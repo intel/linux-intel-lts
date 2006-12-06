@@ -486,7 +486,8 @@ static int skl_machine_device_register(struct skl *skl, void *driver_data)
 	struct sst_acpi_mach *mach = driver_data;
 	int ret;
 
-	if (skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8)
+	if (skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8
+		|| (skl->pci->device == 0x23f0))
 		goto out;
 
 	mach = sst_acpi_find_machine(mach);
@@ -659,7 +660,8 @@ static void skl_probe_work(struct work_struct *work)
 	if (!bus->codec_mask)
 		dev_info(bus->dev, "no hda codecs found!\n");
 
-	if (!(skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8)) {
+	if (!(skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8 ||
+		skl->pci->device == 0x23f0)) {
 		/* create codec instances */
 		err = skl_codec_create(ebus);
 		if (err < 0)
@@ -1047,6 +1049,11 @@ static struct sst_acpi_mach sst_glk_devdata[] = {
 	},
 };
 
+static struct sst_acpi_mach sst_icl_devdata[] = {
+	{ "dummy", "icl_wm8281", "intel/dsp_fw_icl.bin", NULL, NULL, NULL },
+	{}
+};
+
 /* PCI IDs */
 static const struct pci_device_id skl_ids[] = {
 	/* Sunrise Point-LP */
@@ -1070,6 +1077,9 @@ static const struct pci_device_id skl_ids[] = {
 	/* CNL Z0 */
 	{ PCI_DEVICE(0x8086, 0x9dc8),
 		.driver_data = (unsigned long)&sst_cnl_devdata},
+	/* ICL */
+	{ PCI_DEVICE(0x8086, 0x23f0),
+		.driver_data = (unsigned long)&sst_icl_devdata},
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, skl_ids);
