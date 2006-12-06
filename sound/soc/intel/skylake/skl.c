@@ -486,19 +486,15 @@ static int skl_machine_device_register(struct skl *skl, void *driver_data)
 	struct sst_acpi_mach *mach = driver_data;
 	int ret;
 
-	if (skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8) {
-		mach = sst_cnl_devdata;
-		dev_warn(bus->dev, "Using machine driver: %s\n",
-			 mach->drv_name);
-		goto cnl_continue;
-	}
+	if (skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8)
+		goto out;
 
 	mach = sst_acpi_find_machine(mach);
 	if (mach == NULL) {
 		dev_err(bus->dev, "No matching machine driver found\n");
 		return -ENODEV;
 	}
-cnl_continue:
+out:
 	skl->fw_name = mach->fw_filename;
 
 	pdev = platform_device_alloc(mach->drv_name, -1);
