@@ -1216,7 +1216,12 @@ static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
 };
 
 static struct snd_soc_acpi_mach sst_icl_devdata[] = {
-	{ "dummy", "icl_wm8281", "intel/dsp_fw_icl.bin", NULL, NULL, NULL },
+	{
+		.id = "dummy",
+		.drv_name = "icl_rt274",
+		.fw_filename = "intel/dsp_fw_icl.bin",
+		.pdata = &cnl_pdata,
+	},
 	{}
 };
 
