@@ -43,4 +43,10 @@ source "drivers/staging/android/fiq_debugger/Kconfig"
 
 endif # if ANDROID
 
+config ANDROID_LOW_MEMORY_KILLER
+	bool "Android Low Memory Killer"
+	default N
+	---help---
+	  Register processes to be killed when memory is low
+
 endmenu
