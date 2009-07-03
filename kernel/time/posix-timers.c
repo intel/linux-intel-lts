@@ -526,6 +526,9 @@ static struct pid *good_sigevent(sigevent_t * event)
 	case SIGEV_THREAD:
 		if (event->sigev_signo <= 0 || event->sigev_signo > SIGRTMAX)
 			return NULL;
+		if (sig_kernel_only(event->sigev_signo) ||
+		    sig_kernel_coredump(event->sigev_signo))
+			return NULL;
 		/* FALLTHRU */
 	case SIGEV_NONE:
 		return task_pid(rtn);
