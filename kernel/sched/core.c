@@ -3337,7 +3337,10 @@ void migrate_disable(void)
 	}
 
 #ifdef CONFIG_SCHED_DEBUG
-	WARN_ON_ONCE(p->migrate_disable_atomic);
+	if (unlikely(p->migrate_disable_atomic)) {
+		tracing_off();
+		WARN_ON_ONCE(1);
+	}
 #endif
 
 	if (p->migrate_disable) {
@@ -3364,7 +3367,10 @@ void migrate_enable(void)
 	}
 
 #ifdef CONFIG_SCHED_DEBUG
-	WARN_ON_ONCE(p->migrate_disable_atomic);
+	if (unlikely(p->migrate_disable_atomic)) {
+		tracing_off();
+		WARN_ON_ONCE(1);
+	}
 #endif
 	WARN_ON_ONCE(p->migrate_disable <= 0);
 
