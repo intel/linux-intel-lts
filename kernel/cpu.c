@@ -1208,6 +1208,7 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
 		goto restore_cpus;
 	}
 
+	migrate_enable();
 	cpu_hotplug_begin();
 	ret = cpu_unplug_begin(cpu);
 	if (ret) {
@@ -1255,7 +1256,6 @@ out:
 	cpu_unplug_done(cpu);
 out_cancel:
 	cpu_hotplug_done();
-	migrate_enable();
 	/* This post dead nonsense must die */
 	if (!ret && hasdied)
 		cpu_notify_nofail(CPU_POST_DEAD, cpu);
