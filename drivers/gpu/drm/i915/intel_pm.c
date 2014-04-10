@@ -5257,7 +5257,7 @@ void gen6_rps_idle(struct drm_i915_private *dev_priv)
 	gen6_disable_rps_interrupts(dev_priv);
 
 	mutex_lock(&dev_priv->rps.hw_lock);
-	if (dev_priv->rps.enabled) {
+	if (dev_priv->rps.enabled && !dev_priv->rps.debugfs_disable_boost) {
 		if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
 			vlv_set_rps_idle(dev_priv);
 		else
@@ -5283,7 +5283,8 @@ void gen6_rps_boost(struct drm_i915_private *dev_priv,
 	 */
 	if (!(dev_priv->gt.awake &&
 	      dev_priv->rps.enabled &&
-	      dev_priv->rps.cur_freq < dev_priv->rps.boost_freq))
+	      dev_priv->rps.cur_freq < dev_priv->rps.boost_freq) ||
+	     dev_priv->rps.debugfs_disable_boost)
 		return;
 
 	/* Force a RPS boost (and don't count it against the client) if

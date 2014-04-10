@@ -1387,6 +1387,8 @@ struct intel_gen6_power_mgmt {
 	/* manual wa residency calculations */
 	struct intel_rps_ei ei;
 
+	bool debugfs_disable_boost;
+
 	/*
 	 * Protects RPS/RC6 register access and PCU communication.
 	 * Must be taken after struct_mutex if nested. Note that
