@@ -133,6 +133,9 @@ endif
 # LPE Audio for VLV and CHT
 i915-y += intel_lpe_audio.o
 
+# Extended ioctl interface
+i915-y += i915_ext_ioctl.o
+
 obj-$(CONFIG_DRM_I915) += i915.o
 
 CFLAGS_i915_trace_points.o := -I$(src)

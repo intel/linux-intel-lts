@@ -181,6 +181,21 @@ typedef struct _drm_i915_sarea {
 
 } drm_i915_sarea_t;
 
+struct i915_ext_ioctl_data {
+	u32 sub_cmd;	/* Extended ioctl to call */
+	u8  table;	/* Reserved, must be zero */
+	u8  pad1;	/* Alignment pad */
+	u16 pad2;	/* Alignment pad */
+
+	/*
+	 * User-space pointer could be 32-bits or 64-bits
+	 * so use u64 to guarantee compatibility with 64-bit kernels
+	 * This obviates the need to provide both a compat_ioctl and standard
+	 * ioctl for this interface
+	 */
+	u64 args_ptr;
+};
+
 /* due to userspace building against these headers we need some compat here */
 #define planeA_x pipeA_x
 #define planeA_y pipeA_y
@@ -261,6 +276,9 @@ typedef struct _drm_i915_sarea {
 #define DRM_I915_GEM_CONTEXT_SETPARAM	0x35
 #define DRM_I915_PERF_OPEN		0x36
 
+/* Special, two-level, extended ioctl */
+#define DRM_I915_EXT_IOCTL		0x5F
+
 #define DRM_IOCTL_I915_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_I915_INIT, drm_i915_init_t)
 #define DRM_IOCTL_I915_FLUSH		DRM_IO ( DRM_COMMAND_BASE + DRM_I915_FLUSH)
 #define DRM_IOCTL_I915_FLIP		DRM_IO ( DRM_COMMAND_BASE + DRM_I915_FLIP)
@@ -315,6 +333,10 @@ typedef struct _drm_i915_sarea {
 #define DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_CONTEXT_GETPARAM, struct drm_i915_gem_context_param)
 #define DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_CONTEXT_SETPARAM, struct drm_i915_gem_context_param)
 #define DRM_IOCTL_I915_PERF_OPEN	DRM_IOW(DRM_COMMAND_BASE + DRM_I915_PERF_OPEN, struct drm_i915_perf_open_param)
+
+#define DRM_IOCTL_I915_EXT_IOCTL	\
+		DRM_IOW(DRM_COMMAND_BASE + DRM_I915_EXT_IOCTL, \
+		struct i915_ext_ioctl_data)
 
 /* Allow drivers to submit batchbuffers directly to hardware, relying
  * on the security mechanisms provided by hardware.
