@@ -825,6 +825,12 @@ struct intel_csr {
 	uint32_t allowed_dc_mask;
 };
 
+struct i915_rpm {
+	/* procfs related */
+	struct proc_dir_entry *i915_proc_dir;
+	struct proc_dir_entry *i915_proc_file;
+};
+
 #define DEV_INFO_FOR_EACH_FLAG(func) \
 	func(is_mobile); \
 	func(is_lp); \
@@ -2141,6 +2147,7 @@ struct drm_i915_private {
 
 	struct intel_csr csr;
 
+	struct i915_rpm rpm;
 	struct intel_gmbus gmbus[GMBUS_NUM_PINS];
 
 	/** gmbus_mutex protects against concurrent usage of the single hw gmbus
@@ -4039,6 +4046,11 @@ timespec_to_jiffies_timeout(const struct timespec *value)
 
 	return min_t(unsigned long, MAX_JIFFY_OFFSET, j + 1);
 }
+
+int i915_setup_rpm_procfs(struct drm_i915_private *dev_priv);
+int i915_teardown_rpm_procfs(struct drm_i915_private *dev_priv);
+int i915_rpm_get_procfs(struct inode *inode, struct file *file);
+int i915_rpm_put_procfs(struct inode *inode, struct file *file);
 
 /*
  * If you need to wait X milliseconds between events A and B, but event B

@@ -1161,6 +1161,9 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 			i915_guc_log_register(dev_priv);
 		i915_setup_sysfs(dev_priv);
 
+		if (i915_setup_rpm_procfs(dev_priv))
+			DRM_ERROR("Unable to initialize rpm procfs entry");
+
 		/* Depends on sysfs having been initialized */
 		i915_perf_register(dev_priv);
 	} else
@@ -1202,6 +1205,7 @@ static void i915_driver_unregister(struct drm_i915_private *dev_priv)
 	i915_perf_unregister(dev_priv);
 
 	i915_teardown_sysfs(dev_priv);
+	i915_teardown_rpm_procfs(dev_priv);
 	i915_guc_log_unregister(dev_priv);
 	i915_debugfs_unregister(dev_priv);
 	drm_dev_unregister(&dev_priv->drm);
