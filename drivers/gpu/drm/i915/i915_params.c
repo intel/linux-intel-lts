@@ -66,6 +66,7 @@ struct i915_params i915 __read_mostly = {
 	.hpd_sense_invert = 0,
 	.enable_dpcd_backlight = false,
 	.enable_gvt = false,
+	.memtrack_debug = 1,
 };
 
 module_param_named(modeset, i915.modeset, int, 0400);
@@ -260,3 +261,7 @@ MODULE_PARM_DESC(enable_dpcd_backlight,
 module_param_named(enable_gvt, i915.enable_gvt, bool, 0400);
 MODULE_PARM_DESC(enable_gvt,
 	"Enable support for Intel GVT-g graphics virtualization host support(default:false)");
+
+module_param_named(memtrack_debug, i915.memtrack_debug, int, 0600);
+MODULE_PARM_DESC(memtrack_debug,
+		 "use Memtrack debug capability (0=never, 1=always)");

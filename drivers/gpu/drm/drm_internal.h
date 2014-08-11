@@ -25,6 +25,8 @@
 #define DRM_IF_MINOR 4
 
 /* drm_fops.c */
+#define DRM_MAGIC_HASH_ORDER  4  /**< Size of key hash table. Must be power of 2. */
+
 extern struct mutex drm_global_mutex;
 void drm_lastclose(struct drm_device *dev);
 

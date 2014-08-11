@@ -53,6 +53,7 @@
 	func(int, edp_vswing); \
 	func(unsigned int, inject_load_failure); \
 	func(int, hpd_sense_invert); \
+	func(int, memtrack_debug); \
 	/* leave bools at the end to not create holes */ \
 	func(bool, alpha_support); \
 	func(bool, enable_cmd_parser); \

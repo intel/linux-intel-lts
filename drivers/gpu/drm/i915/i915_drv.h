@@ -552,6 +552,8 @@ struct i915_mmu_object;
 struct drm_i915_file_private {
 	struct drm_i915_private *dev_priv;
 	struct drm_file *file;
+	char *process_name;
+	struct pid *tgid;
 
 	struct {
 		spinlock_t lock;
@@ -580,6 +582,7 @@ struct drm_i915_file_private {
  */
 #define I915_MAX_CLIENT_CONTEXT_BANS 3
 	int context_bans;
+	struct bin_attribute *obj_attr;
 };
 
 /* Used by dp and fdi links */
@@ -1558,6 +1561,8 @@ struct i915_gem_mm {
 	spinlock_t object_stat_lock;
 	u64 object_memory;
 	u32 object_count;
+
+	size_t phys_mem_total;
 };
 
 struct drm_i915_error_state_buf {
@@ -2209,6 +2214,8 @@ struct drm_i915_private {
 	struct intel_vbt_data vbt;
 
 	bool preserve_bios_swizzle;
+
+	struct kobject memtrack_kobj;
 
 	/* overlay */
 	struct intel_overlay *overlay;
@@ -3236,6 +3243,7 @@ i915_gem_object_create(struct drm_i915_private *dev_priv, u64 size);
 struct drm_i915_gem_object *
 i915_gem_object_create_from_data(struct drm_i915_private *dev_priv,
 				 const void *data, size_t size);
+int i915_gem_open_object(struct drm_gem_object *gem, struct drm_file *file);
 void i915_gem_close_object(struct drm_gem_object *gem, struct drm_file *file);
 void i915_gem_free_object(struct drm_gem_object *obj);
 
@@ -3637,6 +3645,18 @@ static inline int i915_debugfs_connector_add(struct drm_connector *connector)
 static inline void intel_display_crc_init(struct drm_i915_private *dev_priv) {}
 #endif
 
+int i915_get_pid_cmdline(struct task_struct *task, char *buffer);
+int i915_gem_obj_insert_pid(struct drm_i915_gem_object *obj);
+void i915_gem_obj_remove_pid(struct drm_i915_gem_object *obj);
+void i915_gem_obj_remove_all_pids(struct drm_i915_gem_object *obj);
+int i915_obj_insert_virt_addr(struct drm_i915_gem_object *obj,
+				unsigned long addr, bool is_map_gtt,
+				bool is_mutex_locked);
+int i915_get_drm_clients_info(struct drm_i915_error_state_buf *m,
+				struct drm_device *dev);
+int i915_gem_get_obj_info(struct drm_i915_error_state_buf *m,
+			struct drm_device *dev, struct pid *tgid);
+
 /* i915_gpu_error.c */
 #if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
 
@@ -3674,6 +3694,12 @@ static inline void i915_gpu_state_put(struct i915_gpu_state *gpu)
 
 struct i915_gpu_state *i915_first_error_state(struct drm_i915_private *i915);
 void i915_reset_error_state(struct drm_i915_private *i915);
+
+void i915_error_puts(struct drm_i915_error_state_buf *e,
+		     const char *str);
+bool i915_error_ok(struct drm_i915_error_state_buf *e);
+int i915_obj_state_buf_init(struct drm_i915_error_state_buf *eb,
+			    size_t count);
 
 #else
 
@@ -3721,6 +3747,10 @@ extern int i915_restore_state(struct drm_i915_private *dev_priv);
 /* i915_sysfs.c */
 void i915_setup_sysfs(struct drm_i915_private *dev_priv);
 void i915_teardown_sysfs(struct drm_i915_private *dev_priv);
+int i915_gem_create_sysfs_file_entry(struct drm_device *dev,
+					struct drm_file *file);
+void i915_gem_remove_sysfs_file_entry(struct drm_device *dev,
+			struct drm_file *file);
 
 /* intel_lpe_audio.c */
 int  intel_lpe_audio_init(struct drm_i915_private *dev_priv);

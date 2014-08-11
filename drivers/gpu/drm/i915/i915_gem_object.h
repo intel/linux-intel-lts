@@ -106,6 +106,8 @@ struct drm_i915_gem_object {
 	unsigned int cache_level:3;
 	unsigned int cache_dirty:1;
 
+	unsigned int has_backing_pages:1;
+
 	atomic_t frontbuffer_bits;
 	unsigned int frontbuffer_ggtt_origin; /* write once */
 	struct i915_gem_active frontbuffer_write;
@@ -191,6 +193,8 @@ struct drm_i915_gem_object {
 	struct drm_dma_handle *phys_handle;
 
 	struct reservation_object __builtin_resv;
+
+	struct list_head pid_info;
 };
 
 static inline struct drm_i915_gem_object *
