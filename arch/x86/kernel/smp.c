@@ -116,6 +116,19 @@
 static atomic_t stopping_cpu = ATOMIC_INIT(-1);
 static bool smp_no_nmi_ipi = false;
 
+static DEFINE_PER_CPU(struct pt_regs, cpu_regs);
+
+/* Store regs of this CPU for RAM dump decoding help */
+static inline void store_regs(struct pt_regs *regs)
+{
+        struct pt_regs *print_regs;
+	print_regs = &get_cpu_var(cpu_regs);
+	crash_setup_regs(print_regs, regs);
+
+	/* Flush CPU cache */
+	wbinvd();
+}
+
 /*
  * this function sends a 'reschedule' IPI to another CPU.
  * it goes straight through and wastes no time serializing
@@ -162,6 +175,7 @@ static int smp_stop_nmi_callback(unsigned int val, struct pt_regs *regs)
 	if (raw_smp_processor_id() == atomic_read(&stopping_cpu))
 		return NMI_HANDLED;
 
+	store_regs(regs);
 	stop_this_cpu(NULL);
 
 	return NMI_HANDLED;
@@ -171,9 +185,10 @@ static int smp_stop_nmi_callback(unsigned int val, struct pt_regs *regs)
  * this function calls the 'stop' function on all other CPUs in the system.
  */
 
-asmlinkage __visible void smp_reboot_interrupt(void)
+asmlinkage __visible void smp_reboot_interrupt(struct pt_regs *regs)
 {
 	ipi_entering_ack_irq();
+	store_regs(regs);
 	stop_this_cpu(NULL);
 	irq_exit();
 }
@@ -244,6 +259,7 @@ static void native_stop_other_cpus(int wait)
 	}
 
 finish:
+	store_regs(NULL);
 	local_irq_save(flags);
 	disable_local_APIC();
 	mcheck_cpu_clear(this_cpu_ptr(&cpu_info));
