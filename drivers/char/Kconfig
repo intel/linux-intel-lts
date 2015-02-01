@@ -535,6 +535,8 @@ config ADI
 	  and SSM (Silicon Secured Memory).  Intended consumers of this
 	  driver include crash and makedumpfile.
 
+source "drivers/char/rpmb/Kconfig"
+
 endmenu
 
 config RANDOM_TRUST_CPU
