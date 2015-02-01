@@ -17897,6 +17897,13 @@ L:	linux-remoteproc@vger.kernel.org
 S:	Maintained
 F:	drivers/tty/rpmsg_tty.c
 
+RPMB SUBSYSTEM
+M:	Tomas Winkler <tomas.winkler@intel.com>
+L:	linux-kernel@vger.kernel.org
+S:	Supported
+F:	drivers/char/rpmb/*
+F:	include/linux/rpmb.h
+
 RTL2830 MEDIA DRIVER
 M:	Antti Palosaari <crope@iki.fi>
 L:	linux-media@vger.kernel.org
