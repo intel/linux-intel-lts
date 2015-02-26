@@ -31,8 +31,22 @@ static void
 stm_console_write(struct console *con, const char *buf, unsigned len)
 {
 	struct stm_console *sc = container_of(con, struct stm_console, console);
+	static char svenbuf[1024];
+	char *p = svenbuf;
+	unsigned int towrite;
+	u16 textlen;
+	const u32 sven_header = 0x01000242;
 
-	stm_source_write(&sc->data, 0, buf, len);
+	textlen = min_t(u16, len, 1024 - sizeof(sven_header) - sizeof(textlen));
+	towrite = textlen + sizeof(sven_header) + sizeof(textlen);
+
+	memcpy(p, &sven_header, sizeof(sven_header));
+	p += sizeof(sven_header);
+	memcpy(p, &textlen, sizeof(textlen));
+	p += sizeof(textlen);
+	memcpy(p, buf, textlen);
+
+	stm_source_write(&sc->data, 0, svenbuf, towrite);
 }
 
 static int stm_console_link(struct stm_source_data *data)
