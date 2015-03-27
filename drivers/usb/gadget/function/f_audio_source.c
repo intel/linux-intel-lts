@@ -17,7 +17,6 @@
 #include <linux/device.h>
 #include <linux/usb/audio.h>
 #include <linux/wait.h>
-#include <linux/pm_qos.h>
 #include <sound/core.h>
 #include <sound/initval.h>
 #include <sound/pcm.h>
@@ -269,8 +268,6 @@ struct audio_dev {
 	/* number of frames sent since start_time */
 	s64				frames_sent;
 	struct audio_source_config	*config;
-	/* for creating and issuing QoS requests */
-	struct pm_qos_request pm_qos;
 };
 
 static inline struct audio_dev *func_to_audio(struct usb_function *f)
@@ -313,7 +310,6 @@ static struct device_attribute *audio_source_function_attributes[] = {
 static struct usb_request *audio_request_new(struct usb_ep *ep, int buffer_size)
 {
 	struct usb_request *req = usb_ep_alloc_request(ep, GFP_KERNEL);
-
 	if (!req)
 		return NULL;
 
@@ -381,9 +377,10 @@ static void audio_send(struct audio_dev *audio)
 
 	/* compute number of frames to send */
 	now = ktime_get();
-	msecs = div_s64((ktime_to_ns(now) - ktime_to_ns(audio->start_time)),
-			1000000);
-	frames = div_s64((msecs * SAMPLE_RATE), 1000);
+	msecs = ktime_to_ns(now) - ktime_to_ns(audio->start_time);
+	do_div(msecs, 1000000);
+	frames = msecs * SAMPLE_RATE;
+	do_div(frames, 1000);
 
 	/* Readjust our frames_sent if we fall too far behind.
 	 * If we get too far behind it is better to drop some frames than
@@ -586,11 +583,6 @@ static void audio_disable(struct usb_function *f)
 	usb_ep_disable(audio->in_ep);
 }
 
-static void audio_free_func(struct usb_function *f)
-{
-	/* no-op */
-}
-
 /*-------------------------------------------------------------------------*/
 
 static void audio_build_desc(struct audio_dev *audio)
@@ -743,10 +735,6 @@ static int audio_pcm_open(struct snd_pcm_substream *substream)
 	runtime->hw.channels_max = 2;
 
 	audio->substream = substream;
-
-	/* Add the QoS request and set the latency to 0 */
-	pm_qos_add_request(&audio->pm_qos, PM_QOS_CPU_DMA_LATENCY, 0);
-
 	return 0;
 }
 
@@ -756,10 +744,6 @@ static int audio_pcm_close(struct snd_pcm_substream *substream)
 	unsigned long flags;
 
 	spin_lock_irqsave(&audio->lock, flags);
-
-	/* Remove the QoS request */
-	pm_qos_remove_request(&audio->pm_qos);
-
 	audio->substream = NULL;
 	spin_unlock_irqrestore(&audio->lock, flags);
 
@@ -843,7 +827,6 @@ static struct audio_dev _audio_dev = {
 		.set_alt = audio_set_alt,
 		.setup = audio_setup,
 		.disable = audio_disable,
-		.free_func = audio_free_func,
 	},
 	.lock = __SPIN_LOCK_UNLOCKED(_audio_dev.lock),
 	.idle_reqs = LIST_HEAD_INIT(_audio_dev.idle_reqs),
