@@ -49,6 +49,11 @@ enum {
 	REG_GTH_SCRPD3		= 0xec, /* ScratchPad[3] */
 	REG_TSCU_TSUCTRL	= 0x2000, /* TSCU control register */
 	REG_TSCU_TSCUSTAT	= 0x2004, /* TSCU status register */
+	/* Common Capture Sequencer (CTS) registers */
+	REG_CTS_C0S0_EN		= 0x30c0, /* clause_event_enable_c0s0 */
+	REG_CTS_C0S0_ACT	= 0x3180, /* clause_action_control_c0s0 */
+	REG_CTS_STAT		= 0x32a0, /* cts_status */
+	REG_CTS_CTL		= 0x32a4, /* cts_control */
 };
 
 /* waiting for Pipeline Empty bit(s) to assert for GTH */
@@ -56,5 +61,7 @@ enum {
 
 #define TSUCTRL_CTCRESYNC	BIT(0)
 #define TSCUSTAT_CTCSYNCING	BIT(1)
+/* waiting for Trigger status to assert for CTS */
+#define CTS_TRIG_WAITLOOP_DEPTH	10000
 
 #endif /* __INTEL_TH_GTH_H__ */

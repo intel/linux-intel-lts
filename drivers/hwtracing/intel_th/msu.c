@@ -531,23 +531,14 @@ static int msc_configure(struct msc *msc)
  */
 static void msc_disable(struct msc *msc)
 {
-	unsigned long count;
 	u32 reg;
 
 	lockdep_assert_held(&msc->buf_mutex);
 
 	intel_th_trace_disable(msc->thdev);
 
-	for (reg = 0, count = MSC_PLE_WAITLOOP_DEPTH;
-	     count && !(reg & MSCSTS_PLE); count--) {
-		reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
-		cpu_relax();
-	}
-
-	if (!count)
-		dev_dbg(msc_dev(msc), "timeout waiting for MSC0 PLE\n");
-
 	if (msc->mode == MSC_MODE_SINGLE) {
+		reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
 		msc->single_wrap = !!(reg & MSCSTS_WRAPSTAT);
 
 		reg = ioread32(msc->reg_base + REG_MSU_MSC0MWP);
@@ -1250,6 +1241,22 @@ static const struct file_operations intel_th_msc_fops = {
 	.owner		= THIS_MODULE,
 };
 
+static void msc_wait_ple(struct intel_th_device *thdev)
+{
+	struct msc *msc = dev_get_drvdata(&thdev->dev);
+	unsigned long count;
+	u32 reg;
+
+	for (reg = 0, count = MSC_PLE_WAITLOOP_DEPTH;
+	     count && !(reg & MSCSTS_PLE); count--) {
+		reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
+		cpu_relax();
+	}
+
+	if (!count)
+		dev_dbg(msc_dev(msc), "timeout waiting for MSC0 PLE\n");
+}
+
 static int intel_th_msc_init(struct msc *msc)
 {
 	atomic_set(&msc->user_count, -1);
@@ -1262,6 +1269,8 @@ static int intel_th_msc_init(struct msc *msc)
 	msc->burst_len =
 		(ioread32(msc->reg_base + REG_MSU_MSC0CTL) & MSC_LEN) >>
 		__ffs(MSC_LEN);
+
+	msc->thdev->output.wait_empty = msc_wait_ple;
 
 	return 0;
 }
@@ -1439,10 +1448,32 @@ free_win:
 
 static DEVICE_ATTR_RW(nr_pages);
 
+static ssize_t
+win_switch_store(struct device *dev, struct device_attribute *attr,
+		 const char *buf, size_t size)
+{
+	struct msc *msc = dev_get_drvdata(dev);
+	unsigned long val;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &val);
+	if (ret)
+		return ret;
+
+	if (val != 1)
+		return -EINVAL;
+
+	intel_th_trace_switch(msc->thdev);
+	return size;
+}
+
+static DEVICE_ATTR_WO(win_switch);
+
 static struct attribute *msc_output_attrs[] = {
 	&dev_attr_wrap.attr,
 	&dev_attr_mode.attr,
 	&dev_attr_nr_pages.attr,
+	&dev_attr_win_switch.attr,
 	NULL,
 };
 
