@@ -18,6 +18,8 @@ enum {
 	INTEL_TH_SWITCH,
 };
 
+struct intel_th_device;
+
 /**
  * struct intel_th_output - descriptor INTEL_TH_OUTPUT type devices
  * @port:	output port number, assigned by the switch
@@ -25,6 +27,7 @@ enum {
  * @scratchpad:	scratchpad bits to flag when this output is enabled
  * @multiblock:	true for multiblock output configuration
  * @active:	true when this output is enabled
+ * @wait_empty:	wait for device pipeline to be empty
  *
  * Output port descriptor, used by switch driver to tell which output
  * port this output device corresponds to. Filled in at output device's
@@ -37,6 +40,7 @@ struct intel_th_output {
 	unsigned int	scratchpad;
 	bool		multiblock;
 	bool		active;
+	void		(*wait_empty)(struct intel_th_device *);
 };
 
 /**
@@ -157,6 +161,8 @@ struct intel_th_driver {
 					    struct intel_th_device *othdev);
 	void			(*enable)(struct intel_th_device *thdev,
 					  struct intel_th_output *output);
+	void			(*trig_switch)(struct intel_th_device *thdev,
+					       struct intel_th_output *output);
 	void			(*disable)(struct intel_th_device *thdev,
 					   struct intel_th_output *output);
 	/* output ops */
@@ -220,6 +226,7 @@ int intel_th_driver_register(struct intel_th_driver *thdrv);
 void intel_th_driver_unregister(struct intel_th_driver *thdrv);
 
 int intel_th_trace_enable(struct intel_th_device *thdev);
+int intel_th_trace_switch(struct intel_th_device *thdev);
 int intel_th_trace_disable(struct intel_th_device *thdev);
 int intel_th_set_output(struct intel_th_device *thdev,
 			unsigned int master);
@@ -290,7 +297,7 @@ to_intel_th_hub(struct intel_th_device *thdev)
 enum {
 	/* Global Trace Hub (GTH) */
 	REG_GTH_OFFSET		= 0x0000,
-	REG_GTH_LENGTH		= 0x2000,
+	REG_GTH_LENGTH		= 0x4000,
 
 	/* Timestamp counter unit (TSCU) */
 	REG_TSCU_OFFSET		= 0x2000,
