@@ -29,6 +29,8 @@ const struct cpumask *cpu_coregroup_mask(int cpu);
 #include <linux/cpufreq.h>
 #define arch_scale_freq_capacity cpufreq_scale_freq_capacity
 #endif
+#define arch_get_cpu_scale topology_get_cpu_scale
+extern unsigned long topology_get_cpu_scale(struct sched_domain *sd, int cpu);
 
 #else
 
