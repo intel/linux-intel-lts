@@ -204,7 +204,7 @@ static void __fill_v4l2_buffer(struct vb2_buffer *vb, void *pb)
 	b->timestamp = ns_to_timeval(vb->timestamp);
 	b->timecode = vbuf->timecode;
 	b->sequence = vbuf->sequence;
-	b->reserved2 = 0;
+	b->request = vbuf->request;
 	b->reserved = 0;
 
 	if (q->is_multiplanar) {
@@ -322,6 +322,7 @@ static int __fill_vb2_buffer(struct vb2_buffer *vb,
 	}
 	vb->timestamp = 0;
 	vbuf->sequence = 0;
+	vbuf->request = b->request;
 
 	if (V4L2_TYPE_IS_MULTIPLANAR(b->type)) {
 		if (b->memory == VB2_MEMORY_USERPTR) {
