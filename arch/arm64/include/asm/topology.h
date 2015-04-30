@@ -32,11 +32,13 @@ int pcibus_to_node(struct pci_bus *bus);
 				 cpumask_of_node(pcibus_to_node(bus)))
 
 #endif /* CONFIG_NUMA */
+struct sched_domain;
 #ifdef CONFIG_CPU_FREQ
 #define arch_scale_freq_capacity cpufreq_scale_freq_capacity
-struct sched_domain;
 extern unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu);
 #endif
+#define arch_get_cpu_scale topology_get_cpu_scale
+extern unsigned long topology_get_cpu_scale(struct sched_domain *sd, int cpu);
 
 #include <asm-generic/topology.h>
 
