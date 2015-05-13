@@ -43,6 +43,7 @@
 #include <linux/nls.h>
 #include <linux/of.h>
 #include <linux/bitfield.h>
+#include <linux/string.h>
 #include <linux/rpmb.h>
 
 #include "ufshcd.h"
@@ -6375,11 +6376,18 @@ static struct rpmb_ops ufshcd_rpmb_dev_ops = {
 
 };
 
-static inline void ufshcd_rpmb_add(struct ufs_hba *hba)
+static inline void ufshcd_rpmb_add(struct ufs_hba *hba,
+				   struct ufs_dev_desc *dev_desc)
 {
 	struct rpmb_dev *rdev;
 	u8 rpmb_rw_size = 1;
 	int ret;
+
+	ufshcd_rpmb_dev_ops.dev_id = kmemdup(dev_desc->serial_no,
+					     dev_desc->serial_no_len,
+					     GFP_KERNEL);
+	if (ufshcd_rpmb_dev_ops.dev_id)
+		ufshcd_rpmb_dev_ops.dev_id_len = dev_desc->serial_no_len;
 
 	ret = scsi_device_get(hba->sdev_ufs_rpmb);
 	if (ret)
@@ -6423,6 +6431,9 @@ static inline void ufshcd_rpmb_remove(struct ufs_hba *hba)
 	rpmb_dev_unregister_by_device(hba->dev, 0);
 	scsi_device_put(hba->sdev_ufs_rpmb);
 	hba->sdev_ufs_rpmb = NULL;
+
+	kfree(ufshcd_rpmb_dev_ops.dev_id);
+	ufshcd_rpmb_dev_ops.dev_id = NULL;
 
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 }
@@ -6497,7 +6508,7 @@ static int ufs_get_device_desc(struct ufs_hba *hba,
 {
 	int err;
 	size_t buff_len;
-	u8 model_index;
+	u8 index;
 	u8 *desc_buf;
 
 	if (!dev_desc)
@@ -6525,11 +6536,19 @@ static int ufs_get_device_desc(struct ufs_hba *hba,
 	dev_desc->wmanufacturerid = desc_buf[DEVICE_DESC_PARAM_MANF_ID] << 8 |
 				     desc_buf[DEVICE_DESC_PARAM_MANF_ID + 1];
 
-	model_index = desc_buf[DEVICE_DESC_PARAM_PRDCT_NAME];
-	err = ufshcd_read_string_desc(hba, model_index,
+	index = desc_buf[DEVICE_DESC_PARAM_PRDCT_NAME];
+	err = ufshcd_read_string_desc(hba, index,
 				      &dev_desc->model, SD_ASCII_STD);
 	if (err < 0) {
 		dev_err(hba->dev, "%s: Failed reading Product Name. err = %d\n",
+			__func__, err);
+		goto out;
+	}
+
+	index = desc_buf[DEVICE_DESC_PARAM_SN];
+	err = ufshcd_read_string_desc(hba, index, &dev_desc->serial_no, SD_RAW);
+	if (err < 0) {
+		dev_err(hba->dev, "%s: Failed reading Serial No. err = %d\n",
 			__func__, err);
 		goto out;
 	}
@@ -6549,6 +6568,9 @@ static void ufs_put_device_desc(struct ufs_dev_desc *dev_desc)
 {
 	kfree(dev_desc->model);
 	dev_desc->model = NULL;
+
+	kfree(dev_desc->serial_no);
+	dev_desc->serial_no = NULL;
 }
 
 static void ufs_fixup_device_setup(struct ufs_hba *hba,
@@ -6844,7 +6866,6 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
 	}
 
 	ufs_fixup_device_setup(hba, &card);
-	ufs_put_device_desc(&card);
 
 	ufshcd_tune_unipro_params(hba);
 
@@ -6894,7 +6915,7 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
 		if (ufshcd_scsi_add_wlus(hba))
 			goto out;
 
-		ufshcd_rpmb_add(hba);
+		ufshcd_rpmb_add(hba, &card);
 
 		/* Initialize devfreq after UFS device is detected */
 		if (ufshcd_is_clkscaling_supported(hba)) {
@@ -6918,6 +6939,8 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
 		hba->is_init_prefetch = true;
 
 out:
+
+	ufs_put_device_desc(&card);
 	/*
 	 * If we failed to initialize the device or the device is not
 	 * present, turn off the power/clocks etc.
