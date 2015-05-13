@@ -547,12 +547,16 @@ struct ufs_dev_info {
  * @min_uma_sz: minimum UM area size
  * @wmanufacturerid: card details
  * @model: card model
+ * @serial_no: serial number
+ * @serial_no_len: serial number string length
  */
 struct ufs_dev_desc {
 	u8 subclass;
 	u32 min_uma_sz;
 	u16 wmanufacturerid;
 	char *model;
+	char *serial_no;
+	size_t serial_no_len;
 };
 
 /**
