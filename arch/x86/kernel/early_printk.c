@@ -20,6 +20,7 @@
 #include <linux/efi.h>
 #include <asm/efi.h>
 #include <asm/pci_x86.h>
+#include <asm/early_intel_th.h>
 
 /* Simple VGA output */
 #define VGABASE		(__ISA_IO_base + 0xb8000)
@@ -380,6 +381,12 @@ static int __init setup_early_printk(char *buf)
 #ifdef CONFIG_EARLY_PRINTK_EFI
 		if (!strncmp(buf, "efi", 3))
 			early_console_register(&early_efi_console, keep);
+#endif
+#ifdef CONFIG_INTEL_TH_EARLY_PRINTK
+		if (!strncmp(buf, "intelth", 7)) {
+			early_intel_th_init(buf + 7);
+			early_console_register(&intel_th_early_console, keep);
+		}
 #endif
 
 		buf++;
