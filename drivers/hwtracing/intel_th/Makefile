@@ -20,3 +20,6 @@ intel_th_msu-y			:= msu.o
 
 obj-$(CONFIG_INTEL_TH_PTI)	+= intel_th_pti.o
 intel_th_pti-y			:= pti.o
+
+obj-$(CONFIG_INTEL_TH_EARLY_PRINTK) += intel_th_early_printk.o
+intel_th_early_printk-y		:= early_printk.o

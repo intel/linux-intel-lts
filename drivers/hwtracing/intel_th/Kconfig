@@ -82,4 +82,15 @@ config INTEL_TH_DEBUG
 	help
 	  Say Y here to enable debugging.
 
+config INTEL_TH_EARLY_PRINTK
+	bool "Intel TH early printk console"
+	depends on INTEL_TH=y
+	default n
+	---help---
+	  Enables early printk console.
+	  When the early printk console is enabled in the kernel
+	  command line, kernel log messages are sent to Intel TH
+	  (hence they are aggregated with the other trace messages
+	  from the platform).
+
 endif
