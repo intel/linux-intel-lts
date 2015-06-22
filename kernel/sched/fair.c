@@ -5977,6 +5977,8 @@ boosted_cpu_util(int cpu)
 	unsigned long util = cpu_util(cpu);
 	unsigned long margin = schedtune_cpu_margin(util, cpu);
 
+	trace_sched_boost_cpu(cpu, util, margin);
+
 	return util + margin;
 }
 
