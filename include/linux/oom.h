@@ -95,10 +95,6 @@ static inline int check_stable_address_space(struct mm_struct *mm)
 	return 0;
 }
 
-extern void mark_tsk_oom_victim(struct task_struct *tsk);
-
-extern void unmark_oom_victim(void);
-
 extern unsigned long oom_badness(struct task_struct *p,
 		struct mem_cgroup *memcg, const nodemask_t *nodemask,
 		unsigned long totalpages);
