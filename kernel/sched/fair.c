@@ -5491,11 +5491,12 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 		  int this_cpu, int sd_flag)
 {
 	struct sched_group *idlest = NULL, *group = sd->groups;
-	struct sched_group *fit_group = NULL;
+	struct sched_group *fit_group = NULL, *spare_group = NULL;
 	struct sched_group *most_spare_sg = NULL;
 	unsigned long min_runnable_load = ULONG_MAX, this_runnable_load = 0;
 	unsigned long min_avg_load = ULONG_MAX, this_avg_load = 0;
 	unsigned long fit_capacity = ULONG_MAX;
+	unsigned long max_spare_capacity = capacity_margin - SCHED_CAPACITY_SCALE;
 	unsigned long most_spare = 0, this_spare = 0;
 	int load_idx = sd->forkexec_idx;
 	int imbalance_scale = 100 + (sd->imbalance_pct-100)/2;
@@ -5506,7 +5507,7 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 		load_idx = sd->wake_idx;
 
 	do {
-		unsigned long load, avg_load, runnable_load;
+		unsigned long load, avg_load, runnable_load, spare_capacity;
 		unsigned long spare_cap, max_spare_cap;
 		int local_group;
 		int i;
@@ -5551,6 +5552,16 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 				fit_capacity = capacity_of(i);
 				fit_group = group;
 			}
+
+			/*
+			 * Look for group which has most spare capacity on a
+			 * single cpu.
+			 */
+			spare_capacity = capacity_of(i) - cpu_util(i);
+			if (spare_capacity > max_spare_capacity) {
+				max_spare_capacity = spare_capacity;
+				spare_group = group;
+			}
 		}
 
 		/* Adjust by relative CPU capacity of the group */
@@ -5591,6 +5602,9 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 
 	if (fit_group)
 		return fit_group;
+
+	if (spare_group)
+		return spare_group;
 
 	/*
 	 * The cross-over point between using spare capacity or least load
