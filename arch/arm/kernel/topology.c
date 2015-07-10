@@ -162,6 +162,8 @@ static void __init parse_dt_topology(void)
 		topology_normalize_cpu_scale();
 }
 
+static const struct sched_group_energy * const cpu_core_energy(int cpu);
+
 /*
  * Look for a customed capacity of a CPU in the cpu_capacity table during the
  * boot. The update of all CPUs is in O(n^2) for heteregeneous system but the
@@ -169,10 +171,17 @@ static void __init parse_dt_topology(void)
  */
 static void update_cpu_capacity(unsigned int cpu)
 {
-	if (!cpu_capacity(cpu) || cap_from_dt)
+	unsigned long capacity = SCHED_CAPACITY_SCALE;
+
+	if (cap_from_dt)
 		return;
 
-	topology_set_cpu_scale(cpu, cpu_capacity(cpu) / middle_capacity);
+	if (cpu_core_energy(cpu)) {
+		int max_cap_idx = cpu_core_energy(cpu)->nr_cap_states - 1;
+		capacity = cpu_core_energy(cpu)->cap_states[max_cap_idx].cap;
+	}
+
+	topology_set_cpu_scale(cpu, capacity);
 
 	pr_info("CPU%u: update cpu_capacity %lu\n",
 		cpu, topology_get_cpu_scale(NULL, cpu));
