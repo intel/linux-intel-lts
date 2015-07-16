@@ -20,6 +20,7 @@
 #include <linux/slab.h>
 
 #include <linux/rpmb.h>
+#include "rpmb-cdev.h"
 
 static DEFINE_IDA(rpmb_ida);
 
@@ -390,6 +391,7 @@ int rpmb_dev_unregister(struct device *dev)
 	rpmb_dev_put(rdev);
 
 	mutex_lock(&rdev->lock);
+	rpmb_cdev_del(rdev);
 	device_del(&rdev->dev);
 	mutex_unlock(&rdev->lock);
 
@@ -440,9 +442,13 @@ struct rpmb_dev *rpmb_dev_register(struct device *dev,
 	rdev->dev.parent = dev;
 	rdev->dev.groups = rpmb_attr_groups;
 
+	rpmb_cdev_prepare(rdev);
+
 	ret = device_register(&rdev->dev);
 	if (ret)
 		goto exit;
+
+	rpmb_cdev_add(rdev);
 
 	dev_dbg(&rdev->dev, "registered disk\n");
 
@@ -460,11 +466,12 @@ static int __init rpmb_init(void)
 {
 	ida_init(&rpmb_ida);
 	class_register(&rpmb_class);
-	return 0;
+	return rpmb_cdev_init();
 }
 
 static void __exit rpmb_exit(void)
 {
+	rpmb_cdev_exit();
 	class_unregister(&rpmb_class);
 	ida_destroy(&rpmb_ida);
 }
