@@ -17903,6 +17903,7 @@ L:	linux-kernel@vger.kernel.org
 S:	Supported
 F:	Documentation/ABI/testing/sysfs-class-rpmb
 F:	drivers/char/rpmb/*
+F:	include/uapi/linux/rpmb.h
 F:	include/linux/rpmb.h
 
 RTL2830 MEDIA DRIVER
