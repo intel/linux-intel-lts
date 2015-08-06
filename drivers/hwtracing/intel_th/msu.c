@@ -102,6 +102,8 @@ struct msc_iter {
  * @mode:		MSC operating mode
  * @burst_len:		write burst length
  * @index:		number of this MSC in the MSU
+ *
+ * @max_blocks:		Maximum number of blocks in a window
  */
 struct msc {
 	void __iomem		*reg_base;
@@ -129,7 +131,98 @@ struct msc {
 	unsigned int		mode;
 	unsigned int		burst_len;
 	unsigned int		index;
+	unsigned int		max_blocks;
 };
+
+static struct msc_probe_rem_cb msc_probe_rem_cb;
+
+struct msc_device_instance {
+	struct list_head list;
+	struct intel_th_device *thdev;
+};
+
+static LIST_HEAD(msc_dev_instances);
+static DEFINE_SPINLOCK(msc_dev_reg_lock);
+/**
+ * msc_register_callbacks()
+ * @cbs
+ */
+int msc_register_callbacks(struct msc_probe_rem_cb cbs)
+{
+	struct msc_device_instance *it;
+
+	spin_lock(&msc_dev_reg_lock);
+
+	msc_probe_rem_cb.probe = cbs.probe;
+	msc_probe_rem_cb.remove = cbs.remove;
+	/* Call the probe callback for the already existing ones*/
+	list_for_each_entry(it, &msc_dev_instances, list) {
+		cbs.probe(it->thdev);
+	}
+
+	spin_unlock(&msc_dev_reg_lock);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(msc_register_callbacks);
+
+/**
+ * msc_unregister_callbacks()
+ */
+void msc_unregister_callbacks(void)
+{
+	spin_lock(&msc_dev_reg_lock);
+
+	msc_probe_rem_cb.probe = NULL;
+	msc_probe_rem_cb.remove = NULL;
+
+	spin_unlock(&msc_dev_reg_lock);
+}
+EXPORT_SYMBOL_GPL(msc_unregister_callbacks);
+
+static void msc_add_instance(struct intel_th_device *thdev)
+{
+	struct msc_device_instance *instance;
+
+	instance = kmalloc(sizeof(*instance), GFP_KERNEL);
+	if (!instance)
+		return;
+
+	spin_lock(&msc_dev_reg_lock);
+
+	instance->thdev = thdev;
+	list_add(&instance->list, &msc_dev_instances);
+
+	if (msc_probe_rem_cb.probe)
+		msc_probe_rem_cb.probe(thdev);
+
+	spin_unlock(&msc_dev_reg_lock);
+}
+
+static void msc_rm_instance(struct intel_th_device *thdev)
+{
+	struct msc_device_instance *instance = NULL, *it;
+
+	spin_lock(&msc_dev_reg_lock);
+
+	if (msc_probe_rem_cb.remove)
+		msc_probe_rem_cb.remove(thdev);
+
+	list_for_each_entry(it, &msc_dev_instances, list) {
+		if (it->thdev == thdev) {
+			instance = it;
+			break;
+		}
+	}
+
+	if (instance) {
+		list_del(&instance->list);
+		kfree(instance);
+	} else {
+		pr_warn("msu: cannot remove %p (not found)", thdev);
+	}
+
+	spin_unlock(&msc_dev_reg_lock);
+}
 
 static inline bool msc_block_is_empty(struct msc_block_desc *bdesc)
 {
@@ -143,6 +236,37 @@ static inline bool msc_block_is_empty(struct msc_block_desc *bdesc)
 
 	return false;
 }
+
+/**
+ * msc_current_window() - locate the window in use
+ * @msc:	MSC device
+ *
+ * This should only be used in multiblock mode. Caller should hold the
+ * msc::user_count reference.
+ *
+ * Return:	the current output window
+ */
+static struct msc_window *msc_current_window(struct msc *msc)
+{
+	struct msc_window *win, *prev = NULL;
+	/*BAR is never changing, so the current one is the one before the next*/
+	u32 reg = ioread32(msc->reg_base + REG_MSU_MSC0NWSA);
+	unsigned long win_addr = (unsigned long)reg << PAGE_SHIFT;
+
+	if (list_empty(&msc->win_list))
+		return NULL;
+
+	list_for_each_entry(win, &msc->win_list, entry) {
+		if (win->block[0].addr == win_addr)
+			break;
+		prev = win;
+	}
+	if (!prev)
+		prev = list_entry(msc->win_list.prev, struct msc_window, entry);
+
+	return prev;
+}
+
 
 /**
  * msc_oldest_window() - locate the window with oldest data
@@ -209,6 +333,160 @@ static unsigned int msc_win_oldest_block(struct msc_window *win)
 
 	return 0;
 }
+
+/**
+ * msc_max_blocks() - get the maximum number of block
+ * @thdev:	the sub-device
+ *
+ * Return:	the maximum number of blocks / window
+ */
+unsigned int msc_max_blocks(struct intel_th_device *thdev)
+{
+	struct msc *msc = dev_get_drvdata(&thdev->dev);
+
+	return msc->max_blocks;
+}
+EXPORT_SYMBOL_GPL(msc_max_blocks);
+
+/**
+ * msc_block_max_size() - get the size of biggest block
+ * @thdev:	the sub-device
+ *
+ * Return:	the size of biggest block
+ */
+unsigned int msc_block_max_size(struct intel_th_device *thdev)
+{
+	return PAGE_SIZE;
+}
+EXPORT_SYMBOL_GPL(msc_block_max_size);
+
+/**
+ * msc_switch_window() - perform a window switch
+ * @thdev:	the sub-device
+ */
+int msc_switch_window(struct intel_th_device *thdev)
+{
+	intel_th_trace_switch(thdev);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(msc_switch_window);
+
+/**
+ * msc_current_win_bytes() - get the current window data size
+ * @thdev:	the sub-device
+ *
+ * Get the number of valid data bytes in the current window.
+ * Based on this the dvc-source part can decide to request a window switch.
+ */
+int msc_current_win_bytes(struct intel_th_device *thdev)
+{
+	struct msc *msc = dev_get_drvdata(&thdev->dev);
+	struct msc_window *win;
+	u32 reg_mwp, blk, offset, i;
+	int size = 0;
+
+	/* proceed only if actively storing in muli-window mode */
+	if (!msc->enabled ||
+	    (msc->mode != MSC_MODE_MULTI) ||
+	    !atomic_inc_unless_negative(&msc->user_count))
+		return -EINVAL;
+
+	win = msc_current_window(msc);
+	reg_mwp = ioread32(msc->reg_base + REG_MSU_MSC0MWP);
+
+	if (!win) {
+		atomic_dec(&msc->user_count);
+		return -EINVAL;
+	}
+
+	blk = 0;
+	while (blk < win->nr_blocks) {
+		if (win->block[blk].addr == (reg_mwp & PAGE_MASK))
+			break;
+		blk++;
+	}
+
+	if (blk >= win->nr_blocks) {
+		atomic_dec(&msc->user_count);
+		return -EINVAL;
+	}
+
+	offset = (reg_mwp & (PAGE_SIZE - 1));
+
+
+	/*if wrap*/
+	if (msc_block_wrapped(win->block[blk].bdesc)) {
+		for (i = blk+1; i < win->nr_blocks; i++)
+			size += msc_data_sz(win->block[i].bdesc);
+	}
+
+	for (i = 0; i < blk; i++)
+		size += msc_data_sz(win->block[i].bdesc);
+
+	/*finaly the current one*/
+	size += (offset - MSC_BDESC);
+
+	atomic_dec(&msc->user_count);
+	return size;
+}
+EXPORT_SYMBOL_GPL(msc_current_win_bytes);
+
+/**
+ * msc_sg_oldest_win() - get the data from the oldest window
+ * @thdev:	the sub-device
+ * @sg_array:	destination sg array
+ *
+ * Return:	sg count
+ */
+int msc_sg_oldest_win(struct intel_th_device *thdev,
+		      struct scatterlist *sg_array)
+{
+	struct msc *msc = dev_get_drvdata(&thdev->dev);
+	struct msc_window *win, *c_win;
+	struct msc_block_desc *bdesc;
+	unsigned int blk, sg = 0;
+
+	/* proceed only if actively storing in muli-window mode */
+	if (!msc->enabled ||
+	    (msc->mode != MSC_MODE_MULTI) ||
+	    !atomic_inc_unless_negative(&msc->user_count))
+		return -EINVAL;
+
+	win = msc_oldest_window(msc);
+	if (!win)
+		return 0;
+
+	c_win = msc_current_window(msc);
+
+	if (win == c_win)
+		return 0;
+
+	blk = msc_win_oldest_block(win);
+
+	/* start with the first block containing only oldest data */
+	if (msc_block_wrapped(win->block[blk].bdesc))
+		if (++blk == win->nr_blocks)
+			blk = 0;
+
+	do {
+		bdesc = win->block[blk].bdesc;
+		sg_set_buf(&sg_array[sg++], bdesc, PAGE_SIZE);
+
+		if (bdesc->hw_tag & MSC_HW_TAG_ENDBIT)
+			break;
+
+		if (++blk == win->nr_blocks)
+			blk = 0;
+
+	} while (sg <= win->nr_blocks);
+
+	sg_mark_end(&sg_array[sg - 1]);
+
+	atomic_dec(&msc->user_count);
+
+	return sg;
+}
+EXPORT_SYMBOL_GPL(msc_sg_oldest_win);
 
 /**
  * msc_is_last_win() - check if a window is the last one for a given MSC
@@ -1661,6 +1939,8 @@ nr_pages_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
+	msc->max_blocks = 0;
+
 	/* scan the comma-separated list of allocation sizes */
 	end = memchr(buf, '\n', len);
 	if (end)
@@ -1694,6 +1974,9 @@ nr_pages_store(struct device *dev, struct device_attribute *attr,
 
 		win = rewin;
 		win[nr_wins - 1] = val;
+
+		msc->max_blocks =
+			(val > msc->max_blocks) ? val : msc->max_blocks;
 
 		if (!end)
 			break;
@@ -1776,9 +2059,11 @@ static int intel_th_msc_probe(struct intel_th_device *thdev)
 	if (err)
 		return err;
 
+	msc->max_blocks = 0;
 	dev_set_drvdata(dev, msc);
 
 	intel_th_npkt_init(msc);
+	msc_add_instance(thdev);
 
 	return 0;
 }
@@ -1787,6 +2072,7 @@ static void intel_th_msc_remove(struct intel_th_device *thdev)
 {
 	struct msc *msc = dev_get_drvdata(&thdev->dev);
 	intel_th_npkt_remove(msc);
+	msc_rm_instance(thdev);
 	sysfs_remove_group(&thdev->dev.kobj, &msc_output_group);
 }
 
