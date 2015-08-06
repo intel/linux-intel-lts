@@ -8,6 +8,8 @@
 #ifndef __INTEL_TH_MSU_H__
 #define __INTEL_TH_MSU_H__
 
+#include "intel_th.h"
+
 enum {
 	REG_MSU_MSUPARAMS	= 0x0000,
 	REG_MSU_MSUSTS		= 0x0008,
@@ -104,5 +106,20 @@ static inline bool msc_block_last_written(struct msc_block_desc *bdesc)
 
 /* waiting for Pipeline Empty bit(s) to assert for MSC */
 #define MSC_PLE_WAITLOOP_DEPTH	10000
+
+/* API */
+struct msc_probe_rem_cb {
+	void (*probe)(struct intel_th_device *thdev);
+	void (*remove)(struct intel_th_device *thdev);
+};
+
+int msc_register_callbacks(struct msc_probe_rem_cb cbs);
+void msc_unregister_callbacks(void);
+unsigned int msc_max_blocks(struct intel_th_device *thdev);
+unsigned int msc_block_max_size(struct intel_th_device *thdev);
+int msc_switch_window(struct intel_th_device *thdev);
+int msc_sg_oldest_win(struct intel_th_device *thdev,
+		      struct scatterlist *sg_array);
+int msc_current_win_bytes(struct intel_th_device *thdev);
 
 #endif /* __INTEL_TH_MSU_H__ */
