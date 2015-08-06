@@ -67,6 +67,26 @@ config INTEL_TH_MSU
 
 	  Say Y here to enable MSU output device for Intel TH.
 
+config INTEL_TH_MSU_DVC
+        tristate "Intel Trace Hub Memory Storage Unit to USB-dvc"
+	help
+	  Memory Storage Unit (MSU) trace output device enables
+	  storing STP traces to system memory.
+	  This provides the means to route this data over USB,
+	  using DvC-Trace.
+
+	  Say Y here to enable DvC-Trace output device for Intel TH.
+
+config INTEL_TH_MSU_DVC_DEBUG
+        tristate "Intel Trace Hub Memory Storage Unit to USB-dvc debug"
+	help
+	  Memory Storage Unit (MSU) trace output device enables
+	  storing STP traces to system memory.
+	  This enables extensive logging and collection of
+	  statistical data on MSU/DvC-Trace device performance.
+
+	  Say Y to enable extended debug features on MSU-DvC.
+
 config INTEL_TH_PTI
 	tristate "Intel(R) Trace Hub PTI output"
 	help
