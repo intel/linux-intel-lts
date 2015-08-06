@@ -7125,6 +7125,12 @@ S:	Supported
 F:	Documentation/trace/intel_th.txt
 F:	drivers/hwtracing/intel_th/
 
+INTEL(R) TRACE HUB TO USB-DVC.TRACE
+M:	Traian Schiau <traianx.schiau@intel.com>
+S:	Supported
+F:	drivers/hwtracing/intel_th/msu-dvc.c
+F:	Documentation/ABI/testing/sysfs-bus-dvctrace-devices-dvcith
+
 INTEL(R) TRUSTED EXECUTION TECHNOLOGY (TXT)
 M:	Ning Sun <ning.sun@intel.com>
 L:	tboot-devel@lists.sourceforge.net
