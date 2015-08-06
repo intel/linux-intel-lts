@@ -1,0 +1,68 @@
+What:		/sys/bus/dvctrace/devices/dvcith-<device>/msc
+Date:		Aug 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(R) Symbolic link to the Intel Trace Hub MSC
+		(Memory Storage Controller) sub-device used to get tracing data.
+
+What:		/sys/bus/dvctrace/devices/dvcith-<device>/mdd_min_transfer
+Date:		Aug 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(RW) Window transfer watermark, the driver will queue a
+		new transfer only if at least <mdd_min_transfer> bytes
+		of trace data is available. Since on every switch @48 bytes
+		of trace data is generated, this should not be set under this
+		threshold.
+		Default 2048
+
+What:		/sys/bus/dvctrace/devices/dvcith-<device>/mdd_retry_timeout
+Date:		Aug 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(RW) Read retry interval, If by the time the last usb transfer
+		is complete, there is no new data to be sent the driver will
+		sleep <mdd_retry_timeout> ms, before checking again.
+		Default: 2 ms
+
+What:		/sys/bus/dvctrace/devices/dvcith-<device>/mdd_max_retry
+Date:		Aug 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(RW) the maximum retries to be bone before triggering a switch
+		and sending the currently available data regardless of the
+		available size.
+		Default: 150
+
+What:		/sys/bus/dvctrace/devices/dvcith-<device>/mdd_proc_type
+Date:		Aug 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(RW) Data process type, during DvC tracing the MSC is set up in
+		Multi Window mode (check Intel Trace Hub Developer's Manual for
+		details), This attribute specifies what the dvc-trace data stream
+		should contain.
+		Available values are:
+		  - 1 - Full blocks,
+		  - 2 - Trimmed blocks (Block header + STP data)
+		  - 3 - STP data only.
+		Default 3.
+
+What:		/sys/bus/dvctrace/devices/dvcith-<device>/mdd_transfer_type
+Date:		Aug 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(RW) Data transfer type, This attribute specifies how the trace data
+		is queued in the USB requests.
+		Available values are:
+		  - 1 - Auto,
+		  - 2 - SG-List,
+		  - 3 - Linear buffer.
+		Default 1.
+
+What:		/sys/bus/dvctrace/devices/dvcith-<device>/mdd_stats
+Date:		Aug 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(R) Provides statistical information regarding the latest.
+		trace session. Available if (CONFIG_INTEL_TH_MSU_DVC_DEBUG).
