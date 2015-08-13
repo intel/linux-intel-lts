@@ -61,6 +61,35 @@ static void intel_th_pci_deactivate(struct intel_th *th)
 	if (err)
 		dev_err(&pdev->dev, "failed to read NPKDSC register\n");
 }
+/*
+ * PCI Configuration Registers
+ */
+enum {
+	REG_PCI_NPKDSC		= 0x80, /* NPK Device Specific Control */
+	REG_PCI_NPKDSD		= 0x90, /* NPK Device Specific Defeature */
+};
+
+/* Trace Hub software reset */
+#define NPKDSC_RESET	BIT(1)
+
+/* Force On */
+#define NPKDSD_FON	BIT(0)
+
+static void intel_th_pci_reset(struct intel_th *th)
+{
+	struct pci_dev *pdev = container_of(th->dev, struct pci_dev, dev);
+	u32 val;
+
+	/* Software reset */
+	pci_read_config_dword(pdev, REG_PCI_NPKDSC, &val);
+	val |= NPKDSC_RESET;
+	pci_write_config_dword(pdev, REG_PCI_NPKDSC, val);
+
+	/* Always set FON for S0ix flow */
+	pci_read_config_dword(pdev, REG_PCI_NPKDSD, &val);
+	val |= NPKDSD_FON;
+	pci_write_config_dword(pdev, REG_PCI_NPKDSD, val);
+}
 
 static int intel_th_pci_probe(struct pci_dev *pdev,
 			      const struct pci_device_id *id)
@@ -78,7 +107,7 @@ static int intel_th_pci_probe(struct pci_dev *pdev,
 		return err;
 
 	th = intel_th_alloc(&pdev->dev, drvdata, pdev->resource,
-			    DEVICE_COUNT_RESOURCE, pdev->irq);
+			    DEVICE_COUNT_RESOURCE, pdev->irq, intel_th_pci_reset);
 	if (IS_ERR(th))
 		return PTR_ERR(th);
 
