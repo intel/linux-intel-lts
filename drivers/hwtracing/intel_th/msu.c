@@ -89,6 +89,7 @@ struct msc_iter {
  * @single_wrap:	single mode wrap occurred
  * @base:		buffer's base pointer
  * @base_addr:		buffer's base address
+ * @nwsa:		next window start address backup
  * @user_count:		number of users of the buffer
  * @mmap_count:		number of mappings
  * @buf_mutex:		mutex to serialize access to buffer-related bits
@@ -109,6 +110,7 @@ struct msc {
 	unsigned int		single_wrap : 1;
 	void			*base;
 	dma_addr_t		base_addr;
+	unsigned long		nwsa;
 
 	/* <0: no buffer, 0: no users, >0: active users */
 	atomic_t		user_count;
@@ -151,8 +153,6 @@ static inline bool msc_block_is_empty(struct msc_block_desc *bdesc)
 static struct msc_window *msc_oldest_window(struct msc *msc)
 {
 	struct msc_window *win;
-	u32 reg = ioread32(msc->reg_base + REG_MSU_MSC0NWSA);
-	unsigned long win_addr = (unsigned long)reg << PAGE_SHIFT;
 	unsigned int found = 0;
 
 	if (list_empty(&msc->win_list))
@@ -164,7 +164,7 @@ static struct msc_window *msc_oldest_window(struct msc *msc)
 	 * something like 2, in which case we're good
 	 */
 	list_for_each_entry(win, &msc->win_list, entry) {
-		if (win->block[0].addr == win_addr)
+		if (win->block[0].addr == msc->nwsa)
 			found++;
 
 		/* skip the empty ones */
@@ -478,9 +478,9 @@ static void msc_buffer_clear_hw_header(struct msc *msc)
  * msc_configure() - set up MSC hardware
  * @msc:	the MSC device to configure
  *
- * Program storage mode, wrapping, burst length and trace buffer address
- * into a given MSC. Then, enable tracing and set msc::enabled.
- * The latter is serialized on msc::buf_mutex, so make sure to hold it.
+ * Program all relevant registers for a given MSC.
+ * Programming registers must be delayed until this stage since the hardware
+ * will be reset before a capture is started.
  */
 static int msc_configure(struct msc *msc)
 {
@@ -515,9 +515,7 @@ static int msc_configure(struct msc *msc)
 	iowrite32(reg, msc->reg_base + REG_MSU_MSC0CTL);
 
 	msc->thdev->output.multiblock = msc->mode == MSC_MODE_MULTI;
-	intel_th_trace_enable(msc->thdev);
 	msc->enabled = 1;
-
 
 	return 0;
 }
@@ -547,6 +545,10 @@ static void msc_disable(struct msc *msc)
 			reg, msc->single_sz, msc->single_wrap);
 	}
 
+	/* Save next window start address before disabling */
+	reg = ioread32(msc->reg_base + REG_MSU_MSC0NWSA);
+	msc->nwsa = (unsigned long)reg << PAGE_SHIFT;
+
 	reg = ioread32(msc->reg_base + REG_MSU_MSC0CTL);
 	reg &= ~MSC_EN;
 	iowrite32(reg, msc->reg_base + REG_MSU_MSC0CTL);
@@ -555,8 +557,7 @@ static void msc_disable(struct msc *msc)
 	iowrite32(0, msc->reg_base + REG_MSU_MSC0BAR);
 	iowrite32(0, msc->reg_base + REG_MSU_MSC0SIZE);
 
-	dev_dbg(msc_dev(msc), "MSCnNWSA: %08x\n",
-		ioread32(msc->reg_base + REG_MSU_MSC0NWSA));
+	dev_dbg(msc_dev(msc), "MSCnNWSA: %08lx\n", msc->nwsa);
 
 	reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
 	dev_dbg(msc_dev(msc), "MSCnSTS: %08x\n", reg);

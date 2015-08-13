@@ -27,14 +27,16 @@ struct gth_device;
  * @output:	link to output device's output descriptor
  * @index:	output port number
  * @port_type:	one of GTH_* port type values
- * @master:	bitmap of masters configured for this output
+ * @config:	output configuration backup
+ * @smcfreq:	maintenance packet frequency backup
  */
 struct gth_output {
 	struct gth_device	*gth;
 	struct intel_th_output	*output;
 	unsigned int		index;
 	unsigned int		port_type;
-	DECLARE_BITMAP(master, TH_CONFIGURABLE_MASTERS + 1);
+	u32			config;
+	u32			smcfreq;
 };
 
 /**
@@ -65,6 +67,8 @@ static void gth_output_set(struct gth_device *gth, int port,
 	u32 val;
 	int shift = (port & 3) * 8;
 
+	gth->output[port].config = config;
+
 	val = ioread32(gth->base + reg);
 	val &= ~(0xff << shift);
 	val |= config << shift;
@@ -90,6 +94,8 @@ static void gth_smcfreq_set(struct gth_device *gth, int port,
 	unsigned long reg = REG_GTH_SMCR0 + ((port / 2) * 4);
 	int shift = (port & 1) * 16;
 	u32 val;
+
+	gth->output[port].smcfreq = freq;
 
 	val = ioread32(gth->base + reg);
 	val &= ~(0xffff << shift);
@@ -200,7 +206,6 @@ static ssize_t master_attr_store(struct device *dev,
 	old_port = gth->master[ma->master];
 	if (old_port >= 0) {
 		gth->master[ma->master] = -1;
-		clear_bit(ma->master, gth->output[old_port].master);
 		gth_master_set(gth, ma->master, -1);
 	}
 
@@ -212,7 +217,6 @@ static ssize_t master_attr_store(struct device *dev,
 			goto unlock;
 		}
 
-		set_bit(ma->master, gth->output[port].master);
 		gth_master_set(gth, ma->master, port);
 		gth->master[ma->master] = port;
 	}
@@ -280,30 +284,6 @@ gth_output_parm_get(struct gth_device *gth, int port, unsigned int parm)
 	config &= mask;
 	config >>= shift;
 	return config;
-}
-
-/*
- * Reset outputs and sources
- */
-static void intel_th_gth_reset(struct gth_device *gth)
-{
-	u32 scratchpad;
-
-	/* Always save/restore STH and TU registers in S0ix entry/exit */
-	scratchpad = ioread32(gth->base + REG_GTH_SCRPD0);
-	scratchpad |= SCRPD_STH_IS_ENABLED | SCRPD_TRIGGER_IS_ENABLED;
-	iowrite32(scratchpad, gth->base + REG_GTH_SCRPD0);
-
-	/* disable overrides */
-	iowrite32(0, gth->base + REG_GTH_DESTOVR);
-
-	/* sources */
-	iowrite32(0, gth->base + REG_GTH_SCR);
-	iowrite32(0xfc, gth->base + REG_GTH_SCR2);
-
-	/* setup CTS for single trigger */
-	iowrite32(0x80000000, gth->base + REG_CTS_C0S0_EN);
-	iowrite32(0x40000010, gth->base + REG_CTS_C0S0_ACT);
 }
 
 /*
@@ -524,16 +504,16 @@ static void intel_th_gth_disable(struct intel_th_device *thdev,
 				 struct intel_th_output *output)
 {
 	struct gth_device *gth = dev_get_drvdata(&thdev->dev);
-	int master;
+	int i;
 	u32 reg;
 
 	spin_lock(&gth->gth_lock);
 	output->active = false;
 
-	for_each_set_bit(master, gth->output[output->port].master,
-			 TH_CONFIGURABLE_MASTERS) {
-		gth_master_set(gth, master, -1);
-	}
+	for (i = 0; i < TH_CONFIGURABLE_MASTERS + 1; i++)
+		if (gth->master[i] == output->port)
+			gth_master_set(gth, i, -1);
+
 	spin_unlock(&gth->gth_lock);
 
 	intel_th_gth_stop(gth, output, true);
@@ -543,13 +523,25 @@ static void intel_th_gth_disable(struct intel_th_device *thdev,
 	iowrite32(reg, gth->base + REG_GTH_SCRPD0);
 }
 
-static void gth_tscu_resync(struct gth_device *gth)
+/*
+ * Set default configuration.
+ */
+static void intel_th_gth_reset(struct gth_device *gth)
 {
 	u32 reg;
 
-	reg = ioread32(gth->base + REG_TSCU_TSUCTRL);
-	reg &= ~TSUCTRL_CTCRESYNC;
-	iowrite32(reg, gth->base + REG_TSCU_TSUCTRL);
+	/* Always save/restore STH and TU registers in S0ix entry/exit */
+	reg = ioread32(gth->base + REG_GTH_SCRPD0);
+	reg |= SCRPD_STH_IS_ENABLED | SCRPD_TRIGGER_IS_ENABLED;
+	iowrite32(reg, gth->base + REG_GTH_SCRPD0);
+
+	/* Force sources off */
+	iowrite32(0, gth->base + REG_GTH_SCR);
+	iowrite32(0xfc, gth->base + REG_GTH_SCR2);
+
+	/* Setup CTS for single trigger */
+	iowrite32(0x80000000, gth->base + REG_CTS_C0S0_EN);
+	iowrite32(0x40000010, gth->base + REG_CTS_C0S0_ACT);
 }
 
 /**
@@ -560,33 +552,59 @@ static void gth_tscu_resync(struct gth_device *gth)
  * This will configure all masters set to output to this device and
  * enable tracing using force storeEn signal.
  */
-static void intel_th_gth_enable(struct intel_th_device *thdev,
-				struct intel_th_output *output)
+static int intel_th_gth_enable(struct intel_th_device *thdev,
+			       struct intel_th_output *output)
 {
 	struct gth_device *gth = dev_get_drvdata(&thdev->dev);
 	struct intel_th *th = to_intel_th(thdev);
 	u32 scrpd;
-	int master;
+	int i;
+	int ret = -EBUSY;
+
+	/* No operation allowed while a debugger is connected */
+	scrpd = ioread32(gth->base + REG_GTH_SCRPD0);
+	if (scrpd & SCRPD_DEBUGGER_IN_USE)
+		return ret;
 
 	spin_lock(&gth->gth_lock);
+
+	/* Only allow one output active at a time */
+	for (i = 0; i < TH_POSSIBLE_OUTPUTS; i++) {
+		if (gth->output[i].output &&
+		    gth->output[i].output->active) {
+			spin_unlock(&gth->gth_lock);
+			return ret;
+		}
+	}
+
+	intel_th_reset(thdev);
 	intel_th_gth_reset(gth);
 
-	for_each_set_bit(master, gth->output[output->port].master,
-			 TH_CONFIGURABLE_MASTERS + 1) {
-		gth_master_set(gth, master, output->port);
-	}
+	/* Re-configure output */
+	gth_output_set(gth, output->port, gth->output[output->port].config);
+	gth_smcfreq_set(gth, output->port, gth->output[output->port].smcfreq);
+
+	/* Enable masters for the output, disable others */
+	for (i = 0; i < TH_CONFIGURABLE_MASTERS + 1; i++)
+		gth_master_set(gth, i, gth->master[i] == output->port ?
+				       output->port : -1);
 
 	output->active = true;
 	spin_unlock(&gth->gth_lock);
 
-	if (INTEL_TH_CAP(th, tscu_enable))
-		gth_tscu_resync(gth);
+	/* Setup the output */
+	ret = intel_th_output_activate(output);
+	if (ret)
+		return ret;
 
 	scrpd = ioread32(gth->base + REG_GTH_SCRPD0);
 	scrpd |= output->scratchpad;
 	iowrite32(scrpd, gth->base + REG_GTH_SCRPD0);
 
+	/* Enable sources */
 	intel_th_gth_start(gth, output);
+
+	return 0;
 }
 
 /**
@@ -700,10 +718,9 @@ intel_th_gth_set_output(struct intel_th_device *thdev, unsigned int master)
 		master = TH_CONFIGURABLE_MASTERS;
 
 	spin_lock(&gth->gth_lock);
-	if (gth->master[master] == -1) {
-		set_bit(master, gth->output[port].master);
+	if (gth->master[master] == -1)
 		gth->master[master] = port;
-	}
+
 	spin_unlock(&gth->gth_lock);
 
 	return 0;
@@ -717,7 +734,6 @@ static int intel_th_gth_probe(struct intel_th_device *thdev)
 	struct resource *res;
 	void __iomem *base;
 	int i, ret;
-	u32 scratchpad;
 
 	res = intel_th_device_get_resource(thdev, IORESOURCE_MEM, 0);
 	if (!res)
@@ -745,10 +761,6 @@ static int intel_th_gth_probe(struct intel_th_device *thdev)
         */
        if (thdev->host_mode)
                return 0;
-
-	scratchpad = ioread32(gth->base + REG_GTH_SCRPD0);
-	if (scratchpad & SCRPD_DEBUGGER_IN_USE)
-		return -EBUSY;
 
 	for (i = 0; i < TH_CONFIGURABLE_MASTERS + 1; i++)
 		gth->master[i] = gth_master_get(gth, i);
