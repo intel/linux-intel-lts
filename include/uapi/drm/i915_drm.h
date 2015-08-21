@@ -555,16 +555,15 @@ struct drm_i915_gem_create {
 	__u32 handle;
 	__u32 pad;
 	/**
-	 * Requested flags (currently used for placement
-	 * (which memory domain))
+	 * Requested flags
 	 *
 	 * You can request that the object be created from special memory
 	 * rather than regular system pages using this parameter. Such
 	 * irregular objects may have certain restrictions (such as CPU
 	 * access to a stolen object is verboten).
 	 *
-	 * This can be used in the future for other purposes too
-	 * e.g. specifying tiling/caching/madvise
+	 * Also using this parameter object can be pre-populated with system
+	 * pages.
 	 */
 	__u64 flags;
 #define I915_CREATE_PLACEMENT_NORMAL 	0 /* standard swappable bo  */
@@ -593,7 +592,9 @@ struct drm_i915_gem_create {
 #define I915_CREATE_PLACEMENT_STOLEN 	1 /* Cannot use CPU mmaps */
 
 #define I915_CREATE_PLACEMENT_MASK	0xff
-#define __I915_CREATE_UNKNOWN_FLAGS	~I915_CREATE_PLACEMENT_MASK
+
+#define I915_CREATE_POPULATE		(1<<8) /* Pre-populate object pages */
+#define __I915_CREATE_UNKNOWN_FLAGS	-(I915_CREATE_POPULATE << 1)
 };
 
 struct drm_i915_gem_pread {

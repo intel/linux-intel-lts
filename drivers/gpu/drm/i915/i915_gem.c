@@ -59,6 +59,7 @@ static bool cpu_cache_is_coherent(struct drm_device *dev,
 {
 	return HAS_LLC(to_i915(dev)) || level != I915_CACHE_NONE;
 }
+static int ____i915_gem_object_get_pages(struct drm_i915_gem_object *obj);
 
 static bool cpu_write_needs_clflush(struct drm_i915_gem_object *obj)
 {
@@ -820,6 +821,7 @@ i915_gem_create(struct drm_file *file,
 		obj = i915_gem_object_create(dev_priv, size);
 		break;
 	case I915_CREATE_PLACEMENT_STOLEN:
+		flags = 0;
 		obj = i915_gem_alloc_object_stolen(dev_priv, size);
 		break;
 	default:
@@ -828,6 +830,21 @@ i915_gem_create(struct drm_file *file,
 
 	if (IS_ERR(obj))
 		return PTR_ERR(obj);
+
+	if (flags & I915_CREATE_POPULATE) {
+		ret = mutex_lock_interruptible(&obj->mm.lock);
+		if (ret) {
+			i915_gem_object_put(obj);
+			return ret;
+		}
+
+		ret = ____i915_gem_object_get_pages(obj);
+		mutex_unlock(&obj->mm.lock);
+		if (ret) {
+			i915_gem_object_put(obj);
+			return ret;
+		}
+	}
 
 	ret = drm_gem_handle_create(file, &obj->base, &handle);
 	/* drop reference from allocate - handle holds it now */
