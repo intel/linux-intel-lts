@@ -124,6 +124,8 @@ void skl_nhlt_remove_sysfs(struct skl *skl);
 
 struct skl_debug *skl_debugfs_init(struct skl *skl);
 void skl_debugfs_exit(struct skl_debug *d);
+struct nhlt_specific_cfg
+*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance);
 
 #else
 
@@ -137,6 +139,12 @@ struct skl_debug *skl_debugfs_init(struct skl *skl)
 
 void skl_debugfs_exit(struct skl_debug *d)
 {
+}
+
+struct nhlt_specific_cfg
+*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance)
+{
+	return NULL;
 }
 
 #endif
