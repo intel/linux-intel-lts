@@ -32,6 +32,7 @@ struct skl_debug {
 	struct dentry *fs;
 	struct dentry *nhlt;
 	struct nhlt_blob ssp_blob[MAX_SSP];
+	struct nhlt_blob dmic_blob;
 };
 
 static ssize_t nhlt_read(struct file *file, char __user *user_buf,
@@ -152,6 +153,11 @@ static int skl_init_nhlt(struct skl_debug *d)
 			dev_err(d->dev, "%s: debugfs init failed\n", name);
 	}
 
+	if (!debugfs_create_file("dmic", 0644,
+				d->nhlt, &d->dmic_blob,
+				&nhlt_fops))
+		dev_err(d->dev, "%s: debugfs init failed\n", name);
+
 	return 0;
 }
 
@@ -194,6 +200,7 @@ void skl_debugfs_exit(struct skl_debug *d)
 	/* free blob memory, if allocated */
 	for (i = 0; i < MAX_SSP; i++)
 		kfree(d->ssp_blob[i].cfg);
+	kfree(d->dmic_blob.cfg);
 
 	kfree(d);
 
