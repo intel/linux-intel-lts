@@ -18,6 +18,7 @@
  *
  */
 #include <linux/pci.h>
+#include <sound/soc.h>
 #include "skl.h"
 
 /* Unique identification for getting NHLT blobs */

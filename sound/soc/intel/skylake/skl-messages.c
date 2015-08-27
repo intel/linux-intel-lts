@@ -21,6 +21,7 @@
 #include <linux/pci.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
+#include <sound/soc.h>
 #include "skl-sst-dsp.h"
 #include "cnl-sst-dsp.h"
 #include "skl-sst-ipc.h"

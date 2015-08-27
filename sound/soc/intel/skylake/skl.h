@@ -43,6 +43,7 @@ struct skl_dsp_resource {
 };
 
 struct skl_debug;
+struct snd_soc_dapm_widget;
 
 struct skl {
 	struct hdac_ext_bus ebus;
@@ -120,13 +121,17 @@ void skl_update_d0i3c(struct device *dev, bool enable);
 int skl_nhlt_create_sysfs(struct skl *skl);
 void skl_nhlt_remove_sysfs(struct skl *skl);
 
+struct skl_module_cfg;
+
 #ifdef CONFIG_DEBUG_FS
 
 struct skl_debug *skl_debugfs_init(struct skl *skl);
 void skl_debugfs_exit(struct skl_debug *d);
 struct nhlt_specific_cfg
 *skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance);
-
+void skl_debug_init_module(struct skl_debug *d,
+			struct snd_soc_dapm_widget *w,
+			struct skl_module_cfg *mconfig);
 #else
 
 struct skl_debug {
@@ -145,6 +150,12 @@ struct nhlt_specific_cfg
 *skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance)
 {
 	return NULL;
+}
+
+void skl_debug_init_module(struct skl_debug *d,
+			struct snd_soc_dapm_widget *w,
+			struct skl_module_cfg *mconfig)
+{
 }
 
 #endif

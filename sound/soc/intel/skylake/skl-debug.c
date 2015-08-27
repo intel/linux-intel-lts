@@ -15,8 +15,11 @@
 
 #include <linux/pci.h>
 #include <linux/debugfs.h>
+#include <sound/soc.h>
 #include "skl.h"
 #include "skl-nhlt.h"
+#include "skl-tplg-interface.h"
+#include "skl-topology.h"
 
 #define MAX_SSP 4
 
@@ -33,6 +36,7 @@ struct skl_debug {
 	struct dentry *nhlt;
 	struct nhlt_blob ssp_blob[MAX_SSP];
 	struct nhlt_blob dmic_blob;
+	struct dentry *modules;
 };
 
 struct nhlt_specific_cfg
@@ -182,6 +186,123 @@ static int skl_init_nhlt(struct skl_debug *d)
 	return 0;
 }
 
+#define MOD_BUF (2 * PAGE_SIZE)
+
+static ssize_t skl_print_pins(struct skl_module_pin *m_pin, char *buf,
+				int max_pin, ssize_t ret, bool direction)
+{
+	int i;
+
+	for (i = 0; i < max_pin; i++)
+		ret += snprintf(buf + ret, MOD_BUF - ret,
+				"%s%d\n\tModule %d\n\tInstance %d\n\t%s\n\t%s\n\tIndex:%d\n",
+				direction ? "Input Pin:" : "Output Pin:",
+				i, m_pin[i].id.module_id,
+				m_pin[i].id.instance_id,
+				m_pin[i].in_use ? "Used" : "Unused",
+				m_pin[i].is_dynamic ? "Dynamic" : "Static",
+				m_pin[i].pin_index);
+	return ret;
+}
+
+static ssize_t skl_print_fmt(struct skl_module_fmt *fmt, char *buf,
+					ssize_t ret, bool direction)
+{
+
+	ret += snprintf(buf + ret, MOD_BUF - ret,
+			"%s\n\tCH %d\n\tFreq %d\n\tBit %d\tDepth %d\n\tCh config %x\n",
+			direction ? "Input Format:" : "Output Format:",
+			fmt->channels, fmt->s_freq, fmt->bit_depth,
+			fmt->valid_bit_depth, fmt->ch_cfg);
+
+	return ret;
+}
+
+static ssize_t module_read(struct file *file, char __user *user_buf,
+		size_t count, loff_t *ppos)
+{
+	struct skl_module_cfg *mconfig = file->private_data;
+	struct skl_module *module = mconfig->module;
+	struct skl_module_res *res = &module->resources[mconfig->res_idx];
+	struct skl_module_intf *m_intf;
+	char *buf;
+	ssize_t ret;
+
+	buf = kzalloc(MOD_BUF, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	ret = snprintf(buf, MOD_BUF, "Module\n\tid: %d\n\tinstance id: %d\n",
+			mconfig->id.module_id, mconfig->id.instance_id);
+
+	ret += snprintf(buf + ret, MOD_BUF - ret,
+			"Resources\n\tMCPS %x\n\tIBS %x\n\tOBS %x\t\n",
+			res->cps, res->ibs, res->obs);
+
+	ret += snprintf(buf + ret, MOD_BUF - ret,
+			"Module data:\n\tCore %d\n\tIN queue %d\n\tOut queue %d\n\t%s\n",
+			mconfig->core_id, mconfig->module->max_input_pins,
+			mconfig->module->max_output_pins,
+			mconfig->module->loadable ? "loadable" : "inbuilt");
+
+	m_intf = &module->formats[mconfig->fmt_idx];
+	ret += skl_print_fmt(&m_intf->input[0].pin_fmt, buf, ret, true);
+	ret += skl_print_fmt(&m_intf->output[0].pin_fmt, buf, ret, false);
+
+	ret += snprintf(buf + ret, MOD_BUF - ret,
+			"Module Gateway\n\tType %x\n\tInstance %d\n\tHW conn %x\n\tSlot %x\n",
+			mconfig->dev_type, mconfig->vbus_id,
+			mconfig->hw_conn_type, mconfig->time_slot);
+
+	ret += snprintf(buf + ret, MOD_BUF - ret,
+			"Pipeline ID\n\t%d\n\tPriority %d\n\tConn Type %d\n\tPages %x\n",
+			mconfig->pipe->ppl_id, mconfig->pipe->pipe_priority,
+			mconfig->pipe->conn_type, mconfig->pipe->memory_pages);
+
+	ret += snprintf(buf + ret, MOD_BUF - ret,
+			"\tParams:\n\t\tHost DMA %d\n\t\tLink DMA %d\n",
+			mconfig->pipe->p_params->host_dma_id,
+			mconfig->pipe->p_params->link_dma_id);
+
+	ret += snprintf(buf + ret, MOD_BUF - ret,
+			"\tPCM params:\n\t\tCH %d\n\t\tFreq %d\n\t\tFormat %d\n",
+			mconfig->pipe->p_params->ch,
+			mconfig->pipe->p_params->s_freq,
+			mconfig->pipe->p_params->s_fmt);
+
+	ret += snprintf(buf + ret, MOD_BUF - ret,
+			"\tLink %x\n\tStream %x\n",
+			mconfig->pipe->p_params->linktype,
+			mconfig->pipe->p_params->stream);
+
+	ret += skl_print_pins(mconfig->m_in_pin, buf,
+			mconfig->module->max_input_pins, ret, true);
+	ret += skl_print_pins(mconfig->m_out_pin, buf,
+			mconfig->module->max_output_pins, ret, false);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, ret);
+
+	kfree(buf);
+	return ret;
+}
+
+static const struct file_operations mcfg_fops = {
+	.open = simple_open,
+	.read = module_read,
+	.llseek = default_llseek,
+};
+
+
+void skl_debug_init_module(struct skl_debug *d,
+			struct snd_soc_dapm_widget *w,
+			struct skl_module_cfg *mconfig)
+{
+	if (!debugfs_create_file(w->name, 0444,
+				d->modules, mconfig,
+				&mcfg_fops))
+		dev_err(d->dev, "%s: module debugfs init failed\n", w->name);
+}
+
 struct skl_debug *skl_debugfs_init(struct skl *skl)
 {
 	struct skl_debug *d;
@@ -204,12 +325,23 @@ struct skl_debug *skl_debugfs_init(struct skl *skl)
 	d->nhlt =  debugfs_create_dir("nhlt", d->fs);
 	if (IS_ERR(d->nhlt) || !d->nhlt) {
 		dev_err(&skl->pci->dev, "nhlt debugfs create failed\n");
-		return NULL;
+		goto err;
+	}
+
+	/* now create the module dir */
+	d->modules =  debugfs_create_dir("modules", d->fs);
+	if (IS_ERR(d->modules) || !d->modules) {
+		dev_err(&skl->pci->dev, "modules debugfs create failed\n");
+		goto err;
 	}
 
 	skl_init_nhlt(d);
 
 	return d;
+
+err:
+	debugfs_remove_recursive(d->fs);
+	return NULL;
 }
 
 void skl_debugfs_exit(struct skl_debug *d)
