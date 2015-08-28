@@ -594,7 +594,8 @@ struct drm_i915_gem_create {
 #define I915_CREATE_PLACEMENT_MASK	0xff
 
 #define I915_CREATE_POPULATE		(1<<8) /* Pre-populate object pages */
-#define __I915_CREATE_UNKNOWN_FLAGS	-(I915_CREATE_POPULATE << 1)
+#define I915_CREATE_FLUSH		(1<<9) /* Clflush prepopulated pages */
+#define __I915_CREATE_UNKNOWN_FLAGS	-(I915_CREATE_FLUSH << 1)
 };
 
 struct drm_i915_gem_pread {

@@ -365,7 +365,7 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		value = 1;
 		break;
 	case I915_PARAM_CREATE_VERSION:
-		value = 3;
+		value = 4;
 		break;
 	default:
 		DRM_DEBUG("Unknown parameter %d\n", param->param);

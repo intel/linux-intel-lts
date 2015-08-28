@@ -844,6 +844,13 @@ i915_gem_create(struct drm_file *file,
 			i915_gem_object_put(obj);
 			return ret;
 		}
+
+		if (flags & I915_CREATE_FLUSH) {
+			i915_gem_clflush_object(obj, 0);
+			i915_gem_chipset_flush(to_i915(obj->base.dev));
+
+			obj->base.write_domain = 0;
+		}
 	}
 
 	ret = drm_gem_handle_create(file, &obj->base, &handle);
