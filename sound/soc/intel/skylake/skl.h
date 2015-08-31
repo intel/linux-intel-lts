@@ -103,6 +103,7 @@ struct skl {
 	bool use_tplg_pcm;
 	struct skl_fw_config cfg;
 	struct snd_soc_acpi_mach *mach;
+	bool nhlt_override;
 };
 
 #define skl_to_bus(s)  (&(s)->hbus)
