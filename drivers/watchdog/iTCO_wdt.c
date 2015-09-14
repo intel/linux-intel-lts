@@ -67,7 +67,8 @@
 #include <linux/uaccess.h>		/* For copy_to_user/put_user/... */
 #include <linux/io.h>			/* For inb/outb/... */
 #include <linux/platform_data/itco_wdt.h>
-
+#include <linux/nmi.h>
+#include <asm/nmi.h>
 #include "iTCO_vendor.h"
 
 /* Address definitions for the TCO */
@@ -431,6 +432,19 @@ static void iTCO_wdt_cleanup(void)
 	iTCO_wdt_private.gcs_pmc = NULL;
 }
 
+static int iTCO_pretimeout(unsigned int cmd, struct pt_regs *unused_regs)
+{
+	/* Check the NMI is from the TCO first expiration */
+	if (inw(TCO1_STS) & 0x8) {
+		trigger_all_cpu_backtrace();
+		panic("Kernel Watchdog");
+		return NMI_HANDLED;
+	}
+
+	return NMI_DONE;
+}
+
+
 static int iTCO_wdt_probe(struct platform_device *dev)
 {
 	int ret = -ENODEV;
@@ -558,6 +572,12 @@ static int iTCO_wdt_probe(struct platform_device *dev)
 	ret = watchdog_register_device(&iTCO_wdt_watchdog_dev);
 	if (ret != 0) {
 		pr_err("cannot register watchdog device (err=%d)\n", ret);
+		goto unreg_tco;
+	}
+
+	ret = register_nmi_handler(NMI_LOCAL, iTCO_pretimeout, 0 ,"iTCO_wdt");
+	if (ret != 0) {
+		pr_err("cannot register nmi handler (err=%d)\n", ret);
 		goto unreg_tco;
 	}
 
