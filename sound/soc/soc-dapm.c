@@ -3740,7 +3740,8 @@ static int snd_soc_dai_link_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-		substream.stream = SNDRV_PCM_STREAM_CAPTURE;
+		/*substream.stream = SNDRV_PCM_STREAM_CAPTURE;*/
+		substream.stream = SNDRV_PCM_STREAM_PLAYBACK;
 		if (source->driver->ops->startup) {
 			ret = source->driver->ops->startup(&substream, source);
 			if (ret < 0) {
@@ -3754,7 +3755,8 @@ static int snd_soc_dai_link_event(struct snd_soc_dapm_widget *w,
 		if (ret < 0)
 			goto out;
 
-		substream.stream = SNDRV_PCM_STREAM_PLAYBACK;
+		/*substream.stream = SNDRV_PCM_STREAM_PLAYBACK;*/
+		substream.stream = SNDRV_PCM_STREAM_CAPTURE;
 		if (sink->driver->ops->startup) {
 			ret = sink->driver->ops->startup(&substream, sink);
 			if (ret < 0) {
