@@ -27,7 +27,13 @@ static DEFINE_PER_CPU(unsigned long, cpu_scale) = SCHED_CAPACITY_SCALE;
 
 unsigned long topology_get_cpu_scale(struct sched_domain *sd, int cpu)
 {
+#if CONFIG_CPU_FREQ
+	unsigned long max_freq_scale = cpufreq_scale_max_freq_capacity(cpu);
+
+	return per_cpu(cpu_scale, cpu) * max_freq_scale >> SCHED_CAPACITY_SHIFT;
+#else
 	return per_cpu(cpu_scale, cpu);
+#endif
 }
 
 void topology_set_cpu_scale(unsigned int cpu, unsigned long capacity)
