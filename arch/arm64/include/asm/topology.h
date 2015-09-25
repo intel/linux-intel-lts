@@ -36,6 +36,7 @@ struct sched_domain;
 #ifdef CONFIG_CPU_FREQ
 #define arch_scale_freq_capacity cpufreq_scale_freq_capacity
 extern unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu);
+extern unsigned long cpufreq_scale_max_freq_capacity(int cpu);
 #endif
 #define arch_get_cpu_scale topology_get_cpu_scale
 extern unsigned long topology_get_cpu_scale(struct sched_domain *sd, int cpu);
