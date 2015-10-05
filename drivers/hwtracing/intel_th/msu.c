@@ -142,7 +142,7 @@ struct msc_device_instance {
 };
 
 static LIST_HEAD(msc_dev_instances);
-static DEFINE_SPINLOCK(msc_dev_reg_lock);
+static DEFINE_MUTEX(msc_dev_reg_lock);
 /**
  * msc_register_callbacks()
  * @cbs
@@ -151,7 +151,7 @@ int msc_register_callbacks(struct msc_probe_rem_cb cbs)
 {
 	struct msc_device_instance *it;
 
-	spin_lock(&msc_dev_reg_lock);
+	mutex_lock(&msc_dev_reg_lock);
 
 	msc_probe_rem_cb.probe = cbs.probe;
 	msc_probe_rem_cb.remove = cbs.remove;
@@ -160,7 +160,7 @@ int msc_register_callbacks(struct msc_probe_rem_cb cbs)
 		cbs.probe(it->thdev);
 	}
 
-	spin_unlock(&msc_dev_reg_lock);
+	mutex_unlock(&msc_dev_reg_lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(msc_register_callbacks);
@@ -170,12 +170,12 @@ EXPORT_SYMBOL_GPL(msc_register_callbacks);
  */
 void msc_unregister_callbacks(void)
 {
-	spin_lock(&msc_dev_reg_lock);
+	mutex_lock(&msc_dev_reg_lock);
 
 	msc_probe_rem_cb.probe = NULL;
 	msc_probe_rem_cb.remove = NULL;
 
-	spin_unlock(&msc_dev_reg_lock);
+	mutex_unlock(&msc_dev_reg_lock);
 }
 EXPORT_SYMBOL_GPL(msc_unregister_callbacks);
 
@@ -187,7 +187,7 @@ static void msc_add_instance(struct intel_th_device *thdev)
 	if (!instance)
 		return;
 
-	spin_lock(&msc_dev_reg_lock);
+	mutex_lock(&msc_dev_reg_lock);
 
 	instance->thdev = thdev;
 	list_add(&instance->list, &msc_dev_instances);
@@ -195,14 +195,14 @@ static void msc_add_instance(struct intel_th_device *thdev)
 	if (msc_probe_rem_cb.probe)
 		msc_probe_rem_cb.probe(thdev);
 
-	spin_unlock(&msc_dev_reg_lock);
+	mutex_unlock(&msc_dev_reg_lock);
 }
 
 static void msc_rm_instance(struct intel_th_device *thdev)
 {
 	struct msc_device_instance *instance = NULL, *it;
 
-	spin_lock(&msc_dev_reg_lock);
+	mutex_lock(&msc_dev_reg_lock);
 
 	if (msc_probe_rem_cb.remove)
 		msc_probe_rem_cb.remove(thdev);
@@ -221,7 +221,7 @@ static void msc_rm_instance(struct intel_th_device *thdev)
 		pr_warn("msu: cannot remove %p (not found)", thdev);
 	}
 
-	spin_unlock(&msc_dev_reg_lock);
+	mutex_unlock(&msc_dev_reg_lock);
 }
 
 static inline bool msc_block_is_empty(struct msc_block_desc *bdesc)
