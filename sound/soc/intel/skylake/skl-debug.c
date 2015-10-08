@@ -24,7 +24,7 @@
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
 
-#define MAX_SSP 4
+#define MAX_SSP 6
 #define MAX_SZ 1025
 #define IPC_MOD_LARGE_CONFIG_GET 3
 #define IPC_MOD_LARGE_CONFIG_SET 4
