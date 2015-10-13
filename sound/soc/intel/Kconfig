@@ -280,6 +280,7 @@ config SND_SOC_INTEL_CNL_WM8281_MACH
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SKYLAKE
 	select SND_SOC_DMIC
+	select SND_SOC_COMPRESS
         help
         This adds support for ASoC machine driver . This will create an alsa
         sound card.
@@ -322,6 +323,7 @@ config SND_SOC_INTEL_CNL_CS42L42_MACH
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SKYLAKE
 	select SND_SOC_DMIC
+	select SND_SOC_COMPRESS
         help
         This adds support for ASoC machine driver . This will create an alsa
         sound card.
@@ -334,6 +336,7 @@ config SND_SOC_INTEL_CNL_RT700_MACH
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SKYLAKE
 	select SND_SOC_DMIC
+	select SND_SOC_COMPRESS
         help
         This adds support for ASoC machine driver . This will create an alsa
         sound card.
