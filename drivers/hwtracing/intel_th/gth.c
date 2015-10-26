@@ -521,6 +521,11 @@ static void intel_th_gth_disable(struct intel_th_device *thdev,
 	reg = ioread32(gth->base + REG_GTH_SCRPD0);
 	reg &= ~output->scratchpad;
 	iowrite32(reg, gth->base + REG_GTH_SCRPD0);
+
+	/* Workaround for PTI pipeline empty not set by hardware */
+	if (output->type == GTH_PTI &&
+	    !(BIT(output->port) & ioread32(gth->base + REG_GTH_STAT)))
+		intel_th_reset(thdev);
 }
 
 /*
