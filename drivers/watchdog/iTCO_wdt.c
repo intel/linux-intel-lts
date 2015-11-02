@@ -106,6 +106,8 @@ static struct {		/* this is private data for the iTCO_wdt device */
 	struct pci_dev *pdev;
 	/* whether or not the watchdog has been suspended */
 	bool suspended;
+	/* whether or not the pretimeout occurred */
+	bool pretimeout_occurred;
 } iTCO_wdt_private;
 
 /* module parameters */
@@ -432,15 +434,30 @@ static void iTCO_wdt_cleanup(void)
 	iTCO_wdt_private.gcs_pmc = NULL;
 }
 
-static int iTCO_pretimeout(unsigned int cmd, struct pt_regs *unused_regs)
+static int iTCO_wdt_pretimeout(unsigned int cmd, struct pt_regs *unused_regs)
 {
+	/* Prevent re-entrance */
+	if (iTCO_wdt_private.pretimeout_occurred)
+		return NMI_HANDLED;
+
+	spin_lock(&iTCO_wdt_private.io_lock);
+
 	/* Check the NMI is from the TCO first expiration */
 	if (inw(TCO1_STS) & 0x8) {
+		iTCO_wdt_private.pretimeout_occurred = true;
+
+		/* Forward next expiration */
+		outw(seconds_to_ticks(10), TCOv2_TMR);
+		outw(0x01, TCO_RLD);
+		spin_unlock(&iTCO_wdt_private.io_lock);
+
 		trigger_all_cpu_backtrace();
+		panic_timeout = 0;
 		panic("Kernel Watchdog");
 		return NMI_HANDLED;
 	}
 
+	spin_unlock(&iTCO_wdt_private.io_lock);
 	return NMI_DONE;
 }
 
@@ -575,7 +592,8 @@ static int iTCO_wdt_probe(struct platform_device *dev)
 		goto unreg_tco;
 	}
 
-	ret = register_nmi_handler(NMI_LOCAL, iTCO_pretimeout, 0 ,"iTCO_wdt");
+	ret = register_nmi_handler(NMI_LOCAL, iTCO_wdt_pretimeout, 0,
+							"iTCO_wdt");
 	if (ret != 0) {
 		pr_err("cannot register nmi handler (err=%d)\n", ret);
 		goto unreg_tco;
