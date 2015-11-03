@@ -281,17 +281,25 @@ static struct msc_window *msc_oldest_window(struct msc *msc)
 {
 	struct msc_window *win;
 	unsigned int found = 0;
+	unsigned long nwsa;
 
 	if (list_empty(&msc->win_list))
 		return NULL;
 
+	if (msc->enabled) {
+		u32 reg = ioread32(msc->reg_base + REG_MSU_MSC0NWSA);
+
+		nwsa = (unsigned long)reg << PAGE_SHIFT;
+	} else {
+		nwsa = msc->nwsa;
+	}
 	/*
 	 * we might need a radix tree for this, depending on how
 	 * many windows a typical user would allocate; ideally it's
 	 * something like 2, in which case we're good
 	 */
 	list_for_each_entry(win, &msc->win_list, entry) {
-		if (win->block[0].addr == msc->nwsa)
+		if (win->block[0].addr == nwsa)
 			found++;
 
 		/* skip the empty ones */
