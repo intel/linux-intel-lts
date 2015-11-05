@@ -614,6 +614,7 @@ struct ufs_hba_variant_params {
  * @utmrdl_dma_addr: UTMRDL DMA address
  * @host: Scsi_Host instance of the driver
  * @dev: device handle
+ * @sdev_ufs_rpmb: reference to RPMB device W-LU
  * @lrb: local reference block
  * @cmd_queue: Used to allocate command tags from hba->host->tag_set.
  * @outstanding_tasks: Bits representing outstanding task requests
@@ -684,6 +685,7 @@ struct ufs_hba {
 	 */
 	struct scsi_device *sdev_ufs_device;
 	struct scsi_device *sdev_rpmb;
+	struct scsi_device *sdev_ufs_rpmb;
 
 	enum ufs_dev_pwr_mode curr_dev_pwr_mode;
 	enum uic_link_state uic_link_state;
