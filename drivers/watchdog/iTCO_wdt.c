@@ -134,6 +134,11 @@ module_param(force_no_reboot, bool, 0);
 MODULE_PARM_DESC(force_no_reboot,
 		 "Prevents the watchdog rebooting the platform (default=0)");
 
+static bool stop_on_shutdown = 1;
+module_param(stop_on_shutdown, bool, 0);
+MODULE_PARM_DESC(stop_on_shutdown,
+		 "Watchdog is stopped on driver shutdown (default=1)");
+
 /*
  * Some TCO specific functions
  */
@@ -636,7 +641,10 @@ static int iTCO_wdt_remove(struct platform_device *dev)
 
 static void iTCO_wdt_shutdown(struct platform_device *dev)
 {
-	iTCO_wdt_stop(NULL);
+	if (stop_on_shutdown)
+		iTCO_wdt_stop(NULL);
+	else
+		iTCO_wdt_ping(&iTCO_wdt_watchdog_dev);
 }
 
 #ifdef CONFIG_PM_SLEEP
