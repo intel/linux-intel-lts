@@ -21,6 +21,7 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/regulator/consumer.h>
+#include <linux/rpmb.h>
 #include <linux/sched/clock.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_dbg.h>
@@ -7521,6 +7522,212 @@ out:
 	kfree(desc_buf);
 }
 
+#define SEC_PROTOCOL_UFS  0xEC
+#define   SEC_SPECIFIC_UFS_RPMB 0x001
+
+#define SEC_PROTOCOL_CMD_SIZE 12
+#define SEC_PROTOCOL_RETRIES 3
+#define SEC_PROTOCOL_RETRIES_ON_RESET 10
+#define SEC_PROTOCOL_TIMEOUT msecs_to_jiffies(1000)
+
+static int
+ufshcd_rpmb_security_out(struct scsi_device *sdev, u8 region,
+			 void *frames, u32 trans_len)
+{
+	struct scsi_sense_hdr sshdr;
+	int reset_retries = SEC_PROTOCOL_RETRIES_ON_RESET;
+	int ret;
+	u8 cmd[SEC_PROTOCOL_CMD_SIZE];
+
+	memset(cmd, 0, SEC_PROTOCOL_CMD_SIZE);
+	cmd[0] = SECURITY_PROTOCOL_OUT;
+	cmd[1] = SEC_PROTOCOL_UFS;
+	cmd[2] = region;
+	cmd[3] = SEC_SPECIFIC_UFS_RPMB;
+	cmd[4] = 0;                              /* inc_512 bit 7 set to 0 */
+	put_unaligned_be32(trans_len, cmd + 6);  /* transfer length */
+
+retry:
+	ret = scsi_execute_req(sdev, cmd, DMA_TO_DEVICE,
+			       frames, trans_len, &sshdr,
+			       SEC_PROTOCOL_TIMEOUT, SEC_PROTOCOL_RETRIES,
+			       NULL);
+
+	if (ret && scsi_sense_valid(&sshdr) &&
+	    sshdr.sense_key == UNIT_ATTENTION &&
+	    sshdr.asc == 0x29 && sshdr.ascq == 0x00)
+		/*
+		 * Device reset might occur several times,
+		 * give it one more chance
+		 */
+		if (--reset_retries > 0)
+			goto retry;
+
+	if (ret)
+		dev_err(&sdev->sdev_gendev, "%s: failed with err %0x\n",
+			__func__, ret);
+
+	if (driver_byte(ret) & DRIVER_SENSE)
+		scsi_print_sense_hdr(sdev, "rpmb: security out", &sshdr);
+
+	return ret;
+}
+
+static int
+ufshcd_rpmb_security_in(struct scsi_device *sdev, u8 region,
+			void *frames, u32 alloc_len)
+{
+	struct scsi_sense_hdr sshdr;
+	int reset_retries = SEC_PROTOCOL_RETRIES_ON_RESET;
+	int ret;
+	u8 cmd[SEC_PROTOCOL_CMD_SIZE];
+
+	memset(cmd, 0, SEC_PROTOCOL_CMD_SIZE);
+	cmd[0] = SECURITY_PROTOCOL_IN;
+	cmd[1] = SEC_PROTOCOL_UFS;
+	cmd[2] = region;
+	cmd[3] = SEC_SPECIFIC_UFS_RPMB;
+	cmd[4] = 0;                             /* inc_512 bit 7 set to 0 */
+	put_unaligned_be32(alloc_len, cmd + 6); /* allocation length */
+
+retry:
+	ret = scsi_execute_req(sdev, cmd, DMA_FROM_DEVICE,
+			       frames, alloc_len, &sshdr,
+			       SEC_PROTOCOL_TIMEOUT, SEC_PROTOCOL_RETRIES,
+			       NULL);
+
+	if (ret && scsi_sense_valid(&sshdr) &&
+	    sshdr.sense_key == UNIT_ATTENTION &&
+	    sshdr.asc == 0x29 && sshdr.ascq == 0x00)
+		/*
+		 * Device reset might occur several times,
+		 * give it one more chance
+		 */
+		if (--reset_retries > 0)
+			goto retry;
+
+	if (ret)
+		dev_err(&sdev->sdev_gendev, "%s: failed with err %0x\n",
+			__func__, ret);
+
+	if (driver_byte(ret) & DRIVER_SENSE)
+		scsi_print_sense_hdr(sdev, "rpmb: security in", &sshdr);
+
+	return ret;
+}
+
+static int ufshcd_rpmb_cmd_seq(struct device *dev, u8 target,
+			       struct rpmb_cmd *cmds, u32 ncmds)
+{
+	unsigned long flags;
+	struct ufs_hba *hba = dev_get_drvdata(dev);
+	struct scsi_device *sdev;
+	struct rpmb_cmd *cmd;
+	u32 len;
+	u32 i;
+	int ret;
+
+	spin_lock_irqsave(hba->host->host_lock, flags);
+	sdev = hba->sdev_ufs_rpmb;
+	if (sdev) {
+		ret = scsi_device_get(sdev);
+		if (!ret && !scsi_device_online(sdev)) {
+			ret = -ENODEV;
+			scsi_device_put(sdev);
+		}
+	} else {
+		ret = -ENODEV;
+	}
+	spin_unlock_irqrestore(hba->host->host_lock, flags);
+	if (ret)
+		return ret;
+
+	for (ret = 0, i = 0; i < ncmds && !ret; i++) {
+		cmd = &cmds[i];
+		len = rpmb_ioc_frames_len_jdec(cmd->nframes);
+		if (cmd->flags & RPMB_F_WRITE)
+			ret = ufshcd_rpmb_security_out(sdev, target,
+						       cmd->frames, len);
+		else
+			ret = ufshcd_rpmb_security_in(sdev, target,
+						      cmd->frames, len);
+	}
+	scsi_device_put(sdev);
+	return ret;
+}
+
+static int ufshcd_rpmb_get_capacity(struct device *dev, u8 target)
+{
+	struct ufs_hba *hba = dev_get_drvdata(dev);
+	__be64 block_count;
+	int ret;
+
+	ret = ufshcd_read_unit_desc_param(hba,
+					  UFS_UPIU_RPMB_WLUN,
+					  UNIT_DESC_PARAM_LOGICAL_BLK_COUNT,
+					  (u8 *)&block_count,
+					  sizeof(block_count));
+	if (ret)
+		return ret;
+
+	return be64_to_cpu(block_count) * SZ_512 / SZ_128K;
+}
+
+static struct rpmb_ops ufshcd_rpmb_dev_ops = {
+	.cmd_seq = ufshcd_rpmb_cmd_seq,
+	.get_capacity = ufshcd_rpmb_get_capacity,
+	.type = RPMB_TYPE_UFS,
+	.auth_method = RPMB_HMAC_ALGO_SHA_256,
+	.block_size = 1,
+
+};
+
+static inline void ufshcd_rpmb_add(struct ufs_hba *hba)
+{
+	struct rpmb_dev *rdev;
+	u8 rpmb_rw_size = 1;
+	int ret;
+
+	ret = scsi_device_get(hba->sdev_ufs_rpmb);
+	if (ret)
+		goto out_put_dev;
+
+	if (hba->ufs_version >= UFSHCI_VERSION_21) {
+		ret = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_GEOMETRY, 0,
+					     GEOMETRY_DESC_PARAM_RPMB_RW_SIZE,
+					     &rpmb_rw_size,
+					     sizeof(rpmb_rw_size));
+		if (ret)
+			goto out_put_dev;
+	}
+
+	ufshcd_rpmb_dev_ops.rd_cnt_max = rpmb_rw_size;
+	ufshcd_rpmb_dev_ops.wr_cnt_max = rpmb_rw_size;
+
+	rdev = rpmb_dev_register(hba->dev, 0, &ufshcd_rpmb_dev_ops);
+	if (IS_ERR(rdev)) {
+		dev_warn(hba->dev, "%s: cannot register to rpmb %ld\n",
+			 dev_name(hba->dev), PTR_ERR(rdev));
+		goto out_put_dev;
+	}
+
+	return;
+
+out_put_dev:
+	scsi_device_put(hba->sdev_ufs_rpmb);
+	hba->sdev_ufs_rpmb = NULL;
+}
+
+static inline void ufshcd_rpmb_remove(struct ufs_hba *hba)
+{
+	if (!hba->sdev_ufs_rpmb)
+		return;
+
+	rpmb_dev_unregister_by_device(hba->dev, 0);
+	scsi_device_put(hba->sdev_ufs_rpmb);
+	hba->sdev_ufs_rpmb = NULL;
+}
+
 static inline void ufshcd_blk_pm_runtime_init(struct scsi_device *sdev)
 {
 	scsi_autopm_get_device(sdev);
@@ -7578,6 +7785,8 @@ static int ufshcd_scsi_add_wlus(struct ufs_hba *hba)
 		goto remove_ufs_device_wlun;
 	}
 	ufshcd_blk_pm_runtime_init(sdev_rpmb);
+	hba->sdev_ufs_rpmb = sdev_rpmb;
+
 	scsi_device_put(sdev_rpmb);
 
 	sdev_boot = __scsi_add_device(hba->host, 0, 0,
@@ -7588,6 +7797,9 @@ static int ufshcd_scsi_add_wlus(struct ufs_hba *hba)
 		ufshcd_blk_pm_runtime_init(sdev_boot);
 		scsi_device_put(sdev_boot);
 	}
+
+	ufshcd_rpmb_add(hba);
+
 	goto out;
 
 remove_ufs_device_wlun:
@@ -9524,6 +9736,8 @@ int ufshcd_shutdown(struct ufs_hba *hba)
 	if (ufshcd_is_ufs_dev_poweroff(hba) && ufshcd_is_link_off(hba))
 		ufshcd_suspend(hba);
 
+	ufshcd_rpmb_remove(hba);
+
 	hba->is_powered = false;
 	/* allow force shutdown even in case of errors */
 	return 0;
@@ -9541,6 +9755,9 @@ void ufshcd_remove(struct ufs_hba *hba)
 		ufshcd_rpm_get_sync(hba);
 	ufs_hwmon_remove(hba);
 	ufs_bsg_remove(hba);
+
+	ufshcd_rpmb_remove(hba);
+
 	ufshpb_remove(hba);
 	ufs_sysfs_remove_nodes(hba->dev);
 	blk_mq_destroy_queue(hba->tmf_queue);
