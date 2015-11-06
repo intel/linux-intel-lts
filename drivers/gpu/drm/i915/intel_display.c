@@ -84,6 +84,7 @@ static const uint32_t skl_primary_formats[] = {
 	DRM_FORMAT_YVYU,
 	DRM_FORMAT_UYVY,
 	DRM_FORMAT_VYUY,
+	DRM_FORMAT_AYUV,
 };
 
 /* Cursor formats */
@@ -3261,6 +3262,8 @@ u32 skl_plane_ctl_format(uint32_t pixel_format)
 		return PLANE_CTL_FORMAT_YUV422 | PLANE_CTL_YUV422_UYVY;
 	case DRM_FORMAT_VYUY:
 		return PLANE_CTL_FORMAT_YUV422 | PLANE_CTL_YUV422_VYUY;
+	case DRM_FORMAT_AYUV:
+		return PLANE_CTL_FORMAT_AYUV;
 	default:
 		MISSING_CASE(pixel_format);
 	}
@@ -4721,6 +4724,8 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 	case DRM_FORMAT_YVYU:
 	case DRM_FORMAT_UYVY:
 	case DRM_FORMAT_VYUY:
+	case DRM_FORMAT_AYUV:
+	case DRM_FORMAT_C8:
 		break;
 	default:
 		DRM_DEBUG_KMS("[PLANE:%d:%s] FB:%d unsupported scaling format 0x%x\n",
@@ -14627,6 +14632,7 @@ static int intel_framebuffer_init(struct drm_device *dev,
 	case DRM_FORMAT_UYVY:
 	case DRM_FORMAT_YVYU:
 	case DRM_FORMAT_VYUY:
+	case DRM_FORMAT_AYUV:
 		if (INTEL_GEN(dev_priv) < 5) {
 			DRM_DEBUG("unsupported pixel format: %s\n",
 			          drm_get_format_name(mode_cmd->pixel_format, &format_name));
