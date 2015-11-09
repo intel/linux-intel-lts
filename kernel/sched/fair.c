@@ -2903,6 +2903,7 @@ accumulate_sum(u64 delta, int cpu, struct sched_avg *sa,
 
 	scale_freq = arch_scale_freq_capacity(NULL, cpu);
 	scale_cpu = arch_scale_cpu_capacity(NULL, cpu);
+	trace_sched_contrib_scale_f(cpu, scale_freq, scale_cpu);
 
 	delta += sa->period_contrib;
 	periods = delta / 1024; /* A period is 1024us (~1ms) */
