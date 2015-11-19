@@ -138,7 +138,8 @@ static void guc_params_init(struct drm_i915_private *dev_priv)
 	params[GUC_CTL_WA] |= GUC_CTL_WA_UK_BY_DRIVER;
 
 	params[GUC_CTL_FEATURE] |= GUC_CTL_DISABLE_SCHEDULER |
-			GUC_CTL_VCS2_ENABLED;
+			GUC_CTL_VCS2_ENABLED |
+			GUC_CTL_ENABLE_CP;
 
 	params[GUC_CTL_LOG_PARAMS] = guc->log.flags;
 

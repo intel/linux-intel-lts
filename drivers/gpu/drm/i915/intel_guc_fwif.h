@@ -113,6 +113,7 @@
 #define   GUC_CTL_POWER_GATING		(1 << 3)
 #define   GUC_CTL_DISABLE_SCHEDULER	(1 << 4)
 #define   GUC_CTL_PREEMPTION_LOG	(1 << 5)
+#define   GUC_CTL_ENABLE_CP		(1 << 6)
 #define   GUC_CTL_ENABLE_SLPC		(1 << 7)
 #define   GUC_CTL_RESET_ON_PREMPT_FAILURE	(1 << 8)
 
