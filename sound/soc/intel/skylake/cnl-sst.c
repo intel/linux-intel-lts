@@ -98,6 +98,54 @@ void cnl_ipc_free(struct sst_generic_ipc *ipc)
 	sst_ipc_fini(ipc);
 }
 
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+
+#define CNL_IMR_MEMSIZE					0x400000  /*4MB*/
+#define HDA_ADSP_REG_ADSPCS_IMR_CACHED_TLB_START	0x100
+#define HDA_ADSP_REG_ADSPCS_IMR_UNCACHED_TLB_START	0x200
+#define HDA_ADSP_REG_ADSPCS_IMR_SIZE	0x8
+/* Needed for presilicon platform based on FPGA */
+static int cnl_fpga_alloc_imr(struct sst_dsp *ctx)
+{
+	u32 pages;
+	u32 fw_size = CNL_IMR_MEMSIZE;
+	int ret;
+
+	ret = ctx->dsp_ops.alloc_dma_buf(ctx->dev, &ctx->dsp_fw_buf, fw_size);
+
+	if (ret < 0) {
+		dev_err(ctx->dev, "Alloc buffer for base fw failed: %x\n", ret);
+		return ret;
+	}
+
+	pages = (fw_size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+
+	dev_dbg(ctx->dev, "sst_cnl_fpga_alloc_imr pages=0x%x\n", pages);
+	set_memory_uc((unsigned long)ctx->dsp_fw_buf.area, pages);
+
+	writeq(virt_to_phys(ctx->dsp_fw_buf.area) + 1,
+		 ctx->addr.shim + HDA_ADSP_REG_ADSPCS_IMR_CACHED_TLB_START);
+	writeq(virt_to_phys(ctx->dsp_fw_buf.area) + 1,
+		 ctx->addr.shim + HDA_ADSP_REG_ADSPCS_IMR_UNCACHED_TLB_START);
+
+	writel(CNL_IMR_MEMSIZE, ctx->addr.shim
+	       + HDA_ADSP_REG_ADSPCS_IMR_CACHED_TLB_START
+	       + HDA_ADSP_REG_ADSPCS_IMR_SIZE);
+	writel(CNL_IMR_MEMSIZE, ctx->addr.shim
+	       + HDA_ADSP_REG_ADSPCS_IMR_UNCACHED_TLB_START
+	       + HDA_ADSP_REG_ADSPCS_IMR_SIZE);
+
+	memset(ctx->dsp_fw_buf.area, 0, fw_size);
+
+	return 0;
+}
+
+static inline void cnl_fpga_free_imr(struct sst_dsp *ctx)
+{
+	ctx->dsp_ops.free_dma_buf(ctx->dev, &ctx->dsp_fw_buf);
+}
+
+#endif
 static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata,
 		u32 fwsize)
 {
@@ -106,6 +154,11 @@ static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata,
 	u32 reg;
 	u32 pages;
 
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	ret = cnl_fpga_alloc_imr(ctx);
+	if (ret < 0)
+		return ret;
+#endif
 	dev_dbg(ctx->dev, "Starting to prepare host dma fwsize=0x%x\n", fwsize);
 	stream_tag = ctx->dsp_ops.prepare(ctx->dev, 0x40, fwsize, &ctx->dmab);
 	if (stream_tag <= 0) {
@@ -174,6 +227,9 @@ static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata,
 base_fw_load_failed:
 	cnl_dsp_disable_core(ctx);
 	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, stream_tag);
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	cnl_fpga_free_imr(ctx);
+#endif
 	return ret;
 }
 
