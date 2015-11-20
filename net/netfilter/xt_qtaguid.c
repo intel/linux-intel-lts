@@ -33,7 +33,7 @@
 #include <linux/netfilter_ipv6/ip6_tables.h>
 #endif
 
-#include <linux/netfilter/xt_socket.h>
+#include <net/netfilter/nf_socket.h>
 #include "xt_qtaguid_internal.h"
 #include "xt_qtaguid_print.h"
 #include "../../fs/proc/internal.h"
@@ -1589,10 +1589,10 @@ static struct sock *qtaguid_find_sk(const struct sk_buff *skb,
 
 	switch (par->state->pf) {
 	case NFPROTO_IPV6:
-		sk = xt_socket_lookup_slow_v6(skb, par->state->in);
+		sk = nf_sk_lookup_slow_v6(dev_net(skb->dev), skb, par->state->in);
 		break;
 	case NFPROTO_IPV4:
-		sk = xt_socket_lookup_slow_v4(skb, par->state->in);
+		sk = nf_sk_lookup_slow_v4(dev_net(skb->dev), skb, par->state->in);
 		break;
 	default:
 		return NULL;
