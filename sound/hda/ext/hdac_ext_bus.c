@@ -75,6 +75,7 @@ static const struct hdac_io_ops hdac_ext_default_io = {
 	.reg_readb = hdac_ext_readb,
 	.dma_alloc_pages = hdac_ext_dma_alloc_pages,
 	.dma_free_pages = hdac_ext_dma_free_pages,
+	.mark_pages_uc = hdac_ext_mark_pages_uc,
 };
 
 /**
