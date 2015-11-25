@@ -59,6 +59,9 @@ struct skl_debug {
 	struct dentry *modules;
 	u32 ipc_data[MAX_SZ];
 	struct fw_ipc_data fw_ipc_data;
+	void __iomem *in_base;
+	size_t inbx_sz;
+	u32 w0_stat_sz;
 };
 
 struct nhlt_specific_cfg
@@ -675,7 +678,8 @@ static int skl_init_adsp(struct skl_debug *d)
 	return 0;
 }
 
-struct skl_debug *skl_debugfs_init(struct skl *skl)
+struct skl_debug *skl_debugfs_init(struct skl *skl,
+					struct platform_info *dbg_info)
 {
 	struct skl_debug *d;
 
@@ -694,6 +698,9 @@ struct skl_debug *skl_debugfs_init(struct skl *skl)
 
 	d->skl = skl;
 	d->dev = &skl->pci->dev;
+	d->in_base = dbg_info->in_base;
+	d->inbx_sz = dbg_info->in_size;
+	d->w0_stat_sz = dbg_info->w0_stat_sz;
 
 	/* now create the NHLT dir */
 	d->nhlt =  debugfs_create_dir("nhlt", d->fs);
@@ -712,6 +719,7 @@ struct skl_debug *skl_debugfs_init(struct skl *skl)
 	skl_init_nhlt(d);
 	skl_init_adsp(d);
 	skl_init_mod_set_get(d);
+	kfree(dbg_info);
 
 	return d;
 

@@ -35,6 +35,7 @@
 #include <sound/compress_driver.h>
 
 #include "skl-sst-dsp.h"
+#include "../common/sst-dsp-priv.h"
 #include "skl-sst-ipc.h"
 #include "skl.h"
 
@@ -739,8 +740,23 @@ static void skl_probe_work(struct work_struct *work)
 	list_for_each_entry(hlink, &ebus->hlink_list, list)
 		snd_hdac_ext_bus_link_put(ebus, hlink);
 
+	dbg_info = kzalloc(sizeof(struct platform_info), GFP_KERNEL);
+	if (!dbg_info)
+		return -ENOMEM;
+
+	dbg_info->sram0_base = skl->skl_sst->dsp->addr.sram0_base;
+	dbg_info->sram1_base = skl->skl_sst->dsp->addr.sram1_base;
+	dbg_info->lpe = skl->skl_sst->dsp->addr.lpe;
+	dbg_info->w0_stat_sz = skl->skl_sst->dsp->addr.w0_stat_sz;
+	dbg_info->w0_up_sz = skl->skl_sst->dsp->addr.w0_up_sz;
+
+	dbg_info->in_base = skl->skl_sst->dsp->mailbox.in_base;
+	dbg_info->in_size = skl->skl_sst->dsp->mailbox.in_size;
+	dbg_info->out_base = skl->skl_sst->dsp->mailbox.out_base;
+	dbg_info->out_size = skl->skl_sst->dsp->mailbox.out_size;
+
 	/* init debugfs */
-	skl->debugfs = skl_debugfs_init(skl);
+	skl->debugfs = skl_debugfs_init(skl, dbg_info);
 
 	/* configure PM */
 	pm_runtime_put_noidle(bus->dev);
@@ -880,6 +896,7 @@ static int skl_probe(struct pci_dev *pci,
 #ifdef CONFIG_SND_SOC_INTEL_CNL_FPGA
 	const struct firmware *nhlt_fw = NULL;
 #endif
+	struct platform_info *dbg_info;
 	int err;
 
 	/* we use ext core ops, so provide NULL for ops here */

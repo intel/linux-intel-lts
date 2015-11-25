@@ -128,6 +128,18 @@ struct skl {
 	struct skl_module **modules;
 };
 
+struct platform_info {
+	u32 sram0_base;
+	u32 sram1_base;
+	u32 w0_stat_sz;
+	u32 w0_up_sz;
+	size_t in_size;
+	size_t out_size;
+	void __iomem *lpe;
+	void __iomem *in_base;
+	void __iomem *out_base;
+};
+
 #define skl_to_ebus(s)	(&(s)->ebus)
 #define ebus_to_skl(sbus) \
 	container_of(sbus, struct skl, sbus)
@@ -181,7 +193,8 @@ struct skl_module_cfg;
 
 #ifdef CONFIG_DEBUG_FS
 
-struct skl_debug *skl_debugfs_init(struct skl *skl);
+struct skl_debug *skl_debugfs_init(struct skl *skl,
+					struct platform_info *dbg_info);
 void skl_debugfs_exit(struct skl_debug *d);
 struct nhlt_specific_cfg
 *skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance,
@@ -194,7 +207,8 @@ void skl_debug_init_module(struct skl_debug *d,
 struct skl_debug {
 }
 
-struct skl_debug *skl_debugfs_init(struct skl *skl)
+struct skl_debug *skl_debugfs_init(struct skl *skl,
+					struct platform_info *dbg_info)
 {
 	return NULL;
 }
