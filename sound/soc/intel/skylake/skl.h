@@ -104,6 +104,7 @@ struct skl {
 	struct skl_fw_config cfg;
 	struct snd_soc_acpi_mach *mach;
 	bool nhlt_override;
+	bool mod_set_get_status;
 };
 
 #define skl_to_bus(s)  (&(s)->hbus)
