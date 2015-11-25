@@ -71,6 +71,7 @@ struct skl {
 	struct work_struct probe_work;
 	struct skl_debug *debugfs;
 	bool nhlt_override;
+	bool mod_set_get_status;
 };
 
 #define skl_to_ebus(s)	(&(s)->ebus)
