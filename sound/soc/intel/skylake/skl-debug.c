@@ -29,6 +29,8 @@
 #define IPC_MOD_LARGE_CONFIG_SET 4
 #define MOD_BUF1 (3 * PAGE_SIZE)
 #define MOD_BUF (2 * PAGE_SIZE)
+#define fw_reg_size  0x60
+#define FW_REG_BUF (1 * PAGE_SIZE)
 
 #define DEFAULT_SZ 100
 #define DEFAULT_ID 0XFF
@@ -62,6 +64,7 @@ struct skl_debug {
 	void __iomem *in_base;
 	size_t inbx_sz;
 	u32 w0_stat_sz;
+	u8 fwbuf_rd[FW_REG_BUF];
 };
 
 struct nhlt_specific_cfg
@@ -678,6 +681,57 @@ static int skl_init_adsp(struct skl_debug *d)
 	return 0;
 }
 
+static ssize_t fw_softreg_read(struct file *file,
+			char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct skl_debug *d = file->private_data;
+	void *fw_reg_addr;
+	char *buf1;
+	ssize_t ret;
+	unsigned int ofs = 0;
+
+	fw_reg_addr = d->in_base  - d->w0_stat_sz;
+	memset(d->fwbuf_rd, 0, FW_REG_BUF);
+	memcpy_fromio(d->fwbuf_rd, fw_reg_addr, d->w0_stat_sz);
+
+	buf1 = kzalloc(MOD_BUF1, GFP_KERNEL);
+	if (!buf1)
+		return -ENOMEM;
+
+	ret = snprintf(buf1, MOD_BUF1,
+				"FW SOFT REG BLOB\n");
+
+	for (ofs = 0 ; ofs < fw_reg_size ; ofs += 16) {
+		ret += snprintf(buf1 + ret, MOD_BUF1 - ret, "0x%.4x : ", ofs);
+		hex_dump_to_buffer(d->fwbuf_rd + ofs, 16, 16, 4, buf1 + ret,
+				   MOD_BUF1 - ret, 0);
+		ret += strlen(buf1 + ret);
+
+		if (MOD_BUF1 - ret > 0)
+			buf1[ret++] = '\n';
+		}
+
+	print_hex_dump(KERN_DEBUG, "FWREG Blob:", DUMP_PREFIX_OFFSET, 8, 4,
+			d->fwbuf_rd, fw_reg_size, false);
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf1, ret);
+	kfree(buf1);
+
+	return ret;
+}
+
+static ssize_t fw_softreg_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	return 0;
+}
+
+static const struct file_operations soft_regs_ctrl_fops = {
+	.open = simple_open,
+	.read = fw_softreg_read,
+	.write = fw_softreg_write,
+	.llseek = default_llseek,
+};
+
 struct skl_debug *skl_debugfs_init(struct skl *skl,
 					struct platform_info *dbg_info)
 {
@@ -713,6 +767,12 @@ struct skl_debug *skl_debugfs_init(struct skl *skl,
 	d->modules =  debugfs_create_dir("modules", d->fs);
 	if (IS_ERR(d->modules) || !d->modules) {
 		dev_err(&skl->pci->dev, "modules debugfs create failed\n");
+		goto err;
+	}
+
+	if (!debugfs_create_file("fw_soft_regs_rd", 0644, d->fs, d,
+				 &soft_regs_ctrl_fops)) {
+		dev_err(d->dev, "fw soft regs control debugfs init failed\n");
 		goto err;
 	}
 
