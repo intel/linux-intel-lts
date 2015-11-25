@@ -624,7 +624,7 @@ static void intel_th_gth_switch(struct intel_th_device *thdev,
 				struct intel_th_output *output)
 {
 	struct gth_device *gth = dev_get_drvdata(&thdev->dev);
-	unsigned long count;
+	unsigned long count, flags;
 	u32 reg;
 
 	/* trigger */
@@ -639,8 +639,10 @@ static void intel_th_gth_switch(struct intel_th_device *thdev,
 	if (!count)
 		dev_dbg(&thdev->dev, "timeout waiting for CTS Trigger\n");
 
+	local_irq_save(flags);
 	intel_th_gth_stop(gth, output, false);
 	intel_th_gth_start(gth, output);
+	local_irq_restore(flags);
 }
 
 /**

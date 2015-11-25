@@ -702,6 +702,7 @@ static void mdd_work(struct work_struct *work)
 		/* Maybe will be better if msc_sg_oldest_win changes the window
 		 * if the "oldest" one contains data and is the current one..*/
 
+		preempt_disable();
 		current_bytes = msc_current_win_bytes(mdd->th_dev);
 		if (current_bytes > mdd->min_transfer ||
 		    (current_bytes && retry_cnt >= mdd->max_retry_count)) {
@@ -720,6 +721,7 @@ static void mdd_work(struct work_struct *work)
 			}
 			nents = 0;
 		}
+		preempt_enable();
 		stats_loop(mdd);
 
 		if (nents < 0) {
