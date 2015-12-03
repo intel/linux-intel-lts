@@ -39,6 +39,11 @@
 #define MDD_RETRY_TIMEOUT_DEF	2
 #define MDD_MAX_RETRY_CNT_DEF	150
 
+/* The DWC3 gadget is able to handle a maximum of 32 TRBs per-ep (an sg based
+ * request counts as the number of sg-s).
+ * This should be updated in case some other UDC has a lower threshold. */
+#define MDD_MAX_TRB_CNT		32
+
 #define mdd_err(mdd, ...) dev_err(&(mdd)->ddev.device, ## __VA_ARGS__)
 #define mdd_warn(mdd, ...) dev_warn(&(mdd)->ddev.device, ## __VA_ARGS__)
 #define mdd_info(mdd, ...) dev_info(&(mdd)->ddev.device, ## __VA_ARGS__)
@@ -523,29 +528,55 @@ static unsigned mdd_sg_len(struct scatterlist *sgl, int nents)
 
 static int mdd_send_sg(struct msu_dvc_dev *mdd, int nents)
 {
+	struct scatterlist *sgl = mdd->tdata.sg_trans;
+
 	/*MDD_F_DEBUG(); */
-	if (nents == 1) {
-		mdd->req->buf = sg_virt(mdd->tdata.sg_trans);
-		mdd->req->length = mdd->tdata.sg_trans->length;
-		mdd->req->dma = 0;
-		mdd->req->sg = NULL;
-		mdd->req->num_sgs = 0;
-	} else {
-		mdd->req->buf = NULL;
-		mdd->req->length = mdd_sg_len(mdd->tdata.sg_trans, nents);
-		mdd->req->dma = 0;
-		mdd->req->sg = mdd->tdata.sg_trans;
-		mdd->req->num_sgs = nents;
-	}
+	while (nents) {
+		int trans_ents;
 
-	mdd->req->context = mdd;
-	mdd->req->complete = mdd_complete;
-	mdd->req->zero = 1;
+		mdd_lock_transfer(mdd);
 
-	if (usb_ep_queue(mdd->ep, mdd->req, GFP_KERNEL)) {
-		mdd_err(mdd, "Cannot queue request\n");
-		dvct_set_status(mdd->dtc_status, DVCT_MASK_ERR);
-		return -EINVAL;
+		if (nents > MDD_MAX_TRB_CNT) {
+			trans_ents = MDD_MAX_TRB_CNT;
+			sg_mark_end(&sgl[trans_ents - 1]);
+		} else {
+			trans_ents = nents;
+		}
+
+		if (trans_ents == 1) {
+			mdd->req->buf = sg_virt(sgl);
+			mdd->req->length = sgl->length;
+			mdd->req->dma = 0;
+			mdd->req->sg = NULL;
+			mdd->req->num_sgs = 0;
+		} else {
+			mdd->req->buf = NULL;
+			mdd->req->length = mdd_sg_len(sgl, trans_ents);
+			mdd->req->dma = 0;
+			mdd->req->sg = sgl;
+			mdd->req->num_sgs = trans_ents;
+		}
+
+		mdd->req->context = mdd;
+		mdd->req->complete = mdd_complete;
+		mdd->req->zero = 1;
+
+		if (usb_ep_queue(mdd->ep, mdd->req, GFP_KERNEL)) {
+			mdd_err(mdd, "Cannot queue request\n");
+			dvct_set_status(mdd->dtc_status, DVCT_MASK_ERR);
+			mdd_unlock_transfer(mdd);
+			return -EINVAL;
+		}
+
+		atomic_set(&mdd->req_ongoing, 1);
+		nents -= trans_ents;
+		sgl += trans_ents;
+
+		mdd_unlock_transfer(mdd);
+		/*wait for done stop or disable */
+		wait_event(mdd->wq, (!atomic_read(&mdd->req_ongoing) ||
+				     (atomic_read(mdd->dtc_status) !=
+				      DVCT_MASK_ONLINE_TRANS)));
 	}
 	return 0;
 }
@@ -555,11 +586,13 @@ static int mdd_send_buffer(struct msu_dvc_dev *mdd, int nents)
 	size_t transfer_len;
 
 	/*MDD_F_DEBUG(); */
+	mdd_lock_transfer(mdd);
 	transfer_len =
 	    sg_copy_to_buffer(mdd->tdata.sg_trans, nents, mdd->tdata.buffer,
 			      mdd->tdata.buffer_len);
 	if (!transfer_len) {
 		mdd_err(mdd, "Cannot copy into nonsg memory\n");
+		mdd_unlock_transfer(mdd);
 		return -EINVAL;
 	}
 	mdd->req->buf = mdd->tdata.buffer;
@@ -575,8 +608,16 @@ static int mdd_send_buffer(struct msu_dvc_dev *mdd, int nents)
 	if (usb_ep_queue(mdd->ep, mdd->req, GFP_KERNEL)) {
 		mdd_err(mdd, "Cannot queue request\n");
 		dvct_set_status(mdd->dtc_status, DVCT_MASK_ERR);
+		mdd_unlock_transfer(mdd);
 		return -EINVAL;
 	}
+
+	atomic_set(&mdd->req_ongoing, 1);
+	mdd_unlock_transfer(mdd);
+	/*wait for done stop or disable */
+	wait_event(mdd->wq, (!atomic_read(&mdd->req_ongoing) ||
+			     (atomic_read(mdd->dtc_status) !=
+			      DVCT_MASK_ONLINE_TRANS)));
 	return 0;
 }
 
@@ -608,6 +649,7 @@ static int mdd_proc_add_stats(struct msu_dvc_dev *mdd, int nents)
 		mdd->stats.valid_block_size += (count + MSC_BDESC);
 		mdd->stats.valid_data_size += count;
 	}
+
 	return i;
 }
 #else
@@ -740,22 +782,9 @@ static void mdd_work(struct work_struct *work)
 		}
 
 		if (nents) {
-
 			stats_hit(mdd);
-			mdd_lock_transfer(mdd);
-			atomic_set(&mdd->req_ongoing, 1);
-			if (send_funcs[mdd->transfer_type] (mdd, nents)) {
-				mdd_unlock_transfer(mdd);
+			if (send_funcs[mdd->transfer_type] (mdd, nents))
 				break;
-			}
-
-			mdd_unlock_transfer(mdd);
-
-			/*wait for done stop or disable */
-			wait_event(mdd->wq,
-				   (!atomic_read(&mdd->req_ongoing) ||
-				    (atomic_read(mdd->dtc_status) !=
-				     DVCT_MASK_ONLINE_TRANS)));
 		} else {
 			/*wait for stop or timeout */
 			wait_event_timeout(mdd->wq,
