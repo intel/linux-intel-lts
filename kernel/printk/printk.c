@@ -2159,6 +2159,66 @@ asmlinkage __visible void early_printk(const char *fmt, ...)
 }
 #endif
 
+#ifdef CONFIG_RAW_PRINTK
+static struct console *raw_console;
+static DEFINE_RAW_SPINLOCK(raw_console_lock);
+
+void raw_vprintk(const char *fmt, va_list ap)
+{
+	unsigned long flags;
+	char buf[256];
+	int n;
+
+	if (raw_console == NULL || console_suspended)
+		return;
+
+	n = vscnprintf(buf, sizeof(buf), fmt, ap);
+        touch_nmi_watchdog();
+	raw_spin_lock_irqsave(&raw_console_lock, flags);
+	if (raw_console)
+		raw_console->write_raw(raw_console, buf, n);
+	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
+}
+EXPORT_SYMBOL(raw_vprintk);
+
+asmlinkage __visible void raw_printk(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	raw_vprintk(fmt, ap);
+	va_end(ap);
+}
+EXPORT_SYMBOL(raw_printk);
+
+static inline void register_raw_console(struct console *newcon)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&raw_console_lock, flags);
+	if (newcon->write_raw)
+		raw_console = newcon;
+	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
+}
+
+static inline void unregister_raw_console(struct console *oldcon)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&raw_console_lock, flags);
+	if (oldcon == raw_console)
+		raw_console = NULL;
+	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
+}
+
+#else
+
+static inline void register_raw_console(struct console *newcon) { }
+
+static inline void unregister_raw_console(struct console *oldcon) { }
+
+#endif
+
 static int __add_preferred_console(char *name, int idx, char *options,
 				   char *brl_options, bool user_specified)
 {
@@ -2812,6 +2872,9 @@ void register_console(struct console *newcon)
 	if (err || newcon->flags & CON_BRL)
 		return;
 
+	/* The latest raw console to register is current. */
+	register_raw_console(newcon);
+
 	/*
 	 * If we have a bootconsole, and are switching to a real console,
 	 * don't print everything out again, since when the boot console, and
@@ -2895,6 +2958,8 @@ int unregister_console(struct console *console)
 	pr_info("%sconsole [%s%d] disabled\n",
 		(console->flags & CON_BOOT) ? "boot" : "" ,
 		console->name, console->index);
+
+	unregister_raw_console(console);
 
 	res = _braille_unregister_console(console);
 	if (res < 0)
