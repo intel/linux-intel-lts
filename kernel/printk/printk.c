@@ -2375,21 +2375,28 @@ static void set_user_specified(struct console_cmdline *c, bool user_specified)
 static struct console *raw_console;
 static DEFINE_HARD_SPINLOCK(raw_console_lock);
 
-void raw_vprintk(const char *fmt, va_list ap)
+void raw_puts(const char *s, size_t len)
 {
 	unsigned long flags;
+
+	raw_spin_lock_irqsave(&raw_console_lock, flags);
+	if (raw_console)
+		raw_console->write_raw(raw_console, s, len);
+	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
+}
+EXPORT_SYMBOL(raw_puts);
+
+void raw_vprintk(const char *fmt, va_list ap)
+{
 	char buf[256];
-	int n;
+	size_t n;
 
 	if (raw_console == NULL || console_suspended)
 		return;
 
-	n = vscnprintf(buf, sizeof(buf), fmt, ap);
         touch_nmi_watchdog();
-	raw_spin_lock_irqsave(&raw_console_lock, flags);
-	if (raw_console)
-		raw_console->write_raw(raw_console, buf, n);
-	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
+	n = vscnprintf(buf, sizeof(buf), fmt, ap);
+	raw_puts(buf, n);
 }
 EXPORT_SYMBOL(raw_vprintk);
 
