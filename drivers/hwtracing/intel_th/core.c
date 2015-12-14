@@ -213,7 +213,7 @@ int intel_th_output_activate(struct intel_th_output *output)
 	if (WARN_ON_ONCE(outdev->type != INTEL_TH_OUTPUT))
 		return -EINVAL;
 
-	if (outdrv->activate)
+	if (outdrv && outdrv->activate)
 		return outdrv->activate(outdev);
 
 	return 0;
