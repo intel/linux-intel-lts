@@ -243,18 +243,47 @@ int intel_th_output_activate(struct intel_th_output *output)
 }
 EXPORT_SYMBOL_GPL(intel_th_output_activate);
 
+/**
+ * intel_th_first_trace() - notification callback for first trace
+ *
+ * Notify each child device that the first capture is about to begin.
+ * This gives a chance to save the current data as the Trace Hub may have
+ * already been configured by the BIOS to trace to a given output.
+ *
+ * @dev:	output device to notify
+ * @data:	private data - unused
+ */
+static int intel_th_first_trace(struct device *dev, void *data)
+{
+	struct intel_th_device *thdev =
+		container_of(dev, struct intel_th_device, dev);
+	struct intel_th_driver *thdrv =
+		to_intel_th_driver(thdev->dev.driver);
+
+	if (thdrv && thdrv->first_trace)
+		thdrv->first_trace(thdev);
+
+	return 0;
+}
+
+/**
+ * intel_th_start_trace() - start tracing to an output device
  * @thdev:	output device that requests tracing
  */
 static int intel_th_start_trace(struct intel_th_device *thdev)
 {
 	struct intel_th_device *hub = to_intel_th_device(thdev->dev.parent);
 	struct intel_th_driver *hubdrv = to_intel_th_driver(hub->dev.driver);
+	static atomic_t first = { .counter = 1, };
 
 	if (WARN_ON_ONCE(hub->type != INTEL_TH_SWITCH))
 		return -EINVAL;
 
 	if (WARN_ON_ONCE(thdev->type != INTEL_TH_OUTPUT))
 		return -EINVAL;
+
+	if (atomic_dec_if_positive(&first) == 0)
+		device_for_each_child(&hub->dev, NULL, intel_th_first_trace);
 
 	/* The hub has control over Intel Trace Hub.
 	 * Let the hub start a trace if possible and activate the output. */
