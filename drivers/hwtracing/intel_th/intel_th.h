@@ -154,6 +154,7 @@ intel_th_output_assigned(struct intel_th_device *thdev)
  */
 struct intel_th_driver {
 	struct device_driver	driver;
+	void			(*first_trace)(struct intel_th_device *thdev);
 	int			(*probe)(struct intel_th_device *thdev);
 	void			(*remove)(struct intel_th_device *thdev);
 	/* switch (GTH) ops */
