@@ -23,6 +23,9 @@
 #include <asm/set_memory.h>
 #endif
 
+#include <linux/acpi.h>
+#include <linux/debugfs.h>
+
 #include "intel_th.h"
 #include "msu.h"
 
@@ -1053,16 +1056,19 @@ static int intel_th_msc_release(struct inode *inode, struct file *file)
 }
 
 static ssize_t
-msc_single_to_user(struct msc *msc, char __user *buf, loff_t off, size_t len)
+msc_single_to_user(void *in_buf, unsigned long in_pages,
+		   unsigned long in_sz, bool wrapped,
+		   char __user *buf, loff_t off, size_t len)
 {
-	unsigned long size = msc->nr_pages << PAGE_SHIFT, rem = len;
+	unsigned long size = in_pages << PAGE_SHIFT, rem = len;
 	unsigned long start = off, tocopy = 0;
 
-	if (msc->single_wrap) {
-		start += msc->single_sz;
+	/* With wrapping, copy the end of the buffer first */
+	if (wrapped) {
+		start += in_sz;
 		if (start < size) {
 			tocopy = min(rem, size - start);
-			if (copy_to_user(buf, msc->base + start, tocopy))
+			if (copy_to_user(buf, in_buf + start, tocopy))
 				return -EFAULT;
 
 			buf += tocopy;
@@ -1071,21 +1077,17 @@ msc_single_to_user(struct msc *msc, char __user *buf, loff_t off, size_t len)
 		}
 
 		start &= size - 1;
-		if (rem) {
-			tocopy = min(rem, msc->single_sz - start);
-			if (copy_to_user(buf, msc->base + start, tocopy))
-				return -EFAULT;
+	}
+	/* Copy the beginning of the buffer */
+	if (rem) {
+		tocopy = min(rem, in_sz - start);
+		if (copy_to_user(buf, in_buf + start, tocopy))
+			return -EFAULT;
 
-			rem -= tocopy;
-		}
-
-		return len - rem;
+		rem -= tocopy;
 	}
 
-	if (copy_to_user(buf, msc->base + start, rem))
-		return -EFAULT;
-
-	return len;
+	return len - rem;
 }
 
 static ssize_t intel_th_msc_read(struct file *file, char __user *buf,
@@ -1115,8 +1117,10 @@ static ssize_t intel_th_msc_read(struct file *file, char __user *buf,
 		len = size - off;
 
 	if (msc->mode == MSC_MODE_SINGLE) {
-		ret = msc_single_to_user(msc, buf, off, len);
-		if (ret >= 0)
+		ret = msc_single_to_user(msc->base, msc->nr_pages,
+					 msc->single_sz, msc->single_wrap,
+					 buf, off, len);
+		if (ret > 0)
 			*ppos += ret;
 	} else if (msc->mode == MSC_MODE_MULTI) {
 		struct msc_win_to_user_struct u = {
@@ -1257,6 +1261,267 @@ static void msc_wait_ple(struct intel_th_device *thdev)
 	if (!count)
 		dev_dbg(msc_dev(msc), "timeout waiting for MSC0 PLE\n");
 }
+
+#ifdef CONFIG_ACPI
+#define ACPI_SIG_NPKT "NPKT"
+
+/* Buffers that may be handed through NPKT ACPI table */
+enum NPKT_BUF_TYPE {
+	NPKT_MTB = 0,
+	NPKT_MTB_REC,
+	NPKT_CSR,
+	NPKT_CSR_REC,
+	NPKT_NBUF
+};
+static const char * const npkt_buf_name[NPKT_NBUF] = {
+	[NPKT_MTB]	= "mtb",
+	[NPKT_MTB_REC]	= "mtb_rec",
+	[NPKT_CSR]	= "csr",
+	[NPKT_CSR_REC]	= "csr_rec"
+};
+
+/* CSR capture still active */
+#define NPKT_CSR_USED BIT(4)
+
+struct acpi_npkt_buf {
+	u64 addr;
+	u32 size;
+	u32 offset;
+};
+
+/* NPKT ACPI table */
+struct acpi_table_npkt {
+	struct acpi_table_header	header;
+	struct acpi_npkt_buf		buffers[NPKT_NBUF];
+	u8				flags;
+} __packed;
+
+/* Trace buffer obtained from NPKT table */
+struct npkt_buf {
+	dma_addr_t	phy;
+	void		*buf;
+	u32		size;
+	u32		offset;
+	bool		wrapped;
+	atomic_t	active;
+	struct msc	*msc;
+};
+
+static struct npkt_buf *npkt_bufs;
+static struct dentry *npkt_dump_dir;
+static DEFINE_MUTEX(npkt_lock);
+
+/**
+ * Stop current trace if a buffer was marked with a capture in pogress.
+ *
+ * Update buffer write offset and wrap status after stopping the trace.
+ */
+static void stop_buffer_trace(struct npkt_buf *buf)
+{
+	u32 reg, mode;
+	struct msc *msc = buf->msc;
+
+	mutex_lock(&npkt_lock);
+	if (!atomic_read(&buf->active))
+		goto unlock;
+
+	reg = ioread32(msc->reg_base + REG_MSU_MSC0CTL);
+	mode = (reg & MSC_MODE) >> __ffs(MSC_MODE);
+	if (!(reg & MSC_EN) || mode != MSC_MODE_SINGLE) {
+		/* Assume full buffer */
+		pr_warn("NPKT reported CSR in use but not tracing to CSR\n");
+		buf->offset = 0;
+		buf->wrapped = true;
+		atomic_set(&buf->active, 0);
+		goto unlock;
+	}
+
+	/* The hub must be able to stop a capture not started by the driver */
+	intel_th_trace_disable(msc->thdev);
+
+	/* Update offset and wrap status */
+	reg = ioread32(msc->reg_base + REG_MSU_MSC0MWP);
+	buf->offset = reg - (u32)buf->phy;
+	reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
+	buf->wrapped = !!(reg & MSCSTS_WRAPSTAT);
+	atomic_set(&buf->active, 0);
+
+unlock:
+	mutex_unlock(&npkt_lock);
+}
+
+/**
+ * Copy re-ordered data from an NPKT buffer to a user buffer.
+ */
+static ssize_t read_npkt_dump_buf(struct file *file, char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct npkt_buf *buf = file->private_data;
+	size_t size = buf->size;
+	loff_t off = *ppos;
+	ssize_t ret;
+
+	if (atomic_read(&buf->active))
+		stop_buffer_trace(buf);
+
+	if (off >= size)
+		return 0;
+
+	ret = msc_single_to_user(buf->buf, size >> PAGE_SHIFT,
+				 buf->offset, buf->wrapped,
+				 user_buf, off, count);
+	if (ret > 0)
+		*ppos += ret;
+
+	return ret;
+}
+
+static const struct file_operations npkt_dump_buf_fops = {
+	.read	= read_npkt_dump_buf,
+	.open	= simple_open,
+	.llseek	= noop_llseek,
+};
+
+/**
+ * Prepare a buffer with remapped address for a given NPKT buffer and add
+ * an entry for it in debugfs.
+ */
+static void npkt_bind_buffer(enum NPKT_BUF_TYPE type,
+			     struct acpi_npkt_buf *abuf, u8 flags,
+			     struct npkt_buf *buf, struct msc *msc)
+{
+	const char *name = npkt_buf_name[type];
+
+	/* No buffer handed through ACPI */
+	if (!abuf->addr || !abuf->size)
+		return;
+
+	/* Only expect multiples of page size */
+	if (abuf->size & (PAGE_SIZE - 1)) {
+		pr_warn("invalid size 0x%x for buffer %s\n",
+			abuf->size, name);
+		return;
+	}
+
+	buf->size = abuf->size;
+	buf->offset = abuf->offset;
+	buf->wrapped = !!(flags & BIT(type));
+	/* CSR may still be active */
+	if (type == NPKT_CSR && (flags & NPKT_CSR_USED)) {
+		atomic_set(&buf->active, 1);
+		buf->msc = msc;
+	}
+
+	buf->phy = abuf->addr;
+	buf->buf = (__force void *)ioremap(buf->phy, buf->size);
+	if (!buf->buf) {
+		pr_err("ioremap failed for buffer %s 0x%llx size:0x%x\n",
+		       name, buf->phy, buf->size);
+		return;
+	}
+
+	debugfs_create_file(name, S_IRUGO, npkt_dump_dir, buf,
+			    &npkt_dump_buf_fops);
+}
+
+static void npkt_bind_buffers(struct acpi_table_npkt *npkt,
+			      struct npkt_buf *bufs, struct msc *msc)
+{
+	int i;
+
+	for (i = 0; i < NPKT_NBUF; i++)
+		npkt_bind_buffer(i, &npkt->buffers[i], npkt->flags,
+				 &bufs[i], msc);
+}
+
+static void npkt_unbind_buffers(struct npkt_buf *bufs)
+{
+	int i;
+
+	for (i = 0; i < NPKT_NBUF; i++)
+		if (bufs[i].buf)
+			iounmap((__force void __iomem *)bufs[i].buf);
+}
+
+/**
+ * Prepare debugfs access to NPKT buffers.
+ */
+static void intel_th_npkt_init(struct msc *msc)
+{
+	acpi_status status;
+	struct acpi_table_npkt *npkt;
+
+	/* Associate NPKT to msc0 */
+	if (npkt_bufs || msc->index != 0)
+		return;
+
+	status = acpi_get_table(ACPI_SIG_NPKT, 0,
+				(struct acpi_table_header **)&npkt);
+	if (ACPI_FAILURE(status)) {
+		pr_warn("Failed to get NPKT table, %s\n",
+			acpi_format_exception(status));
+		return;
+	}
+
+	npkt_bufs = kzalloc(sizeof(struct npkt_buf) * NPKT_NBUF, GFP_KERNEL);
+	if (!npkt_bufs)
+		return;
+
+	npkt_dump_dir = debugfs_create_dir("npkt_dump", NULL);
+	if (!npkt_dump_dir) {
+		pr_err("npkt_dump debugfs create dir failed\n");
+		goto free_npkt_bufs;
+	}
+
+	npkt_bind_buffers(npkt, npkt_bufs, msc);
+
+	return;
+
+free_npkt_bufs:
+	kfree(npkt_bufs);
+	npkt_bufs = NULL;
+}
+
+/**
+ * Remove debugfs access to NPKT buffers and release resources.
+ */
+static void intel_th_npkt_remove(struct msc *msc)
+{
+	/* Only clean for msc 0 if necessary */
+	if (!npkt_bufs || msc->index != 0)
+		return;
+
+	npkt_unbind_buffers(npkt_bufs);
+	debugfs_remove_recursive(npkt_dump_dir);
+	kfree(npkt_bufs);
+	npkt_bufs = NULL;
+}
+
+/**
+ * First trace callback.
+ *
+ * If NPKT notified a CSR capture is in progress, stop it and update buffer
+ * write offset and wrap status.
+ */
+static void intel_th_msc_first_trace(struct intel_th_device *thdev)
+{
+	struct device *dev = &thdev->dev;
+	struct msc *msc = dev_get_drvdata(dev);
+	struct npkt_buf *buf;
+
+	if (!npkt_bufs || msc->index != 0)
+		return;
+
+	buf = &npkt_bufs[NPKT_CSR];
+	if (atomic_read(&buf->active))
+		stop_buffer_trace(buf);
+}
+
+#else /* !CONFIG_ACPI */
+static inline void intel_th_npkt_init(struct msc *msc) {}
+static inline void intel_th_npkt_remove(struct msc *msc) {}
+#define intel_th_msc_first_trace NULL
+#endif /* !CONFIG_ACPI */
 
 static int intel_th_msc_init(struct msc *msc)
 {
@@ -1513,26 +1778,20 @@ static int intel_th_msc_probe(struct intel_th_device *thdev)
 
 	dev_set_drvdata(dev, msc);
 
+	intel_th_npkt_init(msc);
+
 	return 0;
 }
 
 static void intel_th_msc_remove(struct intel_th_device *thdev)
 {
 	struct msc *msc = dev_get_drvdata(&thdev->dev);
-	int ret;
-
-	intel_th_msc_deactivate(thdev);
-
-	/*
-	 * Buffers should not be used at this point except if the
-	 * output character device is still open and the parent
-	 * device gets detached from its bus, which is a FIXME.
-	 */
-	ret = msc_buffer_free_unless_used(msc);
-	WARN_ON_ONCE(ret);
+	intel_th_npkt_remove(msc);
+	sysfs_remove_group(&thdev->dev.kobj, &msc_output_group);
 }
 
 static struct intel_th_driver intel_th_msc_driver = {
+	.first_trace	= intel_th_msc_first_trace,
 	.probe	= intel_th_msc_probe,
 	.remove	= intel_th_msc_remove,
 	.activate	= intel_th_msc_activate,
