@@ -2217,6 +2217,16 @@ int i915_ppgtt_init_hw(struct drm_i915_private *dev_priv)
 {
 	gtt_write_workarounds(dev_priv);
 
+	if (HAS_TRTT(dev_priv) && USES_FULL_48BIT_PPGTT(dev_priv)) {
+		/*
+		 * Globally enable TR-TT support in Hw.
+		 * Still TR-TT enabling on per context basis is required.
+		 * Non-trtt contexts are not affected by this setting.
+		 */
+		I915_WRITE(GEN9_TR_CHICKEN_BIT_VECTOR,
+			   GEN9_TRTT_BYPASS_DISABLE);
+	}
+
 	/* In the case of execlists, PPGTT is enabled by the context descriptor
 	 * and the PDPs are contained within the context itself.  We don't
 	 * need to do anything here. */
@@ -3364,6 +3374,56 @@ void i915_gem_restore_gtt_mappings(struct drm_i915_private *dev_priv)
 	}
 
 	i915_ggtt_invalidate(dev_priv);
+}
+
+void intel_trtt_context_destroy_vma(struct i915_vma *vma)
+{
+	WARN_ON(!list_empty(&vma->obj_link));
+	WARN_ON(!list_empty(&vma->vm_link));
+	WARN_ON(!list_empty(&vma->exec_list));
+
+	WARN_ON(!i915_vma_is_pinned(vma));
+
+	if (drm_mm_node_allocated(&vma->node))
+		drm_mm_remove_node(&vma->node);
+
+	i915_ppgtt_put(i915_vm_to_ppgtt(vma->vm));
+	kmem_cache_free(vma->vm->i915->vmas, vma);
+}
+
+struct i915_vma *
+intel_trtt_context_allocate_vma(struct i915_address_space *vm,
+				uint64_t segment_base_addr)
+{
+	struct i915_vma *vma;
+	int ret;
+
+	GEM_BUG_ON(vm->closed);
+
+	vma = kmem_cache_zalloc(vm->i915->vmas, GFP_KERNEL);
+	if (!vma)
+		return ERR_PTR(-ENOMEM);
+
+	INIT_LIST_HEAD(&vma->obj_link);
+	INIT_LIST_HEAD(&vma->vm_link);
+	INIT_LIST_HEAD(&vma->exec_list);
+	vma->vm = vm;
+	i915_ppgtt_get(i915_vm_to_ppgtt(vm));
+
+	/* Mark the vma as permanently pinned */
+	__i915_vma_pin(vma);
+
+	/* Reserve from the 48 bit PPGTT space */
+	vma->size = GEN9_TRTT_SEGMENT_SIZE;
+	ret = i915_gem_gtt_reserve(vma->vm, &vma->node,
+				   GEN9_TRTT_SEGMENT_SIZE, segment_base_addr,
+				   vma->node.color, 0);
+	if (ret) {
+		intel_trtt_context_destroy_vma(vma);
+		return ERR_PTR(ret);
+	}
+
+	return vma;
 }
 
 static struct scatterlist *

@@ -1423,7 +1423,15 @@ struct drm_i915_gem_context_param {
 #define I915_CONTEXT_PARAM_NO_ERROR_CAPTURE	0x4
 #define I915_CONTEXT_PARAM_BANNABLE	0x5
 #define I915_CONTEXT_PARAM_WATCHDOG	0x6
+#define I915_CONTEXT_PARAM_TRTT		0x7
 	__u64 value;
+};
+
+struct drm_i915_gem_context_trtt_param {
+	__u64 segment_base_addr;
+	__u64 l3_table_address;
+	__u32 invd_tile_val;
+	__u32 null_tile_val;
 };
 
 enum drm_i915_oa_format {

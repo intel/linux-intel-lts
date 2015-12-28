@@ -1809,6 +1809,91 @@ static int gen8_init_rcs_context(struct drm_i915_gem_request *req)
 	return i915_gem_render_state_emit(req);
 }
 
+static int gen9_init_rcs_context_trtt(struct drm_i915_gem_request *req)
+{
+	struct intel_ring *ring = req->ring;
+
+	int ret = intel_ring_begin(req, 2 + 2);
+	if (ret)
+		return ret;
+
+	intel_ring_emit(ring, MI_LOAD_REGISTER_IMM(1));
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_TABLE_CONTROL));
+	intel_ring_emit(ring, 0);
+
+	intel_ring_emit(ring, MI_NOOP);
+	intel_ring_advance(ring);
+
+	return 0;
+}
+
+static int gen9_init_rcs_context(struct drm_i915_gem_request *req)
+{
+	int ret;
+
+	/*
+	 * Explictily disable TR-TT at the start of a new context.
+	 * Otherwise on switching from a TR-TT context to a new Non TR-TT
+	 * context the TR-TT settings of the outgoing context could get
+	 * spilled on to the new incoming context as only the Ring Context
+	 * part is loaded on the first submission of a new context, due to
+	 * the setting of ENGINE_CTX_RESTORE_INHIBIT bit.
+	 */
+	ret = gen9_init_rcs_context_trtt(req);
+	if (ret)
+		return ret;
+
+	return gen8_init_rcs_context(req);
+}
+
+static int gen9_emit_trtt_regs(struct drm_i915_gem_request *req)
+{
+	struct i915_gem_context *ctx = req->ctx;
+	u64 masked_l3_gfx_address =
+		ctx->trtt_info.l3_table_address & GEN9_TRTT_L3_GFXADDR_MASK;
+	u32 trva_data_value =
+		(ctx->trtt_info.segment_base_addr >> GEN9_TRTT_SEG_SIZE_SHIFT) &
+		GEN9_TRVA_DATA_MASK;
+	const int num_lri_cmds = 6;
+	struct intel_ring *ring = req->ring;
+
+	/*
+	 * Emitting LRIs to update the TRTT registers is most reliable, instead
+	 * of directly updating the context image, as this will ensure that
+	 * update happens in a serialized manner for the context and also
+	 * lite-restore scenario will get handled.
+	 */
+	int ret = intel_ring_begin(req, num_lri_cmds * 2 + 2);
+	if (ret)
+		return ret;
+
+	intel_ring_emit(ring, MI_LOAD_REGISTER_IMM(num_lri_cmds));
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_L3_POINTER_DW0));
+	intel_ring_emit(ring, lower_32_bits(masked_l3_gfx_address));
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_L3_POINTER_DW1));
+	intel_ring_emit(ring, upper_32_bits(masked_l3_gfx_address));
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_NULL_TILE_REG));
+	intel_ring_emit(ring, ctx->trtt_info.null_tile_val);
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_INVD_TILE_REG));
+	intel_ring_emit(ring, ctx->trtt_info.invd_tile_val);
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_VA_MASKDATA));
+	intel_ring_emit(ring, GEN9_TRVA_MASK_VALUE | trva_data_value);
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_TABLE_CONTROL));
+	intel_ring_emit(ring, GEN9_TRTT_IN_GFX_VA_SPACE | GEN9_TRTT_ENABLE);
+
+	intel_ring_emit(ring, MI_NOOP);
+	intel_ring_advance(ring);
+
+	return 0;
+}
+
 /**
  * intel_logical_ring_cleanup() - deallocate the Engine Command Streamer
  * @engine: Engine Command Streamer.
@@ -1995,11 +2080,14 @@ int logical_render_ring_init(struct intel_engine_cs *engine)
 		engine->irq_keep_mask |= GT_RENDER_L3_PARITY_ERROR_INTERRUPT;
 
 	/* Override some for render ring. */
-	if (INTEL_GEN(dev_priv) >= 9)
+	if (INTEL_GEN(dev_priv) >= 9) {
 		engine->init_hw = gen9_init_render_ring;
-	else
+		engine->init_context = gen9_init_rcs_context;
+	} else {
 		engine->init_hw = gen8_init_render_ring;
-	engine->init_context = gen8_init_rcs_context;
+		engine->init_context = gen8_init_rcs_context;
+	}
+
 	engine->emit_flush = gen8_emit_flush_render;
 	engine->emit_breadcrumb = gen8_emit_breadcrumb_render;
 	engine->emit_breadcrumb_sz = gen8_emit_breadcrumb_render_sz;
@@ -2371,4 +2459,20 @@ void intel_lr_context_resume(struct drm_i915_private *dev_priv)
 			intel_ring_update_space(ce->ring);
 		}
 	}
+}
+
+int intel_lr_rcs_context_setup_trtt(struct i915_gem_context *ctx)
+{
+	struct intel_engine_cs *engine = ctx->i915->engine[RCS];
+	struct drm_i915_gem_request *req;
+	int ret;
+
+	req = i915_gem_request_alloc(engine, ctx);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
+	ret = gen9_emit_trtt_regs(req);
+
+	i915_add_request(req);
+	return ret;
 }

@@ -114,6 +114,7 @@ static const struct intel_device_info intel_i915gm_info = {
 	.supports_tv = 1,
 	.has_fbc = 1,
 	.hws_needs_physical = 1,
+	.has_trtt = 1,
 	.unfenced_needs_alignment = 1,
 };
 
@@ -358,6 +359,7 @@ static const struct intel_device_info intel_skylake_info = {
 	.gen = 9,
 	.has_csr = 1,
 	.has_guc = 1,
+	.has_trtt = 1,
 	.ddb_size = 896,
 };
 
@@ -367,6 +369,7 @@ static const struct intel_device_info intel_skylake_gt3_info = {
 	.gen = 9,
 	.has_csr = 1,
 	.has_guc = 1,
+	.has_trtt = 1,
 	.ddb_size = 896,
 	.ring_mask = RENDER_RING | BSD_RING | BLT_RING | VEBOX_RING | BSD2_RING,
 };
@@ -404,6 +407,7 @@ static const struct intel_device_info intel_broxton_info = {
 	GEN9_LP_FEATURES,
 	.platform = INTEL_BROXTON,
 	.ddb_size = 512,
+	.has_trtt = 1,
 };
 
 static const struct intel_device_info intel_geminilake_info = {

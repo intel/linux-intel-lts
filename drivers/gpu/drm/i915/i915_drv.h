@@ -867,6 +867,7 @@ struct i915_rpm {
 	func(has_resource_streamer); \
 	func(has_runtime_pm); \
 	func(has_snoop); \
+	func(has_trtt); \
 	func(unfenced_needs_alignment); \
 	func(cursor_needs_physical); \
 	func(hws_needs_physical); \
@@ -2972,6 +2973,8 @@ intel_info(const struct drm_i915_private *dev_priv)
 #define HAS_RESOURCE_STREAMER(dev_priv) ((dev_priv)->info.has_resource_streamer)
 
 #define HAS_POOLED_EU(dev_priv)	((dev_priv)->info.has_pooled_eu)
+
+#define HAS_TRTT(dev)		(INTEL_INFO(dev)->has_trtt)
 
 #define INTEL_PCH_DEVICE_ID_MASK		0xff00
 #define INTEL_PCH_IBX_DEVICE_ID_TYPE		0x3b00
