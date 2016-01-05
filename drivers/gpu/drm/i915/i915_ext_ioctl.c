@@ -29,6 +29,7 @@
 #include "i915_drv.h"
 #include "i915_ext_ioctl.h"
 #include "../drm_internal.h"
+#include "i915_gem_userdata.h"
 
 const struct drm_ioctl_desc i915_ext_ioctls[];
 int i915_max_ext_ioctl;
@@ -165,6 +166,8 @@ err_i1:
 	}
 
 const struct drm_ioctl_desc i915_ext_ioctls[] = {
+	EXT_IOCTL_DEF(DRM_IOCTL_I915_EXT_USERDATA, i915_gem_userdata_ioctl,
+			  DRM_UNLOCKED|DRM_CONTROL_ALLOW|DRM_RENDER_ALLOW),
 };
 
 int i915_max_ext_ioctl = ARRAY_SIZE(i915_ext_ioctls);
