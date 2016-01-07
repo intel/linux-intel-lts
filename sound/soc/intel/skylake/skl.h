@@ -193,8 +193,7 @@ struct skl_module_cfg;
 
 #ifdef CONFIG_DEBUG_FS
 
-struct skl_debug *skl_debugfs_init(struct skl *skl,
-					struct platform_info *dbg_info);
+struct skl_debug *skl_debugfs_init(struct skl *skl);
 void skl_debugfs_exit(struct skl_debug *d);
 struct nhlt_specific_cfg
 *skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance,
@@ -202,17 +201,19 @@ struct nhlt_specific_cfg
 void skl_debug_init_module(struct skl_debug *d,
 			struct snd_soc_dapm_widget *w,
 			struct skl_module_cfg *mconfig);
+
+void skl_update_dsp_debug_info(struct skl_debug *d,
+		struct platform_info *dbg_info);
+
 #else
 
 struct skl_debug {
 }
 
-struct skl_debug *skl_debugfs_init(struct skl *skl,
-					struct platform_info *dbg_info)
+struct skl_debug *skl_debugfs_init(struct skl *skl)
 {
 	return NULL;
 }
-
 void skl_debugfs_exit(struct skl_debug *d)
 {
 }
@@ -226,6 +227,11 @@ struct nhlt_specific_cfg
 void skl_debug_init_module(struct skl_debug *d,
 			struct snd_soc_dapm_widget *w,
 			struct skl_module_cfg *mconfig)
+{
+}
+
+void skl_update_dsp_debug_info(struct skl_debug *d,
+		struct platform_info *dbg_info)
 {
 }
 

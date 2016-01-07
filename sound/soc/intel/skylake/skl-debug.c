@@ -732,8 +732,15 @@ static const struct file_operations soft_regs_ctrl_fops = {
 	.llseek = default_llseek,
 };
 
-struct skl_debug *skl_debugfs_init(struct skl *skl,
-					struct platform_info *dbg_info)
+void skl_update_dsp_debug_info(struct skl_debug *d,
+				struct platform_info *dbg_info)
+{
+	d->in_base = dbg_info->in_base;
+	d->inbx_sz = dbg_info->in_size;
+	d->w0_stat_sz = dbg_info->w0_stat_sz;
+}
+
+struct skl_debug *skl_debugfs_init(struct skl *skl)
 {
 	struct skl_debug *d;
 
@@ -752,9 +759,6 @@ struct skl_debug *skl_debugfs_init(struct skl *skl,
 
 	d->skl = skl;
 	d->dev = &skl->pci->dev;
-	d->in_base = dbg_info->in_base;
-	d->inbx_sz = dbg_info->in_size;
-	d->w0_stat_sz = dbg_info->w0_stat_sz;
 
 	/* now create the NHLT dir */
 	d->nhlt =  debugfs_create_dir("nhlt", d->fs);
@@ -779,7 +783,6 @@ struct skl_debug *skl_debugfs_init(struct skl *skl,
 	skl_init_nhlt(d);
 	skl_init_adsp(d);
 	skl_init_mod_set_get(d);
-	kfree(dbg_info);
 
 	return d;
 
