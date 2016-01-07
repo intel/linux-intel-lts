@@ -925,7 +925,6 @@ static void mdd_deactivate(struct dvct_source_device *client)
 	struct msu_dvc_dev *mdd = dtc_to_mdd(client);
 
 	MDD_F_DEBUG();
-	mdd->th_dev = NULL;
 	mdd->dtc_status = NULL;
 }
 
