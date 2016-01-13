@@ -1786,6 +1786,23 @@ config EFI_MIXED
 
 	   If unsure, say N.
 
+if X86_64
+config EFI_INTERRUPTIBLE
+	bool "Interruptible Efi Runtime Services"
+	depends on EFI && !EFI_VARS_PSTORE
+	default n
+	---help---
+	  Only use this if you really know what you are doing, you
+	  possibly risk to break your BIOS.
+
+	  This is an interruptible implementation of efi runtime
+	  services wrappers. If you say Y, BIOS code could be
+	  interrupted and preempted as a standard process. Enable this
+	  only if you are sure that your BIOS will support
+	  interruptible efi calls
+	  In doubt, say "N".
+endif
+
 config SECCOMP
 	def_bool y
 	prompt "Enable seccomp to safely compute untrusted bytecode"
