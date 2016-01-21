@@ -117,7 +117,7 @@ static const struct pci_device_id intel_th_pci_id_table[] = {
 		.driver_data = (kernel_ulong_t)0,
 	},
 	{
-		PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0X1a80),
+		PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x1a8e),
 		.driver_data = (kernel_ulong_t)0,
 	},
 	{ 0 },
