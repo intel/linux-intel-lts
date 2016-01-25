@@ -282,6 +282,17 @@ static const struct snd_soc_dapm_route cnl_map[] = {
 	{ "DMIC01 Rx", NULL, "Capture" },
 	{ "dmic01_hifi", NULL, "DMIC01 Rx" },
 
+	/* ssp2 path */
+	{"Dummy Playback", NULL, "ssp2 Tx"},
+	{"ssp2 Tx", NULL, "ssp2_out"},
+
+	{"ssp2 Rx", NULL, "Dummy Capture"},
+	{"ssp2_in", NULL, "ssp2 Rx"},
+
+	/* ssp1 path */
+	{"Dummy Playback", NULL, "ssp1 Tx"},
+	{"ssp1 Tx", NULL, "ssp1_out"},
+
 	/* SWM map link the SWM outs to codec AIF */
 	{ "AIF1 Playback", NULL, "ssp0 Tx"},
 	{ "ssp0 Tx", NULL, "codec1_out"},
@@ -509,8 +520,20 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.dpcm_capture = 1,
 	},
 	{
-		.name = "dmic01",
+		.name = "SSP1-Codec",
 		.id = 2,
+		.cpu_dai_name = "SSP1 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.be_hw_params_fixup = cnl_florida_codec_fixup,
+		.ignore_suspend = 1,
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+	},
+	{
+		.name = "dmic01",
+		.id = 3,
 		.cpu_dai_name = "DMIC01 Pin",
 		.codec_name = "dmic-codec",
 		.codec_dai_name = "dmic-hifi",
@@ -519,6 +542,41 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.be_hw_params_fixup = cnl_dmic_fixup,
+	},
+	/* codec-codec link */
+	{
+		.name = "CNL SSP0-Loop Port",
+		.stream_name = "CNL SSP0-Loop",
+		.cpu_dai_name = "SSP0 Pin",
+		.platform_name = "0000:02:18.0",
+		.codec_name = "wm5110-codec",
+		.codec_dai_name = "wm5110-aif1",
+		.params = &dai_params_codec,
+		.dsp_loopback = true,
+		.dai_fmt = SND_SOC_DAIFMT_DSP_A |
+			SND_SOC_DAIFMT_NB_NF |
+			SND_SOC_DAIFMT_CBS_CFS,
+	},
+	{
+		.name = "CNL SSP2-Loop Port",
+		.stream_name = "CNL SSP2-Loop",
+		.cpu_dai_name = "SSP2 Pin",
+		.platform_name = "0000:02:18.0",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.params	= &dai_params_modem,
+		.dsp_loopback = true,
+		.ops = &cnl_florida_ops,
+	},
+	{
+		.name = "CNL SSP1-Loop Port",
+		.stream_name = "CNL SSP1-Loop",
+		.cpu_dai_name = "SSP1 Pin",
+		.platform_name = "0000:02:18.0",
+		.codec_dai_name	= "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.params = &dai_params_bt,
+		.dsp_loopback = true,
 	},
 };
 
