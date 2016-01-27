@@ -15,6 +15,7 @@
 
 #include <linux/pci.h>
 #include <linux/debugfs.h>
+#include <linux/pm_runtime.h>
 #include <sound/soc.h>
 #include "skl.h"
 #include "skl-nhlt.h"
@@ -732,6 +733,73 @@ static const struct file_operations soft_regs_ctrl_fops = {
 	.llseek = default_llseek,
 };
 
+static ssize_t core_power_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct skl_debug *d = file->private_data;
+	struct skl_sst *skl_ctx = d->skl->skl_sst;
+	struct sst_dsp *ctx = skl_ctx->dsp;
+	char buf[16];
+	int len = min(count, (sizeof(buf) - 1));
+	unsigned int core_id;
+	char *ptr;
+	int wake;
+	int err;
+
+
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[len] = 0;
+
+	/*
+	 * The buffer content should be "wake n" or "sleep n",
+	 * where n is the core id
+	 */
+	ptr = strnstr(buf, "wake", len);
+	if (ptr) {
+		ptr = ptr + 5;
+		wake = 1;
+	} else {
+		ptr = strnstr(buf, "sleep", len);
+		if (ptr) {
+			ptr = ptr + 6;
+			wake = 0;
+		} else
+			return -EINVAL;
+	}
+
+	err = kstrtouint(ptr, 10, &core_id);
+	if (err) {
+		dev_err(d->dev, "%s: Debugfs kstrtouint returned error = %d\n",
+				__func__, err);
+		return err;
+	}
+
+	dev_info(d->dev, "Debugfs: %s %d\n", wake ? "wake" : "sleep", core_id);
+
+	if (wake) {
+		if (core_id == SKL_DSP_CORE0_ID)
+			pm_runtime_get_sync(d->dev);
+		else
+			skl_dsp_get_core(ctx, core_id);
+	} else {
+		if (core_id == SKL_DSP_CORE0_ID)
+			pm_runtime_put_sync(d->dev);
+		else
+			skl_dsp_put_core(ctx, core_id);
+	}
+
+	/* Userspace has been fiddling around behind the kernel's back */
+	add_taint(TAINT_USER, LOCKDEP_NOW_UNRELIABLE);
+
+	return len;
+}
+static const struct file_operations core_power_fops = {
+	.open = simple_open,
+	.write = core_power_write,
+	.llseek = default_llseek,
+};
+
 void skl_update_dsp_debug_info(struct skl_debug *d,
 				struct platform_info *dbg_info)
 {
@@ -777,6 +845,12 @@ struct skl_debug *skl_debugfs_init(struct skl *skl)
 	if (!debugfs_create_file("fw_soft_regs_rd", 0644, d->fs, d,
 				 &soft_regs_ctrl_fops)) {
 		dev_err(d->dev, "fw soft regs control debugfs init failed\n");
+		goto err;
+	}
+
+	if (!debugfs_create_file("core_power", 0644, d->fs, d,
+				 &core_power_fops)) {
+		dev_err(d->dev, "core power debugfs init failed\n");
 		goto err;
 	}
 
