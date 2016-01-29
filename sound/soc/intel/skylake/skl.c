@@ -435,6 +435,15 @@ static int skl_free(struct hdac_ext_bus *ebus)
 	return 0;
 }
 
+/* TODO fill codec acpi name */
+static struct sst_acpi_mach sst_cnl_devdata[] = {
+	{
+		.id = "dummy",
+		.drv_name = "cnl_florida",
+		.fw_filename = "intel/dsp_fw_cnl.bin",
+	},
+};
+
 static int skl_machine_device_register(struct skl *skl, void *driver_data)
 {
 	struct hdac_bus *bus = ebus_to_hbus(&skl->ebus);
@@ -445,8 +454,15 @@ static int skl_machine_device_register(struct skl *skl, void *driver_data)
 	mach = sst_acpi_find_machine(mach);
 	if (mach == NULL) {
 		dev_err(bus->dev, "No matching machine driver found\n");
+		if (skl->pci->device == 0x9df0) {
+			mach = sst_cnl_devdata;
+			dev_warn(bus->dev, "Taking %s as machine driver for CNL FPGA platform\n",
+				 mach->drv_name);
+			goto cnl_continue;
+		}
 		return -ENODEV;
 	}
+cnl_continue:
 	skl->fw_name = mach->fw_filename;
 
 	pdev = platform_device_alloc(mach->drv_name, -1);
@@ -882,15 +898,6 @@ static struct sst_codecs skl_codecs = { 1, {"NAU88L25"} };
 static struct sst_codecs kbl_codecs = { 1, {"NAU88L25"} };
 static struct sst_codecs bxt_codecs = { 1, {"MX98357A"} };
 static struct sst_codecs kbl_poppy_codecs = { 1, {"10EC5663"} };
-
-/* TODO fill codec acpi name */
-static struct sst_acpi_mach sst_cnl_devdata[] = {
-	{
-		.id = "dummy",
-		.drv_name = "cnl_florida",
-		.fw_filename = "intel/dsp_fw_cnl.bin",
-	},
-};
 
 static struct sst_acpi_mach sst_skl_devdata[] = {
 	{
