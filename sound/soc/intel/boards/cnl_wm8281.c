@@ -456,6 +456,19 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.dpcm_capture = 1,
 		.ops = &cnl_florida_ops,
 	},
+	{
+		.name = "CNL Deepbuffer Port",
+		.stream_name = "Deep Buffer Audio",
+		.cpu_dai_name = "Deepbuffer Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.dpcm_playback = 1,
+		.ignore_suspend = 1,
+		.nonatomic = 1,
+		.dynamic = 1,
+		.ops = &cnl_florida_ops,
+	},
 	/* back ends */
 	{
 		.name = "SSP0-Codec",
