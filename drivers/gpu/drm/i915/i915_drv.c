@@ -1831,6 +1831,8 @@ void i915_reset(struct drm_i915_private *dev_priv)
 	if (!test_and_clear_bit(I915_RESET_IN_PROGRESS, &error->flags))
 		return;
 
+	DRM_DEBUG_DRIVER("resetting chip\n");
+
 	/* Clear any previous failed attempts at recovery. Time to try again. */
 	__clear_bit(I915_WEDGED, &error->flags);
 	error->reset_count++;
@@ -1887,6 +1889,19 @@ wakeup:
 error:
 	i915_gem_set_wedged(dev_priv);
 	goto wakeup;
+}
+
+/**
+ * i915_reset_engine - reset GPU engine to recover from a hang
+ * @engine: engine to reset
+ *
+ * Reset a specific GPU engine. Useful if a hang is detected.
+ * Returns zero on successful reset or otherwise an error code.
+ */
+int i915_reset_engine(struct intel_engine_cs *engine)
+{
+	/* FIXME: replace me with engine reset sequence */
+	return -ENODEV;
 }
 
 static int i915_pm_suspend(struct device *kdev)
