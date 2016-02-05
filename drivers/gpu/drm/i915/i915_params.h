@@ -51,6 +51,7 @@
 	func(int, use_mmio_flip); \
 	func(int, mmio_debug); \
 	func(int, edp_vswing); \
+	func(int, reset); \
 	func(unsigned int, inject_load_failure); \
 	func(int, hpd_sense_invert); \
 	func(int, memtrack_debug); \
@@ -62,7 +63,6 @@
 	func(bool, prefault_disable); \
 	func(bool, load_detect_test); \
 	func(bool, force_reset_modeset_test); \
-	func(bool, reset); \
 	func(bool, error_capture); \
 	func(bool, disable_display); \
 	func(bool, verbose_state_checks); \
