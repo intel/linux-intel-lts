@@ -469,6 +469,18 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.dynamic = 1,
 		.ops = &cnl_florida_ops,
 	},
+	{
+		.name = "CNL Reference Port",
+		.stream_name = "Reference Capture",
+		.cpu_dai_name = "Reference Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.dpcm_capture = 1,
+		.ignore_suspend = 1,
+		.nonatomic = 1,
+		.dynamic = 1,
+	},
 	/* back ends */
 	{
 		.name = "SSP0-Codec",
