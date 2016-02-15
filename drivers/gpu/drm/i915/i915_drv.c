@@ -1908,6 +1908,7 @@ int i915_reset_engine(struct intel_engine_cs *engine)
 {
 	int ret;
 	struct drm_i915_private *dev_priv = engine->i915;
+	struct i915_gpu_error *error = &dev_priv->gpu_error;
 	struct drm_i915_gem_request *active_request;
 
 	DRM_DEBUG_DRIVER("resetting %s\n", engine->name);
@@ -1963,7 +1964,10 @@ int i915_reset_engine(struct intel_engine_cs *engine)
 
 	/* replay remaining requests in the queue */
 	ret = engine->init_hw(engine);
+	if (ret)
+		goto out;
 
+	error->reset_engine_count[engine->id]++;
 out:
 	return ret;
 
