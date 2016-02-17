@@ -277,6 +277,16 @@ static const struct snd_soc_dapm_widget cnl_widgets[] = {
 
 };
 
+static int cnl_dmic_fixup(struct snd_soc_pcm_runtime *rtd,
+				struct snd_pcm_hw_params *params)
+{
+	struct snd_interval *channels = hw_param_interval(params,
+						SNDRV_PCM_HW_PARAM_CHANNELS);
+	channels->min = channels->max = 2;
+
+	return 0;
+}
+
 static const struct snd_soc_dapm_route cnl_map[] = {
 	/* Headphones */
 	{ "Headphones", NULL, "HPOUT1L" },
@@ -288,7 +298,6 @@ static const struct snd_soc_dapm_route cnl_map[] = {
 	{"Ext Spk", NULL, "SPKOUTRP"},
 	{"Ext Spk", NULL, "SPKOUTRN"},
 
-	/* TODO: Currently MICBIAS is set according to WM8281 AOB for MOFD */
 	{ "AMIC", NULL, "MICBIAS2" },
 	{ "AMIC", NULL, "MICBIAS1" },
 
@@ -567,9 +576,8 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.ignore_suspend = 1,
 		.no_pcm = 1,
 		.dpcm_capture = 1,
+		.be_hw_params_fixup = cnl_dmic_fixup,
 	},
-
-
 };
 
 #ifdef CONFIG_PM_SLEEP
