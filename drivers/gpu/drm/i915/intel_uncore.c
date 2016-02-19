@@ -1809,6 +1809,26 @@ int intel_guc_reset(struct drm_i915_private *dev_priv)
 	return ret;
 }
 
+/*
+ * On gen8+ a reset request has to be issued via the reset control register
+ * before a GPU engine can be reset in order to stop the command streamer
+ * and idle the engine. This replaces the legacy way of stopping an engine
+ * by writing to the stop ring bit in the MI_MODE register.
+ */
+int intel_reset_engine_start(struct intel_engine_cs *engine)
+{
+	return gen8_reset_engine_start(engine);
+}
+
+/*
+ * It is possible to back off from a previously issued reset request by simply
+ * clearing the reset request bit in the reset control register.
+ */
+void intel_reset_engine_cancel(struct intel_engine_cs *engine)
+{
+	gen8_reset_engine_cancel(engine);
+}
+
 bool intel_uncore_unclaimed_mmio(struct drm_i915_private *dev_priv)
 {
 	return check_for_unclaimed_mmio(dev_priv);

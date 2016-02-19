@@ -1839,7 +1839,7 @@ void i915_reset(struct drm_i915_private *dev_priv)
 
 	pr_notice("drm/i915: Resetting chip after gpu hang\n");
 	disable_irq(dev_priv->drm.irq);
-	ret = i915_gem_reset_prepare(dev_priv);
+	ret = i915_gem_reset_prepare(dev_priv, ALL_ENGINES);
 	if (ret) {
 		DRM_ERROR("GPU recovery failed\n");
 		intel_gpu_reset(dev_priv, ALL_ENGINES);
@@ -1881,7 +1881,7 @@ void i915_reset(struct drm_i915_private *dev_priv)
 	i915_queue_hangcheck(dev_priv);
 
 wakeup:
-	i915_gem_reset_finish(dev_priv);
+	i915_gem_reset_finish(dev_priv, ALL_ENGINES);
 	enable_irq(dev_priv->drm.irq);
 	wake_up_bit(&error->flags, I915_RESET_IN_PROGRESS);
 	return;
@@ -1897,11 +1897,58 @@ error:
  *
  * Reset a specific GPU engine. Useful if a hang is detected.
  * Returns zero on successful reset or otherwise an error code.
+ *
+ * Procedure is:
+ *  - identifies the request that caused the hang and it is dropped
+ *  - force engine to idle: this is done by issuing a reset request
+ *  - reset engine
+ *  - restart submissions to the engine
  */
 int i915_reset_engine(struct intel_engine_cs *engine)
 {
-	/* FIXME: replace me with engine reset sequence */
-	return -ENODEV;
+	int ret;
+	struct drm_i915_private *dev_priv = engine->i915;
+
+	DRM_DEBUG_DRIVER("resetting %s\n", engine->name);
+
+	ret = i915_gem_reset_prepare_engine(engine);
+	if (ret) {
+		DRM_ERROR("Previous reset failed - promote to full reset\n");
+		goto out;
+	}
+
+	/*
+	 * the request that caused the hang is stuck on elsp, identify the
+	 * active request and drop it, adjust head to skip the offending
+	 * request to resume executing remaining requests in the queue.
+	 */
+	i915_gem_reset_engine(engine);
+
+	/* forcing engine to idle */
+	ret = intel_reset_engine_start(engine);
+	if (ret) {
+		DRM_ERROR("Failed to disable %s\n", engine->name);
+		goto out;
+	}
+
+	/* finally, reset engine */
+	ret = intel_gpu_reset(dev_priv, intel_engine_flag(engine));
+	if (ret) {
+		DRM_ERROR("Failed to reset %s, ret=%d\n", engine->name, ret);
+		intel_reset_engine_cancel(engine);
+		goto out;
+	}
+
+	/* be sure the request reset bit gets cleared */
+	intel_reset_engine_cancel(engine);
+
+	i915_gem_reset_finish_engine(engine);
+
+	/* replay remaining requests in the queue */
+	ret = engine->init_hw(engine);
+
+out:
+	return ret;
 }
 
 static int i915_pm_suspend(struct device *kdev)
