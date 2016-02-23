@@ -1925,7 +1925,10 @@ struct i915_wa_reg {
 
 struct i915_workarounds {
 	struct i915_wa_reg reg[I915_MAX_WA_REGS];
+	/* list of registers (and their values) that GuC will have to restore */
+	struct i915_wa_reg guc_reg[GUC_REGSET_MAX_REGISTERS];
 	u32 count;
+	u32 guc_count;
 	u32 hw_whitelist_count[I915_NUM_ENGINES];
 };
 
