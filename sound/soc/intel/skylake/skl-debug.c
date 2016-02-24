@@ -32,6 +32,8 @@
 #define MOD_BUF (2 * PAGE_SIZE)
 #define fw_reg_size  0x60
 #define FW_REG_BUF (1 * PAGE_SIZE)
+#define MAX_TLV_PAYLOAD_SIZE	4088
+#define EXTENDED_PARAMS_SZ	2
 
 #define DEFAULT_SZ 100
 #define DEFAULT_ID 0XFF
@@ -41,6 +43,7 @@
 #define HARDWARE_CONFIG_SZ	0x84
 #define MODULES_INFO_SZ		0xa70
 #define PIPELINE_LIST_INFO_SZ	0xc
+#define PIPELINE_PROPS_SZ	0x60
 #define SCHEDULERS_INFO_SZ	0x34
 #define GATEWAYS_INFO_SZ	0x4e4
 #define MEMORY_STATE_INFO_SZ	0x1000
@@ -506,7 +509,7 @@ static ssize_t adsp_control_write(struct file *file,
 	struct skl_sst *ctx = d->skl->skl_sst;
 	struct skl_ipc_large_config_msg msg;
 	char id[8];
-	u32 tx_data;
+	u32 tx_data[EXTENDED_PARAMS_SZ];
 	int j = 0, bufsize, tx_param = 0, tx_param_id;
 	int len = min(count, (sizeof(buf)-1));
 
@@ -538,7 +541,8 @@ static ssize_t adsp_control_write(struct file *file,
 
 	if (tx_param == 1) {
 		err = kstrtouint(id, 10, &tx_param_id);
-		tx_data = (tx_param_id << 8) | dsp_property;
+		tx_data[0] = (tx_param_id << 8) | dsp_property;
+		tx_data[1] = MAX_TLV_PAYLOAD_SIZE;
 	}
 
 	ipc_data = kzalloc(DSP_BUF, GFP_ATOMIC);
@@ -573,6 +577,10 @@ static ssize_t adsp_control_write(struct file *file,
 	replysz = PIPELINE_LIST_INFO_SZ;
 	break;
 
+	case PIPELINE_PROPS:
+	replysz = PIPELINE_PROPS_SZ;
+	break;
+
 	case SCHEDULERS_INFO:
 	replysz = SCHEDULERS_INFO_SZ;
 	break;
@@ -597,13 +605,18 @@ static ssize_t adsp_control_write(struct file *file,
 
 	msg.module_id = 0x0;
 	msg.instance_id = 0x0;
-	msg.large_param_id = dsp_property;
+
+	if (tx_param == 1)
+		msg.large_param_id = 0xFF;
+	else
+		msg.large_param_id = dsp_property;
+
 	msg.param_data_size = replysz;
 
 	if (tx_param == 1)
 		skl_ipc_get_large_config(&ctx->ipc, &msg,
-				ipc_data, &tx_data,
-				sizeof(u32), NULL);
+				ipc_data, tx_data,
+				EXTENDED_PARAMS_SZ*sizeof(u32), NULL);
 	else
 		skl_ipc_get_large_config(&ctx->ipc, &msg,
 				ipc_data, NULL,
