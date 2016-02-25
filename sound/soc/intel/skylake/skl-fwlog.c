@@ -115,8 +115,6 @@ void skl_dsp_write_log(struct sst_dsp *sst, void __iomem *src, int core,
 	}
 	buff->total_avail += count;
 }
-EXPORT_SYMBOL_GPL(skl_dsp_write_log);
-
 
 int skl_dsp_copy_log_user(struct sst_dsp *sst, int core,
 				void __user *dest, int count)
