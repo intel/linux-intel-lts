@@ -13,3 +13,4 @@ int skl_dsp_copy_log_user(struct sst_dsp *sst, int core, void __user *dest,
 void skl_dsp_get_log_buff(struct sst_dsp *sst, int core);
 void skl_dsp_put_log_buff(struct sst_dsp *sst, int core);
 void skl_dsp_done_log_buffer(struct sst_dsp *sst, int core);
+int skl_dsp_get_buff_users(struct sst_dsp *sst, int core);
