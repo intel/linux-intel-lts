@@ -812,7 +812,6 @@ static int skl_trace_compr_free(struct snd_compr_stream *stream,
 	struct sst_generic_ipc *ipc = &skl_sst->ipc;
 	int core = skl_get_compr_core(stream);
 	int is_enabled = sst->trace_wind.flags & BIT(core);
-	int ret;
 
 	if (!skl_is_core_valid(core))
 		return -EINVAL;
