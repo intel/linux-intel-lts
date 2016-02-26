@@ -720,6 +720,14 @@ static int skl_get_compr_core(struct snd_compr_stream *stream)
 		return INT_MIN;
 }
 
+static int skl_is_logging_core(int core)
+{
+	if (core == 0 || core == 1)
+		return 1;
+	else
+		return 0;
+}
+
 static struct skl_sst *skl_get_sst_compr(struct snd_compr_stream *stream)
 {
 	struct snd_soc_pcm_runtime *rtd = stream->private_data;
@@ -732,7 +740,8 @@ static struct skl_sst *skl_get_sst_compr(struct snd_compr_stream *stream)
 }
 
 static int skl_trace_compr_set_params(struct snd_compr_stream *stream,
-					struct snd_compr_params *params)
+					struct snd_compr_params *params,
+						struct snd_soc_dai *cpu_dai)
 {
 	int ret;
 	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
@@ -768,7 +777,8 @@ static int skl_trace_compr_set_params(struct snd_compr_stream *stream,
 }
 
 static int skl_trace_compr_tstamp(struct snd_compr_stream *stream,
-					struct snd_compr_tstamp *tstamp)
+					struct snd_compr_tstamp *tstamp,
+						struct snd_soc_dai *cpu_dai)
 {
 	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
 	struct sst_dsp *sst = skl_sst->dsp;
@@ -788,13 +798,14 @@ static int skl_trace_compr_copy(struct snd_compr_stream *stream,
 	struct sst_dsp *sst = skl_sst->dsp;
 	int core = skl_get_compr_core(stream);
 
-	if (!skl_is_core_valid(core))
-		return -EINVAL;
-
-	return skl_dsp_copy_log_user(sst, core, dest, count);
+	if (skl_is_logging_core(core))
+		return skl_dsp_copy_log_user(sst, core, dest, count);
+	else
+		return 0;
 }
 
-static int skl_trace_compr_free(struct snd_compr_stream *stream)
+static int skl_trace_compr_free(struct snd_compr_stream *stream,
+						struct snd_soc_dai *cpu_dai)
 {
 	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
 	struct sst_dsp *sst = skl_sst->dsp;
@@ -814,9 +825,12 @@ static int skl_trace_compr_free(struct snd_compr_stream *stream)
 	return 0;
 }
 
-static struct snd_compr_ops skl_trace_compr_ops = {
-	.free = skl_trace_compr_free,
+static struct snd_compr_ops skl_platform_compr_ops = {
 	.copy = skl_trace_compr_copy,
+};
+
+static struct snd_soc_cdai_ops skl_trace_compr_ops = {
+	.shutdown = skl_trace_compr_free,
 	.pointer = skl_trace_compr_tstamp,
 	.set_params = skl_trace_compr_set_params,
 };
@@ -858,6 +872,7 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 {
 	.name = "TraceBuffer0 Pin",
 	.compress_dai = 1,
+	.cops = &skl_trace_compr_ops,
 	.capture = {
 		.stream_name = "TraceBuffer Capture",
 		.channels_min = HDA_MONO,
@@ -867,6 +882,7 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 {
 	.name = "TraceBuffer1 Pin",
 	.compress_dai = 1,
+	.cops = &skl_trace_compr_ops,
 	.capture = {
 		.stream_name = "TraceBuffer1 Capture",
 		.channels_min = HDA_MONO,
@@ -1609,7 +1625,7 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 static struct snd_soc_platform_driver skl_platform_drv  = {
 	.probe		= skl_platform_soc_probe,
 	.ops		= &skl_platform_ops,
-	.compr_ops	= &skl_trace_compr_ops,
+	.compr_ops	= &skl_platform_compr_ops,
 	.pcm_new	= skl_pcm_new,
 	.pcm_free	= skl_pcm_free,
 };
