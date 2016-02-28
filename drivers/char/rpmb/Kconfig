@@ -13,3 +13,13 @@ config RPMB_INTF_DEV
 	help
 	  Say yes here if you want to access RPMB from user space
 	  via character device interface /dev/rpmb%d
+
+
+config RPMB_SIM
+	tristate "RPMB partition device simulator"
+	default n
+	select RPMB
+	select CRYPTO_SHA256
+	select CRYPTO_HMAC
+	help
+	  RPMB partition simulator used for testing the RPMB subsystem
