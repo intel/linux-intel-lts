@@ -1694,10 +1694,15 @@ int intel_wait_for_register(struct drm_i915_private *dev_priv,
 static int gen8_reset_engine_start(struct intel_engine_cs *engine)
 {
 	struct drm_i915_private *dev_priv = engine->i915;
+	const i915_reg_t reset_ctrl = RING_RESET_CTL(engine->mmio_base);
+	const u32 ready = RESET_CTL_REQUEST_RESET | RESET_CTL_READY_TO_RESET;
 	int ret;
 
-	I915_WRITE_FW(RING_RESET_CTL(engine->mmio_base),
-		      _MASKED_BIT_ENABLE(RESET_CTL_REQUEST_RESET));
+	/* If engine has been already prepared, we can shortcut here */
+	if ((I915_READ_FW(reset_ctrl) & ready) == ready)
+		return 0;
+
+	I915_WRITE_FW(reset_ctrl, _MASKED_BIT_ENABLE(RESET_CTL_REQUEST_RESET));
 
 	ret = intel_wait_for_register_fw(dev_priv,
 					 RING_RESET_CTL(engine->mmio_base),
