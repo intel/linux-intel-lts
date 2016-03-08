@@ -212,6 +212,7 @@ source "drivers/tee/Kconfig"
 source "drivers/mux/Kconfig"
 
 source "drivers/opp/Kconfig"
+source "drivers/sdw/Kconfig"
 
 source "drivers/visorbus/Kconfig"
 
