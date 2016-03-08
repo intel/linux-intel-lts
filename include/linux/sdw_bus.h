@@ -1023,4 +1023,41 @@ int __sdw_mstr_driver_register(struct module *owner,
  */
 void sdw_mstr_driver_unregister(struct sdw_mstr_driver *drv);
 
+/**
+ * __sdw_slave_driver_register: SoundWire Slave driver registration with
+ *				SDW bus. This API will register the Slave
+ *				driver with the SoundWire bus. It is typically
+ *				called from the driver's module-init function.
+ * @drv: Driver to be associated with Slave.
+ */
+int __sdw_slave_driver_register(struct module *owner,
+					struct sdw_slave_driver *drv);
+#define sdw_slave_driver_register(drv) \
+			__sdw_slave_driver_register(THIS_MODULE, drv)
+
+/**
+ * sdw_register_slave_capabilities: Register slave device capabilties to the
+ *				bus driver. Since bus driver handles bunch
+ *				of slave register programming it should
+ *				be aware of slave device capabilties.
+ *				Slave device is attached to bus based on
+ *				enumeration. Once slave driver is attached
+ *				to device and probe of slave driver is called
+ *				on device and driver binding, slave driver
+ *				should call this function to register its
+ *				capabilties to bus. This should be the very
+ *				first function to bus driver from slave driver
+ *				once slave driver is registered and probed.
+ * @slave: SoundWire Slave handle
+ * @cap: Slave capabilities to be updated to bus driver.
+ */
+int sdw_register_slave_capabilities(struct sdw_slave *slave,
+					struct sdw_slv_capabilities *cap);
+
+/**
+ * sdw_slave_driver_unregister: Undo effects of sdw_slave_driver_register
+ * @drv: SDW Slave driver to be unregistered
+ */
+void sdw_slave_driver_unregister(struct sdw_slave_driver *drv);
+
 #endif /*  _LINUX_SDW_BUS_H */
