@@ -910,4 +910,51 @@ struct sdw_msg {
 	u8 *buf;
 };
 
+/**
+ * sdw_stream_config: Stream configuration of the device. This includes
+ *			Master and Slave.
+ * @frame_rate: Audio frame rate of the stream.
+ * @channel_count: Channel count of the stream.
+ * @bps: Number of bits per audio sample.
+ * @direction: Direction of the Data. What is the data direction for the
+ *		device calling stream_config. This is w.r.t device.
+ * @type: Stream type PCM or PDM
+ *
+ */
+struct sdw_stream_config {
+	unsigned int frame_rate;
+	unsigned int channel_count;
+	unsigned int bps;
+	enum sdw_data_direction direction;
+	enum sdw_stream_type	type;
+};
+
+/**
+ * sdw_port_cfg: SoundWire Port configuration, Configuration is done
+ *		for all port of all the devices which are part of stream.
+ *		All the ports of stream handles same pcm parameters accept
+ *		channels. e.g Master may handle stereo channels using single
+ *		port, but slave may handle Left and Right channel on one
+ *		port each.
+ * @port_num:	Port number to be configured
+ * @ch_mask: Which channels needs to be activated for this Port.
+ */
+struct sdw_port_cfg {
+	int port_num;
+	unsigned int ch_mask;
+};
+
+/**
+ * sdw_port_config: List of the ports handled by slave or master
+ *			for particular stream. Both slave and master calls
+ *			this with ports they trasmit/recevie onfor particular
+ *			stream.
+ * @num_ports: Number of ports to be configured.
+ * @port_cfg : Port configuration for each Port.
+ */
+struct sdw_port_config {
+	unsigned int num_ports;
+	struct sdw_port_cfg *port_cfg;
+};
+
 #endif /*  _LINUX_SDW_BUS_H */
