@@ -201,5 +201,11 @@ enum sdw_data_direction {
 	SDW_DATA_DIR_OUT = 1,
 };
 
+/* Forward declaration of the data structures */
+struct sdw_master;
+struct sdw_slave;
+struct sdw_msg;
+struct sdw_bra_block;
+struct sdw_mstr_driver;
 
 #endif /*  _LINUX_SDW_BUS_H */
