@@ -34,6 +34,7 @@ struct regmap_range_cfg;
 struct regmap_field;
 struct snd_ac97;
 struct sdw_slave;
+struct sdw_slv;
 
 /* An enum of all the supported cache types */
 enum regcache_type {
@@ -561,6 +562,9 @@ struct regmap *__regmap_init_sdw(struct sdw_slave *sdw,
 				 const struct regmap_config *config,
 				 struct lock_class_key *lock_key,
 				 const char *lock_name);
+struct regmap *regmap_init_slave(struct sdw_slv *sdw,
+			       const struct regmap_config *config);
+
 
 struct regmap *__devm_regmap_init(struct device *dev,
 				  const struct regmap_bus *bus,
@@ -610,6 +614,9 @@ struct regmap *__devm_regmap_init_slimbus(struct slim_device *slimbus,
 				 const struct regmap_config *config,
 				 struct lock_class_key *lock_key,
 				 const char *lock_name);
+struct regmap *devm_regmap_init_sdwint(struct sdw_slv *sdw,
+				    const struct regmap_config *config);
+
 /*
  * Wrapper for regmap_init macros to include a unique lockdep key and name
  * for each call. No-op if CONFIG_LOCKDEP is not set.
