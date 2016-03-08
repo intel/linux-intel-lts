@@ -561,4 +561,320 @@ struct sdw_slave_driver {
 };
 #define to_sdw_slave_driver(d) container_of(d, struct sdw_slave_driver, driver)
 
+/**
+ * struct sdw_mstr_dpn_capabilities: Capabilities of the Data Port, other than
+ *				Data Port 0 for SoundWire Master
+ * @port_direction: Direction of the Port.
+ * @port_number: Port number.
+ * @max_word_length: Maximum length of the sample word.
+ * @min_word_length: Minimum length of sample word.
+ * @num_word_length: Length of supported word length buffer. This should be
+ *			0 in order to use min and max.
+ * @word_length_buffer: Array of the supported word length.
+ * @dpn_type: Type of Data Port.
+ * @dpn_grouping: Max Block count grouping supported for this Port. if
+ *		slave supports only 1 block group count, than DPN_BlockCtrl2
+ *		wont be programmed.
+ * @min_ch_num: Minimum number of channels supported.
+ * @max_ch_num: Maximum number of channels supported.
+ * @num_ch_supported: Buffer length for the channels supported.This should be
+ *			0 in order to use min and max.
+ * @ch_supported: Array of the channel supported.
+ * @port_mode_mask: Transport modes supported by Port.
+ * @block_packing_mode_mask: Block packing mode mask.
+ */
+
+struct sdw_mstr_dpn_capabilities {
+	unsigned int port_direction;
+	unsigned int port_number;
+	unsigned int max_word_length;
+	unsigned int min_word_length;
+	unsigned int num_word_length;
+	unsigned int *word_length_buffer;
+	enum sdw_dpn_type dpn_type;
+	enum sdw_dpn_grouping dpn_grouping;
+	unsigned int min_ch_num;
+	unsigned int max_ch_num;
+	unsigned int num_ch_supported;
+	unsigned int *ch_supported;
+	unsigned int port_mode_mask;
+	unsigned int block_packing_mode_mask;
+};
+
+/**
+ * struct sdw_mstr_dp0_capabilities: Capabilities of the Data Port 0 of Slave.
+ *
+ * @max_word_length: Maximum word length supported by the Data Port.
+ * @min_word_length: Minimum word length supported by the Data Port.
+ * @num_word_length: Array size of the buffer containing the supported
+ *			word lengths.
+ * @word_length_buffer: Array containing supported word length.
+ * @bra_max_data_per_frame: Maximum Data size per BRA.
+ */
+struct sdw_mstr_dp0_capabilities {
+	unsigned int max_word_length;
+	unsigned int min_word_length;
+	unsigned int num_word_length;
+	unsigned int *word_length_buffer;
+	unsigned int bra_max_data_per_frame;
+};
+
+/**
+ * struct sdw_master_capabilities: Capabilities of the Master.
+ *	This is filled by the software registering Master.
+ * @base_clk_freq: Highest base frequency at which Master can be driven
+ *	This is in Hz.
+ * @monitor_handover_supported: Does Master support monitor handover.
+ * @highphy_capable: Is Master Highphy capable?
+ * @sdw_dp0_supported: Data port0 supported?
+ * @sdw_dp0_cap: Capabilities of the dataport 0 of the Master.
+ * @num_data_ports: Array size for the number of Data ports present in
+ *			Master.
+ * @sdw_dpn_cap: Array containing information about SoundWire Master
+ *		Data Port Capabilities
+ *
+ */
+struct sdw_master_capabilities {
+	unsigned int			base_clk_freq;
+	bool				monitor_handover_supported;
+	bool				highphy_capable;
+	bool				sdw_dp0_supported;
+	struct sdw_mstr_dp0_capabilities sdw_dp0_cap;
+	unsigned int			num_data_ports;
+	struct sdw_mstr_dpn_capabilities *sdw_dpn_cap;
+
+};
+
+/**
+ * struct sdw_master: Master device controller on SoundWire bus.
+ *				(similar to 'Master' on I2C)
+ * @owner: Owner of this module. Generally THIS module.
+ * @dev: Slave interface for this driver;
+ * @nr: Bus number of SoundWire Master bus. Also referred to as link number.
+ * @slv_list: List of SoundWire Slaves registered to the bus.
+ * @name: Name of the Master driver.
+ * @sdw_addr: Array containing Slave SoundWire bus Slave address information.
+ * @bus_lock: Global lock for bus functions.
+ * @num_slv: Number of SoundWire Slaves assigned logical address.
+ * @wq: Workqueue instance for Slave detection.
+ * @mstr_capabilities: Capabilities of the SoundWire Master controller.
+ * @driver: Driver handling the Master.
+ * @slv_released: Flag to indicate Slave release completion. Internally used
+ *		by bus driver.
+ * @timeout: Timeout before getting response from Slave.
+ * @retries: How many times to retry before giving up on Slave response.
+ * @ssp_tag_synchronized: Do bus driver needs to set SSP tag based on
+ *			sample interval of of all streams.
+ * @link_sync_mask: Bit mask representing all the other controller links
+ *		with which this link is synchronized.
+ *
+ */
+struct sdw_master {
+	struct module		*owner;
+	struct device		dev;
+	unsigned int		nr;
+	struct list_head	slv_list;
+	char			name[SOUNDWIRE_NAME_SIZE];
+	struct sdw_slv_addr	sdw_addr[SOUNDWIRE_MAX_DEVICES + 1];
+	struct rt_mutex		bus_lock;
+	u8			num_slv;
+	struct workqueue_struct *wq;
+	struct sdw_master_capabilities mstr_capabilities;
+	struct sdw_mstr_driver	*driver;
+	struct completion slv_released;
+	struct list_head	mstr_rt_list;
+	int timeout;
+	int retries;
+	bool ssp_tag_synchronized;
+	int link_sync_mask;
+};
+#define to_sdw_master(d) container_of(d, struct sdw_master, dev)
+
+
+/** struct sdw_port_params: This is used to program the
+ *			Data Port based on Data Port
+ *			stream params. These parameters cannot be changed
+ *			dynamically
+ *
+ * @num : Port number for which params are there.
+ * @word_length: Word length of the Port
+ * @port_flow_mode: Port Data flow mode.
+ * @port_data_mode: Test mode or normal mode.
+ */
+struct sdw_port_params {
+	int num;
+	int word_length;
+	int port_flow_mode;
+	int port_data_mode;
+};
+
+/** struct sdw_transport_params: This is used to program the
+ *			Data Port based on Data Port
+ *			transport params. These parameters may be changed
+ *			dynamically based on Frame Shape changes and bandwidth
+ *			allocation
+ *
+ * @num : Port number for which params are there.
+ * @blockgroupcontrol_valid: Does Port implement block group control?
+ * @blockgroupcontrol: Block group control value.
+ * @sample_interval: Sample interval.
+ * @offset1: Blockoffset of the payload Data.
+ * @offset2: Blockoffset of the payload Data.
+ * @hstart: Horizontal start of the payload Data.
+ * @hstop: Horizontal stop of the payload Data.
+ * @blockpackingmode: Block per channel or block per Port.
+ * @lanecontrol: Data lane Port uses for Data transfer.
+ */
+struct sdw_transport_params {
+	int num;
+	bool blockgroupcontrol_valid;
+	int blockgroupcontrol; /* DPN_BlockCtrl2 */
+	int sample_interval;   /* DPN_SampleCtrl1 and DPN_SampleCtrl2 */
+	int offset1;		/* DPN_OffsetCtrl1 */
+	int offset2;		/* DPN_OffsetCtrl2 */
+	int hstart;		/*  DPN_HCtrl  */
+	int hstop;		/*  DPN_HCtrl  */
+	int blockpackingmode;	/* DPN_BlockCtrl3 */
+	int lanecontrol;	/* DPN_LaneCtrl */
+};
+
+/** struct sdw_prepare_ch: Prepare/Un-prepare the Data Port channel.
+ *
+ * @num : Port number for which params are there.
+ * @ch_mask: prepare/un-prepare channels specified by ch_mask
+ * @prepare: Prepare/Un-prepare channel
+ */
+struct sdw_prepare_ch {
+	int num;
+	int ch_mask;
+	bool prepare;
+};
+
+/** struct sdw_activate_ch: Activate/Deactivate Data Port channel.
+ *
+ * @num : Port number for which params are there.
+ * @ch_mask: Active channel mask for this port.
+ * @activate: Activate/Deactivate channel
+ */
+struct sdw_activate_ch {
+	int num;
+	int ch_mask;
+	bool activate;
+};
+
+/**
+ * struct sdw_master_port_ops: Callback functions from bus driver
+ *				to Master driver to set Master
+ *				Data ports. Since Master registers
+ *				are not standard, commands are passed
+ *				to Master from bus and Master
+ *				converts commands to register settings
+ *				based on Master register map.
+ * @dpn_set_port_params: Set the Port parameters for the Master Port.
+ * @dpn_set_port_transport_params: Set transport parameters for the
+ *				Master Port.
+ * @dpn_port_prepare_ch: Prepare/Un-prepare the Master channels of the Port
+ * @dpn_port_prepare_ch_pre: Called before calling dpn_port_prepare_ch, if
+ *				Master driver needs to do update
+ *				register settings before ch_prepare
+ * @dpn_port_prepare_ch_post: Called after calling dpn_port_prepare_ch, if
+ *				Master driver needs to do some
+ *				register settings after ch_prepare
+ * @dpn_port_activate_ch: Activate the channels of particular Master Port
+ * @dpn_port_activate_ch_pre: Called before calling dpn_port_activate_ch, if
+ *				Master driver needs to some register
+ *				setting before activating channel.
+ * @dpn_port_activate_ch_post : Called after calling dpn_port_activate_ch, if
+ *				Master driver needs to some register
+ *				setting after activating channel.
+ */
+struct sdw_master_port_ops {
+	int (*dpn_set_port_params)(struct sdw_master *mstr,
+			struct sdw_port_params *port_params, int bank);
+	int (*dpn_set_port_transport_params)(struct sdw_master *mstr,
+			struct sdw_transport_params *transport_params,
+								int bank);
+	int (*dpn_port_prepare_ch)(struct sdw_master *mstr,
+			struct sdw_prepare_ch *prepare_ch);
+	int (*dpn_port_prepare_ch_pre)(struct sdw_master *mstr,
+			struct sdw_prepare_ch *prepare_ch);
+	int (*dpn_port_prepare_ch_post)(struct sdw_master *mstr,
+			struct sdw_prepare_ch *prepare_ch);
+	int (*dpn_port_activate_ch)(struct sdw_master *mstr,
+			struct sdw_activate_ch *activate_ch, int bank);
+	int (*dpn_port_activate_ch_pre)(struct sdw_master *mstr,
+			struct sdw_activate_ch *activate_ch, int bank);
+	int (*dpn_port_activate_ch_post)(struct sdw_master *mstr,
+			struct sdw_activate_ch *activate_ch, int bank);
+};
+
+/**
+ * struct sdw_master_ops: Callback operations from bus driver to Master
+ *				Master driver.Bus driver calls these
+ *				functions to control the bus parameters
+ *				in Master hardware specific way. Its
+ *				like i2c_algorithm to access the bus
+ *				in Master specific way.
+ *
+ *				Slave registers are standard.
+ * @xfer_msg: Callback function to Master driver to read/write
+ *		Slave registers.
+ * @xfer_bulk: Callback function to Master driver for bulk transfer.
+ * @monitor_handover: Allow monitor to be owner of command, if requested.
+ * @set_ssp_interval: Set SSP interval.
+ * @set_clock_freq: Set the clock frequency based on bandwidth requirement.
+ *			Controller driver sets the frequency in hardware
+ *			specific way.
+ *
+ */
+
+struct sdw_master_ops {
+	enum sdw_command_response (*xfer_msg)(struct sdw_master *mstr,
+		struct sdw_msg *msg, bool program_scp_addr_page);
+	int (*xfer_bulk)(struct sdw_master *mstr,
+		struct sdw_bra_block *block);
+	int (*monitor_handover)(struct sdw_master *mstr,
+		bool handover);
+	int (*set_ssp_interval)(struct sdw_master *mstr,
+			int ssp_interval, int bank);
+	int (*set_clock_freq)(struct sdw_master *mstr,
+			int cur_clk_freq, int bank);
+	int (*set_frame_shape)(struct sdw_master *mstr,
+			int col, int row, int bank);
+};
+
+/**
+ * struct sdw_mstr_driver: Manage SoundWire Master/Master device driver
+ * @driver_type: To distinguish between master and slave driver. Set and
+ *		used by bus driver.
+ * @probe: Binds this driver to a SoundWire Master.
+ * @remove: Unbinds this driver from the SoundWire Master.
+ * @shutdown: Standard shutdown callback used during powerdown/halt.
+ * @suspend: Standard suspend callback used during system suspend
+ * @resume: Standard resume callback used during system resume
+ * @driver: SoundWire device drivers should initialize name and owner field of
+ *      this structure.
+ * @mstr_ops: Callback operations from bus driver to Master driver for
+ *		programming and controlling bus parameters and to program
+ *		Slave  registers.
+ * @mstr_port_ops: Commands to setup the Master ports. Master register
+ *		map is not defined by standard. So these ops represents the
+ *		commands to setup Master ports.
+ * @id_table: List of SoundWire devices supported by this driver.
+ */
+struct sdw_mstr_driver {
+	enum sdw_driver_type driver_type;
+	int (*probe)(struct sdw_master *sdwmstr, const struct sdw_master_id *);
+	int (*remove)(struct sdw_master *sdwmstr);
+	void (*shutdown)(struct sdw_master *sdwmstr);
+	int (*suspend)(struct sdw_master *sdwmstr,
+		pm_message_t pmesg);
+	int (*resume)(struct sdw_master *sdwmstr);
+	struct device_driver driver;
+	struct sdw_master_ops *mstr_ops;
+	struct sdw_master_port_ops *mstr_port_ops;
+	const struct sdw_master_id *id_table;
+};
+#define to_sdw_mstr_driver(d) container_of(d, struct sdw_mstr_driver, driver)
+
 #endif /*  _LINUX_SDW_BUS_H */
