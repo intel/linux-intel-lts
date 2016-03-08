@@ -1069,4 +1069,180 @@ void sdw_slave_driver_unregister(struct sdw_slave_driver *drv);
  */
 int sdw_slave_transfer(struct sdw_master *mstr, struct sdw_msg *msg, int num);
 
+/**
+ * sdw_alloc_stream_tag: Allocate stream_tag for each audio stream
+ *			between SoundWire Masters and Slaves.
+ *			(Multiple Masters and Slave in case of
+ *			aggregation) stream_tag is
+ *			unique across system.  Stream tag represents the
+ *			independent audio stream which can be controlled
+ *			configure individually. Stream can be split between
+ *			multiple Masters and Slaves. It can also be
+ *			split between multiple ports of the Master and Slave.
+ *			All the stream configuration for Masters and Slaves
+ *			and ports of the Master and Slave for particular
+ *			stream is done on stream_tag as handle. Normally
+ *			stream is between CPU and Codec. CPU dai ops
+ *			allocate the stream tag and programs same to the
+ *			codec dai. If there are multiple codecs attached
+ *			to each CPU DAI, like L and R digital speaker, both
+ *			codecs should be programmed with same stream tag.
+ *
+ *
+ * @uuid:		uuid  is used to make sure same stream tag gets
+ *			allocated for same uuid. If stream tag is not
+ *			allocated for uuid, it will get allocated and
+ *			uuid-stream tag pair will be saved, for next
+ *			allocation based on uuid. If this is NULL,
+ *			new stream tag will be allocated each time this
+ *			function is called.
+ *
+ *
+ * @stream_tag: Stream tag returned by bus driver.
+ */
+int sdw_alloc_stream_tag(char *uuid, int *stream_tag);
+
+/**
+ * sdw_release_stream_tag: Free the already assigned stream tag.
+ *
+ * @stream_tag: Stream tag to be freed.
+ */
+void sdw_release_stream_tag(int stream_tag);
+
+/**
+ * sdw_config_stream: Configure the audio stream. Each stream between
+ *			master and slave, or between slaves has unique
+ *			stream tag.
+ *			Master and Slave attaches to
+ *			the stream using the unique stream_tag for each
+ *			stream between Master(s) and Slave(s). Both
+ *			Master and Slave driver call this function to
+ *			attach to stream and let bus driver know the
+ *			stream params. Master and Slave calls this function
+ *			typically as part of hw_params ops of their respective
+ *			DAIs to let bus driver know about stream parameters.
+ *			Stream parameters between Tx and Rx direction
+ *			should match. Function is reference counted so
+ *			multiple Master and Slaves attached to particular
+ *			stream can call to setup stream config.
+ *			Master calls this function with Slave handle as
+ *			NULL.
+ * @mstr: Master handle,
+ * @slave: SoundWire Slave handle, Null if stream configuration is called
+ *             by Master driver.
+ * @stream_config: Stream configuration for the SoundWire audio stream.
+ * @stream_tag: Stream_tag representing the audio stream. All Masters and Slaves
+ *             part of the same stream will have same stream tag. So bus drivers
+ *             know  which all Masters and Slaves are part of stream.
+ *
+ */
+int sdw_config_stream(struct sdw_master *mstr,
+		struct sdw_slave *slave,
+		struct sdw_stream_config *stream_config,
+		unsigned int stream_tag);
+
+/**
+ * sdw_release_stream: De-associates Master(s) and Slave(s) from stream. Reverse
+ *		effect of the sdw_config_stream
+ *
+ * @mstr: Master handle,
+ * @slave: SoundWire Slave handle, Null if stream configuration is called
+ *		by Master driver.
+ * @stream_tag: Stream_tag representing the audio stream. All Masters and Slaves
+ *		part of the same stream has same stream tag. So bus drivers
+ *		know  which all Masters and Slaves are part of stream.
+ *
+ */
+int sdw_release_stream(struct sdw_master *mstr,
+		struct sdw_slave *slave,
+		unsigned int stream_tag);
+
+/**
+ * sdw_config_port: Master(s) and Slave(s) are associated to stream.
+ *			Each Master and Slave can handle stream using
+ *			different SoundWire Port number(s).
+ *			e.g Master may handle stereo stream using single
+ *			Data Port, while Slave may handle each channel
+ *			of Data stream using one Port each. Bus driver
+ *			needs to know the stream to Port association
+ *			for each Master(s) and Slave(s) assocated with the
+ *			stream for configuring Master and Slave ports
+ *			based on transport params calculate by bus for a
+ *			stream. Both Master and Slave call this function to let
+ *			bus driver know about stream to Port mapping.
+ *			Master driver calls this with Slave handle
+ *			as NULL.
+ * @mstr: Master handle where the Slave is connected.
+ * @slave: Slave handle.
+ * @port_config: Port configuration for each Port of SoundWire Slave.
+ * @stream_tag: Stream tag, where this Port is connected.
+ *
+ */
+int sdw_config_port(struct sdw_master *mstr,
+			struct sdw_slave *slave,
+			struct sdw_port_config *port_config,
+			unsigned int stream_tag);
+
+/**
+ * sdw_prepare_and_enable: Prepare and enable all the ports of all the Master(s)
+ *			and Slave(s) associated with this stream tag.
+ *			Following will be done as part of prepare and
+ *			enable by bus driver.
+ *			1. Calculate new bandwidth required on bus
+ *				because of addition be this new stream.
+ *			2. Calculate new frameshape based on bandwidth
+ *			3. Calculate the new clock frequency on which
+ *				bus will be transistioned based on new
+ *				bandwidth and frameshape.
+ *			4. Calculate new transport params for the already
+ *				active on the bus based on clock frequency,
+ *				frameshape and bandwidth changes.
+ *			5. Calculate transport params for this stream
+ *			6. Program already active ports with new transport
+ *				params and frame shape,
+ *				change clock frequency of master.
+ *			7. Prepare ports for this stream.
+ *			8. Enable ports for this stream.
+ * @stream_tag: Audio stream to be activated. Each stream has unique
+ *		stream_tag. All the channels of all the ports of Slave(s)
+ *		and Master(s) attached to this stream will be activated
+ *		deactivated simultaneously at proper SSP or gsync.
+ * @enable: Enable the ports as part of current call or not. If its
+ *		false only till steps 1 to 7 will be executed as part of this
+ *		function call. if its true, than steps 1 to 7 will be executed
+ *		if not already done, else only step 8 will be executed.
+ *
+ */
+int sdw_prepare_and_enable(int stream_tag, bool enable);
+
+/**
+ * sdw_disable_and_unprepare: Un-Prepare and disable all the ports of all the
+ *			 Master(s) and Slave(s) associated with stream tag.
+ *			Following will be done as part of Un-prepare and
+ *			disable by bus driver.
+ *			1. Disable all the ports for this stream.
+ *			2. Un-Prepare ports for this stream.
+ *			3. Calculate new bandwidth required on bus
+ *				because of removal of this new stream.
+ *			4. Calculate new frameshape based on bandwidth
+ *			5. Calculate the new clock frequency on which
+ *				bus will be transistioned based on new
+ *				bandwidth and frameshape.
+ *			6. Calculate new transport params for the already
+ *				active on the bus based on clock frequency,
+ *				frameshape and bandwidth changes.
+ *			7.Program already active ports with new transport
+ *				params and frame shape,
+ *				change clock frequency of master.
+ * @stream_tag: Audio stream to be disabled. Each stream has unique
+ *		stream_tag. All the channels of all the ports of Slave(s)
+ *		and Master(s) attached to this stream will be activated
+ *		deactivated simultaneously at proper SSP or gsync.
+ * @un_prepare: Un-prepare the ports as part of current call or not. If its
+ *		false only step 1 will be executed as part of this
+ *		function call. if its true, than step 1 will be executed
+ *		if not already done, else only 2 to 7 will be executed.
+ */
+int sdw_disable_and_unprepare(int stream_tag, bool un_prepare);
+
 #endif /*  _LINUX_SDW_BUS_H */
