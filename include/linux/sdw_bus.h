@@ -1245,4 +1245,16 @@ int sdw_prepare_and_enable(int stream_tag, bool enable);
  */
 int sdw_disable_and_unprepare(int stream_tag, bool un_prepare);
 
+/**
+ * sdw_master_update_slv_status: Update the status of the Slave to the bus
+ *			driver. Master calls this function based on the
+ *			interrupt it gets once the Slave changes its
+ *			state or from interrupts for the Master hardware
+ *			that caches status information reported in PING frames
+ * @mstr: Master handle for which status is reported.
+ * @status: Array of status of each Slave.
+ */
+int sdw_master_update_slv_status(struct sdw_master *mstr,
+					struct sdw_status *status);
+
 #endif /*  _LINUX_SDW_BUS_H */
