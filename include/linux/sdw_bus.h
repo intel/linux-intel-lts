@@ -987,4 +987,40 @@ struct sdw_status {
 	enum sdw_slave_status status[SOUNDWIRE_MAX_DEVICES + 1];
 };
 
+/**
+ * sdw_add_master_controller: Add SoundWire Master controller interface
+ * @mstr: Controller to be registered as SoundWire Master interface.
+ *	This is to be called for each Master interface.
+ *	This is same as I2C, where each adapter register specifies one
+ *	pair of clock and Data lines (link).
+ */
+int sdw_add_master_controller(struct sdw_master *mstr);
+
+/**
+ * sdw_del_master_controller: Master tear-down.
+ * Master added with the "sdw_add_master_controller" API is teared down
+ * using this API.
+ * @mstr: Master to be teared down
+ */
+void sdw_del_master_controller(struct sdw_master *mstr);
+
+/**
+ * sdw_mstr_driver_register: SoundWire Master driver registration with SDW bus.
+ *			This API will register the Master driver with the
+ *			SoundWire bus. It is typically called from the
+ *			driver's module-init function.
+ * @drv: Master Driver to be associated with device.
+ *
+ */
+int __sdw_mstr_driver_register(struct module *owner,
+					struct sdw_mstr_driver *driver);
+#define sdw_mstr_driver_register(drv) \
+			__sdw_mstr_driver_register(THIS_MODULE, drv)
+
+/**
+ * sdw_mstr_driver_unregister: Undo effects of sdw_mstr_driver_register
+ * @drv: SDW Master driver to be unregistered
+ */
+void sdw_mstr_driver_unregister(struct sdw_mstr_driver *drv);
+
 #endif /*  _LINUX_SDW_BUS_H */
