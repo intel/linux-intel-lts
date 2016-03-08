@@ -1257,4 +1257,62 @@ int sdw_disable_and_unprepare(int stream_tag, bool un_prepare);
 int sdw_master_update_slv_status(struct sdw_master *mstr,
 					struct sdw_status *status);
 
+/**
+ * sdw_get_master: Return the Master handle from Master number.
+ *			Increments the reference count of the module.
+ *			Similar to i2c_get_adapter.
+ *  nr: Master controller number.
+ *  returns Master handle on success, else NULL
+ */
+struct sdw_master *sdw_get_master(int nr);
+
+/**
+ *  sdw_put_master: Reverses the effect of sdw_get_master
+ *  mstr: Master controller handle.
+ */
+void sdw_put_master(struct sdw_master *mstr);
+
+
+/**
+ * module_sdw_slave_driver() - Helper macro for registering a sdw Slave driver
+ * @__sdw_slave_driver: sdw_slave_driver struct
+ *
+ * Helper macro for sdw drivers which do not do anything special in module
+ * init/exit. This eliminates a lot of boilerplate. Each module may only
+ * use this macro once, and calling it replaces module_init() and module_exit()
+ */
+#define module_sdw_slave_driver(__sdw_slave_driver) \
+	module_driver(__sdw_slave_driver, sdw_slave_driver_register, \
+			sdw_slave_driver_unregister)
+
+
+
+/* Return the adapter number for a specific adapter */
+static inline int sdw_master_id(struct sdw_master *mstr)
+{
+	return mstr->nr;
+}
+
+static inline void *sdw_master_get_drvdata(const struct sdw_master *mstr)
+{
+	return dev_get_drvdata(&mstr->dev);
+}
+
+static inline void sdw_master_set_drvdata(struct sdw_master *mstr,
+					void *data)
+{
+	dev_set_drvdata(&mstr->dev, data);
+}
+
+static inline void *sdw_slave_get_drvdata(const struct sdw_slave *slv)
+{
+	return dev_get_drvdata(&slv->dev);
+}
+
+static inline void sdw_slave_set_drvdata(struct sdw_slave *slv,
+					void *data)
+{
+	dev_set_drvdata(&slv->dev, data);
+}
+
 #endif /*  _LINUX_SDW_BUS_H */
