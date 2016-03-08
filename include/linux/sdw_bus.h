@@ -1060,4 +1060,13 @@ int sdw_register_slave_capabilities(struct sdw_slave *slave,
  */
 void sdw_slave_driver_unregister(struct sdw_slave_driver *drv);
 
+/**
+ * sdw_slave_transfer: Transfer SDW message on bus.
+ * @mstr: Master which will transfer the message.
+ * @msg: Array of messages to be transferred.
+ * @num: Number of messages to be transferred, messages include read and write
+ *		messages, but not the ping messages.
+ */
+int sdw_slave_transfer(struct sdw_master *mstr, struct sdw_msg *msg, int num);
+
 #endif /*  _LINUX_SDW_BUS_H */
