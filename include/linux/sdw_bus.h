@@ -877,4 +877,37 @@ struct sdw_mstr_driver {
 };
 #define to_sdw_mstr_driver(d) container_of(d, struct sdw_mstr_driver, driver)
 
+/**
+ * struct sdw_msg : Message to be sent on bus. This is similar to i2c_msg
+ *			on I2C bus.
+ *			Actually controller sends the message on bus
+ *			in hardware specific way. This interface is from
+ *			bus driver to Slaves.
+ * @slave_addr: Slave address
+ * @ssp_tag: send message at ssp_tag. It should be used when a command needs
+ *		to be issued during the next SSP. For all normal reads/writes
+ *		this should be zero. This will be used for broadcast write
+ *		to SCP_FrameCtrl register by bus driver only. Normally
+ *		slave driver should always set ssp_tag  to 0.
+ * @addr_page1: SCP address page 1
+ * @addr_page2: SCP address page 2
+ * @flag: Message to be read or write.
+ * @addr: Address of the register to be read;
+ * @len: Length of the message to be read. Successive increment in the
+ *	register address for every message.
+ * @buf: Buf to be written or read from the register.
+ */
+struct sdw_msg {
+	u8 slave_addr;
+	bool ssp_tag;
+	u8 addr_page1;
+	u8 addr_page2;
+#define SDW_MSG_FLAG_READ	0x0
+#define SDW_MSG_FLAG_WRITE	0x1
+	u8 flag;
+	u16 addr;
+	u16 len;
+	u8 *buf;
+};
+
 #endif /*  _LINUX_SDW_BUS_H */
