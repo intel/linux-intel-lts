@@ -976,5 +976,15 @@ struct  sdw_bra_block {
 	u8 *values;
 };
 
+/**
+ *  Struct sdw_slave_status: Status of all the SoundWire Slave devices.
+ *  @status: Array of status of SoundWire Slave devices. 0 is also
+ *		a soundwire device during enumeration, so adding +1 for
+ *		that. Actual number fo devices that can be supported are
+ *		11 as defined by SOUNDWIRE_MAX_DEVICES
+ */
+struct sdw_status {
+	enum sdw_slave_status status[SOUNDWIRE_MAX_DEVICES + 1];
+};
 
 #endif /*  _LINUX_SDW_BUS_H */
