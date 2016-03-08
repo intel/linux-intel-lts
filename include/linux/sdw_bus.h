@@ -957,4 +957,24 @@ struct sdw_port_config {
 	struct sdw_port_cfg *port_cfg;
 };
 
+/**
+ * struct sdw_bra_block: Data block to be sent/received using SoundWire
+ *			bulk transfer protocol
+ * @slave_addr: Slave logical address from/to which transfer
+ *			needs to take place.
+ * @operation: Read operation or write operation.
+ * @num_bytes: Number of Data bytes to be transferred.
+ * @reg_offset: Register offset from where the first byte to read/write.
+ * @values: Array containing value for write operation and to be filled
+ *		for read operation.
+ */
+struct  sdw_bra_block {
+	int slave_addr;
+	int cmd;
+	int num_bytes;
+	int reg_offset;
+	u8 *values;
+};
+
+
 #endif /*  _LINUX_SDW_BUS_H */
