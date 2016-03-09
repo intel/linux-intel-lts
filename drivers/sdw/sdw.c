@@ -906,6 +906,80 @@ int sdw_add_master_controller(struct sdw_master *mstr)
 }
 EXPORT_SYMBOL_GPL(sdw_add_master_controller);
 
+static void sdw_unregister_slave(struct sdw_slave *sdw_slv)
+{
+
+	struct sdw_master *mstr;
+
+	mstr = sdw_slv->mstr;
+	sdw_lock_mstr(mstr);
+	list_del(&sdw_slv->node);
+	sdw_unlock_mstr(mstr);
+	mstr->sdw_addr[sdw_slv->slv_number].assigned = false;
+	memset(mstr->sdw_addr[sdw_slv->slv_number].dev_id, 0x0, 6);
+	device_unregister(&sdw_slv->dev);
+	kfree(sdw_slv);
+}
+
+static int __unregister_slave(struct device *dev, void *dummy)
+{
+	struct sdw_slave *slave = sdw_slave_verify(dev);
+
+	if (slave && strcmp(slave->name, "dummy"))
+		sdw_unregister_slave(slave);
+	return 0;
+}
+
+/**
+ * sdw_del_master_controller - unregister SDW master
+ * @mstr: the master being unregistered
+ * Context: can sleep
+ *
+ * This unregisters an SDW master which was previously registered
+ * by @sdw_add_master_controller or @sdw_add_master_controller.
+ */
+void sdw_del_master_controller(struct sdw_master *mstr)
+{
+	struct sdw_master *found;
+
+	/* First make sure that this master was ever added */
+	mutex_lock(&sdw_core.core_lock);
+	found = idr_find(&sdw_core.idr, mstr->nr);
+	mutex_unlock(&sdw_core.core_lock);
+
+	if (found != mstr) {
+		pr_debug("sdw-core: attempting to delete unregistered master [%s]\n", mstr->name);
+		return;
+	}
+	/* Detach any active slaves. This can't fail, thus we do not
+	 * check the returned value.
+	 */
+	device_for_each_child(&mstr->dev, NULL, __unregister_slave);
+
+	/* device name is gone after device_unregister */
+	dev_dbg(&mstr->dev, "mstrter [%s] unregistered\n", mstr->name);
+
+	/* wait until all references to the device are gone
+	 *
+	 * FIXME: This is old code and should ideally be replaced by an
+	 * alternative which results in decoupling the lifetime of the struct
+	 * device from the sdw_master, like spi or netdev do. Any solution
+	 * should be thoroughly tested with DEBUG_KOBJECT_RELEASE enabled!
+	 */
+	init_completion(&mstr->slv_released);
+	device_unregister(&mstr->dev);
+	wait_for_completion(&mstr->slv_released);
+
+	/* free bus id */
+	mutex_lock(&sdw_core.core_lock);
+	idr_remove(&sdw_core.idr, mstr->nr);
+	mutex_unlock(&sdw_core.core_lock);
+
+	/* Clear the device structure in case this mstrter is ever going to be
+	   added again */
+	memset(&mstr->dev, 0, sizeof(mstr->dev));
+}
+EXPORT_SYMBOL_GPL(sdw_del_master_controller);
 
 static void sdw_exit(void)
 {
