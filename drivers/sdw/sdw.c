@@ -34,3 +34,6 @@
 #include <linux/sdw_bus.h>
 #include <linux/sdw/sdw_registers.h>
 #include "sdw_priv.h"
+
+/* Global instance handling all the SoundWire buses */
+struct sdw_core sdw_core;
