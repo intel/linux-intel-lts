@@ -237,6 +237,36 @@ static int sdw_slv_remove(struct device *dev)
 	return ret;
 }
 
+static void sdw_slv_shutdown(struct device *dev)
+{
+	const struct sdw_slave_driver *sdrv = to_sdw_slave_driver(dev->driver);
+
+	if (sdrv->shutdown)
+		sdrv->shutdown(to_sdw_slave(dev));
+}
+
+static void sdw_mstr_shutdown(struct device *dev)
+{
+	const struct sdw_mstr_driver *sdrv = to_sdw_mstr_driver(dev->driver);
+	struct sdw_master *mstr = to_sdw_master(dev);
+
+	if (sdrv->shutdown)
+		sdrv->shutdown(mstr);
+}
+
+static void sdw_shutdown(struct device *dev)
+{
+	struct sdw_slave *sdw_slv;
+	struct sdw_master *sdw_mstr;
+
+	sdw_slv = sdw_slave_verify(dev);
+	sdw_mstr = sdw_mstr_verify(dev);
+	if (sdw_slv)
+		sdw_slv_shutdown(dev);
+	else if (sdw_mstr)
+		sdw_mstr_shutdown(dev);
+}
+
 static int sdw_remove(struct device *dev)
 {
 	struct sdw_slave *sdw_slv;
@@ -289,6 +319,7 @@ struct bus_type sdw_bus_type = {
 	.match		= sdw_match,
 	.probe		= sdw_probe,
 	.remove		= sdw_remove,
+	.shutdown	= sdw_shutdown,
 };
 EXPORT_SYMBOL_GPL(sdw_bus_type);
 
