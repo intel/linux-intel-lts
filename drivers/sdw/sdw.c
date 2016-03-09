@@ -1051,6 +1051,140 @@ int __sdw_slave_driver_register(struct module *owner,
 }
 EXPORT_SYMBOL_GPL(__sdw_slave_driver_register);
 
+int sdw_register_slave_capabilities(struct sdw_slave *sdw,
+					struct sdw_slv_capabilities *cap)
+{
+	struct sdw_slv_capabilities *slv_cap;
+	struct sdw_slv_dpn_capabilities *slv_dpn_cap, *dpn_cap;
+	struct port_audio_mode_properties *prop, *slv_prop;
+	int i, j;
+
+	slv_cap = &sdw->sdw_slv_cap;
+
+	slv_cap->wake_up_unavailable = cap->wake_up_unavailable;
+	slv_cap->wake_up_unavailable = cap->wake_up_unavailable;
+	slv_cap->test_mode_supported = cap->test_mode_supported;
+	slv_cap->clock_stop1_mode_supported = cap->clock_stop1_mode_supported;
+	slv_cap->simplified_clock_stop_prepare =
+				cap->simplified_clock_stop_prepare;
+	slv_cap->highphy_capable = cap->highphy_capable;
+	slv_cap->paging_supported  = cap->paging_supported;
+	slv_cap->bank_delay_support = cap->bank_delay_support;
+	slv_cap->port_15_read_behavior = cap->port_15_read_behavior;
+	slv_cap->sdw_dp0_supported  = cap->sdw_dp0_supported;
+	slv_cap->num_of_sdw_ports = cap->num_of_sdw_ports;
+	slv_cap->sdw_dpn_cap = devm_kzalloc(&sdw->dev,
+			((sizeof(struct sdw_slv_dpn_capabilities)) *
+			cap->num_of_sdw_ports), GFP_KERNEL);
+	for (i = 0; i < cap->num_of_sdw_ports; i++) {
+		dpn_cap = &cap->sdw_dpn_cap[i];
+		slv_dpn_cap = &slv_cap->sdw_dpn_cap[i];
+		slv_dpn_cap->port_direction = dpn_cap->port_direction;
+		slv_dpn_cap->port_number = dpn_cap->port_number;
+		slv_dpn_cap->max_word_length = dpn_cap->max_word_length;
+		slv_dpn_cap->min_word_length = dpn_cap->min_word_length;
+		slv_dpn_cap->num_word_length = dpn_cap->num_word_length;
+		if (NULL == dpn_cap->word_length_buffer)
+			slv_dpn_cap->word_length_buffer =
+						dpn_cap->word_length_buffer;
+		else {
+			slv_dpn_cap->word_length_buffer =
+				devm_kzalloc(&sdw->dev,
+				dpn_cap->num_word_length *
+				(sizeof(unsigned  int)), GFP_KERNEL);
+			if (!slv_dpn_cap->word_length_buffer)
+				return -ENOMEM;
+			memcpy(slv_dpn_cap->word_length_buffer,
+				dpn_cap->word_length_buffer,
+				dpn_cap->num_word_length *
+				(sizeof(unsigned  int)));
+		}
+		slv_dpn_cap->dpn_type = dpn_cap->dpn_type;
+		slv_dpn_cap->dpn_grouping = dpn_cap->dpn_grouping;
+		slv_dpn_cap->prepare_ch = dpn_cap->prepare_ch;
+		slv_dpn_cap->imp_def_intr_mask = dpn_cap->imp_def_intr_mask;
+		slv_dpn_cap->min_ch_num = dpn_cap->min_ch_num;
+		slv_dpn_cap->max_ch_num = dpn_cap->max_ch_num;
+		slv_dpn_cap->num_ch_supported = dpn_cap->num_ch_supported;
+		if (NULL == slv_dpn_cap->ch_supported)
+			slv_dpn_cap->ch_supported  = dpn_cap->ch_supported;
+		else {
+			slv_dpn_cap->ch_supported =
+				devm_kzalloc(&sdw->dev,
+				dpn_cap->num_ch_supported *
+				(sizeof(unsigned  int)), GFP_KERNEL);
+			if (!slv_dpn_cap->ch_supported)
+				return -ENOMEM;
+			memcpy(slv_dpn_cap->ch_supported,
+				dpn_cap->ch_supported,
+				dpn_cap->num_ch_supported *
+				(sizeof(unsigned  int)));
+		}
+		slv_dpn_cap->port_flow_mode_mask  =
+					dpn_cap->port_flow_mode_mask;
+		slv_dpn_cap->block_packing_mode_mask =
+				dpn_cap->block_packing_mode_mask;
+		slv_dpn_cap->port_encoding_type_mask =
+				dpn_cap->port_encoding_type_mask;
+		slv_dpn_cap->num_audio_modes = dpn_cap->num_audio_modes;
+
+		slv_dpn_cap->mode_properties = devm_kzalloc(&sdw->dev,
+				((sizeof(struct port_audio_mode_properties)) *
+				dpn_cap->num_audio_modes), GFP_KERNEL);
+		for (j = 0; j < dpn_cap->num_audio_modes; j++) {
+			prop = &dpn_cap->mode_properties[j];
+			slv_prop = &slv_dpn_cap->mode_properties[j];
+			slv_prop->max_frequency = prop->max_frequency;
+			slv_prop->min_frequency = prop->min_frequency;
+			slv_prop->num_freq_configs = prop->num_freq_configs;
+			if (NULL == slv_prop->freq_supported)
+				slv_prop->freq_supported =
+						prop->freq_supported;
+			else {
+				slv_prop->freq_supported =
+					devm_kzalloc(&sdw->dev,
+					prop->num_freq_configs *
+					(sizeof(unsigned  int)), GFP_KERNEL);
+					if (!slv_prop->freq_supported)
+						return -ENOMEM;
+					memcpy(slv_prop->freq_supported,
+						prop->freq_supported,
+					prop->num_freq_configs *
+					(sizeof(unsigned  int)));
+			}
+			slv_prop->glitchless_transitions_mask
+					= prop->glitchless_transitions_mask;
+			slv_prop->max_sampling_frequency =
+						prop->max_sampling_frequency;
+			slv_prop->min_sampling_frequency  =
+						prop->min_sampling_frequency;
+			slv_prop->num_sampling_freq_configs =
+					prop->num_sampling_freq_configs;
+			if (NULL == prop->sampling_freq_config)
+				slv_prop->sampling_freq_config =
+						prop->sampling_freq_config;
+			else {
+				slv_prop->sampling_freq_config =
+					devm_kzalloc(&sdw->dev,
+					prop->num_sampling_freq_configs *
+					(sizeof(unsigned  int)), GFP_KERNEL);
+					if (!slv_prop->sampling_freq_config)
+						return -ENOMEM;
+					memcpy(slv_prop->sampling_freq_config,
+						prop->sampling_freq_config,
+					prop->num_sampling_freq_configs *
+					(sizeof(unsigned  int)));
+			}
+
+			slv_prop->ch_prepare_behavior =
+						prop->ch_prepare_behavior;
+		}
+	}
+	sdw->slave_cap_updated = true;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sdw_register_slave_capabilities);
+
 static void sdw_exit(void)
 {
 	device_unregister(&sdw_slv);
