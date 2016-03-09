@@ -57,4 +57,23 @@ struct sdw_runtime;
 /* Defined in sdw.c, used by multiple files of module */
 extern struct sdw_core sdw_core;
 
+enum sdw_port_state {
+	SDW_PORT_STATE_CH_READY,
+	SDW_PORT_STATE_CH_STOPPED,
+	SDW_PORT_STATE_CH_PREPARING,
+	SDW_PORT_STATE_CH_DEPREPARING,
+};
+
+enum sdw_stream_state {
+	SDW_STREAM_ALLOCATED,
+	SDW_STREAM_FREE,
+	SDW_STREAM_ACTIVE,
+	SDW_STREAM_INACTIVE,
+};
+
+enum sdw_clk_state {
+	SDW_CLK_STATE_OFF = 0,
+	SDW_CLK_STATE_ON = 1,
+};
+
 #endif /* _LINUX_SDW_PRIV_H */
