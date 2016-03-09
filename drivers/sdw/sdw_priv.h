@@ -53,5 +53,8 @@
 #define SDW_STATE_UNPREPARE_RT		0x6
 #define SDW_STATE_RELEASE_RT		0x7
 
+struct sdw_runtime;
+/* Defined in sdw.c, used by multiple files of module */
+extern struct sdw_core sdw_core;
 
 #endif /* _LINUX_SDW_PRIV_H */
