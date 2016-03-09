@@ -314,12 +314,82 @@ static int sdw_match(struct device *dev, struct device_driver *driver)
 
 }
 
+#ifdef CONFIG_PM_SLEEP
+static int sdw_legacy_suspend(struct device *dev, pm_message_t mesg)
+{
+	struct sdw_slave *sdw_slv = NULL;
+	struct sdw_slave_driver *driver;
+
+	if (dev->type == &sdw_slv_type)
+		sdw_slv = to_sdw_slave(dev);
+
+	if (!sdw_slv || !dev->driver)
+		return 0;
+
+	driver = to_sdw_slave_driver(dev->driver);
+	if (!driver->suspend)
+		return 0;
+
+	return driver->suspend(sdw_slv, mesg);
+}
+
+static int sdw_legacy_resume(struct device *dev)
+{
+	struct sdw_slave *sdw_slv = NULL;
+	struct sdw_slave_driver *driver;
+
+	if (dev->type == &sdw_slv_type)
+		sdw_slv = to_sdw_slave(dev);
+
+	if (!sdw_slv || !dev->driver)
+		return 0;
+
+	driver = to_sdw_slave_driver(dev->driver);
+	if (!driver->resume)
+		return 0;
+
+	return driver->resume(sdw_slv);
+}
+
+static int sdw_pm_suspend(struct device *dev)
+{
+	const struct dev_pm_ops *pm = dev->driver ? dev->driver->pm : NULL;
+
+	if (pm)
+		return pm_generic_suspend(dev);
+	else
+		return sdw_legacy_suspend(dev, PMSG_SUSPEND);
+}
+
+static int sdw_pm_resume(struct device *dev)
+{
+	const struct dev_pm_ops *pm = dev->driver ? dev->driver->pm : NULL;
+
+	if (pm)
+		return pm_generic_resume(dev);
+	else
+		return sdw_legacy_resume(dev);
+}
+
+static const struct dev_pm_ops soundwire_pm = {
+	.suspend = sdw_pm_suspend,
+	.resume = sdw_pm_resume,
+	.runtime_suspend = pm_generic_runtime_suspend,
+	.runtime_resume = pm_generic_runtime_resume,
+};
+
+#else
+#define sdw_pm_suspend		NULL
+#define sdw_pm_resume		NULL
+#endif
+
 struct bus_type sdw_bus_type = {
 	.name		= "soundwire",
 	.match		= sdw_match,
 	.probe		= sdw_probe,
 	.remove		= sdw_remove,
 	.shutdown	= sdw_shutdown,
+	.pm		= &soundwire_pm,
 };
 EXPORT_SYMBOL_GPL(sdw_bus_type);
 
