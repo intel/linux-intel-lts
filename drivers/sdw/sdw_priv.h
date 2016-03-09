@@ -76,4 +76,160 @@ enum sdw_clk_state {
 	SDW_CLK_STATE_ON = 1,
 };
 
+struct port_chn_en_state {
+	bool is_activate;
+	bool is_bank_sw;
+};
+
+struct sdw_stream_tag {
+	int stream_tag;
+	struct mutex stream_lock;
+	int ref_count;
+	enum sdw_stream_state stream_state;
+	char key[SDW_MAX_STREAM_TAG_KEY_SIZE];
+	struct sdw_runtime *sdw_rt;
+};
+
+struct sdw_stream_params {
+	unsigned int rate;
+	unsigned int channel_count;
+	unsigned int bps;
+};
+
+struct sdw_port_runtime {
+	int port_num;
+	enum sdw_port_state port_state;
+	int channel_mask;
+	/* Frame params and stream params are per port based
+	 * Single stream of audio may be split
+	 * into mutliple port each handling
+	 * subset of channels, channels should
+	 * be contiguous in subset
+	 */
+	struct sdw_transport_params transport_params;
+	struct sdw_port_params port_params;
+	struct list_head port_node;
+};
+
+struct sdw_slave_runtime {
+	/* Simplified port or full port, there cannot be both types of
+	 * data port for single stream, so data structure is kept per
+	 * slave runtime, not per port
+	 */
+	enum sdw_dpn_type type;
+	struct sdw_slave *slave;
+	int direction;
+	/* Stream may be split into multiple slaves, so this is for
+	 * this particular slave
+	 */
+	struct sdw_stream_params stream_params;
+	struct list_head port_rt_list;
+	struct list_head slave_sdw_node;
+	struct list_head slave_node;
+	int rt_state; /* State of runtime structure */
+
+};
+
+
+struct sdw_mstr_runtime {
+	struct sdw_master *mstr;
+	int direction;
+	/* Stream may be split between  multiple masters so this
+	 * is for invidual master, if stream is split into multiple
+	 * streams. For calculating the bandwidth on the particular bus
+	 * stream params of master is taken into account.
+	 */
+	struct sdw_stream_params stream_params;
+	struct list_head port_rt_list;
+	/* Two nodes are required because BW calculation is based on master
+	 * while stream enabling is based on stream_tag, where multiple
+	 * masters may be involved
+	 */
+	struct list_head mstr_sdw_node; /* This is to add mstr_rt in sdw_rt */
+	struct list_head mstr_node; /* This is to add mstr_rt in mstr */
+
+	struct list_head slv_rt_list;
+	 /* Individual stream bandwidth on given master */
+	unsigned int	stream_bw;
+	 /* State of runtime structure */
+	int rt_state;
+};
+
+struct sdw_runtime {
+	int tx_ref_count;
+	int rx_ref_count;
+	/* This is stream params for whole stream
+	 * but stream may be split between two
+	 * masters, or two slaves.
+	 */
+	struct sdw_stream_params stream_params;
+	struct list_head slv_rt_list;
+	struct list_head mstr_rt_list;
+	enum sdw_stream_type	type;
+	int stream_state;
+	int xport_state;
+
+};
+
+struct sdw_slv_status {
+	struct list_head node;
+	enum sdw_slave_status status[SOUNDWIRE_MAX_DEVICES];
+};
+
+/** Bus structure which handles bus related information */
+struct sdw_bus {
+	struct list_head bus_node;
+	struct sdw_master *mstr;
+	unsigned int	port_grp_mask[2];
+	unsigned int	slave_grp_mask[2];
+	unsigned int	clk_state;
+	unsigned int	active_bank;
+	unsigned int	clk_freq;
+	/* Bus total Bandwidth. Initialize and reset to zero */
+	unsigned int	bandwidth;
+	unsigned int	system_interval; /* Bus System Interval */
+	unsigned int	frame_freq;
+	unsigned int	col;
+	unsigned int	row;
+	struct task_struct *status_thread;
+	struct kthread_worker kworker;
+	struct kthread_work kwork;
+	struct list_head status_list;
+	spinlock_t spinlock;
+};
+
+/** Holds supported Row-Column combination related information */
+struct sdw_rowcol {
+	int     row;
+	int     col;
+	int     control_bits;
+	int data_bits;
+};
+
+/**
+ * Global soundwire structure. It handles all the streams spawned
+ * across masters and has list of bus structure per every master
+ * registered
+ */
+struct sdw_core {
+	struct sdw_stream_tag stream_tags[SDW_NUM_STREAM_TAGS];
+	struct sdw_rowcol     rowcolcomb[MAX_NUM_ROW_COLS];
+	struct list_head bus_list;
+	struct mutex core_lock;
+	struct idr idr;
+	int first_dynamic_bus_num;
+};
+
+/* Structure holding mapping of numbers to cols */
+struct sdw_num_to_col {
+	int num;
+	int col;
+};
+
+/* Structure holding mapping of numbers to rows */
+struct sdw_num_to_row {
+	int num;
+	int row;
+};
+
 #endif /* _LINUX_SDW_PRIV_H */
