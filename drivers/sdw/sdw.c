@@ -18,3 +18,19 @@
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
  */
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/errno.h>
+#include <linux/slab.h>
+#include <linux/init.h>
+#include <linux/completion.h>
+#include <linux/idr.h>
+#include <linux/delay.h>
+#include <linux/rtmutex.h>
+#include <linux/pm_runtime.h>
+#include <linux/pm_domain.h>
+#include <linux/pm.h>
+#include <linux/mod_devicetable.h>
+#include <linux/sdw_bus.h>
+#include <linux/sdw/sdw_registers.h>
+#include "sdw_priv.h"
