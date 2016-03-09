@@ -1017,6 +1017,40 @@ void sdw_mstr_driver_unregister(struct sdw_mstr_driver *driver)
 }
 EXPORT_SYMBOL_GPL(sdw_mstr_driver_unregister);
 
+void sdw_slave_driver_unregister(struct sdw_slave_driver *driver)
+{
+	driver_unregister(&driver->driver);
+}
+EXPORT_SYMBOL_GPL(sdw_slave_driver_unregister);
+
+/*
+ * An sdw_driver is used with one or more sdw_slave (slave) nodes to access
+ * sdw slave chips, on a bus instance associated with some sdw_master.
+ */
+int __sdw_slave_driver_register(struct module *owner,
+					struct sdw_slave_driver *driver)
+{
+	int res;
+	/* Can't register until after driver model init */
+	if (unlikely(WARN_ON(!sdw_bus_type.p)))
+		return -EAGAIN;
+
+	/* add the driver to the list of sdw drivers in the driver core */
+	driver->driver.owner = owner;
+	driver->driver.bus = &sdw_bus_type;
+
+	/* When registration returns, the driver core
+	 * will have called probe() for all matching-but-unbound slaves.
+	 */
+	res = driver_register(&driver->driver);
+	if (res)
+		return res;
+	pr_debug("sdw-core: driver [%s] registered\n", driver->driver.name);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(__sdw_slave_driver_register);
+
 static void sdw_exit(void)
 {
 	device_unregister(&sdw_slv);
