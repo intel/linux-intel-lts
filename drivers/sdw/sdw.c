@@ -1560,6 +1560,130 @@ out:
 }
 EXPORT_SYMBOL_GPL(sdw_config_stream);
 
+static int sdw_mstr_port_configuration(struct sdw_master *mstr,
+			struct sdw_runtime *sdw_rt,
+			struct sdw_port_config *port_config)
+{
+	struct sdw_mstr_runtime *mstr_rt;
+	struct sdw_port_runtime *port_rt;
+	int found = 0;
+	int i;
+
+	list_for_each_entry(mstr_rt, &sdw_rt->mstr_rt_list, mstr_sdw_node) {
+		if (mstr_rt->mstr == mstr) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found) {
+		dev_err(&mstr->dev, "Master not found for this port\n");
+		return -EINVAL;
+	}
+	port_rt = kzalloc((sizeof(struct sdw_port_runtime)) *
+			port_config->num_ports, GFP_KERNEL);
+	if (!port_rt)
+		return -EINVAL;
+	for (i = 0; i < port_config->num_ports; i++) {
+		port_rt[i].channel_mask = port_config->port_cfg[i].ch_mask;
+		port_rt[i].port_num = port_config->port_cfg[i].port_num;
+		list_add_tail(&port_rt[i].port_node, &mstr_rt->port_rt_list);
+	}
+	return 0;
+}
+
+static int sdw_slv_port_configuration(struct sdw_slave *slave,
+			struct sdw_runtime *sdw_rt,
+			struct sdw_port_config *port_config)
+{
+	struct sdw_slave_runtime *slv_rt;
+	struct sdw_port_runtime *port_rt;
+	int found = 0;
+	int i;
+
+	list_for_each_entry(slv_rt, &sdw_rt->slv_rt_list, slave_sdw_node) {
+		if (slv_rt->slave == slave) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found) {
+		dev_err(&slave->mstr->dev, "Slave not found for this port\n");
+		return -EINVAL;
+	}
+	port_rt = kzalloc((sizeof(struct sdw_port_runtime)) *
+			port_config->num_ports, GFP_KERNEL);
+	if (!port_rt)
+		return -EINVAL;
+
+	for (i = 0; i < port_config->num_ports; i++) {
+		port_rt[i].channel_mask = port_config->port_cfg[i].ch_mask;
+		port_rt[i].port_num = port_config->port_cfg[i].port_num;
+		list_add_tail(&port_rt[i].port_node, &slv_rt->port_rt_list);
+	}
+	return 0;
+}
+
+/**
+ * sdw_config_port: Port configuration for the SoundWire. Multiple
+ *			soundWire ports may form single stream. Like two
+ *			ports each transferring/receiving mono channels
+ *			forms single stream with stereo channels.
+ *			There will be single ASoC DAI representing
+ *			the both ports. So stream configuration will be
+ *			stereo, but both of the ports will be configured
+ *			for mono channels, each with different channel
+ *			mask. This is used to program port w.r.t to stream.
+ *			params. So no need to de-configure, since these
+ *			are automatically destroyed once stream gets
+ *			destroyed.
+ * @mstr: Master handle where the slave is connected.
+ * @slave: Slave handle.
+ * @port_config: Port configuration for each port of soundwire slave.
+ * @stream_tag: Stream tag, where this port is connected.
+ *
+ */
+int sdw_config_port(struct sdw_master *mstr,
+			struct sdw_slave *slave,
+			struct sdw_port_config *port_config,
+			unsigned int stream_tag)
+{
+	int ret = 0;
+	int i;
+	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
+	struct sdw_runtime *sdw_rt = NULL;
+	struct sdw_stream_tag *stream = NULL;
+
+
+	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
+		if (stream_tags[i].stream_tag == stream_tag) {
+			sdw_rt = stream_tags[i].sdw_rt;
+			stream = &stream_tags[i];
+			break;
+		}
+	}
+	if (!sdw_rt) {
+		dev_err(&mstr->dev, "Invalid stream tag\n");
+		return -EINVAL;
+	}
+	if (static_key_false(&sdw_trace_msg)) {
+		int i;
+
+		for (i = 0; i < port_config->num_ports; i++) {
+			trace_sdw_config_port(mstr, slave,
+				&port_config->port_cfg[i], stream_tag);
+		}
+	}
+	mutex_lock(&stream->stream_lock);
+	if (!slave)
+		ret = sdw_mstr_port_configuration(mstr, sdw_rt, port_config);
+	else
+		ret = sdw_slv_port_configuration(slave, sdw_rt, port_config);
+
+	mutex_unlock(&stream->stream_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sdw_config_port);
+
 static void sdw_exit(void)
 {
 	device_unregister(&sdw_slv);
