@@ -1089,9 +1089,16 @@ static int sdw_register_master(struct sdw_master *mstr)
 	kthread_init_work(&sdw_bus->kwork, handle_slave_status);
 	INIT_LIST_HEAD(&sdw_bus->status_list);
 	spin_lock_init(&sdw_bus->spinlock);
+	ret = sdw_mstr_bw_init(sdw_bus);
+	if (ret) {
+		dev_err(&mstr->dev, "error: Failed to init mstr bw\n");
+		goto mstr_bw_init_failed;
+	}
 	dev_dbg(&mstr->dev, "master [%s] registered\n", mstr->name);
 
 	return 0;
+
+mstr_bw_init_failed:
 task_failed:
 	device_unregister(&mstr->dev);
 out_list:
@@ -1957,7 +1964,7 @@ EXPORT_SYMBOL_GPL(sdw_config_port);
 int sdw_prepare_and_enable(int stream_tag, bool enable)
 {
 
-	int i;
+	int i, ret = 0;
 	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
 	struct sdw_stream_tag *stream = NULL;
 
@@ -1978,16 +1985,19 @@ int sdw_prepare_and_enable(int stream_tag, bool enable)
 		return -EINVAL;
 	}
 	mutex_lock(&stream->stream_lock);
-	/* Next patch adds real function here */
+	ret = sdw_bus_calc_bw(&stream_tags[i], enable);
+	if (ret)
+		pr_err("Bandwidth allocation failed\n");
+
 	mutex_unlock(&stream->stream_lock);
 	mutex_unlock(&sdw_core.core_lock);
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(sdw_prepare_and_enable);
 
 int sdw_disable_and_unprepare(int stream_tag, bool unprepare)
 {
-	int i;
+	int i, ret = 0;
 	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
 	struct sdw_stream_tag *stream = NULL;
 
@@ -2005,11 +2015,14 @@ int sdw_disable_and_unprepare(int stream_tag, bool unprepare)
 		return -EINVAL;
 	}
 	mutex_lock(&stream->stream_lock);
-	/* Next patch adds real function here */
+	ret = sdw_bus_calc_bw_dis(&stream_tags[i], unprepare);
+	if (ret)
+		pr_err("Bandwidth de-allocation failed\n");
+
 	mutex_unlock(&stream->stream_lock);
 
 	mutex_unlock(&sdw_core.core_lock);
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(sdw_disable_and_unprepare);
 
@@ -2037,6 +2050,12 @@ static int sdw_init(void)
 
 	if (retval)
 		bus_unregister(&sdw_bus_type);
+
+	retval = sdw_bus_bw_init();
+	if (retval) {
+		device_unregister(&sdw_slv);
+		bus_unregister(&sdw_bus_type);
+	}
 
 	return retval;
 }

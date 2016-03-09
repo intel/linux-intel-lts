@@ -1,2 +1,2 @@
 
-obj-$(CONFIG_SDW)			+= sdw.o
+obj-$(CONFIG_SDW)			+= sdw.o sdw_bwcalc.o
