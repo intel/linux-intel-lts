@@ -172,6 +172,59 @@ static int sdw_mstr_match(struct device *dev, struct device_driver *driver)
 	return ret;
 }
 
+static int sdw_mstr_probe(struct device *dev)
+{
+	const struct sdw_mstr_driver *sdrv = to_sdw_mstr_driver(dev->driver);
+	struct sdw_master *mstr = to_sdw_master(dev);
+	int ret = 0;
+
+	if (!sdrv->probe)
+		return -ENODEV;
+	ret = dev_pm_domain_attach(dev, true);
+	if (ret != -EPROBE_DEFER) {
+		ret = sdrv->probe(mstr, sdw_match_master(sdrv->id_table, mstr));
+		if (ret)
+			dev_pm_domain_detach(dev, true);
+	}
+	return ret;
+}
+
+static int sdw_slv_probe(struct device *dev)
+{
+	const struct sdw_slave_driver *sdrv = to_sdw_slave_driver(dev->driver);
+	struct sdw_slave *sdwslv = to_sdw_slave(dev);
+	int ret = 0;
+
+	if (!sdrv->probe)
+		return -ENODEV;
+	ret = dev_pm_domain_attach(dev, true);
+	if (ret != -EPROBE_DEFER) {
+		ret = sdrv->probe(sdwslv, sdw_match_slave(sdrv->id_table,
+								sdwslv));
+		return 0;
+		if (ret)
+			dev_pm_domain_detach(dev, true);
+	}
+	return ret;
+}
+
+static int sdw_probe(struct device *dev)
+{
+
+	struct sdw_slave *sdw_slv;
+	struct sdw_master *sdw_mstr;
+
+	sdw_slv = sdw_slave_verify(dev);
+	sdw_mstr = sdw_mstr_verify(dev);
+	if (sdw_slv)
+		return sdw_slv_probe(dev);
+	else if (sdw_mstr)
+		return sdw_mstr_probe(dev);
+
+	return -ENODEV;
+
+}
+
 static int sdw_match(struct device *dev, struct device_driver *driver)
 {
 	struct sdw_slave *sdw_slv;
@@ -190,6 +243,7 @@ static int sdw_match(struct device *dev, struct device_driver *driver)
 struct bus_type sdw_bus_type = {
 	.name		= "soundwire",
 	.match		= sdw_match,
+	.probe		= sdw_probe,
 };
 EXPORT_SYMBOL_GPL(sdw_bus_type);
 
