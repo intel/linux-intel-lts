@@ -232,4 +232,12 @@ struct sdw_num_to_row {
 	int row;
 };
 
+int sdw_slave_port_config_port_params(struct sdw_slave_runtime *slv_rt);
+int sdw_slave_port_prepare(struct sdw_slave_runtime, bool prepare);
+int sdw_bus_bw_init(void);
+int sdw_mstr_bw_init(struct sdw_bus *sdw_bs);
+int sdw_bus_calc_bw(struct sdw_stream_tag *stream_tag, bool enable);
+int sdw_bus_calc_bw_dis(struct sdw_stream_tag *stream_tag, bool unprepare);
+int sdw_chn_enable(void);
+
 #endif /* _LINUX_SDW_PRIV_H */
