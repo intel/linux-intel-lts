@@ -738,10 +738,254 @@ int sdw_slave_transfer(struct sdw_master *mstr, struct sdw_msg *msg, int num)
 }
 EXPORT_SYMBOL_GPL(sdw_slave_transfer);
 
+static int sdw_handle_dp0_interrupts(struct sdw_master *mstr,
+			struct sdw_slave *sdw_slv)
+{
+	int ret = 0;
+	struct sdw_msg rd_msg, wr_msg;
+	int impl_def_mask = 0;
+	u8 rbuf[1] = {0}, wbuf[1] = {0};
+
+	/* Create message for clearing the interrupts */
+	wr_msg.ssp_tag = 0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.addr = SDW_DP0_INTCLEAR;
+	wr_msg.len = 1;
+	wr_msg.buf = wbuf;
+	wr_msg.slave_addr = sdw_slv->slv_number;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+	/* Create message for reading the interrupts  for DP0 interrupts*/
+	rd_msg.ssp_tag = 0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.addr = SDW_DP0_INTSTAT;
+	rd_msg.len = 1;
+	rd_msg.buf = rbuf;
+	rd_msg.slave_addr = sdw_slv->slv_number;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+	ret = sdw_slave_transfer(mstr, &rd_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr->dev, "Interrupt status read failed for slave %x\n", sdw_slv->slv_number);
+		goto out;
+	}
+	if (rd_msg.buf[0] & SDW_DP0_INTSTAT_TEST_FAIL_MASK) {
+		dev_err(&mstr->dev, "Test fail for slave %d port 0\n",
+				sdw_slv->slv_number);
+		wr_msg.buf[0] |= SDW_DP0_INTCLEAR_TEST_FAIL_MASK;
+	}
+	if (rd_msg.buf[0] & SDW_DP0_INTSTAT_PORT_READY_MASK) {
+		complete(&sdw_slv->port_ready[0]);
+		wr_msg.buf[0] |= SDW_DP0_INTCLEAR_PORT_READY_MASK;
+	}
+	if (rd_msg.buf[0] & SDW_DP0_INTMASK_BRA_FAILURE_MASK) {
+		/* TODO: Handle BRA failure */
+		dev_err(&mstr->dev, "BRA failed for slave %d\n",
+				sdw_slv->slv_number);
+		wr_msg.buf[0] |= SDW_DP0_INTCLEAR_BRA_FAILURE_MASK;
+	}
+	impl_def_mask = SDW_DP0_INTSTAT_IMPDEF1_MASK |
+			SDW_DP0_INTSTAT_IMPDEF2_MASK |
+			SDW_DP0_INTSTAT_IMPDEF3_MASK;
+	if (rd_msg.buf[0] & impl_def_mask) {
+		/* TODO: Handle implementation defined mask ready */
+		wr_msg.buf[0] |= impl_def_mask;
+	}
+	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr->dev, "Register transfer failed\n");
+		goto out;
+	}
+out:
+	return ret;
+
+}
+
+static int sdw_handle_port_interrupt(struct sdw_master *mstr,
+		struct sdw_slave *sdw_slv, int port_num)
+{
+	int ret = 0;
+	struct sdw_msg rd_msg, wr_msg;
+	u8 rbuf[1], wbuf[1];
+	int impl_def_mask = 0;
+
+	if (port_num == 0)
+		ret = sdw_handle_dp0_interrupts(mstr, sdw_slv);
+
+	/* Create message for reading the port interrupts */
+	wr_msg.ssp_tag = 0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.addr = SDW_DPN_INTCLEAR +
+				(SDW_NUM_DATA_PORT_REGISTERS * port_num);
+	wr_msg.len = 1;
+	wr_msg.buf = wbuf;
+	wr_msg.slave_addr = sdw_slv->slv_number;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+	rd_msg.ssp_tag = 0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.addr = SDW_DPN_INTSTAT +
+				(SDW_NUM_DATA_PORT_REGISTERS * port_num);
+	rd_msg.len = 1;
+	rd_msg.buf = rbuf;
+	rd_msg.slave_addr = sdw_slv->slv_number;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+	ret = sdw_slave_transfer(mstr, &rd_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr->dev, "Port Status read failed for slv %x port %x\n",
+			sdw_slv->slv_number, port_num);
+		goto out;
+	}
+	if (rd_msg.buf[0] & SDW_DPN_INTSTAT_TEST_FAIL_MASK) {
+		dev_err(&mstr->dev, "Test fail for slave %x port %x\n",
+				sdw_slv->slv_number, port_num);
+		wr_msg.buf[0] |= SDW_DPN_INTCLEAR_TEST_FAIL_MASK;
+	}
+	if (rd_msg.buf[0] & SDW_DPN_INTSTAT_PORT_READY_MASK) {
+		complete(&sdw_slv->port_ready[port_num]);
+		wr_msg.buf[0] |= SDW_DPN_INTCLEAR_PORT_READY_MASK;
+	}
+	impl_def_mask = SDW_DPN_INTSTAT_IMPDEF1_MASK |
+			SDW_DPN_INTSTAT_IMPDEF2_MASK |
+			SDW_DPN_INTSTAT_IMPDEF3_MASK;
+	if (rd_msg.buf[0] & impl_def_mask) {
+		/* TODO: Handle implementation defined mask ready */
+		wr_msg.buf[0] |= impl_def_mask;
+	}
+	/* Clear and Ack the interrupt */
+	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr->dev, "Register transfer failed\n");
+		goto out;
+	}
+out:
+	return ret;
+
+}
+static int sdw_handle_slave_alerts(struct sdw_master *mstr,
+				struct sdw_slave *sdw_slv)
+{
+	struct sdw_msg rd_msg[3], wr_msg;
+	u8 rbuf[3], wbuf[1];
+	int i, ret = 0;
+	int cs_port_mask, cs_port_register, cs_port_start, cs_ports;
+
+
+	/* Read Instat 1, Instat 2 and Instat 3 registers */
+	rd_msg[0].ssp_tag = 0x0;
+	rd_msg[0].flag = SDW_MSG_FLAG_READ;
+	rd_msg[0].addr = SDW_SCP_INTSTAT_1;
+	rd_msg[0].len = 1;
+	rd_msg[0].buf = &rbuf[0];
+	rd_msg[0].slave_addr = sdw_slv->slv_number;
+	rd_msg[0].addr_page1 = 0x0;
+	rd_msg[0].addr_page2 = 0x0;
+
+	rd_msg[1].ssp_tag = 0x0;
+	rd_msg[1].flag = SDW_MSG_FLAG_READ;
+	rd_msg[1].addr = SDW_SCP_INTSTAT2;
+	rd_msg[1].len = 1;
+	rd_msg[1].buf = &rbuf[1];
+	rd_msg[1].slave_addr = sdw_slv->slv_number;
+	rd_msg[1].addr_page1 = 0x0;
+	rd_msg[1].addr_page2 = 0x0;
+
+	rd_msg[2].ssp_tag = 0x0;
+	rd_msg[2].flag = SDW_MSG_FLAG_READ;
+	rd_msg[2].addr = SDW_SCP_INTSTAT3;
+	rd_msg[2].len = 1;
+	rd_msg[2].buf = &rbuf[2];
+	rd_msg[2].slave_addr = sdw_slv->slv_number;
+	rd_msg[2].addr_page1 = 0x0;
+	rd_msg[2].addr_page2 = 0x0;
+
+	wr_msg.ssp_tag = 0x0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.addr = SDW_SCP_INTCLEAR1;
+	wr_msg.len = 1;
+	wr_msg.buf = &wbuf[0];
+	wr_msg.slave_addr = sdw_slv->slv_number;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+	ret = sdw_slave_transfer(mstr, rd_msg, 3);
+	if (ret != 3) {
+		ret = -EINVAL;
+		dev_err(&mstr->dev, "Reading of register failed\n");
+		goto out;
+	}
+	/* First handle parity and bus clash interrupts */
+	if (rd_msg[0].buf[0] & SDW_SCP_INTSTAT1_PARITY_MASK) {
+		dev_err(&mstr->dev, "Parity error detected\n");
+		wr_msg.buf[0] |= SDW_SCP_INTCLEAR1_PARITY_MASK;
+	}
+	/* Handle bus errors */
+	if (rd_msg[0].buf[0] & SDW_SCP_INTSTAT1_BUS_CLASH_MASK) {
+		dev_err(&mstr->dev, "Bus clash error detected\n");
+		wr_msg.buf[0] |= SDW_SCP_INTCLEAR1_BUS_CLASH_MASK;
+	}
+	/* Handle Port interrupts from Instat_1 registers */
+	cs_ports = 4;
+	cs_port_start = 0;
+	cs_port_mask = 0x08;
+	cs_port_register = 0;
+	for (i = cs_port_start; i < cs_port_start + cs_ports; i++) {
+		if (rd_msg[cs_port_register].buf[0] & cs_port_mask) {
+			ret += sdw_handle_port_interrupt(mstr,
+						sdw_slv, cs_port_start + i);
+		}
+		cs_port_mask = cs_port_mask << 1;
+	}
+	/* Handle interrupts from instat_2 register */
+	if (!(rd_msg[0].buf[0] & SDW_SCP_INTSTAT1_SCP2_CASCADE_MASK))
+		goto handle_instat_3_register;
+	cs_ports = 7;
+	cs_port_start = 4;
+	cs_port_mask = 0x1;
+	cs_port_register = 1;
+	for (i = cs_port_start; i < cs_port_start + cs_ports; i++) {
+		if (rd_msg[cs_port_register].buf[0] & cs_port_mask) {
+			ret += sdw_handle_port_interrupt(mstr,
+						sdw_slv, cs_port_start + i);
+		}
+		cs_port_mask = cs_port_mask << 1;
+	}
+handle_instat_3_register:
+
+	if (!(rd_msg[1].buf[0] & SDW_SCP_INTSTAT2_SCP3_CASCADE_MASK))
+		goto handle_instat_3_register;
+	cs_ports = 4;
+	cs_port_start = 11;
+	cs_port_mask = 0x1;
+	cs_port_register = 2;
+	for (i = cs_port_start; i < cs_port_start + cs_ports; i++) {
+		if (rd_msg[cs_port_register].buf[0] & cs_port_mask) {
+			ret += sdw_handle_port_interrupt(mstr,
+						sdw_slv, cs_port_start + i);
+		}
+		cs_port_mask = cs_port_mask << 1;
+	}
+	/* Ack the IntStat 1 interrupts */
+	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr->dev, "Register transfer failed\n");
+		goto out;
+	}
+out:
+	return ret;
+}
 
 static void handle_slave_status(struct kthread_work *work)
 {
-	int ret = 0;
+	int i, ret = 0;
 	struct sdw_slv_status *status, *__status__;
 	struct sdw_bus *bus =
 		container_of(work, struct sdw_bus, kwork);
@@ -759,6 +1003,32 @@ static void handle_slave_status(struct kthread_work *work)
 				 * continue.
 				 */
 				dev_err(&mstr->dev, "Registering new slave failed\n");
+		}
+		for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+			if (status->status[i] == SDW_SLAVE_STAT_NOT_PRESENT &&
+				mstr->sdw_addr[i].assigned == true)
+				/* Logical address was assigned to slave, but
+				 * now its down, so mark it as not present
+				 */
+				mstr->sdw_addr[i].status =
+					SDW_SLAVE_STAT_NOT_PRESENT;
+
+			else if (status->status[i] == SDW_SLAVE_STAT_ALERT &&
+				mstr->sdw_addr[i].assigned == true) {
+				/* Handle slave alerts */
+				mstr->sdw_addr[i].status = SDW_SLAVE_STAT_ALERT;
+				ret = sdw_handle_slave_alerts(mstr,
+						mstr->sdw_addr[i].slave);
+				if (ret)
+					dev_err(&mstr->dev, "Handle slave alert failed for Slave %d\n", i);
+
+
+
+			} else if (status->status[i] ==
+					SDW_SLAVE_STAT_ATTACHED_OK &&
+				mstr->sdw_addr[i].assigned == true)
+					mstr->sdw_addr[i].status =
+						SDW_SLAVE_STAT_ATTACHED_OK;
 		}
 		spin_lock_irqsave(&bus->spinlock, flags);
 		list_del(&status->node);
