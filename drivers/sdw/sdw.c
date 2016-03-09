@@ -441,6 +441,178 @@ void sdw_unlock_mstr(struct sdw_master *mstr)
 }
 EXPORT_SYMBOL_GPL(sdw_unlock_mstr);
 
+
+static int sdw_assign_slv_number(struct sdw_master *mstr,
+				struct sdw_msg *msg)
+{
+	int i, j, ret = -1;
+
+	sdw_lock_mstr(mstr);
+	for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+		if (mstr->sdw_addr[i].assigned == true)
+			continue;
+		mstr->sdw_addr[i].assigned = true;
+		for (j = 0; j < 6; j++)
+			mstr->sdw_addr[i].dev_id[j] = msg->buf[j];
+		ret = i;
+		break;
+	}
+	sdw_unlock_mstr(mstr);
+	return ret;
+}
+
+static int sdw_program_slv_address(struct sdw_master *mstr,
+				u8 slave_addr)
+{
+	struct sdw_msg msg;
+	u8 buf[1] = {0};
+	int ret;
+
+	buf[0] = slave_addr;
+	msg.ssp_tag = 0;
+	msg.flag = SDW_MSG_FLAG_WRITE;
+	msg.addr = SDW_SCP_DEVNUMBER;
+	msg.len = 1;
+	msg.buf = buf;
+	msg.slave_addr = 0x0;
+	msg.addr_page1 = 0x0;
+	msg.addr_page2 = 0x0;
+
+	ret = sdw_slave_transfer(mstr, &msg, 1);
+	if (ret != 1) {
+		dev_err(&mstr->dev, "Program Slave address change\n");
+		return ret;
+	}
+	return 0;
+}
+
+static void sdw_free_slv_number(struct sdw_master *mstr,
+		int slv_number)
+{
+	int i;
+
+	sdw_lock_mstr(mstr);
+	for (i = 0; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+		if (slv_number == mstr->sdw_addr[i].slv_number) {
+			mstr->sdw_addr[slv_number].assigned = false;
+			memset(&mstr->sdw_addr[slv_number].dev_id[0], 0x0, 6);
+		}
+	}
+	sdw_unlock_mstr(mstr);
+}
+
+static int sdw_register_slave(struct sdw_master *mstr)
+{
+	int ret = 0, i, ports;
+	struct sdw_msg msg;
+	u8 buf[6] = {0};
+	struct sdw_slave *sdw_slave;
+	int slv_number = -1;
+
+
+	msg.ssp_tag = 0;
+	msg.flag = SDW_MSG_FLAG_READ;
+	msg.addr = SDW_SCP_DEVID_0;
+	msg.len = 6;
+	msg.buf = buf;
+	msg.slave_addr = 0x0;
+	msg.addr_page1 = 0x0;
+	msg.addr_page2 = 0x0;
+
+	while ((ret = (sdw_slave_transfer(mstr, &msg, 1)) == 1)) {
+		slv_number = sdw_assign_slv_number(mstr, &msg);
+		if (slv_number <= 0) {
+			dev_err(&mstr->dev, "Failed to assign slv_number\n");
+			ret = -EINVAL;
+			goto slv_number_assign_fail;
+		}
+		sdw_slave = kzalloc(sizeof(struct sdw_slave), GFP_KERNEL);
+		if (!sdw_slave) {
+			ret = -ENOMEM;
+			goto mem_alloc_failed;
+		}
+		sdw_slave->mstr = mstr;
+		sdw_slave->dev.parent = &sdw_slave->mstr->dev;
+		sdw_slave->dev.bus = &sdw_bus_type;
+		sdw_slave->dev.type = &sdw_slv_type;
+		sdw_slave->slv_addr = &mstr->sdw_addr[slv_number];
+		sdw_slave->slv_addr->slave = sdw_slave;
+		/* We have assigned new slave number, so its not present
+		 * till it again attaches to bus with this new
+		 * slave address
+		 */
+		sdw_slave->slv_addr->status = SDW_SLAVE_STAT_NOT_PRESENT;
+		for (i = 0; i < 6; i++)
+			sdw_slave->dev_id[i] = msg.buf[i];
+		dev_dbg(&mstr->dev, "SDW slave slave id found with values\n");
+		dev_dbg(&mstr->dev, "dev_id0 to dev_id5: %x:%x:%x:%x:%x:%x\n",
+			msg.buf[0], msg.buf[1], msg.buf[2],
+			msg.buf[3], msg.buf[4], msg.buf[5]);
+		dev_dbg(&mstr->dev, "Slave number assigned is %x\n", slv_number);
+		/* TODO: Fill the sdw_slave structre from ACPI */
+		ports = sdw_slave->sdw_slv_cap.num_of_sdw_ports;
+		/* Add 1 for port 0 for simplicity */
+		ports++;
+		sdw_slave->port_ready =
+			kzalloc((sizeof(struct completion) * ports),
+							GFP_KERNEL);
+		if (!sdw_slave->port_ready) {
+			ret = -ENOMEM;
+			goto port_alloc_mem_failed;
+		}
+		for (i = 0; i < ports; i++)
+			init_completion(&sdw_slave->port_ready[i]);
+
+		dev_set_name(&sdw_slave->dev, "sdw-slave%d-%02x:%02x:%02x:%02x:%02x:%02x",
+			sdw_master_id(mstr),
+			sdw_slave->dev_id[0],
+			sdw_slave->dev_id[1],
+			sdw_slave->dev_id[2],
+			sdw_slave->dev_id[3],
+			sdw_slave->dev_id[4],
+			sdw_slave->dev_id[5]);
+		/* Set name based on dev_id. This will be
+		 * compared to load driver
+		 */
+		sprintf(sdw_slave->name, "%02x:%02x:%02x:%02x:%02x:%02x",
+				sdw_slave->dev_id[0],
+				sdw_slave->dev_id[1],
+				sdw_slave->dev_id[2],
+				sdw_slave->dev_id[3],
+				sdw_slave->dev_id[4],
+				sdw_slave->dev_id[5]);
+		ret = device_register(&sdw_slave->dev);
+		if (ret) {
+			dev_err(&mstr->dev, "Register slave failed\n");
+			goto reg_slv_failed;
+		}
+		ret = sdw_program_slv_address(mstr, slv_number);
+		if (ret) {
+			dev_err(&mstr->dev, "Programming slave address failed\n");
+			goto program_slv_failed;
+		}
+		dev_dbg(&mstr->dev, "Slave registered with bus id %s\n",
+			dev_name(&sdw_slave->dev));
+		sdw_slave->slv_number = slv_number;
+		mstr->num_slv++;
+		sdw_lock_mstr(mstr);
+		list_add_tail(&sdw_slave->node, &mstr->slv_list);
+		sdw_unlock_mstr(mstr);
+
+	}
+	return 0;
+program_slv_failed:
+	device_unregister(&sdw_slave->dev);
+port_alloc_mem_failed:
+reg_slv_failed:
+	kfree(sdw_slave);
+mem_alloc_failed:
+	sdw_free_slv_number(mstr, slv_number);
+slv_number_assign_fail:
+	return ret;
+
+}
+
 /**
  * __sdw_transfer - unlocked flavor of sdw_slave_transfer
  * @mstr: Handle to SDW bus
@@ -567,6 +739,34 @@ int sdw_slave_transfer(struct sdw_master *mstr, struct sdw_msg *msg, int num)
 EXPORT_SYMBOL_GPL(sdw_slave_transfer);
 
 
+static void handle_slave_status(struct kthread_work *work)
+{
+	int ret = 0;
+	struct sdw_slv_status *status, *__status__;
+	struct sdw_bus *bus =
+		container_of(work, struct sdw_bus, kwork);
+	struct sdw_master *mstr = bus->mstr;
+	unsigned long flags;
+
+	/* Handle the new attached slaves to the bus. Register new slave
+	 * to the bus.
+	 */
+	list_for_each_entry_safe(status, __status__, &bus->status_list, node) {
+		if (status->status[0] == SDW_SLAVE_STAT_ATTACHED_OK) {
+			ret += sdw_register_slave(mstr);
+			if (ret)
+				/* Even if adding new slave fails, we will
+				 * continue.
+				 */
+				dev_err(&mstr->dev, "Registering new slave failed\n");
+		}
+		spin_lock_irqsave(&bus->spinlock, flags);
+		list_del(&status->node);
+		spin_unlock_irqrestore(&bus->spinlock, flags);
+		kfree(status);
+	}
+}
+
 static int sdw_register_master(struct sdw_master *mstr)
 {
 	int ret = 0;
@@ -607,9 +807,23 @@ static int sdw_register_master(struct sdw_master *mstr)
 	ret = device_register(&mstr->dev);
 	if (ret)
 		goto out_list;
+	kthread_init_worker(&sdw_bus->kworker);
+	sdw_bus->status_thread = kthread_run(kthread_worker_fn,
+					&sdw_bus->kworker, "%s",
+					dev_name(&mstr->dev));
+	if (IS_ERR(sdw_bus->status_thread)) {
+		dev_err(&mstr->dev, "error: failed to create status message task\n");
+		ret = PTR_ERR(sdw_bus->status_thread);
+		goto task_failed;
+	}
+	kthread_init_work(&sdw_bus->kwork, handle_slave_status);
+	INIT_LIST_HEAD(&sdw_bus->status_list);
+	spin_lock_init(&sdw_bus->spinlock);
+	dev_dbg(&mstr->dev, "master [%s] registered\n", mstr->name);
 
 	return 0;
-
+task_failed:
+	device_unregister(&mstr->dev);
 out_list:
 	mutex_lock(&sdw_core.core_lock);
 	list_del(&sdw_bus->bus_node);
@@ -623,6 +837,42 @@ bus_init_not_done:
 	mutex_unlock(&sdw_core.core_lock);
 	return ret;
 }
+
+/**
+ * sdw_master_update_slv_status: Report the status of slave to the bus driver.
+ *			master calls this function based on the
+ *			interrupt it gets once the slave changes its
+ *			state.
+ * @mstr: Master handle for which status is reported.
+ * @status: Array of status of each slave.
+ */
+int sdw_master_update_slv_status(struct sdw_master *mstr,
+					struct sdw_status *status)
+{
+	struct sdw_bus *bus = NULL;
+	struct sdw_slv_status *slv_status;
+	unsigned long flags;
+
+	list_for_each_entry(bus, &sdw_core.bus_list, bus_node) {
+		if (bus->mstr == mstr)
+			break;
+	}
+	/* This is master is not registered with bus driver */
+	if (!bus) {
+		dev_info(&mstr->dev, "Master not registered with bus\n");
+		return 0;
+	}
+	slv_status = kzalloc(sizeof(struct sdw_slv_status), GFP_ATOMIC);
+	memcpy(slv_status->status, status, sizeof(struct sdw_status));
+
+	spin_lock_irqsave(&bus->spinlock, flags);
+	list_add_tail(&slv_status->node, &bus->status_list);
+	spin_unlock_irqrestore(&bus->spinlock, flags);
+
+	kthread_queue_work(&bus->kworker, &bus->kwork);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sdw_master_update_slv_status);
 
 /**
  * sdw_add_master_controller - declare sdw master, use dynamic bus number
