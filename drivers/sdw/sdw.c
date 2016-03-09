@@ -1185,6 +1185,105 @@ int sdw_register_slave_capabilities(struct sdw_slave *sdw,
 }
 EXPORT_SYMBOL_GPL(sdw_register_slave_capabilities);
 
+static int sdw_get_stream_tag(char *key, int *stream_tag)
+{
+	int i;
+	int ret = -EINVAL;
+	struct sdw_runtime *sdw_rt;
+	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
+
+	/* If stream tag is already allocated return that after incrementing
+	 * reference count. This is only possible if key is provided.
+	 */
+	mutex_lock(&sdw_core.core_lock);
+	if (!key)
+		goto key_check_not_required;
+	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
+		if (!(strcmp(stream_tags[i].key, key))) {
+			stream_tags[i].ref_count++;
+			*stream_tag = stream_tags[i].stream_tag;
+			mutex_unlock(&sdw_core.core_lock);
+			return 0;
+		}
+	}
+key_check_not_required:
+	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
+		if (!stream_tags[i].ref_count) {
+			stream_tags[i].ref_count++;
+			*stream_tag = stream_tags[i].stream_tag;
+			mutex_init(&stream_tags[i].stream_lock);
+			sdw_rt = kzalloc(sizeof(struct sdw_runtime),
+					GFP_KERNEL);
+			INIT_LIST_HEAD(&sdw_rt->slv_rt_list);
+			INIT_LIST_HEAD(&sdw_rt->mstr_rt_list);
+			sdw_rt->stream_state = SDW_STATE_INIT_STREAM_TAG;
+			stream_tags[i].sdw_rt = sdw_rt;
+			if (!stream_tags[i].sdw_rt) {
+				stream_tags[i].ref_count--;
+				ret = -ENOMEM;
+				goto out;
+			}
+			if (key)
+				strlcpy(stream_tags[i].key, key,
+					SDW_MAX_STREAM_TAG_KEY_SIZE);
+			mutex_unlock(&sdw_core.core_lock);
+			return 0;
+		}
+	}
+	mutex_unlock(&sdw_core.core_lock);
+out:
+	return ret;
+}
+
+void sdw_release_stream_tag(int stream_tag)
+{
+	int i;
+	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
+
+	mutex_lock(&sdw_core.core_lock);
+	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
+		if (stream_tag == stream_tags[i].stream_tag) {
+			stream_tags[i].ref_count--;
+			if (stream_tags[i].ref_count == 0) {
+				kfree(stream_tags[i].sdw_rt);
+				memset(stream_tags[i].key, 0x0,
+					SDW_MAX_STREAM_TAG_KEY_SIZE);
+			}
+		}
+	}
+	mutex_unlock(&sdw_core.core_lock);
+}
+EXPORT_SYMBOL_GPL(sdw_release_stream_tag);
+
+/**
+ * sdw_alloc_stream_tag: Assign the stream tag for the unique streams
+ *			between master and slave device.
+ *			Normally master master will request for the
+ *			stream tag for the stream between master
+ *			and slave device. It programs the same stream
+ *			tag to the slave device. Stream tag is unique
+ *			for all the streams between masters and slave
+ *			across SoCs.
+ * @guid: Group of the device port. All the ports of the device with
+ *			part of same stream will have same guid.
+ *
+ * @stream:tag: Stream tag returned by bus driver.
+ */
+int sdw_alloc_stream_tag(char *guid, int *stream_tag)
+{
+	int ret = 0;
+
+	ret = sdw_get_stream_tag(guid, stream_tag);
+	if (ret) {
+		pr_err("Stream tag assignment failed\n");
+		goto out;
+	}
+
+out:
+	return ret;
+}
+EXPORT_SYMBOL_GPL(sdw_alloc_stream_tag);
+
 static void sdw_exit(void)
 {
 	device_unregister(&sdw_slv);
