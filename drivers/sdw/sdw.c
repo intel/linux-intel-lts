@@ -38,6 +38,8 @@
 #define sdw_slave_attr_gr NULL
 #define sdw_mstr_attr_gr NULL
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/sdw.h>
 
 /* Global instance handling all the SoundWire buses */
 struct sdw_core sdw_core;
@@ -396,6 +398,173 @@ EXPORT_SYMBOL_GPL(sdw_bus_type);
 struct device sdw_slv = {
 	.init_name = "soundwire",
 };
+
+static struct static_key sdw_trace_msg = STATIC_KEY_INIT_FALSE;
+
+int sdw_transfer_trace_reg(void)
+{
+	static_key_slow_inc(&sdw_trace_msg);
+}
+
+void sdw_transfer_trace_unreg(void)
+{
+	static_key_slow_dec(&sdw_trace_msg);
+}
+
+/**
+ * sdw_lock_mstr - Get exclusive access to an SDW bus segment
+ * @mstr: Target SDW bus segment
+ */
+void sdw_lock_mstr(struct sdw_master *mstr)
+{
+	rt_mutex_lock(&mstr->bus_lock);
+}
+EXPORT_SYMBOL_GPL(sdw_lock_mstr);
+
+/**
+ * sdw_trylock_mstr - Try to get exclusive access to an SDW bus segment
+ * @mstr: Target SDW bus segment
+ */
+static int sdw_trylock_mstr(struct sdw_master *mstr)
+{
+	return rt_mutex_trylock(&mstr->bus_lock);
+}
+
+
+/**
+ * sdw_unlock_mstr - Release exclusive access to an SDW bus segment
+ * @mstr: Target SDW bus segment
+ */
+void sdw_unlock_mstr(struct sdw_master *mstr)
+{
+	rt_mutex_unlock(&mstr->bus_lock);
+}
+EXPORT_SYMBOL_GPL(sdw_unlock_mstr);
+
+/**
+ * __sdw_transfer - unlocked flavor of sdw_slave_transfer
+ * @mstr: Handle to SDW bus
+ * @msg: One or more messages to execute before STOP is issued to
+ *	terminate the operation; each message begins with a START.
+ * @num: Number of messages to be executed.
+ *
+ * Returns negative errno, else the number of messages executed.
+ *
+ * Adapter lock must be held when calling this function. No debug logging
+ * takes place. mstr->algo->master_xfer existence isn't checked.
+ */
+int __sdw_transfer(struct sdw_master *mstr, struct sdw_msg *msg, int num)
+{
+	unsigned long orig_jiffies;
+	int ret = 0, try, i;
+	struct sdw_slv_capabilities *slv_cap;
+	int program_scp_addr_page;
+	int addr = msg->slave_addr;
+
+	/* sdw_trace_msg gets enabled when tracepoint sdw_slave_transfer gets
+	 * enabled.  This is an efficient way of keeping the for-loop from
+	 * being executed when not needed.
+	 */
+	if (static_key_false(&sdw_trace_msg)) {
+		int i;
+
+		for (i = 0; i < num; i++)
+			if (msg[i].flag & SDW_MSG_FLAG_READ)
+				trace_sdw_read(mstr, &msg[i], i);
+			else
+				trace_sdw_write(mstr, &msg[i], i);
+	}
+	orig_jiffies = jiffies;
+	for (i = 0; i < num; i++) {
+		for (ret = 0, try = 0; try <= mstr->retries; try++) {
+			if (msg->slave_addr == 0)
+				/* If we are enumerating slave address 0,
+				 * we dont program scp, it should be set
+				 * default to 0
+				 */
+				program_scp_addr_page = 0;
+			else if (msg->slave_addr == 15)
+				/* If we are broadcasting, we need to program
+				 * the SCP address as some slaves will be
+				 * supporting it while some wont be.
+				 * So it should be programmed
+				 */
+				program_scp_addr_page = 1;
+
+			else {
+				slv_cap =
+					&mstr->sdw_addr[addr].slave->sdw_slv_cap;
+				program_scp_addr_page =
+					slv_cap->paging_supported;
+			}
+			ret = mstr->driver->mstr_ops->xfer_msg(mstr,
+						msg, program_scp_addr_page);
+			if (ret != -EAGAIN)
+				break;
+			if (time_after(jiffies,
+					orig_jiffies + mstr->timeout))
+				break;
+		}
+	}
+
+	if (static_key_false(&sdw_trace_msg)) {
+		int i;
+
+		for (i = 0; i < msg->len; i++)
+			if (msg[i].flag & SDW_MSG_FLAG_READ)
+				trace_sdw_reply(mstr, &msg[i], i);
+		trace_sdw_result(mstr, i, ret);
+	}
+	if (!ret)
+		return i;
+	return ret;
+}
+EXPORT_SYMBOL_GPL(__sdw_transfer);
+
+/**
+ * sdw_slave_transfer:  Transfer message between slave and mstr on the bus.
+ * @mstr: mstr master which will transfer the message
+ * @msg: Array of messages to be transferred.
+ * @num: Number of messages to be transferred, messages include read and write
+ *		messages, but not the ping messages.
+ */
+int sdw_slave_transfer(struct sdw_master *mstr, struct sdw_msg *msg, int num)
+{
+	int ret;
+
+	/* REVISIT the fault reporting model here is weak:
+	 *
+	 *  - When we get an error after receiving N bytes from a slave,
+	 *    there is no way to report "N".
+	 *
+	 *  - When we get a NAK after transmitting N bytes to a slave,
+	 *    there is no way to report "N" ... or to let the mstr
+	 *    continue executing the rest of this combined message, if
+	 *    that's the appropriate response.
+	 *
+	 *  - When for example "num" is two and we successfully complete
+	 *    the first message but get an error part way through the
+	 *    second, it's unclear whether that should be reported as
+	 *    one (discarding status on the second message) or errno
+	 *    (discarding status on the first one).
+	 */
+	if (mstr->driver->mstr_ops->xfer_msg) {
+		if (in_atomic() || irqs_disabled()) {
+			ret = sdw_trylock_mstr(mstr);
+			if (!ret)
+				/* SDW activity is ongoing. */
+				return -EAGAIN;
+		}
+		sdw_lock_mstr(mstr);
+
+		ret = __sdw_transfer(mstr, msg, num);
+		sdw_unlock_mstr(mstr);
+		return ret;
+	}
+	dev_dbg(&mstr->dev, "SDW level transfers not supported\n");
+	return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL_GPL(sdw_slave_transfer);
 
 
 static int sdw_register_master(struct sdw_master *mstr)
