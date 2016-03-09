@@ -208,6 +208,50 @@ static int sdw_slv_probe(struct device *dev)
 	return ret;
 }
 
+static int sdw_mstr_remove(struct device *dev)
+{
+	const struct sdw_mstr_driver *sdrv = to_sdw_mstr_driver(dev->driver);
+	int ret = 0;
+
+	if (sdrv->remove)
+		ret = sdrv->remove(to_sdw_master(dev));
+	else
+		return -ENODEV;
+
+	dev_pm_domain_detach(dev, true);
+	return ret;
+
+}
+
+static int sdw_slv_remove(struct device *dev)
+{
+	const struct sdw_slave_driver *sdrv = to_sdw_slave_driver(dev->driver);
+	int ret = 0;
+
+	if (sdrv->remove)
+		ret = sdrv->remove(to_sdw_slave(dev));
+	else
+		return -ENODEV;
+
+	dev_pm_domain_detach(dev, true);
+	return ret;
+}
+
+static int sdw_remove(struct device *dev)
+{
+	struct sdw_slave *sdw_slv;
+	struct sdw_master *sdw_mstr;
+
+	sdw_slv = sdw_slave_verify(dev);
+	sdw_mstr = sdw_mstr_verify(dev);
+	if (sdw_slv)
+		return sdw_slv_remove(dev);
+	else if (sdw_mstr)
+		return sdw_mstr_remove(dev);
+
+	return 0;
+}
+
 static int sdw_probe(struct device *dev)
 {
 
@@ -244,6 +288,7 @@ struct bus_type sdw_bus_type = {
 	.name		= "soundwire",
 	.match		= sdw_match,
 	.probe		= sdw_probe,
+	.remove		= sdw_remove,
 };
 EXPORT_SYMBOL_GPL(sdw_bus_type);
 
