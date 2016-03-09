@@ -1284,6 +1284,282 @@ out:
 }
 EXPORT_SYMBOL_GPL(sdw_alloc_stream_tag);
 
+static struct sdw_mstr_runtime *sdw_get_mstr_rt(struct sdw_runtime *sdw_rt,
+		struct sdw_master *mstr) {
+
+	struct sdw_mstr_runtime *mstr_rt;
+	int ret = 0;
+
+	list_for_each_entry(mstr_rt, &sdw_rt->mstr_rt_list, mstr_sdw_node) {
+		if (mstr_rt->mstr == mstr)
+			return mstr_rt;
+	}
+
+	/* Allocate sdw_mstr_runtime structure */
+	mstr_rt = kzalloc(sizeof(struct sdw_mstr_runtime), GFP_KERNEL);
+	if (!mstr_rt) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	/* Initialize sdw_mstr_runtime structure */
+	INIT_LIST_HEAD(&mstr_rt->port_rt_list);
+	INIT_LIST_HEAD(&mstr_rt->slv_rt_list);
+	list_add_tail(&mstr_rt->mstr_sdw_node, &sdw_rt->mstr_rt_list);
+	list_add_tail(&mstr_rt->mstr_node, &mstr->mstr_rt_list);
+	mstr_rt->rt_state = SDW_STATE_INIT_RT;
+	mstr_rt->mstr = mstr;
+out:
+	return mstr_rt;
+}
+
+static struct sdw_slave_runtime *sdw_config_slave_stream(
+				struct sdw_slave *slave,
+				struct sdw_stream_config *stream_config,
+				struct sdw_runtime *sdw_rt)
+{
+	struct sdw_slave_runtime *slv_rt;
+	int ret = 0;
+	struct sdw_stream_params *str_p;
+
+	slv_rt = kzalloc(sizeof(struct sdw_slave_runtime), GFP_KERNEL);
+	if (!slv_rt) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	slv_rt->slave = slave;
+	str_p = &slv_rt->stream_params;
+	slv_rt->direction = stream_config->direction;
+	slv_rt->rt_state = SDW_STATE_CONFIG_RT;
+	str_p->rate = stream_config->frame_rate;
+	str_p->channel_count = stream_config->channel_count;
+	str_p->bps = stream_config->bps;
+	INIT_LIST_HEAD(&slv_rt->port_rt_list);
+out:
+	return slv_rt;
+}
+
+static void sdw_release_mstr_stream(struct sdw_master *mstr,
+			struct sdw_runtime *sdw_rt)
+{
+	struct sdw_mstr_runtime *mstr_rt, *__mstr_rt;
+
+	list_for_each_entry_safe(mstr_rt, __mstr_rt, &sdw_rt->mstr_rt_list,
+			mstr_sdw_node) {
+		if (mstr_rt->mstr == mstr) {
+			list_del(&mstr_rt->mstr_sdw_node);
+			if (mstr_rt->direction == SDW_DATA_DIR_OUT)
+				sdw_rt->tx_ref_count--;
+			else
+				sdw_rt->rx_ref_count--;
+			list_del(&mstr_rt->mstr_node);
+			kfree(mstr_rt);
+		}
+	}
+}
+
+static void sdw_release_slave_stream(struct sdw_slave *slave,
+			struct sdw_runtime *sdw_rt)
+{
+	struct sdw_slave_runtime *slv_rt, *__slv_rt;
+
+	list_for_each_entry_safe(slv_rt, __slv_rt, &sdw_rt->slv_rt_list,
+			slave_sdw_node) {
+		if (slv_rt->slave == slave) {
+			list_del(&slv_rt->slave_sdw_node);
+			if (slv_rt->direction == SDW_DATA_DIR_OUT)
+				sdw_rt->tx_ref_count--;
+			else
+				sdw_rt->rx_ref_count--;
+
+			kfree(slv_rt);
+		}
+	}
+}
+
+/**
+ * sdw_release_stream: De-allocates the bandwidth allocated to the
+ *			the stream. This is reference counted,
+ *			so for the last stream count, BW will be de-allocated
+ *			for the stream. Normally this will be called
+ *			as part of hw_free.
+ *
+ * @mstr: Master handle
+ * @slave: SoundWire slave handle.
+ * @stream_config: Stream configuration for the soundwire audio stream.
+ * @stream_tag: Unique stream tag identifier across SoC for all soundwire
+ *		busses.
+ *		for each audio stream between slaves. This stream tag
+ *		will be allocated by master driver for every
+ *		stream getting open.
+ */
+int sdw_release_stream(struct sdw_master *mstr,
+		struct sdw_slave *slave,
+		unsigned int stream_tag)
+{
+	int i;
+	struct sdw_runtime *sdw_rt = NULL;
+	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
+
+	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
+		if (stream_tags[i].stream_tag == stream_tag) {
+			sdw_rt = stream_tags[i].sdw_rt;
+			break;
+		}
+	}
+	if (!sdw_rt) {
+		dev_err(&mstr->dev, "Invalid stream tag\n");
+		return -EINVAL;
+	}
+	if (!slave)
+		sdw_release_mstr_stream(mstr, sdw_rt);
+	else
+		sdw_release_slave_stream(slave, sdw_rt);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sdw_release_stream);
+
+/**
+ * sdw_configure_stream: Allocates the B/W onto the soundwire bus
+ *			for transferring the data between slave and master.
+ *			This is configuring the single stream of data.
+ *			This will be called by slave, Slave stream
+ *			configuration should match the master stream
+ *			configuration. Normally slave would call this
+ *			as a part of hw_params.
+ *
+ * @mstr: Master handle
+ * @sdw_slave: SoundWire slave handle.
+ * @stream_config: Stream configuration for the soundwire audio stream.
+ * @stream_tag: Unique stream tag identifier across the soundwire bus
+ *		for each audio stream between slaves and master.
+ *		This is something like stream_tag in HDA protocol, but
+ *		here its virtual rather than being embedded into protocol.
+ *		Further same stream tag is valid across masters also
+ *		if some ports of the master is participating in
+ *		stream aggregation. This is input parameters to the
+ *		function.
+ */
+int sdw_config_stream(struct sdw_master *mstr,
+		struct sdw_slave *slave,
+		struct sdw_stream_config *stream_config,
+		unsigned int stream_tag)
+{
+	int i;
+	int ret = 0;
+	struct sdw_runtime *sdw_rt = NULL;
+	struct sdw_mstr_runtime *mstr_rt = NULL;
+	struct sdw_slave_runtime *slv_rt = NULL;
+	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
+	struct sdw_stream_tag *stream = NULL;
+
+	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
+		if (stream_tags[i].stream_tag == stream_tag) {
+			sdw_rt = stream_tags[i].sdw_rt;
+			stream = &stream_tags[i];
+			break;
+		}
+	}
+	if (!sdw_rt) {
+		dev_dbg(&mstr->dev, "Valid stream tag not found\n");
+		ret = -EINVAL;
+		goto out;
+	}
+	if (static_key_false(&sdw_trace_msg))
+		trace_sdw_config_stream(mstr, slave, stream_config,
+							stream_tag);
+
+	mutex_lock(&stream->stream_lock);
+
+	mstr_rt = sdw_get_mstr_rt(sdw_rt, mstr);
+	if (!mstr_rt) {
+		dev_err(&mstr->dev, "master runtime configuration failed\n");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (!slave) {
+		mstr_rt->direction = stream_config->direction;
+		mstr_rt->rt_state = SDW_STATE_CONFIG_RT;
+		sdw_rt->xport_state = SDW_STATE_ONLY_XPORT_STREAM;
+
+		mstr_rt->stream_params.rate = stream_config->frame_rate;
+		mstr_rt->stream_params.channel_count =
+					stream_config->channel_count;
+		mstr_rt->stream_params.bps = stream_config->bps;
+
+	} else
+		slv_rt = sdw_config_slave_stream(slave,
+						stream_config, sdw_rt);
+	/* Stream params will be stored based on Tx only, since there can
+	 * be only one Tx and muliple Rx, There can be muliple Tx if
+	 * there is aggregation on Tx. That is handled by adding the channels
+	 * to stream_params for each aggregated Tx slaves
+	 */
+	if (!sdw_rt->tx_ref_count && stream_config->direction ==
+					SDW_DATA_DIR_OUT) {
+		sdw_rt->stream_params.rate = stream_config->frame_rate;
+		sdw_rt->stream_params.channel_count =
+						stream_config->channel_count;
+		sdw_rt->stream_params.bps = stream_config->bps;
+		sdw_rt->tx_ref_count++;
+	}
+
+
+	/* Normally there will be only one Tx in system, multiple Tx
+	 * can only  be there if we support aggregation. In that case
+	 * there may be multiple slave or masters handing different
+	 * channels of same Tx stream.
+	 */
+	else if (sdw_rt->tx_ref_count && stream_config->direction ==
+						SDW_DATA_DIR_OUT) {
+		if (sdw_rt->stream_params.rate !=
+			stream_config->frame_rate) {
+			dev_err(&mstr->dev, "Frame rate for aggregated devices not matching\n");
+			ret = -EINVAL;
+			goto free_mem;
+		}
+		if (sdw_rt->stream_params.bps != stream_config->bps) {
+			dev_err(&mstr->dev, "bps for aggregated devices not matching\n");
+			ret = -EINVAL;
+			goto free_mem;
+		}
+		/* Number of channels gets added, since both devices will
+		 * be supporting different channels. Like one Codec
+		 * supporting L and other supporting R channel.
+		 */
+		sdw_rt->stream_params.channel_count +=
+			stream_config->channel_count;
+		sdw_rt->tx_ref_count++;
+	} else
+		sdw_rt->rx_ref_count++;
+
+	/* SRK: check with hardik */
+	sdw_rt->type = stream_config->type;
+	sdw_rt->stream_state  = SDW_STATE_CONFIG_STREAM;
+
+	/* Slaves are added to two list, This is because BW is calculated
+	 * for two masters individually, while Ports are enabled of all
+	 * the aggregated masters and slaves part of the same  stream tag
+	 * simultaneously.
+	 */
+	if (slave) {
+		list_add_tail(&slv_rt->slave_sdw_node, &sdw_rt->slv_rt_list);
+		list_add_tail(&slv_rt->slave_node, &mstr_rt->slv_rt_list);
+	}
+	mutex_unlock(&stream->stream_lock);
+	return ret;
+
+free_mem:
+	mutex_unlock(&stream->stream_lock);
+	kfree(mstr_rt);
+	kfree(slv_rt);
+out:
+	return ret;
+
+}
+EXPORT_SYMBOL_GPL(sdw_config_stream);
+
 static void sdw_exit(void)
 {
 	device_unregister(&sdw_slv);

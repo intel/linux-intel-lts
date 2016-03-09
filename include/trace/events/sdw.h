@@ -166,6 +166,66 @@ TRACE_EVENT_FN(sdw_result,
 	       sdw_transfer_trace_reg,
 	       sdw_transfer_trace_unreg);
 
+/*
+ * sdw_stream_config() configuration
+ */
+TRACE_EVENT_FN(sdw_config_stream,
+	       TP_PROTO(const struct sdw_master *mstr, const struct sdw_slave *slv, const struct sdw_stream_config *str_cfg, int stream_tag),
+	       TP_ARGS(mstr, slv, str_cfg, stream_tag),
+	       TP_STRUCT__entry(
+		       __field(unsigned int,	frame_rate)
+		       __field(unsigned int,	ch_cnt)
+		       __field(unsigned int,	bps)
+		       __field(unsigned int,	direction)
+		       __field(unsigned int,	stream_tag)
+		       __array(char,		name,	SOUNDWIRE_NAME_SIZE)
+				),
+	       TP_fast_assign(
+		       __entry->frame_rate = str_cfg->frame_rate;
+		       __entry->ch_cnt = str_cfg->channel_count;
+		       __entry->bps = str_cfg->bps;
+		       __entry->direction = str_cfg->direction;
+		       __entry->stream_tag = stream_tag;
+		       slv ? strncpy(entry->name, dev_name(&slv->dev), SOUNDWIRE_NAME_SIZE) : strncpy(entry->name, dev_name(&mstr->dev), SOUNDWIRE_NAME_SIZE);
+			      ),
+	       TP_printk("Stream_config dev = %s stream_tag = %d, frame_rate = %d, ch_count = %d bps = %d dir = %d",
+			__entry->name,
+			__entry->stream_tag,
+			 __entry->frame_rate,
+			 __entry->ch_cnt,
+			 __entry->bps,
+			 __entry->direction
+			 ),
+	       sdw_transfer_trace_reg,
+	       sdw_transfer_trace_unreg);
+
+/*
+ * sdw_port_config() configuration
+ */
+TRACE_EVENT_FN(sdw_config_port,
+	       TP_PROTO(const struct sdw_master *mstr, const struct sdw_slave *slv, const struct sdw_port_cfg *port_cfg, int stream_tag),
+	       TP_ARGS(mstr, slv, port_cfg, stream_tag),
+	       TP_STRUCT__entry(
+		       __field(unsigned int,	port_num)
+		       __field(unsigned int,	ch_mask)
+		       __field(unsigned int,	stream_tag)
+		       __array(char,		name,	SOUNDWIRE_NAME_SIZE)
+				),
+	       TP_fast_assign(
+		       __entry->port_num = port_cfg->port_num;
+		       __entry->ch_mask = port_cfg->ch_mask;
+		       __entry->stream_tag = stream_tag;
+		       slv ? strncpy(entry->name, dev_name(&slv->dev), SOUNDWIRE_NAME_SIZE) : strncpy(entry->name, dev_name(&mstr->dev), SOUNDWIRE_NAME_SIZE);
+			      ),
+	       TP_printk("Port_config dev = %s stream_tag = %d, port = %d, ch_mask = %d",
+			__entry->name,
+			__entry->stream_tag,
+			 __entry->port_num,
+			 __entry->ch_mask
+			 ),
+	       sdw_transfer_trace_reg,
+	       sdw_transfer_trace_unreg);
+
 #endif /* _TRACE_SDW_H */
 
 /* This part must be outside protection */
