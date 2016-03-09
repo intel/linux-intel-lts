@@ -1684,6 +1684,65 @@ int sdw_config_port(struct sdw_master *mstr,
 }
 EXPORT_SYMBOL_GPL(sdw_config_port);
 
+int sdw_prepare_and_enable(int stream_tag, bool enable)
+{
+
+	int i;
+	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
+	struct sdw_stream_tag *stream = NULL;
+
+	/* TBD: SRK, Check with hardik whether both locks needed
+	 * stream and core??
+	 */
+	mutex_lock(&sdw_core.core_lock);
+
+	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
+		if (stream_tag == stream_tags[i].stream_tag) {
+			stream = &stream_tags[i];
+			break;
+		}
+	}
+	if (stream == NULL) {
+		mutex_unlock(&sdw_core.core_lock);
+		WARN_ON(1); /* Return from here after unlocking core*/
+		return -EINVAL;
+	}
+	mutex_lock(&stream->stream_lock);
+	/* Next patch adds real function here */
+	mutex_unlock(&stream->stream_lock);
+	mutex_unlock(&sdw_core.core_lock);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sdw_prepare_and_enable);
+
+int sdw_disable_and_unprepare(int stream_tag, bool unprepare)
+{
+	int i;
+	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
+	struct sdw_stream_tag *stream = NULL;
+
+	mutex_lock(&sdw_core.core_lock);
+
+	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
+		if (stream_tag == stream_tags[i].stream_tag) {
+			stream = &stream_tags[i];
+			break;
+		}
+	}
+	if (stream == NULL) {
+		mutex_unlock(&sdw_core.core_lock);
+		WARN_ON(1); /* Return from here after unlocking core*/
+		return -EINVAL;
+	}
+	mutex_lock(&stream->stream_lock);
+	/* Next patch adds real function here */
+	mutex_unlock(&stream->stream_lock);
+
+	mutex_unlock(&sdw_core.core_lock);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sdw_disable_and_unprepare);
+
 static void sdw_exit(void)
 {
 	device_unregister(&sdw_slv);
