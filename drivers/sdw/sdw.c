@@ -397,6 +397,97 @@ struct device sdw_slv = {
 	.init_name = "soundwire",
 };
 
+
+static int sdw_register_master(struct sdw_master *mstr)
+{
+	int ret = 0;
+	int i;
+	struct sdw_bus *sdw_bus;
+
+	/* Can't register until after driver model init */
+	if (unlikely(WARN_ON(!sdw_bus_type.p))) {
+		ret = -EAGAIN;
+		goto bus_init_not_done;
+	}
+	/* Sanity checks */
+	if (unlikely(mstr->name[0] == '\0')) {
+		pr_err("sdw-core: Attempt to register an master with no name!\n");
+		ret = -EINVAL;
+		goto mstr_no_name;
+	}
+	for (i = 0; i <= SOUNDWIRE_MAX_DEVICES; i++)
+		mstr->sdw_addr[i].slv_number = i;
+
+	rt_mutex_init(&mstr->bus_lock);
+	INIT_LIST_HEAD(&mstr->slv_list);
+	INIT_LIST_HEAD(&mstr->mstr_rt_list);
+
+	sdw_bus = kzalloc(sizeof(struct sdw_bus), GFP_KERNEL);
+	if (!sdw_bus)
+		goto bus_alloc_failed;
+	sdw_bus->mstr = mstr;
+
+	mutex_lock(&sdw_core.core_lock);
+	list_add_tail(&sdw_bus->bus_node, &sdw_core.bus_list);
+	mutex_unlock(&sdw_core.core_lock);
+
+	dev_set_name(&mstr->dev, "sdw-%d", mstr->nr);
+	mstr->dev.bus = &sdw_bus_type;
+	mstr->dev.type = &sdw_mstr_type;
+
+	ret = device_register(&mstr->dev);
+	if (ret)
+		goto out_list;
+
+	return 0;
+
+out_list:
+	mutex_lock(&sdw_core.core_lock);
+	list_del(&sdw_bus->bus_node);
+	mutex_unlock(&sdw_core.core_lock);
+	kfree(sdw_bus);
+bus_alloc_failed:
+mstr_no_name:
+bus_init_not_done:
+	mutex_lock(&sdw_core.core_lock);
+	idr_remove(&sdw_core.idr, mstr->nr);
+	mutex_unlock(&sdw_core.core_lock);
+	return ret;
+}
+
+/**
+ * sdw_add_master_controller - declare sdw master, use dynamic bus number
+ * @master: the master to add
+ * Context: can sleep
+ *
+ * This routine is used to declare an sdw master when its bus number
+ * doesn't matter or when its bus number is specified by an dt alias.
+ * Examples of bases when the bus number doesn't matter: sdw masters
+ * dynamically added by USB links or PCI plugin cards.
+ *
+ * When this returns zero, a new bus number was allocated and stored
+ * in mstr->nr, and the specified master became available for slaves.
+ * Otherwise, a negative errno value is returned.
+ */
+int sdw_add_master_controller(struct sdw_master *mstr)
+{
+	int id;
+
+	mutex_lock(&sdw_core.core_lock);
+
+	id = idr_alloc(&sdw_core.idr, mstr,
+		       sdw_core.first_dynamic_bus_num, 0, GFP_KERNEL);
+	mutex_unlock(&sdw_core.core_lock);
+	if (id < 0)
+		return id;
+
+	mstr->nr = id;
+
+	return sdw_register_master(mstr);
+}
+EXPORT_SYMBOL_GPL(sdw_add_master_controller);
+
+
 static void sdw_exit(void)
 {
 	device_unregister(&sdw_slv);
