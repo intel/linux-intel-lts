@@ -121,6 +121,11 @@ struct skl_sst {
 
 	/* Callback to update dynamic clock and power gating registers */
 	void (*clock_power_gating)(struct device *dev, bool enable);
+
+	/* SDW Devices in DSP Space */
+	int num_sdw_controllers;
+	/* Array of sdw masters */
+	struct sdw_master *mstr;
 };
 
 struct skl_ipc_init_instance_msg {
