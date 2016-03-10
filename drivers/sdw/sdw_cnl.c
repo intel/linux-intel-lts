@@ -476,10 +476,194 @@ irqreturn_t cnl_sdw_irq_handler(int irq, void *context)
 	return IRQ_HANDLED;
 }
 
+static enum sdw_command_response cnl_program_scp_addr(struct sdw_master *mstr,
+					struct sdw_msg *msg)
+{
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+	u32 cmd_base = SDW_CNL_MCP_COMMAND_BASE;
+	u32 cmd_data[2] = {0, 0};
+	unsigned long time_left;
+	int no_ack = 0, nack = 0;
+	int i;
+
+	/* Since we are programming 2 commands, program the
+	 * RX watermark level at 2
+	 */
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_FIFOLEVEL, 2);
+	/* Program device address */
+	cmd_data[0] |= (msg->slave_addr & MCP_COMMAND_DEV_ADDR_MASK) <<
+				MCP_COMMAND_DEV_ADDR_SHIFT;
+	/* Write command to program the scp_addr1 register */
+	cmd_data[0] |= (0x3 << MCP_COMMAND_COMMAND_SHIFT);
+	cmd_data[1] = cmd_data[0];
+	/* scp_addr1 register address */
+	cmd_data[0] |= (SDW_SCP_ADDRPAGE1 << MCP_COMMAND_REG_ADDR_L_SHIFT);
+	cmd_data[1] |= (SDW_SCP_ADDRPAGE2 << MCP_COMMAND_REG_ADDR_L_SHIFT);
+	cmd_data[0] |= msg->addr_page1;
+	cmd_data[1] |= msg->addr_page2;
+
+	cnl_sdw_reg_writel(data->sdw_regs, cmd_base, cmd_data[0]);
+	cmd_base += SDW_CNL_CMD_WORD_LEN;
+	cnl_sdw_reg_writel(data->sdw_regs, cmd_base, cmd_data[1]);
+
+	time_left = wait_for_completion_timeout(&sdw->tx_complete,
+						3000);
+	if (!time_left) {
+		dev_err(&mstr->dev, "Controller Timed out\n");
+		msg->len = 0;
+		return -ETIMEDOUT;
+	}
+
+	for (i = 0; i < CNL_SDW_SCP_ADDR_REGS; i++) {
+		if (!(MCP_RESPONSE_ACK_MASK & sdw->response_buf[i])) {
+			no_ack = 1;
+				dev_err(&mstr->dev, "Ack not recevied\n");
+			if ((MCP_RESPONSE_NACK_MASK & sdw->response_buf[i])) {
+				nack = 1;
+				dev_err(&mstr->dev, "NACK recevied\n");
+			}
+		}
+	}
+	/* We dont return error if NACK or No ACK detected for broadcast addr
+	 * because some slave might support SCP addr, while some slaves may not
+	 * support it. This is not correct, since we wont be able to find out
+	 * if NACK is detected because of slave not supporting SCP_addrpage or
+	 * its a genuine NACK because of bus errors. We are not sure what slaves
+	 * will report, NACK or No ACK for the scp_addrpage programming if they
+	 * dont support it. Spec is not clear about this.
+	 * This needs to be thought through
+	 */
+	if (nack & (msg->slave_addr != 15)) {
+		dev_err(&mstr->dev, "SCP_addrpage write NACKed for slave %d\n", msg->slave_addr);
+		return -EREMOTEIO;
+	} else if (no_ack && (msg->slave_addr != 15)) {
+		dev_err(&mstr->dev, "SCP_addrpage write ignored for slave %d\n", msg->slave_addr);
+		return -EREMOTEIO;
+	} else
+		return 0;
+
+}
+
+static enum sdw_command_response sdw_xfer_msg(struct sdw_master *mstr,
+		struct sdw_msg *msg, int cmd, int offset, int count)
+{
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+	int i, j;
+	u32 cmd_base =  SDW_CNL_MCP_COMMAND_BASE;
+	u32 response_base = SDW_CNL_MCP_RESPONSE_BASE;
+	u32 cmd_data = 0, response_data;
+	unsigned long time_left;
+	int no_ack = 0, nack = 0;
+	u16 addr = msg->addr;
+
+	/* Program the watermark level upto number of count */
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_FIFOLEVEL, count);
+
+	cmd_base = SDW_CNL_MCP_COMMAND_BASE;
+	for (j = 0; j < count; j++) {
+		/* Program device address */
+		cmd_data = 0;
+		cmd_data |= (msg->slave_addr &
+			MCP_COMMAND_DEV_ADDR_MASK) <<
+			MCP_COMMAND_DEV_ADDR_SHIFT;
+		/* Program read/write command */
+		cmd_data |= (cmd << MCP_COMMAND_COMMAND_SHIFT);
+		/* program incrementing address register */
+		cmd_data |= (addr++ << MCP_COMMAND_REG_ADDR_L_SHIFT);
+		/* Program the data if write command */
+		if (msg->flag == SDW_MSG_FLAG_WRITE)
+			cmd_data |=
+				msg->buf[j + offset];
+
+		cmd_data |= ((msg->ssp_tag &
+				MCP_COMMAND_SSP_TAG_MASK) <<
+				MCP_COMMAND_SSP_TAG_SHIFT);
+		cnl_sdw_reg_writel(data->sdw_regs,
+					cmd_base, cmd_data);
+		cmd_base += SDW_CNL_CMD_WORD_LEN;
+	}
+	/* Wait for 3 second for timeout */
+	time_left = wait_for_completion_timeout(&sdw->tx_complete, 3 * HZ);
+	if (!time_left) {
+		dev_err(&mstr->dev, "Controller timedout\n");
+		msg->len = 0;
+		return -ETIMEDOUT;
+	}
+	for (i = 0; i < count; i++) {
+		if (!(MCP_RESPONSE_ACK_MASK & sdw->response_buf[i])) {
+			no_ack = 1;
+			dev_err(&mstr->dev, "Ack not recevied\n");
+			if ((MCP_RESPONSE_NACK_MASK &
+					sdw->response_buf[i])) {
+				nack = 1;
+				dev_err(&mstr->dev, "NACK recevied\n");
+			}
+		}
+		break;
+	}
+	if (nack) {
+		dev_err(&mstr->dev, "Nack detected for slave %d\n", msg->slave_addr);
+		msg->len = 0;
+		return -EREMOTEIO;
+	} else if (no_ack) {
+		dev_err(&mstr->dev, "Command ignored for slave %d\n", msg->slave_addr);
+		msg->len = 0;
+		return -EREMOTEIO;
+	}
+	if (msg->flag == SDW_MSG_FLAG_WRITE)
+		return 0;
+	/* Response and Command has same base address */
+	response_base = SDW_CNL_MCP_COMMAND_BASE;
+	for (j = 0; j < count; j++) {
+			response_data = cnl_sdw_reg_readl(data->sdw_regs,
+								cmd_base);
+			msg->buf[j + offset] =
+			(sdw->response_buf[j]  >> MCP_RESPONSE_RDATA_SHIFT);
+			cmd_base += 4;
+	}
+	return 0;
+}
+
 static enum sdw_command_response cnl_sdw_xfer_msg(struct sdw_master *mstr,
 		struct sdw_msg *msg, bool program_scp_addr_page)
 {
-	return 0;
+	int i, ret = 0, cmd;
+
+	if (program_scp_addr_page)
+		ret = cnl_program_scp_addr(mstr, msg);
+
+	if (ret) {
+		msg->len = 0;
+		return ret;
+	}
+
+	switch (msg->flag) {
+	case SDW_MSG_FLAG_READ:
+		cmd = 0x2;
+		break;
+	case SDW_MSG_FLAG_WRITE:
+		cmd = 0x3;
+		break;
+	default:
+		dev_err(&mstr->dev, "Command not supported\n");
+		return -EINVAL;
+	}
+	for (i = 0; i < msg->len / SDW_CNL_MCP_COMMAND_LENGTH; i++) {
+		ret = sdw_xfer_msg(mstr, msg,
+				cmd, i * SDW_CNL_MCP_COMMAND_LENGTH,
+				SDW_CNL_MCP_COMMAND_LENGTH);
+		if (ret < 0)
+			break;
+	}
+	if (!(msg->len % SDW_CNL_MCP_COMMAND_LENGTH))
+		return ret;
+	ret = sdw_xfer_msg(mstr, msg, cmd, i * SDW_CNL_MCP_COMMAND_LENGTH,
+			msg->len % SDW_CNL_MCP_COMMAND_LENGTH);
+	if (ret < 0)
+		return -EINVAL;
+	return ret;
 }
 
 static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
