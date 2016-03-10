@@ -55,6 +55,180 @@ int sdw_mstr_bw_init(struct sdw_bus *sdw_bs)
 EXPORT_SYMBOL_GPL(sdw_mstr_bw_init);
 
 
+/**
+ * sdw_get_col_to_num
+ *
+ * Returns column number from the mapping.
+ */
+int sdw_get_col_to_num(int col)
+{
+
+	return 0;
+}
+
+
+/**
+ * sdw_get_row_to_num
+ *
+ * Returns row number from the mapping.
+ */
+int sdw_get_row_to_num(int row)
+{
+
+	return 0;
+}
+
+/*
+ * sdw_lcm - returns LCM of two numbers
+ *
+ *
+ * This function is called BW calculation function to find LCM
+ * of two numbers.
+ */
+int sdw_lcm(int num1, int num2)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_cfg_slv_params - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function configures slave registers for
+ * transport and port parameters.
+ */
+int sdw_cfg_slv_params(struct sdw_bus *mstr_bs,
+		struct sdw_slave_runtime *slv_rt,
+		struct sdw_transport_params *t_slv_params,
+		struct sdw_port_params *p_slv_params)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_cfg_mstr_params - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function configures master registers for
+ * transport and port parameters.
+ */
+int sdw_cfg_mstr_params(struct sdw_bus *mstr_bs,
+		struct sdw_transport_params *t_mstr_params,
+		struct sdw_port_params *p_mstr_params)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_cfg_mstr_slv - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function call master/slave transport/port
+ * params configuration API's, called from sdw_bus_calc_bw
+ * & sdw_bus_calc_bw_dis API's.
+ */
+int sdw_cfg_mstr_slv(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_mstr_runtime *sdw_mstr_bs_rt,
+		bool is_master)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_cpy_params_mstr_slv - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function copies/configure master/slave transport &
+ * port params to alternate bank.
+ *
+ */
+int sdw_cpy_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_mstr_runtime *sdw_mstr_bs_rt)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_cfg_slv_enable_disable - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function enable/disable slave port channels.
+ */
+int sdw_cfg_slv_enable_disable(struct sdw_bus *mstr_bs,
+	struct sdw_slave_runtime *slv_rt_strm,
+	struct sdw_port_runtime *port_slv_strm,
+	struct port_chn_en_state *chn_en)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_cfg_mstr_activate_disable - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function enable/disable master port channels.
+ */
+int sdw_cfg_mstr_activate_disable(struct sdw_bus *mstr_bs,
+		struct sdw_mstr_runtime *mstr_rt_strm,
+		struct sdw_port_runtime *port_mstr_strm,
+		struct port_chn_en_state *chn_en)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_en_dis_mstr_slv - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function call master/slave enable/disable
+ * channel API's.
+ */
+int sdw_en_dis_mstr_slv(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_runtime *sdw_rt, bool is_act)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_en_dis_mstr_slv_state - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function call master/slave enable/disable
+ * channel API's based on runtime state.
+ */
+int sdw_en_dis_mstr_slv_state(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_mstr_runtime *sdw_mstr_bs_rt,
+	struct port_chn_en_state *chn_en)
+{
+
+	return 0;
+}
+
+
 /*
  * sdw_get_clock_frmshp - returns Success
  * -EINVAL - In case of error.
@@ -169,6 +343,40 @@ int sdw_dis_chan(struct sdw_bus *sdw_mstr_bs,
 
 
 /*
+ * sdw_cfg_slv_prep_unprep - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function prepare/unprepare slave ports.
+ */
+int sdw_cfg_slv_prep_unprep(struct sdw_bus *mstr_bs,
+	struct sdw_slave_runtime *slv_rt_strm,
+	struct sdw_port_runtime *port_slv_strm,
+	bool prep)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_cfg_mstr_prep_unprep - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function prepare/unprepare master ports.
+ */
+int sdw_cfg_mstr_prep_unprep(struct sdw_bus *mstr_bs,
+	struct sdw_mstr_runtime *mstr_rt_strm,
+	struct sdw_port_runtime *port_mstr_strm,
+	bool prep)
+{
+
+	return 0;
+}
+
+
+/*
  * sdw_prep_unprep_mstr_slv - returns Success
  * -EINVAL - In case of error.
  *
@@ -179,23 +387,6 @@ int sdw_dis_chan(struct sdw_bus *sdw_mstr_bs,
  */
 int sdw_prep_unprep_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 		struct sdw_runtime *sdw_rt, bool is_prep)
-{
-
-	return 0;
-}
-
-
-/*
- * sdw_en_dis_mstr_slv - returns Success
- * -EINVAL - In case of error.
- *
- *
- * This function call master/slave enable/disable
- * channel API's, called from sdw_bus_calc_bw
- * & sdw_bus_calc_bw_dis API's.
- */
-int sdw_en_dis_mstr_slv(struct sdw_bus *sdw_mstr_bs,
-		struct sdw_runtime *sdw_rt, bool is_act)
 {
 
 	return 0;
