@@ -1,0 +1,6 @@
+menuconfig SDW
+	tristate "SoundWire bus support"
+	help
+	  SoundWire interface is typically used for transporting data
+	  related to audio functions.
+
