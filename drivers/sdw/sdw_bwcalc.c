@@ -130,6 +130,78 @@ int sdw_configure_frmshp_bnkswtch(struct sdw_bus *mstr_bs, int col, int row)
 }
 
 
+/*
+ * sdw_cfg_bs_params - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function performs master/slave transport
+ * params config, set SSP interval, set Clock
+ * frequency, enable channel. This API is called
+ * from sdw_bus_calc_bw & sdw_bus_calc_bw_dis API.
+ *
+ */
+int sdw_cfg_bs_params(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_mstr_runtime *sdw_mstr_bs_rt,
+		bool is_strm_cpy)
+{
+
+	return 0;
+}
+
+/*
+ * sdw_dis_chan - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function disables channel on alternate
+ * bank. This API is called from sdw_bus_calc_bw
+ * & sdw_bus_calc_bw_dis when channel on current
+ * bank is enabled.
+ *
+ */
+int sdw_dis_chan(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_mstr_runtime *sdw_mstr_bs_rt)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_prep_unprep_mstr_slv - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function call master/slave prepare/unprepare
+ * port configuration API's, called from sdw_bus_calc_bw
+ * & sdw_bus_calc_bw_dis API's.
+ */
+int sdw_prep_unprep_mstr_slv(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_runtime *sdw_rt, bool is_prep)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_en_dis_mstr_slv - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function call master/slave enable/disable
+ * channel API's, called from sdw_bus_calc_bw
+ * & sdw_bus_calc_bw_dis API's.
+ */
+int sdw_en_dis_mstr_slv(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_runtime *sdw_rt, bool is_act)
+{
+
+	return 0;
+}
+
+
 /**
  * sdw_bus_calc_bw - returns Success
  * -EINVAL - In case of error.
