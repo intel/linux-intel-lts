@@ -267,10 +267,123 @@ static void sdw_enable_interrupt(struct cnl_sdw *sdw)
 	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_INTMASK, int_mask);
 }
 
-static int sdw_port_pdi_init(struct cnl_sdw *sdw)
+static int sdw_pcm_pdi_init(struct cnl_sdw *sdw)
 {
+	struct sdw_master *mstr = sdw->mstr;
+	struct cnl_sdw_data *data = &sdw->data;
+	int pcm_cap;
+	int pcm_cap_offset = SDW_CNL_PCMSCAP + (data->inst_id *
+					SDW_CNL_PCMSCAP_REG_OFFSET);
+	int ch_cnt_offset;
+	int i;
+
+	pcm_cap = cnl_sdw_reg_readw(data->sdw_shim, pcm_cap_offset);
+	sdw->num_pcm_streams = (pcm_cap >> CNL_PCMSCAP_BSS_SHIFT) &
+			CNL_PCMSCAP_BSS_MASK;
+	dev_info(&mstr->dev, "Number of Bidirectional PCM stream = %d\n",
+			sdw->num_pcm_streams);
+	sdw->pcm_streams = devm_kzalloc(&mstr->dev,
+		sdw->num_pcm_streams * sizeof(struct cnl_sdw_pdi_stream),
+		GFP_KERNEL);
+	if (!sdw->pcm_streams)
+		return -ENOMEM;
+	/* Two of the PCM streams are reserved for bulk transfers */
+	sdw->pcm_streams -= SDW_CNL_PCM_PDI_NUM_OFFSET;
+	for (i = SDW_CNL_PCM_PDI_NUM_OFFSET; i < sdw->num_pcm_streams; i++) {
+		ch_cnt_offset = SDW_CNL_PCMSCHC +
+			(data->inst_id * SDW_CNL_PCMSCHC_REG_OFFSET) +
+			((i + SDW_CNL_PCM_PDI_NUM_OFFSET) * 0x2);
+
+		sdw->pcm_streams[i].ch_cnt = cnl_sdw_reg_readw(data->sdw_shim,
+						ch_cnt_offset);
+		/* Zero based value in register */
+		sdw->pcm_streams[i].ch_cnt++;
+		sdw->pcm_streams[i].pdi_num = i;
+		sdw->pcm_streams[i].allocated = false;
+		dev_info(&mstr->dev, "CH Count for stream %d is %d\n",
+			i, sdw->pcm_streams[i].ch_cnt);
+	}
 	return 0;
 }
+
+static int sdw_pdm_pdi_init(struct cnl_sdw *sdw)
+{
+	int i;
+	struct sdw_master *mstr = sdw->mstr;
+	struct cnl_sdw_data *data = &sdw->data;
+	int pdm_cap, pdm_ch_count, total_pdm_streams;
+	int pdm_cap_offset = SDW_CNL_PDMSCAP +
+			(data->inst_id * SDW_CNL_PDMSCAP_REG_OFFSET);
+
+	pdm_cap = cnl_sdw_reg_readw(data->sdw_regs, pdm_cap_offset);
+	sdw->num_pdm_streams = (pdm_cap >> CNL_PDMSCAP_BSS_SHIFT) &
+			CNL_PDMSCAP_BSS_MASK;
+	/* Zero based value in register */
+	sdw->num_pdm_streams++;
+	sdw->pdm_streams = devm_kzalloc(&mstr->dev,
+		sdw->num_pdm_streams * sizeof(struct cnl_sdw_pdi_stream),
+		GFP_KERNEL);
+	if (!sdw->pdm_streams)
+		return -ENOMEM;
+
+	sdw->num_in_pdm_streams = (pdm_cap >> CNL_PDMSCAP_ISS_SHIFT) &
+			CNL_PDMSCAP_ISS_MASK;
+	/* Zero based value in register */
+	sdw->num_in_pdm_streams++;
+	sdw->in_pdm_streams = devm_kzalloc(&mstr->dev,
+		sdw->num_in_pdm_streams * sizeof(struct cnl_sdw_pdi_stream),
+		GFP_KERNEL);
+
+	if (!sdw->in_pdm_streams)
+		return -ENOMEM;
+
+	sdw->num_out_pdm_streams = (pdm_cap >> CNL_PDMSCAP_OSS_SHIFT) &
+			CNL_PDMSCAP_OSS_MASK;
+	/* Zero based value in register */
+	sdw->num_out_pdm_streams++;
+	sdw->out_pdm_streams = devm_kzalloc(&mstr->dev,
+		sdw->num_out_pdm_streams * sizeof(struct cnl_sdw_pdi_stream),
+		GFP_KERNEL);
+	if (!sdw->out_pdm_streams)
+		return -ENOMEM;
+
+	total_pdm_streams = sdw->num_pdm_streams +
+			sdw->num_in_pdm_streams +
+			sdw->num_out_pdm_streams;
+
+	pdm_ch_count = (pdm_cap >> CNL_PDMSCAP_CPSS_SHIFT) &
+				CNL_PDMSCAP_CPSS_MASK;
+	for (i = 0; i < sdw->num_pdm_streams; i++) {
+		sdw->pdm_streams[i].ch_cnt = pdm_ch_count;
+		sdw->pdm_streams[i].pdi_num = i;
+	}
+	for (i = 0; i < sdw->num_in_pdm_streams; i++) {
+		sdw->in_pdm_streams[i].ch_cnt = pdm_ch_count;
+		sdw->in_pdm_streams[i].pdi_num = i;
+	}
+	for (i = 0; i < sdw->num_out_pdm_streams; i++) {
+		sdw->out_pdm_streams[i].ch_cnt = pdm_ch_count;
+		sdw->out_pdm_streams[i].pdi_num = i;
+	}
+	return 0;
+}
+
+static int sdw_port_pdi_init(struct cnl_sdw *sdw)
+{
+	int i, ret = 0;
+
+	for (i = 0; i <= CNL_SDW_MAX_PORTS; i++) {
+		sdw->port[i].port_num = i;
+		sdw->port[i].allocated = false;
+	}
+	ret = sdw_pcm_pdi_init(sdw);
+	if (ret)
+		return ret;
+	ret = sdw_pdm_pdi_init(sdw);
+
+	return ret;
+}
+
 static int sdw_init(struct cnl_sdw *sdw)
 {
 	struct sdw_master *mstr = sdw->mstr;
