@@ -748,6 +748,29 @@ static int cnl_sdw_set_clock_freq(struct sdw_master *mstr,
 static int cnl_sdw_set_port_params(struct sdw_master *mstr,
 			struct sdw_port_params *params, int bank)
 {
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+	int dpn_config = 0, dpn_config_offset;
+
+	if (bank)
+		dpn_config_offset = SDW_CNL_DPN_CONFIG1;
+	else
+		dpn_config_offset = SDW_CNL_DPN_CONFIG0;
+
+	dpn_config = cnl_sdw_port_reg_readl(data->sdw_regs,
+				dpn_config_offset, params->num);
+
+	dpn_config |= (((params->word_length - 1) & DPN_CONFIG_WL_MASK) <<
+				DPN_CONFIG_WL_SHIFT);
+	dpn_config |= ((params->port_flow_mode & DPN_CONFIG_PF_MODE_MASK) <<
+				DPN_CONFIG_PF_MODE_SHIFT);
+	dpn_config |= ((params->port_data_mode & DPN_CONFIG_PD_MODE_MASK) <<
+				DPN_CONFIG_PD_MODE_SHIFT);
+	cnl_sdw_port_reg_writel(data->sdw_regs,
+				dpn_config_offset, params->num, dpn_config);
+
+	cnl_sdw_port_reg_readl(data->sdw_regs,
+				dpn_config_offset, params->num);
 	return 0;
 }
 
