@@ -105,12 +105,192 @@ struct cnl_sdw {
 
 };
 
+static int sdw_power_up_link(struct cnl_sdw *sdw)
+{
+	return 0;
+}
+
+static void sdw_power_down_link(struct cnl_sdw *sdw)
+{
+
+}
+
+static void sdw_init_phyctrl(struct cnl_sdw *sdw)
+{
+	/* TODO: Initialize based on hardware requirement */
+
+}
+
+static void sdw_init_shim(struct cnl_sdw *sdw)
+{
+
+}
+
+static int sdw_config_update(struct cnl_sdw *sdw)
+{
+	return 0;
+}
+
+static void sdw_enable_interrupt(struct cnl_sdw *sdw)
+{
+
+}
+
+static int sdw_port_pdi_init(struct cnl_sdw *sdw)
+{
+	return 0;
+}
+static int sdw_init(struct cnl_sdw *sdw)
+{
+	struct sdw_master *mstr = sdw->mstr;
+	struct cnl_sdw_data *data = &sdw->data;
+	int mcp_config;
+	int ret = 0;
+
+	/* Power up the link controller */
+	ret = sdw_power_up_link(sdw);
+	if (ret)
+		return ret;
+
+	/* Read shim registers for getting capability */
+	sdw_init_shim(sdw);
+
+
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_FRAMESHAPEINIT, 0x48);
+
+	mcp_config = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_CONFIG);
+	/* Set Max cmd retry to 15 times */
+	mcp_config |= (CNL_SDW_MAX_CMD_RETRIES <<
+				MCP_CONFIG_MAXCMDRETRY_SHIFT);
+
+	/* Set Ping request to ping delay to 15 frames.
+	 * Spec supports 32 max frames
+	 */
+	mcp_config |= (CNL_SDW_MAX_PREQ_DELAY <<
+					MCP_CONFIG_MAXPREQDELAY_SHIFT);
+
+	/* If master is synchronized to some other master set Multimode */
+	if (mstr->link_sync_mask) {
+		mcp_config |= (MCP_CONFIG_MMMODEEN_MASK <<
+						MCP_CONFIG_MMMODEEN_SHIFT);
+		mcp_config |= (MCP_CONFIG_SSPMODE_MASK <<
+						MCP_CONFIG_SSPMODE_SHIFT);
+	} else {
+		mcp_config &= ~(MCP_CONFIG_MMMODEEN_MASK <<
+						MCP_CONFIG_MMMODEEN_SHIFT);
+		mcp_config &= ~(MCP_CONFIG_SSPMODE_MASK <<
+						MCP_CONFIG_SSPMODE_SHIFT);
+	}
+
+	/* Disable automatic bus release */
+	mcp_config &= ~(MCP_CONFIG_BRELENABLE_MASK <<
+				MCP_CONFIG_BRELENABLE_SHIFT);
+
+	/* Disable sniffer mode now */
+	mcp_config &= ~(MCP_CONFIG_SNIFFEREN_MASK <<
+				MCP_CONFIG_SNIFFEREN_SHIFT);
+
+	/* Set the command mode for Tx and Rx command */
+	mcp_config &= ~(MCP_CONFIG_CMDMODE_MASK <<
+				MCP_CONFIG_CMDMODE_SHIFT);
+
+	/* Set operation mode to normal */
+	mcp_config &= ~(MCP_CONFIG_OPERATIONMODE_MASK <<
+				MCP_CONFIG_OPERATIONMODE_SHIFT);
+	mcp_config |= ((MCP_CONFIG_OPERATIONMODE_NORMAL &
+			MCP_CONFIG_OPERATIONMODE_MASK) <<
+			MCP_CONFIG_OPERATIONMODE_SHIFT);
+
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONFIG, mcp_config);
+	/* Set the SSP interval to 32 for both banks */
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SSPCTRL0,
+					SDW_CNL_DEFAULT_SSP_INTERVAL);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SSPCTRL1,
+					SDW_CNL_DEFAULT_SSP_INTERVAL);
+
+	/* Initialize the phy control registers. */
+	sdw_init_phyctrl(sdw);
+
+	/* Initlaize the ports */
+	ret = sdw_port_pdi_init(sdw);
+	if (ret) {
+		dev_err(&mstr->dev, "SoundWire controller init failed %d\n",
+				data->inst_id);
+		sdw_power_down_link(sdw);
+		return ret;
+	}
+
+	/* Lastly enable interrupts */
+	sdw_enable_interrupt(sdw);
+
+	/* Update soundwire configuration */
+	return sdw_config_update(sdw);
+}
+
+irqreturn_t cnl_sdw_irq_handler(int irq, void *context)
+{
+	return IRQ_HANDLED;
+}
+
+static int cnl_sdw_probe(struct sdw_master *mstr,
+				const struct sdw_master_id *sdw_id)
+{
+	struct cnl_sdw *sdw;
+	int ret = 0;
+	struct cnl_sdw_data *data = mstr->dev.platform_data;
+
+	sdw = devm_kzalloc(&mstr->dev, sizeof(*sdw), GFP_KERNEL);
+	if (!sdw) {
+		ret = -ENOMEM;
+		return ret;
+	}
+	dev_info(&mstr->dev,
+		"Controller Resources ctrl_base = %p shim=%p irq=%d inst_id=%d\n",
+		data->sdw_regs, data->sdw_shim, data->irq, data->inst_id);
+	sdw->data.sdw_regs = data->sdw_regs;
+	sdw->data.sdw_shim = data->sdw_shim;
+	sdw->data.irq = data->irq;
+	sdw->data.inst_id = data->inst_id;
+	sdw->data.alh_base = data->alh_base;
+	sdw->mstr = mstr;
+	spin_lock_init(&sdw->ctrl_lock);
+	sdw_master_set_drvdata(mstr, sdw);
+	init_completion(&sdw->tx_complete);
+	mutex_init(&sdw->stream_lock);
+	ret = sdw_init(sdw);
+	if (ret) {
+		dev_err(&mstr->dev, "SoundWire controller init failed %d\n",
+				data->inst_id);
+		return ret;
+	}
+	ret = devm_request_irq(&mstr->dev,
+		sdw->data.irq, cnl_sdw_irq_handler, IRQF_SHARED, "SDW", sdw);
+	if (ret) {
+		dev_err(&mstr->dev, "unable to grab IRQ %d, disabling device\n",
+			       sdw->data.irq);
+		sdw_power_down_link(sdw);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int cnl_sdw_remove(struct sdw_master *mstr)
+{
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+
+	sdw_power_down_link(sdw);
+
+	return 0;
+}
 
 static struct sdw_mstr_driver cnl_sdw_mstr_driver = {
 	.driver_type = SDW_DRIVER_TYPE_MASTER,
 	.driver = {
 		.name   = "cnl_sdw_mstr",
 	},
+	.probe          = cnl_sdw_probe,
+	.remove         = cnl_sdw_remove,
 };
 
 static int __init cnl_sdw_init(void)
