@@ -527,8 +527,131 @@ int sdw_cfg_slv_enable_disable(struct sdw_bus *mstr_bs,
 	struct sdw_port_runtime *port_slv_strm,
 	struct port_chn_en_state *chn_en)
 {
+	struct sdw_msg wr_msg, rd_msg;
+	int ret = 0;
+	int banktouse;
+	u8 wbuf[1] = {0};
+	u8 rbuf[1] = {0};
 
-	return 0;
+	/* Get current bank in use from bus structure*/
+	banktouse = mstr_bs->active_bank;
+	if ((chn_en->is_activate) || (chn_en->is_bank_sw))
+		banktouse = !banktouse;
+
+	rd_msg.addr = wr_msg.addr = ((SDW_DPN_CHANNELEN +
+				(SDW_BANK1_REGISTER_OFFSET * banktouse)) +
+			(SDW_NUM_DATA_PORT_REGISTERS *
+			 port_slv_strm->port_num));
+
+	rd_msg.ssp_tag = 0x0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.len = 1;
+	rd_msg.slave_addr = slv_rt_strm->slave->slv_number;
+	rd_msg.buf = rbuf;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+
+	wr_msg.ssp_tag = 0x0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.len = 1;
+	wr_msg.slave_addr = slv_rt_strm->slave->slv_number;
+	wr_msg.buf = wbuf;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+
+	if (chn_en->is_activate) {
+
+		/*
+		 * 1. slave port enable_ch_pre
+		 * --> callback
+		 * --> no callback available
+		 */
+
+		/* 2. slave port enable */
+		ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+		if (ret != 1) {
+			ret = -EINVAL;
+			dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+			goto out;
+		}
+
+		wbuf[0] = (rbuf[0] | port_slv_strm->channel_mask);
+
+		ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg, 1);
+		if (ret != 1) {
+			ret = -EINVAL;
+			dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+			goto out;
+		}
+
+		rbuf[0] = 0;
+		ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+		if (ret != 1) {
+			ret = -EINVAL;
+			dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+			goto out;
+		}
+
+		/*
+		 * 3. slave port enable post pre
+		 * --> callback
+		 * --> no callback available
+		 */
+		slv_rt_strm->rt_state = SDW_STATE_ENABLE_RT;
+
+	} else {
+
+		/*
+		 * 1. slave port enable_ch_unpre
+		 * --> callback
+		 * --> no callback available
+		 */
+
+		/* 2. slave port disable */
+		ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+		if (ret != 1) {
+			ret = -EINVAL;
+			dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+			goto out;
+		}
+
+		wbuf[0] = (rbuf[0] & ~(port_slv_strm->channel_mask));
+
+		ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg, 1);
+		if (ret != 1) {
+			ret = -EINVAL;
+			dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+			goto out;
+		}
+
+		rbuf[0] = 0;
+		ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+		if (ret != 1) {
+			ret = -EINVAL;
+			dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+			goto out;
+		}
+
+		/*
+		 * 3. slave port enable post unpre
+		 * --> callback
+		 * --> no callback available
+		 */
+		if (!chn_en->is_bank_sw)
+			slv_rt_strm->rt_state = SDW_STATE_DISABLE_RT;
+
+	}
+
+out:
+	return ret;
+
 }
 
 
@@ -544,6 +667,48 @@ int sdw_cfg_mstr_activate_disable(struct sdw_bus *mstr_bs,
 		struct sdw_port_runtime *port_mstr_strm,
 		struct port_chn_en_state *chn_en)
 {
+	struct sdw_mstr_driver *ops = mstr_bs->mstr->driver;
+	struct sdw_activate_ch activate_ch;
+	int banktouse, ret = 0;
+
+	activate_ch.num = port_mstr_strm->port_num;
+	activate_ch.ch_mask = port_mstr_strm->channel_mask;
+	activate_ch.activate = chn_en->is_activate; /* Enable/Disable */
+
+	/* Get current bank in use from bus structure*/
+	banktouse = mstr_bs->active_bank;
+	if ((chn_en->is_activate) || (chn_en->is_bank_sw))
+		banktouse = !banktouse;
+
+
+	/* 1. Master port enable_ch_pre */
+	if (ops->mstr_port_ops->dpn_port_activate_ch_pre) {
+		ret = ops->mstr_port_ops->dpn_port_activate_ch_pre
+			(mstr_bs->mstr, &activate_ch, banktouse);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 2. Master port enable */
+	if (ops->mstr_port_ops->dpn_port_activate_ch) {
+		ret = ops->mstr_port_ops->dpn_port_activate_ch(mstr_bs->mstr,
+				&activate_ch, banktouse);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 3. Master port enable_ch_post */
+	if (ops->mstr_port_ops->dpn_port_activate_ch_post) {
+		ret = ops->mstr_port_ops->dpn_port_activate_ch_post
+			(mstr_bs->mstr, &activate_ch, banktouse);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (chn_en->is_activate)
+		mstr_rt_strm->rt_state = SDW_STATE_ENABLE_RT;
+	else if (!chn_en->is_bank_sw)
+		mstr_rt_strm->rt_state = SDW_STATE_DISABLE_RT;
 
 	return 0;
 }
@@ -560,6 +725,71 @@ int sdw_cfg_mstr_activate_disable(struct sdw_bus *mstr_bs,
 int sdw_en_dis_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 		struct sdw_runtime *sdw_rt, bool is_act)
 {
+	struct sdw_slave_runtime *slv_rt_strm = NULL;
+	struct sdw_port_runtime *port_slv_strm, *port_mstr_strm;
+	struct sdw_mstr_runtime *mstr_rt_strm = NULL;
+	struct port_chn_en_state chn_en;
+	int ret = 0;
+
+	if (is_act)
+		chn_en.is_bank_sw = true;
+	else
+		chn_en.is_bank_sw = false;
+
+	chn_en.is_activate = is_act;
+
+	list_for_each_entry(slv_rt_strm, &sdw_rt->slv_rt_list, slave_sdw_node) {
+
+		if (slv_rt_strm->slave == NULL)
+			break;
+
+		list_for_each_entry(port_slv_strm,
+				&slv_rt_strm->port_rt_list, port_node) {
+
+			ret = sdw_cfg_slv_enable_disable
+				(sdw_mstr_bs, slv_rt_strm,
+					port_slv_strm, &chn_en);
+			if (ret < 0)
+				return ret;
+
+			/*
+			 * Since one port per slave runtime,
+			 * breaking port_list loop
+			 * TBD: to be extended for multiple port support
+			 */
+			break;
+
+		}
+
+		break;
+
+	}
+
+	list_for_each_entry(mstr_rt_strm,
+			&sdw_rt->mstr_rt_list, mstr_sdw_node) {
+
+		if (mstr_rt_strm->mstr == NULL)
+			break;
+
+		list_for_each_entry(port_mstr_strm,
+			&mstr_rt_strm->port_rt_list, port_node) {
+
+			ret = sdw_cfg_mstr_activate_disable
+				(sdw_mstr_bs, mstr_rt_strm,
+				port_mstr_strm, &chn_en);
+			if (ret < 0)
+				return ret;
+
+			/*
+			 * Since one port per master runtime,
+			 * breaking port_list loop
+			 * TBD: to be extended for multiple port support
+			 */
+			break;
+
+		}
+
+	}
 
 	return 0;
 }
@@ -577,6 +807,56 @@ int sdw_en_dis_mstr_slv_state(struct sdw_bus *sdw_mstr_bs,
 	struct sdw_mstr_runtime *sdw_mstr_bs_rt,
 	struct port_chn_en_state *chn_en)
 {
+	struct sdw_slave_runtime *slv_rt = NULL;
+	struct sdw_port_runtime *port_slv_rt, *port_rt;
+	int ret = 0;
+
+	list_for_each_entry(slv_rt, &sdw_mstr_bs_rt->slv_rt_list, slave_node)  {
+
+		if (slv_rt->slave == NULL)
+			break;
+
+		if (slv_rt->rt_state == SDW_STATE_ENABLE_RT) {
+
+			list_for_each_entry(port_slv_rt,
+				&slv_rt->port_rt_list, port_node) {
+
+				ret = sdw_cfg_slv_enable_disable
+					(sdw_mstr_bs, slv_rt,
+					port_slv_rt, chn_en);
+				if (ret < 0)
+					return ret;
+
+				/*
+				 * Since one port per slave runtime,
+				 * breaking port_list loop
+				 * TBD: to be extended for multiple
+				 * port support
+				 */
+				break;
+			}
+		}
+	}
+
+	if (sdw_mstr_bs_rt->rt_state == SDW_STATE_ENABLE_RT) {
+
+		list_for_each_entry(port_rt,
+			&sdw_mstr_bs_rt->port_rt_list, port_node) {
+
+			ret = sdw_cfg_mstr_activate_disable
+				(sdw_mstr_bs, sdw_mstr_bs_rt, port_rt, chn_en);
+			if (ret < 0)
+				return ret;
+
+			/*
+			 * Since one port per master runtime,
+			 * breaking port_list loop
+			 * TBD: to be extended for multiple port support
+			 */
+
+			break;
+		}
+	}
 
 	return 0;
 }
@@ -1248,6 +1528,23 @@ int sdw_cfg_bs_params(struct sdw_bus *sdw_mstr_bs,
 int sdw_dis_chan(struct sdw_bus *sdw_mstr_bs,
 	struct sdw_mstr_runtime *sdw_mstr_bs_rt)
 {
+	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	struct port_chn_en_state chn_en;
+	int ret = 0;
+
+	list_for_each_entry(sdw_mstr_bs_rt,
+			&sdw_mstr->mstr_rt_list, mstr_node) {
+
+		if (sdw_mstr_bs_rt->mstr == NULL)
+			continue;
+
+		chn_en.is_activate = false;
+		chn_en.is_bank_sw = true;
+		ret = sdw_en_dis_mstr_slv_state(sdw_mstr_bs,
+				sdw_mstr_bs_rt, &chn_en);
+		if (ret < 0)
+			return ret;
+	}
 
 	return 0;
 }
@@ -1265,8 +1562,201 @@ int sdw_cfg_slv_prep_unprep(struct sdw_bus *mstr_bs,
 	struct sdw_port_runtime *port_slv_strm,
 	bool prep)
 {
+	struct sdw_slave_driver	*slv_ops = slv_rt_strm->slave->driver;
+	struct sdw_slv_capabilities *slv_cap =
+			&slv_rt_strm->slave->sdw_slv_cap;
+	struct sdw_slv_dpn_capabilities *sdw_slv_dpn_cap =
+			slv_cap->sdw_dpn_cap;
 
-	return 0;
+	struct sdw_msg wr_msg, rd_msg, rd_msg1;
+	int ret = 0;
+	int banktouse;
+	u8 wbuf[1] = {0};
+	u8 rbuf[1] = {0};
+	u8 rbuf1[1] = {0};
+
+	/* Get current bank in use from bus structure*/
+	banktouse = mstr_bs->active_bank;
+	banktouse = !banktouse;
+
+	/* Read SDW_DPN_PREPARECTRL register */
+	rd_msg.addr = wr_msg.addr = SDW_DPN_PREPARECTRL +
+		(SDW_NUM_DATA_PORT_REGISTERS * port_slv_strm->port_num);
+
+	rd_msg.ssp_tag = 0x0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.len = 1;
+	rd_msg.slave_addr = slv_rt_strm->slave->slv_number;
+	rd_msg.buf = rbuf;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+
+	rd_msg1.ssp_tag = 0x0;
+	rd_msg1.flag = SDW_MSG_FLAG_READ;
+	rd_msg1.len = 1;
+	rd_msg1.slave_addr = slv_rt_strm->slave->slv_number;
+	rd_msg1.buf = rbuf1;
+	rd_msg1.addr_page1 = 0x0;
+	rd_msg1.addr_page2 = 0x0;
+
+
+	rd_msg1.addr = SDW_DPN_PREPARESTATUS +
+		(SDW_NUM_DATA_PORT_REGISTERS * port_slv_strm->port_num);
+
+	wr_msg.ssp_tag = 0x0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.len = 1;
+	wr_msg.slave_addr = slv_rt_strm->slave->slv_number;
+	wr_msg.buf = wbuf;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+
+	if (prep) { /* PREPARE */
+
+		/*
+		 * 1. slave port prepare_ch_pre
+		 * --> callback
+		 * --> handle_pre_port_prepare
+		 */
+		if (slv_ops->handle_pre_port_prepare) {
+			slv_ops->handle_pre_port_prepare(slv_rt_strm->slave,
+					port_slv_strm->port_num,
+					port_slv_strm->channel_mask,
+					banktouse);
+		}
+
+		/* 2. slave port prepare --> to write */
+		if (sdw_slv_dpn_cap->prepare_ch) {
+
+			/* NON SIMPLIFIED CM, prepare required */
+			ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+			if (ret != 1) {
+				ret = -EINVAL;
+				dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+				goto out;
+			}
+
+			ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg1, 1);
+			if (ret != 1) {
+				ret = -EINVAL;
+				dev_err(&mstr_bs->mstr->dev,
+						"Register transfer failed\n");
+				goto out;
+			}
+
+			wbuf[0] = (rbuf[0] | port_slv_strm->channel_mask);
+
+			/*
+			 * TBD: poll for prepare interrupt bit
+			 * before calling post_prepare
+			 * 2. check capabilities if simplified
+			 * CM no need to prepare
+			 */
+			ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg, 1);
+			if (ret != 1) {
+				ret = -EINVAL;
+				dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+				goto out;
+			}
+
+			/*
+			 * TBD: check on port ready,
+			 * ideally we should check on prepare
+			 * status for port_ready
+			 */
+
+			/* wait for completion on port ready*/
+			msleep(100); /* TBD: Remove this */
+
+			ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg1, 1);
+			if (ret != 1) {
+				ret = -EINVAL;
+				dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+				goto out;
+			}
+		}
+
+		/*
+		 * 3. slave port post pre
+		 * --> callback
+		 * --> handle_post_port_prepare
+		 */
+		if (slv_ops->handle_post_port_prepare) {
+			slv_ops->handle_post_port_prepare
+				(slv_rt_strm->slave,
+				port_slv_strm->port_num,
+				port_slv_strm->channel_mask, banktouse);
+		}
+
+		slv_rt_strm->rt_state = SDW_STATE_PREPARE_RT;
+
+	} else {
+		/* UNPREPARE */
+		/*
+		 * 1. slave port unprepare_ch_pre
+		 * --> callback
+		 * --> handle_pre_port_prepare
+		 */
+		if (slv_ops->handle_pre_port_unprepare) {
+			slv_ops->handle_pre_port_unprepare(slv_rt_strm->slave,
+						port_slv_strm->port_num,
+						port_slv_strm->channel_mask,
+						banktouse);
+		}
+
+		/* 2. slave port unprepare --> to write */
+		if (sdw_slv_dpn_cap->prepare_ch) {
+
+			/* NON SIMPLIFIED CM, unprepare required */
+
+			/* Read SDW_DPN_PREPARECTRL register */
+			ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+			if (ret != 1) {
+				ret = -EINVAL;
+				dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+				goto out;
+			}
+
+			wbuf[0] = (rbuf[0] & ~(port_slv_strm->channel_mask));
+
+			/*
+			 * TBD: poll for prepare interrupt bit before
+			 * calling post_prepare
+			 * Does it apply for unprepare aswell?
+			 * 2. check capabilities if simplified CM
+			 * no need to unprepare
+			 */
+			ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg, 1);
+			if (ret != 1) {
+				ret = -EINVAL;
+				dev_err(&mstr_bs->mstr->dev,
+					"Register transfer failed\n");
+				goto out;
+			}
+		}
+
+		/*
+		 * 3. slave port post unpre
+		 * --> callback
+		 * --> handle_post_port_unprepare
+		 */
+		if (slv_ops->handle_post_port_unprepare) {
+			slv_ops->handle_post_port_unprepare(slv_rt_strm->slave,
+					port_slv_strm->port_num,
+					port_slv_strm->channel_mask,
+					banktouse);
+		}
+
+		slv_rt_strm->rt_state = SDW_STATE_UNPREPARE_RT;
+	}
+out:
+	return ret;
+
 }
 
 
@@ -1282,6 +1772,44 @@ int sdw_cfg_mstr_prep_unprep(struct sdw_bus *mstr_bs,
 	struct sdw_port_runtime *port_mstr_strm,
 	bool prep)
 {
+	struct sdw_mstr_driver *ops = mstr_bs->mstr->driver;
+	struct sdw_prepare_ch prep_ch;
+	int ret = 0;
+
+	prep_ch.num = port_mstr_strm->port_num;
+	prep_ch.ch_mask = port_mstr_strm->channel_mask;
+	prep_ch.prepare = prep; /* Prepare/Unprepare */
+
+	/* TBD: Bank configuration */
+
+	/* 1. Master port prepare_ch_pre */
+	if (ops->mstr_port_ops->dpn_port_prepare_ch_pre) {
+		ret = ops->mstr_port_ops->dpn_port_prepare_ch_pre
+				(mstr_bs->mstr, &prep_ch);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 2. Master port prepare */
+	if (ops->mstr_port_ops->dpn_port_prepare_ch) {
+		ret = ops->mstr_port_ops->dpn_port_prepare_ch
+				(mstr_bs->mstr, &prep_ch);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 3. Master port prepare_ch_post */
+	if (ops->mstr_port_ops->dpn_port_prepare_ch_post) {
+		ret = ops->mstr_port_ops->dpn_port_prepare_ch_post
+				(mstr_bs->mstr, &prep_ch);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (prep)
+		mstr_rt_strm->rt_state = SDW_STATE_PREPARE_RT;
+	else
+		mstr_rt_strm->rt_state = SDW_STATE_UNPREPARE_RT;
 
 	return 0;
 }
@@ -1299,6 +1827,56 @@ int sdw_cfg_mstr_prep_unprep(struct sdw_bus *mstr_bs,
 int sdw_prep_unprep_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 		struct sdw_runtime *sdw_rt, bool is_prep)
 {
+	struct sdw_slave_runtime *slv_rt_strm = NULL;
+	struct sdw_port_runtime *port_slv_strm, *port_mstr_strm;
+	struct sdw_mstr_runtime *mstr_rt_strm = NULL;
+	int ret = 0;
+
+	list_for_each_entry(slv_rt_strm,
+			&sdw_rt->slv_rt_list, slave_sdw_node) {
+
+		if (slv_rt_strm->slave == NULL)
+			break;
+
+		list_for_each_entry(port_slv_strm,
+				&slv_rt_strm->port_rt_list, port_node) {
+
+			ret = sdw_cfg_slv_prep_unprep(sdw_mstr_bs,
+					slv_rt_strm, port_slv_strm, is_prep);
+			if (ret < 0)
+				return ret;
+
+			/* Since one port per slave runtime,
+			 * breaking port_list loop
+			 * TBD: to be extended for multiple port support
+			 */
+			break;
+		}
+
+		break;
+	}
+
+	list_for_each_entry(mstr_rt_strm,
+			&sdw_rt->mstr_rt_list, mstr_sdw_node) {
+
+		if (mstr_rt_strm->mstr == NULL)
+			break;
+
+		list_for_each_entry(port_mstr_strm,
+			&mstr_rt_strm->port_rt_list, port_node) {
+
+			ret = sdw_cfg_mstr_prep_unprep(sdw_mstr_bs,
+				mstr_rt_strm, port_mstr_strm, is_prep);
+			if (ret < 0)
+				return ret;
+
+			/* Since one port per master runtime,
+			 * breaking port_list loop
+			 * TBD: to be extended for multiple port support
+			 */
+			break;
+		}
+	}
 
 	return 0;
 }
