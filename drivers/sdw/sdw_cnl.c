@@ -40,3 +40,27 @@
 #include <linux/sdw/sdw_registers.h>
 #include <linux/sdw/sdw_cnl.h>
 #include "sdw_cnl_priv.h"
+
+
+static struct sdw_mstr_driver cnl_sdw_mstr_driver = {
+	.driver_type = SDW_DRIVER_TYPE_MASTER,
+	.driver = {
+		.name   = "cnl_sdw_mstr",
+	},
+};
+
+static int __init cnl_sdw_init(void)
+{
+	return sdw_mstr_driver_register(&cnl_sdw_mstr_driver);
+}
+module_init(cnl_sdw_init);
+
+static void cnl_sdw_exit(void)
+{
+	sdw_mstr_driver_unregister(&cnl_sdw_mstr_driver);
+}
+module_exit(cnl_sdw_exit);
+
+MODULE_DESCRIPTION("Intel SoundWire Master Controller Driver");
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Hardik Shah <hardik.t.shah@intel.com>");
