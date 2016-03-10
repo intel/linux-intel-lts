@@ -182,17 +182,89 @@ static void sdw_init_phyctrl(struct cnl_sdw *sdw)
 
 static void sdw_init_shim(struct cnl_sdw *sdw)
 {
+	struct cnl_sdw_data *data = &sdw->data;
+	int act_offset = SDW_CNL_CTMCTL + (data->inst_id *
+					SDW_CNL_CTMCTL_REG_OFFSET);
+	int ioctl_offset = SDW_CNL_IOCTL + (data->inst_id *
+					SDW_CNL_IOCTL_REG_OFFSET);
+	u16 act = 0;
+	u16 ioctl = 0;
 
+
+	ioctl |= CNL_IOCTL_MIF_MASK << CNL_IOCTL_MIF_SHIFT;
+	ioctl |= CNL_IOCTL_WPDD_MASK << CNL_IOCTL_WPDD_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+
+	act |= 0x1 << CNL_CTMCTL_DOAIS_SHIFT;
+	act |= CNL_CTMCTL_DACTQE_MASK << CNL_CTMCTL_DACTQE_SHIFT;
+	act |= CNL_CTMCTL_DODS_MASK << CNL_CTMCTL_DODS_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  act_offset, act);
 }
 
 static int sdw_config_update(struct cnl_sdw *sdw)
 {
+	struct cnl_sdw_data *data = &sdw->data;
+	struct sdw_master *mstr = sdw->mstr;
+
+	volatile int config_update = 0;
+	/* Try 10 times before giving up on configuration update */
+	int timeout = 10;
+	int config_updated = 0;
+
+	config_update |= MCP_CONFIGUPDATE_CONFIGUPDATE_MASK <<
+				MCP_CONFIGUPDATE_CONFIGUPDATE_SHIFT;
+	/* Bit is self-cleared when configuration gets updated. */
+	cnl_sdw_reg_writel(data->sdw_regs,  SDW_CNL_MCP_CONFIGUPDATE,
+			config_update);
+	do {
+		config_update = cnl_sdw_reg_readl(data->sdw_regs,
+				SDW_CNL_MCP_CONFIGUPDATE);
+		if ((config_update &
+				MCP_CONFIGUPDATE_CONFIGUPDATE_MASK) == 0) {
+			config_updated = 1;
+			break;
+		}
+		timeout--;
+		/* Wait for 20ms between each try */
+		msleep(20);
+
+	} while (timeout != 0);
+	if (!config_updated) {
+		dev_err(&mstr->dev, "SoundWire update failed\n");
+		return -EIO;
+	}
 	return 0;
 }
 
 static void sdw_enable_interrupt(struct cnl_sdw *sdw)
 {
+	struct cnl_sdw_data *data = &sdw->data;
+	int int_mask = 0;
 
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SLAVEINTMASK0,
+						MCP_SLAVEINTMASK0_MASK);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SLAVEINTMASK1,
+						MCP_SLAVEINTMASK1_MASK);
+	/* Enable slave interrupt mask */
+	int_mask |= MCP_INTMASK_SLAVERESERVED_MASK <<
+				MCP_INTMASK_SLAVERESERVED_SHIFT;
+	int_mask |= MCP_INTMASK_SLAVEALERT_MASK <<
+				MCP_INTMASK_SLAVEALERT_SHIFT;
+	int_mask |= MCP_INTMASK_SLAVEATTACHED_MASK <<
+				MCP_INTMASK_SLAVEATTACHED_SHIFT;
+	int_mask |= MCP_INTMASK_SLAVENOTATTACHED_MASK <<
+				MCP_INTMASK_SLAVENOTATTACHED_SHIFT;
+	int_mask |= MCP_INTMASK_CONTROLBUSCLASH_MASK <<
+				MCP_INTMASK_CONTROLBUSCLASH_SHIFT;
+	int_mask |= MCP_INTMASK_DATABUSCLASH_MASK <<
+				MCP_INTMASK_DATABUSCLASH_SHIFT;
+	int_mask |= MCP_INTMASK_RXWL_MASK <<
+				MCP_INTMASK_RXWL_SHIFT;
+	int_mask |= MCP_INTMASK_IRQEN_MASK <<
+				MCP_INTMASK_IRQEN_SHIFT;
+	int_mask |= MCP_INTMASK_DPPDIINT_MASK <<
+				MCP_INTMASK_DPPDIINT_SHIFT;
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_INTMASK, int_mask);
 }
 
 static int sdw_port_pdi_init(struct cnl_sdw *sdw)
