@@ -55,6 +55,81 @@ int sdw_mstr_bw_init(struct sdw_bus *sdw_bs)
 EXPORT_SYMBOL_GPL(sdw_mstr_bw_init);
 
 
+/*
+ * sdw_get_clock_frmshp - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function computes clock and frame shape based on
+ * clock frequency.
+ */
+int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
+		int *col, int *row)
+{
+
+	return 0;
+}
+
+/*
+ * sdw_compute_sys_interval - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function computes system interval.
+ */
+int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_master_capabilities *sdw_mstr_cap,
+		int frame_interval)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_compute_hstart_hstop - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function computes hstart and hstop for running
+ * streams per master & slaves.
+ */
+int sdw_compute_hstart_hstop(struct sdw_bus *sdw_mstr_bs, int sel_col)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_compute_blk_subblk_offset - returns Success
+ *
+ *
+ * This function computes block offset and sub block
+ * offset for running streams per master & slaves.
+ */
+int sdw_compute_blk_subblk_offset(struct sdw_bus *sdw_mstr_bs)
+{
+
+	return 0;
+}
+
+
+/*
+ * sdw_configure_frmshp_bnkswtch - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function broadcast frameshape on framectrl
+ * register and performs bank switch.
+ */
+int sdw_configure_frmshp_bnkswtch(struct sdw_bus *mstr_bs, int col, int row)
+{
+
+	return 0;
+}
+
+
 /**
  * sdw_bus_calc_bw - returns Success
  * -EINVAL - In case of error.
