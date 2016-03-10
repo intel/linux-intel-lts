@@ -476,6 +476,36 @@ irqreturn_t cnl_sdw_irq_handler(int irq, void *context)
 	return IRQ_HANDLED;
 }
 
+static enum sdw_command_response cnl_sdw_xfer_msg(struct sdw_master *mstr,
+		struct sdw_msg *msg, bool program_scp_addr_page)
+{
+	return 0;
+}
+
+static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
+	struct sdw_bra_block *block)
+{
+	return 0;
+}
+
+static int cnl_sdw_mon_handover(struct sdw_master *mstr,
+			bool enable)
+{
+	return 0;
+}
+
+static int cnl_sdw_set_ssp_interval(struct sdw_master *mstr,
+			int ssp_interval, int bank)
+{
+	return 0;
+}
+
+static int cnl_sdw_set_clock_freq(struct sdw_master *mstr,
+			int cur_clk_freq, int bank)
+{
+	return 0;
+}
+
 static int cnl_sdw_probe(struct sdw_master *mstr,
 				const struct sdw_master_id *sdw_id)
 {
@@ -528,6 +558,17 @@ static int cnl_sdw_remove(struct sdw_master *mstr)
 	return 0;
 }
 
+
+
+static struct sdw_master_ops cnl_sdw_master_ops  = {
+	.xfer_msg = cnl_sdw_xfer_msg,
+	.xfer_bulk = cnl_sdw_xfer_bulk,
+	.monitor_handover = cnl_sdw_mon_handover,
+	.set_ssp_interval = cnl_sdw_set_ssp_interval,
+	.set_clock_freq = cnl_sdw_set_clock_freq,
+	.set_frame_shape = NULL,
+};
+
 static struct sdw_mstr_driver cnl_sdw_mstr_driver = {
 	.driver_type = SDW_DRIVER_TYPE_MASTER,
 	.driver = {
@@ -535,6 +576,7 @@ static struct sdw_mstr_driver cnl_sdw_mstr_driver = {
 	},
 	.probe          = cnl_sdw_probe,
 	.remove         = cnl_sdw_remove,
+	.mstr_ops	= &cnl_sdw_master_ops,
 };
 
 static int __init cnl_sdw_init(void)
