@@ -28,6 +28,8 @@ struct sst_dsp_device;
 #define CNL_ADSP_REG_ADSPCS		(CNL_ADSP_GEN_BASE + 0x04)
 #define CNL_ADSP_REG_ADSPIC		(CNL_ADSP_GEN_BASE + 0x08)
 #define CNL_ADSP_REG_ADSPIS		(CNL_ADSP_GEN_BASE + 0x0C)
+#define CNL_ADSP_REG_ADSPIC2		(CNL_ADSP_GEN_BASE + 0x10)
+#define CNL_ADSP_REG_ADSPIS2		(CNL_ADSP_GEN_BASE + 0x14)
 
 /* Intel HD Audio Inter-Processor Communication Registers */
 #define CNL_ADSP_IPC_BASE               0xC0
@@ -78,6 +80,15 @@ struct sst_dsp_device;
 
 #define CNL_ADSPIC_IPC			1
 #define CNL_ADSPIS_IPC			1
+
+#define CNL_ADSPIC2_SNDW		0x20
+
+#define CNL_SDW_SHIM_BASE		0x2C000
+#define CNL_SDW_LINK_0_BASE		0x30000
+#define CNL_SDW_LINK_1_BASE		0x40000
+#define CNL_SDW_LINK_2_BASE		0x50000
+#define CNL_SDW_LINK_3_BASE		0x60000
+#define CNL_ALH_BASE			0x2C800
 
 /* ADSPCS - Audio DSP Control & Status */
 #define CNL_DSP_CORES		4
