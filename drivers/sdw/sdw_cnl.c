@@ -745,6 +745,35 @@ static int cnl_sdw_set_clock_freq(struct sdw_master *mstr,
 	return 0;
 }
 
+static int cnl_sdw_set_port_params(struct sdw_master *mstr,
+			struct sdw_port_params *params, int bank)
+{
+	return 0;
+}
+
+static int cnl_sdw_set_port_transport_params(struct sdw_master *mstr,
+			struct sdw_transport_params *params, int bank)
+{
+	return 0;
+}
+
+static int cnl_sdw_port_activate_ch(struct sdw_master *mstr,
+			struct sdw_activate_ch *activate_ch, int bank)
+{
+	return 0;
+}
+
+static int cnl_sdw_port_activate_ch_pre(struct sdw_master *mstr,
+			struct sdw_activate_ch *activate_ch, int bank)
+{
+	return 0;
+}
+static int cnl_sdw_port_activate_ch_post(struct sdw_master *mstr,
+			struct sdw_activate_ch *activate_ch, int bank)
+{
+	return 0;
+}
+
 static int cnl_sdw_probe(struct sdw_master *mstr,
 				const struct sdw_master_id *sdw_id)
 {
@@ -808,6 +837,18 @@ static struct sdw_master_ops cnl_sdw_master_ops  = {
 	.set_frame_shape = NULL,
 };
 
+static struct sdw_master_port_ops cnl_sdw_master_port_ops = {
+	.dpn_set_port_params = cnl_sdw_set_port_params,
+	.dpn_set_port_transport_params = cnl_sdw_set_port_transport_params,
+	.dpn_port_activate_ch = cnl_sdw_port_activate_ch,
+	.dpn_port_activate_ch_pre = cnl_sdw_port_activate_ch_pre,
+	.dpn_port_activate_ch_post = cnl_sdw_port_activate_ch_post,
+	.dpn_port_prepare_ch = NULL,
+	.dpn_port_prepare_ch_pre = NULL,
+	.dpn_port_prepare_ch_post = NULL,
+
+};
+
 static struct sdw_mstr_driver cnl_sdw_mstr_driver = {
 	.driver_type = SDW_DRIVER_TYPE_MASTER,
 	.driver = {
@@ -816,6 +857,7 @@ static struct sdw_mstr_driver cnl_sdw_mstr_driver = {
 	.probe          = cnl_sdw_probe,
 	.remove         = cnl_sdw_remove,
 	.mstr_ops	= &cnl_sdw_master_ops,
+	.mstr_port_ops = &cnl_sdw_master_port_ops,
 };
 
 static int __init cnl_sdw_init(void)
