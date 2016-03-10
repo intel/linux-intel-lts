@@ -22,6 +22,23 @@
 #include <linux/sdw_bus.h>
 #include "sdw_priv.h"
 
+#define MAXCLOCKFREQ           6
+
+/* TBD: Currently we are using 100x2 as frame shape. to be removed later */
+int rows[MAX_NUM_ROWS] = {100, 48, 50, 60, 64, 72, 75, 80, 90,
+		     96, 125, 144, 147, 120, 128, 150,
+		     160, 180, 192, 200, 240, 250, 256};
+
+int cols[MAX_NUM_COLS] = {2, 4, 6, 8, 10, 12, 14, 16};
+
+/*
+ * TBD: Get supported clock frequency from ACPI and store
+ * it in master data structure.
+ */
+/* Currently only 9.6MHz clock frequency used */
+int clock_freq[MAXCLOCKFREQ] = {9600000, 9600000,
+				9600000, 9600000,
+				9600000, 9600000};
 
 /**
  * sdw_bus_bw_init - returns Success
@@ -33,6 +50,21 @@
  */
 int sdw_bus_bw_init(void)
 {
+	int r, c, rowcolcount = 0;
+	int control_bits = 48;
+
+	for (c = 0; c < MAX_NUM_COLS; c++) {
+
+		for (r = 0; r < MAX_NUM_ROWS; r++) {
+			sdw_core.rowcolcomb[rowcolcount].col = cols[c];
+			sdw_core.rowcolcomb[rowcolcount].row = rows[r];
+			sdw_core.rowcolcomb[rowcolcount].control_bits =
+				control_bits;
+			sdw_core.rowcolcomb[rowcolcount].data_bits =
+				(cols[c] * rows[r]) - control_bits;
+			rowcolcount++;
+		}
+	}
 
 	return 0;
 }
@@ -49,6 +81,25 @@ EXPORT_SYMBOL_GPL(sdw_bus_bw_init);
  */
 int sdw_mstr_bw_init(struct sdw_bus *sdw_bs)
 {
+	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
+
+	/* Initialize required parameters in bus structure */
+	sdw_bs->bandwidth = 0;
+	sdw_bs->system_interval = 0;
+	sdw_bs->frame_freq = 0;
+	/* TBD: Base Clock frequency should be read from
+	 * master capabilities
+	 * Currenly hardcoding to 9.6MHz
+	 */
+	sdw_bs->clk_freq = 9.6*1000*1000;
+	sdw_bs->clk_state = SDW_CLK_STATE_ON;
+
+	/* TBD: to be removed later */
+	/* Assumption is these should be already filled */
+	sdw_mstr_cap = &sdw_bs->mstr->mstr_capabilities;
+	sdw_mstr_cap->base_clk_freq = 9.6 * 1000 * 1000;
+	sdw_mstr_cap->monitor_handover_supported = false;
+	sdw_mstr_cap->highphy_capable = false;
 
 	return 0;
 }
