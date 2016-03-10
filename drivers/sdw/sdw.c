@@ -2026,6 +2026,27 @@ int sdw_disable_and_unprepare(int stream_tag, bool unprepare)
 }
 EXPORT_SYMBOL_GPL(sdw_disable_and_unprepare);
 
+struct sdw_master *sdw_get_master(int nr)
+{
+	struct sdw_master *master;
+
+	mutex_lock(&sdw_core.core_lock);
+	master = idr_find(&sdw_core.idr, nr);
+	if (master && !try_module_get(master->owner))
+		master = NULL;
+	mutex_unlock(&sdw_core.core_lock);
+
+	return master;
+}
+EXPORT_SYMBOL_GPL(sdw_get_master);
+
+void sdw_put_master(struct sdw_master *mstr)
+{
+	if (mstr)
+		module_put(mstr->owner);
+}
+EXPORT_SYMBOL_GPL(sdw_put_master);
+
 static void sdw_exit(void)
 {
 	device_unregister(&sdw_slv);
