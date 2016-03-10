@@ -195,8 +195,101 @@ int sdw_cfg_slv_params(struct sdw_bus *mstr_bs,
 		struct sdw_transport_params *t_slv_params,
 		struct sdw_port_params *p_slv_params)
 {
+	struct sdw_msg wr_msg, wr_msg1, rd_msg;
+	int ret = 0;
+	int banktouse;
+	u8 wbuf[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	u8 wbuf1[2] = {0, 0};
+	u8 rbuf[1] = {0};
+	u8 rbuf1[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	u8 rbuf2[2] = {0, 0};
 
-	return 0;
+	/* Program slave alternate bank with all transport parameters */
+	/* DPN_BlockCtrl2 */
+	wbuf[0] = t_slv_params->blockgroupcontrol;
+	/* DPN_SampleCtrl1 */
+	wbuf[1] = (t_slv_params->sample_interval - 1) &
+			SDW_DPN_SAMPLECTRL1_LOW_MASK;
+	wbuf[2] = ((t_slv_params->sample_interval - 1) >> 8) &
+			SDW_DPN_SAMPLECTRL1_LOW_MASK; /* DPN_SampleCtrl2 */
+	wbuf[3] = t_slv_params->offset1; /* DPN_OffsetCtrl1 */
+	wbuf[4] = t_slv_params->offset2; /* DPN_OffsetCtrl1 */
+	/*  DPN_HCtrl  */
+	wbuf[5] = (t_slv_params->hstop | (t_slv_params->hstart << 4));
+	wbuf[6] = t_slv_params->blockpackingmode; /* DPN_BlockCtrl3 */
+	wbuf[7] = t_slv_params->lanecontrol; /* DPN_LaneCtrl */
+
+	/* Get current bank in use from bus structure*/
+	banktouse = mstr_bs->active_bank;
+	banktouse = !banktouse;
+	/* Program slave alternate bank with all port parameters */
+	rd_msg.addr = SDW_DPN_PORTCTRL +
+		(SDW_NUM_DATA_PORT_REGISTERS * t_slv_params->num);
+	rd_msg.ssp_tag = 0x0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.len = 1;
+	rd_msg.slave_addr =  slv_rt->slave->slv_number;
+	rd_msg.buf = rbuf;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+
+	ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr_bs->mstr->dev, "Register transfer failed\n");
+		goto out;
+	}
+
+
+	wbuf1[0] = (p_slv_params->port_flow_mode |
+			(p_slv_params->port_data_mode <<
+			SDW_DPN_PORTCTRL_PORTDATAMODE_SHIFT) |
+			(rbuf[0]));
+
+	wbuf1[1] = (p_slv_params->word_length - 1);
+
+	/* Check whether address computed is correct for both cases */
+	wr_msg.addr = ((SDW_DPN_BLOCKCTRL2 +
+				(1 * (!t_slv_params->blockgroupcontrol_valid))
+				+ (SDW_BANK1_REGISTER_OFFSET * banktouse)) +
+			(SDW_NUM_DATA_PORT_REGISTERS * t_slv_params->num));
+
+	wr_msg1.addr =  SDW_DPN_PORTCTRL +
+		(SDW_NUM_DATA_PORT_REGISTERS * t_slv_params->num);
+
+	wr_msg.ssp_tag = 0x0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.len = (7 + (1 * (t_slv_params->blockgroupcontrol_valid)));
+	wr_msg.slave_addr = slv_rt->slave->slv_number;
+	wr_msg.buf = &wbuf[0 + (1 * (!t_slv_params->blockgroupcontrol_valid))];
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+	wr_msg1.ssp_tag = 0x0;
+	wr_msg1.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg1.len = 2;
+	wr_msg1.slave_addr = slv_rt->slave->slv_number;
+	wr_msg1.buf = &wbuf1[0];
+	wr_msg1.addr_page1 = 0x0;
+	wr_msg1.addr_page2 = 0x0;
+
+	ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr_bs->mstr->dev, "Register transfer failed\n");
+		goto out;
+	}
+
+
+	ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg1, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr_bs->mstr->dev, "Register transfer failed\n");
+		goto out;
+	}
+
+out:
+	return ret;
 }
 
 
@@ -212,6 +305,28 @@ int sdw_cfg_mstr_params(struct sdw_bus *mstr_bs,
 		struct sdw_transport_params *t_mstr_params,
 		struct sdw_port_params *p_mstr_params)
 {
+	struct sdw_mstr_driver *ops = mstr_bs->mstr->driver;
+	int banktouse, ret = 0;
+
+	/* 1. Get current bank in use from bus structure*/
+	banktouse = mstr_bs->active_bank;
+	banktouse = !banktouse;
+
+	/* 2. Set Master Xport Params */
+	if (ops->mstr_port_ops->dpn_set_port_transport_params) {
+		ret = ops->mstr_port_ops->dpn_set_port_transport_params
+				(mstr_bs->mstr, t_mstr_params, banktouse);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 3. Set Master Port Params */
+	if (ops->mstr_port_ops->dpn_set_port_params) {
+		ret = ops->mstr_port_ops->dpn_set_port_params
+				(mstr_bs->mstr, p_mstr_params, banktouse);
+		if (ret < 0)
+			return ret;
+	}
 
 	return 0;
 }
@@ -230,6 +345,89 @@ int sdw_cfg_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 		struct sdw_mstr_runtime *sdw_mstr_bs_rt,
 		bool is_master)
 {
+	struct sdw_transport_params *t_params, *t_slv_params;
+	struct sdw_port_params *p_params, *p_slv_params;
+	struct sdw_slave_runtime *slv_rt = NULL;
+	struct sdw_port_runtime *port_rt, *port_slv_rt;
+	int ret = 0;
+
+	if (is_master) {
+		/* should not compute any transport params */
+		if (sdw_mstr_bs_rt->rt_state == SDW_STATE_UNPREPARE_RT)
+			return 0;
+
+		list_for_each_entry(port_rt,
+			&sdw_mstr_bs_rt->port_rt_list, port_node) {
+
+			/* Transport and port parameters */
+			t_params = &port_rt->transport_params;
+			p_params = &port_rt->port_params;
+
+			p_params->num = port_rt->port_num;
+			p_params->word_length =
+				sdw_mstr_bs_rt->stream_params.bps;
+			p_params->port_flow_mode = 0x0; /* Isochronous Mode */
+			p_params->port_data_mode = 0x0; /* Normal Mode */
+
+			/* Configure xport params and port params for master */
+			ret = sdw_cfg_mstr_params(sdw_mstr_bs,
+					t_params, p_params);
+			if (ret < 0)
+				return ret;
+
+			/* Since one port per master runtime,
+			 * breaking port_list loop
+			 * TBD: to be extended for multiple port support
+			 */
+
+			break;
+		}
+
+	} else {
+
+
+		list_for_each_entry(slv_rt,
+			&sdw_mstr_bs_rt->slv_rt_list, slave_node) {
+
+			if (slv_rt->slave == NULL)
+				break;
+
+			/* should not compute any transport params */
+			if (slv_rt->rt_state == SDW_STATE_UNPREPARE_RT)
+				continue;
+
+			list_for_each_entry(port_slv_rt,
+				&slv_rt->port_rt_list, port_node) {
+
+				/* Fill in port params here */
+				port_slv_rt->port_params.num =
+					port_slv_rt->port_num;
+				port_slv_rt->port_params.word_length =
+					slv_rt->stream_params.bps;
+				/* Isochronous Mode */
+				port_slv_rt->port_params.port_flow_mode = 0x0;
+				/* Normal Mode */
+				port_slv_rt->port_params.port_data_mode = 0x0;
+				t_slv_params = &port_slv_rt->transport_params;
+				p_slv_params = &port_slv_rt->port_params;
+
+				/* Configure xport  & port params for slave */
+				ret = sdw_cfg_slv_params(sdw_mstr_bs,
+					slv_rt, t_slv_params, p_slv_params);
+				if (ret < 0)
+					return ret;
+
+				/* Since one port per slave runtime,
+				 * breaking port_list loop
+				 * TBD: to be extended for multiple
+				 * port support
+				 */
+
+				break;
+			}
+		}
+
+	}
 
 	return 0;
 }
@@ -247,6 +445,71 @@ int sdw_cfg_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 int sdw_cpy_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 		struct sdw_mstr_runtime *sdw_mstr_bs_rt)
 {
+	struct sdw_slave_runtime *slv_rt = NULL;
+	struct sdw_port_runtime *port_rt, *port_slv_rt;
+	struct sdw_transport_params *t_params, *t_slv_params;
+	struct sdw_port_params *p_params, *p_slv_params;
+	int ret = 0;
+
+	list_for_each_entry(slv_rt,
+			&sdw_mstr_bs_rt->slv_rt_list, slave_node) {
+
+		if (slv_rt->slave == NULL)
+			break;
+
+		list_for_each_entry(port_slv_rt,
+				&slv_rt->port_rt_list, port_node) {
+
+			/* Fill in port params here */
+			port_slv_rt->port_params.num = port_slv_rt->port_num;
+			port_slv_rt->port_params.word_length =
+				slv_rt->stream_params.bps;
+			/* Normal/Isochronous Mode */
+			port_slv_rt->port_params.port_flow_mode = 0x0;
+			/* Normal Mode */
+			port_slv_rt->port_params.port_data_mode = 0x0;
+			t_slv_params = &port_slv_rt->transport_params;
+			p_slv_params = &port_slv_rt->port_params;
+
+			/* Configure xport & port params for slave */
+			ret = sdw_cfg_slv_params(sdw_mstr_bs,
+					slv_rt, t_slv_params, p_slv_params);
+			if (ret < 0)
+				return ret;
+
+			/*
+			 * Since one port per slave runtime,
+			 * breaking port_list loop
+			 * TBD: to be extended for multiple port support
+			 */
+			break;
+		}
+	}
+
+
+	list_for_each_entry(port_rt,
+			&sdw_mstr_bs_rt->port_rt_list, port_node) {
+
+		/* Transport and port parameters */
+		t_params = &port_rt->transport_params;
+		p_params = &port_rt->port_params;
+
+
+		p_params->num = port_rt->port_num;
+		p_params->word_length = sdw_mstr_bs_rt->stream_params.bps;
+		p_params->port_flow_mode = 0x0; /* Normal/Isochronous Mode */
+		p_params->port_data_mode = 0x0; /* Normal Mode */
+
+		/* Configure xport params and port params for master */
+		ret = sdw_cfg_mstr_params(sdw_mstr_bs, t_params, p_params);
+		if (ret < 0)
+			return ret;
+
+		/* Since one port per slave runtime, breaking port_list loop
+		 * TBD: to be extended for multiple port support
+		 */
+		break;
+	}
 
 	return 0;
 }
@@ -877,6 +1140,96 @@ int sdw_cfg_bs_params(struct sdw_bus *sdw_mstr_bs,
 		struct sdw_mstr_runtime *sdw_mstr_bs_rt,
 		bool is_strm_cpy)
 {
+	struct port_chn_en_state chn_en;
+	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	struct sdw_mstr_driver *ops;
+	int banktouse, ret = 0;
+
+	list_for_each_entry(sdw_mstr_bs_rt,
+		&sdw_mstr->mstr_rt_list, mstr_node) {
+
+		if (sdw_mstr_bs_rt->mstr == NULL)
+			continue;
+
+		if (is_strm_cpy) {
+			/*
+			 * Configure and enable all slave
+			 * transport params first
+			 */
+			ret = sdw_cfg_mstr_slv(sdw_mstr_bs,
+				sdw_mstr_bs_rt, false);
+			if (ret < 0) {
+				/* TBD: Undo all the computation */
+				dev_err(&sdw_mstr_bs->mstr->dev,
+					"slave config params failed\n");
+				return ret;
+			}
+
+			/* Configure and enable all master params */
+			ret = sdw_cfg_mstr_slv(sdw_mstr_bs,
+				sdw_mstr_bs_rt, true);
+			if (ret < 0) {
+				/* TBD: Undo all the computation */
+				dev_err(&sdw_mstr_bs->mstr->dev,
+					"master config params failed\n");
+				return ret;
+			}
+
+		} else {
+
+			/*
+			 * 7.1 Copy all slave transport and port params
+			 * to alternate bank
+			 * 7.2 copy all master transport and port params
+			 * to alternate bank
+			 */
+			ret = sdw_cpy_params_mstr_slv(sdw_mstr_bs,
+				sdw_mstr_bs_rt);
+			if (ret < 0) {
+				/* TBD: Undo all the computation */
+				dev_err(&sdw_mstr_bs->mstr->dev,
+					"slave/master copy params failed\n");
+				return ret;
+			}
+		}
+
+		/* Get master driver ops */
+		ops = sdw_mstr_bs->mstr->driver;
+
+		/* Configure SSP */
+		banktouse = sdw_mstr_bs->active_bank;
+		banktouse = !banktouse;
+
+		/*
+		 * TBD: Currently harcoded SSP interval to 24,
+		 * computed value to be taken from system_interval in
+		 * bus data structure.
+		 * Add error check.
+		 */
+		if (ops->mstr_ops->set_ssp_interval)
+			ops->mstr_ops->set_ssp_interval(sdw_mstr_bs->mstr,
+					24, banktouse); /* hardcoding to 24 */
+		/*
+		 * Configure Clock
+		 * TBD: Add error check
+		 */
+		if (ops->mstr_ops->set_clock_freq)
+			ops->mstr_ops->set_clock_freq(sdw_mstr_bs->mstr,
+					sdw_mstr_bs->clk_freq, banktouse);
+
+		/* Enable channel on alternate bank for running streams */
+		chn_en.is_activate = true;
+		chn_en.is_bank_sw = true;
+		ret = sdw_en_dis_mstr_slv_state
+				(sdw_mstr_bs, sdw_mstr_bs_rt, &chn_en);
+		if (ret < 0) {
+			/* TBD: Undo all the computation */
+			dev_err(&sdw_mstr_bs->mstr->dev,
+					"Channel enable failed\n");
+			return ret;
+		}
+
+	}
 
 	return 0;
 }
