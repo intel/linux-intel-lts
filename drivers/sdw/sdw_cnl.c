@@ -491,12 +491,38 @@ static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
 static int cnl_sdw_mon_handover(struct sdw_master *mstr,
 			bool enable)
 {
+	int mcp_config;
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+
+	mcp_config = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_CONFIG);
+	if (enable)
+		mcp_config |= MCP_CONFIG_BRELENABLE_MASK <<
+				MCP_CONFIG_BRELENABLE_SHIFT;
+	else
+		mcp_config &= ~(MCP_CONFIG_BRELENABLE_MASK <<
+				MCP_CONFIG_BRELENABLE_SHIFT);
+
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONFIG, mcp_config);
 	return 0;
 }
 
 static int cnl_sdw_set_ssp_interval(struct sdw_master *mstr,
 			int ssp_interval, int bank)
 {
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+	int sspctrl_offset, check;
+
+	if (bank)
+		sspctrl_offset = SDW_CNL_MCP_SSPCTRL1;
+	else
+		sspctrl_offset = SDW_CNL_MCP_SSPCTRL0;
+
+	cnl_sdw_reg_writel(data->sdw_regs, sspctrl_offset, ssp_interval);
+
+	check = cnl_sdw_reg_readl(data->sdw_regs, sspctrl_offset);
+
 	return 0;
 }
 
