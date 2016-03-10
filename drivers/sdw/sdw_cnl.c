@@ -107,12 +107,71 @@ struct cnl_sdw {
 
 static int sdw_power_up_link(struct cnl_sdw *sdw)
 {
-	return 0;
+	volatile int link_control;
+	struct sdw_master *mstr = sdw->mstr;
+	struct cnl_sdw_data *data = &sdw->data;
+	/* Try 10 times before timing out */
+	int timeout = 10;
+	int spa_mask, cpa_mask;
+
+	link_control = cnl_sdw_reg_readl(data->sdw_shim, SDW_CNL_LCTL);
+	spa_mask = (CNL_LCTL_SPA_MASK << (data->inst_id + CNL_LCTL_SPA_SHIFT));
+	cpa_mask = (CNL_LCTL_CPA_MASK << (data->inst_id + CNL_LCTL_CPA_SHIFT));
+	link_control |=  spa_mask;
+	cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_LCTL, link_control);
+	do {
+		link_control = cnl_sdw_reg_readl(data->sdw_shim, SDW_CNL_LCTL);
+		if (link_control & cpa_mask)
+			break;
+		timeout--;
+		/* Wait 20ms before each time */
+		msleep(20);
+	} while (timeout != 0);
+	/* Read once again to confirm */
+	link_control = cnl_sdw_reg_readl(data->sdw_shim, SDW_CNL_LCTL);
+	if (link_control & cpa_mask) {
+		dev_info(&mstr->dev, "SoundWire ctrl %d Powered Up\n",
+						data->inst_id);
+		sdw->sdw_link_status = 1;
+		return 0;
+	}
+	dev_err(&mstr->dev, "Failed to Power Up the SDW ctrl %d\n",
+								data->inst_id);
+	return -EIO;
 }
 
 static void sdw_power_down_link(struct cnl_sdw *sdw)
 {
+	volatile int link_control;
+	struct sdw_master *mstr = sdw->mstr;
+	struct cnl_sdw_data *data = &sdw->data;
+	/* Retry 10 times before giving up */
+	int timeout = 10;
+	int spa_mask, cpa_mask;
 
+	link_control = cnl_sdw_reg_readl(data->sdw_shim, SDW_CNL_LCTL);
+	spa_mask = ~(CNL_LCTL_SPA_MASK << (data->inst_id + CNL_LCTL_SPA_SHIFT));
+	cpa_mask = (CNL_LCTL_CPA_MASK << (data->inst_id + CNL_LCTL_CPA_SHIFT));
+	link_control &=  spa_mask;
+	cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_LCTL, link_control);
+	do {
+		link_control = cnl_sdw_reg_readl(data->sdw_shim, SDW_CNL_LCTL);
+		if (!(link_control & cpa_mask))
+			break;
+		timeout--;
+		/* Wait for 20ms before each retry */
+		msleep(20);
+	} while (timeout != 0);
+	/* Read once again to confirm */
+	link_control = cnl_sdw_reg_readl(data->sdw_shim, SDW_CNL_LCTL);
+	if (!(link_control & cpa_mask)) {
+		dev_info(&mstr->dev, "SoundWire ctrl %d Powered Down\n",
+						data->inst_id);
+		sdw->sdw_link_status = 0;
+		return;
+	}
+	dev_err(&mstr->dev, "Failed to Power Down the SDW ctrl %d\n",
+								data->inst_id);
 }
 
 static void sdw_init_phyctrl(struct cnl_sdw *sdw)
