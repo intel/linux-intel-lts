@@ -61,6 +61,11 @@ drm_add_fake_info_node(struct drm_minor *minor,
 	return 0;
 }
 
+enum {
+	LRC_CONTEXT_DUMP,       /* First 1536 bytes of register state ctx */
+	FULL_CONTEXT_DUMP,      /* Full context (HW status + reg state ctx) */
+};
+
 static __always_inline void seq_print_param(struct seq_file *m,
 					    const char *name,
 					    const char *type,
@@ -2014,11 +2019,13 @@ static int i915_context_status(struct seq_file *m, void *unused)
 
 static void i915_dump_lrc_obj(struct seq_file *m,
 			      struct i915_gem_context *ctx,
-			      struct intel_engine_cs *engine)
+			      struct intel_engine_cs *engine,
+			      unsigned long dump_flag)
 {
 	struct i915_vma *vma = ctx->engine[engine->id].state;
 	struct page *page;
-	int j;
+	struct sg_page_iter sg_iter;
+	int i;
 
 	seq_printf(m, "CONTEXT: %s %u\n", engine->name, ctx->hw_id);
 
@@ -2036,18 +2043,55 @@ static void i915_dump_lrc_obj(struct seq_file *m,
 		return;
 	}
 
-	page = i915_gem_object_get_page(vma->obj, LRC_STATE_PN);
-	if (page) {
-		u32 *reg_state = kmap_atomic(page);
-
-		for (j = 0; j < 0x600 / sizeof(u32) / 4; j += 4) {
-			seq_printf(m,
-				   "\t[0x%04x] 0x%08x 0x%08x 0x%08x 0x%08x\n",
-				   j * 4,
-				   reg_state[j], reg_state[j + 1],
-				   reg_state[j + 2], reg_state[j + 3]);
+	i = 0;
+	for_each_sg_page(vma->pages->sgl, &sg_iter,
+			 vma->pages->nents, 0) {
+		/* Dump only the first page of LRC state if requested */
+		if (dump_flag == LRC_CONTEXT_DUMP && i != LRC_STATE_PN) {
+			i++;
+			continue;
 		}
-		kunmap_atomic(reg_state);
+
+		page = sg_page_iter_page(&sg_iter);
+		if (!WARN_ON(page == NULL)) {
+			int j;
+			uint32_t *reg_state;
+			int run_length = 0;
+			unsigned long page_offset = vma->node.start + i*PAGE_SIZE;
+
+			reg_state = kmap_atomic(page);
+
+			seq_printf(m, "Context object Page: %d\n", i);
+			for (j = 0; j < PAGE_SIZE / sizeof(u32); j += 4) {
+				if (reg_state[j + 0] == 0 && reg_state[j + 1] == 0 &&
+				    reg_state[j + 2] == 0 && reg_state[j + 3] == 0) {
+					run_length += 4;
+					continue;
+				}
+
+				if (run_length > 0) {
+					seq_printf(m, "\t[0x%08lx - 0x%08lx]: 0x00000000\n",
+						   page_offset + (j * 4) - (run_length * 4),
+						   page_offset + (j * 4) - 1);
+
+					run_length = 0;
+				}
+
+				seq_printf(m, "\t[0x%08lx] 0x%08x 0x%08x 0x%08x 0x%08x\n",
+					   page_offset + (j * 4),
+					   reg_state[j + 0], reg_state[j + 1],
+					   reg_state[j + 2], reg_state[j + 3]);
+			}
+
+			if (run_length > 0) {
+				seq_printf(m, "\t[0x%08lx - 0x%08lx]: 0x00000000\n",
+					   page_offset + (j * 4) - (run_length * 4),
+					   page_offset + (j * 4) - 1);
+				run_length = 0;
+			}
+			kunmap_atomic(reg_state);
+		}
+		++i;
 	}
 
 	i915_gem_object_unpin_pages(vma->obj);
@@ -2056,11 +2100,13 @@ static void i915_dump_lrc_obj(struct seq_file *m,
 
 static int i915_dump_lrc(struct seq_file *m, void *unused)
 {
-	struct drm_i915_private *dev_priv = node_to_i915(m->private);
+	struct drm_info_node *node = (struct drm_info_node *) m->private;
+	struct drm_i915_private *dev_priv = node_to_i915(node);
 	struct drm_device *dev = &dev_priv->drm;
 	struct intel_engine_cs *engine;
 	struct i915_gem_context *ctx;
 	enum intel_engine_id id;
+	uintptr_t dump_flag = (uintptr_t) node->info_ent->data;
 	int ret;
 
 	if (!i915.enable_execlists) {
@@ -2073,8 +2119,22 @@ static int i915_dump_lrc(struct seq_file *m, void *unused)
 		return ret;
 
 	list_for_each_entry(ctx, &dev_priv->context_list, link)
-		for_each_engine(engine, dev_priv, id)
-			i915_dump_lrc_obj(m, ctx, engine);
+		for_each_engine(engine, dev_priv, id) {
+			struct i915_vma *ctx_obj = ctx->engine[id].state;
+			if (ctx_obj == NULL) {
+				seq_printf(m, "Context on %s with no gem object\n",
+					   engine->name);
+				continue;
+			}
+
+			if (ctx->file_priv) {
+				seq_printf(m, "CONTEXT: %s (PID: %u, UH:%d)\n",
+					   engine->name,
+					   pid_nr(ctx->pid),
+					   ctx->user_handle);
+				i915_dump_lrc_obj(m, ctx, engine, dump_flag);
+			}
+		}
 
 	mutex_unlock(&dev->struct_mutex);
 
@@ -4693,7 +4753,8 @@ static const struct drm_info_list i915_debugfs_list[] = {
 	{"i915_vbt", i915_vbt, 0},
 	{"i915_gem_framebuffer", i915_gem_framebuffer_info, 0},
 	{"i915_context_status", i915_context_status, 0},
-	{"i915_dump_lrc", i915_dump_lrc, 0},
+	{"i915_dump_lrc", i915_dump_lrc, 0, (void *) LRC_CONTEXT_DUMP},
+	{"i915_context_dump", i915_dump_lrc, 0, (void *) FULL_CONTEXT_DUMP},
 	{"i915_forcewake_domains", i915_forcewake_domains, 0},
 	{"i915_swizzle_info", i915_swizzle_info, 0},
 	{"i915_ppgtt_info", i915_ppgtt_info, 0},
