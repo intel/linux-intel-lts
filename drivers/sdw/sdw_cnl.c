@@ -475,12 +475,118 @@ static int sdw_alloc_pcm_stream(struct cnl_sdw *sdw,
 			struct cnl_sdw_port *port, int ch_cnt,
 			enum sdw_data_direction direction)
 {
+	int num_pcm_streams, pdi_ch_map = 0, stream_id;
+	struct cnl_sdw_pdi_stream *stream, *pdi_stream;
+	unsigned int i;
+	unsigned int ch_map_offset, port_ctrl_offset, pdi_config_offset;
+	struct sdw_master *mstr = sdw->mstr;
+	unsigned int port_ctrl = 0, pdi_config = 0, channel_mask;
+	unsigned int stream_config;
+
+	/* Currently PCM supports only bi-directional streams only */
+	num_pcm_streams = sdw->num_pcm_streams;
+	stream = sdw->pcm_streams;
+
+	mutex_lock(&sdw->stream_lock);
+	for (i = SDW_CNL_PCM_PDI_NUM_OFFSET; i < num_pcm_streams; i++) {
+		if (stream[i].allocated == false) {
+			stream[i].allocated = true;
+			stream[i].port_num = port->port_num;
+			port->pdi_stream = &stream[i];
+			break;
+		}
+	}
+	mutex_unlock(&sdw->stream_lock);
+	if (!port->pdi_stream) {
+		dev_err(&mstr->dev, "Unable to allocate stream for PCM\n");
+		return -EINVAL;
+	}
+	pdi_stream = port->pdi_stream;
+	/* We didnt get enough PDI streams, so free the allocated
+	 * PDI streams. Free the port as well and return with error
+	 */
+	pdi_stream->l_ch_num = 0;
+	pdi_stream->h_ch_num = ch_cnt - 1;
+	ch_map_offset = SDW_CNL_PCMSCHM +
+			(SDW_CNL_PCMSCHM_REG_OFFSET * mstr->nr) +
+			(0x2 * pdi_stream->pdi_num);
+	if (port->direction == SDW_DATA_DIR_IN)
+		pdi_ch_map |= (CNL_PCMSYCM_DIR_MASK << CNL_PCMSYCM_DIR_SHIFT);
+	else
+		pdi_ch_map &= ~(CNL_PCMSYCM_DIR_MASK << CNL_PCMSYCM_DIR_SHIFT);
+	/* TODO: Remove this hardcoding */
+	stream_id = mstr->nr * 16 + pdi_stream->pdi_num + 5;
+	pdi_stream->sdw_pdi_num = stream_id;
+	pdi_ch_map |= (stream_id & CNL_PCMSYCM_STREAM_MASK) <<
+					CNL_PCMSYCM_STREAM_SHIFT;
+	pdi_ch_map |= (pdi_stream->l_ch_num &
+			CNL_PCMSYCM_LCHAN_MASK) <<
+					CNL_PCMSYCM_LCHAN_SHIFT;
+	pdi_ch_map |= (0xF & CNL_PCMSYCM_HCHAN_MASK) <<
+					CNL_PCMSYCM_HCHAN_SHIFT;
+	cnl_sdw_reg_writew(sdw->data.sdw_shim, ch_map_offset,
+				pdi_ch_map);
+	/* If direction is input, port is sink port*/
+	if (direction ==  SDW_DATA_DIR_IN)
+		port_ctrl |= (PORTCTRL_PORT_DIRECTION_MASK <<
+				PORTCTRL_PORT_DIRECTION_SHIFT);
+	else
+		port_ctrl &= ~(PORTCTRL_PORT_DIRECTION_MASK <<
+				PORTCTRL_PORT_DIRECTION_SHIFT);
+
+	port_ctrl_offset =  SDW_CNL_PORTCTRL + (port->port_num *
+				SDW_CNL_PORT_REG_OFFSET);
+	cnl_sdw_reg_writel(sdw->data.sdw_regs, port_ctrl_offset, port_ctrl);
+
+	pdi_config |= ((port->port_num & PDINCONFIG_PORT_NUMBER_MASK) <<
+			PDINCONFIG_PORT_NUMBER_SHIFT);
+
+	channel_mask = (1 << ch_cnt) - 1;
+	pdi_config |= (channel_mask << PDINCONFIG_CHANNEL_MASK_SHIFT);
+	/* TODO: Remove below hardcodings */
+	pdi_config_offset =  (SDW_CNL_PDINCONFIG0 +
+				(pdi_stream->pdi_num * 16));
+	cnl_sdw_reg_writel(sdw->data.sdw_regs, pdi_config_offset, pdi_config);
+
+	stream_config = cnl_sdw_reg_readl(sdw->data.alh_base,
+			(pdi_stream->sdw_pdi_num * ALH_CNL_STRMZCFG_OFFSET));
+	stream_config |= (CNL_STRMZCFG_DMAT_VAL & CNL_STRMZCFG_DMAT_MASK) <<
+				CNL_STRMZCFG_DMAT_SHIFT;
+	stream_config |=  ((ch_cnt - 1) & CNL_STRMZCFG_CHAN_MASK) <<
+			CNL_STRMZCFG_CHAN_SHIFT;
+	cnl_sdw_reg_writel(sdw->data.alh_base,
+			 (pdi_stream->sdw_pdi_num * ALH_CNL_STRMZCFG_OFFSET),
+			stream_config);
 	return 0;
 }
 
 static int sdw_alloc_pdm_stream(struct cnl_sdw *sdw,
 			struct cnl_sdw_port *port, int ch_cnt, int direction)
 {
+int num_pdm_streams;
+	struct cnl_sdw_pdi_stream *stream;
+	int i;
+
+	/* Currently PDM supports either Input or Output Streams */
+	if (direction == SDW_DATA_DIR_IN) {
+		num_pdm_streams = sdw->num_in_pdm_streams;
+		stream = sdw->in_pdm_streams;
+	} else {
+		num_pdm_streams = sdw->num_out_pdm_streams;
+		stream = sdw->out_pdm_streams;
+	}
+	mutex_lock(&sdw->stream_lock);
+	for (i = 0; i < num_pdm_streams; i++) {
+		if (stream[i].allocated == false) {
+			stream[i].allocated = true;
+			stream[i].port_num = port->port_num;
+			port->pdi_stream = &stream[i];
+			break;
+		}
+	}
+	mutex_unlock(&sdw->stream_lock);
+	if (!port->pdi_stream)
+		return -EINVAL;
 	return 0;
 }
 
