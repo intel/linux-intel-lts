@@ -845,17 +845,59 @@ struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
 static int cnl_sdw_port_activate_ch(struct sdw_master *mstr,
 			struct sdw_activate_ch *activate_ch, int bank)
 {
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+	int dpn_channelen_offset;
+	int ch_mask;
+
+	if (bank)
+		dpn_channelen_offset = SDW_CNL_DPN_CHANNELEN1;
+	else
+		dpn_channelen_offset = SDW_CNL_DPN_CHANNELEN0;
+
+	if (activate_ch->activate)
+		ch_mask = activate_ch->ch_mask;
+	else
+		ch_mask = 0;
+
+	cnl_sdw_port_reg_writel(data->sdw_regs,
+			dpn_channelen_offset, activate_ch->num,
+			ch_mask);
+
 	return 0;
 }
 
 static int cnl_sdw_port_activate_ch_pre(struct sdw_master *mstr,
 			struct sdw_activate_ch *activate_ch, int bank)
 {
+	int sync_reg;
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+
+	if (mstr->link_sync_mask) {
+		/* Check if this link is synchronized with some other link */
+		sync_reg = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
+		/* If link is synchronized with other link than
+		 * Need to make sure that command doesnt go till
+		 * ssync is applied
+		 */
+		sync_reg |= (1 << (data->inst_id + CNL_SYNC_CMDSYNC_SHIFT));
+		cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_SYNC, sync_reg);
+	}
+
 	return 0;
 }
 static int cnl_sdw_port_activate_ch_post(struct sdw_master *mstr,
 			struct sdw_activate_ch *activate_ch, int bank)
 {
+	int sync_reg;
+	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+
+	sync_reg = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
+	sync_reg |= CNL_SYNC_SYNCGO_MASK << CNL_SYNC_SYNCGO_SHIFT;
+	cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_SYNC, sync_reg);
+
 	return 0;
 }
 
