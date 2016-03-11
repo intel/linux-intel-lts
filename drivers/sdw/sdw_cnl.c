@@ -777,6 +777,68 @@ static int cnl_sdw_set_port_params(struct sdw_master *mstr,
 static int cnl_sdw_set_port_transport_params(struct sdw_master *mstr,
 			struct sdw_transport_params *params, int bank)
 {
+struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+
+	int dpn_config = 0, dpn_config_offset;
+	int dpn_samplectrl_offset;
+	int dpn_offsetctrl = 0, dpn_offsetctrl_offset;
+	int dpn_hctrl = 0, dpn_hctrl_offset;
+
+	if (bank) {
+		dpn_config_offset = SDW_CNL_DPN_CONFIG1;
+		dpn_samplectrl_offset = SDW_CNL_DPN_SAMPLECTRL1;
+		dpn_hctrl_offset = SDW_CNL_DPN_HCTRL1;
+		dpn_offsetctrl_offset = SDW_CNL_DPN_OFFSETCTRL1;
+	} else {
+		dpn_config_offset = SDW_CNL_DPN_CONFIG0;
+		dpn_samplectrl_offset = SDW_CNL_DPN_SAMPLECTRL0;
+		dpn_hctrl_offset = SDW_CNL_DPN_HCTRL0;
+		dpn_offsetctrl_offset = SDW_CNL_DPN_OFFSETCTRL0;
+	}
+	dpn_config = cnl_sdw_port_reg_readl(data->sdw_regs,
+		dpn_config_offset,  params->num);
+	dpn_config |= ((params->blockgroupcontrol & DPN_CONFIG_BGC_MASK) <<
+					DPN_CONFIG_BGC_SHIFT);
+	dpn_config |= ((params->blockpackingmode & DPN_CONFIG_BPM_MASK) <<
+					DPN_CONFIG_BPM_SHIFT);
+
+	cnl_sdw_port_reg_writel(data->sdw_regs,
+		dpn_config_offset, params->num, dpn_config);
+
+	cnl_sdw_port_reg_readl(data->sdw_regs,
+		dpn_config_offset,  params->num);
+
+	dpn_offsetctrl |= ((params->offset1 & DPN_OFFSETCTRL0_OF1_MASK) <<
+			DPN_OFFSETCTRL0_OF1_SHIFT);
+
+	dpn_offsetctrl |= ((params->offset2 & DPN_OFFSETCTRL0_OF2_MASK) <<
+			DPN_OFFSETCTRL0_OF2_SHIFT);
+
+	cnl_sdw_port_reg_writel(data->sdw_regs,
+		dpn_offsetctrl_offset, params->num, dpn_offsetctrl);
+
+
+	dpn_hctrl |= ((params->hstart & DPN_HCTRL_HSTART_MASK) <<
+				DPN_HCTRL_HSTART_SHIFT);
+	dpn_hctrl |= ((params->hstop & DPN_HCTRL_HSTOP_MASK) <<
+				DPN_HCTRL_HSTOP_SHIFT);
+	dpn_hctrl |= ((params->lanecontrol & DPN_HCTRL_LCONTROL_MASK) <<
+				DPN_HCTRL_LCONTROL_SHIFT);
+
+	cnl_sdw_port_reg_writel(data->sdw_regs,
+			dpn_hctrl_offset, params->num, dpn_hctrl);
+
+	cnl_sdw_port_reg_writel(data->sdw_regs,
+			dpn_samplectrl_offset, params->num,
+			(params->sample_interval - 1));
+
+	cnl_sdw_port_reg_readl(data->sdw_regs,
+		dpn_hctrl_offset,  params->num);
+
+	cnl_sdw_port_reg_readl(data->sdw_regs,
+		dpn_samplectrl_offset,  params->num);
+
 	return 0;
 }
 
