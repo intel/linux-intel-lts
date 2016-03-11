@@ -471,6 +471,84 @@ static int sdw_init(struct cnl_sdw *sdw)
 	return sdw_config_update(sdw);
 }
 
+static int sdw_alloc_pcm_stream(struct cnl_sdw *sdw,
+			struct cnl_sdw_port *port, int ch_cnt,
+			enum sdw_data_direction direction)
+{
+	return 0;
+}
+
+static int sdw_alloc_pdm_stream(struct cnl_sdw *sdw,
+			struct cnl_sdw_port *port, int ch_cnt, int direction)
+{
+	return 0;
+}
+
+struct cnl_sdw_port *cnl_sdw_alloc_port(struct sdw_master *mstr, int ch_count,
+				enum sdw_data_direction direction,
+				enum cnl_sdw_pdi_stream_type stream_type)
+{
+	struct cnl_sdw *sdw;
+	struct cnl_sdw_port *port = NULL;
+	int i, ret = 0;
+	struct num_pdi_streams;
+
+	sdw = sdw_master_get_drvdata(mstr);
+
+	mutex_lock(&sdw->stream_lock);
+	for (i = 1; i <= CNL_SDW_MAX_PORTS; i++) {
+		if (sdw->port[i].allocated == false) {
+			port = &sdw->port[i];
+			port->allocated = true;
+			port->direction = direction;
+			port->ch_cnt = ch_count;
+			break;
+		}
+	}
+	mutex_unlock(&sdw->stream_lock);
+	if (!port) {
+		dev_err(&mstr->dev, "Unable to allocate port\n");
+		return NULL;
+	}
+	port->pdi_stream = NULL;
+	if (stream_type == CNL_SDW_PDI_TYPE_PDM)
+		ret = sdw_alloc_pdm_stream(sdw, port, ch_count, direction);
+	else
+		ret = sdw_alloc_pcm_stream(sdw, port, ch_count, direction);
+	if (!ret)
+		return port;
+
+	dev_err(&mstr->dev, "Unable to allocate stream\n");
+	mutex_lock(&sdw->stream_lock);
+	port->allocated = false;
+	mutex_unlock(&sdw->stream_lock);
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(cnl_sdw_alloc_port);
+
+void cnl_sdw_free_port(struct sdw_master *mstr, int port_num)
+{
+	int i;
+	struct cnl_sdw *sdw;
+	struct cnl_sdw_port *port = NULL;
+
+	sdw = sdw_master_get_drvdata(mstr);
+	for (i = 1; i < CNL_SDW_MAX_PORTS; i++) {
+		if (sdw->port[i].port_num == port_num) {
+			port = &sdw->port[i];
+			break;
+		}
+	}
+	if (!port)
+		return;
+	mutex_lock(&sdw->stream_lock);
+	port->pdi_stream->allocated = false;
+	port->pdi_stream = NULL;
+	port->allocated = false;
+	mutex_unlock(&sdw->stream_lock);
+}
+EXPORT_SYMBOL_GPL(cnl_sdw_free_port);
+
 irqreturn_t cnl_sdw_irq_handler(int irq, void *context)
 {
 	return IRQ_HANDLED;
