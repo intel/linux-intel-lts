@@ -655,8 +655,109 @@ void cnl_sdw_free_port(struct sdw_master *mstr, int port_num)
 }
 EXPORT_SYMBOL_GPL(cnl_sdw_free_port);
 
+static int cnl_sdw_update_slave_status(struct cnl_sdw *sdw, int slave_intstat0,
+			int slave_intstat1)
+{
+	int i;
+	struct sdw_status slave_status;
+	u64 slaves_stat, slave_stat;
+	int ret = 0;
+
+	memset(&slave_status, 0x0, sizeof(slave_status));
+	slaves_stat = (u64) slave_intstat1 <<
+			SDW_CNL_SLAVES_STAT_UPPER_DWORD_SHIFT;
+	slaves_stat |= slave_intstat0;
+	for (i = 0; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+		slave_stat = slaves_stat >> (i * SDW_CNL_SLAVE_STATUS_BITS);
+		if (slave_stat &  MCP_SLAVEINTSTAT_NOT_PRESENT_MASK)
+			slave_status.status[i] = SDW_SLAVE_STAT_NOT_PRESENT;
+		else if (slave_stat &  MCP_SLAVEINTSTAT_ATTACHED_MASK)
+			slave_status.status[i] = SDW_SLAVE_STAT_ATTACHED_OK;
+		else if (slave_stat &  MCP_SLAVEINTSTAT_ALERT_MASK)
+			slave_status.status[i] = SDW_SLAVE_STAT_ALERT;
+		else if (slave_stat &  MCP_SLAVEINTSTAT_RESERVED_MASK)
+			slave_status.status[i] = SDW_SLAVE_STAT_RESERVED;
+	}
+	ret = sdw_master_update_slv_status(sdw->mstr, &slave_status);
+	return ret;
+}
+
+static void cnl_sdw_read_response(struct cnl_sdw *sdw)
+{
+	struct cnl_sdw_data *data = &sdw->data;
+	int num_res = 0, i;
+	u32 cmd_base = SDW_CNL_MCP_COMMAND_BASE;
+
+	num_res = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_FIFOSTAT);
+	num_res &= MCP_RX_FIFO_AVAIL_MASK;
+	for (i = 0; i < num_res; i++) {
+		sdw->response_buf[i] = cnl_sdw_reg_readl(data->sdw_regs,
+				cmd_base);
+		cmd_base += SDW_CNL_CMD_WORD_LEN;
+	}
+}
+
 irqreturn_t cnl_sdw_irq_handler(int irq, void *context)
 {
+	struct cnl_sdw *sdw = context;
+	volatile int int_status, status;
+
+	struct cnl_sdw_data *data = &sdw->data;
+	volatile int slave_intstat0 = 0, slave_intstat1 = 0;
+	struct sdw_master *mstr = sdw->mstr;
+
+	/*
+	 * Return if IP is in power down state. Interrupt can still come
+	 * since  its shared irq.
+	 */
+	if (!sdw->sdw_link_status)
+		return IRQ_NONE;
+
+	int_status = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_INTSTAT);
+	status = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_STAT);
+	slave_intstat0 = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_SLAVEINTSTAT0);
+	slave_intstat1 = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_SLAVEINTSTAT1);
+
+
+	if (!(int_status & (MCP_INTSTAT_IRQ_MASK << MCP_INTSTAT_IRQ_SHIFT)))
+		return IRQ_NONE;
+
+	if (int_status & (MCP_INTSTAT_RXWL_MASK << MCP_INTSTAT_RXWL_SHIFT)) {
+		cnl_sdw_read_response(sdw);
+		complete(&sdw->tx_complete);
+	}
+	if (int_status & (MCP_INTSTAT_CONTROLBUSCLASH_MASK <<
+				MCP_INTSTAT_CONTROLBUSCLASH_SHIFT)) {
+		/* Some slave is behaving badly, where its driving
+		 * data line during control word bits.
+		 */
+		dev_err_ratelimited(&mstr->dev, "Bus clash detected for control word\n");
+		WARN_ONCE(1, "Bus clash detected for control word\n");
+	}
+	if (int_status & (MCP_INTSTAT_DATABUSCLASH_MASK <<
+				MCP_INTSTAT_DATABUSCLASH_SHIFT)) {
+		/* More than 1 slave is trying to drive bus. There is
+		 * some problem with ownership of bus data bits,
+		 * or either of the
+		 * slave is behaving badly.
+		 */
+		dev_err_ratelimited(&mstr->dev, "Bus clash detected for control word\n");
+		WARN_ONCE(1, "Bus clash detected for data word\n");
+	}
+
+	if (int_status & (MCP_INTSTAT_SLAVE_STATUS_CHANGED_MASK <<
+		MCP_INTSTAT_SLAVE_STATUS_CHANGED_SHIFT)) {
+		dev_info(&mstr->dev, "Slave status change\n");
+		cnl_sdw_update_slave_status(sdw, slave_intstat0,
+							slave_intstat1);
+	}
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SLAVEINTSTAT0,
+								slave_intstat0);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SLAVEINTSTAT1,
+								slave_intstat1);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_INTSTAT, int_status);
 	return IRQ_HANDLED;
 }
 
