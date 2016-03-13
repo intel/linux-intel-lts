@@ -17901,6 +17901,7 @@ RPMB SUBSYSTEM
 M:	Tomas Winkler <tomas.winkler@intel.com>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
+F:	Documentation/ABI/testing/sysfs-class-rpmb
 F:	drivers/char/rpmb/*
 F:	include/linux/rpmb.h
 
