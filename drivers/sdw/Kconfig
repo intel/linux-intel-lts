@@ -8,4 +8,10 @@ menuconfig SDW_CNL
 	depends on SDW
 	help
 	  Intel SoundWire master controller driver
+menuconfig SDW_MAXIM_SLAVE
+	bool "SoundWire Slave for the Intel CNL FPGA"
+	depends on SDW
+	help
+	  SoundWire Slave on FPGA platform for Intel CNL IP
+	  Mostly N for all the cases other than CNL Slave FPGA
 
