@@ -39,6 +39,7 @@
 #include "cnl-sst-dsp.h"
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
+#include "skl-fwlog.h"
 
 #define FW_ROM_INIT_DONE                0x1
 #define CNL_IPC_PURGE_FW		0x01004000
@@ -49,6 +50,14 @@
 
 /* Intel HD Audio SRAM Window 0*/
 #define CNL_ADSP_SRAM0_BASE	0x80000
+
+/* Trace Buffer Window */
+#define CNL_ADSP_SRAM2_BASE     0x0C0000
+#define CNL_ADSP_W2_SIZE        0x2000
+#define CNL_ADSP_WP_DSP0        (CNL_ADSP_SRAM0_BASE+0x30)
+#define CNL_ADSP_WP_DSP1        (CNL_ADSP_SRAM0_BASE+0x34)
+#define CNL_ADSP_WP_DSP2        (CNL_ADSP_SRAM0_BASE+0x38)
+#define CNL_ADSP_WP_DSP3        (CNL_ADSP_SRAM0_BASE+0x3C)
 
 /* Firmware status window */
 #define CNL_ADSP_FW_STATUS	CNL_ADSP_SRAM0_BASE
@@ -666,6 +675,8 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 {
 	struct skl_sst *cnl;
 	struct sst_dsp *sst;
+	u32 dsp_wp[] = {CNL_ADSP_WP_DSP0, CNL_ADSP_WP_DSP1, CNL_ADSP_WP_DSP2,
+				CNL_ADSP_WP_DSP3};
 	int ret;
 
 	cnl = devm_kzalloc(dev, sizeof(*cnl), GFP_KERNEL);
@@ -693,6 +704,14 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 			CNL_ADSP_W0_UP_SZ, CNL_ADSP_SRAM1_BASE, CNL_ADSP_W1_SZ);
 
 	INIT_LIST_HEAD(&sst->module_list);
+
+	ret = skl_dsp_init_trace_window(sst, dsp_wp, CNL_ADSP_SRAM2_BASE,
+					 CNL_ADSP_W2_SIZE, CNL_DSP_CORES);
+	if (ret) {
+		dev_err(dev, "FW tracing init failed : %x", ret);
+		return ret;
+	}
+
 	ret = cnl_ipc_init(dev, cnl);
 	if (ret)
 		return ret;
