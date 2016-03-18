@@ -445,8 +445,6 @@ static int iTCO_wdt_pretimeout(unsigned int cmd, struct pt_regs *unused_regs)
 	if (iTCO_wdt_private.pretimeout_occurred)
 		return NMI_HANDLED;
 
-	spin_lock(&iTCO_wdt_private.io_lock);
-
 	/* Check the NMI is from the TCO first expiration */
 	if (inw(TCO1_STS) & 0x8) {
 		iTCO_wdt_private.pretimeout_occurred = true;
@@ -454,7 +452,6 @@ static int iTCO_wdt_pretimeout(unsigned int cmd, struct pt_regs *unused_regs)
 		/* Forward next expiration */
 		outw(seconds_to_ticks(10), TCOv2_TMR);
 		outw(0x01, TCO_RLD);
-		spin_unlock(&iTCO_wdt_private.io_lock);
 
 		trigger_all_cpu_backtrace();
 		panic_timeout = 0;
@@ -462,7 +459,6 @@ static int iTCO_wdt_pretimeout(unsigned int cmd, struct pt_regs *unused_regs)
 		return NMI_HANDLED;
 	}
 
-	spin_unlock(&iTCO_wdt_private.io_lock);
 	return NMI_DONE;
 }
 
