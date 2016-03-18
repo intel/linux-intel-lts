@@ -481,6 +481,48 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.nonatomic = 1,
 		.dynamic = 1,
 	},
+	        /* Trace Buffer DAI links */
+	{
+		.name = "CNL Trace Buffer0",
+		.stream_name = "Core 0 Trace Buffer",
+		.cpu_dai_name = "TraceBuffer0 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.capture_only = true,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = "CNL Trace Buffer1",
+		.stream_name = "Core 1 Trace Buffer",
+		.cpu_dai_name = "TraceBuffer1 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.capture_only = true,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = "CNL Trace Buffer2",
+		.stream_name = "Core 2 Trace Buffer",
+		.cpu_dai_name = "TraceBuffer2 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.capture_only = true,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = "CNL Trace Buffer3",
+		.stream_name = "Core 3 Trace Buffer",
+		.cpu_dai_name = "TraceBuffer3 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.capture_only = true,
+		.ignore_suspend = 1,
+	},
+
 	/* back ends */
 	{
 		.name = "SSP0-Codec",
