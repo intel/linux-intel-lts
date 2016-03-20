@@ -20,6 +20,7 @@ help:
 	@echo '  lguest                 - a minimal 32-bit x86 hypervisor'
 	@echo '  net                    - misc networking tools'
 	@echo '  perf                   - Linux performance measurement and analysis tool'
+	@echo '  rpmb                   - Replay protected memory block access tool'
 	@echo '  selftests              - various kernel selftests'
 	@echo '  spi                    - spi tools'
 	@echo '  objtool                - an ELF object analysis tool'
@@ -56,7 +57,7 @@ acpi: FORCE
 cpupower: FORCE
 	$(call descend,power/$@)
 
-cgroup firewire hv guest spi usb virtio vm net iio gpio objtool: FORCE
+cgroup firewire hv guest rpmb spi usb virtio vm net iio gpio objtool: FORCE
 	$(call descend,$@)
 
 liblockdep: FORCE
@@ -86,7 +87,7 @@ freefall: FORCE
 	$(call descend,laptop/$@)
 
 all: acpi cgroup cpupower gpio hv firewire lguest \
-		perf selftests turbostat usb \
+		perf rpmb selftests turbostat usb \
 		virtio vm net x86_energy_perf_policy \
 		tmon freefall objtool
 
@@ -96,7 +97,7 @@ acpi_install:
 cpupower_install:
 	$(call descend,power/$(@:_install=),install)
 
-cgroup_install firewire_install gpio_install hv_install lguest_install perf_install usb_install virtio_install vm_install net_install objtool_install:
+cgroup_install firewire_install gpio_install hv_install lguest_install perf_install rpmb_install usb_install virtio_install vm_install net_install objtool_install:
 	$(call descend,$(@:_install=),install)
 
 selftests_install:
@@ -116,7 +117,7 @@ kvm_stat_install:
 
 install: acpi_install cgroup_install cpupower_install gpio_install \
 		hv_install firewire_install lguest_install \
-		perf_install selftests_install turbostat_install usb_install \
+		perf_install rpmb_install selftests_install turbostat_install usb_install \
 		virtio_install vm_install net_install x86_energy_perf_policy_install \
 		tmon_install freefall_install objtool_install kvm_stat_install
 
@@ -145,6 +146,9 @@ perf_clean:
 	$(Q)mkdir -p $(PERF_O) .
 	$(Q)$(MAKE) --no-print-directory -C perf O=$(PERF_O) subdir= clean
 
+rpmb_clean:
+	$(call descend,$(@:_clean=),clean)
+
 selftests_clean:
 	$(call descend,testing/$(@:_clean=),clean)
 
@@ -161,7 +165,7 @@ build_clean:
 	$(call descend,build,clean)
 
 clean: acpi_clean cgroup_clean cpupower_clean hv_clean firewire_clean lguest_clean \
-		perf_clean selftests_clean turbostat_clean spi_clean usb_clean virtio_clean \
+		perf_clean rpmb_clean selftests_clean turbostat_clean spi_clean usb_clean virtio_clean \
 		vm_clean net_clean iio_clean x86_energy_perf_policy_clean tmon_clean \
 		freefall_clean build_clean libbpf_clean libsubcmd_clean liblockdep_clean \
 		gpio_clean objtool_clean
