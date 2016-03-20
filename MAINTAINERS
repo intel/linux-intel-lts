@@ -17905,6 +17905,7 @@ F:	Documentation/ABI/testing/sysfs-class-rpmb
 F:	drivers/char/rpmb/*
 F:	include/uapi/linux/rpmb.h
 F:	include/linux/rpmb.h
+F:	tools/rpmb/
 
 RTL2830 MEDIA DRIVER
 M:	Antti Palosaari <crope@iki.fi>
