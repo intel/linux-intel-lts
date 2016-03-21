@@ -372,7 +372,7 @@ static int sdw_port_pdi_init(struct cnl_sdw *sdw)
 {
 	int i, ret = 0;
 
-	for (i = 0; i <= CNL_SDW_MAX_PORTS; i++) {
+	for (i = 0; i < CNL_SDW_MAX_PORTS; i++) {
 		sdw->port[i].port_num = i;
 		sdw->port[i].allocated = false;
 	}
