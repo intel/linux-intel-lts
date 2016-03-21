@@ -184,7 +184,7 @@ static size_t linear_dax_copy_from_iter(struct dm_target *ti, pgoff_t pgoff,
 	return dax_copy_from_iter(dax_dev, pgoff, addr, bytes, i);
 }
 
-static struct target_type linear_target = {
+struct target_type linear_target = {
 	.name   = "linear",
 	.version = {1, 4, 0},
 	.features = DM_TARGET_PASSES_INTEGRITY | DM_TARGET_ZONED_HM,
