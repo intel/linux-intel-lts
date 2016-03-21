@@ -86,7 +86,7 @@ static int maxim_register_sdw_capabilties(struct sdw_slave *sdw,
 static int maxim_sdw_probe(struct sdw_slave *sdw,
 				 const struct sdw_slave_id *sdw_id)
 {
-	dev_info(&sdw->dev, "Maxim SoundWire Slave Registered\n");
+	dev_info(&sdw->dev, "Maxim SoundWire Slave Registered %lx\n", sdw_id->driver_data);
 	return maxim_register_sdw_capabilties(sdw, sdw_id);
 }
 
@@ -97,8 +97,34 @@ static int maxim_sdw_remove(struct sdw_slave *sdw)
 }
 
 static const struct sdw_slave_id maxim_id[] = {
-	{"01:01:9f:79:00:00", 0},
-	{}
+	{"03:01:9f:79:00:00", 0},
+	{"09:01:9f:79:00:00", 1},
+	{"04:01:9f:79:00:00", 2},
+	{"0a:01:9f:79:00:00", 3},
+	{"04:01:9f:79:00:00", 4},
+	{"0a:01:9f:79:00:00", 5},
+	{"05:01:9f:79:00:00", 6},
+	{"06:01:9f:79:00:00", 7},
+	{"05:01:9f:79:00:00", 8},
+	{"00:01:9f:79:00:00", 9},
+	{"06:01:9f:79:00:00", 10},
+	{"07:01:9f:79:00:00", 11},
+	{"00:01:9f:79:00:00", 12},
+	{"06:01:9f:79:00:00", 13},
+	{"01:01:9f:79:00:00", 14},
+	{"07:01:9f:79:00:00", 15},
+	{"08:01:9f:79:00:00", 16},
+	{"01:01:9f:79:00:00", 17},
+	{"07:01:9f:79:00:00", 18},
+	{"02:01:9f:79:00:00", 19},
+	{"08:01:9f:79:00:00", 20},
+	{"09:01:9f:79:00:00", 21},
+	{"02:01:9f:79:00:00", 22},
+	{"08:01:9f:79:00:00", 23},
+	{"03:01:9f:79:00:00", 24},
+	{"09:01:9f:79:00:00", 25},
+	{"0a:01:9f:79:00:00", 26},
+	{},
 };
 
 MODULE_DEVICE_TABLE(sdw, maxim_id);
