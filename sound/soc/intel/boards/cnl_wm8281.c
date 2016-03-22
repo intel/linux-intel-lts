@@ -520,7 +520,29 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.capture_only = true,
 		.ignore_suspend = 1,
 	},
-
+	/* Probe DAI-links */
+	{
+		.name = "CNL Compress Probe playback",
+		.stream_name = "Probe Playback",
+		.cpu_dai_name = "Compress Probe0 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.init = NULL,
+		.ignore_suspend = 1,
+		.nonatomic = 1,
+	},
+	{
+		.name = "CNL Compress Probe capture",
+		.stream_name = "Probe Capture",
+		.cpu_dai_name = "Compress Probe1 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:02:18.0",
+		.init = NULL,
+		.ignore_suspend = 1,
+		.nonatomic = 1,
+	},
 	/* back ends */
 	{
 		.name = "SSP0-Codec",
