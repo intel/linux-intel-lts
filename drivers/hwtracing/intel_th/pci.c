@@ -202,11 +202,34 @@ static const struct pci_device_id intel_th_pci_id_table[] = {
 
 MODULE_DEVICE_TABLE(pci, intel_th_pci_id_table);
 
+static int intel_th_suspend(struct device *dev)
+{
+	/*
+	 * Stub the call to avoid disabling the device.
+	 * Suspend is fully handled by firmwares.
+	 */
+	return 0;
+}
+
+static int intel_th_resume(struct device *dev)
+{
+	/* Firmwares have already restored the device state. */
+	return 0;
+}
+
+static const struct dev_pm_ops intel_th_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(intel_th_suspend,
+				intel_th_resume)
+};
+
 static struct pci_driver intel_th_pci_driver = {
 	.name		= DRIVER_NAME,
 	.id_table	= intel_th_pci_id_table,
 	.probe		= intel_th_pci_probe,
 	.remove		= intel_th_pci_remove,
+	.driver         = {
+		.pm     = &intel_th_pm_ops,
+	},
 };
 
 module_pci_driver(intel_th_pci_driver);
