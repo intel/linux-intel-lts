@@ -486,6 +486,29 @@ static int sdw_program_slv_address(struct sdw_master *mstr,
 	return 0;
 }
 
+static int sdw_find_slave(struct sdw_master *mstr, struct sdw_msg
+						*msg, bool *found)
+{
+	struct sdw_slv_addr *sdw_addr;
+	int ret = 0, i, comparison;
+	*found = false;
+
+	sdw_lock_mstr(mstr);
+	sdw_addr = mstr->sdw_addr;
+	for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+		comparison = memcmp(sdw_addr[i].dev_id, msg->buf,
+				SDW_NUM_DEV_ID_REGISTERS);
+		if ((!comparison) && (sdw_addr[i].assigned == true)) {
+				*found = true;
+				break;
+		}
+	}
+	sdw_unlock_mstr(mstr);
+	if (*found == true)
+		ret = sdw_program_slv_address(mstr, sdw_addr[i].slv_number);
+	return ret;
+}
+
 static void sdw_free_slv_number(struct sdw_master *mstr,
 		int slv_number)
 {
@@ -508,6 +531,7 @@ static int sdw_register_slave(struct sdw_master *mstr)
 	u8 buf[6] = {0};
 	struct sdw_slave *sdw_slave;
 	int slv_number = -1;
+	bool found = false;
 
 
 	msg.ssp_tag = 0;
@@ -520,6 +544,17 @@ static int sdw_register_slave(struct sdw_master *mstr)
 	msg.addr_page2 = 0x0;
 
 	while ((ret = (sdw_slave_transfer(mstr, &msg, 1)) == 1)) {
+		ret = sdw_find_slave(mstr, &msg, &found);
+		if (found && !ret) {
+			dev_info(&mstr->dev, "Slave already registered\n");
+			continue;
+		/* Even if slave registering fails we continue for other
+		 * slave status, but we flag error
+		 */
+		} else if (ret) {
+			dev_err(&mstr->dev, "Re-registering slave failed");
+			continue;
+		}
 		slv_number = sdw_assign_slv_number(mstr, &msg);
 		if (slv_number <= 0) {
 			dev_err(&mstr->dev, "Failed to assign slv_number\n");
