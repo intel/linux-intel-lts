@@ -51,21 +51,52 @@
 #define dvct_get_status(s, m) (atomic_read(s) & (m))
 
 /**
+ * dvct_string_lookup - helper struct to better manage the string id allocation
+ * @str: the usb string to allocate the id for
+ * @id:	the location in the descriptor where the id should be updated
+ */
+struct dvct_string_lookup {
+	struct usb_string *str;
+	u8 *id;			/*points to the location of the string id */
+};
+
+/**
+ * dvctrace_usb_descriptors - holds DvC Trace usb descriptors information
+ * @dvc_spec: Dvc Trace specific descriptors, will be added in the function
+ *	usb descriptors.
+ * @str: Usb gadget string table for strings referenced in @dvc_spec.
+ * @lk_tbl: Strings lookup table.
+ *
+ * From a strict USB point of view the descriptors are optional so @dvc_spec,
+ * @str.strings and @lk_tbl can be null. However the dvc-trace host
+ * implementation might need them.
+ */
+struct dvct_usb_descriptors {
+	struct usb_descriptor_header **dvc_spec; /*null terminated*/
+	struct usb_gadget_strings str;
+	struct dvct_string_lookup *lk_tbl;/*null terminated*/
+};
+
+/**
  * dvct_source_device - DvC Trace function to source (backend) interface
  *
  * @name_add: postfix used to compute the source name (<driver_name>-<name_add>)
  * @protocol: Interface protocol code (used in IAD, control and data
+ * @static_desc: DvC-Trace specific usb descriptors, provided by the driver
+ *			interface descriptors)
  *
- * @instance_taken, @function_taken, @lock, @device are reserved for
+ * @instance_taken, @function_taken, @lock, @device, @desc are reserved for
  * internal use only.
  */
 struct dvct_source_device {
 	const char *name_add;
 	u8 protocol;
+	struct dvct_usb_descriptors static_desc;
 	u32 instance_taken:1;
 	u32 function_taken:1;
 	spinlock_t lock;
 	struct device device;
+	struct dvct_usb_descriptors *desc;
 };
 
 /**
