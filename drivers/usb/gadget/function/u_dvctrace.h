@@ -37,6 +37,7 @@ struct dvct_function_desc {
 
 	/* strings */
 	struct usb_gadget_strings str;
+	struct dvct_string_lookup *lk_tbl;
 };
 
 struct dvct_function {

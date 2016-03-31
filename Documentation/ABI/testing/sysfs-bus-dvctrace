@@ -24,3 +24,45 @@ Description:	(RW) The protocol id of a dvc-trace source device,
 		this will used in function driver interface
 		descriptors (u8). According to USB debug class
 		specification the protocol id is vendor specific.
+
+What:		/sys/bus/dvctrace/devices/<device>/descriptors
+Date:		May 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(RW) Hex-dump of the descriptors provided by the
+		source device.
+		eg. A debug class output connection descriptor
+		09 24 02 04 03 00 00 00 00
+		ll tt ss xx xx xx xx xx ii
+		 |  |  |                 +- iConnection string id.
+		 |  |  +- Descriptor sub-type DC_OUTPUT_CONNECTION
+		 |  +- Descriptor type (USB_DT_CS_INTERFACE)
+		 +- Descriptor length
+		Writing:
+		  - is not allowed while the device is Reserved or In Use.
+		  - will replace all the descriptors currently present.
+		  - will remove any strings previously provided.
+		  - should use the same format.
+		  - accepts multiple descriptors separated by space or '\n'.
+
+What:		/sys/bus/dvctrace/devices/<device>/strings
+Date:		May 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(RW) Currently set usb descriptor strings in
+		<descriptor_index>.<offset>: string format.
+		<descriptor_index>.<offset> identifies the location where
+		the string id is needed.
+		eg. Having the same debug class output connection descriptor,
+		as the first descriptor.
+		09 24 02 04 03 00 00 00 00
+		ll tt ss xx xx xx xx xx ii
+		                         +- iConnection string id.
+		0.8: My output connection - will identify the string associated
+		with this descriptor.
+		Writing:
+		  - is not allowed while the device is Reserved or In Use.
+		  - will replace all the strings currently present.
+		  - should use the same format.
+		  - accepts multiple strings separated by ";" or '\n'.
+		    eg. "0.4: first string; 1.4: second string"
