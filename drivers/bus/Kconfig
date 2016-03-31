@@ -183,4 +183,28 @@ config DA8XX_MSTPRI
 
 source "drivers/bus/fsl-mc/Kconfig"
 
+config DVC_TRACE_BUS
+	bool "DvC-Trace pseudobus"
+	default n
+	depends on USB_GADGET
+	help
+	  DvC-Trace pseudobus is meant to group devices capable of sending
+	  trace data via a USB DvC-Trace gadget function.
+	  An usb function driver will be able to choose a source device and
+	  provide the means to transfer the data.
+
+	  Say Y to enable it.
+
+config DVC_TRACE_BUS_DEBUG
+	bool "DvC-Trace pseudobus debug"
+	default n
+	depends on DVC_TRACE_BUS
+	help
+	  DvC-Trace pseudobus is meant to group devices capable of sending
+	  trace data via a USB DvC-Trace gadget function.
+	  An usb function driver will be able to choose a source device and
+	  provide the means to transfer the data.
+
+	  Say Y to enable extended debug messages in this driver.
+
 endmenu

@@ -32,3 +32,5 @@ obj-$(CONFIG_UNIPHIER_SYSTEM_BUS)	+= uniphier-system-bus.o
 obj-$(CONFIG_VEXPRESS_CONFIG)	+= vexpress-config.o
 
 obj-$(CONFIG_DA8XX_MSTPRI)	+= da8xx-mstpri.o
+obj-$(CONFIG_DVC_TRACE_BUS) += dvctrace.o
+subdir-ccflags-$(CONFIG_DVC_TRACE_BUS_DEBUG)	+= -DDVCT_DEBUG

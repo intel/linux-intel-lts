@@ -1,0 +1,26 @@
+What:		/sys/bus/dvctrace
+Date:		May 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	Groups the devices and drivers registered to
+		to dvc-trace bus.
+
+What:		/sys/bus/dvctrace/devices/<device>/status
+Date:		May 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(R) The status of a dvc-trace source device with
+		respect to an USB function driver.
+		  Free - The device is free
+		  Reserved - The device is reserved by an USB
+			function but not in use.
+		  In use - The device is used by an USB function.
+
+What:		/sys/bus/dvctrace/devices/<device>/protocol
+Date:		May 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(RW) The protocol id of a dvc-trace source device,
+		this will used in function driver interface
+		descriptors (u8). According to USB debug class
+		specification the protocol id is vendor specific.
