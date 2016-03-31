@@ -463,6 +463,10 @@ static int dvct_function_bind(struct usb_configuration *cconfig,
 	DVCT_IN();
 	d_fun->cdev = cconfig->cdev;
 
+	spin_lock(&d_fun->source_dev->lock);
+	d_fun->source_dev->function_taken = 1;
+	spin_unlock(&d_fun->source_dev->lock);
+
 	/*allocate id's */
 	/*strings. not crucial just print on failure */
 	if (d_fun->source_dev->desc && d_fun->source_dev->desc->str.strings) {
@@ -548,6 +552,10 @@ static void dvct_function_unbind(struct usb_configuration *c,
 	d_fun->online_ctrl = 0;
 
 	d_fun->source_drv->unbinded(d_fun->source_dev);
+
+	spin_lock(&d_fun->source_dev->lock);
+	d_fun->source_dev->function_taken = 0;
+	spin_unlock(&d_fun->source_dev->lock);
 }
 
 static int dvct_function_set_alt(struct usb_function *func,
@@ -618,27 +626,6 @@ static void dvct_function_disable(struct usb_function *func)
 	pr_debug("%s disabled\n", d_fun->function.name);
 }
 
-CONFIGFS_ATTR_STRUCT(dvct_function_inst);
-
-static ssize_t dvct_attr_show(struct config_item *item,
-				    struct configfs_attribute *attr, char *page)
-{
-	struct dvct_function_inst *d_inst;
-	struct dvct_function_inst_attribute *d_fun_attr;
-	ssize_t ret = 0;
-
-	DVCT_IN();
-	d_inst = container_of(to_config_group(item), struct dvct_function_inst,
-			      instance.group);
-	d_fun_attr = container_of(attr, struct dvct_function_inst_attribute,
-				  attr);
-
-	if (d_fun_attr->show)
-		ret = d_fun_attr->show(d_inst, page);
-
-	return ret;
-}
-
 static void dvct_attr_release(struct config_item *item)
 {
 	struct dvct_function_inst *d_inst;
@@ -651,19 +638,23 @@ static void dvct_attr_release(struct config_item *item)
 
 static struct configfs_item_operations dvctrace_item_ops = {
 	.release        = dvct_attr_release,
-	.show_attribute = dvct_attr_show,
 };
 
-static ssize_t dvct_device_show(struct dvct_function_inst *d_inst, char *page)
+static ssize_t f_dvctrace_device_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%s\n", d_inst->source_dev->name_add);
+	struct dvct_function_inst *d_inst;
+
+	DVCT_IN();
+	d_inst = container_of(to_config_group(item), struct dvct_function_inst,
+			      instance.group);
+
+	return sprintf(page, "%s\n", dev_name(&d_inst->source_dev->device));
 }
 
-static struct dvct_function_inst_attribute f_dvctrace_device =
-	__CONFIGFS_ATTR_RO(source_dev, dvct_device_show);
+CONFIGFS_ATTR_RO(f_dvctrace_, device);
 
 static struct configfs_attribute *dvct_attrs[] = {
-	&f_dvctrace_device.attr,
+	&f_dvctrace_attr_device,
 	NULL,
 };
 
@@ -698,12 +689,15 @@ static int dvct_set_inst_name(struct usb_function_instance *inst,
 	d_inst = to_dvct_function_inst(inst);
 	old_src = d_inst->source_dev;
 
-	new_src = dvct_source_find_free_by_name(name);
+	new_src = dvct_source_find_by_name(name);
 
 	if (IS_ERR_OR_NULL(new_src))
 		return -ENODEV;
 
-	if (new_src) {
+	if (new_src != old_src) {
+		if (new_src->instance_taken)
+			return -EBUSY;
+
 		spin_lock(&new_src->lock);
 		spin_lock(&old_src->lock);
 
@@ -755,10 +749,6 @@ static void dvct_free_func(struct usb_function *func)
 	DVCT_IN();
 	d_fun->source_drv->deactivate(d_fun->source_dev);
 
-	spin_lock(&d_fun->source_dev->lock);
-	d_fun->source_dev->function_taken = 0;
-	spin_unlock(&d_fun->source_dev->lock);
-
 	dvct_free_desc(d_fun);
 
 	kfree(d_fun);
@@ -778,10 +768,6 @@ static struct usb_function *dvct_alloc_func(struct usb_function_instance *inst)
 	d_fun->source_dev = d_inst->source_dev;
 	d_fun->source_drv = dvct_source_get_drv(d_fun->source_dev);
 	d_fun->trace_config = 0;
-
-	spin_lock(&d_fun->source_dev->lock);
-	d_fun->source_dev->function_taken = 1;
-	spin_unlock(&d_fun->source_dev->lock);
 
 	ret = d_fun->source_drv->activate(d_fun->source_dev, &d_fun->status);
 	if (ret) {
