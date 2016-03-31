@@ -40,3 +40,5 @@ obj-$(CONFIG_DA8XX_MSTPRI)	+= da8xx-mstpri.o
 
 # MHI
 obj-$(CONFIG_MHI_BUS)		+= mhi/
+obj-$(CONFIG_DVC_TRACE_BUS) += dvctrace.o
+subdir-ccflags-$(CONFIG_DVC_TRACE_BUS_DEBUG)	+= -DDVCT_DEBUG
