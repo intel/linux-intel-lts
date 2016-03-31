@@ -161,7 +161,8 @@ static int alloc_strings(struct dvct_usb_descriptors *desc, int count)
 	if (!desc->lk_tbl)
 		goto  err;
 
-	desc->str.strings = kzalloc(sizeof(desc->str), GFP_KERNEL);
+	desc->str.strings = kzalloc((count + 1) * sizeof(*desc->str.strings),
+				    GFP_KERNEL);
 	if (!desc->str.strings)
 		goto err_str;
 
@@ -212,6 +213,13 @@ static ssize_t descriptors_show(struct device *dev,
 		int i;
 
 		len = (*desc)->bLength;
+
+		/* Check if it fits, total output is 3 * len */
+		if ((ret + 3 * len) > PAGE_SIZE) {
+			dev_warn(dev, "Descriptors attribute page overrun\n");
+			break;
+		}
+
 		pdesc = (u8 *)(*desc);
 		for (i = 0; i < len; i++)
 			ret += snprintf(buf + ret, PAGE_SIZE - ret, "%02hhX ",
@@ -385,15 +393,25 @@ static ssize_t strings_show(struct device *dev, struct device_attribute *attr,
 	for (lk_s = ds_dev->desc->lk_tbl; lk_s->str && lk_s->id; lk_s++) {
 		int desc_offset, offset;
 
+		/*
+		 * Check if it fits, worst case is "Unknown(%p): %s\n"
+		 * 8 + 16 + 3 + string length + 1
+		 */
+		if ((ret + 28 + strlen(lk_s->str->s)) > PAGE_SIZE) {
+			dev_warn(dev, "Strings attribute page overrun\n");
+			break;
+		}
+
 		if (dvctrace_string_ptr_to_offset(ds_dev->desc->dvc_spec,
 						  lk_s->id, &desc_offset,
 						  &offset))
-			ret += snprintf(buf + ret, PAGE_SIZE,
+			ret += snprintf(buf + ret, PAGE_SIZE - ret,
 					"Unknown(%p): %s\n", lk_s->id,
 					lk_s->str->s);
 		else
-			ret += snprintf(buf + ret, PAGE_SIZE, "%d.%d: %s\n",
-					desc_offset, offset, lk_s->str->s);
+			ret += snprintf(buf + ret, PAGE_SIZE - ret,
+					"%d.%d: %s\n", desc_offset, offset,
+					lk_s->str->s);
 	}
 	return ret;
 }
@@ -415,7 +433,7 @@ static ssize_t strings_store(struct device *dev, struct device_attribute *attr,
 	}
 
 	if (ds_dev->desc == &ds_dev->static_desc) {
-		dev_warn(&ds_dev->device, "Cannot set strings in static descriptors\n");
+		dev_warn(dev, "Cannot set strings in static descriptors\n");
 		return -EINVAL;
 	}
 
@@ -442,7 +460,7 @@ static ssize_t strings_store(struct device *dev, struct device_attribute *attr,
 		pid = dvctrace_offset_to_string_ptr(ds_dev->desc->dvc_spec,
 						    d_off, off);
 		if (IS_ERR_OR_NULL(pid)) {
-			dev_warn(&ds_dev->device, "String out of bounds\n");
+			dev_warn(dev, "String out of bounds\n");
 			free_strings(ds_dev->desc);
 			return -EINVAL;
 		}
