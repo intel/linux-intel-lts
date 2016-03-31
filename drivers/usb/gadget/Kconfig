@@ -209,6 +209,10 @@ config USB_F_PRINTER
 config USB_F_TCM
 	tristate
 
+config USB_F_DVCTRACE
+	tristate
+	select DVC_TRACE_BUS
+
 # this first set of drivers all depend on bulk-capable hardware.
 
 config USB_CONFIGFS
@@ -476,6 +480,13 @@ choice
 	  enough of the right types of endpoints, the gadget driver might
 	  not be able work with that controller, or might need to implement
 	  a less common variant of a device class protocol.
+
+config USB_CONFIGFS_F_DVCTRACE
+	bool "DvC Trace gadget"
+	depends on USB_CONFIGFS
+	select USB_F_DVCTRACE
+	help
+	  USB gadget DvC Trace support
 
 source "drivers/usb/gadget/legacy/Kconfig"
 
