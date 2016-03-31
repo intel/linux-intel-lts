@@ -4846,6 +4846,14 @@ F:	drivers/bus/dvctrace.c
 F:	include/linux/dvctrace.h
 F:	Documentation/ABI/testing/sysfs-bus-dvctrace
 
+DVC_TRACE USB_GADGET DRIVER
+M:	Traian Schiau <traianx.schiau@intel.com>
+S:	Maintained
+F:	drivers/usb/gadget/function/f_dvctrace.c
+F:	drivers/usb/gadget/function/u_dvctrace.h
+F:	include/linux/usb/debug.h
+F:	Documentation/ABI/testing/configfs-usb-gadget-dvctrace
+
 DYNAMIC DEBUG
 M:	Jason Baron <jbaron@akamai.com>
 S:	Maintained

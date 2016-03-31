@@ -1,0 +1,9 @@
+What:		/config/usb-gadget/<gadget>/functions/dvctrace.<name>/source_dev
+Date:		Mar 2015
+KernelVersion:	4.0
+Contact:	Traian Schiau <traianx.schiau@intel.com>
+Description:	(R) The name of the source device paired with this function
+		instance, if upon creation of the instance a source device
+		named <name> exists and is free, the source device will be
+		associated with the current instance, otherwise the first free
+		source device will be used.
