@@ -39,6 +39,26 @@ enum {
 	DVCT_HS_DESC_COUNT,/*Count of super speed descriptors*/
 };
 
+/*The full list of descriptors will look like:
+ * IAD_DESCRIPTOR         -----|=> USB function specific
+ * CONTROL_ITF_DESCRIPTOR -----|
+ * SOURCE_SPECIFIC_DESCRIPTOR_0    ----|
+ * ....                                |=> s_cnt descriptors provided by the
+ * SOURCE_SPECIFIC_DESCRIPTOR_s_cnt----|   source device.
+ * DATA_ITF_DESCRIPTOR -----|
+ * ENDPOINT_DESCRIPTOR      |=> USB function specific
+ * ....                -----|
+ * This makes a good part of the descriptors to shift,
+ * the following should help*/
+#define DVCT_IAD_DESC_DYN_POS(s_cnt)		(DVCT_IAD_DESC_POS)
+#define DVCT_CITF_DESC_DYN_POS(s_cnt)		(DVCT_CITF_DESC_POS)
+#define DVCT_SOURCE_DESC_FIRST(s_cnt)		(DVCT_DITF_DESC_POS)
+#define DVCT_DITF_DESC_DYN_POS(s_cnt)		((s_cnt)+DVCT_DITF_DESC_POS)
+#define DVCT_EP_DESC_DYN_POS(s_cnt)		((s_cnt)+DVCT_EP_DESC_POS)
+#define DVCT_EP_COMP_DESC_DYN_POS(s_cnt)	((s_cnt)+DVCT_EP_COMP_DESC_POS)
+#define DVCT_LS_DESC_DYN_COUNT(s_cnt)		((s_cnt)+DVCT_LS_DESC_COUNT)
+#define DVCT_HS_DESC_DYN_COUNT(s_cnt)		((s_cnt)+DVCT_HS_DESC_COUNT)
+
 enum {
 	DVCT_STR_IAD_IDX,
 	DVCT_STR_C_ITF_IDX,
@@ -49,25 +69,35 @@ enum {
 
 static int dvct_alloc_desc(struct dvct_function *d_fun)
 {
+	int i;
+	unsigned int s_desc_count = 0;
+	struct usb_descriptor_header **s_desc;
 	struct dvct_function_desc *desc = &d_fun->desc;
 
 	DVCT_IN();
 
+	if (d_fun->source_dev->desc) {
+		for (s_desc = d_fun->source_dev->desc->dvc_spec;
+		     s_desc && (*s_desc); s_desc++)
+			s_desc_count++;
+	}
+
+	/*alloc the descriptors array */
 	desc->fs =
-	    kzalloc(DVCT_LS_DESC_COUNT * sizeof(struct usb_descriptor_header *),
-		    GFP_KERNEL);
+	    kzalloc(DVCT_LS_DESC_DYN_COUNT(s_desc_count) *
+		    sizeof(struct usb_descriptor_header *), GFP_KERNEL);
 	if (!desc->fs)
 		goto err_fs;
 
 	desc->hs =
-	    kzalloc(DVCT_LS_DESC_COUNT * sizeof(struct usb_descriptor_header *),
-		    GFP_KERNEL);
+	    kzalloc(DVCT_LS_DESC_DYN_COUNT(s_desc_count) *
+		    sizeof(struct usb_descriptor_header *), GFP_KERNEL);
 	if (!desc->hs)
 		goto err_hs;
 
 	desc->ss =
-	    kzalloc(DVCT_HS_DESC_COUNT * sizeof(struct usb_descriptor_header *),
-		    GFP_KERNEL);
+	    kzalloc(DVCT_HS_DESC_DYN_COUNT(s_desc_count) *
+		    sizeof(struct usb_descriptor_header *), GFP_KERNEL);
 	if (!desc->ss)
 		goto err_ss;
 
@@ -84,9 +114,12 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	desc->iad->bFunctionProtocol = d_fun->source_dev->protocol;
 	/*bFirstInterface - updated on bind */
 
-	desc->fs[DVCT_IAD_DESC_POS] = (struct usb_descriptor_header *)desc->iad;
-	desc->hs[DVCT_IAD_DESC_POS] = (struct usb_descriptor_header *)desc->iad;
-	desc->ss[DVCT_IAD_DESC_POS] = (struct usb_descriptor_header *)desc->iad;
+	desc->fs[DVCT_IAD_DESC_DYN_POS(s_desc_count)] =
+	    (struct usb_descriptor_header *)desc->iad;
+	desc->hs[DVCT_IAD_DESC_DYN_POS(s_desc_count)] =
+	    (struct usb_descriptor_header *)desc->iad;
+	desc->ss[DVCT_IAD_DESC_DYN_POS(s_desc_count)] =
+	    (struct usb_descriptor_header *)desc->iad;
 
 	/*Control interface */
 	desc->c_itf = kzalloc(sizeof(*desc->c_itf), GFP_KERNEL);
@@ -99,13 +132,25 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	desc->c_itf->bInterfaceSubClass = USB_SUBCLASS_DEBUG_CONTROL;
 	desc->c_itf->bInterfaceProtocol = d_fun->source_dev->protocol;
 
-	desc->fs[DVCT_CITF_DESC_POS] =
+	desc->fs[DVCT_CITF_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->c_itf;
-	desc->hs[DVCT_CITF_DESC_POS] =
+	desc->hs[DVCT_CITF_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->c_itf;
-	desc->ss[DVCT_CITF_DESC_POS] =
+	desc->ss[DVCT_CITF_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->c_itf;
 
+	if (d_fun->source_dev->desc) {
+		/*Copy whatever the source device has provided */
+		s_desc = d_fun->source_dev->desc->dvc_spec;
+		for (i = 0; i < s_desc_count; i++) {
+			desc->fs[DVCT_SOURCE_DESC_FIRST(s_desc_count) + i]
+			    = s_desc[i];
+			desc->hs[DVCT_SOURCE_DESC_FIRST(s_desc_count) + i]
+			    = s_desc[i];
+			desc->ss[DVCT_SOURCE_DESC_FIRST(s_desc_count) + i]
+			    = s_desc[i];
+		}
+	}
 	/*Data interface */
 	desc->d_itf = kzalloc(sizeof(*desc->d_itf), GFP_KERNEL);
 	if (!desc->d_itf)
@@ -118,11 +163,11 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	desc->d_itf->bInterfaceSubClass = USB_SUBCLASS_DVC_TRACE;
 	desc->d_itf->bInterfaceProtocol = d_fun->source_dev->protocol;
 
-	desc->fs[DVCT_DITF_DESC_POS] =
+	desc->fs[DVCT_DITF_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->d_itf;
-	desc->hs[DVCT_DITF_DESC_POS] =
+	desc->hs[DVCT_DITF_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->d_itf;
-	desc->ss[DVCT_DITF_DESC_POS] =
+	desc->ss[DVCT_DITF_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->d_itf;
 
 	/*Full Speed ep */
@@ -136,7 +181,7 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	desc->fs_ep->bmAttributes = USB_ENDPOINT_XFER_BULK;
 	desc->fs_ep->wMaxPacketSize = cpu_to_le16(64);
 
-	desc->fs[DVCT_EP_DESC_POS] =
+	desc->fs[DVCT_EP_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->fs_ep;
 
 	/*High Speed ep */
@@ -150,7 +195,7 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	desc->hs_ep->bmAttributes = USB_ENDPOINT_XFER_BULK;
 	desc->hs_ep->wMaxPacketSize = cpu_to_le16(512);
 
-	desc->hs[DVCT_EP_DESC_POS] =
+	desc->hs[DVCT_EP_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->hs_ep;
 
 	/*Super Speed ep */
@@ -164,7 +209,7 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	desc->ss_ep->bmAttributes = USB_ENDPOINT_XFER_BULK;
 	desc->ss_ep->wMaxPacketSize = cpu_to_le16(1024);
 
-	desc->ss[DVCT_EP_DESC_POS] =
+	desc->ss[DVCT_EP_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->ss_ep;
 
 	/*Super Speed ep comp */
@@ -175,7 +220,7 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	desc->ss_ep_comp->bLength = USB_DT_SS_EP_COMP_SIZE;
 	desc->ss_ep_comp->bDescriptorType = USB_DT_SS_ENDPOINT_COMP;
 
-	desc->ss[DVCT_EP_COMP_DESC_POS] =
+	desc->ss[DVCT_EP_COMP_DESC_DYN_POS(s_desc_count)] =
 	    (struct usb_descriptor_header *)desc->ss_ep_comp;
 
 	/* strings */
@@ -186,12 +231,24 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	if (!desc->str.strings)
 		goto err_str;
 
+	/*lookup table */
+	desc->lk_tbl =
+	    kzalloc(DVCT_STR_COUNT * sizeof(struct dvct_string_lookup),
+		    GFP_KERNEL);
+	if (!desc->lk_tbl)
+		goto err_str_lk;
+
+	/*actual strings */
 	 /*IAD*/
 	    desc->str.strings[DVCT_STR_IAD_IDX].s =
 	    kasprintf(GFP_KERNEL, "DvC Trace (%s)",
 		      dev_name(&d_fun->source_dev->device));
 	if (!desc->str.strings[DVCT_STR_IAD_IDX].s)
 		goto err_str_iad;
+
+	desc->lk_tbl[DVCT_STR_IAD_IDX].str =
+	    &desc->str.strings[DVCT_STR_IAD_IDX];
+	desc->lk_tbl[DVCT_STR_IAD_IDX].id = &desc->iad->iFunction;
 
 	/*control */
 	desc->str.strings[DVCT_STR_C_ITF_IDX].s =
@@ -200,12 +257,20 @@ static int dvct_alloc_desc(struct dvct_function *d_fun)
 	if (!desc->str.strings[DVCT_STR_C_ITF_IDX].s)
 		goto err_str_ctrl;
 
+	desc->lk_tbl[DVCT_STR_C_ITF_IDX].str =
+	    &desc->str.strings[DVCT_STR_C_ITF_IDX];
+	desc->lk_tbl[DVCT_STR_C_ITF_IDX].id = &desc->c_itf->iInterface;
+
 	/*data */
 	desc->str.strings[DVCT_STR_D_ITF_IDX].s =
 	    kasprintf(GFP_KERNEL, "DvC Trace Data (%s)",
 		      dev_name(&d_fun->source_dev->device));
 	if (!desc->str.strings[DVCT_STR_D_ITF_IDX].s)
 		goto err_str_data;
+
+	desc->lk_tbl[DVCT_STR_D_ITF_IDX].str =
+	    &desc->str.strings[DVCT_STR_D_ITF_IDX];
+	desc->lk_tbl[DVCT_STR_D_ITF_IDX].id = &desc->d_itf->iInterface;
 
 	return 0;
 /*cleanup*/
@@ -214,6 +279,8 @@ err_str_data:
 err_str_ctrl:
 	kfree(desc->str.strings[DVCT_STR_IAD_IDX].s);
 err_str_iad:
+	kfree(desc->lk_tbl);
+err_str_lk:
 	kfree(desc->str.strings);
 err_str:
 	kfree(desc->ss_ep_comp);
@@ -249,6 +316,7 @@ static void dvct_free_desc(struct dvct_function *d_fun)
 	kfree(desc->str.strings[DVCT_STR_D_ITF_IDX].s);
 	kfree(desc->str.strings[DVCT_STR_C_ITF_IDX].s);
 	kfree(desc->str.strings[DVCT_STR_IAD_IDX].s);
+	kfree(desc->lk_tbl);
 	kfree(desc->str.strings);
 	kfree(desc->ss_ep_comp);
 	kfree(desc->ss_ep);
@@ -290,25 +358,25 @@ int dvct_stop_transfer(struct dvct_function *d_fun)
 EXPORT_SYMBOL(dvct_stop_transfer);
 
 static int dvct_strings_setup(struct usb_composite_dev *cdev,
-				  struct dvct_function *f_fun)
+			      struct usb_string *strings,
+			      struct dvct_string_lookup *lk_tbl)
 {
 	int status;
+	struct dvct_string_lookup *str_lk;
 
 	DVCT_IN();
-	if (!f_fun->desc.str.strings)
+	if (!strings || !lk_tbl)
 		return -EINVAL;
 
-	status = usb_string_ids_tab(cdev, f_fun->desc.str.strings);
+	status = usb_string_ids_tab(cdev, strings);
 	if (status < 0)
 		return status;
 
-	f_fun->desc.iad->iFunction =
-	    f_fun->desc.str.strings[DVCT_STR_IAD_IDX].id;
-	f_fun->desc.c_itf->iInterface =
-	    f_fun->desc.str.strings[DVCT_STR_C_ITF_IDX].id;
-	f_fun->desc.d_itf->iInterface =
-	    f_fun->desc.str.strings[DVCT_STR_D_ITF_IDX].id;
-
+	for (str_lk = lk_tbl; str_lk->str; str_lk++) {
+		*str_lk->id = str_lk->str->id;
+		pr_info("Setting id %d for str \"%s\"\n", str_lk->str->id,
+			str_lk->str->s);
+	}
 	return 0;
 }
 
@@ -395,7 +463,17 @@ static int dvct_function_bind(struct usb_configuration *cconfig,
 	DVCT_IN();
 	d_fun->cdev = cconfig->cdev;
 
-	ret = dvct_strings_setup(d_fun->cdev, d_fun);
+	/*allocate id's */
+	/*strings. not crucial just print on failure */
+	if (d_fun->source_dev->desc && d_fun->source_dev->desc->str.strings) {
+		ret = dvct_strings_setup(d_fun->cdev,
+					 d_fun->source_dev->desc->str.strings,
+					 d_fun->source_dev->desc->lk_tbl);
+		if (ret)
+			pr_warn("Cannot allocate source device string id's\n");
+	}
+	ret = dvct_strings_setup(d_fun->cdev, d_fun->desc.str.strings,
+				 d_fun->desc.lk_tbl);
 	if (ret)
 		pr_warn("Cannot allocate function string id's\n");
 
@@ -715,8 +793,13 @@ static struct usb_function *dvct_alloc_func(struct usb_function_instance *inst)
 	if (ret)
 		goto err_des;
 
-	/*String table */
-	d_fun->function.strings =
+	/*String table*/
+	/*1 - source dev (if present) , 1 - function, 1 - NULL */
+	if (d_fun->source_dev->desc && d_fun->source_dev->desc->str.strings)
+		d_fun->function.strings =
+		    kzalloc(3 * sizeof(struct usb_gadget_strings), GFP_KERNEL);
+	else
+		d_fun->function.strings =
 		    kzalloc(2 * sizeof(struct usb_gadget_strings), GFP_KERNEL);
 
 	if (!d_fun->function.strings) {
@@ -725,6 +808,8 @@ static struct usb_function *dvct_alloc_func(struct usb_function_instance *inst)
 	}
 
 	d_fun->function.strings[0] = &d_fun->desc.str;
+	if (d_fun->source_dev->desc && d_fun->source_dev->desc->str.strings)
+		d_fun->function.strings[1] = &d_fun->source_dev->desc->str;
 
 	d_fun->function.name = "dvctrace";
 	d_fun->function.fs_descriptors = d_fun->desc.fs;

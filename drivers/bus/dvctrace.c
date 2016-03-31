@@ -19,12 +19,442 @@
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/dvctrace.h>
+#include <linux/usb/debug.h>
 
 #ifdef DVCT_DEBUG
 #define DVCT_IN() pr_debug("in\n")
 #else
 #define DVCT_IN() do {} while (0)
 #endif
+
+/* Count the number of USB descriptors in the given ascii hex string
+ * What we expect:
+ *   ll tt ss xx xx xx
+ *    |  |  |  +- Fill up the descriptor
+ *    |  |  +- Descriptor sub-type (1-4)
+ *    |  |       DC_INPUT_CONNECTION		0x01
+ *    |  |       DC_OUTPUT_CONNECTION		0x02
+ *    |  |       DC_DEBUG_UNIT			0x03
+ *    |  |       DC_DEBUG_ATTRIBUTES		0x04
+ *    |  +- Descriptor type (USB_DT_CS_INTERFACE)
+ *    +- Descriptor length (check > 3 and we have the rest of it)
+ */
+static int count_descriptors(const char *buf, size_t size)
+{
+	size_t off = 0;
+	int i, j, count = 0;
+	u8 len, tmp;
+
+	DVCT_IN();
+	while (off < size) {
+		/*the length*/
+		j = sscanf(buf + off, "%2hhx%n", &len, &i);
+		if (!j)
+			break;
+		if (j < 0 || len < 4)
+			return -EINVAL;
+		len--;
+		off += i;
+
+		/*Type*/
+		j = sscanf(buf + off, "%2hhx%n", &tmp, &i);
+		if (j <= 0 || tmp != USB_DT_CS_INTERFACE)
+			return -EINVAL;
+		len--;
+		off += i;
+
+		/*Sub Type*/
+		j = sscanf(buf + off, "%2hhx%n", &tmp, &i);
+		if (j <= 0 || tmp < DC_INPUT_CONNECTION
+		    || tmp > DC_DEBUG_ATTRIBUTES)
+			return -EINVAL;
+		len--;
+		off += i;
+
+		while (len) {
+			j = sscanf(buf + off, "%2hhx%n", &tmp, &i);
+			if (j <= 0)
+				return -EINVAL;
+			len--;
+			off += i;
+		}
+		count++;
+	}
+	return count;
+}
+
+/* Parse @buf and get a pointer to the descriptor identified
+ *  @idx*/
+static u8 *get_descriptor(const char *buf, size_t size, int idx)
+{
+	size_t off = 0;
+	int i, j, k, count = 0;
+	u8 len, tmp, *ret = NULL;
+
+	DVCT_IN();
+	while (off < size) {
+		j = sscanf(buf + off, "%2hhx%n", &len, &i);
+		if (j < 0)
+			return ERR_PTR(-EINVAL);
+		if (!j)
+			return ERR_PTR(-ERANGE);
+
+		if (count == idx) {
+			ret = kmalloc(len, GFP_KERNEL);
+			if (!ret)
+				return ERR_PTR(-ENOMEM);
+			ret[0] = len;
+		}
+		off += i;
+		for (k = 1; k < len; k++) {
+			j = sscanf(buf + off, "%2hhx%n", &tmp, &i);
+			if (j <= 0) {
+				kfree(ret);
+				return ERR_PTR(-EINVAL);
+			}
+			if (count == idx)
+				ret[k] = tmp;
+			off += i;
+		}
+		if (count == idx)
+			break;
+		count++;
+	}
+	return ret;
+}
+
+
+static void free_strings(struct dvct_usb_descriptors *desc)
+{
+	struct usb_string *string;
+
+	DVCT_IN();
+	for (string = desc->str.strings; string && string->s; string++)
+		kfree(string->s);
+
+	kfree(desc->str.strings);
+	desc->str.strings = NULL;
+	kfree(desc->lk_tbl);
+	desc->lk_tbl = NULL;
+}
+
+static void free_descriptors(struct dvct_usb_descriptors *desc)
+{
+	struct usb_descriptor_header **hdr;
+
+	DVCT_IN();
+	if (desc->dvc_spec) {
+		for (hdr = desc->dvc_spec; *hdr; hdr++)
+			kfree(*hdr);
+		kfree(desc->dvc_spec);
+		desc->dvc_spec = NULL;
+	}
+	free_strings(desc);
+	kfree(desc);
+}
+
+static int alloc_strings(struct dvct_usb_descriptors *desc, int count)
+{
+	DVCT_IN();
+	desc->lk_tbl = kzalloc((count + 1) * sizeof(struct dvct_string_lookup),
+			       GFP_KERNEL);
+	if (!desc->lk_tbl)
+		goto  err;
+
+	desc->str.strings = kzalloc(sizeof(desc->str), GFP_KERNEL);
+	if (!desc->str.strings)
+		goto err_str;
+
+	desc->str.language = 0x0409;
+
+	return count;
+err_str:
+	kfree(desc->lk_tbl);
+	desc->lk_tbl = NULL;
+err:
+	return -ENOMEM;
+}
+
+static struct dvct_usb_descriptors *alloc_descriptors(int count)
+{
+	struct dvct_usb_descriptors *desc;
+
+	DVCT_IN();
+	desc = kzalloc(sizeof(struct dvct_usb_descriptors), GFP_KERNEL);
+	if (!desc)
+		return ERR_PTR(-ENOMEM);
+
+	desc->dvc_spec =
+		kzalloc((count + 1) * sizeof(struct usb_descriptor_header *),
+			GFP_KERNEL);
+
+	if (!desc->dvc_spec) {
+		kfree(desc);
+		return ERR_PTR(-ENOMEM);
+	}
+	return desc;
+}
+
+static ssize_t descriptors_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct dvct_source_device *ds_dev = dev_to_dvct_source_device(dev);
+	struct usb_descriptor_header **desc;
+	int ret = 0;
+
+	DVCT_IN();
+	if (!ds_dev->desc || !ds_dev->desc->dvc_spec
+	    || !*ds_dev->desc->dvc_spec)
+		return sprintf(buf, "No Descriptors.\n");
+
+	for (desc = ds_dev->desc->dvc_spec; *desc; desc++) {
+		u8 len, *pdesc;
+		int i;
+
+		len = (*desc)->bLength;
+		pdesc = (u8 *)(*desc);
+		for (i = 0; i < len; i++)
+			ret += snprintf(buf + ret, PAGE_SIZE - ret, "%02hhX ",
+					pdesc[i]);
+		buf[ret - 1] = '\n';
+	}
+	return ret;
+}
+
+static ssize_t descriptors_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t size)
+{
+	struct dvct_source_device *ds_dev = dev_to_dvct_source_device(dev);
+	int desc_count, i;
+	u8 *hdr;
+
+	DVCT_IN();
+
+	if (ds_dev->instance_taken)
+		return -EBUSY;
+
+	/*count the new descriptors, exit if invalid input*/
+	desc_count = count_descriptors(buf, size);
+	if (desc_count <= 0) {
+		dev_warn(dev, "Invalid descriptor input:[%zu] %s", size, buf);
+		return -EINVAL;
+	}
+
+	if (ds_dev->desc && ds_dev->desc != &ds_dev->static_desc)
+		free_descriptors(ds_dev->desc);
+
+	ds_dev->desc = alloc_descriptors(desc_count);
+	if (IS_ERR_OR_NULL(ds_dev->desc)) {
+		ds_dev->desc = NULL;
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < desc_count; i++) {
+		hdr = get_descriptor(buf, size, i);
+		if (IS_ERR_OR_NULL(hdr)) {
+			dev_err(dev, "Cannot get descriptor %d, %ld\n", i,
+				PTR_ERR(hdr));
+			free_descriptors(ds_dev->desc);
+			ds_dev->desc = NULL;
+			return -EINVAL;
+		}
+		ds_dev->desc->dvc_spec[i] = (struct usb_descriptor_header *)hdr;
+	}
+	return size;
+}
+
+static DEVICE_ATTR_RW(descriptors);
+
+
+/*find out at which member(offset) of which descriptor the pointer
+ * points to */
+static int dvctrace_string_ptr_to_offset(struct usb_descriptor_header **first,
+					u8 *ptr, int *desc_offset, int *offset)
+{
+	u8 *hdr_start, *hdr_end;
+	int idx = 0;
+
+	DVCT_IN();
+	for (; *first; first++, idx++) {
+		hdr_start = (u8 *) (*first);
+		hdr_end = hdr_start + ((*first)->bLength - 1);
+		if (ptr >= hdr_start && ptr <= hdr_end) {
+			*desc_offset = idx;
+			*offset = ptr - hdr_start;
+			return 0;
+		}
+	}
+	return -EINVAL;
+}
+
+static u8 *dvctrace_offset_to_string_ptr(struct usb_descriptor_header **first,
+					 int desc_offset, int offset)
+{
+	int idx = 0;
+
+	DVCT_IN();
+	for (; *first; first++, idx++) {
+		if (idx == desc_offset) {
+			if (offset >= (*first)->bLength)
+				return ERR_PTR(-ERANGE);
+			return ((u8 *) (*first)) + offset;
+		}
+	}
+	return ERR_PTR(-ERANGE);
+}
+
+static int count_strings(const char *buf, size_t size)
+{
+	int count = 0;
+	size_t off = 0, slen;
+	int i = 0, j, desc_offset, offset;
+
+	DVCT_IN();
+	while (off < size) {
+		j = sscanf(buf + off, "%d.%d: %n", &desc_offset, &offset, &i);
+		if (j < 2)
+			break;
+		off += i;
+		slen = 0;
+		while (off + slen < size) {
+			if (buf[off + slen] == ';' || buf[off + slen] == '\n')
+				break;
+			slen++;
+		}
+		off += slen;
+		if (buf[off] == ';' || buf[off] == '\n')
+			off++;
+		count++;
+	}
+	return count;
+}
+
+static char *get_string(const char *buf, size_t size, int index,
+			int *desc_offset, int *offset)
+{
+	int count = 0;
+	size_t off = 0, slen;
+	int i, j;
+	char *ret = ERR_PTR(-EINVAL);
+
+	DVCT_IN();
+	while (off < size) {
+		j = sscanf(buf + off, "%d.%d: %n", desc_offset, offset, &i);
+		if (j < 2)
+			return  ERR_PTR(-EINVAL);
+		off += i;
+		slen = 0;
+		while (off + slen < size) {
+			if (buf[off + slen] == ';' || buf[off + slen] == '\n')
+				break;
+			slen++;
+		}
+
+		if (count == index) {
+			ret = kmalloc(slen+1, GFP_KERNEL);
+			if (!ret)
+				return ERR_PTR(-ENOMEM);
+			memcpy(ret, buf + off, slen);
+			ret[slen] = 0;
+			return ret;
+		}
+		off += slen;
+		if (buf[off] == ';' || buf[off] == '\n')
+			off++;
+		count++;
+	}
+	return ERR_PTR(-EINVAL);
+}
+
+static ssize_t strings_show(struct device *dev, struct device_attribute *attr,
+			    char *buf)
+{
+	struct dvct_string_lookup *lk_s;
+	struct dvct_source_device *ds_dev = dev_to_dvct_source_device(dev);
+	int ret = 0;
+
+	DVCT_IN();
+	if (!ds_dev->desc || !ds_dev->desc->dvc_spec
+	    || !*ds_dev->desc->dvc_spec)
+		return sprintf(buf, "No Descriptors.\n");
+
+	if (!ds_dev->desc->lk_tbl)
+		return sprintf(buf, "No Strings.\n");
+
+	for (lk_s = ds_dev->desc->lk_tbl; lk_s->str && lk_s->id; lk_s++) {
+		int desc_offset, offset;
+
+		if (dvctrace_string_ptr_to_offset(ds_dev->desc->dvc_spec,
+						  lk_s->id, &desc_offset,
+						  &offset))
+			ret += snprintf(buf + ret, PAGE_SIZE,
+					"Unknown(%p): %s\n", lk_s->id,
+					lk_s->str->s);
+		else
+			ret += snprintf(buf + ret, PAGE_SIZE, "%d.%d: %s\n",
+					desc_offset, offset, lk_s->str->s);
+	}
+	return ret;
+}
+
+static ssize_t strings_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t size)
+{
+	struct dvct_source_device *ds_dev = dev_to_dvct_source_device(dev);
+	int count, i, ret;
+
+	DVCT_IN();
+	if (ds_dev->instance_taken)
+		return -EBUSY;
+
+	count = count_strings(buf, size);
+	if (count <= 0) {
+		dev_err(dev, "Invalid input string:(%zu) %s\n", size, buf);
+		return -EINVAL;
+	}
+
+	if (ds_dev->desc == &ds_dev->static_desc) {
+		dev_warn(&ds_dev->device, "Cannot set strings in static descriptors\n");
+		return -EINVAL;
+	}
+
+	if (ds_dev->desc->str.strings)
+		free_strings(ds_dev->desc);
+
+	ret = alloc_strings(ds_dev->desc, count);
+	if (ret < 0) {
+		dev_err(dev, "Cannot allocate strings %d\n", ret);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < count; i++) {
+		char *tmp;
+		int d_off, off;
+		u8 *pid;
+
+		tmp = get_string(buf, size, i, &d_off, &off);
+		if (IS_ERR_OR_NULL(tmp)) {
+			free_strings(ds_dev->desc);
+			return -EINVAL;
+		}
+
+		pid = dvctrace_offset_to_string_ptr(ds_dev->desc->dvc_spec,
+						    d_off, off);
+		if (IS_ERR_OR_NULL(pid)) {
+			dev_warn(&ds_dev->device, "String out of bounds\n");
+			free_strings(ds_dev->desc);
+			return -EINVAL;
+		}
+
+		ds_dev->desc->lk_tbl[i].id = pid;
+		ds_dev->desc->lk_tbl[i].str = &ds_dev->desc->str.strings[i];
+		ds_dev->desc->str.strings[i].s = tmp;
+	}
+	return size;
+}
+
+static DEVICE_ATTR_RW(strings);
 
 static ssize_t protocol_show(struct device *dev, struct device_attribute *attr,
 			     char *buf)
@@ -71,6 +501,8 @@ static DEVICE_ATTR_RO(status);
 static struct attribute *dvct_source_attrs[] = {
 	&dev_attr_protocol.attr,
 	&dev_attr_status.attr,
+	&dev_attr_strings.attr,
+	&dev_attr_descriptors.attr,
 	NULL,
 };
 
@@ -208,6 +640,9 @@ int dvct_source_device_add(struct dvct_source_device *ds_dev,
 		return ret;
 	}
 
+	if (ds_dev->static_desc.dvc_spec)
+		ds_dev->desc = &ds_dev->static_desc;
+
 	dev_notice(&dvctrace_bus, "Adding device %s\n", ds_dev->name_add);
 	return 0;
 };
@@ -216,6 +651,12 @@ EXPORT_SYMBOL_GPL(dvct_source_device_add);
 void dvct_source_device_del(struct dvct_source_device *ds_dev)
 {
 	DVCT_IN();
+
+	if (ds_dev->desc && ds_dev->desc != &ds_dev->static_desc) {
+		free_descriptors(ds_dev->desc);
+		ds_dev->desc = NULL;
+	}
+
 	device_del(&ds_dev->device);
 };
 EXPORT_SYMBOL_GPL(dvct_source_device_del);
