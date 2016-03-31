@@ -221,6 +221,10 @@ config USB_F_AUDIO_SRC
 config USB_F_ACC
 	tristate
 
+config USB_F_DVCTRACE
+	tristate
+	select DVC_TRACE_BUS
+
 # this first set of drivers all depend on bulk-capable hardware.
 
 config USB_CONFIGFS
@@ -537,6 +541,13 @@ choice
 	  both the device instantiation as a child for a USB gadget
 	  controller, and the relevant drivers for each function declared
 	  by the device.
+
+config USB_CONFIGFS_F_DVCTRACE
+	bool "DvC Trace gadget"
+	depends on USB_CONFIGFS
+	select USB_F_DVCTRACE
+	help
+	  USB gadget DvC Trace support
 
 source "drivers/usb/gadget/legacy/Kconfig"
 
