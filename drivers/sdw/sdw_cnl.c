@@ -180,25 +180,73 @@ static void sdw_init_phyctrl(struct cnl_sdw *sdw)
 
 }
 
-static void sdw_init_shim(struct cnl_sdw *sdw)
+static void sdw_switch_to_mip(struct cnl_sdw *sdw)
 {
+	u16 ioctl;
+	u16 act = 0;
 	struct cnl_sdw_data *data = &sdw->data;
-	int act_offset = SDW_CNL_CTMCTL + (data->inst_id *
-					SDW_CNL_CTMCTL_REG_OFFSET);
 	int ioctl_offset = SDW_CNL_IOCTL + (data->inst_id *
 					SDW_CNL_IOCTL_REG_OFFSET);
-	u16 act = 0;
-	u16 ioctl = 0;
+	int act_offset = SDW_CNL_CTMCTL + (data->inst_id *
+					SDW_CNL_CTMCTL_REG_OFFSET);
 
+	ioctl = cnl_sdw_reg_readw(data->sdw_shim,  ioctl_offset);
+
+	ioctl &= ~(CNL_IOCTL_DOE_MASK << CNL_IOCTL_DOE_SHIFT);
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+
+	ioctl &= ~(CNL_IOCTL_DO_MASK << CNL_IOCTL_DO_SHIFT);
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
 
 	ioctl |= CNL_IOCTL_MIF_MASK << CNL_IOCTL_MIF_SHIFT;
-	ioctl |= CNL_IOCTL_WPDD_MASK << CNL_IOCTL_WPDD_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+
+	ioctl &= ~(CNL_IOCTL_BKE_MASK << CNL_IOCTL_BKE_SHIFT);
+	ioctl &= ~(CNL_IOCTL_COE_MASK << CNL_IOCTL_COE_SHIFT);
+
 	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
 
 	act |= 0x1 << CNL_CTMCTL_DOAIS_SHIFT;
 	act |= CNL_CTMCTL_DACTQE_MASK << CNL_CTMCTL_DACTQE_SHIFT;
 	act |= CNL_CTMCTL_DODS_MASK << CNL_CTMCTL_DODS_SHIFT;
 	cnl_sdw_reg_writew(data->sdw_shim,  act_offset, act);
+}
+
+static void sdw_switch_to_glue(struct cnl_sdw *sdw)
+{
+	u16 ioctl;
+	struct cnl_sdw_data *data = &sdw->data;
+	int ioctl_offset = SDW_CNL_IOCTL + (data->inst_id *
+					SDW_CNL_IOCTL_REG_OFFSET);
+
+	ioctl = cnl_sdw_reg_readw(data->sdw_shim,  ioctl_offset);
+	ioctl |= CNL_IOCTL_BKE_MASK << CNL_IOCTL_BKE_SHIFT;
+	ioctl |= CNL_IOCTL_COE_MASK << CNL_IOCTL_COE_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+
+	ioctl &= ~(CNL_IOCTL_MIF_MASK << CNL_IOCTL_MIF_SHIFT);
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+}
+
+static void sdw_init_shim(struct cnl_sdw *sdw)
+{
+	u16 ioctl = 0;
+	struct cnl_sdw_data *data = &sdw->data;
+	int ioctl_offset = SDW_CNL_IOCTL + (data->inst_id *
+					SDW_CNL_IOCTL_REG_OFFSET);
+
+
+	ioctl |= CNL_IOCTL_BKE_MASK << CNL_IOCTL_BKE_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+
+	ioctl |= CNL_IOCTL_WPDD_MASK << CNL_IOCTL_WPDD_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+
+	ioctl |= CNL_IOCTL_DO_MASK << CNL_IOCTL_DO_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+
+	ioctl |= CNL_IOCTL_DOE_MASK << CNL_IOCTL_DOE_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
 }
 
 static int sdw_config_update(struct cnl_sdw *sdw)
@@ -388,7 +436,7 @@ static int sdw_init(struct cnl_sdw *sdw)
 {
 	struct sdw_master *mstr = sdw->mstr;
 	struct cnl_sdw_data *data = &sdw->data;
-	int mcp_config;
+	int mcp_config, mcp_control;
 	int ret = 0;
 
 	/* Power up the link controller */
@@ -396,9 +444,22 @@ static int sdw_init(struct cnl_sdw *sdw)
 	if (ret)
 		return ret;
 
-	/* Read shim registers for getting capability */
+	/* Initialize the IO control registers */
 	sdw_init_shim(sdw);
 
+	/* Switch the ownership to Master IP from glue logic */
+	sdw_switch_to_mip(sdw);
+
+	/* Set command acceptance mode. This is required because when
+	 * Master broadcasts the clock_stop command to slaves, slaves
+	 * might be already suspended, so this return NO ACK, in that
+	 * case also master should go to clock stop mode.
+	 */
+	mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_CONTROL);
+	mcp_control |= (MCP_CONTROL_CMDACCEPTMODE_MASK <<
+			MCP_CONTROL_CMDACCEPTMODE_SHIFT);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
 
 	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_FRAMESHAPEINIT, 0x48);
 
@@ -700,7 +761,7 @@ static void cnl_sdw_read_response(struct cnl_sdw *sdw)
 irqreturn_t cnl_sdw_irq_handler(int irq, void *context)
 {
 	struct cnl_sdw *sdw = context;
-	volatile int int_status, status;
+	volatile int int_status, status, wake_sts;
 
 	struct cnl_sdw_data *data = &sdw->data;
 	volatile int slave_intstat0 = 0, slave_intstat1 = 0;
@@ -719,7 +780,10 @@ irqreturn_t cnl_sdw_irq_handler(int irq, void *context)
 					SDW_CNL_MCP_SLAVEINTSTAT0);
 	slave_intstat1 = cnl_sdw_reg_readl(data->sdw_regs,
 					SDW_CNL_MCP_SLAVEINTSTAT1);
-
+	wake_sts = cnl_sdw_reg_readw(data->sdw_shim,
+				SDW_CNL_SNDWWAKESTS_REG_OFFSET);
+	cnl_sdw_reg_writew(data->sdw_shim, SDW_CNL_SNDWWAKESTS_REG_OFFSET,
+				wake_sts);
 
 	if (!(int_status & (MCP_INTSTAT_IRQ_MASK << MCP_INTSTAT_IRQ_SHIFT)))
 		return IRQ_NONE;
@@ -1225,7 +1289,24 @@ static int cnl_sdw_probe(struct sdw_master *mstr,
 		sdw_power_down_link(sdw);
 		return ret;
 	}
-
+	pm_runtime_set_autosuspend_delay(&mstr->dev, 3000);
+	pm_runtime_use_autosuspend(&mstr->dev);
+	pm_runtime_enable(&mstr->dev);
+	pm_runtime_get_sync(&mstr->dev);
+	/* Resuming the device, since its already ON, function will simply
+	 * return doing nothing
+	 */
+	pm_runtime_mark_last_busy(&mstr->dev);
+	/* Suspending the device after 3 secs, by the time
+	 * all the slave would have enumerated. Initial
+	 * clock freq is 9.6MHz and frame shape is 48X2, so
+	 * there are 200000 frames in second, total there are
+	 * minimum 600000 frames before device suspends. Soundwire
+	 * spec says slave should get attached to bus in 4096
+	 * error free frames after reset. So this should be
+	 * enough to make sure device gets attached to bus.
+	 */
+	pm_runtime_put_sync_autosuspend(&mstr->dev);
 	return ret;
 }
 
@@ -1238,7 +1319,192 @@ static int cnl_sdw_remove(struct sdw_master *mstr)
 	return 0;
 }
 
+#ifdef CONFIG_PM
+static int cnl_sdw_runtime_suspend(struct device *dev)
+{
+	enum  sdw_clk_stop_mode clock_stop_mode;
 
+	int volatile mcp_stat;
+	int mcp_control;
+	int timeout = 0;
+	int ret = 0;
+
+	struct cnl_sdw *sdw = dev_get_drvdata(dev);
+	struct cnl_sdw_data *data = &sdw->data;
+
+	/* If its suspended return */
+	mcp_stat = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_STAT);
+	if (mcp_stat & (MCP_STAT_CLOCKSTOPPED_MASK <<
+				MCP_STAT_CLOCKSTOPPED_SHIFT)) {
+		dev_info(dev, "Clock is already stopped\n");
+		return 0;
+	}
+
+	/* Write the MCP Control register to prevent block wakeup */
+	mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_CONTROL);
+	mcp_control |= (MCP_CONTROL_BLOCKWAKEUP_MASK <<
+				MCP_CONTROL_BLOCKWAKEUP_SHIFT);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
+
+	/* Prepare all the slaves for clock stop */
+	ret = sdw_prepare_for_clock_change(sdw->mstr, 1, &clock_stop_mode);
+	if (ret)
+		return ret;
+
+	/* Call bus function to broadcast the clock stop now */
+	ret = sdw_stop_clock(sdw->mstr, clock_stop_mode);
+	if (ret)
+		return ret;
+	/* Wait for clock to be stopped, we are waiting at max 1sec now */
+	while (timeout != 10) {
+		mcp_stat = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_STAT);
+		if (mcp_stat & (MCP_STAT_CLOCKSTOPPED_MASK <<
+			MCP_STAT_CLOCKSTOPPED_SHIFT))
+			break;
+		msleep(100);
+		timeout++;
+	}
+	mcp_stat = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_STAT);
+	if (!(mcp_stat & (MCP_STAT_CLOCKSTOPPED_MASK <<
+				MCP_STAT_CLOCKSTOPPED_SHIFT))) {
+		dev_err(dev, "Clock Stop failed\n");
+		ret = -EBUSY;
+		goto out;
+	}
+	/* Switch control from master IP to glue */
+	sdw_switch_to_glue(sdw);
+
+	sdw_power_down_link(sdw);
+
+	/* Enable the wakeup */
+	cnl_sdw_reg_writew(data->sdw_shim,
+			SDW_CNL_SNDWWAKEEN_REG_OFFSET,
+			(0x1 << data->inst_id));
+out:
+	return ret;
+}
+
+static int cnl_sdw_clock_stop_exit(struct cnl_sdw *sdw)
+{
+	u16 wake_en, wake_sts, ioctl;
+	int volatile mcp_control;
+	int timeout = 0;
+	struct cnl_sdw_data *data = &sdw->data;
+	int ioctl_offset = SDW_CNL_IOCTL + (data->inst_id *
+					SDW_CNL_IOCTL_REG_OFFSET);
+
+	/* Disable the wake up interrupt */
+	wake_en = cnl_sdw_reg_readw(data->sdw_shim,
+				SDW_CNL_SNDWWAKEEN_REG_OFFSET);
+	wake_en &= ~(0x1 << data->inst_id);
+	cnl_sdw_reg_writew(data->sdw_shim, SDW_CNL_SNDWWAKEEN_REG_OFFSET,
+				wake_en);
+
+	/* Clear wake status. This may be set if Slave requested wakeup has
+	 * happened, or may not be if it master requested. But in any case
+	 * this wont make any harm
+	 */
+	wake_sts = cnl_sdw_reg_readw(data->sdw_shim,
+				SDW_CNL_SNDWWAKESTS_REG_OFFSET);
+	wake_sts |= (0x1 << data->inst_id);
+	cnl_sdw_reg_writew(data->sdw_shim, SDW_CNL_SNDWWAKESTS_REG_OFFSET,
+				wake_sts);
+
+	ioctl = cnl_sdw_reg_readw(data->sdw_shim, ioctl_offset);
+	ioctl |= CNL_IOCTL_DO_MASK << CNL_IOCTL_DO_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+	ioctl |= CNL_IOCTL_DOE_MASK << CNL_IOCTL_DOE_SHIFT;
+	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
+	/* Switch control back to master */
+	sdw_switch_to_mip(sdw);
+
+	mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_CONTROL);
+	mcp_control &= ~(MCP_CONTROL_BLOCKWAKEUP_MASK <<
+				MCP_CONTROL_BLOCKWAKEUP_SHIFT);
+	mcp_control |= (MCP_CONTROL_CLOCKSTOPCLEAR_MASK <<
+				MCP_CONTROL_CLOCKSTOPCLEAR_SHIFT);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
+	/*
+	 * Wait for timeout to be clear to successful enabling of the clock
+	 * We will wait for 1sec before giving up
+	 */
+	while (timeout != 10) {
+		mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_CONTROL);
+		if ((mcp_control & (MCP_CONTROL_CLOCKSTOPCLEAR_MASK <<
+				MCP_CONTROL_CLOCKSTOPCLEAR_SHIFT)) == 0)
+			break;
+		msleep(1000);
+		timeout++;
+	}
+	mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_CONTROL);
+	if ((mcp_control & (MCP_CONTROL_CLOCKSTOPCLEAR_MASK <<
+			MCP_CONTROL_CLOCKSTOPCLEAR_SHIFT)) != 0) {
+		dev_err(&sdw->mstr->dev, "Clop Stop Exit failed\n");
+		return -EBUSY;
+	}
+
+	dev_info(&sdw->mstr->dev, "Exit from clock stop successful\n");
+	return 0;
+
+}
+
+static int cnl_sdw_runtime_resume(struct device *dev)
+{
+	struct cnl_sdw *sdw = dev_get_drvdata(dev);
+	struct cnl_sdw_data *data = &sdw->data;
+	int volatile mcp_stat;
+	struct sdw_master *mstr;
+	int ret = 0;
+
+	mstr = sdw->mstr;
+	/*
+	 * If already resumed, do nothing. This can happen because of
+	 * wakeup enable.
+	 */
+	mcp_stat = cnl_sdw_reg_readl(data->sdw_regs,
+					SDW_CNL_MCP_STAT);
+	if (!(mcp_stat & (MCP_STAT_CLOCKSTOPPED_MASK <<
+				MCP_STAT_CLOCKSTOPPED_SHIFT))) {
+		dev_info(dev, "Clock is already running\n");
+		return 0;
+	}
+	dev_info(dev, "%s %d Clock is stopped\n", __func__, __LINE__);
+
+	ret = cnl_sdw_clock_stop_exit(sdw);
+	if (ret)
+		return ret;
+	dev_info(&mstr->dev, "Exit from clock stop successful\n");
+
+	/* Prepare all the slaves to comeout of clock stop */
+	ret = sdw_prepare_for_clock_change(sdw->mstr, 0, NULL);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static int cnl_sdw_sleep_resume(struct device *dev)
+{
+	return cnl_sdw_runtime_resume(dev);
+}
+static int cnl_sdw_sleep_suspend(struct device *dev)
+{
+	return cnl_sdw_runtime_suspend(dev);
+}
+#endif
+
+static const struct dev_pm_ops cnl_sdw_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(cnl_sdw_sleep_suspend, cnl_sdw_sleep_resume)
+	SET_RUNTIME_PM_OPS(cnl_sdw_runtime_suspend,
+				cnl_sdw_runtime_resume, NULL)
+};
 
 static struct sdw_master_ops cnl_sdw_master_ops  = {
 	.xfer_msg = cnl_sdw_xfer_msg,
@@ -1265,6 +1531,7 @@ static struct sdw_mstr_driver cnl_sdw_mstr_driver = {
 	.driver_type = SDW_DRIVER_TYPE_MASTER,
 	.driver = {
 		.name   = "cnl_sdw_mstr",
+		.pm	= &cnl_sdw_pm_ops,
 	},
 	.probe          = cnl_sdw_probe,
 	.remove         = cnl_sdw_remove,
