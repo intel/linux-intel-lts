@@ -728,6 +728,22 @@ int __sdw_transfer(struct sdw_master *mstr, struct sdw_msg *msg, int num)
 }
 EXPORT_SYMBOL_GPL(__sdw_transfer);
 
+/* NO PM version of slave transfer. Called from power management APIs
+ * to avoid dead locks.
+ */
+static int sdw_slave_transfer_nopm(struct sdw_master *mstr, struct sdw_msg *msg,
+								int num)
+{
+	int ret;
+
+	if (mstr->driver->mstr_ops->xfer_msg) {
+		ret = __sdw_transfer(mstr, msg, num);
+		return ret;
+	}
+	dev_dbg(&mstr->dev, "SDW level transfers not supported\n");
+	return -EOPNOTSUPP;
+}
+
 /**
  * sdw_slave_transfer:  Transfer message between slave and mstr on the bus.
  * @mstr: mstr master which will transfer the message
@@ -755,21 +771,27 @@ int sdw_slave_transfer(struct sdw_master *mstr, struct sdw_msg *msg, int num)
 	 *    one (discarding status on the second message) or errno
 	 *    (discarding status on the first one).
 	 */
-	if (mstr->driver->mstr_ops->xfer_msg) {
-		if (in_atomic() || irqs_disabled()) {
-			ret = sdw_trylock_mstr(mstr);
-			if (!ret)
-				/* SDW activity is ongoing. */
-				return -EAGAIN;
-		}
-		sdw_lock_mstr(mstr);
-
-		ret = __sdw_transfer(mstr, msg, num);
-		sdw_unlock_mstr(mstr);
-		return ret;
+	if (!(mstr->driver->mstr_ops->xfer_msg)) {
+		dev_dbg(&mstr->dev, "SDW level transfers not supported\n");
+		return -EOPNOTSUPP;
 	}
-	dev_dbg(&mstr->dev, "SDW level transfers not supported\n");
-	return -EOPNOTSUPP;
+	pm_runtime_get_sync(&mstr->dev);
+	if (in_atomic() || irqs_disabled()) {
+		ret = sdw_trylock_mstr(mstr);
+		if (!ret) {
+			/* SDW activity is ongoing. */
+			ret = -EAGAIN;
+			goto out;
+		}
+	} else {
+		sdw_lock_mstr(mstr);
+	}
+	ret = __sdw_transfer(mstr, msg, num);
+	sdw_unlock_mstr(mstr);
+out:
+	pm_runtime_mark_last_busy(&mstr->dev);
+	pm_runtime_put_sync_autosuspend(&mstr->dev);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(sdw_slave_transfer);
 
@@ -1665,6 +1687,8 @@ static void sdw_release_mstr_stream(struct sdw_master *mstr,
 			else
 				sdw_rt->rx_ref_count--;
 			list_del(&mstr_rt->mstr_node);
+			pm_runtime_mark_last_busy(&mstr->dev);
+			pm_runtime_put_sync_autosuspend(&mstr->dev);
 			kfree(mstr_rt);
 		}
 	}
@@ -1683,7 +1707,8 @@ static void sdw_release_slave_stream(struct sdw_slave *slave,
 				sdw_rt->tx_ref_count--;
 			else
 				sdw_rt->rx_ref_count--;
-
+			pm_runtime_mark_last_busy(&slave->dev);
+			pm_runtime_put_sync_autosuspend(&slave->dev);
 			kfree(slv_rt);
 		}
 	}
@@ -1860,6 +1885,10 @@ int sdw_config_stream(struct sdw_master *mstr,
 		list_add_tail(&slv_rt->slave_node, &mstr_rt->slv_rt_list);
 	}
 	mutex_unlock(&stream->stream_lock);
+	if (slave)
+		pm_runtime_get_sync(&slave->dev);
+	else
+		pm_runtime_get_sync(&mstr->dev);
 	return ret;
 
 free_mem:
@@ -2060,6 +2089,190 @@ int sdw_disable_and_unprepare(int stream_tag, bool unprepare)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(sdw_disable_and_unprepare);
+
+int sdw_stop_clock(struct sdw_master *mstr, enum sdw_clk_stop_mode mode)
+{
+	int ret = 0, i;
+	struct sdw_msg msg;
+	u8 buf[1] = {0};
+	int slave_present = 0;
+
+	for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+		if (mstr->sdw_addr[i].assigned &&
+			mstr->sdw_addr[i].status !=
+					SDW_SLAVE_STAT_NOT_PRESENT)
+			slave_present = 1;
+	}
+
+	/* Send Broadcast message to the SCP_ctrl register with
+	 * clock stop now
+	 */
+	msg.ssp_tag = 1;
+	msg.flag = SDW_MSG_FLAG_WRITE;
+	msg.addr = SDW_SCP_CTRL;
+	msg.len = 1;
+	buf[0] |= 0x1 << SDW_SCP_CTRL_CLK_STP_NOW_SHIFT;
+	msg.buf = buf;
+	msg.slave_addr = 15;
+	msg.addr_page1 = 0x0;
+	msg.addr_page2 = 0x0;
+	ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
+	if (ret != 1 && slave_present) {
+		dev_err(&mstr->dev, "Failed to stop clk\n");
+		return -EBUSY;
+	}
+	/* If we are entering clock stop mode1, mark all the slaves un-attached.
+	 */
+	if (mode == SDW_CLOCK_STOP_MODE_1) {
+		for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+			if (mstr->sdw_addr[i].assigned)
+				mstr->sdw_addr[i].status =
+						SDW_SLAVE_STAT_NOT_PRESENT;
+		}
+	}
+	return 0;
+}
+
+int sdw_wait_for_slave_enumeration(struct sdw_master *mstr,
+					struct sdw_slave *slave)
+{
+	int timeout = 0;
+
+	/* Wait till device gets enumerated. Wait for 2Secs before
+	 * giving up
+	 */
+	do {
+		msleep(100);
+		timeout++;
+	} while ((slave->slv_addr->status == SDW_SLAVE_STAT_NOT_PRESENT) &&
+		timeout < 20);
+
+	if (slave->slv_addr->status == SDW_SLAVE_STAT_NOT_PRESENT)
+		return -EBUSY;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sdw_wait_for_slave_enumeration);
+
+int sdw_prepare_for_clock_change(struct sdw_master *mstr, bool stop,
+			enum sdw_clk_stop_mode *clck_stop_mode)
+{
+	int i;
+	struct sdw_msg msg;
+	u8 buf[1] = {0};
+	struct sdw_slave *slave;
+	enum sdw_clk_stop_mode clock_stop_mode;
+	int timeout = 0;
+	int ret = 0;
+	int slave_dev_present = 0;
+
+	/*  Find if all slave support clock stop mode1 if all slaves support
+	 *  clock stop mode1 use mode1 else use mode0
+	 */
+	for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+		if (mstr->sdw_addr[i].assigned &&
+		mstr->sdw_addr[i].status != SDW_SLAVE_STAT_NOT_PRESENT) {
+			slave_dev_present = 1;
+			slave = mstr->sdw_addr[i].slave;
+			clock_stop_mode &=
+				slave->sdw_slv_cap.clock_stop1_mode_supported;
+			if (!clock_stop_mode)
+				break;
+		}
+	}
+	if (stop) {
+		*clck_stop_mode = clock_stop_mode;
+		dev_info(&mstr->dev, "Entering Clock stop mode %x\n",
+						clock_stop_mode);
+	}
+	/* Slaves might have removed power during its suspend
+	 * in that case no need to do clock stop prepare
+	 * and return from here
+	 */
+	if (!slave_dev_present)
+		return 0;
+	/* Prepare for the clock stop mode. For simplified clock stop
+	 * prepare only mode is to be set, For others set the ClockStop
+	 * Prepare bit in SCP_SystemCtrl register. For all the other slaves
+	 * set the clock stop prepare bit. For all slave set the clock
+	 * stop mode based on what we got in earlier loop
+	 */
+	for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+		if (mstr->sdw_addr[i].assigned != true)
+			continue;
+		if (mstr->sdw_addr[i].status == SDW_SLAVE_STAT_NOT_PRESENT)
+			continue;
+		slave = mstr->sdw_addr[i].slave;
+		msg.ssp_tag = 0;
+		slave = mstr->sdw_addr[i].slave;
+
+		if (stop) {
+			/* Even if its simplified clock stop prepare
+			 * setting prepare bit wont harm
+			 */
+			buf[0] |= (1 << SDW_SCP_SYSTEMCTRL_CLK_STP_PREP_SHIFT);
+			buf[0] |= clock_stop_mode <<
+				SDW_SCP_SYSTEMCTRL_CLK_STP_MODE_SHIFT;
+		}
+		msg.flag = SDW_MSG_FLAG_WRITE;
+		msg.addr = SDW_SCP_SYSTEMCTRL;
+		msg.len = 1;
+		msg.buf = buf;
+		msg.slave_addr = i;
+		msg.addr_page1 = 0x0;
+		msg.addr_page2 = 0x0;
+		ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
+		if (ret != 1) {
+			dev_err(&mstr->dev, "Clock Stop prepare failed\n");
+			return -EBUSY;
+		}
+	}
+	/*
+	 * Once clock stop prepare bit is set, broadcast the message to read
+	 * ClockStop_NotFinished bit from SCP_Stat, till we read it as 11
+	 * we dont exit loop. We wait for definite time before retrying
+	 * if its simple clock stop it will be always 1, while for other
+	 * they will driver 0 on bus so we wont get 1. In total we are
+	 * waiting 1 sec before we timeout.
+	 */
+	do {
+		buf[0] = 0xFF;
+		msg.ssp_tag = 0;
+		msg.flag = SDW_MSG_FLAG_READ;
+		msg.addr = SDW_SCP_STAT;
+		msg.len = 1;
+		msg.buf = buf;
+		msg.slave_addr = 15;
+		msg.addr_page1 = 0x0;
+		msg.addr_page2 = 0x0;
+		ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
+		if (ret != 1)
+			goto prepare_failed;
+
+		if (!(buf[0] & SDW_SCP_STAT_CLK_STP_NF_MASK))
+				break;
+		msleep(100);
+		timeout++;
+	} while (timeout != 11);
+	/* If we are trying to stop and prepare failed its not ok
+	 */
+	if (!(buf[0] & SDW_SCP_STAT_CLK_STP_NF_MASK)) {
+		dev_info(&mstr->dev, "Clock stop prepare done\n");
+		return 0;
+	/* If we are trying to resume and  un-prepare failes its ok
+	 * since codec might be down during suspned and will
+	 * start afresh after resuming
+	 */
+	} else if (!stop) {
+		dev_info(&mstr->dev, "Some Slaves un-prepare un-successful\n");
+		return 0;
+	}
+
+prepare_failed:
+	dev_err(&mstr->dev, "Clock Stop prepare failed\n");
+	return -EBUSY;
+
+}
+EXPORT_SYMBOL_GPL(sdw_prepare_for_clock_change);
 
 struct sdw_master *sdw_get_master(int nr)
 {

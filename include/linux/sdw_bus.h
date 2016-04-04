@@ -1284,8 +1284,44 @@ void sdw_put_master(struct sdw_master *mstr);
 #define module_sdw_slave_driver(__sdw_slave_driver) \
 	module_driver(__sdw_slave_driver, sdw_slave_driver_register, \
 			sdw_slave_driver_unregister)
+/**
+ * sdw_prepare_for_clock_change: Prepare all the Slaves for clock stop or
+ *		clock start. Prepares Slaves based on what they support
+ *		simplified clock stop or normal clock stop based on
+ *		their capabilities registered to slave driver.
+ * @mstr: Master handle for which clock state has to be changed.
+ * @start: Prepare for starting or stopping the clock
+ * @clk_stop_mode: Bus used which clock mode, if bus finds all the Slaves
+ *		on the bus to be supported clock stop mode1 it prepares
+ *		all the Slaves for mode1 else it will prepare all the
+ *		Slaves for mode0.
+ */
+int sdw_prepare_for_clock_change(struct sdw_master *mstr, bool start,
+			enum sdw_clk_stop_mode *clck_stop_mode);
 
+/**
+ * sdw_wait_for_slave_enumeration: Wait till all the slaves are enumerated.
+ *			Typicall this function is called by master once
+ *			it resumes its clock. This function waits in
+ *			loop for about 2Secs before all slaves gets enumerated
+ *			This function returns immediately if the clock
+ *			stop mode0 was entered earlier, where slave need
+ *			not re-enumerated.
+ *
+ * @mstr: Master handle
+ * @slave: Slave handle
+ */
+int sdw_wait_for_slave_enumeration(struct sdw_master *mstr,
+			struct sdw_slave *slave);
 
+/**
+ * sdw_stop_clock: Stop the clock. This function broadcasts the SCP_CTRL
+ *			register with clock_stop_now bit set.
+ * @mstr: Master handle for which clock has to be stopped.
+ * @clk_stop_mode: Bus used which clock mode.
+ */
+
+int sdw_stop_clock(struct sdw_master *mstr, enum sdw_clk_stop_mode mode);
 
 /* Return the adapter number for a specific adapter */
 static inline int sdw_master_id(struct sdw_master *mstr)
