@@ -1511,6 +1511,121 @@ static void skl_tplg_fill_dma_id(struct skl_module_cfg *mcfg,
 		memcpy(pipe->p_params, params, sizeof(*params));
 	}
 }
+static int skl_cache_probe_param(struct snd_kcontrol *kctl,
+			struct skl_probe_data *ap, struct skl_sst *ctx)
+{
+	struct skl_probe_config *pconfig = &ctx->probe_config;
+	union skl_connector_node_id node_id = {-1};
+	int index = -1, i;
+	char buf[20], pos[10];
+
+	if (ap->is_ext_inj == SKL_PROBE_EXTRACT) {
+		/* From the control ID get the extractor index */
+		for (i = 0; i < pconfig->no_extractor; i++) {
+			strcpy(buf, "Extractor");
+			snprintf(pos, 4, "%d", i);
+			if (strstr(kctl->id.name, strcat(buf, pos))) {
+				index = i;
+				break;
+			}
+		}
+		pr_debug("Setting extractor probe index %d\n", index);
+		memcpy(&ap->node_id, &node_id, sizeof(u32));
+		pconfig->eprobe[index].id = ap->params;
+		if (ap->is_connect == SKL_PROBE_CONNECT)
+			pconfig->eprobe[index].set = 1;
+		else if (ap->is_connect == SKL_PROBE_DISCONNECT)
+			pconfig->eprobe[index].set = -1;
+
+	} else {
+		/* From the control ID get the injector index */
+		for (i = 0; i < pconfig->no_injector; i++) {
+			strcpy(buf, "Injector");
+			snprintf(pos, 4, "%d", i);
+			if (strstr(kctl->id.name, strcat(buf, pos))) {
+				index = i;
+				break;
+			}
+		}
+		pconfig->iprobe[index].id = ap->params;
+		node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
+		node_id.node.vindex = pconfig->iprobe[index].dma_id;
+		memcpy(&ap->node_id, &node_id, sizeof(u32));
+		if (ap->is_connect == SKL_PROBE_CONNECT)
+			pconfig->iprobe[index].set = 1;
+		else if (ap->is_connect == SKL_PROBE_DISCONNECT)
+			pconfig->iprobe[index].set = -1;
+	}
+	return 0;
+}
+
+static int skl_tplg_tlv_probe_set(struct snd_kcontrol *kcontrol,
+			const unsigned int __user *data, unsigned int size)
+{
+	struct snd_soc_dapm_context *dapm =
+				snd_soc_dapm_kcontrol_dapm(kcontrol);
+	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_widget(kcontrol);
+	struct skl_module_cfg *mconfig = w->priv;
+	struct soc_bytes_ext *sb = (void *) kcontrol->private_value;
+	struct skl_probe_data *ap = (struct skl_probe_data *)sb->dobj.private;
+	struct skl *skl = get_skl_ctx(dapm->dev);
+	struct skl_probe_config *pconfig = &skl->skl_sst->probe_config;
+	struct probe_pt_param connect_point;
+	int disconnect_point;
+	void *offset;
+
+	dev_dbg(dapm->dev, "in %s control=%s\n", __func__, kcontrol->id.name);
+	dev_dbg(dapm->dev, "size = %u, %#x\n", size, size);
+
+	if (data) {
+		offset = (unsigned char *)data;
+		offset += 2 * sizeof(u32); /* To skip TLV heeader */
+		if (copy_from_user(&ap->is_connect,
+					offset, sizeof(ap->is_connect)))
+			return -EIO;
+
+		offset += sizeof(ap->is_connect);
+		if (copy_from_user(&ap->is_ext_inj,
+					offset, sizeof(ap->is_ext_inj)))
+			return -EIO;
+
+		offset += sizeof(ap->is_ext_inj);
+		if (copy_from_user(&ap->params,
+					offset, sizeof(ap->params)))
+			return -EIO;
+
+		dev_dbg(dapm->dev, "connect state = %d, extract_inject = %d, params = %d \n",
+						ap->is_connect, ap->is_ext_inj, ap->params);
+
+		skl_cache_probe_param(kcontrol, ap, skl->skl_sst);
+
+		if (pconfig->probe_count) {
+			/* In the case of extraction, additional probe points can be set when
+			 * the stream is in progress and the driver can immediately send the
+			 * connect IPC. But in the case of injector, for each probe point
+			 * connection a new stream with the DAI number corresponding to that
+			 * control has to be opened. Hence below check ensures that the
+			 * connect IPC is sent only in case of extractor.
+			 */
+			if ((ap->is_connect == SKL_PROBE_CONNECT)
+				&& (ap->is_ext_inj == SKL_PROBE_EXTRACT)) {
+
+				memcpy(&connect_point.params, &ap->params, sizeof(u32));
+				connect_point.connection = ap->is_ext_inj;
+				memcpy(&connect_point.node_id, (&ap->node_id), sizeof(u32));
+				return skl_set_module_params(skl->skl_sst, (void *)&connect_point,
+						sizeof(struct probe_pt_param), ap->is_connect, mconfig);
+
+			} else if (ap->is_connect == SKL_PROBE_DISCONNECT) {
+
+				disconnect_point = (int)ap->params;
+				return skl_set_module_params(skl->skl_sst, (void *)&disconnect_point,
+						sizeof(disconnect_point), ap->is_connect, mconfig);
+			}
+		}
+	}
+	return 0;
+}
 
 /*
  * The FE params are passed by hw_params of the DAI.
@@ -1871,6 +1986,8 @@ static const struct snd_soc_tplg_widget_events skl_tplg_widget_ops[] = {
 static const struct snd_soc_tplg_bytes_ext_ops skl_tlv_ops[] = {
 	{SKL_CONTROL_TYPE_BYTE_TLV, skl_tplg_tlv_control_get,
 					skl_tplg_tlv_control_set},
+	{SKL_CONTROL_TYPE_BYTE_PROBE, skl_tplg_tlv_control_get,
+					skl_tplg_tlv_probe_set},
 };
 
 static const struct snd_soc_tplg_kcontrol_ops skl_tplg_kcontrol_ops[] = {
