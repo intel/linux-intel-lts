@@ -771,6 +771,9 @@ static int skl_probe(struct pci_dev *pci,
 	struct skl *skl;
 	struct hdac_ext_bus *ebus = NULL;
 	struct hdac_bus *bus = NULL;
+#ifdef CONFIG_SND_SOC_INTEL_CNL_FPGA
+	const struct firmware *nhlt_fw = NULL;
+#endif
 	int err;
 
 	/* we use ext core ops, so provide NULL for ops here */
@@ -801,8 +804,23 @@ static int skl_probe(struct pci_dev *pci,
 	if (err < 0)
 		goto out_nhlt_free;
 
-	skl_nhlt_update_topology_bin(skl);
 #endif
+
+#ifdef CONFIG_SND_SOC_INTEL_CNL_FPGA
+	if (0 > request_firmware(&nhlt_fw, "intel/nhlt_blob.bin", bus->dev)) {
+		dev_err(bus->dev, "Request nhlt fw failed, continuing..\n");
+		goto nhlt_continue;
+	}
+
+	skl->nhlt = devm_kzalloc(&pci->dev, nhlt_fw->size, GFP_KERNEL);
+	if (skl->nhlt == NULL)
+		return -ENOMEM;
+	memcpy(skl->nhlt, nhlt_fw->data, nhlt_fw->size);
+	release_firmware(nhlt_fw);
+
+nhlt_continue:
+#endif
+	skl_nhlt_update_topology_bin(skl);
 
 	pci_set_drvdata(skl->pci, ebus);
 #if 0
