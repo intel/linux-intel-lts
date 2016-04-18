@@ -125,7 +125,7 @@ static int __init intel_pram_init(void)
 
 	return register_pram_dev(pramt->addr, pramt->size);
 }
-device_initcall(intel_pram_init);
+postcore_initcall(intel_pram_init);
 
 static void __exit intel_pram_exit(void)
 {
