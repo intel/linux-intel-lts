@@ -30,7 +30,7 @@
 #include "skl-sst-ipc.h"
 #include "skl-sdw-pcm.h"
 #include "skl-fwlog.h"
-#include "skl-compress.h"
+#include "skl-probe.h"
 
 #define HDA_MONO 1
 #define HDA_STEREO 2
@@ -1635,6 +1635,29 @@ static int skl_populate_modules(struct skl *skl)
 
 	return ret;
 }
+static int skl_get_probe_widget(struct snd_soc_platform *platform,
+							struct skl *skl)
+{
+	struct skl_probe_config *pconfig = &skl->skl_sst->probe_config;
+	struct snd_soc_dapm_widget *w;
+
+	list_for_each_entry(w, &platform->component.card->widgets, list) {
+		if (is_skl_dsp_widget_type(w) &&
+				(strstr(w->name, "probe") != NULL)) {
+			pconfig->w = w;
+
+			dev_dbg(platform->dev, "widget type=%d name=%s\n",
+							w->id, w->name);
+			break;
+		}
+	}
+
+	pconfig->probe_count = 0;
+	pconfig->no_injector = 6;
+	pconfig->no_extractor = 8;
+
+	return 0;
+}
 
 static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 {
@@ -1670,6 +1693,7 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 		skl_populate_modules(skl);
 		skl->skl_sst->update_d0i3c = skl_update_d0i3c;
 		skl_dsp_enable_notification(skl->skl_sst, false);
+		skl_get_probe_widget(platform, skl);
 	}
 	pm_runtime_mark_last_busy(platform->dev);
 	pm_runtime_put_autosuspend(platform->dev);

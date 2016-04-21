@@ -92,7 +92,7 @@ void skl_tplg_d0i3_put(struct skl *skl, enum d0i3_capability caps)
  * SKL DSP driver modelling uses only few DAPM widgets so for rest we will
  * ignore. This helpers checks if the SKL driver handles this widget type
  */
-static int is_skl_dsp_widget_type(struct snd_soc_dapm_widget *w)
+int is_skl_dsp_widget_type(struct snd_soc_dapm_widget *w)
 {
 	switch (w->id) {
 	case snd_soc_dapm_dai_link:
@@ -463,12 +463,111 @@ static void skl_tplg_update_module_params(struct snd_soc_dapm_widget *w,
 	skl_dump_mconfig(ctx, m_cfg);
 }
 
+int skl_get_probe_index(struct snd_soc_dai *dai,
+				struct skl_probe_config *pconfig)
+{
+	int i, ret = -1;
+	char pos[4];
+
+	for (i = 0; i < pconfig->no_injector; i++) {
+		snprintf(pos, 4, "%d", i);
+		if (strstr(dai->name, pos))
+			return i;
+	}
+	return ret;
+}
+
+int skl_tplg_attach_probe_dma(struct snd_soc_dapm_widget *w,
+					struct skl_sst *ctx, struct snd_soc_dai *dai)
+{
+	int i, ret;
+	struct skl_module_cfg *mconfig = w->priv;
+	struct skl_attach_probe_dma ad;
+	struct skl_probe_config *pconfig = &ctx->probe_config;
+
+	if ((i = skl_get_probe_index(dai, pconfig)) != -1) {
+		ad.node_id.node.vindex = pconfig->iprobe[i].dma_id;
+		ad.node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
+		ad.node_id.node.rsvd = 0;
+		ad.dma_buff_size = 1536;/* TODO:Configure based on calculation*/
+	}
+
+	ret = skl_set_module_params(ctx, (u32 *)&ad,
+			sizeof(struct skl_attach_probe_dma), 1, mconfig);
+	return ret;
+
+}
+
+int skl_tplg_set_probe_params(struct snd_soc_dapm_widget *w,
+					struct skl_sst *ctx, int direction,
+					struct snd_soc_dai *dai)
+{
+	int i, ret = 0, n = 0;
+	struct skl_module_cfg *mconfig = w->priv;
+	const struct snd_kcontrol_new *k;
+	struct soc_bytes_ext *sb;
+	struct skl_probe_data *bc;
+	struct skl_probe_config *pconfig = &ctx->probe_config;
+	struct probe_pt_param prb_pt_param[8] = {{0}};
+
+	if (direction == SND_COMPRESS_PLAYBACK) {
+
+		/* only one injector point can be set at a time*/
+		n = skl_get_probe_index(dai, pconfig);
+		k = &w->kcontrol_news[pconfig->no_extractor + n];
+
+		if (k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK) {
+			sb = (void *) k->private_value;
+			bc = (struct skl_probe_data *)sb->dobj.private;
+			pr_debug("bc->is_ext_inj = %d, bc->params = %d, bc->is_connect = %d \n",
+						bc->is_ext_inj, bc->params, bc->is_connect);
+			if (!(bc->is_ext_inj == SKL_PROBE_INJECT ||
+					bc->is_ext_inj == SKL_PROBE_INJECT_REEXTRACT))
+				return -EINVAL;
+
+			prb_pt_param[0].params = (int)bc->params;
+			prb_pt_param[0].connection = bc->is_ext_inj;
+			prb_pt_param[0].node_id =  pconfig->iprobe[n].dma_id;
+			ret = skl_set_module_params(ctx, (void *)prb_pt_param, sizeof(struct probe_pt_param),
+							bc->is_connect, mconfig);
+		}
+
+	} else if (direction == SND_COMPRESS_CAPTURE) {
+
+		/*multiple extractor points can be set simultaneously*/
+		for (i = 0; i < pconfig->no_extractor; i++) {
+			k = &w->kcontrol_news[i];
+			if (k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK) {
+				sb = (void *) k->private_value;
+				bc = (struct skl_probe_data *)sb->dobj.private;
+
+				pr_debug("bc->is_ext_inj = %d, bc->params = %d, bc->is_connect = %d \n",
+							bc->is_ext_inj, bc->params, bc->is_connect);
+				if (bc->is_ext_inj == SKL_PROBE_EXTRACT &&
+						pconfig->eprobe[i].set == 1) {
+					pr_debug("Retrieving the exractor params \n");
+					prb_pt_param[n].params = (int)bc->params;
+					prb_pt_param[n].connection = bc->is_ext_inj;
+					prb_pt_param[n].node_id = -1;
+					n++;
+				}
+			}
+		}
+
+		if (n > 0)
+			ret = skl_set_module_params(ctx, (void *)prb_pt_param, n * sizeof(struct probe_pt_param),
+						SKL_PROBE_CONNECT, mconfig);
+
+	}
+	return ret;
+}
+
 /*
  * some modules can have multiple params set from user control and
  * need to be set after module is initialized. If set_param flag is
  * set module params will be done after module is initialised.
  */
-static int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
+int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
 						struct skl_sst *ctx)
 {
 	int i, ret;
