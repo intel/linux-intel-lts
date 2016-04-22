@@ -178,6 +178,9 @@ i915_param_named(gvt_workload_priority, int, 0600,
 		"Set GVT-g workload priority, (range: (-1023, 1023), default: 0, "
 		"more positive value means higher priority).");
 
+i915_param_named(enable_initial_modeset, bool, 0400,
+		"Do initial modeset (default : false)");
+
 i915_param_named(domain_scaler_owner, int, 0400,
         "scaler owners for each domain and for each pipe ids can be from 0-F");
 
