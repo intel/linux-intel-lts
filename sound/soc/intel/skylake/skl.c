@@ -439,7 +439,13 @@ static int skl_free(struct hdac_ext_bus *ebus)
 static struct sst_acpi_mach sst_cnl_devdata[] = {
 	{
 		.id = "dummy",
+#ifdef CONFIG_SND_SOC_INTEL_CNL_WM8281_MACH
 		.drv_name = "cnl_florida",
+#elif CONFIG_SND_SOC_SVFPGA
+		.drv_name = "cnl_svfpga",
+#elif CONFIG_SND_SOC_INTEL_CNL_CS42L42_MACH
+		.drv_name = "cnl_cs42l42",
+#endif
 		.fw_filename = "intel/dsp_fw_cnl.bin",
 	},
 };
