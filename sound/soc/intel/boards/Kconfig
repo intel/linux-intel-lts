@@ -306,6 +306,17 @@ config SND_SOC_INTEL_CNL_CS42L42_MACH
 	   Say Y or m if you have such a device. This is a recommended option.
 	   If unsure select "N".
 
+config SND_SOC_INTEL_CNL_SVFPGA_MACH
+        tristate "Cannonlake with SVFPGA PDM SDW mode"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	select SND_SOC_SVFPGA
+	select SND_SOC_DMIC
+        help
+	   This adds support for ASoC SVFPGA PDM codec SDW machine driver. This
+	   will create an alsa sound card for SVFPGA.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
 endif ## SND_SOC_INTEL_SKYLAKE
 
 endif ## SND_SOC_INTEL_MACH
