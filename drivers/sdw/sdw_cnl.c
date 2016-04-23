@@ -403,15 +403,19 @@ static int sdw_pdm_pdi_init(struct cnl_sdw *sdw)
 				CNL_PDMSCAP_CPSS_MASK;
 	for (i = 0; i < sdw->num_pdm_streams; i++) {
 		sdw->pdm_streams[i].ch_cnt = pdm_ch_count;
-		sdw->pdm_streams[i].pdi_num = i;
+		sdw->pdm_streams[i].pdi_num = i + SDW_CNL_PDM_PDI_NUM_OFFSET;
+		sdw->pdm_streams[i].allocated = false;
 	}
 	for (i = 0; i < sdw->num_in_pdm_streams; i++) {
 		sdw->in_pdm_streams[i].ch_cnt = pdm_ch_count;
-		sdw->in_pdm_streams[i].pdi_num = i;
+		sdw->in_pdm_streams[i].pdi_num = i + SDW_CNL_PDM_PDI_NUM_OFFSET;
+		sdw->in_pdm_streams[i].allocated = false;
 	}
 	for (i = 0; i < sdw->num_out_pdm_streams; i++) {
 		sdw->out_pdm_streams[i].ch_cnt = pdm_ch_count;
-		sdw->out_pdm_streams[i].pdi_num = i;
+		sdw->out_pdm_streams[i].pdi_num =
+					i + SDW_CNL_PDM_PDI_NUM_OFFSET;
+		sdw->out_pdm_streams[i].allocated = false;
 	}
 	return 0;
 }
@@ -624,9 +628,11 @@ static int sdw_alloc_pcm_stream(struct cnl_sdw *sdw,
 static int sdw_alloc_pdm_stream(struct cnl_sdw *sdw,
 			struct cnl_sdw_port *port, int ch_cnt, int direction)
 {
-int num_pdm_streams;
+	int num_pdm_streams;
 	struct cnl_sdw_pdi_stream *stream;
 	int i;
+	unsigned int port_ctrl_offset, pdi_config_offset;
+	unsigned int port_ctrl = 0, pdi_config = 0, channel_mask;
 
 	/* Currently PDM supports either Input or Output Streams */
 	if (direction == SDW_DATA_DIR_IN) {
@@ -648,6 +654,27 @@ int num_pdm_streams;
 	mutex_unlock(&sdw->stream_lock);
 	if (!port->pdi_stream)
 		return -EINVAL;
+	/* If direction is input, port is sink port*/
+	if (direction ==  SDW_DATA_DIR_IN)
+		port_ctrl |= (PORTCTRL_PORT_DIRECTION_MASK <<
+				PORTCTRL_PORT_DIRECTION_SHIFT);
+	else
+		port_ctrl &= ~(PORTCTRL_PORT_DIRECTION_MASK <<
+				PORTCTRL_PORT_DIRECTION_SHIFT);
+
+	port_ctrl_offset =  SDW_CNL_PORTCTRL + (port->port_num *
+				SDW_CNL_PORT_REG_OFFSET);
+	cnl_sdw_reg_writel(sdw->data.sdw_regs, port_ctrl_offset, port_ctrl);
+
+	pdi_config |= ((port->port_num & PDINCONFIG_PORT_NUMBER_MASK) <<
+			PDINCONFIG_PORT_NUMBER_SHIFT);
+
+	channel_mask = (1 << ch_cnt) - 1;
+	pdi_config |= (channel_mask << PDINCONFIG_CHANNEL_MASK_SHIFT);
+	/* TODO: Remove below hardcodings */
+	pdi_config_offset =  (SDW_CNL_PDINCONFIG0 + (stream[i].pdi_num * 16));
+	cnl_sdw_reg_writel(sdw->data.sdw_regs, pdi_config_offset, pdi_config);
+
 	return 0;
 }
 
