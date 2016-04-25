@@ -85,37 +85,22 @@ struct sst_dsp_device;
 
 /* Core Reset - asserted high */
 #define CNL_ADSPCS_CRST_SHIFT	0
-#define CNL_ADSPCS_CRST_MASK	(CNL_DSP_CORES_MASK << CNL_ADSPCS_CRST_SHIFT)
-#define CNL_ADSPCS_CRST(x)	((x << CNL_ADSPCS_CRST_SHIFT) &		\
-					CNL_ADSPCS_CRST_MASK)
-#define CNL_ADSPCS_CRST_MASK1	(1 << CNL_ADSPCS_CRST_SHIFT)
-#define CNL_ADSPCS_CRST1(x)	((x << CNL_ADSPCS_CRST_SHIFT) &		\
-					CNL_ADSPCS_CRST_MASK1)
+#define CNL_ADSPCS_CRST(x)	(x << CNL_ADSPCS_CRST_SHIFT)
 
 /* Core run/stall - when set to '1' core is stalled */
 #define CNL_ADSPCS_CSTALL_SHIFT	8
-#define CNL_ADSPCS_CSTALL_MASK	(CNL_DSP_CORES_MASK <<	\
-					CNL_ADSPCS_CSTALL_SHIFT)
-#define CNL_ADSPCS_CSTALL(x)	((x << CNL_ADSPCS_CSTALL_SHIFT) &	\
-				CNL_ADSPCS_CSTALL_MASK)
-#define CNL_ADSPCS_CSTALL_MASK1	(1 << CNL_ADSPCS_CSTALL_SHIFT)
-#define CNL_ADSPCS_CSTALL1(x)	((x << CNL_ADSPCS_CSTALL_SHIFT) &	\
-				CNL_ADSPCS_CSTALL_MASK1)
+#define CNL_ADSPCS_CSTALL(x)	(x << CNL_ADSPCS_CSTALL_SHIFT)
 
 /* Set Power Active - when set to '1' turn cores on */
 #define CNL_ADSPCS_SPA_SHIFT	16
-#define CNL_ADSPCS_SPA_MASK	(CNL_DSP_CORES_MASK << CNL_ADSPCS_SPA_SHIFT)
-#define CNL_ADSPCS_SPA(x)	((x << CNL_ADSPCS_SPA_SHIFT) &		\
-					CNL_ADSPCS_SPA_MASK)
+#define CNL_ADSPCS_SPA(x)	(x << CNL_ADSPCS_SPA_SHIFT)
 
 /* Current Power Active - power status of cores, set by hardware */
 #define CNL_ADSPCS_CPA_SHIFT	24
-#define CNL_ADSPCS_CPA_MASK	(CNL_DSP_CORES_MASK << CNL_ADSPCS_CPA_SHIFT)
-#define CNL_ADSPCS_CPA(x)	((x << CNL_ADSPCS_CPA_SHIFT) &		\
-					CNL_ADSPCS_CPA_MASK)
+#define CNL_ADSPCS_CPA(x)	(x << CNL_ADSPCS_CPA_SHIFT)
 
-int cnl_dsp_enable_core(struct sst_dsp *ctx);
-int cnl_dsp_disable_core(struct sst_dsp *ctx);
+int cnl_dsp_enable_core(struct sst_dsp *ctx, unsigned core);
+int cnl_dsp_disable_core(struct sst_dsp *ctx, unsigned core);
 irqreturn_t cnl_dsp_sst_interrupt(int irq, void *dev_id);
 void cnl_dsp_free(struct sst_dsp *dsp);
 

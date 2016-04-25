@@ -32,189 +32,183 @@
 #define CNL_DSP_PD_TO		50
 #define CNL_DSP_RESET_TO	50
 
-static int cnl_dsp_core_set_reset_state(struct sst_dsp  *ctx)
+static int cnl_dsp_core_set_reset_state(struct sst_dsp *ctx, unsigned core)
 {
 	int ret;
 
 	/* update bits */
 	sst_dsp_shim_update_bits_unlocked(ctx,
-			CNL_ADSP_REG_ADSPCS, CNL_ADSPCS_CRST_MASK,
-			CNL_ADSPCS_CRST(CNL_DSP_CORES_MASK));
+			CNL_ADSP_REG_ADSPCS, CNL_ADSPCS_CRST(core),
+			CNL_ADSPCS_CRST(core));
 
 	/* poll with timeout to check if operation successful */
 	ret = sst_dsp_register_poll(ctx,
 			CNL_ADSP_REG_ADSPCS,
-			CNL_ADSPCS_CRST_MASK,
-			CNL_ADSPCS_CRST(CNL_DSP_CORES_MASK),
+			CNL_ADSPCS_CRST(core),
+			CNL_ADSPCS_CRST(core),
 			CNL_DSP_RESET_TO,
 			"Set reset");
 	if ((sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_ADSPCS) &
-				CNL_ADSPCS_CRST(CNL_DSP_CORES_MASK)) !=
-				CNL_ADSPCS_CRST(CNL_DSP_CORES_MASK)) {
-		dev_err(ctx->dev, "Set reset state failed\n");
+				CNL_ADSPCS_CRST(core)) !=
+				CNL_ADSPCS_CRST(core)) {
+		dev_err(ctx->dev, "DSP core %#x set reset state failed\n",
+								core);
 		ret = -EIO;
 	}
 
 	return ret;
 }
 
-static int cnl_dsp_core_unset_reset_state(struct sst_dsp  *ctx)
+static int cnl_dsp_core_unset_reset_state(struct sst_dsp *ctx, unsigned core)
 {
 	int ret;
 
 	/* update bits */
 	sst_dsp_shim_update_bits_unlocked(ctx, CNL_ADSP_REG_ADSPCS,
-					CNL_ADSPCS_CRST_MASK1, 0);
+					CNL_ADSPCS_CRST(core), 0);
 
 	/* poll with timeout to check if operation successful */
 	ret = sst_dsp_register_poll(ctx,
 			CNL_ADSP_REG_ADSPCS,
-			CNL_ADSPCS_CRST_MASK1,
+			CNL_ADSPCS_CRST(core),
 			0,
 			CNL_DSP_RESET_TO,
 			"Unset reset");
 
 	if ((sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_ADSPCS) &
-				 CNL_ADSPCS_CRST1(1)) != 0) {
-		dev_err(ctx->dev, "Unset reset state failed\n");
+				 CNL_ADSPCS_CRST(core)) != 0) {
+		dev_err(ctx->dev, "DSP core %#x unset reset state failed\n",
+								core);
 		ret = -EIO;
 	}
 
 	return ret;
 }
 
-static bool is_cnl_dsp_core_enable(struct sst_dsp *ctx)
+static bool is_cnl_dsp_core_enable(struct sst_dsp *ctx, unsigned core)
 {
 	int val;
 	bool is_enable;
 
 	val = sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_ADSPCS);
 
-	is_enable = ((val & CNL_ADSPCS_CPA(CNL_DSP_CORES_MASK)) &&
-			(val & CNL_ADSPCS_SPA(CNL_DSP_CORES_MASK)) &&
-			!(val & CNL_ADSPCS_CRST(CNL_DSP_CORES_MASK)) &&
-			!(val & CNL_ADSPCS_CSTALL(CNL_DSP_CORES_MASK)));
+	is_enable = (val & CNL_ADSPCS_CPA(core)) &&
+			(val & CNL_ADSPCS_SPA(core)) &&
+			!(val & CNL_ADSPCS_CRST(core)) &&
+			!(val & CNL_ADSPCS_CSTALL(core));
 
-	dev_dbg(ctx->dev, "DSP core is enabled=%d\n", is_enable);
 	return is_enable;
 }
 
-static int cnl_dsp_reset_core(struct sst_dsp *ctx)
+static int cnl_dsp_reset_core(struct sst_dsp *ctx, unsigned core)
 {
 	/* stall core */
-	sst_dsp_shim_write_unlocked(ctx, CNL_ADSP_REG_ADSPCS,
-			sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_ADSPCS) &
-			CNL_ADSPCS_CSTALL(CNL_DSP_CORES_MASK));
+	sst_dsp_shim_update_bits_unlocked(ctx, CNL_ADSP_REG_ADSPCS,
+			CNL_ADSPCS_CSTALL(core),
+			CNL_ADSPCS_CSTALL(core));
 
 	/* set reset state */
-	return cnl_dsp_core_set_reset_state(ctx);
+	return cnl_dsp_core_set_reset_state(ctx, core);
 }
 
-static int cnl_dsp_start_core(struct sst_dsp *ctx)
+static int cnl_dsp_start_core(struct sst_dsp *ctx, unsigned core)
 {
 	int ret;
 
 	/* unset reset state */
-	ret = cnl_dsp_core_unset_reset_state(ctx);
+	ret = cnl_dsp_core_unset_reset_state(ctx, core);
 	if (ret < 0) {
-		dev_dbg(ctx->dev, "dsp unset reset failed\n");
+		dev_dbg(ctx->dev, "DSP core %#x unset reset failed\n", core);
 		return ret;
 	}
 
 	/* run core */
-	dev_dbg(ctx->dev, "Unstalling core...\n");
-	/* FIXME Unstalling only one core out of 4 cores for CNL */
-	sst_dsp_shim_write_unlocked(ctx, CNL_ADSP_REG_ADSPCS,
-			 sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_ADSPCS) &
-				~CNL_ADSPCS_CSTALL1(1));
-	dev_dbg(ctx->dev, "FW Poll Status: reg=0x%#x\n",
-		sst_dsp_shim_read(ctx, CNL_ADSP_REG_ADSPCS));
+	sst_dsp_shim_update_bits_unlocked(ctx, CNL_ADSP_REG_ADSPCS,
+				CNL_ADSPCS_CSTALL(core), 0);
 
-	/* FIXME Disabling this check since we unstalled only one core */
-
-	/* if (!is_cnl_dsp_core_enable(ctx)) {
-		cnl_dsp_reset_core(ctx);
-		dev_err(ctx->dev, "DSP core enable failed\n");
+	if (!is_cnl_dsp_core_enable(ctx, core)) {
+		cnl_dsp_reset_core(ctx, core);
+		dev_err(ctx->dev, "DSP core %#x enable failed\n", core);
 		ret = -EIO;
-	} */
+	}
 
 	return ret;
 }
 
-static int cnl_dsp_core_power_up(struct sst_dsp  *ctx)
+static int cnl_dsp_core_power_up(struct sst_dsp *ctx, unsigned core)
 {
 	int ret;
 
 	/* update bits */
 	sst_dsp_shim_update_bits_unlocked(ctx, CNL_ADSP_REG_ADSPCS,
-		CNL_ADSPCS_SPA_MASK, CNL_ADSPCS_SPA(CNL_DSP_CORES_MASK));
+		CNL_ADSPCS_SPA(core), CNL_ADSPCS_SPA(core));
 
 	/* poll with timeout to check if operation successful */
 	ret = sst_dsp_register_poll(ctx,
 			CNL_ADSP_REG_ADSPCS,
-			CNL_ADSPCS_CPA_MASK,
-			CNL_ADSPCS_CPA(CNL_DSP_CORES_MASK),
+			CNL_ADSPCS_CPA(core),
+			CNL_ADSPCS_CPA(core),
 			CNL_DSP_PU_TO,
 			"Power up");
 
 	if ((sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_ADSPCS) &
-			CNL_ADSPCS_CPA(CNL_DSP_CORES_MASK)) !=
-			CNL_ADSPCS_CPA(CNL_DSP_CORES_MASK)) {
-		dev_err(ctx->dev, "DSP core power up failed\n");
+			CNL_ADSPCS_CPA(core)) !=
+			CNL_ADSPCS_CPA(core)) {
+		dev_err(ctx->dev, "DSP core %#x power up failed\n", core);
 		ret = -EIO;
 	}
 
 	return ret;
 }
 
-static int cnl_dsp_core_power_down(struct sst_dsp  *ctx)
+static int cnl_dsp_core_power_down(struct sst_dsp *ctx, unsigned core)
 {
 	/* update bits */
 	sst_dsp_shim_update_bits_unlocked(ctx, CNL_ADSP_REG_ADSPCS,
-					CNL_ADSPCS_SPA_MASK, 0);
+					CNL_ADSPCS_SPA(core), 0);
 
 	/* poll with timeout to check if operation successful */
 	return sst_dsp_register_poll(ctx,
 			CNL_ADSP_REG_ADSPCS,
-			CNL_ADSPCS_CPA_MASK,
+			CNL_ADSPCS_CPA(core),
 			0,
 			CNL_DSP_PD_TO,
 			"Power down");
 }
 
-int cnl_dsp_enable_core(struct sst_dsp *ctx)
+int cnl_dsp_enable_core(struct sst_dsp *ctx, unsigned core)
 {
 	int ret;
 
 	/* power up */
-	ret = cnl_dsp_core_power_up(ctx);
+	ret = cnl_dsp_core_power_up(ctx, core);
 	if (ret < 0) {
-		dev_dbg(ctx->dev, "dsp core power up failed\n");
+		dev_dbg(ctx->dev, "DSP core %#x power up failed", core);
 		return ret;
 	}
 
-	return cnl_dsp_start_core(ctx);
+	return cnl_dsp_start_core(ctx, core);
 }
 
-int cnl_dsp_disable_core(struct sst_dsp *ctx)
+int cnl_dsp_disable_core(struct sst_dsp *ctx, unsigned core)
 {
 	int ret;
 
-	ret = cnl_dsp_reset_core(ctx);
+	ret = cnl_dsp_reset_core(ctx, core);
 	if (ret < 0) {
-		dev_err(ctx->dev, "dsp core reset failed\n");
+		dev_err(ctx->dev, "DSP core %#x reset failed\n", core);
 		return ret;
 	}
 
 	/* power down core*/
-	ret = cnl_dsp_core_power_down(ctx);
+	ret = cnl_dsp_core_power_down(ctx, core);
 	if (ret < 0) {
-		dev_err(ctx->dev, "dsp core power down failed\n");
+		dev_err(ctx->dev, "DSP core %#x power down failed\n", core);
 		return ret;
 	}
 
-	if (is_cnl_dsp_core_enable(ctx)) {
-		dev_err(ctx->dev, "DSP core disable failed\n");
+	if (is_cnl_dsp_core_enable(ctx, core)) {
+		dev_err(ctx->dev, "DSP core %#x disable failed\n", core);
 		ret = -EIO;
 	}
 
@@ -252,6 +246,6 @@ void cnl_dsp_free(struct sst_dsp *dsp)
 	cnl_ipc_int_disable(dsp);
 
 	free_irq(dsp->irq, dsp);
-	cnl_dsp_disable_core(dsp);
+	cnl_dsp_disable_core(dsp, SKL_DSP_CORE_MASK(0));
 }
 EXPORT_SYMBOL_GPL(cnl_dsp_free);

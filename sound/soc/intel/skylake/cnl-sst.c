@@ -175,7 +175,7 @@ static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata,
 			CNL_ADSP_REG_HIPCIDR_BUSY |
 			CNL_IPC_PURGE_FW | (stream_tag - 1));
 
-	ret = cnl_dsp_enable_core(ctx);
+	ret = cnl_dsp_enable_core(ctx, SKL_DSP_CORE_MASK(0));
 	if (ret < 0) {
 		dev_err(ctx->dev, "Boot dsp core failed ret: %d\n", ret);
 		ret = -EIO;
@@ -225,7 +225,7 @@ static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata,
 
 	return 0;
 base_fw_load_failed:
-	cnl_dsp_disable_core(ctx);
+	cnl_dsp_disable_core(ctx, SKL_DSP_CORE_MASK(0));
 	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, stream_tag);
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
 	cnl_fpga_free_imr(ctx);
@@ -289,7 +289,7 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
 					msecs_to_jiffies(SKL_IPC_BOOT_MSECS));
 		if (ret == 0) {
 			dev_err(ctx->dev, "DSP boot failed, FW Ready timed-out\n");
-			cnl_dsp_disable_core(ctx);
+			cnl_dsp_disable_core(ctx, SKL_DSP_CORE_MASK(0));
 			ret = -EIO;
 		} else {
 			ret = 0;
@@ -307,30 +307,52 @@ static int cnl_set_dsp_D0(struct sst_dsp *ctx, unsigned int core_id)
 {
 	int ret = 0;
 	struct skl_sst *cnl = ctx->thread_context;
+	unsigned core_mask = SKL_DSP_CORE_MASK(core_id);
+	struct skl_ipc_dxstate_info dx;
 
 	cnl->boot_complete = false;
 
-	ret = cnl_dsp_enable_core(ctx);
+	ret = cnl_dsp_enable_core(ctx, core_mask);
 	if (ret < 0) {
-		dev_err(ctx->dev, "enable dsp core failed: %d\n", ret);
+		dev_err(ctx->dev, "enable DSP core %d failed: %d\n",
+			core_id, ret);
 		return ret;
 	}
 
-	/* enable interrupt */
-	cnl_ipc_int_enable(ctx);
-	cnl_ipc_op_int_enable(ctx);
+	if (core_id == 0) {
+		/* enable interrupt */
+		cnl_ipc_int_enable(ctx);
+		cnl_ipc_op_int_enable(ctx);
 
-	ret = wait_event_timeout(cnl->boot_wait, cnl->boot_complete,
+		ret = wait_event_timeout(cnl->boot_wait, cnl->boot_complete,
 					msecs_to_jiffies(SKL_IPC_BOOT_MSECS));
-	if (ret == 0) {
-		dev_err(ctx->dev, "DSP boot timeout: 0x%x\n",
-			sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_FW_STATUS));
-		cnl_dsp_disable_core(ctx);
-		return -EIO;
+		if (ret == 0) {
+			dev_err(ctx->dev,
+				"DSP boot timeout: Status=%#x Error=%#x\n",
+				sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_FW_STATUS),
+				sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_ERROR_CODE));
+			goto err;
+		}
+	} else {
+		dx.core_mask = core_mask;
+		dx.dx_mask = core_mask;
+
+		ret = skl_ipc_set_dx(&cnl->ipc,
+				     CNL_INSTANCE_ID,
+				     CNL_BASE_FW_MODULE_ID,
+				     &dx);
+		if (ret < 0) {
+			dev_err(ctx->dev, "Failed to set DSP core %d to D0\n",
+								core_id);
+			goto err;
+		}
 	}
 
 	skl_dsp_set_state_locked(ctx, SKL_DSP_RUNNING);
 	return 0;
+err:
+	cnl_dsp_disable_core(ctx, core_mask);
+	return ret;
 }
 
 static int cnl_set_dsp_D3(struct sst_dsp *ctx, unsigned int core_id)
@@ -338,30 +360,24 @@ static int cnl_set_dsp_D3(struct sst_dsp *ctx, unsigned int core_id)
 	int ret;
 	struct skl_ipc_dxstate_info dx;
 	struct skl_sst *cnl = ctx->thread_context;
+	unsigned core_mask = SKL_DSP_CORE_MASK(core_id);
 
-	dev_dbg(ctx->dev, "In %s:\n", __func__);
-	mutex_lock(&ctx->mutex);
-	if (!is_skl_dsp_running(ctx)) {
-		mutex_unlock(&ctx->mutex);
-		return 0;
-	}
-	mutex_unlock(&ctx->mutex);
-
-	dx.core_mask = CNL_DSP_CORES_MASK;
+	dx.core_mask = core_mask;
 	dx.dx_mask = SKL_IPC_D3_MASK;
 	ret = skl_ipc_set_dx(&cnl->ipc,
 			     CNL_INSTANCE_ID,
 			     CNL_BASE_FW_MODULE_ID,
 			     &dx);
-	if (ret < 0) {
-		dev_err(ctx->dev, "Failed to set DSP to D3 state\n");
-		return ret;
-	}
+	if (ret < 0)
+		dev_err(ctx->dev,
+			"Failed to set DSP core %d to D3; continue reset\n",
+			core_id);
 
-	ret = cnl_dsp_disable_core(ctx);
+	ret = cnl_dsp_disable_core(ctx, core_mask);
 	if (ret < 0) {
-		dev_err(ctx->dev, "disable dsp core failed: %d\n", ret);
-		ret = -EIO;
+		dev_err(ctx->dev, "Disable DSP core %d failed: %d\n",
+			core_id, ret);
+		return -EIO;
 	}
 
 	cnl->cores.state[core_id] = SKL_DSP_RESET;
