@@ -524,6 +524,8 @@ static void sdw_free_slv_number(struct sdw_master *mstr,
 	sdw_unlock_mstr(mstr);
 }
 
+
+int count;
 static int sdw_register_slave(struct sdw_master *mstr)
 {
 	int ret = 0, i, ports;
@@ -635,6 +637,7 @@ static int sdw_register_slave(struct sdw_master *mstr)
 		sdw_unlock_mstr(mstr);
 
 	}
+	count++;
 	return 0;
 program_slv_failed:
 	device_unregister(&sdw_slv->dev);
