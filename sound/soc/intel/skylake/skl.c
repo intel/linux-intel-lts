@@ -445,6 +445,8 @@ static struct sst_acpi_mach sst_cnl_devdata[] = {
 		.drv_name = "cnl_svfpga",
 #elif CONFIG_SND_SOC_INTEL_CNL_CS42L42_MACH
 		.drv_name = "cnl_cs42l42",
+#elif CONFIG_SND_SOC_MXFPGA
+		.drv_name = "cnl_mxfpga",
 #endif
 		.fw_filename = "intel/dsp_fw_cnl.bin",
 	},
