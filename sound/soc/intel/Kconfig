@@ -79,6 +79,26 @@ config SND_SOC_INTEL_BXT_DA7219_MAX98357A_MACH
 	   This adds support for ASoC machine driver for Broxton-P platforms
 	   with DA7219 + MAX98357A I2S audio codec.
 	   Say Y if you have such a device.
+
+config SND_SOC_INTEL_BXT_FLORIDA_MACH
+	tristate "ASoC Audio driver for Broxton with FLORIDA codec"
+	depends on X86 && ACPI && I2C
+	select SND_SOC_INTEL_SST
+	select SND_SOC_INTEL_SKYLAKE
+	select SND_SOC_DMIC
+	select SND_SOC_HDAC_HDMI
+	select SND_HDA_DSP_LOADER
+	select SND_SOC_WM_ADSP
+        select SND_SOC_ARIZONA
+        select SND_SOC_WM8998
+        select MFD_ARIZONA_I2C
+        select MFD_WM8998
+        select REGULATOR_ARIZONA
+        select GPIO_ARIZONA
+	help
+	   This adds support for ASoC machine driver for Broxton platforms
+	   with WM Florida I2S audio codec.
+	   Say Y if you have such a device
 	   If unsure select "N".
 
 config SND_SOC_INTEL_BXT_RT298_MACH
