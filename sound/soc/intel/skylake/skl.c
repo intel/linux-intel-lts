@@ -823,6 +823,11 @@ static struct sst_acpi_mach sst_kbl_devdata[] = {
 	{}
 };
 
+static struct sst_acpi_mach sst_bxtm_devdata[] = {
+	{ "INT34E0", "mrgfld_florida", "intel/dsp_fw_bxtn.bin", NULL, NULL, NULL },
+	{}
+};
+
 /* PCI IDs */
 static const struct pci_device_id skl_ids[] = {
 	/* Sunrise Point-LP */
@@ -834,6 +839,9 @@ static const struct pci_device_id skl_ids[] = {
 	/* KBL */
 	{ PCI_DEVICE(0x8086, 0x9D71),
 		.driver_data = (unsigned long)&sst_kbl_devdata},
+	/* BXT-M */
+	{ PCI_DEVICE(0x8086, 0x1a98),
+		.driver_data = (unsigned long)&sst_bxtm_devdata},
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, skl_ids);
