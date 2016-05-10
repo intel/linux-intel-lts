@@ -408,6 +408,15 @@ static void _bxt_ddi_phy_init(struct drm_i915_private *dev_priv,
 		DRM_ERROR("timeout during PHY%d power on\n", phy);
 	}
 
+	/*
+	 * HW team confirmed that the time to reach phypowergood status is
+	 * anywhere between 50 us and 100us.
+	 *
+	 * Keep this sleep because the phy initialization might fail
+	 * without it
+	 */
+	usleep_range(100, 120);
+
 	/* Program PLL Rcomp code offset */
 	val = I915_READ(BXT_PORT_CL1CM_DW9(phy));
 	val &= ~IREF0RC_OFFSET_MASK;
