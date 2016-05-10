@@ -684,6 +684,8 @@ static int skl_probe(struct pci_dev *pci,
 	skl_dmic_data.dmic_num = skl_get_dmic_geo(skl);
 
 	/* check if dsp is there */
+	WARN_ON(!bus->ppcap);
+
 	if (bus->ppcap) {
 		err = skl_machine_device_register(skl,
 				  (void *)pci_id->driver_data);
