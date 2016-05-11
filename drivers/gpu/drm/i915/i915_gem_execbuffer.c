@@ -1133,7 +1133,7 @@ i915_gem_execbuffer_move_to_gpu(struct drm_i915_gem_request *req,
 static bool
 i915_gem_check_execbuffer(struct drm_i915_gem_execbuffer2 *exec)
 {
-	if (exec->flags & __I915_EXEC_UNKNOWN_FLAGS)
+	if (exec->flags & I915_EXEC_UNKNOWN_FLAGS)
 		return false;
 
 	/* Kernel clipping was a DRI1 misfeature */

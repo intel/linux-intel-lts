@@ -913,6 +913,18 @@ struct drm_i915_gem_execbuffer2 {
 
 #define __I915_EXEC_UNKNOWN_FLAGS (-(I915_EXEC_FENCE_OUT<<1))
 
+/** Private (not upstreamed) exec flags start from 24
+ * this helps to avoid conflict with new upstream values
+ */
+#define I915_EXEC_PRIVATE_FLAGS_START	(1<<24)
+
+#define I915_EXEC_PRIVATE_FLAGS_END	(1<<25)
+#define __I915_EXEC_PRIVATE_FLAGS_MASK \
+	((-I915_EXEC_PRIVATE_FLAGS_START) & ~(-I915_EXEC_PRIVATE_FLAGS_END))
+
+#define I915_EXEC_UNKNOWN_FLAGS \
+	(__I915_EXEC_UNKNOWN_FLAGS & ~__I915_EXEC_PRIVATE_FLAGS_MASK)
+
 #define I915_EXEC_CONTEXT_ID_MASK	(0xffffffff)
 #define i915_execbuffer2_set_context_id(eb2, context) \
 	(eb2).rsvd1 = context & I915_EXEC_CONTEXT_ID_MASK
