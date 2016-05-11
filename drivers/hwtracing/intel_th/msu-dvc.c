@@ -432,14 +432,14 @@ static int mdd_setup_transfer_data(struct msu_dvc_dev *mdd)
 	}
 
 	mdd->tdata.block_count = msc_max_blocks(mdd->th_dev);
-	if (mdd->tdata.block_count <= 0) {
+	if (mdd->tdata.block_count == 0) {
 		mdd_err(mdd, "Invalid block count %zu\n",
 			mdd->tdata.block_count);
 		goto err;
 	}
 
 	mdd->tdata.block_size = msc_block_max_size(mdd->th_dev);
-	if (mdd->tdata.block_size <= 0) {
+	if (mdd->tdata.block_size == 0) {
 		mdd_err(mdd, "Invalid block size %zu\n", mdd->tdata.block_size);
 		goto err;
 	}
@@ -670,19 +670,24 @@ static int mdd_proc_trimmed_blocks(struct msu_dvc_dev *mdd, int nents)
 
 	for_each_sg(mdd->tdata.sg_raw, sg, nents, i) {
 		ptr = sg_virt(sg);
-		len = msc_data_sz((struct msc_block_desc *)ptr) + MSC_BDESC;
+		len = msc_data_sz((struct msc_block_desc *)ptr);
 		if (!len) {
 			mdd_err(mdd, "Zero length block");
-		} else {
-			if (!sg_dest)
-				sg_dest = mdd->tdata.sg_proc;
-			else
-				sg_dest = sg_next(sg_dest);
-			sg_set_buf(sg_dest, ptr, len);
-			out_cnt++;
+			continue;
 		}
+
+		len += MSC_BDESC;
+
+		if (!sg_dest)
+			sg_dest = mdd->tdata.sg_proc;
+		else
+			sg_dest = sg_next(sg_dest);
+		sg_set_buf(sg_dest, ptr, len);
+		out_cnt++;
 	}
-	sg_mark_end(sg_dest);
+	if (sg_dest)
+		sg_mark_end(sg_dest);
+
 	return out_cnt;
 }
 
@@ -713,7 +718,9 @@ static int mdd_proc_stp_only(struct msu_dvc_dev *mdd, int nents)
 			out_cnt++;
 		}
 	}
-	sg_mark_end(sg_dest);
+	if (sg_dest)
+		sg_mark_end(sg_dest);
+
 	return out_cnt;
 }
 
@@ -951,8 +958,10 @@ static struct msu_dvc_dev *mdd_alloc_device(const char *name)
 		return ERR_PTR(-ENOMEM);
 
 	mdd->ddev.name_add = kstrdup(name, GFP_KERNEL);
-	if (!mdd->ddev.name_add)
+	if (!mdd->ddev.name_add) {
+		kfree(mdd);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	/* mdd->ddev.protocol = 0; */
 	/* mdd->ddev.desc = NULL; */
