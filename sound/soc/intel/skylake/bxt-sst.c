@@ -19,6 +19,7 @@
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/device.h>
+#include <asm/cacheflush.h>
 
 #include "../common/sst-dsp.h"
 #include "../common/sst-dsp-priv.h"
@@ -129,6 +130,9 @@ static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
 	ctx->dsp_ops.stream_tag = stream_tag;
 	memcpy(ctx->dmab.area, fwdata, fwsize);
 
+	/* make sure FW is flushed to DDR */
+	clflush_cache_range(ctx->dmab.area, fwsize);
+
 	/* Step 1: Power up core 0 and core1 */
 	ret = skl_dsp_core_power_up(ctx, SKL_DSP_CORE0_MASK |
 				SKL_DSP_CORE_MASK(1));
@@ -138,6 +142,8 @@ static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
 	}
 
 	/* Step 2: Purge FW request */
+
+	/* Purge FW request */
 	sst_dsp_shim_write(ctx, SKL_ADSP_REG_HIPCI, SKL_ADSP_REG_HIPCI_BUSY |
 				(BXT_IPC_PURGE_FW | ((stream_tag - 1) << 9)));
 
