@@ -1410,8 +1410,8 @@ static const struct panel_desc sharp_lq123p1jx31 = {
 	.modes = &sharp_lq123p1jx31_mode,
 	.num_modes = 1,
 	.size = {
-		.width = 259,
-		.height = 173,
+		.width = 2400,
+		.height = 1600,
 	},
 	.delay = {
 		.prepare = 110,
