@@ -1415,6 +1415,7 @@ static void skl_setup_cpr_gateway_cfg(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_cpr_cfg *cpr_mconfig)
 {
+	u32 dma_io_buf;
 	struct skl_module_res *res;
 	int res_idx = mconfig->res_idx;
 	struct skl *skl = get_skl_ctx(ctx->dev);
@@ -1434,10 +1435,27 @@ static void skl_setup_cpr_gateway_cfg(struct skl_sst *ctx,
 		goto skip_buf_size_calc;
 	}
 	
-	if (SKL_CONN_SOURCE == mconfig->hw_conn_type)
-		cpr_mconfig->gtw_cfg.dma_buffer_size = 2 * res->obs;
-	else
-		cpr_mconfig->gtw_cfg.dma_buffer_size = 2 * res->ibs;
+	switch (mconfig->hw_conn_type) {
+	case SKL_CONN_SOURCE:
+		if (mconfig->dev_type == SKL_DEVICE_HDAHOST)
+			dma_io_buf =  res->ibs;
+		else
+			dma_io_buf =  res->obs;
+		break;
+
+	case SKL_CONN_SINK:
+		if (mconfig->dev_type == SKL_DEVICE_HDAHOST)
+			dma_io_buf =  res->obs;
+		else
+			dma_io_buf =  res->ibs;
+		break;
+
+	default: /* This should not occur */
+		dma_io_buf =  res->obs;
+	}
+
+	cpr_mconfig->gtw_cfg.dma_buffer_size =
+					mconfig->dma_buffer_size * dma_io_buf;
 
 skip_buf_size_calc:
 	cpr_mconfig->cpr_feature_mask = 0;
