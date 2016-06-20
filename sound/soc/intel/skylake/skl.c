@@ -627,10 +627,12 @@ static void skl_probe_work(struct work_struct *work)
 	if (!bus->codec_mask)
 		dev_info(bus->dev, "no hda codecs found!\n");
 
+#if 0
 	/* create codec instances */
 	err = skl_codec_create(ebus);
 	if (err < 0)
 		goto out_err;
+#endif
 
 	if (IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)) {
 		err = snd_hdac_display_power(bus, false);
@@ -787,6 +789,7 @@ static int skl_probe(struct pci_dev *pci,
 
 	device_disable_async_suspend(bus->dev);
 
+#if 0
 	skl->nhlt = skl_nhlt_init(bus->dev);
 
 	if (skl->nhlt == NULL) {
@@ -799,10 +802,13 @@ static int skl_probe(struct pci_dev *pci,
 		goto out_nhlt_free;
 
 	skl_nhlt_update_topology_bin(skl);
+#endif
 
 	pci_set_drvdata(skl->pci, ebus);
+#if 0
 
 	skl_dmic_data.dmic_num = skl_get_dmic_geo(skl);
+#endif
 
 	/* check if dsp is there */
 	WARN_ON(!bus->ppcap);
