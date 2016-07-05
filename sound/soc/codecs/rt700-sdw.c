@@ -11,6 +11,7 @@
  * published by the Free Software Foundation.
  *
  */
+#define DEBUG
 
 #include <linux/delay.h>
 #include <linux/sdw_bus.h>
@@ -150,7 +151,7 @@ int hda_to_sdw(unsigned int nid, unsigned int verb, unsigned int payload,
 		unsigned int *sdw_addr_l, unsigned int *sdw_data_l) {
 	unsigned int offset_h, offset_l, e_verb;
 
-	if ((verb & 0xff) != 0) { /* 12 bits command */
+	if (((verb & 0xff) != 0) || verb == 0xf00) { /* 12 bits command */
 		if (verb == 0x7ff) /* special case */
 			offset_h = 0;
 		else
@@ -192,9 +193,9 @@ static int rt700_register_sdw_capabilties(struct sdw_slave *sdw,
 	struct sdw_slv_dpn_capabilities *dpn_cap = NULL;
 	struct port_audio_mode_properties *prop = NULL;
 	unsigned int bus_config_frequencies[] = {
-		2400000, 4800000, 9600000, 3000000, 6000000, 12000000};
+		2400000, 4800000, 9600000, 3000000, 6000000, 12000000, 19200000};
 	unsigned int freq_supported[] = {
-		2400000, 4800000, 9600000, 12000000, 12288000};
+		19200000, 2400000, 4800000, 9600000, 12000000, 12288000};
 	int i, j;
 
 	cap.wake_up_unavailable = false;
@@ -205,8 +206,9 @@ static int rt700_register_sdw_capabilties(struct sdw_slave *sdw,
 	cap.paging_supported = false;
 	cap.bank_delay_support = false;
 	cap.port_15_read_behavior = 1;
-	cap.sdw_dp0_supported = true;
+	cap.sdw_dp0_supported = false;
 	cap.num_of_sdw_ports = 8; /* Inport 4, Outport 4 */
+	cap.scp_impl_def_intr_mask = 0x4;
 	cap.sdw_dp0_cap = devm_kzalloc(&sdw->dev,
 			sizeof(struct sdw_slv_dp0_capabilities), GFP_KERNEL);
 
@@ -221,9 +223,9 @@ static int rt700_register_sdw_capabilties(struct sdw_slave *sdw,
 	/* Address 0x0001, bit 0: port ready, bit 2: BRA failure*/
 	cap.sdw_dp0_cap->imp_def_intr_mask = 0;
 	cap.sdw_dp0_cap->impl_def_bpt_supported = true;
-	cap.sdw_dp0_cap->slave_bra_cap.max_bus_frequency = 12000000;
+	cap.sdw_dp0_cap->slave_bra_cap.max_bus_frequency = 24000000;
 	cap.sdw_dp0_cap->slave_bra_cap.min_bus_frequency = 2400000;
-	cap.sdw_dp0_cap->slave_bra_cap.num_bus_config_frequency = 6;
+	cap.sdw_dp0_cap->slave_bra_cap.num_bus_config_frequency = 7;
 	cap.sdw_dp0_cap->slave_bra_cap.bus_config_frequencies =
 						bus_config_frequencies;
 	cap.sdw_dp0_cap->slave_bra_cap.max_data_per_frame = 470;
@@ -267,10 +269,19 @@ static int rt700_register_sdw_capabilties(struct sdw_slave *sdw,
 				dpn_cap->num_audio_modes), GFP_KERNEL);
 		for (j = 0; j < dpn_cap->num_audio_modes; j++) {
 			prop = &dpn_cap->mode_properties[j];
-			prop->max_frequency = 12288000;
+			prop->max_frequency = 24000000;
 			prop->min_frequency = 2400000;
-			prop->num_freq_configs = 5;
-			prop->freq_supported = freq_supported;
+			prop->num_freq_configs = 0;
+			prop->freq_supported = devm_kzalloc(&sdw->dev,
+						    prop->num_freq_configs *
+						    (sizeof(unsigned int)),
+						    GFP_KERNEL);
+			if (!prop->freq_supported)
+				return -ENOMEM;
+
+			memcpy(prop->freq_supported, freq_supported,
+						    prop->num_freq_configs *
+						    (sizeof(unsigned int)));
 			prop->glitchless_transitions_mask = 0x0;
 			prop->max_sampling_frequency = 192000;
 			prop->min_sampling_frequency = 8000;
@@ -285,15 +296,26 @@ static int rt700_register_sdw_capabilties(struct sdw_slave *sdw,
 static int rt700_sdw_probe(struct sdw_slave *sdw,
 				 const struct sdw_slave_id *sdw_id)
 {
+	struct alc700 *alc700_priv;
 	struct regmap *regmap;
 	int ret;
 
+	alc700_priv = kzalloc(sizeof(struct alc700), GFP_KERNEL);
+	if(!alc700_priv) {
+		return -ENOMEM;
+	}
+	dev_set_drvdata(&sdw->dev, alc700_priv);
+	alc700_priv->sdw = sdw;
+	alc700_priv->params = kzalloc(sizeof(struct sdw_bus_params), GFP_KERNEL);
 	regmap = devm_regmap_init_sdw(sdw, &rt700_sdw_regmap);
 	if (!regmap)
 		return -EINVAL;
 	ret = rt700_register_sdw_capabilties(sdw, sdw_id);
 	if (ret)
 		return ret;
+	ret = sdw_slave_get_bus_params(sdw, alc700_priv->params);
+	if (ret)
+		return -EFAULT;
 	return rt700_probe(&sdw->dev, regmap, sdw);
 }
 
@@ -319,10 +341,28 @@ static const struct sdw_slave_id rt700_id[] = {
 	{"15:02:5d:07:01:00", 0},
 	{"16:02:5d:07:01:00", 0},
 	{"17:02:5d:07:01:00", 0},
+	{"10:02:5d:07:00:01", 0},
 	{}
 };
 
 MODULE_DEVICE_TABLE(sdw, rt700_id);
+
+
+static int rt700_sdw_handle_impl_def_interrupts(struct sdw_slave *swdev,
+		struct sdw_impl_def_intr_stat *intr_status)
+{
+	struct rt700_priv *rt700 = dev_get_drvdata(&swdev->dev);
+	bool hp, mic;
+
+	pr_debug("%s control_port_stat=%x port0_stat=%x\n", __func__,
+		intr_status->control_port_stat, intr_status->port0_stat);
+	if (intr_status->control_port_stat & 0x4) {
+		rt700_jack_detect(rt700, &hp, &mic);
+		pr_info("%s hp=%d mic=%d\n", __func__, hp, mic);
+	}
+
+	return 0;
+}
 
 static struct sdw_slave_driver rt700_sdw_driver = {
 	.driver_type = SDW_DRIVER_TYPE_SLAVE,
@@ -332,6 +372,8 @@ static struct sdw_slave_driver rt700_sdw_driver = {
 		   },
 	.probe = rt700_sdw_probe,
 	.remove = rt700_sdw_remove,
+	.handle_impl_def_interrupts = rt700_sdw_handle_impl_def_interrupts,
+
 	.id_table = rt700_id,
 };
 

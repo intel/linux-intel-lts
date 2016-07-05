@@ -32,6 +32,11 @@ struct  rt700_priv {
 	int dbg_payload;
 };
 
+struct alc700 {
+        struct sdw_slave *sdw;
+        struct sdw_bus_params *params;
+};
+
 /* NID */
 #define RT700_AUDIO_FUNCTION_GROUP			0x01
 #define RT700_DAC_OUT1					0x02
@@ -54,9 +59,12 @@ struct  rt700_priv {
 
 /* Verb */
 #define RT700_VERB_SET_CONNECT_SEL			0x3100
+#define RT700_VERB_SET_EAPD_BTLENABLE			0x3c00
 #define RT700_VERB_GET_CONNECT_SEL			0xb100
+#define RT700_VERB_SET_POWER_STATE			0x3500
 #define RT700_VERB_SET_CHANNEL_STREAMID			0x3600
 #define RT700_VERB_SET_PIN_WIDGET_CONTROL		0x3700
+#define RT700_VERB_SET_UNSOLICITED_ENABLE		0x3800
 #define RT700_SET_AMP_GAIN_MUTE_H			0x7300
 #define RT700_SET_AMP_GAIN_MUTE_L			0x8380
 
@@ -76,6 +84,8 @@ struct  rt700_priv {
 #define RT700_DAC_FORMAT_L				0x8283
 #define RT700_ADC_FORMAT_H				0x7209
 #define RT700_ADC_FORMAT_L				0x8289
+#define RT700_SET_AUDIO_POWER_STATE\
+	(RT700_VERB_SET_POWER_STATE | RT700_AUDIO_FUNCTION_GROUP)
 #define RT700_SET_PIN_DMIC1\
 	(RT700_VERB_SET_PIN_WIDGET_CONTROL | RT700_DMIC1)
 #define RT700_SET_PIN_DMIC2\
@@ -90,6 +100,10 @@ struct  rt700_priv {
 	(RT700_VERB_SET_PIN_WIDGET_CONTROL | RT700_LINE1)
 #define RT700_SET_PIN_LINE2\
 	(RT700_VERB_SET_PIN_WIDGET_CONTROL | RT700_LINE2)
+#define RT700_SET_MIC2_UNSOLICITED_ENABLE\
+	(RT700_VERB_SET_UNSOLICITED_ENABLE | RT700_MIC2)
+#define RT700_SET_HP_UNSOLICITED_ENABLE\
+	(RT700_VERB_SET_UNSOLICITED_ENABLE | RT700_HP_OUT)
 #define RT700_SET_STREAMID_DAC1\
 	(RT700_VERB_SET_CHANNEL_STREAMID | RT700_DAC_OUT1)
 #define RT700_SET_STREAMID_DAC2\
@@ -122,7 +136,11 @@ struct  rt700_priv {
 	(RT700_SET_AMP_GAIN_MUTE_L | RT700_SPK_OUT)
 #define RT700_SET_GAIN_SPK_H\
 	(RT700_SET_AMP_GAIN_MUTE_H | RT700_SPK_OUT)
+#define RT700_SET_EAPD_SPK\
+	(RT700_VERB_SET_EAPD_BTLENABLE | RT700_SPK_OUT)
 
+#define RT700_EAPD_HIGH					0x2
+#define RT700_EAPD_LOW					0x0
 #define RT700_MUTE_SFT					7
 #define RT700_DIR_IN_SFT				6
 #define RT700_DIR_OUT_SFT				7
@@ -139,4 +157,5 @@ int rt700_remove(struct device *dev);
 int hda_to_sdw(unsigned int nid, unsigned int verb, unsigned int payload,
 		unsigned int *sdw_addr_h, unsigned int *sdw_data_h,
 		unsigned int *sdw_addr_l, unsigned int *sdw_data_l);
+int rt700_jack_detect(struct rt700_priv *rt700, bool *hp, bool *mic);
 #endif /* __RT700_H__ */
