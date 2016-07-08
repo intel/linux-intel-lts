@@ -1,0 +1,7 @@
+
+menu "USB PD and Type-C drivers"
+
+config TYPEC
+	tristate
+
+endmenu
