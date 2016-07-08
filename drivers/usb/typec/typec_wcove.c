@@ -280,7 +280,8 @@ out:
 			 !!(status2 & USBC_STATUS2_VBUS_REQ));
 err:
 	/* REVISIT: Clear WhiskeyCove CHGR Type-C interrupt */
-	regmap_write(wcove->regmap, WCOVE_CHGRIRQ0, BIT(5));
+	regmap_write(wcove->regmap, WCOVE_CHGRIRQ0, BIT(5) | BIT(4) |
+						    BIT(3) | BIT(0));
 
 	mutex_unlock(&wcove->lock);
 	return IRQ_HANDLED;
