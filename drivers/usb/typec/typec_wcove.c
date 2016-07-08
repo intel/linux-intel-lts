@@ -366,6 +366,7 @@ static struct platform_driver wcove_typec_driver = {
 
 module_platform_driver(wcove_typec_driver);
 
+MODULE_ALIAS("platform:bxt_wcove_usbc");
 MODULE_AUTHOR("Intel Corporation");
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("WhiskeyCove PMIC USB Type-C PHY driver");
