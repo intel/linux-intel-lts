@@ -1,0 +1,103 @@
+USB Type-C connector class
+==========================
+
+Introduction
+------------
+The typec class is meant for describing the USB Type-C ports in a system to the
+user space in unified fashion. The class is designed to provide nothing else
+except the user space interface implementation in hope that it can be utilized
+on as many platforms as possible.
+
+The platforms are expected to register every USB Type-C port they have with the
+class. In a normal case the registration will be done by a USB Type-C or PD PHY
+driver, but it may be a driver for firmware interface such as UCSI, driver for
+USB PD controller or even driver for Thunderbolt3 controller. This document
+considers the component registering the USB Type-C ports with the class as "port
+driver".
+
+On top of showing the capabilities, the class also offer the user space control
+over the roles and alternate modes they support when the port driver is capable
+of supporting those features.
+
+The class provides an API for the port drivers described in this document. The
+attributes are described in Documentation/ABI/testing/sysfs-class-typec.
+
+
+Interface
+---------
+Every port will be presented as its own device under /sys/class/typec/. The
+first port will be named "usbc0", the second "usbc1" and so on.
+
+When connected, the partner will be presented also as its own device under
+/sys/class/typec/. The parent of the partner device will always be the port. The
+partner attached to port "usbc0" will be named "usbc0-partner". Full patch to
+the device would be /sys/class/typec/usb0/usb0-partner/.
+
+The cable and the two plugs on it may also be optionally presented as their own
+devices under /sys/class/typec/. The cable attached to the port "usbc0" port
+will be named usbc0-cable and the plug on the SOP Prime end (see USB Power
+Delivery Specification ch. 2.4) will be named "usbc-plug0" and on the SOP Double
+Prime end "usbc0-plug1". The parent of a cable will always be the port, and the
+parent of the cable plugs will always be the cable.
+
+If the port, partner or cable plug support Alternate Modes, every Alternate Mode
+SVID will have their own device describing them. The Alternate Modes will not be
+attached to the typec class. For the port's "usbc0" partner, the Alternate Modes
+would have devices presented under /sys/class/typec/usbc0-partner/. Every mode
+that is supported will have its own group under the Alternate Mode device named
+"mode<id>". For example /sys/class/typec/usbc0/usbc0.svid:xxxx/mode0/. The
+requests for entering/exiting the modes happens with the "active" attribute in
+that group.
+
+
+API
+---
+
+* Registering the ports
+
+The port drivers will describe every Type-C port they control with struct
+typec_capability data structure, and register them with the following API:
+
+struct typec_port *typec_register_port(struct device *dev,
+				       const struct typec_capability *cap);
+
+The class will provide handle to struct typec_port on success and ERR_PTR on
+failure. The un-registration of the port happens with the following API:
+
+void typec_unregister_port(struct typec_port *port);
+
+
+* Notifications
+
+When connection happens on a port, the port driver fills struct typec_connection
+which is passed to the class. The class provides the following API for reporting
+connection/disconnection:
+
+int typec_connect(struct typec_port *port, struct typec_connection *);
+void typec_disconnect(struct typec_port *);
+
+When the partner end has executed a role change, the port driver uses the
+following APIs to report it to the class:
+
+void typec_set_data_role(struct typec_port *, enum typec_data_role);
+void typec_set_pwr_role(struct typec_port *, enum typec_role);
+void typec_set_vconn_role(struct typec_port *, enum typec_role);
+void typec_set_pwr_opmode(struct typec_port *, enum typec_pwr_opmode);
+
+
+* Alternate Modes
+
+After connection, the port drivers register the alternate modes the partner
+and/or cable plugs support. And before reporting disconnection, the port driver
+_must_ unregister all the alternate modes registered for the partner and cable
+plugs. The API takes the struct device of the partner or the cable plug as
+parameter:
+
+int typec_register_altmodes(struct device *, struct typec_altmode *);
+void typec_unregister_altmodes(struct device *);
+
+When the partner end enters or exits the modes, the port driver needs to notify
+the class with the following API:
+
+void typec_altmode_update_active(struct typec_altmode *alt, int mode,
+				 bool active);
