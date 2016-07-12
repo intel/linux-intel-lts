@@ -1793,6 +1793,9 @@ intel_bios_is_port_hpd_inverted(struct drm_i915_private *dev_priv,
 	if (WARN_ON_ONCE(!IS_GEN9_LP(dev_priv)))
 		return false;
 
+	if (i915.hpd_sense_invert & (1 << port))
+		return true;
+
 	for (i = 0; i < dev_priv->vbt.child_dev_num; i++) {
 		if (!dev_priv->vbt.child_dev[i].common.hpd_invert)
 			continue;
