@@ -871,7 +871,7 @@ bool media_entity_has_route(struct media_entity *entity, unsigned int sink,
  * using media_entity_graph_walk_cleanup().
  */
 void media_entity_graph_walk_start(struct media_entity_graph *graph,
-				   struct media_entity *entity);
+				   struct media_pad *pad);
 
 /**
  * media_entity_graph_walk_next - Get the next entity in the graph
