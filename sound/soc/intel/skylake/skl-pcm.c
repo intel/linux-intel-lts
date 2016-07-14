@@ -1723,6 +1723,10 @@ static int skl_populate_modules(struct skl *skl)
 	struct skl_module_cfg *mconfig;
 	int ret = 0;
 
+	ret = snd_skl_add_mod_data(skl->skl_sst);
+	if (ret < 0)
+		return ret;
+
 	list_for_each_entry(p, &skl->ppl_list, node) {
 		list_for_each_entry(m, &p->pipe->w_list, node) {
 			w = m->w;

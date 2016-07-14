@@ -185,6 +185,7 @@ struct uuid_module {
 	u64 pvt_id[MAX_INSTANCE_BUFF];
 	int *instance_id;
 
+	struct skl_module *mod_data;
 	struct list_head list;
 };
 
@@ -260,5 +261,7 @@ int skl_prepare_lib_load(struct skl_sst *skl, struct skl_lib_info *linfo,
 			struct firmware *stripped_fw,
 			unsigned int hdr_offset, int index);
 void skl_release_library(struct skl_lib_info *linfo, int lib_count);
+
+int snd_skl_add_mod_data(struct skl_sst *ctx);
 
 #endif /*__SKL_SST_DSP_H__*/

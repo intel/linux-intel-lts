@@ -20,7 +20,7 @@
 #include "../common/sst-dsp.h"
 #include "../common/sst-dsp-priv.h"
 #include "skl-sst-ipc.h"
-
+#include "skl.h"
 
 #define UUID_STR_SIZE 37
 #define DEFAULT_HASH_SHA256_LEN 32
@@ -101,6 +101,41 @@ struct skl_ext_manifest_hdr {
 	u16 version_minor;
 	u32 entries;
 };
+
+/**
+ * Add manifest module data to the module list by
+ * comparing the UUID of module to be added with the
+ * already added UUID in the last
+ */
+int snd_skl_add_mod_data(struct skl_sst *ctx)
+{
+	struct uuid_module *module;
+	uuid_le *uuid_mod;
+	int j, num_modules;
+	struct skl_module *mod_data;
+	struct skl *skl = get_skl_ctx(ctx->dev);
+
+	if (list_empty(&ctx->uuid_list)) {
+		dev_err(ctx->dev, "Module list is empty\n");
+		return -EINVAL;
+	}
+
+	num_modules = skl->nr_modules;
+	for (j = 0; j < num_modules; j++) {
+		/* copy the module data in the parsed module uuid list */
+		mod_data = &skl->modules[j];
+		uuid_mod = &mod_data->uuid;
+		list_for_each_entry(module, &ctx->uuid_list, list) {
+			if (uuid_le_cmp(module->uuid, *uuid_mod) == 0) {
+				module->mod_data = mod_data;
+				break;
+			}
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(snd_skl_add_mod_data);
 
 static int skl_get_pvtid_map(struct uuid_module *module, int instance_id)
 {
