@@ -55,6 +55,9 @@
 unsigned int sysctl_sched_latency			= 6000000ULL;
 unsigned int normalized_sysctl_sched_latency		= 6000000ULL;
 
+unsigned int sysctl_sched_is_big_little = 0;
+unsigned int sysctl_sched_sync_hint_enable = 1;
+unsigned int sysctl_sched_cstate_aware = 1;
 /*
  * The initial- and re-scaling of tunables is configurable
  *
@@ -6426,33 +6429,87 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 static int select_idle_sibling(struct task_struct *p, int prev, int target)
 {
 	struct sched_domain *sd;
-	int i;
+	struct sched_group *sg;
+	int i = task_cpu(p);
+	int best_idle = -1;
+	int best_idle_cstate = -1;
+	int best_idle_capacity = INT_MAX;
 
-	if (idle_cpu(target))
-		return target;
+	if (!sysctl_sched_cstate_aware) {
+		if (idle_cpu(target))
+			return target;
+
+		/*
+		 * If the prevous cpu is cache affine and idle, don't be stupid.
+		 */
+		if (i != target && cpus_share_cache(i, target) && idle_cpu(i))
+			return i;
+
+		sd = rcu_dereference(per_cpu(sd_llc, target));
+		if (!sd)
+			return target;
+
+		i = select_idle_core(p, sd, target);
+		if ((unsigned)i < nr_cpumask_bits)
+			return i;
+
+		i = select_idle_cpu(p, sd, target);
+		if ((unsigned)i < nr_cpumask_bits)
+			return i;
+
+		i = select_idle_smt(p, sd, target);
+		if ((unsigned)i < nr_cpumask_bits)
+			return i;
+	}
 
 	/*
-	 * If the previous cpu is cache affine and idle, don't be stupid.
+	 * Otherwise, iterate the domains and find an elegible idle cpu.
 	 */
-	if (prev != target && cpus_share_cache(prev, target) && idle_cpu(prev))
-		return prev;
-
 	sd = rcu_dereference(per_cpu(sd_llc, target));
-	if (!sd)
-		return target;
+	for_each_lower_domain(sd) {
+		sg = sd->groups;
+		do {
+			if (!cpumask_intersects(sched_group_span(sg),
+                                        &p->cpus_allowed))
+				goto next;
 
-	i = select_idle_core(p, sd, target);
-	if ((unsigned)i < nr_cpumask_bits)
-		return i;
 
-	i = select_idle_cpu(p, sd, target);
-	if ((unsigned)i < nr_cpumask_bits)
-		return i;
+			if (sysctl_sched_cstate_aware) {
+				for_each_cpu_and(i, &p->cpus_allowed, sched_group_span(sg)) {
+					struct rq *rq = cpu_rq(i);
+					int idle_idx = idle_get_state_idx(rq);
+					unsigned long new_usage = boosted_task_util(p);
+					unsigned long capacity_orig = capacity_orig_of(i);
+					if (new_usage > capacity_orig || !idle_cpu(i))
+						goto next;
 
-	i = select_idle_smt(p, sd, target);
-	if ((unsigned)i < nr_cpumask_bits)
-		return i;
+					if (i == target && new_usage <= capacity_curr_of(target))
+						return target;
 
+					if (best_idle < 0 || (idle_idx < best_idle_cstate && capacity_orig <= best_idle_capacity)) {
+						best_idle = i;
+						best_idle_cstate = idle_idx;
+						best_idle_capacity = capacity_orig;
+					}
+				}
+			} else {
+				for_each_cpu(i, sched_group_span(sg)) {
+					if (i == target || !idle_cpu(i))
+						goto next;
+				}
+
+				target = cpumask_first_and(sched_group_span(sg),
+					&p->cpus_allowed);
+				goto done;
+			}
+next:
+			sg = sg->next;
+		} while (sg != sd->groups);
+	}
+	if (best_idle > 0)
+		target = best_idle;
+
+done:
 	return target;
 }
 
@@ -6474,13 +6531,111 @@ static int cpu_util_wake(int cpu, struct task_struct *p)
 	return (util >= capacity) ? capacity : util;
 }
 
-static int energy_aware_wake_cpu(struct task_struct *p, int target)
+static inline int find_best_target(struct task_struct *p)
+{
+	int i, boosted;
+	int target_cpu = -1;
+	int target_capacity = 0;
+	int backup_capacity = 0;
+	int idle_cpu = -1;
+	int best_idle_cstate = INT_MAX;
+	int backup_cpu = -1;
+	unsigned long task_util_boosted, new_util;
+
+	/*
+	 * Favor 1) busy cpu with most capacity at current OPP
+	 *       2) idle_cpu with capacity at current OPP
+	 *       3) busy cpu with capacity at higher OPP
+	 */
+#ifdef CONFIG_CGROUP_SCHEDTUNE
+	boosted = schedtune_task_boost(p);
+#else
+	boosted = 0;
+#endif
+	task_util_boosted = boosted_task_util(p);
+	for_each_cpu(i, &p->cpus_allowed) {
+		int cur_capacity = capacity_curr_of(i);
+		struct rq *rq = cpu_rq(i);
+		int idle_idx = idle_get_state_idx(rq);
+
+		/*
+		 * p's blocked utilization is still accounted for on prev_cpu
+		 * so prev_cpu will receive a negative bias due to the double
+		 * accounting. However, the blocked utilization may be zero.
+		 */
+		new_util = cpu_util(i) + task_util_boosted;
+
+		/*
+		 * Ensure minimum capacity to grant the required boost.
+		 * The target CPU can be already at a capacity level higher
+		 * than the one required to boost the task.
+		 */
+
+		if (new_util > capacity_orig_of(i))
+			continue;
+
+		/*
+		 * For boosted tasks we favor idle cpus unconditionally to
+		 * improve latency.
+		 */
+		if (idle_idx >= 0 && boosted) {
+			if (idle_cpu < 0 ||
+				(sysctl_sched_cstate_aware &&
+				 best_idle_cstate > idle_idx)) {
+				best_idle_cstate = idle_idx;
+				idle_cpu = i;
+			}
+			continue;
+		}
+
+		if (new_util < cur_capacity) {
+			if (cpu_rq(i)->nr_running) {
+				if (target_capacity == 0 ||
+					target_capacity > cur_capacity) {
+					/* busy CPU with most capacity at current OPP */
+					target_cpu = i;
+					target_capacity = cur_capacity;
+				}
+			} else if (!boosted) {
+				if (idle_cpu < 0 ||
+					(sysctl_sched_cstate_aware &&
+						best_idle_cstate > idle_idx)) {
+					best_idle_cstate = idle_idx;
+					idle_cpu = i;
+				}
+			}
+		} else if (backup_capacity == 0 ||
+				backup_capacity > cur_capacity) {
+			/* first busy CPU with capacity at higher OPP */
+			backup_capacity = cur_capacity;
+			backup_cpu = i;
+		}
+	}
+
+	if (!boosted && target_cpu < 0) {
+		target_cpu = idle_cpu >= 0 ? idle_cpu : backup_cpu;
+	}
+
+	if (boosted && idle_cpu >= 0)
+		target_cpu = idle_cpu;
+	return target_cpu;
+}
+
+static int energy_aware_wake_cpu(struct task_struct *p, int target, int sync)
 {
 	struct sched_domain *sd;
 	struct sched_group *sg, *sg_target;
 	int target_max_cap = INT_MAX;
 	int target_cpu = task_cpu(p);
 	int i;
+
+	if (sysctl_sched_sync_hint_enable && sync) {
+		int cpu = smp_processor_id();
+		cpumask_t search_cpus;
+		cpumask_and(&search_cpus, &p->cpus_allowed, cpu_online_mask);
+		if (cpumask_test_cpu(cpu, &search_cpus))
+			return cpu;
+	}
 
 	sd = rcu_dereference(per_cpu(sd_ea, task_cpu(p)));
 
@@ -6490,50 +6645,60 @@ static int energy_aware_wake_cpu(struct task_struct *p, int target)
 	sg = sd->groups;
 	sg_target = sg;
 
-	/*
-	 * Find group with sufficient capacity. We only get here if no cpu is
-	 * overutilized. We may end up overutilizing a cpu by adding the task,
-	 * but that should not be any worse than select_idle_sibling().
-	 * load_balance() should sort it out later as we get above the tipping
-	 * point.
-	 */
-	do {
-		/* Assuming all cpus are the same in group */
-		int max_cap_cpu = group_first_cpu(sg);
+	if (sysctl_sched_is_big_little) {
 
 		/*
-		 * Assume smaller max capacity means more energy-efficient.
-		 * Ideally we should query the energy model for the right
-		 * answer but it easily ends up in an exhaustive search.
+		 * Find group with sufficient capacity. We only get here if no cpu is
+		 * overutilized. We may end up overutilizing a cpu by adding the task,
+		 * but that should not be any worse than select_idle_sibling().
+		 * load_balance() should sort it out later as we get above the tipping
+		 * point.
 		 */
-		if (capacity_of(max_cap_cpu) < target_max_cap &&
-		    task_fits_max(p, max_cap_cpu)) {
-			sg_target = sg;
-			target_max_cap = capacity_of(max_cap_cpu);
-		}
-	} while (sg = sg->next, sg != sd->groups);
+		do {
+			/* Assuming all cpus are the same in group */
+			int max_cap_cpu = group_first_cpu(sg);
 
-	/* Find cpu with sufficient capacity */
-	for_each_cpu_and(i, &p->cpus_allowed, sched_group_span(sg_target)) {
+			/*
+			 * Assume smaller max capacity means more energy-efficient.
+			 * Ideally we should query the energy model for the right
+			 * answer but it easily ends up in an exhaustive search.
+			 */
+			if (capacity_of(max_cap_cpu) < target_max_cap &&
+			    task_fits_max(p, max_cap_cpu)) {
+				sg_target = sg;
+				target_max_cap = capacity_of(max_cap_cpu);
+			}
+		} while (sg = sg->next, sg != sd->groups);
+
+		/* Find cpu with sufficient capacity */
+		for_each_cpu_and(i, &p->cpus_allowed, sched_group_span(sg_target)) {
+			/*
+			 * p's blocked utilization is still accounted for on prev_cpu
+			 * so prev_cpu will receive a negative bias due to the double
+			 * accounting. However, the blocked utilization may be zero.
+			 */
+			int new_util = cpu_util(i) + boosted_task_util(p);
+
+			if (new_util > capacity_orig_of(i))
+				continue;
+
+			if (new_util < capacity_curr_of(i)) {
+				target_cpu = i;
+				if (cpu_rq(i)->nr_running)
+					break;
+			}
+
+			/* cpu has capacity at higher OPP, keep it as fallback */
+			if (target_cpu == task_cpu(p))
+				target_cpu = i;
+		}
+	} else {
 		/*
-		 * p's blocked utilization is still accounted for on prev_cpu
-		 * so prev_cpu will receive a negative bias due to the double
-		 * accounting. However, the blocked utilization may be zero.
+		 * Find a cpu with sufficient capacity
 		 */
-		int new_util = cpu_util(i) + boosted_task_util(p);
-
-		if (new_util > capacity_orig_of(i))
-			continue;
-
-		if (new_util < capacity_curr_of(i)) {
-			target_cpu = i;
-			if (cpu_rq(i)->nr_running)
-				break;
-		}
-
-		/* cpu has capacity at higher OPP, keep it as fallback */
-		if (target_cpu == task_cpu(p))
-			target_cpu = i;
+		int tmp_target = find_best_target(p);
+		if (tmp_target >= 0)
+			target_cpu = tmp_target;
 	}
 
 	if (target_cpu != task_cpu(p)) {
@@ -6616,7 +6781,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	if (!sd) {
  pick_cpu:
 		if (energy_aware() && !cpu_rq(cpu)->rd->overutilized)
-			new_cpu = energy_aware_wake_cpu(p, prev_cpu);
+			new_cpu = energy_aware_wake_cpu(p, prev_cpu, sync);
 		else if (sd_flag & SD_BALANCE_WAKE) /* XXX always ? */
 			new_cpu = select_idle_sibling(p, prev_cpu, new_cpu);
 
