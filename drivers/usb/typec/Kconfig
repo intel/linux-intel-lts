@@ -4,12 +4,25 @@ menu "USB PD and Type-C drivers"
 config TYPEC
 	tristate
 
+config USB_PD_SINK
+	bool "USB Power Delivery Sink Port State Machine Driver"
+	select TYPEC
+	help
+	  Enable this to support USB PD(Power Delivery) Sink port.
+	  This driver implements a simple USB PD sink state machine.
+	  The underlying TypeC phy driver is responsible for cable
+	  plug/unplug event, port orientation detection, transmitting
+	  and receiving PD messages. This driver only process messages
+	  received by the TypeC phy driver and maintain the sink port's
+	  state machine.
+
 config TYPEC_WCOVE
 	tristate "Intel WhiskeyCove PMIC USB Type-C PHY driver"
 	depends on ACPI
 	depends on INTEL_SOC_PMIC
 	depends on INTEL_PMC_IPC
 	select TYPEC
+	select USB_PD_SINK
 	help
 	  This driver adds support for USB Type-C detection on Intel Broxton
 	  platforms that have Intel Whiskey Cove PMIC. The driver can detect the
