@@ -67,6 +67,9 @@ static int intel_th_pci_probe(struct pci_dev *pdev,
 	if (err)
 		return err;
 
+	/* Enable bus mastering */
+	pci_set_master(pdev);
+
 	err = pcim_iomap_regions_request_all(pdev, BAR_MASK, DRIVER_NAME);
 	if (err)
 		return err;
