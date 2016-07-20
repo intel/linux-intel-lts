@@ -67,6 +67,7 @@ void irq_work_run(void);
 bool irq_work_needs_cpu(void);
 void irq_work_single(void *arg);
 
+void irq_local_work_raise(void);
 void arch_irq_work_raise(void);
 
 #else
