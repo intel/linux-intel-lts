@@ -32,10 +32,10 @@ unsigned long __xchg(unsigned long x, volatile void *ptr, int size)
 #ifdef __xchg_u8
 		return __xchg_u8(x, ptr);
 #else
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		ret = *(volatile u8 *)ptr;
 		*(volatile u8 *)ptr = x;
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 		return ret;
 #endif /* __xchg_u8 */
 
@@ -43,10 +43,10 @@ unsigned long __xchg(unsigned long x, volatile void *ptr, int size)
 #ifdef __xchg_u16
 		return __xchg_u16(x, ptr);
 #else
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		ret = *(volatile u16 *)ptr;
 		*(volatile u16 *)ptr = x;
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 		return ret;
 #endif /* __xchg_u16 */
 
@@ -54,10 +54,10 @@ unsigned long __xchg(unsigned long x, volatile void *ptr, int size)
 #ifdef __xchg_u32
 		return __xchg_u32(x, ptr);
 #else
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		ret = *(volatile u32 *)ptr;
 		*(volatile u32 *)ptr = x;
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 		return ret;
 #endif /* __xchg_u32 */
 
@@ -66,10 +66,10 @@ unsigned long __xchg(unsigned long x, volatile void *ptr, int size)
 #ifdef __xchg_u64
 		return __xchg_u64(x, ptr);
 #else
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		ret = *(volatile u64 *)ptr;
 		*(volatile u64 *)ptr = x;
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 		return ret;
 #endif /* __xchg_u64 */
 #endif /* CONFIG_64BIT */

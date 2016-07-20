@@ -114,6 +114,7 @@ void do_raw_spin_lock(raw_spinlock_t *lock)
 	mmiowb_spin_lock();
 	debug_spin_lock_after(lock);
 }
+EXPORT_SYMBOL_GPL(do_raw_spin_lock);
 
 int do_raw_spin_trylock(raw_spinlock_t *lock)
 {
@@ -131,6 +132,7 @@ int do_raw_spin_trylock(raw_spinlock_t *lock)
 #endif
 	return ret;
 }
+EXPORT_SYMBOL_GPL(do_raw_spin_trylock);
 
 void do_raw_spin_unlock(raw_spinlock_t *lock)
 {
@@ -138,6 +140,7 @@ void do_raw_spin_unlock(raw_spinlock_t *lock)
 	debug_spin_unlock(lock);
 	arch_spin_unlock(&lock->raw_lock);
 }
+EXPORT_SYMBOL_GPL(do_raw_spin_unlock);
 
 static void rwlock_bug(rwlock_t *lock, const char *msg)
 {
