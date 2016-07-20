@@ -4986,6 +4986,9 @@
 			print every Nth verbose statement, where N is the value
 			specified.
 
+	reboot_panic=	[KNL]
+			Same as reboot parameter above but only in case of panic.
+
 	relax_domain_level=
 			[KNL, SMP] Set scheduler's default relax_domain_level.
 			See Documentation/admin-guide/cgroup-v1/cpusets.rst.

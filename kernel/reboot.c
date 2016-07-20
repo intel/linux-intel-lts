@@ -11,6 +11,7 @@
 #include <linux/ctype.h>
 #include <linux/export.h>
 #include <linux/kexec.h>
+#include <linux/panic_notifier.h>
 #include <linux/kmod.h>
 #include <linux/kmsg_dump.h>
 #include <linux/reboot.h>
@@ -48,6 +49,7 @@ int reboot_default = 1;
 int reboot_cpu;
 enum reboot_type reboot_type = BOOT_ACPI;
 int reboot_force;
+char *reboot_panic_param;
 
 /*
  * If set, this is used for preparing the system to power off.
@@ -599,7 +601,7 @@ void hw_protection_shutdown(const char *reason, int ms_until_forced)
 }
 EXPORT_SYMBOL_GPL(hw_protection_shutdown);
 
-static int __init reboot_setup(char *str)
+static int reboot_setup(char *str)
 {
 	for (;;) {
 		enum reboot_mode *mode;
@@ -679,6 +681,32 @@ static int __init reboot_setup(char *str)
 	return 1;
 }
 __setup("reboot=", reboot_setup);
+
+static int reboot_panic_notifier_call(struct notifier_block *notifier,
+					unsigned long what, void *data)
+{
+	if (!reboot_panic_param)
+	return NOTIFY_DONE;
+
+	reboot_setup(reboot_panic_param);
+	pr_info("panic mode set: %s\n", reboot_panic_param);
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block reboot_panic_notifier = {
+	.notifier_call  = reboot_panic_notifier_call,
+};
+
+static int __init reboot_panic_setup(char *str)
+{
+	reboot_panic_param = str;
+	atomic_notifier_chain_register(&panic_notifier_list,
+					&reboot_panic_notifier);
+
+	return 1;
+}
+__setup("reboot_panic=", reboot_panic_setup);
 
 #ifdef CONFIG_SYSFS
 
