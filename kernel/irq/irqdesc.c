@@ -16,6 +16,7 @@
 #include <linux/bitmap.h>
 #include <linux/irqdomain.h>
 #include <linux/sysfs.h>
+#include <linux/irq_pipeline.h>
 
 #include "internals.h"
 
@@ -452,6 +453,7 @@ static void free_desc(unsigned int irq)
 	 * irq_sysfs_init() as well.
 	 */
 	irq_sysfs_del(desc);
+	uncache_irq_desc(irq);
 	delete_irq_desc(irq);
 
 	/*
@@ -631,9 +633,12 @@ void irq_init_desc(unsigned int irq)
 #endif /* !CONFIG_SPARSE_IRQ */
 
 /**
- * generic_handle_irq - Invoke the handler for a particular irq
+ * generic_handle_irq - Handle a particular irq
  * @irq:	The irq number to handle
  *
+ * The handler is invoked, unless we are entering the interrupt
+ * pipeline, in which case the incoming IRQ is only scheduled for
+ * deferred delivery.
  */
 int generic_handle_irq(unsigned int irq)
 {
@@ -644,7 +649,7 @@ int generic_handle_irq(unsigned int irq)
 		return -EINVAL;
 
 	data = irq_desc_get_irq_data(desc);
-	if (WARN_ON_ONCE(!in_irq() && handle_enforce_irqctx(data)))
+	if (WARN_ON_ONCE(!in_hard_irq() && handle_enforce_irqctx(data)))
 		return -EPERM;
 
 	generic_handle_irq_desc(desc);
