@@ -16,6 +16,7 @@
 #include <linux/irqhandler.h>
 #include <linux/irqreturn.h>
 #include <linux/irqnr.h>
+#include <linux/irq_work.h>
 #include <linux/topology.h>
 #include <linux/io.h>
 #include <linux/slab.h>
@@ -73,6 +74,11 @@ enum irqchip_irq_state;
  * IRQ_DISABLE_UNLAZY		- Disable lazy irq disable
  * IRQ_HIDDEN			- Don't show up in /proc/interrupts
  * IRQ_NO_DEBUG			- Exclude from note_interrupt() debugging
+ * IRQ_OOB                      - Interrupt can be delivered to the out-of-band handler
+ *                                when pipelining is enabled (CONFIG_IRQ_PIPELINE),
+ *                                regardless of the (virtualized) interrupt state
+ *                                maintained by local_irq_save/disable().
+ * IRQ_CHAINED                  - Interrupt is chained.
  */
 enum {
 	IRQ_TYPE_NONE		= 0x00000000,
@@ -101,13 +107,15 @@ enum {
 	IRQ_DISABLE_UNLAZY	= (1 << 19),
 	IRQ_HIDDEN		= (1 << 20),
 	IRQ_NO_DEBUG		= (1 << 21),
+	IRQ_OOB			= (1 << 22),
+	IRQ_CHAINED		= (1 << 23),
 };
 
 #define IRQF_MODIFY_MASK	\
 	(IRQ_TYPE_SENSE_MASK | IRQ_NOPROBE | IRQ_NOREQUEST | \
 	 IRQ_NOAUTOEN | IRQ_MOVE_PCNTXT | IRQ_LEVEL | IRQ_NO_BALANCING | \
 	 IRQ_PER_CPU | IRQ_NESTED_THREAD | IRQ_NOTHREAD | IRQ_PER_CPU_DEVID | \
-	 IRQ_IS_POLLED | IRQ_DISABLE_UNLAZY | IRQ_HIDDEN)
+	 IRQ_IS_POLLED | IRQ_DISABLE_UNLAZY | IRQ_HIDDEN | IRQ_OOB)
 
 #define IRQ_NO_BALANCING_MASK	(IRQ_PER_CPU | IRQ_NO_BALANCING)
 
@@ -175,6 +183,7 @@ struct irq_common_data {
  *			irq_domain
  * @chip_data:		platform-specific per-chip private data for the chip
  *			methods, to allow shared chip implementations
+ * @move_work:		irq_work for setaffinity deferral when pipelining irqs
  */
 struct irq_data {
 	u32			mask;
@@ -185,6 +194,9 @@ struct irq_data {
 	struct irq_domain	*domain;
 #ifdef	CONFIG_IRQ_DOMAIN_HIERARCHY
 	struct irq_data		*parent_data;
+#endif
+#if defined(CONFIG_IRQ_PIPELINE) && defined(CONFIG_GENERIC_PENDING_IRQ)
+	struct irq_work		move_work;
 #endif
 	void			*chip_data;
 };
@@ -223,6 +235,7 @@ struct irq_data {
  *				  irq_chip::irq_set_affinity() when deactivated.
  * IRQD_IRQ_ENABLED_ON_SUSPEND	- Interrupt is enabled on suspend by irq pm if
  *				  irqchip have flag IRQCHIP_ENABLE_WAKEUP_ON_SUSPEND set.
+ * IRQD_SETAFFINITY_BLOCKED	- Pending affinity setting on hold (IRQ_PIPELINE)
  */
 enum {
 	IRQD_TRIGGER_MASK		= 0xf,
@@ -249,6 +262,7 @@ enum {
 	IRQD_HANDLE_ENFORCE_IRQCTX	= (1 << 28),
 	IRQD_AFFINITY_ON_ACTIVATE	= (1 << 29),
 	IRQD_IRQ_ENABLED_ON_SUSPEND	= (1 << 30),
+	IRQD_SETAFFINITY_BLOCKED	= (1 << 31),
 };
 
 #define __irqd_to_state(d) ACCESS_PRIVATE((d)->common, state_use_accessors)
@@ -256,6 +270,21 @@ enum {
 static inline bool irqd_is_setaffinity_pending(struct irq_data *d)
 {
 	return __irqd_to_state(d) & IRQD_SETAFFINITY_PENDING;
+}
+
+static inline void irqd_set_move_blocked(struct irq_data *d)
+{
+	__irqd_to_state(d) |= IRQD_SETAFFINITY_BLOCKED;
+}
+
+static inline void irqd_clr_move_blocked(struct irq_data *d)
+{
+	__irqd_to_state(d) &= ~IRQD_SETAFFINITY_BLOCKED;
+}
+
+static inline bool irqd_is_setaffinity_blocked(struct irq_data *d)
+{
+	return irqs_pipelined() && __irqd_to_state(d) & IRQD_SETAFFINITY_BLOCKED;
 }
 
 static inline bool irqd_is_per_cpu(struct irq_data *d)
@@ -572,6 +601,7 @@ struct irq_chip {
  *                                    in the suspend path if they are in disabled state
  * IRQCHIP_AFFINITY_PRE_STARTUP:      Default affinity update before startup
  * IRQCHIP_IMMUTABLE:		      Don't ever change anything in this chip
+ * IRQCHIP_PIPELINE_SAFE:             Chip can work in pipelined mode
  */
 enum {
 	IRQCHIP_SET_TYPE_MASKED			= (1 <<  0),
@@ -586,6 +616,7 @@ enum {
 	IRQCHIP_ENABLE_WAKEUP_ON_SUSPEND	= (1 <<  9),
 	IRQCHIP_AFFINITY_PRE_STARTUP		= (1 << 10),
 	IRQCHIP_IMMUTABLE			= (1 << 11),
+	IRQCHIP_PIPELINE_SAFE			= (1 << 12),
 };
 
 #include <linux/irqdesc.h>
@@ -664,6 +695,7 @@ extern void handle_percpu_irq(struct irq_desc *desc);
 extern void handle_percpu_devid_irq(struct irq_desc *desc);
 extern void handle_bad_irq(struct irq_desc *desc);
 extern void handle_nested_irq(unsigned int irq);
+extern void handle_synthetic_irq(struct irq_desc *desc);
 
 extern void handle_fasteoi_nmi(struct irq_desc *desc);
 extern void handle_percpu_devid_fasteoi_nmi(struct irq_desc *desc);
@@ -1064,7 +1096,7 @@ struct irq_chip_type {
  * different flow mechanisms (level/edge) for it.
  */
 struct irq_chip_generic {
-	raw_spinlock_t		lock;
+	hard_spinlock_t		lock;
 	void __iomem		*reg_base;
 	u32			(*reg_readl)(void __iomem *addr);
 	void			(*reg_writel)(u32 val, void __iomem *addr);
@@ -1191,6 +1223,15 @@ static inline struct irq_chip_type *irq_data_get_chip_type(struct irq_data *d)
 }
 
 #define IRQ_MSK(n) (u32)((n) < 32 ? ((1 << (n)) - 1) : UINT_MAX)
+
+#ifdef CONFIG_IRQ_PIPELINE
+int irq_switch_oob(unsigned int irq, bool on);
+#else
+static inline int irq_switch_oob(unsigned int irq, bool on)
+{
+	return 0;
+}
+#endif	/* !CONFIG_IRQ_PIPELINE */
 
 #ifdef CONFIG_SMP
 static inline void irq_gc_lock(struct irq_chip_generic *gc)

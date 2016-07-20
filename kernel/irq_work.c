@@ -74,6 +74,11 @@ void __weak arch_irq_work_raise(void)
 	 */
 }
 
+void __weak irq_local_work_raise(void)
+{
+	arch_irq_work_raise();
+}
+
 /* Enqueue on current CPU, work must already be claimed and preempt disabled */
 static void __irq_work_queue_local(struct irq_work *work)
 {
@@ -99,7 +104,7 @@ static void __irq_work_queue_local(struct irq_work *work)
 
 	/* If the work is "lazy", handle it from next tick if any */
 	if (!lazy_work || tick_nohz_tick_stopped())
-		arch_irq_work_raise();
+		irq_local_work_raise();
 }
 
 /* Enqueue the irq work @work on the current CPU */

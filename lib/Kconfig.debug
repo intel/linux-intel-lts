@@ -996,6 +996,16 @@ config DEBUG_SHIRQ
 	  is currently disabled). Drivers need to handle this correctly. Some
 	  don't and need to be caught.
 
+config DEBUG_IRQ_PIPELINE
+	bool "Debug IRQ pipeline"
+	depends on IRQ_PIPELINE && DEBUG_KERNEL
+	help
+	  Turn on this option for enabling debug checks related to
+	  interrupt pipelining, like interrupt state consistency and
+	  proper context isolation between the in-band and oob stages.
+
+	  If unsure, say N.
+
 menu "Debug Oops, Lockups and Hangs"
 
 config PANIC_ON_OOPS
@@ -1382,6 +1392,27 @@ config DEBUG_LOCK_ALLOC
 	 vfree(), etc.), whether a live lock is incorrectly reinitialized via
 	 spin_lock_init()/mutex_init()/etc., or whether there is any lock
 	 held during task exit.
+
+config DEBUG_HARD_LOCKS
+	bool "Debug hard spinlocks"
+	depends on DEBUG_IRQ_PIPELINE && LOCKDEP && EXPERT
+	help
+	  Turn on this option for enabling LOCKDEP for hard spinlock
+	  types used in interrupt pipelining.
+
+	  Keep in mind that enabling such feature will ruin the
+	  latency figures for any out-of-band code, this is merely
+	  useful for proving the correctness of the locking scheme of
+	  such code without any consideration for real-time
+	  guarantees. You have been warned.
+
+	  If unsure, say N.
+
+if DEBUG_HARD_LOCKS
+comment "WARNING! DEBUG_HARD_LOCKS induces **massive** latency"
+comment "overhead for the code running on the out-of-band"
+comment "interrupt stage."
+endif
 
 config LOCKDEP
 	bool
