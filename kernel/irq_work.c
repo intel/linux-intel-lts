@@ -49,6 +49,11 @@ void __weak arch_irq_work_raise(void)
 	 */
 }
 
+void __weak irq_local_work_raise(void)
+{
+	arch_irq_work_raise();
+}
+
 /* Enqueue on current CPU, work must already be claimed and preempt disabled */
 static void __irq_work_queue_local(struct irq_work *work)
 {
@@ -56,10 +61,10 @@ static void __irq_work_queue_local(struct irq_work *work)
 	if (atomic_read(&work->flags) & IRQ_WORK_LAZY) {
 		if (llist_add(&work->llnode, this_cpu_ptr(&lazy_list)) &&
 		    tick_nohz_tick_stopped())
-			arch_irq_work_raise();
+			irq_local_work_raise();
 	} else {
 		if (llist_add(&work->llnode, this_cpu_ptr(&raised_list)))
-			arch_irq_work_raise();
+			irq_local_work_raise();
 	}
 }
 
