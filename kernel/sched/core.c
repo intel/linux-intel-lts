@@ -3101,6 +3101,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 #ifdef CONFIG_SMP
 	p->wake_entry.u_flags = CSD_TYPE_TTWU;
 #endif
+#ifdef CONFIG_IRQ_PIPELINE
+	init_task_stall_bits(p);
+#endif
 }
 
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
@@ -3550,6 +3553,7 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
 	rseq_preempt(prev);
 	fire_sched_out_preempt_notifiers(prev, next);
 	prepare_task(next);
+	hard_cond_local_irq_disable();
 	prepare_arch_switch(next);
 }
 
@@ -3708,6 +3712,8 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	 * PREEMPT_COUNT kernels).
 	 */
 
+	WARN_ON_ONCE(irq_pipeline_debug() && !irqs_disabled());
+	hard_cond_local_irq_enable();
 	rq = finish_task_switch(prev);
 	balance_callback(rq);
 	preempt_enable();
@@ -4279,6 +4285,8 @@ static inline void schedule_debug(struct task_struct *prev, bool preempt)
 		panic("corrupted shadow stack detected inside scheduler\n");
 #endif
 
+	check_inband_stage();
+
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 	if (!preempt && prev->state && prev->non_block_count) {
 		printk(KERN_ERR "BUG: scheduling in a non-blocking section: %s/%d/%i\n",
@@ -4703,7 +4711,7 @@ asmlinkage __visible void __sched notrace preempt_schedule(void)
 	 * If there is a non-zero preempt_count or interrupts are disabled,
 	 * we do not want to preempt the current task. Just return..
 	 */
-	if (likely(!preemptible()))
+	if (likely(!running_inband() || !preemptible()))
 		return;
 
 	preempt_schedule_common();
@@ -4729,7 +4737,7 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
 {
 	enum ctx_state prev_ctx;
 
-	if (likely(!preemptible()))
+	if (likely(!running_inband() || !preemptible()))
 		return;
 
 	do {
@@ -4770,23 +4778,41 @@ EXPORT_SYMBOL_GPL(preempt_schedule_notrace);
  * off of irq context.
  * Note, that this is called and return with irqs disabled. This will
  * protect us against recursive calling from irq.
+ *
+ * IRQ pipeline: we are called with hard irqs off, synchronize the
+ * pipeline then return the same way, so that the in-band log is
+ * guaranteed empty and further interrupt delivery is postponed by the
+ * hardware until have exited the kernel.
  */
 asmlinkage __visible void __sched preempt_schedule_irq(void)
 {
 	enum ctx_state prev_state;
+
+	if (irq_pipeline_debug()) {
+		/* Catch any weirdness in pipelined entry code. */
+		if (WARN_ON_ONCE(!running_inband()))
+			return;
+		WARN_ON_ONCE(!hard_irqs_disabled());
+	}
+
+	hard_cond_local_irq_enable();
 
 	/* Catch callers which need to be fixed */
 	BUG_ON(preempt_count() || !irqs_disabled());
 
 	prev_state = exception_enter();
 
-	do {
+	for (;;) {
 		preempt_disable();
 		local_irq_enable();
 		__schedule(true);
+		sync_inband_irqs();
 		local_irq_disable();
 		sched_preempt_enable_no_resched();
-	} while (need_resched());
+		if (!need_resched())
+			break;
+		hard_cond_local_irq_enable();
+	}
 
 	exception_exit(prev_state);
 }

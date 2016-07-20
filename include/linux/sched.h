@@ -1027,6 +1027,10 @@ struct task_struct {
 	int				irq_config;
 #endif
 
+#ifdef CONFIG_IRQ_PIPELINE
+	unsigned long			stall_bits;
+#endif
+
 #ifdef CONFIG_LOCKDEP
 # define MAX_LOCK_DEPTH			48UL
 	u64				curr_chain_key;
