@@ -14,6 +14,7 @@
 #include <linux/sched/mm.h>
 #include <linux/sched/task.h>
 #include <linux/kthread.h>
+#include <linux/irq_pipeline.h>
 #include <linux/completion.h>
 #include <linux/err.h>
 #include <linux/cgroup.h>
