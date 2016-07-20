@@ -307,14 +307,22 @@ extern void __printk_cpu_unlock(void);
  *
  * If the lock is owned by another CPU, spin until it becomes available.
  * Interrupts are restored while spinning.
+ *
+ * irq_pipeline: we neither need nor want to disable in-band IRQs over
+ * the oob stage or pipeline entry contexts, where CPU migration can't
+ * happen. Conversely, we neither need nor want to disable hard IRQs
+ * from the oob stage, so that latency won't skyrocket as a result of
+ * holding the print lock.
  */
-#define printk_cpu_lock_irqsave(flags)		\
-	for (;;) {				\
-		local_irq_save(flags);		\
-		if (__printk_cpu_trylock())	\
-			break;			\
-		local_irq_restore(flags);	\
-		__printk_wait_on_cpu_lock();	\
+#define printk_cpu_lock_irqsave(flags)				\
+	for (;;) {						\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_save(flags);			\
+		if (__printk_cpu_trylock())			\
+			break;					\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_restore(flags);		\
+		__printk_wait_on_cpu_lock();			\
 	}
 
 /**
@@ -322,11 +330,12 @@ extern void __printk_cpu_unlock(void);
  *                                  lock and restore interrupts.
  * @flags: Caller's saved interrupt state, from printk_cpu_lock_irqsave().
  */
-#define printk_cpu_unlock_irqrestore(flags)	\
-	do {					\
-		__printk_cpu_unlock();		\
-		local_irq_restore(flags);	\
-	} while (0)				\
+#define printk_cpu_unlock_irqrestore(flags)			\
+	do {							\
+		__printk_cpu_unlock();				\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_restore(flags);		\
+	} while (0)						\
 
 #else
 
