@@ -68,7 +68,7 @@ struct irq_desc {
 	unsigned int		irqs_unhandled;
 	atomic_t		threads_handled;
 	int			threads_handled_last;
-	raw_spinlock_t		lock;
+	hybrid_spinlock_t	lock;
 	struct cpumask		*percpu_enabled;
 	const struct cpumask	*percpu_affinity;
 #ifdef CONFIG_SMP
@@ -154,6 +154,8 @@ static inline void generic_handle_irq_desc(struct irq_desc *desc)
 
 int generic_handle_irq(unsigned int irq);
 
+int generic_pipeline_irq(unsigned int irq, struct pt_regs *regs);
+
 #ifdef CONFIG_HANDLE_DOMAIN_IRQ
 /*
  * Convert a HW interrupt number to a logical one using a IRQ domain,
@@ -164,11 +166,24 @@ int generic_handle_irq(unsigned int irq);
 int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 			bool lookup, struct pt_regs *regs);
 
+#ifdef CONFIG_IRQ_PIPELINE
+unsigned int irq_find_mapping(struct irq_domain *host,
+			irq_hw_number_t hwirq);
+
+static inline int handle_domain_irq(struct irq_domain *domain,
+				    unsigned int hwirq, struct pt_regs *regs)
+{
+	unsigned int irq = irq_find_mapping(domain, hwirq);
+
+	return generic_pipeline_irq(irq, regs);
+}
+#else
 static inline int handle_domain_irq(struct irq_domain *domain,
 				    unsigned int hwirq, struct pt_regs *regs)
 {
 	return __handle_domain_irq(domain, hwirq, true, regs);
 }
+#endif	/* !CONFIG_IRQ_PIPELINE */
 
 #ifdef CONFIG_IRQ_DOMAIN
 int handle_domain_nmi(struct irq_domain *domain, unsigned int hwirq,
@@ -250,6 +265,14 @@ static inline bool irq_is_percpu_devid(unsigned int irq)
 
 	desc = irq_to_desc(irq);
 	return desc->status_use_accessors & IRQ_PER_CPU_DEVID;
+}
+
+static inline int irq_is_oob(unsigned int irq)
+{
+	struct irq_desc *desc;
+
+	desc = irq_to_desc(irq);
+	return desc->status_use_accessors & IRQ_OOB;
 }
 
 static inline void
