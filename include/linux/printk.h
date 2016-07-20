@@ -321,14 +321,22 @@ extern void __printk_cpu_sync_put(void);
  *       unsafe to perform any type of locking or spinning to wait for other
  *       CPUs after calling this function from any context. This includes
  *       using spinlocks or any other busy-waiting synchronization methods.
+ *
+ * irq_pipeline: we neither need nor want to disable in-band IRQs over
+ * the oob stage or pipeline entry contexts, where CPU migration can't
+ * happen. Conversely, we neither need nor want to disable hard IRQs
+ * from the oob stage, so that latency won't skyrocket as a result of
+ * holding the print lock.
  */
-#define printk_cpu_sync_get_irqsave(flags)		\
-	for (;;) {					\
-		local_irq_save(flags);			\
-		if (__printk_cpu_sync_try_get())	\
-			break;				\
-		local_irq_restore(flags);		\
-		__printk_cpu_sync_wait();		\
+#define printk_cpu_sync_get_irqsave(flags)			\
+	for (;;) {						\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_save(flags);			\
+		if (__printk_cpu_sync_try_get())		\
+			break;					\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_restore(flags);		\
+		__printk_cpu_sync_wait();			\
 	}
 
 /**
@@ -336,10 +344,11 @@ extern void __printk_cpu_sync_put(void);
  *                                    lock and restore interrupts.
  * @flags: Caller's saved interrupt state, from printk_cpu_sync_get_irqsave().
  */
-#define printk_cpu_sync_put_irqrestore(flags)	\
-	do {					\
-		__printk_cpu_sync_put();	\
-		local_irq_restore(flags);	\
+#define printk_cpu_sync_put_irqrestore(flags)			\
+	do {							\
+		__printk_cpu_sync_put();			\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_restore(flags);		\
 	} while (0)
 
 extern int kptr_restrict;
