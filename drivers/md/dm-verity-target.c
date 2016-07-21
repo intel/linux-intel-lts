@@ -755,12 +755,27 @@ static int verity_parse_opt_args(struct dm_arg_set *as, struct dm_verity *v)
 {
 	int r;
 	unsigned argc;
+	unsigned int num;
+	char dummy;
 	struct dm_target *ti = v->ti;
 	const char *arg_name;
 
 	static struct dm_arg _args[] = {
 		{0, DM_VERITY_OPTS_MAX, "Invalid number of feature args"},
 	};
+
+	/* Support M-dessert verity mode parameter format. */
+	if (sscanf(as->argv[0], "%d%c", &num, &dummy) == 1 &&
+	    (num == DM_VERITY_MODE_EIO ||
+	     num == DM_VERITY_MODE_RESTART ||
+	     num == DM_VERITY_MODE_LOGGING)) {
+		v->mode = num;
+		as->argv++;
+		as->argc--;
+	}
+
+	if (!as->argc)
+		return 0;
 
 	r = dm_read_arg_group(_args, as, &argc, &ti->error);
 	if (r)
