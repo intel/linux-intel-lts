@@ -5,6 +5,7 @@
  */
 #include <linux/bottom_half.h>
 #include <linux/debug_locks.h>
+#include <linux/dovetail.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/irq_pipeline.h>
@@ -1236,6 +1237,15 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	 * interrupt to happen from the in-band stage.
 	 */
 	synchronize_pipeline_on_irq();
+
+#ifdef CONFIG_DOVETAIL
+	/*
+	 * Sending MAYDAY is in essence a rare case, so prefer test
+	 * then maybe clear over test_and_clear.
+	 */
+	if (user_mode(regs) && test_thread_flag(TIF_MAYDAY))
+		dovetail_call_mayday(regs);
+#endif
 
 	return running_inband() && !irqs_disabled();
 }
