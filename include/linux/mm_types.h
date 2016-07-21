@@ -18,6 +18,8 @@
 
 #include <asm/mmu.h>
 
+#include <dovetail/mm_info.h>
+
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
 #endif
@@ -574,6 +576,9 @@ struct mm_struct {
 		struct uprobes_state uprobes_state;
 #ifdef CONFIG_HUGETLB_PAGE
 		atomic_long_t hugetlb_usage;
+#endif
+#ifdef CONFIG_DOVETAIL
+		struct oob_mm_state oob_state;
 #endif
 		struct work_struct async_put_work;
 

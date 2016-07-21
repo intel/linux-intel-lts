@@ -20,6 +20,7 @@
 #include <linux/pfn.h>
 #include <linux/percpu-refcount.h>
 #include <linux/bit_spinlock.h>
+#include <linux/dovetail.h>
 #include <linux/shrinker.h>
 #include <linux/resource.h>
 #include <linux/page_ext.h>
