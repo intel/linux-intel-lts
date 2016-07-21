@@ -760,6 +760,10 @@ still_pending:
 void signal_wake_up_state(struct task_struct *t, unsigned int state)
 {
 	set_tsk_thread_flag(t, TIF_SIGPENDING);
+
+	/* TIF_SIGPENDING must be set prior to notifying. */
+	inband_signal_notify(t);
+
 	/*
 	 * TASK_WAKEKILL also means wake it up in the stopped/traced/killable
 	 * case. We don't check t->state here because there is a race with it
@@ -981,8 +985,11 @@ static inline bool wants_signal(int sig, struct task_struct *p)
 	if (sig == SIGKILL)
 		return true;
 
-	if (task_is_stopped_or_traced(p))
+	if (task_is_stopped_or_traced(p)) {
+		if (!signal_pending(p))
+			inband_signal_notify(p);
 		return false;
+	}
 
 	return task_curr(p) || !signal_pending(p);
 }
@@ -2143,6 +2150,8 @@ static void ptrace_stop(int exit_code, int why, int clear_code, kernel_siginfo_t
 			return;
 	}
 
+	inband_ptstop_notify();
+
 	set_special_state(TASK_TRACED);
 
 	/*
@@ -2235,6 +2244,8 @@ static void ptrace_stop(int exit_code, int why, int clear_code, kernel_siginfo_t
 			current->exit_code = 0;
 		read_unlock(&tasklist_lock);
 	}
+
+	inband_ptcont_notify();
 
 	/*
 	 * We are back.  Now reacquire the siglock before touching

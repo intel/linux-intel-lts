@@ -5042,6 +5042,15 @@ void print_vma_addr(char *prefix, unsigned long ip)
 void __might_fault(const char *file, int line)
 {
 	/*
+	 * When running over the oob stage (e.g. some co-kernel's own
+	 * thread), we should only make sure to run with hw IRQs
+	 * enabled before accessing the memory.
+	 */
+	if (running_oob()) {
+		WARN_ON_ONCE(hard_irqs_disabled());
+		return;
+	}
+	/*
 	 * Some code (nfs/sunrpc) uses socket ops on kernel memory while
 	 * holding the mmap_lock, this is safe because kernel memory doesn't
 	 * get paged out, therefore we'll never actually fault, and the
@@ -5236,6 +5245,66 @@ long copy_huge_page_from_user(struct page *dst_page,
 	return ret_val;
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE || CONFIG_HUGETLBFS */
+
+#ifdef CONFIG_DOVETAIL
+
+int commit_vma(struct mm_struct *mm, struct vm_area_struct *vma)
+{
+	unsigned int gup_flags;
+	int ret, npages;
+
+	if (vma->vm_flags & (VM_IO | VM_PFNMAP))
+		return 0;
+
+	if (!((vma->vm_flags & VM_DONTEXPAND) ||
+	    is_vm_hugetlb_page(vma) || vma == get_gate_vma(mm))) {
+		ret = populate_vma_page_range(vma, vma->vm_start, vma->vm_end,
+					      NULL);
+		return ret < 0 ? ret : 0;
+	}
+
+	gup_flags = (vma->vm_flags & (VM_WRITE | VM_SHARED)) == VM_WRITE
+		? FOLL_WRITE : 0;
+	npages = DIV_ROUND_UP(vma->vm_end, PAGE_SIZE) - vma->vm_start/PAGE_SIZE;
+	ret = get_user_pages(vma->vm_start, npages, gup_flags, NULL, NULL);
+	if (ret < 0)
+		return ret;
+
+	return ret == npages ? 0 : -EFAULT;
+}
+
+int force_commit_memory(void)
+{
+	struct task_struct *tsk = current;
+	struct vm_area_struct *vma;
+	struct mm_struct *mm;
+	int ret = 0;
+
+	mm = get_task_mm(tsk);
+	if (!mm)
+		return -EPERM;
+
+	mmap_write_lock(mm);
+	if (test_bit(MMF_VM_PINNED, &mm->flags))
+		goto done_mm;
+
+	for (vma = mm->mmap; vma; vma = vma->vm_next) {
+		if (is_cow_mapping(vma->vm_flags) &&
+		    (vma->vm_flags & VM_WRITE)) {
+			ret = commit_vma(mm, vma);
+			if (ret < 0)
+				goto done_mm;
+		}
+	}
+	set_bit(MMF_VM_PINNED, &mm->flags);
+done_mm:
+	mmap_write_unlock(mm);
+	mmput(mm);
+
+	return ret;
+}
+
+#endif
 
 #if USE_SPLIT_PTE_PTLOCKS && ALLOC_SPLIT_PTLOCKS
 

@@ -398,6 +398,7 @@ static struct fdtable *close_files(struct files_struct * files)
 			if (set & 1) {
 				struct file * file = xchg(&fdt->fd[i], NULL);
 				if (file) {
+					uninstall_inband_fd(i, file, files);
 					filp_close(file, files);
 					cond_resched();
 				}
@@ -615,6 +616,7 @@ void __fd_install(struct files_struct *files, unsigned int fd,
 		fdt = files_fdtable(files);
 		BUG_ON(fdt->fd[fd] != NULL);
 		rcu_assign_pointer(fdt->fd[fd], file);
+		install_inband_fd(fd, file, files);
 		spin_unlock(&files->file_lock);
 		return;
 	}
@@ -623,6 +625,7 @@ void __fd_install(struct files_struct *files, unsigned int fd,
 	fdt = rcu_dereference_sched(files->fdt);
 	BUG_ON(fdt->fd[fd] != NULL);
 	rcu_assign_pointer(fdt->fd[fd], file);
+	install_inband_fd(fd, file, files);
 	rcu_read_unlock_sched();
 }
 
@@ -651,6 +654,7 @@ static struct file *pick_file(struct files_struct *files, unsigned fd)
 		goto out_unlock;
 	rcu_assign_pointer(fdt->fd[fd], NULL);
 	__put_unused_fd(files, fd);
+	uninstall_inband_fd(fd, file, files);
 
 out_unlock:
 	spin_unlock(&files->file_lock);
@@ -770,6 +774,7 @@ int __close_fd_get_file(unsigned int fd, struct file **res)
 		goto out_unlock;
 	rcu_assign_pointer(fdt->fd[fd], NULL);
 	__put_unused_fd(files, fd);
+	uninstall_inband_fd(fd, file, files);
 	spin_unlock(&files->file_lock);
 	get_file(file);
 	*res = file;
@@ -807,6 +812,7 @@ void do_close_on_exec(struct files_struct *files)
 				continue;
 			rcu_assign_pointer(fdt->fd[fd], NULL);
 			__put_unused_fd(files, fd);
+			uninstall_inband_fd(fd, file, files);
 			spin_unlock(&files->file_lock);
 			filp_close(file, files);
 			cond_resched();
@@ -1001,6 +1007,7 @@ __releases(&files->file_lock)
 		__set_close_on_exec(fd, fdt);
 	else
 		__clear_close_on_exec(fd, fdt);
+	replace_inband_fd(fd, file, files);
 	spin_unlock(&files->file_lock);
 
 	if (tofree)

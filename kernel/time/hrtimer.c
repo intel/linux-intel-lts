@@ -889,6 +889,7 @@ void clock_was_set(void)
 	on_each_cpu(retrigger_next_event, NULL, 1);
 #endif
 	timerfd_clock_was_set();
+	inband_clock_was_set();
 }
 
 /*
