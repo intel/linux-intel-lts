@@ -49,6 +49,7 @@
 #include <linux/plist.h>
 #include <linux/poll.h>
 #include <linux/irq_pipeline.h>
+#include <linux/dovetail.h>
 #include <linux/proc_fs.h>
 #include <linux/profile.h>
 #include <linux/psi.h>
