@@ -124,6 +124,12 @@ struct task_group;
 
 #define task_is_stopped_or_traced(task)	((READ_ONCE(task->__state) & (__TASK_STOPPED | __TASK_TRACED)) != 0)
 
+#ifdef CONFIG_DOVETAIL
+#define task_is_off_stage(task)		test_ti_local_flags(task_thread_info(task), _TLF_OFFSTAGE)
+#else
+#define task_is_off_stage(task)		0
+#endif
+
 /*
  * Special states are those that do not use the normal wait-loop pattern. See
  * the comment with set_special_state().

@@ -10,6 +10,7 @@
 #include <linux/fs.h>
 #include <linux/sysctl.h>
 #include <linux/uaccess.h>
+#include <dovetail/poll.h>
 #include <uapi/linux/poll.h>
 #include <uapi/linux/eventpoll.h>
 
