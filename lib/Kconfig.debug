@@ -1018,6 +1018,16 @@ config IRQ_PIPELINE_TORTURE_TEST
 	  Say Y here if you want the IRQ pipeline torture tests to run
 	  when the kernel starts. Say N if you are unsure.
 
+config DEBUG_DOVETAIL
+	bool "Debug Dovetail interface"
+	depends on DOVETAIL && DEBUG_KERNEL
+	select DEBUG_IRQ_PIPELINE
+	help
+	  Turn on this option for enabling debug checks related to
+	  running a dual kernel configuration, aka dovetailing. This
+	  option implicitly enables the interrupt pipeline debugging
+	  features.
+
 menu "Debug Oops, Lockups and Hangs"
 
 config PANIC_ON_OOPS
