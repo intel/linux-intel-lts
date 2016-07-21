@@ -194,6 +194,9 @@ config HAVE_KPROBES_ON_FTRACE
 config HAVE_FUNCTION_ERROR_INJECTION
 	bool
 
+config HAVE_PERCPU_PREEMPT_COUNT
+	bool
+
 config HAVE_NMI
 	bool
 
