@@ -229,6 +229,9 @@ config HAVE_FUNCTION_ERROR_INJECTION
 config HAVE_NMI
 	bool
 
+config HAVE_PERCPU_PREEMPT_COUNT
+	bool
+
 #
 # An arch should select this if it provides all these things:
 #

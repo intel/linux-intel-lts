@@ -53,6 +53,7 @@
 #include <linux/migrate.h>
 #include <linux/mmu_context.h>
 #include <linux/irq_pipeline.h>
+#include <linux/dovetail.h>
 #include <linux/nmi.h>
 #include <linux/proc_fs.h>
 #include <linux/prefetch.h>
