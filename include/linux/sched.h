@@ -117,6 +117,12 @@ struct io_uring_task;
 
 #define task_is_stopped_or_traced(task)	((task->state & (__TASK_STOPPED | __TASK_TRACED)) != 0)
 
+#ifdef CONFIG_DOVETAIL
+#define task_is_off_stage(task)		test_ti_local_flags(task_thread_info(task), _TLF_OFFSTAGE)
+#else
+#define task_is_off_stage(task)		0
+#endif
+
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 
 /*

@@ -271,6 +271,10 @@ static int vmap_p4d_range(pgd_t *pgd, unsigned long addr,
 	return 0;
 }
 
+void __weak arch_advertise_page_mapping(unsigned long start, unsigned long end)
+{
+}
+
 /**
  * map_kernel_range_noflush - map kernel VM area with the specified pages
  * @addr: start of the VM area to map
@@ -313,6 +317,8 @@ int map_kernel_range_noflush(unsigned long addr, unsigned long size,
 
 	if (mask & ARCH_PAGE_TABLE_SYNC_MASK)
 		arch_sync_kernel_mappings(start, end);
+
+	arch_advertise_page_mapping(start, end);
 
 	return 0;
 }
