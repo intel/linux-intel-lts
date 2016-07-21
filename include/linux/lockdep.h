@@ -611,6 +611,14 @@ DECLARE_PER_CPU(unsigned int, lockdep_recursion);
 			  !__lockdep_check_irqs_disabled());		\
 	  } while (0)
 
+#define lockdep_read_irqs_state()					\
+	({ this_cpu_read(hardirqs_enabled); })
+
+#define lockdep_write_irqs_state(__state)				\
+do {									\
+	this_cpu_write(hardirqs_enabled, __state);			\
+} while (0)
+
 #define lockdep_assert_in_irq()						\
 do {									\
 	WARN_ON_ONCE(__lockdep_enabled && !this_cpu_read(hardirq_context)); \
@@ -649,6 +657,8 @@ do {									\
 
 # define lockdep_assert_irqs_enabled() do { } while (0)
 # define lockdep_assert_irqs_disabled() do { } while (0)
+# define lockdep_read_irqs_state() 0
+# define lockdep_write_irqs_state(__state) do { (void)(__state); } while (0)
 # define lockdep_assert_in_irq() do { } while (0)
 
 # define lockdep_assert_preemption_enabled() do { } while (0)

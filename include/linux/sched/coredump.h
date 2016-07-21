@@ -82,6 +82,7 @@ static inline int get_dumpable(struct mm_struct *mm)
  */
 #define MMF_HAS_PINNED		27	/* FOLL_PIN has run, never cleared */
 #define MMF_DISABLE_THP_MASK	(1 << MMF_DISABLE_THP)
+#define MMF_DOVETAILED		31	/* mm belongs to a dovetailed process */
 
 #define MMF_INIT_MASK		(MMF_DUMPABLE_MASK | MMF_DUMP_FILTER_MASK |\
 				 MMF_DISABLE_THP_MASK)
