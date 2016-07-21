@@ -262,7 +262,7 @@ static inline int page_try_dup_anon_rmap(struct page *page, bool compound,
 	 * future on write faults.
 	 */
 	if (likely(!is_device_private_page(page)) &&
-	    unlikely(page_needs_cow_for_dma(vma, page)))
+	    unlikely(page_needs_cow(vma, page)))
 		return -EBUSY;
 
 	ClearPageAnonExclusive(page);
