@@ -787,8 +787,7 @@ int sdw_en_dis_mstr_slv_state(struct sdw_bus *sdw_mstr_bs,
  * This function computes clock and frame shape based on
  * clock frequency.
  */
-int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
-		int *col, int *row)
+int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int)
 {
 	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
 	int i, rc, clock_reqd = 0, frame_interval = 0, frame_frequency = 0;
@@ -850,8 +849,6 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
 		sdw_mstr_bs->clk_div = clock_div[i];
 		clock_ok = false;
 		*frame_int = frame_interval;
-		*col = sel_col;
-		*row = sel_row;
 		sdw_mstr_bs->col = sel_col;
 		sdw_mstr_bs->row = sel_row;
 
@@ -974,7 +971,7 @@ int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
  * This function computes hstart and hstop for running
  * streams per master & slaves.
  */
-int sdw_compute_hstart_hstop(struct sdw_bus *sdw_mstr_bs, int sel_col)
+int sdw_compute_hstart_hstop(struct sdw_bus *sdw_mstr_bs)
 {
 	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
 	struct sdw_mstr_runtime *sdw_mstr_bs_rt;
@@ -983,6 +980,7 @@ int sdw_compute_hstart_hstop(struct sdw_bus *sdw_mstr_bs, int sel_col)
 	struct sdw_port_runtime *port_rt, *port_slv_rt;
 	int hstop = 0, hwidth = 0;
 	int payload_bw = 0, full_bw = 0, column_needed = 0;
+	int sel_col = sdw_mstr_bs->col;
 	bool hstop_flag = false;
 
 	/* Calculate hwidth, hstart and hstop */
@@ -1295,92 +1293,35 @@ int sdw_compute_blk_subblk_offset(struct sdw_bus *sdw_mstr_bs)
 	return 0;
 }
 
-
 /*
- * sdw_configure_frmshp_bnkswtch - returns Success
+ * sdw_cfg_frmshp_bnkswtch - returns Success
  * -EINVAL - In case of error.
+ * -ENOMEM - In case of memory alloc failure.
+ * -EAGAIN - In case of activity ongoing.
  *
  *
  * This function broadcast frameshape on framectrl
  * register and performs bank switch.
  */
-int sdw_configure_frmshp_bnkswtch(struct sdw_bus *mstr_bs, int col, int row)
+int sdw_cfg_frmshp_bnkswtch(struct sdw_bus *mstr_bs, bool is_wait)
 {
-	struct sdw_msg wr_msg;
-	int ret = 0;
-	int banktouse, numcol, numrow;
-	u8 wbuf[1] = {0};
-
-	numcol = sdw_get_col_to_num(col);
-	numrow = sdw_get_row_to_num(row);
-
-	wbuf[0] = numcol | (numrow << 3);
-	/* Get current bank in use from bus structure*/
-	banktouse = mstr_bs->active_bank;
-	banktouse = !banktouse;
-
-	if (banktouse) {
-		wr_msg.addr = (SDW_SCP_FRAMECTRL + SDW_BANK1_REGISTER_OFFSET) +
-			(SDW_NUM_DATA_PORT_REGISTERS * 0); /* Data port 0 */
-	} else {
-
-		wr_msg.addr = SDW_SCP_FRAMECTRL +
-			(SDW_NUM_DATA_PORT_REGISTERS * 0); /* Data port 0 */
-	}
-
-	wr_msg.ssp_tag = 0x1;
-	wr_msg.flag = SDW_MSG_FLAG_WRITE;
-	wr_msg.len = 1;
-	wr_msg.slave_addr = 0xF; /* Broadcast address*/
-	wr_msg.buf = wbuf;
-	wr_msg.addr_page1 = 0x0;
-	wr_msg.addr_page2 = 0x0;
-
-
-	ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg, 1);
-	if (ret != 1) {
-		ret = -EINVAL;
-		dev_err(&mstr_bs->mstr->dev, "Register transfer failed\n");
-		goto out;
-	}
-
-	msleep(100); /* TBD: Remove this */
-
-	/*
-	 * TBD: check whether we need to poll on
-	 * mcp active bank bit to switch bank
-	 */
-	mstr_bs->active_bank = banktouse;
-
-out:
-
-	return ret;
-}
-
-/*
- * sdw_configure_frmshp_bnkswtch - returns Success
- * -EINVAL - In case of error.
- *
- *
- * This function broadcast frameshape on framectrl
- * register and performs bank switch.
- */
-int sdw_configure_frmshp_bnkswtch_mm(struct sdw_bus *mstr_bs, int col, int row)
-{
+	struct sdw_msg *wr_msg;
 	int ret = 0;
 	int banktouse, numcol, numrow;
 	u8 *wbuf;
-	struct sdw_msg *wr_msg;
 
 	wr_msg = kzalloc(sizeof(struct sdw_msg), GFP_KERNEL);
-	mstr_bs->async_data.msg = wr_msg;
 	if (!wr_msg)
 		return -ENOMEM;
+
+	mstr_bs->async_data.msg = wr_msg;
+
 	wbuf = kzalloc(sizeof(*wbuf), GFP_KERNEL);
-	if (!wbuf)
-		return -ENOMEM;
-	numcol = sdw_get_col_to_num(col);
-	numrow = sdw_get_row_to_num(row);
+		if (!wbuf)
+			return -ENOMEM;
+
+	numcol = sdw_get_col_to_num(mstr_bs->col);
+	numrow = sdw_get_row_to_num(mstr_bs->row);
 
 	wbuf[0] = numcol | (numrow << 3);
 	/* Get current bank in use from bus structure*/
@@ -1404,23 +1345,34 @@ int sdw_configure_frmshp_bnkswtch_mm(struct sdw_bus *mstr_bs, int col, int row)
 	wr_msg->addr_page1 = 0x0;
 	wr_msg->addr_page2 = 0x0;
 
-	if (in_atomic() || irqs_disabled()) {
-		ret = sdw_trylock_mstr(mstr_bs->mstr);
-		if (!ret) {
-			/* SDW activity is ongoing. */
-			ret = -EAGAIN;
+	if (is_wait) {
+
+		if (in_atomic() || irqs_disabled()) {
+			ret = sdw_trylock_mstr(mstr_bs->mstr);
+			if (!ret) {
+				/* SDW activity is ongoing. */
+				ret = -EAGAIN;
+				goto out;
+			}
+		} else
+			sdw_lock_mstr(mstr_bs->mstr);
+
+		ret = sdw_slave_transfer_async(mstr_bs->mstr, wr_msg,
+				1, &mstr_bs->async_data);
+		if (ret != 1) {
+			ret = -EINVAL;
+			dev_err(&mstr_bs->mstr->dev, "Register transfer failed\n");
 			goto out;
 		}
-	} else {
-		sdw_lock_mstr(mstr_bs->mstr);
-	}
 
-	ret = sdw_slave_transfer_async(mstr_bs->mstr, wr_msg,
-					1, &mstr_bs->async_data);
-	if (ret != 1) {
-		ret = -EINVAL;
-		dev_err(&mstr_bs->mstr->dev, "Register transfer failed\n");
-		goto out;
+	} else {
+		ret = sdw_slave_transfer(mstr_bs->mstr, wr_msg, 1);
+		if (ret != 1) {
+			ret = -EINVAL;
+			dev_err(&mstr_bs->mstr->dev, "Register transfer failed\n");
+			goto out;
+		}
+
 	}
 
 	msleep(100); /* TBD: Remove this */
@@ -1431,12 +1383,25 @@ int sdw_configure_frmshp_bnkswtch_mm(struct sdw_bus *mstr_bs, int col, int row)
 	 */
 	mstr_bs->active_bank = banktouse;
 
+	if (!is_wait) {
+		kfree(mstr_bs->async_data.msg->buf);
+		kfree(mstr_bs->async_data.msg);
+	}
+
+
 out:
 
 	return ret;
 }
 
-int sdw_configure_frmshp_bnkswtch_mm_wait(struct sdw_bus *mstr_bs)
+/*
+ * sdw_cfg_frmshp_bnkswtch_wait - returns Success
+ * -ETIMEDOUT - In case of timeout
+ *
+ * This function waits on completion of
+ * bank switch.
+ */
+int sdw_cfg_frmshp_bnkswtch_wait(struct sdw_bus *mstr_bs)
 {
 	unsigned long time_left;
 	struct sdw_master *mstr = mstr_bs->mstr;
@@ -1456,7 +1421,7 @@ int sdw_configure_frmshp_bnkswtch_mm_wait(struct sdw_bus *mstr_bs)
 }
 
 /*
- * sdw_cfg_bs_params - returns Success
+ * sdw_config_bs_prms - returns Success
  * -EINVAL - In case of error.
  *
  *
@@ -1466,12 +1431,11 @@ int sdw_configure_frmshp_bnkswtch_mm_wait(struct sdw_bus *mstr_bs)
  * from sdw_bus_calc_bw & sdw_bus_calc_bw_dis API.
  *
  */
-int sdw_cfg_bs_params(struct sdw_bus *sdw_mstr_bs,
-		struct sdw_mstr_runtime *sdw_mstr_bs_rt,
-		bool state_check)
+int sdw_config_bs_prms(struct sdw_bus *sdw_mstr_bs, bool state_check)
 {
 	struct port_chn_en_state chn_en;
 	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	struct sdw_mstr_runtime *sdw_mstr_bs_rt = NULL;
 	struct sdw_mstr_driver *ops;
 	int banktouse, ret = 0;
 
@@ -1547,10 +1511,10 @@ int sdw_cfg_bs_params(struct sdw_bus *sdw_mstr_bs,
  * bank is enabled.
  *
  */
-int sdw_dis_chan(struct sdw_bus *sdw_mstr_bs,
-	struct sdw_mstr_runtime *sdw_mstr_bs_rt)
+int sdw_dis_chan(struct sdw_bus *sdw_mstr_bs)
 {
 	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	struct sdw_mstr_runtime *sdw_mstr_bs_rt = NULL;
 	struct port_chn_en_state chn_en;
 	int ret = 0;
 
@@ -1921,6 +1885,611 @@ struct sdw_bus *master_to_bus(struct sdw_master *mstr)
 	return NULL;
 }
 
+/*
+ * sdw_chk_strm_prms - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function performs all the required
+ * check such as isynchronous mode support,
+ * stream rates etc. This API is called
+ * from sdw_bus_calc_bw API.
+ *
+ */
+int sdw_chk_strm_prms(struct sdw_master_capabilities *sdw_mstr_cap,
+			struct sdw_stream_params *mstr_params,
+			struct sdw_stream_params *stream_params)
+{
+	/* Asynchronous mode not supported, return Error */
+	if (((sdw_mstr_cap->base_clk_freq * 2) % mstr_params->rate) != 0)
+		return -EINVAL;
+
+	/* Check for sampling frequency */
+	if (stream_params->rate != mstr_params->rate)
+		return -EINVAL;
+
+	return 0;
+}
+
+/*
+ * sdw_compute_bs_prms - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function performs master/slave transport
+ * params computation. This API is called
+ * from sdw_bus_calc_bw & sdw_bus_calc_bw_dis API.
+ *
+ */
+int sdw_compute_bs_prms(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_mstr_runtime *sdw_mstr_rt)
+{
+
+	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
+	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	int ret = 0, frame_interval = 0;
+
+	sdw_mstr_cap = &sdw_mstr->mstr_capabilities;
+
+	ret = sdw_get_clock_frmshp(sdw_mstr_bs, &frame_interval);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "clock/frameshape config failed\n");
+		return ret;
+	}
+
+	/*
+	 * TBD: find right place to run sorting on
+	 * master rt_list. Below sorting is done based on
+	 * bps from low to high, that means PDM streams
+	 * will be placed before PCM.
+	 */
+
+	/*
+	 * TBD Should we also perform sorting based on rate
+	 * for PCM stream check. if yes then how??
+	 * creating two different list.
+	 */
+
+	/* Compute system interval */
+	ret = sdw_compute_sys_interval(sdw_mstr_bs, sdw_mstr_cap,
+			frame_interval);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "compute system interval failed\n");
+		return ret;
+	}
+
+	/* Compute hstart/hstop */
+	ret = sdw_compute_hstart_hstop(sdw_mstr_bs);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "compute hstart/hstop failed\n");
+		return ret;
+	}
+
+	/* Compute block offset */
+	ret = sdw_compute_blk_subblk_offset(sdw_mstr_bs);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "compute block offset failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+/*
+ * sdw_bs_pre_bnkswtch_post - returns Success
+ * -EINVAL or ret value - In case of error.
+ *
+ * This API performs on of the following operation
+ * based on bs_state value:
+ * pre-activate port
+ * bank switch operation
+ * post-activate port
+ * bankswitch wait operation
+ * disable channel operation
+ */
+int sdw_bs_pre_bnkswtch_post(struct sdw_runtime *sdw_rt, int bs_state)
+{
+	struct sdw_mstr_runtime	*mstr_rt_act = NULL;
+	struct sdw_bus *mstr_bs_act = NULL;
+	struct sdw_master_port_ops *ops;
+	int ret = 0;
+
+	list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
+			mstr_sdw_node) {
+
+		if (mstr_rt_act->mstr == NULL)
+			break;
+
+		/* Get bus structure for master */
+		mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
+		ops = mstr_bs_act->mstr->driver->mstr_port_ops;
+
+		/*
+		 * Note that current all the operations
+		 * of pre->bankswitch->post->wait->disable
+		 * are performed sequentially.The switch case
+		 * is kept in order for code to scale where
+		 * pre->bankswitch->post->wait->disable are
+		 * not sequential and called from different
+		 * instances.
+		 */
+		switch (bs_state) {
+
+		case SDW_UPDATE_BS_PRE:
+			/* Pre activate ports */
+			if (ops->dpn_port_activate_ch_pre) {
+				ret = ops->dpn_port_activate_ch_pre
+					(mstr_bs_act->mstr, NULL, 0);
+				if (ret < 0)
+					return ret;
+			}
+			break;
+		case SDW_UPDATE_BS_BNKSWTCH:
+			/* Configure Frame Shape/Switch Bank */
+			ret = sdw_cfg_frmshp_bnkswtch(mstr_bs_act, true);
+			if (ret < 0)
+				return ret;
+			break;
+		case SDW_UPDATE_BS_POST:
+			/* Post activate ports */
+			if (ops->dpn_port_activate_ch_post) {
+				ret = ops->dpn_port_activate_ch_post
+					(mstr_bs_act->mstr, NULL, 0);
+				if (ret < 0)
+					return ret;
+			}
+			break;
+		case SDW_UPDATE_BS_BNKSWTCH_WAIT:
+			/* Post Bankswitch wait operation */
+			ret = sdw_cfg_frmshp_bnkswtch_wait(mstr_bs_act);
+			if (ret < 0)
+				return ret;
+			break;
+		case SDW_UPDATE_BS_DIS_CHN:
+			/* Disable channel on previous bank */
+			ret = sdw_dis_chan(mstr_bs_act);
+			if (ret < 0)
+				return ret;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	return ret;
+
+}
+
+/*
+ * sdw_update_bs_prms - returns Success
+ * -EINVAL - In case of error.
+ *
+ * Once all the parameters are configured
+ * for ports, this function performs bankswitch
+ * where all the new configured parameters
+ * gets in effect. This function is called
+ * from sdw_bus_calc_bw & sdw_bus_calc_bw_dis API.
+ * This function also disables all the channels
+ * enabled on previous bank after bankswitch.
+ */
+int sdw_update_bs_prms(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_runtime *sdw_rt,
+		int last_node)
+{
+
+	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	int ret = 0;
+
+	/*
+	 * Optimization scope.
+	 * Check whether we can assign function pointer
+	 * link sync value is 1, and call that function
+	 * if its not NULL.
+	 */
+	if ((last_node) && (sdw_mstr->link_sync_mask)) {
+
+		/* Perform pre-activate ports */
+		ret = sdw_bs_pre_bnkswtch_post(sdw_rt, SDW_UPDATE_BS_PRE);
+		if (ret < 0) {
+			dev_err(&sdw_mstr->dev, "Pre-activate port failed\n");
+			return ret;
+		}
+
+		/* Perform bankswitch operation*/
+		ret = sdw_bs_pre_bnkswtch_post(sdw_rt, SDW_UPDATE_BS_BNKSWTCH);
+		if (ret < 0) {
+			dev_err(&sdw_mstr->dev, "Bank Switch operation failed\n");
+			return ret;
+		}
+
+		/* Perform post-activate ports */
+		ret = sdw_bs_pre_bnkswtch_post(sdw_rt, SDW_UPDATE_BS_POST);
+		if (ret < 0) {
+			dev_err(&sdw_mstr->dev, "Pre-activate port failed\n");
+			return ret;
+		}
+
+		/* Perform bankswitch post wait opearation */
+		ret = sdw_bs_pre_bnkswtch_post(sdw_rt,
+				SDW_UPDATE_BS_BNKSWTCH_WAIT);
+		if (ret < 0) {
+			dev_err(&sdw_mstr->dev, "BnkSwtch wait op failed\n");
+			return ret;
+		}
+
+		/* Disable channels on previous bank */
+		ret = sdw_bs_pre_bnkswtch_post(sdw_rt, SDW_UPDATE_BS_DIS_CHN);
+		if (ret < 0) {
+			dev_err(&sdw_mstr->dev, "Channel disabled failed\n");
+			return ret;
+		}
+
+	}
+
+	if (!sdw_mstr->link_sync_mask) {
+
+		/* Configure Frame Shape/Switch Bank */
+		ret = sdw_cfg_frmshp_bnkswtch(sdw_mstr_bs, false);
+		if (ret < 0) {
+			/* TBD: Undo all the computation */
+			dev_err(&sdw_mstr->dev, "bank switch failed\n");
+			return ret;
+		}
+
+		/* Disable all channels enabled on previous bank */
+		ret = sdw_dis_chan(sdw_mstr_bs);
+		if (ret < 0) {
+			/* TBD: Undo all the computation */
+			dev_err(&sdw_mstr->dev, "Channel disabled failed\n");
+			return ret;
+		}
+	}
+
+	return ret;
+}
+
+/**
+ * sdw_chk_last_node - returns True or false
+ *
+ * This function returns true in case of last node
+ * else returns false.
+ */
+bool sdw_chk_last_node(struct sdw_mstr_runtime *sdw_mstr_rt,
+	struct sdw_runtime *sdw_rt)
+{
+	struct sdw_mstr_runtime	*last_rt = NULL;
+
+	last_rt = list_last_entry(&sdw_rt->mstr_rt_list,
+			struct sdw_mstr_runtime, mstr_sdw_node);
+	if (sdw_mstr_rt == last_rt)
+		return true;
+	else
+		return false;
+
+}
+
+/**
+ * sdw_unprepare_op - returns Success
+ * -EINVAL - In case of error.
+ *
+ * This function perform all operations required
+ * to unprepare ports and does recomputation of
+ * bus parameters.
+ */
+int sdw_unprepare_op(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_mstr_runtime *sdw_mstr_rt,
+	struct sdw_runtime *sdw_rt)
+{
+
+	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	struct sdw_stream_params *mstr_params;
+	bool last_node = false;
+	int ret = 0;
+
+	last_node = sdw_chk_last_node(sdw_mstr_rt, sdw_rt);
+	mstr_params = &sdw_mstr_rt->stream_params;
+
+	/* 1. Un-prepare master and slave port */
+	ret = sdw_prep_unprep_mstr_slv(sdw_mstr_bs,
+			sdw_rt, false);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "Ch unprep failed\n");
+		return ret;
+	}
+
+	/* change stream state to unprepare */
+	if (last_node)
+		sdw_rt->stream_state =
+			SDW_STATE_UNPREPARE_STREAM;
+
+	/*
+	 * Calculate new bandwidth, frame size
+	 * and total BW required for master controller
+	 */
+	sdw_mstr_rt->stream_bw = mstr_params->rate *
+		mstr_params->channel_count * mstr_params->bps;
+	sdw_mstr_bs->bandwidth -= sdw_mstr_rt->stream_bw;
+
+	/* Something went wrong in bandwidth calulation */
+	if (sdw_mstr_bs->bandwidth < 0) {
+		dev_err(&sdw_mstr->dev, "BW calculation failed\n");
+		return -EINVAL;
+	}
+
+	if (!sdw_mstr_bs->bandwidth) {
+		/*
+		 * Last stream on master should
+		 * return successfully
+		 */
+		return 0;
+	}
+
+	/* Compute transport params */
+	ret = sdw_compute_bs_prms(sdw_mstr_bs, sdw_mstr_rt);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "Params computation failed\n");
+		return -EINVAL;
+	}
+
+	/* Configure bus params */
+	ret = sdw_config_bs_prms(sdw_mstr_bs, true);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "xport params config failed\n");
+		return ret;
+	}
+
+	/*
+	 * Perform SDW bus update
+	 * For Aggregation flow:
+	 * Pre-> Bankswitch -> Post -> Disable channel
+	 * For normal flow:
+	 * Bankswitch -> Disable channel
+	 */
+	ret = sdw_update_bs_prms(sdw_mstr_bs, sdw_rt, last_node);
+
+	return ret;
+}
+
+/**
+ * sdw_disable_op - returns Success
+ * -EINVAL - In case of error.
+ *
+ * This function perform all operations required
+ * to disable ports.
+ */
+int sdw_disable_op(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_mstr_runtime *sdw_mstr_rt,
+	struct sdw_runtime *sdw_rt)
+{
+
+	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
+	struct sdw_stream_params *mstr_params;
+	bool last_node = false;
+	int ret = 0;
+
+
+	last_node = sdw_chk_last_node(sdw_mstr_rt, sdw_rt);
+	sdw_mstr_cap = &sdw_mstr_bs->mstr->mstr_capabilities;
+	mstr_params = &sdw_mstr_rt->stream_params;
+
+	/* Lets do disabling of port for stream to be freed */
+	ret = sdw_en_dis_mstr_slv(sdw_mstr_bs, sdw_rt, false);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "Ch dis failed\n");
+		return ret;
+	}
+
+	/* Change stream state to disable */
+	if (last_node)
+		sdw_rt->stream_state = SDW_STATE_DISABLE_STREAM;
+
+	ret = sdw_config_bs_prms(sdw_mstr_bs, false);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "xport params config failed\n");
+		return ret;
+	}
+
+	/*
+	 * Perform SDW bus update
+	 * For Aggregation flow:
+	 * Pre-> Bankswitch -> Post -> Disable channel
+	 * For normal flow:
+	 * Bankswitch -> Disable channel
+	 */
+	ret = sdw_update_bs_prms(sdw_mstr_bs, sdw_rt, last_node);
+
+	return ret;
+}
+
+/**
+ * sdw_enable_op - returns Success
+ * -EINVAL - In case of error.
+ *
+ * This function perform all operations required
+ * to enable ports.
+ */
+int sdw_enable_op(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_mstr_runtime *sdw_mstr_rt,
+	struct sdw_runtime *sdw_rt)
+{
+
+	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	bool last_node = false;
+	int ret = 0;
+
+	last_node = sdw_chk_last_node(sdw_mstr_rt, sdw_rt);
+
+	ret = sdw_config_bs_prms(sdw_mstr_bs, false);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "xport params config failed\n");
+		return ret;
+	}
+
+	/* Enable new port for master and slave */
+	ret = sdw_en_dis_mstr_slv(sdw_mstr_bs, sdw_rt, true);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "Channel enable failed\n");
+		return ret;
+	}
+
+	/* change stream state to enable */
+	if (last_node)
+		sdw_rt->stream_state = SDW_STATE_ENABLE_STREAM;
+	/*
+	 * Perform SDW bus update
+	 * For Aggregation flow:
+	 * Pre-> Bankswitch -> Post -> Disable channel
+	 * For normal flow:
+	 * Bankswitch -> Disable channel
+	 */
+	ret = sdw_update_bs_prms(sdw_mstr_bs, sdw_rt, last_node);
+
+	return ret;
+}
+
+/**
+ * sdw_prepare_op - returns Success
+ * -EINVAL - In case of error.
+ *
+ * This function perform all operations required
+ * to prepare ports and does computation of
+ * bus parameters.
+ */
+int sdw_prepare_op(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_mstr_runtime *sdw_mstr_rt,
+	struct sdw_runtime *sdw_rt)
+{
+	struct sdw_stream_params *stream_params = &sdw_rt->stream_params;
+	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
+	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
+	struct sdw_stream_params *mstr_params;
+
+	bool last_node = false;
+	int ret = 0;
+
+	last_node = sdw_chk_last_node(sdw_mstr_rt, sdw_rt);
+	sdw_mstr_cap = &sdw_mstr_bs->mstr->mstr_capabilities;
+	mstr_params = &sdw_mstr_rt->stream_params;
+
+	/*
+	 * check all the stream parameters received
+	 * Check for isochronous mode, sample rate etc
+	 */
+	ret = sdw_chk_strm_prms(sdw_mstr_cap, mstr_params,
+			stream_params);
+	if (ret < 0) {
+		dev_err(&sdw_mstr->dev, "Stream param check failed\n");
+		return -EINVAL;
+	}
+
+	/*
+	 * Calculate stream bandwidth, frame size and
+	 * total BW required for master controller
+	 */
+	sdw_mstr_rt->stream_bw = mstr_params->rate *
+		mstr_params->channel_count * mstr_params->bps;
+	sdw_mstr_bs->bandwidth += sdw_mstr_rt->stream_bw;
+
+	/* Compute transport params */
+	ret = sdw_compute_bs_prms(sdw_mstr_bs, sdw_mstr_rt);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "Params computation failed\n");
+		return -EINVAL;
+	}
+
+	/* Configure bus parameters */
+	ret = sdw_config_bs_prms(sdw_mstr_bs, true);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "xport param config failed\n");
+		return ret;
+	}
+
+	/*
+	 * Perform SDW bus update
+	 * For Aggregation flow:
+	 * Pre-> Bankswitch -> Post -> Disable channel
+	 * For normal flow:
+	 * Bankswitch -> Disable channel
+	 */
+	ret = sdw_update_bs_prms(sdw_mstr_bs, sdw_rt, last_node);
+
+	/* Prepare new port for master and slave */
+	ret = sdw_prep_unprep_mstr_slv(sdw_mstr_bs, sdw_rt, true);
+	if (ret < 0) {
+		/* TBD: Undo all the computation */
+		dev_err(&sdw_mstr->dev, "Channel prepare failed\n");
+		return ret;
+	}
+
+	/* change stream state to prepare */
+	if (last_node)
+		sdw_rt->stream_state = SDW_STATE_PREPARE_STREAM;
+
+
+	return ret;
+}
+
+/**
+ * sdw_pre_en_dis_unprep_op - returns Success
+ * -EINVAL - In case of error.
+ *
+ * This function is called by sdw_bus_calc_bw
+ * and sdw_bus_calc_bw_dis to prepare, enable,
+ * unprepare and disable ports. Based on state
+ * value, individual APIs are called.
+ */
+int sdw_pre_en_dis_unprep_op(struct sdw_mstr_runtime *sdw_mstr_rt,
+	struct sdw_runtime *sdw_rt, int state)
+{
+	struct sdw_master *sdw_mstr = NULL;
+	struct sdw_bus *sdw_mstr_bs = NULL;
+	int ret = 0;
+
+	/* Get bus structure for master */
+	sdw_mstr_bs = master_to_bus(sdw_mstr_rt->mstr);
+	sdw_mstr = sdw_mstr_bs->mstr;
+
+	/*
+	 * All data structures required available,
+	 * lets calculate BW for master controller
+	 */
+
+	switch (state) {
+
+	case SDW_STATE_PREPARE_STREAM: /* Prepare */
+		ret = sdw_prepare_op(sdw_mstr_bs, sdw_mstr_rt, sdw_rt);
+		break;
+	case SDW_STATE_ENABLE_STREAM: /* Enable */
+		ret = sdw_enable_op(sdw_mstr_bs, sdw_mstr_rt, sdw_rt);
+		break;
+	case SDW_STATE_DISABLE_STREAM: /* Disable */
+		ret = sdw_disable_op(sdw_mstr_bs, sdw_mstr_rt, sdw_rt);
+		break;
+	case SDW_STATE_UNPREPARE_STREAM: /* UnPrepare */
+		ret = sdw_unprepare_op(sdw_mstr_bs, sdw_mstr_rt, sdw_rt);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+
+	}
+
+	return ret;
+}
+
 /**
  * sdw_bus_calc_bw - returns Success
  * -EINVAL - In case of error.
@@ -1937,20 +2506,11 @@ int sdw_bus_calc_bw(struct sdw_stream_tag *stream_tag, bool enable)
 {
 
 	struct sdw_runtime *sdw_rt = stream_tag->sdw_rt;
-	struct sdw_stream_params *stream_params = &sdw_rt->stream_params;
-	struct sdw_mstr_runtime *sdw_mstr_rt = NULL, *sdw_mstr_bs_rt = NULL;
-	struct sdw_mstr_runtime *mstr_rt_act = NULL, *last_rt = NULL;
-	struct sdw_bus *sdw_mstr_bs = NULL, *mstr_bs_act = NULL;
+	struct sdw_mstr_runtime *sdw_mstr_rt = NULL;
+	struct sdw_bus *sdw_mstr_bs = NULL;
 	struct sdw_master *sdw_mstr = NULL;
-	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
-	struct sdw_stream_params *mstr_params;
-	int stream_frame_size;
-	int frame_interval = 0, sel_row = 0, sel_col = 0;
 	int ret = 0;
-	bool last_node = false;
-	struct sdw_master_port_ops *ops;
 
-	/* TBD: Add PCM/PDM flag in sdw_config_stream */
 
 	/*
 	 * TBD: check for mstr_rt is in configured state or not
@@ -1964,401 +2524,41 @@ int sdw_bus_calc_bw(struct sdw_stream_tag *stream_tag, bool enable)
 
 		if (sdw_mstr_rt->mstr == NULL)
 			break;
-		last_rt = list_last_entry(&sdw_rt->mstr_rt_list,
-				struct sdw_mstr_runtime, mstr_sdw_node);
-		if (sdw_mstr_rt == last_rt)
-			last_node = true;
-		else
-			last_node = false;
-
-		/* Get bus structure for master */
-		sdw_mstr_bs = master_to_bus(sdw_mstr_rt->mstr);
-		sdw_mstr = sdw_mstr_bs->mstr;
-
-		/*
-		 * All data structures required available,
-		 * lets calculate BW for master controller
-		 */
-
-		/* Check for isochronous mode plus other checks if required */
-		sdw_mstr_cap = &sdw_mstr_bs->mstr->mstr_capabilities;
-		mstr_params = &sdw_mstr_rt->stream_params;
 
 		if ((sdw_rt->stream_state != SDW_STATE_CONFIG_STREAM) &&
 			(sdw_rt->stream_state != SDW_STATE_UNPREPARE_STREAM))
 			goto enable_stream;
 
-		/* Asynchronous mode not supported, return Error */
-		if ((sdw_mstr_cap->base_clk_freq % mstr_params->rate) != 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "Async mode not supported\n");
+		/* Get bus structure for master */
+		sdw_mstr_bs = master_to_bus(sdw_mstr_rt->mstr);
+		sdw_mstr = sdw_mstr_bs->mstr;
+		ret = sdw_pre_en_dis_unprep_op(sdw_mstr_rt, sdw_rt,
+				SDW_STATE_PREPARE_STREAM);
+		if (ret < 0) {
+			dev_err(&sdw_mstr->dev, "Prepare Operation failed\n");
 			return -EINVAL;
 		}
-
-		/* Check for sampling frequency */
-		if (stream_params->rate != mstr_params->rate) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "Sample frequency mismatch\n");
-			return -EINVAL;
-		}
-
-		/*
-		 * Calculate stream bandwidth, frame size and
-		 * total BW required for master controller
-		 */
-		sdw_mstr_rt->stream_bw = mstr_params->rate *
-			mstr_params->channel_count * mstr_params->bps;
-		stream_frame_size = mstr_params->channel_count *
-					mstr_params->bps;
-
-		sdw_mstr_bs->bandwidth += sdw_mstr_rt->stream_bw;
-
-		ret = sdw_get_clock_frmshp(sdw_mstr_bs,
-				&frame_interval, &sel_col, &sel_row);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "clock/frameshape config failed\n");
-			return ret;
-		}
-
-		/*
-		 * TBD: find right place to run sorting on
-		 * master rt_list. Below sorting is done based on
-		 * bps from low to high, that means PDM streams
-		 * will be placed before PCM.
-		 */
-
-		/*
-		 * TBD Should we also perform sorting based on rate
-		 * for PCM stream check. if yes then how??
-		 * creating two different list.
-		 */
-
-		/* Compute system interval */
-		ret = sdw_compute_sys_interval(sdw_mstr_bs, sdw_mstr_cap,
-						frame_interval);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "compute system interval failed\n");
-			return ret;
-		}
-
-		/* Compute hstart/hstop */
-		ret = sdw_compute_hstart_hstop(sdw_mstr_bs, sel_col);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "compute hstart/hstop failed\n");
-			return ret;
-		}
-
-		/* Compute block offset */
-		ret = sdw_compute_blk_subblk_offset(sdw_mstr_bs);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "compute block offset failed\n");
-			return ret;
-		}
-		/* Configure bus parameters */
-		ret = sdw_cfg_bs_params(sdw_mstr_bs, sdw_mstr_bs_rt, true);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "xport param config failed\n");
-			return ret;
-		}
-
-		sel_col = sdw_mstr_bs->col;
-		sel_row = sdw_mstr_bs->row;
-
-		if ((last_node) && (sdw_mstr->link_sync_mask)) {
-
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-							mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-				ops = mstr_bs_act->mstr->driver->mstr_port_ops;
-
-				/* Run for all mstr_list and
-				 * pre_activate ports
-				 */
-				if (ops->dpn_port_activate_ch_pre) {
-					ret = ops->dpn_port_activate_ch_pre
-						(mstr_bs_act->mstr, NULL, 0);
-					if (ret < 0)
-						return ret;
-				}
-			}
-
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-						mstr_sdw_node) {
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				/* Configure Frame Shape/Switch Bank */
-				ret = sdw_configure_frmshp_bnkswtch_mm(
-						mstr_bs_act, sel_col, sel_row);
-				if (ret < 0) {
-					/* TBD: Undo all the computation */
-					dev_err(&sdw_mstr->dev, "bank switch failed\n");
-					return ret;
-				}
-			}
-
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-						mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				ops = mstr_bs_act->mstr->driver->mstr_port_ops;
-
-				/* Run for all mstr_list and
-				 * post_activate ports
-				 */
-				if (ops->dpn_port_activate_ch_post) {
-					ret = ops->dpn_port_activate_ch_post
-						(mstr_bs_act->mstr, NULL, 0);
-					if (ret < 0)
-						return ret;
-				}
-			}
-
-			list_for_each_entry(mstr_rt_act,
-				&sdw_rt->mstr_rt_list, mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				mstr_bs_act = master_to_bus(
-					mstr_rt_act->mstr);
-				ret = sdw_configure_frmshp_bnkswtch_mm_wait(
-								mstr_bs_act);
-			}
-
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-						mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				/* Disable all channels
-				 * enabled on previous bank
-				 */
-				ret = sdw_dis_chan(mstr_bs_act, sdw_mstr_bs_rt);
-				if (ret < 0) {
-					/* TBD: Undo all the computation */
-					dev_err(&sdw_mstr->dev, "Channel disabled faile\n");
-					return ret;
-				}
-			}
-		}
-		if (!sdw_mstr->link_sync_mask) {
-
-			/* Configure Frame Shape/Switch Bank */
-			ret = sdw_configure_frmshp_bnkswtch(sdw_mstr_bs,
-					sel_col, sel_row);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr->dev, "bank switch failed\n");
-				return ret;
-			}
-			/* Disable all channels enabled on previous bank */
-			ret = sdw_dis_chan(sdw_mstr_bs, sdw_mstr_bs_rt);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr->dev, "Channel disabled failed\n");
-				return ret;
-			}
-		}
-		/* Prepare new port for master and slave */
-		ret = sdw_prep_unprep_mstr_slv(sdw_mstr_bs, sdw_rt, true);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "Channel prepare failed\n");
-			return ret;
-		}
-
-		/* change stream state to prepare */
-		if (last_node)
-			sdw_rt->stream_state = SDW_STATE_PREPARE_STREAM;
 	}
+
 enable_stream:
+
 	list_for_each_entry(sdw_mstr_rt, &sdw_rt->mstr_rt_list, mstr_sdw_node) {
 
 
 		if (sdw_mstr_rt->mstr == NULL)
 			break;
-		last_rt = list_last_entry(&sdw_rt->mstr_rt_list,
-				struct sdw_mstr_runtime, mstr_sdw_node);
-		if (sdw_mstr_rt == last_rt)
-			last_node = true;
-		else
-			last_node = false;
-
-		/* Get bus structure for master */
-		sdw_mstr_bs = master_to_bus(sdw_mstr_rt->mstr);
-		sdw_mstr = sdw_mstr_bs->mstr;
-
-		sdw_mstr_cap = &sdw_mstr_bs->mstr->mstr_capabilities;
-		mstr_params = &sdw_mstr_rt->stream_params;
 
 		if ((!enable) ||
 			(sdw_rt->stream_state != SDW_STATE_PREPARE_STREAM))
 			return 0;
+		sdw_mstr_bs = master_to_bus(sdw_mstr_rt->mstr);
+		sdw_mstr = sdw_mstr_bs->mstr;
 
-		ret = sdw_cfg_bs_params(sdw_mstr_bs, sdw_mstr_bs_rt, false);
+		ret = sdw_pre_en_dis_unprep_op(sdw_mstr_rt, sdw_rt,
+				SDW_STATE_ENABLE_STREAM);
 		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "xport params config failed\n");
-			return ret;
-		}
-
-		/* Enable new port for master and slave */
-		ret = sdw_en_dis_mstr_slv(sdw_mstr_bs, sdw_rt, true);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "Channel enable failed\n");
-			return ret;
-		}
-
-		/* change stream state to enable */
-		if (last_node)
-			sdw_rt->stream_state = SDW_STATE_ENABLE_STREAM;
-
-		sel_col = sdw_mstr_bs->col;
-		sel_row = sdw_mstr_bs->row;
-
-		if ((last_node) && (sdw_mstr->link_sync_mask)) {
-
-
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-						mstr_sdw_node) {
-
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				ops = mstr_bs_act->mstr->driver->mstr_port_ops;
-
-				/* Run for all mstr_list and
-				 * pre_activate ports
-				 */
-				if (ops->dpn_port_activate_ch_pre) {
-					ret = ops->dpn_port_activate_ch_pre
-						(mstr_bs_act->mstr, NULL, 0);
-					if (ret < 0)
-						return ret;
-				}
-			}
-
-			list_for_each_entry(mstr_rt_act,
-				&sdw_rt->mstr_rt_list, mstr_sdw_node) {
-
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				/* Configure Frame Shape/Switch Bank */
-				ret = sdw_configure_frmshp_bnkswtch_mm(
-						mstr_bs_act,
-						sel_col, sel_row);
-				if (ret < 0) {
-					/* TBD: Undo all the computation */
-					dev_err(&sdw_mstr->dev, "bank switch failed\n");
-					return ret;
-				}
-			}
-
-			list_for_each_entry(mstr_rt_act,
-				&sdw_rt->mstr_rt_list, mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				ops = mstr_bs_act->mstr->driver->mstr_port_ops;
-
-				/* Run for all mstr_list and
-				 * post_activate ports
-				 */
-				if (ops->dpn_port_activate_ch_post) {
-					ret = ops->dpn_port_activate_ch_post
-						(mstr_bs_act->mstr, NULL, 0);
-					if (ret < 0)
-						return ret;
-				}
-			}
-
-			list_for_each_entry(mstr_rt_act,
-				&sdw_rt->mstr_rt_list, mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-				ret = sdw_configure_frmshp_bnkswtch_mm_wait(
-							mstr_bs_act);
-			}
-			list_for_each_entry(mstr_rt_act,
-				&sdw_rt->mstr_rt_list, mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				/* Disable all channels
-				 * enabled on previous bank
-				 */
-				ret = sdw_dis_chan(mstr_bs_act,
-							sdw_mstr_bs_rt);
-				if (ret < 0) {
-					/* TBD: Undo all the computation */
-					dev_err(&sdw_mstr->dev,
-							"Channel disabled faile\n");
-					return ret;
-				}
-			}
-		}
-		if (!sdw_mstr->link_sync_mask) {
-			/* Configure Frame Shape/Switch Bank */
-			ret = sdw_configure_frmshp_bnkswtch(
-					sdw_mstr_bs,
-					sel_col, sel_row);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr->dev, "bank switch failed\n");
-				return ret;
-			}
-			/* Disable all channels enabled on previous bank */
-			ret = sdw_dis_chan(sdw_mstr_bs, sdw_mstr_bs_rt);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr->dev, "Ch disabled failed\n");
-				return ret;
-			}
+			dev_err(&sdw_mstr->dev, "Enable Operation failed\n");
+			return -EINVAL;
 		}
 	}
 
@@ -2382,17 +2582,11 @@ EXPORT_SYMBOL_GPL(sdw_bus_calc_bw);
 int sdw_bus_calc_bw_dis(struct sdw_stream_tag *stream_tag, bool unprepare)
 {
 	struct sdw_runtime *sdw_rt = stream_tag->sdw_rt;
-	struct sdw_mstr_runtime *sdw_mstr_rt = NULL, *sdw_mstr_bs_rt = NULL;
-	struct sdw_mstr_runtime *mstr_rt_act = NULL, *last_rt = NULL;
-	struct sdw_bus *sdw_mstr_bs = NULL, *mstr_bs_act = NULL;
+	struct sdw_mstr_runtime *sdw_mstr_rt = NULL;
+	struct sdw_bus *sdw_mstr_bs = NULL;
 	struct sdw_master *sdw_mstr = NULL;
-	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
-	struct sdw_stream_params *mstr_params;
-	int stream_frame_size;
-	int frame_interval = 0, sel_row = 0, sel_col = 0;
 	int ret = 0;
-	bool last_node = false;
-	struct sdw_master_port_ops *ops;
+
 
 	/* BW calulation for active master controller for given stream tag */
 	list_for_each_entry(sdw_mstr_rt,
@@ -2402,355 +2596,37 @@ int sdw_bus_calc_bw_dis(struct sdw_stream_tag *stream_tag, bool unprepare)
 		if (sdw_mstr_rt->mstr == NULL)
 			break;
 
-		last_rt = list_last_entry(&sdw_rt->mstr_rt_list,
-				struct sdw_mstr_runtime, mstr_sdw_node);
-		if (sdw_mstr_rt == last_rt)
-			last_node = true;
-		else
-			last_node = false;
+		if (sdw_rt->stream_state != SDW_STATE_ENABLE_STREAM)
+			goto unprepare_stream;
 
 		/* Get bus structure for master */
 		sdw_mstr_bs = master_to_bus(sdw_mstr_rt->mstr);
 		sdw_mstr = sdw_mstr_bs->mstr;
-
-
-		sdw_mstr_cap = &sdw_mstr_bs->mstr->mstr_capabilities;
-		mstr_params = &sdw_mstr_rt->stream_params;
-
-		if (sdw_rt->stream_state != SDW_STATE_ENABLE_STREAM)
-			goto unprepare_stream;
-
-		/* Lets do disabling of port for stream to be freed */
-		list_for_each_entry(sdw_mstr_bs_rt,
-				&sdw_mstr->mstr_rt_list, mstr_node) {
-
-			if (sdw_mstr_bs_rt->mstr == NULL)
-				continue;
-
-			/*
-			 * Disable channel for slave and
-			 * master on current bank
-			 */
-			ret = sdw_en_dis_mstr_slv(sdw_mstr_bs, sdw_rt, false);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr->dev, "Ch dis failed\n");
-				return ret;
-			}
-
-			/* Change stream state to disable */
-			if (last_node)
-				sdw_rt->stream_state = SDW_STATE_DISABLE_STREAM;
-		}
-
-		ret = sdw_cfg_bs_params(sdw_mstr_bs, sdw_mstr_bs_rt, false);
+		ret = sdw_pre_en_dis_unprep_op(sdw_mstr_rt, sdw_rt,
+				SDW_STATE_DISABLE_STREAM);
 		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "xport params config failed\n");
-			return ret;
-		}
-
-		sel_col = sdw_mstr_bs->col;
-		sel_row = sdw_mstr_bs->row;
-
-		if ((last_node) && (sdw_mstr->link_sync_mask)) {
-
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-						mstr_sdw_node) {
-				if (mstr_rt_act->mstr == NULL)
-					break;
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-				ops = mstr_bs_act->mstr->driver->mstr_port_ops;
-				/* Run for all mstr_list and
-				 * pre_activate ports
-				 */
-				if (ops->dpn_port_activate_ch_pre) {
-					ret = ops->dpn_port_activate_ch_pre
-						(mstr_bs_act->mstr, NULL, 0);
-					if (ret < 0)
-						return ret;
-				}
-			}
-			list_for_each_entry(mstr_rt_act,
-				&sdw_rt->mstr_rt_list, mstr_sdw_node) {
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-				/* Configure Frame Shape/Switch Bank */
-				ret = sdw_configure_frmshp_bnkswtch_mm(
-						mstr_bs_act,
-						sel_col, sel_row);
-				if (ret < 0) {
-					/* TBD: Undo all the computation */
-					dev_err(&sdw_mstr->dev, "bank switch failed\n");
-					return ret;
-				}
-			}
-
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-						mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-				ops = mstr_bs_act->mstr->driver->mstr_port_ops;
-
-				/* Run for all mstr_list and
-				 * post_activate ports
-				 */
-				if (ops->dpn_port_activate_ch_post) {
-					ret = ops->dpn_port_activate_ch_post
-						(mstr_bs_act->mstr, NULL, 0);
-					if (ret < 0)
-						return ret;
-				}
-
-			}
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-					mstr_sdw_node) {
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-				ret = sdw_configure_frmshp_bnkswtch_mm_wait(
-							mstr_bs_act);
-			}
-		}
-		if (!sdw_mstr->link_sync_mask) {
-
-			/* Configure Frame Shape/Switch Bank */
-			ret = sdw_configure_frmshp_bnkswtch(sdw_mstr_bs,
-					sel_col, sel_row);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr->dev, "bank switch failed\n");
-				return ret;
-			}
-		}
-		/* Disable all channels enabled on previous bank */
-		ret = sdw_dis_chan(sdw_mstr_bs, sdw_mstr_bs_rt);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "Channel disabled failed\n");
-			return ret;
+			dev_err(&sdw_mstr->dev, "Disable Operation failed\n");
+			return -EINVAL;
 		}
 	}
+
 unprepare_stream:
 	list_for_each_entry(sdw_mstr_rt,
 				&sdw_rt->mstr_rt_list, mstr_sdw_node) {
 		if (sdw_mstr_rt->mstr == NULL)
 			break;
 
-
-		last_rt = list_last_entry(&sdw_rt->mstr_rt_list,
-				struct sdw_mstr_runtime, mstr_sdw_node);
-		if (sdw_mstr_rt == last_rt)
-			last_node = true;
-		else
-			last_node = false;
-
-		/* Get bus structure for master */
-		sdw_mstr_bs = master_to_bus(sdw_mstr_rt->mstr);
-		sdw_mstr = sdw_mstr_bs->mstr;
-
-
-		sdw_mstr_cap = &sdw_mstr_bs->mstr->mstr_capabilities;
-		mstr_params = &sdw_mstr_rt->stream_params;
-
 		if ((!unprepare) ||
 			(sdw_rt->stream_state != SDW_STATE_DISABLE_STREAM))
 			return 0;
 
-		/* 1. Un-prepare master and slave port */
-		list_for_each_entry(sdw_mstr_bs_rt, &sdw_mstr->mstr_rt_list,
-						mstr_node) {
-			if (sdw_mstr_bs_rt->mstr == NULL)
-				continue;
-			ret = sdw_prep_unprep_mstr_slv(sdw_mstr_bs,
-					sdw_rt, false);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr->dev, "Ch unprep failed\n");
-				return ret;
-			}
-
-			/* change stream state to unprepare */
-			if (last_node)
-				sdw_rt->stream_state =
-					SDW_STATE_UNPREPARE_STREAM;
-		}
-
-		/*
-		 * Calculate new bandwidth, frame size
-		 * and total BW required for master controller
-		 */
-		sdw_mstr_rt->stream_bw = mstr_params->rate *
-			mstr_params->channel_count * mstr_params->bps;
-		stream_frame_size = mstr_params->channel_count *
-			mstr_params->bps;
-
-		sdw_mstr_bs->bandwidth -= sdw_mstr_rt->stream_bw;
-
-		/* Something went wrong in bandwidth calulation */
-		if (sdw_mstr_bs->bandwidth < 0) {
-			dev_err(&sdw_mstr->dev, "BW calculation failed\n");
+		sdw_mstr_bs = master_to_bus(sdw_mstr_rt->mstr);
+		sdw_mstr = sdw_mstr_bs->mstr;
+		ret = sdw_pre_en_dis_unprep_op(sdw_mstr_rt, sdw_rt,
+				SDW_STATE_UNPREPARE_STREAM);
+		if (ret < 0) {
+			dev_err(&sdw_mstr->dev, "Unprepare Operation failed\n");
 			return -EINVAL;
-		}
-
-		if (!sdw_mstr_bs->bandwidth) {
-			/*
-			 * Last stream on master should
-			 * return successfully
-			 */
-			continue;
-		}
-
-		ret = sdw_get_clock_frmshp(sdw_mstr_bs, &frame_interval,
-							&sel_col, &sel_row);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "clock/frameshape failed\n");
-			return ret;
-		}
-
-		/* Compute new transport params for running streams */
-		/* No sorting required here */
-
-		/* Compute system interval */
-		ret = sdw_compute_sys_interval(sdw_mstr_bs, sdw_mstr_cap,
-						frame_interval);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "compute SI failed\n");
-			return ret;
-		}
-
-		/* Compute hstart/hstop */
-		ret = sdw_compute_hstart_hstop(sdw_mstr_bs, sel_col);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "compute hstart/hstop fail\n");
-			return ret;
-		}
-
-		/* Compute block offset */
-		ret = sdw_compute_blk_subblk_offset(sdw_mstr_bs);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "compute block offset failed\n");
-			return ret;
-		}
-
-		/* Configure bus params */
-		ret = sdw_cfg_bs_params(sdw_mstr_bs, sdw_mstr_bs_rt, true);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr->dev, "xport params config failed\n");
-			return ret;
-		}
-		if ((last_node) && (sdw_mstr->link_sync_mask)) {
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-					mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				ops = mstr_bs_act->mstr->driver->mstr_port_ops;
-
-				/*
-				 * Run for all mstr_list and
-				 * pre_activate ports
-				 */
-				if (ops->dpn_port_activate_ch_pre) {
-					ret = ops->dpn_port_activate_ch_pre
-						(mstr_bs_act->mstr, NULL, 0);
-					if (ret < 0)
-						return ret;
-				}
-			}
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-						mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(
-					mstr_rt_act->mstr);
-
-				/* Configure Frame Shape/Switch Bank */
-				ret = sdw_configure_frmshp_bnkswtch_mm(
-						mstr_bs_act,
-						sel_col, sel_row);
-				if (ret < 0) {
-					/* TBD: Undo all the computation */
-					dev_err(&sdw_mstr->dev,
-							"bank switch failed\n");
-					return ret;
-				}
-			}
-
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-						mstr_sdw_node) {
-
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-
-				ops = mstr_bs_act->mstr->driver->mstr_port_ops;
-
-				/* Run for all mstr_list and
-				 * post_activate ports
-				 */
-				if (ops->dpn_port_activate_ch_post) {
-					ret = ops->dpn_port_activate_ch_post
-						(mstr_bs_act->mstr, NULL, 0);
-					if (ret < 0)
-						return ret;
-				}
-			}
-			list_for_each_entry(mstr_rt_act, &sdw_rt->mstr_rt_list,
-							mstr_sdw_node) {
-
-				if (mstr_rt_act->mstr == NULL)
-					break;
-
-				/* Get bus structure for master */
-				mstr_bs_act = master_to_bus(mstr_rt_act->mstr);
-				ret = sdw_configure_frmshp_bnkswtch_mm_wait(
-							mstr_bs_act);
-			}
-		}
-		if (!sdw_mstr->link_sync_mask) {
-			/* Configure Frame Shape/Switch Bank */
-			ret = sdw_configure_frmshp_bnkswtch(sdw_mstr_bs,
-					sel_col, sel_row);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr->dev, "bank switch failed\n");
-				return ret;
-			}
-
-		}
-		/* Disable all channels enabled on previous bank */
-		ret = sdw_dis_chan(sdw_mstr_bs, sdw_mstr_bs_rt);
-		if (ret < 0) {
-			/* TBD: Undo all the computation */
-			dev_err(&sdw_mstr_bs->mstr->dev,
-					"Channel disabled failed\n");
-			return ret;
 		}
 	}
 

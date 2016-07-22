@@ -74,6 +74,21 @@ enum sdw_clk_state {
 	SDW_CLK_STATE_ON = 1,
 };
 
+enum sdw_update_bs_state {
+	SDW_UPDATE_BS_PRE,
+	SDW_UPDATE_BS_BNKSWTCH,
+	SDW_UPDATE_BS_POST,
+	SDW_UPDATE_BS_BNKSWTCH_WAIT,
+	SDW_UPDATE_BS_DIS_CHN,
+};
+
+enum sdw_port_en_state {
+	SDW_PORT_STATE_PREPARE,
+	SDW_PORT_STATE_ENABLE,
+	SDW_PORT_STATE_DISABLE,
+	SDW_PORT_STATE_UNPREPARE,
+};
+
 struct port_chn_en_state {
 	bool is_activate;
 	bool is_bank_sw;
