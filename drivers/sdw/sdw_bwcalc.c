@@ -109,12 +109,7 @@ int sdw_mstr_bw_init(struct sdw_bus *sdw_bs)
 	sdw_bs->frame_freq = 0;
 	sdw_bs->clk_state = SDW_CLK_STATE_ON;
 	sdw_mstr_cap = &sdw_bs->mstr->mstr_capabilities;
-	/* TBD: Base Clock frequency should be read from
-	 * master capabilities
-	 * Currenly hardcoding to 19.2MHz
-	 */
-	sdw_bs->clk_freq = 9.6 * 1000 * 1000 * 2;
-	sdw_mstr_cap->base_clk_freq = 9.6 * 1000 * 1000 * 2;
+	sdw_bs->clk_freq = (sdw_mstr_cap->base_clk_freq * 2);
 
 	return 0;
 }
@@ -356,119 +351,16 @@ int sdw_cfg_mstr_params(struct sdw_bus *mstr_bs,
 	return 0;
 }
 
-
 /*
- * sdw_cfg_mstr_slv - returns Success
- * -EINVAL - In case of error.
- *
- *
- * This function call master/slave transport/port
- * params configuration API's, called from sdw_bus_calc_bw
- * & sdw_bus_calc_bw_dis API's.
- */
-int sdw_cfg_mstr_slv(struct sdw_bus *sdw_mstr_bs,
-		struct sdw_mstr_runtime *sdw_mstr_bs_rt,
-		bool is_master)
-{
-	struct sdw_transport_params *t_params, *t_slv_params;
-	struct sdw_port_params *p_params, *p_slv_params;
-	struct sdw_slave_runtime *slv_rt = NULL;
-	struct sdw_port_runtime *port_rt, *port_slv_rt;
-	int ret = 0;
-
-	if (is_master) {
-		/* should not compute any transport params */
-		if (sdw_mstr_bs_rt->rt_state == SDW_STATE_UNPREPARE_RT)
-			return 0;
-
-		list_for_each_entry(port_rt,
-			&sdw_mstr_bs_rt->port_rt_list, port_node) {
-
-			/* Transport and port parameters */
-			t_params = &port_rt->transport_params;
-			p_params = &port_rt->port_params;
-
-			p_params->num = port_rt->port_num;
-			p_params->word_length =
-				sdw_mstr_bs_rt->stream_params.bps;
-			p_params->port_flow_mode = 0x0; /* Isochronous Mode */
-			p_params->port_data_mode = 0x0; /* Normal Mode */
-
-			/* Configure xport params and port params for master */
-			ret = sdw_cfg_mstr_params(sdw_mstr_bs,
-					t_params, p_params);
-			if (ret < 0)
-				return ret;
-
-			/* Since one port per master runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-
-			break;
-		}
-
-	} else {
-
-
-		list_for_each_entry(slv_rt,
-			&sdw_mstr_bs_rt->slv_rt_list, slave_node) {
-
-			if (slv_rt->slave == NULL)
-				break;
-
-			/* should not compute any transport params */
-			if (slv_rt->rt_state == SDW_STATE_UNPREPARE_RT)
-				continue;
-
-			list_for_each_entry(port_slv_rt,
-				&slv_rt->port_rt_list, port_node) {
-
-				/* Fill in port params here */
-				port_slv_rt->port_params.num =
-					port_slv_rt->port_num;
-				port_slv_rt->port_params.word_length =
-					slv_rt->stream_params.bps;
-				/* Isochronous Mode */
-				port_slv_rt->port_params.port_flow_mode = 0x0;
-				/* Normal Mode */
-				port_slv_rt->port_params.port_data_mode = 0x0;
-				t_slv_params = &port_slv_rt->transport_params;
-				p_slv_params = &port_slv_rt->port_params;
-
-				/* Configure xport  & port params for slave */
-				ret = sdw_cfg_slv_params(sdw_mstr_bs,
-					slv_rt, t_slv_params, p_slv_params);
-				if (ret < 0)
-					return ret;
-
-				/* Since one port per slave runtime,
-				 * breaking port_list loop
-				 * TBD: to be extended for multiple
-				 * port support
-				 */
-
-				break;
-			}
-		}
-
-	}
-
-	return 0;
-}
-
-
-/*
- * sdw_cpy_params_mstr_slv - returns Success
- * -EINVAL - In case of error.
- *
+ * sdw_cfg_params_mstr_slv - returns Success
  *
  * This function copies/configure master/slave transport &
- * port params to alternate bank.
+ * port params.
  *
  */
-int sdw_cpy_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
-		struct sdw_mstr_runtime *sdw_mstr_bs_rt)
+int sdw_cfg_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
+		struct sdw_mstr_runtime *sdw_mstr_bs_rt,
+		bool state_check)
 {
 	struct sdw_slave_runtime *slv_rt = NULL;
 	struct sdw_port_runtime *port_rt, *port_slv_rt;
@@ -481,6 +373,11 @@ int sdw_cpy_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 
 		if (slv_rt->slave == NULL)
 			break;
+
+		/* configure transport params based on state */
+		if ((state_check) &&
+			(slv_rt->rt_state == SDW_STATE_UNPREPARE_RT))
+			continue;
 
 		list_for_each_entry(port_slv_rt,
 				&slv_rt->port_rt_list, port_node) {
@@ -511,6 +408,9 @@ int sdw_cpy_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 		}
 	}
 
+	if ((state_check) &&
+		(sdw_mstr_bs_rt->rt_state == SDW_STATE_UNPREPARE_RT))
+		return 0;
 
 	list_for_each_entry(port_rt,
 			&sdw_mstr_bs_rt->port_rt_list, port_node) {
@@ -1004,9 +904,12 @@ int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
 			 * One port per bus runtime structure
 			 */
 			/* Calculate sample interval */
-			t_params->sample_interval =
-				(sdw_mstr_bs->clk_freq/
-				  sdw_mstr_bs_rt->stream_params.rate);
+			if (sdw_mstr_bs_rt->stream_params.rate)
+				t_params->sample_interval =
+					(sdw_mstr_bs->clk_freq/
+					sdw_mstr_bs_rt->stream_params.rate);
+			else
+				return -EINVAL;
 
 			/* Only BlockPerPort supported */
 			t_params->blockpackingmode = 0;
@@ -1029,13 +932,24 @@ int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
 		}
 	}
 
+	/*
+	 * If system interval already calculated
+	 * In pause/resume, underrun scenario
+	 */
+	if (sdw_mstr_bs->system_interval)
+		return 0;
 
 	/* 6. compute system_interval */
 	if ((sdw_mstr_cap) && (sdw_mstr_bs->clk_freq)) {
 
 		div = ((sdw_mstr_cap->base_clk_freq * 2) /
 					sdw_mstr_bs->clk_freq);
-		lcm = sdw_lcm(lcmnum1, frame_interval);
+
+		if ((lcmnum1) && (frame_interval))
+			lcm = sdw_lcm(lcmnum1, frame_interval);
+		else
+			return -EINVAL;
+
 		sdw_mstr_bs->system_interval = (div  * lcm);
 
 	}
@@ -1554,7 +1468,7 @@ int sdw_configure_frmshp_bnkswtch_mm_wait(struct sdw_bus *mstr_bs)
  */
 int sdw_cfg_bs_params(struct sdw_bus *sdw_mstr_bs,
 		struct sdw_mstr_runtime *sdw_mstr_bs_rt,
-		bool is_strm_cpy)
+		bool state_check)
 {
 	struct port_chn_en_state chn_en;
 	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
@@ -1562,51 +1476,22 @@ int sdw_cfg_bs_params(struct sdw_bus *sdw_mstr_bs,
 	int banktouse, ret = 0;
 
 	list_for_each_entry(sdw_mstr_bs_rt,
-		&sdw_mstr->mstr_rt_list, mstr_node) {
+			&sdw_mstr->mstr_rt_list, mstr_node) {
 
 		if (sdw_mstr_bs_rt->mstr == NULL)
 			continue;
 
-		if (is_strm_cpy) {
-			/*
-			 * Configure and enable all slave
-			 * transport params first
-			 */
-			ret = sdw_cfg_mstr_slv(sdw_mstr_bs,
-				sdw_mstr_bs_rt, false);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr_bs->mstr->dev,
-					"slave config params failed\n");
-				return ret;
-			}
-
-			/* Configure and enable all master params */
-			ret = sdw_cfg_mstr_slv(sdw_mstr_bs,
-				sdw_mstr_bs_rt, true);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr_bs->mstr->dev,
-					"master config params failed\n");
-				return ret;
-			}
-
-		} else {
-
-			/*
-			 * 7.1 Copy all slave transport and port params
-			 * to alternate bank
-			 * 7.2 copy all master transport and port params
-			 * to alternate bank
-			 */
-			ret = sdw_cpy_params_mstr_slv(sdw_mstr_bs,
-				sdw_mstr_bs_rt);
-			if (ret < 0) {
-				/* TBD: Undo all the computation */
-				dev_err(&sdw_mstr_bs->mstr->dev,
-					"slave/master copy params failed\n");
-				return ret;
-			}
+		/*
+		 * Configure transport and port params
+		 * for master and slave ports.
+		 */
+		ret = sdw_cfg_params_mstr_slv(sdw_mstr_bs,
+				sdw_mstr_bs_rt, state_check);
+		if (ret < 0) {
+			/* TBD: Undo all the computation */
+			dev_err(&sdw_mstr_bs->mstr->dev,
+					"slave/master config params failed\n");
+			return ret;
 		}
 
 		/* Get master driver ops */
@@ -2103,7 +1988,7 @@ int sdw_bus_calc_bw(struct sdw_stream_tag *stream_tag, bool enable)
 			(sdw_rt->stream_state != SDW_STATE_UNPREPARE_STREAM))
 			goto enable_stream;
 
-		/* we do not support asynchronous mode Return Error */
+		/* Asynchronous mode not supported, return Error */
 		if ((sdw_mstr_cap->base_clk_freq % mstr_params->rate) != 0) {
 			/* TBD: Undo all the computation */
 			dev_err(&sdw_mstr->dev, "Async mode not supported\n");
@@ -2173,11 +2058,6 @@ int sdw_bus_calc_bw(struct sdw_stream_tag *stream_tag, bool enable)
 			dev_err(&sdw_mstr->dev, "compute block offset failed\n");
 			return ret;
 		}
-
-		/* Change Stream State */
-		if (last_node)
-			sdw_rt->stream_state = SDW_STATE_COMPUTE_STREAM;
-
 		/* Configure bus parameters */
 		ret = sdw_cfg_bs_params(sdw_mstr_bs, sdw_mstr_bs_rt, true);
 		if (ret < 0) {
@@ -2728,12 +2608,8 @@ unprepare_stream:
 			 * Last stream on master should
 			 * return successfully
 			 */
-			if (last_node)
-				sdw_rt->stream_state =
-						SDW_STATE_UNCOMPUTE_STREAM;
 			continue;
 		}
-
 
 		ret = sdw_get_clock_frmshp(sdw_mstr_bs, &frame_interval,
 							&sel_col, &sel_row);
@@ -2868,10 +2744,6 @@ unprepare_stream:
 			}
 
 		}
-		/* Change stream state to uncompute */
-		if (last_node)
-			sdw_rt->stream_state = SDW_STATE_UNCOMPUTE_STREAM;
-
 		/* Disable all channels enabled on previous bank */
 		ret = sdw_dis_chan(sdw_mstr_bs, sdw_mstr_bs_rt);
 		if (ret < 0) {

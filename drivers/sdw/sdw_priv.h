@@ -34,16 +34,14 @@
 #define SDW_STATE_INIT_STREAM_TAG	    0x1
 #define SDW_STATE_ALLOC_STREAM              0x2
 #define SDW_STATE_CONFIG_STREAM             0x3
-#define SDW_STATE_COMPUTE_STREAM	    0x4
-#define SDW_STATE_PREPARE_STREAM            0x5
-#define SDW_STATE_ENABLE_STREAM             0x6
-#define SDW_STATE_DISABLE_STREAM            0x7
-#define SDW_STATE_UNPREPARE_STREAM          0x8
-#define SDW_STATE_UNCOMPUTE_STREAM	    0x9
-#define SDW_STATE_RELEASE_STREAM            0xa
-#define SDW_STATE_FREE_STREAM               0xb
-#define SDW_STATE_FREE_STREAM_TAG           0xc
-#define SDW_STATE_ONLY_XPORT_STREAM	    0xd
+#define SDW_STATE_PREPARE_STREAM            0x4
+#define SDW_STATE_ENABLE_STREAM             0x5
+#define SDW_STATE_DISABLE_STREAM            0x6
+#define SDW_STATE_UNPREPARE_STREAM          0x7
+#define SDW_STATE_RELEASE_STREAM            0x8
+#define SDW_STATE_FREE_STREAM               0x9
+#define SDW_STATE_FREE_STREAM_TAG           0xA
+#define SDW_STATE_ONLY_XPORT_STREAM	    0xB
 
 #define SDW_STATE_INIT_RT		0x1
 #define SDW_STATE_CONFIG_RT		0x2

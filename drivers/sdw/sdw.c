@@ -2072,9 +2072,6 @@ int sdw_prepare_and_enable(int stream_tag, bool enable)
 	struct sdw_stream_tag *stream_tags = sdw_core.stream_tags;
 	struct sdw_stream_tag *stream = NULL;
 
-	/* TBD: SRK, Check with hardik whether both locks needed
-	 * stream and core??
-	 */
 	mutex_lock(&sdw_core.core_lock);
 
 	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
