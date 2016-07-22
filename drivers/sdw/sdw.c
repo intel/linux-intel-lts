@@ -1717,10 +1717,23 @@ static void sdw_release_mstr_stream(struct sdw_master *mstr,
 			struct sdw_runtime *sdw_rt)
 {
 	struct sdw_mstr_runtime *mstr_rt, *__mstr_rt;
+	struct sdw_port_runtime *port_rt, *__port_rt, *first_port_rt = NULL;
 
 	list_for_each_entry_safe(mstr_rt, __mstr_rt, &sdw_rt->mstr_rt_list,
 			mstr_sdw_node) {
 		if (mstr_rt->mstr == mstr) {
+
+			/* Get first runtime node from port list */
+			first_port_rt = list_first_entry(&mstr_rt->port_rt_list,
+						struct sdw_port_runtime,
+						port_node);
+
+			/* Release Master port resources */
+			list_for_each_entry_safe(port_rt, __port_rt,
+				&mstr_rt->port_rt_list, port_node)
+				list_del(&port_rt->port_node);
+
+			kfree(first_port_rt);
 			list_del(&mstr_rt->mstr_sdw_node);
 			if (mstr_rt->direction == SDW_DATA_DIR_OUT)
 				sdw_rt->tx_ref_count--;
@@ -1738,10 +1751,23 @@ static void sdw_release_slave_stream(struct sdw_slave *slave,
 			struct sdw_runtime *sdw_rt)
 {
 	struct sdw_slave_runtime *slv_rt, *__slv_rt;
+	struct sdw_port_runtime *port_rt, *__port_rt, *first_port_rt = NULL;
 
 	list_for_each_entry_safe(slv_rt, __slv_rt, &sdw_rt->slv_rt_list,
 			slave_sdw_node) {
 		if (slv_rt->slave == slave) {
+
+			/* Get first runtime node from port list */
+			first_port_rt = list_first_entry(&slv_rt->port_rt_list,
+						struct sdw_port_runtime,
+						port_node);
+
+			/* Release Slave port resources */
+			list_for_each_entry_safe(port_rt, __port_rt,
+				&slv_rt->port_rt_list, port_node)
+				list_del(&port_rt->port_node);
+
+			kfree(first_port_rt);
 			list_del(&slv_rt->slave_sdw_node);
 			if (slv_rt->direction == SDW_DATA_DIR_OUT)
 				sdw_rt->tx_ref_count--;

@@ -94,6 +94,13 @@ struct port_chn_en_state {
 	bool is_bank_sw;
 };
 
+struct temp_elements {
+	int rate;
+	int full_bw;
+	int payload_bw;
+	int hwidth;
+};
+
 struct sdw_stream_tag {
 	int stream_tag;
 	struct mutex stream_lock;
@@ -166,6 +173,10 @@ struct sdw_mstr_runtime {
 	unsigned int	stream_bw;
 	 /* State of runtime structure */
 	int rt_state;
+	int hstart;
+	int hstop;
+	int block_offset;
+	int sub_block_offset;
 };
 
 struct sdw_runtime {
@@ -201,6 +212,7 @@ struct sdw_bus {
 	unsigned int	clk_div;
 	/* Bus total Bandwidth. Initialize and reset to zero */
 	unsigned int	bandwidth;
+	unsigned int	stream_interval; /* Stream Interval */
 	unsigned int	system_interval; /* Bus System Interval */
 	unsigned int	frame_freq;
 	unsigned int	col;

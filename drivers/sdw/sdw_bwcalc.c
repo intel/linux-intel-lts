@@ -399,12 +399,6 @@ int sdw_cfg_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 			if (ret < 0)
 				return ret;
 
-			/*
-			 * Since one port per slave runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-			break;
 		}
 	}
 
@@ -430,10 +424,6 @@ int sdw_cfg_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 		if (ret < 0)
 			return ret;
 
-		/* Since one port per slave runtime, breaking port_list loop
-		 * TBD: to be extended for multiple port support
-		 */
-		break;
 	}
 
 	return 0;
@@ -669,13 +659,6 @@ int sdw_en_dis_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 			if (ret < 0)
 				return ret;
 
-			/*
-			 * Since one port per slave runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-			break;
-
 		}
 
 		break;
@@ -696,13 +679,6 @@ int sdw_en_dis_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 				port_mstr_strm, &chn_en);
 			if (ret < 0)
 				return ret;
-
-			/*
-			 * Since one port per master runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-			break;
 
 		}
 
@@ -744,13 +720,6 @@ int sdw_en_dis_mstr_slv_state(struct sdw_bus *sdw_mstr_bs,
 				if (ret < 0)
 					return ret;
 
-				/*
-				 * Since one port per slave runtime,
-				 * breaking port_list loop
-				 * TBD: to be extended for multiple
-				 * port support
-				 */
-				break;
 			}
 		}
 	}
@@ -765,13 +734,6 @@ int sdw_en_dis_mstr_slv_state(struct sdw_bus *sdw_mstr_bs,
 			if (ret < 0)
 				return ret;
 
-			/*
-			 * Since one port per master runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-
-			break;
 		}
 	}
 
@@ -885,10 +847,6 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
 				break;
 		}
 
-		/* None of clock frequency matches, return error */
-		if (i == MAXCLOCKDIVS)
-			return -EINVAL;
-
 		/* check for next clock divider */
 		if (!clock_ok)
 			continue;
@@ -924,8 +882,12 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
 		sdw_mstr_bs->col = sel_col;
 		sdw_mstr_bs->row = sel_row;
 
-		break;
+		return 0;
 	}
+
+	/* None of clock frequency matches, return error */
+	if (i == MAXCLOCKDIVS)
+		return -EINVAL;
 
 	return 0;
 }
@@ -942,61 +904,71 @@ int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
 		int frame_interval)
 {
 	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
-	struct sdw_mstr_runtime *sdw_mstr_bs_rt;
-	struct sdw_transport_params *t_params;
-	struct sdw_port_runtime *port_rt;
+	struct sdw_mstr_runtime *sdw_mstr_rt = NULL;
+	struct sdw_slave_runtime *slv_rt = NULL;
+	struct sdw_transport_params *t_params = NULL, *t_slv_params = NULL;
+	struct sdw_port_runtime *port_rt, *port_slv_rt;
 	int lcmnum1 = 0, lcmnum2 = 0, div = 0, lcm = 0;
+	int sample_interval;
 
 	/*
 	 * once you got bandwidth frame shape for bus,
 	 * run a loop for all the active streams running
-	 * on bus and compute sample_interval & other transport parameters.
+	 * on bus and compute stream interval & sample_interval.
 	 */
-	list_for_each_entry(sdw_mstr_bs_rt,
+	list_for_each_entry(sdw_mstr_rt,
 			&sdw_mstr->mstr_rt_list, mstr_node) {
 
-		if (sdw_mstr_bs_rt->mstr == NULL)
+		if (sdw_mstr_rt->mstr == NULL)
 			break;
 
-		/* should not compute any transport params */
-		if (sdw_mstr_bs_rt->rt_state == SDW_STATE_UNPREPARE_RT)
-			continue;
+		/*
+		 * Calculate sample interval for stream
+		 * running on given master.
+		 */
+		if (sdw_mstr_rt->stream_params.rate)
+			sample_interval = (sdw_mstr_bs->clk_freq/
+					sdw_mstr_rt->stream_params.rate);
+		else
+			return -EINVAL;
 
+		/* Run port loop to assign sample interval per port */
 		list_for_each_entry(port_rt,
-				&sdw_mstr_bs_rt->port_rt_list, port_node) {
+				&sdw_mstr_rt->port_rt_list, port_node) {
 
 			t_params = &port_rt->transport_params;
 
 			/*
-			 * Current Assumption:
-			 * One port per bus runtime structure
+			 * Assign sample interval each port transport
+			 * properties. Assumption is that sample interval
+			 * per port for given master will be same.
 			 */
-			/* Calculate sample interval */
-			if (sdw_mstr_bs_rt->stream_params.rate)
-				t_params->sample_interval =
-					(sdw_mstr_bs->clk_freq/
-					sdw_mstr_bs_rt->stream_params.rate);
-			else
-				return -EINVAL;
+			t_params->sample_interval = sample_interval;
+		}
 
-			/* Only BlockPerPort supported */
-			t_params->blockpackingmode = 0;
-			t_params->lanecontrol = 0;
+		/* Calculate LCM */
+		lcmnum2 = sample_interval;
+		if (!lcmnum1)
+			lcmnum1 = sdw_lcm(lcmnum2, lcmnum2);
+		else
+			lcmnum1 = sdw_lcm(lcmnum1, lcmnum2);
 
-			/* Calculate LCM */
-			lcmnum2 = t_params->sample_interval;
-			if (!lcmnum1)
-				lcmnum1 = sdw_lcm(lcmnum2, lcmnum2);
-			else
-				lcmnum1 = sdw_lcm(lcmnum1, lcmnum2);
+		/* Run loop for slave per master runtime */
+		list_for_each_entry(slv_rt,
+				&sdw_mstr_rt->slv_rt_list, slave_node)  {
 
-			/*
-			 * Since one port per bus runtime, breaking
-			 *  port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-			break;
+			if (slv_rt->slave == NULL)
+				break;
 
+			/* Assign sample interval for each port of slave  */
+			list_for_each_entry(port_slv_rt,
+					&slv_rt->port_rt_list, port_node) {
+
+				t_slv_params = &port_slv_rt->transport_params;
+
+				 /* Assign sample interval each port */
+				t_slv_params->sample_interval = sample_interval;
+			}
 		}
 	}
 
@@ -1006,6 +978,9 @@ int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
 	 */
 	if (sdw_mstr_bs->system_interval)
 		return 0;
+
+	/* Assign frame stream interval */
+	sdw_mstr_bs->stream_interval = lcmnum1;
 
 	/* 6. compute system_interval */
 	if ((sdw_mstr_cap) && (sdw_mstr_bs->clk_freq)) {
@@ -1033,6 +1008,25 @@ int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
 	return 0;
 }
 
+/**
+ * sdw_chk_first_node - returns True or false
+ *
+ * This function returns true in case of first node
+ * else returns false.
+ */
+bool sdw_chk_first_node(struct sdw_mstr_runtime *sdw_mstr_rt,
+	struct sdw_master *sdw_mstr)
+{
+	struct sdw_mstr_runtime	*first_rt = NULL;
+
+	first_rt = list_first_entry(&sdw_mstr->mstr_rt_list,
+			struct sdw_mstr_runtime, mstr_node);
+	if (sdw_mstr_rt == first_rt)
+		return true;
+	else
+		return false;
+
+}
 
 /*
  * sdw_compute_hstart_hstop - returns Success
@@ -1045,101 +1039,217 @@ int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
 int sdw_compute_hstart_hstop(struct sdw_bus *sdw_mstr_bs)
 {
 	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
-	struct sdw_mstr_runtime *sdw_mstr_bs_rt;
+	struct sdw_mstr_runtime *sdw_mstr_rt;
 	struct sdw_transport_params *t_params = NULL, *t_slv_params = NULL;
 	struct sdw_slave_runtime *slv_rt = NULL;
 	struct sdw_port_runtime *port_rt, *port_slv_rt;
-	int hstop = 0, hwidth = 0;
-	int payload_bw = 0, full_bw = 0, column_needed = 0;
+	int hstart = 0, hstop = 0;
+	int column_needed = 0;
 	int sel_col = sdw_mstr_bs->col;
-	bool hstop_flag = false;
+	int group_count = 0, no_of_channels = 0;
+	struct temp_elements *temp, *element;
+	int rates[10];
+	int num, ch_mask, block_offset, i, port_block_offset;
 
-	/* Calculate hwidth, hstart and hstop */
-	list_for_each_entry(sdw_mstr_bs_rt,
+	/* Run loop for all master runtimes for given master */
+	list_for_each_entry(sdw_mstr_rt,
 			&sdw_mstr->mstr_rt_list, mstr_node) {
 
-		if (sdw_mstr_bs_rt->mstr == NULL)
+		if (sdw_mstr_rt->mstr == NULL)
 			break;
 
 		/* should not compute any transport params */
-		if (sdw_mstr_bs_rt->rt_state == SDW_STATE_UNPREPARE_RT)
+		if (sdw_mstr_rt->rt_state == SDW_STATE_UNPREPARE_RT)
 			continue;
 
-		list_for_each_entry(port_rt,
-				&sdw_mstr_bs_rt->port_rt_list, port_node) {
+		/* Perform grouping of streams based on stream rate */
+		if (sdw_mstr_rt == list_first_entry(&sdw_mstr->mstr_rt_list,
+					struct sdw_mstr_runtime, mstr_node))
+			rates[group_count++] = sdw_mstr_rt->stream_params.rate;
+		else {
+			num = group_count;
+			for (i = 0; i < num; i++) {
+				if (sdw_mstr_rt->stream_params.rate == rates[i])
+					break;
 
-			t_params = &port_rt->transport_params;
-			t_params->num = port_rt->port_num;
+				if (i == num)
+					rates[group_count++] =
+					sdw_mstr_rt->stream_params.rate;
+			}
+		}
+	}
 
-			/*
-			 * 1. find full_bw and payload_bw per stream
-			 * 2. find h_width per stream
-			 * 3. find hstart, hstop, block_offset,sub_block_offset
-			 * Note: full_bw is nothing but sampling interval
-			 * of stream.
-			 * payload_bw is serving size no.
-			 * of channels * bps per stream
-			 */
-			full_bw = sdw_mstr_bs->clk_freq/
-				sdw_mstr_bs_rt->stream_params.rate;
-			payload_bw =
-				sdw_mstr_bs_rt->stream_params.bps *
-				sdw_mstr_bs_rt->stream_params.channel_count;
+	/* check for number of streams and number of group count */
+	if (group_count == 0)
+		return 0;
 
-			hwidth = (sel_col * payload_bw + full_bw - 1)/full_bw;
-			column_needed += hwidth;
+	/* Allocate temporary memory holding temp variables */
+	temp = kzalloc((sizeof(struct temp_elements) * group_count),
+			GFP_KERNEL);
+	if (!temp)
+		return -ENOMEM;
 
-			/*
-			 * These needs to be done only for
-			 * 1st entry in link list
-			 */
-			if (!hstop_flag) {
-				hstop = sel_col - 1;
-				hstop_flag = true;
+	/* Calculate full bandwidth per group */
+	for (i = 0; i < group_count; i++) {
+		element = &temp[i];
+		element->rate = rates[i];
+		element->full_bw = sdw_mstr_bs->clk_freq/element->rate;
+	}
+
+	/* Calculate payload bandwidth per group */
+	list_for_each_entry(sdw_mstr_rt,
+			&sdw_mstr->mstr_rt_list, mstr_node) {
+
+		if (sdw_mstr_rt->mstr == NULL)
+			break;
+
+		/* should not compute any transport params */
+		if (sdw_mstr_rt->rt_state == SDW_STATE_UNPREPARE_RT)
+			continue;
+
+		for (i = 0; i < group_count; i++) {
+			element = &temp[i];
+			if (sdw_mstr_rt->stream_params.rate == element->rate) {
+				element->payload_bw +=
+				sdw_mstr_rt->stream_params.bps *
+				sdw_mstr_rt->stream_params.channel_count;
 			}
 
-			/* Assumption: Only block per port is supported
-			 * For blockperport:
-			 * offset1 value = LSB 8 bits of block_offset value
-			 * offset2 value = MSB 8 bits of block_offset value
-			 * For blockperchannel:
-			 * offset1 = LSB 8 bit of block_offset value
-			 * offset2 = MSB 8 bit of sub_block_offload value
-			 * if hstart and hstop of different streams in
-			 * master are different, then block_offset is zero.
-			 * if not then block_offset value for 2nd stream
-			 * is block_offset += payload_bw
-			 */
+			/* Any of stream rate should match */
+			if (i == group_count)
+				return -EINVAL;
+		}
+	}
 
-			t_params->hstop = hstop;
-#ifdef CONFIG_SND_SOC_SVFPGA
-			/* For PDM capture, 0th col is also used */
-			t_params->hstart = 0;
-#else
-			t_params->hstart = hstop - hwidth + 1;
+	/* Calculate hwidth per group and total column needed per master */
+	for (i = 0; i < group_count; i++) {
+		element = &temp[i];
+		element->hwidth =
+			(sel_col * element->payload_bw +
+			element->full_bw - 1)/element->full_bw;
+		column_needed += element->hwidth;
+	}
+
+	/* Check column required should not be greater than selected columns*/
+	if  (column_needed > sel_col - 1)
+		return -EINVAL;
+
+	/* Compute hstop */
+	hstop = sel_col - 1;
+
+	/* Run loop for all groups to compute transport parameters */
+	for (i = 0; i < group_count; i++) {
+		port_block_offset = block_offset = 1;
+		element = &temp[i];
+
+		/* Find streams associated with each group */
+		list_for_each_entry(sdw_mstr_rt,
+				&sdw_mstr->mstr_rt_list, mstr_node) {
+
+			if (sdw_mstr_rt->mstr == NULL)
+				break;
+
+			/* should not compute any transport params */
+			if (sdw_mstr_rt->rt_state == SDW_STATE_UNPREPARE_RT)
+				continue;
+
+			if (sdw_mstr_rt->stream_params.rate != element->rate)
+				continue;
+
+			/* Compute hstart */
+			sdw_mstr_rt->hstart = hstart =
+					hstop - element->hwidth + 1;
+			sdw_mstr_rt->hstop = hstop;
+
+			/* Assign hstart, hstop, block offset for each port */
+			list_for_each_entry(port_rt,
+					&sdw_mstr_rt->port_rt_list, port_node) {
+
+				t_params = &port_rt->transport_params;
+				t_params->num = port_rt->port_num;
+#if 0 /* Original */
+				t_params->hstart = hstart;
+				t_params->hstop = hstop;
+				t_params->offset1 = port_block_offset;
+				t_params->offset2 = port_block_offset >> 8;
 #endif
+
+#ifndef CONFIG_SND_SOC_SVFPGA
+				t_params->hstart = 1;
+				t_params->hstop = 1;
+#else
+				/* PDM capture settings */
+				t_params->hstart = 0;
+				t_params->hstop = hstop;
+#endif
+
+				/* Playback & Capture loopback mode */
+				t_params->offset1 = 1;
+				t_params->offset2 = 0;
+
+				/* Only BlockPerPort supported */
+				t_params->blockgroupcontrol_valid = true;
+				t_params->blockgroupcontrol = 0x0;
+				t_params->lanecontrol = 0x0;
+
+				/* Copy parameters if first node */
+				if (port_rt == list_first_entry
+						(&sdw_mstr_rt->port_rt_list,
+					struct sdw_port_runtime, port_node)) {
+
+					sdw_mstr_rt->hstart = hstart;
+					sdw_mstr_rt->hstop = hstop;
+#if 0 /* Original */
+
+					sdw_mstr_rt->block_offset =
+							port_block_offset;
+#endif
+
+					/* Playback & Capture loopback mode */
+					sdw_mstr_rt->block_offset = 1;
+					sdw_mstr_rt->sub_block_offset = 0;
+				}
+
+				/* Get no. of channels running on curr. port */
+				ch_mask = port_rt->channel_mask;
+				no_of_channels = (((ch_mask >> 3) & 1) +
+						((ch_mask >> 2) & 1) +
+						((ch_mask >> 1) & 1) +
+						(ch_mask & 1));
+
+
+			port_block_offset +=
+				sdw_mstr_rt->stream_params.bps *
+				no_of_channels;
+			}
+
+			/* Compute block offset */
+			block_offset += sdw_mstr_rt->stream_params.bps *
+				sdw_mstr_rt->stream_params.channel_count;
 
 			/*
-			 * TBD: perform this when you have 2 ports
-			 * and accordingly configure hstart hstop for slave
-			 * removing for now
+			 * Re-assign port_block_offset for next stream
+			 * under same group
 			 */
-#if 0
-			hstop = hstop - hwidth;
-#endif
-			/* Since one port per bus runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-			break;
+			port_block_offset = block_offset;
 		}
 
-		/*
-		 * Run loop for slave_rt_list for given master_list
-		 * to compute hstart hstop for slave
-		 */
+		/* Compute hstop for next group */
+		hstop = hstop - element->hwidth;
+	}
+
+	/* Compute transport params for slave */
+
+	/* Run loop for master runtime streams running on master */
+	list_for_each_entry(sdw_mstr_rt,
+			&sdw_mstr->mstr_rt_list, mstr_node) {
+
+		/* Get block offset from master runtime */
+		port_block_offset = sdw_mstr_rt->block_offset;
+
+		/* Run loop for slave per master runtime */
 		list_for_each_entry(slv_rt,
-				&sdw_mstr_bs_rt->slv_rt_list, slave_node)  {
+				&sdw_mstr_rt->slv_rt_list, slave_node)  {
 
 			if (slv_rt->slave == NULL)
 				break;
@@ -1147,219 +1257,39 @@ int sdw_compute_hstart_hstop(struct sdw_bus *sdw_mstr_bs)
 			if (slv_rt->rt_state == SDW_STATE_UNPREPARE_RT)
 				continue;
 
+			/* Run loop for each port of slave */
 			list_for_each_entry(port_slv_rt,
 					&slv_rt->port_rt_list, port_node) {
 
 				t_slv_params = &port_slv_rt->transport_params;
 				t_slv_params->num = port_slv_rt->port_num;
 
-				/*
-				 * TBD: Needs to be verifid for
-				 * multiple combination
-				 * 1. 1 master port, 1 slave rt,
-				 * 1 port per slave rt -->
-				 * In this case, use hstart hstop same as master
-				 * for 1 slave rt
-				 * 2. 1 master port, 2 slave rt,
-				 * 1 port per slave rt -->
-				 * In this case, use hstart hstop same as master
-				 * for 2 slave rt
-				 * only offset will change for 2nd slave rt
-				 * Current assumption is one port per rt,
-				 * hence no multiple port combination
-				 * considered.
-				 */
-				t_slv_params->hstop = hstop;
-				t_slv_params->hstart = hstop - hwidth + 1;
+				/* Assign transport parameters */
+				t_slv_params->hstart = sdw_mstr_rt->hstart;
+				t_slv_params->hstop = sdw_mstr_rt->hstop;
+				t_slv_params->offset1 = port_block_offset;
+				t_slv_params->offset2 = port_block_offset >> 8;
 
 				/* Only BlockPerPort supported */
-				t_slv_params->blockpackingmode = 0;
-				t_slv_params->lanecontrol = 0;
-
-				/*
-				 * below copy needs to be changed when
-				 * more than one port is supported
-				 */
-				if (t_params)
-					t_slv_params->sample_interval =
-						t_params->sample_interval;
-
-				/* Since one port per slave runtime,
-				 * breaking port_list loop
-				 * TBD: to be extended for multiple
-				 * port support
-				 */
-				break;
-			}
-
-		}
-	}
-
-#if 0
-	/* TBD: To be verified */
-	if  (column_needed > sel_col - 1)
-		return -EINVAL; /* Error case, check what has gone wrong */
-#endif
-
-	return 0;
-}
-
-
-/*
- * sdw_compute_blk_subblk_offset - returns Success
- *
- *
- * This function computes block offset and sub block
- * offset for running streams per master & slaves.
- */
-int sdw_compute_blk_subblk_offset(struct sdw_bus *sdw_mstr_bs)
-{
-	struct sdw_master *sdw_mstr = sdw_mstr_bs->mstr;
-	struct sdw_mstr_runtime *sdw_mstr_bs_rt;
-	struct sdw_transport_params *t_params, *t_slv_params;
-	struct sdw_slave_runtime *slv_rt = NULL;
-	struct sdw_port_runtime *port_rt, *port_slv_rt;
-	int hstart1 = 0, hstop1 = 0, hstart2 = 0, hstop2 = 0;
-	int block_offset = 1;
-
-
-	/* Calculate block_offset and subblock_offset */
-	list_for_each_entry(sdw_mstr_bs_rt,
-			&sdw_mstr->mstr_rt_list, mstr_node) {
-
-		if (sdw_mstr_bs_rt->mstr == NULL)
-			break;
-
-		/* should not compute any transport params */
-		if (sdw_mstr_bs_rt->rt_state == SDW_STATE_UNPREPARE_RT)
-			continue;
-
-		list_for_each_entry(port_rt,
-				&sdw_mstr_bs_rt->port_rt_list, port_node) {
-
-			t_params = &port_rt->transport_params;
-
-
-			if ((!hstart2) && (!hstop2)) {
-				hstart1 = hstart2 = t_params->hstart;
-				hstop1  = hstop2 = t_params->hstop;
-				/* TBD: Verify this condition */
-#ifdef CONFIG_SND_SOC_SVFPGA
-				block_offset = 1;
-#else
-				block_offset = 1;
-#endif
-			} else {
-
-				hstart1 = t_params->hstart;
-				hstop1 = t_params->hstop;
-
-#ifndef CONFIG_SND_SOC_SVFPGA
-				/* hstart/stop not same */
-				if ((hstart1 != hstart2) &&
-					(hstop1 != hstop2)) {
-					/* TBD: Harcoding to 0, to be removed*/
-					block_offset = 1;
-				} else {
-					/* TBD: Harcoding to 0, to be removed*/
-					block_offset = 1;
-				}
-#else
-				if ((hstart1 != hstart2) &&
-					(hstop1 != hstop2)) {
-					block_offset = 1;
-				} else {
-/* We are doing loopback for the Aggregation so block offset should
- * always remain same. This is not a requirement. This we are doing
- * to test aggregation without codec.
- */
-#ifdef CONFIG_SND_SOC_MXFPGA
-					block_offset = 1;
-#else
-					block_offset +=
-						(sdw_mstr_bs_rt->stream_params.
-						bps
-						*
-						sdw_mstr_bs_rt->stream_params.
-						channel_count);
-#endif
-				}
-#endif
-
-			}
-
-
-			/*
-			 * TBD: Hardcding block control group as true,
-			 * to be changed later
-			 */
-			t_params->blockgroupcontrol_valid = true;
-			t_params->blockgroupcontrol = 0x0; /* Hardcoding to 0 */
-
-			/*
-			 * Since one port per bus runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-			break;
-		}
-
-		/*
-		 * Run loop for slave_rt_list for given master_list
-		 * to compute block and sub block offset for slave
-		 */
-		list_for_each_entry(slv_rt,
-				&sdw_mstr_bs_rt->slv_rt_list, slave_node)  {
-
-			if (slv_rt->slave == NULL)
-				break;
-
-			if (slv_rt->rt_state == SDW_STATE_UNPREPARE_RT)
-				continue;
-
-			list_for_each_entry(port_slv_rt,
-					&slv_rt->port_rt_list, port_node) {
-
-				t_slv_params = &port_slv_rt->transport_params;
-
-				/*
-				 * TBD: Needs to be verifid for
-				 * multiple combination
-				 * 1. 1 master port, 1 slave rt,
-				 * 1 port per slave rt -->
-				 * In this case, use block_offset same as
-				 * master for 1 slave rt
-				 * 2. 1 master port, 2 slave rt,
-				 * 1 port per slave rt -->
-				 * In this case, use block_offset same as
-				 * master for 1st slave rt and compute for 2nd.
-				 */
-
-				/*
-				 * Current assumption is one port per rt,
-				 * hence no multiple port combination.
-				 * TBD: block offset to be computed for
-				 * more than 1 slave_rt list.
-				 */
-				t_slv_params->offset1 = block_offset;
-				t_slv_params->offset2 = block_offset >> 8;
-
-
-				/*
-				 * TBD: Hardcding block control group as true,
-				 * to be changed later
-				 */
 				t_slv_params->blockgroupcontrol_valid = true;
-				/* Hardcoding to 0 */
 				t_slv_params->blockgroupcontrol = 0x0;
-				/* Since one port per slave runtime,
-				 * breaking port_list loop
-				 * TBD:to be extended for multiple port support
-				 */
-				break;
+				t_slv_params->lanecontrol = 0x0;
+
+				/* Get no. of channels running on curr. port */
+				ch_mask = port_slv_rt->channel_mask;
+				no_of_channels = (((ch_mask >> 3) & 1) +
+						((ch_mask >> 2) & 1) +
+						((ch_mask >> 1) & 1) +
+						(ch_mask & 1));
+
+				/* Increment block offset for next port/slave */
+				port_block_offset += slv_rt->stream_params.bps *
+							no_of_channels;
 			}
 		}
 	}
+
+	kfree(temp);
 
 	return 0;
 }
@@ -1904,15 +1834,8 @@ int sdw_prep_unprep_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 					slv_rt_strm, port_slv_strm, is_prep);
 			if (ret < 0)
 				return ret;
+			}
 
-			/* Since one port per slave runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-			break;
-		}
-
-		break;
 	}
 
 	list_for_each_entry(mstr_rt_strm,
@@ -1928,12 +1851,6 @@ int sdw_prep_unprep_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 				mstr_rt_strm, port_mstr_strm, is_prep);
 			if (ret < 0)
 				return ret;
-
-			/* Since one port per master runtime,
-			 * breaking port_list loop
-			 * TBD: to be extended for multiple port support
-			 */
-			break;
 		}
 	}
 
@@ -2040,14 +1957,6 @@ int sdw_compute_bs_prms(struct sdw_bus *sdw_mstr_bs,
 		return ret;
 	}
 
-	/* Compute block offset */
-	ret = sdw_compute_blk_subblk_offset(sdw_mstr_bs);
-	if (ret < 0) {
-		/* TBD: Undo all the computation */
-		dev_err(&sdw_mstr->dev, "compute block offset failed\n");
-		return ret;
-	}
-
 	return 0;
 }
 
@@ -2126,8 +2035,10 @@ int sdw_bs_pre_bnkswtch_post(struct sdw_runtime *sdw_rt, int bs_state)
 			ret = sdw_dis_chan(mstr_bs_act);
 			if (ret < 0)
 				return ret;
+			break;
 		default:
 			return -EINVAL;
+			break;
 		}
 	}
 
@@ -2297,6 +2208,11 @@ int sdw_unprepare_op(struct sdw_bus *sdw_mstr_bs,
 		 * Last stream on master should
 		 * return successfully
 		 */
+		sdw_mstr_bs->system_interval = 0;
+		sdw_mstr_bs->stream_interval = 0;
+		sdw_mstr_bs->frame_freq = 0;
+		sdw_mstr_bs->row = 0;
+		sdw_mstr_bs->col = 0;
 		return 0;
 	}
 

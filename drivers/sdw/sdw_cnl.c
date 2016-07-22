@@ -369,12 +369,10 @@ static int sdw_pdm_pdi_init(struct cnl_sdw *sdw)
 	int pdm_cap, pdm_ch_count, total_pdm_streams;
 	int pdm_cap_offset = SDW_CNL_PDMSCAP +
 			(data->inst_id * SDW_CNL_PDMSCAP_REG_OFFSET);
-
-	pdm_cap = cnl_sdw_reg_readw(data->sdw_regs, pdm_cap_offset);
+	pdm_cap = cnl_sdw_reg_readw(data->sdw_shim, pdm_cap_offset);
 	sdw->num_pdm_streams = (pdm_cap >> CNL_PDMSCAP_BSS_SHIFT) &
 			CNL_PDMSCAP_BSS_MASK;
-	/* Zero based value in register */
-	sdw->num_pdm_streams++;
+
 	sdw->pdm_streams = devm_kzalloc(&mstr->dev,
 		sdw->num_pdm_streams * sizeof(struct cnl_sdw_pdi_stream),
 		GFP_KERNEL);
@@ -383,8 +381,7 @@ static int sdw_pdm_pdi_init(struct cnl_sdw *sdw)
 
 	sdw->num_in_pdm_streams = (pdm_cap >> CNL_PDMSCAP_ISS_SHIFT) &
 			CNL_PDMSCAP_ISS_MASK;
-	/* Zero based value in register */
-	sdw->num_in_pdm_streams++;
+
 	sdw->in_pdm_streams = devm_kzalloc(&mstr->dev,
 		sdw->num_in_pdm_streams * sizeof(struct cnl_sdw_pdi_stream),
 		GFP_KERNEL);
@@ -395,7 +392,6 @@ static int sdw_pdm_pdi_init(struct cnl_sdw *sdw)
 	sdw->num_out_pdm_streams = (pdm_cap >> CNL_PDMSCAP_OSS_SHIFT) &
 			CNL_PDMSCAP_OSS_MASK;
 	/* Zero based value in register */
-	sdw->num_out_pdm_streams++;
 	sdw->out_pdm_streams = devm_kzalloc(&mstr->dev,
 		sdw->num_out_pdm_streams * sizeof(struct cnl_sdw_pdi_stream),
 		GFP_KERNEL);
