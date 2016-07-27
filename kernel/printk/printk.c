@@ -1993,10 +1993,10 @@ static u8 *__printk_recursion_counter(void)
 	bool success = true;				\
 							\
 	typecheck(u8 *, recursion_ptr);			\
-	local_irq_save(flags);				\
+	prb_irq_save(flags);				\
 	(recursion_ptr) = __printk_recursion_counter();	\
 	if (*(recursion_ptr) > PRINTK_MAX_RECURSION) {	\
-		local_irq_restore(flags);		\
+		prb_irq_restore(flags);			\
 		success = false;			\
 	} else {					\
 		(*(recursion_ptr))++;			\
@@ -2009,7 +2009,7 @@ static u8 *__printk_recursion_counter(void)
 	do {						\
 		typecheck(u8 *, recursion_ptr);		\
 		(*(recursion_ptr))--;			\
-		local_irq_restore(flags);		\
+		prb_irq_restore(flags);			\
 	} while (0)
 
 int printk_delay_msec __read_mostly;
@@ -2129,9 +2129,6 @@ int vprintk_store(int facility, int level,
 	int ret = 0;
 	u64 ts_nsec;
 
-	if (!printk_enter_irqsave(recursion_ptr, irqflags))
-		return 0;
-
 	/*
 	 * Since the duration of printk() can vary depending on the message
 	 * and state of the ringbuffer, grab the timestamp now so that it is
@@ -2139,8 +2136,6 @@ int vprintk_store(int facility, int level,
 	 * timestamp with respect to the caller.
 	 */
 	ts_nsec = local_clock();
-
-	caller_id = printk_caller_id();
 
 	/*
 	 * The sprintf needs to come first since the syslog prefix might be
@@ -2164,6 +2159,12 @@ int vprintk_store(int facility, int level,
 
 	if (dev_info)
 		flags |= LOG_NEWLINE;
+
+	/* Disable interrupts as late as possible. */
+	if (!printk_enter_irqsave(recursion_ptr, irqflags))
+		return 0;
+
+	caller_id = printk_caller_id();
 
 	if (flags & LOG_CONT) {
 		prb_rec_init_wr(&r, reserve_size);
@@ -2238,6 +2239,12 @@ asmlinkage int vprintk_emit(int facility, int level,
 	if (unlikely(suppress_panic_printk) &&
 	    atomic_read(&panic_cpu) != raw_smp_processor_id())
 		return 0;
+
+	if (unlikely(!printk_stage_safe())) {
+		printed_len = vprintk_store(facility, level, dev_info, fmt, args);
+		defer_console_output();
+		return printed_len;
+	}
 
 	if (level == LOGLEVEL_SCHED) {
 		level = LOGLEVEL_DEFAULT;
