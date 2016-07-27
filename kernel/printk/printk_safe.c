@@ -7,8 +7,11 @@
 #include <linux/kdb.h>
 #include <linux/smp.h>
 #include <linux/cpumask.h>
+#include <linux/irq_pipeline.h>
+#include <linux/irq_work.h>
 #include <linux/printk.h>
 #include <linux/kprobes.h>
+#include <linux/irqstage.h>
 
 #include "internal.h"
 
@@ -33,12 +36,14 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	if (unlikely(kdb_trap_printk && kdb_printf_cpu < 0))
 		return vkdb_printf(KDB_MSGSRC_PRINTK, fmt, args);
 #endif
+	if (inband_unsafe())
+		return vprintk_nmi(fmt, args);
 
 	/*
 	 * Use the main logbuf even in NMI. But avoid calling console
 	 * drivers that might have their own locks.
 	 */
-	if (this_cpu_read(printk_context) || in_nmi()) {
+	if (this_cpu_read(printk_context) || !printk_stage_safe() || in_nmi()) {
 		int len;
 
 		len = vprintk_store(0, LOGLEVEL_DEFAULT, NULL, fmt, args);
