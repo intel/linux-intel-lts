@@ -1486,7 +1486,7 @@ config PRINTK
 config PRINTK_NMI
 	def_bool y
 	depends on PRINTK
-	depends on HAVE_NMI
+	depends on HAVE_NMI || IRQ_PIPELINE
 
 config RAW_PRINTK
        bool "Enable support for raw printk"
