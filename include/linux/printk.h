@@ -670,7 +670,7 @@ struct pi_entry {
 				      DEFAULT_RATELIMIT_INTERVAL,	\
 				      DEFAULT_RATELIMIT_BURST);		\
 									\
-	if (__ratelimit(&_rs))						\
+	if (running_oob() || __ratelimit(&_rs))				\
 		printk(fmt, ##__VA_ARGS__);				\
 })
 #else
