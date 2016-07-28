@@ -1044,4 +1044,11 @@ config INTEL_TELEMETRY
 	  used to get various SoC events and parameters
 	  directly via debugfs files. Various tools may use
 	  this interface for SoC state monitoring.
+
+config INTEL_TASKS_DUMP
+	bool "Intel panic tasks dumper"
+	depends on PRINTK
+	---help---
+	  This provides a way to get full tasks dump in case of panic.
+
 endif # X86_PLATFORM_DEVICES
