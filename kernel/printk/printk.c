@@ -1579,6 +1579,9 @@ static void call_console_drivers(int level,
 		if (!cpu_online(smp_processor_id()) &&
 		    !(con->flags & CON_ANYTIME))
 			continue;
+		if (level >= console_loglevel &&
+		    !(con->flags & CON_IGNORELEVEL) && !ignore_loglevel)
+			continue;
 		if (con->flags & CON_EXTENDED)
 			con->write(con, ext_text, ext_len);
 		else
