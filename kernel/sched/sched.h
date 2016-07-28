@@ -1954,6 +1954,9 @@ rq_unlock(struct rq *rq, struct rq_flags *rf)
 	raw_spin_unlock(&rq->lock);
 }
 
+extern struct rq *lock_rq_of(struct task_struct *p, struct rq_flags *flags);
+extern void unlock_rq_of(struct rq *rq, struct task_struct *p, struct rq_flags *flags);
+
 #ifdef CONFIG_SMP
 #ifdef CONFIG_PREEMPT
 
