@@ -240,6 +240,71 @@ check_copy_size(const void *addr, size_t bytes, bool is_source)
 static inline void arch_setup_new_exec(void) { }
 #endif
 
+#ifdef ti_local_flags
+/*
+ * If the arch defines a set of per-thread synchronous flags, provide
+ * generic accessors to them.
+ */
+static inline void set_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	ti_local_flags(ti) |= mask;
+}
+
+static inline void set_thread_local_flags(unsigned int mask)
+{
+	set_ti_local_flags(current_thread_info(), mask);
+}
+
+static inline
+int test_and_set_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	int old = ti_local_flags(ti) & mask;
+	ti_local_flags(ti) |= mask;
+	return old != 0;
+}
+
+static inline int test_and_set_thread_local_flags(unsigned int mask)
+{
+	return test_and_set_ti_local_flags(current_thread_info(), mask);
+}
+
+static inline
+void clear_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	ti_local_flags(ti) &= ~mask;
+}
+
+static inline
+int test_and_clear_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	int old = ti_local_flags(ti) & mask;
+	ti_local_flags(ti) &= ~mask;
+	return old != 0;
+}
+
+static inline int test_and_clear_thread_local_flags(unsigned int mask)
+{
+	return test_and_clear_ti_local_flags(current_thread_info(), mask);
+}
+
+static inline void clear_thread_local_flags(unsigned int mask)
+{
+	clear_ti_local_flags(current_thread_info(), mask);
+}
+
+static inline
+bool test_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	return (ti_local_flags(ti) & mask) != 0;
+}
+
+static inline bool test_thread_local_flags(unsigned int mask)
+{
+	return test_ti_local_flags(current_thread_info(), mask);
+}
+
+#endif	/* ti_local_flags */
+
 #endif	/* __KERNEL__ */
 
 #endif /* _LINUX_THREAD_INFO_H */
