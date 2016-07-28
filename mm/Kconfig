@@ -699,6 +699,12 @@ config ZSMALLOC
 	  returned by an alloc().  This handle must be mapped in order to
 	  access the allocated space.
 
+config DEBUG_PANIC_ON_BAD_PAGE
+	bool "Panic on Bad Page"
+	default n
+	help
+	  Generate a panic in case of Bad Page error detection.
+
 config ZSMALLOC_STAT
 	bool "Export zsmalloc statistics"
 	depends on ZSMALLOC
