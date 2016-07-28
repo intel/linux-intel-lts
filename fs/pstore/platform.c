@@ -595,7 +595,8 @@ static void pstore_console_write(struct console *con, const char *s, unsigned c)
 static struct console pstore_console = {
 	.name	= "pstore",
 	.write	= pstore_console_write,
-	.flags	= CON_PRINTBUFFER | CON_ENABLED | CON_ANYTIME | CON_IGNORELEVEL,
+	.flags	= CON_PRINTBUFFER | CON_ENABLED | CON_ANYTIME | CON_IGNORELEVEL
+		| CON_FAST,
 	.index	= -1,
 };
 
