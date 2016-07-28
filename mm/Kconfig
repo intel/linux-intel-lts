@@ -604,6 +604,12 @@ config PGTABLE_MAPPING
 	  You can check speed with zsmalloc benchmark:
 	  https://github.com/spartacus06/zsmapbench
 
+config DEBUG_PANIC_ON_BAD_PAGE
+	bool "Panic on Bad Page"
+	default n
+	help
+	  Generate a panic in case of Bad Page error detection.
+
 config ZSMALLOC_STAT
 	bool "Export zsmalloc statistics"
 	depends on ZSMALLOC

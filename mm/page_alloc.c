@@ -556,6 +556,10 @@ out:
 	/* Leave bad fields for debug, except PageBuddy could make trouble */
 	page_mapcount_reset(page); /* remove PageBuddy */
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+
+#ifdef CONFIG_DEBUG_PANIC_ON_BAD_PAGE
+	panic("Bad page");
+#endif
 }
 
 /*
