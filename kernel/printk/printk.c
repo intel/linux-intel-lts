@@ -401,6 +401,11 @@ u32 log_buf_len_get(void)
 	return log_buf_len;
 }
 
+/* Give the posibility to temporary disable slow (!CON_FAST) consoles */
+static atomic_t console_slow_suspended = ATOMIC_INIT(0);
+/* Keep the number of slow suspend in check */
+#define MAX_SLOW_SUSPEND_COUNT	(50)
+
 /* human readable text of the record */
 static char *log_text(const struct printk_log *msg)
 {
@@ -1572,6 +1577,9 @@ static void call_console_drivers(int level,
 	for_each_console(con) {
 		if (exclusive_console && con != exclusive_console)
 			continue;
+		if (atomic_read(&console_slow_suspended) &&
+		    !(con->flags & CON_FAST))
+			continue;
 		if (!(con->flags & CON_ENABLED))
 			continue;
 		if (!con->write)
@@ -2529,6 +2537,34 @@ void console_flush_on_panic(void)
 	console_unlock();
 }
 
+void console_suspend_slow(void)
+{
+	struct console *c;
+
+	if (atomic_read(&console_slow_suspended) >= MAX_SLOW_SUSPEND_COUNT) {
+		pr_debug("Max slow suspend\n");
+		return;
+	}
+	if (atomic_add_return(1, &console_slow_suspended) == 1) {
+		pr_err("Suspend slow consoles\n");
+		for_each_console(c)
+			if (!(c->flags & CON_FAST))
+				pr_debug("%s suspended\n", c->name);
+	}
+}
+EXPORT_SYMBOL(console_suspend_slow);
+
+void console_restore_slow(void)
+{
+	if (atomic_read(&console_slow_suspended) <= 0) {
+		pr_debug("Min slow suspend\n");
+		return;
+	}
+
+	if (!atomic_sub_return(1, &console_slow_suspended))
+		pr_err("Restore slow consoles\n");
+}
+EXPORT_SYMBOL(console_restore_slow);
 /*
  * Return the console tty driver structure and its associated index
  */
