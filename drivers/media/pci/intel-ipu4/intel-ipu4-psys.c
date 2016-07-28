@@ -3191,6 +3191,7 @@ static struct intel_ipu4_bus_driver intel_ipu4_psys_driver = {
 		.name = INTEL_IPU4_PSYS_NAME,
 		.owner = THIS_MODULE,
 		.pm = PSYS_PM_OPS,
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
 
