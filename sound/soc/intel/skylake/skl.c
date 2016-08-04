@@ -435,18 +435,20 @@ static int skl_free(struct hdac_ext_bus *ebus)
 	return 0;
 }
 
-/* TODO fill codec acpi name */
+/* FIXME fill codec acpi name */
 static struct sst_acpi_mach sst_cnl_devdata[] = {
 	{
 		.id = "dummy",
-#ifdef CONFIG_SND_SOC_INTEL_CNL_WM8281_MACH
-		.drv_name = "cnl_florida",
-#elif CONFIG_SND_SOC_SVFPGA
+#if IS_ENABLED(CONFIG_SND_SOC_SVFPGA)
 		.drv_name = "cnl_svfpga",
-#elif CONFIG_SND_SOC_INTEL_CNL_CS42L42_MACH
+#elif IS_ENABLED(CONFIG_SND_SOC_CS42L42)
 		.drv_name = "cnl_cs42l42",
-#elif CONFIG_SND_SOC_MXFPGA
+#elif IS_ENABLED(CONFIG_SND_SOC_RT700)
+		.drv_name = "cnl_rt700",
+#elif IS_ENABLED(CONFIG_SND_SOC_MXFPGA)
 		.drv_name = "cnl_mxfpga",
+#elif IS_ENABLED(CONFIG_SND_SOC_WM5110)
+		.drv_name = "cnl_florida",
 #endif
 		.fw_filename = "intel/dsp_fw_cnl.bin",
 	},
@@ -635,7 +637,7 @@ static void skl_probe_work(struct work_struct *work)
 	if (!bus->codec_mask)
 		dev_info(bus->dev, "no hda codecs found!\n");
 
-#if 0
+#ifndef CONFIG_SND_SOC_INTEL_CNL_FPGA
 	/* create codec instances */
 	err = skl_codec_create(ebus);
 	if (err < 0)
@@ -800,7 +802,7 @@ static int skl_probe(struct pci_dev *pci,
 
 	device_disable_async_suspend(bus->dev);
 
-#if 0
+#ifndef CONFIG_SND_SOC_INTEL_CNL_FPGA
 	skl->nhlt = skl_nhlt_init(bus->dev);
 
 	if (skl->nhlt == NULL) {
@@ -831,7 +833,7 @@ nhlt_continue:
 	skl_nhlt_update_topology_bin(skl);
 
 	pci_set_drvdata(skl->pci, ebus);
-#if 0
+#ifndef CONFIG_SND_SOC_INTEL_CNL_FPGA
 
 	skl_dmic_data.dmic_num = skl_get_dmic_geo(skl);
 #endif
@@ -1050,7 +1052,9 @@ static struct pci_driver skl_driver = {
 	.remove = skl_remove,
 	.shutdown = skl_shutdown,
 	.driver = {
+#ifndef CONFIG_SDW
 		.pm = &skl_pm,
+#endif
 	},
 };
 module_pci_driver(skl_driver);
