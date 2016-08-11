@@ -289,6 +289,7 @@ int skl_init_dsp(struct skl *skl)
 		return ret;
 
 	skl->skl_sst->dsp_ops = ops;
+	skl_dsp_enable_notification(skl->skl_sst, false);
 	dev_dbg(bus->dev, "dsp registration status=%d\n", ret);
 
 	return ret;
