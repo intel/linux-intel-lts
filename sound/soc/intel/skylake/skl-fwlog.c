@@ -100,7 +100,6 @@ EXPORT_SYMBOL_GPL(update_dsp_log_priority);
 
 int get_dsp_log_priority(struct skl *skl)
 {
-	int ret = 0;
 	u32 value;
 	struct skl_sst *ctx = skl->skl_sst;
 
