@@ -46,6 +46,7 @@ config ANDROID_FWDATA
 	  the required information can be found in sysfs with the expected
 	  layout.
 
+source "drivers/staging/android/abl/Kconfig"
 source "drivers/staging/android/ion/Kconfig"
 
 endif # if ANDROID
