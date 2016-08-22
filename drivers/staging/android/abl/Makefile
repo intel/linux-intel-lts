@@ -1,0 +1,1 @@
+obj-$(CONFIG_ABL_BOOTLOADER_CONTROL) += ablbc.o
