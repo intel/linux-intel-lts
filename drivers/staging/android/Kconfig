@@ -15,6 +15,7 @@ config ASHMEM
 	  because it can discard shared memory units when under memory pressure.
 
 source "drivers/staging/android/ion/Kconfig"
+source "drivers/staging/android/abl/Kconfig"
 
 endif # if ANDROID
 
