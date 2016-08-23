@@ -298,7 +298,6 @@ static const struct snd_soc_dapm_route cnl_map[] = {
 	{ "DMic", NULL, "SoC DMIC"},
 	{ "DMIC01 Rx", NULL, "Capture" },
 	{ "dmic01_hifi", NULL, "DMIC01 Rx" },
-	{ "dmic01_16k", NULL, "DMIC01 Rx" },
 
 	/* SWM map link the SWM outs to codec AIF */
 	{ "AIF1 Playback", NULL, "ssp0 Tx"},
@@ -307,7 +306,6 @@ static const struct snd_soc_dapm_route cnl_map[] = {
 
 	{ "ssp0 Rx", NULL, "AIF1 Capture" },
 	{ "codec0_in", NULL, "ssp0 Rx" },
-	{ "codec1_in", NULL, "ssp0 Rx" },
 
 	{"Headphones", NULL, "Platform Clock"},
 	{"AMIC", NULL, "Platform Clock"},
