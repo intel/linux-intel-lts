@@ -1694,8 +1694,13 @@ static int skl_pcm_new(struct snd_soc_pcm_runtime *rtd)
 static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 {
 	struct skl_sst *ctx = skl->skl_sst;
+	int i;
+	struct skl_module_inst_id *pin_id;
+	struct skl_module *skl_module;
+	uuid_le *uuid_bin_fw, *uuid_bin_tplg;
 	struct uuid_module *module;
 	uuid_le *uuid_mod;
+	bool found = false;
 
 	uuid_mod = (uuid_le *)mconfig->guid;
 
@@ -1707,17 +1712,45 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 	list_for_each_entry(module, &ctx->uuid_list, list) {
 		if (uuid_le_cmp(*uuid_mod, module->uuid) == 0) {
 			mconfig->id.module_id = module->id;
-			if (skl->nr_modules != 0)
-				mconfig->module = module->mod_data;
-			if (mconfig->module)
-				 mconfig->module->loadable =
-					 module->is_loadable;
-			return 0;
+			found = true;
+			break;
 		}
 	}
 
-	return -EIO;
+	if (!found)
+		return -EIO;
+		
+	uuid_bin_fw = &module->uuid;
+	for (i = 0; i < skl->nr_modules; i++) {
+		skl_module = &skl->modules[i];
+		uuid_bin_tplg = &skl_module->uuid;
+		if (uuid_le_cmp(*uuid_bin_fw, *uuid_bin_tplg) == 0) {
+			mconfig->module = skl_module;
+			found = true;
+			break;
+		}
+	}
+	
+	if (!found)
+		return -EIO;
+
+	list_for_each_entry(module, &ctx->uuid_list, list) {
+		for (i = 0; i < SKL_MAX_IN_QUEUE; i++) {
+			pin_id = &mconfig->m_in_pin[i].id;
+			if (uuid_le_cmp(pin_id->mod_uuid, module->uuid) == 0)
+				pin_id->module_id = module->id;
+		}
+		
+		for (i = 0; i < SKL_MAX_OUT_QUEUE; i++) {
+			pin_id = &mconfig->m_out_pin[i].id;
+			if (uuid_le_cmp(pin_id->mod_uuid, module->uuid) == 0)
+				pin_id->module_id = module->id;
+		}
+	}
+
+	return 0;
 }
+
 
 static int skl_populate_modules(struct skl *skl)
 {
@@ -1802,7 +1835,10 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 			dev_err(platform->dev, "Failed to boot first fw: %d\n", ret);
 			return ret;
 		}
-		skl_populate_modules(skl);
+		ret = skl_populate_modules(skl);
+		if (ret < 0)
+			return ret;
+
 		skl->skl_sst->update_d0i3c = skl_update_d0i3c;
 		skl_dsp_enable_notification(skl->skl_sst, false);
 		skl_get_probe_widget(platform, skl);
