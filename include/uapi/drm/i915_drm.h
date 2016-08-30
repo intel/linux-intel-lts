@@ -1232,6 +1232,22 @@ struct drm_i915_gem_get_aperture {
 	 * bytes
 	 */
 	__u64 aper_available_size;
+
+	/**
+	 * Versioning to indicate if map_total_size and stolen_total_size
+	 * value returned are valid or not
+	 */
+	__u64 version;
+
+	/**
+	 * Total space in the mappable region of the aperture, in bytes
+	 */
+	__u64 map_total_size;
+
+	/**
+	 * Total space in the stolen region, in bytes
+	 */
+	__u64 stolen_total_size;
 };
 
 struct drm_i915_gem_get_aperture2 {

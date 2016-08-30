@@ -3689,6 +3689,9 @@ i915_gem_object_create_stolen_for_preallocated(struct drm_i915_private *dev_priv
 					       u32 gtt_offset,
 					       u32 size);
 int __must_check i915_gem_stolen_freeze(struct drm_i915_private *i915);
+void i915_gem_stolen_size_info(struct drm_i915_private *dev_priv,
+			       uint64_t *stolen_free,
+			       uint64_t *stolen_largest);
 
 /* i915_gem_internal.c */
 struct drm_i915_gem_object *

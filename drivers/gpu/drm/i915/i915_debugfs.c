@@ -525,6 +525,148 @@ static int i915_gem_object_info(struct seq_file *m, void *data)
 	return 0;
 }
 
+static int vma_rank_by_ggtt(void *priv,
+			    struct list_head *A,
+			    struct list_head *B)
+{
+	struct i915_vma *a = list_entry(A, typeof(*a), exec_list);
+	struct i915_vma *b = list_entry(B, typeof(*b), exec_list);
+
+	return a->node.start - b->node.start;
+}
+
+static u32 __fence_size(struct drm_i915_private *dev_priv, u32 start, u32 end)
+{
+	u32 size = end - start;
+	u32 fence_size;
+
+	if (INTEL_INFO(dev_priv)->gen < 4) {
+		u32 fence_max;
+		u32 fence_next;
+
+		if (IS_GEN3(dev_priv)) {
+			fence_max = I830_FENCE_MAX_SIZE_VAL << 20;
+			fence_next = 1024*1024;
+		} else {
+			fence_max = I830_FENCE_MAX_SIZE_VAL << 19;
+			fence_next = 512*1024;
+		}
+
+		fence_max = min(fence_max, size);
+		fence_size = 0;
+		/* Find fence_size less than fence_max and power of 2 */
+		while (fence_next <= fence_max) {
+			u32 base = ALIGN(start, fence_next);
+			if (base + fence_next > end)
+				break;
+
+			fence_size = fence_next;
+			fence_next <<= 1;
+		}
+	} else {
+		fence_size = size;
+	}
+
+	return fence_size;
+}
+
+static int i915_gem_aperture_info(struct seq_file *m, void *data)
+{
+	struct drm_info_node *node = m->private;
+	struct drm_device *dev = node->minor->dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct i915_ggtt *ggtt = &dev_priv->ggtt;
+	struct drm_i915_gem_get_aperture arg;
+	struct i915_vma *vma;
+	struct list_head map_list;
+	const uint64_t map_limit = ggtt->mappable_end;
+	uint64_t map_space, map_largest, fence_space, fence_largest;
+	uint64_t last, hole_size, stolen_free, stolen_largest;
+	int ret;
+
+	INIT_LIST_HEAD(&map_list);
+
+	map_space = map_largest = 0;
+	fence_space = fence_largest = 0;
+
+	ret = i915_gem_get_aperture_ioctl(node->minor->dev, &arg, NULL);
+	if (ret)
+		return ret;
+
+	mutex_lock(&dev->struct_mutex);
+
+	i915_gem_stolen_size_info(dev_priv, &stolen_free,
+				  &stolen_largest);
+
+	list_for_each_entry(vma, &ggtt->base.active_list, vm_link)
+		if (i915_vma_is_pinned(vma) &&
+			(vma->node.start + vma->node.size) <= map_limit)
+			list_add(&vma->exec_list, &map_list);
+	list_for_each_entry(vma, &ggtt->base.inactive_list, vm_link)
+		if (i915_vma_is_pinned(vma) &&
+			(vma->node.start + vma->node.size) <= map_limit)
+			list_add(&vma->exec_list, &map_list);
+
+	last = 0;
+	list_sort(NULL, &map_list, vma_rank_by_ggtt);
+	while (!list_empty(&map_list)) {
+		vma = list_first_entry(&map_list, typeof(*vma), exec_list);
+		list_del_init(&vma->exec_list);
+
+		if (last == 0)
+			goto skip_first;
+
+		hole_size = vma->node.start - last;
+		if (hole_size > map_largest)
+			map_largest = hole_size;
+		map_space += hole_size;
+
+		hole_size = __fence_size(dev_priv, last, vma->node.start);
+		if (hole_size > fence_largest)
+			fence_largest = hole_size;
+		fence_space += hole_size;
+
+skip_first:
+		last = vma->node.start + vma->node.size;
+	}
+	if (last < map_limit) {
+		hole_size = map_limit - last;
+		if (hole_size > map_largest)
+			map_largest = hole_size;
+		map_space += hole_size;
+
+		hole_size = __fence_size(dev_priv, last, map_limit);
+		if (hole_size > fence_largest)
+			fence_largest = hole_size;
+		fence_space += hole_size;
+	}
+
+	mutex_unlock(&dev->struct_mutex);
+
+	seq_printf(m, "Total size of the GTT: %llu bytes\n",
+		   arg.aper_size);
+	seq_printf(m, "Available space in the GTT: %llu bytes\n",
+		   arg.aper_available_size);
+	seq_printf(m, "Total space in the mappable aperture: %llu bytes\n",
+		   arg.map_total_size);
+	seq_printf(m, "Available space in the mappable aperture: %llu bytes\n",
+		   map_space);
+	seq_printf(m, "Single largest space in the mappable aperture: %llu bytes\n",
+		   map_largest);
+	seq_printf(m, "Available space for fences: %llu bytes\n",
+		   fence_space);
+	seq_printf(m, "Single largest fence available: %llu bytes\n",
+		   fence_largest);
+	seq_printf(m, "Total size of the stolen region: %llu bytes\n",
+		   arg.stolen_total_size);
+	seq_printf(m, "Available size of the stolen region: %llu bytes\n",
+		   stolen_free);
+	seq_printf(m, "Single largest area in the stolen region: %llu bytes\n",
+		   stolen_largest);
+
+	return 0;
+}
+
 static int i915_gem_gtt_info(struct seq_file *m, void *data)
 {
 	struct drm_info_node *node = m->private;
@@ -4882,6 +5024,7 @@ static int i915_debugfs_create(struct dentry *root,
 static const struct drm_info_list i915_debugfs_list[] = {
 	{"i915_capabilities", i915_capabilities, 0},
 	{"i915_gem_objects", i915_gem_object_info, 0},
+	{"i915_gem_aperture", i915_gem_aperture_info, 0},
 	{"i915_gem_gtt", i915_gem_gtt_info, 0},
 	{"i915_gem_pin_display", i915_gem_gtt_info, 0, (void *)1},
 	{"i915_gem_stolen", i915_gem_stolen_list_info },
