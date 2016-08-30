@@ -3292,6 +3292,7 @@ i915_gem_object_ggtt_pin(struct drm_i915_gem_object *obj,
 
 int i915_gem_object_unbind(struct drm_i915_gem_object *obj);
 void i915_gem_release_mmap(struct drm_i915_gem_object *obj);
+int i915_gem_object_clear(struct drm_i915_gem_object *obj);
 
 void i915_gem_runtime_suspend(struct drm_i915_private *dev_priv);
 
