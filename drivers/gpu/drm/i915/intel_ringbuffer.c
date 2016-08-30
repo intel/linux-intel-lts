@@ -1962,7 +1962,7 @@ intel_ring_create_vma(struct drm_i915_private *dev_priv, int size)
 	struct i915_vma *vma;
 
 	obj = i915_gem_object_create_stolen(dev_priv, size);
-	if (!obj)
+	if (IS_ERR_OR_NULL(obj))
 		obj = i915_gem_object_create(dev_priv, size);
 	if (IS_ERR(obj))
 		return ERR_CAST(obj);

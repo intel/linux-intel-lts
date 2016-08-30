@@ -6100,10 +6100,13 @@ static void valleyview_setup_pctx(struct drm_i915_private *dev_priv)
 								      pcbr_offset,
 								      I915_GTT_OFFSET_NONE,
 								      pctx_size);
+		if (IS_ERR(pctx))
+			pctx = NULL;
+
 		goto out;
 	}
 
-	DRM_DEBUG_DRIVER("BIOS didn't set up PCBR, fixing up\n");
+	DRM_DEBUG_DRIVER("BIOS didn't set up PCBR or prealloc failed, fixing up\n");
 
 	/*
 	 * From the Gunit register HAS:
