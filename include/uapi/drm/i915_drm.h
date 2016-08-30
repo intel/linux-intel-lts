@@ -454,6 +454,7 @@ typedef struct drm_i915_irq_wait {
 #define I915_PARAM_HAS_GET_APERTURE2     0x808
 #define VPG_I915_PARAM_HAS_POOLED_EU     0x803
 #define VPG_I915_PARAM_MIN_EU_IN_POOL    0x807
+#define I915_PARAM_CREATE_VERSION        0x809
 
 typedef struct drm_i915_getparam {
 	__s32 param;
@@ -553,6 +554,46 @@ struct drm_i915_gem_create {
 	 */
 	__u32 handle;
 	__u32 pad;
+	/**
+	 * Requested flags (currently used for placement
+	 * (which memory domain))
+	 *
+	 * You can request that the object be created from special memory
+	 * rather than regular system pages using this parameter. Such
+	 * irregular objects may have certain restrictions (such as CPU
+	 * access to a stolen object is verboten).
+	 *
+	 * This can be used in the future for other purposes too
+	 * e.g. specifying tiling/caching/madvise
+	 */
+	__u64 flags;
+#define I915_CREATE_PLACEMENT_NORMAL 	0 /* standard swappable bo  */
+/* Allocate the object from memory reserved for the igfx (stolen).
+ *
+ * Objects allocated from stolen are restricted in the API they can use,
+ * as direct CPU access to stolen memory is prohibited by the system.
+ * This means that you cannot use a regular CPU mmap (either using WB
+ * or with the WC extension). You can still use a GTT mmap, pwrite,
+ * pread and pass it around for use by execbuffer and between processes
+ * like normal.
+ *
+ * Stolen memory is a very limited resource and certain functions of the
+ * hardware can only work from within stolen memory. Userspace's
+ * allocations may be evicted from stolen and moved to normal memory as
+ * required. If the allocation is marked as purgeable (using madvise),
+ * the allocation will be dropped and further access to the object's
+ * backing storage will result in -EFAULT. Stolen objects will also be
+ * migrated to normal memory across suspend and resume, as the stolen
+ * memory is not preserved.
+ *
+ * Stolen memory is regarded as a resource placement hint, most suitable
+ * for medium-sized buffers that are only accessed by the GPU and can be
+ * discarded.
+ */
+#define I915_CREATE_PLACEMENT_STOLEN 	1 /* Cannot use CPU mmaps */
+
+#define I915_CREATE_PLACEMENT_MASK	0xff
+#define __I915_CREATE_UNKNOWN_FLAGS	~I915_CREATE_PLACEMENT_MASK
 };
 
 struct drm_i915_gem_pread {

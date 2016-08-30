@@ -609,7 +609,7 @@ cleanup:
 }
 
 struct drm_i915_gem_object *
-i915_gem_object_create_stolen(struct drm_i915_private *dev_priv, u32 size)
+i915_gem_object_create_stolen(struct drm_i915_private *dev_priv, u64 size)
 {
 	struct drm_i915_gem_object *obj;
 	struct drm_mm_node *stolen;
@@ -708,22 +708,24 @@ i915_gem_object_create_stolen_for_preallocated(struct drm_i915_private *dev_priv
 	 * setting up the GTT space. The actual reservation will occur
 	 * later.
 	 */
-	ret = i915_gem_gtt_reserve(&ggtt->base, &vma->node,
-				   size, gtt_offset, obj->cache_level,
-				   0);
-	if (ret) {
-		DRM_DEBUG_KMS("failed to allocate stolen GTT space\n");
-		goto err_pages;
+	if (drm_mm_initialized(&ggtt->base.mm)) {
+		ret = i915_gem_gtt_reserve(&ggtt->base, &vma->node,
+					   size, gtt_offset, obj->cache_level,
+					   0);
+		if (ret) {
+			DRM_DEBUG_KMS("failed to allocate stolen GTT space\n");
+			goto err_pages;
+		}
+
+		GEM_BUG_ON(!drm_mm_node_allocated(&vma->node));
+
+		vma->pages = obj->mm.pages;
+		vma->flags |= I915_VMA_GLOBAL_BIND;
+		__i915_vma_set_map_and_fenceable(vma);
+		list_move_tail(&vma->vm_link, &ggtt->base.inactive_list);
+		list_move_tail(&obj->global_link, &dev_priv->mm.bound_list);
+		obj->bind_count++;
 	}
-
-	GEM_BUG_ON(!drm_mm_node_allocated(&vma->node));
-
-	vma->pages = obj->mm.pages;
-	vma->flags |= I915_VMA_GLOBAL_BIND;
-	__i915_vma_set_map_and_fenceable(vma);
-	list_move_tail(&vma->vm_link, &ggtt->base.inactive_list);
-	list_move_tail(&obj->global_link, &dev_priv->mm.bound_list);
-	obj->bind_count++;
 
 	return obj;
 
