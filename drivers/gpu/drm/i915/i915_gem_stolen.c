@@ -876,3 +876,52 @@ err:
 	i915_gem_object_put(obj);
 	return ERR_PTR(ret);
 }
+
+int i915_gem_stolen_freeze(struct drm_i915_private *i915)
+{
+	struct drm_i915_gem_object *obj, *tmp;
+	struct list_head *phase[] = {
+		&i915->mm.unbound_list, &i915->mm.bound_list, NULL
+	}, **p;
+	int ret = 0;
+
+	for (p = phase; *p; p++) {
+		struct list_head migrate;
+		int ret;
+
+		INIT_LIST_HEAD(&migrate);
+		list_for_each_entry_safe(obj, tmp, *p, global_link) {
+			if (obj->stolen == NULL)
+				continue;
+
+			if (obj->mm.internal_volatile)
+				continue;
+
+			/* In the general case, this object may only be alive
+			 * due to an active reference, and that may disappear
+			 * when we unbind any of the objects (and so wait upon
+			 * the GPU and retire requests). To prevent one of the
+			 * objects from disappearing beneath us, we need to
+			 * take a reference to each as we build the migration
+			 * list.
+			 *
+			 * This is similar to the strategy required whilst
+			 * shrinking or evicting objects (for the same reason).
+			 */
+			drm_gem_object_reference(&obj->base);
+			list_move(&obj->global_link, &migrate);
+		}
+
+		ret = 0;
+		list_for_each_entry_safe(obj, tmp, &migrate, global_link) {
+			if (ret == 0)
+				ret = i915_gem_object_migrate_stolen_to_shmemfs(obj);
+			drm_gem_object_unreference(&obj->base);
+		}
+		list_splice(&migrate, *p);
+		if (ret)
+			break;
+	}
+
+	return ret;
+}

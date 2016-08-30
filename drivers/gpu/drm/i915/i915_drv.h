@@ -3503,6 +3503,8 @@ void i915_gem_init_swizzling(struct drm_i915_private *dev_priv);
 void i915_gem_cleanup_engines(struct drm_i915_private *dev_priv);
 int __must_check i915_gem_wait_for_idle(struct drm_i915_private *dev_priv,
 					unsigned int flags);
+int __must_check
+i915_gem_object_migrate_stolen_to_shmemfs(struct drm_i915_gem_object *obj);
 int __must_check i915_gem_suspend(struct drm_i915_private *dev_priv);
 void i915_gem_resume(struct drm_i915_private *dev_priv);
 int i915_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
@@ -3676,6 +3678,7 @@ i915_gem_object_create_stolen_for_preallocated(struct drm_i915_private *dev_priv
 					       u32 stolen_offset,
 					       u32 gtt_offset,
 					       u32 size);
+int __must_check i915_gem_stolen_freeze(struct drm_i915_private *i915);
 
 /* i915_gem_internal.c */
 struct drm_i915_gem_object *

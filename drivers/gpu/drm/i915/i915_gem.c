@@ -4348,12 +4348,27 @@ static const struct drm_i915_gem_object_ops i915_gem_object_ops = {
 	.pwrite = i915_gem_object_pwrite_gtt,
 };
 
+static struct address_space *
+i915_gem_set_inode_gfp(struct drm_i915_private *dev_priv, struct file *file)
+{
+	struct address_space *mapping = file_inode(file)->i_mapping;
+	gfp_t mask;
+
+	mask = GFP_HIGHUSER | __GFP_RECLAIMABLE;
+	if (IS_I965GM(dev_priv) || IS_I965G(dev_priv)) {
+		/* 965gm cannot relocate objects above 4GiB. */
+		mask &= ~__GFP_HIGHMEM;
+		mask |= __GFP_DMA32;
+	}
+	mapping_set_gfp_mask(mapping, mask);
+
+	return mapping;
+}
+
 struct drm_i915_gem_object *
 i915_gem_object_create(struct drm_i915_private *dev_priv, u64 size)
 {
 	struct drm_i915_gem_object *obj;
-	struct address_space *mapping;
-	gfp_t mask;
 	int ret;
 
 	/* There is a prevalence of the assumption that we fit the object's
@@ -4375,15 +4390,7 @@ i915_gem_object_create(struct drm_i915_private *dev_priv, u64 size)
 	if (ret)
 		goto fail;
 
-	mask = GFP_HIGHUSER | __GFP_RECLAIMABLE;
-	if (IS_I965GM(dev_priv) || IS_I965G(dev_priv)) {
-		/* 965gm cannot relocate objects above 4GiB. */
-		mask &= ~__GFP_HIGHMEM;
-		mask |= __GFP_DMA32;
-	}
-
-	mapping = obj->base.filp->f_mapping;
-	mapping_set_gfp_mask(mapping, mask);
+	i915_gem_set_inode_gfp(dev_priv, obj->base.filp);
 
 	i915_gem_object_init(obj, &i915_gem_object_ops);
 
@@ -5062,6 +5069,156 @@ void i915_gem_load_cleanup(struct drm_i915_private *dev_priv)
 
 	/* And ensure that our DESTROY_BY_RCU slabs are truly destroyed */
 	rcu_barrier();
+}
+
+static int
+copy_content(struct drm_i915_gem_object *obj,
+		struct drm_i915_private *i915,
+		struct address_space *mapping)
+{
+	struct i915_ggtt *ggtt = &i915->ggtt;
+	struct drm_mm_node node;
+	int ret, i;
+
+	ret = i915_gem_object_set_to_gtt_domain(obj, false);
+	if (ret)
+		return ret;
+
+	/* stolen objects are already pinned to prevent shrinkage */
+	memset(&node, 0, sizeof(node));
+	ret = insert_mappable_node(ggtt, &node, PAGE_SIZE);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < obj->base.size / PAGE_SIZE; i++) {
+		struct page *page;
+		void *__iomem src;
+		void *dst;
+
+		ggtt->base.insert_page(&ggtt->base,
+				       i915_gem_object_get_dma_address(obj, i),
+				       node.start,
+				       I915_CACHE_NONE, 0);
+
+		page = shmem_read_mapping_page(mapping, i);
+		if (IS_ERR(page)) {
+			ret = PTR_ERR(page);
+			break;
+		}
+
+		src = io_mapping_map_atomic_wc(&ggtt->mappable, node.start);
+		dst = kmap_atomic(page);
+		wmb(); /* flush modifications to the GGTT (insert_page) */
+		memcpy_fromio(dst, src, PAGE_SIZE);
+		wmb(); 	/* flush the write before we modify the GGTT */
+		kunmap_atomic(dst);
+		io_mapping_unmap_atomic(src);
+
+		put_page(page);
+	}
+
+	ggtt->base.clear_range(&ggtt->base,
+			       node.start, node.size);
+	remove_mappable_node(&node);
+	if (ret)
+		return ret;
+
+	return i915_gem_object_set_to_cpu_domain(obj, true);
+}
+
+/**
+ * i915_gem_object_migrate_stolen_to_shmemfs() - migrates a stolen backed
+ * object to shmemfs
+ * @obj: stolen backed object to be migrated
+ *
+ * Returns: 0 on successful migration, errno on failure
+ */
+
+int
+i915_gem_object_migrate_stolen_to_shmemfs(struct drm_i915_gem_object *obj)
+{
+	struct drm_i915_private *i915 = to_i915(obj->base.dev);
+	struct i915_vma *vma, *vn;
+	struct file *file;
+	struct address_space *mapping;
+	struct sg_table *stolen_pages, *shmemfs_pages = NULL;
+	int ret;
+
+	if (WARN_ON_ONCE(i915_gem_object_needs_bit17_swizzle(obj)))
+		return -EINVAL;
+
+	file = shmem_file_setup("drm mm object", obj->base.size, VM_NORESERVE);
+	if (IS_ERR(file))
+		return PTR_ERR(file);
+	mapping = i915_gem_set_inode_gfp(i915, file);
+
+	list_for_each_entry_safe(vma, vn, &obj->vma_list, obj_link)
+		if (i915_vma_unbind(vma))
+			continue;
+
+	if (obj->mm.madv != I915_MADV_WILLNEED && list_empty(&obj->vma_list)) {
+		/* Discard the stolen reservation, and replace with
+		 * an unpopulated shmemfs object.
+		 */
+		obj->mm.madv = __I915_MADV_PURGED;
+	} else {
+		ret = copy_content(obj, i915, mapping);
+		if (ret)
+			goto err_file;
+	}
+
+	stolen_pages = obj->mm.pages;
+	obj->mm.pages = NULL;
+
+	obj->base.filp = file;
+
+	/* Recreate any pinned binding with pointers to the new storage */
+	if (!list_empty(&obj->vma_list)) {
+		shmemfs_pages = i915_gem_object_get_pages_gtt(obj);
+		if (IS_ERR(shmemfs_pages)) {
+			obj->mm.pages = stolen_pages;
+			goto err_file;
+		}
+
+		obj->mm.get_page.sg_pos = obj->mm.pages->sgl;
+		obj->mm.get_page.sg_idx = 0;
+
+		list_for_each_entry(vma, &obj->vma_list, obj_link) {
+			if (!drm_mm_node_allocated(&vma->node))
+				continue;
+
+			/* As vma is already allocated and only the PTEs
+			 * have to be reprogrammed, makes this vma_bind
+			 * call extremely unlikely to fail.
+			 */
+			BUG_ON(i915_vma_bind(vma,
+					      obj->cache_level,
+					      PIN_UPDATE));
+		}
+	} else {
+		/* Remove object from global list if no reference to the
+		 * pages is held.
+		 */
+		list_del(&obj->global_link);
+	}
+
+	/* drop the stolen pin and backing */
+	obj->mm.pages = stolen_pages;
+
+	i915_gem_object_unpin_pages(obj);
+	obj->ops->put_pages(obj, stolen_pages);
+	if (obj->ops->release)
+		obj->ops->release(obj);
+
+	obj->ops = &i915_gem_object_ops;
+	obj->mm.pages = shmemfs_pages;
+
+	return 0;
+
+err_file:
+	fput(file);
+	obj->base.filp = NULL;
+	return ret;
 }
 
 int i915_gem_freeze(struct drm_i915_private *dev_priv)

@@ -154,7 +154,14 @@ static int intelfb_alloc(struct drm_fb_helper *helper,
 		goto out;
 	}
 
+	/* Discard the contents of the BIOS fb across hibernation.
+	 * We really want to completely throwaway the earlier fbdev
+	 * and reconfigure it anyway.
+	 */
+	obj->mm.internal_volatile = true;
+
 	fb = __intel_framebuffer_create(dev, &mode_cmd, obj);
+
 	if (IS_ERR(fb)) {
 		i915_gem_object_put(obj);
 		ret = PTR_ERR(fb);

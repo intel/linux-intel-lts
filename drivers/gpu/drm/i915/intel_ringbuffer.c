@@ -1967,6 +1967,12 @@ intel_ring_create_vma(struct drm_i915_private *dev_priv, int size)
 	if (IS_ERR(obj))
 		return ERR_CAST(obj);
 
+	/* Ringbuffer objects are by definition volatile - only the commands
+	 * between HEAD and TAIL need to be preserved and whilst there are
+	 * any commands there, the ringbuffer is pinned by activity.
+	 */
+	obj->mm.internal_volatile = true;
+
 	/* mark ring buffers as read-only from GPU side by default */
 	obj->gt_ro = 1;
 

@@ -146,6 +146,13 @@ struct drm_i915_gem_object {
 		unsigned int madv:2;
 
 		/**
+		 * Whereas madv is for userspace, there are certain situations
+		 * where we want I915_MADV_DONTNEED behaviour on internal objects
+		 * without conflating the userspace setting.
+		 */
+		unsigned int internal_volatile:1;
+
+		/**
 		 * This is set if the object has been written to since the
 		 * pages were last acquired.
 		 */
