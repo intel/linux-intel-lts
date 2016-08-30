@@ -224,7 +224,7 @@ describe_obj(struct seq_file *m, struct drm_i915_gem_object *obj)
 		seq_puts(m, ")");
 	}
 	if (obj->stolen)
-		seq_printf(m, " (stolen: %08llx)", obj->stolen->start);
+		seq_printf(m, " (stolen: %08llx)", obj->stolen->base.start);
 
 	engine = i915_gem_object_last_write_engine(obj);
 	if (engine)
@@ -243,9 +243,9 @@ static int obj_rank_by_stolen(void *priv,
 	struct drm_i915_gem_object *b =
 		container_of(B, struct drm_i915_gem_object, obj_exec_link);
 
-	if (a->stolen->start < b->stolen->start)
+	if (a->stolen->base.start < b->stolen->base.start)
 		return -1;
-	if (a->stolen->start > b->stolen->start)
+	if (a->stolen->base.start > b->stolen->base.start)
 		return 1;
 	return 0;
 }

@@ -1511,6 +1511,12 @@ struct intel_l3_parity {
 	int which_slice;
 };
 
+struct i915_stolen_node {
+	struct drm_mm_node base;
+	struct list_head mm_link;
+	struct drm_i915_gem_object *obj;
+};
+
 struct i915_gem_mm {
 	/** Memory allocator for GTT stolen memory */
 	struct drm_mm stolen;
@@ -1527,6 +1533,13 @@ struct i915_gem_mm {
 	 * not actually have any pages attached.
 	 */
 	struct list_head unbound_list;
+
+	/**
+	 * List of stolen objects that have been marked as purgeable and
+	 * thus available for reaping if we need more space for a new
+	 * allocation. Ordered by time of marking purgeable.
+	 */
+	struct list_head stolen_list;
 
 	/** List of all objects in gtt_space, currently mmaped by userspace.
 	 * All objects within this list must also be on bound_list.

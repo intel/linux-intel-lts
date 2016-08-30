@@ -6051,7 +6051,7 @@ static void valleyview_check_pctx(struct drm_i915_private *dev_priv)
 	unsigned long pctx_addr = I915_READ(VLV_PCBR) & ~4095;
 
 	WARN_ON(pctx_addr != dev_priv->mm.stolen_base +
-			     dev_priv->vlv_pctx->stolen->start);
+			     dev_priv->vlv_pctx->stolen->base.start);
 }
 
 
@@ -6122,7 +6122,7 @@ static void valleyview_setup_pctx(struct drm_i915_private *dev_priv)
 		goto out;
 	}
 
-	pctx_paddr = dev_priv->mm.stolen_base + pctx->stolen->start;
+	pctx_paddr = dev_priv->mm.stolen_base + pctx->stolen->base.start;
 	I915_WRITE(VLV_PCBR, pctx_paddr);
 
 out:
