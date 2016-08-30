@@ -23,6 +23,11 @@ static const u8 intel_dsm_guid[] = {
 	0x0f, 0x13, 0x17, 0xb0, 0x1c, 0x2c
 };
 
+static const struct acpi_device_id irst_ids[] = {
+	{"INT3392", 0},
+	{"", 0}
+};
+
 static char *intel_dsm_port_name(u8 id)
 {
 	switch (id) {
@@ -161,4 +166,19 @@ void intel_register_dsm_handler(void)
 
 void intel_unregister_dsm_handler(void)
 {
+}
+
+int match_device(struct device *dev, void* ids) {
+	if (acpi_match_device(irst_ids, dev))
+		return 1;
+
+	return 0;
+}
+
+bool intel_detect_acpi_rst(void)
+{
+	if (bus_for_each_dev(&acpi_bus_type, NULL, NULL, match_device))
+		return true;;
+
+	return false;
 }

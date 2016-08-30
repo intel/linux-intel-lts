@@ -508,6 +508,18 @@ int i915_gem_init_stolen(struct drm_i915_private *dev_priv)
 	drm_mm_init(&dev_priv->mm.stolen, stolen_usable_start,
 		    ggtt->stolen_usable_size);
 
+	/* If the stolen region can be modified behind our backs upon suspend,
+	 * then we cannot use it to store nonvolatile contents (i.e user data)
+	 * as it will be corrupted upon resume.
+	 */
+	dev_priv->mm.volatile_stolen = false;
+	if (IS_ENABLED(CONFIG_SUSPEND)) {
+		/* BIOSes using RapidStart Technology have been reported
+		 * to overwrite stolen across S3, not just S4.
+		 */
+		dev_priv->mm.volatile_stolen = intel_detect_acpi_rst();
+	}
+
 	return 0;
 }
 
@@ -908,7 +920,7 @@ int i915_gem_stolen_freeze(struct drm_i915_private *i915)
 			 * This is similar to the strategy required whilst
 			 * shrinking or evicting objects (for the same reason).
 			 */
-			drm_gem_object_reference(&obj->base);
+			i915_gem_object_get(obj);
 			list_move(&obj->global_link, &migrate);
 		}
 
@@ -916,7 +928,7 @@ int i915_gem_stolen_freeze(struct drm_i915_private *i915)
 		list_for_each_entry_safe(obj, tmp, &migrate, global_link) {
 			if (ret == 0)
 				ret = i915_gem_object_migrate_stolen_to_shmemfs(obj);
-			drm_gem_object_unreference(&obj->base);
+			i915_gem_object_put(obj);
 		}
 		list_splice(&migrate, *p);
 		if (ret)

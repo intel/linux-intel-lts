@@ -767,6 +767,13 @@ i915_gem_alloc_object_stolen(struct drm_i915_private *dev_priv, size_t size)
 	struct drm_i915_gem_object *obj;
 	int ret;
 
+	if (dev_priv->mm.volatile_stolen) {
+		/* Stolen may be overwritten by external parties
+		 * so unsuitable for persistent user data.
+		 */
+		return ERR_PTR(-ENODEV);
+	}
+
 	mutex_lock(&dev_priv->drm.struct_mutex);
 	obj = i915_gem_object_create_stolen(dev_priv, size);
 	if (IS_ERR(obj))
