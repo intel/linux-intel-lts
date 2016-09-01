@@ -145,32 +145,6 @@ static struct snd_soc_dai *cnl_florida_get_codec_dai(struct snd_soc_card *card,
 	return NULL;
 }
 
-int cnl_bt_mode_get(struct snd_kcontrol *kcontrol,
-		struct snd_ctl_elem_value *ucontrol)
-{
-	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
-	struct cnl_mc_private *drv = snd_soc_card_get_drvdata(card);
-
-	ucontrol->value.enumerated.item[0] = drv->bt_mode;
-	pr_debug("%s %d BT mode = %d\n", __func__, __LINE__, drv->bt_mode);
-	return 0;
-}
-
-int cnl_bt_mode_put(struct snd_kcontrol *kcontrol,
-		struct snd_ctl_elem_value *ucontrol)
-{
-	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
-	struct cnl_mc_private *drv = snd_soc_card_get_drvdata(card);
-	struct soc_enum *e = (void *)kcontrol->private_value;
-
-	if (ucontrol->value.enumerated.item[0] > e->items - 1)
-		return -EINVAL;
-
-	drv->bt_mode = ucontrol->value.enumerated.item[0];
-	pr_debug("%s %d mode = %d\n", __func__, __LINE__, drv->bt_mode);
-	return 0;
-}
-
 /* Function to switch the input clock for codec,  When audio is in
  * progress input clock to codec will be through MCLK1 which is 19.2MHz
  * while in off state input clock to codec will be through 32KHz through
@@ -397,17 +371,12 @@ static struct snd_soc_ops cnl_florida_ops = {
 static int cnl_florida_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 			    struct snd_pcm_hw_params *params)
 {
-	struct snd_soc_dai *be_cpu_dai;
-	int slot_width = 24;
-	int ret = 0;
-	int fmt;
 	struct snd_interval *rate = hw_param_interval(params,
 			SNDRV_PCM_HW_PARAM_RATE);
 	struct snd_interval *channels = hw_param_interval(params,
 						SNDRV_PCM_HW_PARAM_CHANNELS);
 
 	pr_debug("Invoked %s for dailink %s\n", __func__, rtd->dai_link->name);
-	slot_width = 24;
 	rate->min = rate->max = 48000;
 	channels->min = channels->max = 2;
 	snd_mask_none(hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT));
@@ -416,36 +385,9 @@ static int cnl_florida_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 
 	pr_info("param width set to:0x%x\n",
 			snd_pcm_format_width(params_format(params)));
-	pr_info("Slot width = %d\n", slot_width);
 
-	be_cpu_dai = rtd->cpu_dai;
 	return 0;
-	ret = snd_soc_dai_set_tdm_slot(be_cpu_dai, SLOT_MASK(4), SLOT_MASK(4),
-				       4, slot_width);
-	if (ret < 0) {
-		pr_err("can't set cpu dai pcm format %d\n", ret);
-		return ret;
-	}
-
-	/* bit clock inverse not required */
-	fmt =   SND_SOC_DAIFMT_DSP_A | SND_SOC_DAIFMT_NB_NF
-		| SND_SOC_DAIFMT_CBM_CFM;
-	ret = snd_soc_dai_set_fmt(be_cpu_dai, fmt);
-	if (ret < 0) {
-		pr_err("can't set codec DAI configuration %d\n", ret);
-		return ret;
-	}
-
-	return ret;
 }
-
-static const struct snd_soc_pcm_stream cnl_florida_dai_params = {
-	.formats = SNDRV_PCM_FMTBIT_S24_LE,
-	.rate_min = 48000,
-	.rate_max = 48000,
-	.channels_min = 4,
-	.channels_max = 4,
-};
 
 struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 	{
