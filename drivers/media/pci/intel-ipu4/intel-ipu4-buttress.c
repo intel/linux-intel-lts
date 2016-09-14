@@ -1401,6 +1401,57 @@ static void intel_ipu4_buttress_clk_exit(struct intel_ipu4_device *isp)
 		clk_unregister(b->pll_sensor[i]);
 }
 
+int intel_ipu4_buttress_tsc_read(struct intel_ipu4_device *isp, u64 *val)
+{
+	struct intel_ipu4_buttress *b = &isp->buttress;
+	u32 tsc_hi, tsc_lo_1, tsc_lo_2, tsc_lo_3, tsc_chk = 0;
+	unsigned long flags;
+	short retry = INTEL_IPU4_BUTTRESS_TSC_RETRY;
+
+	do {
+		spin_lock_irqsave(&b->tsc_lock, flags);
+		tsc_hi = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
+
+		/*
+		 * We are occasionally getting broken values from
+		 * HH. Reading 3 times and doing sanity check as a WA
+		 */
+		tsc_lo_1 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_lo_2 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_lo_3 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_chk = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
+		spin_unlock_irqrestore(&b->tsc_lock, flags);
+		if (tsc_chk == tsc_hi && tsc_lo_2 &&
+		    tsc_lo_2 - tsc_lo_1 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT &&
+		    tsc_lo_3 - tsc_lo_2 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT) {
+			*val = (u64)tsc_hi << 32 | tsc_lo_2;
+			return 0;
+		}
+
+		/*
+		 * Trace error only if limit checkings fails at least
+		 *  by two consecutive readings.
+		 */
+		if (retry < INTEL_IPU4_BUTTRESS_TSC_RETRY - 1 &&
+		    tsc_lo_2)
+			dev_err(&isp->pdev->dev,
+				"failure: tsc_hi = %u, \
+				tsc_chk %u, \
+				tsc_lo_1 = %u, \
+				tsc_lo_2 = %u, \
+				tsc_lo_3 = %u",
+				tsc_hi, tsc_chk, tsc_lo_1, tsc_lo_2, tsc_lo_3);
+	} while (retry--);
+
+	if (!tsc_chk && !tsc_lo_2)
+		return -EIO;
+
+	WARN_ON_ONCE(1);
+
+	return -EINVAL;
+}
+EXPORT_SYMBOL_GPL(intel_ipu4_buttress_tsc_read);
+
 #ifdef CONFIG_DEBUG_FS
 
 static int intel_ipu4_buttress_reg_open(struct inode *inode, struct file *file)
@@ -1467,57 +1518,6 @@ DEFINE_SIMPLE_ATTRIBUTE(intel_ipu4_buttress_start_tsc_sync_fops,
 			NULL, /* intel_ipu4_buttress_start_tsc_sync_get, */
 			intel_ipu4_buttress_start_tsc_sync_set, "%llu\n");
 
-
-int intel_ipu4_buttress_tsc_read(struct intel_ipu4_device *isp, u64 *val)
-{
-	struct intel_ipu4_buttress *b = &isp->buttress;
-	u32 tsc_hi, tsc_lo_1, tsc_lo_2, tsc_lo_3, tsc_chk = 0;
-	unsigned long flags;
-	short retry = INTEL_IPU4_BUTTRESS_TSC_RETRY;
-
-	do {
-		spin_lock_irqsave(&b->tsc_lock, flags);
-		tsc_hi = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
-
-		/*
-		 * We are occasionally getting broken values from
-		 * HH. Reading 3 times and doing sanity check as a WA
-		 */
-		tsc_lo_1 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_lo_2 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_lo_3 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_chk = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
-		spin_unlock_irqrestore(&b->tsc_lock, flags);
-		if (tsc_chk == tsc_hi && tsc_lo_2 &&
-		    tsc_lo_2 - tsc_lo_1 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT &&
-		    tsc_lo_3 - tsc_lo_2 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT) {
-			*val = (u64)tsc_hi << 32 | tsc_lo_2;
-			return 0;
-		}
-
-		/*
-		 * Trace error only if limit checkings fails at least
-		 *  by two consecutive readings.
-		 */
-		if (retry < INTEL_IPU4_BUTTRESS_TSC_RETRY - 1 &&
-		    tsc_lo_2)
-			dev_err(&isp->pdev->dev,
-				"failure: tsc_hi = %u, \
-				tsc_chk %u, \
-				tsc_lo_1 = %u, \
-				tsc_lo_2 = %u, \
-				tsc_lo_3 = %u",
-				tsc_hi, tsc_chk, tsc_lo_1, tsc_lo_2, tsc_lo_3);
-	} while (retry--);
-
-	if (!tsc_chk && !tsc_lo_2)
-		return -EIO;
-
-	WARN_ON_ONCE(1);
-
-	return -EINVAL;
-}
-EXPORT_SYMBOL_GPL(intel_ipu4_buttress_tsc_read);
 
 u64 intel_ipu4_buttress_tsc_ticks_to_ns(u64 ticks)
 {
