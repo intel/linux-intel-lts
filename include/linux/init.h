@@ -260,6 +260,8 @@ extern bool initcall_debug;
 #define console_initcall(fn)	___define_initcall(fn, con, .con_initcall)
 #define security_initcall(fn)	___define_initcall(fn, security, .security_initcall)
 
+extern struct async_domain populate_rootfs_domain;
+
 struct obs_kernel_param {
 	const char *str;
 	int (*setup_func)(char *);

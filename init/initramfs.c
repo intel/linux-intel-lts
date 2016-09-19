@@ -10,6 +10,7 @@
 #include <linux/syscalls.h>
 #include <linux/utime.h>
 #include <linux/file.h>
+#include <linux/async.h>
 
 static ssize_t __init xwrite(int fd, const char *p, size_t count)
 {
@@ -599,7 +600,9 @@ static void __init clean_rootfs(void)
 }
 #endif
 
-static int __init populate_rootfs(void)
+ASYNC_DOMAIN(populate_rootfs_domain);
+
+static void __init async_populate_rootfs(void *data, async_cookie_t cookie)
 {
 	/* Load the built in initramfs */
 	char *err = unpack_to_rootfs(__initramfs_start, __initramfs_size);
@@ -650,6 +653,13 @@ static int __init populate_rootfs(void)
 	 */
 	load_default_modules();
 
+	return;
+}
+
+static int __init populate_rootfs(void)
+{
+	async_schedule_domain(async_populate_rootfs, NULL, &populate_rootfs_domain);
 	return 0;
 }
+
 rootfs_initcall(populate_rootfs);
