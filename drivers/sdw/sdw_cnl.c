@@ -439,7 +439,7 @@ static int sdw_port_pdi_init(struct cnl_sdw *sdw)
 	return ret;
 }
 
-static int sdw_init(struct cnl_sdw *sdw)
+static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 {
 	struct sdw_master *mstr = sdw->mstr;
 	struct cnl_sdw_data *data = &sdw->data;
@@ -546,19 +546,31 @@ static int sdw_init(struct cnl_sdw *sdw)
 	/* Initialize the phy control registers. */
 	sdw_init_phyctrl(sdw);
 
-	/* Initlaize the ports */
-	ret = sdw_port_pdi_init(sdw);
-	if (ret) {
-		dev_err(&mstr->dev, "SoundWire controller init failed %d\n",
+	if (is_first_init) {
+		/* Initlaize the ports */
+		ret = sdw_port_pdi_init(sdw);
+		if (ret) {
+			dev_err(&mstr->dev, "SoundWire controller init failed %d\n",
 				data->inst_id);
-		sdw_power_down_link(sdw);
-		return ret;
+			sdw_power_down_link(sdw);
+			return ret;
+		}
 	}
 
 	/* Lastly enable interrupts */
 	sdw_enable_interrupt(sdw);
 
 	/* Update soundwire configuration */
+	ret = sdw_config_update(sdw);
+	if (ret)
+		return ret;
+
+	/* Reset bus */
+	mcp_control = cnl_sdw_reg_readl(data->sdw_regs,	SDW_CNL_MCP_CONTROL);
+	mcp_control |= (MCP_CONTROL_HARDCTRLBUSRST_MASK <<
+			MCP_CONTROL_HARDCTRLBUSRST_SHIFT);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
+
 	return sdw_config_update(sdw);
 }
 
@@ -1411,7 +1423,7 @@ static int cnl_sdw_probe(struct sdw_master *mstr,
 	sdw_master_set_drvdata(mstr, sdw);
 	init_completion(&sdw->tx_complete);
 	mutex_init(&sdw->stream_lock);
-	ret = sdw_init(sdw);
+	ret = sdw_init(sdw, true);
 	if (ret) {
 		dev_err(&mstr->dev, "SoundWire controller init failed %d\n",
 				data->inst_id);
@@ -1524,12 +1536,9 @@ out:
 
 static int cnl_sdw_clock_stop_exit(struct cnl_sdw *sdw)
 {
-	u16 wake_en, wake_sts, ioctl;
-	int volatile mcp_control;
-	int timeout = 0;
+	u16 wake_en, wake_sts;
+	int ret;
 	struct cnl_sdw_data *data = &sdw->data;
-	int ioctl_offset = SDW_CNL_IOCTL + (data->inst_id *
-					SDW_CNL_IOCTL_REG_OFFSET);
 
 	/* Disable the wake up interrupt */
 	wake_en = cnl_sdw_reg_readw(data->sdw_shim,
@@ -1547,41 +1556,10 @@ static int cnl_sdw_clock_stop_exit(struct cnl_sdw *sdw)
 	wake_sts |= (0x1 << data->inst_id);
 	cnl_sdw_reg_writew(data->sdw_shim, SDW_CNL_SNDWWAKESTS_REG_OFFSET,
 				wake_sts);
-
-	ioctl = cnl_sdw_reg_readw(data->sdw_shim, ioctl_offset);
-	ioctl |= CNL_IOCTL_DO_MASK << CNL_IOCTL_DO_SHIFT;
-	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
-	ioctl |= CNL_IOCTL_DOE_MASK << CNL_IOCTL_DOE_SHIFT;
-	cnl_sdw_reg_writew(data->sdw_shim,  ioctl_offset, ioctl);
-	/* Switch control back to master */
-	sdw_switch_to_mip(sdw);
-
-	mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
-					SDW_CNL_MCP_CONTROL);
-	mcp_control &= ~(MCP_CONTROL_BLOCKWAKEUP_MASK <<
-				MCP_CONTROL_BLOCKWAKEUP_SHIFT);
-	mcp_control |= (MCP_CONTROL_CLOCKSTOPCLEAR_MASK <<
-				MCP_CONTROL_CLOCKSTOPCLEAR_SHIFT);
-	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
-	/*
-	 * Wait for timeout to be clear to successful enabling of the clock
-	 * We will wait for 1sec before giving up
-	 */
-	while (timeout != 10) {
-		mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
-					SDW_CNL_MCP_CONTROL);
-		if ((mcp_control & (MCP_CONTROL_CLOCKSTOPCLEAR_MASK <<
-				MCP_CONTROL_CLOCKSTOPCLEAR_SHIFT)) == 0)
-			break;
-		msleep(1000);
-		timeout++;
-	}
-	mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
-					SDW_CNL_MCP_CONTROL);
-	if ((mcp_control & (MCP_CONTROL_CLOCKSTOPCLEAR_MASK <<
-			MCP_CONTROL_CLOCKSTOPCLEAR_SHIFT)) != 0) {
-		dev_err(&sdw->mstr->dev, "Clop Stop Exit failed\n");
-		return -EBUSY;
+	ret = sdw_init(sdw, false);
+	if (ret < 0) {
+		pr_err("sdw_init fail: %d\n", ret);
+		return ret;
 	}
 
 	dev_info(&sdw->mstr->dev, "Exit from clock stop successful\n");
