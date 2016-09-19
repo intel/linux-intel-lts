@@ -336,6 +336,7 @@ static int cnl_set_dsp_D0(struct sst_dsp *ctx, unsigned int core_id)
 	if (core_id == 0) {
 		/* enable interrupt */
 		cnl_ipc_int_enable(ctx);
+		cnl_sdw_int_enable(ctx, true);
 		cnl_ipc_op_int_enable(ctx);
 
 		ret = wait_event_timeout(cnl->boot_wait, cnl->boot_complete,
