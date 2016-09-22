@@ -436,6 +436,7 @@ struct skl_module_cfg {
 	u32 sdw_stream_num;
 	bool sdw_agg_enable;
 	struct skl_sdw_aggregation sdw_agg;
+	u32 dma_buffer_size; /* in milli seconds */
 	struct skl_module_pin *m_in_pin;
 	struct skl_module_pin *m_out_pin;
 	enum skl_module_type m_type;

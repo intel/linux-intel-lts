@@ -152,7 +152,7 @@
  * %SKL_TKN_U32_CAPS_SIZE:      Caps size
  *
  * %SKL_TKN_U32_PROC_DOMAIN:    Specify processing domain
- *
+
  * %SKL_TKN_U32_LIB_COUNT:      Specifies the number of libraries
  *
  * %SKL_TKN_STR_LIB_NAME:       Specifies the library name
@@ -317,6 +317,7 @@
  * %SKL_TKN_U32_AGG_ID:         Aggregation id is a non zero identifier to
  *                              indicate if this endpoint is participating
  *                              in aggregation.
+ * %SKL_TKN_U32_DMA_BUF_SIZE:	DMA buffer size in millisec
  *
  * module_id and loadable flags dont have tokens as these values will be
  * read from the DSP FW manifest
@@ -461,7 +462,8 @@ enum SKL_TKNS {
 	SKL_TKN_U32_AGG_CH_MASK,
 	SKL_TKN_U32_AGG_ID,
 
-	SKL_TKN_MAX = SKL_TKN_U32_AGG_ID,
+	SKL_TKN_U32_DMA_BUF_SIZE,
+	SKL_TKN_MAX = SKL_TKN_U32_DMA_BUF_SIZE,
 };
 
 #endif
