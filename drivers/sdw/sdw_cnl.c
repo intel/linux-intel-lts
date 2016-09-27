@@ -1458,8 +1458,6 @@ static int cnl_sdw_remove(struct sdw_master *mstr)
 #ifdef CONFIG_PM
 static int cnl_sdw_runtime_suspend(struct device *dev)
 {
-	enum  sdw_clk_stop_mode clock_stop_mode;
-
 	int volatile mcp_stat;
 	int mcp_control;
 	int timeout = 0;
@@ -1485,12 +1483,12 @@ static int cnl_sdw_runtime_suspend(struct device *dev)
 	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
 
 	/* Prepare all the slaves for clock stop */
-	ret = sdw_prepare_for_clock_change(sdw->mstr, 1, &clock_stop_mode);
+	ret = sdw_master_prep_for_clk_stop(sdw->mstr);
 	if (ret)
 		return ret;
 
 	/* Call bus function to broadcast the clock stop now */
-	ret = sdw_stop_clock(sdw->mstr, clock_stop_mode);
+	ret = sdw_master_stop_clock(sdw->mstr);
 	if (ret)
 		return ret;
 	/* Wait for clock to be stopped, we are waiting at max 1sec now */
@@ -1619,7 +1617,7 @@ static int cnl_sdw_runtime_resume(struct device *dev)
 	dev_info(&mstr->dev, "Exit from clock stop successful\n");
 
 	/* Prepare all the slaves to comeout of clock stop */
-	ret = sdw_prepare_for_clock_change(sdw->mstr, 0, NULL);
+	ret = sdw_mstr_deprep_after_clk_start(sdw->mstr);
 	if (ret)
 		return ret;
 

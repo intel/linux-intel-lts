@@ -1373,6 +1373,210 @@ static void sdw_send_slave_status(struct sdw_slave *slave,
 		slv_drv->update_slv_status(slave, status);
 }
 
+static int sdw_wait_for_deprepare(struct sdw_slave *slave)
+{
+	int ret;
+	struct sdw_msg msg;
+	u8 buf[1] = {0};
+	int timeout = 0;
+	struct sdw_master *mstr = slave->mstr;
+
+	/* Create message to read clock stop status, its broadcast message. */
+	buf[0] = 0xFF;
+
+	msg.ssp_tag = 0;
+	msg.flag = SDW_MSG_FLAG_READ;
+	msg.len = 1;
+	msg.buf = &buf[0];
+	msg.slave_addr = slave->slv_number;
+	msg.addr_page1 = 0x0;
+	msg.addr_page2 = 0x0;
+	msg.addr = SDW_SCP_STAT;
+	/*
+	 * Read the ClockStopNotFinished bit from the SCP_Stat register
+	 * of particular Slave to make sure that clock stop prepare is done
+	 */
+	do {
+		/*
+		 * Ideally this should not fail, but even if it fails
+		 * in exceptional situation, we go ahead for clock stop
+		 */
+		ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
+
+		if (ret != 1) {
+			WARN_ONCE(1, "Clock stop status read failed\n");
+			break;
+		}
+
+		if (!(buf[0] & SDW_SCP_STAT_CLK_STP_NF_MASK))
+			break;
+
+		/*
+		 * TODO: Need to find from spec what is requirement.
+		 * Since we are in suspend we should not sleep for more
+		 * Ideally Slave should be ready to stop clock in less than
+		 * few ms.
+		 * So sleep less and increase loop time. This is not
+		 * harmful, since if Slave is ready loop will terminate.
+		 *
+		 */
+		msleep(2);
+		timeout++;
+
+	} while (timeout != 500);
+
+	if (!(buf[0] & SDW_SCP_STAT_CLK_STP_NF_MASK))
+
+		dev_info(&mstr->dev, "Clock stop prepare done\n");
+	else
+		WARN_ONCE(1, "Clk stp deprepare failed for slave %d\n",
+			slave->slv_number);
+
+	return -EINVAL;
+}
+
+static void sdw_prep_slave_for_clk_stp(struct sdw_master *mstr,
+			struct sdw_slave *slave,
+			enum sdw_clk_stop_mode clock_stop_mode,
+			bool prep)
+{
+	bool wake_en;
+	struct sdw_slv_capabilities *cap;
+	u8 buf[1] = {0};
+	struct sdw_msg msg;
+	int ret;
+
+	cap = &slave->sdw_slv_cap;
+
+	/* Set the wakeup enable based on Slave capability */
+	wake_en = !cap->wake_up_unavailable;
+
+	if (prep) {
+		/* Even if its simplified clock stop prepare,
+		 * setting prepare bit wont harm
+		 */
+		buf[0] |= (1 << SDW_SCP_SYSTEMCTRL_CLK_STP_PREP_SHIFT);
+		buf[0] |= clock_stop_mode <<
+			SDW_SCP_SYSTEMCTRL_CLK_STP_MODE_SHIFT;
+		buf[0] |= wake_en << SDW_SCP_SYSTEMCTRL_WAKE_UP_EN_SHIFT;
+	} else
+		buf[0] = 0;
+
+	msg.ssp_tag = 0;
+	msg.flag = SDW_MSG_FLAG_WRITE;
+	msg.len = 1;
+	msg.buf = &buf[0];
+	msg.slave_addr = slave->slv_number;
+	msg.addr_page1 = 0x0;
+	msg.addr_page2 = 0x0;
+	msg.addr = SDW_SCP_SYSTEMCTRL;
+
+	/*
+	 * We are calling NOPM version of the transfer API, because
+	 * Master controllers calls this from the suspend handler,
+	 * so if we call the normal transfer API, it tries to resume
+	 * controller, which result in deadlock
+	 */
+
+	ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
+	/* We should continue even if it fails for some Slave */
+	if (ret != 1)
+		WARN_ONCE(1, "Clock Stop prepare failed for slave %d\n",
+				slave->slv_number);
+}
+
+static int sdw_check_for_prep_bit(struct sdw_slave *slave)
+{
+	u8 buf[1] = {0};
+	struct sdw_msg msg;
+	int ret;
+	struct sdw_master *mstr = slave->mstr;
+
+	msg.ssp_tag = 0;
+	msg.flag = SDW_MSG_FLAG_READ;
+	msg.len = 1;
+	msg.buf = &buf[0];
+	msg.slave_addr = slave->slv_number;
+	msg.addr_page1 = 0x0;
+	msg.addr_page2 = 0x0;
+	msg.addr = SDW_SCP_SYSTEMCTRL;
+
+	ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
+	/* We should continue even if it fails for some Slave */
+	if (ret != 1) {
+		dev_err(&mstr->dev, "SCP_SystemCtrl read failed for Slave %d\n",
+				slave->slv_number);
+		return -EINVAL;
+
+	}
+	return (buf[0] & SDW_SCP_SYSTEMCTRL_CLK_STP_PREP_MASK);
+
+}
+
+static int sdw_slv_deprepare_clk_stp1(struct sdw_slave *slave)
+{
+	struct sdw_slv_capabilities *cap;
+	int ret;
+	struct sdw_master *mstr = slave->mstr;
+
+	cap = &slave->sdw_slv_cap;
+
+	/*
+	 * Slave might have enumerated 1st time or from clock stop mode 1
+	 * return if Slave doesn't require deprepare
+	 */
+	if (!cap->clk_stp1_deprep_required)
+		return 0;
+
+	/*
+	 * If Slave requires de-prepare after exiting from Clock Stop
+	 * mode 1, than check for ClockStopPrepare bit in SystemCtrl register
+	 * if its 1, de-prepare Slave from clock stop prepare, else
+	 * return
+	 */
+	ret = sdw_check_for_prep_bit(slave);
+	/* If prepare bit is not set, return without error */
+	if (!ret)
+		return 0;
+
+	/* If error in reading register, return with error */
+	if (ret < 0)
+		return ret;
+
+	/*
+	 * Call the pre clock stop prepare, if Slave requires.
+	 */
+	if (slave->driver && slave->driver->pre_clk_stop_prep) {
+		ret = slave->driver->pre_clk_stop_prep(slave,
+				cap->clock_stop1_mode_supported, false);
+		if (ret) {
+			dev_warn(&mstr->dev, "Pre de-prepare failed for Slave %d\n",
+				slave->slv_number);
+			return ret;
+		}
+	}
+
+	sdw_prep_slave_for_clk_stp(slave->mstr, slave,
+				cap->clock_stop1_mode_supported, false);
+
+	/* Make sure NF = 0 for deprepare to complete */
+	ret = sdw_wait_for_deprepare(slave);
+
+	/* Return in de-prepare unsuccessful */
+	if (ret)
+		return ret;
+
+	if (slave->driver && slave->driver->post_clk_stop_prep) {
+		ret = slave->driver->post_clk_stop_prep(slave,
+				cap->clock_stop1_mode_supported, false);
+
+		if (ret)
+			dev_err(&mstr->dev, "Post de-prepare failed for Slave %d\n",
+				slave->slv_number);
+	}
+
+	return ret;
+}
 
 static void handle_slave_status(struct kthread_work *work)
 {
@@ -1429,6 +1633,16 @@ static void handle_slave_status(struct kthread_work *work)
 
 				mstr->sdw_addr[i].status =
 						SDW_SLAVE_STAT_ATTACHED_OK;
+				ret = sdw_slv_deprepare_clk_stp1(
+						mstr->sdw_addr[i].slave);
+
+				/*
+				 * If depreparing Slave fails, no need to
+				 * reprogram Slave, this should never happen
+				 * in ideal case.
+				 */
+				if (ret)
+					continue;
 				slave_present = true;
 			}
 
@@ -2651,49 +2865,6 @@ int sdw_disable_and_unprepare(int stream_tag, bool unprepare)
 }
 EXPORT_SYMBOL_GPL(sdw_disable_and_unprepare);
 
-int sdw_stop_clock(struct sdw_master *mstr, enum sdw_clk_stop_mode mode)
-{
-	int ret = 0, i;
-	struct sdw_msg msg;
-	u8 buf[1] = {0};
-	int slave_present = 0;
-
-	for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
-		if (mstr->sdw_addr[i].assigned &&
-			mstr->sdw_addr[i].status !=
-					SDW_SLAVE_STAT_NOT_PRESENT)
-			slave_present = 1;
-	}
-
-	/* Send Broadcast message to the SCP_ctrl register with
-	 * clock stop now
-	 */
-	msg.ssp_tag = 1;
-	msg.flag = SDW_MSG_FLAG_WRITE;
-	msg.addr = SDW_SCP_CTRL;
-	msg.len = 1;
-	buf[0] |= 0x1 << SDW_SCP_CTRL_CLK_STP_NOW_SHIFT;
-	msg.buf = buf;
-	msg.slave_addr = 15;
-	msg.addr_page1 = 0x0;
-	msg.addr_page2 = 0x0;
-	ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
-	if (ret != 1 && slave_present) {
-		dev_err(&mstr->dev, "Failed to stop clk\n");
-		return -EBUSY;
-	}
-	/* If we are entering clock stop mode1, mark all the slaves un-attached.
-	 */
-	if (mode == SDW_CLOCK_STOP_MODE_1) {
-		for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
-			if (mstr->sdw_addr[i].assigned)
-				mstr->sdw_addr[i].status =
-						SDW_SLAVE_STAT_NOT_PRESENT;
-		}
-	}
-	return 0;
-}
-
 int sdw_wait_for_slave_enumeration(struct sdw_master *mstr,
 					struct sdw_slave *slave)
 {
@@ -2714,126 +2885,356 @@ int sdw_wait_for_slave_enumeration(struct sdw_master *mstr,
 }
 EXPORT_SYMBOL_GPL(sdw_wait_for_slave_enumeration);
 
-int sdw_prepare_for_clock_change(struct sdw_master *mstr, bool stop,
-			enum sdw_clk_stop_mode *clck_stop_mode)
+static enum sdw_clk_stop_mode sdw_get_clk_stp_mode(struct sdw_slave *slave)
 {
-	int i;
+	enum sdw_clk_stop_mode clock_stop_mode = SDW_CLOCK_STOP_MODE_0;
+	struct sdw_slv_capabilities *cap = &slave->sdw_slv_cap;
+
+	if (!slave->driver)
+		return clock_stop_mode;
+	/*
+	 * Get the dynamic value of clock stop from Slave driver
+	 * if supported, else use the static value from
+	 * capabilities register. Update the capabilities also
+	 * if we have new dynamic value.
+	 */
+	if (slave->driver->get_dyn_clk_stp_mod) {
+		clock_stop_mode = slave->driver->get_dyn_clk_stp_mod(slave);
+
+		if (clock_stop_mode == SDW_CLOCK_STOP_MODE_1)
+			cap->clock_stop1_mode_supported = true;
+		else
+			cap->clock_stop1_mode_supported = false;
+	} else
+		clock_stop_mode = cap->clock_stop1_mode_supported;
+
+	return clock_stop_mode;
+}
+
+/**
+ * sdw_master_stop_clock: Stop the clock. This function broadcasts the SCP_CTRL
+ *			register with clock_stop_now bit set.
+ *
+ * @mstr: Master handle for which clock has to be stopped.
+ *
+ * Returns 0 on success, appropriate error code on failure.
+ */
+int sdw_master_stop_clock(struct sdw_master *mstr)
+{
+	int ret = 0, i;
 	struct sdw_msg msg;
 	u8 buf[1] = {0};
-	struct sdw_slave *slave;
-	enum sdw_clk_stop_mode clock_stop_mode;
-	int timeout = 0;
-	int ret = 0;
-	int slave_dev_present = 0;
+	enum sdw_clk_stop_mode mode;
 
-	/*  Find if all slave support clock stop mode1 if all slaves support
-	 *  clock stop mode1 use mode1 else use mode0
+	/* Send Broadcast message to the SCP_ctrl register with
+	 * clock stop now. If none of the Slaves are attached, then there
+	 * may not be ACK, flag the error about ACK not recevied but
+	 * clock will be still stopped.
+	 */
+	msg.ssp_tag = 0;
+	msg.flag = SDW_MSG_FLAG_WRITE;
+	msg.len = 1;
+	msg.buf = &buf[0];
+	msg.slave_addr = SDW_SLAVE_BDCAST_ADDR;
+	msg.addr_page1 = 0x0;
+	msg.addr_page2 = 0x0;
+	msg.addr = SDW_SCP_CTRL;
+	buf[0] |= 0x1 << SDW_SCP_CTRL_CLK_STP_NOW_SHIFT;
+	ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
+
+	/* Even if broadcast fails, we stop the clock and flag error */
+	if (ret != 1)
+		dev_err(&mstr->dev, "ClockStopNow Broadcast message failed\n");
+
+	/*
+	 * Mark all Slaves as un-attached which are entering clock stop
+	 * mode1
 	 */
 	for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
-		if (mstr->sdw_addr[i].assigned &&
-		mstr->sdw_addr[i].status != SDW_SLAVE_STAT_NOT_PRESENT) {
-			slave_dev_present = 1;
-			slave = mstr->sdw_addr[i].slave;
-			clock_stop_mode &=
-				slave->sdw_slv_cap.clock_stop1_mode_supported;
-			if (!clock_stop_mode)
-				break;
+
+		if (!mstr->sdw_addr[i].assigned)
+			continue;
+
+		/* Get clock stop mode for all Slaves */
+		mode  = sdw_get_clk_stp_mode(mstr->sdw_addr[i].slave);
+		if (mode == SDW_CLOCK_STOP_MODE_0)
+			continue;
+
+		/* If clock stop mode 1, mark Slave as not present */
+		mstr->sdw_addr[i].status = SDW_SLAVE_STAT_NOT_PRESENT;
 		}
-	}
-	if (stop) {
-		*clck_stop_mode = clock_stop_mode;
-		dev_info(&mstr->dev, "Entering Clock stop mode %x\n",
-						clock_stop_mode);
-	}
-	/* Slaves might have removed power during its suspend
-	 * in that case no need to do clock stop prepare
-	 * and return from here
-	 */
-	if (!slave_dev_present)
-		return 0;
-	/* Prepare for the clock stop mode. For simplified clock stop
-	 * prepare only mode is to be set, For others set the ClockStop
-	 * Prepare bit in SCP_SystemCtrl register. For all the other slaves
-	 * set the clock stop prepare bit. For all slave set the clock
-	 * stop mode based on what we got in earlier loop
-	 */
-	for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sdw_master_stop_clock);
+
+static struct sdw_slave *get_slave_for_prep_deprep(struct sdw_master *mstr,
+					int *slave_index)
+{
+	int i;
+
+	for (i = *slave_index; i <= SOUNDWIRE_MAX_DEVICES; i++) {
 		if (mstr->sdw_addr[i].assigned != true)
 			continue;
+
 		if (mstr->sdw_addr[i].status == SDW_SLAVE_STAT_NOT_PRESENT)
 			continue;
-		slave = mstr->sdw_addr[i].slave;
-		msg.ssp_tag = 0;
-		slave = mstr->sdw_addr[i].slave;
 
-		if (stop) {
-			/* Even if its simplified clock stop prepare
-			 * setting prepare bit wont harm
-			 */
-			buf[0] |= (1 << SDW_SCP_SYSTEMCTRL_CLK_STP_PREP_SHIFT);
-			buf[0] |= clock_stop_mode <<
-				SDW_SCP_SYSTEMCTRL_CLK_STP_MODE_SHIFT;
-		}
-		msg.flag = SDW_MSG_FLAG_WRITE;
-		msg.addr = SDW_SCP_SYSTEMCTRL;
-		msg.len = 1;
-		msg.buf = buf;
-		msg.slave_addr = i;
-		msg.addr_page1 = 0x0;
-		msg.addr_page2 = 0x0;
-		ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
-		if (ret != 1) {
-			dev_err(&mstr->dev, "Clock Stop prepare failed\n");
-			return -EBUSY;
-		}
+		*slave_index = i + 1;
+		return mstr->sdw_addr[i].slave;
 	}
+	return NULL;
+}
+
+/*
+ * Wait till clock stop prepare/deprepare is finished. Prepare for all
+ * mode, De-prepare only for the Slaves resuming from clock stop mode 0
+ */
+static void sdw_wait_for_clk_prep(struct sdw_master *mstr)
+{
+	int ret;
+	struct sdw_msg msg;
+	u8 buf[1] = {0};
+	int timeout = 0;
+
+	/* Create message to read clock stop status, its broadcast message. */
+	msg.ssp_tag = 0;
+	msg.flag = SDW_MSG_FLAG_READ;
+	msg.len = 1;
+	msg.buf = &buf[0];
+	msg.slave_addr = SDW_SLAVE_BDCAST_ADDR;
+	msg.addr_page1 = 0x0;
+	msg.addr_page2 = 0x0;
+	msg.addr = SDW_SCP_STAT;
+	buf[0] = 0xFF;
 	/*
-	 * Once clock stop prepare bit is set, broadcast the message to read
-	 * ClockStop_NotFinished bit from SCP_Stat, till we read it as 11
-	 * we dont exit loop. We wait for definite time before retrying
-	 * if its simple clock stop it will be always 1, while for other
-	 * they will driver 0 on bus so we wont get 1. In total we are
-	 * waiting 1 sec before we timeout.
+	 * Once all the Slaves are written with prepare bit,
+	 * we go ahead and broadcast the read message for the
+	 * SCP_STAT register to read the ClockStopNotFinished bit
+	 * Read till we get this a 0. Currently we have timeout of 1sec
+	 * before giving up. Even if its not read as 0 after timeout,
+	 * controller can stop the clock after warning.
 	 */
 	do {
-		buf[0] = 0xFF;
-		msg.ssp_tag = 0;
-		msg.flag = SDW_MSG_FLAG_READ;
-		msg.addr = SDW_SCP_STAT;
-		msg.len = 1;
-		msg.buf = buf;
-		msg.slave_addr = 15;
-		msg.addr_page1 = 0x0;
-		msg.addr_page2 = 0x0;
+		/*
+		 * Ideally this should not fail, but even if it fails
+		 * in exceptional situation, we go ahead for clock stop
+		 */
 		ret = sdw_slave_transfer_nopm(mstr, &msg, 1);
-		if (ret != 1)
-			goto prepare_failed;
+
+		if (ret != 1) {
+			WARN_ONCE(1, "Clock stop status read failed\n");
+			break;
+		}
 
 		if (!(buf[0] & SDW_SCP_STAT_CLK_STP_NF_MASK))
-				break;
-		msleep(100);
+			break;
+
+		/*
+		 * TODO: Need to find from spec what is requirement.
+		 * Since we are in suspend we should not sleep for more
+		 * Ideally Slave should be ready to stop clock in less than
+		 * few ms.
+		 * So sleep less and increase loop time. This is not
+		 * harmful, since if Slave is ready loop will terminate.
+		 *
+		 */
+		msleep(2);
 		timeout++;
-	} while (timeout != 11);
-	/* If we are trying to stop and prepare failed its not ok
-	 */
-	if (!(buf[0] & SDW_SCP_STAT_CLK_STP_NF_MASK)) {
+
+	} while (timeout != 500);
+
+	if (!(buf[0] & SDW_SCP_STAT_CLK_STP_NF_MASK))
+
 		dev_info(&mstr->dev, "Clock stop prepare done\n");
-		return 0;
-	/* If we are trying to resume and  un-prepare failes its ok
-	 * since codec might be down during suspned and will
-	 * start afresh after resuming
+	else
+		WARN_ONCE(1, "Some Slaves prepare un-successful\n");
+}
+
+/**
+ * sdw_master_prep_for_clk_stop: Prepare all the Slaves for clock stop.
+ *			Iterate through each of the enumerated Slave.
+ *			Prepare each Slave according to the clock stop
+ *			mode supported by Slave. Use dynamic value from
+ *			Slave callback if registered, else use static values
+ *			from Slave capabilities registered.
+ *			1. Get clock stop mode for each Slave.
+ *			2. Call pre_prepare callback of each Slave if
+ *			registered.
+ *			3. Prepare each Slave for clock stop
+ *			4. Broadcast the Read message to make sure
+ *			all Slaves are prepared for clock stop.
+ *			5. Call post_prepare callback of each Slave if
+ *			registered.
+ *
+ * @mstr: Master handle for which clock state has to be changed.
+ *
+ * Returns 0
+ */
+int sdw_master_prep_for_clk_stop(struct sdw_master *mstr)
+{
+	struct sdw_slv_capabilities *cap;
+	enum sdw_clk_stop_mode clock_stop_mode;
+	int ret = 0;
+	struct sdw_slave *slave = NULL;
+	int slv_index = 1;
+
+	/*
+	 * Get all the Slaves registered to the master driver for preparing
+	 * for clock stop. Start from Slave with logical address as 1.
 	 */
-	} else if (!stop) {
-		dev_info(&mstr->dev, "Some Slaves un-prepare un-successful\n");
-		return 0;
+	while ((slave = get_slave_for_prep_deprep(mstr, &slv_index)) != NULL) {
+
+		cap = &slave->sdw_slv_cap;
+
+		clock_stop_mode = sdw_get_clk_stp_mode(slave);
+
+		/*
+		 * Call the pre clock stop prepare, if Slave requires.
+		 */
+		if (slave->driver && slave->driver->pre_clk_stop_prep) {
+			ret = slave->driver->pre_clk_stop_prep(slave,
+						clock_stop_mode, true);
+
+			/* If it fails we still continue */
+			if (ret)
+				dev_warn(&mstr->dev, "Pre prepare failed for Slave %d\n",
+						slave->slv_number);
+		}
+
+		sdw_prep_slave_for_clk_stp(mstr, slave, clock_stop_mode, true);
 	}
 
-prepare_failed:
-	dev_err(&mstr->dev, "Clock Stop prepare failed\n");
-	return -EBUSY;
+	/* Wait till prepare for all Slaves is finished */
+	/*
+	 * We should continue even if the prepare fails. Clock stop
+	 * prepare failure on Slaves, should not impact the broadcasting
+	 * of ClockStopNow.
+	 */
+	sdw_wait_for_clk_prep(mstr);
 
+	slv_index = 1;
+	while ((slave = get_slave_for_prep_deprep(mstr, &slv_index)) != NULL) {
+
+		cap = &slave->sdw_slv_cap;
+
+		clock_stop_mode = sdw_get_clk_stp_mode(slave);
+
+		if (slave->driver && slave->driver->post_clk_stop_prep) {
+			ret = slave->driver->post_clk_stop_prep(slave,
+							clock_stop_mode,
+							true);
+			/*
+			 * Even if Slave fails we continue with other
+			 * Slaves. This should never happen ideally.
+			 */
+			if (ret)
+				dev_err(&mstr->dev, "Post prepare failed for Slave %d\n",
+					slave->slv_number);
+		}
+	}
+
+	return 0;
 }
-EXPORT_SYMBOL_GPL(sdw_prepare_for_clock_change);
+EXPORT_SYMBOL_GPL(sdw_master_prep_for_clk_stop);
+
+/**
+ * sdw_mstr_deprep_after_clk_start: De-prepare all the Slaves
+ *		exiting clock stop mode 0 after clock resumes. Clock
+ *		is already resumed before this. De-prepare all the Slaves
+ *		which were earlier in ClockStop mode0. De-prepare for the
+ *		Slaves which were there in ClockStop mode1 is done after
+ *		they enumerated back. Its not done here as part of master
+ *		getting resumed.
+ *		1. Get clock stop mode for each Slave its exiting from
+ *		2. Call pre_prepare callback of each Slave exiting from
+ *		clock stop mode 0.
+ *		3. De-Prepare each Slave exiting from Clock Stop mode0
+ *		4. Broadcast the Read message to make sure
+ *		all Slaves are de-prepared for clock stop.
+ *		5. Call post_prepare callback of each Slave exiting from
+ *		clock stop mode0
+ *
+ *
+ * @mstr: Master handle
+ *
+ * Returns 0
+ */
+int sdw_mstr_deprep_after_clk_start(struct sdw_master *mstr)
+{
+	struct sdw_slv_capabilities *cap;
+	enum sdw_clk_stop_mode clock_stop_mode;
+	int ret = 0;
+	struct sdw_slave *slave = NULL;
+	/* We are preparing for stop */
+	bool stop = false;
+	int slv_index = 1;
+
+	while ((slave = get_slave_for_prep_deprep(mstr, &slv_index)) != NULL) {
+
+		cap = &slave->sdw_slv_cap;
+
+		/* Get the clock stop mode from which Slave is exiting */
+		clock_stop_mode = sdw_get_clk_stp_mode(slave);
+
+		/*
+		 * Slave is exiting from Clock stop mode 1, De-prepare
+		 * is optional based on capability, and it has to be done
+		 * after Slave is enumerated. So nothing to be done
+		 * here.
+		 */
+		if (clock_stop_mode == SDW_CLOCK_STOP_MODE_1)
+			continue;
+		/*
+		 * Call the pre clock stop prepare, if Slave requires.
+		 */
+		if (slave->driver && slave->driver->pre_clk_stop_prep)
+			ret = slave->driver->pre_clk_stop_prep(slave,
+						clock_stop_mode, false);
+
+		/* If it fails we still continue */
+		if (ret)
+			dev_warn(&mstr->dev, "Pre de-prepare failed for Slave %d\n",
+					slave->slv_number);
+
+		sdw_prep_slave_for_clk_stp(mstr, slave, clock_stop_mode, false);
+	}
+
+	/*
+	 * Wait till prepare is finished for all the Slaves.
+	 */
+	sdw_wait_for_clk_prep(mstr);
+
+	slv_index = 1;
+	while ((slave = get_slave_for_prep_deprep(mstr, &slv_index)) != NULL) {
+
+		cap = &slave->sdw_slv_cap;
+
+		clock_stop_mode = sdw_get_clk_stp_mode(slave);
+
+		/*
+		 * Slave is exiting from Clock stop mode 1, De-prepare
+		 * is optional based on capability, and it has to be done
+		 * after Slave is enumerated.
+		 */
+		if (clock_stop_mode == SDW_CLOCK_STOP_MODE_1)
+			continue;
+
+		if (slave->driver && slave->driver->post_clk_stop_prep)
+			ret = slave->driver->post_clk_stop_prep(slave,
+							clock_stop_mode,
+							stop);
+			/*
+			 * Even if Slave fails we continue with other
+			 * Slaves. This should never happen ideally.
+			 */
+			if (ret)
+				dev_err(&mstr->dev, "Post de-prepare failed for Slave %d\n",
+					slave->slv_number);
+	}
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sdw_mstr_deprep_after_clk_start);
+
 
 struct sdw_master *sdw_get_master(int nr)
 {

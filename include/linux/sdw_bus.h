@@ -422,6 +422,12 @@ struct sdw_slv_dp0_capabilities {
  *			1: Command_OK, Data is OR of all registers
  * @scp_impl_def_intr_mask: Implementation defined interrupt for Slave control
  *			port
+ * @clk_stp1_deprep_required: De-prepare is required after exiting the clock
+ *                      stop mode 1. Noramlly exit from clock stop 1 is like
+ *                      hard reset, so de-prepare shouldn't be required but
+ *                      some Slave requires de-prepare after exiting from
+ *                      clock stop 1. Mark as true if Slave requires
+ *                      deprepare after exiting from clock stop mode 1.
  * @sdw_dp0_supported: DP0 is supported by Slave.
  * @sdw_dp0_cap: Data Port 0 Capabilities of the Slave.
  * @num_of_sdw_ports: Number of SoundWire Data ports present. The representation
@@ -439,6 +445,7 @@ struct sdw_slv_capabilities {
 	bool bank_delay_support;
 	unsigned int port_15_read_behavior;
 	u8 scp_impl_def_intr_mask;
+	bool clk_stp1_deprep_required;
 	bool sdw_dp0_supported;
 	struct sdw_slv_dp0_capabilities *sdw_dp0_cap;
 	int num_of_sdw_ports;
@@ -617,6 +624,11 @@ struct sdw_slave_driver {
 			int port, int ch_mask, int bank);
 	int (*handle_post_port_unprepare)(struct sdw_slave *swdev,
 			int port, int ch_mask, int bank);
+	int (*pre_clk_stop_prep)(struct sdw_slave *sdwdev,
+			enum sdw_clk_stop_mode mode, bool stop);
+	int (*post_clk_stop_prep)(struct sdw_slave *sdwdev,
+			enum sdw_clk_stop_mode mode, bool stop);
+	enum sdw_clk_stop_mode (*get_dyn_clk_stp_mod)(struct sdw_slave *swdev);
 	void (*update_slv_status)(struct sdw_slave *swdev,
 			enum sdw_slave_status *status);
 	const struct sdw_slave_id *id_table;
@@ -1350,19 +1362,50 @@ void sdw_put_master(struct sdw_master *mstr);
 	module_driver(__sdw_slave_driver, sdw_slave_driver_register, \
 			sdw_slave_driver_unregister)
 /**
- * sdw_prepare_for_clock_change: Prepare all the Slaves for clock stop or
- *		clock start. Prepares Slaves based on what they support
- *		simplified clock stop or normal clock stop based on
- *		their capabilities registered to slave driver.
+ * sdw_master_prep_for_clk_stop: Prepare all the Slaves for clock stop.
+ *			Iterate through each of the enumerated Slave.
+ *			Prepare each Slave according to the clock stop
+ *			mode supported by Slave. Use dynamic value from
+ *			Slave callback if registered, else use static values
+ *			from Slave capabilities registered.
+ *			1. Get clock stop mode for each Slave.
+ *			2. Call pre_prepare callback of each Slave if
+ *			registered.
+ *			3. Prepare each Slave for clock stop
+ *			4. Broadcast the Read message to make sure
+ *			all Slaves are prepared for clock stop.
+ *			5. Call post_prepare callback of each Slave if
+ *			registered.
+ *
  * @mstr: Master handle for which clock state has to be changed.
- * @start: Prepare for starting or stopping the clock
- * @clk_stop_mode: Bus used which clock mode, if bus finds all the Slaves
- *		on the bus to be supported clock stop mode1 it prepares
- *		all the Slaves for mode1 else it will prepare all the
- *		Slaves for mode0.
+ *
+ * Returns 0
  */
-int sdw_prepare_for_clock_change(struct sdw_master *mstr, bool start,
-			enum sdw_clk_stop_mode *clck_stop_mode);
+int sdw_master_prep_for_clk_stop(struct sdw_master *mstr);
+
+/**
+ * sdw_mstr_deprep_after_clk_start: De-prepare all the Slaves
+ *		exiting clock stop mode 0 after clock resumes. Clock
+ *		is already resumed before this. De-prepare all the Slaves
+ *		which were earlier in ClockStop mode0. De-prepare for the
+ *		Slaves which were there in ClockStop mode1 is done after
+ *		they enumerated back. Its not done here as part of master
+ *		getting resumed.
+ *		1. Get clock stop mode for each Slave its exiting from
+ *		2. Call pre_prepare callback of each Slave exiting from
+ *		clock stop mode 0.
+ *		3. De-Prepare each Slave exiting from Clock Stop mode0
+ *		4. Broadcast the Read message to make sure
+ *		all Slaves are de-prepared for clock stop.
+ *		5. Call post_prepare callback of each Slave exiting from
+ *		clock stop mode0
+ *
+ *
+ * @mstr: Master handle
+ *
+ * Returns 0
+ */
+int sdw_mstr_deprep_after_clk_start(struct sdw_master *mstr);
 
 /**
  * sdw_wait_for_slave_enumeration: Wait till all the slaves are enumerated.
@@ -1380,13 +1423,14 @@ int sdw_wait_for_slave_enumeration(struct sdw_master *mstr,
 			struct sdw_slave *slave);
 
 /**
- * sdw_stop_clock: Stop the clock. This function broadcasts the SCP_CTRL
+ * sdw_master_stop_clock: Stop the clock. This function broadcasts the SCP_CTRL
  *			register with clock_stop_now bit set.
+ *
  * @mstr: Master handle for which clock has to be stopped.
- * @clk_stop_mode: Bus used which clock mode.
+ *
+ * Returns 0 on success, appropriate error code on failure.
  */
-
-int sdw_stop_clock(struct sdw_master *mstr, enum sdw_clk_stop_mode mode);
+int sdw_master_stop_clock(struct sdw_master *mstr);
 
 /* Return the adapter number for a specific adapter */
 static inline int sdw_master_id(struct sdw_master *mstr)
