@@ -210,6 +210,29 @@ static int sdw_slv_probe(struct device *dev)
 	return ret;
 }
 
+
+int sdw_slave_get_bus_params(struct sdw_slave *sdw_slv,
+			     struct sdw_bus_params *params)
+{
+	struct sdw_bus *bus;
+	struct sdw_master *mstr = sdw_slv->mstr;
+
+	list_for_each_entry(bus, &sdw_core.bus_list, bus_node) {
+		if (bus->mstr == mstr)
+			break;
+	}
+	if (!bus)
+		return -EFAULT;
+
+	params->num_rows = bus->row;
+	params->num_cols = bus->col;
+	params->bus_clk_freq = bus->clk_freq >> 1;
+	params->bank = bus->active_bank;
+
+	return 0;
+}
+EXPORT_SYMBOL(sdw_slave_get_bus_params);
+
 static int sdw_mstr_remove(struct device *dev)
 {
 	const struct sdw_mstr_driver *sdrv = to_sdw_mstr_driver(dev->driver);

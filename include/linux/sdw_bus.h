@@ -1377,4 +1377,16 @@ static inline void sdw_slave_set_drvdata(struct sdw_slave *slv,
 	dev_set_drvdata(&slv->dev, data);
 }
 
+/**
+ * sdw_slave_get_bus_params: Get the current bus params. Some Slaves
+ *			requires bus params at the probe to program its
+ *			registers based on bus params. This API provides
+ *			current bus params
+ *
+ * @sdw_slv: Slave handle
+ * @params: Bus params
+ */
+int sdw_slave_get_bus_params(struct sdw_slave *sdw_slv,
+					struct sdw_bus_params *params);
+
 #endif /*  _LINUX_SDW_BUS_H */
