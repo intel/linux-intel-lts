@@ -858,7 +858,7 @@ out:
 EXPORT_SYMBOL_GPL(sdw_slave_transfer);
 
 static int sdw_handle_dp0_interrupts(struct sdw_master *mstr,
-			struct sdw_slave *sdw_slv)
+			struct sdw_slave *sdw_slv, u8 *status)
 {
 	int ret = 0;
 	struct sdw_msg rd_msg, wr_msg;
@@ -909,8 +909,8 @@ static int sdw_handle_dp0_interrupts(struct sdw_master *mstr,
 			SDW_DP0_INTSTAT_IMPDEF2_MASK |
 			SDW_DP0_INTSTAT_IMPDEF3_MASK;
 	if (rd_msg.buf[0] & impl_def_mask) {
-		/* TODO: Handle implementation defined mask ready */
 		wr_msg.buf[0] |= impl_def_mask;
+		*status = wr_msg.buf[0];
 	}
 	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
 	if (ret != 1) {
@@ -924,15 +924,20 @@ out:
 }
 
 static int sdw_handle_port_interrupt(struct sdw_master *mstr,
-		struct sdw_slave *sdw_slv, int port_num)
+		struct sdw_slave *sdw_slv, int port_num,
+		u8 *status)
 {
 	int ret = 0;
 	struct sdw_msg rd_msg, wr_msg;
 	u8 rbuf[1], wbuf[1];
 	int impl_def_mask = 0;
 
-	if (port_num == 0)
-		ret = sdw_handle_dp0_interrupts(mstr, sdw_slv);
+/*
+	 * Handle the Data port0 interrupt separately since the interrupt
+	 * mask and stat register is different than other DPn registers
+	 */
+	if (port_num == 0 && sdw_slv->sdw_slv_cap.sdw_dp0_supported)
+		return sdw_handle_dp0_interrupts(mstr, sdw_slv, status);
 
 	/* Create message for reading the port interrupts */
 	wr_msg.ssp_tag = 0;
@@ -976,6 +981,7 @@ static int sdw_handle_port_interrupt(struct sdw_master *mstr,
 	if (rd_msg.buf[0] & impl_def_mask) {
 		/* TODO: Handle implementation defined mask ready */
 		wr_msg.buf[0] |= impl_def_mask;
+		*status = wr_msg.buf[0];
 	}
 	/* Clear and Ack the interrupt */
 	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
@@ -995,6 +1001,10 @@ static int sdw_handle_slave_alerts(struct sdw_master *mstr,
 	u8 rbuf[3], wbuf[1];
 	int i, ret = 0;
 	int cs_port_mask, cs_port_register, cs_port_start, cs_ports;
+	struct sdw_impl_def_intr_stat *intr_status;
+	struct sdw_portn_intr_stat *portn_stat;
+	u8 port_status[15] = {0};
+	u8 control_port_stat = 0;
 
 
 	/* Read Instat 1, Instat 2 and Instat 3 registers */
@@ -1050,57 +1060,319 @@ static int sdw_handle_slave_alerts(struct sdw_master *mstr,
 		dev_err(&mstr->dev, "Bus clash error detected\n");
 		wr_msg.buf[0] |= SDW_SCP_INTCLEAR1_BUS_CLASH_MASK;
 	}
-	/* Handle Port interrupts from Instat_1 registers */
+	/* Handle implementation defined mask */
+	if (rd_msg[0].buf[0] & SDW_SCP_INTSTAT1_IMPL_DEF_MASK) {
+		wr_msg.buf[0] |= SDW_SCP_INTCLEAR1_IMPL_DEF_MASK;
+		control_port_stat = (rd_msg[0].buf[0] &
+				SDW_SCP_INTSTAT1_IMPL_DEF_MASK);
+	}
+
+	/* Handle Cascaded Port interrupts from Instat_1 registers */
+
+	/* Number of port status bits in this register */
 	cs_ports = 4;
+	/* Port number starts at in this register */
 	cs_port_start = 0;
+	/* Bit mask for the starting port intr status */
 	cs_port_mask = 0x08;
+	/* Bit mask for the starting port intr status */
 	cs_port_register = 0;
-	for (i = cs_port_start; i < cs_port_start + cs_ports; i++) {
+
+	/* Look for cascaded port interrupts, if found handle port
+	 * interrupts. Do this for all the Int_stat registers.
+	 */
+	for (i = cs_port_start; i < cs_port_start + cs_ports &&
+		i <= sdw_slv->sdw_slv_cap.num_of_sdw_ports; i++) {
 		if (rd_msg[cs_port_register].buf[0] & cs_port_mask) {
 			ret += sdw_handle_port_interrupt(mstr,
-						sdw_slv, cs_port_start + i);
+						sdw_slv, i, &port_status[i]);
 		}
 		cs_port_mask = cs_port_mask << 1;
 	}
-	/* Handle interrupts from instat_2 register */
+
+	/*
+	 * Handle cascaded interrupts from instat_2 register,
+	 * if no cascaded interrupt from SCP2 cascade move to SCP3
+	 */
 	if (!(rd_msg[0].buf[0] & SDW_SCP_INTSTAT1_SCP2_CASCADE_MASK))
 		goto handle_instat_3_register;
+
+
 	cs_ports = 7;
 	cs_port_start = 4;
 	cs_port_mask = 0x1;
 	cs_port_register = 1;
-	for (i = cs_port_start; i < cs_port_start + cs_ports; i++) {
+	for (i = cs_port_start; i < cs_port_start + cs_ports &&
+		i <= sdw_slv->sdw_slv_cap.num_of_sdw_ports; i++) {
+
 		if (rd_msg[cs_port_register].buf[0] & cs_port_mask) {
+
 			ret += sdw_handle_port_interrupt(mstr,
-						sdw_slv, cs_port_start + i);
+						sdw_slv, i, &port_status[i]);
 		}
 		cs_port_mask = cs_port_mask << 1;
 	}
-handle_instat_3_register:
 
+	/*
+	 * Handle cascaded interrupts from instat_2 register,
+	 * if no cascaded interrupt from SCP2 cascade move to impl_def intrs
+	 */
+handle_instat_3_register:
 	if (!(rd_msg[1].buf[0] & SDW_SCP_INTSTAT2_SCP3_CASCADE_MASK))
-		goto handle_instat_3_register;
+		goto handle_impl_def_interrupts;
+
 	cs_ports = 4;
 	cs_port_start = 11;
 	cs_port_mask = 0x1;
 	cs_port_register = 2;
-	for (i = cs_port_start; i < cs_port_start + cs_ports; i++) {
+
+	for (i = cs_port_start; i < cs_port_start + cs_ports &&
+		i <= sdw_slv->sdw_slv_cap.num_of_sdw_ports; i++) {
+
 		if (rd_msg[cs_port_register].buf[0] & cs_port_mask) {
+
 			ret += sdw_handle_port_interrupt(mstr,
-						sdw_slv, cs_port_start + i);
+						sdw_slv, i, &port_status[i]);
 		}
 		cs_port_mask = cs_port_mask << 1;
 	}
-	/* Ack the IntStat 1 interrupts */
+
+handle_impl_def_interrupts:
+
+	/*
+	 * If slave has not registered for implementation defined
+	 * interrupts, dont read it.
+	 */
+	if (!sdw_slv->driver->handle_impl_def_interrupts)
+		goto ack_interrupts;
+
+	intr_status = kzalloc(sizeof(*intr_status), GFP_KERNEL);
+
+	portn_stat = kzalloc((sizeof(*portn_stat)) *
+				sdw_slv->sdw_slv_cap.num_of_sdw_ports,
+				GFP_KERNEL);
+
+	intr_status->portn_stat = portn_stat;
+	intr_status->control_port_stat = control_port_stat;
+
+	/* Update the implementation defined status to Slave */
+	for (i = 1; i < sdw_slv->sdw_slv_cap.num_of_sdw_ports; i++) {
+
+		intr_status->portn_stat[i].status = port_status[i];
+		intr_status->portn_stat[i].num = i;
+	}
+
+	intr_status->port0_stat = port_status[0];
+	intr_status->control_port_stat = wr_msg.buf[0];
+
+	ret = sdw_slv->driver->handle_impl_def_interrupts(sdw_slv,
+							intr_status);
+	if (ret)
+		dev_err(&mstr->dev, "Implementation defined interrupt handling failed\n");
+
+	kfree(portn_stat);
+	kfree(intr_status);
+
+ack_interrupts:
+	/* Ack the interrupts */
 	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
 	if (ret != 1) {
 		ret = -EINVAL;
 		dev_err(&mstr->dev, "Register transfer failed\n");
-		goto out;
 	}
 out:
+	return 0;
+}
+
+int sdw_en_intr(struct sdw_slave *sdw_slv, int port_num, int mask)
+{
+
+	struct sdw_msg rd_msg, wr_msg;
+	u8 buf;
+	int ret;
+	struct sdw_master *mstr = sdw_slv->mstr;
+
+	rd_msg.addr = wr_msg.addr = SDW_DPN_INTMASK +
+			(SDW_NUM_DATA_PORT_REGISTERS * port_num);
+
+	/* Create message for enabling the interrupts */
+	wr_msg.ssp_tag = 0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.len = 1;
+	wr_msg.buf = &buf;
+	wr_msg.slave_addr = sdw_slv->slv_number;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+	/* Create message for reading the interrupts  for DP0 interrupts*/
+	rd_msg.ssp_tag = 0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.len = 1;
+	rd_msg.buf = &buf;
+	rd_msg.slave_addr = sdw_slv->slv_number;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+	ret = sdw_slave_transfer(mstr, &rd_msg, 1);
+	if (ret != 1) {
+		dev_err(&mstr->dev, "DPn Intr mask read failed for slave %x\n",
+						sdw_slv->slv_number);
+		return -EINVAL;
+	}
+
+	buf |= mask;
+
+	/* Set the port ready and Test fail interrupt mask as well */
+	buf |= SDW_DPN_INTSTAT_TEST_FAIL_MASK;
+	buf |= SDW_DPN_INTSTAT_PORT_READY_MASK;
+	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
+	if (ret != 1) {
+		dev_err(&mstr->dev, "DPn Intr mask write failed for slave %x\n",
+						sdw_slv->slv_number);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int sdw_en_scp_intr(struct sdw_slave *sdw_slv, int mask)
+{
+	struct sdw_msg rd_msg, wr_msg;
+	u8 buf = 0;
+	int ret;
+	struct sdw_master *mstr = sdw_slv->mstr;
+	u16 reg_addr;
+
+	reg_addr = SDW_SCP_INTMASK1;
+
+	rd_msg.addr = wr_msg.addr = reg_addr;
+
+	/* Create message for reading the interrupt mask */
+	rd_msg.ssp_tag = 0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.len = 1;
+	rd_msg.buf = &buf;
+	rd_msg.slave_addr = sdw_slv->slv_number;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+	ret = sdw_slave_transfer(mstr, &rd_msg, 1);
+	if (ret != 1) {
+		dev_err(&mstr->dev, "SCP Intr mask read failed for slave %x\n",
+				sdw_slv->slv_number);
+		return -EINVAL;
+	}
+
+	/* Enable the Slave defined interrupts. */
+	buf |= mask;
+
+	/* Set the port ready and Test fail interrupt mask as well */
+	buf |= SDW_SCP_INTMASK1_BUS_CLASH_MASK;
+	buf |= SDW_SCP_INTMASK1_PARITY_MASK;
+
+	/* Create message for enabling the interrupts */
+	wr_msg.ssp_tag = 0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.len = 1;
+	wr_msg.buf = &buf;
+	wr_msg.slave_addr = sdw_slv->slv_number;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
+	if (ret != 1) {
+		dev_err(&mstr->dev, "SCP Intr mask write failed for slave %x\n",
+				sdw_slv->slv_number);
+		return -EINVAL;
+	}
+
+	/* Return if DP0 is not present */
+	if (!sdw_slv->sdw_slv_cap.sdw_dp0_supported)
+		return 0;
+
+
+	reg_addr = SDW_DP0_INTMASK;
+	rd_msg.addr = wr_msg.addr = reg_addr;
+	mask = sdw_slv->sdw_slv_cap.sdw_dp0_cap->imp_def_intr_mask;
+	buf = 0;
+
+	/* Create message for reading the interrupt mask */
+	/* Create message for reading the interrupt mask */
+	rd_msg.ssp_tag = 0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.len = 1;
+	rd_msg.buf = &buf;
+	rd_msg.slave_addr = sdw_slv->slv_number;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+	ret = sdw_slave_transfer(mstr, &rd_msg, 1);
+	if (ret != 1) {
+		dev_err(&mstr->dev, "DP0 Intr mask read failed for slave %x\n",
+				sdw_slv->slv_number);
+		return -EINVAL;
+	}
+
+	/* Enable the Slave defined interrupts. */
+	buf |= mask;
+
+	/* Set the port ready and Test fail interrupt mask as well */
+	buf |= SDW_DP0_INTSTAT_TEST_FAIL_MASK;
+	buf |= SDW_DP0_INTSTAT_PORT_READY_MASK;
+	buf |= SDW_DP0_INTSTAT_BRA_FAILURE_MASK;
+
+	wr_msg.ssp_tag = 0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.len = 1;
+	wr_msg.buf = &buf;
+	wr_msg.slave_addr = sdw_slv->slv_number;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+	ret = sdw_slave_transfer(mstr, &wr_msg, 1);
+	if (ret != 1) {
+		dev_err(&mstr->dev, "DP0 Intr mask write failed for slave %x\n",
+				sdw_slv->slv_number);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int sdw_prog_slv(struct sdw_slave *sdw_slv)
+{
+
+	struct sdw_slv_capabilities *cap;
+	int ret, i;
+	struct sdw_slv_dpn_capabilities *dpn_cap;
+	struct sdw_master *mstr = sdw_slv->mstr;
+
+	if (!sdw_slv->slave_cap_updated)
+		return 0;
+	cap = &sdw_slv->sdw_slv_cap;
+
+	/* Enable DP0 and SCP interrupts */
+	ret = sdw_en_scp_intr(sdw_slv, cap->scp_impl_def_intr_mask);
+
+	/* Failure should never happen, even if it happens we continue */
+	if (ret)
+		dev_err(&mstr->dev, "SCP program failed\n");
+
+	for (i = 0; i < cap->num_of_sdw_ports; i++) {
+		dpn_cap = &cap->sdw_dpn_cap[i];
+		ret = sdw_en_intr(sdw_slv, (i + 1),
+					dpn_cap->imp_def_intr_mask);
+
+		if (ret)
+			break;
+	}
 	return ret;
 }
+
+
+static void sdw_send_slave_status(struct sdw_slave *slave,
+				enum sdw_slave_status *status)
+{
+	struct sdw_slave_driver *slv_drv = slave->driver;
+
+	if (slv_drv && slv_drv->update_slv_status)
+		slv_drv->update_slv_status(slave, status);
+}
+
 
 static void handle_slave_status(struct kthread_work *work)
 {
@@ -1110,6 +1382,7 @@ static void handle_slave_status(struct kthread_work *work)
 		container_of(work, struct sdw_bus, kwork);
 	struct sdw_master *mstr = bus->mstr;
 	unsigned long flags;
+	bool slave_present = 0;
 
 	/* Handle the new attached slaves to the bus. Register new slave
 	 * to the bus.
@@ -1124,16 +1397,20 @@ static void handle_slave_status(struct kthread_work *work)
 				dev_err(&mstr->dev, "Registering new slave failed\n");
 		}
 		for (i = 1; i <= SOUNDWIRE_MAX_DEVICES; i++) {
+			slave_present = false;
 			if (status->status[i] == SDW_SLAVE_STAT_NOT_PRESENT &&
-				mstr->sdw_addr[i].assigned == true)
+				mstr->sdw_addr[i].assigned == true) {
 				/* Logical address was assigned to slave, but
 				 * now its down, so mark it as not present
 				 */
 				mstr->sdw_addr[i].status =
 					SDW_SLAVE_STAT_NOT_PRESENT;
+				slave_present = true;
+			}
 
 			else if (status->status[i] == SDW_SLAVE_STAT_ALERT &&
 				mstr->sdw_addr[i].assigned == true) {
+				ret = 0;
 				/* Handle slave alerts */
 				mstr->sdw_addr[i].status = SDW_SLAVE_STAT_ALERT;
 				ret = sdw_handle_slave_alerts(mstr,
@@ -1141,13 +1418,25 @@ static void handle_slave_status(struct kthread_work *work)
 				if (ret)
 					dev_err(&mstr->dev, "Handle slave alert failed for Slave %d\n", i);
 
+				slave_present = true;
 
 
 			} else if (status->status[i] ==
 					SDW_SLAVE_STAT_ATTACHED_OK &&
-				mstr->sdw_addr[i].assigned == true)
-					mstr->sdw_addr[i].status =
+					mstr->sdw_addr[i].assigned == true) {
+
+				sdw_prog_slv(mstr->sdw_addr[i].slave);
+
+				mstr->sdw_addr[i].status =
 						SDW_SLAVE_STAT_ATTACHED_OK;
+				slave_present = true;
+			}
+
+			if (!slave_present)
+				continue;
+
+			sdw_send_slave_status(mstr->sdw_addr[i].slave,
+					&mstr->sdw_addr[i].status);
 		}
 		spin_lock_irqsave(&bus->spinlock, flags);
 		list_del(&status->node);
@@ -1455,6 +1744,7 @@ int sdw_register_slave_capabilities(struct sdw_slave *sdw,
 	struct sdw_slv_dpn_capabilities *slv_dpn_cap, *dpn_cap;
 	struct port_audio_mode_properties *prop, *slv_prop;
 	int i, j;
+	int ret = 0;
 
 	slv_cap = &sdw->sdw_slv_cap;
 
@@ -1464,6 +1754,8 @@ int sdw_register_slave_capabilities(struct sdw_slave *sdw,
 	slv_cap->clock_stop1_mode_supported = cap->clock_stop1_mode_supported;
 	slv_cap->simplified_clock_stop_prepare =
 				cap->simplified_clock_stop_prepare;
+	slv_cap->scp_impl_def_intr_mask = cap->scp_impl_def_intr_mask;
+
 	slv_cap->highphy_capable = cap->highphy_capable;
 	slv_cap->paging_supported  = cap->paging_supported;
 	slv_cap->bank_delay_support = cap->bank_delay_support;
@@ -1577,6 +1869,9 @@ int sdw_register_slave_capabilities(struct sdw_slave *sdw,
 						prop->ch_prepare_behavior;
 		}
 	}
+	ret = sdw_prog_slv(sdw);
+	if (ret)
+		return ret;
 	sdw->slave_cap_updated = true;
 	return 0;
 }

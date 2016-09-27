@@ -420,6 +420,8 @@ struct sdw_slv_dp0_capabilities {
  *			the Port15 alias
  *			0: Command_Ignored
  *			1: Command_OK, Data is OR of all registers
+ * @scp_impl_def_intr_mask: Implementation defined interrupt for Slave control
+ *			port
  * @sdw_dp0_supported: DP0 is supported by Slave.
  * @sdw_dp0_cap: Data Port 0 Capabilities of the Slave.
  * @num_of_sdw_ports: Number of SoundWire Data ports present. The representation
@@ -436,6 +438,7 @@ struct sdw_slv_capabilities {
 	bool paging_supported;
 	bool bank_delay_support;
 	unsigned int port_15_read_behavior;
+	u8 scp_impl_def_intr_mask;
 	bool sdw_dp0_supported;
 	struct sdw_slv_dp0_capabilities *sdw_dp0_cap;
 	int num_of_sdw_ports;
@@ -493,6 +496,40 @@ struct sdw_bus_params {
 	int bus_clk_freq;
 	int bank;
 };
+
+/** struct sdw_portn_intr_stat: Implementation defined interrupt
+ *			status for slave ports other than port 0
+ *
+ * num:	Port number for which status is reported.
+ * status: status of the implementation defined interrupts
+ */
+struct sdw_portn_intr_stat {
+	int num;
+	u8 status;
+};
+
+/** struct sdw_impl_def_intr_stat: Implementation define interrupt
+ *			status for slave.
+ *
+ * control_port_stat: Implementation defined interrupt status mask
+ *			for control ports. Mask Bits are exactly
+ *			same as defined in MIPI Spec 1.0
+ * port0_stat:	Implementation defined interrupt status mask
+ *			for port 0. Mask bits are exactly same as defined
+ *			in MIPI spec 1.0.
+ * num_ports:		Number of ports in slave other than port 0.
+ * portn_stat:	Implementation defined status for slave ports
+ *			other than port0. Mask bits are exactly same
+ *			as defined in MIPI spec 1.0. Array size is
+ *			same as number of ports in Slave.
+ */
+struct sdw_impl_def_intr_stat {
+	u8 control_port_stat;
+	u8 port0_stat;
+	int num_ports;
+	struct sdw_portn_intr_stat *portn_stat;
+};
+
 
 /**
  * struct sdw_slave_driver: Manage SoundWire generic/Slave device driver
@@ -569,7 +606,7 @@ struct sdw_slave_driver {
 	int (*resume)(struct sdw_slave *swdev);
 	struct device_driver driver;
 	int (*handle_impl_def_interrupts)(struct sdw_slave *swdev,
-		unsigned int intr_status_mask);
+		struct sdw_impl_def_intr_stat *intr_status);
 	int (*handle_bus_changes)(struct sdw_slave *swdev,
 			struct sdw_bus_params *params);
 	int (*handle_pre_port_prepare)(struct sdw_slave *swdev,
@@ -580,6 +617,8 @@ struct sdw_slave_driver {
 			int port, int ch_mask, int bank);
 	int (*handle_post_port_unprepare)(struct sdw_slave *swdev,
 			int port, int ch_mask, int bank);
+	void (*update_slv_status)(struct sdw_slave *swdev,
+			enum sdw_slave_status *status);
 	const struct sdw_slave_id *id_table;
 };
 #define to_sdw_slave_driver(d) container_of(d, struct sdw_slave_driver, driver)
