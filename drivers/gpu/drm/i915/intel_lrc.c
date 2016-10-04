@@ -1940,7 +1940,7 @@ static void execlists_init_reg_state(u32 *reg_state,
 		       RING_START(engine->mmio_base), 0);
 	ASSIGN_CTX_REG(reg_state, CTX_RING_BUFFER_CONTROL,
 		       RING_CTL(engine->mmio_base),
-		       ((ring->size - PAGE_SIZE) & RING_NR_PAGES) | RING_VALID);
+		       RING_CTL_SIZE(ring->size) | RING_VALID);
 	ASSIGN_CTX_REG(reg_state, CTX_BB_HEAD_U,
 		       RING_BBADDR_UDW(engine->mmio_base), 0);
 	ASSIGN_CTX_REG(reg_state, CTX_BB_HEAD_L,
