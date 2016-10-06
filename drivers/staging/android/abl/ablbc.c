@@ -18,6 +18,7 @@
 #include <linux/mc146818rtc.h>
 #include <linux/sysfs.h>
 #include <linux/slab.h>
+#include <linux/kmod.h>
 
 #define MODULE_NAME "ablbc"
 
@@ -289,6 +290,48 @@ static int set_reboot_target(const char *name)
 
 static const unsigned int DEFAULT_TARGET_INDEX;
 
+static const char * const cold_reset[] = {
+	"/sbin/cansend",
+	"slcan0",
+	"0000FFFF#05025555555555",
+	NULL};
+static const char * const cold_reset_capsule[] = {
+	"/sbin/cansend",
+	"slcan0",
+	"0000FFFF#05035555555555",
+	NULL};
+static const char * const suppress_heartbeat[] = {
+	"/sbin/cansend",
+	"slcan0",
+	"0000FFFF#01035555555555",
+	NULL};
+static const char * const reboot_request[] = {
+	"/sbin/cansend",
+	"slcan0",
+	"0000FFFF#03015555555555",
+	NULL};
+
+static int execute_slcan_command(const char *cmd[])
+{
+	struct subprocess_info *sub_info;
+	int ret = -1;
+
+	sub_info = call_usermodehelper_setup(cmd[0],
+		cmd, NULL, GFP_KERNEL,
+		NULL, NULL, NULL);
+
+	if (sub_info) {
+		ret = call_usermodehelper_exec(sub_info,
+			UMH_WAIT_PROC);
+		pr_info("Exec cmd=%s ret=%d\n", cmd[0], ret);
+	}
+
+	if (!ret)
+		pr_err("Failure on cmd=%s ret=%d\n", cmd[0], ret);
+
+	return ret;
+}
+
 static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 				      unsigned long what, void *data)
 {
@@ -298,12 +341,28 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 	if (what != SYS_RESTART)
 		return NOTIFY_DONE;
 
-	if (target[0] != '\0')
+	ret = execute_slcan_command(suppress_heartbeat);
+	if (ret)
+		goto done;
+
+	ret = execute_slcan_command(reboot_request);
+	if (ret)
+		goto done;
+	if (target[0] != '\0') {
 		ret = set_reboot_target(target);
 		if (ret)
 			pr_err("%s: Failed to set reboot target, ret=%d\n",
 				__func__, ret);
+		else {
+			ret = execute_slcan_command(cold_reset);
+			if (ret)
+				goto done;
+		}
+	}
+	if (capsule_request)
+		ret = execute_slcan_command(cold_reset_capsule);
 
+done:
 	return NOTIFY_DONE;
 }
 
