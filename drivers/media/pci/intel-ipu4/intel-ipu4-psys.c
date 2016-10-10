@@ -51,14 +51,19 @@
 
 static bool early_pg_transfer;
 static bool enable_concurrency = true;
+static bool async_fw_init;
 module_param(early_pg_transfer, bool,
 			S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
 module_param(enable_concurrency, bool,
+			S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+module_param(async_fw_init, bool,
 			S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
 MODULE_PARM_DESC(early_pg_transfer,
 			"Copy PGs back to user after resource allocation");
 MODULE_PARM_DESC(enable_concurrency,
 			"Enable concurrent execution of program groups");
+MODULE_PARM_DESC(async_fw_init,
+			"Enable asynchronous firmware initialization");
 
 #define INTEL_IPU4_PSYS_NUM_DEVICES		4
 #define INTEL_IPU4_PSYS_WORK_QUEUE		system_power_efficient_wq
@@ -81,6 +86,11 @@ static int psys_runtime_pm_suspend(struct device *dev);
 static dev_t intel_ipu4_psys_dev_t;
 static DECLARE_BITMAP(intel_ipu4_psys_devices, INTEL_IPU4_PSYS_NUM_DEVICES);
 static DEFINE_MUTEX(intel_ipu4_psys_mutex);
+
+static struct fw_init_task {
+	struct delayed_work work;
+	struct intel_ipu4_psys *psys;
+} fw_init_task;
 
 static struct intel_ipu4_trace_block psys_trace_blocks_ipu4[] = {
 	{
@@ -161,6 +171,8 @@ static struct intel_ipu4_trace_block psys_trace_blocks_ipu4[] = {
 };
 
 static int intel_ipu4_psys_isr_run(void *data);
+
+static void intel_ipu4_psys_remove(struct intel_ipu4_bus_device *adev);
 
 static struct bus_type intel_ipu4_psys_bus = {
 	.name = INTEL_IPU4_PSYS_NAME,
@@ -2406,6 +2418,12 @@ static int psys_runtime_pm_resume(struct device *dev)
 	}
 	spin_unlock_irqrestore(&psys->power_lock, flags);
 
+	if (async_fw_init && !psys->fwcom) {
+		dev_err(dev, "%s: asynchronous firmware init not finished, skipping\n",
+			 __func__);
+		return 0;
+	}
+
 	if (!intel_ipu4_buttress_auth_done(adev->isp)) {
 		dev_err(dev, "%s: not yet authenticated, skipping\n", __func__);
 		return 0;
@@ -2738,6 +2756,21 @@ static int intel_ipu4_psys_fw_init(struct intel_ipu4_psys *psys)
 	return 0;
 }
 
+static void run_fw_init_work(struct work_struct *work)
+{
+	struct fw_init_task *task = (struct fw_init_task *) work;
+	struct intel_ipu4_psys *psys = task->psys;
+	int rval;
+
+	rval = intel_ipu4_psys_fw_init(psys);
+
+	if (rval) {
+		dev_err(&psys->adev->dev, "FW init failed(%d)\n", rval);
+		intel_ipu4_psys_remove(psys->adev);
+	} else
+		dev_info(&psys->adev->dev, "FW init done\n");
+}
+
 static int intel_ipu4_psys_probe(struct intel_ipu4_bus_device *adev)
 {
 	struct intel_ipu4_mmu *mmu = dev_get_drvdata(adev->iommu);
@@ -2877,8 +2910,14 @@ static int intel_ipu4_psys_probe(struct intel_ipu4_bus_device *adev)
 	caps.pg_count = intel_ipu4_cpd_pkg_dir_get_num_entries(psys->pkg_dir);
 
 	dev_info(&adev->dev, "pkg_dir entry count:%d\n", caps.pg_count);
+	if (async_fw_init) {
+		INIT_DELAYED_WORK((struct delayed_work *) &fw_init_task,
+				 run_fw_init_work);
+		fw_init_task.psys = psys;
+		schedule_delayed_work((struct delayed_work *)&fw_init_task, 0);
+	} else
+		rval = intel_ipu4_psys_fw_init(psys);
 
-	rval = intel_ipu4_psys_fw_init(psys);
 	if (rval) {
 		dev_err(&adev->dev, "FW init failed(%d)\n", rval);
 		goto out_free_pgs;
@@ -2981,7 +3020,7 @@ static void intel_ipu4_psys_remove(struct intel_ipu4_bus_device *adev)
 		kfree(kpg);
 	}
 
-	if (intel_ipu4_fw_com_release(psys->fwcom, 1))
+	if (psys->fwcom && intel_ipu4_fw_com_release(psys->fwcom, 1))
 		dev_err(&adev->dev, "fw com release failed.\n");
 
 	isp->pkg_dir = NULL;
