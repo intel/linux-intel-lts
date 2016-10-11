@@ -1149,7 +1149,7 @@ static enum port intel_aux_port(struct drm_i915_private *dev_priv,
 }
 
 static i915_reg_t g4x_aux_ctl_reg(struct drm_i915_private *dev_priv,
-				       enum port port)
+				  enum port port)
 {
 	switch (port) {
 	case PORT_B:
@@ -1163,7 +1163,7 @@ static i915_reg_t g4x_aux_ctl_reg(struct drm_i915_private *dev_priv,
 }
 
 static i915_reg_t g4x_aux_data_reg(struct drm_i915_private *dev_priv,
-					enum port port, int index)
+				   enum port port, int index)
 {
 	switch (port) {
 	case PORT_B:
@@ -1177,7 +1177,7 @@ static i915_reg_t g4x_aux_data_reg(struct drm_i915_private *dev_priv,
 }
 
 static i915_reg_t ilk_aux_ctl_reg(struct drm_i915_private *dev_priv,
-				       enum port port)
+				  enum port port)
 {
 	switch (port) {
 	case PORT_A:
@@ -1193,7 +1193,7 @@ static i915_reg_t ilk_aux_ctl_reg(struct drm_i915_private *dev_priv,
 }
 
 static i915_reg_t ilk_aux_data_reg(struct drm_i915_private *dev_priv,
-					enum port port, int index)
+				   enum port port, int index)
 {
 	switch (port) {
 	case PORT_A:
@@ -1209,7 +1209,7 @@ static i915_reg_t ilk_aux_data_reg(struct drm_i915_private *dev_priv,
 }
 
 static i915_reg_t skl_aux_ctl_reg(struct drm_i915_private *dev_priv,
-				       enum port port)
+				  enum port port)
 {
 	switch (port) {
 	case PORT_A:
@@ -1224,7 +1224,7 @@ static i915_reg_t skl_aux_ctl_reg(struct drm_i915_private *dev_priv,
 }
 
 static i915_reg_t skl_aux_data_reg(struct drm_i915_private *dev_priv,
-					enum port port, int index)
+				   enum port port, int index)
 {
 	switch (port) {
 	case PORT_A:
@@ -1239,7 +1239,7 @@ static i915_reg_t skl_aux_data_reg(struct drm_i915_private *dev_priv,
 }
 
 static i915_reg_t intel_aux_ctl_reg(struct drm_i915_private *dev_priv,
-					 enum port port)
+				    enum port port)
 {
 	if (INTEL_INFO(dev_priv)->gen >= 9)
 		return skl_aux_ctl_reg(dev_priv, port);
@@ -1250,7 +1250,7 @@ static i915_reg_t intel_aux_ctl_reg(struct drm_i915_private *dev_priv,
 }
 
 static i915_reg_t intel_aux_data_reg(struct drm_i915_private *dev_priv,
-					  enum port port, int index)
+				     enum port port, int index)
 {
 	if (INTEL_INFO(dev_priv)->gen >= 9)
 		return skl_aux_data_reg(dev_priv, port, index);
