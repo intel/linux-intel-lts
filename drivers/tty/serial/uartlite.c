@@ -390,17 +390,6 @@ static int ulite_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return -EINVAL;
 }
 
-static void ulite_pm(struct uart_port *port, unsigned int state,
-		     unsigned int oldstate)
-{
-	if (!state) {
-		pm_runtime_get_sync(port->dev);
-	} else {
-		pm_runtime_mark_last_busy(port->dev);
-		pm_runtime_put_autosuspend(port->dev);
-	}
-}
-
 #ifdef CONFIG_CONSOLE_POLL
 static int ulite_get_poll_char(struct uart_port *port)
 {
@@ -436,7 +425,6 @@ static const struct uart_ops ulite_ops = {
 	.request_port	= ulite_request_port,
 	.config_port	= ulite_config_port,
 	.verify_port	= ulite_verify_port,
-	.pm		= ulite_pm,
 #ifdef CONFIG_CONSOLE_POLL
 	.poll_get_char	= ulite_get_poll_char,
 	.poll_put_char	= ulite_put_poll_char,
