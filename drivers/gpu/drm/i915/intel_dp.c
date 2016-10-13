@@ -572,7 +572,7 @@ void intel_power_sequencer_reset(struct drm_i915_private *dev_priv)
 	struct intel_encoder *encoder;
 
 	if (WARN_ON(!IS_VALLEYVIEW(dev) && !IS_CHERRYVIEW(dev) &&
-		    !IS_BROXTON(dev)))
+		    !IS_BROXTON(dev_priv)))
 		return;
 
 	/*
@@ -592,7 +592,7 @@ void intel_power_sequencer_reset(struct drm_i915_private *dev_priv)
 			continue;
 
 		intel_dp = enc_to_intel_dp(&encoder->base);
-		if (IS_BROXTON(dev))
+		if (IS_BROXTON(dev_priv))
 			intel_dp->pps_reset = true;
 		else
 			intel_dp->pps_pipe = INVALID_PIPE;
@@ -2991,7 +2991,7 @@ intel_dp_voltage_max(struct intel_dp *intel_dp)
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	enum port port = dp_to_dig_port(intel_dp)->port;
 
-	if (IS_BROXTON(dev))
+	if (IS_BROXTON(dev_priv))
 		return DP_TRAIN_VOLTAGE_SWING_LEVEL_3;
 	else if (INTEL_INFO(dev)->gen >= 9) {
 		if (dev_priv->vbt.edp.low_vswing && port == PORT_A)
@@ -3354,7 +3354,7 @@ intel_dp_set_signal_levels(struct intel_dp *intel_dp)
 	if (HAS_DDI(dev_priv)) {
 		signal_levels = ddi_signal_levels(intel_dp);
 
-		if (IS_BROXTON(dev))
+		if (IS_BROXTON(dev_priv))
 			signal_levels = 0;
 		else
 			mask = DDI_BUF_EMP_MASK;
@@ -5103,7 +5103,7 @@ intel_dp_init_panel_power_sequencer_registers(struct drm_device *dev,
 		 (seq->t10 << PANEL_POWER_DOWN_DELAY_SHIFT);
 	/* Compute the divisor for the pp clock, simply match the Bspec
 	 * formula. */
-	if (IS_BROXTON(dev)) {
+	if (IS_BROXTON(dev_priv)) {
 		pp_div = I915_READ(regs.pp_ctrl);
 		pp_div &= ~BXT_POWER_CYCLE_DELAY_MASK;
 		pp_div |= (DIV_ROUND_UP((seq->t11_t12 + 1), 1000)
@@ -5129,7 +5129,7 @@ intel_dp_init_panel_power_sequencer_registers(struct drm_device *dev,
 
 	I915_WRITE(regs.pp_on, pp_on);
 	I915_WRITE(regs.pp_off, pp_off);
-	if (IS_BROXTON(dev))
+	if (IS_BROXTON(dev_priv))
 		I915_WRITE(regs.pp_ctrl, pp_div);
 	else
 		I915_WRITE(regs.pp_div, pp_div);
@@ -5137,7 +5137,7 @@ intel_dp_init_panel_power_sequencer_registers(struct drm_device *dev,
 	DRM_DEBUG_KMS("panel power sequencer register settings: PP_ON %#x, PP_OFF %#x, PP_DIV %#x\n",
 		      I915_READ(regs.pp_on),
 		      I915_READ(regs.pp_off),
-		      IS_BROXTON(dev) ?
+		      IS_BROXTON(dev_priv) ?
 		      (I915_READ(regs.pp_ctrl) & BXT_POWER_CYCLE_DELAY_MASK) :
 		      I915_READ(regs.pp_div));
 }
@@ -5746,7 +5746,7 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 		break;
 	case PORT_B:
 		intel_encoder->hpd_pin = HPD_PORT_B;
-		if (IS_BXT_REVID(dev, 0, BXT_REVID_A1))
+		if (IS_BXT_REVID(dev_priv, 0, BXT_REVID_A1))
 			intel_encoder->hpd_pin = HPD_PORT_A;
 		break;
 	case PORT_C:
