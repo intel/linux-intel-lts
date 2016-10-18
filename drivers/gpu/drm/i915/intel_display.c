@@ -16340,7 +16340,7 @@ retry:
 		 * BIOS-programmed watermarks untouched and hope for the best.
 		 */
 		WARN(true, "Could not determine valid watermarks for inherited state\n");
-		goto fail;
+		goto put_state;
 	}
 
 	/* Write calculated watermark values back */
@@ -16351,8 +16351,9 @@ retry:
 		dev_priv->display.optimize_watermarks(cs);
 	}
 
-fail:
+put_state:
 	drm_atomic_state_put(state);
+fail:
 	drm_modeset_drop_locks(&ctx);
 	drm_modeset_acquire_fini(&ctx);
 }
