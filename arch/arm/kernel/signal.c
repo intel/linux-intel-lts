@@ -8,6 +8,7 @@
 #include <linux/random.h>
 #include <linux/signal.h>
 #include <linux/personality.h>
+#include <linux/irq_pipeline.h>
 #include <linux/uaccess.h>
 #include <linux/tracehook.h>
 #include <linux/uprobes.h>
@@ -642,13 +643,22 @@ static int do_signal(struct pt_regs *regs, int syscall)
 asmlinkage int
 do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 {
+	WARN_ON_ONCE(irq_pipeline_debug() &&
+		(irqs_disabled() || running_oob()));
+
 	/*
 	 * The assembly code enters us with IRQs off, but it hasn't
 	 * informed the tracing code of that for efficiency reasons.
 	 * Update the trace code with the current status.
 	 */
-	trace_hardirqs_off();
+	if (!irqs_pipelined())
+		trace_hardirqs_off();
 	do {
+		if (irqs_pipelined()) {
+			local_irq_disable();
+			hard_cond_local_irq_enable();
+		}
+
 		if (likely(thread_flags & _TIF_NEED_RESCHED)) {
 			schedule();
 		} else {
@@ -673,9 +683,9 @@ do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 				rseq_handle_notify_resume(NULL, regs);
 			}
 		}
-		local_irq_disable();
+		hard_local_irq_disable();
 		thread_flags = current_thread_info()->flags;
-	} while (thread_flags & _TIF_WORK_MASK);
+	} while (inband_irq_pending() || (thread_flags & _TIF_WORK_MASK));
 	return 0;
 }
 
