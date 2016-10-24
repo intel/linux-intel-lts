@@ -96,6 +96,8 @@ ifeq ($(CONFIG_DEBUG_LL),y)
 obj-$(CONFIG_RAW_PRINTK)	+= raw_printk.o
 endif
 
+obj-$(CONFIG_IRQ_PIPELINE)	+= irq_pipeline.o
+
 # This is executed very early using a temporary stack when no memory allocator
 # nor global data is available. Everything has to be allocated on the stack.
 CFLAGS_head-inflate-data.o := $(call cc-option,-Wframe-larger-than=10240)
