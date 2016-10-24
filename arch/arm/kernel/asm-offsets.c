@@ -50,6 +50,7 @@ int main(void)
   DEFINE(TI_ABI_SYSCALL,	offsetof(struct thread_info, abi_syscall));
   DEFINE(TI_TP_VALUE,		offsetof(struct thread_info, tp_value));
   DEFINE(TI_FPSTATE,		offsetof(struct thread_info, fpstate));
+  DEFINE(TI_OOB_MASK,		STAGE_MASK);
 #ifdef CONFIG_VFP
   DEFINE(TI_VFPSTATE,		offsetof(struct thread_info, vfpstate));
 #ifdef CONFIG_SMP
