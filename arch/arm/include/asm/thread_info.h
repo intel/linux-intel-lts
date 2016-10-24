@@ -165,5 +165,10 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 				 _TIF_NOTIFY_RESUME | _TIF_UPROBE | \
 				 _TIF_NOTIFY_SIGNAL)
 
+/*
+ * Local (synchronous) thread flags.
+ */
+#define _TLF_OOB		0x0001
+
 #endif /* __KERNEL__ */
 #endif /* __ASM_ARM_THREAD_INFO_H */

@@ -5,6 +5,7 @@
  *  Copyright (C) 1996,1997,1998 Russell King.
  *  ARM700 fix by Matthew Godbolt (linux-user@willothewisp.demon.co.uk)
  *  nommu support by Hyok S. Choi (hyok.choi@samsung.com)
+ *  Copyright (C) 2005 Stelian Pop.
  *
  *  Low-level vector interface routines
  *
@@ -32,6 +33,13 @@
 /*
  * Interrupt handling.
  */
+
+#ifdef CONFIG_IRQ_PIPELINE
+#define irq_service_handler	handle_arch_irq_pipelined
+#else
+#define irq_service_handler	generic_handle_arch_irq
+#endif
+
 	.macro	irq_handler, from_user:req
 	mov	r1, sp
 	ldr_this_cpu r2, irq_stack_ptr, r2, r3
@@ -48,12 +56,12 @@
 #endif
 	bcc	0f			@ If not, switch to the IRQ stack
 	mov	r0, r1
-	bl	generic_handle_arch_irq
+	bl	irq_service_handler
 	b	1f
 0:
 	.endif
 
-	mov_l	r0, generic_handle_arch_irq
+	mov_l	r0, irq_service_handler
 	bl	call_with_stack
 1:
 	.endm
@@ -199,7 +207,10 @@ ENDPROC(__und_invalid)
 	uaccess_entry tsk, r0, r1, r2, \uaccess
 
 	.if \trace
-#ifdef CONFIG_TRACE_IRQFLAGS
+#ifdef CONFIG_IRQ_PIPELINE
+	mov	r0, sp
+	bl	kentry_enter_pipelined
+#elif defined(CONFIG_TRACE_IRQFLAGS)
 	bl	trace_hardirqs_off
 #endif
 	.endif
@@ -219,6 +230,10 @@ ENDPROC(__dabt_svc)
 __irq_svc:
 	svc_entry
 	irq_handler from_user=0
+#ifdef CONFIG_IRQ_PIPELINE
+	tst	r0, r0				@ skip epilogue if oob or in-band stalled
+	beq	1f
+#endif
 
 #ifdef CONFIG_PREEMPTION
 	ldr	r8, [tsk, #TI_PREEMPT]		@ get preempt count
@@ -229,6 +244,7 @@ __irq_svc:
 	blne	svc_preempt
 #endif
 
+1:
 	svc_exit r5, irq = 1			@ return from exception
  UNWIND(.fnend		)
 ENDPROC(__irq_svc)
@@ -238,7 +254,7 @@ ENDPROC(__irq_svc)
 #ifdef CONFIG_PREEMPTION
 svc_preempt:
 	mov	r8, lr
-1:	bl	preempt_schedule_irq		@ irq en/disable is done inside
+1:	bl	arm_preempt_schedule_irq	@ irq en/disable is done inside
 	ldr	r0, [tsk, #TI_FLAGS]		@ get new tasks TI_FLAGS
 	tst	r0, #_TIF_NEED_RESCHED
 	reteq	r8				@ go again
@@ -397,7 +413,7 @@ ENDPROC(__fiq_abt)
 
 	.if	\trace
 #ifdef CONFIG_TRACE_IRQFLAGS
-	bl	trace_hardirqs_off
+	bl	trace_hardirqs_off_pipelined
 #endif
 	ct_user_exit save = 0
 	.endif
@@ -436,6 +452,10 @@ __irq_usr:
 	irq_handler from_user=1
 	get_thread_info tsk
 	mov	why, #0
+#ifdef CONFIG_IRQ_PIPELINE
+	tst	r0, r0
+	beq	fast_ret_to_user	@ skip epilogue if oob (in-band cannot be stalled)
+#endif
 	b	ret_to_user_from_irq
  UNWIND(.fnend		)
 ENDPROC(__irq_usr)
@@ -713,7 +733,7 @@ ENTRY(ret_from_exception)
  UNWIND(.cantunwind	)
 	get_thread_info tsk
 	mov	why, #0
-	b	ret_to_user
+	ret_to_user_pipelined r1
  UNWIND(.fnend		)
 ENDPROC(__pabt_usr)
 ENDPROC(ret_from_exception)

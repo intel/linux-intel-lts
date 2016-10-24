@@ -78,6 +78,7 @@ void arch_cpu_idle(void)
 		arm_pm_idle();
 	else
 		cpu_do_idle();
+	hard_cond_local_irq_enable();
 	raw_local_irq_enable();
 }
 
@@ -442,3 +443,18 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	return ret;
 }
 #endif
+
+/*
+ * When pipelining interrupts, we have to reconcile the hardware and
+ * the virtual states. Hard irqs are off on entry while the current
+ * stage has to be unstalled: fix this up by stalling the in-band
+ * stage on entry, unstalling on exit. These bits are compiled out if
+ * !IRQ_PIPELINE.
+ */
+asmlinkage void __sched arm_preempt_schedule_irq(void)
+{
+	WARN_ON_ONCE(irq_pipeline_debug() && test_inband_stall());
+	stall_inband_nocheck();
+	preempt_schedule_irq();
+	unstall_inband_nocheck();
+}
