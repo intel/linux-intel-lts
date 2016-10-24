@@ -107,12 +107,24 @@
 	.endm
 #endif
 
+	.macro  disable_irq_if_pipelined
+#ifdef CONFIG_IRQ_PIPELINE
+	disable_irq_notrace
+#endif
+	.endm
+
+	.macro  enable_irq_if_pipelined
+#ifdef CONFIG_IRQ_PIPELINE
+	enable_irq_notrace
+#endif
+	.endm
+
 	.macro asm_trace_hardirqs_off, save=1
 #if defined(CONFIG_TRACE_IRQFLAGS)
 	.if \save
 	stmdb   sp!, {r0-r3, ip, lr}
 	.endif
-	bl	trace_hardirqs_off
+	bl	trace_hardirqs_off_pipelined
 	.if \save
 	ldmia	sp!, {r0-r3, ip, lr}
 	.endif
@@ -128,7 +140,7 @@
 	.if \save
 	stmdb   sp!, {r0-r3, ip, lr}
 	.endif
-	bl\cond	trace_hardirqs_on
+	bl\cond	trace_hardirqs_on_pipelined
 	.if \save
 	ldmia	sp!, {r0-r3, ip, lr}
 	.endif
