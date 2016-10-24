@@ -546,6 +546,7 @@ static int cnl_ipc_init(struct device *dev, struct skl_sst *cnl)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_SND_SOC_RT700)
 static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
 			void __iomem *mmio_base, int irq)
 {
@@ -692,6 +693,7 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
 	cnl_sdw_int_enable(dsp->dsp, 1);
 	return 0;
 }
+#endif
 
 static void skl_unregister_sdw_masters(struct skl_sst *ctx)
 {
@@ -765,11 +767,13 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 		return ret;
 	}
 
+#if IS_ENABLED(CONFIG_SND_SOC_RT700)
 	ret = skl_register_sdw_masters(dev, cnl, mmio_base, irq);
 	if (ret) {
 		dev_err(cnl->dev, "%s SoundWire masters registration failed\n", __func__);
 		return ret;
 	}
+#endif
 
 	return 0;
 }
