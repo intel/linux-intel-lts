@@ -23,6 +23,7 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/irqchip.h>
+#include <linux/irq_pipeline.h>
 #include <linux/random.h>
 #include <linux/smp.h>
 #include <linux/init.h>
@@ -146,6 +147,14 @@ void __init init_IRQ(void)
 
 	uniphier_cache_init();
 }
+
+#ifdef CONFIG_IRQ_PIPELINE
+asmlinkage int __exception_irq_entry
+handle_arch_irq_pipelined(struct pt_regs *regs)
+{
+	return handle_irq_pipelined(regs);
+}
+#endif
 
 #ifdef CONFIG_SPARSE_IRQ
 int __init arch_probe_nr_irqs(void)
