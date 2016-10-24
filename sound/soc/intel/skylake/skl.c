@@ -1078,9 +1078,7 @@ static struct pci_driver skl_driver = {
 	.remove = skl_remove,
 	.shutdown = skl_shutdown,
 	.driver = {
-#ifndef CONFIG_SDW
 		.pm = &skl_pm,
-#endif
 	},
 };
 module_pci_driver(skl_driver);
