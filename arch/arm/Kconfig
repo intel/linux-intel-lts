@@ -258,6 +258,11 @@ config FIQ
 config ARCH_MTD_XIP
 	bool
 
+# Limited I-pipe compat (syscall routing only).
+config IPIPE_COMPAT
+	bool
+	select DOVETAIL_LEGACY_SYSCALL_RANGE
+
 config ARM_PATCH_PHYS_VIRT
 	bool "Patch physical to virtual translations at runtime" if !ARCH_MULTIPLATFORM
 	default y

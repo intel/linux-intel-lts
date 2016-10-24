@@ -21,6 +21,9 @@ struct svc_pt_regs {
 	struct pt_regs regs;
 	u32 dacr;
 	u32 ttbcr;
+#ifdef CONFIG_IRQ_PIPELINE
+	long irqstate;
+#endif
 };
 
 #define to_svc_pt_regs(r) container_of(r, struct svc_pt_regs, regs)
