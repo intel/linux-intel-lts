@@ -658,12 +658,12 @@ static void skl_probe_work(struct work_struct *work)
 	if (!bus->codec_mask)
 		dev_info(bus->dev, "no hda codecs found!\n");
 
-#ifndef CONFIG_SND_SOC_INTEL_CNL_FPGA
-	/* create codec instances */
-	err = skl_codec_create(ebus);
-	if (err < 0)
-		goto out_err;
-#endif
+	if (!(skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8)) {
+		/* create codec instances */
+		err = skl_codec_create(ebus);
+		if (err < 0)
+			goto out_err;
+	}
 
 	if (IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)) {
 		err = snd_hdac_display_power(bus, false);
