@@ -363,7 +363,8 @@ static int cnl_set_dsp_D0(struct sst_dsp *ctx, unsigned int core_id)
 		}
 	}
 
-	skl_dsp_set_state_locked(ctx, SKL_DSP_RUNNING);
+	cnl->cores.state[core_id] = SKL_DSP_RUNNING;
+
 	return 0;
 err:
 	cnl_dsp_disable_core(ctx, core_mask);
