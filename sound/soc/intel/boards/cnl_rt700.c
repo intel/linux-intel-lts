@@ -155,6 +155,14 @@ static int cnl_dmic_fixup(struct snd_soc_pcm_runtime *rtd,
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+static const char pname[] = "0000:02:18.0";
+static const char cname[] = "sdw-slave0-10:02:5d:07:01:00";
+#else
+static const char pname[] = "0000:00:1f.3";
+static const char cname[] = "sdw-slave1-10:02:5d:07:00:01";
+#endif
+
 static struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 	{
 		.name = "Bxtn Audio Port",
@@ -162,7 +170,7 @@ static struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 		.cpu_dai_name = "System Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "0000:02:18.0",
+		.platform_name = pname,
 		.init = cnl_rt700_init,
 		.ignore_suspend = 1,
 		.nonatomic = 1,
@@ -177,7 +185,7 @@ static struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 		.cpu_dai_name = "Reference Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "0000:02:18.0",
+		.platform_name = pname,
 		.ignore_suspend = 1,
 		.nonatomic = 1,
 		.dynamic = 1,
@@ -190,7 +198,7 @@ static struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 		.cpu_dai_name = "Deepbuffer Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "0000:02:18.0",
+		.platform_name = pname,
 		.dpcm_playback = 1,
 		.ignore_suspend = 1,
 		.nonatomic = 1,
@@ -201,8 +209,8 @@ static struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 	{
 		.name = "SDW0-Codec",
 		.cpu_dai_name = "SDW Pin",
-		.platform_name = "0000:02:18.0",
-		.codec_name = "sdw-slave0-10:02:5d:07:01:00",
+		.platform_name = pname,
+		.codec_name = cname,
 		.codec_dai_name = "rt700-aif1",
 		.be_hw_params_fixup = cnl_rt700_codec_fixup,
 		.ignore_suspend = 1,
@@ -213,8 +221,8 @@ static struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 	{
 		.name = "SDW1-Codec",
 		.cpu_dai_name = "SDW10 Pin",
-		.platform_name = "0000:02:18.0",
-		.codec_name = "sdw-slave0-10:02:5d:07:01:00",
+		.platform_name = pname,
+		.codec_name = cname,
 		.codec_dai_name = "rt700-aif2",
 		.be_hw_params_fixup = cnl_rt700_codec_fixup,
 		.ignore_suspend = 1,
@@ -227,7 +235,7 @@ static struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 		.cpu_dai_name = "DMIC01 Pin",
 		.codec_name = "dmic-codec",
 		.codec_dai_name = "dmic-hifi",
-		.platform_name = "0000:02:18.0",
+		.platform_name = pname,
 		.ignore_suspend = 1,
 		.no_pcm = 1,
 		.dpcm_capture = 1,
