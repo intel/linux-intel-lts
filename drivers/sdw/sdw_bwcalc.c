@@ -1167,31 +1167,15 @@ int sdw_compute_hstart_hstop(struct sdw_bus *sdw_mstr_bs)
 
 				t_params = &port_rt->transport_params;
 				t_params->num = port_rt->port_num;
-#if 0 /* Original */
 				t_params->hstart = hstart;
 				t_params->hstop = hstop;
 				t_params->offset1 = port_block_offset;
 				t_params->offset2 = port_block_offset >> 8;
-#endif
-
-#ifndef CONFIG_SND_SOC_SVFPGA
-				t_params->hstart = 1;
-				t_params->hstop = 1;
-#else
-				/* PDM capture settings */
-				t_params->hstart = 0;
-				t_params->hstop = hstop;
-#endif
-
-				/* Playback & Capture loopback mode */
-				t_params->offset1 = 1;
-				t_params->offset2 = 0;
 
 				/* Only BlockPerPort supported */
 				t_params->blockgroupcontrol_valid = true;
 				t_params->blockgroupcontrol = 0x0;
 				t_params->lanecontrol = 0x0;
-
 				/* Copy parameters if first node */
 				if (port_rt == list_first_entry
 						(&sdw_mstr_rt->port_rt_list,
@@ -1199,15 +1183,10 @@ int sdw_compute_hstart_hstop(struct sdw_bus *sdw_mstr_bs)
 
 					sdw_mstr_rt->hstart = hstart;
 					sdw_mstr_rt->hstop = hstop;
-#if 0 /* Original */
 
 					sdw_mstr_rt->block_offset =
 							port_block_offset;
-#endif
 
-					/* Playback & Capture loopback mode */
-					sdw_mstr_rt->block_offset = 1;
-					sdw_mstr_rt->sub_block_offset = 0;
 				}
 
 				/* Get no. of channels running on curr. port */
