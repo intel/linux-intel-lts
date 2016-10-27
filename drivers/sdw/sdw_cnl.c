@@ -561,16 +561,6 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 	sdw_enable_interrupt(sdw);
 
 	/* Update soundwire configuration */
-	ret = sdw_config_update(sdw);
-	if (ret)
-		return ret;
-
-	/* Reset bus */
-	mcp_control = cnl_sdw_reg_readl(data->sdw_regs,	SDW_CNL_MCP_CONTROL);
-	mcp_control |= (MCP_CONTROL_HARDCTRLBUSRST_MASK <<
-			MCP_CONTROL_HARDCTRLBUSRST_SHIFT);
-	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
-
 	return sdw_config_update(sdw);
 }
 
