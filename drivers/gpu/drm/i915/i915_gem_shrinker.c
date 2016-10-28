@@ -35,6 +35,24 @@
 #include "i915_drv.h"
 #include "i915_trace.h"
 
+static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
+{
+	switch (mutex_trylock_recursive(&dev->struct_mutex)) {
+	case MUTEX_TRYLOCK_FAILED:
+		return false;
+
+	case MUTEX_TRYLOCK_SUCCESS:
+		*unlock = true;
+		return true;
+
+	case MUTEX_TRYLOCK_RECURSIVE:
+		*unlock = false;
+		return true;
+	}
+
+	BUG();
+}
+
 static bool any_vma_pinned(struct drm_i915_gem_object *obj)
 {
 	struct i915_vma *vma;
@@ -53,6 +71,9 @@ static bool swap_available(void)
 
 static bool can_release_pages(struct drm_i915_gem_object *obj)
 {
+	if (!obj->mm.pages)
+		return false;
+
 	/* Only shmemfs objects are backed by swap */
 	if (!obj->base.filp)
 		return false;
@@ -65,7 +86,7 @@ static bool can_release_pages(struct drm_i915_gem_object *obj)
 	 * to the GPU, simply unbinding from the GPU is not going to succeed
 	 * in releasing our pin count on the pages themselves.
 	 */
-	if (obj->mm.pages_pin_count > obj->bind_count)
+	if (atomic_read(&obj->mm.pages_pin_count) > obj->bind_count)
 		return false;
 
 	if (any_vma_pinned(obj))
@@ -82,7 +103,7 @@ static bool unsafe_drop_pages(struct drm_i915_gem_object *obj)
 {
 	if (i915_gem_object_unbind(obj) == 0)
 		__i915_gem_object_put_pages(obj);
-	return !obj->mm.pages;
+	return !READ_ONCE(obj->mm.pages);
 }
 
 /**
@@ -122,6 +143,10 @@ i915_gem_shrink(struct drm_i915_private *dev_priv,
 		{ NULL, 0 },
 	}, *phase;
 	unsigned long count = 0;
+	bool unlock;
+
+	if (!i915_gem_shrinker_lock(&dev_priv->drm, &unlock))
+		return 0;
 
 	trace_i915_gem_shrink(dev_priv, target, flags);
 	i915_gem_retire_requests(dev_priv);
@@ -186,8 +211,14 @@ i915_gem_shrink(struct drm_i915_private *dev_priv,
 
 			i915_gem_object_get(obj);
 
-			if (unsafe_drop_pages(obj))
-				count += obj->base.size >> PAGE_SHIFT;
+			if (unsafe_drop_pages(obj)) {
+				mutex_lock(&obj->mm.lock);
+				if (!obj->mm.pages) {
+					__i915_gem_object_invalidate(obj);
+					count += obj->base.size >> PAGE_SHIFT;
+				}
+				mutex_unlock(&obj->mm.lock);
+			}
 
 			i915_gem_object_put(obj);
 		}
@@ -198,6 +229,9 @@ i915_gem_shrink(struct drm_i915_private *dev_priv,
 		intel_runtime_pm_put(dev_priv);
 
 	i915_gem_retire_requests(dev_priv);
+	if (unlock)
+		mutex_unlock(&dev_priv->drm.struct_mutex);
+
 	/* expedite the RCU grace period to free some request slabs */
 	synchronize_rcu_expedited();
 
@@ -229,24 +263,6 @@ unsigned long i915_gem_shrink_all(struct drm_i915_private *dev_priv)
 	rcu_barrier(); /* wait until our RCU delayed slab frees are completed */
 
 	return freed;
-}
-
-static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
-{
-	switch (mutex_trylock_recursive(&dev->struct_mutex)) {
-	case MUTEX_TRYLOCK_FAILED:
-		return false;
-
-	case MUTEX_TRYLOCK_SUCCESS:
-		*unlock = true;
-		return true;
-
-	case MUTEX_TRYLOCK_RECURSIVE:
-		*unlock = false;
-		return true;
-	}
-
-	BUG();
 }
 
 static unsigned long
