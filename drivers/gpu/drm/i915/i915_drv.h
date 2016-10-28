@@ -4052,7 +4052,7 @@ __i915_request_irq_complete(struct drm_i915_gem_request *req)
 	/* Before we do the heavier coherent read of the seqno,
 	 * check the value (hopefully) in the CPU cacheline.
 	 */
-	if (i915_gem_request_completed(req))
+	if (__i915_gem_request_completed(req))
 		return true;
 
 	/* Ensure our read of the seqno is coherent so that we
@@ -4103,7 +4103,7 @@ __i915_request_irq_complete(struct drm_i915_gem_request *req)
 			wake_up_process(tsk);
 		rcu_read_unlock();
 
-		if (i915_gem_request_completed(req))
+		if (__i915_gem_request_completed(req))
 			return true;
 	}
 
