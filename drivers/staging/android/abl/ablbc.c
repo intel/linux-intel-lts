@@ -98,6 +98,7 @@ static const struct name2id NAME2ID[] = {
 	{ "fastboot",	0x01 },
 	{ "elk",	0x02 },
 	{ "recovery",	0x03 },
+	{ "crashmode",	0x04 },
 	{ "cli",	0x10 },
 };
 
