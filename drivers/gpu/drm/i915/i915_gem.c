@@ -2689,8 +2689,6 @@ static void i915_gem_cleanup_engine(struct intel_engine_cs *engine)
 		memset(engine->execlist_port, 0, sizeof(engine->execlist_port));
 		spin_unlock(&engine->execlist_lock);
 	}
-
-	engine->i915->gt.active_engines &= ~intel_engine_flag(engine);
 }
 
 void i915_gem_set_wedged(struct drm_i915_private *dev_priv)
@@ -2747,7 +2745,7 @@ i915_gem_idle_work_handler(struct work_struct *work)
 	if (!READ_ONCE(dev_priv->gt.awake))
 		return;
 
-	if (READ_ONCE(dev_priv->gt.active_engines))
+	if (READ_ONCE(dev_priv->gt.active_requests))
 		return;
 
 	rearm_hangcheck =
@@ -2761,7 +2759,7 @@ i915_gem_idle_work_handler(struct work_struct *work)
 		goto out_rearm;
 	}
 
-	if (dev_priv->gt.active_engines)
+	if (dev_priv->gt.active_requests)
 		goto out_unlock;
 
 	for_each_engine(engine, dev_priv, id)
@@ -4414,6 +4412,7 @@ int i915_gem_suspend(struct drm_device *dev)
 		goto err;
 
 	i915_gem_retire_requests(dev_priv);
+	GEM_BUG_ON(dev_priv->gt.active_requests);
 
 	assert_kernel_context_is_current(dev_priv);
 	i915_gem_context_lost(dev_priv);
