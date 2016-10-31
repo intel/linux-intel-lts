@@ -15263,9 +15263,8 @@ static void skl_init_scalers(struct drm_i915_private *dev_priv,
 	scaler_state->scaler_id = -1;
 }
 
-static int intel_crtc_init(struct drm_device *dev, enum pipe pipe)
+static int intel_crtc_init(struct drm_i915_private *dev_priv, enum pipe pipe)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc *intel_crtc;
 	struct intel_crtc_state *crtc_state = NULL;
 	struct intel_plane *primary = NULL;
@@ -15286,7 +15285,7 @@ static int intel_crtc_init(struct drm_device *dev, enum pipe pipe)
 	crtc_state->base.crtc = &intel_crtc->base;
 
 	/* initialize shared scalers */
-	if (INTEL_INFO(dev)->gen >= 9) {
+	if (INTEL_GEN(dev_priv) >= 9) {
 		if (pipe == PIPE_C)
 			intel_crtc->num_scalers = 1;
 		else
@@ -15317,7 +15316,7 @@ static int intel_crtc_init(struct drm_device *dev, enum pipe pipe)
 		goto fail;
 	}
 
-	ret = drm_crtc_init_with_planes(dev, &intel_crtc->base,
+	ret = drm_crtc_init_with_planes(&dev_priv->drm, &intel_crtc->base,
 					&primary->base, &cursor->base,
 					&intel_crtc_funcs,
 					"pipe %c", pipe_name(pipe));
@@ -15330,7 +15329,7 @@ static int intel_crtc_init(struct drm_device *dev, enum pipe pipe)
 	 */
 	intel_crtc->pipe = pipe;
 	intel_crtc->plane = (enum plane) pipe;
-	if (HAS_FBC(dev) && INTEL_INFO(dev)->gen < 4) {
+	if (HAS_FBC(dev_priv) && INTEL_GEN(dev_priv) < 4) {
 		DRM_DEBUG_KMS("swapping pipes & planes for FBC\n");
 		intel_crtc->plane = !pipe;
 	}
@@ -16514,7 +16513,7 @@ int intel_modeset_init(struct drm_device *dev)
 	for_each_pipe(dev_priv, pipe) {
 		int ret;
 
-		ret = intel_crtc_init(dev, pipe);
+		ret = intel_crtc_init(dev_priv, pipe);
 		if (ret) {
 			drm_mode_config_cleanup(dev);
 			return ret;
