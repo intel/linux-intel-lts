@@ -56,10 +56,8 @@
 #define INTEL_RC6p_ENABLE			(1<<1)
 #define INTEL_RC6pp_ENABLE			(1<<2)
 
-static void gen9_init_clock_gating(struct drm_device *dev)
+static void gen9_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
 	/* See Bspec note for PSR2_CTL bit 31, Wa#828:skl,bxt,kbl */
 	I915_WRITE(CHICKEN_PAR1_1,
 		   I915_READ(CHICKEN_PAR1_1) | SKL_EDP_PSR_FIX_RDWRAP);
@@ -82,11 +80,9 @@ static void gen9_init_clock_gating(struct drm_device *dev)
 		   ILK_DPFC_DISABLE_DUMMY0);
 }
 
-static void bxt_init_clock_gating(struct drm_device *dev)
+static void bxt_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
-	gen9_init_clock_gating(dev);
+	gen9_init_clock_gating(dev_priv);
 
 	/* WaDisableSDEUnitClockGating:bxt */
 	I915_WRITE(GEN8_UCGCTL6, I915_READ(GEN8_UCGCTL6) |
@@ -6844,10 +6840,8 @@ void intel_autoenable_gt_powersave(struct drm_i915_private *dev_priv)
 	}
 }
 
-static void ibx_init_clock_gating(struct drm_device *dev)
+static void ibx_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	/*
 	 * On Ibex Peak and Cougar Point, we need to disable clock
 	 * gating for the panel power sequencer or it will fail to
@@ -6856,9 +6850,8 @@ static void ibx_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(SOUTH_DSPCLK_GATE_D, PCH_DPLSUNIT_CLOCK_GATE_DISABLE);
 }
 
-static void g4x_disable_trickle_feed(struct drm_device *dev)
+static void g4x_disable_trickle_feed(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	enum pipe pipe;
 
 	for_each_pipe(dev_priv, pipe) {
@@ -6871,10 +6864,8 @@ static void g4x_disable_trickle_feed(struct drm_device *dev)
 	}
 }
 
-static void ilk_init_lp_watermarks(struct drm_device *dev)
+static void ilk_init_lp_watermarks(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	I915_WRITE(WM3_LP_ILK, I915_READ(WM3_LP_ILK) & ~WM1_LP_SR_EN);
 	I915_WRITE(WM2_LP_ILK, I915_READ(WM2_LP_ILK) & ~WM1_LP_SR_EN);
 	I915_WRITE(WM1_LP_ILK, I915_READ(WM1_LP_ILK) & ~WM1_LP_SR_EN);
@@ -6885,9 +6876,8 @@ static void ilk_init_lp_watermarks(struct drm_device *dev)
 	 */
 }
 
-static void ironlake_init_clock_gating(struct drm_device *dev)
+static void ironlake_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	uint32_t dspclk_gate = ILK_VRHUNIT_CLOCK_GATE_DISABLE;
 
 	/*
@@ -6919,7 +6909,7 @@ static void ironlake_init_clock_gating(struct drm_device *dev)
 		   (I915_READ(DISP_ARB_CTL) |
 		    DISP_FBC_WM_DIS));
 
-	ilk_init_lp_watermarks(dev);
+	ilk_init_lp_watermarks(dev_priv);
 
 	/*
 	 * Based on the document from hardware guys the following bits
@@ -6954,14 +6944,13 @@ static void ironlake_init_clock_gating(struct drm_device *dev)
 	/* WaDisable_RenderCache_OperationalFlush:ilk */
 	I915_WRITE(CACHE_MODE_0, _MASKED_BIT_DISABLE(RC_OP_FLUSH_ENABLE));
 
-	g4x_disable_trickle_feed(dev);
+	g4x_disable_trickle_feed(dev_priv);
 
-	ibx_init_clock_gating(dev);
+	ibx_init_clock_gating(dev_priv);
 }
 
-static void cpt_init_clock_gating(struct drm_device *dev)
+static void cpt_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	int pipe;
 	uint32_t val;
 
@@ -6996,9 +6985,8 @@ static void cpt_init_clock_gating(struct drm_device *dev)
 	}
 }
 
-static void gen6_check_mch_setup(struct drm_device *dev)
+static void gen6_check_mch_setup(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	uint32_t tmp;
 
 	tmp = I915_READ(MCH_SSKPD);
@@ -7007,9 +6995,8 @@ static void gen6_check_mch_setup(struct drm_device *dev)
 			      tmp);
 }
 
-static void gen6_init_clock_gating(struct drm_device *dev)
+static void gen6_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	uint32_t dspclk_gate = ILK_VRHUNIT_CLOCK_GATE_DISABLE;
 
 	I915_WRITE(ILK_DSPCLK_GATE_D, dspclk_gate);
@@ -7036,7 +7023,7 @@ static void gen6_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(GEN6_GT_MODE,
 		   _MASKED_FIELD(GEN6_WIZ_HASHING_MASK, GEN6_WIZ_HASHING_16x4));
 
-	ilk_init_lp_watermarks(dev);
+	ilk_init_lp_watermarks(dev_priv);
 
 	I915_WRITE(CACHE_MODE_0,
 		   _MASKED_BIT_DISABLE(CM0_STC_EVICT_DISABLE_LRA_SNB));
@@ -7097,11 +7084,11 @@ static void gen6_init_clock_gating(struct drm_device *dev)
 		   ILK_DPARBUNIT_CLOCK_GATE_ENABLE  |
 		   ILK_DPFDUNIT_CLOCK_GATE_ENABLE);
 
-	g4x_disable_trickle_feed(dev);
+	g4x_disable_trickle_feed(dev_priv);
 
-	cpt_init_clock_gating(dev);
+	cpt_init_clock_gating(dev_priv);
 
-	gen6_check_mch_setup(dev);
+	gen6_check_mch_setup(dev_priv);
 }
 
 static void gen7_setup_fixed_func_scheduler(struct drm_i915_private *dev_priv)
@@ -7122,10 +7109,8 @@ static void gen7_setup_fixed_func_scheduler(struct drm_i915_private *dev_priv)
 	I915_WRITE(GEN7_FF_THREAD_MODE, reg);
 }
 
-static void lpt_init_clock_gating(struct drm_device *dev)
+static void lpt_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	/*
 	 * TODO: this bit should only be enabled when really needed, then
 	 * disabled when not needed anymore in order to save power.
@@ -7176,11 +7161,9 @@ static void gen8_set_l3sqc_credits(struct drm_i915_private *dev_priv,
 	I915_WRITE(GEN7_MISCCPCTL, misccpctl);
 }
 
-static void kabylake_init_clock_gating(struct drm_device *dev)
+static void kabylake_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
-	gen9_init_clock_gating(dev);
+	gen9_init_clock_gating(dev_priv);
 
 	/* WaDisableSDEUnitClockGating:kbl */
 	if (IS_KBL_REVID(dev_priv, 0, KBL_REVID_B0))
@@ -7197,11 +7180,9 @@ static void kabylake_init_clock_gating(struct drm_device *dev)
 		   ILK_DPFC_NUKE_ON_ANY_MODIFICATION);
 }
 
-static void skylake_init_clock_gating(struct drm_device *dev)
+static void skylake_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
-	gen9_init_clock_gating(dev);
+	gen9_init_clock_gating(dev_priv);
 
 	/* WAC6entrylatency:skl */
 	I915_WRITE(FBC_LLC_READ_CTRL, I915_READ(FBC_LLC_READ_CTRL) |
@@ -7212,12 +7193,11 @@ static void skylake_init_clock_gating(struct drm_device *dev)
 		   ILK_DPFC_NUKE_ON_ANY_MODIFICATION);
 }
 
-static void broadwell_init_clock_gating(struct drm_device *dev)
+static void broadwell_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	enum pipe pipe;
 
-	ilk_init_lp_watermarks(dev);
+	ilk_init_lp_watermarks(dev_priv);
 
 	/* WaSwitchSolVfFArbitrationPriority:bdw */
 	I915_WRITE(GAM_ECOCHK, I915_READ(GAM_ECOCHK) | HSW_ECOCHK_ARB_PRIO_SOL);
@@ -7260,14 +7240,12 @@ static void broadwell_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(CHICKEN_PAR2_1, I915_READ(CHICKEN_PAR2_1)
 		   | KVM_CONFIG_CHANGE_NOTIFICATION_SELECT);
 
-	lpt_init_clock_gating(dev);
+	lpt_init_clock_gating(dev_priv);
 }
 
-static void haswell_init_clock_gating(struct drm_device *dev)
+static void haswell_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
-	ilk_init_lp_watermarks(dev);
+	ilk_init_lp_watermarks(dev_priv);
 
 	/* L3 caching of data atomics doesn't work -- disable it. */
 	I915_WRITE(HSW_SCRATCH1, HSW_SCRATCH1_L3_DATA_ATOMICS_DISABLE);
@@ -7316,15 +7294,14 @@ static void haswell_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(CHICKEN_PAR1_1,
 		   I915_READ(CHICKEN_PAR1_1) | FORCE_ARB_IDLE_PLANES);
 
-	lpt_init_clock_gating(dev);
+	lpt_init_clock_gating(dev_priv);
 }
 
-static void ivybridge_init_clock_gating(struct drm_device *dev)
+static void ivybridge_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	uint32_t snpcr;
 
-	ilk_init_lp_watermarks(dev);
+	ilk_init_lp_watermarks(dev_priv);
 
 	I915_WRITE(ILK_DSPCLK_GATE_D, ILK_VRHUNIT_CLOCK_GATE_DISABLE);
 
@@ -7381,7 +7358,7 @@ static void ivybridge_init_clock_gating(struct drm_device *dev)
 			I915_READ(GEN7_SQ_CHICKEN_MBCUNIT_CONFIG) |
 			GEN7_SQ_CHICKEN_MBCUNIT_SQINTMOB);
 
-	g4x_disable_trickle_feed(dev);
+	g4x_disable_trickle_feed(dev_priv);
 
 	gen7_setup_fixed_func_scheduler(dev_priv);
 
@@ -7412,15 +7389,13 @@ static void ivybridge_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(GEN6_MBCUNIT_SNPCR, snpcr);
 
 	if (!HAS_PCH_NOP(dev_priv))
-		cpt_init_clock_gating(dev);
+		cpt_init_clock_gating(dev_priv);
 
-	gen6_check_mch_setup(dev);
+	gen6_check_mch_setup(dev_priv);
 }
 
-static void valleyview_init_clock_gating(struct drm_device *dev)
+static void valleyview_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	/* WaDisableEarlyCull:vlv */
 	I915_WRITE(_3D_CHICKEN3,
 		   _MASKED_BIT_ENABLE(_3D_CHICKEN_SF_DISABLE_OBJEND_CULL));
@@ -7499,10 +7474,8 @@ static void valleyview_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(VLV_GUNIT_CLOCK_GATE, GCFG_DIS);
 }
 
-static void cherryview_init_clock_gating(struct drm_device *dev)
+static void cherryview_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	/* WaVSRefCountFullforceMissDisable:chv */
 	/* WaDSRefCountFullforceMissDisable:chv */
 	I915_WRITE(GEN7_FF_THREAD_MODE,
@@ -7535,9 +7508,8 @@ static void cherryview_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(HSW_GTT_CACHE_EN, GTT_CACHE_EN_ALL);
 }
 
-static void g4x_init_clock_gating(struct drm_device *dev)
+static void g4x_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	uint32_t dspclk_gate;
 
 	I915_WRITE(RENCLK_GATE_D1, 0);
@@ -7559,13 +7531,11 @@ static void g4x_init_clock_gating(struct drm_device *dev)
 	/* WaDisable_RenderCache_OperationalFlush:g4x */
 	I915_WRITE(CACHE_MODE_0, _MASKED_BIT_DISABLE(RC_OP_FLUSH_ENABLE));
 
-	g4x_disable_trickle_feed(dev);
+	g4x_disable_trickle_feed(dev_priv);
 }
 
-static void crestline_init_clock_gating(struct drm_device *dev)
+static void crestline_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	I915_WRITE(RENCLK_GATE_D1, I965_RCC_CLOCK_GATE_DISABLE);
 	I915_WRITE(RENCLK_GATE_D2, 0);
 	I915_WRITE(DSPCLK_GATE_D, 0);
@@ -7578,10 +7548,8 @@ static void crestline_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(CACHE_MODE_0, _MASKED_BIT_DISABLE(RC_OP_FLUSH_ENABLE));
 }
 
-static void broadwater_init_clock_gating(struct drm_device *dev)
+static void broadwater_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	I915_WRITE(RENCLK_GATE_D1, I965_RCZ_CLOCK_GATE_DISABLE |
 		   I965_RCC_CLOCK_GATE_DISABLE |
 		   I965_RCPB_CLOCK_GATE_DISABLE |
@@ -7595,9 +7563,8 @@ static void broadwater_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(CACHE_MODE_0, _MASKED_BIT_DISABLE(RC_OP_FLUSH_ENABLE));
 }
 
-static void gen3_init_clock_gating(struct drm_device *dev)
+static void gen3_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	u32 dstate = I915_READ(D_STATE);
 
 	dstate |= DSTATE_PLL_D3_OFF | DSTATE_GFX_CLOCK_GATING |
@@ -7620,10 +7587,8 @@ static void gen3_init_clock_gating(struct drm_device *dev)
 		   _MASKED_BIT_ENABLE(MI_ARB_DISPLAY_TRICKLE_FEED_DISABLE));
 }
 
-static void i85x_init_clock_gating(struct drm_device *dev)
+static void i85x_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	I915_WRITE(RENCLK_GATE_D1, SV_CLOCK_GATE_DISABLE);
 
 	/* interrupts should cause a wake up from C3 */
@@ -7634,10 +7599,8 @@ static void i85x_init_clock_gating(struct drm_device *dev)
 		   _MASKED_BIT_ENABLE(MEM_DISPLAY_TRICKLE_FEED_DISABLE));
 }
 
-static void i830_init_clock_gating(struct drm_device *dev)
+static void i830_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
 	I915_WRITE(DSPCLK_GATE_D, OVRUNIT_CLOCK_GATE_DISABLE);
 
 	I915_WRITE(MEM_MODE,
@@ -7645,11 +7608,9 @@ static void i830_init_clock_gating(struct drm_device *dev)
 		   _MASKED_BIT_ENABLE(MEM_DISPLAY_B_TRICKLE_FEED_DISABLE));
 }
 
-void intel_init_clock_gating(struct drm_device *dev)
+void intel_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
-
-	dev_priv->display.init_clock_gating(dev);
+	dev_priv->display.init_clock_gating(dev_priv);
 }
 
 void intel_suspend_hw(struct drm_device *dev)
@@ -7658,7 +7619,7 @@ void intel_suspend_hw(struct drm_device *dev)
 		lpt_suspend_hw(dev);
 }
 
-static void nop_init_clock_gating(struct drm_device *dev)
+static void nop_init_clock_gating(struct drm_i915_private *dev_priv)
 {
 	DRM_DEBUG_KMS("No clock gating settings or workarounds applied.\n");
 }
