@@ -2365,7 +2365,7 @@ static void ironlake_edp_pll_on(struct intel_dp *intel_dp,
 	 * 2. Program DP PLL enable
 	 */
 	if (IS_GEN5(dev_priv))
-		intel_wait_for_vblank_if_active(&dev_priv->drm, !crtc->pipe);
+		intel_wait_for_vblank_if_active(dev_priv, !crtc->pipe);
 
 	intel_dp->DP |= DP_PLL_ENABLE;
 
@@ -3488,7 +3488,7 @@ intel_dp_link_down(struct intel_dp *intel_dp)
 		I915_WRITE(intel_dp->output_reg, DP);
 		POSTING_READ(intel_dp->output_reg);
 
-		intel_wait_for_vblank_if_active(&dev_priv->drm, PIPE_A);
+		intel_wait_for_vblank_if_active(dev_priv, PIPE_A);
 		intel_set_cpu_fifo_underrun_reporting(dev_priv, PIPE_A, true);
 		intel_set_pch_fifo_underrun_reporting(dev_priv, PIPE_A, true);
 	}
@@ -3668,7 +3668,7 @@ intel_dp_configure_mst(struct intel_dp *intel_dp)
 static int intel_dp_sink_crc_stop(struct intel_dp *intel_dp)
 {
 	struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
-	struct drm_device *dev = dig_port->base.base.dev;
+	struct drm_i915_private *dev_priv = to_i915(dig_port->base.base.dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(dig_port->base.base.crtc);
 	u8 buf;
 	int ret = 0;
@@ -3689,7 +3689,7 @@ static int intel_dp_sink_crc_stop(struct intel_dp *intel_dp)
 	}
 
 	do {
-		intel_wait_for_vblank(dev, intel_crtc->pipe);
+		intel_wait_for_vblank(dev_priv, intel_crtc->pipe);
 
 		if (drm_dp_dpcd_readb(&intel_dp->aux,
 				      DP_TEST_SINK_MISC, &buf) < 0) {
@@ -3712,7 +3712,7 @@ static int intel_dp_sink_crc_stop(struct intel_dp *intel_dp)
 static int intel_dp_sink_crc_start(struct intel_dp *intel_dp)
 {
 	struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
-	struct drm_device *dev = dig_port->base.base.dev;
+	struct drm_i915_private *dev_priv = to_i915(dig_port->base.base.dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(dig_port->base.base.crtc);
 	u8 buf;
 	int ret;
@@ -3740,14 +3740,14 @@ static int intel_dp_sink_crc_start(struct intel_dp *intel_dp)
 		return -EIO;
 	}
 
-	intel_wait_for_vblank(dev, intel_crtc->pipe);
+	intel_wait_for_vblank(dev_priv, intel_crtc->pipe);
 	return 0;
 }
 
 int intel_dp_sink_crc(struct intel_dp *intel_dp, u8 *crc)
 {
 	struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
-	struct drm_device *dev = dig_port->base.base.dev;
+	struct drm_i915_private *dev_priv = to_i915(dig_port->base.base.dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(dig_port->base.base.crtc);
 	u8 buf;
 	int count, ret;
@@ -3758,7 +3758,7 @@ int intel_dp_sink_crc(struct intel_dp *intel_dp, u8 *crc)
 		return ret;
 
 	do {
-		intel_wait_for_vblank(dev, intel_crtc->pipe);
+		intel_wait_for_vblank(dev_priv, intel_crtc->pipe);
 
 		if (drm_dp_dpcd_readb(&intel_dp->aux,
 				      DP_TEST_SINK_MISC, &buf) < 0) {
@@ -3991,7 +3991,7 @@ intel_dp_retrain_link(struct intel_dp *intel_dp)
 	intel_dp_stop_link_train(intel_dp);
 
 	/* Keep underrun reporting disabled until things are stable */
-	intel_wait_for_vblank(&dev_priv->drm, crtc->pipe);
+	intel_wait_for_vblank(dev_priv, crtc->pipe);
 
 	intel_set_cpu_fifo_underrun_reporting(dev_priv, crtc->pipe, true);
 	if (crtc->config->has_pch_encoder)
