@@ -956,10 +956,14 @@ int acpi_gpio_count(struct device *dev, const char *con_id)
 	const union acpi_object *obj;
 	const struct acpi_gpio_mapping *gm;
 	int count = -ENOENT;
-	int ret;
+	int ret, err_type;
 	char propname[32];
 	unsigned int i;
 
+	if (adev == NULL) {
+		err_type = -ENOMEM;
+		goto exit_err;
+	}
 	/* Try first from _DSD */
 	for (i = 0; i < ARRAY_SIZE(gpio_suffixes); i++) {
 		if (con_id && strcmp(con_id, "gpios"))
@@ -1000,6 +1004,8 @@ int acpi_gpio_count(struct device *dev, const char *con_id)
 			count = crs_count;
 	}
 	return count;
+exit_err:
+	return err_type;
 }
 
 struct acpi_crs_lookup {
