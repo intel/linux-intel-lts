@@ -327,7 +327,7 @@ static int execute_slcan_command(const char *cmd[])
 		pr_info("Exec cmd=%s ret=%d\n", cmd[0], ret);
 	}
 
-	if (!ret)
+	if (ret)
 		pr_err("Failure on cmd=%s ret=%d\n", cmd[0], ret);
 
 	return ret;
