@@ -663,6 +663,11 @@ const struct dev_pm_ops snd_cnl_florida_mc_pm_ops = {
 	.poweroff = snd_cnl_florida_poweroff,
 };
 
+static const struct platform_device_id cnl_board_ids[] = {
+	{ .name = "cnl_florida" },
+	{ .name = "icl_wm8281" },
+	{ }
+};
 static struct platform_driver snd_cnl_florida_mc_driver = {
 	.driver = {
 		.owner = THIS_MODULE,
@@ -670,6 +675,7 @@ static struct platform_driver snd_cnl_florida_mc_driver = {
 	},
 	.probe = snd_cnl_florida_mc_probe,
 	.remove = snd_cnl_florida_mc_remove,
+	.id_table = cnl_board_ids,
 };
 
 static int snd_cnl_florida_driver_init(void)
