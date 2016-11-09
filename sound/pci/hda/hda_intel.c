@@ -372,9 +372,9 @@ enum {
 			IS_KBL(pci) || IS_KBL_LP(pci) || IS_KBL_H(pci)  || \
 			IS_CNL(pci)
 #define IS_BXT(pci) ((pci)->vendor == 0x8086 && \
-		     ((pci)->device == 0x5a98 || (pci)->device == 0x1a98))
-#define IS_CNL(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0x9df0)
-
+                    ((pci)->device == 0x5a98 || (pci)->device == 0x1a98))
+#define IS_CNL(pci) ((pci)->vendor == 0x8086 && ((pci)->device == 0x9df0 || \
+						(pci)->device == 0x9dc8))
 static char *driver_short_names[] = {
 	[AZX_DRIVER_ICH] = "HDA Intel",
 	[AZX_DRIVER_PCH] = "HDA Intel PCH",
@@ -2248,6 +2248,9 @@ static const struct pci_device_id azx_ids[] = {
 	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_BROXTON },
 	/* Cannonlake */
 	{ PCI_DEVICE(0x8086, 0x9df0),
+	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_SKYLAKE },
+	/* Cannonlake Z0 RVP */
+	{ PCI_DEVICE(0x8086, 0x9dc8),
 	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_SKYLAKE },
 	/* Haswell */
 	{ PCI_DEVICE(0x8086, 0x0a0c),
