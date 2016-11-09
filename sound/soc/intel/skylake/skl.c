@@ -468,8 +468,12 @@ static struct sst_acpi_mach sst_cnl_devdata[] = {
 		.drv_name = "cnl_rt700",
 #elif IS_ENABLED(CONFIG_SND_SOC_MXFPGA)
 		.drv_name = "cnl_mxfpga",
-#elif IS_ENABLED(CONFIG_SND_SOC_WM5110)
+#elif (IS_ENABLED(CONFIG_SND_SOC_WM5110) && \
+	IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA))
 		.drv_name = "cnl_florida",
+#elif (IS_ENABLED(CONFIG_SND_SOC_WM5110) && \
+	!IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA))
+		.drv_name = "cnl_loop",
 #endif
 		.fw_filename = "intel/dsp_fw_cnl.bin",
 	},
@@ -482,15 +486,16 @@ static int skl_machine_device_register(struct skl *skl, void *driver_data)
 	struct sst_acpi_mach *mach = driver_data;
 	int ret;
 
+	if (skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8) {
+		mach = sst_cnl_devdata;
+		dev_warn(bus->dev, "Using machine driver: %s\n",
+			 mach->drv_name);
+		goto cnl_continue;
+	}
+
 	mach = sst_acpi_find_machine(mach);
 	if (mach == NULL) {
 		dev_err(bus->dev, "No matching machine driver found\n");
-		if (skl->pci->device == 0x9df0) {
-			mach = sst_cnl_devdata;
-			dev_warn(bus->dev, "Taking %s as machine driver for CNL FPGA platform\n",
-				 mach->drv_name);
-			goto cnl_continue;
-		}
 		return -ENODEV;
 	}
 cnl_continue:
@@ -1065,6 +1070,9 @@ static const struct pci_device_id skl_ids[] = {
 		.driver_data = (unsigned long)&sst_glk_devdata},
 	/* CNL */
 	{ PCI_DEVICE(0x8086, 0x9df0),
+		.driver_data = (unsigned long)&sst_cnl_devdata},
+	/* CNL Z0 */
+	{ PCI_DEVICE(0x8086, 0x9dc8),
 		.driver_data = (unsigned long)&sst_cnl_devdata},
 	{ 0, }
 };
