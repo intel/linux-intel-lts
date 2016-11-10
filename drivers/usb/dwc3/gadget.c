@@ -26,6 +26,7 @@
 #include <linux/io.h>
 #include <linux/list.h>
 #include <linux/dma-mapping.h>
+#include <asm/processor.h>
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
@@ -1592,6 +1593,17 @@ static void dwc3_gadget_setup_nump(struct dwc3 *dwc)
 	reg &= ~DWC3_DCFG_NUMP_MASK;
 	reg |= nump << DWC3_DCFG_NUMP_SHIFT;
 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
+}
+
+static inline bool platform_is_bxtp(void)
+{
+#ifdef CONFIG_X86_64
+	if ((boot_cpu_data.x86_model == 0x5c)
+		&& (boot_cpu_data.x86_mask >= 0x8)
+		&& (boot_cpu_data.x86_mask <= 0xf))
+		return true;
+#endif
+	return false;
 }
 
 static int __dwc3_gadget_start(struct dwc3 *dwc)
