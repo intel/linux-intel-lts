@@ -27,9 +27,15 @@
 
 
 #ifndef CONFIG_SND_SOC_SVFPGA /* Original */
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
 int rows[MAX_NUM_ROWS] = {48, 50, 60, 64, 72, 75, 80, 90,
 		     96, 125, 144, 147, 100, 120, 128, 150,
 		     160, 180, 192, 200, 240, 250, 256};
+#else
+int rows[MAX_NUM_ROWS] = {125, 64, 48, 50, 60, 72, 75, 80, 90,
+		     96, 144, 147, 100, 120, 128, 150,
+		     160, 180, 192, 200, 240, 250, 256};
+#endif /* IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA) */
 
 int cols[MAX_NUM_COLS] = {2, 4, 6, 8, 10, 12, 14, 16};
 
