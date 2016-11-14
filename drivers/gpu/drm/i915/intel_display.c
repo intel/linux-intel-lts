@@ -3076,6 +3076,9 @@ static void i9xx_update_primary_plane(struct drm_plane *primary,
 	if (rotation & DRM_ROTATE_180)
 		dspcntr |= DISPPLANE_ROTATE_180;
 
+	if (rotation & DRM_REFLECT_X)
+		dspcntr |= DISPPLANE_MIRROR;
+
 	if (IS_G4X(dev_priv))
 		dspcntr |= DISPPLANE_TRICKLE_FEED_DISABLE;
 
@@ -3088,6 +3091,8 @@ static void i9xx_update_primary_plane(struct drm_plane *primary,
 	if (rotation & DRM_ROTATE_180) {
 		x += crtc_state->pipe_src_w - 1;
 		y += crtc_state->pipe_src_h - 1;
+	} else if (rotation & DRM_REFLECT_X) {
+		x += crtc_state->pipe_src_w - 1;
 	}
 
 	linear_offset = intel_fb_xy_to_linear(x, y, plane_state, 0);
@@ -15056,18 +15061,22 @@ intel_primary_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe)
 	if (ret)
 		goto fail;
 
-	if (INTEL_GEN(dev) >= 9) {
+	if (INTEL_GEN(dev_priv) >= 9) {
 		supported_rotations =
 			DRM_ROTATE_0 | DRM_ROTATE_90 |
 			DRM_ROTATE_180 | DRM_ROTATE_270;
-	} else if (INTEL_GEN(dev) >= 4) {
+	} else if (IS_CHERRYVIEW(dev_priv) && pipe == PIPE_B) {
+		supported_rotations =
+			DRM_ROTATE_0 | DRM_ROTATE_180 |
+			DRM_REFLECT_X;
+	} else if (INTEL_GEN(dev_priv) >= 4) {
 		supported_rotations =
 			DRM_ROTATE_0 | DRM_ROTATE_180;
 	} else {
 		supported_rotations = DRM_ROTATE_0;
 	}
 
-	if (INTEL_GEN(dev) >= 4)
+	if (INTEL_GEN(dev_priv) >= 4)
 		drm_plane_create_rotation_property(&primary->base,
 						   DRM_ROTATE_0,
 						   supported_rotations);
