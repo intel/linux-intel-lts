@@ -675,7 +675,8 @@ int skl_ipc_create_pipeline(struct sst_generic_ipc *ipc,
 
 	header.extension = IPC_PPL_LP_MODE(lp_mode);
 
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: create pipeline fail, err: %d\n", ret);
@@ -697,7 +698,8 @@ int skl_ipc_delete_pipeline(struct sst_generic_ipc *ipc, u8 instance_id)
 	header.primary |= IPC_GLB_TYPE(IPC_GLB_DELETE_PPL);
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: delete pipeline failed, err %d\n", ret);
@@ -721,7 +723,8 @@ int skl_ipc_set_pipeline_state(struct sst_generic_ipc *ipc,
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 	header.primary |= IPC_PPL_STATE(state);
 
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: set pipeline state failed, err: %d\n", ret);
@@ -744,7 +747,8 @@ skl_ipc_save_pipeline(struct sst_generic_ipc *ipc, u8 instance_id, int dma_id)
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 
 	header.extension = IPC_DMA_ID(dma_id);
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: save pipeline failed, err: %d\n", ret);
@@ -766,7 +770,8 @@ int skl_ipc_restore_pipeline(struct sst_generic_ipc *ipc, u8 instance_id)
 	header.primary |= IPC_GLB_TYPE(IPC_GLB_RESTORE_PPL);
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: restore  pipeline failed, err: %d\n", ret);
@@ -790,8 +795,8 @@ int skl_ipc_set_dx(struct sst_generic_ipc *ipc, u8 instance_id,
 	header.primary |= IPC_MOD_INSTANCE_ID(instance_id);
 	header.primary |= IPC_MOD_ID(module_id);
 
-	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
-			 header.primary, header.extension);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
 				dx, sizeof(*dx), NULL, 0);
 	if (ret < 0) {
@@ -816,8 +821,8 @@ int skl_ipc_delete_instance(struct sst_generic_ipc *ipc,
 	header.primary |= IPC_MOD_INSTANCE_ID(msg->instance_id);
 	header.primary |= IPC_MOD_ID(msg->module_id);
 
-	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
-			 header.primary, header.extension);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL,
 			msg->param_data_size, NULL, 0);
 
@@ -854,8 +859,8 @@ int skl_ipc_init_instance(struct sst_generic_ipc *ipc,
 	header.extension |= IPC_PARAM_BLOCK_SIZE(param_block_size);
 	header.extension |= IPC_DOMAIN(msg->domain);
 
-	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
-			 header.primary, header.extension);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, param_data,
 			msg->param_data_size, NULL, 0);
 
@@ -887,8 +892,8 @@ int skl_ipc_bind_unbind(struct sst_generic_ipc *ipc,
 	header.extension |= IPC_DST_QUEUE(msg->dst_queue);
 	header.extension |= IPC_SRC_QUEUE(msg->src_queue);
 
-	dev_dbg(ipc->dev, "In %s hdr=%x ext=%x\n", __func__, header.primary,
-			 header.extension);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: bind/unbind failed\n");

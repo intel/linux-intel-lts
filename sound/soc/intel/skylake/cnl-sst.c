@@ -465,10 +465,8 @@ static irqreturn_t cnl_dsp_irq_thread_handler(int irq, void *context)
 		hipctdd = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCTDD);
 		header.primary = hipctdr;
 		header.extension = hipctdd;
-		dev_dbg(dsp->dev, "IPC irq: Firmware respond primary:%x",
-						header.primary);
-		dev_dbg(dsp->dev, "IPC irq: Firmware respond extension:%x",
-						header.extension);
+		dev_dbg(dsp->dev, "IPC irq: Firmware respond primary:%#x ext:%#x",
+					header.primary, header.extension);
 
 		if (IPC_GLB_NOTIFY_RSP_TYPE(header.primary)) {
 			/* Handle Immediate reply from DSP Core */
