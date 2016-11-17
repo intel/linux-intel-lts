@@ -131,6 +131,8 @@
 #define RT274_I2S_CTRL1			0x63
 #define RT274_I2S_CTRL2			0x64
 #define RT274_MCLK_CTRL			0x71
+#define RT274_CLK_CTRL			0x72
+#define RT274_PLL2_CTRL			0x7b
 
 
 /* EAPD GPIO IRQ control (Index 0x10) */
@@ -159,9 +161,19 @@
 #define RT274_I2S_FMT_PCMB	(0x3 << 8)
 
 /* MCLK clock domain control (Index 0x71) */
-#define RT274_MCLK_MODE_MASK	(0x1 << 13)
-#define RT274_MCLK_MODE_DIS	(0x0 << 13)
-#define RT274_MCLK_MODE_EN	(0x1 << 13)
+#define RT274_MCLK_MODE_MASK	(0x1 << 14)
+#define RT274_MCLK_MODE_DIS	(0x0 << 14)
+#define RT274_MCLK_MODE_EN	(0x1 << 14)
+
+/* Clock control (Index 0x72) */
+#define RT274_CLK_SRC_MASK	(0x7 << 3)
+#define RT274_CLK_SRC_MCLK	(0x0 << 3)
+#define RT274_CLK_SRC_PLL2	(0x3 << 3)
+
+/* PLL2 control (Index 0x7b) */
+#define RT274_PLL2_SRC_MASK	(0x1 << 13)
+#define RT274_PLL2_SRC_MCLK	(0x0 << 13)
+#define RT274_PLL2_SRC_BCLK	(0x1 << 13)
 
 /* HP-OUT (0x21) */
 #define RT274_M_HP_MUX_SFT	14
@@ -179,7 +191,11 @@
 #define RT274_ADC_SEL_DMIC	3
 
 #define RT274_SCLK_S_MCLK	0
-#define RT274_SCLK_S_PLL	1
+#define RT274_SCLK_S_PLL1	1
+#define RT274_SCLK_S_PLL2	2
+
+#define RT274_PLL2_S_MCLK	0
+#define RT274_PLL2_S_BCLK	1
 
 enum {
 	RT274_AIF1,

@@ -44,6 +44,7 @@ struct rt274_priv {
 	struct delayed_work jack_detect_work;
 	int sys_clk;
 	int clk_id;
+	int fs;
 	unsigned int adb_reg_addr[0x100];
 	unsigned int adb_reg_value[0x100];
 	unsigned short adb_reg_num;
@@ -694,20 +695,89 @@ static int rt274_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 	return 0;
 }
 
+static int rt274_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
+			unsigned int freq_in, unsigned int freq_out)
+{
+	struct snd_soc_codec *codec = dai->codec;
+	struct rt274_priv *rt274 = snd_soc_codec_get_drvdata(codec);
+
+	switch (source) {
+	case RT274_PLL2_S_MCLK:
+		snd_soc_update_bits(codec, RT274_PLL2_CTRL,
+				RT274_PLL2_SRC_MASK, RT274_PLL2_SRC_MCLK);
+		break;
+	default:
+		dev_warn(codec->dev, "invalid pll source, use BCLK\n");
+	case RT274_PLL2_S_BCLK:
+		snd_soc_update_bits(codec, RT274_PLL2_CTRL,
+				RT274_PLL2_SRC_MASK, RT274_PLL2_SRC_BCLK);
+		break;
+	}
+
+	if (source == RT274_PLL2_S_BCLK) {
+		snd_soc_update_bits(codec, RT274_MCLK_CTRL,
+				(0x3 << 12), (0x3 << 12));
+		switch (rt274->fs) {
+		case 50:
+			snd_soc_write(codec, 0x7a, 0xaab6);
+			snd_soc_write(codec, 0x7b, 0x0301);
+			snd_soc_write(codec, 0x7c, 0x04fe);
+			break;
+		case 64:
+			snd_soc_write(codec, 0x7a, 0xaa96);
+			snd_soc_write(codec, 0x7b, 0x8003);
+			snd_soc_write(codec, 0x7c, 0x081e);
+			break;
+		case 128:
+			snd_soc_write(codec, 0x7a, 0xaa96);
+			snd_soc_write(codec, 0x7b, 0x8003);
+			snd_soc_write(codec, 0x7c, 0x080e);
+			break;
+		default:
+			dev_warn(codec->dev, "invalid freq_in, assume 4.8M\n");
+		case 100:
+			snd_soc_write(codec, 0x7a, 0xaab6);
+			snd_soc_write(codec, 0x7b, 0x0301);
+			snd_soc_write(codec, 0x7c, 0x047e);
+			break;
+		}
+	}
+
+	return 0;
+}
+
 static int rt274_set_dai_sysclk(struct snd_soc_dai *dai,
 				int clk_id, unsigned int freq, int dir)
 {
 	struct snd_soc_codec *codec = dai->codec;
 	struct rt274_priv *rt274 = snd_soc_codec_get_drvdata(codec);
+	unsigned int clk_src, mclk_en;
 
 	dev_dbg(codec->dev, "%s freq=%d\n", __func__, freq);
 
-	if (RT274_SCLK_S_MCLK == clk_id)
-		snd_soc_update_bits(codec, RT274_MCLK_CTRL,
-				RT274_MCLK_MODE_MASK, RT274_MCLK_MODE_EN);
-	else
-		snd_soc_update_bits(codec, RT274_MCLK_CTRL,
-				RT274_MCLK_MODE_MASK, RT274_MCLK_MODE_DIS);
+	switch (clk_id) {
+	case RT274_SCLK_S_MCLK:
+		mclk_en = RT274_MCLK_MODE_EN;
+		clk_src = RT274_CLK_SRC_MCLK;
+		break;
+	case RT274_SCLK_S_PLL1:
+		mclk_en = RT274_MCLK_MODE_DIS;
+		clk_src = RT274_CLK_SRC_MCLK;
+		break;
+	case RT274_SCLK_S_PLL2:
+		mclk_en = RT274_MCLK_MODE_EN;
+		clk_src = RT274_CLK_SRC_PLL2;
+		break;
+	default:
+		mclk_en = RT274_MCLK_MODE_DIS;
+		clk_src = RT274_CLK_SRC_MCLK;
+		dev_warn(codec->dev, "invalid sysclk source, use PLL1\n");
+		break;
+	}
+	snd_soc_update_bits(codec, RT274_MCLK_CTRL,
+			RT274_MCLK_MODE_MASK, mclk_en);
+	snd_soc_update_bits(codec, RT274_CLK_CTRL,
+			RT274_CLK_SRC_MASK, clk_src);
 
 	switch (freq) {
 	case 19200000:
@@ -750,9 +820,11 @@ static int rt274_set_dai_sysclk(struct snd_soc_dai *dai,
 static int rt274_set_bclk_ratio(struct snd_soc_dai *dai, unsigned int ratio)
 {
 	struct snd_soc_codec *codec = dai->codec;
+	struct rt274_priv *rt274 = snd_soc_codec_get_drvdata(codec);
 
 	dev_dbg(codec->dev, "%s ratio=%d\n", __func__, ratio);
-	if (50 == ratio)
+	rt274->fs = ratio;
+	if ((ratio / 50) == 0)
 		snd_soc_update_bits(codec,
 			RT274_I2S_CTRL1, 0x1000, 0x1000);
 	else
@@ -1017,6 +1089,7 @@ static const struct snd_soc_dai_ops rt274_aif_dai_ops = {
 	.hw_params = rt274_hw_params,
 	.set_fmt = rt274_set_dai_fmt,
 	.set_sysclk = rt274_set_dai_sysclk,
+	.set_pll = rt274_set_dai_pll,
 	.set_bclk_ratio = rt274_set_bclk_ratio,
 	.set_tdm_slot = rt274_set_tdm_slot,
 };
