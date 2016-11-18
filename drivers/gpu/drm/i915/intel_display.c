@@ -8755,6 +8755,8 @@ i9xx_get_initial_plane_config(struct intel_crtc *crtc,
 
 	fb = &intel_fb->base;
 
+	fb->dev = dev;
+
 	if (INTEL_GEN(dev_priv) >= 4) {
 		if (val & DISPPLANE_TILED) {
 			plane_config->tiling = I915_TILING_X;
@@ -9780,6 +9782,8 @@ skylake_get_initial_plane_config(struct intel_crtc *crtc,
 
 	fb = &intel_fb->base;
 
+	fb->dev = dev;
+
 	val = I915_READ(PLANE_CTL(pipe, 0));
 	if (!(val & PLANE_CTL_ENABLE))
 		goto error;
@@ -9891,6 +9895,8 @@ ironlake_get_initial_plane_config(struct intel_crtc *crtc,
 	}
 
 	fb = &intel_fb->base;
+
+	fb->dev = dev;
 
 	if (INTEL_GEN(dev_priv) >= 4) {
 		if (val & DISPPLANE_TILED) {
