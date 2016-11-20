@@ -1179,7 +1179,7 @@ static int cnl_sdw_set_ssp_interval(struct sdw_master *mstr,
 }
 
 static int cnl_sdw_set_clock_freq(struct sdw_master *mstr,
-			int cur_clk_freq, int bank)
+			int cur_clk_div, int bank)
 {
 	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
 	struct cnl_sdw_data *data = &sdw->data;
@@ -1189,11 +1189,7 @@ static int cnl_sdw_set_clock_freq(struct sdw_master *mstr,
 	/* TODO: Retrieve divider value or get value directly from calling
 	 * function
 	 */
-#ifdef CONFIG_SND_SOC_SVFPGA
-	int divider = ((9600000 * 2/cur_clk_freq) - 1);
-#else
-	int divider = ((9600000/cur_clk_freq) - 1);
-#endif
+	int divider = (cur_clk_div - 1);
 
 	if (bank) {
 		mcp_clockctrl_offset = SDW_CNL_MCP_CLOCKCTRL1;

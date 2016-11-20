@@ -25,37 +25,29 @@
 #include <linux/sdw/sdw_registers.h>
 
 
-#define MAXCLOCKFREQ		6
 
-#ifdef CONFIG_SND_SOC_SVFPGA
+#ifndef CONFIG_SND_SOC_SVFPGA /* Original */
+int rows[MAX_NUM_ROWS] = {48, 50, 60, 64, 72, 75, 80, 90,
+		     96, 125, 144, 147, 100, 120, 128, 150,
+		     160, 180, 192, 200, 240, 250, 256};
+
+int cols[MAX_NUM_COLS] = {2, 4, 6, 8, 10, 12, 14, 16};
+
+#else
 /* For PDM Capture, frameshape used is 50x10 */
 int rows[MAX_NUM_ROWS] = {50, 100, 48, 60, 64, 72, 75, 80, 90,
 		     96, 125, 144, 147, 120, 128, 150,
 		     160, 180, 192, 200, 240, 250, 256};
 
 int cols[MAX_NUM_COLS] = {10, 2, 4, 6, 8, 12, 14, 16};
-
-int clock_freq[MAXCLOCKFREQ] = {19200000, 19200000,
-				19200000, 19200000,
-				19200000, 19200000};
-
-#else
-/* TBD: Currently we are using 100x2 as frame shape. to be removed later */
-int rows[MAX_NUM_ROWS] = {100, 48, 50, 60, 64, 72, 75, 80, 90,
-		     96, 125, 144, 147, 120, 128, 150,
-		     160, 180, 192, 200, 240, 250, 256};
-
-int cols[MAX_NUM_COLS] = {2, 4, 6, 8, 10, 12, 14, 16};
+#endif
 
 /*
  * TBD: Get supported clock frequency from ACPI and store
  * it in master data structure.
  */
-/* Currently only 9.6MHz clock frequency used */
-int clock_freq[MAXCLOCKFREQ] = {9600000, 9600000,
-				9600000, 9600000,
-				9600000, 9600000};
-#endif
+#define MAXCLOCKDIVS		1
+int clock_div[MAXCLOCKDIVS] = {1};
 
 struct sdw_num_to_col sdw_num_col_mapping[MAX_NUM_COLS] = {
 	{0, 2}, {1, 4}, {2, 6}, {3, 8}, {4, 10}, {5, 12}, {6, 14}, {7, 16},
@@ -117,19 +109,13 @@ int sdw_mstr_bw_init(struct sdw_bus *sdw_bs)
 	sdw_bs->frame_freq = 0;
 	sdw_bs->clk_state = SDW_CLK_STATE_ON;
 	sdw_mstr_cap = &sdw_bs->mstr->mstr_capabilities;
-#ifdef CONFIG_SND_SOC_SVFPGA
-	/* TBD: For PDM capture to be removed later */
-	sdw_bs->clk_freq = 9.6 * 1000 * 1000 * 2;
-	sdw_mstr_cap->base_clk_freq = 9.6 * 1000 * 1000 * 2;
-#else
 	/* TBD: Base Clock frequency should be read from
 	 * master capabilities
-	 * Currenly hardcoding to 9.6MHz
+	 * Currenly hardcoding to 19.2MHz
 	 */
-	sdw_bs->clk_freq = 9.6 * 1000 * 1000;
-	sdw_mstr_cap->base_clk_freq = 9.6 * 1000 * 1000;
+	sdw_bs->clk_freq = 9.6 * 1000 * 1000 * 2;
+	sdw_mstr_cap->base_clk_freq = 9.6 * 1000 * 1000 * 2;
 
-#endif
 	return 0;
 }
 EXPORT_SYMBOL_GPL(sdw_mstr_bw_init);
@@ -904,9 +890,12 @@ int sdw_en_dis_mstr_slv_state(struct sdw_bus *sdw_mstr_bs,
 int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
 		int *col, int *row)
 {
+	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
 	int i, rc, clock_reqd = 0, frame_interval = 0, frame_frequency = 0;
 	int sel_row = 0, sel_col = 0;
 	bool clock_ok = false;
+
+	sdw_mstr_cap = &sdw_mstr_bs->mstr->mstr_capabilities;
 
 	/*
 	 * Find nearest clock frequency needed by master for
@@ -917,13 +906,15 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
 	 * TBD: Need to run efficient algorithm to make sure we have
 	 * only 1 to 10 percent of control bandwidth usage
 	 */
-	for (i = 0; i < MAXCLOCKFREQ; i++) {
+	for (i = 0; i < MAXCLOCKDIVS; i++) {
 
 		/* TBD: Check why 3000 */
-		if ((clock_freq[i] <= sdw_mstr_bs->bandwidth) ||
-				((clock_freq[i] % 3000) != 0))
+		if ((((sdw_mstr_cap->base_clk_freq * 2) / clock_div[i]) <=
+			sdw_mstr_bs->bandwidth) ||
+			((((sdw_mstr_cap->base_clk_freq * 2) / clock_div[i])
+			% 3000) != 0))
 			continue;
-		clock_reqd = clock_freq[i];
+		clock_reqd = ((sdw_mstr_cap->base_clk_freq * 2) / clock_div[i]);
 
 		/*
 		 * TBD: Check all the slave device capabilities
@@ -956,6 +947,7 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
 		sel_col = sdw_core.rowcolcomb[rc].col;
 		sdw_mstr_bs->frame_freq = frame_frequency;
 		sdw_mstr_bs->clk_freq = clock_reqd;
+		sdw_mstr_bs->clk_div = clock_div[i];
 		clock_ok = false;
 		*frame_int = frame_interval;
 		*col = sel_col;
@@ -1012,16 +1004,10 @@ int sdw_compute_sys_interval(struct sdw_bus *sdw_mstr_bs,
 			 * One port per bus runtime structure
 			 */
 			/* Calculate sample interval */
-#ifdef CONFIG_SND_SOC_SVFPGA
 			t_params->sample_interval =
-				((sdw_mstr_bs->clk_freq/
-				  sdw_mstr_bs_rt->stream_params.rate));
-#else
-			t_params->sample_interval =
-				((sdw_mstr_bs->clk_freq/
-				  sdw_mstr_bs_rt->stream_params.rate) * 2);
+				(sdw_mstr_bs->clk_freq/
+				  sdw_mstr_bs_rt->stream_params.rate);
 
-#endif
 			/* Only BlockPerPort supported */
 			t_params->blockpackingmode = 0;
 			t_params->lanecontrol = 0;
@@ -1278,7 +1264,7 @@ int sdw_compute_blk_subblk_offset(struct sdw_bus *sdw_mstr_bs)
 #ifdef CONFIG_SND_SOC_SVFPGA
 				block_offset = 1;
 #else
-				block_offset = 0;
+				block_offset = 1;
 #endif
 			} else {
 
@@ -1290,10 +1276,10 @@ int sdw_compute_blk_subblk_offset(struct sdw_bus *sdw_mstr_bs)
 				if ((hstart1 != hstart2) &&
 					(hstop1 != hstop2)) {
 					/* TBD: Harcoding to 0, to be removed*/
-					block_offset = 0;
+					block_offset = 1;
 				} else {
 					/* TBD: Harcoding to 0, to be removed*/
-					block_offset = 0;
+					block_offset = 1;
 				}
 #else
 				if ((hstart1 != hstart2) &&
@@ -1646,7 +1632,7 @@ int sdw_cfg_bs_params(struct sdw_bus *sdw_mstr_bs,
 		 */
 		if (ops->mstr_ops->set_clock_freq)
 			ops->mstr_ops->set_clock_freq(sdw_mstr_bs->mstr,
-					sdw_mstr_bs->clk_freq, banktouse);
+					sdw_mstr_bs->clk_div, banktouse);
 
 		/* Enable channel on alternate bank for running streams */
 		chn_en.is_activate = true;

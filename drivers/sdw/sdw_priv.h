@@ -185,6 +185,7 @@ struct sdw_bus {
 	unsigned int	clk_state;
 	unsigned int	active_bank;
 	unsigned int	clk_freq;
+	unsigned int	clk_div;
 	/* Bus total Bandwidth. Initialize and reset to zero */
 	unsigned int	bandwidth;
 	unsigned int	system_interval; /* Bus System Interval */
