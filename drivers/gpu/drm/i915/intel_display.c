@@ -15281,6 +15281,7 @@ static int intel_crtc_init(struct drm_i915_private *dev_priv, enum pipe pipe)
 		ret = PTR_ERR(primary);
 		goto fail;
 	}
+	intel_crtc->plane_ids_mask |= BIT(primary->id);
 
 	for_each_sprite(dev_priv, pipe, sprite) {
 		struct intel_plane *plane;
@@ -15290,6 +15291,7 @@ static int intel_crtc_init(struct drm_i915_private *dev_priv, enum pipe pipe)
 			ret = PTR_ERR(plane);
 			goto fail;
 		}
+		intel_crtc->plane_ids_mask |= BIT(plane->id);
 	}
 
 	cursor = intel_cursor_plane_create(dev_priv, pipe);
@@ -15297,6 +15299,7 @@ static int intel_crtc_init(struct drm_i915_private *dev_priv, enum pipe pipe)
 		ret = PTR_ERR(cursor);
 		goto fail;
 	}
+	intel_crtc->plane_ids_mask |= BIT(cursor->id);
 
 	ret = drm_crtc_init_with_planes(&dev_priv->drm, &intel_crtc->base,
 					&primary->base, &cursor->base,
