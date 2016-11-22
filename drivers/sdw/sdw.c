@@ -1959,6 +1959,13 @@ int sdw_slave_xfer_bra_block(struct sdw_master *mstr,
 		goto error;
 	}
 
+	/* Bulk Setup */
+	ret = ops->mstr_ops->xfer_bulk(mstr, block);
+	if (ret < 0) {
+		dev_err(&mstr->dev, "BRA: Transfer failed ret=%d\n", ret);
+		goto error;
+	}
+
 	/* Data port Programming  (OFF) */
 	ret = sdw_bus_bra_xport_config(sdw_mstr_bs, block, false);
 	if (ret < 0) {
