@@ -45,6 +45,7 @@ struct rt274_priv {
 	int sys_clk;
 	int clk_id;
 	int fs;
+	bool master;
 	unsigned int adb_reg_addr[0x100];
 	unsigned int adb_reg_value[0x100];
 	unsigned short adb_reg_num;
@@ -204,7 +205,7 @@ static const struct reg_default rt274_reg[] = {
 	{ 0x01371f00, 0x411111f0 },
 	{ 0x01937000, 0x00000000 },
 	{ 0x01970500, 0x00000400 },
-	{ 0x02050000, 0x00000000 },
+	{ 0x02050000, 0x0000001b },
 	{ 0x02139000, 0x00000080 },
 	{ 0x0213a000, 0x00000080 },
 	{ 0x02170100, 0x00000001 },
@@ -575,7 +576,7 @@ static int rt274_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_codec *codec = dai->codec;
 	struct rt274_priv *rt274 = snd_soc_codec_get_drvdata(codec);
 	unsigned int val = 0;
-	int d_len_code;
+	int d_len_code = 0, c_len_code = 0;
 
 	switch (params_rate(params)) {
 	/* bit 14 0:48K 1:44.1K */
@@ -615,34 +616,41 @@ static int rt274_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	d_len_code = 0;
 	switch (params_width(params)) {
 	/* bit 6:4 Bits per Sample */
 	case 16:
 		d_len_code = 0;
+		c_len_code = 0;
 		val |= (0x1 << 4);
 		break;
 	case 32:
 		d_len_code = 2;
+		c_len_code = 3;
 		val |= (0x4 << 4);
 		break;
 	case 20:
 		d_len_code = 1;
+		c_len_code = 1;
 		val |= (0x2 << 4);
 		break;
 	case 24:
 		d_len_code = 2;
+		c_len_code = 2;
 		val |= (0x3 << 4);
 		break;
 	case 8:
 		d_len_code = 3;
+		c_len_code = 0;
 		break;
 	default:
 		return -EINVAL;
 	}
 
+	if (rt274->master)
+		c_len_code = 0x3;
+
 	snd_soc_update_bits(codec,
-		RT274_I2S_CTRL1, 0x0018, d_len_code << 3);
+		RT274_I2S_CTRL1, 0xc018, d_len_code << 3 | c_len_code << 14);
 	dev_dbg(codec->dev, "format val = 0x%x\n", val);
 
 	snd_soc_update_bits(codec, RT274_DAC_FORMAT, 0x407f, val);
@@ -654,15 +662,18 @@ static int rt274_hw_params(struct snd_pcm_substream *substream,
 static int rt274_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 {
 	struct snd_soc_codec *codec = dai->codec;
+	struct rt274_priv *rt274 = snd_soc_codec_get_drvdata(codec);
 
 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
 	case SND_SOC_DAIFMT_CBM_CFM:
 		snd_soc_update_bits(codec,
 			RT274_I2S_CTRL1, RT274_I2S_MODE_MASK, RT274_I2S_MODE_M);
+		rt274->master = true;
 		break;
 	case SND_SOC_DAIFMT_CBS_CFS:
 		snd_soc_update_bits(codec,
 			RT274_I2S_CTRL1, RT274_I2S_MODE_MASK, RT274_I2S_MODE_S);
+		rt274->master = false;
 		break;
 	default:
 		return -EINVAL;
@@ -1137,7 +1148,7 @@ static struct snd_soc_codec_driver soc_codec_dev_rt274 = {
 static const struct regmap_config rt274_regmap = {
 	.reg_bits = 32,
 	.val_bits = 32,
-	.max_register = 0x0fffffff,
+	.max_register = 0x05bfffff,
 	.volatile_reg = rt274_volatile_register,
 	.readable_reg = rt274_readable_register,
 	.reg_write = rl6347a_hw_write,
@@ -1172,7 +1183,7 @@ static int rt274_i2c_probe(struct i2c_client *i2c,
 {
 	struct rt274_priv *rt274;
 
-	int i, ret;
+	int ret;
 	unsigned int val;
 
 	rt274 = devm_kzalloc(&i2c->dev,	sizeof(*rt274),
@@ -1205,21 +1216,20 @@ static int rt274_i2c_probe(struct i2c_client *i2c,
 	rt274->i2c = i2c;
 	i2c_set_clientdata(i2c, rt274);
 
+	/* reset codec */
+	regmap_write(rt274->regmap, RT274_RESET, 0);
+	regmap_update_bits(rt274->regmap, 0x1a, 0x4000, 0x4000);
 #if 0 /* dump register */
 	pr_info("start dump\n");
-	for (i = 0; i < ARRAY_SIZE(rt274_reg); i++){
+	for (i = 0; i < ARRAY_SIZE(rt274_reg); i++) {
 		regmap_read(rt274->regmap, rt274_reg[i].reg, &val);
 		pr_info("{ 0x%08x, 0x%08x },\n", rt274_reg[i].reg, val);
 	}
+	for (i = 0; i < 0xff; i++) {
+		regmap_read(rt274->regmap, i, &val);
+		pr_info("{ 0x%08x, 0x%08x },\n", i, val);
+	}
 #endif
-	/* restore codec default */
-	for (i = 0; i < INDEX_CACHE_SIZE; i++)
-		regmap_write(rt274->regmap, rt274->index_cache[i].reg,
-				rt274->index_cache[i].def);
-
-	for (i = 0; i < ARRAY_SIZE(rt274_reg); i++)
-		regmap_write(rt274->regmap, rt274_reg[i].reg,
-				rt274_reg[i].def);
 
 	/* Set Pad PDB is floating */
 	regmap_update_bits(rt274->regmap, RT274_PAD_CTRL12, 0x3, 0x0);
@@ -1238,7 +1248,6 @@ static int rt274_i2c_probe(struct i2c_client *i2c,
 	regmap_update_bits(rt274->regmap, 0x6f, 0xf, 0xb);
 	regmap_write(rt274->regmap, RT274_COEF58_INDEX, 0x00);
 	regmap_write(rt274->regmap, RT274_COEF58_COEF, 0x3888);
-
 	/* Set pin widget */
 	regmap_write(rt274->regmap, RT274_SET_PIN_HPO, 0x40);
 	regmap_write(rt274->regmap, RT274_SET_MIC, 0x20);
