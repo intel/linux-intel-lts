@@ -190,9 +190,8 @@ int sdw_lcm(int num1, int num2)
  * transport and port parameters.
  */
 int sdw_cfg_slv_params(struct sdw_bus *mstr_bs,
-		struct sdw_slave_runtime *slv_rt,
 		struct sdw_transport_params *t_slv_params,
-		struct sdw_port_params *p_slv_params)
+		struct sdw_port_params *p_slv_params, int slv_number)
 {
 	struct sdw_msg wr_msg, wr_msg1, rd_msg;
 	int ret = 0;
@@ -228,7 +227,7 @@ int sdw_cfg_slv_params(struct sdw_bus *mstr_bs,
 	wbuf[2] = ((t_slv_params->sample_interval - 1) >> 8) &
 			SDW_DPN_SAMPLECTRL1_LOW_MASK; /* DPN_SampleCtrl2 */
 	wbuf[3] = t_slv_params->offset1; /* DPN_OffsetCtrl1 */
-	wbuf[4] = t_slv_params->offset2; /* DPN_OffsetCtrl1 */
+	wbuf[4] = t_slv_params->offset2; /* DPN_OffsetCtrl2 */
 	/*  DPN_HCtrl  */
 	wbuf[5] = (t_slv_params->hstop | (t_slv_params->hstart << 4));
 	wbuf[6] = t_slv_params->blockpackingmode; /* DPN_BlockCtrl3 */
@@ -243,7 +242,8 @@ int sdw_cfg_slv_params(struct sdw_bus *mstr_bs,
 	rd_msg.ssp_tag = 0x0;
 	rd_msg.flag = SDW_MSG_FLAG_READ;
 	rd_msg.len = 1;
-	rd_msg.slave_addr =  slv_rt->slave->slv_number;
+	rd_msg.slave_addr = slv_number;
+
 	rd_msg.buf = rbuf;
 	rd_msg.addr_page1 = 0x0;
 	rd_msg.addr_page2 = 0x0;
@@ -282,7 +282,8 @@ int sdw_cfg_slv_params(struct sdw_bus *mstr_bs,
 #else
 	wr_msg.len = (7 + (1 * (t_slv_params->blockgroupcontrol_valid)));
 #endif
-	wr_msg.slave_addr = slv_rt->slave->slv_number;
+
+	wr_msg.slave_addr = slv_number;
 	wr_msg.buf = &wbuf[0 + (1 * (!t_slv_params->blockgroupcontrol_valid))];
 	wr_msg.addr_page1 = 0x0;
 	wr_msg.addr_page2 = 0x0;
@@ -290,7 +291,8 @@ int sdw_cfg_slv_params(struct sdw_bus *mstr_bs,
 	wr_msg1.ssp_tag = 0x0;
 	wr_msg1.flag = SDW_MSG_FLAG_WRITE;
 	wr_msg1.len = 2;
-	wr_msg1.slave_addr = slv_rt->slave->slv_number;
+
+	wr_msg1.slave_addr = slv_number;
 	wr_msg1.buf = &wbuf1[0];
 	wr_msg1.addr_page1 = 0x0;
 	wr_msg1.addr_page2 = 0x0;
@@ -400,8 +402,8 @@ int sdw_cfg_params_mstr_slv(struct sdw_bus *sdw_mstr_bs,
 			p_slv_params = &port_slv_rt->port_params;
 
 			/* Configure xport & port params for slave */
-			ret = sdw_cfg_slv_params(sdw_mstr_bs,
-					slv_rt, t_slv_params, p_slv_params);
+			ret = sdw_cfg_slv_params(sdw_mstr_bs, t_slv_params,
+				p_slv_params, slv_rt->slave->slv_number);
 			if (ret < 0)
 				return ret;
 
@@ -2606,3 +2608,491 @@ unprepare_stream:
 	return 0;
 }
 EXPORT_SYMBOL_GPL(sdw_bus_calc_bw_dis);
+
+/*
+ * sdw_slv_dp0_en_dis - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function enable/disable Slave DP0 channels.
+ */
+int sdw_slv_dp0_en_dis(struct sdw_bus *mstr_bs,
+	bool is_enable, u8 slv_number)
+{
+	struct sdw_msg wr_msg, rd_msg;
+	int ret = 0;
+	int banktouse;
+	u8 wbuf[1] = {0};
+	u8 rbuf[1] = {0};
+
+	/* Get current bank in use from bus structure*/
+	banktouse = mstr_bs->active_bank;
+	banktouse = !banktouse;
+
+	rd_msg.addr = wr_msg.addr = ((SDW_DPN_CHANNELEN +
+				(SDW_BANK1_REGISTER_OFFSET * banktouse)) +
+			(SDW_NUM_DATA_PORT_REGISTERS *
+			 0x0));
+	rd_msg.ssp_tag = 0x0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.len = 1;
+	rd_msg.slave_addr = slv_number;
+	rd_msg.buf = rbuf;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+
+	wr_msg.ssp_tag = 0x0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.len = 1;
+	wr_msg.slave_addr = slv_number;
+	wr_msg.buf = wbuf;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+	ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr_bs->mstr->dev,
+				"Register transfer failed\n");
+		goto out;
+	}
+
+	if (is_enable)
+		wbuf[0] = (rbuf[0] | 0x1);
+	else
+		wbuf[0] = (rbuf[0] & ~(0x1));
+
+	ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr_bs->mstr->dev,
+				"Register transfer failed\n");
+		goto out;
+	}
+
+	rbuf[0] = 0;
+	/* This is just status read, can be removed later */
+	ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr_bs->mstr->dev,
+				"Register transfer failed\n");
+		goto out;
+	}
+
+out:
+	return ret;
+
+}
+
+
+/*
+ * sdw_mstr_dp0_act_dis - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function enable/disable Master DP0 channels.
+ */
+int sdw_mstr_dp0_act_dis(struct sdw_bus *mstr_bs, bool is_enable)
+{
+	struct sdw_mstr_driver *ops = mstr_bs->mstr->driver;
+	struct sdw_activate_ch activate_ch;
+	int banktouse, ret = 0;
+
+	activate_ch.num = 0;
+	activate_ch.ch_mask = 0x1;
+	activate_ch.activate = is_enable; /* Enable/Disable */
+
+	/* Get current bank in use from bus structure*/
+	banktouse = mstr_bs->active_bank;
+	banktouse = !banktouse;
+
+	/* 1. Master port enable_ch_pre */
+	if (ops->mstr_port_ops->dpn_port_activate_ch_pre) {
+		ret = ops->mstr_port_ops->dpn_port_activate_ch_pre
+			(mstr_bs->mstr, &activate_ch, banktouse);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 2. Master port enable */
+	if (ops->mstr_port_ops->dpn_port_activate_ch) {
+		ret = ops->mstr_port_ops->dpn_port_activate_ch(mstr_bs->mstr,
+				&activate_ch, banktouse);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 3. Master port enable_ch_post */
+	if (ops->mstr_port_ops->dpn_port_activate_ch_post) {
+		ret = ops->mstr_port_ops->dpn_port_activate_ch_post
+			(mstr_bs->mstr, &activate_ch, banktouse);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+/*
+ * sdw_slv_dp0_prep_unprep - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function prepare/unprepare Slave DP0.
+ */
+int sdw_slv_dp0_prep_unprep(struct sdw_bus *mstr_bs,
+	u8 slv_number, bool prepare)
+{
+	struct sdw_msg wr_msg, rd_msg;
+	int ret = 0;
+	int banktouse;
+	u8 wbuf[1] = {0};
+	u8 rbuf[1] = {0};
+
+	/* Get current bank in use from bus structure*/
+	banktouse = mstr_bs->active_bank;
+	banktouse = !banktouse;
+
+	/* Read SDW_DPN_PREPARECTRL register */
+	rd_msg.addr = wr_msg.addr = SDW_DPN_PREPARECTRL +
+		(SDW_NUM_DATA_PORT_REGISTERS * 0x0);
+	rd_msg.ssp_tag = 0x0;
+	rd_msg.flag = SDW_MSG_FLAG_READ;
+	rd_msg.len = 1;
+	rd_msg.slave_addr = slv_number;
+	rd_msg.buf = rbuf;
+	rd_msg.addr_page1 = 0x0;
+	rd_msg.addr_page2 = 0x0;
+
+	wr_msg.ssp_tag = 0x0;
+	wr_msg.flag = SDW_MSG_FLAG_WRITE;
+	wr_msg.len = 1;
+	wr_msg.slave_addr = slv_number;
+	wr_msg.buf = wbuf;
+	wr_msg.addr_page1 = 0x0;
+	wr_msg.addr_page2 = 0x0;
+
+	ret = sdw_slave_transfer(mstr_bs->mstr, &rd_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr_bs->mstr->dev,
+				"Register transfer failed\n");
+		goto out;
+	}
+
+	if (prepare)
+		wbuf[0] = (rbuf[0] | 0x1);
+	else
+		wbuf[0] = (rbuf[0] & ~(0x1));
+
+	/*
+	 * TBD: poll for prepare interrupt bit
+	 * before calling post_prepare
+	 * 2. check capabilities if simplified
+	 * CM no need to prepare
+	 */
+	ret = sdw_slave_transfer(mstr_bs->mstr, &wr_msg, 1);
+	if (ret != 1) {
+		ret = -EINVAL;
+		dev_err(&mstr_bs->mstr->dev,
+				"Register transfer failed\n");
+		goto out;
+	}
+
+	/*
+	 * Sleep for 100ms.
+	 * TODO: check on check on prepare status for port_ready
+	 */
+	msleep(100);
+
+out:
+	return ret;
+
+}
+
+/*
+ * sdw_mstr_dp0_prep_unprep - returns Success
+ * -EINVAL - In case of error.
+ *
+ *
+ * This function prepare/unprepare Master DP0.
+ */
+int sdw_mstr_dp0_prep_unprep(struct sdw_bus *mstr_bs,
+	bool prep)
+{
+	struct sdw_mstr_driver *ops = mstr_bs->mstr->driver;
+	struct sdw_prepare_ch prep_ch;
+	int ret = 0;
+
+	prep_ch.num = 0x0;
+	prep_ch.ch_mask = 0x1;
+	prep_ch.prepare = prep; /* Prepare/Unprepare */
+
+	/* 1. Master port prepare_ch_pre */
+	if (ops->mstr_port_ops->dpn_port_prepare_ch_pre) {
+		ret = ops->mstr_port_ops->dpn_port_prepare_ch_pre
+				(mstr_bs->mstr, &prep_ch);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 2. Master port prepare */
+	if (ops->mstr_port_ops->dpn_port_prepare_ch) {
+		ret = ops->mstr_port_ops->dpn_port_prepare_ch
+				(mstr_bs->mstr, &prep_ch);
+		if (ret < 0)
+			return ret;
+	}
+
+	/* 3. Master port prepare_ch_post */
+	if (ops->mstr_port_ops->dpn_port_prepare_ch_post) {
+		ret = ops->mstr_port_ops->dpn_port_prepare_ch_post
+				(mstr_bs->mstr, &prep_ch);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int sdw_bra_config_ops(struct sdw_bus *sdw_mstr_bs,
+					struct sdw_bra_block *block,
+					struct sdw_transport_params *t_params,
+					struct sdw_port_params *p_params)
+{
+	struct sdw_mstr_driver *ops;
+	int ret, banktouse;
+
+	/* configure Master transport params */
+	ret = sdw_cfg_mstr_params(sdw_mstr_bs, t_params, p_params);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Master xport params config failed\n");
+		return ret;
+	}
+
+	/* configure Slave transport params */
+	ret = sdw_cfg_slv_params(sdw_mstr_bs, t_params,
+			p_params, block->slave_addr);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Slave xport params config failed\n");
+		return ret;
+	}
+
+	/* Get master driver ops */
+	ops = sdw_mstr_bs->mstr->driver;
+
+	/* Configure SSP */
+	banktouse = sdw_mstr_bs->active_bank;
+	banktouse = !banktouse;
+
+	if (ops->mstr_ops->set_ssp_interval) {
+		ret = ops->mstr_ops->set_ssp_interval(sdw_mstr_bs->mstr,
+				24, banktouse);
+		if (ret < 0) {
+			dev_err(&sdw_mstr_bs->mstr->dev, "BRA: SSP interval config failed\n");
+			return ret;
+		}
+	}
+
+	/* Configure Clock */
+	if (ops->mstr_ops->set_clock_freq) {
+		ret = ops->mstr_ops->set_clock_freq(sdw_mstr_bs->mstr,
+				sdw_mstr_bs->clk_div, banktouse);
+		if (ret < 0) {
+			dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Clock config failed\n");
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int sdw_bra_xport_config_enable(struct sdw_bus *sdw_mstr_bs,
+					struct sdw_bra_block *block,
+					struct sdw_transport_params *t_params,
+					struct sdw_port_params *p_params)
+{
+	int ret;
+
+	/* Prepare sequence */
+	ret = sdw_bra_config_ops(sdw_mstr_bs, block, t_params, p_params);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: config operation failed\n");
+		return ret;
+	}
+
+	/* Bank Switch */
+	ret = sdw_cfg_frmshp_bnkswtch(sdw_mstr_bs, false);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: bank switch failed\n");
+		return ret;
+	}
+
+	/*
+	 * TODO: There may be some slave which doesn't support
+	 * prepare for DP0. We have two options here.
+	 * 1. Just call prepare and ignore error from those
+	 * codec who doesn't support prepare for DP0.
+	 * 2. Get slave capabilities and based on prepare DP0
+	 * support, Program Slave prepare register.
+	 * Currently going with approach 1, not checking return
+	 * value.
+	 * 3. Try to use existing prep_unprep API both for master
+	 * and slave.
+	 */
+	sdw_slv_dp0_prep_unprep(sdw_mstr_bs, block->slave_addr, true);
+
+	/* Prepare Master port */
+	ret = sdw_mstr_dp0_prep_unprep(sdw_mstr_bs, true);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Master prepare failed\n");
+		return ret;
+	}
+
+	/* Enable sequence */
+	ret = sdw_bra_config_ops(sdw_mstr_bs, block, t_params, p_params);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: config operation failed\n");
+		return ret;
+	}
+
+	/* Enable DP0 channel (Slave) */
+	ret = sdw_slv_dp0_en_dis(sdw_mstr_bs, true, block->slave_addr);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Slave DP0 enable failed\n");
+		return ret;
+	}
+
+	/* Enable DP0 channel (Master) */
+	ret = sdw_mstr_dp0_act_dis(sdw_mstr_bs, true);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Master DP0 enable failed\n");
+		return ret;
+	}
+
+	/* Bank Switch */
+	ret = sdw_cfg_frmshp_bnkswtch(sdw_mstr_bs, false);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: bank switch failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int sdw_bra_xport_config_disable(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_bra_block *block)
+{
+	int ret;
+
+	/* Disable DP0 channel (Slave) */
+	ret = sdw_slv_dp0_en_dis(sdw_mstr_bs, false, block->slave_addr);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Slave DP0 disable failed\n");
+		return ret;
+	}
+
+	/* Disable DP0 channel (Master) */
+	ret = sdw_mstr_dp0_act_dis(sdw_mstr_bs, false);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Master DP0 disable failed\n");
+		return ret;
+	}
+
+	/* Bank Switch */
+	ret = sdw_cfg_frmshp_bnkswtch(sdw_mstr_bs, false);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: bank switch failed\n");
+		return ret;
+	}
+
+	/*
+	 * TODO: There may be some slave which doesn't support
+	 * de-prepare for DP0. We have two options here.
+	 * 1. Just call prepare and ignore error from those
+	 * codec who doesn't support de-prepare for DP0.
+	 * 2. Get slave capabilities and based on prepare DP0
+	 * support, Program Slave prepare register.
+	 * Currently going with approach 1, not checking return
+	 * value.
+	 */
+	sdw_slv_dp0_prep_unprep(sdw_mstr_bs, block->slave_addr, false);
+
+	/* De-prepare Master port */
+	ret = sdw_mstr_dp0_prep_unprep(sdw_mstr_bs, false);
+	if (ret < 0) {
+		dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Master de-prepare failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+int sdw_bus_bra_xport_config(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_bra_block *block, bool enable)
+{
+	struct sdw_transport_params t_params;
+	struct sdw_port_params p_params;
+	int ret;
+
+	/* TODO:
+	 * compute transport parameters based on current clock and
+	 * frameshape. need to check how algorithm should be designed
+	 * for BRA for computing clock, frameshape, SSP and transport params.
+	 */
+
+	/* Transport Parameters */
+	t_params.num = 0x0; /* DP 0 */
+	t_params.blockpackingmode = 0x0;
+	t_params.blockgroupcontrol_valid = false;
+	t_params.blockgroupcontrol = 0x0;
+	t_params.lanecontrol = 0;
+	t_params.sample_interval = 10;
+
+	t_params.hstart = 7;
+	t_params.hstop = 9;
+	t_params.offset1 = 0;
+	t_params.offset2 = 0;
+
+	/* Port Parameters */
+	p_params.num = 0x0; /* DP 0 */
+
+	/* Isochronous Mode */
+	p_params.port_flow_mode = 0x0;
+
+	/* Normal Mode */
+	p_params.port_data_mode = 0x0;
+
+	/* Word length */
+	p_params.word_length = 3;
+
+	/* Frameshape and clock params */
+	sdw_mstr_bs->clk_div = 1;
+	sdw_mstr_bs->col = 10;
+	sdw_mstr_bs->row = 80;
+
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	sdw_mstr_bs->bandwidth = 9.6 * 1000 * 1000;
+#else
+	sdw_mstr_bs->bandwidth = 12 * 1000 * 1000;
+#endif
+
+	if (enable) {
+		ret = sdw_bra_xport_config_enable(sdw_mstr_bs, block,
+				&t_params, &p_params);
+		if (ret < 0) {
+			dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Xport params config failed\n");
+			return ret;
+		}
+
+	} else {
+		ret = sdw_bra_xport_config_disable(sdw_mstr_bs, block);
+		if (ret < 0) {
+			dev_err(&sdw_mstr_bs->mstr->dev, "BRA: Xport params de-config failed\n");
+			return ret;
+		}
+	}
+
+	return 0;
+}

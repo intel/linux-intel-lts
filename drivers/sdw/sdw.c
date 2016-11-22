@@ -1881,6 +1881,98 @@ void sdw_del_master_controller(struct sdw_master *mstr)
 }
 EXPORT_SYMBOL_GPL(sdw_del_master_controller);
 
+/**
+ * sdw_slave_xfer_bra_block: Transfer the data block using the BTP/BRA
+ *				protocol.
+ * @mstr: SoundWire Master Master
+ * @block: Data block to be transferred.
+ */
+int sdw_slave_xfer_bra_block(struct sdw_master *mstr,
+				struct sdw_bra_block *block)
+{
+	struct sdw_bus *sdw_mstr_bs = NULL;
+	struct sdw_mstr_driver *ops = NULL;
+	int ret;
+
+	/*
+	 * This API will be called by slave/codec
+	 * when it needs to xfer firmware to
+	 * its memory or perform bulk read/writes of registers.
+	 */
+
+	/*
+	 * Acquire core lock
+	 * TODO: Acquire Master lock inside core lock
+	 * similar way done in upstream. currently
+	 * keeping it as core lock
+	 */
+	mutex_lock(&sdw_core.core_lock);
+
+	/* Get master data structure */
+	list_for_each_entry(sdw_mstr_bs, &sdw_core.bus_list, bus_node) {
+		/* Match master structure pointer */
+		if (sdw_mstr_bs->mstr != mstr)
+			continue;
+
+		break;
+	}
+
+	/*
+	 * Here assumption is made that complete SDW bandwidth is used
+	 * by BRA. So bus will return -EBUSY if any active stream
+	 * is running on given master.
+	 * TODO: In final implementation extra bandwidth will be always
+	 * allocated for BRA. In that case all the computation of clock,
+	 * frame shape, transport parameters for DP0 will be done
+	 * considering BRA feature.
+	 */
+	if (!list_empty(&mstr->mstr_rt_list)) {
+
+		/*
+		 * Currently not allowing BRA when any
+		 * active stream on master, returning -EBUSY
+		 */
+
+		/* Release lock */
+		mutex_unlock(&sdw_core.core_lock);
+		return -EBUSY;
+	}
+
+	/* Get master driver ops */
+	ops = sdw_mstr_bs->mstr->driver;
+
+	/*
+	 * Check whether Master is supporting bulk transfer. If not, then
+	 * bus will use alternate method of performing BRA request using
+	 * normal register read/write API.
+	 * TODO: Currently if Master is not supporting BRA transfers, bus
+	 * returns error. Bus driver to extend support for normal register
+	 * read/write as alternate method.
+	 */
+	if (!ops->mstr_ops->xfer_bulk)
+		return -EINVAL;
+
+	/* Data port Programming (ON) */
+	ret = sdw_bus_bra_xport_config(sdw_mstr_bs, block, true);
+	if (ret < 0) {
+		dev_err(&mstr->dev, "BRA: Xport parameter config failed ret=%d\n", ret);
+		goto error;
+	}
+
+	/* Data port Programming  (OFF) */
+	ret = sdw_bus_bra_xport_config(sdw_mstr_bs, block, false);
+	if (ret < 0) {
+		dev_err(&mstr->dev, "BRA: Xport parameter de-config failed ret=%d\n", ret);
+		goto error;
+	}
+
+error:
+	/* Release lock */
+	mutex_unlock(&sdw_core.core_lock);
+
+	return ret;
+}
+
 /*
  * An sdw_driver is used with one or more sdw_slave (slave) nodes to access
  * sdw slave chips, on a bus instance associated with some sdw_master.
