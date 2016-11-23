@@ -1545,5 +1545,13 @@ static inline void *sdw_master_get_platdata(const struct sdw_master *mstr)
  */
 int sdw_slave_get_bus_params(struct sdw_slave *sdw_slv,
 					struct sdw_bus_params *params);
+/**
+ * sdw_bus_compute_crc8: SoundWire bus helper function to compute crc8.
+ *			This API uses crc8 helper functions internally.
+ *
+ * @values: Data buffer.
+ * @num_bytes: Number of bytes.
+ */
+u8 sdw_bus_compute_crc8(u8 *values, u8 num_bytes);
 
 #endif /*  _LINUX_SDW_BUS_H */
