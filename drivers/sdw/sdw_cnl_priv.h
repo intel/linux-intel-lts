@@ -221,6 +221,8 @@
 #define PDINCONFIG_CHANNEL_MASK_MASK		0xFF
 #define PDINCONFIG_PORT_NUMBER_SHIFT		0x0
 #define PDINCONFIG_PORT_NUMBER_MASK		0x1F
+#define PDINCONFIG_PORT_SOFT_RESET_SHIFT	0x18
+#define PDINCONFIG_PORT_SOFT_RESET		0x1F
 
 #define DPN_CONFIG_WL_SHIFT			0x8
 #define DPN_CONFIG_WL_MASK			0x1F
@@ -341,5 +343,35 @@
 #define CNL_STRMZCFG_DMAT_VAL			0x3
 #define CNL_STRMZCFG_CHAN_SHIFT			16
 #define CNL_STRMZCFG_CHAN_MASK			0xF
+
+#define SDW_BRA_HEADER_SIZE_PDI             12 /* In bytes */
+#define SDW_BRA_HEADER_CRC_SIZE_PDI         4 /* In bytes */
+#define SDW_BRA_DATA_CRC_SIZE_PDI           4 /* In bytes */
+#define SDW_BRA_HEADER_RESP_SIZE_PDI        4 /* In bytes */
+#define SDW_BRA_FOOTER_RESP_SIZE_PDI        4 /* In bytes */
+#define SDW_BRA_PADDING_SZ_PDI              4 /* In bytes */
+#define SDW_BRA_HEADER_TOTAL_SZ_PDI         16 /* In bytes */
+
+#define SDW_BRA_SOP_EOP_PDI_STRT_VALUE	0x4
+#define SDW_BRA_SOP_EOP_PDI_END_VALUE	0x2
+#define SDW_BRA_SOP_EOP_PDI_MASK	0x1F
+#define SDW_BRA_SOP_EOP_PDI_SHIFT	5
+
+#define SDW_BRA_STRM_ID_BLK_OUT		3
+#define SDW_BRA_STRM_ID_BLK_IN		4
+
+#define SDW_BRA_PDI_TX_ID		0
+#define SDW_BRA_PDI_RX_ID		1
+
+#define SDW_BRA_SOFT_RESET		0x1
+#define SDW_BRA_BULK_ENABLE		1
+#define SDW_BRA_BLK_EN_MASK		0xFFFEFFFF
+#define SDW_BRA_BLK_EN_SHIFT		16
+
+#define SDW_BRA_ROLLINGID_PDI_INDX	3
+#define SDW_BRA_ROLLINGID_PDI_MASK	0xF
+#define SDW_BRA_ROLLINGID_PDI_SHIFT	0
+
+#define SDW_PCM_STRM_START_INDEX	0x2
 
 #endif /* _LINUX_SDW_CNL_H */
