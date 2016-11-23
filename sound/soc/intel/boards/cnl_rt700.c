@@ -64,6 +64,8 @@ static const struct snd_soc_dapm_route cnl_rt700_map[] = {
 
 	{ "sdw_codec0_in", NULL, "SDW Rx" },
 	{ "SDW Rx", NULL, "DP2 Capture" },
+	{"sdw_codec2_in", NULL, "SDW Rx10"},
+	{"SDW Rx10", NULL, "DP4 Capture"},
 
 	{"DMic", NULL, "SoC DMIC"},
 	{"DMIC01 Rx", NULL, "Capture"},
