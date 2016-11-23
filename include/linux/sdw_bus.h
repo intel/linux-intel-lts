@@ -60,6 +60,66 @@
 #define SDW_PORT_ENCODING_TYPE_SIGN_MAGNITUDE	0x2
 #define SDW_PORT_ENCODING_TYPE_IEEE_32_FLOAT	0x4
 
+#define SDW_BRA_PORT_ID			0
+#define SDW_BRA_CHN_MASK		0x1
+
+#define SDW_BRA_HEADER_SIZE		6 /* In bytes */
+#define SDW_BRA_HEADER_CRC_SIZE		1 /* In bytes */
+#define SDW_BRA_DATA_CRC_SIZE		1 /* In bytes */
+#define SDW_BRA_HEADER_RESP_SIZE	1 /* In bytes */
+#define SDW_BRA_FOOTER_RESP_SIZE	1 /* In bytes */
+#define SDW_BRA_PADDING_SZ		1 /* In bytes */
+#define SDW_BRA_HEADER_TOTAL_SZ		8 /* In bytes */
+
+#define SDW_BRA_BPT_PAYLOAD_TYPE	0x0
+#define SDW_BRA_BPT_PYLD_TY_MASK	0xFF3FFFFF
+#define SDW_BRA_BPT_PYLD_TY_SHIFT	22
+
+#define SDW_BRA_HDR_ACTIVE		0x3
+#define SDW_BRA_HDR_ACTIVE_SHIFT	6
+#define SDW_BRA_HDR_ACTIVE_MASK		0x3F
+
+#define SDW_BRA_HDR_SLV_ADDR_SHIFT	2
+#define SDW_BRA_HDR_SLV_ADDR_MASK	0xC3
+
+#define SDW_BRA_HDR_RD_WR_SHIFT		1
+#define SDW_BRA_HDR_RD_WR_MASK		0xFD
+
+#define SDW_BRA_HDR_MSB_BYTE_SET	1
+#define SDW_BRA_HDR_MSB_BYTE_UNSET	0
+#define SDW_BRA_HDR_MSB_BYTE_CHK	255
+#define SDW_BRA_HDR_MSB_BYTE_MASK	0xFE
+#define SDW_BRA_HDR_MSB_BYTE_SHIFT	0
+
+#define SDW_BRA_HDR_SLV_REG_OFF_SHIFT0	0
+#define SDW_BRA_HDR_SLV_REG_OFF_MASK0	0xFF
+#define SDW_BRA_HDR_SLV_REG_OFF_SHIFT8	8
+#define SDW_BRA_HDR_SLV_REG_OFF_MASK8	0xFF00
+#define SDW_BRA_HDR_SLV_REG_OFF_SHIFT16	16
+#define SDW_BRA_HDR_SLV_REG_OFF_MASK16	0xFF0000
+#define SDW_BRA_HDR_SLV_REG_OFF_SHIFT24	24
+#define SDW_BRA_HDR_SLV_REG_OFF_MASK24	0xFF000000
+
+#define SDW_BRA_HDR_RESP_ACK_SHIFT	3
+#define SDW_BRA_HDR_RESP_NRDY_SHIFT	5
+#define SDW_BRA_FTR_RESP_ACK_SHIFT	2
+#define SDW_BRA_FTR_RESP_RES_SHIFT	4
+#define SDW_BRA_HDR_RESP_ACK_MASK	0x3
+#define SDW_BRA_HDR_RESP_NRDY_MASK	0x1
+#define SDW_BRA_FTR_RESP_ACK_MASK	0x3
+#define SDW_BRA_FTR_RESP_RES_MASK	0x1
+
+#define SDW_BRA_TARGET_READY		0
+#define SDW_BRA_TARGET_NOT_READY	1
+
+#define SDW_BRA_ACK_NAK_IGNORED		0
+#define SDW_BRA_ACK_NAK_OK		1
+#define SDW_BRA_ACK_NAK_FAILED_ABORT	2
+#define SDW_BRA_ACK_NAK_RSVD_ABORT	3
+
+#define SDW_BRA_FTR_RESULT_GOOD		0
+#define SDW_BRA_FTR_RESULT_BAD		1
+
 /* enum sdw_driver_type: There are different driver callbacks for slave and
  *			master. This is to differentiate between slave driver
  *			and master driver. Bus driver binds master driver to
@@ -1349,6 +1409,15 @@ struct sdw_master *sdw_get_master(int nr);
  */
 void sdw_put_master(struct sdw_master *mstr);
 
+/**
+ * sdw_slave_xfer_bra_block: Transfer the data block using the BTP/BRA
+ *				protocol.
+ * @mstr: SoundWire Master Master
+ * @block: Data block to be transferred.
+ */
+int sdw_slave_xfer_bra_block(struct sdw_master *mstr,
+				struct sdw_bra_block *block);
+
 
 /**
  * module_sdw_slave_driver() - Helper macro for registering a sdw Slave driver
@@ -1458,6 +1527,11 @@ static inline void sdw_slave_set_drvdata(struct sdw_slave *slv,
 					void *data)
 {
 	dev_set_drvdata(&slv->dev, data);
+}
+
+static inline void *sdw_master_get_platdata(const struct sdw_master *mstr)
+{
+	return dev_get_platdata(&mstr->dev);
 }
 
 /**

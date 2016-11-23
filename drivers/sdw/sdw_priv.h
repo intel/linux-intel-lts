@@ -267,6 +267,8 @@ int sdw_bus_bw_init(void);
 int sdw_mstr_bw_init(struct sdw_bus *sdw_bs);
 int sdw_bus_calc_bw(struct sdw_stream_tag *stream_tag, bool enable);
 int sdw_bus_calc_bw_dis(struct sdw_stream_tag *stream_tag, bool unprepare);
+int sdw_bus_bra_xport_config(struct sdw_bus *sdw_mstr_bs,
+	struct sdw_bra_block *block, bool enable);
 int sdw_chn_enable(void);
 void sdw_unlock_mstr(struct sdw_master *mstr);
 int sdw_trylock_mstr(struct sdw_master *mstr);
