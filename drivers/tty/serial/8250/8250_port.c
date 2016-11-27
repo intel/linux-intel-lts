@@ -2305,7 +2305,10 @@ dont_test_tx_en:
 	 * Request DMA channels for both RX and TX.
 	 */
 	if (up->dma) {
-		retval = serial8250_request_dma(up);
+		if (uart_console(port))
+			retval = -ENXIO;
+		else
+			retval = serial8250_request_dma(up);
 		if (retval) {
 			pr_warn_ratelimited("%s - failed to request DMA\n",
 					    port->name);
