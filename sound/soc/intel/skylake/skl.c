@@ -459,7 +459,15 @@ static int skl_free(struct hdac_ext_bus *ebus)
 /* FIXME fill codec acpi name */
 static struct sst_acpi_mach sst_cnl_devdata[] = {
 	{
+#if (IS_ENABLED(CONFIG_SND_SOC_SVFPGA) || IS_ENABLED(CONFIG_SND_SOC_CS42L42) \
+	|| IS_ENABLED(CONFIG_SND_SOC_RT700) \
+	|| IS_ENABLED(CONFIG_SND_SOC_MXFPGA) \
+	|| (IS_ENABLED(CONFIG_SND_SOC_WM5110) && \
+	IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)))
 		.id = "dummy",
+#else
+		.id = "INT34C2",
+#endif
 #if IS_ENABLED(CONFIG_SND_SOC_SVFPGA)
 		.drv_name = "cnl_svfpga",
 #elif IS_ENABLED(CONFIG_SND_SOC_CS42L42)
@@ -471,9 +479,8 @@ static struct sst_acpi_mach sst_cnl_devdata[] = {
 #elif (IS_ENABLED(CONFIG_SND_SOC_WM5110) && \
 	IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA))
 		.drv_name = "cnl_florida",
-#elif (IS_ENABLED(CONFIG_SND_SOC_WM5110) && \
-	!IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA))
-		.drv_name = "cnl_loop",
+#else
+		.drv_name = "cnl_rt274",
 #endif
 		.fw_filename = "intel/dsp_fw_cnl.bin",
 	},
