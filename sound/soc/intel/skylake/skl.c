@@ -479,6 +479,10 @@ static struct sst_acpi_mach sst_cnl_devdata[] = {
 	},
 };
 
+static struct sst_acpi_mach sst_glv_devdata[] = {
+	{ "dummy", "glv_wm8281", "intel/dsp_fw_glv.bin", NULL, NULL, NULL },
+};
+
 static int skl_machine_device_register(struct skl *skl, void *driver_data)
 {
 	struct hdac_bus *bus = ebus_to_hbus(&skl->ebus);
@@ -486,8 +490,8 @@ static int skl_machine_device_register(struct skl *skl, void *driver_data)
 	struct sst_acpi_mach *mach = driver_data;
 	int ret;
 
-	if (skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8
-		|| (skl->pci->device == 0x23f0))
+	if ((skl->pci->device == 0x9df0) || (skl->pci->device == 0x9dc8)
+	    || (skl->pci->device == 0x23f0) || (skl->pci->device == 0x24f0))
 		goto out;
 
 	mach = sst_acpi_find_machine(mach);
@@ -661,7 +665,7 @@ static void skl_probe_work(struct work_struct *work)
 		dev_info(bus->dev, "no hda codecs found!\n");
 
 	if (!(skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8 ||
-		skl->pci->device == 0x23f0)) {
+	      skl->pci->device == 0x23f0 || skl->pci->device == 0x24f0)) {
 		/* create codec instances */
 		err = skl_codec_create(ebus);
 		if (err < 0)
@@ -1080,6 +1084,9 @@ static const struct pci_device_id skl_ids[] = {
 	/* ICL */
 	{ PCI_DEVICE(0x8086, 0x23f0),
 		.driver_data = (unsigned long)&sst_icl_devdata},
+	/* GLV */
+	{ PCI_DEVICE(0x8086, 0x24f0),
+		.driver_data = (unsigned long)&sst_glv_devdata},
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, skl_ids);
