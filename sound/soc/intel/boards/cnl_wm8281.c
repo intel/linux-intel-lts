@@ -665,6 +665,7 @@ const struct dev_pm_ops snd_cnl_florida_mc_pm_ops = {
 
 static const struct platform_device_id cnl_board_ids[] = {
 	{ .name = "cnl_florida" },
+	{ .name = "glv_wm8281" },
 	{ .name = "icl_wm8281" },
 	{ }
 };
