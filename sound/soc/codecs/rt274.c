@@ -1235,6 +1235,7 @@ static int rt274_i2c_probe(struct i2c_client *i2c,
 	regmap_update_bits(rt274->regmap, RT274_PAD_CTRL12, 0x3, 0x0);
 	regmap_write(rt274->regmap, RT274_COEF5b_INDEX, 0x01);
 	regmap_write(rt274->regmap, RT274_COEF5b_COEF, 0x8540);
+	regmap_update_bits(rt274->regmap, 0x6f, 0x0100, 0x0100);
 	/* Combo jack auto detect */
 	regmap_write(rt274->regmap, 0x4a, 0x201b);
 	/* Aux mode off */
