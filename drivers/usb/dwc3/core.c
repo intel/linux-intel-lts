@@ -989,6 +989,9 @@ static int dwc3_probe(struct platform_device *pdev)
 	hird_threshold = 12;
 
 	dwc->maximum_speed = usb_get_maximum_speed(dev);
+	if (dwc->maximum_speed > USB_SPEED_HIGH)
+		dwc->maximum_speed = USB_SPEED_HIGH;
+
 	dwc->dr_mode = usb_get_dr_mode(dev);
 	dwc->hsphy_mode = of_usb_get_phy_mode(dev->of_node);
 
@@ -1107,7 +1110,7 @@ static int dwc3_probe(struct platform_device *pdev)
 		/* fall through */
 	case USB_SPEED_UNKNOWN:
 		/* default to superspeed */
-		dwc->maximum_speed = USB_SPEED_SUPER;
+		dwc->maximum_speed = USB_SPEED_HIGH;
 
 		/*
 		 * default to superspeed plus if we are capable.
