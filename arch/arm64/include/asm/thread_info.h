@@ -23,6 +23,7 @@ struct task_struct;
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
+	unsigned long		local_flags;	/* local (synchronous) flags */
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
 	u64			ttbr0;		/* saved TTBR0_EL1 */
 #endif
@@ -54,6 +55,8 @@ struct thread_info {
 
 void arch_setup_new_exec(void);
 #define arch_setup_new_exec     arch_setup_new_exec
+
+#define ti_local_flags(__ti)	((__ti)->local_flags)
 
 #endif
 
