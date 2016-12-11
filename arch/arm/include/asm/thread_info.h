@@ -51,6 +51,7 @@ struct cpu_context_save {
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
+	__u32			local_flags;	/* local (synchronous) flags */
 	int			preempt_count;	/* 0 => preemptable, <0 => bug */
 	struct task_struct	*task;		/* main task structure */
 	__u32			cpu;		/* cpu */
@@ -73,8 +74,11 @@ struct thread_info {
 {									\
 	.task		= &tsk,						\
 	.flags		= 0,						\
+	.local_flags	= 0,						\
 	.preempt_count	= INIT_PREEMPT_COUNT,				\
 }
+
+#define ti_local_flags(__ti)	((__ti)->local_flags)
 
 /*
  * how to get the thread information struct from C
