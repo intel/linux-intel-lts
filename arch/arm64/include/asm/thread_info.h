@@ -25,6 +25,7 @@ typedef unsigned long mm_segment_t;
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
+	unsigned long		local_flags;	/* local (synchronous) flags */
 	mm_segment_t		addr_limit;	/* address limit */
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
 	u64			ttbr0;		/* saved TTBR0_EL1 */
@@ -58,6 +59,8 @@ void arch_setup_new_exec(void);
 #define arch_setup_new_exec     arch_setup_new_exec
 
 void arch_release_task_struct(struct task_struct *tsk);
+
+#define ti_local_flags(__ti)	((__ti)->local_flags)
 
 #endif
 
