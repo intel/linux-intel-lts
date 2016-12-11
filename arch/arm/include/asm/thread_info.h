@@ -61,6 +61,7 @@ struct cpu_context_save {
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
+	__u32			local_flags;	/* local (synchronous) flags */
 	int			preempt_count;	/* 0 => preemptable, <0 => bug */
 	__u32			cpu;		/* cpu */
 	__u32			cpu_domain;	/* cpu domain */
@@ -78,6 +79,7 @@ struct thread_info {
 #define INIT_THREAD_INFO(tsk)						\
 {									\
 	.flags		= 0,						\
+	.local_flags	= 0,						\
 	.preempt_count	= INIT_PREEMPT_COUNT,				\
 }
 
@@ -86,7 +88,9 @@ static inline struct task_struct *thread_task(struct thread_info* ti)
 	return (struct task_struct *)ti;
 }
 
-#define thread_saved_pc(tsk)	\
+#define ti_local_flags(__ti)	((__ti)->local_flags)
+
+#define thread_saved_pc(tsk)						\
 	((unsigned long)(task_thread_info(tsk)->cpu_context.pc))
 #define thread_saved_sp(tsk)	\
 	((unsigned long)(task_thread_info(tsk)->cpu_context.sp))
