@@ -48,6 +48,16 @@ struct l2x0_regs l2x0_saved_regs;
 static bool l2x0_bresp_disable;
 static bool l2x0_flz_disable;
 
+#ifdef CONFIG_IRQ_PIPELINE
+static int l2x0_wa = -1;
+static int __init l2x0_setup_wa(char *str)
+{
+	l2x0_wa = !!simple_strtol(str, NULL, 0);
+	return 0;
+}
+early_param("l2x0_write_allocate", l2x0_setup_wa);
+#endif
+
 /*
  * Common code for all cache controllers.
  */
@@ -799,6 +809,24 @@ static int __init __l2c_init(const struct l2c_init_data *data,
 	 */
 	if (aux_val & aux_mask)
 		pr_alert("L2C: platform provided aux values permit register corruption.\n");
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (!l2x0_wa) {
+		/*
+		 * Disable WA by setting bit 23 in the auxiliary
+		 * control register.
+		 */
+		aux_mask &= ~L220_AUX_CTRL_FWA_MASK;
+		aux_val &= ~L220_AUX_CTRL_FWA_MASK;
+		aux_val |= 1 << L220_AUX_CTRL_FWA_SHIFT;
+		pr_warn("%s: irq_pipeline: write-allocate disabled via command line\n",
+			data->type);
+	} else if ((cache_id & L2X0_CACHE_ID_PART_MASK) == L2X0_CACHE_ID_PART_L220 ||
+		   ((cache_id & L2X0_CACHE_ID_PART_MASK) == L2X0_CACHE_ID_PART_L310 &&
+		    (cache_id & L2X0_CACHE_ID_RTL_MASK) < L310_CACHE_ID_RTL_R3P2))
+		pr_alert("%s: irq_pipeline: write-allocate enabled, may induce high latency\n",
+			 data->type);
+#endif
 
 	old_aux = aux = readl_relaxed(l2x0_base + L2X0_AUX_CTRL);
 	aux &= aux_mask;
