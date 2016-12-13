@@ -1979,6 +1979,7 @@ error:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(sdw_slave_xfer_bra_block);
 
 /*
  * An sdw_driver is used with one or more sdw_slave (slave) nodes to access
