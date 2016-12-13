@@ -35,11 +35,6 @@
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
-#include <dt-bindings/sound/svfpga.h>
-
-#include "svfpga.h"
-
-
 #include "svfpga.h"
 
 extern const struct regmap_config svfpga_i2c_regmap;
