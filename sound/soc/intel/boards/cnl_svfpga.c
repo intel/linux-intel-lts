@@ -101,7 +101,6 @@ static int cnl_svfpga_init(struct snd_soc_pcm_runtime *runtime)
 {
 	int ret;
 	struct snd_soc_card *card = runtime->card;
-	struct snd_soc_codec *cs_codec = cnl_svfpga_get_codec(card);
 
 	pr_info("Entry %s\n", __func__);
 	card->dapm.idle_bias_off = true;
