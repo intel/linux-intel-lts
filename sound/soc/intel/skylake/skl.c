@@ -366,7 +366,7 @@ static int skl_resume(struct device *dev)
 	struct hdac_bus *bus = pci_get_drvdata(pci);
 	struct skl *skl  = bus_to_skl(bus);
 	struct hdac_ext_link *hlink = NULL;
-	int ret;
+	int ret = 0;
 
 	/* Turned OFF in HDMI codec driver after codec reconfiguration */
 	if (IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)) {
