@@ -277,7 +277,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 		.cleanup = cnl_sst_dsp_cleanup
 	},
 	{
-		.id = 0x23f0,
+		.id = 0x34c8,
 		.loader_ops = bxt_get_loader_ops,
 		.init = cnl_sst_dsp_init,
 		.init_fw = cnl_sst_init_fw,
