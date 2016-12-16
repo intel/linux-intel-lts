@@ -1392,7 +1392,11 @@ struct drm_i915_reset_stats {
 	/* Number of batches lost pending for execution, for this context */
 	__u32 batch_pending;
 
-	__u32 pad;
+	union {
+		__u32 pad;
+		/* Engine resets since boot/module reload, for all contexts */
+		__u32 reset_engine_count;
+	};
 };
 
 struct drm_i915_gem_userptr {
