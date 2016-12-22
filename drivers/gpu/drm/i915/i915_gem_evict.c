@@ -128,7 +128,8 @@ i915_gem_evict_something(struct i915_address_space *vm,
 	 */
 	drm_mm_scan_init_with_range(&scan, &vm->mm,
 				    min_size, alignment, cache_level,
-				    start, end);
+				    start, end,
+				    flags & PIN_HIGH ? DRM_MM_CREATE_TOP : 0);
 
 	/* Retire before we search the active list. Although we have
 	 * reasonable accuracy in our retirement lists, we may have
