@@ -260,8 +260,9 @@ static int sdw_config_update(struct cnl_sdw *sdw)
 {
 	struct cnl_sdw_data *data = &sdw->data;
 	struct sdw_master *mstr = sdw->mstr;
-
+	int sync_reg, syncgo_mask;
 	volatile int config_update = 0;
+	volatile int sync_update = 0;
 	/* Try 10 times before giving up on configuration update */
 	int timeout = 10;
 	int config_updated = 0;
@@ -271,6 +272,44 @@ static int sdw_config_update(struct cnl_sdw *sdw)
 	/* Bit is self-cleared when configuration gets updated. */
 	cnl_sdw_reg_writel(data->sdw_regs,  SDW_CNL_MCP_CONFIGUPDATE,
 			config_update);
+
+	/*
+	 * Set SYNCGO bit for Master(s) running in aggregated mode
+	 * (MMModeEN = 1). This action causes all gSyncs of all Master IPs
+	 * to be unmasked and asserted at the currently active gSync rate.
+	 * The initialization-pending Master IP SoundWire bus clock will
+	 * start up synchronizing to gSync, leading to bus reset entry,
+	 * subsequent exit, and 1st Frame generation aligning to gSync.
+	 * Note that this is done in order to overcome hardware bug related
+	 * to mis-alignment of gSync and frame.
+	 */
+	if (mstr->link_sync_mask) {
+		sync_reg = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
+		sync_reg |= (CNL_SYNC_SYNCGO_MASK << CNL_SYNC_SYNCGO_SHIFT);
+		cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_SYNC, sync_reg);
+		syncgo_mask = (CNL_SYNC_SYNCGO_MASK << CNL_SYNC_SYNCGO_SHIFT);
+
+		do {
+			sync_update = cnl_sdw_reg_readl(data->sdw_shim,
+								SDW_CNL_SYNC);
+			if ((sync_update & syncgo_mask) == 0)
+				break;
+
+			msleep(20);
+			timeout--;
+
+		}  while (timeout);
+
+		if ((sync_update & syncgo_mask) != 0) {
+			dev_err(&mstr->dev, "Failed to set sync go\n");
+			return -EIO;
+		}
+
+		/* Reset timeout */
+		timeout = 10;
+	}
+
+	/* Wait for config update bit to be self cleared */
 	do {
 		config_update = cnl_sdw_reg_readl(data->sdw_regs,
 				SDW_CNL_MCP_CONFIGUPDATE);
@@ -443,11 +482,9 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 {
 	struct sdw_master *mstr = sdw->mstr;
 	struct cnl_sdw_data *data = &sdw->data;
-	int mcp_config, mcp_control, sync_reg;
-
+	int mcp_config, mcp_control, sync_reg, mcp_clockctrl;
 	volatile int sync_update = 0;
-	/* Try 10 times before timing out */
-	int timeout = 10;
+	int timeout = 10; /* Try 10 times before timing out */
 	int ret = 0;
 
 	/* Power up the link controller */
@@ -461,9 +498,11 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 	/* Switch the ownership to Master IP from glue logic */
 	sdw_switch_to_mip(sdw);
 
-	/* Set the Sync period to default */
+	/* Set SyncPRD period */
 	sync_reg = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
 	sync_reg |= (SDW_CNL_DEFAULT_SYNC_PERIOD << CNL_SYNC_SYNCPRD_SHIFT);
+
+	/* Set SyncPU bit */
 	sync_reg |= (0x1 << CNL_SYNC_SYNCCPU_SHIFT);
 	cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_SYNC, sync_reg);
 
@@ -480,6 +519,39 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 		return -EINVAL;
 	}
 
+	/*
+	 * Set CMDSYNC bit based on Master ID
+	 * Note that this bit is set only for the Master which will be
+	 * running in aggregated mode (MMModeEN = 1). By doing
+	 * this the gSync to Master IP to be masked inactive.
+	 * Note that this is done in order to overcome hardware bug related
+	 * to mis-alignment of gSync and frame.
+	 */
+	if (mstr->link_sync_mask) {
+
+		sync_reg = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
+		sync_reg |= (1 << (data->inst_id + CNL_SYNC_CMDSYNC_SHIFT));
+		cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_SYNC, sync_reg);
+	}
+
+	/* Set clock divider to default value in default bank */
+	mcp_clockctrl = cnl_sdw_reg_readl(data->sdw_regs,
+				SDW_CNL_MCP_CLOCKCTRL0);
+	mcp_clockctrl |= SDW_CNL_DEFAULT_CLK_DIVIDER;
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CLOCKCTRL0,
+							mcp_clockctrl);
+
+	/* Set the Frame shape init to default value */
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_FRAMESHAPEINIT,
+						SDW_CNL_DEFAULT_FRAME_SHAPE);
+
+
+	/* Set the SSP interval to default value for both banks */
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SSPCTRL0,
+					SDW_CNL_DEFAULT_SSP_INTERVAL);
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SSPCTRL1,
+					SDW_CNL_DEFAULT_SSP_INTERVAL);
+
 	/* Set command acceptance mode. This is required because when
 	 * Master broadcasts the clock_stop command to slaves, slaves
 	 * might be already suspended, so this return NO ACK, in that
@@ -491,7 +563,6 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 			MCP_CONTROL_CMDACCEPTMODE_SHIFT);
 	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
 
-	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_FRAMESHAPEINIT, 0x48);
 
 	mcp_config = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_CONFIG);
 	/* Set Max cmd retry to 15 times */
@@ -537,11 +608,6 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 			MCP_CONFIG_OPERATIONMODE_SHIFT);
 
 	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONFIG, mcp_config);
-	/* Set the SSP interval to 32 for both banks */
-	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SSPCTRL0,
-					SDW_CNL_DEFAULT_SSP_INTERVAL);
-	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_SSPCTRL1,
-					SDW_CNL_DEFAULT_SSP_INTERVAL);
 
 	/* Initialize the phy control registers. */
 	sdw_init_phyctrl(sdw);
