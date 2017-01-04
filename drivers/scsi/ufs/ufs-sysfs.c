@@ -570,7 +570,7 @@ static ssize_t _name##_show(struct device *dev,				\
 	struct ufs_hba *hba = dev_get_drvdata(dev);			\
 	int ret;							\
 	int desc_len = QUERY_DESC_MAX_SIZE;				\
-	u8 *desc_buf;							\
+	char *desc_buf;							\
 									\
 	desc_buf = kzalloc(QUERY_DESC_MAX_SIZE, GFP_ATOMIC);		\
 	if (!desc_buf)                                                  \

@@ -3153,7 +3153,7 @@ int ufshcd_read_desc_param(struct ufs_hba *hba,
 			   enum desc_idn desc_id,
 			   int desc_index,
 			   u8 param_offset,
-			   u8 *param_read_buf,
+			   void *param_read_buf,
 			   u8 param_size)
 {
 	int ret;
@@ -3253,7 +3253,7 @@ struct uc_string_id {
 } __packed;
 
 /* replace non-printable or non-ASCII characters with spaces */
-static inline char ufshcd_remove_non_printable(u8 ch)
+static inline char blank_non_printable(char ch)
 {
 	return (ch >= 0x20 && ch <= 0x7e) ? ch : ' ';
 }
@@ -3267,16 +3267,15 @@ static inline char ufshcd_remove_non_printable(u8 ch)
  * @ascii: if true convert from unicode to ascii characters
  *         null terminated string.
  *
- * Return:
- * *      string size on success.
- * *      -ENOMEM: on allocation failure
- * *      -EINVAL: on a wrong parameter
+ * Return: string size on success.
+ *         -ENOMEM: on allocation failure
+ *         -EINVAL: on a wrong parameter
  */
 int ufshcd_read_string_desc(struct ufs_hba *hba, u8 desc_index,
-			    u8 **buf, bool ascii)
+			    char **buf, bool ascii)
 {
 	struct uc_string_id *uc_str;
-	u8 *str;
+	char *str;
 	int ret;
 
 	if (!buf)
@@ -3324,16 +3323,17 @@ int ufshcd_read_string_desc(struct ufs_hba *hba, u8 desc_index,
 
 		/* replace non-printable or non-ASCII characters with spaces */
 		for (i = 0; i < ret; i++)
-			str[i] = ufshcd_remove_non_printable(str[i]);
+			str[i] = blank_non_printable(str[i]);
 
 		str[ret++] = '\0';
 
 	} else {
-		str = kmemdup(uc_str, uc_str->len, GFP_KERNEL);
+		str = kzalloc(uc_str->len, GFP_KERNEL);
 		if (!str) {
 			ret = -ENOMEM;
 			goto out;
 		}
+		memcpy(str, uc_str, uc_str->len);
 		ret = uc_str->len;
 	}
 out:
