@@ -2727,6 +2727,11 @@ static void reset_request(struct drm_i915_gem_request *request)
 	memset(vaddr + head, 0, request->postfix - head);
 }
 
+void i915_gem_reset_prepare(struct drm_i915_private *dev_priv)
+{
+	i915_gem_revoke_fences(dev_priv);
+}
+
 static void i915_gem_reset_engine(struct intel_engine_cs *engine)
 {
 	struct drm_i915_gem_request *request;
@@ -2792,7 +2797,7 @@ static void i915_gem_reset_engine(struct intel_engine_cs *engine)
 	spin_unlock_irqrestore(&engine->timeline->lock, flags);
 }
 
-void i915_gem_reset(struct drm_i915_private *dev_priv)
+void i915_gem_reset_finish(struct drm_i915_private *dev_priv)
 {
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
