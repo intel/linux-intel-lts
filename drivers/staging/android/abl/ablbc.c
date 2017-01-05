@@ -99,6 +99,7 @@ static const struct name2id NAME2ID[] = {
 	{ "elk",	0x02 },
 	{ "recovery",	0x03 },
 	{ "crashmode",	0x04 },
+	{ "dnx",	0x05 },
 	{ "cli",	0x10 },
 };
 
@@ -294,7 +295,7 @@ static const unsigned int DEFAULT_TARGET_INDEX;
 static const char * const cold_reset[] = {
 	"/sbin/cansend",
 	"slcan0",
-	"0000FFFF#05025555555555",
+	"0000FFFF#05035555555555",
 	NULL};
 static const char * const cold_reset_capsule[] = {
 	"/sbin/cansend",
