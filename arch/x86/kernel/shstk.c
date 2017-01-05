@@ -327,3 +327,45 @@ int shstk_check_rstor_token(bool proc32, unsigned long *new_ssp)
 
 	return 0;
 }
+
+int setup_signal_shadow_stack(int ia32, void __user *restorer)
+{
+	struct thread_shstk *shstk = &current->thread.shstk;
+	unsigned long new_ssp;
+	int err;
+
+	if (!cpu_feature_enabled(X86_FEATURE_SHSTK) || !shstk->size)
+		return 0;
+
+	err = shstk_setup_rstor_token(ia32, (unsigned long)restorer,
+				      &new_ssp);
+	if (err)
+		return err;
+
+	start_update_msrs();
+	err = wrmsrl_safe(MSR_IA32_PL3_SSP, new_ssp);
+	end_update_msrs();
+
+	return err;
+}
+
+int restore_signal_shadow_stack(void)
+{
+	struct thread_shstk *shstk = &current->thread.shstk;
+	int ia32 = in_ia32_syscall();
+	unsigned long new_ssp;
+	int err;
+
+	if (!cpu_feature_enabled(X86_FEATURE_SHSTK) || !shstk->size)
+		return 0;
+
+	err = shstk_check_rstor_token(ia32, &new_ssp);
+	if (err)
+		return err;
+
+	start_update_msrs();
+	err = wrmsrl_safe(MSR_IA32_PL3_SSP, new_ssp);
+	end_update_msrs();
+
+	return err;
+}

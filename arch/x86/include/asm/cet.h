@@ -24,6 +24,8 @@ void shstk_disable(void);
 int shstk_setup_rstor_token(bool ia32, unsigned long restorer,
 			    unsigned long *new_ssp);
 int shstk_check_rstor_token(bool ia32, unsigned long *new_ssp);
+int setup_signal_shadow_stack(int ia32, void __user *restorer);
+int restore_signal_shadow_stack(void);
 #else
 static inline int shstk_setup(void) { return 0; }
 static inline int shstk_alloc_thread_stack(struct task_struct *p,
@@ -35,6 +37,8 @@ static inline int shstk_setup_rstor_token(bool ia32, unsigned long restorer,
 					  unsigned long *new_ssp) { return 0; }
 static inline int shstk_check_rstor_token(bool ia32,
 					  unsigned long *new_ssp) { return 0; }
+static inline int setup_signal_shadow_stack(int ia32, void __user *restorer) { return 0; }
+static inline int restore_signal_shadow_stack(void) { return 0; }
 #endif
 
 #endif /* __ASSEMBLY__ */
