@@ -1199,6 +1199,26 @@ enum skl_bitdepth skl_get_bit_depth(int params)
 	}
 }
 
+static struct
+skl_module_fmt *skl_get_pin_format(struct skl_module_cfg *mconfig,
+					u8 pin_direction, u8 pin_idx)
+{
+	struct skl_module *module = mconfig->module;
+	int fmt_idx = mconfig->fmt_idx;
+	struct skl_module_intf *intf;
+	struct skl_module_fmt *pin_fmt;
+
+	intf = &module->formats[fmt_idx];
+
+	if (pin_direction == SKL_INPUT_PIN)
+		pin_fmt = &intf->input[pin_idx].pin_fmt;
+	else
+		pin_fmt = &intf->output[pin_idx].pin_fmt;
+
+	return pin_fmt;
+}
+
+
 /*
  * Each module in DSP expects a base module configuration, which consists of
  * PCM format information, which we calculate in driver and resource values
@@ -1209,9 +1229,15 @@ static void skl_set_base_module_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_base_cfg *base_cfg)
 {
-	struct skl_module_fmt *format = &mconfig->in_fmt[0];
+	struct skl_module *module = mconfig->module;
+	int res_idx = mconfig->res_idx;
+	struct skl_module_res *res;
+	struct  skl_module_fmt *format;
 
-	base_cfg->audio_fmt.number_of_channels = (u8)format->channels;
+	res = &module->resources[res_idx];
+
+	format = skl_get_pin_format(mconfig, SKL_INPUT_PIN, 0);
+	base_cfg->audio_fmt.number_of_channels = format->channels;
 
 	base_cfg->audio_fmt.s_freq = format->s_freq;
 	base_cfg->audio_fmt.bit_depth = format->bit_depth;
@@ -1227,10 +1253,10 @@ static void skl_set_base_module_format(struct skl_sst *ctx,
 
 	base_cfg->audio_fmt.interleaving = format->interleaving_style;
 
-	base_cfg->cps = mconfig->mcps;
-	base_cfg->ibs = mconfig->ibs;
-	base_cfg->obs = mconfig->obs;
-	base_cfg->is_pages = mconfig->mem_pages;
+	base_cfg->cps = res->cps;
+	base_cfg->ibs = res->ibs;
+	base_cfg->obs = res->obs;
+	base_cfg->is_pages = res->is_pages;
 }
 
 /*
@@ -1327,6 +1353,10 @@ static void skl_setup_cpr_gateway_cfg(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_cpr_cfg *cpr_mconfig)
 {
+	struct skl_module_res *res;
+	int res_idx = mconfig->res_idx;
+	struct skl *skl = get_skl_ctx(ctx->dev);
+
 	cpr_mconfig->gtw_cfg.node_id = skl_get_node_id(ctx, mconfig);
 
 	if (cpr_mconfig->gtw_cfg.node_id == SKL_NON_GATEWAY_CPR_NODE_ID) {
@@ -1334,11 +1364,20 @@ static void skl_setup_cpr_gateway_cfg(struct skl_sst *ctx,
 		return;
 	}
 
+	if (skl->nr_modules == 0) {
+		res = &mconfig->module->resources[res_idx];
+	} else {
+		res = &mconfig->module->resources[mconfig->res_idx];
+		cpr_mconfig->gtw_cfg.dma_buffer_size = res->dma_buffer_size;
+		goto skip_buf_size_calc;
+	}
+	
 	if (SKL_CONN_SOURCE == mconfig->hw_conn_type)
-		cpr_mconfig->gtw_cfg.dma_buffer_size = 2 * mconfig->obs;
+		cpr_mconfig->gtw_cfg.dma_buffer_size = 2 * res->obs;
 	else
-		cpr_mconfig->gtw_cfg.dma_buffer_size = 2 * mconfig->ibs;
+		cpr_mconfig->gtw_cfg.dma_buffer_size = 2 * res->ibs;
 
+skip_buf_size_calc:
 	cpr_mconfig->cpr_feature_mask = 0;
 	cpr_mconfig->gtw_cfg.config_length  = 0;
 
@@ -1386,7 +1425,9 @@ static void skl_setup_out_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_audio_data_format *out_fmt)
 {
-	struct skl_module_fmt *format = &mconfig->out_fmt[0];
+	struct skl_module_fmt *format;
+
+	format = skl_get_pin_format(mconfig, SKL_OUTPUT_PIN, 0);
 
 	out_fmt->number_of_channels = (u8)format->channels;
 	out_fmt->s_freq = format->s_freq;
@@ -1411,12 +1452,14 @@ static void skl_set_src_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_src_module_cfg *src_mconfig)
 {
-	struct skl_module_fmt *fmt = &mconfig->out_fmt[0];
+	struct skl_module_fmt *format;
+
+	format = skl_get_pin_format(mconfig, SKL_OUTPUT_PIN, 0);
 
 	skl_set_base_module_format(ctx, mconfig,
 		(struct skl_base_cfg *)src_mconfig);
 
-	src_mconfig->src_cfg = fmt->s_freq;
+	src_mconfig->src_cfg = format->s_freq;
 }
 
 /*
@@ -1428,16 +1471,18 @@ static void skl_set_updown_mixer_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_up_down_mixer_cfg *mixer_mconfig)
 {
-	struct skl_module_fmt *fmt = &mconfig->out_fmt[0];
 	int i = 0;
+	struct skl_module_fmt *format;
+
+	format = skl_get_pin_format(mconfig, SKL_OUTPUT_PIN, 0);
 
 	skl_set_base_module_format(ctx,	mconfig,
 		(struct skl_base_cfg *)mixer_mconfig);
-	mixer_mconfig->out_ch_cfg = fmt->ch_cfg;
+	mixer_mconfig->out_ch_cfg = format->ch_cfg;
 
 	/* Select F/W default coefficient */
 	mixer_mconfig->coeff_sel = 0x0;
-	mixer_mconfig->ch_map = fmt->ch_map;
+	mixer_mconfig->ch_map = format->ch_map;
 
 	/* User coeff, don't care since we are selecting F/W defaults */
 	for (i = 0; i < UP_DOWN_MIXER_MAX_COEFF; i++)
@@ -1885,8 +1930,8 @@ int skl_unbind_modules(struct skl_sst *ctx,
 	struct skl_ipc_bind_unbind_msg msg;
 	struct skl_module_inst_id src_id = src_mcfg->id;
 	struct skl_module_inst_id dst_id = dst_mcfg->id;
-	int in_max = dst_mcfg->max_in_queue;
-	int out_max = src_mcfg->max_out_queue;
+	int in_max = dst_mcfg->module->max_input_pins;
+	int out_max = src_mcfg->module->max_output_pins;
 	int src_index, dst_index, src_pin_state, dst_pin_state;
 
 	skl_dump_bind_info(ctx, src_mcfg, dst_mcfg);
@@ -1947,8 +1992,8 @@ int skl_bind_modules(struct skl_sst *ctx,
 {
 	int ret;
 	struct skl_ipc_bind_unbind_msg msg;
-	int in_max = dst_mcfg->max_in_queue;
-	int out_max = src_mcfg->max_out_queue;
+	int in_max = dst_mcfg->module->max_input_pins;
+	int out_max = src_mcfg->module->max_output_pins;
 	int src_index, dst_index;
 
 	skl_dump_bind_info(ctx, src_mcfg, dst_mcfg);

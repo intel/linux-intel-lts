@@ -93,6 +93,13 @@ enum skl_widget_type {
 	SKL_WIDGET_PGA = 3,
 	SKL_WIDGET_MUX = 4
 };
+
+enum skl_pipe_type {
+	SKL_PIPE_SOURCE = 0,
+	SKL_PIPE_INTERMEDIATE = 3,
+	SKL_PIPE_SINK = 7
+};
+
 struct probe_pt_param {
 	u32 params;
 	u32 connection;
@@ -277,14 +284,43 @@ struct skl_pipe_params {
 	unsigned int link_bps;
 };
 
+struct skl_pipe_fmt {
+	u32 freq;
+	u8 channels;
+	u8 bps;
+};
+
+struct skl_pipe_mcfg {
+	u8 res_idx;
+	u8 fmt_idx;
+};
+
+struct skl_path_config {
+	char name[SKL_MAX_NAME_LENGTH];
+	u8 idx;
+	u8 mem_pages;
+	struct skl_pipe_fmt in_fmt;
+	struct skl_pipe_fmt out_fmt;
+};
+
 struct skl_pipe {
 	u8 ppl_id;
 	u8 pipe_priority;
 	u16 conn_type;
 	u32 memory_pages;
 	u8 lp_mode;
+	char name[SKL_MAX_NAME_LENGTH];
+	char device[32];
+	u8 create_priority;
+	u8 order;
+	u8 direction;
+	u8 pipe_mode;
 	struct skl_pipe_params *p_params;
 	enum skl_pipe_state state;
+	u8 nr_modules;
+	u8 cur_config_idx;
+	u8 nr_cfgs;
+	struct skl_path_config configs[SKL_MAX_PATH_CONFIGS];
 	struct list_head w_list;
 	bool passthru;
 };
@@ -316,6 +352,9 @@ struct skl_sdw_aggregation {
 struct skl_module_cfg {
 	u8 guid[16];
 	struct skl_module_inst_id id;
+	struct skl_module *module;
+	int res_idx;
+	int fmt_idx;
 	u8 domain;
 	bool homogenous_inputs;
 	bool homogenous_outputs;
@@ -353,6 +392,7 @@ struct skl_module_cfg {
 	enum skl_module_state m_state;
 	struct skl_pipe *pipe;
 	struct skl_specific_cfg formats_config;
+	struct skl_pipe_mcfg mod_cfg[SKL_MAX_MODULES_IN_PIPE];
 };
 
 struct skl_algo_data {
