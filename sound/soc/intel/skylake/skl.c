@@ -461,7 +461,6 @@ static struct sst_acpi_mach sst_cnl_devdata[] = {
 	{
 #if (IS_ENABLED(CONFIG_SND_SOC_SVFPGA) || IS_ENABLED(CONFIG_SND_SOC_CS42L42) \
 	|| IS_ENABLED(CONFIG_SND_SOC_RT700) \
-	|| IS_ENABLED(CONFIG_SND_SOC_MXFPGA) \
 	|| (IS_ENABLED(CONFIG_SND_SOC_WM5110) && \
 	IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)))
 		.id = "dummy",
@@ -474,8 +473,6 @@ static struct sst_acpi_mach sst_cnl_devdata[] = {
 		.drv_name = "cnl_cs42l42",
 #elif IS_ENABLED(CONFIG_SND_SOC_RT700)
 		.drv_name = "cnl_rt700",
-#elif IS_ENABLED(CONFIG_SND_SOC_MXFPGA)
-		.drv_name = "cnl_mxfpga",
 #elif (IS_ENABLED(CONFIG_SND_SOC_WM5110) && \
 	IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA))
 		.drv_name = "cnl_florida",
