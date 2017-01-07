@@ -1651,6 +1651,22 @@ enum drm_i915_perf_record_type {
 	DRM_I915_PERF_RECORD_MAX /* non-ABI */
 };
 
+/**
+ * Structure to upload perf dynamic configuration into the kernel.
+ */
+struct drm_i915_perf_oa_config {
+	/** String formatted like "%08x-%04x-%04x-%04x-%012x" */
+	char uuid[36];
+
+	__u32 n_mux_regs;
+	__u32 n_boolean_regs;
+	__u32 n_flex_regs;
+
+	__u64 __user mux_regs_ptr;
+	__u64 __user boolean_regs_ptr;
+	__u64 __user flex_regs_ptr;
+};
+
 #if defined(__cplusplus)
 }
 #endif
