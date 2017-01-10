@@ -281,6 +281,8 @@ struct intel_engine_cs {
 
 	int		(*emit_flush)(struct drm_i915_gem_request *request,
 				      u32 mode);
+	void	(*emit_start_watchdog)(struct drm_i915_gem_request *req);
+	void	(*emit_stop_watchdog)(struct drm_i915_gem_request *req);
 #define EMIT_INVALIDATE	BIT(0)
 #define EMIT_FLUSH	BIT(1)
 #define EMIT_BARRIER	(EMIT_INVALIDATE | EMIT_FLUSH)
