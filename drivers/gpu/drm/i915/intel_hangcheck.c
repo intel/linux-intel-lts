@@ -388,7 +388,8 @@ static void hangcheck_accumulate_sample(struct intel_engine_cs *engine,
 
 static void hangcheck_declare_hang(struct drm_i915_private *i915,
 				   unsigned int hung,
-				   unsigned int stuck)
+				   unsigned int stuck,
+				   unsigned int watchdog)
 {
 	struct intel_engine_cs *engine;
 	char msg[80];
@@ -401,7 +402,8 @@ static void hangcheck_declare_hang(struct drm_i915_private *i915,
 	if (stuck != hung)
 		hung &= ~stuck;
 	len = scnprintf(msg, sizeof(msg),
-			"%s on ", stuck == hung ? "No progress" : "Hang");
+			"%s on ", watchdog ? "Watchdog timeout" :
+				  stuck == hung ? "No progress" : "Hang");
 	for_each_engine_masked(engine, i915, hung, tmp)
 		len += scnprintf(msg + len, sizeof(msg) - len,
 				 "%s, ", engine->name);
@@ -425,7 +427,7 @@ static void i915_hangcheck_elapsed(struct work_struct *work)
 			     gpu_error.hangcheck_work.work);
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
-	unsigned int hung = 0, stuck = 0;
+	unsigned int hung = 0, stuck = 0, watchdog = 0;
 	int busy_count = 0;
 
 	if (!i915.enable_hangcheck)
@@ -436,6 +438,9 @@ static void i915_hangcheck_elapsed(struct work_struct *work)
 
 	if (i915_terminally_wedged(&dev_priv->gpu_error))
 		return;
+
+	if (test_and_clear_bit(I915_RESET_WATCHDOG, &dev_priv->gpu_error.flags))
+		watchdog = 1;
 
 	/* As enabling the GPU requires fairly extensive mmio access,
 	 * periodically arm the mmio checker to see if we are triggering
@@ -463,7 +468,7 @@ static void i915_hangcheck_elapsed(struct work_struct *work)
 	}
 
 	if (hung)
-		hangcheck_declare_hang(dev_priv, hung, stuck);
+		hangcheck_declare_hang(dev_priv, hung, stuck, watchdog);
 
 	/* Reset timer in case GPU hangs without another request being added */
 	if (busy_count)

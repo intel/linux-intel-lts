@@ -127,6 +127,7 @@ struct intel_instdone {
 struct intel_engine_hangcheck {
 	u64 acthd;
 	u32 seqno;
+	u32 watchdog;
 	enum intel_engine_hangcheck_action action;
 	unsigned long action_timestamp;
 	int deadlock;
@@ -410,6 +411,9 @@ struct intel_engine_cs {
 	struct atomic_notifier_head context_status_notifier;
 
 	struct intel_engine_hangcheck hangcheck;
+
+	/* watchdog_tasklet: stop counter and re-schedule hangcheck_work asap */
+	struct tasklet_struct watchdog_tasklet;
 
 	bool needs_cmd_parser;
 

@@ -1628,6 +1628,7 @@ struct i915_gpu_error {
 
 	unsigned long flags;
 #define I915_RESET_IN_PROGRESS	0
+#define I915_RESET_WATCHDOG	2
 #define I915_WEDGED		(BITS_PER_LONG - 1)
 
 	/** Number of times an engine has been reset */
