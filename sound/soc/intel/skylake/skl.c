@@ -1223,6 +1223,13 @@ static struct snd_soc_acpi_mach sst_icl_devdata[] = {
 		.fw_filename = "intel/dsp_fw_icl.bin",
 		.pdata = &cnl_pdata,
 	},
+#elif IS_ENABLED(CONFIG_SND_SOC_WM5110)
+	{
+		.id = "dummy",
+		.drv_name = "icl_wm8281",
+		.fw_filename = "intel/dsp_fw_icl.bin",
+		.pdata = &cnl_pdata,
+	},
 #else
 	{
 		.id = "dummy",
