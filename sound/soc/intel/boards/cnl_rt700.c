@@ -301,6 +301,12 @@ static int snd_cnl_rt700_mc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct platform_device_id cnl_board_ids[] = {
+	{ .name = "cnl_rt700" },
+	{ .name = "icl_rt700" },
+	{ }
+};
+
 static struct platform_driver snd_cnl_rt700_mc_driver = {
 	.driver = {
 		.owner = THIS_MODULE,
@@ -308,6 +314,7 @@ static struct platform_driver snd_cnl_rt700_mc_driver = {
 	},
 	.probe = snd_cnl_rt700_mc_probe,
 	.remove = snd_cnl_rt700_mc_remove,
+	.id_table = cnl_board_ids
 };
 
 static int snd_cnl_rt700_driver_init(void)
@@ -326,3 +333,4 @@ MODULE_DESCRIPTION("ASoC CNL Machine driver");
 MODULE_AUTHOR("Hardik Shah <hardik.t.shah>");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:cnl_rt700");
+MODULE_ALIAS("platform:icl_rt700");
