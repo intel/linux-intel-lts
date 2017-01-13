@@ -5346,6 +5346,26 @@ static void cherryview_disable_rps(struct drm_i915_private *dev_priv)
 	I915_WRITE(GEN6_RC_CONTROL, 0);
 }
 
+void vlv_set_rps_mode(struct drm_i915_private *dev_priv, bool disable)
+{
+	if (!IS_VALLEYVIEW(dev_priv)) {
+		DRM_DEBUG_DRIVER("RPS mode change not supported\n");
+		return;
+	}
+
+	WARN_ON(!mutex_is_locked(&dev_priv->rps.hw_lock));
+
+	dev_priv->rps.rps_disable = disable;
+
+	if (disable) {
+		I915_WRITE(GEN6_RP_CONTROL, 0);
+		gen6_disable_rps_interrupts(dev_priv);
+	} else {
+		I915_WRITE(GEN6_RP_CONTROL, dev_priv->rps.rps_mask);
+		gen6_enable_rps_interrupts(dev_priv);
+	}
+}
+
 static void valleyview_disable_rps(struct drm_i915_private *dev_priv)
 {
 	/* we're doing forcewake before Disabling RC6,
@@ -5353,6 +5373,9 @@ static void valleyview_disable_rps(struct drm_i915_private *dev_priv)
 	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
 
 	I915_WRITE(GEN6_RC_CONTROL, 0);
+
+	/* Disable rps */
+	vlv_set_rps_mode(dev_priv, true);
 
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 }
@@ -6332,13 +6355,12 @@ static void valleyview_enable_rps(struct drm_i915_private *dev_priv)
 
 	I915_WRITE(GEN6_RP_IDLE_HYSTERSIS, 10);
 
-	I915_WRITE(GEN6_RP_CONTROL,
-		   GEN6_RP_MEDIA_TURBO |
-		   GEN6_RP_MEDIA_HW_NORMAL_MODE |
-		   GEN6_RP_MEDIA_IS_GFX |
-		   GEN6_RP_ENABLE |
-		   GEN6_RP_UP_BUSY_AVG |
-		   GEN6_RP_DOWN_IDLE_CONT);
+	dev_priv->rps.rps_mask = GEN6_RP_MEDIA_TURBO |
+				   GEN6_RP_MEDIA_HW_NORMAL_MODE |
+				   GEN6_RP_MEDIA_IS_GFX |
+				   GEN6_RP_ENABLE |
+				   GEN6_RP_UP_BUSY_AVG |
+				   GEN6_RP_DOWN_IDLE_CONT;
 
 	I915_WRITE(GEN6_RC6_WAKE_RATE_LIMIT, 0x00280000);
 	I915_WRITE(GEN6_RC_EVALUATION_INTERVAL, 125000);
@@ -6378,6 +6400,8 @@ static void valleyview_enable_rps(struct drm_i915_private *dev_priv)
 	DRM_DEBUG_DRIVER("GPU status: 0x%08x\n", val);
 
 	reset_rps(dev_priv, valleyview_set_rps);
+
+	vlv_set_rps_mode(dev_priv, false);
 
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 }

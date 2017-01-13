@@ -4490,6 +4490,58 @@ DEFINE_SIMPLE_ATTRIBUTE(i915_rps_disable_boost_fops,
 		i915_rps_disable_boost_get, i915_rps_disable_boost_set,
 			"%llu\n");
 
+static int i915_rps_disable_get(void *data, u64 *val)
+{
+	struct drm_device *dev = data;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	if (INTEL_GEN(dev_priv) < 6)
+		return -ENODEV;
+
+	*val = dev_priv->rps.rps_disable;
+
+	return 0;
+}
+
+static int i915_rps_disable_set(void *data, u64 val)
+{
+	struct drm_device *dev = data;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	int ret;
+
+	if (INTEL_GEN(dev_priv) < 6)
+		return -ENODEV;
+
+	DRM_DEBUG_DRIVER("Setting RPS disable %s\n",
+			 val ? "true" : "false");
+
+	intel_runtime_pm_get(dev_priv);
+	ret = mutex_lock_interruptible(&dev_priv->rps.hw_lock);
+	if (ret)
+		return ret;
+
+	dev_priv->rps.rps_disable = val;
+
+	if (val)
+		I915_WRITE(GEN6_RP_CONTROL, 0);
+	else
+		I915_WRITE(GEN6_RP_CONTROL, GEN6_RP_MEDIA_TURBO |
+				GEN6_RP_MEDIA_HW_NORMAL_MODE |
+				GEN6_RP_MEDIA_IS_GFX |
+				GEN6_RP_ENABLE |
+				GEN6_RP_UP_BUSY_AVG |
+				GEN6_RP_DOWN_IDLE_AVG);
+
+	mutex_unlock(&dev_priv->rps.hw_lock);
+	intel_runtime_pm_put(dev_priv);
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(i915_rps_disable_fops,
+			i915_rps_disable_get, i915_rps_disable_set,
+			"%llu\n");
+
 static int
 i915_cache_sharing_get(void *data, u64 *val)
 {
@@ -4849,6 +4901,7 @@ static const struct i915_debugfs_files {
 	{"i915_rc6_disable", &i915_rc6_disable_fops},
 	{"i915_cache_sharing", &i915_cache_sharing_fops},
 	{"i915_rps_disable_boost", &i915_rps_disable_boost_fops},
+	{"i915_rps_disable", &i915_rps_disable_fops},
 	{"i915_ring_missed_irq", &i915_ring_missed_irq_fops},
 	{"i915_ring_test_irq", &i915_ring_test_irq_fops},
 	{"i915_gem_drop_caches", &i915_drop_caches_fops},
