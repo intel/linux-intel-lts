@@ -171,6 +171,7 @@ struct intel_guc {
 
 	uint64_t submissions[I915_NUM_ENGINES];
 	uint32_t last_seqno[I915_NUM_ENGINES];
+	uint32_t shared_data_offset;	/* First page of default ctx */
 
 	/* To serialize the intel_guc_send actions */
 	struct mutex send_mutex;

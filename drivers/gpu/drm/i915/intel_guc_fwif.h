@@ -136,7 +136,11 @@
 #define   GUC_ADS_ADDR_SHIFT		11
 #define   GUC_ADS_ADDR_MASK		0xfffff800
 
-#define GUC_CTL_RSRVD			9
+#define GUC_CTL_SHARED_DATA		9
+
+#define GEN11_GUC_ADS_CTL		9
+#define   GEN11_GUC_ADS_ENABLE		(1 << 0)
+#define   GEN11_GUC_ADS_ADDR_SHIFT	1
 
 #define GUC_CTL_MAX_DWORDS		(SOFT_SCRATCH_COUNT - 2) /* [1..14] */
 
