@@ -1216,12 +1216,22 @@ static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
 };
 
 static struct snd_soc_acpi_mach sst_icl_devdata[] = {
+#if IS_ENABLED(CONFIG_SND_SOC_RT700)
+	{
+		.id = "dummy",
+		.drv_name = "icl_rt700",
+		.fw_filename = "intel/dsp_fw_icl.bin",
+		.pdata = &cnl_pdata,
+	},
+#else
 	{
 		.id = "dummy",
 		.drv_name = "icl_rt274",
 		.fw_filename = "intel/dsp_fw_icl.bin",
 		.pdata = &cnl_pdata,
 	},
+
+#endif
 	{}
 };
 
