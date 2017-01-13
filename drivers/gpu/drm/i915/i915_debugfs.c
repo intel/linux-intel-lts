@@ -4429,6 +4429,30 @@ DEFINE_SIMPLE_ATTRIBUTE(i915_min_freq_fops,
 			i915_min_freq_get, i915_min_freq_set,
 			"%llu\n");
 
+static int i915_rc6_disable_get(void *data, u64 *val)
+{
+	struct drm_device *dev = data;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	*val = dev_priv->rps.rc6_disable;
+
+	return 0;
+}
+
+static int i915_rc6_disable_set(void *data, u64 val)
+{
+	struct drm_device *dev = data;
+
+	DRM_DEBUG_DRIVER("Setting RC6 disable %s\n",
+			 val ? "true" : "false");
+
+	return intel_set_rc6_mode(dev->dev_private, (bool)val);
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(i915_rc6_disable_fops,
+			i915_rc6_disable_get, i915_rc6_disable_set,
+			"%llu\n");
+
 static int i915_rps_disable_boost_get(void *data, u64 *val)
 {
 	struct drm_device *dev = data;
@@ -4822,6 +4846,7 @@ static const struct i915_debugfs_files {
 	{"i915_wedged", &i915_wedged_fops},
 	{"i915_max_freq", &i915_max_freq_fops},
 	{"i915_min_freq", &i915_min_freq_fops},
+	{"i915_rc6_disable", &i915_rc6_disable_fops},
 	{"i915_cache_sharing", &i915_cache_sharing_fops},
 	{"i915_rps_disable_boost", &i915_rps_disable_boost_fops},
 	{"i915_ring_missed_irq", &i915_ring_missed_irq_fops},

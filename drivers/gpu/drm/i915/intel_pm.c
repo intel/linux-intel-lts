@@ -5559,11 +5559,35 @@ static void gen9_enable_rps(struct drm_i915_private *dev_priv)
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 }
 
+static void gen9_set_rc6_mode(struct drm_i915_private *dev_priv)
+{
+	u32 rc6_mask = 0;
+
+	/* 3a: Enable RC6 */
+	if (intel_enable_rc6() & INTEL_RC6_ENABLE)
+		rc6_mask = GEN6_RC_CTL_RC6_ENABLE;
+	DRM_INFO("RC6 %s\n", onoff(rc6_mask & GEN6_RC_CTL_RC6_ENABLE));
+	I915_WRITE(GEN6_RC6_THRESHOLD, 37500); /* 37.5/125ms per EI */
+	I915_WRITE(GEN6_RC_CONTROL,
+		   GEN6_RC_CTL_HW_ENABLE | GEN6_RC_CTL_EI_MODE(1) | rc6_mask);
+
+	intel_guc_sample_forcewake(&dev_priv->guc);
+
+	/*
+	 * 3b: Enable Coarse Power Gating only when RC6 is enabled.
+	 * WaRsDisableCoarsePowerGating:skl,bxt - Render/Media PG need to be disabled with RC6.
+	 */
+	if (NEEDS_WaRsDisableCoarsePowerGating(dev_priv))
+		I915_WRITE(GEN9_PG_ENABLE, 0);
+	else
+		I915_WRITE(GEN9_PG_ENABLE, (rc6_mask & GEN6_RC_CTL_RC6_ENABLE) ?
+				(GEN9_RENDER_PG_ENABLE | GEN9_MEDIA_PG_ENABLE) : 0);
+}
+
 static void gen9_enable_rc6(struct drm_i915_private *dev_priv)
 {
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
-	uint32_t rc6_mask = 0;
 
 	/* 1a: Software RC state - RC0 */
 	I915_WRITE(GEN6_RC_STATE, 0);
@@ -5596,25 +5620,40 @@ static void gen9_enable_rc6(struct drm_i915_private *dev_priv)
 	I915_WRITE(GEN9_MEDIA_PG_IDLE_HYSTERESIS, 25);
 	I915_WRITE(GEN9_RENDER_PG_IDLE_HYSTERESIS, 25);
 
-	/* 3a: Enable RC6 */
-	if (intel_enable_rc6() & INTEL_RC6_ENABLE)
-		rc6_mask = GEN6_RC_CTL_RC6_ENABLE;
-	DRM_INFO("RC6 %s\n", onoff(rc6_mask & GEN6_RC_CTL_RC6_ENABLE));
-	I915_WRITE(GEN6_RC6_THRESHOLD, 37500); /* 37.5/125ms per EI */
-	I915_WRITE(GEN6_RC_CONTROL,
-		   GEN6_RC_CTL_HW_ENABLE | GEN6_RC_CTL_EI_MODE(1) | rc6_mask);
-
-	/*
-	 * 3b: Enable Coarse Power Gating only when RC6 is enabled.
-	 * WaRsDisableCoarsePowerGating:skl,bxt - Render/Media PG need to be disabled with RC6.
-	 */
-	if (NEEDS_WaRsDisableCoarsePowerGating(dev_priv))
-		I915_WRITE(GEN9_PG_ENABLE, 0);
-	else
-		I915_WRITE(GEN9_PG_ENABLE, (rc6_mask & GEN6_RC_CTL_RC6_ENABLE) ?
-				(GEN9_RENDER_PG_ENABLE | GEN9_MEDIA_PG_ENABLE) : 0);
+	/* 3: Proceed with Enabling/Disabling According to Runtime Mode. */
+	gen9_set_rc6_mode(dev_priv);
 
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
+}
+
+int intel_set_rc6_mode(struct drm_i915_private *dev_priv, bool disable)
+{
+	int ret = 0;
+
+	if (!IS_GEN9(dev_priv))
+		return -ENODEV;
+
+	ret = mutex_lock_interruptible(&dev_priv->rps.hw_lock);
+	if (ret)
+		return ret;
+
+	if (dev_priv->rps.rc6_disable == disable) {
+		mutex_unlock(&dev_priv->rps.hw_lock);
+		return 0;
+	}
+
+	intel_runtime_pm_get(dev_priv);
+	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
+
+	dev_priv->rps.rc6_disable = disable;
+	gen9_set_rc6_mode(dev_priv);
+
+	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
+	intel_runtime_pm_put(dev_priv);
+
+	mutex_unlock(&dev_priv->rps.hw_lock);
+
+	return 0;
 }
 
 static void gen8_enable_rps(struct drm_i915_private *dev_priv)
