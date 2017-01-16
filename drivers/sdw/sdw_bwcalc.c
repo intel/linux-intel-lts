@@ -31,10 +31,12 @@
 int rows[MAX_NUM_ROWS] = {48, 50, 60, 64, 72, 75, 80, 90,
 		     96, 125, 144, 147, 100, 120, 128, 150,
 		     160, 180, 192, 200, 240, 250, 256};
+#define SDW_DEFAULT_SSP		50
 #else
 int rows[MAX_NUM_ROWS] = {125, 64, 48, 50, 60, 72, 75, 80, 90,
 		     96, 144, 147, 100, 120, 128, 150,
 		     160, 180, 192, 200, 240, 250, 256};
+#define SDW_DEFAULT_SSP		24
 #endif /* IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA) */
 
 int cols[MAX_NUM_COLS] = {2, 4, 6, 8, 10, 12, 14, 16};
@@ -46,6 +48,7 @@ int rows[MAX_NUM_ROWS] = {50, 100, 48, 60, 64, 72, 75, 80, 90,
 		     160, 180, 192, 200, 240, 250, 256};
 
 int cols[MAX_NUM_COLS] = {10, 2, 4, 6, 8, 12, 14, 16};
+#define SDW_DEFAULT_SSP		50
 #endif
 
 /*
@@ -1435,14 +1438,14 @@ int sdw_config_bs_prms(struct sdw_bus *sdw_mstr_bs, bool state_check)
 		banktouse = !banktouse;
 
 		/*
-		 * TBD: Currently harcoded SSP interval to 50,
+		 * TBD: Currently harcoded SSP interval,
 		 * computed value to be taken from system_interval in
 		 * bus data structure.
 		 * Add error check.
 		 */
 		if (ops->mstr_ops->set_ssp_interval)
 			ops->mstr_ops->set_ssp_interval(sdw_mstr_bs->mstr,
-					50, banktouse);
+					SDW_DEFAULT_SSP, banktouse);
 
 		/*
 		 * Configure Clock
