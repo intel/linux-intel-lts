@@ -301,6 +301,11 @@ static const char * const cold_reset_capsule[] = {
 	"slcan0",
 	"0000FFFF#05035555555555",
 	NULL};
+static const char * const suppress_heartbeat[] = {
+	"/sbin/cansend",
+	"slcan0",
+	"0000FFFF#01045555555555",
+	NULL};
 static const char * const reboot_request[] = {
 	"/sbin/cansend",
 	"slcan0",
@@ -336,6 +341,10 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 
 	if (what != SYS_RESTART)
 		return NOTIFY_DONE;
+
+	ret = execute_slcan_command(suppress_heartbeat);
+	if (ret)
+		goto done;
 
 	ret = execute_slcan_command(reboot_request);
 	if (ret)
