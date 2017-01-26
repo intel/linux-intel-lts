@@ -50,6 +50,8 @@ static inline void cmos_write_ext_bank(u8 val, u8 addr)
 
 #define CRC32C_POLYNOMIAL 0x82F63B78 /* CRC32C Castagnoli */
 
+#define NAME_MAX_SIZE 32
+
 static bool capsule_request;
 
 union _cdata_header {
@@ -188,7 +190,7 @@ static ssize_t capsule_store(struct kobject *kobj, struct kobj_attribute *attr,
 {
 	struct nvram_msg msg;
 	struct nvram_capsule_cmd *capsule_cmd;
-	char name[32], partition;
+	char name[NAME_MAX_SIZE], partition;
 	enum capsule_device_type device;
 	int ret, crc, padding;
 	unsigned char size;
@@ -204,9 +206,9 @@ static ssize_t capsule_store(struct kobject *kobj, struct kobj_attribute *attr,
 	cdh.tag = CDATA_TAG_USER_CMD;
 
 	/* padding of filename on next dword */
-	padding = (4 - (3 + strlen(name))%4)%4;
-	size = 2 + sizeof(cdh) + 3 + strlen(name) + padding + 4;
-	cdh.length = 1 + (3 + strlen(name) + padding) / 4;
+	padding = (4 - (3 + NAME_MAX_SIZE)%4)%4;
+	size = 2 + sizeof(cdh) + 3 + NAME_MAX_SIZE + padding + 4;
+	cdh.length = 1 + (3 + NAME_MAX_SIZE + padding) / 4;
 
 	msg.magic = NVRAM_VALID_FLAG;
 	msg.size = size;
@@ -216,12 +218,12 @@ static ssize_t capsule_store(struct kobject *kobj, struct kobj_attribute *attr,
 	if (!capsule_cmd)
 		return -ENOMEM;
 
-	capsule_cmd->action = USERCMD_UPDATE_IFWI(strlen(name) + 2);
+	capsule_cmd->action = USERCMD_UPDATE_IFWI(NAME_MAX_SIZE + 2);
 	capsule_cmd->device = device;
 	capsule_cmd->partition = partition;
-	strncpy(capsule_cmd->file_name, name, strlen(name));
+	strncpy(capsule_cmd->file_name, name, NAME_MAX_SIZE);
 	msg.cdata_payload = capsule_cmd;
-	msg.cdata_payload_size = 3 + strlen(name) + padding;
+	msg.cdata_payload_size = 3 + NAME_MAX_SIZE + padding;
 	msg.crc = crc32c_msg(&msg);
 	write_msg_to_nvram(&msg);
 	capsule_request = true;
