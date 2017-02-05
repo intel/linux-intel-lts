@@ -45,6 +45,9 @@
 #define SKL_DEFAULT_MIC_SEL_GAIN	0x3FF
 #define SKL_MIC_SEL_SWITCH	0x3
 
+#define SKL_OUTPUT_PIN 0
+#define SKL_INPUT_PIN  1
+
 enum skl_channel_index {
 	SKL_CHANNEL_LEFT = 0,
 	SKL_CHANNEL_RIGHT = 1,
@@ -207,17 +210,6 @@ union skl_connector_node_id {
 		u32 dma_type:5;
 		u32 rsvd:19;
 	} node;
-};
-
-struct skl_module_fmt {
-	u32 channels;
-	u32 s_freq;
-	u32 bit_depth;
-	u32 valid_bit_depth;
-	u32 ch_cfg;
-	u32 interleaving_style;
-	u32 sample_type;
-	u32 ch_map;
 };
 
 struct skl_module_cfg;

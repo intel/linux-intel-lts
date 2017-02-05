@@ -33,9 +33,10 @@
 #include <sound/hdaudio.h>
 #include <sound/hda_i915.h>
 #include <sound/compress_driver.h>
-#include "skl.h"
+
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
+#include "skl.h"
 
 static struct skl_machine_pdata skl_dmic_data;
 

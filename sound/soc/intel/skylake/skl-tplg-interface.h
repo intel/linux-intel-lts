@@ -29,8 +29,11 @@
 #define SKL_CONTROL_TYPE_BYTE_PROBE	0x101
 
 #define HDA_SST_CFG_MAX	900 /* size of copier cfg*/
-#define MAX_IN_QUEUE 8
-#define MAX_OUT_QUEUE 8
+#define SKL_MAX_MODULES	32
+#define SKL_MAX_PATH_CONFIGS	8
+#define SKL_MAX_MODULES_IN_PIPE	8
+#define SKL_MAX_NAME_LENGTH	16
+#define SKL_MOD_NAME 40 /* Length of GUID string */
 
 #define SDW_MAX_MASTERS 4
 

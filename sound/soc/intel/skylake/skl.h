@@ -24,6 +24,7 @@
 #include <sound/hda_register.h>
 #include <sound/hdaudio_ext.h>
 #include "skl-nhlt.h"
+#include "skl-sst-ipc.h"
 
 #define SKL_SUSPEND_DELAY 2000
 
@@ -35,6 +36,13 @@
 #define AZX_REG_VS_D0I3C_CIP      0x1 /* Command in progress */
 #define AZX_REG_VS_D0I3C_I3       0x4 /* D0i3 enable */
 
+#define SKL_MAX_MODULE_RESOURCES 8
+#define SKL_MAX_MODULE_FORMATS 8
+#define SKL_MAX_IN_QUEUE 8
+#define SKL_MAX_OUT_QUEUE 8
+#define SKL_MAX_LL_SRC_CFG  8
+#define SKL_MAX_DMA_CFG    24
+
 struct skl_dsp_resource {
 	u32 max_mcps;
 	u32 max_mem;
@@ -44,6 +52,112 @@ struct skl_dsp_resource {
 
 struct skl_debug;
 struct snd_soc_dapm_widget;
+
+struct skl_module_fmt {
+	u32 channels;
+	u32 s_freq;
+	u32 bit_depth;
+	u32 valid_bit_depth;
+	u32 ch_cfg;
+	u32 interleaving_style;
+	u32 sample_type;
+	u32 ch_map;
+};
+
+struct skl_module_pin_fmt {
+	u8 pin_id;
+	struct skl_module_fmt pin_fmt;
+};
+
+struct skl_module_intf {
+	u8 fmt_idx;
+	u8 nr_input_fmt;
+	u8 nr_output_fmt;
+	struct skl_module_pin_fmt input[SKL_MAX_IN_QUEUE];
+	struct	skl_module_pin_fmt output[SKL_MAX_OUT_QUEUE];
+};
+
+struct skl_module_pin_resources {
+	u8 pin_index;
+	u32 buf_size;
+};
+
+struct skl_module_res {
+	u8 res_idx;
+	u32 is_pages;
+	u32 cps;
+	u32 ibs;
+	u32 obs;
+	u32 dma_buffer_size;
+	u32 cpc;
+	u32 mod_flags;
+	u32 obls;
+	u8 nr_input_pins;
+	u8 nr_output_pins;
+	struct skl_module_pin_resources input[SKL_MAX_IN_QUEUE];
+	struct skl_module_pin_resources output[SKL_MAX_OUT_QUEUE];
+};
+
+struct skl_module {
+	u16 major_version;
+	u16 minor_version;
+	u16 hotfix_version;
+	u16 build_version;
+	uuid_le uuid;
+	u8 loadable;
+	u8 input_pin_type;
+	u8 output_pin_type;
+	u8 auto_start;
+	u8 max_input_pins;
+	u8 max_output_pins;
+	u8 max_instance_count;
+	char library_name[SKL_LIB_NAME_LENGTH];
+	u8 nr_resources;
+	u8 nr_interfaces;
+	struct skl_module_res resources[SKL_MAX_MODULE_RESOURCES];
+	struct skl_module_intf formats[SKL_MAX_MODULE_FORMATS];
+};
+
+struct skl_dma_config {
+	u32 min_size;
+	u32 max_size;
+} __packed;
+
+struct skl_mem_status {
+	u32 type;
+	u32 size;
+	u32 mem_reclaim;
+} __packed;
+
+struct skl_dsp_freq {
+	u32 type;
+	u32 size;
+	u32 freq;
+} __packed;
+
+struct skl_dma_buff_cfg {
+	u32 type;
+	u32 size;
+	struct skl_dma_config dma_cfg[SKL_MAX_DMA_CFG];
+} __packed;
+
+struct skl_sch_config {
+	u32 type;
+	u32 length;
+	u32 sys_tick_mul;
+	u32 sys_tick_div;
+	u32 ll_src;
+	u32 num_cfg;
+	u32 node_info[SKL_MAX_LL_SRC_CFG];
+} __packed;
+
+struct skl_fw_cfg_info {
+	struct skl_mem_status mem_sts;
+	struct skl_dsp_freq slw_frq;
+	struct skl_dsp_freq fst_frq;
+	struct skl_dma_buff_cfg dmacfg;
+	struct skl_sch_config sch_cfg;
+} __packed;
 
 struct skl {
 	struct hdac_ext_bus ebus;
@@ -72,6 +186,10 @@ struct skl {
 	struct skl_debug *debugfs;
 	bool nhlt_override;
 	bool mod_set_get_status;
+	struct skl_fw_cfg_info cfg;
+	u8 nr_modules;
+	u8 conf_version;
+	struct skl_module *modules;
 };
 
 #define skl_to_ebus(s)	(&(s)->ebus)

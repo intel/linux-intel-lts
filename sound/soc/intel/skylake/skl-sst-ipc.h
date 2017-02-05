@@ -80,6 +80,16 @@ struct skl_d0i3_data {
 struct skl_lib_info {
 	char name[SKL_LIB_NAME_LENGTH];
 	const struct firmware *fw;
+	u32 pre_load_pgs;
+	u16 man_major;
+	u16 man_minor;
+	u16 man_hotfix;
+	u16 man_build;
+	u16 ext_man_major;
+	u16 ext_man_minor;
+	u8 man_nr_modules;
+	u8 ext_man_nr_modules;
+	u8 binary_type;
 };
 
 struct injector_data {
