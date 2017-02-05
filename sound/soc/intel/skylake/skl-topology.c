@@ -2284,27 +2284,9 @@ static int skl_tplg_fill_pins_info(struct device *dev,
  * on the direction
  */
 static int skl_tplg_fill_fmt(struct device *dev,
-		struct skl_module_cfg *mconfig,	u32 tkn,
-		u32 value, u32 dir, u32 pin_count)
+		struct skl_module_fmt *dst_fmt,
+		u32 tkn, u32 value)
 {
-	struct skl_module_fmt *dst_fmt;
-
-	switch (dir) {
-	case SKL_DIR_IN:
-		dst_fmt = mconfig->in_fmt;
-		dst_fmt += pin_count;
-		break;
-
-	case SKL_DIR_OUT:
-		dst_fmt = mconfig->out_fmt;
-		dst_fmt += pin_count;
-		break;
-
-	default:
-		dev_err(dev, "Invalid direction value\n");
-		return -EINVAL;
-	}
-
 	switch (tkn) {
 	case SKL_TKN_U32_FMT_CH:
 		dst_fmt->channels  = value;
@@ -2344,6 +2326,32 @@ static int skl_tplg_fill_fmt(struct device *dev,
 	}
 
 	return 0;
+}
+
+static int skl_tplg_widget_fill_fmt(struct device *dev,
+		struct skl_module_cfg *mconfig,
+		u32 tkn, u32 val, u32 dir, int fmt_idx)
+{
+	struct skl_module_fmt *dst_fmt;
+	int ret;
+
+	switch (dir) {
+	case SKL_DIR_IN:
+		dst_fmt = &mconfig->in_fmt[fmt_idx];
+		break;
+
+	case SKL_DIR_OUT:
+		dst_fmt = &mconfig->out_fmt[fmt_idx];
+		break;
+
+	default:
+		dev_err(dev, "Invalid direction value\n");
+		return -EINVAL;
+	}
+
+	ret = skl_tplg_fill_fmt(dev, dst_fmt, tkn, val);
+
+	return ret;
 }
 
 static int skl_tplg_get_uuid(struct device *dev, struct skl_module_cfg *mconfig,
@@ -2525,7 +2533,7 @@ static int skl_tplg_get_token(struct device *dev,
 	case SKL_TKN_U32_FMT_INTERLEAVE:
 	case SKL_TKN_U32_FMT_SAMPLE_TYPE:
 	case SKL_TKN_U32_FMT_CH_MAP:
-		ret = skl_tplg_fill_fmt(dev, mconfig, tkn_elem->token,
+		ret = skl_tplg_widget_fill_fmt(dev, mconfig, tkn_elem->token,
 				tkn_elem->value, dir, pin_index);
 
 		if (ret < 0)
