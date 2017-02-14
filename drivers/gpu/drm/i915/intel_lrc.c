@@ -841,6 +841,7 @@ static int execlists_request_alloc(struct drm_i915_gem_request *request)
 {
 	struct intel_engine_cs *engine = request->engine;
 	struct intel_context *ce = &request->ctx->engine[engine->id];
+	u32 *cs;
 	int ret;
 
 	GEM_BUG_ON(!ce->pin_count);
@@ -865,9 +866,11 @@ static int execlists_request_alloc(struct drm_i915_gem_request *request)
 			goto err;
 	}
 
-	ret = intel_ring_begin(request, 0);
-	if (ret)
+	cs = intel_ring_begin(request, 0);
+	if (IS_ERR(cs)) {
+		ret = PTR_ERR(cs);
 		goto err_unreserve;
+	}
 
 	if (!ce->initialised) {
 		ret = engine->init_context(request);
@@ -896,9 +899,9 @@ err:
 
 static int intel_logical_ring_workarounds_emit(struct drm_i915_gem_request *req)
 {
-	int ret, i;
 	struct i915_workarounds *w = &req->i915->workarounds;
 	u32 *cs;
+	int ret, i;
 
 	if (w->count == 0)
 		return 0;
@@ -916,7 +919,7 @@ static int intel_logical_ring_workarounds_emit(struct drm_i915_gem_request *req)
 		*cs++ = i915_mmio_reg_offset(w->reg[i].addr);
 		*cs++ = w->reg[i].value;
 	}
-	*cs++ =  MI_NOOP;
+	*cs++ = MI_NOOP;
 
 	intel_ring_advance(req, cs);
 
@@ -1432,7 +1435,7 @@ static int intel_logical_ring_emit_pdps(struct drm_i915_gem_request *req)
 		*cs++ = lower_32_bits(pd_daddr);
 	}
 
-	*cs++ =  MI_NOOP;
+	*cs++ = MI_NOOP;
 	intel_ring_advance(req, cs);
 
 	return 0;
@@ -1440,13 +1443,12 @@ static int intel_logical_ring_emit_pdps(struct drm_i915_gem_request *req)
 
 static int gen8_emit_bb_start(struct drm_i915_gem_request *req,
 			      u64 offset, u32 len,
-			      unsigned int flags)
+			      unsigned int dispatch_flags)
 {
-	struct intel_ring *ring = req->ring;
-	bool ppgtt = !(flags & I915_DISPATCH_SECURE);
-	u32 *cs;
+	bool ppgtt = !(dispatch_flags & I915_DISPATCH_SECURE);
 	struct intel_engine_cs *engine = req->engine;
 	u32 num_dwords;
+	u32 *cs;
 	bool watchdog_running = false;
 	int ret;
 
@@ -1491,18 +1493,18 @@ static int gen8_emit_bb_start(struct drm_i915_gem_request *req,
 	}
 
 	/* FIXME(BDW): Address space and security selectors. */
-	*cs++ = MI_BATCH_BUFFER_START_GEN8 |
-		    (flags & I915_DISPATCH_SECURE ? 0 : BIT(8)) |
-		    (flags & I915_DISPATCH_RS ? MI_BATCH_RESOURCE_STREAMER : 0);
+	*cs++ = MI_BATCH_BUFFER_START_GEN8 | (ppgtt << 8) | (dispatch_flags &
+	I915_DISPATCH_RS ? MI_BATCH_RESOURCE_STREAMER : 0);
 	*cs++ = lower_32_bits(offset);
 	*cs++ = upper_32_bits(offset);
 	*cs++ = MI_NOOP;
-	intel_ring_advance(req, cs);
 
 	if (watchdog_running) {
 		/* Cancel watchdog timer */
 		engine->emit_stop_watchdog(req, cs);
 	}
+
+	intel_ring_advance(req, cs);
 	return 0;
 }
 
@@ -1546,7 +1548,7 @@ static int gen8_emit_flush(struct drm_i915_gem_request *request, u32 mode)
 	*cs++ = cmd;
 	*cs++ = I915_GEM_HWS_SCRATCH_ADDR | MI_FLUSH_DW_USE_GTT;
 	*cs++ = 0; /* upper addr */
-	*cs++ = 0;  /* value */
+	*cs++ = 0; /* value */
 	intel_ring_advance(request, cs);
 
 	return 0;
@@ -1559,9 +1561,8 @@ static int gen8_emit_flush_render(struct drm_i915_gem_request *request,
 	u32 scratch_addr =
 		i915_ggtt_offset(engine->scratch) + 2 * CACHELINE_BYTES;
 	bool vf_flush_wa = false, dc_flush_wa = false;
-	u32 flags = 0;
+	u32 *cs, flags = 0;
 	int len;
-	u32 *cs;
 
 	flags |= PIPE_CONTROL_CS_STALL;
 
@@ -1721,34 +1722,33 @@ static u32 *gen8_emit_stop_watchdog(struct drm_i915_gem_request *req, u32 *cs)
  * used as a workaround for not being allowed to do lite
  * restore with HEAD==TAIL (WaIdleLiteRestore).
  */
-static void gen8_emit_wa_tail(struct drm_i915_gem_request *request, u32 *out)
+static void gen8_emit_wa_tail(struct drm_i915_gem_request *request, u32 *cs)
 {
-	*out++ = MI_NOOP;
-	*out++ = MI_NOOP;
-	request->wa_tail = intel_ring_offset(request->ring, out);
+	*cs++ = MI_NOOP;
+	*cs++ = MI_NOOP;
+	request->wa_tail = intel_ring_offset(request, cs);
 }
 
-static void gen8_emit_breadcrumb(struct drm_i915_gem_request *request,
-				 u32 *out)
+static void gen8_emit_breadcrumb(struct drm_i915_gem_request *request, u32 *cs)
 {
 	/* w/a: bit 5 needs to be zero for MI_FLUSH_DW address. */
 	BUILD_BUG_ON(I915_GEM_HWS_INDEX_ADDR & (1 << 5));
 
-	*out++ = (MI_FLUSH_DW + 1) | MI_FLUSH_DW_OP_STOREDW;
-	*out++ = intel_hws_seqno_address(request->engine) | MI_FLUSH_DW_USE_GTT;
-	*out++ = 0;
-	*out++ = request->global_seqno;
-	*out++ = MI_USER_INTERRUPT;
-	*out++ = MI_NOOP;
-	request->tail = intel_ring_offset(request->ring, out);
+	*cs++ = (MI_FLUSH_DW + 1) | MI_FLUSH_DW_OP_STOREDW;
+	*cs++ = intel_hws_seqno_address(request->engine) | MI_FLUSH_DW_USE_GTT;
+	*cs++ = 0;
+	*cs++ = request->global_seqno;
+	*cs++ = MI_USER_INTERRUPT;
+	*cs++ = MI_NOOP;
+	request->tail = intel_ring_offset(request, cs);
 
-	gen8_emit_wa_tail(request, out);
+	gen8_emit_wa_tail(request, cs);
 }
 
 static const int gen8_emit_breadcrumb_sz = 6 + WA_TAIL_DWORDS;
 
 static void gen8_emit_breadcrumb_render(struct drm_i915_gem_request *request,
-					u32 *out)
+					u32 *cs)
 {
 	/* We're using qword write, seqno should be aligned to 8 bytes. */
 	BUILD_BUG_ON(I915_GEM_HWS_INDEX & 1);
@@ -1757,20 +1757,19 @@ static void gen8_emit_breadcrumb_render(struct drm_i915_gem_request *request,
 	 * need a prior CS_STALL, which is emitted by the flush
 	 * following the batch.
 	 */
-	*out++ = GFX_OP_PIPE_CONTROL(6);
-	*out++ = (PIPE_CONTROL_GLOBAL_GTT_IVB |
-		  PIPE_CONTROL_CS_STALL |
-		  PIPE_CONTROL_QW_WRITE);
-	*out++ = intel_hws_seqno_address(request->engine);
-	*out++ = 0;
-	*out++ = request->global_seqno;
+	*cs++ = GFX_OP_PIPE_CONTROL(6);
+	*cs++ = PIPE_CONTROL_GLOBAL_GTT_IVB | PIPE_CONTROL_CS_STALL |
+		PIPE_CONTROL_QW_WRITE;
+	*cs++ = intel_hws_seqno_address(request->engine);
+	*cs++ = 0;
+	*cs++ = request->global_seqno;
 	/* We're thrashing one dword of HWS. */
-	*out++ = 0;
-	*out++ = MI_USER_INTERRUPT;
-	*out++ = MI_NOOP;
-	request->tail = intel_ring_offset(request->ring, out);
+	*cs++ = 0;
+	*cs++ = MI_USER_INTERRUPT;
+	*cs++ = MI_NOOP;
+	request->tail = intel_ring_offset(request, cs);
 
-	gen8_emit_wa_tail(request, out);
+	gen8_emit_wa_tail(request, cs);
 }
 
 static const int gen8_emit_breadcrumb_render_sz = 8 + WA_TAIL_DWORDS;

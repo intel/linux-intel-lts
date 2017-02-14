@@ -842,17 +842,15 @@ static inline int
 mi_set_context(struct drm_i915_gem_request *req, u32 hw_flags)
 {
 	struct drm_i915_private *dev_priv = req->i915;
-	struct intel_ring *ring = req->ring;
 	struct intel_engine_cs *engine = req->engine;
 	enum intel_engine_id id;
-	u32 flags = hw_flags | MI_MM_SPACE_GTT;
+	u32 *cs, flags = hw_flags | MI_MM_SPACE_GTT;
 	const int num_rings =
 		/* Use an extended w/a on ivb+ if signalling from other rings */
 		i915.semaphores ?
 		INTEL_INFO(dev_priv)->num_rings - 1 :
 		0;
 	int len, ret;
-	u32 *cs;
 
 	/* w/a: If Flush TLB Invalidation Mode is enabled, driver must do a TLB
 	 * invalidation prior to MI_SET_CONTEXT. On GEN6 we don't set the value
@@ -891,10 +889,10 @@ mi_set_context(struct drm_i915_gem_request *req, u32 hw_flags)
 				if (signaller == engine)
 					continue;
 
-		*cs++ = i915_mmio_reg_offset(
-						    RING_PSMI_CTL(signaller->mmio_base));
-		*cs++ = _MASKED_BIT_ENABLE(
-			    GEN6_PSMI_SLEEP_MSG_DISABLE);
+				*cs++ = i915_mmio_reg_offset(
+					   RING_PSMI_CTL(signaller->mmio_base));
+				*cs++ = _MASKED_BIT_ENABLE(
+						GEN6_PSMI_SLEEP_MSG_DISABLE);
 			}
 		}
 	}
@@ -913,23 +911,24 @@ mi_set_context(struct drm_i915_gem_request *req, u32 hw_flags)
 			struct intel_engine_cs *signaller;
 			i915_reg_t last_reg = {}; /* keep gcc quiet */
 
-	    *cs++ = MI_LOAD_REGISTER_IMM(num_rings);
+			*cs++ = MI_LOAD_REGISTER_IMM(num_rings);
 			for_each_engine(signaller, dev_priv, id) {
 				if (signaller == engine)
 					continue;
 
 				last_reg = RING_PSMI_CTL(signaller->mmio_base);
-		*cs++ = i915_mmio_reg_offset(last_reg);
-		*cs++ = _MASKED_BIT_DISABLE(GEN6_PSMI_SLEEP_MSG_DISABLE);
+				*cs++ = i915_mmio_reg_offset(last_reg);
+				*cs++ = _MASKED_BIT_DISABLE(
+						GEN6_PSMI_SLEEP_MSG_DISABLE);
 			}
 
 			/* Insert a delay before the next switch! */
-	    *cs++ = MI_STORE_REGISTER_MEM | MI_SRM_LRM_GLOBAL_GTT;
-	    *cs++ = i915_mmio_reg_offset(last_reg);
-	    *cs++ = i915_ggtt_offset(engine->scratch);
-	    *cs++ = MI_NOOP;
+			*cs++ = MI_STORE_REGISTER_MEM | MI_SRM_LRM_GLOBAL_GTT;
+			*cs++ = i915_mmio_reg_offset(last_reg);
+			*cs++ = i915_ggtt_offset(engine->scratch);
+			*cs++ = MI_NOOP;
 		}
-	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+		*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
 	}
 
 	intel_ring_advance(req, cs);

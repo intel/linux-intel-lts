@@ -291,7 +291,7 @@ static int emit_mocs_control_table(struct drm_i915_gem_request *req,
 
 	for (index = 0; index < table->size; index++) {
 		*cs++ = i915_mmio_reg_offset(mocs_register(engine, index));
-	*cs++ = table->table[index].control_value;
+		*cs++ = table->table[index].control_value;
 	}
 
 	/*
@@ -303,7 +303,7 @@ static int emit_mocs_control_table(struct drm_i915_gem_request *req,
 	 * that value to all the used entries.
 	 */
 	for (; index < GEN9_NUM_MOCS_ENTRIES; index++) {
-	*cs++ = i915_mmio_reg_offset(mocs_register(engine, index));
+		*cs++ = i915_mmio_reg_offset(mocs_register(engine, index));
 		*cs++ = table->table[0].control_value;
 	}
 
@@ -349,13 +349,13 @@ static int emit_mocs_l3cc_table(struct drm_i915_gem_request *req,
 
 	for (i = 0; i < table->size/2; i++) {
 		*cs++ = i915_mmio_reg_offset(GEN9_LNCFCMOCS(i));
-		*cs++ = l3cc_combine(table, 2*i, 2*i+1);
+		*cs++ = l3cc_combine(table, 2 * i, 2 * i + 1);
 	}
 
 	if (table->size & 0x01) {
 		/* Odd table size - 1 left over */
 		*cs++ = i915_mmio_reg_offset(GEN9_LNCFCMOCS(i));
-	*cs++ = l3cc_combine(table, 2*i, 0);
+		*cs++ = l3cc_combine(table, 2*i, 0);
 		i++;
 	}
 
@@ -365,8 +365,8 @@ static int emit_mocs_l3cc_table(struct drm_i915_gem_request *req,
 	 * they are reserved by the hardware.
 	 */
 	for (; i < GEN9_NUM_MOCS_ENTRIES / 2; i++) {
-	*cs++ = i915_mmio_reg_offset(GEN9_LNCFCMOCS(i));
-	*cs++ = l3cc_combine(table, 0, 0);
+		*cs++ = i915_mmio_reg_offset(GEN9_LNCFCMOCS(i));
+		*cs++ = l3cc_combine(table, 0, 0);
 	}
 
 	*cs++ = MI_NOOP;

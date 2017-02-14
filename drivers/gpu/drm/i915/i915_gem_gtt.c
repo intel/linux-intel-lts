@@ -1724,14 +1724,13 @@ static int hsw_mm_switch(struct i915_hw_ppgtt *ppgtt,
 			 struct drm_i915_gem_request *req)
 {
 	struct intel_engine_cs *engine = req->engine;
-	int ret;
 	u32 *cs;
+	int ret;
 
 	/* NB: TLBs must be flushed and invalidated before a switch */
 	ret = engine->emit_flush(req, EMIT_INVALIDATE | EMIT_FLUSH);
 	if (ret)
 		return ret;
-
 
 	cs = intel_ring_begin(req, 6);
 	if (IS_ERR(cs))
@@ -1752,8 +1751,8 @@ static int gen7_mm_switch(struct i915_hw_ppgtt *ppgtt,
 			  struct drm_i915_gem_request *req)
 {
 	struct intel_engine_cs *engine = req->engine;
-	int ret;
 	u32 *cs;
+	int ret;
 
 	/* NB: TLBs must be flushed and invalidated before a switch */
 	ret = engine->emit_flush(req, EMIT_INVALIDATE | EMIT_FLUSH);

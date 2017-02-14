@@ -325,8 +325,7 @@ static int intel_overlay_continue(struct intel_overlay *overlay,
 	struct drm_i915_private *dev_priv = overlay->i915;
 	struct drm_i915_gem_request *req;
 	u32 flip_addr = overlay->flip_addr;
-	u32 tmp;
-	u32 *cs;
+	u32 tmp, *cs;
 
 	WARN_ON(!overlay->active);
 
@@ -404,8 +403,7 @@ static void intel_overlay_off_tail(struct i915_gem_active *active,
 static int intel_overlay_off(struct intel_overlay *overlay)
 {
 	struct drm_i915_gem_request *req;
-	u32 flip_addr = overlay->flip_addr;
-	u32 *cs;
+	u32 *cs, flip_addr = overlay->flip_addr;
 
 	WARN_ON(!overlay->active);
 
@@ -424,7 +422,6 @@ static int intel_overlay_off(struct intel_overlay *overlay)
 		i915_add_request_no_flush(req);
 		return PTR_ERR(cs);
 	}
-
 
 	/* wait for overlay to go idle */
 	*cs++ = MI_OVERLAY_FLIP | MI_OVERLAY_CONTINUE;
@@ -459,8 +456,8 @@ static int intel_overlay_recover_from_interrupt(struct intel_overlay *overlay)
 static int intel_overlay_release_old_vid(struct intel_overlay *overlay)
 {
 	struct drm_i915_private *dev_priv = overlay->i915;
-	int ret;
 	u32 *cs;
+	int ret;
 
 	lockdep_assert_held(&dev_priv->drm.struct_mutex);
 
@@ -473,7 +470,6 @@ static int intel_overlay_release_old_vid(struct intel_overlay *overlay)
 	if (I915_READ(ISR) & I915_OVERLAY_PLANE_FLIP_PENDING_INTERRUPT) {
 		/* synchronous slowpath */
 		struct drm_i915_gem_request *req;
-		struct intel_ring *ring;
 
 		req = alloc_request(overlay);
 		if (IS_ERR(req))

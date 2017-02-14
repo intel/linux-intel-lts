@@ -10150,8 +10150,7 @@ static int intel_gen2_queue_flip(struct drm_device *dev,
 				 uint32_t flags)
 {
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
-	u32 flip_mask;
-	u32 *cs;
+	u32 flip_mask, *cs;
 
 	cs = intel_ring_begin(req, 6);
 	if (IS_ERR(cs))
@@ -10182,8 +10181,7 @@ static int intel_gen3_queue_flip(struct drm_device *dev,
 				 uint32_t flags)
 {
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
-	u32 flip_mask;
-	u32 *cs;
+	u32 flip_mask, *cs;
 
 	cs = intel_ring_begin(req, 6);
 	if (IS_ERR(cs))
@@ -10195,8 +10193,7 @@ static int intel_gen3_queue_flip(struct drm_device *dev,
 		flip_mask = MI_WAIT_FOR_PLANE_A_FLIP;
 	*cs++ = MI_WAIT_FOR_EVENT | flip_mask;
 	*cs++ = MI_NOOP;
-	*cs++ = MI_DISPLAY_FLIP_I915 |
-			MI_DISPLAY_FLIP_PLANE(intel_crtc->plane);
+	*cs++ = MI_DISPLAY_FLIP_I915 | MI_DISPLAY_FLIP_PLANE(intel_crtc->plane);
 	*cs++ = fb->pitches[0];
 	*cs++ = intel_crtc->flip_work->gtt_offset;
 	*cs++ = MI_NOOP;
@@ -10213,8 +10210,7 @@ static int intel_gen4_queue_flip(struct drm_device *dev,
 {
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
-	uint32_t pf, pipesrc;
-	u32 *cs;
+	u32 pf, pipesrc, *cs;
 
 	cs = intel_ring_begin(req, 4);
 	if (IS_ERR(cs))
@@ -10224,11 +10220,10 @@ static int intel_gen4_queue_flip(struct drm_device *dev,
 	 * Display Registers (which do not change across a page-flip)
 	 * so we need only reprogram the base address.
 	 */
-	*cs++ = MI_DISPLAY_FLIP |
-			MI_DISPLAY_FLIP_PLANE(intel_crtc->plane);
+	*cs++ = MI_DISPLAY_FLIP | MI_DISPLAY_FLIP_PLANE(intel_crtc->plane);
 	*cs++ = fb->pitches[0];
 	*cs++ = intel_crtc->flip_work->gtt_offset |
-			intel_fb_modifier_to_tiling(fb->modifier);
+		intel_fb_modifier_to_tiling(fb->modifier);
 
 	/* XXX Enabling the panel-fitter across page-flip is so far
 	 * untested on non-native modes, so ignore it for now.
@@ -10236,7 +10231,7 @@ static int intel_gen4_queue_flip(struct drm_device *dev,
 	 */
 	pf = 0;
 	pipesrc = I915_READ(PIPESRC(intel_crtc->pipe)) & 0x0fff0fff;
-	*cs++ =  pf | pipesrc;
+	*cs++ = pf | pipesrc;
 
 	return 0;
 }
@@ -10250,18 +10245,14 @@ static int intel_gen6_queue_flip(struct drm_device *dev,
 {
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
-	uint32_t pf, pipesrc;
-	u32 *cs;
-
+	u32 pf, pipesrc, *cs;
 
 	cs = intel_ring_begin(req, 4);
 	if (IS_ERR(cs))
 		return PTR_ERR(cs);
 
-	*cs++ = MI_DISPLAY_FLIP |
-			MI_DISPLAY_FLIP_PLANE(intel_crtc->plane);
-	*cs++ = fb->pitches[0] |
-			intel_fb_modifier_to_tiling(fb->modifier);
+	*cs++ = MI_DISPLAY_FLIP | MI_DISPLAY_FLIP_PLANE(intel_crtc->plane);
+	*cs++ = fb->pitches[0] | intel_fb_modifier_to_tiling(fb->modifier);
 	*cs++ = intel_crtc->flip_work->gtt_offset;
 
 	/* Contrary to the suggestions in the documentation,
@@ -10286,9 +10277,8 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 {
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
-	uint32_t plane_bit = 0;
+	u32 *cs, plane_bit = 0;
 	int len, ret;
-	u32 *cs;
 
 	switch (intel_crtc->plane) {
 	case PLANE_A:
@@ -10347,12 +10337,12 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 	if (req->engine->id == RCS) {
 		*cs++ = MI_LOAD_REGISTER_IMM(1);
 		*cs++ = i915_mmio_reg_offset(DERRMR);
-		*cs++ =  ~(DERRMR_PIPEA_PRI_FLIP_DONE |
-				DERRMR_PIPEB_PRI_FLIP_DONE |
-				DERRMR_PIPEC_PRI_FLIP_DONE);
+		*cs++ = ~(DERRMR_PIPEA_PRI_FLIP_DONE |
+			  DERRMR_PIPEB_PRI_FLIP_DONE |
+			  DERRMR_PIPEC_PRI_FLIP_DONE);
 		if (IS_GEN8(dev_priv))
 			*cs++ = MI_STORE_REGISTER_MEM_GEN8 |
-					MI_SRM_LRM_GLOBAL_GTT;
+				MI_SRM_LRM_GLOBAL_GTT;
 		else
 			*cs++ = MI_STORE_REGISTER_MEM | MI_SRM_LRM_GLOBAL_GTT;
 		*cs++ = i915_mmio_reg_offset(DERRMR);
@@ -10365,7 +10355,6 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 
 	*cs++ = MI_DISPLAY_FLIP_I915 | plane_bit;
 	*cs++ = fb->pitches[0] | intel_fb_modifier_to_tiling(fb->modifier);
-
 	*cs++ = intel_crtc->flip_work->gtt_offset;
 	*cs++ = MI_NOOP;
 
