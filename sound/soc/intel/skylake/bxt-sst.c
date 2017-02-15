@@ -308,7 +308,7 @@ static int bxt_d0i3_target_state(struct sst_dsp *ctx)
 		return SKL_DSP_D0I3_NONE;
 }
 
-static void bxt_set_dsp_D0i3(struct work_struct *work)
+void bxt_set_dsp_D0i3(struct work_struct *work)
 {
 	int ret;
 	struct skl_ipc_d0ix_msg msg;
@@ -353,7 +353,7 @@ static void bxt_set_dsp_D0i3(struct work_struct *work)
 	skl->cores.state[SKL_DSP_CORE0_ID] = SKL_DSP_RUNNING_D0I3;
 }
 
-static int bxt_schedule_dsp_D0i3(struct sst_dsp *ctx)
+int bxt_schedule_dsp_D0i3(struct sst_dsp *ctx)
 {
 	struct skl_sst *skl = ctx->thread_context;
 	struct skl_d0i3_data *d0i3 = &skl->d0i3;
@@ -370,7 +370,7 @@ static int bxt_schedule_dsp_D0i3(struct sst_dsp *ctx)
 	return 0;
 }
 
-static int bxt_set_dsp_D0i0(struct sst_dsp *ctx)
+int bxt_set_dsp_D0i0(struct sst_dsp *ctx)
 {
 	int ret;
 	struct skl_ipc_d0ix_msg msg;
