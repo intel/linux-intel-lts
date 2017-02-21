@@ -368,7 +368,6 @@ struct skl_module_cfg {
 	u32 vbus_id;
 	u32 mem_pages;
 	enum d0i3_capability d0i3_caps;
-	u8 pdi_type;
 	u32 sdw_stream_num;
 	bool sdw_agg_enable;
 	struct skl_sdw_aggregation sdw_agg;

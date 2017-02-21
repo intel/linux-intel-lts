@@ -2977,10 +2977,6 @@ static int skl_tplg_get_token(struct device *dev,
 	case SKL_TKN_U8_CONN_TYPE:
 		break;
 
-	case SKL_TKN_U8_PDI_TYPE:
-		mconfig->pdi_type = tkn_elem->value;
-		break;
-
 	default:
 		dev_err(dev, "Token %d not handled\n",
 				tkn_elem->token);
