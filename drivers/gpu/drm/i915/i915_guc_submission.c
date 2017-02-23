@@ -859,10 +859,17 @@ static void guc_addon_create(struct intel_guc *guc)
 
 	for_each_engine(engine, dev_priv, id) {
 		reg_state->mmio_white_list[engine->guc_id].mmio_start =
-			engine->mmio_base + GUC_MMIO_WHITE_LIST_START;
+			i915_mmio_reg_offset(RING_FORCE_TO_NONPRIV(engine->mmio_base, 0));
+
+		/*
+		 * Note: if the GuC whitelist management is enabled, the values
+		 * should be filled using the workaround framework to avoid
+		 * inconsistencies with the handling of FORCE_TO_NONPRIV
+		 * registers.
+		 */
+		reg_state->mmio_white_list[engine->guc_id].count = 0;
 
 		/* Nothing to be saved or restored for now. */
-		reg_state->mmio_white_list[engine->guc_id].count = 0;
 	}
 
 	ads->reg_state_addr = ads->scheduler_policies +
