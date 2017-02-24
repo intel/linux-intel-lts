@@ -634,6 +634,13 @@ int i915_error_state_to_str(struct drm_i915_error_state_buf *m,
 			   CSR_VERSION_MINOR(error->dmc_version));
 	}
 
+	if (HAS_GUC(dev_priv)) {
+		err_printf(m, "GuC loaded: %s\n", yesno(error->guc_version));
+		err_printf(m, "GuC fw version: %d.%d\n",
+			   error->guc_version >> 16,
+			   error->guc_version & 0xffff);
+	}
+
 	err_printf(m, "EIR: 0x%08x\n", error->eir);
 	err_printf(m, "IER: 0x%08x\n", error->ier);
 	for (i = 0; i < error->ngtier; i++)
@@ -1609,6 +1616,14 @@ static void i915_capture_fw_state(struct drm_i915_private *dev_priv,
 		struct intel_csr *csr = &dev_priv->csr;
 
 		error->dmc_version = csr->version;
+	}
+
+	if (HAS_GUC(dev_priv)) {
+		struct intel_guc *guc = &dev_priv->guc;
+
+		error->guc_version =
+			(guc->fw.major_ver_found << 16 |
+			 guc->fw.minor_ver_found);
 	}
 }
 

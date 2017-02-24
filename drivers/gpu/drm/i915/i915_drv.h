@@ -988,6 +988,7 @@ struct i915_gpu_state {
 
 	/* Firmware load state */
 	u32 dmc_version;
+	u32 guc_version;
 
 	u32 nfence;
 	u64 fence[I915_MAX_NUM_FENCES];
