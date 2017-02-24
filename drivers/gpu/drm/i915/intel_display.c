@@ -10999,48 +10999,25 @@ static bool check_single_encoder_cloning(struct drm_atomic_state *state,
 static int skylake_pfiter_calculate(struct drm_crtc *crtc,
 				    struct drm_crtc_state *crtc_state)
 {
-	struct drm_device *dev = crtc->dev;
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	struct intel_crtc_state *pipe_config =
 		to_intel_crtc_state(crtc_state);
 	bool mode_changed = needs_modeset(crtc_state);
-	struct intel_connector *intel_connector;
 	int ret = 0;
-	struct drm_display_mode *adjusted_mode =
-		&intel_crtc->config->base.adjusted_mode;
 
-	for_each_intel_connector(dev, intel_connector) {
-		if (!(intel_connector) || !(intel_connector->encoder) ||
-			(intel_connector->encoder->base.crtc  != crtc))
-			continue;
-
-		if (((pipe_config->pipe_src_w !=
-			intel_crtc->config->pipe_src_w) ||
-			(pipe_config->pipe_src_h !=
-			intel_crtc->config->pipe_src_h)) && (!mode_changed))
+	if (((pipe_config->pipe_scaling_mode !=
+		intel_crtc->config->pipe_scaling_mode) ||
+		(pipe_config->pipe_src_w != intel_crtc->config->pipe_src_w) ||
+		(pipe_config->pipe_src_h != intel_crtc->config->pipe_src_h)) &&
+		(!mode_changed)) {
 			pipe_config->update_pipe = true;
+	}
 
-		if ((pipe_config->pipe_scaling_mode !=
-			intel_connector->panel.fitting_mode) &&
-			(!mode_changed)) {
-			if  ((adjusted_mode->hdisplay !=
-				pipe_config->pipe_src_w) ||
-				(adjusted_mode->vdisplay !=
-				pipe_config->pipe_src_h)) {
-					pipe_config->pipe_scaling_mode =
-						intel_connector->panel.fitting_mode;
-					pipe_config->update_pipe = true;
-				}
-		}
-
-		if ((mode_changed) || (pipe_config->update_pipe)) {
-			ret = skl_update_scaler_crtc(pipe_config);
-			if (ret)
-				break;
+	if ((mode_changed) || (pipe_config->update_pipe)) {
+		ret = skl_update_scaler_crtc(pipe_config);
+		if (!ret)
 			intel_pch_panel_fitting(intel_crtc, pipe_config,
-				intel_connector->panel.fitting_mode);
-			break;
-		}
+				pipe_config->pipe_scaling_mode);
 	}
 	return ret;
 }
@@ -12588,6 +12565,8 @@ static int intel_atomic_check(struct drm_device *dev,
 			}
 			pipe_config->pipe_src_w = crtc_state->src_w;
 			pipe_config->pipe_src_h = crtc_state->src_h;
+			pipe_config->pipe_scaling_mode =
+				crtc_state->fitting_mode;
 			crtc_state->pipescaler_changed = false;
 		}
 

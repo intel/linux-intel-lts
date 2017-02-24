@@ -520,6 +520,9 @@ int drm_atomic_crtc_set_property(struct drm_crtc *crtc,
 	} else if (property == config->prop_pipe_src_h) {
 		state->src_h = val;
 		state->pipescaler_changed = true;
+	} else if (property == config->prop_fitting_mode) {
+		state->fitting_mode = val;
+		state->pipescaler_changed = true;
 	} else if (crtc->funcs->atomic_set_property)
 		return crtc->funcs->atomic_set_property(crtc, state, property, val);
 	else
@@ -568,6 +571,8 @@ drm_atomic_crtc_get_property(struct drm_crtc *crtc,
 		*val = state->src_w;
 	else if (property == config->prop_pipe_src_h)
 		*val = state->src_h;
+	else if (property == config->prop_fitting_mode)
+		*val = state->fitting_mode;
 	else if (crtc->funcs->atomic_get_property)
 		return crtc->funcs->atomic_get_property(crtc, state, property, val);
 	else

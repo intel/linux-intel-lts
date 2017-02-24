@@ -106,6 +106,7 @@ intel_pch_panel_fitting(struct intel_crtc *intel_crtc,
 			int fitting_mode)
 {
 	const struct drm_display_mode *adjusted_mode = &pipe_config->base.adjusted_mode;
+	struct drm_i915_private *dev_priv = to_i915(intel_crtc->base.dev);
 	int x = 0, y = 0, width = 0, height = 0;
 	bool downscale = false;
 
@@ -115,7 +116,7 @@ intel_pch_panel_fitting(struct intel_crtc *intel_crtc,
 		goto done;
 
 	/* Downscale pfiter */
-	if (IS_GEN9(intel_crtc->base.dev) &&
+	if (IS_GEN9(dev_priv) &&
 	     (adjusted_mode->hdisplay < pipe_config->pipe_src_w ||
 	    adjusted_mode->vdisplay < pipe_config->pipe_src_h))
 		downscale = true;
