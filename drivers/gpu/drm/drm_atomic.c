@@ -514,6 +514,12 @@ int drm_atomic_crtc_set_property(struct drm_crtc *crtc,
 			return -EFAULT;
 
 		set_out_fence_for_crtc(state->state, crtc, fence_ptr);
+	} else if (property == config->prop_pipe_src_w) {
+		state->src_w = val;
+		state->pipescaler_changed = true;
+	} else if (property == config->prop_pipe_src_h) {
+		state->src_h = val;
+		state->pipescaler_changed = true;
 	} else if (crtc->funcs->atomic_set_property)
 		return crtc->funcs->atomic_set_property(crtc, state, property, val);
 	else
@@ -558,6 +564,10 @@ drm_atomic_crtc_get_property(struct drm_crtc *crtc,
 		*val = (state->gamma_lut) ? state->gamma_lut->base.id : 0;
 	else if (property == config->prop_out_fence_ptr)
 		*val = 0;
+	else if (property == config->prop_pipe_src_w)
+		*val = state->src_w;
+	else if (property == config->prop_pipe_src_h)
+		*val = state->src_h;
 	else if (crtc->funcs->atomic_get_property)
 		return crtc->funcs->atomic_get_property(crtc, state, property, val);
 	else

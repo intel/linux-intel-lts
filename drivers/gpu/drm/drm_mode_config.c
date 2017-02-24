@@ -337,6 +337,17 @@ static int drm_mode_create_standard_properties(struct drm_device *dev)
 		return -ENOMEM;
 	dev->mode_config.gamma_lut_size_property = prop;
 
+	prop = drm_property_create_range(dev, DRM_MODE_PROP_ATOMIC,
+			"PIPE_SRC_W", 0, INT_MAX);
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.prop_pipe_src_w = prop;
+	prop = drm_property_create_range(dev, DRM_MODE_PROP_ATOMIC,
+			"PIPE_SRC_H", 0, INT_MAX);
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.prop_pipe_src_h = prop;
+
 	return 0;
 }
 
