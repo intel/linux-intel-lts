@@ -11057,6 +11057,8 @@ static int skylake_pfiter_calculate(struct drm_crtc *crtc,
 				intel_pch_panel_fitting(intel_crtc,
 						pipe_config,
 						pipe_config->pipe_scaling_mode);
+			}
+			if (pipe_config->pch_pfit.enabled) {
 				pipe_config->pipe_dst_x =
 					(pipe_config->pch_pfit.pos >> 16);
 				pipe_config->pipe_dst_y =
@@ -11516,6 +11518,10 @@ intel_modeset_pipe_config(struct drm_crtc *crtc,
 
 	pipe_config->pipe_dst_w = pipe_config->pipe_src_w;
 	pipe_config->pipe_dst_h = pipe_config->pipe_src_h;
+	pipe_config->base.dst_w = pipe_config->pipe_src_w;
+	pipe_config->base.dst_h = pipe_config->pipe_src_h;
+	pipe_config->base.src_w = pipe_config->pipe_src_w;
+	pipe_config->base.src_h = pipe_config->pipe_src_h;
 
 encoder_retry:
 	/* Ensure the port clock defaults are reset when retrying. */
@@ -12614,8 +12620,8 @@ static int intel_atomic_check(struct drm_device *dev,
 
 				crtc_state->src_w = adjusted_mode->hdisplay;
 				crtc_state->src_h = adjusted_mode->vdisplay;
-				crtc_state->dst_w = adjusted_mode->hdisplay;
-				crtc_state->dst_h = adjusted_mode->vdisplay;
+				crtc_state->dst_w = crtc_state->src_w;
+				crtc_state->dst_h = crtc_state->src_h;
 				crtc_state->dst_x =  0;
 				crtc_state->dst_y =  0;
 				crtc_state->fitting_mode = 0;
