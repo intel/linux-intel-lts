@@ -335,6 +335,14 @@ int drm_crtc_init_with_planes(struct drm_device *dev, struct drm_crtc *crtc,
 					   config->prop_pipe_src_h, 0);
 		drm_object_attach_property(&crtc->base,
 					   config->prop_fitting_mode, 0);
+		drm_object_attach_property(&crtc->base,
+					   config->prop_pipe_dst_x, 0);
+		drm_object_attach_property(&crtc->base,
+					   config->prop_pipe_dst_y, 0);
+		drm_object_attach_property(&crtc->base,
+					   config->prop_pipe_dst_w, 0);
+		drm_object_attach_property(&crtc->base,
+					   config->prop_pipe_dst_h, 0);
 	}
 
 	return 0;

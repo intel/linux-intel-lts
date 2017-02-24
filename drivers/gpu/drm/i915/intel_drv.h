@@ -548,6 +548,8 @@ struct intel_crtc_state {
 	 * and get clipped at the edges. */
 	int pipe_src_w, pipe_src_h;
 	u32 pipe_scaling_mode;
+	int pipe_dst_x, pipe_dst_y;
+	int pipe_dst_w, pipe_dst_h;
 
 	/*
 	 * Pipe pixel rate, adjusted for

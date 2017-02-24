@@ -104,6 +104,7 @@ extern "C" {
 #define DRM_MODE_SCALE_FULLSCREEN	1 /* Full screen, ignore aspect */
 #define DRM_MODE_SCALE_CENTER		2 /* Centered, no scaling */
 #define DRM_MODE_SCALE_ASPECT		3 /* Full screen, preserve aspect */
+#define DRM_MODE_SCALE_CUSTOM		4 /* Custom pipe scaling */
 
 /* Dithering mode options */
 #define DRM_MODE_DITHERING_OFF	0
