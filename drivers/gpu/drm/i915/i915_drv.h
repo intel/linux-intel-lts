@@ -986,6 +986,9 @@ struct i915_gpu_state {
 	u32 gab_ctl;
 	u32 gfx_mode;
 
+	/* Firmware load state */
+	u32 dmc_version;
+
 	u32 nfence;
 	u64 fence[I915_MAX_NUM_FENCES];
 	struct intel_overlay_error_state *overlay;
