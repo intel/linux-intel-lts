@@ -11014,6 +11014,17 @@ intel_gen9_pipe_scale(struct intel_crtc *intel_crtc,
 		pipe_config->pipe_src_w))
 		goto done;
 
+	/* Out of boundary, clamping it */
+	if ((pipe_config->pipe_dst_x + pipe_config->pipe_dst_w) >
+	     adjusted_mode->hdisplay)
+		pipe_config->pipe_dst_w =
+		(adjusted_mode->hdisplay - pipe_config->pipe_dst_x);
+
+	if ((pipe_config->pipe_dst_y + pipe_config->pipe_dst_h) >
+	    adjusted_mode->vdisplay)
+		pipe_config->pipe_dst_h =
+		(adjusted_mode->vdisplay - pipe_config->pipe_dst_y);
+
 	x = pipe_config->pipe_dst_x;
 	y = pipe_config->pipe_dst_y;
 	width = pipe_config->pipe_dst_w;
