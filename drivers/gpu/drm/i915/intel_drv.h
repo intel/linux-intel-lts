@@ -547,6 +547,7 @@ struct intel_crtc_state {
 	 * All planes will be positioned inside this space,
 	 * and get clipped at the edges. */
 	int pipe_src_w, pipe_src_h;
+	u32 pipe_scaling_mode;
 
 	/*
 	 * Pipe pixel rate, adjusted for

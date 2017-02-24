@@ -10996,6 +10996,55 @@ static bool check_single_encoder_cloning(struct drm_atomic_state *state,
 	return true;
 }
 
+static int skylake_pfiter_calculate(struct drm_crtc *crtc,
+				    struct drm_crtc_state *crtc_state)
+{
+	struct drm_device *dev = crtc->dev;
+	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
+	struct intel_crtc_state *pipe_config =
+		to_intel_crtc_state(crtc_state);
+	bool mode_changed = needs_modeset(crtc_state);
+	struct intel_connector *intel_connector;
+	int ret = 0;
+	struct drm_display_mode *adjusted_mode =
+		&intel_crtc->config->base.adjusted_mode;
+
+	for_each_intel_connector(dev, intel_connector) {
+		if (!(intel_connector) || !(intel_connector->encoder) ||
+			(intel_connector->encoder->base.crtc  != crtc))
+			continue;
+
+		if (((pipe_config->pipe_src_w !=
+			intel_crtc->config->pipe_src_w) ||
+			(pipe_config->pipe_src_h !=
+			intel_crtc->config->pipe_src_h)) && (!mode_changed))
+			pipe_config->update_pipe = true;
+
+		if ((pipe_config->pipe_scaling_mode !=
+			intel_connector->panel.fitting_mode) &&
+			(!mode_changed)) {
+			if  ((adjusted_mode->hdisplay !=
+				pipe_config->pipe_src_w) ||
+				(adjusted_mode->vdisplay !=
+				pipe_config->pipe_src_h)) {
+					pipe_config->pipe_scaling_mode =
+						intel_connector->panel.fitting_mode;
+					pipe_config->update_pipe = true;
+				}
+		}
+
+		if ((mode_changed) || (pipe_config->update_pipe)) {
+			ret = skl_update_scaler_crtc(pipe_config);
+			if (ret)
+				break;
+			intel_pch_panel_fitting(intel_crtc, pipe_config,
+				intel_connector->panel.fitting_mode);
+			break;
+		}
+	}
+	return ret;
+}
+
 static int intel_crtc_atomic_check(struct drm_crtc *crtc,
 				   struct drm_crtc_state *crtc_state)
 {
@@ -11064,9 +11113,7 @@ static int intel_crtc_atomic_check(struct drm_crtc *crtc,
 	}
 
 	if (INTEL_GEN(dev_priv) >= 9) {
-		if (mode_changed)
-			ret = skl_update_scaler_crtc(pipe_config);
-
+		ret = skylake_pfiter_calculate(crtc, crtc_state);
 		if (!ret)
 			ret = skl_check_pipe_max_pixel_rate(intel_crtc,
 							    pipe_config);
@@ -12528,6 +12575,21 @@ static int intel_atomic_check(struct drm_device *dev,
 	for_each_crtc_in_state(state, crtc, crtc_state, i) {
 		struct intel_crtc_state *pipe_config =
 			to_intel_crtc_state(crtc_state);
+
+		if (crtc_state->pipescaler_changed) {
+			if (crtc_state->src_w == 0 && crtc_state->src_h == 0) {
+				struct intel_crtc *intel_crtc =
+					to_intel_crtc(crtc);
+				struct drm_display_mode *adjusted_mode =
+					&intel_crtc->config->base.adjusted_mode;
+
+				crtc_state->src_w = adjusted_mode->hdisplay;
+				crtc_state->src_h = adjusted_mode->vdisplay;
+			}
+			pipe_config->pipe_src_w = crtc_state->src_w;
+			pipe_config->pipe_src_h = crtc_state->src_h;
+			crtc_state->pipescaler_changed = false;
+		}
 
 		/* Catch I915_MODE_FLAG_INHERITED */
 		if (crtc_state->mode.private_flags != crtc->state->mode.private_flags)
