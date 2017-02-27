@@ -352,7 +352,7 @@ static int sierra_net_parse_lsi(struct usbnet *dev, char *data, int datalen)
 	struct lsi_umts *lsi = (struct lsi_umts *)data;
 
 	if (datalen < sizeof(struct lsi_umts)) {
-		netdev_err(dev->net, "%s: Data length %d, exp %Zu\n",
+		netdev_err(dev->net, "%s: Data length %d, exp %zu\n",
 				__func__, datalen,
 				sizeof(struct lsi_umts));
 		return -1;
