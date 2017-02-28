@@ -699,7 +699,7 @@ static int efivar_sysfs_destroy(struct efivar_entry *entry, void *data)
 	if (err)
 		return err;
 	efivar_unregister(entry);
-	return 0;
+	return err;
 }
 
 static void efivars_sysfs_exit(void)
