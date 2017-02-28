@@ -702,6 +702,7 @@ unsigned long native_calibrate_tsc(void)
 		}
 	}
 
+	setup_force_cpu_cap(X86_FEATURE_TSC_RELIABLE);
 	return crystal_khz * ebx_numerator / eax_denominator;
 }
 
