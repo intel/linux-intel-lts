@@ -241,6 +241,11 @@ virt_to_phys_or_null_size(void *va, unsigned long size)
 #define virt_to_phys_or_null(addr)				\
 	virt_to_phys_or_null_size((addr), sizeof(*(addr)))
 
+pgd_t *efi_get_pgd(void)
+{
+	return __va(efi_scratch.efi_pgt);
+}
+
 int __init efi_setup_page_tables(unsigned long pa_memmap, unsigned num_pages)
 {
 	unsigned long pfn, text;
