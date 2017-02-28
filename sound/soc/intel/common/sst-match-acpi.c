@@ -14,6 +14,7 @@
  * more details.
  */
 
+#include <linux/module.h>
 #include "sst-acpi.h"
 
 static acpi_status sst_acpi_find_name(acpi_handle handle, u32 level,
