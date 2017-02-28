@@ -72,6 +72,7 @@ ieee80211_bss_info_update(struct ieee80211_local *local,
 	};
 	bool signal_valid;
 	struct ieee80211_sub_if_data *scan_sdata;
+	struct timespec ts;
 
 	if (ieee80211_hw_check(&local->hw, SIGNAL_DBM))
 		bss_meta.signal = rx_status->signal * 100;
@@ -98,6 +99,9 @@ ieee80211_bss_info_update(struct ieee80211_local *local,
 				scan_sdata->vif.bss_conf.bssid);
 	}
 	rcu_read_unlock();
+	get_monotonic_boottime(&ts);
+	mgmt->u.probe_resp.timestamp = ((u64)ts.tv_sec*1000000)
+			+ ts.tv_nsec / 1000;
 
 	cbss = cfg80211_inform_bss_frame_data(local->hw.wiphy, &bss_meta,
 					      mgmt, len, GFP_ATOMIC);
