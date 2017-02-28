@@ -454,11 +454,20 @@ static int wcove_gpio_probe(struct platform_device *pdev)
  * interface) providing power management support for other devices in
  * the accompanied SoC, so we have no .pm for Whiskey Cove GPIO driver.
  */
+static int wcove_gpio_remove(struct platform_device *pdev)
+{
+	struct wcove_gpio *wg = platform_get_drvdata(pdev);
+
+	gpiochip_remove(&wg->chip);
+	return 0;
+}
+
 static struct platform_driver wcove_gpio_driver = {
 	.driver = {
 		.name = "bxt_wcove_gpio",
 	},
 	.probe = wcove_gpio_probe,
+	.remove = wcove_gpio_remove,
 };
 
 module_platform_driver(wcove_gpio_driver);
