@@ -25,7 +25,6 @@
  */
 #define SKL_CONTROL_TYPE_BYTE_TLV	0x100
 #define SKL_CONTROL_TYPE_MIC_SELECT	0x102
-#define SKL_CONTROL_TYPE_DSP_LOG      0x105
 #define SKL_CONTROL_TYPE_BYTE_PROBE	0x101
 
 #define HDA_SST_CFG_MAX	900 /* size of copier cfg*/

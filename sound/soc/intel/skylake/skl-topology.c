@@ -2313,11 +2313,6 @@ static const struct snd_soc_tplg_kcontrol_ops skl_tplg_kcontrol_ops[] = {
 		.get = skl_tplg_mic_control_get,
 		.put = skl_tplg_mic_control_set,
 	},
-	{
-		.id = SKL_CONTROL_TYPE_DSP_LOG,
-		.get = skl_tplg_dsp_log_get,
-		.put = skl_tplg_dsp_log_set,
-	},
 };
 
 static int skl_tplg_fill_pipe_cfg(struct device *dev,
