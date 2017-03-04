@@ -1568,6 +1568,7 @@ bool irq_cpuidle_enter(struct cpuidle_device *dev,
 		unstall_inband_nocheck();
 		synchronize_pipeline();
 		stall_inband_nocheck();
+		trace_hardirqs_off();
 		return false;
 	}
 

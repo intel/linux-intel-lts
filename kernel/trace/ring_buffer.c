@@ -3293,8 +3293,13 @@ trace_recursive_lock(struct ring_buffer_per_cpu *cpu_buffer)
 {
 	unsigned int val = cpu_buffer->current_context;
 	int bit = interrupt_context_level();
+	unsigned long flags;
 
 	bit = RB_CTX_NORMAL - bit;
+
+	flags = hard_cond_local_irq_save();
+
+	val = cpu_buffer->current_context;
 
 	if (unlikely(val & (1 << (bit + cpu_buffer->nest)))) {
 		/*
@@ -3305,6 +3310,7 @@ trace_recursive_lock(struct ring_buffer_per_cpu *cpu_buffer)
 		bit = RB_CTX_TRANSITION;
 		if (val & (1 << (bit + cpu_buffer->nest))) {
 			do_ring_buffer_record_recursion();
+			hard_cond_local_irq_restore(flags);
 			return 1;
 		}
 	}
@@ -3312,14 +3318,20 @@ trace_recursive_lock(struct ring_buffer_per_cpu *cpu_buffer)
 	val |= (1 << (bit + cpu_buffer->nest));
 	cpu_buffer->current_context = val;
 
+	hard_cond_local_irq_restore(flags);
+
 	return 0;
 }
 
 static __always_inline void
 trace_recursive_unlock(struct ring_buffer_per_cpu *cpu_buffer)
 {
+	unsigned long flags;
+
+	flags = hard_cond_local_irq_save();
 	cpu_buffer->current_context &=
 		cpu_buffer->current_context - (1 << cpu_buffer->nest);
+	hard_cond_local_irq_restore(flags);
 }
 
 /* The recursive locking above uses 5 bits */

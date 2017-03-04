@@ -1131,9 +1131,9 @@ static void tracing_snapshot_instance_cond(struct trace_array *tr,
 		return;
 	}
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	update_max_tr(tr, current, smp_processor_id(), cond_data);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 void tracing_snapshot_instance(struct trace_array *tr)
@@ -1823,7 +1823,7 @@ update_max_tr(struct trace_array *tr, struct task_struct *tsk, int cpu,
 	if (tr->stop_count)
 		return;
 
-	WARN_ON_ONCE(!irqs_disabled());
+	WARN_ON_ONCE(!hard_irqs_disabled());
 
 	if (!tr->allocated_snapshot) {
 		/* Only the nop tracer should hit this when disabling */
@@ -1868,7 +1868,7 @@ update_max_tr_single(struct trace_array *tr, struct task_struct *tsk, int cpu)
 	if (tr->stop_count)
 		return;
 
-	WARN_ON_ONCE(!irqs_disabled());
+	WARN_ON_ONCE(!hard_irqs_disabled());
 	if (!tr->allocated_snapshot) {
 		/* Only the nop tracer should hit this when disabling */
 		WARN_ON_ONCE(tr->current_trace != &nop_trace);
@@ -2649,7 +2649,7 @@ unsigned int tracing_gen_ctx_irq_test(unsigned int irqs_status)
 
 	pc = preempt_count();
 
-	if (pc & NMI_MASK)
+	if (pc & (NMI_MASK|STAGE_MASK))
 		trace_flags |= TRACE_FLAG_NMI;
 	if (pc & HARDIRQ_MASK)
 		trace_flags |= TRACE_FLAG_HARDIRQ;
@@ -2657,6 +2657,8 @@ unsigned int tracing_gen_ctx_irq_test(unsigned int irqs_status)
 		trace_flags |= TRACE_FLAG_SOFTIRQ;
 	if (softirq_count() >> (SOFTIRQ_SHIFT + 1))
 		trace_flags |= TRACE_FLAG_BH_OFF;
+	if (irqs_pipelined() && hard_irqs_disabled())
+		trace_flags |= TRACE_FLAG_IRQS_HARDOFF;
 
 	if (tif_need_resched())
 		trace_flags |= TRACE_FLAG_NEED_RESCHED;
@@ -7612,10 +7614,10 @@ tracing_snapshot_write(struct file *filp, const char __user *ubuf, size_t cnt,
 			break;
 		/* Now, we're going to swap */
 		if (iter->cpu_file == RING_BUFFER_ALL_CPUS) {
-			local_irq_disable();
+			hard_local_irq_disable();
 			update_max_tr(tr, current, smp_processor_id(), NULL);
-			local_irq_enable();
-		} else {
+			hard_local_irq_enable();
+		} else {	/* FIXME: irq_pipeline */
 			smp_call_function_single(iter->cpu_file, tracing_swap_cpu_buffer,
 						 (void *)tr, 1);
 		}

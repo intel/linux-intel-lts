@@ -53,7 +53,9 @@ DECLARE_PER_CPU(int, hardirq_context);
 extern void trace_hardirqs_on_prepare(void);
 extern void trace_hardirqs_off_finish(void);
 extern void trace_hardirqs_on(void);
+extern void trace_hardirqs_on_pipelined(void);
 extern void trace_hardirqs_off(void);
+extern void trace_hardirqs_off_pipelined(void);
 
 # define lockdep_hardirq_context()	(raw_cpu_read(hardirq_context))
 # define lockdep_softirq_context(p)	((p)->softirq_context)
@@ -115,7 +117,9 @@ do {						\
 # define trace_hardirqs_on_prepare()		do { } while (0)
 # define trace_hardirqs_off_finish()		do { } while (0)
 # define trace_hardirqs_on()			do { } while (0)
+# define trace_hardirqs_on_pipelined()		do { } while (0)
 # define trace_hardirqs_off()			do { } while (0)
+# define trace_hardirqs_off_pipelined()		do { } while (0)
 # define lockdep_hardirq_context()		0
 # define lockdep_softirq_context(p)		0
 # define lockdep_hardirqs_enabled()		0
