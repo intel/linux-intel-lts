@@ -139,11 +139,14 @@ struct kretprobe_trace_entry_head {
 /*
  * trace_flag_type is an enumeration that holds different
  * states when a trace occurs. These are:
- *  IRQS_OFF		- interrupts were disabled
+ *  IRQS_OFF		- interrupts were off (only virtually if pipelining)
  *  IRQS_NOSUPPORT	- arch does not support irqs_disabled_flags
  *  NEED_RESCHED	- reschedule is requested
  *  HARDIRQ		- inside an interrupt handler
  *  SOFTIRQ		- inside a softirq handler
+ *  IRQS_HARDOFF	- interrupts were hard disabled
+ *  OOB_STAGE		- running over the oob stage (assume IRQ tracing
+ *                        support is always available w/ pipelining).
  */
 enum trace_flag_type {
 	TRACE_FLAG_IRQS_OFF		= 0x01,
@@ -153,6 +156,8 @@ enum trace_flag_type {
 	TRACE_FLAG_SOFTIRQ		= 0x10,
 	TRACE_FLAG_PREEMPT_RESCHED	= 0x20,
 	TRACE_FLAG_NMI			= 0x40,
+	TRACE_FLAG_IRQS_HARDOFF		= 0x80,
+	TRACE_FLAG_OOB_STAGE		= TRACE_FLAG_IRQS_NOSUPPORT,
 };
 
 #define TRACE_BUF_SIZE		1024
