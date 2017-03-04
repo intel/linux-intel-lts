@@ -1119,9 +1119,9 @@ static void tracing_snapshot_instance_cond(struct trace_array *tr,
 		return;
 	}
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	update_max_tr(tr, current, smp_processor_id(), cond_data);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 void tracing_snapshot_instance(struct trace_array *tr)
@@ -1810,7 +1810,7 @@ update_max_tr(struct trace_array *tr, struct task_struct *tsk, int cpu,
 	if (tr->stop_count)
 		return;
 
-	WARN_ON_ONCE(!irqs_disabled());
+	WARN_ON_ONCE(!hard_irqs_disabled());
 
 	if (!tr->allocated_snapshot) {
 		/* Only the nop tracer should hit this when disabling */
@@ -1855,7 +1855,7 @@ update_max_tr_single(struct trace_array *tr, struct task_struct *tsk, int cpu)
 	if (tr->stop_count)
 		return;
 
-	WARN_ON_ONCE(!irqs_disabled());
+	WARN_ON_ONCE(!hard_irqs_disabled());
 	if (!tr->allocated_snapshot) {
 		/* Only the nop tracer should hit this when disabling */
 		WARN_ON_ONCE(tr->current_trace != &nop_trace);
@@ -2632,6 +2632,10 @@ unsigned int tracing_gen_ctx_irq_test(unsigned int irqs_status)
 		trace_flags |= TRACE_FLAG_HARDIRQ;
 	if (in_serving_softirq())
 		trace_flags |= TRACE_FLAG_SOFTIRQ;
+	if (running_oob())
+		trace_flags |= TRACE_FLAG_OOB_STAGE;
+	if (irqs_pipelined() && hard_irqs_disabled())
+		trace_flags |= TRACE_FLAG_IRQS_HARDOFF;
 
 	if (tif_need_resched())
 		trace_flags |= TRACE_FLAG_NEED_RESCHED;
@@ -7498,13 +7502,13 @@ tracing_snapshot_write(struct file *filp, const char __user *ubuf, size_t cnt,
 			ret = tracing_alloc_snapshot_instance(tr);
 		if (ret < 0)
 			break;
-		local_irq_disable();
+		hard_local_irq_disable();
 		/* Now, we're going to swap */
 		if (iter->cpu_file == RING_BUFFER_ALL_CPUS)
 			update_max_tr(tr, current, smp_processor_id(), NULL);
 		else
 			update_max_tr_single(tr, current, iter->cpu_file);
-		local_irq_enable();
+		hard_local_irq_enable();
 		break;
 	default:
 		if (tr->allocated_snapshot) {
