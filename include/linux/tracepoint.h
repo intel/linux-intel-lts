@@ -165,6 +165,10 @@ static inline struct tracepoint *tracepoint_ptr_deref(tracepoint_ptr_t *p)
  * The reason for this is to handle the "void" prototype. If a tracepoint
  * has a "void" prototype, then it is invalid to declare a function
  * as "(void *, void)".
+ *
+ * IRQ pipeline: we may not depend on RCU for data which may be
+ * manipulated from the out-of-band stage, so rcuidle has to be false
+ * if running_oob().
  */
 #define __DO_TRACE(name, proto, args, cond, rcuidle)			\
 	do {								\
@@ -213,7 +217,7 @@ static inline struct tracepoint *tracepoint_ptr_deref(tracepoint_ptr_t *p)
 			__DO_TRACE(name,				\
 				TP_PROTO(data_proto),			\
 				TP_ARGS(data_args),			\
-				TP_CONDITION(cond), 1);			\
+				TP_CONDITION(cond), running_inband());	\
 	}
 #else
 #define __DECLARE_TRACE_RCU(name, proto, args, cond, data_proto, data_args)
