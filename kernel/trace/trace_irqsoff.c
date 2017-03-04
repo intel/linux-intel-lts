@@ -14,6 +14,7 @@
 #include <linux/uaccess.h>
 #include <linux/module.h>
 #include <linux/ftrace.h>
+#include <linux/irqstage.h>
 #include <linux/kprobes.h>
 
 #include "trace.h"
@@ -26,7 +27,7 @@ static int				tracer_enabled __read_mostly;
 
 static DEFINE_PER_CPU(int, tracing_cpu);
 
-static DEFINE_RAW_SPINLOCK(max_trace_lock);
+static DEFINE_HARD_SPINLOCK(max_trace_lock);
 
 enum {
 	TRACER_IRQS_OFF		= (1 << 1),
@@ -44,7 +45,7 @@ static int start_irqsoff_tracer(struct trace_array *tr, int graph);
 static inline int
 preempt_trace(int pc)
 {
-	return ((trace_type & TRACER_PREEMPT_OFF) && pc);
+	return (running_inband() && (trace_type & TRACER_PREEMPT_OFF) && pc);
 }
 #else
 # define preempt_trace(pc) (0)
@@ -55,7 +56,7 @@ static inline int
 irq_trace(void)
 {
 	return ((trace_type & TRACER_IRQS_OFF) &&
-		irqs_disabled());
+		(hard_irqs_disabled() || (running_inband() && irqs_disabled())));
 }
 #else
 # define irq_trace() (0)
@@ -393,7 +394,7 @@ start_critical_timing(unsigned long ip, unsigned long parent_ip, int pc)
 	data->preempt_timestamp = ftrace_now(cpu);
 	data->critical_start = parent_ip ? : ip;
 
-	local_save_flags(flags);
+	stage_save_flags(flags);
 
 	__trace_function(tr, ip, parent_ip, flags, pc);
 
@@ -428,7 +429,7 @@ stop_critical_timing(unsigned long ip, unsigned long parent_ip, int pc)
 
 	atomic_inc(&data->disabled);
 
-	local_save_flags(flags);
+	stage_save_flags(flags);
 	__trace_function(tr, ip, parent_ip, flags, pc);
 	check_critical_timing(tr, data, parent_ip ? : ip, cpu);
 	data->critical_start = 0;
