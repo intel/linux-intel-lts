@@ -180,6 +180,10 @@ static inline struct tracepoint *tracepoint_ptr_deref(tracepoint_ptr_t *p)
 /*
  * it_func[0] is never NULL because there is at least one element in the array
  * when the array itself is non NULL.
+ *
+ * IRQ pipeline: we may not depend on RCU for data which may be
+ * manipulated from the out-of-band stage, so rcuidle has to be false
+ * if running_oob().
  */
 #define __DO_TRACE(name, args, cond, rcuidle)				\
 	do {								\
@@ -220,7 +224,7 @@ static inline struct tracepoint *tracepoint_ptr_deref(tracepoint_ptr_t *p)
 		if (static_key_false(&__tracepoint_##name.key))		\
 			__DO_TRACE(name,				\
 				TP_ARGS(args),				\
-				TP_CONDITION(cond), 1);			\
+  				TP_CONDITION(cond), running_inband());	\
 	}
 #else
 #define __DECLARE_TRACE_RCU(name, proto, args, cond)

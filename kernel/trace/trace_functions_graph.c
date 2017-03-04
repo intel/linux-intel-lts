@@ -168,7 +168,7 @@ int trace_graph_entry(struct ftrace_graph_ent *trace)
 	if (tracing_thresh)
 		return 1;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	cpu = raw_smp_processor_id();
 	data = per_cpu_ptr(tr->array_buffer.data, cpu);
 	disabled = atomic_inc_return(&data->disabled);
@@ -180,7 +180,7 @@ int trace_graph_entry(struct ftrace_graph_ent *trace)
 	}
 
 	atomic_dec(&data->disabled);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 
 	return ret;
 }
@@ -248,7 +248,7 @@ void trace_graph_return(struct ftrace_graph_ret *trace)
 		return;
 	}
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	cpu = raw_smp_processor_id();
 	data = per_cpu_ptr(tr->array_buffer.data, cpu);
 	disabled = atomic_inc_return(&data->disabled);
@@ -257,7 +257,7 @@ void trace_graph_return(struct ftrace_graph_ret *trace)
 		__trace_graph_return(tr, trace, trace_ctx);
 	}
 	atomic_dec(&data->disabled);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 void set_graph_array(struct trace_array *tr)
