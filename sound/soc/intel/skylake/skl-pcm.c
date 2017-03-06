@@ -963,46 +963,6 @@ static struct snd_soc_dai_ops skl_sdw_dai_ops = {
 
 static struct snd_soc_dai_driver skl_fe_dai[] = {
 {
-	.name = "TraceBuffer0 Pin",
-	.compress_new = snd_soc_new_compress,
-	.cops = &skl_trace_compr_ops,
-	.capture = {
-		.stream_name = "TraceBuffer0 Capture",
-		.channels_min = HDA_MONO,
-		.channels_max = HDA_MONO,
-	},
-},
-{
-	.name = "TraceBuffer1 Pin",
-	.compress_new = snd_soc_new_compress,
-	.cops = &skl_trace_compr_ops,
-	.capture = {
-		.stream_name = "TraceBuffer1 Capture",
-		.channels_min = HDA_MONO,
-		.channels_max = HDA_MONO,
-	},
-},
-{
-	.name = "TraceBuffer2 Pin",
-	.compress_new = snd_soc_new_compress,
-	.cops = &skl_trace_compr_ops,
-	.capture = {
-		.stream_name = "TraceBuffer2 Capture",
-		.channels_min = HDA_MONO,
-		.channels_max = HDA_MONO,
-	},
-},
-{
-	.name = "TraceBuffer3 Pin",
-	.compress_new = snd_soc_new_compress,
-	.cops = &skl_trace_compr_ops,
-	.capture = {
-		.stream_name = "TraceBuffer3 Capture",
-		.channels_min = HDA_MONO,
-		.channels_max = HDA_MONO,
-	},
-},
-{
 	.name = "System Pin",
 	.ops = &skl_pcm_dai_ops,
 	.playback = {
@@ -1082,24 +1042,6 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
 	},
 },
 {
-	.name = "Compress Probe0 Pin",
-	.compress_new = snd_soc_new_compress,
-	.cops = &skl_probe_compr_ops,
-	.playback = {
-		.stream_name = "Probe Playback",
-		.channels_min = HDA_MONO,
-	},
-},
-{
-	.name = "Compress Probe1 Pin",
-	.compress_new = snd_soc_new_compress,
-	.cops = &skl_probe_compr_ops,
-	.capture = {
-			.stream_name = "Probe Capture",
-			.channels_min = HDA_MONO,
-	},
-},
-{
 	.name = "LowLatency Pin",
 	.ops = &skl_pcm_dai_ops,
 	.playback = {
@@ -1173,7 +1115,7 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
 },
 };
 
-/* BE CPU  Dais */
+/* BE cpu dais and compress dais*/
 static struct snd_soc_dai_driver skl_platform_dai[] = {
 {
 	.name = "SSP0 Pin",
@@ -1484,6 +1426,64 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.formats = SNDRV_PCM_FMTBIT_S16_LE,
 	},
 
+},
+{
+	.name = "TraceBuffer0 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_trace_compr_ops,
+	.capture = {
+		.stream_name = "TraceBuffer0 Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+	},
+},
+{
+	.name = "TraceBuffer1 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_trace_compr_ops,
+	.capture = {
+		.stream_name = "TraceBuffer1 Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+	},
+},
+{
+	.name = "TraceBuffer2 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_trace_compr_ops,
+	.capture = {
+		.stream_name = "TraceBuffer2 Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+	},
+},
+{
+	.name = "TraceBuffer3 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_trace_compr_ops,
+	.capture = {
+		.stream_name = "TraceBuffer3 Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+	},
+},
+{
+	.name = "Compress Probe0 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_probe_compr_ops,
+	.playback = {
+		.stream_name = "Probe Playback",
+		.channels_min = HDA_MONO,
+	},
+},
+{
+	.name = "Compress Probe1 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_probe_compr_ops,
+	.capture = {
+			.stream_name = "Probe Capture",
+			.channels_min = HDA_MONO,
+	},
 },
 };
 
