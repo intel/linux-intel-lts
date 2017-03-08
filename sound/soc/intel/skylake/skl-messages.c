@@ -2047,6 +2047,51 @@ int skl_unbind_modules(struct skl_sst *ctx,
 }
 
 /*
+ * This function checks for source module and destination module format
+ * mismatch
+ */
+static void skl_module_format_mismatch_detection(struct skl_sst *ctx,
+					struct skl_module_cfg *src_mcfg,
+					struct skl_module_cfg *dst_mcfg,
+					int src_index, int dst_index)
+{
+	struct skl_module_fmt *src_fmt, *dst_fmt;
+
+	src_fmt = skl_get_pin_format(src_mcfg, SKL_OUTPUT_PIN, src_index);
+	dst_fmt = skl_get_pin_format(dst_mcfg, SKL_INPUT_PIN, dst_index);
+
+	if(memcmp(src_fmt, dst_fmt, sizeof(*src_fmt))) {
+		dev_warn(ctx->dev, "#### src and dst format mismatch: ####\n");
+		dev_warn(ctx->dev, "pipe=%d src module_id=%d src instance_id=%d\n",
+					src_mcfg->pipe->ppl_id,
+					src_mcfg->id.module_id,
+					src_mcfg->id.pvt_id);
+
+		dev_warn(ctx->dev, "pipe=%d dst module_id=%d dst instance_id=%d\n",
+					dst_mcfg->pipe->ppl_id,
+					dst_mcfg->id.module_id,
+					dst_mcfg->id.pvt_id);
+
+		dev_warn(ctx->dev, "channels: src=%d dst=%d\n",
+				src_fmt->channels, dst_fmt->channels);
+		dev_warn(ctx->dev, "s_freq: src=%d dst=%d\n",
+				src_fmt->s_freq, dst_fmt->s_freq);
+		dev_warn(ctx->dev, "bit_depth: src=%d dst=%d\n",
+				src_fmt->bit_depth, dst_fmt->bit_depth);
+		dev_warn(ctx->dev, "valid_bit_depth: src=%d dst=%d\n",
+				src_fmt->valid_bit_depth, dst_fmt->valid_bit_depth);
+		dev_warn(ctx->dev, "ch_cfg: src=%d dst=%d\n",
+				src_fmt->ch_cfg, dst_fmt->ch_cfg);
+		dev_warn(ctx->dev, "interleaving_style: src=%d dst=%d\n",
+				src_fmt->interleaving_style, dst_fmt->interleaving_style);
+		dev_warn(ctx->dev, "sample_type: src=%d dst=%d\n",
+				src_fmt->sample_type, dst_fmt->sample_type);
+		dev_warn(ctx->dev, "ch_map: src=%d dst=%d\n",
+				src_fmt->ch_map, dst_fmt->ch_map);
+	}
+}
+
+/*
  * Once a module is instantiated it need to be 'bind' with other modules in
  * the pipeline. For binding we need to find the module pins which are bind
  * together
@@ -2084,6 +2129,9 @@ int skl_bind_modules(struct skl_sst *ctx,
 
 	dev_dbg(ctx->dev, "src queue = %d dst queue =%d\n",
 			 msg.src_queue, msg.dst_queue);
+
+	skl_module_format_mismatch_detection(ctx, src_mcfg, dst_mcfg,
+						src_index, dst_index);
 
 	msg.module_id = src_mcfg->id.module_id;
 	msg.instance_id = src_mcfg->id.pvt_id;
