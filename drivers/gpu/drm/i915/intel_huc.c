@@ -171,7 +171,11 @@ void intel_huc_init(struct drm_i915_private *dev_priv)
 		huc_fw->major_ver_wanted = SKL_HUC_FW_MAJOR;
 		huc_fw->minor_ver_wanted = SKL_HUC_FW_MINOR;
 	} else if (IS_BROXTON(dev_priv)) {
-		fw_path = I915_BXT_HUC_UCODE;
+		/* HACK: HuC firmware loading would hang
+		 * for more than 60 second and causing
+		 * watchdog timeout. Remove it temporarily.
+		 */
+		/* fw_path = I915_BXT_HUC_UCODE; */
 		huc_fw->major_ver_wanted = BXT_HUC_FW_MAJOR;
 		huc_fw->minor_ver_wanted = BXT_HUC_FW_MINOR;
 	} else if (IS_KABYLAKE(dev_priv)) {
