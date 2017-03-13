@@ -125,23 +125,6 @@ static const struct snd_kcontrol_new cnl_rt700_controls[] = {
 #endif
 
 
-static int cnl_rt700_init(struct snd_soc_pcm_runtime *runtime)
-{
-	int ret;
-	struct snd_soc_card *card = runtime->card;
-
-	pr_info("Entry %s\n", __func__);
-	card->dapm.idle_bias_off = true;
-
-	ret = snd_soc_add_card_controls(card, cnl_rt700_controls,
-					ARRAY_SIZE(cnl_rt700_controls));
-	if (ret) {
-		pr_err("unable to add card controls\n");
-		return ret;
-	}
-	return 0;
-}
-
 static int cnl_rt700_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 			    struct snd_pcm_hw_params *params)
 {
