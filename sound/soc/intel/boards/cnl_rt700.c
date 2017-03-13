@@ -264,6 +264,8 @@ static struct snd_soc_card snd_soc_card_cnl_rt700 = {
 	.dapm_routes = cnl_rt700_map,
 	.num_dapm_routes = ARRAY_SIZE(cnl_rt700_map),
 	.add_dai_link = cnl_add_dai_link,
+	.controls = cnl_rt700_controls,
+	.num_controls = ARRAY_SIZE(cnl_rt700_controls),
 };
 
 
