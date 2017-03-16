@@ -36,10 +36,14 @@
  * "DEGAMMA_LUT”:
  *	Blob property to set the degamma lookup table (LUT) mapping pixel data
  *	from the framebuffer before it is given to the transformation matrix.
- *	The data is interpreted as an array of struct &drm_color_lut elements.
+ *	The data is interpreted as an array of &struct drm_color_lut elements.
  *	Hardware might choose not to use the full precision of the LUT elements
  *	nor use all the elements of the LUT (for example the hardware might
  *	choose to interpolate between LUT[0] and LUT[4]).
+ *
+ *	Setting this to NULL (blob property value set to 0) means a
+ *	linear/pass-thru gamma table should be used. This is generally the
+ *	driver boot-up state too.
  *
  * “DEGAMMA_LUT_SIZE”:
  *	Unsinged range property to give the size of the lookup table to be set
@@ -54,13 +58,21 @@
  *	lookup through the gamma LUT. The data is interpreted as a struct
  *	&drm_color_ctm.
  *
+ *	Setting this to NULL (blob property value set to 0) means a
+ *	unit/pass-thru matrix should be used. This is generally the driver
+ *	boot-up state too.
+ *
  * “GAMMA_LUT”:
  *	Blob property to set the gamma lookup table (LUT) mapping pixel data
  *	after the transformation matrix to data sent to the connector. The
- *	data is interpreted as an array of struct &drm_color_lut elements.
+ *	data is interpreted as an array of &struct drm_color_lut elements.
  *	Hardware might choose not to use the full precision of the LUT elements
  *	nor use all the elements of the LUT (for example the hardware might
  *	choose to interpolate between LUT[0] and LUT[4]).
+ *
+ *	Setting this to NULL (blob property value set to 0) means a
+ *	linear/pass-thru gamma table should be used. This is generally the
+ *	driver boot-up state too.
  *
  * “GAMMA_LUT_SIZE”:
  *	Unsigned range property to give the size of the lookup table to be set

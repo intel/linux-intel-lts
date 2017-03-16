@@ -26,7 +26,7 @@
 #include "amdgpu_pm.h"
 #include "amdgpu_dpm.h"
 #include "amdgpu_atombios.h"
-#include "si/sid.h"
+#include "sid.h"
 #include "r600_dpm.h"
 #include "si_dpm.h"
 #include "atom.h"
@@ -64,6 +64,7 @@ MODULE_FIRMWARE("radeon/oland_smc.bin");
 MODULE_FIRMWARE("radeon/oland_k_smc.bin");
 MODULE_FIRMWARE("radeon/hainan_smc.bin");
 MODULE_FIRMWARE("radeon/hainan_k_smc.bin");
+MODULE_FIRMWARE("radeon/banks_k_2_smc.bin");
 
 union power_info {
 	struct _ATOM_POWERPLAY_INFO info;
@@ -3008,29 +3009,6 @@ static int si_init_smc_spll_table(struct amdgpu_device *adev)
 	return ret;
 }
 
-struct si_dpm_quirk {
-	u32 chip_vendor;
-	u32 chip_device;
-	u32 subsys_vendor;
-	u32 subsys_device;
-	u32 max_sclk;
-	u32 max_mclk;
-};
-
-/* cards with dpm stability problems */
-static struct si_dpm_quirk si_dpm_quirk_list[] = {
-	/* PITCAIRN - https://bugs.freedesktop.org/show_bug.cgi?id=76490 */
-	{ PCI_VENDOR_ID_ATI, 0x6810, 0x1462, 0x3036, 0, 120000 },
-	{ PCI_VENDOR_ID_ATI, 0x6811, 0x174b, 0xe271, 0, 120000 },
-	{ PCI_VENDOR_ID_ATI, 0x6811, 0x174b, 0x2015, 0, 120000 },
-	{ PCI_VENDOR_ID_ATI, 0x6810, 0x174b, 0xe271, 85000, 90000 },
-	{ PCI_VENDOR_ID_ATI, 0x6811, 0x1462, 0x2015, 0, 120000 },
-	{ PCI_VENDOR_ID_ATI, 0x6811, 0x1043, 0x2015, 0, 120000 },
-	{ PCI_VENDOR_ID_ATI, 0x6811, 0x148c, 0x2015, 0, 120000 },
-	{ PCI_VENDOR_ID_ATI, 0x6810, 0x1682, 0x9275, 0, 120000 },
-	{ 0, 0, 0, 0 },
-};
-
 static u16 si_get_lower_of_leakage_and_vce_voltage(struct amdgpu_device *adev,
 						   u16 vce_voltage)
 {
@@ -3170,6 +3148,7 @@ static void ni_update_current_ps(struct amdgpu_device *adev,
 	eg_pi->current_rps = *rps;
 	ni_pi->current_ps = *new_ps;
 	eg_pi->current_rps.ps_priv = &ni_pi->current_ps;
+	adev->pm.dpm.current_ps = &eg_pi->current_rps;
 }
 
 static void ni_update_requested_ps(struct amdgpu_device *adev,
@@ -3182,6 +3161,7 @@ static void ni_update_requested_ps(struct amdgpu_device *adev,
 	eg_pi->requested_rps = *rps;
 	ni_pi->requested_ps = *new_ps;
 	eg_pi->requested_rps.ps_priv = &ni_pi->requested_ps;
+	adev->pm.dpm.requested_ps = &eg_pi->requested_rps;
 }
 
 static void ni_set_uvd_clock_before_set_eng_clock(struct amdgpu_device *adev,
@@ -3474,29 +3454,8 @@ static void si_apply_state_adjust_rules(struct amdgpu_device *adev,
 	u32 max_sclk_vddc, max_mclk_vddci, max_mclk_vddc;
 	u32 max_sclk = 0, max_mclk = 0;
 	int i;
-	struct si_dpm_quirk *p = si_dpm_quirk_list;
 
-	/* limit all SI kickers */
-	if (adev->asic_type == CHIP_PITCAIRN) {
-		if ((adev->pdev->revision == 0x81) ||
-		    (adev->pdev->device == 0x6810) ||
-		    (adev->pdev->device == 0x6811) ||
-		    (adev->pdev->device == 0x6816) ||
-		    (adev->pdev->device == 0x6817) ||
-		    (adev->pdev->device == 0x6806))
-			max_mclk = 120000;
-	} else if (adev->asic_type == CHIP_OLAND) {
-		if ((adev->pdev->revision == 0xC7) ||
-		    (adev->pdev->revision == 0x80) ||
-		    (adev->pdev->revision == 0x81) ||
-		    (adev->pdev->revision == 0x83) ||
-		    (adev->pdev->revision == 0x87) ||
-		    (adev->pdev->device == 0x6604) ||
-		    (adev->pdev->device == 0x6605)) {
-			max_sclk = 75000;
-			max_mclk = 80000;
-		}
-	} else if (adev->asic_type == CHIP_HAINAN) {
+	if (adev->asic_type == CHIP_HAINAN) {
 		if ((adev->pdev->revision == 0x81) ||
 		    (adev->pdev->revision == 0x83) ||
 		    (adev->pdev->revision == 0xC3) ||
@@ -3504,20 +3463,7 @@ static void si_apply_state_adjust_rules(struct amdgpu_device *adev,
 		    (adev->pdev->device == 0x6665) ||
 		    (adev->pdev->device == 0x6667)) {
 			max_sclk = 75000;
-			max_mclk = 80000;
 		}
-	}
-	/* Apply dpm quirks */
-	while (p && p->chip_device != 0) {
-		if (adev->pdev->vendor == p->chip_vendor &&
-		    adev->pdev->device == p->chip_device &&
-		    adev->pdev->subsystem_vendor == p->subsys_vendor &&
-		    adev->pdev->subsystem_device == p->subsys_device) {
-			max_sclk = p->max_sclk;
-			max_mclk = p->max_mclk;
-			break;
-		}
-		++p;
 	}
 
 	if (rps->vce_active) {
@@ -3915,25 +3861,25 @@ static int si_restrict_performance_levels_before_switch(struct amdgpu_device *ad
 }
 
 static int si_dpm_force_performance_level(struct amdgpu_device *adev,
-				   enum amdgpu_dpm_forced_level level)
+				   enum amd_dpm_forced_level level)
 {
 	struct amdgpu_ps *rps = adev->pm.dpm.current_ps;
 	struct  si_ps *ps = si_get_ps(rps);
 	u32 levels = ps->performance_level_count;
 
-	if (level == AMDGPU_DPM_FORCED_LEVEL_HIGH) {
+	if (level == AMD_DPM_FORCED_LEVEL_HIGH) {
 		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetEnabledLevels, levels) != PPSMC_Result_OK)
 			return -EINVAL;
 
 		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 1) != PPSMC_Result_OK)
 			return -EINVAL;
-	} else if (level == AMDGPU_DPM_FORCED_LEVEL_LOW) {
+	} else if (level == AMD_DPM_FORCED_LEVEL_LOW) {
 		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 0) != PPSMC_Result_OK)
 			return -EINVAL;
 
 		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetEnabledLevels, 1) != PPSMC_Result_OK)
 			return -EINVAL;
-	} else if (level == AMDGPU_DPM_FORCED_LEVEL_AUTO) {
+	} else if (level == AMD_DPM_FORCED_LEVEL_AUTO) {
 		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 0) != PPSMC_Result_OK)
 			return -EINVAL;
 
@@ -7334,7 +7280,7 @@ static int si_parse_power_table(struct amdgpu_device *adev)
 	adev->pm.dpm.num_ps = state_array->ucNumEntries;
 
 	/* fill in the vce power states */
-	for (i = 0; i < AMDGPU_MAX_VCE_LEVELS; i++) {
+	for (i = 0; i < adev->pm.dpm.num_of_vce_states; i++) {
 		u32 sclk, mclk;
 		clock_array_index = adev->pm.dpm.vce_states[i].clk_idx;
 		clock_info = (union pplib_clock_info *)
@@ -7711,10 +7657,11 @@ static int si_dpm_init_microcode(struct amdgpu_device *adev)
 			((adev->pdev->device == 0x6660) ||
 			(adev->pdev->device == 0x6663) ||
 			(adev->pdev->device == 0x6665) ||
-			(adev->pdev->device == 0x6667))) ||
-		    ((adev->pdev->revision == 0xc3) &&
-			(adev->pdev->device == 0x6665)))
+			 (adev->pdev->device == 0x6667))))
 			chip_name = "hainan_k";
+		else if ((adev->pdev->revision == 0xc3) &&
+			 (adev->pdev->device == 0x6665))
+			chip_name = "banks_k_2";
 		else
 			chip_name = "hainan";
 		break;
@@ -7754,7 +7701,7 @@ static int si_dpm_sw_init(void *handle)
 	/* default to balanced state */
 	adev->pm.dpm.state = POWER_STATE_TYPE_BALANCED;
 	adev->pm.dpm.user_state = POWER_STATE_TYPE_BALANCED;
-	adev->pm.dpm.forced_level = AMDGPU_DPM_FORCED_LEVEL_AUTO;
+	adev->pm.dpm.forced_level = AMD_DPM_FORCED_LEVEL_AUTO;
 	adev->pm.default_sclk = adev->clock.default_sclk;
 	adev->pm.default_mclk = adev->clock.default_mclk;
 	adev->pm.current_sclk = adev->clock.default_sclk;
@@ -7974,6 +7921,57 @@ static int si_dpm_early_init(void *handle)
 	return 0;
 }
 
+static inline bool si_are_power_levels_equal(const struct rv7xx_pl  *si_cpl1,
+						const struct rv7xx_pl *si_cpl2)
+{
+	return ((si_cpl1->mclk == si_cpl2->mclk) &&
+		  (si_cpl1->sclk == si_cpl2->sclk) &&
+		  (si_cpl1->pcie_gen == si_cpl2->pcie_gen) &&
+		  (si_cpl1->vddc == si_cpl2->vddc) &&
+		  (si_cpl1->vddci == si_cpl2->vddci));
+}
+
+static int si_check_state_equal(struct amdgpu_device *adev,
+				struct amdgpu_ps *cps,
+				struct amdgpu_ps *rps,
+				bool *equal)
+{
+	struct si_ps *si_cps;
+	struct si_ps *si_rps;
+	int i;
+
+	if (adev == NULL || cps == NULL || rps == NULL || equal == NULL)
+		return -EINVAL;
+
+	si_cps = si_get_ps(cps);
+	si_rps = si_get_ps(rps);
+
+	if (si_cps == NULL) {
+		printk("si_cps is NULL\n");
+		*equal = false;
+		return 0;
+	}
+
+	if (si_cps->performance_level_count != si_rps->performance_level_count) {
+		*equal = false;
+		return 0;
+	}
+
+	for (i = 0; i < si_cps->performance_level_count; i++) {
+		if (!si_are_power_levels_equal(&(si_cps->performance_levels[i]),
+					&(si_rps->performance_levels[i]))) {
+			*equal = false;
+			return 0;
+		}
+	}
+
+	/* If all performance levels are the same try to use the UVD clocks to break the tie.*/
+	*equal = ((cps->vclk == rps->vclk) && (cps->dclk == rps->dclk));
+	*equal &= ((cps->evclk == rps->evclk) && (cps->ecclk == rps->ecclk));
+
+	return 0;
+}
+
 
 const struct amd_ip_funcs si_dpm_ip_funcs = {
 	.name = "si_dpm",
@@ -8008,6 +8006,8 @@ static const struct amdgpu_dpm_funcs si_dpm_funcs = {
 	.get_fan_control_mode = &si_dpm_get_fan_control_mode,
 	.set_fan_speed_percent = &si_dpm_set_fan_speed_percent,
 	.get_fan_speed_percent = &si_dpm_get_fan_speed_percent,
+	.check_state_equal = &si_check_state_equal,
+	.get_vce_clock_state = amdgpu_get_vce_clock_state,
 };
 
 static void si_dpm_set_dpm_funcs(struct amdgpu_device *adev)

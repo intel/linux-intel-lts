@@ -194,7 +194,8 @@
 # define DP_PSR_SETUP_TIME_0                (6 << 1)
 # define DP_PSR_SETUP_TIME_MASK             (7 << 1)
 # define DP_PSR_SETUP_TIME_SHIFT            1
-
+# define DP_PSR2_SU_Y_COORDINATE_REQUIRED   (1 << 4)  /* eDP 1.4a */
+# define DP_PSR2_SU_GRANULARITY_REQUIRED    (1 << 5)  /* eDP 1.4b */
 /*
  * 0x80-0x8f describe downstream port capabilities, but there are two layouts
  * based on whether DP_DETAILED_CAP_INFO_AVAILABLE was set.  If it was not,
@@ -416,6 +417,63 @@
 #define DP_TEST_LANE_COUNT		    0x220
 
 #define DP_TEST_PATTERN			    0x221
+# define DP_NO_TEST_PATTERN                 0x0
+# define DP_COLOR_RAMP                      0x1
+# define DP_BLACK_AND_WHITE_VERTICAL_LINES  0x2
+# define DP_COLOR_SQUARE                    0x3
+
+#define DP_TEST_H_TOTAL_HI                  0x222
+#define DP_TEST_H_TOTAL_LO                  0x223
+
+#define DP_TEST_V_TOTAL_HI                  0x224
+#define DP_TEST_V_TOTAL_LO                  0x225
+
+#define DP_TEST_H_START_HI                  0x226
+#define DP_TEST_H_START_LO                  0x227
+
+#define DP_TEST_V_START_HI                  0x228
+#define DP_TEST_V_START_LO                  0x229
+
+#define DP_TEST_HSYNC_HI                    0x22A
+# define DP_TEST_HSYNC_POLARITY             (1 << 7)
+# define DP_TEST_HSYNC_WIDTH_HI_MASK        (127 << 0)
+#define DP_TEST_HSYNC_WIDTH_LO              0x22B
+
+#define DP_TEST_VSYNC_HI                    0x22C
+# define DP_TEST_VSYNC_POLARITY             (1 << 7)
+# define DP_TEST_VSYNC_WIDTH_HI_MASK        (127 << 0)
+#define DP_TEST_VSYNC_WIDTH_LO              0x22D
+
+#define DP_TEST_H_WIDTH_HI                  0x22E
+#define DP_TEST_H_WIDTH_LO                  0x22F
+
+#define DP_TEST_V_HEIGHT_HI                 0x230
+#define DP_TEST_V_HEIGHT_LO                 0x231
+
+#define DP_TEST_MISC0                       0x232
+# define DP_TEST_SYNC_CLOCK                 (1 << 0)
+# define DP_TEST_COLOR_FORMAT_MASK          (3 << 1)
+# define DP_TEST_COLOR_FORMAT_SHIFT         1
+# define DP_COLOR_FORMAT_RGB                (0 << 1)
+# define DP_COLOR_FORMAT_YCbCr422           (1 << 1)
+# define DP_COLOR_FORMAT_YCbCr444           (2 << 1)
+# define DP_TEST_DYNAMIC_RANGE_CEA          (1 << 3)
+# define DP_TEST_YCBCR_COEFFICIENTS         (1 << 4)
+# define DP_YCBCR_COEFFICIENTS_ITU601       (0 << 4)
+# define DP_YCBCR_COEFFICIENTS_ITU709       (1 << 4)
+# define DP_TEST_BIT_DEPTH_MASK             (7 << 5)
+# define DP_TEST_BIT_DEPTH_SHIFT            5
+# define DP_TEST_BIT_DEPTH_6                (0 << 5)
+# define DP_TEST_BIT_DEPTH_8                (1 << 5)
+# define DP_TEST_BIT_DEPTH_10               (2 << 5)
+# define DP_TEST_BIT_DEPTH_12               (3 << 5)
+# define DP_TEST_BIT_DEPTH_16               (4 << 5)
+
+#define DP_TEST_MISC1                       0x233
+# define DP_TEST_REFRESH_DENOMINATOR        (1 << 0)
+# define DP_TEST_INTERLACED                 (1 << 1)
+
+#define DP_TEST_REFRESH_RATE_NUMERATOR      0x234
 
 #define DP_TEST_CRC_R_CR		    0x240
 #define DP_TEST_CRC_G_Y			    0x242
@@ -568,6 +626,16 @@
 #define DP_RECEIVER_ALPM_STATUS		    0x200b  /* eDP 1.4 */
 # define DP_ALPM_LOCK_TIMEOUT_ERROR	    (1 << 0)
 
+#define DP_DPRX_FEATURE_ENUMERATION_LIST    0x2210  /* DP 1.3 */
+# define DP_GTC_CAP					(1 << 0)  /* DP 1.3 */
+# define DP_SST_SPLIT_SDP_CAP				(1 << 1)  /* DP 1.4 */
+# define DP_AV_SYNC_CAP					(1 << 2)  /* DP 1.3 */
+# define DP_VSC_SDP_EXT_FOR_COLORIMETRY_SUPPORTED	(1 << 3)  /* DP 1.3 */
+# define DP_VSC_EXT_VESA_SDP_SUPPORTED			(1 << 4)  /* DP 1.4 */
+# define DP_VSC_EXT_VESA_SDP_CHAINING_SUPPORTED		(1 << 5)  /* DP 1.4 */
+# define DP_VSC_EXT_CEA_SDP_SUPPORTED			(1 << 6)  /* DP 1.4 */
+# define DP_VSC_EXT_CEA_SDP_CHAINING_SUPPORTED		(1 << 7)  /* DP 1.4 */
+
 /* DP 1.2 Sideband message defines */
 /* peer device type - DP 1.2a Table 2-92 */
 #define DP_PEER_DEVICE_NONE		0x0
@@ -688,6 +756,12 @@ drm_dp_tps3_supported(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
 {
 	return dpcd[DP_DPCD_REV] >= 0x12 &&
 		dpcd[DP_MAX_LANE_COUNT] & DP_TPS3_SUPPORTED;
+}
+
+static inline bool
+drm_dp_is_branch(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_DOWNSTREAMPORT_PRESENT] & DP_DWN_STRM_PORT_PRESENT;
 }
 
 /*

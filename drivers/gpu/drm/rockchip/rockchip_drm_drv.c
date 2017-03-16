@@ -20,6 +20,7 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_of.h>
 #include <linux/dma-mapping.h>
 #include <linux/pm_runtime.h>
 #include <linux/module.h>
@@ -98,24 +99,11 @@ void rockchip_unregister_crtc_funcs(struct drm_crtc *crtc)
 	priv->crtc_funcs[pipe] = NULL;
 }
 
-static struct drm_crtc *rockchip_crtc_from_pipe(struct drm_device *drm,
-						int pipe)
-{
-	struct drm_crtc *crtc;
-	int i = 0;
-
-	list_for_each_entry(crtc, &drm->mode_config.crtc_list, head)
-		if (i++ == pipe)
-			return crtc;
-
-	return NULL;
-}
-
 static int rockchip_drm_crtc_enable_vblank(struct drm_device *dev,
 					   unsigned int pipe)
 {
 	struct rockchip_drm_private *priv = dev->dev_private;
-	struct drm_crtc *crtc = rockchip_crtc_from_pipe(dev, pipe);
+	struct drm_crtc *crtc = drm_crtc_from_index(dev, pipe);
 
 	if (crtc && priv->crtc_funcs[pipe] &&
 	    priv->crtc_funcs[pipe]->enable_vblank)
@@ -128,7 +116,7 @@ static void rockchip_drm_crtc_disable_vblank(struct drm_device *dev,
 					     unsigned int pipe)
 {
 	struct rockchip_drm_private *priv = dev->dev_private;
-	struct drm_crtc *crtc = rockchip_crtc_from_pipe(dev, pipe);
+	struct drm_crtc *crtc = drm_crtc_from_index(dev, pipe);
 
 	if (crtc && priv->crtc_funcs[pipe] &&
 	    priv->crtc_funcs[pipe]->enable_vblank)
@@ -274,9 +262,7 @@ static const struct file_operations rockchip_drm_driver_fops = {
 	.poll = drm_poll,
 	.read = drm_read,
 	.unlocked_ioctl = drm_ioctl,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl = drm_compat_ioctl,
-#endif
 	.release = drm_release,
 };
 
@@ -388,7 +374,7 @@ static void rockchip_add_endpoints(struct device *dev,
 			continue;
 		}
 
-		component_match_add(dev, match, compare_of, remote);
+		drm_of_component_match_add(dev, match, compare_of, remote);
 		of_node_put(remote);
 	}
 }
@@ -437,7 +423,8 @@ static int rockchip_drm_platform_probe(struct platform_device *pdev)
 		}
 
 		of_node_put(iommu);
-		component_match_add(dev, &match, compare_of, port->parent);
+		drm_of_component_match_add(dev, &match, compare_of,
+					   port->parent);
 		of_node_put(port);
 	}
 

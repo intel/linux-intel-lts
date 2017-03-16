@@ -46,7 +46,8 @@ enum decon_flag_bits {
 	BIT_CLKS_ENABLED,
 	BIT_IRQS_ENABLED,
 	BIT_WIN_UPDATED,
-	BIT_SUSPENDED
+	BIT_SUSPENDED,
+	BIT_REQUEST_UPDATE
 };
 
 struct decon_context {
@@ -141,12 +142,6 @@ static void decon_commit(struct exynos_drm_crtc *crtc)
 		m->crtc_vsync_end = m->crtc_vsync_start + 1;
 	}
 
-	decon_set_bits(ctx, DECON_VIDCON0, VIDCON0_ENVID, 0);
-
-	/* enable clock gate */
-	val = CMU_CLKGAGE_MODE_SFR_F | CMU_CLKGAGE_MODE_MEM_F;
-	writel(val, ctx->addr + DECON_CMU);
-
 	if (ctx->out_type & (IFTYPE_I80 | I80_HW_TRG))
 		decon_setup_trigger(ctx);
 
@@ -200,7 +195,7 @@ static void decon_win_set_pixfmt(struct decon_context *ctx, unsigned int win,
 	val = readl(ctx->addr + DECON_WINCONx(win));
 	val &= ~WINCONx_BPPMODE_MASK;
 
-	switch (fb->pixel_format) {
+	switch (fb->format->format) {
 	case DRM_FORMAT_XRGB1555:
 		val |= WINCONx_BPPMODE_16BPP_I1555;
 		val |= WINCONx_HAWSWP_F;
@@ -226,7 +221,7 @@ static void decon_win_set_pixfmt(struct decon_context *ctx, unsigned int win,
 		return;
 	}
 
-	DRM_DEBUG_KMS("bpp = %u\n", fb->bits_per_pixel);
+	DRM_DEBUG_KMS("bpp = %u\n", fb->format->cpp[0] * 8);
 
 	/*
 	 * In case of exynos, setting dma-burst to 16Word causes permanent
@@ -275,7 +270,7 @@ static void decon_update_plane(struct exynos_drm_crtc *crtc,
 	struct decon_context *ctx = crtc->ctx;
 	struct drm_framebuffer *fb = state->base.fb;
 	unsigned int win = plane->index;
-	unsigned int bpp = fb->bits_per_pixel >> 3;
+	unsigned int bpp = fb->format->cpp[0];
 	unsigned int pitch = fb->pitches[0];
 	dma_addr_t dma_addr = exynos_drm_fb_dma_addr(fb, 0);
 	u32 val;
@@ -315,6 +310,7 @@ static void decon_update_plane(struct exynos_drm_crtc *crtc,
 
 	/* window enable */
 	decon_set_bits(ctx, DECON_WINCONx(win), WINCONx_ENWIN_F, ~0);
+	set_bit(BIT_REQUEST_UPDATE, &ctx->flags);
 }
 
 static void decon_disable_plane(struct exynos_drm_crtc *crtc,
@@ -327,6 +323,7 @@ static void decon_disable_plane(struct exynos_drm_crtc *crtc,
 		return;
 
 	decon_set_bits(ctx, DECON_WINCONx(win), WINCONx_ENWIN_F, 0);
+	set_bit(BIT_REQUEST_UPDATE, &ctx->flags);
 }
 
 static void decon_atomic_flush(struct exynos_drm_crtc *crtc)
@@ -340,8 +337,8 @@ static void decon_atomic_flush(struct exynos_drm_crtc *crtc)
 	for (i = ctx->first_win; i < WINDOWS_NR; i++)
 		decon_shadow_protect_win(ctx, i, false);
 
-	/* standalone update */
-	decon_set_bits(ctx, DECON_UPDATE, STANDALONE_UPDATE_F, ~0);
+	if (test_and_clear_bit(BIT_REQUEST_UPDATE, &ctx->flags))
+		decon_set_bits(ctx, DECON_UPDATE, STANDALONE_UPDATE_F, ~0);
 
 	if (ctx->out_type & IFTYPE_I80)
 		set_bit(BIT_WIN_UPDATED, &ctx->flags);
@@ -470,7 +467,7 @@ err:
 		clk_disable_unprepare(ctx->clks[i]);
 }
 
-static struct exynos_drm_crtc_ops decon_crtc_ops = {
+static const struct exynos_drm_crtc_ops decon_crtc_ops = {
 	.enable			= decon_enable,
 	.disable		= decon_disable,
 	.enable_vblank		= decon_enable_vblank,

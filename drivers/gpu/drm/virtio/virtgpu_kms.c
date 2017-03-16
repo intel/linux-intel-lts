@@ -159,7 +159,7 @@ int virtio_gpu_driver_load(struct drm_device *dev, unsigned long flags)
 	virtio_gpu_init_vq(&vgdev->ctrlq, virtio_gpu_dequeue_ctrl_func);
 	virtio_gpu_init_vq(&vgdev->cursorq, virtio_gpu_dequeue_cursor_func);
 
-	vgdev->fence_drv.context = fence_context_alloc(1);
+	vgdev->fence_drv.context = dma_fence_context_alloc(1);
 	spin_lock_init(&vgdev->fence_drv.lock);
 	INIT_LIST_HEAD(&vgdev->fence_drv.fences);
 	INIT_LIST_HEAD(&vgdev->cap_cache);
@@ -246,7 +246,7 @@ static void virtio_gpu_cleanup_cap_cache(struct virtio_gpu_device *vgdev)
 	}
 }
 
-int virtio_gpu_driver_unload(struct drm_device *dev)
+void virtio_gpu_driver_unload(struct drm_device *dev)
 {
 	struct virtio_gpu_device *vgdev = dev->dev_private;
 
@@ -262,7 +262,6 @@ int virtio_gpu_driver_unload(struct drm_device *dev)
 	virtio_gpu_cleanup_cap_cache(vgdev);
 	kfree(vgdev->capsets);
 	kfree(vgdev);
-	return 0;
 }
 
 int virtio_gpu_driver_open(struct drm_device *dev, struct drm_file *file)
