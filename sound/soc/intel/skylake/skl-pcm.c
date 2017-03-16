@@ -1971,8 +1971,10 @@ int skl_platform_register(struct device *dev)
 			 skl_num_dai);
 	skl_dais = devm_kcalloc(dev, skl_total_dai, sizeof(*skl_dais),
 				GFP_KERNEL);
-	if (!skl_dais)
+	if (!skl_dais) {
+		snd_soc_unregister_platform(dev);
 		return -ENOMEM;
+	}
 
 	memcpy(skl_dais, skl_platform_dai, sizeof(skl_platform_dai));
 
