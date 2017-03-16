@@ -89,13 +89,13 @@ static struct fb_ops radeonfb_ops = {
 };
 
 
-int radeon_align_pitch(struct radeon_device *rdev, int width, int cpp, bool tiled)
+int radeon_align_pitch(struct radeon_device *rdev, int width, int bpp, bool tiled)
 {
 	int aligned = width;
 	int align_large = (ASIC_IS_AVIVO(rdev)) || tiled;
 	int pitch_mask = 0;
 
-	switch (cpp) {
+	switch (bpp / 8) {
 	case 1:
 		pitch_mask = align_large ? 255 : 127;
 		break;
@@ -110,7 +110,7 @@ int radeon_align_pitch(struct radeon_device *rdev, int width, int cpp, bool tile
 
 	aligned += pitch_mask;
 	aligned &= ~pitch_mask;
-	return aligned * cpp;
+	return aligned;
 }
 
 static void radeonfb_destroy_pinned_object(struct drm_gem_object *gobj)
@@ -139,13 +139,13 @@ static int radeonfb_create_pinned_object(struct radeon_fbdev *rfbdev,
 	int ret;
 	int aligned_size, size;
 	int height = mode_cmd->height;
-	u32 cpp;
+	u32 bpp, depth;
 
-	cpp = drm_format_plane_cpp(mode_cmd->pixel_format, 0);
+	drm_fb_get_bpp_depth(mode_cmd->pixel_format, &depth, &bpp);
 
 	/* need to align pitch with crtc limits */
-	mode_cmd->pitches[0] = radeon_align_pitch(rdev, mode_cmd->width, cpp,
-						  fb_tiled);
+	mode_cmd->pitches[0] = radeon_align_pitch(rdev, mode_cmd->width, bpp,
+						  fb_tiled) * ((bpp + 1) / 8);
 
 	if (rdev->family >= CHIP_R600)
 		height = ALIGN(mode_cmd->height, 8);
@@ -165,11 +165,11 @@ static int radeonfb_create_pinned_object(struct radeon_fbdev *rfbdev,
 		tiling_flags = RADEON_TILING_MACRO;
 
 #ifdef __BIG_ENDIAN
-	switch (cpp) {
-	case 4:
+	switch (bpp) {
+	case 32:
 		tiling_flags |= RADEON_TILING_SWAP_32BIT;
 		break;
-	case 2:
+	case 16:
 		tiling_flags |= RADEON_TILING_SWAP_16BIT;
 	default:
 		break;

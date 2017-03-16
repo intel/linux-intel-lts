@@ -130,8 +130,15 @@ int drm_plane_helper_check_state(struct drm_plane_state *state,
 	unsigned int rotation = state->rotation;
 	int hscale, vscale;
 
-	*src = drm_plane_state_src(state);
-	*dst = drm_plane_state_dest(state);
+	src->x1 = state->src_x;
+	src->y1 = state->src_y;
+	src->x2 = state->src_x + state->src_w;
+	src->y2 = state->src_y + state->src_h;
+
+	dst->x1 = state->crtc_x;
+	dst->y1 = state->crtc_y;
+	dst->x2 = state->crtc_x + state->crtc_w;
+	dst->y2 = state->crtc_y + state->crtc_h;
 
 	if (!fb) {
 		state->visible = false;

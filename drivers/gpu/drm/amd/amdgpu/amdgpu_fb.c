@@ -90,12 +90,12 @@ static struct fb_ops amdgpufb_ops = {
 };
 
 
-int amdgpu_align_pitch(struct amdgpu_device *adev, int width, int cpp, bool tiled)
+int amdgpu_align_pitch(struct amdgpu_device *adev, int width, int bpp, bool tiled)
 {
 	int aligned = width;
 	int pitch_mask = 0;
 
-	switch (cpp) {
+	switch (bpp / 8) {
 	case 1:
 		pitch_mask = 255;
 		break;
@@ -110,7 +110,7 @@ int amdgpu_align_pitch(struct amdgpu_device *adev, int width, int cpp, bool tile
 
 	aligned += pitch_mask;
 	aligned &= ~pitch_mask;
-	return aligned * cpp;
+	return aligned;
 }
 
 static void amdgpufb_destroy_pinned_object(struct drm_gem_object *gobj)
@@ -139,13 +139,13 @@ static int amdgpufb_create_pinned_object(struct amdgpu_fbdev *rfbdev,
 	int ret;
 	int aligned_size, size;
 	int height = mode_cmd->height;
-	u32 cpp;
+	u32 bpp, depth;
 
-	cpp = drm_format_plane_cpp(mode_cmd->pixel_format, 0);
+	drm_fb_get_bpp_depth(mode_cmd->pixel_format, &depth, &bpp);
 
 	/* need to align pitch with crtc limits */
-	mode_cmd->pitches[0] = amdgpu_align_pitch(adev, mode_cmd->width, cpp,
-						  fb_tiled);
+	mode_cmd->pitches[0] = amdgpu_align_pitch(adev, mode_cmd->width, bpp,
+						  fb_tiled) * ((bpp + 1) / 8);
 
 	height = ALIGN(mode_cmd->height, 8);
 	size = mode_cmd->pitches[0] * height;

@@ -54,7 +54,7 @@ static int ttm_bo_vm_fault_idle(struct ttm_buffer_object *bo,
 	/*
 	 * Quick non-stalling check for idle.
 	 */
-	if (dma_fence_is_signaled(bo->moving))
+	if (fence_is_signaled(bo->moving))
 		goto out_clear;
 
 	/*
@@ -67,14 +67,14 @@ static int ttm_bo_vm_fault_idle(struct ttm_buffer_object *bo,
 			goto out_unlock;
 
 		up_read(&vma->vm_mm->mmap_sem);
-		(void) dma_fence_wait(bo->moving, true);
+		(void) fence_wait(bo->moving, true);
 		goto out_unlock;
 	}
 
 	/*
 	 * Ordinary wait.
 	 */
-	ret = dma_fence_wait(bo->moving, true);
+	ret = fence_wait(bo->moving, true);
 	if (unlikely(ret != 0)) {
 		ret = (ret != -ERESTARTSYS) ? VM_FAULT_SIGBUS :
 			VM_FAULT_NOPAGE;
@@ -82,7 +82,7 @@ static int ttm_bo_vm_fault_idle(struct ttm_buffer_object *bo,
 	}
 
 out_clear:
-	dma_fence_put(bo->moving);
+	fence_put(bo->moving);
 	bo->moving = NULL;
 
 out_unlock:

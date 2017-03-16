@@ -24,7 +24,7 @@
 #ifndef _INTEL_GVT_H_
 #define _INTEL_GVT_H_
 
-struct intel_gvt;
+#include "gvt/gvt.h"
 
 #ifdef CONFIG_DRM_I915_GVT
 int intel_gvt_init(struct drm_i915_private *dev_priv);

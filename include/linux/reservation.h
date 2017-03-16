@@ -40,7 +40,7 @@
 #define _LINUX_RESERVATION_H
 
 #include <linux/ww_mutex.h>
-#include <linux/dma-fence.h>
+#include <linux/fence.h>
 #include <linux/slab.h>
 #include <linux/seqlock.h>
 #include <linux/rcupdate.h>
@@ -59,7 +59,7 @@ extern const char reservation_seqcount_string[];
 struct reservation_object_list {
 	struct rcu_head rcu;
 	u32 shared_count, shared_max;
-	struct dma_fence __rcu *shared[];
+	struct fence __rcu *shared[];
 };
 
 /**
@@ -74,7 +74,7 @@ struct reservation_object {
 	struct ww_mutex lock;
 	seqcount_t seq;
 
-	struct dma_fence __rcu *fence_excl;
+	struct fence __rcu *fence_excl;
 	struct reservation_object_list __rcu *fence;
 	struct reservation_object_list *staged;
 };
@@ -107,7 +107,7 @@ reservation_object_fini(struct reservation_object *obj)
 {
 	int i;
 	struct reservation_object_list *fobj;
-	struct dma_fence *excl;
+	struct fence *excl;
 
 	/*
 	 * This object should be dead and all references must have
@@ -115,12 +115,12 @@ reservation_object_fini(struct reservation_object *obj)
 	 */
 	excl = rcu_dereference_protected(obj->fence_excl, 1);
 	if (excl)
-		dma_fence_put(excl);
+		fence_put(excl);
 
 	fobj = rcu_dereference_protected(obj->fence, 1);
 	if (fobj) {
 		for (i = 0; i < fobj->shared_count; ++i)
-			dma_fence_put(rcu_dereference_protected(fobj->shared[i], 1));
+			fence_put(rcu_dereference_protected(fobj->shared[i], 1));
 
 		kfree(fobj);
 	}
@@ -155,7 +155,7 @@ reservation_object_get_list(struct reservation_object *obj)
  * RETURNS
  * The exclusive fence or NULL
  */
-static inline struct dma_fence *
+static inline struct fence *
 reservation_object_get_excl(struct reservation_object *obj)
 {
 	return rcu_dereference_protected(obj->fence_excl,
@@ -173,10 +173,10 @@ reservation_object_get_excl(struct reservation_object *obj)
  * RETURNS
  * The exclusive fence or NULL if none
  */
-static inline struct dma_fence *
+static inline struct fence *
 reservation_object_get_excl_rcu(struct reservation_object *obj)
 {
-	struct dma_fence *fence;
+	struct fence *fence;
 	unsigned seq;
 retry:
 	seq = read_seqcount_begin(&obj->seq);
@@ -186,22 +186,22 @@ retry:
 		rcu_read_unlock();
 		goto retry;
 	}
-	fence = dma_fence_get(fence);
+	fence = fence_get(fence);
 	rcu_read_unlock();
 	return fence;
 }
 
 int reservation_object_reserve_shared(struct reservation_object *obj);
 void reservation_object_add_shared_fence(struct reservation_object *obj,
-					 struct dma_fence *fence);
+					 struct fence *fence);
 
 void reservation_object_add_excl_fence(struct reservation_object *obj,
-				       struct dma_fence *fence);
+				       struct fence *fence);
 
 int reservation_object_get_fences_rcu(struct reservation_object *obj,
-				      struct dma_fence **pfence_excl,
+				      struct fence **pfence_excl,
 				      unsigned *pshared_count,
-				      struct dma_fence ***pshared);
+				      struct fence ***pshared);
 
 long reservation_object_wait_timeout_rcu(struct reservation_object *obj,
 					 bool wait_all, bool intr,

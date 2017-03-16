@@ -83,12 +83,6 @@ static unsigned int *io_tlb_list;
 static unsigned int io_tlb_index;
 
 /*
- * Max segment that we can provide which (if pages are contingous) will
- * not be bounced (unless SWIOTLB_FORCE is set).
- */
-unsigned int max_segment;
-
-/*
  * We need to save away the original address corresponding to a mapped entry
  * for the sync operations.
  */
@@ -129,20 +123,6 @@ unsigned long swiotlb_nr_tbl(void)
 	return io_tlb_nslabs;
 }
 EXPORT_SYMBOL_GPL(swiotlb_nr_tbl);
-
-unsigned int swiotlb_max_segment(void)
-{
-	return max_segment;
-}
-EXPORT_SYMBOL_GPL(swiotlb_max_segment);
-
-void swiotlb_set_max_segment(unsigned int val)
-{
-	if (swiotlb_force == SWIOTLB_FORCE)
-		max_segment = 1;
-	else
-		max_segment = rounddown(val, PAGE_SIZE);
-}
 
 /* default to 64MB */
 #define IO_TLB_DEFAULT_SIZE (64UL<<20)
@@ -225,7 +205,6 @@ int __init swiotlb_init_with_tbl(char *tlb, unsigned long nslabs, int verbose)
 	if (verbose)
 		swiotlb_print_info();
 
-	swiotlb_set_max_segment(io_tlb_nslabs << IO_TLB_SHIFT);
 	return 0;
 }
 
@@ -304,7 +283,6 @@ swiotlb_late_init_with_default_size(size_t default_size)
 	rc = swiotlb_late_init_with_tbl(vstart, io_tlb_nslabs);
 	if (rc)
 		free_pages((unsigned long)vstart, order);
-
 	return rc;
 }
 
@@ -359,8 +337,6 @@ swiotlb_late_init_with_tbl(char *tlb, unsigned long nslabs)
 
 	late_alloc = 1;
 
-	swiotlb_set_max_segment(io_tlb_nslabs << IO_TLB_SHIFT);
-
 	return 0;
 
 cleanup4:
@@ -375,7 +351,6 @@ cleanup2:
 	io_tlb_end = 0;
 	io_tlb_start = 0;
 	io_tlb_nslabs = 0;
-	max_segment = 0;
 	return -ENOMEM;
 }
 
@@ -404,7 +379,6 @@ void __init swiotlb_free(void)
 				   PAGE_ALIGN(io_tlb_nslabs << IO_TLB_SHIFT));
 	}
 	io_tlb_nslabs = 0;
-	max_segment = 0;
 }
 
 int is_swiotlb_buffer(phys_addr_t paddr)

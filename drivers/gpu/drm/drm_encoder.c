@@ -110,9 +110,11 @@ int drm_encoder_init(struct drm_device *dev,
 {
 	int ret;
 
+	drm_modeset_lock_all(dev);
+
 	ret = drm_mode_object_get(dev, &encoder->base, DRM_MODE_OBJECT_ENCODER);
 	if (ret)
-		return ret;
+		goto out_unlock;
 
 	encoder->dev = dev;
 	encoder->encoder_type = encoder_type;
@@ -140,6 +142,9 @@ out_put:
 	if (ret)
 		drm_mode_object_unregister(dev, &encoder->base);
 
+out_unlock:
+	drm_modeset_unlock_all(dev);
+
 	return ret;
 }
 EXPORT_SYMBOL(drm_encoder_init);
@@ -159,10 +164,12 @@ void drm_encoder_cleanup(struct drm_encoder *encoder)
 	 * the indices on the drm_encoder after us in the encoder_list.
 	 */
 
+	drm_modeset_lock_all(dev);
 	drm_mode_object_unregister(dev, &encoder->base);
 	kfree(encoder->name);
 	list_del(&encoder->head);
 	dev->mode_config.num_encoder--;
+	drm_modeset_unlock_all(dev);
 
 	memset(encoder, 0, sizeof(*encoder));
 }
