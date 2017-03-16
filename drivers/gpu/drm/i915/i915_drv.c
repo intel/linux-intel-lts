@@ -1842,8 +1842,9 @@ void i915_reset(struct drm_i915_private *dev_priv)
 	int ret;
 
 	lockdep_assert_held(&dev_priv->drm.struct_mutex);
+	GEM_BUG_ON(!test_bit(I915_RESET_BACKOFF, &error->flags));
 
-	if (!test_and_clear_bit(I915_RESET_IN_PROGRESS, &error->flags))
+	if (!test_bit(I915_RESET_HANDOFF, &error->flags))
 		return;
 
 	DRM_DEBUG_DRIVER("resetting chip\n");
@@ -1898,7 +1899,9 @@ void i915_reset(struct drm_i915_private *dev_priv)
 wakeup:
 	i915_gem_reset_finish(dev_priv, ALL_ENGINES);
 	enable_irq(dev_priv->drm.irq);
-	wake_up_bit(&error->flags, I915_RESET_IN_PROGRESS);
+
+	clear_bit(I915_RESET_HANDOFF, &error->flags);
+	wake_up_bit(&error->flags, I915_RESET_HANDOFF);
 	return;
 
 error:

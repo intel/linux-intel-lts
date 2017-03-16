@@ -1024,7 +1024,7 @@ __i915_request_wait_for_execute(struct drm_i915_gem_request *request,
 			break;
 
 		if (flags & I915_WAIT_LOCKED &&
-		    i915_reset_in_progress(&request->i915->gpu_error)) {
+		    i915_reset_handoff(&request->i915->gpu_error)) {
 			__set_current_state(TASK_RUNNING);
 			i915_reset(request->i915);
 			reset_wait_queue(q, &reset);
@@ -1159,7 +1159,7 @@ wakeup:
 		 * itself, or indirectly by recovering the GPU).
 		 */
 		if (flags & I915_WAIT_LOCKED &&
-		    i915_reset_in_progress(&req->i915->gpu_error)) {
+		    i915_reset_handoff(&req->i915->gpu_error)) {
 			__set_current_state(TASK_RUNNING);
 			i915_reset(req->i915);
 			reset_wait_queue(&req->i915->gpu_error.wait_queue,
