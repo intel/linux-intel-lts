@@ -164,10 +164,13 @@ static int amdgpu_gtt_mgr_new(struct ttm_mem_type_manager *man,
 	spin_unlock(&mgr->lock);
 
 	node = kzalloc(sizeof(*node), GFP_KERNEL);
-	if (!node)
-		return -ENOMEM;
+	if (!node) {
+		r = -ENOMEM;
+		goto err_out;
+	}
 
 	node->start = AMDGPU_BO_INVALID_OFFSET;
+	node->size = mem->num_pages;
 	mem->mm_node = node;
 
 	if (place->fpfn || place->lpfn || place->flags & TTM_PL_FLAG_TOPDOWN) {
@@ -175,12 +178,20 @@ static int amdgpu_gtt_mgr_new(struct ttm_mem_type_manager *man,
 		if (unlikely(r)) {
 			kfree(node);
 			mem->mm_node = NULL;
+			r = 0;
+			goto err_out;
 		}
 	} else {
 		mem->start = node->start;
 	}
 
 	return 0;
+err_out:
+	spin_lock(&mgr->lock);
+	mgr->available += mem->num_pages;
+	spin_unlock(&mgr->lock);
+
+	return r;
 }
 
 /**
@@ -224,16 +235,17 @@ static void amdgpu_gtt_mgr_debug(struct ttm_mem_type_manager *man,
 				  const char *prefix)
 {
 	struct amdgpu_gtt_mgr *mgr = man->priv;
+	struct drm_printer p = drm_debug_printer(prefix);
 
 	spin_lock(&mgr->lock);
-	drm_mm_debug_table(&mgr->mm, prefix);
+	drm_mm_print(&mgr->mm, &p);
 	spin_unlock(&mgr->lock);
 }
 
 const struct ttm_mem_type_manager_func amdgpu_gtt_mgr_func = {
-	amdgpu_gtt_mgr_init,
-	amdgpu_gtt_mgr_fini,
-	amdgpu_gtt_mgr_new,
-	amdgpu_gtt_mgr_del,
-	amdgpu_gtt_mgr_debug
+	.init = amdgpu_gtt_mgr_init,
+	.takedown = amdgpu_gtt_mgr_fini,
+	.get_node = amdgpu_gtt_mgr_new,
+	.put_node = amdgpu_gtt_mgr_del,
+	.debug = amdgpu_gtt_mgr_debug
 };

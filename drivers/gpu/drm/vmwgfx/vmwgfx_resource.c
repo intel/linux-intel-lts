@@ -1454,7 +1454,7 @@ void vmw_fence_single_bo(struct ttm_buffer_object *bo,
 	if (fence == NULL) {
 		vmw_execbuf_fence_commands(NULL, dev_priv, &fence, NULL);
 		reservation_object_add_excl_fence(bo->resv, &fence->base);
-		fence_put(&fence->base);
+		dma_fence_put(&fence->base);
 	} else
 		reservation_object_add_excl_fence(bo->resv, &fence->base);
 }
@@ -1760,7 +1760,7 @@ void vmw_resource_unpin(struct vmw_resource *res)
 	struct vmw_private *dev_priv = res->dev_priv;
 	int ret;
 
-	ttm_read_lock(&dev_priv->reservation_sem, false);
+	(void) ttm_read_lock(&dev_priv->reservation_sem, false);
 	mutex_lock(&dev_priv->cmdbuf_mutex);
 
 	ret = vmw_resource_reserve(res, false, true);
@@ -1770,7 +1770,7 @@ void vmw_resource_unpin(struct vmw_resource *res)
 	if (--res->pin_count == 0 && res->backup) {
 		struct vmw_dma_buffer *vbo = res->backup;
 
-		ttm_bo_reserve(&vbo->base, false, false, NULL);
+		(void) ttm_bo_reserve(&vbo->base, false, false, NULL);
 		vmw_bo_pin_reserved(vbo, false);
 		ttm_bo_unreserve(&vbo->base);
 	}

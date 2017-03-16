@@ -79,12 +79,13 @@ static bool ast_get_vbios_mode_info(struct drm_crtc *crtc, struct drm_display_mo
 				    struct ast_vbios_mode_info *vbios_mode)
 {
 	struct ast_private *ast = crtc->dev->dev_private;
+	const struct drm_framebuffer *fb = crtc->primary->fb;
 	u32 refresh_rate_index = 0, mode_id, color_index, refresh_rate;
 	u32 hborder, vborder;
 	bool check_sync;
 	struct ast_vbios_enhtable *best = NULL;
 
-	switch (crtc->primary->fb->bits_per_pixel) {
+	switch (fb->format->cpp[0] * 8) {
 	case 8:
 		vbios_mode->std_table = &vbios_stdtable[VGAModeIndex];
 		color_index = VGAModeIndex - 1;
@@ -207,7 +208,8 @@ static bool ast_get_vbios_mode_info(struct drm_crtc *crtc, struct drm_display_mo
 		ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0x91, 0x00);
 		if (vbios_mode->enh_table->flags & NewModeInfo) {
 			ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0x91, 0xa8);
-			ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0x92, crtc->primary->fb->bits_per_pixel);
+			ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0x92,
+					  fb->format->cpp[0] * 8);
 			ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0x93, adjusted_mode->clock / 1000);
 			ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0x94, adjusted_mode->crtc_hdisplay);
 			ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0x95, adjusted_mode->crtc_hdisplay >> 8);
@@ -369,10 +371,11 @@ static void ast_set_crtc_reg(struct drm_crtc *crtc, struct drm_display_mode *mod
 static void ast_set_offset_reg(struct drm_crtc *crtc)
 {
 	struct ast_private *ast = crtc->dev->dev_private;
+	const struct drm_framebuffer *fb = crtc->primary->fb;
 
 	u16 offset;
 
-	offset = crtc->primary->fb->pitches[0] >> 3;
+	offset = fb->pitches[0] >> 3;
 	ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0x13, (offset & 0xff));
 	ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0xb0, (offset >> 8) & 0x3f);
 }
@@ -395,9 +398,10 @@ static void ast_set_ext_reg(struct drm_crtc *crtc, struct drm_display_mode *mode
 			     struct ast_vbios_mode_info *vbios_mode)
 {
 	struct ast_private *ast = crtc->dev->dev_private;
+	const struct drm_framebuffer *fb = crtc->primary->fb;
 	u8 jregA0 = 0, jregA3 = 0, jregA8 = 0;
 
-	switch (crtc->primary->fb->bits_per_pixel) {
+	switch (fb->format->cpp[0] * 8) {
 	case 8:
 		jregA0 = 0x70;
 		jregA3 = 0x01;
@@ -452,7 +456,9 @@ static void ast_set_sync_reg(struct drm_device *dev, struct drm_display_mode *mo
 static bool ast_set_dac_reg(struct drm_crtc *crtc, struct drm_display_mode *mode,
 		     struct ast_vbios_mode_info *vbios_mode)
 {
-	switch (crtc->primary->fb->bits_per_pixel) {
+	const struct drm_framebuffer *fb = crtc->primary->fb;
+
+	switch (fb->format->cpp[0] * 8) {
 	case 8:
 		break;
 	default:
@@ -839,12 +845,6 @@ static void ast_connector_destroy(struct drm_connector *connector)
 	kfree(connector);
 }
 
-static enum drm_connector_status
-ast_connector_detect(struct drm_connector *connector, bool force)
-{
-	return connector_status_connected;
-}
-
 static const struct drm_connector_helper_funcs ast_connector_helper_funcs = {
 	.mode_valid = ast_mode_valid,
 	.get_modes = ast_get_modes,
@@ -853,7 +853,6 @@ static const struct drm_connector_helper_funcs ast_connector_helper_funcs = {
 
 static const struct drm_connector_funcs ast_connector_funcs = {
 	.dpms = drm_helper_connector_dpms,
-	.detect = ast_connector_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = ast_connector_destroy,
 };
