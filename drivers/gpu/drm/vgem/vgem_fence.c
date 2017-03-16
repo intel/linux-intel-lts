@@ -28,57 +28,56 @@
 #define VGEM_FENCE_TIMEOUT (10*HZ)
 
 struct vgem_fence {
-	struct dma_fence base;
+	struct fence base;
 	struct spinlock lock;
 	struct timer_list timer;
 };
 
-static const char *vgem_fence_get_driver_name(struct dma_fence *fence)
+static const char *vgem_fence_get_driver_name(struct fence *fence)
 {
 	return "vgem";
 }
 
-static const char *vgem_fence_get_timeline_name(struct dma_fence *fence)
+static const char *vgem_fence_get_timeline_name(struct fence *fence)
 {
 	return "unbound";
 }
 
-static bool vgem_fence_signaled(struct dma_fence *fence)
+static bool vgem_fence_signaled(struct fence *fence)
 {
 	return false;
 }
 
-static bool vgem_fence_enable_signaling(struct dma_fence *fence)
+static bool vgem_fence_enable_signaling(struct fence *fence)
 {
 	return true;
 }
 
-static void vgem_fence_release(struct dma_fence *base)
+static void vgem_fence_release(struct fence *base)
 {
 	struct vgem_fence *fence = container_of(base, typeof(*fence), base);
 
 	del_timer_sync(&fence->timer);
-	dma_fence_free(&fence->base);
+	fence_free(&fence->base);
 }
 
-static void vgem_fence_value_str(struct dma_fence *fence, char *str, int size)
+static void vgem_fence_value_str(struct fence *fence, char *str, int size)
 {
 	snprintf(str, size, "%u", fence->seqno);
 }
 
-static void vgem_fence_timeline_value_str(struct dma_fence *fence, char *str,
+static void vgem_fence_timeline_value_str(struct fence *fence, char *str,
 					  int size)
 {
-	snprintf(str, size, "%u",
-		 dma_fence_is_signaled(fence) ? fence->seqno : 0);
+	snprintf(str, size, "%u", fence_is_signaled(fence) ? fence->seqno : 0);
 }
 
-static const struct dma_fence_ops vgem_fence_ops = {
+static const struct fence_ops vgem_fence_ops = {
 	.get_driver_name = vgem_fence_get_driver_name,
 	.get_timeline_name = vgem_fence_get_timeline_name,
 	.enable_signaling = vgem_fence_enable_signaling,
 	.signaled = vgem_fence_signaled,
-	.wait = dma_fence_default_wait,
+	.wait = fence_default_wait,
 	.release = vgem_fence_release,
 
 	.fence_value_str = vgem_fence_value_str,
@@ -89,11 +88,11 @@ static void vgem_fence_timeout(unsigned long data)
 {
 	struct vgem_fence *fence = (struct vgem_fence *)data;
 
-	dma_fence_signal(&fence->base);
+	fence_signal(&fence->base);
 }
 
-static struct dma_fence *vgem_fence_create(struct vgem_file *vfile,
-					   unsigned int flags)
+static struct fence *vgem_fence_create(struct vgem_file *vfile,
+				       unsigned int flags)
 {
 	struct vgem_fence *fence;
 
@@ -102,8 +101,8 @@ static struct dma_fence *vgem_fence_create(struct vgem_file *vfile,
 		return NULL;
 
 	spin_lock_init(&fence->lock);
-	dma_fence_init(&fence->base, &vgem_fence_ops, &fence->lock,
-		       dma_fence_context_alloc(1), 1);
+	fence_init(&fence->base, &vgem_fence_ops, &fence->lock,
+		   fence_context_alloc(1), 1);
 
 	setup_timer(&fence->timer, vgem_fence_timeout, (unsigned long)fence);
 
@@ -158,7 +157,7 @@ int vgem_fence_attach_ioctl(struct drm_device *dev,
 	struct vgem_file *vfile = file->driver_priv;
 	struct reservation_object *resv;
 	struct drm_gem_object *obj;
-	struct dma_fence *fence;
+	struct fence *fence;
 	int ret;
 
 	if (arg->flags & ~VGEM_FENCE_WRITE)
@@ -210,8 +209,8 @@ int vgem_fence_attach_ioctl(struct drm_device *dev,
 	}
 err_fence:
 	if (ret) {
-		dma_fence_signal(fence);
-		dma_fence_put(fence);
+		fence_signal(fence);
+		fence_put(fence);
 	}
 err:
 	drm_gem_object_unreference_unlocked(obj);
@@ -240,7 +239,7 @@ int vgem_fence_signal_ioctl(struct drm_device *dev,
 {
 	struct vgem_file *vfile = file->driver_priv;
 	struct drm_vgem_fence_signal *arg = data;
-	struct dma_fence *fence;
+	struct fence *fence;
 	int ret = 0;
 
 	if (arg->flags)
@@ -254,11 +253,11 @@ int vgem_fence_signal_ioctl(struct drm_device *dev,
 	if (IS_ERR(fence))
 		return PTR_ERR(fence);
 
-	if (dma_fence_is_signaled(fence))
+	if (fence_is_signaled(fence))
 		ret = -ETIMEDOUT;
 
-	dma_fence_signal(fence);
-	dma_fence_put(fence);
+	fence_signal(fence);
+	fence_put(fence);
 	return ret;
 }
 
@@ -272,8 +271,8 @@ int vgem_fence_open(struct vgem_file *vfile)
 
 static int __vgem_fence_idr_fini(int id, void *p, void *data)
 {
-	dma_fence_signal(p);
-	dma_fence_put(p);
+	fence_signal(p);
+	fence_put(p);
 	return 0;
 }
 

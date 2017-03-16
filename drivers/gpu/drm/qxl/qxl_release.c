@@ -21,7 +21,7 @@
  */
 #include "qxl_drv.h"
 #include "qxl_object.h"
-#include <trace/events/dma_fence.h>
+#include <trace/events/fence.h>
 
 /*
  * drawable cmd cache - allocate a bunch of VRAM pages, suballocate
@@ -40,24 +40,23 @@
 static const int release_size_per_bo[] = { RELEASE_SIZE, SURFACE_RELEASE_SIZE, RELEASE_SIZE };
 static const int releases_per_bo[] = { RELEASES_PER_BO, SURFACE_RELEASES_PER_BO, RELEASES_PER_BO };
 
-static const char *qxl_get_driver_name(struct dma_fence *fence)
+static const char *qxl_get_driver_name(struct fence *fence)
 {
 	return "qxl";
 }
 
-static const char *qxl_get_timeline_name(struct dma_fence *fence)
+static const char *qxl_get_timeline_name(struct fence *fence)
 {
 	return "release";
 }
 
-static bool qxl_nop_signaling(struct dma_fence *fence)
+static bool qxl_nop_signaling(struct fence *fence)
 {
 	/* fences are always automatically signaled, so just pretend we did this.. */
 	return true;
 }
 
-static long qxl_fence_wait(struct dma_fence *fence, bool intr,
-			   signed long timeout)
+static long qxl_fence_wait(struct fence *fence, bool intr, signed long timeout)
 {
 	struct qxl_device *qdev;
 	struct qxl_release *release;
@@ -72,7 +71,7 @@ static long qxl_fence_wait(struct dma_fence *fence, bool intr,
 retry:
 	sc++;
 
-	if (dma_fence_is_signaled(fence))
+	if (fence_is_signaled(fence))
 		goto signaled;
 
 	qxl_io_notify_oom(qdev);
@@ -81,11 +80,11 @@ retry:
 		if (!qxl_queue_garbage_collect(qdev, true))
 			break;
 
-		if (dma_fence_is_signaled(fence))
+		if (fence_is_signaled(fence))
 			goto signaled;
 	}
 
-	if (dma_fence_is_signaled(fence))
+	if (fence_is_signaled(fence))
 		goto signaled;
 
 	if (have_drawable_releases || sc < 4) {
@@ -97,9 +96,9 @@ retry:
 			return 0;
 
 		if (have_drawable_releases && sc > 300) {
-			DMA_FENCE_WARN(fence, "failed to wait on release %llu "
-				       "after spincount %d\n",
-				       fence->context & ~0xf0000000, sc);
+			FENCE_WARN(fence, "failed to wait on release %llu "
+					  "after spincount %d\n",
+					  fence->context & ~0xf0000000, sc);
 			goto signaled;
 		}
 		goto retry;
@@ -116,7 +115,7 @@ signaled:
 	return end - cur;
 }
 
-static const struct dma_fence_ops qxl_fence_ops = {
+static const struct fence_ops qxl_fence_ops = {
 	.get_driver_name = qxl_get_driver_name,
 	.get_timeline_name = qxl_get_timeline_name,
 	.enable_signaling = qxl_nop_signaling,
@@ -193,8 +192,8 @@ qxl_release_free(struct qxl_device *qdev,
 		WARN_ON(list_empty(&release->bos));
 		qxl_release_free_list(release);
 
-		dma_fence_signal(&release->base);
-		dma_fence_put(&release->base);
+		fence_signal(&release->base);
+		fence_put(&release->base);
 	} else {
 		qxl_release_free_list(release);
 		kfree(release);
@@ -454,9 +453,9 @@ void qxl_release_fence_buffer_objects(struct qxl_release *release)
 	 * Since we never really allocated a context and we don't want to conflict,
 	 * set the highest bits. This will break if we really allow exporting of dma-bufs.
 	 */
-	dma_fence_init(&release->base, &qxl_fence_ops, &qdev->release_lock,
-		       release->id | 0xf0000000, release->base.seqno);
-	trace_dma_fence_emit(&release->base);
+	fence_init(&release->base, &qxl_fence_ops, &qdev->release_lock,
+		   release->id | 0xf0000000, release->base.seqno);
+	trace_fence_emit(&release->base);
 
 	driver = bdev->driver;
 	glob = bo->glob;

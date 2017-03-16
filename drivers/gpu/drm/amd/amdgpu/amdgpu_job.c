@@ -81,7 +81,7 @@ int amdgpu_job_alloc_with_ib(struct amdgpu_device *adev, unsigned size,
 
 void amdgpu_job_free_resources(struct amdgpu_job *job)
 {
-	struct dma_fence *f;
+	struct fence *f;
 	unsigned i;
 
 	/* use sched fence if available */
@@ -95,7 +95,7 @@ static void amdgpu_job_free_cb(struct amd_sched_job *s_job)
 {
 	struct amdgpu_job *job = container_of(s_job, struct amdgpu_job, base);
 
-	dma_fence_put(job->fence);
+	fence_put(job->fence);
 	amdgpu_sync_free(&job->sync);
 	kfree(job);
 }
@@ -104,14 +104,14 @@ void amdgpu_job_free(struct amdgpu_job *job)
 {
 	amdgpu_job_free_resources(job);
 
-	dma_fence_put(job->fence);
+	fence_put(job->fence);
 	amdgpu_sync_free(&job->sync);
 	kfree(job);
 }
 
 int amdgpu_job_submit(struct amdgpu_job *job, struct amdgpu_ring *ring,
 		      struct amd_sched_entity *entity, void *owner,
-		      struct dma_fence **f)
+		      struct fence **f)
 {
 	int r;
 	job->ring = ring;
@@ -125,19 +125,19 @@ int amdgpu_job_submit(struct amdgpu_job *job, struct amdgpu_ring *ring,
 
 	job->owner = owner;
 	job->fence_ctx = entity->fence_context;
-	*f = dma_fence_get(&job->base.s_fence->finished);
+	*f = fence_get(&job->base.s_fence->finished);
 	amdgpu_job_free_resources(job);
 	amd_sched_entity_push_job(&job->base);
 
 	return 0;
 }
 
-static struct dma_fence *amdgpu_job_dependency(struct amd_sched_job *sched_job)
+static struct fence *amdgpu_job_dependency(struct amd_sched_job *sched_job)
 {
 	struct amdgpu_job *job = to_amdgpu_job(sched_job);
 	struct amdgpu_vm *vm = job->vm;
 
-	struct dma_fence *fence = amdgpu_sync_get_fence(&job->sync);
+	struct fence *fence = amdgpu_sync_get_fence(&job->sync);
 
 	if (fence == NULL && vm && !job->vm_id) {
 		struct amdgpu_ring *ring = job->ring;
@@ -155,9 +155,9 @@ static struct dma_fence *amdgpu_job_dependency(struct amd_sched_job *sched_job)
 	return fence;
 }
 
-static struct dma_fence *amdgpu_job_run(struct amd_sched_job *sched_job)
+static struct fence *amdgpu_job_run(struct amd_sched_job *sched_job)
 {
-	struct dma_fence *fence = NULL;
+	struct fence *fence = NULL;
 	struct amdgpu_job *job;
 	int r;
 
@@ -176,8 +176,8 @@ static struct dma_fence *amdgpu_job_run(struct amd_sched_job *sched_job)
 		DRM_ERROR("Error scheduling IBs (%d)\n", r);
 
 	/* if gpu reset, hw fence will be replaced here */
-	dma_fence_put(job->fence);
-	job->fence = dma_fence_get(fence);
+	fence_put(job->fence);
+	job->fence = fence_get(fence);
 	amdgpu_job_free_resources(job);
 	return fence;
 }

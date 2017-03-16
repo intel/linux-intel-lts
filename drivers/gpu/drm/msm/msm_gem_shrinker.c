@@ -33,20 +33,15 @@ static bool mutex_is_locked_by(struct mutex *mutex, struct task_struct *task)
 
 static bool msm_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 {
-	switch (mutex_trylock_recursive(&dev->struct_mutex)) {
-	case MUTEX_TRYLOCK_FAILED:
-		return false;
-
-	case MUTEX_TRYLOCK_SUCCESS:
-		*unlock = true;
-		return true;
-
-	case MUTEX_TRYLOCK_RECURSIVE:
+	if (!mutex_trylock(&dev->struct_mutex)) {
+		if (!mutex_is_locked_by(&dev->struct_mutex, current))
+			return false;
 		*unlock = false;
-		return true;
+	} else {
+		*unlock = true;
 	}
 
-	BUG();
+	return true;
 }
 
 

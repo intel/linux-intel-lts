@@ -720,7 +720,7 @@ static void amdgpu_cs_parser_fini(struct amdgpu_cs_parser *parser, int error, bo
 		ttm_eu_backoff_reservation(&parser->ticket,
 					   &parser->validated);
 	}
-	dma_fence_put(parser->fence);
+	fence_put(parser->fence);
 
 	if (parser->ctx)
 		amdgpu_ctx_put(parser->ctx);
@@ -757,7 +757,7 @@ static int amdgpu_bo_vm_update_pte(struct amdgpu_cs_parser *p,
 
 	if (p->bo_list) {
 		for (i = 0; i < p->bo_list->num_entries; i++) {
-			struct dma_fence *f;
+			struct fence *f;
 
 			/* ignore duplicates */
 			bo = p->bo_list->array[i].robj;
@@ -957,7 +957,7 @@ static int amdgpu_cs_dependencies(struct amdgpu_device *adev,
 		for (j = 0; j < num_deps; ++j) {
 			struct amdgpu_ring *ring;
 			struct amdgpu_ctx *ctx;
-			struct dma_fence *fence;
+			struct fence *fence;
 
 			r = amdgpu_cs_get_ring(adev, deps[j].ip_type,
 					       deps[j].ip_instance,
@@ -979,7 +979,7 @@ static int amdgpu_cs_dependencies(struct amdgpu_device *adev,
 			} else if (fence) {
 				r = amdgpu_sync_fence(adev, &p->job->sync,
 						      fence);
-				dma_fence_put(fence);
+				fence_put(fence);
 				amdgpu_ctx_put(ctx);
 				if (r)
 					return r;
@@ -1009,7 +1009,7 @@ static int amdgpu_cs_submit(struct amdgpu_cs_parser *p,
 
 	job->owner = p->filp;
 	job->fence_ctx = entity->fence_context;
-	p->fence = dma_fence_get(&job->base.s_fence->finished);
+	p->fence = fence_get(&job->base.s_fence->finished);
 	cs->out.handle = amdgpu_ctx_add_fence(p->ctx, ring, p->fence);
 	job->uf_sequence = cs->out.handle;
 	amdgpu_job_free_resources(job);
@@ -1092,7 +1092,7 @@ int amdgpu_cs_wait_ioctl(struct drm_device *dev, void *data,
 	unsigned long timeout = amdgpu_gem_timeout(wait->in.timeout);
 	struct amdgpu_ring *ring = NULL;
 	struct amdgpu_ctx *ctx;
-	struct dma_fence *fence;
+	struct fence *fence;
 	long r;
 
 	r = amdgpu_cs_get_ring(adev, wait->in.ip_type, wait->in.ip_instance,
@@ -1108,8 +1108,8 @@ int amdgpu_cs_wait_ioctl(struct drm_device *dev, void *data,
 	if (IS_ERR(fence))
 		r = PTR_ERR(fence);
 	else if (fence) {
-		r = dma_fence_wait_timeout(fence, true, timeout);
-		dma_fence_put(fence);
+		r = fence_wait_timeout(fence, true, timeout);
+		fence_put(fence);
 	} else
 		r = 1;
 
@@ -1121,180 +1121,6 @@ int amdgpu_cs_wait_ioctl(struct drm_device *dev, void *data,
 	wait->out.status = (r == 0);
 
 	return 0;
-}
-
-/**
- * amdgpu_cs_get_fence - helper to get fence from drm_amdgpu_fence
- *
- * @adev: amdgpu device
- * @filp: file private
- * @user: drm_amdgpu_fence copied from user space
- */
-static struct dma_fence *amdgpu_cs_get_fence(struct amdgpu_device *adev,
-					     struct drm_file *filp,
-					     struct drm_amdgpu_fence *user)
-{
-	struct amdgpu_ring *ring;
-	struct amdgpu_ctx *ctx;
-	struct dma_fence *fence;
-	int r;
-
-	r = amdgpu_cs_get_ring(adev, user->ip_type, user->ip_instance,
-			       user->ring, &ring);
-	if (r)
-		return ERR_PTR(r);
-
-	ctx = amdgpu_ctx_get(filp->driver_priv, user->ctx_id);
-	if (ctx == NULL)
-		return ERR_PTR(-EINVAL);
-
-	fence = amdgpu_ctx_get_fence(ctx, ring, user->seq_no);
-	amdgpu_ctx_put(ctx);
-
-	return fence;
-}
-
-/**
- * amdgpu_cs_wait_all_fence - wait on all fences to signal
- *
- * @adev: amdgpu device
- * @filp: file private
- * @wait: wait parameters
- * @fences: array of drm_amdgpu_fence
- */
-static int amdgpu_cs_wait_all_fences(struct amdgpu_device *adev,
-				     struct drm_file *filp,
-				     union drm_amdgpu_wait_fences *wait,
-				     struct drm_amdgpu_fence *fences)
-{
-	uint32_t fence_count = wait->in.fence_count;
-	unsigned int i;
-	long r = 1;
-
-	for (i = 0; i < fence_count; i++) {
-		struct dma_fence *fence;
-		unsigned long timeout = amdgpu_gem_timeout(wait->in.timeout_ns);
-
-		fence = amdgpu_cs_get_fence(adev, filp, &fences[i]);
-		if (IS_ERR(fence))
-			return PTR_ERR(fence);
-		else if (!fence)
-			continue;
-
-		r = dma_fence_wait_timeout(fence, true, timeout);
-		if (r < 0)
-			return r;
-
-		if (r == 0)
-			break;
-	}
-
-	memset(wait, 0, sizeof(*wait));
-	wait->out.status = (r > 0);
-
-	return 0;
-}
-
-/**
- * amdgpu_cs_wait_any_fence - wait on any fence to signal
- *
- * @adev: amdgpu device
- * @filp: file private
- * @wait: wait parameters
- * @fences: array of drm_amdgpu_fence
- */
-static int amdgpu_cs_wait_any_fence(struct amdgpu_device *adev,
-				    struct drm_file *filp,
-				    union drm_amdgpu_wait_fences *wait,
-				    struct drm_amdgpu_fence *fences)
-{
-	unsigned long timeout = amdgpu_gem_timeout(wait->in.timeout_ns);
-	uint32_t fence_count = wait->in.fence_count;
-	uint32_t first = ~0;
-	struct dma_fence **array;
-	unsigned int i;
-	long r;
-
-	/* Prepare the fence array */
-	array = kcalloc(fence_count, sizeof(struct dma_fence *), GFP_KERNEL);
-
-	if (array == NULL)
-		return -ENOMEM;
-
-	for (i = 0; i < fence_count; i++) {
-		struct dma_fence *fence;
-
-		fence = amdgpu_cs_get_fence(adev, filp, &fences[i]);
-		if (IS_ERR(fence)) {
-			r = PTR_ERR(fence);
-			goto err_free_fence_array;
-		} else if (fence) {
-			array[i] = fence;
-		} else { /* NULL, the fence has been already signaled */
-			r = 1;
-			goto out;
-		}
-	}
-
-	r = dma_fence_wait_any_timeout(array, fence_count, true, timeout,
-				       &first);
-	if (r < 0)
-		goto err_free_fence_array;
-
-out:
-	memset(wait, 0, sizeof(*wait));
-	wait->out.status = (r > 0);
-	wait->out.first_signaled = first;
-	/* set return value 0 to indicate success */
-	r = 0;
-
-err_free_fence_array:
-	for (i = 0; i < fence_count; i++)
-		dma_fence_put(array[i]);
-	kfree(array);
-
-	return r;
-}
-
-/**
- * amdgpu_cs_wait_fences_ioctl - wait for multiple command submissions to finish
- *
- * @dev: drm device
- * @data: data from userspace
- * @filp: file private
- */
-int amdgpu_cs_wait_fences_ioctl(struct drm_device *dev, void *data,
-				struct drm_file *filp)
-{
-	struct amdgpu_device *adev = dev->dev_private;
-	union drm_amdgpu_wait_fences *wait = data;
-	uint32_t fence_count = wait->in.fence_count;
-	struct drm_amdgpu_fence *fences_user;
-	struct drm_amdgpu_fence *fences;
-	int r;
-
-	/* Get the fences from userspace */
-	fences = kmalloc_array(fence_count, sizeof(struct drm_amdgpu_fence),
-			GFP_KERNEL);
-	if (fences == NULL)
-		return -ENOMEM;
-
-	fences_user = (void __user *)(unsigned long)(wait->in.fences);
-	if (copy_from_user(fences, fences_user,
-		sizeof(struct drm_amdgpu_fence) * fence_count)) {
-		r = -EFAULT;
-		goto err_free_fences;
-	}
-
-	if (wait->in.wait_all)
-		r = amdgpu_cs_wait_all_fences(adev, filp, wait, fences);
-	else
-		r = amdgpu_cs_wait_any_fence(adev, filp, wait, fences);
-
-err_free_fences:
-	kfree(fences);
-
-	return r;
 }
 
 /**
