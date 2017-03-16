@@ -58,11 +58,6 @@ void __init efi_map_region(efi_memory_desc_t *md)
 void __init efi_map_region_fixed(efi_memory_desc_t *md) {}
 void __init parse_efi_setup(u64 phys_addr, u32 data_len) {}
 
-pgd_t *efi_get_pgd(void)
-{
-	return initial_page_table;
-}
-
 pgd_t * __init efi_call_phys_prolog(void)
 {
 	struct desc_ptr gdt_descr;
