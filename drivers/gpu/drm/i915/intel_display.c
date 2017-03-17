@@ -10553,7 +10553,7 @@ void intel_check_page_flip(struct drm_i915_private *dev_priv, int pipe)
 	struct intel_crtc *crtc = intel_get_crtc_for_pipe(dev_priv, pipe);
 	struct intel_flip_work *work;
 
-	WARN_ON(!in_interrupt());
+	WARN_ON_NONRT(!in_interrupt());
 
 	if (crtc == NULL)
 		return;

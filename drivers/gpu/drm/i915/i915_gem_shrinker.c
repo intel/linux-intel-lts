@@ -37,6 +37,7 @@
 
 static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 {
+#if (defined(CONFIG_DEBUG_MUTEXES) || defined(CONFIG_MUTEX_SPIN_ON_OWNER)) && !defined(CONFIG_PREEMPT_RT_BASE)
 	switch (mutex_trylock_recursive(&dev->struct_mutex)) {
 	case MUTEX_TRYLOCK_FAILED:
 		return false;
@@ -51,6 +52,10 @@ static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 	}
 
 	BUG();
+#else
+	/* Since UP may be pre-empted, we cannot assume that we own the lock */
+	return false;
+#endif
 }
 
 static bool any_vma_pinned(struct drm_i915_gem_object *obj)
