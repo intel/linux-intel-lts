@@ -168,6 +168,7 @@ struct dma_fence_ops {
 	const char * (*get_driver_name)(struct dma_fence *fence);
 	const char * (*get_timeline_name)(struct dma_fence *fence);
 	bool (*enable_signaling)(struct dma_fence *fence);
+	void (*disable_signaling)(struct dma_fence *fence);
 	bool (*signaled)(struct dma_fence *fence);
 	signed long (*wait)(struct dma_fence *fence,
 			    bool intr, signed long timeout);

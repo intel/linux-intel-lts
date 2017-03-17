@@ -37,13 +37,11 @@
  * license terms, and distributes only under these terms.
  */
 
-#include <asm/unaligned.h>
 #include <linux/async.h>
 #include <linux/devfreq.h>
 #include <linux/nls.h>
 #include <linux/of.h>
-#include <linux/rpmb.h>
-
+#include <linux/blkdev.h>
 #include "ufshcd.h"
 #include "ufs_quirks.h"
 #include "unipro.h"
@@ -1454,6 +1452,17 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 		clear_bit_unlock(tag, &hba->lrb_in_use);
 		goto out;
 	}
+
+	/* IO svc time latency histogram */
+	if (hba != NULL && cmd->request != NULL) {
+		if (hba->latency_hist_enabled &&
+		    (cmd->request->cmd_type == REQ_TYPE_FS)) {
+			cmd->request->lat_hist_io_start = ktime_get();
+			cmd->request->lat_hist_enabled = 1;
+		} else
+			cmd->request->lat_hist_enabled = 0;
+	}
+
 	WARN_ON(hba->clk_gating.state != CLKS_ON);
 
 	lrbp = &hba->lrb[tag];
@@ -3536,6 +3545,7 @@ static void __ufshcd_transfer_req_compl(struct ufs_hba *hba,
 	struct scsi_cmnd *cmd;
 	int result;
 	int index;
+	struct request *req;
 
 	for_each_set_bit(index, &completed_reqs, hba->nutrs) {
 		lrbp = &hba->lrb[index];
@@ -3547,6 +3557,22 @@ static void __ufshcd_transfer_req_compl(struct ufs_hba *hba,
 			/* Mark completed command as NULL in LRB */
 			lrbp->cmd = NULL;
 			clear_bit_unlock(index, &hba->lrb_in_use);
+			req = cmd->request;
+			if (req) {
+				/* Update IO svc time latency histogram */
+				if (req->lat_hist_enabled) {
+					ktime_t completion;
+					u_int64_t delta_us;
+
+					completion = ktime_get();
+					delta_us = ktime_us_delta(completion,
+						  req->lat_hist_io_start);
+					/* rq_data_dir() => true if WRITE */
+					blk_update_latency_hist(&hba->io_lat_s,
+						(rq_data_dir(req) == READ),
+						delta_us);
+				}
+			}
 			/* Do not touch lrbp after scsi done */
 			cmd->scsi_done(cmd);
 			__ufshcd_release(hba);
@@ -4756,178 +4782,6 @@ static void ufshcd_init_icc_levels(struct ufs_hba *hba)
 
 }
 
-#define SEC_PROTOCOL_UFS  0xEC
-#define   SEC_SPECIFIC_UFS_RPMB 0x0001
-
-#define SEC_PROTOCOL_CMD_SIZE 12
-#define SEC_PROTOCOL_RETRIES 3
-#define SEC_PROTOCOL_RETRIES_ON_RESET 10
-#define SEC_PROTOCOL_TIMEOUT msecs_to_jiffies(1000)
-
-static int
-ufshcd_rpmb_security_out(struct scsi_device *sdev,
-			 struct rpmb_frame *frames, u32 cnt)
-{
-	struct scsi_sense_hdr sshdr;
-	u32 trans_len = cnt * sizeof(struct rpmb_frame);
-	int reset_retries = SEC_PROTOCOL_RETRIES_ON_RESET;
-	int ret;
-	u8 cmd[SEC_PROTOCOL_CMD_SIZE];
-
-	memset(cmd, 0, SEC_PROTOCOL_CMD_SIZE);
-	cmd[0] = SECURITY_PROTOCOL_OUT;
-	cmd[1] = SEC_PROTOCOL_UFS;
-	put_unaligned_be16(SEC_SPECIFIC_UFS_RPMB, cmd + 2);
-	cmd[4] = 0;                              /* inc_512 bit 7 set to 0 */
-	put_unaligned_be32(trans_len, cmd + 6);  /* transfer length */
-
-retry:
-	ret = scsi_execute_req_flags(sdev, cmd, DMA_TO_DEVICE,
-				     frames, trans_len, &sshdr,
-				     SEC_PROTOCOL_TIMEOUT, SEC_PROTOCOL_RETRIES,
-				     NULL, 0);
-
-	if (ret && scsi_sense_valid(&sshdr) &&
-	    sshdr.sense_key == UNIT_ATTENTION &&
-	    sshdr.asc == 0x29 && sshdr.ascq == 0x00)
-		/*
-		 * Device reset might occur several times,
-		 * give it one more chance
-		 */
-		if (--reset_retries > 0)
-			goto retry;
-
-	if (ret)
-		dev_err(&sdev->sdev_gendev, "%s: failed with err %0x\n",
-			__func__, ret);
-
-	if (driver_byte(ret) & DRIVER_SENSE)
-		scsi_print_sense_hdr(sdev, "rpmb: security out", &sshdr);
-
-	return ret;
-}
-
-static int
-ufshcd_rpmb_security_in(struct scsi_device *sdev,
-			struct rpmb_frame *frames, u32 cnt)
-{
-	struct scsi_sense_hdr sshdr;
-	u32 alloc_len = cnt * sizeof(struct rpmb_frame);
-	int reset_retries = SEC_PROTOCOL_RETRIES_ON_RESET;
-	int ret;
-	u8 cmd[SEC_PROTOCOL_CMD_SIZE];
-
-	memset(cmd, 0, SEC_PROTOCOL_CMD_SIZE);
-	cmd[0] = SECURITY_PROTOCOL_IN;
-	cmd[1] = SEC_PROTOCOL_UFS;
-	put_unaligned_be16(SEC_SPECIFIC_UFS_RPMB, cmd + 2);
-	cmd[4] = 0;                             /* inc_512 bit 7 set to 0 */
-	put_unaligned_be32(alloc_len, cmd + 6); /* allocation length */
-
-retry:
-	ret = scsi_execute_req_flags(sdev, cmd, DMA_FROM_DEVICE,
-				     frames, alloc_len, &sshdr,
-				     SEC_PROTOCOL_TIMEOUT, SEC_PROTOCOL_RETRIES,
-				     NULL, 0);
-
-	if (ret && scsi_sense_valid(&sshdr) &&
-	    sshdr.sense_key == UNIT_ATTENTION &&
-	    sshdr.asc == 0x29 && sshdr.ascq == 0x00)
-		/*
-		 * Device reset might occur several times,
-		 * give it one more chance
-		*/
-		if (--reset_retries > 0)
-			goto retry;
-
-	if (ret)
-		dev_err(&sdev->sdev_gendev, "%s: failed with err %0x\n",
-			__func__, ret);
-
-	if (driver_byte(ret) & DRIVER_SENSE)
-		scsi_print_sense_hdr(sdev, "rpmb: security in", &sshdr);
-
-	return ret;
-}
-
-static int ufshcd_rpmb_cmd_seq(struct device *dev,
-			       struct rpmb_cmd *cmds, u32 ncmds)
-{
-	unsigned long flags;
-	struct ufs_hba *hba = dev_get_drvdata(dev);
-	struct scsi_device *sdev;
-	struct rpmb_cmd *cmd;
-	int i;
-	int ret;
-
-	spin_lock_irqsave(hba->host->host_lock, flags);
-	sdev = hba->sdev_ufs_rpmb;
-	if (sdev) {
-		ret = scsi_device_get(sdev);
-		if (!ret && !scsi_device_online(sdev)) {
-			ret = -ENODEV;
-			scsi_device_put(sdev);
-		}
-	} else {
-		ret = -ENODEV;
-	}
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
-	if (ret)
-		return ret;
-
-	for (ret = 0, i = 0; i < ncmds && !ret; i++) {
-		cmd = &cmds[i];
-		if (cmd->flags & RPMB_F_WRITE)
-			ret = ufshcd_rpmb_security_out(sdev, cmd->frames,
-						       cmd->nframes);
-		else
-			ret = ufshcd_rpmb_security_in(sdev, cmd->frames,
-						      cmd->nframes);
-	}
-	scsi_device_put(sdev);
-	return ret;
-}
-
-static struct rpmb_ops ufshcd_rpmb_dev_ops = {
-	.cmd_seq = ufshcd_rpmb_cmd_seq,
-	.type = RPMB_TYPE_UFS,
-};
-
-static inline void ufshcd_rpmb_add(struct ufs_hba *hba)
-{
-	struct rpmb_dev *rdev;
-
-	scsi_device_get(hba->sdev_ufs_rpmb);
-	rdev = rpmb_dev_register(hba->dev, &ufshcd_rpmb_dev_ops);
-	if (IS_ERR(rdev)) {
-		dev_warn(hba->dev, "%s: cannot register to rpmb %ld\n",
-			 dev_name(hba->dev), PTR_ERR(rdev));
-		goto out_put_dev;
-	}
-
-	return;
-
-out_put_dev:
-	scsi_device_put(hba->sdev_ufs_rpmb);
-	hba->sdev_ufs_rpmb = NULL;
-}
-
-static inline void ufshcd_rpmb_remove(struct ufs_hba *hba)
-{
-	unsigned long flags;
-
-	if (!hba->sdev_ufs_rpmb)
-		return;
-
-	spin_lock_irqsave(hba->host->host_lock, flags);
-
-	rpmb_dev_unregister(hba->dev);
-	scsi_device_put(hba->sdev_ufs_rpmb);
-	hba->sdev_ufs_rpmb = NULL;
-
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
-}
-
 /**
  * ufshcd_scsi_add_wlus - Adds required W-LUs
  * @hba: per-adapter instance
@@ -4983,11 +4837,7 @@ static int ufshcd_scsi_add_wlus(struct ufs_hba *hba)
 		ret = PTR_ERR(sdev_rpmb);
 		goto remove_sdev_boot;
 	}
-	hba->sdev_ufs_rpmb = sdev_rpmb;
-
-	ufshcd_rpmb_add(hba);
 	scsi_device_put(sdev_rpmb);
-
 	goto out;
 
 remove_sdev_boot:
@@ -6356,8 +6206,6 @@ int ufshcd_shutdown(struct ufs_hba *hba)
 			goto out;
 	}
 
-	ufshcd_rpmb_remove(hba);
-
 	ret = ufshcd_suspend(hba, UFS_SHUTDOWN_PM);
 out:
 	if (ret)
@@ -6367,6 +6215,54 @@ out:
 }
 EXPORT_SYMBOL(ufshcd_shutdown);
 
+/*
+ * Values permitted 0, 1, 2.
+ * 0 -> Disable IO latency histograms (default)
+ * 1 -> Enable IO latency histograms
+ * 2 -> Zero out IO latency histograms
+ */
+static ssize_t
+latency_hist_store(struct device *dev, struct device_attribute *attr,
+		   const char *buf, size_t count)
+{
+	struct ufs_hba *hba = dev_get_drvdata(dev);
+	long value;
+
+	if (kstrtol(buf, 0, &value))
+		return -EINVAL;
+	if (value == BLK_IO_LAT_HIST_ZERO)
+		blk_zero_latency_hist(&hba->io_lat_s);
+	else if (value == BLK_IO_LAT_HIST_ENABLE ||
+		 value == BLK_IO_LAT_HIST_DISABLE)
+		hba->latency_hist_enabled = value;
+	return count;
+}
+
+ssize_t
+latency_hist_show(struct device *dev, struct device_attribute *attr,
+		  char *buf)
+{
+	struct ufs_hba *hba = dev_get_drvdata(dev);
+
+	return blk_latency_hist_show(&hba->io_lat_s, buf);
+}
+
+static DEVICE_ATTR(latency_hist, S_IRUGO | S_IWUSR,
+		   latency_hist_show, latency_hist_store);
+
+static void
+ufshcd_init_latency_hist(struct ufs_hba *hba)
+{
+	if (device_create_file(hba->dev, &dev_attr_latency_hist))
+		dev_err(hba->dev, "Failed to create latency_hist sysfs entry\n");
+}
+
+static void
+ufshcd_exit_latency_hist(struct ufs_hba *hba)
+{
+	device_create_file(hba->dev, &dev_attr_latency_hist);
+}
+
 /**
  * ufshcd_remove - de-allocate SCSI host and host memory space
  *		data structure memory
@@ -6374,8 +6270,6 @@ EXPORT_SYMBOL(ufshcd_shutdown);
  */
 void ufshcd_remove(struct ufs_hba *hba)
 {
-	ufshcd_rpmb_remove(hba);
-
 	scsi_remove_host(hba->host);
 	/* disable interrupts */
 	ufshcd_disable_intr(hba, hba->intr_mask);
@@ -6384,6 +6278,7 @@ void ufshcd_remove(struct ufs_hba *hba)
 	scsi_host_put(hba->host);
 
 	ufshcd_exit_clk_gating(hba);
+	ufshcd_exit_latency_hist(hba);
 	if (ufshcd_is_clkscaling_enabled(hba))
 		devfreq_remove_device(hba->devfreq);
 	ufshcd_hba_exit(hba);
@@ -6697,6 +6592,8 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
 	/* Hold auto suspend until async scan completes */
 	pm_runtime_get_sync(dev);
 
+	ufshcd_init_latency_hist(hba);
+
 	/*
 	 * The device-initialize-sequence hasn't been invoked yet.
 	 * Set the device to power-off state
@@ -6711,6 +6608,7 @@ out_remove_scsi_host:
 	scsi_remove_host(hba->host);
 exit_gating:
 	ufshcd_exit_clk_gating(hba);
+	ufshcd_exit_latency_hist(hba);
 out_disable:
 	hba->is_irq_enabled = false;
 	scsi_host_put(host);
