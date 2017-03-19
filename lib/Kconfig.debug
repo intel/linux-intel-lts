@@ -1006,6 +1006,18 @@ config DEBUG_IRQ_PIPELINE
 
 	  If unsure, say N.
 
+config IRQ_PIPELINE_TORTURE_TEST
+	bool "Torture tests for IRQ pipeline"
+	depends on DEBUG_IRQ_PIPELINE
+	select TORTURE_TEST
+	default n
+	help
+	  This option provides a kernel module that runs torture tests
+	  on the IRQ pipeline mechanism.
+
+	  Say Y here if you want the IRQ pipeline torture tests to run
+	  when the kernel starts. Say N if you are unsure.
+
 menu "Debug Oops, Lockups and Hangs"
 
 config PANIC_ON_OOPS
