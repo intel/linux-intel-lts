@@ -29,6 +29,16 @@
 
 #ifdef CONFIG_PREEMPT_RT_FULL
 # include <linux/mutex_rt.h>
+
+/* cut and paste hack to get things to compile after attempting to merge
+ * preempt-rt12 into a tree with a backport of some DRM stuff that seems to
+ * have touched mutex.h.  lovely.
+ */
+static inline struct task_struct *__mutex_owner(struct mutex *lock)
+{
+	return lock->lock.owner;
+}
+
 #else
 
 /*
@@ -192,6 +202,7 @@ extern int mutex_trylock(struct mutex *lock);
 extern void mutex_unlock(struct mutex *lock);
 
 #endif /* !PREEMPT_RT_FULL */
+
 
 extern int atomic_dec_and_mutex_lock(atomic_t *cnt, struct mutex *lock);
 
