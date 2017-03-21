@@ -498,6 +498,24 @@ union guc_log_control {
 	u32 value;
 } __packed;
 
+/* GuC Shared Context Data Struct */
+struct guc_shared_ctx_data {
+	u32 addr_of_last_preempted_data_low;
+	u32 addr_of_last_preempted_data_high;
+	u32 addr_of_last_preempted_data_high_tmp;
+	u32 padding;
+	u32 is_mapped_to_proxy;
+	u32 proxy_ctx_id;
+	u32 engine_reset_ctx_id;
+	u32 media_reset_count;
+	u32 reserved[8];
+	u32 uk_last_ctx_switch_reason;
+	u32 was_reset;
+	u32 lrca_gpu_addr;
+	u32 execlist_ctx;
+	u32 reserved1[32];
+} __packed;
+
 /* This Action will be programmed in C180 - SOFT_SCRATCH_O_REG */
 enum intel_guc_action {
 	INTEL_GUC_ACTION_DEFAULT = 0x0,
