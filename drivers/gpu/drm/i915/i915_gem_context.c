@@ -330,7 +330,6 @@ __create_hw_context(struct drm_i915_private *dev_priv,
 	i915_gem_context_set_bannable(ctx);
 	ctx->ring_size = 4 * PAGE_SIZE;
 	ctx->desc_template = default_desc_template(dev_priv);
-	ATOMIC_INIT_NOTIFIER_HEAD(&ctx->status_notifier);
 
 	/* GuC requires the ring to be placed above GUC_WOPCM_TOP. If GuC is not
 	 * present or not in use we still need a small bias as ring wraparound
