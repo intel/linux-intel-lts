@@ -1120,6 +1120,25 @@ void i915_guc_submission_fini(struct drm_i915_private *dev_priv)
 	i915_vma_unpin_and_release(&guc->ctx_pool_vma);
 }
 
+void i915_guc_submission_reenable_engine(struct intel_engine_cs *engine)
+{
+	struct drm_i915_private *dev_priv = engine->i915;
+	struct intel_guc *guc = &dev_priv->guc;
+	struct i915_guc_client *client = guc->execbuf_client;
+	const int wqi_size = sizeof(struct guc_wq_item);
+	struct drm_i915_gem_request *rq;
+
+	GEM_BUG_ON(!client);
+	intel_guc_sample_forcewake(guc);
+
+	spin_lock_irq(&engine->timeline->lock);
+	list_for_each_entry(rq, &engine->timeline->requests, link) {
+		guc_client_update_wq_rsvd(client, wqi_size);
+		__i915_guc_submit(rq);
+	}
+	spin_unlock_irq(&engine->timeline->lock);
+}
+
 /**
  * intel_guc_suspend() - notify GuC entering suspend state
  * @dev_priv:	i915 device private
@@ -1146,6 +1165,34 @@ int intel_guc_suspend(struct drm_i915_private *dev_priv)
 	return intel_guc_send(guc, data, ARRAY_SIZE(data));
 }
 
+int i915_guc_reset_engine(struct intel_engine_cs *engine)
+{
+	struct drm_i915_private *dev_priv = engine->i915;
+	struct intel_guc *guc = &dev_priv->guc;
+	struct i915_gem_context *ctx;
+	u32 data[7];
+
+	if (!i915.enable_guc_submission)
+		return 0;
+
+	ctx = dev_priv->kernel_context;
+
+	/*
+	 * The affected context report is populated by GuC and is provided
+	 * to the driver using the shared page. We request for it but don't
+	 * use it as scheduler has all of these details.
+	 */
+	data[0] = INTEL_GUC_ACTION_REQUEST_ENGINE_RESET;
+	data[1] = engine->guc_id;
+	data[2] = INTEL_GUC_RESET_OPTION_REPORT_AFFECTED_CONTEXTS;
+	data[3] = 0;
+	data[4] = 0;
+	data[5] = 0;
+	/* first page is shared data with GuC */
+	data[6] = guc_ggtt_offset(ctx->engine[RCS].state);
+
+	return intel_guc_send(guc, data, ARRAY_SIZE(data));
+}
 
 /**
  * intel_guc_resume() - notify GuC resuming from suspend state
