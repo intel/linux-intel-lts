@@ -3671,6 +3671,8 @@ void rt_mutex_setprio(struct task_struct *p, int prio)
 		goto out_unlock;
 	}
 
+	rt_mutex_update_top_task(p);
+
 	trace_sched_pi_setprio(p, prio);
 	oldprio = p->prio;
 
