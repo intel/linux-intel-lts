@@ -622,6 +622,8 @@ struct igb_adapter {
 	struct vf_mac_filter *vf_mac_list;
 	/* lock for VF resources */
 	spinlock_t vfs_lock;
+	u8 igb_runtime_status;
+	u8 igb_runtime_auto;
 };
 
 /* flags controlling PTP/1588 function */
