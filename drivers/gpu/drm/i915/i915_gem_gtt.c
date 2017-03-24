@@ -3266,8 +3266,12 @@ int i915_ggtt_init_hw(struct drm_i915_private *dev_priv)
 	 */
 	mutex_lock(&dev_priv->drm.struct_mutex);
 	i915_address_space_init(&ggtt->base, dev_priv, "[global]");
-	if (!HAS_LLC(dev_priv) && !USES_PPGTT(dev_priv))
-		ggtt->base.mm.color_adjust = i915_gtt_color_adjust;
+	if (!HAS_LLC(dev_priv) && !USES_PPGTT(dev_priv)) {
+		if(!intel_vgpu_active(dev_priv))
+			ggtt->base.mm.color_adjust = i915_gtt_color_adjust;
+		else
+			ggtt->base.mm.color_adjust = NULL;
+	}
 	mutex_unlock(&dev_priv->drm.struct_mutex);
 
 	if (!io_mapping_init_wc(&dev_priv->ggtt.mappable,
