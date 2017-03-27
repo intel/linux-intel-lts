@@ -864,12 +864,12 @@ static int sdcardfs_getattr(const struct path *path, struct kstat *stat,
 	dput(parent);
 
 	sdcardfs_get_lower_path(dentry, &lower_path);
-	err = vfs_getattr(&lower_path, &lower_stat);
+	err = vfs_getattr(&lower_path, &lower_stat, request_mask, flags);
 	if (err)
 		goto out;
 	sdcardfs_copy_and_fix_attrs(d_inode(dentry),
 			      d_inode(lower_path.dentry));
-	err = sdcardfs_fillattr(mnt, d_inode(dentry), stat);
+	err = sdcardfs_fillattr(path->mnt, d_inode(dentry), stat);
 	stat->blocks = lower_stat.blocks;
 out:
 	sdcardfs_put_lower_path(dentry, &lower_path);
