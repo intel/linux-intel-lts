@@ -343,6 +343,39 @@ static bool skl_ipc_is_dsp_busy(struct sst_dsp *dsp)
 	return (hipci & SKL_ADSP_REG_HIPCI_BUSY);
 }
 
+static void skl_ipc_tx_msgs_direct(struct sst_generic_ipc *ipc)
+{
+        struct ipc_message *msg;
+        unsigned long flags;
+
+        spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+
+        if (list_empty(&ipc->tx_list) || ipc->pending) {
+                spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+                return;
+        }
+
+        /* if the DSP is busy, we will TX messages after IRQ.
+         * also postpone if we are in the middle of procesing completion irq*/
+        if (ipc->ops.is_dsp_busy && ipc->ops.is_dsp_busy(ipc->dsp)) {
+                dev_dbg(ipc->dev, "skl_ipc_tx_msgs_direct dsp busy\n");
+                spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+                return;
+        }
+
+        msg = list_first_entry(&ipc->tx_list, struct ipc_message, list);
+        list_move(&msg->list, &ipc->rx_list);
+
+        dev_dbg(ipc->dev, "skl_ipc_tx_msgs_direct sending message, header - %#.16lx\n",
+                                (unsigned long)msg->header);
+        print_hex_dump_debug("Params:", DUMP_PREFIX_OFFSET, 8, 4,
+                             msg->tx_data, msg->tx_size, false);
+        if (ipc->ops.tx_msg != NULL)
+                ipc->ops.tx_msg(ipc, msg);
+
+        spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+}
+
 /* Lock to be held by caller */
 static void skl_ipc_tx_msg(struct sst_generic_ipc *ipc, struct ipc_message *msg)
 {
@@ -854,6 +887,7 @@ int skl_ipc_init(struct device *dev, struct skl_sst *skl)
 
 	ipc->ops.tx_msg = skl_ipc_tx_msg;
 	ipc->ops.tx_data_copy = skl_ipc_tx_data_copy;
+	ipc->ops.direct_tx_msg = skl_ipc_tx_msgs_direct;
 	ipc->ops.is_dsp_busy = skl_ipc_is_dsp_busy;
 
 	return 0;
