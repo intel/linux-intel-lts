@@ -1,5 +1,5 @@
 #include <linux/sync_file.h>
-#include <linux/fence.h>
+#include <linux/dma-fence.h>
 
 /**
  * struct sync_pt - sync_pt object
@@ -8,7 +8,7 @@
  * @active_list: sync timeline active child's list
  */
 struct sync_pt {
-	struct fence base;
+	struct dma_fence base;
 	struct list_head child_list;
 	struct list_head active_list;
 };

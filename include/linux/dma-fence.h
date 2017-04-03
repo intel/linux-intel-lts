@@ -109,6 +109,7 @@ struct dma_fence_cb {
  * @get_driver_name: returns the driver name.
  * @get_timeline_name: return the name of the context this fence belongs to.
  * @enable_signaling: enable software signaling of fence.
+ * @disable_signaling: disable software signaling of fence (optional).
  * @signaled: [optional] peek whether the fence is signaled, can be null.
  * @wait: custom wait implementation, or dma_fence_default_wait.
  * @release: [optional] called on destruction of fence, can be null
