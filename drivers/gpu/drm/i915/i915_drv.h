@@ -1049,6 +1049,7 @@ struct i915_gpu_state {
 			int ban_score;
 			int active;
 			int guilty;
+			int watchdog_threshold;
 		} context;
 
 		struct drm_i915_error_object {
