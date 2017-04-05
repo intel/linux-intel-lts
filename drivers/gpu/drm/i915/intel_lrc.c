@@ -1651,7 +1651,7 @@ static inline u32 get_watchdog_disable(struct intel_engine_cs *engine)
 		return GEN8_XCS_WATCHDOG_DISABLE;
 }
 
-#define GEN8_WATCHDOG_1000US 0x2ee0 //XXX: Temp, replace with helper function
+#define GEN8_WATCHDOG_1000US(dev_priv) watchdog_to_clock_counts(dev_priv, 1000)
 static void gen8_watchdog_irq_handler(unsigned long data)
 {
 	struct intel_engine_cs *engine = (struct intel_engine_cs *)data;
@@ -1681,7 +1681,8 @@ static void gen8_watchdog_irq_handler(unsigned long data)
 	} else {
 		engine->hangcheck.watchdog = current_seqno;
 		/* Re-start the counter, if really hung, it will expire again */
-		I915_WRITE_FW(RING_THRESH(engine->mmio_base), GEN8_WATCHDOG_1000US);
+		I915_WRITE_FW(RING_THRESH(engine->mmio_base),
+			      GEN8_WATCHDOG_1000US(dev_priv));
 		I915_WRITE_FW(RING_CNTR(engine->mmio_base), GEN8_WATCHDOG_ENABLE);
 	}
 
