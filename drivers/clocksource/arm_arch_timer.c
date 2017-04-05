@@ -645,7 +645,7 @@ static __always_inline irqreturn_t timer_handler(const int access,
 	if (ctrl & ARCH_TIMER_CTRL_IT_STAT) {
 		ctrl |= ARCH_TIMER_CTRL_IT_MASK;
 		arch_timer_reg_write(access, ARCH_TIMER_REG_CTRL, ctrl, evt);
-		evt->event_handler(evt);
+		clockevents_handle_event(evt);
 		return IRQ_HANDLED;
 	}
 
@@ -754,7 +754,7 @@ static int arch_timer_set_next_event_phys_mem(unsigned long evt,
 static void __arch_timer_setup(unsigned type,
 			       struct clock_event_device *clk)
 {
-	clk->features = CLOCK_EVT_FEAT_ONESHOT;
+	clk->features = CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PIPELINE;
 
 	if (type == ARCH_TIMER_TYPE_CP15) {
 		typeof(clk->set_next_event) sne;
@@ -901,6 +901,7 @@ static int arch_timer_starting_cpu(unsigned int cpu)
 	enable_percpu_irq(arch_timer_ppi[arch_timer_uses_ppi], flags);
 
 	if (arch_timer_has_nonsecure_ppi()) {
+		clk->irq = arch_timer_ppi[ARCH_TIMER_PHYS_NONSECURE_PPI];
 		flags = check_ppi_trigger(arch_timer_ppi[ARCH_TIMER_PHYS_NONSECURE_PPI]);
 		enable_percpu_irq(arch_timer_ppi[ARCH_TIMER_PHYS_NONSECURE_PPI],
 				  flags);
@@ -1019,10 +1020,8 @@ static void __init arch_counter_register(unsigned type)
 
 		arch_timer_read_counter = rd;
 		clocksource_counter.vdso_clock_mode = vdso_default;
-#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
-		if (vdso_default)
+		if (vdso_default != VDSO_CLOCKMODE_NONE)
 			clocksource_counter.vdso_type = CLOCKSOURCE_VDSO_ARCHITECTED;
-#endif
 	} else {
 		arch_timer_read_counter = arch_counter_get_cntvct_mem;
 	}
