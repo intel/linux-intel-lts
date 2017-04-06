@@ -246,7 +246,8 @@ static void tick_setup_device(struct tick_device *td,
 	} else {
 		handler = td->evtdev->event_handler;
 		next_event = td->evtdev->next_event;
-		td->evtdev->event_handler = clockevents_handle_noop;
+		if (!clockevent_state_reserved(td->evtdev))
+			td->evtdev->event_handler = clockevents_handle_noop;
 	}
 
 	td->evtdev = newdev;
@@ -321,6 +322,17 @@ static bool tick_check_preferred(struct clock_event_device *curdev,
 	       !cpumask_equal(curdev->cpumask, newdev->cpumask);
 }
 
+static bool tick_check_is_proxy(struct clock_event_device *curdev)
+{
+	if (!irqs_pipelined())
+		return false;
+
+	/*
+	 * Never replace an active proxy except when unregistering it.
+	 */
+	return curdev && curdev->features & CLOCK_EVT_FEAT_PROXY;
+}
+
 /*
  * Check whether the new device is a better fit than curdev. curdev
  * can be NULL !
@@ -328,6 +340,9 @@ static bool tick_check_preferred(struct clock_event_device *curdev,
 bool tick_check_replacement(struct clock_event_device *curdev,
 			    struct clock_event_device *newdev)
 {
+	if (tick_check_is_proxy(curdev))
+		return false;
+
 	if (!tick_check_percpu(curdev, newdev, smp_processor_id()))
 		return false;
 
@@ -347,6 +362,9 @@ void tick_check_new_device(struct clock_event_device *newdev)
 	cpu = smp_processor_id();
 	td = &per_cpu(tick_cpu_device, cpu);
 	curdev = td->evtdev;
+
+	if (tick_check_is_proxy(curdev))
+		goto out_bc;
 
 	/* cpu local device ? */
 	if (!tick_check_percpu(curdev, newdev, cpu))
