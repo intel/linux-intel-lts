@@ -722,6 +722,14 @@ int __tick_broadcast_oneshot_control(enum tick_broadcast_state state)
 
 	dev = this_cpu_ptr(&tick_cpu_device)->evtdev;
 
+	/*
+	 * If proxying the hardware timer for high-precision tick
+	 * delivery to the out-of-band stage, the whole broadcast
+	 * dance is a no-go. Deny entering deep idle.
+	 */
+	if (dev->features & CLOCK_EVT_FEAT_PROXY)
+		return -EBUSY;
+
 	raw_spin_lock(&tick_broadcast_lock);
 	bc = tick_broadcast_device.evtdev;
 	cpu = smp_processor_id();
