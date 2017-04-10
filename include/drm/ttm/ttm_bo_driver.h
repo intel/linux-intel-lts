@@ -42,7 +42,7 @@
 #include <linux/spinlock.h>
 #include <linux/reservation.h>
 
-#define TTM_MAX_BO_PRIORITY	16
+#define TTM_MAX_BO_PRIORITY	16U
 
 struct ttm_backend_func {
 	/**
@@ -871,7 +871,7 @@ static inline int ttm_bo_reserve(struct ttm_buffer_object *bo,
 {
 	int ret;
 
-	WARN_ON(!atomic_read(&bo->kref.refcount));
+	WARN_ON(!kref_read(&bo->kref));
 
 	ret = __ttm_bo_reserve(bo, interruptible, no_wait, ticket);
 	if (likely(ret == 0))
@@ -896,7 +896,7 @@ static inline int ttm_bo_reserve_slowpath(struct ttm_buffer_object *bo,
 {
 	int ret = 0;
 
-	WARN_ON(!atomic_read(&bo->kref.refcount));
+	WARN_ON(!kref_read(&bo->kref));
 
 	if (interruptible)
 		ret = ww_mutex_lock_slow_interruptible(&bo->resv->lock,
