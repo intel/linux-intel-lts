@@ -721,6 +721,7 @@ static int vi_gpu_pci_config_reset(struct amdgpu_device *adev)
 		if (RREG32(mmCONFIG_MEMSIZE) != 0xffffffff) {
 			/* enable BM */
 			pci_set_master(adev->pdev);
+			adev->has_hw_reset = true;
 			return 0;
 		}
 		udelay(1);
@@ -1050,7 +1051,7 @@ static int vi_common_early_init(void *handle)
 		/* rev0 hardware requires workarounds to support PG */
 		adev->pg_flags = 0;
 		if (adev->rev_id != 0x00) {
-			adev->pg_flags |= AMD_PG_SUPPORT_GFX_PG |
+			adev->pg_flags |=
 				AMD_PG_SUPPORT_GFX_SMG |
 				AMD_PG_SUPPORT_GFX_PIPELINE |
 				AMD_PG_SUPPORT_CP |
