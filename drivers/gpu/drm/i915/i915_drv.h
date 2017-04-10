@@ -293,6 +293,7 @@ enum plane_id {
 	PLANE_PRIMARY,
 	PLANE_SPRITE0,
 	PLANE_SPRITE1,
+	PLANE_SPRITE2,
 	PLANE_CURSOR,
 	I915_MAX_PLANES,
 };
@@ -893,7 +894,7 @@ struct intel_device_info {
 
 struct intel_display_error_state;
 
-struct drm_i915_error_state {
+struct i915_gpu_state {
 	struct kref ref;
 	struct timeval time;
 	struct timeval boottime;
@@ -913,7 +914,7 @@ struct drm_i915_error_state {
 	u32 eir;
 	u32 pgtbl_er;
 	u32 ier;
-	u32 gtier[4];
+	u32 gtier[4], ngtier;
 	u32 ccid;
 	u32 derrmr;
 	u32 forcewake;
@@ -927,6 +928,7 @@ struct drm_i915_error_state {
 	u32 gab_ctl;
 	u32 gfx_mode;
 
+	u32 nfence;
 	u64 fence[I915_MAX_NUM_FENCES];
 	struct intel_overlay_error_state *overlay;
 	struct intel_display_error_state *display;
@@ -1508,11 +1510,6 @@ struct drm_i915_error_state_buf {
 	loff_t pos;
 };
 
-struct i915_error_state_file_priv {
-	struct drm_i915_private *i915;
-	struct drm_i915_error_state *error;
-};
-
 #define I915_RESET_TIMEOUT (10 * HZ) /* 10s */
 #define I915_FENCE_TIMEOUT (10 * HZ) /* 10s */
 
@@ -1529,7 +1526,7 @@ struct i915_gpu_error {
 	/* For reset and error_state handling. */
 	spinlock_t lock;
 	/* Protected by the above dev->gpu_error.lock. */
-	struct drm_i915_error_state *first_error;
+	struct i915_gpu_state *first_error;
 
 	unsigned long missed_irq_rings;
 
@@ -2481,6 +2478,12 @@ struct drm_i915_private {
 	/* Used to save the pipe-to-encoder mapping for audio */
 	struct intel_encoder *av_enc_map[I915_MAX_PIPES];
 
+	/* necessary resource sharing with HDMI LPE audio driver. */
+	struct {
+		struct platform_device *platdev;
+		int	irq;
+	} lpe_audio;
+
 	/*
 	 * NOTE: This is the dri1/ums dungeon, don't add stuff here. Your patch
 	 * will be rejected. Instead look for a better place.
@@ -2500,6 +2503,11 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 static inline struct drm_i915_private *guc_to_i915(struct intel_guc *guc)
 {
 	return container_of(guc, struct drm_i915_private, guc);
+}
+
+static inline struct drm_i915_private *huc_to_i915(struct intel_huc *huc)
+{
+	return container_of(huc, struct drm_i915_private, huc);
 }
 
 /* Simple iterator over all initialised engines */
@@ -3568,7 +3576,7 @@ static inline void intel_display_crc_init(struct drm_i915_private *dev_priv) {}
 __printf(2, 3)
 void i915_error_printf(struct drm_i915_error_state_buf *e, const char *f, ...);
 int i915_error_state_to_str(struct drm_i915_error_state_buf *estr,
-			    const struct i915_error_state_file_priv *error);
+			    const struct i915_gpu_state *gpu);
 int i915_error_state_buf_init(struct drm_i915_error_state_buf *eb,
 			      struct drm_i915_private *i915,
 			      size_t count, loff_t pos);
@@ -3577,13 +3585,28 @@ static inline void i915_error_state_buf_release(
 {
 	kfree(eb->buf);
 }
+
+struct i915_gpu_state *i915_capture_gpu_state(struct drm_i915_private *i915);
 void i915_capture_error_state(struct drm_i915_private *dev_priv,
 			      u32 engine_mask,
 			      const char *error_msg);
-void i915_error_state_get(struct drm_device *dev,
-			  struct i915_error_state_file_priv *error_priv);
-void i915_error_state_put(struct i915_error_state_file_priv *error_priv);
-void i915_destroy_error_state(struct drm_i915_private *dev_priv);
+
+static inline struct i915_gpu_state *
+i915_gpu_state_get(struct i915_gpu_state *gpu)
+{
+	kref_get(&gpu->ref);
+	return gpu;
+}
+
+void __i915_gpu_state_free(struct kref *kref);
+static inline void i915_gpu_state_put(struct i915_gpu_state *gpu)
+{
+	if (gpu)
+		kref_put(&gpu->ref, __i915_gpu_state_free);
+}
+
+struct i915_gpu_state *i915_first_error_state(struct drm_i915_private *i915);
+void i915_reset_error_state(struct drm_i915_private *i915);
 
 #else
 
@@ -3593,7 +3616,13 @@ static inline void i915_capture_error_state(struct drm_i915_private *dev_priv,
 {
 }
 
-static inline void i915_destroy_error_state(struct drm_i915_private *dev_priv)
+static inline struct i915_gpu_state *
+i915_first_error_state(struct drm_i915_private *i915)
+{
+	return NULL;
+}
+
+static inline void i915_reset_error_state(struct drm_i915_private *i915)
 {
 }
 
@@ -3625,6 +3654,14 @@ extern int i915_restore_state(struct drm_i915_private *dev_priv);
 /* i915_sysfs.c */
 void i915_setup_sysfs(struct drm_i915_private *dev_priv);
 void i915_teardown_sysfs(struct drm_i915_private *dev_priv);
+
+/* intel_lpe_audio.c */
+int  intel_lpe_audio_init(struct drm_i915_private *dev_priv);
+void intel_lpe_audio_teardown(struct drm_i915_private *dev_priv);
+void intel_lpe_audio_irq_handler(struct drm_i915_private *dev_priv);
+void intel_lpe_audio_notify(struct drm_i915_private *dev_priv,
+			    void *eld, int port, int pipe, int tmds_clk_speed,
+			    bool dp_output, int link_rate);
 
 /* intel_i2c.c */
 extern int intel_setup_gmbus(struct drm_i915_private *dev_priv);
@@ -3741,7 +3778,6 @@ extern void intel_overlay_print_error_state(struct drm_i915_error_state_buf *e,
 extern struct intel_display_error_state *
 intel_display_capture_error_state(struct drm_i915_private *dev_priv);
 extern void intel_display_print_error_state(struct drm_i915_error_state_buf *e,
-					    struct drm_i915_private *dev_priv,
 					    struct intel_display_error_state *error);
 
 int sandybridge_pcode_read(struct drm_i915_private *dev_priv, u32 mbox, u32 *val);
