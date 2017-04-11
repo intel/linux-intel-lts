@@ -171,6 +171,9 @@ static int efivarfs_callback(efi_char16_t *name16, efi_guid_t vendor,
 	inode_unlock(inode);
 	d_add(dentry, inode);
 
+	/* copied by the above to local storage in the dentry. */
+	kfree(name);
+
 	return 0;
 
 fail_inode:
