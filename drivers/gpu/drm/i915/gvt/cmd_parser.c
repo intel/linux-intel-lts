@@ -481,7 +481,6 @@ struct parser_exec_state {
 	(s->vgpu->gvt->device_info.gmadr_bytes_in_cmd >> 2)
 
 static unsigned long bypass_scan_mask = 0;
-static bool bypass_batch_buffer_scan = true;
 
 /* ring ALL, type = 0 */
 static struct sub_op_bits sub_op_mi[] = {
@@ -669,7 +668,7 @@ static inline void print_opcode(u32 cmd, int ring_id)
 	if (d_info == NULL)
 		return;
 
-	gvt_err("opcode=0x%x %s sub_ops:",
+	gvt_dbg_cmd("opcode=0x%x %s sub_ops:",
 			cmd >> (32 - d_info->op_len), d_info->name);
 
 	for (i = 0; i < d_info->nr_sub_op; i++)
@@ -694,23 +693,23 @@ static void parser_exec_state_dump(struct parser_exec_state *s)
 	int cnt = 0;
 	int i;
 
-	gvt_err("  vgpu%d RING%d: ring_start(%08lx) ring_end(%08lx)"
+	gvt_dbg_cmd("  vgpu%d RING%d: ring_start(%08lx) ring_end(%08lx)"
 			" ring_head(%08lx) ring_tail(%08lx)\n", s->vgpu->id,
 			s->ring_id, s->ring_start, s->ring_start + s->ring_size,
 			s->ring_head, s->ring_tail);
 
-	gvt_err("  %s %s ip_gma(%08lx) ",
+	gvt_dbg_cmd("  %s %s ip_gma(%08lx) ",
 			s->buf_type == RING_BUFFER_INSTRUCTION ?
 			"RING_BUFFER" : "BATCH_BUFFER",
 			s->buf_addr_type == GTT_BUFFER ?
 			"GTT" : "PPGTT", s->ip_gma);
 
 	if (s->ip_va == NULL) {
-		gvt_err(" ip_va(NULL)");
+		gvt_dbg_cmd(" ip_va(NULL)");
 		return;
 	}
 
-	gvt_err("  ip_va=%p: %08x %08x %08x %08x\n",
+	gvt_dbg_cmd("  ip_va=%p: %08x %08x %08x %08x\n",
 			s->ip_va, cmd_val(s, 0), cmd_val(s, 1),
 			cmd_val(s, 2), cmd_val(s, 3));
 
@@ -1135,6 +1134,8 @@ static int skl_decode_mi_display_flip(struct parser_exec_state *s,
 	u32 dword2 = cmd_val(s, 2);
 	u32 plane = (dword0 & GENMASK(12, 8)) >> 8;
 
+	info->plane = PRIMARY_PLANE;
+
 	switch (plane) {
 	case MI_DISPLAY_FLIP_SKL_PLANE_1_A:
 		info->pipe = PIPE_A;
@@ -1148,12 +1149,28 @@ static int skl_decode_mi_display_flip(struct parser_exec_state *s,
 		info->pipe = PIPE_C;
 		info->event = PRIMARY_C_FLIP_DONE;
 		break;
+
+	case MI_DISPLAY_FLIP_SKL_PLANE_2_A:
+		info->pipe = PIPE_A;
+		info->event = SPRITE_A_FLIP_DONE;
+		info->plane = SPRITE_PLANE;
+		break;
+	case MI_DISPLAY_FLIP_SKL_PLANE_2_B:
+		info->pipe = PIPE_B;
+		info->event = SPRITE_B_FLIP_DONE;
+		info->plane = SPRITE_PLANE;
+		break;
+	case MI_DISPLAY_FLIP_SKL_PLANE_2_C:
+		info->pipe = PIPE_C;
+		info->event = SPRITE_C_FLIP_DONE;
+		info->plane = SPRITE_PLANE;
+		break;
+
 	default:
 		gvt_err("unknown plane code %d\n", plane);
 		return -EINVAL;
 	}
 
-	info->pipe = PRIMARY_PLANE;
 	info->stride_val = (dword1 & GENMASK(15, 6)) >> 6;
 	info->tile_val = (dword1 & GENMASK(2, 0));
 	info->surf_val = (dword2 & GENMASK(31, 12)) >> 12;
@@ -1524,9 +1541,6 @@ static int copy_gma_to_hva(struct intel_vgpu *vgpu, struct intel_vgpu_mm *mm,
 static int batch_buffer_needs_scan(struct parser_exec_state *s)
 {
 	struct intel_gvt *gvt = s->vgpu->gvt;
-
-	if (bypass_batch_buffer_scan)
-		return 0;
 
 	if (IS_BROADWELL(gvt->dev_priv) || IS_SKYLAKE(gvt->dev_priv)) {
 		/* BDW decides privilege based on address space */

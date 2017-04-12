@@ -54,8 +54,7 @@ static struct page **get_pages_vram(struct drm_gem_object *obj,
 	if (!p)
 		return ERR_PTR(-ENOMEM);
 
-	ret = drm_mm_insert_node(&priv->vram.mm, msm_obj->vram_node,
-			npages, 0, DRM_MM_SEARCH_DEFAULT);
+	ret = drm_mm_insert_node(&priv->vram.mm, msm_obj->vram_node, npages);
 	if (ret) {
 		drm_free_large(p);
 		return ERR_PTR(ret);
@@ -644,7 +643,7 @@ void msm_gem_describe(struct drm_gem_object *obj, struct seq_file *m)
 
 	seq_printf(m, "%08x: %c %2d (%2d) %08llx %p\t",
 			msm_obj->flags, is_active(msm_obj) ? 'A' : 'I',
-			obj->name, obj->refcount.refcount.counter,
+			obj->name, kref_read(&obj->refcount),
 			off, msm_obj->vaddr);
 
 	for (id = 0; id < priv->num_aspaces; id++)

@@ -619,25 +619,29 @@ void amdgpu_gtt_location(struct amdgpu_device *adev, struct amdgpu_mc *mc)
  * GPU helpers function.
  */
 /**
- * amdgpu_card_posted - check if the hw has already been initialized
+ * amdgpu_need_post - check if the hw need post or not
  *
  * @adev: amdgpu_device pointer
  *
- * Check if the asic has been initialized (all asics).
- * Used at driver startup.
- * Returns true if initialized or false if not.
+ * Check if the asic has been initialized (all asics) at driver startup
+ * or post is needed if  hw reset is performed.
+ * Returns true if need or false if not.
  */
-bool amdgpu_card_posted(struct amdgpu_device *adev)
+bool amdgpu_need_post(struct amdgpu_device *adev)
 {
 	uint32_t reg;
 
+	if (adev->has_hw_reset) {
+		adev->has_hw_reset = false;
+		return true;
+	}
 	/* then check MEM_SIZE, in case the crtcs are off */
 	reg = RREG32(mmCONFIG_MEMSIZE);
 
 	if (reg)
-		return true;
+		return false;
 
-	return false;
+	return true;
 
 }
 
@@ -665,7 +669,7 @@ static bool amdgpu_vpost_needed(struct amdgpu_device *adev)
 				return true;
 		}
 	}
-	return !amdgpu_card_posted(adev);
+	return amdgpu_need_post(adev);
 }
 
 /**
@@ -2071,7 +2075,7 @@ int amdgpu_device_resume(struct drm_device *dev, bool resume, bool fbcon)
 	amdgpu_atombios_scratch_regs_restore(adev);
 
 	/* post card */
-	if (!amdgpu_card_posted(adev) || !resume) {
+	if (amdgpu_need_post(adev)) {
 		r = amdgpu_atom_asic_init(adev->mode_info.atom_context);
 		if (r)
 			DRM_ERROR("amdgpu asic init failed\n");
@@ -2090,8 +2094,11 @@ int amdgpu_device_resume(struct drm_device *dev, bool resume, bool fbcon)
 	}
 
 	r = amdgpu_late_init(adev);
-	if (r)
+	if (r) {
+		if (fbcon)
+			console_unlock();
 		return r;
+	}
 
 	/* pin cursors */
 	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
@@ -2583,7 +2590,7 @@ static ssize_t amdgpu_debugfs_regs_read(struct file *f, char __user *buf,
 		use_bank = 0;
 	}
 
-	*pos &= 0x3FFFF;
+	*pos &= (1UL << 22) - 1;
 
 	if (use_bank) {
 		if ((sh_bank != 0xFFFFFFFF && sh_bank >= adev->gfx.config.max_sh_per_se) ||
@@ -2659,7 +2666,7 @@ static ssize_t amdgpu_debugfs_regs_write(struct file *f, const char __user *buf,
 		use_bank = 0;
 	}
 
-	*pos &= 0x3FFFF;
+	*pos &= (1UL << 22) - 1;
 
 	if (use_bank) {
 		if ((sh_bank != 0xFFFFFFFF && sh_bank >= adev->gfx.config.max_sh_per_se) ||

@@ -60,6 +60,7 @@ adress||address
 adresses||addresses
 adviced||advised
 afecting||affecting
+againt||against
 agaist||against
 albumns||albums
 alegorical||allegorical
@@ -69,6 +70,7 @@ algoritm||algorithm
 algoritms||algorithms
 algorrithm||algorithm
 algorritm||algorithm
+aligment||alignment
 allign||align
 allocatrd||allocated
 allocte||allocate
@@ -686,6 +688,7 @@ ouput||output
 overaall||overall
 overhread||overhead
 overlaping||overlapping
+overrided||overridden
 overriden||overridden
 overun||overrun
 pacakge||package
@@ -963,6 +966,10 @@ susbsystem||subsystem
 suspicously||suspiciously
 swaping||swapping
 switchs||switches
+swith||switch
+swithable||switchable
+swithed||switched
+swithing||switching
 symetric||symmetric
 synax||syntax
 synchonized||synchronized
