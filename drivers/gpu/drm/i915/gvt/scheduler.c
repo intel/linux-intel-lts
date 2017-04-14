@@ -203,6 +203,7 @@ static inline bool is_gvt_request(struct i915_request *req)
 	return i915_gem_context_force_single_submission(req->gem_context);
 }
 
+/*
 static void save_ring_hw_state(struct intel_vgpu *vgpu, int ring_id)
 {
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
@@ -216,6 +217,7 @@ static void save_ring_hw_state(struct intel_vgpu *vgpu, int ring_id)
 	reg = RING_ACTHD_UDW(ring_base);
 	vgpu_vreg(vgpu, i915_mmio_reg_offset(reg)) = I915_READ_FW(reg);
 }
+*/
 
 static int shadow_context_status_change(struct notifier_block *nb,
 		unsigned long action, void *data)
@@ -226,21 +228,9 @@ static int shadow_context_status_change(struct notifier_block *nb,
 	struct intel_gvt_workload_scheduler *scheduler = &gvt->scheduler;
 	enum intel_engine_id ring_id = req->engine->id;
 	struct intel_vgpu_workload *workload;
-	unsigned long flags;
 
-	if (!is_gvt_request(req)) {
-		spin_lock_irqsave(&scheduler->mmio_context_lock, flags);
-		if (action == INTEL_CONTEXT_SCHEDULE_IN &&
-		    scheduler->engine_owner[ring_id]) {
-			/* Switch ring from vGPU to host. */
-			intel_gvt_switch_mmio(scheduler->engine_owner[ring_id],
-					      NULL, ring_id);
-			scheduler->engine_owner[ring_id] = NULL;
-		}
-		spin_unlock_irqrestore(&scheduler->mmio_context_lock, flags);
-
+	if (!is_gvt_request(req))
 		return NOTIFY_OK;
-	}
 
 	workload = scheduler->current_workload[ring_id];
 	if (unlikely(!workload))
@@ -248,25 +238,13 @@ static int shadow_context_status_change(struct notifier_block *nb,
 
 	switch (action) {
 	case INTEL_CONTEXT_SCHEDULE_IN:
-		spin_lock_irqsave(&scheduler->mmio_context_lock, flags);
-		if (workload->vgpu != scheduler->engine_owner[ring_id]) {
-			/* Switch ring from host to vGPU or vGPU to vGPU. */
-			intel_gvt_switch_mmio(scheduler->engine_owner[ring_id],
-					      workload->vgpu, ring_id);
-			scheduler->engine_owner[ring_id] = workload->vgpu;
-		} else
-			gvt_dbg_sched("skip ring %d mmio switch for vgpu%d\n",
-				      ring_id, workload->vgpu->id);
-		spin_unlock_irqrestore(&scheduler->mmio_context_lock, flags);
 		atomic_set(&workload->shadow_ctx_active, 1);
 		break;
 	case INTEL_CONTEXT_SCHEDULE_OUT:
-		save_ring_hw_state(workload->vgpu, ring_id);
 		atomic_set(&workload->shadow_ctx_active, 0);
 		break;
 	case INTEL_CONTEXT_SCHEDULE_PREEMPTED:
-		save_ring_hw_state(workload->vgpu, ring_id);
-		break;
+		return NOTIFY_OK;
 	default:
 		WARN_ON(1);
 		return NOTIFY_OK;
@@ -909,6 +887,7 @@ static int workload_thread(void *priv)
 	struct intel_vgpu_workload *workload = NULL;
 	struct intel_vgpu *vgpu = NULL;
 	int ret;
+	long lret;
 	bool need_force_wake = IS_SKYLAKE(gvt->dev_priv)
 			|| IS_KABYLAKE(gvt->dev_priv)
 			|| IS_BROXTON(gvt->dev_priv);
@@ -955,7 +934,13 @@ static int workload_thread(void *priv)
 
 		gvt_dbg_sched("ring id %d wait workload %p\n",
 				workload->ring_id, workload);
-		i915_request_wait(workload->req, 0, MAX_SCHEDULE_TIMEOUT);
+		lret = i915_request_wait(workload->req, 0,
+				MAX_SCHEDULE_TIMEOUT);
+
+		gvt_dbg_sched("i915_wait_request %p returns %ld\n",
+				workload, lret);
+		if (lret >= 0 && workload->status == -EINPROGRESS)
+			workload->status = 0;
 
 complete:
 		gvt_dbg_sched("will complete workload %p, status: %d\n",
