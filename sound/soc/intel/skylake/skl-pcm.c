@@ -1759,7 +1759,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 		
 	uuid_bin_fw = &module->uuid;
 	for (i = 0; i < skl->nr_modules; i++) {
-		skl_module = &skl->modules[i];
+		skl_module = skl->modules[i];
 		uuid_bin_tplg = &skl_module->uuid;
 		if (uuid_le_cmp(*uuid_bin_fw, *uuid_bin_tplg) == 0) {
 			mconfig->module = skl_module;
@@ -1796,10 +1796,6 @@ static int skl_populate_modules(struct skl *skl)
 	struct snd_soc_dapm_widget *w;
 	struct skl_module_cfg *mconfig;
 	int ret = 0;
-
-	ret = snd_skl_add_mod_data(skl->skl_sst);
-	if (ret < 0)
-		return ret;
 
 	list_for_each_entry(p, &skl->ppl_list, node) {
 		list_for_each_entry(m, &p->pipe->w_list, node) {

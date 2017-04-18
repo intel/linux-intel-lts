@@ -3370,6 +3370,7 @@ static int skl_tplg_fill_str_mfest_tkn(struct device *dev,
 {
 	int tkn_count = 0;
 	static int ref_count, mod_count;
+	struct skl_module *mod;
 
 	switch (str_elem->token) {
 	case SKL_TKN_STR_LIB_NAME:
@@ -3390,9 +3391,9 @@ static int skl_tplg_fill_str_mfest_tkn(struct device *dev,
 			return -EINVAL;
 		}
 
-		strncpy(skl->modules[mod_count].library_name,
-					str_elem->string,
-					ARRAY_SIZE(skl->skl_sst->lib_info[mod_count].name));
+		mod = skl->modules[mod_count];
+		strncpy(mod->library_name, str_elem->string,
+			ARRAY_SIZE(skl->skl_sst->lib_info[mod_count].name));
 		mod_count++;
 		break;
 
@@ -3532,11 +3533,12 @@ static int skl_tplg_get_int_tkn(struct device *dev,
 	struct skl_module_res *res = NULL;
 	struct skl_module_intf *fmt = NULL;
 	struct skl_module *mod = NULL;
+	int i;
 
 	if (skl->modules) {
-		res = &skl->modules[mod_idx].resources[res_val_idx];
-		fmt = &skl->modules[mod_idx].formats[intf_val_idx];
-		mod = &skl->modules[mod_idx];
+		mod = skl->modules[mod_idx];
+		res = &mod->resources[res_val_idx];
+		fmt = &mod->formats[intf_val_idx];
 	}
 
 	switch (tkn_elem->token) {
@@ -3560,6 +3562,13 @@ static int skl_tplg_get_int_tkn(struct device *dev,
 		if (!skl->modules)
 			return -ENOMEM;
 
+		for (i = 0; i < skl->nr_modules; i++) {
+			skl->modules[i] = devm_kzalloc(dev,
+			sizeof(struct skl_module), GFP_KERNEL);
+
+			if (!skl->modules[i])
+				return -EINVAL;
+		}
 		break;
 
 	case SKL_TKN_U8_PRE_LOAD_PGS:
@@ -3697,9 +3706,11 @@ static int skl_tplg_get_mfest_uuid(struct device *dev,
 				struct snd_soc_tplg_vendor_uuid_elem *uuid_tkn)
 {
 	static int ref_count;
+	struct skl_module *mod;
 
 	if (uuid_tkn->token == SKL_TKN_UUID) {
-		memcpy(&skl->modules[ref_count].uuid,
+		mod = skl->modules[ref_count];
+		memcpy(&mod->uuid,
 				&uuid_tkn->uuid, sizeof(uuid_tkn->uuid));
 		ref_count++;
 	} else {
