@@ -345,15 +345,10 @@ static const struct sdw_slave_id rt700_id[] = {
 	{"15:02:5d:07:01:00", 0},
 	{"16:02:5d:07:01:00", 0},
 	{"17:02:5d:07:01:00", 0},
-#ifndef CONFIG_SND_SOC_INTEL_CNL_FPGA
-#ifndef CONFIG_SND_SOC_SDW_AGGM1M2
-	{"10:02:5d:07:00:01", 0},
-#else
 	{"10:02:5d:07:00:01", 1},
+	{"10:02:5d:07:01:01", 1},
 	{"10:02:5d:07:01:02", 2},
 	{"10:02:5d:07:01:03", 3},
-#endif
-#endif
 	{}
 };
 
