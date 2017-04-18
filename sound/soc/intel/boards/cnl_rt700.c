@@ -168,7 +168,11 @@ static int cnl_dmic_fixup(struct snd_soc_pcm_runtime *rtd,
 
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
 static const char pname[] = "0000:02:18.0";
+#ifndef CONFIG_SND_SOC_SDW_AGGM1M2
 static const char cname[] = "sdw-slave0-10:02:5d:07:01:00";
+#else
+static const char cname[] = "sdw-slave1-10:02:5d:07:01:01";
+#endif
 #else
 static const char pname[] = "0000:00:1f.3";
 static const char cname[] = "sdw-slave1-10:02:5d:07:00:01";
