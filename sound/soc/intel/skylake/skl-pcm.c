@@ -1321,7 +1321,11 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	 */
 	.name = "SDW Pin",
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+#ifndef CONFIG_SND_SOC_SDW_AGGM1M2
 	.id = SDW_BE_DAI_ID_MSTR0,
+#else
+	.id = SDW_BE_DAI_ID_MSTR1,
+#endif
 #else
 	.id = SDW_BE_DAI_ID_MSTR1,
 #endif
@@ -1347,7 +1351,11 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	 */
 	.name = "SDW10 Pin",
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+#ifndef CONFIG_SND_SOC_SDW_AGGM1M2
 	.id = SDW_BE_DAI_ID_MSTR0,
+#else
+	.id = SDW_BE_DAI_ID_MSTR1,
+#endif
 #else
 	.id = SDW_BE_DAI_ID_MSTR1,
 #endif
