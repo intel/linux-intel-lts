@@ -24,7 +24,6 @@
 #include <sound/hda_register.h>
 #include <sound/hdaudio_ext.h>
 #include "skl-nhlt.h"
-#include "skl-sst-ipc.h"
 
 #define SKL_SUSPEND_DELAY 2000
 

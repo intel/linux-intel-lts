@@ -3762,8 +3762,8 @@ static int skl_tplg_fill_str_mfest_tkn(struct device *dev,
 		}
 
 		mod = skl->modules[mod_count];
-		strncpy(mod->library_name, str_elem->string,
-			ARRAY_SIZE(skl->skl_sst->lib_info[mod_count].name));
+		mod->library_name = devm_kstrdup(dev, str_elem->string,
+								GFP_KERNEL);
 		mod_count++;
 		break;
 

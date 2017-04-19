@@ -413,7 +413,7 @@ struct skl_module {
 	u8 max_input_pins;
 	u8 max_output_pins;
 	u8 max_instance_count;
-	char library_name[SKL_LIB_NAME_LENGTH];
+	char *library_name;
 	u8 nr_resources;
 	u8 nr_interfaces;
 	struct skl_module_res resources[SKL_MAX_MODULE_RESOURCES];
