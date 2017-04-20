@@ -6001,6 +6001,11 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 			port_name(port));
 
 	drm_connector_init(dev, connector, &intel_dp_connector_funcs, type);
+
+	 if(connector->cmdline_mode.force == DRM_FORCE_OFF) {
+		goto fail;
+	 }
+
 	drm_connector_helper_add(connector, &intel_dp_connector_helper_funcs);
 
 	connector->interlace_allowed = true;
