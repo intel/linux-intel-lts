@@ -467,6 +467,8 @@ struct mei_fw_version {
  *
  * @dbgfs_dir   : debugfs mei root directory
  *
+ * @sysfs_state : sysfs state object
+ *
  * @ops:        : hw specific operations
  * @hw          : hw specific data
  */
@@ -552,6 +554,7 @@ struct mei_device {
 	struct dentry *dbgfs_dir;
 #endif /* CONFIG_DEBUG_FS */
 
+	struct kernfs_node *sysfs_state;
 
 	const struct mei_hw_ops *ops;
 	char hw[0] __aligned(sizeof(void *));
@@ -610,6 +613,14 @@ int mei_start(struct mei_device *dev);
 int mei_restart(struct mei_device *dev);
 void mei_stop(struct mei_device *dev);
 void mei_cancel_work(struct mei_device *dev);
+
+static inline void mei_set_devstate(struct mei_device *dev,
+				    enum mei_dev_state state)
+{
+	dev->dev_state = state;
+	if (dev->sysfs_state)
+		sysfs_notify_dirent(dev->sysfs_state);
+}
 
 int mei_dmam_ring_alloc(struct mei_device *dev);
 void mei_dmam_ring_free(struct mei_device *dev);

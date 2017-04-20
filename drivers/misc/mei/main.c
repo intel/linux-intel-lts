@@ -1014,12 +1014,36 @@ static ssize_t fw_ver_show(struct device *device,
 }
 static DEVICE_ATTR_RO(fw_ver);
 
+/**
+ * dev_state_show - display device state
+ *
+ * @device: device pointer
+ * @attr: attribute pointer
+ * @buf:  char out buffer
+ *
+ * Return: number of the bytes printed into buf or error
+ */
+static ssize_t dev_state_show(struct device *device,
+			      struct device_attribute *attr, char *buf)
+{
+	struct mei_device *dev = dev_get_drvdata(device);
+	enum mei_dev_state dev_state;
+
+	mutex_lock(&dev->device_lock);
+	dev_state = dev->dev_state;
+	mutex_unlock(&dev->device_lock);
+
+	return sprintf(buf, "%s", mei_dev_state_str(dev_state));
+}
+static DEVICE_ATTR_RO(dev_state);
+
 static struct attribute *mei_attrs[] = {
 	&dev_attr_fw_status.attr,
 	&dev_attr_hbm_ver.attr,
 	&dev_attr_hbm_ver_drv.attr,
 	&dev_attr_tx_queue_limit.attr,
 	&dev_attr_fw_ver.attr,
+	&dev_attr_dev_state.attr,
 	NULL
 };
 ATTRIBUTE_GROUPS(mei);
@@ -1115,6 +1139,8 @@ int mei_register(struct mei_device *dev, struct device *parent)
 		ret = PTR_ERR(clsdev);
 		goto err_dev_create;
 	}
+
+	dev->sysfs_state = sysfs_get_dirent(clsdev->kobj.sd, "dev_state");
 
 	ret = mei_dbgfs_register(dev, dev_name(clsdev));
 	if (ret) {
