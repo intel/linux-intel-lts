@@ -36,6 +36,7 @@
 #include "intel_mocs.h"
 #include <linux/dma-fence-array.h>
 #include <linux/reservation.h>
+#include <linux/list_sort.h>
 #include <linux/shmem_fs.h>
 #include <linux/slab.h>
 #include <linux/stop_machine.h>
@@ -166,6 +167,137 @@ i915_gem_get_aperture_ioctl(struct drm_device *dev, void *data,
 
 	args->aper_size = ggtt->base.total;
 	args->aper_available_size = args->aper_size - pinned;
+
+	return 0;
+}
+
+/**
+ * Detached struct to hold a vma temp list in i915_gem_get_aperture_ioctl2
+ */
+struct i915_vma_list_entry {
+	struct i915_vma *vma;
+	struct list_head vma_ap_link; /* link in the temp aperture ioctl list */
+};
+
+static
+struct i915_vma_list_entry *i915_vma_list_entry_create(struct i915_vma *vma)
+{
+	struct i915_vma_list_entry *vma_list_entry;
+
+	vma_list_entry = kmalloc(sizeof(*vma_list_entry), GFP_KERNEL);
+	if (vma_list_entry == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	INIT_LIST_HEAD(&vma_list_entry->vma_ap_link);
+	vma_list_entry->vma = vma;
+	return vma_list_entry;
+}
+
+static inline bool vma_in_mappable_region(struct i915_vma *vma, u32 map_limit)
+{
+	return (vma->node.start < map_limit) && i915_is_ggtt(vma->vm);
+}
+
+static int vma_rank_by_node_start(void *priv,
+				  struct list_head *A,
+				  struct list_head *B)
+{
+	struct i915_vma_list_entry *a =
+		list_entry(A, struct i915_vma_list_entry, vma_ap_link);
+	struct i915_vma_list_entry *b =
+		list_entry(B, struct i915_vma_list_entry, vma_ap_link);
+
+	return a->vma->node.start - b->vma->node.start;
+}
+
+int
+i915_gem_get_aperture_ioctl2(struct drm_device *dev, void *data,
+			     struct drm_file *file)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct drm_i915_gem_get_aperture2 *args = data;
+	struct i915_ggtt *ggtt = &dev_priv->ggtt;
+	struct i915_vma *vma;
+	struct i915_vma_list_entry *vma_list_entry;
+	struct list_head map_list;
+	size_t pinned;
+	u64 map_space, map_largest, last, size;
+	const u32 map_limit = dev_priv->ggtt.mappable_end;
+
+	INIT_LIST_HEAD(&map_list);
+	pinned = 0;
+	mutex_lock(&dev->struct_mutex);
+	list_for_each_entry(vma, &ggtt->base.active_list, vm_link) {
+		if (i915_vma_pin_count(vma)) {
+			pinned += vma->node.size;
+
+			if (vma_in_mappable_region(vma, map_limit)) {
+				vma_list_entry = i915_vma_list_entry_create(vma);
+				if (IS_ERR(vma_list_entry)) {
+					DRM_ERROR("No vma in inactive list\n");
+					mutex_unlock(&dev->struct_mutex);
+					return PTR_ERR(vma_list_entry);
+				}
+				list_add(&vma_list_entry->vma_ap_link, &map_list);
+			}
+		}
+	}
+
+	list_for_each_entry(vma, &ggtt->base.inactive_list, vm_link) {
+		if (i915_vma_pin_count(vma)) {
+			pinned += vma->node.size;
+
+			if (vma_in_mappable_region(vma, map_limit)) {
+				vma_list_entry = i915_vma_list_entry_create(vma);
+				if (IS_ERR(vma_list_entry)) {
+					DRM_ERROR("No vma in active list\n");
+					mutex_unlock(&dev->struct_mutex);
+					return PTR_ERR(vma_list_entry);
+				}
+				list_add(&vma_list_entry->vma_ap_link, &map_list);
+			}
+		}
+	}
+
+	last = map_largest = map_space = size = 0;
+	list_sort(NULL, &map_list, vma_rank_by_node_start);
+	if (list_empty(&map_list))
+		DRM_DEBUG_DRIVER("map_list empty");
+
+	while (!list_empty(&map_list)) {
+		vma_list_entry = list_first_entry(&map_list, typeof(*vma_list_entry), vma_ap_link);
+		vma = vma_list_entry->vma;
+		list_del_init(&vma_list_entry->vma_ap_link);
+
+		size = vma->node.start - last;
+		if (size > map_largest)
+			map_largest = size;
+		map_space += size;
+		last = vma->node.start + vma->node.size;
+		kfree(vma_list_entry);
+	}
+
+	if (last < map_limit) {
+		size = map_limit - last;
+		if (size > map_largest)
+			map_largest = size;
+		map_space += size;
+	}
+	mutex_unlock(&dev->struct_mutex);
+
+	args->aper_size = dev_priv->ggtt.base.total;
+	args->aper_available_size = args->aper_size - pinned;
+	args->map_available_size = map_space;
+	args->map_largest_size = map_largest;
+	args->map_total_size = dev_priv->ggtt.mappable_end;
+
+	DRM_DEBUG_DRIVER("aper_size = %llu\n", args->aper_size);
+	DRM_DEBUG_DRIVER("aper_available_size = %llu\n",
+			 args->aper_available_size);
+	DRM_DEBUG_DRIVER("map_available_size = %llu\n",
+			 args->map_available_size);
+	DRM_DEBUG_DRIVER("map_largest_size = %llu\n", args->map_largest_size);
+	DRM_DEBUG_DRIVER("map_total_size = %llu\n", args->map_total_size);
 
 	return 0;
 }

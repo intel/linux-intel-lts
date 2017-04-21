@@ -359,6 +359,9 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		 */
 		value = 1;
 		break;
+	case I915_PARAM_HAS_GET_APERTURE2:
+		value = 1;
+		break;
 	default:
 		DRM_DEBUG("Unknown parameter %d\n", param->param);
 		return -EINVAL;
