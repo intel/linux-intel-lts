@@ -1840,7 +1840,7 @@ void i915_reset(struct drm_i915_private *dev_priv)
 	pr_notice("drm/i915: Resetting chip after gpu hang\n");
 	disable_irq(dev_priv->drm.irq);
 	ret = i915_gem_reset_prepare(dev_priv, ALL_ENGINES);
-	if (ret) {
+	if (ret == -EIO) {
 		DRM_ERROR("GPU recovery failed\n");
 		intel_gpu_reset(dev_priv, ALL_ENGINES);
 		goto error;
@@ -1908,21 +1908,38 @@ int i915_reset_engine(struct intel_engine_cs *engine)
 {
 	int ret;
 	struct drm_i915_private *dev_priv = engine->i915;
+	struct drm_i915_gem_request *active_request;
 
 	DRM_DEBUG_DRIVER("resetting %s\n", engine->name);
 
-	ret = i915_gem_reset_prepare_engine(engine);
-	if (ret) {
-		DRM_ERROR("Previous reset failed - promote to full reset\n");
-		goto out;
+	active_request = i915_gem_reset_prepare_engine(engine);
+	if (!active_request) {
+		DRM_DEBUG_DRIVER("seqno moved after hang declaration, pardoned\n");
+		goto canceled;
+	}
+	if (IS_ERR(active_request)) {
+		ret = PTR_ERR(active_request);
+		if (ret == -ECANCELED) {
+			DRM_DEBUG_DRIVER("no active request found, skip reset\n");
+			goto canceled;
+		} else if (ret) {
+			DRM_DEBUG_DRIVER("Previous reset failed, promote to full reset\n");
+			goto out;
+		}
 	}
 
+	if (__i915_gem_request_completed(active_request)) {
+		DRM_DEBUG_DRIVER("request completed, skip the reset\n");
+		goto canceled;
+	}
+
+
 	/*
-	 * the request that caused the hang is stuck on elsp, identify the
-	 * active request and drop it, adjust head to skip the offending
+	 * the request that caused the hang is stuck on elsp, we know the
+	 * active request and can drop it, adjust head to skip the offending
 	 * request to resume executing remaining requests in the queue.
 	 */
-	i915_gem_reset_engine(engine);
+	i915_gem_reset_engine(engine, active_request);
 
 	/* forcing engine to idle */
 	ret = intel_reset_engine_start(engine);
@@ -1949,6 +1966,10 @@ int i915_reset_engine(struct intel_engine_cs *engine)
 
 out:
 	return ret;
+
+canceled:
+	i915_gem_reset_finish_engine(engine);
+	return 0;
 }
 
 static int i915_pm_suspend(struct device *kdev)

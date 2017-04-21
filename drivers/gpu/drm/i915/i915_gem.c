@@ -2874,11 +2874,15 @@ static bool engine_stalled(struct intel_engine_cs *engine)
 	return true;
 }
 
-/* Ensure irq handler finishes, and not run again. */
-int i915_gem_reset_prepare_engine(struct intel_engine_cs *engine)
+/*
+ * Ensure irq handler finishes, and not run again.
+ * For reset-engine we also store the active request so that we only search
+ * for it once.
+ */
+struct drm_i915_gem_request *
+i915_gem_reset_prepare_engine(struct intel_engine_cs *engine)
 {
-	struct drm_i915_gem_request *request;
-	int err = 0;
+	struct drm_i915_gem_request *request = NULL;
 
 	/* Prevent request submission to the hardware until we have
 	 * completed the reset in i915_gem_reset_finish(). If a request
@@ -2893,22 +2897,29 @@ int i915_gem_reset_prepare_engine(struct intel_engine_cs *engine)
 
 	if (engine_stalled(engine)) {
 		request = i915_gem_find_active_request(engine);
+		if (!request)
+			return ERR_PTR(-ECANCELED); /* Can't find a request, abort! */
+
 		if (request && request->fence.error == -EIO)
-			err = -EIO; /* Previous reset failed! */
+			return ERR_PTR(-EIO); /* Previous reset failed! */
 	}
 
-	return err;
+	return request;
 }
 
 int i915_gem_reset_prepare(struct drm_i915_private *dev_priv,
 			   unsigned int engine_mask)
 {
 	struct intel_engine_cs *engine;
+	struct drm_i915_gem_request *request;
 	unsigned int tmp;
 	int err = 0;
 
-	for_each_engine_masked(engine, dev_priv, engine_mask, tmp)
-		err = i915_gem_reset_prepare_engine(engine);
+	for_each_engine_masked(engine, dev_priv, engine_mask, tmp) {
+		request = i915_gem_reset_prepare_engine(engine);
+		if (request && IS_ERR(request))
+			err = PTR_ERR(request);
+	}
 
 	i915_gem_revoke_fences(dev_priv);
 
@@ -2995,14 +3006,15 @@ static bool i915_gem_reset_request(struct drm_i915_gem_request *request)
 	return guilty;
 }
 
-void i915_gem_reset_engine(struct intel_engine_cs *engine)
+void i915_gem_reset_engine(struct intel_engine_cs *engine,
+			   struct drm_i915_gem_request *request)
 {
-	struct drm_i915_gem_request *request;
+	if (!request)
+		request = i915_gem_find_active_request(engine);
 
 	if (engine->irq_seqno_barrier)
 		engine->irq_seqno_barrier(engine);
 
-	request = i915_gem_find_active_request(engine);
 	if (request && i915_gem_reset_request(request)) {
 		DRM_DEBUG_DRIVER("resetting %s to restart from tail of request 0x%x\n",
 				 engine->name, request->global_seqno);
@@ -3026,7 +3038,7 @@ void i915_gem_reset(struct drm_i915_private *dev_priv)
 	i915_gem_retire_requests(dev_priv);
 
 	for_each_engine(engine, dev_priv, id)
-		i915_gem_reset_engine(engine);
+		i915_gem_reset_engine(engine, NULL);
 
 	i915_gem_restore_fences(dev_priv);
 
