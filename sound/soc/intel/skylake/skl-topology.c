@@ -1040,7 +1040,7 @@ static int skl_tplg_set_module_bind_params(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
-static int skl_get_module_id(struct skl_sst *ctx, uuid_le *uuid)
+int skl_get_module_id(struct skl_sst *ctx, uuid_le *uuid)
 {
 	struct uuid_module *module;
 
@@ -1051,6 +1051,7 @@ static int skl_get_module_id(struct skl_sst *ctx, uuid_le *uuid)
 
 	return -EINVAL;
 }
+EXPORT_SYMBOL_GPL(skl_get_module_id);
 
 static int skl_tplg_find_moduleid_from_uuid(struct skl *skl,
 					const struct snd_kcontrol_new *k)
