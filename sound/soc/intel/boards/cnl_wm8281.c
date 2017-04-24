@@ -355,30 +355,6 @@ static int cnl_florida_init(struct snd_soc_pcm_runtime *runtime)
 	return 0;
 }
 
-static unsigned int rates_48000[] = {
-	48000,
-	32000,
-	24000,
-	16000,
-	8000,
-};
-
-static struct snd_pcm_hw_constraint_list constraints_48000 = {
-	.count = ARRAY_SIZE(rates_48000),
-	.list  = rates_48000,
-};
-
-static int cnl_florida_startup(struct snd_pcm_substream *substream)
-{
-	return snd_pcm_hw_constraint_list(substream->runtime, 0,
-			SNDRV_PCM_HW_PARAM_RATE,
-			&constraints_48000);
-}
-
-static struct snd_soc_ops cnl_florida_ops = {
-	.startup = cnl_florida_startup,
-};
-
 static int cnl_florida_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 			    struct snd_pcm_hw_params *params)
 {
@@ -401,46 +377,6 @@ static int cnl_florida_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 }
 
 struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
-	{
-		.name = "CNL Audio Port",
-		.stream_name = "Audio",
-		.cpu_dai_name = "System Pin",
-		.codec_name = "snd-soc-dummy",
-		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "0000:02:18.0",
-		.init = cnl_florida_init,
-		.ignore_suspend = 1,
-		.nonatomic = 1,
-		.dynamic = 1,
-		.dpcm_playback = 1,
-		.dpcm_capture = 1,
-		.ops = &cnl_florida_ops,
-	},
-	{
-		.name = "CNL Deepbuffer Port",
-		.stream_name = "Deep Buffer Audio",
-		.cpu_dai_name = "Deepbuffer Pin",
-		.codec_name = "snd-soc-dummy",
-		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "0000:02:18.0",
-		.dpcm_playback = 1,
-		.ignore_suspend = 1,
-		.nonatomic = 1,
-		.dynamic = 1,
-		.ops = &cnl_florida_ops,
-	},
-	{
-		.name = "CNL Reference Port",
-		.stream_name = "Reference Capture",
-		.cpu_dai_name = "Reference Pin",
-		.codec_name = "snd-soc-dummy",
-		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "0000:02:18.0",
-		.dpcm_capture = 1,
-		.ignore_suspend = 1,
-		.nonatomic = 1,
-		.dynamic = 1,
-	},
 	        /* Trace Buffer DAI links */
 	{
 		.name = "CNL Trace Buffer0",
@@ -518,6 +454,7 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.dpcm_capture = 1,
+		.init = cnl_florida_init,
 	},
 	{
 		.name = "SSP1-Codec",
@@ -566,7 +503,6 @@ struct snd_soc_dai_link cnl_florida_msic_dailink[] = {
 		.codec_name = "snd-soc-dummy",
 		.params	= &dai_params_modem,
 		.dsp_loopback = true,
-		.ops = &cnl_florida_ops,
 	},
 	{
 		.name = "CNL SSP1-Loop Port",
@@ -604,6 +540,15 @@ static int snd_cnl_florida_poweroff(struct device *dev)
 #define snd_cnl_florida_poweroff NULL
 #endif
 
+static int
+cnl_add_dai_link(struct snd_soc_card *card, struct snd_soc_dai_link *link)
+{
+       link->platform_name = "0000:02:18.0";
+       link->nonatomic = 1;
+
+       return 0;
+}
+
 /* SoC card */
 static struct snd_soc_card snd_soc_card_cnl = {
 	.name = "florida-audio",
@@ -613,6 +558,7 @@ static struct snd_soc_card snd_soc_card_cnl = {
 	.num_dapm_widgets = ARRAY_SIZE(cnl_widgets),
 	.dapm_routes = cnl_map,
 	.num_dapm_routes = ARRAY_SIZE(cnl_map),
+	.add_dai_link = cnl_add_dai_link,
 };
 
 static int snd_cnl_florida_mc_probe(struct platform_device *pdev)
