@@ -642,9 +642,7 @@ void i915_guc_log_register(struct drm_i915_private *dev_priv)
 	if (!i915.enable_guc_submission)
 		return;
 
-	mutex_lock(&dev_priv->drm.struct_mutex);
 	guc_log_late_setup(&dev_priv->guc);
-	mutex_unlock(&dev_priv->drm.struct_mutex);
 }
 
 void i915_guc_log_unregister(struct drm_i915_private *dev_priv)
