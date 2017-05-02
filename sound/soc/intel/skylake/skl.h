@@ -205,6 +205,7 @@ void skl_debug_init_module(struct skl_debug *d,
 void skl_update_dsp_debug_info(struct skl_debug *d,
 		struct platform_info *dbg_info);
 
+void skl_dbg_event(struct skl_sst *ctx, int type);
 #else
 
 struct skl_debug {
@@ -232,6 +233,10 @@ void skl_debug_init_module(struct skl_debug *d,
 
 void skl_update_dsp_debug_info(struct skl_debug *d,
 		struct platform_info *dbg_info)
+{
+}
+
+void skl_dbg_event(struct skl_sst *ctx, int type)
 {
 }
 
