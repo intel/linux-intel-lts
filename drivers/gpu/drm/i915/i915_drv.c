@@ -312,9 +312,11 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		value = HAS_RESOURCE_STREAMER(dev_priv);
 		break;
 	case I915_PARAM_HAS_POOLED_EU:
+	case VPG_I915_PARAM_HAS_POOLED_EU:
 		value = HAS_POOLED_EU(dev_priv);
 		break;
 	case I915_PARAM_MIN_EU_IN_POOL:
+	case VPG_I915_PARAM_MIN_EU_IN_POOL:
 		value = INTEL_INFO(dev_priv)->sseu.min_eu_in_pool;
 		break;
 	case I915_PARAM_HUC_STATUS:

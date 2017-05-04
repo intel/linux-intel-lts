@@ -452,6 +452,8 @@ typedef struct drm_i915_irq_wait {
 /* Private (not upstreamed) parameters start from 0x800   */
 /* This helps to avoid conflicts with new upstream values */
 #define I915_PARAM_HAS_GET_APERTURE2     0x808
+#define VPG_I915_PARAM_HAS_POOLED_EU     0x803
+#define VPG_I915_PARAM_MIN_EU_IN_POOL    0x807
 
 typedef struct drm_i915_getparam {
 	__s32 param;
