@@ -30,6 +30,7 @@
 #include <linux/virtio_config.h>
 
 #include <linux/trusty/trusty_ipc.h>
+#include <linux/trusty/trusty.h>
 
 #define MAX_DEVICES			4
 
@@ -44,7 +45,8 @@
 #define MAX_SRV_NAME_LEN		256
 #define MAX_DEV_NAME_LEN		32
 
-#define DEFAULT_MSG_BUF_SIZE		PAGE_SIZE
+#define DEFAULT_MSG_BUF_SIZE		(68*1024)
+
 #define DEFAULT_MSG_BUF_ALIGN		PAGE_SIZE
 
 #define TIPC_CTRL_ADDR			53
@@ -70,9 +72,9 @@ struct tipc_dev_config {
 struct tipc_msg_hdr {
 	u32 src;
 	u32 dst;
-	u32 reserved;
-	u16 len;
+	u32 len;
 	u16 flags;
+	u16 reserved;
 	u8 data[0];
 } __packed;
 
@@ -1521,6 +1523,12 @@ static int tipc_virtio_probe(struct virtio_device *vdev)
 	struct virtqueue *vqs[2];
 	vq_callback_t *vq_cbs[] = {_rxvq_cb, _txvq_cb};
 	const char *vq_names[] = { "rx", "tx" };
+
+	err = trusty_check_cpuid();
+	if (err < 0) {
+		dev_err(&vdev->dev, "CPUID Error: Cannot find eVmm in trusty driver initialization!");
+		return -EINVAL;
+	}
 
 	dev_dbg(&vdev->dev, "%s:\n", __func__);
 
