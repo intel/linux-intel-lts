@@ -260,6 +260,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 	},
 	{
 		.id = 0x3198,
+		.num_cores = 2,
 		.loader_ops = bxt_get_loader_ops,
 		.init = bxt_sst_dsp_init,
 		.init_fw = bxt_sst_init_fw,
