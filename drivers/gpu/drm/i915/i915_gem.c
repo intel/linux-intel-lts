@@ -5515,7 +5515,7 @@ i915_gem_access_userdata(struct drm_device *dev, void *data,
 	struct drm_i915_gem_access_userdata *args = data;
 	struct drm_i915_gem_object *obj;
 
-	obj = to_intel_bo(drm_gem_object_lookup(file, args->handle));
+	obj = i915_gem_object_lookup(file, args->handle);
 	if (&obj->base == NULL)
 		return -ENOENT;
 
@@ -5526,7 +5526,7 @@ i915_gem_access_userdata(struct drm_device *dev, void *data,
 	else
 		args->userdata = obj->userdata;
 
-	drm_gem_object_unreference(&obj->base);
+	i915_gem_object_put(obj);
 	mutex_unlock(&dev->struct_mutex);
 
 	return 0;
