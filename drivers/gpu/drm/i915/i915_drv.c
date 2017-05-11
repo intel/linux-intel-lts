@@ -1258,6 +1258,41 @@ static inline int get_max_avail_pipes(struct drm_i915_private *dev_priv)
 	return index;
 }
 
+#ifdef CONFIG_DRM_I915_LOAD_ASYNC_SUPPORT
+
+static int i915_load_finished;
+static DECLARE_WAIT_QUEUE_HEAD(i915_load_queue);
+
+#include <linux/kthread.h>
+struct drm_i915_load_para {
+	struct pci_dev *dev;
+	struct pci_device_id *ent;
+};
+
+static int drm_i915_load_fn(void *arg)
+{
+	struct drm_i915_load_para *para = (struct drm_i915_load_para *)arg;
+	struct pci_dev *dev = para->dev;
+	struct pci_device_id *ent = para->ent;
+	int ret = i915_driver_load(dev, ent);
+	i915_load_finished = 1;
+	wake_up(&i915_load_queue);
+	return ret;
+}
+
+int i915_driver_load_async(struct pci_dev *pdev, const struct pci_device_id *ent)
+{
+	struct drm_i915_load_para *para;
+	para = (struct drm_i915_load_para *)kmalloc(sizeof(struct drm_i915_load_para), GFP_KERNEL);
+	if (para == NULL)
+		return ERR_PTR(-ENOMEM);
+	para->dev = pdev;
+	para->ent = ent;
+	kthread_run(drm_i915_load_fn, (void *)para, "drm_i915_load_thread");
+	return 0;
+}
+#endif
+
 /**
  * i915_driver_load - setup chip and create an initial config
  * @pdev: PCI device
@@ -1461,6 +1496,9 @@ static int i915_driver_open(struct drm_device *dev, struct drm_file *file)
 {
 	int ret;
 
+#ifdef CONFIG_DRM_I915_LOAD_ASYNC_SUPPORT
+	wait_event_interruptible(i915_load_queue, i915_load_finished == 1);
+#endif
 	ret = i915_gem_open(dev, file);
 	if (ret)
 		return ret;
