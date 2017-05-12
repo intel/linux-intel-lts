@@ -205,7 +205,6 @@ enum mutex_trylock_recursive_enum {
 	MUTEX_TRYLOCK_RECURSIVE,
 };
 
-#ifndef CONFIG_PREEMPT_RT_FULL
 /**
  * mutex_trylock_recursive - trylock variant that allows recursive locking
  * @lock: mutex to be locked
@@ -226,6 +225,5 @@ mutex_trylock_recursive(struct mutex *lock)
 
 	return mutex_trylock(lock);
 }
-#endif
 
 #endif /* __LINUX_MUTEX_H */
