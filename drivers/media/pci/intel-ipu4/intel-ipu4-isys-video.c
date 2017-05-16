@@ -100,6 +100,7 @@ const struct intel_ipu4_isys_pixelformat intel_ipu5_isys_pfmts[] = {
 };
 
 const struct intel_ipu4_isys_pixelformat intel_ipu4_isys_pfmts_be_soc[] = {
+	{ V4L2_PIX_FMT_Y10, 10, 10, 0, MEDIA_BUS_FMT_Y10_1X10, IPU_FW_ISYS_FRAME_FORMAT_RAW16 },
 	{ V4L2_PIX_FMT_UYVY, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16, IPU_FW_ISYS_FRAME_FORMAT_UYVY },
 	{ V4L2_PIX_FMT_YUYV, 16, 16, 0, MEDIA_BUS_FMT_YUYV8_1X16, IPU_FW_ISYS_FRAME_FORMAT_YUYV },
 	{ V4L2_PIX_FMT_NV16, 16, 16, 8, MEDIA_BUS_FMT_YUYV8_1X16, IPU_FW_ISYS_FRAME_FORMAT_NV16 },
@@ -126,6 +127,7 @@ const struct intel_ipu4_isys_pixelformat intel_ipu4_isys_pfmts_be_soc[] = {
 };
 
 const struct intel_ipu4_isys_pixelformat intel_ipu4_isys_pfmts_packed[] = {
+	{ V4L2_PIX_FMT_Y10, 10, 10, 0, MEDIA_BUS_FMT_Y10_1X10, IPU_FW_ISYS_FRAME_FORMAT_RAW10 },
 	{ V4L2_PIX_FMT_UYVY, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16, IPU_FW_ISYS_FRAME_FORMAT_UYVY },
 	{ V4L2_PIX_FMT_YUYV, 16, 16, 0, MEDIA_BUS_FMT_YUYV8_1X16, IPU_FW_ISYS_FRAME_FORMAT_YUYV },
 	{ V4L2_PIX_FMT_RGB565, 16, 16, 0, MEDIA_BUS_FMT_RGB565_1X16, IPU_FW_ISYS_FRAME_FORMAT_RGB565 },
