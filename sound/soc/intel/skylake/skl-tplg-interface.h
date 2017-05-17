@@ -29,7 +29,7 @@
 
 #define HDA_SST_CFG_MAX	900 /* size of copier cfg*/
 #define SKL_MAX_MODULES	32
-#define SKL_MAX_PATH_CONFIGS	8
+#define SKL_MAX_PATH_CONFIGS	32
 #define SKL_MAX_MODULES_IN_PIPE	8
 #define SKL_MAX_NAME_LENGTH	16
 #define SKL_MOD_NAME 40 /* Length of GUID string */

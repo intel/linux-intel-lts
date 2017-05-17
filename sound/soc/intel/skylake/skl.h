@@ -37,8 +37,8 @@
 #define AZX_REG_VS_D0I3C_I3       0x4 /* D0i3 enable */
 #define AZX_EM2_DUM_MASK		(1 << 23)
 
-#define SKL_MAX_MODULE_RESOURCES 8
-#define SKL_MAX_MODULE_FORMATS 8
+#define SKL_MAX_MODULE_RESOURCES 32
+#define SKL_MAX_MODULE_FORMATS 64
 #define SKL_MAX_IN_QUEUE 8
 #define SKL_MAX_OUT_QUEUE 8
 #define SKL_MAX_LL_SRC_CFG  8
