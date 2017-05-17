@@ -276,6 +276,7 @@ __create_hw_context(struct drm_i915_private *dev_priv,
 	kref_init(&ctx->ref);
 	list_add_tail(&ctx->link, &dev_priv->context_list);
 	ctx->i915 = dev_priv;
+	ctx->priority = I915_PRIORITY_NORMAL;
 
 	ctx->ggtt_alignment = get_context_alignment(dev_priv);
 
