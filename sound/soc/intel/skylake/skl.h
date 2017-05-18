@@ -82,6 +82,7 @@ struct skl {
 	struct snd_soc_component *component;
 	struct snd_soc_dai_driver *dais;
 
+	unsigned int nhlt_version;
 	struct nhlt_acpi_table *nhlt; /* nhlt ptr */
 	struct skl_sst *skl_sst; /* sst skl ctx */
 
@@ -137,6 +138,7 @@ struct skl_dsp_ops {
 int skl_platform_unregister(struct device *dev);
 int skl_platform_register(struct device *dev);
 
+int skl_get_nhlt_version(struct device *dev);
 struct nhlt_acpi_table *skl_nhlt_init(struct device *dev);
 void skl_nhlt_free(struct nhlt_acpi_table *addr);
 struct nhlt_specific_cfg *skl_get_ep_blob(struct skl *skl, u32 instance,
