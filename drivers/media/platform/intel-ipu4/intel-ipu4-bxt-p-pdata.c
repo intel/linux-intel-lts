@@ -140,6 +140,62 @@ static struct intel_ipu4_isys_subdev_info imx185_b_crl_sd = {
 
 #endif
 
+#ifdef CONFIG_INTEL_IPU4_IMX477
+#define IMX477_LANES	   2
+
+#define IMX477_I2C_ADDRESS 0x10
+
+static struct crlmodule_platform_data imx477_pdata_master = {
+	.xshutdown = GPIO_BASE + 71,
+	.lanes = IMX477_LANES,
+	.ext_clk = 19200000,
+	.op_sys_clock = (uint64_t []){600000000},
+	.module_name = "IMX477-MASTER",
+	.id_string = "0x4 0x77",
+};
+
+static struct intel_ipu4_isys_csi2_config imx477_csi2_cfg_master = {
+	.nlanes = IMX477_LANES,
+	.port = 0,
+};
+
+static struct intel_ipu4_isys_subdev_info imx477_crl_sd_master = {
+	.csi2 = &imx477_csi2_cfg_master,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO(CRLMODULE_NAME, IMX477_I2C_ADDRESS),
+			.platform_data = &imx477_pdata_master,
+		},
+		.i2c_adapter_id = 2,
+	}
+};
+
+static struct crlmodule_platform_data imx477_pdata_slave_1 = {
+	.xshutdown = GPIO_BASE + 73,
+	.lanes = IMX477_LANES,
+	.ext_clk = 19200000,
+	.op_sys_clock = (uint64_t []){600000000},
+	.module_name = "IMX477-SLAVE-1",
+	.id_string = "0x4 0x77",
+};
+
+static struct intel_ipu4_isys_csi2_config imx477_csi2_cfg_slave_1 = {
+	.nlanes = IMX477_LANES,
+	.port = 4,
+};
+
+static struct intel_ipu4_isys_subdev_info imx477_crl_sd_slave_1 = {
+	.csi2 = &imx477_csi2_cfg_slave_1,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO(CRLMODULE_NAME, IMX477_I2C_ADDRESS),
+			.platform_data = &imx477_pdata_slave_1,
+		},
+		.i2c_adapter_id = 4,
+	}
+};
+#endif
+
 #ifdef CONFIG_INTEL_IPU4_IMX274
 
 #define IMX274_LANES		4
@@ -236,8 +292,7 @@ static struct crlmodule_platform_data ov13860_pdata = {
 	.xshutdown = GPIO_BASE + 71,
 	.lanes = OV13860_LANES,
 	.ext_clk = 24000000,
-	.op_sys_clock = (uint64_t []){ 600000000,
-				       300000000},
+	.op_sys_clock = (uint64_t []){ 600000000, 300000000},
 	.module_name = "OV13860"
 };
 
@@ -450,12 +505,12 @@ static struct crlmodule_platform_data ov10635_pdata = {
 #endif
 
 #ifdef CONFIG_INTEL_IPU4_OV10640
-#define OV10640_LANES           4
+#define OV10640_LANES			4
 #define OV10640_I2C_PHY_ADDR	0x60 /* 0x30 for 7bit addr */
-#define OV10640A_I2C_ADDRESS    0x61
-#define OV10640B_I2C_ADDRESS    0x62
-#define OV10640C_I2C_ADDRESS    0x63
-#define OV10640D_I2C_ADDRESS    0x64
+#define OV10640A_I2C_ADDRESS	0x61
+#define OV10640B_I2C_ADDRESS	0x62
+#define OV10640C_I2C_ADDRESS	0x63
+#define OV10640D_I2C_ADDRESS	0x64
 
 static struct crlmodule_platform_data ov10640_pdata = {
 	.lanes = OV10640_LANES,
@@ -722,6 +777,7 @@ struct intel_ipu4_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT("6-0036", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("8-0036", NULL, NULL), "OSC_CLK_OUT1" },
 	{ CLKDEV_INIT("2-0010", NULL, NULL), "OSC_CLK_OUT0" },
+	{ CLKDEV_INIT("4-0010", NULL, NULL), "OSC_CLK_OUT1" },
 	{ CLKDEV_INIT("2-a0e0", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("2-a0e2", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
@@ -736,6 +792,10 @@ static struct intel_ipu4_isys_subdev_pdata pdata = {
 #ifdef CONFIG_INTEL_IPU4_IMX185
 		&imx185_crl_sd,
 		&imx185_b_crl_sd,
+#endif
+#ifdef CONFIG_INTEL_IPU4_IMX477
+		&imx477_crl_sd_slave_1,
+		&imx477_crl_sd_master,
 #endif
 #ifdef CONFIG_INTEL_IPU4_IMX274
 		&imx274_crl_sd,
