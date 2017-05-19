@@ -261,6 +261,9 @@ static struct mfd_cell bxt_wc_dev[] = {
 	{
 		.name = "bxt_wcove_region",
 	},
+	{
+		.name = "clk_wcove",
+	},
 };
 
 static int regmap_ipc_byte_reg_read(void *context, unsigned int reg,
