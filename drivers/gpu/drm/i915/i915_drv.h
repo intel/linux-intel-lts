@@ -726,18 +726,6 @@ enum forcewake_domains {
 #define FW_REG_READ  (1)
 #define FW_REG_WRITE (2)
 
-enum decoupled_power_domain {
-	GEN9_DECOUPLED_PD_BLITTER = 0,
-	GEN9_DECOUPLED_PD_RENDER,
-	GEN9_DECOUPLED_PD_MEDIA,
-	GEN9_DECOUPLED_PD_ALL
-};
-
-enum decoupled_ops {
-	GEN9_DECOUPLED_OP_WRITE = 0,
-	GEN9_DECOUPLED_OP_READ
-};
-
 enum forcewake_domains
 intel_uncore_forcewake_for_reg(struct drm_i915_private *dev_priv,
 			       i915_reg_t reg, unsigned int op);
@@ -834,7 +822,6 @@ struct intel_csr {
 	func(has_aliasing_ppgtt); \
 	func(has_csr); \
 	func(has_ddi); \
-	func(has_decoupled_mmio); \
 	func(has_dp_mst); \
 	func(has_fbc); \
 	func(has_fpga_dbg); \
@@ -2974,8 +2961,6 @@ intel_info(const struct drm_i915_private *dev_priv)
 
 #define GT_FREQUENCY_MULTIPLIER 50
 #define GEN9_FREQ_SCALER 3
-
-#define HAS_DECOUPLED_MMIO(dev_priv) (INTEL_INFO(dev_priv)->has_decoupled_mmio)
 
 #include "i915_trace.h"
 
