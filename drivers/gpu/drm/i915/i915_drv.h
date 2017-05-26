@@ -322,6 +322,7 @@ enum plane {
 	PLANE_A,
 	PLANE_B,
 	PLANE_C,
+	PLANE_D,
 };
 #define plane_name(p) ((p) + 'A')
 
