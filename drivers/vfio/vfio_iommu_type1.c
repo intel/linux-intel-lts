@@ -244,59 +244,38 @@ static int vfio_iova_put_vfio_pfn(struct vfio_dma *dma, struct vfio_pfn *vpfn)
 	return ret;
 }
 
-struct vwork {
-	struct mm_struct	*mm;
-	long			npage;
-	struct work_struct	work;
-};
-
-/* delayed decrement/increment for locked_vm */
-static void vfio_lock_acct_bg(struct work_struct *work)
+static int vfio_lock_acct(struct task_struct *task, long npage, bool *lock_cap)
 {
-	struct vwork *vwork = container_of(work, struct vwork, work);
 	struct mm_struct *mm;
-
-	mm = vwork->mm;
-	down_write(&mm->mmap_sem);
-	mm->locked_vm += vwork->npage;
-	up_write(&mm->mmap_sem);
-	mmput(mm);
-	kfree(vwork);
-}
-
-static void vfio_lock_acct(struct task_struct *task, long npage)
-{
-	struct vwork *vwork;
-	struct mm_struct *mm;
+	int ret;
 
 	if (!npage)
-		return;
+		return 0;
 
 	mm = get_task_mm(task);
 	if (!mm)
-		return; /* process exited or nothing to do */
+		return -ESRCH; /* process exited */
 
-	if (down_write_trylock(&mm->mmap_sem)) {
-		mm->locked_vm += npage;
+	ret = down_write_killable(&mm->mmap_sem);
+	if (!ret) {
+		if (npage > 0) {
+			if (lock_cap ? !*lock_cap : !capable(CAP_IPC_LOCK)) {
+				unsigned long limit;
+
+				limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+
+				if (mm->locked_vm + npage > limit)
+					ret = -ENOMEM;
+			}
+		}
+
+		if (!ret)
+			mm->locked_vm += npage;
+
 		up_write(&mm->mmap_sem);
-		mmput(mm);
-		return;
 	}
 
-	/*
-	 * Couldn't get mmap_sem lock, so must setup to update
-	 * mm->locked_vm later. If locked_vm were atomic, we
-	 * wouldn't need this silliness
-	 */
-	vwork = kmalloc(sizeof(struct vwork), GFP_KERNEL);
-	if (!vwork) {
-		mmput(mm);
-		return;
-	}
-	INIT_WORK(&vwork->work, vfio_lock_acct_bg);
-	vwork->mm = mm;
-	vwork->npage = npage;
-	schedule_work(&vwork->work);
+	return ret;
 }
 
 /*
@@ -393,7 +372,7 @@ static int vaddr_get_pfn(struct mm_struct *mm, unsigned long vaddr,
 static long vfio_pin_pages_remote(struct vfio_dma *dma, unsigned long vaddr,
 				  long npage, unsigned long *pfn_base)
 {
-	unsigned long limit;
+	unsigned long pfn = 0, limit;
 	bool lock_cap = ns_capable(task_active_pid_ns(dma->task)->user_ns,
 				   CAP_IPC_LOCK);
 	struct mm_struct *mm;
@@ -432,7 +411,6 @@ static long vfio_pin_pages_remote(struct vfio_dma *dma, unsigned long vaddr,
 		/* Lock all the consecutive pages from pfn_base */
 		for (vaddr += PAGE_SIZE, iova += PAGE_SIZE; i < npage;
 		     i++, vaddr += PAGE_SIZE, iova += PAGE_SIZE) {
-			unsigned long pfn = 0;
 
 			ret = vaddr_get_pfn(mm, vaddr, dma->prot, &pfn);
 			if (ret)
@@ -451,15 +429,26 @@ static long vfio_pin_pages_remote(struct vfio_dma *dma, unsigned long vaddr,
 					pr_warn("%s: RLIMIT_MEMLOCK (%ld) "
 						"exceeded\n", __func__,
 						limit << PAGE_SHIFT);
-					break;
+					ret = -ENOMEM;
+					goto unpin_out;
 				}
 				lock_acct++;
 			}
 		}
 	}
 
-	vfio_lock_acct(dma->task, lock_acct);
-	ret = i;
+	if (!rsvd)
+		ret = vfio_lock_acct(dma->task, i, &lock_cap);
+
+unpin_out:
+	if (ret) {
+		if (!rsvd) {
+			for (pfn = *pfn_base ; i ; pfn++, i--)
+				put_pfn(pfn, dma->prot);
+		}
+
+		return ret;
+	}
 
 pin_pg_remote_exit:
 	mmput(mm);
@@ -482,7 +471,7 @@ static long vfio_unpin_pages_remote(struct vfio_dma *dma, dma_addr_t iova,
 	}
 
 	if (do_accounting)
-		vfio_lock_acct(dma->task, locked - unlocked);
+		vfio_lock_acct(dma->task, locked - unlocked, NULL);
 
 	return unlocked;
 }
@@ -518,7 +507,7 @@ static int vfio_pin_page_external(struct vfio_dma *dma, unsigned long vaddr,
 	}
 
 	if (!rsvd && do_accounting)
-		vfio_lock_acct(dma->task, 1);
+		vfio_lock_acct(dma->task, 1, NULL);
 	ret = 1;
 
 pin_page_exit:
@@ -538,7 +527,7 @@ static int vfio_unpin_page_external(struct vfio_dma *dma, dma_addr_t iova,
 	unlocked = vfio_iova_put_vfio_pfn(dma, vpfn);
 
 	if (do_accounting)
-		vfio_lock_acct(dma->task, -unlocked);
+		vfio_lock_acct(dma->task, -unlocked, NULL);
 
 	return unlocked;
 }
@@ -735,7 +724,7 @@ static long vfio_unmap_unpin(struct vfio_iommu *iommu, struct vfio_dma *dma,
 
 	dma->iommu_mapped = false;
 	if (do_accounting) {
-		vfio_lock_acct(dma->task, -unlocked);
+		vfio_lock_acct(dma->task, -unlocked, NULL);
 		return 0;
 	}
 	return unlocked;
@@ -1344,7 +1333,7 @@ static void vfio_iommu_unmap_unpin_reaccount(struct vfio_iommu *iommu)
 			if (!is_invalid_reserved_pfn(vpfn->pfn))
 				locked++;
 		}
-		vfio_lock_acct(dma->task, locked - unlocked);
+		vfio_lock_acct(dma->task, locked - unlocked, NULL);
 	}
 }
 
