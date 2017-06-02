@@ -18,15 +18,6 @@ choice
 config VIDEO_INTEL_IPU4_SOC
 	bool "Compile for SOC"
 
-config VIDEO_INTEL_IPU4_FPGA
-	bool "Compile for FPGA"
-
-config VIDEO_INTEL_IPU4_ISYS_FPGA
-	bool "Compile for ISYS-only FPGA"
-
-config VIDEO_INTEL_IPU4_PSYS_FPGA
-	bool "Compile for PSYS-only FPGA"
-
 endchoice
 
 #config VIDEO_INTEL_IPU5

@@ -108,7 +108,6 @@
  * that the software components which uses IPU4 driver can get the hw stepping
  * information.
  */
-#define INTEL_IPU4_MEDIA_DEV_MODEL_IPU4A	"ipu4/Broxton A"
 #define INTEL_IPU4_MEDIA_DEV_MODEL_IPU4B	"ipu4/Broxton B"
 #define INTEL_IPU4_MEDIA_DEV_MODEL_IPU5A	"ipu5/A"
 
@@ -147,10 +146,7 @@ struct intel_ipu4_device {
  * For FPGA PCI device ID definitions are not followed as per the specification
  * Hence we had to use a kconfig option for FPGA specific usecases.
  */
-#if defined CONFIG_VIDEO_INTEL_IPU4_FPGA	\
-	|| defined CONFIG_VIDEO_INTEL_IPU4_ISYS_FPGA	\
-	|| defined CONFIG_VIDEO_INTEL_IPU4_PSYS_FPGA	\
-	|| defined CONFIG_VIDEO_INTEL_IPU5_FPGA
+#if defined CONFIG_VIDEO_INTEL_IPU5_FPGA
 
 #define is_intel_ipu4_hw_bxt_b0(isp) IS_BUILTIN(IPU_STEP_BXTB0)
 #define is_intel_ipu4_hw_bxt_c0(isp) IS_BUILTIN(IPU_STEP_BXTC0)

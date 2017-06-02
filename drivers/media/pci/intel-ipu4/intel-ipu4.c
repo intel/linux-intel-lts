@@ -737,6 +737,7 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	const struct intel_ipu4_buttress_ctrl *psys_buttress_ctrl;
 	const struct intel_ipu4_isys_internal_pdata *isys_ipdata;
 	const struct intel_ipu4_psys_internal_pdata *psys_ipdata;
+	struct intel_ipu4_buttress_ctrl *isys_ctrl, *psys_ctrl;
 	unsigned int dma_mask = 39;
 	unsigned int fpga_bar_mask = 0;
 	int rval;
@@ -880,71 +881,65 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	 * suspend. Registration order is as follows:
 	 * isys_iommu->isys->psys_iommu->psys
 	 */
-	if (!IS_BUILTIN(CONFIG_VIDEO_INTEL_IPU4_PSYS_FPGA)) {
-		struct intel_ipu4_buttress_ctrl *ctrl =
-			devm_kzalloc(&pdev->dev, sizeof(*ctrl), GFP_KERNEL);
-		if (!ctrl) {
-			rval = -ENOMEM;
-			goto out_intel_ipu4_bus_del_devices;
-		}
-
-		/* Init butress control with default values based on the HW */
-		memcpy(ctrl, isys_buttress_ctrl, sizeof(*ctrl));
-
-		isp->isys_iommu = intel_ipu4_mmu_init(
-			pdev, &pdev->dev, ctrl, isys_base,
-			&isys_ipdata->hw_variant, 0,
-			INTEL_IPU4_MMU_TYPE_INTEL_IPU4, ISYS_MMID);
-		rval = PTR_ERR(isp->isys_iommu);
-		if (IS_ERR(isp->isys_iommu)) {
-			dev_err(&pdev->dev, "can't create isys iommu device\n");
-			rval = -ENOMEM;
-			goto out_intel_ipu4_bus_del_devices;
-		}
-
-		isp->isys = intel_ipu4_isys_init(
-			pdev, &isp->isys_iommu->dev, &isp->isys_iommu->dev,
-			isys_base, isys_ipdata,
-			pdev->dev.platform_data,
-			0, is_intel_ipu_hw_fpga(isp) ?
-			INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA :
-			INTEL_IPU4_ISYS_TYPE_INTEL_IPU4);
-		rval = PTR_ERR(isp->isys);
-		if (IS_ERR(isp->isys))
-			goto out_intel_ipu4_bus_del_devices;
+	isys_ctrl = devm_kzalloc(&pdev->dev, sizeof(*isys_ctrl), GFP_KERNEL);
+	if (!isys_ctrl) {
+		rval = -ENOMEM;
+		goto out_intel_ipu4_bus_del_devices;
 	}
 
-	if (!IS_BUILTIN(CONFIG_VIDEO_INTEL_IPU4_ISYS_FPGA)) {
-		struct intel_ipu4_buttress_ctrl *ctrl =
-			devm_kzalloc(&pdev->dev, sizeof(*ctrl), GFP_KERNEL);
-		if (!ctrl) {
-			rval = -ENOMEM;
-			goto out_intel_ipu4_bus_del_devices;
-		}
+	/* Init butress control with default values based on the HW */
+	memcpy(isys_ctrl, isys_buttress_ctrl, sizeof(*isys_ctrl));
 
-		/* Init butress control with default values based on the HW */
-		memcpy(ctrl, psys_buttress_ctrl, sizeof(*ctrl));
-
-		isp->psys_iommu = intel_ipu4_mmu_init(
-			pdev, isp->isys_iommu ? &isp->isys_iommu->dev :
-			&pdev->dev, ctrl, psys_base, &psys_ipdata->hw_variant,
-			1, INTEL_IPU4_MMU_TYPE_INTEL_IPU4, PSYS_MMID);
-		rval = PTR_ERR(isp->psys_iommu);
-		if (IS_ERR(isp->psys_iommu)) {
-			dev_err(&pdev->dev, "can't create psys iommu device\n");
-			goto out_intel_ipu4_bus_del_devices;
-		}
-
-		isp->psys = intel_ipu4_psys_init(
-			pdev, &isp->psys_iommu->dev,
-			&isp->psys_iommu->dev, psys_base, psys_ipdata, 0,
-			is_intel_ipu_hw_fpga(isp) ?
-			INTEL_IPU4_PSYS_TYPE_INTEL_IPU4_FPGA :
-			INTEL_IPU4_PSYS_TYPE_INTEL_IPU4);
-		rval = PTR_ERR(isp->psys);
-		if (IS_ERR(isp->psys))
-			goto out_intel_ipu4_bus_del_devices;
+	isp->isys_iommu = intel_ipu4_mmu_init(
+		pdev, &pdev->dev, isys_ctrl, isys_base,
+		&isys_ipdata->hw_variant, 0,
+		INTEL_IPU4_MMU_TYPE_INTEL_IPU4, ISYS_MMID);
+	rval = PTR_ERR(isp->isys_iommu);
+	if (IS_ERR(isp->isys_iommu)) {
+		dev_err(&pdev->dev, "can't create isys iommu device\n");
+		rval = -ENOMEM;
+		goto out_intel_ipu4_bus_del_devices;
 	}
+
+	isp->isys = intel_ipu4_isys_init(
+		pdev, &isp->isys_iommu->dev, &isp->isys_iommu->dev,
+		isys_base, isys_ipdata,
+		pdev->dev.platform_data,
+		0, is_intel_ipu_hw_fpga(isp) ?
+		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA :
+		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4);
+	rval = PTR_ERR(isp->isys);
+	if (IS_ERR(isp->isys))
+		goto out_intel_ipu4_bus_del_devices;
+
+	psys_ctrl = devm_kzalloc(&pdev->dev, sizeof(*psys_ctrl), GFP_KERNEL);
+	if (!psys_ctrl) {
+		rval = -ENOMEM;
+		goto out_intel_ipu4_bus_del_devices;
+	}
+
+	/* Init butress control with default values based on the HW */
+	memcpy(psys_ctrl, psys_buttress_ctrl, sizeof(*psys_ctrl));
+
+	isp->psys_iommu = intel_ipu4_mmu_init(
+		pdev, isp->isys_iommu ? &isp->isys_iommu->dev :
+		&pdev->dev, psys_ctrl, psys_base, &psys_ipdata->hw_variant,
+		1, INTEL_IPU4_MMU_TYPE_INTEL_IPU4, PSYS_MMID);
+	rval = PTR_ERR(isp->psys_iommu);
+	if (IS_ERR(isp->psys_iommu)) {
+		dev_err(&pdev->dev, "can't create psys iommu device\n");
+		goto out_intel_ipu4_bus_del_devices;
+	}
+
+	isp->psys = intel_ipu4_psys_init(
+		pdev, &isp->psys_iommu->dev,
+		&isp->psys_iommu->dev, psys_base, psys_ipdata, 0,
+		is_intel_ipu_hw_fpga(isp) ?
+		INTEL_IPU4_PSYS_TYPE_INTEL_IPU4_FPGA :
+		INTEL_IPU4_PSYS_TYPE_INTEL_IPU4);
+	rval = PTR_ERR(isp->psys);
+	if (IS_ERR(isp->psys))
+		goto out_intel_ipu4_bus_del_devices;
 
 	rval = intel_ipu4_init_debugfs(isp);
 	if (rval) {
@@ -1088,17 +1083,11 @@ static const struct dev_pm_ops intel_ipu4_pm_ops = {
 #endif
 
 static const struct pci_device_id intel_ipu4_pci_tbl[] = {
-#if defined CONFIG_VIDEO_INTEL_IPU4_FPGA		\
-	|| defined CONFIG_VIDEO_INTEL_IPU4_ISYS_FPGA	\
-	|| defined CONFIG_VIDEO_INTEL_IPU4_PSYS_FPGA
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU4_HW_BXT_B0)},
-#else
 #if defined IPU_STEP_IPU5A0
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU5_HW_FPGA_A0)},
 #else
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU4_HW_BXT_B0)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU4_HW_BXT_P)},
-#endif
 #endif
 	{0,}
 };
