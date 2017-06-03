@@ -51,6 +51,7 @@
 #include "i915_vgpu.h"
 #include "intel_drv.h"
 #include "intel_uc.h"
+#include "i915_ext_ioctl.h"
 
 static struct drm_driver driver;
 
@@ -608,7 +609,12 @@ static int i915_load_modeset_init(struct drm_device *dev)
 	if (ret)
 		goto cleanup_irq;
 
-	intel_uc_init_fw(dev_priv);
+	/*
+	 * ANDROID: we cannot attempt to load the fw here, the filesystem
+	 * where our bin files are located won't be mounted until much
+	 * later.
+	 * intel_uc_init_fw(dev_priv);
+	 */
 
 	ret = i915_gem_init(dev_priv);
 	if (ret)
@@ -1147,7 +1153,9 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 	/* Reveal our presence to userspace */
 	if (drm_dev_register(dev, 0) == 0) {
 		i915_debugfs_register(dev_priv);
-		i915_guc_log_register(dev_priv);
+		/* ANDROID: we defered the guc log registration */
+		if (dev_priv->contexts_ready)
+			i915_guc_log_register(dev_priv);
 		i915_setup_sysfs(dev_priv);
 
 		/* Depends on sysfs having been initialized */
@@ -2619,6 +2627,15 @@ static const struct drm_ioctl_desc i915_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(I915_GEM_CONTEXT_GETPARAM, i915_gem_context_getparam_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_CONTEXT_SETPARAM, i915_gem_context_setparam_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_PERF_OPEN, i915_perf_open_ioctl, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(I915_GEM_ACCESS_USERDATA, i915_gem_access_userdata, DRM_RENDER_ALLOW),
+
+/*
+ * Extended ioctl layers extra ioctls into a single master ioctl
+ * Must allow full access to this ioctl - The i915_extended_ioctl
+ * handler will apply appropriate tests for the underlying ioctl
+*/
+	DRM_IOCTL_DEF_DRV(I915_EXT_IOCTL, i915_extended_ioctl,
+			  DRM_UNLOCKED|DRM_CONTROL_ALLOW|DRM_RENDER_ALLOW),
 };
 
 static struct drm_driver driver = {

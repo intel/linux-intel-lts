@@ -56,13 +56,14 @@ struct i915_params i915 __read_mostly = {
 	.verbose_state_checks = 1,
 	.nuclear_pageflip = 0,
 	.edp_vswing = 0,
-	.enable_guc_loading = 0,
-	.enable_guc_submission = 0,
+	.enable_guc_loading = 1,
+	.enable_guc_submission = 1,
 	.guc_log_level = -1,
 	.guc_firmware_path = NULL,
 	.huc_firmware_path = NULL,
 	.enable_dp_mst = true,
 	.inject_load_failure = 0,
+	.hpd_sense_invert = 0,
 	.enable_dpcd_backlight = false,
 	.enable_gvt = false,
 };
@@ -221,12 +222,12 @@ MODULE_PARM_DESC(edp_vswing,
 module_param_named_unsafe(enable_guc_loading, i915.enable_guc_loading, int, 0400);
 MODULE_PARM_DESC(enable_guc_loading,
 		"Enable GuC firmware loading "
-		"(-1=auto, 0=never [default], 1=if available, 2=required)");
+		"(-1=auto, 0=never, 1=if available [default], 2=required)");
 
 module_param_named_unsafe(enable_guc_submission, i915.enable_guc_submission, int, 0400);
 MODULE_PARM_DESC(enable_guc_submission,
 		"Enable GuC submission "
-		"(-1=auto, 0=never [default], 1=if available, 2=required)");
+		"(-1=auto, 0=never, 1=if available [default], 2=required)");
 
 module_param_named(guc_log_level, i915.guc_log_level, int, 0400);
 MODULE_PARM_DESC(guc_log_level,
@@ -246,6 +247,12 @@ MODULE_PARM_DESC(enable_dp_mst,
 module_param_named_unsafe(inject_load_failure, i915.inject_load_failure, uint, 0400);
 MODULE_PARM_DESC(inject_load_failure,
 	"Force an error after a number of failure check points (0:disabled (default), N:force failure at the Nth failure check point)");
+
+module_param_named_unsafe(hpd_sense_invert, i915.hpd_sense_invert, int, 0400);
+MODULE_PARM_DESC(hpd_sense_invert,
+		"HDP invert selection for GOP-less systems. Bit0 is to enable/disable"
+		"invert logic for portA, Bit1 is for portB, Bit2 is for portC");
+
 module_param_named(enable_dpcd_backlight, i915.enable_dpcd_backlight, bool, 0600);
 MODULE_PARM_DESC(enable_dpcd_backlight,
 	"Enable support for DPCD backlight control (default:false)");

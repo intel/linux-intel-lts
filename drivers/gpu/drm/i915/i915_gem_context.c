@@ -555,25 +555,56 @@ static int context_idr_cleanup(int id, void *p, void *data)
 	return 0;
 }
 
+int i915_gem_context_first_open(struct drm_i915_private *dev_priv)
+{
+	int ret;
+
+	lockdep_assert_held(&dev_priv->drm.struct_mutex);
+
+	DRM_DEBUG_DRIVER("late initialization starting\n");
+
+	intel_runtime_pm_get(dev_priv);
+	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
+
+	ret = i915_gem_init_hw_late(dev_priv);
+	if (ret == 0)
+		dev_priv->contexts_ready = true;
+	else
+		DRM_ERROR("late initialization failed: %d\n", ret);
+
+	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
+	intel_runtime_pm_put(dev_priv);
+
+	return ret;
+}
+
 int i915_gem_context_open(struct drm_device *dev, struct drm_file *file)
 {
 	struct drm_i915_file_private *file_priv = file->driver_priv;
 	struct i915_gem_context *ctx;
+	int ret = 0;
 
 	idr_init(&file_priv->context_idr);
 
 	mutex_lock(&dev->struct_mutex);
-	ctx = i915_gem_create_context(to_i915(dev), file_priv);
-	mutex_unlock(&dev->struct_mutex);
 
-	GEM_BUG_ON(i915_gem_context_is_kernel(ctx));
+	if (!to_i915(dev)->contexts_ready)
+		ret = i915_gem_context_first_open(to_i915(dev));
 
-	if (IS_ERR(ctx)) {
-		idr_destroy(&file_priv->context_idr);
-		return PTR_ERR(ctx);
+	if (ret == 0) {
+		ctx = i915_gem_create_context(to_i915(dev), file_priv);
+		if (IS_ERR(ctx))
+			ret = PTR_ERR(ctx);
+
+		GEM_BUG_ON(i915_gem_context_is_kernel(ctx));
 	}
 
-	return 0;
+	mutex_unlock(&dev->struct_mutex);
+
+	if (ret)
+		idr_destroy(&file_priv->context_idr);
+
+	return ret;
 }
 
 void i915_gem_context_close(struct drm_device *dev, struct drm_file *file)

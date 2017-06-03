@@ -44,6 +44,7 @@
 
 /* from BKL pushdown */
 DEFINE_MUTEX(drm_global_mutex);
+EXPORT_SYMBOL(drm_global_mutex);
 
 /**
  * DOC: file operations
@@ -202,7 +203,11 @@ static int drm_open_helper(struct file *filp, struct drm_minor *minor)
 	priv->minor = minor;
 
 	/* for compatibility root is always authenticated */
+#ifdef CONFIG_NO_GPU_AUTHENTICATION
+	priv->authenticated = 1;
+#else
 	priv->authenticated = capable(CAP_SYS_ADMIN);
+#endif
 	priv->lock_count = 0;
 
 	INIT_LIST_HEAD(&priv->lhead);

@@ -4194,6 +4194,8 @@ static void __i915_gem_free_objects(struct drm_i915_private *i915,
 
 		trace_i915_gem_object_destroy(obj);
 
+		kfree(obj->userdata_blk);
+
 		GEM_BUG_ON(i915_gem_object_is_active(obj));
 		list_for_each_entry_safe(vma, vn,
 					 &obj->vma_list, obj_link) {
@@ -4493,6 +4495,28 @@ static int __i915_gem_restart_engines(void *data)
 	return 0;
 }
 
+int i915_gem_init_hw_late(struct drm_i915_private *dev_priv)
+{
+	int ret;
+
+	/*
+	 * Place for things that can be delayed until the first context
+	 * is open. For example, fw loading in android.
+	 */
+
+	/* fetch firmware */
+	intel_uc_init_fw(dev_priv);
+
+	/* We can't enable contexts until all firmware is loaded */
+	ret = intel_uc_init_hw(dev_priv);
+	if (ret)
+		return ret;
+
+	i915_guc_log_register(dev_priv);
+
+	return 0;
+}
+
 int i915_gem_init_hw(struct drm_i915_private *dev_priv)
 {
 	int ret;
@@ -4546,10 +4570,18 @@ int i915_gem_init_hw(struct drm_i915_private *dev_priv)
 
 	intel_mocs_init_l3cc_table(dev_priv);
 
-	/* We can't enable contexts until all firmware is loaded */
-	ret = intel_uc_init_hw(dev_priv);
-	if (ret)
-		goto out;
+	/*
+	 * Don't call i915_gem_init_hw_late() the very first time (during
+	 * driver load); it will get called during first open instead.
+	 * It should only be called on subsequent (re-initialization) passes.
+	 */
+	if (dev_priv->contexts_ready) {
+		ret = i915_gem_init_hw_late(dev_priv);
+		if (ret)
+			goto out;
+	} else {
+		DRM_DEBUG_DRIVER("deferring late initialization\n");
+	}
 
 out:
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
@@ -4929,6 +4961,33 @@ i915_gem_object_create_from_data(struct drm_i915_private *dev_priv,
 fail:
 	i915_gem_object_put(obj);
 	return ERR_PTR(ret);
+}
+
+/**
+ * Reads/writes userdata for the object.
+ */
+int
+i915_gem_access_userdata(struct drm_device *dev, void *data,
+		   struct drm_file *file)
+{
+	struct drm_i915_gem_access_userdata *args = data;
+	struct drm_i915_gem_object *obj;
+
+	obj = to_intel_bo(drm_gem_object_lookup(file, args->handle));
+	if (&obj->base == NULL)
+		return -ENOENT;
+
+	mutex_lock(&dev->struct_mutex);
+
+	if (args->write)
+		obj->userdata = args->userdata;
+	else
+		args->userdata = obj->userdata;
+
+	drm_gem_object_unreference(&obj->base);
+	mutex_unlock(&dev->struct_mutex);
+
+	return 0;
 }
 
 struct scatterlist *

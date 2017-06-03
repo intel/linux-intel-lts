@@ -2486,6 +2486,8 @@ struct drm_i915_private {
 	 * NOTE: This is the dri1/ums dungeon, don't add stuff here. Your patch
 	 * will be rejected. Instead look for a better place.
 	 */
+
+	bool contexts_ready; /* for deferred initialization */
 };
 
 static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
@@ -3375,6 +3377,7 @@ void i915_gem_clflush_object(struct drm_i915_gem_object *obj, bool force);
 void i915_gem_init_mmio(struct drm_i915_private *i915);
 int __must_check i915_gem_init(struct drm_i915_private *dev_priv);
 int __must_check i915_gem_init_hw(struct drm_i915_private *dev_priv);
+int __must_check i915_gem_init_hw_late(struct drm_i915_private *dev_priv);
 void i915_gem_init_swizzling(struct drm_i915_private *dev_priv);
 void i915_gem_cleanup_engines(struct drm_i915_private *dev_priv);
 int __must_check i915_gem_wait_for_idle(struct drm_i915_private *dev_priv,
@@ -3405,6 +3408,9 @@ int i915_gem_object_attach_phys(struct drm_i915_gem_object *obj,
 				int align);
 int i915_gem_open(struct drm_device *dev, struct drm_file *file);
 void i915_gem_release(struct drm_device *dev, struct drm_file *file);
+
+int i915_gem_access_userdata(struct drm_device *dev, void *data,
+			     struct drm_file *file);
 
 int i915_gem_object_set_cache_level(struct drm_i915_gem_object *obj,
 				    enum i915_cache_level cache_level);

@@ -33,6 +33,8 @@
 
 #include <drm/i915_drm.h>
 
+#include "i915_gem_userdata.h"
+
 struct drm_i915_gem_object_ops {
 	unsigned int flags;
 #define I915_GEM_OBJECT_HAS_STRUCT_PAGE 0x1
@@ -169,6 +171,12 @@ struct drm_i915_gem_object {
 
 	/** Record of address bit 17 of each page at last unbind. */
 	unsigned long *bit_17;
+
+	/** Object userdata */
+	uint32_t userdata;
+
+	/** Optional object userdata block */
+	struct i915_gem_userdata *userdata_blk;
 
 	struct i915_gem_userptr {
 		uintptr_t ptr;
