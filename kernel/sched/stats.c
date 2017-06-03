@@ -13,6 +13,7 @@
  */
 #define SCHEDSTAT_VERSION 15
 
+#ifdef CONFIG_SMP
 static inline void show_easstat(struct seq_file *seq, struct eas_stats *stats)
 {
 	/* eas-specific runqueue stats */
@@ -32,6 +33,7 @@ static inline void show_easstat(struct seq_file *seq, struct eas_stats *stats)
 	seq_printf(seq, "%llu %llu\n",
 	    stats->cas_attempts, stats->cas_count);
 }
+#endif
 
 static int show_schedstat(struct seq_file *seq, void *v)
 {
@@ -60,9 +62,9 @@ static int show_schedstat(struct seq_file *seq, void *v)
 
 		seq_printf(seq, "\n");
 
+#ifdef CONFIG_SMP
 		show_easstat(seq, &rq->eas_stats);
 
-#ifdef CONFIG_SMP
 		/* domain-specific stats */
 		rcu_read_lock();
 		for_each_domain(cpu, sd) {
