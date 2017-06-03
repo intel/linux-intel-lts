@@ -247,22 +247,27 @@ static int vfio_iova_put_vfio_pfn(struct vfio_dma *dma, struct vfio_pfn *vpfn)
 static int vfio_lock_acct(struct task_struct *task, long npage, bool *lock_cap)
 {
 	struct mm_struct *mm;
+	bool is_current;
 	int ret;
 
 	if (!npage)
 		return 0;
 
-	mm = get_task_mm(task);
+	is_current = (task->mm == current->mm);
+
+	mm = is_current ? task->mm : get_task_mm(task);
 	if (!mm)
 		return -ESRCH; /* process exited */
 
 	ret = down_write_killable(&mm->mmap_sem);
 	if (!ret) {
 		if (npage > 0) {
-			if (lock_cap ? !*lock_cap : !capable(CAP_IPC_LOCK)) {
+			if (lock_cap ? !*lock_cap :
+			    !has_capability(task, CAP_IPC_LOCK)) {
 				unsigned long limit;
 
-				limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+				limit = task_rlimit(task,
+						RLIMIT_MEMLOCK) >> PAGE_SHIFT;
 
 				if (mm->locked_vm + npage > limit)
 					ret = -ENOMEM;
@@ -274,6 +279,9 @@ static int vfio_lock_acct(struct task_struct *task, long npage, bool *lock_cap)
 
 		up_write(&mm->mmap_sem);
 	}
+
+	if (!is_current)
+		mmput(mm);
 
 	return ret;
 }
@@ -372,87 +380,80 @@ static int vaddr_get_pfn(struct mm_struct *mm, unsigned long vaddr,
 static long vfio_pin_pages_remote(struct vfio_dma *dma, unsigned long vaddr,
 				  long npage, unsigned long *pfn_base)
 {
-	unsigned long pfn = 0, limit;
-	bool lock_cap = ns_capable(task_active_pid_ns(dma->task)->user_ns,
-				   CAP_IPC_LOCK);
-	struct mm_struct *mm;
-	long ret, i = 0, lock_acct = 0;
+	unsigned long pfn = 0, limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+	bool lock_cap = capable(CAP_IPC_LOCK);
+	long ret, pinned = 0, lock_acct = 0;
 	bool rsvd;
 	dma_addr_t iova = vaddr - dma->vaddr + dma->iova;
 
-	mm = get_task_mm(dma->task);
-	if (!mm)
+	/* This code path is only user initiated */
+	if (!current->mm)
 		return -ENODEV;
 
-	ret = vaddr_get_pfn(mm, vaddr, dma->prot, pfn_base);
+	ret = vaddr_get_pfn(current->mm, vaddr, dma->prot, pfn_base);
 	if (ret)
-		goto pin_pg_remote_exit;
+		return ret;
 
+	pinned++;
 	rsvd = is_invalid_reserved_pfn(*pfn_base);
-	limit = task_rlimit(dma->task, RLIMIT_MEMLOCK) >> PAGE_SHIFT;
 
 	/*
 	 * Reserved pages aren't counted against the user, externally pinned
 	 * pages are already counted against the user.
 	 */
 	if (!rsvd && !vfio_find_vpfn(dma, iova)) {
-		if (!lock_cap && mm->locked_vm + 1 > limit) {
+		if (!lock_cap && current->mm->locked_vm + 1 > limit) {
 			put_pfn(*pfn_base, dma->prot);
 			pr_warn("%s: RLIMIT_MEMLOCK (%ld) exceeded\n", __func__,
 					limit << PAGE_SHIFT);
-			ret = -ENOMEM;
-			goto pin_pg_remote_exit;
+			return -ENOMEM;
 		}
 		lock_acct++;
 	}
 
-	i++;
-	if (likely(!disable_hugepages)) {
-		/* Lock all the consecutive pages from pfn_base */
-		for (vaddr += PAGE_SIZE, iova += PAGE_SIZE; i < npage;
-		     i++, vaddr += PAGE_SIZE, iova += PAGE_SIZE) {
+	if (unlikely(disable_hugepages))
+		goto out;
 
-			ret = vaddr_get_pfn(mm, vaddr, dma->prot, &pfn);
-			if (ret)
-				break;
+	/* Lock all the consecutive pages from pfn_base */
+	for (vaddr += PAGE_SIZE, iova += PAGE_SIZE; pinned < npage;
+	     pinned++, vaddr += PAGE_SIZE, iova += PAGE_SIZE) {
+		ret = vaddr_get_pfn(current->mm, vaddr, dma->prot, &pfn);
+		if (ret)
+			break;
 
-			if (pfn != *pfn_base + i ||
-			    rsvd != is_invalid_reserved_pfn(pfn)) {
+		if (pfn != *pfn_base + pinned ||
+		    rsvd != is_invalid_reserved_pfn(pfn)) {
+			put_pfn(pfn, dma->prot);
+			break;
+		}
+
+		if (!rsvd && !vfio_find_vpfn(dma, iova)) {
+			if (!lock_cap &&
+			    current->mm->locked_vm + lock_acct + 1 > limit) {
 				put_pfn(pfn, dma->prot);
-				break;
+				pr_warn("%s: RLIMIT_MEMLOCK (%ld) exceeded\n",
+					__func__, limit << PAGE_SHIFT);
+				ret = -ENOMEM;
+				goto unpin_out;
 			}
-
-			if (!rsvd && !vfio_find_vpfn(dma, iova)) {
-				if (!lock_cap &&
-				    mm->locked_vm + lock_acct + 1 > limit) {
-					put_pfn(pfn, dma->prot);
-					pr_warn("%s: RLIMIT_MEMLOCK (%ld) "
-						"exceeded\n", __func__,
-						limit << PAGE_SHIFT);
-					ret = -ENOMEM;
-					goto unpin_out;
-				}
-				lock_acct++;
-			}
+			lock_acct++;
 		}
 	}
 
-	if (!rsvd)
-		ret = vfio_lock_acct(dma->task, i, &lock_cap);
+out:
+	ret = vfio_lock_acct(current, lock_acct, &lock_cap);
 
 unpin_out:
 	if (ret) {
 		if (!rsvd) {
-			for (pfn = *pfn_base ; i ; pfn++, i--)
+			for (pfn = *pfn_base ; pinned ; pfn++, pinned--)
 				put_pfn(pfn, dma->prot);
 		}
 
 		return ret;
 	}
 
-pin_pg_remote_exit:
-	mmput(mm);
-	return ret;
+	return pinned;
 }
 
 static long vfio_unpin_pages_remote(struct vfio_dma *dma, dma_addr_t iova,
@@ -462,10 +463,10 @@ static long vfio_unpin_pages_remote(struct vfio_dma *dma, dma_addr_t iova,
 	long unlocked = 0, locked = 0;
 	long i;
 
-	for (i = 0; i < npage; i++) {
+	for (i = 0; i < npage; i++, iova += PAGE_SIZE) {
 		if (put_pfn(pfn++, dma->prot)) {
 			unlocked++;
-			if (vfio_find_vpfn(dma, iova + (i << PAGE_SHIFT)))
+			if (vfio_find_vpfn(dma, iova))
 				locked++;
 		}
 	}
@@ -506,8 +507,14 @@ static int vfio_pin_page_external(struct vfio_dma *dma, unsigned long vaddr,
 		goto pin_page_exit;
 	}
 
-	if (!rsvd && do_accounting)
-		vfio_lock_acct(dma->task, 1, NULL);
+	if (!rsvd && do_accounting) {
+		ret = vfio_lock_acct(dma->task, 1, &lock_cap);
+		if (ret) {
+			put_pfn(*pfn_base, dma->prot);
+			goto pin_page_exit;
+		}
+	}
+
 	ret = 1;
 
 pin_page_exit:
