@@ -21,6 +21,7 @@
 #include "intel-ipu4.h"
 #include "intel-ipu4-pdata.h"
 #include "intel-ipu-resources.h"
+#include "intel-ipu4-psys-abi.h"
 
 #define INTEL_IPU4_PSYS_PG_POOL_SIZE 16
 #define INTEL_IPU4_PSYS_PG_MAX_SIZE 2048
@@ -52,6 +53,7 @@ struct intel_ipu4_psys {
 	spinlock_t pgs_lock;
 	struct list_head fhs;
 	struct list_head pgs;
+	struct list_head ppgs;
 	struct list_head started_kcmds_list;
 	struct intel_ipu4_psys_pdata *pdata;
 	struct intel_ipu4_bus_device *adev;
@@ -99,6 +101,9 @@ struct intel_ipu4_psys_pg {
 	size_t pg_size;
 	dma_addr_t pg_dma_addr;
 	struct list_head list;
+	struct intel_ipu4_psys_resource_alloc *resource_alloc;
+	u64 ppg_identifier;
+	struct intel_ipu4_psys_kcmd *ppg_kcmd;
 };
 
 enum intel_ipu4_psys_cmd_state {
@@ -107,6 +112,9 @@ enum intel_ipu4_psys_cmd_state {
 	KCMD_STATE_STARTED,
 	KCMD_STATE_RUN_PREPARED,
 	KCMD_STATE_RUNNING,
+	KCMD_STATE_PPG_START,
+	KCMD_STATE_PPG_ENQUEUE,
+	KCMD_STATE_PPG_STOP,
 	KCMD_STATE_COMPLETE
 };
 
@@ -165,6 +173,11 @@ struct intel_ipu4_psys_kbuffer {
 
 #define inode_to_intel_ipu4_psys(inode) \
 	container_of((inode)->i_cdev, struct intel_ipu4_psys, cdev)
+
+#define is_ppg_kcmd(kcmd)	\
+	(intel_ipu4_psys_abi_pg_get_protocol(	\
+		(struct intel_ipu4_psys_kcmd *)kcmd)	\
+		== IPU_FW_PSYS_PROCESS_GROUP_PROTOCOL_PPG)
 
 #ifdef CONFIG_COMPAT
 extern long intel_ipu4_psys_compat_ioctl32(struct file *file, unsigned int cmd,
