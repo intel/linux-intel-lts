@@ -95,6 +95,11 @@ struct skl_fw_cfg_info {
 	struct skl_sch_config sch_cfg;
 } __packed;
 
+struct ep_group_cnt {
+	int cnt;
+	int *vbus_id;
+};
+
 struct skl {
 	struct hdac_ext_bus ebus;
 	struct pci_dev *pci;
@@ -127,6 +132,7 @@ struct skl {
 	u8 nr_modules;
 	u8 conf_version;
 	struct skl_module **modules;
+	struct ep_group_cnt grp_cnt;
 };
 
 struct platform_info {
@@ -172,6 +178,7 @@ int skl_platform_unregister(struct device *dev);
 int skl_platform_register(struct device *dev);
 
 int skl_get_nhlt_version(struct device *dev);
+void skl_nhlt_get_ep_cnt(struct skl *skl, int link_type);
 struct nhlt_acpi_table *skl_nhlt_init(struct device *dev);
 void skl_nhlt_free(struct nhlt_acpi_table *addr);
 struct nhlt_specific_cfg *skl_get_ep_blob(struct skl *skl, u32 instance,
