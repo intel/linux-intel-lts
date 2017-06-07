@@ -5,7 +5,7 @@
 #define MODULE_LIST_CONF "/preload_module"
 #define CONFIG_SIZE (1024 * 4)
 
-static int __init load_module(const char *filename, const char *options)
+static int load_module(const char *filename, const char *options)
 {
 	int fd, ret;
 
@@ -17,7 +17,7 @@ static int __init load_module(const char *filename, const char *options)
 	return ret;
 }
 
-static int __init find_pos(char *s, char c)
+static int find_pos(char *s, char c)
 {
 	char *t;
 
@@ -32,7 +32,7 @@ static int __init find_pos(char *s, char c)
 	return t-s;
 }
 
-static int __init load_preload_modules(void)
+static int load_preload_modules(void *args)
 {
 	int fd, count, pos0, pos1;
 	char *cache, *line, *name, *options;

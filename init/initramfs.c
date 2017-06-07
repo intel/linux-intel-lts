@@ -19,6 +19,7 @@
 #include <linux/syscalls.h>
 #include <linux/utime.h>
 #include <linux/async.h>
+#include <linux/kthread.h>
 #include "preload_module.c"
 
 
@@ -657,7 +658,7 @@ static void __init async_populate_rootfs(void *data, async_cookie_t cookie)
 		 * us a chance to load before device_initcalls.
 		 */
 		load_default_modules();
-		load_preload_modules();
+		kthread_run(load_preload_modules, NULL, "preload modules");
 	}
 	return;
 }
