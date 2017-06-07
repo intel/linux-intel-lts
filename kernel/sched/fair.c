@@ -5937,7 +5937,7 @@ static unsigned long capacity_spare_wake(int cpu, struct task_struct *p)
 	return capacity_orig_of(cpu) - cpu_util_wake(cpu, p);
 }
 
-static inline int task_util(struct task_struct *p)
+static inline unsigned long task_util(struct task_struct *p)
 {
 #ifdef CONFIG_SCHED_WALT
 	if (!walt_disabled && sysctl_sched_use_walt_task_util) {
@@ -5971,11 +5971,6 @@ static inline bool task_fits_max(struct task_struct *p, int cpu)
 		return true;
 
 	return __task_fits(p, cpu, 0);
-}
-
-static inline bool task_fits_spare(struct task_struct *p, int cpu)
-{
-	return __task_fits(p, cpu, cpu_util(cpu));
 }
 
 static bool cpu_overutilized(int cpu)
@@ -6109,11 +6104,9 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 		  int this_cpu, int sd_flag)
 {
 	struct sched_group *idlest = NULL, *group = sd->groups;
-	struct sched_group *fit_group = NULL;
 	struct sched_group *most_spare_sg = NULL;
 	unsigned long min_runnable_load = ULONG_MAX, this_runnable_load = 0;
 	unsigned long min_avg_load = ULONG_MAX, this_avg_load = 0;
-	unsigned long fit_capacity = ULONG_MAX;
 	unsigned long most_spare = 0, this_spare = 0;
 	int load_idx = sd->forkexec_idx;
 	int imbalance_scale = 100 + (sd->imbalance_pct-100)/2;
@@ -6161,14 +6154,6 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 			if (spare_cap > max_spare_cap)
 				max_spare_cap = spare_cap;
 
-			/*
-			 * Look for most energy-efficient group that can fit
-			 * that can fit the task.
-			 */
-			if (capacity_of(i) < fit_capacity && task_fits_spare(p, i)) {
-				fit_capacity = capacity_of(i);
-				fit_group = group;
-			}
 		}
 
 		/* Adjust by relative CPU capacity of the group */
@@ -6206,9 +6191,6 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 			}
 		}
 	} while (group = group->next, group != sd->groups);
-
-	if (fit_group)
-		return fit_group;
 
 	/*
 	 * The cross-over point between using spare capacity or least load
@@ -6264,7 +6246,7 @@ find_idlest_cpu(struct sched_group *group, struct task_struct *p, int this_cpu)
 
 	/* Traverse only the allowed CPUs */
 	for_each_cpu_and(i, sched_group_span(group), &p->cpus_allowed) {
-		if (task_fits_spare(p, i)) {
+		if (idle_cpu(i)) {
 			struct rq *rq = cpu_rq(i);
 			struct cpuidle_state *idle = idle_get_state(rq);
 			if (idle && idle->exit_latency < min_exit_latency) {
@@ -6276,8 +6258,7 @@ find_idlest_cpu(struct sched_group *group, struct task_struct *p, int this_cpu)
 				min_exit_latency = idle->exit_latency;
 				latest_idle_timestamp = rq->idle_stamp;
 				shallowest_idle_cpu = i;
-			} else if (idle_cpu(i) &&
-				   (!idle || idle->exit_latency == min_exit_latency) &&
+			} else if ((!idle || idle->exit_latency == min_exit_latency) &&
 				   rq->idle_stamp > latest_idle_timestamp) {
 				/*
 				 * If equal or no active idle state, then
@@ -6285,13 +6266,6 @@ find_idlest_cpu(struct sched_group *group, struct task_struct *p, int this_cpu)
 				 * a warmer cache.
 				 */
 				latest_idle_timestamp = rq->idle_stamp;
-				shallowest_idle_cpu = i;
-			} else if (shallowest_idle_cpu == -1) {
-				/*
-				 * If we haven't found an idle CPU yet
-				 * pick a non-idle one that can fit the task as
-				 * fallback.
-				 */
 				shallowest_idle_cpu = i;
 			}
 		} else if (shallowest_idle_cpu == -1) {
@@ -6694,6 +6668,24 @@ static inline int find_best_target(struct task_struct *p, bool boosted, bool pre
 }
 
 /*
+ * Disable WAKE_AFFINE in the case where task @p doesn't fit in the
+ * capacity of either the waking CPU @cpu or the previous CPU @prev_cpu.
+ * 
+ * In that case WAKE_AFFINE doesn't make sense and we'll let
+ * BALANCE_WAKE sort things out.
+ */
+static int wake_cap(struct task_struct *p, int cpu, int prev_cpu)
+{
+	long min_cap, max_cap;
+	min_cap = min(capacity_orig_of(prev_cpu), capacity_orig_of(cpu));
+	max_cap = cpu_rq(cpu)->rd->max_cpu_capacity.val;
+	/* Minimum capacity is close to max, no need to abort wake_affine */
+	if (max_cap - min_cap < max_cap >> 3)
+		return 0;
+	return min_cap * 1024 < task_util(p) * capacity_margin;
+}
+
+/*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
  * that have the 'sd_flag' flag set. In practice, this is SD_BALANCE_WAKE,
  * SD_BALANCE_FORK, or SD_BALANCE_EXEC.
@@ -6716,7 +6708,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 
 	if (sd_flag & SD_BALANCE_WAKE) {
 		record_wakee(p);
-		want_affine = (!wake_wide(p) && task_fits_max(p, cpu) &&
+		want_affine = (!wake_wide(p) && !wake_cap(p, cpu, prev_cpu) &&
 			cpumask_test_cpu(cpu, &p->cpus_allowed));
 	}
 
