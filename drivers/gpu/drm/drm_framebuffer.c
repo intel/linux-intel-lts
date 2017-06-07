@@ -202,7 +202,7 @@ static int framebuffer_check(const struct drm_mode_fb_cmd2 *r)
 			break;
 		}
 	}
-
+#if 0
 	for (i = info->num_planes; i < 4; i++) {
 		if (r->modifier[i]) {
 			DRM_DEBUG_KMS("non-zero modifier for unused plane %d\n", i);
@@ -228,7 +228,7 @@ static int framebuffer_check(const struct drm_mode_fb_cmd2 *r)
 			return -EINVAL;
 		}
 	}
-
+#endif
 	return 0;
 }
 
