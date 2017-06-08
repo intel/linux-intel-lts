@@ -1139,10 +1139,10 @@ static struct crl_register_write_rep imx230_hdr_mode_type3[] = {
 	/*
 	 * 0x220 HDR control register
 	 * bit 0: 0:HDR Disable 1:HDR enable *1-> below
-	 * bit 1: 0:Combined gain 1:separate gain *1-> below
+	 * bit 1: 0:Combined gain 1:separate gain *0-> below
 	 * bit 5: 0:Use ET Ratio 1:Short exposure by direct control *0-> below
 	 */
-	{ 0x0220, CRL_REG_LEN_08BIT, 0x03 },
+	{ 0x0220, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x0221, CRL_REG_LEN_08BIT, 0x11 },
 	{ 0x0224, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x0225, CRL_REG_LEN_08BIT, 0xF4 },
@@ -1169,10 +1169,10 @@ static struct crl_register_write_rep imx230_hdr_mode_type2[] = {
 	/*
 	 * 0x220 HDR control register
 	 * bit 0: 0:HDR Disable 1:HDR enable *1-> below
-	 * bit 1: 0:Combined gain 1:separate gain *1-> below
+	 * bit 1: 0:Combined gain 1:separate gain *0-> below
 	 * bit 5: 0:Use ET Ratio 1:Short exposure by direct control *0-> below
 	 */
-	{ 0x0220, CRL_REG_LEN_08BIT, 0x03 },
+	{ 0x0220, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x0221, CRL_REG_LEN_08BIT, 0x11 },
 	{ 0x0224, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x0225, CRL_REG_LEN_08BIT, 0xF4 },
@@ -1200,10 +1200,10 @@ static struct crl_register_write_rep imx230_hdr_mode_type1[] = {
 	/*
 	 * 0x220 HDR control register
 	 * bit 0: 0:HDR Disable 1:HDR enable *1-> below
-	 * bit 1: 0:Combined gain 1:separate gain *1-> below
+	 * bit 1: 0:Combined gain 1:separate gain *0-> below
 	 * bit 5: 0:Use ET Ratio 1:Short exposure by direct control *0-> below
 	 */
-	{ 0x0220, CRL_REG_LEN_08BIT, 0x03 },
+	{ 0x0220, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x0221, CRL_REG_LEN_08BIT, 0x11 },
 	{ 0x0224, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x0225, CRL_REG_LEN_08BIT, 0xF4 },
