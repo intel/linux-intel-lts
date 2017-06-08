@@ -513,8 +513,7 @@ int intel_ipu4_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	}
 
 	/* Do not configure timings on FPGA */
-	if (csi2->isys->pdata->type !=
-		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA) {
+	if (!is_intel_ipu_hw_fpga()) {
 		csi2_ev_correction_params(csi2, nlanes);
 
 		writel(timing.ctermen,

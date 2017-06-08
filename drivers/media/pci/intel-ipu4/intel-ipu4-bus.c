@@ -47,9 +47,7 @@ static int bus_pm_runtime_suspend(struct device *dev)
 		return 0;
 	}
 
-	if (is_intel_ipu_hw_fpga(isp) &&
-	    is_intel_ipu5_hw_a0(isp) &&
-	    dev != adev->isp->isys_iommu) {
+	if (dev != adev->isp->isys_iommu) {
 		dev_warn(dev, "not isys iommu suspend, just out\n");
 		return 0;
 	}
@@ -364,7 +362,7 @@ static int intel_ipu4_bus_probe(struct device *dev)
 	adev->adrv = adrv;
 	if (adrv->probe) {
 		rval = adrv->probe(adev);
-		if (!rval && !is_intel_ipu_hw_fpga(adev->isp)) {
+		if (!rval && !is_intel_ipu_hw_fpga()) {
 			/*
 			 * If the device power, after probe, is enabled
 			 * (from the parent device), its resume needs to

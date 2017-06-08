@@ -69,8 +69,7 @@ unsigned int intel_ipu5_fpga_reset_prepare(struct intel_ipu4_device *isp)
 	phys_addr_t phys;
 
 	/* Only for ipu5 fpga - not for SOC */
-	if (!is_intel_ipu_hw_fpga(isp) &&
-	    !is_intel_ipu5_hw_a0(isp))
+	if (!is_intel_ipu_hw_fpga())
 		return 0;
 
 	/* Search FPGA PCI bridge. Reset is done via bridge IO space */

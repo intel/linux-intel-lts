@@ -165,7 +165,7 @@ const struct intel_ipu4_isys_pixelformat intel_ipu4_isys_pfmts_packed[] = {
  */
 static int intel_ipu4_poll_for_events(struct intel_ipu4_isys_video *av)
 {
-	return is_intel_ipu_hw_fpga(av->isys->adev->isp);
+	return is_intel_ipu_hw_fpga();
 }
 
 static int video_open(struct file *file)
@@ -181,8 +181,7 @@ static int video_open(struct file *file)
 	mutex_lock(&isys->mutex);
 
 	/* WA for ipu5 fpga */
-	while (is_intel_ipu_hw_fpga(isp) &&
-	       is_intel_ipu5_hw_a0(isp) &&
+	while (is_intel_ipu_hw_fpga() &&
 	       !isys->video_opened &&
 	       !pm_runtime_status_suspended(&isp->isys_iommu->dev)) {
 		mutex_unlock(&isys->mutex);
@@ -277,12 +276,10 @@ static int video_open(struct file *file)
 		sched_setscheduler(isys->isr_thread, SCHED_FIFO, &param);
 	}
 
-	if (isys->pdata->type == INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA ||
-	    isys->pdata->type == INTEL_IPU4_ISYS_TYPE_INTEL_IPU4) {
-		rval = av->isys->fwctrl->fw_init(av->isys, num_stream_support);
-		if (rval < 0)
-			goto out_lib_init;
-	}
+	rval = av->isys->fwctrl->fw_init(av->isys, num_stream_support);
+	if (rval < 0)
+		goto out_lib_init;
+
 	av->link_id = 0;
 	mutex_unlock(&isys->mutex);
 

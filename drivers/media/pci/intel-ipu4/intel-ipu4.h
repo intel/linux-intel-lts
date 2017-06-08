@@ -153,7 +153,7 @@ struct intel_ipu4_device {
 
 #define is_intel_ipu4_hw_bxtp_e0(isp)	0
 
-#define is_intel_ipu_hw_fpga(isp) 1
+#define is_intel_ipu_hw_fpga() 1
 
 #define is_intel_ipu5_hw_a0(isp) IS_BUILTIN(IPU_STEP_IPU5A0)
 
@@ -175,7 +175,7 @@ struct intel_ipu4_device {
 	((isp)->pdev->device == INTEL_IPU4_HW_BXT_P &&		\
 	 (isp)->pdev->revision == INTEL_IPU4_HW_BXT_P_E0_REV)
 
-#define is_intel_ipu_hw_fpga(isp) 0
+#define is_intel_ipu_hw_fpga() 0
 
 #define is_intel_ipu5_hw_a0(isp)		\
 	((isp)->pdev->device == INTEL_IPU5_HW_FPGA_A0)

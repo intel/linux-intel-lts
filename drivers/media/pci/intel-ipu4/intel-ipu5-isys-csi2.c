@@ -320,8 +320,7 @@ int intel_ipu5_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	}
 
 	/* Do not configure timings on FPGA */
-	if (csi2->isys->pdata->type !=
-		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA) {
+	if (!is_intel_ipu_hw_fpga()) {
 		writel(timing.ctermen,
 			csi2->base +
 			INTEL_IPU5_CSI_REG_RX_DLY_CNT_TERMEN_CLANE);

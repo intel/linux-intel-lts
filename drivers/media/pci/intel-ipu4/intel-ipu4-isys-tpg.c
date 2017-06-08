@@ -150,14 +150,10 @@ static const struct v4l2_ctrl_ops intel_ipu4_isys_tpg_ctrl_ops = {
 static int64_t intel_ipu4_isys_tpg_rate(struct intel_ipu4_isys_tpg *tpg,
 				     unsigned int bpp)
 {
-	switch (tpg->isys->pdata->type) {
-	case INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA:
+	if (is_intel_ipu_hw_fpga())
 		return MIPI_GEN_PPC * INTEL_IPU4_ISYS_FREQ_BXT_FPGA;
-	case INTEL_IPU4_ISYS_TYPE_INTEL_IPU4:
+	else
 		return MIPI_GEN_PPC * INTEL_IPU4_ISYS_FREQ_BXT;
-	default:
-		return MIPI_GEN_PPC; /* SLE, right? :-) */
-	}
 }
 
 static const char * const tpg_mode_items[] = {
@@ -192,7 +188,7 @@ static void intel_ipu4_isys_tpg_init_controls(struct v4l2_subdev *sd)
 		.elem_size = 0,
 	};
 
-	if (is_intel_ipu_hw_fpga(tpg->isys->adev->isp))
+	if (is_intel_ipu_hw_fpga())
 		tpg->hblank = v4l2_ctrl_new_std(
 			&tpg->asd.ctrl_handler, &intel_ipu4_isys_tpg_ctrl_ops,
 			V4L2_CID_HBLANK, 8, 65535, 1, 16384);
@@ -207,7 +203,7 @@ static void intel_ipu4_isys_tpg_init_controls(struct v4l2_subdev *sd)
 
 	cfg.id = V4L2_CID_LINE_LENGTH_PIXELS;
 	cfg.name = "Line Length Pixels";
-	if (is_intel_ipu_hw_fpga(tpg->isys->adev->isp))
+	if (is_intel_ipu_hw_fpga())
 		cfg.def = 16384 + 4096;
 	else
 		cfg.def = 1024 + 4096;

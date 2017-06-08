@@ -96,7 +96,7 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 	unsigned tout = 500;
 	u32 val = 0;
 
-	if (is_intel_ipu_hw_fpga(isp)) {
+	if (is_intel_ipu_hw_fpga()) {
 		dev_info(&isp->pdev->dev,
 			"ipu5 FPGA does not support ipc now\n");
 		return 0;
@@ -560,7 +560,7 @@ int intel_ipu4_buttress_power(
 		pwr_sts = ctrl->pwr_sts_on << ctrl->pwr_sts_shift;
 	}
 
-	if (is_intel_ipu_hw_fpga(isp))
+	if (is_intel_ipu_hw_fpga())
 		intel_ipu5_fpga_pmclite_btr_power(isp, on);
 	else
 		writel(val, isp->base + ctrl->freq_ctl);
@@ -586,11 +586,11 @@ int intel_ipu4_buttress_power(
 	 * Also in FPGA case don't report time out. Depending on FPGA version
 	 * the PM state transition may or may not work.
 	 */
-	if (!is_intel_ipu_hw_fpga(isp))
+	if (!is_intel_ipu_hw_fpga())
 		ret = -ETIMEDOUT;
 
 out:
-	if (is_intel_ipu_hw_fpga(isp))
+	if (is_intel_ipu_hw_fpga())
 		intel_ipu4_buttress_disable_secure_touch(isp);
 
 	ctrl->started = !ret && on;
@@ -658,7 +658,7 @@ bool intel_ipu4_buttress_get_secure_mode(struct intel_ipu4_device *isp)
 {
 	u32 val;
 
-	if (is_intel_ipu_hw_fpga(isp))
+	if (is_intel_ipu_hw_fpga())
 		return false;
 
 	val = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
@@ -1037,7 +1037,7 @@ int intel_ipu4_buttress_start_tsc_sync(struct intel_ipu4_device *isp)
 {
 	unsigned int i;
 
-	if (is_intel_ipu_hw_fpga(isp))
+	if (is_intel_ipu_hw_fpga())
 		return 0;
 
 	for (i = 0; i < BUTTRESS_TSC_SYNC_RESET_TRIAL_MAX; i++) {
@@ -1778,7 +1778,7 @@ int intel_ipu4_buttress_restore(struct intel_ipu4_device *isp)
 {
 	struct intel_ipu4_buttress *b = &isp->buttress;
 
-	if (is_intel_ipu_hw_fpga(isp) && is_intel_ipu5_hw_a0(isp))
+	if (is_intel_ipu_hw_fpga())
 		intel_ipu5_buttress_sensor_support_config(isp);
 
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
@@ -1838,7 +1838,7 @@ int intel_ipu4_buttress_init(struct intel_ipu4_device *isp)
 	dev_info(&isp->pdev->dev, "IPU4 in %s mode\n",
 			isp->secure_mode ? "secure" : "non-secure");
 
-	if (is_intel_ipu_hw_fpga(isp) && is_intel_ipu5_hw_a0(isp))
+	if (is_intel_ipu_hw_fpga())
 		intel_ipu5_buttress_sensor_support_config(isp);
 
 	b->wdt_cached_value = readl(isp->base + BUTTRESS_REG_WDT);

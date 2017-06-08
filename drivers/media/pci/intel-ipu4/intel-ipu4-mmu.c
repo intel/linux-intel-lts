@@ -616,9 +616,8 @@ static int intel_ipu4_mmu_hw_init(struct device *dev)
 		       mmu->mmu_hw[i].base + REG_L1_PHYS);
 
 		/* Set info bits per MMU */
-		if (pdata->type == INTEL_IPU4_MMU_TYPE_INTEL_IPU4)
-			writel(mmu->mmu_hw[i].info_bits,
-			       mmu->mmu_hw[i].base + REG_INFO);
+		writel(mmu->mmu_hw[i].info_bits,
+		       mmu->mmu_hw[i].base + REG_INFO);
 
 		/* Configure MMU TLB stream configuration for L1*/
 		for (j = 0, block_addr = 0; j < mmu_hw->nr_l1streams;

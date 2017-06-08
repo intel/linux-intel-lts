@@ -46,7 +46,7 @@ static struct intel_ipu4_bus_device *intel_ipu4_mmu_init(
 	struct pci_dev *pdev, struct device *parent,
 	struct intel_ipu4_buttress_ctrl *ctrl, void __iomem *base,
 	const struct intel_ipu4_hw_variants *hw, unsigned int nr,
-	unsigned int type, int mmid)
+	int mmid)
 {
 	struct intel_ipu4_mmu_pdata *pdata =
 		devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
@@ -71,7 +71,6 @@ static struct intel_ipu4_bus_device *intel_ipu4_mmu_init(
 
 	pdata->nr_mmus = hw->nr_mmus;
 	pdata->mmid = mmid;
-	pdata->type = type;
 
 	return intel_ipu4_bus_add_device(pdev, parent, pdata, NULL, ctrl,
 					 INTEL_IPU4_MMU_NAME, nr);
@@ -81,8 +80,7 @@ static struct intel_ipu4_bus_device *intel_ipu4_isys_init(
 	struct pci_dev *pdev, struct device *parent,
 	struct device *iommu, void __iomem *base,
 	const struct intel_ipu4_isys_internal_pdata *ipdata,
-	struct intel_ipu4_isys_subdev_pdata *spdata, unsigned int nr,
-	unsigned int type)
+	struct intel_ipu4_isys_subdev_pdata *spdata, unsigned int nr)
 {
 	struct intel_ipu4_isys_pdata *pdata =
 		devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
@@ -91,7 +89,6 @@ static struct intel_ipu4_bus_device *intel_ipu4_isys_init(
 		return ERR_PTR(-ENOMEM);
 
 	pdata->base = base;
-	pdata->type = type;
 	pdata->ipdata = ipdata;
 	pdata->spdata = spdata;
 
@@ -103,7 +100,7 @@ static struct intel_ipu4_bus_device *intel_ipu4_psys_init(
 	struct pci_dev *pdev, struct device *parent,
 	struct device *iommu, void __iomem *base,
 	const struct intel_ipu4_psys_internal_pdata *ipdata,
-	unsigned int nr, unsigned int type)
+	unsigned int nr)
 {
 	struct intel_ipu4_psys_pdata *pdata =
 		devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
@@ -112,7 +109,6 @@ static struct intel_ipu4_bus_device *intel_ipu4_psys_init(
 		return ERR_PTR(-ENOMEM);
 
 	pdata->base = base;
-	pdata->type = type;
 	pdata->ipdata = ipdata;
 	return intel_ipu4_bus_add_device(pdev, parent, pdata, iommu, NULL,
 					 INTEL_IPU4_PSYS_NAME, nr);
@@ -814,7 +810,7 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 		return -EINVAL;
 	}
 
-	if (is_intel_ipu_hw_fpga(isp))
+	if (is_intel_ipu_hw_fpga())
 		dma_mask = 32;
 
 	isys_base = isp->base + isys_ipdata->hw_variant.offset;
@@ -892,8 +888,7 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 
 	isp->isys_iommu = intel_ipu4_mmu_init(
 		pdev, &pdev->dev, isys_ctrl, isys_base,
-		&isys_ipdata->hw_variant, 0,
-		INTEL_IPU4_MMU_TYPE_INTEL_IPU4, ISYS_MMID);
+		&isys_ipdata->hw_variant, 0, ISYS_MMID);
 	rval = PTR_ERR(isp->isys_iommu);
 	if (IS_ERR(isp->isys_iommu)) {
 		dev_err(&pdev->dev, "can't create isys iommu device\n");
@@ -904,10 +899,7 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	isp->isys = intel_ipu4_isys_init(
 		pdev, &isp->isys_iommu->dev, &isp->isys_iommu->dev,
 		isys_base, isys_ipdata,
-		pdev->dev.platform_data,
-		0, is_intel_ipu_hw_fpga(isp) ?
-		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA :
-		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4);
+		pdev->dev.platform_data, 0);
 	rval = PTR_ERR(isp->isys);
 	if (IS_ERR(isp->isys))
 		goto out_intel_ipu4_bus_del_devices;
@@ -924,7 +916,7 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	isp->psys_iommu = intel_ipu4_mmu_init(
 		pdev, isp->isys_iommu ? &isp->isys_iommu->dev :
 		&pdev->dev, psys_ctrl, psys_base, &psys_ipdata->hw_variant,
-		1, INTEL_IPU4_MMU_TYPE_INTEL_IPU4, PSYS_MMID);
+		1, PSYS_MMID);
 	rval = PTR_ERR(isp->psys_iommu);
 	if (IS_ERR(isp->psys_iommu)) {
 		dev_err(&pdev->dev, "can't create psys iommu device\n");
@@ -933,10 +925,7 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 
 	isp->psys = intel_ipu4_psys_init(
 		pdev, &isp->psys_iommu->dev,
-		&isp->psys_iommu->dev, psys_base, psys_ipdata, 0,
-		is_intel_ipu_hw_fpga(isp) ?
-		INTEL_IPU4_PSYS_TYPE_INTEL_IPU4_FPGA :
-		INTEL_IPU4_PSYS_TYPE_INTEL_IPU4);
+		&isp->psys_iommu->dev, psys_base, psys_ipdata, 0);
 	rval = PTR_ERR(isp->psys);
 	if (IS_ERR(isp->psys))
 		goto out_intel_ipu4_bus_del_devices;

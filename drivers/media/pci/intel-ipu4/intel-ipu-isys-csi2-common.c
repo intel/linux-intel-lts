@@ -347,8 +347,7 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	}
 
 	/*Do not configure timings on FPGA*/
-	if (csi2->isys->pdata->type !=
-		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA) {
+	if (!is_intel_ipu_hw_fpga()) {
 		rval = intel_ipu_isys_csi2_calc_timing(csi2,
 			&timing, CSI2_ACCINV);
 		if (rval)

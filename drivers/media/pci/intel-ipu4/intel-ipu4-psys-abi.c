@@ -455,7 +455,7 @@ int intel_ipu4_psys_abi_open(struct intel_ipu4_psys *psys)
 {
 	int retry = INTEL_IPU4_PSYS_OPEN_RETRY, retval;
 
-	if (is_intel_ipu_hw_fpga(psys->adev->isp))
+	if (is_intel_ipu_hw_fpga())
 		retry = INTEL_IPU4_PSYS_OPEN_RETRY_FPGA;
 
 	if (ext_abi)
