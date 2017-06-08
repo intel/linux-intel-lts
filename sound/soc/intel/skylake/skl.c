@@ -1182,6 +1182,11 @@ static struct snd_soc_acpi_mach sst_bxtp_devdata[] = {
 		.machine_quirk = snd_soc_acpi_codec_list,
 		.quirk_data = &bxt_codecs,
 	},
+	{
+		.id = "INT34C3",
+		.drv_name = "bxt_tdf8532",
+		.fw_filename = "intel/dsp_fw_bxtn.bin",
+	},
 	{}
 };
 
