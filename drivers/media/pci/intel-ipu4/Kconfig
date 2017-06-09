@@ -36,9 +36,9 @@ endchoice
 choice
 	prompt "intel-ipu5 hardware type"
 	depends on VIDEO_INTEL_IPU5
-	default VIDEO_INTEL_IPU5_FPGA
+	default VIDEO_INTEL_IPU_FPGA
 
-config VIDEO_INTEL_IPU5_FPGA
+config VIDEO_INTEL_IPU_FPGA
 	bool "Compile for FPGA"
 
 endchoice

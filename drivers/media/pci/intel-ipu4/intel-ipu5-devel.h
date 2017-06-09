@@ -23,7 +23,7 @@ struct intel_ipu4_isys;
 
 #define IPU5_BAR_FOR_BRIDGE 1
 
-#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU5_FPGA)
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_FPGA)
 void intel_ipu5_fpga_pmclite_btr_power(struct intel_ipu4_device *isp, bool on);
 #else
 #define intel_ipu5_fpga_pmclite_btr_power(x,y)

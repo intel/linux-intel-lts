@@ -31,7 +31,7 @@
 
 #ifdef CONFIG_PM
 static struct bus_type intel_ipu4_bus;
-#ifdef CONFIG_VIDEO_INTEL_IPU5_FPGA
+#ifdef CONFIG_VIDEO_INTEL_IPU_FPGA
 /* Simplified PM for IPU5 FPGA until PM works better */
 static int bus_pm_runtime_suspend(struct device *dev)
 {
