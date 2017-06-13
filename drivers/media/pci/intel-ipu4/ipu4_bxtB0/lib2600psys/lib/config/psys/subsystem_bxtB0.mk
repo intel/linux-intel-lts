@@ -48,6 +48,8 @@ PSYS_ACCESS_BLOCKER_VERSION      = v1
 
 # Disable support for PPG protocol to save codesize
 PSYS_HAS_PPG_SUPPORT			= 0
+# Disable support for late binding
+PSYS_HAS_LATE_BINDING_SUPPORT		= 0
 
 PSYS_SERVER_MAX_PROC_GRP_SIZE				= 3344
 PSYS_SERVER_MAX_MANIFEST_SIZE				= 3640

@@ -660,10 +660,6 @@ bool ia_css_can_enqueue_buffer_set(
 	verifexitval(process_group->protocol_version ==
 		IA_CSS_PROCESS_GROUP_PROTOCOL_PPG, EFAULT);
 
-	/*
-	 * Late binding is currently not supported. Enqueued buffer sets must
-	 * for now be complete.
-	 */
 	for (i = 0; i < (int)terminal_count; i++) {
 		ia_css_terminal_t *terminal =
 			ia_css_process_group_get_terminal(process_group, i);
@@ -676,11 +672,6 @@ bool ia_css_can_enqueue_buffer_set(
 		IA_CSS_TRACE_3(PSYSAPI_DYNAMIC, INFO,
 			"\tH: Terminal number(%d) is %p having buffer 0x%x\n",
 			i, terminal, buffer);
-		/* FAS allows for attaching NULL buffers to satisfy SDF,
-		* but only if l-Scheduler is embedded
-		*/
-		if (buffer == VIED_NULL)
-			break;
 
 		/* buffer_state is applicable only for data terminals*/
 		if (ia_css_is_terminal_data_terminal(terminal) == true) {

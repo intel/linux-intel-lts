@@ -175,18 +175,18 @@ EXIT:
 	return retval;
 }
 
-int ia_css_enqueue_buffer_set(
+STORAGE_CLASS_INLINE int enqueue_buffer_set_cmd(
 	ia_css_process_group_t		*process_group,
 	ia_css_buffer_set_t		*buffer_set,
-	unsigned int			queue_offset)
+	unsigned int			queue_offset,
+	uint16_t			command
+	)
 {
 	int retval = -1;
 	struct ia_css_psys_cmd_s psys_cmd;
 	bool cmd_queue_full;
 	unsigned int queue_id;
 
-	IA_CSS_TRACE_0(BXT_SPCTRL, INFO,
-		"ia_css_enqueue_buffer_set():\n");
 	verifexit(ia_css_process_group_get_state(process_group)
 		== IA_CSS_PROCESS_GROUP_STARTED);
 
@@ -202,7 +202,7 @@ int ia_css_enqueue_buffer_set(
 	retval = EBUSY;
 	verifexit(cmd_queue_full == false);
 
-	psys_cmd.command = IA_CSS_PROCESS_GROUP_CMD_RUN;
+	psys_cmd.command = command;
 	psys_cmd.msg = 0;
 	psys_cmd.context_handle =
 		ia_css_buffer_set_get_ipu_address(buffer_set);
@@ -215,7 +215,60 @@ int ia_css_enqueue_buffer_set(
 EXIT:
 	if (0 != retval) {
 		IA_CSS_TRACE_1(BXT_SPCTRL, ERROR,
+			"enqueue_buffer_set failed (%i)\n", retval);
+	}
+	return retval;
+}
+
+int ia_css_enqueue_buffer_set(
+	ia_css_process_group_t		*process_group,
+	ia_css_buffer_set_t		*buffer_set,
+	unsigned int			queue_offset)
+{
+	int retval = -1;
+
+	IA_CSS_TRACE_0(BXT_SPCTRL, INFO,
+			"ia_css_enqueue_buffer_set():\n");
+	retval = enqueue_buffer_set_cmd(
+			process_group,
+			buffer_set,
+			queue_offset,
+			IA_CSS_PROCESS_GROUP_CMD_RUN);
+
+	if (0 != retval) {
+		IA_CSS_TRACE_1(BXT_SPCTRL, ERROR,
 			"ia_css_enqueue_buffer_set failed (%i)\n", retval);
 	}
+	return retval;
+}
+
+int ia_css_enqueue_param_buffer_set(
+	ia_css_process_group_t		*process_group,
+	ia_css_buffer_set_t		*param_buffer_set)
+{
+#if (HAS_LATE_BINDING_SUPPORT == 1)
+	int retval = -1;
+
+	IA_CSS_TRACE_0(BXT_SPCTRL, INFO,
+			"ia_css_enqueue_param_buffer_set():\n");
+
+	retval = enqueue_buffer_set_cmd(
+			process_group,
+			param_buffer_set,
+			IA_CSS_PSYS_LATE_BINDING_QUEUE_OFFSET,
+			IA_CSS_PROCESS_GROUP_CMD_SUBMIT);
+
+	if (0 != retval) {
+		IA_CSS_TRACE_1(BXT_SPCTRL, ERROR,
+			"ia_css_enqueue_param_buffer_set failed (%i)\n", retval);
+	}
+#else
+	int retval = -1;
+
+	NOT_USED(process_group);
+	NOT_USED(param_buffer_set);
+	IA_CSS_TRACE_0(BXT_SPCTRL, ERROR,
+		"ia_css_enqueue_param_buffer_set failed, no late binding supported\n");
+#endif /* (HAS_LATE_BINDING_SUPPORT == 1) */
 	return retval;
 }

@@ -20,11 +20,13 @@
 #include "ia_css_psys_process_types.h"
 #include "ia_css_terminal_types.h"
 
+#define N_UINT64_IN_BUFFER_SET_STRUCT		1
 #define N_UINT16_IN_BUFFER_SET_STRUCT		1
 #define N_UINT8_IN_BUFFER_SET_STRUCT		1
 #define N_PADDING_UINT8_IN_BUFFER_SET_STRUCT	5
 #define SIZE_OF_BUFFER_SET \
-	(VIED_VADDRESS_BITS \
+	(N_UINT64_IN_BUFFER_SET_STRUCT * IA_CSS_UINT64_T_BITS \
+	+ VIED_VADDRESS_BITS \
 	+ VIED_VADDRESS_BITS \
 	+ N_UINT16_IN_BUFFER_SET_STRUCT * IA_CSS_UINT16_T_BITS \
 	+ N_UINT8_IN_BUFFER_SET_STRUCT * IA_CSS_UINT8_T_BITS \
@@ -33,6 +35,8 @@
 typedef struct ia_css_buffer_set_s ia_css_buffer_set_t;
 
 struct ia_css_buffer_set_s {
+	/* Token for user context reference */
+	uint64_t token;
 	/* IPU virtual address of this buffer set */
 	vied_vaddress_t ipu_virtual_address;
 	/* IPU virtual address of the process group corresponding to this buffer set */
@@ -139,6 +143,28 @@ int ia_css_buffer_set_set_process_group_handle(
  */
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
 vied_vaddress_t ia_css_buffer_set_get_process_group_handle(
+	const ia_css_buffer_set_t *buffer_set);
+
+/*! Set token of a buffer set object within the buffer set object
+
+ @param	buffer_set[in]		buffer set object to set ipu address in
+ @param	token[in]		token of the buffer set object
+
+ @return 0 on success, -1 on error
+ */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+int ia_css_buffer_set_set_token(
+	ia_css_buffer_set_t *buffer_set,
+	const uint64_t token);
+
+/*! Get token from a buffer set object
+
+ @param	buffer_set[in]		buffer set object to get token from
+
+ @return token on success, NULL on error
+ */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+uint64_t ia_css_buffer_set_get_token(
 	const ia_css_buffer_set_t *buffer_set);
 
 #ifdef __IA_CSS_PSYS_DYNAMIC_INLINE__

@@ -145,4 +145,16 @@ extern int ia_css_enqueue_buffer_set(
 	ia_css_buffer_set_t				*buffer_set,
 	unsigned int					queue_offset);
 
+/*! Enqueue a parameter buffer set corresponding to a persistent program
+ *  group by sending a command to subsystem.
+
+ @param	process_group[in]		process group object
+ @param	buffer_set[in]			parameter buffer set
+
+ @return < 0 on error
+ */
+extern int ia_css_enqueue_param_buffer_set(
+	ia_css_process_group_t				*process_group,
+	ia_css_buffer_set_t				*buffer_set);
+
 #endif /* __IA_CSS_PSYS_PROCESS_GROUP_CMD_IMPL_H */

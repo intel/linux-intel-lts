@@ -54,6 +54,7 @@ PSYSAPI_PROCESS_GROUP_HOST_FILES += $(PSYSAPI_DIR)/sim/src/ia_css_psys_process_g
 
 PSYSAPI_HOST_CPPFLAGS  = -I$(PSYSAPI_DIR)/interface
 PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/device/interface
+PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/device/interface/$(IPU_SYSVER)
 PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/dynamic/interface
 PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/dynamic/src
 PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/data/interface
@@ -82,6 +83,8 @@ PSYSAPI_SYSTEM_GLOBAL_CPPFLAGS += -I$(PSYSAPI_DIR)/psys_server_manifest/$(PSYS_S
 
 # Defining the trace level for the PSYSAPI
 PSYSAPI_HOST_CPPFLAGS += -DPSYSAPI_TRACE_CONFIG=PSYSAPI_TRACE_LOG_LEVEL_NORMAL
+# Enable/Disable 'late binding' support and it's additional queues
+PSYSAPI_HOST_CPPFLAGS += -DHAS_LATE_BINDING_SUPPORT=$(PSYS_HAS_LATE_BINDING_SUPPORT)
 
 #Example: how to switch to a different log level for a sub-module
 #PSYSAPI_HOST_CPPFLAGS += -DPSYSAPI_DYNAMIC_TRACING_OVERRIDE=PSYSAPI_TRACE_LOG_LEVEL_DEBUG

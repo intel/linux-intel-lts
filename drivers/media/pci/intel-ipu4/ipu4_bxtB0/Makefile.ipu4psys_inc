@@ -23,6 +23,7 @@ IPU_PSYSLIB_INC = \
 	-I$(IPU_PSYSLIB_ROOT)/psysapi/data/interface \
 	-I$(IPU_PSYSLIB_ROOT)/psysapi/data/src \
 	-I$(IPU_PSYSLIB_ROOT)/psysapi/device/interface \
+	-I$(IPU_PSYSLIB_ROOT)/psysapi/device/interface/bxtB0 \
 	-I$(IPU_PSYSLIB_ROOT)/psysapi/dynamic/interface \
 	-I$(IPU_PSYSLIB_ROOT)/psysapi/dynamic/src \
 	-I$(IPU_PSYSLIB_ROOT)/psysapi/interface \
