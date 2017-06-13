@@ -459,6 +459,9 @@ typedef struct drm_i915_irq_wait {
 #define VPG_I915_PARAM_MIN_EU_IN_POOL    0x807
 #define I915_PARAM_CREATE_VERSION        0x809
 
+/* Query the mask of slices available for this system */
+#define I915_PARAM_SLICE_MASK		 46
+
 typedef struct drm_i915_getparam {
 	__s32 param;
 	/*
