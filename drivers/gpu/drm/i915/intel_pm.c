@@ -3781,8 +3781,7 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 				struct intel_crtc_state *cstate,
 				const struct intel_plane_state *intel_pstate,
 				int level,
-				uint16_t *out_blocks, /* out */
-				uint8_t *out_lines /* out */)
+				struct skl_plane_wm *wm /* out */)
 {
 	struct intel_plane *plane = to_intel_plane(intel_pstate->base.plane);
 	const struct drm_plane_state *pstate = &intel_pstate->base;
@@ -3803,6 +3802,8 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 		to_intel_atomic_state(cstate->base.state);
 	bool apply_memory_bw_wa = skl_needs_memory_bw_wa(state);
 	bool y_tiled, x_tiled;
+	uint16_t *out_blocks = &wm->wm[level].plane_res_b;
+	uint8_t *out_lines = &wm->wm[level].plane_res_l;
 
 	if (latency == 0 ||
 	    !intel_wm_plane_visible(cstate, intel_pstate))
@@ -3911,6 +3912,11 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 		}
 	}
 
+	if ((level > 0) && (res_blocks < wm->wm[level - 1].plane_res_b)) {
+		res_blocks = wm->wm[level - 1].plane_res_b;
+		res_lines = wm->wm[level - 1].plane_res_l;
+	}
+
 	if (res_lines >= 31 && level == 0) {
 		struct drm_plane *plane = pstate->plane;
 
@@ -3939,14 +3945,13 @@ skl_compute_wm_levels(const struct drm_i915_private *dev_priv,
 		return -EINVAL;
 
 	for (level = 0; level <= max_level; level++) {
-		struct skl_wm_level *result = &wm->wm[level];
 
 		ret = skl_compute_plane_wm(dev_priv,
 					   cstate,
 					   intel_pstate,
 					   level,
-					   &result->plane_res_b,
-					   &result->plane_res_l);
+					   wm);
+
 		if (ret)
 			return ret;
 	}
