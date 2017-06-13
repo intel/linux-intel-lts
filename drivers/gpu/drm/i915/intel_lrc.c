@@ -2177,6 +2177,7 @@ static void execlists_init_reg_state(u32 *reg_state,
 {
 	struct drm_i915_private *dev_priv = engine->i915;
 	struct i915_hw_ppgtt *ppgtt = ctx->ppgtt ?: dev_priv->mm.aliasing_ppgtt;
+	bool rcs = engine->id == RCS;
 
 	/* A context is actually a big batch buffer with several MI_LOAD_REGISTER_IMM
 	 * commands followed by (reg, value) pairs. The values we are setting here are
@@ -2265,10 +2266,12 @@ static void execlists_init_reg_state(u32 *reg_state,
 		ASSIGN_CTX_PML4(ppgtt, reg_state);
 	}
 
-	if (engine->id == RCS) {
+	if (rcs) {
 		reg_state[CTX_LRI_HEADER_2] = MI_LOAD_REGISTER_IMM(1);
 		ASSIGN_CTX_REG(reg_state, CTX_R_PWR_CLK_STATE, GEN8_R_PWR_CLK_STATE,
-			       make_rpcs(dev_priv));
+			make_rpcs(dev_priv));
+
+		i915_oa_init_reg_state(engine, ctx, reg_state);
 	}
 }
 
