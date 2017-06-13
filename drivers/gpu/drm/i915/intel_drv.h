@@ -1826,6 +1826,8 @@ bool skl_ddb_allocation_overlaps(const struct skl_ddb_entry **entries,
 				 int ignore);
 bool ilk_disable_lp_wm(struct drm_device *dev);
 int sanitize_rc6_option(struct drm_i915_private *dev_priv, int enable_rc6);
+int skl_check_pipe_max_pixel_rate(struct intel_crtc *intel_crtc,
+				  struct intel_crtc_state *cstate);
 static inline int intel_enable_rc6(void)
 {
 	return i915.enable_rc6;
@@ -1897,9 +1899,9 @@ intel_atomic_get_existing_plane_state(struct drm_atomic_state *state,
 	return to_intel_plane_state(plane_state);
 }
 
-int intel_atomic_setup_scalers(struct drm_device *dev,
-	struct intel_crtc *intel_crtc,
-	struct intel_crtc_state *crtc_state);
+int intel_atomic_setup_scalers(struct drm_i915_private *dev_priv,
+			       struct intel_crtc *intel_crtc,
+			       struct intel_crtc_state *crtc_state);
 
 /* intel_atomic_plane.c */
 struct intel_plane_state *intel_create_plane_state(struct drm_plane *plane);
