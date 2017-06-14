@@ -73,6 +73,7 @@ typedef struct {
 } nci_acb_route_t;
 
 typedef struct {
+	nci_acb_route_t base_ctrl;
 	/* ACB_FRAME_SIZE */
 	/* For the FRAGMENT to process, just in ISYS frame == fragment */
 	uint32_t frame_width;

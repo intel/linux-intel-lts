@@ -1785,10 +1785,22 @@ uint8_t ia_css_program_control_init_terminal_get_sid(
 
 	verifjmpexit(program_desc != NULL);
 
-	sid = program_desc->sid;
+	sid = program_desc->control_info.sid;
 
 EXIT:
 	return sid;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+void ia_css_program_control_init_terminal_set_sid(
+	ia_css_program_control_init_program_desc_t *program_desc,
+	uint8_t sid)
+{
+	verifjmpexit(program_desc != NULL);
+
+	program_desc->control_info.sid = sid;
+EXIT:
+	return;
 }
 
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
@@ -1799,10 +1811,48 @@ uint8_t ia_css_program_control_init_terminal_get_pid(
 
 	verifjmpexit(program_desc != NULL);
 
-	pid = program_desc->pid;
+	pid = program_desc->control_info.pid;
 
 EXIT:
 	return pid;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+void ia_css_program_control_init_terminal_set_pid(
+	ia_css_program_control_init_program_desc_t *program_desc,
+	uint8_t pid)
+{
+	verifjmpexit(program_desc != NULL);
+
+	program_desc->control_info.pid = pid;
+EXIT:
+	return;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+uint8_t ia_css_program_control_init_terminal_get_num_done_events(
+	const ia_css_program_control_init_program_desc_t *program_desc)
+{
+	uint8_t num_done_events = 0;
+
+	verifjmpexit(program_desc != NULL);
+
+	num_done_events = program_desc->control_info.num_done_events;
+
+EXIT:
+	return num_done_events;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+void ia_css_program_control_init_terminal_set_num_done_events(
+	ia_css_program_control_init_program_desc_t *program_desc,
+	uint8_t num_done_events)
+{
+	verifjmpexit(program_desc != NULL);
+
+	program_desc->control_info.num_done_events = num_done_events;
+EXIT:
+	return;
 }
 
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
