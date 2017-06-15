@@ -240,6 +240,21 @@ static void intel_ipu_fpga_sensor_config(struct intel_ipu4_device *isp)
 		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING1);
 }
 
+static int intel_ipu_fpga_get_secure_mode(void)
+{
+	return 0;
+}
+
+static int intel_ipu_fpga_ipc_reset(struct device *dev)
+{
+	return 0;
+}
+
+static int intel_ipu_fpga_start_tsc(void)
+{
+	return 0;
+}
+
 const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.get_sim_type = intel_ipu_get_sim_type,
 	.reset_prepare = intel_ipu_fpga_reset_prepare,
@@ -247,6 +262,9 @@ const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.runtime_suspend = intel_ipu_fpga_runtime_suspend,
 	.runtime_resume = intel_ipu_fpga_runtime_resume,
 	.sensor_config = intel_ipu_fpga_sensor_config,
+	.get_secure_mode = intel_ipu_fpga_get_secure_mode,
+	.ipc_reset = intel_ipu_fpga_ipc_reset,
+	.start_tsc = intel_ipu_fpga_start_tsc,
 };
 EXPORT_SYMBOL_GPL(sim_ctrl_ops);
 
