@@ -23,12 +23,6 @@ struct intel_ipu4_isys;
 
 #define IPU5_BAR_FOR_BRIDGE 1
 
-#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_FPGA)
-void intel_ipu5_fpga_pmclite_btr_power(struct intel_ipu4_device *isp, bool on);
-#else
-#define intel_ipu5_fpga_pmclite_btr_power(x,y)
-#endif
-
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU5)
 int intel_ipu5_isys_load_pkg_dir(struct intel_ipu4_isys *isys);
 void intel_ipu5_pkg_dir_configure_spc(struct intel_ipu4_device *isp,

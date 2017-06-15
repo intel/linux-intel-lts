@@ -31,68 +31,7 @@
 
 #ifdef CONFIG_PM
 static struct bus_type intel_ipu4_bus;
-#ifdef CONFIG_VIDEO_INTEL_IPU_FPGA
-/* Simplified PM for IPU5 FPGA until PM works better */
-static int bus_pm_runtime_suspend(struct device *dev)
-{
-	struct intel_ipu4_bus_device *adev = to_intel_ipu4_bus_device(dev);
-	int rval;
 
-	rval = pm_generic_runtime_suspend(dev);
-	if (rval)
-		return rval;
-
-	if (!adev->ctrl) {
-		dev_dbg(dev, "has no buttress control info, bailing out\n");
-		return 0;
-	}
-
-	if (dev != adev->isp->isys_iommu) {
-		dev_warn(dev, "not isys iommu suspend, just out\n");
-		return 0;
-	}
-
-	rval = intel_ipu4_buttress_power(dev, adev->ctrl, false);
-	dev_dbg(dev, "%s: buttress power down %d\n", __func__, rval);
-	if (!rval)
-		return 0;
-
-	dev_err(dev, "power down failed!\n");
-
-	/* Powering down failed, attempt to resume device now */
-	rval = pm_generic_runtime_resume(dev);
-	if (!rval)
-		return -EBUSY;
-
-	return -EIO;
-}
-
-static int bus_pm_runtime_resume(struct device *dev)
-{
-	struct intel_ipu4_bus_device *adev = to_intel_ipu4_bus_device(dev);
-	int rval;
-
-	if (adev->ctrl) {
-		rval = intel_ipu4_buttress_power(dev, adev->ctrl, true);
-		dev_dbg(dev, "%s: buttress power up %d\n", __func__, rval);
-		if (rval)
-			return rval;
-	}
-
-	rval = pm_generic_runtime_resume(dev);
-	dev_dbg(dev, "%s: resume %d\n", __func__, rval);
-	if (rval)
-		goto out_err;
-
-	return 0;
-
-out_err:
-	if (adev->ctrl)
-		intel_ipu4_buttress_power(dev, adev->ctrl, false);
-
-	return -EBUSY;
-}
-#else
 static int bus_pm_suspend_child_dev(struct device *dev, void *p)
 {
 	struct intel_ipu4_bus_device *adev = to_intel_ipu4_bus_device(dev);
@@ -110,7 +49,11 @@ static int bus_pm_suspend_child_dev(struct device *dev, void *p)
 static int bus_pm_runtime_suspend(struct device *dev)
 {
 	struct intel_ipu4_bus_device *adev = to_intel_ipu4_bus_device(dev);
+	struct intel_ipu4_device *isp = adev->isp;
 	int rval;
+
+	if (isp->ctrl->runtime_suspend)
+		return isp->ctrl->runtime_suspend(dev);
 
 	if (!adev->ctrl) {
 		dev_dbg(dev, "has no buttress control info, bailing out\n");
@@ -164,7 +107,11 @@ static int bus_pm_resume_child_dev(struct device *dev, void *p)
 static int bus_pm_runtime_resume(struct device *dev)
 {
 	struct intel_ipu4_bus_device *adev = to_intel_ipu4_bus_device(dev);
+	struct intel_ipu4_device *isp = adev->isp;
 	int rval;
+
+	if (isp->ctrl->runtime_resume)
+		return isp->ctrl->runtime_resume(dev);
 
 	if (!adev->ctrl) {
 		dev_dbg(dev, "has no buttress control info, bailing out\n");
@@ -229,7 +176,6 @@ out_err:
 
 	return -EBUSY;
 }
-#endif
 
 const struct dev_pm_ops intel_ipu4_bus_pm_ops = {
 	.runtime_suspend = bus_pm_runtime_suspend,

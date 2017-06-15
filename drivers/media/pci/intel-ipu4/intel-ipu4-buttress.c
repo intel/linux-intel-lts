@@ -54,8 +54,6 @@
 #define BUTTRESS_IPC_RX_TIMEOUT			1000
 #define BUTTRESS_IPC_VALIDITY_TIMEOUT		1000
 
-#define BUTTRESS_POWER_TIMEOUT			200
-
 #define INTEL_IPU4_BUTTRESS_TSC_LIMIT	500 /* 26 us @ 19.2 MHz */
 #define INTEL_IPU4_BUTTRESS_TSC_RETRY	10
 
@@ -523,15 +521,6 @@ irqreturn_t intel_ipu4_buttress_isr_threaded(int irq, void *isp_ptr)
 	return ret;
 }
 
-void intel_ipu4_buttress_disable_secure_touch(struct intel_ipu4_device *isp)
-{
-	u32 val;
-
-	val = readl(isp->base + BUTTRESS_REG_SECURE_TOUCH);
-	val &= ~(1 << BUTTRESS_SECURE_TOUCH_SECURE_TOUCH_SHIFT);
-	writel(val, isp->base + BUTTRESS_REG_SECURE_TOUCH);
-}
-
 int intel_ipu4_buttress_power(
 	struct device *dev, struct intel_ipu4_buttress_ctrl *ctrl, bool on)
 {
@@ -560,10 +549,7 @@ int intel_ipu4_buttress_power(
 		pwr_sts = ctrl->pwr_sts_on << ctrl->pwr_sts_shift;
 	}
 
-	if (is_intel_ipu_hw_fpga())
-		intel_ipu5_fpga_pmclite_btr_power(isp, on);
-	else
-		writel(val, isp->base + ctrl->freq_ctl);
+	writel(val, isp->base + ctrl->freq_ctl);
 
 	tout_jfs = jiffies + msecs_to_jiffies(BUTTRESS_POWER_TIMEOUT);
 	do {
@@ -579,20 +565,9 @@ int intel_ipu4_buttress_power(
 	dev_err(&isp->pdev->dev,
 		"Timeout when trying to change state of the rail 0x%x\n", val);
 
-	/*
-	 * Return success always as psys power up is not working
-	 * currently. This should be -ETIMEDOUT always when psys power
-	 * up is fixed
-	 * Also in FPGA case don't report time out. Depending on FPGA version
-	 * the PM state transition may or may not work.
-	 */
-	if (!is_intel_ipu_hw_fpga())
-		ret = -ETIMEDOUT;
+	ret = -ETIMEDOUT;
 
 out:
-	if (is_intel_ipu_hw_fpga())
-		intel_ipu4_buttress_disable_secure_touch(isp);
-
 	ctrl->started = !ret && on;
 
 	trace_ipu4_perf_reg(BUTTRESS_REG_IS_FREQ_CTL,

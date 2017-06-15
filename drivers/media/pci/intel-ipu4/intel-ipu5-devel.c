@@ -28,27 +28,6 @@
 #include "vied/vied/shared_memory_map.h"
 #include "vied/vied/shared_memory_access.h"
 
-#define IPU5_BTR_IS_ON 0x80000006
-#define IPU5_BTR_PS_ON 0x80070880
-
-void intel_ipu5_fpga_pmclite_btr_power(struct intel_ipu4_device *isp, bool on)
-{
-	if (!on) {
-		writel(0, isp->base + BUTTRESS_REG_PS_FREQ_CTL);
-		usleep_range(1000, 1500);
-		writel(0, isp->base + BUTTRESS_REG_IS_FREQ_CTL);
-	} else {
-		writel(IPU5_BTR_IS_ON, isp->base + BUTTRESS_REG_IS_FREQ_CTL);
-		usleep_range(1000, 1500);
-		writel(IPU5_BTR_PS_ON, isp->base + BUTTRESS_REG_PS_FREQ_CTL);
-	}
-	usleep_range(1000, 1500);
-	dev_dbg(&isp->pdev->dev,
-		"set buttress power to %d sts now is 0x%x\n",
-		on, readl(isp->base + BUTTRESS_REG_PWR_STATE));
-
-}
-
 static int intel_ipu5_isys_fw_reload(struct intel_ipu4_device *isp)
 {
 	struct intel_ipu4_isys *isys = intel_ipu4_bus_get_drvdata(isp->isys);
