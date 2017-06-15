@@ -2794,10 +2794,7 @@ static int intel_ipu4_psys_probe(struct intel_ipu4_bus_device *adev)
 	spin_lock_init(&psys->power_lock);
 	spin_lock_init(&psys->pgs_lock);
 	psys->power = 0;
-	if (is_intel_ipu_hw_fpga())
-		psys->timeout = INTEL_IPU4_PSYS_CMD_TIMEOUT_MS_FPGA;
-	else
-		psys->timeout = INTEL_IPU4_PSYS_CMD_TIMEOUT_MS_SOC;
+	psys->timeout = INTEL_IPU4_PSYS_CMD_TIMEOUT_MS;
 
 	mutex_init(&psys->mutex);
 	INIT_LIST_HEAD(&psys->fhs);

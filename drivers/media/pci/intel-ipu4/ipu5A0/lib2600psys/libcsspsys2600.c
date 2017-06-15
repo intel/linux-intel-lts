@@ -463,9 +463,6 @@ static int libcsspsys2600_open(struct intel_ipu4_psys *psys)
 	bool opened;
 	int retry = INTEL_IPU4_PSYS_OPEN_RETRY;
 
-	if (is_intel_ipu_hw_fpga())
-		retry = INTEL_IPU4_PSYS_OPEN_RETRY_FPGA;
-
 	intel_ipu4_wrapper_init(PSYS_MMID, &psys->adev->dev,
 				psys->pdata->base);
 

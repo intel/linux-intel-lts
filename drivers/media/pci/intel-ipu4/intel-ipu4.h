@@ -175,6 +175,15 @@ struct intel_ipu4_device {
  */
 #if defined CONFIG_VIDEO_INTEL_IPU_FPGA
 
+/*
+ * Define macros used specially for FPGA
+ */
+#define INTEL_IPU_DMA_MASK	32
+#define INTEL_IPU4_LIB_CALL_TIMEOUT_MS		30000
+#define INTEL_IPU4_PSYS_CMD_TIMEOUT_MS (30 * 1000)
+#define INTEL_IPU4_PSYS_OPEN_TIMEOUT_US	   50
+#define INTEL_IPU4_PSYS_OPEN_RETRY (100*10000 / INTEL_IPU4_PSYS_OPEN_TIMEOUT_US)
+
 #define is_intel_ipu4_hw_bxt_b0(isp) IS_BUILTIN(IPU_STEP_BXTB0)
 #define is_intel_ipu4_hw_bxt_c0(isp) IS_BUILTIN(IPU_STEP_BXTC0)
 #define is_intel_ipu4_hw_bxtp_e0(isp)	0
@@ -183,6 +192,13 @@ struct intel_ipu4_device {
 #define is_intel_ipu_hw_fpga() 1
 
 #else
+
+#define INTEL_IPU_DMA_MASK	39
+#define INTEL_IPU4_LIB_CALL_TIMEOUT_MS		2000
+#define INTEL_IPU4_PSYS_CMD_TIMEOUT_MS	2000
+#define INTEL_IPU4_PSYS_OPEN_TIMEOUT_US	   50
+#define INTEL_IPU4_PSYS_OPEN_RETRY (10000 / INTEL_IPU4_PSYS_OPEN_TIMEOUT_US)
+
 #define is_intel_ipu4_hw_bxt_b0(isp)		\
 	((isp)->pdev->device == INTEL_IPU4_HW_BXT_B0 ||		\
 	 (isp)->pdev->device == INTEL_IPU4_HW_BXT_P)
@@ -205,7 +221,7 @@ struct intel_ipu4_device {
 
 #define is_intel_ipu_hw_fpga() 0
 
-#endif
+#endif /* END OF CONFIG_VIDEO_INTEL_IPU_FPGA */
 
 #define intel_ipu4_media_ctl_dev_model(isp)			\
 	(is_intel_ipu4_hw_bxt_b0(isp) ?				\

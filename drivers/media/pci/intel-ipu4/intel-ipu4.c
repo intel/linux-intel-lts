@@ -740,7 +740,7 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	const struct intel_ipu4_isys_internal_pdata *isys_ipdata;
 	const struct intel_ipu4_psys_internal_pdata *psys_ipdata;
 	struct intel_ipu4_buttress_ctrl *isys_ctrl, *psys_ctrl;
-	unsigned int dma_mask = 39;
+	unsigned int dma_mask = INTEL_IPU_DMA_MASK;
 	unsigned int fpga_bar_mask = 0;
 	int rval;
 
@@ -822,9 +822,6 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 		trace_printk("E|TMWK\n");
 		return -EINVAL;
 	}
-
-	if (is_intel_ipu_hw_fpga())
-		dma_mask = 32;
 
 	isys_base = isp->base + isys_ipdata->hw_variant.offset;
 	psys_base = isp->base + psys_ipdata->hw_variant.offset;
