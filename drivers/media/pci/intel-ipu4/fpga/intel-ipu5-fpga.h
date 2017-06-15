@@ -14,6 +14,8 @@
 #ifndef INTEL_IPU5_FPGA_H
 #define INTEL_IPU5_FPGA_H
 
+#include "../intel-ipu5-buttress-regs.h"
+
 #define IPU5_BAR_FOR_BRIDGE 1
 
 #define IPU5_FPGA_PCI_BRIDGE_RESET_START 0x9200000
@@ -23,6 +25,9 @@
 #define IPU5_FPGA_RESET_REG 0x20
 #define IPU5_FPGA_RESET_ACTIVE 0x0
 #define IPU5_FPGA_RESET_RELEASE 0x1
+
+#define IPU5_BTR_IS_ON 0x80000006
+#define IPU5_BTR_PS_ON 0x80070880
 
 #endif
 

@@ -15,6 +15,14 @@
 #define INTEL_IPU_FPGA_H
 
 #include "../intel-ipu4.h"
+#include "../intel-ipu4-buttress.h"
+#include "../intel-ipu4-buttress-regs.h"
+
 #include "intel-ipu5-fpga.h"
+
+#define BUTTRESS_REG_SECURE_TOUCH	0x318
+#define BUTTRESS_SECURE_TOUCH_SECURE_TOUCH_SHIFT	31
+
+#define BUTTRESS_POWER_TIMEOUT                 200
 
 #endif
