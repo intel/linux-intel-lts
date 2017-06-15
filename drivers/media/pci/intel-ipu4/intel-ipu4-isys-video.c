@@ -19,6 +19,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/module.h>
 #include <linux/version.h>
+#include <linux/compat.h>
 
 #include <media/media-entity.h>
 #include <media/v4l2-device.h>
