@@ -181,13 +181,15 @@ static int video_open(struct file *file)
 
 	mutex_lock(&isys->mutex);
 
-	/* WA for ipu5 fpga */
-	while (is_intel_ipu_hw_fpga() &&
-	       !isys->video_opened &&
-	       !pm_runtime_status_suspended(&isp->isys_iommu->dev)) {
-		mutex_unlock(&isys->mutex);
-		usleep_range(20, 30);
-		mutex_lock(&isys->mutex);
+	if (isp->ctrl->device_suspended) {
+		struct device *isys_dev = &isp->isys_iommu->dev;
+
+		while (!isys->video_opened &&
+		       !isp->ctrl->device_suspended(isys_dev)) {
+			mutex_unlock(&isys->mutex);
+			usleep_range(20, 30);
+			mutex_lock(&isys->mutex);
+		}
 	}
 
 	if (isys->reset_needed || isp->flr_done) {
