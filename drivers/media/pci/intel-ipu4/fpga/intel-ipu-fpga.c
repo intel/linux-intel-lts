@@ -271,6 +271,11 @@ static int intel_ipu_fpga_get_tpg_config(int type)
 	return -EINVAL;
 }
 
+static bool intel_ipu_fpga_device_suspended(struct device *dev)
+{
+	return pm_runtime_status_suspended(dev);
+}
+
 const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.get_sim_type = intel_ipu_get_sim_type,
 	.reset_prepare = intel_ipu_fpga_reset_prepare,
@@ -282,6 +287,7 @@ const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.ipc_reset = intel_ipu_fpga_ipc_reset,
 	.start_tsc = intel_ipu_fpga_start_tsc,
 	.get_tpg_config = intel_ipu_fpga_get_tpg_config,
+	.device_suspended = intel_ipu_fpga_device_suspended,
 };
 EXPORT_SYMBOL_GPL(sim_ctrl_ops);
 
