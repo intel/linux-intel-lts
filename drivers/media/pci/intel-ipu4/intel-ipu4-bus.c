@@ -286,6 +286,7 @@ static struct iommu_group *intel_ipu4_bus_get_group(struct device *dev)
 static int intel_ipu4_bus_probe(struct device *dev)
 {
 	struct intel_ipu4_bus_device *adev = to_intel_ipu4_bus_device(dev);
+	struct intel_ipu4_device *isp = adev->isp;
 	struct intel_ipu4_bus_driver *adrv =
 		to_intel_ipu4_bus_driver(dev->driver);
 	struct iommu_group *group = NULL;
@@ -308,17 +309,24 @@ static int intel_ipu4_bus_probe(struct device *dev)
 	adev->adrv = adrv;
 	if (adrv->probe) {
 		rval = adrv->probe(adev);
-		if (!rval && !is_intel_ipu_hw_fpga()) {
-			/*
-			 * If the device power, after probe, is enabled
-			 * (from the parent device), its resume needs to
-			 * be called to initialize the device properly.
-			 */
-			if (!adev->ctrl &&
-			    !pm_runtime_status_suspended(dev->parent)) {
-				mutex_lock(&adev->resume_lock);
-				pm_generic_runtime_resume(dev);
-				mutex_unlock(&adev->resume_lock);
+		if (!rval) {
+			int type = -1;
+
+			if (isp->ctrl->get_sim_type)
+				type = isp->ctrl->get_sim_type();
+
+			if (type != SIM_FPGA) {
+				/*
+				 * If the device power, after probe, is enabled
+				 * (from the parent device), its resume needs to
+				 * be called to initialize the device properly.
+				 */
+				if (!adev->ctrl &&
+				    !pm_runtime_status_suspended(dev->parent)) {
+					mutex_lock(&adev->resume_lock);
+					pm_generic_runtime_resume(dev);
+					mutex_unlock(&adev->resume_lock);
+				}
 			}
 		}
 	} else {

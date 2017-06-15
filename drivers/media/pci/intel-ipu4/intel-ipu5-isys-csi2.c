@@ -285,6 +285,7 @@ int intel_ipu5_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	unsigned int nlanes, int enable)
 {
 	struct intel_ipu4_isys_csi2 *csi2 = to_intel_ipu4_isys_csi2(sd);
+	struct intel_ipu4_device *isp = csi2->isys->adev->isp;
 	struct intel_ipu4_isys_pipeline *ip =
 		container_of(sd->entity.pipe,
 			     struct intel_ipu4_isys_pipeline, pipe);
@@ -292,6 +293,7 @@ int intel_ipu5_isys_csi2_set_stream(struct v4l2_subdev *sd,
 		v4l2_get_subdev_hostdata(
 			media_entity_to_v4l2_subdev(ip->external->entity));
 	unsigned int i, port;
+	int type = -1;
 	u32 val, csi_irqs;
 
 	port = cfg->port;
@@ -319,8 +321,10 @@ int intel_ipu5_isys_csi2_set_stream(struct v4l2_subdev *sd,
 		return 0;
 	}
 
-	/* Do not configure timings on FPGA */
-	if (!is_intel_ipu_hw_fpga()) {
+	if (isp->ctrl->get_sim_type)
+		type = isp->ctrl->get_sim_type();
+
+	if (type != SIM_FPGA) {
 		writel(timing.ctermen,
 			csi2->base +
 			INTEL_IPU5_CSI_REG_RX_DLY_CNT_TERMEN_CLANE);

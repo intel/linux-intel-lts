@@ -622,7 +622,11 @@ static int intel_ipu4_psys_open(struct inode *inode, struct file *file)
 
 	mutex_lock(&psys->mutex);
 
-	start_thread = list_empty(&psys->fhs) && is_intel_ipu_hw_fpga();
+	if (isp->ctrl->get_sim_type)
+		start_thread = list_empty(&psys->fhs) &&
+		    (SIM_FPGA == isp->ctrl->get_sim_type());
+	else
+		start_thread = false;
 
 	list_add_tail(&fh->list, &psys->fhs);
 	if (start_thread) {

@@ -512,25 +512,18 @@ int intel_ipu4_isys_csi2_set_stream(struct v4l2_subdev *sd,
 		return 0;
 	}
 
-	/* Do not configure timings on FPGA */
-	if (!is_intel_ipu_hw_fpga()) {
-		csi2_ev_correction_params(csi2, nlanes);
+	csi2_ev_correction_params(csi2, nlanes);
 
-		writel(timing.ctermen,
-			csi2->base +
-				CSI2_REG_CSI_RX_DLY_CNT_TERMEN_CLANE);
-		writel(timing.csettle,
-			csi2->base +
-				CSI2_REG_CSI_RX_DLY_CNT_SETTLE_CLANE);
+	writel(timing.ctermen,
+		csi2->base + CSI2_REG_CSI_RX_DLY_CNT_TERMEN_CLANE);
+	writel(timing.csettle,
+		csi2->base + CSI2_REG_CSI_RX_DLY_CNT_SETTLE_CLANE);
 
-		for (i = 0; i < nlanes; i++) {
-			writel(timing.dtermen,
-			csi2->base +
-			CSI2_REG_CSI_RX_DLY_CNT_TERMEN_DLANE(i));
-			writel(timing.dsettle,
-			csi2->base +
-			CSI2_REG_CSI_RX_DLY_CNT_SETTLE_DLANE(i));
-		}
+	for (i = 0; i < nlanes; i++) {
+		writel(timing.dtermen,
+			csi2->base + CSI2_REG_CSI_RX_DLY_CNT_TERMEN_DLANE(i));
+		writel(timing.dsettle,
+			csi2->base + CSI2_REG_CSI_RX_DLY_CNT_SETTLE_DLANE(i));
 	}
 
 	val = readl(csi2->base + CSI2_REG_CSI_RX_CONFIG);

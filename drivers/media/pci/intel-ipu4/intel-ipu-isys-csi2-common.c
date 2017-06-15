@@ -302,6 +302,7 @@ static int intel_ipu_isys_csi2_calc_timing(struct intel_ipu4_isys_csi2 *csi2,
 static int set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct intel_ipu4_isys_csi2 *csi2 = to_intel_ipu4_isys_csi2(sd);
+	struct intel_ipu4_device *isp = csi2->isys->adev->isp;
 	struct intel_ipu4_isys_pipeline *ip =
 		container_of(sd->entity.pipe,
 			     struct intel_ipu4_isys_pipeline, pipe);
@@ -313,6 +314,7 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	struct v4l2_control c = { .id = V4L2_CID_MIPI_LANES, };
 	struct intel_ipu4_isys_csi2_timing timing;
 	unsigned int nlanes;
+	int type = -1;
 	int rval;
 
 	dev_dbg(&csi2->isys->adev->dev, "csi2 s_stream %d\n", enable);
@@ -346,10 +348,12 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 		nlanes = cfg->nlanes;
 	}
 
-	/*Do not configure timings on FPGA*/
-	if (!is_intel_ipu_hw_fpga()) {
+	if (isp->ctrl->get_sim_type)
+		type = isp->ctrl->get_sim_type();
+
+	if (type != SIM_FPGA) {
 		rval = intel_ipu_isys_csi2_calc_timing(csi2,
-			&timing, CSI2_ACCINV);
+						&timing, CSI2_ACCINV);
 		if (rval)
 			return rval;
 	}

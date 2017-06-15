@@ -166,7 +166,15 @@ const struct intel_ipu4_isys_pixelformat intel_ipu4_isys_pfmts_packed[] = {
  */
 static int intel_ipu4_poll_for_events(struct intel_ipu4_isys_video *av)
 {
-	return is_intel_ipu_hw_fpga();
+	struct intel_ipu4_isys *isys = av->isys;
+	struct intel_ipu4_bus_device *adev =
+		to_intel_ipu4_bus_device(&isys->adev->dev);
+	struct intel_ipu4_device *isp = adev->isp;
+
+	if (isp->ctrl->get_sim_type)
+		return (SIM_FPGA == isp->ctrl->get_sim_type());
+
+	return 0;
 }
 
 static int video_open(struct file *file)
