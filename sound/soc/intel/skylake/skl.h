@@ -42,6 +42,7 @@
 #define SKL_MAX_OUT_QUEUE 8
 #define SKL_MAX_LL_SRC_CFG  8
 #define SKL_MAX_DMA_CFG    24
+#define SKL_MAX_DMACTRL_CFG	7
 
 struct skl_dsp_resource {
 	u32 max_mcps;
@@ -86,12 +87,32 @@ struct skl_sch_config {
 	u32 node_info[SKL_MAX_LL_SRC_CFG];
 } __packed;
 
+struct skl_dmctrl_hdr {
+	u32 vbus_id;
+	u32 freq;
+	u32 tdm_slot;
+	u32 fmt;
+	u32 direction;
+	u32 ch;
+	u32 data_size;
+	u32 *data;
+} __packed;
+
+struct skl_dmactrl_config {
+	u32 type;
+	u32 size;
+	u32 idx;
+	struct skl_dmctrl_hdr hdr[SKL_MAX_DMACTRL_CFG];
+} __packed;
+
+
 struct skl_fw_cfg_info {
 	struct skl_mem_status mem_sts;
 	struct skl_dsp_freq slw_frq;
 	struct skl_dsp_freq fst_frq;
 	struct skl_dma_buff_cfg dmacfg;
 	struct skl_sch_config sch_cfg;
+	struct skl_dmactrl_config dmactrl_cfg;
 } __packed;
 
 struct skl {
