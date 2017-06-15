@@ -94,11 +94,8 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 	unsigned tout = 500;
 	u32 val = 0;
 
-	if (is_intel_ipu_hw_fpga()) {
-		dev_info(&isp->pdev->dev,
-			"ipu5 FPGA does not support ipc now\n");
-		return 0;
-	}
+	if (isp->ctrl->ipc_reset)
+		return isp->ctrl->ipc_reset(&isp->pdev->dev);
 
 	mutex_lock(&b->ipc_mutex);
 
@@ -580,11 +577,7 @@ out:
 	return ret;
 }
 
-#if is_intel_ipu_hw_fpga()
-static bool secure_mode_enable;
-#else
 static bool secure_mode_enable = 1;
-#endif
 module_param(secure_mode_enable, bool, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(secure_mode, "IPU4 secure mode enable");
 
@@ -633,8 +626,8 @@ bool intel_ipu4_buttress_get_secure_mode(struct intel_ipu4_device *isp)
 {
 	u32 val;
 
-	if (is_intel_ipu_hw_fpga())
-		return false;
+	if (isp->ctrl->get_secure_mode)
+		return isp->ctrl->get_secure_mode();
 
 	val = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 
@@ -1012,8 +1005,8 @@ int intel_ipu4_buttress_start_tsc_sync(struct intel_ipu4_device *isp)
 {
 	unsigned int i;
 
-	if (is_intel_ipu_hw_fpga())
-		return 0;
+	if (isp->ctrl->start_tsc)
+		return isp->ctrl->start_tsc();
 
 	for (i = 0; i < BUTTRESS_TSC_SYNC_RESET_TRIAL_MAX; i++) {
 		int ret;
@@ -1792,9 +1785,7 @@ int intel_ipu4_buttress_init(struct intel_ipu4_device *isp)
 	}
 
 	intel_ipu4_buttress_set_secure_mode(isp);
-
 	isp->secure_mode = intel_ipu4_buttress_get_secure_mode(isp);
-
 	if (isp->secure_mode != secure_mode_enable)
 		dev_warn(&isp->pdev->dev, "Unable to set secure mode!\n");
 
