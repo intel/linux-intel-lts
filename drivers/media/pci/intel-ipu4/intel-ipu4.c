@@ -772,7 +772,8 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 		return -ENODEV;
 	}
 
-	fpga_bar_mask = intel_ipu5_fpga_reset_prepare(isp);
+	if (isp->ctrl->reset_prepare)
+		fpga_bar_mask = isp->ctrl->reset_prepare(isp);
 
 	phys = pci_resource_start(pdev, INTEL_IPU4_PCI_BAR);
 
@@ -1020,7 +1021,9 @@ static int intel_ipu4_suspend(struct device *dev)
 	struct intel_ipu4_device *isp = pci_get_drvdata(pdev);
 
 	isp->flr_done = false;
-	intel_ipu5_fpga_reset(pdev);
+
+	if (isp->ctrl->reset)
+		isp->ctrl->reset(pdev);
 
 	return 0;
 }

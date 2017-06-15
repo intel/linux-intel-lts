@@ -28,77 +28,8 @@
 #include "vied/vied/shared_memory_map.h"
 #include "vied/vied/shared_memory_access.h"
 
-#define IPU5_FPGA_RESET_REG 0x20
-#define IPU5_FPGA_RESET_ACTIVE 0x0
-#define IPU5_FPGA_RESET_RELEASE 0x1
-
-#define IPU5_FPGA_PCI_BRIDGE_RESET_START 0x9200000
-#define IPU5_FPGA_PCI_BRIDGE_RESET_END \
-	(IPU5_FPGA_PCI_BRIDGE_RESET_START + PAGE_SIZE - 1)
-
 #define IPU5_BTR_IS_ON 0x80000006
 #define IPU5_BTR_PS_ON 0x80070880
-
-void intel_ipu5_fpga_reset(struct pci_dev *pci_dev)
-{
-	struct intel_ipu4_device *isp = pci_get_drvdata(pci_dev);
-
-	dev_info(&pci_dev->dev, "IP reset for FPGA\n");
-
-	pci_save_state(pci_dev);
-
-	readl(isp->base2 + IPU5_FPGA_RESET_REG);
-	writel(IPU5_FPGA_RESET_ACTIVE, isp->base2 + IPU5_FPGA_RESET_REG);
-	usleep_range(1000, 1100);
-
-	readl(isp->base2 + IPU5_FPGA_RESET_REG);
-	writel(IPU5_FPGA_RESET_RELEASE, isp->base2 + IPU5_FPGA_RESET_REG);
-	usleep_range(1000, 1100);
-
-	readl(isp->base2 + IPU5_FPGA_RESET_REG);
-	usleep_range(1000, 1100);
-
-	pci_restore_state(pci_dev);
-
-	dev_info(&pci_dev->dev, "IP reset for FPGA done\n");
-}
-
-unsigned int intel_ipu5_fpga_reset_prepare(struct intel_ipu4_device *isp)
-{
-	struct pci_dev *bridge;
-	phys_addr_t phys;
-
-	/* Only for ipu5 fpga - not for SOC */
-	if (!is_intel_ipu_hw_fpga())
-		return 0;
-
-	/* Search FPGA PCI bridge. Reset is done via bridge IO space */
-	bridge = pci_get_device(PCI_VENDOR_ID_INTEL,
-				INTEL_IPU5_HW_PCI_FPGA_BRIDGE, NULL);
-	if (!bridge)
-		return 0;
-
-	dev_info(&isp->pdev->dev,
-		 "Device 0x%x (rev: 0x%x) is a bridge for ipu\n",
-		 bridge->device, bridge->revision);
-
-	/*
-	 * HACK - search bridge IO resources and map a page from there
-	 * to IPU io resources. This is only for fpga - probably not
-	 * worth of separate driver just for reset.
-	 */
-	phys = pci_resource_start(bridge, 0);
-
-	pci_resource_start(isp->pdev, IPU5_BAR_FOR_BRIDGE) = phys +
-		IPU5_FPGA_PCI_BRIDGE_RESET_START;
-	pci_resource_end(isp->pdev,  IPU5_BAR_FOR_BRIDGE) = phys +
-		IPU5_FPGA_PCI_BRIDGE_RESET_END;
-	pci_resource_flags(isp->pdev, IPU5_BAR_FOR_BRIDGE) =
-		pci_resource_flags(isp->pdev, 0);
-
-	return 1 << IPU5_BAR_FOR_BRIDGE;
-}
-
 
 void intel_ipu5_fpga_pmclite_btr_power(struct intel_ipu4_device *isp, bool on)
 {
