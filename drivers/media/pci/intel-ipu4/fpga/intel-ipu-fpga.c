@@ -229,12 +229,24 @@ out_err:
 	return -EBUSY;
 }
 
+static void intel_ipu_fpga_sensor_config(struct intel_ipu4_device *isp)
+{
+	writel(0x0, isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
+	writel(IPU5_BUTTRESS_SENSOR_SUPPORT_SW_RESET,
+		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
+	writel(0x20202020,
+		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING0);
+	writel(0x20,
+		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING1);
+}
+
 const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.get_sim_type = intel_ipu_get_sim_type,
 	.reset_prepare = intel_ipu_fpga_reset_prepare,
 	.reset = intel_ipu_fpga_reset,
 	.runtime_suspend = intel_ipu_fpga_runtime_suspend,
 	.runtime_resume = intel_ipu_fpga_runtime_resume,
+	.sensor_config = intel_ipu_fpga_sensor_config,
 };
 EXPORT_SYMBOL_GPL(sim_ctrl_ops);
 
