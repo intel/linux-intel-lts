@@ -29,5 +29,7 @@
 #define IPU5_BTR_IS_ON 0x80000006
 #define IPU5_BTR_PS_ON 0x80070880
 
+#define INTEL_IPU5_ISYS_FREQ_FPGA          5000000UL
+
 #endif
 

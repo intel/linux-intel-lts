@@ -23,4 +23,10 @@
 #define BUTTRESS_REG_SECURE_TOUCH	0x318
 #define BUTTRESS_SECURE_TOUCH_SECURE_TOUCH_SHIFT	31
 
+enum tpg_param_type {
+	ISYS_FREQ = 0,
+	TPG_HBLANK,
+	TPG_LLP,
+};
+
 #endif

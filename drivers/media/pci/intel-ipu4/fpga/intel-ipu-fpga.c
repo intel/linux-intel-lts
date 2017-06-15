@@ -255,6 +255,22 @@ static int intel_ipu_fpga_start_tsc(void)
 	return 0;
 }
 
+static int intel_ipu_fpga_get_tpg_config(int type)
+{
+	switch (type) {
+	case ISYS_FREQ:
+		return INTEL_IPU5_ISYS_FREQ_FPGA;
+	case TPG_HBLANK:
+		return 16384;
+	case TPG_LLP:
+		return 16384 + 4096;
+	default:
+		break;
+	}
+
+	return -EINVAL;
+}
+
 const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.get_sim_type = intel_ipu_get_sim_type,
 	.reset_prepare = intel_ipu_fpga_reset_prepare,
@@ -265,6 +281,7 @@ const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.get_secure_mode = intel_ipu_fpga_get_secure_mode,
 	.ipc_reset = intel_ipu_fpga_ipc_reset,
 	.start_tsc = intel_ipu_fpga_start_tsc,
+	.get_tpg_config = intel_ipu_fpga_get_tpg_config,
 };
 EXPORT_SYMBOL_GPL(sim_ctrl_ops);
 
