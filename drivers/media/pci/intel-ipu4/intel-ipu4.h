@@ -117,12 +117,39 @@ struct firmware;
 
 #define NR_OF_MMU_RESOURCES			2
 
+enum ipu_sim_type {
+	SIM_FPGA,
+	SIM_MOCK,
+};
+
+struct intel_ipu_sim_ctrl {
+	int (*get_sim_type)(void);
+
+	unsigned int (*reset_prepare)(struct intel_ipu4_device *isp);
+	void (*reset)(struct pci_dev *pci_dev);
+
+	int (*runtime_suspend)(struct device *dev);
+	int (*runtime_resume)(struct device *dev);
+
+	void (*sensor_config)(struct intel_ipu4_device *isp);
+
+	int (*get_secure_mode)(void);
+	int (*ipc_reset)(struct device *dev);
+	int (*start_tsc)(void);
+
+	int (*get_tpg_config)(int type);
+
+	bool (*device_suspended)(struct device *dev);
+};
+
 struct intel_ipu4_device {
 	struct pci_dev *pdev;
 	struct list_head devices;
 	struct intel_ipu4_bus_device *isys_iommu, *isys;
 	struct intel_ipu4_bus_device *psys_iommu, *psys;
 	struct intel_ipu4_buttress buttress;
+
+	const struct intel_ipu_sim_ctrl *ctrl;
 
 	const struct firmware *cpd_fw;
 	const char *cpd_fw_name;

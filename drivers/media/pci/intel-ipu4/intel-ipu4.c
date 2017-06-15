@@ -718,6 +718,12 @@ static const struct intel_ipu4_buttress_ctrl psys_buttress_ctrl_ipu5 = {
 	.pwr_sts_off = IPU5_BUTTRESS_PWR_STATE_DN_DONE,
 };
 
+#ifdef CONFIG_VIDEO_INTEL_IPU4_SOC
+const struct intel_ipu_sim_ctrl sim_ctrl_ops = {};
+#else
+extern const struct intel_ipu_sim_ctrl sim_ctrl_ops;
+#endif
+
 static const char intel_ipu4_cpd_filename[] = INTEL_IPU4_CPD_FIRMWARE_B0;
 static const char intel_ipu5_cpd_filename[] = INTEL_IPU5_CPD_FIRMWARE_A0;
 
@@ -759,6 +765,12 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 
 	dev_info(&pdev->dev, "Device 0x%x (rev: 0x%x)\n",
 			      pdev->device, pdev->revision);
+
+	isp->ctrl = &sim_ctrl_ops;
+	if (!isp->ctrl) {
+		dev_err(&pdev->dev, "Failed to get IPU ctrl module\n");
+		return -ENODEV;
+	}
 
 	fpga_bar_mask = intel_ipu5_fpga_reset_prepare(isp);
 
