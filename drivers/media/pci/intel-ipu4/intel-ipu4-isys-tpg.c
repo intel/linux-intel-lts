@@ -150,8 +150,10 @@ static const struct v4l2_ctrl_ops intel_ipu4_isys_tpg_ctrl_ops = {
 static int64_t intel_ipu4_isys_tpg_rate(struct intel_ipu4_isys_tpg *tpg,
 				     unsigned int bpp)
 {
-	if (is_intel_ipu_hw_fpga())
-		return MIPI_GEN_PPC * INTEL_IPU4_ISYS_FREQ_BXT_FPGA;
+	struct intel_ipu4_device *isp = tpg->isys->adev->isp;
+
+	if (isp->ctrl->get_tpg_config)
+		return isp->ctrl->get_tpg_config(ISYS_FREQ);
 	else
 		return MIPI_GEN_PPC * INTEL_IPU4_ISYS_FREQ_BXT;
 }
@@ -178,6 +180,8 @@ static struct v4l2_ctrl_config tpg_mode = {
 static void intel_ipu4_isys_tpg_init_controls(struct v4l2_subdev *sd)
 {
 	struct intel_ipu4_isys_tpg *tpg = to_intel_ipu4_isys_tpg(sd);
+	struct intel_ipu4_device *isp = tpg->isys->adev->isp;
+	int hblank;
 	struct v4l2_ctrl_config cfg = {
 		.ops = &intel_ipu4_isys_tpg_ctrl_ops,
 		.type = V4L2_CTRL_TYPE_INTEGER,
@@ -188,14 +192,14 @@ static void intel_ipu4_isys_tpg_init_controls(struct v4l2_subdev *sd)
 		.elem_size = 0,
 	};
 
-	if (is_intel_ipu_hw_fpga())
-		tpg->hblank = v4l2_ctrl_new_std(
-			&tpg->asd.ctrl_handler, &intel_ipu4_isys_tpg_ctrl_ops,
-			V4L2_CID_HBLANK, 8, 65535, 1, 16384);
+	if (isp->ctrl->get_tpg_config)
+		hblank = isp->ctrl->get_tpg_config(TPG_HBLANK);
 	else
-		tpg->hblank = v4l2_ctrl_new_std(
+		hblank = 1024;
+
+	tpg->hblank = v4l2_ctrl_new_std(
 			&tpg->asd.ctrl_handler, &intel_ipu4_isys_tpg_ctrl_ops,
-			V4L2_CID_HBLANK, 8, 65535, 1, 1024);
+			V4L2_CID_HBLANK, 8, 65535, 1, hblank);
 
 	tpg->vblank = v4l2_ctrl_new_std(
 		&tpg->asd.ctrl_handler, &intel_ipu4_isys_tpg_ctrl_ops,
@@ -203,10 +207,12 @@ static void intel_ipu4_isys_tpg_init_controls(struct v4l2_subdev *sd)
 
 	cfg.id = V4L2_CID_LINE_LENGTH_PIXELS;
 	cfg.name = "Line Length Pixels";
-	if (is_intel_ipu_hw_fpga())
-		cfg.def = 16384 + 4096;
+
+	if (isp->ctrl->get_tpg_config)
+		cfg.def = isp->ctrl->get_tpg_config(TPG_LLP);
 	else
 		cfg.def = 1024 + 4096;
+
 	tpg->llp = v4l2_ctrl_new_custom(&tpg->asd.ctrl_handler, &cfg, NULL);
 
 	cfg.id = V4L2_CID_FRAME_LENGTH_LINES;

@@ -32,6 +32,12 @@ struct intel_ipu4_isys;
 #define NR_OF_TPG_SINK_PADS		0
 #define NR_OF_TPG_STREAMS		1
 
+enum tpg_param_type {
+	ISYS_FREQ = 0,
+	TPG_HBLANK,
+	TPG_LLP,
+};
+
 /*
  * struct intel_ipu4_isys_tpg
  *
