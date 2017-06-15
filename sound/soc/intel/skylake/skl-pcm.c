@@ -1845,6 +1845,10 @@ static int skl_platform_soc_probe(struct snd_soc_component *component)
 			dev_err(component->dev, "Failed to boot first fw: %d\n", ret);
 			return ret;
 		}
+
+		/* Set DMA clock controls */
+		skl_dsp_set_dma_clk_controls(skl->skl_sst);
+
 		skl_populate_modules(skl);
 		skl->skl_sst->update_d0i3c = skl_update_d0i3c;
 		skl_dsp_enable_notification(skl->skl_sst, false);
