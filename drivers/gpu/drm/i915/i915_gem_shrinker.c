@@ -66,6 +66,17 @@ static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 }
 #endif
 
+static void i915_gem_shrinker_unlock(struct drm_device *dev, bool unlock)
+{
+	if (!unlock)
+		return;
+
+	mutex_unlock(&dev->struct_mutex);
+
+	/* expedite the RCU grace period to free some request slabs */
+	synchronize_rcu_expedited();
+}
+
 static bool any_vma_pinned(struct drm_i915_gem_object *obj)
 {
 	struct i915_vma *vma;
@@ -245,11 +256,8 @@ i915_gem_shrink(struct drm_i915_private *dev_priv,
 		intel_runtime_pm_put(dev_priv);
 
 	i915_gem_retire_requests(dev_priv);
-	if (unlock)
-		mutex_unlock(&dev_priv->drm.struct_mutex);
 
-	/* expedite the RCU grace period to free some request slabs */
-	synchronize_rcu_expedited();
+	i915_gem_shrinker_unlock(&dev_priv->drm, unlock);
 
 	return count;
 }
@@ -309,8 +317,7 @@ i915_gem_shrinker_count(struct shrinker *shrinker, struct shrink_control *sc)
 			count += obj->base.size >> PAGE_SHIFT;
 	}
 
-	if (unlock)
-		mutex_unlock(&dev->struct_mutex);
+	i915_gem_shrinker_unlock(dev, unlock);
 
 	return count;
 }
@@ -337,8 +344,8 @@ i915_gem_shrinker_scan(struct shrinker *shrinker, struct shrink_control *sc)
 					 sc->nr_to_scan - freed,
 					 I915_SHRINK_BOUND |
 					 I915_SHRINK_UNBOUND);
-	if (unlock)
-		mutex_unlock(&dev->struct_mutex);
+
+	i915_gem_shrinker_unlock(dev, unlock);
 
 	return freed;
 }
@@ -380,8 +387,7 @@ i915_gem_shrinker_unlock_uninterruptible(struct drm_i915_private *dev_priv,
 					 struct shrinker_lock_uninterruptible *slu)
 {
 	dev_priv->mm.interruptible = slu->was_interruptible;
-	if (slu->unlock)
-		mutex_unlock(&dev_priv->drm.struct_mutex);
+	i915_gem_shrinker_unlock(&dev_priv->drm, slu->unlock);
 }
 
 static int
