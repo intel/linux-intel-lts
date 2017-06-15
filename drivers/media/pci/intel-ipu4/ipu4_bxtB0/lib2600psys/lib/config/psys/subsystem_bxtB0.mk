@@ -66,3 +66,7 @@ HAS_ISP0			= 1
 HAS_ISP1			= 1
 HAS_ISP2			= 1
 HAS_ISP3			= 1
+
+#Maximum supported number of active process groups
+PSYS_SERVER_MAX_NUM_PROC_GRP = $(PSYS_SERVER_NOF_CACHES)
+PSYS_SERVER_MAX_NUM_EXEC_PROC_GRP = 3	#$(PSYS_SERVER_MAX_NUM_PROC_GRP) - 1
