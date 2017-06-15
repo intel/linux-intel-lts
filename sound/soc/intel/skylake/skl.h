@@ -47,6 +47,8 @@
 #define AZX_EM2_DUM_MASK		(1 << 23)
 
 #define AZX_REG_VS_EM2_L1SEN		BIT(13)
+#define SKL_MAX_DMA_CFG    24
+#define SKL_MAX_DMACTRL		7
 
 struct skl_dsp_resource {
 	u32 max_mcps;
@@ -67,7 +69,26 @@ struct skl_astate_config {
 	struct skl_astate_param astate_table[0];
 };
 
+struct skl_dmctrl_hdr {
+	u32 vbus_id;
+	u32 freq;
+	u32 tdm_slot;
+	u32 fmt;
+	u32 direction;
+	u32 ch;
+	u32 data_size;
+	u32 *data;
+} __packed;
+
+struct skl_dmactrl_config {
+	u32 type;
+	u32 size;
+	u32 idx;
+	struct skl_dmctrl_hdr hdr[SKL_MAX_DMACTRL];
+} __packed;
+
 struct skl_fw_config {
+	struct skl_dmactrl_config dmactrl_cfg;
 	struct skl_astate_config *astate_cfg;
 };
 
