@@ -1737,24 +1737,12 @@ void intel_ipu4_buttress_csi_port_config(struct intel_ipu4_device *isp,
 }
 EXPORT_SYMBOL(intel_ipu4_buttress_csi_port_config);
 
-static void intel_ipu5_buttress_sensor_support_config(
-	struct intel_ipu4_device *isp)
-{
-	writel(0x0, isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
-	writel(IPU5_BUTTRESS_SENSOR_SUPPORT_SW_RESET,
-		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
-	writel(0x20202020,
-		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING0);
-	writel(0x20,
-		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING1);
-}
-
 int intel_ipu4_buttress_restore(struct intel_ipu4_device *isp)
 {
 	struct intel_ipu4_buttress *b = &isp->buttress;
 
-	if (is_intel_ipu_hw_fpga())
-		intel_ipu5_buttress_sensor_support_config(isp);
+	if (isp->ctrl->sensor_config)
+		isp->ctrl->sensor_config(isp);
 
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_ENABLE);
@@ -1813,8 +1801,8 @@ int intel_ipu4_buttress_init(struct intel_ipu4_device *isp)
 	dev_info(&isp->pdev->dev, "IPU4 in %s mode\n",
 			isp->secure_mode ? "secure" : "non-secure");
 
-	if (is_intel_ipu_hw_fpga())
-		intel_ipu5_buttress_sensor_support_config(isp);
+	if (isp->ctrl->sensor_config)
+		isp->ctrl->sensor_config(isp);
 
 	b->wdt_cached_value = readl(isp->base + BUTTRESS_REG_WDT);
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
