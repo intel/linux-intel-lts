@@ -40,6 +40,13 @@ choice
 
 config VIDEO_INTEL_IPU_FPGA
 	tristate "Compile for FPGA"
+	---help---
+	Select only one platform type
+
+config VIDEO_INTEL_IPU_MOCK
+	tristate "Compile for Mock driver"
+	---help---
+	Select only one platform type
 
 endchoice
 
