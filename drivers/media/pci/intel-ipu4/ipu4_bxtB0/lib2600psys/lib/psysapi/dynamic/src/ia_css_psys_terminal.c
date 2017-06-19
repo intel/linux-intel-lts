@@ -135,6 +135,11 @@ STORAGE_CLASS_INLINE void __terminal_dummy_check_alignment(void)
 						sizeof(uint64_t));
 
 	COMPILATION_ERROR_IF(
+			SIZE_OF_PROGRAM_DESC_CONTROL_INFO_STRUCT_BITS !=
+			(CHAR_BIT *
+			sizeof(struct ia_css_program_desc_control_info_s)));
+
+	COMPILATION_ERROR_IF(
 		SIZE_OF_PROG_CONTROL_INIT_PROG_DESC_STRUCT_BITS !=
 		(CHAR_BIT *
 		 sizeof(ia_css_program_control_init_program_desc_t)));

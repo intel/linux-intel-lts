@@ -118,9 +118,12 @@ struct ia_css_program_control_init_connect_section_desc_s {
 	uint8_t padding[N_PADDING_UINT8_IN_PROG_CTRL_INIT_CONNECT_SECT_STRUCT];
 };
 
-#define N_PADDING_UINT8_IN_PROG_CTRL_INIT_PROGRAM_DESC_STRUCT (5)
+#define N_PADDING_UINT8_IN_PROG_DESC_CONTROL_INFO	(1)
+#define N_PADDING_UINT8_IN_PROG_CTRL_INIT_PROGRAM_DESC_STRUCT (4)
 #define SIZE_OF_PROGRAM_DESC_CONTROL_INFO_STRUCT_BITS \
-	(3 * IA_CSS_UINT8_T_BITS)
+	(1 * IA_CSS_UINT16_T_BITS)	\
+	+ (1 * IA_CSS_UINT8_T_BITS)	\
+	+ (N_PADDING_UINT8_IN_PROG_DESC_CONTROL_INFO * IA_CSS_UINT8_T_BITS)
 
 #define SIZE_OF_PROG_CONTROL_INIT_PROG_DESC_STRUCT_BITS	\
 	(4 * IA_CSS_UINT16_T_BITS)	\
@@ -129,12 +132,11 @@ struct ia_css_program_control_init_connect_section_desc_s {
 		IA_CSS_UINT8_T_BITS)
 
 struct ia_css_program_desc_control_info_s {
-	/* SID of done event token for the process */
-	uint8_t sid;
-	/* PID of done event token for the process */
-	uint8_t pid;
+	/* 12-bit process identifier */
+	ia_css_process_id_t process_id;
 	/* number of done acks required to close the process */
 	uint8_t num_done_events;
+	uint8_t padding[N_PADDING_UINT8_IN_PROG_DESC_CONTROL_INFO];
 };
 
 struct ia_css_program_control_init_program_desc_s {

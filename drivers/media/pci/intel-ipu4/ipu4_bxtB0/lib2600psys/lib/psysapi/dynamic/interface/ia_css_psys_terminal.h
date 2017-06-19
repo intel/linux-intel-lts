@@ -263,44 +263,27 @@ ia_css_program_control_init_terminal_get_load_section_desc(
 );
 
 /*!
- * Gets sid value from program desc
+ * Gets process_id from program desc
  * of a program control init terminal
  * @param program_desc[in]		program control init terminal program desc
  */
-IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
-uint8_t ia_css_program_control_init_terminal_get_sid(
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+ia_css_process_id_t ia_css_program_control_init_terminal_get_process_id(
 	const ia_css_program_control_init_program_desc_t *program_desc);
 
 /*!
- * Gets pid value from program desc
+ * Set control info of program desc
  * of a program control init terminal
- * @param program_desc[in]		program control init terminal program desc
+ * @param program_desc[in]	program control init terminal program desc
+ * @param process_id 		unique process id used to identify the process
+ * among all active process
+ * @param num_done_events 	number of events required to close the process
  */
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
-uint8_t ia_css_program_control_init_terminal_get_pid(
-	const ia_css_program_control_init_program_desc_t *program_desc);
-
-/*!
- * Sets sid value in program desc
- * of a program control init terminal
- * @param program_desc[in]		program control init terminal program desc
- * @param sid					sid value
- */
-IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
-void ia_css_program_control_init_terminal_set_sid(
+void ia_css_program_control_init_terminal_set_control_info(
 	ia_css_program_control_init_program_desc_t *program_desc,
-	uint8_t sid);
-
-/*!
- * Sets pid value in program desc
- * of a program control init terminal
- * @param program_desc[in]		program control init terminal program desc
- * @param pid					pid value
- */
-IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
-void ia_css_program_control_init_terminal_set_pid(
-	ia_css_program_control_init_program_desc_t *program_desc,
-	uint8_t pid);
+	ia_css_process_id_t process_id,
+	uint8_t num_done_events);
 
 /*!
  * Gets num_done_events value from program desc
@@ -310,17 +293,6 @@ void ia_css_program_control_init_terminal_set_pid(
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
 uint8_t ia_css_program_control_init_terminal_get_num_done_events(
 	const ia_css_program_control_init_program_desc_t *program_desc);
-
-/*!
- * Sets num_done_events value in program desc
- * of a program control init terminal
- * @param program_desc[in]		program control init terminal program desc
- * @param num_done_events		number of done events required to complete the process.
- */
-IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
-void ia_css_program_control_init_terminal_set_num_done_events(
-	ia_css_program_control_init_program_desc_t *program_desc,
-	uint8_t num_done_events);
 
 /*!
  * Gets a connect section desc for a program desc

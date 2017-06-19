@@ -35,10 +35,15 @@ HAS_GMEM						= 1
 # use DMA NCI for OFS Service to reduce load in tproxy
 DMA_NCI_IN_OFS_SERVICE = 1
 
-# Used by regmem
-REGMEM_OFFSET                    = 0
-REGMEM_SIZE                      = 16
-REGMEM_WORD_BYTES                = 4
+# Specification for Psys server's fixed globals' locations
+REGMEM_OFFSET				= 0	# Starting from 0
+REGMEM_SIZE				= 16
+REGMEM_WORD_BYTES			= 4
+REGMEM_SIZE_BYTES			= 64
+GPC_ISP_PERF_DATA_OFFSET		= 64	# Taken from REGMEM_OFFSET + REGMEM_SIZE_BYTES
+GPC_ISP_PERF_DATA_SIZE_BYTES		= 80
+FW_LOAD_NO_OF_REQUEST_OFFSET		= 144	# Taken from GPC_ISP_PERF_DATA_OFFSET + GPC_ISP_PERF_DATA_SIZE_BYTES
+FW_LOAD_NO_OF_REQUEST_SIZE_BYTES	= 4
 
 # TODO  use version naming scheme "v#" to decouple
 # IPU_SYSVER from version.
