@@ -404,6 +404,27 @@ static struct intel_ipu4_isys_subdev_info video_aggre_b_stub_sd = {
 };
 #endif
 
+#ifdef CONFIG_INTEL_IPU4_MAGNA
+#define MAGNA_LANES		4
+#define MAGNA_PHY_ADDR	0x60 /* 0x30 for 7bit addr */
+#define MAGNA_ADDRESS_A	0x61
+
+static struct crlmodule_platform_data magna_pdata = {
+	.lanes = MAGNA_LANES,
+	.ext_clk = 24000000,
+	.op_sys_clock = (uint64_t []){ 400000000 },
+	.module_name = "MAGNA",
+	.id_string = "0xa6 0x35",
+	/*
+	 * The pin number of xshutdown will be determined
+	 * and replaced inside TI964 driver.
+	 * The number here stands for which GPIO to connect with.
+	 * 1 means to connect sensor xshutdown to GPIO1
+	 */
+	.xshutdown = 1,
+};
+#endif
+
 #ifdef CONFIG_INTEL_IPU4_OV10635
 #define OV10635_LANES		4
 #define OV10635_I2C_PHY_ADDR	0x60 /* 0x30 for 7bit addr */
@@ -551,6 +572,18 @@ struct ti964_subdev_info ti964_subdevs[] = {
 		.i2c_adapter_id = TI964_I2C_ADAPTER,
 		.rx_port = 3,
 		.phy_i2c_addr = OV10640_I2C_PHY_ADDR,
+	},
+#endif
+#ifdef CONFIG_INTEL_IPU4_MAGNA
+	{
+		.board_info = {
+			.type = CRLMODULE_NAME,
+			.addr = MAGNA_ADDRESS_A,
+			.platform_data = &magna_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER,
+		.rx_port = 0,
+		.phy_i2c_addr = MAGNA_PHY_ADDR,
 	},
 #endif
 };
