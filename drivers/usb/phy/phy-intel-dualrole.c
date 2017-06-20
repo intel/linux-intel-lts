@@ -51,7 +51,6 @@ static int intel_usb_mux_update(struct intel_dr_phy *intel_phy,
 {
 	struct usb_bus *host = intel_phy->phy.otg->host;
 	struct usb_gadget *gadget = intel_phy->phy.otg->gadget;
-	int ret;
 
 	if (!host || !gadget || !gadget->dev.parent || !intel_phy->edev)
 		return -ENODEV;
@@ -187,7 +186,7 @@ static int intel_dr_phy_handle_notification(struct notifier_block *nb,
 			intel_phy_dev->fsm.b_sess_vld = 0;
 		else
 			dev_err(intel_phy_dev->phy.dev, "USB_EVENT_NONE?\n");
-			state = NOTIFY_OK;
+		state = NOTIFY_OK;
 		break;
 	default:
 		dev_info(intel_phy_dev->phy.dev, "unknown notification\n");
