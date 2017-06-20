@@ -96,10 +96,10 @@ void intel_ipu5_pkg_dir_configure_spc(struct intel_ipu4_device *isp,
 
 	void *__iomem spc_base;
 
-	val = readl(base + hw_variant->spc_offset +
+	val = ipu_readl(base + hw_variant->spc_offset +
 		    INTEL_IPU5_PSYS_REG_SPC_STATUS_CTRL);
 	val |= INTEL_IPU5_PSYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE;
-	writel(val, base + hw_variant->spc_offset +
+	ipu_writel(val, base + hw_variant->spc_offset +
 	       INTEL_IPU5_PSYS_REG_SPC_STATUS_CTRL);
 
 	pkg_dir_host_address = pkg_dir;
@@ -125,18 +125,18 @@ void intel_ipu5_pkg_dir_configure_spc(struct intel_ipu4_device *isp,
 		 prog.start[1],
 		 prog.icache_source,
 		 (unsigned int)prog.regs_addr);
-	writel(pkg_dir_vied_address + prog.blob_offset +
+	ipu_writel(pkg_dir_vied_address + prog.blob_offset +
 		     prog.icache_source + pg_offset,
 		     spc_base + INTEL_IPU5_PSYS_REG_SPC_ICACHE_BASE);
-	writel(INTEL_IPU5_INFO_REQUEST_DESTINATION_PRIMARY,
+	ipu_writel(INTEL_IPU5_INFO_REQUEST_DESTINATION_PRIMARY,
 		     spc_base +
 		     INTEL_IPU5_REG_PSYS_INFO_SEG_0_CONFIG_ICACHE_MASTER);
-	writel(prog.start[1],
+	ipu_writel(prog.start[1],
 		     spc_base + INTEL_IPU5_PSYS_REG_SPC_START_PC);
-	writel(INTEL_IPU5_INFO_REQUEST_DESTINATION_PRIMARY,
+	ipu_writel(INTEL_IPU5_INFO_REQUEST_DESTINATION_PRIMARY,
 		     spc_base +
 		     INTEL_IPU5_REG_PSYS_INFO_SEG_0_CONFIG_ICACHE_MASTER);
-	writel(pkg_dir_vied_address,
+	ipu_writel(pkg_dir_vied_address,
 	       base + hw_variant->dmem_offset);
 }
 

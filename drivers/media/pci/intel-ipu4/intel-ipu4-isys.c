@@ -1134,18 +1134,19 @@ static void isys_setup_hw_ipu4(struct intel_ipu4_isys *isys)
 
 	irqs |= INTEL_IPU4_ISYS_UNISPART_IRQ_SW;
 
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_EDGE);
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_LEVEL_NOT_PULSE);
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_CLEAR);
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_MASK);
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_ENABLE);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_EDGE);
+	ipu_writel(irqs, base +
+		   INTEL_IPU4_REG_ISYS_UNISPART_IRQ_LEVEL_NOT_PULSE);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_CLEAR);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_MASK);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_ENABLE);
 
-	writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_REG);
-	writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
+	ipu_writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_REG);
+	ipu_writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
 
 	/* Write CDC FIFO threshold values for isys */
 	for (i = 0; i < isys->pdata->ipdata->hw_variant.cdc_fifos; i++)
-		writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
+		ipu_writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
 		       base + INTEL_IPU4_REG_ISYS_CDC_THRESHOLD(i));
 }
 
@@ -1166,18 +1167,19 @@ static void isys_setup_hw_ipu5(struct intel_ipu4_isys *isys)
 				((i * INTEL_IPU5_CSI_PIPE_NUM_PER_TOP + j) *
 				INTEL_IPU5_CSI_IRQ_NUM_PER_PIPE)));
 
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_EDGE);
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_LEVEL_NOT_PULSE);
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_CLEAR);
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_MASK);
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_ENABLE);
+	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_EDGE);
+	ipu_writel(irqs, base +
+		   INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_LEVEL_NOT_PULSE);
+	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_CLEAR);
+	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_MASK);
+	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_ENABLE);
 
-	writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
-	writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
+	ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
+	ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
 
 	/* Write CDC FIFO threshold values for isys */
 	for (i = 0; i < isys->pdata->ipdata->hw_variant.cdc_fifos; i++)
-		writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
+		ipu_writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
 		base + INTEL_IPU5_REG_ISYS_CDC_THRESHOLD(i));
 }
 
@@ -1863,10 +1865,10 @@ static void isys_isr_ipu4(struct intel_ipu4_bus_device *adev)
 	void __iomem *base = isys->pdata->base;
 	u32 status;
 
-	status = readl(isys->pdata->base +
+	status = ipu_readl(isys->pdata->base +
 		       INTEL_IPU4_REG_ISYS_UNISPART_IRQ_STATUS);
 	do {
-		writel(status, isys->pdata->base +
+		ipu_writel(status, isys->pdata->base +
 		       INTEL_IPU4_REG_ISYS_UNISPART_IRQ_CLEAR);
 
 		if (isys->isr_csi2_bits & status) {
@@ -1880,7 +1882,7 @@ static void isys_isr_ipu4(struct intel_ipu4_bus_device *adev)
 			}
 		}
 
-		writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_REG);
+		ipu_writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_REG);
 
 		/*
 		 * Handle a single FW event per checking the CSI-2
@@ -1898,7 +1900,7 @@ static void isys_isr_ipu4(struct intel_ipu4_bus_device *adev)
 		else
 			status = 0;
 
-		status |= readl(isys->pdata->base +
+		status |= ipu_readl(isys->pdata->base +
 				INTEL_IPU4_REG_ISYS_UNISPART_IRQ_STATUS);
 	} while (status & (isys->isr_csi2_bits
 			   | INTEL_IPU4_ISYS_UNISPART_IRQ_SW) &&
@@ -1911,15 +1913,15 @@ static void isys_isr_ipu5(struct intel_ipu4_bus_device *adev)
 	void __iomem *base = isys->pdata->base;
 	u32 status_csi, status_sw;
 
-	status_csi = readl(isys->pdata->base +
+	status_csi = ipu_readl(isys->pdata->base +
 		       INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_STATUS);
-	status_sw = readl(isys->pdata->base +
+	status_sw = ipu_readl(isys->pdata->base +
 		       INTEL_IPU5_REG_ISYS_UNISPART_IRQ_STATUS);
 
 	do {
-		writel(status_csi, isys->pdata->base +
+		ipu_writel(status_csi, isys->pdata->base +
 		       INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_CLEAR);
-		writel(INTEL_IPU5_ISYS_UNISPART_IRQ_SW,
+		ipu_writel(INTEL_IPU5_ISYS_UNISPART_IRQ_SW,
 			isys->pdata->base +
 			INTEL_IPU5_REG_ISYS_UNISPART_IRQ_CLEAR);
 
@@ -1934,7 +1936,7 @@ static void isys_isr_ipu5(struct intel_ipu4_bus_device *adev)
 			}
 		}
 
-		writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
+		ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
 
 		/*
 		 * Handle a single FW event per checking the CSI-2
@@ -1952,9 +1954,9 @@ static void isys_isr_ipu5(struct intel_ipu4_bus_device *adev)
 		else
 			status_sw = 0;
 
-		status_csi = readl(isys->pdata->base +
+		status_csi = ipu_readl(isys->pdata->base +
 			INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_STATUS);
-		status_sw |= readl(isys->pdata->base +
+		status_sw |= ipu_readl(isys->pdata->base +
 			INTEL_IPU5_REG_ISYS_UNISPART_IRQ_STATUS);
 	} while (((status_csi & isys->isr_csi2_bits) ||
 		(status_sw & INTEL_IPU5_ISYS_UNISPART_IRQ_SW)) &&

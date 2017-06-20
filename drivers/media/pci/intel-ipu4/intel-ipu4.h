@@ -229,6 +229,63 @@ struct intel_ipu4_device {
 
 #endif /* END OF CONFIG_VIDEO_INTEL_IPU_FPGA */
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_MOCK)
+
+static inline unsigned char ipu_readb(const volatile void __iomem *addr)
+{
+	return 0;
+}
+
+static inline unsigned short ipu_readw(const volatile void __iomem *addr)
+{
+	return 0;
+}
+
+static inline unsigned int ipu_readl(const volatile void __iomem *addr)
+{
+	unsigned int rval;
+
+	switch ((unsigned int)addr) {
+	/* SYSCOM_STATE_READY */
+	case 0x6288008:
+		rval = 0x57A7E001;
+		break;
+	/* INTEL_IPU4_ISYS_SPC_STATUS_READY */
+	case 0x2280000:
+		rval = 1 << 5;
+		break;
+	/* ia_css_cell_is_ready */
+	case 0x6280000:
+		rval = 1 << 5;
+		break;
+	default:
+		rval = 0;
+		break;
+	}
+
+	return rval;
+}
+
+static inline void ipu_writeb(unsigned char val, volatile void __iomem *addr)
+{}
+
+static inline void ipu_writew(unsigned short val, volatile void __iomem *addr)
+{}
+
+static inline void ipu_writel(unsigned int val, volatile void __iomem *addr)
+{}
+
+#else
+
+#define ipu_writel	writel
+#define ipu_readl	readl
+#define ipu_writew	writew
+#define ipu_readw	readw
+#define ipu_writeb	writeb
+#define ipu_readb	readb
+
+#endif /* END OF CONFIG_VIDEO_INTEL_IPU_MOCK */
+
 #define intel_ipu4_media_ctl_dev_model(isp)			\
 	(is_intel_ipu4_hw_bxt_b0(isp) ?				\
 	INTEL_IPU4_MEDIA_DEV_MODEL_IPU4B : INTEL_IPU4_MEDIA_DEV_MODEL_IPU5A)

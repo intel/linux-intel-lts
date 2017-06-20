@@ -150,9 +150,9 @@ int intel_ipu4_trace_get_timer(struct device *dev, u64 *timer)
 		return -ENODEV;
 
 	for (retry = 0; retry < INTEL_IPU4_TRACE_TIME_RETRY; retry++) {
-		time_hi1 = readl(addr + TRACE_REG_TUN_LOCAL_TIMER1);
-		time_lo = readl(addr + TRACE_REG_TUN_LOCAL_TIMER0);
-		time_hi2 = readl(addr + TRACE_REG_TUN_LOCAL_TIMER1);
+		time_hi1 = ipu_readl(addr + TRACE_REG_TUN_LOCAL_TIMER1);
+		time_lo = ipu_readl(addr + TRACE_REG_TUN_LOCAL_TIMER0);
+		time_hi2 = ipu_readl(addr + TRACE_REG_TUN_LOCAL_TIMER1);
 		*timer = (((u64) time_hi1) << 32) | time_lo;
 		if (time_hi1 == time_hi2)
 			return 0;
@@ -215,15 +215,15 @@ void __intel_ipu4_trace_restore(struct device *dev)
 	mapped_trace_buffer = sys->memory.dma_handle;
 
 	/* ring buffer base */
-	writel(mapped_trace_buffer,
+	ipu_writel(mapped_trace_buffer,
 	       addr + TRACE_REG_TUN_DRAM_BASE_ADDR);
 
 	/* ring buffer end */
-	writel(mapped_trace_buffer + MEMORY_RING_BUFFER_SIZE -
+	ipu_writel(mapped_trace_buffer + MEMORY_RING_BUFFER_SIZE -
 	       TRACE_MESSAGE_SIZE, addr + TRACE_REG_TUN_DRAM_END_ADDR);
 
 	/* Infobits for ddr trace */
-	writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+	ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 	       addr + TRACE_REG_TUN_DDR_INFO_VAL);
 
 	/* Find trace timer reset address */
@@ -242,14 +242,14 @@ void __intel_ipu4_trace_restore(struct device *dev)
 	}
 
 	/* Remove reset from trace timers */
-	writel(TRACE_REG_GPREG_TRACE_TIMER_RST_OFF, addr);
+	ipu_writel(TRACE_REG_GPREG_TRACE_TIMER_RST_OFF, addr);
 
 	/* Register config received from userspace */
 	for (i = 0; i < sys->fill_level; i++) {
 		dev_dbg(dev,
 			"Trace restore: reg 0x%08x, value 0x%08x\n",
 			config[i].reg, config[i].value);
-		writel(config[i].value, isp->base + config[i].reg);
+		ipu_writel(config[i].value, isp->base + config[i].reg);
 	}
 
 	sys->running = true;
@@ -286,7 +286,7 @@ void __intel_ipu4_trace_stop(struct device *dev)
 	blocks = sys->blocks;
 	while (blocks->type != INTEL_IPU4_TRACE_BLOCK_END) {
 		if (blocks->type == INTEL_IPU4_TRACE_BLOCK_GPC) {
-			writel(0, sys->base + blocks->offset +
+			ipu_writel(0, sys->base + blocks->offset +
 			      TRACE_REG_GPC_OVERALL_ENABLE);
 		}
 		blocks++;
@@ -296,10 +296,10 @@ void __intel_ipu4_trace_stop(struct device *dev)
 	blocks = sys->blocks;
 	while (blocks->type != INTEL_IPU4_TRACE_BLOCK_END) {
 		if (blocks->type == INTEL_IPU4_TRACE_BLOCK_TM) {
-			writel(0, sys->base + blocks->offset +
+			ipu_writel(0, sys->base + blocks->offset +
 			      TRACE_REG_TM_TRACE_ENABLE_NPK);
 
-			writel(0, sys->base + blocks->offset +
+			ipu_writel(0, sys->base + blocks->offset +
 			      TRACE_REG_TM_TRACE_ENABLE_DDR);
 		}
 		blocks++;
@@ -309,9 +309,9 @@ void __intel_ipu4_trace_stop(struct device *dev)
 	blocks = sys->blocks;
 	while (blocks->type != INTEL_IPU4_TRACE_BLOCK_END) {
 		if (blocks->type == INTEL_IPU4_TRACE_BLOCK_TUN) {
-			writel(0, sys->base + blocks->offset +
+			ipu_writel(0, sys->base + blocks->offset +
 			       TRACE_REG_TUN_DDR_ENABLE);
-			writel(0, sys->base + blocks->offset +
+			ipu_writel(0, sys->base + blocks->offset +
 			       TRACE_REG_TUN_NPK_ENABLE);
 		}
 		blocks++;

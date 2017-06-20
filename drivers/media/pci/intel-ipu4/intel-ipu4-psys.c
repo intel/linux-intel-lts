@@ -2279,14 +2279,14 @@ static void set_sp_info_bits(void *base)
 {
 	int i;
 
-	writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+	ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 	       base + INTEL_IPU4_REG_PSYS_INFO_SEG_0_CONFIG_ICACHE_MASTER);
 
 	for (i = 0; i < 4; i++)
-		writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+		ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 		       base + INTEL_IPU4_REG_PSYS_INFO_SEG_CMEM_MASTER(i));
 	for (i = 0; i < 4; i++)
-		writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+		ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 		       base + INTEL_IPU4_REG_PSYS_INFO_SEG_XMEM_MASTER(i));
 }
 
@@ -2294,11 +2294,11 @@ static void set_isp_info_bits(void *base)
 {
 	int i;
 
-	writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+	ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 	       base + INTEL_IPU4_REG_PSYS_INFO_SEG_0_CONFIG_ICACHE_MASTER);
 
 	for (i = 0; i < 4; i++)
-		writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+		ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 		       base + INTEL_IPU4_REG_PSYS_INFO_SEG_DATA_MASTER(i));
 }
 
@@ -2314,7 +2314,8 @@ static void psys_setup_hw(struct intel_ipu4_psys *psys)
 	unsigned int i;
 
 	/* Configure PSYS info bits */
-	writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY, psys_iommu0_ctrl);
+	ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+		   psys_iommu0_ctrl);
 
 	set_sp_info_bits(spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
 	set_sp_info_bits(spc_regs_base + INTEL_IPU4_PSYS_REG_SPP0_STATUS_CTRL);
@@ -2325,22 +2326,22 @@ static void psys_setup_hw(struct intel_ipu4_psys *psys)
 	set_isp_info_bits(spc_regs_base + INTEL_IPU4_PSYS_REG_ISP3_STATUS_CTRL);
 
 	/* Enable FW interrupt #0 */
-	writel(0, base + INTEL_IPU4_REG_PSYS_GPDEV_FWIRQ(0));
+	ipu_writel(0, base + INTEL_IPU4_REG_PSYS_GPDEV_FWIRQ(0));
 	irqs = INTEL_IPU4_PSYS_GPDEV_IRQ_FWIRQ(0);
-	writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_EDGE);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_EDGE);
 	/*
 	 * With pulse setting, driver misses interrupts. IUNIT integration
 	 * HAS(v1.26) suggests to use pulse, but this seem to be error in
 	 * documentation.
 	 */
-	writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_LEVEL_NOT_PULSE);
-	writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_CLEAR);
-	writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_MASK);
-	writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_ENABLE);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_LEVEL_NOT_PULSE);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_CLEAR);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_MASK);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_ENABLE);
 
 	/* Write CDC FIFO threshold values for psys */
 	for (i = 0; i < psys->pdata->ipdata->hw_variant.cdc_fifos; i++)
-		writel(psys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
+		ipu_writel(psys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
 		       base + INTEL_IPU4_REG_PSYS_CDC_THRESHOLD(i));
 }
 
@@ -2354,7 +2355,7 @@ static void ipu5_psys_setup_hw(struct intel_ipu4_psys *psys)
 			INTEL_IPU5_PSYS_MMU0_CTRL_OFFSET;
 
 	/* Configure PSYS info bits */
-	writel(INTEL_IPU5_INFO_REQUEST_DESTINATION_PRIMARY,
+	ipu_writel(INTEL_IPU5_INFO_REQUEST_DESTINATION_PRIMARY,
 		    psys_iommu0_ctrl);
 	set_sp_info_bits(spc_regs_base + INTEL_IPU5_PSYS_REG_SPC_STATUS_CTRL);
 	set_sp_info_bits(spc_regs_base + INTEL_IPU5_PSYS_REG_SPP0_STATUS_CTRL);
@@ -2668,7 +2669,7 @@ static void start_sp(struct intel_ipu4_bus_device *adev)
 		INTEL_IPU4_ISYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE;
 	val |= psys->icache_prefetch_sp ?
 		INTEL_IPU4_ISYS_SPC_STATUS_ICACHE_PREFETCH : 0;
-	writel(val, spc_regs_base + INTEL_IPU4_ISYS_REG_SPC_STATUS_CTRL);
+	ipu_writel(val, spc_regs_base + INTEL_IPU4_ISYS_REG_SPC_STATUS_CTRL);
 }
 
 static int query_sp(struct intel_ipu4_bus_device *adev)
@@ -2677,7 +2678,7 @@ static int query_sp(struct intel_ipu4_bus_device *adev)
 	void __iomem *spc_regs_base = psys->pdata->base +
 		psys->pdata->ipdata->hw_variant.spc_offset;
 	u32 val =
-		readl(spc_regs_base + INTEL_IPU4_ISYS_REG_SPC_STATUS_CTRL);
+		ipu_readl(spc_regs_base + INTEL_IPU4_ISYS_REG_SPC_STATUS_CTRL);
 
 	/* return true when READY == 1, START == 0 */
 	val &= INTEL_IPU4_ISYS_SPC_STATUS_READY |
@@ -3131,11 +3132,11 @@ static irqreturn_t psys_isr_threaded(struct intel_ipu4_bus_device *adev)
 		return IRQ_NONE;
 	}
 #endif
-	status = readl(base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_STATUS);
-	writel(status, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_CLEAR);
+	status = ipu_readl(base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_STATUS);
+	ipu_writel(status, base + INTEL_IPU4_REG_PSYS_GPDEV_IRQ_CLEAR);
 
 	if (status & INTEL_IPU4_PSYS_GPDEV_IRQ_FWIRQ(0)) {
-		writel(0, base + INTEL_IPU4_REG_PSYS_GPDEV_FWIRQ(0));
+		ipu_writel(0, base + INTEL_IPU4_REG_PSYS_GPDEV_FWIRQ(0));
 		intel_ipu4_psys_handle_events(psys);
 	}
 

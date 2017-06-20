@@ -63,15 +63,15 @@ static void intel_ipu_fpga_reset(struct pci_dev *pci_dev)
 
 	pci_save_state(pci_dev);
 
-	readl(isp->base2 + IPU5_FPGA_RESET_REG);
-	writel(IPU5_FPGA_RESET_ACTIVE, isp->base2 + IPU5_FPGA_RESET_REG);
+	ipu_readl(isp->base2 + IPU5_FPGA_RESET_REG);
+	ipu_writel(IPU5_FPGA_RESET_ACTIVE, isp->base2 + IPU5_FPGA_RESET_REG);
 	usleep_range(1000, 1100);
 
-	readl(isp->base2 + IPU5_FPGA_RESET_REG);
-	writel(IPU5_FPGA_RESET_RELEASE, isp->base2 + IPU5_FPGA_RESET_REG);
+	ipu_readl(isp->base2 + IPU5_FPGA_RESET_REG);
+	ipu_writel(IPU5_FPGA_RESET_RELEASE, isp->base2 + IPU5_FPGA_RESET_REG);
 	usleep_range(1000, 1100);
 
-	readl(isp->base2 + IPU5_FPGA_RESET_REG);
+	ipu_readl(isp->base2 + IPU5_FPGA_RESET_REG);
 	usleep_range(1000, 1100);
 
 	pci_restore_state(pci_dev);
@@ -83,19 +83,21 @@ static void intel_ipu_fpga_pmclite_btr_power(
 			struct intel_ipu4_device *isp, bool on)
 {
 	if (!on) {
-		writel(0, isp->base + BUTTRESS_REG_PS_FREQ_CTL);
+		ipu_writel(0, isp->base + BUTTRESS_REG_PS_FREQ_CTL);
 		usleep_range(1000, 1500);
-		writel(0, isp->base + BUTTRESS_REG_IS_FREQ_CTL);
+		ipu_writel(0, isp->base + BUTTRESS_REG_IS_FREQ_CTL);
 	} else {
-		writel(IPU5_BTR_IS_ON, isp->base + BUTTRESS_REG_IS_FREQ_CTL);
+		ipu_writel(IPU5_BTR_IS_ON, isp->base +
+			   BUTTRESS_REG_IS_FREQ_CTL);
 		usleep_range(1000, 1500);
-		writel(IPU5_BTR_PS_ON, isp->base + BUTTRESS_REG_PS_FREQ_CTL);
+		ipu_writel(IPU5_BTR_PS_ON, isp->base +
+			   BUTTRESS_REG_PS_FREQ_CTL);
 	}
 	usleep_range(1000, 1500);
 
 	dev_dbg(&isp->pdev->dev,
 		"set buttress power to %d sts now is 0x%x\n",
-		on, readl(isp->base + BUTTRESS_REG_PWR_STATE));
+		on, ipu_readl(isp->base + BUTTRESS_REG_PWR_STATE));
 }
 
 static void intel_ipu_buttress_disable_secure_touch(
@@ -103,9 +105,9 @@ static void intel_ipu_buttress_disable_secure_touch(
 {
 	u32 val;
 
-	val = readl(isp->base + BUTTRESS_REG_SECURE_TOUCH);
+	val = ipu_readl(isp->base + BUTTRESS_REG_SECURE_TOUCH);
 	val &= ~(1 << BUTTRESS_SECURE_TOUCH_SECURE_TOUCH_SHIFT);
-	writel(val, isp->base + BUTTRESS_REG_SECURE_TOUCH);
+	ipu_writel(val, isp->base + BUTTRESS_REG_SECURE_TOUCH);
 }
 
 static int intel_ipu_fpga_buttress_power(
@@ -141,7 +143,7 @@ static int intel_ipu_fpga_buttress_power(
 	tout_jfs = jiffies + msecs_to_jiffies(BUTTRESS_POWER_TIMEOUT);
 	do {
 		usleep_range(10, 40);
-		val = readl(isp->base + BUTTRESS_REG_PWR_STATE);
+		val = ipu_readl(isp->base + BUTTRESS_REG_PWR_STATE);
 		if ((val & ctrl->pwr_sts_mask) == pwr_sts) {
 			dev_dbg(&isp->pdev->dev,
 				"Rail state successfully changed\n");
@@ -231,12 +233,12 @@ out_err:
 
 static void intel_ipu_fpga_sensor_config(struct intel_ipu4_device *isp)
 {
-	writel(0x0, isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
-	writel(IPU5_BUTTRESS_SENSOR_SUPPORT_SW_RESET,
+	ipu_writel(0x0, isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
+	ipu_writel(IPU5_BUTTRESS_SENSOR_SUPPORT_SW_RESET,
 		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
-	writel(0x20202020,
+	ipu_writel(0x20202020,
 		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING0);
-	writel(0x20,
+	ipu_writel(0x20,
 		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING1);
 }
 

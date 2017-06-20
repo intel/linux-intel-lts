@@ -208,7 +208,7 @@ static void start_sp(struct intel_ipu4_bus_device *adev)
 		INTEL_IPU4_ISYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE;
 	val |= isys->icache_prefetch ?
 		INTEL_IPU4_ISYS_SPC_STATUS_ICACHE_PREFETCH : 0;
-	writel(val, spc_regs_base + INTEL_IPU4_ISYS_REG_SPC_STATUS_CTRL);
+	ipu_writel(val, spc_regs_base + INTEL_IPU4_ISYS_REG_SPC_STATUS_CTRL);
 }
 
 static int query_sp(struct intel_ipu4_bus_device *adev)
@@ -217,7 +217,7 @@ static int query_sp(struct intel_ipu4_bus_device *adev)
 	void __iomem *spc_regs_base = isys->pdata->base +
 		isys->pdata->ipdata->hw_variant.spc_offset;
 	u32 val =
-		readl(spc_regs_base + INTEL_IPU4_ISYS_REG_SPC_STATUS_CTRL);
+		ipu_readl(spc_regs_base + INTEL_IPU4_ISYS_REG_SPC_STATUS_CTRL);
 
 	/* return true when READY == 1, START == 0 */
 	val &= INTEL_IPU4_ISYS_SPC_STATUS_READY |

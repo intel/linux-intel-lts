@@ -313,12 +313,12 @@ void intel_ipu4_configure_spc(struct intel_ipu4_device *isp,
 	void __iomem *dmem_base = base + hw_variant->dmem_offset;
 	void __iomem *spc_regs_base = base + hw_variant->spc_offset;
 
-	val = readl(spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
+	val = ipu_readl(spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
 	val |= INTEL_IPU4_PSYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE;
-	writel(val, spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
+	ipu_writel(val, spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
 
 	if (isp->secure_mode) {
-		writel(INTEL_IPU4_PKG_DIR_IMR_OFFSET, dmem_base);
+		ipu_writel(INTEL_IPU4_PKG_DIR_IMR_OFFSET, dmem_base);
 	} else {
 		u32 server_addr;
 
@@ -334,25 +334,25 @@ void intel_ipu4_configure_spc(struct intel_ipu4_device *isp,
 		server_addr = intel_ipu4_cpd_pkg_dir_get_address(pkg_dir,
 								 pkg_dir_idx);
 
-		writel(server_addr + intel_ipu4_cpd_get_pg_icache_base(
+		ipu_writel(server_addr + intel_ipu4_cpd_get_pg_icache_base(
 			       isp, pkg_dir_idx, isp->cpd_fw->data,
 			       isp->cpd_fw->size),
 		       spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_ICACHE_BASE);
-		writel(intel_ipu4_cpd_get_pg_entry_point(isp, pkg_dir_idx,
+		ipu_writel(intel_ipu4_cpd_get_pg_entry_point(isp, pkg_dir_idx,
 							 isp->cpd_fw->data,
 							 isp->cpd_fw->size),
 		       spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_START_PC);
-		writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+		ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 		       spc_regs_base +
 		       INTEL_IPU4_REG_PSYS_INFO_SEG_0_CONFIG_ICACHE_MASTER);
-		writel(pkg_dir_dma_addr, dmem_base);
+		ipu_writel(pkg_dir_dma_addr, dmem_base);
 	}
 }
 EXPORT_SYMBOL(intel_ipu4_configure_spc);
 
 void intel_ipu4_configure_vc_mechanism(struct intel_ipu4_device *isp)
 {
-	u32 val = readl(isp->base + BUTTRESS_REG_BTRS_CTRL);
+	u32 val = ipu_readl(isp->base + BUTTRESS_REG_BTRS_CTRL);
 
 	if (INTEL_IPU4_BTRS_ARB_STALL_MODE_VC0 ==
 			INTEL_IPU4_BTRS_ARB_MODE_TYPE_STALL)
@@ -366,7 +366,7 @@ void intel_ipu4_configure_vc_mechanism(struct intel_ipu4_device *isp)
 	else
 		val &= ~BUTTRESS_REG_BTRS_CTRL_STALL_MODE_VC1;
 
-	writel(val, isp->base + BUTTRESS_REG_BTRS_CTRL);
+	ipu_writel(val, isp->base + BUTTRESS_REG_BTRS_CTRL);
 }
 
 static struct intel_ipu4_receiver_electrical_params ipu4_ev_params[] = {

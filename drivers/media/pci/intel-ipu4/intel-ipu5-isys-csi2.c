@@ -200,11 +200,11 @@ static void intel_ipu5_isys_register_errors(struct intel_ipu4_isys_csi2 *csi2)
 			media_entity_to_v4l2_subdev(pipe->external->entity));
 	u32 irq;
 
-	irq = readl(csi2->base + irq_info_map[cfg->port].irq_base +
+	irq = ipu_readl(csi2->base + irq_info_map[cfg->port].irq_base +
 		INTEL_IPU5_CSI_REG_IRQ_STATUS_OFFSET);
 
 	if (irq & irq_info_map[cfg->port].irq_error_mask) {
-		writel(irq & irq_info_map[cfg->port].irq_error_mask,
+		ipu_writel(irq & irq_info_map[cfg->port].irq_error_mask,
 			csi2->base + irq_info_map[cfg->port].irq_base +
 			INTEL_IPU5_CSI_REG_IRQ_CLEAR_OFFSET);
 		csi2->receiver_errors |=
@@ -220,11 +220,11 @@ static void intel_ipu5_isys_register_errors(struct intel_ipu4_isys_csi2 *csi2)
 	if (irq_info_map[cfg->port].dphy) {
 		u32 irq_ctrl2;
 
-		irq_ctrl2 = readl(csi2->base +
+		irq_ctrl2 = ipu_readl(csi2->base +
 			irq_info_map[cfg->port].irq_base_ctrl2 +
 			INTEL_IPU5_CSI_REG_IRQ_STATUS_OFFSET);
 		if (irq_ctrl2 & CSI_RX_INTER_FRAME_LONG_PACKET_DISCARDED) {
-			writel(irq_ctrl2 &
+			ipu_writel(irq_ctrl2 &
 				CSI_RX_INTER_FRAME_LONG_PACKET_DISCARDED,
 				csi2->base +
 				irq_info_map[cfg->port].irq_base_ctrl2 +
@@ -299,22 +299,22 @@ int intel_ipu5_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	port = cfg->port;
 	if (!enable) {
 		intel_ipu5_isys_csi2_error(csi2);
-		val = readl(csi2->base + INTEL_IPU5_CSI_REG_RX_CTL);
+		val = ipu_readl(csi2->base + INTEL_IPU5_CSI_REG_RX_CTL);
 		val &= ~(INTEL_IPU5_CSI_REG_RX_CONFIG_RELEASE_LP11 |
 			INTEL_IPU5_CSI_REG_RX_CONFIG_DISABLE_BYTE_CLK_GATING);
-		writel(val, csi2->base + INTEL_IPU5_CSI_REG_RX_CTL);
-		writel(0, csi2->base + INTEL_IPU5_CSI_REG_RX_ENABLE);
+		ipu_writel(val, csi2->base + INTEL_IPU5_CSI_REG_RX_CTL);
+		ipu_writel(0, csi2->base + INTEL_IPU5_CSI_REG_RX_ENABLE);
 
 		/* Disable interrupts */
-		writel(0, csi2->base + irq_info_map[port].irq_base +
+		ipu_writel(0, csi2->base + irq_info_map[port].irq_base +
 			INTEL_IPU5_CSI_REG_IRQ_MASK_OFFSET);
-		writel(0, csi2->base + irq_info_map[port].irq_base +
+		ipu_writel(0, csi2->base + irq_info_map[port].irq_base +
 			INTEL_IPU5_CSI_REG_IRQ_ENABLE_OFFSET);
 		if (irq_info_map[port].dphy) {
-			writel(0,
+			ipu_writel(0,
 				csi2->base + irq_info_map[port].irq_base_ctrl2 +
 				INTEL_IPU5_CSI_REG_IRQ_MASK_OFFSET);
-			writel(0,
+			ipu_writel(0,
 				csi2->base + irq_info_map[port].irq_base_ctrl2 +
 				INTEL_IPU5_CSI_REG_IRQ_ENABLE_OFFSET);
 		}
@@ -325,64 +325,65 @@ int intel_ipu5_isys_csi2_set_stream(struct v4l2_subdev *sd,
 		type = isp->ctrl->get_sim_type();
 
 	if (type != SIM_FPGA) {
-		writel(timing.ctermen,
+		ipu_writel(timing.ctermen,
 			csi2->base +
 			INTEL_IPU5_CSI_REG_RX_DLY_CNT_TERMEN_CLANE);
-		writel(timing.csettle,
+		ipu_writel(timing.csettle,
 			csi2->base +
 			INTEL_IPU5_CSI_REG_RX_DLY_CNT_SETTLE_CLANE);
 
 		for (i = 0; i < nlanes; i++) {
-			writel(timing.dtermen,
+			ipu_writel(timing.dtermen,
 				csi2->base +
 			INTEL_IPU5_CSI_REG_RX_DLY_CNT_TERMEN_DLANE(i));
-			writel(timing.dsettle,
+			ipu_writel(timing.dsettle,
 				csi2->base +
 			INTEL_IPU5_CSI_REG_RX_DLY_CNT_SETTLE_DLANE(i));
 		}
 	}
 
-	val = readl(csi2->base + INTEL_IPU5_CSI_REG_RX_CTL);
+	val = ipu_readl(csi2->base + INTEL_IPU5_CSI_REG_RX_CTL);
 	val |= INTEL_IPU5_CSI_REG_RX_CONFIG_RELEASE_LP11 |
 		INTEL_IPU5_CSI_REG_RX_CONFIG_DISABLE_BYTE_CLK_GATING;
-	writel(val, csi2->base + INTEL_IPU5_CSI_REG_RX_CTL);
+	ipu_writel(val, csi2->base + INTEL_IPU5_CSI_REG_RX_CTL);
 
-	writel(nlanes, csi2->base + INTEL_IPU5_CSI_REG_RX_NOF_ENABLED_LANES);
-	writel(INTEL_IPU5_CSI_REG_RX_ENABLE_ENABLE,
+	ipu_writel(nlanes, csi2->base +
+		   INTEL_IPU5_CSI_REG_RX_NOF_ENABLED_LANES);
+	ipu_writel(INTEL_IPU5_CSI_REG_RX_ENABLE_ENABLE,
 		csi2->base + INTEL_IPU5_CSI_REG_RX_ENABLE);
 
 	/* enable all related irq */
 	csi_irqs = BIT(irq_info_map[port].irq_num) - 1;
-	writel(csi_irqs, csi2->base + irq_info_map[port].irq_base);
-	writel(csi_irqs, csi2->base + irq_info_map[port].irq_base +
+	ipu_writel(csi_irqs, csi2->base + irq_info_map[port].irq_base);
+	ipu_writel(csi_irqs, csi2->base + irq_info_map[port].irq_base +
 		INTEL_IPU5_CSI_REG_IRQ_MASK_OFFSET);
-	writel(csi_irqs, csi2->base + irq_info_map[port].irq_base +
+	ipu_writel(csi_irqs, csi2->base + irq_info_map[port].irq_base +
 		INTEL_IPU5_CSI_REG_IRQ_CLEAR_OFFSET);
-	writel(csi_irqs, csi2->base + irq_info_map[port].irq_base +
+	ipu_writel(csi_irqs, csi2->base + irq_info_map[port].irq_base +
 		INTEL_IPU5_CSI_REG_IRQ_ENABLE_OFFSET);
-	writel(csi_irqs, csi2->base + irq_info_map[port].irq_base +
+	ipu_writel(csi_irqs, csi2->base + irq_info_map[port].irq_base +
 		INTEL_IPU5_CSI_REG_IRQ_PULSE_OFFSET);
 	/*
 	* enable irq of FRAME_LONG_PACKET_DISCARDED when dphy,
 	* because this error bit is located in ctrl2 register
 	*/
 	if (irq_info_map[port].dphy) {
-		csi_irqs = readl(csi2->base +
+		csi_irqs = ipu_readl(csi2->base +
 			irq_info_map[port].irq_base_ctrl2 +
 			INTEL_IPU5_CSI_REG_IRQ_ENABLE_OFFSET);
 		csi_irqs |= CSI_RX_INTER_FRAME_LONG_PACKET_DISCARDED;
-		writel(csi_irqs,
+		ipu_writel(csi_irqs,
 			csi2->base + irq_info_map[port].irq_base_ctrl2);
-		writel(csi_irqs,
+		ipu_writel(csi_irqs,
 			csi2->base + irq_info_map[port].irq_base_ctrl2 +
 			INTEL_IPU5_CSI_REG_IRQ_MASK_OFFSET);
-		writel(csi_irqs,
+		ipu_writel(csi_irqs,
 			csi2->base + irq_info_map[port].irq_base_ctrl2 +
 			INTEL_IPU5_CSI_REG_IRQ_CLEAR_OFFSET);
-		writel(csi_irqs,
+		ipu_writel(csi_irqs,
 			csi2->base + irq_info_map[port].irq_base_ctrl2 +
 			INTEL_IPU5_CSI_REG_IRQ_ENABLE_OFFSET);
-		writel(csi_irqs,
+		ipu_writel(csi_irqs,
 			csi2->base + irq_info_map[port].irq_base_ctrl2 +
 			INTEL_IPU5_CSI_REG_IRQ_PULSE_OFFSET);
 	}
@@ -404,10 +405,10 @@ void intel_ipu5_isys_csi2_isr(struct intel_ipu4_isys_csi2 *csi2)
 
 	intel_ipu5_isys_register_errors(csi2);
 
-	status = readl(csi2->base + irq_info_map[cfg->port].irq_base +
+	status = ipu_readl(csi2->base + irq_info_map[cfg->port].irq_base +
 			INTEL_IPU5_CSI_REG_IRQ_STATUS_OFFSET);
 
-	writel(status, csi2->base + irq_info_map[cfg->port].irq_base +
+	ipu_writel(status, csi2->base + irq_info_map[cfg->port].irq_base +
 		INTEL_IPU5_CSI_REG_IRQ_CLEAR_OFFSET);
 
 	for (i = 0; i < NR_OF_CSI2_VC; i++) {

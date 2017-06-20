@@ -95,21 +95,21 @@ static void *host_addr(int ssid, u32 addr)
 void vied_subsystem_store_32(int ssid,
 			     u32 addr, uint32_t data)
 {
-	writel(data, host_addr(ssid, addr));
+	ipu_writel(data, host_addr(ssid, addr));
 }
 EXPORT_SYMBOL_GPL(vied_subsystem_store_32);
 
 void vied_subsystem_store_16(int ssid,
 			     u32 addr, uint16_t data)
 {
-	writew(data, host_addr(ssid, addr));
+	ipu_writew(data, host_addr(ssid, addr));
 }
 EXPORT_SYMBOL_GPL(vied_subsystem_store_16);
 
 void vied_subsystem_store_8(int ssid,
 			     u32 addr, uint8_t data)
 {
-	writeb(data, host_addr(ssid, addr));
+	ipu_writeb(data, host_addr(ssid, addr));
 }
 EXPORT_SYMBOL_GPL(vied_subsystem_store_8);
 
@@ -124,15 +124,15 @@ void vied_subsystem_store(int ssid,
 
 	for (; size >= sizeof(uint32_t); size -= sizeof(uint32_t),
 		     dst += sizeof(uint32_t), data += sizeof(uint32_t)) {
-		writel(*(uint32_t *)data, dst);
+		ipu_writel(*(uint32_t *)data, dst);
 	}
 	if (size >= sizeof(uint16_t)) {
-		writew(*(uint16_t *)data, dst);
+		ipu_writew(*(uint16_t *)data, dst);
 		size -= sizeof(uint16_t), dst += sizeof(uint16_t),
 			data += sizeof(uint16_t);
 	}
 	if (size)
-		writeb(*(uint8_t *)data, dst);
+		ipu_writeb(*(uint8_t *)data, dst);
 
 }
 EXPORT_SYMBOL_GPL(vied_subsystem_store);
@@ -140,21 +140,21 @@ EXPORT_SYMBOL_GPL(vied_subsystem_store);
 uint32_t vied_subsystem_load_32(int ssid,
 				u32 addr)
 {
-	return readl(host_addr(ssid, addr));
+	return ipu_readl(host_addr(ssid, addr));
 }
 EXPORT_SYMBOL_GPL(vied_subsystem_load_32);
 
 uint16_t vied_subsystem_load_16(int ssid,
 				u32 addr)
 {
-	return readw(host_addr(ssid, addr));
+	return ipu_readw(host_addr(ssid, addr));
 }
 EXPORT_SYMBOL_GPL(vied_subsystem_load_16);
 
 uint8_t vied_subsystem_load_8(int ssid,
 				u32 addr)
 {
-	return readb(host_addr(ssid, addr));
+	return ipu_readb(host_addr(ssid, addr));
 }
 EXPORT_SYMBOL_GPL(vied_subsystem_load_8);
 
@@ -169,14 +169,14 @@ void vied_subsystem_load(int ssid,
 
 	for (; size >= sizeof(uint32_t); size -= sizeof(uint32_t),
 		     src += sizeof(uint32_t), data += sizeof(uint32_t))
-		*(uint32_t *)data = readl(src);
+		*(uint32_t *)data = ipu_readl(src);
 	if (size >= sizeof(uint16_t)) {
-		*(uint16_t *)data = readw(src);
+		*(uint16_t *)data = ipu_readw(src);
 		size -= sizeof(uint16_t), src += sizeof(uint16_t),
 			data += sizeof(uint16_t);
 	}
 	if (size)
-		*(uint8_t *)data = readb(src);
+		*(uint8_t *)data = ipu_readb(src);
 }
 EXPORT_SYMBOL_GPL(vied_subsystem_load);
 /*

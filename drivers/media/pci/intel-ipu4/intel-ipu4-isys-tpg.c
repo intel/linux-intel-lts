@@ -65,40 +65,40 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	 * In B0 MIPI_GEN block is CSI2 FB. Need to enable/disable TPG selection
 	 * register to control the TPG streaming.
 	 */
-	writel(enable ? 1 : 0, tpg->sel);
+	ipu_writel(enable ? 1 : 0, tpg->sel);
 
 	if (!enable) {
-		writel(0, tpg->base + MIPI_GEN_REG_COM_ENABLE);
+		ipu_writel(0, tpg->base + MIPI_GEN_REG_COM_ENABLE);
 		return 0;
 	}
 
-	writel(MIPI_GEN_COM_DTYPE_RAWn(bpp),
+	ipu_writel(MIPI_GEN_COM_DTYPE_RAWn(bpp),
 	       tpg->base + MIPI_GEN_REG_COM_DTYPE);
-	writel(intel_ipu4_isys_mbus_code_to_mipi(
+	ipu_writel(intel_ipu4_isys_mbus_code_to_mipi(
 		       tpg->asd.ffmt[TPG_PAD_SOURCE][0].code),
 	       tpg->base + MIPI_GEN_REG_COM_VTYPE);
-	writel(0, tpg->base + MIPI_GEN_REG_COM_VCHAN);
-	writel(DIV_ROUND_UP(tpg->asd.ffmt[TPG_PAD_SOURCE][0].width *
+	ipu_writel(0, tpg->base + MIPI_GEN_REG_COM_VCHAN);
+	ipu_writel(DIV_ROUND_UP(tpg->asd.ffmt[TPG_PAD_SOURCE][0].width *
 			    bpp, BITS_PER_BYTE),
 	       tpg->base + MIPI_GEN_REG_COM_WCOUNT);
 
-	writel(0, tpg->base + MIPI_GEN_REG_SYNG_NOF_FRAMES);
+	ipu_writel(0, tpg->base + MIPI_GEN_REG_SYNG_NOF_FRAMES);
 
-	writel(DIV_ROUND_UP(tpg->asd.ffmt[TPG_PAD_SOURCE][0].width,
+	ipu_writel(DIV_ROUND_UP(tpg->asd.ffmt[TPG_PAD_SOURCE][0].width,
 	       MIPI_GEN_PPC), tpg->base + MIPI_GEN_REG_SYNG_NOF_PIXELS);
-	writel(tpg->asd.ffmt[TPG_PAD_SOURCE][0].height,
+	ipu_writel(tpg->asd.ffmt[TPG_PAD_SOURCE][0].height,
 	       tpg->base + MIPI_GEN_REG_SYNG_NOF_LINES);
 
-	writel(0, tpg->base + MIPI_GEN_REG_TPG_MODE);
-	writel(-1, tpg->base + MIPI_GEN_REG_TPG_HCNT_MASK);
-	writel(-1, tpg->base + MIPI_GEN_REG_TPG_VCNT_MASK);
-	writel(-1, tpg->base + MIPI_GEN_REG_TPG_XYCNT_MASK);
-	writel(0, tpg->base + MIPI_GEN_REG_TPG_HCNT_DELTA);
-	writel(0, tpg->base + MIPI_GEN_REG_TPG_VCNT_DELTA);
+	ipu_writel(0, tpg->base + MIPI_GEN_REG_TPG_MODE);
+	ipu_writel(-1, tpg->base + MIPI_GEN_REG_TPG_HCNT_MASK);
+	ipu_writel(-1, tpg->base + MIPI_GEN_REG_TPG_VCNT_MASK);
+	ipu_writel(-1, tpg->base + MIPI_GEN_REG_TPG_XYCNT_MASK);
+	ipu_writel(0, tpg->base + MIPI_GEN_REG_TPG_HCNT_DELTA);
+	ipu_writel(0, tpg->base + MIPI_GEN_REG_TPG_VCNT_DELTA);
 
 	v4l2_ctrl_handler_setup(&tpg->asd.ctrl_handler);
 
-	writel(2, tpg->base + MIPI_GEN_REG_COM_ENABLE);
+	ipu_writel(2, tpg->base + MIPI_GEN_REG_COM_ENABLE);
 	return 0;
 }
 
@@ -116,27 +116,27 @@ static int intel_ipu4_isys_tpg_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_HBLANK:
-		writel(ctrl->val,
+		ipu_writel(ctrl->val,
 		       tpg->base + MIPI_GEN_REG_SYNG_HBLANK_CYC);
 		break;
 	case V4L2_CID_VBLANK:
-		writel(ctrl->val,
+		ipu_writel(ctrl->val,
 		       tpg->base + MIPI_GEN_REG_SYNG_VBLANK_CYC);
 		break;
 	case V4L2_CID_LINE_LENGTH_PIXELS:
 		if (ctrl->val > tpg->asd.ffmt[TPG_PAD_SOURCE][0].width)
-			writel(ctrl->val -
+			ipu_writel(ctrl->val -
 				tpg->asd.ffmt[TPG_PAD_SOURCE][0].width,
 				tpg->base + MIPI_GEN_REG_SYNG_HBLANK_CYC);
 		break;
 	case V4L2_CID_FRAME_LENGTH_LINES:
 		if (ctrl->val > tpg->asd.ffmt[TPG_PAD_SOURCE][0].height)
-			writel(ctrl->val -
+			ipu_writel(ctrl->val -
 				tpg->asd.ffmt[TPG_PAD_SOURCE][0].height,
 				tpg->base + MIPI_GEN_REG_SYNG_VBLANK_CYC);
 		break;
 	case V4L2_CID_TEST_PATTERN:
-		writel(ctrl->val, tpg->base + MIPI_GEN_REG_TPG_MODE);
+		ipu_writel(ctrl->val, tpg->base + MIPI_GEN_REG_TPG_MODE);
 		break;
 	}
 
