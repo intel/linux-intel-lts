@@ -477,6 +477,12 @@ static struct crlmodule_platform_data magna_pdata = {
 	 * 1 means to connect sensor xshutdown to GPIO1
 	 */
 	.xshutdown = 1,
+	/*
+	 * this flags indicates the expected polarity for the LineValid
+	 * indication received in Raw mode.
+	 * 1 means LineValid is high for the duration of the video frame.
+	 */
+	.high_framevalid_flags = 1,
 };
 #endif
 
