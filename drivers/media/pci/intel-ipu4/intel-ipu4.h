@@ -173,7 +173,7 @@ struct intel_ipu4_device {
  * For FPGA PCI device ID definitions are not followed as per the specification
  * Hence we had to use a kconfig option for FPGA specific usecases.
  */
-#if defined CONFIG_VIDEO_INTEL_IPU_FPGA
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_FPGA)
 
 /*
  * Define macros used specially for FPGA

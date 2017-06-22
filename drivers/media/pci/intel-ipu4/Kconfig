@@ -39,7 +39,7 @@ choice
 	default VIDEO_INTEL_IPU_FPGA
 
 config VIDEO_INTEL_IPU_FPGA
-	bool "Compile for FPGA"
+	tristate "Compile for FPGA"
 
 endchoice
 
