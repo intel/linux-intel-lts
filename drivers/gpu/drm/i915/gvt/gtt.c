@@ -44,7 +44,7 @@
 #define gvt_vdbg_mm(fmt, args...)
 #endif
 
-static bool enable_out_of_sync = false;
+static bool enable_out_of_sync = true;
 static int preallocated_oos_pages = 8192;
 
 /*
