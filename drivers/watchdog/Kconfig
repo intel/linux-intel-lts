@@ -1059,7 +1059,7 @@ config INTEL_MID_WATCHDOG
 	  To compile this driver as a module, choose M here.
 
 config ITCO_WDT
-	tristate "Intel TCO Timer/Watchdog"
+	bool "Intel TCO Timer/Watchdog"
 	depends on (X86 || IA64) && PCI
 	select WATCHDOG_CORE
 	depends on I2C || I2C=n
