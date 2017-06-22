@@ -351,6 +351,11 @@ __packed __aligned(4)
  */
 DEFINE_RAW_SPINLOCK(logbuf_lock);
 
+/* Give the posibility to temporary disable slow (!CON_FAST) consoles */
+static atomic_t console_slow_suspended = ATOMIC_INIT(0);
+/* Keep the number of slow suspend in check */
+#define MAX_SLOW_SUSPEND_COUNT  (50)
+
 #ifdef CONFIG_PRINTK
 DECLARE_WAIT_QUEUE_HEAD(log_wait);
 /* the next printk record to read by syslog(READ) or /proc/kmsg */
@@ -400,11 +405,6 @@ u32 log_buf_len_get(void)
 {
 	return log_buf_len;
 }
-
-/* Give the posibility to temporary disable slow (!CON_FAST) consoles */
-static atomic_t console_slow_suspended = ATOMIC_INIT(0);
-/* Keep the number of slow suspend in check */
-#define MAX_SLOW_SUSPEND_COUNT	(50)
 
 /* human readable text of the record */
 static char *log_text(const struct printk_log *msg)
