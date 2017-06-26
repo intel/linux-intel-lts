@@ -883,6 +883,15 @@ static struct sst_codecs kbl_codecs = { 1, {"NAU88L25"} };
 static struct sst_codecs bxt_codecs = { 1, {"MX98357A"} };
 static struct sst_codecs kbl_poppy_codecs = { 1, {"10EC5663"} };
 
+/* TODO fill codec acpi name */
+static struct sst_acpi_mach sst_cnl_devdata[] = {
+	{
+		.id = "dummy",
+		.drv_name = "cnl_florida",
+		.fw_filename = "intel/dsp_fw_cnl.bin",
+	},
+};
+
 static struct sst_acpi_mach sst_skl_devdata[] = {
 	{
 		.id = "INT343A",
@@ -987,6 +996,9 @@ static const struct pci_device_id skl_ids[] = {
 	/* GLK */
 	{ PCI_DEVICE(0x8086, 0x3198),
 		.driver_data = (unsigned long)&sst_glk_devdata},
+	/* CNL */
+	{ PCI_DEVICE(0x8086, 0x9df0),
+		.driver_data = (unsigned long)&sst_cnl_devdata},
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, skl_ids);
