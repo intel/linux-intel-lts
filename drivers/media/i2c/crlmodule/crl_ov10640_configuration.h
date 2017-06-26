@@ -3667,6 +3667,26 @@ static struct crl_sensor_detect_config ov10640_sensor_detect_regset[] = {
 	},
 };
 
+/* ctrl-val == 1 ? (1 * 0x0F + 0x45) : (0 * 0x0F + 0x45) -> 0x54 and 0x45 */
+static struct crl_arithmetic_ops ov10640_wdr_ops[] = {
+	{
+		.op = CRL_MULTIPLY,
+		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST,
+		.operand.entity_val = 0x0F,
+	},
+	{
+		.op = CRL_ADD,
+		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST,
+		.operand.entity_val = 0x45,
+	}
+};
+
+static struct crl_dynamic_register_access ov10640_wdr_regs[] = {
+	{ 0x3119, CRL_REG_LEN_08BIT, 0xff,
+		ARRAY_SIZE(ov10640_wdr_ops),
+		ov10640_wdr_ops, 0 },
+};
+
 static struct crl_pll_configuration ov10640_pll_configurations[] = {
 	{
 		.input_clk = 24000000,
@@ -3978,6 +3998,26 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.regs = ov10640_el_regs,
 		.dep_items = 0,
 		.dep_ctrls = 0,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_BINNER,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = V4L2_CID_WDR_MODE,
+		.name = "V4L2_CID_WDR_MODE",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = 1,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_MODE_SELECTION,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_wdr_regs),
+		.regs = ov10640_wdr_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
 	},
 };
 
