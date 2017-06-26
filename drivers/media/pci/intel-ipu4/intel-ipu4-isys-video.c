@@ -171,8 +171,14 @@ static int intel_ipu4_poll_for_events(struct intel_ipu4_isys_video *av)
 		to_intel_ipu4_bus_device(&isys->adev->dev);
 	struct intel_ipu4_device *isp = adev->isp;
 
-	if (isp->ctrl->get_sim_type)
-		return (SIM_FPGA == isp->ctrl->get_sim_type());
+	if (isp->ctrl->get_sim_type) {
+		int type = isp->ctrl->get_sim_type();
+
+		if (SIM_FPGA == type)
+			return 1;
+		else if (SIM_MOCK == type)
+			return 1;
+	}
 
 	return 0;
 }

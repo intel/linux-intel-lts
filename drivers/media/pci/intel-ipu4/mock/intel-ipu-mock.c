@@ -21,8 +21,26 @@ static int intel_ipu_get_sim_type(void)
 	return SIM_MOCK;
 }
 
+static int intel_ipu_mock_get_secure_mode(void)
+{
+	return 0;
+}
+
+static int intel_ipu_mock_ipc_reset(struct device *dev)
+{
+	return 0;
+}
+
+static int intel_ipu_mock_start_tsc(void)
+{
+	return 0;
+}
+
 const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.get_sim_type = intel_ipu_get_sim_type,
+	.get_secure_mode = intel_ipu_mock_get_secure_mode,
+	.ipc_reset = intel_ipu_mock_ipc_reset,
+	.start_tsc = intel_ipu_mock_start_tsc,
 };
 EXPORT_SYMBOL_GPL(sim_ctrl_ops);
 

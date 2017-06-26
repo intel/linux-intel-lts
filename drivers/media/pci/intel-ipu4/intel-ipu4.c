@@ -795,6 +795,9 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	}
 
 	isp->base = iomap[INTEL_IPU4_PCI_BAR];
+	if (isp->ctrl->get_sim_type && SIM_MOCK == isp->ctrl->get_sim_type())
+		isp->base = INTEL_IPU_MOCK_FIXED_PCI_BASE;
+
 	dev_info(&pdev->dev, "mapped as: 0x%p\n", isp->base);
 	if (fpga_bar_mask) {
 		isp->base2 = iomap[IPU5_BAR_FOR_BRIDGE];

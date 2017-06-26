@@ -530,6 +530,9 @@ int intel_ipu4_buttress_power(
 	u32 pwr_sts, val;
 	int ret = 0;
 
+	if (isp->ctrl->get_sim_type && SIM_MOCK == isp->ctrl->get_sim_type())
+		return 0;
+
 	if (!ctrl)
 		return 0;
 

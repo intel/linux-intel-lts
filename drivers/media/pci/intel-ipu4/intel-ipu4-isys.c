@@ -1692,11 +1692,13 @@ static int resp_type_to_index(int type)
 static int isys_isr_one(struct intel_ipu4_bus_device *adev)
 {
 	struct intel_ipu4_isys *isys = intel_ipu4_bus_get_drvdata(adev);
+	struct intel_ipu4_device *isp = isys->adev->isp;
 	struct ipu_fw_isys_resp_info_abi resp_data;
 	struct ipu_fw_isys_resp_info_abi *resp;
 	struct intel_ipu4_isys_pipeline *pipe;
 	u64 ts;
 	unsigned int i;
+	int type = -1;
 
 	if (!isys->fwcom)
 		return 0;
@@ -1833,6 +1835,10 @@ static int isys_isr_one(struct intel_ipu4_bus_device *adev)
 
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_SOF:
+		if (isp->ctrl->get_sim_type && SIM_MOCK ==
+		    isp->ctrl->get_sim_type())
+			intel_ipu_isys_csi2_sof_event(pipe->csi2, pipe->vc);
+
 		pipe->seq[pipe->seq_index].sequence =
 			atomic_read(&pipe->sequence) - 1;
 		pipe->seq[pipe->seq_index].timestamp = ts;
@@ -1845,6 +1851,9 @@ static int isys_isr_one(struct intel_ipu4_bus_device *adev)
 			% INTEL_IPU4_ISYS_MAX_PARALLEL_SOF;
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_EOF:
+		if (isp->ctrl->get_sim_type && SIM_MOCK ==
+		    isp->ctrl->get_sim_type())
+			intel_ipu_isys_csi2_eof_event(pipe->csi2, pipe->vc);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STATS_DATA_READY:
 		break;
@@ -1986,18 +1995,21 @@ static irqreturn_t isys_isr(struct intel_ipu4_bus_device *adev)
 static void isys_isr_poll(struct intel_ipu4_bus_device *adev)
 {
 	struct intel_ipu4_isys *isys = intel_ipu4_bus_get_drvdata(adev);
+	struct intel_ipu4_device *isp = adev->isp;
 
 	if (!isys->fwcom) {
 		dev_dbg(&isys->adev->dev,
 			"got interrupt but device not configured yet\n");
 		return;
 	}
+
 	mutex_lock(&isys->mutex);
-	if (is_intel_ipu5_hw_a0(adev->isp))
+	if (isp->ctrl->get_sim_type && SIM_MOCK == isp->ctrl->get_sim_type())
+		isys_isr_one(adev);
+	else if (is_intel_ipu5_hw_a0(adev->isp))
 		isys_isr_ipu5(adev);
 	else
 		isys_isr_ipu4(adev);
-
 	mutex_unlock(&isys->mutex);
 }
 

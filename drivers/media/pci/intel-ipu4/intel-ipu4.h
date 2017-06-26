@@ -63,7 +63,12 @@
 #define INTEL_IPU4_HW_BXT_P_B1_REV	0xa
 #define INTEL_IPU4_HW_BXT_P_E0_REV	0xc
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_MOCK)
+#define INTEL_IPU5_HW_FPGA_A0		0x22b8 /* Mock on CHT */
+#else
 #define INTEL_IPU5_HW_FPGA_A0		0x5a19
+#endif
+
 #define INTEL_IPU5_HW_PCI_FPGA_BRIDGE	0x0bcd /* Only for FPGA reset */
 
 /* processing system frequency: 25Mhz x ratio, Legal values [8,32] */
@@ -116,6 +121,13 @@ struct list_head;
 struct firmware;
 
 #define NR_OF_MMU_RESOURCES			2
+
+/*
+ * IPU PCI address may change on different platform or each time when bootup
+ * the address may differ, so we have a fixed address for IPU other components
+ * calculation.
+ */
+#define INTEL_IPU_MOCK_FIXED_PCI_BASE	((void __iomem *)0xffffc90006000000)
 
 enum ipu_sim_type {
 	SIM_FPGA,
