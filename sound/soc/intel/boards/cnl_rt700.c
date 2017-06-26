@@ -60,7 +60,7 @@ static const struct snd_soc_dapm_route cnl_rt700_map[] = {
 	/* SWM map link the SWM outs to codec AIF */
 	{ "DP1 Playback", NULL, "SDW Tx"},
 	{ "SDW Tx", NULL, "sdw_codec0_out"},
-
+	{ "SDW Tx10", NULL, "sdw_codec1_out"},
 
 	{ "sdw_codec0_in", NULL, "SDW Rx" },
 	{ "SDW Rx", NULL, "DP2 Capture" },
@@ -192,7 +192,7 @@ struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 	},
 	{
 		.name = "SDW1-Codec",
-		.cpu_dai_name = "SDW1 Pin",
+		.cpu_dai_name = "SDW10 Pin",
 		.platform_name = "0000:02:18.0",
 		.codec_name = "sdw-slave0-10:02:5d:07:01:00",
 		.codec_dai_name = "rt700-aif2",
@@ -213,7 +213,6 @@ struct snd_soc_dai_link cnl_rt700_msic_dailink[] = {
 		.dpcm_capture = 1,
 		.be_hw_params_fixup = cnl_dmic_fixup,
 	},
-
 };
 
 /* SoC card */
