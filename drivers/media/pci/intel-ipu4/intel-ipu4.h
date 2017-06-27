@@ -122,6 +122,12 @@ enum ipu_sim_type {
 	SIM_MOCK,
 };
 
+enum config_param_type {
+	ISYS_FREQ = 0,
+	TPG_HBLANK,
+	TPG_LLP,
+};
+
 struct intel_ipu_sim_ctrl {
 	int (*get_sim_type)(void);
 
@@ -137,7 +143,7 @@ struct intel_ipu_sim_ctrl {
 	int (*ipc_reset)(struct device *dev);
 	int (*start_tsc)(void);
 
-	int (*get_tpg_config)(int type);
+	int (*get_config)(int type);
 
 	bool (*device_suspended)(struct device *dev);
 };

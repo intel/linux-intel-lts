@@ -255,7 +255,7 @@ static int intel_ipu_fpga_start_tsc(void)
 	return 0;
 }
 
-static int intel_ipu_fpga_get_tpg_config(int type)
+static int intel_ipu_fpga_get_config(int type)
 {
 	switch (type) {
 	case ISYS_FREQ:
@@ -286,7 +286,7 @@ const struct intel_ipu_sim_ctrl sim_ctrl_ops = {
 	.get_secure_mode = intel_ipu_fpga_get_secure_mode,
 	.ipc_reset = intel_ipu_fpga_ipc_reset,
 	.start_tsc = intel_ipu_fpga_start_tsc,
-	.get_tpg_config = intel_ipu_fpga_get_tpg_config,
+	.get_config = intel_ipu_fpga_get_config,
 	.device_suspended = intel_ipu_fpga_device_suspended,
 };
 EXPORT_SYMBOL_GPL(sim_ctrl_ops);

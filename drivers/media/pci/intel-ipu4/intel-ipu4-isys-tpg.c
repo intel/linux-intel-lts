@@ -152,8 +152,8 @@ static int64_t intel_ipu4_isys_tpg_rate(struct intel_ipu4_isys_tpg *tpg,
 {
 	struct intel_ipu4_device *isp = tpg->isys->adev->isp;
 
-	if (isp->ctrl->get_tpg_config)
-		return isp->ctrl->get_tpg_config(ISYS_FREQ);
+	if (isp->ctrl->get_config)
+		return isp->ctrl->get_config(ISYS_FREQ);
 	else
 		return MIPI_GEN_PPC * INTEL_IPU4_ISYS_FREQ_BXT;
 }
@@ -192,8 +192,8 @@ static void intel_ipu4_isys_tpg_init_controls(struct v4l2_subdev *sd)
 		.elem_size = 0,
 	};
 
-	if (isp->ctrl->get_tpg_config)
-		hblank = isp->ctrl->get_tpg_config(TPG_HBLANK);
+	if (isp->ctrl->get_config)
+		hblank = isp->ctrl->get_config(TPG_HBLANK);
 	else
 		hblank = 1024;
 
@@ -208,8 +208,8 @@ static void intel_ipu4_isys_tpg_init_controls(struct v4l2_subdev *sd)
 	cfg.id = V4L2_CID_LINE_LENGTH_PIXELS;
 	cfg.name = "Line Length Pixels";
 
-	if (isp->ctrl->get_tpg_config)
-		cfg.def = isp->ctrl->get_tpg_config(TPG_LLP);
+	if (isp->ctrl->get_config)
+		cfg.def = isp->ctrl->get_config(TPG_LLP);
 	else
 		cfg.def = 1024 + 4096;
 
