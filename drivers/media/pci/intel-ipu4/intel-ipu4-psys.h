@@ -147,6 +147,16 @@ struct intel_ipu4_psys_kcmd {
 	struct timer_list watchdog;
 };
 
+struct intel_ipu_dma_buf_attach {
+	struct device *dev;
+	uint64_t len;
+	void *userptr;
+	struct sg_table *sgt;
+	bool vma_is_io;
+	struct page **pages;
+	size_t npages;
+};
+
 struct intel_ipu4_psys_kbuffer {
 	uint64_t len;
 	void *userptr;
@@ -154,11 +164,8 @@ struct intel_ipu4_psys_kbuffer {
 	int fd;
 	void *kaddr;
 	struct list_head list;
-	bool vma_is_io;
 	dma_addr_t dma_addr;
 	struct sg_table *sgt;
-	struct page **pages;
-	size_t npages;
 	struct dma_buf_attachment *db_attach;
 	struct dma_buf *dbuf;
 	struct intel_ipu4_psys *psys;

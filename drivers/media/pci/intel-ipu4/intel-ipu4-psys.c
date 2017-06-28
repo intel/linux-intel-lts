@@ -312,7 +312,8 @@ not_found:
 	return NULL;
 }
 
-static int intel_ipu4_psys_get_userpages(struct intel_ipu4_psys_kbuffer *kbuf)
+static int intel_ipu4_psys_get_userpages(
+	struct intel_ipu_dma_buf_attach *attach)
 {
 	struct vm_area_struct *vma;
 	unsigned long start, end;
@@ -322,8 +323,8 @@ static int intel_ipu4_psys_get_userpages(struct intel_ipu4_psys_kbuffer *kbuf)
 	int nr = 0;
 	int ret = -ENOMEM;
 
-	start = (unsigned long)kbuf->userptr;
-	end = PAGE_ALIGN(start + kbuf->len);
+	start = (unsigned long)attach->userptr;
+	end = PAGE_ALIGN(start + attach->len);
 	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
 	array_size = npages * sizeof(struct page *);
 
@@ -345,10 +346,10 @@ static int intel_ipu4_psys_get_userpages(struct intel_ipu4_psys_kbuffer *kbuf)
 		goto error_up_read;
 	}
 
-	if (vma->vm_end < start + kbuf->len) {
-		dev_err(&kbuf->psys->adev->dev,
+	if (vma->vm_end < start + attach->len) {
+		dev_err(attach->dev,
 			"vma at %lu is too small for %llu bytes\n",
-			start, kbuf->len);
+			start, attach->len);
 		ret = -EFAULT;
 		goto error_up_read;
 	}
@@ -357,9 +358,9 @@ static int intel_ipu4_psys_get_userpages(struct intel_ipu4_psys_kbuffer *kbuf)
 	 * For buffers from Gralloc, VM_PFNMAP is expected,
 	 * but VM_IO is set. Possibly bug in Gralloc.
 	 */
-	kbuf->vma_is_io = vma->vm_flags & (VM_IO | VM_PFNMAP);
+	attach->vma_is_io = vma->vm_flags & (VM_IO | VM_PFNMAP);
 
-	if (kbuf->vma_is_io) {
+	if (attach->vma_is_io) {
 		unsigned long io_start = start;
 
 		for (nr = 0; nr < npages; nr++, io_start += PAGE_SIZE) {
@@ -388,21 +389,21 @@ static int intel_ipu4_psys_get_userpages(struct intel_ipu4_psys_kbuffer *kbuf)
 	up_read(&current->mm->mmap_sem);
 
 	ret = sg_alloc_table_from_pages(sgt, pages, npages,
-					start & ~PAGE_MASK, kbuf->len,
+					start & ~PAGE_MASK, attach->len,
 					GFP_KERNEL);
 	if (ret < 0)
 		goto error;
 
-	kbuf->sgt = sgt;
-	kbuf->pages = pages;
-	kbuf->npages = npages;
+	attach->sgt = sgt;
+	attach->pages = pages;
+	attach->npages = npages;
 
 	return 0;
 
 error_up_read:
 	up_read(&current->mm->mmap_sem);
 error:
-	if (!kbuf->vma_is_io)
+	if (!attach->vma_is_io)
 		while (nr > 0)
 			put_page(pages[--nr]);
 
@@ -413,91 +414,107 @@ error:
 free_sgt:
 	kfree(sgt);
 
-	dev_dbg(&kbuf->psys->adev->dev, "failed to get userpages:%d\n", ret);
+	dev_err(attach->dev, "failed to get userpages:%d\n", ret);
 
 	return ret;
 }
 
-static void intel_ipu4_psys_put_userpages(struct intel_ipu4_psys_kbuffer *kbuf)
+static void intel_ipu4_psys_put_userpages(
+	struct intel_ipu_dma_buf_attach *attach)
 {
-	if (!kbuf->userptr || !kbuf->sgt)
+	if (!attach || !attach->userptr || !attach->sgt)
 		return;
 
-	if (!kbuf->vma_is_io) {
-		int i = kbuf->npages;
+	if (!attach->vma_is_io) {
+		int i = attach->npages;
 
 		while (--i >= 0) {
-			set_page_dirty_lock(kbuf->pages[i]);
-			put_page(kbuf->pages[i]);
+			set_page_dirty_lock(attach->pages[i]);
+			put_page(attach->pages[i]);
 		}
 	}
 
-	if (is_vmalloc_addr(kbuf->pages))
-		vfree(kbuf->pages);
+	if (is_vmalloc_addr(attach->pages))
+		vfree(attach->pages);
 	else
-		kfree(kbuf->pages);
+		kfree(attach->pages);
 
-	sg_free_table(kbuf->sgt);
-	kfree(kbuf->sgt);
-	kbuf->sgt = NULL;
+	sg_free_table(attach->sgt);
+	kfree(attach->sgt);
+	attach->sgt = NULL;
 }
 
 static int intel_ipu4_dma_buf_attach(struct dma_buf *dbuf, struct device *dev,
 				  struct dma_buf_attachment *attach)
 {
-	attach->priv = dbuf->priv;
+	struct intel_ipu4_psys_kbuffer *kbuf = dbuf->priv;
+	struct intel_ipu_dma_buf_attach *ipu_attach;
+
+	ipu_attach = kzalloc(sizeof(*ipu_attach), GFP_KERNEL);
+	if (!ipu_attach)
+		return -ENOMEM;
+
+	ipu_attach->dev = dev;
+	ipu_attach->len = kbuf->len;
+	ipu_attach->userptr = kbuf->userptr;
+
+	attach->priv = ipu_attach;
 	return 0;
 }
 
 static void intel_ipu4_dma_buf_detach(struct dma_buf *dbuf,
 				   struct dma_buf_attachment *attach)
 {
+	struct intel_ipu_dma_buf_attach *ipu_attach = attach->priv;
+
+	kfree(ipu_attach);
+	attach->priv = NULL;
 }
 
 static struct sg_table *intel_ipu4_dma_buf_map(
 					struct dma_buf_attachment *attach,
 					enum dma_data_direction dir)
 {
-	struct intel_ipu4_psys_kbuffer *kbuf = attach->priv;
+	struct intel_ipu_dma_buf_attach *ipu_attach = attach->priv;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 	DEFINE_DMA_ATTRS(attrs);
 #endif
 	int ret;
 
-	ret = intel_ipu4_psys_get_userpages(kbuf);
+	ret = intel_ipu4_psys_get_userpages(ipu_attach);
 	if (ret)
 		return NULL;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
-	ret = dma_map_sg_attrs(attach->dev, kbuf->sgt->sgl,
-				kbuf->sgt->orig_nents, dir, &attrs);
+	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
+				ipu_attach->sgt->orig_nents, dir, &attrs);
 #else
-	ret = dma_map_sg_attrs(attach->dev, kbuf->sgt->sgl,
-				kbuf->sgt->orig_nents, dir, DMA_ATTR_SKIP_CPU_SYNC);
+	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
+				ipu_attach->sgt->orig_nents, dir, DMA_ATTR_SKIP_CPU_SYNC);
 #endif
-	if (ret < kbuf->sgt->orig_nents) {
-		intel_ipu4_psys_put_userpages(kbuf);
-		dev_dbg(&kbuf->psys->adev->dev, "buf map failed\n");
+	if (ret < ipu_attach->sgt->orig_nents) {
+		intel_ipu4_psys_put_userpages(ipu_attach);
+		dev_dbg(attach->dev, "buf map failed\n");
 
 		return ERR_PTR(-EIO);
 	}
 
 	/* initial cache flush to avoid writing dirty pages for buffers which
 	 * are later marked as INTEL_IPU4_BUFFER_FLAG_NO_FLUSH */
-	dma_sync_sg_for_device(attach->dev, kbuf->sgt->sgl,
-			kbuf->sgt->orig_nents, DMA_BIDIRECTIONAL);
+	dma_sync_sg_for_device(attach->dev, ipu_attach->sgt->sgl,
+			ipu_attach->sgt->orig_nents, DMA_BIDIRECTIONAL);
 
-	return kbuf->sgt;
+	return ipu_attach->sgt;
 }
 
 static void intel_ipu4_dma_buf_unmap(struct dma_buf_attachment *attach,
 				  struct sg_table *sg,
 				  enum dma_data_direction dir)
 {
-	struct intel_ipu4_psys_kbuffer *kbuf = attach->priv;
+	struct intel_ipu_dma_buf_attach *ipu_attach = attach->priv;
 
 	dma_unmap_sg(attach->dev, sg->sgl, sg->orig_nents, dir);
-	intel_ipu4_psys_put_userpages(kbuf);
+	intel_ipu4_psys_put_userpages(ipu_attach);
 }
 
 static int intel_ipu4_dma_buf_mmap(struct dma_buf *dbuf,
@@ -526,7 +543,8 @@ static void intel_ipu4_dma_buf_release(struct dma_buf *buf)
 
 	dev_dbg(&kbuf->psys->adev->dev, "releasing buffer %d\n", kbuf->fd);
 
-	intel_ipu4_psys_put_userpages(kbuf);
+	if (kbuf->db_attach)
+		intel_ipu4_psys_put_userpages(kbuf->db_attach->priv);
 	kfree(kbuf);
 }
 
@@ -541,16 +559,41 @@ int intel_ipu4_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
 
 static void *intel_ipu4_dma_buf_vmap(struct dma_buf *dmabuf)
 {
-	struct intel_ipu4_psys_kbuffer *kbuf = dmabuf->priv;
+	struct dma_buf_attachment *attach;
+	struct intel_ipu_dma_buf_attach *ipu_attach;
 
-	return vm_map_ram(kbuf->pages, kbuf->npages, 0, PAGE_KERNEL);
+	if (list_empty(&dmabuf->attachments))
+		return NULL;
+
+	attach = list_last_entry(&dmabuf->attachments,
+			struct dma_buf_attachment, node);
+	ipu_attach = attach->priv;
+
+	if (!ipu_attach || !ipu_attach->pages ||
+			!ipu_attach->npages)
+		return NULL;
+
+	return vm_map_ram(ipu_attach->pages,
+		ipu_attach->npages, 0, PAGE_KERNEL);
 }
 
 static void intel_ipu4_dma_buf_vunmap(struct dma_buf *dmabuf, void *vaddr)
 {
-	struct intel_ipu4_psys_kbuffer *kbuf = dmabuf->priv;
+	struct dma_buf_attachment *attach;
+	struct intel_ipu_dma_buf_attach *ipu_attach;
 
-	vm_unmap_ram(vaddr, kbuf->npages);
+	if (WARN_ON(list_empty(&dmabuf->attachments)))
+		return;
+
+	attach = list_last_entry(&dmabuf->attachments,
+			struct dma_buf_attachment, node);
+	ipu_attach = attach->priv;
+
+	if (WARN_ON(!ipu_attach || !ipu_attach->pages ||
+		!ipu_attach->npages))
+		return;
+
+	vm_unmap_ram(vaddr, ipu_attach->npages);
 }
 
 static struct dma_buf_ops intel_ipu4_dma_buf_ops = {
@@ -766,7 +809,9 @@ static int intel_ipu4_psys_release(struct inode *inode, struct file *file)
 			kbuf->db_attach = NULL;
 			dma_buf_put(dbuf);
 		} else {
-			intel_ipu4_psys_put_userpages(kbuf);
+			if (kbuf->db_attach)
+				intel_ipu4_psys_put_userpages(
+					kbuf->db_attach->priv);
 			kfree(kbuf);
 		}
 	}
@@ -2125,6 +2170,7 @@ error_unmap:
 				kbuf->sgt, DMA_BIDIRECTIONAL);
 error_detach:
 	dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
+	kbuf->db_attach = NULL;
 error_put:
 	list_del(&kbuf->list);
 	dbuf = kbuf->dbuf;
