@@ -324,7 +324,18 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
 				dev_err(ctx->dev, "FW Configuration: memory reclaim not enabled:%d\n",
 						fw_property.memory_reclaimed);
 				ret = -EIO;
+				goto cnl_load_base_firmware_failed;
 			}
+
+			ret = skl_get_hardware_configuration(ctx);
+			if (ret < 0) {
+				dev_err(ctx->dev, "hwconfig ipc failed !\n");
+				ret = -EIO;
+				goto cnl_load_base_firmware_failed;
+			}
+
+			/* Update dsp core count retrieved from hw config IPC */
+			cnl->cores.count = cnl->hw_property.dsp_cores;
 		}
 	}
 cnl_load_base_firmware_failed:
