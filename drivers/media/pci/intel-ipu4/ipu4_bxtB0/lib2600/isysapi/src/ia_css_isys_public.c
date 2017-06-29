@@ -281,8 +281,8 @@ int ia_css_isys_device_open_ready(HANDLE context)
 	for (i = 0; i < ctx->num_send_queues[IA_CSS_ISYS_QUEUE_TYPE_PROXY];
 	     i++) {
 		retval = ia_css_syscom_send_port_open(ctx->sys, i);
-		verifret(retval != ERROR_BUSY, EBUSY);
-		verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+		verifret(retval != FW_ERROR_BUSY, EBUSY);
+		verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 		verifret(retval == 0, EINVAL);
 	}
 
@@ -292,8 +292,8 @@ int ia_css_isys_device_open_ready(HANDLE context)
 		  ctx->num_recv_queues[IA_CSS_ISYS_QUEUE_TYPE_MSG]);
 	     i++) {
 		retval = ia_css_syscom_recv_port_open(ctx->sys, i);
-		verifret(retval != ERROR_BUSY, EBUSY);
-		verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+		verifret(retval != FW_ERROR_BUSY, EBUSY);
+		verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 		verifret(retval == 0, EINVAL);
 	}
 
@@ -526,13 +526,13 @@ stream_cfg->output_pins[i].output_res.width, EINVAL);
 	 */
 	retval = ia_css_syscom_send_port_open(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(retval != ERROR_BUSY, EBUSY);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BUSY, EBUSY);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval == 0, EINVAL);
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	token.send_type = IA_CSS_ISYS_SEND_TYPE_STREAM_OPEN;
@@ -543,7 +543,7 @@ stream_cfg->output_pins[i].output_res.width, EINVAL);
 	token.buf_handle = HOST_ADDRESS(buf_stream_cfg_id);
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	ctx->stream_nof_output_pins[stream_handle] =
@@ -598,7 +598,7 @@ int ia_css_isys_stream_close(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	token.send_type = IA_CSS_ISYS_SEND_TYPE_STREAM_CLOSE;
@@ -606,7 +606,7 @@ int ia_css_isys_stream_close(
 	token.buf_handle = 0;
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	/* close 1 send queue/stream and the single receive queue
@@ -614,7 +614,7 @@ int ia_css_isys_stream_close(
 	 */
 	retval = ia_css_syscom_send_port_close(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval == 0, EINVAL);
 
 	ctx->stream_state_array[stream_handle] = IA_CSS_ISYS_STREAM_STATE_IDLE;
@@ -672,7 +672,7 @@ int ia_css_isys_stream_start(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	if (next_frame != NULL) {
@@ -690,7 +690,7 @@ int ia_css_isys_stream_start(
 	}
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	ctx->stream_state_array[stream_handle] =
@@ -743,7 +743,7 @@ int ia_css_isys_stream_stop(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	token.send_type = IA_CSS_ISYS_SEND_TYPE_STREAM_STOP;
@@ -751,7 +751,7 @@ int ia_css_isys_stream_stop(
 	token.buf_handle = 0;
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 		(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	ctx->stream_state_array[stream_handle] =
@@ -806,7 +806,7 @@ int ia_css_isys_stream_flush(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	token.send_type = IA_CSS_ISYS_SEND_TYPE_STREAM_FLUSH;
@@ -814,7 +814,7 @@ int ia_css_isys_stream_flush(
 	token.buf_handle = 0;
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	ctx->stream_state_array[stream_handle] =
@@ -875,7 +875,7 @@ int ia_css_isys_stream_capture_indication(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	{
@@ -888,7 +888,7 @@ int ia_css_isys_stream_capture_indication(
 	}
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	/* Printing "LEAVE IA_CSS_ISYS_STREAM_CAPTURE_INDICATION" message
@@ -936,13 +936,13 @@ int ia_css_isys_stream_handle_response(
 
 	packets = ia_css_syscom_recv_port_available(
 			ctx->sys, N_MAX_PROXY_RECV_QUEUES);
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 
 	retval = ia_css_syscom_recv_port_transfer(
 			ctx->sys, N_MAX_PROXY_RECV_QUEUES, &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 	retval = ia_css_isys_extract_fw_response(
 			ctx, &token, received_response);
@@ -1015,7 +1015,7 @@ int ia_css_isys_device_close(HANDLE context)
 		retval = ia_css_syscom_recv_port_close(
 				ctx->sys, queue_id);
 	}
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval == 0, EINVAL);
 
 	nof_proxy_send_queues =
@@ -1025,7 +1025,7 @@ int ia_css_isys_device_close(HANDLE context)
 		retval = ia_css_syscom_send_port_close(
 				ctx->sys, queue_id);
 	}
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval == 0, EINVAL);
 
 	for (stream_handle = 0; stream_handle < STREAM_ID_MAX;
@@ -1119,7 +1119,7 @@ int ia_css_isys_proxy_write_req(
 	verifret(write_req_val != NULL, EFAULT);
 
 	packets = ia_css_syscom_send_port_available(ctx->sys, 0);
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 
@@ -1129,7 +1129,7 @@ int ia_css_isys_proxy_write_req(
 	token.value = write_req_val->value;
 
 	retval = ia_css_syscom_send_port_transfer(ctx->sys, 0, &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "LEAVE IA_CSS_ISYS_PROXY_WRITE_REQ\n");
@@ -1156,12 +1156,12 @@ int ia_css_isys_proxy_handle_write_response(
 	verifret(received_response != NULL, EFAULT);
 
 	packets = ia_css_syscom_recv_port_available(ctx->sys, 0);
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 
 	retval = ia_css_syscom_recv_port_transfer(ctx->sys, 0, &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 

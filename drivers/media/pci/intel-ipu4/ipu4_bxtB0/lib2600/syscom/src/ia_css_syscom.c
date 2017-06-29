@@ -99,7 +99,7 @@ EXIT3:	shared_memory_free(mmid, buf->ibuf_host);
 EXIT4:	shared_memory_unmap(ssid, mmid, buf->shm_cell);
 EXIT5:	shared_memory_free(mmid, buf->shm_host);
 EXIT6:	ia_css_cpu_mem_free(buf->cpu);
-EXIT7:	return ERROR_NO_MEMORY;
+EXIT7:	return FW_ERROR_NO_MEMORY;
 }
 
 static void
@@ -368,7 +368,7 @@ ia_css_syscom_close(
 				ctx->env.ssid);
 	if (state != SYSCOM_STATE_READY) {
 		/* SPC is not ready to handle close request yet */
-		return ERROR_BUSY;
+		return FW_ERROR_BUSY;
 	}
 
 	/* set close request flag */
@@ -399,7 +399,7 @@ ia_css_syscom_release(
 	/* check if release is forced, an verify cell state if it is not */
 	if (!force) {
 		if (!ia_css_cell_is_ready(ctx->env.ssid, SPC0))
-			return ERROR_BUSY;
+			return FW_ERROR_BUSY;
 	}
 
 	/* Reset the regmem idx */
@@ -419,15 +419,15 @@ int ia_css_syscom_send_port_open(
 	int state;
 
 	/* check parameters */
-	verifret(ctx != NULL, ERROR_BAD_ADDRESS);
-	verifret(port < ctx->num_input_queues, ERROR_INVALID_PARAMETER);
+	verifret(ctx != NULL, FW_ERROR_BAD_ADDRESS);
+	verifret(port < ctx->num_input_queues, FW_ERROR_INVALID_PARAMETER);
 
 	/* check if SP syscom is ready to open the queue */
 	state = regmem_load_32(ctx->cell_dmem_addr, SYSCOM_STATE_REG,
 			       ctx->env.ssid);
 	if (state != SYSCOM_STATE_READY) {
 		/* SPC is not ready to handle messages yet */
-		return ERROR_BUSY;
+		return FW_ERROR_BUSY;
 	}
 
 	/* initialize the port */
@@ -443,8 +443,8 @@ int ia_css_syscom_send_port_close(
 )
 {
 	/* check parameters */
-	verifret(ctx != NULL, ERROR_BAD_ADDRESS);
-	verifret(port < ctx->num_input_queues, ERROR_INVALID_PARAMETER);
+	verifret(ctx != NULL, FW_ERROR_BAD_ADDRESS);
+	verifret(port < ctx->num_input_queues, FW_ERROR_INVALID_PARAMETER);
 
 	return 0;
 }
@@ -455,8 +455,8 @@ int ia_css_syscom_send_port_available(
 )
 {
 	/* check params */
-	verifret(ctx != NULL, ERROR_BAD_ADDRESS);
-	verifret(port < ctx->num_input_queues, ERROR_INVALID_PARAMETER);
+	verifret(ctx != NULL, FW_ERROR_BAD_ADDRESS);
+	verifret(port < ctx->num_input_queues, FW_ERROR_INVALID_PARAMETER);
 
 	return send_port_available(ctx->send_port + port);
 }
@@ -468,8 +468,8 @@ int ia_css_syscom_send_port_transfer(
 )
 {
 	/* check params */
-	verifret(ctx != NULL, ERROR_BAD_ADDRESS);
-	verifret(port < ctx->num_input_queues, ERROR_INVALID_PARAMETER);
+	verifret(ctx != NULL, FW_ERROR_BAD_ADDRESS);
+	verifret(port < ctx->num_input_queues, FW_ERROR_INVALID_PARAMETER);
 
 	return send_port_transfer(ctx->send_port + port, token);
 }
@@ -482,15 +482,15 @@ int ia_css_syscom_recv_port_open(
 	int state;
 
 	/* check parameters */
-	verifret(ctx != NULL, ERROR_BAD_ADDRESS);
-	verifret(port < ctx->num_output_queues, ERROR_INVALID_PARAMETER);
+	verifret(ctx != NULL, FW_ERROR_BAD_ADDRESS);
+	verifret(port < ctx->num_output_queues, FW_ERROR_INVALID_PARAMETER);
 
 	/* check if SP syscom is ready to open the queue */
 	state = regmem_load_32(ctx->cell_dmem_addr,
 				SYSCOM_STATE_REG, ctx->env.ssid);
 	if (state != SYSCOM_STATE_READY) {
 		/* SPC is not ready to handle messages yet */
-		return ERROR_BUSY;
+		return FW_ERROR_BUSY;
 	}
 
 	/* initialize the port */
@@ -506,8 +506,8 @@ int ia_css_syscom_recv_port_close(
 )
 {
 	/* check parameters */
-	verifret(ctx != NULL, ERROR_BAD_ADDRESS);
-	verifret(port < ctx->num_output_queues, ERROR_INVALID_PARAMETER);
+	verifret(ctx != NULL, FW_ERROR_BAD_ADDRESS);
+	verifret(port < ctx->num_output_queues, FW_ERROR_INVALID_PARAMETER);
 
 	return 0;
 }
@@ -522,8 +522,8 @@ ia_css_syscom_recv_port_available(
 )
 {
 	/* check params */
-	verifret(ctx != NULL, ERROR_BAD_ADDRESS);
-	verifret(port < ctx->num_output_queues, ERROR_INVALID_PARAMETER);
+	verifret(ctx != NULL, FW_ERROR_BAD_ADDRESS);
+	verifret(port < ctx->num_output_queues, FW_ERROR_INVALID_PARAMETER);
 
 	return recv_port_available(ctx->recv_port + port);
 }
@@ -541,8 +541,8 @@ ia_css_syscom_recv_port_transfer(
 )
 {
 	/* check params */
-	verifret(ctx != NULL, ERROR_BAD_ADDRESS);
-	verifret(port < ctx->num_output_queues, ERROR_INVALID_PARAMETER);
+	verifret(ctx != NULL, FW_ERROR_BAD_ADDRESS);
+	verifret(port < ctx->num_output_queues, FW_ERROR_INVALID_PARAMETER);
 
 	return recv_port_transfer(ctx->recv_port + port, token);
 }

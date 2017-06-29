@@ -231,7 +231,7 @@ bool ia_css_psys_open_is_ready(
 	for (i = 0; i < IA_CSS_N_PSYS_CMD_QUEUE_ID; i++) {
 		syscom_retval = ia_css_syscom_send_port_open(context, i);
 		if (syscom_retval != 0) {
-			if (syscom_retval == ERROR_BUSY) {
+			if (syscom_retval == FW_ERROR_BUSY) {
 				/* Do not print error */
 				retval = 0;
 			}
@@ -243,7 +243,7 @@ bool ia_css_psys_open_is_ready(
 	for (i = 0; i < IA_CSS_N_PSYS_EVENT_QUEUE_ID; i++) {
 		syscom_retval = ia_css_syscom_recv_port_open(context, i);
 		if (syscom_retval != 0) {
-			if (syscom_retval == ERROR_BUSY) {
+			if (syscom_retval == FW_ERROR_BUSY) {
 				/* Do not print error */
 				retval = 0;
 			}

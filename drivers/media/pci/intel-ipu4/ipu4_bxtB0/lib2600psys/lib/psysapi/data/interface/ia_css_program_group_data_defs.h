@@ -185,6 +185,10 @@ typedef enum ia_css_frame_format_type {
 	/* TILEYYf representation of P016 MSB aligned*/
 	IA_CSS_DATA_FORMAT_P016_MSB_TILEYF,
 
+        /* consists of L and R PDAF pixel pairs.
+         * L and R can be interleaved or not. 1-plane (bpp == bpe) */
+	IA_CSS_DATA_FORMAT_PAF,
+
 	IA_CSS_N_FRAME_FORMAT_TYPES
 } ia_css_frame_format_type_t;
 

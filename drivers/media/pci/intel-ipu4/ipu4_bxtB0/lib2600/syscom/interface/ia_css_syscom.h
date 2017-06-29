@@ -25,10 +25,10 @@
 
 #include "ia_css_syscom_config.h"
 
-#define ERROR_INVALID_PARAMETER		(-1)
-#define ERROR_BAD_ADDRESS		(-2)
-#define ERROR_BUSY			(-3)
-#define ERROR_NO_MEMORY			(-4)
+#define FW_ERROR_INVALID_PARAMETER	(-1)
+#define FW_ERROR_BAD_ADDRESS		(-2)
+#define FW_ERROR_BUSY			(-3)
+#define FW_ERROR_NO_MEMORY		(-4)
 
 struct ia_css_syscom_context;
 
@@ -68,7 +68,7 @@ ia_css_syscom_open(
 /**
  * ia_css_syscom_close() - signal close to cell
  * @context: pointer to the subsystem context
- * @returns: 0 on success, -2 (ERROR_BUSY) if SPC is not ready yet.
+ * @returns: 0 on success, -2 (FW_ERROR_BUSY) if SPC is not ready yet.
  *
  * Purpose:
  * Request from the Cell to terminate
@@ -84,7 +84,7 @@ ia_css_syscom_close(
  * @force: flag which specifies whether cell
  * state will be checked before freeing the
  * context.
- * @returns: 0 on success, -2 (ERROR_BUSY) if cell
+ * @returns: 0 on success, -2 (FW_ERROR_BUSY) if cell
  * is busy and call was not forced.
  *
  * Purpose:
@@ -103,7 +103,7 @@ ia_css_syscom_release(
  * Open a port for sending tokens to the subsystem
  * @context: pointer to the subsystem context
  * @port: send port index
- * @returns: 0 on success, -1 (ERROR_INVALID_PARAMETER) otherwise.
+ * @returns: 0 on success, -1 (FW_ERROR_INVALID_PARAMETER) otherwise.
  */
 extern int
 ia_css_syscom_send_port_open(
@@ -115,7 +115,7 @@ ia_css_syscom_send_port_open(
  * Closes a port for sending tokens to the subsystem
  * @context: pointer to the subsystem context
  * @port: send port index
- * @returns: 0 on success, -1 (ERROR_INVALID_PARAMETER) otherwise.
+ * @returns: 0 on success, -1 (FW_ERROR_INVALID_PARAMETER) otherwise.
  */
 extern int
 ia_css_syscom_send_port_close(
@@ -128,7 +128,7 @@ ia_css_syscom_send_port_close(
  * @context: pointer to the subsystem context
  * @port: send port index
  * @returns: number of available tokens on success,
- * -1 (ERROR_INVALID_PARAMETER) otherwise.
+ * -1 (FW_ERROR_INVALID_PARAMETER) otherwise.
   */
 extern int
 ia_css_syscom_send_port_available(
@@ -143,7 +143,7 @@ ia_css_syscom_send_port_available(
  * @port: send port index
  * @token: pointer to the token value that is transferred to the subsystem
  * @returns: number of tokens sent on success,
- * -1 (ERROR_INVALID_PARAMETER) otherwise.
+ * -1 (FW_ERROR_INVALID_PARAMETER) otherwise.
  */
 extern int
 ia_css_syscom_send_port_transfer(
@@ -156,7 +156,7 @@ ia_css_syscom_send_port_transfer(
  * Open a port for receiving tokens to the subsystem
  * @context: pointer to the subsystem context
  * @port: receive port index
- * @returns: 0 on success, -1 (ERROR_INVALID_PARAMETER) otherwise.
+ * @returns: 0 on success, -1 (FW_ERROR_INVALID_PARAMETER) otherwise.
  */
 extern int
 ia_css_syscom_recv_port_open(
@@ -169,7 +169,7 @@ ia_css_syscom_recv_port_open(
  * Returns 0 on success, otherwise negative value of error code
  * @context: pointer to the subsystem context
  * @port: receive port index
- * @returns: 0 on success, -1 (ERROR_INVALID_PARAMETER) otherwise.
+ * @returns: 0 on success, -1 (FW_ERROR_INVALID_PARAMETER) otherwise.
  */
 extern int
 ia_css_syscom_recv_port_close(
@@ -182,7 +182,7 @@ ia_css_syscom_recv_port_close(
  * @context: pointer to the subsystem context
  * @port: receive port index
  * @returns: number of available tokens on success,
- * -1 (ERROR_INVALID_PARAMETER) otherwise.
+ * -1 (FW_ERROR_INVALID_PARAMETER) otherwise.
  */
 extern int
 ia_css_syscom_recv_port_available(
@@ -197,7 +197,7 @@ ia_css_syscom_recv_port_available(
  * @port: receive port index
  * @token (output): pointer to (space for) the token to be received
  * @returns: number of tokens received on success,
- * -1 (ERROR_INVALID_PARAMETER) otherwise.
+ * -1 (FW_ERROR_INVALID_PARAMETER) otherwise.
  */
 extern int
 ia_css_syscom_recv_port_transfer(
