@@ -263,6 +263,7 @@ config SND_SOC_INTEL_SKL_RT286_MACH
 	tristate "ASoC Audio driver for SKL with RT286 I2S mode"
 	depends on X86 && ACPI && I2C
 	select SND_SOC_INTEL_SST
+	select SND_SOC_COMPRESS
 	select SND_SOC_INTEL_SKYLAKE
 	select SND_SOC_RT286
 	select SND_SOC_DMIC
@@ -274,12 +275,13 @@ config SND_SOC_INTEL_SKL_RT286_MACH
 	   If unsure select "N".
 
 config SND_SOC_INTEL_CNL_FPGA
-	bool "Enable CNL FPGA board settings"
+	tristate
 	help
 	  Say Y here to enable the support for CNL audio FPGA Device.
 
 config SND_SOC_INTEL_CNL_WM8281_MACH
         tristate "ASoC Audio driver for CNL with WM8281 in I2S Mode"
+	depends on X86 && ACPI && I2C
         select SND_SOC_WM_ADSP
         select SND_SOC_ARIZONA
         select SND_SOC_WM5110
@@ -301,6 +303,7 @@ config SND_SOC_INTEL_CNL_WM8281_MACH
 
 config SND_SOC_INTEL_CNL_RT274_MACH
         tristate "ASoC Audio driver for CNL with RT274 in I2S Mode"
+	depends on X86 && ACPI && I2C
 	select SND_SOC_RT274
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SKYLAKE
@@ -344,6 +347,7 @@ config SND_SOC_INTEL_SKL_NAU88L25_MAX98357A_MACH
 
 config SND_SOC_INTEL_CNL_CS42L42_MACH
         tristate "SOC Machine Audio driver for CNL Platform"
+	depends on X86 && ACPI && I2C
         select SND_SOC_CS42L42
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SKYLAKE
@@ -357,6 +361,7 @@ config SND_SOC_INTEL_CNL_CS42L42_MACH
 
 config SND_SOC_INTEL_CNL_RT700_MACH
         tristate "SOC Machine Audio driver for CNL Platform"
+	depends on X86 && ACPI && I2C
 	select SND_SOC_RT700
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SKYLAKE
@@ -370,6 +375,7 @@ config SND_SOC_INTEL_CNL_RT700_MACH
 
 config SND_SOC_INTEL_CNL_SVFPGA_MACH
         tristate "SND_SOC_INTEL_CNL_SVFPGA_MACH for CNL Platform"
+	depends on X86 && ACPI && I2C
 	select SND_SOC_SVFPGA
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SKYLAKE
