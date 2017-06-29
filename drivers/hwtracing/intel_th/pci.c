@@ -27,6 +27,36 @@
 
 #define BAR_MASK (BIT(TH_MMIO_CONFIG) | BIT(TH_MMIO_SW))
 
+/*
+ * PCI Configuration Registers
+ */
+enum {
+	REG_PCI_NPKDSC		= 0x80, /* NPK Device Specific Control */
+	REG_PCI_NPKDSD		= 0x90, /* NPK Device Specific Defeature */
+};
+
+/* Trace Hub software reset */
+#define NPKDSC_RESET	BIT(1)
+
+/* Force On */
+#define NPKDSD_FON	BIT(0)
+
+static void intel_th_pci_reset(struct intel_th *th)
+{
+	struct pci_dev *pdev = container_of(th->dev, struct pci_dev, dev);
+	u32 val;
+
+	/* Software reset */
+	pci_read_config_dword(pdev, REG_PCI_NPKDSC, &val);
+	val |= NPKDSC_RESET;
+	pci_write_config_dword(pdev, REG_PCI_NPKDSC, val);
+
+	/* Always set FON for S0ix flow */
+	pci_read_config_dword(pdev, REG_PCI_NPKDSD, &val);
+	val |= NPKDSD_FON;
+	pci_write_config_dword(pdev, REG_PCI_NPKDSD, val);
+}
+
 static int intel_th_pci_probe(struct pci_dev *pdev,
 			      const struct pci_device_id *id)
 {
@@ -37,12 +67,16 @@ static int intel_th_pci_probe(struct pci_dev *pdev,
 	if (err)
 		return err;
 
+	/* Enable bus mastering */
+	pci_set_master(pdev);
+
 	err = pcim_iomap_regions_request_all(pdev, BAR_MASK, DRIVER_NAME);
 	if (err)
 		return err;
 
 	th = intel_th_alloc(&pdev->dev, pdev->resource,
-			    DEVICE_COUNT_RESOURCE, pdev->irq);
+			    DEVICE_COUNT_RESOURCE, pdev->irq,
+			    intel_th_pci_reset);
 	if (IS_ERR(th))
 		return PTR_ERR(th);
 
@@ -85,16 +119,43 @@ static const struct pci_device_id intel_th_pci_id_table[] = {
 		PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0xa2a6),
 		.driver_data = (kernel_ulong_t)0,
 	},
+	{
+		PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x1a8e),
+		.driver_data = (kernel_ulong_t)0,
+	},
 	{ 0 },
 };
 
 MODULE_DEVICE_TABLE(pci, intel_th_pci_id_table);
+
+static int intel_th_suspend(struct device *dev)
+{
+	/*
+	 * Stub the call to avoid disabling the device.
+	 * Suspend is fully handled by firmwares.
+	 */
+	return 0;
+}
+
+static int intel_th_resume(struct device *dev)
+{
+	/* Firmwares have already restored the device state. */
+	return 0;
+}
+
+static const struct dev_pm_ops intel_th_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(intel_th_suspend,
+				intel_th_resume)
+};
 
 static struct pci_driver intel_th_pci_driver = {
 	.name		= DRIVER_NAME,
 	.id_table	= intel_th_pci_id_table,
 	.probe		= intel_th_pci_probe,
 	.remove		= intel_th_pci_remove,
+	.driver         = {
+		.pm     = &intel_th_pm_ops,
+	},
 };
 
 module_pci_driver(intel_th_pci_driver);

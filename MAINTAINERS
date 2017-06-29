@@ -4440,6 +4440,21 @@ S:	Maintained
 F:	drivers/media/usb/dvb-usb-v2/dvb_usb*
 F:	drivers/media/usb/dvb-usb-v2/usb_urb.c
 
+DVC_TRACE BUS DRIVER
+M:	Traian Schiau <traianx.schiau@intel.com>
+S:	Maintained
+F:	drivers/bus/dvctrace.c
+F:	include/linux/dvctrace.h
+F:	Documentation/ABI/testing/sysfs-bus-dvctrace
+
+DVC_TRACE USB_GADGET DRIVER
+M:	Traian Schiau <traianx.schiau@intel.com>
+S:	Maintained
+F:	drivers/usb/gadget/function/f_dvctrace.c
+F:	drivers/usb/gadget/function/u_dvctrace.h
+F:	include/linux/usb/debug.h
+F:	Documentation/ABI/testing/configfs-usb-gadget-dvctrace
+
 DYNAMIC DEBUG
 M:	Jason Baron <jbaron@akamai.com>
 S:	Maintained
@@ -6432,11 +6447,22 @@ F:	Documentation/networking/README.ipw2100
 F:	Documentation/networking/README.ipw2200
 F:	drivers/net/wireless/intel/ipw2x00/
 
+INTEL TASKS DUMPER
+M:	Traian Schiau <traianx.schiau@intel.com>
+S:	Supported
+F:	drivers/platform/x86/intel-tasks-dumper.c
+
 INTEL(R) TRACE HUB
 M:	Alexander Shishkin <alexander.shishkin@linux.intel.com>
 S:	Supported
 F:	Documentation/trace/intel_th.txt
 F:	drivers/hwtracing/intel_th/
+
+INTEL(R) TRACE HUB TO USB-DVC.TRACE
+M:	Traian Schiau <traianx.schiau@intel.com>
+S:	Supported
+F:	drivers/hwtracing/intel_th/msu-dvc.c
+F:	Documentation/ABI/testing/sysfs-bus-dvctrace-devices-dvcith
 
 INTEL(R) TRUSTED EXECUTION TECHNOLOGY (TXT)
 M:	Ning Sun <ning.sun@intel.com>

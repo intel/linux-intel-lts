@@ -67,7 +67,8 @@
 #include <linux/uaccess.h>		/* For copy_to_user/put_user/... */
 #include <linux/io.h>			/* For inb/outb/... */
 #include <linux/platform_data/itco_wdt.h>
-
+#include <linux/nmi.h>
+#include <asm/nmi.h>
 #include "iTCO_vendor.h"
 
 /* Address definitions for the TCO */
@@ -105,6 +106,8 @@ static struct {		/* this is private data for the iTCO_wdt device */
 	struct pci_dev *pdev;
 	/* whether or not the watchdog has been suspended */
 	bool suspended;
+	/* whether or not the pretimeout occurred */
+	bool pretimeout_occurred;
 } iTCO_wdt_private;
 
 /* module parameters */
@@ -125,6 +128,16 @@ static int turn_SMI_watchdog_clear_off = 1;
 module_param(turn_SMI_watchdog_clear_off, int, 0);
 MODULE_PARM_DESC(turn_SMI_watchdog_clear_off,
 	"Turn off SMI clearing watchdog (depends on TCO-version)(default=1)");
+
+static bool force_no_reboot;
+module_param(force_no_reboot, bool, 0);
+MODULE_PARM_DESC(force_no_reboot,
+		 "Prevents the watchdog rebooting the platform (default=0)");
+
+static bool stop_on_shutdown = 1;
+module_param(stop_on_shutdown, bool, 0);
+MODULE_PARM_DESC(stop_on_shutdown,
+		 "Watchdog is stopped on driver shutdown (default=1)");
 
 /*
  * Some TCO specific functions
@@ -188,6 +201,10 @@ static int iTCO_wdt_unset_NO_REBOOT_bit(void)
 	u32 enable_bit = no_reboot_bit();
 	u32 val32 = 0;
 
+	/* force_no_reboot will prevent to unset NO_REBOOT bit */
+	if (force_no_reboot)
+		return -EIO;
+
 	/* Unset the NO_REBOOT bit: this enables reboots */
 	if (iTCO_wdt_private.iTCO_version >= 2) {
 		val32 = readl(iTCO_wdt_private.gcs_pmc);
@@ -220,7 +237,7 @@ static int iTCO_wdt_start(struct watchdog_device *wd_dev)
 	/* disable chipset's NO_REBOOT bit */
 	if (iTCO_wdt_unset_NO_REBOOT_bit()) {
 		spin_unlock(&iTCO_wdt_private.io_lock);
-		pr_err("failed to reset NO_REBOOT flag, reboot disabled by hardware/BIOS\n");
+		pr_err("failed to reset NO_REBOOT flag, reboot disabled by hardware/BIOS/command line\n");
 		return -EIO;
 	}
 
@@ -422,6 +439,30 @@ static void iTCO_wdt_cleanup(void)
 	iTCO_wdt_private.gcs_pmc = NULL;
 }
 
+static int iTCO_wdt_pretimeout(unsigned int cmd, struct pt_regs *unused_regs)
+{
+	/* Prevent re-entrance */
+	if (iTCO_wdt_private.pretimeout_occurred)
+		return NMI_HANDLED;
+
+	/* Check the NMI is from the TCO first expiration */
+	if (inw(TCO1_STS) & 0x8) {
+		iTCO_wdt_private.pretimeout_occurred = true;
+
+		/* Forward next expiration */
+		outw(seconds_to_ticks(10), TCOv2_TMR);
+		outw(0x01, TCO_RLD);
+
+		trigger_all_cpu_backtrace();
+		panic_timeout = 0;
+		panic("Kernel Watchdog");
+		return NMI_HANDLED;
+	}
+
+	return NMI_DONE;
+}
+
+
 static int iTCO_wdt_probe(struct platform_device *dev)
 {
 	int ret = -ENODEV;
@@ -552,6 +593,13 @@ static int iTCO_wdt_probe(struct platform_device *dev)
 		goto unreg_tco;
 	}
 
+	ret = register_nmi_handler(NMI_LOCAL, iTCO_wdt_pretimeout, 0,
+							"iTCO_wdt");
+	if (ret != 0) {
+		pr_err("cannot register nmi handler (err=%d)\n", ret);
+		goto unreg_tco;
+	}
+
 	pr_info("initialized. heartbeat=%d sec (nowayout=%d)\n",
 		heartbeat, nowayout);
 
@@ -589,7 +637,10 @@ static int iTCO_wdt_remove(struct platform_device *dev)
 
 static void iTCO_wdt_shutdown(struct platform_device *dev)
 {
-	iTCO_wdt_stop(NULL);
+	if (stop_on_shutdown)
+		iTCO_wdt_stop(NULL);
+	else
+		iTCO_wdt_ping(&iTCO_wdt_watchdog_dev);
 }
 
 #ifdef CONFIG_PM_SLEEP

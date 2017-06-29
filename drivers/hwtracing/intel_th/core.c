@@ -199,34 +199,75 @@ static ssize_t port_show(struct device *dev, struct device_attribute *attr,
 
 static DEVICE_ATTR_RO(port);
 
-static int intel_th_output_activate(struct intel_th_device *thdev)
+/**
+ * intel_th_output_activate() - call output initialization procedure
+ * @output:	output to activate
+ */
+int intel_th_output_activate(struct intel_th_output *output)
 {
+	struct intel_th_device *outdev =
+		container_of(output, struct intel_th_device, output);
+	struct intel_th_driver *outdrv =
+		to_intel_th_driver(outdev->dev.driver);
+
+	if (WARN_ON_ONCE(outdev->type != INTEL_TH_OUTPUT))
+		return -EINVAL;
+
+	if (outdrv && outdrv->activate)
+		return outdrv->activate(outdev);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(intel_th_output_activate);
+
+/**
+ * intel_th_first_trace() - notification callback for first trace
+ *
+ * Notify each child device that the first capture is about to begin.
+ * This gives a chance to save the current data as the Trace Hub may have
+ * already been configured by the BIOS to trace to a given output.
+ *
+ * @dev:	output device to notify
+ * @data:	private data - unused
+ */
+static int intel_th_first_trace(struct device *dev, void *data)
+{
+	struct intel_th_device *thdev =
+		container_of(dev, struct intel_th_device, dev);
 	struct intel_th_driver *thdrv =
-		to_intel_th_driver_or_null(thdev->dev.driver);
-	int ret = 0;
+		to_intel_th_driver(thdev->dev.driver);
 
-	if (!thdrv)
-		return -ENODEV;
+	if (thdrv && thdrv->first_trace)
+		thdrv->first_trace(thdev);
 
-	if (!try_module_get(thdrv->driver.owner))
-		return -ENODEV;
-
-	pm_runtime_get_sync(&thdev->dev);
-
-	if (thdrv->activate)
-		ret = thdrv->activate(thdev);
-	else
-		intel_th_trace_enable(thdev);
-
-	if (ret) {
-		pm_runtime_put(&thdev->dev);
-		module_put(thdrv->driver.owner);
-	}
-
-	return ret;
+	return 0;
 }
 
-static void intel_th_output_deactivate(struct intel_th_device *thdev)
+/**
+ * intel_th_start_trace() - start tracing to an output device
+ * @thdev:	output device that requests tracing
+ */
+static int intel_th_start_trace(struct intel_th_device *thdev)
+{
+	struct intel_th_device *hub = to_intel_th_device(thdev->dev.parent);
+	struct intel_th_driver *hubdrv = to_intel_th_driver(hub->dev.driver);
+	static atomic_t first = { .counter = 1, };
+
+	if (WARN_ON_ONCE(hub->type != INTEL_TH_SWITCH))
+		return -EINVAL;
+
+	if (WARN_ON_ONCE(thdev->type != INTEL_TH_OUTPUT))
+		return -EINVAL;
+
+	if (atomic_dec_if_positive(&first) == 0)
+		device_for_each_child(&hub->dev, NULL, intel_th_first_trace);
+
+	/* The hub has control over Intel Trace Hub.
+	 * Let the hub start a trace if possible and activate the output. */
+	return hubdrv->enable(hub, &thdev->output);
+}
+
+static void intel_th_stop_trace(struct intel_th_device *thdev)
 {
 	struct intel_th_driver *thdrv =
 		to_intel_th_driver_or_null(thdev->dev.driver);
@@ -264,9 +305,9 @@ static ssize_t active_store(struct device *dev, struct device_attribute *attr,
 
 	if (!!val != thdev->output.active) {
 		if (val)
-			ret = intel_th_output_activate(thdev);
+			ret = intel_th_start_trace(thdev);
 		else
-			intel_th_output_deactivate(thdev);
+			intel_th_stop_trace(thdev);
 	}
 
 	return ret ? ret : size;
@@ -335,6 +376,7 @@ intel_th_device_alloc(struct intel_th *th, unsigned int type, const char *name,
 
 	thdev->id = id;
 	thdev->type = type;
+	thdev->th = th;
 
 	strcpy(thdev->name, name);
 	device_initialize(&thdev->dev);
@@ -659,10 +701,12 @@ static const struct file_operations intel_th_output_fops = {
  * @devres:	parent's resources
  * @ndevres:	number of resources
  * @irq:	irq number
+ * @reset:	parent's reset function
  */
 struct intel_th *
 intel_th_alloc(struct device *dev, struct resource *devres,
-	       unsigned int ndevres, int irq)
+	       unsigned int ndevres, int irq,
+	       void (*reset)(struct intel_th *th))
 {
 	struct intel_th *th;
 	int err;
@@ -684,6 +728,7 @@ intel_th_alloc(struct device *dev, struct resource *devres,
 		goto err_ida;
 	}
 	th->dev = dev;
+	th->reset = reset;
 
 	dev_set_drvdata(dev, th);
 
@@ -737,10 +782,26 @@ void intel_th_free(struct intel_th *th)
 EXPORT_SYMBOL_GPL(intel_th_free);
 
 /**
- * intel_th_trace_enable() - enable tracing for an output device
- * @thdev:	output device that requests tracing be enabled
+ * intel_th_reset() - reset hardware registers
+ * @hub:	hub requesting the reset
  */
-int intel_th_trace_enable(struct intel_th_device *thdev)
+void intel_th_reset(struct intel_th_device *hub)
+{
+	struct intel_th *th = hub->th;
+
+	if (WARN_ON_ONCE(hub->type != INTEL_TH_SWITCH))
+		return;
+
+	if (th->reset)
+		th->reset(th);
+}
+EXPORT_SYMBOL_GPL(intel_th_reset);
+
+/**
+ * intel_th_trace_switch() - execute a switch sequence
+ * @thdev:	output device that requests tracing switch
+ */
+int intel_th_trace_switch(struct intel_th_device *thdev)
 {
 	struct intel_th_device *hub = to_intel_th_device(thdev->dev.parent);
 	struct intel_th_driver *hubdrv = to_intel_th_driver(hub->dev.driver);
@@ -751,12 +812,11 @@ int intel_th_trace_enable(struct intel_th_device *thdev)
 	if (WARN_ON_ONCE(thdev->type != INTEL_TH_OUTPUT))
 		return -EINVAL;
 
-	pm_runtime_get_sync(&thdev->dev);
-	hubdrv->enable(hub, &thdev->output);
+	hubdrv->trig_switch(hub, &thdev->output);
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(intel_th_trace_enable);
+EXPORT_SYMBOL_GPL(intel_th_trace_switch);
 
 /**
  * intel_th_trace_disable() - disable tracing for an output device

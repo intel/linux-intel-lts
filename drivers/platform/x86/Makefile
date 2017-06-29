@@ -71,3 +71,5 @@ obj-$(CONFIG_INTEL_TELEMETRY)	+= intel_telemetry_core.o \
 				   intel_telemetry_pltdrv.o \
 				   intel_telemetry_debugfs.o
 obj-$(CONFIG_INTEL_PMC_CORE)    += intel_pmc_core.o
+obj-$(CONFIG_INTEL_PSTORE_PRAM)	+= intel_pstore_pram.o
+obj-$(CONFIG_INTEL_TASKS_DUMP)	+= intel-tasks-dumper.o

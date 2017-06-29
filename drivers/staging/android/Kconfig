@@ -34,6 +34,7 @@ config ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
 	  to oom_score_adj values.
 
 source "drivers/staging/android/ion/Kconfig"
+source "drivers/staging/android/abl/Kconfig"
 
 source "drivers/staging/android/fiq_debugger/Kconfig"
 

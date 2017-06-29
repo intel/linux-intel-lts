@@ -26,6 +26,8 @@ enum {
 	INTEL_TH_SWITCH,
 };
 
+struct intel_th_device;
+
 /**
  * struct intel_th_output - descriptor INTEL_TH_OUTPUT type devices
  * @port:	output port number, assigned by the switch
@@ -33,6 +35,7 @@ enum {
  * @scratchpad:	scratchpad bits to flag when this output is enabled
  * @multiblock:	true for multiblock output configuration
  * @active:	true when this output is enabled
+ * @wait_empty:	wait for device pipeline to be empty
  *
  * Output port descriptor, used by switch driver to tell which output
  * port this output device corresponds to. Filled in at output device's
@@ -45,11 +48,13 @@ struct intel_th_output {
 	unsigned int	scratchpad;
 	bool		multiblock;
 	bool		active;
+	void		(*wait_empty)(struct intel_th_device *);
 };
 
 /**
  * struct intel_th_device - device on the intel_th bus
  * @dev:		device
+ * @th:			core device
  * @resource:		array of resources available to this device
  * @num_resources:	number of resources in @resource array
  * @type:		INTEL_TH_{SOURCE,OUTPUT,SWITCH}
@@ -59,6 +64,7 @@ struct intel_th_output {
  */
 struct intel_th_device {
 	struct device	dev;
+	struct intel_th *th;
 	struct resource	*resource;
 	unsigned int	num_resources;
 	unsigned int	type;
@@ -126,6 +132,7 @@ intel_th_output_assigned(struct intel_th_device *thdev)
  */
 struct intel_th_driver {
 	struct device_driver	driver;
+	void			(*first_trace)(struct intel_th_device *thdev);
 	int			(*probe)(struct intel_th_device *thdev);
 	void			(*remove)(struct intel_th_device *thdev);
 	/* switch (GTH) ops */
@@ -133,8 +140,10 @@ struct intel_th_driver {
 					  struct intel_th_device *othdev);
 	void			(*unassign)(struct intel_th_device *thdev,
 					    struct intel_th_device *othdev);
-	void			(*enable)(struct intel_th_device *thdev,
+	int			(*enable)(struct intel_th_device *thdev,
 					  struct intel_th_output *output);
+	void			(*trig_switch)(struct intel_th_device *thdev,
+					       struct intel_th_output *output);
 	void			(*disable)(struct intel_th_device *thdev,
 					   struct intel_th_output *output);
 	/* output ops */
@@ -170,13 +179,16 @@ to_intel_th_hub(struct intel_th_device *thdev)
 
 struct intel_th *
 intel_th_alloc(struct device *dev, struct resource *devres,
-	       unsigned int ndevres, int irq);
+	       unsigned int ndevres, int irq,
+	       void (*reset)(struct intel_th *th));
 void intel_th_free(struct intel_th *th);
 
 int intel_th_driver_register(struct intel_th_driver *thdrv);
 void intel_th_driver_unregister(struct intel_th_driver *thdrv);
 
-int intel_th_trace_enable(struct intel_th_device *thdev);
+int intel_th_output_activate(struct intel_th_output *output);
+void intel_th_reset(struct intel_th_device *hub);
+int intel_th_trace_switch(struct intel_th_device *thdev);
 int intel_th_trace_disable(struct intel_th_device *thdev);
 int intel_th_set_output(struct intel_th_device *thdev,
 			unsigned int master);
@@ -197,6 +209,7 @@ enum {
  * @dev:	driver core's device
  * @thdev:	subdevices
  * @hub:	"switch" subdevice (GTH)
+ * @reset:	reset function of the core device
  * @id:		this Intel TH controller's device ID in the system
  * @major:	device node major for output devices
  */
@@ -205,6 +218,8 @@ struct intel_th {
 
 	struct intel_th_device	*thdev[TH_SUBDEVICE_MAX];
 	struct intel_th_device	*hub;
+
+	void			(*reset)(struct intel_th *th);
 
 	int			id;
 	int			major;
@@ -222,7 +237,7 @@ struct intel_th {
 enum {
 	/* Global Trace Hub (GTH) */
 	REG_GTH_OFFSET		= 0x0000,
-	REG_GTH_LENGTH		= 0x2000,
+	REG_GTH_LENGTH		= 0x4000,
 
 	/* Software Trace Hub (STH) [0x4000..0x4fff] */
 	REG_STH_OFFSET		= 0x4000,
