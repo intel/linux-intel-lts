@@ -326,25 +326,6 @@ static struct crl_register_write_rep imx477_streamoff_regs[] = {
 	{0x00, CRL_REG_LEN_DELAY, 20, 0x00}, /* Delay 20ms */
 };
 
-static struct crl_flip_data imx477_flip_configurations[] = {
-	{
-		.flip = CRL_FLIP_DEFAULT_NONE,
-		.pixel_order = CRL_PIXEL_ORDER_RGGB,
-	},
-	{
-		.flip = CRL_FLIP_HFLIP,
-		.pixel_order = CRL_PIXEL_ORDER_GRBG,
-	},
-	{
-		.flip = CRL_FLIP_VFLIP,
-		.pixel_order = CRL_PIXEL_ORDER_GBRG,
-	},
-	{
-		.flip = CRL_FLIP_HFLIP_VFLIP,
-		.pixel_order = CRL_PIXEL_ORDER_BGGR,
-	}
-};
-
 static struct crl_register_write_rep imx477_fmt_raw10[] = {
 	{0x0112, CRL_REG_LEN_08BIT, 0x0a}, /* FMT RAW10 */
 	{0x0113, CRL_REG_LEN_08BIT, 0x0a},
@@ -381,28 +362,28 @@ static struct crl_csi_data_fmt imx477_crl_csi_data_fmt[] = {
 	},
 };
 
-static struct crl_subdev_rect_rep imx477_4056_3040_rects[] = {
+static struct crl_subdev_rect_rep imx477_4056_3038_rects[] = {
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 4056,
-		.in_rect.height = 3040,
+		.in_rect.height = 3038,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 4056,
-		.out_rect.height = 3040,
+		.out_rect.height = 3038,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 4056,
-		.in_rect.height = 3040,
+		.in_rect.height = 3038,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 4056,
-		.out_rect.height = 3040,
+		.out_rect.height = 3038,
 	}
 };
 
@@ -459,108 +440,6 @@ static struct crl_register_write_rep imx477_pll_1200mbps[] = {
 	{0x3F57, CRL_REG_LEN_08BIT, 0x4F},
 };
 
-static struct crl_register_write_rep imx477_4056_3040_19MHZ[] = {
-	/* Frame Horizontal Clock Count */
-	{0x0342, CRL_REG_LEN_08BIT, 0x39}, /* Line length [15:8]  */
-	{0x0343, CRL_REG_LEN_08BIT, 0x14}, /* Line length [7:0]   */
-
-	/* Frame Vertical Clock Count */
-	{0x0340, CRL_REG_LEN_08BIT, 0x20}, /* Frame length [15:8] */
-	{0x0341, CRL_REG_LEN_08BIT, 0x11}, /* Frame length [7:0]  */
-
-	/* Visible Size */
-	{0x0344, CRL_REG_LEN_08BIT, 0x00}, /* Analog cropping start X [12:8] */
-	{0x0345, CRL_REG_LEN_08BIT, 0x00}, /* Analog cropping start X [7:0]  */
-	{0x0346, CRL_REG_LEN_08BIT, 0x00}, /* Analog cropping start Y [12:8] */
-	{0x0347, CRL_REG_LEN_08BIT, 0x00}, /* Analog cropping start Y [7:0]  */
-	{0x0348, CRL_REG_LEN_08BIT, 0x0F}, /* Analog cropping end X [12:8]   */
-	{0x0349, CRL_REG_LEN_08BIT, 0xD7}, /* Analog cropping end X [7:0]    */
-	{0x034A, CRL_REG_LEN_08BIT, 0x0B}, /* Analog cropping end Y [12:8]   */
-	{0x034B, CRL_REG_LEN_08BIT, 0xDF}, /* Analog cropping end Y [7:0]    */
-
-	/* Mode Setting */
-	{0x00E3, CRL_REG_LEN_08BIT, 0x00}, /* DOL-HDR Disable */
-	{0x00E4, CRL_REG_LEN_08BIT, 0x00}, /* DOL Mode: DOL-HDR Disable */
-	{0x00FC, CRL_REG_LEN_08BIT, 0x0A}, /* The output data fmt for CSI: RAW10 */
-	{0x00FD, CRL_REG_LEN_08BIT, 0x0A}, /* The output data fmt for CSI: RAW10 */
-	{0x00FE, CRL_REG_LEN_08BIT, 0x0A}, /* The output data fmt for CSI: RAW10 */
-	{0x00FF, CRL_REG_LEN_08BIT, 0x0A}, /* The output data fmt for CSI: RAW10 */
-	{0x0220, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-	{0x0221, CRL_REG_LEN_08BIT, 0x11}, /* Undocumented */
-	{0x0381, CRL_REG_LEN_08BIT, 0x01}, /* Num of pixels skipped, even -> odd */
-	{0x0383, CRL_REG_LEN_08BIT, 0x01}, /* Num of pixels skipped, odd -> even */
-	{0x0385, CRL_REG_LEN_08BIT, 0x01}, /* Num of lines skipped, even -> odd  */
-	{0x0387, CRL_REG_LEN_08BIT, 0x01}, /* Num of lines skipped, odd -> even  */
-	{0x0900, CRL_REG_LEN_08BIT, 0x00}, /* Binning mode: Disable */
-	{0x0901, CRL_REG_LEN_08BIT, 0x11}, /* Binning Type for Horizontal */
-	{0x0902, CRL_REG_LEN_08BIT, 0x02}, /* Binning Type for Vertical   */
-	{0x3140, CRL_REG_LEN_08BIT, 0x02}, /* Undocumented */
-	{0x3C00, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-	{0x3C01, CRL_REG_LEN_08BIT, 0x03}, /* Undocumented */
-	{0x3C02, CRL_REG_LEN_08BIT, 0xDC}, /* Undocumented */
-	{0x3F0D, CRL_REG_LEN_08BIT, 0x00}, /* AD converter: 10 bit */
-	{0x5748, CRL_REG_LEN_08BIT, 0x07}, /* Undocumented */
-	{0x5749, CRL_REG_LEN_08BIT, 0xFF}, /* Undocumented */
-	{0x574A, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-	{0x574B, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-	{0x7B75, CRL_REG_LEN_08BIT, 0x0E}, /* Undocumented */
-	{0x7B76, CRL_REG_LEN_08BIT, 0x09}, /* Undocumented */
-	{0x7B77, CRL_REG_LEN_08BIT, 0x0C}, /* Undocumented */
-	{0x7B78, CRL_REG_LEN_08BIT, 0x06}, /* Undocumented */
-	{0x7B79, CRL_REG_LEN_08BIT, 0x3B}, /* Undocumented */
-	{0x7B53, CRL_REG_LEN_08BIT, 0x01}, /* Undocumented */
-	{0x9369, CRL_REG_LEN_08BIT, 0x5A}, /* Undocumented */
-	{0x936B, CRL_REG_LEN_08BIT, 0x55}, /* Undocumented */
-	{0x936D, CRL_REG_LEN_08BIT, 0x28}, /* Undocumented */
-	{0x9304, CRL_REG_LEN_08BIT, 0x03}, /* Undocumented */
-	{0x9305, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-	{0x9E9A, CRL_REG_LEN_08BIT, 0x2F}, /* Undocumented */
-	{0x9E9B, CRL_REG_LEN_08BIT, 0x2F}, /* Undocumented */
-	{0x9E9C, CRL_REG_LEN_08BIT, 0x2F}, /* Undocumented */
-	{0x9E9D, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-	{0x9E9E, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-	{0x9E9F, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-	{0xA2A9, CRL_REG_LEN_08BIT, 0x60}, /* Undocumented */
-	{0xA2B7, CRL_REG_LEN_08BIT, 0x00}, /* Undocumented */
-
-	/* Digital Crop & Scaling */
-	{0x0401, CRL_REG_LEN_08BIT, 0x00}, /* Scaling mode: No Scaling     */
-	{0x0404, CRL_REG_LEN_08BIT, 0x00}, /* Down Scaling Factor M [8]    */
-	{0x0405, CRL_REG_LEN_08BIT, 0x10}, /* Down Scaling Factor M [7:0]  */
-	{0x0408, CRL_REG_LEN_08BIT, 0x00}, /* Crop Offset from X [12:8]    */
-	{0x0409, CRL_REG_LEN_08BIT, 0x00}, /* Crop Offset from X [7:0]     */
-	{0x040A, CRL_REG_LEN_08BIT, 0x00}, /* Crop Offset from Y [12:8]    */
-	{0x040B, CRL_REG_LEN_08BIT, 0x00}, /* Crop Offset from Y [7:0]     */
-	{0x040C, CRL_REG_LEN_08BIT, 0x0F}, /* Width after cropping [12:8]  */
-	{0x040D, CRL_REG_LEN_08BIT, 0xD8}, /* Width after cropping [7:0]   */
-	{0x040E, CRL_REG_LEN_08BIT, 0x0B}, /* Height after cropping [12:8] */
-	{0x040F, CRL_REG_LEN_08BIT, 0xE0}, /* Height after cropping [7:0]  */
-
-	/* Output Crop */
-	{0x034C, CRL_REG_LEN_08BIT, 0x0F}, /* X output size [12:8] */
-	{0x034D, CRL_REG_LEN_08BIT, 0xD8}, /* X output size [7:0]  */
-	{0x034E, CRL_REG_LEN_08BIT, 0x0B}, /* Y output size [12:8] */
-	{0x034F, CRL_REG_LEN_08BIT, 0xE0}, /* Y output size [7:0]  */
-};
-
-static struct crl_mode_rep imx477_modes[] = {
-	{
-		.sd_rects_items = ARRAY_SIZE(imx477_4056_3040_rects),
-		.sd_rects = imx477_4056_3040_rects,
-		.binn_hor = 1,
-		.binn_vert = 1,
-		.scale_m = 1,
-		.width = 4056,
-		.height = 3040,
-		.min_llp = 14612,
-		.min_fll = 8209,
-		.comp_items = 0,
-		.ctrl_data = 0,
-		.mode_regs_items = ARRAY_SIZE(imx477_4056_3040_19MHZ),
-		.mode_regs = imx477_4056_3040_19MHZ,
-	},
-};
-
 static struct crl_pll_configuration imx477_pll_configurations[] = {
 	{
 		.input_clk = 19200000,
@@ -591,7 +470,7 @@ static struct crl_sensor_limits imx477_sensor_limits = {
 	.x_addr_min = 0,
 	.y_addr_min = 0,
 	.x_addr_max = 4056,
-	.y_addr_max = 3040,
+	.y_addr_max = 3038,
 	.min_frame_length_lines = 320,
 	.max_frame_length_lines = 65535,
 	.min_line_length_pixels = 380,
