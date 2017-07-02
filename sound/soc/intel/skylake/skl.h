@@ -92,10 +92,10 @@ struct skl_machine_pdata {
 struct skl_dsp_ops {
 	int id;
 	struct skl_dsp_loader_ops (*loader_ops)(void);
-	int (*init)(struct device *dev, void __iomem *mmio_base,
-			int irq, const char *fw_name,
+	int (*init)(struct device *dev, void __iomem *mmio_base, int irq,
+			const char *fw_name,
 			struct skl_dsp_loader_ops loader_ops,
-			struct skl_sst **skl_sst);
+			struct skl_sst **skl_sst, void *ptr);
 	int (*init_fw)(struct device *dev, struct skl_sst *ctx);
 	void (*cleanup)(struct device *dev, struct skl_sst *ctx);
 };

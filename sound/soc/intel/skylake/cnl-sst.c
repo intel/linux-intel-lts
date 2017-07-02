@@ -547,13 +547,14 @@ static int cnl_ipc_init(struct device *dev, struct skl_sst *cnl)
 
 #if IS_ENABLED(CONFIG_SND_SOC_RT700)
 static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
-			void __iomem *mmio_base, int irq)
+			void __iomem *mmio_base, int irq, void *ptr)
 {
 	struct sdw_master_capabilities *m_cap, *map_data;
 	struct sdw_mstr_dp0_capabilities *dp0_cap;
 	struct sdw_mstr_dpn_capabilities *dpn_cap;
 	struct sdw_master *master;
 	struct cnl_sdw_data *p_data;
+	struct cnl_bra_operation *p_ptr = ptr;
 	int ret = 0, i, j, k, wl = 0;
 	/* TODO: This number 4 should come from ACPI */
 #if defined(CONFIG_SDW_MAXIM_SLAVE) || defined(CONFIG_SND_SOC_MXFPGA)
@@ -569,11 +570,18 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
 			dsp->num_sdw_controllers = 0;
 	}
 	dsp->mstr = master;
+
+	dsp->bra_pipe_data = devm_kzalloc(dev,
+				(sizeof(*dsp->bra_pipe_data) *
+				dsp->num_sdw_controllers),
+				GFP_KERNEL);
+
 	/* TODO This should come from ACPI */
 	for (i = 0; i < dsp->num_sdw_controllers; i++) {
 		p_data = devm_kzalloc(dev, sizeof(*p_data), GFP_KERNEL);
 		if (!p_data)
 			return -ENOMEM;
+
 		/* PCI Device is parent of the SoundWire master device */
 		/* TODO: All these hardcoding should come from ACPI */
 		master[i].dev.parent = dev;
@@ -682,6 +690,11 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
 		p_data->alh_base = mmio_base + CNL_ALH_BASE;
 		p_data->inst_id = i;
 		p_data->irq = irq;
+
+		p_data->bra_data = kzalloc((sizeof(struct cnl_sdw_bra_cfg)),
+					GFP_KERNEL);
+		p_data->bra_data->drv_data = dsp;
+		p_data->bra_data->bra_ops = p_ptr;
 		ret = sdw_add_master_controller(&master[i]);
 		if (ret) {
 			dev_err(dev, "Failed to register soundwire master\n");
@@ -707,7 +720,7 @@ static void skl_unregister_sdw_masters(struct skl_sst *ctx)
 
 int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 			const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
-			struct skl_sst **dsp)
+			struct skl_sst **dsp, void *ptr)
 {
 	struct skl_sst *cnl;
 	struct sst_dsp *sst;
@@ -767,7 +780,7 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 	}
 
 #if IS_ENABLED(CONFIG_SND_SOC_RT700)
-	ret = skl_register_sdw_masters(dev, cnl, mmio_base, irq);
+	ret = skl_register_sdw_masters(dev, cnl, mmio_base, irq, ptr);
 	if (ret) {
 		dev_err(cnl->dev, "%s SoundWire masters registration failed\n", __func__);
 		return ret;

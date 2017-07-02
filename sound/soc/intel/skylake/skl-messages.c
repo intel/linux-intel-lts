@@ -1054,9 +1054,8 @@ int skl_init_dsp(struct skl *skl)
 		return -EIO;
 
 	loader_ops = ops->loader_ops();
-	ret = ops->init(bus->dev, mmio_base, irq,
-				skl->fw_name, loader_ops,
-				&skl->skl_sst);
+	ret = ops->init(bus->dev, mmio_base, irq, skl->fw_name, loader_ops,
+					&skl->skl_sst, &cnl_sdw_bra_ops);
 
 	if (ret < 0)
 		return ret;
