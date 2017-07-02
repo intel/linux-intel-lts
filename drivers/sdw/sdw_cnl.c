@@ -1811,6 +1811,9 @@ error:
 static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
 	struct sdw_bra_block *block)
 {
+	struct cnl_sdw *sdw = sdw_master_get_platdata(mstr);
+	struct cnl_sdw_data *data = &sdw->data;
+	struct cnl_bra_operation *ops = data->bra_data->bra_ops;
 	struct bra_info info;
 	int ret;
 
@@ -1838,6 +1841,34 @@ static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
 	ret = cnl_sdw_bra_data_ops(mstr, block, &info);
 	if (ret < 0) {
 		dev_err(&mstr->dev, "BRA: Request packet(s) creation failed\n");
+		goto out;
+	}
+
+	/* Pipeline Setup  (ON) */
+	ret = ops->bra_platform_setup(data->bra_data->drv_data, true, &info);
+	if (ret < 0) {
+		dev_err(&mstr->dev, "BRA: Pipeline setup failed\n");
+		goto out;
+	}
+
+	/* Trigger START host DMA and pipeline */
+	ret = ops->bra_platform_xfer(data->bra_data->drv_data, true, &info);
+	if (ret < 0) {
+		dev_err(&mstr->dev, "BRA: Pipeline start failed\n");
+		goto out;
+	}
+
+	/* Trigger STOP host DMA and pipeline */
+	ret = ops->bra_platform_xfer(data->bra_data->drv_data, false, &info);
+	if (ret < 0) {
+		dev_err(&mstr->dev, "BRA: Pipeline stop failed\n");
+		goto out;
+	}
+
+	/* Pipeline Setup  (OFF) */
+	ret = ops->bra_platform_setup(data->bra_data->drv_data, false, &info);
+	if (ret < 0) {
+		dev_err(&mstr->dev, "BRA: Pipeline de-setup failed\n");
 		goto out;
 	}
 
