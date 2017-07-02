@@ -1911,7 +1911,6 @@ int sdw_config_stream(struct sdw_master *mstr,
 	} else
 		sdw_rt->rx_ref_count++;
 
-	/* SRK: check with hardik */
 	sdw_rt->type = stream_config->type;
 	sdw_rt->stream_state  = SDW_STATE_CONFIG_STREAM;
 
@@ -1941,6 +1940,142 @@ out:
 }
 EXPORT_SYMBOL_GPL(sdw_config_stream);
 
+/**
+ * sdw_chk_slv_dpn_caps - Return success
+ * -EINVAL - In case of error
+ *
+ * This function checks all slave port capabilities
+ * for given stream parameters. If any of parameters
+ * is not supported in port capabilities, it returns
+ * error.
+ */
+int sdw_chk_slv_dpn_caps(struct sdw_slv_dpn_capabilities *dpn_cap,
+		struct sdw_stream_params *strm_prms)
+{
+	struct port_audio_mode_properties *mode_prop =
+		dpn_cap->mode_properties;
+	int ret = 0, i, value;
+
+	/* Check Sampling frequency */
+	if (mode_prop->num_sampling_freq_configs) {
+		for (i = 0; i < mode_prop->num_sampling_freq_configs; i++) {
+
+			value = mode_prop->sampling_freq_config[i];
+			if (strm_prms->rate == value)
+				break;
+		}
+
+		if (i == mode_prop->num_sampling_freq_configs)
+			return -EINVAL;
+
+	} else {
+
+		if ((strm_prms->rate < mode_prop->min_sampling_frequency)
+				|| (strm_prms->rate >
+				mode_prop->max_sampling_frequency))
+			return -EINVAL;
+	}
+
+	/* check for bit rate */
+	if (dpn_cap->num_word_length) {
+		for (i = 0; i < dpn_cap->num_word_length; i++) {
+
+			value = dpn_cap->word_length_buffer[i];
+			if (strm_prms->bps == value)
+				break;
+		}
+
+		if (i == dpn_cap->num_word_length)
+			return -EINVAL;
+
+	} else {
+
+		if ((strm_prms->bps < dpn_cap->min_word_length)
+				|| (strm_prms->bps > dpn_cap->max_word_length))
+			return -EINVAL;
+	}
+
+	/* check for number of channels */
+	if (dpn_cap->num_ch_supported) {
+		for (i = 0; i < dpn_cap->num_ch_supported; i++) {
+
+			value = dpn_cap->ch_supported[i];
+			if (strm_prms->bps == value)
+				break;
+		}
+
+		if (i == dpn_cap->num_ch_supported)
+			return -EINVAL;
+
+	} else {
+
+		if ((strm_prms->channel_count < dpn_cap->min_ch_num)
+			|| (strm_prms->channel_count > dpn_cap->max_ch_num))
+			return -EINVAL;
+	}
+
+	return ret;
+}
+
+/**
+ * sdw_chk_mstr_dpn_caps - Return success
+ * -EINVAL - In case of error
+ *
+ * This function checks all master port capabilities
+ * for given stream parameters. If any of parameters
+ * is not supported in port capabilities, it returns
+ * error.
+ */
+int sdw_chk_mstr_dpn_caps(struct sdw_mstr_dpn_capabilities *dpn_cap,
+		struct sdw_stream_params *strm_prms)
+{
+
+	int ret = 0, i, value;
+
+	/* check for bit rate */
+	if (dpn_cap->num_word_length) {
+		for (i = 0; i < dpn_cap->num_word_length; i++) {
+
+			value = dpn_cap->word_length_buffer[i];
+			if (strm_prms->bps == value)
+				break;
+		}
+
+		if (i == dpn_cap->num_word_length)
+			return -EINVAL;
+
+	} else {
+
+		if ((strm_prms->bps < dpn_cap->min_word_length)
+			|| (strm_prms->bps > dpn_cap->max_word_length)) {
+			return -EINVAL;
+		}
+
+
+	}
+
+	/* check for number of channels */
+	if (dpn_cap->num_ch_supported) {
+		for (i = 0; i < dpn_cap->num_ch_supported; i++) {
+
+			value = dpn_cap->ch_supported[i];
+			if (strm_prms->bps == value)
+				break;
+		}
+
+		if (i == dpn_cap->num_ch_supported)
+			return -EINVAL;
+
+	} else {
+
+		if ((strm_prms->channel_count < dpn_cap->min_ch_num)
+			|| (strm_prms->channel_count > dpn_cap->max_ch_num))
+			return -EINVAL;
+	}
+
+	return ret;
+}
+
 static int sdw_mstr_port_configuration(struct sdw_master *mstr,
 			struct sdw_runtime *sdw_rt,
 			struct sdw_port_config *port_config)
@@ -1949,6 +2084,9 @@ static int sdw_mstr_port_configuration(struct sdw_master *mstr,
 	struct sdw_port_runtime *port_rt;
 	int found = 0;
 	int i;
+	int ret = 0, pn = 0;
+	struct sdw_mstr_dpn_capabilities *dpn_cap =
+		mstr->mstr_capabilities.sdw_dpn_cap;
 
 	list_for_each_entry(mstr_rt, &sdw_rt->mstr_rt_list, mstr_sdw_node) {
 		if (mstr_rt->mstr == mstr) {
@@ -1960,16 +2098,35 @@ static int sdw_mstr_port_configuration(struct sdw_master *mstr,
 		dev_err(&mstr->dev, "Master not found for this port\n");
 		return -EINVAL;
 	}
+
 	port_rt = kzalloc((sizeof(struct sdw_port_runtime)) *
 			port_config->num_ports, GFP_KERNEL);
 	if (!port_rt)
 		return -EINVAL;
+
+	if (!dpn_cap)
+		return -EINVAL;
+	/*
+	 * Note: Here the assumption the configuration is not
+	 * received for 0th port.
+	 */
 	for (i = 0; i < port_config->num_ports; i++) {
 		port_rt[i].channel_mask = port_config->port_cfg[i].ch_mask;
-		port_rt[i].port_num = port_config->port_cfg[i].port_num;
+		port_rt[i].port_num = pn = port_config->port_cfg[i].port_num;
+
+		/* Perform capability check for master port */
+		ret = sdw_chk_mstr_dpn_caps(&dpn_cap[pn],
+				&mstr_rt->stream_params);
+		if (ret < 0) {
+			dev_err(&mstr->dev,
+				"Master capabilities check failed\n");
+			return -EINVAL;
+		}
+
 		list_add_tail(&port_rt[i].port_node, &mstr_rt->port_rt_list);
 	}
-	return 0;
+
+	return ret;
 }
 
 static int sdw_slv_port_configuration(struct sdw_slave *slave,
@@ -1978,8 +2135,10 @@ static int sdw_slv_port_configuration(struct sdw_slave *slave,
 {
 	struct sdw_slave_runtime *slv_rt;
 	struct sdw_port_runtime *port_rt;
-	int found = 0;
-	int i;
+	struct sdw_slv_dpn_capabilities *dpn_cap =
+		slave->sdw_slv_cap.sdw_dpn_cap;
+	int found = 0, ret = 0;
+	int i, pn;
 
 	list_for_each_entry(slv_rt, &sdw_rt->slv_rt_list, slave_sdw_node) {
 		if (slv_rt->slave == slave) {
@@ -1991,6 +2150,12 @@ static int sdw_slv_port_configuration(struct sdw_slave *slave,
 		dev_err(&slave->mstr->dev, "Slave not found for this port\n");
 		return -EINVAL;
 	}
+
+	if (!slave->slave_cap_updated) {
+		dev_err(&slave->mstr->dev, "Slave capabilities not updated\n");
+		return -EINVAL;
+	}
+
 	port_rt = kzalloc((sizeof(struct sdw_port_runtime)) *
 			port_config->num_ports, GFP_KERNEL);
 	if (!port_rt)
@@ -1998,10 +2163,21 @@ static int sdw_slv_port_configuration(struct sdw_slave *slave,
 
 	for (i = 0; i < port_config->num_ports; i++) {
 		port_rt[i].channel_mask = port_config->port_cfg[i].ch_mask;
-		port_rt[i].port_num = port_config->port_cfg[i].port_num;
+		port_rt[i].port_num = pn = port_config->port_cfg[i].port_num;
+
+		/* Perform capability check for master port */
+		ret = sdw_chk_slv_dpn_caps(&dpn_cap[pn],
+				&slv_rt->stream_params);
+		if (ret < 0) {
+			dev_err(&slave->mstr->dev,
+				"Slave capabilities check failed\n");
+			return -EINVAL;
+		}
+
 		list_add_tail(&port_rt[i].port_node, &slv_rt->port_rt_list);
 	}
-	return 0;
+
+	return ret;
 }
 
 /**
@@ -2034,7 +2210,6 @@ int sdw_config_port(struct sdw_master *mstr,
 	struct sdw_runtime *sdw_rt = NULL;
 	struct sdw_stream_tag *stream = NULL;
 
-
 	for (i = 0; i < SDW_NUM_STREAM_TAGS; i++) {
 		if (stream_tags[i].stream_tag == stream_tag) {
 			sdw_rt = stream_tags[i].sdw_rt;
@@ -2042,10 +2217,12 @@ int sdw_config_port(struct sdw_master *mstr,
 			break;
 		}
 	}
+
 	if (!sdw_rt) {
 		dev_err(&mstr->dev, "Invalid stream tag\n");
 		return -EINVAL;
 	}
+
 	if (static_key_false(&sdw_trace_msg)) {
 		int i;
 
@@ -2054,13 +2231,16 @@ int sdw_config_port(struct sdw_master *mstr,
 				&port_config->port_cfg[i], stream_tag);
 		}
 	}
+
 	mutex_lock(&stream->stream_lock);
+
 	if (!slave)
 		ret = sdw_mstr_port_configuration(mstr, sdw_rt, port_config);
 	else
 		ret = sdw_slv_port_configuration(slave, sdw_rt, port_config);
 
 	mutex_unlock(&stream->stream_lock);
+
 	return ret;
 }
 EXPORT_SYMBOL_GPL(sdw_config_port);

@@ -787,11 +787,18 @@ int sdw_en_dis_mstr_slv_state(struct sdw_bus *sdw_mstr_bs,
  * This function computes clock and frame shape based on
  * clock frequency.
  */
-int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int)
+int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int,
+		struct sdw_mstr_runtime *sdw_mstr_rt)
 {
 	struct sdw_master_capabilities *sdw_mstr_cap = NULL;
-	int i, rc, clock_reqd = 0, frame_interval = 0, frame_frequency = 0;
-	int sel_row = 0, sel_col = 0;
+	struct sdw_slv_dpn_capabilities *sdw_slv_dpn_cap = NULL;
+	struct port_audio_mode_properties *mode_prop = NULL;
+	struct sdw_slave_runtime *slv_rt = NULL;
+	struct sdw_port_runtime *port_slv_rt = NULL;
+	int i, j, rc;
+	int clock_reqd = 0, frame_interval = 0, frame_frequency = 0;
+	int sel_row = 0, sel_col = 0, pn = 0;
+	int value;
 	bool clock_ok = false;
 
 	sdw_mstr_cap = &sdw_mstr_bs->mstr->mstr_capabilities;
@@ -799,11 +806,6 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int)
 	/*
 	 * Find nearest clock frequency needed by master for
 	 * given bandwidth
-	 */
-
-	/*
-	 * TBD: Need to run efficient algorithm to make sure we have
-	 * only 1 to 10 percent of control bandwidth usage
 	 */
 	for (i = 0; i < MAXCLOCKDIVS; i++) {
 
@@ -813,20 +815,86 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int)
 			((((sdw_mstr_cap->base_clk_freq * 2) / clock_div[i])
 			% 3000) != 0))
 			continue;
+
 		clock_reqd = ((sdw_mstr_cap->base_clk_freq * 2) / clock_div[i]);
 
 		/*
-		 * TBD: Check all the slave device capabilities
+		 * Check all the slave device capabilities
 		 * here and find whether given frequency is
 		 * supported by all slaves
 		 */
+		list_for_each_entry(slv_rt, &sdw_mstr_rt->slv_rt_list,
+								slave_node) {
+
+			/* check for valid slave */
+			if (slv_rt->slave == NULL)
+				break;
+
+			/* check clock req for each port */
+			list_for_each_entry(port_slv_rt,
+					&slv_rt->port_rt_list, port_node) {
+
+				pn = port_slv_rt->port_num;
+
+
+				sdw_slv_dpn_cap =
+				&slv_rt->slave->sdw_slv_cap.sdw_dpn_cap[pn];
+				mode_prop = sdw_slv_dpn_cap->mode_properties;
+
+				/*
+				 * TBD: Indentation to be fixed,
+				 * code refactoring to be considered.
+				 */
+				if (mode_prop->num_freq_configs) {
+					for (j = 0; j <
+					mode_prop->num_freq_configs; j++) {
+						value =
+						mode_prop->freq_supported[j];
+						if (clock_reqd == value) {
+							clock_ok = true;
+							break;
+						}
+						if (j ==
+						mode_prop->num_freq_configs) {
+							clock_ok = false;
+							break;
+						}
+
+					}
+
+				} else {
+					if ((clock_reqd <
+						mode_prop->min_frequency) ||
+						(clock_reqd >
+						 mode_prop->max_frequency)) {
+						clock_ok = false;
+					} else
+						clock_ok = true;
+				}
+
+				/* Go for next clock frequency */
+				if (!clock_ok)
+					break;
+			}
+
+			/*
+			 * Dont check next slave, go for next clock
+			 * frequency
+			 */
+			if (!clock_ok)
+				break;
+		}
+
+		/* None of clock frequency matches, return error */
+		if (i == MAXCLOCKDIVS)
+			return -EINVAL;
+
+		/* check for next clock divider */
+		if (!clock_ok)
+			continue;
 
 		/* Find frame shape based on bandwidth per controller */
-		/*
-		 * TBD: Need to run efficient algorithm to make sure we have
-		 * only 1 to 10 percent of control bandwidth usage
-		 */
-		for (rc = 0; rc <= MAX_NUM_ROW_COLS; rc++) {
+		for (rc = 0; rc < MAX_NUM_ROW_COLS; rc++) {
 			frame_interval =
 				sdw_core.rowcolcomb[rc].row *
 				sdw_core.rowcolcomb[rc].col;
@@ -842,6 +910,10 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int)
 			break;
 		}
 
+		/* Valid frameshape not found, check for next clock freq */
+		if (rc == MAX_NUM_ROW_COLS)
+			continue;
+
 		sel_row = sdw_core.rowcolcomb[rc].row;
 		sel_col = sdw_core.rowcolcomb[rc].col;
 		sdw_mstr_bs->frame_freq = frame_frequency;
@@ -853,7 +925,6 @@ int sdw_get_clock_frmshp(struct sdw_bus *sdw_mstr_bs, int *frame_int)
 		sdw_mstr_bs->row = sel_row;
 
 		break;
-
 	}
 
 	return 0;
@@ -1931,7 +2002,8 @@ int sdw_compute_bs_prms(struct sdw_bus *sdw_mstr_bs,
 
 	sdw_mstr_cap = &sdw_mstr->mstr_capabilities;
 
-	ret = sdw_get_clock_frmshp(sdw_mstr_bs, &frame_interval);
+	ret = sdw_get_clock_frmshp(sdw_mstr_bs, &frame_interval,
+			sdw_mstr_rt);
 	if (ret < 0) {
 		/* TBD: Undo all the computation */
 		dev_err(&sdw_mstr->dev, "clock/frameshape config failed\n");
