@@ -497,3 +497,17 @@ int intel_ipu4_psys_abi_close(struct intel_ipu4_psys *psys)
 	}
 	return retval;
 }
+
+void intel_ipu4_psys_abi_register_ctx_addr(void *ctx_cpu_addr,
+			uint32_t ctx_vied_addr)
+{
+	if (ext_abi && ext_abi->ipu_reg_ctx_addr)
+		ext_abi->ipu_reg_ctx_addr(ctx_cpu_addr, ctx_vied_addr);
+}
+
+void intel_ipu4_psys_abi_unregister_ctx_addr(void *ctx_cpu_addr,
+			uint32_t ctx_vied_addr)
+{
+	if (ext_abi && ext_abi->ipu_unreg_ctx_addr)
+		ext_abi->ipu_unreg_ctx_addr(ctx_cpu_addr, ctx_vied_addr);
+}
