@@ -533,4 +533,8 @@ int skl_dai_load(struct snd_soc_component *cmp, int index,
 		struct snd_soc_tplg_pcm *pcm, struct snd_soc_dai *dai);
 void skl_tplg_add_moduleid_in_bind_params(struct skl *skl,
 				struct snd_soc_dapm_widget *w);
+int skl_tplg_dsp_log_get(struct snd_kcontrol *kcontrol,
+			 struct snd_ctl_elem_value *ucontrol);
+int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
+			 struct snd_ctl_elem_value *ucontrol);
 #endif
