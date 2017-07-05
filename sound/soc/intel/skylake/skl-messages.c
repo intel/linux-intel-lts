@@ -67,11 +67,6 @@ void skl_dsp_set_astate_cfg(struct skl_sst *ctx, u32 cnt, void *data)
 }
 
 #define ENABLE_LOGS		6
-#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
-#define DEFAULT_LOG_PRIORITY	6
-#else
-#define DEFAULT_LOG_PRIORITY	5
-#endif
 
 /* set firmware logging state via IPC */
 int skl_dsp_enable_logging(struct sst_generic_ipc *ipc, int core, int enable)
@@ -82,7 +77,7 @@ int skl_dsp_enable_logging(struct sst_generic_ipc *ipc, int core, int enable)
 
 	log_msg.core_mask = (1 << core);
 	log_msg.logs_core[core].enable = enable;
-	log_msg.logs_core[core].priority = DEFAULT_LOG_PRIORITY;
+	log_msg.logs_core[core].priority = ipc->dsp->trace_wind.log_priority;
 
 	msg.large_param_id = ENABLE_LOGS;
 	msg.param_data_size = sizeof(log_msg);
