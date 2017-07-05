@@ -230,6 +230,7 @@ static struct skl_dsp_loader_ops bxt_get_loader_ops(void)
 static const struct skl_dsp_ops dsp_ops[] = {
 	{
 		.id = 0x9d70,
+		.num_cores = 2,
 		.loader_ops = skl_get_loader_ops,
 		.init = skl_sst_dsp_init,
 		.init_fw = skl_sst_init_fw,
@@ -237,6 +238,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 	},
 	{
 		.id = 0x9d71,
+		.num_cores = 2,
 		.loader_ops = skl_get_loader_ops,
 		.init = kbl_sst_dsp_init,
 		.init_fw = skl_sst_init_fw,
@@ -244,6 +246,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 	},
 	{
 		.id = 0x5a98,
+		.num_cores = 2,
 		.loader_ops = bxt_get_loader_ops,
 		.init = bxt_sst_dsp_init,
 		.init_fw = bxt_sst_init_fw,
@@ -264,6 +267,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 	},
 	{
 		.id = 0x9df0,
+		.num_cores = 4,
 		.loader_ops = bxt_get_loader_ops,
 		.init = cnl_sst_dsp_init,
 		.init_fw = cnl_sst_init_fw,
@@ -271,6 +275,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 	},
 	{
 		.id = 0x9dc8,
+		.num_cores = 4,
 		.loader_ops = bxt_get_loader_ops,
 		.init = cnl_sst_dsp_init,
 		.init_fw = cnl_sst_init_fw,
@@ -278,6 +283,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 	},
 	{
 		.id = 0x34c8,
+		.num_cores = 4,
 		.loader_ops = bxt_get_loader_ops,
 		.init = cnl_sst_dsp_init,
 		.init_fw = cnl_sst_init_fw,
@@ -285,6 +291,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 	},
 	{
 		.id = 0x24f0,
+		.num_cores = 2,
 		.loader_ops = bxt_get_loader_ops,
 		.init = cnl_sst_dsp_init,
 		.init_fw = cnl_sst_init_fw,
@@ -1075,6 +1082,7 @@ int skl_init_dsp(struct skl *skl)
 		return ret;
 
 	skl->skl_sst->dsp_ops = ops;
+	skl->skl_sst->cores.count = ops->num_cores;
 	skl_dsp_enable_notification(skl->skl_sst, false);
 	dev_dbg(bus->dev, "dsp registration status=%d\n", ret);
 

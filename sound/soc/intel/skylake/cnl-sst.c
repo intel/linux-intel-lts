@@ -765,7 +765,6 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 	if (ret)
 		return ret;
 
-	cnl->cores.count = 4;
 	cnl->boot_complete = false;
 	init_waitqueue_head(&cnl->boot_wait);
 	cnl->is_first_boot = true;
