@@ -1,0 +1,41 @@
+ifneq ($(EXTERNAL_BUILD), 1)
+srcpath := $(srctree)
+endif
+
+PROGRAMS = isys_fw
+SYSTEM = input_system_system
+IPU_ISYSLIB_ROOT_REL = lib2600
+IPU_ISYSLIB_ROOT = $(srcpath)/$(src)/$(IPU_ISYSLIB_ROOT_REL)
+
+include $(srcpath)/$(src)/Makefile.ipu4isys_inc
+include $(srcpath)/$(src)/Makefile.ipu4isys_src
+
+lib2600-mod-$(IPU_STEP)-objs := \
+	../libintel-ipu4.$(IPU_STEP).lnk.o \
+	../libintel-checker.$(IPU_STEP).lnk.o \
+	$(IPU_ISYSLIB_SRC)
+
+obj-$(CONFIG_VIDEO_INTEL_IPU4)	+= lib2600-mod-$(IPU_STEP).o
+
+INCLUDES := \
+	-I$(srcpath)/$(src)/$(IPU_ISYSLIB_ROOT_REL) \
+	-I$(srcpath)/$(src) \
+	$(IPU_ISYSLIB_INC)
+
+DEFINES:= -D__HOST__ -D__KERNEL__ -DISYS_FPGA -DPSYS_FPGA
+
+ DEFINES += -DSSID=1
+ DEFINES += -DMMID=1
+ DEFINES += -DPROGNAME=isys_fw
+ DEFINES += -DPROGMAP=\"isys_fw.map.h\"
+ DEFINES += -DSUBSYSTEM_INCLUDE=\<isys.h\>
+ DEFINES += -DCELL=input_system_unis_logic_sp_control_tile_sp
+ DEFINES += -DSPMAIN=isys_fw
+ DEFINES += -DRUN_INTEGRATION
+ DEFINES += -DDEBUG_SP_NCI
+ DEFINES += -DCFG_VIED_SUBSYSTEM_ACCESS_LIB_IMPL=1
+ DEFINES += -DHRT_ON_VIED_SUBSYSTEM_ACCESS=0
+ DEFINES += -DHRT_USE_VIR_ADDRS
+ DEFINES += -DHRT_HW
+
+ccflags-y += $(INCLUDES) $(DEFINES) -fno-common
