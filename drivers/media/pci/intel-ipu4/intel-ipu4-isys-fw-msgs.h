@@ -67,6 +67,8 @@ struct ipu_fw_isys_output_pin_payload_abi {
  * @output_res: output pin resolution
  * @stride: output stride in Bytes (not valid for statistics)
  * @watermark_in_lines: pin watermark level in lines
+ * @payload_buf_size: minimum size in Bytes of all buffers that will be
+ *			supplied for capture on this pin
  * @send_irq: assert if pin event should trigger irq
  * @pt: pin type -real format "enum ipu_fw_isys_pin_type"
  * @ft: frame format type -real format "enum ipu_fw_isys_frame_format_type"
@@ -74,16 +76,19 @@ struct ipu_fw_isys_output_pin_payload_abi {
  * @link_id: identifies PPG to connect to, link_id = 0 implies offline
  *           while link_id > 0 implies buffer_chasing or online mode
  *           can be entered
+ * @reserve_compression: reserve compression resources for pin
  */
 struct ipu_fw_isys_output_pin_info_abi {
 	struct ipu_fw_isys_resolution_abi output_res;
 	uint32_t stride;
 	uint32_t watermark_in_lines;
+	uint32_t payload_buf_size;
 	uint8_t send_irq;
 	uint8_t input_pin_id;
 	uint8_t pt;
 	uint8_t ft;
 	uint8_t link_id;
+	uint8_t reserve_compression;
 };
 
 /**
@@ -105,12 +110,14 @@ struct ipu_fw_isys_param_pin_abi {
  *		     input pin can only be MIPI
  *		     (enum ipu_fw_isys_mipi_store_mode)
  * @bits_per_pix: native bits per pixel
+ * @mapped_dt: actual data type from sensor
  */
 struct ipu_fw_isys_input_pin_info_abi {
 	struct ipu_fw_isys_resolution_abi input_res;
 	uint8_t dt;
 	uint8_t mipi_store_mode;
 	uint8_t bits_per_pix;
+	uint8_t mapped_dt;
 };
 
 /**

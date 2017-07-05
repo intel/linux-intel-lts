@@ -241,9 +241,11 @@ static void output_pin_info_abi_to_api(
 	api->stride = abi->stride;
 	api->pt = abi->pt;
 	api->watermark_in_lines = abi->watermark_in_lines;
+	api->payload_buf_size = abi->payload_buf_size;
 	api->send_irq = abi->send_irq;
 	api->ft = abi->ft;
 	api->link_id = abi->link_id;
+	api->reserve_compression = abi->reserve_compression;
 }
 
 static void param_pin_abi_to_api(struct ipu_fw_isys_param_pin_abi *abi,
@@ -260,6 +262,7 @@ static void input_pin_info_abi_to_api(
 	resolution_abi_to_api(&abi->input_res, &api->input_res);
 	api->dt = abi->dt;
 	api->mipi_store_mode = abi->mipi_store_mode;
+	api->mapped_dt = abi->mapped_dt;
 }
 
 static void isa_cfg_abi_to_api(const struct ipu_fw_isys_isa_cfg_abi *abi,
