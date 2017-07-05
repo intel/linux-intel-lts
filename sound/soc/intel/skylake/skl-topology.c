@@ -29,6 +29,7 @@
 #include "skl-tplg-interface.h"
 #include "../common/sst-dsp.h"
 #include "../common/sst-dsp-priv.h"
+#include "skl-fwlog.h"
 
 #define SKL_CH_FIXUP_MASK		(1 << 0)
 #define SKL_RATE_FIXUP_MASK		(1 << 1)
@@ -1270,6 +1271,32 @@ static int skl_tplg_pga_event(struct snd_soc_dapm_widget *w,
 
 	return 0;
 }
+static int skl_tplg_dsp_log_get(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_platform *platform = snd_soc_kcontrol_platform(kcontrol);
+	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata
+					(&(platform->component));
+	struct skl *skl = ebus_to_skl(ebus);
+
+	ucontrol->value.integer.value[0] = get_dsp_log_priority(skl);
+
+	return 0;
+}
+
+static int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_platform *platform = snd_soc_kcontrol_platform(kcontrol);
+	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata
+					(&(platform->component));
+	struct skl *skl = ebus_to_skl(ebus);
+
+	update_dsp_log_priority(ucontrol->value.integer.value[0], skl);
+
+	return 0;
+}
+
 
 static int skl_tplg_tlv_control_get(struct snd_kcontrol *kcontrol,
 			unsigned int __user *data, unsigned int size)
@@ -1850,6 +1877,11 @@ static const struct snd_soc_tplg_kcontrol_ops skl_tplg_kcontrol_ops[] = {
 		.id = SKL_CONTROL_TYPE_MIC_SELECT,
 		.get = skl_tplg_mic_control_get,
 		.put = skl_tplg_mic_control_set,
+	},
+	{
+		.id = SKL_CONTROL_TYPE_DSP_LOG,
+		.get = skl_tplg_dsp_log_get,
+		.put = skl_tplg_dsp_log_set,
 	},
 };
 
