@@ -178,12 +178,12 @@ extern int ia_css_program_manifest_set_dfm_port_bitmap(
 	const vied_nci_dev_dfm_id_t			dfm_type_id,
 	const vied_nci_resource_bitmap_t	bitmap);
 
-/*! Get DFM port  bitmap for the program
+/*! Get bitmap of DFM ports requested for the program
 
  @param	manifest[in]			program manifest object
  @param	dfm_type_id[in]			DFM resource type ID
 
- @return 0 when not applicable and/or invalid arguments
+ @return DFM port bitmap
  */
 extern vied_nci_resource_bitmap_t ia_css_program_manifest_get_dfm_port_bitmap(
 	const ia_css_program_manifest_t			*manifest,
@@ -214,11 +214,12 @@ extern vied_nci_resource_bitmap_t ia_css_program_manifest_get_dfm_active_port_bi
 	const ia_css_program_manifest_t			*manifest,
 	const vied_nci_dev_dfm_id_t			dfm_type_id);
 
-/*! Set DFM port relocatability specification for the program
+/*! Set DFM device relocatability specification for the program
 
  @param	manifest[in]			program manifest object
  @param	dfm_type_id[in]			DFM resource type ID
- @param is_relocatable[in]		indicate if resource is relocatable
+ @param is_relocatable[in]		1 if dfm device ports are relocatable, 0 otherwise
+
  @return 0 when not applicable and/or invalid arguments
  */
 extern int ia_css_program_manifest_set_is_dfm_relocatable(
@@ -226,11 +227,12 @@ extern int ia_css_program_manifest_set_is_dfm_relocatable(
 	const vied_nci_dev_dfm_id_t			dfm_type_id,
 	const uint8_t						is_relocatable);
 
-/*! Get DFM port relocatability specification for the program
+/*! Get DFM device relocatability specification for the program
 
  @param	manifest[in]			program manifest object
  @param	dfm_type_id[in]			DFM resource type ID
- @return 0 when not applicable and/or invalid arguments
+
+ @return 1 if dfm device ports are relocatable, 0 otherwise
  */
 extern uint8_t ia_css_program_manifest_get_is_dfm_relocatable(
 	const ia_css_program_manifest_t			*manifest,
@@ -346,19 +348,24 @@ extern int ia_css_program_manifest_set_ext_mem_offset(
  @param	manifest[in]			program manifest object
  @param	dev_chn_id[in]			device channel ID
 
- @return 0 when not applicable and/or invalid arguments
+ @return Valid fixed offset (if value is greater or equal to 0) or
+  IA_CSS_PROGRAM_MANIFEST_RESOURCE_OFFSET_IS_RELOCATABLE if offset
+  is relocatable
  */
 extern vied_nci_resource_size_t ia_css_program_manifest_get_dev_chn_offset(
 	const ia_css_program_manifest_t			*manifest,
 	const vied_nci_dev_chn_ID_t				dev_chn_id);
 
 /*! Get the memory resource (offset) specification for a memory
- that does not belong to the cell where the program will be mapped
+ that does not belong to the cell where the program will be mapped.
+
 
  @param	manifest[in]			program manifest object
  @param	mem_type_id[in]			mem type ID
 
- @return 0 when not applicable and/or invalid arguments
+ @return Valid fixed offset (if value is greater or equal to 0) or
+  IA_CSS_PROGRAM_MANIFEST_RESOURCE_OFFSET_IS_RELOCATABLE if offset
+  is relocatable
  */
 extern vied_nci_resource_size_t ia_css_program_manifest_get_ext_mem_offset(
 	const ia_css_program_manifest_t			*manifest,

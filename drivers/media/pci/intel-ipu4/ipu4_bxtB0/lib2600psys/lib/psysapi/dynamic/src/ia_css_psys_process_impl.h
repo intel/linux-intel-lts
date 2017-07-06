@@ -470,6 +470,56 @@ EXIT:
 }
 
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+vied_nci_resource_bitmap_t* ia_css_process_get_dfm_port_bitmap_ptr(
+	ia_css_process_t *process)
+{
+	DECLARE_ERRVAL
+	vied_nci_resource_bitmap_t *p_bitmap = NULL;
+
+	IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, VERBOSE,
+		       "ia_css_process_get_dfm_port_bitmap(): enter:\n");
+
+	verifexitval(process != NULL, EFAULT);
+#if (VIED_NCI_N_DEV_DFM_ID > 0)
+	p_bitmap = &process->dfm_port_bitmap[0];
+#else
+	p_bitmap = NULL;
+#endif
+EXIT:
+	if (haserror(EFAULT)) {
+		IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, ERROR,
+		 "ia_css_process_get_dfm_port_bitmap invalid argument process\n");
+	}
+
+	return p_bitmap;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+vied_nci_resource_bitmap_t* ia_css_process_get_dfm_active_port_bitmap_ptr(
+	ia_css_process_t *process)
+{
+	DECLARE_ERRVAL
+	vied_nci_resource_bitmap_t *p_bitmap = NULL;
+
+	IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, VERBOSE,
+		       "ia_css_process_get_dfm_port_bitmap(): enter:\n");
+
+	verifexitval(process != NULL, EFAULT);
+#if (VIED_NCI_N_DEV_DFM_ID > 0)
+	p_bitmap = &process->dfm_active_port_bitmap[0];
+#else
+	p_bitmap = NULL;
+#endif
+EXIT:
+	if (haserror(EFAULT)) {
+		IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, ERROR,
+		 "ia_css_process_get_dfm_port_bitmap invalid argument process\n");
+	}
+
+	return p_bitmap;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
 vied_nci_resource_bitmap_t ia_css_process_get_dfm_port_bitmap(
 	const ia_css_process_t *process,
 	vied_nci_dev_dfm_id_t  dfm_res_id)
