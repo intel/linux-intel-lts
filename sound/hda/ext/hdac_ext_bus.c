@@ -21,7 +21,7 @@
 #include <linux/slab.h>
 #include <linux/io.h>
 #include <asm/pgtable.h>
-#include <asm/set_memory.h>
+#include <asm/cacheflush.h>
 #include <sound/hdaudio_ext.h>
 
 MODULE_DESCRIPTION("HDA extended core");
