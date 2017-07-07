@@ -697,6 +697,8 @@ void intel_ipu4_isys_buffer_list_to_ipu_fw_isys_frame_buff_set(
 	set->send_resp_sof = 1;
 	set->frame_counter = bl->frame_counter %
 			INTEL_IPU_MAX_FRAME_COUNTER;
+	set->send_irq_eof = 1;
+	set->send_resp_eof = 1;
 
 	list_for_each_entry(ib, &bl->head, head) {
 		if (ib->type == INTEL_IPU4_ISYS_VIDEO_BUFFER) {
@@ -1551,6 +1553,8 @@ int intel_ipu4_isys_req_prepare(struct media_device *mdev,
 	set->send_resp_sof = 1;
 	set->frame_counter = ireq->frame_counter %
 			INTEL_IPU_MAX_FRAME_COUNTER;
+	set->send_irq_eof = 1;
+	set->send_resp_eof = 1;
 
 	spin_lock_irqsave(&ireq->lock, flags);
 

@@ -858,20 +858,39 @@ void intel_ipu_isys_csi2_sof_event(struct intel_ipu4_isys_csi2 *csi2,
 	v4l2_event_queue(vdev, &ev);
 
 	dev_dbg(&csi2->isys->adev->dev,
-		"csi2-%i sequence: %i, vc: %d, stream_id: %d\n",
+		"sof_event::csi2-%i sequence: %i, vc: %d, stream_id: %d\n",
 		csi2->index, ev.u.frame_sync.frame_sequence, vc, ip->stream_id);
 }
 
 void intel_ipu_isys_csi2_eof_event(struct intel_ipu4_isys_csi2 *csi2,
 					   unsigned int vc)
 {
+	struct intel_ipu4_isys_pipeline *ip = NULL;
 	unsigned long flags;
+	unsigned int i;
+	uint32_t frame_sequence;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
 	csi2->in_frame[vc] = false;
 	if (csi2->wait_for_sync[vc])
 		complete(&csi2->eof_completion);
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
+
+	for (i = 0; i < INTEL_IPU4_ISYS_MAX_STREAMS; i++) {
+		if (csi2->isys->pipes[i] && csi2->isys->pipes[i]->csi2 == csi2
+		    && csi2->isys->pipes[i]->vc == vc) {
+			ip = csi2->isys->pipes[i];
+			break;
+		}
+	}
+
+	if (ip) {
+		frame_sequence = atomic_read(&ip->sequence);
+
+		dev_dbg(&csi2->isys->adev->dev,
+			"eof_event::csi2-%i sequence: %i, vc: %d, stream_id: %d\n",
+			csi2->index, frame_sequence, vc, ip->stream_id);
+	}
 }
 
 /* Call this function only _after_ the sensor has been stopped */

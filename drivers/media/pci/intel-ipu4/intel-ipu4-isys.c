@@ -1854,6 +1854,12 @@ static int isys_isr_one(struct intel_ipu4_bus_device *adev)
 		if (isp->ctrl->get_sim_type && SIM_MOCK ==
 		    isp->ctrl->get_sim_type())
 			intel_ipu_isys_csi2_eof_event(pipe->csi2, pipe->vc);
+
+		dev_dbg(&adev->dev,
+			"eof: handle %d: (index %u), timestamp 0x%16.16llx\n",
+			resp->stream_handle,
+			pipe->seq[pipe->seq_index].sequence,
+			ts);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STATS_DATA_READY:
 		break;
