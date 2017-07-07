@@ -195,7 +195,7 @@ static int libcsspsys2600_pg_rcv(
 		(struct ia_css_psys_event_s *)event);
 }
 
-static int libcsspsys2600_terminal_set(struct ia_css_terminal *terminal,
+static int libcsspsys2600_terminal_set(struct ipu_fw_psys_terminal *pss_terminal,
 				       int terminal_idx,
 				       struct intel_ipu4_psys_kcmd *kcmd,
 				       vied_vaddress_t buffer,
@@ -203,7 +203,9 @@ static int libcsspsys2600_terminal_set(struct ia_css_terminal *terminal,
 {
 	ia_css_terminal_type_t type;
 	u32 buffer_state;
+	struct ia_css_terminal *terminal;
 
+	terminal = (struct ia_css_terminal *)pss_terminal;
 	type = ia_css_terminal_get_type((ia_css_terminal_t *)terminal);
 
 	switch (type) {
@@ -487,7 +489,7 @@ static const struct intel_ipu_resource_definitions fw_definitions = {
 	.ext_mem_ids = vied_nci_mem_size,
 
 	.cell_mem_row = VIED_NCI_N_MEM_TYPE_ID,
-	.cell_mem = vied_nci_cell_mem,
+	.cell_mem = (const enum intel_ipu_mem_id *)vied_nci_cell_mem,
 	.process.ext_mem_id = offsetof(struct ia_css_process_s,
 				       ext_mem_id[0]),
 	.process.ext_mem_offset = offsetof(struct ia_css_process_s,
