@@ -49,7 +49,7 @@ static int __i915_gem_timeline_init(struct drm_i915_private *i915,
 
 		tl->fence_context = fences++;
 		tl->common = timeline;
-#if defined(CONFIG_DEBUG_SPINLOCK) && !defined(CONFIG_PREEMPT_RT_BASE)
+#ifdef CONFIG_DEBUG_SPINLOCK
 		__raw_spin_lock_init(&tl->lock.rlock, lockname, lockclass);
 #else
 		spin_lock_init(&tl->lock);
