@@ -49,7 +49,7 @@ PSYSAPI_HOST_FILES = $(PSYSAPI_PROCESS_HOST_FILES) $(PSYSAPI_MANIFEST_HOST_FILES
 PSYSAPI_PROCESS_GROUP_HOST_FILES  = $(PSYSAPI_HOST_FILES)
 PSYSAPI_PROCESS_GROUP_HOST_FILES += $(PSYSAPI_DIR)/sim/src/ia_css_psys_process_group_cmd_impl.c
 
-# for now disabled, implementation for now provided by bxt psys api impl
+# for now disabled, implementation for now provided by psys api impl
 #PSYSAPI_HOST_FILES    += $(PSYSAPI_DIR)/device/src/ia_css_psys_device.c
 
 PSYSAPI_HOST_CPPFLAGS  = -I$(PSYSAPI_DIR)/interface
