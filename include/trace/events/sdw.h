@@ -29,7 +29,7 @@
 /*
  * drivers/sdw/sdw.c
  */
-extern int sdw_transfer_trace_reg(void);
+extern void sdw_transfer_trace_reg(void);
 extern void sdw_transfer_trace_unreg(void);
 /*
  * __sdw_transfer() write request

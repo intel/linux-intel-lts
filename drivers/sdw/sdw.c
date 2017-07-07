@@ -424,7 +424,7 @@ struct device sdw_slv = {
 
 static struct static_key sdw_trace_msg = STATIC_KEY_INIT_FALSE;
 
-int sdw_transfer_trace_reg(void)
+void sdw_transfer_trace_reg(void)
 {
 	static_key_slow_inc(&sdw_trace_msg);
 }
