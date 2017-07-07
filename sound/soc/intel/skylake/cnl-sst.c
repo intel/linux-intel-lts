@@ -31,7 +31,7 @@
 #include <linux/device.h>
 #include <linux/sdw_bus.h>
 #include <linux/sdw/sdw_cnl.h>
-#include <asm/set_memory.h>
+#include <asm/cacheflush.h>
 
 #include "../common/sst-dsp.h"
 #include "../common/sst-dsp-priv.h"

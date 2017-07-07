@@ -33,7 +33,7 @@
 #include "skl-tplg-interface.h"
 #include <linux/sdw/sdw_cnl.h>
 #include <linux/sdw_bus.h>
-#include <asm/set_memory.h>
+#include <asm/cacheflush.h>
 
 static int skl_alloc_dma_buf(struct device *dev,
 		struct snd_dma_buffer *dmab, size_t size)
