@@ -123,7 +123,14 @@ config SND_SOC_ACPI_INTEL_MATCH
 	# this option controls the compilation of ACPI matching tables and
 	# helpers and is not meant to be selected by the user.
 
+config SND_SOC_INTEL_CNL_FPGA
+	tristate "Enable CNL FPGA board settings"
+	help
+	  Select Y if you are using FPGA.
+	  If unsure select "N".
+
 endif ## SND_SOC_INTEL_SST_TOPLEVEL
+
 
 # ASoC codec drivers
 source "sound/soc/intel/boards/Kconfig"
