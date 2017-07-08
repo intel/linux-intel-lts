@@ -1,6 +1,6 @@
 config VIDEO_INTEL_IPU4
 	tristate "Intel intel-ipu4 driver"
-	depends on ACPI
+	depends on ACPI && m
 	select IOMMU_API
 	select IOMMU_IOVA
 	select X86_DEV_DMA_OPS if X86
@@ -8,7 +8,7 @@ config VIDEO_INTEL_IPU4
 	select PHYS_ADDR_T_64BIT
 	select COMMON_CLK
 	---help---
-	Say Y here!
+	Select for intel-ipu4 controller
 
 choice
 	prompt "intel-ipu4 hardware type"
@@ -31,7 +31,7 @@ endchoice
 
 config VIDEO_INTEL_IPU5
 	tristate "Intel intel-ipu5 driver"
-	depends on ACPI
+	depends on ACPI && m
 	select IOMMU_API
 	select IOMMU_IOVA
 	select X86_DEV_DMA_OPS if X86
@@ -40,7 +40,7 @@ config VIDEO_INTEL_IPU5
 	select COMMON_CLK
 	default n if VIDEO_INTEL_IPU4
 	---help---
-	Say Y here!
+	Select for intel-ipu5 controller
 
 choice
 	prompt "intel-ipu5 hardware type"

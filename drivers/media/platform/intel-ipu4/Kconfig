@@ -1,5 +1,9 @@
+choice
+        prompt "intel-ipu4 platform data"
+        default INTEL_IPU4_BXT_RVP_PDATA
+
 config INTEL_IPU4_BXT_RVP_PDATA
-	tristate "Enable built in platform data for Broxton RVP"
+	bool "Enable built in platform data for Broxton RVP"
 	---help---
 	Pre-ACPI system platform data is compiled inside kernel
 
@@ -13,9 +17,10 @@ config INTEL_IPU4_BXT_GP_PDATA
 	Pre-ACPI system platform data is compiled inside kernel
 
 config INTEL_IPU4_BXT_GT_PDATA
-	tristate "Enable built in platform data for Broxton-GT"
+	bool "Enable built in platform data for Broxton-GT"
 	---help---
 	Pre-ACPI system platform data is compiled inside kernel
+endchoice
 
 config INTEL_IPU4_OV2740
 	bool "Compile platform data for OV2740"
@@ -62,10 +67,17 @@ config INTEL_IPU4_IMX290
 	---help---
 	"Sony 8MB camera sensor is enabled for HDR function"
 
+choice
+        prompt "intel-ipu5 platform data"
+	depends on VIDEO_INTEL_IPU5
+        default INTEL_IPU5_FPGA_PDATA
+
 config INTEL_IPU5_FPGA_PDATA
 	bool "Enable built in platform data for ipu5 fpga"
+	depends on VIDEO_INTEL_IPU5
 	---help---
 	Pre-ACPI system platform data is compiled inside kernel
+endchoice
 
 config INTEL_IPU5_PIXTER
 	bool "Compile platform data for internal pixter"
@@ -75,5 +87,6 @@ config INTEL_IPU5_PIXTER
 
 config INTEL_IPU5_IMX135
 	bool "Compile platform data for IMX135"
+	depends on INTEL_IPU5_FPGA_PDATA
 	---help---
 	Sony 13MP camera sensor for ipu5
