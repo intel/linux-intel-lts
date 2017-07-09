@@ -1644,7 +1644,7 @@ config MFD_VEXPRESS_SYSREG
 	  on the ARM Ltd. Versatile Express board.
 
 config MFD_TPS68470
-	tristate "TI TPS68470 Power Management / LED chips"
+	bool "TI TPS68470 Power Management / LED chips"
 	depends on I2C
 	select MFD_CORE
 	select REGMAP_I2C
