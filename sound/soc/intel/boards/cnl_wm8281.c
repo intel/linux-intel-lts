@@ -112,11 +112,11 @@ static inline void set_soc_osc_clk0(void __iomem *addr, bool enable)
 static inline struct snd_soc_codec *cnl_florida_get_codec(struct snd_soc_card *card)
 {
 	bool found = false;
-	struct snd_soc_component *component;
+	struct snd_soc_codec *codec;
 
-	list_for_each_entry(component, &card->component_dev_list, card_list) {
-		if (!strstr(component->name, "wm5110-codec")) {
-			pr_debug("codec was %s", component->name);
+	list_for_each_entry(codec, &card->codec_dev_list, card_list) {
+		if (!strstr(codec->component.name, "wm5110-codec")) {
+			pr_debug("codec was %s", codec->component.name);
 			continue;
 		} else {
 			found = true;
@@ -127,7 +127,7 @@ static inline struct snd_soc_codec *cnl_florida_get_codec(struct snd_soc_card *c
 		pr_err("%s: cant find codec", __func__);
 		return NULL;
 	}
-	return component->codec;
+	return codec;
 }
 
 static struct snd_soc_dai *cnl_florida_get_codec_dai(struct snd_soc_card *card,
