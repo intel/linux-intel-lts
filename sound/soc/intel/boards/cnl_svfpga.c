@@ -78,11 +78,11 @@ static inline
 struct snd_soc_codec *cnl_svfpga_get_codec(struct snd_soc_card *card)
 {
 	bool found = false;
-	struct snd_soc_component *component;
+	struct snd_soc_codec *codec;
 
-	list_for_each_entry(component, &card->component_dev_list, card_list) {
-		if (!strstr(component->name, "sdw-slave0-14:13:20:05:86:80")) {
-			pr_debug("codec was %s", component->name);
+	list_for_each_entry(codec, &card->codec_dev_list, card_list) {
+		  if (!strstr(codec->component.name, "sdw-slave0-14:13:20:05:86:80")) {
+			pr_debug("codec was %s", codec->component.name);
 			continue;
 		} else {
 			found = true;
@@ -94,7 +94,7 @@ struct snd_soc_codec *cnl_svfpga_get_codec(struct snd_soc_card *card)
 		BUG();
 		return NULL;
 	}
-	return snd_soc_component_to_codec(component);
+	return codec;
 }
 
 static int cnl_svfpga_init(struct snd_soc_pcm_runtime *runtime)
