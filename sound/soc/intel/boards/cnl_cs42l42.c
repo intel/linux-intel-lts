@@ -78,11 +78,11 @@ static inline
 struct snd_soc_codec *cnl_cs42l42_get_codec(struct snd_soc_card *card)
 {
 	bool found = false;
-	struct snd_soc_component *component;
+	struct snd_soc_codec *codec;
 
-	list_for_each_entry(component, &card->component_dev_list, card_list) {
-		if (!strstr(component->name, "sdw-slave0-00:01:fa:42:42:00")) {
-			pr_debug("codec was %s", component->name);
+	list_for_each_entry(codec, &card->codec_dev_list, card_list) {
+		if (!strstr(codec->component.name, "sdw-slave0-00:01:fa:42:42:00")) {
+			pr_debug("codec was %s", codec->component.name);
 			continue;
 		} else {
 			found = true;
@@ -94,7 +94,7 @@ struct snd_soc_codec *cnl_cs42l42_get_codec(struct snd_soc_card *card)
 		BUG();
 		return NULL;
 	}
-	return snd_soc_component_to_codec(component);
+	return codec;
 }
 
 static struct snd_soc_dai *cnl_cs42l42_get_codec_dai(struct snd_soc_card *card,
