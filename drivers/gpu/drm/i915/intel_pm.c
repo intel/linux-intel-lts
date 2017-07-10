@@ -32,6 +32,19 @@
 #include "../../../platform/x86/intel_ips.h"
 #include <linux/module.h>
 #include <drm/drm_atomic_helper.h>
+#include <linux/proc_fs.h>  /* Needed for procfs access */
+#include <linux/fs.h>      /* For the basic file system */
+#include <linux/kernel.h>
+
+#define RPM_PROC_ENTRY_FILENAME     "i915_rpm_op"
+#define RPM_PROC_ENTRY_DIRECTORY        "driver/i915rpm"
+
+/* proc file operations supported */
+static const struct file_operations rpm_file_ops = {
+	.owner      = THIS_MODULE,
+	.open       = i915_rpm_get_procfs,
+	.release    = i915_rpm_put_procfs,
+};
 
 /**
  * DOC: RC6
@@ -3768,8 +3781,7 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 				struct intel_crtc_state *cstate,
 				const struct intel_plane_state *intel_pstate,
 				int level,
-				uint16_t *out_blocks, /* out */
-				uint8_t *out_lines /* out */)
+				struct skl_plane_wm *wm /* out */)
 {
 	struct intel_plane *plane = to_intel_plane(intel_pstate->base.plane);
 	const struct drm_plane_state *pstate = &intel_pstate->base;
@@ -3790,6 +3802,8 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 		to_intel_atomic_state(cstate->base.state);
 	bool apply_memory_bw_wa = skl_needs_memory_bw_wa(state);
 	bool y_tiled, x_tiled;
+	uint16_t *out_blocks = &wm->wm[level].plane_res_b;
+	uint8_t *out_lines = &wm->wm[level].plane_res_l;
 
 	if (latency == 0 ||
 	    !intel_wm_plane_visible(cstate, intel_pstate))
@@ -3898,6 +3912,11 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 		}
 	}
 
+	if ((level > 0) && (res_blocks < wm->wm[level - 1].plane_res_b)) {
+		res_blocks = wm->wm[level - 1].plane_res_b;
+		res_lines = wm->wm[level - 1].plane_res_l;
+	}
+
 	if (res_lines >= 31 && level == 0) {
 		struct drm_plane *plane = pstate->plane;
 
@@ -3926,14 +3945,13 @@ skl_compute_wm_levels(const struct drm_i915_private *dev_priv,
 		return -EINVAL;
 
 	for (level = 0; level <= max_level; level++) {
-		struct skl_wm_level *result = &wm->wm[level];
 
 		ret = skl_compute_plane_wm(dev_priv,
 					   cstate,
 					   intel_pstate,
 					   level,
-					   &result->plane_res_b,
-					   &result->plane_res_l);
+					   wm);
+
 		if (ret)
 			return ret;
 	}
@@ -5114,7 +5132,7 @@ skip_hw_write:
 	dev_priv->rps.last_adj = 0;
 }
 
-static u32 gen6_rps_pm_mask(struct drm_i915_private *dev_priv, u8 val)
+u32 gen6_rps_pm_mask(struct drm_i915_private *dev_priv, u8 val)
 {
 	u32 mask = 0;
 
@@ -5266,7 +5284,7 @@ void gen6_rps_idle(struct drm_i915_private *dev_priv)
 	gen6_disable_rps_interrupts(dev_priv);
 
 	mutex_lock(&dev_priv->rps.hw_lock);
-	if (dev_priv->rps.enabled) {
+	if (dev_priv->rps.enabled && !dev_priv->rps.debugfs_disable_boost) {
 		if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
 			vlv_set_rps_idle(dev_priv);
 		else
@@ -5292,7 +5310,8 @@ void gen6_rps_boost(struct drm_i915_private *dev_priv,
 	 */
 	if (!(dev_priv->gt.awake &&
 	      dev_priv->rps.enabled &&
-	      dev_priv->rps.cur_freq < dev_priv->rps.boost_freq))
+	      dev_priv->rps.cur_freq < dev_priv->rps.boost_freq) ||
+	     dev_priv->rps.debugfs_disable_boost)
 		return;
 
 	/* Force a RPS boost (and don't count it against the client) if
@@ -5354,6 +5373,26 @@ static void cherryview_disable_rps(struct drm_i915_private *dev_priv)
 	I915_WRITE(GEN6_RC_CONTROL, 0);
 }
 
+void vlv_set_rps_mode(struct drm_i915_private *dev_priv, bool disable)
+{
+	if (!IS_VALLEYVIEW(dev_priv)) {
+		DRM_DEBUG_DRIVER("RPS mode change not supported\n");
+		return;
+	}
+
+	WARN_ON(!mutex_is_locked(&dev_priv->rps.hw_lock));
+
+	dev_priv->rps.rps_disable = disable;
+
+	if (disable) {
+		I915_WRITE(GEN6_RP_CONTROL, 0);
+		gen6_disable_rps_interrupts(dev_priv);
+	} else {
+		I915_WRITE(GEN6_RP_CONTROL, dev_priv->rps.rps_mask);
+		gen6_enable_rps_interrupts(dev_priv);
+	}
+}
+
 static void valleyview_disable_rps(struct drm_i915_private *dev_priv)
 {
 	/* we're doing forcewake before Disabling RC6,
@@ -5361,6 +5400,9 @@ static void valleyview_disable_rps(struct drm_i915_private *dev_priv)
 	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
 
 	I915_WRITE(GEN6_RC_CONTROL, 0);
+
+	/* Disable rps */
+	vlv_set_rps_mode(dev_priv, true);
 
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 }
@@ -5567,11 +5609,35 @@ static void gen9_enable_rps(struct drm_i915_private *dev_priv)
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 }
 
+static void gen9_set_rc6_mode(struct drm_i915_private *dev_priv)
+{
+	u32 rc6_mask = 0;
+
+	/* 3a: Enable RC6 */
+	if (intel_enable_rc6() & INTEL_RC6_ENABLE)
+		rc6_mask = GEN6_RC_CTL_RC6_ENABLE;
+	DRM_INFO("RC6 %s\n", onoff(rc6_mask & GEN6_RC_CTL_RC6_ENABLE));
+	I915_WRITE(GEN6_RC6_THRESHOLD, 37500); /* 37.5/125ms per EI */
+	I915_WRITE(GEN6_RC_CONTROL,
+		   GEN6_RC_CTL_HW_ENABLE | GEN6_RC_CTL_EI_MODE(1) | rc6_mask);
+
+	intel_guc_sample_forcewake(&dev_priv->guc);
+
+	/*
+	 * 3b: Enable Coarse Power Gating only when RC6 is enabled.
+	 * WaRsDisableCoarsePowerGating:skl,bxt - Render/Media PG need to be disabled with RC6.
+	 */
+	if (NEEDS_WaRsDisableCoarsePowerGating(dev_priv))
+		I915_WRITE(GEN9_PG_ENABLE, 0);
+	else
+		I915_WRITE(GEN9_PG_ENABLE, (rc6_mask & GEN6_RC_CTL_RC6_ENABLE) ?
+				(GEN9_RENDER_PG_ENABLE | GEN9_MEDIA_PG_ENABLE) : 0);
+}
+
 static void gen9_enable_rc6(struct drm_i915_private *dev_priv)
 {
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
-	uint32_t rc6_mask = 0;
 
 	/* 1a: Software RC state - RC0 */
 	I915_WRITE(GEN6_RC_STATE, 0);
@@ -5604,25 +5670,40 @@ static void gen9_enable_rc6(struct drm_i915_private *dev_priv)
 	I915_WRITE(GEN9_MEDIA_PG_IDLE_HYSTERESIS, 25);
 	I915_WRITE(GEN9_RENDER_PG_IDLE_HYSTERESIS, 25);
 
-	/* 3a: Enable RC6 */
-	if (intel_enable_rc6() & INTEL_RC6_ENABLE)
-		rc6_mask = GEN6_RC_CTL_RC6_ENABLE;
-	DRM_INFO("RC6 %s\n", onoff(rc6_mask & GEN6_RC_CTL_RC6_ENABLE));
-	I915_WRITE(GEN6_RC6_THRESHOLD, 37500); /* 37.5/125ms per EI */
-	I915_WRITE(GEN6_RC_CONTROL,
-		   GEN6_RC_CTL_HW_ENABLE | GEN6_RC_CTL_EI_MODE(1) | rc6_mask);
-
-	/*
-	 * 3b: Enable Coarse Power Gating only when RC6 is enabled.
-	 * WaRsDisableCoarsePowerGating:skl,bxt - Render/Media PG need to be disabled with RC6.
-	 */
-	if (NEEDS_WaRsDisableCoarsePowerGating(dev_priv))
-		I915_WRITE(GEN9_PG_ENABLE, 0);
-	else
-		I915_WRITE(GEN9_PG_ENABLE, (rc6_mask & GEN6_RC_CTL_RC6_ENABLE) ?
-				(GEN9_RENDER_PG_ENABLE | GEN9_MEDIA_PG_ENABLE) : 0);
+	/* 3: Proceed with Enabling/Disabling According to Runtime Mode. */
+	gen9_set_rc6_mode(dev_priv);
 
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
+}
+
+int intel_set_rc6_mode(struct drm_i915_private *dev_priv, bool disable)
+{
+	int ret = 0;
+
+	if (!IS_GEN9(dev_priv))
+		return -ENODEV;
+
+	ret = mutex_lock_interruptible(&dev_priv->rps.hw_lock);
+	if (ret)
+		return ret;
+
+	if (dev_priv->rps.rc6_disable == disable) {
+		mutex_unlock(&dev_priv->rps.hw_lock);
+		return 0;
+	}
+
+	intel_runtime_pm_get(dev_priv);
+	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
+
+	dev_priv->rps.rc6_disable = disable;
+	gen9_set_rc6_mode(dev_priv);
+
+	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
+	intel_runtime_pm_put(dev_priv);
+
+	mutex_unlock(&dev_priv->rps.hw_lock);
+
+	return 0;
 }
 
 static void gen8_enable_rps(struct drm_i915_private *dev_priv)
@@ -5984,7 +6065,7 @@ static void valleyview_check_pctx(struct drm_i915_private *dev_priv)
 	unsigned long pctx_addr = I915_READ(VLV_PCBR) & ~4095;
 
 	WARN_ON(pctx_addr != dev_priv->mm.stolen_base +
-			     dev_priv->vlv_pctx->stolen->start);
+			     dev_priv->vlv_pctx->stolen->base.start);
 }
 
 
@@ -6033,10 +6114,13 @@ static void valleyview_setup_pctx(struct drm_i915_private *dev_priv)
 								      pcbr_offset,
 								      I915_GTT_OFFSET_NONE,
 								      pctx_size);
+		if (IS_ERR(pctx))
+			pctx = NULL;
+
 		goto out;
 	}
 
-	DRM_DEBUG_DRIVER("BIOS didn't set up PCBR, fixing up\n");
+	DRM_DEBUG_DRIVER("BIOS didn't set up PCBR or prealloc failed, fixing up\n");
 
 	/*
 	 * From the Gunit register HAS:
@@ -6052,10 +6136,12 @@ static void valleyview_setup_pctx(struct drm_i915_private *dev_priv)
 		goto out;
 	}
 
-	pctx_paddr = dev_priv->mm.stolen_base + pctx->stolen->start;
+	pctx_paddr = dev_priv->mm.stolen_base + pctx->stolen->base.start;
 	I915_WRITE(VLV_PCBR, pctx_paddr);
 
 out:
+	/* The power context need not be preserved across hibernation */
+	pctx->mm.internal_volatile = true;
 	DRM_DEBUG_DRIVER("PCBR: 0x%08x\n", I915_READ(VLV_PCBR));
 	dev_priv->vlv_pctx = pctx;
 }
@@ -6301,13 +6387,12 @@ static void valleyview_enable_rps(struct drm_i915_private *dev_priv)
 
 	I915_WRITE(GEN6_RP_IDLE_HYSTERSIS, 10);
 
-	I915_WRITE(GEN6_RP_CONTROL,
-		   GEN6_RP_MEDIA_TURBO |
-		   GEN6_RP_MEDIA_HW_NORMAL_MODE |
-		   GEN6_RP_MEDIA_IS_GFX |
-		   GEN6_RP_ENABLE |
-		   GEN6_RP_UP_BUSY_AVG |
-		   GEN6_RP_DOWN_IDLE_CONT);
+	dev_priv->rps.rps_mask = GEN6_RP_MEDIA_TURBO |
+				   GEN6_RP_MEDIA_HW_NORMAL_MODE |
+				   GEN6_RP_MEDIA_IS_GFX |
+				   GEN6_RP_ENABLE |
+				   GEN6_RP_UP_BUSY_AVG |
+				   GEN6_RP_DOWN_IDLE_CONT;
 
 	I915_WRITE(GEN6_RC6_WAKE_RATE_LIMIT, 0x00280000);
 	I915_WRITE(GEN6_RC_EVALUATION_INTERVAL, 125000);
@@ -6347,6 +6432,8 @@ static void valleyview_enable_rps(struct drm_i915_private *dev_priv)
 	DRM_DEBUG_DRIVER("GPU status: 0x%08x\n", val);
 
 	reset_rps(dev_priv, valleyview_set_rps);
+
+	vlv_set_rps_mode(dev_priv, false);
 
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 }
@@ -8258,6 +8345,79 @@ void intel_queue_rps_boost_for_request(struct drm_i915_gem_request *req)
 
 	INIT_WORK(&boost->work, __intel_rps_boost_work);
 	queue_work(req->i915->wq, &boost->work);
+}
+
+/*
+ * These operations are caled from user mode (CoreU) to make sure
+ * Gfx is up before register accesses from user mode
+ */
+int i915_rpm_get_procfs(struct inode *inode, struct file *file)
+{
+	struct drm_device *dev = PDE_DATA(inode);
+
+	intel_runtime_pm_get(dev->dev_private);
+
+	return 0;
+}
+
+int i915_rpm_put_procfs(struct inode *inode, struct file *file)
+{
+	struct drm_device *dev = PDE_DATA(inode);
+
+	intel_runtime_pm_put(dev->dev_private);
+
+	return 0;
+}
+
+int i915_setup_rpm_procfs(struct drm_i915_private *dev_priv)
+{
+	dev_priv->rpm.i915_proc_dir = NULL;
+	dev_priv->rpm.i915_proc_file = NULL;
+
+	/**
+	 * Create directory for rpm file(s)
+	 */
+	dev_priv->rpm.i915_proc_dir = proc_mkdir(RPM_PROC_ENTRY_DIRECTORY,
+						 NULL);
+	if (dev_priv->rpm.i915_proc_dir == NULL) {
+		DRM_ERROR("Could not initialize %s\n",
+				RPM_PROC_ENTRY_DIRECTORY);
+		return -ENOMEM;
+	}
+
+	/**
+	 * Create the /proc file
+	 */
+	dev_priv->rpm.i915_proc_file = proc_create_data(
+						RPM_PROC_ENTRY_FILENAME,
+						S_IRUGO | S_IWUSR,
+						dev_priv->rpm.i915_proc_dir,
+						&rpm_file_ops,
+						&dev_priv->drm);
+
+	/* check if file is created successfuly */
+	if (dev_priv->rpm.i915_proc_file == NULL) {
+		DRM_ERROR("Could not initialize %s/%s\n",
+			RPM_PROC_ENTRY_DIRECTORY, RPM_PROC_ENTRY_FILENAME);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+int i915_teardown_rpm_procfs(struct drm_i915_private *dev_priv)
+{
+	/* Clean up proc file */
+	if (dev_priv->rpm.i915_proc_file) {
+		remove_proc_entry(RPM_PROC_ENTRY_FILENAME,
+				 dev_priv->rpm.i915_proc_dir);
+		dev_priv->rpm.i915_proc_file = NULL;
+	}
+	if (dev_priv->rpm.i915_proc_dir) {
+		remove_proc_entry(RPM_PROC_ENTRY_DIRECTORY, NULL);
+		dev_priv->rpm.i915_proc_dir = NULL;
+	}
+	return 0;
 }
 
 void intel_pm_setup(struct drm_i915_private *dev_priv)

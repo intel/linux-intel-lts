@@ -547,6 +547,9 @@ struct intel_crtc_state {
 	 * All planes will be positioned inside this space,
 	 * and get clipped at the edges. */
 	int pipe_src_w, pipe_src_h;
+	u32 pipe_scaling_mode;
+	int pipe_dst_x, pipe_dst_y;
+	int pipe_dst_w, pipe_dst_h;
 
 	/*
 	 * Pipe pixel rate, adjusted for
@@ -1802,6 +1805,7 @@ void intel_enable_gt_powersave(struct drm_i915_private *dev_priv);
 void intel_autoenable_gt_powersave(struct drm_i915_private *dev_priv);
 void intel_disable_gt_powersave(struct drm_i915_private *dev_priv);
 void intel_suspend_gt_powersave(struct drm_i915_private *dev_priv);
+u32 gen6_rps_pm_mask(struct drm_i915_private *dev_priv, u8 val);
 void gen6_rps_busy(struct drm_i915_private *dev_priv);
 void gen6_rps_reset_ei(struct drm_i915_private *dev_priv);
 void gen6_rps_idle(struct drm_i915_private *dev_priv);

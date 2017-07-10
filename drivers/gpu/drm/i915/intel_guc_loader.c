@@ -119,6 +119,7 @@ static void guc_params_init(struct drm_i915_private *dev_priv)
 {
 	struct intel_guc *guc = &dev_priv->guc;
 	u32 params[GUC_CTL_MAX_DWORDS];
+	struct i915_gem_context *ctx;
 	int i;
 
 	memset(&params, 0, sizeof(params));
@@ -138,7 +139,8 @@ static void guc_params_init(struct drm_i915_private *dev_priv)
 	params[GUC_CTL_WA] |= GUC_CTL_WA_UK_BY_DRIVER;
 
 	params[GUC_CTL_FEATURE] |= GUC_CTL_DISABLE_SCHEDULER |
-			GUC_CTL_VCS2_ENABLED;
+			GUC_CTL_VCS2_ENABLED |
+			GUC_CTL_ENABLE_CP;
 
 	params[GUC_CTL_LOG_PARAMS] = guc->log.flags;
 
@@ -168,6 +170,16 @@ static void guc_params_init(struct drm_i915_private *dev_priv)
 		/* Unmask this bit to enable the GuC's internal scheduler */
 		params[GUC_CTL_FEATURE] &= ~GUC_CTL_DISABLE_SCHEDULER;
 	}
+
+	/*
+	 * For watchdog / media reset, GuC must know the address of the shared
+	 * data page, which is the first page of the default context.
+	 * We will also use this page in several places (suspend/resume/reset),
+	 * so save the ggtt offset.
+	 */
+	ctx = dev_priv->kernel_context;
+	guc->shared_data_offset = guc_ggtt_offset(ctx->engine[RCS].state);
+	params[GUC_CTL_SHARED_DATA] = guc->shared_data_offset;
 
 	I915_WRITE(SOFT_SCRATCH(0), 0);
 

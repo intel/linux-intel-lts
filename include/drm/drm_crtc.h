@@ -201,6 +201,11 @@ struct drm_crtc_state {
 	struct drm_pending_vblank_event *event;
 
 	struct drm_atomic_state *state;
+
+	bool pipescaler_changed;
+	u32 src_w, src_h;
+	u32 fitting_mode;
+	u32 dst_x, dst_y, dst_w, dst_h;
 };
 
 /**

@@ -283,9 +283,12 @@ struct i915_ext_ioctl_data {
 
 /* Extended ioctl definitions */
 #define DRM_I915_EXT_USERDATA		0x0
+#define DRM_I915_GEM_GET_APERTURE2	0x2
 
 #define DRM_IOCTL_I915_EXT_USERDATA \
 	DRM_IOWR(DRM_I915_EXT_USERDATA, struct drm_i915_gem_userdata_blk)
+#define DRM_IOCTL_I915_GEM_GET_APERTURE2 \
+	DRM_IOR(DRM_I915_GEM_GET_APERTURE2, struct drm_i915_gem_get_aperture2)
 
 
 #define DRM_IOCTL_I915_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_I915_INIT, drm_i915_init_t)
@@ -446,6 +449,13 @@ typedef struct drm_i915_irq_wait {
  */
 #define I915_PARAM_HAS_EXEC_FENCE	 44
 
+/* Private (not upstreamed) parameters start from 0x800   */
+/* This helps to avoid conflicts with new upstream values */
+#define I915_PARAM_HAS_GET_APERTURE2     0x808
+#define VPG_I915_PARAM_HAS_POOLED_EU     0x803
+#define VPG_I915_PARAM_MIN_EU_IN_POOL    0x807
+#define I915_PARAM_CREATE_VERSION        0x809
+
 typedef struct drm_i915_getparam {
 	__s32 param;
 	/*
@@ -544,6 +554,48 @@ struct drm_i915_gem_create {
 	 */
 	__u32 handle;
 	__u32 pad;
+	/**
+	 * Requested flags
+	 *
+	 * You can request that the object be created from special memory
+	 * rather than regular system pages using this parameter. Such
+	 * irregular objects may have certain restrictions (such as CPU
+	 * access to a stolen object is verboten).
+	 *
+	 * Also using this parameter object can be pre-populated with system
+	 * pages.
+	 */
+	__u64 flags;
+#define I915_CREATE_PLACEMENT_NORMAL 	0 /* standard swappable bo  */
+/* Allocate the object from memory reserved for the igfx (stolen).
+ *
+ * Objects allocated from stolen are restricted in the API they can use,
+ * as direct CPU access to stolen memory is prohibited by the system.
+ * This means that you cannot use a regular CPU mmap (either using WB
+ * or with the WC extension). You can still use a GTT mmap, pwrite,
+ * pread and pass it around for use by execbuffer and between processes
+ * like normal.
+ *
+ * Stolen memory is a very limited resource and certain functions of the
+ * hardware can only work from within stolen memory. Userspace's
+ * allocations may be evicted from stolen and moved to normal memory as
+ * required. If the allocation is marked as purgeable (using madvise),
+ * the allocation will be dropped and further access to the object's
+ * backing storage will result in -EFAULT. Stolen objects will also be
+ * migrated to normal memory across suspend and resume, as the stolen
+ * memory is not preserved.
+ *
+ * Stolen memory is regarded as a resource placement hint, most suitable
+ * for medium-sized buffers that are only accessed by the GPU and can be
+ * discarded.
+ */
+#define I915_CREATE_PLACEMENT_STOLEN 	1 /* Cannot use CPU mmaps */
+
+#define I915_CREATE_PLACEMENT_MASK	0xff
+
+#define I915_CREATE_POPULATE		(1<<8) /* Pre-populate object pages */
+#define I915_CREATE_FLUSH		(1<<9) /* Clflush prepopulated pages */
+#define __I915_CREATE_UNKNOWN_FLAGS	-(I915_CREATE_FLUSH << 1)
 };
 
 struct drm_i915_gem_pread {
@@ -1182,6 +1234,48 @@ struct drm_i915_gem_get_aperture {
 	 * bytes
 	 */
 	__u64 aper_available_size;
+
+	/**
+	 * Versioning to indicate if map_total_size and stolen_total_size
+	 * value returned are valid or not
+	 */
+	__u64 version;
+
+	/**
+	 * Total space in the mappable region of the aperture, in bytes
+	 */
+	__u64 map_total_size;
+
+	/**
+	 * Total space in the stolen region, in bytes
+	 */
+	__u64 stolen_total_size;
+};
+
+struct drm_i915_gem_get_aperture2 {
+	/** Total size of the aperture used by i915_gem_execbuffer, in bytes */
+	__u64 aper_size;
+
+	/**
+	 * Available space in the aperture used by i915_gem_execbuffer, in
+	 * bytes
+	 */
+	__u64 aper_available_size;
+
+	/**
+	 * Total space in the mappable region of the aperture, in bytes
+	 */
+	__u64 map_total_size;
+
+	/**
+	 * Available space in the mappable region of the aperture, in bytes
+	 */
+	__u64 map_available_size;
+
+	/**
+	 * Single largest available region inside the mappable region, in bytes.
+	 */
+	__u64 map_largest_size;
 };
 
 struct drm_i915_get_pipe_from_crtc_id {
@@ -1359,7 +1453,11 @@ struct drm_i915_reset_stats {
 	/* Number of batches lost pending for execution, for this context */
 	__u32 batch_pending;
 
-	__u32 pad;
+	union {
+		__u32 pad;
+		/* Engine resets since boot/module reload, for all contexts */
+		__u32 reset_engine_count;
+	};
 };
 
 struct drm_i915_gem_userptr {
@@ -1385,7 +1483,16 @@ struct drm_i915_gem_context_param {
 #define I915_CONTEXT_PARAM_GTT_SIZE	0x3
 #define I915_CONTEXT_PARAM_NO_ERROR_CAPTURE	0x4
 #define I915_CONTEXT_PARAM_BANNABLE	0x5
+#define I915_CONTEXT_PARAM_WATCHDOG	0x6
+#define I915_CONTEXT_PARAM_TRTT		0x7
 	__u64 value;
+};
+
+struct drm_i915_gem_context_trtt_param {
+	__u64 segment_base_addr;
+	__u64 l3_table_address;
+	__u32 invd_tile_val;
+	__u32 null_tile_val;
 };
 
 enum drm_i915_oa_format {

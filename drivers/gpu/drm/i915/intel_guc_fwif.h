@@ -113,6 +113,7 @@
 #define   GUC_CTL_POWER_GATING		(1 << 3)
 #define   GUC_CTL_DISABLE_SCHEDULER	(1 << 4)
 #define   GUC_CTL_PREEMPTION_LOG	(1 << 5)
+#define   GUC_CTL_ENABLE_CP		(1 << 6)
 #define   GUC_CTL_ENABLE_SLPC		(1 << 7)
 #define   GUC_CTL_RESET_ON_PREMPT_FAILURE	(1 << 8)
 
@@ -135,7 +136,11 @@
 #define   GUC_ADS_ADDR_SHIFT		11
 #define   GUC_ADS_ADDR_MASK		0xfffff800
 
-#define GUC_CTL_RSRVD			9
+#define GUC_CTL_SHARED_DATA		9
+
+#define GEN11_GUC_ADS_CTL		9
+#define   GEN11_GUC_ADS_ENABLE		(1 << 0)
+#define   GEN11_GUC_ADS_ADDR_SHIFT	1
 
 #define GUC_CTL_MAX_DWORDS		(SOFT_SCRATCH_COUNT - 2) /* [1..14] */
 
@@ -386,7 +391,6 @@ struct guc_policies {
 #define GUC_REGSET_SAVE_CURRENT_VALUE	0x10
 
 #define GUC_REGSET_MAX_REGISTERS	25
-#define GUC_MMIO_WHITE_LIST_START	0x24d0
 #define GUC_MMIO_WHITE_LIST_MAX		12
 #define GUC_S3_SAVE_SPACE_PAGES		10
 
@@ -494,9 +498,28 @@ union guc_log_control {
 	u32 value;
 } __packed;
 
+/* GuC Shared Context Data Struct */
+struct guc_shared_ctx_data {
+	u32 addr_of_last_preempted_data_low;
+	u32 addr_of_last_preempted_data_high;
+	u32 addr_of_last_preempted_data_high_tmp;
+	u32 padding;
+	u32 is_mapped_to_proxy;
+	u32 proxy_ctx_id;
+	u32 engine_reset_ctx_id;
+	u32 media_reset_count;
+	u32 reserved[8];
+	u32 uk_last_ctx_switch_reason;
+	u32 was_reset;
+	u32 lrca_gpu_addr;
+	u32 execlist_ctx;
+	u32 reserved1[32];
+} __packed;
+
 /* This Action will be programmed in C180 - SOFT_SCRATCH_O_REG */
 enum intel_guc_action {
 	INTEL_GUC_ACTION_DEFAULT = 0x0,
+	INTEL_GUC_ACTION_REQUEST_ENGINE_RESET = 0x3,
 	INTEL_GUC_ACTION_SAMPLE_FORCEWAKE = 0x6,
 	INTEL_GUC_ACTION_ALLOCATE_DOORBELL = 0x10,
 	INTEL_GUC_ACTION_DEALLOCATE_DOORBELL = 0x20,
@@ -508,6 +531,11 @@ enum intel_guc_action {
 	INTEL_GUC_ACTION_AUTHENTICATE_HUC = 0x4000,
 	INTEL_GUC_ACTION_UK_LOG_ENABLE_LOGGING = 0x0E000,
 	INTEL_GUC_ACTION_LIMIT
+};
+
+/* Reset engine options */
+enum action_engine_reset_options {
+	INTEL_GUC_RESET_OPTION_REPORT_AFFECTED_CONTEXTS = 0x10,
 };
 
 /*

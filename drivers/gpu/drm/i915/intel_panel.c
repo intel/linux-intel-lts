@@ -106,12 +106,20 @@ intel_pch_panel_fitting(struct intel_crtc *intel_crtc,
 			int fitting_mode)
 {
 	const struct drm_display_mode *adjusted_mode = &pipe_config->base.adjusted_mode;
+	struct drm_i915_private *dev_priv = to_i915(intel_crtc->base.dev);
 	int x = 0, y = 0, width = 0, height = 0;
+	bool downscale = false;
 
 	/* Native modes don't need fitting */
 	if (adjusted_mode->crtc_hdisplay == pipe_config->pipe_src_w &&
 	    adjusted_mode->crtc_vdisplay == pipe_config->pipe_src_h)
 		goto done;
+
+	/* Downscale pfiter */
+	if (IS_GEN9(dev_priv) &&
+	     (adjusted_mode->hdisplay < pipe_config->pipe_src_w ||
+	    adjusted_mode->vdisplay < pipe_config->pipe_src_h))
+		downscale = true;
 
 	switch (fitting_mode) {
 	case DRM_MODE_SCALE_CENTER:
@@ -119,6 +127,17 @@ intel_pch_panel_fitting(struct intel_crtc *intel_crtc,
 		height = pipe_config->pipe_src_h;
 		x = (adjusted_mode->crtc_hdisplay - width + 1)/2;
 		y = (adjusted_mode->crtc_vdisplay - height + 1)/2;
+
+		if (downscale) {
+			if (x < 0) {
+				x = 0;
+				width = adjusted_mode->hdisplay;
+			}
+			if (y < 0) {
+				y = 0;
+				height = adjusted_mode->vdisplay;
+			}
+		}
 		break;
 
 	case DRM_MODE_SCALE_ASPECT:
@@ -132,14 +151,26 @@ intel_pch_panel_fitting(struct intel_crtc *intel_crtc,
 				width = scaled_height / pipe_config->pipe_src_h;
 				if (width & 1)
 					width++;
-				x = (adjusted_mode->crtc_hdisplay - width + 1) / 2;
+				if (adjusted_mode->hdisplay > width) {
+					x = (adjusted_mode->hdisplay -
+					     width + 1) / 2;
+				} else if (downscale) {
+					width = adjusted_mode->hdisplay;
+					x = 0;
+				}
 				y = 0;
 				height = adjusted_mode->crtc_vdisplay;
 			} else if (scaled_width < scaled_height) { /* letter */
 				height = scaled_width / pipe_config->pipe_src_w;
 				if (height & 1)
 				    height++;
-				y = (adjusted_mode->crtc_vdisplay - height + 1) / 2;
+				if (adjusted_mode->vdisplay > height) {
+					y = (adjusted_mode->vdisplay -
+					     height + 1) / 2;
+				} else if (downscale) {
+					height = adjusted_mode->vdisplay;
+					y = 0;
+				}
 				x = 0;
 				width = adjusted_mode->crtc_hdisplay;
 			} else {

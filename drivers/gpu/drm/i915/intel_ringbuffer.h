@@ -127,6 +127,7 @@ struct intel_instdone {
 struct intel_engine_hangcheck {
 	u64 acthd;
 	u32 seqno;
+	u32 watchdog;
 	enum intel_engine_hangcheck_action action;
 	unsigned long action_timestamp;
 	int deadlock;
@@ -280,6 +281,8 @@ struct intel_engine_cs {
 
 	int		(*emit_flush)(struct drm_i915_gem_request *request,
 				      u32 mode);
+	void	(*emit_start_watchdog)(struct drm_i915_gem_request *req);
+	void	(*emit_stop_watchdog)(struct drm_i915_gem_request *req);
 #define EMIT_INVALIDATE	BIT(0)
 #define EMIT_FLUSH	BIT(1)
 #define EMIT_BARRIER	(EMIT_INVALIDATE | EMIT_FLUSH)
@@ -410,6 +413,9 @@ struct intel_engine_cs {
 	struct atomic_notifier_head context_status_notifier;
 
 	struct intel_engine_hangcheck hangcheck;
+
+	/* watchdog_tasklet: stop counter and re-schedule hangcheck_work asap */
+	struct tasklet_struct watchdog_tasklet;
 
 	bool needs_cmd_parser;
 

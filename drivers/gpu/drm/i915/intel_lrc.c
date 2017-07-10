@@ -1435,6 +1435,9 @@ static int gen8_emit_bb_start(struct drm_i915_gem_request *req,
 {
 	struct intel_ring *ring = req->ring;
 	bool ppgtt = !(dispatch_flags & I915_DISPATCH_SECURE);
+	struct intel_engine_cs *engine = req->engine;
+	u32 num_dwords;
+	bool watchdog_running = false;
 	int ret;
 
 	/* Don't rely in hw updating PDPs, specially in lite-restore.
@@ -1444,7 +1447,7 @@ static int gen8_emit_bb_start(struct drm_i915_gem_request *req,
 	 * not idle). PML4 is allocated during ppgtt init so this is
 	 * not needed in 48-bit.*/
 	if (req->ctx->ppgtt &&
-	    (intel_engine_flag(req->engine) & req->ctx->ppgtt->pd_dirty_rings)) {
+	    (intel_engine_flag(engine) & req->ctx->ppgtt->pd_dirty_rings)) {
 		if (!USES_FULL_48BIT_PPGTT(req->i915) &&
 		    !intel_vgpu_active(req->i915)) {
 			ret = intel_logical_ring_emit_pdps(req);
@@ -1452,12 +1455,30 @@ static int gen8_emit_bb_start(struct drm_i915_gem_request *req,
 				return ret;
 		}
 
-		req->ctx->ppgtt->pd_dirty_rings &= ~intel_engine_flag(req->engine);
+		req->ctx->ppgtt->pd_dirty_rings &= ~intel_engine_flag(engine);
 	}
 
-	ret = intel_ring_begin(req, 4);
+	/* bb_start only */
+	num_dwords = 4;
+
+	/* check if watchdog will be required */
+	if (req->ctx->engine[engine->id].watchdog_threshold != 0) {
+		GEM_BUG_ON(!engine->emit_start_watchdog ||
+			   !engine->emit_stop_watchdog);
+
+		/* + start_watchdog (6) + stop_watchdog (4) */
+		num_dwords += 10;
+		watchdog_running = true;
+	}
+
+	ret = intel_ring_begin(req, num_dwords);
 	if (ret)
 		return ret;
+
+	if (watchdog_running) {
+		/* Start watchdog timer */
+		engine->emit_start_watchdog(req);
+	}
 
 	/* FIXME(BDW): Address space and security selectors. */
 	intel_ring_emit(ring, MI_BATCH_BUFFER_START_GEN8 |
@@ -1467,8 +1488,13 @@ static int gen8_emit_bb_start(struct drm_i915_gem_request *req,
 	intel_ring_emit(ring, lower_32_bits(offset));
 	intel_ring_emit(ring, upper_32_bits(offset));
 	intel_ring_emit(ring, MI_NOOP);
-	intel_ring_advance(ring);
 
+	if (watchdog_running) {
+		/* Cancel watchdog timer */
+		engine->emit_stop_watchdog(req);
+	}
+
+	intel_ring_advance(ring);
 	return 0;
 }
 
@@ -1616,6 +1642,95 @@ static int gen8_emit_flush_render(struct drm_i915_gem_request *request,
 	return 0;
 }
 
+/* From GEN9 onwards, all engines use the same RING_CNTR format */
+static inline u32 get_watchdog_disable(struct intel_engine_cs *engine)
+{
+	if (engine->id == RCS || INTEL_GEN(engine->i915) >= 9)
+		return GEN8_WATCHDOG_DISABLE;
+	else
+		return GEN8_XCS_WATCHDOG_DISABLE;
+}
+
+#define GEN8_WATCHDOG_1000US(dev_priv) watchdog_to_clock_counts(dev_priv, 1000)
+static void gen8_watchdog_irq_handler(unsigned long data)
+{
+	struct intel_engine_cs *engine = (struct intel_engine_cs *)data;
+	struct drm_i915_private *dev_priv = engine->i915;
+	u32 current_seqno;
+
+	intel_uncore_forcewake_get(dev_priv, engine->fw_domains);
+
+	/* Stop the counter to prevent further timeout interrupts */
+	I915_WRITE_FW(RING_CNTR(engine->mmio_base), get_watchdog_disable(engine));
+
+	current_seqno = intel_engine_get_seqno(engine);
+
+	/* did the request complete after the timer expired? */
+	if (intel_engine_last_submit(engine) == current_seqno)
+		goto fw_put;
+
+	if (engine->hangcheck.watchdog == current_seqno) {
+		/* Make sure the active request will be marked as guilty */
+		engine->hangcheck.stalled = true;
+		engine->hangcheck.seqno = current_seqno;
+
+		/* And try to run the hangcheck_work as soon as possible */
+		set_bit(I915_RESET_WATCHDOG, &dev_priv->gpu_error.flags);
+		queue_delayed_work(system_long_wq,
+				   &dev_priv->gpu_error.hangcheck_work, 0);
+	} else {
+		engine->hangcheck.watchdog = current_seqno;
+		/* Re-start the counter, if really hung, it will expire again */
+		I915_WRITE_FW(RING_THRESH(engine->mmio_base),
+			      GEN8_WATCHDOG_1000US(dev_priv));
+		I915_WRITE_FW(RING_CNTR(engine->mmio_base), GEN8_WATCHDOG_ENABLE);
+	}
+
+fw_put:
+	intel_uncore_forcewake_put(dev_priv, engine->fw_domains);
+}
+
+static void gen8_emit_start_watchdog(struct drm_i915_gem_request *req)
+{
+	struct intel_engine_cs *engine = req->engine;
+	struct intel_ring *ring = req->ring;
+	struct i915_gem_context *ctx = req->ctx;
+	struct intel_context *ce = &ctx->engine[engine->id];
+
+	/* XXX: no watchdog support in BCS engine */
+	GEM_BUG_ON(engine->id == BCS);
+
+	/*
+	 * watchdog register must never be programmed to zero. This would
+	 * cause the watchdog counter to exceed and not allow the engine to
+	 * go into IDLE state
+	 */
+	GEM_BUG_ON(ce->watchdog_threshold == 0);
+
+	/* Set counter period */
+	intel_ring_emit(ring, MI_LOAD_REGISTER_IMM(2));
+	intel_ring_emit(ring, i915_mmio_reg_offset(RING_THRESH(engine->mmio_base)));
+	intel_ring_emit(ring, ce->watchdog_threshold);
+	/* Start counter */
+	intel_ring_emit(ring, i915_mmio_reg_offset(RING_CNTR(engine->mmio_base)));
+	intel_ring_emit(ring, GEN8_WATCHDOG_ENABLE);
+	intel_ring_emit(ring, MI_NOOP);
+}
+
+static void gen8_emit_stop_watchdog(struct drm_i915_gem_request *req)
+{
+	struct intel_engine_cs *engine = req->engine;
+	struct intel_ring *ring = req->ring;
+
+	/* XXX: no watchdog support in BCS engine */
+	GEM_BUG_ON(engine->id == BCS);
+
+	intel_ring_emit(ring, MI_LOAD_REGISTER_IMM(1));
+	intel_ring_emit(ring, i915_mmio_reg_offset(RING_CNTR(engine->mmio_base)));
+	intel_ring_emit(ring, get_watchdog_disable(engine));
+	intel_ring_emit(ring, MI_NOOP);
+}
+
 /*
  * Reserve space for 2 NOOPs at the end of each request to be
  * used as a workaround for not being allowed to do lite
@@ -1694,6 +1809,91 @@ static int gen8_init_rcs_context(struct drm_i915_gem_request *req)
 	return i915_gem_render_state_emit(req);
 }
 
+static int gen9_init_rcs_context_trtt(struct drm_i915_gem_request *req)
+{
+	struct intel_ring *ring = req->ring;
+
+	int ret = intel_ring_begin(req, 2 + 2);
+	if (ret)
+		return ret;
+
+	intel_ring_emit(ring, MI_LOAD_REGISTER_IMM(1));
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_TABLE_CONTROL));
+	intel_ring_emit(ring, 0);
+
+	intel_ring_emit(ring, MI_NOOP);
+	intel_ring_advance(ring);
+
+	return 0;
+}
+
+static int gen9_init_rcs_context(struct drm_i915_gem_request *req)
+{
+	int ret;
+
+	/*
+	 * Explictily disable TR-TT at the start of a new context.
+	 * Otherwise on switching from a TR-TT context to a new Non TR-TT
+	 * context the TR-TT settings of the outgoing context could get
+	 * spilled on to the new incoming context as only the Ring Context
+	 * part is loaded on the first submission of a new context, due to
+	 * the setting of ENGINE_CTX_RESTORE_INHIBIT bit.
+	 */
+	ret = gen9_init_rcs_context_trtt(req);
+	if (ret)
+		return ret;
+
+	return gen8_init_rcs_context(req);
+}
+
+static int gen9_emit_trtt_regs(struct drm_i915_gem_request *req)
+{
+	struct i915_gem_context *ctx = req->ctx;
+	u64 masked_l3_gfx_address =
+		ctx->trtt_info.l3_table_address & GEN9_TRTT_L3_GFXADDR_MASK;
+	u32 trva_data_value =
+		(ctx->trtt_info.segment_base_addr >> GEN9_TRTT_SEG_SIZE_SHIFT) &
+		GEN9_TRVA_DATA_MASK;
+	const int num_lri_cmds = 6;
+	struct intel_ring *ring = req->ring;
+
+	/*
+	 * Emitting LRIs to update the TRTT registers is most reliable, instead
+	 * of directly updating the context image, as this will ensure that
+	 * update happens in a serialized manner for the context and also
+	 * lite-restore scenario will get handled.
+	 */
+	int ret = intel_ring_begin(req, num_lri_cmds * 2 + 2);
+	if (ret)
+		return ret;
+
+	intel_ring_emit(ring, MI_LOAD_REGISTER_IMM(num_lri_cmds));
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_L3_POINTER_DW0));
+	intel_ring_emit(ring, lower_32_bits(masked_l3_gfx_address));
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_L3_POINTER_DW1));
+	intel_ring_emit(ring, upper_32_bits(masked_l3_gfx_address));
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_NULL_TILE_REG));
+	intel_ring_emit(ring, ctx->trtt_info.null_tile_val);
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_INVD_TILE_REG));
+	intel_ring_emit(ring, ctx->trtt_info.invd_tile_val);
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_VA_MASKDATA));
+	intel_ring_emit(ring, GEN9_TRVA_MASK_VALUE | trva_data_value);
+
+	intel_ring_emit(ring, i915_mmio_reg_offset(GEN9_TRTT_TABLE_CONTROL));
+	intel_ring_emit(ring, GEN9_TRTT_IN_GFX_VA_SPACE | GEN9_TRTT_ENABLE);
+
+	intel_ring_emit(ring, MI_NOOP);
+	intel_ring_advance(ring);
+
+	return 0;
+}
+
 /**
  * intel_logical_ring_cleanup() - deallocate the Engine Command Streamer
  * @engine: Engine Command Streamer.
@@ -1708,6 +1908,9 @@ void intel_logical_ring_cleanup(struct intel_engine_cs *engine)
 	 */
 	if (WARN_ON(test_bit(TASKLET_STATE_SCHED, &engine->irq_tasklet.state)))
 		tasklet_kill(&engine->irq_tasklet);
+
+	if (WARN_ON(test_bit(TASKLET_STATE_SCHED, &engine->watchdog_tasklet.state)))
+		tasklet_kill(&engine->watchdog_tasklet);
 
 	dev_priv = engine->i915;
 
@@ -1771,6 +1974,22 @@ logical_ring_default_irqs(struct intel_engine_cs *engine)
 	unsigned shift = engine->irq_shift;
 	engine->irq_enable_mask = GT_RENDER_USER_INTERRUPT << shift;
 	engine->irq_keep_mask = GT_CONTEXT_SWITCH_INTERRUPT << shift;
+
+	switch (engine->id) {
+	default:
+		/* BCS engine does not support hw watchdog */
+		break;
+	case RCS:
+	case VCS:
+	case VCS2:
+		engine->irq_keep_mask |= (GT_GEN8_WATCHDOG_INTERRUPT << shift);
+		break;
+	case VECS:
+		if (INTEL_GEN(engine->i915) >= 9)
+			engine->irq_keep_mask |=
+				(GT_GEN8_WATCHDOG_INTERRUPT << shift);
+		break;
+	}
 }
 
 static int
@@ -1819,6 +2038,9 @@ logical_ring_setup(struct intel_engine_cs *engine)
 	tasklet_init(&engine->irq_tasklet,
 		     intel_lrc_irq_handler, (unsigned long)engine);
 
+	tasklet_init(&engine->watchdog_tasklet,
+		     gen8_watchdog_irq_handler, (unsigned long)engine);
+
 	logical_ring_default_vfuncs(engine);
 	logical_ring_default_irqs(engine);
 }
@@ -1858,14 +2080,19 @@ int logical_render_ring_init(struct intel_engine_cs *engine)
 		engine->irq_keep_mask |= GT_RENDER_L3_PARITY_ERROR_INTERRUPT;
 
 	/* Override some for render ring. */
-	if (INTEL_GEN(dev_priv) >= 9)
+	if (INTEL_GEN(dev_priv) >= 9) {
 		engine->init_hw = gen9_init_render_ring;
-	else
+		engine->init_context = gen9_init_rcs_context;
+	} else {
 		engine->init_hw = gen8_init_render_ring;
-	engine->init_context = gen8_init_rcs_context;
+		engine->init_context = gen8_init_rcs_context;
+	}
+
 	engine->emit_flush = gen8_emit_flush_render;
 	engine->emit_breadcrumb = gen8_emit_breadcrumb_render;
 	engine->emit_breadcrumb_sz = gen8_emit_breadcrumb_render_sz;
+	engine->emit_start_watchdog = gen8_emit_start_watchdog;
+	engine->emit_stop_watchdog = gen8_emit_stop_watchdog;
 
 	ret = intel_engine_create_scratch(engine, PAGE_SIZE);
 	if (ret)
@@ -1888,6 +2115,12 @@ int logical_render_ring_init(struct intel_engine_cs *engine)
 int logical_xcs_ring_init(struct intel_engine_cs *engine)
 {
 	logical_ring_setup(engine);
+
+	/* BCS engine does not have a watchdog-expired irq */
+	if (engine->id != BCS) {
+		engine->emit_start_watchdog = gen8_emit_start_watchdog;
+		engine->emit_stop_watchdog = gen8_emit_stop_watchdog;
+	}
 
 	return logical_ring_init(engine);
 }
@@ -2226,4 +2459,20 @@ void intel_lr_context_resume(struct drm_i915_private *dev_priv)
 			intel_ring_update_space(ce->ring);
 		}
 	}
+}
+
+int intel_lr_rcs_context_setup_trtt(struct i915_gem_context *ctx)
+{
+	struct intel_engine_cs *engine = ctx->i915->engine[RCS];
+	struct drm_i915_gem_request *req;
+	int ret;
+
+	req = i915_gem_request_alloc(engine, ctx);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
+	ret = gen9_emit_trtt_regs(req);
+
+	i915_add_request(req);
+	return ret;
 }

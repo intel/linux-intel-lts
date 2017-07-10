@@ -146,7 +146,7 @@ static int intelfb_alloc(struct drm_fb_helper *helper,
 	 * features. */
 	if (size * 2 < ggtt->stolen_usable_size)
 		obj = i915_gem_object_create_stolen(dev_priv, size);
-	if (obj == NULL)
+	if (IS_ERR_OR_NULL(obj))
 		obj = i915_gem_object_create(dev_priv, size);
 	if (IS_ERR(obj)) {
 		DRM_ERROR("failed to allocate framebuffer\n");
@@ -154,7 +154,14 @@ static int intelfb_alloc(struct drm_fb_helper *helper,
 		goto out;
 	}
 
+	/* Discard the contents of the BIOS fb across hibernation.
+	 * We really want to completely throwaway the earlier fbdev
+	 * and reconfigure it anyway.
+	 */
+	obj->mm.internal_volatile = true;
+
 	fb = __intel_framebuffer_create(dev, &mode_cmd, obj);
+
 	if (IS_ERR(fb)) {
 		i915_gem_object_put(obj);
 		ret = PTR_ERR(fb);
@@ -809,12 +816,21 @@ void intel_fbdev_set_suspend(struct drm_device *dev, int state, bool synchronous
 		}
 	}
 
+	/* When the FB object becomes inactive and is unpinned, other buffers
+	 * can be allocated virtual addresses within its range.  Therefore we
+	 * must not clear this memory range after the FB is unpinned otherwise
+	 * we will clear these buffers causing unpredictable behaviour and GPU
+	 * hangs.  On Android we never hibernate so there is no need to clear
+	 * the memory in any case.
+	 */
+#if 0
 	/* On resume from hibernation: If the object is shmemfs backed, it has
 	 * been restored from swap. If the object is stolen however, it will be
 	 * full of whatever garbage was left in there.
 	 */
 	if (state == FBINFO_STATE_RUNNING && ifbdev->fb->obj->stolen)
 		memset_io(info->screen_base, 0, info->screen_size);
+#endif
 
 	drm_fb_helper_set_suspend(&ifbdev->helper, state);
 	console_unlock();

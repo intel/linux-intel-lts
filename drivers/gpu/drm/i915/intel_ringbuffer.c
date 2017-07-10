@@ -762,6 +762,31 @@ static int wa_ring_whitelist_reg(struct intel_engine_cs *engine,
 	return 0;
 }
 
+static int guc_wa_add(struct drm_i915_private *dev_priv,
+			i915_reg_t addr, const u32 val)
+{
+	const u32 idx = dev_priv->workarounds.guc_count;
+
+	I915_WRITE(addr, val);
+	if (WARN_ON(idx >= GUC_REGSET_MAX_REGISTERS))
+		return -ENOSPC;
+
+	dev_priv->workarounds.guc_reg[idx].addr = addr;
+	/* GuC can't handle masked regs, so we store the value|mask together */
+	dev_priv->workarounds.guc_reg[idx].value = val;
+	dev_priv->workarounds.guc_count++;
+
+	return 0;
+}
+
+#define WA_REG_WR_GUC_RESTORE(addr, val) do { \
+		const int r = guc_wa_add(dev_priv, (addr), (val)); \
+		if (r) \
+			return r; \
+	} while (0)
+
+
+
 static int gen8_init_workarounds(struct intel_engine_cs *engine)
 {
 	struct drm_i915_private *dev_priv = engine->i915;
@@ -865,14 +890,15 @@ static int gen9_init_workarounds(struct intel_engine_cs *engine)
 	int ret;
 
 	/* WaConextSwitchWithConcurrentTLBInvalidate:skl,bxt,kbl,glk */
-	I915_WRITE(GEN9_CSFE_CHICKEN1_RCS, _MASKED_BIT_ENABLE(GEN9_PREEMPT_GPGPU_SYNC_SWITCH_DISABLE));
+	WA_REG_WR_GUC_RESTORE(GEN9_CSFE_CHICKEN1_RCS,
+		   _MASKED_BIT_ENABLE(GEN9_PREEMPT_GPGPU_SYNC_SWITCH_DISABLE));
 
 	/* WaEnableLbsSlaRetryTimerDecrement:skl,bxt,kbl,glk */
-	I915_WRITE(BDW_SCRATCH1, I915_READ(BDW_SCRATCH1) |
+	WA_REG_WR_GUC_RESTORE(BDW_SCRATCH1, I915_READ(BDW_SCRATCH1) |
 		   GEN9_LBS_SLA_RETRY_TIMER_DECREMENT_ENABLE);
 
 	/* WaDisableKillLogic:bxt,skl,kbl */
-	I915_WRITE(GAM_ECOCHK, I915_READ(GAM_ECOCHK) |
+	WA_REG_WR_GUC_RESTORE(GAM_ECOCHK, I915_READ(GAM_ECOCHK) |
 		   ECOCHK_DIS_TLB);
 
 	/* WaClearFlowControlGpgpuContextSave:skl,bxt,kbl,glk */
@@ -942,7 +968,7 @@ static int gen9_init_workarounds(struct intel_engine_cs *engine)
 			  HDC_FORCE_NON_COHERENT);
 
 	/* WaDisableHDCInvalidation:skl,bxt,kbl */
-	I915_WRITE(GAM_ECOCHK, I915_READ(GAM_ECOCHK) |
+	WA_REG_WR_GUC_RESTORE(GAM_ECOCHK, I915_READ(GAM_ECOCHK) |
 		   BDW_DISABLE_HDC_INVALIDATION);
 
 	/* WaDisableSamplerPowerBypassForSOPingPong:skl,bxt,kbl */
@@ -956,7 +982,7 @@ static int gen9_init_workarounds(struct intel_engine_cs *engine)
 	WA_SET_BIT_MASKED(HALF_SLICE_CHICKEN2, GEN8_ST_PO_DISABLE);
 
 	/* WaOCLCoherentLineFlush:skl,bxt,kbl */
-	I915_WRITE(GEN8_L3SQCREG4, (I915_READ(GEN8_L3SQCREG4) |
+	WA_REG_WR_GUC_RESTORE(GEN8_L3SQCREG4, (I915_READ(GEN8_L3SQCREG4) |
 				    GEN8_LQSC_FLUSH_COHERENT_LINES));
 
 	/* WaVFEStateAfterPipeControlwithMediaStateClear:skl,bxt,glk */
@@ -1032,11 +1058,11 @@ static int skl_init_workarounds(struct intel_engine_cs *engine)
 	 * until D0 which is the default case so this is equivalent to
 	 * !WaDisablePerCtxtPreemptionGranularityControl:skl
 	 */
-	I915_WRITE(GEN7_FF_SLICE_CS_CHICKEN1,
+	WA_REG_WR_GUC_RESTORE(GEN7_FF_SLICE_CS_CHICKEN1,
 		   _MASKED_BIT_ENABLE(GEN9_FFSC_PERCTX_PREEMPT_CTRL));
 
 	/* WaEnableGapsTsvCreditFix:skl */
-	I915_WRITE(GEN8_GARBCNTL, (I915_READ(GEN8_GARBCNTL) |
+	WA_REG_WR_GUC_RESTORE(GEN8_GARBCNTL, (I915_READ(GEN8_GARBCNTL) |
 				   GEN9_GAPS_TSV_CREDIT_DISABLE));
 
 	/* WaDisableGafsUnitClkGating:skl */
@@ -1067,12 +1093,12 @@ static int bxt_init_workarounds(struct intel_engine_cs *engine)
 	/* WaStoreMultiplePTEenable:bxt */
 	/* This is a requirement according to Hardware specification */
 	if (IS_BXT_REVID(dev_priv, 0, BXT_REVID_A1))
-		I915_WRITE(TILECTL, I915_READ(TILECTL) | TILECTL_TLBPF);
+		WA_REG_WR_GUC_RESTORE(TILECTL, I915_READ(TILECTL) | TILECTL_TLBPF);
 
 	/* WaSetClckGatingDisableMedia:bxt */
 	if (IS_BXT_REVID(dev_priv, 0, BXT_REVID_A1)) {
-		I915_WRITE(GEN7_MISCCPCTL, (I915_READ(GEN7_MISCCPCTL) &
-					    ~GEN8_DOP_CLOCK_GATE_MEDIA_ENABLE));
+		WA_REG_WR_GUC_RESTORE(GEN7_MISCCPCTL, (I915_READ(GEN7_MISCCPCTL) &
+						    ~GEN8_DOP_CLOCK_GATE_MEDIA_ENABLE));
 	}
 
 	/* WaDisableThreadStallDopClockGating:bxt */
@@ -1108,7 +1134,7 @@ static int bxt_init_workarounds(struct intel_engine_cs *engine)
 
 	/* WaProgramL3SqcReg1DefaultForPerf:bxt */
 	if (IS_BXT_REVID(dev_priv, BXT_REVID_B0, REVID_FOREVER))
-		I915_WRITE(GEN8_L3SQCREG1, L3_GENERAL_PRIO_CREDITS(62) |
+		WA_REG_WR_GUC_RESTORE(GEN8_L3SQCREG1, L3_GENERAL_PRIO_CREDITS(62) |
 					   L3_HIGH_PRIO_CREDITS(2));
 
 	/* WaToEnableHwFixForPushConstHWBug:bxt */
@@ -1134,7 +1160,7 @@ static int kbl_init_workarounds(struct intel_engine_cs *engine)
 		return ret;
 
 	/* WaEnableGapsTsvCreditFix:kbl */
-	I915_WRITE(GEN8_GARBCNTL, (I915_READ(GEN8_GARBCNTL) |
+	WA_REG_WR_GUC_RESTORE(GEN8_GARBCNTL, (I915_READ(GEN8_GARBCNTL) |
 				   GEN9_GAPS_TSV_CREDIT_DISABLE));
 
 	/* WaDisableDynamicCreditSharing:kbl */
@@ -1195,6 +1221,7 @@ int init_workarounds_ring(struct intel_engine_cs *engine)
 	WARN_ON(engine->id != RCS);
 
 	dev_priv->workarounds.count = 0;
+	dev_priv->workarounds.guc_count = 0;
 	dev_priv->workarounds.hw_whitelist_count[RCS] = 0;
 
 	if (IS_BROADWELL(dev_priv))
@@ -1935,10 +1962,16 @@ intel_ring_create_vma(struct drm_i915_private *dev_priv, int size)
 	struct i915_vma *vma;
 
 	obj = i915_gem_object_create_stolen(dev_priv, size);
-	if (!obj)
+	if (IS_ERR_OR_NULL(obj))
 		obj = i915_gem_object_create(dev_priv, size);
 	if (IS_ERR(obj))
 		return ERR_CAST(obj);
+
+	/* Ringbuffer objects are by definition volatile - only the commands
+	 * between HEAD and TAIL need to be preserved and whilst there are
+	 * any commands there, the ringbuffer is pinned by activity.
+	 */
+	obj->mm.internal_volatile = true;
 
 	/* mark ring buffers as read-only from GPU side by default */
 	obj->gt_ro = 1;

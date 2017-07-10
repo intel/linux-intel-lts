@@ -108,6 +108,7 @@ struct i915_gem_context {
 #define CONTEXT_BANNABLE		3
 #define CONTEXT_BANNED			4
 #define CONTEXT_FORCE_SINGLE_SUBMISSION	5
+#define CONTEXT_USE_TRTT		6
 
 	/**
 	 * @hw_id: - unique identifier for the context
@@ -152,8 +153,24 @@ struct i915_gem_context {
 		u32 *lrc_reg_state;
 		u64 lrc_desc;
 		int pin_count;
+		/** watchdog_threshold: hw watchdog threshold value,
+		 * in clock counts
+		 */
+		u32 watchdog_threshold;
 		bool initialised;
 	} engine[I915_NUM_ENGINES];
+
+	/**
+	 * @trtt_info: Programming parameters for tr-tt (redirection tables
+	 * for userspace, for sparse resource management).
+	 */
+	struct intel_context_trtt {
+		u32 invd_tile_val;
+		u32 null_tile_val;
+		u64 l3_table_address;
+		u64 segment_base_addr;
+		struct i915_vma *vma;
+	} trtt_info;
 
 	/** ring_size: size for allocating the per-engine ring buffer */
 	u32 ring_size;
@@ -236,6 +253,16 @@ static inline bool i915_gem_context_force_single_submission(const struct i915_ge
 static inline void i915_gem_context_set_force_single_submission(struct i915_gem_context *ctx)
 {
 	__set_bit(CONTEXT_FORCE_SINGLE_SUBMISSION, &ctx->flags);
+}
+
+static inline bool i915_gem_context_use_trtt(const struct i915_gem_context *ctx)
+{
+	return test_bit(CONTEXT_USE_TRTT, &ctx->flags);
+}
+
+static inline void i915_gem_context_set_trtt(struct i915_gem_context *ctx)
+{
+	__set_bit(CONTEXT_USE_TRTT, &ctx->flags);
 }
 
 static inline bool i915_gem_context_is_default(const struct i915_gem_context *c)

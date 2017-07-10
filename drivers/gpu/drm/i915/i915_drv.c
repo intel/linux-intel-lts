@@ -312,9 +312,11 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		value = HAS_RESOURCE_STREAMER(dev_priv);
 		break;
 	case I915_PARAM_HAS_POOLED_EU:
+	case VPG_I915_PARAM_HAS_POOLED_EU:
 		value = HAS_POOLED_EU(dev_priv);
 		break;
 	case I915_PARAM_MIN_EU_IN_POOL:
+	case VPG_I915_PARAM_MIN_EU_IN_POOL:
 		value = INTEL_INFO(dev_priv)->sseu.min_eu_in_pool;
 		break;
 	case I915_PARAM_HUC_STATUS:
@@ -358,6 +360,12 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		 * INTEL_INFO(), a feature macro, or similar.
 		 */
 		value = 1;
+		break;
+	case I915_PARAM_HAS_GET_APERTURE2:
+		value = 1;
+		break;
+	case I915_PARAM_CREATE_VERSION:
+		value = 4;
 		break;
 	default:
 		DRM_DEBUG("Unknown parameter %d\n", param->param);
@@ -1156,6 +1164,9 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 			i915_guc_log_register(dev_priv);
 		i915_setup_sysfs(dev_priv);
 
+		if (i915_setup_rpm_procfs(dev_priv))
+			DRM_ERROR("Unable to initialize rpm procfs entry");
+
 		/* Depends on sysfs having been initialized */
 		i915_perf_register(dev_priv);
 	} else
@@ -1197,6 +1208,7 @@ static void i915_driver_unregister(struct drm_i915_private *dev_priv)
 	i915_perf_unregister(dev_priv);
 
 	i915_teardown_sysfs(dev_priv);
+	i915_teardown_rpm_procfs(dev_priv);
 	i915_guc_log_unregister(dev_priv);
 	i915_debugfs_unregister(dev_priv);
 	drm_dev_unregister(&dev_priv->drm);
@@ -1443,6 +1455,7 @@ static void i915_driver_postclose(struct drm_device *dev, struct drm_file *file)
 {
 	struct drm_i915_file_private *file_priv = file->driver_priv;
 
+	kfree(file_priv->process_name);
 	kfree(file_priv);
 }
 
@@ -1830,14 +1843,16 @@ void i915_reset(struct drm_i915_private *dev_priv)
 	if (!test_and_clear_bit(I915_RESET_IN_PROGRESS, &error->flags))
 		return;
 
+	DRM_DEBUG_DRIVER("resetting chip\n");
+
 	/* Clear any previous failed attempts at recovery. Time to try again. */
 	__clear_bit(I915_WEDGED, &error->flags);
 	error->reset_count++;
 
 	pr_notice("drm/i915: Resetting chip after gpu hang\n");
 	disable_irq(dev_priv->drm.irq);
-	ret = i915_gem_reset_prepare(dev_priv);
-	if (ret) {
+	ret = i915_gem_reset_prepare(dev_priv, ALL_ENGINES);
+	if (ret == -EIO) {
 		DRM_ERROR("GPU recovery failed\n");
 		intel_gpu_reset(dev_priv, ALL_ENGINES);
 		goto error;
@@ -1878,7 +1893,7 @@ void i915_reset(struct drm_i915_private *dev_priv)
 	i915_queue_hangcheck(dev_priv);
 
 wakeup:
-	i915_gem_reset_finish(dev_priv);
+	i915_gem_reset_finish(dev_priv, ALL_ENGINES);
 	enable_irq(dev_priv->drm.irq);
 	wake_up_bit(&error->flags, I915_RESET_IN_PROGRESS);
 	return;
@@ -1886,6 +1901,105 @@ wakeup:
 error:
 	i915_gem_set_wedged(dev_priv);
 	goto wakeup;
+}
+
+/**
+ * i915_reset_engine - reset GPU engine to recover from a hang
+ * @engine: engine to reset
+ *
+ * Reset a specific GPU engine. Useful if a hang is detected.
+ * Returns zero on successful reset or otherwise an error code.
+ *
+ * Procedure is:
+ *  - identifies the request that caused the hang and it is dropped
+ *  - force engine to idle: this is done by issuing a reset request
+ *  - reset engine
+ *  - restart submissions to the engine
+ */
+int i915_reset_engine(struct intel_engine_cs *engine)
+{
+	int ret;
+	struct drm_i915_private *dev_priv = engine->i915;
+	struct i915_gpu_error *error = &dev_priv->gpu_error;
+	struct drm_i915_gem_request *active_request;
+
+	DRM_DEBUG_DRIVER("resetting %s\n", engine->name);
+
+	active_request = i915_gem_reset_prepare_engine(engine);
+	if (!active_request) {
+		DRM_DEBUG_DRIVER("seqno moved after hang declaration, pardoned\n");
+		goto canceled;
+	}
+	if (IS_ERR(active_request)) {
+		ret = PTR_ERR(active_request);
+		if (ret == -ECANCELED) {
+			DRM_DEBUG_DRIVER("no active request found, skip reset\n");
+			goto canceled;
+		} else if (ret) {
+			DRM_DEBUG_DRIVER("Previous reset failed, promote to full reset\n");
+			goto out;
+		}
+	}
+
+	if (__i915_gem_request_completed(active_request)) {
+		DRM_DEBUG_DRIVER("request completed, skip the reset\n");
+		goto canceled;
+	}
+
+
+	/*
+	 * the request that caused the hang is stuck on elsp, we know the
+	 * active request and can drop it, adjust head to skip the offending
+	 * request to resume executing remaining requests in the queue.
+	 */
+	i915_gem_reset_engine(engine, active_request);
+
+	if (!dev_priv->guc.execbuf_client) {
+		/* forcing engine to idle */
+		ret = intel_reset_engine_start(engine);
+		if (ret) {
+			DRM_ERROR("Failed to disable %s\n", engine->name);
+			goto out;
+		}
+
+		/* finally, reset engine */
+		ret = intel_gpu_reset(dev_priv, intel_engine_flag(engine));
+		if (ret) {
+			DRM_ERROR("Failed to reset %s, ret=%d\n",
+				  engine->name, ret);
+			intel_reset_engine_cancel(engine);
+			goto out;
+		}
+
+		/* be sure the request reset bit gets cleared */
+		intel_reset_engine_cancel(engine);
+	} else {
+		ret = i915_guc_reset_engine(engine);
+		if (ret) {
+			DRM_ERROR("GuC failed to reset %s, ret=%d\n",
+				  engine->name, ret);
+			goto out;
+		}
+	}
+
+	i915_gem_reset_finish_engine(engine);
+
+	/* replay remaining requests in the queue */
+	ret = engine->init_hw(engine);
+	if (ret)
+		goto out;
+
+	/* for guc too */
+	if (dev_priv->guc.execbuf_client)
+		i915_guc_submission_reenable_engine(engine);
+
+	error->reset_engine_count[engine->id]++;
+out:
+	return ret;
+
+canceled:
+	i915_gem_reset_finish_engine(engine);
+	return 0;
 }
 
 static int i915_pm_suspend(struct device *kdev)
@@ -2656,6 +2770,7 @@ static struct drm_driver driver = {
 	.postclose = i915_driver_postclose,
 	.set_busid = drm_pci_set_busid,
 
+	.gem_open_object = i915_gem_open_object,
 	.gem_close_object = i915_gem_close_object,
 	.gem_free_object_unlocked = i915_gem_free_object,
 	.gem_vm_ops = &i915_gem_vm_ops,

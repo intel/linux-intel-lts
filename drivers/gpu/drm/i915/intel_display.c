@@ -84,6 +84,7 @@ static const uint32_t skl_primary_formats[] = {
 	DRM_FORMAT_YVYU,
 	DRM_FORMAT_UYVY,
 	DRM_FORMAT_VYUY,
+	DRM_FORMAT_AYUV,
 };
 
 /* Cursor formats */
@@ -2630,10 +2631,13 @@ intel_alloc_initial_plane_obj(struct intel_crtc *crtc,
 							     base_aligned,
 							     base_aligned,
 							     size_aligned);
-	if (!obj) {
+	if (IS_ERR(obj)) {
 		mutex_unlock(&dev->struct_mutex);
 		return false;
 	}
+
+	/* Not to be preserved across hibernation */
+	obj->mm.internal_volatile = true;
 
 	if (plane_config->tiling == I915_TILING_X)
 		obj->tiling_and_stride = fb->pitches[0] | I915_TILING_X;
@@ -3258,6 +3262,8 @@ u32 skl_plane_ctl_format(uint32_t pixel_format)
 		return PLANE_CTL_FORMAT_YUV422 | PLANE_CTL_YUV422_UYVY;
 	case DRM_FORMAT_VYUY:
 		return PLANE_CTL_FORMAT_YUV422 | PLANE_CTL_YUV422_VYUY;
+	case DRM_FORMAT_AYUV:
+		return PLANE_CTL_FORMAT_AYUV;
 	default:
 		MISSING_CASE(pixel_format);
 	}
@@ -4718,6 +4724,8 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 	case DRM_FORMAT_YVYU:
 	case DRM_FORMAT_UYVY:
 	case DRM_FORMAT_VYUY:
+	case DRM_FORMAT_AYUV:
+	case DRM_FORMAT_C8:
 		break;
 	default:
 		DRM_DEBUG_KMS("[PLANE:%d:%s] FB:%d unsupported scaling format 0x%x\n",
@@ -10993,6 +11001,94 @@ static bool check_single_encoder_cloning(struct drm_atomic_state *state,
 	return true;
 }
 
+void
+intel_gen9_pipe_scale(struct intel_crtc *intel_crtc,
+		      struct intel_crtc_state *pipe_config,
+		      int fitting_mode)
+{
+	const struct drm_display_mode *adjusted_mode =
+		&pipe_config->base.adjusted_mode;
+	int x = 0, y = 0, width = 0, height = 0;
+
+	/* Native modes don't need fitting */
+	if ((adjusted_mode->crtc_hdisplay == pipe_config->pipe_src_w &&
+		adjusted_mode->crtc_vdisplay == pipe_config->pipe_src_h) &&
+		((pipe_config->pipe_dst_x + pipe_config->pipe_dst_w) ==
+		pipe_config->pipe_src_w) &&
+		((pipe_config->pipe_dst_y + pipe_config->pipe_dst_h) ==
+		pipe_config->pipe_src_w))
+		goto done;
+
+	/* Out of boundary, clamping it */
+	if ((pipe_config->pipe_dst_x + pipe_config->pipe_dst_w) >
+	     adjusted_mode->hdisplay)
+		pipe_config->pipe_dst_w =
+		(adjusted_mode->hdisplay - pipe_config->pipe_dst_x);
+
+	if ((pipe_config->pipe_dst_y + pipe_config->pipe_dst_h) >
+	    adjusted_mode->vdisplay)
+		pipe_config->pipe_dst_h =
+		(adjusted_mode->vdisplay - pipe_config->pipe_dst_y);
+
+	x = pipe_config->pipe_dst_x;
+	y = pipe_config->pipe_dst_y;
+	width = pipe_config->pipe_dst_w;
+	height = pipe_config->pipe_dst_h;
+
+done:
+	pipe_config->pch_pfit.pos = (x << 16) | y;
+	pipe_config->pch_pfit.size = (width << 16) | height;
+	pipe_config->pch_pfit.enabled = pipe_config->pch_pfit.size != 0;
+}
+
+static int skylake_pfiter_calculate(struct drm_crtc *crtc,
+				    struct drm_crtc_state *crtc_state)
+{
+	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
+	struct intel_crtc_state *pipe_config =
+		to_intel_crtc_state(crtc_state);
+	bool mode_changed = needs_modeset(crtc_state);
+	int ret = 0;
+
+	if (((pipe_config->pipe_scaling_mode !=
+		intel_crtc->config->pipe_scaling_mode) ||
+		(pipe_config->pipe_src_w != intel_crtc->config->pipe_src_w) ||
+		(pipe_config->pipe_src_h != intel_crtc->config->pipe_src_h) ||
+		(pipe_config->pipe_dst_x != intel_crtc->config->pipe_dst_x) ||
+		(pipe_config->pipe_dst_y != intel_crtc->config->pipe_dst_y) ||
+		(pipe_config->pipe_dst_w != intel_crtc->config->pipe_dst_w) ||
+		(pipe_config->pipe_dst_h != intel_crtc->config->pipe_dst_h)) &&
+		(!mode_changed)) {
+			pipe_config->update_pipe = true;
+	}
+
+	if ((mode_changed) || (pipe_config->update_pipe)) {
+		ret = skl_update_scaler_crtc(pipe_config);
+		if (!ret) {
+			if (pipe_config->pipe_scaling_mode ==
+				DRM_MODE_SCALE_CUSTOM) {
+				intel_gen9_pipe_scale(intel_crtc, pipe_config,
+					pipe_config->pipe_scaling_mode);
+			} else {
+				intel_pch_panel_fitting(intel_crtc,
+						pipe_config,
+						pipe_config->pipe_scaling_mode);
+			}
+			if (pipe_config->pch_pfit.enabled) {
+				pipe_config->pipe_dst_x =
+					(pipe_config->pch_pfit.pos >> 16);
+				pipe_config->pipe_dst_y =
+					(pipe_config->pch_pfit.pos & 0xffff);
+				pipe_config->pipe_dst_w =
+					(pipe_config->pch_pfit.size >> 16);
+				pipe_config->pipe_dst_h =
+					(pipe_config->pch_pfit.size & 0xffff);
+			}
+		}
+	}
+	return ret;
+}
+
 static int intel_crtc_atomic_check(struct drm_crtc *crtc,
 				   struct drm_crtc_state *crtc_state)
 {
@@ -11061,9 +11157,7 @@ static int intel_crtc_atomic_check(struct drm_crtc *crtc,
 	}
 
 	if (INTEL_GEN(dev_priv) >= 9) {
-		if (mode_changed)
-			ret = skl_update_scaler_crtc(pipe_config);
-
+		ret = skylake_pfiter_calculate(crtc, crtc_state);
 		if (!ret)
 			ret = skl_check_pipe_max_pixel_rate(intel_crtc,
 							    pipe_config);
@@ -11437,6 +11531,13 @@ intel_modeset_pipe_config(struct drm_crtc *crtc,
 		 */
 		pipe_config->output_types |= 1 << encoder->type;
 	}
+
+	pipe_config->pipe_dst_w = pipe_config->pipe_src_w;
+	pipe_config->pipe_dst_h = pipe_config->pipe_src_h;
+	pipe_config->base.dst_w = pipe_config->pipe_src_w;
+	pipe_config->base.dst_h = pipe_config->pipe_src_h;
+	pipe_config->base.src_w = pipe_config->pipe_src_w;
+	pipe_config->base.src_h = pipe_config->pipe_src_h;
 
 encoder_retry:
 	/* Ensure the port clock defaults are reset when retrying. */
@@ -12534,6 +12635,32 @@ static int intel_atomic_check(struct drm_device *dev,
 	for_each_crtc_in_state(state, crtc, crtc_state, i) {
 		struct intel_crtc_state *pipe_config =
 			to_intel_crtc_state(crtc_state);
+
+		if (crtc_state->pipescaler_changed) {
+			if (crtc_state->src_w == 0 && crtc_state->src_h == 0) {
+				struct intel_crtc *intel_crtc =
+					to_intel_crtc(crtc);
+				struct drm_display_mode *adjusted_mode =
+					&intel_crtc->config->base.adjusted_mode;
+
+				crtc_state->src_w = adjusted_mode->hdisplay;
+				crtc_state->src_h = adjusted_mode->vdisplay;
+				crtc_state->dst_w = crtc_state->src_w;
+				crtc_state->dst_h = crtc_state->src_h;
+				crtc_state->dst_x =  0;
+				crtc_state->dst_y =  0;
+				crtc_state->fitting_mode = 0;
+			}
+			pipe_config->pipe_src_w = crtc_state->src_w;
+			pipe_config->pipe_src_h = crtc_state->src_h;
+			pipe_config->pipe_scaling_mode =
+				crtc_state->fitting_mode;
+			pipe_config->pipe_dst_x = crtc_state->dst_x;
+			pipe_config->pipe_dst_y = crtc_state->dst_y;
+			pipe_config->pipe_dst_w = crtc_state->dst_w;
+			pipe_config->pipe_dst_h = crtc_state->dst_h;
+			crtc_state->pipescaler_changed = false;
+		}
 
 		/* Catch I915_MODE_FLAG_INHERITED */
 		if (crtc_state->mode.private_flags != crtc->state->mode.private_flags)
@@ -14514,6 +14641,7 @@ static int intel_framebuffer_init(struct drm_device *dev,
 	case DRM_FORMAT_UYVY:
 	case DRM_FORMAT_YVYU:
 	case DRM_FORMAT_VYUY:
+	case DRM_FORMAT_AYUV:
 		if (INTEL_GEN(dev_priv) < 5) {
 			DRM_DEBUG("unsupported pixel format: %s\n",
 			          drm_get_format_name(mode_cmd->pixel_format, &format_name));

@@ -212,6 +212,25 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define   GEN8_RPCS_EU_MIN_SHIFT	0
 #define   GEN8_RPCS_EU_MIN_MASK		(0xf << GEN8_RPCS_EU_MIN_SHIFT)
 
+#define GEN9_TR_CHICKEN_BIT_VECTOR	_MMIO(0x4DFC)
+#define   GEN9_TRTT_BYPASS_DISABLE	(1 << 0)
+
+/* TRTT registers in the H/W Context */
+#define GEN9_TRTT_L3_POINTER_DW0	_MMIO(0x4DE0)
+#define GEN9_TRTT_L3_POINTER_DW1	_MMIO(0x4DE4)
+#define   GEN9_TRTT_L3_GFXADDR_MASK	0xFFFFFFFF0000
+
+#define GEN9_TRTT_NULL_TILE_REG		_MMIO(0x4DE8)
+#define GEN9_TRTT_INVD_TILE_REG		_MMIO(0x4DEC)
+
+#define GEN9_TRTT_VA_MASKDATA		_MMIO(0x4DF0)
+#define   GEN9_TRVA_MASK_VALUE		0xF0
+#define   GEN9_TRVA_DATA_MASK		0xF
+
+#define GEN9_TRTT_TABLE_CONTROL		_MMIO(0x4DF4)
+#define   GEN9_TRTT_IN_GFX_VA_SPACE	(1 << 1)
+#define   GEN9_TRTT_ENABLE		(1 << 0)
+
 #define GAM_ECOCHK			_MMIO(0x4090)
 #define   BDW_DISABLE_HDC_INVALIDATION	(1<<25)
 #define   ECOCHK_SNB_BIT		(1<<10)
@@ -1896,6 +1915,11 @@ enum skl_disp_power_wells {
 #define RING_START(base)	_MMIO((base)+0x38)
 #define RING_CTL(base)		_MMIO((base)+0x3c)
 #define   RING_CTL_SIZE(size)	((size) - PAGE_SIZE) /* in bytes -> pages */
+#define RING_CNTR(base)        _MMIO((base) + 0x178)
+#define   GEN8_WATCHDOG_ENABLE		0
+#define   GEN8_WATCHDOG_DISABLE	1
+#define   GEN8_XCS_WATCHDOG_DISABLE	0xFFFFFFFF /* GEN8 & non-render only */
+#define RING_THRESH(base)      _MMIO((base) + 0x17C)
 #define RING_SYNC_0(base)	_MMIO((base)+0x40)
 #define RING_SYNC_1(base)	_MMIO((base)+0x44)
 #define RING_SYNC_2(base)	_MMIO((base)+0x48)
@@ -2374,6 +2398,7 @@ enum skl_disp_power_wells {
 #define GT_BSD_USER_INTERRUPT			(1 << 12)
 #define GT_RENDER_L3_PARITY_ERROR_INTERRUPT_S1	(1 << 11) /* hsw+; rsvd on snb, ivb, vlv */
 #define GT_CONTEXT_SWITCH_INTERRUPT		(1 <<  8)
+#define GT_GEN8_WATCHDOG_INTERRUPT		(1 <<  6) /* gen8+ */
 #define GT_RENDER_L3_PARITY_ERROR_INTERRUPT	(1 <<  5) /* !snb */
 #define GT_RENDER_PIPECTL_NOTIFY_INTERRUPT	(1 <<  4)
 #define GT_RENDER_CS_MASTER_ERROR_INTERRUPT	(1 <<  3)

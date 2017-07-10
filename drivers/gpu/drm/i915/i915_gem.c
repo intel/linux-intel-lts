@@ -36,12 +36,19 @@
 #include "intel_mocs.h"
 #include <linux/dma-fence-array.h>
 #include <linux/reservation.h>
+#include <linux/list_sort.h>
 #include <linux/shmem_fs.h>
+#include <linux/dma-buf.h>
 #include <linux/slab.h>
 #include <linux/stop_machine.h>
 #include <linux/swap.h>
 #include <linux/pci.h>
 #include <linux/dma-buf.h>
+#include <linux/pid.h>
+#include <linux/async.h>
+#include <linux/sched.h>
+#include <linux/mm.h>
+#include "../drm_internal.h"
 
 static void i915_gem_flush_free_objects(struct drm_i915_private *i915);
 static void i915_gem_object_flush_gtt_write_domain(struct drm_i915_gem_object *obj);
@@ -52,6 +59,7 @@ static bool cpu_cache_is_coherent(struct drm_device *dev,
 {
 	return HAS_LLC(to_i915(dev)) || level != I915_CACHE_NONE;
 }
+static int ____i915_gem_object_get_pages(struct drm_i915_gem_object *obj);
 
 static bool cpu_write_needs_clflush(struct drm_i915_gem_object *obj)
 {
@@ -166,6 +174,141 @@ i915_gem_get_aperture_ioctl(struct drm_device *dev, void *data,
 
 	args->aper_size = ggtt->base.total;
 	args->aper_available_size = args->aper_size - pinned;
+	args->version = 1;
+	args->map_total_size = ggtt->mappable_end;
+	args->stolen_total_size =
+		dev_priv->mm.volatile_stolen ? 0 : ggtt->stolen_usable_size;
+
+	return 0;
+}
+
+/**
+ * Detached struct to hold a vma temp list in i915_gem_get_aperture_ioctl2
+ */
+struct i915_vma_list_entry {
+	struct i915_vma *vma;
+	struct list_head vma_ap_link; /* link in the temp aperture ioctl list */
+};
+
+static
+struct i915_vma_list_entry *i915_vma_list_entry_create(struct i915_vma *vma)
+{
+	struct i915_vma_list_entry *vma_list_entry;
+
+	vma_list_entry = kmalloc(sizeof(*vma_list_entry), GFP_KERNEL);
+	if (vma_list_entry == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	INIT_LIST_HEAD(&vma_list_entry->vma_ap_link);
+	vma_list_entry->vma = vma;
+	return vma_list_entry;
+}
+
+static inline bool vma_in_mappable_region(struct i915_vma *vma, u32 map_limit)
+{
+	return (vma->node.start < map_limit) && i915_is_ggtt(vma->vm);
+}
+
+static int vma_rank_by_node_start(void *priv,
+				  struct list_head *A,
+				  struct list_head *B)
+{
+	struct i915_vma_list_entry *a =
+		list_entry(A, struct i915_vma_list_entry, vma_ap_link);
+	struct i915_vma_list_entry *b =
+		list_entry(B, struct i915_vma_list_entry, vma_ap_link);
+
+	return a->vma->node.start - b->vma->node.start;
+}
+
+int
+i915_gem_get_aperture_ioctl2(struct drm_device *dev, void *data,
+			     struct drm_file *file)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct drm_i915_gem_get_aperture2 *args = data;
+	struct i915_ggtt *ggtt = &dev_priv->ggtt;
+	struct i915_vma *vma;
+	struct i915_vma_list_entry *vma_list_entry;
+	struct list_head map_list;
+	size_t pinned;
+	u64 map_space, map_largest, last, size;
+	const u32 map_limit = dev_priv->ggtt.mappable_end;
+
+	INIT_LIST_HEAD(&map_list);
+	pinned = 0;
+	mutex_lock(&dev->struct_mutex);
+	list_for_each_entry(vma, &ggtt->base.active_list, vm_link) {
+		if (i915_vma_pin_count(vma)) {
+			pinned += vma->node.size;
+
+			if (vma_in_mappable_region(vma, map_limit)) {
+				vma_list_entry = i915_vma_list_entry_create(vma);
+				if (IS_ERR(vma_list_entry)) {
+					DRM_ERROR("No vma in inactive list\n");
+					mutex_unlock(&dev->struct_mutex);
+					return PTR_ERR(vma_list_entry);
+				}
+				list_add(&vma_list_entry->vma_ap_link, &map_list);
+			}
+		}
+	}
+
+	list_for_each_entry(vma, &ggtt->base.inactive_list, vm_link) {
+		if (i915_vma_pin_count(vma)) {
+			pinned += vma->node.size;
+
+			if (vma_in_mappable_region(vma, map_limit)) {
+				vma_list_entry = i915_vma_list_entry_create(vma);
+				if (IS_ERR(vma_list_entry)) {
+					DRM_ERROR("No vma in active list\n");
+					mutex_unlock(&dev->struct_mutex);
+					return PTR_ERR(vma_list_entry);
+				}
+				list_add(&vma_list_entry->vma_ap_link, &map_list);
+			}
+		}
+	}
+
+	last = map_largest = map_space = size = 0;
+	list_sort(NULL, &map_list, vma_rank_by_node_start);
+	if (list_empty(&map_list))
+		DRM_DEBUG_DRIVER("map_list empty");
+
+	while (!list_empty(&map_list)) {
+		vma_list_entry = list_first_entry(&map_list, typeof(*vma_list_entry), vma_ap_link);
+		vma = vma_list_entry->vma;
+		list_del_init(&vma_list_entry->vma_ap_link);
+
+		size = vma->node.start - last;
+		if (size > map_largest)
+			map_largest = size;
+		map_space += size;
+		last = vma->node.start + vma->node.size;
+		kfree(vma_list_entry);
+	}
+
+	if (last < map_limit) {
+		size = map_limit - last;
+		if (size > map_largest)
+			map_largest = size;
+		map_space += size;
+	}
+	mutex_unlock(&dev->struct_mutex);
+
+	args->aper_size = dev_priv->ggtt.base.total;
+	args->aper_available_size = args->aper_size - pinned;
+	args->map_available_size = map_space;
+	args->map_largest_size = map_largest;
+	args->map_total_size = dev_priv->ggtt.mappable_end;
+
+	DRM_DEBUG_DRIVER("aper_size = %llu\n", args->aper_size);
+	DRM_DEBUG_DRIVER("aper_available_size = %llu\n",
+			 args->aper_available_size);
+	DRM_DEBUG_DRIVER("map_available_size = %llu\n",
+			 args->map_available_size);
+	DRM_DEBUG_DRIVER("map_largest_size = %llu\n", args->map_largest_size);
+	DRM_DEBUG_DRIVER("map_total_size = %llu\n", args->map_total_size);
 
 	return 0;
 }
@@ -623,10 +766,42 @@ void i915_gem_object_free(struct drm_i915_gem_object *obj)
 	kmem_cache_free(dev_priv->objects, obj);
 }
 
+static struct drm_i915_gem_object *
+i915_gem_alloc_object_stolen(struct drm_i915_private *dev_priv, size_t size)
+{
+	struct drm_i915_gem_object *obj;
+	int ret;
+
+	if (dev_priv->mm.volatile_stolen) {
+		/* Stolen may be overwritten by external parties
+		 * so unsuitable for persistent user data.
+		 */
+		return ERR_PTR(-ENODEV);
+	}
+
+	mutex_lock(&dev_priv->drm.struct_mutex);
+	obj = i915_gem_object_create_stolen(dev_priv, size);
+	if (IS_ERR(obj))
+		goto out;
+
+	/* Always clear fresh buffers before handing to userspace */
+	ret = i915_gem_object_clear(obj);
+	if (ret) {
+		i915_gem_object_put(obj);
+		obj = ERR_PTR(ret);
+		goto out;
+	}
+
+out:
+	mutex_unlock(&dev_priv->drm.struct_mutex);
+	return obj;
+}
+
 static int
 i915_gem_create(struct drm_file *file,
 		struct drm_i915_private *dev_priv,
 		uint64_t size,
+		uint64_t flags,
 		uint32_t *handle_p)
 {
 	struct drm_i915_gem_object *obj;
@@ -637,10 +812,46 @@ i915_gem_create(struct drm_file *file,
 	if (size == 0)
 		return -EINVAL;
 
+	if (flags & __I915_CREATE_UNKNOWN_FLAGS)
+		return -EINVAL;
+
 	/* Allocate the new object */
-	obj = i915_gem_object_create(dev_priv, size);
+	switch (flags & I915_CREATE_PLACEMENT_MASK) {
+	case I915_CREATE_PLACEMENT_NORMAL:
+		obj = i915_gem_object_create(dev_priv, size);
+		break;
+	case I915_CREATE_PLACEMENT_STOLEN:
+		flags = 0;
+		obj = i915_gem_alloc_object_stolen(dev_priv, size);
+		break;
+	default:
+		return -EINVAL;
+	}
+
 	if (IS_ERR(obj))
 		return PTR_ERR(obj);
+
+	if (flags & I915_CREATE_POPULATE) {
+		ret = mutex_lock_interruptible(&obj->mm.lock);
+		if (ret) {
+			i915_gem_object_put(obj);
+			return ret;
+		}
+
+		ret = ____i915_gem_object_get_pages(obj);
+		mutex_unlock(&obj->mm.lock);
+		if (ret) {
+			i915_gem_object_put(obj);
+			return ret;
+		}
+
+		if (flags & I915_CREATE_FLUSH) {
+			i915_gem_clflush_object(obj, 0);
+			i915_gem_chipset_flush(to_i915(obj->base.dev));
+
+			obj->base.write_domain = 0;
+		}
+	}
 
 	ret = drm_gem_handle_create(file, &obj->base, &handle);
 	/* drop reference from allocate - handle holds it now */
@@ -661,7 +872,7 @@ i915_gem_dumb_create(struct drm_file *file,
 	args->pitch = ALIGN(args->width * DIV_ROUND_UP(args->bpp, 8), 64);
 	args->size = args->pitch * args->height;
 	return i915_gem_create(file, to_i915(dev),
-			       args->size, &args->handle);
+			       args->size, 0, &args->handle);
 }
 
 /**
@@ -680,7 +891,7 @@ i915_gem_create_ioctl(struct drm_device *dev, void *data,
 	i915_gem_flush_free_objects(dev_priv);
 
 	return i915_gem_create(file, dev_priv,
-			       args->size, &args->handle);
+			       args->size, args->flags, &args->handle);
 }
 
 static inline int
@@ -1648,6 +1859,7 @@ i915_gem_mmap_ioctl(struct drm_device *dev, void *data,
 	struct drm_i915_gem_mmap *args = data;
 	struct drm_i915_gem_object *obj;
 	unsigned long addr;
+	int ret;
 
 	if (args->flags & ~(I915_MMAP_WC))
 		return -EINVAL;
@@ -1692,6 +1904,10 @@ i915_gem_mmap_ioctl(struct drm_device *dev, void *data,
 	i915_gem_object_put(obj);
 	if (IS_ERR((void *)addr))
 		return addr;
+
+	ret = i915_obj_insert_virt_addr(obj, addr, false, false);
+	if (ret)
+		return ret;
 
 	args->addr_ptr = (uint64_t) addr;
 
@@ -1868,6 +2084,9 @@ int i915_gem_fault(struct vm_area_struct *area, struct vm_fault *vmf)
 		ret = PTR_ERR(vma);
 		goto err_unlock;
 	}
+
+	ret = i915_obj_insert_virt_addr(obj,
+				(unsigned long)area->vm_start, true, true);
 
 	ret = i915_gem_object_set_to_gtt_domain(obj, write);
 	if (ret)
@@ -2127,6 +2346,17 @@ i915_gem_object_truncate(struct drm_i915_gem_object *obj)
 	shmem_truncate_range(file_inode(obj->base.filp), 0, (loff_t)-1);
 	obj->mm.madv = __I915_MADV_PURGED;
 	obj->mm.pages = ERR_PTR(-EFAULT);
+
+	/*
+	 * Mark the object as not having backing pages, as physical space
+	 * returned back to kernel
+	 */
+	if (obj->has_backing_pages == 1) {
+		struct drm_i915_private *dev_priv = obj->base.dev->dev_private;
+
+		dev_priv->mm.phys_mem_total -= obj->base.size;
+		obj->has_backing_pages = 0;
+	}
 }
 
 /* Try to discard unwanted pages */
@@ -2370,6 +2600,13 @@ rebuild_st:
 
 	if (i915_gem_object_needs_bit17_swizzle(obj))
 		i915_gem_object_do_bit_17_swizzle(obj, st);
+
+	if (obj->has_backing_pages == 0) {
+		struct drm_i915_private *dev_priv = obj->base.dev->dev_private;
+
+		dev_priv->mm.phys_mem_total += obj->base.size;
+		obj->has_backing_pages = 1;
+	}
 
 	return st;
 
@@ -2710,32 +2947,51 @@ static bool engine_stalled(struct intel_engine_cs *engine)
 	return true;
 }
 
-int i915_gem_reset_prepare(struct drm_i915_private *dev_priv)
+/*
+ * Ensure irq handler finishes, and not run again.
+ * For reset-engine we also store the active request so that we only search
+ * for it once.
+ */
+struct drm_i915_gem_request *
+i915_gem_reset_prepare_engine(struct intel_engine_cs *engine)
+{
+	struct drm_i915_gem_request *request = NULL;
+
+	/* Prevent request submission to the hardware until we have
+	 * completed the reset in i915_gem_reset_finish(). If a request
+	 * is completed by one engine, it may then queue a request
+	 * to a second via its engine->irq_tasklet *just* as we are
+	 * calling engine->init_hw() and also writing the ELSP.
+	 * Turning off the engine->irq_tasklet until the reset is over
+	 * prevents the race.
+	 */
+	tasklet_kill(&engine->irq_tasklet);
+	tasklet_disable(&engine->irq_tasklet);
+
+	if (engine_stalled(engine)) {
+		request = i915_gem_find_active_request(engine);
+		if (!request)
+			return ERR_PTR(-ECANCELED); /* Can't find a request, abort! */
+
+		if (request && request->fence.error == -EIO)
+			return ERR_PTR(-EIO); /* Previous reset failed! */
+	}
+
+	return request;
+}
+
+int i915_gem_reset_prepare(struct drm_i915_private *dev_priv,
+			   unsigned int engine_mask)
 {
 	struct intel_engine_cs *engine;
-	enum intel_engine_id id;
+	struct drm_i915_gem_request *request;
+	unsigned int tmp;
 	int err = 0;
 
-	/* Ensure irq handler finishes, and not run again. */
-	for_each_engine(engine, dev_priv, id) {
-		struct drm_i915_gem_request *request;
-
-		/* Prevent request submission to the hardware until we have
-		 * completed the reset in i915_gem_reset_finish(). If a request
-		 * is completed by one engine, it may then queue a request
-		 * to a second via its engine->irq_tasklet *just* as we are
-		 * calling engine->init_hw() and also writing the ELSP.
-		 * Turning off the engine->irq_tasklet until the reset is over
-		 * prevents the race.
-		 */
-		tasklet_disable(&engine->irq_tasklet);
-		tasklet_kill(&engine->irq_tasklet);
-
-		if (engine_stalled(engine)) {
-			request = i915_gem_find_active_request(engine);
-			if (request && request->fence.error == -EIO)
-				err = -EIO; /* Previous reset failed! */
-		}
+	for_each_engine_masked(engine, dev_priv, engine_mask, tmp) {
+		request = i915_gem_reset_prepare_engine(engine);
+		if (request && IS_ERR(request))
+			err = PTR_ERR(request);
 	}
 
 	i915_gem_revoke_fences(dev_priv);
@@ -2823,14 +3079,15 @@ static bool i915_gem_reset_request(struct drm_i915_gem_request *request)
 	return guilty;
 }
 
-static void i915_gem_reset_engine(struct intel_engine_cs *engine)
+void i915_gem_reset_engine(struct intel_engine_cs *engine,
+			   struct drm_i915_gem_request *request)
 {
-	struct drm_i915_gem_request *request;
+	if (!request)
+		request = i915_gem_find_active_request(engine);
 
 	if (engine->irq_seqno_barrier)
 		engine->irq_seqno_barrier(engine);
 
-	request = i915_gem_find_active_request(engine);
 	if (request && i915_gem_reset_request(request)) {
 		DRM_DEBUG_DRIVER("resetting %s to restart from tail of request 0x%x\n",
 				 engine->name, request->global_seqno);
@@ -2854,7 +3111,7 @@ void i915_gem_reset(struct drm_i915_private *dev_priv)
 	i915_gem_retire_requests(dev_priv);
 
 	for_each_engine(engine, dev_priv, id)
-		i915_gem_reset_engine(engine);
+		i915_gem_reset_engine(engine, NULL);
 
 	i915_gem_restore_fences(dev_priv);
 
@@ -2866,15 +3123,22 @@ void i915_gem_reset(struct drm_i915_private *dev_priv)
 	}
 }
 
-void i915_gem_reset_finish(struct drm_i915_private *dev_priv)
+void i915_gem_reset_finish_engine(struct intel_engine_cs *engine)
+{
+	tasklet_enable(&engine->irq_tasklet);
+}
+
+void i915_gem_reset_finish(struct drm_i915_private *dev_priv,
+			   unsigned int engine_mask)
 {
 	struct intel_engine_cs *engine;
-	enum intel_engine_id id;
+	unsigned int tmp;
 
 	lockdep_assert_held(&dev_priv->drm.struct_mutex);
 
-	for_each_engine(engine, dev_priv, id)
-		tasklet_enable(&engine->irq_tasklet);
+	for_each_engine_masked(engine, dev_priv, engine_mask, tmp) {
+		i915_gem_reset_finish_engine(engine);
+	}
 }
 
 static void nop_submit_request(struct drm_i915_gem_request *request)
@@ -3048,6 +3312,13 @@ out_rearm:
 	}
 }
 
+int i915_gem_open_object(struct drm_gem_object *gem, struct drm_file *file)
+{
+	struct drm_i915_gem_object *obj = to_intel_bo(gem);
+
+	return i915_gem_obj_insert_pid(obj);
+}
+
 void i915_gem_close_object(struct drm_gem_object *gem, struct drm_file *file)
 {
 	struct drm_i915_gem_object *obj = to_intel_bo(gem);
@@ -3055,6 +3326,7 @@ void i915_gem_close_object(struct drm_gem_object *gem, struct drm_file *file)
 	struct i915_vma *vma, *vn;
 
 	mutex_lock(&obj->base.dev->struct_mutex);
+	i915_gem_obj_remove_pid(obj);
 	list_for_each_entry_safe(vma, vn, &obj->vma_list, obj_link)
 		if (vma->vm->file == fpriv)
 			i915_vma_close(vma);
@@ -4036,6 +4308,20 @@ i915_gem_madvise_ioctl(struct drm_device *dev, void *data,
 	if (obj->mm.madv == I915_MADV_DONTNEED && !obj->mm.pages)
 		i915_gem_object_truncate(obj);
 
+	if (obj->stolen) {
+		switch (obj->mm.madv) {
+		case I915_MADV_WILLNEED:
+			list_del_init(&obj->stolen->mm_link);
+			break;
+		case I915_MADV_DONTNEED:
+			list_move(&obj->stolen->mm_link,
+				  &dev_priv->mm.stolen_list);
+			break;
+		default:
+			break;
+		}
+	}
+
 	args->retained = obj->mm.madv != __I915_MADV_PURGED;
 	mutex_unlock(&obj->mm.lock);
 
@@ -4077,6 +4363,13 @@ void i915_gem_object_init(struct drm_i915_gem_object *obj,
 	INIT_RADIX_TREE(&obj->mm.get_page.radix, GFP_KERNEL | __GFP_NOWARN);
 	mutex_init(&obj->mm.get_page.lock);
 
+	/*
+	 * Mark the object as not having backing pages, as no allocation
+	 * for it yet
+	 */
+	obj->has_backing_pages = 0;
+	INIT_LIST_HEAD(&obj->pid_info);
+
 	i915_gem_info_add_obj(to_i915(obj->base.dev), obj->base.size);
 }
 
@@ -4090,12 +4383,27 @@ static const struct drm_i915_gem_object_ops i915_gem_object_ops = {
 	.pwrite = i915_gem_object_pwrite_gtt,
 };
 
+static struct address_space *
+i915_gem_set_inode_gfp(struct drm_i915_private *dev_priv, struct file *file)
+{
+	struct address_space *mapping = file_inode(file)->i_mapping;
+	gfp_t mask;
+
+	mask = GFP_HIGHUSER | __GFP_RECLAIMABLE;
+	if (IS_I965GM(dev_priv) || IS_I965G(dev_priv)) {
+		/* 965gm cannot relocate objects above 4GiB. */
+		mask &= ~__GFP_HIGHMEM;
+		mask |= __GFP_DMA32;
+	}
+	mapping_set_gfp_mask(mapping, mask);
+
+	return mapping;
+}
+
 struct drm_i915_gem_object *
 i915_gem_object_create(struct drm_i915_private *dev_priv, u64 size)
 {
 	struct drm_i915_gem_object *obj;
-	struct address_space *mapping;
-	gfp_t mask;
 	int ret;
 
 	/* There is a prevalence of the assumption that we fit the object's
@@ -4117,15 +4425,7 @@ i915_gem_object_create(struct drm_i915_private *dev_priv, u64 size)
 	if (ret)
 		goto fail;
 
-	mask = GFP_HIGHUSER | __GFP_RECLAIMABLE;
-	if (IS_I965GM(dev_priv) || IS_I965G(dev_priv)) {
-		/* 965gm cannot relocate objects above 4GiB. */
-		mask &= ~__GFP_HIGHMEM;
-		mask |= __GFP_DMA32;
-	}
-
-	mapping = obj->base.filp->f_mapping;
-	mapping_set_gfp_mask(mapping, mask);
+	i915_gem_set_inode_gfp(dev_priv, obj->base.filp);
 
 	i915_gem_object_init(obj, &i915_gem_object_ops);
 
@@ -4226,6 +4526,12 @@ static void __i915_gem_free_objects(struct drm_i915_private *i915,
 
 		if (obj->base.import_attach)
 			drm_prime_gem_destroy(&obj->base, NULL);
+
+		if (!obj->stolen && (obj->has_backing_pages == 1)) {
+			i915->mm.phys_mem_total -= obj->base.size;
+			obj->has_backing_pages = 0;
+		}
+		i915_gem_obj_remove_all_pids(obj);
 
 		reservation_object_fini(&obj->__builtin_resv);
 		drm_gem_object_release(&obj->base);
@@ -4750,6 +5056,7 @@ i915_gem_load_init(struct drm_i915_private *dev_priv)
 	init_llist_head(&dev_priv->mm.free_list);
 	INIT_LIST_HEAD(&dev_priv->mm.unbound_list);
 	INIT_LIST_HEAD(&dev_priv->mm.bound_list);
+	INIT_LIST_HEAD(&dev_priv->mm.stolen_list);
 	INIT_LIST_HEAD(&dev_priv->mm.fence_list);
 	INIT_LIST_HEAD(&dev_priv->mm.userfault_list);
 	INIT_DELAYED_WORK(&dev_priv->gt.retire_work,
@@ -4797,6 +5104,156 @@ void i915_gem_load_cleanup(struct drm_i915_private *dev_priv)
 
 	/* And ensure that our DESTROY_BY_RCU slabs are truly destroyed */
 	rcu_barrier();
+}
+
+static int
+copy_content(struct drm_i915_gem_object *obj,
+		struct drm_i915_private *i915,
+		struct address_space *mapping)
+{
+	struct i915_ggtt *ggtt = &i915->ggtt;
+	struct drm_mm_node node;
+	int ret, i;
+
+	ret = i915_gem_object_set_to_gtt_domain(obj, false);
+	if (ret)
+		return ret;
+
+	/* stolen objects are already pinned to prevent shrinkage */
+	memset(&node, 0, sizeof(node));
+	ret = insert_mappable_node(ggtt, &node, PAGE_SIZE);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < obj->base.size / PAGE_SIZE; i++) {
+		struct page *page;
+		void *__iomem src;
+		void *dst;
+
+		ggtt->base.insert_page(&ggtt->base,
+				       i915_gem_object_get_dma_address(obj, i),
+				       node.start,
+				       I915_CACHE_NONE, 0);
+
+		page = shmem_read_mapping_page(mapping, i);
+		if (IS_ERR(page)) {
+			ret = PTR_ERR(page);
+			break;
+		}
+
+		src = io_mapping_map_atomic_wc(&ggtt->mappable, node.start);
+		dst = kmap_atomic(page);
+		wmb(); /* flush modifications to the GGTT (insert_page) */
+		memcpy_fromio(dst, src, PAGE_SIZE);
+		wmb(); 	/* flush the write before we modify the GGTT */
+		kunmap_atomic(dst);
+		io_mapping_unmap_atomic(src);
+
+		put_page(page);
+	}
+
+	ggtt->base.clear_range(&ggtt->base,
+			       node.start, node.size);
+	remove_mappable_node(&node);
+	if (ret)
+		return ret;
+
+	return i915_gem_object_set_to_cpu_domain(obj, true);
+}
+
+/**
+ * i915_gem_object_migrate_stolen_to_shmemfs() - migrates a stolen backed
+ * object to shmemfs
+ * @obj: stolen backed object to be migrated
+ *
+ * Returns: 0 on successful migration, errno on failure
+ */
+
+int
+i915_gem_object_migrate_stolen_to_shmemfs(struct drm_i915_gem_object *obj)
+{
+	struct drm_i915_private *i915 = to_i915(obj->base.dev);
+	struct i915_vma *vma, *vn;
+	struct file *file;
+	struct address_space *mapping;
+	struct sg_table *stolen_pages, *shmemfs_pages = NULL;
+	int ret;
+
+	if (WARN_ON_ONCE(i915_gem_object_needs_bit17_swizzle(obj)))
+		return -EINVAL;
+
+	file = shmem_file_setup("drm mm object", obj->base.size, VM_NORESERVE);
+	if (IS_ERR(file))
+		return PTR_ERR(file);
+	mapping = i915_gem_set_inode_gfp(i915, file);
+
+	list_for_each_entry_safe(vma, vn, &obj->vma_list, obj_link)
+		if (i915_vma_unbind(vma))
+			continue;
+
+	if (obj->mm.madv != I915_MADV_WILLNEED && list_empty(&obj->vma_list)) {
+		/* Discard the stolen reservation, and replace with
+		 * an unpopulated shmemfs object.
+		 */
+		obj->mm.madv = __I915_MADV_PURGED;
+	} else {
+		ret = copy_content(obj, i915, mapping);
+		if (ret)
+			goto err_file;
+	}
+
+	stolen_pages = obj->mm.pages;
+	obj->mm.pages = NULL;
+
+	obj->base.filp = file;
+
+	/* Recreate any pinned binding with pointers to the new storage */
+	if (!list_empty(&obj->vma_list)) {
+		shmemfs_pages = i915_gem_object_get_pages_gtt(obj);
+		if (IS_ERR(shmemfs_pages)) {
+			obj->mm.pages = stolen_pages;
+			goto err_file;
+		}
+
+		obj->mm.get_page.sg_pos = obj->mm.pages->sgl;
+		obj->mm.get_page.sg_idx = 0;
+
+		list_for_each_entry(vma, &obj->vma_list, obj_link) {
+			if (!drm_mm_node_allocated(&vma->node))
+				continue;
+
+			/* As vma is already allocated and only the PTEs
+			 * have to be reprogrammed, makes this vma_bind
+			 * call extremely unlikely to fail.
+			 */
+			BUG_ON(i915_vma_bind(vma,
+					      obj->cache_level,
+					      PIN_UPDATE));
+		}
+	} else {
+		/* Remove object from global list if no reference to the
+		 * pages is held.
+		 */
+		list_del(&obj->global_link);
+	}
+
+	/* drop the stolen pin and backing */
+	obj->mm.pages = stolen_pages;
+
+	i915_gem_object_unpin_pages(obj);
+	obj->ops->put_pages(obj, stolen_pages);
+	if (obj->ops->release)
+		obj->ops->release(obj);
+
+	obj->ops = &i915_gem_object_ops;
+	obj->mm.pages = shmemfs_pages;
+
+	return 0;
+
+err_file:
+	fput(file);
+	obj->base.filp = NULL;
+	return ret;
 }
 
 int i915_gem_freeze(struct drm_i915_private *dev_priv)
@@ -4850,6 +5307,9 @@ void i915_gem_release(struct drm_device *dev, struct drm_file *file)
 	struct drm_i915_file_private *file_priv = file->driver_priv;
 	struct drm_i915_gem_request *request;
 
+	i915_gem_remove_sysfs_file_entry(dev, file);
+	put_pid(file_priv->tgid);
+
 	/* Clean up our request list when the client is going away, so that
 	 * later retire_requests won't dereference our soon-to-be-gone
 	 * file_priv.
@@ -4882,6 +5342,20 @@ int i915_gem_open(struct drm_device *dev, struct drm_file *file)
 	file_priv->file = file;
 	INIT_LIST_HEAD(&file_priv->rps.link);
 
+	rcu_read_lock();
+	file_priv->tgid = get_pid(find_vpid(task_tgid_nr(current)));
+	rcu_read_unlock();
+
+	file_priv->process_name =  kzalloc(PAGE_SIZE, GFP_ATOMIC);
+	if (!file_priv->process_name) {
+		ret = -ENOMEM;
+		goto out_free_file;
+	}
+
+	ret = i915_get_pid_cmdline(current, file_priv->process_name);
+	if (ret)
+		goto out_free_name;
+
 	spin_lock_init(&file_priv->mm.lock);
 	INIT_LIST_HEAD(&file_priv->mm.request_list);
 
@@ -4889,8 +5363,21 @@ int i915_gem_open(struct drm_device *dev, struct drm_file *file)
 
 	ret = i915_gem_context_open(dev, file);
 	if (ret)
-		kfree(file_priv);
+		goto out_free_name;
 
+	ret = i915_gem_create_sysfs_file_entry(dev, file);
+	if (ret) {
+		i915_gem_context_close(dev, file);
+		goto out_free_name;
+	}
+
+	return 0;
+
+out_free_name:
+	kfree(file_priv->process_name);
+out_free_file:
+	put_pid(file_priv->tgid);
+	kfree(file_priv);
 	return ret;
 }
 
@@ -4965,6 +5452,59 @@ fail:
 	return ERR_PTR(ret);
 }
 
+
+/**
+ * i915_gem_object_clear() - Clear buffer object via CPU/GTT
+ * @obj: Buffer object to be cleared
+ *
+ * Return: 0 - success, non-zero - failure
+ */
+int i915_gem_object_clear(struct drm_i915_gem_object *obj)
+{
+	struct drm_i915_private *i915 = to_i915(obj->base.dev);
+	struct i915_ggtt *ggtt = &i915->ggtt;
+	struct drm_mm_node node;
+	char __iomem *base;
+	uint64_t size = obj->base.size;
+	int ret, i;
+
+	lockdep_assert_held(&obj->base.dev->struct_mutex);
+	ret = insert_mappable_node(ggtt, &node, PAGE_SIZE);
+	if (ret)
+		return ret;
+
+	ret = ____i915_gem_object_get_pages(obj);
+	if (ret)
+		goto err_remove_node;
+
+	ret = i915_gem_object_pin_pages(obj);
+	if (ret)
+		goto err_put_pages;
+
+	base = io_mapping_map_wc(&i915->ggtt.mappable, node.start, PAGE_SIZE);
+
+	intel_runtime_pm_get(i915);
+	for (i = 0; i < size/PAGE_SIZE; i++) {
+		ggtt->base.insert_page(&ggtt->base,
+				       i915_gem_object_get_dma_address(obj, i),
+				       node.start, I915_CACHE_NONE, 0);
+		wmb(); /* flush modifications to the GGTT (insert_page) */
+		memset_io(base, 0, PAGE_SIZE);
+		wmb(); /* flush the write before we modify the GGTT */
+	}
+
+	io_mapping_unmap(base);
+	ggtt->base.clear_range(&ggtt->base, node.start, node.size);
+	intel_runtime_pm_put(i915);
+	i915_gem_object_unpin_pages(obj);
+
+err_put_pages:
+	__i915_gem_object_put_pages(obj, I915_MM_NORMAL);
+err_remove_node:
+	remove_mappable_node(&node);
+	return ret;
+}
+
 /**
  * Reads/writes userdata for the object.
  */
@@ -4975,7 +5515,7 @@ i915_gem_access_userdata(struct drm_device *dev, void *data,
 	struct drm_i915_gem_access_userdata *args = data;
 	struct drm_i915_gem_object *obj;
 
-	obj = to_intel_bo(drm_gem_object_lookup(file, args->handle));
+	obj = i915_gem_object_lookup(file, args->handle);
 	if (&obj->base == NULL)
 		return -ENOENT;
 
@@ -4986,7 +5526,7 @@ i915_gem_access_userdata(struct drm_device *dev, void *data,
 	else
 		args->userdata = obj->userdata;
 
-	drm_gem_object_unreference(&obj->base);
+	i915_gem_object_put(obj);
 	mutex_unlock(&dev->struct_mutex);
 
 	return 0;
@@ -5144,3 +5684,951 @@ i915_gem_object_get_dma_address(struct drm_i915_gem_object *obj,
 	sg = i915_gem_object_get_sg(obj, n, &offset);
 	return sg_dma_address(sg) + (offset << PAGE_SHIFT);
 }
+
+/* <memtrack-vpg-code> */
+struct per_file_obj_mem_info {
+	int num_obj;
+	int num_obj_shared;
+	int num_obj_private;
+	int num_obj_gtt_bound;
+	int num_obj_purged;
+	int num_obj_purgeable;
+	int num_obj_allocated;
+	int num_obj_fault_mappable;
+	int num_obj_stolen;
+	size_t gtt_space_allocated_shared;
+	size_t gtt_space_allocated_priv;
+	size_t phys_space_allocated_shared;
+	size_t phys_space_allocated_priv;
+	size_t phys_space_purgeable;
+	size_t phys_space_shared_proportion;
+	size_t fault_mappable_size;
+	size_t stolen_space_allocated;
+	char *process_name;
+};
+
+struct name_entry {
+	struct list_head head;
+	struct drm_hash_item hash_item;
+};
+
+struct pid_stat_entry {
+	struct list_head head;
+	struct list_head namefree;
+	struct drm_open_hash namelist;
+	struct per_file_obj_mem_info stats;
+	struct pid *tgid;
+	int pid_num;
+};
+
+struct drm_i915_obj_virt_addr {
+	struct list_head head;
+	unsigned long user_virt_addr;
+};
+
+struct drm_i915_obj_pid_info {
+	struct list_head head;
+	pid_t tgid;
+	int open_handle_count;
+	struct list_head virt_addr_head;
+};
+
+struct get_obj_stats_buf {
+	struct pid_stat_entry *entry;
+	struct drm_i915_error_state_buf *m;
+};
+
+#define err_printf(e, ...) i915_error_printf(e, __VA_ARGS__)
+#define err_puts(e, s) i915_error_puts(e, s)
+
+static const char *get_pin_flag(struct drm_i915_gem_object *obj)
+{
+	if (i915_gem_object_has_pinned_pages(obj))
+		return "p";
+	else
+		return " ";
+}
+
+static const char *get_tiling_flag(struct drm_i915_gem_object *obj)
+{
+	u32 tiling_mode = i915_gem_object_get_tiling(obj);
+	switch (tiling_mode) {
+	default:
+	case I915_TILING_NONE: return " ";
+	case I915_TILING_X: return "X";
+	case I915_TILING_Y: return "Y";
+	}
+}
+
+/*
+ * If this mmput call is the last one, it will tear down the mmaps of the
+ * process and calls drm_gem_vm_close(), which leads deadlock on i915 mutex.
+ * Instead, asynchronously schedule mmput function here, to avoid recursive
+ * calls to acquire i915_mutex.
+ */
+static void async_mmput_func(void *data, async_cookie_t cookie)
+{
+	struct mm_struct *mm = data;
+	mmput(mm);
+}
+
+static void async_mmput(struct mm_struct *mm)
+{
+	async_schedule(async_mmput_func, mm);
+}
+
+int i915_get_pid_cmdline(struct task_struct *task, char *buffer)
+{
+	int res = 0;
+	unsigned int len;
+	struct mm_struct *mm = get_task_mm(task);
+
+	if (!mm)
+		goto out;
+	if (!mm->arg_end)
+		goto out_mm;
+
+	len = mm->arg_end - mm->arg_start;
+
+	if (len > PAGE_SIZE)
+		len = PAGE_SIZE;
+
+	res = access_process_vm(task, mm->arg_start, buffer, len, 0);
+	if (res < 0) {
+		async_mmput(mm);
+		return res;
+	}
+
+	if (res > 0 && buffer[res-1] != '\0' && len < PAGE_SIZE)
+		buffer[res-1] = '\0';
+out_mm:
+	async_mmput(mm);
+out:
+	return 0;
+}
+
+static int i915_obj_get_shmem_pages_alloced(struct drm_i915_gem_object *obj)
+{
+	int ret;
+
+	if (obj->base.filp) {
+		struct inode *inode = file_inode(obj->base.filp);
+		struct shmem_inode_info *info = SHMEM_I(inode);
+
+		if (!inode)
+			return 0;
+		spin_lock(&info->lock);
+		ret = inode->i_mapping->nrpages;
+		spin_unlock(&info->lock);
+		return ret;
+	}
+	return 0;
+}
+
+int i915_gem_obj_insert_pid(struct drm_i915_gem_object *obj)
+{
+	int found = 0;
+	struct drm_i915_obj_pid_info *entry;
+	pid_t current_tgid = task_tgid_nr(current);
+
+	if (!i915.memtrack_debug)
+		return 0;
+
+	mutex_lock(&obj->base.dev->struct_mutex);
+
+	list_for_each_entry(entry, &obj->pid_info, head) {
+		if (entry->tgid == current_tgid) {
+			entry->open_handle_count++;
+			found = 1;
+			break;
+		}
+	}
+	if (found == 0) {
+		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+		if (entry == NULL) {
+			DRM_ERROR("alloc failed\n");
+			mutex_unlock(&obj->base.dev->struct_mutex);
+			return -ENOMEM;
+		}
+		entry->tgid = current_tgid;
+		entry->open_handle_count = 1;
+		INIT_LIST_HEAD(&entry->virt_addr_head);
+		list_add_tail(&entry->head, &obj->pid_info);
+	}
+
+	mutex_unlock(&obj->base.dev->struct_mutex);
+	return 0;
+}
+
+void i915_gem_obj_remove_pid(struct drm_i915_gem_object *obj)
+{
+	pid_t current_tgid = task_tgid_nr(current);
+	struct drm_i915_obj_pid_info *pid_entry, *pid_next;
+	struct drm_i915_obj_virt_addr *virt_entry, *virt_next;
+	int found = 0;
+
+	if (!i915.memtrack_debug)
+		return;
+
+	lockdep_assert_held(&obj->base.dev->struct_mutex);
+
+	list_for_each_entry_safe(pid_entry, pid_next, &obj->pid_info, head) {
+		if (pid_entry->tgid == current_tgid) {
+			pid_entry->open_handle_count--;
+			found = 1;
+			if (pid_entry->open_handle_count == 0) {
+				list_for_each_entry_safe(virt_entry,
+						virt_next,
+						&pid_entry->virt_addr_head,
+						head) {
+					list_del(&virt_entry->head);
+					kfree(virt_entry);
+				}
+				list_del(&pid_entry->head);
+				kfree(pid_entry);
+			}
+			break;
+		}
+	}
+
+	if (found == 0)
+		DRM_DEBUG("Couldn't find matching tgid %d for obj %p\n",
+				current_tgid, obj);
+}
+
+void i915_gem_obj_remove_all_pids(struct drm_i915_gem_object *obj)
+{
+	struct drm_i915_obj_pid_info *pid_entry, *pid_next;
+	struct drm_i915_obj_virt_addr *virt_entry, *virt_next;
+
+	list_for_each_entry_safe(pid_entry, pid_next, &obj->pid_info, head) {
+		list_for_each_entry_safe(virt_entry,
+					 virt_next,
+					 &pid_entry->virt_addr_head,
+					 head) {
+			list_del(&virt_entry->head);
+			kfree(virt_entry);
+		}
+		list_del(&pid_entry->head);
+		kfree(pid_entry);
+	}
+}
+
+int
+i915_obj_insert_virt_addr(struct drm_i915_gem_object *obj,
+				unsigned long addr,
+				bool is_map_gtt,
+				bool is_mutex_locked)
+{
+	struct drm_i915_obj_pid_info *pid_entry;
+	pid_t current_tgid = task_tgid_nr(current);
+	int ret = 0, found = 0;
+
+	if (!i915.memtrack_debug)
+		return 0;
+
+	if (is_map_gtt)
+		addr |= 1;
+
+	if (!is_mutex_locked) {
+		ret = i915_mutex_lock_interruptible(obj->base.dev);
+		if (ret)
+			return ret;
+	}
+
+	list_for_each_entry(pid_entry, &obj->pid_info, head) {
+		if (pid_entry->tgid == current_tgid) {
+			struct drm_i915_obj_virt_addr *virt_entry, *new_entry;
+
+			list_for_each_entry(virt_entry,
+					    &pid_entry->virt_addr_head,
+					    head) {
+				if (virt_entry->user_virt_addr == addr) {
+					found = 1;
+					break;
+				}
+			}
+			if (found)
+				break;
+			new_entry = kzalloc(sizeof(*new_entry), GFP_KERNEL);
+			if (new_entry == NULL) {
+				DRM_ERROR("alloc failed\n");
+				ret = -ENOMEM;
+				goto out;
+			}
+			new_entry->user_virt_addr = addr;
+			list_add_tail(&new_entry->head,
+				&pid_entry->virt_addr_head);
+			break;
+		}
+	}
+
+out:
+	if (!is_mutex_locked)
+		mutex_unlock(&obj->base.dev->struct_mutex);
+
+	return ret;
+}
+
+static int i915_obj_virt_addr_is_invalid(struct drm_gem_object *obj,
+				struct pid *tgid, unsigned long addr)
+{
+	struct task_struct *task;
+	struct mm_struct *mm;
+	struct vm_area_struct *vma;
+	int locked, ret = 0;
+
+	task = get_pid_task(tgid, PIDTYPE_PID);
+	if (task == NULL) {
+		DRM_DEBUG("null task for tgid=%d\n", pid_nr(tgid));
+		return -EINVAL;
+	}
+
+	mm = get_task_mm(task);
+	if (mm == NULL) {
+		DRM_DEBUG("null mm for tgid=%d\n", pid_nr(tgid));
+		ret = -EINVAL;
+		goto out_task;
+	}
+
+	locked = down_read_trylock(&mm->mmap_sem);
+	if (!locked)
+		goto out_mm;
+
+	vma = find_vma(mm, addr);
+	if (vma) {
+		if (addr & 1) { /* mmap_gtt case */
+			if (vma->vm_pgoff*PAGE_SIZE == (unsigned long)
+				drm_vma_node_offset_addr(&obj->vma_node))
+				ret = 0;
+			else
+				ret = -EINVAL;
+		} else { /* mmap case */
+			if (vma->vm_file == obj->filp)
+				ret = 0;
+			else
+				ret = -EINVAL;
+		}
+	} else
+		ret = -EINVAL;
+
+	up_read(&mm->mmap_sem);
+
+out_mm:
+	async_mmput(mm);
+out_task:
+	put_task_struct(task);
+	return ret;
+}
+
+static void i915_obj_pidarray_validate(struct drm_gem_object *gem_obj)
+{
+	struct drm_i915_gem_object *obj = to_intel_bo(gem_obj);
+	struct drm_device *dev = gem_obj->dev;
+	struct drm_i915_obj_virt_addr *virt_entry, *virt_next;
+	struct drm_i915_obj_pid_info *pid_entry, *pid_next;
+	struct drm_file *file;
+	struct drm_i915_file_private *file_priv;
+	struct pid *tgid;
+	int pid_num, present;
+
+	/*
+	 * Run a sanity check on pid_array. All entries in pid_array should
+	 * be subset of the the drm filelist pid entries.
+	 */
+	list_for_each_entry_safe(pid_entry, pid_next, &obj->pid_info, head) {
+		if (pid_next == NULL) {
+			DRM_ERROR(
+				  "Invalid pid info. obj:%p, size:%zdK, pin flag:%s, tiling:%s, userptr=%s, stolen:%s, name:%d, handle_count=%d\n",
+				  &obj->base, obj->base.size/1024,
+				  get_pin_flag(obj), get_tiling_flag(obj),
+				  (obj->userptr.mm != 0) ? "Y" : "N",
+				  obj->stolen ? "Y" : "N", obj->base.name,
+				  obj->base.handle_count);
+			break;
+		}
+
+		present = 0;
+		list_for_each_entry(file, &dev->filelist, lhead) {
+			file_priv = file->driver_priv;
+			tgid = file_priv->tgid;
+			pid_num = pid_nr(tgid);
+
+			if (pid_num == pid_entry->tgid) {
+				present = 1;
+				break;
+			}
+		}
+		if (present == 0) {
+			DRM_DEBUG("stale_tgid=%d\n", pid_entry->tgid);
+			list_for_each_entry_safe(virt_entry, virt_next,
+					&pid_entry->virt_addr_head,
+					head) {
+				list_del(&virt_entry->head);
+				kfree(virt_entry);
+			}
+			list_del(&pid_entry->head);
+			kfree(pid_entry);
+		} else {
+			/* Validate the virtual address list */
+			struct task_struct *task =
+				get_pid_task(tgid, PIDTYPE_PID);
+			if (task == NULL)
+				continue;
+
+			list_for_each_entry_safe(virt_entry, virt_next,
+					&pid_entry->virt_addr_head,
+					head) {
+				if (i915_obj_virt_addr_is_invalid(gem_obj, tgid,
+					virt_entry->user_virt_addr)) {
+					DRM_DEBUG("stale_addr=%ld\n",
+					virt_entry->user_virt_addr);
+					list_del(&virt_entry->head);
+					kfree(virt_entry);
+				}
+			}
+			put_task_struct(task);
+		}
+	}
+}
+
+static int i915_obj_find_insert_in_hash(struct drm_i915_gem_object *obj,
+				struct pid_stat_entry *pid_entry,
+				bool *found)
+{
+	struct drm_hash_item *hash_item;
+	int ret;
+
+	ret = drm_ht_find_item(&pid_entry->namelist,
+				(unsigned long)&obj->base, &hash_item);
+	/* Not found, insert in hash */
+	if (ret) {
+		struct name_entry *entry =
+			kzalloc(sizeof(*entry), GFP_NOWAIT);
+		if (entry == NULL) {
+			DRM_ERROR("alloc failed\n");
+			return -ENOMEM;
+		}
+		entry->hash_item.key = (unsigned long)&obj->base;
+		drm_ht_insert_item(&pid_entry->namelist,
+				   &entry->hash_item);
+		list_add_tail(&entry->head, &pid_entry->namefree);
+		*found = false;
+	} else
+		*found = true;
+
+	return 0;
+}
+
+static int i915_obj_shared_count(struct drm_i915_gem_object *obj,
+				struct pid_stat_entry *pid_entry,
+				bool *discard)
+{
+	struct drm_i915_obj_pid_info *pid_info_entry;
+	int ret, obj_shared_count = 0;
+
+	/*
+	 * The object can be shared among different processes by either flink
+	 * or dma-buf mechanism, leading to shared count more than 1. For the
+	 * objects not shared , return the shared count as 1.
+	 * In case of shared dma-buf objects, there's a possibility that these
+	 * may be external to i915. Detect this condition through
+	 * 'import_attach' field.
+	 */
+	if (!obj->base.name && !obj->base.dma_buf)
+		return 1;
+	else if(obj->base.import_attach) {
+			/* not our GEM obj */
+			*discard = true;
+			return 0;
+	}
+
+	ret = i915_obj_find_insert_in_hash(obj, pid_entry, discard);
+	if (ret)
+		return ret;
+
+	list_for_each_entry(pid_info_entry, &obj->pid_info, head)
+		obj_shared_count++;
+
+	if (WARN_ON(obj_shared_count == 0))
+		return -EINVAL;
+
+	return obj_shared_count;
+}
+
+static int
+i915_describe_obj(struct get_obj_stats_buf *obj_stat_buf,
+		struct drm_i915_gem_object *obj)
+{
+	struct i915_vma *vma;
+	struct drm_i915_obj_pid_info *pid_info_entry;
+	struct drm_i915_obj_virt_addr *virt_entry;
+	struct drm_i915_error_state_buf *m = obj_stat_buf->m;
+	struct pid_stat_entry *pid_entry = obj_stat_buf->entry;
+	struct per_file_obj_mem_info *stats = &pid_entry->stats;
+	int obj_shared_count = 0;
+	bool discard = false;
+
+	obj_shared_count = i915_obj_shared_count(obj, pid_entry, &discard);
+	if (obj_shared_count < 0)
+		return obj_shared_count;
+
+	if (!discard && !obj->stolen &&
+			(obj->mm.madv != __I915_MADV_PURGED) &&
+			(i915_obj_get_shmem_pages_alloced(obj) != 0)) {
+		if (obj_shared_count > 1)
+			stats->phys_space_shared_proportion +=
+				obj->base.size/obj_shared_count;
+		else
+			stats->phys_space_allocated_priv +=
+				obj->base.size;
+	}
+
+	err_printf(m,
+		"%p: %7zdK  %s    %s     %s      %s     %s      %s       %s     ",
+		   &obj->base,
+		   obj->base.size / 1024,
+		   get_pin_flag(obj),
+		   get_tiling_flag(obj),
+		   obj->mm.dirty ? "Y" : "N",
+		   (obj_shared_count > 1) ? "Y" : "N",
+		   (obj->userptr.mm != 0) ? "Y" : "N",
+		   obj->stolen ? "Y" : "N",
+		   (obj->pin_display || !list_empty(&obj->userfault_link)) ? "Y" : "N");
+
+	if (obj->mm.madv == __I915_MADV_PURGED)
+		err_puts(m, " purged    ");
+	else if (obj->mm.madv == I915_MADV_DONTNEED)
+		err_puts(m, " purgeable   ");
+	else if (i915_obj_get_shmem_pages_alloced(obj) != 0)
+		err_puts(m, " allocated   ");
+	else
+		err_puts(m, "             ");
+
+	list_for_each_entry(vma, &obj->vma_list, obj_link) {
+		if (!i915_is_ggtt(vma->vm))
+			err_puts(m, " PP    ");
+		else
+			err_puts(m, " G     ");
+		err_printf(m, "  %08llx ", vma->node.start);
+	}
+	if (list_empty(&obj->vma_list))
+		err_puts(m, "                  ");
+
+	list_for_each_entry(pid_info_entry, &obj->pid_info, head) {
+		err_printf(m, " (%d: %d:",
+			   pid_info_entry->tgid,
+			   pid_info_entry->open_handle_count);
+		list_for_each_entry(virt_entry,
+				    &pid_info_entry->virt_addr_head, head) {
+			if (virt_entry->user_virt_addr & 1)
+				err_printf(m, " %p",
+				(void *)(virt_entry->user_virt_addr & ~1));
+			else
+				err_printf(m, " %p*",
+				(void *)virt_entry->user_virt_addr);
+		}
+		err_puts(m, ") ");
+	}
+
+	err_puts(m, "\n");
+
+	if (m->bytes == 0 && m->err)
+		return m->err;
+
+	return 0;
+}
+
+static int
+i915_drm_gem_obj_info(int id, void *ptr, void *data)
+{
+	struct drm_i915_gem_object *obj = ptr;
+	struct get_obj_stats_buf *obj_stat_buf = data;
+	int ret;
+
+	if (obj->pid_info.next == NULL) {
+		DRM_ERROR(
+			"Invalid pid info. obj:%p, size:%zdK, pin flag:%s, tiling:%s, userptr=%s, stolen:%s, name:%d, handle_count=%d\n",
+			&obj->base, obj->base.size/1024,
+			get_pin_flag(obj), get_tiling_flag(obj),
+			(obj->userptr.mm != 0) ? "Y" : "N",
+			obj->stolen ? "Y" : "N", obj->base.name,
+			obj->base.handle_count);
+		return 0;
+	}
+	i915_obj_pidarray_validate(&obj->base);
+	ret = i915_describe_obj(obj_stat_buf, obj);
+
+	return ret;
+}
+
+static int
+i915_drm_gem_object_per_file_summary(int id, void *ptr, void *data)
+{
+	struct pid_stat_entry *pid_entry = data;
+	struct drm_i915_gem_object *obj = ptr;
+	struct per_file_obj_mem_info *stats = &pid_entry->stats;
+	int obj_shared_count = 0;
+	bool discard = false;
+
+	if (obj->pid_info.next == NULL) {
+		DRM_ERROR(
+			"Invalid pid info. obj:%p, size:%zdK, pin flag:%s, tiling:%s, userptr=%s, stolen:%s, name:%d, handle_count=%d\n",
+			&obj->base, obj->base.size/1024,
+			get_pin_flag(obj), get_tiling_flag(obj),
+			(obj->userptr.mm != 0) ? "Y" : "N",
+			obj->stolen ? "Y" : "N", obj->base.name,
+			obj->base.handle_count);
+		return 0;
+	}
+
+	i915_obj_pidarray_validate(&obj->base);
+
+	stats->num_obj++;
+
+	obj_shared_count = i915_obj_shared_count(obj, pid_entry, &discard);
+	if (obj_shared_count < 0)
+		return obj_shared_count;
+
+	if (discard)
+		return 0;
+
+	if (obj_shared_count > 1)
+		stats->num_obj_shared++;
+	else
+		stats->num_obj_private++;
+
+	if (obj->bind_count) {
+		stats->num_obj_gtt_bound++;
+		if (obj_shared_count > 1)
+			stats->gtt_space_allocated_shared += obj->base.size;
+		else
+			stats->gtt_space_allocated_priv += obj->base.size;
+	}
+
+	if (obj->stolen) {
+		stats->num_obj_stolen++;
+		stats->stolen_space_allocated += obj->base.size;
+	} else if (obj->mm.madv == __I915_MADV_PURGED) {
+		stats->num_obj_purged++;
+	} else if (obj->mm.madv == I915_MADV_DONTNEED) {
+		stats->num_obj_purgeable++;
+		stats->num_obj_allocated++;
+		if (i915_obj_get_shmem_pages_alloced(obj) != 0) {
+			stats->phys_space_purgeable += obj->base.size;
+			if (obj_shared_count > 1) {
+				stats->phys_space_allocated_shared +=
+					obj->base.size;
+				stats->phys_space_shared_proportion +=
+					obj->base.size/obj_shared_count;
+			} else
+				stats->phys_space_allocated_priv +=
+					obj->base.size;
+		} else
+			WARN_ON(1);
+	} else if (i915_obj_get_shmem_pages_alloced(obj) != 0) {
+		stats->num_obj_allocated++;
+			if (obj_shared_count > 1) {
+				stats->phys_space_allocated_shared +=
+					obj->base.size;
+				stats->phys_space_shared_proportion +=
+					obj->base.size/obj_shared_count;
+			}
+		else
+			stats->phys_space_allocated_priv += obj->base.size;
+	}
+	if (!list_empty(&obj->userfault_link)) {
+		stats->num_obj_fault_mappable++;
+		stats->fault_mappable_size += obj->base.size;
+	}
+	return 0;
+}
+
+static int
+__i915_get_drm_clients_info(struct drm_i915_error_state_buf *m,
+			struct drm_device *dev)
+{
+	struct drm_file *file;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	struct name_entry *entry, *next;
+	struct pid_stat_entry *pid_entry, *temp_entry;
+	struct pid_stat_entry *new_pid_entry, *new_temp_entry;
+	struct list_head per_pid_stats, sorted_pid_stats;
+	int ret = 0;
+	size_t total_shared_prop_space = 0, total_priv_space = 0;
+
+	INIT_LIST_HEAD(&per_pid_stats);
+	INIT_LIST_HEAD(&sorted_pid_stats);
+
+	err_puts(m,
+		"\n\n  pid   Total  Shared  Priv   Purgeable  Alloced  SharedPHYsize   SharedPHYprop    PrivPHYsize   PurgeablePHYsize   process\n");
+
+	list_for_each_entry(file, &dev->filelist, lhead) {
+		struct pid *tgid;
+		struct drm_i915_file_private *file_priv = file->driver_priv;
+		int pid_num, found = 0;
+
+		tgid = file_priv->tgid;
+		pid_num = pid_nr(tgid);
+
+		list_for_each_entry(pid_entry, &per_pid_stats, head) {
+			if (pid_entry->pid_num == pid_num) {
+				found = 1;
+				break;
+			}
+		}
+
+		if (!found) {
+			struct pid_stat_entry *new_entry =
+				kzalloc(sizeof(*new_entry), GFP_KERNEL);
+			if (new_entry == NULL) {
+				DRM_ERROR("alloc failed\n");
+				ret = -ENOMEM;
+				break;
+			}
+			new_entry->tgid = tgid;
+			new_entry->pid_num = pid_num;
+			ret = drm_ht_create(&new_entry->namelist,
+				      DRM_MAGIC_HASH_ORDER);
+			if (ret) {
+				kfree(new_entry);
+				break;
+			}
+
+			list_add_tail(&new_entry->head, &per_pid_stats);
+			INIT_LIST_HEAD(&new_entry->namefree);
+			new_entry->stats.process_name = file_priv->process_name;
+			pid_entry = new_entry;
+		}
+
+		spin_lock(&file->table_lock);
+		ret = idr_for_each(&file->object_idr,
+			&i915_drm_gem_object_per_file_summary, pid_entry);
+		spin_unlock(&file->table_lock);
+		if (ret)
+			break;
+	}
+
+	list_for_each_entry_safe(pid_entry, temp_entry, &per_pid_stats, head) {
+		if (list_empty(&sorted_pid_stats)) {
+			list_del(&pid_entry->head);
+			list_add_tail(&pid_entry->head, &sorted_pid_stats);
+			continue;
+		}
+
+		list_for_each_entry_safe(new_pid_entry, new_temp_entry,
+			&sorted_pid_stats, head) {
+			int prev_space =
+				pid_entry->stats.phys_space_shared_proportion +
+				pid_entry->stats.phys_space_allocated_priv;
+			int new_space =
+				new_pid_entry->
+				stats.phys_space_shared_proportion +
+				new_pid_entry->stats.phys_space_allocated_priv;
+			if (prev_space > new_space) {
+				list_del(&pid_entry->head);
+				list_add_tail(&pid_entry->head,
+					&new_pid_entry->head);
+				break;
+			}
+			if (list_is_last(&new_pid_entry->head,
+				&sorted_pid_stats)) {
+				list_del(&pid_entry->head);
+				list_add_tail(&pid_entry->head,
+						&sorted_pid_stats);
+			}
+		}
+	}
+
+	list_for_each_entry_safe(pid_entry, temp_entry,
+				&sorted_pid_stats, head) {
+		struct task_struct *task = get_pid_task(pid_entry->tgid,
+							PIDTYPE_PID);
+		err_printf(m,
+			"%5d %6d %6d %6d %9d %8d %14zdK %14zdK %14zdK  %14zdK     %s",
+			   pid_entry->pid_num,
+			   pid_entry->stats.num_obj,
+			   pid_entry->stats.num_obj_shared,
+			   pid_entry->stats.num_obj_private,
+			   pid_entry->stats.num_obj_purgeable,
+			   pid_entry->stats.num_obj_allocated,
+			   pid_entry->stats.phys_space_allocated_shared/1024,
+			   pid_entry->stats.phys_space_shared_proportion/1024,
+			   pid_entry->stats.phys_space_allocated_priv/1024,
+			   pid_entry->stats.phys_space_purgeable/1024,
+			   pid_entry->stats.process_name);
+
+		if (task == NULL)
+			err_puts(m, "*\n");
+		else
+			err_puts(m, "\n");
+
+		total_shared_prop_space +=
+			pid_entry->stats.phys_space_shared_proportion/1024;
+		total_priv_space +=
+			pid_entry->stats.phys_space_allocated_priv/1024;
+		list_del(&pid_entry->head);
+
+		list_for_each_entry_safe(entry, next,
+					&pid_entry->namefree, head) {
+			list_del(&entry->head);
+			drm_ht_remove_item(&pid_entry->namelist,
+					&entry->hash_item);
+			kfree(entry);
+		}
+		drm_ht_remove(&pid_entry->namelist);
+		kfree(pid_entry);
+		if (task)
+			put_task_struct(task);
+	}
+
+	err_puts(m,
+		"\t\t\t\t\t\t\t\t--------------\t-------------\t--------\n");
+	err_printf(m,
+		"\t\t\t\t\t\t\t\t%13zdK\t%12zdK\tTotal\n",
+			total_shared_prop_space, total_priv_space);
+
+	err_printf(m, "\nTotal used GFX Shmem Physical space %8zdK\n",
+		   dev_priv->mm.phys_mem_total/1024);
+
+	if (ret)
+		return ret;
+	if (m->bytes == 0 && m->err)
+		return m->err;
+
+	return 0;
+}
+
+#define NUM_SPACES 100
+#define INITIAL_SPACES_STR(x) #x
+#define SPACES_STR(x) INITIAL_SPACES_STR(x)
+
+static int
+__i915_gem_get_obj_info(struct drm_i915_error_state_buf *m,
+			struct drm_device *dev, struct pid *tgid)
+{
+	struct drm_file *file;
+	struct drm_i915_file_private *file_priv_reqd = NULL;
+	int bytes_copy, ret = 0;
+	struct pid_stat_entry pid_entry;
+	struct name_entry *entry, *next;
+
+	pid_entry.stats.phys_space_shared_proportion = 0;
+	pid_entry.stats.phys_space_allocated_priv = 0;
+	pid_entry.tgid = tgid;
+	pid_entry.pid_num = pid_nr(tgid);
+	ret = drm_ht_create(&pid_entry.namelist, DRM_MAGIC_HASH_ORDER);
+	if (ret)
+		return ret;
+
+	INIT_LIST_HEAD(&pid_entry.namefree);
+
+	/*
+	 * Fill up initial few bytes with spaces, to insert summary data later
+	 * on
+	 */
+	err_printf(m, "%"SPACES_STR(NUM_SPACES)"s\n", " ");
+
+	list_for_each_entry(file, &dev->filelist, lhead) {
+		struct drm_i915_file_private *file_priv = file->driver_priv;
+		struct get_obj_stats_buf obj_stat_buf;
+
+		obj_stat_buf.entry = &pid_entry;
+		obj_stat_buf.m = m;
+
+		if (file_priv->tgid != tgid)
+			continue;
+
+		file_priv_reqd = file_priv;
+		err_puts(m,
+			"\n Obj Identifier       Size Pin Tiling Dirty Shared Vmap Stolen Mappable  AllocState Global/PP  GttOffset (PID: handle count: user virt addrs)\n");
+		spin_lock(&file->table_lock);
+		ret = idr_for_each(&file->object_idr,
+				&i915_drm_gem_obj_info, &obj_stat_buf);
+		spin_unlock(&file->table_lock);
+		if (ret)
+			break;
+	}
+
+	if (file_priv_reqd) {
+		int space_remaining;
+
+		/* Reset the bytes counter to buffer beginning */
+		bytes_copy = m->bytes;
+		m->bytes = 0;
+
+		err_printf(m, "\n  PID    GfxMem   Process\n");
+		err_printf(m, "%5d %8zdK ", pid_nr(file_priv_reqd->tgid),
+			   (pid_entry.stats.phys_space_shared_proportion +
+			    pid_entry.stats.phys_space_allocated_priv)/1024);
+
+		space_remaining = NUM_SPACES - m->bytes - 1;
+		if (strlen(file_priv_reqd->process_name) > space_remaining)
+			file_priv_reqd->process_name[space_remaining] = '\0';
+
+		err_printf(m, "%s\n", file_priv_reqd->process_name);
+
+		/* Reinstate the previous saved value of bytes counter */
+		m->bytes = bytes_copy;
+	} else
+		WARN(1, "drm file corresponding to tgid:%d not found\n",
+			pid_nr(tgid));
+
+	list_for_each_entry_safe(entry, next,
+				 &pid_entry.namefree, head) {
+		list_del(&entry->head);
+		drm_ht_remove_item(&pid_entry.namelist,
+				   &entry->hash_item);
+		kfree(entry);
+	}
+	drm_ht_remove(&pid_entry.namelist);
+
+	if (ret)
+		return ret;
+	if (m->bytes == 0 && m->err)
+		return m->err;
+	return 0;
+}
+
+int i915_get_drm_clients_info(struct drm_i915_error_state_buf *m,
+			struct drm_device *dev)
+{
+	int ret = 0;
+
+	/*
+	 * Protect the access to global drm resources such as filelist. Protect
+	 * against their removal under our noses, while in use.
+	 */
+	mutex_lock(&drm_global_mutex);
+	ret = i915_mutex_lock_interruptible(dev);
+	if (ret) {
+		mutex_unlock(&drm_global_mutex);
+		return ret;
+	}
+
+	ret = __i915_get_drm_clients_info(m, dev);
+
+	mutex_unlock(&dev->struct_mutex);
+	mutex_unlock(&drm_global_mutex);
+
+	return ret;
+}
+
+int i915_gem_get_obj_info(struct drm_i915_error_state_buf *m,
+			struct drm_device *dev, struct pid *tgid)
+{
+	int ret = 0;
+
+	ret = i915_mutex_lock_interruptible(dev);
+	if (ret)
+		return ret;
+
+	ret = __i915_gem_get_obj_info(m, dev, tgid);
+
+	mutex_unlock(&dev->struct_mutex);
+
+	return ret;
+}
+/* </memtrack-vpg-code> */
+

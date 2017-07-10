@@ -33,9 +33,9 @@ static int __intel_uc_reset_hw(struct drm_i915_private *dev_priv)
 	int ret;
 	u32 guc_status;
 
-	ret = intel_guc_reset(dev_priv);
+	ret = intel_reset_guc(dev_priv);
 	if (ret) {
-		DRM_ERROR("GuC reset failed, ret = %d\n", ret);
+		DRM_ERROR("Failed to reset GuC, ret = %d\n", ret);
 		return ret;
 	}
 
@@ -138,6 +138,12 @@ int intel_uc_init_hw(struct drm_i915_private *dev_priv)
 	if (ret)
 		goto err_submission;
 
+	/*
+	 * Mask all interrupts to know which interrupts are needed by GuC.
+	 * Restore host side interrupt masks post load.
+	 */
+	I915_WRITE(GEN6_PMINTRMSK, gen6_sanitize_rps_pm_mask(dev_priv, ~0u));
+
 	intel_guc_auth_huc(dev_priv);
 	if (i915.enable_guc_submission) {
 		if (i915.guc_log_level >= 0)
@@ -147,6 +153,14 @@ int intel_uc_init_hw(struct drm_i915_private *dev_priv)
 		if (ret)
 			goto err_submission;
 	}
+
+	/*
+	 * Below write will ensure mask for RPS interrupts is restored back
+	 * w.r.t cur_freq, particularly post reset.
+	 */
+	I915_WRITE(GEN6_PMINTRMSK,
+		   gen6_rps_pm_mask(dev_priv, dev_priv->rps.cur_freq));
+
 
 	return 0;
 

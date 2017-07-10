@@ -52,7 +52,7 @@ i915_gem_userdata(struct drm_device *dev,
 	WARN_ON(!actual_bytes);
 	*actual_bytes = 0;
 
-	obj = to_intel_bo(drm_gem_object_lookup(file, handle));
+	obj = i915_gem_object_lookup(file, handle);
 	if (&obj->base == NULL) {
 		DRM_ERROR("Bad object: handle=%lx\n",
 			  (unsigned long)handle);
@@ -190,7 +190,7 @@ i915_gem_userdata(struct drm_device *dev,
 	}
 
 unref:
-	drm_gem_object_unreference_unlocked(&obj->base);
+	i915_gem_object_put(obj);
 
 	return ret;
 #undef SIZE_LIMIT

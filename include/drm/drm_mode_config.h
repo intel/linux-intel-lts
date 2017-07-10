@@ -517,6 +517,15 @@ struct drm_mode_config {
 	 */
 	struct drm_property *prop_mode_id;
 
+	/* pipe scaler properties */
+	struct drm_property *prop_pipe_src_w;
+	struct drm_property *prop_pipe_src_h;
+	struct drm_property *prop_fitting_mode;
+	struct drm_property *prop_pipe_dst_x;
+	struct drm_property *prop_pipe_dst_y;
+	struct drm_property *prop_pipe_dst_w;
+	struct drm_property *prop_pipe_dst_h;
+
 	/**
 	 * @dvi_i_subconnector_property: Optional DVI-I property to
 	 * differentiate between analog or digital mode.

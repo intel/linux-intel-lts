@@ -78,6 +78,11 @@ static bool __i915_error_ok(struct drm_i915_error_state_buf *e)
 	return true;
 }
 
+bool i915_error_ok(struct drm_i915_error_state_buf *e)
+{
+	return __i915_error_ok(e);
+}
+
 static bool __i915_error_seek(struct drm_i915_error_state_buf *e,
 			      unsigned len)
 {
@@ -149,7 +154,7 @@ static void i915_error_vprintf(struct drm_i915_error_state_buf *e,
 	__i915_error_advance(e, len);
 }
 
-static void i915_error_puts(struct drm_i915_error_state_buf *e,
+void i915_error_puts(struct drm_i915_error_state_buf *e,
 			    const char *str)
 {
 	unsigned len;
@@ -388,9 +393,10 @@ static void error_print_context(struct drm_i915_error_state_buf *m,
 				const char *header,
 				const struct drm_i915_error_context *ctx)
 {
-	err_printf(m, "%s%s[%d] user_handle %d hw_id %d, ban score %d guilty %d active %d\n",
+	err_printf(m, "%s%s[%d] user_handle %d hw_id %d, ban score %d guilty %d active %d, watchdog %dus\n",
 		   header, ctx->comm, ctx->pid, ctx->handle, ctx->hw_id,
-		   ctx->ban_score, ctx->guilty, ctx->active);
+		   ctx->ban_score, ctx->guilty, ctx->active,
+		   watchdog_to_us(m->i915, ctx->watchdog_threshold));
 }
 
 static void error_print_engine(struct drm_i915_error_state_buf *m,
@@ -463,6 +469,7 @@ static void error_print_engine(struct drm_i915_error_state_buf *m,
 	err_printf(m, "  hangcheck action timestamp: %lu, %u ms ago\n",
 		   ee->hangcheck_timestamp,
 		   jiffies_to_msecs(jiffies - ee->hangcheck_timestamp));
+	err_printf(m, "  engine reset count: %u\n", ee->reset_count);
 
 	error_print_request(m, "  ELSP[0]: ", &ee->execlist[0]);
 	error_print_request(m, "  ELSP[1]: ", &ee->execlist[1]);
@@ -623,13 +630,21 @@ int i915_error_state_to_str(struct drm_i915_error_state_buf *m,
 	err_printf(m, "IOMMU enabled?: %d\n", error->iommu);
 
 	if (HAS_CSR(dev_priv)) {
-		struct intel_csr *csr = &dev_priv->csr;
-
-		err_printf(m, "DMC loaded: %s\n",
-			   yesno(csr->dmc_payload != NULL));
+		err_printf(m, "DMC loaded: %s\n", yesno(error->dmc_version));
 		err_printf(m, "DMC fw version: %d.%d\n",
-			   CSR_VERSION_MAJOR(csr->version),
-			   CSR_VERSION_MINOR(csr->version));
+			   CSR_VERSION_MAJOR(error->dmc_version),
+			   CSR_VERSION_MINOR(error->dmc_version));
+	}
+
+	if (HAS_GUC(dev_priv)) {
+		err_printf(m, "GuC loaded: %s\n", yesno(error->guc_version));
+		err_printf(m, "GuC fw version: %d.%d\n",
+			   error->guc_version >> 16,
+			   error->guc_version & 0xffff);
+		err_printf(m, "HuC loaded: %s\n", yesno(error->huc_version));
+		err_printf(m, "HuC fw version: %d.%d\n",
+			   error->huc_version >> 16,
+			   error->huc_version & 0xffff);
 	}
 
 	err_printf(m, "EIR: 0x%08x\n", error->eir);
@@ -796,6 +811,20 @@ int i915_error_state_buf_init(struct drm_i915_error_state_buf *ebuf,
 
 	ebuf->start = pos;
 
+	return 0;
+}
+
+int i915_obj_state_buf_init(struct drm_i915_error_state_buf *ebuf,
+				size_t count)
+{
+	memset(ebuf, 0, sizeof(*ebuf));
+
+	ebuf->buf = kmalloc(count, GFP_KERNEL);
+
+	if (ebuf->buf == NULL)
+		return -ENOMEM;
+
+	ebuf->size = count;
 	return 0;
 }
 
@@ -1225,6 +1254,8 @@ static void error_record_engine_registers(struct i915_gpu_state *error,
 	ee->hangcheck_timestamp = engine->hangcheck.action_timestamp;
 	ee->hangcheck_action = engine->hangcheck.action;
 	ee->hangcheck_stalled = engine->hangcheck.stalled;
+	ee->reset_count = i915_reset_engine_count(&dev_priv->gpu_error,
+						  engine);
 
 	if (USES_PPGTT(dev_priv)) {
 		int i;
@@ -1322,7 +1353,8 @@ static void error_record_engine_execlists(struct intel_engine_cs *engine,
 }
 
 static void record_context(struct drm_i915_error_context *e,
-			   struct i915_gem_context *ctx)
+			   struct i915_gem_context *ctx,
+			   u32 engine_id)
 {
 	if (ctx->pid) {
 		struct task_struct *task;
@@ -1341,6 +1373,7 @@ static void record_context(struct drm_i915_error_context *e,
 	e->ban_score = ctx->ban_score;
 	e->guilty = ctx->guilty_count;
 	e->active = ctx->active_count;
+	e->watchdog_threshold =	ctx->engine[engine_id].watchdog_threshold;
 }
 
 static void i915_gem_record_rings(struct drm_i915_private *dev_priv,
@@ -1375,7 +1408,7 @@ static void i915_gem_record_rings(struct drm_i915_private *dev_priv,
 			ee->vm = request->ctx->ppgtt ?
 				&request->ctx->ppgtt->base : &ggtt->base;
 
-			record_context(&ee->context, request->ctx);
+			record_context(&ee->context, request->ctx, engine->id);
 
 			/* We need to copy these to an anonymous buffer
 			 * as the simplest method to avoid being overwritten
@@ -1585,6 +1618,30 @@ static void i915_capture_reg_state(struct drm_i915_private *dev_priv,
 	error->pgtbl_er = I915_READ(PGTBL_ER);
 }
 
+/* Capture all firmware related information. */
+static void i915_capture_fw_state(struct drm_i915_private *dev_priv,
+				  struct i915_gpu_state *error)
+{
+	if (HAS_CSR(dev_priv)) {
+		struct intel_csr *csr = &dev_priv->csr;
+
+		error->dmc_version = csr->version;
+	}
+
+	if (HAS_GUC(dev_priv)) {
+		struct intel_guc *guc = &dev_priv->guc;
+		struct intel_huc *huc = &dev_priv->huc;
+
+		error->guc_version =
+			(guc->fw.major_ver_found << 16 |
+			 guc->fw.minor_ver_found);
+
+		error->huc_version =
+			(huc->fw.major_ver_found << 16 |
+			 huc->fw.minor_ver_found);
+	}
+}
+
 static void i915_error_capture_msg(struct drm_i915_private *dev_priv,
 				   struct i915_gpu_state *error,
 				   u32 engine_mask,
@@ -1650,6 +1707,7 @@ static int capture(void *data)
 
 	i915_capture_gen_state(error->i915, error);
 	i915_capture_reg_state(error->i915, error);
+	i915_capture_fw_state(error->i915, error);
 	i915_gem_record_fences(error->i915, error);
 	i915_gem_record_rings(error->i915, error);
 	i915_capture_active_buffers(error->i915, error);

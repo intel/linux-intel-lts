@@ -1691,13 +1691,18 @@ int intel_wait_for_register(struct drm_i915_private *dev_priv,
 	return ret;
 }
 
-static int gen8_request_engine_reset(struct intel_engine_cs *engine)
+static int gen8_reset_engine_start(struct intel_engine_cs *engine)
 {
 	struct drm_i915_private *dev_priv = engine->i915;
+	const i915_reg_t reset_ctrl = RING_RESET_CTL(engine->mmio_base);
+	const u32 ready = RESET_CTL_REQUEST_RESET | RESET_CTL_READY_TO_RESET;
 	int ret;
 
-	I915_WRITE_FW(RING_RESET_CTL(engine->mmio_base),
-		      _MASKED_BIT_ENABLE(RESET_CTL_REQUEST_RESET));
+	/* If engine has been already prepared, we can shortcut here */
+	if ((I915_READ_FW(reset_ctrl) & ready) == ready)
+		return 0;
+
+	I915_WRITE_FW(reset_ctrl, _MASKED_BIT_ENABLE(RESET_CTL_REQUEST_RESET));
 
 	ret = intel_wait_for_register_fw(dev_priv,
 					 RING_RESET_CTL(engine->mmio_base),
@@ -1710,7 +1715,7 @@ static int gen8_request_engine_reset(struct intel_engine_cs *engine)
 	return ret;
 }
 
-static void gen8_unrequest_engine_reset(struct intel_engine_cs *engine)
+static void gen8_reset_engine_cancel(struct intel_engine_cs *engine)
 {
 	struct drm_i915_private *dev_priv = engine->i915;
 
@@ -1725,14 +1730,14 @@ static int gen8_reset_engines(struct drm_i915_private *dev_priv,
 	unsigned int tmp;
 
 	for_each_engine_masked(engine, dev_priv, engine_mask, tmp)
-		if (gen8_request_engine_reset(engine))
+		if (gen8_reset_engine_start(engine))
 			goto not_ready;
 
 	return gen6_reset_engines(dev_priv, engine_mask);
 
 not_ready:
 	for_each_engine_masked(engine, dev_priv, engine_mask, tmp)
-		gen8_unrequest_engine_reset(engine);
+		gen8_reset_engine_cancel(engine);
 
 	return -EIO;
 }
@@ -1784,7 +1789,13 @@ bool intel_has_gpu_reset(struct drm_i915_private *dev_priv)
 	return intel_get_gpu_reset(dev_priv) != NULL;
 }
 
-int intel_guc_reset(struct drm_i915_private *dev_priv)
+bool intel_has_reset_engine(struct drm_i915_private *dev_priv)
+{
+	return (dev_priv->info.has_reset_engine &&
+		i915.reset >= 2);
+}
+
+int intel_reset_guc(struct drm_i915_private *dev_priv)
 {
 	int ret;
 
@@ -1796,6 +1807,26 @@ int intel_guc_reset(struct drm_i915_private *dev_priv)
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 
 	return ret;
+}
+
+/*
+ * On gen8+ a reset request has to be issued via the reset control register
+ * before a GPU engine can be reset in order to stop the command streamer
+ * and idle the engine. This replaces the legacy way of stopping an engine
+ * by writing to the stop ring bit in the MI_MODE register.
+ */
+int intel_reset_engine_start(struct intel_engine_cs *engine)
+{
+	return gen8_reset_engine_start(engine);
+}
+
+/*
+ * It is possible to back off from a previously issued reset request by simply
+ * clearing the reset request bit in the reset control register.
+ */
+void intel_reset_engine_cancel(struct intel_engine_cs *engine)
+{
+	gen8_reset_engine_cancel(engine);
 }
 
 bool intel_uncore_unclaimed_mmio(struct drm_i915_private *dev_priv)

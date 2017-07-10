@@ -171,6 +171,7 @@ struct intel_guc {
 
 	uint64_t submissions[I915_NUM_ENGINES];
 	uint32_t last_seqno[I915_NUM_ENGINES];
+	uint32_t shared_data_offset;	/* First page of default ctx */
 
 	/* To serialize the intel_guc_send actions */
 	struct mutex send_mutex;
@@ -209,6 +210,7 @@ int i915_guc_wq_reserve(struct drm_i915_gem_request *rq);
 void i915_guc_wq_unreserve(struct drm_i915_gem_request *request);
 void i915_guc_submission_disable(struct drm_i915_private *dev_priv);
 void i915_guc_submission_fini(struct drm_i915_private *dev_priv);
+void i915_guc_submission_reenable_engine(struct intel_engine_cs *engine);
 struct i915_vma *intel_guc_allocate_vma(struct intel_guc *guc, u32 size);
 
 /* intel_guc_log.c */

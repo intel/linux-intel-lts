@@ -1340,6 +1340,9 @@ gen8_cs_irq_handler(struct intel_engine_cs *engine, u32 iir, int test_shift)
 		set_bit(ENGINE_IRQ_EXECLIST, &engine->irq_posted);
 		tasklet_hi_schedule(&engine->irq_tasklet);
 	}
+
+	if (iir & (GT_GEN8_WATCHDOG_INTERRUPT << test_shift))
+		tasklet_schedule(&engine->watchdog_tasklet);
 }
 
 static irqreturn_t gen8_gt_irq_ack(struct drm_i915_private *dev_priv,
@@ -2621,11 +2624,13 @@ static void i915_error_wake_up(struct drm_i915_private *dev_priv)
 /**
  * i915_reset_and_wakeup - do process context error handling work
  * @dev_priv: i915 device private
+ * @engine_mask: engine(s) hung - for reset-engine only.
  *
  * Fire an error uevent so userspace can see that a hang or error
  * was detected.
  */
-static void i915_reset_and_wakeup(struct drm_i915_private *dev_priv)
+static void
+i915_reset_and_wakeup(struct drm_i915_private *dev_priv, u32 engine_mask)
 {
 	struct kobject *kobj = &dev_priv->drm.primary->kdev->kobj;
 	char *error_event[] = { I915_ERROR_UEVENT "=1", NULL };
@@ -2634,7 +2639,15 @@ static void i915_reset_and_wakeup(struct drm_i915_private *dev_priv)
 
 	kobject_uevent_env(kobj, KOBJ_CHANGE, error_event);
 
-	DRM_DEBUG_DRIVER("resetting chip\n");
+	/*
+	 * This event needs to be sent before performing gpu reset. When
+	 * engine resets are supported we iterate through all engines and
+	 * reset hung engines individually. To keep the event dispatch
+	 * mechanism consistent with full gpu reset, this is only sent once
+	 * even when multiple engines are hung. It is also safe to move this
+	 * here because when we are in this function, we will definitely
+	 * perform gpu reset.
+	 */
 	kobject_uevent_env(kobj, KOBJ_CHANGE, reset_event);
 
 	/*
@@ -2645,6 +2658,23 @@ static void i915_reset_and_wakeup(struct drm_i915_private *dev_priv)
 	 * simulated reset via debugs, so get an RPM reference.
 	 */
 	intel_runtime_pm_get(dev_priv);
+
+	/* try engine reset first, and continue if fails; look mom, no mutex! */
+	if (intel_has_reset_engine(dev_priv)) {
+		struct intel_engine_cs *engine;
+		unsigned int tmp;
+
+		for_each_engine_masked(engine, dev_priv, engine_mask, tmp) {
+			if (i915_reset_engine(engine) == 0)
+				engine_mask &= ~intel_engine_flag(engine);
+		}
+
+		if (engine_mask)
+			DRM_WARN("per-engine reset failed, promoting to full gpu reset\n");
+		else
+			goto finish;
+	}
+
 	intel_prepare_reset(dev_priv);
 
 	do {
@@ -2672,6 +2702,7 @@ static void i915_reset_and_wakeup(struct drm_i915_private *dev_priv)
 		kobject_uevent_env(kobj,
 				   KOBJ_CHANGE, reset_done_event);
 
+finish:
 	/*
 	 * Note: The wake_up also serves as a memory barrier so that
 	 * waiters see the updated value of the dev_priv->gpu_error.
@@ -2777,7 +2808,7 @@ void i915_handle_error(struct drm_i915_private *dev_priv,
 	 */
 	i915_error_wake_up(dev_priv);
 
-	i915_reset_and_wakeup(dev_priv);
+	i915_reset_and_wakeup(dev_priv, engine_mask);
 }
 
 /* Called from drm generic code, passed 'crtc' which
@@ -3421,12 +3452,15 @@ static void gen8_gt_irq_postinstall(struct drm_i915_private *dev_priv)
 	uint32_t gt_interrupts[] = {
 		GT_RENDER_USER_INTERRUPT << GEN8_RCS_IRQ_SHIFT |
 			GT_CONTEXT_SWITCH_INTERRUPT << GEN8_RCS_IRQ_SHIFT |
+			GT_GEN8_WATCHDOG_INTERRUPT << GEN8_RCS_IRQ_SHIFT |
 			GT_RENDER_USER_INTERRUPT << GEN8_BCS_IRQ_SHIFT |
 			GT_CONTEXT_SWITCH_INTERRUPT << GEN8_BCS_IRQ_SHIFT,
 		GT_RENDER_USER_INTERRUPT << GEN8_VCS1_IRQ_SHIFT |
 			GT_CONTEXT_SWITCH_INTERRUPT << GEN8_VCS1_IRQ_SHIFT |
+			GT_GEN8_WATCHDOG_INTERRUPT << GEN8_VCS1_IRQ_SHIFT |
 			GT_RENDER_USER_INTERRUPT << GEN8_VCS2_IRQ_SHIFT |
-			GT_CONTEXT_SWITCH_INTERRUPT << GEN8_VCS2_IRQ_SHIFT,
+			GT_CONTEXT_SWITCH_INTERRUPT << GEN8_VCS2_IRQ_SHIFT |
+			GT_GEN8_WATCHDOG_INTERRUPT << GEN8_VCS2_IRQ_SHIFT,
 		0,
 		GT_RENDER_USER_INTERRUPT << GEN8_VECS_IRQ_SHIFT |
 			GT_CONTEXT_SWITCH_INTERRUPT << GEN8_VECS_IRQ_SHIFT
@@ -3434,6 +3468,10 @@ static void gen8_gt_irq_postinstall(struct drm_i915_private *dev_priv)
 
 	if (HAS_L3_DPF(dev_priv))
 		gt_interrupts[0] |= GT_RENDER_L3_PARITY_ERROR_INTERRUPT;
+
+	/* VECS watchdog is only available in skl+ */
+	if (INTEL_GEN(dev_priv) >= 9)
+		gt_interrupts[3] |= GT_GEN8_WATCHDOG_INTERRUPT;
 
 	dev_priv->pm_ier = 0x0;
 	dev_priv->pm_imr = ~dev_priv->pm_ier;
