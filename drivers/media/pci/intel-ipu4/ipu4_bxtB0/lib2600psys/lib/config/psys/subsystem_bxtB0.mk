@@ -28,6 +28,9 @@ PSYS_ISL_DPC_DPC_V2				= 0
 # Assume OFS will be running concurrently with IPF, and prioritize according to rates of services on devproxy
 CONCURRENT_OFS_IPF_PRIORITY_OPTIMIZATION_ENABLED	= 1
 
+# Use the DMA for terminal loading in Psys server
+PSYS_SERVER_ENABLE_TERMINAL_LOAD_DMA = 1
+
 HAS_GMEM						= 1
 # use DMA NCI for OFS Service to reduce load in tproxy
 DMA_NCI_IN_OFS_SERVICE = 1
