@@ -124,11 +124,11 @@ static void write_msg_to_nvram(struct nvram_msg *nvram_msg)
 {
 	/* Ensure to start from top : only one command expected */
 	offset = 0;
-	write_data_to_nvram(nvram_msg,
+	write_data_to_nvram((void*)nvram_msg,
 				offsetof(struct nvram_msg, cdata_payload));
-	write_data_to_nvram(nvram_msg->cdata_payload,
+	write_data_to_nvram((void*)(nvram_msg->cdata_payload),
 				nvram_msg->cdata_payload_size);
-	write_data_to_nvram(&(nvram_msg->crc), sizeof(nvram_msg->crc));
+	write_data_to_nvram((void*)&(nvram_msg->crc), sizeof(nvram_msg->crc));
 }
 
 /*  Compute CRC for one byte (shift register-based: one bit at a time). */
@@ -174,7 +174,7 @@ static uint32_t crc32c_msg(struct nvram_msg *nvram_msg)
 static struct kobject *capsule_kobject;
 
 static ssize_t is_capsule_requested(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf, size_t count)
+		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%d\n", capsule_request);
 }
@@ -185,13 +185,13 @@ enum capsule_device_type {
 };
 
 static ssize_t capsule_store(struct kobject *kobj, struct kobj_attribute *attr,
-		char *buf, size_t count)
+		const char *buf, size_t count)
 {
 	struct nvram_msg msg;
 	struct nvram_capsule_cmd *capsule_cmd;
 	char name[32], partition;
 	enum capsule_device_type device;
-	int ret, crc, padding;
+	int ret, padding;
 	unsigned char size;
 	union _cdata_header cdh;
 
@@ -221,7 +221,7 @@ static ssize_t capsule_store(struct kobject *kobj, struct kobj_attribute *attr,
 	capsule_cmd->device = device;
 	capsule_cmd->partition = partition;
 	strncpy(capsule_cmd->file_name, name, strlen(name));
-	msg.cdata_payload = capsule_cmd;
+	msg.cdata_payload = (char *)capsule_cmd;
 	msg.cdata_payload_size = 3 + strlen(name) + padding;
 	msg.crc = crc32c_msg(&msg);
 	write_msg_to_nvram(&msg);
@@ -279,7 +279,7 @@ static int set_reboot_target(const char *name)
 	reboot_cmd.action = USERCMD_ACTION;
 
 	reboot_cmd.target = id;
-	msg.cdata_payload = &reboot_cmd;
+	msg.cdata_payload = (void*)&reboot_cmd;
 	msg.cdata_payload_size = sizeof(reboot_cmd);
 	msg.size = offsetof(struct nvram_msg, cdata_payload) +
 			sizeof(reboot_cmd) + sizeof(msg.crc);
@@ -318,9 +318,9 @@ static int execute_slcan_command(const char *cmd[])
 	struct subprocess_info *sub_info;
 	int ret = -1;
 
-	sub_info = call_usermodehelper_setup(cmd[0],
-		cmd, NULL, GFP_KERNEL,
-		NULL, NULL, NULL);
+	sub_info = call_usermodehelper_setup((char *)cmd[0],
+		(char **)cmd,(char **) NULL, GFP_KERNEL,
+		(void *)NULL, (void*)NULL, (void*)NULL);
 
 	if (sub_info) {
 		ret = call_usermodehelper_exec(sub_info,
@@ -343,11 +343,11 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 	if (what != SYS_RESTART)
 		return NOTIFY_DONE;
 
-	ret = execute_slcan_command(suppress_heartbeat);
+	ret = execute_slcan_command((const char **)suppress_heartbeat);
 	if (ret)
 		goto done;
 
-	ret = execute_slcan_command(reboot_request);
+	ret = execute_slcan_command((const char **)reboot_request);
 	if (ret)
 		goto done;
 	if (target[0] != '\0') {
@@ -356,13 +356,13 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 			pr_err("%s: Failed to set reboot target, ret=%d\n",
 				__func__, ret);
 		else {
-			ret = execute_slcan_command(cold_reset);
+			ret = execute_slcan_command((const char **)cold_reset);
 			if (ret)
 				goto done;
 		}
 	}
 	if (capsule_request)
-		ret = execute_slcan_command(cold_reset_capsule);
+		ret = execute_slcan_command((const char **)cold_reset_capsule);
 
 done:
 	return NOTIFY_DONE;
