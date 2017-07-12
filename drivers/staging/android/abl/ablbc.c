@@ -293,22 +293,22 @@ static int set_reboot_target(const char *name)
 static const unsigned int DEFAULT_TARGET_INDEX;
 
 static const char * const cold_reset[] = {
-	"/sbin/cansend",
+	"/vendor/bin/cansend",
 	"slcan0",
 	"0000FFFF#05035555555555",
 	NULL};
 static const char * const cold_reset_capsule[] = {
-	"/sbin/cansend",
+	"/vendor/bin/cansend",
 	"slcan0",
 	"0000FFFF#05035555555555",
 	NULL};
 static const char * const suppress_heartbeat[] = {
-	"/sbin/cansend",
+	"/vendor/bin/cansend",
 	"slcan0",
 	"0000FFFF#01035555555555",
 	NULL};
 static const char * const reboot_request[] = {
-	"/sbin/cansend",
+	"/vendor/bin/cansend",
 	"slcan0",
 	"0000FFFF#03015555555555",
 	NULL};
