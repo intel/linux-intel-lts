@@ -4662,12 +4662,10 @@ skl_update_scaler(struct intel_crtc_state *crtc_state, bool force_detach,
  */
 int skl_update_scaler_crtc(struct intel_crtc_state *state)
 {
-	const struct drm_display_mode *adjusted_mode = &state->base.adjusted_mode;
-
 	return skl_update_scaler(state, !state->base.active, SKL_CRTC_INDEX,
 		&state->scaler_state.scaler_id,
 		state->pipe_src_w, state->pipe_src_h,
-		adjusted_mode->crtc_hdisplay, adjusted_mode->crtc_vdisplay);
+		state->pipe_dst_w, state->pipe_dst_h);
 }
 
 /**
