@@ -132,11 +132,15 @@ enum ipu_device_gp_isa_value {
 	IPU_DEVICE_GP_ISA_STATIC_PAF_SRC_SEL_EXT_PAF = 0,
 	IPU_DEVICE_GP_ISA_STATIC_PAF_SRC_SEL_DPC = 1,
 	IPU_DEVICE_GP_ISA_STATIC_PAF_SRC_SEL_X2B = 2,
+	/* 0 - from R2I; 1 - from B2B - TODO remove after SDK 0.5 as it was removed from design */
+	IPU_DEVICE_GP_ISA_STATIC_ISA_ORIG_OUT_MUX_SEL_R2I = 0,
+	IPU_DEVICE_GP_ISA_STATIC_ISA_ORIG_OUT_MUX_SEL_B2B = 1,
 	/* Blockers */
 	/* For all IPU6 ISA Port blockers 0-UNBLOCK, 1- BLOCK */
 	IPU_DEVICE_GP_ISA_STATIC_PORT_BLK_UNBLOCK = 0,
 	IPU_DEVICE_GP_ISA_STATIC_PORT_BLK_BLOCK = 1,
-	/*------------------- End Of IPU6 ISA -------------------*/
+
+    /*------------------- End Of IPU6 ISA -------------------*/
 
 	/* sis port block options */
 	IPU_DEVICE_GP_ISA_SIS_PORT_UNBLOCK = 0,
