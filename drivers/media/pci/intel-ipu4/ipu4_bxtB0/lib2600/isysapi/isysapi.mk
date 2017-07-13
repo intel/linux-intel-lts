@@ -59,3 +59,5 @@ ISYSAPI_FW_CPPFLAGS += -I$(HIVESDK)/systems/ipu_system/dai/include/default_syste
 ISYSAPI_FW_CPPFLAGS += -I$(HIVESDK)/include/ipu/dai
 ISYSAPI_FW_CPPFLAGS += -I$(HIVESDK)/include/ipu
 
+ISYSAPI_FW_CPPFLAGS += -DWA_HSD1805168877=$(WA_HSD1805168877)
+
