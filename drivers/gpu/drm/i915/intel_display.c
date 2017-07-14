@@ -4592,7 +4592,7 @@ static void cpt_verify_modeset(struct drm_device *dev, int pipe)
 
 static int
 skl_update_scaler(struct intel_crtc_state *crtc_state, bool force_detach,
-		  unsigned scaler_user, int *scaler_id, unsigned int rotation,
+		  unsigned int scaler_user, int *scaler_id,
 		  int src_w, int src_h, int dst_w, int dst_h)
 {
 	struct intel_crtc_scaler_state *scaler_state =
@@ -4601,9 +4601,12 @@ skl_update_scaler(struct intel_crtc_state *crtc_state, bool force_detach,
 		to_intel_crtc(crtc_state->base.crtc);
 	int need_scaling;
 
-	need_scaling = drm_rotation_90_or_270(rotation) ?
-		(src_h != dst_w || src_w != dst_h):
-		(src_w != dst_w || src_h != dst_h);
+	/*
+	 * Src coordinates are already rotated by 270 degrees for
+	 * the 90/270 degree plane rotation cases (to match the
+	 * GTT mapping), hence no need to account for rotation here.
+	 */
+	need_scaling = src_w != dst_w || src_h != dst_h;
 
 	/*
 	 * if plane is being disabled or scaler is no more required or force detach
@@ -4662,12 +4665,10 @@ skl_update_scaler(struct intel_crtc_state *crtc_state, bool force_detach,
  */
 int skl_update_scaler_crtc(struct intel_crtc_state *state)
 {
-	const struct drm_display_mode *adjusted_mode = &state->base.adjusted_mode;
-
 	return skl_update_scaler(state, !state->base.active, SKL_CRTC_INDEX,
-		&state->scaler_state.scaler_id, DRM_ROTATE_0,
+		&state->scaler_state.scaler_id,
 		state->pipe_src_w, state->pipe_src_h,
-		adjusted_mode->crtc_hdisplay, adjusted_mode->crtc_vdisplay);
+		state->pipe_dst_w, state->pipe_dst_h);
 }
 
 /**
@@ -4694,7 +4695,6 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 	ret = skl_update_scaler(crtc_state, force_detach,
 				drm_plane_index(&intel_plane->base),
 				&plane_state->scaler_id,
-				plane_state->base.rotation,
 				drm_rect_width(&plane_state->base.src) >> 16,
 				drm_rect_height(&plane_state->base.src) >> 16,
 				drm_rect_width(&plane_state->base.dst),

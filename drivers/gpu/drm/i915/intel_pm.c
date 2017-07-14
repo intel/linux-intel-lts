@@ -3208,19 +3208,25 @@ skl_plane_downscale_amount(const struct intel_crtc_state *cstate,
 
 	/* n.b., src is 16.16 fixed point, dst is whole integer */
 	if (plane->id == PLANE_CURSOR) {
+		/*
+		 * Cursors only support 0/180 degree rotation,
+		 * hence no need to account for rotation here.
+		 */
 		src_w = pstate->base.src_w >> 16;
 		src_h = pstate->base.src_h >> 16;
 		dst_w = pstate->base.crtc_w;
 		dst_h = pstate->base.crtc_h;
 	} else {
+		/*
+		 * Src coordinates are already rotated by 270 degrees for
+		 * the 90/270 degree plane rotation cases (to match the
+		 * GTT mapping), hence no need to account for rotation here.
+		 */
 		src_w = drm_rect_width(&pstate->base.src) >> 16;
 		src_h = drm_rect_height(&pstate->base.src) >> 16;
 		dst_w = drm_rect_width(&pstate->base.dst);
 		dst_h = drm_rect_height(&pstate->base.dst);
 	}
-
-	if (drm_rotation_90_or_270(pstate->base.rotation))
-		swap(dst_w, dst_h);
 
 	fp_w_ratio = fixed_16_16_div(src_w, dst_w);
 	fp_h_ratio = fixed_16_16_div(src_h, dst_h);
@@ -3271,7 +3277,7 @@ int skl_check_pipe_max_pixel_rate(struct intel_crtc *intel_crtc,
 	struct drm_plane *plane;
 	const struct drm_plane_state *pstate;
 	struct intel_plane_state *intel_pstate;
-	int crtc_clock, cdclk;
+	int crtc_clock, dotclk;
 	uint32_t pipe_max_pixel_rate;
 	uint_fixed_16_16_t pipe_downscale;
 	uint_fixed_16_16_t max_downscale = u32_to_fixed_16_16(1);
@@ -3306,11 +3312,15 @@ int skl_check_pipe_max_pixel_rate(struct intel_crtc *intel_crtc,
 	pipe_downscale = mul_fixed16(pipe_downscale, max_downscale);
 
 	crtc_clock = crtc_state->adjusted_mode.crtc_clock;
-	cdclk = to_intel_atomic_state(state)->cdclk.logical.cdclk;
-	pipe_max_pixel_rate = div_round_up_u32_fixed16(cdclk, pipe_downscale);
+	dotclk = to_intel_atomic_state(state)->cdclk.logical.cdclk;
+
+	if (IS_GEMINILAKE(to_i915(intel_crtc->base.dev)))
+		dotclk *= 2;
+
+	pipe_max_pixel_rate = div_round_up_u32_fixed16(dotclk, pipe_downscale);
 
 	if (pipe_max_pixel_rate < crtc_clock) {
-		DRM_ERROR("Max supported pixel clock with scaling exceeded\n");
+		DRM_DEBUG_KMS("Max supported pixel clock with scaling exceeded\n");
 		return -EINVAL;
 	}
 
@@ -3341,11 +3351,13 @@ skl_plane_relative_data_rate(const struct intel_crtc_state *cstate,
 	if (y && format != DRM_FORMAT_NV12)
 		return 0;
 
+	/*
+	 * Src coordinates are already rotated by 270 degrees for
+	 * the 90/270 degree plane rotation cases (to match the
+	 * GTT mapping), hence no need to account for rotation here.
+	 */
 	width = drm_rect_width(&intel_pstate->base.src) >> 16;
 	height = drm_rect_height(&intel_pstate->base.src) >> 16;
-
-	if (drm_rotation_90_or_270(pstate->rotation))
-		swap(width, height);
 
 	/* for planar format */
 	if (format == DRM_FORMAT_NV12) {
@@ -3429,11 +3441,13 @@ skl_ddb_min_alloc(const struct drm_plane_state *pstate,
 	    fb->modifier != I915_FORMAT_MOD_Yf_TILED)
 		return 8;
 
+	/*
+	 * Src coordinates are already rotated by 270 degrees for
+	 * the 90/270 degree plane rotation cases (to match the
+	 * GTT mapping), hence no need to account for rotation here.
+	 */
 	src_w = drm_rect_width(&intel_pstate->base.src) >> 16;
 	src_h = drm_rect_height(&intel_pstate->base.src) >> 16;
-
-	if (drm_rotation_90_or_270(pstate->rotation))
-		swap(src_w, src_h);
 
 	/* Halve UV plane width and height for NV12 */
 	if (fb->format->format == DRM_FORMAT_NV12 && !y) {
@@ -3824,12 +3838,14 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 		width = intel_pstate->base.crtc_w;
 		height = intel_pstate->base.crtc_h;
 	} else {
+		/*
+		 * Src coordinates are already rotated by 270 degrees for
+		 * the 90/270 degree plane rotation cases (to match the
+		 * GTT mapping), hence no need to account for rotation here.
+		 */
 		width = drm_rect_width(&intel_pstate->base.src) >> 16;
 		height = drm_rect_height(&intel_pstate->base.src) >> 16;
 	}
-
-	if (drm_rotation_90_or_270(pstate->rotation))
-		swap(width, height);
 
 	cpp = fb->format->cpp[0];
 	plane_pixel_rate = skl_adjusted_plane_pixel_rate(cstate, intel_pstate);
