@@ -21,16 +21,22 @@
 
 #include <linux/pci.h>
 #include <linux/pm_runtime.h>
+#include <linux/delay.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include "skl.h"
 #include "skl-topology.h"
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
+#include "skl-sdw-pcm.h"
+#include "skl-fwlog.h"
+#include "skl-probe.h"
+#include "../common/sst-dsp-priv.h"
 
 #define HDA_MONO 1
 #define HDA_STEREO 2
 #define HDA_QUAD 4
+#define HDA_8_CH 8
 
 static struct snd_pcm_hardware azx_pcm_hw = {
 	.info =			(SNDRV_PCM_INFO_MMAP |
@@ -42,14 +48,15 @@ static struct snd_pcm_hardware azx_pcm_hw = {
 				 SNDRV_PCM_INFO_SYNC_START |
 				 SNDRV_PCM_INFO_HAS_WALL_CLOCK | /* legacy */
 				 SNDRV_PCM_INFO_HAS_LINK_ATIME |
-				 SNDRV_PCM_INFO_NO_PERIOD_WAKEUP),
+				 SNDRV_PCM_INFO_NO_PERIOD_WAKEUP |
+				 SNDRV_PCM_INFO_NO_STATUS_MMAP),
 	.formats =		SNDRV_PCM_FMTBIT_S16_LE |
 				SNDRV_PCM_FMTBIT_S32_LE |
-				SNDRV_PCM_FMTBIT_S24_LE,
-	.rates =		SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_16000 |
-				SNDRV_PCM_RATE_8000,
+				SNDRV_PCM_FMTBIT_S24_LE |
+				SNDRV_PCM_FMTBIT_FLOAT_LE,
+	.rates =		SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
 	.rate_min =		8000,
-	.rate_max =		48000,
+	.rate_max =		192000,
 	.channels_min =		1,
 	.channels_max =		8,
 	.buffer_bytes_max =	AZX_MAX_BUF_SIZE,
@@ -80,17 +87,25 @@ static int skl_substream_alloc_pages(struct hdac_ext_bus *ebus,
 				 size_t size)
 {
 	struct hdac_ext_stream *stream = get_hdac_ext_stream(substream);
+	int ret;
 
 	hdac_stream(stream)->bufsize = 0;
 	hdac_stream(stream)->period_bytes = 0;
 	hdac_stream(stream)->format_val = 0;
 
-	return snd_pcm_lib_malloc_pages(substream, size);
+	ret = snd_pcm_lib_malloc_pages(substream, size);
+	if (ret < 0)
+		return ret;
+	ebus->bus.io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
+
+	return ret;
 }
 
 static int skl_substream_free_pages(struct hdac_bus *bus,
 				struct snd_pcm_substream *substream)
 {
+	bus->io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), false);
+
 	return snd_pcm_lib_free_pages(substream);
 }
 
@@ -111,6 +126,31 @@ static enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_ext_bus *e
 	else
 		return HDAC_EXT_STREAM_TYPE_COUPLED;
 }
+
+static unsigned int rates[] = {
+       8000,
+       11025,
+       12000,
+       16000,
+       22050,
+       24000,
+       32000,
+       44100,
+       48000,
+       64000,
+       88200,
+       96000,
+       128000,
+       176400,
+       192000,
+};
+
+static struct snd_pcm_hw_constraint_list hw_rates = {
+       .count = ARRAY_SIZE(rates),
+       .list = rates,
+       .mask = 0,
+};
+
 
 /*
  * check if the stream opened is marked as ignore_suspend by machine, if so
@@ -137,6 +177,86 @@ static void skl_set_suspend_active(struct snd_pcm_substream *substream,
 		skl->supend_active--;
 }
 
+int skl_pcm_host_dma_prepare(struct device *dev, struct skl_pipe_params *params)
+{
+	struct hdac_ext_bus *ebus = dev_get_drvdata(dev);
+	struct hdac_bus *bus = ebus_to_hbus(ebus);
+	unsigned int format_val;
+	struct hdac_stream *hstream;
+	struct hdac_ext_stream *stream;
+	struct snd_pcm_runtime *runtime;
+	int err;
+
+	hstream = snd_hdac_get_stream(bus, params->stream,
+					params->host_dma_id + 1);
+	if (!hstream)
+		return -EINVAL;
+
+	stream = stream_to_hdac_ext_stream(hstream);
+	snd_hdac_ext_stream_decouple(ebus, stream, true);
+
+	format_val = snd_hdac_calc_stream_format(params->s_freq,
+			params->ch, params->format, params->host_bps, 0);
+
+	dev_dbg(dev, "format_val=%d, rate=%d, ch=%d, format=%d\n",
+		format_val, params->s_freq, params->ch, params->format);
+
+	snd_hdac_stream_reset(hdac_stream(stream));
+	err = snd_hdac_stream_set_params(hdac_stream(stream), format_val);
+	if (err < 0)
+		return err;
+
+	err = snd_hdac_stream_setup(hdac_stream(stream));
+	if (err < 0)
+		return err;
+
+	runtime = hdac_stream(stream)->substream->runtime;
+	/* enable SPIB if no_rewinds flag is set */
+	if (runtime->no_rewinds)
+		snd_hdac_ext_stream_spbcap_enable(ebus, 1, hstream->index);
+
+	hdac_stream(stream)->prepared = 1;
+
+	return 0;
+}
+
+int skl_pcm_link_dma_prepare(struct device *dev, struct skl_pipe_params *params)
+{
+	struct hdac_ext_bus *ebus = dev_get_drvdata(dev);
+	struct hdac_bus *bus = ebus_to_hbus(ebus);
+	unsigned int format_val;
+	struct hdac_stream *hstream;
+	struct hdac_ext_stream *stream;
+	struct hdac_ext_link *link;
+
+	hstream = snd_hdac_get_stream(bus, params->stream,
+					params->link_dma_id + 1);
+	if (!hstream)
+		return -EINVAL;
+
+	stream = stream_to_hdac_ext_stream(hstream);
+	snd_hdac_ext_stream_decouple(ebus, stream, true);
+	format_val = snd_hdac_calc_stream_format(params->s_freq, params->ch,
+					params->format, params->link_bps, 0);
+
+	dev_dbg(dev, "format_val=%d, rate=%d, ch=%d, format=%d\n",
+		format_val, params->s_freq, params->ch, params->format);
+
+	snd_hdac_ext_link_stream_reset(stream);
+
+	snd_hdac_ext_link_stream_setup(stream, format_val);
+
+	list_for_each_entry(link, &ebus->hlink_list, list) {
+		if (link->index == params->link_index)
+			snd_hdac_ext_link_set_stream_id(link,
+					hstream->stream_tag);
+	}
+
+	stream->link_prepared = 1;
+
+	return 0;
+}
+
 static int skl_pcm_open(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *dai)
 {
@@ -155,6 +275,11 @@ static int skl_pcm_open(struct snd_pcm_substream *substream,
 		return -EBUSY;
 
 	skl_set_pcm_constrains(ebus, runtime);
+
+	snd_pcm_hw_constraint_list(runtime, 0,
+			SNDRV_PCM_HW_PARAM_RATE,
+                                     &hw_rates);
+
 
 	/*
 	 * disable WALLCLOCK timestamps for capture streams
@@ -180,71 +305,30 @@ static int skl_pcm_open(struct snd_pcm_substream *substream,
 	snd_pcm_set_sync(substream);
 
 	mconfig = skl_tplg_fe_get_cpr_module(dai, substream->stream);
+	if (!mconfig)
+		return -EINVAL;
+
 	skl_tplg_d0i3_get(skl, mconfig->d0i3_caps);
 
 	return 0;
 }
 
-static int skl_get_format(struct snd_pcm_substream *substream,
-		struct snd_soc_dai *dai)
-{
-	struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
-	struct skl_dma_params *dma_params;
-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
-	int format_val = 0;
-
-	if ((ebus_to_hbus(ebus))->ppcap) {
-		struct snd_pcm_runtime *runtime = substream->runtime;
-
-		format_val = snd_hdac_calc_stream_format(runtime->rate,
-						runtime->channels,
-						runtime->format,
-						32, 0);
-	} else {
-		struct snd_soc_dai *codec_dai = rtd->codec_dai;
-
-		dma_params = snd_soc_dai_get_dma_data(codec_dai, substream);
-		if (dma_params)
-			format_val = dma_params->format;
-	}
-
-	return format_val;
-}
-
 static int skl_pcm_prepare(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *dai)
 {
-	struct hdac_ext_stream *stream = get_hdac_ext_stream(substream);
 	struct skl *skl = get_skl_ctx(dai->dev);
-	unsigned int format_val;
-	int err;
 	struct skl_module_cfg *mconfig;
 
 	dev_dbg(dai->dev, "%s: %s\n", __func__, dai->name);
 
 	mconfig = skl_tplg_fe_get_cpr_module(dai, substream->stream);
 
-	format_val = skl_get_format(substream, dai);
-	dev_dbg(dai->dev, "stream_tag=%d formatvalue=%d\n",
-				hdac_stream(stream)->stream_tag, format_val);
-	snd_hdac_stream_reset(hdac_stream(stream));
-
 	/* In case of XRUN recovery, reset the FW pipe to clean state */
 	if (mconfig && (substream->runtime->status->state ==
 					SNDRV_PCM_STATE_XRUN))
 		skl_reset_pipe(skl->skl_sst, mconfig->pipe);
 
-	err = snd_hdac_stream_set_params(hdac_stream(stream), format_val);
-	if (err < 0)
-		return err;
-
-	err = snd_hdac_stream_setup(hdac_stream(stream));
-	if (err < 0)
-		return err;
-
-	hdac_stream(stream)->prepared = 1;
-
-	return err;
+	return 0;
 }
 
 static int skl_pcm_hw_params(struct snd_pcm_substream *substream,
@@ -275,6 +359,12 @@ static int skl_pcm_hw_params(struct snd_pcm_substream *substream,
 	p_params.s_freq = params_rate(params);
 	p_params.host_dma_id = dma_id;
 	p_params.stream = substream->stream;
+	p_params.format = params_format(params);
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		p_params.host_bps = dai->driver->playback.sig_bits;
+	else
+		p_params.host_bps = dai->driver->capture.sig_bits;
+
 
 	m_cfg = skl_tplg_fe_get_cpr_module(dai, p_params.stream);
 	if (m_cfg)
@@ -325,8 +415,15 @@ static int skl_pcm_hw_free(struct snd_pcm_substream *substream,
 {
 	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
 	struct hdac_ext_stream *stream = get_hdac_ext_stream(substream);
+	struct hdac_stream *hstream = hdac_stream(stream);
+	struct snd_pcm_runtime *runtime = substream->runtime;
 
 	dev_dbg(dai->dev, "%s: %s\n", __func__, dai->name);
+
+	if (runtime->no_rewinds) {
+		snd_hdac_ext_stream_set_spib(ebus, stream, 0);
+		snd_hdac_ext_stream_spbcap_enable(ebus, 0, hstream->index);
+	}
 
 	snd_hdac_stream_cleanup(hdac_stream(stream));
 	hdac_stream(stream)->prepared = 0;
@@ -403,6 +500,7 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
 	struct skl_module_cfg *mconfig;
 	struct hdac_ext_bus *ebus = get_bus_ctx(substream);
 	struct hdac_ext_stream *stream = get_hdac_ext_stream(substream);
+	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_dapm_widget *w;
 	int ret;
 
@@ -417,8 +515,11 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_RESUME:
-		if (!w->ignore_suspend) {
-			skl_pcm_prepare(substream, dai);
+		/*
+		 * DMA resume capablity is not attempted for capture stream
+		 * as it is not supported by HW
+		 */
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 			/*
 			 * enable DMA Resume enable bit for the stream, set the
 			 * dpib & lpib position to resume before starting the
@@ -427,10 +528,12 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
 			snd_hdac_ext_stream_drsm_enable(ebus, true,
 						hdac_stream(stream)->index);
 			snd_hdac_ext_stream_set_dpibr(ebus, stream,
-							stream->dpib);
+							stream->lpib);
 			snd_hdac_ext_stream_set_lpib(stream, stream->lpib);
+			if (runtime->no_rewinds)
+				snd_hdac_ext_stream_set_spib(ebus,
+						stream, stream->spib);
 		}
-
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		/*
@@ -439,7 +542,6 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
 		 * pipeline is started but there is a delay in starting the
 		 * DMA channel on the host.
 		 */
-		snd_hdac_ext_stream_decouple(ebus, stream, true);
 		ret = skl_decoupled_trigger(substream, cmd);
 		if (ret < 0)
 			return ret;
@@ -486,9 +588,10 @@ static int skl_link_hw_params(struct snd_pcm_substream *substream,
 	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
 	struct hdac_ext_stream *link_dev;
 	struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
-	struct hdac_ext_dma_params *dma_params;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct skl_pipe_params p_params = {0};
+	struct hdac_ext_link *link;
+	int stream_tag;
 
 	link_dev = snd_hdac_ext_stream_assign(ebus, substream,
 					HDAC_EXT_STREAM_TYPE_LINK);
@@ -497,16 +600,27 @@ static int skl_link_hw_params(struct snd_pcm_substream *substream,
 
 	snd_soc_dai_set_dma_data(dai, substream, (void *)link_dev);
 
+	link = snd_hdac_ext_bus_get_link(ebus, rtd->codec->component.name);
+	if (!link)
+		return -EINVAL;
+
+	stream_tag = hdac_stream(link_dev)->stream_tag;
+
 	/* set the stream tag in the codec dai dma params  */
-	dma_params = snd_soc_dai_get_dma_data(codec_dai, substream);
-	if (dma_params)
-		dma_params->stream_tag =  hdac_stream(link_dev)->stream_tag;
+	snd_soc_dai_set_tdm_slot(codec_dai, stream_tag, 0, 0, 0);
 
 	p_params.s_fmt = snd_pcm_format_width(params_format(params));
 	p_params.ch = params_channels(params);
 	p_params.s_freq = params_rate(params);
 	p_params.stream = substream->stream;
-	p_params.link_dma_id = hdac_stream(link_dev)->stream_tag - 1;
+	p_params.link_dma_id = stream_tag - 1;
+	p_params.link_index = link->index;
+	p_params.format = params_format(params);
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		p_params.link_bps = codec_dai->driver->playback.sig_bits;
+	else
+		p_params.link_bps = codec_dai->driver->capture.sig_bits;
 
 	return skl_tplg_be_update_params(dai, &p_params);
 }
@@ -514,40 +628,14 @@ static int skl_link_hw_params(struct snd_pcm_substream *substream,
 static int skl_link_pcm_prepare(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *dai)
 {
-	struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
-	struct hdac_ext_stream *link_dev =
-			snd_soc_dai_get_dma_data(dai, substream);
-	unsigned int format_val = 0;
-	struct skl_dma_params *dma_params;
-	struct snd_soc_dai *codec_dai = rtd->codec_dai;
-	struct hdac_ext_link *link;
 	struct skl *skl = get_skl_ctx(dai->dev);
 	struct skl_module_cfg *mconfig = NULL;
 
-	dma_params  = (struct skl_dma_params *)
-			snd_soc_dai_get_dma_data(codec_dai, substream);
-	if (dma_params)
-		format_val = dma_params->format;
-	dev_dbg(dai->dev, "stream_tag=%d formatvalue=%d codec_dai_name=%s\n",
-			hdac_stream(link_dev)->stream_tag, format_val, codec_dai->name);
-
-	link = snd_hdac_ext_bus_get_link(ebus, rtd->codec->component.name);
-	if (!link)
-		return -EINVAL;
-
-	snd_hdac_ext_link_stream_reset(link_dev);
-
 	/* In case of XRUN recovery, reset the FW pipe to clean state */
 	mconfig = skl_tplg_be_get_cpr_module(dai, substream->stream);
-	if (mconfig && (substream->runtime->status->state ==
-					SNDRV_PCM_STATE_XRUN))
+	if (mconfig && !mconfig->pipe->passthru &&
+		(substream->runtime->status->state == SNDRV_PCM_STATE_XRUN))
 		skl_reset_pipe(skl->skl_sst, mconfig->pipe);
-
-	snd_hdac_ext_link_stream_setup(link_dev, format_val);
-
-	snd_hdac_ext_link_set_stream_id(link, hdac_stream(link_dev)->stream_tag);
-	link_dev->link_prepared = 1;
 
 	return 0;
 }
@@ -563,10 +651,8 @@ static int skl_link_pcm_trigger(struct snd_pcm_substream *substream,
 	dev_dbg(dai->dev, "In %s cmd=%d\n", __func__, cmd);
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_RESUME:
-		skl_link_pcm_prepare(substream, dai);
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
-		snd_hdac_ext_stream_decouple(ebus, stream, true);
 		snd_hdac_ext_link_stream_start(link_dev);
 		break;
 
@@ -606,6 +692,224 @@ static int skl_link_hw_free(struct snd_pcm_substream *substream,
 	return 0;
 }
 
+static int skl_sdw_startup(struct snd_pcm_substream *substream,
+		struct snd_soc_dai *dai)
+{
+	/* Find the type of DAI, Its decided based on which copier
+	 * is connected to the DAI. All the soundwire DAIs are identical
+	 * but some registers needs to be programmed based on its a
+	 * PDM or PCM. Copier tells DAI is to be used as PDM  or PCM
+	 * This makes sure no change is required in code, only change
+	 * required is in the topology to change DAI from PDM to PCM or
+	 * vice versa.
+	 */
+	return cnl_sdw_startup(substream, dai);
+
+}
+
+static int skl_sdw_hw_params(struct snd_pcm_substream *substream,
+				struct snd_pcm_hw_params *params,
+				struct snd_soc_dai *dai)
+{
+	int ret = 0;
+
+	ret = pm_runtime_get_sync(dai->dev);
+	if (!ret)
+		return ret;
+	/* Allocate the port based on hw_params.
+	 * Allocate PDI stream based on hw_params
+	 * Program stream params to the sdw bus driver
+	 * program Port params to sdw bus driver
+	 */
+	return cnl_sdw_hw_params(substream, params, dai);
+}
+
+static int skl_sdw_hw_free(struct snd_pcm_substream *substream,
+		struct snd_soc_dai *dai)
+{
+	/* De-allocate the port from master controller
+	 * De allocate stream from bus driver
+	 */
+	return cnl_sdw_hw_free(substream, dai);
+}
+
+static int skl_sdw_pcm_prepare(struct snd_pcm_substream *substream,
+		struct snd_soc_dai *dai)
+{
+	return cnl_sdw_pcm_prepare(substream, dai);
+}
+
+static int skl_sdw_pcm_trigger(struct snd_pcm_substream *substream,
+	int cmd, struct snd_soc_dai *dai)
+{
+		return cnl_sdw_pcm_trigger(substream, cmd, dai);
+}
+
+static void skl_sdw_shutdown(struct snd_pcm_substream *substream,
+		struct snd_soc_dai *dai)
+{
+	cnl_sdw_shutdown(substream, dai);
+	pm_runtime_mark_last_busy(dai->dev);
+	pm_runtime_put_autosuspend(dai->dev);
+}
+
+static bool skl_is_core_valid(int core)
+{
+	if (core != INT_MIN)
+		return true;
+	else
+		return false;
+}
+
+static int skl_get_compr_core(struct snd_compr_stream *stream)
+{
+	struct snd_soc_pcm_runtime *rtd = stream->private_data;
+	struct snd_soc_dai *dai = rtd->cpu_dai;
+
+	if (!strcmp(dai->name, "TraceBuffer0 Pin"))
+		return 0;
+	else if (!strcmp(dai->name, "TraceBuffer1 Pin"))
+		return 1;
+	else if (!strcmp(dai->name, "TraceBuffer2 Pin"))
+		return 2;
+	else if (!strcmp(dai->name, "TraceBuffer3 Pin"))
+		return 3;
+	else
+		return INT_MIN;
+}
+
+static int skl_is_logging_core(int core)
+{
+	if (core == 0 || core == 1)
+		return 1;
+	else
+		return 0;
+}
+
+static struct skl_sst *skl_get_sst_compr(struct snd_compr_stream *stream)
+{
+	struct snd_soc_pcm_runtime *rtd = stream->private_data;
+	struct snd_soc_dai *dai = rtd->cpu_dai;
+	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
+	struct skl *skl = ebus_to_skl(ebus);
+	struct skl_sst *sst = skl->skl_sst;
+
+	return sst;
+}
+
+static int skl_trace_compr_set_params(struct snd_compr_stream *stream,
+					struct snd_compr_params *params,
+						struct snd_soc_dai *cpu_dai)
+{
+	int ret;
+	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
+	struct sst_dsp *sst = skl_sst->dsp;
+	struct sst_generic_ipc *ipc = &skl_sst->ipc;
+	int size = params->buffer.fragment_size * params->buffer.fragments;
+	int core = skl_get_compr_core(stream);
+
+	if (!skl_is_core_valid(core))
+		return -EINVAL;
+
+	size = size / sizeof(u32);
+	if (size & (size - 1)) {
+		dev_err(sst->dev, "Buffer size must be a power of 2\n");
+		return -EINVAL;
+	}
+
+	ret = skl_dsp_init_log_buffer(sst, size, core, stream);
+	if (ret) {
+		dev_err(sst->dev, "set params failed for dsp %d\n", core);
+		return ret;
+	}
+
+	ret = skl_dsp_set_system_time(skl_sst);
+	if (ret < 0) {
+		dev_err(sst->dev, "Set system time to dsp firmware failed: %d\n", ret);
+		return ret;
+	}
+
+	skl_dsp_get_log_buff(sst, core);
+	sst->trace_wind.flags |= BIT(core);
+	ret = skl_dsp_enable_logging(ipc, core, 1);
+	if (ret < 0) {
+		dev_err(sst->dev, "enable logs failed for dsp %d\n", core);
+		sst->trace_wind.flags &= ~BIT(core);
+		skl_dsp_put_log_buff(sst, core);
+		return ret;
+	}
+	return 0;
+}
+
+static int skl_trace_compr_tstamp(struct snd_compr_stream *stream,
+					struct snd_compr_tstamp *tstamp,
+						struct snd_soc_dai *cpu_dai)
+{
+	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
+	struct sst_dsp *sst = skl_sst->dsp;
+	int core = skl_get_compr_core(stream);
+
+	if (!skl_is_core_valid(core))
+		return -EINVAL;
+
+	tstamp->copied_total = skl_dsp_log_avail(sst, core);
+	return 0;
+}
+
+static int skl_trace_compr_copy(struct snd_compr_stream *stream,
+				char __user *dest, size_t count)
+{
+	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
+	struct snd_soc_pcm_runtime *rtd = stream->private_data;
+	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	struct sst_dsp *sst = skl_sst->dsp;
+	int core = skl_get_compr_core(stream);
+
+	if (skl_is_logging_core(core))
+		return skl_dsp_copy_log_user(sst, core, dest, count);
+	else
+		return skl_probe_compr_copy(stream, dest, count, cpu_dai);
+}
+
+static int skl_trace_compr_free(struct snd_compr_stream *stream,
+						struct snd_soc_dai *cpu_dai)
+{
+	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
+	struct sst_dsp *sst = skl_sst->dsp;
+	struct sst_generic_ipc *ipc = &skl_sst->ipc;
+	int core = skl_get_compr_core(stream);
+	int is_enabled = sst->trace_wind.flags & BIT(core);
+
+	if (!skl_is_core_valid(core))
+		return -EINVAL;
+	if (is_enabled) {
+		sst->trace_wind.flags &= ~BIT(core);
+		skl_dsp_enable_logging(ipc, core, 0);
+		skl_dsp_put_log_buff(sst, core);
+		skl_dsp_done_log_buffer(sst, core);
+	}
+	return 0;
+}
+
+static struct snd_compr_ops skl_platform_compr_ops = {
+	.copy = skl_trace_compr_copy,
+};
+
+static struct snd_soc_cdai_ops skl_probe_compr_ops = {
+	.startup = skl_probe_compr_open,
+	.shutdown = skl_probe_compr_close,
+	.trigger = skl_probe_compr_trigger,
+	.ack = skl_probe_compr_ack,
+	.pointer = skl_probe_compr_tstamp,
+	.set_params = skl_probe_compr_set_params,
+};
+
+static struct snd_soc_cdai_ops skl_trace_compr_ops = {
+	.shutdown = skl_trace_compr_free,
+	.pointer = skl_trace_compr_tstamp,
+	.set_params = skl_trace_compr_set_params,
+};
+
 static struct snd_soc_dai_ops skl_pcm_dai_ops = {
 	.startup = skl_pcm_open,
 	.shutdown = skl_pcm_close,
@@ -630,24 +934,197 @@ static struct snd_soc_dai_ops skl_link_dai_ops = {
 	.trigger = skl_link_pcm_trigger,
 };
 
-static struct snd_soc_dai_driver skl_platform_dai[] = {
+static struct snd_soc_dai_ops skl_sdw_dai_ops = {
+	.startup = skl_sdw_startup,
+	.prepare = skl_sdw_pcm_prepare,
+	.hw_params = skl_sdw_hw_params,
+	.hw_free = skl_sdw_hw_free,
+	.trigger = skl_sdw_pcm_trigger,
+	.shutdown = skl_sdw_shutdown,
+};
+
+static struct snd_soc_dai_driver skl_fe_dai[] = {
+{
+	.name = "Speaker Pin",
+	.ops = &skl_pcm_dai_ops,
+	.playback = {
+		.stream_name = "Speaker Playback",
+		.channels_min = HDA_QUAD,
+		.channels_max = HDA_QUAD,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "Dirana Cp Pin",
+	.ops = &skl_pcm_dai_ops,
+	.capture = {
+		.stream_name = "Dirana Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
+			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
+			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "Dirana Aux Cp Pin",
+	.ops = &skl_pcm_dai_ops,
+	.capture = {
+		.stream_name = "Dirana Aux Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
+			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
+			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "Dirana Tuner Cp Pin",
+	.ops = &skl_pcm_dai_ops,
+	.capture = {
+		.stream_name = "Dirana Tuner Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
+			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
+			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "Dirana Pb Pin",
+	.ops = &skl_pcm_dai_ops,
+	.playback = {
+		.stream_name = "Dirana Playback",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "HDMI Cp Pin",
+	.ops = &skl_pcm_dai_ops,
+	.capture = {
+		.stream_name = "HDMI PT Capture",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_32000 |
+			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
+			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "TestPin Cp Pin",
+	.ops = &skl_pcm_dai_ops,
+	.capture = {
+		.stream_name = "TestPin PT Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
+			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
+			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "TestPin Pb Pin",
+	.ops = &skl_pcm_dai_ops,
+	.playback = {
+		.stream_name = "TestPin PT Playback",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
+			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
+			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
+			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "BtHfp Cp Pin",
+	.ops = &skl_pcm_dai_ops,
+	.capture = {
+		.stream_name = "BtHfp PT Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000,
+		.formats = SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "BtHfp Pb Pin",
+	.ops = &skl_pcm_dai_ops,
+	.playback = {
+		.stream_name = "BtHfp PT Playback",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000,
+		.formats = SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "Modem Cp Pin",
+	.ops = &skl_pcm_dai_ops,
+	.capture = {
+		.stream_name = "Modem PT Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000,
+		.formats = SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
+{
+	.name = "Modem Pb Pin",
+	.ops = &skl_pcm_dai_ops,
+	.playback = {
+		.stream_name = "Modem PT Playback",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000,
+		.formats = SNDRV_PCM_FMTBIT_S32_LE,
+	}
+},
 {
 	.name = "System Pin",
 	.ops = &skl_pcm_dai_ops,
 	.playback = {
 		.stream_name = "System Playback",
 		.channels_min = HDA_MONO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_8000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE |
-			SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_FLOAT_LE,
+		.sig_bits = 32,
 	},
 	.capture = {
 		.stream_name = "System Capture",
 		.channels_min = HDA_MONO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_16000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_FLOAT_LE,
+		.sig_bits = 32,
 	},
 },
 {
@@ -657,8 +1134,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "Reference Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_QUAD,
-		.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_16000,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+		.sig_bits = 32,
 	},
 },
 {
@@ -666,6 +1144,14 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	.ops = &skl_pcm_dai_ops,
 	.playback = {
 		.stream_name = "Deepbuffer Playback",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+		.sig_bits = 32,
+	},
+	.capture = {
+		.stream_name = "Deepbuffer Capture",
 		.channels_min = HDA_STEREO,
 		.channels_max = HDA_STEREO,
 		.rates = SNDRV_PCM_RATE_48000,
@@ -681,6 +1167,7 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.channels_max = HDA_STEREO,
 		.rates = SNDRV_PCM_RATE_48000,
 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+		.sig_bits = 32,
 	},
 },
 {
@@ -692,6 +1179,7 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.channels_max = HDA_QUAD,
 		.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_16000,
 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+		.sig_bits = 32,
 	},
 },
 {
@@ -707,6 +1195,7 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 			SNDRV_PCM_RATE_192000,
 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
 			SNDRV_PCM_FMTBIT_S32_LE,
+		.sig_bits = 32,
 	},
 },
 {
@@ -722,6 +1211,7 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 			SNDRV_PCM_RATE_192000,
 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
 			SNDRV_PCM_FMTBIT_S32_LE,
+		.sig_bits = 32,
 	},
 },
 {
@@ -737,26 +1227,31 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 			SNDRV_PCM_RATE_192000,
 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
 			SNDRV_PCM_FMTBIT_S32_LE,
+		.sig_bits = 32,
 	},
 },
+};
 
-/* BE CPU  Dais */
+/* BE cpu dais and compress dais*/
+static struct snd_soc_dai_driver skl_platform_dai[] = {
 {
 	.name = "SSP0 Pin",
 	.ops = &skl_be_ssp_dai_ops,
 	.playback = {
 		.stream_name = "ssp0 Tx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 	.capture = {
 		.stream_name = "ssp0 Rx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 },
 {
@@ -764,17 +1259,19 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	.ops = &skl_be_ssp_dai_ops,
 	.playback = {
 		.stream_name = "ssp1 Tx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 	.capture = {
 		.stream_name = "ssp1 Rx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 },
 {
@@ -782,17 +1279,19 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	.ops = &skl_be_ssp_dai_ops,
 	.playback = {
 		.stream_name = "ssp2 Tx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 	.capture = {
 		.stream_name = "ssp2 Rx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 },
 {
@@ -800,17 +1299,19 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	.ops = &skl_be_ssp_dai_ops,
 	.playback = {
 		.stream_name = "ssp3 Tx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 	.capture = {
 		.stream_name = "ssp3 Rx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 },
 {
@@ -818,17 +1319,19 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	.ops = &skl_be_ssp_dai_ops,
 	.playback = {
 		.stream_name = "ssp4 Tx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 	.capture = {
 		.stream_name = "ssp4 Rx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 },
 {
@@ -836,17 +1339,19 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	.ops = &skl_be_ssp_dai_ops,
 	.playback = {
 		.stream_name = "ssp5 Tx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 	.capture = {
 		.stream_name = "ssp5 Rx",
-		.channels_min = HDA_STEREO,
-		.channels_max = HDA_STEREO,
-		.rates = SNDRV_PCM_RATE_48000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
 	},
 },
 {
@@ -916,18 +1421,229 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.formats = SNDRV_PCM_FMTBIT_S16_LE,
 	},
 },
+{
+	/* Currently adding 1 playback and 1 capture pin, ideally it
+	 * should be coming from CLT based on endpoints to be supported
+	 */
+	.name = "SDW Pin",
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+#ifndef CONFIG_SND_SOC_SDW_AGGM1M2
+	.id = SDW_BE_DAI_ID_MSTR0,
+#else
+	.id = SDW_BE_DAI_ID_MSTR1,
+#endif
+#else
+	.id = SDW_BE_DAI_ID_MSTR1,
+#endif
+	.ops = &skl_sdw_dai_ops,
+	.playback = {
+		.stream_name = "SDW Tx",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+	.capture = {
+		.stream_name = "SDW Rx",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+},
+{
+	/* Currently adding 1 playback and 1 capture pin, ideally it
+	 * should be coming from CLT based on endpoints to be supported
+	 */
+	.name = "SDW10 Pin",
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+#ifndef CONFIG_SND_SOC_SDW_AGGM1M2
+	.id = SDW_BE_DAI_ID_MSTR0,
+#else
+	.id = SDW_BE_DAI_ID_MSTR1,
+#endif
+#else
+	.id = SDW_BE_DAI_ID_MSTR1,
+#endif
+	.ops = &skl_sdw_dai_ops,
+	.playback = {
+		.stream_name = "SDW Tx10",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+	},
+	.capture = {
+		.stream_name = "SDW Rx10",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+	},
+},
+{
+	/* Currently adding 1 capture pin, for PDM ideally it
+	 * should be coming from CLT based on endpoints to be supported
+	 */
+	.name = "SDW PDM Pin",
+	.ops = &skl_sdw_dai_ops,
+	.id = SDW_BE_DAI_ID_MSTR0 + 1,
+	.capture = {
+		.stream_name = "SDW Rx1",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_QUAD,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+},
+{
+	/* Currently adding 1 playback and 1 capture pin, ideally it
+	 * should be coming from CLT based on endpoints to be supported
+	 */
+	.name = "SDW1 Pin",
+	.id = SDW_BE_DAI_ID_MSTR1,
+	.ops = &skl_sdw_dai_ops,
+	.playback = {
+		.stream_name = "SDW1 Tx",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+	.capture = {
+		.stream_name = "SDW1 Rx",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+
+},
+#ifdef CONFIG_SND_SOC_SDW_AGGM1M2
+{
+	/*
+	 * Currently adding 1 playback and 1 capture pin, ideally it
+	 * should be coming from CLT based on endpoints to be supported
+	 */
+	.name = "SDW2 Pin",
+	.id = SDW_BE_DAI_ID_MSTR2,
+	.ops = &skl_sdw_dai_ops,
+	.playback = {
+		.stream_name = "SDW2 Tx",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+	},
+	.capture = {
+		.stream_name = "SDW2 Rx",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+	},
+
+},
+#endif
+{
+	/* Currently adding 1 playback and 1 capture pin, ideally it
+	 * should be coming from CLT based on endpoints to be supported
+	 */
+	.name = "SDW3 Pin",
+	.ops = &skl_sdw_dai_ops,
+	.playback = {
+		.stream_name = "SDW3 Tx",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+	.capture = {
+		.stream_name = "SDW3 Rx",
+		.channels_min = HDA_STEREO,
+		.channels_max = HDA_STEREO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+
+},
+{
+	.name = "TraceBuffer0 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_trace_compr_ops,
+	.capture = {
+		.stream_name = "TraceBuffer0 Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+	},
+},
+{
+	.name = "TraceBuffer1 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_trace_compr_ops,
+	.capture = {
+		.stream_name = "TraceBuffer1 Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+	},
+},
+{
+	.name = "TraceBuffer2 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_trace_compr_ops,
+	.capture = {
+		.stream_name = "TraceBuffer2 Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+	},
+},
+{
+	.name = "TraceBuffer3 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_trace_compr_ops,
+	.capture = {
+		.stream_name = "TraceBuffer3 Capture",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_MONO,
+	},
+},
+{
+	.name = "Compress Probe0 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_probe_compr_ops,
+	.playback = {
+		.stream_name = "Probe Playback",
+		.channels_min = HDA_MONO,
+	},
+},
+{
+	.name = "Compress Probe1 Pin",
+	.compress_new = snd_soc_new_compress,
+	.cops = &skl_probe_compr_ops,
+	.capture = {
+			.stream_name = "Probe Capture",
+			.channels_min = HDA_MONO,
+	},
+},
 };
+
+int skl_dai_load(struct snd_soc_component *cmp,
+		 struct snd_soc_dai_driver *pcm_dai)
+{
+	dev_dbg(cmp->dev, "Adding dai %s from topology\n", pcm_dai->name);
+	pcm_dai->ops = &skl_pcm_dai_ops;
+
+	return 0;
+}
 
 static int skl_platform_open(struct snd_pcm_substream *substream)
 {
-	struct snd_pcm_runtime *runtime;
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai_link *dai_link = rtd->dai_link;
 
 	dev_dbg(rtd->cpu_dai->dev, "In %s:%s\n", __func__,
 					dai_link->cpu_dai_name);
 
-	runtime = substream->runtime;
 	snd_soc_set_runtime_hwparams(substream, &azx_pcm_hw);
 
 	return 0;
@@ -1018,14 +1734,71 @@ static int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
 	return 0;
 }
 
+/* update SPIB register with appl position */
+static int skl_platform_ack(struct snd_pcm_substream *substream)
+{
+	struct hdac_ext_bus *ebus = get_bus_ctx(substream);
+	struct hdac_ext_stream *estream = get_hdac_ext_stream(substream);
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	ssize_t appl_pos, buf_size;
+	u32 spib;
+
+	/* Use spib mode only if no_rewind mode is set */
+	if (runtime->no_rewinds == 0)
+		return 0;
+
+	appl_pos = frames_to_bytes(runtime, runtime->control->appl_ptr);
+	buf_size = frames_to_bytes(runtime, runtime->buffer_size);
+
+	spib = appl_pos % buf_size;
+
+	/* Allowable value for SPIB is 1 byte to max buffer size */
+	spib = (spib == 0) ? buf_size : spib;
+	snd_hdac_ext_stream_set_spib(ebus, estream, spib);
+
+	return 0;
+}
+
 static snd_pcm_uframes_t skl_platform_pcm_pointer
 			(struct snd_pcm_substream *substream)
 {
 	struct hdac_ext_stream *hstream = get_hdac_ext_stream(substream);
+	struct hdac_ext_bus *ebus = get_bus_ctx(substream);
 	unsigned int pos;
 
-	/* use the position buffer as default */
-	pos = snd_hdac_stream_get_pos_posbuf(hdac_stream(hstream));
+	/*
+	 * Use DPIB for Playback stream as the periodic DMA Position-in-
+	 * Buffer Writes may be scheduled at the same time or later than
+	 * the MSI and does not guarantee to reflect the Position of the
+	 * last buffer that was transferred. Whereas DPIB register in
+	 * HAD space reflects the actual data that is transferred.
+	 * Use the position buffer for capture, as DPIB write gets
+	 * completed earlier than the actual data written to the DDR.
+	 *
+	 * For capture stream following workaround is required to fix the
+	 * incorrect position reporting.
+	 *
+	 * 1. Wait for 20us before reading the DMA position in buffer once
+	 * the interrupt is generated for stream completion as update happens
+	 * on the HDA frame boundary i.e. 20.833uSec.
+	 * 2. Read DPIB register to flush the DMA position value. This dummy
+	 * read is required to flush DMA position value.
+	 * 3. Read the DMA Position-in-Buffer. This value now will be equal to
+	 * or greater than period boundary.
+	 */
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		pos = readl(ebus->bus.remap_addr + AZX_REG_VS_SDXDPIB_XBASE +
+				(AZX_REG_VS_SDXDPIB_XINTERVAL *
+				hdac_stream(hstream)->index));
+	} else {
+		udelay(20);
+		readl(ebus->bus.remap_addr +
+				AZX_REG_VS_SDXDPIB_XBASE +
+				(AZX_REG_VS_SDXDPIB_XINTERVAL *
+				 hdac_stream(hstream)->index));
+		pos = snd_hdac_stream_get_pos_posbuf(hdac_stream(hstream));
+	}
 
 	if (pos >= hdac_stream(hstream)->bufsize)
 		pos = 0;
@@ -1093,6 +1866,7 @@ static const struct snd_pcm_ops skl_platform_ops = {
 	.get_time_info =  skl_get_time_info,
 	.mmap = snd_pcm_lib_default_mmap,
 	.page = snd_pcm_sgbuf_ops_page,
+	.ack = skl_platform_ack,
 };
 
 static void skl_pcm_free(struct snd_pcm *pcm)
@@ -1122,7 +1896,7 @@ static int skl_pcm_new(struct snd_soc_pcm_runtime *rtd)
 						snd_dma_pci_data(skl->pci),
 						size, MAX_PREALLOC_SIZE);
 		if (retval) {
-			dev_err(dai->dev, "dma buffer allocationf fail\n");
+			dev_err(dai->dev, "dma buffer allocation fail\n");
 			return retval;
 		}
 	}
@@ -1130,36 +1904,131 @@ static int skl_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	return retval;
 }
 
+static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
+{
+	struct skl_sst *ctx = skl->skl_sst;
+	int i;
+	struct skl_module_inst_id *pin_id;
+	struct skl_module *skl_module;
+	uuid_le *uuid_bin_fw, *uuid_bin_tplg;
+	struct uuid_module *module;
+	uuid_le *uuid_mod;
+	bool found = false;
+
+	uuid_mod = (uuid_le *)mconfig->guid;
+
+	if (list_empty(&ctx->uuid_list)) {
+		dev_err(ctx->dev, "Module list is empty\n");
+		return -EIO;
+	}
+
+	list_for_each_entry(module, &ctx->uuid_list, list) {
+		if (uuid_le_cmp(*uuid_mod, module->uuid) == 0) {
+			mconfig->id.module_id = module->id;
+
+		if(mconfig->module)
+			mconfig->module->loadable = module->is_loadable;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		return -EIO;
+		
+	uuid_bin_fw = &module->uuid;
+	for (i = 0; i < skl->nr_modules; i++) {
+		skl_module = skl->modules[i];
+		uuid_bin_tplg = &skl_module->uuid;
+		if (uuid_le_cmp(*uuid_bin_fw, *uuid_bin_tplg) == 0) {
+			mconfig->module = skl_module;
+			found = true;
+			break;
+		}
+	}
+	
+	if (!found)
+		return -EIO;
+
+	list_for_each_entry(module, &ctx->uuid_list, list) {
+		for (i = 0; i < SKL_MAX_IN_QUEUE; i++) {
+			pin_id = &mconfig->m_in_pin[i].id;
+			if (uuid_le_cmp(pin_id->mod_uuid, module->uuid) == 0)
+				pin_id->module_id = module->id;
+		}
+		
+		for (i = 0; i < SKL_MAX_OUT_QUEUE; i++) {
+			pin_id = &mconfig->m_out_pin[i].id;
+			if (uuid_le_cmp(pin_id->mod_uuid, module->uuid) == 0)
+				pin_id->module_id = module->id;
+		}
+	}
+
+	return 0;
+}
+
+
 static int skl_populate_modules(struct skl *skl)
 {
 	struct skl_pipeline *p;
 	struct skl_pipe_module *m;
 	struct snd_soc_dapm_widget *w;
 	struct skl_module_cfg *mconfig;
-	int ret;
+	int ret = 0;
 
 	list_for_each_entry(p, &skl->ppl_list, node) {
 		list_for_each_entry(m, &p->pipe->w_list, node) {
-
 			w = m->w;
 			mconfig = w->priv;
 
-			ret = snd_skl_get_module_info(skl->skl_sst, mconfig);
+			ret = skl_get_module_info(skl, mconfig);
 			if (ret < 0) {
 				dev_err(skl->skl_sst->dev,
-					"query module info failed:%d\n", ret);
-				goto err;
+					"query module info failed\n");
+				return ret;
 			}
 		}
 	}
-err:
+
 	return ret;
+}
+static int skl_get_probe_widget(struct snd_soc_platform *platform,
+							struct skl *skl)
+{
+	struct skl_probe_config *pconfig = &skl->skl_sst->probe_config;
+	struct snd_soc_dapm_widget *w;
+	int i;
+
+	list_for_each_entry(w, &platform->component.card->widgets, list) {
+		if (is_skl_dsp_widget_type(w) &&
+				(strstr(w->name, "probe") != NULL)) {
+			pconfig->w = w;
+
+			dev_dbg(platform->dev, "widget type=%d name=%s\n",
+							w->id, w->name);
+			break;
+		}
+	}
+
+	pconfig->i_refc = 0;
+	pconfig->e_refc = 0;
+	pconfig->no_injector = NO_OF_INJECTOR;
+	pconfig->no_extractor = NO_OF_EXTRACTOR;
+
+	for (i = 0; i < pconfig->no_injector; i++)
+		pconfig->iprobe[i].state = SKL_PROBE_STATE_INJ_NONE;
+
+	for (i = 0; i < pconfig->no_extractor; i++)
+		pconfig->eprobe[i].state = SKL_PROBE_STATE_EXT_NONE;
+
+	return 0;
 }
 
 static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 {
 	struct hdac_ext_bus *ebus = dev_get_drvdata(platform->dev);
 	struct skl *skl = ebus_to_skl(ebus);
+	struct platform_info *dbg_info;
 	const struct skl_dsp_ops *ops;
 	int ret;
 
@@ -1187,9 +2056,36 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 			dev_err(platform->dev, "Failed to boot first fw: %d\n", ret);
 			return ret;
 		}
-		skl_populate_modules(skl);
+		ret = skl_populate_modules(skl);
+		if (ret < 0)
+			return ret;
+
 		skl->skl_sst->update_d0i3c = skl_update_d0i3c;
+		skl_dsp_enable_notification(skl->skl_sst, false);
+		skl_get_probe_widget(platform, skl);
+
+		/* create sysfs to list modules downloaded by driver */
+		skl_module_sysfs_init(skl->skl_sst, &platform->dev->kobj);
 	}
+
+	dbg_info = kzalloc(sizeof(struct platform_info), GFP_KERNEL);
+	if (!dbg_info)
+		return -ENOMEM;
+
+	dbg_info->sram0_base = skl->skl_sst->dsp->addr.sram0_base;
+	dbg_info->sram1_base = skl->skl_sst->dsp->addr.sram1_base;
+	dbg_info->lpe = skl->skl_sst->dsp->addr.lpe;
+	dbg_info->w0_stat_sz = skl->skl_sst->dsp->addr.w0_stat_sz;
+	dbg_info->w0_up_sz = skl->skl_sst->dsp->addr.w0_up_sz;
+
+	dbg_info->in_base = skl->skl_sst->dsp->mailbox.in_base;
+	dbg_info->in_size = skl->skl_sst->dsp->mailbox.in_size;
+	dbg_info->out_base = skl->skl_sst->dsp->mailbox.out_base;
+	dbg_info->out_size = skl->skl_sst->dsp->mailbox.out_size;
+
+	skl_update_dsp_debug_info(skl->debugfs, dbg_info);
+	kfree(dbg_info);
+
 	pm_runtime_mark_last_busy(platform->dev);
 	pm_runtime_put_autosuspend(platform->dev);
 
@@ -1198,30 +2094,71 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 static struct snd_soc_platform_driver skl_platform_drv  = {
 	.probe		= skl_platform_soc_probe,
 	.ops		= &skl_platform_ops,
+	.compr_ops	= &skl_platform_compr_ops,
 	.pcm_new	= skl_pcm_new,
 	.pcm_free	= skl_pcm_free,
 };
 
+static const char* const dsp_log_text[] =
+	{"QUIET", "CRITICAL", "HIGH", "MEDIUM", "LOW", "VERBOSE"};
+
+static const struct soc_enum dsp_log_enum =
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(dsp_log_text), dsp_log_text);
+
+static struct snd_kcontrol_new skl_controls[] = {
+	SOC_ENUM_EXT("DSP Log Level", dsp_log_enum, skl_tplg_dsp_log_get,
+		     skl_tplg_dsp_log_set),
+};
+
 static const struct snd_soc_component_driver skl_component = {
 	.name           = "pcm",
+	.controls	= skl_controls,
+	.num_controls	= ARRAY_SIZE(skl_controls),
 };
+
+/*
+ * mod param to decide during platform registration whether
+ * if FE dai and FE dai links will come from topology or not.
+ * By default, it takes the fe dais defined above i.e. skl_fe_dai[].
+ */
+static int dynamic_dai;
+module_param(dynamic_dai, int, 0644);
 
 int skl_platform_register(struct device *dev)
 {
-	int ret;
+	int ret, skl_total_dai;
 	struct hdac_ext_bus *ebus = dev_get_drvdata(dev);
 	struct skl *skl = ebus_to_skl(ebus);
+	int skl_num_fe_dai = ARRAY_SIZE(skl_fe_dai);
+	int skl_num_dai = ARRAY_SIZE(skl_platform_dai);
+	struct snd_soc_dai_driver *skl_dais;
 
 	INIT_LIST_HEAD(&skl->ppl_list);
+	INIT_LIST_HEAD(&skl->bind_list);
 
 	ret = snd_soc_register_platform(dev, &skl_platform_drv);
 	if (ret) {
 		dev_err(dev, "soc platform registration failed %d\n", ret);
 		return ret;
 	}
-	ret = snd_soc_register_component(dev, &skl_component,
-				skl_platform_dai,
-				ARRAY_SIZE(skl_platform_dai));
+
+	skl_total_dai = (dynamic_dai ? skl_num_dai : skl_num_fe_dai +
+			 skl_num_dai);
+	skl_dais = devm_kcalloc(dev, skl_total_dai, sizeof(*skl_dais),
+				GFP_KERNEL);
+	if (!skl_dais) {
+		snd_soc_unregister_platform(dev);
+		return -ENOMEM;
+	}
+
+	memcpy(skl_dais, skl_platform_dai, sizeof(skl_platform_dai));
+
+	if (!dynamic_dai)
+		memcpy(&skl_dais[skl_num_dai], skl_fe_dai,
+						sizeof(skl_fe_dai));
+
+	ret = snd_soc_register_component(dev, &skl_component, skl_dais,
+					 skl_total_dai);
 	if (ret) {
 		dev_err(dev, "soc component registration failed %d\n", ret);
 		snd_soc_unregister_platform(dev);
@@ -1233,6 +2170,17 @@ int skl_platform_register(struct device *dev)
 
 int skl_platform_unregister(struct device *dev)
 {
+	struct hdac_ext_bus *ebus = dev_get_drvdata(dev);
+	struct skl *skl = ebus_to_skl(ebus);
+	struct skl_module_deferred_bind *modules, *tmp;
+
+	if (!list_empty(&skl->bind_list)) {
+		list_for_each_entry_safe(modules, tmp, &skl->bind_list, node) {
+			list_del(&modules->node);
+			kfree(modules);
+		}
+	}
+
 	snd_soc_unregister_component(dev);
 	snd_soc_unregister_platform(dev);
 	return 0;
