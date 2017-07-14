@@ -23,7 +23,6 @@
 #include <linux/list.h>
 #include <linux/workqueue.h>
 #include <linux/sched.h>
-#include <linux/kthread.h>
 
 #define IPC_MAX_MAILBOX_BYTES	256
 
@@ -45,6 +44,7 @@ struct ipc_message {
 };
 
 struct sst_generic_ipc;
+struct sst_dsp;
 
 struct sst_plat_ipc_ops {
 	void (*tx_msg)(struct sst_generic_ipc *, struct ipc_message *);
@@ -66,8 +66,7 @@ struct sst_generic_ipc {
 	struct list_head empty_list;
 	wait_queue_head_t wait_txq;
 	struct task_struct *tx_thread;
-	struct kthread_worker kworker;
-	struct kthread_work kwork;
+	struct work_struct kwork;
 	bool pending;
 	struct ipc_message *msg;
 	int tx_data_max_size;
@@ -77,7 +76,8 @@ struct sst_generic_ipc {
 };
 
 int sst_ipc_tx_message_wait(struct sst_generic_ipc *ipc, u64 header,
-	void *tx_data, size_t tx_bytes, void *rx_data, size_t rx_bytes);
+	void *tx_data, size_t tx_bytes, void *rx_data,
+	size_t *rx_bytes);
 
 int sst_ipc_tx_message_nowait(struct sst_generic_ipc *ipc, u64 header,
 	void *tx_data, size_t tx_bytes);
