@@ -176,13 +176,13 @@ static int jt8ev1_post_poweron(struct smiapp_sensor *sensor)
 	if (rval < 0)
 		return rval;
 
-	switch (sensor->hwcfg->ext_clk) {
+	switch (sensor->platform_data->ext_clk) {
 	case 9600000:
 		return smiapp_write_8s(sensor, regs_96,
 				       ARRAY_SIZE(regs_96));
 	default:
 		dev_warn(&client->dev, "no MSRs for %d Hz ext_clk\n",
-			 sensor->hwcfg->ext_clk);
+			 sensor->platform_data->ext_clk);
 		return 0;
 	}
 }
