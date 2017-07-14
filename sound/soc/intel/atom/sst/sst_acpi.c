@@ -303,8 +303,6 @@ static int sst_acpi_probe(struct platform_device *pdev)
 		dev_err(dev, "No matching machine driver found\n");
 		return -ENODEV;
 	}
-	if (mach->machine_quirk)
-		mach = mach->machine_quirk(mach);
 
 	pdata = mach->pdata;
 
@@ -360,22 +358,8 @@ static int sst_acpi_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	/* need to save shim registers in BYT */
-	ctx->shim_regs64 = devm_kzalloc(ctx->dev, sizeof(*ctx->shim_regs64),
-					GFP_KERNEL);
-	if (!ctx->shim_regs64) {
-		ret = -ENOMEM;
-		goto do_sst_cleanup;
-	}
-
 	sst_configure_runtime_pm(ctx);
 	platform_set_drvdata(pdev, ctx);
-	return ret;
-
-do_sst_cleanup:
-	sst_context_cleanup(ctx);
-	platform_set_drvdata(pdev, NULL);
-	dev_err(ctx->dev, "failed with %d\n", ret);
 	return ret;
 }
 
@@ -480,12 +464,20 @@ static struct sst_acpi_mach sst_acpi_bytcr[] = {
 						&byt_rvp_platform_data },
 	{"10EC5651", "bytcr_rt5651", "intel/fw_sst_0f28.bin", "bytcr_rt5651", NULL,
 						&byt_rvp_platform_data },
+	/* some Baytrail platforms rely on RT5645, use CHT machine driver */
+	{"10EC5645", "cht-bsw-rt5645", "intel/fw_sst_0f28.bin", "cht-bsw", NULL,
+						&byt_rvp_platform_data },
+	{"10EC5648", "cht-bsw-rt5645", "intel/fw_sst_0f28.bin", "cht-bsw", NULL,
+						&byt_rvp_platform_data },
+
 	{},
 };
 
 /* Cherryview-based platforms: CherryTrail and Braswell */
 static struct sst_acpi_mach sst_acpi_chv[] = {
 	{"10EC5670", "cht-bsw-rt5672", "intel/fw_sst_22a8.bin", "cht-bsw", NULL,
+						&chv_platform_data },
+	{"10EC5672", "cht-bsw-rt5672", "intel/fw_sst_22a8.bin", "cht-bsw", NULL,
 						&chv_platform_data },
 	{"10EC5645", "cht-bsw-rt5645", "intel/fw_sst_22a8.bin", "cht-bsw", NULL,
 						&chv_platform_data },
@@ -496,7 +488,11 @@ static struct sst_acpi_mach sst_acpi_chv[] = {
 	/* some CHT-T platforms rely on RT5640, use Baytrail machine driver */
 	{"10EC5640", "bytcr_rt5640", "intel/fw_sst_22a8.bin", "bytcr_rt5640", cht_quirk,
 						&chv_platform_data },
-
+	{"10EC3276", "bytcr_rt5640", "intel/fw_sst_22a8.bin", "bytcr_rt5640", NULL,
+						&chv_platform_data },
+	/* some CHT-T platforms rely on RT5651, use Baytrail machine driver */
+	{"10EC5651", "bytcr_rt5651", "intel/fw_sst_22a8.bin", "bytcr_rt5651", NULL,
+						&chv_platform_data },
 	{},
 };
 
