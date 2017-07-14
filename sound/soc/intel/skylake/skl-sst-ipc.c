@@ -19,8 +19,8 @@
 #include "skl.h"
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
+#include "skl-fwlog.h"
 #include "sound/hdaudio_ext.h"
-
 
 #define IPC_IXC_STATUS_BITS		24
 
@@ -33,6 +33,11 @@
 #define IPC_GLB_REPLY_STATUS_SHIFT	24
 #define IPC_GLB_REPLY_STATUS_MASK	((0x1 << IPC_GLB_REPLY_STATUS_SHIFT) - 1)
 #define IPC_GLB_REPLY_STATUS(x)		((x) << IPC_GLB_REPLY_STATUS_SHIFT)
+
+#define IPC_GLB_REPLY_TYPE_SHIFT	29
+#define IPC_GLB_REPLY_TYPE_MASK		0x1F
+#define IPC_GLB_REPLY_TYPE(x)		(((x) >> IPC_GLB_REPLY_TYPE_SHIFT) \
+					& IPC_GLB_RPLY_TYPE_MASK)
 
 #define IPC_TIMEOUT_MSECS		3000
 
@@ -48,6 +53,10 @@
 #define IPC_MSG_DIR(x)			(((x) & IPC_MSG_DIR_MASK) \
 					<< IPC_MSG_DIR_SHIFT)
 /* Global Notification Message */
+#define IPC_GLB_NOTIFY_CORE_SHIFT	12
+#define IPC_GLB_NOTIFY_CORE_MASK	0xF
+#define IPC_GLB_NOTIFY_CORE_ID(x)	(((x) >> IPC_GLB_NOTIFY_CORE_SHIFT) \
+					& IPC_GLB_NOTIFY_CORE_MASK)
 #define IPC_GLB_NOTIFY_TYPE_SHIFT	16
 #define IPC_GLB_NOTIFY_TYPE_MASK	0xFF
 #define IPC_GLB_NOTIFY_TYPE(x)		(((x) >> IPC_GLB_NOTIFY_TYPE_SHIFT) \
@@ -275,10 +284,11 @@ enum skl_ipc_module_msg {
 	IPC_MOD_BIND = 5,
 	IPC_MOD_UNBIND = 6,
 	IPC_MOD_SET_DX = 7,
-	IPC_MOD_SET_D0IX = 8
+	IPC_MOD_SET_D0IX = 8,
+	IPC_MOD_DELETE_INSTANCE = 11
 };
 
-static void skl_ipc_tx_data_copy(struct ipc_message *msg, char *tx_data,
+void skl_ipc_tx_data_copy(struct ipc_message *msg, char *tx_data,
 		size_t tx_size)
 {
 	if (tx_size)
@@ -342,7 +352,57 @@ out:
 
 }
 
-static int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
+static void
+skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+{
+	int core, size;
+	u32 *ptr;
+	u8 *base;
+	u32 write, read;
+
+#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	core = 0;
+#else
+	core = IPC_GLB_NOTIFY_CORE_ID(header.primary);
+#endif
+	if (!(BIT(core) & sst->trace_wind.flags)) {
+		dev_err(sst->dev, "Logging is disabled on dsp %d\n", core);
+		return;
+	}
+	if (skl_dsp_get_buff_users(sst, core) > 2) {
+		dev_err(sst->dev, "Can't handle log buffer notification, \
+			previous writer is not finished yet !\n \
+			dropping log buffer\n");
+		return;
+	}
+	skl_dsp_get_log_buff(sst, core);
+#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	size = sst->trace_wind.size;
+#else
+	size = sst->trace_wind.size/sst->trace_wind.nr_dsp;
+#endif
+	base = (u8 *)sst->trace_wind.addr;
+	/* move to the source dsp tracing window */
+	base += (core * size);
+	ptr = (u32 *) base;
+	read = ptr[0];
+	write = ptr[1];
+	if (write > read) {
+		skl_dsp_write_log(sst, (void __iomem *)(base + 8 + read),
+					core, (write - read));
+		/* read pointer */
+		ptr[0] += write - read;
+	} else {
+		skl_dsp_write_log(sst, (void __iomem *) (base + 8 + read),
+					core, size - 8 - read);
+		skl_dsp_write_log(sst, (void __iomem *) (base + 8),
+					core, write);
+		ptr[0] = write;
+	}
+	skl_dsp_put_log_buff(sst, core);
+}
+
+int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 		struct skl_ipc_header header)
 {
 	struct skl_sst *skl = container_of(ipc, struct skl_sst, ipc);
@@ -362,6 +422,10 @@ static int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 		case IPC_GLB_NOTIFY_FW_READY:
 			skl->boot_complete = true;
 			wake_up(&skl->boot_wait);
+			break;
+
+		case IPC_GLB_NOTIFY_LOG_BUFFER_STATUS:
+			skl_process_log_buffer(skl->dsp, header);
 			break;
 
 		case IPC_GLB_NOTIFY_PHRASE_DETECTED:
@@ -387,51 +451,81 @@ static int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 	return 0;
 }
 
-static void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
+static int skl_ipc_set_reply_error_code(u32 reply)
+{
+	switch (reply) {
+	case IPC_GLB_REPLY_OUT_OF_MEMORY:
+		return -ENOMEM;
+
+	case IPC_GLB_REPLY_BUSY:
+		return -EBUSY;
+
+	default:
+		return -EINVAL;
+	}
+}
+
+void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 		struct skl_ipc_header header)
 {
 	struct ipc_message *msg;
 	u32 reply = header.primary & IPC_GLB_REPLY_STATUS_MASK;
 	u64 *ipc_header = (u64 *)(&header);
+	struct skl_sst *skl = container_of(ipc, struct skl_sst, ipc);
+	unsigned long flags;
 
+	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
 	msg = skl_ipc_reply_get_msg(ipc, *ipc_header);
+	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 	if (msg == NULL) {
 		dev_dbg(ipc->dev, "ipc: rx list is empty\n");
 		return;
 	}
 
 	/* first process the header */
-	switch (reply) {
-	case IPC_GLB_REPLY_SUCCESS:
+	if (reply == IPC_GLB_REPLY_SUCCESS) {
 		dev_dbg(ipc->dev, "ipc FW reply %x: success\n", header.primary);
 		/* copy the rx data from the mailbox */
+		if (IPC_GLB_NOTIFY_MSG_TYPE(header.primary) ==
+				IPC_MOD_LARGE_CONFIG_GET)
+			msg->rx_size = header.extension &
+				IPC_DATA_OFFSET_SZ_MASK;
 		sst_dsp_inbox_read(ipc->dsp, msg->rx_data, msg->rx_size);
-		break;
+		switch (IPC_GLB_NOTIFY_MSG_TYPE(header.primary)) {
+		case IPC_GLB_LOAD_MULTIPLE_MODS:
+		case IPC_GLB_LOAD_LIBRARY:
+			skl->mod_load_complete = true;
+			skl->mod_load_status = true;
+			wake_up(&skl->mod_load_wait);
+			break;
 
-	case IPC_GLB_REPLY_OUT_OF_MEMORY:
-		dev_err(ipc->dev, "ipc fw reply: %x: no memory\n", header.primary);
-		msg->errno = -ENOMEM;
-		break;
+		default:
+			break;
 
-	case IPC_GLB_REPLY_BUSY:
-		dev_err(ipc->dev, "ipc fw reply: %x: Busy\n", header.primary);
-		msg->errno = -EBUSY;
-		break;
-
-	default:
-		dev_err(ipc->dev, "Unknown ipc reply: 0x%x\n", reply);
-		msg->errno = -EINVAL;
-		break;
-	}
-
-	if (reply != IPC_GLB_REPLY_SUCCESS) {
+		}
+	} else {
+		msg->errno = skl_ipc_set_reply_error_code(reply);
 		dev_err(ipc->dev, "ipc FW reply: reply=%d\n", reply);
 		dev_err(ipc->dev, "FW Error Code: %u\n",
 			ipc->dsp->fw_ops.get_fw_errcode(ipc->dsp));
+		switch (IPC_GLB_NOTIFY_MSG_TYPE(header.primary)) {
+		case IPC_GLB_LOAD_MULTIPLE_MODS:
+		case IPC_GLB_LOAD_LIBRARY:
+			skl->mod_load_complete = true;
+			skl->mod_load_status = false;
+			wake_up(&skl->mod_load_wait);
+			break;
+
+		default:
+			break;
+
+		}
 	}
 
+	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
 	list_del(&msg->list);
 	sst_ipc_tx_msg_reply_complete(ipc, msg);
+	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 }
 
 irqreturn_t skl_dsp_irq_thread_handler(int irq, void *context)
@@ -498,7 +592,7 @@ irqreturn_t skl_dsp_irq_thread_handler(int irq, void *context)
 	skl_ipc_int_enable(dsp);
 
 	/* continue to send any remaining messages... */
-	kthread_queue_work(&ipc->kworker, &ipc->kwork);
+	schedule_work(&ipc->kwork);
 
 	return IRQ_HANDLED;
 }
@@ -596,8 +690,9 @@ int skl_ipc_create_pipeline(struct sst_generic_ipc *ipc,
 
 	header.extension = IPC_PPL_LP_MODE(lp_mode);
 
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: create pipeline fail, err: %d\n", ret);
 		return ret;
@@ -618,8 +713,9 @@ int skl_ipc_delete_pipeline(struct sst_generic_ipc *ipc, u8 instance_id)
 	header.primary |= IPC_GLB_TYPE(IPC_GLB_DELETE_PPL);
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: delete pipeline failed, err %d\n", ret);
 		return ret;
@@ -642,8 +738,9 @@ int skl_ipc_set_pipeline_state(struct sst_generic_ipc *ipc,
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 	header.primary |= IPC_PPL_STATE(state);
 
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: set pipeline state failed, err: %d\n", ret);
 		return ret;
@@ -665,8 +762,9 @@ skl_ipc_save_pipeline(struct sst_generic_ipc *ipc, u8 instance_id, int dma_id)
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 
 	header.extension = IPC_DMA_ID(dma_id);
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: save pipeline failed, err: %d\n", ret);
 		return ret;
@@ -687,8 +785,9 @@ int skl_ipc_restore_pipeline(struct sst_generic_ipc *ipc, u8 instance_id)
 	header.primary |= IPC_GLB_TYPE(IPC_GLB_RESTORE_PPL);
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 
-	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: restore  pipeline failed, err: %d\n", ret);
 		return ret;
@@ -711,10 +810,10 @@ int skl_ipc_set_dx(struct sst_generic_ipc *ipc, u8 instance_id,
 	header.primary |= IPC_MOD_INSTANCE_ID(instance_id);
 	header.primary |= IPC_MOD_ID(module_id);
 
-	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
-			 header.primary, header.extension);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
-				dx, sizeof(*dx), NULL, 0);
+				dx, sizeof(*dx), NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: set dx failed, err %d\n", ret);
 		return ret;
@@ -723,6 +822,33 @@ int skl_ipc_set_dx(struct sst_generic_ipc *ipc, u8 instance_id,
 	return ret;
 }
 EXPORT_SYMBOL_GPL(skl_ipc_set_dx);
+
+int skl_ipc_delete_instance(struct sst_generic_ipc *ipc,
+			struct skl_ipc_init_instance_msg *msg)
+{
+	struct skl_ipc_header header = {0};
+	u64 *ipc_header = (u64 *)(&header);
+	int ret;
+
+	header.primary = IPC_MSG_TARGET(IPC_MOD_MSG);
+	header.primary |= IPC_MSG_DIR(IPC_MSG_REQUEST);
+	header.primary |= IPC_GLB_TYPE(IPC_MOD_DELETE_INSTANCE);
+	header.primary |= IPC_MOD_INSTANCE_ID(msg->instance_id);
+	header.primary |= IPC_MOD_ID(msg->module_id);
+
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL,
+			msg->param_data_size, NULL, NULL);
+
+	if (ret < 0) {
+		dev_err(ipc->dev, "ipc: delete instance failed\n");
+		return ret;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(skl_ipc_delete_instance);
 
 int skl_ipc_init_instance(struct sst_generic_ipc *ipc,
 		struct skl_ipc_init_instance_msg *msg, void *param_data)
@@ -748,10 +874,10 @@ int skl_ipc_init_instance(struct sst_generic_ipc *ipc,
 	header.extension |= IPC_PARAM_BLOCK_SIZE(param_block_size);
 	header.extension |= IPC_DOMAIN(msg->domain);
 
-	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
-			 header.primary, header.extension);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, param_data,
-			msg->param_data_size, NULL, 0);
+			msg->param_data_size, NULL, NULL);
 
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: init instance failed\n");
@@ -781,9 +907,9 @@ int skl_ipc_bind_unbind(struct sst_generic_ipc *ipc,
 	header.extension |= IPC_DST_QUEUE(msg->dst_queue);
 	header.extension |= IPC_SRC_QUEUE(msg->src_queue);
 
-	dev_dbg(ipc->dev, "In %s hdr=%x ext=%x\n", __func__, header.primary,
-			 header.extension);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+		header.primary, header.extension);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: bind/unbind failed\n");
 		return ret;
@@ -812,7 +938,7 @@ int skl_ipc_load_modules(struct sst_generic_ipc *ipc,
 	header.primary |= IPC_LOAD_MODULE_CNT(module_cnt);
 
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, data,
-				(sizeof(u16) * module_cnt), NULL, 0);
+				(sizeof(u16) * module_cnt), NULL, NULL);
 	if (ret < 0)
 		dev_err(ipc->dev, "ipc: load modules failed :%d\n", ret);
 
@@ -833,7 +959,7 @@ int skl_ipc_unload_modules(struct sst_generic_ipc *ipc, u8 module_cnt,
 	header.primary |= IPC_LOAD_MODULE_CNT(module_cnt);
 
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, data,
-				(sizeof(u16) * module_cnt), NULL, 0);
+				(sizeof(u16) * module_cnt), NULL, NULL);
 	if (ret < 0)
 		dev_err(ipc->dev, "ipc: unload modules failed :%d\n", ret);
 
@@ -874,7 +1000,7 @@ int skl_ipc_set_large_config(struct sst_generic_ipc *ipc,
 			(unsigned)data_offset, (unsigned)tx_size);
 		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
 					  ((char *)param) + data_offset,
-					  tx_size, NULL, 0);
+					  tx_size, NULL, NULL);
 		if (ret < 0) {
 			dev_err(ipc->dev,
 				"ipc: set large config fail, err: %d\n", ret);
@@ -896,12 +1022,13 @@ int skl_ipc_set_large_config(struct sst_generic_ipc *ipc,
 EXPORT_SYMBOL_GPL(skl_ipc_set_large_config);
 
 int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
-		struct skl_ipc_large_config_msg *msg, u32 *param)
+		struct skl_ipc_large_config_msg *msg, u32 *param,
+		u32 *txparam, u32 tx_bytes, size_t *rx_bytes)
 {
 	struct skl_ipc_header header = {0};
 	u64 *ipc_header = (u64 *)(&header);
 	int ret = 0;
-	size_t sz_remaining, rx_size, data_offset;
+	size_t sz_remaining, rx_size, data_offset, inbox_sz;
 
 	header.primary = IPC_MSG_TARGET(IPC_MOD_MSG);
 	header.primary |= IPC_MSG_DIR(IPC_MSG_REQUEST);
@@ -916,29 +1043,50 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
 
 	sz_remaining = msg->param_data_size;
 	data_offset = 0;
+	inbox_sz = ipc->dsp->mailbox.in_size;
+
+	if (msg->param_data_size >= inbox_sz)
+		header.extension |= IPC_FINAL_BLOCK(0);
 
 	while (sz_remaining != 0) {
-		rx_size = sz_remaining > SKL_ADSP_W1_SZ
-				? SKL_ADSP_W1_SZ : sz_remaining;
+		rx_size = sz_remaining > inbox_sz
+				? inbox_sz : sz_remaining;
 		if (rx_size == sz_remaining)
 			header.extension |= IPC_FINAL_BLOCK(1);
 
-		ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0,
-					      ((char *)param) + data_offset,
-					      msg->param_data_size);
+		dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+			header.primary, header.extension);
+		dev_dbg(ipc->dev, "receiving offset: %#x, size: %#x\n",
+			(unsigned)data_offset, (unsigned)rx_size);
+
+		if (rx_bytes != NULL)
+			*rx_bytes = rx_size;
+
+		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
+			((char *)txparam), tx_bytes,
+			((char *)param) + data_offset, rx_bytes);
+
 		if (ret < 0) {
 			dev_err(ipc->dev,
 				"ipc: get large config fail, err: %d\n", ret);
 			return ret;
 		}
+		/* exit as this is the final block */
+		if (header.extension | (0 << IPC_FINAL_BLOCK_SHIFT))
+			break;
+
+		if (rx_bytes != NULL)
+			rx_size = *rx_bytes;
+
 		sz_remaining -= rx_size;
+
 		data_offset = msg->param_data_size - sz_remaining;
 
 		/* clear the fields */
 		header.extension &= IPC_INITIAL_BLOCK_CLEAR;
 		header.extension &= IPC_DATA_OFFSET_SZ_CLEAR;
 		/* fill the fields */
-		header.extension |= IPC_INITIAL_BLOCK(1);
+		header.extension |= IPC_INITIAL_BLOCK(0);
 		header.extension |= IPC_DATA_OFFSET_SZ(data_offset);
 	}
 
@@ -947,7 +1095,7 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
 EXPORT_SYMBOL_GPL(skl_ipc_get_large_config);
 
 int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
-				u8 dma_id, u8 table_id)
+				u8 dma_id, u8 table_id, bool wait)
 {
 	struct skl_ipc_header header = {0};
 	u64 *ipc_header = (u64 *)(&header);
@@ -959,7 +1107,11 @@ int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
 	header.primary |= IPC_MOD_INSTANCE_ID(table_id);
 	header.primary |= IPC_MOD_ID(dma_id);
 
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	if (wait)
+		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
+					NULL, 0, NULL, NULL);
+	else
+		ret = sst_ipc_tx_message_nowait(ipc, *ipc_header, NULL, 0);
 
 	if (ret < 0)
 		dev_err(ipc->dev, "ipc: load lib failed\n");
