@@ -1029,6 +1029,37 @@ EXIT:
 	return terminal;
 }
 
+/* Returns the terminal or NULL if it was not found
+   For some of those maybe valid to not exist at all in the process group */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+const ia_css_terminal_t *ia_css_process_group_get_single_instance_terminal(
+	const ia_css_process_group_t 	*process_group,
+	ia_css_terminal_type_t		term_type)
+{
+	int i, term_count;
+
+	assert(process_group != NULL);
+
+	/* Those below have at most one instance per process group */
+	assert(term_type == IA_CSS_TERMINAL_TYPE_PARAM_CACHED_IN ||
+		term_type == IA_CSS_TERMINAL_TYPE_PARAM_CACHED_OUT ||
+		term_type == IA_CSS_TERMINAL_TYPE_PROGRAM ||
+		term_type == IA_CSS_TERMINAL_TYPE_PROGRAM_CONTROL_INIT);
+
+	term_count = ia_css_process_group_get_terminal_count(process_group);
+
+	for (i = 0; i < term_count; i++) {
+		const ia_css_terminal_t	*terminal = ia_css_process_group_get_terminal(process_group, i);
+
+		if (ia_css_terminal_get_type(terminal) == term_type) {
+			/* Only one parameter terminal per process group */
+			return terminal;
+		}
+	}
+
+	return NULL;
+}
+
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
 ia_css_terminal_t *ia_css_process_group_get_terminal(
 	const ia_css_process_group_t *process_grp,
