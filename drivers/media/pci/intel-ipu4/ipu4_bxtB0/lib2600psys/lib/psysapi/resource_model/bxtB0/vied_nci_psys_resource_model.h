@@ -21,6 +21,13 @@
 #define HAS_DFM				0
 #define NON_RELOC_RESOURCE_SUPPORT	0
 
+/* Defines for the routing bitmap in the program group manifest.
+ */
+#define VIED_NCI_RBM_MAX_MUX_COUNT			0
+#define VIED_NCI_RBM_MAX_VALIDATION_RULE_COUNT		0
+#define VIED_NCI_RBM_MAX_TERMINAL_DESC_COUNT		0
+#define N_PADDING_UINT8_IN_RBM_MANIFEST			2
+
 /* The amount of padding bytes needed to make
  * ia_css_process_s structure 64 bit aligned
  */

@@ -24,6 +24,7 @@
 #include "ia_css_psys_private_pg_data.h"
 #include <vied_nci_psys_system_global.h>	/* Safer bit mask functions */
 #include "ia_css_psys_static_trace.h"
+#include "ia_css_rbm_manifest_types.h"
 #include <error_support.h>
 #include <assert_support.h>
 #include <misc_support.h>
@@ -143,6 +144,29 @@ EXIT:
 			"ia_css_program_group_manifest_get_private_data invalid argument\n");
 	}
 	return private_data;
+}
+
+IA_CSS_PSYS_STATIC_STORAGE_CLASS_C
+ia_css_rbm_manifest_t *ia_css_program_group_manifest_get_rbm_manifest(
+	ia_css_program_group_manifest_t *manifest)
+{
+	ia_css_rbm_manifest_t *rbm_manifest = NULL;
+
+	IA_CSS_TRACE_1(PSYSAPI_STATIC, VERBOSE,
+		"ia_css_program_group_manifest_get_rbm_manifest(%p): enter:\n",
+		manifest);
+
+	verifexit(manifest != NULL);
+
+	rbm_manifest = (ia_css_rbm_manifest_t *)((const char *)manifest +
+				manifest->rbm_manifest_offset);
+
+EXIT:
+	if (NULL == manifest) {
+		IA_CSS_TRACE_0(PSYSAPI_STATIC, WARNING,
+			"ia_css_program_group_manifest_get_rbm_manifest invalid argument\n");
+	}
+	return rbm_manifest;
 }
 
 IA_CSS_PSYS_STATIC_STORAGE_CLASS_C

@@ -25,6 +25,8 @@ IPU_PSYSLIB_SRC = \
 	$(IPU_PSYSLIB_ROOT_REL)/psysapi/static/src/ia_css_psys_program_manifest.o \
 	$(IPU_PSYSLIB_ROOT_REL)/psysapi/static/src/ia_css_psys_terminal_manifest.o \
 	$(IPU_PSYSLIB_ROOT_REL)/reg_dump/src/reg_dump_generic_bridge.o \
+	$(IPU_PSYSLIB_ROOT_REL)/routing_bitmap/src/ia_css_rbm.o \
+	$(IPU_PSYSLIB_ROOT_REL)/routing_bitmap/src/ia_css_rbm_manifest.o \
 	$(IPU_PSYSLIB_ROOT_REL)/syscom/src/ia_css_syscom.o \
 	$(IPU_PSYSLIB_ROOT_REL)/vied_parameters/src/ia_css_terminal.o \
 	$(IPU_PSYSLIB_ROOT_REL)/vied_parameters/src/ia_css_terminal_manifest.o

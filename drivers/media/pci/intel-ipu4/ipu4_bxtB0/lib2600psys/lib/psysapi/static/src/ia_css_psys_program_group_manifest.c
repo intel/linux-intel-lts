@@ -14,6 +14,7 @@
 
 #include "ia_css_psys_static_storage_class.h"
 #include "ia_css_psys_program_group_manifest.h"
+#include "ia_css_rbm_manifest.h"
 
 /*
  * Functions to possibly inline
@@ -68,6 +69,9 @@ size_t ia_css_sizeof_program_group_manifest(
 
 	/* Private payload in the program group manifest */
 	size += ceil_mul(sizeof(struct ia_css_psys_private_pg_data),
+				sizeof(uint64_t));
+	/* RBM manifest in the program group manifest */
+	size += ceil_mul(sizeof(ia_css_rbm_manifest_t),
 				sizeof(uint64_t));
 
 	for (i = 0; i < (int)program_count; i++) {
@@ -896,6 +900,13 @@ void ia_css_program_group_manifest_init(
 	blob->private_data_offset = offset;
 	offset += ceil_mul(sizeof(struct ia_css_psys_private_pg_data),
 				sizeof(uint64_t));
+
+	/* Set the RBM manifest blob offset */
+	blob->rbm_manifest_offset = offset;
+	offset += ceil_mul(sizeof(ia_css_rbm_manifest_t),
+				sizeof(uint64_t));
+
+	assert(offset <= UINT16_MAX);
 	blob->size = (uint16_t)offset;
 }
 

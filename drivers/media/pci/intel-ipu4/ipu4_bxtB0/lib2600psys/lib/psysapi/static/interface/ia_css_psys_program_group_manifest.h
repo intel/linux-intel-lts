@@ -35,6 +35,7 @@
 
 #include <ia_css_kernel_bitmap.h>		/* ia_css_kernel_bitmap_t */
 #include "ia_css_terminal_manifest.h"
+#include "ia_css_rbm_manifest_types.h"
 
 #define IA_CSS_PROGRAM_GROUP_INVALID_ALIGNMENT		((uint8_t)(-1))
 
@@ -145,6 +146,17 @@ uint8_t ia_css_program_group_manifest_get_terminal_count(
 IA_CSS_PSYS_STATIC_STORAGE_CLASS_H
 void *ia_css_program_group_manifest_get_private_data(
 	const ia_css_program_group_manifest_t *manifest);
+
+/*! Get the (pointer to) routing bitmap (rbm) manifest
+
+ @param	manifest[in]			program group manifest object
+
+ @return rbm manifest, NULL on invalid manifest argument
+ */
+IA_CSS_PSYS_STATIC_STORAGE_CLASS_H
+ia_css_rbm_manifest_t *
+ia_css_program_group_manifest_get_rbm_manifest(
+	ia_css_program_group_manifest_t *manifest);
 
 /*! Get the (pointer to) indexed program manifest in the program group manifest
  * object

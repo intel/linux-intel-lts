@@ -11,4 +11,7 @@
 * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
 * more details.
 */
-#define IA_CSS_FW_PKG_RELEASE  0x20170717
+
+#ifndef __IA_CSS_RBM_INLINE__
+#include "ia_css_rbm_impl.h"
+#endif /* __IA_CSS_RBM_INLINE__ */
