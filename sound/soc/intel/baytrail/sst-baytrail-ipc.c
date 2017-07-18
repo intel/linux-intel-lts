@@ -23,7 +23,6 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/platform_device.h>
-#include <linux/kthread.h>
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <asm/div64.h>
@@ -338,7 +337,7 @@ static irqreturn_t sst_byt_irq_thread(int irq, void *context)
 	spin_unlock_irqrestore(&sst->spinlock, flags);
 
 	/* continue to send any remaining messages... */
-	kthread_queue_work(&ipc->kworker, &ipc->kwork);
+	schedule_work(&ipc->kwork);
 
 	return IRQ_HANDLED;
 }
@@ -421,13 +420,14 @@ int sst_byt_stream_commit(struct sst_byt *byt, struct sst_byt_stream *stream)
 	struct sst_byt_alloc_response *reply = &stream->reply;
 	u64 header;
 	int ret;
+	size_t rx_bytes = sizeof(*reply);
 
 	header = sst_byt_header(IPC_IA_ALLOC_STREAM,
 				sizeof(*str_req) + sizeof(u32),
 				true, stream->str_id);
 	ret = sst_ipc_tx_message_wait(&byt->ipc, header, str_req,
 				      sizeof(*str_req),
-				      reply, sizeof(*reply));
+				      reply, &rx_bytes);
 	if (ret < 0) {
 		dev_err(byt->dev, "ipc: error stream commit failed\n");
 		return ret;
@@ -449,7 +449,7 @@ int sst_byt_stream_free(struct sst_byt *byt, struct sst_byt_stream *stream)
 		goto out;
 
 	header = sst_byt_header(IPC_IA_FREE_STREAM, 0, false, stream->str_id);
-	ret = sst_ipc_tx_message_wait(&byt->ipc, header, NULL, 0, NULL, 0);
+	ret = sst_ipc_tx_message_wait(&byt->ipc, header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(byt->dev, "ipc: free stream %d failed\n",
 			stream->str_id);
@@ -474,7 +474,7 @@ static int sst_byt_stream_operations(struct sst_byt *byt, int type,
 	header = sst_byt_header(type, 0, false, stream_id);
 	if (wait)
 		return sst_ipc_tx_message_wait(&byt->ipc, header, NULL,
-						0, NULL, 0);
+						0, NULL, NULL);
 	else
 		return sst_ipc_tx_message_nowait(&byt->ipc, header,
 						NULL, 0);

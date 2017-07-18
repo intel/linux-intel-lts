@@ -16,6 +16,7 @@ available subsections can be seen below.
 
    basics
    infrastructure
+   dma-buf
    message-based
    sound
    frame-buffer

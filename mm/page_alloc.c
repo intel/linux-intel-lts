@@ -286,6 +286,26 @@ int page_group_by_mobility_disabled __read_mostly;
 #ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
 static inline void reset_deferred_meminit(pg_data_t *pgdat)
 {
+	unsigned long max_initialise;
+	unsigned long reserved_lowmem;
+
+	/*
+	 * Initialise at least 2G of a node but also take into account that
+	 * two large system hashes that can take up 1GB for 0.25TB/node.
+	 */
+	max_initialise = max(2UL << (30 - PAGE_SHIFT),
+		(pgdat->node_spanned_pages >> 8));
+
+	/*
+	 * Compensate the all the memblock reservations (e.g. crash kernel)
+	 * from the initial estimation to make sure we will initialize enough
+	 * memory to boot.
+	 */
+	reserved_lowmem = memblock_reserved_memory_within(pgdat->node_start_pfn,
+			pgdat->node_start_pfn + max_initialise);
+	max_initialise += reserved_lowmem;
+
+	pgdat->static_init_size = min(max_initialise, pgdat->node_spanned_pages);
 	pgdat->first_deferred_pfn = ULONG_MAX;
 }
 
@@ -308,20 +328,11 @@ static inline bool update_defer_init(pg_data_t *pgdat,
 				unsigned long pfn, unsigned long zone_end,
 				unsigned long *nr_initialised)
 {
-	unsigned long max_initialise;
-
 	/* Always populate low zones for address-contrained allocations */
 	if (zone_end < pgdat_end_pfn(pgdat))
 		return true;
-	/*
-	 * Initialise at least 2G of a node but also take into account that
-	 * two large system hashes that can take up 1GB for 0.25TB/node.
-	 */
-	max_initialise = max(2UL << (30 - PAGE_SHIFT),
-		(pgdat->node_spanned_pages >> 8));
-
 	(*nr_initialised)++;
-	if ((*nr_initialised > max_initialise) &&
+	if ((*nr_initialised > pgdat->static_init_size) &&
 	    (pfn & (PAGES_PER_SECTION - 1)) == 0) {
 		pgdat->first_deferred_pfn = pfn;
 		return false;
@@ -2858,7 +2869,7 @@ bool zone_watermark_ok_safe(struct zone *z, unsigned int order,
 #ifdef CONFIG_NUMA
 static bool zone_allows_reclaim(struct zone *local_zone, struct zone *zone)
 {
-	return node_distance(zone_to_nid(local_zone), zone_to_nid(zone)) <
+	return node_distance(zone_to_nid(local_zone), zone_to_nid(zone)) <=
 				RECLAIM_DISTANCE;
 }
 #else	/* CONFIG_NUMA */
@@ -3125,6 +3136,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 		enum compact_priority prio, enum compact_result *compact_result)
 {
 	struct page *page;
+	unsigned int noreclaim_flag = current->flags & PF_MEMALLOC;
 
 	if (!order)
 		return NULL;
@@ -3132,7 +3144,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	current->flags |= PF_MEMALLOC;
 	*compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
 									prio);
-	current->flags &= ~PF_MEMALLOC;
+	current->flags = (current->flags & ~PF_MEMALLOC) | noreclaim_flag;
 
 	if (*compact_result <= COMPACT_INACTIVE)
 		return NULL;
@@ -4345,13 +4357,13 @@ void show_free_areas(unsigned int filter)
 			K(node_page_state(pgdat, NR_FILE_MAPPED)),
 			K(node_page_state(pgdat, NR_FILE_DIRTY)),
 			K(node_page_state(pgdat, NR_WRITEBACK)),
+			K(node_page_state(pgdat, NR_SHMEM)),
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 			K(node_page_state(pgdat, NR_SHMEM_THPS) * HPAGE_PMD_NR),
 			K(node_page_state(pgdat, NR_SHMEM_PMDMAPPED)
 					* HPAGE_PMD_NR),
 			K(node_page_state(pgdat, NR_ANON_THPS) * HPAGE_PMD_NR),
 #endif
-			K(node_page_state(pgdat, NR_SHMEM)),
 			K(node_page_state(pgdat, NR_WRITEBACK_TEMP)),
 			K(node_page_state(pgdat, NR_UNSTABLE_NFS)),
 			node_page_state(pgdat, NR_PAGES_SCANNED),
@@ -5910,7 +5922,6 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 	/* pg_data_t should be reset to zero when it's allocated */
 	WARN_ON(pgdat->nr_zones || pgdat->kswapd_classzone_idx);
 
-	reset_deferred_meminit(pgdat);
 	pgdat->node_id = nid;
 	pgdat->node_start_pfn = node_start_pfn;
 	pgdat->per_cpu_nodestats = NULL;
@@ -5932,6 +5943,7 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 		(unsigned long)pgdat->node_mem_map);
 #endif
 
+	reset_deferred_meminit(pgdat);
 	free_area_init_core(pgdat);
 }
 

@@ -705,6 +705,11 @@ struct inode {
 	void			*i_private; /* fs or device private pointer */
 };
 
+static inline unsigned int i_blocksize(const struct inode *node)
+{
+	return (1 << node->i_blkbits);
+}
+
 static inline int inode_unhashed(struct inode *inode)
 {
 	return hlist_unhashed(&inode->i_hash);
@@ -1762,6 +1767,11 @@ struct inode_operations {
 	int (*tmpfile) (struct inode *, struct dentry *, umode_t);
 	int (*set_acl)(struct inode *, struct posix_acl *, int);
 } ____cacheline_aligned;
+
+static inline int call_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	return file->f_op->mmap(file, vma);
+}
 
 ssize_t rw_copy_check_uvector(int type, const struct iovec __user * uvector,
 			      unsigned long nr_segs, unsigned long fast_segs,

@@ -588,9 +588,13 @@ xfs_getbmap(
 		}
 		break;
 	default:
+		/* Local format data forks report no extents. */
+		if (ip->i_d.di_format == XFS_DINODE_FMT_LOCAL) {
+			bmv->bmv_entries = 0;
+			return 0;
+		}
 		if (ip->i_d.di_format != XFS_DINODE_FMT_EXTENTS &&
-		    ip->i_d.di_format != XFS_DINODE_FMT_BTREE &&
-		    ip->i_d.di_format != XFS_DINODE_FMT_LOCAL)
+		    ip->i_d.di_format != XFS_DINODE_FMT_BTREE)
 			return -EINVAL;
 
 		if (xfs_get_extsz_hint(ip) ||
@@ -718,7 +722,7 @@ xfs_getbmap(
 			 * extents.
 			 */
 			if (map[i].br_startblock == DELAYSTARTBLOCK &&
-			    map[i].br_startoff <= XFS_B_TO_FSB(mp, XFS_ISIZE(ip)))
+			    map[i].br_startoff < XFS_B_TO_FSB(mp, XFS_ISIZE(ip)))
 				ASSERT((iflags & BMV_IF_DELALLOC) != 0);
 
                         if (map[i].br_startblock == HOLESTARTBLOCK &&
@@ -911,23 +915,22 @@ xfs_can_free_eofblocks(struct xfs_inode *ip, bool force)
 }
 
 /*
- * This is called by xfs_inactive to free any blocks beyond eof
- * when the link count isn't zero and by xfs_dm_punch_hole() when
- * punching a hole to EOF.
+ * This is called to free any blocks beyond eof. The caller must hold
+ * IOLOCK_EXCL unless we are in the inode reclaim path and have the only
+ * reference to the inode.
  */
 int
 xfs_free_eofblocks(
-	xfs_mount_t	*mp,
-	xfs_inode_t	*ip,
-	bool		need_iolock)
+	struct xfs_inode	*ip)
 {
-	xfs_trans_t	*tp;
-	int		error;
-	xfs_fileoff_t	end_fsb;
-	xfs_fileoff_t	last_fsb;
-	xfs_filblks_t	map_len;
-	int		nimaps;
-	xfs_bmbt_irec_t	imap;
+	struct xfs_trans	*tp;
+	int			error;
+	xfs_fileoff_t		end_fsb;
+	xfs_fileoff_t		last_fsb;
+	xfs_filblks_t		map_len;
+	int			nimaps;
+	struct xfs_bmbt_irec	imap;
+	struct xfs_mount	*mp = ip->i_mount;
 
 	/*
 	 * Figure out if there are any blocks beyond the end
@@ -944,6 +947,10 @@ xfs_free_eofblocks(
 	error = xfs_bmapi_read(ip, end_fsb, map_len, &imap, &nimaps, 0);
 	xfs_iunlock(ip, XFS_ILOCK_SHARED);
 
+	/*
+	 * If there are blocks after the end of file, truncate the file to its
+	 * current size to free them up.
+	 */
 	if (!error && (nimaps != 0) &&
 	    (imap.br_startblock != HOLESTARTBLOCK ||
 	     ip->i_delayed_blks)) {
@@ -954,22 +961,13 @@ xfs_free_eofblocks(
 		if (error)
 			return error;
 
-		/*
-		 * There are blocks after the end of file.
-		 * Free them up now by truncating the file to
-		 * its current size.
-		 */
-		if (need_iolock) {
-			if (!xfs_ilock_nowait(ip, XFS_IOLOCK_EXCL))
-				return -EAGAIN;
-		}
+		/* wait on dio to ensure i_size has settled */
+		inode_dio_wait(VFS_I(ip));
 
 		error = xfs_trans_alloc(mp, &M_RES(mp)->tr_itruncate, 0, 0, 0,
 				&tp);
 		if (error) {
 			ASSERT(XFS_FORCED_SHUTDOWN(mp));
-			if (need_iolock)
-				xfs_iunlock(ip, XFS_IOLOCK_EXCL);
 			return error;
 		}
 
@@ -997,8 +995,6 @@ xfs_free_eofblocks(
 		}
 
 		xfs_iunlock(ip, XFS_ILOCK_EXCL);
-		if (need_iolock)
-			xfs_iunlock(ip, XFS_IOLOCK_EXCL);
 	}
 	return error;
 }
@@ -1324,8 +1320,16 @@ xfs_free_file_space(
 	/*
 	 * Now that we've unmap all full blocks we'll have to zero out any
 	 * partial block at the beginning and/or end.  xfs_zero_range is
-	 * smart enough to skip any holes, including those we just created.
+	 * smart enough to skip any holes, including those we just created,
+	 * but we must take care not to zero beyond EOF and enlarge i_size.
 	 */
+
+	if (offset >= XFS_ISIZE(ip))
+		return 0;
+
+	if (offset + len > XFS_ISIZE(ip))
+		len = XFS_ISIZE(ip) - offset;
+
 	return xfs_zero_range(ip, offset, len, NULL);
 }
 
@@ -1393,10 +1397,16 @@ xfs_shift_file_space(
 	xfs_fileoff_t		stop_fsb;
 	xfs_fileoff_t		next_fsb;
 	xfs_fileoff_t		shift_fsb;
+	uint			resblks;
 
 	ASSERT(direction == SHIFT_LEFT || direction == SHIFT_RIGHT);
 
 	if (direction == SHIFT_LEFT) {
+		/*
+		 * Reserve blocks to cover potential extent merges after left
+		 * shift operations.
+		 */
+		resblks = XFS_DIOSTRAT_SPACE_RES(mp, 0);
 		next_fsb = XFS_B_TO_FSB(mp, offset + len);
 		stop_fsb = XFS_B_TO_FSB(mp, VFS_I(ip)->i_size);
 	} else {
@@ -1404,6 +1414,7 @@ xfs_shift_file_space(
 		 * If right shift, delegate the work of initialization of
 		 * next_fsb to xfs_bmap_shift_extent as it has ilock held.
 		 */
+		resblks = 0;
 		next_fsb = NULLFSBLOCK;
 		stop_fsb = XFS_B_TO_FSB(mp, offset);
 	}
@@ -1415,7 +1426,7 @@ xfs_shift_file_space(
 	 * into the accessible region of the file.
 	 */
 	if (xfs_can_free_eofblocks(ip, true)) {
-		error = xfs_free_eofblocks(mp, ip, false);
+		error = xfs_free_eofblocks(ip);
 		if (error)
 			return error;
 	}
@@ -1445,21 +1456,14 @@ xfs_shift_file_space(
 	}
 
 	while (!error && !done) {
-		/*
-		 * We would need to reserve permanent block for transaction.
-		 * This will come into picture when after shifting extent into
-		 * hole we found that adjacent extents can be merged which
-		 * may lead to freeing of a block during record update.
-		 */
-		error = xfs_trans_alloc(mp, &M_RES(mp)->tr_write,
-				XFS_DIOSTRAT_SPACE_RES(mp, 0), 0, 0, &tp);
+		error = xfs_trans_alloc(mp, &M_RES(mp)->tr_write, resblks, 0, 0,
+					&tp);
 		if (error)
 			break;
 
 		xfs_ilock(ip, XFS_ILOCK_EXCL);
 		error = xfs_trans_reserve_quota(tp, mp, ip->i_udquot,
-				ip->i_gdquot, ip->i_pdquot,
-				XFS_DIOSTRAT_SPACE_RES(mp, 0), 0,
+				ip->i_gdquot, ip->i_pdquot, resblks, 0,
 				XFS_QMOPT_RES_REGBLKS);
 		if (error)
 			goto out_trans_cancel;

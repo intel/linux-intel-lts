@@ -2920,11 +2920,12 @@ static ssize_t __cgroup_procs_write(struct kernfs_open_file *of, char *buf,
 		tsk = tsk->group_leader;
 
 	/*
-	 * Workqueue threads may acquire PF_NO_SETAFFINITY and become
-	 * trapped in a cpuset, or RT worker may be born in a cgroup
-	 * with no rt_runtime allocated.  Just say no.
+	 * kthreads may acquire PF_NO_SETAFFINITY during initialization.
+	 * If userland migrates such a kthread to a non-root cgroup, it can
+	 * become trapped in a cpuset, or RT kthread may be born in a
+	 * cgroup with no rt_runtime allocated.  Just say no.
 	 */
-	if (tsk == kthreadd_task || (tsk->flags & PF_NO_SETAFFINITY)) {
+	if (tsk->no_cgroup_migration || (tsk->flags & PF_NO_SETAFFINITY)) {
 		ret = -EINVAL;
 		goto out_unlock_rcu;
 	}
@@ -5405,6 +5406,11 @@ static void css_killed_ref_fn(struct percpu_ref *ref)
 static void kill_css(struct cgroup_subsys_state *css)
 {
 	lockdep_assert_held(&cgroup_mutex);
+
+	if (css->flags & CSS_DYING)
+		return;
+
+	css->flags |= CSS_DYING;
 
 	/*
 	 * This must happen before css is disassociated with its cgroup.

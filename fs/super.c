@@ -470,7 +470,7 @@ struct super_block *sget_userns(struct file_system_type *type,
 	struct super_block *old;
 	int err;
 
-	if (!(flags & MS_KERNMOUNT) &&
+	if (!(flags & (MS_KERNMOUNT|MS_SUBMOUNT)) &&
 	    !(type->fs_flags & FS_USERNS_MOUNT) &&
 	    !capable(CAP_SYS_ADMIN))
 		return ERR_PTR(-EPERM);
@@ -500,7 +500,7 @@ retry:
 	}
 	if (!s) {
 		spin_unlock(&sb_lock);
-		s = alloc_super(type, flags, user_ns);
+		s = alloc_super(type, (flags & ~MS_SUBMOUNT), user_ns);
 		if (!s)
 			return ERR_PTR(-ENOMEM);
 		goto retry;
@@ -541,8 +541,15 @@ struct super_block *sget(struct file_system_type *type,
 {
 	struct user_namespace *user_ns = current_user_ns();
 
+	/* We don't yet pass the user namespace of the parent
+	 * mount through to here so always use &init_user_ns
+	 * until that changes.
+	 */
+	if (flags & MS_SUBMOUNT)
+		user_ns = &init_user_ns;
+
 	/* Ensure the requestor has permissions over the target filesystem */
-	if (!(flags & MS_KERNMOUNT) && !ns_capable(user_ns, CAP_SYS_ADMIN))
+	if (!(flags & (MS_KERNMOUNT|MS_SUBMOUNT)) && !ns_capable(user_ns, CAP_SYS_ADMIN))
 		return ERR_PTR(-EPERM);
 
 	return sget_userns(type, test, set, flags, user_ns, data);
@@ -837,7 +844,7 @@ static void do_emergency_remount(struct work_struct *work)
 	struct super_block *sb, *p = NULL;
 
 	spin_lock(&sb_lock);
-	list_for_each_entry(sb, &super_blocks, s_list) {
+	list_for_each_entry_reverse(sb, &super_blocks, s_list) {
 		if (hlist_unhashed(&sb->s_instances))
 			continue;
 		sb->s_count++;

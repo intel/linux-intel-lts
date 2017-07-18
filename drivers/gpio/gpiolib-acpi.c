@@ -176,7 +176,7 @@ static acpi_status acpi_gpiochip_request_interrupt(struct acpi_resource *ares,
 	irq_handler_t handler = NULL;
 	struct gpio_desc *desc;
 	unsigned long irqflags;
-	int ret, pin, irq;
+	int ret, pin, irq, ret_error;
 
 	if (ares->type != ACPI_RESOURCE_TYPE_GPIO)
 		return AE_OK;
@@ -190,9 +190,13 @@ static acpi_status acpi_gpiochip_request_interrupt(struct acpi_resource *ares,
 
 	if (pin <= 255) {
 		char ev_name[5];
-		sprintf(ev_name, "_%c%02X",
+		if (snprintf(ev_name, sizeof(ev_name), "_%c%02X",
 			agpio->triggering == ACPI_EDGE_SENSITIVE ? 'E' : 'L',
-			pin);
+			pin) >= sizeof(ev_name)) {
+			ret_error = -ENOMEM;
+			goto exit_func;
+		}
+
 		if (ACPI_SUCCESS(acpi_get_handle(handle, ev_name, &evt_handle)))
 			handler = acpi_gpio_irq_handler;
 	}
@@ -275,8 +279,9 @@ fail_unlock_irq:
 	gpiochip_unlock_as_irq(chip, pin);
 fail_free_desc:
 	gpiochip_free_own_desc(desc);
-
 	return AE_ERROR;
+exit_func:
+	return ret_error;
 }
 
 /**
@@ -571,8 +576,10 @@ struct gpio_desc *acpi_find_gpio(struct device *dev,
 		}
 
 		desc = acpi_get_gpiod_by_index(adev, propname, idx, &info);
-		if (!IS_ERR(desc) || (PTR_ERR(desc) == -EPROBE_DEFER))
+		if (!IS_ERR(desc))
 			break;
+		if (PTR_ERR(desc) == -EPROBE_DEFER)
+			return ERR_CAST(desc);
 	}
 
 	/* Then from plain _CRS GPIOs */
@@ -956,10 +963,14 @@ int acpi_gpio_count(struct device *dev, const char *con_id)
 	const union acpi_object *obj;
 	const struct acpi_gpio_mapping *gm;
 	int count = -ENOENT;
-	int ret;
+	int ret, err_type;
 	char propname[32];
 	unsigned int i;
 
+	if (adev == NULL) {
+		err_type = -ENOMEM;
+		goto exit_err;
+	}
 	/* Try first from _DSD */
 	for (i = 0; i < ARRAY_SIZE(gpio_suffixes); i++) {
 		if (con_id && strcmp(con_id, "gpios"))
@@ -1000,6 +1011,8 @@ int acpi_gpio_count(struct device *dev, const char *con_id)
 			count = crs_count;
 	}
 	return count;
+exit_err:
+	return err_type;
 }
 
 struct acpi_crs_lookup {

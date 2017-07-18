@@ -500,19 +500,6 @@ static void psb_intel_lvds_mode_set(struct drm_encoder *encoder,
 }
 
 /*
- * Detect the LVDS connection.
- *
- * This always returns CONNECTOR_STATUS_CONNECTED.
- * This connector should only have
- * been set up if the LVDS was actually connected anyway.
- */
-static enum drm_connector_status psb_intel_lvds_detect(struct drm_connector
-						   *connector, bool force)
-{
-	return connector_status_connected;
-}
-
-/*
  * Return the list of DDC modes if available, or the BIOS fixed mode otherwise.
  */
 static int psb_intel_lvds_get_modes(struct drm_connector *connector)
@@ -643,7 +630,6 @@ const struct drm_connector_helper_funcs
 
 const struct drm_connector_funcs psb_intel_lvds_connector_funcs = {
 	.dpms = drm_helper_connector_dpms,
-	.detect = psb_intel_lvds_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.set_property = psb_intel_lvds_set_property,
 	.destroy = psb_intel_lvds_destroy,
@@ -774,20 +760,23 @@ void psb_intel_lvds_init(struct drm_device *dev,
 		if (scan->type & DRM_MODE_TYPE_PREFERRED) {
 			mode_dev->panel_fixed_mode =
 			    drm_mode_duplicate(dev, scan);
+			DRM_DEBUG_KMS("Using mode from DDC\n");
 			goto out;	/* FIXME: check for quirks */
 		}
 	}
 
 	/* Failed to get EDID, what about VBT? do we need this? */
-	if (mode_dev->vbt_mode)
+	if (dev_priv->lfp_lvds_vbt_mode) {
 		mode_dev->panel_fixed_mode =
-		    drm_mode_duplicate(dev, mode_dev->vbt_mode);
+			drm_mode_duplicate(dev, dev_priv->lfp_lvds_vbt_mode);
 
-	if (!mode_dev->panel_fixed_mode)
-		if (dev_priv->lfp_lvds_vbt_mode)
-			mode_dev->panel_fixed_mode =
-				drm_mode_duplicate(dev,
-					dev_priv->lfp_lvds_vbt_mode);
+		if (mode_dev->panel_fixed_mode) {
+			mode_dev->panel_fixed_mode->type |=
+				DRM_MODE_TYPE_PREFERRED;
+			DRM_DEBUG_KMS("Using mode from VBT\n");
+			goto out;
+		}
+	}
 
 	/*
 	 * If we didn't get EDID, try checking if the panel is already turned
@@ -804,6 +793,7 @@ void psb_intel_lvds_init(struct drm_device *dev,
 		if (mode_dev->panel_fixed_mode) {
 			mode_dev->panel_fixed_mode->type |=
 			    DRM_MODE_TYPE_PREFERRED;
+			DRM_DEBUG_KMS("Using pre-programmed mode\n");
 			goto out;	/* FIXME: check for quirks */
 		}
 	}

@@ -178,9 +178,10 @@ pass_up:
 
 	tunnel_id = ntohl(*(__be32 *) &skb->data[4]);
 	tunnel = l2tp_tunnel_find(net, tunnel_id);
-	if (tunnel != NULL)
+	if (tunnel) {
 		sk = tunnel->sock;
-	else {
+		sock_hold(sk);
+	} else {
 		struct iphdr *iph = (struct iphdr *) skb_network_header(skb);
 
 		read_lock_bh(&l2tp_ip_lock);
@@ -388,7 +389,7 @@ static int l2tp_ip_backlog_recv(struct sock *sk, struct sk_buff *skb)
 drop:
 	IP_INC_STATS(sock_net(sk), IPSTATS_MIB_INDISCARDS);
 	kfree_skb(skb);
-	return -1;
+	return 0;
 }
 
 /* Userspace will call sendmsg() on the tunnel socket to send L2TP

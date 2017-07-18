@@ -1073,9 +1073,6 @@ static int ff_layout_async_handle_error_v4(struct rpc_task *task,
 	struct nfs_client *mds_client = mds_server->nfs_client;
 	struct nfs4_slot_table *tbl = &clp->cl_session->fc_slot_table;
 
-	if (task->tk_status >= 0)
-		return 0;
-
 	switch (task->tk_status) {
 	/* MDS state errors */
 	case -NFS4ERR_DELEG_REVOKED:
@@ -1176,9 +1173,6 @@ static int ff_layout_async_handle_error_v3(struct rpc_task *task,
 {
 	struct nfs4_deviceid_node *devid = FF_LAYOUT_DEVID_NODE(lseg, idx);
 
-	if (task->tk_status >= 0)
-		return 0;
-
 	switch (task->tk_status) {
 	/* File access problems. Don't mark the device as unavailable */
 	case -EACCES:
@@ -1212,6 +1206,13 @@ static int ff_layout_async_handle_error(struct rpc_task *task,
 					int idx)
 {
 	int vers = clp->cl_nfs_mod->rpc_vers->number;
+
+	if (task->tk_status >= 0)
+		return 0;
+
+	/* Handle the case of an invalid layout segment */
+	if (!pnfs_is_valid_lseg(lseg))
+		return -NFS4ERR_RESET_TO_PNFS;
 
 	switch (vers) {
 	case 3:
@@ -1769,7 +1770,7 @@ ff_layout_read_pagelist(struct nfs_pgio_header *hdr)
 	int vers;
 	struct nfs_fh *fh;
 
-	dprintk("--> %s ino %lu pgbase %u req %Zu@%llu\n",
+	dprintk("--> %s ino %lu pgbase %u req %zu@%llu\n",
 		__func__, hdr->inode->i_ino,
 		hdr->args.pgbase, (size_t)hdr->args.count, offset);
 
@@ -1846,7 +1847,7 @@ ff_layout_write_pagelist(struct nfs_pgio_header *hdr, int sync)
 
 	vers = nfs4_ff_layout_ds_version(lseg, idx);
 
-	dprintk("%s ino %lu sync %d req %Zu@%llu DS: %s cl_count %d vers %d\n",
+	dprintk("%s ino %lu sync %d req %zu@%llu DS: %s cl_count %d vers %d\n",
 		__func__, hdr->inode->i_ino, sync, (size_t) hdr->args.count,
 		offset, ds->ds_remotestr, atomic_read(&ds->ds_clp->cl_count),
 		vers);

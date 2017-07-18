@@ -278,7 +278,8 @@ struct l2tp_session *l2tp_session_find(struct net *net, struct l2tp_tunnel *tunn
 }
 EXPORT_SYMBOL_GPL(l2tp_session_find);
 
-struct l2tp_session *l2tp_session_find_nth(struct l2tp_tunnel *tunnel, int nth)
+struct l2tp_session *l2tp_session_get_nth(struct l2tp_tunnel *tunnel, int nth,
+					  bool do_ref)
 {
 	int hash;
 	struct l2tp_session *session;
@@ -288,6 +289,9 @@ struct l2tp_session *l2tp_session_find_nth(struct l2tp_tunnel *tunnel, int nth)
 	for (hash = 0; hash < L2TP_HASH_SIZE; hash++) {
 		hlist_for_each_entry(session, &tunnel->session_hlist[hash], hlist) {
 			if (++count > nth) {
+				l2tp_session_inc_refcount(session);
+				if (do_ref && session->ref)
+					session->ref(session);
 				read_unlock_bh(&tunnel->hlist_lock);
 				return session;
 			}
@@ -298,7 +302,7 @@ struct l2tp_session *l2tp_session_find_nth(struct l2tp_tunnel *tunnel, int nth)
 
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(l2tp_session_find_nth);
+EXPORT_SYMBOL_GPL(l2tp_session_get_nth);
 
 /* Lookup a session by interface name.
  * This is very inefficient but is only used by management interfaces.
@@ -1058,10 +1062,10 @@ static int l2tp_xmit_core(struct l2tp_session *session, struct sk_buff *skb,
 
 	/* Debug */
 	if (session->send_seq)
-		l2tp_dbg(session, L2TP_MSG_DATA, "%s: send %Zd bytes, ns=%u\n",
+		l2tp_dbg(session, L2TP_MSG_DATA, "%s: send %zd bytes, ns=%u\n",
 			 session->name, data_len, session->ns - 1);
 	else
-		l2tp_dbg(session, L2TP_MSG_DATA, "%s: send %Zd bytes\n",
+		l2tp_dbg(session, L2TP_MSG_DATA, "%s: send %zd bytes\n",
 			 session->name, data_len);
 
 	if (session->debug & L2TP_MSG_DATA) {

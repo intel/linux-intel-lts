@@ -24,34 +24,25 @@
 #include <sound/hda_register.h>
 #include <sound/hdaudio_ext.h>
 #include "skl-nhlt.h"
+#include "skl-sst-ipc.h"
 
 #define SKL_SUSPEND_DELAY 2000
-
-/* Vendor Specific Registers */
-#define AZX_REG_VS_EM1			0x1000
-#define AZX_REG_VS_INRC			0x1004
-#define AZX_REG_VS_OUTRC		0x1008
-#define AZX_REG_VS_FIFOTRK		0x100C
-#define AZX_REG_VS_FIFOTRK2		0x1010
-#define AZX_REG_VS_EM2			0x1030
-#define AZX_REG_VS_EM3L			0x1038
-#define AZX_REG_VS_EM3U			0x103C
-#define AZX_REG_VS_EM4L			0x1040
-#define AZX_REG_VS_EM4U			0x1044
-#define AZX_REG_VS_LTRC			0x1048
-#define AZX_REG_VS_D0I3C		0x104A
-#define AZX_REG_VS_PCE			0x104B
-#define AZX_REG_VS_L2MAGC		0x1050
-#define AZX_REG_VS_L2LAHPT		0x1054
-#define AZX_REG_VS_SDXDPIB_XBASE	0x1084
-#define AZX_REG_VS_SDXDPIB_XINTERVAL	0x20
-#define AZX_REG_VS_SDXEFIFOS_XBASE	0x1094
-#define AZX_REG_VS_SDXEFIFOS_XINTERVAL	0x20
 
 #define AZX_PCIREG_PGCTL		0x44
 #define AZX_PGCTL_LSRMD_MASK		(1 << 4)
 #define AZX_PCIREG_CGCTL		0x48
 #define AZX_CGCTL_MISCBDCGE_MASK	(1 << 6)
+/* D0I3C Register fields */
+#define AZX_REG_VS_D0I3C_CIP      0x1 /* Command in progress */
+#define AZX_REG_VS_D0I3C_I3       0x4 /* D0i3 enable */
+#define AZX_EM2_DUM_MASK		(1 << 23)
+
+#define SKL_MAX_MODULE_RESOURCES 32
+#define SKL_MAX_MODULE_FORMATS 64
+#define SKL_MAX_IN_QUEUE 8
+#define SKL_MAX_OUT_QUEUE 8
+#define SKL_MAX_LL_SRC_CFG  8
+#define SKL_MAX_DMA_CFG    24
 
 struct skl_dsp_resource {
 	u32 max_mcps;
@@ -60,20 +51,66 @@ struct skl_dsp_resource {
 	u32 mem;
 };
 
+struct skl_debug;
+struct snd_soc_dapm_widget;
+
+struct skl_dma_config {
+	u32 min_size;
+	u32 max_size;
+} __packed;
+
+struct skl_mem_status {
+	u32 type;
+	u32 size;
+	u32 mem_reclaim;
+} __packed;
+
+struct skl_dsp_freq {
+	u32 type;
+	u32 size;
+	u32 freq;
+} __packed;
+
+struct skl_dma_buff_cfg {
+	u32 type;
+	u32 size;
+	struct skl_dma_config dma_cfg[SKL_MAX_DMA_CFG];
+} __packed;
+
+struct skl_sch_config {
+	u32 type;
+	u32 length;
+	u32 sys_tick_mul;
+	u32 sys_tick_div;
+	u32 ll_src;
+	u32 num_cfg;
+	u32 node_info[SKL_MAX_LL_SRC_CFG];
+} __packed;
+
+struct skl_fw_cfg_info {
+	struct skl_mem_status mem_sts;
+	struct skl_dsp_freq slw_frq;
+	struct skl_dsp_freq fst_frq;
+	struct skl_dma_buff_cfg dmacfg;
+	struct skl_sch_config sch_cfg;
+} __packed;
+
 struct skl {
 	struct hdac_ext_bus ebus;
 	struct pci_dev *pci;
 
-	unsigned int init_failed:1; /* delayed init failed */
+	unsigned int init_done:1; /* delayed init status */
 	struct platform_device *dmic_dev;
 	struct platform_device *i2s_dev;
 	struct snd_soc_platform *platform;
 
+	unsigned int nhlt_version;
 	struct nhlt_acpi_table *nhlt; /* nhlt ptr */
 	struct skl_sst *skl_sst; /* sst skl ctx */
 
 	struct skl_dsp_resource resource;
 	struct list_head ppl_list;
+	struct list_head bind_list;
 
 	const char *fw_name;
 	char tplg_name[64];
@@ -81,6 +118,27 @@ struct skl {
 	const struct firmware *tplg;
 
 	int supend_active;
+
+	struct work_struct probe_work;
+	struct skl_debug *debugfs;
+	bool nhlt_override;
+	bool mod_set_get_status;
+	struct skl_fw_cfg_info cfg;
+	u8 nr_modules;
+	u8 conf_version;
+	struct skl_module **modules;
+};
+
+struct platform_info {
+	u32 sram0_base;
+	u32 sram1_base;
+	u32 w0_stat_sz;
+	u32 w0_up_sz;
+	size_t in_size;
+	size_t out_size;
+	void __iomem *lpe;
+	void __iomem *in_base;
+	void __iomem *out_base;
 };
 
 #define skl_to_ebus(s)	(&(s)->ebus)
@@ -100,11 +158,12 @@ struct skl_machine_pdata {
 
 struct skl_dsp_ops {
 	int id;
+	unsigned int num_cores;
 	struct skl_dsp_loader_ops (*loader_ops)(void);
-	int (*init)(struct device *dev, void __iomem *mmio_base,
-			int irq, const char *fw_name,
+	int (*init)(struct device *dev, void __iomem *mmio_base, int irq,
+			const char *fw_name,
 			struct skl_dsp_loader_ops loader_ops,
-			struct skl_sst **skl_sst);
+			struct skl_sst **skl_sst, void *ptr);
 	int (*init_fw)(struct device *dev, struct skl_sst *ctx);
 	void (*cleanup)(struct device *dev, struct skl_sst *ctx);
 };
@@ -112,17 +171,77 @@ struct skl_dsp_ops {
 int skl_platform_unregister(struct device *dev);
 int skl_platform_register(struct device *dev);
 
+int skl_get_nhlt_version(struct device *dev);
 struct nhlt_acpi_table *skl_nhlt_init(struct device *dev);
 void skl_nhlt_free(struct nhlt_acpi_table *addr);
 struct nhlt_specific_cfg *skl_get_ep_blob(struct skl *skl, u32 instance,
-			u8 link_type, u8 s_fmt, u8 no_ch, u32 s_rate, u8 dirn);
+					u8 link_type, u8 s_fmt, u8 no_ch,
+					u32 s_rate, u8 dirn, u8 dev_type);
 
 int skl_get_dmic_geo(struct skl *skl);
 int skl_nhlt_update_topology_bin(struct skl *skl);
 int skl_init_dsp(struct skl *skl);
 int skl_free_dsp(struct skl *skl);
+int skl_suspend_late_dsp(struct skl *skl);
 int skl_suspend_dsp(struct skl *skl);
 int skl_resume_dsp(struct skl *skl);
 void skl_cleanup_resources(struct skl *skl);
 const struct skl_dsp_ops *skl_get_dsp_ops(int pci_id);
+void skl_update_d0i3c(struct device *dev, bool enable);
+int skl_nhlt_create_sysfs(struct skl *skl);
+void skl_nhlt_remove_sysfs(struct skl *skl);
+
+struct skl_module_cfg;
+
+#ifdef CONFIG_DEBUG_FS
+
+struct skl_debug *skl_debugfs_init(struct skl *skl);
+void skl_debugfs_exit(struct skl_debug *d);
+struct nhlt_specific_cfg
+*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance,
+			u8 stream);
+void skl_debug_init_module(struct skl_debug *d,
+			struct snd_soc_dapm_widget *w,
+			struct skl_module_cfg *mconfig);
+
+void skl_update_dsp_debug_info(struct skl_debug *d,
+		struct platform_info *dbg_info);
+
+void skl_dbg_event(struct skl_sst *ctx, int type);
+#else
+
+struct skl_debug {
+}
+
+struct skl_debug *skl_debugfs_init(struct skl *skl)
+{
+	return NULL;
+}
+void skl_debugfs_exit(struct skl_debug *d)
+{
+}
+
+struct nhlt_specific_cfg
+*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance, u8 stream)
+{
+	return NULL;
+}
+
+void skl_debug_init_module(struct skl_debug *d,
+			struct snd_soc_dapm_widget *w,
+			struct skl_module_cfg *mconfig)
+{
+}
+
+void skl_update_dsp_debug_info(struct skl_debug *d,
+		struct platform_info *dbg_info)
+{
+}
+
+void skl_dbg_event(struct skl_sst *ctx, int type)
+{
+}
+
+#endif
+
 #endif /* __SOUND_SOC_SKL_H */

@@ -105,10 +105,10 @@ static void ip_cmsg_recv_checksum(struct msghdr *msg, struct sk_buff *skb,
 	if (skb->ip_summed != CHECKSUM_COMPLETE)
 		return;
 
-	if (offset != 0)
-		csum = csum_sub(csum,
-				csum_partial(skb_transport_header(skb) + tlen,
-					     offset, 0));
+	if (offset != 0) {
+		int tend_off = skb_transport_offset(skb) + tlen;
+		csum = csum_sub(csum, skb_checksum(skb, tend_off, offset, 0));
+	}
 
 	put_cmsg(msg, SOL_IP, IP_CHECKSUM, sizeof(__wsum), &csum);
 }
@@ -474,16 +474,15 @@ static bool ipv4_datagram_support_cmsg(const struct sock *sk,
 		return false;
 
 	/* Support IP_PKTINFO on tstamp packets if requested, to correlate
-	 * timestamp with egress dev. Not possible for packets without dev
+	 * timestamp with egress dev. Not possible for packets without iif
 	 * or without payload (SOF_TIMESTAMPING_OPT_TSONLY).
 	 */
-	if ((!(sk->sk_tsflags & SOF_TIMESTAMPING_OPT_CMSG)) ||
-	    (!skb->dev))
+	info = PKTINFO_SKB_CB(skb);
+	if (!(sk->sk_tsflags & SOF_TIMESTAMPING_OPT_CMSG) ||
+	    !info->ipi_ifindex)
 		return false;
 
-	info = PKTINFO_SKB_CB(skb);
 	info->ipi_spec_dst.s_addr = ip_hdr(skb)->saddr;
-	info->ipi_ifindex = skb->dev->ifindex;
 	return true;
 }
 

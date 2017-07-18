@@ -198,6 +198,12 @@ config COMMON_CLK_OXNAS
 	---help---
 	  Support for the OXNAS SoC Family clocks.
 
+config COMMON_CLK_TPS68470
+	tristate "Clock driver for TPS68470 PMIC"
+	depends on MFD_TPS68470
+	---help---
+	  Supports the clocking subsystem of the TPS68470 PMIC
+
 source "drivers/clk/bcm/Kconfig"
 source "drivers/clk/hisilicon/Kconfig"
 source "drivers/clk/mediatek/Kconfig"

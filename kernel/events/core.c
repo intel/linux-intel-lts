@@ -6726,7 +6726,7 @@ static bool perf_addr_filter_match(struct perf_addr_filter *filter,
 				     struct file *file, unsigned long offset,
 				     unsigned long size)
 {
-	if (filter->inode != file->f_inode)
+	if (filter->inode != file_inode(file))
 		return false;
 
 	if (filter->offset > offset + size)
@@ -7062,6 +7062,21 @@ static void perf_log_itrace_start(struct perf_event *event)
 	perf_output_end(&handle);
 }
 
+static bool sample_is_allowed(struct perf_event *event, struct pt_regs *regs)
+{
+	/*
+	 * Due to interrupt latency (AKA "skid"), we may enter the
+	 * kernel before taking an overflow, even if the PMU is only
+	 * counting user events.
+	 * To avoid leaking information to userspace, we must always
+	 * reject kernel samples when exclude_kernel is set.
+	 */
+	if (event->attr.exclude_kernel && !user_mode(regs))
+		return false;
+
+	return true;
+}
+
 /*
  * Generic event overflow handling, sampling.
  */
@@ -7107,6 +7122,12 @@ static int __perf_event_overflow(struct perf_event *event,
 		if (delta > 0 && delta < 2*TICK_NSEC)
 			perf_adjust_period(event, delta, hwc->last_period, true);
 	}
+
+	/*
+	 * For security, drop the skid kernel samples if necessary.
+	 */
+	if (!sample_is_allowed(event, regs))
+		return ret;
 
 	/*
 	 * XXX event_limit might not quite work as expected on inherited
@@ -10333,6 +10354,17 @@ void perf_event_free_task(struct task_struct *task)
 			continue;
 
 		mutex_lock(&ctx->mutex);
+		raw_spin_lock_irq(&ctx->lock);
+		/*
+		 * Destroy the task <-> ctx relation and mark the context dead.
+		 *
+		 * This is important because even though the task hasn't been
+		 * exposed yet the context has been (through child_list).
+		 */
+		RCU_INIT_POINTER(task->perf_event_ctxp[ctxn], NULL);
+		WRITE_ONCE(ctx->task, TASK_TOMBSTONE);
+		put_task_struct(task); /* cannot be last */
+		raw_spin_unlock_irq(&ctx->lock);
 again:
 		list_for_each_entry_safe(event, tmp, &ctx->pinned_groups,
 				group_entry)
@@ -10586,7 +10618,7 @@ static int perf_event_init_context(struct task_struct *child, int ctxn)
 		ret = inherit_task_group(event, parent, parent_ctx,
 					 child, ctxn, &inherited_all);
 		if (ret)
-			break;
+			goto out_unlock;
 	}
 
 	/*
@@ -10602,7 +10634,7 @@ static int perf_event_init_context(struct task_struct *child, int ctxn)
 		ret = inherit_task_group(event, parent, parent_ctx,
 					 child, ctxn, &inherited_all);
 		if (ret)
-			break;
+			goto out_unlock;
 	}
 
 	raw_spin_lock_irqsave(&parent_ctx->lock, flags);
@@ -10630,6 +10662,7 @@ static int perf_event_init_context(struct task_struct *child, int ctxn)
 	}
 
 	raw_spin_unlock_irqrestore(&parent_ctx->lock, flags);
+out_unlock:
 	mutex_unlock(&parent_ctx->mutex);
 
 	perf_unpin_context(parent_ctx);

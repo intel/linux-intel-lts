@@ -54,7 +54,7 @@ static int ttm_bo_vm_fault_idle(struct ttm_buffer_object *bo,
 	/*
 	 * Quick non-stalling check for idle.
 	 */
-	if (fence_is_signaled(bo->moving))
+	if (dma_fence_is_signaled(bo->moving))
 		goto out_clear;
 
 	/*
@@ -66,15 +66,18 @@ static int ttm_bo_vm_fault_idle(struct ttm_buffer_object *bo,
 		if (vmf->flags & FAULT_FLAG_RETRY_NOWAIT)
 			goto out_unlock;
 
+		ttm_bo_reference(bo);
 		up_read(&vma->vm_mm->mmap_sem);
-		(void) fence_wait(bo->moving, true);
+		(void) dma_fence_wait(bo->moving, true);
+		ttm_bo_unreserve(bo);
+		ttm_bo_unref(&bo);
 		goto out_unlock;
 	}
 
 	/*
 	 * Ordinary wait.
 	 */
-	ret = fence_wait(bo->moving, true);
+	ret = dma_fence_wait(bo->moving, true);
 	if (unlikely(ret != 0)) {
 		ret = (ret != -ERESTARTSYS) ? VM_FAULT_SIGBUS :
 			VM_FAULT_NOPAGE;
@@ -82,7 +85,7 @@ static int ttm_bo_vm_fault_idle(struct ttm_buffer_object *bo,
 	}
 
 out_clear:
-	fence_put(bo->moving);
+	dma_fence_put(bo->moving);
 	bo->moving = NULL;
 
 out_unlock:
@@ -120,8 +123,10 @@ static int ttm_bo_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 		if (vmf->flags & FAULT_FLAG_ALLOW_RETRY) {
 			if (!(vmf->flags & FAULT_FLAG_RETRY_NOWAIT)) {
+				ttm_bo_reference(bo);
 				up_read(&vma->vm_mm->mmap_sem);
 				(void) ttm_bo_wait_unreserved(bo);
+				ttm_bo_unref(&bo);
 			}
 
 			return VM_FAULT_RETRY;
@@ -166,6 +171,13 @@ static int ttm_bo_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	ret = ttm_bo_vm_fault_idle(bo, vma, vmf);
 	if (unlikely(ret != 0)) {
 		retval = ret;
+
+		if (retval == VM_FAULT_RETRY &&
+		    !(vmf->flags & FAULT_FLAG_RETRY_NOWAIT)) {
+			/* The BO has already been unreserved. */
+			return retval;
+		}
+
 		goto out_unlock;
 	}
 

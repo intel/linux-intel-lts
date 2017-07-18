@@ -24,10 +24,17 @@
  * SST types start at higher to avoid any overlapping in future
  */
 #define SKL_CONTROL_TYPE_BYTE_TLV	0x100
+#define SKL_CONTROL_TYPE_MIC_SELECT	0x102
+#define SKL_CONTROL_TYPE_BYTE_PROBE	0x101
 
 #define HDA_SST_CFG_MAX	900 /* size of copier cfg*/
-#define MAX_IN_QUEUE 8
-#define MAX_OUT_QUEUE 8
+#define SKL_MAX_MODULES	32
+#define SKL_MAX_PATH_CONFIGS	32
+#define SKL_MAX_MODULES_IN_PIPE	8
+#define SKL_MAX_NAME_LENGTH	16
+#define SKL_MOD_NAME 40 /* Length of GUID string */
+
+#define SDW_MAX_MASTERS 4
 
 #define SKL_UUID_STR_SZ 40
 /* Event types goes here */
@@ -82,6 +89,8 @@ enum skl_module_type {
 	SKL_MODULE_TYPE_ALGO,
 	SKL_MODULE_TYPE_BASE_OUTFMT,
 	SKL_MODULE_TYPE_KPB,
+	SKL_MODULE_TYPE_MIC_SELECT,
+	SKL_MODULE_TYPE_PROBE
 };
 
 enum skl_core_affinity {
@@ -109,7 +118,10 @@ enum skl_dev_type {
 	SKL_DEVICE_SLIMBUS = 0x3,
 	SKL_DEVICE_HDALINK = 0x4,
 	SKL_DEVICE_HDAHOST = 0x5,
-	SKL_DEVICE_NONE
+	SKL_DEVICE_NONE = 0x6,
+	SKL_DEVICE_SDW_PCM = 0x7,
+	SKL_DEVICE_SDW_PDM = 0x8,
+	SKL_DEVICE_MAX = SKL_DEVICE_SDW_PDM,
 };
 
 /**
@@ -149,24 +161,44 @@ enum skl_module_param_type {
 	SKL_PARAM_BIND
 };
 
+enum skl_probe_param_id_type {
+	SKL_PROBE_INJECT_DMA_ATTACH = 1,
+	SKL_PROBE_INJECT_DMA_DETACH,
+	SKL_PROBE_CONNECT,
+	SKL_PROBE_DISCONNECT
+};
+
+enum skl_probe_purpose {
+	SKL_PROBE_EXTRACT = 0,
+	SKL_PROBE_INJECT,
+	SKL_PROBE_INJECT_REEXTRACT
+};
+
+/* Injector probe states */
+enum skl_probe_state_inj {
+	SKL_PROBE_STATE_INJ_NONE = 1,
+	SKL_PROBE_STATE_INJ_DMA_ATTACHED,
+	SKL_PROBE_STATE_INJ_CONNECTED,
+	SKL_PROBE_STATE_INJ_DISCONNECTED
+};
+
+/* Extractor probe states */
+enum skl_probe_state_ext {
+	SKL_PROBE_STATE_EXT_NONE = 1,
+	SKL_PROBE_STATE_EXT_CONNECTED
+};
+
+struct skl_dfw_sdw_aggdata {
+	u32 alh_stream_num;
+	u32 channel_mask;
+} __packed;
+
 struct skl_dfw_algo_data {
 	u32 set_params:2;
 	u32 rsvd:30;
 	u32 param_id;
 	u32 max;
 	char params[0];
-} __packed;
-
-#define LIB_NAME_LENGTH	128
-#define HDA_MAX_LIB	16
-
-struct lib_info {
-	char name[LIB_NAME_LENGTH];
-} __packed;
-
-struct skl_dfw_manifest {
-	u32 lib_count;
-	struct lib_info lib[HDA_MAX_LIB];
 } __packed;
 
 enum skl_tkn_dir {

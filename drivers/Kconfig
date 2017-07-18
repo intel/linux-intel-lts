@@ -76,6 +76,8 @@ source "drivers/hwmon/Kconfig"
 
 source "drivers/thermal/Kconfig"
 
+source "drivers/trusty/Kconfig"
+
 source "drivers/watchdog/Kconfig"
 
 source "drivers/ssb/Kconfig"
@@ -201,5 +203,7 @@ source "drivers/hwtracing/stm/Kconfig"
 source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
+
+source "drivers/sdw/Kconfig"
 
 endmenu

@@ -336,8 +336,10 @@ static void omap_gem_detach_pages(struct drm_gem_object *obj)
 	if (omap_obj->flags & (OMAP_BO_WC|OMAP_BO_UNCACHED)) {
 		int i, npages = obj->size >> PAGE_SHIFT;
 		for (i = 0; i < npages; i++) {
-			dma_unmap_page(obj->dev->dev, omap_obj->addrs[i],
-					PAGE_SIZE, DMA_BIDIRECTIONAL);
+			if (omap_obj->addrs[i])
+				dma_unmap_page(obj->dev->dev,
+					       omap_obj->addrs[i],
+					       PAGE_SIZE, DMA_BIDIRECTIONAL);
 		}
 	}
 
@@ -1035,7 +1037,7 @@ void omap_gem_describe(struct drm_gem_object *obj, struct seq_file *m)
 	off = drm_vma_node_start(&obj->vma_node);
 
 	seq_printf(m, "%08x: %2d (%2d) %08llx %pad (%2d) %p %4d",
-			omap_obj->flags, obj->name, obj->refcount.refcount.counter,
+			omap_obj->flags, obj->name, kref_read(&obj->refcount),
 			off, &omap_obj->paddr, omap_obj->paddr_cnt,
 			omap_obj->vaddr, omap_obj->roll);
 
