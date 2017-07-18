@@ -232,10 +232,12 @@ static acpi_status intel_pmic_regs_handler(u32 function,
 		return AE_OK;
 	case 4:
 		if (*value64) {
-			result = regmap_write(opregion->regmap, opregion->ctx.addr,
+			result = regmap_write(opregion->regmap,
+					      opregion->ctx.addr,
 					      opregion->ctx.val);
 		} else {
-			result = regmap_read(opregion->regmap, opregion->ctx.addr,
+			result = regmap_read(opregion->regmap,
+					     opregion->ctx.addr,
 					     &opregion->ctx.val);
 			if (result == 0)
 				*value64 = opregion->ctx.val;

@@ -198,11 +198,11 @@ static void ttm_bo_man_debug(struct ttm_mem_type_manager *man,
 }
 
 static const struct ttm_mem_type_manager_func virtio_gpu_bo_manager_func = {
-	ttm_bo_man_init,
-	ttm_bo_man_takedown,
-	ttm_bo_man_get_node,
-	ttm_bo_man_put_node,
-	ttm_bo_man_debug
+	.init = ttm_bo_man_init,
+	.takedown = ttm_bo_man_takedown,
+	.get_node = ttm_bo_man_get_node,
+	.put_node = ttm_bo_man_put_node,
+	.debug = ttm_bo_man_debug
 };
 
 static int virtio_gpu_init_mem_type(struct ttm_bo_device *bdev, uint32_t type,
@@ -386,6 +386,7 @@ static int virtio_gpu_bo_move(struct ttm_buffer_object *bo,
 }
 
 static void virtio_gpu_bo_move_notify(struct ttm_buffer_object *tbo,
+				      bool evict,
 				      struct ttm_mem_reg *new_mem)
 {
 	struct virtio_gpu_object *bo;
@@ -425,6 +426,7 @@ static struct ttm_bo_driver virtio_gpu_bo_driver = {
 	.ttm_tt_unpopulate = &virtio_gpu_ttm_tt_unpopulate,
 	.invalidate_caches = &virtio_gpu_invalidate_caches,
 	.init_mem_type = &virtio_gpu_init_mem_type,
+	.eviction_valuable = ttm_bo_eviction_valuable,
 	.evict_flags = &virtio_gpu_evict_flags,
 	.move = &virtio_gpu_bo_move,
 	.verify_access = &virtio_gpu_verify_access,
@@ -432,8 +434,6 @@ static struct ttm_bo_driver virtio_gpu_bo_driver = {
 	.io_mem_free = &virtio_gpu_ttm_io_mem_free,
 	.move_notify = &virtio_gpu_bo_move_notify,
 	.swap_notify = &virtio_gpu_bo_swap_notify,
-	.lru_tail = &ttm_bo_default_lru_tail,
-	.swap_lru_tail = &ttm_bo_default_swap_lru_tail,
 };
 
 int virtio_gpu_ttm_init(struct virtio_gpu_device *vgdev)

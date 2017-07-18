@@ -368,10 +368,13 @@ enum {
 #define IS_KBL(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0xa171)
 #define IS_KBL_LP(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0x9d71)
 #define IS_KBL_H(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0xa2f0)
-#define IS_BXT(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0x5a98)
 #define IS_SKL_PLUS(pci) (IS_SKL(pci) || IS_SKL_LP(pci) || IS_BXT(pci)) || \
-			IS_KBL(pci) || IS_KBL_LP(pci) || IS_KBL_H(pci)
-
+			IS_KBL(pci) || IS_KBL_LP(pci) || IS_KBL_H(pci)  || \
+			IS_CNL(pci)
+#define IS_BXT(pci) ((pci)->vendor == 0x8086 && \
+                    ((pci)->device == 0x5a98 || (pci)->device == 0x1a98))
+#define IS_CNL(pci) ((pci)->vendor == 0x8086 && ((pci)->device == 0x9df0 || \
+						(pci)->device == 0x9dc8))
 static char *driver_short_names[] = {
 	[AZX_DRIVER_ICH] = "HDA Intel",
 	[AZX_DRIVER_PCH] = "HDA Intel PCH",
@@ -534,9 +537,9 @@ static void bxt_reduce_dma_latency(struct azx *chip)
 {
 	u32 val;
 
-	val = azx_readl(chip, SKL_EM4L);
+	val = azx_readl(chip, VS_EM4L);
 	val &= (0x3 << 20);
-	azx_writel(chip, SKL_EM4L, val);
+	azx_writel(chip, VS_EM4L, val);
 }
 
 static void hda_intel_init_chip(struct azx *chip, bool full_reset)
@@ -2243,6 +2246,12 @@ static const struct pci_device_id azx_ids[] = {
 	/* Broxton-T */
 	{ PCI_DEVICE(0x8086, 0x1a98),
 	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_BROXTON },
+	/* Cannonlake */
+	{ PCI_DEVICE(0x8086, 0x9df0),
+	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_SKYLAKE },
+	/* Cannonlake Z0 RVP */
+	{ PCI_DEVICE(0x8086, 0x9dc8),
+	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_SKYLAKE },
 	/* Haswell */
 	{ PCI_DEVICE(0x8086, 0x0a0c),
 	  .driver_data = AZX_DRIVER_HDMI | AZX_DCAPS_INTEL_HASWELL },

@@ -58,7 +58,7 @@ static u32 calc_residency(struct drm_i915_private *dev_priv,
 
 		if (I915_READ(VLV_COUNTER_CONTROL) & VLV_COUNT_RANGE_HIGH)
 			units <<= 8;
-	} else if (IS_BROXTON(dev_priv)) {
+	} else if (IS_GEN9_LP(dev_priv)) {
 		units = 1;
 		div = 1200;		/* 833.33ns */
 	}
@@ -395,13 +395,13 @@ static ssize_t gt_max_freq_mhz_store(struct device *kdev,
 	/* We still need *_set_rps to process the new max_delay and
 	 * update the interrupt limits and PMINTRMSK even though
 	 * frequency request may be unchanged. */
-	intel_set_rps(dev_priv, val);
+	ret = intel_set_rps(dev_priv, val);
 
 	mutex_unlock(&dev_priv->rps.hw_lock);
 
 	intel_runtime_pm_put(dev_priv);
 
-	return count;
+	return ret ?: count;
 }
 
 static ssize_t gt_min_freq_mhz_show(struct device *kdev, struct device_attribute *attr, char *buf)
@@ -448,14 +448,13 @@ static ssize_t gt_min_freq_mhz_store(struct device *kdev,
 	/* We still need *_set_rps to process the new min_delay and
 	 * update the interrupt limits and PMINTRMSK even though
 	 * frequency request may be unchanged. */
-	intel_set_rps(dev_priv, val);
+	ret = intel_set_rps(dev_priv, val);
 
 	mutex_unlock(&dev_priv->rps.hw_lock);
 
 	intel_runtime_pm_put(dev_priv);
 
-	return count;
-
+	return ret ?: count;
 }
 
 static DEVICE_ATTR(gt_act_freq_mhz, S_IRUGO, gt_act_freq_mhz_show, NULL);
@@ -514,6 +513,8 @@ static const struct attribute *vlv_attrs[] = {
 	NULL,
 };
 
+#if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
+
 static ssize_t error_state_read(struct file *filp, struct kobject *kobj,
 				struct bin_attribute *attr, char *buf,
 				loff_t off, size_t count)
@@ -521,33 +522,27 @@ static ssize_t error_state_read(struct file *filp, struct kobject *kobj,
 
 	struct device *kdev = kobj_to_dev(kobj);
 	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	struct drm_device *dev = &dev_priv->drm;
-	struct i915_error_state_file_priv error_priv;
 	struct drm_i915_error_state_buf error_str;
-	ssize_t ret_count = 0;
-	int ret;
+	struct i915_gpu_state *gpu;
+	ssize_t ret;
 
-	memset(&error_priv, 0, sizeof(error_priv));
-
-	ret = i915_error_state_buf_init(&error_str, to_i915(dev), count, off);
+	ret = i915_error_state_buf_init(&error_str, dev_priv, count, off);
 	if (ret)
 		return ret;
 
-	error_priv.dev = dev;
-	i915_error_state_get(dev, &error_priv);
-
-	ret = i915_error_state_to_str(&error_str, &error_priv);
+	gpu = i915_first_error_state(dev_priv);
+	ret = i915_error_state_to_str(&error_str, gpu);
 	if (ret)
 		goto out;
 
-	ret_count = count < error_str.bytes ? count : error_str.bytes;
+	ret = count < error_str.bytes ? count : error_str.bytes;
+	memcpy(buf, error_str.buf, ret);
 
-	memcpy(buf, error_str.buf, ret_count);
 out:
-	i915_error_state_put(&error_priv);
+	i915_gpu_state_put(gpu);
 	i915_error_state_buf_release(&error_str);
 
-	return ret ?: ret_count;
+	return ret;
 }
 
 static ssize_t error_state_write(struct file *file, struct kobject *kobj,
@@ -558,7 +553,7 @@ static ssize_t error_state_write(struct file *file, struct kobject *kobj,
 	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
 
 	DRM_DEBUG_DRIVER("Resetting error state\n");
-	i915_destroy_error_state(&dev_priv->drm);
+	i915_reset_error_state(dev_priv);
 
 	return count;
 }
@@ -570,6 +565,21 @@ static struct bin_attribute error_state_attr = {
 	.read = error_state_read,
 	.write = error_state_write,
 };
+
+static void i915_setup_error_capture(struct device *kdev)
+{
+	if (sysfs_create_bin_file(&kdev->kobj, &error_state_attr))
+		DRM_ERROR("error_state sysfs setup failed\n");
+}
+
+static void i915_teardown_error_capture(struct device *kdev)
+{
+	sysfs_remove_bin_file(&kdev->kobj, &error_state_attr);
+}
+#else
+static void i915_setup_error_capture(struct device *kdev) {}
+static void i915_teardown_error_capture(struct device *kdev) {}
+#endif
 
 void i915_setup_sysfs(struct drm_i915_private *dev_priv)
 {
@@ -617,17 +627,15 @@ void i915_setup_sysfs(struct drm_i915_private *dev_priv)
 	if (ret)
 		DRM_ERROR("RPS sysfs setup failed\n");
 
-	ret = sysfs_create_bin_file(&kdev->kobj,
-				    &error_state_attr);
-	if (ret)
-		DRM_ERROR("error_state sysfs setup failed\n");
+	i915_setup_error_capture(kdev);
 }
 
 void i915_teardown_sysfs(struct drm_i915_private *dev_priv)
 {
 	struct device *kdev = dev_priv->drm.primary->kdev;
 
-	sysfs_remove_bin_file(&kdev->kobj, &error_state_attr);
+	i915_teardown_error_capture(kdev);
+
 	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
 		sysfs_remove_files(&kdev->kobj, vlv_attrs);
 	else
