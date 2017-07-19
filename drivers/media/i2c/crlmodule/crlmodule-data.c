@@ -76,7 +76,7 @@ int crlmodule_populate_ds(struct crl_sensor *sensor, struct device *dev)
 			dev_info(dev, "%s %s selected\n",
 				 __func__, supported_sensors[i].name);
 			return 0;
-		};
+		}
 
 		/* Check the non ACPI modules */
 		if (!strcmp(sensor->platform_data->module_name,
@@ -85,7 +85,7 @@ int crlmodule_populate_ds(struct crl_sensor *sensor, struct device *dev)
 			dev_info(dev, "%s %s selected\n",
 				 __func__, supported_sensors[i].name);
 			return 0;
-		};
+		}
 	}
 
 	dev_err(dev, "%s No suitable configuration found for %s\n",

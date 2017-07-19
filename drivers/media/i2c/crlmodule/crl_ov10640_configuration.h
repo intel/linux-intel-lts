@@ -49,6 +49,7 @@ static struct crl_power_seq_entity ov10640_power_items[] = {
 	},
 };
 
+#if 0
 static struct crl_register_write_rep ov10640_1280_1080_HDR[] = {
 	{0x328a, CRL_REG_LEN_08BIT, 0x11},
 	{0x313f, CRL_REG_LEN_08BIT, 0x80},
@@ -1202,6 +1203,7 @@ static struct crl_register_write_rep ov10640_1280_1080_HDR[] = {
 	{0x3042, CRL_REG_LEN_08BIT, 0x05},
 	{0x328a, CRL_REG_LEN_08BIT, 0x10},
 };
+#endif
 
 static struct crl_register_write_rep ov10640_1280_1080_LONG_RAW[] = {
 	{0x328a, CRL_REG_LEN_08BIT, 0x11},
@@ -3622,6 +3624,7 @@ static struct crl_dynamic_register_access ov10640_el_regs[] = {
 	},
 };
 
+#if 0
 /* Short exposure register */
 static struct crl_dynamic_register_access ov10640_es_regs[] = {
 	{
@@ -3650,6 +3653,7 @@ static struct crl_dynamic_register_access ov10640_evs_regs[] = {
 		.mask = 0xff,
 	},
 };
+#endif
 
 /* Needed for acpi support for runtime detection */
 static struct crl_sensor_detect_config ov10640_sensor_detect_regset[] = {
