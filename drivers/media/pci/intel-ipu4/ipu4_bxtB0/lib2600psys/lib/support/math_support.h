@@ -102,7 +102,9 @@
 #define ROUND_HALF_DOWN_MUL(a, b)	(ROUND_HALF_DOWN_DIV(a, b) * (b))
 
 #define MAX3(a, b, c)		MAX((a), MAX((b), (c)))
+#define MIN3(a, b, c)		MIN((a), MIN((b), (c)))
 #define MAX4(a, b, c, d)	MAX((MAX((a), (b))), (MAX((c), (d))))
+#define MIN4(a, b, c, d)	MIN((MIN((a), (b))), (MIN((c), (d))))
 
 /* min and max should not be macros as they will evaluate their arguments twice.
    if you really need a macro (e.g. for CPP or for initializing an array)

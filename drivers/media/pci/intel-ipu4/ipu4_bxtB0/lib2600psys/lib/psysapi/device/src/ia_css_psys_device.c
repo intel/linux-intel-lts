@@ -40,10 +40,11 @@ static struct ia_css_syscom_queue_config
 };
 
 static struct ia_css_syscom_config psys_syscom_config;
+struct ia_css_syscom_context	*psys_syscom;
 #if HAS_DUAL_CMD_CTX_SUPPORT
 static struct ia_css_syscom_config psys_syscom_config_secure;
+struct ia_css_syscom_context	*psys_syscom_secure;
 #endif
-struct ia_css_syscom_context	*psys_syscom;
 static bool external_alloc = true;
 
 int ia_css_psys_config_print(

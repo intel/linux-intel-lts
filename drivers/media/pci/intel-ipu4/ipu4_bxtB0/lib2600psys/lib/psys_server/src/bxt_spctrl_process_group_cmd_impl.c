@@ -158,7 +158,7 @@ int ia_css_process_group_exec_cmd(
 		psys_cmd.context_handle = process_group->ipu_virtual_address;
 
 		retval = ia_css_psys_cmd_queue_send(psys_syscom,
-				IA_CSS_PSYS_CMD_QUEUE_COMMAND_ID, &psys_cmd);
+			IA_CSS_PSYS_CMD_QUEUE_DEVICE_ID, &psys_cmd);
 		verifexit(retval > 0);
 		break;
 	default:
