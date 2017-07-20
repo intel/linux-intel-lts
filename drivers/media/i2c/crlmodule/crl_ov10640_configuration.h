@@ -26,6 +26,7 @@
 #define OV10640_VMAX			131071
 #define OV10640_MAX_SHS1		(OV10640_VMAX - 2)
 #define OV10640_MAX_SHS3		0xFF
+#define OV10640_MAX_DGAIN		0x3FFF
 
 /* 800Mbps for ov10640 1280x1080 30fps */
 static struct crl_register_write_rep ov10640_pll_800mbps[] = {
@@ -3597,14 +3598,156 @@ static struct crl_dynamic_register_access ov10640_fll_regs[] = {
 	},
 };
 
-static struct crl_dynamic_register_access ov10640_ana_gain_regs[] = {
+static const char * const ov10640_analog_qmenu[] = {"1x", "2x", "4x", "8x"};
+
+/* long analog gain */
+static struct crl_register_write_rep ov10640_analog_lgain1[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x40 },
+};
+
+static struct crl_register_write_rep ov10640_analog_lgain2[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x41 },
+};
+
+static struct crl_register_write_rep ov10640_analog_lgain4[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x42 },
+};
+
+static struct crl_register_write_rep ov10640_analog_lgain8[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x43 },
+};
+
+/* short analog gain */
+static struct crl_register_write_rep ov10640_analog_sgain1[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x00 },
+};
+
+static struct crl_register_write_rep ov10640_analog_sgain2[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x04 },
+};
+
+static struct crl_register_write_rep ov10640_analog_sgain4[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x08 },
+};
+
+static struct crl_register_write_rep ov10640_analog_sgain8[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x0C },
+};
+
+/* very short analog gain */
+static struct crl_register_write_rep ov10640_analog_vshort_gain1[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0x90 },
+};
+
+static struct crl_register_write_rep ov10640_analog_vshort_gain2[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0xA0 },
+};
+
+static struct crl_register_write_rep ov10640_analog_vshort_gain4[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0xB0 },
+};
+
+static struct crl_register_write_rep ov10640_analog_vshort_gain8[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT, 0xC0 },
+};
+
+static struct crl_dep_reg_list ov10640_analog_lgain_regs[] = {
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 0 },
+		ARRAY_SIZE(ov10640_analog_lgain1), ov10640_analog_lgain1, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 1 },
+		ARRAY_SIZE(ov10640_analog_lgain2), ov10640_analog_lgain2, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 2 },
+		ARRAY_SIZE(ov10640_analog_lgain4), ov10640_analog_lgain4, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 3 },
+		ARRAY_SIZE(ov10640_analog_lgain8), ov10640_analog_lgain8, 0, 0 },
+};
+
+static struct crl_dep_reg_list ov10640_analog_sgain_regs[] = {
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 0 },
+		ARRAY_SIZE(ov10640_analog_sgain1), ov10640_analog_sgain1, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 1 },
+		ARRAY_SIZE(ov10640_analog_sgain2), ov10640_analog_sgain2, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 2 },
+		ARRAY_SIZE(ov10640_analog_sgain4), ov10640_analog_sgain4, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 3 },
+		ARRAY_SIZE(ov10640_analog_sgain8), ov10640_analog_sgain8, 0, 0 },
+};
+
+static struct crl_dep_reg_list ov10640_analog_vshort_gain_regs[] = {
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 0 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain1), ov10640_analog_vshort_gain1, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 1 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain2), ov10640_analog_vshort_gain2, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 2 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain4), ov10640_analog_vshort_gain4, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 3 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain8), ov10640_analog_vshort_gain8, 0, 0 },
+};
+
+/* Long digital gain register */
+static struct crl_dynamic_register_access ov10640_gl_regs[] = {
 	{
-		.address = 0x30EB,
+		.address = 0x30EC, /* High Byte */
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
+		.ops = ov10640_hsb_ops,
+		.mask = 0xff,
+	},
+	{
+		.address = 0x30ED, /* Low Byte */
 		.len = CRL_REG_LEN_08BIT,
 		.ops_items = 0,
 		.ops = 0,
 		.mask = 0xff,
-	 }
+	},
+};
+
+/* Short digital gain register */
+static struct crl_dynamic_register_access ov10640_gs_regs[] = {
+	{
+		.address = 0x30EE,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
+		.ops = ov10640_hsb_ops,
+		.mask = 0xff,
+	},
+	{
+		.address = 0x30EF,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
+	},
+};
+
+/* Very short digital gain register */
+static struct crl_dynamic_register_access ov10640_gvs_regs[] = {
+	{
+		.address = 0x30F0,
+		.len = CRL_REG_LEN_16BIT,
+		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
+		.ops = ov10640_hsb_ops,
+		.mask = 0xff,
+	},
+	{
+		.address = 0x30F1,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
+	},
 };
 
 /* Long exposure register, also used in linear(non-HDR) mode */
@@ -3966,20 +4109,55 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
 		.op_type = CRL_V4L2_CTRL_SET_OP,
 		.context = SENSOR_POWERED_ON,
-		.ctrl_id = V4L2_CID_ANALOGUE_GAIN,
-		.name = "V4L2_CID_ANALOGUE_GAIN",
-		.type = CRL_V4L2_CTRL_TYPE_INTEGER,
-		.data.std_data.min = 0,
-		.data.std_data.max = 160,
-		.data.std_data.step = 1,
-		.data.std_data.def = 0,
+		.ctrl_id = CRL_CID_ANALOGUE_GAIN_L,
+		.name = "CRL_CID_ANALOGUE_GAIN_L",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.v4l2_menu_items.size = ARRAY_SIZE(ov10640_analog_qmenu),
+		.data.v4l2_menu_items.menu = ov10640_analog_qmenu,
 		.flags = 0,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
-		.regs_items = ARRAY_SIZE(ov10640_ana_gain_regs),
-		.regs = ov10640_ana_gain_regs,
-		.dep_items = 0,
-		.dep_ctrls = 0,
+		.regs_items = 0,
+		.regs = NULL,
+		.crl_ctrl_dep_reg_list = ARRAY_SIZE(ov10640_analog_lgain_regs),
+		.dep_regs = ov10640_analog_lgain_regs,
+		.v4l2_type = V4L2_CTRL_TYPE_MENU,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_ANALOGUE_GAIN_S,
+		.name = "CRL_CID_ANALOGUE_GAIN_S",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.v4l2_menu_items.size = ARRAY_SIZE(ov10640_analog_qmenu),
+		.data.v4l2_menu_items.menu = ov10640_analog_qmenu,
+		.flags = 0,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = 0,
+		.regs = NULL,
+		.crl_ctrl_dep_reg_list = ARRAY_SIZE(ov10640_analog_sgain_regs),
+		.dep_regs = ov10640_analog_sgain_regs,
+		.v4l2_type = V4L2_CTRL_TYPE_MENU,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_ANALOGUE_GAIN_VS,
+		.name = "CRL_CID_ANALOGUE_GAIN_VS",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.v4l2_menu_items.size = ARRAY_SIZE(ov10640_analog_qmenu),
+		.data.v4l2_menu_items.menu = ov10640_analog_qmenu,
+		.flags = 0,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = 0,
+		.regs = NULL,
+		.crl_ctrl_dep_reg_list = ARRAY_SIZE(ov10640_analog_vshort_gain_regs),
+		.dep_regs = ov10640_analog_vshort_gain_regs,
+		.v4l2_type = V4L2_CTRL_TYPE_MENU,
 	},
 	{
 		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
@@ -3999,6 +4177,66 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.regs = ov10640_el_regs,
 		.dep_items = 0,
 		.dep_ctrls = 0,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_DIGITAL_GAIN_S,
+		.name = "CRL_CID_DIGITAL_GAIN_S",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_DGAIN,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x100,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_gs_regs),
+		.regs = ov10640_gs_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_DIGITAL_GAIN_L,
+		.name = "CRL_CID_DIGITAL_GAIN_L",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_DGAIN,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x100,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_gl_regs),
+		.regs = ov10640_gl_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_DIGITAL_GAIN_VS,
+		.name = "CRL_CID_DIGITAL_GAIN_VS",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_DGAIN,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x100,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_gvs_regs),
+		.regs = ov10640_gvs_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
 	},
 	{
 		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
