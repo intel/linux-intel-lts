@@ -122,14 +122,12 @@ struct ia_css_syscom_config *ia_css_psys_specify_secure(void)
 size_t ia_css_sizeof_psys(
 	struct ia_css_syscom_config *config)
 {
-	size_t size = 0;
-
 	IA_CSS_TRACE_0(PSYSAPI_DEVICE, VERBOSE,
 		"ia_css_sizeof_psys(): enter:\n");
 
 	NOT_USED(config);
 
-	return size;
+	return 0;
 }
 
 /* Internal function to create syscom_context */

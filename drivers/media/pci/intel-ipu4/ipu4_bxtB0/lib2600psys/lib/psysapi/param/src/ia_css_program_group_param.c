@@ -608,7 +608,7 @@ int ia_css_program_group_param_init(
 	IA_CSS_TRACE_0(PSYSAPI_PARAM, INFO,
 		"ia_css_program_group_param_init(): enter:\n");
 
-	assert(blob != 0);
+	assert(blob != NULL);
 
 	verifexit(blob != NULL);
 	verifexit(frame_format_types != NULL);

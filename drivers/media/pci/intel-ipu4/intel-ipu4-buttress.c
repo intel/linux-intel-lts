@@ -659,7 +659,7 @@ bool intel_ipu4_buttress_get_secure_mode(struct intel_ipu4_device *isp)
 	u32 val;
 
 	if (is_intel_ipu_hw_fpga(isp))
-		return 0;
+		return false;
 
 	val = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 
@@ -671,7 +671,7 @@ bool intel_ipu4_buttress_auth_done(struct intel_ipu4_device *isp)
 	u32 val;
 
 	if (!isp->secure_mode)
-		return 1;
+		return true;
 
 	val = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 

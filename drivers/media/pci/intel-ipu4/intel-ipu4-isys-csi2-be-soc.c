@@ -116,7 +116,7 @@ static int ipu4_isys_csi2_be_soc_set_sel(struct v4l2_subdev *sd,
 	    pad->flags & MEDIA_PAD_FL_SOURCE &&
 	    asd->valid_tgts[sel->pad].crop) {
 		struct v4l2_rect *r;
-		unsigned int sink_pad;
+		unsigned int sink_pad = 0;
 		int i;
 
 		for (i = 0; i < asd->nstreams; i++) {
