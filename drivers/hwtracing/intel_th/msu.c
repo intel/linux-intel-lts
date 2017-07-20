@@ -808,8 +808,8 @@ static int msc_configure(struct msc *msc)
 
 	iowrite32(reg, msc->reg_base + REG_MSU_MSC0CTL);
 
-	if (msc->enabled)
-		msc->thdev->output.multiblock = msc->mode == MSC_MODE_MULTI;
+	msc->thdev->output.multiblock = msc->mode == MSC_MODE_MULTI;
+	msc->enabled = 1;
 
 	return 0;
 }
