@@ -22,6 +22,7 @@
  * Define the methods on the process object that are not part of
  * a single interface
  */
+#include "ia_css_rbm.h"
 
 #include <ia_css_psys_process_types.h>
 #include <ia_css_psys_dynamic_storage_class.h>
@@ -254,6 +255,28 @@ IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
 int ia_css_process_group_set_resource_bitmap(
 	ia_css_process_group_t			*process_group,
 	const vied_nci_resource_bitmap_t	resource_bitmap);
+
+/*! Get the routing bitmap of the process group
+
+ @param	process_group[in]   process group object
+
+ @return routing bitmap
+ */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+const ia_css_rbm_t * ia_css_process_group_get_routing_bitmap(
+	const ia_css_process_group_t *process_group);
+
+/*! Set the routing bitmap of the process group
+
+ @param	process_group[in]   process group object
+ @param	rbm[in]		        routing bitmap
+
+ @return < 0 on error
+ */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+int ia_css_process_group_set_routing_bitmap(
+	ia_css_process_group_t *process_group,
+	const ia_css_rbm_t rbm);
 
 /*! Get IPU virtual address of process group
 

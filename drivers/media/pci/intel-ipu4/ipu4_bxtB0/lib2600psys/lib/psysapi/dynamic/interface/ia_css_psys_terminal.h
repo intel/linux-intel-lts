@@ -160,11 +160,11 @@ uint8_t ia_css_data_terminal_get_link_id(
 /*! Set link id of the terminal object
 
  @param	terminal[in]			data terminal object
- @param	link_id[in]			on-the-fly link id
+ @param	link_id[in]			synchronization link id
 
  @return < 0 on error
  */
-IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
 int ia_css_data_terminal_set_link_id(
 	ia_css_data_terminal_t				*dterminal,
 	const uint8_t					link_id);
