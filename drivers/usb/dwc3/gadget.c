@@ -26,6 +26,7 @@
 #include <linux/io.h>
 #include <linux/list.h>
 #include <linux/dma-mapping.h>
+#include <asm/processor.h>
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
@@ -1630,14 +1631,28 @@ static int __dwc3_gadget_start(struct dwc3 *dwc)
 			reg |= DWC3_DCFG_HIGHSPEED;
 			break;
 		case USB_SPEED_SUPER_PLUS:
-			reg |= DWC3_DCFG_SUPERSPEED_PLUS;
+			/*
+			 * WORKAROUND: BXTP platform USB3.0 port SS fail,
+			 * We switch SS to HS to enable USB3.0.
+			 */
+			if (platform_is_bxtp())
+				reg |= DWC3_DCFG_HIGHSPEED;
+			else
+				reg |= DWC3_DCFG_SUPERSPEED_PLUS;
 			break;
 		default:
 			dev_err(dwc->dev, "invalid dwc->maximum_speed (%d)\n",
 				dwc->maximum_speed);
 			/* fall through */
-		case USB_SPEED_SUPER:
-			reg |= DWC3_DCFG_SUPERSPEED;
+		case USB_SPEED_SUPER:	/* FALLTHROUGH */
+			/*
+			 * WORKAROUND: BXTP platform USB3.0 port SS fail,
+			 * We switch SS to HS to enable USB3.0.
+			 */
+			if (platform_is_bxtp())
+				reg |= DWC3_DCFG_HIGHSPEED;
+			else
+				reg |= DWC3_DCFG_SUPERSPEED;
 			break;
 		}
 	}
