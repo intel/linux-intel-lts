@@ -827,23 +827,22 @@ static void guc_addon_create(struct intel_guc *guc)
 {
 	struct drm_i915_private *dev_priv = guc_to_i915(guc);
 	struct i915_vma *vma;
-	struct guc_ads *ads;
-	struct guc_policies *policies;
-	struct guc_mmio_reg_state *reg_state;
-	struct intel_engine_cs *engine;
 	struct i915_workarounds *workarounds = &dev_priv->workarounds;
-	enum intel_engine_id id;
 	struct page *page;
-	u32 size;
-
 	/* The ads obj includes the struct itself and buffers passed to GuC */
-	size = sizeof(struct guc_ads) + sizeof(struct guc_policies) +
-			sizeof(struct guc_mmio_reg_state) +
-			GUC_S3_SAVE_SPACE_PAGES * PAGE_SIZE;
+	struct {
+		struct guc_ads ads;
+		struct guc_policies policies;
+		struct guc_mmio_reg_state reg_state;
+		u8 reg_state_buffer[GUC_S3_SAVE_SPACE_PAGES * PAGE_SIZE];
+	} __packed *blob;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id;
+	u32 base;
 
 	vma = guc->ads_vma;
 	if (!vma) {
-		vma = intel_guc_allocate_vma(guc, PAGE_ALIGN(size));
+		vma = intel_guc_allocate_vma(guc, PAGE_ALIGN(sizeof(*blob)));
 		if (IS_ERR(vma))
 			return;
 
@@ -851,35 +850,16 @@ static void guc_addon_create(struct intel_guc *guc)
 	}
 
 	page = i915_vma_first_page(vma);
-	ads = kmap(page);
-
-	/*
-	 * The GuC requires a "Golden Context" when it reinitialises
-	 * engines after a reset. Here we use the Render ring default
-	 * context, which must already exist and be pinned in the GGTT,
-	 * so its address won't change after we've told the GuC where
-	 * to find it.
-	 */
-	engine = dev_priv->engine[RCS];
-	ads->golden_context_lrca = engine->status_page.ggtt_offset;
-
-	for_each_engine(engine, dev_priv, id)
-		ads->eng_state_size[engine->guc_id] = intel_lr_context_size(engine);
+	blob = kmap(page);
 
 	/* GuC scheduling policies */
-	policies = (void *)ads + sizeof(struct guc_ads);
-	guc_policies_init(policies);
-
-	ads->scheduler_policies =
-		guc_ggtt_offset(vma) + sizeof(struct guc_ads);
+	guc_policies_init(&blob->policies);
 
 	/* MMIO reg state */
-	reg_state = (void *)policies + sizeof(struct guc_policies);
-
 	for_each_engine(engine, dev_priv, id) {
 		u32 i;
 		struct guc_mmio_regset *eng_reg =
-			&reg_state->engine_reg[engine->guc_id];
+			&blob->reg_state.engine_reg[engine->guc_id];
 
 		/*
 		 * Provide a list of registers to be saved/restored during gpu
@@ -920,7 +900,7 @@ static void guc_addon_create(struct intel_guc *guc)
 		DRM_DEBUG_DRIVER("%s register save/restore count: %u\n",
 				 engine->name, eng_reg->number_of_registers);
 
-		reg_state->mmio_white_list[engine->guc_id].mmio_start =
+		blob->reg_state.mmio_white_list[engine->guc_id].mmio_start =
 			i915_mmio_reg_offset(RING_FORCE_TO_NONPRIV(engine->mmio_base, 0));
 
 		/*
@@ -929,20 +909,33 @@ static void guc_addon_create(struct intel_guc *guc)
 		 * inconsistencies with the handling of FORCE_TO_NONPRIV
 		 * registers.
 		 */
-		reg_state->mmio_white_list[engine->guc_id].count =
+		blob->reg_state.mmio_white_list[engine->guc_id].count =
 					workarounds->hw_whitelist_count[id];
 
 		for (i = 0; i < workarounds->hw_whitelist_count[id]; i++) {
-			reg_state->mmio_white_list[engine->guc_id].offsets[i] =
+			blob->reg_state.mmio_white_list[engine->guc_id].offsets[i] =
 				I915_READ(RING_FORCE_TO_NONPRIV(engine->mmio_base, i));
 		}
 	}
 
-	ads->reg_state_addr = ads->scheduler_policies +
-			sizeof(struct guc_policies);
+	/*
+	 * The GuC requires a "Golden Context" when it reinitialises
+	 * engines after a reset. Here we use the Render ring default
+	 * context, which must already exist and be pinned in the GGTT,
+	 * so its address won't change after we've told the GuC where
+	 * to find it.
+	 */
+	blob->ads.golden_context_lrca =
+		dev_priv->engine[RCS]->status_page.ggtt_offset;
 
-	ads->reg_state_buffer = ads->reg_state_addr +
-			sizeof(struct guc_mmio_reg_state);
+	for_each_engine(engine, dev_priv, id)
+		blob->ads.eng_state_size[engine->guc_id] =
+			intel_lr_context_size(engine);
+
+	base = guc_ggtt_offset(vma);
+	blob->ads.scheduler_policies = base + ptr_offset(blob, policies);
+	blob->ads.reg_state_buffer = base + ptr_offset(blob, reg_state_buffer);
+	blob->ads.reg_state_addr = base + ptr_offset(blob, reg_state);
 
 	kunmap(page);
 }
