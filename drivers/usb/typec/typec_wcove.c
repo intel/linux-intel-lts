@@ -18,6 +18,8 @@
 #include <linux/usb/pd_sink.h>
 #include <linux/platform_device.h>
 #include <linux/mfd/intel_soc_pmic.h>
+#include <linux/pci.h>
+#include <linux/pm_runtime.h>
 
 /* Register offsets */
 #define WCOVE_CHGRIRQ0		0x4e09
@@ -135,6 +137,7 @@ struct wcove_typec {
 	struct typec_capability cap;
 	struct typec_connection con;
 	struct typec_partner partner;
+	struct pci_dev *xhci_dev;
 };
 
 enum wcove_typec_func {
@@ -201,6 +204,18 @@ static struct pd_sink_profile profile = {
 static uuid_le uuid = UUID_LE(0x482383f0, 0x2876, 0x4e49,
 			      0x86, 0x85, 0xdb, 0x66, 0x21, 0x1a, 0xf0, 0x37);
 
+static int wcove_access_xhci(struct wcove_typec *wcove, bool enable)
+{
+	if (wcove->xhci_dev) {
+		if (enable) {
+			pm_runtime_get_sync(&wcove->xhci_dev->dev);
+		} else {
+			pm_runtime_put(&wcove->xhci_dev->dev);
+		}
+	}
+	return 0;
+}
+
 static int wcove_typec_func(struct wcove_typec *wcove,
 			    enum wcove_typec_func func, int param)
 {
@@ -228,7 +243,9 @@ static void wcove_typec_device_mode(struct wcove_typec *wcove)
 	wcove->con.partner = &wcove->partner;
 	wcove->con.pwr_role = TYPEC_SINK;
 	wcove->con.vconn_role = TYPEC_SINK;
+	wcove_access_xhci(wcove, true);
 	wcove_typec_func(wcove, WCOVE_FUNC_ROLE, WCOVE_ROLE_DEVICE);
+	wcove_access_xhci(wcove, false);
 	typec_connect(wcove->port, &wcove->con);
 }
 
@@ -398,8 +415,9 @@ static irqreturn_t  wcove_typec_irq(int irq, void *data)
 		wcove_typec_func(wcove, WCOVE_FUNC_ORIENTATION,
 				 WCOVE_ORIENTATION_NORMAL);
 		/* Host mode by default */
+		wcove_access_xhci(wcove, true);
 		wcove_typec_func(wcove, WCOVE_FUNC_ROLE, WCOVE_ROLE_HOST);
-
+		wcove_access_xhci(wcove, false);
 		/* reset the pd sink state */
 		if (wcove->pd_port_num >= 0)
 			pd_sink_reset_state(wcove->pd_port_num);
@@ -463,7 +481,10 @@ static irqreturn_t  wcove_typec_irq(int irq, void *data)
 		wcove->con.data_role = TYPEC_HOST;
 		wcove->con.pwr_role = TYPEC_SOURCE;
 		wcove->con.vconn_role = TYPEC_SOURCE;
+		wcove_access_xhci(wcove, true);
 		wcove_typec_func(wcove, WCOVE_FUNC_ROLE, WCOVE_ROLE_HOST);
+		wcove_access_xhci(wcove, false);
+
 		typec_connect(wcove->port, &wcove->con);
 		break;
 	case USBC_RSLT_DEBUG_ACC:
@@ -574,6 +595,8 @@ static int wcove_typec_probe(struct platform_device *pdev)
 	regmap_write(wcove->regmap, USBC_PD_CFG3, val);
 
 	platform_set_drvdata(pdev, wcove);
+
+	wcove->xhci_dev = pci_get_class(PCI_CLASS_SERIAL_USB_XHCI, NULL);
 	return 0;
 }
 
