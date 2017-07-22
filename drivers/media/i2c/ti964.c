@@ -256,7 +256,7 @@ static int ti964_set_routing(struct v4l2_subdev *sd,
 				   struct v4l2_subdev_routing *route)
 {
 	struct ti964 *va = to_ti964(sd);
-	int i, j, ret = 0;
+	int i, j;
 
 	for (i = 0; i < min(route->num_routes, va->nstreams); ++i) {
 		struct v4l2_subdev_route *t = &route->routes[i];
@@ -290,7 +290,7 @@ static int ti964_set_routing(struct v4l2_subdev *sd,
 				(~V4L2_SUBDEV_ROUTE_FL_ACTIVE);
 	}
 
-	return ret;
+	return 0;
 }
 
 static int ti964_enum_mbus_code(struct v4l2_subdev *sd,
