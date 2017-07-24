@@ -134,6 +134,10 @@ enum {
 struct __packed ipu_fw_psys_process_group {
 	u64 token;
 	u64 private_token;
+/* FIXME: add this change when ipu5 is back */
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU4)
+	u64 routing_bitmap;
+#endif
 	u32 size;
 	u32 pg_load_start_ts;
 	u32 pg_load_cycles;

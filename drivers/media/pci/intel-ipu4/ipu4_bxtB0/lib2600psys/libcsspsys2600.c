@@ -100,6 +100,7 @@ static void abi_sanity_checker(void)
 	ABI_CHECK(ipu_fw_psys_pg, ia_css_pg, ID);
 	ABI_CHECK(ipu_fw_psys_pg, ia_css_pg, process_count);
 	ABI_CHECK(ipu_fw_psys_pg, ia_css_pg, processes_offset);
+	ABI_CHECK(ipu_fw_psys_pg, ia_css_pg, routing_bitmap);
 
 	SIZE_OF_CHECK(ipu_fw_psys_ps, ia_css_ps);
 	ABI_CHECK(ipu_fw_psys_ps, ia_css_ps, ID);
