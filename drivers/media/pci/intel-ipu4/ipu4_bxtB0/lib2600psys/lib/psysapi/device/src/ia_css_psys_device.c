@@ -26,13 +26,7 @@
 #define IA_CSS_PSYS_CMD_QUEUE_SIZE		0x20
 #define IA_CSS_PSYS_EVENT_QUEUE_SIZE		0x40
 
-static struct ia_css_syscom_queue_config
-	ia_css_psys_cmd_queue_cfg[IA_CSS_N_PSYS_CMD_QUEUE_ID] = {
-	{IA_CSS_PSYS_CMD_QUEUE_SIZE, IA_CSS_PSYS_CMD_BITS/8},
-	{IA_CSS_PSYS_CMD_QUEUE_SIZE, IA_CSS_PSYS_CMD_BITS/8},
-	{IA_CSS_PSYS_CMD_QUEUE_SIZE, IA_CSS_PSYS_CMD_BITS/8},
-	{IA_CSS_PSYS_CMD_QUEUE_SIZE, IA_CSS_PSYS_CMD_BITS/8}
-};
+static struct ia_css_syscom_queue_config ia_css_psys_cmd_queue_cfg[IA_CSS_N_PSYS_CMD_QUEUE_ID];
 
 static struct ia_css_syscom_queue_config
 	ia_css_psys_event_queue_cfg[IA_CSS_N_PSYS_EVENT_QUEUE_ID] = {
@@ -91,8 +85,16 @@ EXIT:
 
 static void set_syscom_config(struct ia_css_syscom_config *config)
 {
+	int i;
 	config->num_input_queues = IA_CSS_N_PSYS_CMD_QUEUE_ID;
 	config->num_output_queues = IA_CSS_N_PSYS_EVENT_QUEUE_ID;
+	/* The number of queues are different for different platforms
+	 * so the array is initialized here
+	 */
+	for (i = 0; i < IA_CSS_N_PSYS_CMD_QUEUE_ID; i++) {
+		ia_css_psys_cmd_queue_cfg[i].queue_size = IA_CSS_PSYS_CMD_QUEUE_SIZE;
+		ia_css_psys_cmd_queue_cfg[i].token_size = IA_CSS_PSYS_CMD_BITS/8;
+	}
 	config->input = ia_css_psys_cmd_queue_cfg;
 	config->output = ia_css_psys_event_queue_cfg;
 }
