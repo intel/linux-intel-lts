@@ -49,6 +49,7 @@
 #include "i915_drv.h"
 #include "i915_trace.h"
 #include "i915_vgpu.h"
+#include "intel_uc.h"
 #include "intel_drv.h"
 #include "intel_uc.h"
 #include "i915_ext_ioctl.h"
@@ -941,6 +942,9 @@ static void i915_mmio_cleanup(struct drm_i915_private *dev_priv)
 
 	intel_teardown_mchbar(dev_priv);
 	pci_iounmap(pdev, dev_priv->regs);
+	if (intel_vgpu_active(dev_priv) && dev_priv->shared_page)
+		pci_iounmap(pdev, dev_priv->shared_page);
+
 }
 
 /**
@@ -967,6 +971,22 @@ static int i915_driver_init_mmio(struct drm_i915_private *dev_priv)
 		goto put_bridge;
 
 	intel_uncore_init(dev_priv);
+
+	if (intel_vgpu_active(dev_priv)) {
+		u32 bar = 0;
+		u32 mmio_size = 2 * 1024 * 1024;
+
+		/* Map a share page from the end of 2M mmio region in bar0. */
+		dev_priv->shared_page = (struct gvt_shared_page *)
+			pci_iomap_range(dev_priv->drm.pdev, bar,
+			mmio_size, PAGE_SIZE);
+		if (dev_priv->shared_page == NULL) {
+			ret = -EIO;
+			DRM_ERROR("ivi: failed to map share page.\n");
+			goto put_bridge;
+		}
+	}
+
 	i915_gem_init_mmio(dev_priv);
 
 	return 0;
