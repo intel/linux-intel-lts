@@ -18,6 +18,7 @@
 #include <linux/gpio.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
+#include <linux/module.h>
 
 #include <media/intel-ipu4-isys.h>
 #include "../../../../include/media/crlmodule.h"
