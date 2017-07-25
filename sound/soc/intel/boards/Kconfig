@@ -340,6 +340,17 @@ config SND_SOC_INTEL_CNL_RT274_MACH
 	   Say Y or m if you have such a device. This is a recommended option.
 	   If unsure select "N".
 
+config SND_SOC_INTEL_ICL_RT274_MACH
+        tristate "Icelake with RT274 I2S mode"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	select SND_SOC_RT274
+	select SND_SOC_DMIC
+        help
+	   This adds support for ASoC machine driver for Icelake platform with
+	   RT274 I2S audio codec.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
 config SND_SOC_INTEL_BXT_TDF8532_MACH
         tristate "Broxton with TDF8532 I2S mode"
 	depends on MFD_INTEL_LPSS && I2C && ACPI
