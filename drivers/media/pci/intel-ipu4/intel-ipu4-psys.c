@@ -268,7 +268,7 @@ static struct intel_ipu4_psys_kbuffer *intel_ipu4_psys_lookup_kbuffer_by_kaddr(
 
 	return NULL;
 }
-
+#if 0
 static struct intel_ipu_psys_buffer_set *
 	intel_ipu_psys_lookup_kbuffer_set(
 			struct intel_ipu4_psys *psys, u32 addr)
@@ -289,7 +289,7 @@ static struct intel_ipu_psys_buffer_set *
 
 	return NULL;
 }
-
+#endif
 static int intel_ipu4_psys_get_userpages(struct intel_ipu4_psys_kbuffer *kbuf)
 {
 	struct vm_area_struct *vma;
@@ -1651,7 +1651,7 @@ static long intel_ipu4_ioctl_dqevent(struct intel_ipu4_psys_event *event,
 
 	if (!(f_flags & O_NONBLOCK)) {
 		rval = wait_event_interruptible(fh->wait,
-			kcmd = intel_ipu4_get_completed_kcmd(psys, fh));
+			(kcmd = intel_ipu4_get_completed_kcmd(psys, fh)));
 		if (rval == -ERESTARTSYS)
 			return rval;
 	}

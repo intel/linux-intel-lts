@@ -126,7 +126,7 @@ struct intel_ipu4_device {
 	struct intel_ipu4_buttress buttress;
 
 	const struct firmware *cpd_fw;
-	char *cpd_fw_name;
+	const char *cpd_fw_name;
 	u64 *pkg_dir;
 	dma_addr_t pkg_dir_dma_addr;
 	unsigned pkg_dir_size;
