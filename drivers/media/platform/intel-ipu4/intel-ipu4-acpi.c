@@ -353,7 +353,7 @@ struct ipu4_gpio_regulator {
 };
 static LIST_HEAD(ipu4_gpio_regulator_head);
 
-static int create_gpio_regulator(struct device *dev, int index, char *name)
+static int create_gpio_regulator(struct device *dev, int index, const char *name)
 {
 	struct ipu4_gpio_regulator *reg_device;
 	struct platform_device *cam_regs[1];

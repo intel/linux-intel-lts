@@ -267,7 +267,7 @@ int crlmodule_write_regs(struct crl_sensor *sensor,
 					regs[i].val);
 		if (ret < 0)
 			return ret;
-	};
+	}
 
 	return 0;
 }

@@ -21,6 +21,7 @@
 
 #define OV10635_REG_RESET		0x0103
 
+#if 0
 static struct crl_register_write_rep ov10635_1280_800_RAW18_HDR[] = {
 	{0x301b, CRL_REG_LEN_08BIT, 0xff},
 	{0x301c, CRL_REG_LEN_08BIT, 0xff},
@@ -3809,6 +3810,7 @@ static struct crl_register_write_rep ov10635_1280_800_RAW10_HDR[] = {
 	{0xceb7, CRL_REG_LEN_08BIT, 0x00},
 	{0x3011, CRL_REG_LEN_08BIT, 0x42},
 };
+#endif
 
 static struct crl_register_write_rep ov10635_1280_800_YUV_HDR[] = {
 	{0x301b, CRL_REG_LEN_08BIT, 0xff},
@@ -9992,9 +9994,11 @@ static struct crl_register_write_rep ov10635_uyvy_regs[] = {
 	{0x4300, CRL_REG_LEN_08BIT, 0x3a},
 };
 
+#if 0
 static struct crl_register_write_rep ov10635_raw_regs[] = {
 	{0x4300, CRL_REG_LEN_08BIT, 0xf8},
 };
+#endif
 
 static struct crl_csi_data_fmt ov10635_crl_csi_data_fmt[] = {
 	{

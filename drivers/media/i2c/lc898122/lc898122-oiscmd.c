@@ -335,8 +335,6 @@ void lc898122_SrvCon(struct lc898122_device *lc898122_dev, u8	UcDirSel,
 u8 lc898122_RtnCen(struct lc898122_device *lc898122_dev,
 		     u8 UcCmdPar)
 {
-	u8	UcCmdSts = LC898122_EXE_END;
-
 	lc898122_GyrCon(lc898122_dev, OFF);
 
 	if (!UcCmdPar) {
@@ -349,7 +347,7 @@ u8 lc898122_RtnCen(struct lc898122_device *lc898122_dev,
 		lc898122_SrvCon(lc898122_dev, LC898122_Y_DIR, ON);
 	}
 
-	return UcCmdSts;
+	return LC898122_EXE_END;
 }
 
 void lc898122_GyrCon(struct lc898122_device *lc898122_dev, u8 UcGyrCon)

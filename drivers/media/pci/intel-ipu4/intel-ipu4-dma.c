@@ -448,7 +448,7 @@ static int intel_ipu4_dma_get_sgtable(struct device *dev, struct sg_table *sgt,
 	return ret;
 }
 
-const struct dma_map_ops intel_ipu4_dma_ops = {
+struct dma_map_ops intel_ipu4_dma_ops = {
 	.alloc = intel_ipu4_dma_alloc,
 	.free = intel_ipu4_dma_free,
 	.mmap = intel_ipu4_dma_mmap,

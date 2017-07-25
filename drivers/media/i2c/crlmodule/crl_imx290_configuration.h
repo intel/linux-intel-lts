@@ -444,7 +444,7 @@ static struct crl_dynamic_register_access imx290_h_flip_regs[] = {
 	{
 		.address = 0x3007,
 		.len = CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE,
-		.ops_items = ARRAY_SIZE(imx185_hflip_ops),
+		.ops_items = ARRAY_SIZE(imx290_hflip_ops),
 		.ops = imx185_hflip_ops,
 		.mask = 0x2,
 	}

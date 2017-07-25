@@ -268,9 +268,9 @@ bool ia_css_is_program_group_manifest_valid(
 				*spatial_param_man =
 			(const ia_css_spatial_param_terminal_manifest_t *)
 				terminal_manifest_i;
+			ia_css_kernel_bitmap_t terminal_bitmap = 0;
 			verifexit(spatial_param_man);
 			verifexit(is_spatial_param);
-			ia_css_kernel_bitmap_t terminal_bitmap = 0;
 
 			terminal_bitmap =
 				ia_css_kernel_bitmap_set(terminal_bitmap,
@@ -907,6 +907,7 @@ int ia_css_program_group_manifest_print(
 	int i;
 	uint8_t program_count, terminal_count;
 	ia_css_kernel_bitmap_t bitmap;
+	struct ia_css_psys_private_pg_data *priv_data;
 
 	IA_CSS_TRACE_0(PSYSAPI_STATIC, INFO,
 		"ia_css_program_group_manifest_print(): enter:\n");
@@ -957,9 +958,9 @@ int ia_css_program_group_manifest_print(
 		verifjmpexit(retval == 0);
 	}
 
-	struct ia_css_psys_private_pg_data *priv_data =
-		(struct ia_css_psys_private_pg_data *)
+	priv_data = (struct ia_css_psys_private_pg_data *)
 		ia_css_program_group_manifest_get_private_data(manifest);
+
 	IA_CSS_TRACE_1(PSYSAPI_STATIC, INFO,
 		"private_data_offset %d\n", manifest->private_data_offset);
 

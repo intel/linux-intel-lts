@@ -308,15 +308,19 @@ static const struct i2c_device_id dw9714_id_table[] = {
 };
 MODULE_DEVICE_TABLE(i2c, dw9714_id_table);
 
+#ifdef CONFIG_PM
 static const struct dev_pm_ops dw9714_pm_ops = {
 	.runtime_suspend = dw9714_runtime_suspend,
 	.runtime_resume = dw9714_runtime_resume,
 };
+#endif
 
 static struct i2c_driver dw9714_i2c_driver = {
 	.driver		= {
 		.name	= DW9714_NAME,
+#ifdef CONFIG_PM
 		.pm = &dw9714_pm_ops,
+#endif
 	},
 	.probe		= dw9714_probe,
 	.remove		= dw9714_remove,

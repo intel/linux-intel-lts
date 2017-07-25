@@ -525,7 +525,7 @@ int intel_ipu4_isys_subdev_set_routing(struct v4l2_subdev *sd,
 				       struct v4l2_subdev_routing *route)
 {
 	struct intel_ipu4_isys_subdev *asd = to_intel_ipu4_isys_subdev(sd);
-	int i, j, ret = 0;
+	int i, j;
 
 	WARN_ON(!mutex_is_locked(&sd->entity.graph_obj.mdev->graph_mutex));
 
@@ -589,7 +589,7 @@ int intel_ipu4_isys_subdev_set_routing(struct v4l2_subdev *sd,
 		}
 	}
 
-	return ret;
+	return 0;
 }
 
 int intel_ipu4_isys_subdev_get_routing(struct v4l2_subdev *sd,
