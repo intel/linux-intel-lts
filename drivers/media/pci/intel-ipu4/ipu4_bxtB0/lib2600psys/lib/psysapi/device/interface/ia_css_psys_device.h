@@ -41,6 +41,10 @@
 #define IA_CSS_PSYS_STATE_INITIALIZING_PATTERN (0xB3B3B3B3)
 #define IA_CSS_PSYS_STATE_INITIALIZED_PATTERN (0xA0A0A0A0)
 
+#ifndef HAS_DUAL_CMD_CTX_SUPPORT
+#define HAS_DUAL_CMD_CTX_SUPPORT 0
+#endif
+
 /*
  * Defines the state of psys:
  * - IA_CSS_PSYS_STATE_UNKNOWN = psys status is unknown (or not recognized)
