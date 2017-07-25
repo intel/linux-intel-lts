@@ -49,6 +49,15 @@ enum vgt_g2v_type {
 	VGT_G2V_MAX,
 };
 
+/* shared page(4KB) between gvt and VM, located at the first page next
+ * to MMIO region(2MB size normally).
+ */
+struct gvt_shared_page {
+	u32 elsp_data[4];
+	u32 reg_addr;
+	u32 rsvd2[0x400 - 5];
+};
+
 #define VGPU_PVMMIO(vgpu) vgpu_vreg(vgpu, vgtif_reg(enable_pvmmio))
 struct vgt_if {
 	u64 magic;		/* VGT_MAGIC */
