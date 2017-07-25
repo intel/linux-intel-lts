@@ -1162,9 +1162,9 @@ static void isys_setup_hw_ipu5(struct intel_ipu4_isys *isys)
 	for (i = 0; i < INTEL_IPU5_ISYS_COMBO_PHY_NUM; i++)
 		for (j = 0; j < INTEL_IPU5_CSI_PIPE_NUM_PER_TOP; j++)
 			for (k = 0; k < INTEL_IPU5_CSI_IRQ_NUM_PER_PIPE; k++)
-				irqs |= INTEL_IPU5_ISYS_CSI_TOP_IRQ_A0(k +
-				(i * INTEL_IPU5_CSI_PIPE_NUM_PER_TOP + j) *
-				INTEL_IPU5_CSI_IRQ_NUM_PER_PIPE);
+				irqs |= INTEL_IPU5_ISYS_CSI_TOP_IRQ_A0((k +
+				((i * INTEL_IPU5_CSI_PIPE_NUM_PER_TOP + j) *
+				INTEL_IPU5_CSI_IRQ_NUM_PER_PIPE)));
 
 	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_EDGE);
 	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_LEVEL_NOT_PULSE);

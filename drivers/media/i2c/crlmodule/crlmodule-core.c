@@ -54,7 +54,7 @@ static int __crlmodule_get_variable_ref(struct crl_sensor *sensor,
 		break;
 	default:
 		return -EINVAL;
-	};
+	}
 
 	return 0;
 }
@@ -356,7 +356,7 @@ static int __crlmodule_parse_dynamic_entity(struct crl_sensor *sensor,
 	}
 	default:
 		break;
-	};
+	}
 
 	return -EINVAL;
 }
@@ -820,7 +820,7 @@ static int crlmodule_set_ctrl(struct v4l2_ctrl *ctrl)
 		/* Go through the supported list and compare the values */
 		ret = __crlmodule_update_pll_index(sensor);
 		goto out;
-	};
+	}
 
 	/* update the selection impacts flags */
 	__crlmodule_update_selection_impact_flags(sensor, crl_ctrl);
@@ -967,7 +967,7 @@ static struct v4l2_ctrl_handler *__crlmodule_get_sd_ctrl_handler(
 		if (sensor->pixel_array)
 			return &sensor->pixel_array->ctrl_handler;
 		break;
-	};
+	}
 
 	return NULL;
 }
@@ -1310,7 +1310,6 @@ static unsigned int __crlmodule_get_mode_max_fll(struct crl_sensor *sensor)
 static void crlmodule_update_framesize(struct crl_sensor *sensor)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->src->sd);
-	const struct crl_mode_rep *mode = sensor->current_mode;
 	unsigned int min_llp, max_llp, min_fll, max_fll;
 	struct v4l2_ctrl *llength;
 	struct v4l2_ctrl *flength;
@@ -1348,7 +1347,6 @@ static int crlmodule_update_frame_blanking(struct crl_sensor *sensor)
 	unsigned int min_llp, max_llp, min_fll, max_fll;
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
-	int ret;
 
 	vblank = __crlmodule_get_v4l2_ctrl(sensor, V4L2_CID_VBLANK);
 	hblank = __crlmodule_get_v4l2_ctrl(sensor, V4L2_CID_HBLANK);
@@ -1377,7 +1375,7 @@ static int crlmodule_update_frame_blanking(struct crl_sensor *sensor)
 }
 
 static int __crlmodule_rect_index(enum crl_subdev_type type,
-				  struct crl_mode_rep *mode)
+				  const struct crl_mode_rep *mode)
 {
 	int i;
 
