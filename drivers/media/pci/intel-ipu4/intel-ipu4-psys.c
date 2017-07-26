@@ -46,7 +46,7 @@
 #include "intel-ipu4-regs.h"
 #include "intel-ipu5-regs.h"
 #define CREATE_TRACE_POINTS
-#include "intel-ipu4-trace-event.h"
+#include "intel-ipu4-trace-event-psys.h"
 #include "intel-ipu4-isys-fw-msgs.h"
 #include "intel-ipu4-fw-com.h"
 

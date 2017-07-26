@@ -14,42 +14,10 @@
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM ipu4
 
-#if !defined(INTEL_IPU4_TRACE_EVENT_H) || defined(TRACE_HEADER_MULTI_READ)
-#define INTEL_IPU4_EVENT_H
+#if !defined(INTEL_IPU4_TRACE_EVENT_PSYS_H) || defined(TRACE_HEADER_MULTI_READ)
+#define INTEL_IPU4_TRACE_EVENT_PSYS_H
 
 #include <linux/tracepoint.h>
-
-TRACE_EVENT(ipu4_sof_seqid,
-		TP_PROTO(unsigned int seqid, unsigned int csiport,
-			unsigned int csivc),
-		TP_ARGS(seqid, csiport, csivc),
-		TP_STRUCT__entry(
-			__field(unsigned int, seqid)
-			__field(unsigned int, csiport)
-			__field(unsigned int, csivc)
-		),
-		TP_fast_assign(
-			__entry->seqid = seqid;
-			__entry->csiport = csiport;
-			__entry->csivc = csivc;
-		),
-		TP_printk("seqid<%u>,csiport<%u>,csivc<%u>", __entry->seqid,
-			__entry->csiport, __entry->csivc)
-);
-
-TRACE_EVENT(ipu4_perf_reg,
-		TP_PROTO(unsigned int addr, unsigned int val),
-		TP_ARGS(addr, val),
-		TP_STRUCT__entry(
-			__field(unsigned int, addr)
-			__field(unsigned int, val)
-		),
-		TP_fast_assign(
-			__entry->addr = addr;
-			__entry->val = val;
-		),
-		TP_printk("addr=%u,val=%u", __entry->addr, __entry->val)
-);
 
 TRACE_EVENT(ipu4_pg_kcmd,
 		TP_PROTO(const char *func, unsigned int id,
@@ -90,6 +58,6 @@ TRACE_EVENT(ipu4_pg_kcmd,
 #undef TRACE_INCLUDE_PATH
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_PATH .
-#define TRACE_INCLUDE_FILE  intel-ipu4-trace-event
+#define TRACE_INCLUDE_FILE  intel-ipu4-trace-event-psys
 /* This part must be outside protection */
 #include <trace/define_trace.h>
