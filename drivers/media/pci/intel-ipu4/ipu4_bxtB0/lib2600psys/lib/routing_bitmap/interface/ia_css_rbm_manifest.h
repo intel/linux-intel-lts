@@ -112,6 +112,7 @@ ia_css_rbm_manifest_check_rbm_validity(
  * @param rbm[in]             Routing bitmap.
  * @param mux[in]             List of mux descriptors corresponding to rbm.
  * @param mux_count[in]       Number of muxes in list mux.
+ * @param gp_dev_id[in]       ID of sub system (PSA/ISA) where the mux is located.
  * @param mux_id[in]          ID of mux to set configuration for.
  * @param value[in]           Value of the mux.
  * @return routing bitmap.
@@ -121,6 +122,7 @@ ia_css_rbm_set_mux(
 	ia_css_rbm_t rbm,
 	ia_css_rbm_mux_desc_t *mux,
 	unsigned int mux_count,
+	unsigned int gp_dev_id,
 	unsigned int mux_id,
 	unsigned int value);
 

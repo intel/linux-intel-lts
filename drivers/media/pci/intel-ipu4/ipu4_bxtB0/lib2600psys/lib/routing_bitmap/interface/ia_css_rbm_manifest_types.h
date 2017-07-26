@@ -32,10 +32,11 @@
 #endif
 
 #define SIZE_OF_RBM_MUX_DESC_S ( \
-	(3 * IA_CSS_UINT8_T_BITS))
+	(4 * IA_CSS_UINT8_T_BITS))
 
 typedef struct ia_css_rbm_mux_desc_s {
-	uint8_t id;
+	uint8_t gp_dev_id;
+	uint8_t mux_id;
 	uint8_t offset;
 	uint8_t size_bits;
 } ia_css_rbm_mux_desc_t;
@@ -53,7 +54,7 @@ typedef struct ia_css_rbm_validation_rule_s {
 #define SIZE_OF_RBM_TERMINAL_ROUTING_DESC_S ( \
 	(4 * IA_CSS_UINT8_T_BITS))
 
-typedef struct ia_css_rbm_terinal_routing_desc_s {
+typedef struct ia_css_rbm_terminal_routing_desc_s {
 	uint8_t terminal_id;
 	uint8_t connection_state;
 	uint8_t mux_id;

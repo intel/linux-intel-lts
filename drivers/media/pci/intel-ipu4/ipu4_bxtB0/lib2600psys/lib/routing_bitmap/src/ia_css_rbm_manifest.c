@@ -46,7 +46,7 @@ ia_css_rbm_print_with_header(
 
 	if (print_header) {
 		for (i = mux_desc_count - 1; i >= 0; i--) {
-			PRINT("%*d|", mux[i].size_bits, mux[i].id);
+			PRINT("%*d|", mux[i].size_bits, mux[i].mux_id);
 		}
 		PRINT("\n");
 	}
@@ -108,8 +108,9 @@ ia_css_rbm_manifest_print(
 	verifjmpexit(muxes != NULL || manifest->mux_desc_count == 0);
 
 	for (i = 0; i < manifest->mux_desc_count; i++) {
-		IA_CSS_TRACE_3(RBM, INFO, "id: %d offstet: %d size_bits: %d\n",
-			muxes[i].id,
+		IA_CSS_TRACE_4(RBM, INFO, "id: %d.%d offstet: %d size_bits: %d\n",
+			muxes[i].gp_dev_id,
+			muxes[i].mux_id,
 			muxes[i].offset,
 			muxes[i].size_bits);
 	}
@@ -184,6 +185,7 @@ ia_css_rbm_set_mux(
 	ia_css_rbm_t rbm,
 	ia_css_rbm_mux_desc_t *mux,
 	unsigned int mux_count,
+	unsigned int gp_dev_id,
 	unsigned int mux_id,
 	unsigned int value)
 {
@@ -192,17 +194,17 @@ ia_css_rbm_set_mux(
 	verifjmpexit(mux != NULL);
 
 	for (i = 0; i < mux_count; i++) {
-		if (mux[i].id == mux_id)
+		if (mux[i].gp_dev_id == gp_dev_id && mux[i].mux_id == mux_id)
 			break;
 	}
 	if (i >= mux_count) {
-		IA_CSS_TRACE_1(RBM, ERROR,
-			"ia_css_rbm_set_mux mux with mux_id %d not found\n", mux_id);
+		IA_CSS_TRACE_2(RBM, ERROR,
+			"ia_css_rbm_set_mux mux with mux_id %d.%d not found\n", gp_dev_id, mux_id);
 		return rbm;
 	}
 	if (value >= mux[i].size_bits) {
-		IA_CSS_TRACE_2(RBM, ERROR,
-			"ia_css_rbm_set_mux mux mux_id %d, value %d illegal\n", mux_id, value);
+		IA_CSS_TRACE_3(RBM, ERROR,
+			"ia_css_rbm_set_mux mux mux_id %d.%d, value %d illegal\n", gp_dev_id, mux_id, value);
 		return rbm;
 	}
 	rbm = ia_css_rbm_set(rbm, mux[i].offset + value);
