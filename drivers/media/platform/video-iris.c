@@ -203,12 +203,14 @@ static const struct v4l2_ctrl_config camera_iris_controls[] = {
 };
 
 static const struct v4l2_subdev_core_ops camera_iris_core_subdev_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 	.g_ctrl = v4l2_subdev_g_ctrl,
 	.s_ctrl = v4l2_subdev_s_ctrl,
 	.g_ext_ctrls = v4l2_subdev_g_ext_ctrls,
 	.s_ext_ctrls = v4l2_subdev_s_ext_ctrls,
 	.try_ext_ctrls = v4l2_subdev_try_ext_ctrls,
 	.queryctrl = v4l2_subdev_queryctrl,
+#endif
 };
 
 static const struct v4l2_subdev_ops camera_iris_subdev_ops = {
