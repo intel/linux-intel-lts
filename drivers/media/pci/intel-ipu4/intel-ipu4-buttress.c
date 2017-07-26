@@ -35,7 +35,7 @@
 #include "intel-ipu4-cpd.h"
 #include "intel-ipu5-devel.h"
 #define CREATE_TRACE_POINTS
-#include "intel-ipu4-trace-event.h"
+#include "intel-ipu4-trace-event-buttress.h"
 
 #define BOOTLOADER_STATUS_OFFSET	0x8000
 #define BOOTLOADER_MAGIC_KEY		0xb00710ad
