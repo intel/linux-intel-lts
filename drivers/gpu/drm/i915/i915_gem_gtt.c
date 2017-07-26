@@ -2771,18 +2771,20 @@ int i915_gem_init_ggtt(struct drm_i915_private *dev_priv)
 	if (ret)
 		return ret;
 
-	/* Clear any non-preallocated blocks */
-	drm_mm_for_each_hole(entry, &ggtt->base.mm, hole_start, hole_end) {
-		DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
-			      hole_start, hole_end);
-		ggtt->base.clear_range(&ggtt->base, hole_start,
-				       hole_end - hole_start);
+	if (!intel_vgpu_active(dev_priv)) {
+		/* Clear any non-preallocated blocks */
+		drm_mm_for_each_hole(entry, &ggtt->base.mm, hole_start, hole_end) {
+			DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
+				      hole_start, hole_end);
+			ggtt->base.clear_range(&ggtt->base, hole_start,
+					       hole_end - hole_start);
+		}
+
+		/* And finally clear the reserved guard page */
+		ggtt->base.clear_range(&ggtt->base,
+				       ggtt->base.total - PAGE_SIZE, PAGE_SIZE);
+
 	}
-
-	/* And finally clear the reserved guard page */
-	ggtt->base.clear_range(&ggtt->base,
-			       ggtt->base.total - PAGE_SIZE, PAGE_SIZE);
-
 	if (USES_PPGTT(dev_priv) && !USES_FULL_PPGTT(dev_priv)) {
 		ppgtt = kzalloc(sizeof(*ppgtt), GFP_KERNEL);
 		if (!ppgtt) {
@@ -3264,8 +3266,12 @@ int i915_ggtt_init_hw(struct drm_i915_private *dev_priv)
 	 */
 	mutex_lock(&dev_priv->drm.struct_mutex);
 	i915_address_space_init(&ggtt->base, dev_priv, "[global]");
-	if (!HAS_LLC(dev_priv) && !USES_PPGTT(dev_priv))
-		ggtt->base.mm.color_adjust = i915_gtt_color_adjust;
+	if (!HAS_LLC(dev_priv) && !USES_PPGTT(dev_priv)) {
+		if(!intel_vgpu_active(dev_priv))
+			ggtt->base.mm.color_adjust = i915_gtt_color_adjust;
+		else
+			ggtt->base.mm.color_adjust = NULL;
+	}
 	mutex_unlock(&dev_priv->drm.struct_mutex);
 
 	if (!io_mapping_init_wc(&dev_priv->ggtt.mappable,
