@@ -30,7 +30,7 @@
 #include "intel-ipu4-isys-video.h"
 
 #define CREATE_TRACE_POINTS
-#include "intel-ipu4-trace-event.h"
+#include "intel-ipu4-trace-event-csi2.h"
 
 static const uint32_t csi2_supported_codes_pad_sink[] = {
 	MEDIA_BUS_FMT_RGB565_1X16,
