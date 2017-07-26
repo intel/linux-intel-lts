@@ -879,6 +879,8 @@ const ia_css_rbm_t *ia_css_process_group_get_routing_bitmap(
 #if 0
 	/*TODO this is a work around for #H1504539043*/
 	rbm = &(process_group->routing_bitmap);
+#else
+	(void)process_group;
 #endif
 EXIT:
 	if (haserror(EFAULT)) {

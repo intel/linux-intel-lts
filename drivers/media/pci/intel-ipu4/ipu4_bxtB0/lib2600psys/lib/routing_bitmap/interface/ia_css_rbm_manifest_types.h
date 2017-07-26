@@ -15,11 +15,6 @@
 #ifndef __IA_CSS_RBM_MANIFEST_TYPES_H
 #define __IA_CSS_RBM_MANIFEST_TYPES_H
 
-/** The following size might be made platform specific,
- * the implementation of routing bitmap can also be changed
- * to support variable sized arrays.
- */
-
 #include "ia_css_rbm.h"
 #include "vied_nci_psys_resource_model.h"
 

@@ -20,12 +20,14 @@
 
 /** Returns the descriptor size of the RBM manifest.
  */
+IA_CSS_RBM_MANIFEST_STORAGE_CLASS_H
 unsigned int
 ia_css_rbm_manifest_get_size(void);
 
 /** Initializes the RBM manifest.
  * @param rbm[in] Routing bitmap.
  */
+IA_CSS_RBM_MANIFEST_STORAGE_CLASS_H
 void
 ia_css_rbm_manifest_init(struct ia_css_rbm_manifest_s *rbm);
 
@@ -33,6 +35,7 @@ ia_css_rbm_manifest_init(struct ia_css_rbm_manifest_s *rbm);
  * @param manifest[in] Routing bitmap manifest.
  * @return NULL on error
  */
+IA_CSS_RBM_MANIFEST_STORAGE_CLASS_H
 ia_css_rbm_mux_desc_t *
 ia_css_rbm_manifest_get_muxes(const ia_css_rbm_manifest_t *manifest);
 
@@ -40,6 +43,7 @@ ia_css_rbm_manifest_get_muxes(const ia_css_rbm_manifest_t *manifest);
  * @param manifest[in] Routing bitmap manifest.
  * @return size
  */
+IA_CSS_RBM_MANIFEST_STORAGE_CLASS_H
 unsigned int
 ia_css_rbm_manifest_get_mux_count(const ia_css_rbm_manifest_t *manifest);
 
@@ -47,6 +51,7 @@ ia_css_rbm_manifest_get_mux_count(const ia_css_rbm_manifest_t *manifest);
  * @param manifest[in] Routing bitmap manifest.
  * @return NULL on error
  */
+IA_CSS_RBM_MANIFEST_STORAGE_CLASS_H
 ia_css_rbm_validation_rule_t *
 ia_css_rbm_manifest_get_validation_rules(const ia_css_rbm_manifest_t *manifest);
 
@@ -54,6 +59,7 @@ ia_css_rbm_manifest_get_validation_rules(const ia_css_rbm_manifest_t *manifest);
  * @param manifest[in] Routing bitmap manifest.
  * @return size
  */
+IA_CSS_RBM_MANIFEST_STORAGE_CLASS_H
 unsigned int
 ia_css_rbm_manifest_get_validation_rule_count(const ia_css_rbm_manifest_t *manifest);
 
@@ -61,6 +67,7 @@ ia_css_rbm_manifest_get_validation_rule_count(const ia_css_rbm_manifest_t *manif
  * @param manifest[in] Routing bitmap manifest.
  * @return NULL on error
  */
+IA_CSS_RBM_MANIFEST_STORAGE_CLASS_H
 ia_css_rbm_terminal_routing_desc_t *
 ia_css_rbm_manifest_get_terminal_routing_desc(const ia_css_rbm_manifest_t *manifest);
 
@@ -69,6 +76,7 @@ ia_css_rbm_manifest_get_terminal_routing_desc(const ia_css_rbm_manifest_t *manif
  * @param manifest[in] Routing bitmap manifest.
  * @return size
  */
+IA_CSS_RBM_MANIFEST_STORAGE_CLASS_H
 unsigned int
 ia_css_rbm_manifest_get_terminal_routing_desc_count(const ia_css_rbm_manifest_t *manifest);
 
@@ -115,6 +123,10 @@ ia_css_rbm_set_mux(
 	unsigned int mux_count,
 	unsigned int mux_id,
 	unsigned int value);
+
+#ifdef __IA_CSS_RBM_MANIFEST_INLINE__
+#include "ia_css_rbm_manifest_impl.h"
+#endif /* __IA_CSS_RBM_MANIFEST_INLINE__ */
 
 #endif /* __IA_CSS_RBM_MANIFEST_H */
 

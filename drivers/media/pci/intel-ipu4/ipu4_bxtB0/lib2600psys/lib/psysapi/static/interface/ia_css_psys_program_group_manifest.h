@@ -156,7 +156,7 @@ void *ia_css_program_group_manifest_get_private_data(
 IA_CSS_PSYS_STATIC_STORAGE_CLASS_H
 ia_css_rbm_manifest_t *
 ia_css_program_group_manifest_get_rbm_manifest(
-	ia_css_program_group_manifest_t *manifest);
+	const ia_css_program_group_manifest_t *manifest);
 
 /*! Get the (pointer to) indexed program manifest in the program group manifest
  * object

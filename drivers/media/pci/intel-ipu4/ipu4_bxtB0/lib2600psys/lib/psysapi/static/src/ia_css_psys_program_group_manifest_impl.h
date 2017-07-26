@@ -148,7 +148,7 @@ EXIT:
 
 IA_CSS_PSYS_STATIC_STORAGE_CLASS_C
 ia_css_rbm_manifest_t *ia_css_program_group_manifest_get_rbm_manifest(
-	ia_css_program_group_manifest_t *manifest)
+	const ia_css_program_group_manifest_t *manifest)
 {
 	ia_css_rbm_manifest_t *rbm_manifest = NULL;
 

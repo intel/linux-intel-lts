@@ -260,10 +260,10 @@ int ia_css_process_group_set_resource_bitmap(
 
  @param	process_group[in]   process group object
 
- @return routing bitmap
+ @return routing bitmap (pointer)
  */
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
-const ia_css_rbm_t * ia_css_process_group_get_routing_bitmap(
+const ia_css_rbm_t *ia_css_process_group_get_routing_bitmap(
 	const ia_css_process_group_t *process_group);
 
 /*! Set the routing bitmap of the process group

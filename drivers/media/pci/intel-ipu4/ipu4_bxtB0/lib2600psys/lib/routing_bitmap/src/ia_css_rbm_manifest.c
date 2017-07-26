@@ -1,4 +1,4 @@
-/**
+/*
 * Support for Intel Camera Imaging ISP subsystem.
 * Copyright (c) 2010 - 2017, Intel Corporation.
 *
@@ -13,88 +13,16 @@
 */
 
 #include "ia_css_rbm_manifest.h"
+#include "ia_css_rbm.h"
+#include "type_support.h"
+#include "misc_support.h"
+#include "assert_support.h"
+#include "math_support.h"
 #include "ia_css_rbm_trace.h"
 
-#include "type_support.h"
-#include "math_support.h"
-#include "error_support.h"
-#include "assert_support.h"
-#include "print_support.h"
-
-STORAGE_CLASS_INLINE
-void __ia_css_rbm_manifest_check_struct(void)
-{
-	COMPILATION_ERROR_IF(
-		sizeof(ia_css_rbm_manifest_t) != (SIZE_OF_RBM_MANIFEST_S / IA_CSS_UINT8_T_BITS));
-	COMPILATION_ERROR_IF(
-		(sizeof(ia_css_rbm_manifest_t) % 8 /* 64 bit */) != 0);
-}
-
-unsigned int
-ia_css_rbm_manifest_get_size(void)
-{
-	unsigned int size = sizeof(struct ia_css_rbm_manifest_s);
-
-	return ceil_mul(size, sizeof(uint64_t));
-}
-
-void
-ia_css_rbm_manifest_init(struct ia_css_rbm_manifest_s *rbm)
-{
-	rbm->mux_desc_count = 0;
-	rbm->terminal_routing_desc_count = 0;
-	rbm->validation_rule_count = 0;
-}
-
-ia_css_rbm_mux_desc_t *
-ia_css_rbm_manifest_get_muxes(const ia_css_rbm_manifest_t *manifest)
-{
-#if VIED_NCI_RBM_MAX_MUX_COUNT == 0
-	(void)manifest;
-	return NULL;
-#else
-	return (ia_css_rbm_mux_desc_t *)manifest->mux_desc;
-#endif
-}
-
-unsigned int
-ia_css_rbm_manifest_get_mux_count(const ia_css_rbm_manifest_t *manifest)
-{
-	return manifest->mux_desc_count;
-}
-
-ia_css_rbm_validation_rule_t *
-ia_css_rbm_manifest_get_validation_rules(const ia_css_rbm_manifest_t *manifest)
-{
-#if VIED_NCI_RBM_MAX_VALIDATION_RULE_COUNT == 0
-	(void)manifest;
-	return NULL;
-#else
-	return (ia_css_rbm_validation_rule_t *)manifest->validation_rules;
-#endif
-}
-
-unsigned int
-ia_css_rbm_manifest_get_validation_rule_count(const ia_css_rbm_manifest_t *manifest)
-{
-	return manifest->validation_rule_count;
-}
-
-ia_css_rbm_terminal_routing_desc_t *
-ia_css_rbm_manifest_get_terminal_routing_desc(const ia_css_rbm_manifest_t *manifest)
-{
-#if VIED_NCI_RBM_MAX_TERMINAL_DESC_COUNT == 0
-	(void)manifest;
-	return NULL;
-#else
-	return (ia_css_rbm_terminal_routing_desc_t *)manifest->terminal_routing_desc;
-#endif
-}
-unsigned int
-ia_css_rbm_manifest_get_terminal_routing_desc_count(const ia_css_rbm_manifest_t *manifest)
-{
-	return manifest->terminal_routing_desc_count;
-}
+#ifndef __IA_CSS_RBM_MANIFEST_INLINE__
+#include "ia_css_rbm_manifest_impl.h"
+#endif /* __IA_CSS_RBM_MANIFEST_INLINE__ */
 
 STORAGE_CLASS_INLINE void
 ia_css_rbm_print_with_header(
@@ -224,6 +152,11 @@ ia_css_rbm_manifest_check_rbm_validity(
 	verifjmpexit(manifest != NULL);
 	verifjmpexit(rbm != NULL);
 
+	if (ia_css_is_rbm_empty(*rbm)) {
+		IA_CSS_TRACE_0(RBM, ERROR, "ia_css_rbm_manifest_check_rbm_validity failes: RBM is empty.\n");
+		return false;
+	}
+
 	rules = ia_css_rbm_manifest_get_validation_rules(manifest);
 	verifjmpexit(rules != NULL || manifest->validation_rule_count == 0);
 
@@ -238,10 +171,10 @@ ia_css_rbm_manifest_check_rbm_validity(
 			final_rbm = ia_css_rbm_union(final_rbm, res);
 		} else {
 			IA_CSS_TRACE_1(RBM, INFO, "ia_css_rbm_manifest_check_rbm_validity failes on rule %d\n", 1);
-			return -1;
+			return false;
 		}
 	}
-	return (!ia_css_is_rbm_equal(final_rbm, *rbm));
+	return ia_css_is_rbm_equal(final_rbm, *rbm);
 EXIT:
 	return false;
 }
