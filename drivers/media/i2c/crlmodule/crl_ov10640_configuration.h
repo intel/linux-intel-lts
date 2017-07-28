@@ -3798,7 +3798,7 @@ static struct crl_dynamic_register_access ov10640_gs_regs[] = {
 static struct crl_dynamic_register_access ov10640_gvs_regs[] = {
 	{
 		.address = 0x30F0,
-		.len = CRL_REG_LEN_16BIT,
+		.len = CRL_REG_LEN_08BIT,
 		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
 		.ops = ov10640_hsb_ops,
 		.mask = 0xff,
@@ -3835,7 +3835,7 @@ static struct crl_dynamic_register_access ov10640_el_regs[] = {
 static struct crl_dynamic_register_access ov10640_es_regs[] = {
 	{
 		.address = 0x30E8,
-		.len = CRL_REG_LEN_16BIT,
+		.len = CRL_REG_LEN_08BIT,
 		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
 		.ops = ov10640_hsb_ops,
 		.mask = 0xff,
