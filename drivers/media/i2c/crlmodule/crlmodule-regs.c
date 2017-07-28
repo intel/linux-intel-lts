@@ -139,13 +139,16 @@ static int crlmodule_i2c_write(struct crl_sensor *sensor, u16 dev_i2c_addr,
 
 	switch (len) {
 	case CRL_REG_LEN_08BIT:
+		val = val & 0xFF;
 		data_offset[0] = val;
 		break;
 	case CRL_REG_LEN_16BIT:
+		val = val & 0xFFFF;
 		data_offset[0] = val >> 8;
 		data_offset[1] = val;
 		break;
 	case CRL_REG_LEN_24BIT:
+		val = val & 0xFFFFFF;
 		data_offset[0] = val >> 16;
 		data_offset[1] = val >> 8;
 		data_offset[2] = val;
