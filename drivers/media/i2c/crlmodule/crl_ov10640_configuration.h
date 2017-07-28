@@ -3599,71 +3599,121 @@ static struct crl_dynamic_register_access ov10640_fll_regs[] = {
 };
 
 static const char * const ov10640_analog_qmenu[] = {"1x", "2x", "4x", "8x"};
+static const char * const ov10640_analog_qmenu2[] = {
+	"1x", "2x", "2.57x", "4x",
+	"5.14x", "8x", "10.28x", "20.56x"
+};
 
 /* long analog gain */
-static struct crl_register_write_rep ov10640_analog_lgain1[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x40 },
+static struct crl_register_write_rep ov10640_analog_lgain1x[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x00, 0x00, 0x03 },
 };
 
-static struct crl_register_write_rep ov10640_analog_lgain2[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x41 },
+static struct crl_register_write_rep ov10640_analog_lgain2x[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x01, 0x00, 0x03 },
 };
 
-static struct crl_register_write_rep ov10640_analog_lgain4[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x42 },
+static struct crl_register_write_rep ov10640_analog_lgain4x[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x02, 0x00, 0x03 },
 };
 
 static struct crl_register_write_rep ov10640_analog_lgain8[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x43 },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x03, 0x00, 0x03 },
 };
+
+static struct crl_register_write_rep ov10640_analog_lgain2x57[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x40, 0x00, 0x43 },
+};
+
+static struct crl_register_write_rep ov10640_analog_lgain5x14[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x41, 0x00, 0x43 },
+};
+
+static struct crl_register_write_rep ov10640_analog_lgain10x28[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x42, 0x00, 0x43 },
+};
+
+static struct crl_register_write_rep ov10640_analog_lgain20x56[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x43, 0x00, 0x43 },
+};
+
 
 /* short analog gain */
 static struct crl_register_write_rep ov10640_analog_sgain1[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x00, 0x00, 0x0C },
 };
 
 static struct crl_register_write_rep ov10640_analog_sgain2[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x04 },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x04, 0x00, 0x0C },
 };
 
 static struct crl_register_write_rep ov10640_analog_sgain4[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x08 },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x08, 0x00, 0x0C },
 };
 
 static struct crl_register_write_rep ov10640_analog_sgain8[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x0C },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x0C, 0x00, 0x0C },
 };
 
 /* very short analog gain */
 static struct crl_register_write_rep ov10640_analog_vshort_gain1[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0x90 },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x00, 0x00, 0x30 },
 };
 
 static struct crl_register_write_rep ov10640_analog_vshort_gain2[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0xA0 },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x10, 0x00, 0x30 },
 };
 
 static struct crl_register_write_rep ov10640_analog_vshort_gain4[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0xB0 },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x20, 0x00, 0x30 },
 };
 
 static struct crl_register_write_rep ov10640_analog_vshort_gain8[] = {
-	{ 0x30EB, CRL_REG_LEN_08BIT, 0xC0 },
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x30, 0x00, 0x30 },
 };
+
+static struct crl_register_write_rep ov10640_analog_vshort_gain257[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0x00, 0xB0 },
+};
+
+static struct crl_register_write_rep ov10640_analog_vshort_gain514[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x90, 0x00, 0xB0 },
+};
+
+static struct crl_register_write_rep ov10640_analog_vshort_gain1028[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0xA0, 0x00, 0xB0 },
+};
+
+static struct crl_register_write_rep ov10640_analog_vshort_gain2056[] = {
+	{ 0x30EB, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0xB0, 0x00, 0xB0 },
+};
+
 
 static struct crl_dep_reg_list ov10640_analog_lgain_regs[] = {
 	{ CRL_DEP_CTRL_CONDITION_EQUAL,
 		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 0 },
-		ARRAY_SIZE(ov10640_analog_lgain1), ov10640_analog_lgain1, 0, 0 },
+		ARRAY_SIZE(ov10640_analog_lgain1x), ov10640_analog_lgain1x, 0, 0 },
 	{ CRL_DEP_CTRL_CONDITION_EQUAL,
 		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 1 },
-		ARRAY_SIZE(ov10640_analog_lgain2), ov10640_analog_lgain2, 0, 0 },
+		ARRAY_SIZE(ov10640_analog_lgain2x), ov10640_analog_lgain2x, 0, 0 },
 	{ CRL_DEP_CTRL_CONDITION_EQUAL,
 		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 2 },
-		ARRAY_SIZE(ov10640_analog_lgain4), ov10640_analog_lgain4, 0, 0 },
+		ARRAY_SIZE(ov10640_analog_lgain2x57), ov10640_analog_lgain2x57, 0, 0 },
 	{ CRL_DEP_CTRL_CONDITION_EQUAL,
 		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 3 },
+		ARRAY_SIZE(ov10640_analog_lgain4x), ov10640_analog_lgain4x, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 4 },
+		ARRAY_SIZE(ov10640_analog_lgain5x14), ov10640_analog_lgain5x14, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 5 },
 		ARRAY_SIZE(ov10640_analog_lgain8), ov10640_analog_lgain8, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 6 },
+		ARRAY_SIZE(ov10640_analog_lgain10x28), ov10640_analog_lgain10x28, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 7 },
+		ARRAY_SIZE(ov10640_analog_lgain20x56), ov10640_analog_lgain20x56, 0, 0 },
 };
 
 static struct crl_dep_reg_list ov10640_analog_sgain_regs[] = {
@@ -3690,10 +3740,22 @@ static struct crl_dep_reg_list ov10640_analog_vshort_gain_regs[] = {
 		ARRAY_SIZE(ov10640_analog_vshort_gain2), ov10640_analog_vshort_gain2, 0, 0 },
 	{ CRL_DEP_CTRL_CONDITION_EQUAL,
 		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 2 },
-		ARRAY_SIZE(ov10640_analog_vshort_gain4), ov10640_analog_vshort_gain4, 0, 0 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain257), ov10640_analog_vshort_gain257, 0, 0 },
 	{ CRL_DEP_CTRL_CONDITION_EQUAL,
 		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 3 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain4), ov10640_analog_vshort_gain4, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 4 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain514), ov10640_analog_vshort_gain514, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 5 },
 		ARRAY_SIZE(ov10640_analog_vshort_gain8), ov10640_analog_vshort_gain8, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 6 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain1028), ov10640_analog_vshort_gain1028, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 7 },
+		ARRAY_SIZE(ov10640_analog_vshort_gain2056), ov10640_analog_vshort_gain2056, 0, 0 },
 };
 
 /* Long digital gain register */
@@ -4112,8 +4174,8 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.ctrl_id = CRL_CID_ANALOGUE_GAIN_L,
 		.name = "CRL_CID_ANALOGUE_GAIN_L",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.v4l2_menu_items.size = ARRAY_SIZE(ov10640_analog_qmenu),
-		.data.v4l2_menu_items.menu = ov10640_analog_qmenu,
+		.data.v4l2_menu_items.size = ARRAY_SIZE(ov10640_analog_qmenu2),
+		.data.v4l2_menu_items.menu = ov10640_analog_qmenu2,
 		.flags = 0,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
@@ -4148,8 +4210,8 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.ctrl_id = CRL_CID_ANALOGUE_GAIN_VS,
 		.name = "CRL_CID_ANALOGUE_GAIN_VS",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.v4l2_menu_items.size = ARRAY_SIZE(ov10640_analog_qmenu),
-		.data.v4l2_menu_items.menu = ov10640_analog_qmenu,
+		.data.v4l2_menu_items.size = ARRAY_SIZE(ov10640_analog_qmenu2),
+		.data.v4l2_menu_items.menu = ov10640_analog_qmenu2,
 		.flags = 0,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
