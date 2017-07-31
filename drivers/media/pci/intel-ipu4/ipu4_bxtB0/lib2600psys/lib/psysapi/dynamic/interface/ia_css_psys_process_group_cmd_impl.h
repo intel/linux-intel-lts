@@ -17,6 +17,7 @@
 
 #include "type_support.h"
 #include "ia_css_psys_process_group.h"
+#include "ia_css_rbm_manifest_types.h"
 
 #define N_UINT64_IN_PROCESS_GROUP_STRUCT	2
 #define N_UINT32_IN_PROCESS_GROUP_STRUCT	5
@@ -25,7 +26,8 @@
 #define N_PADDING_UINT8_IN_PROCESS_GROUP_STRUCT	4
 
 #define SIZE_OF_PROCESS_GROUP_STRUCT_BITS \
-	(N_UINT64_IN_PROCESS_GROUP_STRUCT * IA_CSS_UINT64_T_BITS \
+	(IA_CSS_RBM_BITS \
+	+ N_UINT64_IN_PROCESS_GROUP_STRUCT * IA_CSS_UINT64_T_BITS \
 	+ N_UINT32_IN_PROCESS_GROUP_STRUCT * IA_CSS_UINT32_T_BITS \
 	+ IA_CSS_PROGRAM_GROUP_ID_BITS \
 	+ IA_CSS_PROCESS_GROUP_STATE_BITS \
@@ -42,6 +44,8 @@ struct ia_css_process_group_s {
 	uint64_t token;
 	/**< private token / context reference, zero is an error value */
 	uint64_t private_token;
+	/**< PG routing bitmap used to set connection between programs >*/
+	ia_css_rbm_t routing_bitmap;
 	/**< Size of this structure */
 	uint32_t size;
 	/**< The timestamp when PG load starts */

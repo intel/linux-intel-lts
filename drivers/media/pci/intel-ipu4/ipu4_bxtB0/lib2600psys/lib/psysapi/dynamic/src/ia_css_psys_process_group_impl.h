@@ -422,17 +422,12 @@ int ia_css_process_group_print(
 		"\tfragment_count = %d\n",
 		(int)ia_css_process_group_get_fragment_count(process_group));
 
-#if 0
-	/*TODO this is a work around for #H1504539043*/
 	routing_bitmap = *ia_css_process_group_get_routing_bitmap(process_group);
 	for (i = 0; i < (int)IA_CSS_RBM_NOF_ELEMS; i++) {
 		IA_CSS_TRACE_2(PSYSAPI_DYNAMIC, INFO,
 			"\trouting_bitmap[index = %d] = 0x%X\n",
 			i, (int)routing_bitmap.data[i]);
 	}
-#else
-	(void)routing_bitmap;
-#endif
 
 	IA_CSS_TRACE_1(PSYSAPI_DYNAMIC, INFO,
 		"\tprogram_group(process_group) = %d\n",
@@ -876,12 +871,7 @@ const ia_css_rbm_t *ia_css_process_group_get_routing_bitmap(
 
 	verifexitval(process_group != NULL, EFAULT);
 
-#if 0
-	/*TODO this is a work around for #H1504539043*/
 	rbm = &(process_group->routing_bitmap);
-#else
-	(void)process_group;
-#endif
 EXIT:
 	if (haserror(EFAULT)) {
 		IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, ERROR,
@@ -1248,12 +1238,7 @@ int ia_css_process_group_set_routing_bitmap(
 		"ia_css_process_group_set_routing_bitmap(): enter:\n");
 
 	verifexitval(process_group != NULL, EFAULT);
-#if 0
-	/*TODO this is a work around for #H1504539043*/
 	process_group->routing_bitmap = rbm;
-#else
-	(void)rbm;
-#endif
 	retval = 0;
 EXIT:
 	if (haserror(EFAULT)) {
