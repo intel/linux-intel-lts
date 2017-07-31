@@ -118,6 +118,15 @@ void cnl_ipc_free(struct sst_generic_ipc *ipc)
 #define HDA_ADSP_REG_ADSPCS_IMR_CACHED_TLB_START	0x100
 #define HDA_ADSP_REG_ADSPCS_IMR_UNCACHED_TLB_START	0x200
 #define HDA_ADSP_REG_ADSPCS_IMR_SIZE	0x8
+
+#ifndef writeq
+static inline void writeq(u64 val, void __iomem *addr)
+{
+	writel(((u32) (val)), addr);
+	writel(((u32) (val >> 32)), addr + 4);
+}
+#endif
+
 /* Needed for presilicon platform based on FPGA */
 static int cnl_fpga_alloc_imr(struct sst_dsp *ctx)
 {
