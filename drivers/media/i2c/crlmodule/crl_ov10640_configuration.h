@@ -4382,6 +4382,82 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 	},
 };
 
+#define OV10640_OTP_BLANK0_START_ADDR 0x349E
+#define OV10640_OTP_BLANK0_END_ADDR 0x34AD
+#define OV10640_OTP_BLANK1_START_ADDR 0x34AE
+#define OV10640_OTP_BLANK1_END_ADDR 0x34BD
+#define OV10640_OTP_BLANK0_LEN (OV10640_OTP_BLANK0_END_ADDR - \
+		OV10640_OTP_BLANK0_START_ADDR + 1)
+#define OV10640_OTP_BLANK1_LEN (OV10640_OTP_BLANK1_END_ADDR -  \
+		OV10640_OTP_BLANK1_START_ADDR + 1)
+
+static struct crl_register_write_rep ov10640_nvm_preop_regset[] = {
+	/* Start streaming */
+	{OV10640_REG_STREAM, CRL_REG_LEN_08BIT, 0x01},
+	/* clear blank 0 data registers buffer */
+	{ 0x349E, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x349F, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A0, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A1, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A2, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A3, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A4, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A5, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A6, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A7, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A8, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A9, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AA, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AB, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AC, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AD, CRL_REG_LEN_08BIT, 0x00 },
+	/* set registers buffer range */
+	{ 0x3496, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x3497, CRL_REG_LEN_08BIT, 0x0F },
+	/* select blank 0 */
+	{ 0x3495, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x00, 0x00, 0x01 },
+	/* enable read strobe */
+	{ 0x349C, CRL_REG_LEN_08BIT, 0x01 },
+	/* Wait for the data to load into the buffer */
+	{ 0x0000, CRL_REG_LEN_DELAY, 25 },
+
+	/* clear blank 1 data registers buffer */
+	{ 0x34AE, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AF, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B0, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B1, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B2, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B3, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B4, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B5, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B6, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B7, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B8, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B9, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34BA, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34BB, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34BC, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34BD, CRL_REG_LEN_08BIT, 0x00 },
+	/* set registers buffer range */
+	{ 0x3496, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x3497, CRL_REG_LEN_08BIT, 0x0F },
+	/* select blank 1 */
+	{ 0x3495, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x01, 0x00, 0x01 },
+	/* enable read strobe */
+	{ 0x349C, CRL_REG_LEN_08BIT, 0x01 },
+	/* Wait for the data to load into the buffer */
+	{ 0x0000, CRL_REG_LEN_DELAY, 25 },
+};
+
+static struct crl_register_write_rep ov10640_nvm_postop_regset[] = {
+	{OV10640_REG_STREAM, CRL_REG_LEN_08BIT, 0x00} /* Stop streaming */
+};
+
+static struct crl_nvm_blob ov10640_nvm_blobs[] = {
+	{CRL_I2C_ADDRESS_NO_OVERRIDE, OV10640_OTP_BLANK0_START_ADDR, OV10640_OTP_BLANK0_LEN},
+	{CRL_I2C_ADDRESS_NO_OVERRIDE, OV10640_OTP_BLANK1_START_ADDR, OV10640_OTP_BLANK1_LEN},
+};
+
 struct crl_sensor_configuration ov10640_crl_configuration = {
 	.powerup_regs_items = ARRAY_SIZE(ov10640_powerup_standby),
 	.powerup_regs = ov10640_powerup_standby,
@@ -4420,6 +4496,16 @@ struct crl_sensor_configuration ov10640_crl_configuration = {
 
 	.flip_items = ARRAY_SIZE(ov10640_flip_configurations),
 	.flip_data = ov10640_flip_configurations,
+
+	.crl_nvm_info.nvm_flags = CRL_NVM_ADDR_MODE_8BIT,
+	.crl_nvm_info.nvm_preop_regs_items =
+		ARRAY_SIZE(ov10640_nvm_preop_regset),
+	.crl_nvm_info.nvm_preop_regs = ov10640_nvm_preop_regset,
+	.crl_nvm_info.nvm_postop_regs_items =
+		ARRAY_SIZE(ov10640_nvm_postop_regset),
+	.crl_nvm_info.nvm_postop_regs = ov10640_nvm_postop_regset,
+	.crl_nvm_info.nvm_blobs_items = ARRAY_SIZE(ov10640_nvm_blobs),
+	.crl_nvm_info.nvm_config = ov10640_nvm_blobs,
 };
 
 #endif  /* __CRLMODULE_OV10640_CONFIGURATION_H_ */
