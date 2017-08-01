@@ -244,9 +244,12 @@ ia_css_syscom_open(
 
 	/* check members of cfg: TBD */
 
-	/* Check if SP is in valid state */
-	if (!ia_css_cell_is_ready(cfg->ssid, SPC0))
-		return NULL;	/* NULL means error */
+	/*
+	 * Check if SP is in valid state, have to wait if not ready.
+	 * In some platform (Such as VP), it will need more time to wait due to system performance;
+	 * If return NULL without wait for SPC0 ready, Driver load FW will failed
+	 */
+	ia_css_cell_wait(cfg->ssid, SPC0);
 
 	ia_css_syscom_size_intern(cfg, &size_intern);
 	ia_css_syscom_size_extern(&size_intern, &size);
