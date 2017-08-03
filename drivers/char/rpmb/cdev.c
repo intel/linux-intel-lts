@@ -13,7 +13,6 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/compat.h>
@@ -28,6 +27,8 @@ static dev_t rpmb_devt;
 #define RPMB_MAX_DEVS  MINORMASK
 
 #define RPMB_DEV_OPEN    0  /** single open bit (position) */
+/* from MMC_IOC_MAX_CMDS */
+#define RPMB_MAX_FRAMES 255
 
 /**
  * rpmb_open - the open function
@@ -58,6 +59,14 @@ static int rpmb_open(struct inode *inode, struct file *fp)
 	return nonseekable_open(inode, fp);
 }
 
+/**
+ * rpmb_open - the open function
+ *
+ * @inode: pointer to inode structure
+ * @fp: pointer to file structure
+ *
+ * Return: 0 on success, <0 on error
+ */
 static int rpmb_release(struct inode *inode, struct file *fp)
 {
 	struct rpmb_dev *rdev = fp->private_data;
@@ -67,18 +76,20 @@ static int rpmb_release(struct inode *inode, struct file *fp)
 	return 0;
 }
 
-#define u64_to_user_ptr(x) (            \
-{                                       \
-	typecheck(u64, x);              \
-	(void __user *)(uintptr_t)x;    \
-}                                       \
-)
-
+/**
+ * rpmb_cmd_copy_from_user - copy rpmb command from the user space
+ *
+ * @cmd:  internal cmd structure
+ * @ucmd: user space cmd structure
+ *
+ * Return: 0 on success, <0 on error
+ */
 static int rpmb_cmd_copy_from_user(struct rpmb_cmd *cmd,
 				   struct rpmb_ioc_cmd __user *ucmd)
 {
 	size_t sz;
 	struct rpmb_frame *frames;
+	u64 frames_ptr;
 
 	if (get_user(cmd->flags, &ucmd->flags))
 		return -EFAULT;
@@ -86,12 +97,18 @@ static int rpmb_cmd_copy_from_user(struct rpmb_cmd *cmd,
 	if (get_user(cmd->nframes, &ucmd->nframes))
 		return -EFAULT;
 
-	/* FIXME get real number this is from MMC_IOC_MAX_BYTES */
-	if (cmd->nframes > 256)
+	if (cmd->nframes > RPMB_MAX_FRAMES)
+		return -EOVERFLOW;
+
+	if (!cmd->nframes)
 		return -EINVAL;
 
+	/* some archs have issues with 64bit get_user */
+	if (copy_from_user(&frames_ptr, &ucmd->frames_ptr, sizeof(frames_ptr)))
+		return -EFAULT;
+
 	sz = cmd->nframes * sizeof(struct rpmb_frame);
-	frames = memdup_user(u64_to_user_ptr(ucmd->frames_ptr), sz);
+	frames = memdup_user(u64_to_user_ptr(frames_ptr), sz);
 	if (IS_ERR(frames))
 		return PTR_ERR(frames);
 
@@ -99,18 +116,42 @@ static int rpmb_cmd_copy_from_user(struct rpmb_cmd *cmd,
 	return 0;
 }
 
+/**
+ * rpmb_cmd_copy_to_user -  copy rpmb command the the user space
+ *
+ * @ucmd: user space cmd structure
+ * @cmd:  internal cmd structure
+ *
+ * Return: 0 on success, <0 on error
+ */
 static int rpmb_cmd_copy_to_user(struct rpmb_ioc_cmd __user *ucmd,
 				 struct rpmb_cmd *cmd)
 {
 	size_t sz;
+	u64 frames_ptr;
 
 	sz = cmd->nframes * sizeof(struct rpmb_frame);
-	if (copy_to_user(u64_to_user_ptr(ucmd->frames_ptr), cmd->frames, sz))
+
+	if (copy_from_user(&frames_ptr, &ucmd->frames_ptr, sizeof(frames_ptr)))
+		return -EFAULT;
+
+	/* some archs have issues with 64bit get_user */
+	if (copy_to_user(u64_to_user_ptr(frames_ptr), cmd->frames, sz))
 		return -EFAULT;
 
 	return 0;
 }
 
+/**
+ * rpmb_ioctl_seq_cmd - issue an rpmb command sequence
+ *
+ * @rdev: rpmb device
+ * @ptr:  rpmb cmd sequence
+ *
+ * RPMB_IOC_SEQ_CMD handler
+ *
+ * Return: 0 on success, <0 on error
+ */
 static long rpmb_ioctl_seq_cmd(struct rpmb_dev *rdev,
 			       struct rpmb_ioc_seq_cmd __user *ptr)
 {
@@ -162,13 +203,22 @@ out:
 	return ret;
 }
 
+/**
+ * rpmb_ioctl_req_cmd - issue an rpmb request command
+ *
+ * @rdev: rpmb device
+ * @ptr: rpmb request command
+ *
+ * RPMB_IOC_REQ_CMD handler
+ *
+ * Return: 0 on success; < 0 on error
+ */
 static long rpmb_ioctl_req_cmd(struct rpmb_dev *rdev,
 			       struct rpmb_ioc_req_cmd __user *ptr)
 {
 	struct rpmb_data rpmbd;
 	u64 req_type;
 	int ret;
-
 
 	/* some archs have issues with 64bit get_user */
 	if (copy_from_user(&req_type, &ptr->req_type, sizeof(req_type)))
@@ -201,31 +251,36 @@ out:
 	return ret;
 }
 
-static long __rpmb_ioctl(struct file *fp, unsigned int cmd, void __user *arg)
+/**
+ * rpmb_ioctl - rpmb ioctl dispatcher
+ *
+ * @fp: a file pointer
+ * @cmd: ioctl command RPMB_IOC_REQ_CMD or RPMB_IOC_SEQ_CMD
+ * @arg: ioctl data: rpmb_ioc_req_cmd or rpmb_ioc_seq_cmd
+ *
+ * Return: 0 on success; < 0 on error
+ */
+static long rpmb_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 {
 	struct rpmb_dev *rdev = fp->private_data;
+	void __user *ptr = (void __user *)arg;
 
 	switch (cmd) {
 	case RPMB_IOC_REQ_CMD:
-		return rpmb_ioctl_req_cmd(rdev, arg);
+		return rpmb_ioctl_req_cmd(rdev, ptr);
 	case RPMB_IOC_SEQ_CMD:
-		return rpmb_ioctl_seq_cmd(rdev, arg);
+		return rpmb_ioctl_seq_cmd(rdev, ptr);
 	default:
 		dev_err(&rdev->dev, "unsupported ioctl 0x%x.\n", cmd);
 		return -ENOIOCTLCMD;
 	}
 }
 
-static long rpmb_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
-{
-	return __rpmb_ioctl(fp, cmd, (void __user *)arg);
-}
-
 #ifdef CONFIG_COMPAT
 static long rpmb_compat_ioctl(struct file *fp, unsigned int cmd,
 			      unsigned long arg)
 {
-	return	__rpmb_ioctl(fp, cmd, compat_ptr(arg));
+	return rpmb_ioctl(fp, cmd, (unsigned long)compat_ptr(arg));
 }
 #endif /* CONFIG_COMPAT */
 
@@ -271,6 +326,5 @@ int __init rpmb_cdev_init(void)
 
 void __exit rpmb_cdev_exit(void)
 {
-	if (rpmb_devt)
-		unregister_chrdev_region(rpmb_devt, RPMB_MAX_DEVS);
+	unregister_chrdev_region(rpmb_devt, RPMB_MAX_DEVS);
 }

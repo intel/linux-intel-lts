@@ -25,13 +25,15 @@
  * @RPMB_TYPE_ANY   : any type used for search only
  * @RPMB_TYPE_EMMC  : emmc (JESD84-B50.1)
  * @RPMB_TYPE_UFS   : UFS (JESD220)
+ * @RPMB_TYPE_SIM   : Simulation Device type
  * @RPMB_TYPE_MAX   : upper sentinel
  */
 enum rpmb_type {
 	RPMB_TYPE_ANY = 0,
 	RPMB_TYPE_EMMC,
 	RPMB_TYPE_UFS,
-	RPMB_TYPE_MAX = RPMB_TYPE_UFS
+	RPMB_TYPE_SIM,
+	RPMB_TYPE_MAX = RPMB_TYPE_SIM
 };
 
 extern struct class rpmb_class;
@@ -41,7 +43,7 @@ extern struct class rpmb_class;
  *
  * @flags:   command flags
  *      0 - read command
- *      1 - write commnad RPMB_F_WRITE
+ *      1 - write command RPMB_F_WRITE
  *      2 - reliable write RPMB_F_REL_WRITE
  * @nframes: number of rpmb frames in the command
  * @frames:  list of rpmb frames
@@ -114,7 +116,8 @@ struct rpmb_dev *rpmb_dev_get_by_type(enum rpmb_type type);
 struct rpmb_dev *rpmb_dev_register(struct device *dev,
 				   const struct rpmb_ops *ops);
 struct rpmb_dev *rpmb_dev_find_device(void *data,
-			int (*match)(struct device *dev, const void *data));
+				      int (*match)(struct device *dev,
+						   const void *data));
 int rpmb_dev_unregister(struct device *dev);
 int rpmb_cmd_seq(struct rpmb_dev *rdev, struct rpmb_cmd *cmds, u32 ncmds);
 int rpmb_cmd_req(struct rpmb_dev *rdev, struct rpmb_data *data);

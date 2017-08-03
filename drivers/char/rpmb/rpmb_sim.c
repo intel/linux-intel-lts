@@ -55,9 +55,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  *****************************************************************************/
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/platform_device.h>
 #include <linux/device.h>
 #include <crypto/hash.h>
 #include <linux/scatterlist.h>
@@ -71,9 +72,9 @@ static const char id[] = "RPMB:SIM";
 #define CAPACITY_MAX  SZ_16M
 #define BLK_UNIT      SZ_256
 
-static unsigned int max_wr_blks = 1;
+static unsigned int max_wr_blks = 2;
 module_param(max_wr_blks, uint, 0644);
-MODULE_PARM_DESC(max_wr_blks, "max blocks that can be written in a single command (default: 1)");
+MODULE_PARM_DESC(max_wr_blks, "max blocks that can be written in a single command (default: 2)");
 
 static unsigned int daunits = 1;
 module_param(daunits, uint, 0644);
@@ -86,11 +87,11 @@ struct blk {
 /**
  * struct rpmb_sim_dev
  *
- * @dev:  back pointer to the platform device
+ * @dev:  back pointer device
  * @rdev: rpmb device
  * @auth_key: Authentication key register which is used to authenticate
  *            accesses when MAC is calculated;
- * @auth_key_set: true if auth key was set
+ * @auth_key_set: true if authentication key was set
  * @write_counter: Counter value for the total amount of successful
  *             authenticated data write requests made by the host.
  *             The initial value of this register after production is 00000000h.
@@ -98,7 +99,7 @@ struct blk {
  *             programming access. The value cannot be reset. After the counter
  *             has reached the maximum value of FFFFFFFFh,
  *             it will not be incremented anymore (overflow prevention)
- * @hash_tfm:  hmac(sha256) tfm
+ * @hash_desc: hmac(sha256) shash descriptor
  *
  * @res_frames: frame that holds the result of the last write operation
  * @out_frames: next read operation result frames
@@ -114,7 +115,7 @@ struct rpmb_sim_dev {
 	u8 auth_key[32];
 	bool auth_key_set;
 	u32 write_counter;
-	struct crypto_shash *hash_tfm;
+	struct shash_desc *hash_desc;
 
 	struct rpmb_frame res_frames[1];
 	struct rpmb_frame *out_frames;
@@ -145,12 +146,9 @@ static int rpmb_sim_calc_hmac(struct rpmb_sim_dev *rsdev,
 			      struct rpmb_frame *frames,
 			      unsigned int blks, u8 *mac)
 {
-	SHASH_DESC_ON_STACK(desc, rsdev->hash_tfm);
+	struct shash_desc *desc = rsdev->hash_desc;
 	int i;
 	int ret;
-
-	desc->tfm = rsdev->hash_tfm;
-	desc->flags = 0;
 
 	ret = crypto_shash_init(desc);
 	if (ret)
@@ -176,6 +174,9 @@ static int rpmb_op_not_programmed(struct rpmb_sim_dev *rsdev, u16 req)
 	res_frame->req_resp = req_to_resp(req);
 	res_frame->result = op_result(rsdev, RPMB_ERR_NO_KEY);
 
+	rsdev->out_frames = res_frame;
+	rsdev->out_frames_cnt = 1;
+
 	dev_err(rsdev->dev, "not programmed\n");
 
 	return 0;
@@ -185,6 +186,7 @@ static int rpmb_op_program_key(struct rpmb_sim_dev *rsdev,
 			       struct rpmb_frame *in_frame, u32 cnt)
 {
 	struct rpmb_frame *res_frame = rsdev->res_frames;
+	struct crypto_shash *tfm = rsdev->hash_desc->tfm;
 	u16 req;
 	int ret;
 	u16 err = RPMB_ERR_OK;
@@ -194,24 +196,25 @@ static int rpmb_op_program_key(struct rpmb_sim_dev *rsdev,
 	if (req != RPMB_PROGRAM_KEY)
 		return -EINVAL;
 
-	if (cnt != 1)
+	if (cnt != 1) {
+		dev_err(rsdev->dev, "wrong number of frames %d != 1\n", cnt);
 		return -EINVAL;
+	}
 
 	if (rsdev->auth_key_set) {
-		dev_err(rsdev->dev, "key allread set\n");
-		err = RPMB_ERR_WRITE;
+		dev_err(rsdev->dev, "key already set\n");
+		err = RPMB_ERR_GENERAL;
 		goto out;
 	}
 
-	ret = crypto_shash_setkey(rsdev->hash_tfm, in_frame[0].key_mac, 32);
+	ret = crypto_shash_setkey(tfm, in_frame[0].key_mac, 32);
 	if (ret) {
 		dev_err(rsdev->dev, "set key failed = %d\n", ret);
 		err = RPMB_ERR_GENERAL;
 		goto out;
 	}
 
-	dev_dbg(rsdev->dev, "digest size %u\n",
-		crypto_shash_digestsize(rsdev->hash_tfm));
+	dev_dbg(rsdev->dev, "digest size %u\n", crypto_shash_digestsize(tfm));
 
 	memcpy(rsdev->auth_key, in_frame[0].key_mac, 32);
 	rsdev->auth_key_set = true;
@@ -236,8 +239,10 @@ static int rpmb_op_get_wr_counter(struct rpmb_sim_dev *rsdev,
 	if (req != RPMB_GET_WRITE_COUNTER)
 		return -EINVAL;
 
-	if (cnt != 1)
+	if (cnt != 1) {
+		dev_err(rsdev->dev, "wrong number of frames %d != 1\n", cnt);
 		return -EINVAL;
+	}
 
 	frame = kcalloc(1, sizeof(struct rpmb_frame), GFP_KERNEL);
 	if (!frame) {
@@ -257,7 +262,7 @@ static int rpmb_op_get_wr_counter(struct rpmb_sim_dev *rsdev,
 
 	err = RPMB_ERR_OK;
 	if (rpmb_sim_calc_hmac(rsdev, frame, cnt, frame->key_mac))
-		err = RPMB_ERR_READ;
+		err = RPMB_ERR_GENERAL;
 
 out:
 	rsdev->out_frames[0].req_resp = req_to_resp(req);
@@ -280,12 +285,14 @@ static int rpmb_op_write_data(struct rpmb_sim_dev *rsdev,
 		return -EINVAL;
 
 	if (rsdev->write_counter == 0xFFFFFFFF) {
-		err = RPMB_ERR_WRITE;
+		err = RPMB_ERR_COUNTER_EXPIRED;
 		goto out;
 	}
 
 	blks = be16_to_cpu(in_frame[0].block_count);
 	if (blks == 0 || blks > cnt) {
+		dev_err(rsdev->dev, "wrong number of blocks: blks=%u  cnt=%u\n",
+			blks, cnt);
 		ret = -EINVAL;
 		err = RPMB_ERR_GENERAL;
 		goto out;
@@ -323,48 +330,57 @@ static int rpmb_op_write_data(struct rpmb_sim_dev *rsdev,
 		goto out;
 	}
 
+	dev_dbg(rsdev->dev, "Writing = %u blocks at addr = 0x%X\n", blks, addr);
 	err = RPMB_ERR_OK;
 	for (i = 0; i < blks; i++)
 		memcpy(rsdev->da[addr + i].data, in_frame[i].data, BLK_UNIT);
 
 	rsdev->write_counter++;
 
-out:
 	memset(res_frame, 0, sizeof(struct rpmb_frame));
-	if (err == RPMB_ERR_OK) {
-		res_frame->write_counter = cpu_to_be32(rsdev->write_counter);
-		memcpy(res_frame->key_mac, mac, sizeof(mac));
-	}
 	res_frame->req_resp = req_to_resp(req);
+	res_frame->write_counter = cpu_to_be32(rsdev->write_counter);
+	res_frame->addr = cpu_to_be16(addr);
+	if (rpmb_sim_calc_hmac(rsdev, res_frame, 1, res_frame->key_mac))
+		err = RPMB_ERR_READ;
+
+out:
+	if (err != RPMB_ERR_OK) {
+		memset(res_frame, 0, sizeof(struct rpmb_frame));
+		res_frame->req_resp = req_to_resp(req);
+	}
 	res_frame->result = op_result(rsdev, err);
 
 	return ret;
 }
 
-static int rpmb_op_read_data(struct rpmb_sim_dev *rsdev,
+static int rpmb_do_read_data(struct rpmb_sim_dev *rsdev,
 			     struct rpmb_frame *in_frame, u32 cnt)
 {
 	struct rpmb_frame *res_frame = rsdev->res_frames;
-	struct rpmb_frame *out_frame;
+	struct rpmb_frame *out_frames = NULL;
 	u8 mac[32];
 	u16 req, err, addr, blks;
 	unsigned int i;
 	int ret;
 
-	req = be16_to_cpu(in_frame[0].req_resp);
+	req = be16_to_cpu(in_frame->req_resp);
 	if (req != RPMB_READ_DATA)
 		return -EINVAL;
 
-	out_frame = kcalloc(cnt, sizeof(struct rpmb_frame), GFP_KERNEL);
-	if (!out_frame) {
-		ret = -ENOMEM;
-		err = RPMB_ERR_READ;
+	/* eMMC intentionally set 0 here */
+	blks = be16_to_cpu(in_frame->block_count);
+	blks = blks ?: cnt;
+	if (blks > cnt) {
+		dev_err(rsdev->dev, "wrong number of frames cnt %u\n", blks);
+		ret = -EINVAL;
+		err = RPMB_ERR_GENERAL;
 		goto out;
 	}
 
-	blks = be16_to_cpu(in_frame[0].block_count);
-	if (blks == 0 || blks > cnt) {
-		ret = -EINVAL;
+	out_frames = kcalloc(blks, sizeof(struct rpmb_frame), GFP_KERNEL);
+	if (!out_frames) {
+		ret = -ENOMEM;
 		err = RPMB_ERR_READ;
 		goto out;
 	}
@@ -381,38 +397,58 @@ static int rpmb_op_read_data(struct rpmb_sim_dev *rsdev,
 		goto out;
 	}
 
+	dev_dbg(rsdev->dev, "reading = %u blocks at addr = 0x%X\n", blks, addr);
 	for (i = 0; i < blks; i++) {
-		memcpy(out_frame[i].data, rsdev->da[addr + i].data, BLK_UNIT);
-		memcpy(out_frame[i].nonce, in_frame[0].nonce, 16);
-		out_frame[i].req_resp = req_to_resp(req);
-		out_frame[i].addr = in_frame[0].addr;
-		out_frame[i].block_count = cpu_to_be16(blks);
+		memcpy(out_frames[i].data, rsdev->da[addr + i].data, BLK_UNIT);
+		memcpy(out_frames[i].nonce, in_frame[0].nonce, 16);
+		out_frames[i].req_resp = req_to_resp(req);
+		out_frames[i].addr = in_frame[0].addr;
+		out_frames[i].block_count = cpu_to_be16(blks);
 	}
 
-	if (rpmb_sim_calc_hmac(rsdev, out_frame, blks, mac)) {
+	if (rpmb_sim_calc_hmac(rsdev, out_frames, blks, mac)) {
 		err = RPMB_ERR_AUTH;
 		goto out;
 	}
 
-	memcpy(out_frame[blks - 1].key_mac, mac, sizeof(mac));
+	memcpy(out_frames[blks - 1].key_mac, mac, sizeof(mac));
 
 	err = RPMB_ERR_OK;
-	out_frame[0].result = op_result(rsdev, err);
+	for (i = 0; i < blks; i++)
+		out_frames[i].result = op_result(rsdev, err);
 
-	rsdev->out_frames = out_frame;
+	rsdev->out_frames = out_frames;
 	rsdev->out_frames_cnt = cnt;
+
+	return 0;
 
 out:
 	memset(res_frame, 0, sizeof(struct rpmb_frame));
 	res_frame->req_resp = req_to_resp(req);
 	res_frame->result = op_result(rsdev, err);
-	if (err != RPMB_ERR_OK) {
-		kfree(out_frame);
-		rsdev->out_frames = res_frame;
-		rsdev->out_frames_cnt = 1;
-	}
+	kfree(out_frames);
+	rsdev->out_frames = res_frame;
+	rsdev->out_frames_cnt = 1;
 
 	return ret;
+}
+
+static int rpmb_op_read_data(struct rpmb_sim_dev *rsdev,
+			     struct rpmb_frame *in_frame, u32 cnt)
+{
+	struct rpmb_frame *res_frame = rsdev->res_frames;
+	u16 req;
+
+	req = be16_to_cpu(in_frame->req_resp);
+	if (req != RPMB_READ_DATA)
+		return -EINVAL;
+
+	memcpy(res_frame, in_frame, sizeof(*res_frame));
+
+	rsdev->out_frames = res_frame;
+	rsdev->out_frames_cnt = 1;
+
+	return 0;
 }
 
 static int rpmb_op_result_read(struct rpmb_sim_dev *rsdev,
@@ -424,8 +460,10 @@ static int rpmb_op_result_read(struct rpmb_sim_dev *rsdev,
 	if (req != RPMB_RESULT_READ)
 		return -EINVAL;
 
-	if (blks != 0)
+	if (blks != 0) {
+		dev_err(rsdev->dev, "wrong number of frames %u != 0\n",  blks);
 		return -EINVAL;
+	}
 
 	rsdev->out_frames = rsdev->res_frames;
 	rsdev->out_frames_cnt = 1;
@@ -467,6 +505,7 @@ static int rpmb_sim_write(struct rpmb_sim_dev *rsdev,
 		ret = rpmb_op_result_read(rsdev, frames, cnt);
 		break;
 	default:
+		dev_err(rsdev->dev, "unsupported command %u\n", req);
 		ret = -EINVAL;
 		break;
 	}
@@ -489,8 +528,11 @@ static int rpmb_sim_read(struct rpmb_sim_dev *rsdev,
 		return -EINVAL;
 	}
 
+	if (rsdev->out_frames->req_resp == cpu_to_be16(RPMB_READ_DATA))
+		rpmb_do_read_data(rsdev, rsdev->out_frames, cnt);
+
 	for (i = 0; i < min_t(u32, rsdev->out_frames_cnt, cnt); i++)
-		memcpy(frames, rsdev->out_frames, sizeof(struct rpmb_frame));
+		memcpy(&frames[i], &rsdev->out_frames[i], sizeof(frames[i]));
 
 	if (rsdev->out_frames != rsdev->res_frames)
 		kfree(rsdev->out_frames);
@@ -505,7 +547,6 @@ static int rpmb_sim_read(struct rpmb_sim_dev *rsdev,
 static int rpmb_sim_cmd_seq(struct device *dev,
 			    struct rpmb_cmd *cmds, u32 ncmds)
 {
-	struct platform_device *pdev;
 	struct rpmb_sim_dev *rsdev;
 	int i;
 	int ret;
@@ -514,8 +555,7 @@ static int rpmb_sim_cmd_seq(struct device *dev,
 	if (!dev)
 		return -EINVAL;
 
-	pdev = to_platform_device(dev);
-	rsdev = platform_get_drvdata(pdev);
+	rsdev = dev_get_drvdata(dev);
 
 	if (!rsdev)
 		return -EINVAL;
@@ -537,13 +577,21 @@ static struct rpmb_ops rpmb_sim_ops = {
 
 static int rpmb_sim_hmac_256_alloc(struct rpmb_sim_dev *rsdev)
 {
-	struct crypto_shash *hash_tfm;
+	struct shash_desc *desc;
+	struct crypto_shash *tfm;
 
-	hash_tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
-	if (IS_ERR(hash_tfm))
-		return PTR_ERR(hash_tfm);
+	tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
+	if (IS_ERR(tfm))
+		return PTR_ERR(tfm);
 
-	rsdev->hash_tfm = hash_tfm;
+	desc = kzalloc(sizeof(*desc) + crypto_shash_descsize(tfm), GFP_KERNEL);
+	if (!desc) {
+		crypto_free_shash(tfm);
+		return -ENOMEM;
+	}
+
+	desc->tfm = tfm;
+	rsdev->hash_desc = desc;
 
 	dev_dbg(rsdev->dev, "hamac(sha256) registered\n");
 	return 0;
@@ -551,13 +599,16 @@ static int rpmb_sim_hmac_256_alloc(struct rpmb_sim_dev *rsdev)
 
 static void rpmb_sim_hmac_256_free(struct rpmb_sim_dev *rsdev)
 {
-	if (rsdev->hash_tfm)
-		crypto_free_shash(rsdev->hash_tfm);
+	struct shash_desc *desc = rsdev->hash_desc;
 
-	rsdev->hash_tfm = NULL;
+	if (desc->tfm)
+		crypto_free_shash(desc->tfm);
+	kfree(desc);
+
+	rsdev->hash_desc = NULL;
 }
 
-static int rpmb_sim_probe(struct platform_device *pdev)
+static int rpmb_sim_probe(struct device *dev)
 {
 	struct rpmb_sim_dev *rsdev;
 	int ret;
@@ -566,7 +617,7 @@ static int rpmb_sim_probe(struct platform_device *pdev)
 	if (!rsdev)
 		return -ENOMEM;
 
-	rsdev->dev = &pdev->dev;
+	rsdev->dev = dev;
 
 	ret = rpmb_sim_hmac_256_alloc(rsdev);
 	if (ret)
@@ -590,10 +641,10 @@ static int rpmb_sim_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	dev_info(&pdev->dev, "registered RPMB capacity = %zu of %zu blocks\n",
+	dev_info(dev, "registered RPMB capacity = %zu of %zu blocks\n",
 		 rsdev->capacity, rsdev->blkcnt);
 
-	platform_set_drvdata(pdev, rsdev);
+	dev_set_drvdata(dev, rsdev);
 
 	return 0;
 err:
@@ -604,15 +655,15 @@ err:
 	return ret;
 }
 
-static int rpmb_sim_remove(struct platform_device *pdev)
+static int rpmb_sim_remove(struct device *dev)
 {
 	struct rpmb_sim_dev *rsdev;
 
-	rsdev = platform_get_drvdata(pdev);
+	rsdev = dev_get_drvdata(dev);
 
 	rpmb_dev_unregister(rsdev->dev);
 
-	platform_set_drvdata(pdev, NULL);
+	dev_set_drvdata(dev, NULL);
 
 	rpmb_sim_hmac_256_free(rsdev);
 
@@ -621,43 +672,77 @@ static int rpmb_sim_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static void rpmb_sim_shutdown(struct platform_device *pdev)
+static void rpmb_sim_shutdown(struct device *dev)
 {
-	rpmb_sim_remove(pdev);
+	rpmb_sim_remove(dev);
 }
 
-static struct platform_driver rpmb_sim_driver = {
-	.driver = {
-		.name  = "rpmb_sim",
-	},
-	.probe         = rpmb_sim_probe,
-	.remove        = rpmb_sim_remove,
-	.shutdown      = rpmb_sim_shutdown,
+static int rpmb_sim_match(struct device *dev, struct device_driver *drv)
+{
+	return 1;
+}
+
+static struct bus_type rpmb_sim_bus = {
+	.name = "rpmb_sim",
+	.match = rpmb_sim_match,
 };
 
-static struct platform_device *rpmb_sim_pdev;
+static struct device_driver rpmb_sim_drv = {
+	.name  = "rpmb_sim",
+	.probe = rpmb_sim_probe,
+	.remove = rpmb_sim_remove,
+	.shutdown = rpmb_sim_shutdown,
+};
+
+static void rpmb_sim_dev_release(struct device *dev)
+{
+}
+
+static struct device rpmb_sim_dev;
 
 static int __init rpmb_sim_init(void)
 {
 	int ret;
+	struct device *dev = &rpmb_sim_dev;
+	struct device_driver *drv = &rpmb_sim_drv;
 
-	rpmb_sim_pdev = platform_device_register_simple("rpmb_sim", -1,
-							NULL, 0);
-
-	if (IS_ERR(rpmb_sim_pdev))
-		return PTR_ERR(rpmb_sim_pdev);
-
-	ret = platform_driver_register(&rpmb_sim_driver);
+	ret = bus_register(&rpmb_sim_bus);
 	if (ret)
-		platform_device_unregister(rpmb_sim_pdev);
+		return ret;
 
+	dev->bus = &rpmb_sim_bus;
+	dev->release = rpmb_sim_dev_release;
+	dev_set_name(dev, "%s", "rpmb_sim");
+	ret = device_register(dev);
+	if (ret) {
+		pr_err("device register failed %d\n", ret);
+		goto err_device;
+	}
+
+	drv->bus = &rpmb_sim_bus;
+	ret = driver_register(drv);
+	if (ret) {
+		pr_err("driver register failed %d\n", ret);
+		goto err_driver;
+	}
+
+	return 0;
+
+err_driver:
+	device_unregister(dev);
+err_device:
+	bus_unregister(&rpmb_sim_bus);
 	return ret;
 }
 
 static void __exit rpmb_sim_exit(void)
 {
-	platform_device_unregister(rpmb_sim_pdev);
-	platform_driver_unregister(&rpmb_sim_driver);
+	struct device *dev = &rpmb_sim_dev;
+	struct device_driver *drv = &rpmb_sim_drv;
+
+	device_unregister(dev);
+	driver_unregister(drv);
+	bus_unregister(&rpmb_sim_bus);
 }
 
 module_init(rpmb_sim_init);
@@ -665,4 +750,4 @@ module_exit(rpmb_sim_exit);
 
 MODULE_AUTHOR("Tomas Winkler <tomas.winkler@intel.com");
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_ALIAS("platform:rpmb_sim");
+MODULE_ALIAS("rpmb_sim:rpmb_sim");
