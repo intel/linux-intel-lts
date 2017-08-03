@@ -13,10 +13,15 @@ prefix ?= /usr/local
 bindir = $(prefix)/bin
 
 
-CFLAGS += -D__EXPORTED_HEADERS__ -g -static
+CFLAGS += $(HOSTCFLAGS)
+CFLAGS += -D__EXPORTED_HEADERS__ -g
+ifdef RPMB_STATIC
 LDFLAGS += -static
+CFLAGS += -static
+PKG_STATIC = --static
+endif
 CFLAGS += -I$(srctree)/include/uapi -I$(srctree)/include
-LDLIBS += $(shell $(PKG_CONFIG) --libs --static libcrypto)
+LDLIBS += $(shell $(PKG_CONFIG) --libs $(PKG_STATIC) libcrypto)
 
 prog := rpmb
 
