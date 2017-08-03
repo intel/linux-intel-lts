@@ -117,6 +117,25 @@ int ia_css_process_group_exec_cmd(
 				IA_CSS_PSYS_CMD_QUEUE_COMMAND_ID, &psys_cmd);
 		verifexit(retval > 0);
 		break;
+	case IA_CSS_PROCESS_GROUP_CMD_RESUME:
+
+		IA_CSS_TRACE_0(BXT_SPCTRL, INFO,
+			"ia_css_process_group_exec_cmd(): IA_CSS_PROCESS_GROUP_CMD_RESUME:\n");
+		verifexit(state == IA_CSS_PROCESS_GROUP_STARTED);
+
+		cmd_queue_full = ia_css_is_psys_cmd_queue_full(psys_syscom,
+					IA_CSS_PSYS_CMD_QUEUE_COMMAND_ID);
+		retval = EBUSY;
+		verifexit(cmd_queue_full == false);
+
+		psys_cmd.command = IA_CSS_PROCESS_GROUP_CMD_RESUME;
+		psys_cmd.msg = 0;
+		psys_cmd.context_handle = process_group->ipu_virtual_address;
+
+		retval = ia_css_psys_cmd_queue_send(psys_syscom,
+				IA_CSS_PSYS_CMD_QUEUE_COMMAND_ID, &psys_cmd);
+		verifexit(retval > 0);
+		break;
 	case IA_CSS_PROCESS_GROUP_CMD_STOP:
 
 		IA_CSS_TRACE_0(BXT_SPCTRL, INFO,
@@ -136,6 +155,24 @@ int ia_css_process_group_exec_cmd(
 
 		retval = ia_css_psys_cmd_queue_send(psys_syscom,
 				queue_id, &psys_cmd);
+		verifexit(retval > 0);
+		break;
+	case IA_CSS_PROCESS_GROUP_CMD_SUSPEND:
+
+		IA_CSS_TRACE_0(BXT_SPCTRL, INFO,
+			"ia_css_process_group_exec_cmd(): IA_CSS_PROCESS_GROUP_CMD_SUSPEND:\n");
+
+		cmd_queue_full = ia_css_is_psys_cmd_queue_full(psys_syscom,
+					IA_CSS_PSYS_CMD_QUEUE_DEVICE_ID);
+		retval = EBUSY;
+		verifexit(cmd_queue_full == false);
+
+		psys_cmd.command = IA_CSS_PROCESS_GROUP_CMD_SUSPEND;
+		psys_cmd.msg = 0;
+		psys_cmd.context_handle = process_group->ipu_virtual_address;
+
+		retval = ia_css_psys_cmd_queue_send(psys_syscom,
+				IA_CSS_PSYS_CMD_QUEUE_DEVICE_ID, &psys_cmd);
 		verifexit(retval > 0);
 		break;
 	case IA_CSS_PROCESS_GROUP_CMD_ABORT:
