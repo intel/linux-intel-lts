@@ -94,12 +94,12 @@ enum rpmb_op_result {
 #define RPMB_F_REL_WRITE (1UL << 1)
 
 /**
- * struct rpmb_cmd: rpmb access command
+ * struct rpmb_cmd - rpmb access command
  *
- * @flags:   command flags
+ * @flags: command flags
  *      0 - read command
  *      1 - write commnad RPMB_F_WRITE
- *      2 -  reliable write RPMB_F_REL_WRITE
+ *      2 - reliable write RPMB_F_REL_WRITE
  * @nframes: number of rpmb frames in the command
  * @frames_ptr:  a pointer to the list of rpmb frames
  */
@@ -112,10 +112,11 @@ struct rpmb_ioc_cmd {
 #define rpmb_ioc_cmd_set_frames(_cmd, _ptr) \
 	(_cmd).frames_ptr = (__aligned_u64)(intptr_t)(_ptr)
 
-#define rpmb_ioc_cmd_set(_cmd, _flags, _ptr, _n) do {         \
-	(_cmd).flags = (_flags);                              \
-	(_cmd).nframes = (_n);                                \
-	(_cmd).frames_ptr = (__aligned_u64)(intptr_t)(_ptr);  \
+#define rpmb_ioc_cmd_set(_cmd, _flags, _ptr, _n) do {        \
+	struct rpmb_ioc_cmd *icmd = &(_cmd);                 \
+	icmd->flags = (_flags);                              \
+	icmd->nframes = (_n);                                \
+	icmd->frames_ptr = (__aligned_u64)(intptr_t)(_ptr);  \
 } while (0)
 
 /**
@@ -146,7 +147,7 @@ struct rpmb_ioc_seq_cmd {
 	struct rpmb_ioc_cmd cmds[0];
 };
 
-#define RPMB_IOC_REQ_CMD _IOWR(0xB5, 0, struct rpmb_ioc_req_cmd)
-#define RPMB_IOC_SEQ_CMD _IOWR(0xB5, 1, struct rpmb_ioc_seq_cmd)
+#define RPMB_IOC_REQ_CMD _IOWR(0xB5, 80, struct rpmb_ioc_req_cmd)
+#define RPMB_IOC_SEQ_CMD _IOWR(0xB5, 81, struct rpmb_ioc_seq_cmd)
 
 #endif /* _UAPI_LINUX_RPMB_H_ */
