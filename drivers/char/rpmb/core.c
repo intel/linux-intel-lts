@@ -118,6 +118,35 @@ static int rpmb_request_verify(struct rpmb_dev *rdev, struct rpmb_data *rpmbd)
 }
 
 /**
+ * rpmb_cmd_fixup - fixup rpmb command
+ *
+ * @rdev: rpmb device
+ * @cmds: rpmb command list
+ * @ncmds: number of commands
+ *
+ */
+static void rpmb_cmd_fixup(struct rpmb_dev *rdev,
+			   struct rpmb_cmd *cmds, u32 ncmds)
+{
+	int i;
+
+	if (rdev->ops->type != RPMB_TYPE_EMMC)
+		return;
+
+	/* Fixup RPMB_READ_DATA specific to eMMC
+	 * The block count of the RPMB read operation is not indicated
+	 * in the original RPMB Data Read Request packet.
+	 * This is different then implementation for other protocol
+	 * standards.
+	 */
+	for (i = 0; i < ncmds; i++)
+		if (cmds->frames->req_resp == cpu_to_be16(RPMB_READ_DATA)) {
+			dev_dbg(&rdev->dev, "Fixing up READ_DATA frame to block_count=0\n");
+			cmds->frames->block_count = 0;
+		}
+}
+
+/**
  * rpmb_cmd_seq - send RPMB command sequence
  *
  * @rdev: rpmb device
@@ -137,10 +166,11 @@ int rpmb_cmd_seq(struct rpmb_dev *rdev, struct rpmb_cmd *cmds, u32 ncmds)
 		return -EINVAL;
 
 	mutex_lock(&rdev->lock);
-	if (rdev->ops && rdev->ops->cmd_seq)
+	err = -EOPNOTSUPP;
+	if (rdev->ops && rdev->ops->cmd_seq) {
+		rpmb_cmd_fixup(rdev, cmds, ncmds);
 		err = rdev->ops->cmd_seq(rdev->dev.parent, cmds, ncmds);
-	else
-		err = -EOPNOTSUPP;
+	}
 	mutex_unlock(&rdev->lock);
 	return err;
 }
@@ -152,6 +182,52 @@ static void rpmb_cmd_set(struct rpmb_cmd *cmd, u32 flags,
 	cmd->flags = flags;
 	cmd->frames = frames;
 	cmd->nframes = nframes;
+}
+
+/**
+ * rpmb_cmd_req_write - setup cmd request write sequence
+ *
+ * @cmd: cmd sequence
+ * @rpmbd: rpmb request data
+ * @cnt_in: number of input frames
+ * @cnt_out: number of output frames
+ *
+ * Return: 3 - number of commands in the sequence
+ */
+static u32 rpmb_cmd_req_write(struct rpmb_cmd *cmd, struct rpmb_data *rpmbd,
+			      u32 cnt_in, u32 cnt_out)
+{
+	struct rpmb_frame *res_frame;
+
+	rpmb_cmd_set(&cmd[0], RPMB_F_WRITE | RPMB_F_REL_WRITE,
+		     rpmbd->icmd.frames, cnt_in);
+	res_frame = rpmbd->ocmd.frames;
+	memset(res_frame, 0, sizeof(*res_frame));
+	res_frame->req_resp = cpu_to_be16(RPMB_RESULT_READ);
+	rpmb_cmd_set(&cmd[1], RPMB_F_WRITE, res_frame, 1);
+
+	rpmb_cmd_set(&cmd[2], 0, rpmbd->ocmd.frames, cnt_out);
+
+	return  3;
+}
+
+/**
+ * rpmb_cmd_req_read - setup cmd request read sequence
+ *
+ * @cmd: cmd sequence
+ * @rpmbd: rpmb request data
+ * @cnt_in: number of input frames
+ * @cnt_out: number of output frames
+ *
+ * Return: 2 - number of commands in the sequence
+ */
+static u32 rpmb_cmd_req_read(struct rpmb_cmd *cmd, struct rpmb_data *rpmbd,
+			     u32 cnt_in, u32 cnt_out)
+{
+	rpmb_cmd_set(&cmd[0], RPMB_F_WRITE, rpmbd->icmd.frames, cnt_in);
+	rpmb_cmd_set(&cmd[1], 0, rpmbd->ocmd.frames, cnt_out);
+
+	return 2;
 }
 
 /**
@@ -168,7 +244,6 @@ static void rpmb_cmd_set(struct rpmb_cmd *cmd, u32 flags,
 int rpmb_cmd_req(struct rpmb_dev *rdev, struct rpmb_data *rpmbd)
 {
 	struct rpmb_cmd cmd[3];
-	struct rpmb_frame *res_frame;
 	u32 cnt_in, cnt_out;
 	u32 ncmds;
 	u16 type;
@@ -189,30 +264,21 @@ int rpmb_cmd_req(struct rpmb_dev *rdev, struct rpmb_data *rpmbd)
 	type = rpmbd->req_type;
 	switch (type) {
 	case RPMB_PROGRAM_KEY:
-		cnt_in = 1;
-		cnt_out = 1;
-		/* fall through */
+		ncmds = rpmb_cmd_req_write(cmd, rpmbd, 1, 1);
+		break;
+
 	case RPMB_WRITE_DATA:
-		rpmb_cmd_set(&cmd[0], RPMB_F_WRITE | RPMB_F_REL_WRITE,
-			     rpmbd->icmd.frames, cnt_in);
-
-		res_frame = rpmbd->ocmd.frames;
-		memset(res_frame, 0, sizeof(*res_frame));
-		res_frame->req_resp = cpu_to_be16(RPMB_RESULT_READ);
-		rpmb_cmd_set(&cmd[1], RPMB_F_WRITE, res_frame, 1);
-
-		rpmb_cmd_set(&cmd[2], 0, rpmbd->ocmd.frames, cnt_out);
-		ncmds = 3;
+		ncmds = rpmb_cmd_req_write(cmd, rpmbd, cnt_in, cnt_out);
 		break;
+
 	case RPMB_GET_WRITE_COUNTER:
-		cnt_in = 1;
-		cnt_out = 1;
-		/* fall through */
-	case RPMB_READ_DATA:
-		rpmb_cmd_set(&cmd[0], RPMB_F_WRITE, rpmbd->icmd.frames, cnt_in);
-		rpmb_cmd_set(&cmd[1], 0, rpmbd->ocmd.frames, cnt_out);
-		ncmds = 2;
+		ncmds = rpmb_cmd_req_read(cmd, rpmbd, 1, 1);
 		break;
+
+	case RPMB_READ_DATA:
+		ncmds = rpmb_cmd_req_write(cmd, rpmbd, cnt_in, cnt_out);
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -249,7 +315,8 @@ EXPORT_SYMBOL(rpmb_class);
  * Return: matching rpmb device or NULL on failure
  */
 struct rpmb_dev *rpmb_dev_find_device(void *data,
-		     int (*match)(struct device *dev, const void *data))
+				      int (*match)(struct device *dev,
+						   const void *data))
 {
 	struct device *dev;
 
@@ -317,13 +384,16 @@ static ssize_t type_show(struct device *dev,
 
 	switch (rdev->ops->type) {
 	case RPMB_TYPE_EMMC:
-		ret = scnprintf(buf, PAGE_SIZE, "EMMC\n");
+		ret = sprintf(buf, "EMMC\n");
 		break;
 	case RPMB_TYPE_UFS:
-		ret = scnprintf(buf, PAGE_SIZE, "UFS\n");
+		ret = sprintf(buf, "UFS\n");
+		break;
+	case RPMB_TYPE_SIM:
+		ret = sprintf(buf, "SIM\n");
 		break;
 	default:
-		ret = scnprintf(buf, PAGE_SIZE, "UNKNOWN\n");
+		ret = sprintf(buf, "UNKNOWN\n");
 		break;
 	}
 
@@ -331,38 +401,44 @@ static ssize_t type_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(type);
 
-static ssize_t id_show(struct device *dev,
-		       struct device_attribute *attr, char *buf)
+static ssize_t id_read(struct file *file, struct kobject *kobj,
+		       struct bin_attribute *attr, char *buf,
+		       loff_t off, size_t count)
 {
+	struct device *dev = kobj_to_dev(kobj);
 	struct rpmb_dev *rdev = to_rpmb_dev(dev);
 	size_t sz = min_t(size_t, rdev->ops->dev_id_len, PAGE_SIZE);
 
 	if (!rdev->ops->dev_id)
 		return 0;
 
-	memcpy(buf, rdev->ops->dev_id, sz);
-	return sz;
+	return memory_read_from_buffer(buf, count, &off, rdev->ops->dev_id, sz);
 }
-static DEVICE_ATTR_RO(id);
+static BIN_ATTR_RO(id, 0);
 
 static ssize_t reliable_wr_cnt_show(struct device *dev,
 				    struct device_attribute *attr, char *buf)
 {
 	struct rpmb_dev *rdev = to_rpmb_dev(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", rdev->ops->reliable_wr_cnt);
+	return sprintf(buf, "%u\n", rdev->ops->reliable_wr_cnt);
 }
 static DEVICE_ATTR_RO(reliable_wr_cnt);
 
 static struct attribute *rpmb_attrs[] = {
 	&dev_attr_type.attr,
-	&dev_attr_id.attr,
 	&dev_attr_reliable_wr_cnt.attr,
+	NULL,
+};
+
+static struct bin_attribute *rpmb_bin_attributes[] = {
+	&bin_attr_id,
 	NULL,
 };
 
 static struct attribute_group rpmb_attr_group = {
 	.attrs = rpmb_attrs,
+	.bin_attrs = rpmb_bin_attributes,
 };
 
 static const struct attribute_group *rpmb_attr_groups[] = {

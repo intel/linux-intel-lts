@@ -71,9 +71,11 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <endian.h>
 
 #include <openssl/engine.h>
 #include <openssl/hmac.h>
+#include <openssl/rand.h>
 
 #include "linux/rpmb.h"
 
@@ -117,7 +119,7 @@ static const char *rpmb_result_str(enum rpmb_op_result result)
 	{ if (result & RPMB_ERR_COUNTER_EXPIRED)     \
 		return "COUNTER_EXPIRE:" str(_res);  \
 	else                                         \
-		return #_res;                        \
+		return str(x);                       \
 	}
 
 	switch (result & 0x000F) {
@@ -143,8 +145,9 @@ static inline void __dump_buffer(const char *buf)
 }
 
 static void
-dump_hex_buffer(const char *title, const unsigned char *buf, size_t len)
+dump_hex_buffer(const char *title, const void *buf, size_t len)
 {
+	const unsigned char *_buf = (const unsigned char *)buf;
 	const size_t pbufsz = 16 * 3;
 	char pbuf[pbufsz];
 	int j = 0;
@@ -152,7 +155,7 @@ dump_hex_buffer(const char *title, const unsigned char *buf, size_t len)
 	if (title)
 		fprintf(stderr, "%s\n", title);
 	while (len-- > 0) {
-		snprintf(&pbuf[j], pbufsz - j, "%02X ", *buf++);
+		snprintf(&pbuf[j], pbufsz - j, "%02X ", *_buf++);
 		j += 3;
 		if (j == 16 * 3) {
 			__dump_buffer(pbuf);
@@ -173,14 +176,13 @@ static void dbg_dump_frame(const char *title, const struct rpmb_frame *f)
 	if (!f)
 		return;
 
-	if (title)
-		fprintf(stderr, "%s\n", title);
-
 	result = be16toh(f->result);
 	req_resp = be16toh(f->req_resp);
 	if (req_resp & 0xf00)
 		req_resp = RPMB_RESP2REQ(req_resp);
 
+	fprintf(stderr, "--------------- %s ---------------\n",
+		title ? title : "start");
 	fprintf(stderr, "ptr: %p\n", f);
 	dump_hex_buffer("key_mac: ", f->key_mac, 32);
 	dump_hex_buffer("data: ", f->data, 256);
@@ -190,6 +192,7 @@ static void dbg_dump_frame(const char *title, const struct rpmb_frame *f)
 	fprintf(stderr, "block_count: %u\n", be16toh(f->block_count));
 	fprintf(stderr, "result %s:%d\n", rpmb_result_str(result), result);
 	fprintf(stderr, "req_resp %s\n", rpmb_op_str(req_resp));
+	fprintf(stderr, "--------------- End ---------------\n");
 }
 
 static int open_dev_file(const char *devfile)
@@ -198,7 +201,7 @@ static int open_dev_file(const char *devfile)
 
 	fd = open(devfile, O_RDWR);
 	if (fd < 0)
-		rpmb_err("Cannot open: %s: %s\n", devfile, strerror(errno));
+		rpmb_err("Cannot open: %s: %s.\n", devfile, strerror(errno));
 	return fd;
 }
 
@@ -212,7 +215,7 @@ static int open_rd_file(const char *datafile, const char *type)
 		fd = open(datafile, O_RDONLY);
 
 	if (fd < 0)
-		rpmb_err("Cannot open %s: %s: %s\n",
+		rpmb_err("Cannot open %s: %s: %s.\n",
 			 type, datafile, strerror(errno));
 
 	return fd;
@@ -225,10 +228,9 @@ static int open_wr_file(const char *datafile, const char *type)
 	if (!strcmp(datafile, "-"))
 		fd = STDOUT_FILENO;
 	else
-		fd = open(datafile, O_WRONLY | O_CREAT | O_APPEND,
-			  S_IRUSR | S_IWUSR);
+		fd = open(datafile, O_WRONLY | O_CREAT | O_APPEND, 0600);
 	if (fd < 0)
-		rpmb_err("Cannot open %s: %s: %s\n",
+		rpmb_err("Cannot open %s: %s: %s.\n",
 			 type, datafile, strerror(errno));
 	return fd;
 }
@@ -239,22 +241,26 @@ static void close_fd(int fd)
 		close(fd);
 }
 
+/* need to just cast out 'const' in write(2) */
+typedef ssize_t (*rwfunc_t)(int fd, void *buf, size_t count);
 /* blocking rw wrapper */
-#define rw(func, fd, buf, size)                              \
-({                                                           \
-	ssize_t nread = 0, n;                                \
-	char *_buf = (char *)buf;                            \
-	do {                                                 \
-		n = func(fd, _buf + nread, size - nread);    \
-		if (n == -1 && errno != EINTR) {             \
-			nread = -1;                          \
-			break;                               \
-		} else if (n > 0) {                          \
-			nread += n;                          \
-		}                                            \
-	} while (n != 0 && (size_t)nread != size);           \
-	nread;                                               \
-})
+static inline ssize_t rw(rwfunc_t func, int fd, unsigned char *buf, size_t size)
+{
+	ssize_t ntotal = 0, n;
+	char *_buf = (char *)buf;
+
+	do {
+		n = func(fd, _buf + ntotal, size - ntotal);
+		if (n == -1 && errno != EINTR) {
+			ntotal = -1;
+			break;
+		} else if (n > 0) {
+			ntotal += n;
+		}
+	} while (n != 0 && (size_t)ntotal != size);
+
+	return ntotal;
+}
 
 static ssize_t read_file(int fd, unsigned char *data, size_t size)
 {
@@ -262,9 +268,9 @@ static ssize_t read_file(int fd, unsigned char *data, size_t size)
 
 	ret = rw(read, fd, data, size);
 	if (ret < 0) {
-		rpmb_err("cannot read file: %s\n", strerror(errno));
-	} else if (ret != size) {
-		rpmb_err("read %zd but must be %zu bytes length\n", ret, size);
+		rpmb_err("cannot read file: %s\n.", strerror(errno));
+	} else if ((size_t)ret != size) {
+		rpmb_err("read %zd but must be %zu bytes length.\n", ret, size);
 		ret = -EINVAL;
 	}
 
@@ -275,15 +281,20 @@ static ssize_t write_file(int fd, unsigned char *data, size_t size)
 {
 	ssize_t ret;
 
-	ret = rw(write, fd, data, size);
+	ret = rw((rwfunc_t)write, fd, data, size);
 	if (ret < 0) {
-		rpmb_err("cannot read file: %s\n", strerror(errno));
-	} else if (ret != size) {
-		rpmb_err("data is %zd but must be %zu bytes length\n",
+		rpmb_err("cannot read file: %s.\n", strerror(errno));
+	} else if ((size_t)ret != size) {
+		rpmb_err("data is %zd but must be %zu bytes length.\n",
 			 ret, size);
 		ret = -EINVAL;
 	}
 	return ret;
+}
+
+static struct rpmb_frame *rpmb_alloc_frames(unsigned int cnt)
+{
+	return calloc(cnt, sizeof(struct rpmb_frame));
 }
 
 static int rpmb_calc_hmac_sha256(struct rpmb_frame *frames, size_t blocks_cnt,
@@ -294,7 +305,7 @@ static int rpmb_calc_hmac_sha256(struct rpmb_frame *frames, size_t blocks_cnt,
 {
 	HMAC_CTX ctx;
 	int ret;
-	int i;
+	unsigned int i;
 
 	 /* SSL returns 1 on success 0 on failure */
 
@@ -315,6 +326,42 @@ static int rpmb_calc_hmac_sha256(struct rpmb_frame *frames, size_t blocks_cnt,
 out:
 	HMAC_CTX_cleanup(&ctx);
 	return ret == 1 ? 0 : -1;
+}
+
+static int rpmb_check_req_resp(uint16_t req, struct rpmb_frame *frame_out)
+{
+	if (RPMB_REQ2RESP(req) != be16toh(frame_out->req_resp)) {
+		rpmb_err("RPMB response mismatch %04X != %04X\n.",
+			 RPMB_REQ2RESP(req), be16toh(frame_out->req_resp));
+		return -1;
+	}
+	return 0;
+}
+
+static int rpmb_check_mac(const unsigned char *key,
+			  struct rpmb_frame *frames_out,
+			  unsigned int cnt_out)
+{
+	unsigned char mac[RPMB_MAC_SIZE];
+
+	if (cnt_out == 0) {
+		rpmb_err("RPMB 0 output frames.\n");
+		return -1;
+	}
+
+	rpmb_calc_hmac_sha256(frames_out, cnt_out,
+			      key, RPMB_KEY_SIZE,
+			      mac, RPMB_MAC_SIZE);
+
+	if (memcmp(mac, frames_out[cnt_out - 1].key_mac, RPMB_MAC_SIZE)) {
+		rpmb_err("RPMB hmac mismatch:\n");
+		dump_hex_buffer("Result MAC: ",
+				frames_out[cnt_out - 1].key_mac, RPMB_MAC_SIZE);
+		dump_hex_buffer("Expected MAC: ", mac, RPMB_MAC_SIZE);
+		return -1;
+	}
+
+	return 0;
 }
 
 static int (*rpmb_ioctl)(int fd, uint16_t req,
@@ -349,10 +396,10 @@ static int rpmb_ioctl_seq(int fd, uint16_t req,
 	i++;
 
 	if (req == RPMB_WRITE_DATA || req == RPMB_PROGRAM_KEY) {
-		frame_res = calloc(1, sizeof(*frame_res));
-		frame_res->req_resp =  htobe16(RPMB_RESULT_READ);
+		frame_res = rpmb_alloc_frames(1);
 		if (!frame_res)
 			return -ENOMEM;
+		frame_res->req_resp =  htobe16(RPMB_RESULT_READ);
 		rpmb_ioc_cmd_set(iseq.cmd[i], RPMB_F_WRITE, frame_res, 1);
 		i++;
 	}
@@ -363,7 +410,9 @@ static int rpmb_ioctl_seq(int fd, uint16_t req,
 	iseq.h.num_of_cmds = i;
 	ret = ioctl(fd, RPMB_IOC_SEQ_CMD, &iseq);
 	if (ret < 0)
-		rpmb_err("ioctl failure %d: %s\n", ret, strerror(errno));
+		rpmb_err("ioctl failure %d: %s.\n", ret, strerror(errno));
+
+	ret = rpmb_check_req_resp(req, frames_out);
 
 	dbg_dump_frame("Res Frame: ", frame_res);
 	dbg_dump_frame("Out Frame: ", frames_out);
@@ -388,7 +437,9 @@ static int rpmb_ioctl_req(int fd, uint16_t req,
 	dbg_dump_frame("In Frame: ", frames_in);
 	ret = ioctl(fd, RPMB_IOC_REQ_CMD, &ireq);
 	if (ret < 0)
-		rpmb_err("ioctl failure %d: %s\n", ret, strerror(errno));
+		rpmb_err("ioctl failure %d: %s.\n", ret, strerror(errno));
+
+	ret = rpmb_check_req_resp(req, frames_out);
 	dbg_dump_frame("Out Frame: ", frames_out);
 
 	return ret;
@@ -399,7 +450,7 @@ static int op_rpmb_program_key(int nargs, char *argv[])
 	int ret;
 	int  dev_fd = -1, key_fd = -1;
 	uint16_t req = RPMB_PROGRAM_KEY;
-	struct rpmb_frame frame_in, frame_out;
+	struct rpmb_frame *frame_in = NULL, *frame_out = NULL;
 
 	ret = -EINVAL;
 	if (nargs != 2)
@@ -415,21 +466,35 @@ static int op_rpmb_program_key(int nargs, char *argv[])
 		goto out;
 	argv++;
 
-	memset(&frame_in, 0, sizeof(frame_in));
-	frame_in.req_resp = htobe16(req);
+	frame_in = rpmb_alloc_frames(1);
+	frame_out = rpmb_alloc_frames(1);
+	if (!frame_in || !frame_out) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
-	read_file(key_fd, frame_in.key_mac, RPMB_KEY_SIZE);
+	frame_in->req_resp = htobe16(req);
 
-	ret = rpmb_ioctl(dev_fd, req, &frame_in, 1, &frame_out, 1);
+	read_file(key_fd, frame_in->key_mac, RPMB_KEY_SIZE);
+
+	ret = rpmb_ioctl(dev_fd, req, frame_in, 1, frame_out, 1);
 	if (ret)
 		goto out;
 
-	ret = be16toh(frame_out.result);
+	if (RPMB_REQ2RESP(req) != be16toh(frame_out->req_resp)) {
+		rpmb_err("RPMB response mismatch.\n");
+		ret = -1;
+		goto out;
+	}
+
+	ret = be16toh(frame_out->result);
 	if (ret)
-		rpmb_err("RPMB operation %s failed, %s[0x%04x]\n",
+		rpmb_err("RPMB operation %s failed, %s[0x%04x].\n",
 			 rpmb_op_str(req), rpmb_result_str(ret), ret);
 
 out:
+	free(frame_in);
+	free(frame_out);
 	close_fd(dev_fd);
 	close_fd(key_fd);
 
@@ -440,44 +505,55 @@ static int rpmb_get_write_counter(int dev_fd, unsigned int *cnt,
 				  const unsigned char *key)
 {
 	int ret;
+	uint16_t res = 0x000F;
 	uint16_t req = RPMB_GET_WRITE_COUNTER;
-	unsigned char mac[RPMB_MAC_SIZE];
-	struct rpmb_frame frame_in;
-	struct rpmb_frame frame_out;
+	struct rpmb_frame *frame_in = NULL;
+	struct rpmb_frame *frame_out = NULL;
 
-	memset(&frame_in, 0, sizeof(frame_in));
-	frame_in.req_resp = htobe16(req);
-	RAND_bytes(frame_in.nonce, RPMB_NONCE_SIZE);
+	frame_in = rpmb_alloc_frames(1);
+	frame_out = rpmb_alloc_frames(1);
+	if (!frame_in || !frame_out) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
-	ret = rpmb_ioctl(dev_fd, req, &frame_in, 1, &frame_out, 1);
-	if (ret != 0)
-		return ret;
+	frame_in->req_resp = htobe16(req);
+	RAND_bytes(frame_in->nonce, RPMB_NONCE_SIZE);
 
-	ret = be16toh(frame_out.result);
+	ret = rpmb_ioctl(dev_fd, req, frame_in, 1, frame_out, 1);
 	if (ret)
 		goto out;
 
-	if (key) {
-		rpmb_calc_hmac_sha256(&frame_out, 1,
-				      key, RPMB_KEY_SIZE,
-				      mac, RPMB_MAC_SIZE);
-		if (memcmp(mac, frame_out.key_mac, RPMB_MAC_SIZE)) {
-			rpmb_err("RPMB hmac mismatch\n");
-			dump_hex_buffer("Result MAC: ",
-					frame_out.key_mac, RPMB_MAC_SIZE);
-			dump_hex_buffer("Expected MAC: ", mac, RPMB_MAC_SIZE);
-			ret = RPMB_ERR_AUTH;
-			goto out;
-		}
+	res = be16toh(frame_out->result);
+	if (res != RPMB_ERR_OK) {
+		ret = -1;
+		goto out;
 	}
 
-	*cnt = be32toh(frame_out.write_counter);
+	if (memcmp(&frame_in->nonce, &frame_out->nonce, RPMB_NONCE_SIZE)) {
+		rpmb_err("RPMB NONCE mismatch\n");
+		dump_hex_buffer("Result NONCE:",
+				&frame_out->nonce, RPMB_NONCE_SIZE);
+		dump_hex_buffer("Expected NONCE: ",
+				&frame_in->nonce, RPMB_NONCE_SIZE);
+		ret = -1;
+		goto out;
+	}
+
+	if (key) {
+		ret = rpmb_check_mac(key, frame_out, 1);
+		if (ret)
+			goto out;
+	}
+
+	*cnt = be32toh(frame_out->write_counter);
 
 out:
-	if (ret) {
+	if (ret)
 		rpmb_err("RPMB operation %s failed, %s[0x%04x]\n",
-			 rpmb_op_str(req), rpmb_result_str(ret), ret);
-	}
+			 rpmb_op_str(req), rpmb_result_str(res), res);
+	free(frame_in);
+	free(frame_out);
 	return ret;
 }
 
@@ -533,10 +609,9 @@ static int op_rpmb_read_blocks(int nargs, char **argv)
 	uint16_t req = RPMB_READ_DATA;
 	uint16_t addr, blocks_cnt;
 	unsigned char key[RPMB_KEY_SIZE];
-	unsigned char mac[RPMB_MAC_SIZE];
 	unsigned long numarg;
 	bool has_key;
-	struct rpmb_frame frame_in;
+	struct rpmb_frame *frame_in = NULL;
 	struct rpmb_frame *frames_out = NULL;
 	struct rpmb_frame *frame_out;
 
@@ -593,21 +668,22 @@ static int op_rpmb_read_blocks(int nargs, char **argv)
 	}
 
 	ret = 0;
-	memset(&frame_in, 0, sizeof(frame_in));
-	frame_in.req_resp = htobe16(req);
-	frame_in.addr = htobe16(addr);
-	frame_in.block_count = htobe16(blocks_cnt);
-	if (has_key)
-		RAND_bytes(frame_in.nonce, RPMB_NONCE_SIZE);
-
-	frames_out = calloc(blocks_cnt, sizeof(struct rpmb_frame));
-	if (!frames_out) {
+	frames_out = rpmb_alloc_frames(blocks_cnt);
+	frame_in = rpmb_alloc_frames(1);
+	if (!frames_out || !frame_in) {
 		rpmb_err("Cannot allocate %d RPMB frames\n", blocks_cnt);
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	ret = rpmb_ioctl(dev_fd, req, &frame_in, 1, frames_out, blocks_cnt);
+	frame_in->req_resp = htobe16(req);
+	frame_in->addr = htobe16(addr);
+	/* eMMc spec ask for 0 here this will be translated by the rpmb layer */
+	frame_in->block_count = htobe16(blocks_cnt);
+	if (has_key)
+		RAND_bytes(frame_in->nonce, RPMB_NONCE_SIZE);
+
+	ret = rpmb_ioctl(dev_fd, req, frame_in, 1, frames_out, blocks_cnt);
 	if (ret)
 		goto out;
 
@@ -620,17 +696,9 @@ static int op_rpmb_read_blocks(int nargs, char **argv)
 	}
 
 	if (has_key) {
-		rpmb_calc_hmac_sha256(frames_out, blocks_cnt,
-				      key, RPMB_KEY_SIZE,
-				      mac, RPMB_MAC_SIZE);
-		if (memcmp(mac, frame_out->key_mac, RPMB_MAC_SIZE)) {
-			rpmb_err("RPMB hmac mismatch\n");
-			dump_hex_buffer("Result MAC: ",
-					frame_out->key_mac, RPMB_MAC_SIZE);
-			dump_hex_buffer("Expected MAC: ", mac, RPMB_MAC_SIZE);
-			ret = RPMB_ERR_AUTH;
+		ret = rpmb_check_mac(key, frames_out, blocks_cnt);
+		if (ret)
 			goto out;
-		}
 	}
 
 	for (i = 0; i < blocks_cnt; i++) {
@@ -641,6 +709,7 @@ static int op_rpmb_read_blocks(int nargs, char **argv)
 	}
 
 out:
+	free(frame_in);
 	free(frames_out);
 	close_fd(dev_fd);
 	close_fd(data_fd);
@@ -659,9 +728,9 @@ static int op_rpmb_write_blocks(int nargs, char **argv)
 	unsigned char mac[RPMB_MAC_SIZE];
 	unsigned long numarg;
 	uint16_t addr, blocks_cnt;
-	unsigned int cnt;
-	struct rpmb_frame *frames_in;
-	struct rpmb_frame frame_out;
+	uint32_t write_counter;
+	struct rpmb_frame *frames_in = NULL;
+	struct rpmb_frame *frame_out = NULL;
 
 	ret = -EINVAL;
 	if (nargs != 5)
@@ -709,13 +778,15 @@ static int op_rpmb_write_blocks(int nargs, char **argv)
 	if (ret < 0)
 		goto out;
 
-	frames_in = calloc(blocks_cnt, sizeof(struct rpmb_frame));
-	if (!frames_in) {
+	frames_in = rpmb_alloc_frames(blocks_cnt);
+	frame_out = rpmb_alloc_frames(1);
+	if (!frames_in || !frame_out) {
 		rpmb_err("can't allocate memory for RPMB outer frames\n");
-		exit(EXIT_FAILURE);
+		ret = -ENOMEM;
+		goto out;
 	}
 
-	ret = rpmb_get_write_counter(dev_fd, &cnt, key);
+	ret = rpmb_get_write_counter(dev_fd, &write_counter, key);
 	if (ret)
 		goto out;
 
@@ -723,7 +794,7 @@ static int op_rpmb_write_blocks(int nargs, char **argv)
 		frames_in[i].req_resp      = htobe16(req);
 		frames_in[i].block_count   = htobe16(blocks_cnt);
 		frames_in[i].addr          = htobe16(addr);
-		frames_in[i].write_counter = htobe32(cnt);
+		frames_in[i].write_counter = htobe32(write_counter);
 	}
 
 	for (i = 0; i < blocks_cnt; i++) {
@@ -737,16 +808,33 @@ static int op_rpmb_write_blocks(int nargs, char **argv)
 			      key, RPMB_KEY_SIZE,
 			      mac, RPMB_MAC_SIZE);
 	memcpy(frames_in[blocks_cnt - 1].key_mac, mac, RPMB_MAC_SIZE);
-	ret = rpmb_ioctl(dev_fd, req, frames_in, blocks_cnt, &frame_out, 1);
+	ret = rpmb_ioctl(dev_fd, req, frames_in, blocks_cnt, frame_out, 1);
 	if (ret != 0)
 		goto out;
 
-	ret = be16toh(frame_out.result);
+	ret = be16toh(frame_out->result);
 	if (ret) {
 		rpmb_err("RPMB operation %s failed, %s[0x%04x]\n",
 			 rpmb_op_str(req), rpmb_result_str(ret), ret);
+		ret = -1;
 	}
+
+	if (be16toh(frame_out->addr) != addr) {
+		rpmb_err("RPMB addr mismatchs res=%04x req=%04x\n",
+			 be16toh(frame_out->addr), addr);
+		ret = -1;
+	}
+
+	if (be32toh(frame_out->write_counter) <= write_counter) {
+		rpmb_err("RPMB write counter not incremeted res=%x req=%x\n",
+			 be32toh(frame_out->write_counter), write_counter);
+		ret = -1;
+	}
+
+	ret = rpmb_check_mac(key, frame_out, 1);
 out:
+	free(frames_in);
+	free(frame_out);
 	close_fd(dev_fd);
 	close_fd(data_fd);
 	close_fd(key_fd);
