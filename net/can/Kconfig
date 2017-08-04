@@ -51,6 +51,10 @@ config CAN_GW
 	  They can be modified with AND/OR/XOR/SET operations as configured
 	  by the netlink configuration interface known e.g. from iptables.
 
+config CAN_TX_ATTEMPT_RATE_LIMIT
+	int "Tx attempt rate limit"
+	default "5"
+
 source "drivers/net/can/Kconfig"
 
 endif
