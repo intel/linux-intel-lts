@@ -22,30 +22,30 @@
 #include <linux/smp.h>
 #include <linux/string.h>
 #include <linux/trusty/smcall.h>
+#include <linux/trusty/smwall.h>
 #include <linux/trusty/sm_err.h>
 #include <linux/trusty/trusty.h>
 
-#define TRUSTY_VMCALL_SMC       0x74727500
-#define TRUSTY_LKTIMER_INTERVAL 10   /* 10 ms */
-#define TRUSTY_LKTIMER_VECTOR   0x31 /* INT_PIT */
-#define TRUSTY_STOP_TIMER       0xFFFFFFFF
+#define TRUSTY_VMCALL_SMC 0x74727500
 
-enum lktimer_mode {
-	ONESHOT_TIMER,
-	PERIODICAL_TIMER,
+struct trusty_state;
+
+struct trusty_work {
+	struct trusty_state *ts;
+	struct work_struct work;
 };
 
 struct trusty_state {
-	struct device *dev;
 	struct mutex smc_lock;
 	struct atomic_notifier_head notifier;
 	struct completion cpu_idle_completion;
-	struct timer_list timer;
-	struct work_struct timer_work;
-	enum lktimer_mode timer_mode;
-	unsigned long timer_interval;
 	char *version_str;
 	u32 api_version;
+	struct device *dev;
+	struct workqueue_struct *nop_wq;
+	struct trusty_work __percpu *nop_works;
+	struct list_head nop_queue;
+	spinlock_t nop_lock; /* protects nop_queue */
 };
 
 struct trusty_smc_interface {
@@ -53,152 +53,13 @@ struct trusty_smc_interface {
 	ulong args[5];
 };
 
-static struct timer_list *lk_timer;
-
-static ulong (*smc_func)(ulong r0, ulong r1, ulong r2, ulong r3);
-static ulong smc_dynamic_timer(ulong r0, ulong r1, ulong r2, ulong r3);
-static ulong smc_periodic_timer(ulong r0, ulong r1, ulong r2, ulong r3);
-
-static void trusty_lktimer_work_func(struct work_struct *work)
-{
-	int ret;
-	unsigned int vector;
-	struct trusty_state *s =
-			container_of(work, struct trusty_state, timer_work);
-
-	dev_dbg(s->dev, "%s\n", __func__);
-
-	/* need vector number only for the first time */
-	vector = TRUSTY_LKTIMER_VECTOR;
-
-	do {
-		ret = trusty_std_call32(s->dev, SMC_SC_NOP, vector, 0, 0);
-		vector = 0;
-	} while (ret == SM_ERR_NOP_INTERRUPTED);
-
-	if (ret != SM_ERR_NOP_DONE)
-		dev_err(s->dev, "%s: SMC_SC_NOP failed %d", __func__, ret);
-
-	dev_notice_once(s->dev, "LK OS timer works\n");
-}
-
-static void trusty_lktimer_func(unsigned long data)
-{
-	struct trusty_state *s = (struct trusty_state *)data;
-
-	/* binding it physical CPU0 only because trusty OS runs on it */
-	schedule_work_on(0, &s->timer_work);
-
-	/* reactivate the timer again in periodic mode */
-	if (s->timer_mode == PERIODICAL_TIMER)
-		mod_timer(&s->timer,
-			jiffies + msecs_to_jiffies(s->timer_interval));
-}
-
-static void trusty_init_lktimer(struct trusty_state *s)
-{
-	INIT_WORK(&s->timer_work, trusty_lktimer_work_func);
-	setup_timer(&s->timer, trusty_lktimer_func, (unsigned long)s);
-	lk_timer = &s->timer;
-}
-
-/* note that this function is not thread-safe */
-static void trusty_configure_lktimer(struct trusty_state *s,
-			enum lktimer_mode mode, unsigned long interval)
-{
-	if (mode != ONESHOT_TIMER && mode != PERIODICAL_TIMER) {
-		pr_err("%s: invalid timer mode: %d\n", __func__, mode);
-		return;
-	}
-
-	s->timer_mode = mode;
-	s->timer_interval = interval;
-	mod_timer(&s->timer, jiffies + msecs_to_jiffies(s->timer_interval));
-}
-
-static void trusty_init_smc_function(void)
-{
-	smc_func = smc_periodic_timer;
-}
-
-static void trusty_set_timer_mode(struct trusty_state *s, struct device *dev)
-{
-	int ret;
-
-	ret = trusty_fast_call32(dev, SMC_FC_TIMER_MODE, 0, 0, 0);
-
-	if (ret == 0) {
-		smc_func = smc_dynamic_timer;
-	} else {
-		smc_func = smc_periodic_timer;
-		/*
-		 * If bit 31 set indicates periodic timer is used
-		 * bit 15:0 indicates interval
-		 */
-		if ((ret & 0x80000000) && (ret & 0x0FFFF)) {
-			trusty_configure_lktimer(s,
-				PERIODICAL_TIMER,
-				ret & 0x0FFFF);
-		} else {
-			/* set periodical timer with default interval */
-			trusty_configure_lktimer(s,
-				PERIODICAL_TIMER,
-				TRUSTY_LKTIMER_INTERVAL);
-		}
-	}
-
-}
-
-/*
- * this should be called when removing trusty dev and
- * when LK/Trusty crashes, to disable proxy timer.
- */
-static void trusty_del_lktimer(struct trusty_state *s)
-{
-	del_timer_sync(&s->timer);
-	flush_work(&s->timer_work);
-}
-
 static inline ulong smc(ulong r0, ulong r1, ulong r2, ulong r3)
 {
-	return smc_func(r0, r1, r2, r3);
-}
-
-static ulong smc_dynamic_timer(ulong r0, ulong r1, ulong r2, ulong r3)
-{
 	__asm__ __volatile__(
 	"vmcall; \n"
-	: "=D"(r0), "=S"(r1), "=d"(r2), "=b"(r3)
+	: "=D"(r0)
 	: "a"(TRUSTY_VMCALL_SMC), "D"(r0), "S"(r1), "d"(r2), "b"(r3)
 	);
-
-	if (((r0 == SM_ERR_NOP_INTERRUPTED) ||
-		(r0 == SM_ERR_INTERRUPTED)) &&
-		(r1 != 0)) {
-		struct trusty_state *s;
-
-		if (lk_timer != NULL) {
-			s = container_of(lk_timer, struct trusty_state, timer);
-			if (r1 != TRUSTY_STOP_TIMER)
-				trusty_configure_lktimer(s, ONESHOT_TIMER, r1);
-			else
-				trusty_configure_lktimer(s, ONESHOT_TIMER, 0);
-		} else {
-			pr_err("Trusty timer has not been initialized yet!\n");
-		}
-	}
-
-	return r0;
-}
-
-static inline ulong smc_periodic_timer(ulong r0, ulong r1, ulong r2, ulong r3)
-{
-	__asm__ __volatile__(
-	"vmcall; \n"
-	: "=D"(r0), "=S"(r1), "=d"(r2), "=b"(r3)
-	: "a"(TRUSTY_VMCALL_SMC), "D"(r0), "S"(r1), "d"(r2), "b"(r3)
-	);
-
 	return r0;
 }
 
@@ -381,9 +242,6 @@ static long trusty_std_call32_work(void *args)
 
 	WARN_ONCE(ret == SM_ERR_PANIC, "trusty crashed");
 
-	if (ret == SM_ERR_PANIC)
-		trusty_del_lktimer(s);
-
 	if (smcnr == SMC_SC_NOP)
 		complete(&s->cpu_idle_completion);
 	else
@@ -518,9 +376,116 @@ static int trusty_init_api_version(struct trusty_state *s, struct device *dev)
 	return 0;
 }
 
+static bool dequeue_nop(struct trusty_state *s, u32 *args)
+{
+	unsigned long flags;
+	struct trusty_nop *nop = NULL;
+
+	spin_lock_irqsave(&s->nop_lock, flags);
+	if (!list_empty(&s->nop_queue)) {
+		nop = list_first_entry(&s->nop_queue,
+					struct trusty_nop, node);
+		list_del_init(&nop->node);
+		args[0] = nop->args[0];
+		args[1] = nop->args[1];
+		args[2] = nop->args[2];
+	} else {
+		args[0] = 0;
+		args[1] = 0;
+		args[2] = 0;
+	}
+	spin_unlock_irqrestore(&s->nop_lock, flags);
+	return nop;
+}
+
+static void locked_nop_work_func(struct work_struct *work)
+{
+	int ret;
+	struct trusty_work *tw = container_of(work, struct trusty_work, work);
+	struct trusty_state *s = tw->ts;
+
+	dev_dbg(s->dev, "%s\n", __func__);
+
+	ret = trusty_std_call32(s->dev, SMC_SC_LOCKED_NOP, 0, 0, 0);
+	if (ret != 0)
+		dev_err(s->dev, "%s: SMC_SC_LOCKED_NOP failed %d",
+			__func__, ret);
+	dev_dbg(s->dev, "%s: done\n", __func__);
+}
+
+static void nop_work_func(struct work_struct *work)
+{
+	int ret;
+	bool next;
+	u32 args[3];
+	struct trusty_work *tw = container_of(work, struct trusty_work, work);
+	struct trusty_state *s = tw->ts;
+
+	dev_dbg(s->dev, "%s:\n", __func__);
+
+	dequeue_nop(s, args);
+	do {
+		dev_dbg(s->dev, "%s: %x %x %x\n",
+			__func__, args[0], args[1], args[2]);
+
+	ret = trusty_std_call32(s->dev, SMC_SC_NOP,
+				args[0], args[1], args[2]);
+
+	next = dequeue_nop(s, args);
+
+	if (ret == SM_ERR_NOP_INTERRUPTED)
+		next = true;
+	else if (ret != SM_ERR_NOP_DONE)
+		dev_err(s->dev, "%s: SMC_SC_NOP failed %d",
+			__func__, ret);
+	} while (next);
+
+	dev_dbg(s->dev, "%s: done\n", __func__);
+}
+
+void trusty_enqueue_nop(struct device *dev, struct trusty_nop *nop)
+{
+	unsigned long flags;
+	struct trusty_work *tw;
+	struct trusty_state *s = platform_get_drvdata(to_platform_device(dev));
+
+	preempt_disable();
+	tw = this_cpu_ptr(s->nop_works);
+	if (nop) {
+		WARN_ON(s->api_version < TRUSTY_API_VERSION_SMP_NOP);
+
+		spin_lock_irqsave(&s->nop_lock, flags);
+		if (list_empty(&nop->node))
+			list_add_tail(&nop->node, &s->nop_queue);
+		spin_unlock_irqrestore(&s->nop_lock, flags);
+	}
+	queue_work(s->nop_wq, &tw->work);
+	preempt_enable();
+}
+EXPORT_SYMBOL(trusty_enqueue_nop);
+
+void trusty_dequeue_nop(struct device *dev, struct trusty_nop *nop)
+{
+	unsigned long flags;
+	struct trusty_state *s = platform_get_drvdata(to_platform_device(dev));
+
+	if (WARN_ON(!nop))
+		return;
+
+	spin_lock_irqsave(&s->nop_lock, flags);
+	if (!list_empty(&nop->node))
+		list_del_init(&nop->node);
+	spin_unlock_irqrestore(&s->nop_lock, flags);
+}
+EXPORT_SYMBOL(trusty_dequeue_nop);
+
+
+
 static int trusty_probe(struct platform_device *pdev)
 {
 	int ret;
+	unsigned int cpu;
+	work_func_t work_func;
 	struct trusty_state *s;
 	struct device_node *node = pdev->dev.of_node;
 
@@ -540,15 +505,15 @@ static int trusty_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto err_allocate_state;
 	}
+
+	s->dev = &pdev->dev;
+	spin_lock_init(&s->nop_lock);
+	INIT_LIST_HEAD(&s->nop_queue);
+
 	mutex_init(&s->smc_lock);
 	ATOMIC_INIT_NOTIFIER_HEAD(&s->notifier);
 	init_completion(&s->cpu_idle_completion);
 	platform_set_drvdata(pdev, s);
-	s->dev = &pdev->dev;
-
-	trusty_init_smc_function();
-	trusty_init_lktimer(s);
-	trusty_set_timer_mode(s, &pdev->dev);
 
 	trusty_init_version(s, &pdev->dev);
 
@@ -556,10 +521,44 @@ static int trusty_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_api_version;
 
+	s->nop_wq = alloc_workqueue("trusty-nop-wq", WQ_CPU_INTENSIVE, 0);
+	if (!s->nop_wq) {
+		ret = -ENODEV;
+		dev_err(&pdev->dev, "Failed create trusty-nop-wq\n");
+		goto err_create_nop_wq;
+	}
+
+	s->nop_works = alloc_percpu(struct trusty_work);
+	if (!s->nop_works) {
+		ret = -ENOMEM;
+		dev_err(&pdev->dev, "Failed to allocate works\n");
+		goto err_alloc_works;
+	}
+
+	if (s->api_version < TRUSTY_API_VERSION_SMP)
+		work_func = locked_nop_work_func;
+	else
+		work_func = nop_work_func;
+
+	for_each_possible_cpu(cpu) {
+		struct trusty_work *tw = per_cpu_ptr(s->nop_works, cpu);
+
+		tw->ts = s;
+		INIT_WORK(&tw->work, work_func);
+	}
+
 	return 0;
 
+err_alloc_works:
+	for_each_possible_cpu(cpu) {
+		struct trusty_work *tw = per_cpu_ptr(s->nop_works, cpu);
+
+		flush_work(&tw->work);
+	}
+	free_percpu(s->nop_works);
+	destroy_workqueue(s->nop_wq);
+err_create_nop_wq:
 err_api_version:
-	trusty_del_lktimer(s);
 	if (s->version_str) {
 		device_remove_file(&pdev->dev, &dev_attr_trusty_version);
 		kfree(s->version_str);
@@ -573,17 +572,26 @@ err_allocate_state:
 
 static int trusty_remove(struct platform_device *pdev)
 {
+	unsigned int cpu;
 	struct trusty_state *s = platform_get_drvdata(pdev);
 
 	dev_dbg(&(pdev->dev), "%s() is called\n", __func__);
 
 	device_for_each_child(&pdev->dev, NULL, trusty_remove_child);
+
+	for_each_possible_cpu(cpu) {
+		struct trusty_work *tw = per_cpu_ptr(s->nop_works, cpu);
+
+		flush_work(&tw->work);
+	}
+	free_percpu(s->nop_works);
+	destroy_workqueue(s->nop_wq);
+
 	mutex_destroy(&s->smc_lock);
 	if (s->version_str) {
 		device_remove_file(&pdev->dev, &dev_attr_trusty_version);
 		kfree(s->version_str);
 	}
-	trusty_del_lktimer(s);
 	kfree(s);
 	return 0;
 }
@@ -603,11 +611,21 @@ static struct platform_driver trusty_driver = {
 	},
 };
 
-void	trusty_dev_release(struct device *dev)
+void trusty_dev_release(struct device *dev)
 {
 	dev_dbg(dev, "%s() is called()\n", __func__);
 	return;
 }
+
+static struct device_node trusty_timer_node = {
+	.name = "trusty-timer",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_wall_node = {
+	.name = "trusty-wall",
+	.sibling = NULL,
+};
 
 static struct device_node trusty_irq_node = {
 	.name = "trusty-irq",
@@ -672,11 +690,35 @@ static struct platform_device trusty_platform_dev_irq = {
 	},
 };
 
+static struct platform_device trusty_platform_dev_wall = {
+	.name = "trusty-wall",
+	.id   = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_wall_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_timer = {
+	.name = "trusty-timer",
+	.id   = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev_wall.dev,
+		.of_node = &trusty_timer_node,
+	},
+};
+
 static struct platform_device *trusty_devices[] __initdata = {
 	&trusty_platform_dev,
 	&trusty_platform_dev_log,
 	&trusty_platform_dev_virtio,
-	&trusty_platform_dev_irq
+	&trusty_platform_dev_irq,
+	&trusty_platform_dev_wall,
+	&trusty_platform_dev_timer
 };
 static int __init trusty_driver_init(void)
 {
