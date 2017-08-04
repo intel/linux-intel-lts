@@ -26,8 +26,10 @@ enum regmem_id {
 	SYSCOM_STATE_REG	= 2,
 	/* syscom commands - modified by the host */
 	SYSCOM_COMMAND_REG	= 3,
+	/* Store interrupt status - updated by SP */
+	SYSCOM_IRQ_REG		= 4,
 	/* first syscom queue pointer register */
-	SYSCOM_QPR_BASE_REG	= 4
+	SYSCOM_QPR_BASE_REG	= 5
 };
 
 STORAGE_CLASS_INLINE unsigned int
