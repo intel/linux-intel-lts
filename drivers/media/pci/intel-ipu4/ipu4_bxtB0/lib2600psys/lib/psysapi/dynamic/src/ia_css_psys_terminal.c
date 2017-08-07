@@ -339,7 +339,8 @@ ia_css_terminal_t *ia_css_terminal_create(
 		case IA_CSS_DATA_FORMAT_RAW:
 		case IA_CSS_DATA_FORMAT_RAW_PACKED:
 		case IA_CSS_DATA_FORMAT_YYUVYY_VECTORIZED:
-		case IA_CSS_DATA_FORMAT_PAF:
+		case IA_CSS_DATA_FORMAT_PAF_NON_INTERLEAVED:
+		case IA_CSS_DATA_FORMAT_PAF_INTERLEAVED:
 			dterminal->frame_descriptor.plane_count = 1;
 			dterminal->frame_descriptor.plane_offsets[0] = 0;
 			break;
