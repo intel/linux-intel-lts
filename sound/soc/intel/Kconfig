@@ -279,6 +279,7 @@ config SND_SOC_INTEL_SKL_RT286_MACH
 
 config SND_SOC_INTEL_CNL_FPGA
 	tristate
+	depends on X86
 	help
 	  Say Y here to enable the support for CNL audio FPGA Device.
 
