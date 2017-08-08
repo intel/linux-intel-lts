@@ -37,6 +37,7 @@
 #include "skl.h"
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
+#include "skl-topology.h"
 
 /*
  * initialize the PCI registers
@@ -1091,6 +1092,7 @@ static void skl_remove(struct pci_dev *pci)
 	struct hdac_bus *bus = pci_get_drvdata(pci);
 	struct skl *skl = bus_to_skl(bus);
 
+	skl_delete_notify_kctl_list(skl->skl_sst);
 	release_firmware(skl->tplg);
 
 	pm_runtime_get_noresume(&pci->dev);
