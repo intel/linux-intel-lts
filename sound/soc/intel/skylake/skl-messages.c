@@ -1229,6 +1229,8 @@ int skl_init_dsp(struct skl *skl)
 	skl_dsp_enable_notification(skl->skl_sst, false);
 	dev_dbg(bus->dev, "dsp registration status=%d\n", ret);
 
+	INIT_LIST_HEAD(&skl->skl_sst->notify_kctls);
+
 	/* Set DMA clock controls */
 	ret = skl_dsp_set_dma_clk_controls(skl->skl_sst);
 	if (ret < 0)
