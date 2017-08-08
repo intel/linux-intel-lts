@@ -3305,7 +3305,7 @@ static int skl_tplg_get_token(struct device *dev,
 		mconfig->mod_cfg[conf_idx].res_idx = tkn_elem->value;
 		break;
 
-	case SKL_TKN_CFG_MOD_FMT_IDX:
+	case SKL_TKN_CFG_MOD_FMT_ID:
 		mconfig->mod_cfg[conf_idx].fmt_idx = tkn_elem->value;
 		break;
 
