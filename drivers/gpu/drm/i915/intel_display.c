@@ -15324,6 +15324,8 @@ int intel_modeset_init(struct drm_device *dev)
 		      INTEL_INFO(dev_priv)->num_pipes > 1 ? "s" : "");
 
 	avail_plane_per_pipe_mask = intel_sanitize_app_option(dev_priv);
+	DRM_INFO("avail_planes_per_pipe = 0x%x \n", i915.avail_planes_per_pipe);
+	DRM_INFO("domain_plane_owners = 0x%llx \n", i915.domain_plane_owners);
 
 	for_each_pipe(dev_priv, pipe) {
 		planes_mask[pipe] = AVAIL_PLANE_PER_PIPE(avail_plane_per_pipe_mask, pipe);
