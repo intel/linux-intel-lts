@@ -355,6 +355,16 @@ static struct crl_dynamic_register_access imx274_ana_gain_global_regs[] = {
 	},
 };
 
+static struct crl_dynamic_register_access imx274_dig_gain_regs[] = {
+	{
+		.address = 0x3012,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
+	},
+};
+
 /* shr = fll - exposure */
 static struct crl_arithmetic_ops imx274_shr_lsb_ops[] = {
 	{
@@ -955,6 +965,25 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.dep_items = 0,
 		.dep_ctrls = 0,
 		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = V4L2_CID_GAIN,
+		.name = "Digital Gain",
+		.type = CRL_V4L2_CTRL_TYPE_INTEGER,
+		.data.std_data.min = 0,
+		.data.std_data.max = 6,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0,
+		.flags = 0,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(imx274_dig_gain_regs),
+		.regs = imx274_dig_gain_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
 	},
 	{
 		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
