@@ -23,6 +23,14 @@ config ANDROID_VSOC
 	  a 'cuttlefish' Android image inside QEmu. The driver interacts with
 	  a QEmu ivshmem device. If built as a module, it will be called vsoc.
 
+config SYNC
+        bool "Synchronization framework"
+        default n
+        ---help---
+          This option enables the framework for synchronization between multiple
+          drivers.  Sync implementations can take advantage of hardware
+          synchronization built into devices like GPUs.
+
 source "drivers/staging/android/ion/Kconfig"
 
 endif # if ANDROID
