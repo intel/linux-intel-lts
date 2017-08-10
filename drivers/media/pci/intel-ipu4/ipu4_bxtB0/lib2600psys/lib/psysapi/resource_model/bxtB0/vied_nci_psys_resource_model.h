@@ -20,6 +20,7 @@
 
 #define HAS_DFM				0
 #define NON_RELOC_RESOURCE_SUPPORT	0
+#define IA_CSS_KERNEL_BITMAP_DO_NOT_USE_ELEMS
 
 /* Defines for the routing bitmap in the program group manifest.
  */

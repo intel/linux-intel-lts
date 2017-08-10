@@ -419,7 +419,7 @@ ia_css_kernel_bitmap_t ia_css_process_get_kernel_bitmap(
 	const ia_css_process_t					*process)
 {
 	DECLARE_ERRVAL
-	ia_css_kernel_bitmap_t		bitmap = 0;
+	ia_css_kernel_bitmap_t bitmap = ia_css_kernel_bitmap_clear();
 
 	IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, VERBOSE,
 		       "ia_css_process_get_kernel_bitmap(): enter:\n");

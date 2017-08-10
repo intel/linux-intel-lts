@@ -164,7 +164,7 @@ bool ia_css_is_program_group_manifest_valid(
 	uint8_t program_count;
 	ia_css_kernel_bitmap_t total_bitmap;
 	ia_css_kernel_bitmap_t check_bitmap;
-	ia_css_kernel_bitmap_t terminal_bitmap = 0;
+	ia_css_kernel_bitmap_t terminal_bitmap;
 	/*
 	 * Use a standard bitmap type for the minimum logic to check the DAG,
 	 * generic functions can be used for the kernel enable bitmaps; Later
@@ -193,6 +193,7 @@ bool ia_css_is_program_group_manifest_valid(
 		ia_css_program_group_manifest_get_kernel_bitmap(manifest);
 	check_bitmap = ia_css_kernel_bitmap_clear();
 	resource_bitmap = vied_nci_bit_mask(VIED_NCI_RESOURCE_BITMAP_BITS);
+	terminal_bitmap = ia_css_kernel_bitmap_clear();
 
 	verifexit(program_count != 0);
 	verifexit(terminal_count != 0);
@@ -675,7 +676,7 @@ int ia_css_program_group_manifest_set_kernel_bitmap(
 ia_css_kernel_bitmap_t ia_css_program_group_manifest_get_kernel_bitmap(
 	const ia_css_program_group_manifest_t *manifest)
 {
-	ia_css_kernel_bitmap_t bitmap = 0;
+	ia_css_kernel_bitmap_t bitmap = ia_css_kernel_bitmap_clear();
 
 	IA_CSS_TRACE_0(PSYSAPI_STATIC, VERBOSE,
 		"ia_css_program_group_manifest_get_kernel_bitmap(): enter:\n");

@@ -40,6 +40,11 @@ PSYSAPI_MANIFEST_HOST_FILES    += $(PSYSAPI_DIR)/data/src/ia_css_program_group_d
 PSYSAPI_MANIFEST_HOST_FILES    += $(PSYSAPI_DIR)/resource_model/$(PSYS_RESOURCE_MODEL_VERSION)/vied_nci_psys_resource_model.c
 PSYSAPI_MANIFEST_HOST_FILES    += $(PSYSAPI_DIR)/psys_server_manifest/$(PSYS_SERVER_MANIFEST_VERSION)/ia_css_psys_server_manifest.c
 
+# Use only kernel bitmap functionality from PSYS API
+PSYSAPI_KERNEL_BITMAP_FILES    += $(PSYSAPI_DIR)/kernel/src/ia_css_kernel_bitmap.c
+PSYSAPI_KERNEL_BITMAP_CPPFLAGS += -I$(PSYSAPI_DIR)/kernel/interface
+PSYSAPI_KERNEL_BITMAP_CPPFLAGS += -I$(PSYSAPI_DIR)/interface
+
 # Use PSYSAPI_HOST_FILES when program and process group are both needed
 PSYSAPI_HOST_FILES = $(PSYSAPI_PROCESS_HOST_FILES) $(PSYSAPI_MANIFEST_HOST_FILES)
 

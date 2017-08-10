@@ -208,7 +208,7 @@ int ia_css_program_manifest_set_type(
 ia_css_kernel_bitmap_t ia_css_program_manifest_get_kernel_bitmap(
 	const ia_css_program_manifest_t			*manifest)
 {
-	ia_css_kernel_bitmap_t	kernel_bitmap = 0;
+	ia_css_kernel_bitmap_t	kernel_bitmap = ia_css_kernel_bitmap_clear();
 
 	IA_CSS_TRACE_0(PSYSAPI_STATIC, VERBOSE,
 		"ia_css_program_manifest_get_kernel_bitmap(): enter:\n");

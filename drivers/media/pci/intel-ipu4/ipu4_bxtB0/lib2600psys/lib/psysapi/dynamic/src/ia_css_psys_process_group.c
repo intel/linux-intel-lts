@@ -157,7 +157,7 @@ static bool ia_css_process_group_is_terminal_enabled(
 		}
 	} else if (ia_css_is_terminal_manifest_spatial_parameter_terminal(
 				terminal_manifest)) {
-		ia_css_kernel_bitmap_t term_kernel_bitmap = 0;
+		ia_css_kernel_bitmap_t term_kernel_bitmap = ia_css_kernel_bitmap_clear();
 		ia_css_spatial_param_terminal_manifest_t *spatial_term_man =
 			(ia_css_spatial_param_terminal_manifest_t *)
 			terminal_manifest;
@@ -187,7 +187,7 @@ static bool ia_css_process_group_is_terminal_enabled(
 		 * (HW) parameters must be supplied via the parameter
 		 * in terminal (e.g. bypass bits).
 		 */
-		ia_css_kernel_bitmap_t term_kernel_bitmap = 0;
+		ia_css_kernel_bitmap_t term_kernel_bitmap = ia_css_kernel_bitmap_clear();
 		ia_css_param_terminal_manifest_t *param_term_man =
 			(ia_css_param_terminal_manifest_t *)terminal_manifest;
 		ia_css_param_manifest_section_desc_t *section_desc;
