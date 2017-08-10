@@ -257,6 +257,12 @@
  *
  * %SKL_TKN_U32_SCH_NUM_CONF:   Number of configs
  *
+ * %SKL_TKN_U32_DMACTRL_CFG_IDX:
+ *				Config index to fill up DMA control params
+ *
+ * %SKL_TKN_U32_DMACTRL_CFG_SIZE:
+ *				Size information of DMA control params
+ *
  * %SKL_TKN_MM_U8_MAJOR_VER:    Major version of firmware extended manifest
  *
  * %SKL_TKN_MM_U8_MINOR_VER:    Minor version of firmware extended manifest
@@ -461,9 +467,10 @@ enum SKL_TKNS {
 	SKL_TKN_U32_AGG_LINK_ID,
 	SKL_TKN_U32_AGG_CH_MASK,
 	SKL_TKN_U32_AGG_ID,
-
 	SKL_TKN_U32_DMA_BUF_SIZE,
-	SKL_TKN_MAX = SKL_TKN_U32_DMA_BUF_SIZE,
+	SKL_TKN_U32_DMACTRL_CFG_IDX,
+	SKL_TKN_U32_DMACTRL_CFG_SIZE,
+	SKL_TKN_MAX = SKL_TKN_U32_DMACTRL_CFG_SIZE,
 };
 
 #endif
