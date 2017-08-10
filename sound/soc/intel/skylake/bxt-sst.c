@@ -22,7 +22,7 @@
 #include <asm/cacheflush.h>
 
 #include "../common/sst-dsp.h"
-#include "../common/sst-dsp-priv.h"
+#include "skl-fwlog.h"
 #include "skl-sst-ipc.h"
 
 #define BXT_BASEFW_TIMEOUT	3000
@@ -32,6 +32,13 @@
 
 #define BXT_ROM_INIT		0x5
 #define BXT_ADSP_SRAM0_BASE	0x80000
+
+/* Trace Buffer Window */
+#define BXT_ADSP_SRAM2_BASE	0x0C0000
+#define BXT_ADSP_W2_SIZE	0x2000
+#define BXT_ADSP_WP_DSP0	(BXT_ADSP_SRAM0_BASE+0x30)
+#define BXT_ADSP_WP_DSP1	(BXT_ADSP_SRAM0_BASE+0x34)
+#define BXT_ADSP_NR_DSP		2
 
 /* Firmware status window */
 #define BXT_ADSP_FW_STATUS	BXT_ADSP_SRAM0_BASE
@@ -576,6 +583,7 @@ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 {
 	struct skl_sst *skl;
 	struct sst_dsp *sst;
+	u32 dsp_wp[] = {BXT_ADSP_WP_DSP0, BXT_ADSP_WP_DSP1};
 	int ret;
 
 	ret = skl_sst_ctx_init(dev, irq, fw_name, dsp_ops, dsp, &skl_dev);
@@ -596,6 +604,12 @@ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 
 	sst_dsp_mailbox_init(sst, (BXT_ADSP_SRAM0_BASE + SKL_ADSP_W0_STAT_SZ),
 			SKL_ADSP_W0_UP_SZ, BXT_ADSP_SRAM1_BASE, SKL_ADSP_W1_SZ);
+	ret = skl_dsp_init_trace_window(sst, dsp_wp, BXT_ADSP_SRAM2_BASE,
+					BXT_ADSP_W2_SIZE, BXT_ADSP_NR_DSP);
+	if (ret) {
+		dev_err(dev, "FW tracing init failed : %x", ret);
+		return ret;
+	}
 
 	/* set the D0i3 check */
 	skl->ipc.ops.check_dsp_lp_on = skl_ipc_check_D0i0;

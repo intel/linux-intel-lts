@@ -713,7 +713,7 @@ static void skl_probe_work(struct work_struct *work)
 	if (!bus->codec_mask)
 		dev_info(bus->dev, "no hda codecs found!\n");
 
-	if (!(skl->pci->device == 0x9df0 || skl->pci->device == 0x9dc8 ||
+	if (!(skl->pci->device == 0x9df0 ||
 	      skl->pci->device == 0x34c8 || skl->pci->device == 0x24f0)) {
 		/* create codec instances */
 		err = skl_codec_create(ebus);
