@@ -3743,6 +3743,29 @@ static struct crl_dynamic_register_access ov10640_wdr_regs[] = {
 		ov10640_wdr_ops, 0 },
 };
 
+static struct crl_arithmetic_ops ov10640_linear_ops[] = {
+	{
+		.op = CRL_ASSIGNMENT,
+		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_REG_VAL,
+		.operand.entity_val = 0x31BE,
+	},
+	{
+		.op = CRL_BITWISE_AND,
+		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST,
+		.operand.entity_val = 0x01,
+	},
+};
+
+static struct crl_dynamic_register_access ov10640_linear_regs[] = {
+	{
+		.address = 0x31BE,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_linear_ops),
+		.ops = ov10640_linear_ops,
+		.mask = 0xff,
+	},
+};
+
 static struct crl_pll_configuration ov10640_pll_configurations[] = {
 	{
 		.input_clk = 24000000,
@@ -4111,6 +4134,26 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.ctrl = 0,
 		.regs_items = ARRAY_SIZE(ov10640_gvs_regs),
 		.regs = ov10640_gvs_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_GET_OP,
+		.context = SENSOR_STREAMING,
+		.ctrl_id = CRL_CID_SENSOR_BIT_LINEAR,
+		.name = "Sensor bit linear",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = INT_MAX,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0,
+		.flags = V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_READ_ONLY,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_linear_regs),
+		.regs = ov10640_linear_regs,
 		.dep_items = 0,
 		.dep_ctrls = 0,
 		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
