@@ -48,4 +48,7 @@
 
 /* Get sensor bit linear */
 #define CRL_CID_SENSOR_BIT_LINEAR	(V4L2_CID_CRLMODULE_BASE + 17)
+
+/* set sensor msb align*/
+#define CRL_CID_MSB_ALIGN		(V4L2_CID_CRLMODULE_BASE + 18)
 #endif /* UAPI_LINUX_CRLMODULE_H */

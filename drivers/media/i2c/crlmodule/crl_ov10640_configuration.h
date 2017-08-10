@@ -3680,7 +3680,6 @@ static struct crl_dynamic_register_access ov10640_el_regs[] = {
 	},
 };
 
-#if 0
 /* Short exposure register */
 static struct crl_dynamic_register_access ov10640_es_regs[] = {
 	{
@@ -3709,7 +3708,24 @@ static struct crl_dynamic_register_access ov10640_evs_regs[] = {
 		.mask = 0xff,
 	},
 };
-#endif
+
+/* MSB register */
+static struct crl_dynamic_register_access ov10640_msb_regs[] = {
+	{
+		.address = 0x30BF,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
+		.ops = ov10640_hsb_ops,
+		.mask = 0xff,
+	},
+	{
+		.address = 0x31C0,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
+	},
+};
 
 /* Needed for acpi support for runtime detection */
 static struct crl_sensor_detect_config ov10640_sensor_detect_regset[] = {
@@ -4154,6 +4170,26 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.ctrl = 0,
 		.regs_items = ARRAY_SIZE(ov10640_linear_regs),
 		.regs = ov10640_linear_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_MSB_ALIGN,
+		.name = "CRL_CID_MSB_ALIGN",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = 0xFFFF,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_msb_regs),
+		.regs = ov10640_msb_regs,
 		.dep_items = 0,
 		.dep_ctrls = 0,
 		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
