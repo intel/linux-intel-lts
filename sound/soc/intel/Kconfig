@@ -122,6 +122,7 @@ config SND_SOC_INTEL_BXT_TDF8532_MACH
         select SND_SOC_INTEL_SST
         select SND_SOC_INTEL_SKYLAKE
         select SND_SOC_TDF8532
+        select SND_SOC_COMPRESS
         help
 	   This adds support for ASoC machine driver for Broxton IVI GP MRB platform
 	   Say Y if you have such a device.
@@ -259,6 +260,7 @@ config SND_SOC_INTEL_SKYLAKE
 	select SND_SOC_INTEL_SST
 	select SDW
 	select SDW_CNL
+	select WANT_DEV_COREDUMP
 
 config SND_SOC_INTEL_SKL_RT286_MACH
 	tristate "ASoC Audio driver for SKL with RT286 I2S mode"
@@ -310,6 +312,20 @@ config SND_SOC_INTEL_CNL_RT274_MACH
 	select SND_SOC_INTEL_SKYLAKE
 	select SND_SOC_DMIC
 	select SND_SOC_COMPRESS
+	select SND_SOC_HDAC_HDMI
+        help
+        This adds support for ASoC machine driver . This will create an alsa
+        sound card.
+        Say Y if you have such a device
+        If unsure select "N".
+
+config SND_SOC_INTEL_ICL_RT274_MACH
+        tristate "ASoC Audio driver for ICL with RT274 in I2S Mode"
+	depends on X86 && ACPI && I2C
+	select SND_SOC_RT274
+	select SND_SOC_INTEL_SST
+	select SND_SOC_INTEL_SKYLAKE
+	select SND_SOC_DMIC
         help
         This adds support for ASoC machine driver . This will create an alsa
         sound card.

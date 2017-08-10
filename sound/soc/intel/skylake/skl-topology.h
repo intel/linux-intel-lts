@@ -328,6 +328,7 @@ struct skl_pipe {
 	struct skl_path_config configs[SKL_MAX_PATH_CONFIGS];
 	struct list_head w_list;
 	bool passthru;
+	u32 pipe_config_idx;
 };
 
 enum skl_module_state {
@@ -412,7 +413,7 @@ struct skl_module {
 	u8 max_input_pins;
 	u8 max_output_pins;
 	u8 max_instance_count;
-	char library_name[SKL_LIB_NAME_LENGTH];
+	char *library_name;
 	u8 nr_resources;
 	u8 nr_interfaces;
 	struct skl_module_res resources[SKL_MAX_MODULE_RESOURCES];
@@ -521,8 +522,9 @@ struct fw_ipc_data {
 
 int skl_tplg_be_update_params(struct snd_soc_dai *dai,
 	struct skl_pipe_params *params);
-int skl_dsp_set_dma_control(struct skl_sst *ctx,
-		struct skl_module_cfg *mconfig);
+int skl_dsp_set_dma_clk_controls(struct skl_sst *ctx);
+int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
+			u32 caps_size, u32 node_id);
 void skl_tplg_set_be_dmic_config(struct snd_soc_dai *dai,
 	struct skl_pipe_params *params, int stream);
 int skl_tplg_init(struct snd_soc_platform *platform,
@@ -597,4 +599,5 @@ int skl_tplg_dsp_log_get(struct snd_kcontrol *kcontrol,
 			 struct snd_ctl_elem_value *ucontrol);
 int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
 			 struct snd_ctl_elem_value *ucontrol);
+int skl_dsp_crash_dump_read(struct skl_sst *ctx);
 #endif
