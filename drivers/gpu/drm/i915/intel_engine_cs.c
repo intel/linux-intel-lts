@@ -301,7 +301,7 @@ int intel_engine_create_scratch(struct intel_engine_cs *engine, int size)
 	WARN_ON(engine->scratch);
 
 	obj = i915_gem_object_create_stolen(engine->i915, size);
-	if (!obj)
+	if (IS_ERR_OR_NULL(obj))
 		obj = i915_gem_object_create_internal(engine->i915, size);
 	if (IS_ERR(obj)) {
 		DRM_ERROR("Failed to allocate scratch page\n");
