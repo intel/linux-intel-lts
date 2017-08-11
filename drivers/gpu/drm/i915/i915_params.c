@@ -269,7 +269,13 @@ MODULE_PARM_DESC(memtrack_debug,
 		 "use Memtrack debug capability (0=never, 1=always)");
 
 module_param_named_unsafe(avail_planes_per_pipe, i915.avail_planes_per_pipe, uint, 0400);
-/* pipeA = BYTE0, pipeB = BYTE1, pipeC = BYTE2
+/* pipeA = BITS 0-3, pipeB = BITS 8-11, pipeC = BITS 16-18
+ * +----------+-------+---------+--------+--------+--------+--------+
+ * |unused    |unused |  Pipe C | unused | Pipe B | unused | Pipe A |
+ * +----------+-------+---------+--------+--------+--------+--------+
+ * 31         23      18        15       11       7        3        0
+ *
+ *
  * BITS 0,1,2,3 - needs to be set planes assigned for pipes A and B
  * and BITs 0,1,2 - for pipe C
  * eg: avail_planes_per_pipe = 0x3 - pipe A=2(planes 1 and 2) , pipeB=0 and pipeC=0 planes
@@ -287,7 +293,7 @@ module_param_named_unsafe(domain_plane_owners, i915.domain_plane_owners, ullong,
  * +----------+------------+-------------+------------+
  * |unused    |  Pipe C    |   Pipe B    |   Pipe A   |
  * +----------+------------+-------------+------------+
- * 63         47           31            15            0
+ * 63         47           31            15           0
  *
  * Each nibble represents domain id. 0 for Dom0, 1,2,3...0xF for DomUs
  * eg: domain_plane_owners = 0x022111000010 // 0x0221|1100|0010
