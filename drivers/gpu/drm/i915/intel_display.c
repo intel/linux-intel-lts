@@ -15243,8 +15243,9 @@ static int intel_sanitize_app_option(struct drm_i915_private *dev_priv)
 }
 
 #define BITS_PER_PIPE 8
-#define AVAIL_PLANE_PER_PIPE(mask, pipe) \
-		(((mask) >> (pipe) * BITS_PER_PIPE) & 0x0f);
+#define AVAIL_PLANE_PER_PIPE(dev_priv, mask, pipe)  \
+	(((mask) >> (pipe) * BITS_PER_PIPE) & \
+		((1 << ((INTEL_INFO(dev_priv)->num_sprites[pipe]) + 1)) - 1));
 
 int intel_modeset_init(struct drm_device *dev)
 {
@@ -15328,7 +15329,7 @@ int intel_modeset_init(struct drm_device *dev)
 	DRM_INFO("domain_plane_owners = 0x%llx \n", i915.domain_plane_owners);
 
 	for_each_pipe(dev_priv, pipe) {
-		planes_mask[pipe] = AVAIL_PLANE_PER_PIPE(avail_plane_per_pipe_mask, pipe);
+		planes_mask[pipe] = AVAIL_PLANE_PER_PIPE(dev_priv, avail_plane_per_pipe_mask, pipe);
 		DRM_INFO("for pipe %d plane_mask = %d \n", pipe, planes_mask[pipe]);
 	}
 
