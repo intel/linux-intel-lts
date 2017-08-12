@@ -14195,6 +14195,9 @@ static int intel_crtc_init(struct drm_i915_private *dev_priv, enum pipe pipe, in
 			goto fail;
 	}
 
+	/*if primary==NULL, that means no planes were created */
+	if (!primary)
+		return 0;
 	intel_crtc->pipe = pipe;
 	intel_crtc->plane = primary->plane;
 
