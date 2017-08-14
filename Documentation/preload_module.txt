@@ -1,0 +1,66 @@
+            ========================
+            preload module in kernel
+            ========================
+
+            author: Zhang Ning <ning.a.zhang@intel.com>
+
+==========
+background
+==========
+
+preload module in kernel is to speed up system boot.
+
+
+we (liu shuo <shuo.liu@intel.com> and me) found after async rootfs_populate. there
+is a time slot to preload modules, and it can run parallelly with kernel main
+thread.
+
+usually system boot like (with async rootfs_populate):
+
+-----kernel main thread----------------->>init thread---load modules--other init---->>>
+    |--async roofs---->>>>>>>>>>>>>>>>>>>>|
+
+if preload modules in kernel, system boot like:
+
+-----kernel main thread----------------->>init thread----other init---->>>
+    |--async rootfs---->>load modules-----|
+
+we can find time saving, when async rootfs is faster than kernel main thread.
+and that require a small rootfs.
+
+this method will load configure from /preload_module, and load them one by one.
+
+
+
+============
+requirements
+============
+
+A, rootfs_populate is using async_schedule_domain.
+B, small rootfs. the kernel driver to preload and related firmware need be in rootfs.
+C, if CONFIG_MODULE_SIG=y, need load related sign key/algorithm in advance.
+	eg: asymmetric_type.c, x509_public_key.c, system_keyring.c
+
+
+==============
+tuning preload
+==============
+
+A, tuning rootfs size, build non-urgent to other parittion.
+B, move rootfs_populate to early stage, and sign key/algorithm needs to adjust
+	same time.
+
+
+=========================
+Syntax of /preload_module
+=========================
+
+A, this file is UNIX format, means newline is '\n', no encoding support, ASCII
+B, NO comments support.
+C, one module pre-line, using full path, no alias.
+	module option starts after module path, separate with single space (not tab).
+	it looks like below.
+/full/path/to/module.ko option1=value1 option2=value2
+/full/path/to/module2.ko
+
+D, Modules order MUST in dependence order. we will never resolve module dependence.
