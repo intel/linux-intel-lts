@@ -155,6 +155,8 @@ void can_stat_update(unsigned long data)
 
 	can_stats.total_tx_rate = calc_rate(can_stats.jiffies_init, j,
 					    can_stats.tx_frames);
+	can_stats.total_tx_attempt_rate = calc_rate(can_stats.jiffies_init, j,
+					    can_stats.tx_attempt_frames);
 	can_stats.total_rx_rate = calc_rate(can_stats.jiffies_init, j,
 					    can_stats.rx_frames);
 
@@ -165,11 +167,15 @@ void can_stat_update(unsigned long data)
 			can_stats.rx_frames_delta;
 
 	can_stats.current_tx_rate = calc_rate(0, HZ, can_stats.tx_frames_delta);
+	can_stats.current_tx_attempt_rate = calc_rate(0, HZ, can_stats.tx_frames_attempt_delta);
 	can_stats.current_rx_rate = calc_rate(0, HZ, can_stats.rx_frames_delta);
 
 	/* check / update maximum values */
 	if (can_stats.max_tx_rate < can_stats.current_tx_rate)
 		can_stats.max_tx_rate = can_stats.current_tx_rate;
+
+	if (can_stats.max_tx_attempt_rate < can_stats.current_tx_attempt_rate)
+		can_stats.max_tx_attempt_rate = can_stats.current_tx_attempt_rate;
 
 	if (can_stats.max_rx_rate < can_stats.current_rx_rate)
 		can_stats.max_rx_rate = can_stats.current_rx_rate;
@@ -179,6 +185,7 @@ void can_stat_update(unsigned long data)
 
 	/* clear values for 'current rate' calculation */
 	can_stats.tx_frames_delta = 0;
+	can_stats.tx_frames_attempt_delta = 0;
 	can_stats.rx_frames_delta = 0;
 	can_stats.matches_delta   = 0;
 
@@ -230,6 +237,8 @@ static int can_stats_proc_show(struct seq_file *m, void *v)
 
 		seq_printf(m, " %8ld frames/s total tx rate (TXR)\n",
 				can_stats.total_tx_rate);
+		seq_printf(m, " %8ld frames/s total attempt tx rate (ATXR)\n",
+				can_stats.total_tx_attempt_rate);
 		seq_printf(m, " %8ld frames/s total rx rate (RXR)\n",
 				can_stats.total_rx_rate);
 
@@ -240,6 +249,8 @@ static int can_stats_proc_show(struct seq_file *m, void *v)
 
 		seq_printf(m, " %8ld frames/s current tx rate (CTXR)\n",
 				can_stats.current_tx_rate);
+		seq_printf(m, " %8ld frames/s current attempt tx rate (CATXR)\n",
+				can_stats.current_tx_attempt_rate);
 		seq_printf(m, " %8ld frames/s current rx rate (CRXR)\n",
 				can_stats.current_rx_rate);
 
@@ -250,6 +261,8 @@ static int can_stats_proc_show(struct seq_file *m, void *v)
 
 		seq_printf(m, " %8ld frames/s max tx rate (MTXR)\n",
 				can_stats.max_tx_rate);
+		seq_printf(m, " %8ld frames/s max attempt tx rate (MATXR)\n",
+				can_stats.max_tx_attempt_rate);
 		seq_printf(m, " %8ld frames/s max rx rate (MRXR)\n",
 				can_stats.max_rx_rate);
 
