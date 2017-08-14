@@ -91,6 +91,9 @@ struct s_pstats   can_pstats;      /* receive list statistics */
 
 static atomic_t skbcounter = ATOMIC_INIT(0);
 
+#define SOCK_TX_ATTEMPT_RATE_LIMIT    (CONFIG_CAN_TX_ATTEMPT_RATE_LIMIT)
+
+
 /*
  * af_can socket functions
  */
@@ -223,6 +226,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
  *  -EPERM when trying to send on a non-CAN interface
  *  -EMSGSIZE CAN frame size is bigger than CAN interface MTU
  *  -EINVAL when the skb->data does not contain a valid CAN frame
+ *  -EDQUOT when current tx rate reach its limit
  */
 int can_send(struct sk_buff *skb, int loop)
 {
@@ -259,6 +263,16 @@ int can_send(struct sk_buff *skb, int loop)
 	if (unlikely(!(skb->dev->flags & IFF_UP))) {
 		err = -ENETDOWN;
 		goto inval_skb;
+	}
+
+	/* update statistics */
+	can_stats.tx_attempt_frames++;
+	can_stats.tx_frames_attempt_delta++;
+
+	/* throttle if needed */
+	if (can_stats.current_tx_attempt_rate > SOCK_TX_ATTEMPT_RATE_LIMIT) {
+		printk(KERN_ERR "can: inhibit tx due to attempt rate: %d\n", can_stats.current_tx_attempt_rate);
+		return EDQUOT;
 	}
 
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
