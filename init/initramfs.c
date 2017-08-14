@@ -18,6 +18,10 @@
 #include <linux/dirent.h>
 #include <linux/syscalls.h>
 #include <linux/utime.h>
+#include <linux/async.h>
+#include <linux/kthread.h>
+#include "preload_module.c"
+
 
 static ssize_t __init xwrite(int fd, const char *p, size_t count)
 {
@@ -605,7 +609,9 @@ static void __init clean_rootfs(void)
 }
 #endif
 
-static int __init populate_rootfs(void)
+ASYNC_DOMAIN(populate_rootfs_domain);
+
+static void __init async_populate_rootfs(void *data, async_cookie_t cookie)
 {
 	char *err = unpack_to_rootfs(__initramfs_start, __initramfs_size);
 	if (err)
@@ -652,7 +658,15 @@ static int __init populate_rootfs(void)
 		 * us a chance to load before device_initcalls.
 		 */
 		load_default_modules();
+		kthread_run(load_preload_modules, NULL, "preload modules");
 	}
+	return;
+}
+
+static int __init populate_rootfs(void)
+{
+	async_schedule_domain(async_populate_rootfs, NULL, &populate_rootfs_domain);
 	return 0;
 }
-rootfs_initcall(populate_rootfs);
+
+fs_initcall(populate_rootfs);
