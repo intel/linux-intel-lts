@@ -485,7 +485,7 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 	int mcp_config, mcp_control, sync_reg, mcp_clockctrl;
 	volatile int sync_update = 0;
 	int timeout = 10; /* Try 10 times before timing out */
-	int ret = 0;
+	int ret = 0, mask;
 
 	/* Power up the link controller */
 	ret = sdw_power_up_link(sdw);
@@ -498,6 +498,56 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 	/* Switch the ownership to Master IP from glue logic */
 	sdw_switch_to_mip(sdw);
 
+	/* write to MCP Control register to enable block wakeup */
+	mcp_control = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_CONTROL);
+	mask = (MCP_CONTROL_BLOCKWAKEUP_MASK <<
+			MCP_CONTROL_BLOCKWAKEUP_SHIFT);
+	mcp_control &= ~mask;
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
+	do {
+		mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
+						 SDW_CNL_MCP_CONTROL);
+		if (!(mcp_control & mask))
+			break;
+
+		timeout--;
+		/* Wait 20ms before each time */
+		msleep(20);
+	} while (timeout != 0);
+
+	/* Write the MCP Control register to exit from clock stop */
+	mcp_control = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_CONTROL);
+	mask = (MCP_CONTROL_CLOCKSTOPCLEAR_MASK <<
+			MCP_CONTROL_CLOCKSTOPCLEAR_SHIFT);
+	mcp_control |= mask;
+	cnl_sdw_reg_writel(data->sdw_regs, SDW_CNL_MCP_CONTROL, mcp_control);
+
+	/* Reset timeout */
+	timeout = 10;
+
+	/* Wait for clock stop exit bit to be self cleared */
+	do {
+		mcp_control = cnl_sdw_reg_readl(data->sdw_regs,
+							SDW_CNL_MCP_CONTROL);
+		if (!(mcp_control & mask))
+			break;
+		timeout--;
+		/* Wait 20ms before each time */
+		msleep(20);
+	} while (timeout != 0);
+
+	/* Read once again to confirm */
+	mcp_control = cnl_sdw_reg_readl(data->sdw_regs, SDW_CNL_MCP_CONTROL);
+	if (!(mcp_control & mask)) {
+		dev_dbg(&sdw->mstr->dev, "SDW ctrl %d exit clock stop success\n",
+						data->inst_id);
+	} else {
+		dev_err(&sdw->mstr->dev,
+			"Failed exit from clock stop SDW ctrl %d\n",
+			data->inst_id);
+		return -EIO;
+	}
+
 	/* Set SyncPRD period */
 	sync_reg = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
 	sync_reg |= (SDW_CNL_DEFAULT_SYNC_PERIOD << CNL_SYNC_SYNCPRD_SHIFT);
@@ -505,6 +555,9 @@ static int sdw_init(struct cnl_sdw *sdw, bool is_first_init)
 	/* Set SyncPU bit */
 	sync_reg |= (0x1 << CNL_SYNC_SYNCCPU_SHIFT);
 	cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_SYNC, sync_reg);
+
+	/* Reset timeout */
+	timeout = 10;
 
 	do {
 		sync_update = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
