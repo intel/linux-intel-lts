@@ -131,6 +131,11 @@ module_param(turn_SMI_watchdog_clear_off, int, 0);
 MODULE_PARM_DESC(turn_SMI_watchdog_clear_off,
 	"Turn off SMI clearing watchdog (depends on TCO-version)(default=1)");
 
+static bool force_no_reboot;
+module_param(force_no_reboot, bool, 0);
+MODULE_PARM_DESC(force_no_reboot,
+		 "Prevents the watchdog rebooting the platform (default=0)");
+
 /*
  * Some TCO specific functions
  */
@@ -243,6 +248,10 @@ static int iTCO_wdt_start(struct watchdog_device *wd_dev)
 	struct iTCO_wdt_private *p = watchdog_get_drvdata(wd_dev);
 	unsigned int val;
 
+	/* force_no_reboot will prevent to unset NO_REBOOT bit */
+	if (force_no_reboot)
+		return -EIO;
+
 	spin_lock(&p->io_lock);
 
 	iTCO_vendor_pre_start(p->smi_res, wd_dev->timeout);
@@ -250,7 +259,7 @@ static int iTCO_wdt_start(struct watchdog_device *wd_dev)
 	/* disable chipset's NO_REBOOT bit */
 	if (p->update_no_reboot_bit(p->no_reboot_priv, false)) {
 		spin_unlock(&p->io_lock);
-		pr_err("failed to reset NO_REBOOT flag, reboot disabled by hardware/BIOS\n");
+		pr_err("failed to reset NO_REBOOT flag, reboot disabled by hardware/BIOS/rc_cmd\n");
 		return -EIO;
 	}
 
