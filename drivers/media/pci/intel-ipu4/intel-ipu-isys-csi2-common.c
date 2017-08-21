@@ -205,11 +205,12 @@ static void csi2_meta_prepare_firmware_stream_cfg_default(
 static int subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 			   struct v4l2_event_subscription *sub)
 {
+	struct intel_ipu4_isys_csi2 *csi2 = to_intel_ipu4_isys_csi2(sd);
+
 	if (sub->type != V4L2_EVENT_FRAME_SYNC)
 		return -EINVAL;
 
-	if (sub->id != 0)
-		return -EINVAL;
+	dev_dbg(&csi2->isys->adev->dev, "sub->id %u\n", sub->id);
 
 	return v4l2_event_subscribe(fh, sub, 10, NULL);
 }
