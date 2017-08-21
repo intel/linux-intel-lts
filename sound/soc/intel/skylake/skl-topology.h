@@ -165,6 +165,7 @@ struct skl_cpr_cfg {
 struct skl_src_module_cfg {
 	struct skl_base_cfg base_cfg;
 	enum skl_s_freq src_cfg;
+	u32 mode;
 } __packed;
 
 struct notification_mask {
