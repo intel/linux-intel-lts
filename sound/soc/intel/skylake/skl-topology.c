@@ -897,8 +897,6 @@ skl_tplg_init_pipe_modules(struct skl *skl, struct skl_pipe *pipe)
 		 */
 		skl_tplg_update_module_params(w, ctx);
 		uuid_mod = (uuid_le *)mconfig->guid;
-		if (skl->conf_version < 2)
-			skl_tplg_update_module_params(w, ctx);
 
 		mconfig->id.pvt_id = skl_get_pvt_id(ctx, uuid_mod,
 						mconfig->id.instance_id);
@@ -3983,10 +3981,6 @@ static int skl_tplg_get_int_tkn(struct device *dev,
 		skl->skl_sst->lib_count = tkn_elem->value;
 		break;
 
-	case SKL_TKN_U8_CONF_VERSION:
-		skl->conf_version = tkn_elem->value;
-		break;
-
 	case SKL_TKN_U8_NUM_MOD:
 		skl->nr_modules = tkn_elem->value;
 		skl->modules = devm_kcalloc(dev, skl->nr_modules,
@@ -4271,8 +4265,6 @@ static int skl_manifest_load(struct snd_soc_component *cmpnt,
 	if (manifest->priv.size == 0)
 		return 0;
 
-	/* Initialize the conf version to legacy */
-	skl->conf_version = 1;
 	skl->nr_modules = 0;
 	skl->modules = NULL;
 
