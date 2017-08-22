@@ -554,7 +554,7 @@ static int vsp1_video_pipeline_build(struct vsp1_pipeline *pipe,
 	if (ret)
 		return ret;
 
-	media_entity_graph_walk_start(&graph, &entity->pads[0]);
+	media_entity_graph_walk_start(&graph, entity);
 
 	while ((entity = media_entity_graph_walk_next(&graph))) {
 		struct v4l2_subdev *subdev;
