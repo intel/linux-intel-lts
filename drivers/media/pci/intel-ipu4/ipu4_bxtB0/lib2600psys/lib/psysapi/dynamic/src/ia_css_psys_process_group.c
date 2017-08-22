@@ -322,7 +322,6 @@ ia_css_process_group_t *ia_css_process_group_create(
 	char *process_grp_raw_ptr;
 	uint16_t *process_tab_ptr, *terminal_tab_ptr;
 	ia_css_kernel_bitmap_t enable_bitmap;
-	uint8_t manifest_terminal_count;
 
 	IA_CSS_TRACE_3(PSYSAPI_DYNAMIC, INFO,
 		"ia_css_process_group_create(process_grp_mem %p, manifest %p, group_param %p): enter:\n",
@@ -375,7 +374,8 @@ ia_css_process_group_t *ia_css_process_group_create(
 
 	/* Set process group terminal dependency list */
 	/* This list is used during creating the process dependency list */
-	manifest_terminal_count = ia_css_program_group_manifest_get_terminal_count(manifest);
+	uint8_t manifest_terminal_count =
+		ia_css_program_group_manifest_get_terminal_count(manifest);
 
 	terminal_num = 0;
 	for (i = 0; i < (int)manifest_terminal_count; i++) {
