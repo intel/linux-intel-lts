@@ -2,8 +2,7 @@
 # Makefile for the kernel multimedia device drivers.
 #
 
-obj-y        +=	intel-ipu4/	\
-		ttpci/		\
+obj-y        +=	ttpci/		\
 		b2c2/		\
 		pluto2/		\
 		dm1105/		\

@@ -120,7 +120,6 @@ source "drivers/media/platform/am437x/Kconfig"
 source "drivers/media/platform/xilinx/Kconfig"
 source "drivers/media/platform/rcar-vin/Kconfig"
 source "drivers/media/platform/atmel/Kconfig"
-source "drivers/media/platform/intel-ipu4/Kconfig"
 
 config VIDEO_TI_CAL
 	tristate "TI CAL (Camera Adaptation Layer) driver"
@@ -377,18 +376,3 @@ menuconfig DVB_PLATFORM_DRIVERS
 if DVB_PLATFORM_DRIVERS
 source "drivers/media/platform/sti/c8sectpfe/Kconfig"
 endif #DVB_PLATFORM_DRIVERS
-config VIDEO_SENSOR_STUB
-	tristate "Intel dummysensor stub"
-	---help---
-	Dummy sensor driver that is controlled outside (pixter/xactor)
-
-config I2C_ADAPTER_STUB
-	tristate "Intel fpga i2c adapter stub"
-	---help---
-	Dummy i2c adpater that allows use i2c sensor without i2c hw
-
-config VIDEO_SENSOR_STUB_PDATA
-	bool "Intel intel-ipu4 sensor stub platform data"
-	---help---
-	Pdata for sensor driver that is controlled outside (pixter/xactor)
-

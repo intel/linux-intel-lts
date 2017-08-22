@@ -2,8 +2,6 @@
 # Makefile for the video capture/playback device drivers.
 #
 
-obj-y += intel-ipu4/
-
 obj-$(CONFIG_VIDEO_M32R_AR_M64278) += arv.o
 
 obj-$(CONFIG_VIDEO_VIA_CAMERA) += via-camera.o
@@ -68,7 +66,3 @@ ccflags-y += -I$(srctree)/drivers/media/i2c
 obj-$(CONFIG_VIDEO_MEDIATEK_VPU)	+= mtk-vpu/
 
 obj-$(CONFIG_VIDEO_MEDIATEK_VCODEC)	+= mtk-vcodec/
-
-obj-$(CONFIG_VIDEO_SENSOR_STUB) += video-sensor-stub.o
-obj-$(CONFIG_VIDEO_SENSOR_STUB_PDATA) += video-sensor-stub-pdata.o
-obj-$(CONFIG_I2C_ADAPTER_STUB) += i2c-adapter-stub.o
