@@ -1359,6 +1359,12 @@ gen8_cs_irq_handler(struct intel_engine_cs *engine, u32 iir, int test_shift)
 		tasklet_hi_schedule(&engine->irq_tasklet);
 	}
 
+	if ((iir & (GT_RENDER_CS_MASTER_ERROR_INTERRUPT << test_shift)) &&
+			intel_vgpu_active(engine->i915)) {
+		queue_work(system_highpri_wq, &engine->reset_work);
+		return;
+	}
+
 	if (iir & (GT_GEN8_WATCHDOG_INTERRUPT << test_shift))
 		tasklet_schedule(&engine->watchdog_tasklet);
 }
@@ -3466,6 +3472,19 @@ static void gen8_gt_irq_postinstall(struct drm_i915_private *dev_priv)
 
 	if (HAS_L3_DPF(dev_priv))
 		gt_interrupts[0] |= GT_RENDER_L3_PARITY_ERROR_INTERRUPT;
+
+	if (intel_vgpu_active(dev_priv)) {
+		gt_interrupts[0] |= GT_RENDER_CS_MASTER_ERROR_INTERRUPT <<
+				GEN8_RCS_IRQ_SHIFT |
+			GT_RENDER_CS_MASTER_ERROR_INTERRUPT <<
+				GEN8_BCS_IRQ_SHIFT;
+		gt_interrupts[1] |= GT_RENDER_CS_MASTER_ERROR_INTERRUPT <<
+				GEN8_VCS1_IRQ_SHIFT |
+			GT_RENDER_CS_MASTER_ERROR_INTERRUPT <<
+				GEN8_VCS2_IRQ_SHIFT;
+		gt_interrupts[3] |= GT_RENDER_CS_MASTER_ERROR_INTERRUPT <<
+				GEN8_VECS_IRQ_SHIFT;
+	}
 
 	/* VECS watchdog is only available in skl+ */
 	if (INTEL_GEN(dev_priv) >= 9)
