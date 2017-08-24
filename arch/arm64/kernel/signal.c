@@ -11,6 +11,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/signal.h>
+#include <linux/irq_pipeline.h>
 #include <linux/freezer.h>
 #include <linux/stddef.h>
 #include <linux/uaccess.h>

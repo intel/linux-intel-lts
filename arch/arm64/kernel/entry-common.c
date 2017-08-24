@@ -14,12 +14,12 @@
 #include <linux/sched.h>
 #include <linux/sched/debug.h>
 #include <linux/thread_info.h>
+#include <linux/irq_pipeline.h>
 
 #include <asm/cpufeature.h>
 #include <asm/daifflags.h>
 #include <asm/esr.h>
 #include <asm/exception.h>
-#include <asm/irq_regs.h>
 #include <asm/kprobes.h>
 #include <asm/mmu.h>
 #include <asm/processor.h>
@@ -54,12 +54,60 @@ static __always_inline void __enter_from_kernel_mode(struct pt_regs *regs)
 	trace_hardirqs_off_finish();
 }
 
-static void noinstr enter_from_kernel_mode(struct pt_regs *regs)
+static void noinstr _enter_from_kernel_mode(struct pt_regs *regs)
 {
 	__enter_from_kernel_mode(regs);
 	mte_check_tfsr_entry();
 	mte_disable_tco_entry(current);
 }
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+static void noinstr enter_from_kernel_mode(struct pt_regs *regs)
+{
+	/*
+	 * CAUTION: we may switch in-band as a result of handling a
+	 * trap, so if we are running out-of-band, we must make sure
+	 * not to perform the RCU exit since we did not enter it in
+	 * the first place.
+	 */
+	regs->oob_on_entry = running_oob();
+	if (regs->oob_on_entry) {
+		regs->exit_rcu = false;
+		goto out;
+	}
+
+	/*
+	 * We trapped from kernel space running in-band, we need to
+	 * record the virtual interrupt state into the current
+	 * register frame (regs->stalled_on_entry) in order to
+	 * reinstate it from exit_to_kernel_mode(). Next we stall the
+	 * in-band stage in order to mirror the current hardware state
+	 * (i.e. hardirqs are off).
+	 */
+	regs->stalled_on_entry = test_and_stall_inband_nocheck();
+
+	__enter_from_kernel_mode(regs);
+
+	/*
+	 * Our caller is going to inherit the hardware interrupt state
+	 * from the trapped context once we have returned: if running
+	 * in-band, align the stall bit on the upcoming state.
+	 */
+	if (running_inband() && interrupts_enabled(regs))
+		unstall_inband_nocheck();
+out:
+	mte_check_tfsr_entry();
+}
+
+#else
+
+static void noinstr enter_from_kernel_mode(struct pt_regs *regs)
+{
+	_enter_from_kernel_mode(regs);
+}
+
+#endif	/* !CONFIG_IRQ_PIPELINE */
 
 /*
  * Handle IRQ/context state management when exiting to kernel mode.
@@ -92,7 +140,24 @@ static __always_inline void __exit_to_kernel_mode(struct pt_regs *regs)
 static void noinstr exit_to_kernel_mode(struct pt_regs *regs)
 {
 	mte_check_tfsr_exit();
+
+	if (running_oob())
+		return;
+
 	__exit_to_kernel_mode(regs);
+
+#ifdef CONFIG_IRQ_PIPELINE
+	/*
+	 * Reinstate the virtual interrupt state which was in effect
+	 * on entry to the trap.
+	 */
+	if (!regs->oob_on_entry) {
+		if (regs->stalled_on_entry)
+			stall_inband_nocheck();
+		else
+			unstall_inband_nocheck();
+	}
+#endif
 }
 
 /*
@@ -102,11 +167,17 @@ static void noinstr exit_to_kernel_mode(struct pt_regs *regs)
  */
 static __always_inline void __enter_from_user_mode(void)
 {
-	lockdep_hardirqs_off(CALLER_ADDR0);
-	CT_WARN_ON(ct_state() != CT_STATE_USER);
-	user_exit_irqoff();
-	trace_hardirqs_off_finish();
-	mte_disable_tco_entry(current);
+	if (running_inband()) {
+		lockdep_hardirqs_off(CALLER_ADDR0);
+		WARN_ON_ONCE(irq_pipeline_debug() && test_inband_stall());
+		CT_WARN_ON(ct_state() != CT_STATE_USER);
+		CT_WARN_ON(ct_state() != CONTEXT_USER);
+		stall_inband_nocheck();
+		user_exit_irqoff();
+		unstall_inband_nocheck();
+		trace_hardirqs_off_finish();
+		mte_disable_tco_entry(current);
+	}
 }
 
 static __always_inline void enter_from_user_mode(struct pt_regs *regs)
@@ -118,66 +189,102 @@ static __always_inline void enter_from_user_mode(struct pt_regs *regs)
  * Handle IRQ/context state management when exiting to user mode.
  * After this function returns it is not safe to call regular kernel code,
  * instrumentable code, or any code which may trigger an exception.
+ *
+ * irq_pipeline: exit_to_user_mode_prepare() tells the caller whether
+ * it is safe to return via the common in-band exit path, i.e. the
+ * in-band stage was unstalled on entry, and we are (still) running on
+ * it.
  */
 static __always_inline void __exit_to_user_mode(void)
 {
+	stall_inband_nocheck();
 	trace_hardirqs_on_prepare();
 	lockdep_hardirqs_on_prepare();
 	user_enter_irqoff();
 	lockdep_hardirqs_on(CALLER_ADDR0);
+	unstall_inband_nocheck();
 }
 
 static void do_notify_resume(struct pt_regs *regs, unsigned long thread_flags)
 {
+	WARN_ON_ONCE(irq_pipeline_debug() && running_oob());
+	WARN_ON_ONCE(irq_pipeline_debug() && test_inband_stall());
+
 	do {
-		local_irq_enable();
+		stall_inband_nocheck();
 
-		if (thread_flags & _TIF_NEED_RESCHED)
+		if (thread_flags & _TIF_NEED_RESCHED) {
+			/* Unmask Debug and SError for the next task */
+			local_daif_restore(irqs_pipelined() ? DAIF_PROCCTX :
+					DAIF_PROCCTX_NOIRQ);
+
 			schedule();
+		} else {
+			unstall_inband_nocheck();
+			local_daif_restore(DAIF_PROCCTX);
 
-		if (thread_flags & _TIF_UPROBE)
-			uprobe_notify_resume(regs);
+			if (thread_flags & _TIF_UPROBE)
+				uprobe_notify_resume(regs);
 
-		if (thread_flags & _TIF_MTE_ASYNC_FAULT) {
-			clear_thread_flag(TIF_MTE_ASYNC_FAULT);
-			send_sig_fault(SIGSEGV, SEGV_MTEAERR,
-				       (void __user *)NULL, current);
+			if (thread_flags & _TIF_MTE_ASYNC_FAULT) {
+				clear_thread_flag(TIF_MTE_ASYNC_FAULT);
+				send_sig_fault(SIGSEGV, SEGV_MTEAERR,
+					       (void __user *)NULL, current);
+			}
+
+			if (thread_flags & (_TIF_SIGPENDING | _TIF_NOTIFY_SIGNAL))
+				do_signal(regs);
+
+			if (thread_flags & _TIF_NOTIFY_RESUME)
+				resume_user_mode_work(regs);
+
+			if (thread_flags & _TIF_FOREIGN_FPSTATE)
+				fpsimd_restore_current_state();
 		}
 
-		if (thread_flags & (_TIF_SIGPENDING | _TIF_NOTIFY_SIGNAL))
-			do_signal(regs);
-
-		if (thread_flags & _TIF_NOTIFY_RESUME)
-			resume_user_mode_work(regs);
-
-		if (thread_flags & _TIF_FOREIGN_FPSTATE)
-			fpsimd_restore_current_state();
-
-		local_irq_disable();
+		local_daif_mask();
 		thread_flags = read_thread_flags();
 	} while (thread_flags & _TIF_WORK_MASK);
+
+	/*
+	 * irq_pipeline: trace_hardirqs_off was in effect on entry, we
+	 * leave it this way by virtue of calling local_daif_mask()
+	 * before exiting the loop. However, we did enter unstalled
+	 * and we must restore such state on exit.
+	 */
+	unstall_inband_nocheck();
 }
 
-static __always_inline void exit_to_user_mode_prepare(struct pt_regs *regs)
+static __always_inline bool exit_to_user_mode_prepare(struct pt_regs *regs)
 {
 	unsigned long flags;
 
-	local_irq_disable();
-
-	flags = read_thread_flags();
-	if (unlikely(flags & _TIF_WORK_MASK))
-		do_notify_resume(regs, flags);
-
 	local_daif_mask();
 
-	lockdep_sys_exit();
+	if (running_inband() && !test_inband_stall()) {
+		flags = read_thread_flags();
+		if (unlikely(flags & _TIF_WORK_MASK))
+			do_notify_resume(regs, flags);
+
+		lockdep_sys_exit();
+		/*
+		 * Caution: do_notify_resume() might have switched us
+		 * to the out-of-band stage.
+		 */
+		return running_inband();
+	}
+
+	return false;
 }
 
 static __always_inline void exit_to_user_mode(struct pt_regs *regs)
 {
-	exit_to_user_mode_prepare(regs);
+	bool ret;
+
+	ret = exit_to_user_mode_prepare(regs);
 	mte_check_tfsr_exit();
-	__exit_to_user_mode();
+	if (ret)
+		__exit_to_user_mode();
 }
 
 asmlinkage void noinstr asm_exit_to_user_mode(struct pt_regs *regs)
@@ -192,6 +299,7 @@ asmlinkage void noinstr asm_exit_to_user_mode(struct pt_regs *regs)
  */
 static void noinstr arm64_enter_nmi(struct pt_regs *regs)
 {
+	/* irq_pipeline: running this code oob is ok. */
 	regs->lockdep_hardirqs = lockdep_hardirqs_enabled();
 
 	__nmi_enter();
@@ -267,6 +375,37 @@ DEFINE_STATIC_KEY_TRUE(sk_dynamic_irqentry_exit_cond_resched);
 #define need_irq_preemption()	(IS_ENABLED(CONFIG_PREEMPTION))
 #endif
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+/*
+ * When pipelining interrupts, we have to reconcile the hardware and
+ * the virtual states. Hard irqs are off on entry while the current
+ * stage has to be unstalled: fix this up by stalling the in-band
+ * stage on entry, unstalling on exit.
+ */
+static inline void arm64_preempt_irq_enter(void)
+{
+	WARN_ON_ONCE(irq_pipeline_debug() && test_inband_stall());
+	stall_inband_nocheck();
+	trace_hardirqs_off();
+}
+
+static inline void arm64_preempt_irq_exit(void)
+{
+	trace_hardirqs_on();
+	unstall_inband_nocheck();
+}
+
+#else  /* !CONFIG_IRQ_PIPELINE */
+
+static inline void arm64_preempt_irq_enter(void)
+{ }
+
+static inline void arm64_preempt_irq_exit(void)
+{ }
+
+#endif	/* !CONFIG_IRQ_PIPELINE */
+
 static void __sched arm64_preempt_schedule_irq(void)
 {
 	if (!need_irq_preemption())
@@ -280,6 +419,8 @@ static void __sched arm64_preempt_schedule_irq(void)
 	if (READ_ONCE(current_thread_info()->preempt_count) != 0)
 		return;
 
+	arm64_preempt_irq_enter();
+
 	/*
 	 * DAIF.DA are cleared at the start of IRQ/FIQ handling, and when GIC
 	 * priority masking is used the GIC irqchip driver will clear DAIF.IF
@@ -287,7 +428,7 @@ static void __sched arm64_preempt_schedule_irq(void)
 	 * DAIF we must have handled an NMI, so skip preemption.
 	 */
 	if (system_uses_irq_prio_masking() && read_sysreg(daif))
-		return;
+		goto out;
 
 	/*
 	 * Preempting a task from an IRQ means we leave copies of PSTATE
@@ -299,20 +440,49 @@ static void __sched arm64_preempt_schedule_irq(void)
 	 */
 	if (system_capabilities_finalized())
 		preempt_schedule_irq();
+out:
+	arm64_preempt_irq_exit();
 }
 
-static void do_interrupt_handler(struct pt_regs *regs,
-				 void (*handler)(struct pt_regs *))
+static void __do_interrupt_handler(struct pt_regs *regs,
+				void (*handler)(struct pt_regs *))
 {
-	struct pt_regs *old_regs = set_irq_regs(regs);
-
 	if (on_thread_stack())
 		call_on_irq_stack(regs, handler);
 	else
 		handler(regs);
+}
+
+#ifdef CONFIG_IRQ_PIPELINE
+static bool do_interrupt_handler(struct pt_regs *regs,
+				void (*handler)(struct pt_regs *))
+{
+	struct pt_regs *old_regs = set_irq_regs(regs); /* need this for FIQs */
+
+	if (handler == handle_arch_irq)
+		handler = (typeof(handler))(void (*)(void))handle_irq_pipelined;
+
+	__do_interrupt_handler(regs, handler);
 
 	set_irq_regs(old_regs);
+
+	return running_inband() && !irqs_disabled();
 }
+#else
+static bool do_interrupt_handler(struct pt_regs *regs,
+				void (*handler)(struct pt_regs *))
+{
+	struct pt_regs *old_regs = set_irq_regs(regs);
+
+	irq_enter_rcu();
+	__do_interrupt_handler(regs, handler);
+	irq_exit_rcu();
+
+	set_irq_regs(old_regs);
+
+	return true;
+}
+#endif
 
 extern void (*handle_arch_irq)(struct pt_regs *);
 extern void (*handle_arch_fiq)(struct pt_regs *);
@@ -320,6 +490,11 @@ extern void (*handle_arch_fiq)(struct pt_regs *);
 static void noinstr __panic_unhandled(struct pt_regs *regs, const char *vector,
 				      unsigned long esr)
 {
+	/*
+	 * Dovetail: Same as __do_kernel_fault(), don't bother
+	 * restoring the in-band stage, this trap is fatal and we are
+	 * already walking on thin ice.
+	 */
 	arm64_enter_nmi(regs);
 
 	console_verbose();
@@ -526,19 +701,54 @@ static __always_inline void __el1_pnmi(struct pt_regs *regs,
 	do_interrupt_handler(regs, handler);
 	arm64_exit_nmi(regs);
 }
-
 static __always_inline void __el1_irq(struct pt_regs *regs,
 				      void (*handler)(struct pt_regs *))
 {
+	bool ret;
+
+	/*
+	 * IRQ pipeline: the interrupt entry is special in that we may
+	 * run the regular kernel entry prologue/epilogue only if the
+	 * IRQ is going to be dispatched to its handler on behalf of
+	 * the current context, i.e. only if running in-band and
+	 * unstalled. If so, we also have to reconcile the hardware
+	 * and virtual interrupt states temporarily in order to run
+	 * such prologue.
+	 */
+#ifdef CONFIG_IRQ_PIPELINE
+	if (running_inband()) {
+		regs->stalled_on_entry = test_inband_stall();
+		if (!regs->stalled_on_entry) {
+			stall_inband_nocheck();
+			_enter_from_kernel_mode(regs);
+			unstall_inband_nocheck();
+		}
+	}
+#else
 	enter_from_kernel_mode(regs);
+#endif
 
-	irq_enter_rcu();
-	do_interrupt_handler(regs, handler);
-	irq_exit_rcu();
+	ret = do_interrupt_handler(regs, handler);
+	if (ret)
+		arm64_preempt_schedule_irq();
 
-	arm64_preempt_schedule_irq();
-
-	exit_to_kernel_mode(regs);
+#ifdef CONFIG_IRQ_PIPELINE
+		/*
+		 * UGLY: we also have to tell the tracer that irqs are
+		 * off, since sync_current_irq_stage() did the
+		 * opposite on exit. Hopefully, at some point arm64
+		 * will convert to the generic entry code which
+		 * exhibits a less convoluted logic.
+		 */
+		if (running_inband() && !regs->stalled_on_entry) {
+			stall_inband_nocheck();
+			trace_hardirqs_off();
+			exit_to_kernel_mode(regs);
+			unstall_inband_nocheck();
+		}
+#else
+		exit_to_kernel_mode(regs);
+#endif
 }
 static void noinstr el1_interrupt(struct pt_regs *regs,
 				  void (*handler)(struct pt_regs *))
@@ -783,16 +993,16 @@ asmlinkage void noinstr el0t_64_sync_handler(struct pt_regs *regs)
 static void noinstr el0_interrupt(struct pt_regs *regs,
 				  void (*handler)(struct pt_regs *))
 {
-	enter_from_user_mode(regs);
+	if (handler == handle_arch_fiq ||
+		(running_inband() && !test_inband_stall()))
+		enter_from_user_mode(regs);
 
 	write_sysreg(DAIF_PROCCTX_NOIRQ, daif);
 
 	if (regs->pc & BIT(55))
 		arm64_apply_bp_hardening();
 
-	irq_enter_rcu();
 	do_interrupt_handler(regs, handler);
-	irq_exit_rcu();
 
 	exit_to_user_mode(regs);
 }
