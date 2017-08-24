@@ -391,21 +391,6 @@ struct i915_sw_dma_fence_cb {
 	struct timer_list timer;
 };
 
-static void timer_i915_sw_fence_wake(unsigned long data)
-{
-	struct i915_sw_dma_fence_cb *cb = (struct i915_sw_dma_fence_cb *)data;
-
-	printk(KERN_WARNING "asynchronous wait on fence %s:%s:%x timed out\n",
-	       cb->dma->ops->get_driver_name(cb->dma),
-	       cb->dma->ops->get_timeline_name(cb->dma),
-	       cb->dma->seqno);
-	dma_fence_put(cb->dma);
-	cb->dma = NULL;
-
-	__i915_sw_fence_commit(cb->fence);
-	cb->timer.function = NULL;
-}
-
 static void dma_i915_sw_fence_wake(struct dma_fence *dma,
 				   struct dma_fence_cb *data)
 {
@@ -417,6 +402,24 @@ static void dma_i915_sw_fence_wake(struct dma_fence *dma,
 	dma_fence_put(cb->dma);
 
 	kfree(cb);
+}
+
+static void timer_i915_sw_fence_wake(unsigned long data)
+{
+	struct i915_sw_dma_fence_cb *cb = (struct i915_sw_dma_fence_cb *)data;
+
+	printk(KERN_WARNING "asynchronous wait on fence %s:%s:%x timed out\n",
+	       cb->dma->ops->get_driver_name(cb->dma),
+	       cb->dma->ops->get_timeline_name(cb->dma),
+	       cb->dma->seqno);
+
+	//need to set callback function before release dma_fence
+	dma_fence_add_callback(cb->dma, &cb->base, dma_i915_sw_fence_wake);
+	dma_fence_put(cb->dma);
+	cb->dma = NULL;
+
+	__i915_sw_fence_commit(cb->fence);
+	cb->timer.function = NULL;
 }
 
 int i915_sw_fence_await_dma_fence(struct i915_sw_fence *fence,
