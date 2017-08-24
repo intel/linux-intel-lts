@@ -126,6 +126,7 @@ void noinstr arch_cpu_idle(void)
 	 * tricks
 	 */
 	cpu_do_idle();
+	hard_cond_local_irq_enable();
 	raw_local_irq_enable();
 }
 
@@ -709,8 +710,41 @@ static int __init tagged_addr_init(void)
 core_initcall(tagged_addr_init);
 #endif	/* CONFIG_ARM64_TAGGED_ADDR_ABI */
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+/*
+ * When pipelining interrupts, we have to reconcile the hardware and
+ * the virtual states. Hard irqs are off on entry while the current
+ * stage has to be unstalled: fix this up by stalling the in-band
+ * stage on entry, unstalling on exit.
+ */
+static inline void arm64_preempt_irq_enter(void)
+{
+	WARN_ON_ONCE(irq_pipeline_debug() && test_inband_stall());
+	stall_inband();
+	trace_hardirqs_off();
+}
+
+static inline void arm64_preempt_irq_exit(void)
+{
+	trace_hardirqs_on();
+	unstall_inband();
+}
+
+#else
+
+static inline void arm64_preempt_irq_enter(void)
+{ }
+
+static inline void arm64_preempt_irq_exit(void)
+{ }
+
+#endif
+
 asmlinkage void __sched arm64_preempt_schedule_irq(void)
 {
+	arm64_preempt_irq_enter();
+
 	lockdep_assert_irqs_disabled();
 
 	/*
@@ -723,6 +757,8 @@ asmlinkage void __sched arm64_preempt_schedule_irq(void)
 	 */
 	if (system_capabilities_finalized())
 		preempt_schedule_irq();
+
+	arm64_preempt_irq_exit();
 }
 
 #ifdef CONFIG_BINFMT_ELF

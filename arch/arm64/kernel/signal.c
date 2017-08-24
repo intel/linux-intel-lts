@@ -11,6 +11,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/signal.h>
+#include <linux/irq_pipeline.h>
 #include <linux/personality.h>
 #include <linux/freezer.h>
 #include <linux/stddef.h>
@@ -911,19 +912,36 @@ static void do_signal(struct pt_regs *regs)
 	restore_saved_sigmask();
 }
 
+static inline void do_retuser(void)
+{
+	unsigned long thread_flags;
+
+	if (dovetailing()) {
+		thread_flags = current_thread_info()->flags;
+		if (thread_flags & _TIF_RETUSER)
+			inband_retuser_notify();
+	}
+}
+
 asmlinkage void do_notify_resume(struct pt_regs *regs,
 				 unsigned long thread_flags)
 {
+	WARN_ON_ONCE(irq_pipeline_debug() && running_oob());
+
+	stall_inband();
+
 	do {
 		/* Check valid user FS if needed */
 		addr_limit_user_check();
 
 		if (thread_flags & _TIF_NEED_RESCHED) {
 			/* Unmask Debug and SError for the next task */
-			local_daif_restore(DAIF_PROCCTX_NOIRQ);
+			local_daif_restore(irqs_pipelined() ? DAIF_PROCCTX :
+					DAIF_PROCCTX_NOIRQ);
 
 			schedule();
 		} else {
+			unstall_inband();
 			local_daif_restore(DAIF_PROCCTX);
 
 			if (thread_flags & _TIF_UPROBE)
@@ -948,8 +966,11 @@ asmlinkage void do_notify_resume(struct pt_regs *regs,
 		}
 
 		local_daif_mask();
+		stall_inband();
 		thread_flags = READ_ONCE(current_thread_info()->flags);
 	} while (thread_flags & _TIF_WORK_MASK);
+
+	unstall_inband();
 }
 
 unsigned long __ro_after_init signal_minsigstksz;

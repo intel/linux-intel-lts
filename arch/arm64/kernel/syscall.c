@@ -2,6 +2,7 @@
 
 #include <linux/compiler.h>
 #include <linux/context_tracking.h>
+#include <linux/irqstage.h>
 #include <linux/errno.h>
 #include <linux/nospec.h>
 #include <linux/ptrace.h>
@@ -121,6 +122,7 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 
 	cortex_a76_erratum_1463225_svc_handler();
 	local_daif_restore(DAIF_PROCCTX);
+	unstall_inband();
 
 	if (system_supports_mte() && (flags & _TIF_MTE_ASYNC_FAULT)) {
 		/*
@@ -164,9 +166,13 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 	 */
 	if (!has_syscall_work(flags) && !IS_ENABLED(CONFIG_DEBUG_RSEQ)) {
 		local_daif_mask();
+		stall_inband();
 		flags = current_thread_info()->flags;
-		if (!has_syscall_work(flags) && !(flags & _TIF_SINGLESTEP))
+		if (!has_syscall_work(flags) && !(flags & _TIF_SINGLESTEP)) {
+			unstall_inband();
 			return;
+		}
+		unstall_inband();
 		local_daif_restore(DAIF_PROCCTX);
 	}
 

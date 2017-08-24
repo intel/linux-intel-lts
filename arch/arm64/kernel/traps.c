@@ -15,6 +15,7 @@
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/hardirq.h>
+#include <linux/irqstage.h>
 #include <linux/kdebug.h>
 #include <linux/module.h>
 #include <linux/kexec.h>
@@ -111,7 +112,7 @@ static int __die(const char *str, int err, struct pt_regs *regs)
 	return ret;
 }
 
-static DEFINE_RAW_SPINLOCK(die_lock);
+static DEFINE_HARD_SPINLOCK(die_lock);
 
 /*
  * This function is protected against re-entrancy.
@@ -283,7 +284,7 @@ void arm64_skip_faulting_instruction(struct pt_regs *regs, unsigned long size)
 }
 
 static LIST_HEAD(undef_hook);
-static DEFINE_RAW_SPINLOCK(undef_lock);
+static DEFINE_HARD_SPINLOCK(undef_lock);
 
 void register_undef_hook(struct undef_hook *hook)
 {
