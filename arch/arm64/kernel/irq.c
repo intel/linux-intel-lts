@@ -14,6 +14,7 @@
 #include <linux/memory.h>
 #include <linux/smp.h>
 #include <linux/hardirq.h>
+#include <linux/irq_pipeline.h>
 #include <linux/init.h>
 #include <linux/irqchip.h>
 #include <linux/kprobes.h>
@@ -26,6 +27,16 @@
 DEFINE_PER_CPU(struct nmi_ctx, nmi_contexts);
 
 DEFINE_PER_CPU(unsigned long *, irq_stack_ptr);
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+asmlinkage int notrace
+handle_arch_irq_pipelined(struct pt_regs *regs)
+{
+	return handle_irq_pipelined(regs);
+}
+
+#endif
 
 #ifdef CONFIG_VMAP_STACK
 static void init_irq_stacks(void)

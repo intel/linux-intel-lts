@@ -39,6 +39,12 @@
 #endif
 	.endm
 
+	.macro user_exit_el0_irq
+#if defined(CONFIG_CONTEXT_TRACKING) || defined(CONFIG_TRACE_IRQFLAGS)
+	bl	enter_el0_irq
+#endif
+	.endm
+
 	.macro user_enter_irqoff
 #if defined(CONFIG_CONTEXT_TRACKING) || defined(CONFIG_TRACE_IRQFLAGS)
 	bl	exit_to_user_mode
@@ -464,6 +470,7 @@ SYM_CODE_END(__swpan_exit_el0)
 	 * The callee-saved regs (x19-x29) should be preserved between
 	 * irq_stack_entry and irq_stack_exit, but note that kernel_entry
 	 * uses x20-x23 to store data for later use.
+	 * IRQ_PIPELINE: caution, we have to preserve w0.
 	 */
 	.macro	irq_stack_exit
 	mov	sp, x19
@@ -479,7 +486,15 @@ tsk	.req	x28		// current thread_info
  * Interrupt handling.
  */
 	.macro	irq_handler, handler:req
+#ifdef CONFIG_IRQ_PIPELINE
+	.if	\handler == handle_arch_irq
+	ldr	x1, =handle_arch_irq_pipelined
+	.else
+	.error	"irq_pipeline: cannot handle interrupt"
+	.endif
+#else
 	ldr_l	x1, \handler
+#endif
 	mov	x0, sp
 	irq_stack_entry
 	blr	x1
@@ -517,6 +532,9 @@ alternative_endif
 
 	irq_handler	\handler
 
+#ifdef CONFIG_IRQ_PIPELINE
+	cbz     w0, 66f				// skip epilogue if oob or in-band stalled
+#endif
 #ifdef CONFIG_PREEMPTION
 	ldr	x24, [tsk, #TSK_TI_PREEMPT]	// get preempt count
 alternative_if ARM64_HAS_IRQ_PRIO_MASKING
@@ -531,13 +549,13 @@ alternative_else_nop_endif
 	bl	arm64_preempt_schedule_irq	// irq en/disable is done inside
 1:
 #endif
-
+66:
 	mov	x0, sp
 	bl	exit_el1_irq_or_nmi
 	.endm
 
 	.macro el0_interrupt_handler, handler:req
-	user_exit_irqoff
+	user_exit_el0_irq
 	enable_da_f
 
 	tbz	x22, #55, 1f
@@ -716,6 +734,9 @@ SYM_CODE_START_LOCAL_NOALIGN(el0_irq)
 	kernel_entry 0
 el0_irq_naked:
 	el0_interrupt_handler handle_arch_irq
+#ifdef CONFIG_IRQ_PIPELINE
+	cbz	w0, fast_ret_from_el0_irq	// skip epilogue if oob
+#endif
 	b	ret_to_user
 SYM_CODE_END(el0_irq)
 
@@ -747,6 +768,11 @@ SYM_CODE_END(el0_error)
 SYM_CODE_START_LOCAL(ret_to_user)
 	disable_daif
 	gic_prio_kentry_setup tmp=x3
+#ifdef CONFIG_IRQ_PIPELINE
+	ldr	x0, [tsk, #TSK_TI_LOCAL_FLAGS]
+	tst	x0, #_TLF_OOB
+	b.ne	fast_ret_to_user
+#endif
 #ifdef CONFIG_TRACE_IRQFLAGS
 	bl	trace_hardirqs_off
 #endif
@@ -756,12 +782,22 @@ SYM_CODE_START_LOCAL(ret_to_user)
 finish_ret_to_user:
 	user_enter_irqoff
 	/* Ignore asynchronous tag check faults in the uaccess routines */
+ret_to_user_naked:
 	clear_mte_async_tcf
 	enable_step_tsk x19, x2
 #ifdef CONFIG_GCC_PLUGIN_STACKLEAK
 	bl	stackleak_erase
 #endif
 	kernel_exit 0
+
+#ifdef CONFIG_IRQ_PIPELINE
+fast_ret_from_el0_irq:	
+ 	disable_daif
+ 	gic_prio_kentry_setup tmp=x3
+fast_ret_to_user:
+	ldr	x19, [tsk, #TSK_TI_FLAGS]
+	b	ret_to_user_naked
+#endif
 
 /*
  * Ok, we need to do extra processing, enter the slow path.
