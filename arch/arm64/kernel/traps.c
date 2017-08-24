@@ -14,6 +14,7 @@
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/hardirq.h>
+#include <linux/irqstage.h>
 #include <linux/kdebug.h>
 #include <linux/module.h>
 #include <linux/kexec.h>
@@ -203,7 +204,7 @@ static int __die(const char *str, long err, struct pt_regs *regs)
 	return ret;
 }
 
-static DEFINE_RAW_SPINLOCK(die_lock);
+static DEFINE_HARD_SPINLOCK(die_lock);
 
 /*
  * This function is protected against re-entrancy.

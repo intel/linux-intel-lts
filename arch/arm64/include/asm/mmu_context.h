@@ -101,6 +101,9 @@ static inline void __cpu_set_tcr_t0sz(unsigned long t0sz)
 static inline void cpu_uninstall_idmap(void)
 {
 	struct mm_struct *mm = current->active_mm;
+	unsigned long flags;
+
+	flags = hard_cond_local_irq_save();
 
 	cpu_set_reserved_ttbr0();
 	local_flush_tlb_all();
@@ -108,15 +111,23 @@ static inline void cpu_uninstall_idmap(void)
 
 	if (mm != &init_mm && !system_uses_ttbr0_pan())
 		cpu_switch_mm(mm->pgd, mm);
+
+	hard_cond_local_irq_restore(flags);
 }
 
 static inline void __cpu_install_idmap(pgd_t *idmap)
 {
+	unsigned long flags;
+
+	flags = hard_cond_local_irq_save();
+
 	cpu_set_reserved_ttbr0();
 	local_flush_tlb_all();
 	cpu_set_idmap_tcr_t0sz();
 
 	cpu_switch_mm(lm_alias(idmap), &init_mm);
+
+	hard_cond_local_irq_restore(flags);
 }
 
 static inline void cpu_install_idmap(void)

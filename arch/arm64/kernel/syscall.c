@@ -2,6 +2,7 @@
 
 #include <linux/compiler.h>
 #include <linux/context_tracking.h>
+#include <linux/irqstage.h>
 #include <linux/errno.h>
 #include <linux/nospec.h>
 #include <linux/ptrace.h>
@@ -81,6 +82,12 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 
 	regs->orig_x0 = regs->regs[0];
 	regs->syscallno = scno;
+
+	/*
+	 * irq_pipeline: DAIF was unmasked by caller(s), we fixup the
+	 * inband stall bit accordingly.
+	 */
+	unstall_inband();
 
 	/*
 	 * BTI note:

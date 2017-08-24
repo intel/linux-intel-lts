@@ -11,6 +11,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/signal.h>
+#include <linux/irq_pipeline.h>
 #include <linux/freezer.h>
 #include <linux/stddef.h>
 #include <linux/uaccess.h>
@@ -1280,13 +1281,20 @@ static void do_signal(struct pt_regs *regs)
 
 void do_notify_resume(struct pt_regs *regs, unsigned long thread_flags)
 {
+	WARN_ON_ONCE(irq_pipeline_debug() && running_oob());
+	WARN_ON_ONCE(irq_pipeline_debug() && test_inband_stall());
+
 	do {
+		stall_inband_nocheck();
+
 		if (thread_flags & _TIF_NEED_RESCHED) {
 			/* Unmask Debug and SError for the next task */
-			local_daif_restore(DAIF_PROCCTX_NOIRQ);
+			local_daif_restore(irqs_pipelined() ? DAIF_PROCCTX :
+					DAIF_PROCCTX_NOIRQ);
 
 			schedule();
 		} else {
+			unstall_inband_nocheck();
 			local_daif_restore(DAIF_PROCCTX);
 
 			if (thread_flags & _TIF_UPROBE)
@@ -1311,6 +1319,14 @@ void do_notify_resume(struct pt_regs *regs, unsigned long thread_flags)
 		local_daif_mask();
 		thread_flags = read_thread_flags();
 	} while (thread_flags & _TIF_WORK_MASK);
+
+	/*
+	 * irq_pipeline: trace_hardirqs_off was in effect on entry, we
+	 * leave it this way by virtue of calling local_daif_mask()
+	 * before exiting the loop. However, we did enter unstalled
+	 * and we must restore such state on exit.
+	 */
+	unstall_inband_nocheck();
 }
 
 unsigned long __ro_after_init signal_minsigstksz;
