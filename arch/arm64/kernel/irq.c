@@ -14,6 +14,7 @@
 #include <linux/memory.h>
 #include <linux/smp.h>
 #include <linux/hardirq.h>
+#include <linux/irq_pipeline.h>
 #include <linux/init.h>
 #include <linux/irqchip.h>
 #include <linux/kprobes.h>
@@ -27,7 +28,6 @@
 DEFINE_PER_CPU(struct nmi_ctx, nmi_contexts);
 
 DEFINE_PER_CPU(unsigned long *, irq_stack_ptr);
-
 
 DECLARE_PER_CPU(unsigned long *, irq_shadow_call_stack_ptr);
 
