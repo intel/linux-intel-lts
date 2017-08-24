@@ -2,6 +2,7 @@
 
 #include <linux/compiler.h>
 #include <linux/context_tracking.h>
+#include <linux/irqstage.h>
 #include <linux/errno.h>
 #include <linux/nospec.h>
 #include <linux/ptrace.h>
@@ -105,6 +106,7 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 	 */
 
 	local_daif_restore(DAIF_PROCCTX);
+	unstall_inband();
 
 	if (flags & _TIF_MTE_ASYNC_FAULT) {
 		/*

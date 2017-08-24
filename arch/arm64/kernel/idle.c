@@ -42,5 +42,6 @@ void noinstr arch_cpu_idle(void)
 	 * tricks
 	 */
 	cpu_do_idle();
+	hard_cond_local_irq_enable();
 	raw_local_irq_enable();
 }
