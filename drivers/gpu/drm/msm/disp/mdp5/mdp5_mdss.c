@@ -91,6 +91,7 @@ static struct irq_chip mdss_hw_irq_chip = {
 	.name		= "mdss",
 	.irq_mask	= mdss_hw_mask_irq,
 	.irq_unmask	= mdss_hw_unmask_irq,
+	.flags		= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int mdss_hw_irqdomain_map(struct irq_domain *d, unsigned int irq,

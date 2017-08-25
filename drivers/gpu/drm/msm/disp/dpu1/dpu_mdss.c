@@ -126,6 +126,7 @@ static struct irq_chip dpu_mdss_irq_chip = {
 	.name = "dpu_mdss",
 	.irq_mask = dpu_mdss_irq_mask,
 	.irq_unmask = dpu_mdss_irq_unmask,
+	.flags = IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct lock_class_key dpu_mdss_lock_key, dpu_mdss_request_key;
