@@ -88,6 +88,7 @@ static struct irq_chip gicv2m_msi_irq_chip = {
 	.irq_mask		= gicv2m_mask_msi_irq,
 	.irq_unmask		= gicv2m_unmask_msi_irq,
 	.irq_eoi		= irq_chip_eoi_parent,
+	.flags			= IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct msi_domain_info gicv2m_msi_domain_info = {
@@ -129,6 +130,7 @@ static struct irq_chip gicv2m_irq_chip = {
 	.irq_eoi		= irq_chip_eoi_parent,
 	.irq_set_affinity	= irq_chip_set_affinity_parent,
 	.irq_compose_msi_msg	= gicv2m_compose_msi_msg,
+	.flags			= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int gicv2m_irq_gic_domain_alloc(struct irq_domain *domain,
@@ -251,6 +253,7 @@ static bool is_msi_spi_valid(u32 base, u32 num)
 
 static struct irq_chip gicv2m_pmsi_irq_chip = {
 	.name			= "pMSI",
+	.flags			= IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct msi_domain_ops gicv2m_pmsi_ops = {
