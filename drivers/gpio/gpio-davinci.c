@@ -291,7 +291,8 @@ static struct irq_chip gpio_irqchip = {
 	.irq_unmask	= gpio_irq_unmask,
 	.irq_mask	= gpio_irq_mask,
 	.irq_set_type	= gpio_irq_type,
-	.flags		= IRQCHIP_SET_TYPE_MASKED | IRQCHIP_SKIP_SET_WAKE,
+	.flags		= IRQCHIP_SET_TYPE_MASKED | IRQCHIP_SKIP_SET_WAKE |
+			  IRQCHIP_PIPELINE_SAFE,
 };
 
 static void gpio_irq_handler(struct irq_desc *desc)
