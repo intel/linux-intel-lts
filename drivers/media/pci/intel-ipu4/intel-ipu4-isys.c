@@ -234,11 +234,38 @@ static int intel_ipu4_pipeline_pm_power_one(struct media_entity *entity,
 	return 0;
 }
 
+
+/*
+ * intel_ipu4_get_linked_pad - Find internally connected pad for a given pad
+ * @entity: The entity
+ * @pad: Initial pad
+ *
+ * Return index of the linked pad.
+*/
+static int intel_ipu4_get_linked_pad(struct media_entity *entity,
+					struct media_pad *pad)
+{
+	int i;
+
+	for (i = 0; i < entity->num_pads; i++) {
+		struct media_pad *opposite_pad = &entity->pads[i];
+
+		if (opposite_pad == pad)
+			continue;
+
+		if (media_entity_has_route(entity, pad->index, opposite_pad->index))
+			return opposite_pad->index;
+	}
+
+	return 0;
+}
+
 /*
  * intel_ipu4_pipeline_pm_power - Apply power change to all entities
  * in a pipeline
  * @entity: The entity
  * @change: Use count change
+ * @from_pad: Starting pad
  *
  * Walk the pipeline to update the use count and the power state of
  * all non-node
@@ -247,7 +274,7 @@ static int intel_ipu4_pipeline_pm_power_one(struct media_entity *entity,
  * Return 0 on success or a negative error code on failure.
  */
 static int intel_ipu4_pipeline_pm_power(struct media_entity *entity,
-					int change)
+					int change, int from_pad)
 {
 	struct media_entity_graph graph;
 	struct media_entity *first = entity;
@@ -259,7 +286,7 @@ static int intel_ipu4_pipeline_pm_power(struct media_entity *entity,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_entity_graph_walk_init(&graph, entity->graph_obj.mdev);
 #endif
-	media_entity_graph_walk_start(&graph, &entity->pads[0]);
+	media_entity_graph_walk_start(&graph, &entity->pads[from_pad]);
 
 	while (!ret && (entity = media_entity_graph_walk_next(&graph)))
 		if (!is_media_entity_v4l2_io(entity))
@@ -274,7 +301,7 @@ static int intel_ipu4_pipeline_pm_power(struct media_entity *entity,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_entity_graph_walk_init(&graph, entity->graph_obj.mdev);
 #endif
-	media_entity_graph_walk_start(&graph, &first->pads[0]);
+	media_entity_graph_walk_start(&graph, &first->pads[from_pad]);
 
 	while ((first = media_entity_graph_walk_next(&graph))
 	       && first != entity)
@@ -317,7 +344,7 @@ int intel_ipu4_pipeline_pm_use(struct media_entity *entity, int use)
 	WARN_ON(entity->use_count < 0);
 
 	/* Apply power change to connected non-nodes. */
-	ret = intel_ipu4_pipeline_pm_power(entity, change);
+	ret = intel_ipu4_pipeline_pm_power(entity, change, 0);
 	if (ret < 0)
 		entity->use_count -= change;
 
@@ -359,21 +386,21 @@ static int intel_ipu4_pipeline_link_notify(struct media_link *link, u32 flags,
 	if (notification == MEDIA_DEV_NOTIFY_POST_LINK_CH &&
 	    !(flags & MEDIA_LNK_FL_ENABLED)) {
 		/* Powering off entities is assumed to never fail. */
-		intel_ipu4_pipeline_pm_power(source, -sink_use);
-		intel_ipu4_pipeline_pm_power(sink, -source_use);
+		intel_ipu4_pipeline_pm_power(source, -sink_use, 0);
+		intel_ipu4_pipeline_pm_power(sink, -source_use, 0);
 		return 0;
 	}
 
 	if (notification == MEDIA_DEV_NOTIFY_PRE_LINK_CH &&
 		(flags & MEDIA_LNK_FL_ENABLED)) {
-
-		ret = intel_ipu4_pipeline_pm_power(source, sink_use);
+		int from_pad = intel_ipu4_get_linked_pad(source, link->source);
+		ret = intel_ipu4_pipeline_pm_power(source, sink_use, from_pad);
 		if (ret < 0)
 			return ret;
 
-		ret = intel_ipu4_pipeline_pm_power(sink, source_use);
+		ret = intel_ipu4_pipeline_pm_power(sink, source_use, 0);
 		if (ret < 0)
-			intel_ipu4_pipeline_pm_power(source, -sink_use);
+			intel_ipu4_pipeline_pm_power(source, -sink_use, 0);
 
 		return ret;
 	}
