@@ -943,6 +943,10 @@ static struct snd_soc_dai_ops skl_sdw_dai_ops = {
 	.shutdown = skl_sdw_shutdown,
 };
 
+struct skl_dsp_notify_ops cb_ops = {
+	.notify_cb = skl_dsp_cb_event,
+};
+
 static struct snd_soc_dai_driver skl_fe_dai[] = {
 {
 	.name = "Speaker Pin",
@@ -2041,6 +2045,8 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 		}
 		skl->platform = platform;
 
+		skl->platform = platform;
+
 		/* load the firmwares, since all is set */
 		ops = skl_get_dsp_ops(skl->pci->device);
 		if (!ops)
@@ -2065,6 +2071,7 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 			return ret;
 
 		skl->skl_sst->update_d0i3c = skl_update_d0i3c;
+		skl->skl_sst->notify_ops = cb_ops;
 		skl_dsp_enable_notification(skl->skl_sst, false);
 		skl_get_probe_widget(platform, skl);
 
@@ -2112,6 +2119,9 @@ static const struct soc_enum dsp_log_enum =
 static struct snd_kcontrol_new skl_controls[] = {
 	SOC_ENUM_EXT("DSP Log Level", dsp_log_enum, skl_tplg_dsp_log_get,
 		     skl_tplg_dsp_log_set),
+	SND_SOC_BYTES_TLV("Topology Change Notification",
+		sizeof(struct skl_tcn_events), skl_tplg_change_notification_get,
+						NULL),
 };
 
 static const struct snd_soc_component_driver skl_component = {
