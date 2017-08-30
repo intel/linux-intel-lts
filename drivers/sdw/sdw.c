@@ -396,17 +396,19 @@ static int sdw_pm_resume(struct device *dev)
 		return sdw_legacy_resume(dev);
 }
 
-static const struct dev_pm_ops soundwire_pm = {
-	.suspend = sdw_pm_suspend,
-	.resume = sdw_pm_resume,
-	.runtime_suspend = pm_generic_runtime_suspend,
-	.runtime_resume = pm_generic_runtime_resume,
-};
-
 #else
 #define sdw_pm_suspend		NULL
 #define sdw_pm_resume		NULL
+#endif /* CONFIG_PM_SLEEP */
+
+static const struct dev_pm_ops soundwire_pm = {
+	.suspend = sdw_pm_suspend,
+	.resume = sdw_pm_resume,
+#ifdef CONFIG_PM
+	.runtime_suspend = pm_generic_runtime_suspend,
+	.runtime_resume = pm_generic_runtime_resume,
 #endif
+};
 
 struct bus_type sdw_bus_type = {
 	.name		= "soundwire",

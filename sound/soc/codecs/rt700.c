@@ -557,8 +557,6 @@ err:
 static int rt700_hda_read(struct regmap *regmap, unsigned int vid,
 	unsigned int nid, unsigned int pid, unsigned int *value)
 {
-	int ret;
-	unsigned int val_h, val_l;
 	unsigned int sdw_data_3, sdw_data_2, sdw_data_1, sdw_data_0;
 	unsigned int sdw_addr_h, sdw_addr_l;
 
@@ -571,12 +569,10 @@ static int rt700_hda_read(struct regmap *regmap, unsigned int vid,
 		hda_to_sdw(nid, vid, pid,
 				&sdw_addr_h, &sdw_data_1, &sdw_addr_l, &sdw_data_0);
 
-		pr_debug("write %04x %02x\n", sdw_addr_h, sdw_data_1);
 		regmap_write(regmap, sdw_addr_h, sdw_data_1);
-		if (sdw_addr_l) {
-			pr_debug("write %04x %02x", sdw_addr_l, sdw_data_0);
+		if (sdw_addr_l)
 			regmap_write(regmap, sdw_addr_l, sdw_data_0);
-		}
+
 		regmap_read(regmap,
 			RT700_READ_HDA_3, &sdw_data_3);
 		regmap_read(regmap,
@@ -585,11 +581,6 @@ static int rt700_hda_read(struct regmap *regmap, unsigned int vid,
 			RT700_READ_HDA_1, &sdw_data_1);
 		regmap_read(regmap,
 			RT700_READ_HDA_0, &sdw_data_0);
-		pr_debug("(%03x %02x %04x) = %02x%02x%02x%02x\n",
-			vid, nid, pid, sdw_data_3,
-			sdw_data_2, sdw_data_1, sdw_data_0);
-	} else {
-		pr_err("%s: it is not a get verb\n", __func__);
 	}
 	*value = ((sdw_data_3 & 0xff) << 24) | ((sdw_data_2 & 0xff) << 16) |
 		((sdw_data_1 & 0xff) << 8) | (sdw_data_0 & 0xff);
@@ -629,20 +620,14 @@ static void rt700_get_gain(struct rt700_priv *rt700, unsigned int addr_h,
 {
 	/* R Channel */
 	regmap_write(rt700->regmap, addr_h, val_h);
-	pr_debug("%s write %04x %02x\n", __func__, addr_h, val_h);
 	regmap_write(rt700->regmap, addr_l, 0);
-	pr_debug("%s write %04x %02x\n", __func__, addr_l, 0);
 	regmap_read(rt700->regmap, RT700_READ_HDA_0, r_val);
-	pr_debug("%s read %04x %02x\n", __func__, RT700_READ_HDA_0, *r_val);
 
 	/* L Channel */
 	val_h |= 0x20;
 	regmap_write(rt700->regmap, addr_h, val_h);
-	pr_debug("%s write %04x %02x\n", __func__, addr_h, val_h);
 	regmap_write(rt700->regmap, addr_l, 0);
-	pr_debug("%s write %04x %02x\n", __func__, addr_l, 0);
 	regmap_read(rt700->regmap, RT700_READ_HDA_0, l_val);
-	pr_debug("%s read %04x %02x\n", __func__, RT700_READ_HDA_0, *l_val);
 }
 
 /* For Verb-Set Amplifier Gain (Verb ID = 3h) */
@@ -673,9 +658,6 @@ static int rt700_set_amp_gain_put(struct snd_kcontrol *kcontrol,
 	/* Now set value */
 	addr_h = mc->reg;
 	addr_l = mc->rreg;
-
-	pr_debug("%s val = %d, %d\n", __func__, ucontrol->value.integer.value[0],
-			ucontrol->value.integer.value[1]);
 
 	/* L Channel */
 	if (mc->invert) {
@@ -714,38 +696,23 @@ static int rt700_set_amp_gain_put(struct snd_kcontrol *kcontrol,
 	}
 
 	for (i = 0; i < 3; i++) { /* retry 3 times at most */
-		pr_debug("%s i=%d\n", __func__, i);
 		addr_h = mc->reg;
 		addr_l = mc->rreg;
 		if (val_ll == val_lr) {
 			/* Set both L/R channels at the same time */
 			val_h = (1 << mc->shift) | (3 << 4);
 			regmap_write(rt700->regmap, addr_h, val_h);
-			pr_debug("%s write %04x %02x\n",
-						__func__, addr_h, val_h);
 			regmap_write(rt700->regmap, addr_l, val_ll);
-			pr_debug("%s write %04x %02x\n",
-						__func__, addr_l, val_ll);
-
 		} else {
 			/* Lch*/
 			val_h = (1 << mc->shift) | (1 << 5);
 			regmap_write(rt700->regmap, addr_h, val_h);
-			pr_debug("%s write %04x %02x\n",
-						__func__, addr_h, val_h);
 			regmap_write(rt700->regmap, addr_l, val_ll);
-			pr_debug("%s write %04x %02x\n",
-						__func__, addr_l, val_ll);
 
 			/* Rch */
 			val_h = (1 << mc->shift) | (1 << 4);
 			regmap_write(rt700->regmap, addr_h, val_h);
-			pr_debug("%s write %04x %02x\n",
-						__func__, addr_h, val_h);
 			regmap_write(rt700->regmap, addr_l, val_lr);
-			pr_debug("%s write %04x %02x\n",
-						__func__, addr_l, val_lr);
-
 		}
 		/* check result */
 		addr_h = (mc->reg + 0x2000) | 0x800;
@@ -757,12 +724,8 @@ static int rt700_set_amp_gain_put(struct snd_kcontrol *kcontrol,
 
 		rt700_get_gain(rt700, addr_h, addr_l, val_h,
 							&read_rl, &read_ll);
-		if (read_rl == val_lr && read_ll == val_ll) {
-			pr_debug("write command successful\n");
+		if (read_rl == val_lr && read_ll == val_ll)
 			break;
-		}
-
-		pr_warn("write command unsuccessful, retry\n");
 	}
 
 	if (dapm->bias_level <= SND_SOC_BIAS_STANDBY)
@@ -892,9 +855,7 @@ static int rt700_mux_get(struct snd_kcontrol *kcontrol,
 	/* nid = e->reg, vid = 0xf01 */
 	reg = RT700_VERB_GET_CONNECT_SEL | e->reg;
 	snd_soc_write(codec, reg, 0x0);
-	pr_debug("%s write %04x %02x\n", __func__, reg, 0x0);
 	val = snd_soc_read(codec, RT700_READ_HDA_0);
-	pr_debug("%s read %04x %02x\n", __func__, RT700_READ_HDA_0, val);
 	ucontrol->value.enumerated.item[0] = val;
 
 	return 0;
@@ -916,25 +877,18 @@ static int rt700_mux_put(struct snd_kcontrol *kcontrol,
 
 	/* Verb ID = 0x701h, nid = e->reg */
 	val = snd_soc_enum_item_to_val(e, item[0]) << e->shift_l;
-	pr_debug("%s val=%x e->reg=%x item[0]=%d\n",
-		__func__, val, e->reg, item[0]);
 
 	reg = RT700_VERB_GET_CONNECT_SEL | e->reg;
 	snd_soc_write(codec, reg, 0x0);
-	pr_debug("%s write %04x %02x\n", __func__, reg, 0x0);
 	val2 = snd_soc_read(codec, RT700_READ_HDA_0);
-	pr_debug("%s read %04x %02x\n", __func__, RT700_READ_HDA_0, val2);
 	if (val == val2)
 		change = 0;
 	else
 		change = 1;
 
-	pr_debug("change=%d\n", change);
-
 	if (change) {
 		reg = RT700_VERB_SET_CONNECT_SEL | e->reg;
 		snd_soc_write(codec, reg, val);
-		pr_debug("%s write %04x %02x\n", __func__, reg, val);
 		update.kcontrol = kcontrol;
 		update.reg = e->reg;
 		update.mask = 0xff;
@@ -1105,10 +1059,7 @@ static int rt700_set_bias_level(struct snd_soc_codec *codec,
 					enum snd_soc_bias_level level)
 {
 	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
-	struct rt700_priv *rt700 = snd_soc_codec_get_drvdata(codec);
-	unsigned int sdw_data_0;
 
-	pr_debug("%s level=%d\n", __func__, level);
 	switch (level) {
 	case SND_SOC_BIAS_PREPARE:
 		if (SND_SOC_BIAS_STANDBY == dapm->bias_level) {
@@ -1411,8 +1362,7 @@ static ssize_t rt700_index_cmd_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
 	struct rt700_priv *rt700 = dev_get_drvdata(dev);
-	unsigned int sdw_addr_h, sdw_addr_l;
-	unsigned int sdw_data_3, sdw_data_2, sdw_data_1, sdw_data_0;
+	unsigned int sdw_data_0;
 	int i, cnt = 0;
 
 	/* index */
@@ -1433,11 +1383,9 @@ static ssize_t rt700_index_cmd_store(struct device *dev,
 				  const char *buf, size_t count)
 {
 	struct rt700_priv *rt700 = dev_get_drvdata(dev);
-	unsigned int sdw_addr_h, sdw_addr_l, sdw_data_h, sdw_data_l;
-	unsigned int index_reg, index_val;
+	unsigned int index_reg = 0, index_val = 0;
 	int i;
 
-	pr_debug("register \"%s\" count=%zu\n", buf, count);
 	for (i = 0; i < count; i++) {	/*rt700->dbg_nidess */
 		if (*(buf + i) <= '9' && *(buf + i) >= '0')
 			index_reg = (index_reg << 4) |
@@ -1466,9 +1414,6 @@ static ssize_t rt700_index_cmd_store(struct device *dev,
 			break;
 	}
 
-	pr_debug("index_reg=0x%x index_val=0x%x\n",
-		index_reg, index_val);
-
 	rt700_index_write(rt700->regmap, index_reg, index_val);
 
 	return count;
@@ -1480,15 +1425,10 @@ static ssize_t rt700_hda_cmd_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
 	struct rt700_priv *rt700 = dev_get_drvdata(dev);
-	unsigned int sdw_addr_h, sdw_addr_l;
-	unsigned int sdw_data_3, sdw_data_2, sdw_data_1, sdw_data_0;
 	int i, cnt = 0;
 	unsigned int value;
 
-	pr_debug("%s cnt=%d RT700_HDA_DUMP_LEN=%d PAGE_SIZE=%d\n",
-		__func__, cnt, RT700_HDA_DUMP_LEN, PAGE_SIZE);
 	for (i = 0; i < RT700_HDA_DUMP_LEN; i++) {
-		pr_debug("%s i=%d", __func__, i);
 		if (cnt + 25 >= PAGE_SIZE)
 			break;
 		rt700->dbg_nid = hda_dump_list[i].nid;
@@ -1518,7 +1458,6 @@ static ssize_t rt700_hda_cmd_store(struct device *dev,
 	unsigned int sdw_data_3, sdw_data_2, sdw_data_1, sdw_data_0;
 	int i;
 
-	pr_debug("register \"%s\" count=%zu\n", buf, count);
 	for (i = 0; i < count; i++) {	/*rt700->dbg_nidess */
 		if (*(buf + i) <= '9' && *(buf + i) >= '0')
 			rt700->dbg_nid = (rt700->dbg_nid << 4) |
@@ -1563,8 +1502,6 @@ static ssize_t rt700_hda_cmd_store(struct device *dev,
 		else
 			break;
 	}
-	pr_debug("dbg_nid=0x%x dbg_vid=0x%x dbg_payload=0x%x\n",
-		rt700->dbg_nid, rt700->dbg_vid, rt700->dbg_payload);
 
 	hda_to_sdw(rt700->dbg_nid, rt700->dbg_vid, rt700->dbg_payload,
 		&sdw_addr_h, &sdw_data_h, &sdw_addr_l, &sdw_data_l);
@@ -1605,9 +1542,9 @@ static DEVICE_ATTR(hda_reg, 0664, rt700_hda_cmd_show, rt700_hda_cmd_store);
 static int rt700_clock_config(struct device *dev, struct alc700 *alc700)
 {
 	struct rt700_priv *rt700 = dev_get_drvdata(dev);
-	int value, read_value1, read_value2;
+	int value;
 
-	switch(alc700->params->bus_clk_freq) {
+	switch (alc700->params->bus_clk_freq) {
 	case RT700_CLK_FREQ_12000000HZ:
 		value = 0x0;
 		break;
@@ -1706,7 +1643,6 @@ int rt700_probe(struct device *dev, struct regmap *regmap,
 	struct rt700_priv *rt700;
 	struct alc700 *alc700 = dev_get_drvdata(dev);
 	int ret;
-	unsigned int value;
 
 	rt700 = devm_kzalloc(dev, sizeof(struct rt700_priv),
 			       GFP_KERNEL);
@@ -1791,19 +1727,6 @@ int rt700_probe(struct device *dev, struct regmap *regmap,
 
 	/* Set index */
 	rt700_index_write(rt700->regmap, 0x4a, 0x201b);
-	//rt700_index_write(rt700->regmap, 0x38, 0x4921);
-
-	/* get the setting registers for debug 
-	pr_debug("%s get the setting registers\n", __func__);
-	rt700_hda_read(rt700->regmap, 0xf07, 0x21, 0, &value);
-	rt700_hda_read(rt700->regmap, 0xf07, 0x14, 0, &value);
-	rt700_hda_read(rt700->regmap, 0xf07, 0x12, 0, &value);
-	rt700_hda_read(rt700->regmap, 0xf07, 0x13, 0, &value);
-	rt700_hda_read(rt700->regmap, 0xf07, 0x19, 0, &value);
-	rt700_hda_read(rt700->regmap, 0xf07, 0x1a, 0, &value);
-	rt700_hda_read(rt700->regmap, 0xf07, 0x1b, 0, &value);
-	rt700_hda_read(rt700->regmap, 0xf0c, 0x14, 0, &value);
-	*/
 	ret = rt700_clock_config(dev, alc700);
 
 	/* Enable Jack Detection */
@@ -1868,7 +1791,7 @@ static int rt700_runtime_resume(struct device *dev)
 	int ret;
 	int timeout = 0;
 
-	if(rt700->sdw) {
+	if (rt700->sdw) {
 		ret = sdw_wait_for_slave_enumeration(rt700->sdw->mstr,
 						     rt700->sdw);
 		if (ret < 0)
