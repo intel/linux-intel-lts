@@ -384,6 +384,7 @@ enum SKL_TKNS {
 	SKL_TKN_U32_PMODE,
 	SKL_TKL_U32_D0I3_CAPS, /* Typo added at v4.10 */
 	SKL_TKN_U32_D0I3_CAPS = SKL_TKL_U32_D0I3_CAPS,
+	SKL_TKN_U32_DMA_BUF_SIZE,
 	SKL_TKN_U8_PDI_TYPE,
 
 	SKL_TKN_U8_CONF_VERSION,
@@ -467,10 +468,25 @@ enum SKL_TKNS {
 	SKL_TKN_U32_AGG_LINK_ID,
 	SKL_TKN_U32_AGG_CH_MASK,
 	SKL_TKN_U32_AGG_ID,
-	SKL_TKN_U32_DMA_BUF_SIZE,
 	SKL_TKN_U32_DMACTRL_CFG_IDX,
 	SKL_TKN_U32_DMACTRL_CFG_SIZE,
 	SKL_TKN_MAX = SKL_TKN_U32_DMACTRL_CFG_SIZE,
+};
+
+/*
+ * Topology change notification events along with time at which
+ * the change occurred in topology.
+ */
+enum skl_event_type {
+	SKL_TPLG_CHG_NOTIFY_PIPELINE_START = 1,
+	SKL_TPLG_CHG_NOTIFY_PIPELINE_DELETE,
+	SKL_TPLG_CHG_NOTIFY_DSP_D0,
+	SKL_TPLG_CHG_NOTIFY_DSP_D3,
+};
+
+struct skl_tcn_events {
+	enum skl_event_type type;
+	struct timeval tv;
 };
 
 #endif

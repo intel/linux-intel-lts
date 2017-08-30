@@ -2406,6 +2406,7 @@ static int cnl_sdw_runtime_resume(struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
 static int cnl_sdw_sleep_resume(struct device *dev)
 {
 	return cnl_sdw_runtime_resume(dev);
@@ -2414,7 +2415,15 @@ static int cnl_sdw_sleep_suspend(struct device *dev)
 {
 	return cnl_sdw_runtime_suspend(dev);
 }
-#endif
+#else
+#define cnl_sdw_sleep_suspend NULL
+#define cnl_sdw_sleep_resume NULL
+#endif /* CONFIG_PM_SLEEP */
+#else
+#define cnl_sdw_runtime_suspend NULL
+#define cnl_sdw_runtime_resume NULL
+#endif /* CONFIG_PM */
+
 
 static const struct dev_pm_ops cnl_sdw_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(cnl_sdw_sleep_suspend, cnl_sdw_sleep_resume)
