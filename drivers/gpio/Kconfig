@@ -1224,10 +1224,4 @@ config GPIO_VIPERBOARD
 
 endmenu
 
-config GPIO_TPS68470
-	bool "TPS68470 GPIO"
-	depends on MFD_TPS68470
-	help
-	  Select this option to enable GPIO driver for the TPS68470
-	  chip family.
 endif

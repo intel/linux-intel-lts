@@ -179,11 +179,6 @@ static int vb2_queue_or_prepare_buf(struct vb2_queue *q, struct v4l2_buffer *b,
 		return -EINVAL;
 	}
 
-	if (!q->allow_requests && b->request) {
-		dprintk(1, "%s: unsupported request ID\n", opname);
-		return -EINVAL;
-	}
-
 	return __verify_planes_array(q->bufs[b->index], b);
 }
 
@@ -209,7 +204,7 @@ static void __fill_v4l2_buffer(struct vb2_buffer *vb, void *pb)
 	b->timestamp = ns_to_timeval(vb->timestamp);
 	b->timecode = vbuf->timecode;
 	b->sequence = vbuf->sequence;
-	b->request = vbuf->request;
+	b->reserved2 = 0;
 	b->reserved = 0;
 
 	if (q->is_multiplanar) {
@@ -327,7 +322,6 @@ static int __fill_vb2_buffer(struct vb2_buffer *vb,
 	}
 	vb->timestamp = 0;
 	vbuf->sequence = 0;
-	vbuf->request = b->request;
 
 	if (V4L2_TYPE_IS_MULTIPLANAR(b->type)) {
 		if (b->memory == VB2_MEMORY_USERPTR) {
