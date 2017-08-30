@@ -198,12 +198,6 @@ config COMMON_CLK_OXNAS
 	---help---
 	  Support for the OXNAS SoC Family clocks.
 
-config COMMON_CLK_TPS68470
-	tristate "Clock driver for TPS68470 PMIC"
-	depends on MFD_TPS68470
-	---help---
-	  Supports the clocking subsystem of the TPS68470 PMIC
-
 config COMMON_CLK_WHISKEY_COVE
 	tristate "Clock driver for Whiskey Cove PMIC 32kHz clock"
 	depends on INTEL_SOC_PMIC
