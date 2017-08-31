@@ -137,6 +137,9 @@ static void sync_timeline_signal(struct sync_timeline *obj, unsigned int inc)
 {
 	unsigned long flags;
 	struct sync_pt *pt, *next;
+	struct dma_fence **fences;
+	int num_fences = 0;
+	int i = 0;
 
 	trace_sync_timeline(obj);
 
@@ -145,12 +148,27 @@ static void sync_timeline_signal(struct sync_timeline *obj, unsigned int inc)
 	obj->value += inc;
 
 	list_for_each_entry_safe(pt, next, &obj->active_list_head,
+				 active_list)
+		num_fences++;
+	fences = kcalloc(num_fences, sizeof(*fences), GFP_ATOMIC | __GFP_NOFAIL);
+
+	list_for_each_entry_safe(pt, next, &obj->active_list_head,
 				 active_list) {
+		/* build fences array so we can match gets to puts. */
+		fences[i++] = &pt->base;
+		dma_fence_get(&pt->base);
 		if (dma_fence_is_signaled_locked(&pt->base))
 			list_del_init(&pt->active_list);
 	}
 
 	spin_unlock_irqrestore(&obj->child_list_lock, flags);
+
+	/* puts might call to timeline_fence_release who hold the
+	 * same spin lock as child_list_lock. It's safe that puts
+	 * and kfree are outside of the spin lock. */
+	for (i = 0; i < num_fences; i++)
+		dma_fence_put(fences[i]);
+	kfree(fences);
 }
 
 /**
