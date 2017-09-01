@@ -1851,7 +1851,13 @@ int intel_sprite_set_colorkey(struct drm_device *dev, void *data,
 			      struct drm_file *file_priv);
 void intel_pipe_update_start(struct intel_crtc *crtc);
 void intel_pipe_update_end(struct intel_crtc *crtc, struct intel_flip_work *work);
-
+int intel_check_sprite_plane(struct drm_plane *plane,
+		struct intel_crtc_state *crtc_state,
+		struct intel_plane_state *state);
+void skl_update_plane(struct drm_plane *drm_plane,
+		const struct intel_crtc_state *crtc_state,
+		const struct intel_plane_state *plane_state);
+void skl_disable_plane(struct drm_plane *dplane, struct drm_crtc *crtc);
 /* intel_tv.c */
 void intel_tv_init(struct drm_i915_private *dev_priv);
 

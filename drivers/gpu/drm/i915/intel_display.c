@@ -13836,6 +13836,99 @@ fail:
 	return ERR_PTR(ret);
 }
 
+static struct intel_plane *
+intel_skl_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe, int plane, bool is_primary)
+{
+	struct intel_plane *intel_plane = NULL;
+	struct intel_plane_state *state = NULL;
+	unsigned long possible_crtcs;
+	const uint32_t *plane_formats;
+	unsigned int supported_rotations, plane_type;
+	unsigned int num_formats;
+	int ret;
+
+	intel_plane = kzalloc(sizeof(*intel_plane), GFP_KERNEL);
+	if (!intel_plane) {
+		ret = -ENOMEM;
+		goto fail;
+	}
+
+	state = intel_create_plane_state(&intel_plane->base);
+	if (!state) {
+		ret = -ENOMEM;
+		goto fail;
+	}
+
+	intel_plane->base.state = &state->base;
+
+	if (INTEL_GEN(dev_priv) >= 9) {
+		intel_plane->can_scale = true;
+		state->scaler_id = -1;
+	}
+	intel_plane->pipe = pipe;
+	/*
+	 * On gen2/3 only plane A can do FBC, but the panel fitter and LVDS
+	 * port is hooked to pipe B. Hence we want plane A feeding pipe B.
+	*/
+	if(is_primary) {
+		intel_plane->plane = (enum plane) pipe;
+		intel_plane->check_plane = intel_check_primary_plane;
+		plane_type = DRM_PLANE_TYPE_PRIMARY;
+	} else {
+		intel_plane->plane = plane;
+		intel_plane->frontbuffer_bit = INTEL_FRONTBUFFER_SPRITE(pipe, plane);
+		intel_plane->check_plane = intel_check_sprite_plane;
+		plane_type = DRM_PLANE_TYPE_OVERLAY;
+	}
+	if(plane == 0){
+		intel_plane->frontbuffer_bit = INTEL_FRONTBUFFER_PRIMARY(pipe);
+		intel_plane->update_plane = skylake_update_primary_plane;
+		intel_plane->disable_plane = skylake_disable_primary_plane;
+	} else {
+		intel_plane->frontbuffer_bit = INTEL_FRONTBUFFER(pipe, plane);
+		intel_plane->update_plane = skl_update_plane;
+		intel_plane->disable_plane = skl_disable_plane;
+	}
+	intel_plane->id = plane;
+	plane_formats = skl_primary_formats;
+	num_formats = ARRAY_SIZE(skl_primary_formats);
+
+	/*
+	 * Drop final format (NV12) for pipes or hardware steppings
+	 * that don't support it.
+	*/
+	if (IS_BXT_REVID(dev_priv, 0, BXT_REVID_C0) || pipe >= PIPE_C
+			|| plane >= 2)
+		num_formats--;
+
+
+	possible_crtcs = (1 << pipe);
+	ret = drm_universal_plane_init(&dev_priv->drm, &intel_plane->base,
+			possible_crtcs, &intel_plane_funcs,
+			plane_formats, num_formats,
+			plane_type,
+			"plane %d%c", plane+1, pipe_name(pipe));
+
+	if (ret)
+		goto fail;
+
+	supported_rotations =
+		DRM_ROTATE_0 | DRM_ROTATE_90 |
+		DRM_ROTATE_180 | DRM_ROTATE_270;
+
+	drm_plane_helper_add(&intel_plane->base, &intel_plane_helper_funcs);
+
+	return intel_plane;
+
+fail:
+	kfree(state);
+	kfree(intel_plane);
+
+	return ERR_PTR(ret);
+}
+
+
+
 static int
 intel_check_cursor_plane(struct drm_plane *plane,
 			 struct intel_crtc_state *crtc_state,
