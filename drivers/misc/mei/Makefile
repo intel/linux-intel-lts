@@ -29,3 +29,4 @@ obj-$(CONFIG_INTEL_MEI_VIRTIO) += mei-virtio.o
 mei-virtio-objs := hw-virtio.o
 
 obj-$(CONFIG_INTEL_MEI_SPD) += spd/
+obj-$(CONFIG_INTEL_MEI_DAL) += dal/
