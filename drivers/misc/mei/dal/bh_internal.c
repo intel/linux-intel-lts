@@ -11,6 +11,7 @@
 #include "bh_errcode.h"
 #include "bh_external.h"
 #include "bh_internal.h"
+#include "dal_dev.h"
 
 /* BH initialization state */
 static atomic_t bh_state = ATOMIC_INIT(0);
@@ -177,6 +178,7 @@ static struct bh_request_cmd *bh_request_alloc(const void *hdr,
 	return request;
 }
 
+static char skip_buffer[DAL_MAX_BUFFER_SIZE] = {0};
 /**
  * bh_transport_recv - receive message from DAL FW.
  *
@@ -189,6 +191,31 @@ static struct bh_request_cmd *bh_request_alloc(const void *hdr,
  */
 static int bh_transport_recv(unsigned int conn_idx, void *buffer, size_t size)
 {
+	size_t got;
+	unsigned int count;
+	char *buf = buffer;
+	int ret;
+
+	if (conn_idx > DAL_MEI_DEVICE_MAX)
+		return -ENODEV;
+
+	for (count = 0; count < size; count += got) {
+		got = min_t(size_t, size - count, DAL_MAX_BUFFER_SIZE);
+		if (buf)
+			ret = dal_kdi_recv(conn_idx, buf + count, &got);
+		else
+			ret = dal_kdi_recv(conn_idx, skip_buffer, &got);
+
+		if (!got)
+			return -EFAULT;
+
+		if (ret)
+			return ret;
+	}
+
+	if (count != size)
+		return -EFAULT;
+
 	return 0;
 }
 
@@ -307,7 +334,16 @@ static int bh_recv_message(struct bh_request_cmd *request)
 static int bh_transport_send(unsigned int conn_idx, const void *buffer,
 			     unsigned int size, u64 host_id)
 {
-	return 0;
+	size_t chunk_sz = DAL_MAX_BUFFER_SIZE;
+	size_t count;
+	int ret;
+
+	for (ret = 0, count = 0; count < size && !ret; count += chunk_sz) {
+		chunk_sz = min_t(size_t, size - count, DAL_MAX_BUFFER_SIZE);
+		ret = dal_kdi_send(conn_idx, buffer + count, chunk_sz, host_id);
+	}
+
+	return ret;
 }
 
 /**

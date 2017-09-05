@@ -9,3 +9,4 @@ mei_dal-objs += bh_external.o
 mei_dal-objs += bh_internal.o
 mei_dal-objs += dal_class.o
 mei_dal-objs += dal_cdev.o
+mei_dal-objs += dal_kdi.o
