@@ -184,7 +184,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_rgb565[] = {
 					SDR 444 */
 	{0x17, CRL_REG_LEN_08BIT, 0xB8, 0xE0}, /* Configure for RGB565 & Luma &
 					Chroma Values Can Reach 254d */
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0}, /* CP-Insert_AV_Code */
 	{0x7C, CRL_REG_LEN_08BIT, 0x00, 0x44}, /* ADI Required Write */
 	{0x0C, CRL_REG_LEN_08BIT, 0xE0, 0xE0}, /* Enable LLC_DLL &
 					Double LLC Timing */
@@ -201,7 +200,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_rgb888[] = {
 					SDR 444 */
 	{0x17, CRL_REG_LEN_08BIT, 0x80, 0xE0}, /* Luma & Chroma Values Can
 					Reach 254d */
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0}, /* CP-Insert_AV_Code */
 	{0x7C, CRL_REG_LEN_08BIT, 0x00, 0x44}, /* ADI Required Write */
 	{0x0C, CRL_REG_LEN_08BIT, 0xE0, 0xE0}, /* Enable LLC_DLL &
 					Double LLC Timing */
@@ -218,7 +216,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_yuv[] = {
 					SDR422 set */
 	{0x17, CRL_REG_LEN_08BIT, 0x80, 0xE0}, /* Luma & Chroma Values Can
 					Reach 254d */
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0}, /* CP-Insert_AV_Code */
 	{0x7C, CRL_REG_LEN_08BIT, 0x00, 0x44}, /* ADI Required Write */
 	{0x0C, CRL_REG_LEN_08BIT, 0xE0, 0xE0}, /* Enable LLC_DLL &
 					Double LLC Timing */
@@ -249,10 +246,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_1080p[] = {
 	{0x31, CRL_REG_LEN_08BIT, 0x80, 0x94},
 	{0xC9, CRL_REG_LEN_08BIT, 0x2D, 0x44},
 	{0x05, CRL_REG_LEN_08BIT, 0x5E, 0xE0},
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
-	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
-	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
-	{0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
 };
 
 static struct crl_register_write_rep adv7481_hdmi_mode_1080i[] = {
@@ -272,10 +265,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_1080i[] = {
 	{0x31, CRL_REG_LEN_08BIT, 0x80, 0x94},
 	{0xC9, CRL_REG_LEN_08BIT, 0x2D, 0x44},
 	{0x05, CRL_REG_LEN_08BIT, 0x54, 0xE0},
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
-	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
-	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
-	{0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
 };
 
 static struct crl_register_write_rep adv7481_hdmi_mode_480p[] = {
@@ -295,10 +284,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_480p[] = {
 	{0x31, CRL_REG_LEN_08BIT, 0x80, 0x94},
 	{0xC9, CRL_REG_LEN_08BIT, 0x2D, 0x44},
 	{0x05, CRL_REG_LEN_08BIT, 0x4A, 0xE0},
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
-	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
-	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
-	{0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
 };
 
 static struct crl_register_write_rep adv7481_hdmi_mode_720p[] = {
@@ -318,10 +303,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_720p[] = {
 	{0x31, CRL_REG_LEN_08BIT, 0x80, 0x94},
 	{0xC9, CRL_REG_LEN_08BIT, 0x2D, 0x44},
 	{0x05, CRL_REG_LEN_08BIT, 0x53, 0xE0},
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
-	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
-	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
-	{0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
 };
 
 static struct crl_register_write_rep adv7481_hdmi_mode_576p[] = {
@@ -341,10 +322,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_576p[] = {
 	{0x31, CRL_REG_LEN_08BIT, 0x80, 0x94},
 	{0xC9, CRL_REG_LEN_08BIT, 0x2D, 0x44},
 	{0x05, CRL_REG_LEN_08BIT, 0x4B, 0xE0},
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
-	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
-	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
-	{0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
 };
 
 static struct crl_register_write_rep adv7481_hdmi_mode_576i[] = {
@@ -364,10 +341,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_576i[] = {
 	{0x31, CRL_REG_LEN_08BIT, 0x80, 0x94},
 	{0xC9, CRL_REG_LEN_08BIT, 0x2D, 0x44},
 	{0x05, CRL_REG_LEN_08BIT, 0x41, 0xE0},
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
-	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
-	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
-	{0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
 };
 
 static struct crl_register_write_rep adv7481_hdmi_mode_480i[] = {
@@ -387,10 +360,6 @@ static struct crl_register_write_rep adv7481_hdmi_mode_480i[] = {
 	{0x31, CRL_REG_LEN_08BIT, 0x80, 0x94},
 	{0xC9, CRL_REG_LEN_08BIT, 0x2D, 0x44},
 	{0x05, CRL_REG_LEN_08BIT, 0x40, 0xE0},
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
-	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
-	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
-	{0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
 };
 
 static struct crl_register_write_rep adv7481_hdmi_powerup_regset[] = {
@@ -827,6 +796,71 @@ static struct crl_csi_data_fmt adv7481_hdmi_crl_csi_data_fmt[] = {
 	},
 };
 
+static const char * const adv7481_hdmi_test_pattern_menu[] = {
+	"default",
+	"30fps",
+	"50fps",
+	"60fps",
+	"real",
+};
+
+static struct crl_register_write_rep adv7481_hdmi_test_pattern_default_mode[] = {
+	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
+	{0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
+	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
+};
+
+static struct crl_register_write_rep adv7481_hdmi_test_pattern_30fps_mode[] = {
+	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
+	{0x03, CRL_REG_LEN_08BIT, 0xA6, 0xE0},
+	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
+	{0x37, CRL_REG_LEN_08BIT, 0x85, 0x44},
+};
+
+static struct crl_register_write_rep adv7481_hdmi_test_pattern_50fps_mode[] = {
+	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
+	{0x03, CRL_REG_LEN_08BIT, 0x96, 0xE0},
+	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
+	{0x37, CRL_REG_LEN_08BIT, 0x85, 0x44},
+};
+
+static struct crl_register_write_rep adv7481_hdmi_test_pattern_60fps_mode[] = {
+	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
+	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
+	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
+	{0x37, CRL_REG_LEN_08BIT, 0x85, 0x44},
+};
+
+static struct crl_register_write_rep adv7481_hdmi_real_mode[] = {
+	{0x00, CRL_REG_LEN_DELAY, 0x05, 0x00},
+	{0x03, CRL_REG_LEN_08BIT, 0x00, 0xE0},
+	{0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x00, 0xE0, 0xFD},
+	{0x37, CRL_REG_LEN_08BIT, 0x00, 0x44},
+};
+
+static struct crl_dep_reg_list adv7481_hdmi_test_pattern_fps_types_regs[] = {
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 0 },
+		ARRAY_SIZE(adv7481_hdmi_test_pattern_default_mode),
+		adv7481_hdmi_test_pattern_default_mode, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 1 },
+		ARRAY_SIZE(adv7481_hdmi_test_pattern_30fps_mode),
+		adv7481_hdmi_test_pattern_30fps_mode, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 2 },
+		ARRAY_SIZE(adv7481_hdmi_test_pattern_50fps_mode),
+		adv7481_hdmi_test_pattern_50fps_mode, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 3 },
+		ARRAY_SIZE(adv7481_hdmi_test_pattern_60fps_mode),
+		adv7481_hdmi_test_pattern_60fps_mode, 0, 0 },
+	{ CRL_DEP_CTRL_CONDITION_EQUAL,
+		{ CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST, 4 },
+		ARRAY_SIZE(adv7481_hdmi_real_mode),
+		adv7481_hdmi_real_mode, 0, 0 },
+};
+
 static struct crl_v4l2_ctrl adv7481_hdmi_v4l2_ctrls[] = {
 	{
 		.sd_type = CRL_SUBDEV_TYPE_BINNER,
@@ -883,6 +917,25 @@ static struct crl_v4l2_ctrl adv7481_hdmi_v4l2_ctrls[] = {
 		.data.std_data.def = 0,
 		.flags = 0,
 		.impact = CRL_IMPACTS_NO_IMPACT,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = V4L2_CID_TEST_PATTERN,
+		.name = "V4L2_CID_TEST_PATTERN",
+		.type = CRL_V4L2_CTRL_TYPE_MENU_ITEMS,
+		.data.v4l2_menu_items.menu = adv7481_hdmi_test_pattern_menu,
+		.data.v4l2_menu_items.size = ARRAY_SIZE(adv7481_hdmi_test_pattern_menu),
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.ctrl = 0,
+		.regs_items = 0,
+		.regs = 0,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.crl_ctrl_dep_reg_list = ARRAY_SIZE(adv7481_hdmi_test_pattern_fps_types_regs),
+		.dep_regs = adv7481_hdmi_test_pattern_fps_types_regs,
 	},
 };
 
