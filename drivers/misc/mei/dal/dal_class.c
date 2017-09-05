@@ -23,6 +23,7 @@
 #include "bh_cmd_defs.h"
 #include "bh_errcode.h"
 #include "dal_dev.h"
+#include "dal_cdev.h"
 
 /*
  * this class contains the 3 mei_cl_device, ivm, sdm, rtm.
@@ -613,6 +614,8 @@ static int dal_remove(struct mei_cl_device *cldev)
 	if (!ddev)
 		return 0;
 
+	dal_dev_del(ddev);
+
 	ddev->is_device_removed = 1;
 	/* make sure the above is set */
 	smp_mb();
@@ -675,25 +678,34 @@ static int dal_probe(struct mei_cl_device *cldev,
 	ddev->dev.release = dal_device_release;
 	dev_set_name(&ddev->dev, "dal%d", ddev->device_id);
 
+	dal_dev_setup(ddev);
+
 	ret = device_register(&ddev->dev);
 	if (ret) {
 		dev_err(pdev, "unable to register device\n");
-		goto err;
+		goto err_unregister;
 	}
 
 	ddev->bh_fw_msg.msg = kzalloc(DAL_MAX_BUFFER_SIZE, GFP_KERNEL);
 	if (!ddev->bh_fw_msg.msg) {
 		ret = -ENOMEM;
-		goto err;
+		goto err_unregister;
 	}
 
 	ret = dal_mei_enable(ddev);
 	if (ret < 0)
-		goto err;
+		goto err_unregister;
+
+	ret = dal_dev_add(ddev);
+	if (ret)
+		goto err_disable;
 
 	return 0;
 
-err:
+err_disable:
+	mei_cldev_set_drvdata(cldev, NULL);
+	mei_cldev_disable(cldev);
+err_unregister:
 	device_unregister(&ddev->dev);
 	return ret;
 }
@@ -739,6 +751,7 @@ static void __exit mei_dal_exit(void)
 {
 	mei_cldev_driver_unregister(&dal_driver);
 
+	dal_dev_exit();
 	class_destroy(dal_class);
 }
 
@@ -758,14 +771,22 @@ static int __init mei_dal_init(void)
 		return PTR_ERR(dal_class);
 	}
 
+	ret = dal_dev_init();
+	if (ret < 0) {
+		pr_err("failed allocate chrdev region = %d\n", ret);
+		goto err_class;
+	}
+
 	ret = mei_cldev_driver_register(&dal_driver);
 	if (ret < 0) {
 		pr_err("mei_cl_driver_register failed with status = %d\n", ret);
-		goto err_class;
+		goto err_dev;
 	}
 
 	return 0;
 
+err_dev:
+	dal_dev_exit();
 err_class:
 	class_destroy(dal_class);
 	return ret;
