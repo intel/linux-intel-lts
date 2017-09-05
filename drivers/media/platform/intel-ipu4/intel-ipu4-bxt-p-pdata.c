@@ -397,7 +397,7 @@ static struct crlmodule_platform_data ov10635_pdata = {
 	 * The number here stands for which GPIO to connect with.
 	 * 1 means to connect sensor xshutdown to GPIO1
 	 */
-	.xshutdown = 1,
+	.xshutdown = 0,
 };
 #endif
 
@@ -426,8 +426,8 @@ static struct crlmodule_platform_data ov10640_pdata = {
 #endif
 
 #ifdef CONFIG_VIDEO_TI964
-#define TI964_I2C_ADAPTER	0
-#define TI964_I2C_ADAPTER_2	7
+#define TI964_I2C_ADAPTER	4
+#define TI964_I2C_ADAPTER_2	11
 #define TI964_I2C_ADDRESS	0x3d
 #define TI964_LANES		4
 
