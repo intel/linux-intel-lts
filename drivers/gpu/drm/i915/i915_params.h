@@ -75,7 +75,8 @@ struct drm_printer;
 			PVMMIO_ELSP_SUBMIT | PVMMIO_PLANE_UPDATE \
 			| PVMMIO_PLANE_WM_UPDATE | PVMMIO_PPGTT_UPDATE \
 			| PVMMIO_GGTT_UPDATE ) \
-	param(bool, enable_gvt, false)
+	param(bool, enable_gvt, false) \
+	param(bool, enable_conformance_check, true)
 
 #define MEMBER(T, member, ...) T member;
 struct i915_params {
