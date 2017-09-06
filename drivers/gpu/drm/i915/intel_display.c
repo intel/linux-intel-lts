@@ -15818,12 +15818,15 @@ intel_modeset_setup_hw_state(struct drm_device *dev)
 	for_each_intel_encoder(dev, encoder) {
 		intel_sanitize_encoder(encoder);
 	}
+
 	for_each_pipe(dev_priv, pipe) {
 		crtc = intel_get_crtc_for_pipe(dev_priv, pipe);
 
-		intel_sanitize_crtc(crtc);
-		intel_dump_pipe_config(crtc, crtc->config,
-				       "[setup_hw_state]");
+		if (crtc) {
+			intel_sanitize_crtc(crtc);
+			intel_dump_pipe_config(crtc, crtc->config,
+					       "[setup_hw_state]");
+		}
 	}
 
 	intel_modeset_update_connector_atomic_state(dev);
