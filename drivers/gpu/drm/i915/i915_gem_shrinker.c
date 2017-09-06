@@ -35,18 +35,6 @@
 #include "i915_drv.h"
 #include "i915_trace.h"
 
-#ifdef CONFIG_PREEMPT_RT_FULL
-static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
-{
-	if (!mutex_trylock(&dev->struct_mutex)) {
-		*unlock = false;
-		return false;
-	} else {
-		*unlock = true;
-		return true;
-	}
-}
-#else
 static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 {
 	switch (mutex_trylock_recursive(&dev->struct_mutex)) {
@@ -64,7 +52,6 @@ static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 
 	BUG();
 }
-#endif
 
 static void i915_gem_shrinker_unlock(struct drm_device *dev, bool unlock)
 {
