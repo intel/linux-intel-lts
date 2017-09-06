@@ -712,7 +712,8 @@ static int dispatch_workload(struct intel_vgpu_workload *workload)
 
 	ret = intel_gvt_scan_and_shadow_workload(workload);
 
-	if (intel_gvt_vgpu_conformance_check(vgpu, ring_id))
+	if (i915_modparams.enable_conformance_check
+			&& intel_gvt_vgpu_conformance_check(vgpu, ring_id))
 		gvt_err("vgpu%d unconformance guest detected\n", vgpu->id);
 
 	if (ret)
