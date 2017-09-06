@@ -3467,12 +3467,6 @@ static int i915_display_info(struct seq_file *m, void *unused)
 		if (pipe_config->base.active) {
 			intel_crtc_info(m, crtc);
 
-			active = cursor_position(dev_priv, crtc->pipe, &x, &y);
-			seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x, active? %s\n",
-				   yesno(crtc->cursor_base),
-				   x, y, crtc->base.cursor->state->crtc_w,
-				   crtc->base.cursor->state->crtc_h,
-				   crtc->cursor_addr, yesno(active));
 			intel_scaler_info(m, crtc);
 			intel_plane_info(m, crtc);
 		}
