@@ -2931,15 +2931,17 @@ static int crlmodule_registered(struct v4l2_subdev *subdev)
 
 	/* Power up the sensor */
 	if (pm_runtime_get_sync(&client->dev) < 0) {
-		pm_runtime_put(&client->dev);
-		return -ENODEV;
+		rval = -ENODEV;
+		goto out;
 	}
 
 	/* init GPIO IRQ */
 	if (sensor->sensor_ds->irq_in_use == true) {
 		rval = crl_request_gpio_irq(sensor);
-		if (rval)
-			return -ENODEV;
+		if (rval) {
+			rval = -ENODEV;
+			goto out;
+		}
 	}
 
 	/* one time init */
@@ -2949,7 +2951,8 @@ static int crlmodule_registered(struct v4l2_subdev *subdev)
 	if (rval) {
 		dev_err(&client->dev, "%s failed to set powerup registers\n",
 				      __func__);
-		return -ENODEV;
+		rval = -ENODEV;
+		goto out;
 	}
 
 	/* sensor specific init */
@@ -2960,7 +2963,8 @@ static int crlmodule_registered(struct v4l2_subdev *subdev)
 			dev_err(&client->dev,
 				"%s failed to run sensor specific init\n",
 				__func__);
-			return -ENODEV;
+			rval = -ENODEV;
+			goto out;
 		}
 	}
 	/* Identify the module */
