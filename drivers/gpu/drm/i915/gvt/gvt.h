@@ -758,6 +758,8 @@ int intel_gvt_debugfs_init(struct intel_gvt *gvt);
 void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
 
 
+bool is_force_nonpriv_mmio(unsigned int offset);
+
 #include "trace.h"
 #include "mpt.h"
 
