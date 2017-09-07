@@ -11947,6 +11947,20 @@ static void intel_pipe_config_sanity_check(struct drm_i915_private *dev_priv,
 	}
 }
 
+static bool is_plane_avail_on_pipe(struct drm_i915_private *dev_priv, int plane,
+		enum pipe pipe)
+{
+	int planes_mask = 0;
+
+	/* non virtual or native environment */
+	if(!i915.avail_planes_per_pipe)
+		return true;
+	planes_mask = AVAIL_PLANE_PER_PIPE(dev_priv,
+			i915.avail_planes_per_pipe, pipe);
+	return (planes_mask & BIT(plane));
+
+}
+
 static void verify_wm_state(struct drm_crtc *crtc,
 			    struct drm_crtc_state *new_state)
 {
@@ -11970,6 +11984,8 @@ static void verify_wm_state(struct drm_crtc *crtc,
 
 	/* planes */
 	for_each_universal_plane(dev_priv, pipe, plane) {
+		if (!is_plane_avail_on_pipe(dev_priv, plane, pipe))
+			continue;
 		hw_plane_wm = &hw_wm.planes[plane];
 		sw_plane_wm = &sw_wm->planes[plane];
 
