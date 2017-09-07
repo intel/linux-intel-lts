@@ -490,11 +490,12 @@ static void bdw_update_port_irq(struct drm_i915_private *dev_priv,
  * @enabled_irq_mask: mask of interrupt bits to enable
  */
 void bdw_update_pipe_irq(struct drm_i915_private *dev_priv,
-			 enum pipe pipe,
+			 unsigned int crtc_index,
 			 uint32_t interrupt_mask,
 			 uint32_t enabled_irq_mask)
 {
 	uint32_t new_val;
+	enum pipe pipe;
 
 	assert_spin_locked(&dev_priv->irq_lock);
 
@@ -503,6 +504,7 @@ void bdw_update_pipe_irq(struct drm_i915_private *dev_priv,
 	if (WARN_ON(!intel_irqs_enabled(dev_priv)))
 		return;
 
+	pipe = get_pipe_from_crtc_index(&dev_priv->drm, crtc_index);
 	new_val = dev_priv->de_irq_mask[pipe];
 	new_val &= ~interrupt_mask;
 	new_val |= (~enabled_irq_mask & interrupt_mask);
@@ -767,9 +769,13 @@ static u32 i915_get_vblank_counter(struct drm_device *dev, unsigned int pipe)
 	return (((high1 << 8) | low) + (pixel >= vbl_start)) & 0xffffff;
 }
 
-static u32 g4x_get_vblank_counter(struct drm_device *dev, unsigned int pipe)
+static u32 g4x_get_vblank_counter(struct drm_device *dev,
+		unsigned int crtc_index)
 {
 	struct drm_i915_private *dev_priv = to_i915(dev);
+	enum pipe pipe;
+
+	pipe = get_pipe_from_crtc_index(dev, crtc_index);
 
 	return I915_READ(PIPE_FRMCOUNT_G4X(pipe));
 }
@@ -825,19 +831,22 @@ static int __intel_get_crtc_scanline(struct intel_crtc *crtc)
 	return (position + crtc->scanline_offset) % vtotal;
 }
 
-static int i915_get_crtc_scanoutpos(struct drm_device *dev, unsigned int pipe,
+static int i915_get_crtc_scanoutpos(struct drm_device *dev, unsigned int crtc_index,
 				    unsigned int flags, int *vpos, int *hpos,
 				    ktime_t *stime, ktime_t *etime,
 				    const struct drm_display_mode *mode)
 {
 	struct drm_i915_private *dev_priv = to_i915(dev);
-	struct intel_crtc *intel_crtc = intel_get_crtc_for_pipe(dev_priv,
-								pipe);
+	struct intel_crtc *intel_crtc;
+	enum pipe pipe;
 	int position;
 	int vbl_start, vbl_end, hsync_start, htotal, vtotal;
 	bool in_vbl = true;
 	int ret = 0;
 	unsigned long irqflags;
+
+	intel_crtc = get_intel_crtc_from_index(dev, crtc_index);
+	pipe = intel_crtc->pipe;
 
 	if (WARN_ON(!mode->crtc_clock)) {
 		DRM_DEBUG_DRIVER("trying to get scanoutpos for disabled "
@@ -962,7 +971,8 @@ int intel_get_crtc_scanline(struct intel_crtc *crtc)
 	return position;
 }
 
-static int i915_get_vblank_timestamp(struct drm_device *dev, unsigned int pipe,
+static int i915_get_vblank_timestamp(struct drm_device *dev,
+			      unsigned int crtc_index,
 			      int *max_error,
 			      struct timeval *vblank_time,
 			      unsigned flags)
@@ -970,25 +980,25 @@ static int i915_get_vblank_timestamp(struct drm_device *dev, unsigned int pipe,
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc *crtc;
 
-	if (pipe >= INTEL_INFO(dev_priv)->num_pipes) {
-		DRM_ERROR("Invalid crtc %u\n", pipe);
+	if (crtc_index >= INTEL_INFO(dev_priv)->num_pipes) {
+		DRM_ERROR("Invalid crtc %u\n", crtc_index);
 		return -EINVAL;
 	}
 
 	/* Get drm_crtc to timestamp: */
-	crtc = intel_get_crtc_for_pipe(dev_priv, pipe);
+	crtc = get_intel_crtc_from_index(dev, crtc_index);
 	if (crtc == NULL) {
-		DRM_ERROR("Invalid crtc %u\n", pipe);
+		DRM_ERROR("Invalid crtc %u\n", crtc_index);
 		return -EINVAL;
 	}
 
 	if (!crtc->base.hwmode.crtc_clock) {
-		DRM_DEBUG_KMS("crtc %u is disabled\n", pipe);
+		DRM_DEBUG_KMS("crtc %u is disabled\n", crtc_index);
 		return -EBUSY;
 	}
 
 	/* Helper routine in DRM core does all the work: */
-	return drm_calc_vbltimestamp_from_scanoutpos(dev, pipe, max_error,
+	return drm_calc_vbltimestamp_from_scanoutpos(dev, crtc_index, max_error,
 						     vblank_time, flags,
 						     &crtc->base.hwmode);
 }
@@ -1556,6 +1566,10 @@ static void display_pipe_crc_irq_handler(struct drm_i915_private *dev_priv,
 	uint32_t crcs[5];
 	int head, tail;
 
+	if (!crtc) {
+		DRM_DEBUG_KMS("No CRTC available for pipe %d\n", pipe);
+		return;
+	}
 	spin_lock(&pipe_crc->lock);
 	if (pipe_crc->source) {
 		if (!pipe_crc->entries) {
@@ -1575,7 +1589,8 @@ static void display_pipe_crc_irq_handler(struct drm_i915_private *dev_priv,
 
 		entry = &pipe_crc->entries[head];
 
-		entry->frame = driver->get_vblank_counter(&dev_priv->drm, pipe);
+		entry->frame = driver->get_vblank_counter(&dev_priv->drm,
+				drm_crtc_index(&crtc->base));
 		entry->crc[0] = crc0;
 		entry->crc[1] = crc1;
 		entry->crc[2] = crc2;
@@ -1731,8 +1746,9 @@ static bool intel_pipe_handle_vblank(struct drm_i915_private *dev_priv,
 				     enum pipe pipe)
 {
 	bool ret;
+	struct intel_crtc *crtc = intel_get_crtc_for_pipe(dev_priv, pipe);
 
-	ret = drm_handle_vblank(&dev_priv->drm, pipe);
+	ret = drm_handle_vblank(&dev_priv->drm, drm_crtc_index(&crtc->base));
 	if (ret)
 		intel_finish_page_flip_mmio(dev_priv, pipe);
 
