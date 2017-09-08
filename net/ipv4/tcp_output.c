@@ -1027,7 +1027,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	skb_shinfo(skb)->gso_size = tcp_skb_mss(skb);
 
 	/* Our usage of tstamp should remain private */
-	skb->tstamp.tv64 = 0;
+	skb->tstamp = 0;
 
 	/* Cleanup our debris for IP stacks */
 	memset(skb->cb, 0, max(sizeof(struct inet_skb_parm),
@@ -3130,7 +3130,7 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 #endif
 
 	/* Do not fool tcpdump (if any), clean our debris */
-	skb->tstamp.tv64 = 0;
+	skb->tstamp = 0;
 	return skb;
 }
 EXPORT_SYMBOL(tcp_make_synack);
@@ -3343,6 +3343,9 @@ int tcp_connect(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *buff;
 	int err;
+
+	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
+		return -EHOSTUNREACH; /* Routing failure or similar. */
 
 	tcp_connect_init(sk);
 
