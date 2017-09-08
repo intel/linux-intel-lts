@@ -119,6 +119,11 @@ static int etnaviv_iommu_find_iova(struct etnaviv_iommu *mmu,
 		struct list_head list;
 		bool found;
 
+		/*
+		 * XXX: The DRM_MM_SEARCH_BELOW is really a hack to trick
+		 * drm_mm into giving out a low IOVA after address space
+		 * rollover. This needs a proper fix.
+		 */
 		ret = drm_mm_insert_node_in_range(&mmu->mm, node,
 						  size, 0, 0,
 						  mmu->last_iova, U64_MAX,
