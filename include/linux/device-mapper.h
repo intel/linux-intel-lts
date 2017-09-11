@@ -529,6 +529,11 @@ struct dm_table *dm_swap_table(struct mapped_device *md,
  */
 void *dm_vcalloc(unsigned long nmemb, unsigned long elem_size);
 
+/*
+ * Helper function to parse DM arguments
+ */
+int dm_split_args(int *argc, char ***argvp, char *input);
+
 /*-----------------------------------------------------------------
  * Macros.
  *---------------------------------------------------------------*/
