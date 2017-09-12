@@ -877,6 +877,8 @@ static int skl_trace_compr_tstamp(struct snd_compr_stream *stream,
 		return -EINVAL;
 
 	tstamp->copied_total = skl_dsp_log_avail(sst, core);
+	tstamp->sampling_rate = snd_pcm_rate_bit_to_rate(cpu_dai->driver->capture.rates);
+
 	return 0;
 }
 
@@ -1359,6 +1361,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "TraceBuffer0 Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.rate_min = 48000,
+		.rate_max = 48000,
 	},
 },
 {
@@ -1369,6 +1374,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "TraceBuffer1 Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.rate_min = 48000,
+		.rate_max = 48000,
 	},
 },
 {
@@ -1379,6 +1387,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "TraceBuffer2 Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.rate_min = 48000,
+		.rate_max = 48000,
 	},
 },
 {
@@ -1389,6 +1400,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "TraceBuffer3 Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.rate_min = 48000,
+		.rate_max = 48000,
 	},
 },
 {
