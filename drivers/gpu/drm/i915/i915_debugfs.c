@@ -3178,15 +3178,23 @@ static void intel_crtc_info(struct seq_file *m, struct intel_crtc *intel_crtc)
 	struct drm_device *dev = &dev_priv->drm;
 	struct drm_crtc *crtc = &intel_crtc->base;
 	struct intel_encoder *intel_encoder;
-	struct drm_plane_state *plane_state = crtc->primary->state;
-	struct drm_framebuffer *fb = plane_state->fb;
+	struct drm_plane_state *plane_state;
+	struct drm_framebuffer *fb;
 
-	if (fb)
-		seq_printf(m, "\tfb: %d, pos: %dx%d, size: %dx%d\n",
+	if (!crtc->primary) {
+		seq_puts(m, "\tno primary plane\n");
+	} else {
+		plane_state = crtc->primary->state;
+		fb = plane_state->fb;
+
+		if (fb)
+			seq_printf(m, "\tfb: %d, pos: %dx%d, size: %dx%d\n",
 			   fb->base.id, plane_state->src_x >> 16,
 			   plane_state->src_y >> 16, fb->width, fb->height);
-	else
-		seq_puts(m, "\tprimary plane disabled\n");
+		else
+			seq_puts(m, "\tprimary plane disabled\n");
+	}
+
 	for_each_encoder_on_crtc(dev, crtc, intel_encoder)
 		intel_encoder_info(m, intel_crtc, intel_encoder);
 }

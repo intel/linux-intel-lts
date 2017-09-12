@@ -4955,8 +4955,8 @@ static void intel_post_plane_update(struct intel_crtc_state *old_crtc_state)
 	struct intel_crtc_state *pipe_config =
 		to_intel_crtc_state(crtc->base.state);
 	struct drm_plane *primary = crtc->base.primary;
-	struct drm_plane_state *old_pri_state =
-		drm_atomic_get_existing_plane_state(old_state, primary);
+	struct drm_plane_state *old_pri_state = primary ?
+		drm_atomic_get_existing_plane_state(old_state, primary) : NULL;
 
 	intel_frontbuffer_flip(to_i915(crtc->base.dev), pipe_config->fb_bits);
 
@@ -4989,8 +4989,8 @@ static void intel_pre_plane_update(struct intel_crtc_state *old_crtc_state)
 		to_intel_crtc_state(crtc->base.state);
 	struct drm_atomic_state *old_state = old_crtc_state->base.state;
 	struct drm_plane *primary = crtc->base.primary;
-	struct drm_plane_state *old_pri_state =
-		drm_atomic_get_existing_plane_state(old_state, primary);
+	struct drm_plane_state *old_pri_state = primary ?
+		drm_atomic_get_existing_plane_state(old_state, primary) : NULL;
 	bool modeset = needs_modeset(&pipe_config->base);
 	struct intel_atomic_state *old_intel_state =
 		to_intel_atomic_state(old_state);
@@ -11605,7 +11605,8 @@ intel_modeset_update_crtc_state(struct drm_atomic_state *state)
 		 * Update legacy state to satisfy fbc code. This can
 		 * be removed when fbc uses the atomic state.
 		 */
-		if (drm_atomic_get_existing_plane_state(state, crtc->primary)) {
+		if (crtc->primary &&
+			drm_atomic_get_existing_plane_state(state, crtc->primary)) {
 			struct drm_plane_state *plane_state = crtc->primary->state;
 
 			crtc->primary->fb = plane_state->fb;
@@ -12855,7 +12856,8 @@ static void intel_update_crtc(struct drm_crtc *crtc,
 		intel_pre_plane_update(to_intel_crtc_state(old_crtc_state));
 	}
 
-	if (drm_atomic_get_existing_plane_state(state, crtc->primary)) {
+	if (crtc->primary &&
+		drm_atomic_get_existing_plane_state(state, crtc->primary)) {
 		intel_fbc_enable(
 		    intel_crtc, pipe_config,
 		    to_intel_plane_state(crtc->primary->state));
@@ -14227,8 +14229,7 @@ static int intel_crtc_init(struct drm_i915_private *dev_priv, enum pipe pipe, in
 	/* initialize shared scalers */
 	intel_crtc_init_scalers(intel_crtc, crtc_state);
 
-	BUG_ON(pipe >= ARRAY_SIZE(dev_priv->plane_to_crtc_mapping) ||
-	       dev_priv->plane_to_crtc_mapping[intel_crtc->plane] != NULL);
+	BUG_ON(pipe >= ARRAY_SIZE(dev_priv->plane_to_crtc_mapping));
 	dev_priv->plane_to_crtc_mapping[intel_crtc->plane] = intel_crtc;
 	dev_priv->pipe_to_crtc_mapping[intel_crtc->pipe] = intel_crtc;
 
