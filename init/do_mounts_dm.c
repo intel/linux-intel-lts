@@ -343,6 +343,47 @@ parse_fail:
 	return 0;
 }
 
+/* Number of milliseconds to wait before checking for drive status */
+#define DM_DRIVE_WAIT			20
+/* Number of tries allowed to wait for DM drive, before timeout */
+#define DM_DRIVE_RETRY_COUNT		100
+
+static int __init dm_wait_for_drive(char *params)
+{
+	char *dm_params;
+	int ret, argc = 0, try = 0;
+	char **argv;
+	dev_t dm_dev;
+
+	dm_params = kstrndup(params, strlen(params), GFP_KERNEL);
+	if (!dm_params)
+		return -ENOMEM;
+
+	ret = dm_split_args(&argc, &argv, dm_params);
+	if (ret || argc < 2) {
+		DMDEBUG("failed to get dm params");
+		goto free_dm_params;
+	}
+
+	dm_dev = dm_get_dev_t(argv[1]);
+	while (!dm_dev && try++ < DM_DRIVE_RETRY_COUNT) {
+		DMDEBUG("Waiting for device %s\n", argv[1]);
+		msleep(DM_DRIVE_WAIT);
+		dm_dev = dm_get_dev_t(argv[1]);
+	}
+
+	if (!dm_dev) {
+		ret = -ENODEV;
+		goto free_dm_params;
+	}
+
+	DMDEBUG("Device %s found\n", argv[1]);
+
+free_dm_params:
+	kfree(dm_params);
+	return ret;
+}
+
 static void __init dm_setup_drives(void)
 {
 	struct mapped_device *md = NULL;
@@ -382,6 +423,10 @@ static void __init dm_setup_drives(void)
 			       (unsigned long long) target->begin,
 			       (unsigned long long) target->length,
 			       target->type, target->params);
+
+			if (dm_wait_for_drive(target->params))
+				goto add_target_fail;
+
 			if (dm_table_add_target(table, target->type,
 						target->begin,
 						target->length,
