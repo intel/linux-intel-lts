@@ -478,8 +478,11 @@ int drm_mode_set_config_internal(struct drm_mode_set *set)
 	 * connectors from it), hence we need to refcount the fbs across all
 	 * crtcs. Atomic modeset will have saner semantics ...
 	 */
-	drm_for_each_crtc(tmp, crtc->dev)
+	drm_for_each_crtc(tmp, crtc->dev) {
+		if (!tmp->primary)
+			continue;
 		tmp->primary->old_fb = tmp->primary->fb;
+	}
 
 	fb = set->fb;
 
@@ -490,6 +493,8 @@ int drm_mode_set_config_internal(struct drm_mode_set *set)
 	}
 
 	drm_for_each_crtc(tmp, crtc->dev) {
+		if (!tmp->primary)
+			continue;
 		if (tmp->primary->fb)
 			drm_framebuffer_reference(tmp->primary->fb);
 		if (tmp->primary->old_fb)

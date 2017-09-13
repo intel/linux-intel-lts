@@ -185,6 +185,8 @@ static void __drm_helper_disable_unused_functions(struct drm_device *dev)
 				(*crtc_funcs->disable)(crtc);
 			else
 				(*crtc_funcs->dpms)(crtc, DRM_MODE_DPMS_OFF);
+			if (!crtc->primary)
+				continue;
 			crtc->primary->fb = NULL;
 		}
 	}
@@ -951,6 +953,8 @@ void drm_helper_resume_force_mode(struct drm_device *dev)
 	drm_for_each_crtc(crtc, dev) {
 
 		if (!crtc->enabled)
+			continue;
+		if (!crtc->primary)
 			continue;
 
 		ret = drm_crtc_helper_set_mode(crtc, &crtc->mode,
