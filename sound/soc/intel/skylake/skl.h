@@ -145,7 +145,6 @@ struct skl {
 	bool mod_set_get_status;
 	struct skl_fw_cfg_info cfg;
 	u8 nr_modules;
-	u8 conf_version;
 	struct skl_module **modules;
 };
 
