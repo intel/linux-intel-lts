@@ -2329,6 +2329,9 @@ int __drm_atomic_helper_set_config(struct drm_mode_set *set,
 	int hdisplay, vdisplay;
 	int ret;
 
+	if (!crtc->primary)
+		return -EINVAL;
+
 	crtc_state = drm_atomic_get_crtc_state(state, crtc);
 	if (IS_ERR(crtc_state))
 		return PTR_ERR(crtc_state);

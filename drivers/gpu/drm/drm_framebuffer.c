@@ -776,7 +776,7 @@ void drm_framebuffer_remove(struct drm_framebuffer *fb)
 		drm_modeset_lock_all(dev);
 		/* remove from any CRTC */
 		drm_for_each_crtc(crtc, dev) {
-			if (crtc->primary->fb == fb) {
+			if (crtc->primary->fb == fb && crtc->primary->fb == fb) {
 				/* should turn off the crtc */
 				if (drm_crtc_force_disable(crtc))
 					DRM_ERROR("failed to reset crtc %p when fb was deleted\n", crtc);

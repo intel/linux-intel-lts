@@ -413,6 +413,9 @@ int drm_mode_getcrtc(struct drm_device *dev,
 	if (!crtc)
 		return -ENOENT;
 
+	if (!crtc->primary)
+		return -EINVAL;
+
 	drm_modeset_lock_crtc(crtc, crtc->primary);
 	crtc_resp->gamma_size = crtc->gamma_size;
 
@@ -466,6 +469,9 @@ int drm_mode_set_config_internal(struct drm_mode_set *set)
 	struct drm_framebuffer *fb;
 	struct drm_crtc *tmp;
 	int ret;
+
+	if (!crtc->primary)
+		return -EINVAL;
 
 	/*
 	 * NOTE: ->set_config can also disable other crtcs (if we steal all
@@ -569,6 +575,9 @@ int drm_mode_setcrtc(struct drm_device *dev, void *data,
 		goto out;
 	}
 	DRM_DEBUG_KMS("[CRTC:%d:%s]\n", crtc->base.id, crtc->name);
+
+	if (!crtc->primary)
+		return -EINVAL;
 
 	if (crtc_req->mode_valid) {
 		/* If we have a mode we need a framebuffer. */
