@@ -511,6 +511,14 @@ out_clean_idr:
 	return ret;
 }
 
+int gvt_dom0_ready(struct drm_i915_private *dev_priv)
+{
+	if (!intel_gvt_active(dev_priv))
+		return 0;
+
+	return intel_gvt_hypervisor_dom0_ready();
+}
+
 #if IS_ENABLED(CONFIG_DRM_I915_GVT_KVMGT)
 MODULE_SOFTDEP("pre: kvmgt");
 #endif

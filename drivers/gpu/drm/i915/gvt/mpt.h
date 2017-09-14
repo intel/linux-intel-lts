@@ -362,4 +362,12 @@ static inline bool intel_gvt_hypervisor_is_valid_gfn(
 	return intel_gvt_host.mpt->is_valid_gfn(vgpu->handle, gfn);
 }
 
+static inline int intel_gvt_hypervisor_dom0_ready(void)
+{
+	if (!intel_gvt_host.mpt->dom0_ready)
+		return 0;
+
+	return intel_gvt_host.mpt->dom0_ready();
+}
+
 #endif /* _GVT_MPT_H_ */
