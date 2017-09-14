@@ -20,11 +20,11 @@
 
 #define IMX274_REG_STANDBY              0x3000  /* STBLOGIC STBMIPI STBDV */
 
-#define IMX274_HMAX                      65535
-#define IMX274_VMAX                      131071
-#define IMX274_MAX_SHS1		(IMX274_VMAX - 2)
-#define IMX274_MAX_SHS2		(IMX274_VMAX - 2)
-#define IMX274_MAX_RHS1		(IMX274_VMAX - 2)
+#define IMX274_HMAX                      65536
+#define IMX274_VMAX                      1048576
+#define IMX274_MAX_SHS1		(IMX274_VMAX - 2236)
+#define IMX274_MAX_SHS2		(IMX274_VMAX - 4)
+#define IMX274_MAX_RHS1		(IMX274_VMAX - 2234)
 
 /* imx274 mode standby cancel sequence */
 static struct crl_register_write_rep imx274_powerup_standby[] = {
