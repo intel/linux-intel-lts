@@ -49,6 +49,10 @@
 #include <linux/dma_remapping.h>
 #include <linux/reservation.h>
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+#include "gvt.h"
+#endif
+
 /* Primary plane formats for gen <= 3 */
 static const uint32_t i8xx_primary_formats[] = {
 	DRM_FORMAT_C8,
@@ -14323,6 +14327,15 @@ static void intel_setup_outputs(struct drm_i915_private *dev_priv)
 		encoder->base.possible_clones =
 			intel_encoder_clones(encoder);
 	}
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	/*
+	 * Encoders have been initialized. If we are in VGT mode,
+	 * let's inform the HV that it can start Dom U as Dom 0
+	 * is ready to accept new Dom Us.
+	 */
+	gvt_dom0_ready(dev_priv);
+#endif
 
 	intel_init_pch_refclk(dev_priv);
 
