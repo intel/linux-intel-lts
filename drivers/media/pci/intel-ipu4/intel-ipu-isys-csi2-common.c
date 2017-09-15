@@ -800,6 +800,8 @@ int intel_ipu_isys_csi2_init(struct intel_ipu4_isys_csi2 *csi2,
 	csi2->av_meta.aq.fill_frame_buff_set_pin =
 		intel_ipu4_isys_buffer_list_to_ipu_fw_isys_frame_buff_set_pin;
 	csi2->av_meta.aq.link_fmt_validate = intel_ipu4_isys_link_fmt_validate;
+	csi2->av_meta.aq.vbq.buf_struct_size =
+		sizeof(struct intel_ipu4_isys_video_buffer);
 
 	rval = intel_ipu4_isys_video_init(
 		&csi2->av_meta, &csi2->asd.sd.entity, CSI2_PAD_META,
