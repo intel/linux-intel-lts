@@ -214,7 +214,7 @@ static void ack_message(struct pd_sink_port *port, int msg_id)
 {
 	struct pd_msg_header *header = kzalloc(PD_MSG_HEADER_LEN, GFP_KERNEL);
 
-	if (!header) {
+	if (header) {
 		MAKE_HEADER(port, header, PD_CMSG_GOODCRC, 0);
 		send_message(port, header, PD_MSG_HEADER_LEN,
 				PD_CMSG_GOODCRC, true, SOP);
