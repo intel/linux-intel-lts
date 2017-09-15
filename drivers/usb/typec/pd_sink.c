@@ -218,7 +218,8 @@ static void ack_message(struct pd_sink_port *port, int msg_id)
 		MAKE_HEADER(port, header, PD_CMSG_GOODCRC, 0);
 		send_message(port, header, PD_MSG_HEADER_LEN,
 				PD_CMSG_GOODCRC, true, SOP);
-}	}
+	}
+}
 
 static int handle_goodcrc(struct pd_sink_port *port, u8 msg_id)
 {
@@ -479,9 +480,13 @@ static int send_request(struct pd_sink_port *port)
 					PD_OBJ_SIZE, GFP_KERNEL);
 	bool voltage_matched = false, current_matched = false;
 
+	if (!header)
+		return -ENOMEM;
+
 	/* Only support fixed PDO for now */
 	if (ps->ps_type != PS_TYPE_FIXED) {
 		pr_err("%s(): We only support fixed PDO now\n", __func__);
+		kfree(header);
 		return -EINVAL;
 	}
 
@@ -502,6 +507,7 @@ static int send_request(struct pd_sink_port *port)
 
 	if (!voltage_matched) {
 		pr_err("Can't match any PDO from source caps\n");
+		kfree(header);
 		return -EINVAL;
 	}
 
