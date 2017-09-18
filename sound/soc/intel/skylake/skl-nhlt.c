@@ -28,6 +28,8 @@ static guid_t osc_guid =
 	GUID_INIT(0xA69F886E, 0x6CEB, 0x4594,
 		  0xA4, 0x1F, 0x7B, 0x5D, 0xCE, 0x24, 0xC5, 0x53);
 
+#define NHLT_ACPI_HEADER_SIG	"NHLT"
+
 int skl_get_nhlt_version(struct device *dev)
 {
 	const char *version;
