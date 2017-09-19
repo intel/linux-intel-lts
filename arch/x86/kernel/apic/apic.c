@@ -2070,7 +2070,7 @@ static int allocate_logical_cpuid(int apicid)
 	return nr_logical_cpuids++;
 }
 
-int generic_processor_info(int apicid, int version)
+int __generic_processor_info(int apicid, int version, bool enabled)
 {
 	int cpu, max = nr_cpu_ids;
 	bool boot_cpu_detected = physid_isset(boot_cpu_physical_apicid,
@@ -2128,9 +2128,11 @@ int generic_processor_info(int apicid, int version)
 	if (num_processors >= nr_cpu_ids) {
 		int thiscpu = max + disabled_cpus;
 
-		pr_warning("APIC: NR_CPUS/possible_cpus limit of %i "
-			   "reached. Processor %d/0x%x ignored.\n",
-			   max, thiscpu, apicid);
+		if (enabled) {
+			pr_warning("APIC: NR_CPUS/possible_cpus limit of %i "
+				   "reached. Processor %d/0x%x ignored.\n",
+				   max, thiscpu, apicid);
+		}
 
 		disabled_cpus++;
 		return -EINVAL;
@@ -2182,11 +2184,21 @@ int generic_processor_info(int apicid, int version)
 		apic->x86_32_early_logical_apicid(cpu);
 #endif
 	set_cpu_possible(cpu, true);
-	physid_set(apicid, phys_cpu_present_map);
-	set_cpu_present(cpu, true);
-	num_processors++;
+
+	if (enabled) {
+		num_processors++;
+		physid_set(apicid, phys_cpu_present_map);
+		set_cpu_present(cpu, true);
+	} else {
+		disabled_cpus++;
+	}
 
 	return cpu;
+}
+
+int generic_processor_info(int apicid, int version)
+{
+	return __generic_processor_info(apicid, version, true);
 }
 
 int hard_smp_processor_id(void)
