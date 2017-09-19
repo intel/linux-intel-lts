@@ -16,6 +16,7 @@
 
 #include "ia_css_syscom_context.h"
 #include "ia_css_syscom_config_fw.h"
+#include "ia_css_syscom_trace.h"
 
 #include "queue.h"
 #include "send_port.h"
@@ -238,6 +239,8 @@ ia_css_syscom_open(
 	unsigned int i;
 	struct sys_queue_res res;
 
+	IA_CSS_TRACE_1(SYSCOM, INFO, "ia_css_syscom_open (secure %d) start\n", cfg->secure);
+
 	/* error handling */
 	if (cfg == NULL)
 		return NULL;
@@ -345,18 +348,25 @@ ia_css_syscom_open(
 				    sizeof(struct ia_css_syscom_config_fw));
 
 	/* store syscom uninitialized state */
+	IA_CSS_TRACE_3(SYSCOM, INFO, "ia_css_syscom_open store STATE_REG (%#x) @ dmem_addr %#x ssid %d\n",
+		       SYSCOM_STATE_UNINIT, ctx->cell_dmem_addr, cfg->ssid);
 	regmem_store_32(ctx->cell_dmem_addr, SYSCOM_STATE_REG,
 			SYSCOM_STATE_UNINIT, cfg->ssid);
 	/* store syscom uninitialized command */
+	IA_CSS_TRACE_3(SYSCOM, INFO, "ia_css_syscom_open store COMMAND_REG (%#x) @ dmem_addr %#x ssid %d\n",
+		       SYSCOM_COMMAND_UNINIT, ctx->cell_dmem_addr, cfg->ssid);
 	regmem_store_32(ctx->cell_dmem_addr, SYSCOM_COMMAND_REG,
 			SYSCOM_COMMAND_UNINIT, cfg->ssid);
 	/* store firmware configuration address */
+	IA_CSS_TRACE_3(SYSCOM, INFO, "ia_css_syscom_open store CONFIG_REG (%#x) @ dmem_addr %#x ssid %d\n",
+		       ctx->config_vied_addr, ctx->cell_dmem_addr, cfg->ssid);
 	regmem_store_32(ctx->cell_dmem_addr, SYSCOM_CONFIG_REG,
 			ctx->config_vied_addr, cfg->ssid);
 
 	/* Indicate if ctx is created for secure stream purpose */
 	ctx->secure = cfg->secure;
 
+	IA_CSS_TRACE_1(SYSCOM, INFO, "ia_css_syscom_open (secure %d) completed\n", cfg->secure);
 	return ctx;
 }
 
