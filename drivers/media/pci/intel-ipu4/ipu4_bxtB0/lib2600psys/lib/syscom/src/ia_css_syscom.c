@@ -239,11 +239,13 @@ ia_css_syscom_open(
 	unsigned int i;
 	struct sys_queue_res res;
 
-	IA_CSS_TRACE_1(SYSCOM, INFO, "ia_css_syscom_open (secure %d) start\n", cfg->secure);
+	IA_CSS_TRACE_0(SYSCOM, INFO, "Entered: ia_css_syscom_open\n");
 
 	/* error handling */
 	if (cfg == NULL)
 		return NULL;
+
+	IA_CSS_TRACE_1(SYSCOM, INFO, "ia_css_syscom_open (secure %d) start\n", cfg->secure);
 
 	/* check members of cfg: TBD */
 
