@@ -987,11 +987,12 @@ int ia_css_terminal_manifest_print(
 		ia_css_frame_grid_param_manifest_section_desc_t *sec;
 		int sec_count =
 			stm->frame_grid_param_manifest_section_desc_count;
+		int sec_index;
+#if ((PSYSAPI_TRACE_CONFIG == PSYSAPI_TRACE_LOG_LEVEL_NORMAL) || (PSYSAPI_TRACE_CONFIG == PSYSAPI_TRACE_LOG_LEVEL_DEBUG))
 		ia_css_fragment_grid_manifest_desc_t *fragd =
 			&stm->common_fragment_grid_desc;
 		ia_css_frame_grid_manifest_desc_t *framed =
 			&stm->frame_grid_desc;
-		int sec_index;
 
 		IA_CSS_TRACE_1(PSYSAPI_STATIC, INFO, "kernel_id:\t\t%d\n",
 			stm->kernel_id);
@@ -1006,7 +1007,7 @@ int ia_css_terminal_manifest_print(
 			framed->min_frame_grid_dimension);
 		PRINT_DIMENSION("max_frame_grid_dimension",
 			framed->max_frame_grid_dimension);
-
+#endif
 		for (sec_index = 0; sec_index < sec_count; sec_index++) {
 			sec = ia_css_spatial_param_terminal_manifest_get_frm_grid_prm_sct_desc(
 				stm, sec_index);
