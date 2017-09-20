@@ -241,6 +241,9 @@ EXPORT_SYMBOL_GPL(alarm_expires_remaining);
  */
 static int alarmtimer_suspend(struct device *dev)
 {
+#ifdef CONFIG_ANDROID_AUTO_SUSPEND_BEHAVIOR
+	return 0;
+#else
 	ktime_t min, now, expires;
 	int i, ret, type;
 	struct rtc_device *rtc;
@@ -298,6 +301,7 @@ static int alarmtimer_suspend(struct device *dev)
 	if (ret < 0)
 		pm_wakeup_event(dev, MSEC_PER_SEC);
 	return ret;
+#endif
 }
 
 static int alarmtimer_resume(struct device *dev)
