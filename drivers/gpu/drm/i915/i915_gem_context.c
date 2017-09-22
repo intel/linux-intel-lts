@@ -285,6 +285,7 @@ __create_hw_context(struct drm_i915_private *dev_priv,
 	kref_init(&ctx->ref);
 	list_add_tail(&ctx->link, &dev_priv->context_list);
 	ctx->i915 = dev_priv;
+	ctx->priority = I915_PRIORITY_NORMAL;
 
 	ctx->ggtt_alignment = get_context_alignment(dev_priv);
 
@@ -1355,6 +1356,9 @@ int i915_gem_context_getparam_ioctl(struct drm_device *dev, void *data,
 	case I915_CONTEXT_PARAM_TRTT:
 		ret = intel_context_get_trtt(ctx, args);
 		break;
+	case I915_CONTEXT_PARAM_PRIORITY:
+		args->value = ctx->priority;
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -1425,6 +1429,24 @@ int i915_gem_context_setparam_ioctl(struct drm_device *dev, void *data,
 		break;
 	case I915_CONTEXT_PARAM_TRTT:
 		ret = intel_context_set_trtt(ctx, args);
+		break;
+	case I915_CONTEXT_PARAM_PRIORITY:
+		{
+			int priority = args->value;
+
+			if (args->size)
+				ret = -EINVAL;
+			else if (!to_i915(dev)->engine[RCS]->schedule)
+				ret = -ENODEV;
+			else if (priority > I915_CONTEXT_MAX_USER_PRIORITY ||
+				 priority < I915_CONTEXT_MIN_USER_PRIORITY)
+				ret = -EINVAL;
+			else if (priority > I915_CONTEXT_DEFAULT_PRIORITY &&
+				 !capable(CAP_SYS_NICE))
+				ret = -EPERM;
+			else
+				ctx->priority = priority;
+		}
 		break;
 	default:
 		ret = -EINVAL;
