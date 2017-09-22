@@ -24,6 +24,17 @@
 #include "intel_lrc.h"
 #include "intel_ringbuffer.h"
 
+/* structures required */
+struct drm_i915_mocs_entry {
+	u32 control_value;
+	u16 l3cc_value;
+};
+
+struct drm_i915_mocs_table {
+	u32 size;
+	const struct drm_i915_mocs_entry *table;
+};
+
 /* Defines for the tables (XXX_MOCS_0 - XXX_MOCS_63) */
 #define LE_CACHEABILITY(value)	((value) << 0)
 #define LE_TGT_CACHE(value)	((value) << 2)
@@ -149,6 +160,49 @@ static const struct drm_i915_mocs_entry broxton_mocs_table[] = {
 	  .l3cc_value =    L3_ESC(0) | L3_SCC(0) | L3_CACHEABILITY(L3_WB),
 	},
 };
+
+/**
+ * get_mocs_settings()
+ * @dev_priv:	i915 device.
+ * @table:      Output table that will be made to point at appropriate
+ *	      MOCS values for the device.
+ *
+ * This function will return the values of the MOCS table that needs to
+ * be programmed for the platform. It will return the values that need
+ * to be programmed and if they need to be programmed.
+ *
+ * Return: true if there are applicable MOCS settings for the device.
+ */
+static bool get_mocs_settings(struct drm_i915_private *dev_priv,
+			      struct drm_i915_mocs_table *table)
+{
+	bool result = false;
+
+	if (IS_GEN9_BC(dev_priv)) {
+		table->size  = ARRAY_SIZE(skylake_mocs_table);
+		table->table = skylake_mocs_table;
+		result = true;
+	} else if (IS_GEN9_LP(dev_priv)) {
+		table->size  = ARRAY_SIZE(broxton_mocs_table);
+		table->table = broxton_mocs_table;
+		result = true;
+	} else {
+		WARN_ONCE(INTEL_INFO(dev_priv)->gen >= 9,
+			  "Platform that should have a MOCS table does not.\n");
+	}
+
+	/* WaDisableSkipCaching:skl,bxt,kbl,glk */
+	if (IS_GEN9(dev_priv)) {
+		int i;
+
+		for (i = 0; i < table->size; i++)
+			if (WARN_ON(table->table[i].l3cc_value &
+				    (L3_ESC(1) | L3_SCC(0x7))))
+				return false;
+	}
+
+	return result;
+}
 
 static i915_reg_t mocs_register(enum intel_engine_id engine_id, int index)
 {
