@@ -58,7 +58,7 @@ static struct intel_ipu4_isys_subdev_info adv7481_cvbs_crl_sd = {
 			 .addr = ADV7481_I2C_ADDRESS,
 			 .platform_data = &adv7481_cvbs_pdata,
 		},
-		.i2c_adapter_id = 6,
+		.i2c_adapter_id = 4,
 	}
 };
 
@@ -87,7 +87,7 @@ static struct intel_ipu4_isys_subdev_info adv7481_hdmi_crl_sd = {
 			 .addr = ADV7481_HDMI_I2C_ADDRESS,
 			 .platform_data = &adv7481_hdmi_pdata,
 		},
-		.i2c_adapter_id = 6,
+		.i2c_adapter_id = 4,
 	}
 };
 
