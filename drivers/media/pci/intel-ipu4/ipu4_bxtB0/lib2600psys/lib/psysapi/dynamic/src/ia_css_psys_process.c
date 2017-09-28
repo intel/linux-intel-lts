@@ -903,7 +903,7 @@ int ia_css_process_print(const ia_css_process_t *process, void *fid)
 			(int)mem_id,
 			process->int_mem_offset[mem_index]);
 	}
-
+#if ((PSYSAPI_TRACE_CONFIG == PSYSAPI_TRACE_LOG_LEVEL_NORMAL) || (PSYSAPI_TRACE_CONFIG == PSYSAPI_TRACE_LOG_LEVEL_DEBUG))
 	for (mem_index = 0; mem_index < (int)VIED_NCI_N_DATA_MEM_TYPE_ID;
 		mem_index++) {
 		vied_nci_mem_ID_t mem_id =
@@ -918,6 +918,7 @@ int ia_css_process_print(const ia_css_process_t *process, void *fid)
 			(int)mem_id,
 			process->ext_mem_offset[mem_index]);
 	}
+#endif
 	for (dev_chn_index = 0; dev_chn_index < (int)VIED_NCI_N_DEV_CHN_ID;
 		dev_chn_index++) {
 		IA_CSS_TRACE_3(PSYSAPI_DYNAMIC, INFO,
