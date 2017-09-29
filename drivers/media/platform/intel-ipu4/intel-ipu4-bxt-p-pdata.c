@@ -81,7 +81,7 @@ static struct intel_ipu4_isys_subdev_info imx185_crl_sd = {
 			 I2C_BOARD_INFO(CRLMODULE_NAME, IMX185_I2C_ADDRESS),
 			.platform_data = &imx185_pdata,
 		},
-		.i2c_adapter_id = 2,
+		.i2c_adapter_id = 6,
 	}
 };
 
@@ -107,7 +107,7 @@ static struct intel_ipu4_isys_subdev_info imx185_b_crl_sd = {
 			 I2C_BOARD_INFO(CRLMODULE_NAME, IMX185_I2C_ADDRESS),
 			.platform_data = &imx185_b_pdata,
 		},
-		.i2c_adapter_id = 4,
+		.i2c_adapter_id = 8,
 	}
 };
 
@@ -658,8 +658,8 @@ static struct intel_ipu4_isys_subdev_info ti964_sd_2 = {
  */
 struct intel_ipu4_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT("2-0036", NULL, NULL), "OSC_CLK_OUT0" },
-	{ CLKDEV_INIT("2-001a", NULL, NULL), "OSC_CLK_OUT0" },
-	{ CLKDEV_INIT("4-001a", NULL, NULL), "OSC_CLK_OUT1" },
+	{ CLKDEV_INIT("6-001a", NULL, NULL), "OSC_CLK_OUT0" },
+	{ CLKDEV_INIT("8-001a", NULL, NULL), "OSC_CLK_OUT1" },
 	{ CLKDEV_INIT("2-0010", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("2-a0e0", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("2-a0e2", NULL, NULL), "OSC_CLK_OUT0" },
