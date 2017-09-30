@@ -26,7 +26,7 @@
 #define OV10640_VMAX			131071
 #define OV10640_MAX_SHS1		(OV10640_VMAX - 2)
 #define OV10640_MAX_SHS3		0xFF
-#define OV10640_MAX_DGAIN		0x3FFF
+#define OV10640_MAX_DGAIN		0x40
 
 /* 800Mbps for ov10640 1280x1080 30fps */
 static struct crl_register_write_rep ov10640_pll_800mbps[] = {
@@ -3611,14 +3611,7 @@ static struct crl_dynamic_register_access ov10640_ana_gain_regs[] = {
 /* Long digital gain register */
 static struct crl_dynamic_register_access ov10640_gl_regs[] = {
 	{
-		.address = 0x30EC, /* High Byte */
-		.len = CRL_REG_LEN_08BIT,
-		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
-		.ops = ov10640_hsb_ops,
-		.mask = 0xff,
-	},
-	{
-		.address = 0x30ED, /* Low Byte */
+		.address = 0x30EC,
 		.len = CRL_REG_LEN_08BIT,
 		.ops_items = 0,
 		.ops = 0,
@@ -3631,13 +3624,6 @@ static struct crl_dynamic_register_access ov10640_gs_regs[] = {
 	{
 		.address = 0x30EE,
 		.len = CRL_REG_LEN_08BIT,
-		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
-		.ops = ov10640_hsb_ops,
-		.mask = 0xff,
-	},
-	{
-		.address = 0x30EF,
-		.len = CRL_REG_LEN_08BIT,
 		.ops_items = 0,
 		.ops = 0,
 		.mask = 0xff,
@@ -3648,13 +3634,6 @@ static struct crl_dynamic_register_access ov10640_gs_regs[] = {
 static struct crl_dynamic_register_access ov10640_gvs_regs[] = {
 	{
 		.address = 0x30F0,
-		.len = CRL_REG_LEN_08BIT,
-		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
-		.ops = ov10640_hsb_ops,
-		.mask = 0xff,
-	},
-	{
-		.address = 0x30F1,
 		.len = CRL_REG_LEN_08BIT,
 		.ops_items = 0,
 		.ops = 0,
@@ -4104,7 +4083,7 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.data.std_data.min = 0,
 		.data.std_data.max = OV10640_MAX_DGAIN,
 		.data.std_data.step = 1,
-		.data.std_data.def = 0x100,
+		.data.std_data.def = 0x1,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
@@ -4124,7 +4103,7 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.data.std_data.min = 0,
 		.data.std_data.max = OV10640_MAX_DGAIN,
 		.data.std_data.step = 1,
-		.data.std_data.def = 0x100,
+		.data.std_data.def = 0x1,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
@@ -4144,7 +4123,7 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.data.std_data.min = 0,
 		.data.std_data.max = OV10640_MAX_DGAIN,
 		.data.std_data.step = 1,
-		.data.std_data.def = 0x100,
+		.data.std_data.def = 0x1,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
