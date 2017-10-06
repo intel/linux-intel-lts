@@ -2609,14 +2609,20 @@ static int handle_tx_event(struct xhci_hcd *xhci,
 		event_trb = &event_seg->trbs[(event_dma - event_seg->dma) /
 						sizeof(*event_trb)];
 		/*
-		 * No-op TRB should not trigger interrupts.
-		 * If event_trb is a no-op TRB, it means the
-		 * corresponding TD has been cancelled. Just ignore
-		 * the TD.
+		 * No-op TRB could trigger interrupts in a case where
+		 * a URB was killed and a STALL_ERROR happens right
+		 * after the endpoint ring stopped. Reset the halted
+		 * endpoint. Otherwise, the endpoint remains stalled
+		 * indefinitely.
 		 */
 		if (TRB_TYPE_NOOP_LE32(event_trb->generic.field[3])) {
-			xhci_dbg(xhci,
-				 "event_trb is a no-op TRB. Skip it\n");
+			if (trb_comp_code == COMP_STALL ||
+			    xhci_requires_manual_halt_cleanup(xhci, ep_ctx,
+							      trb_comp_code))
+				xhci_cleanup_halted_endpoint(xhci, slot_id,
+							     ep_index,
+							     ep_ring->stream_id,
+							     td, event_trb);
 			goto cleanup;
 		}
 
