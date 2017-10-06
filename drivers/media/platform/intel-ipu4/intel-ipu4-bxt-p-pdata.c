@@ -29,8 +29,35 @@
 #ifdef CONFIG_INTEL_IPU4_OV2740
 #define OV2740_LANES		2
 #define OV2740_I2C_ADDRESS	0x36
+
 static struct crlmodule_platform_data ov2740_pdata = {
-	.xshutdown = GPIO_BASE + 64,
+        .xshutdown = GPIO_BASE + 73,
+        .lanes = OV2740_LANES,
+        .ext_clk = 19200000,
+        .op_sys_clock = (uint64_t []){ 72000000 },
+        .module_name = "INT3474",
+        .id_string = "0x27 0x40",
+};
+
+static struct intel_ipu4_isys_csi2_config ov2740_csi2_cfg = {
+        .nlanes = OV2740_LANES,
+        .port = 0,
+};
+
+static struct intel_ipu4_isys_subdev_info ov2740_crl_sd = {
+        .csi2 = &ov2740_csi2_cfg,
+        .i2c = {
+                .board_info = {
+                         I2C_BOARD_INFO(CRLMODULE_NAME, OV2740_I2C_ADDRESS),
+                        .platform_data = &ov2740_pdata,
+                },
+                .i2c_adapter_id = 6,
+        }
+};
+
+
+static struct crlmodule_platform_data ov2740_b_pdata = {
+	.xshutdown = GPIO_BASE + 71,
 	.lanes = OV2740_LANES,
 	.ext_clk = 19200000,
 	.op_sys_clock = (uint64_t []){ 72000000 },
@@ -38,19 +65,19 @@ static struct crlmodule_platform_data ov2740_pdata = {
 	.id_string = "0x27 0x40",
 };
 
-static struct intel_ipu4_isys_csi2_config ov2740_csi2_cfg = {
+static struct intel_ipu4_isys_csi2_config ov2740_b_csi2_cfg = {
 	.nlanes = OV2740_LANES,
-	.port = 0,
+	.port = 4,
 };
 
-static struct intel_ipu4_isys_subdev_info ov2740_crl_sd = {
-	.csi2 = &ov2740_csi2_cfg,
+static struct intel_ipu4_isys_subdev_info ov2740_b_crl_sd = {
+	.csi2 = &ov2740_b_csi2_cfg,
 	.i2c = {
 		.board_info = {
 			 I2C_BOARD_INFO(CRLMODULE_NAME, OV2740_I2C_ADDRESS),
-			.platform_data = &ov2740_pdata,
+			.platform_data = &ov2740_b_pdata,
 		},
-		.i2c_adapter_id = 2,
+		.i2c_adapter_id = 8,
 	}
 };
 #endif
@@ -657,9 +684,10 @@ static struct intel_ipu4_isys_subdev_info ti964_sd_2 = {
  * this should be coming from ACPI
  */
 struct intel_ipu4_isys_clk_mapping clk_mapping[] = {
-	{ CLKDEV_INIT("2-0036", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("6-001a", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("8-001a", NULL, NULL), "OSC_CLK_OUT1" },
+	{ CLKDEV_INIT("6-0036", NULL, NULL), "OSC_CLK_OUT0" },
+	{ CLKDEV_INIT("8-0036", NULL, NULL), "OSC_CLK_OUT1" },
 	{ CLKDEV_INIT("2-0010", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("2-a0e0", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("2-a0e2", NULL, NULL), "OSC_CLK_OUT0" },
@@ -670,6 +698,7 @@ static struct intel_ipu4_isys_subdev_pdata pdata = {
 	.subdevs = (struct intel_ipu4_isys_subdev_info *[]) {
 #ifdef CONFIG_INTEL_IPU4_OV2740
 		&ov2740_crl_sd,
+		&ov2740_b_crl_sd,
 #endif
 #ifdef CONFIG_INTEL_IPU4_IMX185
 		&imx185_crl_sd,
