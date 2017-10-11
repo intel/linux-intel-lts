@@ -4527,10 +4527,6 @@ static int skl_tplg_fill_mod_info(struct device *dev,
 		mod->max_output_pins = tkn_elem->value;
 		break;
 
-	case SKL_TKN_MM_U8_MAX_INST_COUNT:
-		mod->max_instance_count = tkn_elem->value;
-		break;
-
 	case SKL_TKN_MM_U8_NUM_RES:
 		mod->nr_resources = tkn_elem->value;
 		break;
@@ -4618,7 +4614,6 @@ static int skl_tplg_get_int_tkn(struct device *dev,
 	case SKL_TKN_U8_OUT_PIN_TYPE:
 	case SKL_TKN_U8_IN_QUEUE_COUNT:
 	case SKL_TKN_U8_OUT_QUEUE_COUNT:
-	case SKL_TKN_MM_U8_MAX_INST_COUNT:
 	case SKL_TKN_MM_U8_NUM_RES:
 	case SKL_TKN_MM_U8_NUM_INTF:
 		ret = skl_tplg_fill_mod_info(dev, tkn_elem, mod);
