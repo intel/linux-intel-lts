@@ -18,7 +18,6 @@
 #include <linux/mfd/core.h>
 #include <linux/mfd/intel_soc_pmic_bxtwc.h>
 #include <linux/mfd/intel_soc_pmic.h>
-#include <asm/intel_pmc_ipc.h>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
 
@@ -121,7 +120,6 @@ static int wcove_clk_probe(struct platform_device *pdev)
 
 	clk = clk_register(&pdev->dev, &clk_wc->hw);
 	if (IS_ERR(clk)) {
-		printk("JUKKA: clk register failed");
 		devm_kfree(&pdev->dev, clk_wc);
 		return PTR_ERR(clk);
 	}

@@ -858,12 +858,4 @@ bool xen_set_default_idle(void);
 void stop_this_cpu(void *dummy);
 void df_debug(struct pt_regs *regs, long error_code);
 
-static inline bool platform_is_bxtp(void)
-{
-	if ((boot_cpu_data.x86_model == 0x5c)
-		&& (boot_cpu_data.x86_mask >= 0x8)
-		&& (boot_cpu_data.x86_mask <= 0xf))
-		return true;
-	return false;
-}
 #endif /* _ASM_X86_PROCESSOR_H */

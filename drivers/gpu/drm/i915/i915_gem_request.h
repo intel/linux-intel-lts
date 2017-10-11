@@ -29,6 +29,7 @@
 
 #include "i915_gem.h"
 #include "i915_sw_fence.h"
+#include <uapi/drm/i915_drm.h>
 
 struct drm_file;
 struct drm_i915_gem_object;
@@ -67,8 +68,12 @@ struct i915_priotree {
 	struct list_head waiters_list; /* those after us, they depend upon us */
 	struct rb_node node;
 	int priority;
-#define I915_PRIORITY_MAX 1024
-#define I915_PRIORITY_MIN (-I915_PRIORITY_MAX)
+};
+
+enum {
+	I915_PRIORITY_MIN = I915_CONTEXT_MIN_USER_PRIORITY - 1,
+	I915_PRIORITY_NORMAL = I915_CONTEXT_DEFAULT_PRIORITY,
+	I915_PRIORITY_MAX = I915_CONTEXT_MAX_USER_PRIORITY + 1,
 };
 
 /**
