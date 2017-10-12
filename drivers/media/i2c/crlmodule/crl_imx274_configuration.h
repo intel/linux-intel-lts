@@ -22,9 +22,9 @@
 
 #define IMX274_HMAX                      65536
 #define IMX274_VMAX                      1048576
-#define IMX274_MAX_SHS1		(IMX274_VMAX - 2236)
+#define IMX274_MAX_SHS1		(IMX274_VMAX - 2200)
 #define IMX274_MAX_SHS2		(IMX274_VMAX - 4)
-#define IMX274_MAX_RHS1		(IMX274_VMAX - 2234)
+#define IMX274_MAX_RHS1		(IMX274_VMAX - 2198)
 
 /* imx274 mode standby cancel sequence */
 static struct crl_register_write_rep imx274_powerup_standby[] = {
@@ -146,7 +146,7 @@ static struct crl_register_write_rep imx274_3864_2174_RAW10_NORMAL[] = {
 	{0x3019, CRL_REG_LEN_08BIT, 0x00},	/* Disable DOL */
 };
 
-static struct crl_register_write_rep imx274_3868_4464_RAW10_DOL[] = {
+static struct crl_register_write_rep imx274_3868_4536_RAW10_DOL[] = {
 	{0x30E2, CRL_REG_LEN_08BIT, 0x01},	/* VCUTMODE */
 	{0x3130, CRL_REG_LEN_08BIT, 0x86},	/* WRITE_VSIZE */
 	{0x3131, CRL_REG_LEN_08BIT, 0x08},
@@ -546,18 +546,18 @@ static struct crl_subdev_rect_rep imx274_3864_2202_rects[] = {
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4464,
+		.out_rect.height = 4536,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3864,
@@ -571,18 +571,18 @@ static struct crl_subdev_rect_rep imx274_3864_2174_rects[] = {
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4464,
+		.out_rect.height = 4536,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3864,
@@ -591,28 +591,28 @@ static struct crl_subdev_rect_rep imx274_3864_2174_rects[] = {
 };
 
 /* DOL pixel array includes 4 pixel sync code each line */
-static struct crl_subdev_rect_rep imx274_3868_4464_rects[] = {
+static struct crl_subdev_rect_rep imx274_3868_4536_rects[] = {
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4464,
+		.out_rect.height = 4536,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4464,
+		.out_rect.height = 4536,
 	}
 };
 
@@ -622,18 +622,18 @@ static struct crl_subdev_rect_rep imx274_1932_1094_rects[] = {
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4464,
+		.out_rect.height = 4536,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 1932,
@@ -648,18 +648,18 @@ static struct crl_subdev_rect_rep imx274_1936_2282_rects[] = {
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4464,
+		.out_rect.height = 4536,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4464,
+		.in_rect.height = 4536,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 1936,
@@ -704,20 +704,20 @@ static struct crl_mode_rep imx274_modes[] = {
 	},
 	{
 		/* mode 1 DOL per datasheet */
-		.sd_rects_items = ARRAY_SIZE(imx274_3868_4464_rects),
-		.sd_rects = imx274_3868_4464_rects,
+		.sd_rects_items = ARRAY_SIZE(imx274_3868_4536_rects),
+		.sd_rects = imx274_3868_4536_rects,
 		.binn_hor = 1,
 		.binn_vert = 1,
 		.scale_m = 1,
 		.width = 3868,
-		.height = 4464,
+		.height = 4536, /* 2*(2160+22+VBP) */
 		.min_llp = 1052, /* 041Ch */
 		.min_fll = 2284, /* 08ECh 30fps*/
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items =
-				ARRAY_SIZE(imx274_3868_4464_RAW10_DOL),
-		.mode_regs = imx274_3868_4464_RAW10_DOL,
+				ARRAY_SIZE(imx274_3868_4536_RAW10_DOL),
+		.mode_regs = imx274_3868_4536_RAW10_DOL,
 	},
 	{
 		/* mode 3 10bit all pixel scan per datasheet */
@@ -787,7 +787,7 @@ static struct crl_sensor_limits imx274_sensor_limits = {
 		.x_addr_min = 0,
 		.y_addr_min = 0,
 		.x_addr_max = 3868, /* pixel area length and width */
-		.y_addr_max = 4464,
+		.y_addr_max = 4536,
 		.min_frame_length_lines = 1111,
 		.max_frame_length_lines = 65535,
 		.min_line_length_pixels = 260,
@@ -1014,7 +1014,7 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.data.std_data.min = 0,
 		.data.std_data.max = IMX274_MAX_SHS1,
 		.data.std_data.step = 1,
-		.data.std_data.def = 0x08,
+		.data.std_data.def = 0x400,
 		.flags = 0,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
@@ -1031,7 +1031,7 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.name = "CRL_CID_EXPOSURE_SHS1",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
 		.data.std_data.min = 0,
-		.data.std_data.max = IMX274_MAX_SHS1, /* Use SHR range*/
+		.data.std_data.max = IMX274_MAX_SHS1,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x06,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
@@ -1051,9 +1051,9 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.name = "CRL_CID_EXPOSURE_SHS2",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
 		.data.std_data.min = 0,
-		.data.std_data.max = IMX274_MAX_SHS1, /* Use SHR range*/
+		.data.std_data.max = IMX274_MAX_SHS2,
 		.data.std_data.step = 1,
-		.data.std_data.def = 0x20,
+		.data.std_data.def = 0x2d,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
@@ -1071,7 +1071,7 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.name = "CRL_CID_EXPOSURE_RHS1",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
 		.data.std_data.min = 0,
-		.data.std_data.max = IMX274_MAX_SHS1, /* Use SHR range*/
+		.data.std_data.max = IMX274_MAX_RHS1,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x10,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
