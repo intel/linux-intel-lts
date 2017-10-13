@@ -43,6 +43,10 @@
 #define SKL_MAX_LL_SRC_CFG  8
 #define SKL_MAX_DMA_CFG    24
 #define SKL_MAX_DMACTRL_CFG	7
+#define SKL_MAX_DMA_CFG		24
+#define BXT_INSTANCE_ID		0
+#define BXT_BASE_FW_MODULE_ID	0
+
 
 struct skl_dsp_resource {
 	u32 max_mcps;
@@ -107,11 +111,7 @@ struct skl_dmactrl_config {
 
 
 struct skl_fw_cfg_info {
-	struct skl_mem_status mem_sts;
-	struct skl_dsp_freq slw_frq;
-	struct skl_dsp_freq fst_frq;
 	struct skl_dma_buff_cfg dmacfg;
-	struct skl_sch_config sch_cfg;
 	struct skl_dmactrl_config dmactrl_cfg;
 } __packed;
 
