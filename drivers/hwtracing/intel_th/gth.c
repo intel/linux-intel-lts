@@ -659,8 +659,15 @@ static void intel_th_gth_switch(struct intel_th_device *thdev,
 static int intel_th_gth_assign(struct intel_th_device *thdev,
 			       struct intel_th_device *othdev)
 {
-	struct gth_device *gth = dev_get_drvdata(&thdev->dev);
+	struct gth_device *gth;
 	int i, id;
+
+	if(thdev == NULL || othdev == NULL)
+		return -EINVAL;
+
+	gth = dev_get_drvdata(&thdev->dev);
+        if(gth == NULL)
+		return -EINVAL;
 
 	if (thdev->host_mode)
 		return -EBUSY;
