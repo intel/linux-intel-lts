@@ -232,7 +232,6 @@ struct snd_soc_dai_link cnl_cs42l42_msic_dailink[] = {
 		.ignore_suspend = 1,
 		.no_pcm = 1,
 		.dpcm_capture = 1,
-		.be_hw_params_fixup = cnl_dmic_fixup,
 	},
 
 };
