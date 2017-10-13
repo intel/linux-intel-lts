@@ -35,6 +35,10 @@
 #include <linux/sdw_bus.h>
 #include <asm/cacheflush.h>
 
+#define ASRC_MODE_UPLINK	2
+#define ASRC_MODE_DOWNLINK	1
+#define SKL_ENABLE_ALL_CHANNELS  0xffffffff
+
 static int skl_alloc_dma_buf(struct device *dev,
 		struct snd_dma_buffer *dmab, size_t size)
 {
@@ -1332,6 +1336,11 @@ int skl_resume_dsp(struct skl *skl)
 
 	skl_dsp_enable_notification(skl->skl_sst, false);
 
+	/* Set DMA buffer configuration */
+	if (skl->cfg.dmacfg.size)
+		skl_ipc_set_dma_cfg(&skl->skl_sst->ipc, BXT_INSTANCE_ID,
+			BXT_BASE_FW_MODULE_ID, (u32 *)(&skl->cfg.dmacfg));
+
 	/* Set DMA clock controls */
 	return skl_dsp_set_dma_clk_controls(skl->skl_sst);
 }
@@ -1711,6 +1720,22 @@ static void skl_setup_out_format(struct skl_sst *ctx,
 		out_fmt->number_of_channels, format->s_freq, format->bit_depth);
 }
 
+static int skl_set_gain_format(struct skl_sst *ctx,
+			struct skl_module_cfg *mconfig,
+			struct skl_gain_module_config *gain_mconfig)
+{
+	struct skl_gain_data *gain_fmt = mconfig->gain_data;
+
+	skl_set_base_module_format(ctx, mconfig,
+			(struct skl_base_cfg *)gain_mconfig);
+	gain_mconfig->gain_cfg.channel_id = SKL_ENABLE_ALL_CHANNELS;
+	gain_mconfig->gain_cfg.target_volume = gain_fmt->volume[0];
+	gain_mconfig->gain_cfg.ramp_type = gain_fmt->ramp_type;
+	gain_mconfig->gain_cfg.ramp_duration = gain_fmt->ramp_duration;
+
+	return 0;
+}
+
 /*
  * DSP needs SRC module for frequency conversion, SRC takes base module
  * configuration and the target frequency as extra parameter passed as src
@@ -1728,6 +1753,14 @@ static void skl_set_src_format(struct skl_sst *ctx,
 		(struct skl_base_cfg *)src_mconfig);
 
 	src_mconfig->src_cfg = format->s_freq;
+
+	if (mconfig->m_type == SKL_MODULE_TYPE_ASRC) {
+		if (mconfig->pipe->p_params->stream ==
+				SNDRV_PCM_STREAM_PLAYBACK)
+			src_mconfig->mode = ASRC_MODE_DOWNLINK;
+		else
+			src_mconfig->mode = ASRC_MODE_UPLINK;
+	}
 }
 
 /*
@@ -1782,7 +1815,12 @@ static void skl_setup_probe_gateway_cfg(struct skl_sst *ctx,
 			struct skl_probe_cfg *probe_cfg)
 {
 	union skl_connector_node_id node_id = {0};
+	struct skl_module_res *res;
 	struct skl_probe_config *pconfig = &ctx->probe_config;
+
+	res = &mconfig->module->resources[mconfig->res_idx];
+
+	pconfig->edma_buffsize = res->dma_buffer_size;
 
 	node_id.node.dma_type = pconfig->edma_type;
 	node_id.node.vindex = pconfig->edma_id;
@@ -1846,6 +1884,7 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig)
 {
 	u16 param_size;
+	struct skl_module_intf *m_intf;
 
 	switch (mconfig->m_type) {
 	case SKL_MODULE_TYPE_COPIER:
@@ -1857,6 +1896,7 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 		return sizeof(struct skl_probe_cfg);
 
 	case SKL_MODULE_TYPE_SRCINT:
+	case SKL_MODULE_TYPE_ASRC:
 		return sizeof(struct skl_src_module_cfg);
 
 	case SKL_MODULE_TYPE_UPDWMIX:
@@ -1871,6 +1911,13 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 	case SKL_MODULE_TYPE_MIC_SELECT:
 	case SKL_MODULE_TYPE_KPB:
 		return sizeof(struct skl_base_outfmt_cfg);
+
+	case SKL_MODULE_TYPE_GAIN:
+		m_intf = &mconfig->module->formats[mconfig->fmt_idx];
+		param_size = sizeof(struct skl_base_cfg);
+		param_size += sizeof(struct skl_gain_config)
+			* m_intf->output[0].pin_fmt.channels;
+		return param_size;
 
 	default:
 		/*
@@ -1915,6 +1962,7 @@ static int skl_set_module_format(struct skl_sst *ctx,
 		break;
 
 	case SKL_MODULE_TYPE_SRCINT:
+	case SKL_MODULE_TYPE_ASRC:
 		skl_set_src_format(ctx, module_config, *param_data);
 		break;
 
@@ -1930,6 +1978,10 @@ static int skl_set_module_format(struct skl_sst *ctx,
 	case SKL_MODULE_TYPE_MIC_SELECT:
 	case SKL_MODULE_TYPE_KPB:
 		skl_set_base_outfmt_format(ctx, module_config, *param_data);
+		break;
+
+	case SKL_MODULE_TYPE_GAIN:
+		skl_set_gain_format(ctx, module_config, *param_data);
 		break;
 
 	default:

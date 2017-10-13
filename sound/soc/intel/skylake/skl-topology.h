@@ -49,8 +49,13 @@
 #define SKL_DEFAULT_MIC_SEL_GAIN	0x3FF
 #define SKL_MIC_SEL_SWITCH	0x3
 
-#define SKL_OUTPUT_PIN 0
-#define SKL_INPUT_PIN  1
+#define SKL_OUTPUT_PIN		0
+#define SKL_INPUT_PIN		1
+#define SKL_MAX_PATH_CONFIGS	32
+#define SKL_MAX_MODULES_IN_PIPE	8
+#define SKL_MAX_MODULE_FORMATS		64
+#define SKL_MAX_MODULE_RESOURCES	32
+#define MAX_NUM_CHANNELS	8
 
 enum skl_channel_index {
 	SKL_CHANNEL_LEFT = 0,
@@ -165,6 +170,7 @@ struct skl_cpr_cfg {
 struct skl_src_module_cfg {
 	struct skl_base_cfg base_cfg;
 	enum skl_s_freq src_cfg;
+	u32 mode;
 } __packed;
 
 struct notification_mask {
@@ -233,6 +239,11 @@ struct skl_mod_inst_map {
 struct skl_kpb_params {
 	u32 num_modules;
 	struct skl_mod_inst_map map[0];
+};
+
+struct skl_gain_module_config {
+	struct skl_base_cfg mconf;
+	struct skl_gain_config gain_cfg;
 };
 
 struct skl_module_inst_id {
@@ -420,6 +431,12 @@ struct skl_module {
 	struct skl_module_intf formats[SKL_MAX_MODULE_FORMATS];
 };
 
+struct skl_gain_data {
+	u64 ramp_duration;
+	u32 ramp_type;
+	u32 volume[MAX_NUM_CHANNELS];
+};
+
 struct skl_module_cfg {
 	u8 guid[16];
 	struct skl_module_inst_id id;
@@ -450,6 +467,7 @@ struct skl_module_cfg {
 	struct skl_pipe *pipe;
 	struct skl_specific_cfg formats_config;
 	struct skl_pipe_mcfg mod_cfg[SKL_MAX_MODULES_IN_PIPE];
+	struct skl_gain_data *gain_data;
 };
 
 struct skl_algo_data {
@@ -599,8 +617,6 @@ int skl_tplg_dsp_log_get(struct snd_kcontrol *kcontrol,
 			 struct snd_ctl_elem_value *ucontrol);
 int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
 			 struct snd_ctl_elem_value *ucontrol);
-int skl_dsp_crash_dump_read(struct skl_sst *ctx);
-
 int skl_tplg_change_notification_get(struct snd_kcontrol *kcontrol,
 			unsigned int __user *data, unsigned int size);
 struct snd_kcontrol *skl_search_notify_kctl(struct skl_sst *skl,
