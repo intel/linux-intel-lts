@@ -325,8 +325,10 @@ static int skl_pcm_prepare(struct snd_pcm_substream *substream,
 
 	/* In case of XRUN recovery, reset the FW pipe to clean state */
 	if (mconfig && (substream->runtime->status->state ==
-					SNDRV_PCM_STATE_XRUN))
+					SNDRV_PCM_STATE_XRUN)) {
 		skl_reset_pipe(skl->skl_sst, mconfig->pipe);
+		skl_pcm_host_dma_prepare(dai->dev, mconfig->pipe->p_params);
+	}
 
 	return 0;
 }
@@ -853,6 +855,8 @@ static int skl_trace_compr_tstamp(struct snd_compr_stream *stream,
 		return -EINVAL;
 
 	tstamp->copied_total = skl_dsp_log_avail(sst, core);
+	tstamp->sampling_rate = snd_pcm_rate_bit_to_rate(cpu_dai->driver->capture.rates);
+
 	return 0;
 }
 
@@ -1579,6 +1583,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "TraceBuffer0 Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.rate_min = 48000,
+		.rate_max = 48000,
 	},
 },
 {
@@ -1589,6 +1596,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "TraceBuffer1 Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.rate_min = 48000,
+		.rate_max = 48000,
 	},
 },
 {
@@ -1599,6 +1609,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "TraceBuffer2 Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.rate_min = 48000,
+		.rate_max = 48000,
 	},
 },
 {
@@ -1609,6 +1622,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.stream_name = "TraceBuffer3 Capture",
 		.channels_min = HDA_MONO,
 		.channels_max = HDA_MONO,
+		.rates = SNDRV_PCM_RATE_48000,
+		.rate_min = 48000,
+		.rate_max = 48000,
 	},
 },
 {
@@ -2062,6 +2078,12 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 			dev_err(platform->dev, "Failed to boot first fw: %d\n", ret);
 			return ret;
 		}
+
+		/* Set DMA buffer configuration */
+		if (skl->cfg.dmacfg.size)
+			skl_ipc_set_dma_cfg(&skl->skl_sst->ipc,
+				BXT_INSTANCE_ID, BXT_BASE_FW_MODULE_ID,
+						(u32 *)(&skl->cfg.dmacfg));
 
 		/* Set DMA clock controls */
 		skl_dsp_set_dma_clk_controls(skl->skl_sst);
