@@ -3421,22 +3421,6 @@ static void intel_complete_page_flips(struct drm_i915_private *dev_priv)
 		intel_finish_page_flip_cs(dev_priv, crtc->pipe);
 }
 
-static void intel_update_primary_planes(struct drm_device *dev)
-{
-	struct drm_crtc *crtc;
-
-	for_each_crtc(dev, crtc) {
-		struct intel_plane *plane = to_intel_plane(crtc->primary);
-		struct intel_plane_state *plane_state =
-			to_intel_plane_state(plane->base.state);
-
-		if (plane_state->base.visible)
-			plane->update_plane(&plane->base,
-					    to_intel_crtc_state(crtc->state),
-					    plane_state);
-	}
-}
-
 static int
 __intel_display_resume(struct drm_device *dev,
 		       struct drm_atomic_state *state)
@@ -3482,6 +3466,19 @@ void intel_prepare_reset(struct drm_i915_private *dev_priv)
 	struct drm_atomic_state *state;
 	int ret;
 
+
+	/* reset doesn't touch the display */
+	if (!i915.force_reset_modeset_test &&
+	    !gpu_reset_clobbers_display(dev_priv))
+		return;
+
+	/* We have a modeset vs reset deadlock, defensively unbreak it.
+	 *
+	 * FIXME: We can do a _lot_ better, this is just a first iteration.
+	 */
+	i915_gem_set_wedged(dev_priv);
+	DRM_DEBUG_DRIVER("Wedging GPU to avoid deadlocks with pending modeset updates\n");
+
 	/*
 	 * Need mode_config.mutex so that we don't
 	 * trample ongoing ->detect() and whatnot.
@@ -3495,12 +3492,6 @@ void intel_prepare_reset(struct drm_i915_private *dev_priv)
 
 		drm_modeset_backoff(ctx);
 	}
-
-	/* reset doesn't touch the display, but flips might get nuked anyway, */
-	if (!i915.force_reset_modeset_test &&
-	    !gpu_reset_clobbers_display(dev_priv))
-		return;
-
 	/*
 	 * Disabling the crtcs gracefully seems nicer. Also the
 	 * g33 docs say we should at least disable all the planes.
@@ -3530,6 +3521,14 @@ void intel_finish_reset(struct drm_i915_private *dev_priv)
 	struct drm_atomic_state *state = dev_priv->modeset_restore_state;
 	int ret;
 
+	/* reset doesn't touch the display */
+	if (!i915.force_reset_modeset_test &&
+	    !gpu_reset_clobbers_display(dev_priv))
+		return;
+
+	if (!state)
+		goto unlock;
+
 	/*
 	 * Flips in the rings will be nuked by the reset,
 	 * so complete all pending flips so that user space
@@ -3543,22 +3542,10 @@ void intel_finish_reset(struct drm_i915_private *dev_priv)
 
 	/* reset doesn't touch the display */
 	if (!gpu_reset_clobbers_display(dev_priv)) {
-		if (!state) {
-			/*
-			 * Flips in the rings have been nuked by the reset,
-			 * so update the base address of all primary
-			 * planes to the the last fb to make sure we're
-			 * showing the correct fb after a reset.
-			 *
-			 * FIXME: Atomic will make this obsolete since we won't schedule
-			 * CS-based flips (which might get lost in gpu resets) any more.
-			 */
-			intel_update_primary_planes(dev);
-		} else {
-			ret = __intel_display_resume(dev, state);
-			if (ret)
-				DRM_ERROR("Restoring old state failed with %i\n", ret);
-		}
+		/* for testing only restore the display */
+		ret = __intel_display_resume(dev, state);
+		if (ret)
+			DRM_ERROR("Restoring old state failed with %i\n", ret);
 	} else {
 		/*
 		 * The display has been reset as well,
@@ -3582,8 +3569,8 @@ void intel_finish_reset(struct drm_i915_private *dev_priv)
 		intel_hpd_init(dev_priv);
 	}
 
-	if (state)
-		drm_atomic_state_put(state);
+	drm_atomic_state_put(state);
+unlock:
 	drm_modeset_drop_locks(ctx);
 	drm_modeset_acquire_fini(ctx);
 	mutex_unlock(&dev->mode_config.mutex);
@@ -3593,7 +3580,7 @@ static bool abort_flip_on_reset(struct intel_crtc *crtc)
 {
 	struct i915_gpu_error *error = &to_i915(crtc->base.dev)->gpu_error;
 
-	if (i915_reset_in_progress(error))
+	if (i915_reset_backoff(error))
 		return true;
 
 	if (crtc->reset_count != i915_reset_count(error))
@@ -10671,7 +10658,7 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 		goto cleanup;
 
 	intel_crtc->reset_count = i915_reset_count(&dev_priv->gpu_error);
-	if (i915_reset_in_progress_or_wedged(&dev_priv->gpu_error)) {
+	if (i915_reset_backoff_or_wedged(&dev_priv->gpu_error)) {
 		ret = -EIO;
 		goto unlock;
 	}
@@ -12979,6 +12966,8 @@ static void intel_atomic_commit_tail(struct drm_atomic_state *state)
 	unsigned crtc_vblank_mask = 0;
 	int i;
 
+	i915_sw_fence_wait(&intel_state->commit_ready);
+
 	drm_atomic_helper_wait_for_dependencies(state);
 
 	if (intel_state->modeset)
@@ -13150,10 +13139,8 @@ intel_atomic_commit_ready(struct i915_sw_fence *fence,
 
 	switch (notify) {
 	case FENCE_COMPLETE:
-		if (state->base.commit_work.func)
-			queue_work(system_unbound_wq, &state->base.commit_work);
+		/* we do blocking waits in the worker, nothing to do here */
 		break;
-
 	case FENCE_FREE:
 		{
 			struct intel_atomic_helper *helper =
@@ -13240,14 +13227,14 @@ static int intel_atomic_commit(struct drm_device *dev,
 	}
 
 	drm_atomic_state_get(state);
-	INIT_WORK(&state->commit_work,
-		  nonblock ? intel_atomic_commit_work : NULL);
+	INIT_WORK(&state->commit_work, intel_atomic_commit_work);
 
 	i915_sw_fence_commit(&intel_state->commit_ready);
-	if (!nonblock) {
-		i915_sw_fence_wait(&intel_state->commit_ready);
+	if (nonblock)
+		queue_work(system_unbound_wq, &state->commit_work);
+	else
 		intel_atomic_commit_tail(state);
-	}
+
 
 	return 0;
 }
