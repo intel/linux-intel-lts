@@ -3602,6 +3602,24 @@ static struct crl_dynamic_register_access ov10640_gl_regs[] = {
 	},
 };
 
+static struct crl_arithmetic_ops ov10640_ls5_ops[] = {
+	{
+		.op = CRL_BITWISE_LSHIFT,
+		.operand.entity_val = 5,
+	}
+};
+
+/* enable ae debug */
+static struct crl_dynamic_register_access ov10640_ae_debug_regs[] = {
+	{
+		.address = 0x30FA,
+		.len = CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE,
+		.ops_items = ARRAY_SIZE(ov10640_ls5_ops),
+		.ops = ov10640_ls5_ops,
+		.mask = 0x60,
+	},
+};
+
 /* Short digital gain register */
 static struct crl_dynamic_register_access ov10640_gs_regs[] = {
 	{
@@ -4050,6 +4068,26 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.regs = ov10640_ana_gain_regs,
 		.dep_items = 0,
 		.dep_ctrls = 0,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_AUTO_EXPOSURE_DEBUG,
+		.name = "CRL_CID_AUTO_EXPOSURE_DEBUG",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = 3,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x0,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_ae_debug_regs),
+		.regs = ov10640_ae_debug_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
 	},
 	{
 		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,

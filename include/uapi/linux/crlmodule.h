@@ -51,4 +51,7 @@
 
 /* set sensor msb align*/
 #define CRL_CID_MSB_ALIGN		(V4L2_CID_CRLMODULE_BASE + 18)
+
+/* enable/disable auto exposure */
+#define CRL_CID_AUTO_EXPOSURE_DEBUG		(V4L2_CID_CRLMODULE_BASE + 19)
 #endif /* UAPI_LINUX_CRLMODULE_H */
