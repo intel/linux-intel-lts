@@ -703,7 +703,7 @@ static struct crl_mode_rep imx274_modes[] = {
 		.mode_regs = imx274_3864_2174_RAW10_NORMAL,
 	},
 	{
-		/* mode 1 DOL per datasheet */
+		/* mode 1 DOL 10bit per datasheet */
 		.sd_rects_items = ARRAY_SIZE(imx274_3868_4536_rects),
 		.sd_rects = imx274_3868_4536_rects,
 		.binn_hor = 1,
@@ -754,7 +754,7 @@ static struct crl_mode_rep imx274_modes[] = {
 		.mode_regs = imx274_1932_1094_RAW12_NORMAL,
 	},
 	{
-		/* mode 3 DOL per datasheet */
+		/* mode 3 DOL bit10 per datasheet */
 		.sd_rects_items = ARRAY_SIZE(imx274_1936_2282_rects),
 		.sd_rects = imx274_1936_2282_rects,
 		.binn_hor = 1,
@@ -762,8 +762,8 @@ static struct crl_mode_rep imx274_modes[] = {
 		.scale_m = 1,
 		.width = 1936,
 		.height = 2282,
-		.min_llp = 1040, /* 0410h */
-		.min_fll = 2308, /* 0904h 30fps*/
+		.min_llp = 1052, /* 041Ch */
+		.min_fll = 2284, /* 08ECh 30fps*/
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items = ARRAY_SIZE(
