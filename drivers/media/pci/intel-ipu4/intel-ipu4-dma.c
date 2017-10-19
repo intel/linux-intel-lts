@@ -272,14 +272,14 @@ static void intel_ipu4_dma_free(struct device *dev, size_t size, void *vaddr,
 
 	size = PAGE_ALIGN(size);
 
+	vunmap(vaddr);
+
 	iommu_unmap(mmu->dmap->domain, iova->pfn_lo << PAGE_SHIFT,
 		(iova->pfn_hi - iova->pfn_lo + 1) << PAGE_SHIFT);
 
-	__free_iova(&mmu->dmap->iovad, iova);
-
 	__iommu_free_buffer(dev, area->pages, size, attrs);
 
-	vunmap(vaddr);
+	__free_iova(&mmu->dmap->iovad, iova);
 
 	mmu->tlb_invalidate(mmu);
 }
