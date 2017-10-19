@@ -256,7 +256,7 @@ static struct crl_register_write_rep imx274_1932_1094_RAW12_NORMAL[] = {
 	{0x3019, CRL_REG_LEN_08BIT, 0x00},	/* Disable DOL */
 };
 
-static struct crl_register_write_rep imx274_1936_2282_RAW10_DOL[] = {
+static struct crl_register_write_rep imx274_1936_2376_RAW10_DOL[] = {
 	{0x30E2, CRL_REG_LEN_08BIT, 0x02},	/* VCUTMODE */
 	{0x3130, CRL_REG_LEN_08BIT, 0x4E},	/* WRITE_VSIZE */
 	{0x3131, CRL_REG_LEN_08BIT, 0x04},
@@ -642,7 +642,7 @@ static struct crl_subdev_rect_rep imx274_1932_1094_rects[] = {
 };
 
 /* DOL pixel array includes 4 pixel sync code each line */
-static struct crl_subdev_rect_rep imx274_1936_2282_rects[] = {
+static struct crl_subdev_rect_rep imx274_1936_2376_rects[] = {
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
 		.in_rect.left = 0,
@@ -663,7 +663,7 @@ static struct crl_subdev_rect_rep imx274_1936_2282_rects[] = {
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 1936,
-		.out_rect.height = 2282,
+		.out_rect.height = 2376,
 	}
 };
 
@@ -755,20 +755,20 @@ static struct crl_mode_rep imx274_modes[] = {
 	},
 	{
 		/* mode 3 DOL bit10 per datasheet */
-		.sd_rects_items = ARRAY_SIZE(imx274_1936_2282_rects),
-		.sd_rects = imx274_1936_2282_rects,
+		.sd_rects_items = ARRAY_SIZE(imx274_1936_2376_rects),
+		.sd_rects = imx274_1936_2376_rects,
 		.binn_hor = 1,
 		.binn_vert = 1,
 		.scale_m = 1,
 		.width = 1936,
-		.height = 2282,
+		.height = 2376,
 		.min_llp = 1052, /* 041Ch */
 		.min_fll = 2284, /* 08ECh 30fps*/
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items = ARRAY_SIZE(
-				imx274_1936_2282_RAW10_DOL),
-		.mode_regs = imx274_1936_2282_RAW10_DOL,
+				imx274_1936_2376_RAW10_DOL),
+		.mode_regs = imx274_1936_2376_RAW10_DOL,
 	},
 };
 
@@ -1073,7 +1073,7 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.data.std_data.min = 0,
 		.data.std_data.max = IMX274_MAX_RHS1,
 		.data.std_data.step = 1,
-		.data.std_data.def = 0x10,
+		.data.std_data.def = 0x56, /* Fixed to 86 by default */
 		.flags = V4L2_CTRL_FLAG_UPDATE,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
