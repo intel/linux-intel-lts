@@ -25,14 +25,16 @@
 STORAGE_CLASS_INLINE unsigned int
 regmem_load_32(unsigned int mem_addr, unsigned int reg, unsigned int ssid)
 {
-	return ia_css_cmem_load_32(ssid, mem_addr + REGMEM_OFFSET + (4*reg));
+	/* No need to add REGMEM_OFFSET, it is already included in mem_addr. */
+	return ia_css_cmem_load_32(ssid, mem_addr + (REGMEM_WORD_BYTES*reg));
 }
 
 STORAGE_CLASS_INLINE void
 regmem_store_32(unsigned int mem_addr, unsigned int reg,
 	unsigned int value, unsigned int ssid)
 {
-	ia_css_cmem_store_32(ssid, mem_addr + REGMEM_OFFSET + (4*reg),
+	/* No need to add REGMEM_OFFSET, it is already included in mem_addr. */
+	ia_css_cmem_store_32(ssid, mem_addr + (REGMEM_WORD_BYTES*reg),
 		value);
 }
 
