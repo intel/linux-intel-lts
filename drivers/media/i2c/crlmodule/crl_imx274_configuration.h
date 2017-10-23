@@ -296,6 +296,41 @@ static struct crl_register_write_rep imx274_1936_2376_RAW10_DOL[] = {
 	{0x30E9, CRL_REG_LEN_08BIT, 0x01},	/* DOLSET2 */
 };
 
+static struct crl_register_write_rep imx274_1288_738_RAW10_NORMAL[] = {
+	{0x30E2, CRL_REG_LEN_08BIT, 0x03},	/* VCUTMODE */
+	{0x3130, CRL_REG_LEN_08BIT, 0xE2},	/* WRITE_VSIZE */
+	{0x3131, CRL_REG_LEN_08BIT, 0x02},
+	{0x3132, CRL_REG_LEN_08BIT, 0xDE},	/* Y_OUT_SIZE */
+	{0x3133, CRL_REG_LEN_08BIT, 0x02},
+	{0x3004, CRL_REG_LEN_08BIT, 0x03},	/* MDSEL */
+	{0x3005, CRL_REG_LEN_08BIT, 0x31},
+	{0x3006, CRL_REG_LEN_08BIT, 0x00},
+	{0x3007, CRL_REG_LEN_08BIT, 0x09},
+	{0x3A41, CRL_REG_LEN_08BIT, 0x04},	/* MDSEL5 */
+	{0x3342, CRL_REG_LEN_08BIT, 0x0A},	/* MDPLS01 */
+	{0x3343, CRL_REG_LEN_08BIT, 0x00},
+	{0x3344, CRL_REG_LEN_08BIT, 0x1B},
+	{0x3345, CRL_REG_LEN_08BIT, 0x00},
+	{0x3528, CRL_REG_LEN_08BIT, 0x0E},	/* MDPLS03 */
+	{0x3A54, CRL_REG_LEN_08BIT, 0x8C},	/* Metadata Size */
+	{0x3A55, CRL_REG_LEN_08BIT, 0x00},
+	{0x3554, CRL_REG_LEN_08BIT, 0x00},
+	{0x3555, CRL_REG_LEN_08BIT, 0x01},
+	{0x3556, CRL_REG_LEN_08BIT, 0x01},
+	{0x3557, CRL_REG_LEN_08BIT, 0x01},
+	{0x3558, CRL_REG_LEN_08BIT, 0x01},
+	{0x3559, CRL_REG_LEN_08BIT, 0x00},
+	{0x355A, CRL_REG_LEN_08BIT, 0x00},
+	{0x35BA, CRL_REG_LEN_08BIT, 0x0E},
+	{0x366A, CRL_REG_LEN_08BIT, 0x1B},
+	{0x366B, CRL_REG_LEN_08BIT, 0x19},
+	{0x366C, CRL_REG_LEN_08BIT, 0x17},
+	{0x366D, CRL_REG_LEN_08BIT, 0x17},
+	{0x33A6, CRL_REG_LEN_08BIT, 0x01},
+	{0x306B, CRL_REG_LEN_08BIT, 0x05},	/* MDPLS17 */
+	{0x3019, CRL_REG_LEN_08BIT, 0x00},	/* Disable DOL */
+};
+
 static struct crl_register_write_rep imx274_streamon_regs[] = {
 	{0x00, CRL_REG_LEN_DELAY, 10, 0x00},	/* Add a pre 10ms delay */
 	{IMX274_REG_STANDBY, CRL_REG_LEN_08BIT, 0x00},
@@ -667,6 +702,31 @@ static struct crl_subdev_rect_rep imx274_1936_2376_rects[] = {
 	}
 };
 
+static struct crl_subdev_rect_rep imx274_1288_738_rects[] = {
+	{
+		.subdev_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.in_rect.left = 0,
+		.in_rect.top = 0,
+		.in_rect.width = 3868,
+		.in_rect.height = 4536,
+		.out_rect.left = 0,
+		.out_rect.top = 0,
+		.out_rect.width = 3868,
+		.out_rect.height = 4536,
+	},
+	{
+		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
+		.in_rect.left = 0,
+		.in_rect.top = 0,
+		.in_rect.width = 3868,
+		.in_rect.height = 4536,
+		.out_rect.left = 0,
+		.out_rect.top = 0,
+		.out_rect.width = 1288,
+		.out_rect.height = 738,
+	}
+};
+
 static struct crl_mode_rep imx274_modes[] = {
 	{
 		/* mode 0 12bit all pixel scan per datasheet */
@@ -769,6 +829,23 @@ static struct crl_mode_rep imx274_modes[] = {
 		.mode_regs_items = ARRAY_SIZE(
 				imx274_1936_2376_RAW10_DOL),
 		.mode_regs = imx274_1936_2376_RAW10_DOL,
+	},
+	{
+		/* mode 5 bit10 per datasheet */
+		.sd_rects_items = ARRAY_SIZE(imx274_1288_738_rects),
+		.sd_rects = imx274_1288_738_rects,
+		.binn_hor = 3,
+		.binn_vert = 6,
+		.scale_m = 1,
+		.width = 1288,
+		.height = 738,
+		.min_llp = 260,
+		.min_fll = 2310,
+		.comp_items = 0,
+		.ctrl_data = 0,
+		.mode_regs_items = ARRAY_SIZE(
+				imx274_1288_738_RAW10_NORMAL),
+		.mode_regs = imx274_1288_738_RAW10_NORMAL,
 	},
 };
 
