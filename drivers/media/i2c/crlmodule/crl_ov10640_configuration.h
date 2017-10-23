@@ -3602,6 +3602,13 @@ static struct crl_dynamic_register_access ov10640_gl_regs[] = {
 	},
 };
 
+static struct crl_arithmetic_ops ov10640_ls1_ops[] = {
+	{
+		.op = CRL_BITWISE_LSHIFT,
+		.operand.entity_val = 1,
+	}
+};
+
 static struct crl_arithmetic_ops ov10640_ls5_ops[] = {
 	{
 		.op = CRL_BITWISE_LSHIFT,
@@ -3706,18 +3713,11 @@ static struct crl_dynamic_register_access ov10640_evs_regs[] = {
 /* MSB register */
 static struct crl_dynamic_register_access ov10640_msb_regs[] = {
 	{
-		.address = 0x30BF,
-		.len = CRL_REG_LEN_08BIT,
-		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
-		.ops = ov10640_hsb_ops,
-		.mask = 0xff,
-	},
-	{
-		.address = 0x31C0,
-		.len = CRL_REG_LEN_08BIT,
-		.ops_items = 0,
-		.ops = 0,
-		.mask = 0xff,
+		.address = 0x328a,
+		.len = CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE,
+		.ops_items = ARRAY_SIZE(ov10640_ls1_ops),
+		.ops = ov10640_ls1_ops,
+		.mask = 0x02,
 	},
 };
 
@@ -4215,9 +4215,9 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.name = "CRL_CID_MSB_ALIGN",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
 		.data.std_data.min = 0,
-		.data.std_data.max = 0xFFFF,
+		.data.std_data.max = 1,
 		.data.std_data.step = 1,
-		.data.std_data.def = 0,
+		.data.std_data.def = 1,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
