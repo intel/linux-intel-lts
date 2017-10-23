@@ -23,9 +23,9 @@
 #define OV10640_REG_RESET		0x3013
 
 #define OV10640_HMAX			65535
-#define OV10640_VMAX			131071
-#define OV10640_MAX_SHS1		(OV10640_VMAX - 2)
-#define OV10640_MAX_SHS3		0xFF
+#define OV10640_VMAX			65535
+#define OV10640_MAX_SHS1		(OV10640_VMAX - 6)
+#define OV10640_MAX_SHS3		0x7F
 #define OV10640_MAX_DGAIN		0x3FFF
 
 /* 800Mbps for ov10640 1280x1080 30fps */
@@ -4096,7 +4096,7 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.ctrl_id = V4L2_CID_EXPOSURE,
 		.name = "V4L2_CID_EXPOSURE",
 		.type = CRL_V4L2_CTRL_TYPE_INTEGER,
-		.data.std_data.min = 0,
+		.data.std_data.min = 1,
 		.data.std_data.max = OV10640_MAX_SHS1,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x040,
@@ -4234,7 +4234,7 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.ctrl_id = CRL_CID_EXPOSURE_SHS1,
 		.name = "CRL_CID_EXPOSURE_SHS1",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.std_data.min = 0,
+		.data.std_data.min = 1,
 		.data.std_data.max = OV10640_MAX_SHS1,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x40,
@@ -4254,7 +4254,7 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.ctrl_id = CRL_CID_EXPOSURE_SHS2,
 		.name = "CRL_CID_EXPOSURE_SHS2",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.std_data.min = 0,
+		.data.std_data.min = 1,
 		.data.std_data.max = OV10640_MAX_SHS1,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x40,
@@ -4274,7 +4274,7 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.ctrl_id = CRL_CID_EXPOSURE_SHS3,
 		.name = "CRL_CID_EXPOSURE_SHS3",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.std_data.min = 0,
+		.data.std_data.min = 0x11,
 		.data.std_data.max = OV10640_MAX_SHS3,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x20,
