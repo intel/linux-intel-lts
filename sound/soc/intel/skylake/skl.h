@@ -47,7 +47,6 @@
 #define BXT_INSTANCE_ID		0
 #define BXT_BASE_FW_MODULE_ID	0
 
-
 struct skl_dsp_resource {
 	u32 max_mcps;
 	u32 max_mem;
@@ -86,10 +85,10 @@ struct skl_sch_config {
 	u32 length;
 	u32 sys_tick_mul;
 	u32 sys_tick_div;
-	u32 ll_src;
-	u32 num_cfg;
-	u32 node_info[SKL_MAX_LL_SRC_CFG];
-} __packed;
+	u32 sys_tick_ll_src;
+	u32 sys_tick_cfg_len;
+	u32 sys_tick_cfg;
+};
 
 struct skl_dmctrl_hdr {
 	u32 vbus_id;
@@ -112,6 +111,7 @@ struct skl_dmactrl_config {
 
 struct skl_fw_cfg_info {
 	struct skl_dma_buff_cfg dmacfg;
+	struct skl_sch_config sch_cfg;
 	struct skl_dmactrl_config dmactrl_cfg;
 } __packed;
 

@@ -626,5 +626,6 @@ int skl_create_notify_kctl_list(struct skl_sst *skl_sst,
 void skl_delete_notify_kctl_list(struct skl_sst *skl_sst);
 struct snd_kcontrol *skl_get_notify_kcontrol(struct skl_sst *skl,
 				struct snd_card *card, u32 notify_id);
+void skl_tplg_fw_cfg_set(struct skl *skl);
 
 #endif

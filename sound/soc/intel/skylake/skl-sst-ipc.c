@@ -1170,7 +1170,7 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
 }
 EXPORT_SYMBOL_GPL(skl_ipc_get_large_config);
 
-void skl_ipc_set_dma_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
+void skl_ipc_set_fw_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
 			u16 module_id, u32 *data)
 {
 	struct skl_ipc_large_config_msg msg = {0};
@@ -1185,9 +1185,9 @@ void skl_ipc_set_dma_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
 
 	ret = skl_ipc_set_large_config(ipc, &msg, data);
 	if (ret < 0)
-		dev_err(ipc->dev, "ipc: set dma config failed, err %d\n", ret);
+		dev_err(ipc->dev, "ipc: set fw config failed, err %d\n", ret);
 }
-EXPORT_SYMBOL_GPL(skl_ipc_set_dma_cfg);
+EXPORT_SYMBOL_GPL(skl_ipc_set_fw_cfg);
 
 int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
 				u8 dma_id, u8 table_id, bool wait)

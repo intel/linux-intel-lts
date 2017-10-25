@@ -255,6 +255,25 @@
  *
  * %SKL_TKN_U32_DMA_MIN_SIZE:   Minimum DMA buffer size
  *
+ * %SKL_TKN_U32_SCH_TYPE:       Types of FW configs: SCHEDULER_CONFIG
+ *
+ * %SKL_TKN_U32_SCH_SIZE:       Scheduler config size
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_MUL:
+ *                              System tick multiplier
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_DIV:
+ *                              System tick divider
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_LL_SRC:
+ *                              Low Latency interrupt source
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN:
+ *                              Config length
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_CFG:
+ *                              Config contain capture on which SSP to
+ *                              active the FW
  *
  * module_id and loadable flags dont have tokens as these values will be
  * read from the DSP FW manifest
@@ -354,7 +373,15 @@ enum SKL_TKNS {
 	SKL_TKN_U32_DMA_SIZE,
 	SKL_TKN_U32_DMA_MAX_SIZE,
 	SKL_TKN_U32_DMA_MIN_SIZE,
-	SKL_TKN_MAX = SKL_TKN_U32_DMA_MIN_SIZE,
+
+	SKL_TKN_U32_SCH_TYPE,
+	SKL_TKN_U32_SCH_SIZE,
+	SKL_TKN_U32_SCH_SYS_TICK_MUL,
+	SKL_TKN_U32_SCH_SYS_TICK_DIV,
+	SKL_TKN_U32_SCH_SYS_TICK_LL_SRC,
+	SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN,
+	SKL_TKN_U32_SCH_SYS_TICK_CFG,
+	SKL_TKN_MAX = SKL_TKN_U32_SCH_SYS_TICK_CFG,
 };
 
 /*
