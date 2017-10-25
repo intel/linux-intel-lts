@@ -53,6 +53,7 @@
 
 #include "i915_params.h"
 #include "i915_reg.h"
+#include "i915_pvinfo.h"
 #include "i915_utils.h"
 
 #include "intel_bios.h"
@@ -4108,7 +4109,11 @@ int intel_freq_opcode(struct drm_i915_private *dev_priv, int val);
 static inline uint##x##_t __raw_i915_read##x(struct drm_i915_private *dev_priv, \
 					     i915_reg_t reg) \
 { \
-	return read##s(dev_priv->regs + i915_mmio_reg_offset(reg)); \
+	if (!intel_vgpu_active(dev_priv) || !i915.enable_pvmmio || \
+		likely(!in_mmio_read_trap_list((reg).reg))) \
+		return read##s(dev_priv->regs + i915_mmio_reg_offset(reg)); \
+	dev_priv->shared_page->reg_addr = i915_mmio_reg_offset(reg); \
+	return read##s(dev_priv->regs + i915_mmio_reg_offset(vgtif_reg(pv_mmio))); \
 }
 
 #define __raw_write(x, s) \
