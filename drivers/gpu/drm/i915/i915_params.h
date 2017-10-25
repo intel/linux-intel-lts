@@ -69,7 +69,8 @@
 	func(bool, enable_dp_mst); \
 	func(bool, enable_dpcd_backlight); \
 	func(bool, enable_gvt); \
-	func(unsigned int, avail_planes_per_pipe)
+	func(unsigned int, avail_planes_per_pipe); \
+	func(bool, enable_pvmmio)
 
 #define MEMBER(T, member) T member
 struct i915_params {

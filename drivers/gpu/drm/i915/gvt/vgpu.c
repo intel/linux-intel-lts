@@ -53,6 +53,7 @@ void populate_pvinfo_page(struct intel_vgpu *vgpu)
 		vgpu_hidden_sz(vgpu);
 
 	vgpu_vreg(vgpu, vgtif_reg(avail_rs.fence_num)) = vgpu_fence_sz(vgpu);
+	vgpu_vreg(vgpu, vgtif_reg(enable_pvmmio)) = i915.enable_pvmmio;
 
 	gvt_dbg_core("Populate PVINFO PAGE for vGPU %d\n", vgpu->id);
 	gvt_dbg_core("aperture base [GMADR] 0x%llx size 0x%llx\n",
