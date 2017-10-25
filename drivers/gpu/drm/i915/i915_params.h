@@ -55,7 +55,6 @@
 	func(unsigned int, inject_load_failure); \
 	func(int, hpd_sense_invert); \
 	func(int, memtrack_debug); \
-	/* leave bools at the end to not create holes */ \
 	func(bool, alpha_support); \
 	func(bool, enable_cmd_parser); \
 	func(bool, enable_hangcheck); \
@@ -69,11 +68,13 @@
 	func(bool, nuclear_pageflip); \
 	func(bool, enable_dp_mst); \
 	func(bool, enable_dpcd_backlight); \
-	func(bool, enable_gvt)
+	func(bool, enable_gvt); \
+	func(unsigned int, avail_planes_per_pipe)
 
 #define MEMBER(T, member) T member
 struct i915_params {
 	I915_PARAMS_FOR_EACH(MEMBER);
+	unsigned long long domain_plane_owners;
 };
 #undef MEMBER
 

@@ -834,7 +834,7 @@ drm_atomic_helper_update_legacy_modeset_state(struct drm_device *dev,
 		crtc->mode = crtc->state->mode;
 		crtc->enabled = crtc->state->enable;
 
-		if (drm_atomic_get_existing_plane_state(old_state, primary) &&
+		if (primary && drm_atomic_get_existing_plane_state(old_state, primary) &&
 		    primary->state->crtc == crtc) {
 			crtc->x = primary->state->src_x >> 16;
 			crtc->y = primary->state->src_y >> 16;
@@ -2328,6 +2328,9 @@ int __drm_atomic_helper_set_config(struct drm_mode_set *set,
 	struct drm_crtc *crtc = set->crtc;
 	int hdisplay, vdisplay;
 	int ret;
+
+	if (!crtc->primary)
+		return -EINVAL;
 
 	crtc_state = drm_atomic_get_crtc_state(state, crtc);
 	if (IS_ERR(crtc_state))

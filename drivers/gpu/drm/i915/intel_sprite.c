@@ -215,7 +215,7 @@ void intel_pipe_update_end(struct intel_crtc *crtc, struct intel_flip_work *work
 	}
 }
 
-static void
+void
 skl_update_plane(struct drm_plane *drm_plane,
 		 const struct intel_crtc_state *crtc_state,
 		 const struct intel_plane_state *plane_state)
@@ -303,7 +303,7 @@ skl_update_plane(struct drm_plane *drm_plane,
 	POSTING_READ(PLANE_SURF(pipe, plane_id));
 }
 
-static void
+void
 skl_disable_plane(struct drm_plane *dplane, struct drm_crtc *crtc)
 {
 	struct drm_device *dev = dplane->dev;
@@ -767,7 +767,7 @@ ilk_disable_plane(struct drm_plane *plane, struct drm_crtc *crtc)
 	POSTING_READ(DVSSURF(pipe));
 }
 
-static int
+int
 intel_check_sprite_plane(struct drm_plane *plane,
 			 struct intel_crtc_state *crtc_state,
 			 struct intel_plane_state *state)

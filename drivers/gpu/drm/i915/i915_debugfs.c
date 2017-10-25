@@ -3178,15 +3178,23 @@ static void intel_crtc_info(struct seq_file *m, struct intel_crtc *intel_crtc)
 	struct drm_device *dev = &dev_priv->drm;
 	struct drm_crtc *crtc = &intel_crtc->base;
 	struct intel_encoder *intel_encoder;
-	struct drm_plane_state *plane_state = crtc->primary->state;
-	struct drm_framebuffer *fb = plane_state->fb;
+	struct drm_plane_state *plane_state;
+	struct drm_framebuffer *fb;
 
-	if (fb)
-		seq_printf(m, "\tfb: %d, pos: %dx%d, size: %dx%d\n",
+	if (!crtc->primary) {
+		seq_puts(m, "\tno primary plane\n");
+	} else {
+		plane_state = crtc->primary->state;
+		fb = plane_state->fb;
+
+		if (fb)
+			seq_printf(m, "\tfb: %d, pos: %dx%d, size: %dx%d\n",
 			   fb->base.id, plane_state->src_x >> 16,
 			   plane_state->src_y >> 16, fb->width, fb->height);
-	else
-		seq_puts(m, "\tprimary plane disabled\n");
+		else
+			seq_puts(m, "\tprimary plane disabled\n");
+	}
+
 	for_each_encoder_on_crtc(dev, crtc, intel_encoder)
 		intel_encoder_info(m, intel_crtc, intel_encoder);
 }
@@ -3459,12 +3467,6 @@ static int i915_display_info(struct seq_file *m, void *unused)
 		if (pipe_config->base.active) {
 			intel_crtc_info(m, crtc);
 
-			active = cursor_position(dev_priv, crtc->pipe, &x, &y);
-			seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x, active? %s\n",
-				   yesno(crtc->cursor_base),
-				   x, y, crtc->base.cursor->state->crtc_w,
-				   crtc->base.cursor->state->crtc_h,
-				   crtc->cursor_addr, yesno(active));
 			intel_scaler_info(m, crtc);
 			intel_plane_info(m, crtc);
 		}
