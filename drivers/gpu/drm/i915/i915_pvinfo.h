@@ -54,8 +54,9 @@ enum vgt_g2v_type {
  */
 struct gvt_shared_page {
 	u32 elsp_data[4];
-	u32 reg_addr;
-	u32 rsvd2[0x400 - 5];
+	u32 reg_addr; /* register address of pv mmio read op */
+	u32 flip_regs[6];
+	u32 rsvd2[0x400 - 11];
 };
 
 #define VGPU_PVMMIO(vgpu) vgpu_vreg(vgpu, vgtif_reg(enable_pvmmio))
@@ -107,9 +108,12 @@ struct vgt_if {
 	u32 execlist_context_descriptor_hi;
 	u32 enable_pvmmio;
 	u32 pv_mmio; /* vgpu trapped mmio read will be redirected here */
+	u32 mmio_flip;
 
-	u32  rsv7[0x200 - 26];    /* pad to one page */
+	u32  rsv7[0x200 - 27];    /* pad to one page */
 } __packed;
+
+#define GVT_PV_MMIO_FLIP 1
 
 #define vgtif_reg(x) \
 	_MMIO((VGT_PVINFO_PAGE + offsetof(struct vgt_if, x)))

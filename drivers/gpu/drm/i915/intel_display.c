@@ -10433,11 +10433,20 @@ static void skl_do_mmio_flip(struct intel_crtc *intel_crtc,
 	 * Both PLANE_CTL and PLANE_STRIDE are not updated on vblank but on
 	 * PLANE_SURF updates, the update is then guaranteed to be atomic.
 	 */
-	I915_WRITE(PLANE_CTL(pipe, 0), ctl);
-	I915_WRITE(PLANE_STRIDE(pipe, 0), stride);
+	if (intel_vgpu_active(dev_priv) && i915.enable_pvmmio) {
+		/* vGPU driver inside VM */
+		dev_priv->shared_page->flip_regs[0] = pipe;
+		dev_priv->shared_page->flip_regs[1] = ctl;
+		dev_priv->shared_page->flip_regs[2] = stride;
+		dev_priv->shared_page->flip_regs[3] = work->gtt_offset;
+		I915_WRITE(vgtif_reg(mmio_flip), GVT_PV_MMIO_FLIP);
+	} else {
+		I915_WRITE(PLANE_CTL(pipe, 0), ctl);
+		I915_WRITE(PLANE_STRIDE(pipe, 0), stride);
 
-	I915_WRITE(PLANE_SURF(pipe, 0), work->gtt_offset);
-	POSTING_READ(PLANE_SURF(pipe, 0));
+		I915_WRITE(PLANE_SURF(pipe, 0), work->gtt_offset);
+		POSTING_READ(PLANE_SURF(pipe, 0));
+	}
 }
 
 static void ilk_do_mmio_flip(struct intel_crtc *intel_crtc,
