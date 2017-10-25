@@ -279,6 +279,11 @@ static int wcove_typec_pd_recv_pkt_handler(struct wcove_typec *wcove)
 		}
 
 		msg = pd_sink_alloc_msg(wcove->pd_port_num, len);
+		if (!msg) {
+			ret = -ENOMEM;
+			goto err;
+		}
+
 		memcpy(msg->buf, buf, len);
 
 		switch (USBC_RX_INFO_RX_SOP(rx_info)) {
@@ -325,8 +330,10 @@ static int wcove_typec_pd_tx_pkt_handler(int port_num, void *data,
 	if (ret)
 		goto err;
 
-	if (!(tx_cmd & USBC_TX_CMD_TXBUF_RDY))
-		return -EBUSY;
+	if (!(tx_cmd & USBC_TX_CMD_TXBUF_RDY)) {
+		ret = -EBUSY;
+		goto err;
+	}
 
 	for (i = 0; i < len; i++)
 		ret = regmap_write(wcove->regmap, USBC_TX_DATA_START + i,
