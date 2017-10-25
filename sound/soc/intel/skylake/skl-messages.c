@@ -1356,13 +1356,10 @@ int skl_resume_dsp(struct skl *skl)
 					skl->cfg.astate_cfg);
 	}
 
-	/* Set DMA buffer configuration */
-	if (skl->cfg.dmacfg.size)
-		skl_ipc_set_dma_cfg(&skl->skl_sst->ipc, BXT_INSTANCE_ID,
-			BXT_BASE_FW_MODULE_ID, (u32 *)(&skl->cfg.dmacfg));
+	/* Set the FW config info from topology */
+	skl_tplg_fw_cfg_set(skl);
 
-	/* Set DMA clock controls */
-	return skl_dsp_set_dma_clk_controls(skl->skl_sst);
+	return ret;
 }
 
 enum skl_bitdepth skl_get_bit_depth(int params)
