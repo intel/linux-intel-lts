@@ -4794,7 +4794,8 @@ void intel_ddi_init(struct drm_i915_private *dev_priv, enum port port)
 	init_hdmi = port_info->supports_dvi || port_info->supports_hdmi;
 	init_dp = port_info->supports_dp;
 
-	if (intel_bios_is_lspcon_present(dev_priv, port)) {
+	if (!intel_vgpu_active(dev_priv) &&
+			intel_bios_is_lspcon_present(dev_priv, port)) {
 		/*
 		 * Lspcon device needs to be driven with DP connector
 		 * with special detection sequence. So make sure DP
