@@ -75,9 +75,12 @@ void i915_check_vgpu(struct drm_i915_private *dev_priv)
 		return;
 	}
 
-	/* for guest i915 driver, its enable_pvmmio value is set by host
-	 * through vgt_if interface, not through user input.
+	/* If guest wants to enable pvmmio, it needs to enable it explicitly
+	 * through vgt_if interface, and then read back the enable state from
+	 * gvt layer.
 	 */
+	__raw_i915_write32(dev_priv, vgtif_reg(enable_pvmmio),
+			i915.enable_pvmmio);
 	i915.enable_pvmmio = __raw_i915_read16(dev_priv,
 			vgtif_reg(enable_pvmmio));
 	dev_priv->vgpu.active = true;
