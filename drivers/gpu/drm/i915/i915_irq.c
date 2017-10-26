@@ -813,13 +813,18 @@ static int __intel_get_crtc_scanline(struct intel_crtc *crtc)
 	if (HAS_DDI(dev_priv) && !position) {
 		int i, temp;
 
-		for (i = 0; i < 100; i++) {
-			udelay(1);
-			temp = __raw_i915_read32(dev_priv, PIPEDSL(pipe)) &
-				DSL_LINEMASK_GEN3;
-			if (temp != position) {
-				position = temp;
-				break;
+		/* DSL register values are meaningful only for Dom0,
+		 * so don't read the DSL register in DomU
+		 */
+		if (!intel_vgpu_active(dev_priv)) {
+			for (i = 0; i < 100; i++) {
+				udelay(1);
+				temp = __raw_i915_read32(dev_priv, PIPEDSL(pipe)) &
+					DSL_LINEMASK_GEN3;
+				if (temp != position) {
+					position = temp;
+					break;
+				}
 			}
 		}
 	}
