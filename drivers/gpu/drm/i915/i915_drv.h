@@ -1975,6 +1975,12 @@ struct i915_virtual_gpu {
 	bool active;
 };
 
+struct i915_vgt_set_pte_job {
+	struct set_pte_job_entry *job_table;
+	u32 table_end;
+	u32 pte_num;
+};
+
 /* used in computing the new watermarks state */
 struct intel_wm_config {
 	unsigned int num_pipes_active;
@@ -2197,6 +2203,8 @@ struct drm_i915_private {
 	struct intel_uncore uncore;
 
 	struct i915_virtual_gpu vgpu;
+
+	struct i915_vgt_set_pte_job set_pte;
 
 	struct intel_gvt *gvt;
 

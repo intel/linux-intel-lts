@@ -2403,6 +2403,49 @@ static void gen8_set_pte(void __iomem *addr, gen8_pte_t pte)
 	writeq(pte, addr);
 }
 
+static int gen8_ggtt_notify_vgt_ptes(struct i915_address_space *vm)
+{
+	struct drm_i915_private *dev_priv = vm->i915;
+	struct i915_vgt_set_pte_job *set_pte = &dev_priv->set_pte;
+	enum vgt_g2v_type msg = VGT_G2V_SET_PTE;
+
+	if (set_pte->pte_num == 0)
+		return 0;
+
+	I915_WRITE(vgtif_reg(pte_num), set_pte->pte_num);
+	I915_WRITE(vgtif_reg(g2v_notify), msg);
+
+	set_pte->pte_num = 0;
+	return 0;
+}
+
+/*
+ * intent: add entry to the "dispatch command list" for setting pte's
+ * The expectation is that after multiple calls to this function, it
+ * is followed with a call go gen8_dispatch_set_ptes
+ */
+static void gen8_add_set_pte(
+			void __iomem *addr,
+			u64 index,
+			gen8_pte_t pte,
+			struct i915_address_space *vm)
+{
+	struct drm_i915_private *dev_priv = vm->i915;
+	struct i915_vgt_set_pte_job *set_pte = &dev_priv->set_pte;
+	struct set_pte_job_entry *one_entry = NULL;
+
+	GEM_BUG_ON(set_pte->job_table == NULL);
+
+	/* handle overflow */
+	if (set_pte->pte_num >= set_pte->table_end)
+		gen8_ggtt_notify_vgt_ptes(vm);
+
+	one_entry = set_pte->job_table + set_pte->pte_num;
+	one_entry->index = index;
+	one_entry->pte = pte;
+	++(set_pte->pte_num);
+}
+
 static void gen8_ggtt_insert_page(struct i915_address_space *vm,
 				  dma_addr_t addr,
 				  uint64_t offset,
@@ -2436,6 +2479,47 @@ static void gen8_ggtt_insert_entries(struct i915_address_space *vm,
 		gtt_entry = gen8_pte_encode(addr, level);
 		gen8_set_pte(&gtt_entries[i++], gtt_entry);
 	}
+
+	/*
+	 * XXX: This serves as a posting read to make sure that the PTE has
+	 * actually been updated. There is some concern that even though
+	 * registers and PTEs are within the same BAR that they are potentially
+	 * of NUMA access patterns. Therefore, even with the way we assume
+	 * hardware should work, we must keep this posting read for paranoia.
+	 */
+	if (i != 0)
+		WARN_ON(readq(&gtt_entries[i-1]) != gtt_entry);
+
+	/* This next bit makes the above posting read even more important. We
+	 * want to flush the TLBs only after we're certain all the PTE updates
+	 * have finished.
+	 */
+	ggtt->invalidate(vm->i915);
+}
+
+static void gen8_ggtt_insert_entries_vgpu(struct i915_address_space *vm,
+				     struct sg_table *st,
+				     uint64_t start,
+				     enum i915_cache_level level, u32 unused)
+{
+	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vm);
+	struct sgt_iter sgt_iter;
+	gen8_pte_t __iomem *gtt_entries;
+	gen8_pte_t gtt_entry;
+	dma_addr_t addr;
+	int i = 0;
+
+	gtt_entries = (gen8_pte_t __iomem *)ggtt->gsm + (start >> PAGE_SHIFT);
+
+	for_each_sgt_dma(addr, sgt_iter, st) {
+		gtt_entry = gen8_pte_encode(addr, level);
+		gen8_add_set_pte(
+			&gtt_entries[i],
+			(start >> PAGE_SHIFT) + i,
+			gtt_entry, vm);
+		i++;
+	}
+	gen8_ggtt_notify_vgt_ptes(vm);
 
 	/*
 	 * XXX: This serves as a posting read to make sure that the PTE has
@@ -2561,6 +2645,34 @@ static void gen8_ggtt_clear_range(struct i915_address_space *vm,
 				      I915_CACHE_LLC);
 	for (i = 0; i < num_entries; i++)
 		gen8_set_pte(&gtt_base[i], scratch_pte);
+	readl(gtt_base);
+}
+
+static void gen8_ggtt_clear_range_vgpu(struct i915_address_space *vm,
+				  uint64_t start, uint64_t length)
+{
+	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vm);
+	unsigned first_entry = start >> PAGE_SHIFT;
+	unsigned num_entries = length >> PAGE_SHIFT;
+	gen8_pte_t scratch_pte, __iomem *gtt_base =
+		(gen8_pte_t __iomem *)ggtt->gsm + first_entry;
+	const int max_entries = ggtt_total_entries(ggtt) - first_entry;
+	int i;
+
+	if (WARN(num_entries > max_entries,
+		 "First entry = %d; Num entries = %d (max=%d)\n",
+		 first_entry, num_entries, max_entries))
+		num_entries = max_entries;
+
+	scratch_pte = gen8_pte_encode(vm->scratch_page.daddr,
+				      I915_CACHE_LLC);
+	for (i = 0; i < num_entries; i++) {
+		gen8_add_set_pte(
+				 &gtt_base[i],
+				 first_entry + i,
+				 scratch_pte, vm);
+	}
+	gen8_ggtt_notify_vgt_ptes(vm);
 	readl(gtt_base);
 }
 
@@ -3091,10 +3203,18 @@ static int gen8_gmch_probe(struct i915_ggtt *ggtt)
 	ggtt->base.unbind_vma = ggtt_unbind_vma;
 	ggtt->base.insert_page = gen8_ggtt_insert_page;
 	ggtt->base.clear_range = nop_clear_range;
-	if (!USES_FULL_PPGTT(dev_priv) || intel_scanout_needs_vtd_wa(dev_priv))
-		ggtt->base.clear_range = gen8_ggtt_clear_range;
+	if (!USES_FULL_PPGTT(dev_priv) ||
+		intel_scanout_needs_vtd_wa(dev_priv)) {
+		if (intel_vgpu_active(dev_priv))
+			ggtt->base.clear_range = gen8_ggtt_clear_range_vgpu;
+		else
+			ggtt->base.clear_range = gen8_ggtt_clear_range;
+	}
 
-	ggtt->base.insert_entries = gen8_ggtt_insert_entries;
+	if (intel_vgpu_active(dev_priv))
+		ggtt->base.insert_entries = gen8_ggtt_insert_entries_vgpu;
+	else
+		ggtt->base.insert_entries = gen8_ggtt_insert_entries;
 	if (IS_CHERRYVIEW(dev_priv))
 		ggtt->base.insert_entries = gen8_ggtt_insert_entries__BKL;
 

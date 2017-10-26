@@ -1273,6 +1273,22 @@ void intel_uncore_init(struct drm_i915_private *dev_priv)
 	if (INTEL_GEN(dev_priv) >= 8)
 		intel_shadow_table_check();
 
+	if (intel_vgpu_active(dev_priv)) {
+		u64 table_phys = 0;
+
+		dev_priv->set_pte.job_table =
+			kmalloc(PAGE_SIZE, GFP_KERNEL | GFP_DMA);
+		WARN_ON(dev_priv->set_pte.job_table == NULL);
+		table_phys = virt_to_phys(dev_priv->set_pte.job_table);
+		dev_priv->set_pte.table_end = PAGE_SIZE /
+			sizeof(*(dev_priv->set_pte.job_table));
+		dev_priv->set_pte.pte_num = 0;
+		I915_WRITE(vgtif_reg(pte_page.lo), lower_32_bits(table_phys));
+		I915_WRITE(vgtif_reg(pte_page.hi), upper_32_bits(table_phys));
+		I915_WRITE(vgtif_reg(g2v_notify), VGT_G2V_SET_PTE_PAGE);
+
+	}
+
 	i915_check_and_clear_faults(dev_priv);
 }
 #undef ASSIGN_WRITE_MMIO_VFUNCS
@@ -1283,6 +1299,11 @@ void intel_uncore_fini(struct drm_i915_private *dev_priv)
 	/* Paranoia: make sure we have disabled everything before we exit. */
 	intel_uncore_sanitize(dev_priv);
 	intel_uncore_forcewake_reset(dev_priv, false);
+
+	if (intel_vgpu_active(dev_priv)) {
+		kfree(dev_priv->set_pte.job_table);
+		dev_priv->set_pte.job_table = NULL;
+	}
 }
 
 #define GEN_RANGE(l, h) GENMASK((h) - 1, (l) - 1)
