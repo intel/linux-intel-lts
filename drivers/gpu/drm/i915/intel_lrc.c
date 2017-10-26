@@ -370,17 +370,19 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 
 	/* You must always write both descriptors in the order below. */
 	if (intel_vgpu_active(engine->i915) && i915.enable_pvmmio) {
+		spin_lock(&dev_priv->shared_page_lock);
 		writel(upper_32_bits(desc[1]), elsp_data);
 		writel(lower_32_bits(desc[1]), elsp_data + 1);
 		writel(upper_32_bits(desc[0]), elsp_data + 2);
+		writel(lower_32_bits(desc[0]), elsp);
+		spin_unlock(&dev_priv->shared_page_lock);
 	} else {
 		writel(upper_32_bits(desc[1]), elsp);
 		writel(lower_32_bits(desc[1]), elsp);
 		writel(upper_32_bits(desc[0]), elsp);
+		/* The context is automatically loaded after the following */
+		writel(lower_32_bits(desc[0]), elsp);
 	}
-
-	/* The context is automatically loaded after the following */
-	writel(lower_32_bits(desc[0]), elsp);
 }
 
 static bool ctx_single_port_submission(const struct i915_gem_context *ctx)

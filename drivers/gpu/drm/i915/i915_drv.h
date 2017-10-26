@@ -2199,6 +2199,7 @@ struct drm_i915_private {
 
 	void __iomem *regs;
 	struct gvt_shared_page *shared_page;
+	spinlock_t shared_page_lock;
 
 	struct intel_uncore uncore;
 
