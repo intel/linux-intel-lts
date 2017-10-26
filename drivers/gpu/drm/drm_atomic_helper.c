@@ -3486,6 +3486,11 @@ retry:
 		goto fail;
 
 	ret = drm_atomic_crtc_set_property(crtc, crtc_state,
+			config->ctm_post_offset_property, 0);
+	if (ret)
+		goto fail;
+
+	ret = drm_atomic_crtc_set_property(crtc, crtc_state,
 			config->gamma_lut_property, blob->base.id);
 	if (ret)
 		goto fail;
