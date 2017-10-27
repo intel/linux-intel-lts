@@ -405,6 +405,17 @@ config SND_SOC_INTEL_CNL_SVFPGA_MACH
         Say Y if you have such a device
         If unsure select "N".
 
+config SND_SOC_INTEL_BXT_ULL_MACH
+        tristate "Reference ASoC Machine driver for BXT ULL machine"
+        depends on X86 && ACPI && I2C
+        select SND_SOC_INTEL_SST
+        select SND_SOC_INTEL_SKYLAKE
+        select SND_SOC_COMPRESS
+        help
+           This adds support for ASoC machine driver for Broxton ULL GP MRB platform
+           Say Y if you have such a device
+           If unsure select "N".
+
 config SND_SOC_SDW_AGGM1M2
 	bool "Enable SoundWire aggregation on Master 1 and Master 2"
 	help
