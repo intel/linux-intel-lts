@@ -39,9 +39,8 @@ static unsigned int intel_ipu_fpga_reset_prepare(struct intel_ipu4_device *isp)
 		 bridge->device, bridge->revision);
 
 	/*
-	 * HACK - search bridge IO resources and map a page from there
-	 * to IPU io resources. This is only for fpga - probably not
-	 * worth of separate driver just for reset.
+	 * FPGA related process - search bridge IO resources and map a page
+	 * from there to IPU io resources.
 	 */
 	phys = pci_resource_start(bridge, 0);
 
@@ -63,6 +62,7 @@ static void intel_ipu_fpga_reset(struct pci_dev *pci_dev)
 
 	pci_save_state(pci_dev);
 
+	/* reset process for FPGA only */
 	ipu_readl(isp->base2 + IPU5_FPGA_RESET_REG);
 	ipu_writel(IPU5_FPGA_RESET_ACTIVE, isp->base2 + IPU5_FPGA_RESET_REG);
 	usleep_range(1000, 1100);
@@ -82,6 +82,7 @@ static void intel_ipu_fpga_reset(struct pci_dev *pci_dev)
 static void intel_ipu_fpga_pmclite_btr_power(
 			struct intel_ipu4_device *isp, bool on)
 {
+	/* FPGA uses PMC Lite to control IPU power */
 	if (!on) {
 		ipu_writel(0, isp->base + BUTTRESS_REG_PS_FREQ_CTL);
 		usleep_range(1000, 1500);
@@ -105,6 +106,7 @@ static void intel_ipu_buttress_disable_secure_touch(
 {
 	u32 val;
 
+	/* No CSE HW on FPGA, no security related features */
 	val = ipu_readl(isp->base + BUTTRESS_REG_SECURE_TOUCH);
 	val &= ~(1 << BUTTRESS_SECURE_TOUCH_SECURE_TOUCH_SHIFT);
 	ipu_writel(val, isp->base + BUTTRESS_REG_SECURE_TOUCH);
@@ -233,6 +235,10 @@ out_err:
 
 static void intel_ipu_fpga_sensor_config(struct intel_ipu4_device *isp)
 {
+	/*
+	* To support sensor on FPGA, some registers defined to control
+	* MIPI to connect sensor
+	*/
 	ipu_writel(0x0, isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
 	ipu_writel(IPU5_BUTTRESS_SENSOR_SUPPORT_SW_RESET,
 		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
@@ -244,21 +250,25 @@ static void intel_ipu_fpga_sensor_config(struct intel_ipu4_device *isp)
 
 static int intel_ipu_fpga_get_secure_mode(void)
 {
+	/* skip handling for security related features as no CSE HW */
 	return 0;
 }
 
 static int intel_ipu_fpga_ipc_reset(struct device *dev)
 {
+	/* skip handling for security related features as no CSE HW */
 	return 0;
 }
 
 static int intel_ipu_fpga_start_tsc(void)
 {
+	/* Skip handling as no Hammock Harbor HW */
 	return 0;
 }
 
 static int intel_ipu_fpga_get_config(int type)
 {
+	/* FPGA related configration for TPG mode */
 	switch (type) {
 	case ISYS_FREQ:
 		return INTEL_IPU5_ISYS_FREQ_FPGA;

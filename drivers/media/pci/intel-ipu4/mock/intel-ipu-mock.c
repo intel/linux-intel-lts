@@ -23,16 +23,19 @@ static int intel_ipu_get_sim_type(void)
 
 static int intel_ipu_mock_get_secure_mode(void)
 {
+	/* skip handling for security related features as no CSE HW */
 	return 0;
 }
 
 static int intel_ipu_mock_ipc_reset(struct device *dev)
 {
+	/* Skip handling for security related features as no CSE HW */
 	return 0;
 }
 
 static int intel_ipu_mock_start_tsc(void)
 {
+	/* Skip handling as no Hammock Harbor HW */
 	return 0;
 }
 
