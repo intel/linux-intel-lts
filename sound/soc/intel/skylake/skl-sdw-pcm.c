@@ -97,7 +97,8 @@ int cnl_sdw_startup(struct snd_pcm_substream *substream,
 		dma->stream_type = CNL_SDW_PDI_TYPE_PDM;
 	else {
 		dev_err(dai->dev, "Stream type not known\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto free_dma;
 	}
 	dma->mstr = mstr;
 	dma->mstr_nr = sdw_ctrl_nr;
@@ -113,13 +114,13 @@ int cnl_sdw_startup(struct snd_pcm_substream *substream,
 	if (ret) {
 		dev_err(dai->dev, "Unable to allocate stream tag");
 		ret =  -EINVAL;
-		goto alloc_stream_tag_failed;
+		goto free_dma;
 	}
 	ret = snd_soc_dai_program_stream_tag(substream, dai, dma->stream_tag);
 
 	dma->stream_state = STREAM_STATE_ALLOC_STREAM_TAG;
 	return 0;
-alloc_stream_tag_failed:
+free_dma:
 	kfree(dma);
 alloc_failed:
 	sdw_put_master(mstr);
@@ -140,6 +141,7 @@ int cnl_sdw_hw_params(struct snd_pcm_substream *substream,
 	struct skl_pipe_params p_params = {0};
 	struct skl_module_cfg *m_cfg;
 	int i, upscale_factor = 16;
+	int nr_port;
 
 	p_params.s_fmt = snd_pcm_format_width(params_format(params));
 	p_params.ch = params_channels(params);
@@ -167,13 +169,14 @@ int cnl_sdw_hw_params(struct snd_pcm_substream *substream,
 	if (!dma->port)
 		return -ENOMEM;
 
-	for (i = 0; i < dma->nr_ports; i++) {
+	for (nr_port = 0; nr_port < dma->nr_ports; nr_port++) {
 		/* Dynamically alloc port and PDI streams for this DAI */
-		dma->port[i] = cnl_sdw_alloc_port(dma->mstr, channels,
+		dma->port[nr_port] = cnl_sdw_alloc_port(dma->mstr, channels,
 					direction, dma->stream_type);
-		if (!dma->port[i]) {
+		if (!dma->port[nr_port]) {
 			dev_err(dai->dev, "Unable to allocate port\n");
-			return -EINVAL;
+			ret = -EINVAL;
+			goto free_dma_port;
 		}
 	}
 
@@ -181,7 +184,8 @@ int cnl_sdw_hw_params(struct snd_pcm_substream *substream,
 	m_cfg = skl_tplg_be_get_cpr_module(dai, substream->stream);
 	if (!m_cfg) {
 		dev_err(dai->dev, "BE Copier not found\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto free_dma_port;
 	}
 
 	if (!m_cfg->sdw_agg_enable)
@@ -191,7 +195,7 @@ int cnl_sdw_hw_params(struct snd_pcm_substream *substream,
 					dma->port[0]->pdi_stream->sdw_pdi_num;
 	ret = skl_tplg_be_update_params(dai, &p_params);
 	if (ret)
-		return ret;
+		goto free_dma_port;
 
 
 	stream_config.frame_rate =  params_rate(params);
@@ -215,13 +219,14 @@ int cnl_sdw_hw_params(struct snd_pcm_substream *substream,
 							dma->stream_tag);
 	if (ret) {
 		dev_err(dai->dev, "Unable to configure the stream\n");
-		return ret;
+		goto free_dma_port;
 	}
 	port_cfg = kcalloc(dma->nr_ports, sizeof(struct sdw_port_cfg),
 								GFP_KERNEL);
-	if (!port_cfg)
-		return -ENOMEM;
-
+	if (!port_cfg) {
+		ret = -ENOMEM;
+		goto free_dma_port;
+	}
 	port_config.num_ports = dma->nr_ports;
 	port_config.port_cfg = port_cfg;
 
@@ -237,10 +242,18 @@ int cnl_sdw_hw_params(struct snd_pcm_substream *substream,
 	ret = sdw_config_port(dma->mstr, NULL, &port_config, dma->stream_tag);
 	if (ret) {
 		dev_err(dai->dev, "Unable to configure port\n");
-		return ret;
+		goto free_port_cfg;
 	}
 	dma->stream_state = STREAM_STATE_CONFIG_STREAM;
 	return 0;
+
+free_port_cfg:
+	kfree(port_cfg);
+free_dma_port:
+	while (nr_port--)
+		cnl_sdw_free_port(dma->mstr, dma->port[nr_port]->port_num);
+	kfree(dma->port);
+	return ret;
 }
 
 int cnl_sdw_hw_free(struct snd_pcm_substream *substream,
