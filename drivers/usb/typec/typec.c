@@ -625,6 +625,9 @@ typec_altmode_active_store(struct device *dev, struct device_attribute *attr,
 	bool activate;
 	int ret;
 
+	if (!mode  || !port)
+		return -EINVAL;
+
 	ret = strtobool(buf, &activate);
 	if (ret)
 		return ret;
