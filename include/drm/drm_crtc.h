@@ -147,6 +147,7 @@ struct drm_crtc_state {
 	/* blob property to expose color management to userspace */
 	struct drm_property_blob *degamma_lut;
 	struct drm_property_blob *ctm;
+	struct drm_property_blob *ctm_post_offset;
 	struct drm_property_blob *gamma_lut;
 
 	/**

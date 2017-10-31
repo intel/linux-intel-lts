@@ -13334,6 +13334,11 @@ static int intel_atomic_legacy_gamma_set(struct drm_crtc *crtc,
 				      state->ctm->base.id : 0);
 
 	drm_object_property_set_value(&crtc->base,
+				      config->ctm_post_offset_property,
+				      (state->ctm_post_offset) ?
+				      state->ctm_post_offset->base.id : 0);
+
+	drm_object_property_set_value(&crtc->base,
 				      config->gamma_lut_property,
 				      (state->gamma_lut) ?
 				      state->gamma_lut->base.id : 0);

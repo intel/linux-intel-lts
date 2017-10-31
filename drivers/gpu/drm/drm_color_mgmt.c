@@ -142,9 +142,12 @@ void drm_crtc_enable_color_mgmt(struct drm_crtc *crtc,
 					   degamma_lut_size);
 	}
 
-	if (has_ctm)
+	if (has_ctm) {
 		drm_object_attach_property(&crtc->base,
 					   config->ctm_property, 0);
+		drm_object_attach_property(&crtc->base,
+					   config->ctm_post_offset_property, 0);
+    }
 
 	if (gamma_lut_size) {
 		drm_object_attach_property(&crtc->base,
