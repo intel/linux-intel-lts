@@ -67,7 +67,7 @@ struct i915_params i915 __read_mostly = {
 	.enable_dpcd_backlight = false,
 	.enable_gvt = false,
 	.memtrack_debug = 1,
-	.avail_planes_per_pipe = 0x010101, /*plane1 for pipes A,B and C */
+	.avail_planes_per_pipe = 0x0,
 	.domain_plane_owners = 0x0,
 };
 
@@ -286,7 +286,7 @@ module_param_named_unsafe(avail_planes_per_pipe, i915.avail_planes_per_pipe, uin
 MODULE_PARM_DESC(avail_planes_per_pipe, "plane mask for each   pipe: \
 	set BITS 0-3:pipeA 8-11:pipeB 16-18:pipeC to specify the planes that \
 	are available eg: 0x030701 : planes 1:pipeA 1,2,3:pipeB \
-	1,2:pipeC (0x010101 - default value)");
+	1,2:pipeC (0x0 - default value)");
 module_param_named_unsafe(domain_plane_owners, i915.domain_plane_owners, ullong, 0400);
 /* pipeA = BITS 0-15 pipeB = 16-31, pipeC = 32-47
  *
