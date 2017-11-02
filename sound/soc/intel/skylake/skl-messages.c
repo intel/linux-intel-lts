@@ -117,6 +117,19 @@ int skl_dsp_set_system_time(struct skl_sst *skl_sst)
 	return ret;
 }
 
+#define SKL_ASTATE_PARAM_ID	4
+
+void skl_dsp_set_astate_cfg(struct skl_sst *ctx, u32 cnt, void *data)
+{
+	struct skl_ipc_large_config_msg	msg = {0};
+
+	msg.large_param_id = SKL_ASTATE_PARAM_ID;
+	msg.param_data_size = (cnt * sizeof(struct skl_astate_config) +
+				sizeof(cnt));
+
+	skl_ipc_set_large_config(&ctx->ipc, &msg, data);
+}
+
 #define NOTIFICATION_PARAM_ID 3
 #define NOTIFICATION_MASK 0xf
 
@@ -1358,6 +1371,11 @@ int skl_resume_dsp(struct skl *skl)
 
 	skl_dsp_enable_notification(skl->skl_sst, false);
 
+	if (skl->cfg.astate_cfg != NULL) {
+		skl_dsp_set_astate_cfg(skl->skl_sst, skl->cfg.astate_cfg->count,
+					skl->cfg.astate_cfg);
+	}
+
 	/* Set the FW config info from topology */
 	skl_tplg_fw_cfg_set(skl);
 
@@ -1559,7 +1577,7 @@ static void skl_setup_cpr_gateway_cfg(struct skl_sst *ctx,
 		cpr_mconfig->gtw_cfg.dma_buffer_size = res->dma_buffer_size;
 		goto skip_buf_size_calc;
 	}
-	
+
 	switch (mconfig->hw_conn_type) {
 	case SKL_CONN_SOURCE:
 		if (mconfig->dev_type == SKL_DEVICE_HDAHOST)

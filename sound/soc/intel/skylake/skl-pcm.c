@@ -2134,7 +2134,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 
 	if (!found)
 		return -EIO;
-		
+
 	uuid_bin_fw = &module->uuid;
 	for (i = 0; i < skl->nr_modules; i++) {
 		skl_module = skl->modules[i];
@@ -2145,7 +2145,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 			break;
 		}
 	}
-	
+
 	if (!found)
 		return -EIO;
 
@@ -2155,7 +2155,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 			if (uuid_le_cmp(pin_id->mod_uuid, module->uuid) == 0)
 				pin_id->module_id = module->id;
 		}
-		
+
 		for (i = 0; i < SKL_MAX_OUT_QUEUE; i++) {
 			pin_id = &mconfig->m_out_pin[i].id;
 			if (uuid_le_cmp(pin_id->mod_uuid, module->uuid) == 0)
@@ -2256,6 +2256,12 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 		if (ret < 0) {
 			dev_err(platform->dev, "Failed to boot first fw: %d\n", ret);
 			return ret;
+		}
+
+		if (skl->cfg.astate_cfg != NULL) {
+			skl_dsp_set_astate_cfg(skl->skl_sst,
+					skl->cfg.astate_cfg->count,
+					skl->cfg.astate_cfg);
 		}
 
 		/* Set the FW config info from topology */
