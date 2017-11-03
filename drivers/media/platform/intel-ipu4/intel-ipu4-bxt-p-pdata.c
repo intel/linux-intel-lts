@@ -146,7 +146,7 @@ static struct intel_ipu4_isys_subdev_info imx185_b_crl_sd = {
 #define IMX477_I2C_ADDRESS 0x10
 
 static struct crlmodule_platform_data imx477_pdata_master = {
-	.xshutdown = GPIO_BASE + 71,
+	.xshutdown = GPIO_BASE + 64,
 	.lanes = IMX477_LANES,
 	.ext_clk = 19200000,
 	.op_sys_clock = (uint64_t []){600000000},
@@ -171,7 +171,7 @@ static struct intel_ipu4_isys_subdev_info imx477_crl_sd_master = {
 };
 
 static struct crlmodule_platform_data imx477_pdata_slave_1 = {
-	.xshutdown = GPIO_BASE + 73,
+	.xshutdown = GPIO_BASE + 67,
 	.lanes = IMX477_LANES,
 	.ext_clk = 19200000,
 	.op_sys_clock = (uint64_t []){600000000},
