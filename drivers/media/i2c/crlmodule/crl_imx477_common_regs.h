@@ -362,28 +362,28 @@ static struct crl_csi_data_fmt imx477_crl_csi_data_fmt[] = {
 	},
 };
 
-static struct crl_subdev_rect_rep imx477_4056_3038_rects[] = {
+static struct crl_subdev_rect_rep imx477_4056_3040_rects[] = {
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 4056,
-		.in_rect.height = 3038,
+		.in_rect.height = 3040,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 4056,
-		.out_rect.height = 3038,
+		.out_rect.height = 3040,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 4056,
-		.in_rect.height = 3038,
+		.in_rect.height = 3040,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 4056,
-		.out_rect.height = 3038,
+		.out_rect.height = 3040,
 	}
 };
 
@@ -470,7 +470,7 @@ static struct crl_sensor_limits imx477_sensor_limits = {
 	.x_addr_min = 0,
 	.y_addr_min = 0,
 	.x_addr_max = 4056,
-	.y_addr_max = 3038,
+	.y_addr_max = 3040,
 	.min_frame_length_lines = 320,
 	.max_frame_length_lines = 65535,
 	.min_line_length_pixels = 380,
@@ -502,6 +502,7 @@ static struct crl_power_seq_entity imx477_power_items[] = {
 	{
 		.type = CRL_POWER_ETY_GPIO_FROM_PDATA,
 		.val = 1,
+		.undo_val = 1,
 	},
 };
 

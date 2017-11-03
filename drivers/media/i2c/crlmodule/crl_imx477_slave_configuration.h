@@ -22,7 +22,7 @@
 static struct crl_register_write_rep imx477_onetime_init_regset_slave[] = {
 	{0x0103, CRL_REG_LEN_08BIT, 0x01}, /* Software reset        */
 
-	{0x3010, CRL_REG_LEN_08BIT, 0x01}, /* SLAVE_ADD_EN_2ND i    */
+	{0x3010, CRL_REG_LEN_08BIT, 0x01}, /* SLAVE_ADD_EN_2ND      */
 	{0x3011, CRL_REG_LEN_08BIT, 0x01}, /* SLAVE_ADD_ACKEN_2ND   */
 
 	{0x3F0B, CRL_REG_LEN_08BIT, 0x01}, /* Multi camera mode: on */
@@ -346,7 +346,7 @@ static struct crl_register_write_rep imx477_onetime_init_regset_slave[] = {
 	{0xB35E, CRL_REG_LEN_08BIT, 0x08},
 };
 
-static struct crl_register_write_rep imx477_4056_3038_19MHZ_slave[] = {
+static struct crl_register_write_rep imx477_4056_3040_19MHZ_slave[] = {
 	/* Frame Horizontal Clock Count */
 	{0x0342, CRL_REG_LEN_08BIT, 0x39}, /* Line length [15:8]  */
 	{0x0343, CRL_REG_LEN_08BIT, 0x14}, /* Line length [7:0]   */
@@ -363,7 +363,7 @@ static struct crl_register_write_rep imx477_4056_3038_19MHZ_slave[] = {
 	{0x0348, CRL_REG_LEN_08BIT, 0x0F}, /* Analog cropping end X [12:8]   */
 	{0x0349, CRL_REG_LEN_08BIT, 0xD7}, /* Analog cropping end X [7:0]    */
 	{0x034A, CRL_REG_LEN_08BIT, 0x0B}, /* Analog cropping end Y [12:8]   */
-	{0x034B, CRL_REG_LEN_08BIT, 0xDD}, /* Analog cropping end Y [7:0]    */
+	{0x034B, CRL_REG_LEN_08BIT, 0xDF}, /* Analog cropping end Y [7:0]    */
 
 	/* Mode Setting */
 	{0x00E3, CRL_REG_LEN_08BIT, 0x00}, /* DOL-HDR Disable */
@@ -421,30 +421,30 @@ static struct crl_register_write_rep imx477_4056_3038_19MHZ_slave[] = {
 	{0x040C, CRL_REG_LEN_08BIT, 0x0F}, /* Width after cropping [12:8]  */
 	{0x040D, CRL_REG_LEN_08BIT, 0xD8}, /* Width after cropping [7:0]   */
 	{0x040E, CRL_REG_LEN_08BIT, 0x0B}, /* Height after cropping [12:8] */
-	{0x040F, CRL_REG_LEN_08BIT, 0xDE}, /* Height after cropping [7:0]  */
+	{0x040F, CRL_REG_LEN_08BIT, 0xE0}, /* Height after cropping [7:0]  */
 
 	/* Output Crop */
 	{0x034C, CRL_REG_LEN_08BIT, 0x0F}, /* X output size [12:8] */
 	{0x034D, CRL_REG_LEN_08BIT, 0xD8}, /* X output size [7:0]  */
 	{0x034E, CRL_REG_LEN_08BIT, 0x0B}, /* Y output size [12:8] */
-	{0x034F, CRL_REG_LEN_08BIT, 0xDE}, /* Y output size [7:0]  */
+	{0x034F, CRL_REG_LEN_08BIT, 0xE0}, /* Y output size [7:0]  */
 };
 
 static struct crl_mode_rep imx477_modes_slave[] = {
 	{
-		.sd_rects_items = ARRAY_SIZE(imx477_4056_3038_rects),
-		.sd_rects = imx477_4056_3038_rects,
+		.sd_rects_items = ARRAY_SIZE(imx477_4056_3040_rects),
+		.sd_rects = imx477_4056_3040_rects,
 		.binn_hor = 1,
 		.binn_vert = 1,
 		.scale_m = 1,
 		.width = 4056,
-		.height = 3038,
+		.height = 3040,
 		.min_llp = 14612,
 		.min_fll = 8209,
 		.comp_items = 0,
 		.ctrl_data = 0,
-		.mode_regs_items = ARRAY_SIZE(imx477_4056_3038_19MHZ_slave),
-		.mode_regs = imx477_4056_3038_19MHZ_slave,
+		.mode_regs_items = ARRAY_SIZE(imx477_4056_3040_19MHZ_slave),
+		.mode_regs = imx477_4056_3040_19MHZ_slave,
 	},
 };
 
