@@ -1,15 +1,15 @@
 /**
 * Support for Intel Camera Imaging ISP subsystem.
-* Copyright (c) 2010 - 2017, Intel Corporation.
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms and conditions of the GNU General Public License,
-* version 2, as published by the Free Software Foundation.
-*
-* This program is distributed in the hope it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-* more details.
+ * Copyright (c) 2010 - 2017, Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
 */
 
 /* TODO: REMOVE --> START IF EXTERNALLY INCLUDED/DEFINED */
@@ -185,6 +185,10 @@ static int isys_context_create(
 	sys.dmem_addr = ipu_device_cell_memory_address(SPC0,
 				IPU_DEVICE_SP2600_CONTROL_DMEM);
 
+#if HAS_DUAL_CMD_CTX_SUPPORT
+	sys.dmem_addr += config->secure ? REGMEM_SECURE_OFFSET : REGMEM_OFFSET;
+#endif
+
 	/* Prepare the param */
 	ia_css_isys_prepare_param(
 		&isys_fw_cfg,
@@ -196,6 +200,7 @@ static int isys_context_create(
 	sys.specific_addr = &isys_fw_cfg;
 	/* parameters size */
 	sys.specific_size = sizeof(isys_fw_cfg);
+	sys.secure = config->secure;
 
 	IA_CSS_TRACE_0(ISYSAPI, VERBOSE,
 		"isys_context_create || call ia_css_syscom_open()\n");
