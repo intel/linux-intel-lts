@@ -940,7 +940,4 @@ void skl_debugfs_exit(struct skl_debug *d)
 	}
 	kfree(d->dmic_blob.cfg);
 	mutex_destroy(&d->fw_ipc_data.mutex);
-
-	kfree(d);
-
 }
