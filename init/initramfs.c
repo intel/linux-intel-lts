@@ -18,6 +18,7 @@
 #include <linux/dirent.h>
 #include <linux/syscalls.h>
 #include <linux/utime.h>
+#include <linux/file.h>
 #include <linux/async.h>
 #include <linux/kthread.h>
 #include "preload_module.c"
@@ -653,6 +654,7 @@ static void __init async_populate_rootfs(void *data, async_cookie_t cookie)
 			printk(KERN_EMERG "Initramfs unpacking failed: %s\n", err);
 		free_initrd();
 #endif
+		flush_delayed_fput();
 		/*
 		 * Try loading default modules from initramfs.  This gives
 		 * us a chance to load before device_initcalls.
