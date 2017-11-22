@@ -526,6 +526,10 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
 
 	adsp_hdr = (struct adsp_fw_hdr *)(buf + offset);
 
+	dev_info(ctx->dev, "ADSP FW Version: %d.%d.%d.%d\n",
+		 adsp_hdr->major, adsp_hdr->minor,
+		 adsp_hdr->hotfix, adsp_hdr->build);
+
 	/* check 1st module entry is in file */
 	safe_file += adsp_hdr->len + sizeof(*mod_entry);
 	if (stripped_fw.size <= safe_file) {
