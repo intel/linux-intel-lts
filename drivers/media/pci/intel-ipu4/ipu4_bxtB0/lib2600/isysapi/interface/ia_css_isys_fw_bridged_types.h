@@ -375,7 +375,8 @@ struct resp_queue_token {
 struct send_queue_token {
 	aligned_uint64(ia_css_return_token, buf_handle);
 	aligned_uint32(ia_css_input_buffer_css_address, payload);
-	aligned_enum(enum ia_css_isys_send_type, send_type);
+	aligned_uint16(enum ia_css_isys_send_type, send_type);
+	aligned_uint16(unsigned int, stream_id);
 };
 
 /**
