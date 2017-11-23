@@ -25,6 +25,7 @@ config ANDROID_VSOC
 
 source "drivers/staging/android/abl/Kconfig"
 source "drivers/staging/android/ion/Kconfig"
+source "drivers/staging/android/sbl/Kconfig"
 
 endif # if ANDROID
 
