@@ -26,6 +26,7 @@ config DEBUG_KINFO
 	   - BUILD_INFO(ro.build.fingerprint)
 
 source "drivers/staging/android/abl/Kconfig"
+source "drivers/staging/android/sbl/Kconfig"
 endif # if ANDROID
 
 endmenu
