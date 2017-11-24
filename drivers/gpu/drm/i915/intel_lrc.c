@@ -345,6 +345,7 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 	struct execlist_port *port = engine->execlist_port;
 	u32 __iomem *elsp =
 		dev_priv->regs + i915_mmio_reg_offset(RING_ELSP(engine));
+	u32 __iomem *elsp_data = dev_priv->shared_page->elsp_data;
 	u64 desc[2];
 
 	GEM_BUG_ON(port[0].count > 1);
@@ -368,12 +369,20 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 	GEM_BUG_ON(desc[0] == desc[1]);
 
 	/* You must always write both descriptors in the order below. */
-	writel(upper_32_bits(desc[1]), elsp);
-	writel(lower_32_bits(desc[1]), elsp);
-
-	writel(upper_32_bits(desc[0]), elsp);
-	/* The context is automatically loaded after the following */
-	writel(lower_32_bits(desc[0]), elsp);
+	if (intel_vgpu_active(engine->i915) && i915.enable_pvmmio) {
+		spin_lock(&dev_priv->shared_page_lock);
+		writel(upper_32_bits(desc[1]), elsp_data);
+		writel(lower_32_bits(desc[1]), elsp_data + 1);
+		writel(upper_32_bits(desc[0]), elsp_data + 2);
+		writel(lower_32_bits(desc[0]), elsp);
+		spin_unlock(&dev_priv->shared_page_lock);
+	} else {
+		writel(upper_32_bits(desc[1]), elsp);
+		writel(lower_32_bits(desc[1]), elsp);
+		writel(upper_32_bits(desc[0]), elsp);
+		/* The context is automatically loaded after the following */
+		writel(lower_32_bits(desc[0]), elsp);
+	}
 }
 
 static bool ctx_single_port_submission(const struct i915_gem_context *ctx)

@@ -46,9 +46,30 @@ enum vgt_g2v_type {
 	VGT_G2V_PPGTT_L4_PAGE_TABLE_DESTROY,
 	VGT_G2V_EXECLIST_CONTEXT_CREATE,
 	VGT_G2V_EXECLIST_CONTEXT_DESTROY,
+	VGT_G2V_SET_PTE_PAGE,
+	VGT_G2V_SET_PTE,
 	VGT_G2V_MAX,
 };
 
+/*
+ * a job queue of pte set instructions is essentially a vector of job entries;
+ */
+struct set_pte_job_entry {
+	u64 index;
+	u64 pte;
+} __packed;
+
+/* shared page(4KB) between gvt and VM, located at the first page next
+ * to MMIO region(2MB size normally).
+ */
+struct gvt_shared_page {
+	u32 elsp_data[4];
+	u32 reg_addr; /* register address of pv mmio read op */
+	u32 flip_regs[6];
+	u32 rsvd2[0x400 - 11];
+};
+
+#define VGPU_PVMMIO(vgpu) vgpu_vreg(vgpu, vgtif_reg(enable_pvmmio))
 struct vgt_if {
 	u64 magic;		/* VGT_MAGIC */
 	u16 version_major;
@@ -93,11 +114,22 @@ struct vgt_if {
 		u32 hi;
 	} pdp[4];
 
+	struct {
+		u32 lo;
+		u32 hi;
+	} pte_page;
+
+	u32 pte_num;
 	u32 execlist_context_descriptor_lo;
 	u32 execlist_context_descriptor_hi;
+	u32 enable_pvmmio;
+	u32 pv_mmio; /* vgpu trapped mmio read will be redirected here */
+	u32 mmio_flip;
 
-	u32  rsv7[0x200 - 24];    /* pad to one page */
+	u32  rsv7[0x200 - 30];    /* pad to one page */
 } __packed;
+
+#define GVT_PV_MMIO_FLIP 1
 
 #define vgtif_reg(x) \
 	_MMIO((VGT_PVINFO_PAGE + offsetof(struct vgt_if, x)))

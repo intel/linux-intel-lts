@@ -1827,6 +1827,14 @@ static u8 intel_hdmi_ddc_pin(struct drm_i915_private *dev_priv,
 	}
 
 	switch (port) {
+	case PORT_A:
+		if ((IS_GEN9_LP(dev_priv)) && (intel_vgpu_active(dev_priv)))
+			ddc_pin = GMBUS_PIN_3_BXT;
+		else {
+			MISSING_CASE(port);
+			ddc_pin = GMBUS_PIN_DPB;
+		}
+		break;
 	case PORT_B:
 		if (IS_GEN9_LP(dev_priv))
 			ddc_pin = GMBUS_PIN_1_BXT;
@@ -1886,6 +1894,14 @@ void intel_hdmi_init_connector(struct intel_digital_port *intel_dig_port,
 	intel_hdmi->ddc_bus = intel_hdmi_ddc_pin(dev_priv, port);
 
 	switch (port) {
+	case PORT_A:
+		if (intel_vgpu_active(dev_priv))
+			intel_encoder->hpd_pin = HPD_PORT_A;
+		else {
+			MISSING_CASE(port);
+			return;
+		}
+		break;
 	case PORT_B:
 		intel_encoder->hpd_pin = HPD_PORT_B;
 		break;

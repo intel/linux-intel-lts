@@ -69,6 +69,7 @@ struct i915_params i915 __read_mostly = {
 	.memtrack_debug = 1,
 	.avail_planes_per_pipe = 0x0,
 	.domain_plane_owners = 0x0,
+	.enable_pvmmio = 1,
 };
 
 module_param_named(modeset, i915.modeset, int, 0400);
@@ -316,3 +317,7 @@ MODULE_PARM_DESC(domain_plane_owners, "plane owners for each domain and for each
 	ids can be from 0-F,  eg: domain_plane_owners = 0x022111000010 \
 	planes owner: 3C:2 2C:2 1C:1 4B:1 3B:1 2B:1 1B:0 4A:0 3A:0 2A:1 1A:0 \
 	(0x0 - default value)");
+module_param_named(enable_pvmmio, i915.enable_pvmmio, bool, 0400);
+MODULE_PARM_DESC(enable_pvmmio,
+	"Enable pv mmio feature, default TRUE. This parameter "
+	"could only set from host, guest value is set through vgt_if");
