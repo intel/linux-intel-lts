@@ -169,8 +169,6 @@ static int intel_th_pti_activate(struct intel_th_device *thdev)
 
 	iowrite32(ctl, pti->base + REG_PTI_CTL);
 
-	intel_th_trace_enable(thdev);
-
 	return 0;
 }
 

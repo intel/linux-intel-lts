@@ -42,6 +42,7 @@ config SYNC
           synchronization built into devices like GPUs.
 
 source "drivers/staging/android/ion/Kconfig"
+source "drivers/staging/android/abl/Kconfig"
 
 source "drivers/staging/android/fiq_debugger/Kconfig"
 

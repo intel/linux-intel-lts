@@ -31,6 +31,9 @@
 #include <asm/set_memory.h>
 #endif
 
+#include <linux/acpi.h>
+#include <linux/debugfs.h>
+
 #include "intel_th.h"
 #include "msu.h"
 
@@ -97,6 +100,7 @@ struct msc_iter {
  * @single_wrap:	single mode wrap occurred
  * @base:		buffer's base pointer
  * @base_addr:		buffer's base address
+ * @nwsa:		next window start address backup
  * @user_count:		number of users of the buffer
  * @mmap_count:		number of mappings
  * @buf_mutex:		mutex to serialize access to buffer-related bits
@@ -106,6 +110,8 @@ struct msc_iter {
  * @mode:		MSC operating mode
  * @burst_len:		write burst length
  * @index:		number of this MSC in the MSU
+ *
+ * @max_blocks:		Maximum number of blocks in a window
  */
 struct msc {
 	void __iomem		*reg_base;
@@ -117,6 +123,7 @@ struct msc {
 	unsigned int		single_wrap : 1;
 	void			*base;
 	dma_addr_t		base_addr;
+	unsigned long		nwsa;
 
 	/* <0: no buffer, 0: no users, >0: active users */
 	atomic_t		user_count;
@@ -132,7 +139,98 @@ struct msc {
 	unsigned int		mode;
 	unsigned int		burst_len;
 	unsigned int		index;
+	unsigned int		max_blocks;
 };
+
+static struct msc_probe_rem_cb msc_probe_rem_cb;
+
+struct msc_device_instance {
+	struct list_head list;
+	struct intel_th_device *thdev;
+};
+
+static LIST_HEAD(msc_dev_instances);
+static DEFINE_MUTEX(msc_dev_reg_lock);
+/**
+ * msc_register_callbacks()
+ * @cbs
+ */
+int msc_register_callbacks(struct msc_probe_rem_cb cbs)
+{
+	struct msc_device_instance *it;
+
+	mutex_lock(&msc_dev_reg_lock);
+
+	msc_probe_rem_cb.probe = cbs.probe;
+	msc_probe_rem_cb.remove = cbs.remove;
+	/* Call the probe callback for the already existing ones*/
+	list_for_each_entry(it, &msc_dev_instances, list) {
+		cbs.probe(it->thdev);
+	}
+
+	mutex_unlock(&msc_dev_reg_lock);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(msc_register_callbacks);
+
+/**
+ * msc_unregister_callbacks()
+ */
+void msc_unregister_callbacks(void)
+{
+	mutex_lock(&msc_dev_reg_lock);
+
+	msc_probe_rem_cb.probe = NULL;
+	msc_probe_rem_cb.remove = NULL;
+
+	mutex_unlock(&msc_dev_reg_lock);
+}
+EXPORT_SYMBOL_GPL(msc_unregister_callbacks);
+
+static void msc_add_instance(struct intel_th_device *thdev)
+{
+	struct msc_device_instance *instance;
+
+	instance = kmalloc(sizeof(*instance), GFP_KERNEL);
+	if (!instance)
+		return;
+
+	mutex_lock(&msc_dev_reg_lock);
+
+	instance->thdev = thdev;
+	list_add(&instance->list, &msc_dev_instances);
+
+	if (msc_probe_rem_cb.probe)
+		msc_probe_rem_cb.probe(thdev);
+
+	mutex_unlock(&msc_dev_reg_lock);
+}
+
+static void msc_rm_instance(struct intel_th_device *thdev)
+{
+	struct msc_device_instance *instance = NULL, *it;
+
+	mutex_lock(&msc_dev_reg_lock);
+
+	if (msc_probe_rem_cb.remove)
+		msc_probe_rem_cb.remove(thdev);
+
+	list_for_each_entry(it, &msc_dev_instances, list) {
+		if (it->thdev == thdev) {
+			instance = it;
+			break;
+		}
+	}
+
+	if (instance) {
+		list_del(&instance->list);
+		kfree(instance);
+	} else {
+		pr_warn("msu: cannot remove %p (not found)", thdev);
+	}
+
+	mutex_unlock(&msc_dev_reg_lock);
+}
 
 static inline bool msc_block_is_empty(struct msc_block_desc *bdesc)
 {
@@ -148,6 +246,37 @@ static inline bool msc_block_is_empty(struct msc_block_desc *bdesc)
 }
 
 /**
+ * msc_current_window() - locate the window in use
+ * @msc:	MSC device
+ *
+ * This should only be used in multiblock mode. Caller should hold the
+ * msc::user_count reference.
+ *
+ * Return:	the current output window
+ */
+static struct msc_window *msc_current_window(struct msc *msc)
+{
+	struct msc_window *win, *prev = NULL;
+	/*BAR is never changing, so the current one is the one before the next*/
+	u32 reg = ioread32(msc->reg_base + REG_MSU_MSC0NWSA);
+	unsigned long win_addr = (unsigned long)reg << PAGE_SHIFT;
+
+	if (list_empty(&msc->win_list))
+		return NULL;
+
+	list_for_each_entry(win, &msc->win_list, entry) {
+		if (win->block[0].addr == win_addr)
+			break;
+		prev = win;
+	}
+	if (!prev)
+		prev = list_entry(msc->win_list.prev, struct msc_window, entry);
+
+	return prev;
+}
+
+
+/**
  * msc_oldest_window() - locate the window with oldest data
  * @msc:	MSC device
  *
@@ -159,20 +288,26 @@ static inline bool msc_block_is_empty(struct msc_block_desc *bdesc)
 static struct msc_window *msc_oldest_window(struct msc *msc)
 {
 	struct msc_window *win;
-	u32 reg = ioread32(msc->reg_base + REG_MSU_MSC0NWSA);
-	unsigned long win_addr = (unsigned long)reg << PAGE_SHIFT;
 	unsigned int found = 0;
+	unsigned long nwsa;
 
 	if (list_empty(&msc->win_list))
 		return NULL;
 
+	if (msc->enabled) {
+		u32 reg = ioread32(msc->reg_base + REG_MSU_MSC0NWSA);
+
+		nwsa = (unsigned long)reg << PAGE_SHIFT;
+	} else {
+		nwsa = msc->nwsa;
+	}
 	/*
 	 * we might need a radix tree for this, depending on how
 	 * many windows a typical user would allocate; ideally it's
 	 * something like 2, in which case we're good
 	 */
 	list_for_each_entry(win, &msc->win_list, entry) {
-		if (win->block[0].addr == win_addr)
+		if (win->block[0].addr == nwsa)
 			found++;
 
 		/* skip the empty ones */
@@ -214,6 +349,160 @@ static unsigned int msc_win_oldest_block(struct msc_window *win)
 
 	return 0;
 }
+
+/**
+ * msc_max_blocks() - get the maximum number of block
+ * @thdev:	the sub-device
+ *
+ * Return:	the maximum number of blocks / window
+ */
+unsigned int msc_max_blocks(struct intel_th_device *thdev)
+{
+	struct msc *msc = dev_get_drvdata(&thdev->dev);
+
+	return msc->max_blocks;
+}
+EXPORT_SYMBOL_GPL(msc_max_blocks);
+
+/**
+ * msc_block_max_size() - get the size of biggest block
+ * @thdev:	the sub-device
+ *
+ * Return:	the size of biggest block
+ */
+unsigned int msc_block_max_size(struct intel_th_device *thdev)
+{
+	return PAGE_SIZE;
+}
+EXPORT_SYMBOL_GPL(msc_block_max_size);
+
+/**
+ * msc_switch_window() - perform a window switch
+ * @thdev:	the sub-device
+ */
+int msc_switch_window(struct intel_th_device *thdev)
+{
+	intel_th_trace_switch(thdev);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(msc_switch_window);
+
+/**
+ * msc_current_win_bytes() - get the current window data size
+ * @thdev:	the sub-device
+ *
+ * Get the number of valid data bytes in the current window.
+ * Based on this the dvc-source part can decide to request a window switch.
+ */
+int msc_current_win_bytes(struct intel_th_device *thdev)
+{
+	struct msc *msc = dev_get_drvdata(&thdev->dev);
+	struct msc_window *win;
+	u32 reg_mwp, blk, offset, i;
+	int size = 0;
+
+	/* proceed only if actively storing in muli-window mode */
+	if (!msc->enabled ||
+	    (msc->mode != MSC_MODE_MULTI) ||
+	    !atomic_inc_unless_negative(&msc->user_count))
+		return -EINVAL;
+
+	win = msc_current_window(msc);
+	reg_mwp = ioread32(msc->reg_base + REG_MSU_MSC0MWP);
+
+	if (!win) {
+		atomic_dec(&msc->user_count);
+		return -EINVAL;
+	}
+
+	blk = 0;
+	while (blk < win->nr_blocks) {
+		if (win->block[blk].addr == (reg_mwp & PAGE_MASK))
+			break;
+		blk++;
+	}
+
+	if (blk >= win->nr_blocks) {
+		atomic_dec(&msc->user_count);
+		return -EINVAL;
+	}
+
+	offset = (reg_mwp & (PAGE_SIZE - 1));
+
+
+	/*if wrap*/
+	if (msc_block_wrapped(win->block[blk].bdesc)) {
+		for (i = blk+1; i < win->nr_blocks; i++)
+			size += msc_data_sz(win->block[i].bdesc);
+	}
+
+	for (i = 0; i < blk; i++)
+		size += msc_data_sz(win->block[i].bdesc);
+
+	/*finaly the current one*/
+	size += (offset - MSC_BDESC);
+
+	atomic_dec(&msc->user_count);
+	return size;
+}
+EXPORT_SYMBOL_GPL(msc_current_win_bytes);
+
+/**
+ * msc_sg_oldest_win() - get the data from the oldest window
+ * @thdev:	the sub-device
+ * @sg_array:	destination sg array
+ *
+ * Return:	sg count
+ */
+int msc_sg_oldest_win(struct intel_th_device *thdev,
+		      struct scatterlist *sg_array)
+{
+	struct msc *msc = dev_get_drvdata(&thdev->dev);
+	struct msc_window *win, *c_win;
+	struct msc_block_desc *bdesc;
+	unsigned int blk, sg = 0;
+
+	/* proceed only if actively storing in muli-window mode */
+	if (!msc->enabled ||
+	    (msc->mode != MSC_MODE_MULTI) ||
+	    !atomic_inc_unless_negative(&msc->user_count))
+		return -EINVAL;
+
+	win = msc_oldest_window(msc);
+	if (!win)
+		return 0;
+
+	c_win = msc_current_window(msc);
+
+	if (win == c_win)
+		return 0;
+
+	blk = msc_win_oldest_block(win);
+
+	/* start with the first block containing only oldest data */
+	if (msc_block_wrapped(win->block[blk].bdesc))
+		if (++blk == win->nr_blocks)
+			blk = 0;
+
+	do {
+		bdesc = win->block[blk].bdesc;
+		sg_set_buf(&sg_array[sg++], bdesc, PAGE_SIZE);
+
+		if (bdesc->hw_tag & MSC_HW_TAG_ENDBIT)
+			break;
+
+		if (++blk == win->nr_blocks)
+			blk = 0;
+
+	} while (sg <= win->nr_blocks);
+
+	sg_mark_end(&sg_array[sg - 1]);
+
+	atomic_dec(&msc->user_count);
+
+	return sg;
+}
+EXPORT_SYMBOL_GPL(msc_sg_oldest_win);
 
 /**
  * msc_is_last_win() - check if a window is the last one for a given MSC
@@ -486,9 +775,9 @@ static void msc_buffer_clear_hw_header(struct msc *msc)
  * msc_configure() - set up MSC hardware
  * @msc:	the MSC device to configure
  *
- * Program storage mode, wrapping, burst length and trace buffer address
- * into a given MSC. Then, enable tracing and set msc::enabled.
- * The latter is serialized on msc::buf_mutex, so make sure to hold it.
+ * Program all relevant registers for a given MSC.
+ * Programming registers must be delayed until this stage since the hardware
+ * will be reset before a capture is started.
  */
 static int msc_configure(struct msc *msc)
 {
@@ -523,9 +812,7 @@ static int msc_configure(struct msc *msc)
 	iowrite32(reg, msc->reg_base + REG_MSU_MSC0CTL);
 
 	msc->thdev->output.multiblock = msc->mode == MSC_MODE_MULTI;
-	intel_th_trace_enable(msc->thdev);
 	msc->enabled = 1;
-
 
 	return 0;
 }
@@ -539,23 +826,14 @@ static int msc_configure(struct msc *msc)
  */
 static void msc_disable(struct msc *msc)
 {
-	unsigned long count;
 	u32 reg;
 
 	lockdep_assert_held(&msc->buf_mutex);
 
 	intel_th_trace_disable(msc->thdev);
 
-	for (reg = 0, count = MSC_PLE_WAITLOOP_DEPTH;
-	     count && !(reg & MSCSTS_PLE); count--) {
-		reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
-		cpu_relax();
-	}
-
-	if (!count)
-		dev_dbg(msc_dev(msc), "timeout waiting for MSC0 PLE\n");
-
 	if (msc->mode == MSC_MODE_SINGLE) {
+		reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
 		msc->single_wrap = !!(reg & MSCSTS_WRAPSTAT);
 
 		reg = ioread32(msc->reg_base + REG_MSU_MSC0MWP);
@@ -563,6 +841,10 @@ static void msc_disable(struct msc *msc)
 		dev_dbg(msc_dev(msc), "MSCnMWP: %08x/%08lx, wrap: %d\n",
 			reg, msc->single_sz, msc->single_wrap);
 	}
+
+	/* Save next window start address before disabling */
+	reg = ioread32(msc->reg_base + REG_MSU_MSC0NWSA);
+	msc->nwsa = (unsigned long)reg << PAGE_SHIFT;
 
 	reg = ioread32(msc->reg_base + REG_MSU_MSC0CTL);
 	reg &= ~MSC_EN;
@@ -572,8 +854,7 @@ static void msc_disable(struct msc *msc)
 	iowrite32(0, msc->reg_base + REG_MSU_MSC0BAR);
 	iowrite32(0, msc->reg_base + REG_MSU_MSC0SIZE);
 
-	dev_dbg(msc_dev(msc), "MSCnNWSA: %08x\n",
-		ioread32(msc->reg_base + REG_MSU_MSC0NWSA));
+	dev_dbg(msc_dev(msc), "MSCnNWSA: %08lx\n", msc->nwsa);
 
 	reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
 	dev_dbg(msc_dev(msc), "MSCnSTS: %08x\n", reg);
@@ -1069,16 +1350,19 @@ static int intel_th_msc_release(struct inode *inode, struct file *file)
 }
 
 static ssize_t
-msc_single_to_user(struct msc *msc, char __user *buf, loff_t off, size_t len)
+msc_single_to_user(void *in_buf, unsigned long in_pages,
+		   unsigned long in_sz, bool wrapped,
+		   char __user *buf, loff_t off, size_t len)
 {
-	unsigned long size = msc->nr_pages << PAGE_SHIFT, rem = len;
+	unsigned long size = in_pages << PAGE_SHIFT, rem = len;
 	unsigned long start = off, tocopy = 0;
 
-	if (msc->single_wrap) {
-		start += msc->single_sz;
+	/* With wrapping, copy the end of the buffer first */
+	if (wrapped) {
+		start += in_sz;
 		if (start < size) {
 			tocopy = min(rem, size - start);
-			if (copy_to_user(buf, msc->base + start, tocopy))
+			if (copy_to_user(buf, in_buf + start, tocopy))
 				return -EFAULT;
 
 			buf += tocopy;
@@ -1087,21 +1371,17 @@ msc_single_to_user(struct msc *msc, char __user *buf, loff_t off, size_t len)
 		}
 
 		start &= size - 1;
-		if (rem) {
-			tocopy = min(rem, msc->single_sz - start);
-			if (copy_to_user(buf, msc->base + start, tocopy))
-				return -EFAULT;
+	}
+	/* Copy the beginning of the buffer */
+	if (rem) {
+		tocopy = min(rem, in_sz - start);
+		if (copy_to_user(buf, in_buf + start, tocopy))
+			return -EFAULT;
 
-			rem -= tocopy;
-		}
-
-		return len - rem;
+		rem -= tocopy;
 	}
 
-	if (copy_to_user(buf, msc->base + start, rem))
-		return -EFAULT;
-
-	return len;
+	return len - rem;
 }
 
 static ssize_t intel_th_msc_read(struct file *file, char __user *buf,
@@ -1131,8 +1411,10 @@ static ssize_t intel_th_msc_read(struct file *file, char __user *buf,
 		len = size - off;
 
 	if (msc->mode == MSC_MODE_SINGLE) {
-		ret = msc_single_to_user(msc, buf, off, len);
-		if (ret >= 0)
+		ret = msc_single_to_user(msc->base, msc->nr_pages,
+					 msc->single_sz, msc->single_wrap,
+					 buf, off, len);
+		if (ret > 0)
 			*ppos += ret;
 	} else if (msc->mode == MSC_MODE_MULTI) {
 		struct msc_win_to_user_struct u = {
@@ -1258,6 +1540,283 @@ static const struct file_operations intel_th_msc_fops = {
 	.owner		= THIS_MODULE,
 };
 
+static void msc_wait_ple(struct intel_th_device *thdev)
+{
+	struct msc *msc = dev_get_drvdata(&thdev->dev);
+	unsigned long count;
+	u32 reg;
+
+	for (reg = 0, count = MSC_PLE_WAITLOOP_DEPTH;
+	     count && !(reg & MSCSTS_PLE); count--) {
+		reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
+		cpu_relax();
+	}
+
+	if (!count)
+		dev_dbg(msc_dev(msc), "timeout waiting for MSC0 PLE\n");
+}
+
+#ifdef CONFIG_ACPI
+#define ACPI_SIG_NPKT "NPKT"
+
+/* Buffers that may be handed through NPKT ACPI table */
+enum NPKT_BUF_TYPE {
+	NPKT_MTB = 0,
+	NPKT_MTB_REC,
+	NPKT_CSR,
+	NPKT_CSR_REC,
+	NPKT_NBUF
+};
+static const char * const npkt_buf_name[NPKT_NBUF] = {
+	[NPKT_MTB]	= "mtb",
+	[NPKT_MTB_REC]	= "mtb_rec",
+	[NPKT_CSR]	= "csr",
+	[NPKT_CSR_REC]	= "csr_rec"
+};
+
+/* CSR capture still active */
+#define NPKT_CSR_USED BIT(4)
+
+struct acpi_npkt_buf {
+	u64 addr;
+	u32 size;
+	u32 offset;
+};
+
+/* NPKT ACPI table */
+struct acpi_table_npkt {
+	struct acpi_table_header	header;
+	struct acpi_npkt_buf		buffers[NPKT_NBUF];
+	u8				flags;
+} __packed;
+
+/* Trace buffer obtained from NPKT table */
+struct npkt_buf {
+	dma_addr_t	phy;
+	void		*buf;
+	u32		size;
+	u32		offset;
+	bool		wrapped;
+	atomic_t	active;
+	struct msc	*msc;
+};
+
+static struct npkt_buf *npkt_bufs;
+static struct dentry *npkt_dump_dir;
+static DEFINE_MUTEX(npkt_lock);
+
+/**
+ * Stop current trace if a buffer was marked with a capture in pogress.
+ *
+ * Update buffer write offset and wrap status after stopping the trace.
+ */
+static void stop_buffer_trace(struct npkt_buf *buf)
+{
+	u32 reg, mode;
+	struct msc *msc = buf->msc;
+
+	mutex_lock(&npkt_lock);
+	if (!atomic_read(&buf->active))
+		goto unlock;
+
+	reg = ioread32(msc->reg_base + REG_MSU_MSC0CTL);
+	mode = (reg & MSC_MODE) >> __ffs(MSC_MODE);
+	if (!(reg & MSC_EN) || mode != MSC_MODE_SINGLE) {
+		/* Assume full buffer */
+		pr_warn("NPKT reported CSR in use but not tracing to CSR\n");
+		buf->offset = 0;
+		buf->wrapped = true;
+		atomic_set(&buf->active, 0);
+		goto unlock;
+	}
+
+	/* The hub must be able to stop a capture not started by the driver */
+	intel_th_trace_disable(msc->thdev);
+
+	/* Update offset and wrap status */
+	reg = ioread32(msc->reg_base + REG_MSU_MSC0MWP);
+	buf->offset = reg - (u32)buf->phy;
+	reg = ioread32(msc->reg_base + REG_MSU_MSC0STS);
+	buf->wrapped = !!(reg & MSCSTS_WRAPSTAT);
+	atomic_set(&buf->active, 0);
+
+unlock:
+	mutex_unlock(&npkt_lock);
+}
+
+/**
+ * Copy re-ordered data from an NPKT buffer to a user buffer.
+ */
+static ssize_t read_npkt_dump_buf(struct file *file, char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct npkt_buf *buf = file->private_data;
+	size_t size = buf->size;
+	loff_t off = *ppos;
+	ssize_t ret;
+
+	if (atomic_read(&buf->active))
+		stop_buffer_trace(buf);
+
+	if (off >= size)
+		return 0;
+
+	ret = msc_single_to_user(buf->buf, size >> PAGE_SHIFT,
+				 buf->offset, buf->wrapped,
+				 user_buf, off, count);
+	if (ret > 0)
+		*ppos += ret;
+
+	return ret;
+}
+
+static const struct file_operations npkt_dump_buf_fops = {
+	.read	= read_npkt_dump_buf,
+	.open	= simple_open,
+	.llseek	= noop_llseek,
+};
+
+/**
+ * Prepare a buffer with remapped address for a given NPKT buffer and add
+ * an entry for it in debugfs.
+ */
+static void npkt_bind_buffer(enum NPKT_BUF_TYPE type,
+			     struct acpi_npkt_buf *abuf, u8 flags,
+			     struct npkt_buf *buf, struct msc *msc)
+{
+	const char *name = npkt_buf_name[type];
+
+	/* No buffer handed through ACPI */
+	if (!abuf->addr || !abuf->size)
+		return;
+
+	/* Only expect multiples of page size */
+	if (abuf->size & (PAGE_SIZE - 1)) {
+		pr_warn("invalid size 0x%x for buffer %s\n",
+			abuf->size, name);
+		return;
+	}
+
+	buf->size = abuf->size;
+	buf->offset = abuf->offset;
+	buf->wrapped = !!(flags & BIT(type));
+	/* CSR may still be active */
+	if (type == NPKT_CSR && (flags & NPKT_CSR_USED)) {
+		atomic_set(&buf->active, 1);
+		buf->msc = msc;
+	}
+
+	buf->phy = abuf->addr;
+	buf->buf = (__force void *)ioremap(buf->phy, buf->size);
+	if (!buf->buf) {
+		pr_err("ioremap failed for buffer %s 0x%llx size:0x%x\n",
+		       name, buf->phy, buf->size);
+		return;
+	}
+
+	debugfs_create_file(name, S_IRUGO, npkt_dump_dir, buf,
+			    &npkt_dump_buf_fops);
+}
+
+static void npkt_bind_buffers(struct acpi_table_npkt *npkt,
+			      struct npkt_buf *bufs, struct msc *msc)
+{
+	int i;
+
+	for (i = 0; i < NPKT_NBUF; i++)
+		npkt_bind_buffer(i, &npkt->buffers[i], npkt->flags,
+				 &bufs[i], msc);
+}
+
+static void npkt_unbind_buffers(struct npkt_buf *bufs)
+{
+	int i;
+
+	for (i = 0; i < NPKT_NBUF; i++)
+		if (bufs[i].buf)
+			iounmap((__force void __iomem *)bufs[i].buf);
+}
+
+/**
+ * Prepare debugfs access to NPKT buffers.
+ */
+static void intel_th_npkt_init(struct msc *msc)
+{
+	acpi_status status;
+	struct acpi_table_npkt *npkt;
+
+	/* Associate NPKT to msc0 */
+	if (npkt_bufs || msc->index != 0)
+		return;
+
+	status = acpi_get_table(ACPI_SIG_NPKT, 0,
+				(struct acpi_table_header **)&npkt);
+	if (ACPI_FAILURE(status)) {
+		pr_warn("Failed to get NPKT table, %s\n",
+			acpi_format_exception(status));
+		return;
+	}
+
+	npkt_bufs = kzalloc(sizeof(struct npkt_buf) * NPKT_NBUF, GFP_KERNEL);
+	if (!npkt_bufs)
+		return;
+
+	npkt_dump_dir = debugfs_create_dir("npkt_dump", NULL);
+	if (!npkt_dump_dir) {
+		pr_err("npkt_dump debugfs create dir failed\n");
+		goto free_npkt_bufs;
+	}
+
+	npkt_bind_buffers(npkt, npkt_bufs, msc);
+
+	return;
+
+free_npkt_bufs:
+	kfree(npkt_bufs);
+	npkt_bufs = NULL;
+}
+
+/**
+ * Remove debugfs access to NPKT buffers and release resources.
+ */
+static void intel_th_npkt_remove(struct msc *msc)
+{
+	/* Only clean for msc 0 if necessary */
+	if (!npkt_bufs || msc->index != 0)
+		return;
+
+	npkt_unbind_buffers(npkt_bufs);
+	debugfs_remove_recursive(npkt_dump_dir);
+	kfree(npkt_bufs);
+	npkt_bufs = NULL;
+}
+
+/**
+ * First trace callback.
+ *
+ * If NPKT notified a CSR capture is in progress, stop it and update buffer
+ * write offset and wrap status.
+ */
+static void intel_th_msc_first_trace(struct intel_th_device *thdev)
+{
+	struct device *dev = &thdev->dev;
+	struct msc *msc = dev_get_drvdata(dev);
+	struct npkt_buf *buf;
+
+	if (!npkt_bufs || msc->index != 0)
+		return;
+
+	buf = &npkt_bufs[NPKT_CSR];
+	if (atomic_read(&buf->active))
+		stop_buffer_trace(buf);
+}
+
+#else /* !CONFIG_ACPI */
+static inline void intel_th_npkt_init(struct msc *msc) {}
+static inline void intel_th_npkt_remove(struct msc *msc) {}
+#define intel_th_msc_first_trace NULL
+#endif /* !CONFIG_ACPI */
+
 static int intel_th_msc_init(struct msc *msc)
 {
 	atomic_set(&msc->user_count, -1);
@@ -1270,6 +1829,8 @@ static int intel_th_msc_init(struct msc *msc)
 	msc->burst_len =
 		(ioread32(msc->reg_base + REG_MSU_MSC0CTL) & MSC_LEN) >>
 		__ffs(MSC_LEN);
+
+	msc->thdev->output.wait_empty = msc_wait_ple;
 
 	return 0;
 }
@@ -1394,6 +1955,8 @@ nr_pages_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
+	msc->max_blocks = 0;
+
 	/* scan the comma-separated list of allocation sizes */
 	end = memchr(buf, '\n', len);
 	if (end)
@@ -1428,6 +1991,9 @@ nr_pages_store(struct device *dev, struct device_attribute *attr,
 		win = rewin;
 		win[nr_wins - 1] = val;
 
+		msc->max_blocks =
+			(val > msc->max_blocks) ? val : msc->max_blocks;
+
 		if (!end)
 			break;
 
@@ -1447,10 +2013,32 @@ free_win:
 
 static DEVICE_ATTR_RW(nr_pages);
 
+static ssize_t
+win_switch_store(struct device *dev, struct device_attribute *attr,
+		 const char *buf, size_t size)
+{
+	struct msc *msc = dev_get_drvdata(dev);
+	unsigned long val;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &val);
+	if (ret)
+		return ret;
+
+	if (val != 1)
+		return -EINVAL;
+
+	intel_th_trace_switch(msc->thdev);
+	return size;
+}
+
+static DEVICE_ATTR_WO(win_switch);
+
 static struct attribute *msc_output_attrs[] = {
 	&dev_attr_wrap.attr,
 	&dev_attr_mode.attr,
 	&dev_attr_nr_pages.attr,
+	&dev_attr_win_switch.attr,
 	NULL,
 };
 
@@ -1487,7 +2075,11 @@ static int intel_th_msc_probe(struct intel_th_device *thdev)
 	if (err)
 		return err;
 
+	msc->max_blocks = 0;
 	dev_set_drvdata(dev, msc);
+
+	intel_th_npkt_init(msc);
+	msc_add_instance(thdev);
 
 	return 0;
 }
@@ -1495,20 +2087,13 @@ static int intel_th_msc_probe(struct intel_th_device *thdev)
 static void intel_th_msc_remove(struct intel_th_device *thdev)
 {
 	struct msc *msc = dev_get_drvdata(&thdev->dev);
-	int ret;
-
-	intel_th_msc_deactivate(thdev);
-
-	/*
-	 * Buffers should not be used at this point except if the
-	 * output character device is still open and the parent
-	 * device gets detached from its bus, which is a FIXME.
-	 */
-	ret = msc_buffer_free_unless_used(msc);
-	WARN_ON_ONCE(ret);
+	intel_th_npkt_remove(msc);
+	msc_rm_instance(thdev);
+	sysfs_remove_group(&thdev->dev.kobj, &msc_output_group);
 }
 
 static struct intel_th_driver intel_th_msc_driver = {
+	.first_trace	= intel_th_msc_first_trace,
 	.probe	= intel_th_msc_probe,
 	.remove	= intel_th_msc_remove,
 	.activate	= intel_th_msc_activate,

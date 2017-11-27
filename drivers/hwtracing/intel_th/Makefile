@@ -15,5 +15,12 @@ intel_th_sth-y			:= sth.o
 obj-$(CONFIG_INTEL_TH_MSU)	+= intel_th_msu.o
 intel_th_msu-y			:= msu.o
 
+obj-$(CONFIG_INTEL_TH_MSU_DVC)	+= intel_th_msu_dvc.o
+intel_th_msu_dvc-y			:= msu-dvc.o
+subdir-ccflags-$(CONFIG_INTEL_TH_MSU_DVC_DEBUG)	+= -DMDD_DEBUG
+
 obj-$(CONFIG_INTEL_TH_PTI)	+= intel_th_pti.o
 intel_th_pti-y			:= pti.o
+
+obj-$(CONFIG_INTEL_TH_EARLY_PRINTK) += intel_th_early_printk.o
+intel_th_early_printk-y		:= early_printk.o
