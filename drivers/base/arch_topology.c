@@ -34,6 +34,13 @@ void arch_set_freq_scale(struct cpumask *cpus, unsigned long cur_freq,
 
 	for_each_cpu(i, cpus)
 		per_cpu(freq_scale, i) = scale;
+#ifdef CONFIG_CPU_FREQ
+	unsigned long max_freq_scale = cpufreq_scale_max_freq_capacity(cpu);
+
+	return per_cpu(cpu_scale, cpu) * max_freq_scale >> SCHED_CAPACITY_SHIFT;
+#else
+	return per_cpu(cpu_scale, cpu);
+#endif
 }
 
 static DEFINE_MUTEX(cpu_scale_mutex);
