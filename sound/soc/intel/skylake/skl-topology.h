@@ -237,9 +237,18 @@ struct skl_mod_inst_map {
 	u16 inst_id;
 };
 
+struct skl_uuid_inst_map {
+	u16 inst_id;
+	u16 reserved;
+	uuid_le mod_uuid;
+} __packed;
+
 struct skl_kpb_params {
 	u32 num_modules;
-	struct skl_mod_inst_map map[0];
+	union {
+		struct skl_mod_inst_map map[0];
+		struct skl_uuid_inst_map map_uuid[0];
+	} u;
 };
 
 struct skl_gain_module_config {
@@ -632,4 +641,6 @@ void skl_tplg_fw_cfg_set(struct skl *skl);
 static int skl_tplg_get_caps_data(struct device *dev, char *data,
 				struct skl_module_cfg *mconfig);
 
+void skl_tplg_add_moduleid_in_bind_params(struct skl *skl,
+				struct snd_soc_dapm_widget *w);
 #endif
