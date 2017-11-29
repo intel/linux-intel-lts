@@ -31,6 +31,21 @@ config SYNC
           drivers.  Sync implementations can take advantage of hardware
           synchronization built into devices like GPUs.
 
+config ANDROID_FWDATA
+	tristate "Parser for Android-specific firmware data"
+	depends on ACPI
+	default n
+	---help---
+	  This driver parses Android-specific data (e.g. fstab configuration)
+	  stored in firmware (e.g. ACPI tables), and present it to user space
+	  via sysfs. Android Oreo (8.0) and later requires some essential boot-
+	  time configuration to be available in a directory structure organized
+	  in Device Tree style, e.g. /proc/device-tree/firmware/android/ on
+	  platforms that enable DT. Platforms that use ACPI instead of DT, such
+	  as Goldfish (Ranchu) x86/x86_64, should enable this driver to ensure
+	  the required information can be found in sysfs with the expected
+	  layout.
+
 source "drivers/staging/android/ion/Kconfig"
 
 endif # if ANDROID
