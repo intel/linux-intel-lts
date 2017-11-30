@@ -22,6 +22,7 @@ struct android_fwdata_state {
 	struct device *dev;
 	struct kobject *properties_kobj;
 	struct kobject *android_kobj;
+	struct kobject *vbmeta_kobj;
 	struct kobject *fstab_kobj;
 	struct kobject *system_kobj;
 	struct kobject *vendor_kobj;
@@ -46,6 +47,8 @@ static ssize_t property_show(struct kobject *kobj, struct kobj_attribute *attr,
 	 */
 	if (kobj == state.android_kobj) {
 		prefix = "android";
+	} else if (kobj == state.vbmeta_kobj) {
+		prefix = "android.vbmeta";
 	} else if (kobj == state.fstab_kobj) {
 		prefix = "android.fstab";
 	} else if (kobj == state.system_kobj) {
@@ -70,19 +73,8 @@ static ssize_t property_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return scnprintf(buf, PAGE_SIZE, "%s\n", value);
 }
 
-#define DT_COMPATIBLE_ATTR(_folder) \
-	struct kobj_attribute _folder##_compatible_attr = { \
-		.attr = { .name = "compatible", .mode = 0444, }, \
-		.show = property_show, \
-	}
-
-static DT_COMPATIBLE_ATTR(android);
-static DT_COMPATIBLE_ATTR(fstab);
-static DT_COMPATIBLE_ATTR(system);
-static DT_COMPATIBLE_ATTR(vendor);
-
-#define FSTAB_PROPERTY_ATTR(_partition, _name) \
-	struct kobj_attribute _partition##_##_name##_attr = { \
+#define DT_SIMPLE_ATTR(_prefix, _name) \
+	struct kobj_attribute _prefix##_##_name##_attr = { \
 		.attr = { \
 			.name = __stringify(_name), \
 			.mode = 0444, \
@@ -90,15 +82,33 @@ static DT_COMPATIBLE_ATTR(vendor);
 		.show = property_show, \
 	}
 
-static FSTAB_PROPERTY_ATTR(system, dev);
-static FSTAB_PROPERTY_ATTR(system, type);
-static FSTAB_PROPERTY_ATTR(system, mnt_flags);
-static FSTAB_PROPERTY_ATTR(system, fsmgr_flags);
+static DT_SIMPLE_ATTR(android, compatible);
+static DT_SIMPLE_ATTR(vbmeta, compatible);
+static DT_SIMPLE_ATTR(fstab, compatible);
+static DT_SIMPLE_ATTR(system, compatible);
+static DT_SIMPLE_ATTR(vendor, compatible);
 
-static FSTAB_PROPERTY_ATTR(vendor, dev);
-static FSTAB_PROPERTY_ATTR(vendor, type);
-static FSTAB_PROPERTY_ATTR(vendor, mnt_flags);
-static FSTAB_PROPERTY_ATTR(vendor, fsmgr_flags);
+static DT_SIMPLE_ATTR(vbmeta, parts);
+
+static struct attribute *vbmeta_attrs[] = {
+	&vbmeta_compatible_attr.attr,
+	&vbmeta_parts_attr.attr,
+	NULL,
+};
+
+static struct attribute_group vbmeta_group = {
+	.attrs = vbmeta_attrs,
+};
+
+static DT_SIMPLE_ATTR(system, dev);
+static DT_SIMPLE_ATTR(system, type);
+static DT_SIMPLE_ATTR(system, mnt_flags);
+static DT_SIMPLE_ATTR(system, fsmgr_flags);
+
+static DT_SIMPLE_ATTR(vendor, dev);
+static DT_SIMPLE_ATTR(vendor, type);
+static DT_SIMPLE_ATTR(vendor, mnt_flags);
+static DT_SIMPLE_ATTR(vendor, fsmgr_flags);
 
 static struct attribute *system_attrs[] = {
 	&system_compatible_attr.attr,
@@ -220,6 +230,11 @@ static void clean_up(void)
 					&fstab_compatible_attr);
 		state.fstab_kobj = NULL;
 	}
+	if (state.vbmeta_kobj) {
+		/* Delete <sysfs_device>/properties/android/vbmeta/ */
+		remove_folder_with_files(state.vbmeta_kobj, &vbmeta_group);
+		state.vbmeta_kobj = NULL;
+	}
 	if (state.android_kobj) {
 		/* Delete <sysfs_device>/properties/android/ */
 		remove_folder_with_file(state.android_kobj,
@@ -253,6 +268,15 @@ static int android_fwdata_probe(struct platform_device *pdev)
 						     &android_compatible_attr);
 	if (!state.android_kobj)
 		goto out;
+
+	if (device_property_present(state.dev, "android.vbmeta.compatible")) {
+		/* Firmware contains vbmeta config for AVB 2.0 */
+		state.vbmeta_kobj = create_folder_with_files(state.android_kobj,
+							     "vbmeta",
+							     &vbmeta_group);
+		if (!state.vbmeta_kobj)
+			goto out;
+	}
 
 	/* Create <sysfs_device>/properties/android/fstab/compatible */
 	state.fstab_kobj = create_folder_with_file(state.android_kobj, "fstab",
