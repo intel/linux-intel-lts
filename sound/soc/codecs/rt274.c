@@ -1182,6 +1182,7 @@ static int rt274_i2c_probe(struct i2c_client *i2c,
 	regmap_write(rt274->regmap, RT274_UNSOLICITED_HP_OUT, 0x81);
 	regmap_write(rt274->regmap, RT274_UNSOLICITED_MIC, 0x82);
 
+#if 0
 	if (rt274->i2c->irq) {
 		ret = request_threaded_irq(rt274->i2c->irq, NULL, rt274_irq,
 			IRQF_TRIGGER_HIGH | IRQF_ONESHOT, "rt274", rt274);
@@ -1191,6 +1192,7 @@ static int rt274_i2c_probe(struct i2c_client *i2c,
 			return ret;
 		}
 	}
+#endif
 
 	ret = devm_snd_soc_register_component(&i2c->dev,
 				     &soc_component_dev_rt274,
