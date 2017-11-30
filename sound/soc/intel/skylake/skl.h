@@ -156,8 +156,10 @@ struct skl {
 	bool nhlt_override;
 	bool mod_set_get_status;
 	struct skl_fw_cfg_info cfg;
+	struct sst_acpi_mach *mach;
 	u8 nr_modules;
 	struct skl_module **modules;
+	bool use_tplg_pcm;
 };
 
 struct platform_info {
@@ -185,6 +187,7 @@ struct skl_dma_params {
 /* to pass dmic data */
 struct skl_machine_pdata {
 	u32 dmic_num;
+	bool use_tplg_pcm; /* use total dais and dai links from topology*/
 };
 
 struct skl_dsp_ops {
