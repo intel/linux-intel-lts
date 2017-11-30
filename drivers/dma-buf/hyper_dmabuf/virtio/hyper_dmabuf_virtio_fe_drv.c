@@ -38,6 +38,8 @@
 #include "hyper_dmabuf_virtio_shm.h"
 #include "hyper_dmabuf_virtio_comm_ring.h"
 
+#define VIRTIO_ID_HYPERDMABUF 0xFFFF
+
 /*
  * Identifies which queue is used for TX and RX
  * Note: it is opposite regarding to backend definition
@@ -271,7 +273,7 @@ static int virtio_hdma_fe_restore(struct virtio_device *vdev)
 
 
 static struct virtio_device_id id_table[] = {
-	{ VIRTIO_ID_BALLOON, VIRTIO_DEV_ANY_ID },
+	{ VIRTIO_ID_HYPERDMABUF, VIRTIO_DEV_ANY_ID },
 	{ 0 },
 };
 
