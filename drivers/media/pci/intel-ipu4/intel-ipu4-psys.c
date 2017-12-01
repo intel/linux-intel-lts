@@ -1155,6 +1155,7 @@ static void intel_ipu4_psys_kcmd_complete(struct intel_ipu4_psys *psys,
 					  int error)
 {
 	struct intel_ipu4_device *isp = psys->adev->isp;
+	struct intel_ipu4_psys_fh *fh = kcmd->fh;
 
 	trace_ipu4_pg_kcmd(__func__, kcmd->user_token, kcmd->issue_id,
 		kcmd->priority,
@@ -1242,7 +1243,7 @@ static void intel_ipu4_psys_kcmd_complete(struct intel_ipu4_psys *psys,
 
 	kcmd->state = KCMD_STATE_COMPLETE;
 
-	wake_up_interruptible(&kcmd->fh->wait);
+	wake_up_interruptible(&fh->wait);
 }
 
 /*
