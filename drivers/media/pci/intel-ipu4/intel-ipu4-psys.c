@@ -1398,6 +1398,8 @@ static int intel_ipu4_psys_kcmd_queue(struct intel_ipu4_psys *psys,
 			pm_runtime_put(&psys->adev->dev);
 			return -EINVAL;
 		}
+
+		return ret;
 	}
 
 	ret = intel_ipu4_psys_allocate_resources(&psys->adev->dev,
