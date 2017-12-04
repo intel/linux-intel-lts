@@ -160,7 +160,7 @@ static int get_string_dsdt_data(struct device *dev, const u8 *dsdt,
 	union acpi_object *obj;
 	int ret = -ENODEV;
 
-	obj = acpi_evaluate_dsm(dev_handle, dsdt, 0, func, NULL);
+	obj = acpi_evaluate_dsm(dev_handle, (void *)dsdt, 0, func, NULL);
 	if (!obj) {
 		dev_err(dev, "No dsdt field\n");
 		return -ENODEV;
@@ -186,7 +186,7 @@ static int get_integer_dsdt_data(struct device *dev, const u8 *dsdt,
 	struct acpi_handle *dev_handle = ACPI_HANDLE(dev);
 	union acpi_object *obj;
 
-	obj = acpi_evaluate_dsm(dev_handle, dsdt, 0, func, NULL);
+	obj = acpi_evaluate_dsm(dev_handle, (void *)dsdt, 0, func, NULL);
 	if (!obj) {
 		dev_err(dev, "No dsdt\n");
 		return -ENODEV;

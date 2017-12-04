@@ -578,9 +578,9 @@ static int intel_ipu4_psys_open(struct inode *inode, struct file *file)
 		kbuf_set = kzalloc(sizeof(*kbuf_set), GFP_KERNEL);
 		if (!kbuf_set)
 			goto out_free_buf_sets;
-		kbuf_set->kaddr = dma_alloc_noncoherent(&psys->adev->dev,
+		kbuf_set->kaddr = dma_alloc_attrs(&psys->adev->dev,
 			INTEL_IPU_PSYS_BUF_SET_MAX_SIZE, &kbuf_set->dma_addr,
-			GFP_KERNEL);
+			GFP_KERNEL, DMA_ATTR_NON_CONSISTENT);
 		if (!kbuf_set->kaddr) {
 			kfree(kbuf_set);
 			goto out_free_buf_sets;
@@ -625,9 +625,10 @@ static int intel_ipu4_psys_open(struct inode *inode, struct file *file)
 
 out_free_buf_sets:
 	list_for_each_entry(kbuf_set, &fh->buf_sets, list) {
-		dma_free_noncoherent(&psys->adev->dev,
+		dma_free_attrs(&psys->adev->dev,
 				kbuf_set->size, kbuf_set->kaddr,
-				kbuf_set->dma_addr);
+				kbuf_set->dma_addr,
+				DMA_ATTR_NON_CONSISTENT);
 		list_del(&kbuf_set->list);
 		kfree(kbuf_set);
 	}
@@ -712,9 +713,10 @@ static int intel_ipu4_psys_release(struct inode *inode, struct file *file)
 
 	mutex_lock(&fh->bs_mutex);
 	list_for_each_entry_safe(kbuf_set, kbuf_set0, &fh->buf_sets, list) {
-		dma_free_noncoherent(&psys->adev->dev,
+		dma_free_attrs(&psys->adev->dev,
 				kbuf_set->size, kbuf_set->kaddr,
-				kbuf_set->dma_addr);
+				kbuf_set->dma_addr,
+				DMA_ATTR_NON_CONSISTENT);
 		list_del(&kbuf_set->list);
 		kfree(kbuf_set);
 	}
@@ -855,8 +857,9 @@ struct intel_ipu4_psys_pg *__get_pg_buf(
 	if (!kpg)
 		return NULL;
 
-	kpg->pg = dma_alloc_noncoherent(&psys->adev->dev, pg_size,
-			&kpg->pg_dma_addr, GFP_KERNEL);
+	kpg->pg = dma_alloc_attrs(&psys->adev->dev, pg_size,
+			&kpg->pg_dma_addr, GFP_KERNEL,
+			DMA_ATTR_NON_CONSISTENT);
 	if (!kpg->pg) {
 		kfree(kpg);
 		return NULL;
@@ -891,8 +894,9 @@ struct intel_ipu_psys_buffer_set *__get_buf_set(
 	if (!kbuf_set)
 		return NULL;
 
-	kbuf_set->kaddr = dma_alloc_noncoherent(&fh->psys->adev->dev,
-			buf_set_size, &kbuf_set->dma_addr, GFP_KERNEL);
+	kbuf_set->kaddr = dma_alloc_attrs(&fh->psys->adev->dev,
+			buf_set_size, &kbuf_set->dma_addr, GFP_KERNEL,
+			DMA_ATTR_NON_CONSISTENT);
 	if (!kbuf_set->kaddr) {
 		kfree(kbuf_set);
 		return NULL;
@@ -2856,9 +2860,10 @@ static int intel_ipu4_psys_probe(struct intel_ipu4_bus_device *adev)
 		kpg = kzalloc(sizeof(*kpg), GFP_KERNEL);
 		if (!kpg)
 			goto out_free_pgs;
-		kpg->pg = dma_alloc_noncoherent(&adev->dev,
+		kpg->pg = dma_alloc_attrs(&adev->dev,
 				INTEL_IPU4_PSYS_PG_MAX_SIZE, &kpg->pg_dma_addr,
-				GFP_KERNEL);
+				GFP_KERNEL,
+				DMA_ATTR_NON_CONSISTENT);
 		if (!kpg->pg) {
 			kfree(kpg);
 			goto out_free_pgs;
@@ -2920,8 +2925,9 @@ out_release_fw_com:
 	intel_ipu4_fw_com_release(psys->fwcom, 1);
 out_free_pgs:
 	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
-		dma_free_noncoherent(&adev->dev, kpg->size, kpg->pg,
-				     kpg->pg_dma_addr);
+		dma_free_attrs(&adev->dev, kpg->size, kpg->pg,
+				kpg->pg_dma_addr,
+				DMA_ATTR_NON_CONSISTENT);
 		kfree(kpg);
 	}
 
@@ -2971,8 +2977,9 @@ static void intel_ipu4_psys_remove(struct intel_ipu4_bus_device *adev)
 	mutex_lock(&intel_ipu4_psys_mutex);
 
 	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
-		dma_free_noncoherent(&adev->dev, kpg->size, kpg->pg,
-				     kpg->pg_dma_addr);
+		dma_free_attrs(&adev->dev, kpg->size, kpg->pg,
+				kpg->pg_dma_addr,
+				DMA_ATTR_NON_CONSISTENT);
 		kfree(kpg);
 	}
 
