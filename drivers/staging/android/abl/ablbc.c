@@ -375,6 +375,11 @@ static struct notifier_block ablbc_reboot_notifier = {
 static int __init ablbc_init(void)
 {
 	int ret;
+	struct wakeup_source *ws;
+
+	/* hold a wakeup source to make sure only IOC can suspend system */
+	ws = wakeup_source_register("car-ioc");
+	__pm_stay_awake(ws);
 
 	ret = register_reboot_notifier(&ablbc_reboot_notifier);
 	if (ret) {
