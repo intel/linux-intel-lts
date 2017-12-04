@@ -125,16 +125,16 @@ static struct crl_register_write_rep adv7481_hdmi_onetime_init_regset[] = {
 	{0x0A*4, CRL_REG_LEN_32BIT, 0x01010101, 0x6C}, /* EDID programming */
 	{0x0B*4, CRL_REG_LEN_32BIT, 0x01010101, 0x6C}, /* EDID programming */
 	{0x0C*4, CRL_REG_LEN_32BIT, 0x01010101, 0x6C}, /* EDID programming */
-	{0x0D*4, CRL_REG_LEN_32BIT, 0x0101011D, 0x6C}, /* EDID programming */
-	{0x0E*4, CRL_REG_LEN_32BIT, 0x80D0721C, 0x6C}, /* EDID programming */
-	{0x0F*4, CRL_REG_LEN_32BIT, 0x1620102C, 0x6C}, /* EDID programming */
-	{0x10*4, CRL_REG_LEN_32BIT, 0x2580C48E, 0x6C}, /* EDID programming */
-	{0x11*4, CRL_REG_LEN_32BIT, 0x2100009E, 0x6C}, /* EDID programming */
-	{0x12*4, CRL_REG_LEN_32BIT, 0x011D8018, 0x6C}, /* EDID programming */
-	{0x13*4, CRL_REG_LEN_32BIT, 0x711C1620, 0x6C}, /* EDID programming */
-	{0x14*4, CRL_REG_LEN_32BIT, 0x582C2500, 0x6C}, /* EDID programming */
-	{0x15*4, CRL_REG_LEN_32BIT, 0xC48E2100, 0x6C}, /* EDID programming */
-	{0x16*4, CRL_REG_LEN_32BIT, 0x009E0000, 0x6C}, /* EDID programming */
+	{0x0D*4, CRL_REG_LEN_32BIT, 0x0101023A, 0x6C}, /* EDID programming */
+	{0x0E*4, CRL_REG_LEN_32BIT, 0x80187138, 0x6C}, /* EDID programming */
+	{0x0F*4, CRL_REG_LEN_32BIT, 0x2D40582C, 0x6C}, /* EDID programming */
+	{0x10*4, CRL_REG_LEN_32BIT, 0x4500FE1F, 0x6C}, /* EDID programming */
+	{0x11*4, CRL_REG_LEN_32BIT, 0x1100001E, 0x6C}, /* EDID programming */
+	{0x12*4, CRL_REG_LEN_32BIT, 0x000000FF, 0x6C}, /* EDID programming */
+	{0x13*4, CRL_REG_LEN_32BIT, 0x00313233, 0x6C}, /* EDID programming */
+	{0x14*4, CRL_REG_LEN_32BIT, 0x34353637, 0x6C}, /* EDID programming */
+	{0x15*4, CRL_REG_LEN_32BIT, 0x380A2020, 0x6C}, /* EDID programming */
+	{0x16*4, CRL_REG_LEN_32BIT, 0x20200000, 0x6C}, /* EDID programming */
 	{0x17*4, CRL_REG_LEN_32BIT, 0x00FC0048, 0x6C}, /* EDID programming */
 	{0x18*4, CRL_REG_LEN_32BIT, 0x444D4920, 0x6C}, /* EDID programming */
 	{0x19*4, CRL_REG_LEN_32BIT, 0x4C4C430A, 0x6C}, /* EDID programming */
@@ -143,7 +143,7 @@ static struct crl_register_write_rep adv7481_hdmi_onetime_init_regset[] = {
 	{0x1C*4, CRL_REG_LEN_32BIT, 0x003B3D0F, 0x6C}, /* EDID programming */
 	{0x1D*4, CRL_REG_LEN_32BIT, 0x2D08000A, 0x6C}, /* EDID programming */
 	{0x1E*4, CRL_REG_LEN_32BIT, 0x20202020, 0x6C}, /* EDID programming */
-	{0x1F*4, CRL_REG_LEN_32BIT, 0x202001C1, 0x6C}, /* EDID programming */
+	{0x1F*4, CRL_REG_LEN_32BIT, 0x202001EC, 0x6C}, /* EDID programming */
 	{0x20*4, CRL_REG_LEN_32BIT, 0x02031E77, 0x6C}, /* EDID programming */
 	{0x21*4, CRL_REG_LEN_32BIT, 0x4F941305, 0x6C}, /* EDID programming */
 	{0x22*4, CRL_REG_LEN_32BIT, 0x03040201, 0x6C}, /* EDID programming */
