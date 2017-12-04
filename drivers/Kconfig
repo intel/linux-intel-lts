@@ -206,4 +206,6 @@ source "drivers/fpga/Kconfig"
 
 source "drivers/sdw/Kconfig"
 
+source "drivers/dma-buf/hyper_dmabuf/Kconfig"
+
 endmenu
