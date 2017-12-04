@@ -1900,9 +1900,6 @@ static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
 	/* Fill master number in bra info data structure */
 	info.mstr_num = mstr->nr;
 
-	/* PDI Configuration (ON) */
-	cnl_sdw_bra_pdi_config(mstr, true);
-
 	/* Prepare TX buffer */
 	ret = cnl_sdw_bra_data_ops(mstr, block, &info);
 	if (ret < 0) {
@@ -1916,6 +1913,9 @@ static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
 		dev_err(&mstr->dev, "BRA: Pipeline setup failed\n");
 		goto out;
 	}
+
+	/* PDI Configuration (ON) */
+	cnl_sdw_bra_pdi_config(mstr, true);
 
 	/* Trigger START host DMA and pipeline */
 	ret = ops->bra_platform_xfer(data->bra_data->drv_data, true, &info);
