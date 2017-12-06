@@ -259,16 +259,6 @@ static int isys_context_create(
 	print_handle_context(ctx);
 #endif /* ISYSAPI_TRACE_CONFIG == ISYSAPI_TRACE_LOG_LEVEL_DEBUG */
 
-	/* Only bits from 0-11 are valid.
-	 *  0 - mapped to IA_CSS_ISYS_STREAM_SRC_PORT_0 enum
-	 * ..
-	 * 11 - mapped to IA_CSS_ISYS_STREAM_SRC_PORT_11 enum
-	 * Verify the bits mapped to IA_CSS_ISYS_STREAM_SRC_MIPIGEN_0 and beyond are 0
-	 */
-	verifret(config->stream_secure_bitmask >> IA_CSS_ISYS_STREAM_SRC_MIPIGEN_0 == 0,
-		 EINVAL);
-	ctx->stream_secure_bitmask = config->stream_secure_bitmask;
-
 	/* Printing "LEAVE isys_context_create" message
 	 * if tracing level = VERBOSE.
 	 */
@@ -626,12 +616,6 @@ stream_cfg->output_pins[i].output_res.width, EINVAL);
 		stream_cfg->nof_output_pins;
 	ctx->stream_state_array[stream_handle] =
 		IA_CSS_ISYS_STREAM_STATE_OPENED;
-
-	/* check secure setting against declared list at isys_device_open() */
-	IA_CSS_TRACE_3(ISYSAPI, VERBOSE, "IA_CSS_ISYS_STREAM_OPEN stream_secure_bitmask 0x%x, stream src %d "
-		       "Conflicts with ctx->secure %d\n", ctx->stream_secure_bitmask, stream_cfg->src, ctx->secure);
-	verifret(((ctx->stream_secure_bitmask >> stream_cfg->src) & 1) ==
-		ctx->secure, EINVAL);
 
 	/* Printing "LEAVE IA_CSS_ISYS_STREAM_OPEN" message
 	 * if tracing level = VERBOSE.

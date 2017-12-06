@@ -84,12 +84,6 @@ struct ia_css_isys_context {
 	enum stream_state stream_state_array[STREAM_ID_MAX];
 	/* If true, this context is created based on secure config */
 	bool secure;
-	/* Initialized to 0 for default all non-secure streams
-	 * IA_CSS_ISYS_STREAM_SRC_PORT_0 is mapped to bit 0.
-	 * IA_CSS_ISYS_STREAM_SRC_PORT_11 is all mapped to bit 11.
-	 * Bits 31:12 are reserved;
-	 */
-	uint32_t stream_secure_bitmask;
 };
 
 
