@@ -396,7 +396,7 @@ static struct crl_dynamic_register_access imx274_dig_gain_regs[] = {
 		.len = CRL_REG_LEN_08BIT,
 		.ops_items = 0,
 		.ops = 0,
-		.mask = 0xff,
+		.mask = 0xf,
 	},
 };
 
