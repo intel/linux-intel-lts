@@ -27,6 +27,9 @@
 /* To define the HANDLE */
 #include "type_support.h"
 
+#ifndef HAS_DUAL_CMD_CTX_SUPPORT
+#define HAS_DUAL_CMD_CTX_SUPPORT 0
+#endif
 
 /**
  * ia_css_isys_device_open() - configure ISYS device

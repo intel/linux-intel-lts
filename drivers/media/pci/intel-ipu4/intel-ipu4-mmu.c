@@ -585,7 +585,6 @@ static int intel_ipu4_mmu_hw_init(struct device *dev)
 {
 	struct intel_ipu4_bus_device *adev = to_intel_ipu4_bus_device(dev);
 	struct intel_ipu4_mmu *mmu = intel_ipu4_bus_get_drvdata(adev);
-	struct intel_ipu4_mmu_pdata *pdata = adev->pdata;
 	struct intel_ipu4_mmu_domain *adom;
 	unsigned int i;
 	unsigned long flags;

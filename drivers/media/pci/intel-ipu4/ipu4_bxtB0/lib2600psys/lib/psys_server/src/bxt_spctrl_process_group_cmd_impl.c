@@ -27,6 +27,11 @@
 #include "cpu_mem_support.h"
 #include "ia_css_bxt_spctrl_trace.h"
 
+#ifndef HAS_LATE_BINDING_SUPPORT
+#define HAS_LATE_BINDING_SUPPORT 0
+#endif
+
+
 int ia_css_process_group_on_create(
 	ia_css_process_group_t			*process_group,
 	const ia_css_program_group_manifest_t	*program_group_manifest,

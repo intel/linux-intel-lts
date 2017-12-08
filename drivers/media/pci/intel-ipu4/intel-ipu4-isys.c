@@ -1725,7 +1725,6 @@ static int isys_isr_one(struct intel_ipu4_bus_device *adev)
 	struct intel_ipu4_isys_pipeline *pipe;
 	u64 ts;
 	unsigned int i;
-	int type = -1;
 
 	if (!isys->fwcom)
 		return 0;
