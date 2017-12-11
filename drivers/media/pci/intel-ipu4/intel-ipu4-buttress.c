@@ -1099,6 +1099,14 @@ static void intel_ipu4_buttress_clk_pll_disable(struct clk_hw *hw)
 {
 	struct clk_intel_ipu4_sensor *ck = to_clk_intel_ipu4_sensor(hw);
 	u32 val;
+	int i;
+
+	val = ipu_readl(ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
+	for (i = 0; i < INTEL_IPU4_BUTTRESS_NUM_OF_SENS_CKS; i++) {
+		if (val &
+		    (1 << BUTTRESS_SENSOR_CLK_CTL_OSC_CLK_OUT_EN_SHIFT(i)))
+			return;
+	}
 
 	/* See enable control above */
 	val = ipu_readl(ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
