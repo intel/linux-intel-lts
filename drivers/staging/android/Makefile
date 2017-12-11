@@ -6,3 +6,4 @@ obj-$(CONFIG_ABL_BOOTLOADER_CONTROL)	+= abl/
 
 obj-$(CONFIG_ASHMEM)			+= ashmem.o
 obj-$(CONFIG_ANDROID_LOW_MEMORY_KILLER)	+= lowmemorykiller.o
+obj-$(CONFIG_ANDROID_FWDATA)		+= fwdata.o
