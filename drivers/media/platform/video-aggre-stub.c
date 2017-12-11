@@ -337,12 +337,14 @@ static const struct v4l2_subdev_video_ops video_aggre_sd_video_ops = {
 };
 
 static const struct v4l2_subdev_core_ops video_aggre_core_subdev_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 	.g_ctrl = v4l2_subdev_g_ctrl,
 	.s_ctrl = v4l2_subdev_s_ctrl,
 	.g_ext_ctrls = v4l2_subdev_g_ext_ctrls,
 	.s_ext_ctrls = v4l2_subdev_s_ext_ctrls,
 	.try_ext_ctrls = v4l2_subdev_try_ext_ctrls,
 	.queryctrl = v4l2_subdev_queryctrl,
+#endif
 };
 
 static int video_aggre_s_ctrl(struct v4l2_ctrl *ctrl)

@@ -20,27 +20,29 @@
 #include "ia_css_kernel_bitmap.h"
 #include "ia_css_program_group_data.h"
 #include "vied_nci_psys_resource_model.h"
+#include "ia_css_rbm_manifest_types.h"
 #include <type_support.h>
 #include <math_support.h>
 #include <platform_support.h>
 
 #define SIZE_OF_PROGRAM_GROUP_MANIFEST_STRUCT_IN_BITS \
-	(IA_CSS_KERNEL_BITMAP_BITS \
-	+ IA_CSS_PROGRAM_GROUP_ID_BITS \
-	+ (3 * IA_CSS_UINT32_T_BITS) \
-	+ IA_CSS_UINT16_T_BITS \
+	((IA_CSS_KERNEL_BITMAP_BITS) \
+	+ (IA_CSS_PROGRAM_GROUP_ID_BITS) \
+	+ (5 * IA_CSS_UINT16_T_BITS) \
 	+ (5 * IA_CSS_UINT8_T_BITS) \
-	+ (1 * IA_CSS_UINT8_T_BITS))
+	+ (5 * IA_CSS_UINT8_T_BITS))
 
 struct ia_css_program_group_manifest_s {
 	/**< Indicate kernels are present in this program group */
 	ia_css_kernel_bitmap_t kernel_bitmap;
 	/**< Referral ID to program group FW */
 	ia_css_program_group_ID_t ID;
-	uint32_t program_manifest_offset;
-	uint32_t terminal_manifest_offset;
+	uint16_t program_manifest_offset;
+	uint16_t terminal_manifest_offset;
 	/**< Offset to private data (not part of the official API) */
-	uint32_t private_data_offset;
+	uint16_t private_data_offset;
+	/**< Offset to RBM manifest */
+	uint16_t rbm_manifest_offset;
 	/**< Size of this structure */
 	uint16_t size;
 	/**< Storage alignment requirement (in uint8_t) */
@@ -53,7 +55,8 @@ struct ia_css_program_group_manifest_s {
 	uint8_t terminal_count;
 	/**< Total number of independent subgraphs in this program group */
 	uint8_t subgraph_count;
-	uint8_t reserved[1];
+	/**< Padding; esnures that rbm_manifest starts on 64bit alignment */
+	uint8_t reserved[5];
 };
 
 #define SIZE_OF_PROGRAM_MANIFEST_STRUCT_IN_BITS \

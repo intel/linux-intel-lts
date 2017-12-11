@@ -40,6 +40,11 @@ PSYSAPI_MANIFEST_HOST_FILES    += $(PSYSAPI_DIR)/data/src/ia_css_program_group_d
 PSYSAPI_MANIFEST_HOST_FILES    += $(PSYSAPI_DIR)/resource_model/$(PSYS_RESOURCE_MODEL_VERSION)/vied_nci_psys_resource_model.c
 PSYSAPI_MANIFEST_HOST_FILES    += $(PSYSAPI_DIR)/psys_server_manifest/$(PSYS_SERVER_MANIFEST_VERSION)/ia_css_psys_server_manifest.c
 
+# Use only kernel bitmap functionality from PSYS API
+PSYSAPI_KERNEL_BITMAP_FILES    += $(PSYSAPI_DIR)/kernel/src/ia_css_kernel_bitmap.c
+PSYSAPI_KERNEL_BITMAP_CPPFLAGS += -I$(PSYSAPI_DIR)/kernel/interface
+PSYSAPI_KERNEL_BITMAP_CPPFLAGS += -I$(PSYSAPI_DIR)/interface
+
 # Use PSYSAPI_HOST_FILES when program and process group are both needed
 PSYSAPI_HOST_FILES = $(PSYSAPI_PROCESS_HOST_FILES) $(PSYSAPI_MANIFEST_HOST_FILES)
 
@@ -49,11 +54,12 @@ PSYSAPI_HOST_FILES = $(PSYSAPI_PROCESS_HOST_FILES) $(PSYSAPI_MANIFEST_HOST_FILES
 PSYSAPI_PROCESS_GROUP_HOST_FILES  = $(PSYSAPI_HOST_FILES)
 PSYSAPI_PROCESS_GROUP_HOST_FILES += $(PSYSAPI_DIR)/sim/src/ia_css_psys_process_group_cmd_impl.c
 
-# for now disabled, implementation for now provided by bxt psys api impl
+# for now disabled, implementation for now provided by psys api impl
 #PSYSAPI_HOST_FILES    += $(PSYSAPI_DIR)/device/src/ia_css_psys_device.c
 
 PSYSAPI_HOST_CPPFLAGS  = -I$(PSYSAPI_DIR)/interface
 PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/device/interface
+PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/device/interface/$(IPU_SYSVER)
 PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/dynamic/interface
 PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/dynamic/src
 PSYSAPI_HOST_CPPFLAGS += -I$(PSYSAPI_DIR)/data/interface
@@ -82,6 +88,8 @@ PSYSAPI_SYSTEM_GLOBAL_CPPFLAGS += -I$(PSYSAPI_DIR)/psys_server_manifest/$(PSYS_S
 
 # Defining the trace level for the PSYSAPI
 PSYSAPI_HOST_CPPFLAGS += -DPSYSAPI_TRACE_CONFIG=PSYSAPI_TRACE_LOG_LEVEL_NORMAL
+# Enable/Disable 'late binding' support and it's additional queues
+PSYSAPI_HOST_CPPFLAGS += -DHAS_LATE_BINDING_SUPPORT=$(PSYS_HAS_LATE_BINDING_SUPPORT)
 
 #Example: how to switch to a different log level for a sub-module
 #PSYSAPI_HOST_CPPFLAGS += -DPSYSAPI_DYNAMIC_TRACING_OVERRIDE=PSYSAPI_TRACE_LOG_LEVEL_DEBUG

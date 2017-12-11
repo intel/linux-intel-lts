@@ -46,7 +46,7 @@ static struct intel_ipu4_bus_device *intel_ipu4_mmu_init(
 	struct pci_dev *pdev, struct device *parent,
 	struct intel_ipu4_buttress_ctrl *ctrl, void __iomem *base,
 	const struct intel_ipu4_hw_variants *hw, unsigned int nr,
-	unsigned int type, int mmid)
+	int mmid)
 {
 	struct intel_ipu4_mmu_pdata *pdata =
 		devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
@@ -71,7 +71,6 @@ static struct intel_ipu4_bus_device *intel_ipu4_mmu_init(
 
 	pdata->nr_mmus = hw->nr_mmus;
 	pdata->mmid = mmid;
-	pdata->type = type;
 
 	return intel_ipu4_bus_add_device(pdev, parent, pdata, NULL, ctrl,
 					 INTEL_IPU4_MMU_NAME, nr);
@@ -81,8 +80,7 @@ static struct intel_ipu4_bus_device *intel_ipu4_isys_init(
 	struct pci_dev *pdev, struct device *parent,
 	struct device *iommu, void __iomem *base,
 	const struct intel_ipu4_isys_internal_pdata *ipdata,
-	struct intel_ipu4_isys_subdev_pdata *spdata, unsigned int nr,
-	unsigned int type)
+	struct intel_ipu4_isys_subdev_pdata *spdata, unsigned int nr)
 {
 	struct intel_ipu4_isys_pdata *pdata =
 		devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
@@ -91,7 +89,6 @@ static struct intel_ipu4_bus_device *intel_ipu4_isys_init(
 		return ERR_PTR(-ENOMEM);
 
 	pdata->base = base;
-	pdata->type = type;
 	pdata->ipdata = ipdata;
 	pdata->spdata = spdata;
 
@@ -103,7 +100,7 @@ static struct intel_ipu4_bus_device *intel_ipu4_psys_init(
 	struct pci_dev *pdev, struct device *parent,
 	struct device *iommu, void __iomem *base,
 	const struct intel_ipu4_psys_internal_pdata *ipdata,
-	unsigned int nr, unsigned int type)
+	unsigned int nr)
 {
 	struct intel_ipu4_psys_pdata *pdata =
 		devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
@@ -112,7 +109,6 @@ static struct intel_ipu4_bus_device *intel_ipu4_psys_init(
 		return ERR_PTR(-ENOMEM);
 
 	pdata->base = base;
-	pdata->type = type;
 	pdata->ipdata = ipdata;
 	return intel_ipu4_bus_add_device(pdev, parent, pdata, iommu, NULL,
 					 INTEL_IPU4_PSYS_NAME, nr);
@@ -317,12 +313,12 @@ void intel_ipu4_configure_spc(struct intel_ipu4_device *isp,
 	void __iomem *dmem_base = base + hw_variant->dmem_offset;
 	void __iomem *spc_regs_base = base + hw_variant->spc_offset;
 
-	val = readl(spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
+	val = ipu_readl(spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
 	val |= INTEL_IPU4_PSYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE;
-	writel(val, spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
+	ipu_writel(val, spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_STATUS_CTRL);
 
 	if (isp->secure_mode) {
-		writel(INTEL_IPU4_PKG_DIR_IMR_OFFSET, dmem_base);
+		ipu_writel(INTEL_IPU4_PKG_DIR_IMR_OFFSET, dmem_base);
 	} else {
 		u32 server_addr;
 
@@ -338,25 +334,25 @@ void intel_ipu4_configure_spc(struct intel_ipu4_device *isp,
 		server_addr = intel_ipu4_cpd_pkg_dir_get_address(pkg_dir,
 								 pkg_dir_idx);
 
-		writel(server_addr + intel_ipu4_cpd_get_pg_icache_base(
+		ipu_writel(server_addr + intel_ipu4_cpd_get_pg_icache_base(
 			       isp, pkg_dir_idx, isp->cpd_fw->data,
 			       isp->cpd_fw->size),
 		       spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_ICACHE_BASE);
-		writel(intel_ipu4_cpd_get_pg_entry_point(isp, pkg_dir_idx,
+		ipu_writel(intel_ipu4_cpd_get_pg_entry_point(isp, pkg_dir_idx,
 							 isp->cpd_fw->data,
 							 isp->cpd_fw->size),
 		       spc_regs_base + INTEL_IPU4_PSYS_REG_SPC_START_PC);
-		writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+		ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 		       spc_regs_base +
 		       INTEL_IPU4_REG_PSYS_INFO_SEG_0_CONFIG_ICACHE_MASTER);
-		writel(pkg_dir_dma_addr, dmem_base);
+		ipu_writel(pkg_dir_dma_addr, dmem_base);
 	}
 }
 EXPORT_SYMBOL(intel_ipu4_configure_spc);
 
 void intel_ipu4_configure_vc_mechanism(struct intel_ipu4_device *isp)
 {
-	u32 val = readl(isp->base + BUTTRESS_REG_BTRS_CTRL);
+	u32 val = ipu_readl(isp->base + BUTTRESS_REG_BTRS_CTRL);
 
 	if (INTEL_IPU4_BTRS_ARB_STALL_MODE_VC0 ==
 			INTEL_IPU4_BTRS_ARB_MODE_TYPE_STALL)
@@ -370,7 +366,7 @@ void intel_ipu4_configure_vc_mechanism(struct intel_ipu4_device *isp)
 	else
 		val &= ~BUTTRESS_REG_BTRS_CTRL_STALL_MODE_VC1;
 
-	writel(val, isp->base + BUTTRESS_REG_BTRS_CTRL);
+	ipu_writel(val, isp->base + BUTTRESS_REG_BTRS_CTRL);
 }
 
 static struct intel_ipu4_receiver_electrical_params ipu4_ev_params[] = {
@@ -416,6 +412,32 @@ static struct intel_ipu4_receiver_electrical_params ipu4_ev_params[] = {
 	},
 
 	{ 0, 1500000000ul / 2, INTEL_IPU4_HW_BXT_P, INTEL_IPU4_HW_BXT_P_B1_REV,
+	  .RcompVal_combo = 11,
+	  .RcompVal_legacy = 11,
+	  .ports[0].CrcVal = 18,
+	  .ports[0].DrcVal = 29,
+	  .ports[0].DrcVal_combined = 29,
+	  .ports[0].CtleVal = 4,
+	  .ports[1].CrcVal = 18,
+	  .ports[1].DrcVal = 29,
+	  .ports[1].DrcVal_combined = 31,
+	  .ports[1].CtleVal = 4
+	},
+
+	{ 0, 1500000000ul / 2, INTEL_IPU4_HW_BXT_P, INTEL_IPU4_HW_BXT_P_D0_REV,
+	  .RcompVal_combo = 11,
+	  .RcompVal_legacy = 11,
+	  .ports[0].CrcVal = 18,
+	  .ports[0].DrcVal = 29,
+	  .ports[0].DrcVal_combined = 29,
+	  .ports[0].CtleVal = 4,
+	  .ports[1].CrcVal = 18,
+	  .ports[1].DrcVal = 29,
+	  .ports[1].DrcVal_combined = 31,
+	  .ports[1].CtleVal = 4
+	},
+
+	{ 0, 1500000000ul / 2, INTEL_IPU4_HW_BXT_P, INTEL_IPU4_HW_BXT_P_E0_REV,
 	  .RcompVal_combo = 11,
 	  .RcompVal_legacy = 11,
 	  .ports[0].CrcVal = 18,
@@ -722,6 +744,12 @@ static const struct intel_ipu4_buttress_ctrl psys_buttress_ctrl_ipu5 = {
 	.pwr_sts_off = IPU5_BUTTRESS_PWR_STATE_DN_DONE,
 };
 
+#ifdef CONFIG_VIDEO_INTEL_IPU4_SOC
+const struct intel_ipu_sim_ctrl sim_ctrl_ops = {};
+#else
+extern const struct intel_ipu_sim_ctrl sim_ctrl_ops;
+#endif
+
 static const char intel_ipu4_cpd_filename[] = INTEL_IPU4_CPD_FIRMWARE_B0;
 static const char intel_ipu5_cpd_filename[] = INTEL_IPU5_CPD_FIRMWARE_A0;
 
@@ -737,7 +765,8 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	const struct intel_ipu4_buttress_ctrl *psys_buttress_ctrl;
 	const struct intel_ipu4_isys_internal_pdata *isys_ipdata;
 	const struct intel_ipu4_psys_internal_pdata *psys_ipdata;
-	unsigned int dma_mask = 39;
+	struct intel_ipu4_buttress_ctrl *isys_ctrl, *psys_ctrl;
+	unsigned int dma_mask = INTEL_IPU_DMA_MASK;
 	unsigned int fpga_bar_mask = 0;
 	int rval;
 
@@ -763,7 +792,14 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	dev_info(&pdev->dev, "Device 0x%x (rev: 0x%x)\n",
 			      pdev->device, pdev->revision);
 
-	fpga_bar_mask = intel_ipu5_fpga_reset_prepare(isp);
+	isp->ctrl = &sim_ctrl_ops;
+	if (!isp->ctrl) {
+		dev_err(&pdev->dev, "Failed to get IPU ctrl module\n");
+		return -ENODEV;
+	}
+
+	if (isp->ctrl->reset_prepare)
+		fpga_bar_mask = isp->ctrl->reset_prepare(isp);
 
 	phys = pci_resource_start(pdev, INTEL_IPU4_PCI_BAR);
 
@@ -785,6 +821,9 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	}
 
 	isp->base = iomap[INTEL_IPU4_PCI_BAR];
+	if (isp->ctrl->get_sim_type && SIM_MOCK == isp->ctrl->get_sim_type())
+		isp->base = INTEL_IPU_MOCK_FIXED_PCI_BASE;
+
 	dev_info(&pdev->dev, "mapped as: 0x%p\n", isp->base);
 	if (fpga_bar_mask) {
 		isp->base2 = iomap[IPU5_BAR_FOR_BRIDGE];
@@ -812,9 +851,6 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 		trace_printk("E|TMWK\n");
 		return -EINVAL;
 	}
-
-	if (is_intel_ipu_hw_fpga(isp))
-		dma_mask = 32;
 
 	isys_base = isp->base + isys_ipdata->hw_variant.offset;
 	psys_base = isp->base + psys_ipdata->hw_variant.offset;
@@ -880,71 +916,58 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 	 * suspend. Registration order is as follows:
 	 * isys_iommu->isys->psys_iommu->psys
 	 */
-	if (!IS_BUILTIN(CONFIG_VIDEO_INTEL_IPU4_PSYS_FPGA)) {
-		struct intel_ipu4_buttress_ctrl *ctrl =
-			devm_kzalloc(&pdev->dev, sizeof(*ctrl), GFP_KERNEL);
-		if (!ctrl) {
-			rval = -ENOMEM;
-			goto out_intel_ipu4_bus_del_devices;
-		}
-
-		/* Init butress control with default values based on the HW */
-		memcpy(ctrl, isys_buttress_ctrl, sizeof(*ctrl));
-
-		isp->isys_iommu = intel_ipu4_mmu_init(
-			pdev, &pdev->dev, ctrl, isys_base,
-			&isys_ipdata->hw_variant, 0,
-			INTEL_IPU4_MMU_TYPE_INTEL_IPU4, ISYS_MMID);
-		rval = PTR_ERR(isp->isys_iommu);
-		if (IS_ERR(isp->isys_iommu)) {
-			dev_err(&pdev->dev, "can't create isys iommu device\n");
-			rval = -ENOMEM;
-			goto out_intel_ipu4_bus_del_devices;
-		}
-
-		isp->isys = intel_ipu4_isys_init(
-			pdev, &isp->isys_iommu->dev, &isp->isys_iommu->dev,
-			isys_base, isys_ipdata,
-			pdev->dev.platform_data,
-			0, is_intel_ipu_hw_fpga(isp) ?
-			INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA :
-			INTEL_IPU4_ISYS_TYPE_INTEL_IPU4);
-		rval = PTR_ERR(isp->isys);
-		if (IS_ERR(isp->isys))
-			goto out_intel_ipu4_bus_del_devices;
+	isys_ctrl = devm_kzalloc(&pdev->dev, sizeof(*isys_ctrl), GFP_KERNEL);
+	if (!isys_ctrl) {
+		rval = -ENOMEM;
+		goto out_intel_ipu4_bus_del_devices;
 	}
 
-	if (!IS_BUILTIN(CONFIG_VIDEO_INTEL_IPU4_ISYS_FPGA)) {
-		struct intel_ipu4_buttress_ctrl *ctrl =
-			devm_kzalloc(&pdev->dev, sizeof(*ctrl), GFP_KERNEL);
-		if (!ctrl) {
-			rval = -ENOMEM;
-			goto out_intel_ipu4_bus_del_devices;
-		}
+	/* Init butress control with default values based on the HW */
+	memcpy(isys_ctrl, isys_buttress_ctrl, sizeof(*isys_ctrl));
 
-		/* Init butress control with default values based on the HW */
-		memcpy(ctrl, psys_buttress_ctrl, sizeof(*ctrl));
-
-		isp->psys_iommu = intel_ipu4_mmu_init(
-			pdev, isp->isys_iommu ? &isp->isys_iommu->dev :
-			&pdev->dev, ctrl, psys_base, &psys_ipdata->hw_variant,
-			1, INTEL_IPU4_MMU_TYPE_INTEL_IPU4, PSYS_MMID);
-		rval = PTR_ERR(isp->psys_iommu);
-		if (IS_ERR(isp->psys_iommu)) {
-			dev_err(&pdev->dev, "can't create psys iommu device\n");
-			goto out_intel_ipu4_bus_del_devices;
-		}
-
-		isp->psys = intel_ipu4_psys_init(
-			pdev, &isp->psys_iommu->dev,
-			&isp->psys_iommu->dev, psys_base, psys_ipdata, 0,
-			is_intel_ipu_hw_fpga(isp) ?
-			INTEL_IPU4_PSYS_TYPE_INTEL_IPU4_FPGA :
-			INTEL_IPU4_PSYS_TYPE_INTEL_IPU4);
-		rval = PTR_ERR(isp->psys);
-		if (IS_ERR(isp->psys))
-			goto out_intel_ipu4_bus_del_devices;
+	isp->isys_iommu = intel_ipu4_mmu_init(
+		pdev, &pdev->dev, isys_ctrl, isys_base,
+		&isys_ipdata->hw_variant, 0, ISYS_MMID);
+	rval = PTR_ERR(isp->isys_iommu);
+	if (IS_ERR(isp->isys_iommu)) {
+		dev_err(&pdev->dev, "can't create isys iommu device\n");
+		rval = -ENOMEM;
+		goto out_intel_ipu4_bus_del_devices;
 	}
+
+	isp->isys = intel_ipu4_isys_init(
+		pdev, &isp->isys_iommu->dev, &isp->isys_iommu->dev,
+		isys_base, isys_ipdata,
+		pdev->dev.platform_data, 0);
+	rval = PTR_ERR(isp->isys);
+	if (IS_ERR(isp->isys))
+		goto out_intel_ipu4_bus_del_devices;
+
+	psys_ctrl = devm_kzalloc(&pdev->dev, sizeof(*psys_ctrl), GFP_KERNEL);
+	if (!psys_ctrl) {
+		rval = -ENOMEM;
+		goto out_intel_ipu4_bus_del_devices;
+	}
+
+	/* Init butress control with default values based on the HW */
+	memcpy(psys_ctrl, psys_buttress_ctrl, sizeof(*psys_ctrl));
+
+	isp->psys_iommu = intel_ipu4_mmu_init(
+		pdev, isp->isys_iommu ? &isp->isys_iommu->dev :
+		&pdev->dev, psys_ctrl, psys_base, &psys_ipdata->hw_variant,
+		1, PSYS_MMID);
+	rval = PTR_ERR(isp->psys_iommu);
+	if (IS_ERR(isp->psys_iommu)) {
+		dev_err(&pdev->dev, "can't create psys iommu device\n");
+		goto out_intel_ipu4_bus_del_devices;
+	}
+
+	isp->psys = intel_ipu4_psys_init(
+		pdev, &isp->psys_iommu->dev,
+		&isp->psys_iommu->dev, psys_base, psys_ipdata, 0);
+	rval = PTR_ERR(isp->psys);
+	if (IS_ERR(isp->psys))
+		goto out_intel_ipu4_bus_del_devices;
 
 	rval = intel_ipu4_init_debugfs(isp);
 	if (rval) {
@@ -1024,7 +1047,9 @@ static int intel_ipu4_suspend(struct device *dev)
 	struct intel_ipu4_device *isp = pci_get_drvdata(pdev);
 
 	isp->flr_done = false;
-	intel_ipu5_fpga_reset(pdev);
+
+	if (isp->ctrl->reset)
+		isp->ctrl->reset(pdev);
 
 	return 0;
 }
@@ -1088,17 +1113,11 @@ static const struct dev_pm_ops intel_ipu4_pm_ops = {
 #endif
 
 static const struct pci_device_id intel_ipu4_pci_tbl[] = {
-#if defined CONFIG_VIDEO_INTEL_IPU4_FPGA		\
-	|| defined CONFIG_VIDEO_INTEL_IPU4_ISYS_FPGA	\
-	|| defined CONFIG_VIDEO_INTEL_IPU4_PSYS_FPGA
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU4_HW_BXT_B0)},
-#else
 #if defined IPU_STEP_IPU5A0
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU5_HW_FPGA_A0)},
 #else
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU4_HW_BXT_B0)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU4_HW_BXT_P)},
-#endif
 #endif
 	{0,}
 };

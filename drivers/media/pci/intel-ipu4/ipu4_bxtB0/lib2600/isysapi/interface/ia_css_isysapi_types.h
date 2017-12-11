@@ -60,11 +60,22 @@ struct ia_css_driver_proxy_config {
  * @driver_sys
  * @buffer_partition: Information required for the virtual SRAM
  * space partition of the streams.
+ * @driver_proxy
+ * @secure: Driver needs to set 'secure' to indicate the intention
+ *     when invoking ia_css_isys_context_create() in
+ *     HAS_DUAL_CMD_CTX_SUPPORT case. If 'true', it's for
+ *     secure case.
+ * @stream_secure_bitmask: Initialized to 0 for default all non-secure streams
+ *     IA_CSS_ISYS_STREAM_SRC_PORT_0 is mapped to bit 0.
+ *     IA_CSS_ISYS_STREAM_SRC_PORT_11 is all mapped to bit 11.
+ *     Bits 31:12 are reserved;
  */
 struct ia_css_isys_device_cfg_data {
 	struct ia_css_driver_sys_config driver_sys;
 	struct ia_css_isys_buffer_partition buffer_partition;
 	struct ia_css_driver_proxy_config driver_proxy;
+	bool secure;
+	uint32_t stream_secure_bitmask;
 };
 
 /**

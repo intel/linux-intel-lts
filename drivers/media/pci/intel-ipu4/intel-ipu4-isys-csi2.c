@@ -282,9 +282,9 @@ static int csi2_ev_correction_params(struct intel_ipu4_isys_csi2 *csi2,
 
 static void intel_ipu4_isys_register_errors(struct intel_ipu4_isys_csi2 *csi2)
 {
-	u32 status = readl(csi2->base + CSI2_REG_CSIRX_IRQ_STATUS);
+	u32 status = ipu_readl(csi2->base + CSI2_REG_CSIRX_IRQ_STATUS);
 
-	writel(status, csi2->base + CSI2_REG_CSIRX_IRQ_CLEAR);
+	ipu_writel(status, csi2->base + CSI2_REG_CSIRX_IRQ_CLEAR);
 	csi2->receiver_errors |= status;
 }
 
@@ -394,7 +394,7 @@ static int intel_ipu4_isys_csi2_configure_tunit(
 	if (!enable) {
 		isys->short_packet_tracing_count--;
 		if (isys->short_packet_tracing_count == 0)
-			writel(0, tunit_base + TRACE_REG_TUN_DDR_ENABLE);
+			ipu_writel(0, tunit_base + TRACE_REG_TUN_DDR_ENABLE);
 		goto out_release_mutex;
 	}
 
@@ -410,45 +410,45 @@ static int intel_ipu4_isys_csi2_configure_tunit(
 		DMA_BIDIRECTIONAL);
 
 	/* ring buffer base */
-	writel(isys->short_packet_trace_buffer_dma_addr,
+	ipu_writel(isys->short_packet_trace_buffer_dma_addr,
 		tunit_base + TRACE_REG_TUN_DRAM_BASE_ADDR);
 
 	/* ring buffer end */
-	writel(isys->short_packet_trace_buffer_dma_addr +
+	ipu_writel(isys->short_packet_trace_buffer_dma_addr +
 		INTEL_IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE -
 		INTEL_IPU_ISYS_SHORT_PACKET_TRACE_MSG_SIZE,
 		tunit_base + TRACE_REG_TUN_DRAM_END_ADDR);
 
 	/* Infobits for ddr trace */
-	writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
+	ipu_writel(INTEL_IPU4_INFO_REQUEST_DESTINATION_PRIMARY,
 		tunit_base + TRACE_REG_TUN_DDR_INFO_VAL);
 
 	/* Remove reset from trace timers */
-	writel(TRACE_REG_GPREG_TRACE_TIMER_RST_OFF,
+	ipu_writel(TRACE_REG_GPREG_TRACE_TIMER_RST_OFF,
 		isys_base + TRACE_REG_IS_GPREG_TRACE_TIMER_RST_N);
 
 	/* Reset CSI2 monitors */
-	writel(1, isys->pdata->base + TRACE_REG_CSI2_TM_BASE +
+	ipu_writel(1, isys->pdata->base + TRACE_REG_CSI2_TM_BASE +
 		TRACE_REG_CSI2_TM_RESET_REG_IDX);
-	writel(1, isys->pdata->base + TRACE_REG_CSI2_3PH_TM_BASE +
+	ipu_writel(1, isys->pdata->base + TRACE_REG_CSI2_3PH_TM_BASE +
 		TRACE_REG_CSI2_TM_RESET_REG_IDX);
 
 	/* Set trace address register. */
-	writel(TRACE_REG_CSI2_TM_TRACE_ADDRESS_VAL,
+	ipu_writel(TRACE_REG_CSI2_TM_TRACE_ADDRESS_VAL,
 		isys->pdata->base + TRACE_REG_CSI2_TM_BASE +
 		TRACE_REG_CSI2_TM_TRACE_ADDRESS_REG_IDX);
-	writel(TRACE_REG_CSI2_TM_TRACE_HEADER_VAL,
+	ipu_writel(TRACE_REG_CSI2_TM_TRACE_HEADER_VAL,
 		isys->pdata->base + TRACE_REG_CSI2_TM_BASE +
 		TRACE_REG_CSI2_TM_TRACE_HEADER_REG_IDX);
-	writel(TRACE_REG_CSI2_3PH_TM_TRACE_ADDRESS_VAL,
+	ipu_writel(TRACE_REG_CSI2_3PH_TM_TRACE_ADDRESS_VAL,
 		isys->pdata->base + TRACE_REG_CSI2_3PH_TM_BASE +
 		TRACE_REG_CSI2_TM_TRACE_ADDRESS_REG_IDX);
-	writel(TRACE_REG_CSI2_TM_TRACE_HEADER_VAL,
+	ipu_writel(TRACE_REG_CSI2_TM_TRACE_HEADER_VAL,
 		isys->pdata->base + TRACE_REG_CSI2_3PH_TM_BASE +
 		TRACE_REG_CSI2_TM_TRACE_HEADER_REG_IDX);
 
 	/* Enable DDR trace. */
-	writel(1, tunit_base + TRACE_REG_TUN_DDR_ENABLE);
+	ipu_writel(1, tunit_base + TRACE_REG_TUN_DDR_ENABLE);
 
 	/* Enable trace for CSI2 port. */
 	for (i = 0; i < INTEL_IPU4_ISYS_MAX_CSI2_LEGACY_PORTS +
@@ -460,14 +460,14 @@ static int intel_ipu4_isys_csi2_configure_tunit(
 			isys->pdata->base + TRACE_REG_CSI2_3PH_TM_BASE +
 			TRACE_REG_CSI2_3PH_TM_TRACE_DDR_EN_REG_IDX_Pn(i);
 
-		writel(INTEL_IPU4_ISYS_SHORT_PACKET_TRACE_EVENT_MASK,
+		ipu_writel(INTEL_IPU4_ISYS_SHORT_PACKET_TRACE_EVENT_MASK,
 			event_mask_reg);
 	}
 
 	/* Enable CSI2 receiver monitor */
-	writel(1, isys->pdata->base + TRACE_REG_CSI2_TM_BASE +
+	ipu_writel(1, isys->pdata->base + TRACE_REG_CSI2_TM_BASE +
 		TRACE_REG_CSI2_TM_OVERALL_ENABLE_REG_IDX);
-	writel(1, isys->pdata->base + TRACE_REG_CSI2_3PH_TM_BASE +
+	ipu_writel(1, isys->pdata->base + TRACE_REG_CSI2_3PH_TM_BASE +
 		TRACE_REG_CSI2_TM_OVERALL_ENABLE_REG_IDX);
 
 	ret = update_timer_base(isys);
@@ -495,52 +495,44 @@ int intel_ipu4_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	if (!enable) {
 		intel_ipu4_isys_csi2_error(csi2);
 
-		val = readl(csi2->base + CSI2_REG_CSI_RX_CONFIG);
+		val = ipu_readl(csi2->base + CSI2_REG_CSI_RX_CONFIG);
 		val &= ~(CSI2_CSI_RX_CONFIG_DISABLE_BYTE_CLK_GATING |
 			 CSI2_CSI_RX_CONFIG_RELEASE_LP11);
-		writel(val, csi2->base + CSI2_REG_CSI_RX_CONFIG);
+		ipu_writel(val, csi2->base + CSI2_REG_CSI_RX_CONFIG);
 
-		writel(0, csi2->base + CSI2_REG_CSI_RX_ENABLE);
+		ipu_writel(0, csi2->base + CSI2_REG_CSI_RX_ENABLE);
 
 		/* Disable interrupts */
-		writel(0, csi2->base + CSI2_REG_CSI2S2M_IRQ_MASK);
-		writel(0, csi2->base + CSI2_REG_CSI2S2M_IRQ_ENABLE);
-		writel(0, csi2->base + CSI2_REG_CSI2PART_IRQ_MASK);
-		writel(0, csi2->base + CSI2_REG_CSI2PART_IRQ_ENABLE);
+		ipu_writel(0, csi2->base + CSI2_REG_CSI2S2M_IRQ_MASK);
+		ipu_writel(0, csi2->base + CSI2_REG_CSI2S2M_IRQ_ENABLE);
+		ipu_writel(0, csi2->base + CSI2_REG_CSI2PART_IRQ_MASK);
+		ipu_writel(0, csi2->base + CSI2_REG_CSI2PART_IRQ_ENABLE);
 		if (ip->interlaced)
 			intel_ipu4_isys_csi2_configure_tunit(csi2, 0);
 		return 0;
 	}
 
-	/* Do not configure timings on FPGA */
-	if (csi2->isys->pdata->type !=
-		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA) {
-		csi2_ev_correction_params(csi2, nlanes);
+	csi2_ev_correction_params(csi2, nlanes);
 
-		writel(timing.ctermen,
-			csi2->base +
-				CSI2_REG_CSI_RX_DLY_CNT_TERMEN_CLANE);
-		writel(timing.csettle,
-			csi2->base +
-				CSI2_REG_CSI_RX_DLY_CNT_SETTLE_CLANE);
+	ipu_writel(timing.ctermen,
+		csi2->base + CSI2_REG_CSI_RX_DLY_CNT_TERMEN_CLANE);
+	ipu_writel(timing.csettle,
+		csi2->base + CSI2_REG_CSI_RX_DLY_CNT_SETTLE_CLANE);
 
-		for (i = 0; i < nlanes; i++) {
-			writel(timing.dtermen,
-			csi2->base +
-			CSI2_REG_CSI_RX_DLY_CNT_TERMEN_DLANE(i));
-			writel(timing.dsettle,
-			csi2->base +
-			CSI2_REG_CSI_RX_DLY_CNT_SETTLE_DLANE(i));
-		}
+	for (i = 0; i < nlanes; i++) {
+		ipu_writel(timing.dtermen,
+			csi2->base + CSI2_REG_CSI_RX_DLY_CNT_TERMEN_DLANE(i));
+		ipu_writel(timing.dsettle,
+			csi2->base + CSI2_REG_CSI_RX_DLY_CNT_SETTLE_DLANE(i));
 	}
 
-	val = readl(csi2->base + CSI2_REG_CSI_RX_CONFIG);
+	val = ipu_readl(csi2->base + CSI2_REG_CSI_RX_CONFIG);
 	val |= CSI2_CSI_RX_CONFIG_DISABLE_BYTE_CLK_GATING |
 		CSI2_CSI_RX_CONFIG_RELEASE_LP11;
-	writel(val, csi2->base + CSI2_REG_CSI_RX_CONFIG);
+	ipu_writel(val, csi2->base + CSI2_REG_CSI_RX_CONFIG);
 
-	writel(nlanes, csi2->base + CSI2_REG_CSI_RX_NOF_ENABLED_LANES);
-	writel(CSI2_CSI_RX_ENABLE_ENABLE,
+	ipu_writel(nlanes, csi2->base + CSI2_REG_CSI_RX_NOF_ENABLED_LANES);
+	ipu_writel(CSI2_CSI_RX_ENABLE_ENABLE,
 		csi2->base + CSI2_REG_CSI_RX_ENABLE);
 
 	/* SOF of VC0-VC3 enabled from CSI2PART register in B0 */
@@ -549,20 +541,20 @@ int intel_ipu4_isys_csi2_set_stream(struct v4l2_subdev *sd,
 
 	/* Enable csi2 receiver error interrupts */
 	csi2csirx = BIT(CSI2_CSIRX_NUM_ERRORS) - 1;
-	writel(csi2csirx, csi2->base + CSI2_REG_CSIRX_IRQ_EDGE);
-	writel(0, csi2->base + CSI2_REG_CSIRX_IRQ_LEVEL_NOT_PULSE);
-	writel(csi2csirx, csi2->base + CSI2_REG_CSIRX_IRQ_CLEAR);
-	writel(csi2csirx, csi2->base + CSI2_REG_CSIRX_IRQ_MASK);
-	writel(csi2csirx, csi2->base + CSI2_REG_CSIRX_IRQ_ENABLE);
+	ipu_writel(csi2csirx, csi2->base + CSI2_REG_CSIRX_IRQ_EDGE);
+	ipu_writel(0, csi2->base + CSI2_REG_CSIRX_IRQ_LEVEL_NOT_PULSE);
+	ipu_writel(csi2csirx, csi2->base + CSI2_REG_CSIRX_IRQ_CLEAR);
+	ipu_writel(csi2csirx, csi2->base + CSI2_REG_CSIRX_IRQ_MASK);
+	ipu_writel(csi2csirx, csi2->base + CSI2_REG_CSIRX_IRQ_ENABLE);
 
 	/* Enable csi2 error and SOF-related irqs */
-	writel(csi2part, csi2->base + CSI2_REG_CSI2PART_IRQ_EDGE);
-	writel(0, csi2->base + CSI2_REG_CSI2PART_IRQ_LEVEL_NOT_PULSE);
-	writel(csi2part, csi2->base + CSI2_REG_CSI2PART_IRQ_CLEAR);
-	writel(csi2part, csi2->base + CSI2_REG_CSI2PART_IRQ_MASK);
-	writel(csi2part, csi2->base + CSI2_REG_CSI2PART_IRQ_ENABLE);
+	ipu_writel(csi2part, csi2->base + CSI2_REG_CSI2PART_IRQ_EDGE);
+	ipu_writel(0, csi2->base + CSI2_REG_CSI2PART_IRQ_LEVEL_NOT_PULSE);
+	ipu_writel(csi2part, csi2->base + CSI2_REG_CSI2PART_IRQ_CLEAR);
+	ipu_writel(csi2part, csi2->base + CSI2_REG_CSI2PART_IRQ_MASK);
+	ipu_writel(csi2part, csi2->base + CSI2_REG_CSI2PART_IRQ_ENABLE);
 	if (ip->interlaced) {
-		writel(CSI2_RX_SYNC_COUNTER_EXTERNAL,
+		ipu_writel(CSI2_RX_SYNC_COUNTER_EXTERNAL,
 			csi2->base + CSI2_REG_CSI_RX_SYNC_COUNTER_SEL);
 		rval = intel_ipu4_isys_csi2_configure_tunit(csi2, 1);
 		if (rval)
@@ -574,10 +566,10 @@ int intel_ipu4_isys_csi2_set_stream(struct v4l2_subdev *sd,
 
 void intel_ipu4_isys_csi2_isr(struct intel_ipu4_isys_csi2 *csi2)
 {
-	u32 status = readl(csi2->base + CSI2_REG_CSI2PART_IRQ_STATUS);
+	u32 status = ipu_readl(csi2->base + CSI2_REG_CSI2PART_IRQ_STATUS);
 	unsigned int i;
 
-	writel(status, csi2->base + CSI2_REG_CSI2PART_IRQ_CLEAR);
+	ipu_writel(status, csi2->base + CSI2_REG_CSI2PART_IRQ_CLEAR);
 
 	if (status & CSI2_CSI2PART_IRQ_CSIRX_B0)
 		intel_ipu4_isys_register_errors(csi2);
@@ -725,14 +717,14 @@ int intel_ipu4_csi_set_skew_cal(struct intel_ipu4_isys_csi2 *csi2, int enable)
 {
 	u32 val;
 
-	val = readl(csi2->base + CSI2_REG_CSI_RX_CONFIG);
+	val = ipu_readl(csi2->base + CSI2_REG_CSI_RX_CONFIG);
 
 	if (enable)
 		val |= CSI2_CSI_RX_CONFIG_SKEWCAL_ENABLE;
 	else
 		val &= ~CSI2_CSI_RX_CONFIG_SKEWCAL_ENABLE;
 
-	writel(val, csi2->base + CSI2_REG_CSI_RX_CONFIG);
+	ipu_writel(val, csi2->base + CSI2_REG_CSI_RX_CONFIG);
 
 	return 0;
 }

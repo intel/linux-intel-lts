@@ -14,6 +14,7 @@
 
 #include "ia_css_psys_static_storage_class.h"
 #include "ia_css_psys_program_group_manifest.h"
+#include "ia_css_rbm_manifest.h"
 
 /*
  * Functions to possibly inline
@@ -68,6 +69,9 @@ size_t ia_css_sizeof_program_group_manifest(
 
 	/* Private payload in the program group manifest */
 	size += ceil_mul(sizeof(struct ia_css_psys_private_pg_data),
+				sizeof(uint64_t));
+	/* RBM manifest in the program group manifest */
+	size += ceil_mul(sizeof(ia_css_rbm_manifest_t),
 				sizeof(uint64_t));
 
 	for (i = 0; i < (int)program_count; i++) {
@@ -160,11 +164,12 @@ bool ia_css_is_program_group_manifest_valid(
 	uint8_t program_count;
 	ia_css_kernel_bitmap_t total_bitmap;
 	ia_css_kernel_bitmap_t check_bitmap;
+	ia_css_kernel_bitmap_t terminal_bitmap;
 	/*
 	 * Use a standard bitmap type for the minimum logic to check the DAG,
 	 * generic functions can be used for the kernel enable bitmaps; Later
 	 */
-	vied_nci_resource_bitmap_t terminal_bitmap;
+	vied_nci_resource_bitmap_t resource_bitmap;
 	int terminal_bitmap_weight;
 	bool has_parameter_terminal_in = false;
 	bool has_parameter_terminal_out = false;
@@ -187,12 +192,13 @@ bool ia_css_is_program_group_manifest_valid(
 	total_bitmap =
 		ia_css_program_group_manifest_get_kernel_bitmap(manifest);
 	check_bitmap = ia_css_kernel_bitmap_clear();
-	terminal_bitmap = vied_nci_bit_mask(VIED_NCI_RESOURCE_BITMAP_BITS);
+	resource_bitmap = vied_nci_bit_mask(VIED_NCI_RESOURCE_BITMAP_BITS);
+	terminal_bitmap = ia_css_kernel_bitmap_clear();
 
 	verifexit(program_count != 0);
 	verifexit(terminal_count != 0);
 	verifexit(!ia_css_is_kernel_bitmap_empty(total_bitmap));
-	verifexit(vied_nci_is_bitmap_empty(terminal_bitmap));
+	verifexit(vied_nci_is_bitmap_empty(resource_bitmap));
 
 	/* Check the kernel bitmaps for terminals */
 	for (i = 0; i < (int)terminal_count; i++) {
@@ -268,15 +274,13 @@ bool ia_css_is_program_group_manifest_valid(
 				*spatial_param_man =
 			(const ia_css_spatial_param_terminal_manifest_t *)
 				terminal_manifest_i;
-			ia_css_kernel_bitmap_t terminal_bitmap = 0;
 			verifexit(spatial_param_man);
 			verifexit(is_spatial_param);
 
 			terminal_bitmap =
 				ia_css_kernel_bitmap_set(terminal_bitmap,
 				spatial_param_man->kernel_id);
-			verifexit(!ia_css_is_kernel_bitmap_empty(
-					terminal_bitmap));
+			verifexit(!ia_css_is_kernel_bitmap_empty(terminal_bitmap));
 			verifexit(ia_css_is_kernel_bitmap_subset(
 					total_bitmap, terminal_bitmap));
 		}
@@ -602,13 +606,13 @@ bool ia_css_is_program_group_manifest_valid(
 				IA_CSS_PROGRAM_TYPE_VIRTUAL_SUB)) {
 				/* If the subnode always came after the */
 				/* supernode we could check for presence */
-				terminal_bitmap =
+				resource_bitmap =
 					vied_nci_bit_mask_set_unique(
-						terminal_bitmap,
+						resource_bitmap,
 						terminal_dependency);
 				verifexit(USE_SIMPLIFIED_GRAPH_MODEL ||
 					!vied_nci_is_bitmap_empty(
-						terminal_bitmap));
+						resource_bitmap));
 			}
 		}
 	}
@@ -616,7 +620,7 @@ bool ia_css_is_program_group_manifest_valid(
 			total_bitmap, check_bitmap));
 
 	terminal_bitmap_weight =
-		vied_nci_bitmap_compute_weight(terminal_bitmap);
+		vied_nci_bitmap_compute_weight(resource_bitmap);
 	verifexit(terminal_bitmap_weight >= 0);
 	if (has_parameter_terminal_in ||
 		has_parameter_terminal_out ||
@@ -672,7 +676,7 @@ int ia_css_program_group_manifest_set_kernel_bitmap(
 ia_css_kernel_bitmap_t ia_css_program_group_manifest_get_kernel_bitmap(
 	const ia_css_program_group_manifest_t *manifest)
 {
-	ia_css_kernel_bitmap_t bitmap = 0;
+	ia_css_kernel_bitmap_t bitmap = ia_css_kernel_bitmap_clear();
 
 	IA_CSS_TRACE_0(PSYSAPI_STATIC, VERBOSE,
 		"ia_css_program_group_manifest_get_kernel_bitmap(): enter:\n");
@@ -896,6 +900,13 @@ void ia_css_program_group_manifest_init(
 	blob->private_data_offset = offset;
 	offset += ceil_mul(sizeof(struct ia_css_psys_private_pg_data),
 				sizeof(uint64_t));
+
+	/* Set the RBM manifest blob offset */
+	blob->rbm_manifest_offset = offset;
+	offset += ceil_mul(sizeof(ia_css_rbm_manifest_t),
+				sizeof(uint64_t));
+
+	assert(offset <= UINT16_MAX);
 	blob->size = (uint16_t)offset;
 }
 

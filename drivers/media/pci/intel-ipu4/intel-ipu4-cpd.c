@@ -62,6 +62,10 @@
 #define intel_ipu4_cpd_get_moduledata(cpd)		\
 	intel_ipu4_cpd_get_entry(cpd, CPD_MODULEDATA_IDX)
 
+static bool fw_version_check = true;
+module_param(fw_version_check, bool, 0444);
+MODULE_PARM_DESC(fw_version_check, "enable/disable checking firmware version");
+
 static const struct intel_ipu4_cpd_metadata_cmpnt *
 intel_ipu4_cpd_metadata_get_cmpnt(
 	struct intel_ipu4_device *isp, const void *metadata,
@@ -370,11 +374,16 @@ static int intel_ipu4_cpd_validate_moduledata(struct intel_ipu4_device *isp,
 		return -EINVAL;
 	}
 
-	if (IA_CSS_FW_PKG_RELEASE != mod_hdr->fw_pkg_date) {
+	if (fw_version_check &&
+		(IA_CSS_FW_PKG_RELEASE != mod_hdr->fw_pkg_date)) {
 		dev_err(&isp->pdev->dev,
 			"Moduledata and library version mismatch (%x != %x)\n",
 			mod_hdr->fw_pkg_date, IA_CSS_FW_PKG_RELEASE);
 		return -EINVAL;
+	} else {
+		dev_warn(&isp->pdev->dev,
+			"Moduledata version: %x, library version: %x\n",
+			mod_hdr->fw_pkg_date, IA_CSS_FW_PKG_RELEASE);
 	}
 
 	dev_info(&isp->pdev->dev, "CSS release: %x\n", IA_CSS_FW_PKG_RELEASE);

@@ -28,12 +28,15 @@
 #include "crl_imx185_configuration.h"
 #include "crl_ov10635_configuration.h"
 #include "crl_ov10640_configuration.h"
+#include "crl_imx477_master_configuration.h"
+#include "crl_imx477_slave_configuration.h"
 #include "crl_imx274_configuration.h"
 #include "crl_ov5670_configuration.h"
 #include "crl_imx290_configuration.h"
 #include "crl_pixter_stub_configuration.h"
 #include "crl_imx135_ipu5_FPGA_configuration.h"
 #include "crl_ov2740_configuration.h"
+#include "crl_magna_configuration.h"
 
 static const struct crlmodule_sensors supported_sensors[] = {
 	{ "i2c-SONY214A:00", "imx214", &imx214_crl_configuration },
@@ -44,6 +47,8 @@ static const struct crlmodule_sensors supported_sensors[] = {
 	{ "i2c-INT3477:00", "ov8858", &ov8858_crl_configuration },
 	{ "i2c-OV5670AA:00", "ov5670", &ov5670_crl_configuration },
 	{ "IMX185", "imx185", &imx185_crl_configuration },
+	{ "IMX477-MASTER", "imx477", &imx477_master_crl_configuration },
+	{ "IMX477-SLAVE-1", "imx477", &imx477_slave_crl_configuration },
 	{ "OV13860", "ov13860", &ov13860_crl_configuration },
 	{ "ADV7481 CVBS", "adv7481_cvbs", &adv7481_cvbs_crl_configuration },
 	{ "ADV7481 HDMI", "adv7481_hdmi", &adv7481_hdmi_crl_configuration },
@@ -59,6 +64,7 @@ static const struct crlmodule_sensors supported_sensors[] = {
 	{ "PIXTER_STUB_B", "pixter_stub_b", &pixter_stub_b_crl_configuration},
 	{ "IMX135_IPU5", "imx135", &imx135_ipu5_fpga_crl_configuration},
 	{ "INT3474", "ov2740", &ov2740_crl_configuration },
+	{ "MAGNA", "magna", &magna_crl_configuration },
 };
 
 /*

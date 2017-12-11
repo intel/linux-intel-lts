@@ -25,6 +25,8 @@
 #define OV10640_HMAX			65535
 #define OV10640_VMAX			131071
 #define OV10640_MAX_SHS1		(OV10640_VMAX - 2)
+#define OV10640_MAX_SHS3		0xFF
+#define OV10640_MAX_DGAIN		0x3FFF
 
 /* 800Mbps for ov10640 1280x1080 30fps */
 static struct crl_register_write_rep ov10640_pll_800mbps[] = {
@@ -134,7 +136,7 @@ static struct crl_register_write_rep ov10640_1280_1080_HDR[] = {
 	{0x3127, CRL_REG_LEN_08BIT, 0x63},
 	{0x3128, CRL_REG_LEN_08BIT, 0xc0},
 	{0x3129, CRL_REG_LEN_08BIT, 0x00},
-	{0x31be, CRL_REG_LEN_08BIT, 0x00},
+	{0x31be, CRL_REG_LEN_08BIT, 0x01},
 	{0x30a5, CRL_REG_LEN_08BIT, 0x78},
 	{0x30a6, CRL_REG_LEN_08BIT, 0x40},
 	{0x30a7, CRL_REG_LEN_08BIT, 0x78},
@@ -1289,7 +1291,7 @@ static struct crl_register_write_rep ov10640_1280_1080_LONG_RAW[] = {
 	{0x3127, CRL_REG_LEN_08BIT, 0x63},
 	{0x3128, CRL_REG_LEN_08BIT, 0xc0},
 	{0x3129, CRL_REG_LEN_08BIT, 0x00},
-	{0x31be, CRL_REG_LEN_08BIT, 0x00},
+	{0x31be, CRL_REG_LEN_08BIT, 0x01},
 	{0x30a5, CRL_REG_LEN_08BIT, 0x78},
 	{0x30a6, CRL_REG_LEN_08BIT, 0x40},
 	{0x30a7, CRL_REG_LEN_08BIT, 0x78},
@@ -2443,7 +2445,7 @@ static struct crl_register_write_rep ov10640_1280_1088_LONG_RAW[] = {
 	{0x3127, CRL_REG_LEN_08BIT, 0x63},
 	{0x3128, CRL_REG_LEN_08BIT, 0xc0},
 	{0x3129, CRL_REG_LEN_08BIT, 0x00},
-	{0x31be, CRL_REG_LEN_08BIT, 0x00},
+	{0x31be, CRL_REG_LEN_08BIT, 0x01},
 	{0x30a5, CRL_REG_LEN_08BIT, 0x78},
 	{0x30a6, CRL_REG_LEN_08BIT, 0x40},
 	{0x30a7, CRL_REG_LEN_08BIT, 0x78},
@@ -3603,7 +3605,61 @@ static struct crl_dynamic_register_access ov10640_ana_gain_regs[] = {
 		.ops_items = 0,
 		.ops = 0,
 		.mask = 0xff,
-	 }
+	}
+};
+
+/* Long digital gain register */
+static struct crl_dynamic_register_access ov10640_gl_regs[] = {
+	{
+		.address = 0x30EC, /* High Byte */
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
+		.ops = ov10640_hsb_ops,
+		.mask = 0xff,
+	},
+	{
+		.address = 0x30ED, /* Low Byte */
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
+	},
+};
+
+/* Short digital gain register */
+static struct crl_dynamic_register_access ov10640_gs_regs[] = {
+	{
+		.address = 0x30EE,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
+		.ops = ov10640_hsb_ops,
+		.mask = 0xff,
+	},
+	{
+		.address = 0x30EF,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
+	},
+};
+
+/* Very short digital gain register */
+static struct crl_dynamic_register_access ov10640_gvs_regs[] = {
+	{
+		.address = 0x30F0,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
+		.ops = ov10640_hsb_ops,
+		.mask = 0xff,
+	},
+	{
+		.address = 0x30F1,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
+	},
 };
 
 /* Long exposure register, also used in linear(non-HDR) mode */
@@ -3624,12 +3680,11 @@ static struct crl_dynamic_register_access ov10640_el_regs[] = {
 	},
 };
 
-#if 0
 /* Short exposure register */
 static struct crl_dynamic_register_access ov10640_es_regs[] = {
 	{
 		.address = 0x30E8,
-		.len = CRL_REG_LEN_16BIT,
+		.len = CRL_REG_LEN_08BIT,
 		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
 		.ops = ov10640_hsb_ops,
 		.mask = 0xff,
@@ -3653,7 +3708,24 @@ static struct crl_dynamic_register_access ov10640_evs_regs[] = {
 		.mask = 0xff,
 	},
 };
-#endif
+
+/* MSB register */
+static struct crl_dynamic_register_access ov10640_msb_regs[] = {
+	{
+		.address = 0x30BF,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_hsb_ops),
+		.ops = ov10640_hsb_ops,
+		.mask = 0xff,
+	},
+	{
+		.address = 0x31C0,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
+	},
+};
 
 /* Needed for acpi support for runtime detection */
 static struct crl_sensor_detect_config ov10640_sensor_detect_regset[] = {
@@ -3664,6 +3736,49 @@ static struct crl_sensor_detect_config ov10640_sensor_detect_regset[] = {
 	{
 		.reg = { 0x300B, CRL_REG_LEN_08BIT, 0x000000ff },
 		.width = 8,
+	},
+};
+
+/* ctrl-val == 1 ? (1 * 0x0F + 0x45) : (0 * 0x0F + 0x45) -> 0x54 and 0x45 */
+static struct crl_arithmetic_ops ov10640_wdr_ops[] = {
+	{
+		.op = CRL_MULTIPLY,
+		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST,
+		.operand.entity_val = 0x0F,
+	},
+	{
+		.op = CRL_ADD,
+		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST,
+		.operand.entity_val = 0x45,
+	}
+};
+
+static struct crl_dynamic_register_access ov10640_wdr_regs[] = {
+	{ 0x3119, CRL_REG_LEN_08BIT, 0xff,
+		ARRAY_SIZE(ov10640_wdr_ops),
+		ov10640_wdr_ops, 0 },
+};
+
+static struct crl_arithmetic_ops ov10640_linear_ops[] = {
+	{
+		.op = CRL_ASSIGNMENT,
+		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_REG_VAL,
+		.operand.entity_val = 0x31BE,
+	},
+	{
+		.op = CRL_BITWISE_AND,
+		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST,
+		.operand.entity_val = 0x01,
+	},
+};
+
+static struct crl_dynamic_register_access ov10640_linear_regs[] = {
+	{
+		.address = 0x31BE,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = ARRAY_SIZE(ov10640_linear_ops),
+		.ops = ov10640_linear_ops,
+		.mask = 0xff,
 	},
 };
 
@@ -3979,6 +4094,262 @@ static struct crl_v4l2_ctrl ov10640_v4l2_ctrls[] = {
 		.dep_items = 0,
 		.dep_ctrls = 0,
 	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_DIGITAL_GAIN_S,
+		.name = "CRL_CID_DIGITAL_GAIN_S",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_DGAIN,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x100,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_gs_regs),
+		.regs = ov10640_gs_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_DIGITAL_GAIN_L,
+		.name = "CRL_CID_DIGITAL_GAIN_L",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_DGAIN,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x100,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_gl_regs),
+		.regs = ov10640_gl_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_DIGITAL_GAIN_VS,
+		.name = "CRL_CID_DIGITAL_GAIN_VS",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_DGAIN,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x100,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_gvs_regs),
+		.regs = ov10640_gvs_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_GET_OP,
+		.context = SENSOR_STREAMING,
+		.ctrl_id = CRL_CID_SENSOR_BIT_LINEAR,
+		.name = "Sensor bit linear",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = INT_MAX,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0,
+		.flags = V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_READ_ONLY,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_linear_regs),
+		.regs = ov10640_linear_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_MSB_ALIGN,
+		.name = "CRL_CID_MSB_ALIGN",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = 0xFFFF,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_msb_regs),
+		.regs = ov10640_msb_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_EXPOSURE_SHS1,
+		.name = "CRL_CID_EXPOSURE_SHS1",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_SHS1,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x40,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_es_regs),
+		.regs = ov10640_es_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_EXPOSURE_SHS2,
+		.name = "CRL_CID_EXPOSURE_SHS2",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_SHS1,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x40,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_el_regs),
+		.regs = ov10640_el_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = CRL_CID_EXPOSURE_SHS3,
+		.name = "CRL_CID_EXPOSURE_SHS3",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = OV10640_MAX_SHS3,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0x20,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_evs_regs),
+		.regs = ov10640_evs_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_BINNER,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
+		.ctrl_id = V4L2_CID_WDR_MODE,
+		.name = "V4L2_CID_WDR_MODE",
+		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
+		.data.std_data.min = 0,
+		.data.std_data.max = 1,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0,
+		.flags = V4L2_CTRL_FLAG_UPDATE,
+		.impact = CRL_IMPACTS_MODE_SELECTION,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(ov10640_wdr_regs),
+		.regs = ov10640_wdr_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+		.v4l2_type = V4L2_CTRL_TYPE_INTEGER,
+	},
+};
+
+#define OV10640_OTP_BLANK0_START_ADDR 0x349E
+#define OV10640_OTP_BLANK0_END_ADDR 0x34AD
+#define OV10640_OTP_BLANK1_START_ADDR 0x34AE
+#define OV10640_OTP_BLANK1_END_ADDR 0x34BD
+#define OV10640_OTP_BLANK0_LEN (OV10640_OTP_BLANK0_END_ADDR - \
+		OV10640_OTP_BLANK0_START_ADDR + 1)
+#define OV10640_OTP_BLANK1_LEN (OV10640_OTP_BLANK1_END_ADDR -  \
+		OV10640_OTP_BLANK1_START_ADDR + 1)
+
+static struct crl_register_write_rep ov10640_nvm_preop_regset[] = {
+	/* Start streaming */
+	{OV10640_REG_STREAM, CRL_REG_LEN_08BIT, 0x01},
+	/* clear blank 0 data registers buffer */
+	{ 0x349E, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x349F, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A0, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A1, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A2, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A3, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A4, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A5, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A6, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A7, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A8, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34A9, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AA, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AB, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AC, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AD, CRL_REG_LEN_08BIT, 0x00 },
+	/* set registers buffer range */
+	{ 0x3496, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x3497, CRL_REG_LEN_08BIT, 0x0F },
+	/* select blank 0 */
+	{ 0x3495, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x00, 0x00, 0x01 },
+	/* enable read strobe */
+	{ 0x349C, CRL_REG_LEN_08BIT, 0x01 },
+	/* Wait for the data to load into the buffer */
+	{ 0x0000, CRL_REG_LEN_DELAY, 25 },
+
+	/* clear blank 1 data registers buffer */
+	{ 0x34AE, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34AF, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B0, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B1, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B2, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B3, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B4, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B5, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B6, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B7, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B8, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34B9, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34BA, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34BB, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34BC, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x34BD, CRL_REG_LEN_08BIT, 0x00 },
+	/* set registers buffer range */
+	{ 0x3496, CRL_REG_LEN_08BIT, 0x00 },
+	{ 0x3497, CRL_REG_LEN_08BIT, 0x0F },
+	/* select blank 1 */
+	{ 0x3495, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x01, 0x00, 0x01 },
+	/* enable read strobe */
+	{ 0x349C, CRL_REG_LEN_08BIT, 0x01 },
+	/* Wait for the data to load into the buffer */
+	{ 0x0000, CRL_REG_LEN_DELAY, 25 },
+};
+
+static struct crl_register_write_rep ov10640_nvm_postop_regset[] = {
+	{OV10640_REG_STREAM, CRL_REG_LEN_08BIT, 0x00} /* Stop streaming */
+};
+
+static struct crl_nvm_blob ov10640_nvm_blobs[] = {
+	{CRL_I2C_ADDRESS_NO_OVERRIDE, OV10640_OTP_BLANK0_START_ADDR, OV10640_OTP_BLANK0_LEN},
+	{CRL_I2C_ADDRESS_NO_OVERRIDE, OV10640_OTP_BLANK1_START_ADDR, OV10640_OTP_BLANK1_LEN},
 };
 
 struct crl_sensor_configuration ov10640_crl_configuration = {
@@ -4019,6 +4390,16 @@ struct crl_sensor_configuration ov10640_crl_configuration = {
 
 	.flip_items = ARRAY_SIZE(ov10640_flip_configurations),
 	.flip_data = ov10640_flip_configurations,
+
+	.crl_nvm_info.nvm_flags = CRL_NVM_ADDR_MODE_8BIT,
+	.crl_nvm_info.nvm_preop_regs_items =
+		ARRAY_SIZE(ov10640_nvm_preop_regset),
+	.crl_nvm_info.nvm_preop_regs = ov10640_nvm_preop_regset,
+	.crl_nvm_info.nvm_postop_regs_items =
+		ARRAY_SIZE(ov10640_nvm_postop_regset),
+	.crl_nvm_info.nvm_postop_regs = ov10640_nvm_postop_regset,
+	.crl_nvm_info.nvm_blobs_items = ARRAY_SIZE(ov10640_nvm_blobs),
+	.crl_nvm_info.nvm_config = ov10640_nvm_blobs,
 };
 
 #endif  /* __CRLMODULE_OV10640_CONFIGURATION_H_ */

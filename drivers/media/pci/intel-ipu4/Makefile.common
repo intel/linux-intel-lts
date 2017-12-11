@@ -54,7 +54,6 @@ intel-ipu4-mod-$(IPU_STEP)-objs			+= \
 obj-$(CONFIG_VIDEO_INTEL_IPU4)		+= intel-ipu4-mod-$(IPU_STEP).o
 intel-ipu4-mmu-$(IPU_STEP)-objs		+= ../intel-ipu4-mmu.$(IPU_STEP).lnk.o
 obj-$(CONFIG_VIDEO_INTEL_IPU4)		+= intel-ipu4-mmu-$(IPU_STEP).o
-ifndef CONFIG_VIDEO_INTEL_IPU4_PSYS_FPGA
 intel-ipu4-isys-mod-$(IPU_STEP)-objs			+= ../intel-ipu4-isys.$(IPU_STEP).lnk.o ../intel-ipu-isys-csi2-common.$(IPU_STEP).lnk.o \
 					   ../intel-ipu5-isys-csi2.$(IPU_STEP).lnk.o \
 					   ../intel-ipu4-isys-csi2.$(IPU_STEP).lnk.o \
@@ -68,11 +67,12 @@ intel-ipu4-isys-mod-$(IPU_STEP)-objs			+= ../intel-ipu4-isys.$(IPU_STEP).lnk.o .
 					   ../intel-ipu4-isys-subdev.$(IPU_STEP).lnk.o \
 					   ../intel-ipu4-isys-tpg.$(IPU_STEP).lnk.o
 obj-$(CONFIG_VIDEO_INTEL_IPU4)		+= intel-ipu4-isys-mod-$(IPU_STEP).o
-endif
+
 ifdef CONFIG_VIDEO_INTEL_IPU_FW_LIB
 intel-ipu4-wrapper-$(IPU_STEP)-objs	+= ../intel-ipu4-wrapper.$(IPU_STEP).lnk.o
 obj-$(CONFIG_VIDEO_INTEL_IPU4)		+= intel-ipu4-wrapper-$(IPU_STEP).o
 endif
+
 intel-ipu4-psys-mod-$(IPU_STEP)-objs	+= \
 					../intel-ipu4-psys.$(IPU_STEP).lnk.o \
 					../intel-ipu-resources.$(IPU_STEP).lnk.o \
@@ -81,7 +81,5 @@ intel-ipu4-psys-mod-$(IPU_STEP)-objs	+= \
 ifeq ($(CONFIG_COMPAT),y)
 intel-ipu4-psys-mod-$(IPU_STEP)-objs			+= ../intel-ipu4-psys-compat32.$(IPU_STEP).lnk.o
 endif
-ifndef CONFIG_VIDEO_INTEL_IPU4_ISYS_FPGA
 obj-$(CONFIG_VIDEO_INTEL_IPU4)		+= intel-ipu4-psys-mod-$(IPU_STEP).o
-endif
 endif

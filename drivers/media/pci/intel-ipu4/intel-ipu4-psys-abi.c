@@ -455,9 +455,6 @@ int intel_ipu4_psys_abi_open(struct intel_ipu4_psys *psys)
 {
 	int retry = INTEL_IPU4_PSYS_OPEN_RETRY, retval;
 
-	if (is_intel_ipu_hw_fpga(psys->adev->isp))
-		retry = INTEL_IPU4_PSYS_OPEN_RETRY_FPGA;
-
 	if (ext_abi)
 		return ext_abi->open(psys);
 
@@ -499,4 +496,18 @@ int intel_ipu4_psys_abi_close(struct intel_ipu4_psys *psys)
 		return retval;
 	}
 	return retval;
+}
+
+void intel_ipu4_psys_abi_register_ctx_addr(void *ctx_cpu_addr,
+			uint32_t ctx_vied_addr)
+{
+	if (ext_abi && ext_abi->ipu_reg_ctx_addr)
+		ext_abi->ipu_reg_ctx_addr(ctx_cpu_addr, ctx_vied_addr);
+}
+
+void intel_ipu4_psys_abi_unregister_ctx_addr(void *ctx_cpu_addr,
+			uint32_t ctx_vied_addr)
+{
+	if (ext_abi && ext_abi->ipu_unreg_ctx_addr)
+		ext_abi->ipu_unreg_ctx_addr(ctx_cpu_addr, ctx_vied_addr);
 }

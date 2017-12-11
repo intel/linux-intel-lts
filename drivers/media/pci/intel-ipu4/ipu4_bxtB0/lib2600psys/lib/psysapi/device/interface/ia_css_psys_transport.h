@@ -15,26 +15,10 @@
 #ifndef __IA_CSS_PSYS_TRANSPORT_H
 #define __IA_CSS_PSYS_TRANSPORT_H
 
+#include <ia_css_psys_transport_dep.h>		/* ia_css_psys_cmd_queues */
 #include <vied_nci_psys_system_global.h>	/* vied_vaddress_t */
 
 #include <type_support.h>
-
-/*
- * The ID's of the Psys specific queues.
- */
-typedef enum ia_css_psys_cmd_queues {
-	/**< The in-order queue for scheduled process groups */
-	IA_CSS_PSYS_CMD_QUEUE_COMMAND_ID = 0,
-	/**< The in-order queue for commands changing psys or
-	 * process group state
-	 */
-	IA_CSS_PSYS_CMD_QUEUE_DEVICE_ID,
-	/**< An in-order queue for dedicated PPG commands */
-	IA_CSS_PSYS_CMD_QUEUE_PPG0_COMMAND_ID,
-	/**< An in-order queue for dedicated PPG commands */
-	IA_CSS_PSYS_CMD_QUEUE_PPG1_COMMAND_ID,
-	IA_CSS_N_PSYS_CMD_QUEUE_ID
-} ia_css_psys_cmd_queue_ID_t;
 
 typedef enum ia_css_psys_event_queues {
 	/**< The in-order queue for event returns */

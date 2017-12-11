@@ -33,5 +33,7 @@ typedef union {
 	uint32_t data;
 } device_descriptor_id_t;
 
+typedef uint16_t ia_css_process_id_t;
+
 #endif /* __IA_CSS_BASE_TYPES_H */
 

@@ -52,10 +52,13 @@
 #include "misc_support.h"
 #include "system_const.h"
 
-/**
- * ia_css_isys_device_open() - open and configure ISYS device
- */
-int ia_css_isys_device_open(
+static int isys_context_create(
+	HANDLE * context,
+	const struct ia_css_isys_device_cfg_data *config);
+static int isys_start_server(
+	const struct ia_css_isys_device_cfg_data *config);
+
+static int isys_context_create(
 	HANDLE * context,
 	const struct ia_css_isys_device_cfg_data *config)
 {
@@ -73,10 +76,10 @@ int ia_css_isys_device_open(
 	unsigned int mmid;
 	unsigned int i;
 
-	/* Printing "ENTRY IA_CSS_ISYS_DEVICE_OPEN"
+	/* Printing "ENTRY isys_context_create"
 	 * if tracing level = VERBOSE.
 	 */
-	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "ENTRY IA_CSS_ISYS_DEVICE_OPEN\n");
+	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "ENTRY isys_context_create\n");
 
 	verifret(config != NULL, EFAULT);
 
@@ -116,6 +119,7 @@ int ia_css_isys_device_open(
 	sys.ssid = ssid;
 	sys.mmid = mmid;
 
+	ctx->secure = config->secure;
 	/* Following operations need to be aligned with
 	 * "enum ia_css_isys_queue_type" list (list of queue types)
 	 */
@@ -194,7 +198,7 @@ int ia_css_isys_device_open(
 	sys.specific_size = sizeof(isys_fw_cfg);
 
 	IA_CSS_TRACE_0(ISYSAPI, VERBOSE,
-		"ia_css_isys_device_open || call ia_css_syscom_open()\n");
+		"isys_context_create || call ia_css_syscom_open()\n");
 	/* The allocation of the queues will take place within this call and
 	 * info will be stored in sys_context output
 	 */
@@ -203,14 +207,6 @@ int ia_css_isys_device_open(
 		ia_css_cpu_mem_free(ctx);
 		return -EFAULT;
 	}
-
-	IA_CSS_TRACE_0(ISYSAPI, VERBOSE,
-		"ia_css_isys_device_open || start SPC\n");
-	/* The firmware is loaded and syscom is ready, start the SPC */
-	ia_css_cell_start_prefetch(ssid, SPC0,
-		config->driver_sys.icache_prefetch);
-	IA_CSS_TRACE_1(ISYSAPI, VERBOSE, "SPC prefetch: %d\n",
-		config->driver_sys.icache_prefetch);
 
 	/* Update the context with the id's */
 	ctx->ssid = ssid;
@@ -242,13 +238,70 @@ int ia_css_isys_device_open(
 	print_handle_context(ctx);
 #endif /* ISYSAPI_TRACE_CONFIG == ISYSAPI_TRACE_LOG_LEVEL_DEBUG */
 
-	/* Printing "LEAVE IA_CSS_ISYS_DEVICE_OPEN" message
+	/* Only bits from 0-11 are valid.
+	 *  0 - mapped to IA_CSS_ISYS_STREAM_SRC_PORT_0 enum
+	 * ..
+	 * 11 - mapped to IA_CSS_ISYS_STREAM_SRC_PORT_11 enum
+	 * Verify the bits mapped to IA_CSS_ISYS_STREAM_SRC_MIPIGEN_0 and beyond are 0
+	 */
+	verifret(config->stream_secure_bitmask >> IA_CSS_ISYS_STREAM_SRC_MIPIGEN_0 == 0,
+		 EINVAL);
+	ctx->stream_secure_bitmask = config->stream_secure_bitmask;
+
+	/* Printing "LEAVE isys_context_create" message
 	 * if tracing level = VERBOSE.
 	 */
-	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "LEAVE IA_CSS_ISYS_DEVICE_OPEN\n");
+	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "LEAVE isys_context_create\n");
 	return 0;
 }
 
+static int isys_start_server(
+	const struct ia_css_isys_device_cfg_data *config)
+{
+	verifret(config != NULL, EFAULT);
+	IA_CSS_TRACE_0(ISYSAPI, VERBOSE,
+		"isys_start_server || start SPC\n");
+	/* The firmware is loaded and syscom is ready, start the SPC */
+	ia_css_cell_start_prefetch(config->driver_sys.ssid, SPC0,
+		config->driver_sys.icache_prefetch);
+	IA_CSS_TRACE_1(ISYSAPI, VERBOSE, "SPC prefetch: %d\n",
+		config->driver_sys.icache_prefetch);
+	return 0;
+}
+
+/**
+ * ia_css_isys_device_open() - open and configure ISYS device
+ */
+#if HAS_DUAL_CMD_CTX_SUPPORT
+int ia_css_isys_context_create(
+	HANDLE * context,
+	const struct ia_css_isys_device_cfg_data *config)
+{
+	return isys_context_create(context, config);
+}
+
+int ia_css_isys_device_open(
+	const struct ia_css_isys_device_cfg_data *config)
+{
+	return isys_start_server(config);
+}
+#else
+int ia_css_isys_device_open(
+	HANDLE * context,
+	const struct ia_css_isys_device_cfg_data *config)
+{
+	int retval;
+
+	retval = isys_context_create(context, config);
+	if (retval) {
+		IA_CSS_TRACE_1(ISYSAPI, ERROR, "ia_css_isys_device_open() failed (retval %d)\n", retval);
+		return retval;
+	}
+
+	isys_start_server(config);
+	return 0;
+}
+#endif
 
 /**
  * ia_css_isys_device_open_ready() - open and configure ISYS device
@@ -281,8 +334,8 @@ int ia_css_isys_device_open_ready(HANDLE context)
 	for (i = 0; i < ctx->num_send_queues[IA_CSS_ISYS_QUEUE_TYPE_PROXY];
 	     i++) {
 		retval = ia_css_syscom_send_port_open(ctx->sys, i);
-		verifret(retval != ERROR_BUSY, EBUSY);
-		verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+		verifret(retval != FW_ERROR_BUSY, EBUSY);
+		verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 		verifret(retval == 0, EINVAL);
 	}
 
@@ -292,8 +345,8 @@ int ia_css_isys_device_open_ready(HANDLE context)
 		  ctx->num_recv_queues[IA_CSS_ISYS_QUEUE_TYPE_MSG]);
 	     i++) {
 		retval = ia_css_syscom_recv_port_open(ctx->sys, i);
-		verifret(retval != ERROR_BUSY, EBUSY);
-		verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+		verifret(retval != FW_ERROR_BUSY, EBUSY);
+		verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 		verifret(retval == 0, EINVAL);
 	}
 
@@ -526,13 +579,13 @@ stream_cfg->output_pins[i].output_res.width, EINVAL);
 	 */
 	retval = ia_css_syscom_send_port_open(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(retval != ERROR_BUSY, EBUSY);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BUSY, EBUSY);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval == 0, EINVAL);
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	token.send_type = IA_CSS_ISYS_SEND_TYPE_STREAM_OPEN;
@@ -543,13 +596,20 @@ stream_cfg->output_pins[i].output_res.width, EINVAL);
 	token.buf_handle = HOST_ADDRESS(buf_stream_cfg_id);
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	ctx->stream_nof_output_pins[stream_handle] =
 		stream_cfg->nof_output_pins;
 	ctx->stream_state_array[stream_handle] =
 		IA_CSS_ISYS_STREAM_STATE_OPENED;
+
+	/* check secure setting against declared list at isys_device_open() */
+	IA_CSS_TRACE_3(ISYSAPI, VERBOSE, "IA_CSS_ISYS_STREAM_OPEN stream_secure_bitmask 0x%x, stream src %d "
+		       "Conflicts with ctx->secure %d\n", ctx->stream_secure_bitmask, stream_cfg->src, ctx->secure);
+	verifret(((ctx->stream_secure_bitmask >> stream_cfg->src) & 1) ==
+		ctx->secure, EINVAL);
+
 	/* Printing "LEAVE IA_CSS_ISYS_STREAM_OPEN" message
 	 * if tracing level = VERBOSE.
 	 */
@@ -598,7 +658,7 @@ int ia_css_isys_stream_close(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	token.send_type = IA_CSS_ISYS_SEND_TYPE_STREAM_CLOSE;
@@ -606,7 +666,7 @@ int ia_css_isys_stream_close(
 	token.buf_handle = 0;
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	/* close 1 send queue/stream and the single receive queue
@@ -614,7 +674,7 @@ int ia_css_isys_stream_close(
 	 */
 	retval = ia_css_syscom_send_port_close(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval == 0, EINVAL);
 
 	ctx->stream_state_array[stream_handle] = IA_CSS_ISYS_STREAM_STATE_IDLE;
@@ -672,7 +732,7 @@ int ia_css_isys_stream_start(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	if (next_frame != NULL) {
@@ -690,7 +750,7 @@ int ia_css_isys_stream_start(
 	}
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	ctx->stream_state_array[stream_handle] =
@@ -743,7 +803,7 @@ int ia_css_isys_stream_stop(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	token.send_type = IA_CSS_ISYS_SEND_TYPE_STREAM_STOP;
@@ -751,7 +811,7 @@ int ia_css_isys_stream_stop(
 	token.buf_handle = 0;
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 		(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	ctx->stream_state_array[stream_handle] =
@@ -806,7 +866,7 @@ int ia_css_isys_stream_flush(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	token.send_type = IA_CSS_ISYS_SEND_TYPE_STREAM_FLUSH;
@@ -814,7 +874,7 @@ int ia_css_isys_stream_flush(
 	token.buf_handle = 0;
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	ctx->stream_state_array[stream_handle] =
@@ -875,7 +935,7 @@ int ia_css_isys_stream_capture_indication(
 
 	packets = ia_css_syscom_send_port_available(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle));
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 	{
@@ -888,7 +948,7 @@ int ia_css_isys_stream_capture_indication(
 	}
 	retval = ia_css_syscom_send_port_transfer(ctx->sys,
 			(N_MAX_PROXY_SEND_QUEUES + stream_handle), &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	/* Printing "LEAVE IA_CSS_ISYS_STREAM_CAPTURE_INDICATION" message
@@ -936,13 +996,13 @@ int ia_css_isys_stream_handle_response(
 
 	packets = ia_css_syscom_recv_port_available(
 			ctx->sys, N_MAX_PROXY_RECV_QUEUES);
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 
 	retval = ia_css_syscom_recv_port_transfer(
 			ctx->sys, N_MAX_PROXY_RECV_QUEUES, &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 	retval = ia_css_isys_extract_fw_response(
 			ctx, &token, received_response);
@@ -981,7 +1041,7 @@ int ia_css_isys_stream_handle_response(
 /**
  * ia_css_isys_device_close() - close ISYS device
  */
-int ia_css_isys_device_close(HANDLE context)
+static int isys_context_destroy(HANDLE context)
 {
 	struct ia_css_isys_context *ctx = (struct ia_css_isys_context *)context;
 	unsigned int stream_handle;
@@ -993,7 +1053,7 @@ int ia_css_isys_device_close(HANDLE context)
 	/* Printing "ENTRY IA_CSS_ISYS_DEVICE_CLOSE" message
 	 * if tracing level = VERBOSE.
 	 */
-	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "ENTRY IA_CSS_ISYS_DEVICE_CLOSE\n");
+	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "ENTRY isys_context_destroy\n");
 
 	verifret(ctx, EFAULT);
 
@@ -1015,7 +1075,7 @@ int ia_css_isys_device_close(HANDLE context)
 		retval = ia_css_syscom_recv_port_close(
 				ctx->sys, queue_id);
 	}
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval == 0, EINVAL);
 
 	nof_proxy_send_queues =
@@ -1025,7 +1085,7 @@ int ia_css_isys_device_close(HANDLE context)
 		retval = ia_css_syscom_send_port_close(
 				ctx->sys, queue_id);
 	}
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval == 0, EINVAL);
 
 	for (stream_handle = 0; stream_handle < STREAM_ID_MAX;
@@ -1044,11 +1104,30 @@ int ia_css_isys_device_close(HANDLE context)
 	/* Printing "LEAVE IA_CSS_ISYS_DEVICE_CLOSE" message
 	 * if tracing level = VERBOSE.
 	 */
-	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "LEAVE IA_CSS_ISYS_DEVICE_CLOSE\n");
+	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "LEAVE isys_context_destroy\n");
 
 	return 0;
 }
+/**
+ * ia_css_isys_device_close() - close ISYS device
+ */
+#if HAS_DUAL_CMD_CTX_SUPPORT
+int ia_css_isys_context_destroy(HANDLE context)
+{
+	return isys_context_destroy(context);
+}
 
+void ia_css_isys_device_close(void)
+{
+	/* Created for legacy, nothing to perform here */
+}
+
+#else
+int ia_css_isys_device_close(HANDLE context)
+{
+	return isys_context_destroy(context);
+}
+#endif
 
 /**
  * ia_css_isys_device_release() - release ISYS device
@@ -1119,7 +1198,7 @@ int ia_css_isys_proxy_write_req(
 	verifret(write_req_val != NULL, EFAULT);
 
 	packets = ia_css_syscom_send_port_available(ctx->sys, 0);
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 
@@ -1129,7 +1208,7 @@ int ia_css_isys_proxy_write_req(
 	token.value = write_req_val->value;
 
 	retval = ia_css_syscom_send_port_transfer(ctx->sys, 0, &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 	IA_CSS_TRACE_0(ISYSAPI, VERBOSE, "LEAVE IA_CSS_ISYS_PROXY_WRITE_REQ\n");
@@ -1156,12 +1235,12 @@ int ia_css_isys_proxy_handle_write_response(
 	verifret(received_response != NULL, EFAULT);
 
 	packets = ia_css_syscom_recv_port_available(ctx->sys, 0);
-	verifret(packets != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(packets != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(packets >= 0, EINVAL);
 	verifret(packets > 0, EPERM);
 
 	retval = ia_css_syscom_recv_port_transfer(ctx->sys, 0, &token);
-	verifret(retval != ERROR_BAD_ADDRESS, EFAULT);
+	verifret(retval != FW_ERROR_BAD_ADDRESS, EFAULT);
 	verifret(retval >= 0, EINVAL);
 
 

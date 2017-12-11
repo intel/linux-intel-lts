@@ -41,4 +41,14 @@
 /* Switch to enable/disable PDAF settings */
 #define CRL_CID_SENSOR_PDAF		(V4L2_CID_CRLMODULE_BASE + 13)
 
+/* Set multi-digital gain */
+#define CRL_CID_DIGITAL_GAIN_L		(V4L2_CID_CRLMODULE_BASE + 14)
+#define CRL_CID_DIGITAL_GAIN_S		(V4L2_CID_CRLMODULE_BASE + 15)
+#define CRL_CID_DIGITAL_GAIN_VS		(V4L2_CID_CRLMODULE_BASE + 16)
+
+/* Get sensor bit linear */
+#define CRL_CID_SENSOR_BIT_LINEAR	(V4L2_CID_CRLMODULE_BASE + 17)
+
+/* set sensor msb align*/
+#define CRL_CID_MSB_ALIGN		(V4L2_CID_CRLMODULE_BASE + 18)
 #endif /* UAPI_LINUX_CRLMODULE_H */

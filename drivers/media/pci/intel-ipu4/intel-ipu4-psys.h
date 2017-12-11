@@ -21,15 +21,11 @@
 #include "intel-ipu4.h"
 #include "intel-ipu4-pdata.h"
 #include "intel-ipu-resources.h"
+#include "intel-ipu4-psys-abi.h"
 
 #define INTEL_IPU4_PSYS_PG_POOL_SIZE 16
 #define INTEL_IPU4_PSYS_PG_MAX_SIZE 2048
 #define INTEL_IPU4_MAX_PSYS_CMD_BUFFERS 32
-#define INTEL_IPU4_PSYS_CMD_TIMEOUT_MS_FPGA (30 * 1000)
-#define INTEL_IPU4_PSYS_CMD_TIMEOUT_MS_SOC 2000
-#define INTEL_IPU4_PSYS_OPEN_TIMEOUT_US	   50
-#define INTEL_IPU4_PSYS_OPEN_RETRY (10000 / INTEL_IPU4_PSYS_OPEN_TIMEOUT_US)
-#define INTEL_IPU4_PSYS_OPEN_RETRY_FPGA (100 * INTEL_IPU4_PSYS_OPEN_RETRY)
 #define INTEL_IPU4_PSYS_EVENT_CMD_COMPLETE IPU_FW_PSYS_EVENT_TYPE_SUCCESS
 #define INTEL_IPU4_PSYS_EVENT_FRAGMENT_COMPLETE IPU_FW_PSYS_EVENT_TYPE_SUCCESS
 #define INTEL_IPU4_PSYS_CLOSE_TIMEOUT_US   50
@@ -52,6 +48,7 @@ struct intel_ipu4_psys {
 	spinlock_t pgs_lock;
 	struct list_head fhs;
 	struct list_head pgs;
+	struct list_head ppgs;
 	struct list_head started_kcmds_list;
 	struct intel_ipu4_psys_pdata *pdata;
 	struct intel_ipu4_bus_device *adev;
@@ -99,6 +96,9 @@ struct intel_ipu4_psys_pg {
 	size_t pg_size;
 	dma_addr_t pg_dma_addr;
 	struct list_head list;
+	struct intel_ipu4_psys_resource_alloc *resource_alloc;
+	u64 ppg_identifier;
+	struct intel_ipu4_psys_kcmd *ppg_kcmd;
 };
 
 enum intel_ipu4_psys_cmd_state {
@@ -107,6 +107,9 @@ enum intel_ipu4_psys_cmd_state {
 	KCMD_STATE_STARTED,
 	KCMD_STATE_RUN_PREPARED,
 	KCMD_STATE_RUNNING,
+	KCMD_STATE_PPG_START,
+	KCMD_STATE_PPG_ENQUEUE,
+	KCMD_STATE_PPG_STOP,
 	KCMD_STATE_COMPLETE
 };
 
@@ -144,6 +147,16 @@ struct intel_ipu4_psys_kcmd {
 	struct timer_list watchdog;
 };
 
+struct intel_ipu_dma_buf_attach {
+	struct device *dev;
+	uint64_t len;
+	void *userptr;
+	struct sg_table *sgt;
+	bool vma_is_io;
+	struct page **pages;
+	size_t npages;
+};
+
 struct intel_ipu4_psys_kbuffer {
 	uint64_t len;
 	void *userptr;
@@ -151,11 +164,8 @@ struct intel_ipu4_psys_kbuffer {
 	int fd;
 	void *kaddr;
 	struct list_head list;
-	bool vma_is_io;
 	dma_addr_t dma_addr;
 	struct sg_table *sgt;
-	struct page **pages;
-	size_t npages;
 	struct dma_buf_attachment *db_attach;
 	struct dma_buf *dbuf;
 	struct intel_ipu4_psys *psys;
@@ -165,6 +175,11 @@ struct intel_ipu4_psys_kbuffer {
 
 #define inode_to_intel_ipu4_psys(inode) \
 	container_of((inode)->i_cdev, struct intel_ipu4_psys, cdev)
+
+#define is_ppg_kcmd(kcmd)	\
+	(intel_ipu4_psys_abi_pg_get_protocol(	\
+		(struct intel_ipu4_psys_kcmd *)kcmd)	\
+		== IPU_FW_PSYS_PROCESS_GROUP_PROTOCOL_PPG)
 
 #ifdef CONFIG_COMPAT
 extern long intel_ipu4_psys_compat_ioctl32(struct file *file, unsigned int cmd,

@@ -21,5 +21,8 @@
 #ifndef REGMEM_OFFSET
 #define REGMEM_OFFSET	(0)
 #endif /* REGMEM_OFFSET */
+#ifndef REGMEM_WORD_BYTES
+#define REGMEM_WORD_BYTES (4)
+#endif
 
 #endif /* __REGMEM_CONST_H */

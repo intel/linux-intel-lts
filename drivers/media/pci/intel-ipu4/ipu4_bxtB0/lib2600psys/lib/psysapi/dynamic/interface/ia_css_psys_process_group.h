@@ -22,6 +22,7 @@
  * Define the methods on the process object that are not part of
  * a single interface
  */
+#include "ia_css_rbm.h"
 
 #include <ia_css_psys_process_types.h>
 #include <ia_css_psys_dynamic_storage_class.h>
@@ -165,6 +166,20 @@ ia_css_terminal_t *ia_css_process_group_get_terminal_from_type(
 		const ia_css_process_group_t *process_group,
 		const ia_css_terminal_type_t terminal_type);
 
+/*! Get the (pointer to) the <terminal type> terminal of the process group object
+ * for terminals which have only a single instance
+ * (cached in, cached out, program, program_ctrl_init)
+
+ @param	process_group[in]               process group object
+ @param	terminal_type[in]               terminal type of terminal
+
+ @return the pointer to the terminal, NULL on error
+ */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+const ia_css_terminal_t *ia_css_process_group_get_single_instance_terminal(
+	const ia_css_process_group_t 	*process_group,
+	ia_css_terminal_type_t		term_type);
+
 /*! Get the (pointer to) the indexed terminal of the process group object
 
  @param	process_group[in]		process group object
@@ -240,6 +255,28 @@ IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
 int ia_css_process_group_set_resource_bitmap(
 	ia_css_process_group_t			*process_group,
 	const vied_nci_resource_bitmap_t	resource_bitmap);
+
+/*! Get the routing bitmap of the process group
+
+ @param	process_group[in]   process group object
+
+ @return routing bitmap (pointer)
+ */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+const ia_css_rbm_t *ia_css_process_group_get_routing_bitmap(
+	const ia_css_process_group_t *process_group);
+
+/*! Set the routing bitmap of the process group
+
+ @param	process_group[in]   process group object
+ @param	rbm[in]		        routing bitmap
+
+ @return < 0 on error
+ */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+int ia_css_process_group_set_routing_bitmap(
+	ia_css_process_group_t *process_group,
+	const ia_css_rbm_t rbm);
 
 /*! Get IPU virtual address of process group
 

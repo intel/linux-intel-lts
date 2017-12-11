@@ -535,6 +535,7 @@ STORAGE_CLASS_INLINE int stream_cfg_data_host_to_css(
 	stream_cfg_data_css->vc = stream_cfg_data_host->vc;
 	stream_cfg_data_css->isl_use = stream_cfg_data_host->isl_use;
 	stream_cfg_data_css->compfmt = stream_cfg_data_host->compfmt;
+	stream_cfg_data_css->isa_cfg.cfg_fields = 0;
 
 	switch (stream_cfg_data_host->isl_use) {
 	case IA_CSS_ISYS_USE_SINGLE_ISA:

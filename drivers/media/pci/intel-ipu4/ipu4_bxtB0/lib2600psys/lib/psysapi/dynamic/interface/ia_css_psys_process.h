@@ -242,6 +242,15 @@ IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
 ia_css_kernel_bitmap_t ia_css_process_get_kernel_bitmap(
 	const ia_css_process_t *process);
 
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+vied_nci_resource_bitmap_t* ia_css_process_get_dfm_port_bitmap_ptr(
+	ia_css_process_t *process);
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+vied_nci_resource_bitmap_t* ia_css_process_get_dfm_active_port_bitmap_ptr(
+	ia_css_process_t *process);
+
+
 /*! Get the cells bitmap of the the process object
 
  @param	process[in]	process object

@@ -20,7 +20,7 @@
 
 enum ia_css_process_group_protocol_version {
 	/*
-	 * Legacy IPU4 protocol
+	 * Legacy protocol
 	 */
 	IA_CSS_PROCESS_GROUP_PROTOCOL_LEGACY = 0,
 	/*

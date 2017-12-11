@@ -54,8 +54,6 @@
 #define BUTTRESS_IPC_RX_TIMEOUT			1000
 #define BUTTRESS_IPC_VALIDITY_TIMEOUT		1000
 
-#define BUTTRESS_POWER_TIMEOUT			200
-
 #define INTEL_IPU4_BUTTRESS_TSC_LIMIT	500 /* 26 us @ 19.2 MHz */
 #define INTEL_IPU4_BUTTRESS_TSC_RETRY	10
 
@@ -96,27 +94,24 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 	unsigned tout = 500;
 	u32 val = 0;
 
-	if (is_intel_ipu_hw_fpga(isp)) {
-		dev_info(&isp->pdev->dev,
-			"ipu5 FPGA does not support ipc now\n");
-		return 0;
-	}
+	if (isp->ctrl->ipc_reset)
+		return isp->ctrl->ipc_reset(&isp->pdev->dev);
 
 	mutex_lock(&b->ipc_mutex);
 
 	/* Clear-by-1 CSR (all bits), corresponding internal states. */
-	val = readl(isp->base + ipc->csr_in);
-	writel(val, isp->base + ipc->csr_in);
+	val = ipu_readl(isp->base + ipc->csr_in);
+	ipu_writel(val, isp->base + ipc->csr_in);
 
 	/* Set peer CSR bit IPC_PEER_COMP_ACTIONS_RST_PHASE1 */
-	writel(ENTRY, isp->base + ipc->csr_out);
+	ipu_writel(ENTRY, isp->base + ipc->csr_out);
 
 	/*
 	* How long we should wait here?
 	*/
 	tout_jfs = jiffies + msecs_to_jiffies(tout);
 	do {
-		val = readl(isp->base + ipc->csr_in);
+		val = ipu_readl(isp->base + ipc->csr_in);
 		dev_dbg(&isp->pdev->dev, "%s: csr_in = %x\n", __func__, val);
 		if (val & ENTRY) {
 			if (val & EXIT) {
@@ -131,15 +126,16 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 				 * 2) Set peer CSR bit
 				 * IPC_PEER_QUERIED_IP_COMP_ACTIONS_RST_PHASE.
 				 */
-				writel(ENTRY | EXIT, isp->base + ipc->csr_in);
+				ipu_writel(ENTRY | EXIT,
+					   isp->base + ipc->csr_in);
 
-				writel(QUERY, isp->base + ipc->csr_out);
+				ipu_writel(QUERY, isp->base + ipc->csr_out);
 
 				tout_jfs = jiffies + msecs_to_jiffies(tout);
 				continue;
 			} else {
 				dev_dbg(&isp->pdev->dev,
-					"%s: IPC_PEER_COMP_ACTIONS_RST_PHASE1\n",
+					"%s:IPC_PEER_COMP_ACTIONS_RST_PHASE1\n",
 					__func__);
 				/*
 				 * 1) Clear-by-1 CSR bits
@@ -148,9 +144,10 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 				 * 2) Set peer CSR bit
 				 * IPC_PEER_COMP_ACTIONS_RST_PHASE1.
 				 */
-				writel(ENTRY | QUERY, isp->base + ipc->csr_in);
+				ipu_writel(ENTRY | QUERY,
+					   isp->base + ipc->csr_in);
 
-				writel(ENTRY, isp->base + ipc->csr_out);
+				ipu_writel(ENTRY, isp->base + ipc->csr_out);
 
 				tout_jfs = jiffies + msecs_to_jiffies(tout);
 				continue;
@@ -172,18 +169,18 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 			 * 3) Set peer CSR bit
 			 * IPC_PEER_COMP_ACTIONS_RST_PHASE2.
 			 */
-			writel(EXIT, isp->base + ipc->csr_in);
+			ipu_writel(EXIT, isp->base + ipc->csr_in);
 
-			writel(0 << BUTTRESS_IU2CSEDB0_BUSY_SHIFT,
+			ipu_writel(0 << BUTTRESS_IU2CSEDB0_BUSY_SHIFT,
 			       isp->base + ipc->db0_in);
 
-			writel(
+			ipu_writel(
 			BUTTRESS_IU2CSECSR_IPC_PEER_DEASSERTED_REG_VALID_REQ |
 			BUTTRESS_IU2CSECSR_IPC_PEER_ACKED_REG_VALID |
 			BUTTRESS_IU2CSECSR_IPC_PEER_ASSERTED_REG_VALID_REQ |
 			QUERY, isp->base + ipc->csr_in);
 
-			writel(EXIT, isp->base + ipc->csr_out);
+			ipu_writel(EXIT, isp->base + ipc->csr_out);
 
 			mutex_unlock(&b->ipc_mutex);
 
@@ -198,9 +195,9 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 			 * 2) Set peer CSR bit
 			 * IPC_PEER_COMP_ACTIONS_RST_PHASE1
 			 */
-			writel(QUERY, isp->base + ipc->csr_in);
+			ipu_writel(QUERY, isp->base + ipc->csr_in);
 
-			writel(ENTRY, isp->base + ipc->csr_out);
+			ipu_writel(ENTRY, isp->base + ipc->csr_out);
 
 			tout_jfs = jiffies + msecs_to_jiffies(tout);
 		}
@@ -219,7 +216,7 @@ static void intel_ipu4_buttress_ipc_validity_close(
 	struct intel_ipu4_buttress_ipc *ipc)
 {
 	/* Set bit 5 in CSE CSR */
-	writel(BUTTRESS_IU2CSECSR_IPC_PEER_DEASSERTED_REG_VALID_REQ,
+	ipu_writel(BUTTRESS_IU2CSECSR_IPC_PEER_DEASSERTED_REG_VALID_REQ,
 	       isp->base + ipc->csr_out);
 }
 
@@ -232,7 +229,7 @@ static int intel_ipu4_buttress_ipc_validity_open(
 	u32 val;
 
 	/* Set bit 3 in CSE CSR */
-	writel(BUTTRESS_IU2CSECSR_IPC_PEER_ASSERTED_REG_VALID_REQ,
+	ipu_writel(BUTTRESS_IU2CSECSR_IPC_PEER_ASSERTED_REG_VALID_REQ,
 	       isp->base + ipc->csr_out);
 
 	/*
@@ -240,7 +237,7 @@ static int intel_ipu4_buttress_ipc_validity_open(
 	*/
 	tout_jfs = jiffies + msecs_to_jiffies(tout);
 	do {
-		val = readl(isp->base + ipc->csr_in);
+		val = ipu_readl(isp->base + ipc->csr_in);
 		dev_dbg(&isp->pdev->dev, "%s: CSE/ISH2IUCSR = %x\n",
 			__func__, val);
 
@@ -266,8 +263,8 @@ static void intel_ipu4_buttress_ipc_recv(
 	u32 *ipc_msg)
 {
 	if (ipc_msg)
-		*ipc_msg = readl(isp->base + ipc->data0_in);
-	writel(0, isp->base + ipc->db0_in);
+		*ipc_msg = ipu_readl(isp->base + ipc->data0_in);
+	ipu_writel(0, isp->base + ipc->db0_in);
 }
 
 int intel_ipu4_buttress_ipc_send_bulk(
@@ -300,11 +297,11 @@ int intel_ipu4_buttress_ipc_send_bulk(
 
 		dev_dbg(&isp->pdev->dev, "bulk IPC command: 0x%x\n",
 			msgs[i].cmd);
-		writel(msgs[i].cmd, isp->base + ipc->data0_out);
+		ipu_writel(msgs[i].cmd, isp->base + ipc->data0_out);
 
 		val = 1 << BUTTRESS_IU2CSEDB0_BUSY_SHIFT | msgs[i].cmd_size;
 
-		writel(val, isp->base + ipc->db0_out);
+		ipu_writel(val, isp->base + ipc->db0_out);
 
 		tout = wait_for_completion_timeout(&ipc->send_complete,
 					msecs_to_jiffies(
@@ -320,7 +317,7 @@ int intel_ipu4_buttress_ipc_send_bulk(
 			 * WORKAROUND: Sometimes CSE is not
 			 * responding on first try, try again.
 			 */
-			writel(0, isp->base + ipc->db0_out);
+			ipu_writel(0, isp->base + ipc->db0_out);
 			i--;
 			continue;
 		}
@@ -413,25 +410,26 @@ irqreturn_t intel_ipu4_buttress_isr(int irq, void *isp_ptr)
 	pm_runtime_get(&isp->pdev->dev);
 
 	if (!pm_runtime_active(&isp->pdev->dev)) {
-		irq_status = readl(isp->base + BUTTRESS_REG_ISR_ENABLED_STATUS);
-		writel(irq_status, isp->base + BUTTRESS_REG_ISR_CLEAR);
+		irq_status = ipu_readl(isp->base +
+				       BUTTRESS_REG_ISR_ENABLED_STATUS);
+		ipu_writel(irq_status, isp->base + BUTTRESS_REG_ISR_CLEAR);
 		pm_runtime_put(&isp->pdev->dev);
 		return IRQ_HANDLED;
 	}
 
 	trace_ipu4_perf_reg(BUTTRESS_REG_IS_FREQ_CTL,
-		readl(isp->base + BUTTRESS_REG_IS_FREQ_CTL));
+		ipu_readl(isp->base + BUTTRESS_REG_IS_FREQ_CTL));
 	trace_ipu4_perf_reg(BUTTRESS_REG_PS_FREQ_CTL,
-		readl(isp->base + BUTTRESS_REG_PS_FREQ_CTL));
+		ipu_readl(isp->base + BUTTRESS_REG_PS_FREQ_CTL));
 
-	irq_status = readl(isp->base + BUTTRESS_REG_ISR_ENABLED_STATUS);
+	irq_status = ipu_readl(isp->base + BUTTRESS_REG_ISR_ENABLED_STATUS);
 	if (!irq_status) {
 		pm_runtime_put(&isp->pdev->dev);
 		return IRQ_NONE;
 	}
 
 	do {
-		writel(irq_status, isp->base + BUTTRESS_REG_ISR_CLEAR);
+		ipu_writel(irq_status, isp->base + BUTTRESS_REG_ISR_CLEAR);
 
 		for (i = 0; i < ARRAY_SIZE(intel_ipu4_adev_irq_mask); i++) {
 			if (irq_status & intel_ipu4_adev_irq_mask[i]) {
@@ -490,11 +488,12 @@ irqreturn_t intel_ipu4_buttress_isr(int irq, void *isp_ptr)
 			WARN_ON(1);
 		}
 
-		irq_status = readl(isp->base + BUTTRESS_REG_ISR_ENABLED_STATUS);
+		irq_status = ipu_readl(isp->base +
+				       BUTTRESS_REG_ISR_ENABLED_STATUS);
 	} while (irq_status && !isp->flr_done);
 
 	if (disable_irqs)
-		writel(BUTTRESS_IRQS & ~disable_irqs,
+		ipu_writel(BUTTRESS_IRQS & ~disable_irqs,
 		       isp->base + BUTTRESS_REG_ISR_ENABLE);
 
 	pm_runtime_put(&isp->pdev->dev);
@@ -518,18 +517,9 @@ irqreturn_t intel_ipu4_buttress_isr_threaded(int irq, void *isp_ptr)
 				ret = IRQ_HANDLED;
 	}
 
-	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_ENABLE);
+	ipu_writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_ENABLE);
 
 	return ret;
-}
-
-void intel_ipu4_buttress_disable_secure_touch(struct intel_ipu4_device *isp)
-{
-	u32 val;
-
-	val = readl(isp->base + BUTTRESS_REG_SECURE_TOUCH);
-	val &= ~(1 << BUTTRESS_SECURE_TOUCH_SECURE_TOUCH_SHIFT);
-	writel(val, isp->base + BUTTRESS_REG_SECURE_TOUCH);
 }
 
 int intel_ipu4_buttress_power(
@@ -539,6 +529,9 @@ int intel_ipu4_buttress_power(
 	unsigned long tout_jfs;
 	u32 pwr_sts, val;
 	int ret = 0;
+
+	if (isp->ctrl->get_sim_type && SIM_MOCK == isp->ctrl->get_sim_type())
+		return 0;
 
 	if (!ctrl)
 		return 0;
@@ -560,15 +553,12 @@ int intel_ipu4_buttress_power(
 		pwr_sts = ctrl->pwr_sts_on << ctrl->pwr_sts_shift;
 	}
 
-	if (is_intel_ipu_hw_fpga(isp))
-		intel_ipu5_fpga_pmclite_btr_power(isp, on);
-	else
-		writel(val, isp->base + ctrl->freq_ctl);
+	ipu_writel(val, isp->base + ctrl->freq_ctl);
 
 	tout_jfs = jiffies + msecs_to_jiffies(BUTTRESS_POWER_TIMEOUT);
 	do {
 		usleep_range(10, 40);
-		val = readl(isp->base + BUTTRESS_REG_PWR_STATE);
+		val = ipu_readl(isp->base + BUTTRESS_REG_PWR_STATE);
 		if ((val & ctrl->pwr_sts_mask) == pwr_sts) {
 			dev_dbg(&isp->pdev->dev,
 				"Rail state successfully changed\n");
@@ -579,37 +569,22 @@ int intel_ipu4_buttress_power(
 	dev_err(&isp->pdev->dev,
 		"Timeout when trying to change state of the rail 0x%x\n", val);
 
-	/*
-	 * Return success always as psys power up is not working
-	 * currently. This should be -ETIMEDOUT always when psys power
-	 * up is fixed
-	 * Also in FPGA case don't report time out. Depending on FPGA version
-	 * the PM state transition may or may not work.
-	 */
-	if (!is_intel_ipu_hw_fpga(isp))
-		ret = -ETIMEDOUT;
+	ret = -ETIMEDOUT;
 
 out:
-	if (is_intel_ipu_hw_fpga(isp))
-		intel_ipu4_buttress_disable_secure_touch(isp);
-
 	ctrl->started = !ret && on;
 
 	trace_ipu4_perf_reg(BUTTRESS_REG_IS_FREQ_CTL,
-		readl(isp->base + BUTTRESS_REG_IS_FREQ_CTL));
+		ipu_readl(isp->base + BUTTRESS_REG_IS_FREQ_CTL));
 	trace_ipu4_perf_reg(BUTTRESS_REG_PS_FREQ_CTL,
-		readl(isp->base + BUTTRESS_REG_PS_FREQ_CTL));
+		ipu_readl(isp->base + BUTTRESS_REG_PS_FREQ_CTL));
 
 	mutex_unlock(&isp->buttress.power_mutex);
 
 	return ret;
 }
 
-#if is_intel_ipu_hw_fpga()
-static bool secure_mode_enable;
-#else
 static bool secure_mode_enable = 1;
-#endif
 module_param(secure_mode_enable, bool, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(secure_mode, "IPU4 secure mode enable");
 
@@ -622,7 +597,7 @@ void intel_ipu4_buttress_set_secure_mode(struct intel_ipu4_device *isp)
 	 * HACK to disable possible secure mode. This can be
 	 * reverted when CSE is disabling the secure mode
 	 */
-	read = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
+	read = ipu_readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 
 	if (secure_mode_enable)
 		val = read |= 1 << BUTTRESS_SECURITY_CTL_FW_SECURE_MODE_SHIFT;
@@ -632,20 +607,20 @@ void intel_ipu4_buttress_set_secure_mode(struct intel_ipu4_device *isp)
 	if (val == read)
 		return;
 
-	writel(val, isp->base + BUTTRESS_REG_SECURITY_CTL);
+	ipu_writel(val, isp->base + BUTTRESS_REG_SECURITY_CTL);
 
 	/* In B0, for some registers in buttress, because of a hw bug, write
 	 * might not succeed at first attempt. Write twice untill the
 	 * write is successful
 	 */
-	writel(val, isp->base + BUTTRESS_REG_SECURITY_CTL);
+	ipu_writel(val, isp->base + BUTTRESS_REG_SECURITY_CTL);
 
 	while (retry--) {
-		read = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
+		read = ipu_readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 		if (read == val)
 			break;
 
-		writel(val, isp->base + BUTTRESS_REG_SECURITY_CTL);
+		ipu_writel(val, isp->base + BUTTRESS_REG_SECURITY_CTL);
 
 	if (retry == 0)
 		dev_err(&isp->pdev->dev,
@@ -658,10 +633,10 @@ bool intel_ipu4_buttress_get_secure_mode(struct intel_ipu4_device *isp)
 {
 	u32 val;
 
-	if (is_intel_ipu_hw_fpga(isp))
-		return false;
+	if (isp->ctrl->get_secure_mode)
+		return isp->ctrl->get_secure_mode();
 
-	val = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
+	val = ipu_readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 
 	return val & (1 << BUTTRESS_SECURITY_CTL_FW_SECURE_MODE_SHIFT);
 }
@@ -673,7 +648,7 @@ bool intel_ipu4_buttress_auth_done(struct intel_ipu4_device *isp)
 	if (!isp->secure_mode)
 		return true;
 
-	val = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
+	val = ipu_readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 
 	return (val & BUTTRESS_SECURITY_CTL_FW_SETUP_MASK) ==
 		BUTTRESS_SECURITY_CTL_AUTH_DONE;
@@ -701,7 +676,7 @@ static void intel_ipu4_buttress_set_psys_ratio(struct intel_ipu4_device *isp,
 		 * transition by writing wanted ratio, floor ratio and start
 		 * bit. No need to stop PS first
 		 */
-		writel(1 << BUTTRESS_FREQ_CTL_START_SHIFT |
+		ipu_writel(1 << BUTTRESS_FREQ_CTL_START_SHIFT |
 		       ctrl->qos_floor << BUTTRESS_FREQ_CTL_QOS_FLOOR_SHIFT |
 		       psys_divisor, isp->base + BUTTRESS_REG_PS_FREQ_CTL);
 	}
@@ -775,16 +750,16 @@ int intel_ipu4_buttress_reset_authentication(struct intel_ipu4_device *isp)
 		return 0;
 	}
 
-	writel(1 << BUTTRESS_FW_RESET_CTL_START_SHIFT, isp->base +
+	ipu_writel(1 << BUTTRESS_FW_RESET_CTL_START_SHIFT, isp->base +
 	       BUTTRESS_REG_FW_RESET_CTL);
 
 	tout_jfs = jiffies + msecs_to_jiffies(BUTTRESS_CSE_FWRESET_TIMEOUT);
 	do {
-		val = readl(isp->base + BUTTRESS_REG_FW_RESET_CTL);
+		val = ipu_readl(isp->base + BUTTRESS_REG_FW_RESET_CTL);
 		if (val & 1 << BUTTRESS_FW_RESET_CTL_DONE_SHIFT) {
 			dev_info(&isp->pdev->dev,
 				"FW reset for authentication done!\n");
-			writel(0, isp->base + BUTTRESS_REG_FW_RESET_CTL);
+			ipu_writel(0, isp->base + BUTTRESS_REG_FW_RESET_CTL);
 			/*
 			 * Leave some time for HW restore.
 			 */
@@ -894,10 +869,10 @@ int intel_ipu4_buttress_authenticate(struct intel_ipu4_device *isp)
 	 * Let's use fw address. I.e. not using FIT table yet
 	 */
 	data = (u32)isp->pkg_dir_dma_addr;
-	writel(data, isp->base + BUTTRESS_REG_FW_SOURCE_BASE_LO);
+	ipu_writel(data, isp->base + BUTTRESS_REG_FW_SOURCE_BASE_LO);
 
 	data = (u32)(isp->pkg_dir_dma_addr >> 32);
-	writel(data, isp->base + BUTTRESS_REG_FW_SOURCE_BASE_HI);
+	ipu_writel(data, isp->base + BUTTRESS_REG_FW_SOURCE_BASE_HI);
 
 	/*
 	 * Write boot_load into IU2CSEDATA0
@@ -915,7 +890,7 @@ int intel_ipu4_buttress_authenticate(struct intel_ipu4_device *isp)
 
 	tout_jfs = jiffies + msecs_to_jiffies(BUTTRESS_CSE_BOOTLOAD_TIMEOUT);
 	do {
-		data = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
+		data = ipu_readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 		data &= BUTTRESS_SECURITY_CTL_FW_SETUP_MASK;
 		if (data == BUTTRESS_SECURITY_CTL_FW_SETUP_DONE) {
 			dev_dbg(&isp->pdev->dev, "CSE boot_load done\n");
@@ -936,7 +911,7 @@ int intel_ipu4_buttress_authenticate(struct intel_ipu4_device *isp)
 
 	tout_jfs = jiffies + msecs_to_jiffies(BUTTRESS_CSE_BOOTLOAD_TIMEOUT);
 	do {
-		data = readl(psys_pdata->base + BOOTLOADER_STATUS_OFFSET);
+		data = ipu_readl(psys_pdata->base + BOOTLOADER_STATUS_OFFSET);
 		dev_dbg(&isp->pdev->dev, "%s: BOOTLOADER_STATUS 0x%x",
 			__func__, data);
 		if (data == BOOTLOADER_MAGIC_KEY) {
@@ -972,7 +947,7 @@ int intel_ipu4_buttress_authenticate(struct intel_ipu4_device *isp)
 	tout_jfs = jiffies + msecs_to_jiffies(
 		BUTTRESS_CSE_AUTHENTICATE_TIMEOUT);
 	do {
-		data = readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
+		data = ipu_readl(isp->base + BUTTRESS_REG_SECURITY_CTL);
 		data &= BUTTRESS_SECURITY_CTL_FW_SETUP_MASK;
 		if (data == BUTTRESS_SECURITY_CTL_AUTH_DONE) {
 			dev_dbg(&isp->pdev->dev, "CSE authenticate_run done\n");
@@ -1004,14 +979,14 @@ static int intel_ipu4_buttress_send_tsc_request(struct intel_ipu4_device *isp)
 {
 	unsigned long tout_jfs = msecs_to_jiffies(5);
 
-	writel(BUTTRESS_FABRIC_CMD_START_TSC_SYNC,
+	ipu_writel(BUTTRESS_FABRIC_CMD_START_TSC_SYNC,
 	       isp->base + BUTTRESS_REG_FABRIC_CMD);
 
 	tout_jfs += jiffies;
 	do {
 		u32 val;
 
-		val = readl(isp->base + BUTTRESS_REG_PWR_STATE);
+		val = ipu_readl(isp->base + BUTTRESS_REG_PWR_STATE);
 		val = (val & BUTTRESS_PWR_STATE_HH_STATUS_MASK) >>
 			BUTTRESS_PWR_STATE_HH_STATUS_SHIFT;
 
@@ -1037,8 +1012,8 @@ int intel_ipu4_buttress_start_tsc_sync(struct intel_ipu4_device *isp)
 {
 	unsigned int i;
 
-	if (is_intel_ipu_hw_fpga(isp))
-		return 0;
+	if (isp->ctrl->start_tsc)
+		return isp->ctrl->start_tsc();
 
 	for (i = 0; i < BUTTRESS_TSC_SYNC_RESET_TRIAL_MAX; i++) {
 		int ret;
@@ -1047,12 +1022,12 @@ int intel_ipu4_buttress_start_tsc_sync(struct intel_ipu4_device *isp)
 		if (ret == -ETIMEDOUT) {
 			u32 val;
 			/* set tsw soft reset */
-			val = readl(isp->base + BUTTRESS_REG_TSW_CTL);
+			val = ipu_readl(isp->base + BUTTRESS_REG_TSW_CTL);
 			val = val | BUTTRESS_TSW_CTL_SOFT_RESET;
-			writel(val, isp->base + BUTTRESS_REG_TSW_CTL);
+			ipu_writel(val, isp->base + BUTTRESS_REG_TSW_CTL);
 			/* clear tsw soft reset */
 			val = val & (~BUTTRESS_TSW_CTL_SOFT_RESET);
-			writel(val, isp->base + BUTTRESS_REG_TSW_CTL);
+			ipu_writel(val, isp->base + BUTTRESS_REG_TSW_CTL);
 
 			continue;
 		}
@@ -1104,7 +1079,7 @@ static int intel_ipu4_buttress_clk_pll_enable(struct clk_hw *hw)
 	 * It is needed regardless of the 24 MHz or per clock out pll
 	 * setting.
 	 */
-	val = readl(ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
+	val = ipu_readl(ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
 	val |= 1 << BUTTRESS_FREQ_CTL_START_SHIFT;
 	val &= ~BUTTRESS_SENSOR_FREQ_CTL_OSC_OUT_FREQ_MASK_B0(ck->id);
 	for (i = 0; i < ARRAY_SIZE(sensor_clk_freqs); i++)
@@ -1117,7 +1092,7 @@ static int intel_ipu4_buttress_clk_pll_enable(struct clk_hw *hw)
 	else
 		val |= BUTTRESS_SENSOR_FREQ_CTL_OSC_OUT_FREQ_DEFAULT_B0(ck->id);
 
-	writel(val, ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
+	ipu_writel(val, ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
 
 	return 0;
 }
@@ -1128,9 +1103,9 @@ static void intel_ipu4_buttress_clk_pll_disable(struct clk_hw *hw)
 	u32 val;
 
 	/* See enable control above */
-	val = readl(ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
+	val = ipu_readl(ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
 	val &= ~(1 << BUTTRESS_FREQ_CTL_START_SHIFT);
-	writel(val, ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
+	ipu_writel(val, ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
 }
 
 static int intel_ipu4_buttress_clk_enable(struct clk_hw *hw)
@@ -1138,12 +1113,12 @@ static int intel_ipu4_buttress_clk_enable(struct clk_hw *hw)
 	struct clk_intel_ipu4_sensor *ck = to_clk_intel_ipu4_sensor(hw);
 	u32 val;
 
-	val = readl(ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
+	val = ipu_readl(ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
 	val |= 1 << BUTTRESS_SENSOR_CLK_CTL_OSC_CLK_OUT_EN_SHIFT(ck->id);
 
 	/* Enable dynamic sensor clock */
 	val |= 1 << BUTTRESS_SENSOR_CLK_CTL_OSC_CLK_OUT_SEL_SHIFT(ck->id);
-	writel(val, ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
+	ipu_writel(val, ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
 
 	return 0;
 }
@@ -1153,9 +1128,9 @@ static void intel_ipu4_buttress_clk_disable(struct clk_hw *hw)
 	struct clk_intel_ipu4_sensor *ck = to_clk_intel_ipu4_sensor(hw);
 	u32 val;
 
-	val = readl(ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
+	val = ipu_readl(ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
 	val &= ~(1 << BUTTRESS_SENSOR_CLK_CTL_OSC_CLK_OUT_EN_SHIFT(ck->id));
-	writel(val, ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
+	ipu_writel(val, ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
 }
 
 static long intel_ipu4_buttress_clk_round_rate(
@@ -1277,7 +1252,7 @@ static void intel_ipu4_buttress_read_psys_fused_freqs(
 		&isp->buttress.psys_fused_freqs;
 	u32 reg_val, max_ratio, min_ratio, efficient_ratio;
 
-	reg_val = readl(isp->base + BUTTRESS_REG_PS_FREQ_CAPABILITIES);
+	reg_val = ipu_readl(isp->base + BUTTRESS_REG_PS_FREQ_CAPABILITIES);
 
 	min_ratio = (reg_val &
 		     BUTTRESS_PS_FREQ_CAPABILITIES_MIN_RATIO_MASK) >>
@@ -1442,7 +1417,7 @@ static ssize_t intel_ipu4_buttress_reg_read(struct file *file, char __user *buf,
 {
 	struct debugfs_reg32 *reg = file->private_data;
 	u8 tmp[11];
-	u32 val = readl((void __iomem *)reg->offset);
+	u32 val = ipu_readl((void __iomem *)reg->offset);
 	int len = scnprintf(tmp, sizeof(tmp), "0x%08x", val);
 
 	return simple_read_from_buffer(buf, len, ppos, &tmp, len);
@@ -1460,7 +1435,7 @@ static ssize_t intel_ipu4_buttress_reg_write(struct file *file,
 	if (rval)
 		return rval;
 
-	writel(val, (void __iomem *)reg->offset);
+	ipu_writel(val, (void __iomem *)reg->offset);
 
 	return count;
 }
@@ -1502,16 +1477,16 @@ int intel_ipu4_buttress_tsc_read(struct intel_ipu4_device *isp, u64 *val)
 
 	do {
 		spin_lock_irqsave(&b->tsc_lock, flags);
-		tsc_hi = readl(isp->base + BUTTRESS_REG_TSC_HI);
+		tsc_hi = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
 
 		/*
 		 * We are occasionally getting broken values from
 		 * HH. Reading 3 times and doing sanity check as a WA
 		 */
-		tsc_lo_1 = readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_lo_2 = readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_lo_3 = readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_chk = readl(isp->base + BUTTRESS_REG_TSC_HI);
+		tsc_lo_1 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_lo_2 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_lo_3 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_chk = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
 		spin_unlock_irqrestore(&b->tsc_lock, flags);
 		if (tsc_chk == tsc_hi && tsc_lo_2 &&
 		    tsc_lo_2 - tsc_lo_1 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT &&
@@ -1613,7 +1588,7 @@ static int intel_ipu4_buttress_psys_freq_get(void *data, u64 *val)
 		return rval;
 	}
 
-	reg_val = readl(isp->base + BUTTRESS_REG_PS_FREQ_CAPABILITIES);
+	reg_val = ipu_readl(isp->base + BUTTRESS_REG_PS_FREQ_CAPABILITIES);
 
 	pm_runtime_put(&isp->psys->dev);
 
@@ -1643,7 +1618,7 @@ static int intel_ipu4_buttress_isys_freq_get(void *data, u64 *val)
 		return rval;
 	}
 
-	reg_val = readl(isp->base + BUTTRESS_REG_IS_FREQ_CTL);
+	reg_val = ipu_readl(isp->base + BUTTRESS_REG_IS_FREQ_CTL);
 
 	pm_runtime_put(&isp->isys->dev);
 
@@ -1758,32 +1733,20 @@ void intel_ipu4_buttress_csi_port_config(struct intel_ipu4_device *isp,
 	}
 
 	if (!is_intel_ipu4_hw_bxt_b0(isp))
-		writel(combo, isp->base + BUTTRESS_REG_CSI2_PORT_CONFIG_AB);
+		ipu_writel(combo, isp->base + BUTTRESS_REG_CSI2_PORT_CONFIG_AB);
 }
 EXPORT_SYMBOL(intel_ipu4_buttress_csi_port_config);
-
-static void intel_ipu5_buttress_sensor_support_config(
-	struct intel_ipu4_device *isp)
-{
-	writel(0x0, isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
-	writel(IPU5_BUTTRESS_SENSOR_SUPPORT_SW_RESET,
-		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_CONTROL);
-	writel(0x20202020,
-		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING0);
-	writel(0x20,
-		isp->base + IPU5_BUTTRESS_REG_SENSOR_SUPPORT_MIPI_TIMING1);
-}
 
 int intel_ipu4_buttress_restore(struct intel_ipu4_device *isp)
 {
 	struct intel_ipu4_buttress *b = &isp->buttress;
 
-	if (is_intel_ipu_hw_fpga(isp) && is_intel_ipu5_hw_a0(isp))
-		intel_ipu5_buttress_sensor_support_config(isp);
+	if (isp->ctrl->sensor_config)
+		isp->ctrl->sensor_config(isp);
 
-	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
-	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_ENABLE);
-	writel(b->wdt_cached_value, isp->base + BUTTRESS_REG_WDT);
+	ipu_writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
+	ipu_writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_ENABLE);
+	ipu_writel(b->wdt_cached_value, isp->base + BUTTRESS_REG_WDT);
 
 	return 0;
 }
@@ -1829,21 +1792,19 @@ int intel_ipu4_buttress_init(struct intel_ipu4_device *isp)
 	}
 
 	intel_ipu4_buttress_set_secure_mode(isp);
-
 	isp->secure_mode = intel_ipu4_buttress_get_secure_mode(isp);
-
 	if (isp->secure_mode != secure_mode_enable)
 		dev_warn(&isp->pdev->dev, "Unable to set secure mode!\n");
 
 	dev_info(&isp->pdev->dev, "IPU4 in %s mode\n",
 			isp->secure_mode ? "secure" : "non-secure");
 
-	if (is_intel_ipu_hw_fpga(isp) && is_intel_ipu5_hw_a0(isp))
-		intel_ipu5_buttress_sensor_support_config(isp);
+	if (isp->ctrl->sensor_config)
+		isp->ctrl->sensor_config(isp);
 
-	b->wdt_cached_value = readl(isp->base + BUTTRESS_REG_WDT);
-	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
-	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_ENABLE);
+	b->wdt_cached_value = ipu_readl(isp->base + BUTTRESS_REG_WDT);
+	ipu_writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
+	ipu_writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_ENABLE);
 
 	rval = device_create_file(&isp->pdev->dev,
 				  &dev_attr_psys_fused_min_freq);
@@ -1904,7 +1865,7 @@ void intel_ipu4_buttress_exit(struct intel_ipu4_device *isp)
 {
 	struct intel_ipu4_buttress *b = &isp->buttress;
 
-	writel(0, isp->base + BUTTRESS_REG_ISR_ENABLE);
+	ipu_writel(0, isp->base + BUTTRESS_REG_ISR_ENABLE);
 
 	device_remove_file(&isp->pdev->dev,
 			   &dev_attr_psys_fused_efficient_freq);

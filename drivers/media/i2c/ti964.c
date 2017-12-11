@@ -689,6 +689,7 @@ static int ti964_rx_port_config(struct ti964 *va, int sink, int rx_port)
 	int vc_mode_reg_index;
 	int vc_mode_reg_val;
 	int mipi_dt_type;
+	int high_fv_flags = va->subdev_pdata[sink].high_framevalid_flags;
 
 	/* Select RX port. */
 	rval = regmap_write(va->regmap8, TI964_RX_PORT_SEL,
@@ -718,7 +719,7 @@ static int ti964_rx_port_config(struct ti964 *va, int sink, int rx_port)
 	switch (bpp) {
 	case 8:
 	case 16:
-		port_cfg2_val = TI964_RAW10_8BIT;
+		port_cfg2_val = TI964_RAW10_8BIT & (~high_fv_flags);
 		vc_mode_reg_index = TI964_RAW10_ID;
 		break;
 	case 12:
@@ -726,7 +727,7 @@ static int ti964_rx_port_config(struct ti964 *va, int sink, int rx_port)
 		vc_mode_reg_index = TI964_RAW12_ID;
 		break;
 	default:
-		port_cfg2_val = TI964_RAW10_NORMAL;
+		port_cfg2_val = TI964_RAW10_NORMAL & (~high_fv_flags);
 		vc_mode_reg_index = TI964_RAW10_ID;
 		break;
 	}

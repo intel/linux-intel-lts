@@ -697,6 +697,8 @@ void intel_ipu4_isys_buffer_list_to_ipu_fw_isys_frame_buff_set(
 	set->send_resp_sof = 1;
 	set->frame_counter = bl->frame_counter %
 			INTEL_IPU_MAX_FRAME_COUNTER;
+	set->send_irq_eof = 1;
+	set->send_resp_eof = 1;
 
 	list_for_each_entry(ib, &bl->head, head) {
 		if (ib->type == INTEL_IPU4_ISYS_VIDEO_BUFFER) {
@@ -1389,7 +1391,17 @@ void intel_ipu4_isys_queue_buf_done(struct intel_ipu4_isys_buffer *ib)
 {
 	struct vb2_buffer *vb = intel_ipu4_isys_buffer_to_vb2_buffer(ib);
 
-	vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
+	if (atomic_read(&(ib->str2mmio_flag))) {
+		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
+		/*
+		 * Operation on buffer is ended with error and will be reported
+		 * to the userspace when it is de-queued
+		 */
+		atomic_set(&(ib->str2mmio_flag), 0);
+	} else {
+		vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
+	}
+
 }
 
 void intel_ipu4_isys_queue_buf_ready(struct intel_ipu4_isys_pipeline *ip,
@@ -1429,6 +1441,11 @@ void intel_ipu4_isys_queue_buf_ready(struct intel_ipu4_isys_pipeline *ip,
 			continue;
 		}
 
+		if (info->error_info.error ==
+			IPU_FW_ISYS_ERROR_HW_REPORTED_STR2MMIO) {
+			/* Check for 'IPU_FW_ISYS_ERROR_HW_REPORTED_STR2MMIO' error message*/
+			atomic_set(&(ib->str2mmio_flag), 1);
+		}
 		dev_dbg(&isys->adev->dev, "buffer: found buffer %pad\n", &addr);
 
 		if (info->written_direct)
@@ -1536,6 +1553,8 @@ int intel_ipu4_isys_req_prepare(struct media_device *mdev,
 	set->send_resp_sof = 1;
 	set->frame_counter = ireq->frame_counter %
 			INTEL_IPU_MAX_FRAME_COUNTER;
+	set->send_irq_eof = 1;
+	set->send_resp_eof = 1;
 
 	spin_lock_irqsave(&ireq->lock, flags);
 

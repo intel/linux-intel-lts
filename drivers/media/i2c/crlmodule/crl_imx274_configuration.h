@@ -20,11 +20,11 @@
 
 #define IMX274_REG_STANDBY              0x3000  /* STBLOGIC STBMIPI STBDV */
 
-#define IMX274_HMAX                      65535
-#define IMX274_VMAX                      131071
-#define IMX274_MAX_SHS1		(IMX274_VMAX - 2)
-#define IMX274_MAX_SHS2		(IMX274_VMAX - 2)
-#define IMX274_MAX_RHS1		(IMX274_VMAX - 2)
+#define IMX274_HMAX                      65536
+#define IMX274_VMAX                      1048576
+#define IMX274_MAX_SHS1		(IMX274_VMAX - 2236)
+#define IMX274_MAX_SHS2		(IMX274_VMAX - 4)
+#define IMX274_MAX_RHS1		(IMX274_VMAX - 2234)
 
 /* imx274 mode standby cancel sequence */
 static struct crl_register_write_rep imx274_powerup_standby[] = {
@@ -146,7 +146,7 @@ static struct crl_register_write_rep imx274_3864_2174_RAW10_NORMAL[] = {
 	{0x3019, CRL_REG_LEN_08BIT, 0x00},	/* Disable DOL */
 };
 
-static struct crl_register_write_rep imx274_3868_4448_RAW10_DOL[] = {
+static struct crl_register_write_rep imx274_3868_4464_RAW10_DOL[] = {
 	{0x30E2, CRL_REG_LEN_08BIT, 0x01},	/* VCUTMODE */
 	{0x3130, CRL_REG_LEN_08BIT, 0x86},	/* WRITE_VSIZE */
 	{0x3131, CRL_REG_LEN_08BIT, 0x08},
@@ -256,7 +256,7 @@ static struct crl_register_write_rep imx274_1932_1094_RAW12_NORMAL[] = {
 	{0x3019, CRL_REG_LEN_08BIT, 0x00},	/* Disable DOL */
 };
 
-static struct crl_register_write_rep imx274_1936_2268_RAW10_DOL[] = {
+static struct crl_register_write_rep imx274_1936_2282_RAW10_DOL[] = {
 	{0x30E2, CRL_REG_LEN_08BIT, 0x02},	/* VCUTMODE */
 	{0x3130, CRL_REG_LEN_08BIT, 0x4E},	/* WRITE_VSIZE */
 	{0x3131, CRL_REG_LEN_08BIT, 0x04},
@@ -352,6 +352,16 @@ static struct crl_dynamic_register_access imx274_ana_gain_global_regs[] = {
 		.len = CRL_REG_LEN_08BIT,
 		.ops_items = ARRAY_SIZE(imx274_nan_gain_ops),
 		.ops = imx274_nan_gain_ops,
+	},
+};
+
+static struct crl_dynamic_register_access imx274_dig_gain_regs[] = {
+	{
+		.address = 0x3012,
+		.len = CRL_REG_LEN_08BIT,
+		.ops_items = 0,
+		.ops = 0,
+		.mask = 0xff,
 	},
 };
 
@@ -536,18 +546,18 @@ static struct crl_subdev_rect_rep imx274_3864_2202_rects[] = {
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4448,
+		.out_rect.height = 4464,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3864,
@@ -561,18 +571,18 @@ static struct crl_subdev_rect_rep imx274_3864_2174_rects[] = {
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4448,
+		.out_rect.height = 4464,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3864,
@@ -581,28 +591,28 @@ static struct crl_subdev_rect_rep imx274_3864_2174_rects[] = {
 };
 
 /* DOL pixel array includes 4 pixel sync code each line */
-static struct crl_subdev_rect_rep imx274_3868_4448_rects[] = {
+static struct crl_subdev_rect_rep imx274_3868_4464_rects[] = {
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4448,
+		.out_rect.height = 4464,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4448,
+		.out_rect.height = 4464,
 	}
 };
 
@@ -612,18 +622,18 @@ static struct crl_subdev_rect_rep imx274_1932_1094_rects[] = {
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4448,
+		.out_rect.height = 4464,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 1932,
@@ -632,28 +642,28 @@ static struct crl_subdev_rect_rep imx274_1932_1094_rects[] = {
 };
 
 /* DOL pixel array includes 4 pixel sync code each line */
-static struct crl_subdev_rect_rep imx274_1936_2268_rects[] = {
+static struct crl_subdev_rect_rep imx274_1936_2282_rects[] = {
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 3868,
-		.out_rect.height = 4448,
+		.out_rect.height = 4464,
 	},
 	{
 		.subdev_type = CRL_SUBDEV_TYPE_BINNER,
 		.in_rect.left = 0,
 		.in_rect.top = 0,
 		.in_rect.width = 3868,
-		.in_rect.height = 4448,
+		.in_rect.height = 4464,
 		.out_rect.left = 0,
 		.out_rect.top = 0,
 		.out_rect.width = 1936,
-		.out_rect.height = 2268,
+		.out_rect.height = 2282,
 	}
 };
 
@@ -694,20 +704,20 @@ static struct crl_mode_rep imx274_modes[] = {
 	},
 	{
 		/* mode 1 DOL per datasheet */
-		.sd_rects_items = ARRAY_SIZE(imx274_3868_4448_rects),
-		.sd_rects = imx274_3868_4448_rects,
+		.sd_rects_items = ARRAY_SIZE(imx274_3868_4464_rects),
+		.sd_rects = imx274_3868_4464_rects,
 		.binn_hor = 1,
 		.binn_vert = 1,
 		.scale_m = 1,
 		.width = 3868,
-		.height = 4448,
+		.height = 4464,
 		.min_llp = 1052, /* 041Ch */
-		.min_fll = 2248, /* 08ECh 30fps*/
+		.min_fll = 2284, /* 08ECh 30fps*/
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items =
-				ARRAY_SIZE(imx274_3868_4448_RAW10_DOL),
-		.mode_regs = imx274_3868_4448_RAW10_DOL,
+				ARRAY_SIZE(imx274_3868_4464_RAW10_DOL),
+		.mode_regs = imx274_3868_4464_RAW10_DOL,
 	},
 	{
 		/* mode 3 10bit all pixel scan per datasheet */
@@ -745,20 +755,20 @@ static struct crl_mode_rep imx274_modes[] = {
 	},
 	{
 		/* mode 3 DOL per datasheet */
-		.sd_rects_items = ARRAY_SIZE(imx274_1936_2268_rects),
-		.sd_rects = imx274_1936_2268_rects,
+		.sd_rects_items = ARRAY_SIZE(imx274_1936_2282_rects),
+		.sd_rects = imx274_1936_2282_rects,
 		.binn_hor = 1,
 		.binn_vert = 1,
 		.scale_m = 1,
 		.width = 1936,
-		.height = 2268,
+		.height = 2282,
 		.min_llp = 1040, /* 0410h */
 		.min_fll = 2308, /* 0904h 30fps*/
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items = ARRAY_SIZE(
-				imx274_1936_2268_RAW10_DOL),
-		.mode_regs = imx274_1936_2268_RAW10_DOL,
+				imx274_1936_2282_RAW10_DOL),
+		.mode_regs = imx274_1936_2282_RAW10_DOL,
 	},
 };
 
@@ -777,7 +787,7 @@ static struct crl_sensor_limits imx274_sensor_limits = {
 		.x_addr_min = 0,
 		.y_addr_min = 0,
 		.x_addr_max = 3868, /* pixel area length and width */
-		.y_addr_max = 4448,
+		.y_addr_max = 4464,
 		.min_frame_length_lines = 1111,
 		.max_frame_length_lines = 65535,
 		.min_line_length_pixels = 260,
@@ -960,11 +970,30 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
 		.op_type = CRL_V4L2_CTRL_SET_OP,
 		.context = SENSOR_POWERED_ON,
+		.ctrl_id = V4L2_CID_GAIN,
+		.name = "Digital Gain",
+		.type = CRL_V4L2_CTRL_TYPE_INTEGER,
+		.data.std_data.min = 0,
+		.data.std_data.max = 6,
+		.data.std_data.step = 1,
+		.data.std_data.def = 0,
+		.flags = 0,
+		.impact = CRL_IMPACTS_NO_IMPACT,
+		.ctrl = 0,
+		.regs_items = ARRAY_SIZE(imx274_dig_gain_regs),
+		.regs = imx274_dig_gain_regs,
+		.dep_items = 0,
+		.dep_ctrls = 0,
+	},
+	{
+		.sd_type = CRL_SUBDEV_TYPE_PIXEL_ARRAY,
+		.op_type = CRL_V4L2_CTRL_SET_OP,
+		.context = SENSOR_POWERED_ON,
 		.ctrl_id = V4L2_CID_ANALOGUE_GAIN,
 		.name = "V4L2_CID_ANALOGUE_GAIN",
 		.type = CRL_V4L2_CTRL_TYPE_INTEGER,
 		.data.std_data.min = 0,
-		.data.std_data.max = 0x75A,
+		.data.std_data.max = 0x7A5,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0,
 		.flags = 0,

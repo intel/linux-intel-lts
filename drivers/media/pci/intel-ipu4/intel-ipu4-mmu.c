@@ -110,7 +110,7 @@ static void zlw_invalidate(struct intel_ipu4_mmu *mmu,
 			 * block size
 			 */
 			for (j = 0; j < mmu_hw->l1_block_sz[i]; j++)
-				writel(mmu->iova_addr_trash +
+				ipu_writel(mmu->iova_addr_trash +
 				       j * MMUV2_TRASH_L1_BLOCK_OFFSET,
 				       mmu_hw->base +
 				       MMUV2_AT_REG_L1_ZLW_INSERTION(i));
@@ -124,7 +124,7 @@ static void zlw_invalidate(struct intel_ipu4_mmu *mmu,
 			 * just need to trigger another pre-fetch which is
 			 * outside the above 4MB range.
 			 */
-			writel(mmu->iova_addr_trash +
+			ipu_writel(mmu->iova_addr_trash +
 			       MMUV2_TRASH_L2_BLOCK_OFFSET,
 			       mmu_hw->base + MMUV2_AT_REG_L1_ZLW_INSERTION(0));
 		}
@@ -139,7 +139,7 @@ static void zlw_invalidate(struct intel_ipu4_mmu *mmu,
 			dev_err(mmu->dev, "zlw invalidation failed\n");
 			return;
 		}
-		ret = readl(mmu_hw->base + MMUV2_AT_REG_L1_FW_ZLW_FIFO);
+		ret = ipu_readl(mmu_hw->base + MMUV2_AT_REG_L1_FW_ZLW_FIFO);
 		retry++;
 	} while (ret != 2);
 }
@@ -167,7 +167,7 @@ static void tlb_invalidate(struct intel_ipu4_mmu *mmu)
 		 * Disregard the return value of the read.
 		 */
 		if (mmu->mmu_hw[i].insert_read_before_invalidate)
-			readl(mmu->mmu_hw[i].base+REG_L1_PHYS);
+			ipu_readl(mmu->mmu_hw[i].base+REG_L1_PHYS);
 
 		/* Normal invalidate or zlw invalidate */
 		if (mmu->mmu_hw[i].zlw_invalidate) {
@@ -180,7 +180,8 @@ static void tlb_invalidate(struct intel_ipu4_mmu *mmu)
 				inv = MMU0_TLB_INVALIDATE;
 			else
 				inv = MMU1_TLB_INVALIDATE;
-			writel(inv, mmu->mmu_hw[i].base + REG_TLB_INVALIDATE);
+			ipu_writel(inv, mmu->mmu_hw[i].base +
+				   REG_TLB_INVALIDATE);
 		}
 	}
 	spin_unlock_irqrestore(&mmu->ready_lock, flags);
@@ -584,7 +585,6 @@ static int intel_ipu4_mmu_hw_init(struct device *dev)
 {
 	struct intel_ipu4_bus_device *adev = to_intel_ipu4_bus_device(dev);
 	struct intel_ipu4_mmu *mmu = intel_ipu4_bus_get_drvdata(adev);
-	struct intel_ipu4_mmu_pdata *pdata = adev->pdata;
 	struct intel_ipu4_mmu_domain *adom;
 	unsigned int i;
 	unsigned long flags;
@@ -611,14 +611,13 @@ static int intel_ipu4_mmu_hw_init(struct device *dev)
 		u16 block_addr;
 
 		/* Write page table address per MMU */
-		writel((phys_addr_t)virt_to_phys(adom->pgtbl)
+		ipu_writel((phys_addr_t)virt_to_phys(adom->pgtbl)
 		       >> ISP_PADDR_SHIFT,
 		       mmu->mmu_hw[i].base + REG_L1_PHYS);
 
 		/* Set info bits per MMU */
-		if (pdata->type == INTEL_IPU4_MMU_TYPE_INTEL_IPU4)
-			writel(mmu->mmu_hw[i].info_bits,
-			       mmu->mmu_hw[i].base + REG_INFO);
+		ipu_writel(mmu->mmu_hw[i].info_bits,
+		       mmu->mmu_hw[i].base + REG_INFO);
 
 		/* Configure MMU TLB stream configuration for L1*/
 		for (j = 0, block_addr = 0; j < mmu_hw->nr_l1streams;
@@ -630,28 +629,28 @@ static int intel_ipu4_mmu_hw_init(struct device *dev)
 			}
 
 			/* Write block start address for each streams */
-			writel(block_addr,
+			ipu_writel(block_addr,
 			       mmu_hw->base + MMUV2_REG_L1_STREAMID(j));
 
 			/* Enable ZLW for streams based on the init table */
-			writel(mmu->mmu_hw[i].l1_zlw_en[j],
+			ipu_writel(mmu->mmu_hw[i].l1_zlw_en[j],
 			       mmu_hw->base + MMUV2_AT_REG_L1_ZLW_EN_SID(j));
 
 			/* To track if zlw is enabled in any streams */
 			zlw_invalidate |= mmu->mmu_hw[i].l1_zlw_en[j];
 
 			/* Enable ZLW 1D mode for streams from the init table */
-			writel(mmu->mmu_hw[i].l1_zlw_1d_mode[j],
+			ipu_writel(mmu->mmu_hw[i].l1_zlw_1d_mode[j],
 			       mmu_hw->base +
 			       MMUV2_AT_REG_L1_ZLW_1DMODE_SID(j));
 
 			/* Set when the ZLW insertion will happen */
-			writel(mmu->mmu_hw[i].l1_ins_zlw_ahead_pages[j],
+			ipu_writel(mmu->mmu_hw[i].l1_ins_zlw_ahead_pages[j],
 			       mmu_hw->base +
 			       MMUV2_AT_REG_L1_ZLW_INS_N_AHEAD_SID(j));
 
 			/* Set if ZLW 2D mode active for each streams */
-			writel(mmu->mmu_hw[i].l1_zlw_2d_mode[j],
+			ipu_writel(mmu->mmu_hw[i].l1_zlw_2d_mode[j],
 			       mmu_hw->base +
 			       MMUV2_AT_REG_L1_ZLW_2DMODE_SID(j));
 		}
@@ -662,7 +661,8 @@ static int intel_ipu4_mmu_hw_init(struct device *dev)
 		 * on that MMU1
 		 */
 		if (zlw_invalidate)
-			writel(1, mmu_hw->base + MMUV2_AT_REG_L1_FW_ZLW_PRIO);
+			ipu_writel(1, mmu_hw->base +
+				   MMUV2_AT_REG_L1_FW_ZLW_PRIO);
 
 		/* Configure MMU TLB stream configuration for L2*/
 		for (j = 0, block_addr = 0; j <  mmu_hw->nr_l2streams;
@@ -672,7 +672,7 @@ static int intel_ipu4_mmu_hw_init(struct device *dev)
 				return -EINVAL;
 			}
 
-			writel(block_addr,
+			ipu_writel(block_addr,
 			       mmu_hw->base + MMUV2_REG_L2_STREAMID(j));
 		}
 	}

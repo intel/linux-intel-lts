@@ -134,6 +134,10 @@ enum {
 struct __packed ipu_fw_psys_process_group {
 	u64 token;
 	u64 private_token;
+/* FIXME: add this change when ipu5 is back */
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU4)
+	u64 routing_bitmap;
+#endif
 	u32 size;
 	u32 pg_load_start_ts;
 	u32 pg_load_cycles;
@@ -324,6 +328,11 @@ struct intel_ipu4_psys_abi {
 		int index);
 	int (*open)(struct intel_ipu4_psys *psys);
 	int (*close)(struct intel_ipu4_psys *psys);
+	/* for mock */
+	void (*ipu_reg_ctx_addr)(void *ctx_cpu_addr,
+			uint32_t ctx_vied_addr);
+	void (*ipu_unreg_ctx_addr)(void *ctx_cpu_addr,
+			uint32_t ctx_vied_addr);
 };
 
 void intel_ipu4_psys_abi_init_ext(struct intel_ipu4_psys_abi *abi);
@@ -375,5 +384,8 @@ int intel_ipu4_psys_abi_ppg_enqueue_bufs
 int intel_ipu4_psys_abi_pg_get_protocol(struct intel_ipu4_psys_kcmd *kcmd);
 int intel_ipu4_psys_abi_open(struct intel_ipu4_psys *psys);
 int intel_ipu4_psys_abi_close(struct intel_ipu4_psys *psys);
-
+void intel_ipu4_psys_abi_register_ctx_addr(void *ctx_cpu_addr,
+			uint32_t ctx_vied_addr);
+void intel_ipu4_psys_abi_unregister_ctx_addr(void *ctx_cpu_addr,
+			uint32_t ctx_vied_addr);
 #endif /* INTEL_IPU4_PSYS_ABI_H */

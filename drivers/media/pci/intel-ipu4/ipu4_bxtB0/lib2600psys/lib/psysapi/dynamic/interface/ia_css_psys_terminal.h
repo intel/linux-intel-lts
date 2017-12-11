@@ -160,11 +160,11 @@ uint8_t ia_css_data_terminal_get_link_id(
 /*! Set link id of the terminal object
 
  @param	terminal[in]			data terminal object
- @param	link_id[in]			on-the-fly link id
+ @param	link_id[in]			synchronization link id
 
  @return < 0 on error
  */
-IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
 int ia_css_data_terminal_set_link_id(
 	ia_css_data_terminal_t				*dterminal,
 	const uint8_t					link_id);
@@ -263,23 +263,36 @@ ia_css_program_control_init_terminal_get_load_section_desc(
 );
 
 /*!
- * Gets sid value from program desc
+ * Gets process_id from program desc
  * of a program control init terminal
  * @param program_desc[in]		program control init terminal program desc
  */
-IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
-uint8_t ia_css_program_control_init_terminal_get_sid(
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+ia_css_process_id_t ia_css_program_control_init_terminal_get_process_id(
 	const ia_css_program_control_init_program_desc_t *program_desc);
 
 /*!
- * Gets pid value from program desc
+ * Set control info of program desc
+ * of a program control init terminal
+ * @param program_desc[in]	program control init terminal program desc
+ * @param process_id 		unique process id used to identify the process
+ * among all active process
+ * @param num_done_events 	number of events required to close the process
+ */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
+void ia_css_program_control_init_terminal_set_control_info(
+	ia_css_program_control_init_program_desc_t *program_desc,
+	ia_css_process_id_t process_id,
+	uint8_t num_done_events);
+
+/*!
+ * Gets num_done_events value from program desc
  * of a program control init terminal
  * @param program_desc[in]		program control init terminal program desc
  */
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_H
-uint8_t ia_css_program_control_init_terminal_get_pid(
+uint8_t ia_css_program_control_init_terminal_get_num_done_events(
 	const ia_css_program_control_init_program_desc_t *program_desc);
-
 
 /*!
  * Gets a connect section desc for a program desc

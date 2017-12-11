@@ -25,7 +25,6 @@
 #define INTEL_IPU4_MMU_ADDRESS_BITS		32
 /* The firmware is accessible within the first 2 GiB only in non-secure mode. */
 #define INTEL_IPU4_MMU_ADDRESS_BITS_NON_SECURE	31
-#define INTEL_IPU4_MMU_TYPE_INTEL_IPU4		KERNEL_VERSION(4, 0, 0)
 #define INTEL_IPU4_MMU_MAX_TLB_L1_STREAMS	16
 #define INTEL_IPU4_MMU_MAX_TLB_L2_STREAMS	16
 #define INTEL_IPU4_MAX_LI_BLOCK_ADDR		64
@@ -203,21 +202,12 @@ struct intel_ipu4_mmu_hw {
 struct intel_ipu4_mmu_pdata {
 	unsigned int nr_mmus;
 	struct intel_ipu4_mmu_hw mmu_hw[INTEL_IPU4_MMU_MAX_DEVICES];
-	unsigned int type;
 	int mmid;
 };
 
 struct intel_ipu4_isys_csi2_pdata {
 	void __iomem *base;
 };
-
-#define INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA	KERNEL_VERSION(3, 99, 0)
-#define INTEL_IPU4_ISYS_TYPE_INTEL_IPU4		KERNEL_VERSION(4, 0, 0)
-
-#define INTEL_IPU4_PSYS_TYPE_INTEL_IPU4_FPGA \
-	INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA
-#define INTEL_IPU4_PSYS_TYPE_INTEL_IPU4 \
-	INTEL_IPU4_ISYS_TYPE_INTEL_IPU4
 
 #define INTEL_IPU4_EV_AUTO 0xff
 
@@ -279,7 +269,6 @@ struct intel_ipu4_isys_internal_pdata {
 
 struct intel_ipu4_isys_pdata {
 	void __iomem *base;
-	unsigned int type;
 	const struct intel_ipu4_isys_internal_pdata *ipdata;
 	struct intel_ipu4_isys_subdev_pdata *spdata;
 };
@@ -290,7 +279,6 @@ struct intel_ipu4_psys_internal_pdata {
 
 struct intel_ipu4_psys_pdata {
 	void __iomem *base;
-	unsigned int type;
 	const struct intel_ipu4_psys_internal_pdata *ipdata;
 };
 

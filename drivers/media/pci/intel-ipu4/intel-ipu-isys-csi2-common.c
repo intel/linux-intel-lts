@@ -205,11 +205,12 @@ static void csi2_meta_prepare_firmware_stream_cfg_default(
 static int subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 			   struct v4l2_event_subscription *sub)
 {
+	struct intel_ipu4_isys_csi2 *csi2 = to_intel_ipu4_isys_csi2(sd);
+
 	if (sub->type != V4L2_EVENT_FRAME_SYNC)
 		return -EINVAL;
 
-	if (sub->id != 0)
-		return -EINVAL;
+	dev_dbg(&csi2->isys->adev->dev, "sub->id %u\n", sub->id);
 
 	return v4l2_event_subscribe(fh, sub, 10, NULL);
 }
@@ -302,6 +303,7 @@ static int intel_ipu_isys_csi2_calc_timing(struct intel_ipu4_isys_csi2 *csi2,
 static int set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct intel_ipu4_isys_csi2 *csi2 = to_intel_ipu4_isys_csi2(sd);
+	struct intel_ipu4_device *isp = csi2->isys->adev->isp;
 	struct intel_ipu4_isys_pipeline *ip =
 		container_of(sd->entity.pipe,
 			     struct intel_ipu4_isys_pipeline, pipe);
@@ -313,6 +315,7 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	struct v4l2_control c = { .id = V4L2_CID_MIPI_LANES, };
 	struct intel_ipu4_isys_csi2_timing timing;
 	unsigned int nlanes;
+	int type = -1;
 	int rval;
 
 	dev_dbg(&csi2->isys->adev->dev, "csi2 s_stream %d\n", enable);
@@ -346,11 +349,12 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 		nlanes = cfg->nlanes;
 	}
 
-	/*Do not configure timings on FPGA*/
-	if (csi2->isys->pdata->type !=
-		INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA) {
+	if (isp->ctrl->get_sim_type)
+		type = isp->ctrl->get_sim_type();
+
+	if (type != SIM_FPGA) {
 		rval = intel_ipu_isys_csi2_calc_timing(csi2,
-			&timing, CSI2_ACCINV);
+						&timing, CSI2_ACCINV);
 		if (rval)
 			return rval;
 	}
@@ -796,6 +800,8 @@ int intel_ipu_isys_csi2_init(struct intel_ipu4_isys_csi2 *csi2,
 	csi2->av_meta.aq.fill_frame_buff_set_pin =
 		intel_ipu4_isys_buffer_list_to_ipu_fw_isys_frame_buff_set_pin;
 	csi2->av_meta.aq.link_fmt_validate = intel_ipu4_isys_link_fmt_validate;
+	csi2->av_meta.aq.vbq.buf_struct_size =
+		sizeof(struct intel_ipu4_isys_video_buffer);
 
 	rval = intel_ipu4_isys_video_init(
 		&csi2->av_meta, &csi2->asd.sd.entity, CSI2_PAD_META,
@@ -855,20 +861,39 @@ void intel_ipu_isys_csi2_sof_event(struct intel_ipu4_isys_csi2 *csi2,
 	v4l2_event_queue(vdev, &ev);
 
 	dev_dbg(&csi2->isys->adev->dev,
-		"csi2-%i sequence: %i, vc: %d, stream_id: %d\n",
+		"sof_event::csi2-%i sequence: %i, vc: %d, stream_id: %d\n",
 		csi2->index, ev.u.frame_sync.frame_sequence, vc, ip->stream_id);
 }
 
 void intel_ipu_isys_csi2_eof_event(struct intel_ipu4_isys_csi2 *csi2,
 					   unsigned int vc)
 {
+	struct intel_ipu4_isys_pipeline *ip = NULL;
 	unsigned long flags;
+	unsigned int i;
+	uint32_t frame_sequence;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
 	csi2->in_frame[vc] = false;
 	if (csi2->wait_for_sync[vc])
 		complete(&csi2->eof_completion);
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
+
+	for (i = 0; i < INTEL_IPU4_ISYS_MAX_STREAMS; i++) {
+		if (csi2->isys->pipes[i] && csi2->isys->pipes[i]->csi2 == csi2
+		    && csi2->isys->pipes[i]->vc == vc) {
+			ip = csi2->isys->pipes[i];
+			break;
+		}
+	}
+
+	if (ip) {
+		frame_sequence = atomic_read(&ip->sequence);
+
+		dev_dbg(&csi2->isys->adev->dev,
+			"eof_event::csi2-%i sequence: %i, vc: %d, stream_id: %d\n",
+			csi2->index, frame_sequence, vc, ip->stream_id);
+	}
 }
 
 /* Call this function only _after_ the sensor has been stopped */

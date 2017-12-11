@@ -76,6 +76,9 @@ typedef enum ia_css_psys_state {
 } ia_css_psys_state_t;
 
 extern struct ia_css_syscom_context *psys_syscom;
+#if HAS_DUAL_CMD_CTX_SUPPORT
+extern struct ia_css_syscom_context *psys_syscom_secure;
+#endif
 
 /*! Print the syscom creation descriptor to file/stream
 

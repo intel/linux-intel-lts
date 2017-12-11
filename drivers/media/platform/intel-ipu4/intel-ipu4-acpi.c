@@ -650,7 +650,11 @@ static int get_smiapp_pdata(struct i2c_client *client,
 			    struct ipu4_i2c_helper *helper,
 			    void *priv, size_t size)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	struct smiapp_platform_data *pdata;
+#else
+	struct smiapp_hwconfig *pdata;
+#endif
 	uint64_t *source = priv;
 
 	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
@@ -659,9 +663,11 @@ static int get_smiapp_pdata(struct i2c_client *client,
 	data->pdata = pdata;
 
 	data->priv = source;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	pdata->xshutdown = get_sensor_gpio(&client->dev, 0);
 	if (pdata->xshutdown < 0)
 		return -ENODEV;
+#endif
 
 	intel_ipu4_acpi_get_sensor_data(&client->dev, data, NULL);
 

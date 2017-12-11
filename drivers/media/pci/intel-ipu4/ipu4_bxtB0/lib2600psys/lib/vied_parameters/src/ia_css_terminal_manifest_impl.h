@@ -89,7 +89,7 @@ STORAGE_CLASS_INLINE void __terminal_manifest_dummy_check_alignment(void)
 			sizeof(uint64_t));
 
 	COMPILATION_ERROR_IF(
-		SIZE_OF_PARAM_TERMINAL_MANIFEST_SEC_STRUCT_IN_BITS !=
+		SIZE_OF_SLICED_PARAM_MAN_SEC_STRUCT_IN_BITS !=
 		(CHAR_BIT * sizeof
 			(ia_css_sliced_param_manifest_section_desc_t)));
 

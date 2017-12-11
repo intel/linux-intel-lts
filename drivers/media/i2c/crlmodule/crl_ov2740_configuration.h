@@ -106,11 +106,11 @@ static struct crl_register_write_rep ov2740_powerup_regset[] = {
 	{0x380c, CRL_REG_LEN_08BIT, 0x08},
 	{0x380d, CRL_REG_LEN_08BIT, 0x70},
 	{0x380e, CRL_REG_LEN_08BIT, 0x04},
-	{0x380f, CRL_REG_LEN_08BIT, 0x56},
+	{0x380f, CRL_REG_LEN_08BIT, 0x60},
 	{0x3810, CRL_REG_LEN_08BIT, 0x00},
 	{0x3811, CRL_REG_LEN_08BIT, 0x04},
 	{0x3812, CRL_REG_LEN_08BIT, 0x00},
-	{0x3813, CRL_REG_LEN_08BIT, 0x04},
+	{0x3813, CRL_REG_LEN_08BIT, 0x05},
 	{0x3814, CRL_REG_LEN_08BIT, 0x01},
 	{0x3815, CRL_REG_LEN_08BIT, 0x01},
 	{0x3820, CRL_REG_LEN_08BIT, 0x80},
@@ -177,7 +177,7 @@ static struct crl_register_write_rep ov2740_powerup_regset[] = {
 	{0x3810, CRL_REG_LEN_08BIT, 0x00},
 	{0x3811, CRL_REG_LEN_08BIT, 0x00},/* 00 */
 	{0x3812, CRL_REG_LEN_08BIT, 0x00},
-	{0x3813, CRL_REG_LEN_08BIT, 0x02},/* 00 */
+	{0x3813, CRL_REG_LEN_08BIT, 0x03},/* 00 */
 	{0x4003, CRL_REG_LEN_08BIT, 0x40},/* set Black level to 0x40 */
 };
 
@@ -203,13 +203,6 @@ static struct crl_arithmetic_ops ov2740_vflip_ops[] = {
 static struct crl_arithmetic_ops ov2740_hflip_ops[] = {
 	{
 		.op = CRL_BITWISE_LSHIFT,
-		.operand.entity_val = 1,
-	 },
-};
-
-static struct crl_arithmetic_ops ov2740_hblank_ops[] = {
-	{
-		.op = CRL_BITWISE_RSHIFT,
 		.operand.entity_val = 1,
 	 },
 };
@@ -295,7 +288,7 @@ static struct crl_dynamic_register_access ov2740_vblank_regs[] = {
 		.len = CRL_REG_LEN_16BIT,
 		.ops_items = 0,
 		.ops = 0,
-		.mask = 0xffff,
+		.mask = 0x7fff,
 	 },
 };
 
@@ -303,8 +296,8 @@ static struct crl_dynamic_register_access ov2740_hblank_regs[] = {
 	{
 		.address = 0x380C,
 		.len = CRL_REG_LEN_16BIT,
-		.ops_items = ARRAY_SIZE(ov2740_hblank_ops),
-		.ops = ov2740_hblank_ops,
+		.ops_items = 0,
+		.ops = 0,
 		.mask = 0xffff,
 	 },
 };
@@ -325,8 +318,8 @@ static struct crl_pll_configuration ov2740_pll_configurations[] = {
 		.input_clk = 19200000,
 		.op_sys_clk = 72000000,
 		.bitsperpixel = 10,
-		.pixel_rate_csi = 28800000,
-		.pixel_rate_pa = 28800000,
+		.pixel_rate_csi = 72000000,
+		.pixel_rate_pa = 72000000,
 		.csi_lanes = 2,
 		.comp_items = 0,
 		.ctrl_data = 0,
@@ -371,7 +364,7 @@ static struct crl_mode_rep ov2740_modes[] = {
 		.width = 1932,
 		.height = 1092,
 		.min_llp = 2160,
-		.min_fll = 1110,
+		.min_fll = 1120,
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items = 0,
@@ -395,28 +388,28 @@ static struct crl_sensor_limits ov2740_sensor_limits = {
 	.y_addr_min = 0,
 	.x_addr_max = 1932,
 	.y_addr_max = 1092,
-	.min_frame_length_lines = 160,
-	.max_frame_length_lines = 65535,
+	.min_frame_length_lines = 1120,
+	.max_frame_length_lines = 32767,
 	.min_line_length_pixels = 2160,
-	.max_line_length_pixels = 32752,
+	.max_line_length_pixels = 65535,
 };
 
 static struct crl_flip_data ov2740_flip_configurations[] = {
 	{
 		.flip = CRL_FLIP_DEFAULT_NONE,
-		.pixel_order = CRL_PIXEL_ORDER_BGGR,
-	 },
-	{
-		.flip = CRL_FLIP_VFLIP,
 		.pixel_order = CRL_PIXEL_ORDER_GRBG,
 	 },
 	{
+		.flip = CRL_FLIP_VFLIP,
+		.pixel_order = CRL_PIXEL_ORDER_BGGR,
+	 },
+	{
 		.flip = CRL_FLIP_HFLIP,
-		.pixel_order = CRL_PIXEL_ORDER_GBRG,
+		.pixel_order = CRL_PIXEL_ORDER_RGGB,
 	 },
 	{
 		.flip = CRL_FLIP_HFLIP_VFLIP,
-		.pixel_order = CRL_PIXEL_ORDER_RGGB,
+		.pixel_order = CRL_PIXEL_ORDER_GBRG,
 	 },
 };
 
@@ -588,10 +581,10 @@ static struct crl_v4l2_ctrl ov2740_v4l2_ctrls[] = {
 		.ctrl_id = V4L2_CID_FRAME_LENGTH_LINES,
 		.name = "Frame Length Lines",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.std_data.min = 160,
-		.data.std_data.max = 65535,
+		.data.std_data.min = 1120,
+		.data.std_data.max = 32767,
 		.data.std_data.step = 1,
-		.data.std_data.def = 1110,
+		.data.std_data.def = 1120,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
 		.impact = CRL_IMPACTS_NO_IMPACT,
 		.ctrl = 0,
@@ -608,8 +601,8 @@ static struct crl_v4l2_ctrl ov2740_v4l2_ctrls[] = {
 		.ctrl_id = V4L2_CID_LINE_LENGTH_PIXELS,
 		.name = "Line Length Pixels",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.std_data.min = 1024,
-		.data.std_data.max = 65520,
+		.data.std_data.min = 2160,
+		.data.std_data.max = 65535,
 		.data.std_data.step = 1,
 		.data.std_data.def = 2160,
 		.flags = V4L2_CTRL_FLAG_UPDATE,
@@ -764,7 +757,6 @@ static struct crl_sensor_configuration ov2740_crl_configuration = {
 	.frame_desc_type = CRL_V4L2_MBUS_FRAME_DESC_TYPE_CSI2,
 	.frame_desc = ov2740_frame_desc,
 
-	.msr_file_name = "",
 };
 
 #endif  /* __CRLMODULE_OV2740_CONFIGURATION_H_ */

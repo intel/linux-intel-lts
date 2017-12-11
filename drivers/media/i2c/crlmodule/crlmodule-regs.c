@@ -14,12 +14,17 @@
  *
  */
 #include <linux/delay.h>
+#include <linux/module.h>
 
 #include "crlmodule.h"
 #include "crlmodule-nvm.h"
 #include "crlmodule-regs.h"
 
 static DEFINE_MUTEX(crl_i2c_mutex);
+
+static bool reg_verify;
+module_param(reg_verify, bool, 0444);
+MODULE_PARM_DESC(reg_verify, "enable/disable registers write value and read value checking");
 
 static int crlmodule_i2c_read(struct crl_sensor *sensor, u16 dev_i2c_addr,
 				u16 reg, u8 len, u32 *val)
@@ -104,6 +109,8 @@ static int crlmodule_i2c_write(struct crl_sensor *sensor, u16 dev_i2c_addr,
 	unsigned char data[6];
 	unsigned int retries;
 	int r;
+	int ret;
+	u32 rval;
 	unsigned char *data_offset;
 
 	if (len != CRL_REG_LEN_08BIT && len != CRL_REG_LEN_16BIT &&
@@ -139,13 +146,16 @@ static int crlmodule_i2c_write(struct crl_sensor *sensor, u16 dev_i2c_addr,
 
 	switch (len) {
 	case CRL_REG_LEN_08BIT:
+		val = val & 0xFF;
 		data_offset[0] = val;
 		break;
 	case CRL_REG_LEN_16BIT:
+		val = val & 0xFFFF;
 		data_offset[0] = val >> 8;
 		data_offset[1] = val;
 		break;
 	case CRL_REG_LEN_24BIT:
+		val = val & 0xFFFFFF;
 		data_offset[0] = val >> 16;
 		data_offset[1] = val >> 8;
 		data_offset[2] = val;
@@ -170,6 +180,17 @@ static int crlmodule_i2c_write(struct crl_sensor *sensor, u16 dev_i2c_addr,
 				dev_err(&client->dev,
 					"sensor i2c stall encountered. retries: %d\n",
 					retries);
+
+			if (reg_verify) {
+				ret  = crlmodule_i2c_read(sensor, dev_i2c_addr, reg, len, &rval);
+				if (ret < 0)
+					dev_err(&client->dev, "i2c read error\n");
+				else if (rval != val) {
+					dev_warn(&client->dev,
+							"reg:0x%x write val(0x%x), read val(0x%x)",
+							reg, val, rval);
+				}
+			}
 			return 0;
 		}
 

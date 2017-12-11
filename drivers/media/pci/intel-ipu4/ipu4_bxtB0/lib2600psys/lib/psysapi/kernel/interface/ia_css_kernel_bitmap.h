@@ -24,11 +24,37 @@
  */
 
 #include <type_support.h>
-
+#include "vied_nci_psys_resource_model.h"
 
 #define IA_CSS_KERNEL_BITMAP_BITS 64
-typedef uint64_t ia_css_kernel_bitmap_t;
+#define IA_CSS_KERNEL_BITMAP_ELEM_TYPE uint32_t
+#define IA_CSS_KERNEL_BITMAP_ELEM_BITS \
+	(sizeof(IA_CSS_KERNEL_BITMAP_ELEM_TYPE)*8)
+#define IA_CSS_KERNEL_BITMAP_NOF_ELEMS \
+	((IA_CSS_KERNEL_BITMAP_BITS) / (IA_CSS_KERNEL_BITMAP_ELEM_BITS))
 
+/** An element is a 32 bit unsigned integer. 64 bit integers might cause
+ * problems in the compiler.
+ */
+typedef struct {
+	IA_CSS_KERNEL_BITMAP_ELEM_TYPE data[IA_CSS_KERNEL_BITMAP_NOF_ELEMS];
+} ia_css_kernel_bitmap_elems_t;
+
+/** Users should make no assumption about the actual type of
+ * ia_css_kernel_bitmap_t.
+ * Users should use IA_CSS_KERNEL_BITMAP_DO_NOT_USE_ELEMS in
+ * case they erroneously assume that this type is uint64_t and they
+ * cannot change their implementation.
+ */
+#ifndef IA_CSS_KERNEL_BITMAP_DO_NOT_USE_ELEMS
+typedef ia_css_kernel_bitmap_elems_t ia_css_kernel_bitmap_t;
+#else
+typedef uint64_t ia_css_kernel_bitmap_t;
+#if IA_CSS_KERNEL_BITMAP_BITS > 64
+#error IA_CSS_KERNEL_BITMAP_BITS > 64 not supported \
+	with IA_CSS_KERNEL_BITMAP_DO_NOT_USE_ELEMS
+#endif
+#endif
 
 /*! Print the bits of a kernel bitmap
 

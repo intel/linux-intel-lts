@@ -19,6 +19,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/module.h>
 #include <linux/version.h>
+#include <linux/compat.h>
 
 #include <media/media-entity.h>
 #include <media/v4l2-device.h>
@@ -165,7 +166,21 @@ const struct intel_ipu4_isys_pixelformat intel_ipu4_isys_pfmts_packed[] = {
  */
 static int intel_ipu4_poll_for_events(struct intel_ipu4_isys_video *av)
 {
-	return is_intel_ipu_hw_fpga(av->isys->adev->isp);
+	struct intel_ipu4_isys *isys = av->isys;
+	struct intel_ipu4_bus_device *adev =
+		to_intel_ipu4_bus_device(&isys->adev->dev);
+	struct intel_ipu4_device *isp = adev->isp;
+
+	if (isp->ctrl->get_sim_type) {
+		int type = isp->ctrl->get_sim_type();
+
+		if (SIM_FPGA == type)
+			return 1;
+		else if (SIM_MOCK == type)
+			return 1;
+	}
+
+	return 0;
 }
 
 static int video_open(struct file *file)
@@ -180,14 +195,15 @@ static int video_open(struct file *file)
 
 	mutex_lock(&isys->mutex);
 
-	/* WA for ipu5 fpga */
-	while (is_intel_ipu_hw_fpga(isp) &&
-	       is_intel_ipu5_hw_a0(isp) &&
-	       !isys->video_opened &&
-	       !pm_runtime_status_suspended(&isp->isys_iommu->dev)) {
-		mutex_unlock(&isys->mutex);
-		usleep_range(20, 30);
-		mutex_lock(&isys->mutex);
+	if (isp->ctrl->device_suspended) {
+		struct device *isys_dev = &isp->isys_iommu->dev;
+
+		while (!isys->video_opened &&
+		       !isp->ctrl->device_suspended(isys_dev)) {
+			mutex_unlock(&isys->mutex);
+			usleep_range(20, 30);
+			mutex_lock(&isys->mutex);
+		}
 	}
 
 	if (isys->reset_needed || isp->flr_done) {
@@ -277,12 +293,10 @@ static int video_open(struct file *file)
 		sched_setscheduler(isys->isr_thread, SCHED_FIFO, &param);
 	}
 
-	if (isys->pdata->type == INTEL_IPU4_ISYS_TYPE_INTEL_IPU4_FPGA ||
-	    isys->pdata->type == INTEL_IPU4_ISYS_TYPE_INTEL_IPU4) {
-		rval = av->isys->fwctrl->fw_init(av->isys, num_stream_support);
-		if (rval < 0)
-			goto out_lib_init;
-	}
+	rval = av->isys->fwctrl->fw_init(av->isys, num_stream_support);
+	if (rval < 0)
+		goto out_lib_init;
+
 	av->link_id = 0;
 	mutex_unlock(&isys->mutex);
 

@@ -18,7 +18,7 @@
 #include "ipu_device_acb_devices.h"
 #include "ipu_device_gp_devices.h"
 #include "type_support.h"
-#include "vied_nci_acb_types.h"
+#include "vied_nci_acb_route_type.h"
 
 #define PRIV_CONF_INVALID	0xFF
 

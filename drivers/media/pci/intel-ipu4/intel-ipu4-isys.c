@@ -234,11 +234,38 @@ static int intel_ipu4_pipeline_pm_power_one(struct media_entity *entity,
 	return 0;
 }
 
+
+/*
+ * intel_ipu4_get_linked_pad - Find internally connected pad for a given pad
+ * @entity: The entity
+ * @pad: Initial pad
+ *
+ * Return index of the linked pad.
+*/
+static int intel_ipu4_get_linked_pad(struct media_entity *entity,
+					struct media_pad *pad)
+{
+	int i;
+
+	for (i = 0; i < entity->num_pads; i++) {
+		struct media_pad *opposite_pad = &entity->pads[i];
+
+		if (opposite_pad == pad)
+			continue;
+
+		if (media_entity_has_route(entity, pad->index, opposite_pad->index))
+			return opposite_pad->index;
+	}
+
+	return 0;
+}
+
 /*
  * intel_ipu4_pipeline_pm_power - Apply power change to all entities
  * in a pipeline
  * @entity: The entity
  * @change: Use count change
+ * @from_pad: Starting pad
  *
  * Walk the pipeline to update the use count and the power state of
  * all non-node
@@ -247,7 +274,7 @@ static int intel_ipu4_pipeline_pm_power_one(struct media_entity *entity,
  * Return 0 on success or a negative error code on failure.
  */
 static int intel_ipu4_pipeline_pm_power(struct media_entity *entity,
-					int change)
+					int change, int from_pad)
 {
 	struct media_entity_graph graph;
 	struct media_entity *first = entity;
@@ -259,7 +286,7 @@ static int intel_ipu4_pipeline_pm_power(struct media_entity *entity,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_entity_graph_walk_init(&graph, entity->graph_obj.mdev);
 #endif
-	media_entity_graph_walk_start(&graph, &entity->pads[0]);
+	media_entity_graph_walk_start(&graph, &entity->pads[from_pad]);
 
 	while (!ret && (entity = media_entity_graph_walk_next(&graph)))
 		if (!is_media_entity_v4l2_io(entity))
@@ -274,7 +301,7 @@ static int intel_ipu4_pipeline_pm_power(struct media_entity *entity,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_entity_graph_walk_init(&graph, entity->graph_obj.mdev);
 #endif
-	media_entity_graph_walk_start(&graph, &first->pads[0]);
+	media_entity_graph_walk_start(&graph, &first->pads[from_pad]);
 
 	while ((first = media_entity_graph_walk_next(&graph))
 	       && first != entity)
@@ -317,7 +344,7 @@ int intel_ipu4_pipeline_pm_use(struct media_entity *entity, int use)
 	WARN_ON(entity->use_count < 0);
 
 	/* Apply power change to connected non-nodes. */
-	ret = intel_ipu4_pipeline_pm_power(entity, change);
+	ret = intel_ipu4_pipeline_pm_power(entity, change, 0);
 	if (ret < 0)
 		entity->use_count -= change;
 
@@ -359,21 +386,21 @@ static int intel_ipu4_pipeline_link_notify(struct media_link *link, u32 flags,
 	if (notification == MEDIA_DEV_NOTIFY_POST_LINK_CH &&
 	    !(flags & MEDIA_LNK_FL_ENABLED)) {
 		/* Powering off entities is assumed to never fail. */
-		intel_ipu4_pipeline_pm_power(source, -sink_use);
-		intel_ipu4_pipeline_pm_power(sink, -source_use);
+		intel_ipu4_pipeline_pm_power(source, -sink_use, 0);
+		intel_ipu4_pipeline_pm_power(sink, -source_use, 0);
 		return 0;
 	}
 
 	if (notification == MEDIA_DEV_NOTIFY_PRE_LINK_CH &&
 		(flags & MEDIA_LNK_FL_ENABLED)) {
-
-		ret = intel_ipu4_pipeline_pm_power(source, sink_use);
+		int from_pad = intel_ipu4_get_linked_pad(source, link->source);
+		ret = intel_ipu4_pipeline_pm_power(source, sink_use, from_pad);
 		if (ret < 0)
 			return ret;
 
-		ret = intel_ipu4_pipeline_pm_power(sink, source_use);
+		ret = intel_ipu4_pipeline_pm_power(sink, source_use, 0);
 		if (ret < 0)
-			intel_ipu4_pipeline_pm_power(source, -sink_use);
+			intel_ipu4_pipeline_pm_power(source, -sink_use, 0);
 
 		return ret;
 	}
@@ -1134,18 +1161,19 @@ static void isys_setup_hw_ipu4(struct intel_ipu4_isys *isys)
 
 	irqs |= INTEL_IPU4_ISYS_UNISPART_IRQ_SW;
 
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_EDGE);
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_LEVEL_NOT_PULSE);
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_CLEAR);
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_MASK);
-	writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_ENABLE);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_EDGE);
+	ipu_writel(irqs, base +
+		   INTEL_IPU4_REG_ISYS_UNISPART_IRQ_LEVEL_NOT_PULSE);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_CLEAR);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_MASK);
+	ipu_writel(irqs, base + INTEL_IPU4_REG_ISYS_UNISPART_IRQ_ENABLE);
 
-	writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_REG);
-	writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
+	ipu_writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_REG);
+	ipu_writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
 
 	/* Write CDC FIFO threshold values for isys */
 	for (i = 0; i < isys->pdata->ipdata->hw_variant.cdc_fifos; i++)
-		writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
+		ipu_writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
 		       base + INTEL_IPU4_REG_ISYS_CDC_THRESHOLD(i));
 }
 
@@ -1166,18 +1194,19 @@ static void isys_setup_hw_ipu5(struct intel_ipu4_isys *isys)
 				((i * INTEL_IPU5_CSI_PIPE_NUM_PER_TOP + j) *
 				INTEL_IPU5_CSI_IRQ_NUM_PER_PIPE)));
 
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_EDGE);
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_LEVEL_NOT_PULSE);
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_CLEAR);
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_MASK);
-	writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_ENABLE);
+	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_EDGE);
+	ipu_writel(irqs, base +
+		   INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_LEVEL_NOT_PULSE);
+	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_CLEAR);
+	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_MASK);
+	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_ENABLE);
 
-	writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
-	writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
+	ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
+	ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
 
 	/* Write CDC FIFO threshold values for isys */
 	for (i = 0; i < isys->pdata->ipdata->hw_variant.cdc_fifos; i++)
-		writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
+		ipu_writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
 		base + INTEL_IPU5_REG_ISYS_CDC_THRESHOLD(i));
 }
 
@@ -1690,6 +1719,7 @@ static int resp_type_to_index(int type)
 static int isys_isr_one(struct intel_ipu4_bus_device *adev)
 {
 	struct intel_ipu4_isys *isys = intel_ipu4_bus_get_drvdata(adev);
+	struct intel_ipu4_device *isp = isys->adev->isp;
 	struct ipu_fw_isys_resp_info_abi resp_data;
 	struct ipu_fw_isys_resp_info_abi *resp;
 	struct intel_ipu4_isys_pipeline *pipe;
@@ -1831,6 +1861,10 @@ static int isys_isr_one(struct intel_ipu4_bus_device *adev)
 
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_SOF:
+		if (isp->ctrl->get_sim_type && SIM_MOCK ==
+		    isp->ctrl->get_sim_type())
+			intel_ipu_isys_csi2_sof_event(pipe->csi2, pipe->vc);
+
 		pipe->seq[pipe->seq_index].sequence =
 			atomic_read(&pipe->sequence) - 1;
 		pipe->seq[pipe->seq_index].timestamp = ts;
@@ -1843,6 +1877,15 @@ static int isys_isr_one(struct intel_ipu4_bus_device *adev)
 			% INTEL_IPU4_ISYS_MAX_PARALLEL_SOF;
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_EOF:
+		if (isp->ctrl->get_sim_type && SIM_MOCK ==
+		    isp->ctrl->get_sim_type())
+			intel_ipu_isys_csi2_eof_event(pipe->csi2, pipe->vc);
+
+		dev_dbg(&adev->dev,
+			"eof: handle %d: (index %u), timestamp 0x%16.16llx\n",
+			resp->stream_handle,
+			pipe->seq[pipe->seq_index].sequence,
+			ts);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STATS_DATA_READY:
 		break;
@@ -1863,10 +1906,10 @@ static void isys_isr_ipu4(struct intel_ipu4_bus_device *adev)
 	void __iomem *base = isys->pdata->base;
 	u32 status;
 
-	status = readl(isys->pdata->base +
+	status = ipu_readl(isys->pdata->base +
 		       INTEL_IPU4_REG_ISYS_UNISPART_IRQ_STATUS);
 	do {
-		writel(status, isys->pdata->base +
+		ipu_writel(status, isys->pdata->base +
 		       INTEL_IPU4_REG_ISYS_UNISPART_IRQ_CLEAR);
 
 		if (isys->isr_csi2_bits & status) {
@@ -1880,7 +1923,7 @@ static void isys_isr_ipu4(struct intel_ipu4_bus_device *adev)
 			}
 		}
 
-		writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_REG);
+		ipu_writel(0, base + INTEL_IPU4_REG_ISYS_UNISPART_SW_IRQ_REG);
 
 		/*
 		 * Handle a single FW event per checking the CSI-2
@@ -1898,7 +1941,7 @@ static void isys_isr_ipu4(struct intel_ipu4_bus_device *adev)
 		else
 			status = 0;
 
-		status |= readl(isys->pdata->base +
+		status |= ipu_readl(isys->pdata->base +
 				INTEL_IPU4_REG_ISYS_UNISPART_IRQ_STATUS);
 	} while (status & (isys->isr_csi2_bits
 			   | INTEL_IPU4_ISYS_UNISPART_IRQ_SW) &&
@@ -1911,15 +1954,15 @@ static void isys_isr_ipu5(struct intel_ipu4_bus_device *adev)
 	void __iomem *base = isys->pdata->base;
 	u32 status_csi, status_sw;
 
-	status_csi = readl(isys->pdata->base +
+	status_csi = ipu_readl(isys->pdata->base +
 		       INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_STATUS);
-	status_sw = readl(isys->pdata->base +
+	status_sw = ipu_readl(isys->pdata->base +
 		       INTEL_IPU5_REG_ISYS_UNISPART_IRQ_STATUS);
 
 	do {
-		writel(status_csi, isys->pdata->base +
+		ipu_writel(status_csi, isys->pdata->base +
 		       INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_CLEAR);
-		writel(INTEL_IPU5_ISYS_UNISPART_IRQ_SW,
+		ipu_writel(INTEL_IPU5_ISYS_UNISPART_IRQ_SW,
 			isys->pdata->base +
 			INTEL_IPU5_REG_ISYS_UNISPART_IRQ_CLEAR);
 
@@ -1934,7 +1977,7 @@ static void isys_isr_ipu5(struct intel_ipu4_bus_device *adev)
 			}
 		}
 
-		writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
+		ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
 
 		/*
 		 * Handle a single FW event per checking the CSI-2
@@ -1952,9 +1995,9 @@ static void isys_isr_ipu5(struct intel_ipu4_bus_device *adev)
 		else
 			status_sw = 0;
 
-		status_csi = readl(isys->pdata->base +
+		status_csi = ipu_readl(isys->pdata->base +
 			INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_STATUS);
-		status_sw |= readl(isys->pdata->base +
+		status_sw |= ipu_readl(isys->pdata->base +
 			INTEL_IPU5_REG_ISYS_UNISPART_IRQ_STATUS);
 	} while (((status_csi & isys->isr_csi2_bits) ||
 		(status_sw & INTEL_IPU5_ISYS_UNISPART_IRQ_SW)) &&
@@ -1984,18 +2027,21 @@ static irqreturn_t isys_isr(struct intel_ipu4_bus_device *adev)
 static void isys_isr_poll(struct intel_ipu4_bus_device *adev)
 {
 	struct intel_ipu4_isys *isys = intel_ipu4_bus_get_drvdata(adev);
+	struct intel_ipu4_device *isp = adev->isp;
 
 	if (!isys->fwcom) {
 		dev_dbg(&isys->adev->dev,
 			"got interrupt but device not configured yet\n");
 		return;
 	}
+
 	mutex_lock(&isys->mutex);
-	if (is_intel_ipu5_hw_a0(adev->isp))
+	if (isp->ctrl->get_sim_type && SIM_MOCK == isp->ctrl->get_sim_type())
+		isys_isr_one(adev);
+	else if (is_intel_ipu5_hw_a0(adev->isp))
 		isys_isr_ipu5(adev);
 	else
 		isys_isr_ipu4(adev);
-
 	mutex_unlock(&isys->mutex);
 }
 

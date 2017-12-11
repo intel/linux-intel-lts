@@ -362,6 +362,29 @@ static struct crl_register_write_rep adv7481_hdmi_mode_480i[] = {
 	{0x05, CRL_REG_LEN_08BIT, 0x40, 0xE0},
 };
 
+static struct crl_register_write_rep adv7481_hdmi_mode_vga[] = {
+       {0x00, CRL_REG_LEN_08BIT, 0x84, 0x94}, /*  Enable 4-lane MIPI */
+       {0x00, CRL_REG_LEN_08BIT, 0xA4, 0x94}, /*  Set Auto DPHY Timing */
+       {0x10, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0xA0, 0xE0, 0xA0},
+       {0xD6, CRL_REG_LEN_08BIT, 0x07, 0x94},
+       {0xC4, CRL_REG_LEN_08BIT, 0x0A, 0x94},
+       {0x71, CRL_REG_LEN_08BIT, 0x33, 0x94},
+       {0x72, CRL_REG_LEN_08BIT, 0x11, 0x94},
+       {0xF0, CRL_REG_LEN_08BIT, 0x00, 0x94},
+       {0x31, CRL_REG_LEN_08BIT, 0x82, 0x94},
+       {0x1E, CRL_REG_LEN_08BIT, 0x80, 0x94},
+       {0xDA, CRL_REG_LEN_08BIT, 0x01, 0x94},
+       {0x00, CRL_REG_LEN_08BIT, 0x24, 0x94},
+       {0xC1, CRL_REG_LEN_08BIT, 0x2B, 0x94},
+       {0x31, CRL_REG_LEN_08BIT, 0x80, 0x94},
+       {0xC9, CRL_REG_LEN_08BIT, 0x2D, 0x44},
+       {0x05, CRL_REG_LEN_08BIT, 0x88, 0xE0},
+       {0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0},
+       {0x00, CRL_REG_LEN_08BIT, 0x00, 0xE0},
+       {0x04, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x80, 0xE0, 0xFD},
+       {0x37, CRL_REG_LEN_08BIT, 0x81, 0x44},
+};
+
 static struct crl_register_write_rep adv7481_hdmi_powerup_regset[] = {
 	{0x00, CRL_REG_LEN_08BIT, 0x84, 0x94}, /* Enable 4-lane MIPI */
 	{0x00, CRL_REG_LEN_08BIT, 0xA4, 0x94}, /* Set Auto DPHY Timing */
@@ -670,6 +693,8 @@ static struct crl_mode_rep adv7481_hdmi_modes[] = {
 		.scale_m = 1,
 		.width = 640,
 		.height = 480,
+		.mode_regs_items = ARRAY_SIZE(adv7481_hdmi_mode_vga),
+		.mode_regs = adv7481_hdmi_mode_vga,
 		.comp_items = 1,
 		.ctrl_data = &hdmi_ctrl_data_lanes[0],
 	},
@@ -793,6 +818,13 @@ static struct crl_csi_data_fmt adv7481_hdmi_crl_csi_data_fmt[] = {
 		.bits_per_pixel = 24,
 		.regs_items = ARRAY_SIZE(adv7481_hdmi_mode_rgb888),
 		.regs = adv7481_hdmi_mode_rgb888,
+	},
+	{
+		.code = MEDIA_BUS_FMT_YUYV8_1X16,
+		.pixel_order = CRL_PIXEL_ORDER_GRBG,
+		.bits_per_pixel = 16,
+		.regs_items = ARRAY_SIZE(adv7481_hdmi_mode_yuv),
+		.regs = adv7481_hdmi_mode_yuv,
 	},
 };
 

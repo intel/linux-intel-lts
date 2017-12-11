@@ -20,6 +20,7 @@
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
 #include <linux/version.h>
+#include "intel-ipu4.h"
 #include "intel-ipu4-fw-com.h"
 #include "intel-ipu4-bus.h"
 
@@ -147,7 +148,7 @@ static unsigned num_free(unsigned int wr, unsigned int rd,
 static unsigned int curr_index(void __iomem *q_dmem, struct sys_queue *q,
 			       enum message_direction dir)
 {
-	return readl(q_dmem +
+	return ipu_readl(q_dmem +
 		     (dir == DIR_RECV ? FW_COM_RD_REG : FW_COM_WR_REG));
 }
 
@@ -313,13 +314,13 @@ int intel_ipu4_fw_com_open(struct intel_ipu4_fw_com_context *ctx)
 		return -EIO;
 
 	/* store syscom uninitialized state */
-	writel(SYSCOM_STATE_UNINIT,
+	ipu_writel(SYSCOM_STATE_UNINIT,
 	       ctx->dmem_addr + SYSCOM_STATE_REG * 4);
 	/* store syscom uninitialized command */
-	writel(SYSCOM_COMMAND_UNINIT,
+	ipu_writel(SYSCOM_COMMAND_UNINIT,
 	       ctx->dmem_addr + SYSCOM_COMMAND_REG * 4);
 	/* store firmware configuration address */
-	writel(ctx->config_vied_addr,
+	ipu_writel(ctx->config_vied_addr,
 	       ctx->dmem_addr + SYSCOM_CONFIG_REG * 4);
 
 	ctx->cell_start(ctx->adev);
@@ -332,12 +333,12 @@ int intel_ipu4_fw_com_close(struct intel_ipu4_fw_com_context *ctx)
 {
 	int state;
 
-	state = readl(ctx->dmem_addr + 4 * SYSCOM_STATE_REG);
+	state = ipu_readl(ctx->dmem_addr + 4 * SYSCOM_STATE_REG);
 	if (state != SYSCOM_STATE_READY)
 		return -EBUSY;
 
 	/* set close request flag */
-	writel(SYSCOM_COMMAND_INACTIVE, ctx->dmem_addr +
+	ipu_writel(SYSCOM_COMMAND_INACTIVE, ctx->dmem_addr +
 	       SYSCOM_COMMAND_REG * 4);
 
 	return 0;
@@ -367,7 +368,7 @@ int intel_ipu4_fw_com_ready(struct intel_ipu4_fw_com_context *ctx)
 	int state;
 
 	/* check if SP syscom is ready to open the queue */
-	state = readl(ctx->dmem_addr +	SYSCOM_STATE_REG * 4);
+	state = ipu_readl(ctx->dmem_addr +	SYSCOM_STATE_REG * 4);
 	if (state != SYSCOM_STATE_READY)
 		return -EBUSY; /* SPC is not ready to handle messages yet */
 
@@ -391,8 +392,8 @@ void *intel_ipu4_send_get_token(struct intel_ipu4_fw_com_context *ctx,
 	unsigned int packets;
 	unsigned int index;
 
-	wr = readl(q_dmem + FW_COM_WR_REG);
-	rd = readl(q_dmem + FW_COM_RD_REG);
+	wr = ipu_readl(q_dmem + FW_COM_WR_REG);
+	rd = ipu_readl(q_dmem + FW_COM_RD_REG);
 
 	/* Catch indexes in dmem */
 	if (!is_index_valid(q, wr) || !is_index_valid(q, rd))
@@ -421,7 +422,7 @@ void intel_ipu4_send_put_token(struct intel_ipu4_fw_com_context *ctx, int q_nbr)
 	/* Increment index */
 	index = inc_index(q_dmem, q, DIR_SEND);
 
-	writel(index, q_dmem + FW_COM_WR_REG);
+	ipu_writel(index, q_dmem + FW_COM_WR_REG);
 }
 EXPORT_SYMBOL_GPL(intel_ipu4_send_put_token);
 
@@ -434,8 +435,8 @@ void *intel_ipu4_recv_get_token(struct intel_ipu4_fw_com_context *ctx,
 	unsigned int packets;
 	void *addr;
 
-	wr = readl(q_dmem + FW_COM_WR_REG);
-	rd = readl(q_dmem + FW_COM_RD_REG);
+	wr = ipu_readl(q_dmem + FW_COM_WR_REG);
+	rd = ipu_readl(q_dmem + FW_COM_RD_REG);
 
 	/* Catch indexes in dmem? */
 	if (!is_index_valid(q, wr) || !is_index_valid(q, rd))
@@ -461,7 +462,7 @@ void intel_ipu4_recv_put_token(struct intel_ipu4_fw_com_context *ctx, int q_nbr)
 	unsigned int rd = inc_index(q_dmem, q, DIR_RECV);
 
 	/* Release index */
-	writel(rd, q_dmem + FW_COM_RD_REG);
+	ipu_writel(rd, q_dmem + FW_COM_RD_REG);
 }
 EXPORT_SYMBOL_GPL(intel_ipu4_recv_put_token);
 

@@ -282,7 +282,7 @@ int ia_css_program_group_param_set_kernel_enable_bitmap(
 ia_css_kernel_bitmap_t ia_css_program_group_param_get_kernel_enable_bitmap(
 	const ia_css_program_group_param_t		*param)
 {
-	ia_css_kernel_bitmap_t	bitmap = 0;
+	ia_css_kernel_bitmap_t	bitmap = ia_css_kernel_bitmap_clear();
 
 	IA_CSS_TRACE_0(PSYSAPI_PARAM, VERBOSE,
 	     "ia_css_program_group_param_get_kernel_enable_bitmap(): enter:\n");
@@ -319,7 +319,7 @@ int ia_css_program_param_set_kernel_enable_bitmap(
 ia_css_kernel_bitmap_t ia_css_program_param_get_kernel_enable_bitmap(
 	const ia_css_program_param_t	*program_param)
 {
-	ia_css_kernel_bitmap_t	bitmap = 0;
+	ia_css_kernel_bitmap_t	bitmap = ia_css_kernel_bitmap_clear();
 	char *base;
 
 	IA_CSS_TRACE_0(PSYSAPI_PARAM, VERBOSE,
@@ -341,7 +341,7 @@ EXIT:
 ia_css_kernel_bitmap_t ia_css_terminal_param_get_kernel_enable_bitmap(
 	const ia_css_terminal_param_t			*param)
 {
-	ia_css_kernel_bitmap_t	bitmap = 0;
+	ia_css_kernel_bitmap_t	bitmap = ia_css_kernel_bitmap_clear();
 	char *base;
 
 	IA_CSS_TRACE_0(PSYSAPI_PARAM, VERBOSE,

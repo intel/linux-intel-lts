@@ -191,4 +191,51 @@ EXIT:
 	return process_group_handle;
 }
 
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+int ia_css_buffer_set_set_token(
+	ia_css_buffer_set_t *buffer_set,
+	const uint64_t token)
+{
+	DECLARE_ERRVAL
+	int ret = -1;
+
+	verifexitval(buffer_set != NULL, EFAULT);
+
+	IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, VERBOSE,
+		"ia_css_buffer_set_set_token(): enter:\n");
+
+	buffer_set->token = token;
+
+	ret = 0;
+
+EXIT:
+	if (haserror(EFAULT)) {
+		IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, ERROR,
+			"ia_css_buffer_set_set_token invalid argument\n");
+	}
+	return ret;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+uint64_t ia_css_buffer_set_get_token(
+	const ia_css_buffer_set_t *buffer_set)
+{
+	DECLARE_ERRVAL
+	uint64_t token = 0;
+
+	verifexitval(buffer_set != NULL, EFAULT);
+
+	IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, VERBOSE,
+		"ia_css_buffer_set_get_token(): enter:\n");
+
+	token = buffer_set->token;
+
+EXIT:
+	if (haserror(EFAULT)) {
+		IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, ERROR,
+			"ia_css_buffer_set_get_token: invalid argument\n");
+	}
+	return token;
+}
+
 #endif /* __IA_CSS_PSYS_BUFFER_SET_IMPL_H */

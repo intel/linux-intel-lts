@@ -26,10 +26,13 @@
 #include <ia_css_psys_program_group_manifest.h>
 #include "ia_css_terminal_manifest_types.h"
 
+#include "ia_css_rbm.h"
+
 #include <ia_css_kernel_bitmap.h>	/* ia_css_kernel_bitmap_t */
 
 #include <vied_nci_psys_system_global.h>
 #include <ia_css_program_group_data.h>
+#include "ia_css_rbm_manifest_types.h"
 #include <type_support.h>
 #include <error_support.h>
 #include <misc_support.h>
@@ -395,6 +398,7 @@ int ia_css_process_group_print(
 	uint8_t	process_count;
 	uint8_t terminal_count;
 	vied_vaddress_t ipu_vaddress = VIED_NULL;
+	ia_css_rbm_t routing_bitmap;
 
 	NOT_USED(fid);
 
@@ -417,10 +421,17 @@ int ia_css_process_group_print(
 	IA_CSS_TRACE_1(PSYSAPI_DYNAMIC, INFO,
 		"\tfragment_count = %d\n",
 		(int)ia_css_process_group_get_fragment_count(process_group));
+
+	routing_bitmap = *ia_css_process_group_get_routing_bitmap(process_group);
+	for (i = 0; i < (int)IA_CSS_RBM_NOF_ELEMS; i++) {
+		IA_CSS_TRACE_2(PSYSAPI_DYNAMIC, INFO,
+			"\trouting_bitmap[index = %d] = 0x%X\n",
+			i, (int)routing_bitmap.data[i]);
+	}
+
 	IA_CSS_TRACE_1(PSYSAPI_DYNAMIC, INFO,
 		"\tprogram_group(process_group) = %d\n",
 		(int)ia_css_process_group_get_program_group_ID(process_group));
-
 	process_count = ia_css_process_group_get_process_count(process_group);
 	terminal_count =
 		ia_css_process_group_get_terminal_count(process_group);
@@ -660,10 +671,6 @@ bool ia_css_can_enqueue_buffer_set(
 	verifexitval(process_group->protocol_version ==
 		IA_CSS_PROCESS_GROUP_PROTOCOL_PPG, EFAULT);
 
-	/*
-	 * Late binding is currently not supported. Enqueued buffer sets must
-	 * for now be complete.
-	 */
 	for (i = 0; i < (int)terminal_count; i++) {
 		ia_css_terminal_t *terminal =
 			ia_css_process_group_get_terminal(process_group, i);
@@ -676,11 +683,6 @@ bool ia_css_can_enqueue_buffer_set(
 		IA_CSS_TRACE_3(PSYSAPI_DYNAMIC, INFO,
 			"\tH: Terminal number(%d) is %p having buffer 0x%x\n",
 			i, terminal, buffer);
-		/* FAS allows for attaching NULL buffers to satisfy SDF,
-		* but only if l-Scheduler is embedded
-		*/
-		if (buffer == VIED_NULL)
-			break;
 
 		/* buffer_state is applicable only for data terminals*/
 		if (ia_css_is_terminal_data_terminal(terminal) == true) {
@@ -855,6 +857,27 @@ EXIT:
 			"ia_css_process_group_get_state invalid argument\n");
 	}
 	return state;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+const ia_css_rbm_t *ia_css_process_group_get_routing_bitmap(
+	const ia_css_process_group_t *process_group)
+{
+	DECLARE_ERRVAL
+	const ia_css_rbm_t *rbm = NULL;
+
+	IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, VERBOSE,
+		"ia_css_process_group_get_routing_bitmap(): enter:\n");
+
+	verifexitval(process_group != NULL, EFAULT);
+
+	rbm = &(process_group->routing_bitmap);
+EXIT:
+	if (haserror(EFAULT)) {
+		IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, ERROR,
+			"ia_css_process_group_get_routing_bitmap invalid argument\n");
+	}
+	return rbm;
 }
 
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
@@ -1038,6 +1061,37 @@ EXIT:
 	return terminal;
 }
 
+/* Returns the terminal or NULL if it was not found
+   For some of those maybe valid to not exist at all in the process group */
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+const ia_css_terminal_t *ia_css_process_group_get_single_instance_terminal(
+	const ia_css_process_group_t 	*process_group,
+	ia_css_terminal_type_t		term_type)
+{
+	int i, term_count;
+
+	assert(process_group != NULL);
+
+	/* Those below have at most one instance per process group */
+	assert(term_type == IA_CSS_TERMINAL_TYPE_PARAM_CACHED_IN ||
+		term_type == IA_CSS_TERMINAL_TYPE_PARAM_CACHED_OUT ||
+		term_type == IA_CSS_TERMINAL_TYPE_PROGRAM ||
+		term_type == IA_CSS_TERMINAL_TYPE_PROGRAM_CONTROL_INIT);
+
+	term_count = ia_css_process_group_get_terminal_count(process_group);
+
+	for (i = 0; i < term_count; i++) {
+		const ia_css_terminal_t	*terminal = ia_css_process_group_get_terminal(process_group, i);
+
+		if (ia_css_terminal_get_type(terminal) == term_type) {
+			/* Only one parameter terminal per process group */
+			return terminal;
+		}
+	}
+
+	return NULL;
+}
+
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
 ia_css_terminal_t *ia_css_process_group_get_terminal(
 	const ia_css_process_group_t *process_grp,
@@ -1167,6 +1221,33 @@ EXIT:
 	if (!noerror()) {
 		IA_CSS_TRACE_1(PSYSAPI_DYNAMIC, ERROR,
 			"ia_css_process_group_set_resource_bitmap failed (%i)\n",
+			retval);
+	}
+	return retval;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+int ia_css_process_group_set_routing_bitmap(
+	ia_css_process_group_t *process_group,
+	const ia_css_rbm_t rbm)
+{
+	DECLARE_ERRVAL
+	int retval = -1;
+
+	IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, VERBOSE,
+		"ia_css_process_group_set_routing_bitmap(): enter:\n");
+
+	verifexitval(process_group != NULL, EFAULT);
+	process_group->routing_bitmap = rbm;
+	retval = 0;
+EXIT:
+	if (haserror(EFAULT)) {
+		IA_CSS_TRACE_0(PSYSAPI_DYNAMIC, ERROR,
+			"ia_css_process_group_set_routing_bitmap invalid argument process_group\n");
+	}
+	if (!noerror()) {
+		IA_CSS_TRACE_1(PSYSAPI_DYNAMIC, ERROR,
+			"ia_css_process_group_set_routing_bitmap failed (%i)\n",
 			retval);
 	}
 	return retval;

@@ -1778,31 +1778,46 @@ EXIT:
 }
 
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
-uint8_t ia_css_program_control_init_terminal_get_sid(
+ia_css_process_id_t ia_css_program_control_init_terminal_get_process_id(
 	const ia_css_program_control_init_program_desc_t *program_desc)
 {
-	uint8_t sid = 0;
+	ia_css_process_id_t process_id = 0;
 
 	verifjmpexit(program_desc != NULL);
 
-	sid = program_desc->sid;
+	process_id = program_desc->control_info.process_id;
 
 EXIT:
-	return sid;
+	return process_id;
 }
 
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
-uint8_t ia_css_program_control_init_terminal_get_pid(
+uint8_t ia_css_program_control_init_terminal_get_num_done_events(
 	const ia_css_program_control_init_program_desc_t *program_desc)
 {
-	uint8_t pid = 0;
+	uint8_t num_done_events = 0;
 
 	verifjmpexit(program_desc != NULL);
 
-	pid = program_desc->pid;
+	num_done_events = program_desc->control_info.num_done_events;
 
 EXIT:
-	return pid;
+	return num_done_events;
+}
+
+IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C
+void ia_css_program_control_init_terminal_set_control_info(
+	ia_css_program_control_init_program_desc_t *program_desc,
+	ia_css_process_id_t process_id,
+	uint8_t num_done_events)
+{
+	verifjmpexit(program_desc != NULL);
+
+	program_desc->control_info.process_id = process_id;
+	program_desc->control_info.num_done_events = num_done_events;
+
+EXIT:
+	return;
 }
 
 IA_CSS_PSYS_DYNAMIC_STORAGE_CLASS_C

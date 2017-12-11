@@ -64,7 +64,11 @@ STORAGE_CLASS_INLINE void
 ia_css_cmem_load(unsigned int ssid, ia_css_cmem_address_t address, void *data,
 		 unsigned int size)
 {
-	vied_subsystem_load(ssid, address, data, size);
+	assert(size % 4 == 0);
+	assert(address % 4 == 0);
+	assert((long)data % 4 == 0);
+
+	return vied_subsystem_load(ssid, address, data, size);
 }
 
 STORAGE_CLASS_INLINE void

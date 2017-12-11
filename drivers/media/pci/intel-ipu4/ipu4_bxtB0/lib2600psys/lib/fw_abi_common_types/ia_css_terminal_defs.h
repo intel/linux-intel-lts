@@ -101,7 +101,11 @@ typedef enum ia_css_isys_link_id {
  * enum ia_css_data_barrier_link_id. Lists the link IDs used by the FW for data barrier feature
  */
 typedef enum ia_css_data_barrier_link_id {
-	IA_CSS_DATA_BARRIER_LINK_MEMORY = N_IA_CSS_ISYS_LINK_ID,
+	IA_CSS_DATA_BARRIER_LINK_MEMORY_0 = N_IA_CSS_ISYS_LINK_ID,
+	IA_CSS_DATA_BARRIER_LINK_MEMORY_1,
+	IA_CSS_DATA_BARRIER_LINK_MEMORY_2,
+	IA_CSS_DATA_BARRIER_LINK_MEMORY_3,
+	IA_CSS_DATA_BARRIER_LINK_MEMORY_4,
 	N_IA_CSS_DATA_BARRIER_LINK_ID
 } ia_css_data_barrier_link_id_t;
 

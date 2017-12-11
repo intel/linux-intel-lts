@@ -93,6 +93,7 @@
 #define CEIL_SHIFT_MUL(a, b)	(CEIL_SHIFT(a, b) << (b))
 /* Absolute difference of a and b */
 #define ABS_DIF(a, b)		(((a) > (b)) ? ((a) - (b)) : ((b) - (a)))
+#define ABS(a) ABS_DIF(a, 0)
 /* Square of x */
 #define SQR(x)			((x)*(x))
 /* Integer round-half-down division of a nad b */
@@ -100,13 +101,10 @@
 /* Align a to the round-half-down multiple of b */
 #define ROUND_HALF_DOWN_MUL(a, b)	(ROUND_HALF_DOWN_DIV(a, b) * (b))
 
-/* Following 3 defines to support - reuse of Skycam OFS code for BXT */
-#define CEIL(a, b)	CEIL_MUL(a, b)
-#define FLOOR(a, b)	FLOOR_MUL(a, b)
-#define ABS(a) ABS_DIF(a, 0)
-
 #define MAX3(a, b, c)		MAX((a), MAX((b), (c)))
+#define MIN3(a, b, c)		MIN((a), MIN((b), (c)))
 #define MAX4(a, b, c, d)	MAX((MAX((a), (b))), (MAX((c), (d))))
+#define MIN4(a, b, c, d)	MIN((MIN((a), (b))), (MIN((c), (d))))
 
 /* min and max should not be macros as they will evaluate their arguments twice.
    if you really need a macro (e.g. for CPP or for initializing an array)

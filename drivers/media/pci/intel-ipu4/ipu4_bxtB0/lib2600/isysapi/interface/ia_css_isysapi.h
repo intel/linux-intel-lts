@@ -27,6 +27,9 @@
 /* To define the HANDLE */
 #include "type_support.h"
 
+#ifndef HAS_DUAL_CMD_CTX_SUPPORT
+#define HAS_DUAL_CMD_CTX_SUPPORT 0
+#endif
 
 /**
  * ia_css_isys_device_open() - configure ISYS device
@@ -40,10 +43,20 @@
  *
  * Return:  int type error code (errno.h)
  */
+#if HAS_DUAL_CMD_CTX_SUPPORT
+extern int ia_css_isys_context_create(
+	HANDLE * context,
+	const struct ia_css_isys_device_cfg_data *config
+);
+extern int ia_css_isys_device_open(
+	const struct ia_css_isys_device_cfg_data *config
+);
+#else
 extern int ia_css_isys_device_open(
 	HANDLE * context,
 	const struct ia_css_isys_device_cfg_data *config
 );
+#endif
 
 /**
  * ia_css_isys_device_open_ready() - Complete ISYS device configuration
@@ -250,9 +263,18 @@ extern int ia_css_isys_stream_handle_response(
  *
  * Return:  int type error code (errno.h)
  */
+#if HAS_DUAL_CMD_CTX_SUPPORT
+extern int ia_css_isys_context_destroy(
+	HANDLE context
+);
+extern void ia_css_isys_device_close(
+	void
+);
+#else
 extern int ia_css_isys_device_close(
 	HANDLE context
 );
+#endif
 
 /**
  * ia_css_isys_device_release() - release ISYS device

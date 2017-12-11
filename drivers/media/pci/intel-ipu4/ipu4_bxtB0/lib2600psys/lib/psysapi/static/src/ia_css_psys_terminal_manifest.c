@@ -418,7 +418,7 @@ int ia_css_data_terminal_manifest_set_connection_bitmap(
 ia_css_kernel_bitmap_t ia_css_data_terminal_manifest_get_kernel_bitmap(
 	const ia_css_data_terminal_manifest_t *manifest)
 {
-	ia_css_kernel_bitmap_t kernel_bitmap = 0;
+	ia_css_kernel_bitmap_t kernel_bitmap = ia_css_kernel_bitmap_clear();
 
 	IA_CSS_TRACE_0(PSYSAPI_STATIC, VERBOSE,
 		"ia_css_data_terminal_manifest_get_kernel_bitmap(): enter:\n");
@@ -467,7 +467,7 @@ int ia_css_data_terminal_manifest_set_kernel_bitmap_unique(
 					ia_css_kernel_bitmap_clear();
 
 		kernel_bitmap = ia_css_kernel_bitmap_set(kernel_bitmap, index);
-		verifexit(kernel_bitmap != 0);
+		verifexit(!ia_css_is_kernel_bitmap_empty(kernel_bitmap));
 		verifexit(ia_css_data_terminal_manifest_set_kernel_bitmap(
 				manifest, kernel_bitmap) == 0);
 		retval = 0;

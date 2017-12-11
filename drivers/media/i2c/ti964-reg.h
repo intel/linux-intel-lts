@@ -68,6 +68,7 @@ static const struct ti964_register_write ti964_init_settings[] = {
 	{0x70, 0xde}, /* YUV422_8 */
 	{0x7c, 0x81}, /* Use RAW10 8bit mode */
 	{0xd2, 0x84},
+	{0xbc, 0x00},
 };
 
 static const struct ti964_register_write ti964_tp_settings[] = {

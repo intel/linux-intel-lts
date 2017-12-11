@@ -463,9 +463,6 @@ static int libcsspsys2600_open(struct intel_ipu4_psys *psys)
 	bool opened;
 	int retry = INTEL_IPU4_PSYS_OPEN_RETRY;
 
-	if (is_intel_ipu_hw_fpga(psys->adev->isp))
-		retry = INTEL_IPU4_PSYS_OPEN_RETRY_FPGA;
-
 	intel_ipu4_wrapper_init(PSYS_MMID, &psys->adev->dev,
 				psys->pdata->base);
 
@@ -528,6 +525,33 @@ static int libcsspsys2600_close(struct intel_ipu4_psys *psys)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_MOCK)
+extern void intel_ipu_register_context_addr(void *ctx_cpu_addr,
+					    uint32_t ctx_vied_addr);
+extern void intel_ipu_unregister_context_addr(void *ctx_cpu_addr,
+					      uint32_t ctx_vied_addr);
+#else
+/* Defined here only for compiling in non-mock mode */
+static void intel_ipu_register_context_addr(void *ctx_cpu_addr,
+					    uint32_t ctx_vied_addr)
+{}
+
+static void intel_ipu_unregister_context_addr(void *ctx_cpu_addr,
+					      uint32_t ctx_vied_addr)
+{}
+#endif
+
+static void libcsspsys2600_register_context_addr(
+	void *ctx_cpu_addr, uint32_t ctx_vied_addr)
+{
+	intel_ipu_register_context_addr(ctx_cpu_addr, ctx_vied_addr);
+}
+static void libcsspsys2600_unregister_context_addr(
+	void *ctx_cpu_addr, uint32_t ctx_vied_addr)
+{
+	intel_ipu_unregister_context_addr(ctx_cpu_addr, ctx_vied_addr);
+}
+
 static struct intel_ipu4_psys_abi abi = {
 	.pg_start = libcsspsys2600_pg_start,
 	.pg_disown = libcsspsys2600_pg_disown,
@@ -555,6 +579,8 @@ static struct intel_ipu4_psys_abi abi = {
 	.pg_get_processing_cycles = libcsspsys2600_pg_get_processing_cycles,
 	.open = libcsspsys2600_open,
 	.close = libcsspsys2600_close,
+	.ipu_reg_ctx_addr = libcsspsys2600_register_context_addr,
+	.ipu_unreg_ctx_addr = libcsspsys2600_unregister_context_addr,
 };
 
 static int libcsspsys2600_get_program_manifest_by_process(

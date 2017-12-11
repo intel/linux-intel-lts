@@ -185,6 +185,17 @@ typedef enum ia_css_frame_format_type {
 	/* TILEYYf representation of P016 MSB aligned*/
 	IA_CSS_DATA_FORMAT_P016_MSB_TILEYF,
 
+        /* consists of L and R PDAF pixel line pairs.
+         * If line n is L pixel line, n+1 will be R pixel line.
+         * Depending on mode - First line can be L or R pixel line and
+         * the line pair sequence can also alternate. 1-plane (bpp == bpe) */
+	IA_CSS_DATA_FORMAT_PAF_NON_INTERLEAVED,
+
+	/* consists of L and R PDAF pixel pairs.
+         * Depending on mode - Pixel pairs can be LRLR.., RLRL.. and
+         * alternating between the above two as well. 1-plane (bpp == bpe) */
+	IA_CSS_DATA_FORMAT_PAF_INTERLEAVED,
+
 	IA_CSS_N_FRAME_FORMAT_TYPES
 } ia_css_frame_format_type_t;
 
