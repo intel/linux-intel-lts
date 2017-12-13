@@ -51,7 +51,7 @@ static struct intel_ipu4_isys_subdev_info ov2740_crl_sd = {
                          I2C_BOARD_INFO(CRLMODULE_NAME, OV2740_I2C_ADDRESS),
                         .platform_data = &ov2740_pdata,
                 },
-                .i2c_adapter_id = 6,
+                .i2c_adapter_id = 2,
         }
 };
 
@@ -77,7 +77,7 @@ static struct intel_ipu4_isys_subdev_info ov2740_b_crl_sd = {
 			 I2C_BOARD_INFO(CRLMODULE_NAME, OV2740_I2C_ADDRESS),
 			.platform_data = &ov2740_b_pdata,
 		},
-		.i2c_adapter_id = 8,
+		.i2c_adapter_id = 4,
 	}
 };
 #endif
@@ -108,7 +108,7 @@ static struct intel_ipu4_isys_subdev_info imx185_crl_sd = {
 			 I2C_BOARD_INFO(CRLMODULE_NAME, IMX185_I2C_ADDRESS),
 			.platform_data = &imx185_pdata,
 		},
-		.i2c_adapter_id = 6,
+		.i2c_adapter_id = 2,
 	}
 };
 
@@ -134,7 +134,7 @@ static struct intel_ipu4_isys_subdev_info imx185_b_crl_sd = {
 			 I2C_BOARD_INFO(CRLMODULE_NAME, IMX185_I2C_ADDRESS),
 			.platform_data = &imx185_b_pdata,
 		},
-		.i2c_adapter_id = 8,
+		.i2c_adapter_id = 4,
 	}
 };
 
@@ -535,8 +535,8 @@ static struct crlmodule_platform_data ov10640_pdata = {
 #endif
 
 #ifdef CONFIG_VIDEO_TI964
-#define TI964_I2C_ADAPTER	4
-#define TI964_I2C_ADAPTER_2	11
+#define TI964_I2C_ADAPTER	0
+#define TI964_I2C_ADAPTER_2	7
 #define TI964_I2C_ADDRESS	0x3d
 #define TI964_LANES		4
 
@@ -778,10 +778,10 @@ static struct intel_ipu4_isys_subdev_info ti964_sd_2 = {
  * this should be coming from ACPI
  */
 struct intel_ipu4_isys_clk_mapping clk_mapping[] = {
-	{ CLKDEV_INIT("6-001a", NULL, NULL), "OSC_CLK_OUT0" },
-	{ CLKDEV_INIT("8-001a", NULL, NULL), "OSC_CLK_OUT1" },
-	{ CLKDEV_INIT("6-0036", NULL, NULL), "OSC_CLK_OUT0" },
-	{ CLKDEV_INIT("8-0036", NULL, NULL), "OSC_CLK_OUT1" },
+	{ CLKDEV_INIT("2-001a", NULL, NULL), "OSC_CLK_OUT0" },
+	{ CLKDEV_INIT("4-001a", NULL, NULL), "OSC_CLK_OUT1" },
+	{ CLKDEV_INIT("2-0036", NULL, NULL), "OSC_CLK_OUT0" },
+	{ CLKDEV_INIT("4-0036", NULL, NULL), "OSC_CLK_OUT1" },
 	{ CLKDEV_INIT("2-0010", NULL, NULL), "OSC_CLK_OUT0" },
 	{ CLKDEV_INIT("4-0010", NULL, NULL), "OSC_CLK_OUT1" },
 	{ CLKDEV_INIT("2-a0e0", NULL, NULL), "OSC_CLK_OUT0" },
