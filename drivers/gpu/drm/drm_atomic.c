@@ -1511,11 +1511,9 @@ drm_atomic_connector_get_property(struct drm_connector *connector,
 		*val = state->scaling_mode;
 	} else if (property == connector->content_protection_property) {
 		*val = state->content_protection;
-	} else if (property == config->writeback_fb_id_property) {
-		/* Writeback framebuffer is one-shot, write and forget */
-		*val = 0;
-	} else if (property == config->writeback_out_fence_ptr_property) {
-		*val = 0;
+	} else if (property == connector->cp_downstream_property) {
+		*val = connector->cp_downstream_blob_ptr ?
+			connector->cp_downstream_blob_ptr->base.id : 0;
 	} else if (connector->funcs->atomic_get_property) {
 		return connector->funcs->atomic_get_property(connector,
 				state, property, val);
