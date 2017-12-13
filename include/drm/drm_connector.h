@@ -916,6 +916,13 @@ struct drm_connector {
 	struct drm_property *content_protection_property;
 
 	/**
+	 * @cp_downstream_property: DRM BLOB property for content
+	 * protection downstream information.
+	 */
+	struct drm_property *cp_downstream_property;
+	struct drm_property_blob *cp_downstream_blob_ptr;
+
+	/**
 	 * @path_blob_ptr:
 	 *
 	 * DRM blob property data for the DP MST path property. This should only
@@ -1184,20 +1191,24 @@ int drm_connector_attach_scaling_mode_property(struct drm_connector *connector,
 					       u32 scaling_mode_mask);
 int drm_connector_attach_content_protection_property(
 		struct drm_connector *connector);
+int drm_connector_attach_cp_downstream_property(
+				struct drm_connector *connector);
 int drm_mode_create_aspect_ratio_property(struct drm_device *dev);
 int drm_mode_create_content_type_property(struct drm_device *dev);
 void drm_hdmi_avi_infoframe_content_type(struct hdmi_avi_infoframe *frame,
 					 const struct drm_connector_state *conn_state);
-
 int drm_mode_create_suggested_offset_properties(struct drm_device *dev);
 
 int drm_connector_set_path_property(struct drm_connector *connector,
-				    const char *path);
+					const char *path);
 int drm_connector_set_tile_property(struct drm_connector *connector);
 int drm_connector_update_edid_property(struct drm_connector *connector,
-				       const struct edid *edid);
+					const struct edid *edid);
 void drm_connector_set_link_status_property(struct drm_connector *connector,
-					    uint64_t link_status);
+						uint64_t link_status);
+int drm_mode_connector_update_cp_downstream_property(
+				struct drm_connector *connector,
+				const struct cp_downstream_info *info);
 int drm_connector_init_panel_orientation_property(
 	struct drm_connector *connector, int width, int height);
 
