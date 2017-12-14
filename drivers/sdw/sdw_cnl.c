@@ -1652,6 +1652,11 @@ static int cnl_sdw_bra_check_data(struct sdw_master *mstr,
 		}
 	}
 
+	if (info->valid_packets <=0) {
+		ret = -EINVAL;
+		goto error;
+	}
+
 	/*
 	 * TODO: From the response header and footer there is no mention of
 	 * read or write packet so controller needs to keep transmit packet
