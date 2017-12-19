@@ -563,7 +563,9 @@ int skl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 	sst->addr.w0_stat_sz = SKL_ADSP_W0_STAT_SZ;
 	sst->addr.w0_up_sz = SKL_ADSP_W0_UP_SZ;
 
-	return 0;
+	ret = post_init(sst, &skl_dev);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(skl_sst_dsp_init);
 
