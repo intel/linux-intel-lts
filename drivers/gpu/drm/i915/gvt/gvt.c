@@ -255,6 +255,54 @@ static int init_service_thread(struct intel_gvt *gvt)
 	return 0;
 }
 
+void intel_gvt_init_pipe_info(struct intel_gvt *gvt);
+
+/*
+ * When enabling multi-plane in DomU, an issue is that the PLANE_BUF_CFG
+ * register cannot be updated dynamically, since Dom0 has no idea of the
+ * plane information of DomU's planes, so here we statically allocate the
+ * ddb entries for all the possible enabled planes.
+ */
+void intel_gvt_allocate_ddb(struct intel_gvt *gvt, unsigned int active_crtcs)
+{
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+	struct intel_gvt_pipe_info *pipe_info = gvt->pipe_info;
+	const struct intel_runtime_info *info = RUNTIME_INFO(dev_priv);
+	unsigned int pipe_size, ddb_size, plane_size, plane_cnt;
+	u16 start, end;
+	enum pipe pipe;
+	enum plane_id plane;
+	int i = 0;
+	int num_active = hweight32(active_crtcs);
+
+	if (!num_active)
+		return;
+
+	ddb_size = INTEL_INFO(dev_priv)->ddb_size;
+	ddb_size -= 4; /* 4 blocks for bypass path allocation */
+	pipe_size = ddb_size / num_active;
+
+	for_each_pipe_masked(dev_priv, pipe, active_crtcs) {
+		start = pipe_size * (i++);
+		end = start + pipe_size;
+		pipe_info[pipe].pipe_ddb.start = start;
+		pipe_info[pipe].pipe_ddb.end = end;
+
+		pipe_info[pipe].plane_ddb_y[PLANE_CURSOR].start = end - 8;
+		pipe_info[pipe].plane_ddb_y[PLANE_CURSOR].end = end;
+
+		plane_cnt = (info->num_sprites[pipe] + 1);
+		plane_size = (pipe_size - 8) / plane_cnt;
+
+		for_each_universal_plane(dev_priv, pipe, plane) {
+			pipe_info[pipe].plane_ddb_y[plane].start = start +
+				(plane * (pipe_size - 8) / plane_cnt);
+			pipe_info[pipe].plane_ddb_y[plane].end =
+				pipe_info[pipe].plane_ddb_y[plane].start + plane_size;
+		}
+	}
+}
+
 /**
  * intel_gvt_clean_device - clean a GVT device
  * @dev_priv: i915 private
@@ -366,6 +414,8 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
 		gvt_err("failed to init vgpu type groups: %d\n", ret);
 		goto out_clean_types;
 	}
+
+	intel_gvt_init_pipe_info(gvt);
 
 	vgpu = intel_gvt_create_idle_vgpu(gvt);
 	if (IS_ERR(vgpu)) {

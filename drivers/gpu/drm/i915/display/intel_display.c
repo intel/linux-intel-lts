@@ -13378,6 +13378,12 @@ static void verify_wm_state(struct intel_crtc *crtc,
 	if (INTEL_GEN(dev_priv) < 9 || !new_crtc_state->hw.active)
 		return;
 
+	/* For the VGPU scenario based on Linux this is skipped as Dom0
+	 * ignores the WM setting from Guest.
+	 */
+	if (intel_vgpu_active(dev_priv))
+		return;
+
 	hw = kzalloc(sizeof(*hw), GFP_KERNEL);
 	if (!hw)
 		return;

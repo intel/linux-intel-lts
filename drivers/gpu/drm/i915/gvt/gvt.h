@@ -298,6 +298,17 @@ struct intel_vgpu_type {
 	enum intel_vgpu_edid resolution;
 };
 
+struct intel_gvt_pipe_info {
+	enum pipe pipe_num;
+	int owner;
+	struct intel_gvt *gvt;
+	struct work_struct vblank_work;
+	int plane_owner[I915_MAX_PLANES];
+	struct skl_ddb_entry plane_ddb_y[I915_MAX_PLANES];
+	struct skl_ddb_entry plane_ddb_uv[I915_MAX_PLANES];
+	struct skl_ddb_entry pipe_ddb;
+};
+
 struct intel_gvt {
 	/* GVT scope lock, protect GVT itself, and all resource currently
 	 * not yet protected by special locks(vgpu and scheduler lock).
@@ -330,6 +341,8 @@ struct intel_gvt {
 	 * use it with atomic bit ops so that no need to use gvt big lock.
 	 */
 	unsigned long service_request;
+
+	struct intel_gvt_pipe_info pipe_info[I915_MAX_PIPES];
 
 	struct {
 		struct engine_mmio *mmio;
@@ -579,6 +592,7 @@ struct intel_gvt_ops {
 	void (*emulate_hotplug)(struct intel_vgpu *vgpu, bool connected);
 };
 
+void intel_gvt_allocate_ddb(struct intel_gvt *gvt, unsigned int active_crtcs);
 
 enum {
 	GVT_FAILSAFE_UNSUPPORTED_GUEST,
