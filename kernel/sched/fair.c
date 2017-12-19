@@ -7060,17 +7060,23 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 			struct root_domain *rd = cpu_rq(cpu)->rd;
 			struct perf_domain *pd = rcu_dereference(rd->pd);
 
-			if (pd && !READ_ONCE(rd->overutilized)) {
-				new_cpu = find_energy_efficient_cpu(p, prev_cpu, pd, sync);
-				goto unlock;
-			}
+			if (!pd || READ_ONCE(rd->overutilized))
+				goto affine;
+
+			if (schedtune_prefer_idle(p) && !sched_feat(EAS_PREFER_IDLE) && !sync)
+				goto sd_loop;
+
+			new_cpu = find_energy_efficient_cpu(p, prev_cpu, pd, sync);
+			goto unlock;
 		}
 
+affine:
 		want_affine = !wake_wide(p, sibling_count_hint) &&
 			      !wake_cap(p, cpu, prev_cpu) &&
 			      cpumask_test_cpu(cpu, &p->cpus_allowed);
 	}
 
+sd_loop:
 	for_each_domain(cpu, tmp) {
 		if (!(tmp->flags & SD_LOAD_BALANCE))
 			break;
