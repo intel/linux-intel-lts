@@ -671,7 +671,9 @@ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 	INIT_DELAYED_WORK(&skl->d0i3.work, bxt_set_dsp_D0i3);
 	skl->d0i3.state = SKL_DSP_D0I3_NONE;
 
-	return 0;
+	ret = post_init(sst, &skl_dev);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(bxt_sst_dsp_init);
 

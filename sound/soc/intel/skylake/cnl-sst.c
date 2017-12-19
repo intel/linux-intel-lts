@@ -812,6 +812,10 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 	if (dsp)
 		*dsp = cnl;
 
+	ret = post_init(sst, &cnl_dev);
+	if (ret < 0)
+		return ret;
+
 	ret = cnl_load_base_firmware(sst);
 	if (ret < 0) {
 		dev_err(dev, "Load base fw failed: %d", ret);
@@ -832,7 +836,7 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
 	}
 #endif
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(cnl_sst_dsp_init);
 
