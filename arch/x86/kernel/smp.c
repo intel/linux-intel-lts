@@ -125,34 +125,6 @@ static inline void store_regs(struct pt_regs *regs)
 	print_regs = &get_cpu_var(cpu_regs);
 	crash_setup_regs(print_regs, regs);
 
-	pr_emerg("Dump register value r15: %016llx\n", print_regs->r15);
-	pr_emerg("Dump register value r14: %016llx\n", print_regs->r14);
-	pr_emerg("Dump register value r13: %016llx\n", print_regs->r13);
-	pr_emerg("Dump register value r12: %016llx\n", print_regs->r12);
-
-	pr_emerg("Dump register value r11: %016llx\n", print_regs->r11);
-	pr_emerg("Dump register value r10: %016llx\n", print_regs->r10);
-	pr_emerg("Dump register value bp: %016llx\n", print_regs->bp);
-	pr_emerg("Dump register value bx: %016llx\n", print_regs->bx);
-
-	pr_emerg("Dump register value ax: %016llx\n", print_regs->ax);
-	pr_emerg("Dump register value cx: %016llx\n", print_regs->cx);
-	pr_emerg("Dump register value dx: %016llx\n", print_regs->dx);
-	pr_emerg("Dump register value si: %016llx\n", print_regs->si);
-
-	pr_emerg("Dump register value di: %016llx\n", print_regs->di);
-	pr_emerg("Dump register value orig_ax: %016llx\n", print_regs->orig_ax);
-	pr_emerg("Dump register value ip: %016llx\n", print_regs->ip);
-	pr_emerg("Dump register value cs: %016llx\n", print_regs->cs);
-
-	pr_emerg("Dump register value flags: %016llx\n", print_regs->flags);
-	pr_emerg("Dump register value sp: %016llx\n", print_regs->sp);
-	pr_emerg("Dump register value ss: %016llx\n", print_regs->ss);
-	pr_emerg("Dump register value r8: %016llx\n", print_regs->r8);
-
-	pr_emerg("Dump register value r9: %016llx\n", print_regs->r9);
-
-
 	/* Flush CPU cache */
 	wbinvd();
 }
