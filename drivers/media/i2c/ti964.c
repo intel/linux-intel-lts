@@ -522,12 +522,6 @@ static int ti964_registered(struct v4l2_subdev *subdev)
 		if (rval)
 			return rval;
 
-		/* Config FSIN GPIO */
-		rval = ti964_fsin_gpio_init(va, info->rx_port,
-				va->sub_devs[k].fsin_gpio);
-		if (rval)
-			return rval;
-
 		adapter = i2c_get_adapter(info->i2c_adapter_id);
 		va->sub_devs[k].sd = v4l2_i2c_new_subdev_board(
 			va->sd.v4l2_dev, adapter,
@@ -789,6 +783,25 @@ static int ti964_find_subdev_index(struct ti964 *va, struct v4l2_subdev *sd)
 	return -EINVAL;
 }
 
+static int ti964_set_frame_sync(struct ti964 *va, int enable)
+{
+	int i, rval;
+	int index = !!enable;
+
+	for (i = 0; i < ARRAY_SIZE(ti964_frame_sync_settings[index]); i++) {
+		rval = regmap_write(va->regmap8,
+				ti964_frame_sync_settings[index][i].reg,
+				ti964_frame_sync_settings[index][i].val);
+		if (rval) {
+			dev_err(va->sd.dev, "Failed to %s frame sync\n",
+				enable ? "enable" : "disable");
+			return rval;
+		}
+	}
+
+	return 0;
+}
+
 static int ti964_set_stream(struct v4l2_subdev *subdev, int enable)
 {
 	struct ti964 *va = to_ti964(subdev);
@@ -871,6 +884,26 @@ static int ti964_set_stream(struct v4l2_subdev *subdev, int enable)
 				"Failed to set stream for %s. enable  %d\n",
 				sd->name, enable);
 			return rval;
+		}
+
+		rval = ti964_set_frame_sync(va, enable);
+		if (rval) {
+			dev_err(va->sd.dev,
+				"Failed to set frame sync.\n");
+			return rval;
+		}
+
+		for (i = 0; i < NR_OF_TI964_SINK_PADS; i++) {
+			if (enable && test_bit(i, rx_port_enabled)) {
+				rval = ti964_fsin_gpio_init(va,
+						va->sub_devs[i].rx_port,
+						va->sub_devs[i].fsin_gpio);
+				if (rval) {
+					dev_err(va->sd.dev,
+						"Failed to enable frame sync gpio init.\n");
+					return rval;
+				}
+			}
 		}
 
 		for (i = 0; i < NR_OF_TI964_SINK_PADS; i++) {
@@ -1078,13 +1111,6 @@ static int ti964_init(struct ti964 *va)
 	rval = ti964_map_subdevs_addr(va);
 	if (rval)
 		return rval;
-
-	for (i = 0; i < NR_OF_TI964_SINK_PADS; i++) {
-		rval = ti964_fsin_gpio_init(va, va->sub_devs[i].rx_port,
-					va->sub_devs[i].fsin_gpio);
-		if (rval)
-			return rval;
-	}
 
 	return 0;
 }
