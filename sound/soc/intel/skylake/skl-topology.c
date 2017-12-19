@@ -3791,9 +3791,7 @@ static int skl_tplg_get_token(struct device *dev,
 	case SKL_TKN_U32_MAX_MCPS:
 	case SKL_TKN_U32_OBS:
 	case SKL_TKN_U32_IBS:
-		ret = skl_tplg_fill_res_tkn(dev, tkn_elem, res,
-				dir, pin_index);
-
+		ret = skl_tplg_fill_res_tkn(dev, tkn_elem, res, pin_index, dir);
 		if (ret < 0)
 			return ret;
 
@@ -4609,6 +4607,34 @@ static int skl_tplg_get_int_tkn(struct device *dev,
 							tkn_elem->value;
 		break;
 
+	case SKL_TKN_U32_SCH_TYPE:
+		skl->cfg.sch_cfg.type = tkn_elem->value;
+		break;
+
+	case SKL_TKN_U32_SCH_SIZE:
+		skl->cfg.sch_cfg.length = tkn_elem->value;
+		break;
+
+	case SKL_TKN_U32_SCH_SYS_TICK_MUL:
+		skl->cfg.sch_cfg.sys_tick_mul = tkn_elem->value;
+		break;
+
+	case SKL_TKN_U32_SCH_SYS_TICK_DIV:
+		skl->cfg.sch_cfg.sys_tick_div = tkn_elem->value;
+		break;
+
+	case SKL_TKN_U32_SCH_SYS_TICK_LL_SRC:
+		skl->cfg.sch_cfg.sys_tick_ll_src = tkn_elem->value;
+		break;
+
+	case SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN:
+		skl->cfg.sch_cfg.sys_tick_cfg_len = tkn_elem->value;
+		break;
+
+	case SKL_TKN_U32_SCH_SYS_TICK_CFG:
+		skl->cfg.sch_cfg.sys_tick_cfg = tkn_elem->value;
+		break;
+
 	case SKL_TKN_U8_IN_PIN_TYPE:
 	case SKL_TKN_U8_OUT_PIN_TYPE:
 	case SKL_TKN_U8_IN_QUEUE_COUNT:
@@ -4959,6 +4985,22 @@ static int skl_tplg_create_pipe_widget_list(struct snd_soc_platform *platform)
 	}
 
 	return 0;
+}
+
+void skl_tplg_fw_cfg_set(struct skl *skl)
+{
+	/* Set DMA buffer configuration */
+	if (skl->cfg.dmacfg.size)
+		skl_ipc_set_fw_cfg(&skl->skl_sst->ipc, SKL_INSTANCE_ID,
+			SKL_BASE_FW_MODULE_ID, (u32 *)(&skl->cfg.dmacfg));
+
+	/* set scheduler config if available */
+	if (skl->cfg.sch_cfg.length)
+		skl_ipc_set_fw_cfg(&skl->skl_sst->ipc, SKL_INSTANCE_ID,
+			SKL_BASE_FW_MODULE_ID, (u32 *)(&skl->cfg.sch_cfg));
+
+	/* Set DMA clock controls */
+	skl_dsp_set_dma_clk_controls(skl->skl_sst);
 }
 
 static void skl_tplg_set_pipe_type(struct skl *skl, struct skl_pipe *pipe)

@@ -1149,10 +1149,14 @@ handle_impl_def_interrupts:
 		goto ack_interrupts;
 
 	intr_status = kzalloc(sizeof(*intr_status), GFP_KERNEL);
+	if (!intr_status)
+		return -ENOMEM;
 
 	portn_stat = kzalloc((sizeof(*portn_stat)) *
 				sdw_slv->sdw_slv_cap.num_of_sdw_ports,
 				GFP_KERNEL);
+	if (!portn_stat)
+		return -ENOMEM;
 
 	intr_status->portn_stat = portn_stat;
 	intr_status->control_port_stat = control_port_stat;
@@ -2081,6 +2085,9 @@ int sdw_register_slave_capabilities(struct sdw_slave *sdw,
 	slv_cap->sdw_dpn_cap = devm_kzalloc(&sdw->dev,
 			((sizeof(struct sdw_slv_dpn_capabilities)) *
 			cap->num_of_sdw_ports), GFP_KERNEL);
+	if (!slv_cap->sdw_dpn_cap)
+		return -ENOMEM;
+
 	for (i = 0; i < cap->num_of_sdw_ports; i++) {
 		dpn_cap = &cap->sdw_dpn_cap[i];
 		slv_dpn_cap = &slv_cap->sdw_dpn_cap[i];
@@ -2136,6 +2143,9 @@ int sdw_register_slave_capabilities(struct sdw_slave *sdw,
 		slv_dpn_cap->mode_properties = devm_kzalloc(&sdw->dev,
 				((sizeof(struct port_audio_mode_properties)) *
 				dpn_cap->num_audio_modes), GFP_KERNEL);
+		if (!slv_dpn_cap->mode_properties)
+			return -ENOMEM;
+
 		for (j = 0; j < dpn_cap->num_audio_modes; j++) {
 			prop = &dpn_cap->mode_properties[j];
 			slv_prop = &slv_dpn_cap->mode_properties[j];
