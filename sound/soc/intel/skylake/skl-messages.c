@@ -394,26 +394,25 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 
 	host_cpr_cfg = kzalloc(sizeof(*host_cpr_cfg), GFP_KERNEL);
 	if (!host_cpr_cfg) {
-		ret = -ENOMEM;
-		goto error;
+		return -ENOMEM;
 	}
 
 	link_cpr_cfg = kzalloc(sizeof(*link_cpr_cfg), GFP_KERNEL);
 	if (!link_cpr_cfg) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_host_cpr_cfg;
 	}
 
 	host_cpr_mod = kzalloc(sizeof(*host_cpr_mod), GFP_KERNEL);
 	if (!host_cpr_mod) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_link_cpr_cfg;
 	}
 
 	link_cpr_mod = kzalloc(sizeof(*link_cpr_mod), GFP_KERNEL);
 	if (!link_cpr_mod) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_host_cpr_mod;
 	}
 
 	link_cpr_cfg->module = link_cpr_mod;
@@ -433,7 +432,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 	host_cpr_pipe = kzalloc(sizeof(struct skl_pipe), GFP_KERNEL);
 	if (!host_cpr_pipe) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_link_cpr_mod;
 	}
 
 	host_cpr_cfg->fmt_idx = 0;
@@ -452,7 +451,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 
 	ret = skl_create_pipeline(ctx, host_cpr_cfg->pipe);
 	if (ret < 0)
-		goto error;
+		goto free_host_cpr_pipe;
 
 	host_cpr_params.host_dma_id = (bra_data->pb_stream_tag - 1);
 	host_cpr_params.link_dma_id = 0;
@@ -467,8 +466,10 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 	host_cpr_cfg->id.instance_id = 1;
 	host_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
 		(uuid_le *)host_cpr_cfg->guid, host_cpr_cfg->id.instance_id);
-	if (host_cpr_cfg->id.pvt_id < 0)
-		return -EINVAL;
+	if (host_cpr_cfg->id.pvt_id < 0) {
+		ret = -EINVAL;
+		goto error_delete_pipeline;
+	}
 
 	host_cpr_cfg->module->resources[0].cps = 100000;
 	host_cpr_cfg->module->resources[0].is_pages = 0;
@@ -512,7 +513,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 					GFP_KERNEL);
 	if (!host_cpr_cfg->m_in_pin) {
 		ret =  -ENOMEM;
-		goto error;
+		goto error_delete_pipeline;
 	}
 
 	host_cpr_cfg->m_out_pin = kcalloc(host_cpr_cfg->module->max_output_pins,
@@ -520,7 +521,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 					GFP_KERNEL);
 	if (!host_cpr_cfg->m_out_pin) {
 		ret =  -ENOMEM;
-		goto error;
+		goto free_host_m_in_pin;
 	}
 
 	host_cpr_cfg->m_in_pin[0].id.module_id =
@@ -547,8 +548,10 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 	link_cpr_cfg->id.instance_id = 2;
 	link_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
 		(uuid_le *)link_cpr_cfg->guid, link_cpr_cfg->id.instance_id);
-	if (link_cpr_cfg->id.pvt_id < 0)
-		return -EINVAL;
+	if (link_cpr_cfg->id.pvt_id < 0) {
+		ret -EINVAL;
+		goto free_host_m_out_pin;
+	}
 
 	link_cpr_cfg->dev_type = SKL_DEVICE_SDW_PCM;
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
@@ -563,7 +566,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 					GFP_KERNEL);
 	if (!link_cpr_cfg->m_in_pin) {
 		ret =  -ENOMEM;
-		goto error;
+		goto free_host_m_out_pin;
 	}
 
 	link_cpr_cfg->m_out_pin = kcalloc(link_cpr_cfg->module->max_output_pins,
@@ -571,7 +574,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 					GFP_KERNEL);
 	if (!link_cpr_cfg->m_out_pin) {
 		ret =  -ENOMEM;
-		goto error;
+		goto free_link_m_in_pin ;
 	}
 
 	link_cpr_cfg->m_in_pin[0].id.module_id =
@@ -595,7 +598,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 			GFP_KERNEL);
 	if (!link_cpr_cfg->formats_config.caps) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_link_m_out_pin;
 	}
 
 	link_cpr_cfg->formats_config.caps[0] = 0x0;
@@ -624,15 +627,27 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 
 error:
 	/* Free up all memory allocated */
-	kfree(host_cpr_cfg->m_in_pin);
-	kfree(host_cpr_cfg->m_out_pin);
-	kfree(link_cpr_cfg->m_in_pin);
-	kfree(link_cpr_cfg->m_out_pin);
 	kfree(link_cpr_cfg->formats_config.caps);
-	kfree(host_cpr_cfg);
-	kfree(link_cpr_cfg);
-	kfree(host_cpr_mod);
+free_link_m_out_pin:
+	kfree(link_cpr_cfg->m_out_pin);
+free_link_m_in_pin:
+	kfree(link_cpr_cfg->m_in_pin);
+free_host_m_out_pin:
+	kfree(host_cpr_cfg->m_out_pin);
+free_host_m_in_pin:
+	kfree(host_cpr_cfg->m_in_pin);
+error_delete_pipeline:
+	skl_delete_pipe(ctx, host_cpr_cfg->pipe);
+free_host_cpr_pipe:
+	kfree(host_cpr_pipe);
+free_link_cpr_mod:
 	kfree(link_cpr_mod);
+free_host_cpr_mod:
+	kfree(host_cpr_mod);
+free_link_cpr_cfg:
+	kfree(link_cpr_cfg);
+free_host_cpr_cfg:
+	kfree(host_cpr_cfg);
 
 	return ret;
 }
@@ -652,26 +667,25 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 
 	link_cpr_cfg = kzalloc(sizeof(*link_cpr_cfg), GFP_KERNEL);
 	if (!link_cpr_cfg) {
-		ret = -ENOMEM;
-		goto error;
+		return -ENOMEM;
 	}
 
 	host_cpr_cfg = kzalloc(sizeof(*host_cpr_cfg), GFP_KERNEL);
 	if (!host_cpr_cfg) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_link_cpr_cfg;
 	}
 
 	host_cpr_mod = kzalloc(sizeof(*host_cpr_mod), GFP_KERNEL);
 	if (!host_cpr_mod) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_host_cpr_cfg;
 	}
 
 	link_cpr_mod = kzalloc(sizeof(*link_cpr_mod), GFP_KERNEL);
 	if (!link_cpr_mod) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_host_cpr_mod;
 	}
 
 	link_cpr_cfg->module = link_cpr_mod;
@@ -692,7 +706,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 	link_cpr_pipe = kzalloc(sizeof(struct skl_pipe), GFP_KERNEL);
 	if (!link_cpr_pipe) {
 		ret = -ENOMEM;
-		goto error;
+		goto free_link_cpr_mod;
 	}
 
 	link_cpr_cfg->fmt_idx = 0;
@@ -711,7 +725,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 	/* Create Capture Pipeline */
 	ret = skl_create_pipeline(ctx, link_cpr_cfg->pipe);
 	if (ret < 0)
-		goto error;
+		goto free_link_cpr_pipe;
 
 	link_cpr_params.host_dma_id = 0;
 	link_cpr_params.link_dma_id = 0;
@@ -726,8 +740,10 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 	link_cpr_cfg->id.instance_id = 3;
 	link_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
 		(uuid_le *)link_cpr_cfg->guid, link_cpr_cfg->id.instance_id);
-	if (link_cpr_cfg->id.pvt_id < 0)
-		return -EINVAL;
+	if (link_cpr_cfg->id.pvt_id < 0) {
+		ret = -EINVAL;
+		goto error_delete_pipeline;
+	}
 
 	link_cpr_cfg->module->resources[0].cps = 100000;
 	link_cpr_cfg->module->resources[0].is_pages = 0;
@@ -757,7 +773,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 			GFP_KERNEL);
 	if (!link_cpr_cfg->formats_config.caps) {
 		ret = -ENOMEM;
-		goto error;
+		goto error_delete_pipeline;
 	}
 
 	link_cpr_cfg->formats_config.caps[0] = 0x0;
@@ -792,7 +808,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 					GFP_KERNEL);
 	if (!link_cpr_cfg->m_in_pin) {
 		ret =  -ENOMEM;
-		goto error;
+		goto free_caps;
 	}
 
 	link_cpr_cfg->m_out_pin = kcalloc(link_cpr_cfg->module->max_output_pins,
@@ -800,7 +816,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 					GFP_KERNEL);
 	if (!link_cpr_cfg->m_out_pin) {
 		ret =  -ENOMEM;
-		goto error;
+		goto free_link_m_in_pin;
 	}
 
 	link_cpr_cfg->m_in_pin[0].id.module_id =
@@ -827,9 +843,10 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 	host_cpr_cfg->id.instance_id = 4;
 	host_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
 		(uuid_le *)host_cpr_cfg->guid, host_cpr_cfg->id.instance_id);
-	if (host_cpr_cfg->id.pvt_id < 0)
-		return -EINVAL;
-
+	if (host_cpr_cfg->id.pvt_id < 0) {
+		ret -EINVAL;
+		goto free_link_m_out_pin;
+	}
 	host_cpr_cfg->dev_type = SKL_DEVICE_HDAHOST;
 	host_cpr_cfg->hw_conn_type = SKL_CONN_SINK;
 	link_cpr_params.host_dma_id = (bra_data->cp_stream_tag - 1);
@@ -840,7 +857,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 					GFP_KERNEL);
 	if (!host_cpr_cfg->m_in_pin) {
 		ret =  -ENOMEM;
-		goto error;
+		goto free_link_m_out_pin;
 	}
 
 	host_cpr_cfg->m_out_pin = kcalloc(host_cpr_cfg->module->max_output_pins,
@@ -848,7 +865,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 					GFP_KERNEL);
 	if (!host_cpr_cfg->m_out_pin) {
 		ret =  -ENOMEM;
-		goto error;
+		goto free_host_m_in_pin;
 	}
 
 	host_cpr_cfg->m_in_pin[0].id.module_id =
@@ -882,18 +899,28 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 	if (ret < 0)
 		goto error;
 
-
 error:
-	/* Free up all memory allocated */
-	kfree(link_cpr_cfg->formats_config.caps);
-	kfree(link_cpr_cfg->m_in_pin);
-	kfree(link_cpr_cfg->m_out_pin);
-	kfree(host_cpr_cfg->m_in_pin);
 	kfree(host_cpr_cfg->m_out_pin);
-	kfree(link_cpr_cfg);
-	kfree(host_cpr_cfg);
-	kfree(host_cpr_mod);
+free_host_m_in_pin:
+	kfree(host_cpr_cfg->m_in_pin);
+free_link_m_out_pin:
+	kfree(link_cpr_cfg->m_out_pin);
+free_link_m_in_pin:
+	kfree(link_cpr_cfg->m_in_pin);
+free_caps:
+	kfree(link_cpr_cfg->formats_config.caps);
+error_delete_pipeline:
+	ret = skl_delete_pipe(ctx, link_cpr_cfg->pipe);
+free_link_cpr_pipe:
+	kfree(link_cpr_pipe);
+free_link_cpr_mod:
 	kfree(link_cpr_mod);
+free_host_cpr_mod:
+	kfree(host_cpr_mod);
+free_host_cpr_cfg:
+	kfree(host_cpr_cfg);
+free_link_cpr_cfg:
+	kfree(link_cpr_cfg);
 	return ret;
 }
 
@@ -1336,13 +1363,10 @@ int skl_resume_dsp(struct skl *skl)
 
 	skl_dsp_enable_notification(skl->skl_sst, false);
 
-	/* Set DMA buffer configuration */
-	if (skl->cfg.dmacfg.size)
-		skl_ipc_set_dma_cfg(&skl->skl_sst->ipc, BXT_INSTANCE_ID,
-			BXT_BASE_FW_MODULE_ID, (u32 *)(&skl->cfg.dmacfg));
+	/* Set the FW config info from topology */
+	skl_tplg_fw_cfg_set(skl);
 
-	/* Set DMA clock controls */
-	return skl_dsp_set_dma_clk_controls(skl->skl_sst);
+	return ret;
 }
 
 enum skl_bitdepth skl_get_bit_depth(int params)
