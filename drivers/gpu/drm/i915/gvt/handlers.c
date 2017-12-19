@@ -441,18 +441,21 @@ static int pipeconf_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes)
 {
 	u32 data;
+	unsigned int pipe = SKL_PLANE_REG_TO_PIPE(offset);
+	struct intel_crtc *crtc = intel_get_crtc_for_pipe(
+		vgpu->gvt->dev_priv, pipe);
 
 	write_vreg(vgpu, offset, p_data, bytes);
 	data = vgpu_vreg(vgpu, offset);
 
-	if (data & PIPECONF_ENABLE)
+	if (data & PIPECONF_ENABLE) {
 		vgpu_vreg(vgpu, offset) |= I965_PIPECONF_ACTIVE;
-	else
+		if (crtc)
+			drm_crtc_vblank_get(&crtc->base);
+	} else {
 		vgpu_vreg(vgpu, offset) &= ~I965_PIPECONF_ACTIVE;
-	/* vgpu_lock already hold by emulate mmio r/w */
-	mutex_unlock(&vgpu->vgpu_lock);
-	intel_gvt_check_vblank_emulation(vgpu->gvt);
-	mutex_lock(&vgpu->vgpu_lock);
+	}
+
 	return 0;
 }
 
@@ -2815,6 +2818,7 @@ static int init_broadwell_mmio_info(struct intel_gvt *gvt)
 static int skl_plane_surf_write(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes)
 {
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 	unsigned int pipe = SKL_PLANE_REG_TO_PIPE(offset);
 	unsigned int plane = SKL_PLANE_REG_TO_PLANE(offset);
 	i915_reg_t reg_1ac = _MMIO(_REG_701AC(pipe, plane));
@@ -2823,6 +2827,11 @@ static int skl_plane_surf_write(struct intel_vgpu *vgpu, unsigned int offset,
 	write_vreg(vgpu, offset, p_data, bytes);
 	vgpu_vreg_t(vgpu, reg_1ac) = vgpu_vreg(vgpu, offset);
 
+	if ((vgpu_vreg_t(vgpu, PIPECONF(pipe)) & I965_PIPECONF_ACTIVE) &&
+			(vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id)) {
+		I915_WRITE(_MMIO(offset), vgpu_vreg(vgpu, offset));
+	}
+
 	set_bit(flip_event, vgpu->irq.flip_done_event[pipe]);
 	return 0;
 }
@@ -2830,7 +2839,15 @@ static int skl_plane_surf_write(struct intel_vgpu *vgpu, unsigned int offset,
 static int skl_plane_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes)
 {
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+	unsigned int pipe = SKL_PLANE_REG_TO_PIPE(offset);
+	unsigned int plane = SKL_PLANE_REG_TO_PLANE(offset);
+
 	write_vreg(vgpu, offset, p_data, bytes);
+	if ((vgpu_vreg_t(vgpu, PIPECONF(pipe)) & I965_PIPECONF_ACTIVE) &&
+			(vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id)) {
+		I915_WRITE(_MMIO(offset), vgpu_vreg(vgpu, offset));
+	}
 	return 0;
 }
 
@@ -2937,8 +2954,8 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 	MMIO_PLANES_DH(PLANE_AUX_DIST, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 	MMIO_PLANES_DH(PLANE_AUX_OFFSET, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 
-	MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, NULL);
-	MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, NULL);
+	MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, skl_plane_mmio_write);
+	MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 	MMIO_PLANES_DH(PLANE_NV12_BUF_CFG, D_SKL_PLUS, NULL, NULL);
 	MMIO_PLANES_DH(PLANE_BUF_CFG, D_SKL_PLUS, NULL, NULL);
 
