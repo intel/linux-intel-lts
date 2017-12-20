@@ -429,6 +429,11 @@ struct intel_connector {
 	struct delayed_work hdcp_check_work;
 	struct work_struct hdcp_prop_work;
 	struct work_struct hdcp_enable_work;
+
+	/* list of Revocated KSVs and their count from SRM blob Parsing */
+	unsigned int revocated_ksv_cnt;
+	u8 *revocated_ksv_list;
+	u32 srm_blob_id;
 };
 
 struct intel_digital_connector_state {
