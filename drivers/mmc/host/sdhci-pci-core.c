@@ -372,6 +372,9 @@ static int byt_emmc_probe_slot(struct sdhci_pci_slot *slot)
 		spt_read_drive_strength(slot->host);
 		slot->select_drive_strength = spt_select_drive_strength;
 	}
+	if (slot->chip->pdev->device == PCI_DEVICE_ID_INTEL_APL_EMMC) {
+		slot->host->mmc->caps2 |= MMC_CAP2_NO_SDIO | MMC_CAP2_NO_SD;
+	}
 	return 0;
 }
 
