@@ -10,6 +10,7 @@
 #include <drm/drm_hdcp.h>
 #include <linux/i2c.h>
 #include <linux/random.h>
+#include <uapi/linux/swab.h>
 
 #include "intel_drv.h"
 #include "i915_reg.h"
@@ -732,6 +733,10 @@ int intel_hdcp_init(struct intel_connector *connector,
 	if (ret)
 		return ret;
 
+	ret = drm_connector_attach_cp_srm_property(&connector->base);
+	if (ret)
+		return ret;
+
 	connector->hdcp_shim = hdcp_shim;
 	mutex_init(&connector->hdcp_mutex);
 	INIT_DELAYED_WORK(&connector->hdcp_check_work, intel_hdcp_check_work);
@@ -818,10 +823,151 @@ void intel_hdcp_atomic_pre_commit(struct drm_connector *connector,
 		intel_hdcp_disable(to_intel_connector(connector));
 }
 
+static u32 intel_hdcp_get_revocated_ksv_count(u8 *buf, u32 vrls_length)
+{
+	u32 parsed_bytes = 0, ksv_count = 0, vrl_ksv_cnt, vrl_sz;
+
+	do {
+		vrl_ksv_cnt = *buf;
+		ksv_count += vrl_ksv_cnt;
+
+		vrl_sz = (vrl_ksv_cnt * DRM_HDCP_KSV_LEN) + 1;
+		buf += vrl_sz;
+		parsed_bytes += vrl_sz;
+	} while (parsed_bytes < vrls_length);
+
+	return ksv_count;
+}
+
+static u32 intel_hdcp_get_revocated_ksvs(u8 *ksv_list, const u8 *buf,
+					u32 vrls_length)
+{
+	u32 parsed_bytes = 0, ksv_count = 0;
+	u32 vrl_ksv_cnt, vrl_ksv_sz, vrl_idx = 0;
+
+	do {
+		vrl_ksv_cnt = *buf;
+		vrl_ksv_sz = vrl_ksv_cnt * DRM_HDCP_KSV_LEN;
+
+		buf++;
+
+		DRM_INFO("vrl: %d, Revoked KSVs: %d\n", vrl_idx++,
+							vrl_ksv_cnt);
+		memcpy(ksv_list, buf, vrl_ksv_sz);
+
+		ksv_count += vrl_ksv_cnt;
+		ksv_list += vrl_ksv_sz;
+		buf += vrl_ksv_sz;
+
+		parsed_bytes += (vrl_ksv_sz + 1);
+	} while (parsed_bytes < vrls_length);
+
+	return ksv_count;
+}
+
+static int intel_hdcp_parse_srm(struct drm_connector *connector,
+				struct drm_property_blob *blob)
+{
+	struct intel_connector *intel_connector = to_intel_connector(connector);
+	struct cp_srm_header *header;
+	u32 vrl_length, ksv_count;
+	u8 *buf;
+
+	if (blob->length < (sizeof(struct cp_srm_header) +
+			    DRM_HDCP_1_4_VRL_LENGTH_SIZE +
+			    DRM_HDCP_1_4_DCP_SIG_SIZE)) {
+		DRM_ERROR("Invalid blob length\n");
+		return -EINVAL;
+	}
+
+	header = (struct cp_srm_header *)blob->data;
+
+	DRM_INFO("SRM ID: 0x%x, SRM Ver: 0x%x, SRM Gen No: 0x%x\n",
+				header->spec_indicator.srm_id,
+				__swab16(header->srm_version),
+				header->srm_gen_no);
+
+	WARN_ON(header->spec_indicator.reserved_hi ||
+			header->spec_indicator.reserved_lo);
+
+	if (header->spec_indicator.srm_id != DRM_HDCP_1_4_SRM_ID) {
+		DRM_ERROR("Invalid srm_id\n");
+		return -EINVAL;
+	}
+
+	buf = blob->data + sizeof(*header);
+
+	vrl_length = (*buf << 16 | *(buf + 1) << 8 | *(buf + 2));
+
+	if (blob->length < (sizeof(struct cp_srm_header) + vrl_length) ||
+		vrl_length < (DRM_HDCP_1_4_VRL_LENGTH_SIZE +
+			      DRM_HDCP_1_4_DCP_SIG_SIZE)) {
+		DRM_ERROR("Invalid blob length or vrl length\n");
+		return -EINVAL;
+	}
+
+	/* Length of the all vrls combined */
+	vrl_length -= (DRM_HDCP_1_4_VRL_LENGTH_SIZE +
+		       DRM_HDCP_1_4_DCP_SIG_SIZE);
+
+	if (!vrl_length) {
+		DRM_DEBUG("No vrl found\n");
+		return -EINVAL;
+	}
+
+	buf += DRM_HDCP_1_4_VRL_LENGTH_SIZE;
+
+
+	ksv_count = intel_hdcp_get_revocated_ksv_count(buf, vrl_length);
+	if (!ksv_count) {
+		DRM_INFO("Revocated KSV count is 0\n");
+		return 0;
+	}
+
+	kfree(intel_connector->revocated_ksv_list);
+	intel_connector->revocated_ksv_list = kzalloc(ksv_count *
+						DRM_HDCP_KSV_LEN, GFP_KERNEL);
+	if (!intel_connector->revocated_ksv_list) {
+		DRM_ERROR("Out of Memory\n");
+		return -ENOMEM;
+	}
+
+	if (intel_hdcp_get_revocated_ksvs(intel_connector->revocated_ksv_list,
+				      buf, vrl_length) != ksv_count) {
+		intel_connector->revocated_ksv_cnt = 0;
+		kfree(intel_connector->revocated_ksv_list);
+		return -EINVAL;
+	}
+
+	intel_connector->revocated_ksv_cnt = ksv_count;
+	return 0;
+}
+
+static void intel_hdcp_update_srm(struct drm_connector *connector,
+				  u32 srm_blob_id)
+{
+	struct intel_connector *intel_connector = to_intel_connector(connector);
+	struct drm_property_blob *blob;
+
+	blob = drm_property_lookup_blob(connector->dev, srm_blob_id);
+	if (!blob || !blob->data)
+		return;
+
+	if (!intel_hdcp_parse_srm(connector, blob))
+		intel_connector->srm_blob_id = srm_blob_id;
+
+	drm_property_blob_put(blob);
+}
+
 void intel_hdcp_atomic_commit(struct drm_connector *connector,
 			      struct drm_connector_state *new_state)
 {
+	struct intel_connector *intel_connector = to_intel_connector(connector);
 	uint64_t new_cp = new_state->content_protection;
+
+	if (new_state->cp_srm_blob_id &&
+		new_state->cp_srm_blob_id != intel_connector->srm_blob_id)
+		intel_hdcp_update_srm(connector, new_state->cp_srm_blob_id);
 
 	/* Enable hdcp if it's desired */
 	if (new_state->crtc && new_cp == DRM_MODE_CONTENT_PROTECTION_DESIRED)

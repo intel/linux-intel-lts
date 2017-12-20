@@ -38,4 +38,18 @@
 #define DRM_HDCP_DDC_BSTATUS			0x41
 #define DRM_HDCP_DDC_KSV_FIFO			0x43
 
+#define DRM_HDCP_1_4_SRM_ID			0x8
+#define DRM_HDCP_1_4_VRL_LENGTH_SIZE		3
+#define DRM_HDCP_1_4_DCP_SIG_SIZE		40
+
+struct cp_srm_header {
+	struct {
+		uint8_t reserved_hi:4;
+		uint8_t srm_id:4;
+		uint8_t reserved_lo;
+	} spec_indicator;
+	uint16_t srm_version;
+	uint8_t srm_gen_no;
+} __packed;
+
 #endif
