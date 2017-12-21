@@ -185,6 +185,45 @@ struct intel_digital_port *conn_to_dig_port(struct intel_connector *connector)
 	return enc_to_dig_port(&intel_attached_encoder(&connector->base)->base);
 }
 
+static inline void intel_hdcp_print_ksv(u8 *ksv)
+{
+	DRM_DEBUG_KMS("\t%#04x, %#04x, %#04x, %#04x, %#04x\n", *ksv,
+		      *(ksv + 1), *(ksv + 2), *(ksv + 3), *(ksv + 4));
+}
+
+/* Check if any of the KSV is revocated by DCP LLC through SRM table */
+static inline bool intel_hdcp_ksvs_revocated(struct intel_connector *connector,
+					     u8 *ksvs, u32 ksv_count)
+{
+	u32 rev_ksv_cnt = connector->revocated_ksv_cnt;
+	u8 *rev_ksv_list = connector->revocated_ksv_list;
+	u32 cnt, i, j;
+
+	/* If the Revocated ksv list is empty */
+	if (!rev_ksv_cnt || !rev_ksv_list)
+		return false;
+
+	for  (cnt = 0; cnt < ksv_count; cnt++) {
+		rev_ksv_list = connector->revocated_ksv_list;
+		for (i = 0; i < rev_ksv_cnt; i++) {
+			for (j = 0; j < DRM_HDCP_KSV_LEN; j++)
+				if (*(ksvs + j) != *(rev_ksv_list + j)) {
+					break;
+				} else if (j == (DRM_HDCP_KSV_LEN - 1)) {
+					DRM_DEBUG_KMS("Revocated KSV is ");
+					intel_hdcp_print_ksv(ksvs);
+					return true;
+				}
+			/* Move the offset to next KSV in the revocated list */
+			rev_ksv_list += DRM_HDCP_KSV_LEN;
+		}
+
+		/* Iterate to next ksv_offset */
+		ksvs += DRM_HDCP_KSV_LEN;
+	}
+	return false;
+}
+
 /* Implements Part 2 of the HDCP authorization procedure */
 static
 int intel_hdcp_auth_downstream(struct intel_connector *connector)
@@ -234,6 +273,11 @@ int intel_hdcp_auth_downstream(struct intel_connector *connector)
 	ret = shim->read_ksv_fifo(intel_dig_port, num_downstream, ksv_fifo);
 	if (ret)
 		return ret;
+
+	if (intel_hdcp_ksvs_revocated(connector, ksv_fifo, num_downstream)) {
+		DRM_ERROR("Revocated Ksv(s) in ksv_fifo\n");
+		return -EPERM;
+	}
 
 	/* Process V' values from the receiver */
 	for (i = 0; i < DRM_HDCP_V_PRIME_NUM_PARTS; i++) {
@@ -517,6 +561,11 @@ static int intel_hdcp_auth(struct intel_connector *connector)
 	if (i == tries) {
 		DRM_ERROR("HDCP failed, Bksv is invalid\n");
 		return -ENODEV;
+	}
+
+	if (intel_hdcp_ksvs_revocated(connector, bksv.shim, 1)) {
+		DRM_ERROR("BKSV is revocated\n");
+		return -EPERM;
 	}
 
 	I915_WRITE(PORT_HDCP_BKSVLO(port), bksv.reg[0]);
