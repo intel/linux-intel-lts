@@ -258,7 +258,17 @@ static struct pci_driver intel_lpss_pci_driver = {
 	},
 };
 
-module_pci_driver(intel_lpss_pci_driver);
+static int __init intel_lpss_pci_driver_init(void)
+{
+	return pci_register_driver(&intel_lpss_pci_driver);
+}
+fs_initcall_sync(intel_lpss_pci_driver_init);
+
+static void __exit intel_lpss_pci_driver_init_exit(void)
+{
+	pci_unregister_driver(&intel_lpss_pci_driver);
+}
+module_exit(intel_lpss_pci_driver_init_exit);
 
 MODULE_AUTHOR("Andy Shevchenko <andriy.shevchenko@linux.intel.com>");
 MODULE_AUTHOR("Mika Westerberg <mika.westerberg@linux.intel.com>");
