@@ -606,6 +606,9 @@ static int byt_emmc_probe_slot(struct sdhci_pci_slot *slot)
 		slot->host->timeout_clk = 1000; /* 1000 kHz i.e. 1 MHz */
 	slot->host->mmc_host_ops.select_drive_strength =
 						intel_select_drive_strength;
+	if (slot->chip->pdev->device == PCI_DEVICE_ID_INTEL_APL_EMMC) {
+		slot->host->mmc->caps2 |= MMC_CAP2_NO_SDIO | MMC_CAP2_NO_SD;
+	}
 	return 0;
 }
 
