@@ -5183,7 +5183,7 @@ intel_dp_add_properties(struct intel_dp *intel_dp, struct drm_connector *connect
 
 static void intel_dp_init_panel_power_timestamps(struct intel_dp *intel_dp)
 {
-	intel_dp->panel_power_off_time = ktime_get_boottime();
+	intel_dp->panel_power_off_time = ktime_set(0, 0);
 	intel_dp->last_power_on = jiffies;
 	intel_dp->last_backlight_off = jiffies;
 }
