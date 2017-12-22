@@ -1749,7 +1749,17 @@ static struct pci_driver sdhci_driver = {
 	},
 };
 
-module_pci_driver(sdhci_driver);
+static int __init sdhci_driver_init(void)
+{
+	return pci_register_driver(&sdhci_driver);
+}
+fs_initcall_sync(sdhci_driver_init);
+
+static void __exit sdhci_driver_exit(void)
+{
+	pci_unregister_driver(&sdhci_driver);
+}
+module_exit(sdhci_driver_exit);
 
 MODULE_AUTHOR("Pierre Ossman <pierre@ossman.eu>");
 MODULE_DESCRIPTION("Secure Digital Host Controller Interface PCI driver");
