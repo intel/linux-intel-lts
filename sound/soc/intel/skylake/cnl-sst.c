@@ -30,6 +30,7 @@
 #include <linux/sdw_bus.h>
 #include <linux/sdw/sdw_cnl.h>
 #include <asm/set_memory.h>
+#include <asm/cacheflush.h>
 
 #include "../common/sst-dsp.h"
 #include "../common/sst-dsp-priv.h"
@@ -137,6 +138,7 @@ static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata, u32 fwsize)
 	ctx->dsp_ops.stream_tag = stream_tag;
 	memcpy(ctx->dmab.area, fwdata, fwsize);
 
+	clflush_cache_range(ctx->dmab.area, fwsize);
 	/* purge FW request */
 	sst_dsp_shim_write(ctx, CNL_ADSP_REG_HIPCIDR,
 			   CNL_ADSP_REG_HIPCIDR_BUSY | (CNL_IPC_PURGE |
