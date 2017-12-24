@@ -22,6 +22,7 @@
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <uapi/sound/skl-tplg-interface.h>
+#include <linux/timer.h>
 #include <linux/delay.h>
 #include "skl-sst-dsp.h"
 #include "cnl-sst-dsp.h"
@@ -361,6 +362,38 @@ static int cnl_sdw_bra_pipe_trigger(struct skl_sst *ctx, bool enable,
 
 error:
 	return ret;
+}
+
+void skl_trigger_recovery(struct work_struct *work)
+{
+	struct skl_monitor *monitor_dsp = container_of(work,
+						struct skl_monitor, mwork);
+	struct skl *skl  = container_of(monitor_dsp,
+						struct skl, monitor_dsp);
+	const struct skl_dsp_ops *ops;
+
+	ops = skl_get_dsp_ops(skl->pci->device);
+
+	if (ops->do_recovery)
+		ops->do_recovery(skl);
+	return;
+
+}
+
+void skl_timer_cb(struct timer_list *t)
+{
+	struct skl *skl = from_timer(skl, t, monitor_dsp.timer);
+	struct skl_sst *ctx = skl->skl_sst;
+	const struct skl_dsp_ops *ops;
+
+	ops = skl_get_dsp_ops(skl->pci->device);
+	ctx->cores.state[SKL_DSP_CORE0_ID] = SKL_DSP_RESET;
+
+	if (ops->do_recovery) {
+		schedule_work(&skl->monitor_dsp.mwork);
+		del_timer(&skl->monitor_dsp.timer);
+	}
+
 }
 
 static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
