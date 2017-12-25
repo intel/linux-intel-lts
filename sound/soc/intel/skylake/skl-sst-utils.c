@@ -292,7 +292,21 @@ int skl_put_pvt_id(struct skl_sst *ctx, uuid_le *uuid_mod, int *pvt_id)
 }
 EXPORT_SYMBOL_GPL(skl_put_pvt_id);
 
+void skl_reset_instance_id(struct skl_sst *ctx)
+{
+	struct uuid_module *module;
+	int size, i;
 
+	list_for_each_entry(module, &ctx->uuid_list, list) {
+
+		for (i = 0; i < MAX_INSTANCE_BUFF; i++)
+			module->pvt_id[i] = 0;
+
+		size = sizeof(int) * module->max_instance;
+		memset(module->instance_id, -1, size);
+	}
+}
+EXPORT_SYMBOL_GPL(skl_reset_instance_id);
 
 int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 {
