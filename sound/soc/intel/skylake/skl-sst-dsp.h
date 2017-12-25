@@ -307,6 +307,7 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
 int skl_get_module_id(struct skl_sst *ctx, uuid_le *uuid_mod);
 int skl_get_pvt_id(struct skl_sst *ctx, uuid_le *uuid_mod, int instance_id);
 int skl_put_pvt_id(struct skl_sst *ctx, uuid_le *uuid_mod, int *pvt_id);
+void skl_reset_instance_id(struct skl_sst *ctx);
 int skl_get_pvt_instance_id_map(struct skl_sst *ctx,
 				int module_id, int instance_id);
 void skl_freeup_uuid_list(struct skl_sst *ctx);
