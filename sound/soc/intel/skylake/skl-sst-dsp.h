@@ -273,6 +273,7 @@ bool is_skl_dsp_running(struct sst_dsp *ctx);
 
 unsigned int skl_dsp_get_enabled_cores(struct sst_dsp *ctx);
 void skl_dsp_init_core_state(struct sst_dsp *ctx);
+void skl_dsp_reset_core_state(struct sst_dsp *ctx);
 int skl_dsp_enable_core(struct sst_dsp *ctx, unsigned int core_mask);
 int skl_dsp_disable_core(struct sst_dsp *ctx, unsigned int core_mask);
 int skl_dsp_core_power_up(struct sst_dsp *ctx, unsigned int core_mask);
