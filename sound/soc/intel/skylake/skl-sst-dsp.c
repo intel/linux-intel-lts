@@ -54,6 +54,18 @@ void skl_dsp_init_core_state(struct sst_dsp *ctx)
 	}
 }
 
+void skl_dsp_reset_core_state(struct sst_dsp *ctx)
+{
+	struct skl_sst *skl = ctx->thread_context;
+	int i;
+
+	for (i = 0; i < skl->cores.count; i++) {
+		skl->cores.state[i] = SKL_DSP_RESET;
+		skl->cores.usage_count[i] = 0;
+	}
+}
+EXPORT_SYMBOL_GPL(skl_dsp_reset_core_state);
+
 /* Get the mask for all enabled cores */
 unsigned int skl_dsp_get_enabled_cores(struct sst_dsp *ctx)
 {
