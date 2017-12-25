@@ -28,13 +28,6 @@
 #define SKL_DSP_PD_TO		50
 #define SKL_DSP_RESET_TO	50
 
-void skl_dsp_set_state_locked(struct sst_dsp *ctx, int state)
-{
-	mutex_lock(&ctx->mutex);
-	ctx->sst_state = state;
-	mutex_unlock(&ctx->mutex);
-}
-
 /*
  * Initialize core power state and usage count. To be called after
  * successful first boot. Hence core 0 will be running and other cores
@@ -504,6 +497,8 @@ EXPORT_SYMBOL_GPL(skl_dsp_free);
 
 bool is_skl_dsp_running(struct sst_dsp *ctx)
 {
-	return (ctx->sst_state == SKL_DSP_RUNNING);
+	struct skl_sst *skl_sst = ctx->thread_context;
+
+	return (skl_sst->cores.state[SKL_DSP_CORE0_ID] != SKL_DSP_RESET);
 }
 EXPORT_SYMBOL_GPL(is_skl_dsp_running);
