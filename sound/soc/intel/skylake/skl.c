@@ -768,9 +768,6 @@ static void skl_probe_work(struct work_struct *work)
 	list_for_each_entry(hlink, &ebus->hlink_list, list)
 		snd_hdac_ext_bus_link_put(ebus, hlink);
 
-	/* init debugfs */
-	skl->debugfs = skl_debugfs_init(skl);
-
 	/* configure PM */
 	pm_runtime_put_noidle(bus->dev);
 	pm_runtime_allow(bus->dev);
