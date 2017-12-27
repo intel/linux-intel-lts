@@ -38,6 +38,10 @@
 
 #define RAMOOPS_KERNMSG_HDR "===="
 #define MIN_MEM_SIZE 4096UL
+#define DEFAULT_RECORD_SIZE 0X4000
+#define DEFAULT_CONSOLE_SIZE 0X200000
+#define DEFAULT_FTRACE_SIZE 0x2000
+#define DEFAULT_DUMP_OOPS 1
 
 static ulong record_size = MIN_MEM_SIZE;
 module_param(record_size, ulong, 0400);
@@ -688,7 +692,7 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 	pdata->mem_size = resource_size(res);
 	pdata->mem_address = res->start;
 	pdata->mem_type = of_property_read_bool(of_node, "unbuffered");
-	pdata->dump_oops = !of_property_read_bool(of_node, "no-dump-oops");
+	pdata->dump_oops = DEFAULT_DUMP_OOPS;
 
 #define parse_size(name, field) {					\
 		ret = ramoops_parse_dt_size(pdev, name, &value);	\
@@ -697,9 +701,9 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 		field = value;						\
 	}
 
-	parse_size("record-size", pdata->record_size);
-	parse_size("console-size", pdata->console_size);
-	parse_size("ftrace-size", pdata->ftrace_size);
+	pdata->record_size = DEFAULT_RECORD_SIZE;
+	pdata->console_size = DEFAULT_CONSOLE_SIZE;
+	pdata->ftrace_size = DEFAULT_FTRACE_SIZE;
 	parse_size("pmsg-size", pdata->pmsg_size);
 	parse_size("ecc-size", pdata->ecc_info.ecc_size);
 	parse_size("flags", pdata->flags);
