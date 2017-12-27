@@ -116,12 +116,26 @@
 static atomic_t stopping_cpu = ATOMIC_INIT(-1);
 static bool smp_no_nmi_ipi = false;
 
+static DEFINE_PER_CPU(struct pt_regs, cpu_regs);
+
+/* Store regs of this CPU for RAM dump decoding help */
+static inline void store_regs(struct pt_regs *regs)
+{
+	struct pt_regs *print_regs;
+	print_regs = &get_cpu_var(cpu_regs);
+	crash_setup_regs(print_regs, regs);
+
+	/* Flush CPU cache */
+	wbinvd();
+}
+
 static int smp_stop_nmi_callback(unsigned int val, struct pt_regs *regs)
 {
 	/* We are registered on stopping cpu too, avoid spurious NMI */
 	if (raw_smp_processor_id() == atomic_read(&stopping_cpu))
 		return NMI_HANDLED;
 
+	store_regs(regs);
 	cpu_emergency_disable_virtualization();
 	stop_this_cpu(NULL);
 
@@ -134,6 +148,7 @@ static int smp_stop_nmi_callback(unsigned int val, struct pt_regs *regs)
 DEFINE_IDTENTRY_SYSVEC(sysvec_reboot)
 {
 	ack_APIC_irq();
+	store_regs(regs);
 	cpu_emergency_disable_virtualization();
 	stop_this_cpu(NULL);
 }
@@ -212,6 +227,7 @@ static void native_stop_other_cpus(int wait)
 			udelay(1);
 	}
 
+	store_regs(NULL);
 	local_irq_save(flags);
 	disable_local_APIC();
 	mcheck_cpu_clear(this_cpu_ptr(&cpu_info));
