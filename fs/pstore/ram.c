@@ -26,6 +26,10 @@
 
 #define RAMOOPS_KERNMSG_HDR "===="
 #define MIN_MEM_SIZE 4096UL
+#define DEFAULT_RECORD_SIZE 0X4000
+#define DEFAULT_CONSOLE_SIZE 0X200000
+#define DEFAULT_FTRACE_SIZE 0x2000
+#define DEFAULT_DUMP_OOPS 1
 
 static ulong record_size = MIN_MEM_SIZE;
 module_param(record_size, ulong, 0400);
@@ -666,10 +670,11 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 	 * Setting "no-dump-oops" is deprecated and will be ignored if
 	 * "max_reason" is also specified.
 	 */
-	if (of_property_read_bool(of_node, "no-dump-oops"))
+	/*if (of_property_read_bool(of_node, "no-dump-oops"))
 		pdata->max_reason = KMSG_DUMP_PANIC;
 	else
-		pdata->max_reason = KMSG_DUMP_OOPS;
+		pdata->max_reason = KMSG_DUMP_OOPS;*/
+	pdata->max_reason = DEFAULT_DUMP_OOPS;
 
 #define parse_u32(name, field, default_value) {				\
 		ret = ramoops_parse_dt_u32(pdev, name, default_value,	\
@@ -680,9 +685,9 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 	}
 
 	parse_u32("mem-type", pdata->mem_type, pdata->mem_type);
-	parse_u32("record-size", pdata->record_size, 0);
-	parse_u32("console-size", pdata->console_size, 0);
-	parse_u32("ftrace-size", pdata->ftrace_size, 0);
+	pdata->record_size = DEFAULT_RECORD_SIZE;
+	pdata->console_size = DEFAULT_CONSOLE_SIZE;
+	pdata->ftrace_size = DEFAULT_FTRACE_SIZE;
 	parse_u32("pmsg-size", pdata->pmsg_size, 0);
 	parse_u32("ecc-size", pdata->ecc_info.ecc_size, 0);
 	parse_u32("flags", pdata->flags, 0);
