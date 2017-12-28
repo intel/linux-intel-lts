@@ -2517,6 +2517,7 @@ static void skl_tplg_fill_dma_id(struct skl_module_cfg *mcfg,
 		pipe->p_params->s_freq = params->s_freq;
 		pipe->p_params->stream = params->stream;
 		pipe->p_params->format = params->format;
+		pipe->p_params->substream = params->substream;
 
 	} else {
 		memcpy(pipe->p_params, params, sizeof(*params));
