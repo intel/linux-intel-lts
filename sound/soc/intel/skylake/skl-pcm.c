@@ -189,6 +189,7 @@ int skl_pcm_host_dma_prepare(struct device *dev, struct skl_pipe_params *params)
 					params->host_dma_id + 1);
 	if (!hstream)
 		return -EINVAL;
+	hstream->substream = params->substream;
 
 	stream = stream_to_hdac_ext_stream(hstream);
 	snd_hdac_ext_stream_decouple(bus, stream, true);
@@ -373,6 +374,7 @@ static int skl_pcm_hw_params(struct snd_pcm_substream *substream,
 	p_params.host_dma_id = dma_id;
 	p_params.stream = substream->stream;
 	p_params.format = params_format(params);
+	p_params.substream = substream;
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		p_params.host_bps = dai->driver->playback.sig_bits;
 	else
