@@ -355,6 +355,7 @@ struct sst_dsp {
 	/* To allocate CL dma buffers */
 	struct skl_dsp_loader_ops dsp_ops;
 	struct skl_dsp_fw_ops fw_ops;
+	bool is_recovery;
 	struct skl_cl_dev cl_dev;
 	u32 intr_status;
 	const struct firmware *fw;

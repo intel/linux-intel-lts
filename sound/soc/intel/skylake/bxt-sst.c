@@ -680,6 +680,9 @@ int bxt_sst_init_fw(struct device *dev, struct skl_sst *ctx)
 	int ret;
 	struct sst_dsp *sst = ctx->dsp;
 
+	if (sst->is_recovery)
+		skl_dsp_disable_core(sst, SKL_DSP_CORE0_MASK);
+
 	ret = sst->fw_ops.load_fw(sst);
 	if (ret < 0) {
 		dev_err(dev, "Load base fw failed: %x\n", ret);

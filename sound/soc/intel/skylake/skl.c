@@ -389,6 +389,9 @@ static int skl_suspend(struct device *dev)
 	struct skl *skl  = bus_to_skl(bus);
 	int ret = 0;
 
+	if (skl->skl_sst->dsp->is_recovery)
+		return -EBUSY;
+
 	/*
 	 * Do not suspend if streams which are marked ignore suspend are
 	 * running, we need to save the state for these and continue
