@@ -292,15 +292,10 @@ static int set_reboot_target(const char *name)
 
 static const unsigned int DEFAULT_TARGET_INDEX;
 
-static const char * const cold_reset[] = {
-	"/vendor/bin/cansend",
-	"slcan0",
-	"0000FFFF#05035555555555",
-	NULL};
 static const char * const cold_reset_capsule[] = {
 	"/vendor/bin/cansend",
 	"slcan0",
-	"0000FFFF#05035555555555",
+	"0000FFFF#05025555555555",
 	NULL};
 static const char * const suppress_heartbeat[] = {
 	"/vendor/bin/cansend",
@@ -355,11 +350,6 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 		if (ret)
 			pr_err("%s: Failed to set reboot target, ret=%d\n",
 				__func__, ret);
-		else {
-			ret = execute_slcan_command((const char **)cold_reset);
-			if (ret)
-				goto done;
-		}
 	}
 	if (capsule_request)
 		ret = execute_slcan_command((const char **)cold_reset_capsule);
