@@ -1882,7 +1882,7 @@ bool intel_ddi_connector_get_hw_state(struct intel_connector *intel_connector)
 		goto out;
 	}
 
-	if (port == PORT_A)
+	if (port == PORT_A && !intel_vgpu_active(dev_priv))
 		cpu_transcoder = TRANSCODER_EDP;
 	else
 		cpu_transcoder = (enum transcoder) pipe;
@@ -3278,7 +3278,7 @@ static bool intel_ddi_compute_config(struct intel_encoder *encoder,
 	enum port port = encoder->port;
 	int ret;
 
-	if (port == PORT_A)
+	if (port == PORT_A && !intel_vgpu_active(dev_priv))
 		pipe_config->cpu_transcoder = TRANSCODER_EDP;
 
 	if (intel_crtc_has_type(pipe_config, INTEL_OUTPUT_HDMI))
