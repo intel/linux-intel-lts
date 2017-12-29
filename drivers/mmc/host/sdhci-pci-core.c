@@ -372,6 +372,9 @@ static int byt_emmc_probe_slot(struct sdhci_pci_slot *slot)
 		spt_read_drive_strength(slot->host);
 		slot->select_drive_strength = spt_select_drive_strength;
 	}
+	if (slot->chip->pdev->device == PCI_DEVICE_ID_INTEL_APL_EMMC) {
+		slot->host->mmc->caps2 |= MMC_CAP2_NO_SDIO | MMC_CAP2_NO_SD;
+	}
 	return 0;
 }
 
@@ -1919,7 +1922,17 @@ static struct pci_driver sdhci_driver = {
 	},
 };
 
-module_pci_driver(sdhci_driver);
+static int __init sdhci_driver_init(void)
+{
+	return pci_register_driver(&sdhci_driver);
+}
+fs_initcall_sync(sdhci_driver_init);
+
+static void __exit sdhci_driver_exit(void)
+{
+	pci_unregister_driver(&sdhci_driver);
+}
+module_exit(sdhci_driver_exit);
 
 MODULE_AUTHOR("Pierre Ossman <pierre@ossman.eu>");
 MODULE_DESCRIPTION("Secure Digital Host Controller Interface PCI driver");
