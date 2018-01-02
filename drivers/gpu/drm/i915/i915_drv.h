@@ -3172,6 +3172,8 @@ extern const struct dev_pm_ops i915_pm_ops;
 
 extern int i915_driver_load(struct pci_dev *pdev,
 			    const struct pci_device_id *ent);
+extern int i915_driver_load_async(struct pci_dev *pdev,
+			    const struct pci_device_id *ent);
 extern void i915_driver_unload(struct drm_device *dev);
 extern int intel_gpu_reset(struct drm_i915_private *dev_priv, u32 engine_mask);
 extern bool intel_has_gpu_reset(struct drm_i915_private *dev_priv);

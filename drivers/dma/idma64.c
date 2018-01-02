@@ -701,7 +701,17 @@ static struct platform_driver idma64_platform_driver = {
 	},
 };
 
-module_platform_driver(idma64_platform_driver);
+static int __init idma64_platform_driver_init(void)
+{
+	return platform_driver_register(&idma64_platform_driver);
+}
+fs_initcall(idma64_platform_driver_init);
+
+static void __exit idma64_platform_driver_exit(void)
+{
+	platform_driver_unregister(&idma64_platform_driver);
+}
+module_exit(idma64_platform_driver_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("iDMA64 core driver");
