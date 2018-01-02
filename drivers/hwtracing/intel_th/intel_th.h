@@ -308,7 +308,7 @@ enum {
 
 	/* Timestamp counter unit (TSCU) */
 	REG_TSCU_OFFSET		= 0x2000,
-	REG_TSCU_LENGTH		= 0x1000,
+	REG_TSCU_LENGTH		= 0x2000,
 
 	/* Software Trace Hub (STH) [0x4000..0x4fff] */
 	REG_STH_OFFSET		= 0x4000,
