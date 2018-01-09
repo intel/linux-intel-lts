@@ -193,8 +193,9 @@ check_name(struct dentry *direntry, struct cifs_tcon *tcon)
 	struct cifs_sb_info *cifs_sb = CIFS_SB(direntry->d_sb);
 	int i;
 
-	if (unlikely(direntry->d_name.len >
-		     tcon->fsAttrInfo.MaxPathNameComponentLength))
+	if (unlikely(tcon->fsAttrInfo.MaxPathNameComponentLength &&
+		     direntry->d_name.len >
+		     le32_to_cpu(tcon->fsAttrInfo.MaxPathNameComponentLength)))
 		return -ENAMETOOLONG;
 
 	if (!(cifs_sb->mnt_cifs_flags & CIFS_MOUNT_POSIX_PATHS)) {
@@ -509,7 +510,7 @@ cifs_atomic_open(struct inode *inode, struct dentry *direntry,
 
 	rc = check_name(direntry, tcon);
 	if (rc)
-		goto out_free_xid;
+		goto out;
 
 	server = tcon->ses->server;
 
