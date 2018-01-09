@@ -131,6 +131,7 @@ union ccp_function {
 #define	CCP_AES_MODE(p)		((p)->aes.mode)
 #define	CCP_AES_TYPE(p)		((p)->aes.type)
 #define	CCP_XTS_SIZE(p)		((p)->aes_xts.size)
+#define	CCP_XTS_TYPE(p)		((p)->aes_xts.type)
 #define	CCP_XTS_ENCRYPT(p)	((p)->aes_xts.encrypt)
 #define	CCP_SHA_TYPE(p)		((p)->sha.type)
 #define	CCP_RSA_SIZE(p)		((p)->rsa.size)
@@ -277,8 +278,7 @@ static int ccp5_perform_aes(struct ccp_op *op)
 	CCP_AES_ENCRYPT(&function) = op->u.aes.action;
 	CCP_AES_MODE(&function) = op->u.aes.mode;
 	CCP_AES_TYPE(&function) = op->u.aes.type;
-	if (op->u.aes.mode == CCP_AES_MODE_CFB)
-		CCP_AES_SIZE(&function) = 0x7f;
+	CCP_AES_SIZE(&function) = op->u.aes.size;
 
 	CCP5_CMD_FUNCTION(&desc) = function.raw;
 
@@ -318,6 +318,7 @@ static int ccp5_perform_xts_aes(struct ccp_op *op)
 	CCP5_CMD_PROT(&desc) = 0;
 
 	function.raw = 0;
+	CCP_XTS_TYPE(&function) = op->u.xts.type;
 	CCP_XTS_ENCRYPT(&function) = op->u.xts.action;
 	CCP_XTS_SIZE(&function) = op->u.xts.unit_size;
 	CCP5_CMD_FUNCTION(&desc) = function.raw;
