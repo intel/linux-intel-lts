@@ -100,6 +100,8 @@ static const char *const process_type_name[] = {
 
 struct mdd_transfer_data {
 	u8 *buffer;
+	u8 *buffer_sg;
+	size_t buffer_sg_len;
 	dma_addr_t buffer_dma;
 	size_t buffer_len;
 	struct scatterlist *sg_raw;
@@ -479,6 +481,12 @@ static int mdd_setup_transfer_data(struct msu_dvc_dev *mdd)
 			goto err_l_buf;
 		}
 	} else {
+		mdd->tdata.buffer_sg_len =
+		    mdd->tdata.block_count * mdd->tdata.block_size;
+		mdd->tdata.buffer_sg = kmalloc(mdd->tdata.buffer_sg_len, GFP_KERNEL);
+		if(mdd->tdata.buffer_sg == NULL)
+			mdd->tdata.buffer_sg_len = 0;
+
 		mdd->tdata.buffer = NULL;
 		mdd->tdata.buffer_dma = 0;
 		mdd->tdata.buffer_len = 0;
@@ -511,6 +519,12 @@ static void mdd_reset_transfer_data(struct msu_dvc_dev *mdd)
 		mdd->tdata.buffer_dma = 0;
 		mdd->tdata.buffer_len = 0;
 	}
+
+	if(mdd->tdata.buffer_sg != NULL)
+	{
+		mdd->tdata.buffer_sg_len = 0;
+		kfree(mdd->tdata.buffer_sg);
+	}
 }
 
 static unsigned mdd_sg_len(struct scatterlist *sgl, int nents)
@@ -526,9 +540,56 @@ static unsigned mdd_sg_len(struct scatterlist *sgl, int nents)
 	return ret;
 }
 
+static int mdd_send_sg_buffer(struct msu_dvc_dev *mdd, int nents)
+{
+	size_t transfer_len;
+
+	/*MDD_F_DEBUG(); */
+	mdd_lock_transfer(mdd);
+	transfer_len =
+	    sg_copy_to_buffer(mdd->tdata.sg_trans, nents, mdd->tdata.buffer_sg,
+			      mdd->tdata.buffer_sg_len);
+
+	if (!transfer_len) {
+		mdd_err(mdd, "Cannot copy into nonsg memory\n");
+		mdd_unlock_transfer(mdd);
+		return -EINVAL;
+	}
+
+	mdd->req->buf = mdd->tdata.buffer_sg;
+	mdd->req->length = transfer_len;
+	mdd->req->dma = 0;
+	mdd->req->sg = NULL;
+	mdd->req->num_sgs = 0;
+
+	mdd->req->context = mdd;
+	mdd->req->complete = mdd_complete;
+	mdd->req->zero = 1;
+
+	if (usb_ep_queue(mdd->ep, mdd->req, GFP_KERNEL)) {
+		mdd_err(mdd, "Cannot queue request\n");
+		dvct_set_status(mdd->dtc_status, DVCT_MASK_ERR);
+		mdd_unlock_transfer(mdd);
+		return -EINVAL;
+	}
+
+	atomic_set(&mdd->req_ongoing, 1);
+	mdd_unlock_transfer(mdd);
+	/*wait for done stop or disable */
+	wait_event(mdd->wq, (!atomic_read(&mdd->req_ongoing) ||
+			     (atomic_read(mdd->dtc_status) !=
+			      DVCT_MASK_ONLINE_TRANS)));
+	return 0;
+}
+
 static int mdd_send_sg(struct msu_dvc_dev *mdd, int nents)
 {
 	struct scatterlist *sgl = mdd->tdata.sg_trans;
+
+	if(mdd->tdata.buffer_sg != NULL)
+	{
+		return mdd_send_sg_buffer(mdd, nents);
+	}
 
 	/*MDD_F_DEBUG(); */
 	while (nents) {
