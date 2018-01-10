@@ -180,6 +180,17 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 
 			ipu_writel(EXIT, isp->base + ipc->csr_out);
 
+			/*
+			 * Read csr_in again to make sure if RST_PHASE2 is done.
+			 * If csr_in is QUERY, it should be handled again.
+			 */
+			usleep_range(100, 500);
+			val = ipu_readl(isp->base + ipc->csr_in);
+			if (val & QUERY) {
+				dev_dbg(&isp->pdev->dev, "%s: RST_PHASE2 retry csr_in = %x\n", __func__, val);
+				continue;
+			}
+
 			mutex_unlock(&b->ipc_mutex);
 
 			return 0;
