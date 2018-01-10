@@ -239,7 +239,7 @@ char *pp_sock_tag(struct sock_tag *st)
 			"sock_node=rb_node{...}, "
 			"sk=%p (f_count=%d), list=list_head{...}, "
 			"pid=%u, tag=%s}",
-			st, st->sk, atomic_read(
+			st, st->sk, refcount_read(
 				&st->sk->sk_refcnt),
 			st->pid, tag_str);
 	_bug_on_err_or_null(res);
