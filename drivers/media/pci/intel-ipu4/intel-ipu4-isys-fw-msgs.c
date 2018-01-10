@@ -172,7 +172,9 @@ static int intel_ipu4_isys_abi_fw_close(struct intel_ipu4_isys *isys)
 	 * some time as the FW must stop its actions including code fetch
 	 * to SP icache.
 	*/
+	spin_lock_irqsave(&isys->power_lock, flags);
 	rval = intel_ipu4_fw_com_close(isys->fwcom);
+	spin_unlock_irqrestore(&isys->power_lock, flags);
 	if (rval)
 		dev_err(dev, "Device close failure: %d\n", rval);
 
