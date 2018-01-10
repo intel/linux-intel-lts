@@ -1091,76 +1091,6 @@ exit:
 #endif /* RTT_SUPPORT */
 
 static int
-wl_cfgvendor_priv_string_handler(struct wiphy *wiphy,
-	struct wireless_dev *wdev, const void  *data, int len)
-{
-	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-	int ret = 0;
-	int ret_len = 0, payload = 0, msglen;
-	const struct bcm_nlmsg_hdr *nlioc = data;
-	void *buf = NULL, *cur;
-	int maxmsglen = PAGE_SIZE - 0x100;
-	struct sk_buff *reply;
-
-	WL_ERR(("entry: cmd = %d\n", nlioc->cmd));
-
-	len -= sizeof(struct bcm_nlmsg_hdr);
-	ret_len = nlioc->len;
-	if (ret_len > 0 || len > 0) {
-		if (len > DHD_IOCTL_MAXLEN) {
-			WL_ERR(("oversize input buffer %d\n", len));
-			len = DHD_IOCTL_MAXLEN;
-		}
-		if (ret_len > DHD_IOCTL_MAXLEN) {
-			WL_ERR(("oversize return buffer %d\n", ret_len));
-			ret_len = DHD_IOCTL_MAXLEN;
-		}
-		payload = max(ret_len, len) + 1;
-		buf = vzalloc(payload);
-		if (!buf) {
-			return -ENOMEM;
-		}
-		memcpy(buf, (void *)nlioc + nlioc->offset, len);
-		*(char *)(buf + len) = '\0';
-	}
-
-	ret = dhd_cfgvendor_priv_string_handler(cfg, wdev, nlioc, buf);
-	if (ret) {
-		WL_ERR(("dhd_cfgvendor returned error %d", ret));
-		vfree(buf);
-		return ret;
-	}
-	cur = buf;
-	while (ret_len > 0) {
-		msglen = nlioc->len > maxmsglen ? maxmsglen : ret_len;
-		ret_len -= msglen;
-		payload = msglen + sizeof(msglen);
-		reply = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, payload);
-		if (!reply) {
-			WL_ERR(("Failed to allocate reply msg\n"));
-			ret = -ENOMEM;
-			break;
-		}
-
-		if (nla_put(reply, BCM_NLATTR_DATA, msglen, cur) ||
-			nla_put_u16(reply, BCM_NLATTR_LEN, msglen)) {
-			kfree_skb(reply);
-			ret = -ENOBUFS;
-			break;
-		}
-
-		ret = cfg80211_vendor_cmd_reply(reply);
-		if (ret) {
-			WL_ERR(("testmode reply failed:%d\n", ret));
-			break;
-		}
-		cur += msglen;
-	}
-
-	return ret;
-}
-
-static int
 wl_cfgvendor_priv_bcm_handler(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void  *data, int len)
 {
@@ -1338,14 +1268,6 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 #endif /* LINKSTAT_SUPPORT */
 
 static const struct wiphy_vendor_command wl_vendor_cmds [] = {
-	{
-		{
-			.vendor_id = OUI_BRCM,
-			.subcmd = BRCM_VENDOR_SCMD_PRIV_STR
-		},
-		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
-		.doit = wl_cfgvendor_priv_string_handler
-	},
 	{
 		{
 			.vendor_id = OUI_BRCM,
