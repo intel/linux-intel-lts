@@ -1030,16 +1030,6 @@ int cfg80211_connect(struct cfg80211_registered_device *rdev,
 	     memcmp(wdev->ssid, connect->ssid, wdev->ssid_len)))
 		return -EALREADY;
 
-	/*
-	 * If connected, reject (re-)association unless prev_bssid
-	 * matches the current BSSID.
-	 */
-	if (wdev->current_bss) {
-		if (!prev_bssid)
-			return -EALREADY;
-		if (!ether_addr_equal(prev_bssid, wdev->current_bss->pub.bssid))
-			return -ENOTCONN;
-	}
 
 	/*
 	 * Reject if we're in the process of connecting with WEP,
