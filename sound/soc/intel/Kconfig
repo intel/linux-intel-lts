@@ -49,7 +49,7 @@ config SND_SOC_INTEL_SST_FIRMWARE
 config SND_SOC_INTEL_HASWELL
 	tristate "Haswell/Broadwell Platforms"
 	depends on SND_DMA_SGBUF
-	depends on DMADEVICES && ACPI
+	depends on DMADEVICES && ACPI && X86
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SST_ACPI
 	select SND_SOC_INTEL_SST_FIRMWARE
@@ -61,7 +61,7 @@ config SND_SOC_INTEL_HASWELL
 
 config SND_SOC_INTEL_BAYTRAIL
 	tristate "Baytrail (legacy) Platforms"
-	depends on DMADEVICES && ACPI && SND_SST_ATOM_HIFI2_PLATFORM=n
+	depends on DMADEVICES && ACPI && X86 && SND_SST_ATOM_HIFI2_PLATFORM=n
 	select SND_SOC_INTEL_SST
 	select SND_SOC_INTEL_SST_ACPI
 	select SND_SOC_INTEL_SST_FIRMWARE
@@ -106,7 +106,7 @@ config SND_SOC_INTEL_SKYLAKE_SSP_CLK
 
 config SND_SOC_INTEL_SKYLAKE
 	tristate "SKL/BXT/KBL/GLK/CNL... Platforms"
-	depends on PCI && ACPI
+	depends on PCI && ACPI && X86
 	select SND_HDA_EXT_CORE
 	select SND_HDA_DSP_LOADER
 	select SND_SOC_TOPOLOGY
