@@ -1331,8 +1331,6 @@ static int intel_ipu4_psys_kcmd_queue(struct intel_ipu4_psys *psys,
 			pm_runtime_put(&psys->adev->dev);
 			return -EINVAL;
 		}
-
-		return ret;
 	}
 
 	ret = intel_ipu4_psys_allocate_resources(&psys->adev->dev,
@@ -3017,11 +3015,35 @@ static void intel_ipu4_psys_remove(struct intel_ipu4_bus_device *adev)
 
 }
 
+static bool intel_ipu_psys_kcmd_is_valid(struct intel_ipu4_psys *psys,
+				struct intel_ipu4_psys_kcmd *kcmd)
+{
+	struct intel_ipu4_psys_fh *fh;
+	struct intel_ipu4_psys_kcmd *kcmd0;
+	int p;
+
+	list_for_each_entry(fh, &psys->fhs, list) {
+		mutex_lock(&fh->mutex);
+		for (p = 0; p < INTEL_IPU4_PSYS_CMD_PRIORITY_NUM; p++) {
+			list_for_each_entry(kcmd0, &fh->kcmds[p], list) {
+				if (kcmd0 == kcmd) {
+					mutex_unlock(&fh->mutex);
+					return true;
+				}
+			}
+
+		}
+		mutex_unlock(&fh->mutex);
+	}
+
+	return false;
+}
+
 static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 {
 	struct intel_ipu4_psys_kcmd *kcmd = NULL;
 	struct ipu_fw_psys_event event;
-	bool error, is_ppg;
+	bool error;
 
 	do {
 		memset(&event, 0, sizeof(event));
@@ -3029,7 +3051,6 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 			break;
 
 		error = false;
-		is_ppg = false;
 		/*
 		 * event.command == CMD_RUN shows this is fw processing frame
 		 * done as pPG mode, and event.context_handle should be pointer
@@ -3039,7 +3060,6 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 		if (event.command == IPU_FW_PSYS_PROCESS_GROUP_CMD_RUN) {
 			struct intel_ipu_psys_buffer_set *kbuf_set = NULL;
 
-			is_ppg = true;
 			if (event.context_handle)
 				kbuf_set = intel_ipu_psys_lookup_kbuffer_set(
 						psys, event.context_handle);
@@ -3047,7 +3067,7 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 				kcmd = kbuf_set->kcmd;
 			dev_dbg(&psys->adev->dev, "ppg event: %d, 0x%x\n",
 				event.context_handle, event.command);
-			if (!kbuf_set || !kcmd || (kcmd && !is_ppg_kcmd(kcmd)))
+			if (!kbuf_set || !kcmd)
 				error = true;
 		} else {
 			/*
@@ -3061,10 +3081,6 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 				kcmd =
 				   (struct intel_ipu4_psys_kcmd *)event.token;
 			error = IS_ERR_OR_NULL(kcmd) ? true : false;
-			if (!error && is_ppg_kcmd(kcmd)) {
-				is_ppg = true;
-				dev_dbg(&psys->adev->dev, "ppg stopped\n");
-			}
 		}
 
 		dev_dbg(&psys->adev->dev, "psys received event status:%d\n",
@@ -3083,19 +3099,17 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 			break;
 		}
 
-		intel_ipu4_psys_kcmd_complete(
-			psys, kcmd,
-			event.status ==
-				INTEL_IPU4_PSYS_EVENT_CMD_COMPLETE ||
-			event.status ==
-				INTEL_IPU4_PSYS_EVENT_FRAGMENT_COMPLETE ?
-			0 : -EIO);
+		if (intel_ipu_psys_kcmd_is_valid(psys, kcmd))
+			intel_ipu4_psys_kcmd_complete(psys, kcmd,
+				event.status ==
+					INTEL_IPU4_PSYS_EVENT_CMD_COMPLETE ||
+				event.status ==
+					INTEL_IPU4_PSYS_EVENT_FRAGMENT_COMPLETE
+					? 0 : -EIO);
 
 		/* Kick command scheduler thread */
-		if (!is_ppg) {
-			atomic_set(&psys->wakeup_sched_thread_count, 1);
-			wake_up_interruptible(&psys->sched_cmd_wq);
-		}
+		atomic_set(&psys->wakeup_sched_thread_count, 1);
+		wake_up_interruptible(&psys->sched_cmd_wq);
 	} while (1);
 
 }
