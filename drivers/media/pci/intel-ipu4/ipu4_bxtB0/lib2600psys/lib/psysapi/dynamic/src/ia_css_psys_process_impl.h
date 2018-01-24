@@ -79,12 +79,16 @@ vied_nci_cell_ID_t ia_css_process_get_cell(
 
 	verifexitval(process != NULL, EFAULT);
 
+#if IA_CSS_PROCESS_MAX_CELLS > 1
 	for (i = 1; i < IA_CSS_PROCESS_MAX_CELLS; i++) {
 		assert(VIED_NCI_N_CELL_ID == ia_css_process_cells_get_cell(process, i));
 #ifdef __HIVECC
 #pragma hivecc unroll
 #endif
 	}
+#else
+	(void)i;
+#endif
 	cell_id = ia_css_process_cells_get_cell(process, 0);
 
 EXIT:
