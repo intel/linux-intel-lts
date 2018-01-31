@@ -1,0 +1,1 @@
+obj-$(CONFIG_SBL_BOOTLOADER_CONTROL) += sblbc.o
