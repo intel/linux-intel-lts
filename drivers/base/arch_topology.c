@@ -22,29 +22,13 @@
 #include <linux/string.h>
 #include <linux/sched/topology.h>
 
-DEFINE_PER_CPU(unsigned long, freq_scale) = SCHED_CAPACITY_SCALE;
-
-void arch_set_freq_scale(struct cpumask *cpus, unsigned long cur_freq,
-			 unsigned long max_freq)
-{
-	unsigned long scale;
-	int i;
-
-	scale = (cur_freq << SCHED_CAPACITY_SHIFT) / max_freq;
-
-	for_each_cpu(i, cpus)
-		per_cpu(freq_scale, i) = scale;
-#ifdef CONFIG_CPU_FREQ
-	unsigned long max_freq_scale = cpufreq_scale_max_freq_capacity(cpu);
-
-	return per_cpu(cpu_scale, cpu) * max_freq_scale >> SCHED_CAPACITY_SHIFT;
-#else
-	return per_cpu(cpu_scale, cpu);
-#endif
-}
-
 static DEFINE_MUTEX(cpu_scale_mutex);
-DEFINE_PER_CPU(unsigned long, cpu_scale) = SCHED_CAPACITY_SCALE;
+static DEFINE_PER_CPU(unsigned long, cpu_scale) = SCHED_CAPACITY_SCALE;
+
+unsigned long topology_get_cpu_scale(struct sched_domain *sd, int cpu)
+{
+	return per_cpu(cpu_scale, cpu);
+}
 
 void topology_set_cpu_scale(unsigned int cpu, unsigned long capacity)
 {
@@ -228,8 +212,6 @@ static struct notifier_block init_cpu_capacity_notifier __initdata = {
 
 static int __init register_cpufreq_notifier(void)
 {
-	int ret;
-
 	/*
 	 * on ACPI-based systems we need to use the default cpu capacity
 	 * until we have the necessary code to parse the cpu capacity, so
@@ -245,13 +227,8 @@ static int __init register_cpufreq_notifier(void)
 
 	cpumask_copy(cpus_to_visit, cpu_possible_mask);
 
-	ret = cpufreq_register_notifier(&init_cpu_capacity_notifier,
-					CPUFREQ_POLICY_NOTIFIER);
-
-	if (ret)
-		free_cpumask_var(cpus_to_visit);
-
-	return ret;
+	return cpufreq_register_notifier(&init_cpu_capacity_notifier,
+					 CPUFREQ_POLICY_NOTIFIER);
 }
 core_initcall(register_cpufreq_notifier);
 
@@ -259,7 +236,6 @@ static void __init parsing_done_workfn(struct work_struct *work)
 {
 	cpufreq_unregister_notifier(&init_cpu_capacity_notifier,
 					 CPUFREQ_POLICY_NOTIFIER);
-	free_cpumask_var(cpus_to_visit);
 }
 
 #else

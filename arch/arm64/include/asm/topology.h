@@ -32,22 +32,6 @@ int pcibus_to_node(struct pci_bus *bus);
 				 cpumask_of_node(pcibus_to_node(bus)))
 
 #endif /* CONFIG_NUMA */
-struct sched_domain;
-#ifdef CONFIG_CPU_FREQ
-#define arch_scale_freq_capacity cpufreq_scale_freq_capacity
-extern unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu);
-extern unsigned long cpufreq_scale_max_freq_capacity(int cpu);
-#endif
-#define arch_get_cpu_scale topology_get_cpu_scale
-extern unsigned long topology_get_cpu_scale(struct sched_domain *sd, int cpu);
-
-#include <linux/arch_topology.h>
-
-/* Replace task scheduler's default frequency-invariant accounting */
-#define arch_scale_freq_capacity topology_get_freq_scale
-
-/* Replace task scheduler's default cpu-invariant accounting */
-#define arch_scale_cpu_capacity topology_get_cpu_scale
 
 #include <asm-generic/topology.h>
 

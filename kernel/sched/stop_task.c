@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 #include "sched.h"
-#include "walt.h"
 
 /*
  * stop-task scheduling class.
@@ -44,14 +43,12 @@ static void
 enqueue_task_stop(struct rq *rq, struct task_struct *p, int flags)
 {
 	add_nr_running(rq, 1);
-	walt_inc_cumulative_runnable_avg(rq, p);
 }
 
 static void
 dequeue_task_stop(struct rq *rq, struct task_struct *p, int flags)
 {
 	sub_nr_running(rq, 1);
-	walt_dec_cumulative_runnable_avg(rq, p);
 }
 
 static void yield_task_stop(struct rq *rq)
