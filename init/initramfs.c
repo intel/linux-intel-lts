@@ -19,8 +19,6 @@
 #include <linux/syscalls.h>
 #include <linux/utime.h>
 #include <linux/async.h>
-#include "preload_module.c"
-
 
 static ssize_t __init xwrite(int fd, const char *p, size_t count)
 {
@@ -657,7 +655,6 @@ static void __init async_populate_rootfs(void *data, async_cookie_t cookie)
 		 * us a chance to load before device_initcalls.
 		 */
 		load_default_modules();
-		load_preload_modules();
 	}
 	return;
 }
@@ -668,4 +665,4 @@ static int __init populate_rootfs(void)
 	return 0;
 }
 
-fs_initcall(populate_rootfs);
+rootfs_initcall(populate_rootfs);
