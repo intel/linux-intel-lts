@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014--2017 Intel Corporation.
+ * Copyright (c) 2014--2018 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -213,6 +213,9 @@ static int intel_ipu4_isys_api_simple_cmd(struct intel_ipu4_isys *isys,
 	case IPU_FW_ISYS_SEND_TYPE_STREAM_FLUSH:
 		rval = intel_ipu4_lib_call(stream_flush, isys, stream_handle);
 		break;
+	case IPU_FW_ISYS_SEND_TYPE_STREAM_STOP:
+               rval = intel_ipu4_lib_call(stream_stop, isys, stream_handle);
+               break;
 	case IPU_FW_ISYS_SEND_TYPE_STREAM_CLOSE:
 		rval = intel_ipu4_lib_call(stream_close, isys, stream_handle);
 		break;
