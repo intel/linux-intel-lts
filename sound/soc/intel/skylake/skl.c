@@ -1074,16 +1074,19 @@ static struct sst_acpi_mach sst_bxtp_devdata[] = {
 		.machine_quirk = sst_acpi_codec_list,
 		.quirk_data = &bxt_codecs,
 	},
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_TDF8532_MACH)
 	{
 		.id = "INT34C3",
 		.drv_name = "bxt_tdf8532",
 		.fw_filename = "intel/dsp_fw_bxtn.bin",
 	},
+#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
 	{
 		.id = "INT34C3",
 		.drv_name = "bxt_ivi_ull",
 		.fw_filename = "intel/dsp_fw_ull_bxtn.bin",
 	},
+#endif
 	{}
 };
 
