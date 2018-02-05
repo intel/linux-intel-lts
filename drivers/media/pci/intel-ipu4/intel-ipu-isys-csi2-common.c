@@ -452,13 +452,13 @@ static int csi2_link_validate(struct media_link *link)
 }
 
 bool csi2_has_route(struct media_entity *entity, unsigned int pad0,
-		    unsigned int pad1)
+		    unsigned int pad1, int *stream)
 {
 	/* TODO: need to remove this when meta data node is removed */
 	if (pad0 == CSI2_PAD_META || pad1 == CSI2_PAD_META)
 		return true;
 
-	return intel_ipu4_isys_subdev_has_route(entity, pad0, pad1);
+	return intel_ipu4_isys_subdev_has_route(entity, pad0, pad1, stream);
 }
 
 static const struct v4l2_subdev_video_ops csi2_sd_video_ops = {
