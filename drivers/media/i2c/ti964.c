@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016--2017 Intel Corporation.
+ * Copyright (c) 2016--2018 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -905,6 +905,30 @@ static struct v4l2_subdev_internal_ops ti964_sd_internal_ops = {
 	.registered = ti964_registered,
 };
 
+static bool ti964_sd_has_route(struct media_entity *entity,
+		unsigned int pad0, unsigned int pad1, int *stream)
+{
+	struct ti964 *va = to_ti964(media_entity_to_v4l2_subdev(entity));
+
+	if (stream == NULL || *stream >= va->nstreams)
+		return false;
+
+	if ((va->route[*stream].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE) &&
+			((va->route[*stream].source == pad0 &&
+			 va->route[*stream].sink == pad1)||
+			(va->route[*stream].source == pad1 &&
+			 va->route[*stream].sink == pad0)))
+		return true;
+
+	return false;
+}
+
+static const struct media_entity_operations ti964_sd_entity_ops = {
+        .link_setup = 0,
+        .link_validate = 0,
+	.has_route = ti964_sd_has_route,
+};
+
 static const struct v4l2_subdev_video_ops ti964_sd_video_ops = {
 	.s_stream = ti964_set_stream,
 };
@@ -974,6 +998,7 @@ static int ti964_register_subdev(struct ti964 *va)
 			V4L2_SUBDEV_FL_HAS_SUBSTREAMS;
 
 	va->sd.internal_ops = &ti964_sd_internal_ops;
+	va->sd.entity.ops = &ti964_sd_entity_ops;
 
 	v4l2_set_subdevdata(&va->sd, client);
 
