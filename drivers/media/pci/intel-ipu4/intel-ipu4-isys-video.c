@@ -41,7 +41,7 @@ static unsigned int  num_stream_support = INTEL_IPU4_ISYS_NUM_STREAMS_B0;
 module_param(num_stream_support, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(num_stream_support, "IPU4 project support number of stream");
 
-static bool use_stream_stop = false;
+bool use_stream_stop = false;
 module_param(use_stream_stop, bool, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(use_stream_stop, "Use STOP command if running in CSI capture mode");
 
