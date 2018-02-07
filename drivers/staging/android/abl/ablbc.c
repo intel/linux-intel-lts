@@ -310,6 +310,7 @@ static const char * const reboot_request[] = {
 
 static int execute_slcan_command(const char *cmd[])
 {
+#ifdef CONFIG_SEND_SLCAN_ENABLE
 	struct subprocess_info *sub_info;
 	int ret = -1;
 
@@ -327,6 +328,9 @@ static int execute_slcan_command(const char *cmd[])
 		pr_err("Failure on cmd=%s ret=%d\n", cmd[0], ret);
 
 	return ret;
+#else
+	return 0;
+#endif
 }
 
 static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
