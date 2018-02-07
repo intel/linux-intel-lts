@@ -6,3 +6,12 @@ config ABL_BOOTLOADER_CONTROL
           invoked with a string argument, the corresponding ABL Action
           is written in CMOS data, in order to be processed by ABL on
           reboot.
+
+config SEND_SLCAN_ENABLE
+        bool "control slcan protocol"
+        default n
+        help
+          This option control slcan protocol enable/disable in ablbc driver
+          The IOC compononent on broxton IVI platform use slcan protocol to
+          communicate befor calling powerctl program.
+          If no use IOC, this option can be disabed.
