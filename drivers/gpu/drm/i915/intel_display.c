@@ -14301,12 +14301,15 @@ int intel_get_pipe_from_crtc_id(struct drm_device *dev, void *data,
 	return 0;
 }
 
-enum pipe get_pipe_from_crtc_index(struct drm_device *dev, unsigned int index)
+int get_pipe_from_crtc_index(struct drm_device *dev, unsigned int index, enum pipe *pipe)
 {
 	struct drm_crtc *c = drm_crtc_from_index(dev, index);
 
-	WARN_ON(!c);
-	return (to_intel_crtc(c)->pipe);
+	if (WARN_ON(!c))
+		return -ENOENT;
+
+	*pipe =  (to_intel_crtc(c)->pipe);
+	return 0;
 }
 
 struct intel_crtc *get_intel_crtc_from_index(struct drm_device *dev,

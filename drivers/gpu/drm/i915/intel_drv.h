@@ -1300,7 +1300,7 @@ struct drm_display_mode *intel_crtc_mode_get(struct drm_device *dev,
 enum pipe intel_get_pipe_from_connector(struct intel_connector *connector);
 int intel_get_pipe_from_crtc_id(struct drm_device *dev, void *data,
 				struct drm_file *file_priv);
-enum pipe get_pipe_from_crtc_index(struct drm_device *dev, unsigned int index);
+int get_pipe_from_crtc_index(struct drm_device *dev, unsigned int index, enum pipe *pipe);
 struct intel_crtc *get_intel_crtc_from_index(struct drm_device *dev,
 					     unsigned int index);
 enum transcoder intel_pipe_to_cpu_transcoder(struct drm_i915_private *dev_priv,

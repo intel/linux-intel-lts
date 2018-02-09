@@ -504,7 +504,9 @@ void bdw_update_pipe_irq(struct drm_i915_private *dev_priv,
 	if (WARN_ON(!intel_irqs_enabled(dev_priv)))
 		return;
 
-	pipe = get_pipe_from_crtc_index(&dev_priv->drm, crtc_index);
+	if(get_pipe_from_crtc_index(&dev_priv->drm, crtc_index, &pipe))
+		return;
+
 	new_val = dev_priv->de_irq_mask[pipe];
 	new_val &= ~interrupt_mask;
 	new_val |= (~enabled_irq_mask & interrupt_mask);
@@ -775,7 +777,8 @@ static u32 g4x_get_vblank_counter(struct drm_device *dev,
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	enum pipe pipe;
 
-	pipe = get_pipe_from_crtc_index(dev, crtc_index);
+	if(get_pipe_from_crtc_index(dev, crtc_index, &pipe))
+		return 0;
 
 	return I915_READ(PIPE_FRMCOUNT_G4X(pipe));
 }
