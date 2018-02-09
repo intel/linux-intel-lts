@@ -2232,6 +2232,7 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 
 	policy->min = new_policy->min;
 	policy->max = new_policy->max;
+	trace_cpu_frequency_limits(policy->max, policy->min, policy->cpu);
 
 	policy->cached_target_freq = UINT_MAX;
 
@@ -2429,6 +2430,17 @@ int cpufreq_boost_enabled(void)
 	return cpufreq_driver->boost_enabled;
 }
 EXPORT_SYMBOL_GPL(cpufreq_boost_enabled);
+
+/*********************************************************************
+ *               FREQUENCY INVARIANT ACCOUNTING SUPPORT              *
+ *********************************************************************/
+
+__weak void arch_set_freq_scale(struct cpumask *cpus,
+				unsigned long cur_freq,
+				unsigned long max_freq)
+{
+}
+EXPORT_SYMBOL_GPL(arch_set_freq_scale);
 
 /*********************************************************************
  *               REGISTER / UNREGISTER CPUFREQ DRIVER                *

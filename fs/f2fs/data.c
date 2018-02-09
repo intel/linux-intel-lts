@@ -29,6 +29,7 @@
 #include "segment.h"
 #include "trace.h"
 #include <trace/events/f2fs.h>
+#include <trace/events/android_fs.h>
 
 static bool __is_cp_guaranteed(struct page *page)
 {
@@ -173,7 +174,7 @@ static struct bio *__bio_alloc(struct f2fs_sb_info *sbi, block_t blk_addr,
 {
 	struct bio *bio;
 
-	bio = f2fs_bio_alloc(npages);
+	bio = f2fs_bio_alloc(sbi, npages, true);
 
 	f2fs_target_device(sbi, blk_addr, bio);
 	bio->bi_end_io = is_read ? f2fs_read_end_io : f2fs_write_end_io;
@@ -418,8 +419,8 @@ next:
 
 	bio_page = fio->encrypted_page ? fio->encrypted_page : fio->page;
 
-	/* set submitted = 1 as a return value */
-	fio->submitted = 1;
+	/* set submitted = true as a return value */
+	fio->submitted = true;
 
 	inc_page_count(sbi, WB_DATA_TYPE(bio_page));
 
@@ -473,7 +474,7 @@ static struct bio *f2fs_grab_read_bio(struct inode *inode, block_t blkaddr,
 		f2fs_wait_on_block_writeback(sbi, blkaddr);
 	}
 
-	bio = bio_alloc(GFP_KERNEL, min_t(int, nr_pages, BIO_MAX_PAGES));
+	bio = f2fs_bio_alloc(sbi, min_t(int, nr_pages, BIO_MAX_PAGES), false);
 	if (!bio) {
 		if (ctx)
 			fscrypt_release_ctx(ctx);
@@ -833,6 +834,13 @@ int f2fs_preallocate_blocks(struct kiocb *iocb, struct iov_iter *from)
 	struct f2fs_map_blocks map;
 	int err = 0;
 
+	/* convert inline data for Direct I/O*/
+	if (iocb->ki_flags & IOCB_DIRECT) {
+		err = f2fs_convert_inline_inode(inode);
+		if (err)
+			return err;
+	}
+
 	if (is_inode_flag_set(inode, FI_NO_PREALLOC))
 		return 0;
 
@@ -845,15 +853,11 @@ int f2fs_preallocate_blocks(struct kiocb *iocb, struct iov_iter *from)
 
 	map.m_next_pgofs = NULL;
 
-	if (iocb->ki_flags & IOCB_DIRECT) {
-		err = f2fs_convert_inline_inode(inode);
-		if (err)
-			return err;
+	if (iocb->ki_flags & IOCB_DIRECT)
 		return f2fs_map_blocks(inode, &map, 1,
 			__force_buffered_io(inode, WRITE) ?
 				F2FS_GET_BLOCK_PRE_AIO :
 				F2FS_GET_BLOCK_PRE_DIO);
-	}
 	if (iocb->ki_pos + iov_iter_count(from) > MAX_INLINE_DATA(inode)) {
 		err = f2fs_convert_inline_inode(inode);
 		if (err)
@@ -1334,7 +1338,7 @@ static int f2fs_read_data_pages(struct file *file,
 			struct address_space *mapping,
 			struct list_head *pages, unsigned nr_pages)
 {
-	struct inode *inode = file->f_mapping->host;
+	struct inode *inode = mapping->host;
 	struct page *page = list_last_entry(pages, struct page, lru);
 
 	trace_f2fs_readpages(inode, page, nr_pages);
@@ -1495,6 +1499,7 @@ static int __write_data_page(struct page *page, bool *submitted,
 	int err = 0;
 	struct f2fs_io_info fio = {
 		.sbi = sbi,
+		.ino = inode->i_ino,
 		.type = DATA,
 		.op = REQ_OP_WRITE,
 		.op_flags = wbc_to_write_flags(wbc),
@@ -1566,8 +1571,11 @@ write:
 			err = do_write_data_page(&fio);
 		}
 	}
+
+	down_write(&F2FS_I(inode)->i_sem);
 	if (F2FS_I(inode)->last_disk_size < psize)
 		F2FS_I(inode)->last_disk_size = psize;
+	up_write(&F2FS_I(inode)->i_sem);
 
 done:
 	if (err && err != -ENOENT)
@@ -1935,7 +1943,23 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
 	block_t blkaddr = NULL_ADDR;
 	int err = 0;
 
+	if (trace_android_fs_datawrite_start_enabled()) {
+		char *path, pathbuf[MAX_TRACE_PATHBUF_LEN];
+
+		path = android_fstrace_get_pathname(pathbuf,
+						    MAX_TRACE_PATHBUF_LEN,
+						    inode);
+		trace_android_fs_datawrite_start(inode, pos, len,
+						 current->pid, path,
+						 current->comm);
+	}
 	trace_f2fs_write_begin(inode, pos, len, flags);
+
+	if (f2fs_is_atomic_file(inode) &&
+			!available_free_memory(sbi, INMEM_PAGES)) {
+		err = -ENOMEM;
+		goto fail;
+	}
 
 	/*
 	 * We should check this at this moment to avoid deadlock on inode page
@@ -1952,7 +1976,7 @@ repeat:
 	 * Do not use grab_cache_page_write_begin() to avoid deadlock due to
 	 * wait_for_stable_page. Will wait that below with our IO control.
 	 */
-	page = pagecache_get_page(mapping, index,
+	page = f2fs_pagecache_get_page(mapping, index,
 				FGP_LOCK | FGP_WRITE | FGP_CREAT, GFP_NOFS);
 	if (!page) {
 		err = -ENOMEM;
@@ -2014,6 +2038,8 @@ repeat:
 fail:
 	f2fs_put_page(page, 1);
 	f2fs_write_failed(mapping, pos + len);
+	if (f2fs_is_atomic_file(inode))
+		drop_inmem_pages_all(sbi);
 	return err;
 }
 
@@ -2024,6 +2050,7 @@ static int f2fs_write_end(struct file *file,
 {
 	struct inode *inode = page->mapping->host;
 
+	trace_android_fs_datawrite_end(inode, pos, len);
 	trace_f2fs_write_end(inode, pos, len, copied);
 
 	/*
@@ -2082,6 +2109,29 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 
 	trace_f2fs_direct_IO_enter(inode, offset, count, rw);
 
+	if (trace_android_fs_dataread_start_enabled() &&
+	    (rw == READ)) {
+		char *path, pathbuf[MAX_TRACE_PATHBUF_LEN];
+
+		path = android_fstrace_get_pathname(pathbuf,
+						    MAX_TRACE_PATHBUF_LEN,
+						    inode);
+		trace_android_fs_dataread_start(inode, offset,
+						count, current->pid, path,
+						current->comm);
+	}
+	if (trace_android_fs_datawrite_start_enabled() &&
+	    (rw == WRITE)) {
+		char *path, pathbuf[MAX_TRACE_PATHBUF_LEN];
+
+		path = android_fstrace_get_pathname(pathbuf,
+						    MAX_TRACE_PATHBUF_LEN,
+						    inode);
+		trace_android_fs_datawrite_start(inode, offset, count,
+						 current->pid, path,
+						 current->comm);
+	}
+
 	down_read(&F2FS_I(inode)->dio_rwsem[rw]);
 	err = blockdev_direct_IO(iocb, inode, iter, get_data_block_dio);
 	up_read(&F2FS_I(inode)->dio_rwsem[rw]);
@@ -2095,6 +2145,13 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 			f2fs_write_failed(mapping, offset + count);
 		}
 	}
+
+	if (trace_android_fs_dataread_start_enabled() &&
+	    (rw == READ))
+		trace_android_fs_dataread_end(inode, offset, count);
+	if (trace_android_fs_datawrite_start_enabled() &&
+	    (rw == WRITE))
+		trace_android_fs_datawrite_end(inode, offset, count);
 
 	trace_f2fs_direct_IO_exit(inode, offset, count, rw, err);
 
