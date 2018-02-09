@@ -14,6 +14,48 @@ config ASHMEM
 	  It is, in theory, a good memory allocator for low-memory devices,
 	  because it can discard shared memory units when under memory pressure.
 
+config ANDROID_LOW_MEMORY_KILLER
+	bool "Android Low Memory Killer"
+	---help---
+	  Registers processes to be killed when low memory conditions, this is useful
+	  as there is no particular swap space on android.
+
+	  The registered process will kill according to the priorities in android init
+	  scripts (/init.rc), and it defines priority values with minimum free memory size
+	  for each priority.
+
+config ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
+	bool "Android Low Memory Killer: detect oom_adj values"
+	depends on ANDROID_LOW_MEMORY_KILLER
+	default y
+	---help---
+	  Detect oom_adj values written to
+	  /sys/module/lowmemorykiller/parameters/adj and convert them
+	  to oom_score_adj values.
+
+config SYNC
+        bool "Synchronization framework"
+        default n
+        ---help---
+          This option enables the framework for synchronization between multiple
+          drivers.  Sync implementations can take advantage of hardware
+          synchronization built into devices like GPUs.
+
+config ANDROID_FWDATA
+	tristate "Parser for Android-specific firmware data"
+	depends on ACPI
+	default n
+	---help---
+	  This driver parses Android-specific data (e.g. fstab configuration)
+	  stored in firmware (e.g. ACPI tables), and present it to user space
+	  via sysfs. Android Oreo (8.0) and later requires some essential boot-
+	  time configuration to be available in a directory structure organized
+	  in Device Tree style, e.g. /proc/device-tree/firmware/android/ on
+	  platforms that enable DT. Platforms that use ACPI instead of DT, such
+	  as Goldfish (Ranchu) x86/x86_64, should enable this driver to ensure
+	  the required information can be found in sysfs with the expected
+	  layout.
+
 source "drivers/staging/android/ion/Kconfig"
 source "drivers/staging/android/abl/Kconfig"
 source "drivers/staging/android/sbl/Kconfig"
