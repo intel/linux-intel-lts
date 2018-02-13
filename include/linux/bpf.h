@@ -57,9 +57,6 @@ struct bpf_map {
 	struct work_struct work;
 	atomic_t usercnt;
 	struct bpf_map *inner_map_meta;
-#ifdef CONFIG_SECURITY
-	void *security;
-#endif
 };
 
 /* function argument constraints */
