@@ -25,6 +25,9 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include "../../../include/media/dw9714.h"
+#ifdef CONFIG_CRLMODULE_RD_NVM_TO_VCM
+extern int pass_vcm_val;
+#endif
 
 /* dw9714 device structure */
 struct dw9714_device {
@@ -109,6 +112,7 @@ static int dw9714_init_controls(struct dw9714_device *dev_vcm)
 	if (hdl->error)
 		dev_err(&client->dev, "dw9714_init_controls fail\n");
 	dev_vcm->subdev_vcm.ctrl_handler = hdl;
+
 	return hdl->error;
 }
 
@@ -124,7 +128,7 @@ static int dw9714_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct dw9714_device *dw9714_dev = container_of(sd,
 			struct dw9714_device, subdev_vcm);
 	struct device *dev = &dw9714_dev->client->dev;
-	int rval;
+	int rval = 0;
 
 	rval = pm_runtime_get_sync(dev);
 	dev_dbg(dev, "%s rval = %d\n", __func__, rval);
@@ -166,6 +170,8 @@ static int dw9714_probe(struct i2c_client *client,
 
 	if (pdata) {
 		dw9714_dev->pdata = pdata;
+
+#ifndef CONFIG_INTEL_IPU4_OV13858
 		if (pdata->gpio_xsd >= 0 && devm_gpio_request_one(&client->dev,
 					  dw9714_dev->pdata->gpio_xsd, 0,
 					  "dw9714 xsd") != 0) {
@@ -174,6 +180,9 @@ static int dw9714_probe(struct i2c_client *client,
 				dw9714_dev->pdata->gpio_xsd);
 			return -ENODEV;
 		}
+#else
+		dev_dbg(&client->dev, "Do not request GPIO as it's common pin design");
+#endif
 	}
 
 	dw9714_dev->client = client;
@@ -234,10 +243,11 @@ static int dw9714_runtime_suspend(struct device *dev)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct dw9714_device *dw9714_dev = container_of(sd,
 			struct dw9714_device, subdev_vcm);
-	int ret, val;
+	int ret = 0, val = 0;
 
 	dev_dbg(dev, "%s\n", __func__);
 
+#ifndef CONFIG_INTEL_IPU4_OV13858
 	for (val = dw9714_dev->current_val & ~(DW9714_CTRL_STEPS - 1);
 	     val >= 0 ; val -= DW9714_CTRL_STEPS) {
 		ret = dw9714_i2c_write(client,
@@ -253,6 +263,10 @@ static int dw9714_runtime_suspend(struct device *dev)
 		if (dw9714_dev->pdata->sensor_dev)
 			pm_runtime_put(dw9714_dev->pdata->sensor_dev);
 	}
+#else
+	vcm_in_use = false;
+	dev_dbg(dev, "%s: Skip xshutdown due to common pin\n", __func__);
+#endif
 
 	return 0;
 }
@@ -263,19 +277,29 @@ static int dw9714_runtime_resume(struct device *dev)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct dw9714_device *dw9714_dev = container_of(sd,
 			struct dw9714_device, subdev_vcm);
-	int ret, val;
+	int ret = 0, val = 0;
 
+#ifdef CONFIG_INTEL_IPU4_OV13858
+	vcm_in_use = true;
+#endif
 	if (dw9714_dev->pdata) {
 		if (dw9714_dev->pdata->sensor_dev) {
 			ret = pm_runtime_get_sync(
 				dw9714_dev->pdata->sensor_dev);
+			dev_dbg(dev, "%s pm_runtime_get_sync rval = %d\n", __func__, ret);
 			if (ret < 0)
 				goto out;
 		}
 		if (dw9714_dev->pdata->gpio_xsd >= 0)
+#ifndef CONFIG_INTEL_IPU4_OV13858
 			gpio_set_value(dw9714_dev->pdata->gpio_xsd, 1);
+#else
+			crlmodule_vcm_gpio_set_value(
+					dw9714_dev->pdata->gpio_xsd, 1);
+			dev_dbg(dev, "Control xshutdown via crlmodule");
+#endif
 	}
-
+#ifndef CONFIG_CRLMODULE_RD_NVM_TO_VCM
 	for (val = dw9714_dev->current_val % DW9714_CTRL_STEPS;
 	     val < dw9714_dev->current_val + DW9714_CTRL_STEPS - 1;
 	     val += DW9714_CTRL_STEPS) {
@@ -288,10 +312,19 @@ static int dw9714_runtime_resume(struct device *dev)
 
 	/* restore v4l2 control values */
 	ret = v4l2_ctrl_handler_setup(&dw9714_dev->ctrls_vcm);
+
+#else
+	if(pass_vcm_val!=0){
+		dw9714_t_focus_vcm(dw9714_dev,pass_vcm_val);
+		dev_dbg(dev,"%s nvm pass %d to set vcm\n",__func__,pass_vcm_val);
+	}else
+		dev_err(dev,"%s nvm pass fail \n",__func__);
+#endif
+	if (dw9714_dev->pdata && dw9714_dev->pdata->sensor_dev) {
+		ret = pm_runtime_put_sync(dw9714_dev->pdata->sensor_dev);
+		dev_dbg(dev, "%s pm_runtime_put_sync rval = %d\n", __func__, ret);
+	}
  out:
-	if (ret && dw9714_dev->pdata && dw9714_dev->pdata->sensor_dev)
-		pm_runtime_put_sync(dw9714_dev->pdata->sensor_dev);
-	dev_dbg(dev, "%s rval = %d\n", __func__, ret);
 	return ret;
 }
 
@@ -308,19 +341,15 @@ static const struct i2c_device_id dw9714_id_table[] = {
 };
 MODULE_DEVICE_TABLE(i2c, dw9714_id_table);
 
-#ifdef CONFIG_PM
 static const struct dev_pm_ops dw9714_pm_ops = {
 	.runtime_suspend = dw9714_runtime_suspend,
 	.runtime_resume = dw9714_runtime_resume,
 };
-#endif
 
 static struct i2c_driver dw9714_i2c_driver = {
 	.driver		= {
 		.name	= DW9714_NAME,
-#ifdef CONFIG_PM
 		.pm = &dw9714_pm_ops,
-#endif
 	},
 	.probe		= dw9714_probe,
 	.remove		= dw9714_remove,

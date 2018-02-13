@@ -19,6 +19,10 @@
 #include "crlmodule-nvm.h"
 #include "crlmodule-regs.h"
 
+#ifdef CONFIG_CRLMODULE_RD_NVM_TO_VCM
+	int pass_vcm_val;
+#endif
+
 static ssize_t crlmodule_sysfs_nvm_read(struct device *dev,
 					struct device_attribute *attr,
 					char *buf)
@@ -26,7 +30,8 @@ static ssize_t crlmodule_sysfs_nvm_read(struct device *dev,
 	struct v4l2_subdev *subdev = i2c_get_clientdata(to_i2c_client(dev));
 	struct crl_sensor *sensor = to_crlmodule_sensor(subdev);
 
-	memcpy(buf, sensor->nvm_data, min(((int)PAGE_SIZE), ((int)sensor->nvm_size)));
+	memcpy(buf, sensor->nvm_data, min_t(unsigned long, PAGE_SIZE,
+		sensor->nvm_size));
 	return sensor->nvm_size;
 }
 
@@ -59,7 +64,6 @@ static int crlmodule_get_nvm_data(struct crl_sensor *sensor)
 	if (sensor->sensor_ds->crl_nvm_info.nvm_preop_regs_items) {
 		dev_dbg(&client->dev,
 			"%s perform pre-operations\n", __func__);
-
 		rval = crlmodule_write_regs(
 			sensor,
 			sensor->sensor_ds->crl_nvm_info.nvm_preop_regs,
@@ -87,7 +91,10 @@ static int crlmodule_get_nvm_data(struct crl_sensor *sensor)
 				& CRL_NVM_ADDR_MODE_MASK,
 			sensor->sensor_ds->crl_nvm_info.nvm_config->size,
 			nvm_data);
-
+#ifdef CONFIG_CRLMODULE_RD_NVM_TO_VCM
+		pass_vcm_val = *(nvm_data+7) | (*(nvm_data+8)<<8);
+		dev_dbg(&client->dev,"%s af_far nvm_data: %d  \n",__func__,pass_vcm_val);
+#endif
 		nvm_data += sensor->sensor_ds->crl_nvm_info.nvm_config->size;
 		sensor->sensor_ds->crl_nvm_info.nvm_config++;
 	}
@@ -147,3 +154,6 @@ void crlmodule_nvm_deinit(struct crl_sensor *sensor)
 		sensor->nvm_size = 0;
 	}
 }
+#ifdef CONFIG_CRLMODULE_RD_NVM_TO_VCM
+EXPORT_SYMBOL(pass_vcm_val);
+#endif

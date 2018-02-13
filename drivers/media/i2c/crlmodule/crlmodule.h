@@ -34,6 +34,10 @@
 #define CRL_PAD_SRC			1
 #define CRL_PADS			2
 
+#ifdef CONFIG_CRLMODULE_RD_NVM_TO_VCM
+extern int pass_vcm_val;
+#endif
+
 struct crl_subdev {
 	struct v4l2_subdev sd;
 	struct media_pad pads[2];
