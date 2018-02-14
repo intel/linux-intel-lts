@@ -277,14 +277,14 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
 				sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE),
 				sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS));
 
-			dev_err(ctx->dev, "Itertion %d Core En/ROM load fail:%d\n", i,ret);
+			dev_err(ctx->dev, "Iteration %d Core En/ROM load fail:%d\n", i, ret);
 			continue;
 		}
-		dev_dbg(ctx->dev, "Itertion %d ROM load Success:%d,%d\n", i,ret);
+		dev_dbg(ctx->dev, "Iteration %d ROM load Success:%d\n", i, ret);
 
 		ret = sst_transfer_fw_host_dma(ctx);
 		if (ret < 0) {
-			dev_err(ctx->dev, "Itertion %d Transfer firmware failed %d\n", i,ret);
+			dev_err(ctx->dev, "Iteration %d Transfer firmware failed %d\n", i, ret);
 			dev_info(ctx->dev, "Error code=0x%x: FW status=0x%x\n",
 				sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE),
 				sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS));
@@ -293,7 +293,7 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
 			skl_dsp_disable_core(ctx, SKL_DSP_CORE0_MASK);
 			continue;
 		}
-		dev_dbg(ctx->dev, "Itertion %d FW transfer Success:%d,%d\n", i,ret);
+		dev_dbg(ctx->dev, "Iteration %d FW transfer Success:%d\n", i, ret);
 
 		if (ret == 0)
 			break;
