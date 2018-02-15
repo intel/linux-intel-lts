@@ -1998,6 +1998,24 @@ struct i915_oa_reg {
 	u32 value;
 };
 
+struct i915_oa_config {
+	char uuid[UUID_STRING_LEN + 1];
+	int id;
+
+	const struct i915_oa_reg *mux_regs;
+	u32 mux_regs_len;
+	const struct i915_oa_reg *b_counter_regs;
+	u32 b_counter_regs_len;
+	const struct i915_oa_reg *flex_regs;
+	u32 flex_regs_len;
+
+	struct attribute_group sysfs_metric;
+	struct attribute *attrs[2];
+	struct device_attribute sysfs_metric_id;
+
+	atomic_t ref_count;
+};
+
 struct i915_perf_stream;
 
 /**
@@ -2110,12 +2128,36 @@ struct i915_perf_stream {
 	 * type of configured stream.
 	 */
 	const struct i915_perf_stream_ops *ops;
+
+	/**
+	 * @oa_config: The OA configuration used by the stream.
+	 */
+	struct i915_oa_config *oa_config;
 };
 
 /**
  * struct i915_oa_ops - Gen specific implementation of an OA unit stream
  */
 struct i915_oa_ops {
+	/**
+	 * @is_valid_b_counter_reg: Validates register's address for
+	 * programming boolean counters for a particular platform.
+	 */
+	bool (*is_valid_b_counter_reg)(struct drm_i915_private *dev_priv,
+				       u32 addr);
+
+	/**
+	 * @is_valid_mux_reg: Validates register's address for programming mux
+	 * for a particular platform.
+	 */
+	bool (*is_valid_mux_reg)(struct drm_i915_private *dev_priv, u32 addr);
+
+	/**
+	 * @is_valid_flex_reg: Validates register's address for programming
+	 * flex EU filtering for a particular platform.
+	 */
+	bool (*is_valid_flex_reg)(struct drm_i915_private *dev_priv, u32 addr);
+
 	/**
 	 * @init_oa_buffer: Resets the head and tail pointers of the
 	 * circular buffer for periodic OA reports.
@@ -2134,12 +2176,13 @@ struct i915_oa_ops {
 	void (*init_oa_buffer)(struct drm_i915_private *dev_priv);
 
 	/**
-	 * @enable_metric_set: Applies any MUX configuration to set up the
-	 * Boolean and Custom (B/C) counters that are part of the counter
-	 * reports being sampled. May apply system constraints such as
+	 * @enable_metric_set: Selects and applies any MUX configuration to set
+	 * up the Boolean and Custom (B/C) counters that are part of the
+	 * counter reports being sampled. May apply system constraints such as
 	 * disabling EU clock gating as required.
 	 */
-	int (*enable_metric_set)(struct drm_i915_private *dev_priv);
+	int (*enable_metric_set)(struct drm_i915_private *dev_priv,
+				 const struct i915_oa_config *oa_config);
 
 	/**
 	 * @disable_metric_set: Remove system constraints associated with using
@@ -2167,20 +2210,13 @@ struct i915_oa_ops {
 		    size_t *offset);
 
 	/**
-	 * @oa_buffer_is_empty: Check if OA buffer empty (false positives OK)
+	 * @oa_hw_tail_read: read the OA tail pointer register
 	 *
-	 * This is either called via fops or the poll check hrtimer (atomic
-	 * ctx) without any locks taken.
-	 *
-	 * It's safe to read OA config state here unlocked, assuming that this
-	 * is only called while the stream is enabled, while the global OA
-	 * configuration can't be modified.
-	 *
-	 * Efficiency is more important than avoiding some false positives
-	 * here, which will be handled gracefully - likely resulting in an
-	 * %EAGAIN error for userspace.
+	 * In particular this enables us to share all the fiddly code for
+	 * handling the OA unit tail pointer race that affects multiple
+	 * generations.
 	 */
-	bool (*oa_buffer_is_empty)(struct drm_i915_private *dev_priv);
+	u32 (*oa_hw_tail_read)(struct drm_i915_private *dev_priv);
 };
 
 struct intel_cdclk_state {
@@ -2517,12 +2553,32 @@ struct drm_i915_private {
 		struct kobject *metrics_kobj;
 		struct ctl_table_header *sysctl_header;
 
+		/*
+		 * Lock associated with adding/modifying/removing OA configs
+		 * in dev_priv->perf.metrics_idr.
+		 */
+		struct mutex metrics_lock;
+
+		/*
+		 * List of dynamic configurations, you need to hold
+		 * dev_priv->perf.metrics_lock to access it.
+		 */
+		struct idr metrics_idr;
+
+		/*
+		 * Lock associated with anything below within this structure
+		 * except exclusive_stream.
+		 */
 		struct mutex lock;
 		struct list_head streams;
 
-		spinlock_t hook_lock;
-
 		struct {
+			/*
+			 * The stream currently using the OA unit. If accessed
+			 * outside a syscall associated to its file
+			 * descriptor, you need to hold
+			 * dev_priv->drm.struct_mutex.
+			 */
 			struct i915_perf_stream *exclusive_stream;
 
 			u32 specific_ctx_id;
@@ -2531,31 +2587,103 @@ struct drm_i915_private {
 			wait_queue_head_t poll_wq;
 			bool pollin;
 
+			/**
+			 * For rate limiting any notifications of spurious
+			 * invalid OA reports
+			 */
+			struct ratelimit_state spurious_report_rs;
+
 			bool periodic;
 			int period_exponent;
 			int timestamp_frequency;
 
-			int tail_margin;
-
-			int metrics_set;
-
-			const struct i915_oa_reg *mux_regs;
-			int mux_regs_len;
-			const struct i915_oa_reg *b_counter_regs;
-			int b_counter_regs_len;
+			struct i915_oa_config test_config;
 
 			struct {
 				struct i915_vma *vma;
 				u8 *vaddr;
+				u32 last_ctx_id;
 				int format;
 				int format_size;
+
+				/**
+				 * Locks reads and writes to all head/tail state
+				 *
+				 * Consider: the head and tail pointer state
+				 * needs to be read consistently from a hrtimer
+				 * callback (atomic context) and read() fop
+				 * (user context) with tail pointer updates
+				 * happening in atomic context and head updates
+				 * in user context and the (unlikely)
+				 * possibility of read() errors needing to
+				 * reset all head/tail state.
+				 *
+				 * Note: Contention or performance aren't
+				 * currently a significant concern here
+				 * considering the relatively low frequency of
+				 * hrtimer callbacks (5ms period) and that
+				 * reads typically only happen in response to a
+				 * hrtimer event and likely complete before the
+				 * next callback.
+				 *
+				 * Note: This lock is not held *while* reading
+				 * and copying data to userspace so the value
+				 * of head observed in htrimer callbacks won't
+				 * represent any partial consumption of data.
+				 */
+				spinlock_t ptr_lock;
+
+				/**
+				 * One 'aging' tail pointer and one 'aged'
+				 * tail pointer ready to used for reading.
+				 *
+				 * Initial values of 0xffffffff are invalid
+				 * and imply that an update is required
+				 * (and should be ignored by an attempted
+				 * read)
+				 */
+				struct {
+					u32 offset;
+				} tails[2];
+
+				/**
+				 * Index for the aged tail ready to read()
+				 * data up to.
+				 */
+				unsigned int aged_tail_idx;
+
+				/**
+				 * A monotonic timestamp for when the current
+				 * aging tail pointer was read; used to
+				 * determine when it is old enough to trust.
+				 */
+				u64 aging_timestamp;
+
+				/**
+				 * Although we can always read back the head
+				 * pointer register, we prefer to avoid
+				 * trusting the HW state, just to avoid any
+				 * risk that some hardware condition could
+				 * somehow bump the head pointer unpredictably
+				 * and cause us to forward the wrong OA buffer
+				 * data to userspace.
+				 */
+				u32 head;
 			} oa_buffer;
 
 			u32 gen7_latched_oastatus1;
+			u32 ctx_oactxctrl_offset;
+			u32 ctx_flexeu0_offset;
+
+			/**
+			 * The RPT_ID/reason field for Gen8+ includes a bit
+			 * to determine if the CTX ID in the report is valid
+			 * but the specific bit differs between Gen 8 and 9
+			 */
+			u32 gen8_valid_ctx_bit;
 
 			struct i915_oa_ops ops;
 			const struct i915_oa_format *oa_formats;
-			int n_builtin_sets;
 		} oa;
 	} perf;
 
@@ -2872,10 +3000,18 @@ intel_info(const struct drm_i915_private *dev_priv)
 #define IS_KBL_ULX(dev_priv)	(INTEL_DEVID(dev_priv) == 0x590E || \
 				 INTEL_DEVID(dev_priv) == 0x5915 || \
 				 INTEL_DEVID(dev_priv) == 0x591E)
+#define IS_SKL_GT2(dev_priv)	(IS_SKYLAKE(dev_priv) && \
+				 (INTEL_DEVID(dev_priv) & 0x00F0) == 0x0010)
 #define IS_SKL_GT3(dev_priv)	(IS_SKYLAKE(dev_priv) && \
 				 (INTEL_DEVID(dev_priv) & 0x00F0) == 0x0020)
 #define IS_SKL_GT4(dev_priv)	(IS_SKYLAKE(dev_priv) && \
 				 (INTEL_DEVID(dev_priv) & 0x00F0) == 0x0030)
+#define IS_KBL_GT2(dev_priv)	(IS_KABYLAKE(dev_priv) && \
+				 (INTEL_DEVID(dev_priv) & 0x00F0) == 0x0010)
+#define IS_KBL_GT3(dev_priv)	(IS_KABYLAKE(dev_priv) && \
+				 (INTEL_DEVID(dev_priv) & 0x00F0) == 0x0020)
+#define IS_CFL_ULT(dev_priv)	(IS_COFFEELAKE(dev_priv) && \
+				 (INTEL_DEVID(dev_priv) & 0x00F0) == 0x00A0)
 
 #define IS_ALPHA_SUPPORT(intel_info) ((intel_info)->is_alpha_support)
 
@@ -3682,6 +3818,13 @@ watchdog_to_clock_counts(struct drm_i915_private *dev_priv, u64 value_in_us)
 
 int i915_perf_open_ioctl(struct drm_device *dev, void *data,
 			 struct drm_file *file);
+int i915_perf_add_config_ioctl(struct drm_device *dev, void *data,
+			       struct drm_file *file);
+int i915_perf_remove_config_ioctl(struct drm_device *dev, void *data,
+				  struct drm_file *file);
+void i915_oa_init_reg_state(struct intel_engine_cs *engine,
+			    struct i915_gem_context *ctx,
+			    uint32_t *reg_state);
 
 /* i915_gem_evict.c */
 int __must_check i915_gem_evict_something(struct i915_address_space *vm,

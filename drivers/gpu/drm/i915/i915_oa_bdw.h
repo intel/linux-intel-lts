@@ -26,9 +26,9 @@
  *
  */
 
-#ifndef __I915_OA_HSW_H__
-#define __I915_OA_HSW_H__
+#ifndef __I915_OA_BDW_H__
+#define __I915_OA_BDW_H__
 
-extern void i915_perf_load_test_config_hsw(struct drm_i915_private *dev_priv);
+extern void i915_perf_load_test_config_bdw(struct drm_i915_private *dev_priv);
 
 #endif

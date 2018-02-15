@@ -275,6 +275,8 @@ struct i915_ext_ioctl_data {
 #define DRM_I915_GEM_CONTEXT_GETPARAM	0x34
 #define DRM_I915_GEM_CONTEXT_SETPARAM	0x35
 #define DRM_I915_PERF_OPEN		0x36
+#define DRM_I915_PERF_ADD_CONFIG    0x37
+#define DRM_I915_PERF_REMOVE_CONFIG 0x38
 #define DRM_I915_GEM_ACCESS_USERDATA	0x3c
 
 /* Special, two-level, extended ioctl */
@@ -345,6 +347,8 @@ struct i915_ext_ioctl_data {
 #define DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_CONTEXT_GETPARAM, struct drm_i915_gem_context_param)
 #define DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_CONTEXT_SETPARAM, struct drm_i915_gem_context_param)
 #define DRM_IOCTL_I915_PERF_OPEN	DRM_IOW(DRM_COMMAND_BASE + DRM_I915_PERF_OPEN, struct drm_i915_perf_open_param)
+#define DRM_IOCTL_I915_PERF_ADD_CONFIG  DRM_IOW(DRM_COMMAND_BASE + DRM_I915_PERF_ADD_CONFIG, struct drm_i915_perf_oa_config)
+#define DRM_IOCTL_I915_PERF_REMOVE_CONFIG   DRM_IOW(DRM_COMMAND_BASE + DRM_I915_PERF_REMOVE_CONFIG, __u64)
 #define DRM_IOCTL_I915_GEM_ACCESS_USERDATA	\
 		DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GEM_ACCESS_USERDATA, \
 		struct drm_i915_gem_access_userdata)
@@ -458,6 +462,14 @@ typedef struct drm_i915_irq_wait {
 #define VPG_I915_PARAM_HAS_POOLED_EU     0x803
 #define VPG_I915_PARAM_MIN_EU_IN_POOL    0x807
 #define I915_PARAM_CREATE_VERSION        0x809
+
+/* Query the mask of slices available for this system */
+#define I915_PARAM_SLICE_MASK		 46
+
+/* Assuming it's uniform for each slice, this queries the mask of subslices
+ * per-slice for this system.
+ */
+#define I915_PARAM_SUBSLICE_MASK	 47
 
 typedef struct drm_i915_getparam {
 	__s32 param;
@@ -1503,13 +1515,18 @@ struct drm_i915_gem_context_trtt_param {
 };
 
 enum drm_i915_oa_format {
-	I915_OA_FORMAT_A13 = 1,
-	I915_OA_FORMAT_A29,
-	I915_OA_FORMAT_A13_B8_C8,
-	I915_OA_FORMAT_B4_C8,
-	I915_OA_FORMAT_A45_B8_C8,
-	I915_OA_FORMAT_B4_C8_A16,
-	I915_OA_FORMAT_C4_B8,
+	I915_OA_FORMAT_A13 = 1,	    /* HSW only */
+	I915_OA_FORMAT_A29,	    /* HSW only */
+	I915_OA_FORMAT_A13_B8_C8,   /* HSW only */
+	I915_OA_FORMAT_B4_C8,	    /* HSW only */
+	I915_OA_FORMAT_A45_B8_C8,   /* HSW only */
+	I915_OA_FORMAT_B4_C8_A16,   /* HSW only */
+	I915_OA_FORMAT_C4_B8,	    /* HSW+ */
+
+	/* Gen8+ */
+	I915_OA_FORMAT_A12,
+	I915_OA_FORMAT_A12_B8_C8,
+	I915_OA_FORMAT_A32u40_A4u32_B8_C8,
 
 	I915_OA_FORMAT_MAX	    /* non-ABI */
 };
@@ -1632,6 +1649,22 @@ enum drm_i915_perf_record_type {
 	DRM_I915_PERF_RECORD_OA_BUFFER_LOST = 3,
 
 	DRM_I915_PERF_RECORD_MAX /* non-ABI */
+};
+
+/**
+ * Structure to upload perf dynamic configuration into the kernel.
+ */
+struct drm_i915_perf_oa_config {
+	/** String formatted like "%08x-%04x-%04x-%04x-%012x" */
+	char uuid[36];
+
+	__u32 n_mux_regs;
+	__u32 n_boolean_regs;
+	__u32 n_flex_regs;
+
+	__u64 __user mux_regs_ptr;
+	__u64 __user boolean_regs_ptr;
+	__u64 __user flex_regs_ptr;
 };
 
 #if defined(__cplusplus)

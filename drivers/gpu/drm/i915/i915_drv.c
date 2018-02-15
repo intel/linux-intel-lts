@@ -365,11 +365,15 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		 */
 		value = 1;
 		break;
-	case I915_PARAM_HAS_GET_APERTURE2:
-		value = 1;
+	case I915_PARAM_SLICE_MASK:
+		value = INTEL_INFO(dev_priv)->sseu.slice_mask;
+		if (!value)
+			return -ENODEV;
 		break;
-	case I915_PARAM_CREATE_VERSION:
-		value = 4;
+	case I915_PARAM_SUBSLICE_MASK:
+		value = INTEL_INFO(dev_priv)->sseu.subslice_mask;
+		if (!value)
+			return -ENODEV;
 		break;
 	default:
 		DRM_DEBUG("Unknown parameter %d\n", param->param);
@@ -2791,6 +2795,8 @@ static const struct drm_ioctl_desc i915_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(I915_GEM_CONTEXT_SETPARAM, i915_gem_context_setparam_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_PERF_OPEN, i915_perf_open_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_ACCESS_USERDATA, i915_gem_access_userdata, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(I915_PERF_ADD_CONFIG, i915_perf_add_config_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(I915_PERF_REMOVE_CONFIG, i915_perf_remove_config_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 
 /*
  * Extended ioctl layers extra ioctls into a single master ioctl

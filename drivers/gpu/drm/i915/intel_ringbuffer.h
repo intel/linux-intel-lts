@@ -281,8 +281,10 @@ struct intel_engine_cs {
 
 	int		(*emit_flush)(struct drm_i915_gem_request *request,
 				      u32 mode);
-	void	(*emit_start_watchdog)(struct drm_i915_gem_request *req);
-	void	(*emit_stop_watchdog)(struct drm_i915_gem_request *req);
+	u32 *	(*emit_start_watchdog)(struct drm_i915_gem_request *req,
+				    u32 *cs);
+	u32 *	(*emit_stop_watchdog)(struct drm_i915_gem_request *req,
+				    u32 *cs);
 #define EMIT_INVALIDATE	BIT(0)
 #define EMIT_FLUSH	BIT(1)
 #define EMIT_BARRIER	(EMIT_INVALIDATE | EMIT_FLUSH)
@@ -293,7 +295,7 @@ struct intel_engine_cs {
 #define I915_DISPATCH_PINNED BIT(1)
 #define I915_DISPATCH_RS     BIT(2)
 	void		(*emit_breadcrumb)(struct drm_i915_gem_request *req,
-					   u32 *out);
+					   u32 *cs);
 	int		emit_breadcrumb_sz;
 
 	/* Pass the request to the hardware queue (e.g. directly into
@@ -376,7 +378,7 @@ struct intel_engine_cs {
 		/* AKA wait() */
 		int	(*sync_to)(struct drm_i915_gem_request *req,
 				   struct drm_i915_gem_request *signal);
-		u32	*(*signal)(struct drm_i915_gem_request *req, u32 *out);
+		u32	*(*signal)(struct drm_i915_gem_request *req, u32 *cs);
 	} semaphore;
 
 	/* Execlists */
@@ -504,21 +506,12 @@ void intel_engine_cleanup(struct intel_engine_cs *engine);
 
 void intel_legacy_submission_resume(struct drm_i915_private *dev_priv);
 
-int __must_check intel_ring_begin(struct drm_i915_gem_request *req, int n);
 int __must_check intel_ring_cacheline_align(struct drm_i915_gem_request *req);
 
-static inline void intel_ring_emit(struct intel_ring *ring, u32 data)
-{
-	*(uint32_t *)(ring->vaddr + ring->tail) = data;
-	ring->tail += 4;
-}
+u32 __must_check *intel_ring_begin(struct drm_i915_gem_request *req, int n);
 
-static inline void intel_ring_emit_reg(struct intel_ring *ring, i915_reg_t reg)
-{
-	intel_ring_emit(ring, i915_mmio_reg_offset(reg));
-}
-
-static inline void intel_ring_advance(struct intel_ring *ring)
+static inline void
+intel_ring_advance(struct drm_i915_gem_request *req, u32 *cs)
 {
 	/* Dummy function.
 	 *
@@ -528,7 +521,7 @@ static inline void intel_ring_advance(struct intel_ring *ring)
 	 * reserved for the command packet (i.e. the value passed to
 	 * intel_ring_begin()).
 	 */
-	GEM_BUG_ONLY_ON(ring->tail != ring->advance);
+	GEM_BUG_ON((req->ring->vaddr + req->ring->tail) != cs);
 }
 
 static inline u32
@@ -537,11 +530,14 @@ intel_ring_wrap(const struct intel_ring *ring, u32 pos)
 	return pos & (ring->size - 1);
 }
 
-static inline u32 intel_ring_offset(struct intel_ring *ring, void *addr)
+static inline u32
+intel_ring_offset(struct drm_i915_gem_request *req, void *addr)
 {
 	/* Don't write ring->size (equivalent to 0) as that hangs some GPUs. */
-	u32 offset = addr - ring->vaddr;
-	return intel_ring_wrap(ring, offset);
+	u32 offset = addr - req->ring->vaddr;
+
+	GEM_BUG_ON(offset > req->ring->size);
+	return offset & (req->ring->size - 1);
 }
 
 int __intel_ring_space(int head, int tail, int size);
@@ -651,5 +647,16 @@ static inline bool intel_engine_wakeup(const struct intel_engine_cs *engine)
 void intel_engine_reset_breadcrumbs(struct intel_engine_cs *engine);
 void intel_engine_fini_breadcrumbs(struct intel_engine_cs *engine);
 unsigned int intel_breadcrumbs_busy(struct drm_i915_private *i915);
+
+static inline u32 *gen8_emit_pipe_control(u32 *batch, u32 flags, u32 offset)
+{
+	memset(batch, 0, 6 * sizeof(u32));
+
+	batch[0] = GFX_OP_PIPE_CONTROL(6);
+	batch[1] = flags;
+	batch[2] = offset;
+
+	return batch + 6;
+}
 
 #endif /* _INTEL_RINGBUFFER_H_ */
