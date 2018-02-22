@@ -337,7 +337,7 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 				      unsigned long what, void *data)
 {
 	const char *target = (const char *)data;
-	int ret;
+	int ret = 0;
 
 	if (what != SYS_RESTART)
 		return NOTIFY_DONE;
@@ -359,6 +359,10 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 		ret = execute_slcan_command((const char **)cold_reset_capsule);
 
 done:
+#ifdef CONFIG_SEND_SLCAN_ENABLE
+	if (ret)
+		panic("ablbc failed to cummnunicate with IOC.");
+#endif
 	return NOTIFY_DONE;
 }
 
