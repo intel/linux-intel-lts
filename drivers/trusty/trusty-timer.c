@@ -97,7 +97,6 @@ static int trusty_timer_call_notify(struct notifier_block *nb,
 static int trusty_timer_probe(struct platform_device *pdev)
 {
 	int ret;
-	unsigned int cpu;
 	struct trusty_timer_dev_state *s;
 	struct trusty_timer *tt;
 
@@ -159,7 +158,6 @@ err_allocate_work_queue:
 
 static int trusty_timer_remove(struct platform_device *pdev)
 {
-	unsigned int cpu;
 	struct trusty_timer_dev_state *s = platform_get_drvdata(pdev);
 	struct trusty_timer *tt;
 

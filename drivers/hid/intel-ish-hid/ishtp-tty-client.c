@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Intel Corporation.
+ * Copyright (c) 2017, Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -12,311 +12,152 @@
  */
 
 #include <linux/module.h>
-#include <linux/moduleparam.h>
-#include <linux/kernel.h>
-#include <linux/device.h>
-#include <linux/fs.h>
-#include <linux/errno.h>
-#include <linux/types.h>
-#include <linux/fcntl.h>
-#include <linux/aio.h>
-#include <linux/pci.h>
-#include <linux/poll.h>
-#include <linux/init.h>
-#include <linux/ioctl.h>
-#include <linux/cdev.h>
-#include <linux/version.h>
-#include <linux/sched.h>
-#include <linux/interrupt.h>
-#include <linux/uuid.h>
-#include <linux/compat.h>
-#include <linux/jiffies.h>
-#include <linux/console.h>
-#include <linux/delay.h>
+#include <linux/slab.h>
 #include <linux/tty.h>
-#include <linux/tty_driver.h>
 #include <linux/tty_flip.h>
-#include <linux/circ_buf.h>
 
-#include "ishtp/ishtp-dev.h"
-#include "ishtp/client.h"
-#include "ishtp-tty.h"
+#include "ishtp-dev.h"
+#include "client.h"
 
+#define ISH_TTY_MAJOR		267
 
 /* Rx ring buffer pool size */
 #define TTY_CL_RX_RING_SIZE	32
 #define TTY_CL_TX_RING_SIZE	16
 
-#define ISH_TTY_MAJOR 		267
+#define UART_GET_CONFIG	1
+#define UART_SET_CONFIG 2
+#define UART_SEND_DATA	3
+#define UART_RECV_DATA	4
+#define UART_ABORT_WRITE 5
+#define UART_ABORT_READ 6
 
-#define ISH_BUF_SIZE		256
+#define CMD_MASK	0x7F
+#define IS_RESPONSE	0x80
 
-struct ttyish {
+struct ishtp_tty_msg {
+	uint8_t command; /* Bit 7 : is_response */
+	uint8_t status;
+	uint16_t size;
+} __packed;
+
+struct uart_config {
+	uint32_t baud;
+	uint8_t bits_length:4;
+	uint8_t stop_bits:2;
+	uint8_t parity:1;
+	uint8_t even_parity:1;
+	uint8_t flow_control:1;
+	uint8_t reserved:7;
+};
+
+struct ishtp_cl_tty{
 	struct tty_port port;
-	struct device *dev;
+	struct ishtp_cl_device *cl_device;
+	struct ishtp_cl *ishtp_cl;
 	uint32_t baud;
 	uint8_t bits_length;
-} ttyish_dev;
+	int max_msg_size;
+	bool get_report_done;
+	int last_cmd_status;
+	wait_queue_head_t ishtp_tty_wait;
+};
 
-struct tty_driver *ish_tty_driver;
+static struct ishtp_cl_tty *ishtp_cl_tty_device;
 
-void __iomem *ish_membase;
+static const uuid_le tty_ishtp_guid = UUID_LE(0x6f2647c7, 0x3e16, 0x4d79,
+					      0xb4, 0xff, 0x02, 0x89, 0x28,
+					      0xee, 0xeb, 0xca);
 
-
-struct ishtp_cl	*tty_ishtp_cl;	/* ISS HECI TTY client */
-wait_queue_head_t	ishtp_tty_wait;
-
-int	get_report_done;	/* Get Feature/Input report complete flag */
-static int max_msg_size;
-
-static int ishtp_wait_for_response(void)
+static int ishtp_wait_for_response(struct ishtp_cl_tty *tp)
 {
-	if (!get_report_done)
-		wait_event_timeout(ishtp_tty_wait, get_report_done, 3 * HZ);
+	if (!tp->get_report_done)
+		wait_event_interruptible_timeout(tp->ishtp_tty_wait,
+						 tp->get_report_done, 3 * HZ);
 
-	if (!get_report_done) {
-		pr_err("Timeout waiting for response from HECI device\n");
-		return -1;
+	if (!tp->get_report_done) {
+		pr_err("Timeout waiting for response from ISHTP device\n");
+		return -ETIMEDOUT;
 	}
-
-	get_report_done = 0;
 
 	return 0;
 }
 
-/* HECI client driver structures and API for bus interface */
-void process_recv(void *recv_buf, size_t data_len)
-{
-	struct ishtp_tty_msg *ishtp_msg;
-	struct ttyish *tp = &ttyish_dev;
-	struct uart_config *cfg;
-	unsigned char	*payload;
-	size_t payload_len, total_len, cur_pos;
-
-	ISH_DBG_PRINT(KERN_ALERT "[ish-tty]: %s():+++ len=%u\n", __func__,
-		(unsigned)data_len);
-
-	if (data_len < sizeof(struct ishtp_tty_msg_hdr)) {
-		dev_err(NULL, "[ish-tty]: error, received %u which is ",
-			(unsigned)data_len);
-		dev_err(NULL, " less than data header %u\n",
-			(unsigned)sizeof(struct ishtp_tty_msg_hdr));
-		return;
-	}
-
-	payload = recv_buf + sizeof(struct ishtp_tty_msg);
-	total_len = data_len;
-	cur_pos = 0;
-
-	do {
-		ishtp_msg = (struct ishtp_tty_msg *)(recv_buf + cur_pos);
-		payload_len = ishtp_msg->hdr.size;
-
-		switch (ishtp_msg->hdr.command & CMD_MASK) {
-		default:
-			break;
-
-		case UART_GET_CONFIG:
-			if (!(ishtp_msg->hdr.command & IS_RESPONSE) || (ishtp_msg->hdr.status)) {
-				pr_err("recv command with status error\n");
-				//error handler
-				get_report_done = 1;
-				if (waitqueue_active(&ishtp_tty_wait))
-					wake_up(&ishtp_tty_wait);
-				break;
-			}
-
-
-			cfg = (struct uart_config *)payload;
-			tp->baud = cfg->baud;
-			tp->bits_length = cfg->bits_length;
-
-			ISH_DBG_PRINT(KERN_ALERT "[ish-tty] command: get config: %d:%d\n", tp->baud, tp->bits_length);
-
-			get_report_done = 1;
-			if (waitqueue_active(&ishtp_tty_wait))
-				wake_up(&ishtp_tty_wait);
-			break;
-		case UART_SET_CONFIG:
-			if (!(ishtp_msg->hdr.command & IS_RESPONSE) || (ishtp_msg->hdr.status)) {
-				pr_err("[ish-tty] recv command with status error\n");
-				//error handler
-				get_report_done = 1;
-				if (waitqueue_active(&ishtp_tty_wait))
-					wake_up(&ishtp_tty_wait);
-				break;
-			}
-
-			ISH_DBG_PRINT(KERN_ALERT "[ish-tty] command: set config success\n");
-
-			get_report_done = 1;
-			if (waitqueue_active(&ishtp_tty_wait))
-				wake_up(&ishtp_tty_wait);
-			break;
-		case UART_SEND_DATA:
-			if (!(ishtp_msg->hdr.command & IS_RESPONSE) || (ishtp_msg->hdr.status)) {
-				pr_err("[ish-tty] recv command with status error\n");
-				//error handler
-				get_report_done = 1;
-				if (waitqueue_active(&ishtp_tty_wait))
-					wake_up(&ishtp_tty_wait);
-				break;
-			}
-
-			ISH_DBG_PRINT(KERN_ALERT "[ish-tty] command: send data done\n");
-			get_report_done = 1;
-			if (waitqueue_active(&ishtp_tty_wait))
-				wake_up(&ishtp_tty_wait);
-			break;
-		case UART_RECV_DATA:
-			ISH_DBG_PRINT(KERN_ALERT "[ish-tty] command: recv data: len=%d\n", payload_len);
-			print_hex_dump(KERN_INFO, "", DUMP_PREFIX_NONE, 16, 1, payload,
-					payload_len, true);
-			tty_insert_flip_string(&tp->port, payload, payload_len);
-			tty_flip_buffer_push(&tp->port);
-
-			break;
-		case UART_ABORT_WRITE:
-			get_report_done = 1;
-			if (waitqueue_active(&ishtp_tty_wait))
-				wake_up(&ishtp_tty_wait);
-			break;
-		case UART_ABORT_READ:
-			get_report_done = 1;
-			if (waitqueue_active(&ishtp_tty_wait))
-				wake_up(&ishtp_tty_wait);
-			break;
-		}
-
-		cur_pos += payload_len + sizeof(struct ishtp_tty_msg);
-		payload += payload_len + sizeof(struct ishtp_tty_msg);
-
-	} while (cur_pos < total_len);
-
-}
-
-static void tty_ishtp_cl_event_cb(struct ishtp_cl_device *device)
-{
-	size_t r_length;
-	struct ishtp_cl_rb *rb_in_proc;
-	unsigned long	flags;
-
-	ISH_DBG_PRINT(KERN_ALERT "%s() +++\n", __func__);
-
-	if (!tty_ishtp_cl)
-		return;
-
-	spin_lock_irqsave(&tty_ishtp_cl->in_process_spinlock, flags);
-	while (!list_empty(&tty_ishtp_cl->in_process_list.list)) {
-		rb_in_proc = list_entry(tty_ishtp_cl->in_process_list.list.next,
-			struct ishtp_cl_rb, list);
-		list_del_init(&rb_in_proc->list);
-		spin_unlock_irqrestore(&tty_ishtp_cl->in_process_spinlock,
-			flags);
-
-		if (!rb_in_proc->buffer.data) {
-			ISH_DBG_PRINT(KERN_ALERT
-				"%s(): !rb_in_proc-->buffer.data, something's wrong\n",
-				__func__);
-			return;
-		}
-		r_length = rb_in_proc->buf_idx;
-		ISH_DBG_PRINT(KERN_ALERT
-			"%s(): OK received buffer of %u length\n", __func__,
-			(unsigned)r_length);
-
-		/* decide what to do with received data */
-		process_recv(rb_in_proc->buffer.data, r_length);
-
-		ishtp_cl_io_rb_recycle(rb_in_proc);
-		spin_lock_irqsave(&tty_ishtp_cl->in_process_spinlock, flags);
-	}
-	spin_unlock_irqrestore(&tty_ishtp_cl->in_process_spinlock, flags);
-}
-
 static int ish_tty_install(struct tty_driver *driver, struct tty_struct *tty)
 {
-	struct ttyish *tp;
-	int ret = -ENODEV;
+	tty->driver_data = ishtp_cl_tty_device;
 
-	dev_info(tty->dev, "[%d]%s index:%d\n", __LINE__, __func__, tty->index);
-
-	tp = &ttyish_dev;
-
-	ret = tty_port_install(&tp->port, driver, tty);
-
-	tty->driver_data = tp;
-
-	return ret;
-}
-
-static void ish_tty_cleanup(struct tty_struct *tty)
-{
-
-	dev_info(tty->dev, "[%d]%s index:%d\n", __LINE__, __func__, tty->index);
+	return tty_port_install(&ishtp_cl_tty_device->port, driver, tty);
 }
 
 static int ish_tty_open(struct tty_struct *tty, struct file *filp)
 {
-	struct ttyish *tp = tty->driver_data;
-	int ret = 0;
+	struct ishtp_cl_tty *tp = tty->driver_data;
 
-	dev_info(tty->dev, "[%d]%s index:%d\n", __LINE__, __func__, tty->index);
-
-	ret = tty_port_open(&tp->port, tty, filp);
-
-	return ret;
+	return tty_port_open(&tp->port, tty, filp);
 }
 
 static void ish_tty_close(struct tty_struct *tty, struct file *filp)
 {
-	struct ttyish *tp = tty->driver_data;
-
-	dev_info(tty->dev, "%s index:%d\n", __func__, tty->index);
+	struct ishtp_cl_tty *tp = tty->driver_data;
 
 	tty_port_close(&tp->port, tty, filp);
 }
 
-static int ish_tty_write(struct tty_struct *tty, const unsigned char *buf, int count)
+static int ish_tty_write(struct tty_struct *tty, const unsigned char *buf,
+			 int count)
 {
+	struct ishtp_cl_tty *tp = tty->driver_data;
 	unsigned char *ishtp_buf;
 	struct ishtp_tty_msg *ishtp_msg;
 	unsigned char *msg_buf;
+	uint32_t max_msg_payload_size;
 	int c, ret = 0;
 
 	dev_dbg(tty->dev, "%s: len=%d\n", __func__, count);
-	ishtp_buf = kzalloc(sizeof(struct ishtp_tty_msg) + max_msg_size, GFP_KERNEL);
+
+	ishtp_buf = kzalloc(sizeof(struct ishtp_tty_msg) + tp->max_msg_size,
+			    GFP_KERNEL);
 	ishtp_msg = (struct ishtp_tty_msg *)ishtp_buf;
 	if (!ishtp_msg)
 		return -ENOMEM;
-	ishtp_msg->hdr.command = UART_SEND_DATA;
+
+	ishtp_msg->command = UART_SEND_DATA;
 	msg_buf = (unsigned char *)&ishtp_msg[1];
 
-	uint32_t max_msg_payload_size = max_msg_size -
-					sizeof(struct ishtp_tty_msg_hdr);
+	max_msg_payload_size = tp->max_msg_size -
+					sizeof(struct ishtp_tty_msg);
+
 	while (count > 0) {
 		c = count;
 		if (c > max_msg_payload_size)
 			c = max_msg_payload_size;
 
-		ishtp_msg->hdr.size = c;
+		ishtp_msg->size = c;
 		memcpy(msg_buf, buf, c);
 
-		/* heci message send out */
-		ishtp_cl_send(tty_ishtp_cl, ishtp_buf, sizeof(struct ishtp_tty_msg) + c);
+		tp->get_report_done = false;
+		tp->last_cmd_status = -EIO;
+		/* ishtp message send out */
+		ishtp_cl_send(tp->ishtp_cl, ishtp_buf,
+			      sizeof(struct ishtp_tty_msg) + c);
 
 		buf += c;
 		count -= c;
 		ret += c;
 
 		/* wait for message send completely */
-		if (ishtp_wait_for_response() < 0) {
-			kfree(ishtp_buf);
-			return -ETIMEDOUT;
+		if (ishtp_wait_for_response(tp) < 0) {
+			ret = -ETIMEDOUT;
+			goto free_buffer;
+		}
+
+		if (tp->last_cmd_status) {
+			ret = tp->last_cmd_status;
+			goto free_buffer;
 		}
 	}
-
-	dev_dbg(tty->dev, "%s: done\n", __func__);
+free_buffer:
 	kfree(ishtp_buf);
 	return ret;
 }
@@ -324,13 +165,14 @@ static int ish_tty_write(struct tty_struct *tty, const unsigned char *buf, int c
 static void ish_tty_set_termios(struct tty_struct *tty,
 					struct ktermios *old_termios)
 {
+	struct ishtp_cl_tty *tp = tty->driver_data;
 	static unsigned char ishtp_buf[10];
 	struct ishtp_tty_msg *ishtp_msg;
 	struct ktermios *termios;
 	struct uart_config *cfg;
 	unsigned int baud;
 
-	dev_info(tty->dev, "[%d]%s index:%d\n", __LINE__, __func__, tty->index);
+	dev_dbg(tty->dev, "[%d]%s index:%d\n", __LINE__, __func__, tty->index);
 
 	if (old_termios && !tty_termios_hw_change(&tty->termios, old_termios))
 		return;
@@ -338,7 +180,7 @@ static void ish_tty_set_termios(struct tty_struct *tty,
 	termios = &tty->termios;
 	ishtp_msg = (struct ishtp_tty_msg *)ishtp_buf;
 
-	ishtp_msg->hdr.command = UART_SET_CONFIG;
+	ishtp_msg->command = UART_SET_CONFIG;
 	cfg = (struct uart_config *)&ishtp_msg[1];
 
 	switch (C_CSIZE(tty)) {
@@ -360,227 +202,365 @@ static void ish_tty_set_termios(struct tty_struct *tty,
 
 	baud = tty_termios_baud_rate(termios);
 
-	if ((baud != 9600) && (baud != 57600) && (baud != 19200) && (baud != 38400) &&
-	    (baud != 115200) && (baud != 921600) && (baud != 2000000) && (baud != 3000000) &&
-		(baud != 3250000) && (baud != 3500000) && (baud != 4000000))
-		dev_info(tty->dev, "%s: baud[%d] is not supported\n", __func__, baud);
+	if (baud != 9600 && baud != 57600 && baud != 19200 &&
+	    baud != 38400 && baud != 115200 && baud != 921600 &&
+	    baud != 2000000 && baud != 3000000 && baud != 3250000 &&
+	    baud != 3500000 && baud != 4000000) {
+		dev_err(tty->dev, "%s: baud[%d] is not supported\n",
+			__func__, baud);
+		return;
+	}
 
 	cfg->baud = baud;
 
-	ishtp_msg->hdr.size = sizeof(struct uart_config);
+	ishtp_msg->size = sizeof(struct uart_config);
 
-	/* heci message send out */
-	ishtp_cl_send(tty_ishtp_cl, ishtp_buf, sizeof(struct ishtp_tty_msg) + ishtp_msg->hdr.size);
+	tp->get_report_done = false;
+	/* ishtp message send out */
+	ishtp_cl_send(tp->ishtp_cl, ishtp_buf,
+		      sizeof(struct ishtp_tty_msg) + ishtp_msg->size);
 
 	/* wait for message send completely */
-	if (ishtp_wait_for_response() < 0)
-		return;
+	ishtp_wait_for_response(tp);
 }
 
 static int ish_tty_write_room(struct tty_struct *tty)
 {
-	int space_left;
+	struct ishtp_cl_tty *tp = tty->driver_data;
 
-	space_left = max_msg_size;
-
-	dev_info(tty->dev, "%s index:%d, space_left:%d\n", __func__, tty->index, space_left);
-
-	return space_left;
-}
-
-static int ish_tty_chars_in_buffer(struct tty_struct *tty)
-{
-	dev_info(tty->dev, "[%d]%s index:%d\n", __LINE__, __func__, tty->index);
-
-	return 0;
-}
-
-static void ish_tty_unthrottle(struct tty_struct *tty)
-{
-	dev_info(tty->dev, "[%d]%s index:%d\n", __LINE__, __func__, tty->index);
+	return tp->max_msg_size;
 }
 
 static struct tty_operations ish_tty_ops = {
 	.install = ish_tty_install,
-	.cleanup = ish_tty_cleanup,
 	.open = ish_tty_open,
 	.close = ish_tty_close,
 	.write = ish_tty_write,
 	.set_termios	= ish_tty_set_termios,
 	.write_room = ish_tty_write_room,
-	.chars_in_buffer = ish_tty_chars_in_buffer,
-	.unthrottle = ish_tty_unthrottle,
 };
 
-static int ishtp_tty_port_activate(struct tty_port *port, struct tty_struct *tty)
+static struct tty_driver *ish_tty_driver;
+
+static void process_recv(struct ishtp_cl_device *cl_device, void *recv_buf,
+			 size_t data_len)
 {
-	return 0;
-}
+	struct ishtp_tty_msg *ishtp_msg;
+	struct ishtp_cl_tty *tp = ishtp_cl_tty_device;
+	struct uart_config *cfg;
+	unsigned char	*payload;
+	size_t payload_len, total_len, cur_pos;
 
-static void ishtp_tty_port_shutdown(struct tty_port *tport)
-{
-	return;
-}
+	dev_dbg(&cl_device->dev, "%s():+++ len=%u\n", __func__,
+		(unsigned)data_len);
 
-static void ishtp_tty_port_dtr_rts(struct tty_port *port, int on)
-{
-	return;
-}
-
-static int ishtp_tty_port_carrier_raised(struct tty_port *port)
-{
-	return 1;
-}
-
-static const struct tty_port_operations ishtp_tty_port_ops = {
-	.activate	= ishtp_tty_port_activate,
-	.shutdown	= ishtp_tty_port_shutdown,
-	.carrier_raised = ishtp_tty_port_carrier_raised,
-	.dtr_rts	= ishtp_tty_port_dtr_rts,
-};
-
-static int tty_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
-{
-	struct ishtp_device *dev;
-	struct tty_port *port;
-	int i, rv;
-
-	ISH_DBG_PRINT(KERN_ALERT "%s(): +++\n", __func__);
-	if (!cl_device)
-		return	-ENODEV;
-
-	if (uuid_le_cmp(tty_ishtp_guid,
-			cl_device->fw_client->props.protocol_name) != 0) {
-		ISH_DBG_PRINT(KERN_ALERT "%s(): device doesn't match\n",
-			__func__);
-		return	-ENODEV;
+	if (data_len < sizeof(struct ishtp_tty_msg)) {
+		dev_err(&cl_device->dev,
+			"Error, received %u which is ",
+			(unsigned)data_len);
+		dev_err(&cl_device->dev, " less than data header %u\n",
+			(unsigned)sizeof(struct ishtp_tty_msg));
+		return;
 	}
 
-	ISH_DBG_PRINT(KERN_ALERT "%s(): device matches!\n", __func__);
-	tty_ishtp_cl = ishtp_cl_allocate(cl_device->ishtp_dev);
+	payload = recv_buf + sizeof(struct ishtp_tty_msg);
+	total_len = data_len;
+	cur_pos = 0;
+
+	do {
+		ishtp_msg = (struct ishtp_tty_msg *)(recv_buf + cur_pos);
+		payload_len = ishtp_msg->size;
+
+		switch (ishtp_msg->command & CMD_MASK) {
+		case UART_GET_CONFIG:
+			tp->get_report_done = true;
+			if (!(ishtp_msg->command & IS_RESPONSE) ||
+			    (ishtp_msg->status)) {
+				dev_err(&cl_device->dev,
+					"Recv command with status error\n");
+				wake_up_interruptible(&tp->ishtp_tty_wait);
+				break;
+			}
+
+			cfg = (struct uart_config *)payload;
+			tp->baud = cfg->baud;
+			tp->bits_length = cfg->bits_length;
+			dev_dbg(&cl_device->dev,
+				"Command: get config: %d:%d\n",
+				tp->baud, tp->bits_length);
+			wake_up_interruptible(&tp->ishtp_tty_wait);
+			break;
+		case UART_SET_CONFIG:
+			tp->get_report_done = true;
+			if (!(ishtp_msg->command & IS_RESPONSE) ||
+			    (ishtp_msg->status)) {
+				dev_err(&cl_device->dev,
+					"Recv command with status error\n");
+				wake_up_interruptible(&tp->ishtp_tty_wait);
+				break;
+			}
+
+			tp->last_cmd_status = 0;
+			dev_dbg(&cl_device->dev,
+				"Command: set config success\n");
+			wake_up_interruptible(&tp->ishtp_tty_wait);
+			break;
+		case UART_SEND_DATA:
+			tp->get_report_done = true;
+			if (!(ishtp_msg->command & IS_RESPONSE) ||
+			    (ishtp_msg->status)) {
+				dev_err(&cl_device->dev,
+					"Recv command with status error\n");
+				wake_up_interruptible(&tp->ishtp_tty_wait);
+				break;
+			}
+
+			tp->last_cmd_status = 0;
+			dev_dbg (&cl_device->dev,
+				 "Command: send data done\n");
+			wake_up_interruptible(&tp->ishtp_tty_wait);
+			break;
+		case UART_RECV_DATA:
+			dev_dbg(&cl_device->dev,
+				"Command: recv data: len=%ld\n",
+				payload_len);
+			print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_NONE,
+				       16, 1, payload,
+				       payload_len, true);
+			tty_insert_flip_string(&tp->port, payload,
+					       payload_len);
+			tty_flip_buffer_push(&tp->port);
+			break;
+		case UART_ABORT_WRITE:
+			tp->get_report_done = true;
+			wake_up_interruptible(&tp->ishtp_tty_wait);
+			break;
+		case UART_ABORT_READ:
+			tp->get_report_done = true;
+			wake_up_interruptible(&tp->ishtp_tty_wait);
+			break;
+		default:
+			break;
+		}
+
+		cur_pos += payload_len + sizeof(struct ishtp_tty_msg);
+		payload += payload_len + sizeof(struct ishtp_tty_msg);
+
+	} while (cur_pos < total_len);
+}
+
+static void tty_ishtp_cl_event_cb(struct ishtp_cl_device *cl_device)
+{
+	struct ishtp_cl	*tty_ishtp_cl = ishtp_get_drvdata(cl_device);
+	struct ishtp_cl_rb *rb_in_proc;
+
 	if (!tty_ishtp_cl)
-		return	-ENOMEM;
+		return;
 
-	rv = ishtp_cl_link(tty_ishtp_cl, ISHTP_HOST_CLIENT_ID_ANY);
-	if (rv) {
-		dev_err(&cl_device->dev, "ishtp_cl_link failed\n");
-		return	-ENOMEM;
+	while ((rb_in_proc = ishtp_cl_rx_get_rb(tty_ishtp_cl)) &&
+	       rb_in_proc->buffer.data) {
+		process_recv(cl_device, rb_in_proc->buffer.data,
+			     rb_in_proc->buf_idx);
+		ishtp_cl_io_rb_recycle(rb_in_proc);
 	}
-
-	dev = tty_ishtp_cl->dev;
-
-	/* Connect to FW client */
-	tty_ishtp_cl->rx_ring_size = TTY_CL_RX_RING_SIZE;
-	tty_ishtp_cl->tx_ring_size = TTY_CL_TX_RING_SIZE;
-
-	i = ishtp_fw_cl_by_uuid(dev, &tty_ishtp_guid);
-	tty_ishtp_cl->fw_client_id = dev->fw_clients[i].client_id;
-	tty_ishtp_cl->state = ISHTP_CL_CONNECTING;
-
-	rv = ishtp_cl_connect(tty_ishtp_cl);
-	if (rv) {
-		dev_err(&cl_device->dev, "client connect failed\n");
-		return rv;
-	}
-
-	/* Register read callback */
-	ishtp_register_event_cb(tty_ishtp_cl->device, tty_ishtp_cl_event_cb);
-
-	init_waitqueue_head(&ishtp_tty_wait);
-
-	/* register tty device */
-	port = &ttyish_dev.port;
-	tty_port_init(port);
-	port->ops = &ishtp_tty_port_ops;
-
-	ttyish_dev.dev = tty_port_register_device(port, ish_tty_driver, 0,
-			&tty_ishtp_cl->device->dev);
-
-	max_msg_size = cl_device->fw_client->props.max_msg_length;
-
-	ISH_DBG_PRINT(KERN_ALERT "%s(): ---\n", __func__);
-	return	0;
 }
 
-static int tty_ishtp_cl_remove(struct ishtp_cl_device *dev)
+static const struct tty_port_operations ish_port_ops;
+
+static int ishtp_cl_tty_connect(struct ishtp_cl_tty *tty_dev,
+				struct ishtp_cl_device *cl_device)
 {
-	ISH_DBG_PRINT(KERN_ALERT "%s(): +++\n", __func__);
-	tty_unregister_device(ish_tty_driver, 0);
-
-	tty_ishtp_cl = NULL;
-
-	ISH_DBG_PRINT(KERN_ALERT "%s(): ---\n", __func__);
-	return  0;
-}
-
-
-struct ishtp_cl_driver	tty_ishtp_cl_driver = {
-	.name = "ish_tty",
-	.probe = tty_ishtp_cl_probe,
-	.remove = tty_ishtp_cl_remove,
-};
-
-static int __init ish_tty_init(void)
-{
-	struct tty_driver *tty_driver;
+	struct ishtp_cl *cl;
+	struct ishtp_fw_client *fw_client;
 	int ret;
 
-	pr_info("[%d]%s\n", __LINE__, __func__);
-
-	tty_driver = alloc_tty_driver(1);
-	if (!tty_driver) {
-		pr_err("%s(%d): Memory allocation failed\n", __func__, __LINE__);
-		return -ENOMEM;
-	}
-
-	ish_tty_driver = tty_driver;
-
-	tty_driver->owner = THIS_MODULE;
-	tty_driver->driver_name = "ISH-UART";
-	tty_driver->name = "ttyISH";
-	tty_driver->major = ISH_TTY_MAJOR;
-	tty_driver->type = TTY_DRIVER_TYPE_SERIAL;
-	tty_driver->subtype = SERIAL_TYPE_NORMAL;
-	tty_driver->flags = TTY_DRIVER_REAL_RAW | TTY_DRIVER_DYNAMIC_DEV;
-
-	tty_driver->init_termios = tty_std_termios;
-	tty_driver->init_termios.c_cflag = B115200 | CS8 | HUPCL | CLOCAL;
-	tty_driver->init_termios.c_lflag = ISIG | ICANON | IEXTEN;
-	tty_set_operations(tty_driver, &ish_tty_ops);
-
-	pr_info("[%d]%s\n", __LINE__, __func__);
-
-	ret = tty_register_driver(tty_driver);
-	if (ret) {
-		put_tty_driver(tty_driver);
+	cl = ishtp_cl_allocate(cl_device->ishtp_dev);
+	if (!cl) {
+		ret = -ENOMEM;
 		return ret;
 	}
 
-	ret = ishtp_cl_driver_register(&tty_ishtp_cl_driver);
+	ret = ishtp_cl_link(cl, ISHTP_HOST_CLIENT_ID_ANY);
+	if (ret) {
+		ret = -ENOMEM;
+		goto out_client_free;
+	}
+
+	fw_client = ishtp_fw_cl_get_client(cl->dev, &tty_ishtp_guid);
+	if (!fw_client) {
+		ret = -ENOENT;
+		goto out_client_free;
+	}
+
+	cl->fw_client_id = fw_client->client_id;
+	cl->state = ISHTP_CL_CONNECTING;
+	cl->rx_ring_size = TTY_CL_RX_RING_SIZE;
+	cl->tx_ring_size = TTY_CL_TX_RING_SIZE;
+	ret = ishtp_cl_connect(cl);
+	if (ret) {
+		dev_err(&cl_device->dev, "client connect failed\n");
+		goto out_client_free;
+	}
+
+	init_waitqueue_head(&tty_dev->ishtp_tty_wait);
+	tty_dev->max_msg_size = cl_device->fw_client->props.max_msg_length;
+	ishtp_set_drvdata(cl_device, cl);
+	tty_dev->ishtp_cl= cl;
+
+	/* Register read callback */
+	ishtp_register_event_cb(cl_device, tty_ishtp_cl_event_cb);
+
+        ishtp_get_device(cl_device);
+
+	return 0;
+
+out_client_free:
+	ishtp_cl_free(cl);
+
+	return ret;
+}
+
+static void ishtp_cl_tty_disconnect(struct ishtp_cl_device *cl_device)
+{
+	struct ishtp_cl	*cl = ishtp_get_drvdata(cl_device);
+
+	ishtp_register_event_cb(cl->device, NULL);
+	cl->state = ISHTP_CL_DISCONNECTING;
+	ishtp_cl_disconnect(cl);
+	ishtp_put_device(cl_device);
+	ishtp_cl_unlink(cl);
+	ishtp_cl_flush_queues(cl);
+	ishtp_cl_free(cl);
+}
+
+static int ishtp_cl_tty_init(struct ishtp_cl_device *cl_device)
+{
+	struct device *dev;
+	int ret;
+
+	ishtp_cl_tty_device = kzalloc(sizeof(*ishtp_cl_tty_device),
+				      GFP_KERNEL);
+	if (!ishtp_cl_tty_device)
+		return -ENOMEM;
+
+	ish_tty_driver = alloc_tty_driver(1);
+	if (!ish_tty_driver) {
+		ret = -ENOMEM;
+		goto free_device;
+	}
+
+	ish_tty_driver->owner = THIS_MODULE;
+	ish_tty_driver->driver_name = "ish-serial";
+	ish_tty_driver->name = "ttyISH";
+	ish_tty_driver->minor_start = 0;
+	ish_tty_driver->major = ISH_TTY_MAJOR;
+	ish_tty_driver->type = TTY_DRIVER_TYPE_SERIAL;
+	ish_tty_driver->subtype = SERIAL_TYPE_NORMAL;
+	ish_tty_driver->flags = TTY_DRIVER_REAL_RAW | TTY_DRIVER_DYNAMIC_DEV;
+
+	ish_tty_driver->init_termios = tty_std_termios;
+	ish_tty_driver->init_termios.c_cflag = B115200 | CS8 | HUPCL | CLOCAL;
+	ish_tty_driver->init_termios.c_lflag = ISIG | ICANON | IEXTEN;
+	tty_set_operations(ish_tty_driver, &ish_tty_ops);
+
+	ishtp_cl_tty_device->cl_device = cl_device;
+	tty_port_init(&ishtp_cl_tty_device->port);
+
+	ret = tty_register_driver(ish_tty_driver);
+	if (ret) {
+		put_tty_driver(ish_tty_driver);
+		return ret;
+	}
+
+	ret = ishtp_cl_tty_connect(ishtp_cl_tty_device, cl_device);
+	if (ret)
+		goto free_tty_driver;
+
+	ishtp_cl_tty_device->cl_device = cl_device;
+	tty_port_init(&ishtp_cl_tty_device->port);
+	ishtp_cl_tty_device->port.ops = &ish_port_ops;
+	dev = tty_port_register_device(&ishtp_cl_tty_device->port,
+				       ish_tty_driver, 0, &cl_device->dev);
+
+	if (IS_ERR(dev)) {
+		tty_port_put(&ishtp_cl_tty_device->port);
+		ret = PTR_ERR(dev);
+		goto disconnect_tty_driver;
+	}
+
+	return 0;
+disconnect_tty_driver:
+	ishtp_cl_tty_disconnect(cl_device);
+free_tty_driver:
+	tty_unregister_driver(ish_tty_driver);
+	put_tty_driver(ish_tty_driver);
+free_device:
+	kfree(ishtp_cl_tty_device);
+	ishtp_cl_tty_device = NULL;
+
+	return ret;
+}
+
+static void ishtp_cl_tty_deinit(void)
+{
+	tty_unregister_device(ish_tty_driver, 0);
+	tty_port_destroy(&ishtp_cl_tty_device->port);
+	tty_unregister_driver(ish_tty_driver);
+	put_tty_driver(ish_tty_driver);
+	ishtp_cl_tty_disconnect(ishtp_cl_tty_device->cl_device);
+	ishtp_set_drvdata(ishtp_cl_tty_device->cl_device, NULL);
+	kfree(ishtp_cl_tty_device);
+	ishtp_cl_tty_device = NULL;
+}
+
+static int ishtp_cl_tty_probe(struct ishtp_cl_device *cl_device)
+{
+	int ret;
+
+	if (ishtp_cl_tty_device)
+		return -EEXIST;
+
+	if (!cl_device)
+		return -ENODEV;
+
+	if (uuid_le_cmp(tty_ishtp_guid,
+			cl_device->fw_client->props.protocol_name) != 0)
+		return	-ENODEV;
+
+	ret = ishtp_cl_tty_init(cl_device);
+	if (ret)
+		return ret;
 
 	return 0;
 }
 
-static void  __exit ish_tty_exit(void)
+static int ishtp_cl_tty_remove(struct ishtp_cl_device *cl_device)
 {
-	int ret;
+	ishtp_cl_tty_deinit();
 
-	ishtp_cl_driver_unregister(&tty_ishtp_cl_driver);
-
-	ret = tty_unregister_driver(ish_tty_driver);
-	if (ret < 0)
-		printk(KERN_ERR "ish_tty_driver: tty_unregister_driver failed, %d\n", ret);
-	else
-		put_tty_driver(ish_tty_driver);
-	ish_tty_driver = NULL;
+	return 0;
 }
 
-late_initcall(ish_tty_init);
-module_exit(ish_tty_exit);
+static struct ishtp_cl_driver ishtp_cl_tty_driver = {
+	.name = "ishtp-client",
+	.probe = ishtp_cl_tty_probe,
+	.remove = ishtp_cl_tty_remove,
+};
 
-MODULE_DESCRIPTION("Driver of Simulated UART on Sensor Hub");
-MODULE_AUTHOR("Intel Corporation");
-MODULE_AUTHOR("Even Xu <even.xu@intel.com");
+static int __init ishtp_tty_client_init(void)
+{
+	return ishtp_cl_driver_register(&ishtp_cl_tty_driver);
+}
 
+static void __exit ishtp_tty_client_exit(void)
+{
+	ishtp_cl_driver_unregister(&ishtp_cl_tty_driver);
+}
+
+late_initcall(ishtp_tty_client_init);
+module_exit(ishtp_tty_client_exit);
+
+MODULE_DESCRIPTION("ISH ISHTP TTY client driver");
+MODULE_AUTHOR("Even Xu <even.xu@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("ishtp:*");

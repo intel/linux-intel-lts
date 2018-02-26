@@ -1021,13 +1021,6 @@ static noinline void __init kernel_init_freeable(void)
 	(void) sys_dup(0);
 	(void) sys_dup(0);
 	/*
-	 * We need to ensure that the filesystem is ready by this point,
-	 *  wait for async_populate_rootfs to complete.
-	 */
-#ifdef CONFIG_BLK_DEV_INITRD 
-	async_synchronize_full_domain(&populate_rootfs_domain);
-#endif
-	/*
 	 * check if there is an early userspace init.  If yes, let it do all
 	 * the work
 	 */
