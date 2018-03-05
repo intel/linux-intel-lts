@@ -575,6 +575,8 @@ static int rapl_cpu_offline(unsigned int cpu)
 	if (!cpumask_test_and_clear_cpu(cpu, &rapl_cpu_mask))
 		return 0;
 
+	if (!pmu)
+		return -ENODEV;
 	pmu->cpu = -1;
 	/* Find a new cpu to collect rapl events */
 	target = cpumask_any_but(topology_core_cpumask(cpu), cpu);
