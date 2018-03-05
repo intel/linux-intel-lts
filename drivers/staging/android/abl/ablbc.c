@@ -295,12 +295,7 @@ static const unsigned int DEFAULT_TARGET_INDEX;
 static const char * const cold_reset[] = {
 	"/vendor/bin/cansend",
 	"slcan0",
-	"0000FFFF#05035555555555",
-	NULL};
-static const char * const cold_reset_capsule[] = {
-	"/vendor/bin/cansend",
-	"slcan0",
-	"0000FFFF#05035555555555",
+	"0000FFFF#05015555555555",
 	NULL};
 static const char * const suppress_heartbeat[] = {
 	"/vendor/bin/cansend",
@@ -315,6 +310,7 @@ static const char * const reboot_request[] = {
 
 static int execute_slcan_command(const char *cmd[])
 {
+#ifdef CONFIG_SEND_SLCAN_ENABLE
 	struct subprocess_info *sub_info;
 	int ret = -1;
 
@@ -332,13 +328,16 @@ static int execute_slcan_command(const char *cmd[])
 		pr_err("Failure on cmd=%s ret=%d\n", cmd[0], ret);
 
 	return ret;
+#else
+	return 0;
+#endif
 }
 
 static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 				      unsigned long what, void *data)
 {
 	const char *target = (const char *)data;
-	int ret;
+	int ret = 0;
 
 	if (what != SYS_RESTART)
 		return NOTIFY_DONE;
@@ -355,16 +354,15 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 		if (ret)
 			pr_err("%s: Failed to set reboot target, ret=%d\n",
 				__func__, ret);
-		else {
-			ret = execute_slcan_command((const char **)cold_reset);
-			if (ret)
-				goto done;
-		}
 	}
-	if (capsule_request)
-		ret = execute_slcan_command((const char **)cold_reset_capsule);
+
+	ret = execute_slcan_command((const char **)cold_reset);
 
 done:
+#ifdef CONFIG_SEND_SLCAN_ENABLE
+	if (ret)
+		panic("ablbc failed to cummnunicate with IOC.");
+#endif
 	return NOTIFY_DONE;
 }
 
