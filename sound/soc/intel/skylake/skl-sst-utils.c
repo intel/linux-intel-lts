@@ -32,6 +32,7 @@
 #define CRASH_DUMP_VERSION 0x1
 /* FW Extended Manifest Header id = $AE1 */
 #define SKL_EXT_MANIFEST_HEADER_MAGIC   0x31454124
+#define MAX_DSP_EXCEPTION_STACK_SIZE (64*1024)
 
 #define UUID_ATTR_RO(_name) \
 	struct uuid_attribute uuid_attr_##_name = __ATTR_RO(_name)
@@ -308,6 +309,73 @@ void skl_reset_instance_id(struct skl_sst *ctx)
 }
 EXPORT_SYMBOL_GPL(skl_reset_instance_id);
 
+/* This function checks tha available data on the core id
+ * passed as an argument and returns the bytes available
+ */
+static int skl_check_ext_excep_data_avail(struct skl_sst *ctx, int idx)
+{
+	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
+	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
+	u32 read, write;
+	u32 *ptr;
+
+	/* move to the source dsp tracing window */
+        base += (idx * size);
+        ptr = (u32 *) base;
+        read = ptr[0];
+        write = ptr[1];
+
+	if (write == read)
+		return 0;
+        else if (write > read)
+		return (write - read);
+	else
+		return (size - 8 - read + write);
+}
+
+/* Function to read the extended DSP crash information from the
+ * log buffer memory window, on per core basis.
+ * Data is read into the buffer passed as *ext_core_dump.
+ * number of bytes read is updated in the sz_ext_dump
+ */
+static void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
+			void *ext_core_dump, int *sz_ext_dump)
+{
+	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
+	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
+	u32 read, write;
+	int offset = *sz_ext_dump;
+	u32 *ptr;
+
+	/* move to the current core's tracing window */
+	base += (idx * size);
+	ptr = (u32 *) base;
+	read = ptr[0];
+	write = ptr[1];
+	if (write > read) {
+		memcpy_fromio((ext_core_dump + offset),
+			(const void __iomem *)(base + 8 + read),
+				(write - read));
+		*sz_ext_dump = offset + write - read;
+		/* advance read pointer */
+		ptr[0] += write - read;
+	} else {
+		/* wrap around condition - copy till the end */
+		memcpy_fromio((ext_core_dump + offset),
+			(const void __iomem *)(base + 8 + read),
+				(size - 8 - read));
+		*sz_ext_dump = offset + size - 8 - read;
+		offset = *sz_ext_dump;
+
+		/* copy from the beginnning */
+		memcpy_fromio((ext_core_dump + offset),
+			(const void __iomem *) (base + 8), write);
+		*sz_ext_dump = offset + write;
+		/* update the read pointer */
+		ptr[0] = write;
+	}
+}
+
 int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 {
 	int num_mod = 0, size_core_dump, sz_ext_dump = 0, idx = 0;
@@ -320,12 +388,28 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	struct adsp_type0_crash_data *type0_data;
 	struct adsp_type1_crash_data *type1_data;
 	struct adsp_type2_crash_data *type2_data;
+	struct sst_dsp *sst = ctx->dsp;
 
 	if (list_empty(&ctx->uuid_list))
 		dev_info(ctx->dev, "Module list is empty\n");
 
 	list_for_each_entry(module1, &ctx->uuid_list, list) {
 		num_mod++;
+	}
+
+	if(stack_size)
+		ext_core_dump = vzalloc(stack_size);
+	else
+		ext_core_dump = vzalloc(MAX_DSP_EXCEPTION_STACK_SIZE);
+        if (!ext_core_dump) {
+                dev_err(ctx->dsp->dev, "failed to allocate memory for FW Stack\n");
+                return -ENOMEM;
+        }
+	for (idx = 0; idx < sst->trace_wind.nr_dsp; idx++) {
+		while(skl_check_ext_excep_data_avail(ctx, idx)) {
+			skl_read_ext_exception_data(ctx, idx,
+						ext_core_dump, &sz_ext_dump);
+		}
 	}
 
 	/* Length representing in DWORD */
@@ -336,11 +420,14 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	/* type1 data size is calculated based on number of modules */
 	size_core_dump = (MAX_CRASH_DATA_TYPES * sizeof(*crash_data_hdr)) +
 			sizeof(*type0_data) + (num_mod * sizeof(*type1_data)) +
-			sizeof(*type2_data);
+			sizeof(*type2_data) + sz_ext_dump;
 
-	coredump = vzalloc(size_core_dump);
-	if (!coredump)
+	coredump = vzalloc(size_core_dump + sz_ext_dump);
+	if (!coredump){
+		dev_err(ctx->dsp->dev, "failed to allocate memory \n");
+		vfree(ext_core_dump);
 		return -ENOMEM;
+	}
 
 	offset = coredump;
 
@@ -382,8 +469,15 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	memcpy_fromio(type2_data->fwreg, (const void __iomem *)fw_reg_addr,
 						sizeof(*type2_data));
 
+	if (sz_ext_dump) {
+		offset = coredump + size_core_dump;
+		memcpy(offset, ext_core_dump, sz_ext_dump);
+	}
+
+	vfree(ext_core_dump);
+
 	dev_coredumpv(ctx->dsp->dev, coredump,
-			size_core_dump, GFP_KERNEL);
+			size_core_dump + sz_ext_dump, GFP_KERNEL);
 	return 0;
 }
 
