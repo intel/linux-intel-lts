@@ -34,6 +34,9 @@
 #define SKL_EXT_MANIFEST_HEADER_MAGIC   0x31454124
 #define MAX_DSP_EXCEPTION_STACK_SIZE (64*1024)
 
+/* FW adds headers and trailing patters to extended crash data */
+#define EXTRA_BYTES	256
+
 #define UUID_ATTR_RO(_name) \
 	struct uuid_attribute uuid_attr_##_name = __ATTR_RO(_name)
 
@@ -352,6 +355,11 @@ static void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
 	ptr = (u32 *) base;
 	read = ptr[0];
 	write = ptr[1];
+
+	/* in case of read = write, just return */
+	if (read == write)
+		return;
+
 	if (write > read) {
 		memcpy_fromio((ext_core_dump + offset),
 			(const void __iomem *)(base + 8 + read),
@@ -398,17 +406,19 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	}
 
 	if(stack_size)
-		ext_core_dump = vzalloc(stack_size);
+		ext_core_dump = vzalloc(stack_size + EXTRA_BYTES);
 	else
-		ext_core_dump = vzalloc(MAX_DSP_EXCEPTION_STACK_SIZE);
+		ext_core_dump = vzalloc(MAX_DSP_EXCEPTION_STACK_SIZE + EXTRA_BYTES);
         if (!ext_core_dump) {
                 dev_err(ctx->dsp->dev, "failed to allocate memory for FW Stack\n");
                 return -ENOMEM;
         }
 	for (idx = 0; idx < sst->trace_wind.nr_dsp; idx++) {
-		while(skl_check_ext_excep_data_avail(ctx, idx)) {
-			skl_read_ext_exception_data(ctx, idx,
+		if(skl_check_ext_excep_data_avail(ctx, idx) != 0) {
+			while(sz_ext_dump < stack_size) {
+				skl_read_ext_exception_data(ctx, idx,
 						ext_core_dump, &sz_ext_dump);
+			}
 		}
 	}
 
