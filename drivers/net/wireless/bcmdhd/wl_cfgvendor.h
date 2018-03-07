@@ -252,9 +252,6 @@ typedef enum gscan_complete_event {
 	WIFI_SCAN_COMPLETE
 } gscan_complete_event_t;
 
-/* Capture the BRCM_VENDOR_SUBCMD_PRIV_STRINGS* here */
-#define BRCM_VENDOR_SCMD_CAPA	"cap"
-
 #if defined(WL_VENDOR_EXT_SUPPORT) || defined(CONFIG_BCMDHD_VENDOR_EXT)
 extern int wl_cfgvendor_attach(struct wiphy *wiphy);
 extern int wl_cfgvendor_detach(struct wiphy *wiphy);
