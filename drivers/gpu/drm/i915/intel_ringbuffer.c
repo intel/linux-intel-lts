@@ -338,6 +338,10 @@ gen8_render_ring_flush(struct drm_i915_gem_request *req, u32 mode)
 	u32 flags = 0;
 	u32 *cs;
 
+	cs = intel_ring_begin(req, mode & EMIT_INVALIDATE ? 12 : 6);
+	if (IS_ERR(cs))
+		return PTR_ERR(cs);
+
 	flags |= PIPE_CONTROL_CS_STALL;
 
 	if (mode & EMIT_FLUSH) {
