@@ -4364,6 +4364,9 @@ i915_wedged_set(void *data, u64 val)
 {
 	struct drm_i915_private *dev_priv = data;
 
+	if (intel_vgpu_active(dev_priv))
+		return -EINVAL;
+
 	/*
 	 * There is no safeguard against this debugfs entry colliding
 	 * with the hangcheck calling same i915_handle_error() in
