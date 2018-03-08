@@ -1530,6 +1530,9 @@ enum tc_port intel_port_to_tc(struct drm_i915_private *dev_priv,
 enum pipe intel_get_pipe_from_connector(struct intel_connector *connector);
 int intel_get_pipe_from_crtc_id_ioctl(struct drm_device *dev, void *data,
 				      struct drm_file *file_priv);
+int get_pipe_from_crtc_index(struct drm_device *dev, unsigned int index, enum pipe *pipe);
+struct intel_crtc *get_intel_crtc_from_index(struct drm_device *dev,
+					     unsigned int index);
 enum transcoder intel_pipe_to_cpu_transcoder(struct drm_i915_private *dev_priv,
 					     enum pipe pipe);
 static inline bool
@@ -1549,7 +1552,12 @@ intel_crtc_has_dp_encoder(const struct intel_crtc_state *crtc_state)
 static inline void
 intel_wait_for_vblank(struct drm_i915_private *dev_priv, enum pipe pipe)
 {
-	drm_wait_one_vblank(&dev_priv->drm, pipe);
+	struct intel_crtc *crtc;
+
+	crtc = intel_get_crtc_for_pipe(dev_priv, pipe);
+	if (crtc)
+		drm_wait_one_vblank(&dev_priv->drm,
+				    drm_crtc_index(&crtc->base));
 }
 static inline void
 intel_wait_for_vblank_if_active(struct drm_i915_private *dev_priv, int pipe)
