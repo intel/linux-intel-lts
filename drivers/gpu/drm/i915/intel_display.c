@@ -5241,8 +5241,8 @@ static void intel_post_plane_update(struct intel_crtc_state *old_crtc_state)
 		intel_atomic_get_new_crtc_state(to_intel_atomic_state(old_state),
 						crtc);
 	struct drm_plane *primary = crtc->base.primary;
-	struct drm_plane_state *old_primary_state =
-		drm_atomic_get_old_plane_state(old_state, primary);
+	struct drm_plane_state *old_primary_state = primary ?
+		drm_atomic_get_old_plane_state(old_state, primary) : NULL;
 
 	intel_frontbuffer_flip(to_i915(crtc->base.dev), pipe_config->fb_bits);
 
@@ -5280,8 +5280,8 @@ static void intel_pre_plane_update(struct intel_crtc_state *old_crtc_state,
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct drm_atomic_state *old_state = old_crtc_state->base.state;
 	struct drm_plane *primary = crtc->base.primary;
-	struct drm_plane_state *old_primary_state =
-		drm_atomic_get_old_plane_state(old_state, primary);
+	struct drm_plane_state *old_primary_state = primary ?
+		drm_atomic_get_old_plane_state(old_state, primary) : NULL;
 	bool modeset = needs_modeset(&pipe_config->base);
 	struct intel_atomic_state *old_intel_state =
 		to_intel_atomic_state(old_state);
@@ -12419,8 +12419,9 @@ static void intel_update_crtc(struct drm_crtc *crtc,
 	struct intel_crtc_state *pipe_config = to_intel_crtc_state(new_crtc_state);
 	bool modeset = needs_modeset(new_crtc_state);
 	struct intel_plane_state *new_plane_state =
+		crtc->primary ?
 		intel_atomic_get_new_plane_state(to_intel_atomic_state(state),
-						 to_intel_plane(crtc->primary));
+						 to_intel_plane(crtc->primary)) : NULL;
 
 	if (modeset) {
 		update_scanline_offset(intel_crtc);
@@ -15671,7 +15672,8 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
 			dev_priv->active_crtcs |=
 				1 << drm_crtc_index(&crtc->base);
 
-		readout_plane_state(crtc);
+		if (crtc->base.primary)
+			readout_plane_state(crtc);
 
 		DRM_DEBUG_KMS("[CRTC:%d:%s] hw state readout: %s\n",
 			      crtc->base.base.id, crtc->base.name,
