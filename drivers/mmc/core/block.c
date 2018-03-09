@@ -2900,7 +2900,7 @@ static void __exit mmc_blk_exit(void)
 	unregister_blkdev(MMC_BLOCK_MAJOR, "mmc");
 }
 
-fs_initcall_sync(mmc_blk_init);
+module_init(mmc_blk_init);
 module_exit(mmc_blk_exit);
 
 MODULE_LICENSE("GPL");
