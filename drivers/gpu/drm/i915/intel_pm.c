@@ -5088,6 +5088,33 @@ void skl_write_cursor_wm(struct intel_plane *plane,
 	skl_ddb_entry_write(dev_priv, CUR_BUF_CFG(pipe), ddb);
 }
 
+void skl_write_planeid_wm(struct drm_i915_private *dev_priv,
+			  enum plane_id plane_id,
+			  const struct intel_crtc_state *crtc_state)
+{
+	int level, max_level = ilk_wm_max_level(dev_priv);
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	enum pipe pipe = crtc->pipe;
+	const struct skl_plane_wm *wm =
+		&crtc_state->wm.skl.optimal.planes[plane_id];
+	const struct skl_ddb_entry *ddb_y =
+		&crtc_state->wm.skl.plane_ddb_y[plane_id];
+	const struct skl_ddb_entry *ddb_uv =
+		&crtc_state->wm.skl.plane_ddb_uv[plane_id];
+
+	for (level = 0; level <= max_level; level++) {
+		skl_write_wm_level(dev_priv, PLANE_WM(pipe, plane_id, level),
+				   &wm->wm[level]);
+	}
+	skl_write_wm_level(dev_priv, PLANE_WM_TRANS(pipe, plane_id),
+			   &wm->trans_wm);
+
+	skl_ddb_entry_write(dev_priv,
+			    PLANE_BUF_CFG(pipe, plane_id), ddb_y);
+	skl_ddb_entry_write(dev_priv,
+			    PLANE_NV12_BUF_CFG(pipe, plane_id), ddb_uv);
+}
+
 bool skl_wm_level_equals(const struct skl_wm_level *l1,
 			 const struct skl_wm_level *l2)
 {
@@ -5555,6 +5582,28 @@ skl_compute_wm(struct intel_atomic_state *state)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+/*
+ * when SOS updates plane wm registers, we need to refresh the planes owned by
+ * GVT-g guests, to avoid some garbage display on the screen
+ */
+static void update_gvt_guest_plane(struct drm_i915_private *dev_priv,
+				   int pipe,
+				   int plane_id)
+{
+	unsigned long value, irqflags;
+
+	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
+
+	value = I915_READ_FW(PLANE_CTL(pipe, plane_id));
+	I915_WRITE_FW(PLANE_CTL(pipe, plane_id), value);
+	value = I915_READ_FW(PLANE_SURF(pipe, plane_id));
+	I915_WRITE_FW(PLANE_SURF(pipe, plane_id), value);
+
+	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
+}
+#endif
+
 static void skl_atomic_update_crtc_wm(struct intel_atomic_state *state,
 				      struct intel_crtc_state *crtc_state)
 {
@@ -5579,6 +5628,35 @@ static void skl_atomic_update_crtc_wm(struct intel_atomic_state *state,
 		/* TBD: 1. Check the plane_res_block with ddb_plane[i].
 		 *      2. update the plane with plane_id
 		 */
+
+		if (i915_modparams.avail_planes_per_pipe) {
+			enum plane_id valid_plane;
+			struct skl_plane_wm *src_wm, *dst_wm;
+			for_each_intel_plane_on_crtc(&dev_priv->drm, crtc, intel_plane) {
+				valid_plane = intel_plane->id;
+				break;
+			}
+			src_wm = &crtc_state->wm.skl.optimal.planes[valid_plane];
+			for_each_universal_plane(dev_priv, crtc->pipe, plane_id) {
+				dst_wm = &crtc_state->wm.skl.optimal.planes[plane_id];
+				if (!dst_wm->trans_wm.plane_res_b) {
+					memcpy(dst_wm, src_wm, sizeof(*src_wm));
+				}
+				skl_write_planeid_wm(dev_priv, plane_id, crtc_state);
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+				if (dev_priv->gvt &&
+					dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
+					update_gvt_guest_plane(dev_priv, pipe, plane_id);
+#endif
+			}
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+			skl_ddb_entry_write(dev_priv, CUR_BUF_CFG(pipe),
+					&dev_priv->gvt->pipe_info[pipe].plane_ddb_y[PLANE_CURSOR]);
+#endif
+			return;
+		}
+
 		for_each_intel_plane_on_crtc(&dev_priv->drm, crtc, intel_plane) {
 			plane_id = intel_plane->id;
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)

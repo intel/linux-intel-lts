@@ -270,6 +270,24 @@ intel_teardown_mchbar(struct drm_i915_private *dev_priv)
 		release_resource(&dev_priv->mch_res);
 }
 
+static inline int get_max_avail_pipes(struct drm_i915_private *dev_priv)
+{
+	enum pipe pipe;
+	int index = 0;
+
+	if (!intel_vgpu_active(dev_priv) ||
+	    !i915_modparams.avail_planes_per_pipe)
+		return INTEL_NUM_PIPES(dev_priv);
+
+	for_each_pipe(dev_priv, pipe) {
+		if (AVAIL_PLANE_PER_PIPE(dev_priv, i915_modparams.avail_planes_per_pipe,
+					pipe))
+			index++;
+	}
+
+	return index;
+}
+
 static int i915_driver_modeset_probe(struct drm_i915_private *i915)
 {
 	int ret;
@@ -278,10 +296,13 @@ static int i915_driver_modeset_probe(struct drm_i915_private *i915)
 		return -ENODEV;
 
 	if (HAS_DISPLAY(i915) && INTEL_DISPLAY_ENABLED(i915)) {
-		ret = drm_vblank_init(&i915->drm,
-				      INTEL_NUM_PIPES(i915));
-		if (ret)
-			goto out;
+		int num_crtcs = get_max_avail_pipes(i915);
+
+		if (num_crtcs) {
+			ret = drm_vblank_init(&i915->drm, num_crtcs);
+			if (ret)
+				goto out;
+		}
 	}
 
 	intel_bios_init(i915);

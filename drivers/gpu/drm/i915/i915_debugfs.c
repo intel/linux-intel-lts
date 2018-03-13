@@ -2694,13 +2694,17 @@ static int i915_display_info(struct seq_file *m, void *unused)
 
 			intel_crtc_info(m, crtc);
 
-			seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x\n",
+			if (cursor) {
+				seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x\n",
 				   yesno(cursor->base.state->visible),
 				   cursor->base.state->crtc_x,
 				   cursor->base.state->crtc_y,
 				   cursor->base.state->crtc_w,
 				   cursor->base.state->crtc_h,
 				   cursor->cursor.base);
+			} else {
+				seq_puts(m, "\tNo cursor plane available on this platform\n");
+			}
 			intel_scaler_info(m, crtc);
 			intel_plane_info(m, crtc);
 		}

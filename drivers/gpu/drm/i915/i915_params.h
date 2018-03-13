@@ -82,7 +82,9 @@ struct drm_printer;
 	param(unsigned int, enable_pvmmio, \
 			PVMMIO_ELSP_SUBMIT | PVMMIO_PPGTT_UPDATE) \
 	param(bool, enable_gvt, false) \
-	param(int, gvt_workload_priority, 0)
+	param(int, gvt_workload_priority, 0) \
+	param(unsigned long, avail_planes_per_pipe, 0) \
+	param(unsigned long, domain_plane_owners, 0)
 
 
 #define MEMBER(T, member, ...) T member;

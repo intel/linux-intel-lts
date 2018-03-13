@@ -3014,7 +3014,7 @@ skl_universal_plane_create(struct drm_i915_private *dev_priv,
 	else
 		plane_type = DRM_PLANE_TYPE_OVERLAY;
 
-	possible_crtcs = BIT(pipe);
+	possible_crtcs = 1 << (dev_priv->drm.mode_config.num_crtc);
 
 	ret = drm_universal_plane_init(&dev_priv->drm, &plane->base,
 				       possible_crtcs, plane_funcs,
