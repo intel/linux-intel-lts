@@ -1039,7 +1039,7 @@ g4x_plane_get_hw_state(struct intel_plane *plane,
 	return ret;
 }
 
-static int
+int
 intel_check_sprite_plane(struct intel_plane *plane,
 			 struct intel_crtc_state *crtc_state,
 			 struct intel_plane_state *state)
