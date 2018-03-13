@@ -201,6 +201,56 @@ i915_param_named(enable_pvmmio, uint, 0400,
 	"Enable pv mmio feature and set pvmmio level, default 1."
 	"This parameter could only set from host, guest value is set through vgt_if");
 
+/* pipeA = BITS 0-3, pipeB = BITS 8-11, pipeC = BITS 16-18
+ * +----------+-------+---------+--------+--------+--------+--------+
+ * |unused    |unused |  Pipe C | unused | Pipe B | unused | Pipe A |
+ * +----------+-------+---------+--------+--------+--------+--------+
+ * 31         23      18        15       11       7        3        0
+ *
+ *
+ * BITS 0,1,2,3 - needs to be set planes assigned for pipes A and B
+ * and BITs 0,1,2 - for pipe C
+ * eg: avail_planes_per_pipe = 0x3 - pipe A=2(planes 1 and 2) , pipeB=0 and pipeC=0 planes
+ * eg: avail_planes_per_pipe = 0x5 - pipe A=2(planes 1 and 3) , pipeB=0 and pipeC=0 planes
+ * avail_planes_per_pipe = 0x030701 - pipe A =1(plane 1, pipeB=3(planes 1,2 and 3), pipeC=2( planes 1 and 2)
+ *
+ */
+i915_param_named_unsafe(avail_planes_per_pipe, uint, 0400,
+	"plane mask for each	pipe: \
+	set BITS 0-3:pipeA 8-11:pipeB 16-18:pipeC to specify the planes that \
+	are available eg: 0x030701 : planes 1:pipeA 1,2,3:pipeB \
+	1,2:pipeC (0x0 - default value)");
+
+/* pipeA = BITS 0-15 pipeB = 16-31, pipeC = 32-47
+ *
+ * +----------+------------+-------------+------------+
+ * |unused    |  Pipe C    |   Pipe B    |   Pipe A   |
+ * +----------+------------+-------------+------------+
+ * 63         47           31            15           0
+ *
+ * Each nibble represents domain id. 0 for Dom0, 1,2,3...0xF for DomUs
+ * eg: domain_plane_owners = 0x022111000010 // 0x0221|1100|0010
+ * plane		 domain
+ * plane_owner1A -0
+ * plane_owner2A -1
+ * plane_owner3A -0
+ * plane_owner4A -0
+ * plane_owner1B -0
+ * plane_owner2B -0
+ * plane_owner3B -1
+ * plane_owner4B -1
+ * plane_owner1C -1
+ * plane_owner2C -2
+ * plane_owner3C -2
+ *
+ *
+ */
+i915_param_named_unsafe(domain_plane_owners, ullong, 0400,
+	"plane owners for each domain and for each pipe \
+	ids can be from 0-F,  eg: domain_plane_owners = 0x022111000010 \
+	planes owner: 3C:2 2C:2 1C:1 4B:1 3B:1 2B:1 1B:0 4A:0 3A:0 2A:1 1A:0 \
+	(0x0 - default value)");
+
 static __always_inline void _print_param(struct drm_printer *p,
 					 const char *name,
 					 const char *type,
@@ -212,6 +262,8 @@ static __always_inline void _print_param(struct drm_printer *p,
 		drm_printf(p, "i915.%s=%d\n", name, *(const int *)x);
 	else if (!__builtin_strcmp(type, "unsigned int"))
 		drm_printf(p, "i915.%s=%u\n", name, *(const unsigned int *)x);
+	else if (!__builtin_strcmp(type, "unsigned long long"))
+		drm_printf(p, "i915.%s=%llu\n", name, *(const unsigned long long *)x);
 	else if (!__builtin_strcmp(type, "char *"))
 		drm_printf(p, "i915.%s=%s\n", name, *(const char **)x);
 	else

@@ -485,6 +485,22 @@ static void intel_gvt_vblank_work(struct work_struct *w)
 	((((owner) >> (pipe) * BITS_PER_DOMAIN * MAX_SCALERS_PER_DOMAIN) >>  \
 	BITS_PER_DOMAIN * (scaler)) & 0xf)
 
+int bxt_check_planes(struct intel_vgpu *vgpu, int pipe)
+{
+	int plane = 0;
+	bool ret = false;
+
+	for (plane = 0;
+	     plane < ((INTEL_INFO(vgpu->gvt->dev_priv)->num_sprites[pipe]) + 1);
+	     plane++) {
+		if (vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id) {
+			ret = true;
+			break;
+		}
+	}
+	return ret;
+}
+
 void intel_gvt_init_pipe_info(struct intel_gvt *gvt)
 {
 	enum pipe pipe;
@@ -528,6 +544,10 @@ int setup_virtual_monitors(struct intel_vgpu *vgpu)
 	for_each_intel_connector_iter(connector, &conn_iter) {
 		if (connector->encoder->get_hw_state(connector->encoder, &pipe)
 				&& connector->detect_edid) {
+			/* if no planes are allocated for this pipe, skip it */
+			if (i915_modparams.avail_planes_per_pipe &&
+			    !bxt_check_planes(vgpu, pipe))
+				continue;
 			/* Get (Dom0) port associated with current pipe. */
 			port = enc_to_dig_port(
 					&(connector->encoder->base))->base.port;
