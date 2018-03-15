@@ -219,13 +219,6 @@ static bool goldfish_sync_timeline_fence_enable_signaling(struct dma_fence *fenc
 	return true;
 }
 
-static void goldfish_sync_timeline_fence_disable_signaling(struct dma_fence *fence)
-{
-	struct sync_pt *pt = container_of(fence, struct sync_pt, base);
-
-	list_del_init(&pt->active_list);
-}
-
 static void goldfish_sync_timeline_fence_value_str(struct dma_fence *fence,
 					char *str, int size)
 {
@@ -245,7 +238,6 @@ static const struct dma_fence_ops goldfish_sync_timeline_fence_ops = {
 	.get_driver_name = goldfish_sync_timeline_fence_get_driver_name,
 	.get_timeline_name = goldfish_sync_timeline_fence_get_timeline_name,
 	.enable_signaling = goldfish_sync_timeline_fence_enable_signaling,
-	.disable_signaling = goldfish_sync_timeline_fence_disable_signaling,
 	.signaled = goldfish_sync_timeline_fence_signaled,
 	.wait = dma_fence_default_wait,
 	.release = goldfish_sync_timeline_fence_release,
