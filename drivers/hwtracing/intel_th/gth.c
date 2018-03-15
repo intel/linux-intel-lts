@@ -561,7 +561,6 @@ static int intel_th_gth_enable(struct intel_th_device *thdev,
 			       struct intel_th_output *output)
 {
 	struct gth_device *gth = dev_get_drvdata(&thdev->dev);
-	struct intel_th *th = to_intel_th(thdev);
 	u32 scrpd;
 	int i;
 	int ret = -EBUSY;

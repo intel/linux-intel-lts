@@ -95,7 +95,7 @@ static int register_pram_dev(unsigned long mem_address,
 	}
 
 	pr_info("registered pram device, addr=0x%lx, size=0x%lx\n",
-		pram_data->mem_address, pram_data->mem_size);
+		(unsigned long)pram_data->mem_address, (unsigned long)pram_data->mem_size);
 
 	return 0;
 }
