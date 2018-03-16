@@ -300,7 +300,7 @@ static const char * const cold_reset[] = {
 static const char * const suppress_heartbeat[] = {
 	"/vendor/bin/cansend",
 	"slcan0",
-	"0000FFFF#01045555555555",
+	"0000FFFF#01035555555555",
 	NULL};
 static const char * const reboot_request[] = {
 	"/vendor/bin/cansend",
