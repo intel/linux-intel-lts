@@ -116,7 +116,7 @@ static size_t write_data_to_nvram(char *data, size_t size)
 
 	for (i = 0; i < size; i++)
 	{
-		pr_err("Kernel Addr=0x%X, data=0x%X\n", NVRAM_START_ADDRESS + offset + i, *(unsigned char *)(data + i));
+		pr_err("Kernel Addr=0x%X, data=0x%X\n", (unsigned int)(NVRAM_START_ADDRESS + offset + i), (unsigned int)(*(unsigned char *)(data + i)));
 	}
 
 	offset += size;
@@ -311,7 +311,6 @@ static int sblbc_reboot_notifier_call(struct notifier_block *notifier,
 				__func__, ret);
 	}
 
-done:
 	return NOTIFY_DONE;
 }
 
