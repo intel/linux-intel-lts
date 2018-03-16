@@ -258,7 +258,7 @@ static inline unsigned int ipu_readl(const volatile void __iomem *addr)
 {
 	unsigned int rval;
 
-	switch ((unsigned int)addr) {
+	switch ((unsigned long)addr) {
 	/* SYSCOM_STATE_READY */
 	case 0x6288008:
 		rval = 0x57A7E001;

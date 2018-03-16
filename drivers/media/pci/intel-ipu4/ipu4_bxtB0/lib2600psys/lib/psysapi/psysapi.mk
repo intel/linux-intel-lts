@@ -1,4 +1,4 @@
-# #
+# # #
 # Support for Intel Camera Imaging ISP subsystem.
 # Copyright (c) 2010 - 2017, Intel Corporation.
 #
@@ -116,3 +116,7 @@ PSYSAPI_FW_FILES += $(PSYSAPI_DIR)/kernel/src/ia_css_kernel_bitmap.c
 
 # resource model
 PSYSAPI_RESOURCE_MODEL_FILES = $(PSYSAPI_DIR)/resource_model/$(PSYS_RESOURCE_MODEL_VERSION)/vied_nci_psys_resource_model.c
+
+ifeq ($(PSYS_HAS_DUAL_CMD_CTX_SUPPORT), 1)
+PSYSAPI_HOST_CPPFLAGS += -DHAS_DUAL_CMD_CTX_SUPPORT=$(PSYS_HAS_DUAL_CMD_CTX_SUPPORT)
+endif

@@ -1414,6 +1414,11 @@ void intel_ipu4_isys_queue_buf_ready(struct intel_ipu4_isys_pipeline *ip,
 	struct vb2_buffer *vb;
 	unsigned long flags;
 	bool first = true;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	struct v4l2_buffer *buf;
+#else
+	struct vb2_v4l2_buffer *buf;
+#endif
 
 	dev_dbg(&isys->adev->dev, "buffer: %s: received buffer %8.8x %d %d\n",
 		intel_ipu4_isys_queue_to_video(aq)->vdev.name, info->pin.addr,
@@ -1450,19 +1455,21 @@ void intel_ipu4_isys_queue_buf_ready(struct intel_ipu4_isys_pipeline *ip,
 
 		if (info->written_direct)
 			vb2_set_plane_payload(vb, 0, 0);
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
-		vb->v4l2_buf.field = V4L2_FIELD_NONE;
+		buf = &vb->v4l2_buf;
+#else
+		buf = to_vb2_v4l2_buffer(vb);
+#endif
+		buf->field = V4L2_FIELD_NONE;
 		/*
 		 * Use "reserved" field to pass csi2 index and vc.
 		 * May need to change to other approach.
 		 */
-		vb->v4l2_buf.reserved &= 0xFFFFFF00;
+		buf->reserved &= 0xFFFFFF00;
 		if (ip->csi2)
-			vb->v4l2_buf.reserved |= ip->csi2->index << 4;
-		vb->v4l2_buf.reserved |= ip->vc;
-#else
-		to_vb2_v4l2_buffer(vb)->field = V4L2_FIELD_NONE;
-#endif
+			buf->reserved |= ip->csi2->index << 4;
+		buf->reserved |= ip->vc;
 
 		list_del(&ib->head);
 		spin_unlock_irqrestore(&aq->lock, flags);

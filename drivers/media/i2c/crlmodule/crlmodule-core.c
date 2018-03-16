@@ -3065,12 +3065,83 @@ static int crlmodule_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	return 0;
 }
 
+static int crlmodule_get_registers(struct v4l2_subdev *sd, struct crl_registers_info *info)
+{
+	struct crl_subdev *ssd = to_crlmodule_subdev(sd);
+	struct crl_sensor *sensor = ssd->sensor;
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->src->sd);
+	struct crl_register_read_rep reg;
+	int i;
+	int ret = 0;
+
+	if (info->number > REGS_BUF_SIZE) {
+		dev_err(&client->dev, "error: max register's numbers than %d\n", REGS_BUF_SIZE);
+		return -1;
+	}
+
+	for (i = 0; i < info->number; i++) {
+		reg.address = info->start_address + i;
+		reg.dev_i2c_addr = CRL_I2C_ADDRESS_NO_OVERRIDE;
+		reg.len = info->len;
+		reg.mask = 0xff;
+		ret = crlmodule_read_reg(sensor, reg, &info->regs[i]);
+		if (ret < 0)
+			return ret;
+	}
+
+	return ret;
+}
+
+static int crlmodule_set_registers(struct v4l2_subdev *sd, struct crl_registers_info *info)
+{
+	struct crl_subdev *ssd = to_crlmodule_subdev(sd);
+	struct crl_sensor *sensor = ssd->sensor;
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->src->sd);
+	struct crl_register_read_rep reg;
+	int i;
+	int ret = 0;
+
+	if (info->number > REGS_BUF_SIZE) {
+		dev_err(&client->dev, "error: max register's numbers than %d\n", REGS_BUF_SIZE);
+		return -1;
+	}
+
+	for (i = 0; i < info->number; i++) {
+		ret = crlmodule_write_reg(sensor, CRL_I2C_ADDRESS_NO_OVERRIDE,
+				info->start_address + i, info->len, 0xff, info->regs[i]);
+		if (ret < 0)
+			return ret;
+	}
+
+	return ret;
+}
+
+static long crlmodule_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
+{
+	int ret;
+
+	switch (cmd) {
+	case CRL_G_REGISTERS:
+		ret = crlmodule_get_registers(sd, arg);
+		break;
+	case CRL_S_REGISTERS:
+		ret = crlmodule_set_registers(sd, arg);
+		break;
+	default:
+		ret = -1;
+		break;
+	};
+
+	return ret;
+}
+
 static const struct v4l2_subdev_video_ops crlmodule_video_ops = {
 	.s_stream = crlmodule_set_stream,
 };
 
 static const struct v4l2_subdev_core_ops crlmodule_core_ops = {
 	.s_power = crlmodule_set_power,
+	.ioctl = crlmodule_ioctl,
 };
 
 static const struct v4l2_subdev_pad_ops crlmodule_pad_ops = {

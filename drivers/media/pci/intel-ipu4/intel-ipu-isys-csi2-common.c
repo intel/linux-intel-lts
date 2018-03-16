@@ -33,6 +33,7 @@
 #include "intel-ipu4-trace-event-csi2.h"
 
 static const uint32_t csi2_supported_codes_pad_sink[] = {
+	MEDIA_BUS_FMT_Y10_1X10,
 	MEDIA_BUS_FMT_RGB565_1X16,
 	MEDIA_BUS_FMT_RGB888_1X24,
 	MEDIA_BUS_FMT_UYVY8_1X16,
@@ -61,6 +62,7 @@ static const uint32_t csi2_supported_codes_pad_sink[] = {
 };
 
 static const uint32_t csi2_supported_codes_pad_source[] = {
+	MEDIA_BUS_FMT_Y10_1X10,
 	MEDIA_BUS_FMT_RGB565_1X16,
 	MEDIA_BUS_FMT_RGB888_1X24,
 	MEDIA_BUS_FMT_UYVY8_1X16,

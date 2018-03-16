@@ -1,15 +1,15 @@
 /**
 * Support for Intel Camera Imaging ISP subsystem.
-* Copyright (c) 2010 - 2017, Intel Corporation.
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms and conditions of the GNU General Public License,
-* version 2, as published by the Free Software Foundation.
-*
-* This program is distributed in the hope it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-* more details.
+ * Copyright (c) 2010 - 2017, Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
 */
 
 #ifndef __IA_CSS_ISYSAPI_TYPES_H
@@ -65,17 +65,12 @@ struct ia_css_driver_proxy_config {
  *     when invoking ia_css_isys_context_create() in
  *     HAS_DUAL_CMD_CTX_SUPPORT case. If 'true', it's for
  *     secure case.
- * @stream_secure_bitmask: Initialized to 0 for default all non-secure streams
- *     IA_CSS_ISYS_STREAM_SRC_PORT_0 is mapped to bit 0.
- *     IA_CSS_ISYS_STREAM_SRC_PORT_11 is all mapped to bit 11.
- *     Bits 31:12 are reserved;
  */
 struct ia_css_isys_device_cfg_data {
 	struct ia_css_driver_sys_config driver_sys;
 	struct ia_css_isys_buffer_partition buffer_partition;
 	struct ia_css_driver_proxy_config driver_proxy;
 	bool secure;
-	uint32_t stream_secure_bitmask;
 };
 
 /**

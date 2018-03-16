@@ -1,4 +1,4 @@
-# #
+# # #
 # Support for Intel Camera Imaging ISP subsystem.
 # Copyright (c) 2010 - 2017, Intel Corporation.
 #
@@ -71,12 +71,12 @@ PSYS_HAS_LATE_BINDING_SUPPORT		= 0
 # Specify PSYS server context spaces for caching context from DDR
 PSYS_SERVER_NOF_CACHES				= 4
 PSYS_SERVER_MAX_NUM_PROC_GRP			= $(PSYS_SERVER_NOF_CACHES)
-PSYS_SERVER_MAX_NUM_EXEC_PROC_GRP		= 3	#$(PSYS_SERVER_MAX_NUM_PROC_GRP) - 1
-PSYS_SERVER_MAX_PROC_GRP_SIZE			= 3352
-PSYS_SERVER_MAX_MANIFEST_SIZE			= 3648
-PSYS_SERVER_MAX_CLIENT_PKG_SIZE			= 2276
+PSYS_SERVER_MAX_NUM_EXEC_PROC_GRP		= 8	# Max PG's running, 4 running on Cores, 4 being updated on the host upon executing.
+PSYS_SERVER_MAX_PROC_GRP_SIZE			= 3512
+PSYS_SERVER_MAX_MANIFEST_SIZE			= 3732
+PSYS_SERVER_MAX_CLIENT_PKG_SIZE			= 2380
 PSYS_SERVER_MAX_BUFFER_SET_SIZE			= 0
-PSYS_SERVER_MAX_NUMBER_OF_TERMINAL_SECTIONS	= 82
+PSYS_SERVER_MAX_NUMBER_OF_TERMINAL_SECTIONS	= 88
 PSYS_SERVER_MAX_NUMBER_OF_TERMINAL_STORE_SECTIONS = 1
 # The caching scheme for this subsystem suits the method of queueing ahead separate PGs for frames in an interleaved
 # fashion. As such there should be as many caches to support to heaviest two concurrent PGs, times two. This results

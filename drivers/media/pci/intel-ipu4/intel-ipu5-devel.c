@@ -34,6 +34,8 @@ static int intel_ipu5_isys_fw_reload(struct intel_ipu4_device *isp)
 
 	intel_ipu4_buttress_unmap_fw_image(isp->isys, &isys->fw_sgt);
 	intel_ipu5_isys_load_pkg_dir(isys);
+
+	return 0;
 }
 
 int intel_ipu5_isys_load_pkg_dir(struct intel_ipu4_isys *isys)

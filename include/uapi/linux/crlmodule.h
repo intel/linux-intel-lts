@@ -15,6 +15,24 @@
 #ifndef UAPI_LINUX_CRLMODULE_H
 #define UAPI_LINUX_CRLMODULE_H
 
+#define REGS_BUF_SIZE			32
+/**
+ * struct crl_registers_info - the information for register.
+ * @start_address: sensor i2c start address.
+ * @number:        the number of registers to be read/write.
+ * @len:           register length, 1:8bit, 2:16bit, 3:24bit, 4:32bit.
+ * @regs:          the array of registers.
+ */
+struct crl_registers_info {
+	unsigned int start_address;
+	unsigned int number;
+	unsigned int len;
+	unsigned int regs[REGS_BUF_SIZE];
+};
+
+#define CRL_G_REGISTERS			_IOWR('C', 1, struct crl_registers_info)
+#define CRL_S_REGISTERS			_IOW('C', 2, struct crl_registers_info)
+
 #define V4L2_CID_CRLMODULE_BASE		(V4L2_CID_USER_BASE + 0x2050)
 
 #define V4L2_CID_FRAME_LENGTH_LINES (V4L2_CID_CRLMODULE_BASE + 1)
@@ -51,4 +69,7 @@
 
 /* set sensor msb align*/
 #define CRL_CID_MSB_ALIGN		(V4L2_CID_CRLMODULE_BASE + 18)
+
+/* enable/disable auto exposure */
+#define CRL_CID_AUTO_EXPOSURE_DEBUG		(V4L2_CID_CRLMODULE_BASE + 19)
 #endif /* UAPI_LINUX_CRLMODULE_H */

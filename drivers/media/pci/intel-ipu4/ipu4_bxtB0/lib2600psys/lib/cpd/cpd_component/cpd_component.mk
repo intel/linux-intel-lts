@@ -1,5 +1,5 @@
 ##
-# #
+# # #
 # Support for Intel Camera Imaging ISP subsystem.
 # Copyright (c) 2010 - 2017, Intel Corporation.
 #
