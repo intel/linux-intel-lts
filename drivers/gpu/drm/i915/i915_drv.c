@@ -1209,8 +1209,6 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 	if (IS_GEN5(dev_priv))
 		intel_gpu_ips_init(dev_priv);
 
-	intel_audio_init(dev_priv);
-
 	/*
 	 * Some ports require correctly set-up hpd registers for detection to
 	 * work properly (leading to ghost connected connector status), e.g. VGA
