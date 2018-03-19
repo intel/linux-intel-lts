@@ -17,6 +17,7 @@ config ASHMEM
 source "drivers/staging/android/ion/Kconfig"
 source "drivers/staging/android/abl/Kconfig"
 source "drivers/staging/android/sbl/Kconfig"
+source "drivers/staging/android/vsbl/Kconfig"
 
 endif # if ANDROID
 
