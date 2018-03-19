@@ -27,6 +27,8 @@ config DEBUG_KINFO
 
 source "drivers/staging/android/abl/Kconfig"
 source "drivers/staging/android/sbl/Kconfig"
+source "drivers/staging/android/vsbl/Kconfig"
+
 endif # if ANDROID
 
 endmenu
