@@ -1,0 +1,8 @@
+config VSBL_BOOTLOADER_CONTROL
+        tristate "vSBL Bootloader Control module"
+        default n
+        help
+          This driver installs a reboot hook, such that if reboot() is
+          invoked with a string argument, the corresponding ABL Action
+          is written in CMOS data, in order to be processed by ABL on
+          reboot.

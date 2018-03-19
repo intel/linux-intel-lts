@@ -1,0 +1,1 @@
+obj-$(CONFIG_VSBL_BOOTLOADER_CONTROL) += vsblbc.o
