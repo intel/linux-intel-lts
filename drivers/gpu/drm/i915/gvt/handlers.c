@@ -3082,6 +3082,8 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 	MMIO_D(GAMT_CHKN_BIT_REG, D_KBL);
 	MMIO_D(GEN9_CTX_PREEMPT_REG, D_KBL | D_SKL);
 
+	MMIO_D(HUC_STATUS2, D_SKL_PLUS);
+
 	return 0;
 }
 
