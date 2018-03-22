@@ -3017,6 +3017,8 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 	MMIO_D(_MMIO(0x4ab8), D_KBL);
 	MMIO_D(_MMIO(0x2248), D_KBL | D_SKL);
 
+	MMIO_D(HUC_STATUS2, D_SKL_PLUS);
+
 	return 0;
 }
 
