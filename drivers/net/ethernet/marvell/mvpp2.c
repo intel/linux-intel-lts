@@ -5399,7 +5399,7 @@ static int mvpp2_aggr_txq_init(struct platform_device *pdev,
 	u32 txq_dma;
 
 	/* Allocate memory for TX descriptors */
-	aggr_txq->descs = dma_alloc_coherent(&pdev->dev,
+	aggr_txq->descs = dma_zalloc_coherent(&pdev->dev,
 				MVPP2_AGGR_TXQ_SIZE * MVPP2_DESC_ALIGNED_SIZE,
 				&aggr_txq->descs_dma, GFP_KERNEL);
 	if (!aggr_txq->descs)
@@ -5597,7 +5597,7 @@ static int mvpp2_txq_init(struct mvpp2_port *port,
 						sizeof(*txq_pcpu->buffs),
 						GFP_KERNEL);
 		if (!txq_pcpu->buffs)
-			goto cleanup;
+			return -ENOMEM;
 
 		txq_pcpu->count = 0;
 		txq_pcpu->reserved_num = 0;
@@ -5610,26 +5610,10 @@ static int mvpp2_txq_init(struct mvpp2_port *port,
 					   &txq_pcpu->tso_headers_dma,
 					   GFP_KERNEL);
 		if (!txq_pcpu->tso_headers)
-			goto cleanup;
+			return -ENOMEM;
 	}
 
 	return 0;
-cleanup:
-	for_each_present_cpu(cpu) {
-		txq_pcpu = per_cpu_ptr(txq->pcpu, cpu);
-		kfree(txq_pcpu->buffs);
-
-		dma_free_coherent(port->dev->dev.parent,
-				  txq_pcpu->size * TSO_HEADER_SIZE,
-				  txq_pcpu->tso_headers,
-				  txq_pcpu->tso_headers_dma);
-	}
-
-	dma_free_coherent(port->dev->dev.parent,
-			  txq->size * MVPP2_DESC_ALIGNED_SIZE,
-			  txq->descs, txq->descs_dma);
-
-	return -ENOMEM;
 }
 
 /* Free allocated TXQ resources */
@@ -6904,6 +6888,7 @@ static void mvpp2_set_rx_mode(struct net_device *dev)
 	int id = port->id;
 	bool allmulti = dev->flags & IFF_ALLMULTI;
 
+retry:
 	mvpp2_prs_mac_promisc_set(priv, id, dev->flags & IFF_PROMISC);
 	mvpp2_prs_mac_multi_set(priv, id, MVPP2_PE_MAC_MC_ALL, allmulti);
 	mvpp2_prs_mac_multi_set(priv, id, MVPP2_PE_MAC_MC_IP6, allmulti);
@@ -6911,9 +6896,13 @@ static void mvpp2_set_rx_mode(struct net_device *dev)
 	/* Remove all port->id's mcast enries */
 	mvpp2_prs_mcast_del_all(priv, id);
 
-	if (allmulti && !netdev_mc_empty(dev)) {
-		netdev_for_each_mc_addr(ha, dev)
-			mvpp2_prs_mac_da_accept(priv, id, ha->addr, true);
+	if (!allmulti) {
+		netdev_for_each_mc_addr(ha, dev) {
+			if (mvpp2_prs_mac_da_accept(priv, id, ha->addr, true)) {
+				allmulti = true;
+				goto retry;
+			}
+		}
 	}
 }
 

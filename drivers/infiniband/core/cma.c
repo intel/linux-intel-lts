@@ -801,6 +801,7 @@ struct rdma_cm_id *rdma_create_id(struct net *net,
 	INIT_LIST_HEAD(&id_priv->mc_list);
 	get_random_bytes(&id_priv->seq_num, sizeof id_priv->seq_num);
 	id_priv->id.route.addr.dev_addr.net = get_net(net);
+	id_priv->seq_num &= 0x00ffffff;
 
 	return &id_priv->id;
 }
@@ -3016,7 +3017,8 @@ static int cma_port_is_unique(struct rdma_bind_list *bind_list,
 			continue;
 
 		/* different dest port -> unique */
-		if (!cma_any_port(cur_daddr) &&
+		if (!cma_any_port(daddr) &&
+		    !cma_any_port(cur_daddr) &&
 		    (dport != cur_dport))
 			continue;
 
@@ -3027,7 +3029,8 @@ static int cma_port_is_unique(struct rdma_bind_list *bind_list,
 			continue;
 
 		/* different dst address -> unique */
-		if (!cma_any_addr(cur_daddr) &&
+		if (!cma_any_addr(daddr) &&
+		    !cma_any_addr(cur_daddr) &&
 		    cma_addr_cmp(daddr, cur_daddr))
 			continue;
 
@@ -3325,12 +3328,12 @@ int rdma_bind_addr(struct rdma_cm_id *id, struct sockaddr *addr)
 		}
 #endif
 	}
+	daddr = cma_dst_addr(id_priv);
+	daddr->sa_family = addr->sa_family;
+
 	ret = cma_get_port(id_priv);
 	if (ret)
 		goto err2;
-
-	daddr = cma_dst_addr(id_priv);
-	daddr->sa_family = addr->sa_family;
 
 	return 0;
 err2:
@@ -4117,6 +4120,9 @@ int rdma_join_multicast(struct rdma_cm_id *id, struct sockaddr *addr,
 	struct cma_multicast *mc;
 	int ret;
 
+	if (!id->device)
+		return -EINVAL;
+
 	id_priv = container_of(id, struct rdma_id_private, id);
 	if (!cma_comp(id_priv, RDMA_CM_ADDR_BOUND) &&
 	    !cma_comp(id_priv, RDMA_CM_ADDR_RESOLVED))
@@ -4435,7 +4441,7 @@ static int cma_get_id_stats(struct sk_buff *skb, struct netlink_callback *cb)
 					  RDMA_NL_RDMA_CM_ATTR_SRC_ADDR))
 				goto out;
 			if (ibnl_put_attr(skb, nlh,
-					  rdma_addr_size(cma_src_addr(id_priv)),
+					  rdma_addr_size(cma_dst_addr(id_priv)),
 					  cma_dst_addr(id_priv),
 					  RDMA_NL_RDMA_CM_ATTR_DST_ADDR))
 				goto out;
@@ -4461,7 +4467,7 @@ out:
 	return skb->len;
 }
 
-static const struct rdma_nl_cbs cma_cb_table[] = {
+static const struct rdma_nl_cbs cma_cb_table[RDMA_NL_RDMA_CM_NUM_OPS] = {
 	[RDMA_NL_RDMA_CM_ID_STATS] = { .dump = cma_get_id_stats},
 };
 

@@ -150,13 +150,17 @@ EXPORT_SYMBOL_GPL(af_alg_release_parent);
 
 static int alg_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 {
-	const u32 forbidden = CRYPTO_ALG_INTERNAL;
+	const u32 allowed = CRYPTO_ALG_KERN_DRIVER_ONLY;
 	struct sock *sk = sock->sk;
 	struct alg_sock *ask = alg_sk(sk);
 	struct sockaddr_alg *sa = (void *)uaddr;
 	const struct af_alg_type *type;
 	void *private;
 	int err;
+
+	/* If caller uses non-allowed flag, return error. */
+	if ((sa->salg_feat & ~allowed) || (sa->salg_mask & ~allowed))
+		return -EINVAL;
 
 	if (sock->state == SS_CONNECTED)
 		return -EINVAL;
@@ -176,9 +180,7 @@ static int alg_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	if (IS_ERR(type))
 		return PTR_ERR(type);
 
-	private = type->bind(sa->salg_name,
-			     sa->salg_feat & ~forbidden,
-			     sa->salg_mask & ~forbidden);
+	private = type->bind(sa->salg_name, sa->salg_feat, sa->salg_mask);
 	if (IS_ERR(private)) {
 		module_put(type->owner);
 		return PTR_ERR(private);
@@ -691,7 +693,7 @@ void af_alg_free_areq_sgls(struct af_alg_async_req *areq)
 	unsigned int i;
 
 	list_for_each_entry_safe(rsgl, tmp, &areq->rsgl_list, list) {
-		ctx->rcvused -= rsgl->sg_num_bytes;
+		atomic_sub(rsgl->sg_num_bytes, &ctx->rcvused);
 		af_alg_free_sg(&rsgl->sgl);
 		list_del(&rsgl->list);
 		if (rsgl != &areq->first_rsgl)
@@ -1190,7 +1192,7 @@ int af_alg_get_rsgl(struct sock *sk, struct msghdr *msg, int flags,
 
 		areq->last_rsgl = rsgl;
 		len += err;
-		ctx->rcvused += err;
+		atomic_add(err, &ctx->rcvused);
 		rsgl->sg_num_bytes = err;
 		iov_iter_advance(&msg->msg_iter, err);
 	}
