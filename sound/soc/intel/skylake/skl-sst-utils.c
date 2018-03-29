@@ -1178,10 +1178,11 @@ int skl_module_sysfs_init(struct skl_sst *ctx, struct kobject *kobj)
 {
 	struct uuid_module *module;
 	struct skl_sysfs_module *modinfo_obj;
-	char *uuid_name;
 	int count = 0;
 	int max_mod = 0;
 	int ret = 0;
+	unsigned int uuid_size = sizeof(module->uuid);
+	char uuid_name[uuid_size];
 
 	if (list_empty(&ctx->uuid_list))
 		return 0;
@@ -1218,7 +1219,7 @@ int skl_module_sysfs_init(struct skl_sst *ctx, struct kobject *kobj)
 			goto err_sysfs_exit;
 		}
 
-		uuid_name = kasprintf(GFP_KERNEL, "%pUL", &module->uuid);
+		snprintf(uuid_name, sizeof(uuid_name), "%pUL", &module->uuid);
 		ret = kobject_init_and_add(&modinfo_obj->kobj, &uuid_ktype,
 				ctx->sysfs_tree->modules_kobj, uuid_name);
 		if (ret < 0)
@@ -1240,7 +1241,7 @@ int skl_module_sysfs_init(struct skl_sst *ctx, struct kobject *kobj)
 	return 0;
 
 err_sysfs_exit:
-	 skl_module_sysfs_exit(ctx);
+	skl_module_sysfs_exit(ctx);
 
 	return ret;
 }
