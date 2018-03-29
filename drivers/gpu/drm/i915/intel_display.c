@@ -15307,6 +15307,8 @@ int intel_modeset_init(struct drm_device *dev)
 
 	dev->mode_config.funcs = &intel_mode_funcs;
 
+	intel_audio_init(dev_priv);
+
 	INIT_WORK(&dev_priv->atomic_helper.free_work,
 		  intel_atomic_helper_free_state_worker);
 
