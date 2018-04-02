@@ -165,6 +165,8 @@ static int tdf8532_get_state(struct tdf8532_priv *dev_data,
 	*status_repl = (struct get_dev_status_repl *) repl_buff;
 
 out:
+	if (repl_buff)
+		kfree(repl_buff);
 	return ret;
 }
 
