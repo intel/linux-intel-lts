@@ -766,7 +766,6 @@ static int intel_ipu4_mmu_probe(struct intel_ipu4_bus_device *adev)
 		return -ENOMEM;
 
 	dev_dbg(&adev->dev, "mmu probe %p %p\n", adev, &adev->dev);
-	intel_ipu4_bus_set_drvdata(adev, mmu);
 
 	rval = intel_ipu4_bus_set_iommu(&intel_ipu4_iommu_ops);
 	if (rval)
@@ -798,6 +797,7 @@ static int intel_ipu4_mmu_probe(struct intel_ipu4_bus_device *adev)
 	dev_info(&adev->dev, "MMU: %d, allocated page for trash: 0x%p\n",
 			     mmu->mmid, mmu->trash_page);
 
+	intel_ipu4_bus_set_drvdata(adev, mmu);
 	pm_runtime_allow(&adev->dev);
 	pm_runtime_enable(&adev->dev);
 
