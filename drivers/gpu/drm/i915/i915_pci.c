@@ -511,7 +511,11 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (vga_switcheroo_client_probe_defer(pdev))
 		return -EPROBE_DEFER;
 
+#ifdef CONFIG_DRM_I915_LOAD_ASYNC_SUPPORT
+	return i915_driver_load_async(pdev, ent);
+#else
 	return i915_driver_load(pdev, ent);
+#endif
 }
 
 static void i915_pci_remove(struct pci_dev *pdev)
