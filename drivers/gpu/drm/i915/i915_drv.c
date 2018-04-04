@@ -1285,9 +1285,9 @@ int i915_driver_load_async(struct pci_dev *pdev, const struct pci_device_id *ent
 	struct drm_i915_load_para *para;
 	para = (struct drm_i915_load_para *)kmalloc(sizeof(struct drm_i915_load_para), GFP_KERNEL);
 	if (para == NULL)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 	para->dev = pdev;
-	para->ent = ent;
+	para->ent = (struct pci_device_id *)ent;
 	kthread_run(drm_i915_load_fn, (void *)para, "drm_i915_load_thread");
 	return 0;
 }
