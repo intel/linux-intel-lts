@@ -360,8 +360,14 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 
 done:
 #ifdef CONFIG_SEND_SLCAN_ENABLE
-	if (ret)
+	if (ret) {
+		if (!target)
+			pr_emerg("Restarting system\n");
+		else
+			pr_emerg("Restarting system with command '%s'\n", target);
+
 		panic("ablbc failed to cummnunicate with IOC.");
+	}
 #endif
 	return NOTIFY_DONE;
 }
