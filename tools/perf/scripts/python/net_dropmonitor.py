@@ -18,8 +18,8 @@ def get_kallsyms_table():
 	global kallsyms
 
 	try:
-		f = open("/proc/kallsyms", "r")
-	except:
+		f = open("/proc/kallsyms")
+	except IOError:
 		return
 
 	for line in f:
@@ -45,9 +45,8 @@ def get_sym(sloc):
 	# and (start == len(kallsyms) - 1 or loc < kallsyms[start + 1][0])
 	if start >= 0:
 		symloc, name = kallsyms[start]
-		return (name, loc - symloc)
-	else:
-		return (None, 0)
+		return name, loc - symloc
+	return None, 0
 
 def print_drop_table():
 	print "%25s %25s %25s" % ("LOCATION", "OFFSET", "COUNT")
@@ -71,6 +70,6 @@ def skb__kfree_skb(name, context, cpu, sec, nsec, pid, comm, callchain,
 		   skbaddr, location, protocol):
 	slocation = str(location)
 	try:
-		drop_log[slocation] = drop_log[slocation] + 1
-	except:
+		drop_log[slocation] += 1
+	except TypeError:
 		drop_log[slocation] = 1
