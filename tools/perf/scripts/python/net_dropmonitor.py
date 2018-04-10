@@ -65,7 +65,7 @@ def trace_end():
 	get_kallsyms_table()
 	print_drop_table()
 
-# called from perf, when it finds a correspoinding event
+# called from perf, when it finds a corresponding event
 def skb__kfree_skb(name, context, cpu, sec, nsec, pid, comm, callchain,
 		   skbaddr, location, protocol):
 	slocation = str(location)
