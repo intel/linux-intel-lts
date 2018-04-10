@@ -18,32 +18,32 @@ from perf_trace_context import *
 from Core import *
 from Util import *
 
-all_event_list = []; # insert all tracepoint event related with this script
-irq_dic = {}; # key is cpu and value is a list which stacks irqs
+all_event_list = [] # insert all tracepoint event related with this script
+irq_dic = {} # key is cpu and value is a list which stacks irqs
               # which raise NET_RX softirq
-net_rx_dic = {}; # key is cpu and value include time of NET_RX softirq-entry
+net_rx_dic = {} # key is cpu and value include time of NET_RX softirq-entry
 		 # and a list which stacks receive
-receive_hunk_list = []; # a list which include a sequence of receive events
-rx_skb_list = []; # received packet list for matching
+receive_hunk_list = [] # a list which include a sequence of receive events
+rx_skb_list = [] # received packet list for matching
 		       # skb_copy_datagram_iovec
 
-buffer_budget = 65536; # the budget of rx_skb_list, tx_queue_list and
+buffer_budget = 65536 # the budget of rx_skb_list, tx_queue_list and
 		       # tx_xmit_list
-of_count_rx_skb_list = 0; # overflow count
+of_count_rx_skb_list = 0 # overflow count
 
-tx_queue_list = []; # list of packets which pass through dev_queue_xmit
-of_count_tx_queue_list = 0; # overflow count
+tx_queue_list = [] # list of packets which pass through dev_queue_xmit
+of_count_tx_queue_list = 0 # overflow count
 
-tx_xmit_list = [];  # list of packets which pass through dev_hard_start_xmit
-of_count_tx_xmit_list = 0; # overflow count
+tx_xmit_list = []  # list of packets which pass through dev_hard_start_xmit
+of_count_tx_xmit_list = 0 # overflow count
 
-tx_free_list = [];  # list of packets which is freed
+tx_free_list = []  # list of packets which is freed
 
 # options
-show_tx = 0;
-show_rx = 0;
-dev = 0; # store a name of device specified by option "dev="
-debug = 0;
+show_tx = 0
+show_rx = 0
+dev = 0 # store a name of device specified by option "dev="
+debug = 0
 
 # indices of event_info tuple
 EINFO_IDX_NAME    = 0
