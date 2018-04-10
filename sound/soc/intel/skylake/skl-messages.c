@@ -117,6 +117,19 @@ int skl_dsp_set_system_time(struct skl_sst *skl_sst)
 	return ret;
 }
 
+#define SKL_ASTATE_PARAM_ID	4
+
+void skl_dsp_set_astate_cfg(struct skl_sst *ctx, u32 cnt, void *data)
+{
+	struct skl_ipc_large_config_msg	msg = {0};
+
+	msg.large_param_id = SKL_ASTATE_PARAM_ID;
+	msg.param_data_size = (cnt * sizeof(struct skl_astate_config) +
+				sizeof(cnt));
+
+	skl_ipc_set_large_config(&ctx->ipc, &msg, data);
+}
+
 #define NOTIFICATION_PARAM_ID 3
 #define NOTIFICATION_MASK 0xf
 
@@ -276,7 +289,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 		.id = 0x9d71,
 		.num_cores = 2,
 		.loader_ops = skl_get_loader_ops,
-		.init = kbl_sst_dsp_init,
+		.init = skl_sst_dsp_init,
 		.init_fw = skl_sst_init_fw,
 		.cleanup = skl_sst_dsp_cleanup
 	},
@@ -483,12 +496,12 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 	host_cpr_cfg->m_type = SKL_MODULE_TYPE_COPIER;
 	host_cpr_cfg->dev_type = SKL_DEVICE_HDAHOST;
 	host_cpr_cfg->hw_conn_type = SKL_CONN_SOURCE;
-	host_cpr_cfg->formats_config.caps_size = 0;
+	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
 	host_cpr_cfg->module->resources[0].dma_buffer_size = 2;
 	host_cpr_cfg->converter = 0;
 	host_cpr_cfg->vbus_id = 0;
 	host_cpr_cfg->sdw_agg_enable = 0;
-	host_cpr_cfg->formats_config.caps_size = 0;
+	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
 
 	in_fmt->channels = 1;
 	in_fmt->s_freq = 96000;
@@ -591,22 +604,23 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 	link_cpr_cfg->m_out_pin[0].is_dynamic = true;
 	link_cpr_cfg->m_out_pin[0].pin_state = SKL_PIN_UNBIND;
 
-	link_cpr_cfg->formats_config.caps_size = (sizeof(u32) * 4);
-	link_cpr_cfg->formats_config.caps = kzalloc((sizeof(u32) * 4),
-			GFP_KERNEL);
-	if (!link_cpr_cfg->formats_config.caps) {
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size =
+							(sizeof(u32) * 4);
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps =
+				kzalloc((sizeof(u32) * 4), GFP_KERNEL);
+	if (!link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps) {
 		ret = -ENOMEM;
 		goto free_link_m_out_pin;
 	}
 
-	link_cpr_cfg->formats_config.caps[0] = 0x0;
-	link_cpr_cfg->formats_config.caps[1] = 0x1;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[0] = 0x0;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[1] = 0x1;
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
-	link_cpr_cfg->formats_config.caps[2] = 0x1003;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1003;
 #else
-	link_cpr_cfg->formats_config.caps[2] = 0x1013;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1013;
 #endif
-	link_cpr_cfg->formats_config.caps[3] = 0x0;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[3] = 0x0;
 
 	/* Init PB CPR1 module */
 	ret = skl_init_module(ctx, host_cpr_cfg);
@@ -625,7 +639,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 
 error:
 	/* Free up all memory allocated */
-	kfree(link_cpr_cfg->formats_config.caps);
+	kfree(link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps);
 free_link_m_out_pin:
 	kfree(link_cpr_cfg->m_out_pin);
 free_link_m_in_pin:
@@ -761,27 +775,28 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 #endif
 	link_cpr_cfg->hw_conn_type = SKL_CONN_SINK;
 
-	link_cpr_cfg->formats_config.caps_size = 0;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
 	link_cpr_cfg->module->resources[0].dma_buffer_size = 2;
 	link_cpr_cfg->converter = 0;
 	link_cpr_cfg->vbus_id = 0;
 	link_cpr_cfg->sdw_agg_enable = 0;
-	link_cpr_cfg->formats_config.caps_size = (sizeof(u32) * 4);
-	link_cpr_cfg->formats_config.caps = kzalloc((sizeof(u32) * 4),
-			GFP_KERNEL);
-	if (!link_cpr_cfg->formats_config.caps) {
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size =
+							(sizeof(u32) * 4);
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps =
+				kzalloc((sizeof(u32) * 4), GFP_KERNEL);
+	if (!link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps) {
 		ret = -ENOMEM;
 		goto error_delete_pipeline;
 	}
 
-	link_cpr_cfg->formats_config.caps[0] = 0x0;
-	link_cpr_cfg->formats_config.caps[1] = 0x1;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[0] = 0x0;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[1] = 0x1;
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
-	link_cpr_cfg->formats_config.caps[2] = 0x1104;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1104;
 #else
-	link_cpr_cfg->formats_config.caps[2] = 0x1114;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1114;
 #endif
-	link_cpr_cfg->formats_config.caps[3] = 0x1;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[3] = 0x1;
 
 	in_fmt->channels = 6;
 	in_fmt->s_freq = 48000;
@@ -846,7 +861,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 	host_cpr_cfg->dev_type = SKL_DEVICE_HDAHOST;
 	host_cpr_cfg->hw_conn_type = SKL_CONN_SINK;
 	link_cpr_params.host_dma_id = (bra_data->cp_stream_tag - 1);
-	host_cpr_cfg->formats_config.caps_size = 0;
+	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
 	host_cpr_cfg->m_in_pin = kcalloc(host_cpr_cfg->module->max_input_pins,
 					sizeof(*host_cpr_cfg->m_in_pin),
 					GFP_KERNEL);
@@ -903,7 +918,7 @@ free_link_m_out_pin:
 free_link_m_in_pin:
 	kfree(link_cpr_cfg->m_in_pin);
 free_caps:
-	kfree(link_cpr_cfg->formats_config.caps);
+	kfree(link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps);
 error_delete_pipeline:
 	ret = skl_delete_pipe(ctx, link_cpr_cfg->pipe);
 free_link_cpr_pipe:
@@ -1358,6 +1373,11 @@ int skl_resume_dsp(struct skl *skl)
 
 	skl_dsp_enable_notification(skl->skl_sst, false);
 
+	if (skl->cfg.astate_cfg != NULL) {
+		skl_dsp_set_astate_cfg(skl->skl_sst, skl->cfg.astate_cfg->count,
+					skl->cfg.astate_cfg);
+	}
+
 	/* Set the FW config info from topology */
 	skl_tplg_fw_cfg_set(skl);
 
@@ -1452,15 +1472,15 @@ static void skl_set_base_module_format(struct skl_sst *ctx,
 static void skl_copy_copier_caps(struct skl_module_cfg *mconfig,
 				struct skl_cpr_cfg *cpr_mconfig)
 {
-	if (mconfig->formats_config.caps_size == 0)
+	if (mconfig->formats_config[SKL_PARAM_INIT].caps_size == 0)
 		return;
 
 	memcpy(cpr_mconfig->gtw_cfg.config_data,
-			mconfig->formats_config.caps,
-			mconfig->formats_config.caps_size);
+			mconfig->formats_config[SKL_PARAM_INIT].caps,
+			mconfig->formats_config[SKL_PARAM_INIT].caps_size);
 
 	cpr_mconfig->gtw_cfg.config_length =
-			(mconfig->formats_config.caps_size) / 4;
+			(mconfig->formats_config[SKL_PARAM_INIT].caps_size) / 4;
 }
 
 #define SKL_NON_GATEWAY_CPR_NODE_ID 0xFFFFFFFF
@@ -1559,7 +1579,7 @@ static void skl_setup_cpr_gateway_cfg(struct skl_sst *ctx,
 		cpr_mconfig->gtw_cfg.dma_buffer_size = res->dma_buffer_size;
 		goto skip_buf_size_calc;
 	}
-	
+
 	switch (mconfig->hw_conn_type) {
 	case SKL_CONN_SOURCE:
 		if (mconfig->dev_type == SKL_DEVICE_HDAHOST)
@@ -1871,12 +1891,12 @@ static void skl_set_algo_format(struct skl_sst *ctx,
 
 	skl_set_base_module_format(ctx, mconfig, base_cfg);
 
-	if (mconfig->formats_config.caps_size == 0)
+	if (mconfig->formats_config[SKL_PARAM_INIT].caps_size == 0)
 		return;
 
 	memcpy(algo_mcfg->params,
-			mconfig->formats_config.caps,
-			mconfig->formats_config.caps_size);
+			mconfig->formats_config[SKL_PARAM_INIT].caps,
+			mconfig->formats_config[SKL_PARAM_INIT].caps_size);
 
 }
 
@@ -1908,7 +1928,7 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 	switch (mconfig->m_type) {
 	case SKL_MODULE_TYPE_COPIER:
 		param_size = sizeof(struct skl_cpr_cfg);
-		param_size += mconfig->formats_config.caps_size;
+		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 		return param_size;
 
 	case SKL_MODULE_TYPE_PROBE:
@@ -1923,7 +1943,7 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 
 	case SKL_MODULE_TYPE_ALGO:
 		param_size = sizeof(struct skl_base_cfg);
-		param_size += mconfig->formats_config.caps_size;
+		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 		return param_size;
 
 	case SKL_MODULE_TYPE_BASE_OUTFMT:

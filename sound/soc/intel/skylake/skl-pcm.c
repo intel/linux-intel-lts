@@ -1585,6 +1585,17 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	},
 },
 {
+	.name = "DMIC16k Pin",
+	.ops = &skl_dmic_dai_ops,
+	.capture = {
+		.stream_name = "DMIC16k Rx",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_QUAD,
+		.rates = SNDRV_PCM_RATE_16000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+},
+{
 	.name = "HD-Codec Pin",
 	.ops = &skl_link_dai_ops,
 	.playback = {
@@ -2134,7 +2145,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 
 	if (!found)
 		return -EIO;
-		
+
 	uuid_bin_fw = &module->uuid;
 	for (i = 0; i < skl->nr_modules; i++) {
 		skl_module = skl->modules[i];
@@ -2145,7 +2156,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 			break;
 		}
 	}
-	
+
 	if (!found)
 		return -EIO;
 
@@ -2155,7 +2166,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 			if (uuid_le_cmp(pin_id->mod_uuid, module->uuid) == 0)
 				pin_id->module_id = module->id;
 		}
-		
+
 		for (i = 0; i < SKL_MAX_OUT_QUEUE; i++) {
 			pin_id = &mconfig->m_out_pin[i].id;
 			if (uuid_le_cmp(pin_id->mod_uuid, module->uuid) == 0)
@@ -2186,6 +2197,8 @@ static int skl_populate_modules(struct skl *skl)
 					"query module info failed\n");
 				return ret;
 			}
+
+			skl_tplg_add_moduleid_in_bind_params(skl, w);
 		}
 	}
 
@@ -2199,7 +2212,7 @@ static int skl_get_probe_widget(struct snd_soc_platform *platform,
 	int i;
 
 	list_for_each_entry(w, &platform->component.card->widgets, list) {
-		if (is_skl_dsp_widget_type(w) &&
+		if (is_skl_dsp_widget_type(w, skl->skl_sst->dev) &&
 				(strstr(w->name, "probe") != NULL)) {
 			pconfig->w = w;
 
@@ -2256,6 +2269,12 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 		if (ret < 0) {
 			dev_err(platform->dev, "Failed to boot first fw: %d\n", ret);
 			return ret;
+		}
+
+		if (skl->cfg.astate_cfg != NULL) {
+			skl_dsp_set_astate_cfg(skl->skl_sst,
+					skl->cfg.astate_cfg->count,
+					skl->cfg.astate_cfg);
 		}
 
 		/* Set the FW config info from topology */

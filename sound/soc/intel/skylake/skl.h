@@ -27,6 +27,8 @@
 
 #define SKL_SUSPEND_DELAY 2000
 
+#define SKL_MAX_ASTATE_CFG		3
+
 #define AZX_PCIREG_PGCTL		0x44
 #define AZX_PGCTL_LSRMD_MASK		(1 << 4)
 #define AZX_PCIREG_CGCTL		0x48
@@ -108,11 +110,21 @@ struct skl_dmactrl_config {
 	struct skl_dmctrl_hdr hdr[SKL_MAX_DMACTRL_CFG];
 } __packed;
 
+struct skl_astate_config {
+	u32 kcps;
+	u32 clk_src;
+};
+
+struct skl_astate_cfg {
+	u32 count;
+	struct skl_astate_config astate_table[0];
+};
 
 struct skl_fw_cfg_info {
 	struct skl_dma_buff_cfg dmacfg;
 	struct skl_sch_config sch_cfg;
 	struct skl_dmactrl_config dmactrl_cfg;
+	struct skl_astate_cfg *astate_cfg;
 } __packed;
 
 struct skl {
@@ -144,8 +156,10 @@ struct skl {
 	bool nhlt_override;
 	bool mod_set_get_status;
 	struct skl_fw_cfg_info cfg;
+	struct sst_acpi_mach *mach;
 	u8 nr_modules;
 	struct skl_module **modules;
+	bool use_tplg_pcm;
 };
 
 struct platform_info {
@@ -173,6 +187,7 @@ struct skl_dma_params {
 /* to pass dmic data */
 struct skl_machine_pdata {
 	u32 dmic_num;
+	bool use_tplg_pcm; /* use total dais and dai links from topology*/
 };
 
 struct skl_dsp_ops {
