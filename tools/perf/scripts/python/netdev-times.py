@@ -18,40 +18,40 @@ from perf_trace_context import *
 from Core import *
 from Util import *
 
-all_event_list = []; # insert all tracepoint event related with this script
-irq_dic = {}; # key is cpu and value is a list which stacks irqs
+all_event_list = [] # insert all tracepoint event related with this script
+irq_dic = {} # key is cpu and value is a list which stacks irqs
               # which raise NET_RX softirq
-net_rx_dic = {}; # key is cpu and value include time of NET_RX softirq-entry
+net_rx_dic = {} # key is cpu and value include time of NET_RX softirq-entry
 		 # and a list which stacks receive
-receive_hunk_list = []; # a list which include a sequence of receive events
-rx_skb_list = []; # received packet list for matching
+receive_hunk_list = [] # a list which include a sequence of receive events
+rx_skb_list = [] # received packet list for matching
 		       # skb_copy_datagram_iovec
 
-buffer_budget = 65536; # the budget of rx_skb_list, tx_queue_list and
+buffer_budget = 65536 # the budget of rx_skb_list, tx_queue_list and
 		       # tx_xmit_list
-of_count_rx_skb_list = 0; # overflow count
+of_count_rx_skb_list = 0 # overflow count
 
-tx_queue_list = []; # list of packets which pass through dev_queue_xmit
-of_count_tx_queue_list = 0; # overflow count
+tx_queue_list = [] # list of packets which pass through dev_queue_xmit
+of_count_tx_queue_list = 0 # overflow count
 
-tx_xmit_list = [];  # list of packets which pass through dev_hard_start_xmit
-of_count_tx_xmit_list = 0; # overflow count
+tx_xmit_list = []  # list of packets which pass through dev_hard_start_xmit
+of_count_tx_xmit_list = 0 # overflow count
 
-tx_free_list = [];  # list of packets which is freed
+tx_free_list = []  # list of packets which is freed
 
 # options
-show_tx = 0;
-show_rx = 0;
-dev = 0; # store a name of device specified by option "dev="
-debug = 0;
+show_tx = 0
+show_rx = 0
+dev = 0 # store a name of device specified by option "dev="
+debug = 0
 
 # indices of event_info tuple
-EINFO_IDX_NAME=   0
-EINFO_IDX_CONTEXT=1
-EINFO_IDX_CPU=    2
-EINFO_IDX_TIME=   3
-EINFO_IDX_PID=    4
-EINFO_IDX_COMM=   5
+EINFO_IDX_NAME    = 0
+EINFO_IDX_CONTEXT = 1
+EINFO_IDX_CPU     = 2
+EINFO_IDX_TIME    = 3
+EINFO_IDX_PID     = 4
+EINFO_IDX_COMM    = 5
 
 # Calculate a time interval(msec) from src(nsec) to dst(nsec)
 def diff_msec(src, dst):
@@ -59,7 +59,7 @@ def diff_msec(src, dst):
 
 # Display a process of transmitting a packet
 def print_transmit(hunk):
-	if dev != 0 and hunk['dev'].find(dev) < 0:
+	if dev and hunk['dev'].find(dev) < 0:
 		return
 	print "%7s %5d %6d.%06dsec %12.3fmsec      %12.3fmsec" % \
 		(hunk['dev'], hunk['len'],
@@ -69,16 +69,16 @@ def print_transmit(hunk):
 		diff_msec(hunk['xmit_t'], hunk['free_t']))
 
 # Format for displaying rx packet processing
-PF_IRQ_ENTRY= "  irq_entry(+%.3fmsec irq=%d:%s)"
-PF_SOFT_ENTRY="  softirq_entry(+%.3fmsec)"
-PF_NAPI_POLL= "  napi_poll_exit(+%.3fmsec %s)"
-PF_JOINT=     "         |"
-PF_WJOINT=    "         |            |"
-PF_NET_RECV=  "         |---netif_receive_skb(+%.3fmsec skb=%x len=%d)"
-PF_NET_RX=    "         |---netif_rx(+%.3fmsec skb=%x)"
-PF_CPY_DGRAM= "         |      skb_copy_datagram_iovec(+%.3fmsec %d:%s)"
-PF_KFREE_SKB= "         |      kfree_skb(+%.3fmsec location=%x)"
-PF_CONS_SKB=  "         |      consume_skb(+%.3fmsec)"
+PF_IRQ_ENTRY  = "  irq_entry(+%.3fmsec irq=%d:%s)"
+PF_SOFT_ENTRY = "  softirq_entry(+%.3fmsec)"
+PF_NAPI_POLL  = "  napi_poll_exit(+%.3fmsec %s)"
+PF_JOINT      = "         |"
+PF_WJOINT     = "         |            |"
+PF_NET_RECV   = "         |---netif_receive_skb(+%.3fmsec skb=%x len=%d)"
+PF_NET_RX     = "         |---netif_rx(+%.3fmsec skb=%x)"
+PF_CPY_DGRAM  = "         |      skb_copy_datagram_iovec(+%.3fmsec %d:%s)"
+PF_KFREE_SKB  = "         |      kfree_skb(+%.3fmsec location=%x)"
+PF_CONS_SKB   = "         |      consume_skb(+%.3fmsec)"
 
 # Display a process of received packets and interrputs associated with
 # a NET_RX softirq
@@ -88,26 +88,26 @@ def print_receive(hunk):
 	cpu = irq_list[0]['cpu']
 	base_t = irq_list[0]['irq_ent_t']
 	# check if this hunk should be showed
-	if dev != 0:
-		for i in range(len(irq_list)):
-			if irq_list[i]['name'].find(dev) >= 0:
+	if dev:
+		for v in irq_list:
+			if v['name'].find(dev) >= 0:
 				show_hunk = 1
 				break
 	else:
 		show_hunk = 1
-	if show_hunk == 0:
+	if not show_hunk:
 		return
 
 	print "%d.%06dsec cpu=%d" % \
 		(nsecs_secs(base_t), nsecs_nsecs(base_t)/1000, cpu)
-	for i in range(len(irq_list)):
+	for i in irq_list:
 		print PF_IRQ_ENTRY % \
-			(diff_msec(base_t, irq_list[i]['irq_ent_t']),
-			irq_list[i]['irq'], irq_list[i]['name'])
+			(diff_msec(base_t, i['irq_ent_t']),
+			 i['irq'], i['name'])
 		print PF_JOINT
-		irq_event_list = irq_list[i]['event_list']
-		for j in range(len(irq_event_list)):
-			irq_event = irq_event_list[j]
+		irq_event_list = i['event_list']
+		for j in irq_event_list:
+			irq_event = j
 			if irq_event['event'] == 'netif_rx':
 				print PF_NET_RX % \
 					(diff_msec(base_t, irq_event['time']),
@@ -117,13 +117,13 @@ def print_receive(hunk):
 		diff_msec(base_t, hunk['sirq_ent_t'])
 	print PF_JOINT
 	event_list = hunk['event_list']
-	for i in range(len(event_list)):
-		event = event_list[i]
+	for i in event_list:
+		event = i
 		if event['event_name'] == 'napi_poll':
 			print PF_NAPI_POLL % \
 			    (diff_msec(base_t, event['event_t']), event['dev'])
-			if i == len(event_list) - 1:
-				print ""
+			if i == event_list[-1]:
+				print
 			else:
 				print PF_JOINT
 		else:
@@ -154,66 +154,40 @@ def trace_begin():
 	global dev
 	global debug
 
-	for i in range(len(sys.argv)):
-		if i == 0:
-			continue
-		arg = sys.argv[i]
+	for arg in sys.argv[1:]:
 		if arg == 'tx':
 			show_tx = 1
 		elif arg =='rx':
 			show_rx = 1
-		elif arg.find('dev=',0, 4) >= 0:
+		elif arg.find('dev=', 0, 4) >= 0:
 			dev = arg[4:]
 		elif arg == 'debug':
 			debug = 1
-	if show_tx == 0  and show_rx == 0:
-		show_tx = 1
-		show_rx = 1
+	if not show_tx and not show_rx:
+		show_tx = show_rx = 1
 
 def trace_end():
 	# order all events in time
 	all_event_list.sort(lambda a,b :cmp(a[EINFO_IDX_TIME],
 					    b[EINFO_IDX_TIME]))
 	# process all events
-	for i in range(len(all_event_list)):
-		event_info = all_event_list[i]
-		name = event_info[EINFO_IDX_NAME]
-		if name == 'irq__softirq_exit':
-			handle_irq_softirq_exit(event_info)
-		elif name == 'irq__softirq_entry':
-			handle_irq_softirq_entry(event_info)
-		elif name == 'irq__softirq_raise':
-			handle_irq_softirq_raise(event_info)
-		elif name == 'irq__irq_handler_entry':
-			handle_irq_handler_entry(event_info)
-		elif name == 'irq__irq_handler_exit':
-			handle_irq_handler_exit(event_info)
-		elif name == 'napi__napi_poll':
-			handle_napi_poll(event_info)
-		elif name == 'net__netif_receive_skb':
-			handle_netif_receive_skb(event_info)
-		elif name == 'net__netif_rx':
-			handle_netif_rx(event_info)
-		elif name == 'skb__skb_copy_datagram_iovec':
-			handle_skb_copy_datagram_iovec(event_info)
-		elif name == 'net__net_dev_queue':
-			handle_net_dev_queue(event_info)
-		elif name == 'net__net_dev_xmit':
-			handle_net_dev_xmit(event_info)
-		elif name == 'skb__kfree_skb':
-			handle_kfree_skb(event_info)
-		elif name == 'skb__consume_skb':
-			handle_consume_skb(event_info)
+	for event_info in all_event_list:
+		name = event_info[EINFO_IDX_NAME].split("__")[-1]
+		
+		func = globals().get("handle_%s" % name, None)
+		if func is not None:
+			func(event_info)
+
 	# display receive hunks
 	if show_rx:
-		for i in range(len(receive_hunk_list)):
-			print_receive(receive_hunk_list[i])
+		for i in receive_hunk_list:
+			print_receive(i)
 	# display transmit hunks
 	if show_tx:
 		print "   dev    len      Qdisc        " \
 			"       netdevice             free"
-		for i in range(len(tx_free_list)):
-			print_transmit(tx_free_list[i])
+		for i in tx_free_list:
+			print_transmit(i)
 	if debug:
 		print "debug buffer status"
 		print "----------------------------"
@@ -348,7 +322,7 @@ def handle_irq_softirq_exit(event_info):
 		sirq_ent_t = net_rx_dic[cpu]['sirq_ent_t']
 		event_list = net_rx_dic[cpu]['event_list']
 		del net_rx_dic[cpu]
-	if irq_list == [] or event_list == 0:
+	if not irq_list or not event_list:
 		return
 	rec_data = {'sirq_ent_t':sirq_ent_t, 'sirq_ext_t':time,
 		    'irq_list':irq_list, 'event_list':event_list}
@@ -369,7 +343,7 @@ def handle_netif_rx(event_info):
 	(name, context, cpu, time, pid, comm,
 		skbaddr, skblen, dev_name) = event_info
 	if cpu not in irq_dic.keys() \
-	or len(irq_dic[cpu]) == 0:
+	       or not irq_dic[cpu]:
 		return
 	irq_record = irq_dic[cpu].pop()
 	if 'event_list' in irq_record.keys():
@@ -401,7 +375,12 @@ def handle_net_dev_queue(event_info):
 
 	(name, context, cpu, time, pid, comm,
 		skbaddr, skblen, dev_name) = event_info
-	skb = {'dev':dev_name, 'skbaddr':skbaddr, 'len':skblen, 'queue_t':time}
+	skb = {
+	  'dev': dev_name,
+	  'skbaddr': skbaddr,
+	  'len': skblen,
+	  'queue_t': time
+	}
 	tx_queue_list.insert(0, skb)
 	if len(tx_queue_list) > buffer_budget:
 		tx_queue_list.pop()
@@ -412,7 +391,7 @@ def handle_net_dev_xmit(event_info):
 
 	(name, context, cpu, time, pid, comm,
 		skbaddr, skblen, rc, dev_name) = event_info
-	if rc == 0: # NETDEV_TX_OK
+	if not rc: # NETDEV_TX_OK
 		for i in range(len(tx_queue_list)):
 			skb = tx_queue_list[i]
 			if skb['skbaddr'] == skbaddr:
@@ -427,20 +406,17 @@ def handle_net_dev_xmit(event_info):
 def handle_kfree_skb(event_info):
 	(name, context, cpu, time, pid, comm,
 		skbaddr, protocol, location) = event_info
-	for i in range(len(tx_queue_list)):
-		skb = tx_queue_list[i]
+	for i, skb in enumerate(tx_queue_list):
 		if skb['skbaddr'] == skbaddr:
 			del tx_queue_list[i]
 			return
-	for i in range(len(tx_xmit_list)):
-		skb = tx_xmit_list[i]
+	for i, skb in enumerate(tx_xmit_list):
 		if skb['skbaddr'] == skbaddr:
 			skb['free_t'] = time
 			tx_free_list.append(skb)
 			del tx_xmit_list[i]
 			return
-	for i in range(len(rx_skb_list)):
-		rec_data = rx_skb_list[i]
+	for i, rec_data in rx_skb_list:
 		if rec_data['skbaddr'] == skbaddr:
 			rec_data.update({'handle':"kfree_skb",
 					'comm':comm, 'pid':pid, 'comm_t':time})
@@ -449,8 +425,7 @@ def handle_kfree_skb(event_info):
 
 def handle_consume_skb(event_info):
 	(name, context, cpu, time, pid, comm, skbaddr) = event_info
-	for i in range(len(tx_xmit_list)):
-		skb = tx_xmit_list[i]
+	for i, skb in enumerate(tx_xmit_list):
 		if skb['skbaddr'] == skbaddr:
 			skb['free_t'] = time
 			tx_free_list.append(skb)
@@ -459,8 +434,7 @@ def handle_consume_skb(event_info):
 
 def handle_skb_copy_datagram_iovec(event_info):
 	(name, context, cpu, time, pid, comm, skbaddr, skblen) = event_info
-	for i in range(len(rx_skb_list)):
-		rec_data = rx_skb_list[i]
+	for i, rec_data in enumerate(rx_skb_list):
 		if skbaddr == rec_data['skbaddr']:
 			rec_data.update({'handle':"skb_copy_datagram_iovec",
 					'comm':comm, 'pid':pid, 'comm_t':time})

@@ -41,9 +41,9 @@ def list_for_each_entry(head, gdbtype, member):
 
 def list_check(head):
     nb = 0
-    if (head.type == list_head.get_type().pointer()):
+    if head.type == list_head.get_type().pointer():
         head = head.dereference()
-    elif (head.type != list_head.get_type()):
+    elif head.type != list_head.get_type():
         raise gdb.GdbError('argument must be of type (struct list_head [*])')
     c = head
     try:
@@ -90,9 +90,8 @@ def list_check(head):
                           current=c
                       ))
             return
-        c = n
         nb += 1
-        if c == head:
+        if n == head:
             gdb.write("list is consistent: {} node(s)\n".format(nb))
             return
 
@@ -106,7 +105,7 @@ class LxListChk(gdb.Command):
 
     def invoke(self, arg, from_tty):
         argv = gdb.string_to_argv(arg)
-        if len(argv) != 1:
+        if not argv:
             raise gdb.GdbError("lx-list-check takes one argument")
         list_check(gdb.parse_and_eval(argv[0]))
 

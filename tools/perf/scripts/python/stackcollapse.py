@@ -55,7 +55,7 @@ option_list = [
 parser = OptionParser(option_list=option_list)
 (opts, args) = parser.parse_args()
 
-if len(args) != 0:
+if args:
     parser.error("unexpected command line argument")
 if opts.include_tid and not opts.include_comm:
     parser.error("requesting tid but not comm is invalid")
@@ -89,8 +89,7 @@ def process_event(param_dict):
 
         if opts.annotate_kernel and dso == '[kernel.kallsyms]':
             return sym + '_[k]'
-        else:
-            return sym
+        return sym
 
     stack = list()
     if 'callchain' in param_dict:
@@ -110,17 +109,17 @@ def process_event(param_dict):
         comm = param_dict["comm"].replace(' ', '_')
         sep = "-"
         if opts.include_pid:
-            comm = comm + sep + str(param_dict['sample']['pid'])
+            comm += sep + str(param_dict['sample']['pid'])
             sep = "/"
         if opts.include_tid:
-            comm = comm + sep + str(param_dict['sample']['tid'])
+            comm += sep + str(param_dict['sample']['tid'])
         stack.append(comm)
 
     stack_string = ';'.join(reversed(stack))
-    lines[stack_string] = lines[stack_string] + 1
+    lines[stack_string] += 1
 
 def trace_end():
-    list = lines.keys()
-    list.sort()
-    for stack in list:
+    list_ = lines.keys()
+    list_.sort()
+    for stack in list_:
         print "%s %d" % (stack, lines[stack])
