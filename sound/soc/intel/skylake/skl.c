@@ -1110,6 +1110,15 @@ static void skl_shutdown(struct pci_dev *pci)
 		return;
 
 	snd_hdac_ext_stop_streams(bus);
+	/* While doing the warm reboot testing, some times dsp core is on
+	 * when system goes to shutdown. When cores.usage_count is
+	 * equal to zero then driver puts the dsp core to zero. On few
+	 * warm reboots cores.usage_count is not equal to zero and dsp
+	 * core is ON even system goes to shutdown. Force the dsp cores
+	 * off without checking the usage_count.
+	 */
+	skl_dsp_disable_core(skl->skl_sst->dsp, SKL_DSP_CORE0_ID);
+
 	list_for_each_entry(s, &bus->stream_list, list) {
 		stream = stream_to_hdac_ext_stream(s);
 		snd_hdac_ext_stream_decouple(bus, stream, false);
