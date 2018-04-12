@@ -1110,6 +1110,8 @@ static void skl_shutdown(struct pci_dev *pci)
 		return;
 
 	snd_hdac_ext_stop_streams(bus);
+	snd_hdac_ext_bus_link_power_down_all(bus);
+	skl_dsp_sleep(skl->skl_sst->dsp);
 	/* While doing the warm reboot testing, some times dsp core is on
 	 * when system goes to shutdown. When cores.usage_count is
 	 * equal to zero then driver puts the dsp core to zero. On few
