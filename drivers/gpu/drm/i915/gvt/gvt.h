@@ -361,6 +361,7 @@ struct intel_gvt {
 	} engine_mmio_list;
 
 	struct dentry *debugfs_root;
+	struct work_struct active_hp_work;
 };
 
 static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
