@@ -34,6 +34,13 @@ static const struct acpi_device_id intel_th_acpi_ids[] = {
 
 MODULE_DEVICE_TABLE(acpi, intel_th_acpi_ids);
 
+static void intel_th_acpi_reset(struct intel_th *th)
+{
+	/* Software reset */
+
+	/* Always set FON for S0ix flow */
+}
+
 static int intel_th_acpi_probe(struct platform_device *pdev)
 {
 	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
@@ -45,7 +52,7 @@ static int intel_th_acpi_probe(struct platform_device *pdev)
 		return -ENODEV;
 
 	th = intel_th_alloc(&pdev->dev, (void *)id->driver_data,
-			    pdev->resource, pdev->num_resources, -1);
+			    pdev->resource, pdev->num_resources, -1,intel_th_acpi_reset);
 	if (IS_ERR(th))
 		return PTR_ERR(th);
 
