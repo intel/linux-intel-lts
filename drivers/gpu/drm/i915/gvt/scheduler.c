@@ -265,6 +265,22 @@ static void save_ring_hw_state(struct intel_vgpu *vgpu, int ring_id)
 }
 */
 
+static void active_hp_work(struct work_struct *work)
+{
+	struct intel_gvt *gvt =
+		container_of(work, struct intel_gvt, active_hp_work);
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+
+	gen6_disable_rps_interrupts(dev_priv);
+
+	if (READ_ONCE(dev_priv->gt_pm.rps.cur_freq) <
+	    READ_ONCE(dev_priv->gt_pm.rps.rp0_freq)) {
+		mutex_lock(&dev_priv->pcu_lock);
+		intel_set_rps(dev_priv, dev_priv->gt_pm.rps.rp0_freq);
+		mutex_unlock(&dev_priv->pcu_lock);
+	}
+}
+
 static int shadow_context_status_change(struct notifier_block *nb,
 		unsigned long action, void *data)
 {
@@ -284,6 +300,7 @@ static int shadow_context_status_change(struct notifier_block *nb,
 
 	switch (action) {
 	case INTEL_CONTEXT_SCHEDULE_IN:
+		schedule_work(&gvt->active_hp_work);
 		atomic_set(&workload->shadow_ctx_active, 1);
 		break;
 	case INTEL_CONTEXT_SCHEDULE_OUT:
@@ -1170,6 +1187,8 @@ int intel_gvt_init_workload_scheduler(struct intel_gvt *gvt)
 		atomic_notifier_chain_register(&engine->context_status_notifier,
 					&gvt->shadow_ctx_notifier_block[i]);
 	}
+	INIT_WORK(&gvt->active_hp_work, active_hp_work);
+
 	return 0;
 err:
 	intel_gvt_clean_workload_scheduler(gvt);
