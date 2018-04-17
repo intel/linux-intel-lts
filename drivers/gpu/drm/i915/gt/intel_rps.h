@@ -35,4 +35,6 @@ void gen5_rps_irq_handler(struct intel_rps *rps);
 void gen6_rps_irq_handler(struct intel_rps *rps, u32 pm_iir);
 void gen11_rps_irq_handler(struct intel_rps *rps, u32 pm_iir);
 
+void rps_disable_interrupts(struct intel_rps *rps);
+
 #endif /* INTEL_RPS_H */
