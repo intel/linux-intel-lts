@@ -107,7 +107,7 @@ static void rps_reset_interrupts(struct intel_rps *rps)
 	spin_unlock_irq(&gt->irq_lock);
 }
 
-static void rps_disable_interrupts(struct intel_rps *rps)
+void rps_disable_interrupts(struct intel_rps *rps)
 {
 	struct intel_gt *gt = rps_to_gt(rps);
 
