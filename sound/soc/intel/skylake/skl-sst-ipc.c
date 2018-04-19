@@ -202,6 +202,9 @@
 #define MOD_DATA_OFFSET		12
 #define SET_LARGE_CFG_FW_CONFIG		7
 
+#define DSP_EXCEP_CORE_MASK		0x3
+#define DSP_EXCEP_STACK_SIZE_SHIFT	2
+
 enum skl_ipc_msg_target {
 	IPC_FW_GEN_MSG = 0,
 	IPC_MOD_MSG = 1
@@ -494,9 +497,11 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 			skl->miscbdcg_disabled = true;
 			break;
 		case IPC_GLB_NOTIFY_EXCEPTION_CAUGHT:
-			dev_err(ipc->dev, "*****Exception Detected **********\n");
+			dev_err(ipc->dev, "*****Exception Detected  on core id: %d \n",(header.extension & DSP_EXCEP_CORE_MASK));
+			dev_err(ipc->dev, "Exception Stack size is %d\n", (header.extension >> DSP_EXCEP_STACK_SIZE_SHIFT));
 			/* hexdump of the fw core exception record reg */
-			ret = skl_dsp_crash_dump_read(skl);
+			ret = skl_dsp_crash_dump_read(skl,
+						(header.extension >> DSP_EXCEP_STACK_SIZE_SHIFT));
 			if (ret < 0) {
 				dev_err(ipc->dev,
 					"dsp crash dump read fail:%d\n", ret);
