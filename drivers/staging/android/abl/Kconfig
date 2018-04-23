@@ -1,5 +1,6 @@
 config ABL_BOOTLOADER_CONTROL
         tristate "ABL Bootloader Control module"
+        depends on X86
         default n
         help
           This driver installs a reboot hook, such that if reboot() is
@@ -9,6 +10,7 @@ config ABL_BOOTLOADER_CONTROL
 
 config SEND_SLCAN_ENABLE
         bool "control slcan protocol"
+        depends on X86
         default n
         help
           This option control slcan protocol enable/disable in ablbc driver
