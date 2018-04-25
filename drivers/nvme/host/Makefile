@@ -17,6 +17,7 @@ nvme-core-$(CONFIG_FAULT_INJECTION_DEBUG_FS)	+= fault_inject.o
 nvme-core-$(CONFIG_NVME_HWMON)		+= hwmon.o
 
 nvme-y					+= pci.o
+nvme-y					+= rpmb.o
 
 nvme-fabrics-y				+= fabrics.o
 
