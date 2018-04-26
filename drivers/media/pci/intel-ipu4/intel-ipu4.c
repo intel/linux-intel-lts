@@ -27,16 +27,12 @@
 #include "intel-ipu4.h"
 #include "intel-ipu4-buttress.h"
 #include "intel-ipu4-buttress-regs.h"
-#include "intel-ipu5-buttress-regs.h"
 #include "intel-ipu4-cpd.h"
 #include "intel-ipu4-pdata.h"
 #include "intel-ipu4-bus.h"
 #include "intel-ipu4-mmu.h"
 #include "intel-ipu4-regs.h"
-#include "intel-ipu5-regs.h"
-#include "intel-ipu5-isys-csi2-reg.h"
 #include "intel-ipu4-trace.h"
-#include "intel-ipu5-devel.h"
 
 #define INTEL_IPU4_PCI_BAR		0
 
@@ -322,15 +318,6 @@ void intel_ipu4_configure_spc(struct intel_ipu4_device *isp,
 	} else {
 		u32 server_addr;
 
-		if (is_intel_ipu5_hw_a0(isp)) {
-			intel_ipu5_pkg_dir_configure_spc(isp,
-							 hw_variant,
-							 pkg_dir_idx,
-							 base, pkg_dir,
-							 pkg_dir_dma_addr);
-			return;
-		}
-
 		server_addr = intel_ipu4_cpd_pkg_dir_get_address(pkg_dir,
 								 pkg_dir_idx);
 
@@ -567,129 +554,6 @@ static const struct intel_ipu4_psys_internal_pdata psys_ipdata_ipu4 = {
 	},
 };
 
-static unsigned int ipu5_csi_offsets[] = {
-	INTEL_IPU5_CSI_REG_TOP0_RX_A_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP0_RX_B_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP0_CPHY_RX_0_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP0_CPHY_RX_1_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP1_RX_A_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP1_RX_B_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP1_CPHY_RX_0_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP1_CPHY_RX_1_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP2_RX_A_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP2_RX_B_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP2_CPHY_RX_0_ADDR_OFFSET,
-	INTEL_IPU5_CSI_REG_TOP2_CPHY_RX_1_ADDR_OFFSET
-};
-
-static unsigned int ipu5_tpg_offsets[] = {
-	INTEL_IPU5_A0_TPG0_ADDR_OFFSET,
-	INTEL_IPU5_A0_TPG1_ADDR_OFFSET,
-	INTEL_IPU5_A0_TPG2_ADDR_OFFSET
-};
-
-static unsigned int ipu5_tpg_sels[] = {
-	INTEL_IPU5_GP0OFFSET +
-	INTEL_IPU5_GPREG_MIPI_PKT_GEN0_SEL,
-	INTEL_IPU5_GP1OFFSET +
-	INTEL_IPU5_GPREG_MIPI_PKT_GEN1_SEL,
-	INTEL_IPU5_GP2OFFSET +
-	INTEL_IPU5_GPREG_MIPI_PKT_GEN2_SEL
-};
-
-static const struct intel_ipu4_isys_internal_pdata isys_ipdata_ipu5 = {
-	.csi2 = {
-		.nports = ARRAY_SIZE(ipu5_csi_offsets),
-		.offsets = ipu5_csi_offsets,
-	},
-	.tpg = {
-		.ntpgs = ARRAY_SIZE(ipu5_tpg_offsets),
-		.offsets = ipu5_tpg_offsets,
-		.sels = ipu5_tpg_sels,
-	},
-	.hw_variant = {
-		.offset = INTEL_IPU5_A0_ISYS_OFFSET,
-		.nr_mmus = 2,
-		.mmu_hw = {
-			{
-			 .offset = INTEL_IPU5_A0_ISYS_IOMMU0_OFFSET,
-			 .info_bits =
-				 INTEL_IPU5_INFO_REQUEST_DESTINATION_PRIMARY,
-			 .nr_l1streams = 0,
-			 .nr_l2streams = 0,
-			 .insert_read_before_invalidate = true,
-			},
-			{
-			 .offset = INTEL_IPU5_A0_ISYS_IOMMU1_OFFSET,
-			 .info_bits = INTEL_IPU4_INFO_STREAM_ID_SET(0),
-			 .nr_l1streams = INTEL_IPU4_MMU_MAX_TLB_L1_STREAMS,
-			 .l1_block_sz = { 1, 8, 8, 8, 8, 6, 6, 6, 6, 1, 1, 1, 1, 1, 1, 1 },
-			 .l1_zlw_en = { 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-			 .l1_zlw_1d_mode = { 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-			 .l1_ins_zlw_ahead_pages = { 0, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-			 .l1_zlw_2d_mode = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-			 .nr_l2streams = INTEL_IPU4_MMU_MAX_TLB_L2_STREAMS,
-			 .l2_block_sz = { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-			 .insert_read_before_invalidate = false,
-			 .zlw_invalidate = false,
-			},
-		},
-		.cdc_fifos = 3,
-		.cdc_fifo_threshold = {6, 8, 2},
-		.dmem_offset = INTEL_IPU5_ISYS_DMEM_OFFSET,
-		.spc_offset = INTEL_IPU5_ISYS_SPC_OFFSET,
-	},
-	.num_parallel_streams = INTEL_IPU4_ISYS_NUM_STREAMS_B0,
-	.isys_dma_overshoot =  INTEL_IPU4_ISYS_OVERALLOC_MIN,
-};
-
-static const struct intel_ipu4_psys_internal_pdata psys_ipdata_ipu5 = {
-	.hw_variant = {
-		.offset = INTEL_IPU5_A0_PSYS_OFFSET,
-		.nr_mmus = 3,
-		.mmu_hw = {
-			{
-			 .offset = INTEL_IPU5_A0_PSYS_IOMMU0_OFFSET,
-			 .info_bits =
-				 INTEL_IPU5_INFO_REQUEST_DESTINATION_PRIMARY,
-			 .nr_l1streams = 0,
-			 .nr_l2streams = 0,
-			 .insert_read_before_invalidate = true,
-			},
-			{
-			 .offset = INTEL_IPU5_A0_PSYS_IOMMU1_OFFSET,
-			 .info_bits = INTEL_IPU5_INFO_STREAM_ID_SET(0),
-			 .nr_l1streams = INTEL_IPU4_MMU_MAX_TLB_L1_STREAMS,
-			 .l1_block_sz = { 1, 2, 2, 2, 2, 2, 2, 2, 8, 4, 9, 4, 8, 4, 8, 4},
-			 .l1_zlw_en = { 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1 },
-			 .l1_zlw_1d_mode = { 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1 },
-			 .l1_ins_zlw_ahead_pages = { 0, 3, 2, 2, 3, 3, 3, 1, 0, 0, 3, 3, 3, 3, 3, 3 },
-			 .l1_zlw_2d_mode = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-			 .nr_l2streams = INTEL_IPU4_MMU_MAX_TLB_L2_STREAMS,
-			 .l2_block_sz = { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-			 .insert_read_before_invalidate = false,
-			 .zlw_invalidate = false,
-			},
-			{
-			 .offset = INTEL_IPU5_A0_PSYS_IOMMU1R_OFFSET,
-			 .info_bits = INTEL_IPU5_INFO_STREAM_ID_SET(0),
-			 .nr_l1streams = INTEL_IPU4_MMU_MAX_TLB_L1_STREAMS,
-			 .l1_block_sz = { 1, 2, 2, 2, 2, 2, 2, 12, 6, 15, 7, 1, 1, 1, 1, 7 },
-			 .l1_zlw_en = { 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-			 .l1_zlw_1d_mode = { 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-			 .l1_ins_zlw_ahead_pages = { 0, 3, 3, 3, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-			 .l1_zlw_2d_mode = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1 },
-			 .nr_l2streams = INTEL_IPU4_MMU_MAX_TLB_L2_STREAMS,
-			 .l2_block_sz = { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-			 .insert_read_before_invalidate = false,
-			 .zlw_invalidate = false,
-			},
-		},
-		.dmem_offset = INTEL_IPU5_PSYS_DMEM_OFFSET,
-		.spc_offset = INTEL_IPU5_PSYS_SPC_OFFSET,
-	},
-};
-
 /*
  * This is meant only as reference for initialising the buttress control,
  * because the different HW stepping can have different initial values
@@ -724,26 +588,6 @@ static const struct intel_ipu4_buttress_ctrl psys_buttress_ctrl_ipu4 = {
 	.pwr_sts_off = BUTTRESS_PWR_STATE_PS_PWR_FSM_IDLE,
 };
 
-static const struct intel_ipu4_buttress_ctrl isys_buttress_ctrl_ipu5 = {
-	.divisor = IS_FREQ_CTL_DIVISOR_IPU5_A0,
-	.qos_floor = 0,
-	.freq_ctl = BUTTRESS_REG_IS_FREQ_CTL,
-	.pwr_sts_shift = IPU5_BUTTRESS_PWR_STATE_IS_PWR_SHIFT,
-	.pwr_sts_mask = IPU5_BUTTRESS_PWR_STATE_IS_PWR_MASK,
-	.pwr_sts_on = IPU5_BUTTRESS_PWR_STATE_UP_DONE,
-	.pwr_sts_off = IPU5_BUTTRESS_PWR_STATE_DN_DONE,
-};
-
-static const struct intel_ipu4_buttress_ctrl psys_buttress_ctrl_ipu5 = {
-	.divisor = PS_FREQ_CTL_DEFAULT_RATIO_IPU5_A0,
-	.qos_floor = PS_FREQ_CTL_DEFAULT_QOS_FLOOR_RATIO_IPU5_A0,
-	.freq_ctl = BUTTRESS_REG_PS_FREQ_CTL,
-	.pwr_sts_shift = IPU5_BUTTRESS_PWR_STATE_PS_PWR_SHIFT,
-	.pwr_sts_mask = IPU5_BUTTRESS_PWR_STATE_PS_PWR_MASK,
-	.pwr_sts_on = IPU5_BUTTRESS_PWR_STATE_UP_DONE,
-	.pwr_sts_off = IPU5_BUTTRESS_PWR_STATE_DN_DONE,
-};
-
 #ifdef CONFIG_VIDEO_INTEL_IPU4_SOC
 const struct intel_ipu_sim_ctrl sim_ctrl_ops = {};
 #else
@@ -751,7 +595,6 @@ extern const struct intel_ipu_sim_ctrl sim_ctrl_ops;
 #endif
 
 static const char intel_ipu4_cpd_filename[] = INTEL_IPU4_CPD_FIRMWARE_B0;
-static const char intel_ipu5_cpd_filename[] = INTEL_IPU5_CPD_FIRMWARE_A0;
 
 static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 			     const struct pci_device_id *id)
@@ -825,10 +668,6 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 		isp->base = INTEL_IPU_MOCK_FIXED_PCI_BASE;
 
 	dev_info(&pdev->dev, "mapped as: 0x%p\n", isp->base);
-	if (fpga_bar_mask) {
-		isp->base2 = iomap[IPU5_BAR_FOR_BRIDGE];
-		dev_info(&pdev->dev, "fpga bar mapped as: 0x%p\n", isp->base2);
-	}
 
 	pci_set_drvdata(pdev, isp);
 
@@ -840,12 +679,6 @@ static int intel_ipu4_pci_probe(struct pci_dev *pdev,
 		isys_buttress_ctrl = &isys_buttress_ctrl_ipu4;
 		psys_buttress_ctrl = &psys_buttress_ctrl_ipu4;
 		isp->cpd_fw_name = intel_ipu4_cpd_filename;
-	} else if (is_intel_ipu5_hw_a0(isp)) {
-		isys_ipdata = &isys_ipdata_ipu5;
-		psys_ipdata = &psys_ipdata_ipu5;
-		isys_buttress_ctrl = &isys_buttress_ctrl_ipu5;
-		psys_buttress_ctrl = &psys_buttress_ctrl_ipu5;
-		isp->cpd_fw_name = intel_ipu5_cpd_filename;
 	} else {
 		dev_err(&pdev->dev, "Not supported device\n");
 		trace_printk("E|TMWK\n");
@@ -1113,12 +946,8 @@ static const struct dev_pm_ops intel_ipu4_pm_ops = {
 #endif
 
 static const struct pci_device_id intel_ipu4_pci_tbl[] = {
-#if defined IPU_STEP_IPU5A0
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU5_HW_FPGA_A0)},
-#else
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU4_HW_BXT_B0)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, INTEL_IPU4_HW_BXT_P)},
-#endif
 	{0,}
 };
 

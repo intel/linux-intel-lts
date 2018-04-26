@@ -24,7 +24,7 @@ enum intel_ipu4_trace_block_type {
 	INTEL_IPU4_TRACE_BLOCK_GPC,     /* General purpose control */
 	INTEL_IPU4_TRACE_CSI2,		/* CSI2 legacy receiver */
 	INTEL_IPU4_TRACE_CSI2_3PH,	/* CSI2 combo receiver */
-	/* One range to cover all 9 blocks on ipu4, 11 blocks on ipu5 */
+	/* One range to cover all 9 blocks on ipu4 */
 	INTEL_IPU4_TRACE_SIG2CIOS,
 	INTEL_IPU4_TRACE_TIMER_RST,	/* Trace reset control timer */
 	INTEL_IPU4_TRACE_BLOCK_END      /* End of list */

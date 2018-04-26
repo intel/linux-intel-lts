@@ -28,8 +28,6 @@
 
 #define INTEL_IPU4_CPD_FIRMWARE_B0	"ipu4_cpd_b0.bin"
 
-#define INTEL_IPU5_CPD_FIRMWARE_A0	"ipu5_fw_a0_pkg_dir.bin"
-
 
 /*
  * Details of the PCI device ID and revisions of the BXT HW supported
@@ -64,29 +62,12 @@
 #define INTEL_IPU4_HW_BXT_P_D0_REV	0xb
 #define INTEL_IPU4_HW_BXT_P_E0_REV	0xc
 
-#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_MOCK)
-#define INTEL_IPU5_HW_FPGA_A0		0x22b8 /* Mock on CHT */
-#else
-#define INTEL_IPU5_HW_FPGA_A0		0x5a19
-#endif
-
-#define INTEL_IPU5_HW_PCI_FPGA_BRIDGE	0x0bcd /* Only for FPGA reset */
-
 /* processing system frequency: 25Mhz x ratio, Legal values [8,32] */
 #define PS_FREQ_CTL_DEFAULT_RATIO_B0	0x12
-
-/*
-* TODO: tuning these 2 IPU5 PS_FREQ default values
-* setting default values following the ipu5 FPGA release report now;
-* and these values should be tuned when enabling PS and on silicon
-*/
-#define PS_FREQ_CTL_DEFAULT_RATIO_IPU5_A0	0x80
-#define PS_FREQ_CTL_DEFAULT_QOS_FLOOR_RATIO_IPU5_A0	0x0708
 
 /* input system frequency: 1600Mhz / divisor. Legal values [2,8] */
 #define IS_FREQ_SOURCE			1600000000
 #define IS_FREQ_CTL_DIVISOR_B0		0x4
-#define IS_FREQ_CTL_DIVISOR_IPU5_A0		0x6
 
 #define INTEL_IPU4_ISYS_NUM_STREAMS_B0		8 /* Max 8 */
 
@@ -115,7 +96,6 @@
  * information.
  */
 #define INTEL_IPU4_MEDIA_DEV_MODEL_IPU4B	"ipu4/Broxton B"
-#define INTEL_IPU4_MEDIA_DEV_MODEL_IPU5A	"ipu5/A"
 
 struct pci_dev;
 struct list_head;
@@ -206,7 +186,6 @@ struct intel_ipu4_device {
 #define is_intel_ipu4_hw_bxt_b0(isp) IS_BUILTIN(IPU_STEP_BXTB0)
 #define is_intel_ipu4_hw_bxt_c0(isp) IS_BUILTIN(IPU_STEP_BXTC0)
 #define is_intel_ipu4_hw_bxtp_e0(isp)	0
-#define is_intel_ipu5_hw_a0(isp) IS_BUILTIN(IPU_STEP_IPU5A0)
 
 #define is_intel_ipu_hw_fpga() 1
 
@@ -234,9 +213,6 @@ struct intel_ipu4_device {
 #define is_intel_ipu4_hw_bxtp_e0(isp)			\
 	((isp)->pdev->device == INTEL_IPU4_HW_BXT_P &&		\
 	 (isp)->pdev->revision == INTEL_IPU4_HW_BXT_P_E0_REV)
-
-#define is_intel_ipu5_hw_a0(isp)		\
-	((isp)->pdev->device == INTEL_IPU5_HW_FPGA_A0)
 
 #define is_intel_ipu_hw_fpga() 0
 
@@ -299,9 +275,7 @@ static inline void ipu_writel(unsigned int val, volatile void __iomem *addr)
 
 #endif /* END OF CONFIG_VIDEO_INTEL_IPU_MOCK */
 
-#define intel_ipu4_media_ctl_dev_model(isp)			\
-	(is_intel_ipu4_hw_bxt_b0(isp) ?				\
-	INTEL_IPU4_MEDIA_DEV_MODEL_IPU4B : INTEL_IPU4_MEDIA_DEV_MODEL_IPU5A)
+#define intel_ipu4_media_ctl_dev_model(isp) INTEL_IPU4_MEDIA_DEV_MODEL_IPU4B
 
 int intel_ipu4_fw_authenticate(void *data, u64 val);
 void intel_ipu4_configure_spc(struct intel_ipu4_device *isp,

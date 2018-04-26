@@ -41,10 +41,8 @@
 #include "intel-ipu4-isys-tpg.h"
 #include "intel-ipu4-isys-video.h"
 #include "intel-ipu4-regs.h"
-#include "intel-ipu5-regs.h"
 #include "intel-ipu4-buttress.h"
 #include "intel-ipu4-buttress-regs.h"
-#include "intel-ipu5-devel.h"
 
 #define ISYS_PM_QOS_VALUE	300
 
@@ -100,45 +98,6 @@ static struct intel_ipu4_trace_block isys_trace_blocks_ipu4[] = {
 	},
 	{
 		.offset = TRACE_REG_IS_GPREG_TRACE_TIMER_RST_N,
-		.type = INTEL_IPU4_TRACE_TIMER_RST,
-	},
-	{
-		.type = INTEL_IPU4_TRACE_BLOCK_END,
-	}
-};
-
-static struct intel_ipu4_trace_block isys_trace_blocks_ipu5A0[] = {
-	{
-		.offset = INTEL_IPU5_TRACE_REG_IS_TRACE_UNIT_BASE,
-		.type = INTEL_IPU4_TRACE_BLOCK_TUN,
-	},
-	{
-		.offset = INTEL_IPU5_TRACE_REG_IS_SP_EVQ_BASE,
-		.type = INTEL_IPU4_TRACE_BLOCK_TM,
-	},
-	{
-		.offset = INTEL_IPU5_TRACE_REG_IS_SP_GPC_BASE,
-		.type = INTEL_IPU4_TRACE_BLOCK_GPC,
-	},
-	{
-		.offset = INTEL_IPU5_TRACE_REG_IS_ISL_GPC_BASE,
-		.type = INTEL_IPU4_TRACE_BLOCK_GPC,
-	},
-	{
-		.offset = INTEL_IPU5_TRACE_REG_IS_MMU_GPC_BASE,
-		.type = INTEL_IPU4_TRACE_BLOCK_GPC,
-	},
-	{
-		.offset = INTEL_IPU5_TRACE_REG_CSI2_TM_BASE,
-		.type = INTEL_IPU4_TRACE_CSI2,
-	},
-	{
-		/* Note! this covers all 11 blocks */
-		.offset = INTEL_IPU5_TRACE_REG_CSI2_SIG2SIO_GRn_BASE(0),
-		.type = INTEL_IPU4_TRACE_SIG2CIOS,
-	},
-	{
-		.offset = INTEL_IPU5_TRACE_REG_IS_GPREG_TRACE_TIMER_RST_N,
 		.type = INTEL_IPU4_TRACE_TIMER_RST,
 	},
 	{
@@ -506,73 +465,6 @@ static int isys_determine_csi_combo_lane_configuration(
 	return 0;
 }
 
-static int isys_determine_csi_combo_lane_configuration_ipu5(
-					struct intel_ipu4_isys *isys)
-{
-	const struct csi_lane_cfg {
-		u8 reg_value;
-		u8 port_lanes[INTEL_IPU5_ISYS_MAX_CSI2_COMBO_PORTS];
-	} csi_lanes_to_cfg[] = {
-		{ 0x1f, { 0, 0, 0, 0 } }, /* no sensor defaults here*/
-		{ 0x00, { 0, 0, 4, 0 } }, /* Dphy0, Dphy1, Cphy0, Cphy1*/
-		{ 0x01, { 0, 0, 3, 0 } },
-		{ 0x02, { 0, 0, 2, 0 } },
-		{ 0x03, { 0, 0, 1, 0 } },
-		{ 0x04, { 0, 0, 3, 1 } },
-		{ 0x05, { 0, 0, 2, 1 } },
-		{ 0x06, { 0, 0, 1, 1 } },
-		{ 0x08, { 0, 0, 2, 2 } },
-		{ 0x09, { 0, 0, 1, 2 } },
-		{ 0x10, { 4, 0, 0, 0 } },
-		{ 0x11, { 3, 0, 0, 0 } },
-		{ 0x12, { 2, 0, 0, 0 } },
-		{ 0x13, { 1, 0, 0, 0 } },
-		{ 0x14, { 3, 1, 0, 0 } },
-		{ 0x15, { 2, 1, 0, 0 } },
-		{ 0x16, { 1, 1, 0, 0 } },
-		{ 0x18, { 2, 2, 0, 0 } },
-		{ 0x19, { 1, 2, 0, 0 } },
-	};
-	u8 i, j, top_num;
-
-	for (top_num = 0; top_num < INTEL_IPU5_ISYS_COMBO_PHY_NUM; top_num++) {
-		for (i = 0; i < ARRAY_SIZE(csi_lanes_to_cfg); i++) {
-			for (j = 0; j <
-				INTEL_IPU5_ISYS_MAX_CSI2_COMBO_PORTS; j++) {
-				if (!isys->csi2[j + top_num *
-				INTEL_IPU5_ISYS_MAX_CSI2_COMBO_PORTS].nlanes)
-					continue;
-				/*
-				* if current lanes number of port can not
-				* match within csi_lanes_to_cfg[i], switch
-				* to csi_lanes_to_cfg[i+1]
-				*/
-				if (csi_lanes_to_cfg[i].port_lanes[j] !=
-					isys->csi2[j + top_num *
-				INTEL_IPU5_ISYS_MAX_CSI2_COMBO_PORTS].nlanes)
-					break;
-			}
-
-			if (j < INTEL_IPU5_ISYS_MAX_CSI2_COMBO_PORTS)
-				continue;
-
-			isys->combo_port_cfg |=
-				csi_lanes_to_cfg[i].reg_value <<
-				(top_num *
-				BUTTRESS_CSI2_PORT_CONFIG_SHIFT_IPU5A0);
-			dev_dbg(&isys->adev->dev,
-				"Combo port lane configuration value 0x%x\n",
-				isys->combo_port_cfg);
-			break;
-		}
-		if (i == ARRAY_SIZE(csi_lanes_to_cfg))
-			dev_err(&isys->adev->dev,
-				"Unsupported CSI2-combo lane configuration on top %d\n",
-						top_num);
-	}
-	return 0;
-}
-
 struct isys_i2c_test {
 	u8 bus_nr;
 	u16 addr;
@@ -916,9 +808,6 @@ static int isys_register_subdevices(struct intel_ipu4_isys *isys)
 		if (is_intel_ipu4_hw_bxt_b0(isys->adev->isp))
 			isys->isr_csi2_bits |=
 				INTEL_IPU4_ISYS_UNISPART_IRQ_CSI2_B0(i);
-		else
-			isys->isr_csi2_bits |=
-				INTEL_IPU5_ISYS_UNISPART_IRQ_CSI2_A0(i);
 	}
 
 	isys->tpg = devm_kcalloc(&isys->adev->dev, tpg->ntpgs,
@@ -1103,10 +992,6 @@ static int isys_register_devices(struct intel_ipu4_isys *isys)
 		rval = isys_determine_csi_combo_lane_configuration(isys);
 		if (rval)
 			goto out_isys_unregister_subdevices;
-	} else {
-		rval = isys_determine_csi_combo_lane_configuration_ipu5(isys);
-		if (rval)
-			goto out_isys_unregister_subdevices;
 	}
 #ifndef CONFIG_PM
 	intel_ipu4_buttress_csi_port_config(isys->adev->isp,
@@ -1177,45 +1062,10 @@ static void isys_setup_hw_ipu4(struct intel_ipu4_isys *isys)
 		       base + INTEL_IPU4_REG_ISYS_CDC_THRESHOLD(i));
 }
 
-static void isys_setup_hw_ipu5(struct intel_ipu4_isys *isys)
-{
-	void __iomem *base = isys->pdata->base;
-	u32 irqs = 0;
-	unsigned int i, j, k;
-
-	/*
-	* TODO: set sw_irq bit to enable isr
-	*/
-	/* Enable irqs for all MIPI busses */
-	for (i = 0; i < INTEL_IPU5_ISYS_COMBO_PHY_NUM; i++)
-		for (j = 0; j < INTEL_IPU5_CSI_PIPE_NUM_PER_TOP; j++)
-			for (k = 0; k < INTEL_IPU5_CSI_IRQ_NUM_PER_PIPE; k++)
-				irqs |= INTEL_IPU5_ISYS_CSI_TOP_IRQ_A0((k +
-				((i * INTEL_IPU5_CSI_PIPE_NUM_PER_TOP + j) *
-				INTEL_IPU5_CSI_IRQ_NUM_PER_PIPE)));
-
-	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_EDGE);
-	ipu_writel(irqs, base +
-		   INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_LEVEL_NOT_PULSE);
-	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_CLEAR);
-	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_MASK);
-	ipu_writel(irqs, base + INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_ENABLE);
-
-	ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
-	ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_MUX_REG);
-
-	/* Write CDC FIFO threshold values for isys */
-	for (i = 0; i < isys->pdata->ipdata->hw_variant.cdc_fifos; i++)
-		ipu_writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
-		base + INTEL_IPU5_REG_ISYS_CDC_THRESHOLD(i));
-}
-
 static void isys_setup_hw(struct intel_ipu4_isys *isys)
 {
 	if (is_intel_ipu4_hw_bxt_b0(isys->adev->isp))
 		isys_setup_hw_ipu4(isys);
-	else
-		isys_setup_hw_ipu5(isys);
 }
 
 #ifdef CONFIG_PM
@@ -1524,12 +1374,10 @@ static int isys_probe(struct intel_ipu4_bus_device *adev)
 
 	trace_printk("B|%d|TMWK\n", current->pid);
 
-	if (!is_intel_ipu5_hw_a0(isp)) {
-		/* Has the domain been attached? */
-		if (!mmu || !isp->pkg_dir_dma_addr) {
-			trace_printk("E|TMWK\n");
-			return -EPROBE_DEFER;
-		}
+	/* Has the domain been attached? */
+	if (!mmu || !isp->pkg_dir_dma_addr) {
+		trace_printk("E|TMWK\n");
+		return -EPROBE_DEFER;
 	}
 
 	isys = devm_kzalloc(&adev->dev, sizeof(*isys), GFP_KERNEL);
@@ -1591,40 +1439,28 @@ static int isys_probe(struct intel_ipu4_bus_device *adev)
 #endif
 
 	if (!isp->secure_mode) {
-		if (is_intel_ipu5_hw_a0(isp)) {
-			int ret;
+		fw = isp->cpd_fw;
 
-			ret = intel_ipu5_isys_load_pkg_dir(isys);
-			if (ret < 0)
-				goto release_firmware;
-		} else {
-			fw = isp->cpd_fw;
+		rval = intel_ipu4_buttress_map_fw_image(
+			adev, fw, &isys->fw_sgt);
+		if (rval)
+			goto release_firmware;
 
-			rval = intel_ipu4_buttress_map_fw_image(
-				adev, fw, &isys->fw_sgt);
-			if (rval)
-				goto release_firmware;
-
-			isys->pkg_dir = intel_ipu4_cpd_create_pkg_dir(
-				adev, isp->cpd_fw->data,
-				sg_dma_address(isys->fw_sgt.sgl),
-				&isys->pkg_dir_dma_addr,
-				&isys->pkg_dir_size);
-			if (isys->pkg_dir == NULL) {
-				rval = -ENOMEM;
-				goto  remove_shared_buffer;
-			}
+		isys->pkg_dir = intel_ipu4_cpd_create_pkg_dir(
+			adev, isp->cpd_fw->data,
+			sg_dma_address(isys->fw_sgt.sgl),
+			&isys->pkg_dir_dma_addr,
+			&isys->pkg_dir_size);
+		if (isys->pkg_dir == NULL) {
+			rval = -ENOMEM;
+			goto  remove_shared_buffer;
 		}
 	}
 
 	/* Debug fs failure is not fatal. */
 	intel_ipu4_isys_init_debugfs(isys);
 
-	if (is_intel_ipu5_hw_a0(isp))
-		intel_ipu4_trace_init(adev->isp, isys->pdata->base, &adev->dev,
-				isys_trace_blocks_ipu5A0);
-	else
-		intel_ipu4_trace_init(adev->isp, isys->pdata->base, &adev->dev,
+	intel_ipu4_trace_init(adev->isp, isys->pdata->base, &adev->dev,
 				isys_trace_blocks_ipu4);
 
 
@@ -1948,63 +1784,6 @@ static void isys_isr_ipu4(struct intel_ipu4_bus_device *adev)
 		 !isys->adev->isp->flr_done);
 }
 
-static void isys_isr_ipu5(struct intel_ipu4_bus_device *adev)
-{
-	struct intel_ipu4_isys *isys = intel_ipu4_bus_get_drvdata(adev);
-	void __iomem *base = isys->pdata->base;
-	u32 status_csi, status_sw;
-
-	status_csi = ipu_readl(isys->pdata->base +
-		       INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_STATUS);
-	status_sw = ipu_readl(isys->pdata->base +
-		       INTEL_IPU5_REG_ISYS_UNISPART_IRQ_STATUS);
-
-	do {
-		ipu_writel(status_csi, isys->pdata->base +
-		       INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_CLEAR);
-		ipu_writel(INTEL_IPU5_ISYS_UNISPART_IRQ_SW,
-			isys->pdata->base +
-			INTEL_IPU5_REG_ISYS_UNISPART_IRQ_CLEAR);
-
-		if (isys->isr_csi2_bits & status_csi) {
-			unsigned int i;
-
-			for (i = 0; i < isys->pdata->ipdata->csi2.nports; i++) {
-				if (status_csi &
-					INTEL_IPU5_ISYS_UNISPART_IRQ_CSI2_A0(i))
-					intel_ipu_isys_csi2_isr(
-						&isys->csi2[i]);
-			}
-		}
-
-		ipu_writel(0, base + INTEL_IPU5_REG_ISYS_UNISPART_SW_IRQ_REG);
-
-		/*
-		 * Handle a single FW event per checking the CSI-2
-		 * receiver SOF status. This is done in order to avoid
-		 * the case where events arrive to the event queue and
-		 * one of them is a SOF event which then could be
-		 * handled before the SOF interrupt. This would pose
-		 * issues in sequence numbering which is based on SOF
-		 * interrupts, always assumed to arrive before FW SOF
-		 * events.
-		 */
-		/* TODO:check sw_irq bit then call isr_one() */
-		if (!isys_isr_one(adev))
-			status_sw = INTEL_IPU5_ISYS_UNISPART_IRQ_SW;
-		else
-			status_sw = 0;
-
-		status_csi = ipu_readl(isys->pdata->base +
-			INTEL_IPU5_REG_ISYS_CSI_TOP_IRQ_STATUS);
-		status_sw |= ipu_readl(isys->pdata->base +
-			INTEL_IPU5_REG_ISYS_UNISPART_IRQ_STATUS);
-	} while (((status_csi & isys->isr_csi2_bits) ||
-		(status_sw & INTEL_IPU5_ISYS_UNISPART_IRQ_SW)) &&
-		 !isys->adev->isp->flr_done);
-
-}
-
 static irqreturn_t isys_isr(struct intel_ipu4_bus_device *adev)
 {
 	struct intel_ipu4_isys *isys = intel_ipu4_bus_get_drvdata(adev);
@@ -2017,8 +1796,6 @@ static irqreturn_t isys_isr(struct intel_ipu4_bus_device *adev)
 
 	if (is_intel_ipu4_hw_bxt_b0(adev->isp))
 		isys_isr_ipu4(adev);
-	else
-		isys_isr_ipu5(adev);
 
 	spin_unlock(&isys->power_lock);
 	return IRQ_HANDLED;
@@ -2038,8 +1815,6 @@ static void isys_isr_poll(struct intel_ipu4_bus_device *adev)
 	mutex_lock(&isys->mutex);
 	if (isp->ctrl->get_sim_type && SIM_MOCK == isp->ctrl->get_sim_type())
 		isys_isr_one(adev);
-	else if (is_intel_ipu5_hw_a0(adev->isp))
-		isys_isr_ipu5(adev);
 	else
 		isys_isr_ipu4(adev);
 	mutex_unlock(&isys->mutex);

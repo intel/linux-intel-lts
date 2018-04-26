@@ -97,12 +97,7 @@ enum ipu_fw_isys_stream_source {
 	IPU_FW_ISYS_STREAM_SRC_PORT_9,
 	IPU_FW_ISYS_STREAM_SRC_PORT_10,
 	IPU_FW_ISYS_STREAM_SRC_PORT_11,
-/*
- * FIXME: Firmware changed its enum member which is used
- * across all platforms, as ipu5 stopped updating so
- * just update ipu4 related change.
- *
- */
+
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU4)
 	IPU_FW_ISYS_STREAM_SRC_PORT_12,
 	IPU_FW_ISYS_STREAM_SRC_PORT_13,

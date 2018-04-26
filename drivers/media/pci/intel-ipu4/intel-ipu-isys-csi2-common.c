@@ -25,7 +25,6 @@
 #include "intel-ipu4-buttress.h"
 #include "intel-ipu4-isys.h"
 #include "intel-ipu4-isys-csi2.h"
-#include "intel-ipu5-isys-csi2.h"
 #include "intel-ipu4-isys-subdev.h"
 #include "intel-ipu4-isys-video.h"
 
@@ -815,8 +814,6 @@ int intel_ipu_isys_csi2_init(struct intel_ipu4_isys_csi2 *csi2,
 
 	if (is_intel_ipu4_hw_bxt_b0(isys->adev->isp))
 		csi2->csi2_ops = &csi2_funcs_ipu4;
-	else
-		csi2->csi2_ops = &csi2_funcs_ipu5;
 
 	return 0;
 
