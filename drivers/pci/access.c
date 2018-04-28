@@ -674,7 +674,7 @@ void pci_cfg_access_unlock(struct pci_dev *dev)
 	dev->block_cfg_access = 0;
 	raw_spin_unlock_irqrestore(&pci_lock, flags);
 
-	wake_up_all_locked(&pci_cfg_wait);
+	wake_up_all(&pci_cfg_wait);
 }
 EXPORT_SYMBOL_GPL(pci_cfg_access_unlock);
 
