@@ -32,6 +32,8 @@
 #include <asm/apic.h>
 #endif
 
+bool split_lock_detect_enabled;
+
 /*
  * Just in case our CPU detection goes bad, or you have a weird system,
  * allow a way to override the automatic disabling of MPX.

@@ -172,4 +172,7 @@ enum x86_pf_error_code {
 	X86_PF_INSTR	=		1 << 4,
 	X86_PF_PK	=		1 << 5,
 };
+
+extern bool split_lock_detect_enabled;
+
 #endif /* _ASM_X86_TRAPS_H */
