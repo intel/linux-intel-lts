@@ -57,7 +57,6 @@ static int fdp_nci_i2c_enable(void *phy_id)
 {
 	struct fdp_i2c_phy *phy = phy_id;
 
-	dev_dbg(&phy->i2c_dev->dev, "%s\n", __func__);
 	fdp_nci_i2c_reset(phy);
 
 	return 0;
@@ -67,7 +66,6 @@ static void fdp_nci_i2c_disable(void *phy_id)
 {
 	struct fdp_i2c_phy *phy = phy_id;
 
-	dev_dbg(&phy->i2c_dev->dev, "%s\n", __func__);
 	fdp_nci_i2c_reset(phy);
 }
 
@@ -113,8 +111,8 @@ static int fdp_nci_i2c_write(void *phy_id, struct sk_buff *skb)
 	}
 
 	if (r < 0 || r != skb->len)
-		dev_dbg(&client->dev, "%s: error err=%d len=%d\n",
-			__func__, r, skb->len);
+		dev_dbg(&client->dev, "error err=%d len=%d\n",
+			r, skb->len);
 
 	if (r >= 0) {
 		if (r != skb->len) {
@@ -152,8 +150,7 @@ static int fdp_nci_i2c_read(struct fdp_i2c_phy *phy, struct sk_buff **skb)
 
 		r = i2c_master_recv(client, tmp, len);
 		if (r != len) {
-			dev_dbg(&client->dev, "%s: i2c recv err: %d\n",
-				__func__, r);
+			dev_dbg(&client->dev, "i2c recv err: %d\n", r);
 			goto flush;
 		}
 
@@ -167,8 +164,7 @@ static int fdp_nci_i2c_read(struct fdp_i2c_phy *phy, struct sk_buff **skb)
 		 * and force resynchronization
 		 */
 		if (lrc) {
-			dev_dbg(&client->dev, "%s: corrupted packet\n",
-				__func__);
+			dev_dbg(&client->dev, "corrupted packet\n");
 			phy->next_read_size = 5;
 			goto flush;
 		}
@@ -224,7 +220,6 @@ static irqreturn_t fdp_nci_i2c_irq_thread_fn(int irq, void *phy_id)
 	}
 
 	client = phy->i2c_dev;
-	dev_dbg(&client->dev, "%s\n", __func__);
 
 	r = fdp_nci_i2c_read(phy, &skb);
 
@@ -305,8 +300,6 @@ static int fdp_nci_i2c_probe(struct i2c_client *client)
 	u32 clock_freq;
 	int r = 0;
 
-	dev_dbg(dev, "%s\n", __func__);
-
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		nfc_err(dev, "No I2C_FUNC_I2C support\n");
 		return -ENODEV;
@@ -367,8 +360,6 @@ static int fdp_nci_i2c_probe(struct i2c_client *client)
 static int fdp_nci_i2c_remove(struct i2c_client *client)
 {
 	struct fdp_i2c_phy *phy = i2c_get_clientdata(client);
-
-	dev_dbg(&client->dev, "%s\n", __func__);
 
 	fdp_nci_remove(phy->ndev);
 	fdp_nci_i2c_disable(phy);
