@@ -14,6 +14,7 @@ struct thread_shstk {
 	u64	base;
 	u64	size;
 	u64	locked:1;
+	u64	ibt:1;
 };
 
 #ifdef CONFIG_X86_SHADOW_STACK
@@ -40,6 +41,14 @@ static inline int shstk_check_rstor_token(bool ia32,
 					  unsigned long *new_ssp) { return 0; }
 static inline int setup_signal_shadow_stack(int ia32, void __user *restorer) { return 0; }
 static inline int restore_signal_shadow_stack(void) { return 0; }
+#endif
+
+#ifdef CONFIG_X86_IBT
+int ibt_setup(void);
+void ibt_disable(void);
+#else
+static inline int ibt_setup(void) { return 0; }
+static inline void ibt_disable(void) {}
 #endif
 
 #ifdef CONFIG_X86_SHADOW_STACK
