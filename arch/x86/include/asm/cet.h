@@ -13,6 +13,7 @@ struct task_struct;
 struct thread_shstk {
 	u64	base;
 	u64	size;
+	u64	locked:1;
 };
 
 #ifdef CONFIG_X86_SHADOW_STACK
@@ -39,6 +40,12 @@ static inline int shstk_check_rstor_token(bool ia32,
 					  unsigned long *new_ssp) { return 0; }
 static inline int setup_signal_shadow_stack(int ia32, void __user *restorer) { return 0; }
 static inline int restore_signal_shadow_stack(void) { return 0; }
+#endif
+
+#ifdef CONFIG_X86_SHADOW_STACK
+int prctl_cet(int option, u64 arg2);
+#else
+static inline int prctl_cet(int option, u64 arg2) { return -EINVAL; }
 #endif
 
 #endif /* __ASSEMBLY__ */
