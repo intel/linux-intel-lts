@@ -1052,6 +1052,13 @@ static void mei_hbm_config_features(struct mei_device *dev)
 	    (dev->version.major_version == HBM_MAJOR_VERSION_DR &&
 	     dev->version.minor_version >= HBM_MINOR_VERSION_DR))
 		dev->hbm_f_dr_supported = 1;
+
+	/* VTag Support */
+	dev->hbm_f_vt_supported = 0;
+	if (dev->version.major_version > HBM_MAJOR_VERSION_VT ||
+	    (dev->version.major_version == HBM_MAJOR_VERSION_VT &&
+	     dev->version.minor_version >= HBM_MINOR_VERSION_VT))
+		dev->hbm_f_vt_supported = 1;
 }
 
 /**
