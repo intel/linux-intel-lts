@@ -187,6 +187,8 @@ static ssize_t mei_dbgfs_read_devstate(struct file *fp, char __user *ubuf,
 				 dev->hbm_f_dr_supported);
 		pos += scnprintf(buf + pos, bufsz - pos, "\tVM: %01d\n",
 				 dev->hbm_f_vm_supported);
+		pos += scnprintf(buf + pos, bufsz - pos, "\tCAP: %01d\n",
+				 dev->hbm_f_cap_supported);
 	}
 
 	pos += scnprintf(buf + pos, bufsz - pos, "pg:  %s, %s\n",
