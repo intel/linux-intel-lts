@@ -111,8 +111,10 @@ intel_pch_panel_fitting(struct intel_crtc *intel_crtc,
 	bool downscale = false;
 
 	/* Native modes don't need fitting */
-	if (adjusted_mode->crtc_hdisplay == pipe_config->pipe_src_w &&
-	    adjusted_mode->crtc_vdisplay == pipe_config->pipe_src_h)
+	if ((adjusted_mode->crtc_hdisplay == pipe_config->pipe_src_w &&
+	     adjusted_mode->crtc_vdisplay == pipe_config->pipe_src_h) ||
+	    (!fitting_mode && !adjusted_mode->crtc_hdisplay &&
+	     !adjusted_mode->crtc_vdisplay))
 		goto done;
 
 	/* Downscale pfiter */
