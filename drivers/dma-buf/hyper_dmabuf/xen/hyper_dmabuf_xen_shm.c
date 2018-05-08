@@ -284,26 +284,65 @@ struct page **xen_be_map_shared_pages(unsigned long lvl3_gref, int domid,
 	dev_dbg(hy_drv_priv->dev, "%s entry\n", __func__);
 
 	sh_pages_info = kmalloc(sizeof(*sh_pages_info), GFP_KERNEL);
+
+	if (!sh_pages_info) {
+		dev_err(hy_drv_priv->dev,
+			"can't allocate sh_pages_info\n");
+		return NULL;
+	}
+
 	*refs_info = (void *) sh_pages_info;
 
 	lvl2_table_pages = kcalloc(n_lvl2_grefs, sizeof(struct page *),
 				   GFP_KERNEL);
 
+	if (!lvl2_table_pages) {
+		dev_err(hy_drv_priv->dev,
+			"can't allocate lvl2_table_pages\n");
+		goto error_alloc_lvl2_table_pages;
+	}
+
 	data_pages = kcalloc(nents, sizeof(struct page *), GFP_KERNEL);
+
+        if (!data_pages) {
+		dev_err(hy_drv_priv->dev, "can't allocate data_pages\n");
+		goto error_alloc_data_pages;
+	}
 
 	lvl2_map_ops = kcalloc(n_lvl2_grefs, sizeof(*lvl2_map_ops),
 			       GFP_KERNEL);
 
+        if (!lvl2_map_ops) {
+		dev_err(hy_drv_priv->dev, "can't allocate lvl2_map_ops\n");
+		goto error_alloc_lvl2_map_ops;
+	}
+
 	lvl2_unmap_ops = kcalloc(n_lvl2_grefs, sizeof(*lvl2_unmap_ops),
 				 GFP_KERNEL);
 
+        if (!lvl2_unmap_ops) {
+		dev_err(hy_drv_priv->dev, "can't allocate lvl2_unmap_ops\n");
+		goto error_alloc_lvl2_unmap_ops;
+	}
+
 	data_map_ops = kcalloc(nents, sizeof(*data_map_ops), GFP_KERNEL);
+
+        if (!data_map_ops) {
+		dev_err(hy_drv_priv->dev, "can't allocate data_map_ops\n");
+		goto error_alloc_data_map_ops;
+	}
+
 	data_unmap_ops = kcalloc(nents, sizeof(*data_unmap_ops), GFP_KERNEL);
+
+        if (!data_unmap_ops) {
+		dev_err(hy_drv_priv->dev, "can't allocate data_unmap_ops\n");
+		goto error_alloc_data_unmap_ops;
+	}
 
 	/* Map top level addressing page */
 	if (gnttab_alloc_pages(1, &lvl3_table_page)) {
 		dev_err(hy_drv_priv->dev, "Cannot allocate pages\n");
-		return NULL;
+		goto error_lvl3_addr_init;
 	}
 
 	lvl3_table = (grant_ref_t *)pfn_to_kaddr(page_to_pfn(lvl3_table_page));
@@ -318,7 +357,7 @@ struct page **xen_be_map_shared_pages(unsigned long lvl3_gref, int domid,
 	if (gnttab_map_refs(&lvl3_map_ops, NULL, &lvl3_table_page, 1)) {
 		dev_err(hy_drv_priv->dev,
 			"HYPERVISOR map grant ref failed");
-		return NULL;
+		goto error_lvl3_addr_init;
 	}
 
 	if (lvl3_map_ops.status) {
@@ -354,7 +393,7 @@ struct page **xen_be_map_shared_pages(unsigned long lvl3_gref, int domid,
 			      &lvl3_table_page, 1)) {
 		dev_err(hy_drv_priv->dev,
 			"xen: cannot unmap top level page\n");
-		return NULL;
+		goto error_cleanup_lvl2;
 	}
 
 	/* Mark that page was unmapped */
@@ -364,7 +403,7 @@ struct page **xen_be_map_shared_pages(unsigned long lvl3_gref, int domid,
 			    lvl2_table_pages, n_lvl2_grefs)) {
 		dev_err(hy_drv_priv->dev,
 			"HYPERVISOR map grant ref failed");
-		return NULL;
+		goto error_cleanup_lvl2;
 	}
 
 	/* Checks if pages were mapped correctly */
@@ -483,11 +522,26 @@ error_cleanup_lvl3:
 				  &lvl3_table_page, 1);
 	gnttab_free_pages(1, &lvl3_table_page);
 
-	kfree(lvl2_table_pages);
-	kfree(lvl2_map_ops);
-	kfree(lvl2_unmap_ops);
+error_lvl3_addr_init:
+	kfree(data_unmap_ops);
+
+error_alloc_data_unmap_ops:
 	kfree(data_map_ops);
 
+error_alloc_data_map_ops:
+	kfree(lvl2_unmap_ops);
+
+error_alloc_lvl2_unmap_ops:
+	kfree(lvl2_map_ops);
+
+error_alloc_lvl2_map_ops:
+	kfree(data_pages);
+
+error_alloc_data_pages:
+	kfree(lvl2_table_pages);
+
+error_alloc_lvl2_table_pages:
+	kfree(sh_pages_info);
 
 	return NULL;
 }
