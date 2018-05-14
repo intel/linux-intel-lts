@@ -42,45 +42,34 @@
 static int count_descriptors(const char *buf, size_t size)
 {
 	size_t off = 0;
-	int i, j, count = 0;
-	u8 len, tmp;
+	int j, count0 = 0, count1 = 0;
+	u8 len, type, sub_type;
 
-	DVCT_IN();
-	while (off < size) {
-		/*the length*/
-		j = sscanf(buf + off, "%2hhx%n", &len, &i);
-		if (!j)
-			break;
-		if (j < 0 || len < 4)
+	if (buf == NULL)
+		return -EINVAL;
+	/* Ensuring 'buf' only has serval correct format USB descriptors */
+	while(off < size) {
+		j = sscanf(buf + off, "%2hhx", &len);
+		if (j <= 0)
 			return -EINVAL;
-		len--;
-		off += i;
-
-		/*Type*/
-		j = sscanf(buf + off, "%2hhx%n", &tmp, &i);
-		if (j <= 0 || tmp != USB_DT_CS_INTERFACE)
-			return -EINVAL;
-		len--;
-		off += i;
-
-		/*Sub Type*/
-		j = sscanf(buf + off, "%2hhx%n", &tmp, &i);
-		if (j <= 0 || tmp < DC_INPUT_CONNECTION
-		    || tmp > DC_DEBUG_ATTRIBUTES)
-			return -EINVAL;
-		len--;
-		off += i;
-
-		while (len) {
-			j = sscanf(buf + off, "%2hhx%n", &tmp, &i);
-			if (j <= 0)
-				return -EINVAL;
-			len--;
-			off += i;
-		}
-		count++;
+	/* skip related data and space to read next 'len': aa bb cc ... */
+		off += len * 3;
+		count0++;
 	}
-	return count;
+	if (off != size)
+		return -EINVAL;
+	off = 0;
+	DVCT_IN();
+	/* Check every USB descriptor type and sub_type */
+	while (count0--) {
+		/*the length*/
+		j = sscanf(buf + off, "%2hhx%2hhx%2hhx", &len, &type, &sub_type);
+		if (j <= 0 || type != USB_DT_CS_INTERFACE || sub_type < DC_INPUT_CONNECTION || sub_type > DC_DEBUG_ATTRIBUTES)
+			return -EINVAL;
+		off += len * 3;
+		count1++;
+	}
+	return count1;
 }
 
 /* Parse @buf and get a pointer to the descriptor identified
@@ -91,6 +80,8 @@ static u8 *get_descriptor(const char *buf, size_t size, int idx)
 	int i, j, k, count = 0;
 	u8 len, tmp, *ret = NULL;
 
+	if (buf == NULL)
+		return ERR_PTR(-EINVAL);
 	DVCT_IN();
 	while (off < size) {
 		j = sscanf(buf + off, "%2hhx%n", &len, &i);
@@ -318,6 +309,8 @@ static int count_strings(const char *buf, size_t size)
 	size_t off = 0, slen;
 	int i = 0, j, desc_offset, offset;
 
+	if (buf == NULL)
+		return -EINVAL;
 	DVCT_IN();
 	while (off < size) {
 		j = sscanf(buf + off, "%d.%d: %n", &desc_offset, &offset, &i);
@@ -346,6 +339,8 @@ static char *get_string(const char *buf, size_t size, int index,
 	int i, j;
 	char *ret = ERR_PTR(-EINVAL);
 
+	if (buf == NULL)
+		return ERR_PTR(-EINVAL);
 	DVCT_IN();
 	while (off < size) {
 		j = sscanf(buf + off, "%d.%d: %n", desc_offset, offset, &i);
