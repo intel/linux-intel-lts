@@ -768,9 +768,6 @@ static void skl_probe_work(struct work_struct *work)
 	list_for_each_entry(hlink, &ebus->hlink_list, list)
 		snd_hdac_ext_bus_link_put(ebus, hlink);
 
-	/* init debugfs */
-	skl->debugfs = skl_debugfs_init(skl);
-
 	/* configure PM */
 	pm_runtime_put_noidle(bus->dev);
 	pm_runtime_allow(bus->dev);
@@ -1021,6 +1018,9 @@ static void skl_shutdown(struct pci_dev *pci)
 		return;
 
 	snd_hdac_ext_stop_streams(ebus);
+	snd_hdac_ext_bus_link_power_down_all(ebus);
+	skl_dsp_sleep(skl->skl_sst->dsp);
+	skl_dsp_disable_core(skl->skl_sst->dsp, SKL_DSP_CORE0_ID);
 	list_for_each_entry(s, &bus->stream_list, list) {
 		stream = stream_to_hdac_ext_stream(s);
 		snd_hdac_ext_stream_decouple(ebus, stream, false);
