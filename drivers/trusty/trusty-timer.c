@@ -100,6 +100,12 @@ static int trusty_timer_probe(struct platform_device *pdev)
 	struct trusty_timer_dev_state *s;
 	struct trusty_timer *tt;
 
+	ret = trusty_detect_vmm();
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Cannot detect VMM which supports trusty!");
+		return -EINVAL;
+	}
+
 	dev_dbg(&pdev->dev, "%s\n", __func__);
 
 	if (!trusty_wall_base(pdev->dev.parent)) {
@@ -160,6 +166,7 @@ static int trusty_timer_remove(struct platform_device *pdev)
 	struct trusty_timer_dev_state *s = platform_get_drvdata(pdev);
 	struct trusty_timer *tt;
 
+
 	dev_dbg(&pdev->dev, "%s\n", __func__);
 
 	/* unregister notifier */
@@ -170,7 +177,6 @@ static int trusty_timer_remove(struct platform_device *pdev)
 
 	flush_work(&tt->work);
 	destroy_workqueue(s->workqueue);
-
 	/* free state */
 	kfree(s);
 	return 0;

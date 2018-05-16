@@ -192,6 +192,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
 
 	sock_init_data(sock, sk);
 	sk->sk_destruct = can_sock_destruct;
+	sock_set_flag(sk, SOCK_RCU_FREE);
 
 	if (sk->sk_prot->init)
 		err = sk->sk_prot->init(sk);

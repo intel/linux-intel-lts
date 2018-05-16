@@ -21,6 +21,10 @@
 #include <linux/poll.h>
 #include <linux/idr.h>
 #include <linux/completion.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#include <linux/sched/signal.h>
+#endif
 #include <linux/sched.h>
 #include <linux/compat.h>
 #include <linux/uio.h>
@@ -45,8 +49,7 @@
 #define MAX_SRV_NAME_LEN		256
 #define MAX_DEV_NAME_LEN		32
 
-#define DEFAULT_MSG_BUF_SIZE		(68*1024)
-
+#define DEFAULT_MSG_BUF_SIZE		PAGE_SIZE
 #define DEFAULT_MSG_BUF_ALIGN		PAGE_SIZE
 
 #define TIPC_CTRL_ADDR			53
@@ -1557,7 +1560,11 @@ static int tipc_virtio_probe(struct virtio_device *vdev)
 	vds->cdev_name[sizeof(vds->cdev_name)-1] = '\0';
 
 	/* find tx virtqueues (rx and tx and in this order) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	err = vdev->config->find_vqs(vdev, 2, vqs, vq_cbs, vq_names, NULL, NULL);
+#else
 	err = vdev->config->find_vqs(vdev, 2, vqs, vq_cbs, vq_names);
+#endif
 	if (err)
 		goto err_find_vqs;
 

@@ -147,6 +147,12 @@ static int trusty_wall_probe(struct platform_device *pdev)
 	int ret;
 	struct trusty_wall_dev_state *s;
 
+	ret = trusty_detect_vmm();
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Cannot detect VMM which supports trusty!");
+		return -EINVAL;
+	}
+
 	dev_dbg(&pdev->dev, "%s\n", __func__);
 
 	s = kzalloc(sizeof(*s), GFP_KERNEL);

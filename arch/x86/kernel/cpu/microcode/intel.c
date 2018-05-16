@@ -474,7 +474,6 @@ static void show_saved_mc(void)
  */
 static void save_mc_for_early(u8 *mc)
 {
-#ifdef CONFIG_HOTPLUG_CPU
 	/* Synchronization during CPU hotplug. */
 	static DEFINE_MUTEX(x86_cpu_microcode_mutex);
 
@@ -521,7 +520,6 @@ static void save_mc_for_early(u8 *mc)
 
 out:
 	mutex_unlock(&x86_cpu_microcode_mutex);
-#endif
 }
 
 static bool __init load_builtin_intel_microcode(struct cpio_data *cp)
@@ -1062,7 +1060,7 @@ static bool is_blacklisted(unsigned int cpu)
 	 */
 	if (c->x86 == 6 &&
 	    c->x86_model == INTEL_FAM6_BROADWELL_X &&
-	    c->x86_mask == 0x01 &&
+	    c->x86_stepping == 0x01 &&
 	    llc_size_per_core > 2621440 &&
 	    c->microcode < 0x0b000021) {
 		pr_err_once("Erratum BDF90: late loading with revision < 0x0b000021 (0x%x) disabled.\n", c->microcode);
@@ -1085,7 +1083,7 @@ static enum ucode_state request_microcode_fw(int cpu, struct device *device,
 		return UCODE_NFOUND;
 
 	sprintf(name, "intel-ucode/%02x-%02x-%02x",
-		c->x86, c->x86_model, c->x86_mask);
+		c->x86, c->x86_model, c->x86_stepping);
 
 	if (request_firmware_direct(&firmware, name, device)) {
 		pr_debug("data file %s load failed\n", name);
@@ -1132,7 +1130,7 @@ static struct microcode_ops microcode_intel_ops = {
 
 static int __init calc_llc_size_per_core(struct cpuinfo_x86 *c)
 {
-	u64 llc_size = c->x86_cache_size * 1024;
+	u64 llc_size = c->x86_cache_size * 1024ULL;
 
 	do_div(llc_size, c->x86_max_cores);
 

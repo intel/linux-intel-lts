@@ -1375,19 +1375,32 @@ static int kcm_attach(struct socket *sock, struct socket *csock,
 	struct list_head *head;
 	int index = 0;
 	struct strp_callbacks cb;
-	int err;
+	int err = 0;
 
 	csk = csock->sk;
 	if (!csk)
 		return -EINVAL;
 
-	/* We must prevent loops or risk deadlock ! */
-	if (csk->sk_family == PF_KCM)
-		return -EOPNOTSUPP;
+	lock_sock(csk);
+
+	/* Only allow TCP sockets to be attached for now */
+	if ((csk->sk_family != AF_INET && csk->sk_family != AF_INET6) ||
+	    csk->sk_protocol != IPPROTO_TCP) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	/* Don't allow listeners or closed sockets */
+	if (csk->sk_state == TCP_LISTEN || csk->sk_state == TCP_CLOSE) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
 
 	psock = kmem_cache_zalloc(kcm_psockp, GFP_KERNEL);
-	if (!psock)
-		return -ENOMEM;
+	if (!psock) {
+		err = -ENOMEM;
+		goto out;
+	}
 
 	psock->mux = mux;
 	psock->sk = csk;
@@ -1401,12 +1414,22 @@ static int kcm_attach(struct socket *sock, struct socket *csock,
 	err = strp_init(&psock->strp, csk, &cb);
 	if (err) {
 		kmem_cache_free(kcm_psockp, psock);
-		return err;
+		goto out;
 	}
 
-	sock_hold(csk);
-
 	write_lock_bh(&csk->sk_callback_lock);
+
+	/* Check if sk_user_data is aready by KCM or someone else.
+	 * Must be done under lock to prevent race conditions.
+	 */
+	if (csk->sk_user_data) {
+		write_unlock_bh(&csk->sk_callback_lock);
+		strp_done(&psock->strp);
+		kmem_cache_free(kcm_psockp, psock);
+		err = -EALREADY;
+		goto out;
+	}
+
 	psock->save_data_ready = csk->sk_data_ready;
 	psock->save_write_space = csk->sk_write_space;
 	psock->save_state_change = csk->sk_state_change;
@@ -1414,7 +1437,10 @@ static int kcm_attach(struct socket *sock, struct socket *csock,
 	csk->sk_data_ready = psock_data_ready;
 	csk->sk_write_space = psock_write_space;
 	csk->sk_state_change = psock_state_change;
+
 	write_unlock_bh(&csk->sk_callback_lock);
+
+	sock_hold(csk);
 
 	/* Finished initialization, now add the psock to the MUX. */
 	spin_lock_bh(&mux->lock);
@@ -1437,7 +1463,10 @@ static int kcm_attach(struct socket *sock, struct socket *csock,
 	/* Schedule RX work in case there are already bytes queued */
 	strp_check_rcv(&psock->strp);
 
-	return 0;
+out:
+	release_sock(csk);
+
+	return err;
 }
 
 static int kcm_attach_ioctl(struct socket *sock, struct kcm_attach *info)
@@ -1489,6 +1518,7 @@ static void kcm_unattach(struct kcm_psock *psock)
 
 	if (WARN_ON(psock->rx_kcm)) {
 		write_unlock_bh(&csk->sk_callback_lock);
+		release_sock(csk);
 		return;
 	}
 
