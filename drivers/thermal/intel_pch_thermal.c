@@ -29,6 +29,8 @@
 #define PCH_THERMAL_DID_HSW_2	0x8C24 /* Haswell PCH */
 #define PCH_THERMAL_DID_WPT	0x9CA4 /* Wildcat Point */
 #define PCH_THERMAL_DID_SKL	0x9D31 /* Skylake PCH */
+#define PCH_THERMAL_DID_SKL_H	0xA131 /* Skylake PCH 100 series */
+#define PCH_THERMAL_DID_CNL	0x9Df9 /* CNL PCH */
 
 /* Wildcat Point-LP  PCH Thermal registers */
 #define WPT_TEMP	0x0000	/* Temperature */
@@ -273,6 +275,34 @@ static struct thermal_zone_device_ops tzd_ops = {
 	.get_trip_temp = pch_get_trip_temp,
 };
 
+enum board_ids {
+	board_hsw,
+	board_wpt,
+	board_skl,
+	board_cnl,
+};
+
+static const struct board_info {
+	const char *name;
+	const struct pch_dev_ops *ops;
+} board_info[] = {
+	[board_hsw] = {
+		.name = "pch_haswell",
+		.ops = &pch_dev_ops_wpt,
+	},
+	[board_wpt] = {
+		.name = "pch_wildcat_point",
+		.ops = &pch_dev_ops_wpt,
+	},
+	[board_skl] = {
+		.name = "pch_skylake",
+		.ops = &pch_dev_ops_wpt,
+	},
+	[board_cnl] = {
+		.name = "pch_cannonlake",
+		.ops = &pch_dev_ops_wpt,
+	},
+};
 
 static int intel_pch_thermal_probe(struct pci_dev *pdev,
 				   const struct pci_device_id *id)
@@ -380,10 +410,18 @@ static int intel_pch_thermal_resume(struct device *device)
 }
 
 static struct pci_device_id intel_pch_thermal_id[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_WPT) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_SKL) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_HSW_1) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_HSW_2) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_HSW_1),
+		.driver_data = board_hsw, },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_HSW_2),
+		.driver_data = board_hsw, },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_WPT),
+		.driver_data = board_wpt, },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_SKL),
+		.driver_data = board_skl, },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_SKL_H),
+		.driver_data = board_skl, },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCH_THERMAL_DID_CNL),
+		.driver_data = board_cnl, },
 	{ 0, },
 };
 MODULE_DEVICE_TABLE(pci, intel_pch_thermal_id);

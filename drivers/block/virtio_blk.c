@@ -630,11 +630,12 @@ static int virtblk_probe(struct virtio_device *vdev)
 	if (err)
 		goto out_put_disk;
 
-	q = vblk->disk->queue = blk_mq_init_queue(&vblk->tag_set);
+	q = blk_mq_init_queue(&vblk->tag_set);
 	if (IS_ERR(q)) {
 		err = -ENOMEM;
 		goto out_free_tags;
 	}
+	vblk->disk->queue = q;
 
 	q->queuedata = vblk;
 
@@ -769,7 +770,7 @@ static void virtblk_remove(struct virtio_device *vdev)
 	/* Stop all the virtqueues. */
 	vdev->config->reset(vdev);
 
-	refc = atomic_read(&disk_to_dev(vblk->disk)->kobj.kref.refcount);
+	refc = kref_read(&disk_to_dev(vblk->disk)->kobj.kref);
 	put_disk(vblk->disk);
 	vdev->config->del_vqs(vdev);
 	kfree(vblk->vqs);

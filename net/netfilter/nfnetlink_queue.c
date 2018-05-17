@@ -384,7 +384,7 @@ nfqnl_build_packet_message(struct net *net, struct nfqnl_instance *queue,
 		+ nla_total_size(sizeof(u_int32_t))	/* skbinfo */
 		+ nla_total_size(sizeof(u_int32_t));	/* cap_len */
 
-	if (entskb->tstamp.tv64)
+	if (entskb->tstamp)
 		size += nla_total_size(sizeof(struct nfqnl_msg_packet_timestamp));
 
 	size += nfqnl_get_bridge_size(entry);
@@ -443,7 +443,7 @@ nfqnl_build_packet_message(struct net *net, struct nfqnl_instance *queue,
 	skb = alloc_skb(size, GFP_ATOMIC);
 	if (!skb) {
 		skb_tx_error(entskb);
-		return NULL;
+		goto nlmsg_failure;
 	}
 
 	nlh = nlmsg_put(skb, 0, 0,
@@ -452,7 +452,7 @@ nfqnl_build_packet_message(struct net *net, struct nfqnl_instance *queue,
 	if (!nlh) {
 		skb_tx_error(entskb);
 		kfree_skb(skb);
-		return NULL;
+		goto nlmsg_failure;
 	}
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family = entry->state.pf;
@@ -555,7 +555,7 @@ nfqnl_build_packet_message(struct net *net, struct nfqnl_instance *queue,
 	if (nfqnl_put_bridge(entry, skb) < 0)
 		goto nla_put_failure;
 
-	if (entskb->tstamp.tv64) {
+	if (entskb->tstamp) {
 		struct nfqnl_msg_packet_timestamp ts;
 		struct timespec64 kts = ktime_to_timespec64(entskb->tstamp);
 
@@ -598,12 +598,17 @@ nfqnl_build_packet_message(struct net *net, struct nfqnl_instance *queue,
 	}
 
 	nlh->nlmsg_len = skb->len;
+	if (seclen)
+		security_release_secctx(secdata, seclen);
 	return skb;
 
 nla_put_failure:
 	skb_tx_error(entskb);
 	kfree_skb(skb);
 	net_err_ratelimited("nf_queue: error creating packet message\n");
+nlmsg_failure:
+	if (seclen)
+		security_release_secctx(secdata, seclen);
 	return NULL;
 }
 

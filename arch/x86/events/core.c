@@ -190,8 +190,8 @@ static void release_pmc_hardware(void) {}
 
 static bool check_hw_exists(void)
 {
-	u64 val, val_fail, val_new= ~0;
-	int i, reg, reg_fail, ret = 0;
+	u64 val, val_fail = -1, val_new= ~0;
+	int i, reg, reg_fail = -1, ret = 0;
 	int bios_fail = 0;
 	int reg_safe = -1;
 
@@ -505,6 +505,10 @@ int x86_pmu_hw_config(struct perf_event *event)
 
 		if (event->attr.precise_ip > precise)
 			return -EOPNOTSUPP;
+
+		/* There's no sense in having PEBS for non sampling events: */
+		if (!is_sampling_event(event))
+			return -EINVAL;
 	}
 	/*
 	 * check that PEBS LBR correction does not conflict with

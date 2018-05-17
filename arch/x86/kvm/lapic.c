@@ -246,9 +246,14 @@ static inline void kvm_apic_set_ldr(struct kvm_lapic *apic, u32 id)
 	recalculate_apic_map(apic->vcpu->kvm);
 }
 
+static inline u32 kvm_apic_calc_x2apic_ldr(u32 id)
+{
+	return ((id >> 4) << 16) | (1 << (id & 0xf));
+}
+
 static inline void kvm_apic_set_x2apic_id(struct kvm_lapic *apic, u32 id)
 {
-	u32 ldr = ((id >> 4) << 16) | (1 << (id & 0xf));
+	u32 ldr = kvm_apic_calc_x2apic_ldr(id);
 
 	kvm_lapic_set_reg(apic, APIC_ID, id);
 	kvm_lapic_set_reg(apic, APIC_LDR, ldr);
@@ -1358,8 +1363,10 @@ EXPORT_SYMBOL_GPL(kvm_lapic_hv_timer_in_use);
 
 static void cancel_hv_tscdeadline(struct kvm_lapic *apic)
 {
+	preempt_disable();
 	kvm_x86_ops->cancel_hv_timer(apic->vcpu);
 	apic->lapic_timer.hv_timer_in_use = false;
+	preempt_enable();
 }
 
 void kvm_lapic_expired_hv_timer(struct kvm_vcpu *vcpu)
@@ -2029,6 +2036,7 @@ static int kvm_apic_state_fixup(struct kvm_vcpu *vcpu,
 {
 	if (apic_x2apic_mode(vcpu->arch.apic)) {
 		u32 *id = (u32 *)(s->regs + APIC_ID);
+		u32 *ldr = (u32 *)(s->regs + APIC_LDR);
 
 		if (vcpu->kvm->arch.x2apic_format) {
 			if (*id != vcpu->vcpu_id)
@@ -2039,6 +2047,10 @@ static int kvm_apic_state_fixup(struct kvm_vcpu *vcpu,
 			else
 				*id <<= 24;
 		}
+
+		/* In x2APIC mode, the LDR is fixed and based on the id */
+		if (set)
+			*ldr = kvm_apic_calc_x2apic_ldr(*id);
 	}
 
 	return 0;

@@ -769,8 +769,10 @@ int cdc_ncm_bind_common(struct usbnet *dev, struct usb_interface *intf, u8 data_
 	u8 *buf;
 	int len;
 	int temp;
+	int err;
 	u8 iface_no;
 	struct usb_cdc_parsed_header hdr;
+	u16 curr_ntb_format;
 
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
@@ -873,6 +875,32 @@ int cdc_ncm_bind_common(struct usbnet *dev, struct usb_interface *intf, u8 data_
 	if (temp) {
 		dev_dbg(&intf->dev, "set interface failed\n");
 		goto error2;
+	}
+
+	/*
+	 * Some Huawei devices have been observed to come out of reset in NDP32 mode.
+	 * Let's check if this is the case, and set the device to NDP16 mode again if
+	 * needed.
+	*/
+	if (ctx->drvflags & CDC_NCM_FLAG_RESET_NTB16) {
+		err = usbnet_read_cmd(dev, USB_CDC_GET_NTB_FORMAT,
+				      USB_TYPE_CLASS | USB_DIR_IN | USB_RECIP_INTERFACE,
+				      0, iface_no, &curr_ntb_format, 2);
+		if (err < 0) {
+			goto error2;
+		}
+
+		if (curr_ntb_format == USB_CDC_NCM_NTB32_FORMAT) {
+			dev_info(&intf->dev, "resetting NTB format to 16-bit");
+			err = usbnet_write_cmd(dev, USB_CDC_SET_NTB_FORMAT,
+					       USB_TYPE_CLASS | USB_DIR_OUT
+					       | USB_RECIP_INTERFACE,
+					       USB_CDC_NCM_NTB16_FORMAT,
+					       iface_no, NULL, 0);
+
+			if (err < 0)
+				goto error2;
+		}
 	}
 
 	cdc_ncm_find_endpoints(dev, ctx->data);
@@ -1090,6 +1118,7 @@ cdc_ncm_fill_tx_frame(struct usbnet *dev, struct sk_buff *skb, __le32 sign)
 	u16 n = 0, index, ndplen;
 	u8 ready2send = 0;
 	u32 delayed_ndp_size;
+	size_t padding_count;
 
 	/* When our NDP gets written in cdc_ncm_ndp(), then skb_out->len gets updated
 	 * accordingly. Otherwise, we should check here.
@@ -1246,11 +1275,13 @@ cdc_ncm_fill_tx_frame(struct usbnet *dev, struct sk_buff *skb, __le32 sign)
 	 * a ZLP after full sized NTBs.
 	 */
 	if (!(dev->driver_info->flags & FLAG_SEND_ZLP) &&
-	    skb_out->len > ctx->min_tx_pkt)
-		memset(skb_put(skb_out, ctx->tx_max - skb_out->len), 0,
-		       ctx->tx_max - skb_out->len);
-	else if (skb_out->len < ctx->tx_max && (skb_out->len % dev->maxpacket) == 0)
+	    skb_out->len > ctx->min_tx_pkt) {
+		padding_count = ctx->tx_max - skb_out->len;
+		memset(skb_put(skb_out, padding_count), 0, padding_count);
+	} else if (skb_out->len < ctx->tx_max &&
+		   (skb_out->len % dev->maxpacket) == 0) {
 		*skb_put(skb_out, 1) = 0;	/* force short packet */
+	}
 
 	/* set final frame length */
 	nth16 = (struct usb_cdc_ncm_nth16 *)skb_out->data;

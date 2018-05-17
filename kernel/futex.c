@@ -338,7 +338,7 @@ static inline bool should_fail_futex(bool fshared)
 
 static inline void futex_get_mm(union futex_key *key)
 {
-	atomic_inc(&key->private.mm->mm_count);
+	mmgrab(key->private.mm);
 	/*
 	 * Ensure futex_get_mm() implies a full barrier such that
 	 * get_futex_key() implies a full barrier. This is relied upon
@@ -668,13 +668,14 @@ again:
 		 * this reference was taken by ihold under the page lock
 		 * pinning the inode in place so i_lock was unnecessary. The
 		 * only way for this check to fail is if the inode was
-		 * truncated in parallel so warn for now if this happens.
+		 * truncated in parallel which is almost certainly an
+		 * application bug. In such a case, just retry.
 		 *
 		 * We are not calling into get_futex_key_refs() in file-backed
 		 * cases, therefore a successful atomic_inc return below will
 		 * guarantee that get_futex_key() will still imply smp_mb(); (B).
 		 */
-		if (WARN_ON_ONCE(!atomic_inc_not_zero(&inode->i_count))) {
+		if (!atomic_inc_not_zero(&inode->i_count)) {
 			rcu_read_unlock();
 			put_page(page);
 
@@ -1710,6 +1711,9 @@ static int futex_requeue(u32 __user *uaddr1, unsigned int flags,
 	struct futex_q *this, *next;
 	WAKE_Q(wake_q);
 
+	if (nr_wake < 0 || nr_requeue < 0)
+		return -EINVAL;
+
 	if (requeue_pi) {
 		/*
 		 * Requeue PI only works on two distinct uaddrs. This
@@ -2459,7 +2463,7 @@ retry:
 	restart->fn = futex_wait_restart;
 	restart->futex.uaddr = uaddr;
 	restart->futex.val = val;
-	restart->futex.time = abs_time->tv64;
+	restart->futex.time = *abs_time;
 	restart->futex.bitset = bitset;
 	restart->futex.flags = flags | FLAGS_HAS_TIMEOUT;
 
@@ -2480,7 +2484,7 @@ static long futex_wait_restart(struct restart_block *restart)
 	ktime_t t, *tp = NULL;
 
 	if (restart->futex.flags & FLAGS_HAS_TIMEOUT) {
-		t.tv64 = restart->futex.time;
+		t = restart->futex.time;
 		tp = &t;
 	}
 	restart->fn = do_no_restart_syscall;

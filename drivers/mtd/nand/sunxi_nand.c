@@ -320,6 +320,10 @@ static int sunxi_nfc_wait_events(struct sunxi_nfc *nfc, u32 events,
 
 		ret = wait_for_completion_timeout(&nfc->complete,
 						msecs_to_jiffies(timeout_ms));
+		if (!ret)
+			ret = -ETIMEDOUT;
+		else
+			ret = 0;
 
 		writel(0, nfc->regs + NFC_REG_INT);
 	} else {
@@ -1831,8 +1835,14 @@ static int sunxi_nand_hw_common_ecc_ctrl_init(struct mtd_info *mtd,
 
 	/* Add ECC info retrieval from DT */
 	for (i = 0; i < ARRAY_SIZE(strengths); i++) {
-		if (ecc->strength <= strengths[i])
+		if (ecc->strength <= strengths[i]) {
+			/*
+			 * Update ecc->strength value with the actual strength
+			 * that will be used by the ECC engine.
+			 */
+			ecc->strength = strengths[i];
 			break;
+		}
 	}
 
 	if (i >= ARRAY_SIZE(strengths)) {

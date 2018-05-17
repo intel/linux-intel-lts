@@ -152,13 +152,149 @@
  * %SKL_TKN_U32_CAPS_SIZE:      Caps size
  *
  * %SKL_TKN_U32_PROC_DOMAIN:    Specify processing domain
- *
+
  * %SKL_TKN_U32_LIB_COUNT:      Specifies the number of libraries
  *
  * %SKL_TKN_STR_LIB_NAME:       Specifies the library name
  *
+ * %SKL_TKN_U32_PMODE:		Specifies the power mode for pipe
+ *
+ * %SKL_TKL_U32_D0I3_CAPS:	Specifies the D0i3 capability for module
+ *
+ * %SKL_TKN_U8_PDI_TYPE:        Specifies PDI type. Can be PCM or PDM
+ *
+ * %SKL_TKN_U8_CONF_VERSION:    Version of topology conf file format
+ *
+ * %SKL_TKN_U32_PIPE_DIR:       Specifies pipe direction. Can be
+ *                              playback/capture.
+ *
+ * %SKL_TKN_U32_NUM_CONFIGS:    Number of pipe configs
+ *
+ * %SKL_TKN_STR_CONFIG_NAME:    Name of the pipe config
+ *
+ * %SKL_TKN_U32_PIPE_CONFIG_ID: Config id for the modules in the pipe
+ *                              and PCM params supported by that pipe
+ *                              config. This is used as index to fill
+ *                              up the pipe config and module config
+ *                              structure.
+ *
+ * %SKL_TKN_U32_CFG_FREQ:
+ * %SKL_TKN_U8_CFG_CHAN:
+ * %SKL_TKN_U8_CFG_BPS:         PCM params (freq, channels, bits per sample)
+ *                              supported for each of the pipe configs.
+ *
+ * %SKL_TKN_CFG_MOD_RES_ID:     Module's resource index for each of the
+ *                              pipe config
+ *
+ * %SKL_TKN_CFG_MOD_RES_ID:     Module's interface index for each of the
+ *                              pipe config
+ *
+ * %SKL_TKN_U8_NUM_MOD:         Number of modules in the manifest
+ *
+ *
+ * %SKL_TKN_U32_DMACTRL_CFG_IDX:
+ *				Config index to fill up DMA control params
+ *
+ * %SKL_TKN_U32_DMACTRL_CFG_SIZE:
+ *				Size information of DMA control params
+ *
+ *
+ * %SKL_TKN_MM_U8_MAX_INST_COUNT:
+ *                              Max allowed instance count for modules
+ *
+ * %SKL_TKN_MM_U8_NUM_RES:      Number of resources for the module
+ *
+ * %SKL_TKN_MM_U8_NUM_INTF:     Number of interfaces for the module
+ *
+ * %SKL_TKN_MM_U32_RES_ID:      Resource index for the resource info to
+ *                              be filled into.
+ *                              A module can support multiple resource
+ *                              configuration and is represnted as a
+ *                              resource table. This index is used to
+ *                              fill information into appropriate index.
+ *
+ * %SKL_TKN_MM_U32_CPS:         DSP cycles
+ *
+ * %SKL_TKN_MM_U32_DMA_SIZE:    Allocated buffer size for gateway DMA
+ *
+ * %SKL_TKN_MM_U32_CPC:         DSP cycles allocated per frame
+ *
+ * %SKL_TKN_MM_U32_RES_PIN_ID:  Resource pin id
+ *
+ * %SKL_TKN_MM_U32_INTF_PIN_ID: Pin index in the module
+ *
+ * %SKL_TKN_MM_U32_PIN_BUF:     Pin buffer size
+ *
+ * %SKL_TKN_MM_U32_FMT_ID:      Format index for each of the interface/
+ *                              format information to be filled into.
+ *
+ * %SKL_TKN_MM_U32_NUM_IN_FMT:
+ * %SKL_TKN_MM_U32_NUM_OUT_FMT: Number of input/output formats
+ *
+ * %SKL_TKN_U32_ASTATE_IDX:     Table Index for the A-State entry to be filled
+ *                              with kcps and clock source
+ *
+ * %SKL_TKN_U32_ASTATE_COUNT:   Number of valid entries in A-State table
+ *
+ * %SKL_TKN_U32_ASTATE_KCPS:    Specifies the core load threshold (in kilo
+ *                              cycles per second) below which DSP is clocked
+ *                              from source specified by clock source.
+ *
+ * %SKL_TKN_U32_ASTATE_CLK_SRC: Clock source for A-State entry
+ *
+ * %SKL_TKN_U32_AGG_NUM_MASTERS:
+ *                              Number of aggregated masters
+ *
+ * %SKL_TKN_U32_AGG_LINK_ID:    Aggregated master's instance id
+ *
+ * %SKL_TKN_U32_AGG_CH_MASK:    Represents channels driven by the master
+ *
+ * %SKL_TKN_U32_AGG_ID:         Aggregation id is a non zero identifier to
+ *                              indicate if this endpoint is participating
+ *                              in aggregation.
+ * %SKL_TKN_U32_DMA_BUF_SIZE:	DMA buffer size in millisec
+ *
+ * %SKL_TKN_U32_DMA_IDX         Config index to fill up DMA config info
+ *                              from the manifest.
+ *
+ * %SKL_TKN_U32_DMA_TYPE:       Types of FW configs
+ *                              DMA_CONFIG, SCHEDULER_CONFIG.
+ *
+ * %SKL_TKN_U32_DMA_SIZE:       DMA buffer Size
+ *
+ * %SKL_TKN_U32_DMA_MAX_SIZE:   Maximum DMA buffer size
+ *
+ * %SKL_TKN_U32_DMA_MIN_SIZE:   Minimum DMA buffer size
+ *
+ * %SKL_TKN_U32_SCH_TYPE:       Types of FW configs: SCHEDULER_CONFIG
+ *
+ * %SKL_TKN_U32_SCH_SIZE:       Scheduler config size
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_MUL:
+ *                              System tick multiplier
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_DIV:
+ *                              System tick divider
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_LL_SRC:
+ *                              Low Latency interrupt source
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN:
+ *                              Config length
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_CFG:
+ *                              Config contain capture on which SSP to
+ *                              active the FW
+ *
+ * %SKL_TKN_U32_FMT_CFG_IDX:    Format config index
+ *
  * module_id and loadable flags dont have tokens as these values will be
  * read from the DSP FW manifest
+ *
+ * Tokens defined can be used either in the manifest or widget private data.
+ *
+ * SKL_TKN_MM is used as a suffix for all tokens that represent
+ * module data in the manifest.
  */
 enum SKL_TKNS {
 	SKL_TKN_UUID = 1,
@@ -208,7 +344,79 @@ enum SKL_TKNS {
 	SKL_TKN_U32_PROC_DOMAIN,
 	SKL_TKN_U32_LIB_COUNT,
 	SKL_TKN_STR_LIB_NAME,
-	SKL_TKN_MAX = SKL_TKN_STR_LIB_NAME,
+	SKL_TKN_U32_PMODE,
+	SKL_TKL_U32_D0I3_CAPS, /* Typo added at v4.10 */
+	SKL_TKN_U32_D0I3_CAPS = SKL_TKL_U32_D0I3_CAPS,
+	SKL_TKN_U32_DMA_BUF_SIZE,
+
+	SKL_TKN_U32_PIPE_DIRECTION,
+	SKL_TKN_U32_PIPE_CONFIG_ID,
+	SKL_TKN_U32_NUM_CONFIGS,
+	SKL_TKN_U32_PATH_MEM_PGS,
+
+	SKL_TKN_U32_CFG_FREQ,
+	SKL_TKN_U8_CFG_CHAN,
+	SKL_TKN_U8_CFG_BPS,
+	SKL_TKN_CFG_MOD_RES_ID,
+	SKL_TKN_CFG_MOD_FMT_ID,
+	SKL_TKN_U8_NUM_MOD,
+
+	SKL_TKN_MM_U8_MOD_IDX,
+	SKL_TKN_MM_U8_NUM_RES,
+	SKL_TKN_MM_U8_NUM_INTF,
+	SKL_TKN_MM_U32_RES_ID,
+	SKL_TKN_MM_U32_CPS,
+	SKL_TKN_MM_U32_DMA_SIZE,
+	SKL_TKN_MM_U32_CPC,
+	SKL_TKN_MM_U32_RES_PIN_ID,
+	SKL_TKN_MM_U32_INTF_PIN_ID,
+	SKL_TKN_MM_U32_PIN_BUF,
+	SKL_TKN_MM_U32_FMT_ID,
+	SKL_TKN_MM_U32_NUM_IN_FMT,
+	SKL_TKN_MM_U32_NUM_OUT_FMT,
+
+	SKL_TKN_U32_ASTATE_IDX,
+	SKL_TKN_U32_ASTATE_COUNT,
+	SKL_TKN_U32_ASTATE_KCPS,
+	SKL_TKN_U32_ASTATE_CLK_SRC,
+	SKL_TKN_U32_AGG_NUM_MASTERS,
+	SKL_TKN_U32_AGG_LINK_ID,
+	SKL_TKN_U32_AGG_CH_MASK,
+	SKL_TKN_U32_AGG_ID,
+	SKL_TKN_U32_DMACTRL_CFG_IDX,
+	SKL_TKN_U32_DMACTRL_CFG_SIZE,
+	SKL_TKN_U32_DMA_IDX,
+	SKL_TKN_U32_DMA_TYPE,
+	SKL_TKN_U32_DMA_SIZE,
+	SKL_TKN_U32_DMA_MAX_SIZE,
+	SKL_TKN_U32_DMA_MIN_SIZE,
+
+	SKL_TKN_U32_SCH_TYPE,
+	SKL_TKN_U32_SCH_SIZE,
+	SKL_TKN_U32_SCH_SYS_TICK_MUL,
+	SKL_TKN_U32_SCH_SYS_TICK_DIV,
+	SKL_TKN_U32_SCH_SYS_TICK_LL_SRC,
+	SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN,
+	SKL_TKN_U32_SCH_SYS_TICK_CFG,
+
+	SKL_TKN_U32_FMT_CFG_IDX,
+	SKL_TKN_MAX = SKL_TKN_U32_FMT_CFG_IDX,
+};
+
+/*
+ * Topology change notification events along with time at which
+ * the change occurred in topology.
+ */
+enum skl_event_type {
+	SKL_TPLG_CHG_NOTIFY_PIPELINE_START = 1,
+	SKL_TPLG_CHG_NOTIFY_PIPELINE_DELETE,
+	SKL_TPLG_CHG_NOTIFY_DSP_D0,
+	SKL_TPLG_CHG_NOTIFY_DSP_D3,
+};
+
+struct skl_tcn_events {
+	enum skl_event_type type;
+	struct timeval tv;
 };
 
 #endif

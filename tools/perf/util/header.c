@@ -826,7 +826,7 @@ static int write_group_desc(int fd, struct perf_header *h __maybe_unused,
 
 /*
  * default get_cpuid(): nothing gets recorded
- * actual implementation must be in arch/$(ARCH)/util/header.c
+ * actual implementation must be in arch/$(SRCARCH)/util/header.c
  */
 int __weak get_cpuid(char *buffer __maybe_unused, size_t sz __maybe_unused)
 {
@@ -1454,8 +1454,16 @@ static int __event_process_build_id(struct build_id_event *bev,
 
 		dso__set_build_id(dso, &bev->build_id);
 
-		if (!is_kernel_module(filename, cpumode))
-			dso->kernel = dso_type;
+		if (dso_type != DSO_TYPE_USER) {
+			struct kmod_path m = { .name = NULL, };
+
+			if (!kmod_path__parse_name(&m, filename) && m.kmod)
+				dso__set_short_name(dso, strdup(m.name), true);
+			else
+				dso->kernel = dso_type;
+
+			free(m.name);
+		}
 
 		build_id__sprintf(dso->build_id, sizeof(dso->build_id),
 				  sbuild_id);
@@ -3184,6 +3192,7 @@ int perf_event__process_event_update(struct perf_tool *tool __maybe_unused,
 	case PERF_EVENT_UPDATE__SCALE:
 		ev_scale = (struct event_update_event_scale *) ev->data;
 		evsel->scale = ev_scale->scale;
+		break;
 	case PERF_EVENT_UPDATE__CPUS:
 		ev_cpus = (struct event_update_event_cpus *) ev->data;
 

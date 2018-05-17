@@ -24,6 +24,9 @@
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/acpi.h>
+#include <linux/usb/phy.h>
+#include <linux/usb/otg.h>
+#include <linux/platform_device.h>
 
 #include "xhci.h"
 #include "xhci-trace.h"
@@ -52,6 +55,11 @@
 #define PCI_DEVICE_ID_INTEL_BROXTON_M_XHCI		0x0aa8
 #define PCI_DEVICE_ID_INTEL_BROXTON_B_XHCI		0x1aa8
 #define PCI_DEVICE_ID_INTEL_APL_XHCI			0x5aa8
+#define PCI_DEVICE_ID_INTEL_DNV_XHCI			0x19d0
+
+#define PCI_DEVICE_ID_ASMEDIA_1042A_XHCI		0x1142
+
+#define XHCI_INTEL_VENDOR_CAPS 192
 
 static const char hcd_name[] = "xhci_hcd";
 
@@ -66,11 +74,62 @@ static const struct xhci_driver_overrides xhci_pci_overrides __initconst = {
 /* called after powerup, by probe or system-pm "wakeup" */
 static int xhci_pci_reinit(struct xhci_hcd *xhci, struct pci_dev *pdev)
 {
+	struct usb_hcd *hcd;
+	int retval;
+
 	/*
 	 * TODO: Implement finding debug ports later.
 	 * TODO: see if there are any quirks that need to be added to handle
 	 * new extended capabilities.
 	 */
+	retval = XHCI_HCC_EXT_CAPS(readl(&xhci->cap_regs->hcc_params));
+	retval = xhci_find_next_ext_cap(&xhci->cap_regs->hc_capbase,
+					retval << 2,
+					XHCI_INTEL_VENDOR_CAPS);
+	/* If This capbility is found, register host on PHY for OTG purpose */
+	if (pdev->vendor == PCI_VENDOR_ID_INTEL && retval) {
+		hcd = xhci_to_hcd(xhci);
+
+		hcd->usb_phy = usb_get_phy(USB_PHY_TYPE_USB2);
+
+		if (IS_ERR_OR_NULL(hcd->usb_phy)) {
+			/* Unable to get phy, very likely intel_usb_dr_phy
+			 * platform device not yet allocated. Possible
+			 * race with another drivers.
+			 */
+			int ret;
+			xhci->usb2_phy = platform_device_alloc(
+								"intel_usb_dr_phy", 0);
+			if (xhci->usb2_phy) {
+				xhci->usb2_phy->dev.parent = &pdev->dev;
+					ret = platform_device_add(xhci->usb2_phy);
+				if (ret) {
+					platform_device_put(xhci->usb2_phy);
+					return ret;
+				}
+			} else {
+				/* In case of a race and another driver allocate
+				 * intel_usb_dr_phy platform device earlier, check
+				 * whether phy is already available. If not return error.
+				 */
+				hcd->usb_phy = usb_get_phy(USB_PHY_TYPE_USB2);
+				if (IS_ERR_OR_NULL(hcd->usb_phy))
+					return -ENOMEM;
+			}
+		}
+
+		hcd->usb_phy = usb_get_phy(USB_PHY_TYPE_USB2);
+
+		if (!IS_ERR_OR_NULL(hcd->usb_phy)) {
+			retval = otg_set_host(hcd->usb_phy->otg, &hcd->self);
+			if (retval)
+				usb_put_phy(hcd->usb_phy);
+		} else {
+			xhci_dbg(xhci, "No USB2 PHY transceiver found\n");
+			hcd->usb_phy = NULL;
+		}
+	}
+
 
 	/* PCI Memory-Write-Invalidate cycle support is optional (uncommon) */
 	if (!pci_set_mwi(pdev))
@@ -166,7 +225,8 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 		 pdev->device == PCI_DEVICE_ID_INTEL_CHERRYVIEW_XHCI ||
 		 pdev->device == PCI_DEVICE_ID_INTEL_BROXTON_M_XHCI ||
 		 pdev->device == PCI_DEVICE_ID_INTEL_BROXTON_B_XHCI ||
-		 pdev->device == PCI_DEVICE_ID_INTEL_APL_XHCI)) {
+		 pdev->device == PCI_DEVICE_ID_INTEL_APL_XHCI ||
+		 pdev->device == PCI_DEVICE_ID_INTEL_DNV_XHCI)) {
 		xhci->quirks |= XHCI_PME_STUCK_QUIRK;
 	}
 	if (pdev->vendor == PCI_VENDOR_ID_INTEL &&
@@ -175,7 +235,8 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 	}
 	if (pdev->vendor == PCI_VENDOR_ID_INTEL &&
 	    (pdev->device == PCI_DEVICE_ID_INTEL_CHERRYVIEW_XHCI ||
-	     pdev->device == PCI_DEVICE_ID_INTEL_APL_XHCI))
+	     pdev->device == PCI_DEVICE_ID_INTEL_APL_XHCI ||
+	     pdev->device == PCI_DEVICE_ID_INTEL_DNV_XHCI))
 		xhci->quirks |= XHCI_MISSING_CAS;
 
 	if (pdev->vendor == PCI_VENDOR_ID_ETRON &&
@@ -184,6 +245,9 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 		xhci->quirks |= XHCI_TRUST_TX_LENGTH;
 		xhci->quirks |= XHCI_BROKEN_STREAMS;
 	}
+	if (pdev->vendor == PCI_VENDOR_ID_RENESAS &&
+			pdev->device == 0x0014)
+		xhci->quirks |= XHCI_TRUST_TX_LENGTH;
 	if (pdev->vendor == PCI_VENDOR_ID_RENESAS &&
 			pdev->device == 0x0015)
 		xhci->quirks |= XHCI_RESET_ON_RESUME;
@@ -198,6 +262,16 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 	if (pdev->vendor == PCI_VENDOR_ID_ASMEDIA &&
 			pdev->device == 0x1042)
 		xhci->quirks |= XHCI_BROKEN_STREAMS;
+	if (pdev->vendor == PCI_VENDOR_ID_ASMEDIA &&
+			pdev->device == 0x1142)
+		xhci->quirks |= XHCI_TRUST_TX_LENGTH;
+
+	if (pdev->vendor == PCI_VENDOR_ID_ASMEDIA &&
+		pdev->device == PCI_DEVICE_ID_ASMEDIA_1042A_XHCI)
+		xhci->quirks |= XHCI_ASMEDIA_MODIFY_FLOWCONTROL;
+
+	if (pdev->vendor == PCI_VENDOR_ID_TI && pdev->device == 0x8241)
+		xhci->quirks |= XHCI_LIMIT_ENDPOINT_INTERVAL_7;
 
 	if (xhci->quirks & XHCI_RESET_ON_RESUME)
 		xhci_dbg_trace(xhci, trace_xhci_dbg_quirks,
@@ -319,6 +393,8 @@ static void xhci_pci_remove(struct pci_dev *dev)
 
 	xhci = hcd_to_xhci(pci_get_drvdata(dev));
 	xhci->xhc_state |= XHCI_STATE_REMOVING;
+	if(xhci->usb2_phy)
+		platform_device_unregister(xhci->usb2_phy);
 	if (xhci->shared_hcd) {
 		usb_remove_hcd(xhci->shared_hcd);
 		usb_put_hcd(xhci->shared_hcd);

@@ -675,6 +675,16 @@ static inline void __qdisc_drop(struct sk_buff *skb, struct sk_buff **to_free)
 	*to_free = skb;
 }
 
+static inline void __qdisc_drop_all(struct sk_buff *skb,
+				    struct sk_buff **to_free)
+{
+	if (skb->prev)
+		skb->prev->next = *to_free;
+	else
+		skb->next = *to_free;
+	*to_free = skb;
+}
+
 static inline unsigned int __qdisc_queue_drop_head(struct Qdisc *sch,
 						   struct qdisc_skb_head *qh,
 						   struct sk_buff **to_free)
@@ -768,8 +778,11 @@ static inline struct Qdisc *qdisc_replace(struct Qdisc *sch, struct Qdisc *new,
 	old = *pold;
 	*pold = new;
 	if (old != NULL) {
-		qdisc_tree_reduce_backlog(old, old->q.qlen, old->qstats.backlog);
+		unsigned int qlen = old->q.qlen;
+		unsigned int backlog = old->qstats.backlog;
+
 		qdisc_reset(old);
+		qdisc_tree_reduce_backlog(old, qlen, backlog);
 	}
 	sch_tree_unlock(sch);
 
@@ -787,6 +800,15 @@ static inline int qdisc_drop(struct sk_buff *skb, struct Qdisc *sch,
 			     struct sk_buff **to_free)
 {
 	__qdisc_drop(skb, to_free);
+	qdisc_qstats_drop(sch);
+
+	return NET_XMIT_DROP;
+}
+
+static inline int qdisc_drop_all(struct sk_buff *skb, struct Qdisc *sch,
+				 struct sk_buff **to_free)
+{
+	__qdisc_drop_all(skb, to_free);
 	qdisc_qstats_drop(sch);
 
 	return NET_XMIT_DROP;

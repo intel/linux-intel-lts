@@ -17,6 +17,7 @@
  */
 #include <sound/pcm.h>
 
+#include <linux/delay.h>
 #include "../common/sst-dsp.h"
 #include "../common/sst-ipc.h"
 #include "../common/sst-dsp-priv.h"
@@ -160,10 +161,23 @@ is_skl_dsp_core_enable(struct sst_dsp *ctx, unsigned int core_mask)
 
 static int skl_dsp_reset_core(struct sst_dsp *ctx, unsigned int core_mask)
 {
+	int ret;
+
 	/* stall core */
 	sst_dsp_shim_update_bits_unlocked(ctx, SKL_ADSP_REG_ADSPCS,
 			SKL_ADSPCS_CSTALL_MASK(core_mask),
 			SKL_ADSPCS_CSTALL_MASK(core_mask));
+
+	/* poll with timeout to check if operation successful */
+	ret = sst_dsp_register_poll(ctx,
+			SKL_ADSP_REG_ADSPCS,
+			SKL_ADSPCS_CSTALL_MASK(core_mask),
+			SKL_ADSPCS_CSTALL_MASK(core_mask),
+			SKL_DSP_PU_TO,
+			"Stall Core");
+
+	if (ret < 0)
+		return ret;
 
 	/* set reset state */
 	return skl_dsp_core_set_reset_state(ctx, core_mask);
@@ -182,6 +196,19 @@ int skl_dsp_start_core(struct sst_dsp *ctx, unsigned int core_mask)
 	dev_dbg(ctx->dev, "unstall/run core: core_mask = %x\n", core_mask);
 	sst_dsp_shim_update_bits_unlocked(ctx, SKL_ADSP_REG_ADSPCS,
 			SKL_ADSPCS_CSTALL_MASK(core_mask), 0);
+
+	/* poll with timeout to check if operation successful */
+	ret = sst_dsp_register_poll(ctx,
+			SKL_ADSP_REG_ADSPCS,
+			SKL_ADSPCS_CSTALL_MASK(core_mask),
+			0,
+			SKL_DSP_PU_TO,
+			"Unstall Core");
+	if (ret < 0)
+		return ret;
+
+	/* delay to ensure proper signal propagation after unreset/unstall */
+	usleep_range(1000, 1500);
 
 	if (!is_skl_dsp_core_enable(ctx, core_mask)) {
 		skl_dsp_reset_core(ctx, core_mask);
@@ -278,6 +305,7 @@ int skl_dsp_disable_core(struct sst_dsp *ctx, unsigned int core_mask)
 
 	return ret;
 }
+EXPORT_SYMBOL(skl_dsp_disable_core);
 
 int skl_dsp_boot(struct sst_dsp *ctx)
 {
@@ -355,12 +383,13 @@ int skl_dsp_get_core(struct sst_dsp *ctx, unsigned int core_id)
 		ret = ctx->fw_ops.set_state_D0(ctx, core_id);
 		if (ret < 0) {
 			dev_err(ctx->dev, "unable to get core%d\n", core_id);
-			return ret;
+			goto out;
 		}
 	}
 
 	skl->cores.usage_count[core_id]++;
 
+out:
 	dev_dbg(ctx->dev, "core id %d state %d usage_count %d\n",
 			core_id, skl->cores.state[core_id],
 			skl->cores.usage_count[core_id]);
@@ -379,7 +408,8 @@ int skl_dsp_put_core(struct sst_dsp *ctx, unsigned int core_id)
 		return -EINVAL;
 	}
 
-	if (--skl->cores.usage_count[core_id] == 0) {
+	if ((--skl->cores.usage_count[core_id] == 0) &&
+		(skl->cores.state[core_id] != SKL_DSP_RESET)) {
 		ret = ctx->fw_ops.set_state_D3(ctx, core_id);
 		if (ret < 0) {
 			dev_err(ctx->dev, "unable to put core %d: %d\n",
@@ -433,16 +463,21 @@ struct sst_dsp *skl_dsp_ctx_init(struct device *dev,
 			return NULL;
 	}
 
+	return sst;
+}
+
+int post_init(struct sst_dsp *sst, struct sst_dsp_device *sst_dev)
+{
+	int ret = 0;
+
 	/* Register the ISR */
 	ret = request_threaded_irq(sst->irq, sst->ops->irq_handler,
 		sst_dev->thread, IRQF_SHARED, "AudioDSP", sst);
-	if (ret) {
+	if (ret)
 		dev_err(sst->dev, "unable to grab threaded IRQ %d, disabling device\n",
 			       sst->irq);
-		return NULL;
-	}
 
-	return sst;
+	return ret;
 }
 
 void skl_dsp_free(struct sst_dsp *dsp)

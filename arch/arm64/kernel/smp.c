@@ -214,7 +214,7 @@ asmlinkage void secondary_start_kernel(void)
 	 * All kernel threads share the same mm context; grab a
 	 * reference and switch to it.
 	 */
-	atomic_inc(&mm->mm_count);
+	mmgrab(mm);
 	current->active_mm = mm;
 
 	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
@@ -934,7 +934,7 @@ static bool have_cpu_die(void)
 #ifdef CONFIG_HOTPLUG_CPU
 	int any_cpu = raw_smp_processor_id();
 
-	if (cpu_ops[any_cpu]->cpu_die)
+	if (cpu_ops[any_cpu] && cpu_ops[any_cpu]->cpu_die)
 		return true;
 #endif
 	return false;

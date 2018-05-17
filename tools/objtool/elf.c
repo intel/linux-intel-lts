@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "elf.h"
 #include "warn.h"
@@ -80,6 +81,18 @@ struct symbol *find_symbol_by_offset(struct section *sec, unsigned long offset)
 	list_for_each_entry(sym, &sec->symbol_list, list)
 		if (sym->type != STT_SECTION &&
 		    sym->offset == offset)
+			return sym;
+
+	return NULL;
+}
+
+struct symbol *find_symbol_containing(struct section *sec, unsigned long offset)
+{
+	struct symbol *sym;
+
+	list_for_each_entry(sym, &sec->symbol_list, list)
+		if (sym->type != STT_SECTION &&
+		    offset >= sym->offset && offset < sym->offset + sym->len)
 			return sym;
 
 	return NULL;
@@ -358,7 +371,8 @@ struct elf *elf_open(const char *name)
 
 	elf->fd = open(name, O_RDONLY);
 	if (elf->fd == -1) {
-		perror("open");
+		fprintf(stderr, "objtool: Can't open '%s': %s\n",
+			name, strerror(errno));
 		goto err;
 	}
 

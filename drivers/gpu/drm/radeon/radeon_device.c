@@ -136,6 +136,10 @@ static struct radeon_px_quirk radeon_px_quirk_list[] = {
 	 * https://bugzilla.kernel.org/show_bug.cgi?id=51381
 	 */
 	{ PCI_VENDOR_ID_ATI, 0x6840, 0x1043, 0x2122, RADEON_PX_QUIRK_DISABLE_PX },
+	/* Asus K53TK laptop with AMD A6-3420M APU and Radeon 7670m GPU
+	 * https://bugs.freedesktop.org/show_bug.cgi?id=101491
+	 */
+	{ PCI_VENDOR_ID_ATI, 0x6741, 0x1043, 0x2122, RADEON_PX_QUIRK_DISABLE_PX },
 	/* macbook pro 8.2 */
 	{ PCI_VENDOR_ID_ATI, 0x6741, PCI_VENDOR_ID_APPLE, 0x00e2, RADEON_PX_QUIRK_LONG_WAKEUP },
 	{ 0, 0, 0, 0, 0 },
@@ -1333,7 +1337,7 @@ int radeon_device_init(struct radeon_device *rdev,
 	for (i = 0; i < RADEON_NUM_RINGS; i++) {
 		rdev->ring[i].idx = i;
 	}
-	rdev->fence_context = fence_context_alloc(RADEON_NUM_RINGS);
+	rdev->fence_context = dma_fence_context_alloc(RADEON_NUM_RINGS);
 
 	DRM_INFO("initializing kernel modesetting (%s 0x%04X:0x%04X 0x%04X:0x%04X 0x%02X).\n",
 		 radeon_family_name[rdev->family], pdev->vendor, pdev->device,
@@ -1549,8 +1553,6 @@ failed:
 	return r;
 }
 
-static void radeon_debugfs_remove_files(struct radeon_device *rdev);
-
 /**
  * radeon_device_fini - tear down the driver
  *
@@ -1577,7 +1579,6 @@ void radeon_device_fini(struct radeon_device *rdev)
 	rdev->rmmio = NULL;
 	if (rdev->family >= CHIP_BONAIRE)
 		radeon_doorbell_fini(rdev);
-	radeon_debugfs_remove_files(rdev);
 }
 
 
@@ -1664,13 +1665,16 @@ int radeon_suspend_kms(struct drm_device *dev, bool suspend,
 
 	radeon_suspend(rdev);
 	radeon_hpd_fini(rdev);
-	/* evict remaining vram memory */
+	/* evict remaining vram memory
+	 * This second call to evict vram is to evict the gart page table
+	 * using the CPU.
+	 */
 	radeon_bo_evict_vram(rdev);
 
 	radeon_agp_suspend(rdev);
 
 	pci_save_state(dev->pdev);
-	if (freeze && rdev->family >= CHIP_CEDAR) {
+	if (freeze && rdev->family >= CHIP_CEDAR && !(rdev->flags & RADEON_IS_IGP)) {
 		rdev->asic->asic_reset(rdev, true);
 		pci_restore_state(dev->pdev);
 	} else if (suspend) {
@@ -1946,27 +1950,8 @@ int radeon_debugfs_add_files(struct radeon_device *rdev,
 	rdev->debugfs_count = i;
 #if defined(CONFIG_DEBUG_FS)
 	drm_debugfs_create_files(files, nfiles,
-				 rdev->ddev->control->debugfs_root,
-				 rdev->ddev->control);
-	drm_debugfs_create_files(files, nfiles,
 				 rdev->ddev->primary->debugfs_root,
 				 rdev->ddev->primary);
 #endif
 	return 0;
-}
-
-static void radeon_debugfs_remove_files(struct radeon_device *rdev)
-{
-#if defined(CONFIG_DEBUG_FS)
-	unsigned i;
-
-	for (i = 0; i < rdev->debugfs_count; i++) {
-		drm_debugfs_remove_files(rdev->debugfs[i].files,
-					 rdev->debugfs[i].num_files,
-					 rdev->ddev->control);
-		drm_debugfs_remove_files(rdev->debugfs[i].files,
-					 rdev->debugfs[i].num_files,
-					 rdev->ddev->primary);
-	}
-#endif
 }

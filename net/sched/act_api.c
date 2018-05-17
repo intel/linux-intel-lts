@@ -95,8 +95,10 @@ static int tcf_dump_walker(struct tcf_hashinfo *hinfo, struct sk_buff *skb,
 				continue;
 
 			nest = nla_nest_start(skb, n_i);
-			if (nest == NULL)
+			if (nest == NULL) {
+				index--;
 				goto nla_put_failure;
+			}
 			err = tcf_action_dump_1(skb, p, 0, 0);
 			if (err < 0) {
 				index--;
@@ -141,7 +143,7 @@ static int tcf_del_walker(struct tcf_hashinfo *hinfo, struct sk_buff *skb,
 		hlist_for_each_entry_safe(p, n, head, tcfa_head) {
 			ret = __tcf_hash_release(p, false, true);
 			if (ret == ACT_P_DELETED) {
-				module_put(p->ops->owner);
+				module_put(ops->owner);
 				n_i++;
 			} else if (ret < 0)
 				goto nla_put_failure;
@@ -450,13 +452,15 @@ EXPORT_SYMBOL(tcf_action_exec);
 
 int tcf_action_destroy(struct list_head *actions, int bind)
 {
+	const struct tc_action_ops *ops;
 	struct tc_action *a, *tmp;
 	int ret = 0;
 
 	list_for_each_entry_safe(a, tmp, actions, list) {
+		ops = a->ops;
 		ret = __tcf_hash_release(a, bind, true);
 		if (ret == ACT_P_DELETED)
-			module_put(a->ops->owner);
+			module_put(ops->owner);
 		else if (ret < 0)
 			return ret;
 	}

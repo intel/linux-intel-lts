@@ -359,7 +359,7 @@ static void schedule_next_timer(struct k_itimer *timr)
 {
 	struct hrtimer *timer = &timr->it.real.timer;
 
-	if (timr->it.real.interval.tv64 == 0)
+	if (timr->it.real.interval == 0)
 		return;
 
 	timr->it_overrun += (unsigned int) hrtimer_forward(timer,
@@ -449,7 +449,7 @@ static enum hrtimer_restart posix_timer_fn(struct hrtimer *timer)
 	timr = container_of(timer, struct k_itimer, it.real.timer);
 	spin_lock_irqsave(&timr->it_lock, flags);
 
-	if (timr->it.real.interval.tv64 != 0)
+	if (timr->it.real.interval != 0)
 		si_private = ++timr->it_requeue_pending;
 
 	if (posix_timer_event(timr, si_private)) {
@@ -458,7 +458,7 @@ static enum hrtimer_restart posix_timer_fn(struct hrtimer *timer)
 		 * we will not get a call back to restart it AND
 		 * it should be restarted.
 		 */
-		if (timr->it.real.interval.tv64 != 0) {
+		if (timr->it.real.interval != 0) {
 			ktime_t now = hrtimer_cb_get_time(timer);
 
 			/*
@@ -487,7 +487,7 @@ static enum hrtimer_restart posix_timer_fn(struct hrtimer *timer)
 			{
 				ktime_t kj = ktime_set(0, NSEC_PER_SEC / HZ);
 
-				if (timr->it.real.interval.tv64 < kj.tv64)
+				if (timr->it.real.interval < kj)
 					now = ktime_add(now, kj);
 			}
 #endif
@@ -507,17 +507,22 @@ static struct pid *good_sigevent(sigevent_t * event)
 {
 	struct task_struct *rtn = current->group_leader;
 
-	if ((event->sigev_notify & SIGEV_THREAD_ID ) &&
-		(!(rtn = find_task_by_vpid(event->sigev_notify_thread_id)) ||
-		 !same_thread_group(rtn, current) ||
-		 (event->sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_SIGNAL))
+	switch (event->sigev_notify) {
+	case SIGEV_SIGNAL | SIGEV_THREAD_ID:
+		rtn = find_task_by_vpid(event->sigev_notify_thread_id);
+		if (!rtn || !same_thread_group(rtn, current))
+			return NULL;
+		/* FALLTHRU */
+	case SIGEV_SIGNAL:
+	case SIGEV_THREAD:
+		if (event->sigev_signo <= 0 || event->sigev_signo > SIGRTMAX)
+			return NULL;
+		/* FALLTHRU */
+	case SIGEV_NONE:
+		return task_pid(rtn);
+	default:
 		return NULL;
-
-	if (((event->sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_NONE) &&
-	    ((event->sigev_signo <= 0) || (event->sigev_signo > SIGRTMAX)))
-		return NULL;
-
-	return task_pid(rtn);
+	}
 }
 
 void posix_timers_register_clock(const clockid_t clock_id,
@@ -743,10 +748,9 @@ common_timer_get(struct k_itimer *timr, struct itimerspec *cur_setting)
 	iv = timr->it.real.interval;
 
 	/* interval timer ? */
-	if (iv.tv64)
+	if (iv)
 		cur_setting->it_interval = ktime_to_timespec(iv);
-	else if (!hrtimer_active(timer) &&
-		 (timr->it_sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_NONE)
+	else if (!hrtimer_active(timer) && timr->it_sigev_notify != SIGEV_NONE)
 		return;
 
 	now = timer->base->get_time();
@@ -756,18 +760,18 @@ common_timer_get(struct k_itimer *timr, struct itimerspec *cur_setting)
 	 * timer move the expiry time forward by intervals, so
 	 * expiry is > now.
 	 */
-	if (iv.tv64 && (timr->it_requeue_pending & REQUEUE_PENDING ||
-	    (timr->it_sigev_notify & ~SIGEV_THREAD_ID) == SIGEV_NONE))
+	if (iv && (timr->it_requeue_pending & REQUEUE_PENDING ||
+			timr->it_sigev_notify == SIGEV_NONE))
 		timr->it_overrun += (unsigned int) hrtimer_forward(timer, now, iv);
 
 	remaining = __hrtimer_expires_remaining_adjusted(timer, now);
 	/* Return 0 only, when the timer is expired and not pending */
-	if (remaining.tv64 <= 0) {
+	if (remaining <= 0) {
 		/*
 		 * A single shot SIGEV_NONE timer must return 0, when
 		 * it is expired !
 		 */
-		if ((timr->it_sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_NONE)
+		if (timr->it_sigev_notify != SIGEV_NONE)
 			cur_setting->it_value.tv_nsec = 1;
 	} else
 		cur_setting->it_value = ktime_to_timespec(remaining);
@@ -839,7 +843,7 @@ common_timer_set(struct k_itimer *timr, int flags,
 		common_timer_get(timr, old_setting);
 
 	/* disable the timer */
-	timr->it.real.interval.tv64 = 0;
+	timr->it.real.interval = 0;
 	/*
 	 * careful here.  If smp we could be in the "fire" routine which will
 	 * be spinning as we hold the lock.  But this is ONLY an SMP issue.
@@ -865,7 +869,7 @@ common_timer_set(struct k_itimer *timr, int flags,
 	timr->it.real.interval = timespec_to_ktime(new_setting->it_interval);
 
 	/* SIGEV_NONE timers are not queued ! See common_timer_get */
-	if (((timr->it_sigev_notify & ~SIGEV_THREAD_ID) == SIGEV_NONE)) {
+	if (timr->it_sigev_notify == SIGEV_NONE) {
 		/* Setup correct expiry time for relative timers */
 		if (mode == HRTIMER_MODE_REL) {
 			hrtimer_add_expires(timer, timer->base->get_time());
@@ -924,7 +928,7 @@ retry:
 
 static int common_timer_del(struct k_itimer *timer)
 {
-	timer->it.real.interval.tv64 = 0;
+	timer->it.real.interval = 0;
 
 	if (hrtimer_try_to_cancel(&timer->it.real.timer) < 0)
 		return TIMER_RETRY;

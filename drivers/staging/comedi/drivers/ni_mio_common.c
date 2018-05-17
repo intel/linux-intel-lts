@@ -1284,6 +1284,8 @@ static void ack_a_interrupt(struct comedi_device *dev, unsigned short a_status)
 		ack |= NISTC_INTA_ACK_AI_START;
 	if (a_status & NISTC_AI_STATUS1_STOP)
 		ack |= NISTC_INTA_ACK_AI_STOP;
+	if (a_status & NISTC_AI_STATUS1_OVER)
+		ack |= NISTC_INTA_ACK_AI_ERR;
 	if (ack)
 		ni_stc_writew(dev, ack, NISTC_INTA_ACK_REG);
 }
@@ -3078,8 +3080,7 @@ static void ni_ao_cmd_set_update(struct comedi_device *dev,
 		/* following line: 2-1 per STC */
 		ni_stc_writel(dev, 1, NISTC_AO_UI_LOADA_REG);
 		ni_stc_writew(dev, NISTC_AO_CMD1_UI_LOAD, NISTC_AO_CMD1_REG);
-		/* following line: N-1 per STC */
-		ni_stc_writel(dev, trigvar - 1, NISTC_AO_UI_LOADA_REG);
+		ni_stc_writel(dev, trigvar, NISTC_AO_UI_LOADA_REG);
 	} else { /* TRIG_EXT */
 		/* FIXME:  assert scan_begin_arg != 0, ret failure otherwise */
 		devpriv->ao_cmd2  |= NISTC_AO_CMD2_BC_GATE_ENA;

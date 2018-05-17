@@ -195,7 +195,7 @@ static void evict_entry(struct drm_gem_object *obj,
 	size_t size = PAGE_SIZE * n;
 	loff_t off = mmap_offset(obj) +
 			(entry->obj_pgoff << PAGE_SHIFT);
-	const int m = 1 + ((omap_obj->width << fmt) / PAGE_SIZE);
+	const int m = DIV_ROUND_UP(omap_obj->width << fmt, PAGE_SIZE);
 
 	if (m > 1) {
 		int i;
@@ -336,8 +336,10 @@ static void omap_gem_detach_pages(struct drm_gem_object *obj)
 	if (omap_obj->flags & (OMAP_BO_WC|OMAP_BO_UNCACHED)) {
 		int i, npages = obj->size >> PAGE_SHIFT;
 		for (i = 0; i < npages; i++) {
-			dma_unmap_page(obj->dev->dev, omap_obj->addrs[i],
-					PAGE_SIZE, DMA_BIDIRECTIONAL);
+			if (omap_obj->addrs[i])
+				dma_unmap_page(obj->dev->dev,
+					       omap_obj->addrs[i],
+					       PAGE_SIZE, DMA_BIDIRECTIONAL);
 		}
 	}
 
@@ -442,7 +444,7 @@ static int fault_2d(struct drm_gem_object *obj,
 	 * into account in some of the math, so figure out virtual stride
 	 * in pages
 	 */
-	const int m = 1 + ((omap_obj->width << fmt) / PAGE_SIZE);
+	const int m = DIV_ROUND_UP(omap_obj->width << fmt, PAGE_SIZE);
 
 	/* We don't use vmf->pgoff since that has the fake offset: */
 	pgoff = ((unsigned long)vmf->virtual_address -
@@ -1035,7 +1037,7 @@ void omap_gem_describe(struct drm_gem_object *obj, struct seq_file *m)
 	off = drm_vma_node_start(&obj->vma_node);
 
 	seq_printf(m, "%08x: %2d (%2d) %08llx %pad (%2d) %p %4d",
-			omap_obj->flags, obj->name, obj->refcount.refcount.counter,
+			omap_obj->flags, obj->name, kref_read(&obj->refcount),
 			off, &omap_obj->paddr, omap_obj->paddr_cnt,
 			omap_obj->vaddr, omap_obj->roll);
 

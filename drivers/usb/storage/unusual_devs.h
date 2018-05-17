@@ -1459,6 +1459,13 @@ UNUSUAL_DEV( 0x0bc2, 0x3010, 0x0000, 0x0000,
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_SANE_SENSE ),
 
+/* Reported by Kris Lindgren <kris.lindgren@gmail.com> */
+UNUSUAL_DEV( 0x0bc2, 0x3332, 0x0000, 0x9999,
+		"Seagate",
+		"External",
+		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+		US_FL_NO_WP_DETECT ),
+
 UNUSUAL_DEV(  0x0d49, 0x7310, 0x0000, 0x9999,
 		"Maxtor",
 		"USB to SATA",
@@ -2071,6 +2078,20 @@ UNUSUAL_DEV(  0x1370, 0x6828, 0x0110, 0x0110,
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_IGNORE_RESIDUE ),
 
+/*
+ * Reported by Tobias Jakobi <tjakobi@math.uni-bielefeld.de>
+ * The INIC-3619 bridge is used in the StarTech SLSODDU33B
+ * SATA-USB enclosure for slimline optical drives.
+ *
+ * The quirk enables MakeMKV to properly exchange keys with
+ * an installed BD drive.
+ */
+UNUSUAL_DEV(  0x13fd, 0x3609, 0x0209, 0x0209,
+		"Initio Corporation",
+		"INIC-3619",
+		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+		US_FL_IGNORE_RESIDUE ),
+
 /* Reported by Qinglin Ye <yestyle@gmail.com> */
 UNUSUAL_DEV(  0x13fe, 0x3600, 0x0100, 0x0100,
 		"Kingston",
@@ -2092,6 +2113,13 @@ UNUSUAL_DEV(  0x152d, 0x0567, 0x0114, 0x0116,
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_BROKEN_FUA ),
 
+/* Reported by David Kozub <zub@linux.fjfi.cvut.cz> */
+UNUSUAL_DEV(0x152d, 0x0578, 0x0000, 0x9999,
+		"JMicron",
+		"JMS567",
+		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+		US_FL_BROKEN_FUA),
+
 /*
  * Reported by Alexandre Oliva <oliva@lsd.ic.unicamp.br>
  * JMicron responds to USN and several other SCSI ioctls with a
@@ -2104,6 +2132,13 @@ UNUSUAL_DEV(  0x152d, 0x2329, 0x0100, 0x0100,
 
 /* Reported by Dmitry Nezhevenko <dion@dion.org.ua> */
 UNUSUAL_DEV(  0x152d, 0x2566, 0x0114, 0x0114,
+		"JMicron",
+		"USB to ATA/ATAPI Bridge",
+		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+		US_FL_BROKEN_FUA ),
+
+/* Reported by Teijo Kinnunen <teijo.kinnunen@code-q.fi> */
+UNUSUAL_DEV(  0x152d, 0x2567, 0x0117, 0x0117,
 		"JMicron",
 		"USB to ATA/ATAPI Bridge",
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,

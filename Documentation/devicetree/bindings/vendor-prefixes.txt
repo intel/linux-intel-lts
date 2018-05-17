@@ -38,6 +38,7 @@ atmel	Atmel Corporation
 auo	AU Optronics Corporation
 auvidea Auvidea GmbH
 avago	Avago Technologies
+avia	avia semiconductor
 avic	Shanghai AVIC Optoelectronics Co., Ltd.
 axis	Axis Communications AB
 boe	BOE Technology Group Co., Ltd.
@@ -187,6 +188,7 @@ netgear	NETGEAR
 netlogic	Broadcom Corporation (formerly NetLogic Microsystems)
 netxeon		Shenzhen Netxeon Technology CO., LTD
 newhaven	Newhaven Display International
+nvd	New Vision Display
 nintendo	Nintendo
 nokia	Nokia
 nuvoton	Nuvoton Technology Corporation

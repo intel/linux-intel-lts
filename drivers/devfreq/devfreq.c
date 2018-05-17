@@ -574,7 +574,7 @@ struct devfreq *devfreq_add_device(struct device *dev,
 	err = device_register(&devfreq->dev);
 	if (err) {
 		mutex_unlock(&devfreq->lock);
-		goto err_out;
+		goto err_dev;
 	}
 
 	devfreq->trans_table =	devm_kzalloc(&devfreq->dev, sizeof(unsigned int) *
@@ -618,6 +618,9 @@ err_init:
 	mutex_unlock(&devfreq_list_lock);
 
 	device_unregister(&devfreq->dev);
+err_dev:
+	if (devfreq)
+		kfree(devfreq);
 err_out:
 	return ERR_PTR(err);
 }
@@ -681,7 +684,7 @@ struct devfreq *devm_devfreq_add_device(struct device *dev,
 	devfreq = devfreq_add_device(dev, profile, governor_name, data);
 	if (IS_ERR(devfreq)) {
 		devres_free(ptr);
-		return ERR_PTR(-ENOMEM);
+		return devfreq;
 	}
 
 	*ptr = devfreq;
@@ -940,7 +943,8 @@ static ssize_t governor_store(struct device *dev, struct device_attribute *attr,
 	if (df->governor == governor) {
 		ret = 0;
 		goto out;
-	} else if (df->governor->immutable || governor->immutable) {
+	} else if ((df->governor && df->governor->immutable) ||
+					governor->immutable) {
 		ret = -EINVAL;
 		goto out;
 	}

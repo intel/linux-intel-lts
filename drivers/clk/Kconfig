@@ -198,6 +198,18 @@ config COMMON_CLK_OXNAS
 	---help---
 	  Support for the OXNAS SoC Family clocks.
 
+config COMMON_CLK_WHISKEY_COVE
+	tristate "Clock driver for Whiskey Cove PMIC 32kHz clock"
+	depends on INTEL_SOC_PMIC
+	---help---
+	  Support for 32kHz clock outputs on Whiskey Cove PMIC.
+
+	  Say Yes if you have a Intel SoC based device with Whiskey Cove PMIC
+	  inside.
+
+	  This driver can also be built as a module. If so, the module will be
+	  called clk-wcove.
+
 source "drivers/clk/bcm/Kconfig"
 source "drivers/clk/hisilicon/Kconfig"
 source "drivers/clk/mediatek/Kconfig"

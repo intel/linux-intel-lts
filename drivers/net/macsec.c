@@ -617,7 +617,8 @@ static void macsec_encrypt_done(struct crypto_async_request *base, int err)
 
 static struct aead_request *macsec_alloc_req(struct crypto_aead *tfm,
 					     unsigned char **iv,
-					     struct scatterlist **sg)
+					     struct scatterlist **sg,
+					     int num_frags)
 {
 	size_t size, iv_offset, sg_offset;
 	struct aead_request *req;
@@ -629,7 +630,7 @@ static struct aead_request *macsec_alloc_req(struct crypto_aead *tfm,
 
 	size = ALIGN(size, __alignof__(struct scatterlist));
 	sg_offset = size;
-	size += sizeof(struct scatterlist) * (MAX_SKB_FRAGS + 1);
+	size += sizeof(struct scatterlist) * num_frags;
 
 	tmp = kmalloc(size, GFP_ATOMIC);
 	if (!tmp)
@@ -649,6 +650,7 @@ static struct sk_buff *macsec_encrypt(struct sk_buff *skb,
 {
 	int ret;
 	struct scatterlist *sg;
+	struct sk_buff *trailer;
 	unsigned char *iv;
 	struct ethhdr *eth;
 	struct macsec_eth_header *hh;
@@ -723,7 +725,14 @@ static struct sk_buff *macsec_encrypt(struct sk_buff *skb,
 		return ERR_PTR(-EINVAL);
 	}
 
-	req = macsec_alloc_req(tx_sa->key.tfm, &iv, &sg);
+	ret = skb_cow_data(skb, 0, &trailer);
+	if (unlikely(ret < 0)) {
+		macsec_txsa_put(tx_sa);
+		kfree_skb(skb);
+		return ERR_PTR(ret);
+	}
+
+	req = macsec_alloc_req(tx_sa->key.tfm, &iv, &sg, ret);
 	if (!req) {
 		macsec_txsa_put(tx_sa);
 		kfree_skb(skb);
@@ -732,8 +741,13 @@ static struct sk_buff *macsec_encrypt(struct sk_buff *skb,
 
 	macsec_fill_iv(iv, secy->sci, pn);
 
-	sg_init_table(sg, MAX_SKB_FRAGS + 1);
-	skb_to_sgvec(skb, sg, 0, skb->len);
+	sg_init_table(sg, ret);
+	ret = skb_to_sgvec(skb, sg, 0, skb->len);
+	if (unlikely(ret < 0)) {
+		macsec_txsa_put(tx_sa);
+		kfree_skb(skb);
+		return ERR_PTR(ret);
+	}
 
 	if (tx_sc->encrypt) {
 		int len = skb->len - macsec_hdr_len(sci_present) -
@@ -914,6 +928,7 @@ static struct sk_buff *macsec_decrypt(struct sk_buff *skb,
 {
 	int ret;
 	struct scatterlist *sg;
+	struct sk_buff *trailer;
 	unsigned char *iv;
 	struct aead_request *req;
 	struct macsec_eth_header *hdr;
@@ -924,7 +939,12 @@ static struct sk_buff *macsec_decrypt(struct sk_buff *skb,
 	if (!skb)
 		return ERR_PTR(-ENOMEM);
 
-	req = macsec_alloc_req(rx_sa->key.tfm, &iv, &sg);
+	ret = skb_cow_data(skb, 0, &trailer);
+	if (unlikely(ret < 0)) {
+		kfree_skb(skb);
+		return ERR_PTR(ret);
+	}
+	req = macsec_alloc_req(rx_sa->key.tfm, &iv, &sg, ret);
 	if (!req) {
 		kfree_skb(skb);
 		return ERR_PTR(-ENOMEM);
@@ -933,8 +953,12 @@ static struct sk_buff *macsec_decrypt(struct sk_buff *skb,
 	hdr = (struct macsec_eth_header *)skb->data;
 	macsec_fill_iv(iv, sci, ntohl(hdr->packet_number));
 
-	sg_init_table(sg, MAX_SKB_FRAGS + 1);
-	skb_to_sgvec(skb, sg, 0, skb->len);
+	sg_init_table(sg, ret);
+	ret = skb_to_sgvec(skb, sg, 0, skb->len);
+	if (unlikely(ret < 0)) {
+		kfree_skb(skb);
+		return ERR_PTR(ret);
+	}
 
 	if (hdr->tci_an & MACSEC_TCI_E) {
 		/* confidentiality: ethernet + macsec header
@@ -3495,6 +3519,7 @@ module_init(macsec_init);
 module_exit(macsec_exit);
 
 MODULE_ALIAS_RTNL_LINK("macsec");
+MODULE_ALIAS_GENL_FAMILY("macsec");
 
 MODULE_DESCRIPTION("MACsec IEEE 802.1AE");
 MODULE_LICENSE("GPL v2");

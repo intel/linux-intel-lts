@@ -364,7 +364,10 @@ int arizona_irq_init(struct arizona *arizona)
 	if (ret != 0) {
 		dev_err(arizona->dev, "Failed to request primary IRQ %d: %d\n",
 			arizona->irq, ret);
+/* FPGA board doesn't have irq line */
+#ifndef CONFIG_SND_SOC_INTEL_CNL_FPGA
 		goto err_main_irq;
+#endif
 	}
 
 	/* Make sure the boot done IRQ is unmasked for resumes */

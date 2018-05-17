@@ -123,7 +123,7 @@ int snd_seq_fifo_event_in(struct snd_seq_fifo *f,
 		return -EINVAL;
 
 	snd_use_lock_use(&f->use_lock);
-	err = snd_seq_event_dup(f->pool, event, &cell, 1, NULL); /* always non-blocking */
+	err = snd_seq_event_dup(f->pool, event, &cell, 1, NULL, NULL); /* always non-blocking */
 	if (err < 0) {
 		if ((err == -ENOMEM) || (err == -EAGAIN))
 			atomic_inc(&f->overflow);
@@ -264,6 +264,10 @@ int snd_seq_fifo_resize(struct snd_seq_fifo *f, int poolsize)
 	f->cells = 0;
 	/* NOTE: overflow flag is not cleared */
 	spin_unlock_irqrestore(&f->lock, flags);
+
+	/* close the old pool and wait until all users are gone */
+	snd_seq_pool_mark_closing(oldpool);
+	snd_use_lock_sync(&f->use_lock);
 
 	/* release cells in old pool */
 	for (cell = oldhead; cell; cell = next) {

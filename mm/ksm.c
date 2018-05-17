@@ -1002,8 +1002,7 @@ static int try_to_merge_one_page(struct vm_area_struct *vma,
 		goto out;
 
 	if (PageTransCompound(page)) {
-		err = split_huge_page(page);
-		if (err)
+		if (split_huge_page(page))
 			goto out_unlock;
 	}
 
@@ -1813,7 +1812,7 @@ int __ksm_enter(struct mm_struct *mm)
 	spin_unlock(&ksm_mmlist_lock);
 
 	set_bit(MMF_VM_MERGEABLE, &mm->flags);
-	atomic_inc(&mm->mm_count);
+	mmgrab(mm);
 
 	if (needs_wakeup)
 		wake_up_interruptible(&ksm_thread_wait);

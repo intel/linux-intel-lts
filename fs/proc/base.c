@@ -795,7 +795,7 @@ struct mm_struct *proc_mem_open(struct inode *inode, unsigned int mode)
 
 		if (!IS_ERR_OR_NULL(mm)) {
 			/* ensure this mm_struct can't be freed */
-			atomic_inc(&mm->mm_count);
+			mmgrab(mm);
 			/* but do not pin its memory */
 			mmput(mm);
 		}
@@ -842,7 +842,7 @@ static ssize_t mem_rw(struct file *file, char __user *buf,
 		return -ENOMEM;
 
 	copied = 0;
-	if (!atomic_inc_not_zero(&mm->mm_users))
+	if (!mmget_not_zero(mm))
 		goto free;
 
 	/* Maybe we should limit FOLL_FORCE to actual ptrace users? */
@@ -950,7 +950,7 @@ static ssize_t environ_read(struct file *file, char __user *buf,
 		return -ENOMEM;
 
 	ret = 0;
-	if (!atomic_inc_not_zero(&mm->mm_users))
+	if (!mmget_not_zero(mm))
 		goto free;
 
 	down_read(&mm->mmap_sem);
@@ -1093,7 +1093,7 @@ static int __set_oom_adj(struct file *file, int oom_adj, bool legacy)
 		if (p) {
 			if (atomic_read(&p->mm->mm_users) > 1) {
 				mm = p->mm;
-				atomic_inc(&mm->mm_count);
+				mmgrab(mm);
 			}
 			task_unlock(p);
 		}
@@ -3181,6 +3181,8 @@ int proc_pid_readdir(struct file *file, struct dir_context *ctx)
 	     iter.tgid += 1, iter = next_tgid(ns, iter)) {
 		char name[PROC_NUMBUF];
 		int len;
+
+		cond_resched();
 		if (!has_pid_permissions(ns, iter.task, 2))
 			continue;
 

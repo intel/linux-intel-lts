@@ -186,6 +186,10 @@ struct c4iw_rdev {
 	struct wr_log_entry *wr_log;
 	int wr_log_size;
 	struct workqueue_struct *free_workq;
+	struct completion rqt_compl;
+	struct completion pbl_compl;
+	struct kref rqt_kref;
+	struct kref pbl_kref;
 };
 
 static inline int c4iw_fatal_error(struct c4iw_rdev *rdev)
@@ -672,14 +676,14 @@ enum c4iw_mmid_state {
 
 #define c4iw_put_ep(ep) { \
 	PDBG("put_ep (via %s:%u) ep %p refcnt %d\n", __func__, __LINE__,  \
-	     ep, atomic_read(&((ep)->kref.refcount))); \
-	WARN_ON(atomic_read(&((ep)->kref.refcount)) < 1); \
+	     ep, kref_read(&((ep)->kref))); \
+	WARN_ON(kref_read(&((ep)->kref)) < 1); \
 	kref_put(&((ep)->kref), _c4iw_free_ep); \
 }
 
 #define c4iw_get_ep(ep) { \
 	PDBG("get_ep (via %s:%u) ep %p, refcnt %d\n", __func__, __LINE__, \
-	     ep, atomic_read(&((ep)->kref.refcount))); \
+	     ep, kref_read(&((ep)->kref))); \
 	kref_get(&((ep)->kref));  \
 }
 void _c4iw_free_ep(struct kref *kref);

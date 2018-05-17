@@ -75,7 +75,7 @@ void virtio_gpu_cursor_ack(struct virtqueue *vq)
 int virtio_gpu_alloc_vbufs(struct virtio_gpu_device *vgdev)
 {
 	struct virtio_gpu_vbuffer *vbuf;
-	int i, size, count = 0;
+	int i, size, count = 16;
 	void *ptr;
 
 	INIT_LIST_HEAD(&vgdev->free_vbufs);
@@ -109,8 +109,10 @@ void virtio_gpu_free_vbufs(struct virtio_gpu_device *vgdev)
 
 	spin_lock(&vgdev->free_vbufs_lock);
 	for (i = 0; i < count; i++) {
-		if (WARN_ON(list_empty(&vgdev->free_vbufs)))
+		if (WARN_ON(list_empty(&vgdev->free_vbufs))) {
+			spin_unlock(&vgdev->free_vbufs_lock);
 			return;
+		}
 		vbuf = list_first_entry(&vgdev->free_vbufs,
 					struct virtio_gpu_vbuffer, list);
 		list_del(&vbuf->list);
@@ -295,6 +297,8 @@ void virtio_gpu_dequeue_cursor_func(struct work_struct *work)
 
 static int virtio_gpu_queue_ctrl_buffer_locked(struct virtio_gpu_device *vgdev,
 					       struct virtio_gpu_vbuffer *vbuf)
+		__releases(&vgdev->ctrlq.qlock)
+		__acquires(&vgdev->ctrlq.qlock)
 {
 	struct virtqueue *vq = vgdev->ctrlq.vq;
 	struct scatterlist *sgs[3], vcmd, vout, vresp;
@@ -324,7 +328,7 @@ retry:
 	ret = virtqueue_add_sgs(vq, sgs, outcnt, incnt, vbuf, GFP_ATOMIC);
 	if (ret == -ENOSPC) {
 		spin_unlock(&vgdev->ctrlq.qlock);
-		wait_event(vgdev->ctrlq.ack_queue, vq->num_free);
+		wait_event(vgdev->ctrlq.ack_queue, vq->num_free >= outcnt + incnt);
 		spin_lock(&vgdev->ctrlq.qlock);
 		goto retry;
 	} else {
@@ -399,7 +403,7 @@ retry:
 	ret = virtqueue_add_sgs(vq, sgs, outcnt, 0, vbuf, GFP_ATOMIC);
 	if (ret == -ENOSPC) {
 		spin_unlock(&vgdev->cursorq.qlock);
-		wait_event(vgdev->cursorq.ack_queue, vq->num_free);
+		wait_event(vgdev->cursorq.ack_queue, vq->num_free >= outcnt);
 		spin_lock(&vgdev->cursorq.qlock);
 		goto retry;
 	} else {

@@ -2671,8 +2671,6 @@ mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 		PPORT_802_3_GET(pstats, a_frame_check_sequence_errors);
 	stats->rx_frame_errors = PPORT_802_3_GET(pstats, a_alignment_errors);
 	stats->tx_aborted_errors = PPORT_2863_GET(pstats, if_out_discards);
-	stats->tx_carrier_errors =
-		PPORT_802_3_GET(pstats, a_symbol_error_during_carrier);
 	stats->rx_errors = stats->rx_length_errors + stats->rx_crc_errors +
 			   stats->rx_frame_errors;
 	stats->tx_errors = stats->tx_aborted_errors + stats->tx_carrier_errors;
@@ -2742,6 +2740,9 @@ static int set_feature_lro(struct net_device *netdev, bool enable)
 		mlx5e_open_locked(priv->netdev);
 
 	mutex_unlock(&priv->state_lock);
+
+	if (mlx5e_vxlan_allowed(priv->mdev))
+		udp_tunnel_get_rx_info(netdev);
 
 	return err;
 }
@@ -3040,6 +3041,7 @@ static netdev_features_t mlx5e_vxlan_features_check(struct mlx5e_priv *priv,
 						    struct sk_buff *skb,
 						    netdev_features_t features)
 {
+	unsigned int offset = 0;
 	struct udphdr *udph;
 	u16 proto;
 	u16 port = 0;
@@ -3049,7 +3051,7 @@ static netdev_features_t mlx5e_vxlan_features_check(struct mlx5e_priv *priv,
 		proto = ip_hdr(skb)->protocol;
 		break;
 	case htons(ETH_P_IPV6):
-		proto = ipv6_hdr(skb)->nexthdr;
+		proto = ipv6_find_hdr(skb, &offset, -1, NULL, NULL);
 		break;
 	default:
 		goto out;
@@ -3786,13 +3788,6 @@ static void mlx5e_nic_enable(struct mlx5e_priv *priv)
 	if (netdev->reg_state != NETREG_REGISTERED)
 		return;
 
-	/* Device already registered: sync netdev system state */
-	if (mlx5e_vxlan_allowed(mdev)) {
-		rtnl_lock();
-		udp_tunnel_get_rx_info(netdev);
-		rtnl_unlock();
-	}
-
 	queue_work(priv->wq, &priv->set_rx_mode_work);
 }
 
@@ -3846,7 +3841,8 @@ struct net_device *mlx5e_create_netdev(struct mlx5_core_dev *mdev,
 	return netdev;
 
 err_cleanup_nic:
-	profile->cleanup(priv);
+	if (profile->cleanup)
+		profile->cleanup(priv);
 	free_netdev(netdev);
 
 	return NULL;

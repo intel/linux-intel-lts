@@ -301,7 +301,7 @@ int uprobe_write_opcode(struct mm_struct *mm, unsigned long vaddr,
 retry:
 	/* Read the page with vaddr into memory */
 	ret = get_user_pages_remote(NULL, mm, vaddr, 1, FOLL_FORCE, &old_page,
-			&vma);
+			&vma, NULL);
 	if (ret <= 0)
 		return ret;
 
@@ -741,7 +741,7 @@ build_map_info(struct address_space *mapping, loff_t offset, bool is_register)
 			continue;
 		}
 
-		if (!atomic_inc_not_zero(&vma->vm_mm->mm_users))
+		if (!mmget_not_zero(vma->vm_mm))
 			continue;
 
 		info = prev;
@@ -1254,8 +1254,6 @@ void uprobe_end_dup_mmap(void)
 
 void uprobe_dup_mmap(struct mm_struct *oldmm, struct mm_struct *newmm)
 {
-	newmm->uprobes_state.xol_area = NULL;
-
 	if (test_bit(MMF_HAS_UPROBES, &oldmm->flags)) {
 		set_bit(MMF_HAS_UPROBES, &newmm->flags);
 		/* unconditionally, dup_mmap() skips VM_DONTCOPY vmas */
@@ -1712,7 +1710,7 @@ static int is_trap_at_addr(struct mm_struct *mm, unsigned long vaddr)
 	 * essentially a kernel access to the memory.
 	 */
 	result = get_user_pages_remote(NULL, mm, vaddr, 1, FOLL_FORCE, &page,
-			NULL);
+			NULL, NULL);
 	if (result < 0)
 		return result;
 

@@ -57,9 +57,7 @@ struct byt_rt5640_private {
 	struct clk *mclk;
 };
 
-static unsigned long byt_rt5640_quirk = BYT_RT5640_DMIC1_MAP |
-					BYT_RT5640_DMIC_EN |
-					BYT_RT5640_MCLK_EN;
+static unsigned long byt_rt5640_quirk = BYT_RT5640_MCLK_EN;
 
 static void log_quirks(struct device *dev)
 {
@@ -144,7 +142,7 @@ static int platform_clock_control(struct snd_soc_dapm_widget *w,
 		 * for Jack detection and button press
 		 */
 		ret = snd_soc_dai_set_sysclk(codec_dai, RT5640_SCLK_S_RCCLK,
-					     0,
+					     48000 * 512,
 					     SND_SOC_CLOCK_IN);
 		if (!ret) {
 			if ((byt_rt5640_quirk & BYT_RT5640_MCLK_EN) && priv->mclk)
@@ -389,6 +387,16 @@ static const struct dmi_system_id byt_rt5640_quirk_table[] = {
 						 BYT_RT5640_SSP0_AIF1),
 
 	},
+	{
+		.callback = byt_rt5640_quirk_cb,
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Insyde"),
+		},
+		.driver_data = (unsigned long *)(BYT_RT5640_IN3_MAP |
+						 BYT_RT5640_MCLK_EN |
+						 BYT_RT5640_SSP0_AIF1),
+
+	},
 	{}
 };
 
@@ -548,7 +556,7 @@ static int byt_rt5640_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 		 */
 		ret = snd_soc_dai_set_fmt(rtd->cpu_dai,
 					SND_SOC_DAIFMT_I2S     |
-					SND_SOC_DAIFMT_NB_IF   |
+					SND_SOC_DAIFMT_NB_NF   |
 					SND_SOC_DAIFMT_CBS_CFS
 			);
 		if (ret < 0) {
@@ -574,7 +582,7 @@ static int byt_rt5640_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 		 */
 		ret = snd_soc_dai_set_fmt(rtd->cpu_dai,
 					SND_SOC_DAIFMT_I2S     |
-					SND_SOC_DAIFMT_NB_IF   |
+					SND_SOC_DAIFMT_NB_NF   |
 					SND_SOC_DAIFMT_CBS_CFS
 			);
 		if (ret < 0) {
@@ -597,11 +605,11 @@ static int byt_rt5640_aif1_startup(struct snd_pcm_substream *substream)
 			SNDRV_PCM_HW_PARAM_RATE, 48000);
 }
 
-static struct snd_soc_ops byt_rt5640_aif1_ops = {
+static const struct snd_soc_ops byt_rt5640_aif1_ops = {
 	.startup = byt_rt5640_aif1_startup,
 };
 
-static struct snd_soc_ops byt_rt5640_be_ssp2_ops = {
+static const struct snd_soc_ops byt_rt5640_be_ssp2_ops = {
 	.hw_params = byt_rt5640_aif1_hw_params,
 };
 
@@ -613,7 +621,7 @@ static struct snd_soc_dai_link byt_rt5640_dais[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 		.platform_name = "sst-mfld-platform",
-		.ignore_suspend = 1,
+		.nonatomic = true,
 		.dynamic = 1,
 		.dpcm_playback = 1,
 		.dpcm_capture = 1,
@@ -626,7 +634,6 @@ static struct snd_soc_dai_link byt_rt5640_dais[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 		.platform_name = "sst-mfld-platform",
-		.ignore_suspend = 1,
 		.nonatomic = true,
 		.dynamic = 1,
 		.dpcm_playback = 1,
@@ -653,6 +660,7 @@ static struct snd_soc_dai_link byt_rt5640_dais[] = {
 						| SND_SOC_DAIFMT_CBS_CFS,
 		.be_hw_params_fixup = byt_rt5640_codec_fixup,
 		.ignore_suspend = 1,
+		.nonatomic = true,
 		.dpcm_playback = 1,
 		.dpcm_capture = 1,
 		.init = byt_rt5640_init,
@@ -738,6 +746,13 @@ static int snd_byt_rt5640_mc_probe(struct platform_device *pdev)
 		if (res_info->acpi_ipc_irq_index == 0) {
 			byt_rt5640_quirk |= BYT_RT5640_SSP0_AIF2;
 		}
+
+		/* change defaults for Baytrail-CR capture */
+		byt_rt5640_quirk |= BYT_RT5640_IN1_MAP;
+		byt_rt5640_quirk |= BYT_RT5640_DIFF_MIC;
+	} else {
+		byt_rt5640_quirk |= (BYT_RT5640_DMIC1_MAP |
+				BYT_RT5640_DMIC_EN);
 	}
 
 	/* check quirks before creating card */
@@ -792,7 +807,6 @@ static int snd_byt_rt5640_mc_probe(struct platform_device *pdev)
 static struct platform_driver snd_byt_rt5640_mc_driver = {
 	.driver = {
 		.name = "bytcr_rt5640",
-		.pm = &snd_soc_pm_ops,
 	},
 	.probe = snd_byt_rt5640_mc_probe,
 };

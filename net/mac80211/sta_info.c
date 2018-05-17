@@ -395,10 +395,15 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 	sta->sta.smps_mode = IEEE80211_SMPS_OFF;
 	if (sdata->vif.type == NL80211_IFTYPE_AP ||
 	    sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
-		struct ieee80211_supported_band *sband =
-			hw->wiphy->bands[ieee80211_get_sdata_band(sdata)];
-		u8 smps = (sband->ht_cap.cap & IEEE80211_HT_CAP_SM_PS) >>
-				IEEE80211_HT_CAP_SM_PS_SHIFT;
+		struct ieee80211_supported_band *sband;
+		u8 smps;
+
+		sband = ieee80211_get_sband(sdata);
+		if (!sband)
+			goto free_txq;
+
+		smps = (sband->ht_cap.cap & IEEE80211_HT_CAP_SM_PS) >>
+			IEEE80211_HT_CAP_SM_PS_SHIFT;
 		/*
 		 * Assume that hostapd advertises our caps in the beacon and
 		 * this is the known_smps_mode for a station that just assciated
@@ -688,7 +693,7 @@ static void __sta_info_recalc_tim(struct sta_info *sta, bool ignore_pending)
 	}
 
 	/* No need to do anything if the driver does all */
-	if (ieee80211_hw_check(&local->hw, AP_LINK_PS))
+	if (ieee80211_hw_check(&local->hw, AP_LINK_PS) && !local->ops->set_tim)
 		return;
 
 	if (sta->dead)
@@ -2148,7 +2153,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo)
 			struct ieee80211_sta_rx_stats *cpurxs;
 
 			cpurxs = per_cpu_ptr(sta->pcpu_rx_stats, cpu);
-			sinfo->rx_packets += cpurxs->dropped;
+			sinfo->rx_dropped_misc += cpurxs->dropped;
 		}
 	}
 

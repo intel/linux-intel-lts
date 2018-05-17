@@ -457,13 +457,15 @@ void audit_remove_watch_rule(struct audit_krule *krule)
 	list_del(&krule->rlist);
 
 	if (list_empty(&watch->rules)) {
+		/*
+		 * audit_remove_watch() drops our reference to 'parent' which
+		 * can get freed. Grab our own reference to be safe.
+		 */
+		audit_get_parent(parent);
 		audit_remove_watch(watch);
-
-		if (list_empty(&parent->watches)) {
-			audit_get_parent(parent);
+		if (list_empty(&parent->watches))
 			fsnotify_destroy_mark(&parent->mark, audit_watch_group);
-			audit_put_parent(parent);
-		}
+		audit_put_parent(parent);
 	}
 }
 
@@ -548,8 +550,8 @@ int audit_exe_compare(struct task_struct *tsk, struct audit_fsnotify_mark *mark)
 	exe_file = get_task_exe_file(tsk);
 	if (!exe_file)
 		return 0;
-	ino = exe_file->f_inode->i_ino;
-	dev = exe_file->f_inode->i_sb->s_dev;
+	ino = file_inode(exe_file)->i_ino;
+	dev = file_inode(exe_file)->i_sb->s_dev;
 	fput(exe_file);
 	return audit_mark_compare(mark, ino, dev);
 }

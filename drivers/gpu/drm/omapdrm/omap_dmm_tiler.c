@@ -224,7 +224,7 @@ static void dmm_txn_append(struct dmm_txn *txn, struct pat_area *area,
 	int rows = (1 + area->y1 - area->y0);
 	int i = columns*rows;
 
-	pat = alloc_dma(txn, sizeof(struct pat), &pat_pa);
+	pat = alloc_dma(txn, sizeof(*pat), &pat_pa);
 
 	if (txn->last_pat)
 		txn->last_pat->next_pa = (uint32_t)pat_pa;
@@ -298,7 +298,12 @@ static int dmm_txn_commit(struct dmm_txn *txn, bool wait)
 				msecs_to_jiffies(100))) {
 			dev_err(dmm->dev, "timed out waiting for done\n");
 			ret = -ETIMEDOUT;
+			goto cleanup;
 		}
+
+		/* Check the engine status before continue */
+		ret = wait_status(engine, DMM_PATSTATUS_READY |
+				  DMM_PATSTATUS_VALID | DMM_PATSTATUS_DONE);
 	}
 
 cleanup:
@@ -638,7 +643,8 @@ static int omap_dmm_probe(struct platform_device *dev)
 		match = of_match_node(dmm_of_match, dev->dev.of_node);
 		if (!match) {
 			dev_err(&dev->dev, "failed to find matching device node\n");
-			return -ENODEV;
+			ret = -ENODEV;
+			goto fail;
 		}
 
 		omap_dmm->plat_data = match->data;
@@ -735,7 +741,7 @@ static int omap_dmm_probe(struct platform_device *dev)
 
 	/* alloc engines */
 	omap_dmm->engines = kcalloc(omap_dmm->num_engines,
-				    sizeof(struct refill_engine), GFP_KERNEL);
+				    sizeof(*omap_dmm->engines), GFP_KERNEL);
 	if (!omap_dmm->engines) {
 		ret = -ENOMEM;
 		goto fail;

@@ -68,6 +68,12 @@ static inline bool __chk_range_not_ok(unsigned long addr, unsigned long size, un
 	__chk_range_not_ok((unsigned long __force)(addr), size, limit); \
 })
 
+#ifdef CONFIG_DEBUG_ATOMIC_SLEEP
+# define WARN_ON_IN_IRQ()	WARN_ON_ONCE(!in_task())
+#else
+# define WARN_ON_IN_IRQ()
+#endif
+
 /**
  * access_ok: - Checks if a user space pointer is valid
  * @type: Type of access: %VERIFY_READ or %VERIFY_WRITE.  Note that
@@ -88,8 +94,11 @@ static inline bool __chk_range_not_ok(unsigned long addr, unsigned long size, un
  * checks that the pointer is in the user space range - after calling
  * this function, memory access functions may still return -EFAULT.
  */
-#define access_ok(type, addr, size) \
-	likely(!__range_not_ok(addr, size, user_addr_max()))
+#define access_ok(type, addr, size)					\
+({									\
+	WARN_ON_IN_IRQ();						\
+	likely(!__range_not_ok(addr, size, user_addr_max()));		\
+})
 
 /*
  * These are the main single-value transfer routines.  They automatically
@@ -114,6 +123,11 @@ extern int __get_user_bad(void);
 
 #define __uaccess_begin() stac()
 #define __uaccess_end()   clac()
+#define __uaccess_begin_nospec()	\
+({					\
+	stac();				\
+	barrier_nospec();		\
+})
 
 /*
  * This is a type: either unsigned long, if the argument fits into
@@ -315,10 +329,10 @@ do {									\
 #define __get_user_asm_u64(x, ptr, retval, errret)			\
 ({									\
 	__typeof__(ptr) __ptr = (ptr);					\
-	asm volatile(ASM_STAC "\n"					\
+	asm volatile("\n"					\
 		     "1:	movl %2,%%eax\n"			\
 		     "2:	movl %3,%%edx\n"			\
-		     "3: " ASM_CLAC "\n"				\
+		     "3:\n"				\
 		     ".section .fixup,\"ax\"\n"				\
 		     "4:	mov %4,%0\n"				\
 		     "	xorl %%eax,%%eax\n"				\
@@ -327,7 +341,7 @@ do {									\
 		     ".previous\n"					\
 		     _ASM_EXTABLE(1b, 4b)				\
 		     _ASM_EXTABLE(2b, 4b)				\
-		     : "=r" (retval), "=A"(x)				\
+		     : "=r" (retval), "=&A"(x)				\
 		     : "m" (__m(__ptr)), "m" __m(((u32 *)(__ptr)) + 1),	\
 		       "i" (errret), "0" (retval));			\
 })
@@ -423,7 +437,7 @@ do {									\
 ({									\
 	int __gu_err;							\
 	__inttype(*(ptr)) __gu_val;					\
-	__uaccess_begin();						\
+	__uaccess_begin_nospec();					\
 	__get_user_size(__gu_val, (ptr), (size), __gu_err, -EFAULT);	\
 	__uaccess_end();						\
 	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
@@ -464,6 +478,10 @@ struct __large_struct { unsigned long buf[100]; };
 	current->thread.uaccess_err = 0;				\
 	__uaccess_begin();						\
 	barrier();
+
+#define uaccess_try_nospec do {						\
+	current->thread.uaccess_err = 0;				\
+	__uaccess_begin_nospec();					\
 
 #define uaccess_catch(err)						\
 	__uaccess_end();						\
@@ -529,7 +547,7 @@ struct __large_struct { unsigned long buf[100]; };
  *	get_user_ex(...);
  * } get_user_catch(err)
  */
-#define get_user_try		uaccess_try
+#define get_user_try		uaccess_try_nospec
 #define get_user_catch(err)	uaccess_catch(err)
 
 #define get_user_ex(x, ptr)	do {					\
@@ -564,7 +582,7 @@ extern void __cmpxchg_wrong_size(void)
 	__typeof__(ptr) __uval = (uval);				\
 	__typeof__(*(ptr)) __old = (old);				\
 	__typeof__(*(ptr)) __new = (new);				\
-	__uaccess_begin();						\
+	__uaccess_begin_nospec();					\
 	switch (size) {							\
 	case 1:								\
 	{								\

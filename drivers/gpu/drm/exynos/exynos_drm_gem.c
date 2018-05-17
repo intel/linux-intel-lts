@@ -218,7 +218,7 @@ static struct exynos_drm_gem *exynos_drm_gem_init(struct drm_device *dev,
 		return ERR_PTR(ret);
 	}
 
-	DRM_DEBUG_KMS("created file object = %p\n", obj->filp);
+	DRM_DEBUG_KMS("created file object = %pK\n", obj->filp);
 
 	return exynos_gem;
 }
@@ -231,12 +231,12 @@ struct exynos_drm_gem *exynos_drm_gem_create(struct drm_device *dev,
 	int ret;
 
 	if (flags & ~(EXYNOS_BO_MASK)) {
-		DRM_ERROR("invalid flags.\n");
+		DRM_ERROR("invalid GEM buffer flags: %u\n", flags);
 		return ERR_PTR(-EINVAL);
 	}
 
 	if (!size) {
-		DRM_ERROR("invalid size.\n");
+		DRM_ERROR("invalid GEM buffer size: %lu\n", size);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -245,6 +245,15 @@ struct exynos_drm_gem *exynos_drm_gem_create(struct drm_device *dev,
 	exynos_gem = exynos_drm_gem_init(dev, size);
 	if (IS_ERR(exynos_gem))
 		return exynos_gem;
+
+	if (!is_drm_iommu_supported(dev) && (flags & EXYNOS_BO_NONCONTIG)) {
+		/*
+		 * when no IOMMU is available, all allocated buffers are
+		 * contiguous anyway, so drop EXYNOS_BO_NONCONTIG flag
+		 */
+		flags &= ~EXYNOS_BO_NONCONTIG;
+		DRM_WARN("Non-contiguous allocation is not supported without IOMMU, falling back to contiguous buffer\n");
+	}
 
 	/* set memory type and cache attribute from user side. */
 	exynos_gem->flags = flags;

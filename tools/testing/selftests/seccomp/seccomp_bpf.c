@@ -6,10 +6,18 @@
  */
 
 #include <sys/types.h>
-#include <asm/siginfo.h>
-#define __have_siginfo_t 1
-#define __have_sigval_t 1
-#define __have_sigevent_t 1
+
+/*
+ * glibc 2.26 and later have SIGSYS in siginfo_t. Before that,
+ * we need to use the kernel's siginfo.h file and trick glibc
+ * into accepting it.
+ */
+#if !__GLIBC_PREREQ(2, 26)
+# include <asm/siginfo.h>
+# define __have_siginfo_t 1
+# define __have_sigval_t 1
+# define __have_sigevent_t 1
+#endif
 
 #include <errno.h>
 #include <linux/filter.h>
@@ -676,7 +684,7 @@ TEST_F_SIGNAL(TRAP, ign, SIGSYS)
 	syscall(__NR_getpid);
 }
 
-static struct siginfo TRAP_info;
+static siginfo_t TRAP_info;
 static volatile int TRAP_nr;
 static void TRAP_action(int nr, siginfo_t *info, void *void_context)
 {
@@ -1310,7 +1318,7 @@ void change_syscall(struct __test_metadata *_metadata,
 	iov.iov_len = sizeof(regs);
 	ret = ptrace(PTRACE_GETREGSET, tracee, NT_PRSTATUS, &iov);
 #endif
-	EXPECT_EQ(0, ret);
+	EXPECT_EQ(0, ret) {}
 
 #if defined(__x86_64__) || defined(__i386__) || defined(__powerpc__) || \
     defined(__s390__) || defined(__hppa__)

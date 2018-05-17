@@ -46,6 +46,9 @@
 #define BYT_TRIG_POS		BIT(25)
 #define BYT_TRIG_LVL		BIT(24)
 #define BYT_DEBOUNCE_EN		BIT(20)
+#define BYT_GLITCH_FILTER_EN	BIT(19)
+#define BYT_GLITCH_F_SLOW_CLK	BIT(17)
+#define BYT_GLITCH_F_FAST_CLK	BIT(16)
 #define BYT_PULL_STR_SHIFT	9
 #define BYT_PULL_STR_MASK	(3 << BYT_PULL_STR_SHIFT)
 #define BYT_PULL_STR_2K		(0 << BYT_PULL_STR_SHIFT)
@@ -1250,10 +1253,12 @@ static int byt_pin_config_set(struct pinctrl_dev *pctl_dev,
 			debounce = readl(db_reg);
 			debounce &= ~BYT_DEBOUNCE_PULSE_MASK;
 
+			if (arg)
+				conf |= BYT_DEBOUNCE_EN;
+			else
+				conf &= ~BYT_DEBOUNCE_EN;
+
 			switch (arg) {
-			case 0:
-				conf &= BYT_DEBOUNCE_EN;
-				break;
 			case 375:
 				debounce |= BYT_DEBOUNCE_PULSE_375US;
 				break;
@@ -1276,7 +1281,9 @@ static int byt_pin_config_set(struct pinctrl_dev *pctl_dev,
 				debounce |= BYT_DEBOUNCE_PULSE_24MS;
 				break;
 			default:
-				ret = -EINVAL;
+				if (arg)
+					ret = -EINVAL;
+				break;
 			}
 
 			if (!ret)
@@ -1462,7 +1469,7 @@ static void byt_gpio_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 			   val & BYT_INPUT_EN ? "  " : "in",
 			   val & BYT_OUTPUT_EN ? "   " : "out",
 			   val & BYT_LEVEL ? "hi" : "lo",
-			   comm->pad_map[i], comm->pad_map[i] * 32,
+			   comm->pad_map[i], comm->pad_map[i] * 16,
 			   conf0 & 0x7,
 			   conf0 & BYT_TRIG_NEG ? " fall" : "     ",
 			   conf0 & BYT_TRIG_POS ? " rise" : "     ",
@@ -1575,6 +1582,9 @@ static int byt_irq_type(struct irq_data *d, unsigned int type)
 	 */
 	value &= ~(BYT_DIRECT_IRQ_EN | BYT_TRIG_POS | BYT_TRIG_NEG |
 		   BYT_TRIG_LVL);
+	/* Enable glitch filtering */
+	value |= BYT_GLITCH_FILTER_EN | BYT_GLITCH_F_SLOW_CLK |
+		 BYT_GLITCH_F_FAST_CLK;
 
 	writel(value, reg);
 

@@ -44,6 +44,9 @@ static struct sk_buff *sctp_gso_segment(struct sk_buff *skb,
 	struct sk_buff *segs = ERR_PTR(-EINVAL);
 	struct sctphdr *sh;
 
+	if (!(skb_shinfo(skb)->gso_type & SKB_GSO_SCTP))
+		goto out;
+
 	sh = sctp_hdr(skb);
 	if (!pskb_may_pull(skb, sizeof(*sh)))
 		goto out;
@@ -68,7 +71,7 @@ static struct sk_buff *sctp_gso_segment(struct sk_buff *skb,
 		goto out;
 	}
 
-	segs = skb_segment(skb, features | NETIF_F_HW_CSUM);
+	segs = skb_segment(skb, features | NETIF_F_HW_CSUM | NETIF_F_SG);
 	if (IS_ERR(segs))
 		goto out;
 

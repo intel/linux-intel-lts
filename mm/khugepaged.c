@@ -420,7 +420,7 @@ int __khugepaged_enter(struct mm_struct *mm)
 	list_add_tail(&mm_slot->mm_node, &khugepaged_scan.mm_head);
 	spin_unlock(&khugepaged_mm_lock);
 
-	atomic_inc(&mm->mm_count);
+	mmgrab(mm);
 	if (wakeup)
 		wake_up_interruptible(&khugepaged_wait);
 
@@ -528,7 +528,12 @@ static int __collapse_huge_page_isolate(struct vm_area_struct *vma,
 			goto out;
 		}
 
-		VM_BUG_ON_PAGE(PageCompound(page), page);
+		/* TODO: teach khugepaged to collapse THP mapped with pte */
+		if (PageCompound(page)) {
+			result = SCAN_PAGE_COMPOUND;
+			goto out;
+		}
+
 		VM_BUG_ON_PAGE(!PageAnon(page), page);
 		VM_BUG_ON_PAGE(!PageSwapBacked(page), page);
 

@@ -146,6 +146,19 @@ notrace unsigned int __check_irq_replay(void)
 
 	/* Clear bit 0 which we wouldn't clear otherwise */
 	local_paca->irq_happened &= ~PACA_IRQ_HARD_DIS;
+	if (happened & PACA_IRQ_HARD_DIS) {
+		/*
+		 * We may have missed a decrementer interrupt if hard disabled.
+		 * Check the decrementer register in case we had a rollover
+		 * while hard disabled.
+		 */
+		if (!(happened & PACA_IRQ_DEC)) {
+			if (decrementer_check_overflow()) {
+				local_paca->irq_happened |= PACA_IRQ_DEC;
+				happened |= PACA_IRQ_DEC;
+			}
+		}
+	}
 
 	/*
 	 * Force the delivery of pending soft-disabled interrupts on PS3.
@@ -171,7 +184,7 @@ notrace unsigned int __check_irq_replay(void)
 	 * in case we also had a rollover while hard disabled
 	 */
 	local_paca->irq_happened &= ~PACA_IRQ_DEC;
-	if ((happened & PACA_IRQ_DEC) || decrementer_check_overflow())
+	if (happened & PACA_IRQ_DEC)
 		return 0x900;
 
 	/* Finally check if an external interrupt happened */
@@ -358,6 +371,14 @@ void force_external_irq_replay(void)
 	 * the replay will happen when re-enabling.
 	 */
 	WARN_ON(!arch_irqs_disabled());
+
+	/*
+	 * Interrupts must always be hard disabled before irq_happened is
+	 * modified (to prevent lost update in case of interrupt between
+	 * load and store).
+	 */
+	__hard_irq_disable();
+	local_paca->irq_happened |= PACA_IRQ_HARD_DIS;
 
 	/* Indicate in the PACA that we have an interrupt to replay */
 	local_paca->irq_happened |= PACA_IRQ_EE;

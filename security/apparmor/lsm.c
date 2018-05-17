@@ -671,9 +671,9 @@ enum profile_mode aa_g_profile_mode = APPARMOR_ENFORCE;
 module_param_call(mode, param_set_mode, param_get_mode,
 		  &aa_g_profile_mode, S_IRUSR | S_IWUSR);
 
-#ifdef CONFIG_SECURITY_APPARMOR_HASH
 /* whether policy verification hashing is enabled */
 bool aa_g_hash_policy = IS_ENABLED(CONFIG_SECURITY_APPARMOR_HASH_DEFAULT);
+#ifdef CONFIG_SECURITY_APPARMOR_HASH
 module_param_named(hash_policy, aa_g_hash_policy, aabool, S_IRUSR | S_IWUSR);
 #endif
 
@@ -707,7 +707,7 @@ module_param_named(logsyscall, aa_g_logsyscall, aabool, S_IRUSR | S_IWUSR);
 
 /* Maximum pathname length before accesses will start getting rejected */
 unsigned int aa_g_path_max = 2 * PATH_MAX;
-module_param_named(path_max, aa_g_path_max, aauint, S_IRUSR | S_IWUSR);
+module_param_named(path_max, aa_g_path_max, aauint, S_IRUSR);
 
 /* Determines how paranoid loading of policy is and how much verification
  * on the loaded policy is done.

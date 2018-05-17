@@ -2623,6 +2623,9 @@ static long pnv_pci_ioda2_table_alloc_pages(int nid, __u64 bus_offset,
 	level_shift = entries_shift + 3;
 	level_shift = max_t(unsigned, level_shift, PAGE_SHIFT);
 
+	if ((level_shift - 3) * levels + page_shift >= 60)
+		return -EINVAL;
+
 	/* Allocate TCE table */
 	addr = pnv_pci_ioda2_table_do_alloc_pages(nid, level_shift,
 			levels, tce_table_size, &offset, &total_allocated);
@@ -3031,7 +3034,7 @@ static void pnv_ioda_setup_pe_res(struct pnv_ioda_pe *pe,
 /*
  * This function is supposed to be called on basis of PE from top
  * to bottom style. So the the I/O or MMIO segment assigned to
- * parent PE could be overrided by its child PEs if necessary.
+ * parent PE could be overridden by its child PEs if necessary.
  */
 static void pnv_ioda_setup_pe_seg(struct pnv_ioda_pe *pe)
 {

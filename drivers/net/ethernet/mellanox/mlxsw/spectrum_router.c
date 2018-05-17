@@ -765,11 +765,8 @@ static void mlxsw_sp_router_neigh_ent_ipv4_process(struct mlxsw_sp *mlxsw_sp,
 	dipn = htonl(dip);
 	dev = mlxsw_sp->rifs[rif]->dev;
 	n = neigh_lookup(&arp_tbl, &dipn, dev);
-	if (!n) {
-		netdev_err(dev, "Failed to find matching neighbour for IP=%pI4h\n",
-			   &dip);
+	if (!n)
 		return;
-	}
 
 	netdev_dbg(dev, "Updating neighbour with IP=%pI4h\n", &dip);
 	neigh_event_send(n, NULL);
@@ -1178,7 +1175,8 @@ static int mlxsw_sp_nexthop_mac_update(struct mlxsw_sp *mlxsw_sp, u32 adj_index,
 
 static int
 mlxsw_sp_nexthop_group_mac_update(struct mlxsw_sp *mlxsw_sp,
-				  struct mlxsw_sp_nexthop_group *nh_grp)
+				  struct mlxsw_sp_nexthop_group *nh_grp,
+				  bool reallocate)
 {
 	u32 adj_index = nh_grp->adj_index; /* base */
 	struct mlxsw_sp_nexthop *nh;
@@ -1193,7 +1191,7 @@ mlxsw_sp_nexthop_group_mac_update(struct mlxsw_sp *mlxsw_sp,
 			continue;
 		}
 
-		if (nh->update) {
+		if (nh->update || reallocate) {
 			err = mlxsw_sp_nexthop_mac_update(mlxsw_sp,
 							  adj_index, nh);
 			if (err)
@@ -1254,7 +1252,8 @@ mlxsw_sp_nexthop_group_refresh(struct mlxsw_sp *mlxsw_sp,
 		/* Nothing was added or removed, so no need to reallocate. Just
 		 * update MAC on existing adjacency indexes.
 		 */
-		err = mlxsw_sp_nexthop_group_mac_update(mlxsw_sp, nh_grp);
+		err = mlxsw_sp_nexthop_group_mac_update(mlxsw_sp, nh_grp,
+							false);
 		if (err) {
 			dev_warn(mlxsw_sp->bus_info->dev, "Failed to update neigh MAC in adjacency table.\n");
 			goto set_trap;
@@ -1282,7 +1281,7 @@ mlxsw_sp_nexthop_group_refresh(struct mlxsw_sp *mlxsw_sp,
 	nh_grp->adj_index_valid = 1;
 	nh_grp->adj_index = adj_index;
 	nh_grp->ecmp_size = ecmp_size;
-	err = mlxsw_sp_nexthop_group_mac_update(mlxsw_sp, nh_grp);
+	err = mlxsw_sp_nexthop_group_mac_update(mlxsw_sp, nh_grp, true);
 	if (err) {
 		dev_warn(mlxsw_sp->bus_info->dev, "Failed to update neigh MAC in adjacency table.\n");
 		goto set_trap;
@@ -1326,9 +1325,9 @@ set_trap:
 static void __mlxsw_sp_nexthop_neigh_update(struct mlxsw_sp_nexthop *nh,
 					    bool removing)
 {
-	if (!removing && !nh->should_offload)
+	if (!removing)
 		nh->should_offload = 1;
-	else if (removing && nh->offloaded)
+	else
 		nh->should_offload = 0;
 	nh->update = 1;
 }

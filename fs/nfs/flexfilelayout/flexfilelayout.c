@@ -475,6 +475,7 @@ ff_layout_alloc_lseg(struct pnfs_layout_hdr *lh,
 			goto out_err_free;
 
 		/* fh */
+		rc = -EIO;
 		p = xdr_inline_decode(&stream, 4);
 		if (!p)
 			goto out_err_free;
@@ -642,12 +643,11 @@ nfs4_ff_layoutstat_start_io(struct nfs4_ff_layout_mirror *mirror,
 			    struct nfs4_ff_layoutstat *layoutstat,
 			    ktime_t now)
 {
-	static const ktime_t notime = {0};
 	s64 report_interval = FF_LAYOUTSTATS_REPORT_INTERVAL;
 	struct nfs4_flexfile_layout *ffl = FF_LAYOUT_FROM_HDR(mirror->layout);
 
 	nfs4_ff_start_busy_timer(&layoutstat->busy_timer, now);
-	if (ktime_equal(mirror->start_time, notime))
+	if (ktime_equal(mirror->start_time, 0))
 		mirror->start_time = now;
 	if (mirror->report_interval != 0)
 		report_interval = (s64)mirror->report_interval * 1000LL;
@@ -1770,7 +1770,7 @@ ff_layout_read_pagelist(struct nfs_pgio_header *hdr)
 	int vers;
 	struct nfs_fh *fh;
 
-	dprintk("--> %s ino %lu pgbase %u req %Zu@%llu\n",
+	dprintk("--> %s ino %lu pgbase %u req %zu@%llu\n",
 		__func__, hdr->inode->i_ino,
 		hdr->args.pgbase, (size_t)hdr->args.count, offset);
 
@@ -1847,7 +1847,7 @@ ff_layout_write_pagelist(struct nfs_pgio_header *hdr, int sync)
 
 	vers = nfs4_ff_layout_ds_version(lseg, idx);
 
-	dprintk("%s ino %lu sync %d req %Zu@%llu DS: %s cl_count %d vers %d\n",
+	dprintk("%s ino %lu sync %d req %zu@%llu DS: %s cl_count %d vers %d\n",
 		__func__, hdr->inode->i_ino, sync, (size_t) hdr->args.count,
 		offset, ds->ds_remotestr, atomic_read(&ds->ds_clp->cl_count),
 		vers);

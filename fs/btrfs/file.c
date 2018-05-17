@@ -2817,8 +2817,10 @@ static long btrfs_fallocate(struct file *file, int mode,
 			}
 			ret = btrfs_qgroup_reserve_data(inode, cur_offset,
 					last_byte - cur_offset);
-			if (ret < 0)
+			if (ret < 0) {
+				free_extent_map(em);
 				break;
+			}
 		} else {
 			/*
 			 * Do not need to reserve unwritten extent for this
@@ -2842,7 +2844,7 @@ static long btrfs_fallocate(struct file *file, int mode,
 		if (!ret)
 			ret = btrfs_prealloc_file_range(inode, mode,
 					range->start,
-					range->len, 1 << inode->i_blkbits,
+					range->len, i_blocksize(inode),
 					offset + len, &alloc_hint);
 		else
 			btrfs_free_reserved_data_space(inode, range->start,

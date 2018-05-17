@@ -91,6 +91,9 @@ struct s_pstats   can_pstats;      /* receive list statistics */
 
 static atomic_t skbcounter = ATOMIC_INIT(0);
 
+#define SOCK_TX_ATTEMPT_RATE_LIMIT    (CONFIG_CAN_TX_ATTEMPT_RATE_LIMIT)
+
+
 /*
  * af_can socket functions
  */
@@ -189,6 +192,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
 
 	sock_init_data(sock, sk);
 	sk->sk_destruct = can_sock_destruct;
+	sock_set_flag(sk, SOCK_RCU_FREE);
 
 	if (sk->sk_prot->init)
 		err = sk->sk_prot->init(sk);
@@ -223,6 +227,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
  *  -EPERM when trying to send on a non-CAN interface
  *  -EMSGSIZE CAN frame size is bigger than CAN interface MTU
  *  -EINVAL when the skb->data does not contain a valid CAN frame
+ *  -EDQUOT when current tx rate reach its limit
  */
 int can_send(struct sk_buff *skb, int loop)
 {
@@ -259,6 +264,16 @@ int can_send(struct sk_buff *skb, int loop)
 	if (unlikely(!(skb->dev->flags & IFF_UP))) {
 		err = -ENETDOWN;
 		goto inval_skb;
+	}
+
+	/* update statistics */
+	can_stats.tx_attempt_frames++;
+	can_stats.tx_frames_attempt_delta++;
+
+	/* throttle if needed */
+	if (can_stats.current_tx_attempt_rate > SOCK_TX_ATTEMPT_RATE_LIMIT) {
+		printk(KERN_ERR "can: inhibit tx due to attempt rate: %d\n", can_stats.current_tx_attempt_rate);
+		return EDQUOT;
 	}
 
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
@@ -722,13 +737,12 @@ static int can_rcv(struct sk_buff *skb, struct net_device *dev,
 	if (unlikely(!net_eq(dev_net(dev), &init_net)))
 		goto drop;
 
-	if (WARN_ONCE(dev->type != ARPHRD_CAN ||
-		      skb->len != CAN_MTU ||
-		      cfd->len > CAN_MAX_DLEN,
-		      "PF_CAN: dropped non conform CAN skbuf: "
-		      "dev type %d, len %d, datalen %d\n",
-		      dev->type, skb->len, cfd->len))
+	if (unlikely(dev->type != ARPHRD_CAN || skb->len != CAN_MTU ||
+		     cfd->len > CAN_MAX_DLEN)) {
+		pr_warn_once("PF_CAN: dropped non conform CAN skbuf: dev type %d, len %d, datalen %d\n",
+			     dev->type, skb->len, cfd->len);
 		goto drop;
+	}
 
 	can_receive(skb, dev);
 	return NET_RX_SUCCESS;
@@ -746,13 +760,12 @@ static int canfd_rcv(struct sk_buff *skb, struct net_device *dev,
 	if (unlikely(!net_eq(dev_net(dev), &init_net)))
 		goto drop;
 
-	if (WARN_ONCE(dev->type != ARPHRD_CAN ||
-		      skb->len != CANFD_MTU ||
-		      cfd->len > CANFD_MAX_DLEN,
-		      "PF_CAN: dropped non conform CAN FD skbuf: "
-		      "dev type %d, len %d, datalen %d\n",
-		      dev->type, skb->len, cfd->len))
+	if (unlikely(dev->type != ARPHRD_CAN || skb->len != CANFD_MTU ||
+		     cfd->len > CANFD_MAX_DLEN)) {
+		pr_warn_once("PF_CAN: dropped non conform CAN FD skbuf: dev type %d, len %d, datalen %d\n",
+			     dev->type, skb->len, cfd->len);
 		goto drop;
+	}
 
 	can_receive(skb, dev);
 	return NET_RX_SUCCESS;

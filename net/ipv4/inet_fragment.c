@@ -119,6 +119,9 @@ out:
 
 static bool inet_fragq_should_evict(const struct inet_frag_queue *q)
 {
+	if (!hlist_unhashed(&q->list_evictor))
+		return false;
+
 	return q->net->low_thresh == 0 ||
 	       frag_mem_limit(q->net) >= q->net->low_thresh;
 }
@@ -234,10 +237,8 @@ evict_again:
 	cond_resched();
 
 	if (read_seqretry(&f->rnd_seqlock, seq) ||
-	    percpu_counter_sum(&nf->mem))
+	    sum_frag_mem_limit(nf))
 		goto evict_again;
-
-	percpu_counter_destroy(&nf->mem);
 }
 EXPORT_SYMBOL(inet_frags_exit_net);
 

@@ -24,11 +24,12 @@
 
 static const struct crypto_type crypto_shash_type;
 
-static int shash_no_setkey(struct crypto_shash *tfm, const u8 *key,
-			   unsigned int keylen)
+int shash_no_setkey(struct crypto_shash *tfm, const u8 *key,
+		    unsigned int keylen)
 {
 	return -ENOSYS;
 }
+EXPORT_SYMBOL_GPL(shash_no_setkey);
 
 static int shash_setkey_unaligned(struct crypto_shash *tfm, const u8 *key,
 				  unsigned int keylen)
@@ -56,11 +57,18 @@ int crypto_shash_setkey(struct crypto_shash *tfm, const u8 *key,
 {
 	struct shash_alg *shash = crypto_shash_alg(tfm);
 	unsigned long alignmask = crypto_shash_alignmask(tfm);
+	int err;
 
 	if ((unsigned long)key & alignmask)
-		return shash_setkey_unaligned(tfm, key, keylen);
+		err = shash_setkey_unaligned(tfm, key, keylen);
+	else
+		err = shash->setkey(tfm, key, keylen);
 
-	return shash->setkey(tfm, key, keylen);
+	if (err)
+		return err;
+
+	crypto_shash_clear_flags(tfm, CRYPTO_TFM_NEED_KEY);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(crypto_shash_setkey);
 
@@ -179,6 +187,9 @@ int crypto_shash_digest(struct shash_desc *desc, const u8 *data,
 	struct shash_alg *shash = crypto_shash_alg(tfm);
 	unsigned long alignmask = crypto_shash_alignmask(tfm);
 
+	if (crypto_shash_get_flags(tfm) & CRYPTO_TFM_NEED_KEY)
+		return -ENOKEY;
+
 	if (((unsigned long)data | (unsigned long)out) & alignmask)
 		return shash_digest_unaligned(desc, data, len, out);
 
@@ -274,12 +285,14 @@ static int shash_async_finup(struct ahash_request *req)
 
 int shash_ahash_digest(struct ahash_request *req, struct shash_desc *desc)
 {
-	struct scatterlist *sg = req->src;
-	unsigned int offset = sg->offset;
 	unsigned int nbytes = req->nbytes;
+	struct scatterlist *sg;
+	unsigned int offset;
 	int err;
 
-	if (nbytes < min(sg->length, ((unsigned int)(PAGE_SIZE)) - offset)) {
+	if (nbytes &&
+	    (sg = req->src, offset = sg->offset,
+	     nbytes < min(sg->length, ((unsigned int)(PAGE_SIZE)) - offset))) {
 		void *data;
 
 		data = kmap_atomic(sg_page(sg));
@@ -356,7 +369,8 @@ int crypto_init_shash_ops_async(struct crypto_tfm *tfm)
 	crt->digest = shash_async_digest;
 	crt->setkey = shash_async_setkey;
 
-	crt->has_setkey = alg->setkey != shash_no_setkey;
+	crypto_ahash_set_flags(crt, crypto_shash_get_flags(shash) &
+				    CRYPTO_TFM_NEED_KEY);
 
 	if (alg->export)
 		crt->export = shash_async_export;
@@ -371,8 +385,14 @@ int crypto_init_shash_ops_async(struct crypto_tfm *tfm)
 static int crypto_shash_init_tfm(struct crypto_tfm *tfm)
 {
 	struct crypto_shash *hash = __crypto_shash_cast(tfm);
+	struct shash_alg *alg = crypto_shash_alg(hash);
 
-	hash->descsize = crypto_shash_alg(hash)->descsize;
+	hash->descsize = alg->descsize;
+
+	if (crypto_shash_alg_has_setkey(alg) &&
+	    !(alg->base.cra_flags & CRYPTO_ALG_OPTIONAL_KEY))
+		crypto_shash_set_flags(hash, CRYPTO_TFM_NEED_KEY);
+
 	return 0;
 }
 

@@ -419,7 +419,6 @@ struct mlx4_en_dev {
 	struct cyclecounter	cycles;
 	struct timecounter	clock;
 	unsigned long		last_overflow_check;
-	unsigned long		overflow_period;
 	struct ptp_clock	*ptp_clock;
 	struct ptp_clock_info	ptp_clock_info;
 	struct notifier_block	nb;
@@ -473,6 +472,7 @@ struct mlx4_en_frag_info {
 #define MLX4_EN_BW_MIN 1
 #define MLX4_EN_BW_MAX 100 /* Utilize 100% of the line */
 
+#define MLX4_EN_TC_VENDOR 0
 #define MLX4_EN_TC_ETS 7
 
 enum dcb_pfc_type {

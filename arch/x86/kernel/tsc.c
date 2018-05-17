@@ -366,6 +366,8 @@ static int __init tsc_setup(char *str)
 		tsc_clocksource_reliable = 1;
 	if (!strncmp(str, "noirqtime", 9))
 		no_sched_irq_time = 1;
+	if (!strcmp(str, "unstable"))
+		mark_tsc_unstable("boot parameter");
 	return 1;
 }
 
@@ -407,7 +409,7 @@ static unsigned long calc_hpet_ref(u64 deltatsc, u64 hpet1, u64 hpet2)
 	hpet2 -= hpet1;
 	tmp = ((u64)hpet2 * hpet_readl(HPET_PERIOD));
 	do_div(tmp, 1000000);
-	do_div(deltatsc, tmp);
+	deltatsc = div64_u64(deltatsc, tmp);
 
 	return (unsigned long) deltatsc;
 }
@@ -693,7 +695,7 @@ unsigned long native_calibrate_tsc(void)
 		case INTEL_FAM6_KABYLAKE_DESKTOP:
 			crystal_khz = 24000;	/* 24.0 MHz */
 			break;
-		case INTEL_FAM6_SKYLAKE_X:
+		case INTEL_FAM6_ATOM_DENVERTON:
 			crystal_khz = 25000;	/* 25.0 MHz */
 			break;
 		case INTEL_FAM6_ATOM_GOLDMONT:
@@ -702,6 +704,7 @@ unsigned long native_calibrate_tsc(void)
 		}
 	}
 
+	setup_force_cpu_cap(X86_FEATURE_TSC_RELIABLE);
 	return crystal_khz * ebx_numerator / eax_denominator;
 }
 
@@ -1381,12 +1384,10 @@ void __init tsc_init(void)
 unsigned long calibrate_delay_is_known(void)
 {
 	int sibling, cpu = smp_processor_id();
-	struct cpumask *mask = topology_core_cpumask(cpu);
+	int constant_tsc = cpu_has(&cpu_data(cpu), X86_FEATURE_CONSTANT_TSC);
+	const struct cpumask *mask = topology_core_cpumask(cpu);
 
-	if (!tsc_disabled && !cpu_has(&cpu_data(cpu), X86_FEATURE_CONSTANT_TSC))
-		return 0;
-
-	if (!mask)
+	if (tsc_disabled || !constant_tsc || !mask)
 		return 0;
 
 	sibling = cpumask_any_but(mask, cpu);

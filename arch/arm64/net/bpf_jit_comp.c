@@ -234,8 +234,9 @@ static int emit_bpf_tail_call(struct jit_ctx *ctx)
 	off = offsetof(struct bpf_array, map.max_entries);
 	emit_a64_mov_i64(tmp, off, ctx);
 	emit(A64_LDR32(tmp, r2, tmp), ctx);
+	emit(A64_MOV(0, r3, r3), ctx);
 	emit(A64_CMP(0, r3, tmp), ctx);
-	emit(A64_B_(A64_COND_GE, jmp_offset), ctx);
+	emit(A64_B_(A64_COND_CS, jmp_offset), ctx);
 
 	/* if (tail_call_cnt > MAX_TAIL_CALL_CNT)
 	 *     goto out;
@@ -243,7 +244,7 @@ static int emit_bpf_tail_call(struct jit_ctx *ctx)
 	 */
 	emit_a64_mov_i64(tmp, MAX_TAIL_CALL_CNT, ctx);
 	emit(A64_CMP(1, tcc, tmp), ctx);
-	emit(A64_B_(A64_COND_GT, jmp_offset), ctx);
+	emit(A64_B_(A64_COND_HI, jmp_offset), ctx);
 	emit(A64_ADD_I(1, tcc, tcc, 1), ctx);
 
 	/* prog = array->ptrs[index];
@@ -252,8 +253,9 @@ static int emit_bpf_tail_call(struct jit_ctx *ctx)
 	 */
 	off = offsetof(struct bpf_array, ptrs);
 	emit_a64_mov_i64(tmp, off, ctx);
-	emit(A64_LDR64(tmp, r2, tmp), ctx);
-	emit(A64_LDR64(prg, tmp, r3), ctx);
+	emit(A64_ADD(1, tmp, r2, tmp), ctx);
+	emit(A64_LSL(1, prg, r3, 3), ctx);
+	emit(A64_LDR64(prg, tmp, prg), ctx);
 	emit(A64_CBZ(1, prg, jmp_offset), ctx);
 
 	/* goto *(prog->bpf_func + prologue_size); */
@@ -779,14 +781,14 @@ static int build_body(struct jit_ctx *ctx)
 		int ret;
 
 		ret = build_insn(insn, ctx);
-
-		if (ctx->image == NULL)
-			ctx->offset[i] = ctx->idx;
-
 		if (ret > 0) {
 			i++;
+			if (ctx->image == NULL)
+				ctx->offset[i] = ctx->idx;
 			continue;
 		}
+		if (ctx->image == NULL)
+			ctx->offset[i] = ctx->idx;
 		if (ret)
 			return ret;
 	}

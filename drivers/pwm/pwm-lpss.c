@@ -15,6 +15,7 @@
 
 #include <linux/delay.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
@@ -82,9 +83,27 @@ static inline void pwm_lpss_write(const struct pwm_device *pwm, u32 value)
 
 static void pwm_lpss_update(struct pwm_device *pwm)
 {
+	struct pwm_lpss_chip *lpwm = to_lpwm(pwm->chip);
+	const void __iomem *addr = lpwm->regs + pwm->hwpwm * PWM_SIZE + PWM;
+	const unsigned int us = 500 * USEC_PER_MSEC;
+	int err;
+	u32 val;
+
 	pwm_lpss_write(pwm, pwm_lpss_read(pwm) | PWM_SW_UPDATE);
-	/* Give it some time to propagate */
-	usleep_range(10, 50);
+	/*
+	 * PWM Configuration register has SW_UPDATE bit that is set when a new
+	 * configuration is written to the register. The bit is automatically
+	 * cleared at the start of the next output cycle by the IP block.
+	 *
+	 * If one writes a new configuration to the register while it still has
+	 * the bit enabled, PWM may freeze. That is, while one can still write
+	 * to the register, it won't have an effect. Thus, we try to sleep long
+	 * enough that the bit gets cleared and make sure the bit is not
+	 * enabled while we update the configuration.
+	 */
+	err = readl_poll_timeout(addr, val, !(val & PWM_SW_UPDATE), 10, us);
+	if (err)
+		dev_err(pwm->chip->dev, "PWM_SW_UPDATE was not cleared\n");
 }
 
 static int pwm_lpss_config(struct pwm_chip *chip, struct pwm_device *pwm,
@@ -116,6 +135,16 @@ static int pwm_lpss_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	pm_runtime_get_sync(chip->dev);
 
 	ctrl = pwm_lpss_read(pwm);
+
+	/*
+	 * We must not write to the register while the SW_UPDATE bit is still
+	 * enabled. For more information see the comment in pwm_lpss_update()
+	 */
+	if (ctrl & PWM_SW_UPDATE) {
+		pm_runtime_put(chip->dev);
+		return -EAGAIN;
+	}
+
 	ctrl &= ~PWM_ON_TIME_DIV_MASK;
 	ctrl &= ~((base_unit_range - 1) << PWM_BASE_UNIT_SHIFT);
 	base_unit &= (base_unit_range - 1);

@@ -1082,6 +1082,13 @@ static int elan_probe(struct i2c_client *client,
 		return error;
 	}
 
+	/* Make sure there is something at this address */
+	error = i2c_smbus_read_byte(client);
+	if (error < 0) {
+		dev_dbg(&client->dev, "nothing at this address: %d\n", error);
+		return -ENXIO;
+	}
+
 	/* Initialize the touchpad. */
 	error = elan_initialize(data);
 	if (error)
@@ -1234,7 +1241,14 @@ static const struct acpi_device_id elan_acpi_id[] = {
 	{ "ELAN0000", 0 },
 	{ "ELAN0100", 0 },
 	{ "ELAN0600", 0 },
+	{ "ELAN0602", 0 },
 	{ "ELAN0605", 0 },
+	{ "ELAN0608", 0 },
+	{ "ELAN0605", 0 },
+	{ "ELAN0609", 0 },
+	{ "ELAN060B", 0 },
+	{ "ELAN060C", 0 },
+	{ "ELAN0611", 0 },
 	{ "ELAN1000", 0 },
 	{ }
 };

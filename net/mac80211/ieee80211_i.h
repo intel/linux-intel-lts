@@ -681,7 +681,6 @@ struct ieee80211_if_mesh {
 	const struct ieee80211_mesh_sync_ops *sync_ops;
 	s64 sync_offset_clockdrift_max;
 	spinlock_t sync_offset_lock;
-	bool adjusting_tbtt;
 	/* mesh power save */
 	enum nl80211_mesh_power_mode nonpeer_pm;
 	int ps_peers_light_sleep;
@@ -990,21 +989,6 @@ static inline void
 sdata_assert_lock(struct ieee80211_sub_if_data *sdata)
 {
 	lockdep_assert_held(&sdata->wdev.mtx);
-}
-
-static inline enum nl80211_band
-ieee80211_get_sdata_band(struct ieee80211_sub_if_data *sdata)
-{
-	enum nl80211_band band = NL80211_BAND_2GHZ;
-	struct ieee80211_chanctx_conf *chanctx_conf;
-
-	rcu_read_lock();
-	chanctx_conf = rcu_dereference(sdata->vif.chanctx_conf);
-	if (!WARN_ON(!chanctx_conf))
-		band = chanctx_conf->def.chan->band;
-	rcu_read_unlock();
-
-	return band;
 }
 
 static inline int
@@ -1409,6 +1393,27 @@ static inline struct ieee80211_sub_if_data *
 IEEE80211_WDEV_TO_SUB_IF(struct wireless_dev *wdev)
 {
 	return container_of(wdev, struct ieee80211_sub_if_data, wdev);
+}
+
+static inline struct ieee80211_supported_band *
+ieee80211_get_sband(struct ieee80211_sub_if_data *sdata)
+{
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_chanctx_conf *chanctx_conf;
+	enum nl80211_band band;
+
+	rcu_read_lock();
+	chanctx_conf = rcu_dereference(sdata->vif.chanctx_conf);
+
+	if (WARN_ON(!chanctx_conf)) {
+		rcu_read_unlock();
+		return NULL;
+	}
+
+	band = chanctx_conf->def.chan->band;
+	rcu_read_unlock();
+
+	return local->hw.wiphy->bands[band];
 }
 
 /* this struct represents 802.11n's RA/TID combination */

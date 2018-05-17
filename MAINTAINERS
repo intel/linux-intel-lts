@@ -3917,7 +3917,7 @@ F:	drivers/dma-buf/
 F:	include/linux/dma-buf*
 F:	include/linux/reservation.h
 F:	include/linux/*fence.h
-F:	Documentation/dma-buf-sharing.txt
+F:	Documentation/driver-api/dma-buf.rst
 T:	git git://git.linaro.org/people/sumitsemwal/linux-dma-buf.git
 
 SYNC FILE FRAMEWORK
@@ -4034,12 +4034,18 @@ F:	drivers/gpu/drm/ast/
 
 DRM DRIVER FOR BOCHS VIRTUAL GPU
 M:	Gerd Hoffmann <kraxel@redhat.com>
-S:	Odd Fixes
+L:	virtualization@lists.linux-foundation.org
+T:	git git://git.kraxel.org/linux drm-qemu
+S:	Maintained
 F:	drivers/gpu/drm/bochs/
 
 DRM DRIVER FOR QEMU'S CIRRUS DEVICE
 M:	Dave Airlie <airlied@redhat.com>
-S:	Odd Fixes
+M:	Gerd Hoffmann <kraxel@redhat.com>
+L:	virtualization@lists.linux-foundation.org
+T:	git git://git.kraxel.org/linux drm-qemu
+S:	Obsolete
+W:	https://www.kraxel.org/blog/2014/10/qemu-using-cirrus-considered-harmful/
 F:	drivers/gpu/drm/cirrus/
 
 RADEON and AMDGPU DRM DRIVERS
@@ -4151,6 +4157,12 @@ S:	Supported
 F:	drivers/gpu/drm/mediatek/
 F:	Documentation/devicetree/bindings/display/mediatek/
 
+DRM DRIVER FOR MI0283QT
+M:	Noralf Trønnes <noralf@tronnes.org>
+S:	Maintained
+F:	drivers/gpu/drm/tinydrm/mi0283qt.c
+F:	Documentation/devicetree/bindings/display/multi-inno,mi0283qt.txt
+
 DRM DRIVER FOR MSM ADRENO GPU
 M:	Rob Clark <robdclark@gmail.com>
 L:	linux-arm-msm@vger.kernel.org
@@ -4211,7 +4223,10 @@ F:	Documentation/devicetree/bindings/display/renesas,du.txt
 
 DRM DRIVER FOR QXL VIRTUAL GPU
 M:	Dave Airlie <airlied@redhat.com>
-S:	Odd Fixes
+M:	Gerd Hoffmann <kraxel@redhat.com>
+L:	virtualization@lists.linux-foundation.org
+T:	git git://git.kraxel.org/linux drm-qemu
+S:	Maintained
 F:	drivers/gpu/drm/qxl/
 F:	include/uapi/drm/qxl_drm.h
 
@@ -8280,6 +8295,12 @@ T:	git git://linuxtv.org/mkrufky/tuners.git
 S:	Maintained
 F:	drivers/media/tuners/mxl5007t.*
 
+MXSFB DRM DRIVER
+M:	Marek Vasut <marex@denx.de>
+S:	Supported
+F:	drivers/gpu/drm/mxsfb/
+F:	Documentation/devicetree/bindings/display/mxsfb-drm.txt
+
 MYRICOM MYRI-10G 10GbE DRIVER (MYRI10GE)
 M:	Hyong-Youb Kim <hykim@myri.com>
 L:	netdev@vger.kernel.org
@@ -10296,6 +10317,16 @@ S:	Maintained
 F:	include/net/rose.h
 F:	include/uapi/linux/rose.h
 F:	net/rose/
+
+RPMB SUBSYSTEM
+M:	Tomas Winkler <tomas.winkler@intel.com>
+L:	linux-kernel@vger.kernel.org
+S:	Supported
+F:	drivers/char/rpmb/*
+F:	include/uapi/linux/rpmb.h
+F:	include/linux/rpmb.h
+F:	Documentation/ABI/testing/sysfs-class-rpmb
+F:	tools/rpmb/
 
 RTL2830 MEDIA DRIVER
 M:	Antti Palosaari <crope@iki.fi>
@@ -12627,6 +12658,15 @@ F:	drivers/usb/
 F:	include/linux/usb.h
 F:	include/linux/usb/
 
+USB TYPEC SUBSYSTEM
+M:	Heikki Krogerus <heikki.krogerus@linux.intel.com>
+L:	linux-usb@vger.kernel.org
+S:	Maintained
+F:	Documentation/ABI/testing/sysfs-class-typec
+F:	Documentation/usb/typec.txt
+F:	drivers/usb/typec/
+F:	include/linux/usb/typec.h
+
 USB UHCI DRIVER
 M:	Alan Stern <stern@rowland.harvard.edu>
 L:	linux-usb@vger.kernel.org
@@ -12830,6 +12870,7 @@ M:	David Airlie <airlied@linux.ie>
 M:	Gerd Hoffmann <kraxel@redhat.com>
 L:	dri-devel@lists.freedesktop.org
 L:	virtualization@lists.linux-foundation.org
+T:	git git://git.kraxel.org/linux drm-qemu
 S:	Maintained
 F:	drivers/gpu/drm/virtio/
 F:	include/uapi/linux/virtio_gpu.h

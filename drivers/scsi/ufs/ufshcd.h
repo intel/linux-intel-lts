@@ -261,6 +261,7 @@ struct ufs_pwr_mode_info {
  * @pwr_change_notify: called before and after a power mode change
  *			is carried out to allow vendor spesific capabilities
  *			to be set.
+ * @apply_dev_quirks: called to apply device specific quirks
  * @suspend: called during host controller PM callback
  * @resume: called during host controller PM callback
  * @dbg_register_dump: used to dump controller debug information
@@ -283,6 +284,7 @@ struct ufs_hba_variant_ops {
 					enum ufs_notify_change_status status,
 					struct ufs_pa_layer_attr *,
 					struct ufs_pa_layer_attr *);
+	int	(*apply_dev_quirks)(struct ufs_hba *);
 	int     (*suspend)(struct ufs_hba *, enum ufs_pm_op);
 	int     (*resume)(struct ufs_hba *, enum ufs_pm_op);
 	void	(*dbg_register_dump)(struct ufs_hba *hba);
@@ -348,6 +350,7 @@ struct ufs_init_prefetch {
  * @utmrdl_dma_addr: UTMRDL DMA address
  * @host: Scsi_Host instance of the driver
  * @dev: device handle
+ * @sdev_ufs_rpmb: reference to RPMB device W-LU
  * @lrb: local reference block
  * @lrb_in_use: lrb in use
  * @outstanding_tasks: Bits representing outstanding task requests
@@ -410,6 +413,7 @@ struct ufs_hba {
 	 * "UFS device" W-LU.
 	 */
 	struct scsi_device *sdev_ufs_device;
+	struct scsi_device *sdev_ufs_rpmb;
 
 	enum ufs_dev_pwr_mode curr_dev_pwr_mode;
 	enum uic_link_state uic_link_state;
@@ -473,6 +477,12 @@ struct ufs_hba {
 	 * ops (get_ufs_hci_version) to get the correct version.
 	 */
 	#define UFSHCD_QUIRK_BROKEN_UFS_HCI_VERSION		UFS_BIT(5)
+
+	/*
+	 * This quirk needs to be enabled if the host contoller regards
+	 * resolution of the values of PRDTO and PRDTL in UTRD as byte.
+	 */
+	#define UFSHCD_QUIRK_PRDT_BYTE_GRAN			UFS_BIT(7)
 
 	unsigned int quirks;	/* Deviations from standard UFSHCI spec. */
 
@@ -540,6 +550,14 @@ struct ufs_hba {
 	 * CAUTION: Enabling this might reduce overall UFS throughput.
 	 */
 #define UFSHCD_CAP_INTR_AGGR (1 << 4)
+	/*
+	 * This capability allows the device auto-bkops to be always enabled
+	 * except during suspend (both runtime and suspend).
+	 * Enabling this capability means that device will always be allowed
+	 * to do background operation when it's active but it might degrade
+	 * the performance of ongoing read/write operations.
+	 */
+#define UFSHCD_CAP_KEEP_AUTO_BKOPS_ENABLED_EXCEPT_SUSPEND (1 << 5)
 
 	struct devfreq *devfreq;
 	struct ufs_clk_scaling clk_scaling;
@@ -636,6 +654,11 @@ static inline void *ufshcd_get_variant(struct ufs_hba *hba)
 {
 	BUG_ON(!hba);
 	return hba->priv;
+}
+static inline bool ufshcd_keep_autobkops_enabled_except_suspend(
+							struct ufs_hba *hba)
+{
+	return hba->caps & UFSHCD_CAP_KEEP_AUTO_BKOPS_ENABLED_EXCEPT_SUSPEND;
 }
 
 extern int ufshcd_runtime_suspend(struct ufs_hba *hba);
@@ -797,6 +820,13 @@ static inline int ufshcd_vops_pwr_change_notify(struct ufs_hba *hba,
 					dev_max_params, dev_req_params);
 
 	return -ENOTSUPP;
+}
+
+static inline int ufshcd_vops_apply_dev_quirks(struct ufs_hba *hba)
+{
+	if (hba->vops && hba->vops->apply_dev_quirks)
+		return hba->vops->apply_dev_quirks(hba);
+	return 0;
 }
 
 static inline int ufshcd_vops_suspend(struct ufs_hba *hba, enum ufs_pm_op op)

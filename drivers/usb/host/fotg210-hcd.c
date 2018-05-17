@@ -1381,7 +1381,7 @@ static enum hrtimer_restart fotg210_hrtimer_func(struct hrtimer *t)
 	 */
 	now = ktime_get();
 	for_each_set_bit(e, &events, FOTG210_HRTIMER_NUM_EVENTS) {
-		if (now.tv64 >= fotg210->hr_timeouts[e].tv64)
+		if (now >= fotg210->hr_timeouts[e])
 			event_handlers[e](fotg210);
 		else
 			fotg210_enable_event(fotg210, e, false);
@@ -5698,7 +5698,7 @@ static int __init fotg210_hcd_init(void)
 			test_bit(USB_OHCI_LOADED, &usb_hcds_loaded))
 		pr_warn("Warning! fotg210_hcd should always be loaded before uhci_hcd and ohci_hcd, not after\n");
 
-	pr_debug("%s: block sizes: qh %Zd qtd %Zd itd %Zd\n",
+	pr_debug("%s: block sizes: qh %zd qtd %zd itd %zd\n",
 			hcd_name, sizeof(struct fotg210_qh),
 			sizeof(struct fotg210_qtd),
 			sizeof(struct fotg210_itd));

@@ -941,7 +941,8 @@ static void wait_barrier(struct r10conf *conf)
 				    !conf->barrier ||
 				    (atomic_read(&conf->nr_pending) &&
 				     current->bio_list &&
-				     !bio_list_empty(current->bio_list)),
+				     (!bio_list_empty(&current->bio_list[0]) ||
+				      !bio_list_empty(&current->bio_list[1]))),
 				    conf->resync_lock);
 		conf->nr_waiting--;
 		if (!conf->nr_waiting)
@@ -1406,11 +1407,24 @@ retry_write:
 			mbio->bi_private = r10_bio;
 
 			atomic_inc(&r10_bio->remaining);
+
+			cb = blk_check_plugged(raid10_unplug, mddev,
+					       sizeof(*plug));
+			if (cb)
+				plug = container_of(cb, struct raid10_plug_cb,
+						    cb);
+			else
+				plug = NULL;
 			spin_lock_irqsave(&conf->device_lock, flags);
-			bio_list_add(&conf->pending_bio_list, mbio);
-			conf->pending_count++;
+			if (plug) {
+				bio_list_add(&plug->pending, mbio);
+				plug->pending_cnt++;
+			} else {
+				bio_list_add(&conf->pending_bio_list, mbio);
+				conf->pending_count++;
+			}
 			spin_unlock_irqrestore(&conf->device_lock, flags);
-			if (!mddev_check_plugged(mddev))
+			if (!plug)
 				md_wakeup_thread(mddev->thread);
 		}
 	}
@@ -2690,6 +2704,11 @@ static void handle_write_completed(struct r10conf *conf, struct r10bio *r10_bio)
 			list_add(&r10_bio->retry_list, &conf->bio_end_io_list);
 			conf->nr_queued++;
 			spin_unlock_irq(&conf->device_lock);
+			/*
+			 * In case freeze_array() is waiting for condition
+			 * nr_pending == nr_queued + extra to be true.
+			 */
+			wake_up(&conf->wait_barrier);
 			md_wakeup_thread(conf->mddev->thread);
 		} else {
 			if (test_bit(R10BIO_WriteError,
@@ -3662,6 +3681,7 @@ static int raid10_run(struct mddev *mddev)
 
 		if (blk_queue_discard(bdev_get_queue(rdev->bdev)))
 			discard_supported = true;
+		first = 0;
 	}
 
 	if (mddev->queue) {
@@ -4070,6 +4090,7 @@ static int raid10_start_reshape(struct mddev *mddev)
 				diff = 0;
 			if (first || diff < min_offset_diff)
 				min_offset_diff = diff;
+			first = 0;
 		}
 	}
 
