@@ -337,10 +337,16 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 				      unsigned long what, void *data)
 {
 	const char *target = (const char *)data;
-	int ret = 0;
+	int ret;
 
 	if (what != SYS_RESTART)
 		return NOTIFY_DONE;
+	if (target[0] != '\0') {
+		ret = set_reboot_target(target);
+		if (ret)
+			pr_err("%s: Failed to set reboot target, ret=%d\n",
+				__func__, ret);
+	}
 
 	ret = execute_slcan_command((const char **)suppress_heartbeat);
 	if (ret)
@@ -349,26 +355,10 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 	ret = execute_slcan_command((const char **)reboot_request);
 	if (ret)
 		goto done;
-	if (target[0] != '\0') {
-		ret = set_reboot_target(target);
-		if (ret)
-			pr_err("%s: Failed to set reboot target, ret=%d\n",
-				__func__, ret);
-	}
 
 	ret = execute_slcan_command((const char **)cold_reset);
 
 done:
-#ifdef CONFIG_SEND_SLCAN_ENABLE
-	if (ret) {
-		if (!target)
-			pr_emerg("Restarting system\n");
-		else
-			pr_emerg("Restarting system with command '%s'\n", target);
-
-		panic("ablbc failed to cummnunicate with IOC.");
-	}
-#endif
 	return NOTIFY_DONE;
 }
 
