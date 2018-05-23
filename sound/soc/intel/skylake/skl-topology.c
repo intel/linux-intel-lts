@@ -4633,6 +4633,7 @@ static int skl_tplg_mfest_fill_dmactrl(struct device *dev,
 			if (!hdr->data)
 				return -ENOMEM;
 			hdr->data_size = tkn_elem->value;
+			dmactrl_cfg->size = hdr->data_size;
 		} else {
 			hdr->data_size = 0;
 			dev_err(dev, "Invalid dmactrl info \n");
