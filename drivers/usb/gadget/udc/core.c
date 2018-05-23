@@ -1234,8 +1234,9 @@ static void usb_gadget_remove_driver(struct usb_udc *udc)
 
 	usb_gadget_disconnect(udc->gadget);
 	udc->driver->disconnect(udc->gadget);
-	udc->driver->unbind(udc->gadget);
+
 	usb_gadget_udc_stop(udc);
+	udc->driver->unbind(udc->gadget);
 
 	udc->driver = NULL;
 	udc->dev.driver = NULL;
