@@ -13942,6 +13942,8 @@ intel_skl_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe, int pl
 	supported_rotations =
 		DRM_ROTATE_0 | DRM_ROTATE_90 |
 		DRM_ROTATE_180 | DRM_ROTATE_270;
+	drm_plane_create_rotation_property(&intel_plane->base,
+			DRM_ROTATE_0, supported_rotations);
 
 	drm_plane_helper_add(&intel_plane->base, &intel_plane_helper_funcs);
 
@@ -15370,6 +15372,10 @@ int intel_modeset_init(struct drm_device *dev)
 	DRM_INFO("domain_plane_owners = 0x%llx \n", i915.domain_plane_owners);
 
 	for_each_pipe(dev_priv, pipe) {
+		struct intel_device_info *info = mkwrite_device_info(dev_priv);
+
+		if (intel_vgpu_active(dev_priv) && IS_BROXTON(dev_priv))
+			info->num_sprites[pipe]++;
 		planes_mask[pipe] = AVAIL_PLANE_PER_PIPE(dev_priv, avail_plane_per_pipe_mask, pipe);
 		DRM_INFO("for pipe %d plane_mask = %d \n", pipe, planes_mask[pipe]);
 	}
