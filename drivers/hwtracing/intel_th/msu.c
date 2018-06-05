@@ -1022,8 +1022,8 @@ err_nomem:
 		/* Reset the page to write-back before releasing */
 		set_memory_wb((unsigned long)win->block[i].bdesc, 1);
 #endif
-		dma_free_coherent(msc_dev(msc)->parent->parent, size, win->block[i].bdesc,
-				  win->block[i].addr);
+		dma_free_coherent(msc_dev(msc)->parent->parent, size,
+				  win->block[i].bdesc, win->block[i].addr);
 	}
 	kfree(win);
 
