@@ -294,10 +294,7 @@ int intel_ipu4_isys_csi2_be_init(struct intel_ipu4_isys_csi2_be *csi2_be,
 
 	csi2_be->av.isys = isys;
 
-	if (is_intel_ipu5_hw_a0(isys->adev->isp))
-		csi2_be->av.pfmts = intel_ipu5_isys_pfmts;
-	else
-		csi2_be->av.pfmts = intel_ipu4_isys_pfmts;
+	csi2_be->av.pfmts = intel_ipu4_isys_pfmts;
 
 	csi2_be->av.try_fmt_vid_mplane =
 		intel_ipu4_isys_video_try_fmt_vid_mplane_default;

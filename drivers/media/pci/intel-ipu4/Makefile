@@ -12,7 +12,5 @@
 #
 
 obj-$(CONFIG_VIDEO_INTEL_IPU4)		+= ipu4_bxtB0/
-obj-$(CONFIG_VIDEO_INTEL_IPU5)		+= ipu5A0/
 obj-$(CONFIG_VIDEO_INTEL_IPU4_DEBUG)	+= debug_if/
-obj-$(CONFIG_VIDEO_INTEL_IPU_FPGA)	+= fpga/
 obj-$(CONFIG_VIDEO_INTEL_IPU_MOCK)	+= mock/

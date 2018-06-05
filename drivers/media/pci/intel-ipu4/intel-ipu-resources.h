@@ -12,7 +12,6 @@
  *
  */
 
-#include "intel-ipu5-resources.h"
 #include "intel-ipu4-resources.h"
 #include "intel-ipu4-psys-abi.h"
 
