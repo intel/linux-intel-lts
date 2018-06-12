@@ -15,6 +15,7 @@
  */
 
 #include "crlmodule.h"
+#include "crl_ov13858_configuration.h"
 #include "crl_imx132_configuration.h"
 #include "crl_imx214_configuration.h"
 #include "crl_imx135_configuration.h"
@@ -38,6 +39,11 @@
 #include "crl_magna_configuration.h"
 
 static const struct crlmodule_sensors supported_sensors[] = {
+	{ "i2c-OVTIF858:00", "ov13858", &ov13858_crl_configuration},
+	{ "OV13858", "ov13858", &ov13858_crl_configuration},
+	{ "OV13858-2", "ov13858", &ov13858_crl_configuration},
+	{ "i2c-INT3474:00", "ov2740", &ov2740_crl_configuration },
+	{ "OV2740", "ov2740", &ov2740_crl_configuration },
 	{ "i2c-SONY214A:00", "imx214", &imx214_crl_configuration },
 	{ "IMX214", "imx214", &imx214_crl_configuration },
 	{ "i2c-SONY132A:00", "imx132", &imx132_crl_configuration },

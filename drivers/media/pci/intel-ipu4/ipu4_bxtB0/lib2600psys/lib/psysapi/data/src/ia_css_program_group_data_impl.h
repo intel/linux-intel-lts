@@ -1,6 +1,6 @@
 /*
 * Support for Intel Camera Imaging ISP subsystem.
- * Copyright (c) 2010 - 2017, Intel Corporation.
+ * Copyright (c) 2010 - 2018, Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -331,10 +331,13 @@ int ia_css_frame_descriptor_print(
 	COMPILATION_ERROR_IF(0 > (IA_CSS_N_DATA_DIMENSION - 2));
 	IA_CSS_TRACE_1(PSYSAPI_DATA, INFO,
 		"\tstride[%d] = {\n", IA_CSS_N_DATA_DIMENSION - 1);
+	i = 0;
+#if IA_CSS_N_DATA_DIMENSION > 2
 	for (i = 0; i < (int)IA_CSS_N_DATA_DIMENSION - 2; i++) {
 		IA_CSS_TRACE_1(PSYSAPI_DATA, INFO,
 			"\t%4d,\n", frame_descriptor->stride[i]);
 	}
+#endif
 	IA_CSS_TRACE_1(PSYSAPI_DATA, INFO,
 		"\t%4d }\n", frame_descriptor->stride[i]);
 

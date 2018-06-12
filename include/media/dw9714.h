@@ -33,4 +33,8 @@ struct dw9714_platform_data {
 	int gpio_xsd; /* Should be < 0 if not used */
 };
 
+#ifdef CONFIG_INTEL_IPU4_OV13858
+extern bool vcm_in_use;
+extern void crlmodule_vcm_gpio_set_value(unsigned int gpio, int value);
+#endif
 #endif

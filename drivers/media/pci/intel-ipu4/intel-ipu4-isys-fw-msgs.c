@@ -327,6 +327,7 @@ static int intel_ipu4_isys_abi_fw_init(struct intel_ipu4_isys *isys,
 		rval = intel_ipu4_fw_com_ready(isys->fwcom);
 		if (!rval)
 			break;
+		retry--;
 	} while (retry > 0);
 
 	if (!retry && rval) {

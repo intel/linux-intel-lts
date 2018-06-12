@@ -180,6 +180,17 @@ int intel_ipu4_buttress_ipc_reset(struct intel_ipu4_device *isp,
 
 			ipu_writel(EXIT, isp->base + ipc->csr_out);
 
+			/*
+			 * Read csr_in again to make sure if RST_PHASE2 is done.
+			 * If csr_in is QUERY, it should be handled again.
+			 */
+			usleep_range(100, 500);
+			val = ipu_readl(isp->base + ipc->csr_in);
+			if (val & QUERY) {
+				dev_dbg(&isp->pdev->dev, "%s: RST_PHASE2 retry csr_in = %x\n", __func__, val);
+				continue;
+			}
+
 			mutex_unlock(&b->ipc_mutex);
 
 			return 0;
@@ -1099,6 +1110,14 @@ static void intel_ipu4_buttress_clk_pll_disable(struct clk_hw *hw)
 {
 	struct clk_intel_ipu4_sensor *ck = to_clk_intel_ipu4_sensor(hw);
 	u32 val;
+	int i;
+
+	val = ipu_readl(ck->isp->base + BUTTRESS_REG_SENSOR_CLK_CTL);
+	for (i = 0; i < INTEL_IPU4_BUTTRESS_NUM_OF_SENS_CKS; i++) {
+		if (val &
+		    (1 << BUTTRESS_SENSOR_CLK_CTL_OSC_CLK_OUT_EN_SHIFT(i)))
+			return;
+	}
 
 	/* See enable control above */
 	val = ipu_readl(ck->isp->base + BUTTRESS_REG_SENSOR_FREQ_CTL);
@@ -1393,6 +1412,57 @@ static void intel_ipu4_buttress_clk_exit(struct intel_ipu4_device *isp)
 		clk_unregister(b->pll_sensor[i]);
 }
 
+int intel_ipu4_buttress_tsc_read(struct intel_ipu4_device *isp, u64 *val)
+{
+	struct intel_ipu4_buttress *b = &isp->buttress;
+	u32 tsc_hi, tsc_lo_1, tsc_lo_2, tsc_lo_3, tsc_chk = 0;
+	unsigned long flags;
+	short retry = INTEL_IPU4_BUTTRESS_TSC_RETRY;
+
+	do {
+		spin_lock_irqsave(&b->tsc_lock, flags);
+		tsc_hi = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
+
+		/*
+		 * We are occasionally getting broken values from
+		 * HH. Reading 3 times and doing sanity check as a WA
+		 */
+		tsc_lo_1 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_lo_2 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_lo_3 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
+		tsc_chk = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
+		spin_unlock_irqrestore(&b->tsc_lock, flags);
+		if (tsc_chk == tsc_hi && tsc_lo_2 &&
+		    tsc_lo_2 - tsc_lo_1 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT &&
+		    tsc_lo_3 - tsc_lo_2 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT) {
+			*val = (u64)tsc_hi << 32 | tsc_lo_2;
+			return 0;
+		}
+
+		/*
+		 * Trace error only if limit checkings fails at least
+		 *  by two consecutive readings.
+		 */
+		if (retry < INTEL_IPU4_BUTTRESS_TSC_RETRY - 1 &&
+		    tsc_lo_2)
+			dev_err(&isp->pdev->dev,
+				"failure: tsc_hi = %u, \
+				tsc_chk %u, \
+				tsc_lo_1 = %u, \
+				tsc_lo_2 = %u, \
+				tsc_lo_3 = %u",
+				tsc_hi, tsc_chk, tsc_lo_1, tsc_lo_2, tsc_lo_3);
+	} while (retry--);
+
+	if (!tsc_chk && !tsc_lo_2)
+		return -EIO;
+
+	WARN_ON_ONCE(1);
+
+	return -EINVAL;
+}
+EXPORT_SYMBOL_GPL(intel_ipu4_buttress_tsc_read);
+
 #ifdef CONFIG_DEBUG_FS
 
 static int intel_ipu4_buttress_reg_open(struct inode *inode, struct file *file)
@@ -1459,57 +1529,6 @@ DEFINE_SIMPLE_ATTRIBUTE(intel_ipu4_buttress_start_tsc_sync_fops,
 			NULL, /* intel_ipu4_buttress_start_tsc_sync_get, */
 			intel_ipu4_buttress_start_tsc_sync_set, "%llu\n");
 
-
-int intel_ipu4_buttress_tsc_read(struct intel_ipu4_device *isp, u64 *val)
-{
-	struct intel_ipu4_buttress *b = &isp->buttress;
-	u32 tsc_hi, tsc_lo_1, tsc_lo_2, tsc_lo_3, tsc_chk = 0;
-	unsigned long flags;
-	short retry = INTEL_IPU4_BUTTRESS_TSC_RETRY;
-
-	do {
-		spin_lock_irqsave(&b->tsc_lock, flags);
-		tsc_hi = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
-
-		/*
-		 * We are occasionally getting broken values from
-		 * HH. Reading 3 times and doing sanity check as a WA
-		 */
-		tsc_lo_1 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_lo_2 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_lo_3 = ipu_readl(isp->base + BUTTRESS_REG_TSC_LO);
-		tsc_chk = ipu_readl(isp->base + BUTTRESS_REG_TSC_HI);
-		spin_unlock_irqrestore(&b->tsc_lock, flags);
-		if (tsc_chk == tsc_hi && tsc_lo_2 &&
-		    tsc_lo_2 - tsc_lo_1 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT &&
-		    tsc_lo_3 - tsc_lo_2 <= INTEL_IPU4_BUTTRESS_TSC_LIMIT) {
-			*val = (u64)tsc_hi << 32 | tsc_lo_2;
-			return 0;
-		}
-
-		/*
-		 * Trace error only if limit checkings fails at least
-		 *  by two consecutive readings.
-		 */
-		if (retry < INTEL_IPU4_BUTTRESS_TSC_RETRY - 1 &&
-		    tsc_lo_2)
-			dev_err(&isp->pdev->dev,
-				"failure: tsc_hi = %u, \
-				tsc_chk %u, \
-				tsc_lo_1 = %u, \
-				tsc_lo_2 = %u, \
-				tsc_lo_3 = %u",
-				tsc_hi, tsc_chk, tsc_lo_1, tsc_lo_2, tsc_lo_3);
-	} while (retry--);
-
-	if (!tsc_chk && !tsc_lo_2)
-		return -EIO;
-
-	WARN_ON_ONCE(1);
-
-	return -EINVAL;
-}
-EXPORT_SYMBOL_GPL(intel_ipu4_buttress_tsc_read);
 
 u64 intel_ipu4_buttress_tsc_ticks_to_ns(u64 ticks)
 {

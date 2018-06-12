@@ -501,7 +501,7 @@ int intel_ipu4_isys_subdev_get_frame_desc(struct v4l2_subdev *sd,
 }
 
 bool intel_ipu4_isys_subdev_has_route(struct media_entity *entity,
-				      unsigned int pad0, unsigned int pad1)
+				      unsigned int pad0, unsigned int pad1, int *stream)
 {
 	struct intel_ipu4_isys_subdev *asd = to_intel_ipu4_isys_subdev(
 					media_entity_to_v4l2_subdev(entity));
@@ -513,11 +513,14 @@ bool intel_ipu4_isys_subdev_has_route(struct media_entity *entity,
 
 	for (i = 0; i < asd->nstreams; i++) {
 		if ((asd->route[i].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE) &&
-			((asd->route[i].sink == pad0 &&
-			asd->route[i].source == pad1) ||
-			(asd->route[i].sink == pad1 &&
-			asd->route[i].source == pad0)))
+				((asd->route[i].sink == pad0 &&
+				  asd->route[i].source == pad1) ||
+				 (asd->route[i].sink == pad1 &&
+				  asd->route[i].source == pad0))) {
+			if (stream)
+				*stream = i;
 			return true;
+		}
 	}
 
 	return false;
@@ -767,7 +770,8 @@ int intel_ipu4_isys_subdev_link_validate(struct v4l2_subdev *sd,
 			struct intel_ipu4_isys_pipeline, pipe);
 	struct intel_ipu4_isys_subdev *asd = to_intel_ipu4_isys_subdev(sd);
 
-	if (source_sd->owner != THIS_MODULE) {
+	if (strncmp(source_sd->name, INTEL_IPU4_ISYS_ENTITY_PREFIX,
+		strlen(INTEL_IPU4_ISYS_ENTITY_PREFIX)) != 0) {
 		/*
 		 * source_sd isn't ours --- sd must be the external
 		 * sub-device.

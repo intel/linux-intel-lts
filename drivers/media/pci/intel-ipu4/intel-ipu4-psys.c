@@ -51,14 +51,19 @@
 
 static bool early_pg_transfer;
 static bool enable_concurrency = true;
+static bool async_fw_init;
 module_param(early_pg_transfer, bool,
 			S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
 module_param(enable_concurrency, bool,
+			S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+module_param(async_fw_init, bool,
 			S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
 MODULE_PARM_DESC(early_pg_transfer,
 			"Copy PGs back to user after resource allocation");
 MODULE_PARM_DESC(enable_concurrency,
 			"Enable concurrent execution of program groups");
+MODULE_PARM_DESC(async_fw_init,
+			"Enable asynchronous firmware initialization");
 
 #define INTEL_IPU4_PSYS_NUM_DEVICES		4
 #define INTEL_IPU4_PSYS_WORK_QUEUE		system_power_efficient_wq
@@ -81,6 +86,11 @@ static int psys_runtime_pm_suspend(struct device *dev);
 static dev_t intel_ipu4_psys_dev_t;
 static DECLARE_BITMAP(intel_ipu4_psys_devices, INTEL_IPU4_PSYS_NUM_DEVICES);
 static DEFINE_MUTEX(intel_ipu4_psys_mutex);
+
+static struct fw_init_task {
+	struct delayed_work work;
+	struct intel_ipu4_psys *psys;
+} fw_init_task;
 
 static struct intel_ipu4_trace_block psys_trace_blocks_ipu4[] = {
 	{
@@ -161,6 +171,8 @@ static struct intel_ipu4_trace_block psys_trace_blocks_ipu4[] = {
 };
 
 static int intel_ipu4_psys_isr_run(void *data);
+
+static void intel_ipu4_psys_remove(struct intel_ipu4_bus_device *adev);
 
 static struct bus_type intel_ipu4_psys_bus = {
 	.name = INTEL_IPU4_PSYS_NAME,
@@ -578,9 +590,9 @@ static int intel_ipu4_psys_open(struct inode *inode, struct file *file)
 		kbuf_set = kzalloc(sizeof(*kbuf_set), GFP_KERNEL);
 		if (!kbuf_set)
 			goto out_free_buf_sets;
-		kbuf_set->kaddr = dma_alloc_noncoherent(&psys->adev->dev,
+		kbuf_set->kaddr = dma_alloc_attrs(&psys->adev->dev,
 			INTEL_IPU_PSYS_BUF_SET_MAX_SIZE, &kbuf_set->dma_addr,
-			GFP_KERNEL);
+			GFP_KERNEL, DMA_ATTR_NON_CONSISTENT);
 		if (!kbuf_set->kaddr) {
 			kfree(kbuf_set);
 			goto out_free_buf_sets;
@@ -625,9 +637,10 @@ static int intel_ipu4_psys_open(struct inode *inode, struct file *file)
 
 out_free_buf_sets:
 	list_for_each_entry(kbuf_set, &fh->buf_sets, list) {
-		dma_free_noncoherent(&psys->adev->dev,
+		dma_free_attrs(&psys->adev->dev,
 				kbuf_set->size, kbuf_set->kaddr,
-				kbuf_set->dma_addr);
+				kbuf_set->dma_addr,
+				DMA_ATTR_NON_CONSISTENT);
 		list_del(&kbuf_set->list);
 		kfree(kbuf_set);
 	}
@@ -712,9 +725,10 @@ static int intel_ipu4_psys_release(struct inode *inode, struct file *file)
 
 	mutex_lock(&fh->bs_mutex);
 	list_for_each_entry_safe(kbuf_set, kbuf_set0, &fh->buf_sets, list) {
-		dma_free_noncoherent(&psys->adev->dev,
+		dma_free_attrs(&psys->adev->dev,
 				kbuf_set->size, kbuf_set->kaddr,
-				kbuf_set->dma_addr);
+				kbuf_set->dma_addr,
+				DMA_ATTR_NON_CONSISTENT);
 		list_del(&kbuf_set->list);
 		kfree(kbuf_set);
 	}
@@ -855,8 +869,9 @@ struct intel_ipu4_psys_pg *__get_pg_buf(
 	if (!kpg)
 		return NULL;
 
-	kpg->pg = dma_alloc_noncoherent(&psys->adev->dev, pg_size,
-			&kpg->pg_dma_addr, GFP_KERNEL);
+	kpg->pg = dma_alloc_attrs(&psys->adev->dev, pg_size,
+			&kpg->pg_dma_addr, GFP_KERNEL,
+			DMA_ATTR_NON_CONSISTENT);
 	if (!kpg->pg) {
 		kfree(kpg);
 		return NULL;
@@ -891,8 +906,9 @@ struct intel_ipu_psys_buffer_set *__get_buf_set(
 	if (!kbuf_set)
 		return NULL;
 
-	kbuf_set->kaddr = dma_alloc_noncoherent(&fh->psys->adev->dev,
-			buf_set_size, &kbuf_set->dma_addr, GFP_KERNEL);
+	kbuf_set->kaddr = dma_alloc_attrs(&fh->psys->adev->dev,
+			buf_set_size, &kbuf_set->dma_addr, GFP_KERNEL,
+			DMA_ATTR_NON_CONSISTENT);
 	if (!kbuf_set->kaddr) {
 		kfree(kbuf_set);
 		return NULL;
@@ -1327,8 +1343,6 @@ static int intel_ipu4_psys_kcmd_queue(struct intel_ipu4_psys *psys,
 			pm_runtime_put(&psys->adev->dev);
 			return -EINVAL;
 		}
-
-		return ret;
 	}
 
 	ret = intel_ipu4_psys_allocate_resources(&psys->adev->dev,
@@ -2404,6 +2418,12 @@ static int psys_runtime_pm_resume(struct device *dev)
 	}
 	spin_unlock_irqrestore(&psys->power_lock, flags);
 
+	if (async_fw_init && !psys->fwcom) {
+		dev_err(dev, "%s: asynchronous firmware init not finished, skipping\n",
+			 __func__);
+		return 0;
+	}
+
 	if (!intel_ipu4_buttress_auth_done(adev->isp)) {
 		dev_err(dev, "%s: not yet authenticated, skipping\n", __func__);
 		return 0;
@@ -2736,6 +2756,21 @@ static int intel_ipu4_psys_fw_init(struct intel_ipu4_psys *psys)
 	return 0;
 }
 
+static void run_fw_init_work(struct work_struct *work)
+{
+	struct fw_init_task *task = (struct fw_init_task *) work;
+	struct intel_ipu4_psys *psys = task->psys;
+	int rval;
+
+	rval = intel_ipu4_psys_fw_init(psys);
+
+	if (rval) {
+		dev_err(&psys->adev->dev, "FW init failed(%d)\n", rval);
+		intel_ipu4_psys_remove(psys->adev);
+	} else
+		dev_info(&psys->adev->dev, "FW init done\n");
+}
+
 static int intel_ipu4_psys_probe(struct intel_ipu4_bus_device *adev)
 {
 	struct intel_ipu4_mmu *mmu = dev_get_drvdata(adev->iommu);
@@ -2856,9 +2891,10 @@ static int intel_ipu4_psys_probe(struct intel_ipu4_bus_device *adev)
 		kpg = kzalloc(sizeof(*kpg), GFP_KERNEL);
 		if (!kpg)
 			goto out_free_pgs;
-		kpg->pg = dma_alloc_noncoherent(&adev->dev,
+		kpg->pg = dma_alloc_attrs(&adev->dev,
 				INTEL_IPU4_PSYS_PG_MAX_SIZE, &kpg->pg_dma_addr,
-				GFP_KERNEL);
+				GFP_KERNEL,
+				DMA_ATTR_NON_CONSISTENT);
 		if (!kpg->pg) {
 			kfree(kpg);
 			goto out_free_pgs;
@@ -2874,8 +2910,14 @@ static int intel_ipu4_psys_probe(struct intel_ipu4_bus_device *adev)
 	caps.pg_count = intel_ipu4_cpd_pkg_dir_get_num_entries(psys->pkg_dir);
 
 	dev_info(&adev->dev, "pkg_dir entry count:%d\n", caps.pg_count);
+	if (async_fw_init) {
+		INIT_DELAYED_WORK((struct delayed_work *) &fw_init_task,
+				 run_fw_init_work);
+		fw_init_task.psys = psys;
+		schedule_delayed_work((struct delayed_work *)&fw_init_task, 0);
+	} else
+		rval = intel_ipu4_psys_fw_init(psys);
 
-	rval = intel_ipu4_psys_fw_init(psys);
 	if (rval) {
 		dev_err(&adev->dev, "FW init failed(%d)\n", rval);
 		goto out_free_pgs;
@@ -2920,8 +2962,9 @@ out_release_fw_com:
 	intel_ipu4_fw_com_release(psys->fwcom, 1);
 out_free_pgs:
 	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
-		dma_free_noncoherent(&adev->dev, kpg->size, kpg->pg,
-				     kpg->pg_dma_addr);
+		dma_free_attrs(&adev->dev, kpg->size, kpg->pg,
+				kpg->pg_dma_addr,
+				DMA_ATTR_NON_CONSISTENT);
 		kfree(kpg);
 	}
 
@@ -2971,12 +3014,13 @@ static void intel_ipu4_psys_remove(struct intel_ipu4_bus_device *adev)
 	mutex_lock(&intel_ipu4_psys_mutex);
 
 	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
-		dma_free_noncoherent(&adev->dev, kpg->size, kpg->pg,
-				     kpg->pg_dma_addr);
+		dma_free_attrs(&adev->dev, kpg->size, kpg->pg,
+				kpg->pg_dma_addr,
+				DMA_ATTR_NON_CONSISTENT);
 		kfree(kpg);
 	}
 
-	if (intel_ipu4_fw_com_release(psys->fwcom, 1))
+	if (psys->fwcom && intel_ipu4_fw_com_release(psys->fwcom, 1))
 		dev_err(&adev->dev, "fw com release failed.\n");
 
 	isp->pkg_dir = NULL;
@@ -3010,11 +3054,35 @@ static void intel_ipu4_psys_remove(struct intel_ipu4_bus_device *adev)
 
 }
 
+static bool intel_ipu_psys_kcmd_is_valid(struct intel_ipu4_psys *psys,
+				struct intel_ipu4_psys_kcmd *kcmd)
+{
+	struct intel_ipu4_psys_fh *fh;
+	struct intel_ipu4_psys_kcmd *kcmd0;
+	int p;
+
+	list_for_each_entry(fh, &psys->fhs, list) {
+		mutex_lock(&fh->mutex);
+		for (p = 0; p < INTEL_IPU4_PSYS_CMD_PRIORITY_NUM; p++) {
+			list_for_each_entry(kcmd0, &fh->kcmds[p], list) {
+				if (kcmd0 == kcmd) {
+					mutex_unlock(&fh->mutex);
+					return true;
+				}
+			}
+
+		}
+		mutex_unlock(&fh->mutex);
+	}
+
+	return false;
+}
+
 static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 {
 	struct intel_ipu4_psys_kcmd *kcmd = NULL;
 	struct ipu_fw_psys_event event;
-	bool error, is_ppg;
+	bool error;
 
 	do {
 		memset(&event, 0, sizeof(event));
@@ -3022,7 +3090,6 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 			break;
 
 		error = false;
-		is_ppg = false;
 		/*
 		 * event.command == CMD_RUN shows this is fw processing frame
 		 * done as pPG mode, and event.context_handle should be pointer
@@ -3032,7 +3099,6 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 		if (event.command == IPU_FW_PSYS_PROCESS_GROUP_CMD_RUN) {
 			struct intel_ipu_psys_buffer_set *kbuf_set = NULL;
 
-			is_ppg = true;
 			if (event.context_handle)
 				kbuf_set = intel_ipu_psys_lookup_kbuffer_set(
 						psys, event.context_handle);
@@ -3040,7 +3106,7 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 				kcmd = kbuf_set->kcmd;
 			dev_dbg(&psys->adev->dev, "ppg event: %d, 0x%x\n",
 				event.context_handle, event.command);
-			if (!kbuf_set || !kcmd || (kcmd && !is_ppg_kcmd(kcmd)))
+			if (!kbuf_set || !kcmd)
 				error = true;
 		} else {
 			/*
@@ -3054,10 +3120,6 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 				kcmd =
 				   (struct intel_ipu4_psys_kcmd *)event.token;
 			error = IS_ERR_OR_NULL(kcmd) ? true : false;
-			if (!error && is_ppg_kcmd(kcmd)) {
-				is_ppg = true;
-				dev_dbg(&psys->adev->dev, "ppg stopped\n");
-			}
 		}
 
 		dev_dbg(&psys->adev->dev, "psys received event status:%d\n",
@@ -3076,19 +3138,17 @@ static void intel_ipu4_psys_handle_events(struct intel_ipu4_psys *psys)
 			break;
 		}
 
-		intel_ipu4_psys_kcmd_complete(
-			psys, kcmd,
-			event.status ==
-				INTEL_IPU4_PSYS_EVENT_CMD_COMPLETE ||
-			event.status ==
-				INTEL_IPU4_PSYS_EVENT_FRAGMENT_COMPLETE ?
-			0 : -EIO);
+		if (intel_ipu_psys_kcmd_is_valid(psys, kcmd))
+			intel_ipu4_psys_kcmd_complete(psys, kcmd,
+				event.status ==
+					INTEL_IPU4_PSYS_EVENT_CMD_COMPLETE ||
+				event.status ==
+					INTEL_IPU4_PSYS_EVENT_FRAGMENT_COMPLETE
+					? 0 : -EIO);
 
 		/* Kick command scheduler thread */
-		if (!is_ppg) {
-			atomic_set(&psys->wakeup_sched_thread_count, 1);
-			wake_up_interruptible(&psys->sched_cmd_wq);
-		}
+		atomic_set(&psys->wakeup_sched_thread_count, 1);
+		wake_up_interruptible(&psys->sched_cmd_wq);
 	} while (1);
 
 }
@@ -3170,6 +3230,7 @@ static struct intel_ipu4_bus_driver intel_ipu4_psys_driver = {
 		.name = INTEL_IPU4_PSYS_NAME,
 		.owner = THIS_MODULE,
 		.pm = PSYS_PM_OPS,
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
 

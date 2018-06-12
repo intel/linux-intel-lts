@@ -20,11 +20,11 @@
 
 #define IMX274_REG_STANDBY              0x3000  /* STBLOGIC STBMIPI STBDV */
 
-#define IMX274_HMAX                      65536
-#define IMX274_VMAX                      1048576
-#define IMX274_MAX_SHS1		(IMX274_VMAX - 2200)
-#define IMX274_MAX_SHS2		(IMX274_VMAX - 4)
-#define IMX274_MAX_RHS1		(IMX274_VMAX - 2198)
+#define IMX274_HMAX                      65535
+#define IMX274_VMAX                      1048575
+#define IMX274_MAX_SHS1                  65535
+#define IMX274_MAX_SHS2                  65535
+#define IMX274_MAX_RHS1                  65535
 
 /* imx274 mode standby cancel sequence */
 static struct crl_register_write_rep imx274_powerup_standby[] = {
@@ -396,7 +396,7 @@ static struct crl_dynamic_register_access imx274_dig_gain_regs[] = {
 		.len = CRL_REG_LEN_08BIT,
 		.ops_items = 0,
 		.ops = 0,
-		.mask = 0xff,
+		.mask = 0xf,
 	},
 };
 
@@ -738,7 +738,7 @@ static struct crl_mode_rep imx274_modes[] = {
 		.width = 3864,
 		.height = 2202,
 		.min_llp = 493, /* 01EDh */
-		.min_fll = 4872, /* 01308h default 30fps*/
+		.min_fll = 4868, /* default 30fps */
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items =
@@ -755,7 +755,7 @@ static struct crl_mode_rep imx274_modes[] = {
 		.width = 3864,
 		.height = 2174,
 		.min_llp = 493, /* 01EDh */
-		.min_fll = 4872, /* 01308h default 30fps*/
+		.min_fll = 4868, /* default 30fps */
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items =
@@ -772,7 +772,7 @@ static struct crl_mode_rep imx274_modes[] = {
 		.width = 3868,
 		.height = 4536, /* 2*(2160+22+VBP) */
 		.min_llp = 1052, /* 041Ch */
-		.min_fll = 2284, /* 08ECh 30fps*/
+		.min_fll = 2281, /* 30fps */
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items =
@@ -789,7 +789,7 @@ static struct crl_mode_rep imx274_modes[] = {
 		.width = 1932,
 		.height = 1094,
 		.min_llp = 493, /* 01EDh */
-		.min_fll = 4872, /* 01308h default 30fps */
+		.min_fll = 4868, /* default 30fps */
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items = ARRAY_SIZE(
@@ -806,7 +806,7 @@ static struct crl_mode_rep imx274_modes[] = {
 		.width = 1932,
 		.height = 1094,
 		.min_llp = 493, /* 01EDh */
-		.min_fll = 4872, /* 01308h default 30fps */
+		.min_fll = 4868, /* default 30fps */
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items = ARRAY_SIZE(
@@ -823,7 +823,7 @@ static struct crl_mode_rep imx274_modes[] = {
 		.width = 1936,
 		.height = 2376,
 		.min_llp = 1052, /* 041Ch */
-		.min_fll = 2284, /* 08ECh 30fps*/
+		.min_fll = 2281, /* 30fps */
 		.comp_items = 0,
 		.ctrl_data = 0,
 		.mode_regs_items = ARRAY_SIZE(
@@ -1088,8 +1088,8 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.ctrl_id = V4L2_CID_EXPOSURE,
 		.name = "V4L2_CID_EXPOSURE",
 		.type = CRL_V4L2_CTRL_TYPE_INTEGER,
-		.data.std_data.min = 0,
-		.data.std_data.max = IMX274_MAX_SHS1,
+		.data.std_data.min = 8,
+		.data.std_data.max = IMX274_MAX_SHS2,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x400,
 		.flags = 0,
@@ -1107,7 +1107,7 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.ctrl_id = CRL_CID_EXPOSURE_SHS1,
 		.name = "CRL_CID_EXPOSURE_SHS1",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.std_data.min = 0,
+		.data.std_data.min = 4,
 		.data.std_data.max = IMX274_MAX_SHS1,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x06,
@@ -1127,7 +1127,7 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.ctrl_id = CRL_CID_EXPOSURE_SHS2,
 		.name = "CRL_CID_EXPOSURE_SHS2",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.std_data.min = 0,
+		.data.std_data.min = 10,
 		.data.std_data.max = IMX274_MAX_SHS2,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x2d,
@@ -1147,7 +1147,7 @@ static struct crl_v4l2_ctrl imx274_v4l2_ctrls[] = {
 		.ctrl_id = CRL_CID_EXPOSURE_RHS1,
 		.name = "CRL_CID_EXPOSURE_RHS1",
 		.type = CRL_V4L2_CTRL_TYPE_CUSTOM,
-		.data.std_data.min = 0,
+		.data.std_data.min = 6,
 		.data.std_data.max = IMX274_MAX_RHS1,
 		.data.std_data.step = 1,
 		.data.std_data.def = 0x56, /* Fixed to 86 by default */

@@ -35,6 +35,16 @@
 #include "crlmodule-regs.h"
 #include "crlmodule-msrlist.h"
 
+#ifdef CONFIG_INTEL_IPU4_OV13858
+bool vcm_in_use;
+EXPORT_SYMBOL(vcm_in_use);
+void crlmodule_vcm_gpio_set_value(unsigned int gpio, int value)
+{
+	gpio_set_value(gpio, value);
+}
+EXPORT_SYMBOL(crlmodule_vcm_gpio_set_value);
+#endif
+
 static void crlmodule_update_current_mode(struct crl_sensor *sensor);
 
 static int __crlmodule_get_variable_ref(struct crl_sensor *sensor,
@@ -2467,8 +2477,14 @@ static void crlmodule_undo_poweron_entities(
 
 		switch (entity->type) {
 		case CRL_POWER_ETY_GPIO_FROM_PDATA:
-			gpio_set_value(sensor->platform_data->xshutdown,
-						   entity->undo_val);
+#ifdef CONFIG_INTEL_IPU4_OV13858
+			if (!vcm_in_use) {
+#endif
+				gpio_set_value(sensor->platform_data->xshutdown,
+						entity->undo_val);
+#ifdef CONFIG_INTEL_IPU4_OV13858
+			}
+#endif
 			break;
 		case CRL_POWER_ETY_GPIO_FROM_PDATA_BY_NUMBER:
 			custom_gpio_ctrl(sensor, false);
@@ -3249,6 +3265,9 @@ static int crlmodule_probe(struct i2c_client *client,
 {
 	struct crl_sensor *sensor;
 	int ret;
+#ifdef CONFIG_INTEL_IPU4_OV13858
+	vcm_in_use = false;
+#endif
 
 	if (client->dev.platform_data == NULL)
 		return -ENODEV;

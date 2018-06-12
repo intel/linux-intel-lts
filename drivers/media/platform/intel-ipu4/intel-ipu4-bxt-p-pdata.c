@@ -23,8 +23,99 @@
 #include "../../../../include/media/crlmodule.h"
 #include "../../../../include/media/ti964.h"
 #include "../../pci/intel-ipu4/intel-ipu4.h"
+#include <media/dw9714.h>
 
 #define GPIO_BASE		422
+#ifdef CONFIG_INTEL_IPU4_OV13858
+
+#define DW9714_VCM_ADDR        0x0c
+// for port 1
+static struct dw9714_platform_data  dw9714_pdata = {
+       .gpio_xsd = GPIO_BASE + 67,
+};
+
+static struct intel_ipu4_isys_subdev_info dw9714_common_sd = {
+       .i2c = {
+               .board_info = {
+                       I2C_BOARD_INFO(DW9714_NAME,  DW9714_VCM_ADDR),
+                       .platform_data = &dw9714_pdata,
+               },
+               .i2c_adapter_id = 4,
+       }
+};
+
+// for port2
+static struct dw9714_platform_data  dw9714_pdata_1 = {
+       .gpio_xsd = GPIO_BASE + 64,
+};
+
+static struct intel_ipu4_isys_subdev_info dw9714_common_sd_1 = {
+       .i2c = {
+               .board_info = {
+                       I2C_BOARD_INFO(DW9714_NAME,  DW9714_VCM_ADDR),
+                       .platform_data = &dw9714_pdata_1,
+               },
+               .i2c_adapter_id = 2,
+       }
+};
+
+#define OV13858_LANES           4
+#define OV13858_I2C_ADDRESS     0x10
+
+//for port1
+static struct crlmodule_platform_data ov13858_pdata = {
+	.xshutdown = GPIO_BASE + 67,
+	.lanes = OV13858_LANES,
+	.ext_clk = 19200000,
+	.op_sys_clock = (uint64_t []){ 54000000 },
+	.module_name = "OV13858",
+	.id_string = "0xd8 0x55",
+};
+
+static struct intel_ipu4_isys_csi2_config ov13858_csi2_cfg = {
+	.nlanes = OV13858_LANES,
+	.port = 4,
+};
+
+static struct intel_ipu4_isys_subdev_info ov13858_crl_sd = {
+	.csi2 = &ov13858_csi2_cfg,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO(CRLMODULE_NAME, OV13858_I2C_ADDRESS),
+			.platform_data = &ov13858_pdata,
+		},
+		.i2c_adapter_id = 4,
+	},
+/*	.acpiname = "i2c-OVTIF858:00", */
+};
+
+// for port2
+static struct crlmodule_platform_data ov13858_pdata_2 = {
+	.xshutdown = GPIO_BASE + 64,
+	.lanes = OV13858_LANES,
+	.ext_clk = 19200000,
+	.op_sys_clock = (uint64_t []){ 54000000 },
+	.module_name = "OV13858-2",
+	.id_string = "0xd8 0x55",
+};
+
+static struct intel_ipu4_isys_csi2_config ov13858_csi2_cfg_2 = {
+	.nlanes = OV13858_LANES,
+	.port = 0,
+};
+
+static struct intel_ipu4_isys_subdev_info ov13858_crl_sd_2 = {
+	.csi2 = &ov13858_csi2_cfg_2,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO(CRLMODULE_NAME, OV13858_I2C_ADDRESS),
+			.platform_data = &ov13858_pdata_2,
+		},
+		.i2c_adapter_id = 2,
+	},
+};
+
+#endif
 
 #ifdef CONFIG_INTEL_IPU4_OV2740
 #define OV2740_LANES		2
@@ -791,6 +882,12 @@ struct intel_ipu4_isys_clk_mapping clk_mapping[] = {
 
 static struct intel_ipu4_isys_subdev_pdata pdata = {
 	.subdevs = (struct intel_ipu4_isys_subdev_info *[]) {
+#ifdef CONFIG_INTEL_IPU4_OV13858
+		&ov13858_crl_sd,
+		&dw9714_common_sd,
+             &ov13858_crl_sd_2,
+             &dw9714_common_sd_1,
+#endif
 #ifdef CONFIG_INTEL_IPU4_OV2740
 		&ov2740_crl_sd,
 		&ov2740_b_crl_sd,

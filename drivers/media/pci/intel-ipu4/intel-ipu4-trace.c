@@ -200,10 +200,11 @@ void __intel_ipu4_trace_restore(struct device *dev)
 
 	if (!sys->memory.memory_buffer) {
 		sys->memory.memory_buffer =
-			dma_alloc_noncoherent(dev, MEMORY_RING_BUFFER_SIZE +
-					      MEMORY_RING_BUFFER_GUARD,
-					      &sys->memory.dma_handle,
-					      GFP_KERNEL);
+			dma_alloc_attrs(dev, MEMORY_RING_BUFFER_SIZE +
+					MEMORY_RING_BUFFER_GUARD,
+					&sys->memory.dma_handle,
+					GFP_KERNEL,
+					DMA_ATTR_NON_CONSISTENT);
 	}
 
 	if (!sys->memory.memory_buffer) {
@@ -847,11 +848,12 @@ void intel_ipu4_trace_uninit(struct device *dev)
 	mutex_lock(&trace->lock);
 
 	if (sys->memory.memory_buffer)
-		dma_free_noncoherent(sys->dev,
-				     MEMORY_RING_BUFFER_SIZE +
-				     MEMORY_RING_BUFFER_GUARD,
-				     sys->memory.memory_buffer,
-				     sys->memory.dma_handle);
+		dma_free_attrs(sys->dev,
+				MEMORY_RING_BUFFER_SIZE +
+				MEMORY_RING_BUFFER_GUARD,
+				sys->memory.memory_buffer,
+				sys->memory.dma_handle,
+				DMA_ATTR_NON_CONSISTENT);
 
 	sys->dev = NULL;
 	sys->memory.memory_buffer = NULL;

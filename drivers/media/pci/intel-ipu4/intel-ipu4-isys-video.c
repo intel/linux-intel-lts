@@ -41,6 +41,10 @@ static unsigned int  num_stream_support = INTEL_IPU4_ISYS_NUM_STREAMS_B0;
 module_param(num_stream_support, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(num_stream_support, "IPU4 project support number of stream");
 
+bool use_stream_stop = false;
+module_param(use_stream_stop, bool, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+MODULE_PARM_DESC(use_stream_stop, "Use STOP command if running in CSI capture mode");
+
 #ifndef V4L2_PIX_FMT_SBGGR14V32
 /*
  * Non-vectorized 14bit definitions have been upstreamed.
@@ -715,7 +719,8 @@ static bool is_external(struct intel_ipu4_isys_video *av,
 
 	sd = media_entity_to_v4l2_subdev(entity);
 
-	if (sd->owner != THIS_MODULE)
+	if (strncmp(sd->name, INTEL_IPU4_ISYS_ENTITY_PREFIX,
+		strlen(INTEL_IPU4_ISYS_ENTITY_PREFIX)) != 0)
 		return true;
 
 	for (i = 0; i < av->isys->pdata->ipdata->tpg.ntpgs
@@ -843,8 +848,10 @@ static int get_external_facing_format(struct intel_ipu4_isys_pipeline *ip,
 	struct intel_ipu4_isys_video *av =
 		container_of(ip, struct intel_ipu4_isys_video, ip);
 	struct media_pad *external_facing =
-		(media_entity_to_v4l2_subdev(ip->external->entity)->owner
-		== THIS_MODULE)
+		(strncmp(
+		media_entity_to_v4l2_subdev(ip->external->entity)->name,
+		INTEL_IPU4_ISYS_ENTITY_PREFIX,
+		strlen(INTEL_IPU4_ISYS_ENTITY_PREFIX)) == 0)
 		? ip->external : media_entity_remote_pad(ip->external);
 
 	if (WARN_ON(!external_facing)) {
@@ -1320,12 +1327,18 @@ static void stop_streaming_firmware(struct intel_ipu4_isys_video *av)
 		to_intel_ipu4_isys_pipeline(av->vdev.entity.pipe);
 	struct device *dev = &av->isys->adev->dev;
 	int rval, tout;
+	enum ipu_fw_isys_send_type send_type =
+		IPU_FW_ISYS_SEND_TYPE_STREAM_FLUSH;
 
 	reinit_completion(&ip->stream_stop_completion);
 
+	/* Use STOP command if running in CSI capture mode */
+	if (use_stream_stop)
+		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_STOP;
+
 	rval = av->isys->fwctrl->simple_cmd(av->isys,
 				ip->stream_handle,
-				IPU_FW_ISYS_SEND_TYPE_STREAM_FLUSH);
+				send_type);
 
 	if (rval < 0) {
 		dev_err(dev, "can't stop stream (%d)\n", rval);
@@ -1593,7 +1606,9 @@ int intel_ipu4_isys_video_set_streaming(struct intel_ipu4_isys_video *av,
 			continue;
 
 		/* Don't start truly external devices quite yet. */
-		if (media_entity_to_v4l2_subdev(entity)->owner != THIS_MODULE
+		if (strncmp(media_entity_to_v4l2_subdev(entity)->name,
+			INTEL_IPU4_ISYS_ENTITY_PREFIX,
+			strlen(INTEL_IPU4_ISYS_ENTITY_PREFIX)) != 0
 		    || ip->external->entity == entity)
 			continue;
 

@@ -20,7 +20,7 @@
 #include "intel-ipu4-psys-abi.h"
 #include "intel-ipu4-psys.h"
 
-struct intel_ipu4_psys_abi *ext_abi;
+static struct intel_ipu4_psys_abi *ext_abi;
 
 void intel_ipu4_psys_abi_init_ext(struct intel_ipu4_psys_abi *abi)
 {

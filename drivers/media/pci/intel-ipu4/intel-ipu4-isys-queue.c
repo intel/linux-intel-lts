@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013--2017 Intel Corporation.
+ * Copyright (c) 2013--2018 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -28,6 +28,7 @@
 #include "intel-ipu-isys-csi2-common.h"
 #include "intel-ipu4-isys-video.h"
 
+extern bool use_stream_stop;
 static bool wall_clock_ts_on;
 module_param(wall_clock_ts_on, bool, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(wall_clock_ts_on, "Timestamp based on REALTIME clock");
@@ -1144,7 +1145,8 @@ static void return_buffers(struct intel_ipu4_isys_queue *aq,
 #endif
 
 		spin_lock_irqsave(&aq->lock, flags);
-		reset_needed = 1;
+		if (!use_stream_stop)
+			reset_needed = 1;
 	}
 
 	spin_unlock_irqrestore(&aq->lock, flags);

@@ -19,6 +19,23 @@ struct ti964_register_write {
 	u8 val;
 };
 
+static const struct ti964_register_write ti964_frame_sync_settings[2][5] = {
+	{
+		{0x18, 0x00}, /* Disable frame sync. */
+		{0x19, 0x00},
+		{0x1a, 0x02},
+		{0x1b, 0x0a},
+		{0x1c, 0xd3},
+	},
+	{
+		{0x19, 0x01}, /* Frame sync high time.*/
+		{0x1a, 0x15},
+		{0x1b, 0x09}, /* Frame sync low time. */
+		{0x1c, 0xC3},
+		{0x18, 0x01}, /* Enable frame sync. and use high/low mode */
+	}
+};
+
 static const struct ti964_register_write ti964_init_settings[] = {
 	{0x8, 0x1c},
 	{0xa, 0x79},

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013--2017 Intel Corporation.
+ * Copyright (c) 2013--2018 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -208,5 +208,5 @@ int intel_ipu4_isys_subdev_set_routing(struct v4l2_subdev *sd,
 int intel_ipu4_isys_subdev_get_routing(struct v4l2_subdev *sd,
 	struct v4l2_subdev_routing *route);
 bool intel_ipu4_isys_subdev_has_route(struct media_entity *entity,
-	unsigned int pad0, unsigned int pad1);
+	unsigned int pad0, unsigned int pad1, int *stream);
 #endif /* INTEL_IPU4_ISYS_SUBDEV_H */

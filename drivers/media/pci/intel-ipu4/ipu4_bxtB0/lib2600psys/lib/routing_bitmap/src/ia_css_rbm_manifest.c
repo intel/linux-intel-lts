@@ -1,6 +1,6 @@
 /*
 * Support for Intel Camera Imaging ISP subsystem.
- * Copyright (c) 2010 - 2017, Intel Corporation.
+ * Copyright (c) 2010 - 2018, Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -114,6 +114,7 @@ ia_css_rbm_manifest_print(
 			muxes[i].offset,
 			muxes[i].size_bits);
 	}
+#if VIED_NCI_RBM_MAX_VALIDATION_RULE_COUNT != 0
 	validation_rule = ia_css_rbm_manifest_get_validation_rules(manifest);
 	verifjmpexit(validation_rule != NULL || manifest->validation_rule_count == 0);
 
@@ -121,7 +122,10 @@ ia_css_rbm_manifest_print(
 		ia_css_rbm_validation_rule_print(&validation_rule[i], muxes, manifest->mux_desc_count, print_header);
 		print_header = false;
 	}
-
+#else
+	(void) validation_rule;
+	(void) print_header;
+#endif
 	terminal_routing_desc = ia_css_rbm_manifest_get_terminal_routing_desc(manifest);
 	verifjmpexit(terminal_routing_desc != NULL || manifest->terminal_routing_desc_count == 0);
 	for (i = 0; i < manifest->terminal_routing_desc_count; i++) {
@@ -158,6 +162,7 @@ ia_css_rbm_manifest_check_rbm_validity(
 		return false;
 	}
 
+#if VIED_NCI_RBM_MAX_VALIDATION_RULE_COUNT != 0
 	rules = ia_css_rbm_manifest_get_validation_rules(manifest);
 	verifjmpexit(rules != NULL || manifest->validation_rule_count == 0);
 
@@ -175,6 +180,12 @@ ia_css_rbm_manifest_check_rbm_validity(
 			return false;
 		}
 	}
+#else
+	(void)matches_rules;
+	(void)i;
+	(void)rules;
+	(void)res;
+#endif
 	return ia_css_is_rbm_equal(final_rbm, *rbm);
 EXIT:
 	return false;
