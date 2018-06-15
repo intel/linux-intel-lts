@@ -48,7 +48,7 @@ struct pl061_context_save_regs {
 #endif
 
 struct pl061 {
-	raw_spinlock_t		lock;
+	hard_spinlock_t		lock;
 
 	void __iomem		*base;
 	struct gpio_chip	gc;
@@ -321,6 +321,7 @@ static int pl061_probe(struct amba_device *adev, const struct amba_id *id)
 	pl061->irq_chip.irq_unmask = pl061_irq_unmask;
 	pl061->irq_chip.irq_set_type = pl061_irq_type;
 	pl061->irq_chip.irq_set_wake = pl061_irq_set_wake;
+	pl061->irq_chip.flags = IRQCHIP_PIPELINE_SAFE;
 
 	writeb(0, pl061->base + GPIOIE); /* disable irqs */
 	irq = adev->irq[0];
