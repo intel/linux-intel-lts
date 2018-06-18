@@ -90,6 +90,7 @@ static int mei_cl_irq_read_msg(struct mei_cl *cl,
 {
 	struct mei_device *dev = cl->dev;
 	struct mei_cl_cb *cb;
+	struct mei_msg_extd_hdr *ext_hdr = (void *)mei_hdr->extension;
 	size_t buf_sz;
 	u32 length;
 
@@ -105,13 +106,24 @@ static int mei_cl_irq_read_msg(struct mei_cl *cl,
 		list_add_tail(&cb->list, &cl->rd_pending);
 	}
 
+	if (mei_hdr->extended) {
+		cl_dbg(dev, cl, "vtag: %d\n", ext_hdr->vtag);
+		if (cb->vtag && cb->vtag != ext_hdr->vtag) {
+			cl_err(dev, cl, "mismatched tag: %d != %d\n",
+			       cb->vtag, ext_hdr->vtag);
+			cb->status = -EPROTO;
+			goto discard;
+		}
+		cb->vtag = ext_hdr->vtag;
+	}
+
 	if (!mei_cl_is_connected(cl)) {
 		cl_dbg(dev, cl, "not connected\n");
 		cb->status = -ENODEV;
 		goto discard;
 	}
 
-	length = mei_hdr->dma_ring ? mei_hdr->extension[0] : mei_hdr->length;
+	length = mei_hdr->dma_ring ? mei_hdr->extension[1] : mei_hdr->length;
 
 	buf_sz = length + cb->buf_idx;
 	/* catch for integer overflow */
@@ -292,8 +304,12 @@ int mei_irq_read_handler(struct mei_device *dev,
 		goto end;
 	}
 
-	if (mei_hdr->dma_ring) {
+	if (mei_hdr->extended) {
 		dev->rd_msg_hdr[1] = mei_read_hdr(dev);
+		(*slots)--;
+	}
+	if (mei_hdr->dma_ring) {
+		dev->rd_msg_hdr[2] = mei_read_hdr(dev);
 		(*slots)--;
 		mei_hdr->length = 0;
 	}

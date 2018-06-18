@@ -202,12 +202,24 @@ enum  mei_cl_disconnect_status {
 };
 
 /**
+ * struct mei_msg_extd_hdr - mei extended header
+ *
+ * @vtag: virtual tag.
+ * @reserved: reserved.
+ */
+struct mei_msg_extd_hdr {
+	u8 vtag;
+	u8 reserved[3];
+} __packed;
+
+/**
  * struct mei_msg_hdr - MEI BUS Interface Section
  *
  * @me_addr: device address
  * @host_addr: host address
  * @length: message length
  * @reserved: reserved
+ * @extended: message has extended header
  * @dma_ring: message is on dma ring
  * @internal: message is internal
  * @msg_complete: last packet of the message
@@ -217,14 +229,15 @@ struct mei_msg_hdr {
 	u32 me_addr:8;
 	u32 host_addr:8;
 	u32 length:9;
-	u32 reserved:4;
+	u32 reserved:3;
+	u32 extended:1;
 	u32 dma_ring:1;
 	u32 internal:1;
 	u32 msg_complete:1;
 	u32 extension[0];
 } __packed;
 
-#define MEI_MSG_HDR_MAX 2
+#define MEI_MSG_HDR_MAX 3
 
 struct mei_bus_message {
 	u8 hbm_cmd;

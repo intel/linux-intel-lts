@@ -376,6 +376,7 @@ static struct mei_cl_cb *mei_io_cb_init(struct mei_cl *cl,
 	cb->cl = cl;
 	cb->buf_idx = 0;
 	cb->fop_type = type;
+	cb->vtag = 0;
 	return cb;
 }
 
@@ -1521,16 +1522,29 @@ nortpm:
  *
  * @mei_hdr: mei message header
  * @cb: message callback structure
+ *
+ * Return: header length in bytes
  */
-static void mei_msg_hdr_init(struct mei_msg_hdr *mei_hdr, struct mei_cl_cb *cb)
+static size_t mei_msg_hdr_init(struct mei_msg_hdr *mei_hdr,
+			       struct mei_cl_cb *cb)
 {
+	size_t hdr_len = sizeof(*mei_hdr);
+	struct mei_msg_extd_hdr *ext_hdr;
+
+	memset(mei_hdr, 0, sizeof(*mei_hdr));
 	mei_hdr->host_addr = mei_cl_host_addr(cb->cl);
 	mei_hdr->me_addr = mei_cl_me_id(cb->cl);
-	mei_hdr->length = 0;
-	mei_hdr->reserved = 0;
-	mei_hdr->msg_complete = 0;
-	mei_hdr->dma_ring = 0;
 	mei_hdr->internal = cb->internal;
+
+	if (cb->vtag && cb->buf_idx == 0) {
+		ext_hdr = (struct mei_msg_extd_hdr *)mei_hdr->extension;
+		memset(ext_hdr, 0, sizeof(*ext_hdr));
+		mei_hdr->extended = 1;
+		ext_hdr->vtag = cb->vtag;
+		hdr_len += sizeof(*ext_hdr);
+	}
+
+	return hdr_len;
 }
 
 /**
@@ -1548,8 +1562,9 @@ int mei_cl_irq_write(struct mei_cl *cl, struct mei_cl_cb *cb,
 {
 	struct mei_device *dev;
 	struct mei_msg_data *buf;
-	struct mei_msg_hdr mei_hdr;
-	size_t hdr_len = sizeof(mei_hdr);
+	u32 __hdr[MEI_MSG_HDR_MAX];
+	struct mei_msg_hdr *mei_hdr = (void *)__hdr;
+	size_t hdr_len;
 	size_t len;
 	size_t hbuf_len, dr_len;
 	int hbuf_slots;
@@ -1589,36 +1604,36 @@ int mei_cl_irq_write(struct mei_cl *cl, struct mei_cl_cb *cb,
 	dr_slots = mei_dma_ring_empty_slots(dev);
 	dr_len = mei_slots2data(dr_slots);
 
-	mei_msg_hdr_init(&mei_hdr, cb);
+	hdr_len = mei_msg_hdr_init(mei_hdr, cb);
 
 	/**
 	 * Split the message only if we can write the whole host buffer
 	 * otherwise wait for next time the host buffer is empty.
 	 */
 	if (len + hdr_len <= hbuf_len) {
-		mei_hdr.length = len;
-		mei_hdr.msg_complete = 1;
+		mei_hdr->length = len;
+		mei_hdr->msg_complete = 1;
 	} else if (dr_slots && hbuf_len >= hdr_len + sizeof(dma_len)) {
-		mei_hdr.dma_ring = 1;
+		mei_hdr->dma_ring = 1;
 		if (len > dr_len)
 			len = dr_len;
 		else
-			mei_hdr.msg_complete = 1;
+			mei_hdr->msg_complete = 1;
 
-		mei_hdr.length = sizeof(dma_len);
+		mei_hdr->length = sizeof(dma_len);
 		dma_len = len;
 		data = &dma_len;
 	} else if ((u32)hbuf_slots == mei_hbuf_depth(dev)) {
 		len = hbuf_len - hdr_len;
-		mei_hdr.length = len;
+		mei_hdr->length = len;
 	} else {
 		return 0;
 	}
 
-	if (mei_hdr.dma_ring)
+	if (mei_hdr->dma_ring)
 		mei_dma_ring_write(dev, buf->data + cb->buf_idx, len);
 
-	rets = mei_write_message(dev, &mei_hdr, hdr_len, data, mei_hdr.length);
+	rets = mei_write_message(dev, mei_hdr, hdr_len, data, mei_hdr->length);
 	if (rets)
 		goto err;
 
@@ -1633,7 +1648,7 @@ int mei_cl_irq_write(struct mei_cl *cl, struct mei_cl_cb *cb,
 		}
 	}
 
-	if (mei_hdr.msg_complete)
+	if (mei_hdr->msg_complete)
 		list_move_tail(&cb->list, &dev->write_waiting_list);
 
 	return 0;
@@ -1657,8 +1672,9 @@ ssize_t mei_cl_write(struct mei_cl *cl, struct mei_cl_cb *cb)
 {
 	struct mei_device *dev;
 	struct mei_msg_data *buf;
-	struct mei_msg_hdr mei_hdr;
-	size_t hdr_len = sizeof(mei_hdr);
+	u32 __hdr[MEI_MSG_HDR_MAX];
+	struct mei_msg_hdr *mei_hdr = (void *)__hdr;
+	size_t hdr_len;
 	size_t len, hbuf_len, dr_len;
 	int hbuf_slots;
 	u32 dr_slots;
@@ -1698,7 +1714,7 @@ ssize_t mei_cl_write(struct mei_cl *cl, struct mei_cl_cb *cb)
 	if (rets < 0)
 		goto err;
 
-	mei_msg_hdr_init(&mei_hdr, cb);
+	hdr_len = mei_msg_hdr_init(mei_hdr, cb);
 
 	if (rets == 0) {
 		cl_dbg(dev, cl, "No flow control credentials: not sending.\n");
@@ -1723,28 +1739,28 @@ ssize_t mei_cl_write(struct mei_cl *cl, struct mei_cl_cb *cb)
 	dr_len =  mei_slots2data(dr_slots);
 
 	if (len + hdr_len <= hbuf_len) {
-		mei_hdr.length = len;
-		mei_hdr.msg_complete = 1;
+		mei_hdr->length = len;
+		mei_hdr->msg_complete = 1;
 	} else if (dr_slots && hbuf_len >= hdr_len + sizeof(dma_len)) {
-		mei_hdr.dma_ring = 1;
+		mei_hdr->dma_ring = 1;
 		if (len > dr_len)
 			len = dr_len;
 		else
-			mei_hdr.msg_complete = 1;
+			mei_hdr->msg_complete = 1;
 
-		mei_hdr.length = sizeof(dma_len);
+		mei_hdr->length = sizeof(dma_len);
 		dma_len = len;
 		data = &dma_len;
 	} else {
 		len = hbuf_len - hdr_len;
-		mei_hdr.length = len;
+		mei_hdr->length = len;
 	}
 
-	if (mei_hdr.dma_ring)
+	if (mei_hdr->dma_ring)
 		mei_dma_ring_write(dev, buf->data, len);
 
-	rets = mei_write_message(dev, &mei_hdr, hdr_len,
-				 data, mei_hdr.length);
+	rets = mei_write_message(dev, mei_hdr, hdr_len,
+				 data, mei_hdr->length);
 	if (rets)
 		goto err;
 
@@ -1758,7 +1774,7 @@ ssize_t mei_cl_write(struct mei_cl *cl, struct mei_cl_cb *cb)
 	len = buf->size;
 
 out:
-	if (mei_hdr.msg_complete)
+	if (mei_hdr->msg_complete)
 		mei_tx_cb_enqueue(cb, &dev->write_waiting_list);
 	else
 		mei_tx_cb_enqueue(cb, &dev->write_list);
