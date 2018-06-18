@@ -1188,6 +1188,10 @@ static struct skl_machine_pdata cnl_pdata = {
 	.use_tplg_pcm = true,
 };
 
+static struct skl_machine_pdata bxt_pdata = {
+       .use_tplg_pcm = true,
+};
+
 static struct snd_soc_acpi_mach sst_skl_devdata[] = {
 	{
 		.id = "INT343A",
@@ -1248,12 +1252,14 @@ IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_GENERIC_MACH)
 		.id = "INT34C3",
 		.drv_name = "bxt_tdf8532",
 		.fw_filename = "intel/dsp_fw_bxtn.bin",
+		.pdata = &bxt_pdata,
 	},
 #elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
 	{
 		.id = "INT34C3",
 		.drv_name = "bxt_ivi_ull",
 		.fw_filename = "intel/dsp_fw_ull_bxtn.bin",
+		.pdata = &bxt_pdata,
 	},
 #endif
 	{}
