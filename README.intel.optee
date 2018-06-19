@@ -1,0 +1,13 @@
+IP Block: OPTEE core driver
+Platform Affect: (ARM64) IOTG KeemBay
+BugFix: None
+
+This branch pulls in driver interface enhancement to OPTEE TEE driver to expose
+an kernel internal TEE client interface to be used by other drivers.
+
+This patch was pushed to the upstream kernel mailinglist by Jens Wiklander (OPTEE maintainer)
+nearly a year ago but no effort to include yet in any recently release.
+
+https://patchwork.kernel.org/patch/9845351/
+
+CONFIG_TEE and CONFIG_OPTEE in defconfig must be enabled for driver to compile.
