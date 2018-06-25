@@ -2649,6 +2649,9 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 	/* Start the ball rolling... */
 	stmmac_start_all_dma(priv);
 
+	/* Set HW VLAN stripping mode */
+	stmmac_set_hw_vlan_mode(priv, priv->ioaddr, dev->features);
+
 	return 0;
 }
 
@@ -3720,6 +3723,7 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit, u32 queue)
 		unsigned int sec_len;
 		int entry;
 		u32 hash;
+		int ret;
 
 		if (!count && rx_q->state_saved) {
 			skb = rx_q->state.skb;
@@ -3868,7 +3872,13 @@ read_again:
 		/* Got entire packet into SKB. Finish it. */
 
 		stmmac_get_rx_hwtstamp(priv, p, np, skb);
-		stmmac_rx_vlan(priv->dev, skb);
+
+		/* Use HW to strip VLAN header before fallback to SW. */
+		ret = stmmac_rx_hw_vlan(priv, priv->dev,
+					priv->hw, p, skb);
+		if (ret == -EINVAL)
+			stmmac_rx_vlan(priv->dev, skb);
+
 		skb->protocol = eth_type_trans(skb, priv->dev);
 
 		if (unlikely(!coe))
@@ -4039,6 +4049,9 @@ static int stmmac_set_features(struct net_device *netdev,
 	struct stmmac_priv *priv = netdev_priv(netdev);
 	bool sph_en;
 	u32 chan;
+	netdev_features_t changed;
+
+	changed = netdev->features ^ features;
 
 	/* Keep the COE Type in case of csum is supporting */
 	if (features & NETIF_F_RXCSUM)
@@ -4053,6 +4066,9 @@ static int stmmac_set_features(struct net_device *netdev,
 	sph_en = (priv->hw->rx_csum > 0) && priv->sph;
 	for (chan = 0; chan < priv->plat->rx_queues_to_use; chan++)
 		stmmac_enable_sph(priv, priv->ioaddr, sph_en, chan);
+
+	if (changed & NETIF_F_HW_VLAN_CTAG_RX)
+		stmmac_set_hw_vlan_mode(priv, priv->ioaddr, features);
 
 	netdev->features = features;
 
@@ -4912,7 +4928,7 @@ int stmmac_dvr_probe(struct device *device,
 	ndev->watchdog_timeo = msecs_to_jiffies(watchdog);
 #ifdef STMMAC_VLAN_TAG_USED
 	/* Both mac100 and gmac support receive VLAN tag detection */
-	ndev->features |= NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_STAG_RX;
+	ndev->hw_features |= NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_STAG_RX;
 	if (priv->dma_cap.vlhash) {
 		ndev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
 		ndev->features |= NETIF_F_HW_VLAN_STAG_FILTER;
