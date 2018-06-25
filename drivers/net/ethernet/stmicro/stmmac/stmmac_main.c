@@ -4631,6 +4631,8 @@ static int stmmac_vlan_rx_add_vid(struct net_device *ndev, __be16 proto, u16 vid
 		return ret;
 	}
 
+	ret = stmmac_add_hw_vlan_rx_fltr(priv, ndev, priv->hw, proto, vid);
+
 	return ret;
 }
 
@@ -4638,6 +4640,7 @@ static int stmmac_vlan_rx_kill_vid(struct net_device *ndev, __be16 proto, u16 vi
 {
 	struct stmmac_priv *priv = netdev_priv(ndev);
 	bool is_double = false;
+	int ret;
 
 	if (!priv->dma_cap.vlhash)
 		return -EOPNOTSUPP;
@@ -4645,6 +4648,11 @@ static int stmmac_vlan_rx_kill_vid(struct net_device *ndev, __be16 proto, u16 vi
 		is_double = true;
 
 	clear_bit(vid, priv->active_vlans);
+
+	ret = stmmac_del_hw_vlan_rx_fltr(priv, ndev, priv->hw, proto, vid);
+	if(ret)
+		return ret;
+
 	return stmmac_vlan_update(priv, is_double);
 }
 
@@ -5229,6 +5237,8 @@ int stmmac_resume(struct device *dev)
 	stmmac_hw_setup(ndev, false);
 	stmmac_init_coalesce(priv);
 	stmmac_set_rx_mode(ndev);
+
+	stmmac_restore_hw_vlan_rx_fltr(priv, ndev, priv->hw);
 
 	stmmac_enable_all_queues(priv);
 

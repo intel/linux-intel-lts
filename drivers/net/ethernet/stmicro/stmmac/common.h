@@ -474,6 +474,8 @@ struct mac_device_info {
 	unsigned int ps;
 	bool mdio_intr_en;
 	wait_queue_head_t mdio_busy_wait;
+	unsigned int num_vlan;
+	u32 vlan_filter[32];
 };
 
 struct stmmac_rx_routing {
