@@ -3455,6 +3455,9 @@ static int stmmac_hw_setup(struct net_device *dev, bool ptp_register)
 			stmmac_fpe_handshake(priv, true);
 	}
 
+	/* Set HW VLAN stripping mode */
+	stmmac_set_hw_vlan_mode(priv, priv->ioaddr, dev->features);
+
 	return 0;
 }
 
@@ -5715,6 +5718,8 @@ static int stmmac_set_features(struct net_device *netdev,
 	if (changed & NETIF_F_HW_VLAN_CTAG_RX)
 		stmmac_set_hw_vlan_mode(priv, priv->ioaddr, features);
 
+	netdev->features = features;
+
 	return 0;
 }
 
@@ -7280,7 +7285,6 @@ int stmmac_dvr_probe(struct device *device,
 	ndev->watchdog_timeo = msecs_to_jiffies(watchdog);
 #ifdef STMMAC_VLAN_TAG_USED
 	/* Both mac100 and gmac support receive VLAN tag detection */
-	ndev->features |= NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_STAG_RX;
 	ndev->hw_features |= NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_STAG_RX;
 	if (priv->dma_cap.vlhash) {
 		ndev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
