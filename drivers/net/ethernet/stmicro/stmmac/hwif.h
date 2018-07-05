@@ -282,6 +282,10 @@ struct stmmac_safety_stats;
 struct stmmac_tc_entry;
 struct stmmac_pps_cfg;
 struct stmmac_rss;
+enum tsn_feat_id;
+struct est_gc_entry;
+struct est_gcrr;
+struct est_gc_config;
 
 /* Helpers to program the MAC core */
 struct stmmac_ops {
@@ -391,6 +395,33 @@ struct stmmac_ops {
 				bool en, bool udp, bool sa, bool inv,
 				u32 match);
 	void (*set_arp_offload)(struct mac_device_info *hw, bool en, u32 addr);
+	/* TSN APIs */
+	void (*tsnif_setup)(struct mac_device_info *mac);
+	int (*init_tsn)(struct mac_device_info *hw, struct net_device *dev);
+	int (*set_tsn_feat)(struct mac_device_info *hw,
+			    struct net_device *dev,
+			    enum tsn_feat_id featid, bool enable);
+	bool (*has_tsn_feat)(struct mac_device_info *hw, struct net_device *dev,
+			     enum tsn_feat_id featid);
+	int (*set_est_enable)(struct mac_device_info *hw,
+			      struct net_device *dev, bool enable);
+	int (*get_est_bank)(struct mac_device_info *hw, struct net_device *dev,
+			    bool is_own, u32 *bank);
+	int (*set_est_gce)(struct mac_device_info *hw, struct net_device *dev,
+			   struct est_gc_entry *gce, u32 row,
+			   u32 dbgb, bool is_dbgm);
+	int (*get_est_gcl_len)(struct mac_device_info *hw,
+			       struct net_device *dev, u32 *gcl_len,
+			       u32 dbgb, bool is_dbgm);
+	int (*set_est_gcl_len)(struct mac_device_info *hw,
+			       struct net_device *dev, u32 gcl_len,
+			       u32 dbgb, bool is_dbgm);
+	int (*set_est_gcrr_times)(struct mac_device_info *hw,
+				  struct net_device *dev,
+				  struct est_gcrr *gcrr,
+				  u32 dbgb, bool is_dbgm);
+	int (*get_est_gcc)(struct mac_device_info *hw, struct net_device *dev,
+			   struct est_gc_config **gcc);
 };
 
 #define stmmac_core_init(__priv, __args...) \
@@ -487,6 +518,32 @@ struct stmmac_ops {
 	stmmac_do_callback(__priv, mac, config_l4_filter, __args)
 #define stmmac_set_arp_offload(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, set_arp_offload, __args)
+#define stmmac_tsnif_setup(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, tsnif_setup, __args)
+#define stmmac_tsn_init(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, init_tsn, __args)
+#define stmmac_set_tsn_feat(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, set_tsn_feat, __args)
+#define stmmac_has_tsn_feat(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, has_tsn_feat, __args)
+#define stmmac_set_tsn_hwtunable(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_tsn_hwtunable, __args)
+#define stmmac_get_tsn_hwtunable(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, get_tsn_hwtunable, __args)
+#define stmmac_set_est_enable(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_est_enable, __args)
+#define stmmac_get_est_bank(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, get_est_bank, __args)
+#define stmmac_set_est_gce(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_est_gce, __args)
+#define stmmac_set_est_gcl_len(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_est_gcl_len, __args)
+#define stmmac_get_est_gcl_len(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, get_est_gcl_len, __args)
+#define stmmac_set_est_gcrr_times(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_est_gcrr_times, __args)
+#define stmmac_get_est_gcc(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, get_est_gcc, __args)
 
 /* Helpers for serdes */
 struct stmmac_serdes_ops {
@@ -619,5 +676,79 @@ extern const struct stmmac_mmc_ops dwxgmac_mmc_ops;
 #define GMAC4_VERSION		0x00000110	/* GMAC4+ CORE Version */
 
 int stmmac_hwif_init(struct stmmac_priv *priv);
+
+/* TSN Interface HW IP Specific Functions
+ * Note:
+ *  These functions implement IP specifics logics and are callable by TSN APIs
+ *  defined in struct stmmac_ops. To differentiate them from high level TSN
+ *  APIs, we use tsnif_xxx here.
+ */
+#define tsnif_do_void_callback(__hw, __cname,  __arg0, __args...) \
+({ \
+	int __result = -EINVAL; \
+	if ((__hw)->tsnif && (__hw)->tsnif->__cname) { \
+		(__hw)->tsnif->__cname((__arg0), ##__args); \
+		__result = 0; \
+	} \
+	__result; \
+})
+#define tsnif_do_callback(__hw, __cname,  __arg0, __args...) \
+({ \
+	int __result = -EINVAL; \
+	if ((__hw)->tsnif && (__hw)->tsnif->__cname) \
+		__result = (__hw)->tsnif->__cname((__arg0), ##__args); \
+	__result; \
+})
+
+struct tsnif_ops {
+	u32 (*read_hwid)(void __iomem *ioaddr);
+	bool (*has_tsn_cap)(void __iomem *ioaddr, enum tsn_feat_id featid);
+	/* IEEE 802.1Qbv Enhanced Scheduled Traffics (EST) */
+	u32 (*est_get_gcl_depth)(void __iomem *ioaddr);
+	u32 (*est_get_ti_width)(void __iomem *ioaddr);
+	u32 (*est_get_txqcnt)(void __iomem *ioaddr);
+	void (*est_get_max)(u32 *ct_max);
+	int (*est_write_gcl_config)(void __iomem *ioaddr, u32 data, u32 addr,
+				    bool is_gcrr,
+				    u32 dbgb, bool is_dbgm);
+	int (*est_read_gcl_config)(void __iomem *ioaddr, u32 *data, u32 addr,
+				   bool is_gcrr,
+				   u32 dbgb, bool is_dbgm);
+	int (*est_read_gce)(void __iomem *ioaddr, u32 row,
+			    u32 *gates, u32 *ti_nsec,
+			    u32 ti_wid, u32 txqcnt,
+			    u32 dbgb, bool is_dbgm);
+	int (*est_set_enable)(void __iomem *ioaddr, bool enable);
+	bool (*est_get_enable)(void __iomem *ioaddr);
+	u32 (*est_get_bank)(void __iomem *ioaddr, bool is_own);
+	void (*est_switch_swol)(void __iomem *ioaddr);
+};
+
+#define tsnif_read_hwid(__hw, __args...) \
+	tsnif_do_callback(__hw, read_hwid, __args)
+#define tsnif_has_tsn_cap(__hw, __args...) \
+	tsnif_do_callback(__hw, has_tsn_cap, __args)
+#define tsnif_est_get_gcl_depth(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_gcl_depth, __args)
+#define tsnif_est_get_ti_width(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_ti_width, __args)
+#define tsnif_est_get_txqcnt(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_txqcnt, __args)
+#define tsnif_est_get_max(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_get_max, __args)
+#define tsnif_est_write_gcl_config(__hw, __args...) \
+	tsnif_do_callback(__hw, est_write_gcl_config, __args)
+#define tsnif_est_read_gcl_config(__hw, __args...) \
+	tsnif_do_callback(__hw, est_read_gcl_config, __args)
+#define tsnif_est_read_gce(__hw, __args...) \
+	tsnif_do_callback(__hw, est_read_gce, __args)
+#define tsnif_est_set_enable(__hw, __args...) \
+	tsnif_do_callback(__hw, est_set_enable, __args)
+#define tsnif_est_get_enable(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_enable, __args)
+#define tsnif_est_get_bank(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_bank, __args)
+#define tsnif_est_switch_swol(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_switch_swol, __args)
 
 #endif /* __STMMAC_HWIF_H__ */

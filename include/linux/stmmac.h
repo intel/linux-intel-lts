@@ -184,6 +184,7 @@ struct plat_stmmacenet_data {
 	bool has_sun8i;
 	bool tso_en;
 	int rss_en;
+	bool tsn_est_en;
 	int mac_port_sel_speed;
 	bool en_tx_lpi_clockgating;
 	int has_xgmac;

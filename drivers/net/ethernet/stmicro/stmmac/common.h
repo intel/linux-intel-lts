@@ -21,6 +21,7 @@
 #include <linux/if_vlan.h>
 #endif
 
+#include "stmmac_tsn.h"
 #include "descs.h"
 #include "hwif.h"
 #include "mmc.h"
@@ -479,6 +480,8 @@ struct mac_device_info {
 	unsigned int promisc;
 	bool vlan_fail_q_en;
 	u8 vlan_fail_q;
+	const struct tsnif_ops *tsnif;
+	struct tsnif_info tsn_info;
 };
 
 struct stmmac_rx_routing {
