@@ -448,29 +448,29 @@ static const struct watchdog_ops iTCO_wdt_ops = {
 
 static int iTCO_pretimeout(unsigned int cmd, struct pt_regs *unused_regs)
 {
-	    resource_size_t tco_base_address;
+	resource_size_t tco_base_address;
 
-        /* Prevent re-entrance */
-        if (iTCO_wdt_sub.pretimeout_occurred)
-                return NMI_HANDLED;
+	/* Prevent re-entrance */
+	if (iTCO_wdt_sub.pretimeout_occurred)
+		return NMI_HANDLED;
 
-		tco_base_address = iTCO_wdt_sub.tco_base_address;
+	tco_base_address = iTCO_wdt_sub.tco_base_address;
 
-        /* Check the NMI is from the TCO first expiration */
-        if (inw(TCO1_STS_sub(tco_base_address)) & 0x8) {
-                iTCO_wdt_sub.pretimeout_occurred = true;
+	/* Check the NMI is from the TCO first expiration */
+	if (inw(TCO1_STS_sub(tco_base_address)) & 0x8) {
+		iTCO_wdt_sub.pretimeout_occurred = true;
 
-                /* Forward next expiration */
-                outw(iTCO_wdt_sub.second_to_ticks, TCOv2_TMR_sub(tco_base_address));
-                outw(0x01, TCO_RLD_sub(tco_base_address));
+		/* Forward next expiration */
+		outw(iTCO_wdt_sub.second_to_ticks, TCOv2_TMR_sub(tco_base_address));
+		outw(0x01, TCO_RLD_sub(tco_base_address));
 
-                trigger_all_cpu_backtrace();
-                panic_timeout = 0;
-                panic("Kernel Watchdog");
-                return NMI_HANDLED;
-        }
+		trigger_all_cpu_backtrace();
+		panic_timeout = 0;
+		panic("Kernel Watchdog");
+		return NMI_HANDLED;
+	}
 
-        return NMI_DONE;
+	return NMI_DONE;
 }
 
 /*
