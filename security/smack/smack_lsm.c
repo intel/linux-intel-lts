@@ -3906,14 +3906,12 @@ access_check:
  *
  * returns zero on success, an error code otherwise
  */
-static int smack_socket_getpeersec_stream(struct socket *sock,
-					  char __user *optval,
-					  int __user *optlen, unsigned len)
+static int smack_socket_getpeersec_stream(struct socket *sock, char **optval,
+					  int *optlen, unsigned int len)
 {
 	struct socket_smack *ssp;
 	char *rcp = "";
 	int slen = 1;
-	int rc = 0;
 
 	ssp = smack_sock(sock->sk);
 	if (ssp->smk_packet != NULL) {
@@ -3922,14 +3920,13 @@ static int smack_socket_getpeersec_stream(struct socket *sock,
 	}
 
 	if (slen > len)
-		rc = -ERANGE;
-	else if (copy_to_user(optval, rcp, slen) != 0)
-		rc = -EFAULT;
+		return -ERANGE;
 
-	if (put_user(slen, optlen) != 0)
-		rc = -EFAULT;
-
-	return rc;
+	*optval = kstrdup(rcp, GFP_ATOMIC);
+	if (*optval == NULL)
+		return -ENOMEM;
+	*optlen = slen;
+	return 0;
 }
 
 
