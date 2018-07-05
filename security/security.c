@@ -1951,8 +1951,21 @@ EXPORT_SYMBOL(security_sock_rcv_skb);
 int security_socket_getpeersec_stream(struct socket *sock, char __user *optval,
 				      int __user *optlen, unsigned len)
 {
-	return call_int_hook(socket_getpeersec_stream, -ENOPROTOOPT, sock,
-				optval, optlen, len);
+	char *tval = NULL;
+	u32 tlen;
+	int rc;
+
+	rc = call_int_hook(socket_getpeersec_stream, -ENOPROTOOPT, sock,
+			   &tval, &tlen, len);
+	if (rc == 0) {
+		tlen = strlen(tval) + 1;
+		if (put_user(tlen, optlen))
+			rc = -EFAULT;
+		else if (copy_to_user(optval, tval, tlen))
+			rc = -EFAULT;
+		kfree(tval);
+	}
+	return rc;
 }
 
 int security_socket_getpeersec_dgram(struct socket *sock, struct sk_buff *skb,
