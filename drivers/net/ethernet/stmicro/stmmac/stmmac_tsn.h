@@ -10,6 +10,14 @@
 #define EST_GCL_BANK_MAX		(2)
 #define EST_TIWID_TO_EXTMAX(ti_wid)	((1 << ((ti_wid) + 7)) - 1)
 
+/* Hardware Tunable Enum */
+enum tsn_hwtunable_id {
+	TSN_HWTUNA_TX_EST_TILS = 0,
+	TSN_HWTUNA_TX_EST_PTOV,
+	TSN_HWTUNA_TX_EST_CTOV,
+	TSN_HWTUNA_MAX,
+};
+
 /* TSN Feature Enabled List */
 enum tsn_feat_id {
 	TSN_FEAT_ID_EST = 0,
@@ -39,6 +47,9 @@ struct tsn_hw_cap {
 	u32 ti_wid;		/* time interval width */
 	u32 ext_max;		/* Max time extension */
 	u32 cycle_max;		/* Max Cycle Time */
+	u32 tils_max;		/* Max time interval left shift */
+	u32 ptov_max;		/* Max PTP Offset */
+	u32 ctov_max;		/* Max Current Time Offset */
 };
 
 /* EST Gate Control Entry */
@@ -74,6 +85,7 @@ struct est_gc_config {
 struct tsnif_info {
 	struct tsn_hw_cap cap;
 	bool feat_en[TSN_FEAT_ID_MAX];
+	u32 hwtunable[TSN_HWTUNA_MAX];
 	struct est_gc_config est_gcc;
 };
 
@@ -85,6 +97,10 @@ int tsn_feat_set(struct mac_device_info *hw, struct net_device *dev,
 		 enum tsn_feat_id featid, bool enable);
 bool tsn_has_feat(struct mac_device_info *hw, struct net_device *dev,
 		  enum tsn_feat_id featid);
+int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
+		      enum tsn_hwtunable_id id, const u32 data);
+int tsn_hwtunable_get(struct mac_device_info *hw, struct net_device *dev,
+		      enum tsn_hwtunable_id id, u32 *data);
 int tsn_est_enable_set(struct mac_device_info *hw, struct net_device *dev,
 		       bool enable);
 int tsn_est_bank_get(struct mac_device_info *hw, struct net_device *dev,

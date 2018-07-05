@@ -31,6 +31,7 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 	struct est_gc_entry *gcl;
 	struct tsn_hw_cap *cap;
 	u32 gcl_depth;
+	u32 tils_max;
 	u32 ti_wid;
 	u32 bank;
 	u32 hwid;
@@ -87,14 +88,17 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 	ti_wid = tsnif_est_get_ti_width(hw, ioaddr);
 	cap->ti_wid = ti_wid;
 	cap->gcl_depth = gcl_depth;
-
 	cap->ext_max = EST_TIWID_TO_EXTMAX(ti_wid);
 	cap->txqcnt = tsnif_est_get_txqcnt(hw, ioaddr);
-	tsnif_est_get_max(hw, &cap->cycle_max);
+
+	tils_max = (tsnif_has_tsn_cap(hw, ioaddr, TSN_FEAT_ID_EST) ? 3 : 0);
+	tils_max = (1 << tils_max) - 1;
+	cap->tils_max = tils_max;
+	tsnif_est_get_max(hw, &cap->ptov_max, &cap->ctov_max, &cap->cycle_max);
 	cap->est_support = 1;
 
-	dev_info(pdev, "EST: depth=%u, ti_wid=%u, ter_max=%uns, tqcnt=%u\n",
-		 gcl_depth, ti_wid, cap->ext_max, cap->txqcnt);
+	dev_info(pdev, "EST: depth=%u, ti_wid=%u, ter_max=%uns, tils_max=%u, tqcnt=%u\n",
+		 gcl_depth, ti_wid, cap->ext_max, tils_max, cap->txqcnt);
 
 	return 0;
 }
@@ -121,6 +125,104 @@ bool tsn_has_feat(struct mac_device_info *hw, struct net_device *dev,
 	}
 
 	return hw->tsn_info.feat_en[featid];
+}
+
+int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
+		      enum tsn_hwtunable_id id,
+		      const u32 data)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	struct tsn_hw_cap *cap = &info->cap;
+	void __iomem *ioaddr = hw->pcsr;
+	int ret = 0;
+
+	switch (id) {
+	case TSN_HWTUNA_TX_EST_TILS:
+	case TSN_HWTUNA_TX_EST_PTOV:
+	case TSN_HWTUNA_TX_EST_CTOV:
+		if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_EST)) {
+			netdev_info(dev, "EST: feature unsupported\n");
+			return -ENOTSUPP;
+		}
+		break;
+	default:
+		netdev_warn(dev, "TSN: invalid tunable id(%u)\n", id);
+		return -EINVAL;
+	};
+
+	switch (id) {
+	case TSN_HWTUNA_TX_EST_TILS:
+		if (data > cap->tils_max) {
+			netdev_warn(dev, "EST: invalid tils(%u), max=%u\n",
+				    data, cap->tils_max);
+
+			return -EINVAL;
+		}
+		if (data != info->hwtunable[TSN_HWTUNA_TX_EST_TILS]) {
+			tsnif_est_set_tils(hw, ioaddr, data);
+			info->hwtunable[TSN_HWTUNA_TX_EST_TILS] = data;
+			netdev_info(dev, "EST: Set TILS = %u\n", data);
+		}
+		break;
+	case TSN_HWTUNA_TX_EST_PTOV:
+		if (data > cap->ptov_max) {
+			netdev_warn(dev,
+				    "EST: invalid PTOV(%u), max=%u\n",
+				    data, cap->ptov_max);
+
+			return -EINVAL;
+		}
+		if (data != info->hwtunable[TSN_HWTUNA_TX_EST_PTOV]) {
+			tsnif_est_set_ptov(hw, ioaddr, data);
+			info->hwtunable[TSN_HWTUNA_TX_EST_PTOV] = data;
+			netdev_info(dev, "EST: Set PTOV = %u\n", data);
+		}
+		break;
+	case TSN_HWTUNA_TX_EST_CTOV:
+		if (data > cap->ctov_max) {
+			netdev_warn(dev,
+				    "EST: invalid CTOV(%u), max=%u\n",
+				    data, cap->ctov_max);
+
+			return -EINVAL;
+		}
+		if (data != info->hwtunable[TSN_HWTUNA_TX_EST_CTOV]) {
+			tsnif_est_set_ctov(hw, ioaddr, data);
+			info->hwtunable[TSN_HWTUNA_TX_EST_CTOV] = data;
+			netdev_info(dev, "EST: Set CTOV = %u\n", data);
+		}
+		break;
+	default:
+		netdev_warn(dev, "TSN: invalid tunable id(%u)\n", id);
+		ret = -EINVAL;
+	};
+
+	return ret;
+}
+
+int tsn_hwtunable_get(struct mac_device_info *hw, struct net_device *dev,
+		      enum tsn_hwtunable_id id, u32 *data)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+
+	switch (id) {
+	case TSN_HWTUNA_TX_EST_TILS:
+	case TSN_HWTUNA_TX_EST_PTOV:
+	case TSN_HWTUNA_TX_EST_CTOV:
+		if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_EST)) {
+			netdev_info(dev, "EST: feature unsupported\n");
+			return -ENOTSUPP;
+		}
+		break;
+	default:
+		netdev_warn(dev, "TSN: invalid tunable id(%u)\n", id);
+		return -EINVAL;
+	};
+
+	*data = info->hwtunable[id];
+	netdev_info(dev, "TSN: Get HW tunable[%d] = %u\n", id, *data);
+
+	return 0;
 }
 
 int tsn_est_enable_set(struct mac_device_info *hw, struct net_device *dev,

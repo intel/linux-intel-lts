@@ -121,8 +121,12 @@ static u32 dwmac5_est_get_txqcnt(void __iomem *ioaddr)
 	return ((hw_cap2 & GMAC_HW_FEAT_TXQCNT) >> 6) + 1;
 }
 
-static void dwmac5_est_get_max(u32 *cycle_max)
+static void dwmac5_est_get_max(u32 *ptov_max,
+			       u32 *ctov_max,
+			       u32 *cycle_max)
 {
+	*ptov_max = EST_PTOV_MAX;
+	*ctov_max = EST_CTOV_MAX;
 	*cycle_max = EST_CTR_HI_MAX;
 }
 
@@ -178,6 +182,39 @@ static int dwmac5_est_read_gce(void __iomem *ioaddr, u32 row,
 	*gates = (value >> ti_wid) & gates_mask;
 
 	return ret;
+}
+
+static void dwmac5_est_set_tils(void __iomem *ioaddr, const u32 tils)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_EST_CTRL);
+	value &= ~(MTL_EST_CTRL_SSWL | MTL_EST_CTRL_TILS);
+	value |= (tils << MTL_EST_CTRL_TILS_SHIFT);
+
+	writel(value, ioaddr + MTL_EST_CTRL);
+}
+
+static void dwmac5_est_set_ptov(void __iomem *ioaddr, const u32 ptov)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_EST_CTRL);
+	value &= ~(MTL_EST_CTRL_SSWL | MTL_EST_CTRL_PTOV);
+	value |= (ptov << MTL_EST_CTRL_PTOV_SHIFT);
+
+	writel(value, ioaddr + MTL_EST_CTRL);
+}
+
+static void dwmac5_est_set_ctov(void __iomem *ioaddr, const u32 ctov)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_EST_CTRL);
+	value &= ~(MTL_EST_CTRL_SSWL | MTL_EST_CTRL_CTOV);
+	value |= (ctov << MTL_EST_CTRL_CTOV_SHIFT);
+
+	writel(value, ioaddr + MTL_EST_CTRL);
 }
 
 static int dwmac5_est_set_enable(void __iomem *ioaddr, bool enable)
@@ -237,6 +274,9 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.est_write_gcl_config = dwmac5_est_write_gcl_config,
 	.est_read_gcl_config = dwmac5_est_read_gcl_config,
 	.est_read_gce = dwmac5_est_read_gce,
+	.est_set_tils = dwmac5_est_set_tils,
+	.est_set_ptov = dwmac5_est_set_ptov,
+	.est_set_ctov = dwmac5_est_set_ctov,
 	.est_set_enable = dwmac5_est_set_enable,
 	.est_get_enable = dwmac5_est_get_enable,
 	.est_get_bank = dwmac5_est_get_bank,

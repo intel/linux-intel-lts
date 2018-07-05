@@ -283,6 +283,7 @@ struct stmmac_tc_entry;
 struct stmmac_pps_cfg;
 struct stmmac_rss;
 enum tsn_feat_id;
+enum tsn_hwtunable_id;
 struct est_gc_entry;
 struct est_gcrr;
 struct est_gc_config;
@@ -403,6 +404,13 @@ struct stmmac_ops {
 			    enum tsn_feat_id featid, bool enable);
 	bool (*has_tsn_feat)(struct mac_device_info *hw, struct net_device *dev,
 			     enum tsn_feat_id featid);
+	int (*set_tsn_hwtunable)(struct mac_device_info *hw,
+				 struct net_device *dev,
+				 enum tsn_hwtunable_id id,
+				 const u32 data);
+	int (*get_tsn_hwtunable)(struct mac_device_info *hw,
+				 struct net_device *dev,
+				 enum tsn_hwtunable_id id, u32 *data);
 	int (*set_est_enable)(struct mac_device_info *hw,
 			      struct net_device *dev, bool enable);
 	int (*get_est_bank)(struct mac_device_info *hw, struct net_device *dev,
@@ -712,7 +720,7 @@ struct tsnif_ops {
 	u32 (*est_get_gcl_depth)(void __iomem *ioaddr);
 	u32 (*est_get_ti_width)(void __iomem *ioaddr);
 	u32 (*est_get_txqcnt)(void __iomem *ioaddr);
-	void (*est_get_max)(u32 *ct_max);
+	void (*est_get_max)(u32 *ptov_max, u32 *ctov_max, u32 *ct_max);
 	int (*est_write_gcl_config)(void __iomem *ioaddr, u32 data, u32 addr,
 				    bool is_gcrr,
 				    u32 dbgb, bool is_dbgm);
@@ -723,6 +731,9 @@ struct tsnif_ops {
 			    u32 *gates, u32 *ti_nsec,
 			    u32 ti_wid, u32 txqcnt,
 			    u32 dbgb, bool is_dbgm);
+	void (*est_set_tils)(void __iomem *ioaddr, const u32 tils);
+	void (*est_set_ptov)(void __iomem *ioaddr, const u32 ptov);
+	void (*est_set_ctov)(void __iomem *ioaddr, const u32 ctov);
 	int (*est_set_enable)(void __iomem *ioaddr, bool enable);
 	bool (*est_get_enable)(void __iomem *ioaddr);
 	u32 (*est_get_bank)(void __iomem *ioaddr, bool is_own);
@@ -747,6 +758,12 @@ struct tsnif_ops {
 	tsnif_do_callback(__hw, est_read_gcl_config, __args)
 #define tsnif_est_read_gce(__hw, __args...) \
 	tsnif_do_callback(__hw, est_read_gce, __args)
+#define tsnif_est_set_tils(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_set_tils, __args)
+#define tsnif_est_set_ptov(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_set_ptov, __args)
+#define tsnif_est_set_ctov(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_set_ctov, __args)
 #define tsnif_est_set_enable(__hw, __args...) \
 	tsnif_do_callback(__hw, est_set_enable, __args)
 #define tsnif_est_get_enable(__hw, __args...) \

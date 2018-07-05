@@ -95,6 +95,12 @@
 
 /* MTL EST control register */
 #define MTL_EST_CTRL			0x00000c50
+#define MTL_EST_CTRL_PTOV		GENMASK(31, 24)
+#define MTL_EST_CTRL_PTOV_SHIFT		24
+#define MTL_EST_CTRL_CTOV		GENMASK(23, 12)
+#define MTL_EST_CTRL_CTOV_SHIFT		12
+#define MTL_EST_CTRL_TILS		GENMASK(10, 8)
+#define MTL_EST_CTRL_TILS_SHIFT		8
 #define MTL_EST_CTRL_SSWL		BIT(1)	/* Switch to SWOL */
 #define MTL_EST_CTRL_EEST		BIT(0)	/* Enable EST */
 
@@ -131,6 +137,8 @@
 
 /* EST Global defines */
 #define EST_CTR_HI_MAX			0xff	/* CTR Hi is 8-bit only */
+#define EST_PTOV_MAX			0xff	/* Max PTP time offset */
+#define EST_CTOV_MAX			0xfff	/* Max Current time offset */
 
 /* MAC Core Version */
 #define TSN_VER_MASK		0xFF
