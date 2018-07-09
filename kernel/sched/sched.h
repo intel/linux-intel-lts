@@ -2243,7 +2243,7 @@ enum schedutil_type {
 };
 
 #ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL
-unsigned long schedutil_freq_util(int cpu, unsigned long util_cfs,
+unsigned long schedutil_freq_util(int cpu, unsigned long util,
 				  enum schedutil_type type);
 #else /* CONFIG_CPU_FREQ_GOV_SCHEDUTIL */
 static inline unsigned long schedutil_freq_util(int cpu, unsigned long util,
