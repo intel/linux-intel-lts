@@ -70,7 +70,8 @@ struct drm_printer;
 	param(bool, enable_dpcd_backlight, false) \
 	param(int, domain_scaler_owner, 0x11100) \
 	param(unsigned int, enable_pvmmio, \
-			PVMMIO_ELSP_SUBMIT | PVMMIO_PLANE_UPDATE) \
+			PVMMIO_ELSP_SUBMIT | PVMMIO_PLANE_UPDATE \
+			| PVMMIO_PPGTT_UPDATE) \
 	param(bool, enable_gvt, false)
 
 #define MEMBER(T, member, ...) T member;
