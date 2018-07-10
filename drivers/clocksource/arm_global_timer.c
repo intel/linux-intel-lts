@@ -192,11 +192,6 @@ static int gt_dying_cpu(unsigned int cpu)
 	return 0;
 }
 
-static u64 gt_clocksource_read(struct clocksource *cs)
-{
-	return gt_counter_read();
-}
-
 static void gt_resume(struct clocksource *cs)
 {
 	unsigned long ctrl;
@@ -207,13 +202,15 @@ static void gt_resume(struct clocksource *cs)
 		writel(GT_CONTROL_TIMER_ENABLE, gt_base + GT_CONTROL);
 }
 
-static struct clocksource gt_clocksource = {
-	.name	= "arm_global_timer",
-	.rating	= 300,
-	.read	= gt_clocksource_read,
-	.mask	= CLOCKSOURCE_MASK(64),
-	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
-	.resume = gt_resume,
+static struct clocksource_user_mmio gt_clocksource = {
+	.mmio.clksrc = {
+		.name	= "arm_global_timer",
+		.rating	= 300,
+		.read	= clocksource_dual_mmio_readl_up,
+		.mask	= CLOCKSOURCE_MASK(64),
+		.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
+		.resume = gt_resume,
+	},
 };
 
 #ifdef CONFIG_CLKSRC_ARM_GLOBAL_TIMER_SCHED_CLOCK
@@ -240,6 +237,8 @@ static void __init gt_delay_timer_init(void)
 
 static int __init gt_clocksource_init(void)
 {
+	struct clocksource_mmio_regs mmr;
+
 	writel(0, gt_base + GT_CONTROL);
 	writel(0, gt_base + GT_COUNTER0);
 	writel(0, gt_base + GT_COUNTER1);
@@ -249,7 +248,13 @@ static int __init gt_clocksource_init(void)
 #ifdef CONFIG_CLKSRC_ARM_GLOBAL_TIMER_SCHED_CLOCK
 	sched_clock_register(gt_sched_clock_read, 64, gt_clk_rate);
 #endif
-	return clocksource_register_hz(&gt_clocksource, gt_clk_rate);
+	mmr.reg_upper = gt_base + GT_COUNTER1;
+	mmr.reg_lower = gt_base + GT_COUNTER0;
+	mmr.bits_upper = 32;
+	mmr.bits_lower = 32;
+	mmr.revmap = NULL;
+
+	return clocksource_user_mmio_init(&gt_clocksource, &mmr, gt_clk_rate);
 }
 
 static int __init global_timer_of_register(struct device_node *np)
