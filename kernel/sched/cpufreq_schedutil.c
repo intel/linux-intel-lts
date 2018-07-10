@@ -206,7 +206,8 @@ unsigned long schedutil_freq_util(int cpu, unsigned long util_cfs,
 
 	max = arch_scale_cpu_capacity(NULL, cpu);
 
-	if (type == FREQUENCY_UTIL && rt_rq_is_runnable(&rq->rt))
+	if (sched_feat(SUGOV_RT_MAX_FREQ) && type == FREQUENCY_UTIL &&
+						rt_rq_is_runnable(&rq->rt))
 		return max;
 
 	/*
