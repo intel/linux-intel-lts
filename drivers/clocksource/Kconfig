@@ -609,7 +609,7 @@ config CLKSRC_ST_LPC
 	bool "Low power clocksource found in the LPC" if COMPILE_TEST
 	select TIMER_OF if OF
 	depends on HAS_IOMEM
-	select CLKSRC_MMIO
+	imply GENERIC_CLOCKSOURCE_VDSO
 	help
 	  Enable this option to use the Low Power controller timer
 	  as clocksource.
