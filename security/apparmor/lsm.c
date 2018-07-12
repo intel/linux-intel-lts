@@ -1526,7 +1526,9 @@ static int __init apparmor_init(void)
 	int error;
 
 	if (!finish) {
-		if (apparmor_enabled && security_module_enable("apparmor"))
+		if (apparmor_enabled &&
+		    security_module_enable("apparmor",
+				IS_ENABLED(CONFIG_SECURITY_APPARMOR_STACKED)))
 			security_add_blobs(&apparmor_blob_sizes);
 		else
 			apparmor_enabled = false;
@@ -1534,7 +1536,9 @@ static int __init apparmor_init(void)
 		return 0;
 	}
 
-	if (!apparmor_enabled || !security_module_enable("apparmor")) {
+	if (!apparmor_enabled ||
+	    !security_module_enable("apparmor",
+				IS_ENABLED(CONFIG_SECURITY_APPARMOR_STACKED))) {
 		aa_info_message("AppArmor disabled by boot time parameter");
 		apparmor_enabled = false;
 		return 0;

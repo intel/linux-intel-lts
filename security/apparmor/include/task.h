@@ -16,7 +16,11 @@
 
 static inline struct aa_task_ctx *task_ctx(struct task_struct *task)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	return task->security + apparmor_blob_sizes.lbs_task;
+#else
 	return task->security;
+#endif
 }
 
 /*
