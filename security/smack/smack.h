@@ -372,6 +372,11 @@ static inline struct inode_smack *smack_inode(const struct inode *inode)
 	return inode->i_security;
 }
 
+static inline struct socket_smack *smack_sock(const struct sock *sock)
+{
+	return sock->sk_security;
+}
+
 static inline struct superblock_smack *smack_superblock(
 					const struct super_block *superblock)
 {
