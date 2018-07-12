@@ -25,7 +25,11 @@
 
 static inline struct aa_label *cred_label(const struct cred *cred)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct aa_label **blob = cred->security + apparmor_blob_sizes.lbs_cred;
+#else
 	struct aa_label **blob = cred->security;
+#endif
 
 	AA_BUG(!blob);
 	return *blob;
@@ -34,7 +38,11 @@ static inline struct aa_label *cred_label(const struct cred *cred)
 static inline void set_cred_label(const struct cred *cred,
 				  struct aa_label *label)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct aa_label **blob = cred->security + apparmor_blob_sizes.lbs_cred;
+#else
 	struct aa_label **blob = cred->security;
+#endif
 
 	AA_BUG(!blob);
 	*blob = label;
