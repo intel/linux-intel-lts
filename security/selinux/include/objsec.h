@@ -181,4 +181,9 @@ static inline struct superblock_security_struct *selinux_superblock(
 	return superblock->s_security;
 }
 
+static inline struct sk_security_struct *selinux_sock(const struct sock *sock)
+{
+	return sock->sk_security;
+}
+
 #endif /* _SELINUX_OBJSEC_H_ */
