@@ -2917,6 +2917,9 @@ static ssize_t f2fs_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 		if (iov_iter_fault_in_readable(from, iov_iter_count(from)))
 			set_inode_flag(inode, FI_NO_PREALLOC);
 
+		preallocated = true;
+		target_size = iocb->ki_pos + iov_iter_count(from);
+
 		if ((iocb->ki_flags & IOCB_NOWAIT) &&
 			(iocb->ki_flags & IOCB_DIRECT)) {
 				if (!f2fs_overwrite_io(inode, iocb->ki_pos,
