@@ -563,7 +563,7 @@ static int acpi_battery_get_state(struct acpi_battery *battery)
 	if (!acpi_battery_present(battery))
 		return 0;
 
-	if (battery->update_time &&
+	if (cache_time &&
 	    time_before(jiffies, battery->update_time +
 			msecs_to_jiffies(cache_time)))
 		return 0;
