@@ -606,15 +606,28 @@ static ssize_t intel_pmc_ipc_northpeak_store(struct device *dev,
 	}
 	return (ssize_t)count;
 }
+static ssize_t intel_ssrambase_show(struct device *dev,
+					     struct device_attribute *attr,
+					     char *buf)
+{
+	if (ipcdev.telem_punit_ssram_base > TELEM_PUNIT_SSRAM_OFFSET)
+		return scnprintf(buf, 64, "%x\n",
+		ipcdev.telem_punit_ssram_base - TELEM_PUNIT_SSRAM_OFFSET);
+	else
+		return scnprintf(buf, 64, "%x\n", 0);
+}
 
 static DEVICE_ATTR(simplecmd, S_IWUSR,
 		   NULL, intel_pmc_ipc_simple_cmd_store);
 static DEVICE_ATTR(northpeak, S_IWUSR,
 		   NULL, intel_pmc_ipc_northpeak_store);
+static DEVICE_ATTR(ssrambase, S_IRUGO,
+		   intel_ssrambase_show, NULL);
 
 static struct attribute *intel_ipc_attrs[] = {
 	&dev_attr_northpeak.attr,
 	&dev_attr_simplecmd.attr,
+	&dev_attr_ssrambase.attr,
 	NULL
 };
 
