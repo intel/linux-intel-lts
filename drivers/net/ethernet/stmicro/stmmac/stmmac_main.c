@@ -4126,6 +4126,35 @@ read_again:
 
 	priv->xstats.rx_pkt_n += count;
 
+	switch (queue) {
+	case 0x0:
+		priv->xstats.q0_rx_pkt_n += count;
+		break;
+	case 0x1:
+		priv->xstats.q1_rx_pkt_n += count;
+		break;
+	case 0x2:
+		priv->xstats.q2_rx_pkt_n += count;
+		break;
+	case 0x3:
+		priv->xstats.q3_rx_pkt_n += count;
+		break;
+	case 0x4:
+		priv->xstats.q4_rx_pkt_n += count;
+		break;
+	case 0x5:
+		priv->xstats.q5_rx_pkt_n += count;
+		break;
+	case 0x6:
+		priv->xstats.q6_rx_pkt_n += count;
+		break;
+	case 0x7:
+		priv->xstats.q7_rx_pkt_n += count;
+		break;
+	default:
+		break;
+	}
+
 	return count;
 }
 
