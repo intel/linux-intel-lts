@@ -99,6 +99,22 @@ struct stmmac_extra_stats {
 	unsigned long tx_clean;
 	unsigned long tx_set_ic_bit;
 	unsigned long irq_receive_pmt_irq_n;
+	unsigned long q0_rx_irq_n;
+	unsigned long q1_rx_irq_n;
+	unsigned long q2_rx_irq_n;
+	unsigned long q3_rx_irq_n;
+	unsigned long q4_rx_irq_n;
+	unsigned long q5_rx_irq_n;
+	unsigned long q6_rx_irq_n;
+	unsigned long q7_rx_irq_n;
+	unsigned long q0_tx_irq_n;
+	unsigned long q1_tx_irq_n;
+	unsigned long q2_tx_irq_n;
+	unsigned long q3_tx_irq_n;
+	unsigned long q4_tx_irq_n;
+	unsigned long q5_tx_irq_n;
+	unsigned long q6_tx_irq_n;
+	unsigned long q7_tx_irq_n;
 	/* MMC info */
 	unsigned long mmc_tx_irq_n;
 	unsigned long mmc_rx_irq_n;
