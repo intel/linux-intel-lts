@@ -125,6 +125,7 @@ enum dwmac4_irq_status {
 	mmc_irq = 0x00000100,
 	lpi_irq = 0x00000020,
 	pmt_irq = 0x00000010,
+	mdio_irq = 0x00040000,
 };
 
 /* MAC PMT bitmap */

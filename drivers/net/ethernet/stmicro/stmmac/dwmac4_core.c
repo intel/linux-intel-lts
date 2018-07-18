@@ -53,6 +53,9 @@ static void dwmac4_core_init(struct mac_device_info *hw,
 	if (hw->pcs)
 		value |= GMAC_PCS_IRQ_DEFAULT;
 
+	if (hw->mdio_intr_en)
+		value |= GMAC_INT_MDIO_EN;
+
 	writel(value, ioaddr + GMAC_INT_EN);
 }
 
@@ -623,6 +626,9 @@ static int dwmac4_irq_status(struct mac_device_info *hw,
 		if (status & GMAC4_LPI_CTRL_STATUS_RLPIEX)
 			x->irq_rx_path_exit_lpi_mode_n++;
 	}
+
+	if (intr_status & mdio_irq)
+		wake_up(&hw->mdio_busy_wait);
 
 	dwmac_pcs_isr(ioaddr, GMAC_PCS_BASE, intr_status, x);
 	if (intr_status & PCS_RGSMIIIS_IRQ)
