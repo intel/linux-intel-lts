@@ -195,5 +195,7 @@ struct plat_stmmacenet_data {
 	int msi_sfty_ue_vec;
 	int msi_rx_base_vec;
 	int msi_tx_base_vec;
+	bool vlan_fail_q_en;
+	u8 vlan_fail_q;
 };
 #endif
