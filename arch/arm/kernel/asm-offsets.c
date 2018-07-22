@@ -157,6 +157,7 @@ int main(void)
   BLANK();
 #ifdef CONFIG_VDSO
   DEFINE(VDSO_DATA_SIZE,	sizeof(union vdso_data_store));
+  DEFINE(VDSO_PRIV_SIZE,	PAGE_SIZE);
 #endif
   BLANK();
 #ifdef CONFIG_ARM_MPU
