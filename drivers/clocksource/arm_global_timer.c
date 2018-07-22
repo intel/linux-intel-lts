@@ -162,11 +162,11 @@ static irqreturn_t gt_clockevent_interrupt(int irq, void *dev_id)
 	 *	the Global Timer flag _after_ having incremented
 	 *	the Comparator register	value to a higher value.
 	 */
-	if (clockevent_state_oneshot(evt))
+	if (clockevent_is_oob(evt) || clockevent_state_oneshot(evt))
 		gt_compare_set(ULONG_MAX, 0);
 
 	writel_relaxed(GT_INT_STATUS_EVENT_FLAG, gt_base + GT_INT_STATUS);
-	evt->event_handler(evt);
+	clockevents_handle_event(evt);
 
 	return IRQ_HANDLED;
 }
@@ -177,7 +177,7 @@ static int gt_starting_cpu(unsigned int cpu)
 
 	clk->name = "arm_global_timer";
 	clk->features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT |
-		CLOCK_EVT_FEAT_PERCPU;
+		CLOCK_EVT_FEAT_PERCPU | CLOCK_EVT_FEAT_PIPELINE;
 	clk->set_state_shutdown = gt_clockevent_shutdown;
 	clk->set_state_periodic = gt_clockevent_set_periodic;
 	clk->set_state_oneshot = gt_clockevent_shutdown;
@@ -404,8 +404,8 @@ static int __init global_timer_of_register(struct device_node *np)
 		goto out_clk_nb;
 	}
 
-	err = request_percpu_irq(gt_ppi, gt_clockevent_interrupt,
-				 "gt", gt_evt);
+	err = __request_percpu_irq(gt_ppi, gt_clockevent_interrupt,
+				   IRQF_TIMER, "gt", gt_evt);
 	if (err) {
 		pr_warn("global-timer: can't register interrupt %d (%d)\n",
 			gt_ppi, err);
