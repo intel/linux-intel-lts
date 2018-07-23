@@ -202,6 +202,11 @@ static ssize_t capsule_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 	device = (buf[0] == 'm' ? EMMC : SDCARD);
 	partition = buf[1] - '0';
+	if (strlen(buf+3) >= sizeof(name)) {
+		pr_err(MODULE_NAME " buf+3: %d is too long\n", strlen(buf+3));
+		return -ENOMEM;
+	}
+
 	ret = sscanf(buf+3, "%s", name);
 	pr_info(MODULE_NAME " capsule parameters (%d): DEVICE=%d PARTITION=%d NAME=%s\n",
 				ret, device, partition, name);
