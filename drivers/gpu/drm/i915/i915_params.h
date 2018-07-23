@@ -79,7 +79,8 @@ struct drm_printer;
 	param(bool, nuclear_pageflip, false) \
 	param(bool, enable_dp_mst, true) \
 	param(int, domain_scaler_owner, 0x11100) \
-	param(unsigned int, enable_pvmmio, 0) \
+	param(unsigned int, enable_pvmmio, \
+			PVMMIO_ELSP_SUBMIT) \
 	param(bool, enable_gvt, false)
 
 #define MEMBER(T, member, ...) T member;
