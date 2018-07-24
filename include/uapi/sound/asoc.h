@@ -88,7 +88,7 @@
 #define SND_SOC_TPLG_MAGIC		0x41536F43 /* ASoC */
 
 /* string sizes */
-#define SND_SOC_TPLG_NUM_TEXTS		32
+#define SND_SOC_TPLG_NUM_TEXTS		16
 
 /* ABI version */
 #define SND_SOC_TPLG_ABI_VERSION	0x5	/* current version */
