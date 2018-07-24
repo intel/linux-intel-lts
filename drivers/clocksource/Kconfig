@@ -57,6 +57,8 @@ config DIGICOLOR_TIMER
 
 config DW_APB_TIMER
 	bool "DW APB timer driver" if COMPILE_TEST
+        select CLKSRC_MMIO
+	select GENERIC_CLOCKSOURCE_VDSO if ARM
 	help
 	  Enables the support for the dw_apb timer.
 
