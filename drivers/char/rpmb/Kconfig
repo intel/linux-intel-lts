@@ -42,3 +42,5 @@ config VIRTIO_RPMB
 	  Say yes here if you want to access virtio RPMB from user space
 	  via character device interface /dev/vrpmb.
 	  This device interface is only for guest/frontend virtio driver.
+
+source "drivers/char/rpmb/mux/Kconfig"
