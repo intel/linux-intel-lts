@@ -37,6 +37,7 @@
 #include <linux/ioport.h>
 #include <linux/uaccess.h>
 #include <linux/io.h>
+#include <linux/nmi.h>
 
 /* Module and version information */
 #define ESB_MODULE_NAME "i6300ESB timer"
@@ -64,6 +65,9 @@
 /* Reload register bits */
 #define ESB_WDT_TIMEOUT (0x01 << 9)    /* Watchdog timed out                */
 #define ESB_WDT_RELOAD  (0x01 << 8)    /* prevent timeout                   */
+
+/* General Interrupt Status Register bits*/
+#define ESB_WDT_INTR_ACTIVE	(0x01 << 0) /* Intr happens on first timeout*/
 
 /* Magic constants */
 #define ESB_UNLOCK1     0x80            /* Step 1 to unlock reset registers  */
@@ -213,9 +217,34 @@ MODULE_DEVICE_TABLE(pci, esb_pci_tbl);
 /*
  *      Init & exit routines
  */
+static irqreturn_t esb_pretimeout(int irq, void *dev_id)
+{
+	u16 val = 0;
+	struct esb_dev *edev = NULL;
 
+	if (!dev_id)
+		return IRQ_NONE;
+	edev = dev_get_drvdata(&((struct pci_dev *)dev_id)->dev);
+	if (!edev)
+		return IRQ_NONE;
+
+	val = readw(ESB_GINTSR_REG(edev));
+	if (val & ESB_WDT_INTR_ACTIVE) {
+		//clear interrupt status bit
+		writew(ESB_WDT_INTR_ACTIVE, ESB_GINTSR_REG(edev));
+
+		//dump logs
+		trigger_all_cpu_backtrace();
+		panic_timeout = 0;
+		panic("Kernel Watchdog");
+		return IRQ_HANDLED;
+	}
+	return IRQ_NONE;
+}
 static unsigned char esb_getdevice(struct esb_dev *edev)
 {
+	int nvec, ret;
+
 	if (pci_enable_device(edev->pdev)) {
 		dev_err(&edev->pdev->dev, "failed to enable device\n");
 		goto err_devput;
@@ -232,7 +261,16 @@ static unsigned char esb_getdevice(struct esb_dev *edev)
 		dev_err(&edev->pdev->dev, "failed to get BASEADDR\n");
 		goto err_release;
 	}
-
+	nvec = pci_alloc_irq_vectors(edev->pdev, 1, 1, PCI_IRQ_ALL_TYPES);
+	if (nvec < 0)
+		pr_err("failed to alloc irq\n");
+	else {
+		edev->pdev->irq = pci_irq_vector(edev->pdev, 0);
+		ret = request_irq(edev->pdev->irq, esb_pretimeout, 0,
+					 "i6300esb", edev->pdev);
+		if (ret)
+			pr_err("failed to request_irq\n");
+	}
 	/* Done */
 	dev_set_drvdata(&edev->pdev->dev, edev);
 	return 1;
@@ -262,7 +300,7 @@ static void esb_initdevice(struct esb_dev *edev)
 	 * any interrupts as there is not much we can do with it
 	 * right now.
 	 */
-	pci_write_config_word(edev->pdev, ESB_CONFIG_REG, 0x0003);
+	pci_write_config_word(edev->pdev, ESB_CONFIG_REG, 0x0000);
 
 	/* Check that the WDT isn't already locked */
 	pci_read_config_byte(edev->pdev, ESB_LOCK_REG, &val1);
@@ -335,6 +373,11 @@ static void esb_remove(struct pci_dev *pdev)
 
 	watchdog_unregister_device(&edev->wdd);
 	iounmap(edev->base);
+
+	if (edev->pdev->irq) {
+		free_irq(edev->pdev->irq, edev->pdev);
+		pci_free_irq_vectors(edev->pdev);
+	}
 	pci_release_region(edev->pdev, 0);
 	pci_disable_device(edev->pdev);
 }
