@@ -1013,7 +1013,7 @@ config WAFER_WDT
 	  module will be called wafer5823wdt.
 
 config I6300ESB_WDT
-	tristate "Intel 6300ESB Timer/Watchdog"
+	bool "Intel 6300ESB Timer/Watchdog"
 	depends on PCI
 	select WATCHDOG_CORE
 	---help---
