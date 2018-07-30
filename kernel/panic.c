@@ -34,6 +34,7 @@
 #include <linux/debugfs.h>
 #include <linux/sysfs.h>
 #include <asm/sections.h>
+#include <linux/acpi.h>
 
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
@@ -379,6 +380,9 @@ void panic(const char *fmt, ...)
 	console_flush_on_panic(CONSOLE_FLUSH_PENDING);
 
 	panic_print_sys_info();
+
+	/* Flush CPU cache */
+	ACPI_FLUSH_CPU_CACHE();
 
 	if (!panic_blink)
 		panic_blink = no_blink;
