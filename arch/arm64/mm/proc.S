@@ -186,8 +186,9 @@ ENDPROC(idmap_cpu_replace_ttbr1)
 
 	.macro __idmap_kpti_put_pgtable_ent_ng, type
 	orr	\type, \type, #PTE_NG		// Same bit for blocks and pages
-	str	\type, [cur_\()\type\()p]	// Update the entry and ensure it
-	dc	civac, cur_\()\type\()p		// is visible to all CPUs.
+	str	\type, [cur_\()\type\()p]	// Update the entry and ensure
+	dmb	sy				// that it is visible to all
+	dc	civac, cur_\()\type\()p		// CPUs.
 	.endm
 
 /*
@@ -425,6 +426,11 @@ ENTRY(__cpu_setup)
 	cbz	x9, 2f
 	cmp	x9, #2
 	b.lt	1f
+#ifdef CONFIG_ARM64_ERRATUM_1024718
+	/* Disable hardware DBM on Cortex-A55 r0p0, r0p1 & r1p0 */
+	cpu_midr_match MIDR_CORTEX_A55, MIDR_CPU_VAR_REV(0, 0), MIDR_CPU_VAR_REV(1, 0), x1, x2, x3, x4
+	cbnz	x1, 1f
+#endif
 	orr	x10, x10, #TCR_HD		// hardware Dirty flag update
 1:	orr	x10, x10, #TCR_HA		// hardware Access flag update
 2:

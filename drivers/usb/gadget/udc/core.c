@@ -190,8 +190,8 @@ EXPORT_SYMBOL_GPL(usb_ep_alloc_request);
 void usb_ep_free_request(struct usb_ep *ep,
 				       struct usb_request *req)
 {
-	ep->ops->free_request(ep, req);
 	trace_usb_ep_free_request(ep, req, 0);
+	ep->ops->free_request(ep, req);
 }
 EXPORT_SYMBOL_GPL(usb_ep_free_request);
 
@@ -1235,8 +1235,9 @@ static void usb_gadget_remove_driver(struct usb_udc *udc)
 
 	usb_gadget_disconnect(udc->gadget);
 	udc->driver->disconnect(udc->gadget);
-	udc->driver->unbind(udc->gadget);
+
 	usb_gadget_udc_stop(udc);
+	udc->driver->unbind(udc->gadget);
 
 	udc->driver = NULL;
 	udc->dev.driver = NULL;
