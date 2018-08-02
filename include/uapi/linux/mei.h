@@ -66,4 +66,23 @@ struct mei_connect_client_data {
  */
 #define IOCTL_MEI_NOTIFY_GET _IOR('H', 0x03, __u32)
 
+/*
+ * IOCTL Connect Client Data structure with vtag
+ */
+struct mei_connect_client_vtag {
+	uuid_le in_client_uuid;
+	__u8 vtag;
+	__u8 reserved[3];
+};
+
+struct mei_connect_client_data_vtag {
+	union {
+		struct mei_connect_client_vtag connect;
+		struct mei_client out_client_properties;
+	};
+};
+
+#define IOCTL_MEI_CONNECT_CLIENT_VTAG \
+	_IOWR('H', 0x04, struct mei_connect_client_data_vtag)
+
 #endif /* _LINUX_MEI_H  */

@@ -352,6 +352,19 @@ static inline void mei_tx_cb_dequeue(struct mei_cl_cb *cb)
 	mei_io_cb_free(cb);
 }
 
+static void mei_cl_set_read_by_fp(const struct mei_cl *cl,
+				  const struct file *fp)
+{
+	struct mei_cl_vtag *cl_vtag;
+
+	list_for_each_entry(cl_vtag, &cl->vtag_map, list) {
+		if (cl_vtag->fp == fp) {
+			cl_vtag->pending_read = true;
+			return;
+		}
+	}
+}
+
 /**
  * mei_io_cb_init - allocate and initialize io callback
  *
@@ -377,6 +390,7 @@ static struct mei_cl_cb *mei_io_cb_init(struct mei_cl *cl,
 	cb->buf_idx = 0;
 	cb->fop_type = type;
 	cb->vtag = 0;
+
 	return cb;
 }
 
@@ -562,6 +576,7 @@ static void mei_cl_init(struct mei_cl *cl, struct mei_device *dev)
 	init_waitqueue_head(&cl->rx_wait);
 	init_waitqueue_head(&cl->tx_wait);
 	init_waitqueue_head(&cl->ev_wait);
+	INIT_LIST_HEAD(&cl->vtag_map);
 	spin_lock_init(&cl->rd_completed_lock);
 	INIT_LIST_HEAD(&cl->rd_completed);
 	INIT_LIST_HEAD(&cl->rd_pending);
@@ -1234,6 +1249,61 @@ static int mei_cl_tx_flow_ctrl_creds_reduce(struct mei_cl *cl)
 	return 0;
 }
 
+const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag)
+{
+	struct mei_cl_vtag *vtag_l;
+
+	list_for_each_entry(vtag_l, &cl->vtag_map, list)
+		if (vtag_l->vtag == vtag)
+			return vtag_l->fp;
+
+	return NULL;
+}
+
+static void mei_cl_reset_read_by_vtag(const struct mei_cl *cl, u8 vtag)
+{
+	struct mei_cl_vtag *vtag_l;
+
+	list_for_each_entry(vtag_l, &cl->vtag_map, list) {
+		if (vtag_l->vtag == vtag) {
+			vtag_l->pending_read = false;
+			break;
+		}
+	}
+}
+
+static void mei_cl_read_vtag_add_fc(struct mei_cl *cl)
+{
+	struct mei_cl_vtag *cl_vtag;
+
+	list_for_each_entry(cl_vtag, &cl->vtag_map, list) {
+		if (cl_vtag->pending_read) {
+			if (mei_cl_enqueue_ctrl_wr_cb(cl,
+						      mei_cl_mtu(cl),
+						      MEI_FOP_READ,
+						      cl_vtag->fp))
+				cl->rx_flow_ctrl_creds++;
+			break;
+		}
+	}
+}
+
+void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb)
+{
+	const struct file *fp;
+
+	fp = mei_cl_fp_by_vtag(cl, cb->vtag);
+	if (fp)
+		cb->fp = fp;
+	mei_cl_reset_read_by_vtag(cl, cb->vtag);
+
+	spin_lock(&cl->rd_completed_lock);
+	list_add_tail(&cb->list, &cl->rd_completed);
+	spin_unlock(&cl->rd_completed_lock);
+
+	mei_cl_read_vtag_add_fc(cl);
+}
+
 /**
  *  mei_cl_notify_fop2req - convert fop to proper request
  *
@@ -1489,12 +1559,16 @@ int mei_cl_read_start(struct mei_cl *cl, size_t length, const struct file *fp)
 		return 0;
 
 	/* HW currently supports only one pending read */
-	if (cl->rx_flow_ctrl_creds)
+	if (cl->rx_flow_ctrl_creds) {
+		mei_cl_set_read_by_fp(cl, fp);
 		return -EBUSY;
+	}
 
 	cb = mei_cl_enqueue_ctrl_wr_cb(cl, length, MEI_FOP_READ, fp);
 	if (!cb)
 		return -ENOMEM;
+
+	mei_cl_set_read_by_fp(cl, fp);
 
 	rets = pm_runtime_get(dev->dev);
 	if (rets < 0 && rets != -EINPROGRESS) {
@@ -1613,6 +1687,9 @@ int mei_cl_irq_write(struct mei_cl *cl, struct mei_cl_cb *cb,
 
 	hdr_len = mei_msg_hdr_init(mei_hdr, cb);
 
+	cl_dbg(dev, cl, "Extend Header %d vtag = %d\n",
+	       mei_hdr->extended, cb->vtag);
+
 	/**
 	 * Split the message only if we can write the whole host buffer
 	 * otherwise wait for next time the host buffer is empty.
@@ -1722,6 +1799,9 @@ ssize_t mei_cl_write(struct mei_cl *cl, struct mei_cl_cb *cb)
 		goto err;
 
 	hdr_len = mei_msg_hdr_init(mei_hdr, cb);
+
+	cl_dbg(dev, cl, "Extend Header %d vtag = %d\n",
+	       mei_hdr->extended, cb->vtag);
 
 	if (rets == 0) {
 		cl_dbg(dev, cl, "No flow control credentials: not sending.\n");
