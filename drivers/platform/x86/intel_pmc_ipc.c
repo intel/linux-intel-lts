@@ -611,7 +611,7 @@ static ssize_t intel_ssrambase_show(struct device *dev,
 					     char *buf)
 {
 	if (ipcdev.telem_punit_ssram_base > TELEM_PUNIT_SSRAM_OFFSET)
-		return scnprintf(buf, 64, "%x\n",
+		return scnprintf(buf, 64, "%llx\n",
 		ipcdev.telem_punit_ssram_base - TELEM_PUNIT_SSRAM_OFFSET);
 	else
 		return scnprintf(buf, 64, "%x\n", 0);

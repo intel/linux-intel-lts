@@ -377,8 +377,6 @@ __packed __aligned(4)
  */
 DEFINE_RAW_SPINLOCK(logbuf_lock);
 
-/* Give the posibility to temporary disable slow (!CON_FAST) consoles */
-static atomic_t console_slow_suspended = ATOMIC_INIT(0);
 /* Keep the number of slow suspend in check */
 #define MAX_SLOW_SUSPEND_COUNT  (50)
 
