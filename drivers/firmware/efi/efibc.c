@@ -19,6 +19,15 @@
 #include <linux/reboot.h>
 #include <linux/slab.h>
 
+#define REBOOT_REASON_CRASH	"kernel_panic"
+#define REBOOT_REASON_NORMAL	"reboot"
+#define REBOOT_REASON_SHUTDOWN	"shutdown"
+#define REBOOT_REASON_WATCHDOG	"watchdog"
+
+#define WATCHDOG_KERNEL_H	"Watchdog"
+#define WATCHDOG_KERNEL_S	"softlockup"
+#define WATCHDOG_KERNEL_D	"Software Watchdog"
+
 static void efibc_str_to_str16(const char *str, efi_char16_t *str16)
 {
 	size_t i;
@@ -67,11 +76,11 @@ static int efibc_set_variable(const char *name, const char *value)
 static int efibc_reboot_notifier_call(struct notifier_block *notifier,
 				      unsigned long event, void *data)
 {
-	const char *reason = "shutdown";
+	const char *reason = REBOOT_REASON_SHUTDOWN;
 	int ret;
 
 	if (event == SYS_RESTART)
-		reason = "reboot";
+		reason = REBOOT_REASON_NORMAL;
 
 	ret = efibc_set_variable("LoaderEntryRebootReason", reason);
 	if (ret || !data)
@@ -82,8 +91,39 @@ static int efibc_reboot_notifier_call(struct notifier_block *notifier,
 	return NOTIFY_DONE;
 }
 
+static int efibc_panic_notifier_call(struct notifier_block *notifier,
+				     unsigned long what, void *data)
+{
+	int i;
+	char *str = data;
+	const char *reason = REBOOT_REASON_CRASH;
+	const char *watchdogs[] = {
+		WATCHDOG_KERNEL_H,
+		WATCHDOG_KERNEL_S,
+		WATCHDOG_KERNEL_D
+	};
+
+
+	if (str) {
+		for (i = 0; i < ARRAY_SIZE(watchdogs); i++) {
+			if (strncmp(str, watchdogs[i], strlen(watchdogs[i])) == 0) {
+				reason = REBOOT_REASON_WATCHDOG;
+				break;
+			}
+		}
+	}
+
+	efibc_set_variable("LoaderEntryRebootReason", reason);
+
+	return NOTIFY_DONE;
+}
+
 static struct notifier_block efibc_reboot_notifier = {
 	.notifier_call = efibc_reboot_notifier_call,
+};
+
+static struct notifier_block paniced = {
+	.notifier_call  = efibc_panic_notifier_call,
 };
 
 static int __init efibc_init(void)
@@ -94,8 +134,12 @@ static int __init efibc_init(void)
 		return -ENODEV;
 
 	ret = register_reboot_notifier(&efibc_reboot_notifier);
-	if (ret)
+	if (ret) {
 		pr_err("unable to register reboot notifier\n");
+		return ret;
+	}
+
+	atomic_notifier_chain_register(&panic_notifier_list, &paniced);
 
 	return ret;
 }
@@ -104,6 +148,7 @@ module_init(efibc_init);
 static void __exit efibc_exit(void)
 {
 	unregister_reboot_notifier(&efibc_reboot_notifier);
+	atomic_notifier_chain_unregister(&panic_notifier_list, &paniced);
 }
 module_exit(efibc_exit);
 
