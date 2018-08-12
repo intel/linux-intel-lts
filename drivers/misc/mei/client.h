@@ -85,8 +85,24 @@ int mei_cl_unlink(struct mei_cl *cl);
 
 struct mei_cl *mei_cl_alloc_linked(struct mei_device *dev);
 
-struct mei_cl_cb *mei_cl_read_cb(const struct mei_cl *cl,
-				 const struct file *fp);
+struct mei_cl_cb *mei_cl_read_cb(struct mei_cl *cl, const struct file *fp);
+
+static inline void mei_cl_add_rd_completed(struct mei_cl *cl,
+					   struct mei_cl_cb *cb)
+{
+	spin_lock(&cl->rd_completed_lock);
+	list_add_tail(&cb->list, &cl->rd_completed);
+	spin_unlock(&cl->rd_completed_lock);
+}
+
+static inline void mei_cl_del_rd_completed(struct mei_cl *cl,
+					   struct mei_cl_cb *cb)
+{
+	spin_lock(&cl->rd_completed_lock);
+	mei_io_cb_free(cb);
+	spin_unlock(&cl->rd_completed_lock);
+}
+
 struct mei_cl_cb *mei_cl_alloc_cb(struct mei_cl *cl, size_t length,
 				  enum mei_cb_file_ops type,
 				  const struct file *fp);
