@@ -316,6 +316,7 @@ put_name:
 
 	/* no error: handle positive dentries */
 	if (!err) {
+found:
 		/* check if the dentry is an obb dentry
 		 * if true, the lower_inode must be replaced with
 		 * the inode of the graft path
@@ -362,28 +363,27 @@ put_name:
 	if (err && err != -ENOENT)
 		goto out;
 
-	/* instatiate a new negative dentry */
-	dname.name = name->name;
-	dname.len = name->len;
-
-	/* See if the low-level filesystem might want
-	 * to use its own hash
-	 */
-	lower_dentry = d_hash_and_lookup(lower_dir_dentry, &dname);
-	if (IS_ERR(lower_dentry))
-		return lower_dentry;
-
-	if (!lower_dentry) {
-		/* We called vfs_path_lookup earlier, and did not get a negative
-		 * dentry then. Don't confuse the lower filesystem by forcing
-		 * one on it now...
-		 */
-		err = -ENOENT;
+	/* get a (very likely) new negative dentry */
+	lower_dentry = lookup_one_len_unlocked(name->name,
+							lower_dir_dentry, name->len);
+	if (IS_ERR(lower_dentry)) {
+		err = PTR_ERR(lower_dentry);
 		goto out;
 	}
 
 	lower_path.dentry = lower_dentry;
 	lower_path.mnt = mntget(lower_dir_mnt);
+
+	/*
+	 * partially close race from operating underlayfs directly,
+	 * since lower_dentry could still become positive before entering
+	 * .create (in other words, it should be rechecked in .create).
+	 */
+	if (unlikely(READ_ONCE(lower_dentry->d_inode))) {/* like d_inode_rcu */
+		err = 0;
+		goto found;
+	}
+
 	sdcardfs_set_lower_path(dentry, &lower_path);
 
 	/*
