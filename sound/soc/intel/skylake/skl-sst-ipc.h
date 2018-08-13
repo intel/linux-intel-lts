@@ -20,7 +20,7 @@
 #include <sound/memalloc.h>
 #include "../common/sst-ipc.h"
 #include "skl-sst-dsp.h"
-#include "skl-tplg-interface.h"
+#include <uapi/sound/skl-tplg-interface.h>
 
 struct sst_dsp;
 struct skl_sst;
