@@ -35,7 +35,11 @@ static struct snd_soc_acpi_codecs kbl_7219_98357_codecs = {
 struct snd_soc_acpi_mach snd_soc_acpi_intel_kbl_machines[] = {
 	{
 		.id = "INT343A",
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_KBLR_RT298_MACH)
+		.drv_name = "kblr_alc298s_i2s",
+#else
 		.drv_name = "kbl_alc286s_i2s",
+#endif
 		.fw_filename = "intel/dsp_fw_kbl.bin",
 	},
 	{

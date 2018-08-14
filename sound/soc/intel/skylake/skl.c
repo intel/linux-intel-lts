@@ -1159,26 +1159,6 @@ static struct snd_soc_acpi_codecs skl_codecs = {
 	.codecs = {"10508825"}
 };
 
-static struct snd_soc_acpi_codecs kbl_codecs = {
-	.num_codecs = 1,
-	.codecs = {"10508825"}
-};
-
-static struct snd_soc_acpi_codecs kbl_poppy_codecs = {
-	.num_codecs = 1,
-	.codecs = {"10EC5663"}
-};
-
-static struct snd_soc_acpi_codecs kbl_5663_5514_codecs = {
-	.num_codecs = 2,
-	.codecs = {"10EC5663", "10EC5514"}
-};
-
-static struct snd_soc_acpi_codecs kbl_7219_98357_codecs = {
-	.num_codecs = 1,
-	.codecs = {"MX98357A"}
-};
-
 static struct skl_machine_pdata cnl_pdata = {
 	.use_tplg_pcm = true,
 };
@@ -1205,65 +1185,6 @@ static struct snd_soc_acpi_mach sst_skl_devdata[] = {
 		.quirk_data = &skl_codecs,
 		.pdata = &skl_dmic_data
 	},
-	{}
-};
-
-static struct snd_soc_acpi_mach sst_kbl_devdata[] = {
-	{
-		.id = "INT343A",
-#if IS_ENABLED(CONFIG_SND_SOC_INTEL_KBLR_RT298_MACH)
-		.drv_name = "kblr_alc298s_i2s",
-#else
-		.drv_name = "kbl_alc286s_i2s",
-#endif
-		.fw_filename = "intel/dsp_fw_kbl.bin",
-	},
-	{
-		.id = "INT343B",
-		.drv_name = "kbl_n88l25_s4567",
-		.fw_filename = "intel/dsp_fw_kbl.bin",
-		.machine_quirk = snd_soc_acpi_codec_list,
-		.quirk_data = &kbl_codecs,
-		.pdata = &skl_dmic_data
-	},
-	{
-		.id = "MX98357A",
-		.drv_name = "kbl_n88l25_m98357a",
-		.fw_filename = "intel/dsp_fw_kbl.bin",
-		.machine_quirk = snd_soc_acpi_codec_list,
-		.quirk_data = &kbl_codecs,
-		.pdata = &skl_dmic_data
-	},
-	{
-		.id = "MX98927",
-		.drv_name = "kbl_r5514_5663_max",
-		.fw_filename = "intel/dsp_fw_kbl.bin",
-		.machine_quirk = snd_soc_acpi_codec_list,
-		.quirk_data = &kbl_5663_5514_codecs,
-		.pdata = &skl_dmic_data
-	},
-	{
-		.id = "MX98927",
-		.drv_name = "kbl_rt5663_m98927",
-		.fw_filename = "intel/dsp_fw_kbl.bin",
-		.machine_quirk = snd_soc_acpi_codec_list,
-		.quirk_data = &kbl_poppy_codecs,
-		.pdata = &skl_dmic_data
-	},
-	{
-		.id = "10EC5663",
-		.drv_name = "kbl_rt5663",
-		.fw_filename = "intel/dsp_fw_kbl.bin",
-	},
-	{
-		.id = "DLGS7219",
-		.drv_name = "kbl_da7219_max98357a",
-		.fw_filename = "intel/dsp_fw_kbl.bin",
-		.machine_quirk = snd_soc_acpi_codec_list,
-		.quirk_data = &kbl_7219_98357_codecs,
-		.pdata = &skl_dmic_data
-	},
-
 	{}
 };
 
