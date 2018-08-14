@@ -1154,38 +1154,8 @@ static void skl_remove(struct pci_dev *pci)
 	dev_set_drvdata(&pci->dev, NULL);
 }
 
-static struct snd_soc_acpi_codecs skl_codecs = {
-	.num_codecs = 1,
-	.codecs = {"10508825"}
-};
-
 static struct skl_machine_pdata cnl_pdata = {
 	.use_tplg_pcm = true,
-};
-
-static struct snd_soc_acpi_mach sst_skl_devdata[] = {
-	{
-		.id = "INT343A",
-		.drv_name = "skl_alc286s_i2s",
-		.fw_filename = "intel/dsp_fw_release.bin",
-	},
-	{
-		.id = "INT343B",
-		.drv_name = "skl_n88l25_s4567",
-		.fw_filename = "intel/dsp_fw_release.bin",
-		.machine_quirk = snd_soc_acpi_codec_list,
-		.quirk_data = &skl_codecs,
-		.pdata = &skl_dmic_data
-	},
-	{
-		.id = "MX98357A",
-		.drv_name = "skl_n88l25_m98357a",
-		.fw_filename = "intel/dsp_fw_release.bin",
-		.machine_quirk = snd_soc_acpi_codec_list,
-		.quirk_data = &skl_codecs,
-		.pdata = &skl_dmic_data
-	},
-	{}
 };
 
 static struct snd_soc_acpi_mach sst_glk_devdata[] = {
