@@ -15,6 +15,7 @@ static struct skl_machine_pdata cnl_pdata = {
 };
 
 struct snd_soc_acpi_mach snd_soc_acpi_intel_cnl_machines[] = {
+#if !IS_ENABLED(CONFIG_SND_SOC_RT700)
 	{
 		.id = "INT34C2",
 		.drv_name = "cnl_rt274",
@@ -24,6 +25,13 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_cnl_machines[] = {
 		.sof_tplg_filename = "intel/sof-cnl-rt274.tplg",
 		.asoc_plat_name = "0000:00:1f.3",
 	},
+#else
+	{
+		.drv_name = "cnl_rt700",
+		.fw_filename = "intel/dsp_fw_cnl.bin",
+		.pdata = &cnl_pdata,
+	},
+#endif
 	{},
 };
 EXPORT_SYMBOL_GPL(snd_soc_acpi_intel_cnl_machines);
