@@ -1158,15 +1158,6 @@ static struct skl_machine_pdata cnl_pdata = {
 	.use_tplg_pcm = true,
 };
 
-static struct snd_soc_acpi_mach sst_glk_devdata[] = {
-	{
-		.id = "INT343A",
-		.drv_name = "glk_alc298s_i2s",
-		.fw_filename = "intel/dsp_fw_glk.bin",
-	},
-	{}
-};
-
 static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
 #if !IS_ENABLED(CONFIG_SND_SOC_RT700)
 	{
