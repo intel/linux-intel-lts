@@ -1176,33 +1176,6 @@ static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
 	{}
 };
 
-static struct snd_soc_acpi_mach sst_icl_devdata[] = {
-#if IS_ENABLED(CONFIG_SND_SOC_RT700)
-	{
-		.id = "dummy",
-		.drv_name = "icl_rt700",
-		.fw_filename = "intel/dsp_fw_icl.bin",
-		.pdata = &cnl_pdata,
-	},
-#elif IS_ENABLED(CONFIG_SND_SOC_WM5110)
-	{
-		.id = "dummy",
-		.drv_name = "icl_wm8281",
-		.fw_filename = "intel/dsp_fw_icl.bin",
-		.pdata = &cnl_pdata,
-	},
-#else
-	{
-		.id = "dummy",
-		.drv_name = "icl_rt274",
-		.fw_filename = "intel/dsp_fw_icl.bin",
-		.pdata = &cnl_pdata,
-	},
-
-#endif
-	{}
-};
-
 /* PCI IDs */
 static const struct pci_device_id skl_ids[] = {
 	/* Sunrise Point-LP */
@@ -1222,7 +1195,7 @@ static const struct pci_device_id skl_ids[] = {
 		.driver_data = (unsigned long)&snd_soc_acpi_intel_cnl_machines},
 	/* ICL */
 	{ PCI_DEVICE(0x8086, 0x34c8),
-		.driver_data = (unsigned long)&sst_icl_devdata},
+		.driver_data = (unsigned long)&snd_soc_acpi_intel_icl_machines},
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, skl_ids);
