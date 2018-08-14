@@ -1154,28 +1154,6 @@ static void skl_remove(struct pci_dev *pci)
 	dev_set_drvdata(&pci->dev, NULL);
 }
 
-static struct skl_machine_pdata cnl_pdata = {
-	.use_tplg_pcm = true,
-};
-
-static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
-#if !IS_ENABLED(CONFIG_SND_SOC_RT700)
-	{
-		.id = "INT34C2",
-		.drv_name = "cnl_rt274",
-		.fw_filename = "intel/dsp_fw_cnl.bin",
-		.pdata = &cnl_pdata,
-	},
-#else
-	{
-		.drv_name = "cnl_rt700",
-		.fw_filename = "intel/dsp_fw_cnl.bin",
-		.pdata = &cnl_pdata,
-	},
-#endif
-	{}
-};
-
 /* PCI IDs */
 static const struct pci_device_id skl_ids[] = {
 	/* Sunrise Point-LP */
