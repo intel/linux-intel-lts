@@ -3183,6 +3183,10 @@ int skl_check_plane_surface(const struct intel_crtc_state *crtc_state,
 		return -EINVAL;
 	}
 
+	/* HW only has 8 bits pixel precision, disable plane if invisible */
+	if (!(plane_state->base.alpha >> 8))
+		plane_state->base.visible = false;
+
 	if (!plane_state->base.visible)
 		return 0;
 
@@ -3528,18 +3532,20 @@ static u32 skl_plane_ctl_format(uint32_t pixel_format)
 	return 0;
 }
 
-/*
- * XXX: For ARBG/ABGR formats we default to expecting scanout buffers
- * to be already pre-multiplied. We need to add a knob (or a different
- * DRM_FORMAT) for user-space to configure that.
- */
-static u32 skl_plane_ctl_alpha(uint32_t pixel_format)
+static u32 skl_plane_ctl_alpha(const struct intel_plane_state *plane_state)
 {
-	switch (pixel_format) {
-	case DRM_FORMAT_ABGR8888:
-	case DRM_FORMAT_ARGB8888:
+	if (!plane_state->base.fb->format->has_alpha)
+		return PLANE_CTL_ALPHA_DISABLE;
+
+	switch (plane_state->base.pixel_blend_mode) {
+	case DRM_MODE_BLEND_PIXEL_NONE:
+		return PLANE_CTL_ALPHA_DISABLE;
+	case DRM_MODE_BLEND_PREMULTI:
 		return PLANE_CTL_ALPHA_SW_PREMULTIPLY;
+	case DRM_MODE_BLEND_COVERAGE:
+		return PLANE_CTL_ALPHA_HW_PREMULTIPLY;
 	default:
+		MISSING_CASE(plane_state->base.pixel_blend_mode);
 		return PLANE_CTL_ALPHA_DISABLE;
 	}
 }
@@ -3627,7 +3633,7 @@ u32 skl_plane_ctl(const struct intel_crtc_state *crtc_state,
 	plane_ctl = PLANE_CTL_ENABLE;
 
 	if (INTEL_GEN(dev_priv) < 10 && !IS_GEMINILAKE(dev_priv)) {
-		plane_ctl |= skl_plane_ctl_alpha(fb->format->format);
+		plane_ctl |= skl_plane_ctl_alpha(plane_state);
 		plane_ctl |=
 			PLANE_CTL_PIPE_GAMMA_ENABLE |
 			PLANE_CTL_PIPE_CSC_ENABLE |
@@ -13993,6 +13999,14 @@ intel_skl_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe,
 		drm_plane_create_rotation_property(&intel_plane->base,
 						   DRM_MODE_ROTATE_0,
 						   supported_rotations);
+
+	if (INTEL_GEN(dev_priv) >= 9) {
+		drm_plane_create_alpha_property(&intel_plane->base);
+		drm_plane_create_blend_mode_property(&intel_plane->base,
+						     BIT(DRM_MODE_BLEND_PIXEL_NONE) |
+						     BIT(DRM_MODE_BLEND_PREMULTI) |
+						     BIT(DRM_MODE_BLEND_COVERAGE));
+	}
 
 	drm_plane_helper_add(&intel_plane->base, &intel_plane_helper_funcs);
 
