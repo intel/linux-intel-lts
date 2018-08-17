@@ -63,6 +63,7 @@
 #include <linux/acpi.h>
 #include <linux/device.h>
 #include <linux/pci.h>
+#include <linux/irq.h>
 
 #include "i915_drv.h"
 #include <linux/delay.h>
