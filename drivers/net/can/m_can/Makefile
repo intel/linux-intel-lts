@@ -5,4 +5,5 @@
 
 obj-$(CONFIG_CAN_M_CAN) += m_can.o
 obj-$(CONFIG_CAN_M_CAN_PLATFORM) += m_can_platform.o
+obj-$(CONFIG_CAN_M_CAN_PCI) += m_can_pci.o
 obj-$(CONFIG_CAN_M_CAN_TCAN4X5X) += tcan4x5x.o
