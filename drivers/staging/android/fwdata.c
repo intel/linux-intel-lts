@@ -26,6 +26,8 @@ struct android_fwdata_state {
 	struct kobject *fstab_kobj;
 	struct kobject *system_kobj;
 	struct kobject *vendor_kobj;
+	struct kobject *product_kobj;
+	struct kobject *odm_kobj;
 };
 
 static struct android_fwdata_state state;
@@ -55,6 +57,10 @@ static ssize_t property_show(struct kobject *kobj, struct kobj_attribute *attr,
 		prefix = "android.fstab.system";
 	} else if (kobj == state.vendor_kobj) {
 		prefix = "android.fstab.vendor";
+	} else if (kobj == state.product_kobj) {
+		prefix = "android.fstab.product";
+	} else if (kobj == state.odm_kobj) {
+		prefix = "android.fstab.odm";
 	} else {
 		pr_err("%s: Unexpected folder\n", __func__);
 		return -EINVAL;
@@ -87,6 +93,8 @@ static DT_SIMPLE_ATTR(vbmeta, compatible);
 static DT_SIMPLE_ATTR(fstab, compatible);
 static DT_SIMPLE_ATTR(system, compatible);
 static DT_SIMPLE_ATTR(vendor, compatible);
+static DT_SIMPLE_ATTR(product, compatible);
+static DT_SIMPLE_ATTR(odm, compatible);
 
 static DT_SIMPLE_ATTR(vbmeta, parts);
 
@@ -109,6 +117,16 @@ static DT_SIMPLE_ATTR(vendor, dev);
 static DT_SIMPLE_ATTR(vendor, type);
 static DT_SIMPLE_ATTR(vendor, mnt_flags);
 static DT_SIMPLE_ATTR(vendor, fsmgr_flags);
+
+static DT_SIMPLE_ATTR(product, dev);
+static DT_SIMPLE_ATTR(product, type);
+static DT_SIMPLE_ATTR(product, mnt_flags);
+static DT_SIMPLE_ATTR(product, fsmgr_flags);
+
+static DT_SIMPLE_ATTR(odm, dev);
+static DT_SIMPLE_ATTR(odm, type);
+static DT_SIMPLE_ATTR(odm, mnt_flags);
+static DT_SIMPLE_ATTR(odm, fsmgr_flags);
 
 static struct attribute *system_attrs[] = {
 	&system_compatible_attr.attr,
@@ -134,6 +152,32 @@ static struct attribute *vendor_attrs[] = {
 
 static struct attribute_group vendor_group = {
 	.attrs = vendor_attrs,
+};
+
+static struct attribute *product_attrs[] = {
+	&product_compatible_attr.attr,
+	&product_dev_attr.attr,
+	&product_type_attr.attr,
+	&product_mnt_flags_attr.attr,
+	&product_fsmgr_flags_attr.attr,
+	NULL,
+};
+
+static struct attribute_group product_group = {
+	.attrs = product_attrs,
+};
+
+static struct attribute *odm_attrs[] = {
+	&odm_compatible_attr.attr,
+	&odm_dev_attr.attr,
+	&odm_type_attr.attr,
+	&odm_mnt_flags_attr.attr,
+	&odm_fsmgr_flags_attr.attr,
+	NULL,
+};
+
+static struct attribute_group odm_group = {
+	.attrs = odm_attrs,
 };
 
 static struct kobject *create_folder(struct kobject *parent, const char *name)
@@ -219,6 +263,16 @@ static void clean_up(void)
 		remove_folder_with_files(state.vendor_kobj, &vendor_group);
 		state.vendor_kobj = NULL;
 	}
+	if (state.product_kobj) {
+		/* Delete <sysfs_device>/properties/android/fstab/product/ */
+		remove_folder_with_files(state.product_kobj, &product_group);
+		state.product_kobj = NULL;
+	}
+	if (state.odm_kobj) {
+		/* Delete <sysfs_device>/properties/android/fstab/odm/ */
+		remove_folder_with_files(state.odm_kobj, &odm_group);
+		state.odm_kobj = NULL;
+	}
 	if (state.system_kobj) {
 		/* Delete <sysfs_device>/properties/android/fstab/system/ */
 		remove_folder_with_files(state.system_kobj, &system_group);
@@ -298,6 +352,22 @@ static int android_fwdata_probe(struct platform_device *pdev)
 							     "vendor",
 							     &vendor_group);
 		if (!state.vendor_kobj)
+			goto out;
+	}
+	if (device_property_present(state.dev, "android.fstab.product.dev")) {
+		/* Firmware contains fstab config for early mount of /product */
+		state.product_kobj = create_folder_with_files(state.fstab_kobj,
+							     "product",
+							     &product_group);
+		if (!state.product_kobj)
+			goto out;
+	}
+	if (device_property_present(state.dev, "android.fstab.odm.dev")) {
+		/* Firmware contains fstab config for early mount of /odm */
+		state.odm_kobj = create_folder_with_files(state.fstab_kobj,
+							     "odm",
+							     &odm_group);
+		if (!state.odm_kobj)
 			goto out;
 	}
 	return 0;
