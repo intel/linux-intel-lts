@@ -286,6 +286,23 @@ create_vm_fail:
 		return ret;
 	}
 
+	case IC_SET_VCPU_REGS: {
+		struct acrn_set_vcpu_regs asvr;
+
+		if (copy_from_user(&asvr, (void *)ioctl_param, sizeof(asvr)))
+			return -EFAULT;
+
+		ret = acrn_hypercall2(HC_SET_VCPU_REGS, vm->vmid,
+				virt_to_phys(&asvr));
+		if (ret < 0) {
+			pr_err("vhm: failed to set bsp state of vm %ld!\n",
+					vm->vmid);
+			return -EFAULT;
+		}
+
+		return ret;
+	}
+
 	case IC_SET_MEMSEG: {
 		struct vm_memmap memmap;
 
