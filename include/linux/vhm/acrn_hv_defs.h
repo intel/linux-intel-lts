@@ -78,6 +78,7 @@
 #define HC_PAUSE_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x03)
 #define HC_CREATE_VCPU              _HC_ID(HC_ID, HC_ID_VM_BASE + 0x04)
 #define HC_RESET_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x05)
+#define HC_SET_VCPU_REGS            _HC_ID(HC_ID, HC_ID_VM_BASE + 0x06)
 
 /* IRQ and Interrupts */
 #define HC_ID_IRQ_BASE              0x20UL
