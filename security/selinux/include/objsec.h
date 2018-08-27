@@ -25,6 +25,9 @@
 #include <linux/binfmts.h>
 #include <linux/in.h>
 #include <linux/spinlock.h>
+#include <linux/lsm_hooks.h>
+#include <linux/msg.h>
+#include <net/sock.h>
 #include <net/net_namespace.h>
 #include "flask.h"
 #include "avc.h"
@@ -158,6 +161,7 @@ struct bpf_security_struct {
 	u32 sid;  /*SID of bpf obj creater*/
 };
 
+extern struct lsm_blob_sizes selinux_blob_sizes;
 static inline struct task_security_struct *selinux_cred(const struct cred *cred)
 {
 	return cred->security;
