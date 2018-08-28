@@ -3425,15 +3425,15 @@ static int selinux_inode_listsecurity(struct inode *inode, char *buffer, size_t 
 	return len;
 }
 
-static void selinux_inode_getsecid(struct inode *inode, u32 *secid)
+static void selinux_inode_getsecid(struct inode *inode, struct secids *secid)
 {
 	struct inode_security_struct *isec = inode_security_novalidate(inode);
-	*secid = isec->sid;
+	secid->selinux = isec->sid;
 }
 
 static int selinux_inode_copy_up(struct dentry *src, struct cred **new)
 {
-	u32 sid;
+	struct secids sids;
 	struct task_security_struct *tsec;
 	struct cred *new_creds = *new;
 
@@ -3445,8 +3445,8 @@ static int selinux_inode_copy_up(struct dentry *src, struct cred **new)
 
 	tsec = selinux_cred(new_creds);
 	/* Get label from overlay inode and set it in create_sid */
-	selinux_inode_getsecid(d_inode(src), &sid);
-	tsec->create_sid = sid;
+	selinux_inode_getsecid(d_inode(src), &sids);
+	tsec->create_sid = sids.selinux;
 	*new = new_creds;
 	return 0;
 }
@@ -3863,28 +3863,28 @@ static void selinux_cred_transfer(struct cred *new, const struct cred *old)
 	*tsec = *old_tsec;
 }
 
-static void selinux_cred_getsecid(const struct cred *c, u32 *secid)
+static void selinux_cred_getsecid(const struct cred *c, struct secids *secid)
 {
-	*secid = cred_sid(c);
+	secid->selinux = cred_sid(c);
 }
 
 /*
  * set the security data for a kernel service
  * - all the creation contexts are set to unlabelled
  */
-static int selinux_kernel_act_as(struct cred *new, u32 secid)
+static int selinux_kernel_act_as(struct cred *new, struct secids *secid)
 {
 	struct task_security_struct *tsec = selinux_cred(new);
 	u32 sid = current_sid();
 	int ret;
 
 	ret = avc_has_perm(&selinux_state,
-			   sid, secid,
+			   sid, secid->selinux,
 			   SECCLASS_KERNEL_SERVICE,
 			   KERNEL_SERVICE__USE_AS_OVERRIDE,
 			   NULL);
 	if (ret == 0) {
-		tsec->sid = secid;
+		tsec->sid = secid->selinux;
 		tsec->create_sid = 0;
 		tsec->keycreate_sid = 0;
 		tsec->sockcreate_sid = 0;
@@ -4010,9 +4010,9 @@ static int selinux_task_getsid(struct task_struct *p)
 			    PROCESS__GETSESSION, NULL);
 }
 
-static void selinux_task_getsecid(struct task_struct *p, u32 *secid)
+static void selinux_task_getsecid(struct task_struct *p, struct secids *secid)
 {
-	*secid = task_sid(p);
+	secid->selinux = task_sid(p);
 }
 
 static int selinux_task_setnice(struct task_struct *p, int nice)
@@ -5037,7 +5037,9 @@ out_len:
 	return err;
 }
 
-static int selinux_socket_getpeersec_dgram(struct socket *sock, struct sk_buff *skb, u32 *secid)
+static int selinux_socket_getpeersec_dgram(struct socket *sock,
+					   struct sk_buff *skb,
+					   struct secids *secid)
 {
 	u32 peer_secid = SECSID_NULL;
 	u16 family;
@@ -5059,7 +5061,7 @@ static int selinux_socket_getpeersec_dgram(struct socket *sock, struct sk_buff *
 		selinux_skb_peerlbl_sid(skb, family, &peer_secid);
 
 out:
-	*secid = peer_secid;
+	secid->selinux = peer_secid;
 	if (peer_secid == SECSID_NULL)
 		return -EINVAL;
 	return 0;
@@ -5096,14 +5098,14 @@ static void selinux_sk_clone_security(const struct sock *sk, struct sock *newsk)
 	selinux_netlbl_sk_security_reset(newsksec);
 }
 
-static void selinux_sk_getsecid(struct sock *sk, u32 *secid)
+static void selinux_sk_getsecid(struct sock *sk, struct secids *secid)
 {
 	if (!sk)
-		*secid = SECINITSID_ANY_SOCKET;
+		secid->selinux = SECINITSID_ANY_SOCKET;
 	else {
 		struct sk_security_struct *sksec = selinux_sock(sk);
 
-		*secid = sksec->sid;
+		secid->selinux = sksec->sid;
 	}
 }
 
@@ -5336,7 +5338,7 @@ static void selinux_inet_conn_established(struct sock *sk, struct sk_buff *skb)
 	selinux_skb_peerlbl_sid(skb, family, &sksec->peer_sid);
 }
 
-static int selinux_secmark_relabel_packet(u32 sid)
+static int selinux_secmark_relabel_packet(struct secids *secid)
 {
 	const struct task_security_struct *__tsec;
 	u32 tsid;
@@ -5345,8 +5347,8 @@ static int selinux_secmark_relabel_packet(u32 sid)
 	tsid = __tsec->sid;
 
 	return avc_has_perm(&selinux_state,
-			    tsid, sid, SECCLASS_PACKET, PACKET__RELABELTO,
-			    NULL);
+			    tsid, secid->selinux, SECCLASS_PACKET,
+			    PACKET__RELABELTO, NULL);
 }
 
 static void selinux_secmark_refcount_inc(void)
@@ -5362,7 +5364,7 @@ static void selinux_secmark_refcount_dec(void)
 static void selinux_req_classify_flow(const struct request_sock *req,
 				      struct flowi *fl)
 {
-	fl->flowi_secid = req->secid;
+	fl->flowi_secid.selinux = req->secid;
 }
 
 static int selinux_tun_dev_alloc_security(void **security)
@@ -6187,10 +6189,11 @@ static int selinux_ipc_permission(struct kern_ipc_perm *ipcp, short flag)
 	return ipc_has_perm(ipcp, av);
 }
 
-static void selinux_ipc_getsecid(struct kern_ipc_perm *ipcp, u32 *secid)
+static void selinux_ipc_getsecid(struct kern_ipc_perm *ipcp,
+				 struct secids *secid)
 {
 	struct ipc_security_struct *isec = selinux_ipc(ipcp);
-	*secid = isec->sid;
+	secid->selinux = isec->sid;
 }
 
 static void selinux_d_instantiate(struct dentry *dentry, struct inode *inode)
@@ -6396,16 +6399,18 @@ static int selinux_ismaclabel(const char *name)
 	return (strcmp(name, XATTR_SELINUX_SUFFIX) == 0);
 }
 
-static int selinux_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
+static int selinux_secid_to_secctx(struct secids *secid, char **secdata,
+				   u32 *seclen)
 {
-	return security_sid_to_context(&selinux_state, secid,
+	return security_sid_to_context(&selinux_state, secid->selinux,
 				       secdata, seclen);
 }
 
-static int selinux_secctx_to_secid(const char *secdata, u32 seclen, u32 *secid)
+static int selinux_secctx_to_secid(const char *secdata, u32 seclen,
+				   struct secids *secid)
 {
 	return security_context_to_sid(&selinux_state, secdata, seclen,
-				       secid, GFP_KERNEL);
+				       &secid->selinux, GFP_KERNEL);
 }
 
 static void selinux_release_secctx(char *secdata, u32 seclen)

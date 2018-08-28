@@ -550,7 +550,9 @@ struct smack_known *smk_import_entry(const char *string, int len)
 	skp->smk_secid = smack_next_secid++;
 	skp->smk_netlabel.domain = skp->smk_known;
 	skp->smk_netlabel.flags =
-		NETLBL_SECATTR_DOMAIN | NETLBL_SECATTR_MLS_LVL;
+		NETLBL_SECATTR_DOMAIN | NETLBL_SECATTR_MLS_LVL |
+		NETLBL_SECATTR_SECID;
+	skp->smk_netlabel.attr.secid.smack = skp->smk_secid;
 	/*
 	 * If direct labeling works use it.
 	 * Otherwise use mapped labeling.

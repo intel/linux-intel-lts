@@ -707,10 +707,10 @@ static void apparmor_bprm_committed_creds(struct linux_binprm *bprm)
 	return;
 }
 
-static void apparmor_task_getsecid(struct task_struct *p, u32 *secid)
+static void apparmor_task_getsecid(struct task_struct *p, struct secids *secid)
 {
 	struct aa_label *label = aa_get_task_label(p);
-	*secid = label->secid;
+	secid->apparmor = label->secid;
 	aa_put_label(label);
 }
 
@@ -1077,7 +1077,8 @@ done:
  * Sets the netlabel socket state on sk from parent
  */
 static int apparmor_socket_getpeersec_dgram(struct socket *sock,
-					    struct sk_buff *skb, u32 *secid)
+					    struct sk_buff *skb,
+					    struct secids *secid)
 
 {
 	/* TODO: requires secid support */
