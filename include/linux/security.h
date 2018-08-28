@@ -70,6 +70,25 @@ enum lsm_event {
 	LSM_POLICY_CHANGE,
 };
 
+struct secids {
+	union {
+		u32 common;
+		u32 selinux;
+		u32 smack;
+		u32 apparmor;
+	};
+};
+
+static inline bool secid_valid(const struct secids *secids)
+{
+	return secids->common != 0;
+}
+
+static inline void secid_init(struct secids *secid)
+{
+	memset(secid, 0, sizeof(*secid));
+}
+
 /* These functions are in security/commoncap.c */
 extern int cap_capable(const struct cred *cred, struct user_namespace *ns,
 		       int cap, int audit);

@@ -11,6 +11,7 @@
 #include <linux/socket.h>
 #include <linux/in6.h>
 #include <linux/atomic.h>
+#include <linux/security.h>
 #include <net/flow_dissector.h>
 #include <linux/uidgid.h>
 
@@ -37,7 +38,7 @@ struct flowi_common {
 #define FLOWI_FLAG_ANYSRC		0x01
 #define FLOWI_FLAG_KNOWN_NH		0x02
 #define FLOWI_FLAG_SKIP_NH_OIF		0x04
-	__u32	flowic_secid;
+	struct secids flowic_secid;
 	struct flowi_tunnel flowic_tun_key;
 	kuid_t  flowic_uid;
 };
@@ -107,7 +108,7 @@ static inline void flowi4_init_output(struct flowi4 *fl4, int oif,
 	fl4->flowi4_scope = scope;
 	fl4->flowi4_proto = proto;
 	fl4->flowi4_flags = flags;
-	fl4->flowi4_secid = 0;
+	secid_init(&fl4->flowi4_secid);
 	fl4->flowi4_tun_key.tun_id = 0;
 	fl4->flowi4_uid = uid;
 	fl4->daddr = daddr;

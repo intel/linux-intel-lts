@@ -73,10 +73,10 @@ struct aa_label *aa_secid_to_label(u32 secid)
 	return label;
 }
 
-int apparmor_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
+int apparmor_secid_to_secctx(struct secids *secid, char **secdata, u32 *seclen)
 {
 	/* TODO: cache secctx and ref count so we don't have to recreate */
-	struct aa_label *label = aa_secid_to_label(secid);
+	struct aa_label *label = aa_secid_to_label(secid->apparmor);
 	int len;
 
 	AA_BUG(!seclen);
@@ -101,7 +101,8 @@ int apparmor_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
 	return 0;
 }
 
-int apparmor_secctx_to_secid(const char *secdata, u32 seclen, u32 *secid)
+int apparmor_secctx_to_secid(const char *secdata, u32 seclen,
+			     struct secids *secid)
 {
 	struct aa_label *label;
 
@@ -109,7 +110,7 @@ int apparmor_secctx_to_secid(const char *secdata, u32 seclen, u32 *secid)
 				    seclen, GFP_KERNEL, false, false);
 	if (IS_ERR(label))
 		return PTR_ERR(label);
-	*secid = label->secid;
+	secid->apparmor = label->secid;
 
 	return 0;
 }
