@@ -51,7 +51,7 @@ void selinux_audit_rule_free(void *rule);
  *	Returns 1 if the context id matches the rule, 0 if it does not, and
  *	-errno on failure.
  */
-int selinux_audit_rule_match(u32 sid, u32 field, u32 op, void *rule,
+int selinux_audit_rule_match(struct secids *sid, u32 field, u32 op, void *rule,
 			     struct audit_context *actx);
 
 /**

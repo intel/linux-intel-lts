@@ -132,6 +132,7 @@ int __init security_init(void)
 	pr_info("LSM: sock blob size       = %d\n", blob_sizes.lbs_sock);
 	pr_info("LSM: superblock blob size = %d\n", blob_sizes.lbs_superblock);
 	pr_info("LSM: task blob size       = %d\n", blob_sizes.lbs_task);
+	pr_info("LSM: secid size           = %zu\n", sizeof(struct secids));
 #endif /* CONFIG_SECURITY_LSM_DEBUG */
 
 	return 0;
@@ -1254,7 +1255,10 @@ EXPORT_SYMBOL(security_inode_listsecurity);
 
 void security_inode_getsecid(struct inode *inode, u32 *secid)
 {
-	call_void_hook(inode_getsecid, inode, secid);
+	struct secids ids;
+
+	call_void_hook(inode_getsecid, inode, &ids);
+	*secid = ids.common;
 }
 
 int security_inode_copy_up(struct dentry *src, struct cred **new)
@@ -1464,14 +1468,20 @@ void security_transfer_creds(struct cred *new, const struct cred *old)
 
 void security_cred_getsecid(const struct cred *c, u32 *secid)
 {
-	*secid = 0;
-	call_void_hook(cred_getsecid, c, secid);
+	struct secids ids;
+
+	ids.common = 0;
+	call_void_hook(cred_getsecid, c, &ids);
+	*secid = ids.common;
 }
 EXPORT_SYMBOL(security_cred_getsecid);
 
 int security_kernel_act_as(struct cred *new, u32 secid)
 {
-	return call_int_hook(kernel_act_as, 0, new, secid);
+	struct secids ids;
+
+	ids.common = secid;
+	return call_int_hook(kernel_act_as, 0, new, &ids);
 }
 
 int security_kernel_create_files_as(struct cred *new, struct inode *inode)
@@ -1546,8 +1556,11 @@ int security_task_getsid(struct task_struct *p)
 
 void security_task_getsecid(struct task_struct *p, u32 *secid)
 {
-	*secid = 0;
-	call_void_hook(task_getsecid, p, secid);
+	struct secids ids;
+
+	ids.common = 0;
+	call_void_hook(task_getsecid, p, &ids);
+	*secid = ids.common;
 }
 EXPORT_SYMBOL(security_task_getsecid);
 
@@ -1629,8 +1642,11 @@ int security_ipc_permission(struct kern_ipc_perm *ipcp, short flag)
 
 void security_ipc_getsecid(struct kern_ipc_perm *ipcp, u32 *secid)
 {
-	*secid = 0;
-	call_void_hook(ipc_getsecid, ipcp, secid);
+	struct secids ids;
+
+	ids.common = 0;
+	call_void_hook(ipc_getsecid, ipcp, &ids);
+	*secid = ids.common;
 }
 
 int security_msg_msg_alloc(struct msg_msg *msg)
@@ -1809,15 +1825,24 @@ EXPORT_SYMBOL(security_ismaclabel);
 
 int security_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
 {
-	return call_int_hook(secid_to_secctx, -EOPNOTSUPP, secid, secdata,
+	struct secids ids;
+
+	ids.common = secid;
+	return call_int_hook(secid_to_secctx, -EOPNOTSUPP, &ids, secdata,
 				seclen);
 }
 EXPORT_SYMBOL(security_secid_to_secctx);
 
 int security_secctx_to_secid(const char *secdata, u32 seclen, u32 *secid)
 {
-	*secid = 0;
-	return call_int_hook(secctx_to_secid, 0, secdata, seclen, secid);
+	struct secids ids;
+	int rc;
+
+	ids.common = 0;
+	rc = call_int_hook(secctx_to_secid, 0, secdata, seclen, &ids);
+	*secid = ids.common;
+
+	return rc;
 }
 EXPORT_SYMBOL(security_secctx_to_secid);
 
@@ -1954,8 +1979,14 @@ int security_socket_getpeersec_stream(struct socket *sock, char __user *optval,
 
 int security_socket_getpeersec_dgram(struct socket *sock, struct sk_buff *skb, u32 *secid)
 {
-	return call_int_hook(socket_getpeersec_dgram, -ENOPROTOOPT, sock,
-			     skb, secid);
+	struct secids ids;
+	int rc;
+
+	rc = call_int_hook(socket_getpeersec_dgram, -ENOPROTOOPT, sock,
+			     skb, &ids);
+	*secid = ids.common;
+
+	return rc;
 }
 EXPORT_SYMBOL(security_socket_getpeersec_dgram);
 
@@ -2024,7 +2055,10 @@ EXPORT_SYMBOL(security_inet_conn_established);
 
 int security_secmark_relabel_packet(u32 secid)
 {
-	return call_int_hook(secmark_relabel_packet, 0, secid);
+	struct secids ids;
+
+	ids.common = secid;
+	return call_int_hook(secmark_relabel_packet, 0, &ids);
 }
 EXPORT_SYMBOL(security_secmark_relabel_packet);
 
@@ -2163,7 +2197,10 @@ EXPORT_SYMBOL(security_xfrm_state_alloc);
 int security_xfrm_state_alloc_acquire(struct xfrm_state *x,
 				      struct xfrm_sec_ctx *polsec, u32 secid)
 {
-	return call_int_hook(xfrm_state_alloc_acquire, 0, x, polsec, secid);
+	struct secids ids;
+
+	ids.common = secid;
+	return call_int_hook(xfrm_state_alloc_acquire, 0, x, polsec, &ids);
 }
 
 int security_xfrm_state_delete(struct xfrm_state *x)
@@ -2179,7 +2216,10 @@ void security_xfrm_state_free(struct xfrm_state *x)
 
 int security_xfrm_policy_lookup(struct xfrm_sec_ctx *ctx, u32 fl_secid, u8 dir)
 {
-	return call_int_hook(xfrm_policy_lookup, 0, ctx, fl_secid, dir);
+	struct secids ids;
+
+	ids.common = fl_secid;
+	return call_int_hook(xfrm_policy_lookup, 0, ctx, &ids, dir);
 }
 
 int security_xfrm_state_pol_flow_match(struct xfrm_state *x,
@@ -2208,7 +2248,13 @@ int security_xfrm_state_pol_flow_match(struct xfrm_state *x,
 
 int security_xfrm_decode_session(struct sk_buff *skb, u32 *secid)
 {
-	return call_int_hook(xfrm_decode_session, 0, skb, secid, 1);
+	struct secids ids;
+	int rc;
+
+	rc = call_int_hook(xfrm_decode_session, 0, skb, &ids, 1);
+	*secid = ids.common;
+
+	return rc;
 }
 
 void security_skb_classify_flow(struct sk_buff *skb, struct flowi *fl)
@@ -2278,7 +2324,10 @@ void security_audit_rule_free(void *lsmrule)
 int security_audit_rule_match(u32 secid, u32 field, u32 op, void *lsmrule,
 			      struct audit_context *actx)
 {
-	return call_int_hook(audit_rule_match, 0, secid, field, op, lsmrule,
+	struct secids ids;
+
+	ids.common = secid;
+	return call_int_hook(audit_rule_match, 0, &ids, field, op, lsmrule,
 				actx);
 }
 #endif /* CONFIG_AUDIT */

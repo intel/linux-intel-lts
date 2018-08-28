@@ -23,8 +23,9 @@ struct aa_label;
 #define AA_SECID_INVALID 0
 
 struct aa_label *aa_secid_to_label(u32 secid);
-int apparmor_secid_to_secctx(u32 secid, char **secdata, u32 *seclen);
-int apparmor_secctx_to_secid(const char *secdata, u32 seclen, u32 *secid);
+int apparmor_secid_to_secctx(struct secids *secid, char **secdata, u32 *seclen);
+int apparmor_secctx_to_secid(const char *secdata, u32 seclen,
+			     struct secids *secid);
 void apparmor_release_secctx(char *secdata, u32 seclen);
 
 
