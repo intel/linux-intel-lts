@@ -113,7 +113,7 @@ struct audit_buffer *netlbl_audit_start_common(int type,
 			 audit_info->sessionid);
 
 	if (audit_info->secid.common != 0 &&
-	    security_secid_to_secctx(audit_info->secid.common,
+	    security_secid_to_secctx(&audit_info->secid,
 				     &secctx,
 				     &secctx_len) == 0) {
 		audit_log_format(audit_buf, " subj=%s", secctx);

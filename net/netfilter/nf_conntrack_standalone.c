@@ -171,8 +171,12 @@ static void ct_show_secctx(struct seq_file *s, const struct nf_conn *ct)
 	int ret;
 	u32 len;
 	char *secctx;
+	struct secids secid;
 
-	ret = security_secid_to_secctx(ct->secmark, &secctx, &len);
+	secid_init(&secid);
+	secid.common = ct->secmark;
+
+	ret = security_secid_to_secctx(&secid, &secctx, &len);
 	if (ret)
 		return;
 
