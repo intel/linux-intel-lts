@@ -650,7 +650,7 @@ EXPORT_SYMBOL(prepare_kernel_cred);
  * Set the LSM security ID in a set of credentials so that the subjective
  * security is overridden when an alternative set of credentials is used.
  */
-int set_security_override(struct cred *new, u32 secid)
+int set_security_override(struct cred *new, struct secids *secid)
 {
 	return security_kernel_act_as(new, secid);
 }
@@ -668,14 +668,14 @@ EXPORT_SYMBOL(set_security_override);
  */
 int set_security_override_from_ctx(struct cred *new, const char *secctx)
 {
-	u32 secid;
+	struct secids secid;
 	int ret;
 
 	ret = security_secctx_to_secid(secctx, strlen(secctx), &secid);
 	if (ret < 0)
 		return ret;
 
-	return set_security_override(new, secid);
+	return set_security_override(new, &secid);
 }
 EXPORT_SYMBOL(set_security_override_from_ctx);
 
