@@ -244,7 +244,7 @@ int netlbl_cfg_unlbl_static_add(struct net *net,
 
 	return netlbl_unlhsh_add(net,
 				 dev_name, addr, mask, addr_len,
-				 secid->common, audit_info);
+				 secid, audit_info);
 }
 
 /**
