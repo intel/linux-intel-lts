@@ -59,7 +59,7 @@ static int checkentry_lsm(struct xt_secmark_target_info *info)
 
 	err = security_secctx_to_secid(info->secctx, strlen(info->secctx),
 				       &secid);
-	info->secid = secid.common;
+	info->secid = secid.selinux;
 
 	if (err) {
 		if (err == -EINVAL)

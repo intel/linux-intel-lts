@@ -417,6 +417,14 @@ int selinux_netlbl_socket_post_create(struct sock *sk, u16 family)
 	secattr = selinux_netlbl_sock_genattr(sk);
 	if (secattr == NULL)
 		return -ENOMEM;
+
+#ifdef CONFIG_SECURITY_STACKING
+	/* Ensure that other security modules cooperate */
+	rc = lsm_sock_vet_attr(sk, secattr, LSM_SOCK_SELINUX);
+	if (rc)
+		return rc;
+#endif
+
 	rc = netlbl_sock_setattr(sk, family, secattr);
 	switch (rc) {
 	case 0:
