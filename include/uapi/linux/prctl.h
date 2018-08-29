@@ -219,4 +219,8 @@ struct prctl_mm_map {
 # define PR_SPEC_DISABLE		(1UL << 2)
 # define PR_SPEC_FORCE_DISABLE		(1UL << 3)
 
+/* Control the LSM specific peer information */
+#define	PR_GET_DISPLAY_LSM	52
+#define	PR_SET_DISPLAY_LSM	53
+
 #endif /* _LINUX_PRCTL_H */

@@ -53,6 +53,7 @@ struct msg_msg;
 struct xattr;
 struct xfrm_sec_ctx;
 struct mm_struct;
+struct sk_buff;
 
 /* If capable should audit the security request */
 #define SECURITY_CAP_NOAUDIT 0
@@ -70,6 +71,33 @@ enum lsm_event {
 	LSM_POLICY_CHANGE,
 };
 
+/*
+ * A secid is an u32 unless stacking is involved,
+ * in which case it is a set of u32s, one for each module
+ * that uses secids.
+ */
+#ifdef CONFIG_SECURITY_STACKING
+
+struct secids {
+	u32 common;
+#ifdef CONFIG_SECURITY_SELINUX
+	u32 selinux;
+#endif
+#ifdef CONFIG_SECURITY_SMACK
+	u32 smack;
+#endif
+#ifdef CONFIG_SECURITY_APPARMOR
+	u32 apparmor;
+#endif
+	u32 flags;
+};
+
+extern void secid_from_skb(struct secids *secid, const struct sk_buff *skb);
+extern void secid_to_skb(struct secids *secid, struct sk_buff *skb);
+extern bool secid_valid(const struct secids *secids);
+
+#else /* CONFIG_SECURITY_STACKING */
+
 struct secids {
 	union {
 		u32 common;
@@ -83,6 +111,8 @@ static inline bool secid_valid(const struct secids *secids)
 {
 	return secids->common != 0;
 }
+
+#endif /* CONFIG_SECURITY_STACKING */
 
 static inline void secid_init(struct secids *secid)
 {
@@ -120,7 +150,6 @@ extern int cap_task_setnice(struct task_struct *p, int nice);
 extern int cap_vm_enough_memory(struct mm_struct *mm, long pages);
 
 struct msghdr;
-struct sk_buff;
 struct sock;
 struct sockaddr;
 struct socket;
@@ -828,17 +857,23 @@ static inline int security_inode_killpriv(struct dentry *dentry)
 	return cap_inode_killpriv(dentry);
 }
 
-static inline int security_inode_getsecurity(struct inode *inode, const char *name, void **buffer, bool alloc)
+static inline int security_inode_getsecurity(struct inode *inode,
+					     const char *name, void **buffer,
+					     bool alloc)
 {
 	return -EOPNOTSUPP;
 }
 
-static inline int security_inode_setsecurity(struct inode *inode, const char *name, const void *value, size_t size, int flags)
+static inline int security_inode_setsecurity(struct inode *inode,
+					     const char *name,
+					     const void *value, size_t size,
+					     int flags)
 {
 	return -EOPNOTSUPP;
 }
 
-static inline int security_inode_listsecurity(struct inode *inode, char *buffer, size_t buffer_size)
+static inline int security_inode_listsecurity(struct inode *inode, char *buffer,
+					      size_t buffer_size)
 {
 	return 0;
 }
@@ -1080,7 +1115,8 @@ static inline int security_task_prctl(int option, unsigned long arg2,
 	return cap_task_prctl(option, arg2, arg3, arg4, arg5);
 }
 
-static inline void security_task_to_inode(struct task_struct *p, struct inode *inode)
+static inline void security_task_to_inode(struct task_struct *p,
+					  struct inode *inode)
 { }
 
 static inline int security_ipc_permission(struct kern_ipc_perm *ipcp,
