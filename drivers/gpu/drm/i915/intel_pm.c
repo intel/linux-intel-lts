@@ -4961,6 +4961,70 @@ static void skl_write_wm_level(struct drm_i915_private *dev_priv,
 	I915_WRITE(reg, val);
 }
 
+static void skl_pv_write_wm_level(u32 *plane_wm_level,
+			       const struct skl_wm_level *level)
+{
+	uint32_t val = 0;
+
+	if (level->plane_en) {
+		val |= PLANE_WM_EN;
+		val |= level->plane_res_b;
+		val |= level->plane_res_l << PLANE_WM_LINES_SHIFT;
+	}
+
+	*plane_wm_level = val;
+}
+
+static void skl_pv_ddb_entry_write(u32 *plane_cfg,
+				const struct skl_ddb_entry *entry)
+{
+	if (entry->end)
+		*plane_cfg = (entry->end - 1) << 16 | entry->start;
+	else
+		*plane_cfg = 0;
+}
+
+static void skl_pv_write_plane_wm(struct intel_crtc *intel_crtc,
+				const struct skl_plane_wm *wm,
+				const struct skl_ddb_allocation *ddb,
+				enum plane_id plane_id)
+{
+	int i, level;
+	struct pv_plane_wm_update tmp_plane_wm;
+	struct drm_i915_private *dev_priv = to_i915(intel_crtc->base.dev);
+	int max_level = ilk_wm_max_level(dev_priv);
+	u32 __iomem *pv_plane_wm = (u32 *)&(dev_priv->shared_page->pv_plane_wm);
+	enum pipe pipe = intel_crtc->pipe;
+
+	memset(&tmp_plane_wm, 0, sizeof(struct pv_plane_wm_update));
+	tmp_plane_wm.max_wm_level = max_level;
+	for (level = 0; level <= max_level; level++) {
+		skl_pv_write_wm_level(&tmp_plane_wm.plane_wm_level[level],
+				      &wm->wm[level]);
+	}
+	skl_pv_write_wm_level(&tmp_plane_wm.plane_trans_wm_level,
+			      &wm->trans_wm);
+
+	if (wm->is_planar) {
+		skl_pv_ddb_entry_write(&tmp_plane_wm.plane_buf_cfg,
+				       &ddb->uv_plane[pipe][plane_id]);
+	} else {
+		skl_pv_ddb_entry_write(&tmp_plane_wm.plane_buf_cfg,
+				       &ddb->plane[pipe][plane_id]);
+	}
+
+	spin_lock(&dev_priv->shared_page_lock);
+	for (i = 0; i < sizeof(struct pv_plane_wm_update) / 4; i++)
+		writel(*((u32 *)(&tmp_plane_wm) + i), pv_plane_wm + i);
+	if (wm->is_planar)
+		skl_ddb_entry_write(dev_priv,
+				    PLANE_NV12_BUF_CFG(pipe, plane_id),
+				    &ddb->plane[pipe][plane_id]);
+	else
+		I915_WRITE(PLANE_NV12_BUF_CFG(pipe, plane_id), 0x0);
+	spin_unlock(&dev_priv->shared_page_lock);
+}
+
 static void skl_write_plane_wm(struct intel_crtc *intel_crtc,
 			       const struct skl_plane_wm *wm,
 			       const struct skl_ddb_allocation *ddb,
@@ -4971,6 +5035,21 @@ static void skl_write_plane_wm(struct intel_crtc *intel_crtc,
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	int level, max_level = ilk_wm_max_level(dev_priv);
 	enum pipe pipe = intel_crtc->pipe;
+
+	if (INTEL_GEN(dev_priv) < 11) {
+		/*
+		 * when plane restriction feature is enabled,
+		 * sos trap handlers for plane wm related registers are null
+		 */
+		/* TODO: uncomment when plane restriction feature is enabled */
+#if 0
+		if (i915_modparams.avail_planes_per_pipe)
+			return;
+#endif
+		if (PVMMIO_LEVEL(dev_priv, PVMMIO_PLANE_WM_UPDATE))
+			return skl_pv_write_plane_wm(intel_crtc, wm,
+						     ddb, plane_id);
+	}
 
 	for (level = 0; level <= max_level; level++) {
 		skl_write_wm_level(dev_priv, PLANE_WM(pipe, plane_id, level),
