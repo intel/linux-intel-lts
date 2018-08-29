@@ -91,8 +91,10 @@ struct gvt_shared_page {
 	u32 elsp_data[4];
 	u32 reg_addr;
 	struct pv_plane_update pv_plane;
+	/* This is reserved only for compatibility */
+	u32 plane_wm_rsvd[11];
 	struct pv_ppgtt_update pv_ppgtt;
-	u32 rsvd2[0x400 - 30];
+	u32 rsvd2[0x400 - 40];
 };
 
 #define VGPU_PVMMIO(vgpu) vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio))
@@ -103,6 +105,7 @@ struct gvt_shared_page {
 enum pvmmio_levels {
 	PVMMIO_ELSP_SUBMIT = 0x1,
 	PVMMIO_PLANE_UPDATE = 0x2,
+	/* PVMMIO_XX= 0x4. Reseved for compatibility */
 	PVMMIO_PPGTT_UPDATE = 0x10,
 };
 
