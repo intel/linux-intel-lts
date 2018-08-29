@@ -1231,9 +1231,9 @@ static int smack_inode_setxattr(struct dentry *dentry, const char *name,
 {
 	struct smk_audit_info ad;
 	struct smack_known *skp;
-	int check_priv = 0;
-	int check_import = 0;
-	int check_star = 0;
+	bool check_priv = false;
+	bool check_import = false;
+	bool check_star = false;
 	int rc = 0;
 
 	/*
@@ -1242,20 +1242,20 @@ static int smack_inode_setxattr(struct dentry *dentry, const char *name,
 	if (strcmp(name, XATTR_NAME_SMACK) == 0 ||
 	    strcmp(name, XATTR_NAME_SMACKIPIN) == 0 ||
 	    strcmp(name, XATTR_NAME_SMACKIPOUT) == 0) {
-		check_priv = 1;
-		check_import = 1;
+		check_priv = true;
+		check_import = true;
 	} else if (strcmp(name, XATTR_NAME_SMACKEXEC) == 0 ||
 		   strcmp(name, XATTR_NAME_SMACKMMAP) == 0) {
-		check_priv = 1;
-		check_import = 1;
-		check_star = 1;
+		check_priv = true;
+		check_import = true;
+		check_star = true;
 	} else if (strcmp(name, XATTR_NAME_SMACKTRANSMUTE) == 0) {
-		check_priv = 1;
+		check_priv = true;
 		if (size != TRANS_TRUE_SIZE ||
 		    strncmp(value, TRANS_TRUE, TRANS_TRUE_SIZE) != 0)
 			rc = -EINVAL;
 	} else
-		rc = cap_inode_setxattr(dentry, name, value, size, flags);
+		rc = -ENOSYS;
 
 	if (check_priv && !smack_privileged(CAP_MAC_ADMIN))
 		rc = -EPERM;
@@ -1269,11 +1269,11 @@ static int smack_inode_setxattr(struct dentry *dentry, const char *name,
 			rc = -EINVAL;
 	}
 
-	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_DENTRY);
-	smk_ad_setfield_u_fs_path_dentry(&ad, dentry);
-
 	if (rc == 0) {
-		rc = smk_curacc(smk_of_inode(d_backing_inode(dentry)), MAY_WRITE, &ad);
+		smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_DENTRY);
+		smk_ad_setfield_u_fs_path_dentry(&ad, dentry);
+		rc = smk_curacc(smk_of_inode(d_backing_inode(dentry)),
+				MAY_WRITE, &ad);
 		rc = smk_bu_inode(d_backing_inode(dentry), MAY_WRITE, rc);
 	}
 
@@ -2392,12 +2392,31 @@ static int smack_netlabel(struct sock *sk, int labeled)
 	bh_lock_sock_nested(sk);
 
 	if (ssp->smk_out == smack_net_ambient ||
-	    labeled == SMACK_UNLABELED_SOCKET)
+	    labeled == SMACK_UNLABELED_SOCKET) {
+#ifdef CONFIG_SECURITY_STACKING
+		rc = lsm_sock_vet_attr(sk, NULL, LSM_SOCK_SMACK);
+		if (!rc)
+			netlbl_sock_delattr(sk);
+#else
 		netlbl_sock_delattr(sk);
-	else {
+#endif
+	} else {
 		skp = ssp->smk_out;
+#ifdef CONFIG_SECURITY_STACKING
+		rc = lsm_sock_vet_attr(sk, &skp->smk_netlabel, LSM_SOCK_SMACK);
+		if (rc)
+			goto unlock_out;
+#endif
 		rc = netlbl_sock_setattr(sk, sk->sk_family, &skp->smk_netlabel);
+		if (rc == -EDESTADDRREQ) {
+			pr_info("Smack: %s set socket deferred\n", __func__);
+			rc = 0;
+		}
 	}
+
+#ifdef CONFIG_SECURITY_STACKING
+unlock_out:
+#endif
 
 	bh_unlock_sock(sk);
 	local_bh_enable();
@@ -3833,7 +3852,7 @@ static int smack_socket_sock_rcv_skb(struct sock *sk, struct sk_buff *skb)
 		netlbl_secattr_init(&secattr);
 
 		rc = netlbl_skbuff_getattr(skb, family, &secattr);
-		if (rc == 0)
+		if (rc == 0 && secattr.flags != NETLBL_SECATTR_NONE)
 			skp = smack_from_secattr(&secattr, ssp);
 		else
 			skp = smack_net_ambient;
@@ -4427,11 +4446,15 @@ static int smack_secctx_to_secid(const char *secdata, u32 seclen,
 	return 0;
 }
 
+#ifdef CONFIG_SECURITY_STACKING
 /*
- * There used to be a smack_release_secctx hook
- * that did nothing back when hooks were in a vector.
- * Now that there's a list such a hook adds cost.
+ * The smack_release_secctx hook is only needed when stacking
+ * is in use to avoid confusion when a secctx is provided.
  */
+static void smack_release_secctx(char *secdata, u32 seclen)
+{
+}
+#endif
 
 static int smack_inode_notifysecctx(struct inode *inode, void *ctx, u32 ctxlen)
 {
@@ -4669,6 +4692,9 @@ static struct security_hook_list smack_hooks[] __lsm_ro_after_init = {
 	LSM_HOOK_INIT(ismaclabel, smack_ismaclabel),
 	LSM_HOOK_INIT(secid_to_secctx, smack_secid_to_secctx),
 	LSM_HOOK_INIT(secctx_to_secid, smack_secctx_to_secid),
+#ifdef CONFIG_SECURITY_STACKING
+	LSM_HOOK_INIT(release_secctx, smack_release_secctx),
+#endif
 	LSM_HOOK_INIT(inode_notifysecctx, smack_inode_notifysecctx),
 	LSM_HOOK_INIT(inode_setsecctx, smack_inode_setsecctx),
 	LSM_HOOK_INIT(inode_getsecctx, smack_inode_getsecctx),

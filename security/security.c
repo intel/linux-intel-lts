@@ -29,12 +29,18 @@
 #include <linux/backing-dev.h>
 #include <linux/string.h>
 #include <linux/msg.h>
+#include <linux/prctl.h>
 #include <net/flow.h>
 #include <net/sock.h>
 
 #include <trace/events/initcall.h>
 
-#define MAX_LSM_EVM_XATTR	2
+/*
+ * This should depend on the number of security modules
+ * that use extended attributes. At this writing it is
+ * at least EVM, SELinux and Smack.
+ */
+#define MAX_LSM_EVM_XATTR	8
 
 /* Maximum number of letters for an LSM name string */
 #define SECURITY_NAME_MAX	10
@@ -47,7 +53,16 @@ static struct kmem_cache *lsm_file_cache;
 static struct kmem_cache *lsm_inode_cache;
 
 char *lsm_names;
-static struct lsm_blob_sizes blob_sizes;
+/*
+ * If stacking is enabled the task blob will always
+ * include an indicator of what security module data
+ * should be displayed. This is set with PR_SET_DISPLAY_LSM.
+ */
+static struct lsm_blob_sizes blob_sizes = {
+#ifdef CONFIG_SECURITY_STACKING
+	.lbs_task = SECURITY_NAME_MAX + 2,
+#endif
+};
 
 /* Boot-time LSM user choice */
 static __initdata char chosen_lsm[SECURITY_NAME_MAX + 1] =
@@ -336,6 +351,14 @@ void __init security_add_blobs(struct lsm_blob_sizes *needed)
 	lsm_set_size(&needed->lbs_key, &blob_sizes.lbs_key);
 #endif
 	lsm_set_size(&needed->lbs_msg_msg, &blob_sizes.lbs_msg_msg);
+#ifdef CONFIG_NETWORK_SECMARK
+	/*
+	 * Store the most likely secmark with the socket
+	 * so that it doesn't have to be a managed object.
+	 */
+	if (needed->lbs_sock && blob_sizes.lbs_sock == 0)
+		blob_sizes.lbs_sock = sizeof(struct secids);
+#endif
 	lsm_set_size(&needed->lbs_sock, &blob_sizes.lbs_sock);
 	lsm_set_size(&needed->lbs_superblock, &blob_sizes.lbs_superblock);
 	lsm_set_size(&needed->lbs_task, &blob_sizes.lbs_task);
@@ -556,6 +579,25 @@ int lsm_superblock_alloc(struct super_block *sb)
 		return -ENOMEM;
 	return 0;
 }
+
+#ifdef CONFIG_SECURITY_STACKING
+static int lsm_pick_secctx(const char *lsm, const char *from, char *to)
+{
+	char fmt[SECURITY_NAME_MAX + 4];
+	char *cp;
+	int i;
+
+	sprintf(fmt, "%s='", lsm);
+	i = sscanf(from, fmt, to);
+	if (i != 1)
+		return -ENOENT;
+	cp = strchr(to, '\'');
+	if (cp == NULL)
+		return -EINVAL;
+	*cp = '\0';
+	return 0;
+}
+#endif /* CONFIG_SECURITY_STACKING */
 
 /*
  * Hook list operation macros.
@@ -879,8 +921,12 @@ int security_inode_init_security(struct inode *inode, struct inode *dir,
 				 const initxattrs initxattrs, void *fs_data)
 {
 	struct xattr new_xattrs[MAX_LSM_EVM_XATTR + 1];
-	struct xattr *lsm_xattr, *evm_xattr, *xattr;
-	int ret;
+	struct xattr *lsm_xattr;
+	struct xattr *evm_xattr;
+	struct xattr *xattr;
+	struct security_hook_list *shp;
+	int ret = -EOPNOTSUPP;
+	int rc = 0;
 
 	if (unlikely(IS_PRIVATE(inode)))
 		return 0;
@@ -888,23 +934,41 @@ int security_inode_init_security(struct inode *inode, struct inode *dir,
 	if (!initxattrs)
 		return call_int_hook(inode_init_security, -EOPNOTSUPP, inode,
 				     dir, qstr, NULL, NULL, NULL);
+
 	memset(new_xattrs, 0, sizeof(new_xattrs));
 	lsm_xattr = new_xattrs;
-	ret = call_int_hook(inode_init_security, -EOPNOTSUPP, inode, dir, qstr,
-						&lsm_xattr->name,
-						&lsm_xattr->value,
-						&lsm_xattr->value_len);
-	if (ret)
-		goto out;
 
-	evm_xattr = lsm_xattr + 1;
-	ret = evm_inode_init_security(inode, lsm_xattr, evm_xattr);
-	if (ret)
-		goto out;
-	ret = initxattrs(inode, new_xattrs, fs_data);
-out:
-	for (xattr = new_xattrs; xattr->value != NULL; xattr++)
-		kfree(xattr->value);
+	hlist_for_each_entry(shp, &security_hook_heads.inode_init_security,
+				list) {
+		rc = shp->hook.inode_init_security(inode, dir, qstr,
+							&lsm_xattr->name,
+							&lsm_xattr->value,
+							&lsm_xattr->value_len);
+		if (rc == 0) {
+			lsm_xattr++;
+			evm_xattr = lsm_xattr;
+			if (ret == -EOPNOTSUPP)
+				ret = 0;
+		} else if (rc != -EOPNOTSUPP) {
+			ret = rc;
+			break;
+		}
+	}
+
+	if (ret == 0) {
+		rc = evm_inode_init_security(inode, new_xattrs, evm_xattr);
+		if (rc == 0)
+			rc = initxattrs(inode, new_xattrs, fs_data);
+	}
+
+	if (lsm_xattr != new_xattrs) {
+		for (xattr = new_xattrs; xattr->value != NULL; xattr++)
+			kfree(xattr->value);
+	}
+
+	if (rc != 0)
+		return rc;
+
 	return (ret == -EOPNOTSUPP) ? 0 : ret;
 }
 EXPORT_SYMBOL(security_inode_init_security);
@@ -1133,18 +1197,22 @@ int security_inode_getattr(const struct path *path)
 int security_inode_setxattr(struct dentry *dentry, const char *name,
 			    const void *value, size_t size, int flags)
 {
-	int ret;
+	struct security_hook_list *hp;
+	int ret = -ENOSYS;
+	int trc;
 
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
 		return 0;
-	/*
-	 * SELinux and Smack integrate the cap call,
-	 * so assume that all LSMs supplying this call do so.
-	 */
-	ret = call_int_hook(inode_setxattr, 1, dentry, name, value, size,
-				flags);
 
-	if (ret == 1)
+	hlist_for_each_entry(hp, &security_hook_heads.inode_setxattr, list) {
+		trc = hp->hook.inode_setxattr(dentry, name, value, size, flags);
+		if (trc != -ENOSYS) {
+			ret = trc;
+			break;
+		}
+	}
+
+	if (ret == -ENOSYS)
 		ret = cap_inode_setxattr(dentry, name, value, size, flags);
 	if (ret)
 		return ret;
@@ -1601,12 +1669,65 @@ int security_task_kill(struct task_struct *p, struct siginfo *info,
 	return call_int_hook(task_kill, 0, p, info, sig, cred);
 }
 
+#ifdef CONFIG_SECURITY_STACKING
+static void lsm_to_display(char *lsm)
+{
+	WARN_ON(!current->security);
+	if (current->security)
+		strncpy(lsm, current->security, SECURITY_NAME_MAX + 1);
+	else
+		lsm[0] = '\0';
+}
+#endif
+
 int security_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 			 unsigned long arg4, unsigned long arg5)
 {
 	int thisrc;
 	int rc = -ENOSYS;
 	struct security_hook_list *hp;
+#ifdef CONFIG_SECURITY_STACKING
+	char lsm[SECURITY_NAME_MAX + 1];
+	__user char *optval = (__user char *)arg2;
+	__user int *optlen = (__user int *)arg3;
+	int dlen;
+	int len;
+
+	switch (option) {
+	case PR_GET_DISPLAY_LSM:
+		lsm_to_display(lsm);
+		len = arg4;
+		dlen = strlen(lsm) + 1;
+		if (dlen > len)
+			return -ERANGE;
+		if (copy_to_user(optval, lsm, dlen))
+			return -EFAULT;
+		if (put_user(dlen, optlen))
+			return -EFAULT;
+		return 0;
+	case PR_SET_DISPLAY_LSM:
+		len = arg3;
+		if (len > SECURITY_NAME_MAX)
+			return -EINVAL;
+		if (copy_from_user(lsm, optval, len))
+			return -EFAULT;
+		lsm[len] = '\0';
+		/*
+		 * Trust the caller to know what lsm name(s) are available.
+		 */
+		if (!current) {
+			pr_info("%s BUGGER - no current!\n", __func__);
+			return -EINVAL;
+		}
+		if (!current->security) {
+			pr_info("%s %s BUGGER - no security!\n", __func__,
+				current->comm);
+			return -EINVAL;
+		}
+		strcpy(current->security, lsm);
+		return 0;
+	}
+#endif
 
 	hlist_for_each_entry(hp, &security_hook_heads.task_prctl, list) {
 		thisrc = hp->hook.task_prctl(option, arg2, arg3, arg4, arg5);
@@ -1776,9 +1897,17 @@ int security_getprocattr(struct task_struct *p, const char *lsm, char *name,
 				char **value)
 {
 	struct security_hook_list *hp;
+#ifdef CONFIG_SECURITY_STACKING
+	char dlsm[SECURITY_NAME_MAX + 1];
+
+	if (!lsm) {
+		lsm_to_display(dlsm);
+		lsm = dlsm;
+	}
+#endif
 
 	hlist_for_each_entry(hp, &security_hook_heads.getprocattr, list) {
-		if (lsm != NULL && strcmp(lsm, hp->lsm))
+		if (lsm && lsm[0] && strcmp(lsm, hp->lsm))
 			continue;
 		return hp->hook.getprocattr(p, name, value);
 	}
@@ -1789,9 +1918,17 @@ int security_setprocattr(const char *lsm, const char *name, void *value,
 			 size_t size)
 {
 	struct security_hook_list *hp;
+#ifdef CONFIG_SECURITY_STACKING
+	char dlsm[SECURITY_NAME_MAX + 1];
+
+	if (!lsm) {
+		lsm_to_display(dlsm);
+		lsm = dlsm;
+	}
+#endif
 
 	hlist_for_each_entry(hp, &security_hook_heads.setprocattr, list) {
-		if (lsm != NULL && strcmp(lsm, hp->lsm))
+		if (lsm && lsm[0] && strcmp(lsm, hp->lsm))
 			continue;
 		return hp->hook.setprocattr(name, value, size);
 	}
@@ -1811,22 +1948,60 @@ EXPORT_SYMBOL(security_ismaclabel);
 
 int security_secid_to_secctx(struct secids *secid, char **secdata, u32 *seclen)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct security_hook_list *hp;
+	char lsm[SECURITY_NAME_MAX + 1];
+
+	lsm_to_display(lsm);
+
+	hlist_for_each_entry(hp, &security_hook_heads.secid_to_secctx, list)
+		if (lsm[0] == '\0' || !strcmp(lsm, hp->lsm))
+			return hp->hook.secid_to_secctx(secid, secdata, seclen);
+
+	return -EOPNOTSUPP;
+#else
 	return call_int_hook(secid_to_secctx, -EOPNOTSUPP, secid, secdata,
 				seclen);
+#endif
 }
 EXPORT_SYMBOL(security_secid_to_secctx);
 
 int security_secctx_to_secid(const char *secdata, u32 seclen,
 			     struct secids *secid)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct security_hook_list *hp;
+	char lsm[SECURITY_NAME_MAX + 1];
+	int rc = 0;
+
+	lsm_to_display(lsm);
 	secid_init(secid);
+	hlist_for_each_entry(hp, &security_hook_heads.secctx_to_secid, list)
+		if (lsm[0] == '\0' || !strcmp(lsm, hp->lsm))
+			return hp->hook.secctx_to_secid(secdata, seclen, secid);
+	return rc;
+#else
 	return call_int_hook(secctx_to_secid, 0, secdata, seclen, secid);
+#endif
 }
 EXPORT_SYMBOL(security_secctx_to_secid);
 
 void security_release_secctx(char *secdata, u32 seclen)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct security_hook_list *hp;
+	char lsm[SECURITY_NAME_MAX + 1];
+
+	lsm_to_display(lsm);
+
+	hlist_for_each_entry(hp, &security_hook_heads.release_secctx, list)
+		if (lsm[0] == '\0' || !strcmp(lsm, hp->lsm)) {
+			hp->hook.release_secctx(secdata, seclen);
+			break;
+		}
+#else
 	call_void_hook(release_secctx, secdata, seclen);
+#endif
 }
 EXPORT_SYMBOL(security_release_secctx);
 
@@ -1844,13 +2019,80 @@ EXPORT_SYMBOL(security_inode_notifysecctx);
 
 int security_inode_setsecctx(struct dentry *dentry, void *ctx, u32 ctxlen)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct security_hook_list *hp;
+	char *subctx;
+	int rc = 0;
+
+	subctx = kzalloc(ctxlen, GFP_KERNEL);
+	if (subctx == NULL)
+		return -ENOMEM;
+
+	hlist_for_each_entry(hp, &security_hook_heads.inode_setsecctx, list) {
+		rc = lsm_pick_secctx(hp->lsm, ctx, subctx);
+		if (rc) {
+			rc = 0;
+			continue;
+		}
+		rc = hp->hook.inode_setsecctx(dentry, subctx, strlen(subctx));
+		if (rc)
+			break;
+	}
+
+	kfree(subctx);
+	return rc;
+#else
 	return call_int_hook(inode_setsecctx, 0, dentry, ctx, ctxlen);
+#endif
 }
 EXPORT_SYMBOL(security_inode_setsecctx);
 
 int security_inode_getsecctx(struct inode *inode, void **ctx, u32 *ctxlen)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct security_hook_list *hp;
+	struct security_hook_list *rhp;
+	char *final = NULL;
+	char *cp;
+	void *data;
+	u32 len;
+	int rc = -EOPNOTSUPP;
+
+	hlist_for_each_entry(hp, &security_hook_heads.inode_getsecctx, list) {
+		rc = hp->hook.inode_getsecctx(inode, &data, &len);
+		if (rc) {
+#ifdef CONFIG_SECURITY_LSM_DEBUG
+			pr_info("%s: getsecctx by %s failed.\n",
+				__func__, hp->lsm);
+#endif
+			kfree(final);
+			return rc;
+		}
+		if (final) {
+			cp = kasprintf(GFP_KERNEL, "%s,%s='%s'", final,
+					hp->lsm, (char *)data);
+			kfree(final);
+		} else
+			cp = kasprintf(GFP_KERNEL, "%s='%s'", hp->lsm,
+					(char *)data);
+
+		hlist_for_each_entry(rhp, &security_hook_heads.release_secctx,
+					list) {
+			if (hp->lsm == rhp->lsm) {
+				rhp->hook.release_secctx(data, len);
+				break;
+			}
+		}
+		if (cp == NULL)
+			return -ENOMEM;
+		final = cp;
+	}
+	*ctx = final;
+	*ctxlen = strlen(final);
+	return 0;
+#else
 	return call_int_hook(inode_getsecctx, -EOPNOTSUPP, inode, ctx, ctxlen);
+#endif
 }
 EXPORT_SYMBOL(security_inode_getsecctx);
 
@@ -1951,12 +2193,31 @@ EXPORT_SYMBOL(security_sock_rcv_skb);
 int security_socket_getpeersec_stream(struct socket *sock, char __user *optval,
 				      int __user *optlen, unsigned len)
 {
+	struct security_hook_list *hp;
 	char *tval = NULL;
 	u32 tlen;
-	int rc;
+	int rc = -ENOPROTOOPT;
+#ifdef CONFIG_SECURITY_STACKING
+	char lsm[SECURITY_NAME_MAX + 1];
 
-	rc = call_int_hook(socket_getpeersec_stream, -ENOPROTOOPT, sock,
-			   &tval, &tlen, len);
+	lsm_to_display(lsm);
+
+	hlist_for_each_entry(hp, &security_hook_heads.socket_getpeersec_stream,
+				list) {
+		if (lsm[0] == '\0' || !strcmp(lsm, hp->lsm)) {
+			rc = hp->hook.socket_getpeersec_stream(sock, &tval,
+							       &tlen, len);
+			break;
+		}
+	}
+#else
+	hlist_for_each_entry(hp, &security_hook_heads.socket_getpeersec_stream,
+				list) {
+		rc = hp->hook.socket_getpeersec_stream(sock, &tval, &tlen, len);
+		break;
+	}
+#endif
+
 	if (rc == 0) {
 		tlen = strlen(tval) + 1;
 		if (put_user(tlen, optlen))
@@ -1971,8 +2232,20 @@ int security_socket_getpeersec_stream(struct socket *sock, char __user *optval,
 int security_socket_getpeersec_dgram(struct socket *sock, struct sk_buff *skb,
 				     struct secids *secid)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct security_hook_list *hp;
+	int rc = -ENOPROTOOPT;
+
+	secid_init(secid);
+	hlist_for_each_entry(hp, &security_hook_heads.socket_getpeersec_dgram,
+				list)
+		rc = hp->hook.socket_getpeersec_dgram(sock, skb, secid);
+
+	return rc;
+#else
 	return call_int_hook(socket_getpeersec_dgram, -ENOPROTOOPT, sock,
 			     skb, secid);
+#endif
 }
 EXPORT_SYMBOL(security_socket_getpeersec_dgram);
 
@@ -2041,7 +2314,18 @@ EXPORT_SYMBOL(security_inet_conn_established);
 
 int security_secmark_relabel_packet(struct secids *secid)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	struct security_hook_list *hp;
+	int rc;
+
+	hlist_for_each_entry(hp, &security_hook_heads.secmark_relabel_packet,
+				list)
+		rc = hp->hook.secmark_relabel_packet(secid);
+
+	return 0;
+#else
 	return call_int_hook(secmark_relabel_packet, 0, secid);
+#endif
 }
 EXPORT_SYMBOL(security_secmark_relabel_packet);
 
