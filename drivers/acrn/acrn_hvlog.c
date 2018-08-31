@@ -52,8 +52,39 @@
  * Li Fei <fei1.li@intel.com>
  *
  */
+#define pr_fmt(fmt) "ACRN HVLog: " fmt
+
 #include <linux/memblock.h>
 #include <linux/kernel.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/module.h>
+#include <linux/major.h>
+#include <linux/miscdevice.h>
+
+#include "sbuf.h"
+
+#define LOG_ENTRY_SIZE		80
+#define PCPU_NRS		4
+
+#define foreach_cpu(cpu, cpu_num)					\
+	for ((cpu) = 0; (cpu) < (cpu_num); (cpu)++)
+
+#define foreach_hvlog_type(idx, hvlog_type)				\
+	for ((idx) = 0; (idx) < (hvlog_type); (idx)++)
+
+enum sbuf_hvlog_index {
+	SBUF_CUR_HVLOG = 0,
+	SBUF_LAST_HVLOG,
+	SBUF_HVLOG_TYPES
+};
+
+struct acrn_hvlog {
+	struct miscdevice miscdev;
+	shared_buf_t *sbuf;
+	atomic_t open_cnt;
+	int pcpu_num;
+};
 
 static unsigned long long hvlog_buf_size;
 static unsigned long long hvlog_buf_base;
@@ -78,6 +109,324 @@ static int __init early_hvlog(char *p)
 			return ret;
 		}
 	}
+
 	return 0;
 }
 early_param("hvlog", early_hvlog);
+
+
+static inline shared_buf_t *hvlog_mark_unread(shared_buf_t *sbuf)
+{
+	/* sbuf must point to valid data.
+	 * clear the lowest bit in the magic to indicate that
+	 * the sbuf point to the last boot valid data, we should
+	 * read it later.
+	 */
+	if (sbuf != NULL)
+		sbuf->magic &= ~1;
+
+	return sbuf;
+}
+
+static int acrn_hvlog_open(struct inode *inode, struct file *filp)
+{
+	struct acrn_hvlog *acrn_hvlog;
+
+	acrn_hvlog = container_of(filp->private_data,
+				struct acrn_hvlog, miscdev);
+	pr_debug("%s, %s\n", __func__, acrn_hvlog->miscdev.name);
+
+	if (acrn_hvlog->pcpu_num >= PCPU_NRS) {
+		pr_err("%s, invalid pcpu_num: %d\n",
+				__func__, acrn_hvlog->pcpu_num);
+		return -EIO;
+	}
+
+	/* More than one reader at the same time could get data messed up */
+	if (atomic_cmpxchg(&acrn_hvlog->open_cnt, 0, 1) != 0)
+		return -EBUSY;
+
+	filp->private_data = acrn_hvlog;
+
+	return 0;
+}
+
+static int acrn_hvlog_release(struct inode *inode, struct file *filp)
+{
+	struct acrn_hvlog *acrn_hvlog;
+
+	acrn_hvlog = filp->private_data;
+
+	pr_debug("%s, %s\n", __func__, acrn_hvlog->miscdev.name);
+
+	if (acrn_hvlog->pcpu_num >= PCPU_NRS) {
+		pr_err("%s, invalid pcpu_num: %d\n",
+				__func__, acrn_hvlog->pcpu_num);
+		return -EIO;
+	}
+
+	atomic_dec(&acrn_hvlog->open_cnt);
+	filp->private_data = NULL;
+
+	return 0;
+}
+
+static ssize_t acrn_hvlog_read(struct file *filp, char __user *buf,
+				size_t count, loff_t *offset)
+{
+	char data[LOG_ENTRY_SIZE];
+	struct acrn_hvlog *acrn_hvlog;
+	int ret;
+
+	acrn_hvlog = (struct acrn_hvlog *)filp->private_data;
+
+	pr_debug("%s, %s\n", __func__, acrn_hvlog->miscdev.name);
+
+	if (acrn_hvlog->pcpu_num >= PCPU_NRS) {
+		pr_err("%s, invalid pcpu_num: %d\n",
+				__func__, acrn_hvlog->pcpu_num);
+		return -EIO;
+	}
+
+	if (acrn_hvlog->sbuf != NULL) {
+		ret = sbuf_get(acrn_hvlog->sbuf, (uint8_t *)&data);
+		if (ret > 0) {
+			if (copy_to_user(buf, &data, ret))
+				return -EFAULT;
+		}
+
+		return ret;
+	}
+
+	return 0;
+}
+
+static const struct file_operations acrn_hvlog_fops = {
+	.owner  = THIS_MODULE,
+	.open   = acrn_hvlog_open,
+	.release = acrn_hvlog_release,
+	.read = acrn_hvlog_read,
+};
+
+static struct acrn_hvlog acrn_hvlog_devs[SBUF_HVLOG_TYPES][PCPU_NRS] = {
+	[SBUF_CUR_HVLOG] = {
+		{
+			.miscdev = {
+				.name   = "acrn_hvlog_cur_0",
+				.minor  = MISC_DYNAMIC_MINOR,
+				.fops   = &acrn_hvlog_fops,
+			},
+			.pcpu_num = 0,
+		},
+		{
+			.miscdev = {
+				.name   = "acrn_hvlog_cur_1",
+				.minor  = MISC_DYNAMIC_MINOR,
+				.fops   = &acrn_hvlog_fops,
+			},
+			.pcpu_num = 1,
+		},
+		{
+			.miscdev = {
+				.name   = "acrn_hvlog_cur_2",
+				.minor  = MISC_DYNAMIC_MINOR,
+				.fops   = &acrn_hvlog_fops,
+			},
+			.pcpu_num = 2,
+		},
+		{
+			.miscdev = {
+				.name   = "acrn_hvlog_cur_3",
+				.minor  = MISC_DYNAMIC_MINOR,
+				.fops   = &acrn_hvlog_fops,
+			},
+			.pcpu_num = 3,
+		},
+	},
+	[SBUF_LAST_HVLOG] = {
+		{
+			.miscdev = {
+				.name   = "acrn_hvlog_last_0",
+				.minor  = MISC_DYNAMIC_MINOR,
+				.fops   = &acrn_hvlog_fops,
+			},
+			.pcpu_num = 0,
+		},
+		{
+			.miscdev = {
+				.name   = "acrn_hvlog_last_1",
+				.minor  = MISC_DYNAMIC_MINOR,
+				.fops   = &acrn_hvlog_fops,
+			},
+			.pcpu_num = 1,
+		},
+		{
+			.miscdev = {
+				.name   = "acrn_hvlog_last_2",
+				.minor  = MISC_DYNAMIC_MINOR,
+				.fops   = &acrn_hvlog_fops,
+			},
+			.pcpu_num = 2,
+		},
+		{
+			.miscdev = {
+				.name   = "acrn_hvlog_last_3",
+				.minor  = MISC_DYNAMIC_MINOR,
+				.fops   = &acrn_hvlog_fops,
+			},
+			.pcpu_num = 3,
+		},
+	}
+};
+
+static int __init acrn_hvlog_init(void)
+{
+	int ret = 0;
+	int i, j, idx;
+	uint32_t pcpu_id;
+	uint64_t logbuf_base0;
+	uint64_t logbuf_base1;
+	uint64_t logbuf_size;
+	uint32_t ele_size;
+	uint32_t ele_num;
+	uint32_t size;
+	bool sbuf_constructed = false;
+
+	shared_buf_t *sbuf0[PCPU_NRS];
+	shared_buf_t *sbuf1[PCPU_NRS];
+
+	pr_info("%s\n", __func__);
+	if (!hvlog_buf_base || !hvlog_buf_size) {
+		pr_warn("no fixed memory reserve for hvlog.\n");
+		return 0;
+	}
+
+	logbuf_base0 = hvlog_buf_base;
+	logbuf_size = (hvlog_buf_size >> 1);
+	logbuf_base1 = hvlog_buf_base + logbuf_size;
+
+	size = (logbuf_size / PCPU_NRS);
+	ele_size = LOG_ENTRY_SIZE;
+	ele_num = (size - SBUF_HEAD_SIZE) / ele_size;
+
+	foreach_cpu(pcpu_id, PCPU_NRS) {
+		sbuf0[pcpu_id] = sbuf_check_valid(ele_num, ele_size,
+					logbuf_base0 + size * pcpu_id);
+		sbuf1[pcpu_id] = sbuf_check_valid(ele_num, ele_size,
+					logbuf_base1 + size * pcpu_id);
+	}
+
+	foreach_cpu(pcpu_id, PCPU_NRS) {
+		if (sbuf0[pcpu_id] == NULL)
+			continue;
+
+		foreach_cpu(pcpu_id, PCPU_NRS) {
+			acrn_hvlog_devs[SBUF_LAST_HVLOG][pcpu_id].sbuf =
+					hvlog_mark_unread(sbuf0[pcpu_id]);
+			acrn_hvlog_devs[SBUF_CUR_HVLOG][pcpu_id].sbuf =
+				sbuf_construct(ele_num, ele_size,
+					logbuf_base1 + size * pcpu_id);
+		}
+		sbuf_constructed = true;
+	}
+
+	if (sbuf_constructed == false) {
+		foreach_cpu(pcpu_id, PCPU_NRS) {
+			if (sbuf1[pcpu_id] == NULL)
+				continue;
+
+			foreach_cpu(pcpu_id, PCPU_NRS) {
+				acrn_hvlog_devs[SBUF_LAST_HVLOG][pcpu_id].sbuf =
+					hvlog_mark_unread(sbuf1[pcpu_id]);
+			}
+		}
+		foreach_cpu(pcpu_id, PCPU_NRS) {
+			acrn_hvlog_devs[SBUF_CUR_HVLOG][pcpu_id].sbuf =
+				sbuf_construct(ele_num, ele_size,
+					logbuf_base0 + size * pcpu_id);
+		}
+		sbuf_constructed = true;
+	}
+
+	idx = SBUF_CUR_HVLOG;
+	{
+		foreach_cpu(pcpu_id, PCPU_NRS) {
+			ret = sbuf_share_setup(pcpu_id, ACRN_HVLOG,
+					acrn_hvlog_devs[idx][pcpu_id].sbuf);
+			if (ret < 0) {
+				pr_err("Failed to setup %s, errno %d\n",
+				acrn_hvlog_devs[idx][pcpu_id].miscdev.name, ret);
+				goto setup_err;
+			}
+		}
+	}
+
+	foreach_hvlog_type(idx, SBUF_HVLOG_TYPES) {
+		foreach_cpu(pcpu_id, PCPU_NRS) {
+			atomic_set(&acrn_hvlog_devs[idx][pcpu_id].open_cnt, 0);
+
+			ret = misc_register(
+					&acrn_hvlog_devs[idx][pcpu_id].miscdev);
+			if (ret < 0) {
+				pr_err("Failed to register %s, errno %d\n",
+				acrn_hvlog_devs[idx][pcpu_id].miscdev.name, ret);
+				goto reg_err;
+			}
+		}
+	}
+
+	return 0;
+
+reg_err:
+	foreach_hvlog_type(i, idx) {
+		foreach_cpu(j, PCPU_NRS) {
+			misc_deregister(&acrn_hvlog_devs[i][j].miscdev);
+		}
+	}
+
+	foreach_cpu(j, pcpu_id) {
+		misc_deregister(&acrn_hvlog_devs[idx][j].miscdev);
+	}
+
+	pcpu_id = PCPU_NRS;
+setup_err:
+	idx = SBUF_CUR_HVLOG;
+	{
+		foreach_cpu(j, pcpu_id) {
+			sbuf_share_setup(j, ACRN_HVLOG, 0);
+			sbuf_deconstruct(acrn_hvlog_devs[idx][j].sbuf);
+		}
+	}
+
+	return ret;
+}
+
+static void __exit acrn_hvlog_exit(void)
+{
+	int idx;
+	uint32_t pcpu_id;
+
+	pr_info("%s\n", __func__);
+
+	foreach_hvlog_type(idx, SBUF_HVLOG_TYPES) {
+		foreach_cpu(pcpu_id, PCPU_NRS) {
+			misc_deregister(&acrn_hvlog_devs[idx][pcpu_id].miscdev);
+		}
+	}
+
+	idx = SBUF_CUR_HVLOG;
+	{
+		foreach_cpu(pcpu_id, PCPU_NRS) {
+			sbuf_share_setup(pcpu_id, ACRN_HVLOG, 0);
+			sbuf_deconstruct(acrn_hvlog_devs[idx][pcpu_id].sbuf);
+		}
+	}
+}
+
+module_init(acrn_hvlog_init);
+module_exit(acrn_hvlog_exit);
+
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_AUTHOR("Intel Corp., http://www.intel.com");
+MODULE_DESCRIPTION("Driver for the Intel ACRN Hypervisor Logmsg");
+MODULE_VERSION("0.1");
