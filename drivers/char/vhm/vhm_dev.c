@@ -177,12 +177,12 @@ static long vhm_dev_ioctl(struct file *filep,
 
 		vm->vmid = created_vm.vmid;
 
-		pr_info("vhm: VM %ld created\n", created_vm.vmid);
+		pr_info("vhm: VM %d created\n", created_vm.vmid);
 		break;
 	}
 
-	case IC_RESUME_VM: {
-		ret = hcall_resume_vm(vm->vmid);
+	case IC_START_VM: {
+		ret = hcall_start_vm(vm->vmid);
 		if (ret < 0) {
 			pr_err("vhm: failed to start VM %ld!\n", vm->vmid);
 			return -EFAULT;
@@ -209,15 +209,6 @@ static long vhm_dev_ioctl(struct file *filep,
 		break;
 	}
 
-	case IC_QUERY_VMSTATE: {
-		ret = hcall_query_vm_state(vm->vmid);
-		if (ret < 0) {
-			pr_err("vhm: failed to query VM State%ld!\n", vm->vmid);
-			return -EFAULT;
-		}
-		return ret;
-	}
-
 	case IC_CREATE_VCPU: {
 		struct acrn_create_vcpu cv;
 
@@ -228,7 +219,7 @@ static long vhm_dev_ioctl(struct file *filep,
 		ret = acrn_hypercall2(HC_CREATE_VCPU, vm->vmid,
 				virt_to_phys(&cv));
 		if (ret < 0) {
-			pr_err("vhm: failed to create vcpu %ld!\n", cv.vcpuid);
+			pr_err("vhm: failed to create vcpu %d!\n", cv.vcpu_id);
 			return -EFAULT;
 		}
 
