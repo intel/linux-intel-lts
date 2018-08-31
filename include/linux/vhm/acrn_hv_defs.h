@@ -74,8 +74,34 @@
 #define HC_PAUSE_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x04)
 #define HC_QUERY_VMSTATE            _HC_ID(HC_ID, HC_ID_VM_BASE + 0x05)
 
+/* Guest memory management */
+#define HC_ID_MEM_BASE              0x300UL
+#define HC_VM_SET_MEMMAP            _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x00)
+
 #define ACRN_DOM0_VMID (0UL)
 #define ACRN_INVALID_VMID (-1UL)
 #define ACRN_INVALID_HPA (-1UL)
+
+enum vm_memmap_type {
+	MAP_MEM = 0,
+	MAP_MMIO,
+	MAP_UNMAP,
+	MAP_UPDATE,
+};
+
+struct vm_set_memmap {
+	enum vm_memmap_type type;
+	/* IN: beginning guest GPA to map */
+	unsigned long foreign_gpa;
+
+	/* IN: VM0's GPA which foreign gpa will be mapped to */
+	unsigned long hvm_gpa;
+
+	/* IN: length of the range */
+	unsigned long length;
+
+	/* IN: not used right now */
+	int prot;
+} __attribute__((aligned(8)));
 
 #endif /* ACRN_HV_DEFS_H */
