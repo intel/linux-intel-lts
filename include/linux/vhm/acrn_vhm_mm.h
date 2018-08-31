@@ -1,5 +1,5 @@
 /*
- * virtio and hyperviosr service module (VHM): vm management
+ * virtio and hyperviosr service module (VHM): memory map
  *
  * This file is provided under a dual BSD/GPLv2 license.  When using or
  * redistributing this file, you may do so under either license.
@@ -47,63 +47,42 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * Liang Ding <liang.ding@intel.com>
- * Jason Zeng <jason.zeng@intel.com>
+ * Jason Chen CJ <jason.cj.chen@intel.com>
  *
  */
 
-#include <linux/list.h>
-#include <linux/slab.h>
-#include <linux/init.h>
-#include <asm/processor.h>
-#include <linux/vhm/acrn_hv_defs.h>
+#ifndef __ACRN_VHM_MM_H__
+#define __ACRN_VHM_MM_H__
+
 #include <linux/vhm/vhm_ioctl_defs.h>
-#include <linux/vhm/acrn_vhm_mm.h>
-#include <linux/vhm/vhm_hypercall.h>
+#include <linux/vhm/vhm_vm_mngt.h>
 
-LIST_HEAD(vhm_vm_list);
-DEFINE_MUTEX(vhm_vm_list_lock);
+#define	MMU_MEM_ATTR_READ	0x00000001
+#define	MMU_MEM_ATTR_WRITE	0x00000002
+#define	MMU_MEM_ATTR_EXECUTE	0x00000004
+#define MMU_MEM_ATTR_WB_CACHE   0x00000040
+#define MMU_MEM_ATTR_WT_CACHE   0x00000080
+#define MMU_MEM_ATTR_UNCACHED   0x00000100
+#define MMU_MEM_ATTR_WC         0x00000200
 
-struct vhm_vm *find_get_vm(unsigned long vmid)
-{
-	struct vhm_vm *vm;
+#define MMU_MEM_ATTR_ALL	0x00000007
+#define MMU_MEM_ATTR_WP		0x00000005
+#define MMU_MEM_ATTR_ALL_WB	0x00000047
+#define MMU_MEM_ATTR_ALL_WC	0x00000207
 
-	mutex_lock(&vhm_vm_list_lock);
-	list_for_each_entry(vm, &vhm_vm_list, list) {
-		if (vm->vmid == vmid) {
-			vm->refcnt++;
-			mutex_unlock(&vhm_vm_list_lock);
-			return vm;
-		}
-	}
-	mutex_unlock(&vhm_vm_list_lock);
-	return NULL;
-}
+int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+	unsigned long host_gpa, unsigned long len, int prot);
+int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+	unsigned long host_gpa, unsigned long len, int prot);
+int update_mem_map(unsigned long vmid, unsigned long guest_gpa,
+	unsigned long host_gpa, unsigned long len, int prot);
 
-void put_vm(struct vhm_vm *vm)
-{
-	mutex_lock(&vhm_vm_list_lock);
-	vm->refcnt--;
-	if (vm->refcnt == 0) {
-		list_del(&vm->list);
-		free_guest_mem(vm);
-		kfree(vm);
-		pr_info("vhm: freed vm\n");
-	}
-	mutex_unlock(&vhm_vm_list_lock);
-}
+int vhm_dev_mmap(struct file *file, struct vm_area_struct *vma);
 
-void vm_list_add(struct list_head *list)
-{
-	list_add(list, &vhm_vm_list);
-}
+int check_guest_mem(struct vhm_vm *vm);
+void free_guest_mem(struct vhm_vm *vm);
 
-void vm_mutex_lock(struct mutex *mlock)
-{
-	mutex_lock(mlock);
-}
+int alloc_guest_memseg(struct vhm_vm *vm, struct vm_memseg *memseg);
+int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
 
-void vm_mutex_unlock(struct mutex *mlock)
-{
-	mutex_unlock(mlock);
-}
+#endif
