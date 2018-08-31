@@ -287,14 +287,13 @@ static long vhm_dev_ioctl(struct file *filep,
 	}
 
 	case IC_NOTIFY_REQUEST_FINISH: {
-		struct acrn_ioreq_notify notify;
+		struct ioreq_notify notify;
 
 		if (copy_from_user(&notify, (void *)ioctl_param,
 					sizeof(notify)))
 			return -EFAULT;
 
-		ret = acrn_ioreq_complete_request(notify.client_id,
-							notify.vcpu_mask);
+		ret = acrn_ioreq_complete_request(notify.client_id, notify.vcpu);
 		if (ret < 0)
 			return -EFAULT;
 		break;
