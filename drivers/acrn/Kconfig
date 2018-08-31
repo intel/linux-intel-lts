@@ -1,0 +1,5 @@
+config ACRN_SHARED_BUFFER
+	bool "Intel ACRN SHARED BUFFER"
+	---help---
+	  Ring buffer shared between ACRN Hypervisor and its SOS.
+	  Help ACRN performance profiling.
