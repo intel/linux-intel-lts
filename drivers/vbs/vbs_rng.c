@@ -369,8 +369,7 @@ static int handle_kick(int client_id, int req_cnt)
 				 req->reqs.pio_request.size,
 				 req->reqs.pio_request.value);
 			req->processed = REQ_STATE_SUCCESS;
-			acrn_ioreq_complete_request(client->vhm_client_id,
-						   1 << i);
+			acrn_ioreq_complete_request(client->vhm_client_id, i);
 		}
 	}
 
