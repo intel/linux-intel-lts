@@ -1,0 +1,20 @@
+#
+# This Kconfig describes VBS for ACRN hypervisor
+#
+config VBS
+	tristate "Enable VBS framework for ACRN hypervisor"
+	depends on ACRN_GUEST
+	depends on ACRN_VHM
+	default n
+	---help---
+	  This option is selected by any driver which needs to use
+	  the Virtio Backend Service (VBS) framework on ACRN
+	  hypervisor.
+
+config VBS_DEBUG
+	bool "ACRN VBS debugging"
+	depends on VBS != n
+	default n
+	---help---
+	  This is an option for use by developers; most people should
+	  say N here.  This enables ACRN VBS debugging.

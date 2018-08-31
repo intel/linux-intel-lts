@@ -228,4 +228,6 @@ source "drivers/interconnect/Kconfig"
 
 source "drivers/counter/Kconfig"
 
+source "drivers/vbs/Kconfig"
+
 endmenu
