@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# This Kconfig describes ACRN options
+#
+
+config ACRN
+	bool "Enable services run on ACRN hypervisor"
+	depends on X86_64
+	depends on PARAVIRT
+	depends on DMA_CMA
+	depends on !INTEL_IOMMU
+	depends on !VMAP_STACK
+	help
+	  This option is needed if were to run ACRN services linux on top of
+	  ACRN hypervisor.
