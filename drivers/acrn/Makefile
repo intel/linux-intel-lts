@@ -1,0 +1,1 @@
+obj-$(CONFIG_ACRN_SHARED_BUFFER) += sbuf.o
