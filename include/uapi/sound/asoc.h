@@ -338,7 +338,7 @@ struct snd_soc_tplg_hw_config {
 	__u8 invert_fsync;	/* 1 for inverted frame clock, 0 for normal */
 	__u8 bclk_master;	/* SND_SOC_TPLG_BCLK_ value */
 	__u8 fsync_master;	/* SND_SOC_TPLG_FSYNC_ value */
-	__u8 mclk_direction;    /* SND_SOC_TPLG_MCLK_ value */
+	__u8 mclk_direction;    /* 0 for input, 1 for output */
 	__le16 reserved;	/* for 32bit alignment */
 	__le32 mclk_rate;	/* MCLK or SYSCLK freqency in Hz */
 	__le32 bclk_rate;	/* BCLK freqency in Hz */
