@@ -217,4 +217,9 @@ struct acrn_nmi_entry {
 	unsigned long vcpuid;	/* IN: -1 means vcpu0 */
 } __attribute__((aligned(8)));
 
+struct vm_gpa2hpa {
+	unsigned long gpa;		/* IN: gpa to translation */
+	unsigned long hpa;		/* OUT: -1 means invalid gpa */
+} __attribute__((aligned(8)));
+
 #endif /* ACRN_COMMON_H */
