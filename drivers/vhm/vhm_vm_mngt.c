@@ -58,6 +58,7 @@
 #include <asm/processor.h>
 #include <linux/vhm/acrn_hv_defs.h>
 #include <linux/vhm/vhm_ioctl_defs.h>
+#include <linux/vhm/acrn_vhm_ioreq.h>
 #include <linux/vhm/acrn_vhm_mm.h>
 #include <linux/vhm/vhm_hypercall.h>
 
@@ -87,6 +88,7 @@ void put_vm(struct vhm_vm *vm)
 	if (vm->refcnt == 0) {
 		list_del(&vm->list);
 		free_guest_mem(vm);
+		acrn_ioreq_free(vm);
 		kfree(vm);
 		pr_info("vhm: freed vm\n");
 	}

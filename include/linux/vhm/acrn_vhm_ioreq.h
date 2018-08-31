@@ -1,5 +1,5 @@
 /*
- * virtio and hyperviosr service module (VHM): hypercall wrap
+ * virtio and hyperviosr service module (VHM): ioreq multi client feature
  *
  * This file is provided under a dual BSD/GPLv2 license.  When using or
  * redistributing this file, you may do so under either license.
@@ -47,103 +47,40 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
+ * Jason Chen CJ <jason.cj.chen@intel.com>
+ *
  */
-#include <linux/uaccess.h>
-#include <linux/io.h>
-#include <linux/vhm/acrn_hv_defs.h>
-#include <linux/vhm/vhm_hypercall.h>
 
-inline long hcall_set_ioreq_buffer(unsigned long vmid, unsigned long buffer)
-{
-	return acrn_hypercall2(HC_SET_IOREQ_BUFFER, vmid, buffer);
-}
+#ifndef __ACRN_VHM_IOREQ_H__
+#define __ACRN_VHM_IOREQ_H__
 
-inline long hcall_notify_req_finish(unsigned long vmid, unsigned long vcpu_mask)
-{
-	return acrn_hypercall2(HC_NOTIFY_REQUEST_FINISH,	vmid, vcpu_mask);
-}
+#include <linux/poll.h>
+#include <linux/vhm/vhm_vm_mngt.h>
 
-inline long hcall_set_memmap(unsigned long vmid, unsigned long memmap)
-{
-	return acrn_hypercall2(HC_VM_SET_MEMMAP, vmid, memmap);
-}
+typedef	int (*ioreq_handler_t)(int client_id, int req);
 
-inline long vhm_create_vm(struct vhm_vm *vm, unsigned long ioctl_param)
-{
-	long ret = 0;
-	struct acrn_create_vm created_vm;
+int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
+	char *name);
+void acrn_ioreq_destroy_client(int client_id);
 
-	if (copy_from_user(&created_vm, (void *)ioctl_param,
-				sizeof(struct acrn_create_vm)))
-		return -EFAULT;
+int acrn_ioreq_add_iorange(int client_id, enum request_type type,
+	long start, long end);
+int acrn_ioreq_del_iorange(int client_id, enum request_type type,
+	long start, long end);
 
-	ret = acrn_hypercall2(HC_CREATE_VM, 0,
-			virt_to_phys(&created_vm));
-	if ((ret < 0) ||
-			(created_vm.vmid == ACRN_INVALID_VMID)) {
-		pr_err("vhm: failed to create VM from Hypervisor !\n");
-		return -EFAULT;
-	}
+struct vhm_request *acrn_ioreq_get_reqbuf(int client_id);
+int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop);
 
-	if (copy_to_user((void *)ioctl_param, &created_vm,
-				sizeof(struct acrn_create_vm)))
-		return -EFAULT;
+int acrn_ioreq_distribute_request(struct vhm_vm *vm);
+int acrn_ioreq_complete_request(int client_id, uint64_t vcpu_mask);
 
-	vm->vmid = created_vm.vmid;
-	pr_info("vhm: VM %ld created\n", created_vm.vmid);
+void acrn_ioreq_intercept_bdf(int client_id, int bus, int dev, int func);
+void acrn_ioreq_unintercept_bdf(int client_id);
 
-	return ret;
-}
+/* IOReq APIs */
+int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma);
+void acrn_ioreq_free(struct vhm_vm *vm);
+int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name);
+unsigned int vhm_dev_poll(struct file *filep, poll_table *wait);
 
-inline long vhm_resume_vm(struct vhm_vm *vm)
-{
-	long ret = 0;
-
-	ret = acrn_hypercall1(HC_RESUME_VM, vm->vmid);
-	if (ret < 0) {
-		pr_err("vhm: failed to start VM %ld!\n", vm->vmid);
-		return -EFAULT;
-	}
-
-	return ret;
-}
-
-inline long vhm_pause_vm(struct vhm_vm *vm)
-{
-	long ret = 0;
-
-	ret = acrn_hypercall1(HC_PAUSE_VM, vm->vmid);
-	if (ret < 0) {
-		pr_err("vhm: failed to pause VM %ld!\n", vm->vmid);
-		return -EFAULT;
-	}
-
-	return ret;
-}
-
-inline long vhm_destroy_vm(struct vhm_vm *vm)
-{
-	long ret = 0;
-
-	ret = acrn_hypercall1(HC_DESTROY_VM, vm->vmid);
-	if (ret < 0) {
-		pr_err("failed to destroy VM %ld\n", vm->vmid);
-		return -EFAULT;
-	}
-	vm->vmid = ACRN_INVALID_VMID;
-
-	return ret;
-}
-
-inline long vhm_query_vm_state(struct vhm_vm *vm)
-{
-	long ret = 0;
-
-	ret = acrn_hypercall1(HC_QUERY_VMSTATE, vm->vmid);
-	if (ret < 0) {
-		pr_err("vhm: failed to query VM State%ld!\n", vm->vmid);
-		return -EFAULT;
-	}
-
-	return ret;
-}
+#endif
