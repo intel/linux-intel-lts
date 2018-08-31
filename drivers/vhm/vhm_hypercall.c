@@ -77,6 +77,11 @@ inline long hcall_destroy_vm(unsigned long vmid)
 	return  acrn_hypercall1(HC_DESTROY_VM, vmid);
 }
 
+inline long hcall_setup_sbuf(unsigned long sbuf_head)
+{
+	return acrn_hypercall1(HC_SETUP_SBUF, sbuf_head);
+}
+
 inline long hcall_set_memmap(unsigned long vmid, unsigned long memmap)
 {
 	return acrn_hypercall2(HC_VM_SET_MEMMAP, vmid, memmap);
