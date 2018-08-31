@@ -42,7 +42,7 @@ static uint32_t __init acrn_detect(void)
 
 static void __init acrn_init_platform(void)
 {
-#ifdef CONFIG_PCI_MSI
+#if  defined(CONFIG_PCI_MSI) && defined(CONFIG_ACRN_VHM)
 	pv_irq_ops.write_msi = acrn_write_msi_msg;
 #endif
 }
