@@ -56,6 +56,9 @@ struct cpumask;
 struct flush_tlb_info;
 struct mmu_gather;
 
+struct msi_desc;
+struct msi_msg;
+ 
 /*
  * Wrapper type for pointers to code which uses the non-standard
  * calling convention.  See PV_CALL_SAVE_REGS_THUNK below.
@@ -196,6 +199,7 @@ struct pv_irq_ops {
 	void (*safe_halt)(void);
 	void (*halt)(void);
 
+	void (*write_msi)(struct msi_desc *entry, struct msi_msg *msg);
 } __no_randomize_layout;
 
 struct pv_mmu_ops {

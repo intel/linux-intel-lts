@@ -1,5 +1,23 @@
 /*
- * ACRN hypervisor support
+ * virtio and hyperviosr service module (VHM): msi paravirt
+ *
+ * This file is provided under a dual BSD/GPLv2 license.  When using or
+ * redistributing this file, you may do so under either license.
+ *
+ * GPL LICENSE SUMMARY
+ *
+ * Copyright (c) 2017 Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * BSD LICENSE
  *
  * Copyright (C) 2017 Intel Corporation. All rights reserved.
  *
@@ -32,44 +50,12 @@
  * Jason Chen CJ <jason.cj.chen@intel.com>
  *
  */
-#include <asm/hypervisor.h>
-#include <linux/vhm/vhm_msi.h>
 
-static uint32_t __init acrn_detect(void)
-{
-	return hypervisor_cpuid_base("ACRNACRNACRN\0\0", 0);
-}
+#ifndef __ACRN_VHM_MSI_H__
+#define __ACRN_VHM_MSI_H__
 
-static void __init acrn_init_platform(void)
-{
-#ifdef CONFIG_PCI_MSI
-	pv_irq_ops.write_msi = acrn_write_msi_msg;
+struct msi_desc;
+struct msi_msg;
+void acrn_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg);
+
 #endif
-}
-
-static void acrn_pin_vcpu(int cpu)
-{
-	/* do nothing here now */
-}
-
-static bool acrn_x2apic_available(void)
-{
-	/* do not support x2apic */
-	return false;
-}
-
-static void __init acrn_init_mem_mapping(void)
-{
-	/* do nothing here now */
-}
-
-const struct hypervisor_x86 x86_hyper_acrn = {
-	.name                   = "ACRN",
-	.detect                 = acrn_detect,
-	.type                 	= X86_HYPER_ACRN,
-	.init.init_platform     = acrn_init_platform,
-	.runtime.pin_vcpu       = acrn_pin_vcpu,
-	.init.x2apic_available  = acrn_x2apic_available,
-	.init.init_mem_mapping	= acrn_init_mem_mapping,
-};
-EXPORT_SYMBOL(x86_hyper_acrn);
