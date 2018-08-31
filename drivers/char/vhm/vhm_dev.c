@@ -86,6 +86,9 @@
 #define  DEVICE_NAME "acrn_vhm"
 #define  CLASS_NAME  "vhm"
 
+#define VHM_API_VERSION_MAJOR	1
+#define VHM_API_VERSION_MINOR	0
+
 static int    major;
 static struct class *vhm_class;
 static struct device *vhm_device;
@@ -143,6 +146,19 @@ static long vhm_dev_ioctl(struct file *filep,
 	struct hc_ptdev_irq hc_pt_irq;
 
 	trace_printk("[%s] ioctl_num=0x%x\n", __func__, ioctl_num);
+
+	if (ioctl_num == IC_GET_API_VERSION) {
+		struct api_version api_version;
+
+		api_version.major_version = VHM_API_VERSION_MAJOR;
+		api_version.minor_version = VHM_API_VERSION_MINOR;
+
+		if (copy_to_user((void *)ioctl_param, &api_version,
+			sizeof(struct api_version)))
+			return -EFAULT;
+
+		return 0;
+	}
 
 	memset(&hc_pt_irq, 0, sizeof(hc_pt_irq));
 	memset(&ic_pt_irq, 0, sizeof(ic_pt_irq));
