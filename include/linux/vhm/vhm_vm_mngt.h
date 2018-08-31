@@ -55,9 +55,7 @@
  */
 
 /**
- * @file vhm_vm_mngt.h
- *
- * @brief Virtio and Hypervisor Module(VHM) management APIs
+ * DOC: brief Virtio and Hypervisor Module(VHM) management APIs
  */
 #ifndef VHM_VM_MNGT_H
 #define VHM_VM_MNGT_H
@@ -79,6 +77,7 @@ extern struct mutex vhm_vm_list_lock;
  * @dev: pointer to dev of linux device mode
  * @list: list of vhm_vm
  * @vmid: guest vmid
+ * @trusty_host_gpa: host physical address of continuous memory for Trusty
  * @ioreq_fallback_client: default ioreq client
  * @refcnt: reference count of guest
  * @seg_lock:  mutex to protect memseg_list
