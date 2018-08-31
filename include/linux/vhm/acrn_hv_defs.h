@@ -132,4 +132,24 @@ struct vm_gpa2hpa {
 	unsigned long hpa;		/* OUT: -1 means invalid gpa */
 } __attribute__((aligned(8)));
 
+struct hc_ptdev_irq {
+#define IRQ_INTX 0
+#define IRQ_MSI 1
+#define IRQ_MSIX 2
+	uint32_t type;
+	uint16_t virt_bdf;	/* IN: Device virtual BDF# */
+	uint16_t phys_bdf;	/* IN: Device physical BDF# */
+	union {
+		struct {
+			uint32_t virt_pin;	/* IN: virtual IOAPIC pin */
+			uint32_t phys_pin;	/* IN: physical IOAPIC pin */
+			uint32_t pic_pin;	/* IN: pin from PIC? */
+		} intx;
+		struct {
+			/* IN: vector count of MSI/MSIX */
+			uint32_t vector_cnt;
+		} msix;
+	};
+} __attribute__((aligned(8)));
+
 #endif /* ACRN_HV_DEFS_H */
