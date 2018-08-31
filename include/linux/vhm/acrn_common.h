@@ -199,6 +199,11 @@ struct acrn_create_vm {
 	unsigned long vcpu_num;		/* IN: VM vcpu number */
 } __attribute__((aligned(8)));
 
+struct acrn_create_vcpu {
+	int vcpuid;			/* IN: vcpu id */
+	int pcpuid;			/* IN: pcpu id */
+} __attribute__((aligned(8)));
+
 struct acrn_set_ioreq_buffer {
 	long req_buf;			/* IN: gpa of per VM request_buffer*/
 } __attribute__((aligned(8)));
