@@ -317,8 +317,13 @@ static u32 nfqnl_get_sk_secctx(struct sk_buff *skb, char **secdata)
 	read_lock_bh(&skb->sk->sk_callback_lock);
 
 	if (skb->secmark) {
+#ifdef CONFIG_SECURITY_STACKING
 		secid_init(&secid);
+		secid.selinux = skb->secmark;
+		secid.smack = skb->secmark;
+#else
 		secid.common = skb->secmark;
+#endif
 		security_secid_to_secctx(&secid, secdata, &seclen);
 	}
 

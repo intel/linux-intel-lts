@@ -80,15 +80,9 @@ enum lsm_event {
 
 struct secids {
 	u32 common;
-#ifdef CONFIG_SECURITY_SELINUX
 	u32 selinux;
-#endif
-#ifdef CONFIG_SECURITY_SMACK
 	u32 smack;
-#endif
-#ifdef CONFIG_SECURITY_APPARMOR
 	u32 apparmor;
-#endif
 	u32 flags;
 };
 
@@ -1321,8 +1315,9 @@ void security_inet_csk_clone(struct sock *newsk,
 void security_inet_conn_established(struct sock *sk,
 			struct sk_buff *skb);
 int security_secmark_relabel_packet(struct secids *secid);
-void security_secmark_refcount_inc(void);
-void security_secmark_refcount_dec(void);
+void security_secmark_refcount_inc(u8 lsm);
+void security_secmark_refcount_dec(u8 lsm);
+int security_secmark_mode(u8 lsm);
 int security_tun_dev_alloc_security(void **security);
 void security_tun_dev_free_security(void *security);
 int security_tun_dev_create(void);
@@ -1500,12 +1495,17 @@ static inline int security_secmark_relabel_packet(struct secids *secid)
 	return 0;
 }
 
-static inline void security_secmark_refcount_inc(void)
+static inline void security_secmark_refcount_inc(u8 lsm)
 {
 }
 
-static inline void security_secmark_refcount_dec(void)
+static inline void security_secmark_refcount_dec(u8 lsm)
 {
+}
+
+static inline int security_secmark_mode(u8 lsm)
+{
+	return 0;
 }
 
 static inline int security_tun_dev_alloc_security(void **security)

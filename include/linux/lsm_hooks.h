@@ -1701,8 +1701,8 @@ union security_list_options {
 				const struct request_sock *req);
 	void (*inet_conn_established)(struct sock *sk, struct sk_buff *skb);
 	int (*secmark_relabel_packet)(struct secids *secid);
-	void (*secmark_refcount_inc)(void);
-	void (*secmark_refcount_dec)(void);
+	void (*secmark_refcount_inc)(u8 lsm);
+	void (*secmark_refcount_dec)(u8 lsm);
 	void (*req_classify_flow)(const struct request_sock *req,
 					struct flowi *fl);
 	int (*tun_dev_alloc_security)(void **security);

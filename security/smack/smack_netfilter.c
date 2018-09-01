@@ -16,6 +16,7 @@
 
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
+#include <linux/netfilter/xt_SECMARK.h>
 #include <linux/netdevice.h>
 #include <net/inet_sock.h>
 #include <net/net_namespace.h>
@@ -30,6 +31,11 @@ static unsigned int smack_ipv6_output(void *priv,
 	struct sock *sk = skb_to_full_sk(skb);
 	struct socket_smack *ssp;
 	struct smack_known *skp;
+
+#ifdef CONFIG_SECURITY_STACKING
+	if (security_secmark_mode(SECMARK_MODE_SMACK))
+		return NF_ACCEPT;
+#endif
 
 	if (sk && smack_sock(sk)) {
 		ssp = smack_sock(sk);
@@ -48,6 +54,11 @@ static unsigned int smack_ipv4_output(void *priv,
 	struct sock *sk = skb_to_full_sk(skb);
 	struct socket_smack *ssp;
 	struct smack_known *skp;
+
+#ifdef CONFIG_SECURITY_STACKING
+	if (security_secmark_mode(SECMARK_MODE_SMACK))
+		return NF_ACCEPT;
+#endif
 
 	if (sk && smack_sock(sk)) {
 		ssp = smack_sock(sk);
