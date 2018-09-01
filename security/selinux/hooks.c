@@ -50,6 +50,7 @@
 #include <linux/mount.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
+#include <linux/netfilter/xt_SECMARK.h>
 #include <linux/tty.h>
 #include <net/icmp.h>
 #include <net/ip.h>		/* for local_port_range[] */
@@ -5342,13 +5343,21 @@ static int selinux_secmark_relabel_packet(struct secids *secid)
 			    PACKET__RELABELTO, NULL);
 }
 
-static void selinux_secmark_refcount_inc(void)
+static void selinux_secmark_refcount_inc(u8 lsm)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	if (lsm != SECMARK_MODE_SEL)
+		return;
+#endif
 	atomic_inc(&selinux_secmark_refcount);
 }
 
-static void selinux_secmark_refcount_dec(void)
+static void selinux_secmark_refcount_dec(u8 lsm)
 {
+#ifdef CONFIG_SECURITY_STACKING
+	if (lsm != SECMARK_MODE_SEL)
+		return;
+#endif
 	atomic_dec(&selinux_secmark_refcount);
 }
 

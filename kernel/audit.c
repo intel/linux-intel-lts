@@ -2168,7 +2168,9 @@ void audit_log_name(struct audit_context *context, struct audit_names *n,
 		u32 len;
 		if (security_secid_to_secctx(
 			&n->osid, &ctx, &len)) {
+#ifndef CONFIG_SECURITY_STACKING
 			audit_log_format(ab, " osid=%u", n->osid.common);
+#endif
 			if (call_panic)
 				*call_panic = 2;
 		} else {

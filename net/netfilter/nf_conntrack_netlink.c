@@ -334,8 +334,13 @@ static int ctnetlink_dump_secctx(struct sk_buff *skb, const struct nf_conn *ct)
 	char *secctx;
 	struct secids secid;
 
+#ifdef CONFIG_SECURITY_STACKING
 	secid_init(&secid);
+	secid.selinux = ct->secmark;
+	secid.smack = ct->secmark;
+#else
 	secid.common = ct->secmark;
+#endif
 
 	ret = security_secid_to_secctx(&secid, &secctx, &len);
 	if (ret)
@@ -623,8 +628,13 @@ static inline int ctnetlink_secctx_size(const struct nf_conn *ct)
 	int len, ret;
 	struct secids secid;
 
+#ifdef CONFIG_SECURITY_STACKING
 	secid_init(&secid);
+	secid.selinux = ct->secmark;
+	secid.smack = ct->secmark;
+#else
 	secid.common = ct->secmark;
+#endif
 
 	ret = security_secid_to_secctx(&secid, NULL, &len);
 	if (ret)

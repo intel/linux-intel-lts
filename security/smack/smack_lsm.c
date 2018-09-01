@@ -35,6 +35,7 @@
 #include <net/cipso_ipv4.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
+#include <linux/netfilter/xt_SECMARK.h>
 #include <linux/audit.h>
 #include <linux/magic.h>
 #include <linux/dcache.h>
@@ -51,6 +52,11 @@
 #define SMK_CONNECTING	0
 #define SMK_RECEIVING	1
 #define SMK_SENDING	2
+
+/*
+ * SECMARK reference count
+ */
+static atomic_t smack_secmark_refcount = ATOMIC_INIT(0);
 
 #ifdef SMACK_IPV6_PORT_LABELING
 DEFINE_MUTEX(smack_ipv6_lock);
@@ -3807,6 +3813,19 @@ static int smk_skb_to_addr_ipv6(struct sk_buff *skb, struct sockaddr_in6 *sip)
 }
 #endif /* CONFIG_IPV6 */
 
+#ifdef CONFIG_SECURITY_SMACK_NETFILTER
+static bool smack_owns_secmark(const struct sk_buff *skb)
+{
+	if (skb == NULL || skb->secmark == 0)
+		return false;
+#ifdef CONFIG_SECURITY_STACKING
+	return atomic_read(&smack_secmark_refcount) != 0;
+#else
+	return true;
+#endif
+}
+#endif /* CONFIG_SECURITY_SMACK_NETFILTER */
+
 /**
  * smack_socket_sock_rcv_skb - Smack packet delivery access check
  * @sk: socket
@@ -3841,7 +3860,7 @@ static int smack_socket_sock_rcv_skb(struct sock *sk, struct sk_buff *skb)
 		 * If there is no secmark fall back to CIPSO.
 		 * The secmark is assumed to reflect policy better.
 		 */
-		if (skb && skb->secmark != 0) {
+		if (smack_owns_secmark(skb)) {
 			skp = smack_from_secid(skb->secmark);
 			goto access_check;
 		}
@@ -3887,7 +3906,7 @@ access_check:
 		    proto != IPPROTO_TCP && proto != IPPROTO_DCCP)
 			break;
 #ifdef SMACK_IPV6_SECMARK_LABELING
-		if (skb)
+		if (smack_owns_secmark(skb))
 			skp = smack_from_secid(skb->secmark);
 		else
 			skp = smack_ipv6host_label(&sadd);
@@ -3987,7 +4006,7 @@ static int smack_socket_getpeersec_dgram(struct socket *sock,
 		break;
 	case PF_INET:
 #ifdef CONFIG_SECURITY_SMACK_NETFILTER
-		if (skb->secmark) {
+		if (smack_owns_secmark(skb)) {
 			s = skb->secmark;
 			if (s != 0)
 				break;
@@ -4008,7 +4027,8 @@ static int smack_socket_getpeersec_dgram(struct socket *sock,
 		break;
 	case PF_INET6:
 #ifdef SMACK_IPV6_SECMARK_LABELING
-		s = skb->secmark;
+		if (smack_owns_secmark(skb))
+			s = skb->secmark;
 #endif
 		break;
 	}
@@ -4086,11 +4106,9 @@ static int smack_inet_conn_request(struct sock *sk, struct sk_buff *skb,
 	 * If there is no secmark fall back to CIPSO.
 	 * The secmark is assumed to reflect policy better.
 	 */
-	if (skb) {
-		if (skb->secmark != 0) {
-			skp = smack_from_secid(skb->secmark);
-			goto access_check;
-		}
+	if (smack_owns_secmark(skb)) {
+		skp = smack_from_secid(skb->secmark);
+		goto access_check;
 	}
 #endif /* CONFIG_SECURITY_SMACK_NETFILTER */
 
@@ -4164,6 +4182,24 @@ static void smack_inet_csk_clone(struct sock *sk,
 		ssp->smk_packet = skp;
 	} else
 		ssp->smk_packet = NULL;
+}
+
+static void smack_secmark_refcount_inc(u8 lsm)
+{
+#ifdef CONFIG_SECURITY_STACKING
+	if (lsm != SECMARK_MODE_SMACK)
+		return;
+#endif
+	atomic_inc(&smack_secmark_refcount);
+}
+
+static void smack_secmark_refcount_dec(u8 lsm)
+{
+#ifdef CONFIG_SECURITY_STACKING
+	if (lsm != SECMARK_MODE_SMACK)
+		return;
+#endif
+	atomic_dec(&smack_secmark_refcount);
 }
 
 /*
@@ -4674,6 +4710,8 @@ static struct security_hook_list smack_hooks[] __lsm_ro_after_init = {
 	LSM_HOOK_INIT(sock_graft, smack_sock_graft),
 	LSM_HOOK_INIT(inet_conn_request, smack_inet_conn_request),
 	LSM_HOOK_INIT(inet_csk_clone, smack_inet_csk_clone),
+	LSM_HOOK_INIT(secmark_refcount_inc, smack_secmark_refcount_inc),
+	LSM_HOOK_INIT(secmark_refcount_dec, smack_secmark_refcount_dec),
 
  /* key management security hooks */
 #ifdef CONFIG_KEYS

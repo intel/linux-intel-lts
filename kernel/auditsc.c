@@ -1214,7 +1214,9 @@ static void show_special(struct audit_context *context, int *call_panic)
 			char *ctx = NULL;
 			u32 len;
 			if (security_secid_to_secctx(&osid, &ctx, &len)) {
+#ifndef CONFIG_SECURITY_STACKING
 				audit_log_format(ab, " osid=%u", osid.common);
+#endif
 				*call_panic = 1;
 			} else {
 				audit_log_format(ab, " obj=%s", ctx);

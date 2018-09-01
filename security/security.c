@@ -351,10 +351,9 @@ void __init security_add_blobs(struct lsm_blob_sizes *needed)
 	lsm_set_size(&needed->lbs_key, &blob_sizes.lbs_key);
 #endif
 	lsm_set_size(&needed->lbs_msg_msg, &blob_sizes.lbs_msg_msg);
-#ifdef CONFIG_NETWORK_SECMARK
+#ifdef CONFIG_SECURITY_NETWORK
 	/*
-	 * Store the most likely secmark with the socket
-	 * so that it doesn't have to be a managed object.
+	 * Store the secids with the socket for UDS.
 	 */
 	if (needed->lbs_sock && blob_sizes.lbs_sock == 0)
 		blob_sizes.lbs_sock = sizeof(struct secids);
@@ -2235,11 +2234,17 @@ int security_socket_getpeersec_dgram(struct socket *sock, struct sk_buff *skb,
 #ifdef CONFIG_SECURITY_STACKING
 	struct security_hook_list *hp;
 	int rc = -ENOPROTOOPT;
+	int trc;
 
 	secid_init(secid);
 	hlist_for_each_entry(hp, &security_hook_heads.socket_getpeersec_dgram,
-				list)
-		rc = hp->hook.socket_getpeersec_dgram(sock, skb, secid);
+				list) {
+		trc = hp->hook.socket_getpeersec_dgram(sock, skb, secid);
+		if (trc == 0)
+			rc = 0;
+		else if (trc != -ENOPROTOOPT)
+			return trc;
+	}
 
 	return rc;
 #else
@@ -2329,17 +2334,31 @@ int security_secmark_relabel_packet(struct secids *secid)
 }
 EXPORT_SYMBOL(security_secmark_relabel_packet);
 
-void security_secmark_refcount_inc(void)
+void security_secmark_refcount_inc(u8 lsm)
 {
-	call_void_hook(secmark_refcount_inc);
+	call_void_hook(secmark_refcount_inc, lsm);
 }
 EXPORT_SYMBOL(security_secmark_refcount_inc);
 
-void security_secmark_refcount_dec(void)
+void security_secmark_refcount_dec(u8 lsm)
 {
-	call_void_hook(secmark_refcount_dec);
+	call_void_hook(secmark_refcount_dec, lsm);
 }
 EXPORT_SYMBOL(security_secmark_refcount_dec);
+
+static u8 security_secmark_mode_value;
+
+int security_secmark_mode(u8 lsm)
+{
+	if (security_secmark_mode_value == 0) {
+		security_secmark_mode_value = lsm;
+		return 0;
+	}
+	if (security_secmark_mode_value == lsm)
+		return 0;
+	return -EBUSY;
+}
+EXPORT_SYMBOL(security_secmark_mode);
 
 int security_tun_dev_alloc_security(void **security)
 {
