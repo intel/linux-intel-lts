@@ -12,6 +12,7 @@
  * packets are being marked for.
  */
 #define SECMARK_MODE_SEL	0x01		/* SELinux */
+#define SECMARK_MODE_SMACK	0x02		/* Smack */
 #define SECMARK_SECCTX_MAX	256
 
 struct xt_secmark_target_info {

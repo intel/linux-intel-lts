@@ -41,6 +41,9 @@ secmark_tg(struct sk_buff *skb, const struct xt_action_param *par)
 	case SECMARK_MODE_SEL:
 		secmark = info->secid;
 		break;
+	case SECMARK_MODE_SMACK:
+		secmark = info->secid;
+		break;
 	default:
 		BUG();
 	}
@@ -59,7 +62,16 @@ static int checkentry_lsm(struct xt_secmark_target_info *info)
 
 	err = security_secctx_to_secid(info->secctx, strlen(info->secctx),
 				       &secid);
-	info->secid = secid.selinux;
+	switch (info->mode) {
+	case SECMARK_MODE_SEL:
+		info->secid = secid.selinux;
+		break;
+	case SECMARK_MODE_SMACK:
+		info->secid = secid.smack;
+		break;
+	default:
+		BUG();
+	}
 
 	if (err) {
 		if (err == -EINVAL)
@@ -80,7 +92,8 @@ static int checkentry_lsm(struct xt_secmark_target_info *info)
 		return err;
 	}
 
-	security_secmark_refcount_inc();
+	if (mode)
+		security_secmark_refcount_inc(mode);
 	return 0;
 }
 
@@ -96,14 +109,22 @@ static int secmark_tg_check(const struct xt_tgchk_param *par)
 		return -EINVAL;
 	}
 
-	if (mode && mode != info->mode) {
-		pr_info_ratelimited("mode already set to %hu cannot mix with rules for mode %hu\n",
-				    mode, info->mode);
+	if (mode) {
+		if (mode != info->mode) {
+			pr_info("mode already set to %hu cannot mix with "
+				"rules for mode %hu\n", mode, info->mode);
+			return -EINVAL;
+		}
+	} else if (security_secmark_mode(info->mode)) {
+		pr_info("mode already set and cannot mix with "
+			"rules for mode %hu\n", info->mode);
 		return -EINVAL;
 	}
 
 	switch (info->mode) {
 	case SECMARK_MODE_SEL:
+		break;
+	case SECMARK_MODE_SMACK:
 		break;
 	default:
 		pr_info_ratelimited("invalid mode: %hu\n", info->mode);
@@ -123,8 +144,14 @@ static void secmark_tg_destroy(const struct xt_tgdtor_param *par)
 {
 	switch (mode) {
 	case SECMARK_MODE_SEL:
-		security_secmark_refcount_dec();
+		break;
+	case SECMARK_MODE_SMACK:
+		break;
+	default:
+		pr_info("invalid mode: %hu\n", mode);
+		return;
 	}
+	security_secmark_refcount_dec(mode);
 }
 
 static struct xt_target secmark_tg_reg __read_mostly = {
