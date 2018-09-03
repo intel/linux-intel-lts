@@ -27,13 +27,12 @@
 #include "skl.h"
 #include "skl-compress.h"
 
-struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream)
+struct hdac_bus *get_bus_compr_ctx(struct snd_compr_stream *substream)
 {
 	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
 	struct hdac_stream *hstream = hdac_stream(stream);
-	struct hdac_bus *bus = hstream->bus;
 
-	return hbus_to_ebus(bus);
+	return hstream->bus;
 }
 
 void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
@@ -55,10 +54,10 @@ void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
 }
 
 int skl_compr_malloc_pages(struct snd_compr_stream *substream,
-					struct hdac_ext_bus *ebus, size_t size)
+					struct hdac_bus *bus, size_t size)
 {
 	struct snd_dma_buffer *dmab = NULL;
-	struct skl *skl = ebus_to_skl(ebus);
+	struct skl *skl = bus_to_skl(bus);
 
 	dmab = kzalloc(sizeof(*dmab), GFP_KERNEL);
 	if (!dmab)
@@ -69,7 +68,7 @@ int skl_compr_malloc_pages(struct snd_compr_stream *substream,
 	if (snd_dma_alloc_pages(substream->dma_buffer.dev.type,
 				substream->dma_buffer.dev.dev,
 				size, dmab) < 0) {
-		dev_err(ebus_to_hbus(ebus)->dev,
+		dev_err(bus->dev,
 			"Error in snd_dma_alloc_pages\n");
 		kfree(dmab);
 		return -ENOMEM;
@@ -79,7 +78,7 @@ int skl_compr_malloc_pages(struct snd_compr_stream *substream,
 	return 1;
 }
 
-int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
+int skl_substream_alloc_compr_pages(struct hdac_bus *bus,
 				 struct snd_compr_stream *substream,
 				 size_t size)
 {
@@ -90,10 +89,10 @@ int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
 	hdac_stream(stream)->period_bytes = 0;
 	hdac_stream(stream)->format_val = 0;
 
-	ret = skl_compr_malloc_pages(substream, ebus, size);
+	ret = skl_compr_malloc_pages(substream, bus, size);
 	if (ret < 0)
 		return ret;
-	ebus->bus.io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
+	bus->io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
 
 	return ret;
 }

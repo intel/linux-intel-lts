@@ -42,6 +42,10 @@
 #include "skl-sst-ipc.h"
 #include "skl-topology.h"
 
+#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+static struct skl_machine_pdata skl_dmic_data;
+#endif
+
 /*
  * initialize the PCI registers
  */
@@ -211,9 +215,8 @@ static void skl_get_total_bytes_transferred(struct hdac_stream *hstr)
  * skl_dum_set - Set the DUM bit in EM2 register to fix the IP bug
  * of incorrect postion reporting for capture stream.
  */
-static void skl_dum_set(struct hdac_ext_bus *ebus)
+static void skl_dum_set(struct hdac_bus *bus)
 {
-	struct hdac_bus *bus = ebus_to_hbus(ebus);
 	u32 reg;
 	u8 val;
 
@@ -248,7 +251,7 @@ static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
 static irqreturn_t skl_interrupt(int irq, void *dev_id)
 {
 	struct hdac_bus *bus = dev_id;
-	struct skl *skl = bus_to_skl(ebus);
+	struct skl *skl = bus_to_skl(bus);
 	u32 status;
 	u32 mask, int_enable;
 	int ret = IRQ_NONE;
@@ -304,7 +307,7 @@ static irqreturn_t skl_threaded_handler(int irq, void *dev_id)
 	snd_hdac_bus_handle_stream_irq(bus, status, skl_stream_update);
 
 	/* Re-enable stream interrupts */
-	mask = (0x1 << ebus->num_streams) - 1;
+	mask = (0x1 << bus->num_streams) - 1;
 	spin_lock_irqsave(&bus->reg_lock, flags);
 	int_enable = snd_hdac_chip_readl(bus, INTCTL);
 	snd_hdac_chip_writel(bus, INTCTL, (int_enable | mask));
@@ -875,7 +878,7 @@ static int skl_init_recovery(struct skl *skl)
 	monitor->interval = SKL_MIN_TIME_INTERVAL;
 
 	monitor->intervals = devm_kzalloc(&skl->pci->dev,
-					skl->ebus.num_streams * sizeof(u32),
+					skl->hbus.num_streams * sizeof(u32),
 					GFP_KERNEL);
 	if (!monitor->intervals)
 		return -ENOMEM;
@@ -982,7 +985,7 @@ static int skl_first_init(struct hdac_bus *bus)
 	/* initialize chip */
 	skl_init_pci(skl);
 
-	skl_dum_set(ebus);
+	skl_dum_set(bus);
 
 	return skl_init_chip(bus, true);
 }
@@ -1043,7 +1046,7 @@ static int skl_probe(struct pci_dev *pci,
 
 nhlt_continue:
 #endif
-	pci_set_drvdata(skl->pci, ebus);
+	pci_set_drvdata(skl->pci, bus);
 
 #if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
 	skl_dmic_data.dmic_num = skl_get_dmic_geo(skl);
