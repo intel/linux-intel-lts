@@ -95,7 +95,7 @@ static int skl_substream_alloc_pages(struct hdac_bus *bus,
 	ret = snd_pcm_lib_malloc_pages(substream, size);
 	if (ret < 0)
 		return ret;
-	ebus->bus.io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
+	bus->io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
 
 	return ret;
 }
@@ -118,7 +118,7 @@ static void skl_set_pcm_constrains(struct hdac_bus *bus,
 				     20, 178000000);
 }
 
-static enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus)
+enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus)
 {
 	if (bus->ppcap)
 		return HDAC_EXT_STREAM_TYPE_HOST;
@@ -212,7 +212,7 @@ int skl_pcm_host_dma_prepare(struct device *dev, struct skl_pipe_params *params)
 	runtime = hdac_stream(stream)->substream->runtime;
 	/* enable SPIB if no_rewinds flag is set */
 	if (runtime->no_rewinds)
-		snd_hdac_ext_stream_spbcap_enable(ebus, 1, hstream->index);
+		snd_hdac_ext_stream_spbcap_enable(bus, 1, hstream->index);
 
 	hdac_stream(stream)->prepared = 1;
 
@@ -442,8 +442,8 @@ static int skl_pcm_hw_free(struct snd_pcm_substream *substream,
 	mconfig = skl_tplg_fe_get_cpr_module(dai, substream->stream);
 
 	if (runtime->no_rewinds) {
-		snd_hdac_ext_stream_set_spib(ebus, stream, 0);
-		snd_hdac_ext_stream_spbcap_enable(ebus, 0, hstream->index);
+		snd_hdac_ext_stream_set_spib(bus, stream, 0);
+		snd_hdac_ext_stream_spbcap_enable(bus, 0, hstream->index);
 	}
 	if (mconfig) {
 		ret = skl_reset_pipe(skl->skl_sst, mconfig->pipe);
@@ -863,8 +863,8 @@ static struct skl_sst *skl_get_sst_compr(struct snd_compr_stream *stream)
 {
 	struct snd_soc_pcm_runtime *rtd = stream->private_data;
 	struct snd_soc_dai *dai = rtd->cpu_dai;
-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
-	struct skl *skl = ebus_to_skl(ebus);
+	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
+	struct skl *skl = bus_to_skl(bus);
 	struct skl_sst *sst = skl->skl_sst;
 
 	return sst;
@@ -1589,7 +1589,7 @@ static int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
 /* update SPIB register with appl position */
 static int skl_platform_ack(struct snd_pcm_substream *substream)
 {
-	struct hdac_ext_bus *ebus = get_bus_ctx(substream);
+	struct hdac_bus *bus = get_bus_ctx(substream);
 	struct hdac_ext_stream *estream = get_hdac_ext_stream(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	ssize_t appl_pos, buf_size;
@@ -1606,7 +1606,7 @@ static int skl_platform_ack(struct snd_pcm_substream *substream)
 
 	/* Allowable value for SPIB is 1 byte to max buffer size */
 	spib = (spib == 0) ? buf_size : spib;
-	snd_hdac_ext_stream_set_spib(ebus, estream, spib);
+	snd_hdac_ext_stream_set_spib(bus, estream, spib);
 
 	return 0;
 }

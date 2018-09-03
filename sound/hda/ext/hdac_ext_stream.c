@@ -552,21 +552,21 @@ int snd_hdac_ext_stream_set_lpib(struct hdac_ext_stream *stream, u32 value)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(snd_hdac_ext_stream_set_lpib);
+
 struct hdac_ext_stream *
-hdac_ext_host_stream_compr_assign(struct hdac_ext_bus *ebus,
+hdac_ext_host_stream_compr_assign(struct hdac_bus *bus,
 				struct snd_compr_stream *substream,
 				int direction)
 {
 	struct hdac_ext_stream *res = NULL;
 	struct hdac_stream *stream = NULL;
-	struct hdac_bus *hbus = &ebus->bus;
 
-	if (!hbus->ppcap) {
-		dev_err(hbus->dev, "stream type not supported\n");
+	if (!bus->ppcap) {
+		dev_err(bus->dev, "stream type not supported\n");
 		return NULL;
 	}
 
-	list_for_each_entry(stream, &hbus->stream_list, list) {
+	list_for_each_entry(stream, &bus->stream_list, list) {
 		struct hdac_ext_stream *hstream = container_of(stream,
 						struct hdac_ext_stream,
 						hstream);
@@ -575,19 +575,19 @@ hdac_ext_host_stream_compr_assign(struct hdac_ext_bus *ebus,
 
 		if (!stream->opened) {
 			if (!hstream->decoupled)
-				snd_hdac_ext_stream_decouple(ebus,
+				snd_hdac_ext_stream_decouple(bus,
 							hstream, true);
 			res = hstream;
 			break;
 		}
 	}
 	if (res) {
-		spin_lock_irq(&hbus->reg_lock);
+		spin_lock_irq(&bus->reg_lock);
 		res->hstream.opened = 1;
 		res->hstream.running = 0;
 		res->hstream.stream = substream;
-		spin_unlock_irq(&hbus->reg_lock);
-		dev_dbg(hbus->dev, "Stream tag = %d, index = %d\n",
+		spin_unlock_irq(&bus->reg_lock);
+		dev_dbg(bus->dev, "Stream tag = %d, index = %d\n",
 				res->hstream.stream_tag, res->hstream.index);
 	}
 	return res;

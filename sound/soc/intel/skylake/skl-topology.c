@@ -2051,8 +2051,8 @@ int skl_tplg_dsp_log_get(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
-	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(component);
-	struct skl *skl = ebus_to_skl(ebus);
+	struct hdac_bus *bus = snd_soc_component_get_drvdata(component);
+	struct skl *skl = bus_to_skl(bus);
 
 	ucontrol->value.integer.value[0] = get_dsp_log_priority(skl);
 
@@ -2063,8 +2063,8 @@ int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
-	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(component);
-	struct skl *skl = ebus_to_skl(ebus);
+	struct hdac_bus *bus = snd_soc_component_get_drvdata(component);
+	struct skl *skl = bus_to_skl(bus);
 
 	update_dsp_log_priority(ucontrol->value.integer.value[0], skl);
 
@@ -2260,8 +2260,8 @@ static int skl_tplg_multi_config_get(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
-	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(component);
-	struct skl *skl = ebus_to_skl(ebus);
+	struct hdac_bus *bus = snd_soc_component_get_drvdata(component);
+	struct skl *skl = bus_to_skl(bus);
 	struct skl_pipeline *ppl;
 	struct skl_pipe *pipe = NULL;
 	u32 *pipe_id;
@@ -2284,8 +2284,8 @@ static int skl_tplg_multi_config_set(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
-	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(component);
-	struct skl *skl = ebus_to_skl(ebus);
+	struct hdac_bus *bus = snd_soc_component_get_drvdata(component);
+	struct skl *skl = bus_to_skl(bus);
 	struct skl_pipeline *ppl;
 	struct skl_pipe *pipe = NULL;
 	struct soc_enum *ec = (struct soc_enum *)kcontrol->private_value;
@@ -4379,7 +4379,7 @@ static int skl_tplg_widget_load(struct snd_soc_component *cmpnt, int index,
 				struct snd_soc_dapm_widget *w,
 				struct snd_soc_tplg_dapm_widget *tplg_w)
 {
-	int ret;
+	int i, ret;
 	struct hdac_bus *bus = snd_soc_component_get_drvdata(cmpnt);
 	struct skl *skl = bus_to_skl(bus);
 	struct skl_module_cfg *mconfig;

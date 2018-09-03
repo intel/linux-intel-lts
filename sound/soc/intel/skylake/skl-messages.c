@@ -380,8 +380,7 @@ void skl_do_recovery(struct skl *skl)
 	const struct skl_dsp_ops *ops;
 	struct snd_soc_card *card;
 	struct hdac_stream *azx_dev;
-	struct hdac_ext_bus *ebus = &skl->ebus;
-	struct hdac_bus *bus = ebus_to_hbus(ebus);
+	struct hdac_bus *bus = skl_to_bus(skl);
 	struct snd_pcm_substream *substream = NULL;
 	struct hdac_ext_stream *stream;
 
@@ -400,7 +399,7 @@ void skl_do_recovery(struct skl *skl)
 				substream = azx_dev->substream;
 				stream = stream_to_hdac_ext_stream(azx_dev);
 				snd_hdac_ext_stream_release(stream,
-					skl_get_host_stream_type(ebus));
+					skl_get_host_stream_type(bus));
 			}
 			break;
 		}
@@ -409,8 +408,8 @@ void skl_do_recovery(struct skl *skl)
 	if (ops->init_fw(soc_component->dev, skl->skl_sst) < 0)
 		dev_err(skl->skl_sst->dev, "Recovery failed\n");
 	if (substream != NULL) {
-		stream = snd_hdac_ext_stream_assign(ebus, substream,
-					skl_get_host_stream_type(ebus));
+		stream = snd_hdac_ext_stream_assign(bus, substream,
+					skl_get_host_stream_type(bus));
 	}
 	snd_soc_resume(card->dev);
 	skl->skl_sst->dsp->is_recovery = false;
@@ -1266,7 +1265,6 @@ int skl_init_dsp(struct skl *skl)
 {
 	void __iomem *mmio_base;
 	struct hdac_bus *bus = skl_to_bus(skl);
-	struct skl_dsp_loader_ops loader_ops;
 	int irq = bus->irq;
 	const struct skl_dsp_ops *ops;
 	struct skl_dsp_cores *cores;

@@ -90,7 +90,7 @@ struct hdac_ext_stream *snd_hdac_ext_stream_assign(struct hdac_bus *bus,
 					   struct snd_pcm_substream *substream,
 					   int type);
 struct hdac_ext_stream *
-hdac_ext_host_stream_compr_assign(struct hdac_ext_bus *ebus,
+hdac_ext_host_stream_compr_assign(struct hdac_bus *bus,
 				struct snd_compr_stream *substream,
 				int direction);
 void snd_hdac_ext_stream_release(struct hdac_ext_stream *azx_dev, int type);

@@ -20,12 +20,12 @@
  */
 #ifndef __SKL_COMPRESS_H__
 #define __SKL_COMPRESS_H__
-struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream);
+struct hdac_bus *get_bus_compr_ctx(struct snd_compr_stream *substream);
 void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
 				struct snd_dma_buffer *bufp, size_t size);
 int skl_compr_malloc_pages(struct snd_compr_stream *substream,
-					struct hdac_ext_bus *ebus, size_t size);
-int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
+					struct hdac_bus *bus, size_t size);
+int skl_substream_alloc_compr_pages(struct hdac_bus *bus,
 				 struct snd_compr_stream *substream,
 				 size_t size);
 int skl_compr_free_pages(struct snd_compr_stream *substream);
