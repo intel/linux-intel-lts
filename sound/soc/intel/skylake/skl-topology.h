@@ -553,7 +553,7 @@ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
 void skl_tplg_set_be_dmic_config(struct snd_soc_dai *dai,
 	struct skl_pipe_params *params, int stream);
 int skl_tplg_init(struct snd_soc_component *component,
-				struct hdac_bus *ebus);
+				struct hdac_bus *bus);
 struct skl_module_cfg *skl_tplg_fe_get_cpr_module(
 		struct snd_soc_dai *dai, int stream);
 int skl_tplg_update_pipe_params(struct device *dev,
@@ -617,7 +617,7 @@ int skl_pcm_host_dma_prepare(struct device *dev,
 			struct skl_pipe_params *params);
 int skl_pcm_link_dma_prepare(struct device *dev,
 			struct skl_pipe_params *params);
-enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_ext_bus *ebus);
+enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus);
 
 int skl_dai_load(struct snd_soc_component *cmp, int index,
 		struct snd_soc_dai_driver *dai_drv,

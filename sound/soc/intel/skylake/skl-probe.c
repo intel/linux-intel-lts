@@ -87,7 +87,7 @@ static int set_injector_stream(struct hdac_ext_stream *stream,
 int skl_probe_compr_open(struct snd_compr_stream *substream,
 						struct snd_soc_dai *dai)
 {
-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
+	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
 	struct hdac_ext_stream *stream = NULL;
 	struct snd_compr_runtime *runtime = substream->runtime;
 	struct skl *skl = get_skl_ctx(dai->dev);
@@ -107,7 +107,7 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
 		 * correct substream pointer later when open is indeed for
 		 * extractor.
 		 */
-		pconfig->estream = hdac_ext_host_stream_compr_assign(ebus,
+		pconfig->estream = hdac_ext_host_stream_compr_assign(bus,
 								NULL,
 							SND_COMPRESS_CAPTURE);
 		if (!pconfig->estream) {
@@ -120,7 +120,7 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
 	}
 
 	if (substream->direction == SND_COMPRESS_PLAYBACK) {
-		stream = hdac_ext_host_stream_compr_assign(ebus, substream,
+		stream = hdac_ext_host_stream_compr_assign(bus, substream,
 							SND_COMPRESS_PLAYBACK);
 		if (stream == NULL) {
 			if ((pconfig->i_refc + pconfig->e_refc) == 0)
@@ -154,7 +154,7 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
 							struct snd_soc_dai *dai)
 {
 
-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
+	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
 	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
 	struct snd_compr_runtime *runtime = substream->runtime;
 	struct skl *skl = get_skl_ctx(dai->dev);
@@ -172,7 +172,7 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
 		return 0;
 	}
 
-	ret = skl_substream_alloc_compr_pages(ebus, substream,
+	ret = skl_substream_alloc_compr_pages(bus, substream,
 				runtime->fragments*runtime->fragment_size);
 	if (ret < 0)
 		return ret;
@@ -215,7 +215,7 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
 	}
 
 #if USE_SPIB
-	snd_hdac_ext_stream_spbcap_enable(ebus, 1, hdac_stream(stream)->index);
+	snd_hdac_ext_stream_spbcap_enable(bus, 1, hdac_stream(stream)->index);
 #endif
 	return 0;
 }
@@ -224,7 +224,7 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
 						struct snd_soc_dai *dai)
 {
 	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
+	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
 	struct skl *skl = get_skl_ctx(dai->dev);
 	struct skl_probe_config *pconfig =  &skl->skl_sst->probe_config;
 	struct skl_module_cfg *mconfig = pconfig->w->priv;
@@ -233,7 +233,7 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
 
 	dev_dbg(dai->dev, "%s: %s\n", __func__, dai->name);
 #if USE_SPIB
-	snd_hdac_ext_stream_spbcap_enable(ebus, 0, hdac_stream(stream)->index);
+	snd_hdac_ext_stream_spbcap_enable(bus, 0, hdac_stream(stream)->index);
 #endif
 	if ((pconfig->i_refc + pconfig->e_refc) == 0)
 		goto probe_uninit;
@@ -282,7 +282,7 @@ probe_uninit:
 	snd_hdac_stream_cleanup(hdac_stream(stream));
 	hdac_stream(stream)->prepared = 0;
 
-	skl_substream_free_compr_pages(ebus_to_hbus(ebus), substream);
+	skl_substream_free_compr_pages(bus, substream);
 
 	/* Release the particular injector/extractor stream getting closed */
 	snd_hdac_ext_stream_release(stream, HDAC_EXT_STREAM_TYPE_HOST);
@@ -293,8 +293,7 @@ probe_uninit:
 int skl_probe_compr_ack(struct snd_compr_stream *substream, size_t bytes,
 							struct snd_soc_dai *dai)
 {
-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
-	struct hdac_bus *bus = ebus_to_hbus(ebus);
+	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
 	u64 __maybe_unused new_spib_pos;
 	struct snd_compr_runtime *runtime = substream->runtime;
 	u64 spib_pos = div64_u64(runtime->total_bytes_available,
@@ -387,7 +386,7 @@ int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
 
 #if USE_SPIB
 	spib_pos = (offset + retval)%stream->runtime->dma_bytes;
-	snd_hdac_ext_stream_set_spib(ebus, estream, spib_pos);
+	snd_hdac_ext_stream_set_spib(bus, estream, spib_pos);
 #endif
 
 	return retval;
@@ -397,8 +396,7 @@ int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
 int skl_probe_compr_trigger(struct snd_compr_stream *substream, int cmd,
 							struct snd_soc_dai *dai)
 {
-	struct hdac_ext_bus *ebus = get_bus_compr_ctx(substream);
-	struct hdac_bus *bus = ebus_to_hbus(ebus);
+	struct hdac_bus *bus = get_bus_compr_ctx(substream);
 	struct hdac_ext_stream *stream;
 	struct hdac_stream *hstr;
 	int start;

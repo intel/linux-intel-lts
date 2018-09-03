@@ -863,7 +863,7 @@ int soc_dai_hw_params(struct snd_pcm_substream *substream,
 	int ret;
 
 	/* perform any topology hw_params fixups before DAI  */
-	if (rtd->dai_link->be_hw_params_fixup) {
+	if (rtd && rtd->dai_link->be_hw_params_fixup) {
 		ret = rtd->dai_link->be_hw_params_fixup(rtd, params);
 		if (ret < 0) {
 			dev_err(rtd->dev,
