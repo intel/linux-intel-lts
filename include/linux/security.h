@@ -875,7 +875,7 @@ static inline int security_inode_listsecurity(struct inode *inode, char *buffer,
 static inline void security_inode_getsecid(struct inode *inode,
 					   struct secids *secid)
 {
-	secid->secmark = 0;
+	secid->common = 0;
 }
 
 static inline int security_inode_copy_up(struct dentry *src, struct cred **new)
@@ -1047,7 +1047,7 @@ static inline int security_task_getsid(struct task_struct *p)
 static inline void security_task_getsecid(struct task_struct *p,
 					  struct secids *secid)
 {
-	secid->secmark = 0;
+	secid->common = 0;
 }
 
 static inline int security_task_setnice(struct task_struct *p, int nice)
@@ -1122,7 +1122,7 @@ static inline int security_ipc_permission(struct kern_ipc_perm *ipcp,
 static inline void security_ipc_getsecid(struct kern_ipc_perm *ipcp,
 					 struct secids *secid)
 {
-	secid->secmark = 0;
+	secid->common = 0;
 }
 
 static inline int security_msg_msg_alloc(struct msg_msg *msg)
