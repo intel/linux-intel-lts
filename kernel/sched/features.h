@@ -90,3 +90,10 @@ SCHED_FEAT(WA_BIAS, true)
  * UtilEstimation. Use estimated CPU utilization.
  */
 SCHED_FEAT(UTIL_EST, true)
+
+/*
+ * Energy-Aware Scheduling. Whether or not tasks will be placed into an
+ * energy-aware fashion depends on this feature being enabled and on the
+ * root domain having an Energy Model attached.
+ */
+SCHED_FEAT(ENERGY_AWARE, false)
