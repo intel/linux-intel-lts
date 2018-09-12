@@ -82,6 +82,7 @@ struct intel_gvt_device_info {
 struct intel_vgpu_gm {
 	u64 aperture_sz;
 	u64 hidden_sz;
+	struct sg_table *st;
 	struct drm_mm_node low_gm_node;
 	struct drm_mm_node high_gm_node;
 };
@@ -320,8 +321,6 @@ struct intel_gvt {
 	wait_queue_head_t service_thread_wq;
 	unsigned long service_request;
 	struct intel_gvt_pipe_info pipe_info[I915_MAX_PIPES];
-
-	struct skl_ddb_allocation ddb;
 };
 
 static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
@@ -519,11 +518,15 @@ void intel_vgpu_init_cfg_space(struct intel_vgpu *vgpu,
 		bool primary);
 void intel_vgpu_reset_cfg_space(struct intel_vgpu *vgpu);
 
+int set_pvmmio(struct intel_vgpu *vgpu, bool map);
+
 int intel_vgpu_emulate_cfg_read(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes);
 
 int intel_vgpu_emulate_cfg_write(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes);
+
+int map_gttmmio(struct intel_vgpu *vgpu, bool map);
 
 void intel_gvt_clean_opregion(struct intel_gvt *gvt);
 int intel_gvt_init_opregion(struct intel_gvt *gvt);
@@ -536,6 +539,8 @@ void populate_pvinfo_page(struct intel_vgpu *vgpu);
 int gvt_pause_user_domains(struct drm_i915_private *dev_priv);
 int gvt_unpause_user_domains(struct drm_i915_private *dev_priv);
 int gvt_dom0_ready(struct drm_i915_private *dev_priv);
+void intel_gvt_allocate_ddb(struct intel_gvt *gvt,
+		struct skl_ddb_allocation *ddb, unsigned int active_crtcs);
 
 int intel_gvt_scan_and_shadow_workload(struct intel_vgpu_workload *workload);
 
