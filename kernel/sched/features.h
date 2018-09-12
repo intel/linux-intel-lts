@@ -96,4 +96,4 @@ SCHED_FEAT(UTIL_EST, true)
  * energy-aware fashion depends on this feature being enabled and on the
  * root domain having an Energy Model attached.
  */
-SCHED_FEAT(ENERGY_AWARE, false)
+SCHED_FEAT(ENERGY_AWARE, true)
