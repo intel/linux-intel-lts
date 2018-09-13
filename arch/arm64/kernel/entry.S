@@ -429,6 +429,21 @@ SYM_CODE_END(__swpan_exit_el0)
 	mov	x24, scs_sp		// preserve the original shadow stack
 #endif
 
+#ifdef CONFIG_DOVETAIL
+	/*
+	 * When the pipeline is enabled, context switches over the irq
+	 * stack are allowed (for the co-kernel), and more interrupts
+	 * can be taken over sibling stack contexts. So we need a not so
+	 * subtle way of figuring out whether the irq stack was actually
+	 * exited, which cannot depend on the current task pointer.
+	 */
+	adr_this_cpu x25, irq_nesting, x26
+	ldr	w26, [x25]
+	cmp	w26, #0
+	add	w26, w26, #1
+	str	w26, [x25]
+	b.ne	9998f
+#else
 	/*
 	 * Compare sp with the base of the task stack.
 	 * If the top ~(THREAD_SIZE - 1) bits match, we are on a task stack,
@@ -438,6 +453,7 @@ SYM_CODE_END(__swpan_exit_el0)
 	eor	x25, x25, x19
 	and	x25, x25, #~(THREAD_SIZE - 1)
 	cbnz	x25, 9998f
+#endif
 
 	ldr_this_cpu x25, irq_stack_ptr, x26
 	mov	x26, #IRQ_STACK_SIZE
@@ -464,6 +480,12 @@ SYM_CODE_END(__swpan_exit_el0)
 	mov	sp, x19
 #ifdef CONFIG_SHADOW_CALL_STACK
 	mov	scs_sp, x24
+#endif
+#ifdef CONFIG_DOVETAIL
+	adr_this_cpu x1, irq_nesting, x2
+	ldr	w2, [x1]
+	add	w2, w2, #-1
+	str	w2, [x1]
 #endif
 	.endm
 
