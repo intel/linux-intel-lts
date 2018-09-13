@@ -427,6 +427,39 @@ out:
 	arm64_preempt_irq_exit();
 }
 
+#ifdef CONFIG_DOVETAIL
+/*
+ * When Dovetail is enabled, the companion core may switch contexts
+ * over the irq stack, therefore subsequent interrupts might be taken
+ * over sibling stack contexts. So we need a not so subtle way of
+ * figuring out whether the irq stack was actually exited, which
+ * cannot depend on the current task pointer. Instead, we track the
+ * interrupt nesting depth for a CPU in irq_nesting.
+ */
+DEFINE_PER_CPU(int, irq_nesting);
+
+static void __do_interrupt_handler(struct pt_regs *regs,
+				void (*handler)(struct pt_regs *))
+{
+	if (this_cpu_inc_return(irq_nesting) == 1)
+		call_on_irq_stack(regs, handler);
+	else
+		handler(regs);
+
+	this_cpu_dec(irq_nesting);
+}
+
+#else
+static void __do_interrupt_handler(struct pt_regs *regs,
+				void (*handler)(struct pt_regs *))
+{
+	if (on_thread_stack())
+		call_on_irq_stack(regs, handler);
+	else
+		handler(regs);
+}
+#endif
+
 #ifdef CONFIG_IRQ_PIPELINE
 static bool do_interrupt_handler(struct pt_regs *regs,
 				void (*handler)(struct pt_regs *))
@@ -434,10 +467,7 @@ static bool do_interrupt_handler(struct pt_regs *regs,
 	if (handler == handle_arch_irq)
 		handler = (void (*)(struct pt_regs *))handle_irq_pipelined;
 
-	if (on_thread_stack())
-		call_on_irq_stack(regs, handler);
-	else
-		handler(regs);
+	__do_interrupt_handler(regs, handler);
 
 	return running_inband() && !irqs_disabled();
 }
