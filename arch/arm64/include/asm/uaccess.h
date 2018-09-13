@@ -110,7 +110,7 @@ static inline void __uaccess_ttbr0_disable(void)
 {
 	unsigned long flags, ttbr;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	ttbr = read_sysreg(ttbr1_el1);
 	ttbr &= ~TTBR_ASID_MASK;
 	/* reserved_ttbr0 placed before swapper_pg_dir */
@@ -119,7 +119,7 @@ static inline void __uaccess_ttbr0_disable(void)
 	/* Set reserved ASID */
 	write_sysreg(ttbr, ttbr1_el1);
 	isb();
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 static inline void __uaccess_ttbr0_enable(void)
@@ -131,7 +131,7 @@ static inline void __uaccess_ttbr0_enable(void)
 	 * variable and the MSR. A context switch could trigger an ASID
 	 * roll-over and an update of 'ttbr0'.
 	 */
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	ttbr0 = READ_ONCE(current_thread_info()->ttbr0);
 
 	/* Restore active ASID */
@@ -144,7 +144,7 @@ static inline void __uaccess_ttbr0_enable(void)
 	/* Restore user page table */
 	write_sysreg(ttbr0, ttbr0_el1);
 	isb();
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 static inline bool uaccess_ttbr0_disable(void)
