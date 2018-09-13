@@ -14,6 +14,7 @@
 
 struct task_struct;
 
+#include <dovetail/thread_info.h>
 #include <asm/memory.h>
 #include <asm/stack_pointer.h>
 #include <asm/types.h>
@@ -44,6 +45,7 @@ struct thread_info {
 	void			*scs_sp;
 #endif
 	u32			cpu;
+	struct oob_thread_state	oob_state;
 };
 
 #define thread_saved_pc(tsk)	\
@@ -73,6 +75,7 @@ void arch_setup_new_exec(void);
 #define TIF_SYSCALL_TRACEPOINT	10	/* syscall tracepoint for ftrace */
 #define TIF_SECCOMP		11	/* syscall secure computing */
 #define TIF_SYSCALL_EMU		12	/* syscall emulation active */
+#define TIF_MAYDAY		13	/* Emergency trap pending */
 #define TIF_MEMDIE		18	/* is terminating due to OOM killer */
 #define TIF_FREEZE		19
 #define TIF_RESTORE_SIGMASK	20
@@ -97,6 +100,7 @@ void arch_setup_new_exec(void);
 #define _TIF_SYSCALL_TRACEPOINT	(1 << TIF_SYSCALL_TRACEPOINT)
 #define _TIF_SECCOMP		(1 << TIF_SECCOMP)
 #define _TIF_SYSCALL_EMU	(1 << TIF_SYSCALL_EMU)
+#define _TIF_MAYDAY		(1 << TIF_MAYDAY)
 #define _TIF_UPROBE		(1 << TIF_UPROBE)
 #define _TIF_SINGLESTEP		(1 << TIF_SINGLESTEP)
 #define _TIF_32BIT		(1 << TIF_32BIT)
@@ -133,5 +137,7 @@ void arch_setup_new_exec(void);
  * Local (synchronous) thread flags.
  */
 #define _TLF_OOB		0x0001
+#define _TLF_DOVETAIL		0x0002
+#define _TLF_OFFSTAGE		0x0004
 
 #endif /* __ASM_THREAD_INFO_H */
