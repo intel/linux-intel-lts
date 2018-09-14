@@ -17,4 +17,17 @@
 #define ARM64_TRAP_SVE		7	/* SVE access trap */
 #define ARM64_TRAP_BTI		8	/* Branch target identification */
 
+#ifdef CONFIG_DOVETAIL
+
+static inline void arch_dovetail_exec_prepare(void)
+{ }
+
+static inline void arch_dovetail_switch_prepare(bool leave_inband)
+{ }
+
+static inline void arch_dovetail_switch_finish(bool enter_inband)
+{ }
+
+#endif
+
 #endif /* _ASM_ARM64_DOVETAIL_H */
