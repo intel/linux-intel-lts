@@ -2949,16 +2949,19 @@ int i915_gem_init_ggtt(struct drm_i915_private *dev_priv)
 	if (ret)
 		return ret;
 
-	/* Clear any non-preallocated blocks */
-	drm_mm_for_each_hole(entry, &ggtt->vm.mm, hole_start, hole_end) {
-		DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
+	if (!intel_vgpu_active(dev_priv)) {
+		/* Clear any non-preallocated blocks */
+		drm_mm_for_each_hole(entry, &ggtt->vm.mm, hole_start, hole_end) {
+			DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
 			      hole_start, hole_end);
-		ggtt->vm.clear_range(&ggtt->vm, hole_start,
+			ggtt->vm.clear_range(&ggtt->vm, hole_start,
 				     hole_end - hole_start);
-	}
+		}
 
-	/* And finally clear the reserved guard page */
-	ggtt->vm.clear_range(&ggtt->vm, ggtt->vm.total - PAGE_SIZE, PAGE_SIZE);
+		/* And finally clear the reserved guard page */
+		ggtt->vm.clear_range(&ggtt->vm, ggtt->vm.total - PAGE_SIZE, PAGE_SIZE);
+
+	}
 
 	if (USES_PPGTT(dev_priv) && !USES_FULL_PPGTT(dev_priv)) {
 		ret = i915_gem_init_aliasing_ppgtt(dev_priv);
