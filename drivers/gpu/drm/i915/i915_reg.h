@@ -5863,6 +5863,9 @@ enum {
 #define PIPE_C_OFFSET		0x72000
 #define PIPE_D_OFFSET		0x73000
 #define CHV_PIPE_C_OFFSET	0x74000
+
+#define __PIPEBDSL		0x71000
+#define __PIPECDSL		0x72000
 /*
  * There's actually no pipe EDP. Some pipe registers have
  * simply shifted from the pipe to the transcoder, while
@@ -12024,5 +12027,37 @@ enum skl_power_gate {
 #define DSB_CTRL(pipe, id)		_MMIO(DSBSL_INSTANCE(pipe, id) + 0x8)
 #define   DSB_ENABLE			(1 << 31)
 #define   DSB_STATUS			(1 << 0)
+
+#include "gvt/reg.h"
+/* GVT has special read process from some MMIO register,
+ * which so that should be trapped to GVT to make a
+ * complete emulation. Such MMIO is not too much, now using
+ * a static list to cover them.
+ */
+static inline bool in_mmio_read_trap_list(u32 reg)
+{
+	if (unlikely(reg >= PCH_GMBUS0.reg && reg <= PCH_GMBUS5.reg))
+		return true;
+
+	if (unlikely(reg == RING_TIMESTAMP(RENDER_RING_BASE).reg ||
+		reg == RING_TIMESTAMP(BLT_RING_BASE).reg ||
+		reg == RING_TIMESTAMP(GEN6_BSD_RING_BASE).reg ||
+		reg == RING_TIMESTAMP(VEBOX_RING_BASE).reg ||
+		reg == RING_TIMESTAMP(GEN8_BSD2_RING_BASE).reg ||
+		reg == RING_TIMESTAMP_UDW(RENDER_RING_BASE).reg ||
+		reg == RING_TIMESTAMP_UDW(BLT_RING_BASE).reg ||
+		reg == RING_TIMESTAMP_UDW(GEN6_BSD_RING_BASE).reg ||
+		reg == RING_TIMESTAMP_UDW(VEBOX_RING_BASE).reg))
+		return true;
+
+	if (unlikely(reg == SBI_DATA.reg || reg == 0x6c060 || reg == 0x206c))
+		return true;
+
+	if (unlikely(reg == _PIPEADSL ||
+				reg == __PIPEBDSL ||
+				reg == __PIPECDSL))
+		return true;
+	return false;
+}
 
 #endif /* _I915_REG_H_ */

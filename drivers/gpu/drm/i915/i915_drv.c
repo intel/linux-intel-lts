@@ -490,6 +490,7 @@ static int i915_driver_early_probe(struct drm_i915_private *dev_priv)
 	intel_uncore_init_early(&dev_priv->uncore, dev_priv);
 
 	spin_lock_init(&dev_priv->irq_lock);
+	spin_lock_init(&dev_priv->shared_page_lock);
 	spin_lock_init(&dev_priv->gpu_error.lock);
 	mutex_init(&dev_priv->backlight_lock);
 
