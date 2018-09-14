@@ -303,6 +303,18 @@ static inline int gtt_get_entry64(void *pt,
 		return -EINVAL;
 
 	if (hypervisor_access) {
+		if (vgpu->ge_cache_enable && vgpu->cached_guest_entry) {
+			if (index == 0) {
+				ret = intel_gvt_hypervisor_read_gpa(vgpu, gpa,
+				      vgpu->cached_guest_entry,
+				      I915_GTT_PAGE_SIZE);
+				if (WARN_ON(ret))
+					return ret;
+			}
+			e->val64 = *(vgpu->cached_guest_entry + index);
+			return 0;
+		}
+
 		ret = intel_gvt_hypervisor_read_gpa(vgpu, gpa +
 				(index << info->gtt_entry_size_shift),
 				&e->val64, 8);
@@ -1277,8 +1289,10 @@ static int ppgtt_populate_spt(struct intel_vgpu_ppgtt_spt *spt)
 	trace_spt_change(spt->vgpu->id, "born", spt,
 			 spt->guest_page.gfn, spt->shadow_page.type);
 
+	vgpu->ge_cache_enable = true;
 	for_each_present_guest_entry(spt, &ge, i) {
 		if (gtt_type_is_pt(get_next_pt_type(ge.type))) {
+			vgpu->ge_cache_enable = false;
 			s = ppgtt_populate_spt_by_guest_entry(vgpu, &ge);
 			if (IS_ERR(s)) {
 				ret = PTR_ERR(s);
@@ -1300,6 +1314,7 @@ static int ppgtt_populate_spt(struct intel_vgpu_ppgtt_spt *spt)
 				goto fail;
 		}
 	}
+	vgpu->ge_cache_enable = false;
 	return 0;
 fail:
 	gvt_vgpu_err("fail: shadow page %p guest entry 0x%llx type %d\n",
@@ -2428,6 +2443,13 @@ int intel_vgpu_init_gtt(struct intel_vgpu *vgpu)
 
 	intel_vgpu_reset_ggtt(vgpu, false);
 
+	vgpu->cached_guest_entry = kzalloc(I915_GTT_PAGE_SIZE, GFP_KERNEL);
+	if (!vgpu->cached_guest_entry) {
+		gvt_vgpu_err("fail to allocate cached_guest_entry page\n");
+		return -ENOMEM;
+	}
+	vgpu->ge_cache_enable = false;
+
 	return create_scratch_page_tree(vgpu);
 }
 
@@ -2470,6 +2492,7 @@ void intel_vgpu_clean_gtt(struct intel_vgpu *vgpu)
 {
 	intel_vgpu_destroy_all_ppgtt_mm(vgpu);
 	intel_vgpu_destroy_ggtt_mm(vgpu);
+	kfree(vgpu->cached_guest_entry);
 	release_scratch_page_tree(vgpu);
 }
 

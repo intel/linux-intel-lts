@@ -235,6 +235,9 @@ struct intel_vgpu {
 	struct completion vblank_done;
 
 	u32 scan_nonprivbb;
+
+	unsigned long long *cached_guest_entry;
+	bool ge_cache_enable;
 };
 
 /* validating GM healthy status*/
