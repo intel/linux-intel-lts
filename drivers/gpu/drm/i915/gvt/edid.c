@@ -83,7 +83,7 @@ static inline int bxt_get_port_from_gmbus0(u32 gmbus0)
 	else if (port_select == 2)
 		port = PORT_C;
 	else if (port_select == 3)
-		port = PORT_D;
+		port = PORT_A;
 	return port;
 }
 
