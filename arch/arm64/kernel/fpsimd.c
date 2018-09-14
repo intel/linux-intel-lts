@@ -936,10 +936,12 @@ void fpsimd_release_task(struct task_struct *dead_task)
  */
 void do_sve_acc(unsigned int esr, struct pt_regs *regs)
 {
+	oob_trap_notify(ARM64_TRAP_SVE, regs);
+
 	/* Even if we chose not to use SVE, the hardware could still trap: */
 	if (unlikely(!system_supports_sve()) || WARN_ON(is_compat_task())) {
 		force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
-		return;
+		goto out;
 	}
 
 	sve_alloc(current);
@@ -956,6 +958,8 @@ void do_sve_acc(unsigned int esr, struct pt_regs *regs)
 		WARN_ON(1); /* SVE access shouldn't have trapped */
 
 	put_cpu_fpsimd_context();
+out:
+	oob_trap_unwind(ARM64_TRAP_SVE, regs);
 }
 
 /*
@@ -987,9 +991,13 @@ void do_fpsimd_exc(unsigned int esr, struct pt_regs *regs)
 			si_code = FPE_FLTRES;
 	}
 
+	oob_trap_notify(ARM64_TRAP_FPE, regs);
+
 	send_sig_fault(SIGFPE, si_code,
 		       (void __user *)instruction_pointer(regs),
 		       current);
+
+	oob_trap_unwind(ARM64_TRAP_FPE, regs);
 }
 
 void fpsimd_thread_switch(struct task_struct *next)
