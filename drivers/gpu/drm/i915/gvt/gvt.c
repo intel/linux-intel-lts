@@ -44,6 +44,7 @@ struct intel_gvt_host intel_gvt_host;
 static const char * const supported_hypervisors[] = {
 	[INTEL_GVT_HYPERVISOR_XEN] = "XEN",
 	[INTEL_GVT_HYPERVISOR_KVM] = "KVM",
+	[INTEL_GVT_HYPERVISOR_ACRN] = "ACRN",
 };
 
 static struct intel_vgpu_type *intel_gvt_find_vgpu_type(struct intel_gvt *gvt,
@@ -221,6 +222,11 @@ int intel_gvt_init_host(void)
 				symbol_get(kvmgt_mpt), "kvmgt");
 		intel_gvt_host.hypervisor_type = INTEL_GVT_HYPERVISOR_KVM;
 #endif
+		/* not in Xen. Try ACRN */
+		intel_gvt_host.mpt = try_then_request_module(
+				symbol_get(acrn_gvt_mpt), "acrn_gvt");
+		intel_gvt_host.hypervisor_type = INTEL_GVT_HYPERVISOR_ACRN;
+		printk("acrngt %s\n", intel_gvt_host.mpt?"found":"not found");
 	}
 
 	/* Fail to load MPT modules - bail out */
