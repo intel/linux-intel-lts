@@ -317,8 +317,8 @@ static void clean_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num)
 	port->dpcd = NULL;
 }
 
-static int setup_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num,
-				    int type, unsigned int resolution, void *edid)
+static int setup_virtual_monitor(struct intel_vgpu *vgpu, int port_num,
+		int type, unsigned int resolution, void *edid, bool is_dp)
 {
 	struct intel_vgpu_port *port = intel_vgpu_port(vgpu, port_num);
 	int valid_extensions = 1;
@@ -359,9 +359,11 @@ static int setup_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num,
 
 	port->edid->data_valid = true;
 
-	memcpy(port->dpcd->data, dpcd_fix_data, DPCD_HEADER_SIZE);
-	port->dpcd->data_valid = true;
-	port->dpcd->data[DPCD_SINK_COUNT] = 0x1;
+	if (is_dp) {
+		memcpy(port->dpcd->data, dpcd_fix_data, DPCD_HEADER_SIZE);
+		port->dpcd->data_valid = true;
+		port->dpcd->data[DPCD_SINK_COUNT] = 0x1;
+	}
 	port->type = type;
 	port->id = resolution;
 
@@ -522,22 +524,32 @@ void intel_gvt_init_pipe_info(struct intel_gvt *gvt)
 	}
 }
 
+bool gvt_emulate_hdmi = true;
+
 int setup_virtual_monitors(struct intel_vgpu *vgpu)
 {
 	struct intel_connector *connector = NULL;
 	struct drm_connector_list_iter conn_iter;
 	int pipe = 0;
 	int ret = 0;
+	int type = gvt_emulate_hdmi ? GVT_HDMI_B : GVT_DP_B;
+	int port = PORT_B;
+
 
 	drm_connector_list_iter_begin(&vgpu->gvt->dev_priv->drm, &conn_iter);
 	for_each_intel_connector_iter(connector, &conn_iter) {
 		if (connector->encoder->get_hw_state(connector->encoder, &pipe)
 				&& connector->detect_edid) {
-			ret = setup_virtual_dp_monitor(vgpu, pipe,
-					GVT_DP_A + pipe, 0,
-					connector->detect_edid);
+			/* Get (Dom0) port associated with current pipe. */
+			port = enc_to_dig_port(
+					&(connector->encoder->base))->base.port;
+			ret = setup_virtual_monitor(vgpu, port,
+				type, 0, connector->detect_edid,
+				!gvt_emulate_hdmi);
 			if (ret)
 				return ret;
+			type++;
+			port++;
 		}
 	}
 	drm_connector_list_iter_end(&conn_iter);
@@ -595,11 +607,11 @@ int intel_vgpu_init_display(struct intel_vgpu *vgpu, u64 resolution)
 	if (IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv))
 		return setup_virtual_monitors(vgpu);
 	else if (IS_SKYLAKE(dev_priv))
-		return setup_virtual_dp_monitor(vgpu, PORT_D, GVT_DP_D,
-						resolution, NULL);
+		return setup_virtual_monitor(vgpu, PORT_D, GVT_DP_D,
+						resolution, NULL, true);
 	else
-		return setup_virtual_dp_monitor(vgpu, PORT_B, GVT_DP_B,
-						resolution, NULL);
+		return setup_virtual_monitor(vgpu, PORT_B, GVT_DP_B,
+						resolution, NULL, true);
 }
 
 /**
