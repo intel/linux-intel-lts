@@ -1837,6 +1837,10 @@ struct drm_i915_private {
 		 * This is limited in execlists to 21 bits.
 		 */
 		struct ida hw_ida;
+
+	/* In case of virtualization, 3-bits of vgt-id will be added to hw_id */
+#define SIZE_CONTEXT_HW_ID_GVT (18)
+#define MAX_CONTEXT_HW_ID_GVT (1<<SIZE_CONTEXT_HW_ID_GVT)
 #define MAX_CONTEXT_HW_ID (1<<21) /* exclusive */
 #define MAX_GUC_CONTEXT_HW_ID (1 << 20) /* exclusive */
 #define GEN11_MAX_CONTEXT_HW_ID (1<<11) /* exclusive */
