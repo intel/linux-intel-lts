@@ -2714,16 +2714,19 @@ static int init_ggtt(struct i915_ggtt *ggtt)
 	if (ret)
 		goto err;
 
-	/* Clear any non-preallocated blocks */
-	drm_mm_for_each_hole(entry, &ggtt->vm.mm, hole_start, hole_end) {
-		DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
+	if (!intel_vgpu_active(ggtt->vm.i915)) {
+		/* Clear any non-preallocated blocks */
+		drm_mm_for_each_hole(entry, &ggtt->vm.mm, hole_start, hole_end) {
+			DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
 			      hole_start, hole_end);
-		ggtt->vm.clear_range(&ggtt->vm, hole_start,
+			ggtt->vm.clear_range(&ggtt->vm, hole_start,
 				     hole_end - hole_start);
-	}
+		}
 
-	/* And finally clear the reserved guard page */
-	ggtt->vm.clear_range(&ggtt->vm, ggtt->vm.total - PAGE_SIZE, PAGE_SIZE);
+		/* And finally clear the reserved guard page */
+		ggtt->vm.clear_range(&ggtt->vm, ggtt->vm.total - PAGE_SIZE, PAGE_SIZE);
+
+	}
 
 	return 0;
 
