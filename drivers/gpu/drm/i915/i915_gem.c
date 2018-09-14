@@ -5027,7 +5027,8 @@ void i915_gem_sanitize(struct drm_i915_private *i915)
 	 * of the reset, so this could be applied to even earlier gen.
 	 */
 	err = -ENODEV;
-	if (INTEL_GEN(i915) >= 5 && intel_has_gpu_reset(i915))
+	if (INTEL_GEN(i915) >= 5 && intel_has_gpu_reset(i915) &&
+		!intel_vgpu_active(i915))
 		err = WARN_ON(intel_gpu_reset(i915, ALL_ENGINES));
 	if (!err)
 		intel_engines_sanitize(i915);
