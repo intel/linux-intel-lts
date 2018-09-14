@@ -151,6 +151,7 @@ i915-y += \
 	  i915_trace_points.o \
 	  i915_vma.o \
 	  intel_region_lmem.o \
+	  i915_gem_gvtbuffer.o \
 	  intel_wopcm.o
 
 # general-purpose microcontroller (GuC) support
