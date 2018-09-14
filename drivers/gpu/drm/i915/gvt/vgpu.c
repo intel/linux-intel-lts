@@ -37,6 +37,11 @@
 
 void populate_pvinfo_page(struct intel_vgpu *vgpu)
 {
+	enum pipe pipe;
+	int scaler;
+	struct intel_gvt *gvt = vgpu->gvt;
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+
 	/* setup the ballooning information */
 	vgpu_vreg64_t(vgpu, vgtif_reg(magic)) = VGT_MAGIC;
 	vgpu_vreg_t(vgpu, vgtif_reg(version_major)) = 1;
@@ -61,6 +66,14 @@ void populate_pvinfo_page(struct intel_vgpu *vgpu)
 
 	vgpu_vreg_t(vgpu, vgtif_reg(cursor_x_hot)) = UINT_MAX;
 	vgpu_vreg_t(vgpu, vgtif_reg(cursor_y_hot)) = UINT_MAX;
+
+	vgpu_vreg_t(vgpu, vgtif_reg(scaler_owned)) = 0;
+	for_each_pipe(dev_priv, pipe)
+		for_each_universal_scaler(dev_priv, pipe, scaler)
+			if (gvt->pipe_info[pipe].scaler_owner[scaler] ==
+				vgpu->id)
+				vgpu_vreg_t(vgpu, vgtif_reg(scaler_owned)) |=
+					1 << (pipe * SKL_NUM_SCALERS + scaler);
 
 	gvt_dbg_core("Populate PVINFO PAGE for vGPU %d\n", vgpu->id);
 	gvt_dbg_core("aperture base [GMADR] 0x%llx size 0x%llx\n",
