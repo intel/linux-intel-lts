@@ -2369,6 +2369,16 @@ logical_ring_default_irqs(struct intel_engine_cs *engine)
 	engine->irq_keep_mask = GT_CONTEXT_SWITCH_INTERRUPT << shift;
 }
 
+static void i915_error_reset(struct work_struct *work) {
+	struct intel_engine_cs *engine =
+		container_of(work, struct intel_engine_cs,
+			     reset_work);
+	i915_handle_error(engine->i915, 1 << engine->id,
+			I915_ERROR_CAPTURE,
+			"Received error interrupt from engine %d",
+			engine->id);
+}
+
 static void
 logical_ring_setup(struct intel_engine_cs *engine)
 {
@@ -2382,6 +2392,8 @@ logical_ring_setup(struct intel_engine_cs *engine)
 
 	logical_ring_default_vfuncs(engine);
 	logical_ring_default_irqs(engine);
+
+	INIT_WORK(&engine->reset_work, i915_error_reset);
 }
 
 static bool csb_force_mmio(struct drm_i915_private *i915)

@@ -418,6 +418,9 @@ static void i915_hangcheck_elapsed(struct work_struct *work)
 	if (!i915_modparams.enable_hangcheck)
 		return;
 
+	if (intel_vgpu_active(dev_priv))
+		return;
+
 	if (!READ_ONCE(dev_priv->gt.awake))
 		return;
 

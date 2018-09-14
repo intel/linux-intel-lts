@@ -567,6 +567,7 @@ struct intel_engine_cs {
 	} semaphore;
 
 	struct intel_engine_execlists execlists;
+	struct work_struct reset_work;
 
 	/* Contexts are pinned whilst they are active on the GPU. The last
 	 * context executed remains active whilst the GPU is idle - the
