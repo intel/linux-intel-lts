@@ -18,6 +18,27 @@
 #define ARM64_TRAP_BTI		8	/* Branch target identification */
 #define ARM64_TRAP_SME		9	/* SME access trap */
 
+#ifdef CONFIG_DOVETAIL
+
+static inline void arch_dovetail_exec_prepare(void)
+{ }
+
+static inline void arch_dovetail_switch_prepare(bool leave_inband)
+{ }
+
+static inline void arch_dovetail_switch_finish(bool enter_inband)
+{ }
+
+/*
+ * 172 is __NR_prctl from unistd32 in ARM32 mode, without #inclusion
+ * hell. At the end of the day, this number is written in stone to
+ * honor the ABI stability promise anyway.
+ */
+#define arch_dovetail_is_syscall(__nr)	\
+	(is_compat_task() ? (__nr) == 172 : (__nr) == __NR_prctl)
+
+#endif
+
 /*
  * Pass the trap event to the companion core. Return true if running
  * in-band afterwards.
