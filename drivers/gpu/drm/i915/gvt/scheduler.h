@@ -84,6 +84,7 @@ struct intel_vgpu_workload {
 	/* if this workload has been dispatched to i915? */
 	bool dispatched;
 	int status;
+	unsigned int guilty_count;
 
 	struct intel_vgpu_mm *shadow_mm;
 
