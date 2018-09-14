@@ -481,7 +481,7 @@ struct acrn_vm_pci_msix_remap {
 #define SPACE_PLATFORM_COMM     10
 #define SPACE_FFixedHW          0x7F
 
-struct acpi_generic_address {
+struct acrn_generic_address {
 	uint8_t 	space_id;
 	uint8_t 	bit_width;
 	uint8_t 	bit_offset;
@@ -490,7 +490,7 @@ struct acpi_generic_address {
 } __attribute__((aligned(8)));
 
 struct cpu_cx_data {
-	struct acpi_generic_address cx_reg;
+	struct acrn_generic_address cx_reg;
 	uint8_t 	type;
 	uint32_t	latency;
 	uint64_t	power;
@@ -512,10 +512,10 @@ struct acpi_sstate_pkg {
 } __attribute__((aligned(8)));
 
 struct acpi_sstate_data {
-	struct acpi_generic_address pm1a_evt;
-	struct acpi_generic_address pm1b_evt;
-	struct acpi_generic_address pm1a_cnt;
-	struct acpi_generic_address pm1b_cnt;
+	struct acrn_generic_address pm1a_evt;
+	struct acrn_generic_address pm1b_evt;
+	struct acrn_generic_address pm1a_cnt;
+	struct acrn_generic_address pm1b_cnt;
 	struct acpi_sstate_pkg s3_pkg;
 	struct acpi_sstate_pkg s5_pkg;
 	uint32_t *wake_vector_32;
