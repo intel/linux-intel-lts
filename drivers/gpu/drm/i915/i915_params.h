@@ -68,6 +68,7 @@ struct drm_printer;
 	param(bool, nuclear_pageflip, false) \
 	param(bool, enable_dp_mst, true) \
 	param(bool, enable_dpcd_backlight, false) \
+	param(int, domain_scaler_owner, 0x11100) \
 	param(bool, enable_gvt, false)
 
 #define MEMBER(T, member, ...) T member;

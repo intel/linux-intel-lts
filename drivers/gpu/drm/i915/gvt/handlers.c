@@ -1161,6 +1161,7 @@ static int pvinfo_mmio_read(struct intel_vgpu *vgpu, unsigned int offset,
 		break;
 	case 0x78010:	/* vgt_caps */
 	case 0x7881c:
+	case _vgtif_reg(scaler_owned):
 		break;
 	default:
 		invalid_read = true;
@@ -1257,22 +1258,6 @@ static int pvinfo_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 		break;
 	}
 	return 0;
-}
-
-static int pf_write(struct intel_vgpu *vgpu,
-		unsigned int offset, void *p_data, unsigned int bytes)
-{
-	u32 val = *(u32 *)p_data;
-
-	if ((offset == _PS_1A_CTRL || offset == _PS_2A_CTRL ||
-	   offset == _PS_1B_CTRL || offset == _PS_2B_CTRL ||
-	   offset == _PS_1C_CTRL) && (val & PS_PLANE_SEL_MASK) != 0) {
-		WARN_ONCE(true, "VM(%d): guest is trying to scaling a plane\n",
-			  vgpu->id);
-		return 0;
-	}
-
-	return intel_vgpu_default_mmio_write(vgpu, offset, p_data, bytes);
 }
 
 static int power_well_ctl_mmio_write(struct intel_vgpu *vgpu,
@@ -2851,6 +2836,45 @@ static int skl_plane_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 
 #define PLANE_WM_BASE(pipe, plane) _MMIO(_PLANE_WM_BASE(pipe, plane))
 
+static int skl_ps_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
+		void *p_data, unsigned int bytes)
+{
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+	unsigned int pipe = SKL_PS_REG_TO_PIPE(offset);
+	unsigned int scaler = SKL_PS_REG_TO_SCALER(offset) - 1;
+
+	if (pipe >=  I915_MAX_PIPES || scaler >= SKL_NUM_SCALERS ||
+	    vgpu->gvt->pipe_info[pipe].scaler_owner[scaler] != vgpu->id) {
+		gvt_vgpu_err("Unsupport pipe %d, scaler %d scaling\n",
+			pipe, scaler);
+		return 0;
+	}
+
+	if (!(vgpu_vreg_t(vgpu, PIPECONF(pipe)) & I965_PIPECONF_ACTIVE))
+		return 0;
+
+	if ((offset == _PS_1A_CTRL || offset == _PS_2A_CTRL ||
+	   offset == _PS_1B_CTRL || offset == _PS_2B_CTRL ||
+	   offset == _PS_1C_CTRL) && ((*(u32 *)p_data) & PS_SCALER_EN)) {
+		unsigned int plane;
+
+		if (SKL_PS_REG_VALUE_TO_PLANE(*(u32 *)p_data) == 0) {
+			gvt_vgpu_err("Unsupport crtc scaling for UOS\n");
+			return 0;
+		}
+		plane = SKL_PS_REG_VALUE_TO_PLANE(*(u32 *)p_data) - 1;
+		if (plane >= I915_MAX_PLANES ||
+		    vgpu->gvt->pipe_info[pipe].plane_owner[plane] != vgpu->id) {
+			gvt_vgpu_err("Unsupport plane %d scaling\n", plane);
+			return 0;
+		}
+	}
+
+	write_vreg(vgpu, offset, p_data, bytes);
+	I915_WRITE(_MMIO(offset), vgpu_vreg(vgpu, offset));
+	return 0;
+}
+
 static int init_skl_mmio_info(struct intel_gvt *gvt)
 {
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
@@ -2901,26 +2925,26 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 	MMIO_D(_MMIO(0x6c05c), D_SKL_PLUS);
 	MMIO_DH(_MMIO(0x6c060), D_SKL_PLUS, dpll_status_read, NULL);
 
-	MMIO_DH(SKL_PS_WIN_POS(PIPE_A, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_POS(PIPE_A, 1), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_POS(PIPE_B, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_POS(PIPE_B, 1), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_POS(PIPE_C, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_POS(PIPE_C, 1), D_SKL_PLUS, NULL, pf_write);
+	MMIO_DH(SKL_PS_WIN_POS(PIPE_A, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_POS(PIPE_A, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_POS(PIPE_B, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_POS(PIPE_B, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_POS(PIPE_C, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_POS(PIPE_C, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
 
-	MMIO_DH(SKL_PS_WIN_SZ(PIPE_A, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_SZ(PIPE_A, 1), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_SZ(PIPE_B, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_SZ(PIPE_B, 1), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_SZ(PIPE_C, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_WIN_SZ(PIPE_C, 1), D_SKL_PLUS, NULL, pf_write);
+	MMIO_DH(SKL_PS_WIN_SZ(PIPE_A, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_SZ(PIPE_A, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_SZ(PIPE_B, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_SZ(PIPE_B, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_SZ(PIPE_C, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_WIN_SZ(PIPE_C, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
 
-	MMIO_DH(SKL_PS_CTRL(PIPE_A, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_CTRL(PIPE_A, 1), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_CTRL(PIPE_B, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_CTRL(PIPE_B, 1), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_CTRL(PIPE_C, 0), D_SKL_PLUS, NULL, pf_write);
-	MMIO_DH(SKL_PS_CTRL(PIPE_C, 1), D_SKL_PLUS, NULL, pf_write);
+	MMIO_DH(SKL_PS_CTRL(PIPE_A, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_CTRL(PIPE_A, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_CTRL(PIPE_B, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_CTRL(PIPE_B, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_CTRL(PIPE_C, 0), D_SKL_PLUS, NULL, skl_ps_mmio_write);
+	MMIO_DH(SKL_PS_CTRL(PIPE_C, 1), D_SKL_PLUS, NULL, skl_ps_mmio_write);
 
 	MMIO_PLANES_DH(PLANE_CTL, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 	MMIO_PLANES_DH(PLANE_STRIDE, D_SKL_PLUS, NULL, skl_plane_mmio_write);
