@@ -44,6 +44,7 @@ struct intel_gvt_host intel_gvt_host;
 static const char * const supported_hypervisors[] = {
 	[INTEL_GVT_HYPERVISOR_XEN] = "XEN",
 	[INTEL_GVT_HYPERVISOR_KVM] = "KVM",
+	[INTEL_GVT_HYPERVISOR_ACRN] = "ACRN",
 };
 
 static struct intel_vgpu_type *intel_gvt_find_vgpu_type(struct intel_gvt *gvt,
@@ -467,7 +468,8 @@ intel_gvt_register_hypervisor(struct intel_gvt_mpt *m)
 		return -ENODEV;
 
 	if (m->type != INTEL_GVT_HYPERVISOR_KVM &&
-	    m->type != INTEL_GVT_HYPERVISOR_XEN)
+	    m->type != INTEL_GVT_HYPERVISOR_XEN &&
+	    m->type != INTEL_GVT_HYPERVISOR_ACRN)
 		return -EINVAL;
 
 	/* Get a reference for device model module */
