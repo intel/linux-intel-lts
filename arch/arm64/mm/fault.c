@@ -325,6 +325,12 @@ static void __do_kernel_fault(unsigned long addr, unsigned int esr,
 		msg = "paging request";
 	}
 
+	/*
+	 * Dovetail: Don't bother restoring the in-band stage in the
+	 * non-recoverable fault case, we got busted and a full stage
+	 * switch is likely to make things even worse. Try at least to
+	 * get some debug output before panicing.
+	 */
 	die_kernel_fault(msg, addr, esr, regs);
 }
 
@@ -394,9 +400,11 @@ static void do_bad_area(unsigned long addr, unsigned int esr, struct pt_regs *re
 	if (user_mode(regs)) {
 		const struct fault_info *inf = esr_to_fault_info(esr);
 
+		oob_trap_notify(ARM64_TRAP_ACCESS, regs);
 		set_thread_esr(addr, esr);
 		arm64_force_sig_fault(inf->sig, inf->code, (void __user *)addr,
 				      inf->name);
+		oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
 	} else {
 		__do_kernel_fault(addr, esr, regs);
 	}
@@ -459,6 +467,8 @@ static int __kprobes do_page_fault(unsigned long addr, unsigned int esr,
 
 	if (kprobe_page_fault(regs, esr))
 		return 0;
+
+	oob_trap_notify(ARM64_TRAP_ACCESS, regs);
 
 	/*
 	 * If we're in an interrupt or have no user context, we must not take
@@ -525,7 +535,7 @@ retry:
 	if (fault_signal_pending(fault, regs)) {
 		if (!user_mode(regs))
 			goto no_context;
-		return 0;
+		goto out;
 	}
 
 	if (fault & VM_FAULT_RETRY) {
@@ -541,7 +551,7 @@ retry:
 	 */
 	if (likely(!(fault & (VM_FAULT_ERROR | VM_FAULT_BADMAP |
 			      VM_FAULT_BADACCESS))))
-		return 0;
+		goto out;
 
 	/*
 	 * If we are in kernel mode at this point, we have no context to
@@ -557,7 +567,7 @@ retry:
 		 * oom-killed).
 		 */
 		pagefault_out_of_memory();
-		return 0;
+		goto out;
 	}
 
 	inf = esr_to_fault_info(esr);
@@ -589,10 +599,12 @@ retry:
 				      inf->name);
 	}
 
-	return 0;
+	goto out;
 
 no_context:
 	__do_kernel_fault(addr, esr, regs);
+out:
+	oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
 	return 0;
 }
 
@@ -624,6 +636,8 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 	const struct fault_info *inf;
 	void __user *siaddr;
 
+	oob_trap_notify(ARM64_TRAP_SEA, regs);
+
 	inf = esr_to_fault_info(esr);
 
 	if (user_mode(regs) && apei_claim_sea(regs) == 0) {
@@ -631,7 +645,7 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 		 * APEI claimed this as a firmware-first notification.
 		 * Some processing deferred to task_work before ret_to_user().
 		 */
-		return 0;
+		goto out;
 	}
 
 	if (esr & ESR_ELx_FnV)
@@ -639,6 +653,8 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 	else
 		siaddr  = (void __user *)addr;
 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
+out:
+	oob_trap_unwind(ARM64_TRAP_SEA, regs);
 
 	return 0;
 }
@@ -724,6 +740,8 @@ void do_mem_abort(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 	if (!inf->fn(addr, esr, regs))
 		return;
 
+	oob_trap_notify(ARM64_TRAP_ACCESS, regs);
+
 	if (!user_mode(regs)) {
 		pr_alert("Unhandled fault at 0x%016lx\n", addr);
 		mem_abort_decode(esr);
@@ -732,6 +750,8 @@ void do_mem_abort(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 
 	arm64_notify_die(inf->name, regs,
 			 inf->sig, inf->code, (void __user *)addr, esr);
+
+	oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
 }
 NOKPROBE_SYMBOL(do_mem_abort);
 
@@ -744,8 +764,12 @@ NOKPROBE_SYMBOL(do_el0_irq_bp_hardening);
 
 void do_sp_pc_abort(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 {
+	oob_trap_notify(ARM64_TRAP_ALIGN, regs);
+
 	arm64_notify_die("SP/PC alignment exception", regs,
 			 SIGBUS, BUS_ADRALN, (void __user *)addr, esr);
+
+	oob_trap_unwind(ARM64_TRAP_ALIGN, regs);
 }
 NOKPROBE_SYMBOL(do_sp_pc_abort);
 
@@ -840,6 +864,8 @@ void do_debug_exception(unsigned long addr_if_watchpoint, unsigned int esr,
 	if (cortex_a76_erratum_1463225_debug_handler(regs))
 		return;
 
+	oob_trap_notify(ARM64_TRAP_DEBUG, regs);
+
 	debug_exception_enter(regs);
 
 	if (user_mode(regs) && !is_ttbr0_addr(pc))
@@ -851,5 +877,7 @@ void do_debug_exception(unsigned long addr_if_watchpoint, unsigned int esr,
 	}
 
 	debug_exception_exit(regs);
+
+	oob_trap_unwind(ARM64_TRAP_DEBUG, regs);
 }
 NOKPROBE_SYMBOL(do_debug_exception);
