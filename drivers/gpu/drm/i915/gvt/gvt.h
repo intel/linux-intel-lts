@@ -49,6 +49,7 @@
 #include "fb_decoder.h"
 #include "dmabuf.h"
 #include "page_track.h"
+#include "display/intel_display_types.h"
 
 #define GVT_MAX_VGPU 8
 
@@ -304,6 +305,7 @@ struct intel_gvt_pipe_info {
 	struct intel_gvt *gvt;
 	struct work_struct vblank_work;
 	int plane_owner[I915_MAX_PLANES];
+	int scaler_owner[SKL_NUM_SCALERS];
 	struct skl_ddb_entry plane_ddb_y[I915_MAX_PLANES];
 	struct skl_ddb_entry plane_ddb_uv[I915_MAX_PLANES];
 	struct skl_ddb_entry pipe_ddb;
@@ -467,6 +469,11 @@ void intel_vgpu_write_fence(struct intel_vgpu *vgpu,
 #define for_each_active_vgpu(gvt, vgpu, id) \
 	idr_for_each_entry((&(gvt)->vgpu_idr), (vgpu), (id)) \
 		for_each_if(vgpu->active)
+
+#define for_each_universal_scaler(__dev_priv, __pipe, __s)		\
+	for ((__s) = 0;							\
+	     (__s) < RUNTIME_INFO(__dev_priv)->num_scalers[(__pipe)] + 1; \
+	     (__s)++)
 
 static inline void intel_vgpu_write_pci_bar(struct intel_vgpu *vgpu,
 					    u32 offset, u32 val, bool low)
