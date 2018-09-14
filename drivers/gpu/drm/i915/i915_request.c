@@ -1054,6 +1054,7 @@ void i915_request_add(struct i915_request *request)
 
 	lockdep_assert_held(&request->i915->drm.struct_mutex);
 	trace_i915_request_add(request);
+	trace_i915_request_add_domain(request);
 
 	/*
 	 * Make sure that no request gazumped us - if it was allocated after

@@ -1384,6 +1384,11 @@ static inline bool intel_irqs_enabled(struct drm_i915_private *dev_priv)
 	return dev_priv->runtime_pm.irqs_enabled;
 }
 
+bool is_shadow_context(struct i915_gem_context *ctx);
+int get_vgt_id(struct i915_gem_context *ctx);
+int get_pid_shadowed(struct i915_gem_context *ctx,
+		      struct intel_engine_cs *engine);
+
 int intel_get_crtc_scanline(struct intel_crtc *crtc);
 void gen8_irq_power_well_post_enable(struct drm_i915_private *dev_priv,
 				     u8 pipe_mask);
