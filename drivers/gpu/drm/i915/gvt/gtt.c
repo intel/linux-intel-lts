@@ -1719,6 +1719,13 @@ static int ppgtt_handle_guest_write_page_table_bytes(
 
 	index = (pa & (PAGE_SIZE - 1)) >> info->gtt_entry_size_shift;
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+	/*
+	 * Set guest ppgtt entry. Optional for KVMGT, but MUST for
+	 * XENGT and ACRNGT.
+	 */
+	intel_gvt_hypervisor_write_gpa(vgpu, pa, p_data, bytes);
+#endif
 	ppgtt_get_guest_entry(spt, &we, index);
 
 	/*
