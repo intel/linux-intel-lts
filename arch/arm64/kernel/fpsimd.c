@@ -1399,16 +1399,18 @@ static void sve_init_regs(void)
  */
 void do_sve_acc(unsigned long esr, struct pt_regs *regs)
 {
+	oob_trap_notify(ARM64_TRAP_SVE, regs);
+
 	/* Even if we chose not to use SVE, the hardware could still trap: */
 	if (unlikely(!system_supports_sve()) || WARN_ON(is_compat_task())) {
 		force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
-		return;
+		goto out;
 	}
 
 	sve_alloc(current, true);
 	if (!current->thread.sve_state) {
 		force_sig(SIGKILL);
-		return;
+		goto out;
 	}
 
 	get_cpu_fpsimd_context();
@@ -1426,6 +1428,8 @@ void do_sve_acc(unsigned long esr, struct pt_regs *regs)
 	sve_init_regs();
 
 	put_cpu_fpsimd_context();
+out:
+	oob_trap_unwind(ARM64_TRAP_SVE, regs);
 }
 
 /*
@@ -1441,10 +1445,14 @@ void do_sve_acc(unsigned long esr, struct pt_regs *regs)
  */
 void do_sme_acc(unsigned long esr, struct pt_regs *regs)
 {
+	unsigned long flags;
+
+	oob_trap_notify(ARM64_TRAP_SME, regs);
+
 	/* Even if we chose not to use SME, the hardware could still trap: */
 	if (unlikely(!system_supports_sme()) || WARN_ON(is_compat_task())) {
 		force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
-		return;
+		goto out;
 	}
 
 	/*
@@ -1453,14 +1461,14 @@ void do_sme_acc(unsigned long esr, struct pt_regs *regs)
 	 */
 	if (ESR_ELx_ISS(esr) != ESR_ELx_SME_ISS_SME_DISABLED) {
 		force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
-		return;
+		goto out;
 	}
 
 	sve_alloc(current, false);
 	sme_alloc(current, true);
 	if (!current->thread.sve_state || !current->thread.za_state) {
 		force_sig(SIGKILL);
-		return;
+		goto out;
 	}
 
 	get_cpu_fpsimd_context();
@@ -1478,6 +1486,8 @@ void do_sme_acc(unsigned long esr, struct pt_regs *regs)
 	}
 
 	put_cpu_fpsimd_context();
+out:
+	oob_trap_unwind(ARM64_TRAP_SME, regs);
 }
 
 /*
@@ -1509,9 +1519,13 @@ void do_fpsimd_exc(unsigned long esr, struct pt_regs *regs)
 			si_code = FPE_FLTRES;
 	}
 
+	oob_trap_notify(ARM64_TRAP_FPE, regs);
+
 	send_sig_fault(SIGFPE, si_code,
 		       (void __user *)instruction_pointer(regs),
 		       current);
+
+	oob_trap_unwind(ARM64_TRAP_FPE, regs);
 }
 
 void fpsimd_thread_switch(struct task_struct *next)
