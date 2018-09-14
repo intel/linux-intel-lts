@@ -36,6 +36,7 @@
 enum hypervisor_type {
 	INTEL_GVT_HYPERVISOR_XEN = 0,
 	INTEL_GVT_HYPERVISOR_KVM,
+	INTEL_GVT_HYPERVISOR_ACRN,
 };
 
 /*
@@ -74,5 +75,6 @@ struct intel_gvt_mpt {
 };
 
 extern struct intel_gvt_mpt xengt_mpt;
+extern struct intel_gvt_mpt acrn_gvt_mpt;
 
 #endif /* _GVT_HYPERCALL_H_ */
