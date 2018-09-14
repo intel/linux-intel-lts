@@ -1590,6 +1590,7 @@ struct drm_i915_private {
 	resource_size_t stolen_usable_size;	/* Total size minus reserved ranges */
 
 	void __iomem *regs;
+	struct gvt_shared_page *shared_page;
 
 	struct intel_uncore uncore;
 
