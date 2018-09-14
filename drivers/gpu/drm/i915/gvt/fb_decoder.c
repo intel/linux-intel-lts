@@ -37,6 +37,7 @@
 #include "i915_drv.h"
 #include "gvt.h"
 #include "i915_pvinfo.h"
+#include "fb_decoder.h"
 
 #define PRIMARY_FORMAT_NUM	16
 struct pixel_format {
@@ -510,4 +511,71 @@ int intel_vgpu_decode_sprite_plane(struct intel_vgpu *vgpu,
 			   _SPRITE_OFFSET_START_Y_SHIFT;
 
 	return 0;
+}
+
+/**
+ * intel_vgpu_decode_fb_format - Decode framebuffer information from raw vMMIO
+ * @gvt: GVT device
+ * @vmid: guest domain ID
+ * @fb: frame buffer infomation of guest.
+ * This function is called for query frame buffer format, so that gl can
+ * display guest fb in Dom0
+ *
+ * Returns:
+ * Zero on success, negative error code if failed.
+ */
+int intel_vgpu_decode_fb_format(struct intel_gvt *gvt, int id,
+				struct intel_vgpu_fb_format *fb)
+
+{
+	int i;
+	struct intel_vgpu *vgpu = NULL;
+	int ret = 0;
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+
+	if (!fb)
+		return -EINVAL;
+
+	/* TODO: use fine-grained refcnt later */
+	mutex_lock(&gvt->lock);
+
+	for_each_active_vgpu(gvt, vgpu, i)
+		if (vgpu->id == id)
+			break;
+
+	if (!vgpu) {
+		gvt_err("Invalid vgpu ID (%d)\n", id);
+		mutex_unlock(&gvt->lock);
+		return -ENODEV;
+	}
+
+	for (i = 0; i < I915_MAX_PIPES; i++) {
+		struct intel_vgpu_pipe_format *pipe = &fb->pipes[i];
+		u32 ddi_func_ctl = vgpu_vreg_t(vgpu, TRANS_DDI_FUNC_CTL(i));
+
+		if (!(ddi_func_ctl & TRANS_DDI_FUNC_ENABLE)) {
+			pipe->ddi_port = DDI_PORT_NONE;
+		} else {
+			u32 port = (ddi_func_ctl & TRANS_DDI_PORT_MASK) >>
+						TRANS_DDI_PORT_SHIFT;
+			if (port <= DDI_PORT_E)
+				pipe->ddi_port = port;
+			else
+				pipe->ddi_port = DDI_PORT_NONE;
+		}
+
+		ret |= intel_vgpu_decode_primary_plane(vgpu, &pipe->primary);
+		ret |= intel_vgpu_decode_sprite_plane(vgpu, &pipe->sprite);
+		ret |= intel_vgpu_decode_cursor_plane(vgpu, &pipe->cursor);
+
+		if (ret) {
+			gvt_err("Decode format error for pipe(%d)\n", i);
+			ret = -EINVAL;
+			break;
+		}
+	}
+
+	mutex_unlock(&gvt->lock);
+
+	return ret;
 }
