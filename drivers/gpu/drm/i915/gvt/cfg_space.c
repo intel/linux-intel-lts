@@ -138,6 +138,47 @@ static int map_aperture(struct intel_vgpu *vgpu, bool map)
 	return 0;
 }
 
+int map_gttmmio(struct intel_vgpu *vgpu, bool map)
+{
+	struct intel_vgpu_gm *gm = &vgpu->gm;
+	unsigned long mfn;
+	struct scatterlist *sg;
+	struct sg_table *st = gm->st;
+	u64 start, end;
+	int ret = 0;
+
+	if (!st) {
+		DRM_INFO("no scatter list, fallback to disable ggtt pv\n");
+		return -EINVAL;
+	}
+
+	start = *(u64 *)(vgpu_cfg_space(vgpu) + PCI_BASE_ADDRESS_0);
+	start &= ~GENMASK(3, 0);
+	start += vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_GTTMMIO].size >> 1;
+
+	end = start +
+		(vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_GTTMMIO].size >> 1);
+
+	WARN_ON((end - start) != gvt_ggtt_sz(vgpu->gvt));
+
+	gvt_dbg_mmio("%s start=%llx end=%llx map=%d\n",
+				__func__, start, end, map);
+
+	start >>= PAGE_SHIFT;
+	for (sg = st->sgl; sg; sg = __sg_next(sg)) {
+		mfn = page_to_pfn(sg_page(sg));
+		gvt_dbg_mmio("page=%p mfn=%lx size=%x start=%llx\n",
+			sg_page(sg), mfn, sg->length, start);
+		ret = intel_gvt_hypervisor_map_gfn_to_mfn(vgpu, start,
+				mfn, sg->length >> PAGE_SHIFT, map);
+		if (ret)
+			return ret;
+		start += sg->length >> PAGE_SHIFT;
+	}
+
+	return ret;
+}
+
 static int trap_gttmmio(struct intel_vgpu *vgpu, bool trap)
 {
 	u64 start, end;
