@@ -174,6 +174,28 @@ i915_param_named(enable_dpcd_backlight, bool, 0600,
 i915_param_named(enable_gvt, bool, 0400,
 	"Enable support for Intel GVT-g graphics virtualization host support(default:false)");
 
+i915_param_named(domain_scaler_owner, int, 0400,
+        "scaler owners for each domain and for each pipe ids can be from 0-F");
+
+/* pipeA Scaler = BITS 0-7 pipeB scaler = 8-15, pipeC = 16-19
+ *
+ * +----------+------------+-------------+------------+
+ * |unused    |  Pipe C    |   Pipe B    |   Pipe A   |
+ * +----------+------------+-------------+------------+
+ * 31       20 19        16 15           8 7           0
+ *
+ * Each nibble represents domain id. 0 for Dom0, 1,2,3...0xF for DomUs
+ * eg: domains_scaler_owners = 0x00030210 // 0x000|3|02|10
+ * scaler          domain
+ * scaler_owner1A -0
+ * scaler_owner2A -1
+ * scaler_owner1B -2
+ * scaler_owner2B -0
+ * scaler_owner1C -3
+ * scaler_owner2C -0
+ *
+ */
+
 static __always_inline void _print_param(struct drm_printer *p,
 					 const char *name,
 					 const char *type,
