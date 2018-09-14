@@ -838,6 +838,97 @@ static int acrngt_set_trap_area(unsigned long handle, u64 start,
 	return ret;
 }
 
+static int acrngt_set_pvmmio(unsigned long handle, u64 start, u64 end, bool map)
+{
+	int rc, i;
+	unsigned long mfn, shared_mfn;
+	unsigned long pfn = start >> PAGE_SHIFT;
+	u32 mmio_size_fn = acrngt_priv.gvt->device_info.mmio_size >> PAGE_SHIFT;
+	struct acrngt_hvm_dev *info = (struct acrngt_hvm_dev *)handle;
+
+	if (map) {
+		mfn = acrngt_virt_to_mfn(info->vgpu->mmio.vreg);
+		rc = acrngt_map_gfn_to_mfn(handle, pfn, mfn, mmio_size_fn, map);
+		if (rc) {
+			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
+					pfn, mfn, rc);
+			return rc;
+		}
+
+		/* map the shared page to guest */
+		shared_mfn = acrngt_virt_to_mfn(info->vgpu->mmio.shared_page);
+		rc = acrngt_map_gfn_to_mfn(handle, pfn + mmio_size_fn, shared_mfn, 1, map);
+		if (rc) {
+			gvt_err("acrn-gvt: map shared page fail with ret %d\n", rc);
+			return rc;
+		}
+
+		/* mmio access is trapped like memory write protection */
+		rc = acrn_ioreq_add_iorange(info->client, REQ_WP, pfn << PAGE_SHIFT,
+					((pfn + mmio_size_fn) << PAGE_SHIFT) - 1);
+		if (rc) {
+			gvt_err("failed acrn_ioreq_add_iorange for pfn 0x%lx\n", pfn);
+			return rc;
+		}
+
+		for (i = 0; i < mmio_size_fn; i++) {
+			rc = write_protect_page(info->vm_id,
+				(pfn + i) << PAGE_SHIFT, true);
+			if (rc) {
+				gvt_err("failed set wp for pfn 0x%lx\n", pfn + i);
+				return rc;
+			}
+		}
+
+		/* scratch reg access is trapped like mmio access, 1 page */
+		rc = acrngt_map_gfn_to_mfn(handle, pfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT),
+					mfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT), 1, 0);
+		if (rc) {
+			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
+					pfn, mfn, rc);
+			return rc;
+		}
+		rc = acrn_ioreq_add_iorange(info->client, REQ_MMIO,
+				(pfn << PAGE_SHIFT) + VGT_PVINFO_PAGE,
+				((pfn + 1) << PAGE_SHIFT) + VGT_PVINFO_PAGE - 1);
+		if (rc) {
+			gvt_err("failed acrn_ioreq_add_iorange for pfn 0x%lx\n",
+				(pfn << PAGE_SHIFT) + VGT_PVINFO_PAGE);
+			return rc;
+		}
+
+	} else {
+		mfn = acrngt_virt_to_mfn(info->vgpu->mmio.vreg);
+		rc = acrngt_map_gfn_to_mfn(handle, pfn, mfn, mmio_size_fn, map);
+		if (rc) {
+			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
+					pfn, mfn, rc);
+			return rc;
+		}
+		rc = acrn_ioreq_del_iorange(info->client, REQ_WP, pfn << PAGE_SHIFT,
+					((pfn + mmio_size_fn) << PAGE_SHIFT) - 1);
+		if (rc) {
+			gvt_err("failed acrn_ioreq_add_iorange for pfn 0x%lx\n", pfn);
+			return rc;
+		}
+		rc = acrn_ioreq_add_iorange(info->client, REQ_MMIO, pfn << PAGE_SHIFT,
+					((pfn + mmio_size_fn) << PAGE_SHIFT) - 1);
+		if (rc) {
+			gvt_err("failed acrn_ioreq_del_iorange for pfn 0x%lx\n", pfn);
+			return rc;
+		}
+
+		/* unmap the shared page to guest */
+		shared_mfn = acrngt_virt_to_mfn(info->vgpu->mmio.shared_page);
+		rc = acrngt_map_gfn_to_mfn(handle, pfn + mmio_size_fn, shared_mfn, 1, map);
+		if (rc) {
+			gvt_err("acrn-gvt: map shared page fail with ret %d\n", rc);
+			return rc;
+		}
+	}
+	return rc;
+}
+
 static int acrngt_dom0_ready(void)
 {
 	char *env[] = {"GVT_DOM0_READY=1", NULL};
@@ -880,6 +971,7 @@ struct intel_gvt_mpt acrn_gvt_mpt = {
         .dma_map_guest_page = acrngt_dma_map_guest_page,
         .dma_unmap_guest_page = acrngt_dma_unmap_guest_page,
 	.set_trap_area = acrngt_set_trap_area,
+	.set_pvmmio = acrngt_set_pvmmio,
 	.dom0_ready = acrngt_dom0_ready,
 };
 EXPORT_SYMBOL_GPL(acrn_gvt_mpt);
