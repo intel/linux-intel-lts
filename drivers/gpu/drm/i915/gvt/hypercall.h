@@ -69,5 +69,6 @@ struct intel_gvt_mpt {
 
 extern struct intel_gvt_mpt xengt_mpt;
 extern struct intel_gvt_mpt kvmgt_mpt;
+extern struct intel_gvt_mpt acrn_gvt_mpt;
 
 #endif /* _GVT_HYPERCALL_H_ */
