@@ -85,6 +85,7 @@ struct intel_vgpu_workload {
 	bool dispatched;
 	bool shadow;      /* if workload has done shadow of guest request */
 	int status;
+	unsigned int guilty_count;
 
 	struct intel_vgpu_mm *shadow_mm;
 
