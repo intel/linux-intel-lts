@@ -608,6 +608,8 @@ struct intel_gvt_ops {
 };
 
 int gvt_dom0_ready(struct drm_i915_private *dev_priv);
+void intel_gvt_allocate_ddb(struct intel_gvt *gvt,
+		struct skl_ddb_allocation *ddb, unsigned int active_crtcs);
 
 enum {
 	GVT_FAILSAFE_UNSUPPORTED_GUEST,
