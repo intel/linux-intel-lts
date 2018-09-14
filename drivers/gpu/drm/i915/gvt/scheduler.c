@@ -619,6 +619,14 @@ static int prepare_workload(struct intel_vgpu_workload *workload)
 		goto err_unpin_mm;
 	}
 
+	/* we consider this as an workaround to avoid the situation that
+	 * PDP's not updated, and right now we only limit it to BXT platform
+	 * since it's not reported on the other platforms
+	 */
+	if (IS_BROXTON(vgpu->gvt->dev_priv)) {
+		gvt_emit_pdps(workload);
+	}
+
 	ret = copy_workload_to_ring_buffer(workload);
 	if (ret) {
 		gvt_vgpu_err("fail to generate request\n");
