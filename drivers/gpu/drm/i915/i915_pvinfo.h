@@ -49,6 +49,15 @@ enum vgt_g2v_type {
 	VGT_G2V_MAX,
 };
 
+#define VGPU_PVMMIO(vgpu) vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio))
+
+/*
+ * define different levels of PVMMIO optimization
+ */
+enum pvmmio_levels {
+	PVMMIO_ELSP_SUBMIT = 0x1,
+};
+
 /*
  * VGT capabilities type
  */
@@ -106,9 +115,11 @@ struct vgt_if {
 
 	u32 execlist_context_descriptor_lo;
 	u32 execlist_context_descriptor_hi;
+	u32 enable_pvmmio;
+	u32 pv_mmio;
 	u32 scaler_owned;
 
-	u32  rsv7[0x200 - 25];    /* pad to one page */
+	u32  rsv7[0x200 - 27];    /* pad to one page */
 } __packed;
 
 #define vgtif_reg(x) \
