@@ -451,6 +451,8 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 	struct intel_engine_execlists *execlists = &engine->execlists;
 	struct execlist_port *port = execlists->port;
 	unsigned int n;
+	u32 descs[4];
+	int i = 0;
 
 	/*
 	 * We can skip acquiring intel_runtime_pm_get() here as it was taken
@@ -493,10 +495,27 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 			GEM_BUG_ON(!n);
 			desc = 0;
 		}
+		if (intel_vgpu_active(engine->i915) &&
+				PVMMIO_LEVEL(engine->i915, PVMMIO_ELSP_SUBMIT)) {
+			BUG_ON(i >= 4);
+			descs[i] = upper_32_bits(desc);
+			descs[i + 1] = lower_32_bits(desc);
+			i += 2;
+			continue;
+		}
 
 		write_desc(execlists, desc, n);
 	}
-
+	if (intel_vgpu_active(engine->i915) &&
+			PVMMIO_LEVEL(engine->i915, PVMMIO_ELSP_SUBMIT)) {
+		u32 __iomem *elsp_data = engine->i915->shared_page->elsp_data;
+		spin_lock(&engine->i915->shared_page_lock);
+		writel(descs[0], elsp_data);
+		writel(descs[1], elsp_data + 1);
+		writel(descs[2], elsp_data + 2);
+		writel(descs[3], execlists->submit_reg);
+		spin_unlock(&engine->i915->shared_page_lock);
+	}
 	/* we need to manually load the submit queue */
 	if (execlists->ctrl_reg)
 		writel(EL_CTRL_LOAD, execlists->ctrl_reg);

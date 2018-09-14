@@ -55,6 +55,7 @@
 
 #include "i915_params.h"
 #include "i915_reg.h"
+#include "i915_pvinfo.h"
 #include "i915_utils.h"
 
 #include "intel_bios.h"
@@ -1591,6 +1592,7 @@ struct drm_i915_private {
 
 	void __iomem *regs;
 	struct gvt_shared_page *shared_page;
+	spinlock_t shared_page_lock;
 
 	struct intel_uncore uncore;
 
@@ -2786,7 +2788,7 @@ static inline bool intel_gvt_active(struct drm_i915_private *dev_priv)
 	return dev_priv->gvt;
 }
 
-static inline bool intel_vgpu_active(struct drm_i915_private *dev_priv)
+static inline bool intel_vgpu_active(const struct drm_i915_private *dev_priv)
 {
 	return dev_priv->vgpu.active;
 }
@@ -3586,7 +3588,11 @@ static inline u64 intel_rc6_residency_us(struct drm_i915_private *dev_priv,
 static inline uint##x##_t __raw_i915_read##x(const struct drm_i915_private *dev_priv, \
 					     i915_reg_t reg) \
 { \
-	return read##s(dev_priv->regs + i915_mmio_reg_offset(reg)); \
+	if (!intel_vgpu_active(dev_priv) || !i915_modparams.enable_pvmmio || \
+		likely(!in_mmio_read_trap_list((reg).reg))) \
+		return read##s(dev_priv->regs + i915_mmio_reg_offset(reg)); \
+	dev_priv->shared_page->reg_addr = i915_mmio_reg_offset(reg); \
+	return read##s(dev_priv->regs + i915_mmio_reg_offset(vgtif_reg(pv_mmio))); \
 }
 
 #define __raw_write(x, s) \
