@@ -91,6 +91,13 @@ static bool __i915_error_ok(struct drm_i915_error_state_buf *e)
 	return true;
 }
 
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+bool i915_error_ok(struct drm_i915_error_state_buf *e)
+{
+	return __i915_error_ok(e);
+}
+#endif
+
 static bool __i915_error_seek(struct drm_i915_error_state_buf *e,
 			      unsigned len)
 {
@@ -162,7 +169,7 @@ static void i915_error_vprintf(struct drm_i915_error_state_buf *e,
 	__i915_error_advance(e, len);
 }
 
-static void i915_error_puts(struct drm_i915_error_state_buf *e,
+void i915_error_puts(struct drm_i915_error_state_buf *e,
 			    const char *str)
 {
 	unsigned len;
@@ -870,6 +877,22 @@ int i915_error_state_buf_init(struct drm_i915_error_state_buf *ebuf,
 
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+int i915_obj_state_buf_init(struct drm_i915_error_state_buf *ebuf,
+		size_t count)
+{
+	memset(ebuf, 0, sizeof(*ebuf));
+
+	ebuf->buf = kmalloc(count, GFP_KERNEL);
+
+	if (ebuf->buf == NULL)
+		return -ENOMEM;
+
+	ebuf->size = count;
+	return 0;
+}
+#endif
 
 static void i915_error_object_free(struct drm_i915_error_object *obj)
 {

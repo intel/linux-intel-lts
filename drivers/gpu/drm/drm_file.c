@@ -46,6 +46,10 @@
 /* from BKL pushdown */
 DEFINE_MUTEX(drm_global_mutex);
 
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+EXPORT_SYMBOL(drm_global_mutex);
+#endif
+
 /**
  * DOC: file operations
  *
