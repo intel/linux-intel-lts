@@ -679,8 +679,14 @@ static int _intel_hdcp_enable(struct intel_connector *connector)
 	for (i = 0; i < tries; i++) {
 		ret = intel_hdcp_auth(conn_to_dig_port(connector),
 				      connector->hdcp_shim);
-		if (!ret)
+		if (!ret) {
+			connector->hdcp_value =
+					DRM_MODE_CONTENT_PROTECTION_ENABLED;
+			schedule_work(&connector->hdcp_prop_work);
+			schedule_delayed_work(&connector->hdcp_check_work,
+					DRM_HDCP_CHECK_PERIOD_MS);
 			return 0;
+		}
 
 		DRM_DEBUG_KMS("HDCP Auth failure (%d)\n", ret);
 
@@ -690,6 +696,17 @@ static int _intel_hdcp_enable(struct intel_connector *connector)
 
 	DRM_ERROR("HDCP authentication failed (%d tries/%d)\n", tries, ret);
 	return ret;
+}
+
+static void intel_hdcp_enable_work(struct work_struct *work)
+{
+	struct intel_connector *connector = container_of(work,
+							 struct intel_connector,
+							 hdcp_enable_work);
+
+	mutex_lock(&connector->hdcp_mutex);
+	_intel_hdcp_enable(connector);
+	mutex_unlock(&connector->hdcp_mutex);
 }
 
 static void intel_hdcp_check_work(struct work_struct *work)
@@ -748,29 +765,20 @@ int intel_hdcp_init(struct intel_connector *connector,
 	mutex_init(&connector->hdcp_mutex);
 	INIT_DELAYED_WORK(&connector->hdcp_check_work, intel_hdcp_check_work);
 	INIT_WORK(&connector->hdcp_prop_work, intel_hdcp_prop_work);
+	INIT_WORK(&connector->hdcp_enable_work, intel_hdcp_enable_work);
 	return 0;
 }
 
 int intel_hdcp_enable(struct intel_connector *connector)
 {
-	int ret;
-
 	if (!connector->hdcp_shim)
 		return -ENOENT;
 
 	mutex_lock(&connector->hdcp_mutex);
-
-	ret = _intel_hdcp_enable(connector);
-	if (ret)
-		goto out;
-
-	connector->hdcp_value = DRM_MODE_CONTENT_PROTECTION_ENABLED;
-	schedule_work(&connector->hdcp_prop_work);
-	schedule_delayed_work(&connector->hdcp_check_work,
-			      DRM_HDCP_CHECK_PERIOD_MS);
-out:
+	schedule_work(&connector->hdcp_enable_work);
 	mutex_unlock(&connector->hdcp_mutex);
-	return ret;
+
+	return 0;
 }
 
 int intel_hdcp_disable(struct intel_connector *connector)
