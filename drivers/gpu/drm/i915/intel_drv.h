@@ -428,6 +428,7 @@ struct intel_connector {
 	uint64_t hdcp_value; /* protected by hdcp_mutex */
 	struct delayed_work hdcp_check_work;
 	struct work_struct hdcp_prop_work;
+	struct work_struct hdcp_enable_work;
 };
 
 struct intel_digital_connector_state {
