@@ -30,6 +30,7 @@
 #include <linux/errno.h>
 #include <linux/slab.h>
 #include <linux/dma-buf.h>
+#include <linux/version.h>
 #include "hyper_dmabuf_drv.h"
 #include "hyper_dmabuf_struct.h"
 #include "hyper_dmabuf_list.h"
@@ -219,10 +220,12 @@ int hyper_dmabuf_remote_sync(hyper_dmabuf_id_t hid, int ops)
 			return -ENOMEM;
 
 		/* dummy kmapping of 1 page */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
 		if (ops == HYPER_DMABUF_OPS_KMAP_ATOMIC)
 			va_kmapl->vaddr = dma_buf_kmap_atomic(
 						exported->dma_buf, 1);
 		else
+#endif
 			va_kmapl->vaddr = dma_buf_kmap(
 						exported->dma_buf, 1);
 
@@ -253,11 +256,13 @@ int hyper_dmabuf_remote_sync(hyper_dmabuf_id_t hid, int ops)
 			return PTR_ERR(va_kmapl->vaddr);
 		}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
 		/* unmapping 1 page */
 		if (ops == HYPER_DMABUF_OPS_KUNMAP_ATOMIC)
 			dma_buf_kunmap_atomic(exported->dma_buf,
 					      1, va_kmapl->vaddr);
 		else
+#endif
 			dma_buf_kunmap(exported->dma_buf,
 				       1, va_kmapl->vaddr);
 
