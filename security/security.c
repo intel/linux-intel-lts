@@ -955,18 +955,15 @@ int security_inode_init_security(struct inode *inode, struct inode *dir,
 	}
 
 	if (ret == 0) {
-		rc = evm_inode_init_security(inode, new_xattrs, evm_xattr);
-		if (rc == 0)
-			rc = initxattrs(inode, new_xattrs, fs_data);
+		ret = evm_inode_init_security(inode, new_xattrs, evm_xattr);
+		if (ret == 0)
+			ret = initxattrs(inode, new_xattrs, fs_data);
 	}
 
 	if (lsm_xattr != new_xattrs) {
 		for (xattr = new_xattrs; xattr->value != NULL; xattr++)
 			kfree(xattr->value);
 	}
-
-	if (rc != 0)
-		return rc;
 
 	return (ret == -EOPNOTSUPP) ? 0 : ret;
 }
