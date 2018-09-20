@@ -365,6 +365,8 @@ static int vbs_k_reset(struct virtio_be_priv *priv)
 	virtio_comm_ring_init(&priv->tx_ring,
 			      sizeof(struct virtio_be_tx_data),
 			      REQ_RING_SIZE);
+
+	return 0;
 }
 
 static long vbs_k_ioctl(struct file *f, unsigned int ioctl,
@@ -373,7 +375,7 @@ static long vbs_k_ioctl(struct file *f, unsigned int ioctl,
 	struct virtio_be_priv *priv =
 		(struct virtio_be_priv *) f->private_data;
 	void __user *argp = (void __user *)arg;
-	int r;
+	int r = 0;
 
 	if (priv == NULL) {
 		dev_err(hy_drv_priv->dev,
