@@ -30,6 +30,7 @@
 #include <linux/errno.h>
 #include <linux/slab.h>
 #include <linux/dma-buf.h>
+#include <linux/version.h>
 #include "hyper_dmabuf_drv.h"
 #include "hyper_dmabuf_struct.h"
 #include "hyper_dmabuf_ops.h"
@@ -86,7 +87,9 @@ static int sync_request(hyper_dmabuf_id_t hid, int dmabuf_ops)
 }
 
 static int hyper_dmabuf_ops_attach(struct dma_buf *dmabuf,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
 				   struct device *dev,
+#endif
 				   struct dma_buf_attachment *attach)
 {
 	struct imported_sgt_info *imported;
@@ -255,6 +258,7 @@ static int hyper_dmabuf_ops_end_cpu_access(struct dma_buf *dmabuf,
 	return sync_request(imported->hid, HYPER_DMABUF_OPS_END_CPU_ACCESS);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
 static void *hyper_dmabuf_ops_kmap_atomic(struct dma_buf *dmabuf,
 					  unsigned long pgnum)
 {
@@ -283,6 +287,7 @@ static void hyper_dmabuf_ops_kunmap_atomic(struct dma_buf *dmabuf,
 
 	sync_request(imported->hid, HYPER_DMABUF_OPS_KUNMAP_ATOMIC);
 }
+#endif
 
 static void *hyper_dmabuf_ops_kmap(struct dma_buf *dmabuf, unsigned long pgnum)
 {
@@ -362,8 +367,10 @@ static const struct dma_buf_ops hyper_dmabuf_ops = {
 	.release = hyper_dmabuf_ops_release,
 	.begin_cpu_access = hyper_dmabuf_ops_begin_cpu_access,
 	.end_cpu_access = hyper_dmabuf_ops_end_cpu_access,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
 	.map_atomic = hyper_dmabuf_ops_kmap_atomic,
 	.unmap_atomic = hyper_dmabuf_ops_kunmap_atomic,
+#endif
 	.map = hyper_dmabuf_ops_kmap,
 	.unmap = hyper_dmabuf_ops_kunmap,
 	.mmap = hyper_dmabuf_ops_mmap,
