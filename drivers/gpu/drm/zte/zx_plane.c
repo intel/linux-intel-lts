@@ -210,7 +210,7 @@ static void zx_vl_plane_atomic_update(struct drm_plane *plane,
 	if (!fb)
 		return;
 
-	format = fb->pixel_format;
+	format = fb->format->format;
 
 	src_x = src->x1 >> 16;
 	src_y = src->y1 >> 16;

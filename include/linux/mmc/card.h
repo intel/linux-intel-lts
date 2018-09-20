@@ -366,6 +366,7 @@ struct mmc_fixup {
 #define CID_MANFID_ANY (-1u)
 #define CID_OEMID_ANY ((unsigned short) -1)
 #define CID_NAME_ANY (NULL)
+#define CID_NAME_SP  "R1J56L"	/* For specific Micron 4.41 cards */
 
 #define EXT_CSD_REV_ANY (-1u)
 
