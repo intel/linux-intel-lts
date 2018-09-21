@@ -220,6 +220,7 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 
 	return client_id;
 }
+EXPORT_SYMBOL_GPL(acrn_ioreq_create_client);
 
 int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name)
 {
@@ -317,6 +318,7 @@ void acrn_ioreq_destroy_client(int client_id)
 
 	put_vm(vm);
 }
+EXPORT_SYMBOL_GPL(acrn_ioreq_destroy_client);
 
 static void __attribute__((unused)) dump_iorange(struct ioreq_client *client)
 {
@@ -376,6 +378,7 @@ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(acrn_ioreq_add_iorange);
 
 int acrn_ioreq_del_iorange(int client_id, uint32_t type,
 	long start, long end)
@@ -424,6 +427,7 @@ int acrn_ioreq_del_iorange(int client_id, uint32_t type,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(acrn_ioreq_del_iorange);
 
 static inline bool is_destroying(struct ioreq_client *client)
 {
@@ -469,6 +473,7 @@ struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
 	put_vm(vm);
 	return (struct vhm_request *)vm->req_buf;
 }
+EXPORT_SYMBOL_GPL(acrn_ioreq_get_reqbuf);
 
 static int ioreq_client_thread(void *data)
 {
@@ -563,6 +568,7 @@ int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(acrn_ioreq_attach_client);
 
 void acrn_ioreq_intercept_bdf(int client_id, int bus, int dev, int func)
 {
@@ -582,6 +588,7 @@ void acrn_ioreq_intercept_bdf(int client_id, int bus, int dev, int func)
 	client->pci_dev = dev;
 	client->pci_func = func;
 }
+EXPORT_SYMBOL_GPL(acrn_ioreq_intercept_bdf);
 
 void acrn_ioreq_unintercept_bdf(int client_id)
 {
@@ -850,6 +857,7 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(acrn_ioreq_complete_request);
 
 unsigned int vhm_dev_poll(struct file *filep, poll_table *wait)
 {
