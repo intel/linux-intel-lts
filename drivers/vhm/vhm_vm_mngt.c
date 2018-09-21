@@ -80,6 +80,7 @@ struct vhm_vm *find_get_vm(unsigned long vmid)
 	mutex_unlock(&vhm_vm_list_lock);
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(find_get_vm);
 
 void put_vm(struct vhm_vm *vm)
 {
@@ -94,6 +95,7 @@ void put_vm(struct vhm_vm *vm)
 	}
 	mutex_unlock(&vhm_vm_list_lock);
 }
+EXPORT_SYMBOL_GPL(put_vm);
 
 int vhm_get_vm_info(unsigned long vmid, struct vm_info *info)
 {
@@ -111,6 +113,7 @@ int vhm_get_vm_info(unsigned long vmid, struct vm_info *info)
 	put_vm(vm);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(vhm_get_vm_info);
 
 int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
 		unsigned long msi_data)
@@ -129,6 +132,7 @@ int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
 	}
 	return 0;
 }
+EXPORT_SYMBOL_GPL(vhm_inject_msi);
 
 unsigned long vhm_vm_gpa2hpa(unsigned long vmid, unsigned long gpa)
 {
@@ -145,6 +149,7 @@ unsigned long vhm_vm_gpa2hpa(unsigned long vmid, unsigned long gpa)
 	mb();
 	return gpa2hpa.hpa;
 }
+EXPORT_SYMBOL_GPL(vhm_vm_gpa2hpa);
 
 void vm_list_add(struct list_head *list)
 {

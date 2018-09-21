@@ -133,6 +133,7 @@ int add_memory_region(unsigned long vmid, unsigned long gpa,
 			(mem_access_right & MEM_ACCESS_RIGHT_MASK));
 	return set_memory_region(vmid, &region);
 }
+EXPORT_SYMBOL_GPL(add_memory_region);
 
 int del_memory_region(unsigned long vmid, unsigned long gpa,
 	unsigned long size)
@@ -147,6 +148,7 @@ int del_memory_region(unsigned long vmid, unsigned long gpa,
 
 	return set_memory_region(vmid, &region);
 }
+EXPORT_SYMBOL_GPL(del_memory_region);
 
 int set_memory_regions(struct set_regions *regions)
 {
@@ -184,6 +186,7 @@ int write_protect_page(unsigned long vmid,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(write_protect_page);
 
 int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
 {
