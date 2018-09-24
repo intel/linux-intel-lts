@@ -270,7 +270,7 @@ void acrn_ioreq_clear_request(struct vhm_vm *vm)
 		client = clients[vm->ioreq_fallback_client];
 		while ((bit = find_next_bit(client->ioreqs_map,
 				VHM_REQUEST_MAX, bit + 1)) < VHM_REQUEST_MAX)
-			acrn_ioreq_complete_request(client->id, bit);
+			acrn_ioreq_complete_request(client->id, bit, NULL);
 	}
 }
 
@@ -877,7 +877,8 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
 	return 0;
 }
 
-int acrn_ioreq_complete_request(int client_id, uint64_t vcpu)
+int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
+		struct vhm_request *vhm_req)
 {
 	struct ioreq_client *client;
 	int ret;
@@ -893,6 +894,14 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu)
 	}
 
 	clear_bit(vcpu, client->ioreqs_map);
+	if (!vhm_req) {
+		vhm_req = acrn_ioreq_get_reqbuf(client_id);
+		vhm_req += vcpu;
+	}
+
+	smp_mb();
+	atomic_set(&vhm_req->processed, REQ_STATE_COMPLETE);
+
 	ret = hcall_notify_req_finish(client->vmid, vcpu);
 	if (ret < 0) {
 		pr_err("vhm-ioreq: failed to notify request finished !\n");

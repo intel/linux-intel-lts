@@ -364,7 +364,8 @@ create_vm_fail:
 					sizeof(notify)))
 			return -EFAULT;
 
-		ret = acrn_ioreq_complete_request(notify.client_id, notify.vcpu);
+		ret = acrn_ioreq_complete_request(notify.client_id,
+				notify.vcpu, NULL);
 		if (ret < 0)
 			return -EFAULT;
 		break;
