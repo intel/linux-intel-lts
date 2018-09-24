@@ -1,0 +1,12 @@
+config NETWORK_PROXY
+	tristate "Network Proxy"
+	default n
+	depends on CONFIGFS_FS && INTEL_ISH_HID
+	select NETWORK_PROXY_ISHTP
+	help
+	  Network proxy maintains network presence while Host is in
+	  low-power mode. Host is woke-up when there is print job or
+	  other packet of interest not handled by Network Proxy agent.
+	  This technology is described in ECMA-393 proxZZzy.
+	  It requires 2 devices to be registered to the Network Proxy
+	  framework: IPC Device and Network Device.
