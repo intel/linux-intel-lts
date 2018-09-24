@@ -267,11 +267,9 @@ static int acrngt_emulation_thread(void *priv)
 				if (ret)
 					handle_request_error(vgpu);
 
-				smp_mb();
-				atomic_set(&req->processed, REQ_STATE_COMPLETE);
 				/* complete request */
 				if (acrn_ioreq_complete_request(info->client,
-						vcpu))
+						vcpu, req))
 					gvt_err("failed complete request\n");
 			}
 		}

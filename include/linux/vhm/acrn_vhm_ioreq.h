@@ -155,10 +155,12 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm);
  *
  * @client_id: client id to identify ioreq client
  * @vcpu: identify request submitter
+ * @vhm_req: the request for fast grab
  *
  * Return: 0 on success, <0 on error
  */
-int acrn_ioreq_complete_request(int client_id, uint64_t vcpu);
+int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
+		struct vhm_request *vhm_req);
 
 /**
  * acrn_ioreq_clear_request - clear all guest requests
