@@ -86,6 +86,7 @@
 #define HC_PULSE_IRQLINE            _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x02)
 #define HC_INJECT_MSI               _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x03)
 #define HC_VM_INTR_MONITOR          _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x04)
+#define HC_SET_IRQLINE              _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x05)
 
 /* DM ioreq management */
 #define HC_ID_IOREQ_BASE            0x30UL
