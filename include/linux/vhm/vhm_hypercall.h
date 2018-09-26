@@ -157,6 +157,7 @@ inline long hcall_notify_req_finish(unsigned long vmid, unsigned long vcpu);
 inline long hcall_assert_irqline(unsigned long vmid, unsigned long irq);
 inline long hcall_deassert_irqline(unsigned long vmid, unsigned long irq);
 inline long hcall_pulse_irqline(unsigned long vmid, unsigned long irq);
+inline long hcall_set_irqline(unsigned long vmid, unsigned long op);
 inline long hcall_inject_msi(unsigned long vmid, unsigned long msi);
 inline long hcall_assign_ptdev(unsigned long vmid, unsigned long bdf);
 inline long hcall_deassign_ptdev(unsigned long vmid, unsigned long bdf);

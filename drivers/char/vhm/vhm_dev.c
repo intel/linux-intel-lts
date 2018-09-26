@@ -393,6 +393,15 @@ create_vm_fail:
 		break;
 	}
 
+	case IC_SET_IRQLINE: {
+		ret = hcall_set_irqline(vm->vmid, ioctl_param);
+		if (ret < 0) {
+			pr_err("vhm: failed to set irqline!\n");
+			return -EFAULT;
+		}
+		break;
+	}
+
 	case IC_INJECT_MSI: {
 		struct acrn_msi_entry msi;
 

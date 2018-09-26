@@ -137,6 +137,11 @@ inline long hcall_pulse_irqline(unsigned long vmid, unsigned long irq)
 	return acrn_hypercall2(HC_PULSE_IRQLINE, vmid, irq);
 }
 
+inline long hcall_set_irqline(unsigned long vmid, unsigned long op)
+{
+	return acrn_hypercall2(HC_SET_IRQLINE, vmid, op);
+}
+
 inline long hcall_inject_msi(unsigned long vmid, unsigned long msi)
 {
 	return acrn_hypercall2(HC_INJECT_MSI, vmid, msi);
