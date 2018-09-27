@@ -1432,11 +1432,11 @@ static void dapm_seq_insert(struct snd_soc_dapm_widget *new_widget,
 	list_add_tail(&new_widget->power_list, list);
 }
 
-static void dapm_seq_check_event(struct snd_soc_card *card,
+static int dapm_seq_check_event(struct snd_soc_card *card,
 				 struct snd_soc_dapm_widget *w, int event)
 {
 	const char *ev_name;
-	int power, ret;
+	int power, ret = 0;
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1465,11 +1465,11 @@ static void dapm_seq_check_event(struct snd_soc_card *card,
 		break;
 	default:
 		WARN(1, "Unknown event %d\n", event);
-		return;
+		return -EINVAL;
 	}
 
 	if (w->new_power != power)
-		return;
+		return ret;
 
 	if (w->event && (w->event_flags & event)) {
 		pop_dbg(w->dapm->dev, card->pop_time, "pop test : %s %s\n",
@@ -1482,10 +1482,11 @@ static void dapm_seq_check_event(struct snd_soc_card *card,
 			dev_err(w->dapm->dev, "ASoC: %s: %s event failed: %d\n",
 			       ev_name, w->name, ret);
 	}
+	return ret;
 }
 
 /* Apply the coalesced changes from a DAPM sequence */
-static void dapm_seq_run_coalesced(struct snd_soc_card *card,
+static int dapm_seq_run_coalesced(struct snd_soc_card *card,
 				   struct list_head *pending)
 {
 	struct snd_soc_dapm_context *dapm;
@@ -1493,6 +1494,7 @@ static void dapm_seq_run_coalesced(struct snd_soc_card *card,
 	int reg;
 	unsigned int value = 0;
 	unsigned int mask = 0;
+	int ret = 0;
 
 	w = list_first_entry(pending, struct snd_soc_dapm_widget, power_list);
 	reg = w->reg;
@@ -1513,8 +1515,8 @@ static void dapm_seq_run_coalesced(struct snd_soc_card *card,
 			w->name, reg, value, mask);
 
 		/* Check for events */
-		dapm_seq_check_event(card, w, SND_SOC_DAPM_PRE_PMU);
-		dapm_seq_check_event(card, w, SND_SOC_DAPM_PRE_PMD);
+		ret |= dapm_seq_check_event(card, w, SND_SOC_DAPM_PRE_PMU);
+		ret |= dapm_seq_check_event(card, w, SND_SOC_DAPM_PRE_PMD);
 	}
 
 	if (reg >= 0) {
@@ -1530,9 +1532,14 @@ static void dapm_seq_run_coalesced(struct snd_soc_card *card,
 	}
 
 	list_for_each_entry(w, pending, power_list) {
-		dapm_seq_check_event(card, w, SND_SOC_DAPM_POST_PMU);
-		dapm_seq_check_event(card, w, SND_SOC_DAPM_POST_PMD);
+		ret |= dapm_seq_check_event(card, w, SND_SOC_DAPM_POST_PMU);
+		ret |= dapm_seq_check_event(card, w, SND_SOC_DAPM_POST_PMD);
 	}
+
+	if (ret < 0)
+		ret = -EINVAL;
+
+	return ret;
 }
 
 /* Apply a DAPM power sequence.
@@ -1543,7 +1550,7 @@ static void dapm_seq_run_coalesced(struct snd_soc_card *card,
  * Currently anything that requires more than a single write is not
  * handled.
  */
-static void dapm_seq_run(struct snd_soc_card *card,
+static int dapm_seq_run(struct snd_soc_card *card,
 	struct list_head *list, int event, bool power_up)
 {
 	struct snd_soc_dapm_widget *w, *n;
@@ -1553,7 +1560,7 @@ static void dapm_seq_run(struct snd_soc_card *card,
 	int cur_subseq = -1;
 	int cur_reg = SND_SOC_NOPM;
 	struct snd_soc_dapm_context *cur_dapm = NULL;
-	int ret, i;
+	int ret = 0, i;
 	int *sort;
 
 	if (power_up)
@@ -1562,13 +1569,12 @@ static void dapm_seq_run(struct snd_soc_card *card,
 		sort = dapm_down_seq;
 
 	list_for_each_entry_safe(w, n, list, power_list) {
-		ret = 0;
 
 		/* Do we need to apply any queued changes? */
 		if (sort[w->id] != cur_sort || w->reg != cur_reg ||
 		    w->dapm != cur_dapm || w->subseq != cur_subseq) {
 			if (!list_empty(&pending))
-				dapm_seq_run_coalesced(card, &pending);
+				ret |= dapm_seq_run_coalesced(card, &pending);
 
 			if (cur_dapm && cur_dapm->seq_notifier) {
 				for (i = 0; i < ARRAY_SIZE(dapm_up_seq); i++)
@@ -1595,10 +1601,10 @@ static void dapm_seq_run(struct snd_soc_card *card,
 								  power_list);
 
 			if (event == SND_SOC_DAPM_STREAM_START)
-				ret = w->event(w,
+				ret |= w->event(w,
 					       NULL, SND_SOC_DAPM_PRE_PMU);
 			else if (event == SND_SOC_DAPM_STREAM_STOP)
-				ret = w->event(w,
+				ret |= w->event(w,
 					       NULL, SND_SOC_DAPM_PRE_PMD);
 			break;
 
@@ -1608,10 +1614,10 @@ static void dapm_seq_run(struct snd_soc_card *card,
 								  power_list);
 
 			if (event == SND_SOC_DAPM_STREAM_START)
-				ret = w->event(w,
+				ret |= w->event(w,
 					       NULL, SND_SOC_DAPM_POST_PMU);
 			else if (event == SND_SOC_DAPM_STREAM_STOP)
-				ret = w->event(w,
+				ret |= w->event(w,
 					       NULL, SND_SOC_DAPM_POST_PMD);
 			break;
 
@@ -1625,13 +1631,18 @@ static void dapm_seq_run(struct snd_soc_card *card,
 			break;
 		}
 
-		if (ret < 0)
+		if (ret < 0) {
 			dev_err(w->dapm->dev,
 				"ASoC: Failed to apply widget power: %d\n", ret);
+			return -EINVAL;
+		}
 	}
 
-	if (!list_empty(&pending))
-		dapm_seq_run_coalesced(card, &pending);
+	if (!list_empty(&pending)) {
+		ret = dapm_seq_run_coalesced(card, &pending);
+		if (ret < 0)
+			return ret;
+	}
 
 	if (cur_dapm && cur_dapm->seq_notifier) {
 		for (i = 0; i < ARRAY_SIZE(dapm_up_seq); i++)
@@ -1643,6 +1654,8 @@ static void dapm_seq_run(struct snd_soc_card *card,
 	list_for_each_entry(d, &card->dapm_list, list) {
 		soc_dapm_async_complete(d);
 	}
+
+	return ret;
 }
 
 static void dapm_widget_update(struct snd_soc_card *card)
@@ -1871,6 +1884,7 @@ static int dapm_power_widgets(struct snd_soc_card *card, int event)
 	LIST_HEAD(down_list);
 	ASYNC_DOMAIN_EXCLUSIVE(async_domain);
 	enum snd_soc_bias_level bias;
+	int ret = 0;
 
 	lockdep_assert_held(&card->dapm_mutex);
 
@@ -1960,20 +1974,20 @@ static int dapm_power_widgets(struct snd_soc_card *card, int event)
 	async_synchronize_full_domain(&async_domain);
 
 	list_for_each_entry(w, &down_list, power_list) {
-		dapm_seq_check_event(card, w, SND_SOC_DAPM_WILL_PMD);
+		ret |= dapm_seq_check_event(card, w, SND_SOC_DAPM_WILL_PMD);
 	}
 
 	list_for_each_entry(w, &up_list, power_list) {
-		dapm_seq_check_event(card, w, SND_SOC_DAPM_WILL_PMU);
+		ret |= dapm_seq_check_event(card, w, SND_SOC_DAPM_WILL_PMU);
 	}
 
 	/* Power down widgets first; try to avoid amplifying pops. */
-	dapm_seq_run(card, &down_list, event, false);
+	ret |= dapm_seq_run(card, &down_list, event, false);
 
 	dapm_widget_update(card);
 
 	/* Now power up. */
-	dapm_seq_run(card, &up_list, event, true);
+	ret |= dapm_seq_run(card, &up_list, event, true);
 
 	/* Run all the bias changes in parallel */
 	list_for_each_entry(d, &card->dapm_list, list) {
@@ -1997,7 +2011,10 @@ static int dapm_power_widgets(struct snd_soc_card *card, int event)
 
 	trace_snd_soc_dapm_done(card);
 
-	return 0;
+	if (ret < 0)
+		ret = -EINVAL;
+
+	return ret;
 }
 
 #ifdef CONFIG_DEBUG_FS
@@ -2198,6 +2215,7 @@ static int soc_dapm_mux_update_power(struct snd_soc_card *card,
 	struct snd_soc_dapm_path *path;
 	int found = 0;
 	bool connect;
+	int ret = 0;
 
 	lockdep_assert_held(&card->dapm_mutex);
 
@@ -2213,8 +2231,11 @@ static int soc_dapm_mux_update_power(struct snd_soc_card *card,
 		soc_dapm_connect_path(path, connect, "mux update");
 	}
 
-	if (found)
-		dapm_power_widgets(card, SND_SOC_DAPM_STREAM_NOP);
+	if (found) {
+		ret = dapm_power_widgets(card, SND_SOC_DAPM_STREAM_NOP);
+		if (ret < 0)
+			return ret;
+	}
 
 	return found;
 }
@@ -2243,7 +2264,7 @@ static int soc_dapm_mixer_update_power(struct snd_soc_card *card,
 				       int connect, int rconnect)
 {
 	struct snd_soc_dapm_path *path;
-	int found = 0;
+	int found = 0, ret = 0;
 
 	lockdep_assert_held(&card->dapm_mutex);
 
@@ -2278,8 +2299,11 @@ static int soc_dapm_mixer_update_power(struct snd_soc_card *card,
 		found = 1;
 	}
 
-	if (found)
-		dapm_power_widgets(card, SND_SOC_DAPM_STREAM_NOP);
+	if (found) {
+		ret = dapm_power_widgets(card, SND_SOC_DAPM_STREAM_NOP);
+		if (ret < 0)
+			return ret;
+	}
 
 	return found;
 }
@@ -3040,6 +3064,7 @@ int snd_soc_dapm_new_widgets(struct snd_soc_card *card)
 {
 	struct snd_soc_dapm_widget *w;
 	unsigned int val;
+	int ret = 0;
 
 	mutex_lock_nested(&card->dapm_mutex, SND_SOC_DAPM_CLASS_INIT);
 
@@ -3094,9 +3119,9 @@ int snd_soc_dapm_new_widgets(struct snd_soc_card *card)
 		dapm_debugfs_add_widget(w);
 	}
 
-	dapm_power_widgets(card, SND_SOC_DAPM_STREAM_NOP);
+	ret = dapm_power_widgets(card, SND_SOC_DAPM_STREAM_NOP);
 	mutex_unlock(&card->dapm_mutex);
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(snd_soc_dapm_new_widgets);
 
@@ -4206,7 +4231,7 @@ void snd_soc_dapm_connect_dai_link_widgets(struct snd_soc_card *card)
 	}
 }
 
-static void soc_dapm_stream_event(struct snd_soc_pcm_runtime *rtd, int stream,
+static int soc_dapm_stream_event(struct snd_soc_pcm_runtime *rtd, int stream,
 	int event)
 {
 	int i;
@@ -4215,7 +4240,7 @@ static void soc_dapm_stream_event(struct snd_soc_pcm_runtime *rtd, int stream,
 	for (i = 0; i < rtd->num_codecs; i++)
 		soc_dapm_dai_stream_event(rtd->codec_dais[i], stream, event);
 
-	dapm_power_widgets(rtd->card, event);
+	return dapm_power_widgets(rtd->card, event);
 }
 
 /**
@@ -4229,14 +4254,17 @@ static void soc_dapm_stream_event(struct snd_soc_pcm_runtime *rtd, int stream,
  *
  * Returns 0 for success else error.
  */
-void snd_soc_dapm_stream_event(struct snd_soc_pcm_runtime *rtd, int stream,
+int snd_soc_dapm_stream_event(struct snd_soc_pcm_runtime *rtd, int stream,
 			      int event)
 {
 	struct snd_soc_card *card = rtd->card;
+	int ret = 0;
 
 	mutex_lock_nested(&card->dapm_mutex, SND_SOC_DAPM_CLASS_RUNTIME);
-	soc_dapm_stream_event(rtd, stream, event);
+	ret = soc_dapm_stream_event(rtd, stream, event);
 	mutex_unlock(&card->dapm_mutex);
+
+	return ret;
 }
 
 /**
