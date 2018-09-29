@@ -148,7 +148,7 @@ static long vhm_dev_ioctl(struct file *filep,
 	struct ic_ptdev_irq ic_pt_irq;
 	struct hc_ptdev_irq hc_pt_irq;
 
-	trace_printk("[%s] ioctl_num=0x%x\n", __func__, ioctl_num);
+	pr_debug("[%s] ioctl_num=0x%x\n", __func__, ioctl_num);
 
 	if (ioctl_num == IC_GET_API_VERSION) {
 		struct api_version api_version;
