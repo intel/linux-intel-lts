@@ -211,6 +211,33 @@ static inline void sme_free(struct task_struct *t) { }
 
 static void fpsimd_bind_task_to_cpu(void);
 
+#ifdef CONFIG_DOVETAIL
+
+#define get_cpu_fpsimd_context(__flags)			\
+	do {						\
+		(__flags) = hard_preempt_disable();	\
+	} while (0)
+
+#define put_cpu_fpsimd_context(__flags)			\
+	do {						\
+		hard_preempt_enable(__flags);		\
+	} while (0)
+
+void fpsimd_restore_current_oob(void)
+{
+	/*
+	 * Restore the fpsimd context for the current task as it
+	 * resumes from dovetail_context_switch(), which always happen
+	 * on the out-of-band stage. Skip this for kernel threads
+	 * which have no such context but always bear
+	 * TIF_FOREIGN_FPSTATE.
+	 */
+	if (current->mm)
+		fpsimd_restore_current_state();
+}
+
+#else  /* !CONFIG_DOVETAIL */
+
 /*
  * Claim ownership of the CPU FPSIMD context for use by the calling context.
  *
@@ -223,12 +250,14 @@ static void fpsimd_bind_task_to_cpu(void);
  * half processing is always in thread context on RT kernels so it
  * implicitly prevents bottom half processing as well.
  */
-static void get_cpu_fpsimd_context(void)
-{
-	if (!IS_ENABLED(CONFIG_PREEMPT_RT))
-		local_bh_disable();
-	else
-		preempt_disable();
+#define get_cpu_fpsimd_context(__flags)			\
+	do {						\
+		if (!IS_ENABLED(CONFIG_PREEMPT_RT))	\
+			local_bh_disable();		\
+		else					\
+			preempt_disable();		\
+		(void)(__flags);			\
+	} while (0)
 }
 
 /*
@@ -238,13 +267,16 @@ static void get_cpu_fpsimd_context(void)
  * previously called, with no call to put_cpu_fpsimd_context() in the
  * meantime.
  */
-static void put_cpu_fpsimd_context(void)
-{
-	if (!IS_ENABLED(CONFIG_PREEMPT_RT))
-		local_bh_enable();
-	else
-		preempt_enable();
-}
+#define get_cpu_fpsimd_context(__flags)			\
+	do {						\
+		if (!IS_ENABLED(CONFIG_PREEMPT_RT))	\
+			local_bh_enable();		\
+		else					\
+			preempt_enable();		\
+		(void)(__flags);			\
+	} while (0)
+
+#endif	/* !CONFIG_DOVETAIL */
 
 unsigned int task_get_vl(const struct task_struct *task, enum vec_type type)
 {
@@ -358,6 +390,7 @@ static void task_fpsimd_load(void)
 	WARN_ON(!system_supports_fpsimd());
 	WARN_ON(preemptible());
 	WARN_ON(test_thread_flag(TIF_KERNEL_FPSTATE));
+	WARN_ON_ONCE(dovetail_debug() && !hard_irqs_disabled());
 
 	if (system_supports_fpmr())
 		write_sysreg_s(current->thread.uw.fpmr, SYS_FPMR);
@@ -445,6 +478,7 @@ static void fpsimd_save_user_state(void)
 
 	WARN_ON(!system_supports_fpsimd());
 	WARN_ON(preemptible());
+	WARN_ON_ONCE(dovetail_debug() && !hard_irqs_disabled());
 
 	if (test_thread_flag(TIF_FOREIGN_FPSTATE))
 		return;
@@ -490,6 +524,7 @@ static void fpsimd_save_user_state(void)
 			 * re-enter user with corrupt state.
 			 * There's no way to recover, so kill it:
 			 */
+			hard_cond_local_irq_enable();
 			force_signal_inject(SIGKILL, SI_KERNEL, 0, 0);
 			return;
 		}
@@ -656,12 +691,15 @@ static void fpsimd_to_sve(struct task_struct *task)
 	unsigned int vq;
 	void *sst = task->thread.sve_state;
 	struct user_fpsimd_state const *fst = &task->thread.uw.fpsimd_state;
+	unsigned long flags;
 
 	if (!system_supports_sve() && !system_supports_sme())
 		return;
 
+	flags = hard_cond_local_irq_save();
 	vq = sve_vq_from_vl(thread_get_cur_vl(&task->thread));
 	__fpsimd_to_sve(sst, fst, vq);
+	hard_cond_local_irq_restore(flags);
 }
 
 /*
@@ -682,16 +720,19 @@ static void sve_to_fpsimd(struct task_struct *task)
 	struct user_fpsimd_state *fst = &task->thread.uw.fpsimd_state;
 	unsigned int i;
 	__uint128_t const *p;
+	unsigned long flags;
 
 	if (!system_supports_sve() && !system_supports_sme())
 		return;
 
+	flags = hard_cond_local_irq_save();
 	vl = thread_get_cur_vl(&task->thread);
 	vq = sve_vq_from_vl(vl);
 	for (i = 0; i < SVE_NUM_ZREGS; ++i) {
 		p = (__uint128_t const *)ZREG(sst, vq, i);
 		fst->vregs[i] = arm64_le128_to_cpu(*p);
 	}
+	hard_cond_local_irq_restore(flags);
 }
 
 void cpu_enable_fpmr(const struct arm64_cpu_capabilities *__always_unused p)
@@ -832,6 +873,7 @@ void sve_sync_from_fpsimd_zeropad(struct task_struct *task)
 int vec_set_vector_length(struct task_struct *task, enum vec_type type,
 			  unsigned long vl, unsigned long flags)
 {
+	unsigned long irqflags = 0;
 	bool free_sme = false;
 
 	if (flags & ~(unsigned long)(PR_SVE_VL_INHERIT |
@@ -872,7 +914,7 @@ int vec_set_vector_length(struct task_struct *task, enum vec_type type,
 	 * regular FPSIMD thread.
 	 */
 	if (task == current) {
-		get_cpu_fpsimd_context();
+		get_cpu_fpsimd_context(irqflags);
 
 		fpsimd_save_user_state();
 	}
@@ -900,7 +942,7 @@ int vec_set_vector_length(struct task_struct *task, enum vec_type type,
 	}
 
 	if (task == current)
-		put_cpu_fpsimd_context();
+		put_cpu_fpsimd_context(irqflags);
 
 	task_set_vl(task, type, vl);
 
@@ -1384,6 +1426,8 @@ static void sve_init_regs(void)
  */
 void do_sve_acc(unsigned long esr, struct pt_regs *regs)
 {
+	unsigned long flags;
+
 	oob_trap_notify(ARM64_TRAP_SVE, regs);
 
 	/* Even if we chose not to use SVE, the hardware could still trap: */
@@ -1398,7 +1442,7 @@ void do_sve_acc(unsigned long esr, struct pt_regs *regs)
 		goto out;
 	}
 
-	get_cpu_fpsimd_context();
+	get_cpu_fpsimd_context(flags);
 
 	if (test_and_set_thread_flag(TIF_SVE))
 		WARN_ON(1); /* SVE access shouldn't have trapped */
@@ -1412,7 +1456,7 @@ void do_sve_acc(unsigned long esr, struct pt_regs *regs)
 	 */
 	sve_init_regs();
 
-	put_cpu_fpsimd_context();
+	put_cpu_fpsimd_context(flags);
 out:
 	oob_trap_unwind(ARM64_TRAP_SVE, regs);
 }
@@ -1456,7 +1500,7 @@ void do_sme_acc(unsigned long esr, struct pt_regs *regs)
 		goto out;
 	}
 
-	get_cpu_fpsimd_context();
+	get_cpu_fpsimd_context(flags);
 
 	/* With TIF_SME userspace shouldn't generate any traps */
 	if (test_and_set_thread_flag(TIF_SME))
@@ -1470,7 +1514,7 @@ void do_sme_acc(unsigned long esr, struct pt_regs *regs)
 		fpsimd_bind_task_to_cpu();
 	}
 
-	put_cpu_fpsimd_context();
+	put_cpu_fpsimd_context(flags);
 out:
 	oob_trap_unwind(ARM64_TRAP_SME, regs);
 }
@@ -1544,6 +1588,8 @@ static void fpsimd_save_kernel_state(struct task_struct *task)
 		.to_save	= FP_STATE_FPSIMD,
 	};
 
+	WARN_ON_ONCE(dovetail_debug() && !hard_irqs_disabled());
+
 	fpsimd_save_state(&task->thread.kernel_fpsimd_state);
 	fpsimd_bind_state_to_cpu(&cpu_fp_state);
 
@@ -1578,7 +1624,7 @@ void fpsimd_thread_switch(struct task_struct *next)
 	if (!system_supports_fpsimd())
 		return;
 
-	WARN_ON_ONCE(!irqs_disabled());
+	WARN_ON_ONCE(!hard_irqs_disabled());
 
 	/* Save unsaved fpsimd state, if any: */
 	if (test_thread_flag(TIF_KERNEL_FPSTATE))
@@ -1644,11 +1690,12 @@ void fpsimd_flush_thread(void)
 {
 	void *sve_state = NULL;
 	void *sme_state = NULL;
+	unsigned long flags;
 
 	if (!system_supports_fpsimd())
 		return;
 
-	get_cpu_fpsimd_context();
+	get_cpu_fpsimd_context(flags);
 
 	fpsimd_flush_task_state(current);
 	memset(&current->thread.uw.fpsimd_state, 0,
@@ -1677,7 +1724,7 @@ void fpsimd_flush_thread(void)
 
 	current->thread.fp_type = FP_STATE_FPSIMD;
 
-	put_cpu_fpsimd_context();
+	put_cpu_fpsimd_context(flags);
 	kfree(sve_state);
 	kfree(sme_state);
 }
@@ -1688,12 +1735,14 @@ void fpsimd_flush_thread(void)
  */
 void fpsimd_preserve_current_state(void)
 {
+	unsigned long flags;
+
 	if (!system_supports_fpsimd())
 		return;
 
-	get_cpu_fpsimd_context();
+	get_cpu_fpsimd_context(flags);
 	fpsimd_save_user_state();
-	put_cpu_fpsimd_context();
+	put_cpu_fpsimd_context(flags);
 }
 
 /*
@@ -1713,6 +1762,8 @@ void fpsimd_signal_preserve_current_state(void)
  */
 void fpsimd_kvm_prepare(void)
 {
+	unsigned long flags;
+
 	if (!system_supports_sve())
 		return;
 
@@ -1723,14 +1774,14 @@ void fpsimd_kvm_prepare(void)
 	 * SVE enabled for performance reasons then update the task
 	 * state to be FPSIMD only.
 	 */
-	get_cpu_fpsimd_context();
+	get_cpu_fpsimd_context(flags);
 
 	if (test_and_clear_thread_flag(TIF_SVE)) {
 		sve_to_fpsimd(current);
 		current->thread.fp_type = FP_STATE_FPSIMD;
 	}
 
-	put_cpu_fpsimd_context();
+	put_cpu_fpsimd_context(flags);
 }
 
 /*
@@ -1776,11 +1827,14 @@ static void fpsimd_bind_task_to_cpu(void)
 void fpsimd_bind_state_to_cpu(struct cpu_fp_state *state)
 {
 	struct cpu_fp_state *last = this_cpu_ptr(&fpsimd_last_state);
+	unsigned long flags;
 
 	WARN_ON(!system_supports_fpsimd());
-	WARN_ON(!in_softirq() && !irqs_disabled());
+	WARN_ON(running_inband() && !in_softirq() && !irqs_disabled());
 
+	flags = hard_cond_local_irq_save();
 	*last = *state;
+	hard_cond_local_irq_restore(flags);
 }
 
 /*
@@ -1791,6 +1845,8 @@ void fpsimd_bind_state_to_cpu(struct cpu_fp_state *state)
  */
 void fpsimd_restore_current_state(void)
 {
+	unsigned long flags;
+
 	/*
 	 * TIF_FOREIGN_FPSTATE is set on the init task and copied by
 	 * arch_dup_task_struct() regardless of whether FP/SIMD is detected.
@@ -1815,14 +1871,14 @@ void fpsimd_restore_current_state(void)
 		return;
 	}
 
-	get_cpu_fpsimd_context();
+	get_cpu_fpsimd_context(flags);
 
 	if (test_and_clear_thread_flag(TIF_FOREIGN_FPSTATE)) {
 		task_fpsimd_load();
 		fpsimd_bind_task_to_cpu();
 	}
 
-	put_cpu_fpsimd_context();
+	put_cpu_fpsimd_context(flags);
 }
 
 /*
@@ -1834,10 +1890,12 @@ void fpsimd_restore_current_state(void)
  */
 void fpsimd_update_current_state(struct user_fpsimd_state const *state)
 {
+	unsigned long flags;
+
 	if (WARN_ON(!system_supports_fpsimd()))
 		return;
 
-	get_cpu_fpsimd_context();
+	get_cpu_fpsimd_context(flags);
 
 	current->thread.uw.fpsimd_state = *state;
 	if (test_thread_flag(TIF_SVE))
@@ -1848,7 +1906,7 @@ void fpsimd_update_current_state(struct user_fpsimd_state const *state)
 
 	clear_thread_flag(TIF_FOREIGN_FPSTATE);
 
-	put_cpu_fpsimd_context();
+	put_cpu_fpsimd_context(flags);
 }
 
 /*
@@ -1889,10 +1947,10 @@ void fpsimd_save_and_flush_cpu_state(void)
 	if (!system_supports_fpsimd())
 		return;
 	WARN_ON(preemptible());
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	fpsimd_save_user_state();
 	fpsimd_flush_cpu_state();
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 #ifdef CONFIG_KERNEL_MODE_NEON
@@ -1916,12 +1974,14 @@ void fpsimd_save_and_flush_cpu_state(void)
  */
 void kernel_neon_begin(void)
 {
+	unsigned long flags;
+
 	if (WARN_ON(!system_supports_fpsimd()))
 		return;
 
 	BUG_ON(!may_use_simd());
 
-	get_cpu_fpsimd_context();
+	get_cpu_fpsimd_context(flags);
 
 	/* Save unsaved fpsimd state, if any: */
 	if (test_thread_flag(TIF_KERNEL_FPSTATE)) {
@@ -1954,7 +2014,7 @@ void kernel_neon_begin(void)
 	/* Invalidate any task state remaining in the fpsimd regs: */
 	fpsimd_flush_cpu_state();
 
-	put_cpu_fpsimd_context();
+	put_cpu_fpsimd_context(flags);
 }
 EXPORT_SYMBOL_GPL(kernel_neon_begin);
 
@@ -1969,6 +2029,8 @@ EXPORT_SYMBOL_GPL(kernel_neon_begin);
  */
 void kernel_neon_end(void)
 {
+	unsigned long flags;
+
 	if (!system_supports_fpsimd())
 		return;
 
@@ -1978,10 +2040,13 @@ void kernel_neon_end(void)
 	 * running in softirq context on non-PREEMPT_RT.
 	 */
 	if (!IS_ENABLED(CONFIG_PREEMPT_RT) && in_serving_softirq() &&
-	    test_thread_flag(TIF_KERNEL_FPSTATE))
+		test_thread_flag(TIF_KERNEL_FPSTATE)) {
+		flags = hard_cond_local_irq_save();
 		fpsimd_load_kernel_state(current);
-	else
+		hard_cond_local_irq_restore(flags);
+	} else {
 		clear_thread_flag(TIF_KERNEL_FPSTATE);
+	}
 }
 EXPORT_SYMBOL_GPL(kernel_neon_end);
 
@@ -2019,6 +2084,7 @@ void __efi_fpsimd_begin(void)
 	if (may_use_simd()) {
 		kernel_neon_begin();
 	} else {
+		unsigned long flags = hard_cond_local_irq_save();
 		/*
 		 * If !efi_sve_state, SVE can't be in use yet and doesn't need
 		 * preserving:
@@ -2057,6 +2123,8 @@ void __efi_fpsimd_begin(void)
 		}
 
 		__this_cpu_write(efi_fpsimd_state_used, true);
+
+		hard_cond_local_irq_restore(flags);
 	}
 }
 
@@ -2071,6 +2139,8 @@ void __efi_fpsimd_end(void)
 	if (!__this_cpu_xchg(efi_fpsimd_state_used, false)) {
 		kernel_neon_end();
 	} else {
+		unsigned long flags = hard_cond_local_irq_save();
+
 		if (system_supports_sve() &&
 		    likely(__this_cpu_read(efi_sve_state_used))) {
 			char const *sve_state = this_cpu_ptr(efi_sve_state);
@@ -2104,6 +2174,8 @@ void __efi_fpsimd_end(void)
 		} else {
 			fpsimd_load_state(this_cpu_ptr(&efi_fpsimd_state));
 		}
+
+		hard_cond_local_irq_restore(flags);
 	}
 }
 
@@ -2115,9 +2187,13 @@ void __efi_fpsimd_end(void)
 static int fpsimd_cpu_pm_notifier(struct notifier_block *self,
 				  unsigned long cmd, void *v)
 {
+	unsigned long flags;
+
 	switch (cmd) {
 	case CPU_PM_ENTER:
+		flags = hard_cond_local_irq_save();
 		fpsimd_save_and_flush_cpu_state();
+		hard_cond_local_irq_restore(flags);
 		break;
 	case CPU_PM_EXIT:
 		break;
