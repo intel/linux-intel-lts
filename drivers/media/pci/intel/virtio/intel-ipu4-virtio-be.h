@@ -8,8 +8,14 @@
 
 #include <linux/vbs/vbs.h>
 
-int notify_fe(void);
-int ipu_virtio_vqs_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map,
-						int *vqs_index, int max_vqs_index);
+enum poll_status {
+	IPU4_POLL_PENDING = 0,
+	IPU4_POLL_AVAILABLE,
+	IPU4_POLL_STOP,
+	IPU4_POLL_SLEEP
+};
+
+int notify_fe(int status, struct ipu4_virtio_req_info *req_info);
+void notify_poll_thread(int stream_id, enum poll_status status);
 
 #endif

@@ -18,6 +18,7 @@
 #include "intel-ipu4-para-virt-drv.h"
 #include "intel-ipu4-virtio-fe-pipeline.h"
 #include "intel-ipu4-virtio-fe-payload.h"
+#include "intel-ipu4-virtio-fe-request-queue.h"
 #include "./ici/ici-isys-stream.h"
 #include "./ici/ici-isys-pipeline-device.h"
 
@@ -32,8 +33,6 @@ static int virt_stream_devs_registered;
 static int stream_dev_init;
 
 static struct ipu4_virtio_ctx *g_fe_priv;
-
-struct mutex fop_mutex;
 
 #ifdef CONFIG_COMPAT
 struct timeval32 {
@@ -219,63 +218,6 @@ static struct ici_frame_buf_wrapper *frame_buf_lookup(struct ici_isys_frame_buf_
 	}
 	return NULL;
 }
-static void put_userpages(struct ici_kframe_plane *kframe_plane)
-{
-	struct sg_table *sgt = kframe_plane->sgt;
-	struct scatterlist *sgl;
-	unsigned int i;
-	struct mm_struct *mm = current->active_mm;
-
-	if (!mm) {
-		pr_err("Failed to get active mm_struct ptr from current process.\n");
-		return;
-	}
-
-	down_read(&mm->mmap_sem);
-	for_each_sg(sgt->sgl, sgl, sgt->orig_nents, i) {
-		struct page *page = sg_page(sgl);
-
-		unsigned int npages = PAGE_ALIGN(sgl->offset + sgl->length)	>> PAGE_SHIFT;
-		unsigned int page_no;
-
-		for (page_no = 0; page_no < npages; ++page_no, ++page) {
-			set_page_dirty_lock(page);
-			put_page(page);
-		}
-	}
-
-	kfree(sgt);
-	kframe_plane->sgt = NULL;
-
-	up_read(&mm->mmap_sem);
-}
-
-static void put_dma(struct ici_kframe_plane	*kframe_plane)
-{
-	struct sg_table *sgt = kframe_plane->sgt;
-
-	if (WARN_ON(!kframe_plane->db_attach)) {
-		pr_err("trying to unpin a not attached buffer\n");
-		return;
-	}
-
-	if (WARN_ON(!sgt)) {
-		pr_err("dmabuf buffer is already unpinned\n");
-		return;
-	}
-
-	if (kframe_plane->kaddr) {
-		dma_buf_vunmap(kframe_plane->db_attach->dmabuf,
-		kframe_plane->kaddr);
-		kframe_plane->kaddr = NULL;
-	}
-	dma_buf_unmap_attachment(kframe_plane->db_attach, sgt,
-							 DMA_BIDIRECTIONAL);
-
-	kframe_plane->dma_addr = 0;
-	kframe_plane->sgt = NULL;
-
-}
 
 static int map_dma(struct device *dev, struct ici_frame_plane *frame_plane,
 				   struct ici_kframe_plane	*kframe_plane)
@@ -332,26 +274,6 @@ error:
 	return ret;
 }
 
-static void unmap_buf(struct ici_frame_buf_wrapper *buf)
-{
-	int i;
-
-	for (i = 0; i < buf->frame_info.num_planes; i++) {
-		struct ici_kframe_plane *kframe_plane =
-			&buf->kframe_info.planes[i];
-		switch (kframe_plane->mem_type) {
-		case ICI_MEM_USERPTR:
-			put_userpages(kframe_plane);
-		break;
-		case ICI_MEM_DMABUF:
-			put_dma(kframe_plane);
-		break;
-		default:
-			pr_debug("not supported memory type: %d\n", kframe_plane->mem_type);
-		break;
-		}
-	}
-}
 struct ici_frame_buf_wrapper *get_buf(struct virtual_stream *vstream, struct ici_frame_info *frame_info)
 {
 	int res;
@@ -450,7 +372,7 @@ static int virt_isys_set_format(struct file *file, void *fh,
 
 	pr_debug("Calling Set Format\n");
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 	op[0] = vstream->virt_dev_id;
@@ -463,10 +385,10 @@ static int virt_isys_set_format(struct file *file, void *fh,
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
 	if (rval) {
 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
+	ipu4_virtio_fe_req_queue_put(req);
 
 	return rval;
 }
@@ -480,7 +402,8 @@ static int virt_isys_stream_on(struct file *file, void *fh)
 	int rval = 0;
 	int op[10];
 	pr_debug("Calling Stream ON\n");
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 	op[0] = vstream->virt_dev_id;
@@ -491,14 +414,10 @@ static int virt_isys_stream_on(struct file *file, void *fh)
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
 	if (rval) {
 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
-
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
-	if (!req && !fe_ctx)
-		return -ENOMEM;
+	ipu4_virtio_fe_req_queue_put(req);
 
 	return rval;
 }
@@ -513,7 +432,7 @@ static int virt_isys_stream_off(struct file *file, void *fh)
 	int op[10];
 
 	pr_debug("Calling Stream OFF\n");
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 	op[0] = vstream->virt_dev_id;
@@ -524,10 +443,10 @@ static int virt_isys_stream_off(struct file *file, void *fh)
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
 	if (rval) {
 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
+	ipu4_virtio_fe_req_queue_put(req);
 
 	buf_stream_cancel(vstream);
 
@@ -545,7 +464,7 @@ static int virt_isys_getbuf(struct file *file, void *fh,
 	int rval = 0;
 	int op[3];
 
-	pr_debug("Calling Get Buffer\n");
+	pr_debug("%s stream %d", __func__, vstream->virt_dev_id);
 
 	buf = get_buf(vstream, user_frame_info);
 	if (!buf) {
@@ -553,7 +472,7 @@ static int virt_isys_getbuf(struct file *file, void *fh,
 		return -ENOMEM;
 	}
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 
@@ -567,10 +486,12 @@ static int virt_isys_getbuf(struct file *file, void *fh,
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
 	if (rval) {
 		dev_err(&strm_dev->dev, "Failed to Get Buffer\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
+	ipu4_virtio_fe_req_queue_put(req);
+
+	pr_debug("%s exit stream %d", __func__, vstream->virt_dev_id);
 
 	return rval;
 }
@@ -585,9 +506,9 @@ static int virt_isys_putbuf(struct file *file, void *fh,
 	int rval = 0;
 	int op[2];
 
-	pr_debug("Calling Put Buffer\n");
+	pr_debug("%s stream %d", __func__, vstream->virt_dev_id);
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 
@@ -600,14 +521,12 @@ static int virt_isys_putbuf(struct file *file, void *fh,
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
 	if (rval) {
 		dev_err(&strm_dev->dev, "Failed to Get Buffer\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
+	ipu4_virtio_fe_req_queue_put(req);
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
-	if (!req && !fe_ctx)
-		return -ENOMEM;
+	pr_debug("%s exit stream %d", __func__, vstream->virt_dev_id);
 
 	return rval;
 }
@@ -624,7 +543,7 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device 
 	dev_dbg(&strm_dev->dev, "stream_fop_poll %d\n", vstream->virt_dev_id);
 	get_device(&dev->dev);
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 
@@ -633,22 +552,16 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device 
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_POLL, &op[0]);
 
-	mutex_lock(&fop_mutex);
-
-	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_1);
+	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+										IPU_VIRTIO_QUEUE_0);
 	if (rval) {
-		mutex_unlock(&fop_mutex);
 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
+	ipu4_virtio_fe_req_queue_put(req);
 
-	mutex_unlock(&fop_mutex);
-
-	rval = req->func_ret;
-	kfree(req);
-
-	return rval;
+	return req->func_ret;
 }
 
 static int virt_stream_fop_open(struct inode *inode, struct file *file)
@@ -667,7 +580,7 @@ static int virt_stream_fop_open(struct inode *inode, struct file *file)
 	if (!fe_ctx)
 		return -EINVAL;
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req) {
 		dev_err(&strm_dev->dev, "Virtio Req buffer failed\n");
 		return -ENOMEM;
@@ -678,18 +591,14 @@ static int virt_stream_fop_open(struct inode *inode, struct file *file)
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_DEVICE_OPEN, &op[0]);
 
-	mutex_lock(&fop_mutex);
-
-	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_1);
+	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+										IPU_VIRTIO_QUEUE_0);
 	if (rval) {
-		mutex_unlock(&fop_mutex);
 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
-
-	mutex_unlock(&fop_mutex);
+	ipu4_virtio_fe_req_queue_put(req);
 
 	return rval;
 }
@@ -705,7 +614,7 @@ static int virt_stream_fop_release(struct inode *inode, struct file *file)
 	pr_debug("%s %d", __func__, vstream->virt_dev_id);
 	put_device(&strm_dev->dev);
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 
@@ -714,18 +623,14 @@ static int virt_stream_fop_release(struct inode *inode, struct file *file)
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_DEVICE_CLOSE, &op[0]);
 
-	mutex_lock(&fop_mutex);
-
-	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_1);
+	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+										IPU_VIRTIO_QUEUE_0);
 	if (rval) {
-		mutex_unlock(&fop_mutex);
 		dev_err(&strm_dev->dev, "Failed to close virtual device\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
-
-	mutex_unlock(&fop_mutex);
+	ipu4_virtio_fe_req_queue_put(req);
 
 	return rval;
 }
@@ -740,10 +645,7 @@ static unsigned int virt_stream_fop_poll(struct file *file,
 
 	res = stream_fop_poll(file, as);
 
-	//res = POLLIN;
-
 	dev_dbg(&as->dev, "virt_stream_fop_poll res %u\n", res);
-
 	return res;
 }
 
@@ -1014,7 +916,7 @@ static int virt_pipeline_fop_open(struct inode *inode, struct file *file)
 
 	file->private_data = dev;
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 
@@ -1023,14 +925,14 @@ static int virt_pipeline_fop_open(struct inode *inode, struct file *file)
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PIPELINE_OPEN, &op[0]);
 
-	rval = g_fe_priv->bknd_ops->send_req(g_fe_priv->domid, req, true, IPU_VIRTIO_QUEUE_1);
+	rval = g_fe_priv->bknd_ops->send_req(g_fe_priv->domid, req, true,
+											IPU_VIRTIO_QUEUE_0);
 	if (rval) {
 		pr_err("Failed to open virtual device\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
-
+	ipu4_virtio_fe_req_queue_put(req);
 	return rval;
 }
 
@@ -1045,7 +947,7 @@ static int virt_pipeline_fop_release(struct inode *inode, struct file *file)
 
 	put_device(&pipe_dev->dev);
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 
@@ -1054,13 +956,13 @@ static int virt_pipeline_fop_release(struct inode *inode, struct file *file)
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PIPELINE_CLOSE, &op[0]);
 
-	rval = g_fe_priv->bknd_ops->send_req(g_fe_priv->domid, req, true, IPU_VIRTIO_QUEUE_1);
+	rval = g_fe_priv->bknd_ops->send_req(g_fe_priv->domid, req, true, IPU_VIRTIO_QUEUE_0);
 	if (rval) {
 		pr_err("Failed to close virtual device\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
-	kfree(req);
+	ipu4_virtio_fe_req_queue_put(req);
 
 	return rval;
 }
@@ -1271,7 +1173,6 @@ static int __init virt_ici_init(void)
 		if (!vstream)
 			return -ENOMEM;
 		mutex_init(&vstream->mutex);
-		mutex_init(&fop_mutex);
 		vstream->strm_dev.mutex = &vstream->mutex;
 
 		rval = virt_frame_buf_init(&vstream->buf_list);
@@ -1288,6 +1189,10 @@ static int __init virt_ici_init(void)
 			goto init_fail;
 	}
 
+	rval = ipu4_virtio_fe_req_queue_init();
+	if (rval)
+		goto init_fail;
+
 	rval = virt_ici_pipeline_init();
 	if (rval)
 		goto init_fail;
@@ -1297,7 +1202,6 @@ static int __init virt_ici_init(void)
 
 init_fail:
 	mutex_destroy(&vstream->mutex);
-	mutex_destroy(&fop_mutex);
 	kfree(vstream);
 	return rval;
 }
@@ -1318,6 +1222,7 @@ static void __exit virt_ici_exit(void)
 {
 	virt_ici_stream_exit();
 	virt_ici_pipeline_exit();
+	ipu4_virtio_fe_req_queue_free();
 }
 
 module_init(virt_ici_init);

@@ -495,6 +495,9 @@ int ici_isys_get_buf_virt(struct ici_isys_stream *as,
 		return 0;
 	}
 
+	pr_debug("%s: creating new buf object\n", __func__);
+	pr_debug("%s: mem.userptr %lu", __func__,
+		frame_buf->frame_info.frame_planes[0].mem.userptr);
 
 	buf = frame_buf;
 
@@ -585,6 +588,8 @@ static void frame_buf_done(
 	list_add_tail(&buf->node, &buf_list->putbuf_list);
 	spin_unlock_irqrestore(&buf_list->lock, flags);
 	wake_up_interruptible(&buf_list->wait);
+	pr_debug("%s: Frame data arrived! %lu", __func__,
+		buf->frame_info.frame_planes[0].mem.userptr);
 }
 
 void ici_isys_frame_buf_ready(struct ici_isys_pipeline
@@ -639,8 +644,6 @@ void ici_isys_frame_buf_ready(struct ici_isys_pipeline
 	} else {
 		buf->frame_info.field = ICI_FIELD_NONE;
 		frame_buf_done(buf_list, buf);
-		if (as->frame_done_notify_queue)
-			as->frame_done_notify_queue();
 	}
 
 	dev_dbg(&isys->adev->dev, "buffer: found buffer %p\n", buf);
@@ -720,6 +723,9 @@ int ici_isys_frame_buf_add_next(
 	buf->state = ICI_BUF_ACTIVE;
 	mutex_unlock(&buf_list->mutex);
 
+	pr_debug("%s: add buf to FW! %lu", __func__,
+		buf->frame_info.frame_planes[0].mem.userptr);
+
 	css_buf->send_irq_sof = 1;
 	css_buf->output_pins[buf_list->fw_output].addr =
 		(uint32_t)buf->kframe_info.planes[0].dma_addr;
@@ -797,8 +803,6 @@ void ici_isys_frame_buf_capture_done(
 			buf->frame_info.field = ip->cur_field;
 			list_del(&buf->node);
 			frame_buf_done(buf_list, buf);
-		if (as->frame_done_notify_queue)
-			as->frame_done_notify_queue();
 		}
 	}
 }

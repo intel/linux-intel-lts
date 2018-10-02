@@ -17,15 +17,13 @@ static DEFINE_IDA(index_ida);
 
 struct ipu4_virtio_uos {
 	struct virtqueue *vq[IPU_VIRTIO_QUEUE_MAX];
-	struct completion have_data;
 	char name[25];
 	unsigned int data_avail;
+	spinlock_t lock;
 	int index;
 	bool busy;
 	int vmid;
 };
-
-struct completion completion_queue[IPU_VIRTIO_QUEUE_MAX];
 
 /* Assuming there will be one FE instance per VM */
 static struct ipu4_virtio_uos *ipu4_virtio_fe;
@@ -33,24 +31,40 @@ static struct ipu4_virtio_uos *ipu4_virtio_fe;
 static void ipu_virtio_fe_tx_done_vq_0(struct virtqueue *vq)
 {
 	struct ipu4_virtio_uos *priv = (struct ipu4_virtio_uos *)vq->vdev->priv;
+	struct ipu4_virtio_req *req;
+	unsigned long flags = 0;
 
-	/* We can get spurious callbacks, e.g. shared IRQs + virtio_pci. */
-	if (!virtqueue_get_buf(vq, &priv->data_avail))
-		return;
+	do {
+		spin_lock_irqsave(&priv->lock, flags);
+		req = (struct ipu4_virtio_req *)
+			virtqueue_get_buf(vq, &priv->data_avail);
+		spin_unlock_irqrestore(&priv->lock, flags);
+		if (req != NULL &&
+			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
+			complete(&req->wait);
+		}
+	} while (req != NULL);
 
-	complete(&completion_queue[0]);
 	pr_debug("IPU FE:%s vmid:%d TX for VQ 0 done\n", __func__, priv->vmid);
 }
 
 static void ipu_virtio_fe_tx_done_vq_1(struct virtqueue *vq)
 {
 	struct ipu4_virtio_uos *priv = (struct ipu4_virtio_uos *)vq->vdev->priv;
+	struct ipu4_virtio_req *req;
+	unsigned long flags = 0;
 
-	/* We can get spurious callbacks, e.g. shared IRQs + virtio_pci. */
-	if (!virtqueue_get_buf(vq, &priv->data_avail))
-		return;
+	do {
+		spin_lock_irqsave(&priv->lock, flags);
+		req = (struct ipu4_virtio_req *)
+			virtqueue_get_buf(vq, &priv->data_avail);
+		spin_unlock_irqrestore(&priv->lock, flags);
+		if (req != NULL &&
+			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
+			complete(&req->wait);
+		}
+	} while (req != NULL);
 
-	complete(&completion_queue[1]);
 	pr_debug("IPU FE:%s vmid:%d TX for VQ 1 done\n", __func__, priv->vmid);
 }
 
@@ -59,6 +73,8 @@ static void ipu_virtio_fe_register_buffer(struct ipu4_virtio_uos *vi, void *buf,
 		int nqueue)
 {
 	struct scatterlist sg;
+	unsigned long flags = 0;
+
 	if (nqueue >= IPU_VIRTIO_QUEUE_MAX) {
 		pr_debug("Number of queue exceeding max queue number\n");
 			return;
@@ -66,19 +82,25 @@ static void ipu_virtio_fe_register_buffer(struct ipu4_virtio_uos *vi, void *buf,
 
 	sg_init_one(&sg, buf, size);
 
+	spin_lock_irqsave(&vi->lock, flags);
 	/* There should always be room for one buffer. */
 	virtqueue_add_inbuf(vi->vq[nqueue], &sg, 1, buf, GFP_KERNEL);
+
+	spin_unlock_irqrestore(&vi->lock, flags);
 
 	virtqueue_kick(vi->vq[nqueue]);
 }
 
 static int ipu_virtio_fe_probe_common(struct virtio_device *vdev)
 {
-	int err, index, i;
+	int err, index;
 	struct ipu4_virtio_uos *priv = NULL;
-	vq_callback_t *callbacks[] = {ipu_virtio_fe_tx_done_vq_0,
+	vq_callback_t *callbacks[] = {
+							ipu_virtio_fe_tx_done_vq_0,
 							ipu_virtio_fe_tx_done_vq_1};
-	static const char *names[] = {"csi_queue_0", "csi_queue_1"};
+	static const char * const names[] = {
+							"csi_queue_0",
+							"csi_queue_1"};
 	priv = kzalloc(sizeof(struct ipu4_virtio_uos), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
@@ -89,14 +111,14 @@ static int ipu_virtio_fe_probe_common(struct virtio_device *vdev)
 		goto err_ida;
 	}
 	sprintf(priv->name, "virtio_.%d", index);
-	for (i = 0; i < IPU_VIRTIO_QUEUE_MAX; i++)
-		init_completion(&completion_queue[i]);
 	priv->vmid = -1;
 	vdev->priv = priv;
 	err = virtio_find_vqs(vdev, IPU_VIRTIO_QUEUE_MAX,
 				      priv->vq, callbacks, names, NULL);
 	if (err)
 		goto err_find;
+
+	spin_lock_init(&priv->lock);
 
 	ipu4_virtio_fe = priv;
 
@@ -112,11 +134,8 @@ err_ida:
 static void ipu_virtio_fe_remove_common(struct virtio_device *vdev)
 {
 	struct ipu4_virtio_uos *priv = vdev->priv;
-	int i;
 
 	priv->data_avail = 0;
-	for (i = 0; i < IPU_VIRTIO_QUEUE_MAX; i++)
-		complete(&completion_queue[i]);
 	vdev->config->reset(vdev);
 	priv->busy = false;
 
@@ -135,10 +154,8 @@ static int ipu_virtio_fe_send_req(int vmid, struct ipu4_virtio_req *req,
 		pr_err("IPU Backend not connected\n");
 		return -ENOENT;
 	}
-
-	init_completion(&completion_queue[idx]);
 	ipu_virtio_fe_register_buffer(ipu4_virtio_fe, req, sizeof(*req), idx);
-	wait_for_completion(&completion_queue[idx]);
+	wait_for_completion(&req->wait);
 
 	return ret;
 }

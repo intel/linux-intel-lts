@@ -11,6 +11,7 @@
 
 #include "intel-ipu4-virtio-fe-payload.h"
 #include "intel-ipu4-virtio-fe-pipeline.h"
+#include "intel-ipu4-virtio-fe-request-queue.h"
 
 int process_pipeline(struct file *file, struct ipu4_virtio_ctx *fe_priv,
 			void *data, int cmd)
@@ -22,7 +23,7 @@ int process_pipeline(struct file *file, struct ipu4_virtio_ctx *fe_priv,
 	op[0] = 0;
 	op[1] = 0;
 
-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
 		return -ENOMEM;
 
@@ -33,11 +34,11 @@ int process_pipeline(struct file *file, struct ipu4_virtio_ctx *fe_priv,
 	rval = fe_priv->bknd_ops->send_req(fe_priv->domid, req, true, IPU_VIRTIO_QUEUE_0);
 	if (rval) {
 		pr_err("Failed to send request to BE\n");
-		kfree(req);
+		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
 
-	kfree(req);
+	ipu4_virtio_fe_req_queue_put(req);
 
 	return rval;
 }

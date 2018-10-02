@@ -17,6 +17,7 @@
 #include "intel-ipu4-virtio-common.h"
 #include "intel-ipu4-virtio-be-bridge.h"
 #include "intel-ipu4-virtio-be.h"
+#include "intel-ipu4-virtio-be-request-queue.h"
 
 /**
  * struct ipu4_virtio_be_priv - Backend of virtio-rng based on VBS-K
@@ -31,8 +32,8 @@ struct ipu4_virtio_be_priv {
 	struct virtio_dev_info dev;
 	struct virtio_vq_info vqs[IPU_VIRTIO_QUEUE_MAX];
 	bool busy;
-	struct ipu4_virtio_req *pending_tx_req;
-	struct mutex lock;
+	struct mutex mlock;
+	spinlock_t slock;
 	/*
 	 * Each VBS-K module might serve multiple connections
 	 * from multiple guests/device models/VBS-Us, so better
@@ -42,22 +43,12 @@ struct ipu4_virtio_be_priv {
 	struct hlist_node node;
 };
 
-struct vq_request_data {
-	struct virtio_vq_info *vq;
-	struct ipu4_virtio_req *req;
-	int len;
-	uint16_t idx;
-};
-
-struct vq_request_data vq_req;
-
 #define RNG_MAX_HASH_BITS 4		/* MAX is 2^4 */
 #define HASH_NAME vbs_hash
 
 DECLARE_HASHTABLE(HASH_NAME, RNG_MAX_HASH_BITS);
 static int ipu_vbk_hash_initialized;
 static int ipu_vbk_connection_cnt;
-
 /* function declarations */
 static int handle_kick(int client_id, long unsigned int *req_cnt);
 static void ipu_vbk_reset(struct ipu4_virtio_be_priv *rng);
@@ -150,19 +141,23 @@ static int ipu_vbk_hash_del_all(void)
 	return 0;
 }
 
-static void handle_vq_kick(struct ipu4_virtio_be_priv *priv, int vq_idx)
+static void handle_vq_kick(int client_id, int vq_idx)
 {
 	struct iovec iov;
 	struct ipu4_virtio_be_priv *be;
 	struct virtio_vq_info *vq;
+	struct ipu4_virtio_req_info *req_info = NULL;
 	struct ipu4_virtio_req *req = NULL;
 	int len;
 	int ret;
 	uint16_t idx;
 
-	pr_debug("%s: vq_idx %d\n", __func__, vq_idx);
-
-	be = priv;
+	be = ipu_vbk_hash_find(client_id);
+	if (be == NULL) {
+		pr_err("%s: client %d not found!\n",
+				__func__, client_id);
+		return -EINVAL;
+	}
 
 	if (!be) {
 		pr_err("rng is NULL! Cannot proceed!\n");
@@ -174,9 +169,9 @@ static void handle_vq_kick(struct ipu4_virtio_be_priv *priv, int vq_idx)
 	while (virtio_vq_has_descs(vq)) {
 		virtio_vq_getchain(vq, &idx, &iov, 1, NULL);
 
+		pr_debug("%s: vq index: %d vq buf index: %d req ptr: %lu\n",
+						__func__, vq_idx, idx, iov.iov_base);
 		/* device specific operations, for example: */
-		pr_debug("iov base %p len %lx\n", iov.iov_base, iov.iov_len);
-
 		if (iov.iov_len != sizeof(struct ipu4_virtio_req)) {
 			if (iov.iov_len == sizeof(int)) {
 					*((int *)iov.iov_base) = 1;
@@ -195,20 +190,32 @@ static void handle_vq_kick(struct ipu4_virtio_be_priv *priv, int vq_idx)
 			continue;
 		}
 
-		req = (struct ipu4_virtio_req *)iov.iov_base;
-		ret = intel_ipu4_virtio_msg_parse(1, req);
-		len = iov.iov_len;
+		req_info = ipu4_virtio_be_req_queue_get();
+		if (req_info) {
+			req = (struct ipu4_virtio_req *)iov.iov_base;
+			req_info->request = req;
+			req_info->vq_info.req_len = iov.iov_len;
+			req_info->vq_info.vq_buf_idx = idx;
+			req_info->vq_info.vq_idx = vq_idx;
+			req_info->domid = 1;
+			req_info->client_id = client_id;
+			ret = intel_ipu4_virtio_msg_parse(req_info);
+		} else {
+			pr_err("%s: Failed to get request buffer from queue!", __func__);
+			virtio_vq_relchain(vq, idx, iov.iov_len);
+			continue;
+		}
 
-		if (req->stat == IPU4_REQ_NEEDS_FOLLOW_UP) {
-			vq_req.vq = vq;
-			vq_req.req = req;
-			vq_req.idx = idx;
-			vq_req.len = len;
-		} else
-			virtio_vq_relchain(vq, idx, len);
+		if (req->stat != IPU4_REQ_PENDING) {
+			virtio_vq_relchain(vq, idx, iov.iov_len);
+			ipu4_virtio_be_req_queue_put(req_info);
+		}
+		pr_debug("%s ending request for stream %d",
+			__func__, req->op[0]);
 	}
 	pr_debug("IPU VBK data process on VQ Done\n");
-	if (req && req->stat != IPU4_REQ_NEEDS_FOLLOW_UP)
+	if ((req == NULL) || (req && req->stat !=
+						IPU4_REQ_PENDING))
 		virtio_vq_endchains(vq, 1);
 }
 
@@ -229,11 +236,11 @@ static int handle_kick(int client_id, long unsigned *ioreqs_map)
 		return -EINVAL;
 	}
 
-	count = ipu_virtio_vqs_index_get(&priv->dev, ioreqs_map, val, IPU_VIRTIO_QUEUE_MAX);
+	count = virtio_vqs_index_get(&priv->dev, ioreqs_map, val, IPU_VIRTIO_QUEUE_MAX);
 
 	for (i = 0; i < count; i++) {
 		if (val[i] >= 0) {
-			handle_vq_kick(priv, val[i]);
+			handle_vq_kick(client_id, val[i]);
 		}
 	}
 
@@ -273,15 +280,15 @@ static int ipu_vbk_open(struct inode *inode, struct file *f)
 
 	virtio_dev_init(dev, vqs, IPU_VIRTIO_QUEUE_MAX);
 
-	priv->pending_tx_req = kcalloc(1, sizeof(struct ipu4_virtio_req),
-								GFP_KERNEL);
-
-	mutex_init(&priv->lock);
+	mutex_init(&priv->mlock);
+	spin_lock_init(&priv->slock);
 
 	f->private_data = priv;
 
 	/* init a hash table to maintain multi-connections */
 	ipu_vbk_hash_init();
+
+	ipu4_virtio_be_req_queue_init();
 
 	return 0;
 }
@@ -314,6 +321,8 @@ static int ipu_vbk_release(struct inode *inode, struct file *f)
 	}
 
 	kfree(priv);
+
+	ipu4_virtio_be_req_queue_free();
 
 	pr_debug("%s done\n", __func__);
 	return 0;
@@ -381,63 +390,36 @@ static long ipu_vbk_ioctl(struct file *f, unsigned int ioctl,
 	}
 }
 
-int notify_fe(void)
+int notify_fe(int status, struct ipu4_virtio_req_info *req_info)
 {
-	if (vq_req.vq) {
-		pr_debug("%s: notifying fe", __func__);
-		vq_req.req->func_ret = 1;
-		virtio_vq_relchain(vq_req.vq, vq_req.idx, vq_req.len);
-		virtio_vq_endchains(vq_req.vq, 1);
-		vq_req.vq = NULL;
-	} else
-		pr_debug("%s: NULL vq!", __func__);
+	struct virtio_vq_info *vq;
+	struct ipu4_virtio_be_priv *be;
+	unsigned long flags = 0;
 
-	return 0;
-}
+	pr_debug("%s: notifying fe %d vq idx: %d cmd: %d",
+		__func__, req_info->request->op[0],
+		req_info->vq_info.vq_idx,
+		req_info->request->cmd);
 
-int ipu_virtio_vqs_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map,
-				int *vqs_index, int max_vqs_index)
-{
-	int idx = 0;
-	struct vhm_request *req;
-	int vcpu;
-
-	if (dev == NULL) {
-		pr_err("%s: dev is NULL!\n", __func__);
+	be = ipu_vbk_hash_find(req_info->client_id);
+	if (be == NULL) {
+		pr_err("%s: client %d not found!\n",
+				__func__, req_info->client_id);
 		return -EINVAL;
 	}
 
-	while (idx < max_vqs_index) {
-		vcpu = find_first_bit(ioreqs_map, dev->_ctx.max_vcpu);
-		if (vcpu == dev->_ctx.max_vcpu)
-			break;
-		req = &dev->_ctx.req_buf[vcpu];
-		if (atomic_read(&req->processed) == REQ_STATE_PROCESSING &&
-		    req->client == dev->_ctx.vhm_client_id) {
-			if (req->reqs.pio_request.direction == REQUEST_READ) {
-				/* currently we handle kick only,
-				 * so read will return 0
-				 */
-				pr_debug("%s: read request!\n", __func__);
-				if (dev->io_range_type == PIO_RANGE)
-					req->reqs.pio_request.value = 0;
-				else
-					req->reqs.mmio_request.value = 0;
-			} else {
-				pr_debug("%s: write request! type %d\n",
-						__func__, req->type);
-				if (dev->io_range_type == PIO_RANGE)
-					vqs_index[idx++] = req->reqs.pio_request.value;
-				else
-					vqs_index[idx++] = req->reqs.mmio_request.value;
-			}
-			smp_mb();
-			atomic_set(&req->processed, REQ_STATE_COMPLETE);
-			acrn_ioreq_complete_request(req->client, vcpu);
-		}
-	}
+	vq = &(be->vqs[req_info->vq_info.vq_idx]);
 
-	return idx;
+	req_info->request->stat = status;
+
+	spin_lock_irqsave(&be->slock, flags);
+	virtio_vq_relchain(vq, req_info->vq_info.vq_buf_idx,
+				req_info->vq_info.req_len);
+	virtio_vq_endchains(vq, 1);
+	ipu4_virtio_be_req_queue_put(req_info);
+	spin_unlock_irqrestore(&be->slock, flags);
+
+	return 0;
 }
 
 /* device specific function to cleanup itself */
