@@ -6,20 +6,19 @@
 #ifndef __IPU4_VIRTIO_COMMON_H__
 #define __IPU4_VIRTIO_COMMON_H__
 
-
 /*
  * CWP uses physicall addresses for memory sharing,
  * so size of one page ref will be 64-bits
  */
 
 #define REFS_PER_PAGE (PAGE_SIZE/sizeof(u64))
-
 /* Defines size of requests circular buffer */
 #define REQ_RING_SIZE 128
-
 #define MAX_NUMBER_OF_OPERANDS 64
-
 #define MAX_ENTRY_FE 7
+#define MAX_STREAM_DEVICES 64
+#define MAX_PIPELINE_DEVICES 1
+#define MAX_ISYS_VIRT_STREAM 34
 
 enum virio_queue_type {
       IPU_VIRTIO_QUEUE_0 = 0,
@@ -33,6 +32,8 @@ struct ipu4_virtio_req {
 	unsigned int cmd;
 	unsigned int func_ret;
 	unsigned int op[MAX_NUMBER_OF_OPERANDS];
+	struct completion wait;
+	struct list_head node;
 	u64 payload;
 };
 struct test_payload {
@@ -114,10 +115,44 @@ enum intel_ipu4_virtio_command {
 
 enum intel_ipu4_virtio_req_feedback {
 	IPU4_REQ_PROCESSED,
-	IPU4_REQ_NEEDS_FOLLOW_UP,
+	IPU4_REQ_PENDING,
 	IPU4_REQ_ERROR,
 	IPU4_REQ_NOT_RESPONDED
 };
+
+struct ipu4_virtio_ring {
+	/* Buffer allocated for keeping ring entries */
+	u64 *buffer;
+
+	/* Index pointing to next free element in ring */
+	int head;
+
+	/* Index pointing to last released element in ring */
+	int tail;
+
+	/* Total number of elements that ring can contain */
+	int ring_size;
+
+	/* Number of location in ring has been used */
+	unsigned int used;
+
+	/* Multi thread sync */
+	spinlock_t lock;
+};
+
+/* Create the ring buffer with given size */
+int ipu4_virtio_ring_init(struct ipu4_virtio_ring *ring,
+			  int ring_size);
+
+/* Frees the ring buffers */
+void ipu4_virtio_ring_free(struct ipu4_virtio_ring *ring);
+
+/* Add a buffer to ring */
+int ipu4_virtio_ring_push(struct ipu4_virtio_ring *ring, void *data);
+
+/* Grab a buffer from ring */
+void *ipu4_virtio_ring_pop(struct ipu4_virtio_ring *ring);
+
 extern struct ipu4_bknd_ops ipu4_virtio_bknd_ops;
 
 void ipu4_virtio_fe_table_init(void);

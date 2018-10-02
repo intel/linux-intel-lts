@@ -14,176 +14,321 @@
 #include "intel-ipu4-virtio-be-pipeline.h"
 #include "./ici/ici-isys-pipeline.h"
 #include "./ici/ici-isys-pipeline-device.h"
+#include "intel-ipu4-virtio-be.h"
+#include "intel-ipu4-virtio-be-request-queue.h"
 
 static struct file *pipeline;
 static int guestID = -1;
 
-int process_pipeline_open(int domid, struct ipu4_virtio_req *req)
+int process_pipeline_open(struct ipu4_virtio_req_info *req_info)
 {
+	int domid = req_info->domid;
 	if (guestID != -1 && guestID != domid) {
 		pr_err("%s: pipeline device already opened by other guest! %d %d", __func__, guestID, domid);
-		return -1;
+		return IPU4_REQ_ERROR;
 	}
 
 	pr_info("process_device_open: /dev/intel_pipeline");
 	pipeline = filp_open("/dev/intel_pipeline", O_RDWR | O_NONBLOCK, 0);
 	guestID = domid;
 
-	return 0;
+	return IPU4_REQ_PROCESSED;
 }
 
-int process_pipeline_close(int domid, struct ipu4_virtio_req *req)
+int process_pipeline_close(struct ipu4_virtio_req_info *req_info)
 {
+	struct ipu4_virtio_req *req = req_info->request;
+
 	pr_info("%s: %d", __func__, req->op[0]);
 
 	filp_close(pipeline, 0);
 	guestID = -1;
 
-	return 0;
+	return IPU4_REQ_PROCESSED;
 }
 
-int process_enum_nodes(int domid, struct ipu4_virtio_req *req)
+int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
 	struct ici_node_desc *host_virt;
+	struct ipu4_virtio_req *req = req_info->request;
+	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
 
 	host_virt = (struct ici_node_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (host_virt == NULL) {
 		pr_err("process_enum_nodes: NULL host_virt");
-		return 0;
+		return IPU4_REQ_ERROR;
 	}
 
 	err = dev->pipeline_ioctl_ops->pipeline_enum_nodes(pipeline, dev, host_virt);
 
-	return err;
+	if (err)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
-int process_enum_links(int domid, struct ipu4_virtio_req *req)
+int process_enum_links(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
 	struct ici_links_query *host_virt;
+	struct ipu4_virtio_req *req = req_info->request;
+	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
 
 	host_virt = (struct ici_links_query *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
-		return 0;
+		return IPU4_REQ_ERROR;
 	}
 	err = dev->pipeline_ioctl_ops->pipeline_enum_links(pipeline, dev, host_virt);
 
-	return err;
+	if (err)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
-int process_get_supported_framefmt(int domid, struct ipu4_virtio_req *req)
+int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
 	struct ici_pad_supported_format_desc *host_virt;
+	struct ipu4_virtio_req *req = req_info->request;
+	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
 
 	host_virt = (struct ici_pad_supported_format_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
-		return 0;
+		return IPU4_REQ_ERROR;
 	}
 	err = dev->pipeline_ioctl_ops->pad_get_supported_format(pipeline, dev, host_virt);
 
-	return err;
+	if (err)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
-int process_set_framefmt(int domid, struct ipu4_virtio_req *req)
+int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
 	struct ici_pad_framefmt *host_virt;
+	struct ipu4_virtio_req *req = req_info->request;
+	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
 
 	host_virt = (struct ici_pad_framefmt *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
-		return 0;
+		return IPU4_REQ_ERROR;
 	}
 	err = dev->pipeline_ioctl_ops->pad_set_ffmt(pipeline, dev, host_virt);
 
-	return err;
+	if (err)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
-int process_get_framefmt(int domid, struct ipu4_virtio_req *req)
+int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
 	struct ici_pad_framefmt *host_virt;
+	struct ipu4_virtio_req *req = req_info->request;
+	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
 
 	host_virt = (struct ici_pad_framefmt *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
-		return 0;
+		return IPU4_REQ_ERROR;
 	}
 	err = dev->pipeline_ioctl_ops->pad_get_ffmt(pipeline, dev, host_virt);
 
-	return err;
+	if (err)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
-int process_setup_pipe(int domid, struct ipu4_virtio_req *req)
+int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
 	struct ici_link_desc *host_virt;
+	struct ipu4_virtio_req *req = req_info->request;
+	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
 
 	host_virt = (struct ici_link_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
-		return 0;
+		return IPU4_REQ_ERROR;
 	}
 	err = dev->pipeline_ioctl_ops->pipeline_setup_pipe(pipeline, dev, host_virt);
 
-	return err;
+	if (err)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
-int process_pad_set_sel(int domid, struct ipu4_virtio_req *req)
+int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
 	struct ici_pad_selection *host_virt;
+	struct ipu4_virtio_req *req = req_info->request;
+	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
 
 	host_virt = (struct ici_pad_selection *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
-		return 0;
+		return IPU4_REQ_ERROR;
 	}
 	err = dev->pipeline_ioctl_ops->pad_set_sel(pipeline, dev, host_virt);
 
-	return err;
+	if (err)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
-int process_pad_get_sel(int domid, struct ipu4_virtio_req *req)
+int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
 	struct ici_pad_selection *host_virt;
+	struct ipu4_virtio_req *req = req_info->request;
+	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
 
 	host_virt = (struct ici_pad_selection *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
-		return 0;
+		return IPU4_REQ_ERROR;
 	}
 	err = dev->pipeline_ioctl_ops->pad_get_sel(pipeline, dev, host_virt);
 
-	return err;
+	if (err)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
+}
+
+int process_pipeline_open_thread(void *data)
+{
+	int status;
+
+	status = process_pipeline_open(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_pipeline_close_thread(void *data)
+{
+	int status;
+
+	status = process_pipeline_close(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_enum_nodes_thread(void *data)
+{
+	int status;
+
+	status = process_enum_nodes(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_enum_links_thread(void *data)
+{
+	int status;
+
+	status = process_enum_links(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_get_supported_framefmt_thread(void *data)
+{
+	int status;
+
+	status = process_get_supported_framefmt(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_set_framefmt_thread(void *data)
+{
+	int status;
+
+	status = process_set_framefmt(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_get_framefmt_thread(void *data)
+{
+	int status;
+
+	status = process_get_framefmt(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_pad_set_sel_thread(void *data)
+{
+	int status;
+
+	status = process_pad_set_sel(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_pad_get_sel_thread(void *data)
+{
+	int status;
+
+	status = process_pad_get_sel(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
+}
+
+int process_setup_pipe_thread(void *data)
+{
+	int status;
+
+	status = process_setup_pipe(data);
+	notify_fe(status, data);
+	do_exit(0);
+	return 0;
 }
 
 /*
