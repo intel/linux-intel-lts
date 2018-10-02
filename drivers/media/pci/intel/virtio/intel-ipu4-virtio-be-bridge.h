@@ -12,13 +12,12 @@
 #include <linux/vhm/acrn_vhm_mm.h>
 
 #include "intel-ipu4-virtio-common.h"
+#include "intel-ipu4-virtio-be-request-queue.h"
 
-int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req);
+int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info);
 
 void intel_ipu4_virtio_create_req(struct ipu4_virtio_req *req,
 			     enum intel_ipu4_virtio_command cmd, int *op);
-
-int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req);
 
 
 #endif

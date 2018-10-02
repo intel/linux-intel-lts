@@ -18,10 +18,6 @@
 #include "./ici/ici-isys-frame-buf.h"
 #include "intel-ipu4-virtio-common.h"
 
-#define MAX_STREAM_DEVICES 64
-#define MAX_PIPELINE_DEVICES 1
-#define MAX_ISYS_VIRT_STREAM 34
-
 struct virtual_stream {
 	struct mutex mutex;
 	struct ici_stream_device strm_dev;
