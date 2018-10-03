@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Intel SoC drivers
+#
+
+menu "Intel SoC drivers"
+
+config KEEMBAY_IPC
+	tristate "Support for Intel Keem Bay IPC"
+	depends on ARM64 && OF || COMPILE_TEST
+	help
+	  Keem Bay IPC enables communication between the Keem Bay CPU
+	  Sub-System (CSS) and the Keem Bay Media Sub-System (MSS).
+
+	  Select this if you are compiling the Kernel for the Intel Movidius
+	  SoC code named Keem Bay.
+
+endmenu
