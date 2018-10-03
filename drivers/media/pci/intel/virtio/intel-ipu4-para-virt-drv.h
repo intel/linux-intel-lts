@@ -17,7 +17,7 @@
 #include "./ici/ici-isys-stream-device.h"
 #include "./ici/ici-isys-frame-buf.h"
 #include "intel-ipu4-virtio-common.h"
-
+#include "intel-ipu4-para-virt-psys.h"
 struct virtual_stream {
 	struct mutex mutex;
 	struct ici_stream_device strm_dev;

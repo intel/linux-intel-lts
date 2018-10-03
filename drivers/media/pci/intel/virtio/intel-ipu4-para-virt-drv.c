@@ -1255,7 +1255,7 @@ static int virt_ici_pipeline_init(void)
 	return 0;
 }
 
-static int __init virt_ici_init(void)
+static int virt_ici_init(void)
 {
 	struct virtual_stream *vstream;
 	int rval = 0, i;
@@ -1310,16 +1310,32 @@ static void virt_ici_pipeline_exit(void)
 
 	pr_notice("virt_ici pipeline device unregistered\n");
 }
-
-static void __exit virt_ici_exit(void)
+static void virt_ici_exit(void)
 {
-	virt_ici_stream_exit();
-	virt_ici_pipeline_exit();
-	ipu4_virtio_fe_req_queue_free();
+    virt_ici_stream_exit();
+    virt_ici_pipeline_exit();
+}
+static int __init virt_ipu_init(void)
+{
+    int rval = 0;
+    rval = virt_ici_init();
+    if(rval)
+        pr_warn("ipu virt: ISYS init failed\n");
+
+    rval = virt_psys_init();
+    if(rval)
+        pr_warn("ipu virt: PSYS init failed\n");
+
+    return rval;
+}
+static void __exit virt_ipu_exit(void)
+{
+    virt_ici_exit();
+    virt_psys_exit();
 }
 
-module_init(virt_ici_init);
-module_exit(virt_ici_exit);
+module_init(virt_ipu_init);
+module_exit(virt_ipu_exit);
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("Intel IPU Para virtualize ici input system driver");
