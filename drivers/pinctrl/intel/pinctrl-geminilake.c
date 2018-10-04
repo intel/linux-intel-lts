@@ -114,6 +114,37 @@ static const struct pinctrl_pin_desc glk_northwest_pins[] = {
 	PINCTRL_PIN(77, "GPIO_212"),
 	PINCTRL_PIN(78, "GPIO_213"),
 	PINCTRL_PIN(79, "GPIO_214"),
+	PINCTRL_PIN(80, "vCNV_BTEN"),
+	PINCTRL_PIN(81, "vCNV_GNEN"),
+	PINCTRL_PIN(82, "vCNV_WFEN"),
+	PINCTRL_PIN(83, "vCNV_WCEN"),
+	PINCTRL_PIN(84, "vCNV_BT_HOST_WAKEB"),
+	PINCTRL_PIN(85, "vCNV_BT_IF_SELECT"),
+	PINCTRL_PIN(86, "vCNV_BT_UART_TXD"),
+	PINCTRL_PIN(87, "vCNV_BT_UART_RXD"),
+	PINCTRL_PIN(88, "vCNV_BT_UART_CTS_B"),
+	PINCTRL_PIN(89, "vCNV_BT_UART_RTS_B"),
+	PINCTRL_PIN(90, "vCNV_MFUART1_TXD"),
+	PINCTRL_PIN(91, "vCNV_MFUART1_RXD"),
+	PINCTRL_PIN(92, "vCNV_MFUART1_CTS_B"),
+	PINCTRL_PIN(93, "vCNV_MFUART1_RTS_B"),
+	PINCTRL_PIN(94, "vCNV_GNSS_UART_TXD"),
+	PINCTRL_PIN(95, "vCNV_GNSS_UART_RXD"),
+	PINCTRL_PIN(96, "vCNV_GNSS_UART_CTS_B"),
+	PINCTRL_PIN(97, "vCNV_GNSS_UART_RTS_B"),
+	PINCTRL_PIN(98, "vLPSS_UART0_TXD"),
+	PINCTRL_PIN(99, "vLPSS_UART0_RXD"),
+	PINCTRL_PIN(100, "vLPSS_UART0_CTS_B"),
+	PINCTRL_PIN(101, "vLPSS_UART0_RTS_B"),
+	PINCTRL_PIN(102, "vLPSS_UART1_TXD"),
+	PINCTRL_PIN(103, "vLPSS_UART1_RXD"),
+	PINCTRL_PIN(104, "vLPSS_UART1_CTS_B"),
+	PINCTRL_PIN(105, "vLPSS_UART1_RTS_B"),
+	PINCTRL_PIN(106, "vLPSS_UART2_TXD"),
+	PINCTRL_PIN(107, "vLPSS_UART2_RXD"),
+	PINCTRL_PIN(108, "vLPSS_UART2_CTS_B"),
+	PINCTRL_PIN(109, "vLPSS_UART2_RTS_B"),
+	PINCTRL_PIN(110, "vCNV_GNSS_HOST_WAKEB"),
 };
 
 static const unsigned int glk_northwest_uart1_pins[] = { 26, 27, 28, 29 };
@@ -173,7 +204,7 @@ static const struct intel_function glk_northwest_functions[] = {
 };
 
 static const struct intel_community glk_northwest_communities[] = {
-	GLK_COMMUNITY(0, 79),
+	GLK_COMMUNITY(0, 110),
 };
 
 static const struct intel_pinctrl_soc_data glk_northwest_soc_data = {
@@ -342,10 +373,18 @@ static const struct pinctrl_pin_desc glk_audio_pins[] = {
 	PINCTRL_PIN(17, "AVS_M_DATA_1"),
 	PINCTRL_PIN(18, "AVS_M_CLK_AB2"),
 	PINCTRL_PIN(19, "AVS_M_DATA_2"),
+	PINCTRL_PIN(20, "vCNV_BT_I2S_BCLK"),
+	PINCTRL_PIN(21, "vCNV_BT_I2S_WS_SYNC"),
+	PINCTRL_PIN(22, "vCNV_BT_I2S_SDO"),
+	PINCTRL_PIN(23, "vCNV_BT_I2S_SDI"),
+	PINCTRL_PIN(24, "vAVS_I2S0_BCLK"),
+	PINCTRL_PIN(25, "vAVS_I2S0_WS_SYNC"),
+	PINCTRL_PIN(26, "vAVS_I2S0_SDO"),
+	PINCTRL_PIN(27, "vAVS_I2S0_SDI"),
 };
 
 static const struct intel_community glk_audio_communities[] = {
-	GLK_COMMUNITY(0, 19),
+	GLK_COMMUNITY(0, 27),
 };
 
 static const struct intel_pinctrl_soc_data glk_audio_soc_data = {
