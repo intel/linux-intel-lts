@@ -1178,6 +1178,29 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
 
 /* BE cpu dais and compress dais*/
 static struct snd_soc_dai_driver skl_platform_dai[] = {
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_TDF8532_MACH) || \
+	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
+{
+	.name = "SSP5 Pin",
+	.ops = &skl_be_ssp_dai_ops,
+	.playback = {
+		.stream_name = "ssp5 Tx",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
+	},
+	.capture = {
+		.stream_name = "ssp5 Rx",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32_LE,
+	},
+},
+#endif
 {
 	.name = "iDisp1 Pin",
 	.ops = &skl_link_dai_ops,
