@@ -15,7 +15,7 @@ struct virt_ipu_psys {
       struct cdev cdev;
       struct device dev;
       struct mutex mutex;
-
+      struct ipu4_virtio_ctx *ctx;
 };
 
 struct virt_ipu_psys_fh {
@@ -30,9 +30,12 @@ struct virt_ipu_psys_fh {
 	struct mutex bs_mutex;	/* Protects buf_set field */
 	struct list_head buf_sets;
 };
-int virt_psys_init(void);
+int virt_psys_init(struct ipu4_virtio_ctx *fe_ctx);
 void virt_psys_exit(void);
 #define dev_to_vpsys(dev) \
 	container_of(dev, struct virt_ipu_psys, dev)
+
+#define inode_to_ipu_psys(inode) \
+	container_of((inode)->i_cdev, struct virt_ipu_psys, cdev)
 
 #endif /* INTEL_IPU4_PARA_VIRT_PSYS_H_ */

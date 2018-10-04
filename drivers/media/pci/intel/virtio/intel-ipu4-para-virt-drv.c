@@ -883,12 +883,11 @@ int virt_frame_buf_init(struct ici_isys_frame_buf_list *buf_list)
 	return 0;
 }
 
-static int virt_ici_stream_init(struct virtual_stream *vstream,
+static int virt_ici_stream_init(struct ipu4_virtio_ctx *fe_ctx,struct virtual_stream *vstream,
 				struct ici_stream_device *strm_dev)
 {
 	int rval;
 	int num;
-	struct ipu4_virtio_ctx *fe_ctx;
 
 	if (!stream_dev_init) {
 		virt_stream_dev_t = MKDEV(MAJOR_STREAM, 0);
@@ -937,6 +936,7 @@ static int virt_ici_stream_init(struct virtual_stream *vstream,
 
 	virt_stream_devs_registered++;
 
+#if 0
 	fe_ctx = kcalloc(1, sizeof(struct ipu4_virtio_ctx),
 					      GFP_KERNEL);
 
@@ -954,6 +954,9 @@ static int virt_ici_stream_init(struct virtual_stream *vstream,
 	}
 
 	fe_ctx->domid = fe_ctx->bknd_ops->get_vm_id();
+#endif
+	if (!fe_ctx)
+		return -ENOMEM;
 	vstream->ctx = fe_ctx;
 	dev_dbg(&strm_dev->dev, "IPU FE registered with domid:%d\n", fe_ctx->domid);
 
@@ -1255,7 +1258,7 @@ static int virt_ici_pipeline_init(void)
 	return 0;
 }
 
-static int virt_ici_init(void)
+static int virt_ici_init(struct ipu4_virtio_ctx *fe_ctx)
 {
 	struct virtual_stream *vstream;
 	int rval = 0, i;
@@ -1275,22 +1278,17 @@ static int virt_ici_init(void)
 		dev_set_drvdata(&vstream->strm_dev.dev, vstream);
 
 		mutex_lock(&vstream->mutex);
-		rval = virt_ici_stream_init(vstream, &vstream->strm_dev);
+		rval = virt_ici_stream_init(fe_ctx,vstream, &vstream->strm_dev);
 		mutex_unlock(&vstream->mutex);
 
 		if (rval)
 			goto init_fail;
 	}
 
-	rval = ipu4_virtio_fe_req_queue_init();
-	if (rval)
-		goto init_fail;
-
 	rval = virt_ici_pipeline_init();
 	if (rval)
 		goto init_fail;
 
-	rval = virt_fe_init();
 	return rval;
 
 init_fail:
@@ -1298,7 +1296,22 @@ init_fail:
 	kfree(vstream);
 	return rval;
 }
+static int virt_fe_probe(void)
+{
+	int rval = 0;
+	rval = ipu4_virtio_fe_req_queue_init();
+	if (rval) {
+	    pr_err("FE Ring queue initialization failed\n");
+	    return rval;
+	}
+	rval = virt_fe_init();
+	if (rval) {
+	    pr_err("FE initialization failed\n");
+	    return rval;
+	}
 
+	return rval;
+}
 static void virt_ici_pipeline_exit(void)
 {
 	class_unregister(virt_pipeline_class);
@@ -1318,11 +1331,16 @@ static void virt_ici_exit(void)
 static int __init virt_ipu_init(void)
 {
     int rval = 0;
-    rval = virt_ici_init();
+
+    rval = virt_fe_probe();
+    if(rval)
+      return rval;
+
+    rval = virt_ici_init(g_fe_priv);
     if(rval)
         pr_warn("ipu virt: ISYS init failed\n");
 
-    rval = virt_psys_init();
+    rval = virt_psys_init(g_fe_priv);
     if(rval)
         pr_warn("ipu virt: PSYS init failed\n");
 
