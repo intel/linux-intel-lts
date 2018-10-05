@@ -4897,13 +4897,63 @@ exit:
 	trans_wm->plane_en = false;
 }
 
+static int skl_build_plane_wm(struct intel_crtc_state *cstate,
+		struct skl_ddb_allocation *ddb,
+		struct skl_pipe_wm *pipe_wm,
+		int pipe,
+		enum plane_id plane_id,
+		struct intel_plane_state *intel_pstate)
+{
+	struct drm_device *dev = cstate->base.crtc->dev;
+	const struct drm_i915_private *dev_priv = to_i915(dev);
+	struct skl_plane_wm *wm;
+	struct skl_wm_params wm_params;
+	uint16_t ddb_blocks;
+	int ret;
+
+	wm = &pipe_wm->planes[plane_id];
+	ddb_blocks = skl_ddb_entry_size(&ddb->plane[pipe][plane_id]);
+
+	ret = skl_compute_plane_wm_params(dev_priv, cstate,
+			intel_pstate, &wm_params, 0);
+	if (ret)
+		return ret;
+
+	ret = skl_compute_wm_levels(dev_priv, ddb, cstate,
+			intel_pstate, &wm_params, wm, 0, plane_id);
+	if (ret)
+		return ret;
+
+	skl_compute_transition_wm(cstate, &wm_params, &wm->wm[0],
+			ddb_blocks, &wm->trans_wm);
+
+	/* uv plane watermarks must also be validated for NV12/Planar */
+	if (wm_params.is_planar) {
+		memset(&wm_params, 0, sizeof(struct skl_wm_params));
+		wm->is_planar = true;
+
+		ret = skl_compute_plane_wm_params(dev_priv, cstate,
+				intel_pstate,
+				&wm_params, 1);
+		if (ret)
+			return ret;
+
+		ret = skl_compute_wm_levels(dev_priv, ddb, cstate,
+				intel_pstate, &wm_params,
+				wm, 1, plane_id);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 static int skl_build_pipe_all_plane_wm(struct intel_crtc_state *cstate,
 			     struct skl_ddb_allocation *ddb,
 			     struct skl_pipe_wm *pipe_wm)
 {
 	struct drm_device *dev = cstate->base.crtc->dev;
 	const struct drm_i915_private *dev_priv = to_i915(dev);
-	struct skl_plane_wm *wm;
 	struct intel_crtc *crtc = to_intel_crtc(cstate->base.crtc);
 	struct drm_crtc_state *crtc_state = &cstate->base;
 	struct drm_plane *plane;
@@ -4924,8 +4974,6 @@ static int skl_build_pipe_all_plane_wm(struct intel_crtc_state *cstate,
 	 * also assume cpp = 4 and tiling = x_tiled.
 	 */
 	for_each_universal_plane(dev_priv, pipe, plane_id) {
-		struct skl_wm_params wm_params;
-		uint16_t ddb_blocks;
 		intel_pstate = NULL;
 
 		drm_atomic_crtc_state_for_each_plane_state(plane, pstate, crtc_state) {
@@ -4935,20 +4983,10 @@ static int skl_build_pipe_all_plane_wm(struct intel_crtc_state *cstate,
 			}
 		}
 
-		wm = &pipe_wm->planes[plane_id];
-		ddb_blocks = skl_ddb_entry_size(&ddb->plane[pipe][plane_id]);
-		ret = skl_compute_plane_wm_params(dev_priv, cstate,
-						  intel_pstate, &wm_params, 0);
+		ret = skl_build_plane_wm(cstate, ddb, pipe_wm,
+				pipe, plane_id, (struct intel_plane_state *) intel_pstate);
 		if (ret)
 			return ret;
-
-		ret = skl_compute_wm_levels(dev_priv, ddb, cstate,
-					    intel_pstate, &wm_params, wm, 0, plane_id);
-		if (ret)
-			return ret;
-
-		skl_compute_transition_wm(cstate, &wm_params, &wm->wm[0],
-				ddb_blocks, &wm->trans_wm);
 	}
 	pipe_wm->linetime = skl_compute_linetime_wm(cstate);
 
@@ -4959,12 +4997,9 @@ static int skl_build_pipe_wm(struct intel_crtc_state *cstate,
 			     struct skl_ddb_allocation *ddb,
 			     struct skl_pipe_wm *pipe_wm)
 {
-	struct drm_device *dev = cstate->base.crtc->dev;
 	struct drm_crtc_state *crtc_state = &cstate->base;
-	const struct drm_i915_private *dev_priv = to_i915(dev);
 	struct drm_plane *plane;
 	const struct drm_plane_state *pstate;
-	struct skl_plane_wm *wm;
 	int ret;
 
 	/*
@@ -4977,43 +5012,12 @@ static int skl_build_pipe_wm(struct intel_crtc_state *cstate,
 		const struct intel_plane_state *intel_pstate =
 						to_intel_plane_state(pstate);
 		enum plane_id plane_id = to_intel_plane(plane)->id;
-		struct skl_wm_params wm_params;
 		enum pipe pipe = to_intel_crtc(cstate->base.crtc)->pipe;
-		uint16_t ddb_blocks;
 
-		wm = &pipe_wm->planes[plane_id];
-		ddb_blocks = skl_ddb_entry_size(&ddb->plane[pipe][plane_id]);
-
-		ret = skl_compute_plane_wm_params(dev_priv, cstate,
-						  intel_pstate, &wm_params, 0);
+		ret = skl_build_plane_wm(cstate, ddb, pipe_wm,
+				pipe, plane_id, (struct intel_plane_state *) intel_pstate);
 		if (ret)
 			return ret;
-
-		ret = skl_compute_wm_levels(dev_priv, ddb, cstate,
-					    intel_pstate, &wm_params, wm, 0, plane_id);
-		if (ret)
-			return ret;
-
-		skl_compute_transition_wm(cstate, &wm_params, &wm->wm[0],
-					  ddb_blocks, &wm->trans_wm);
-
-		/* uv plane watermarks must also be validated for NV12/Planar */
-		if (wm_params.is_planar) {
-			memset(&wm_params, 0, sizeof(struct skl_wm_params));
-			wm->is_planar = true;
-
-			ret = skl_compute_plane_wm_params(dev_priv, cstate,
-							  intel_pstate,
-							  &wm_params, 1);
-			if (ret)
-				return ret;
-
-			ret = skl_compute_wm_levels(dev_priv, ddb, cstate,
-						    intel_pstate, &wm_params,
-						    wm, 1, plane_id);
-			if (ret)
-				return ret;
-		}
 	}
 
 	pipe_wm->linetime = skl_compute_linetime_wm(cstate);
