@@ -20,7 +20,15 @@ int process_psys_mapbuf(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
 {
-	return IPU4_REQ_ERROR;
+	struct ipu_psys_fh *fh = psys_file->private_data;
+	int status = 0;
+
+	status = fh->vfops->unmap_buf(fh, req_info);
+
+	if (status)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
@@ -65,7 +73,15 @@ int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
 {
-	return IPU4_REQ_ERROR;
+	struct ipu_psys_fh *fh = psys_file->private_data;
+	int status = 0;
+
+	status = fh->vfops->get_buf(fh, req_info);
+
+	if (status)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_psys_get_manifest(struct ipu4_virtio_req_info *req_info)
@@ -73,18 +89,7 @@ int process_psys_get_manifest(struct ipu4_virtio_req_info *req_info)
 	struct ipu_psys_fh *fh = psys_file->private_data;
 	int status = 0;
 
-	struct ipu_psys_manifest_virt *manifest;
-	manifest = (struct ipu_psys_manifest_virt *)map_guest_phys(
-										req_info->domid,
-										req_info->request->payload,
-										PAGE_SIZE
-										);
-	if (manifest == NULL) {
-		pr_err("%s: failed to get payload", __func__);
-		return -EFAULT;
-	}
-
-	status = fh->vfops->get_manifest(fh->psys, req_info);
+	status = fh->vfops->get_manifest(fh, req_info);
 
 	if (status)
 		return IPU4_REQ_ERROR;
