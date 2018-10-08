@@ -49,16 +49,15 @@ int ipu_get_manifest(struct ipu_psys_manifest *m,
 	struct virt_ipu_psys *psys = fh->psys;
 	struct ipu4_virtio_req *req;
 	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
-	struct ipu_psys_manifest_virt *manifest;
+	struct ipu_psys_manifest_wrap *manifest;
 	int rval = 0;
 
 	pr_debug("%s: processing start", __func__);
 
-	manifest = kzalloc(sizeof(struct ipu_psys_manifest_virt),
+	manifest = kzalloc(sizeof(struct ipu_psys_manifest_wrap),
 								GFP_KERNEL);
 
-	manifest->index = m->index;
-	manifest->size = m->size;
+	manifest->psys_manifest = virt_to_phys(m);
 
 	req = ipu4_virtio_fe_req_queue_get();
 	if (!req)
@@ -75,12 +74,9 @@ int ipu_get_manifest(struct ipu_psys_manifest *m,
 		goto error_exit;
 	}
 
-	m->index = manifest->index;
-	m->size = manifest->size;
-
 	if (m->manifest != NULL && copy_to_user(m->manifest,
 			manifest->manifest,
-			manifest->size)) {
+			m->size)) {
 		pr_err("%s: Failed copy_to_user", __func__);
 		rval = -EFAULT;
 		goto error_exit;
@@ -113,8 +109,6 @@ int ipu_query_caps(struct ipu_psys_capability *caps,
 
 	req->payload = virt_to_phys(caps);
 
-	pr_err("%s: %llu", __func__, req->payload);
-
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_QUERYCAP, NULL);
 
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
@@ -124,6 +118,192 @@ int ipu_query_caps(struct ipu_psys_capability *caps,
 		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
+
+	ipu4_virtio_fe_req_queue_put(req);
+
+	pr_debug("%s: processing ended %d", __func__, rval);
+
+	return rval;
+}
+
+int psys_get_userpages(struct ipu_psys_buffer *buf,
+				struct ipu_psys_usrptr_map *map)
+{
+	struct vm_area_struct *vma;
+	unsigned long start, end;
+	int npages, array_size;
+	struct page **pages;
+	u64 *page_table;
+	int nr = 0, i;
+	int ret = -ENOMEM;
+
+	start = (unsigned long)buf->base.userptr;
+	end = PAGE_ALIGN(start + buf->len);
+	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
+	array_size = npages * sizeof(struct page *);
+
+	page_table = kcalloc(npages, sizeof(*page_table), GFP_KERNEL);
+	if (!page_table) {
+		pr_err("%s: Shared Page table for mediation failed", __func__);
+		return -ENOMEM;
+	}
+
+	if (array_size <= PAGE_SIZE)
+		pages = kzalloc(array_size, GFP_KERNEL);
+	else
+		pages = vzalloc(array_size);
+	if (!pages) {
+		pr_err("%s: failed to get userpages:%d", __func__, -ENOMEM);
+		kfree(page_table);
+		return -ENOMEM;
+	}
+
+	down_read(&current->mm->mmap_sem);
+	vma = find_vma(current->mm, start);
+	if (!vma) {
+		ret = -EFAULT;
+		goto error_up_read;
+	}
+
+	if (vma->vm_end < start + buf->len) {
+		pr_err("%s: vma at %lu is too small for %llu bytes",
+			__func__, start, buf->len);
+		ret = -EFAULT;
+		goto error_up_read;
+	}
+
+	/*
+	 * For buffers from Gralloc, VM_PFNMAP is expected,
+	 * but VM_IO is set. Possibly bug in Gralloc.
+	 */
+	map->vma_is_io = vma->vm_flags & (VM_IO | VM_PFNMAP);
+
+	if (map->vma_is_io) {
+		unsigned long io_start = start;
+
+		for (nr = 0; nr < npages; nr++, io_start += PAGE_SIZE) {
+			unsigned long pfn;
+
+			ret = follow_pfn(vma, io_start, &pfn);
+			if (ret)
+				goto error_up_read;
+			pages[nr] = pfn_to_page(pfn);
+		}
+	} else {
+		nr = get_user_pages(
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+				   current, current->mm,
+#endif
+				   start & PAGE_MASK, npages,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+				   1, 0,
+#else
+				   FOLL_WRITE,
+#endif
+				   pages, NULL);
+		if (nr < npages)
+			goto error_up_read;
+	}
+
+	for (i = 0; i < npages; i++)
+		page_table[i] = page_to_phys(pages[i]);
+
+	map->page_table_ref = virt_to_phys(page_table);
+
+	up_read(&current->mm->mmap_sem);
+
+	map->npages = npages;
+
+	return 0;
+
+error_up_read:
+	kfree(page_table);
+	up_read(&current->mm->mmap_sem);
+	if (!map->vma_is_io)
+		while (nr > 0)
+			put_page(pages[--nr]);
+
+	kfree(page_table);
+	if (array_size <= PAGE_SIZE)
+		kfree(pages);
+	else
+		vfree(pages);
+
+	return ret;
+}
+
+int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
+				struct virt_ipu_psys_fh *fh)
+{
+	struct virt_ipu_psys *psys = fh->psys;
+	struct ipu4_virtio_req *req;
+	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
+	struct ipu_psys_buffer_wrap *attach;
+	int rval = 0;
+
+	pr_debug("%s: processing start", __func__);
+
+	req = ipu4_virtio_fe_req_queue_get();
+	if (!req)
+		return -ENOMEM;
+
+	attach = kzalloc(sizeof(struct ipu_psys_buffer_wrap),
+								GFP_KERNEL);
+
+	attach->psys_buf = virt_to_phys(buf);
+
+	if (psys_get_userpages(buf, &attach->map)) {
+		goto error_exit;
+	}
+
+	req->payload = virt_to_phys(attach);
+
+	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_GETBUF, NULL);
+
+	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+									IPU_VIRTIO_QUEUE_1);
+	if (rval) {
+		pr_err("%s: Failed to get buf", __func__);
+		goto error_exit;
+	}
+
+error_exit:
+
+	kfree(phys_to_virt(attach->map.page_table_ref));
+	kfree(attach);
+
+	ipu4_virtio_fe_req_queue_put(req);
+
+	pr_debug("%s: processing ended %d", __func__, rval);
+
+	return rval;
+}
+
+int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
+{
+	struct virt_ipu_psys *psys = fh->psys;
+	struct ipu4_virtio_req *req;
+	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
+	int rval = 0, op[1];
+
+	pr_debug("%s: processing start", __func__);
+
+	req = ipu4_virtio_fe_req_queue_get();
+	if (!req)
+		return -ENOMEM;
+
+	op[0] = fd;
+
+	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_UNMAPBUF, &op[0]);
+
+	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+									IPU_VIRTIO_QUEUE_1);
+	if (rval) {
+		pr_err("%s: Failed to unmapbuf", __func__);
+		goto error_exit;
+	}
+
+error_exit:
 
 	ipu4_virtio_fe_req_queue_put(req);
 
@@ -187,11 +367,11 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 	switch (cmd) {
 	case IPU_IOC_MAPBUF:
 		pr_debug("%s: IPU_IOC_MAPBUF", __func__);
-		//err = ipu_psys_mapbuf(arg, fh);
+		// mapbuf combined with getbuf
 		break;
 	case IPU_IOC_UNMAPBUF:
 		pr_debug("%s: IPU_IOC_UNMAPBUF", __func__);
-		//err = ipu_psys_unmapbuf(arg, fh);
+		err = ipu_psys_unmapbuf(arg, fh);
 		break;
 	case IPU_IOC_QUERYCAP:
 		pr_debug("%s: IPU_IOC_QUERYCAP", __func__);
@@ -199,7 +379,7 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case IPU_IOC_GETBUF:
 		pr_debug("%s: IPU_IOC_GETBUF", __func__);
-		//err = ipu_psys_getbuf(&karg.buf, fh);
+		err = ipu_psys_getbuf(&data->buf, fh);
 		break;
 	case IPU_IOC_PUTBUF:
 		pr_debug("%s: IPU_IOC_PUTBUF", __func__);
@@ -234,6 +414,7 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 
 	return 0;
 }
+
 static int virt_psys_open(struct inode *inode, struct file *file)
 {
 	struct virt_ipu_psys *psys = inode_to_ipu_psys(inode);

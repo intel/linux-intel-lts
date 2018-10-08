@@ -49,11 +49,13 @@ void intel_ipu4_virtio_create_req(struct ipu4_virtio_req *req,
 		for (i = 0; i < 3; i++)
 			req->op[i] = op[i];
 		break;
+	case IPU4_CMD_PSYS_UNMAPBUF:
+		req->op[0] = op[0];
+		break;
 	case IPU4_CMD_PSYS_OPEN:
 	case IPU4_CMD_PSYS_CLOSE:
 	case IPU4_CMD_PSYS_POLL:
 	case IPU4_CMD_PSYS_MAPBUF:
-	case IPU4_CMD_PSYS_UNMAPBUF:
 	case IPU4_CMD_PSYS_QUERYCAP:
 	case IPU4_CMD_PSYS_GETBUF:
 	case IPU4_CMD_PSYS_PUTBUF:
