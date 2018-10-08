@@ -5,21 +5,22 @@
 #ifndef IPU_PSYS_VIRT_H
 #define IPU_PSYS_VIRT_H
 
-#include "ipu-psys.h"
 #include "virtio/intel-ipu4-virtio-be-request-queue.h"
 
+struct ipu_psys_fh;
+
 struct psys_fops_virt {
-	int (*get_manifest) (struct ipu_psys *psys,
+	int (*get_manifest)(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info);
-	int (*map_buf) (struct ipu_psys *psys,
+	int (*map_buf)(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info);
-	int (*unmap_buf) (struct ipu_psys *psys,
+	int (*unmap_buf)(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info);
-	int (*qcmd) (struct ipu_psys *psys,
+	int (*qcmd)(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info);
-	int (*dqevent) (struct ipu_psys *psys,
+	int (*dqevent)(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info);
-	int (*get_buf) (struct ipu_psys *psys,
+	int (*get_buf)(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info);
 };
 
