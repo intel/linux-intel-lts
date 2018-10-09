@@ -207,6 +207,13 @@ int intel_wopcm_init(struct intel_wopcm *wopcm)
 	wopcm->guc.base = guc_wopcm_base;
 	wopcm->guc.size = guc_wopcm_size;
 
+	/*
+	 * In deferred fw loading, we defer the intel_guc_init which will
+	 * initialize the guc.ggtt_pin_bias. As it relies on wopcm size,
+	 * set the ggtt_pin_bias after wopcm initialization
+	 */
+	i915->guc.ggtt_pin_bias = i915->wopcm.size - i915->wopcm.guc.base;
+
 	return 0;
 }
 
