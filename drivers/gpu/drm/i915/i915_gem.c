@@ -6165,6 +6165,28 @@ static int __i915_gem_restart_engines(void *data)
 	return 0;
 }
 
+int i915_gem_init_hw_late(struct drm_i915_private *dev_priv)
+{
+	int ret;
+
+	/*
+	 * Place for things that can be delayed until the first context
+	 * is open. For example, fw loading in android.
+	 */
+
+	/* fetch firmware */
+	intel_uc_init_misc(dev_priv);
+
+	/* Load fw. We can't enable contexts until all firmware is loaded */
+	ret = intel_uc_init_hw(dev_priv);
+	if (ret) {
+		DRM_ERROR("Late init: enabling uc failed (%d)\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 int i915_gem_init_hw(struct drm_i915_private *dev_priv)
 {
 	int ret;
@@ -6223,11 +6245,17 @@ int i915_gem_init_hw(struct drm_i915_private *dev_priv)
 		goto out;
 	}
 
-	/* We can't enable contexts until all firmware is loaded */
-	ret = intel_uc_init_hw(dev_priv);
-	if (ret) {
-		DRM_ERROR("Enabling uc failed (%d)\n", ret);
-		goto out;
+	/*
+	 * Don't call i915_gem_init_hw_late() the very first time (during
+	 * driver load); it will get called during first open instead.
+	 * It should only be called on subsequent (re-initialization) passes.
+	 */
+	if (dev_priv->contexts_ready) {
+		ret = i915_gem_init_hw_late(dev_priv);
+		if (ret)
+			goto out;
+	} else {
+		DRM_DEBUG_DRIVER("Deferring late initialization\n");
 	}
 
 	intel_mocs_init_l3cc_table(dev_priv);
@@ -6391,9 +6419,13 @@ int i915_gem_init(struct drm_i915_private *dev_priv)
 	if (ret)
 		return ret;
 
-	ret = intel_uc_init_misc(dev_priv);
-	if (ret)
-		return ret;
+	/*
+	 * ANDROID: fetch fw during drm_open instead
+	 * due to filesystem is not up yet during driver init
+	 * ret = intel_uc_init_misc(dev_priv);
+	 * if (ret)
+	 * 	return ret;
+	 */
 
 	ret = intel_wopcm_init(&dev_priv->wopcm);
 	if (ret)
