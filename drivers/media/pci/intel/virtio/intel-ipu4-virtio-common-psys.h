@@ -22,4 +22,10 @@ struct ipu_psys_buffer_wrap {
 	struct ipu_psys_usrptr_map map;
 };
 
+struct ipu_psys_command_wrap {
+	u64 psys_command;
+	u64 psys_manifest;
+	u64 psys_buffer;
+};
+
 #endif

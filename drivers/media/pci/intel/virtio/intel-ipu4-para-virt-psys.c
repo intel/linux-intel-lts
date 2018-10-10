@@ -135,6 +135,83 @@ int ipu_query_caps(struct ipu_psys_capability *caps,
 	return rval;
 }
 
+int ipu_psys_kcmd_new(struct ipu_psys_command *cmd,
+				struct virt_ipu_psys_fh *fh)
+{
+	struct virt_ipu_psys *psys = fh->psys;
+	struct ipu4_virtio_req *req;
+	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
+	struct ipu_psys_command_wrap *cmd_wrap = NULL;
+	struct ipu_psys_buffer *psys_buffers = NULL;
+	void *pg_manifest = NULL;
+
+	int rval = 0;
+
+	pr_debug("%s: processing start", __func__);
+
+	req = ipu4_virtio_fe_req_queue_get();
+	if (!req)
+		return -ENOMEM;
+
+	cmd_wrap = kzalloc(sizeof(struct ipu_psys_command_wrap),
+								GFP_KERNEL);
+
+	/* Allocate for pg_manifest */
+	pg_manifest = kzalloc(cmd->pg_manifest_size, GFP_KERNEL);
+
+	/* Copy data from user */
+	if (copy_from_user(pg_manifest,
+				cmd->pg_manifest,
+				cmd->pg_manifest_size)) {
+		pr_err("%s, Failed copy_from_user", __func__);
+		rval = -EFAULT;
+		goto error_exit;
+	}
+
+
+	/* Map pg_manifest to physical address */
+	cmd_wrap->psys_manifest = virt_to_phys(pg_manifest);
+
+	/* Map ipu_psys_command to physical address */
+	cmd_wrap->psys_command = virt_to_phys(cmd);
+
+	psys_buffers = kcalloc(cmd->bufcount,
+								sizeof(struct ipu_psys_buffer),
+								GFP_KERNEL);
+
+	if (copy_from_user(psys_buffers, 
+						cmd->buffers,
+						cmd->bufcount * sizeof(struct ipu_psys_buffer))) {
+		pr_err("%s, Failed copy_from_user", __func__);
+		rval = -EFAULT;
+		goto error_exit;
+	}
+
+	/* Map ipu_psys_buffer to physical address */
+	cmd_wrap->psys_buffer = virt_to_phys(psys_buffers);
+
+	req->payload = virt_to_phys(cmd_wrap);
+
+	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_QCMD, NULL);
+
+	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+									IPU_VIRTIO_QUEUE_1);
+
+	if (rval) {
+		pr_err("%s: Failed to queue command", __func__);
+		goto error_exit;
+	}
+
+error_exit:
+	if (pg_manifest) kfree(pg_manifest);
+	if (cmd_wrap) kfree(cmd_wrap);
+	if (psys_buffers) kfree(psys_buffers);
+
+	ipu4_virtio_fe_req_queue_put(req);
+
+	return rval;
+}
+
 int psys_get_userpages(struct ipu_psys_buffer *buf,
 				struct ipu_psys_usrptr_map *map)
 {
@@ -457,7 +534,7 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case IPU_IOC_QCMD:
 		pr_debug("%s: IPU_IOC_QCMD", __func__);
-		//err = ipu_psys_kcmd_new(&karg.cmd, fh);
+		err = ipu_psys_kcmd_new(&data->cmd, fh);
 		break;
 	case IPU_IOC_DQEVENT:
 		pr_debug("%s: IPU_IOC_DQEVENT", __func__);
