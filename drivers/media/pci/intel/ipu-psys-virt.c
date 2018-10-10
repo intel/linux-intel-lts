@@ -149,10 +149,325 @@ int virt_ipu_psys_unmap_buf(struct ipu_psys_fh *fh,
 	return ipu_psys_unmapbuf(fd, fh);
 }
 
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 14, 2)
+static void ipu_psys_watchdog(unsigned long data)
+{
+	struct ipu_psys_kcmd *kcmd = (struct ipu_psys_kcmd *)data;
+#else
+static void ipu_psys_watchdog(struct timer_list *t)
+{
+	struct ipu_psys_kcmd *kcmd = from_timer(kcmd, t, watchdog);
+#endif
+	struct ipu_psys *psys = kcmd->fh->psys;
+
+	queue_work(IPU_PSYS_WORK_QUEUE, &psys->watchdog_work);
+}
+
+static int ipu_psys_config_legacy_pg(struct ipu_psys_kcmd *kcmd)
+{
+	struct ipu_psys *psys = kcmd->fh->psys;
+	unsigned int i;
+	int ret;
+
+	ret = ipu_fw_psys_pg_set_ipu_vaddress(kcmd, kcmd->kpg->pg_dma_addr);
+	if (ret) {
+		ret = -EIO;
+		goto error;
+	}
+
+	for (i = 0; i < kcmd->nbuffers; i++) {
+		struct ipu_fw_psys_terminal *terminal;
+		u32 buffer;
+
+		terminal = ipu_fw_psys_pg_get_terminal(kcmd, i);
+		if (!terminal)
+			continue;
+
+		buffer = (u32) kcmd->kbufs[i]->dma_addr +
+		    kcmd->buffers[i].data_offset;
+
+		ret = ipu_fw_psys_terminal_set(terminal, i, kcmd,
+					       buffer, kcmd->kbufs[i]->len);
+		if (ret == -EAGAIN)
+			continue;
+
+		if (ret) {
+			dev_err(&psys->adev->dev, "Unable to set terminal\n");
+			goto error;
+		}
+	}
+
+	ipu_fw_psys_pg_set_token(kcmd, (uintptr_t) kcmd);
+
+	ret = ipu_fw_psys_pg_submit(kcmd);
+	if (ret) {
+		dev_err(&psys->adev->dev, "failed to submit kcmd!\n");
+		goto error;
+	}
+
+	return 0;
+
+error:
+	dev_err(&psys->adev->dev, "failed to config legacy pg\n");
+	return ret;
+}
+
+static struct ipu_psys_kcmd *virt_ipu_psys_copy_cmd(
+			struct ipu_psys_command *cmd,
+			struct ipu_psys_buffer *buffers,
+			void *pg_manifest,
+			struct ipu_psys_fh *fh)
+{
+	struct ipu_psys *psys = fh->psys;
+	struct ipu_psys_kcmd *kcmd;
+	struct ipu_psys_kbuffer *kpgbuf;
+	unsigned int i;
+	int prevfd = 0;
+
+	if (cmd->bufcount > IPU_MAX_PSYS_CMD_BUFFERS)
+		return NULL;
+
+	if (!cmd->pg_manifest_size ||
+		cmd->pg_manifest_size > KMALLOC_MAX_CACHE_SIZE)
+		return NULL;
+
+	kcmd = kzalloc(sizeof(*kcmd), GFP_KERNEL);
+	if (!kcmd)
+		return NULL;
+
+	kcmd->state = KCMD_STATE_NEW;
+	kcmd->fh = fh;
+	INIT_LIST_HEAD(&kcmd->list);
+	INIT_LIST_HEAD(&kcmd->started_list);
+
+	mutex_lock(&fh->mutex);
+	kpgbuf = ipu_psys_lookup_kbuffer(fh, cmd->pg);
+	mutex_unlock(&fh->mutex);
+	if (!kpgbuf || !kpgbuf->sgt) {
+		pr_err("%s: failed ipu_psys_lookup_kbuffer", __func__);
+		goto error;
+	}
+
+	kcmd->pg_user = kpgbuf->kaddr;
+	kcmd->kpg = __get_pg_buf(psys, kpgbuf->len);
+	if (!kcmd->kpg) {
+		pr_err("%s: failed __get_pg_buf", __func__);
+		goto error;
+	}
+
+	memcpy(kcmd->kpg->pg, kcmd->pg_user, kcmd->kpg->pg_size);
+	kcmd->pg_manifest = kzalloc(cmd->pg_manifest_size, GFP_KERNEL);
+	if (!kcmd->pg_manifest) {
+		pr_err("%s: failed kzalloc pg_manifest", __func__);
+		goto error;
+	}
+
+	memcpy(kcmd->pg_manifest, pg_manifest,
+			     cmd->pg_manifest_size);
+
+	kcmd->pg_manifest_size = cmd->pg_manifest_size;
+
+	kcmd->user_token = cmd->user_token;
+	kcmd->issue_id = cmd->issue_id;
+	kcmd->priority = cmd->priority;
+	if (kcmd->priority >= IPU_PSYS_CMD_PRIORITY_NUM) {
+		pr_err("%s: failed priority", __func__);
+		goto error;
+	}
+
+	kcmd->nbuffers = ipu_fw_psys_pg_get_terminal_count(kcmd);
+	kcmd->buffers = kcalloc(kcmd->nbuffers, sizeof(*kcmd->buffers),
+				GFP_KERNEL);
+	if (!kcmd->buffers) {
+		pr_err("%s, failed kcalloc buffers", __func__);
+		goto error;
+	}
+
+	kcmd->kbufs = kcalloc(kcmd->nbuffers, sizeof(kcmd->kbufs[0]),
+			      GFP_KERNEL);
+	if (!kcmd->kbufs) {
+		pr_err("%s: failed kcalloc kbufs", __func__);
+		goto error;
+	}
+
+	if (!cmd->bufcount || kcmd->nbuffers > cmd->bufcount) {
+		pr_err("%s: failed bufcount", __func__);
+		goto error;
+	}
+
+	memcpy(kcmd->buffers, buffers,
+		kcmd->nbuffers * sizeof(*kcmd->buffers));
+
+	for (i = 0; i < kcmd->nbuffers; i++) {
+		struct ipu_fw_psys_terminal *terminal;
+
+		terminal = ipu_fw_psys_pg_get_terminal(kcmd, i);
+		if (!terminal)
+			continue;
+
+
+		mutex_lock(&fh->mutex);
+		kcmd->kbufs[i] = ipu_psys_lookup_kbuffer(fh,
+						 kcmd->buffers[i].base.fd);
+		mutex_unlock(&fh->mutex);
+		if (!kcmd->kbufs[i]) {
+			pr_err("%s: NULL kcmd->kbufs[i]", __func__);
+			goto error;
+		}
+		if (!kcmd->kbufs[i] || !kcmd->kbufs[i]->sgt ||
+		    kcmd->kbufs[i]->len < kcmd->buffers[i].bytes_used)
+			goto error;
+		if ((kcmd->kbufs[i]->flags &
+		     IPU_BUFFER_FLAG_NO_FLUSH) ||
+		    (kcmd->buffers[i].flags &
+		     IPU_BUFFER_FLAG_NO_FLUSH) ||
+		    prevfd == kcmd->buffers[i].base.fd)
+			continue;
+
+		prevfd = kcmd->buffers[i].base.fd;
+		dma_sync_sg_for_device(&psys->adev->dev,
+				       kcmd->kbufs[i]->sgt->sgl,
+				       kcmd->kbufs[i]->sgt->orig_nents,
+				       DMA_BIDIRECTIONAL);
+	}
+
+	return kcmd;
+
+error:
+	ipu_psys_kcmd_free(kcmd);
+
+	dev_dbg(&psys->adev->dev, "failed to copy cmd\n");
+
+	return NULL;
+}
+
+static int virt_ipu_psys_kcmd_new(struct ipu_psys_command *cmd,
+			struct ipu_psys_buffer *buffers,
+			void *pg_manifest,
+			struct ipu_psys_fh *fh)
+{
+	struct ipu_psys *psys = fh->psys;
+	struct ipu_psys_kcmd *kcmd;
+	size_t pg_size;
+	int ret = 0;
+
+	if (psys->adev->isp->flr_done)
+		return -EIO;
+
+	kcmd = virt_ipu_psys_copy_cmd(cmd, buffers, pg_manifest, fh);
+	if(!kcmd)
+		return -EINVAL;
+
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 14, 2)
+	init_timer(&kcmd->watchdog);
+	kcmd->watchdog.data = (unsigned long)kcmd;
+	kcmd->watchdog.function = &ipu_psys_watchdog;
+#else
+	timer_setup(&kcmd->watchdog, ipu_psys_watchdog, 0);
+#endif
+
+	if (cmd->min_psys_freq) {
+		kcmd->constraint.min_freq = cmd->min_psys_freq;
+		ipu_buttress_add_psys_constraint(psys->adev->isp,
+						 &kcmd->constraint);
+	}
+
+	pg_size = ipu_fw_psys_pg_get_size(kcmd);
+	if (pg_size > kcmd->kpg->pg_size) {
+		dev_dbg(&psys->adev->dev, "pg size mismatch %zu %zu\n",
+			pg_size, kcmd->kpg->pg_size);
+		ret = -EINVAL;
+		goto error;
+	}
+
+	ret = ipu_psys_config_legacy_pg(kcmd);
+	if (ret)
+		goto error;
+
+	mutex_lock(&fh->mutex);
+	list_add_tail(&kcmd->list, &fh->sched.kcmds[cmd->priority]);
+	if (!fh->sched.new_kcmd_tail[cmd->priority] &&
+	    kcmd->state == KCMD_STATE_NEW) {
+		fh->sched.new_kcmd_tail[cmd->priority] = kcmd;
+		/* Kick command scheduler thread */
+		atomic_set(&psys->wakeup_sched_thread_count, 1);
+		wake_up_interruptible(&psys->sched_cmd_wq);
+	}
+	mutex_unlock(&fh->mutex);
+
+	dev_dbg(&psys->adev->dev,
+		"IOC_QCMD: user_token:%llx issue_id:0x%llx pri:%d\n",
+		cmd->user_token, cmd->issue_id, cmd->priority);
+
+	return 0;
+
+error:
+	ipu_psys_kcmd_free(kcmd);
+
+	return ret;
+}
+
+
 int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info)
 {
-	return -1;
+	struct ipu_psys *psys = fh->psys;
+	struct ipu_psys_command_wrap *cmd_wrap;
+	struct ipu_psys_command *cmd;
+	void *pg_manifest;
+	struct ipu_psys_buffer *buffers;
+	int ret = 0;
+
+	if (psys->adev->isp->flr_done)
+		return -EIO;
+
+	cmd_wrap = (struct ipu_psys_command_wrap *)map_guest_phys(
+										req_info->domid,
+										req_info->request->payload,
+										PAGE_SIZE
+										);
+
+	if (cmd_wrap == NULL) {
+		pr_err("%s: failed to get payload", __func__);
+		return -EFAULT;
+	}
+
+	cmd = (struct ipu_psys_command *)map_guest_phys(
+										req_info->domid,
+										cmd_wrap->psys_command,
+										PAGE_SIZE
+										);
+
+	if (cmd == NULL) {
+		pr_err("%s: failed to get ipu_psys_command", __func__);
+		return -EFAULT;
+	}
+
+	pg_manifest = (void *)map_guest_phys(
+										req_info->domid,
+										cmd_wrap->psys_manifest,
+										PAGE_SIZE
+										);
+
+	if (pg_manifest == NULL) {
+		pr_err("%s: failed to get pg_manifest", __func__);
+		return -EFAULT;
+	}
+
+	buffers = (struct ipu_psys_buffer *)map_guest_phys(
+										req_info->domid,
+										cmd_wrap->psys_buffer,
+										PAGE_SIZE
+										);
+
+	if (buffers == NULL) {
+		pr_err("%s: failed to get ipu_psys_buffers", __func__);
+		return -EFAULT;
+	}
+
+	ret = virt_ipu_psys_kcmd_new(cmd, buffers, pg_manifest, fh);
+
+	return ret;
 }
 
 int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
