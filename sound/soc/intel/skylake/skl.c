@@ -58,21 +58,6 @@ static void skl_update_pci_byte(struct pci_dev *pci, unsigned int reg,
 	pci_write_config_byte(pci, reg, data);
 }
 
-static void skl_init_pci(struct skl *skl)
-{
-	struct hdac_bus *bus = skl_to_bus(skl);
-
-	/*
-	 * Clear bits 0-2 of PCI register TCSEL (at offset 0x44)
-	 * TCSEL == Traffic Class Select Register, which sets PCI express QOS
-	 * Ensuring these bits are 0 clears playback static on some HD Audio
-	 * codecs.
-	 * The PCI register TCSEL is defined in the Intel manuals.
-	 */
-	dev_dbg(bus->dev, "Clearing TCSEL\n");
-	skl_update_pci_byte(skl->pci, AZX_PCIREG_TCSEL, 0x07, 0);
-}
-
 static void update_pci_dword(struct pci_dev *pci,
 			unsigned int reg, u32 mask, u32 val)
 {
@@ -239,6 +224,22 @@ static void skl_dum_set(struct hdac_bus *bus)
 	 */
 	reg  = snd_hdac_chip_readl(bus, VS_EM2);
 	snd_hdac_chip_writel(bus, VS_EM2, (reg | AZX_EM2_DUM_MASK));
+}
+
+static void skl_init_pci(struct skl *skl)
+{
+	struct hdac_bus *bus = skl_to_bus(skl);
+
+	/*
+	* Clear bits 0-2 of PCI register TCSEL (at offset 0x44)
+	* TCSEL == Traffic Class Select Register, which sets PCI express QOS
+	* Ensuring these bits are 0 clears playback static on some HD Audio
+	* codecs.
+	* The PCI register TCSEL is defined in the Intel manuals.
+	*/
+	dev_dbg(bus->dev, "Clearing TCSEL\n");
+	skl_update_pci_byte(skl->pci, AZX_PCIREG_TCSEL, 0x07, 0);
+	skl_dum_set(bus);
 }
 
 /* called from IRQ */
@@ -1009,8 +1010,6 @@ static int skl_first_init(struct hdac_bus *bus)
 
 	/* initialize chip */
 	skl_init_pci(skl);
-
-	skl_dum_set(bus);
 
 	return skl_init_chip(bus, true);
 }
