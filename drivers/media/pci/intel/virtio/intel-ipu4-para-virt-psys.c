@@ -37,6 +37,12 @@
 
 #define IPU_PSYS_NUM_DEVICES		4
 #define IPU_PSYS_NAME	"intel-ipu4-psys"
+
+#ifdef CONFIG_COMPAT
+extern long virt_psys_compat_ioctl32(struct file *file, unsigned int cmd,
+			     unsigned long arg);
+#endif
+
 static dev_t virt_psys_dev_t;
 static struct virt_ipu_psys *g_psys;
 
@@ -466,16 +472,6 @@ error_exit:
 	return rval;
 }
 
-long virt_psys_compat_ioctl32(struct file *file, unsigned int cmd,
-						 unsigned long arg)
-{
-	int err = 0;
-
-	if (err)
-	return err;
-
-	return 0;
-}
 static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 							unsigned long arg)
 {
