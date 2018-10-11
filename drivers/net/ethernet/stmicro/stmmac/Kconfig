@@ -211,3 +211,12 @@ config STMMAC_PCI
 
 	  If unsure, say N.
 endif
+
+config STMMAC_HWTS
+	bool "Support HW cross-timestamp on Ethernet devices"
+	default n
+	depends on STMMAC_ETH && X86
+	help
+	 Say Y to enable hardware cross-timestamping on supported PCH
+	 devices. The cross-timestamp is accessible through the ioctl
+	 call PTP_SYS_OFFSET_PRECISE.

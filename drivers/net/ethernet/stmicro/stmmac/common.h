@@ -384,6 +384,8 @@ struct dma_features {
 	unsigned int dvlan;
 	unsigned int l3l4fnum;
 	unsigned int arpoffsel;
+	/* Number of Auxiliary Snapshot Inputs */
+	unsigned int aux_snapshot_n;
 };
 
 /* GMAC TX FIFO is 8K, Rx FIFO is 16K */

@@ -9,6 +9,8 @@
 *******************************************************************************/
 #include "stmmac.h"
 #include "stmmac_ptp.h"
+#include "dwmac4.h"
+#include <linux/iopoll.h>
 
 /**
  * stmmac_adjust_freq
@@ -165,6 +167,116 @@ static int stmmac_enable(struct ptp_clock_info *ptp,
 	return ret;
 }
 
+#ifdef CONFIG_STMMAC_HWTS
+static int stmmac_cross_ts_isr(struct stmmac_priv *priv)
+{
+	return (readl(priv->ioaddr + GMAC_INT_STATUS) & GMAC_INT_TSIE);
+}
+
+/**
+ * stmmac_get_syncdevicetime - Callback given to timekeeping code
+ *                             reads system/device registers
+ * @device: current device time
+ * @system: system counter value read synchronously with device time
+ * @ctx: context provided by timekeeping code
+ *
+ * Read device and system (ART) clock simultaneously and return the corrected
+ * clock values in ns.
+ **/
+static int stmmac_get_syncdevicetime(ktime_t *device,
+				     struct system_counterval_t *system,
+				     void *ctx)
+{
+	struct stmmac_priv *priv = (struct stmmac_priv *)ctx;
+	void __iomem *ptpaddr = priv->ptpaddr;
+	void __iomem *ioaddr = priv->hw->pcsr;
+	unsigned long flags;
+	u32 num_snapshot;
+	u32 gpio_value;
+	u32 acr_value;
+	u64 art_time;
+	u64 ptp_time;
+	u32 v;
+	int i;
+
+	/* Enable Internal snapshot trigger */
+	acr_value = readl(ptpaddr + PTP_ACR);
+	acr_value &= ~PTP_ACR_MASK;
+	switch (priv->plat->int_snapshot_num) {
+	case AUX_SNAPSHOT0:
+		acr_value |= PTP_ACR_ATSEN0;
+		break;
+	case AUX_SNAPSHOT1:
+		acr_value |= PTP_ACR_ATSEN1;
+		break;
+	case AUX_SNAPSHOT2:
+		acr_value |= PTP_ACR_ATSEN2;
+		break;
+	case AUX_SNAPSHOT3:
+		acr_value |= PTP_ACR_ATSEN3;
+		break;
+	default:
+		return -EINVAL;
+	}
+	writel(acr_value, ptpaddr + PTP_ACR);
+
+	/* Clear FIFO */
+	acr_value = readl(ptpaddr + PTP_ACR);
+	acr_value |= PTP_ACR_ATSFC;
+	writel(acr_value, ptpaddr + PTP_ACR);
+
+	/** Trigger Internal snapshot signal
+	 * Create a rising edge by just toggle the GPO1 to low
+	 * and back to high.
+	 */
+	gpio_value = readl(ioaddr + GMAC_GPIO_STATUS);
+	gpio_value &= ~GPO1;
+	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
+	gpio_value |= GPO1;
+	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
+
+	/* Time sync done Indication - Interrupt method */
+	if (priv->hw->mdio_intr_en) {
+		if (!wait_event_timeout(priv->hw->mdio_busy_wait,
+					stmmac_cross_ts_isr(priv), HZ / 100))
+			return -ETIMEDOUT;
+	} else if (readl_poll_timeout(priv->ioaddr + GMAC_INT_STATUS, v,
+				     (v & GMAC_INT_TSIE), 100, 10000))
+		return -ETIMEDOUT;
+
+	num_snapshot = (readl(ioaddr + GMAC_TIMESTAMP_STATUS) &
+			GMAC_TIMESTAMP_ATSNS_MASK) >>
+			GMAC_TIMESTAMP_ATSNS_SHIFT;
+
+	/* Repeat until the timestamps are from the FIFO last segment */
+	for (i = 0; i < num_snapshot; i++) {
+		spin_lock_irqsave(&priv->ptp_lock, flags);
+		stmmac_get_ptptime(priv, ptpaddr, &ptp_time);
+		*device = ns_to_ktime(ptp_time);
+		spin_unlock_irqrestore(&priv->ptp_lock, flags);
+
+		stmmac_get_arttime(priv, priv->mii,
+				   priv->plat->intel_adhoc_addr, &art_time);
+		*system = convert_art_to_tsc(art_time);
+	}
+
+	return 0;
+}
+
+static int stmmac_getcrosststamp(struct ptp_clock_info *ptp,
+				 struct system_device_crosststamp *xtstamp)
+{
+	struct stmmac_priv *priv =
+	    container_of(ptp, struct stmmac_priv, ptp_clock_ops);
+
+	if (!boot_cpu_has(X86_FEATURE_ART))
+		return -EOPNOTSUPP;
+
+	return get_device_system_crosststamp(stmmac_get_syncdevicetime,
+					     priv, NULL, xtstamp);
+}
+#endif
+
 /* structure describing a PTP hardware clock */
 static struct ptp_clock_info stmmac_ptp_clock_ops = {
 	.owner = THIS_MODULE,
@@ -180,6 +292,9 @@ static struct ptp_clock_info stmmac_ptp_clock_ops = {
 	.gettime64 = stmmac_get_time,
 	.settime64 = stmmac_set_time,
 	.enable = stmmac_enable,
+#ifdef CONFIG_STMMAC_HWTS
+	.getcrosststamp = stmmac_getcrosststamp,
+#endif
 };
 
 /**
@@ -190,7 +305,17 @@ static struct ptp_clock_info stmmac_ptp_clock_ops = {
  */
 void stmmac_ptp_register(struct stmmac_priv *priv)
 {
+	int aux_snapshot_n;
 	int i;
+#ifdef CONFIG_STMMAC_HWTS
+	void __iomem *ioaddr = priv->hw->pcsr;
+	u32 gpio_value;
+
+	/* set 200 Mhz xtal clock for Hammock Harbor */
+	gpio_value = readl(ioaddr + GMAC_GPIO_STATUS);
+	gpio_value &= ~GPO0;
+	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
+#endif
 
 	for (i = 0; i < priv->dma_cap.pps_out_num; i++) {
 		if (i >= STMMAC_PPS_MAX)
@@ -205,6 +330,8 @@ void stmmac_ptp_register(struct stmmac_priv *priv)
 
 	spin_lock_init(&priv->ptp_lock);
 	priv->ptp_clock_ops = stmmac_ptp_clock_ops;
+
+	aux_snapshot_n = priv->dma_cap.aux_snapshot_n;
 
 	priv->ptp_clock = ptp_clock_register(&priv->ptp_clock_ops,
 					     priv->device);
