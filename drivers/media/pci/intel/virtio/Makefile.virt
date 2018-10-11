@@ -20,6 +20,9 @@ else
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-fe.o
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-para-virt-drv.o
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-para-virt-psys.o
+ifdef CONFIG_COMPAT
+	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-fe-psys-32compat.o
+endif
 endif
 
 obj-$(CONFIG_VIDEO_INTEL_IPU_ACRN) += $(TARGET_MODULE).o
