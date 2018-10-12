@@ -803,13 +803,6 @@ int cnl_sst_init_fw(struct device *dev, struct skl_sst *ctx)
 	struct sst_dsp *sst = ctx->dsp;
 	int ret;
 
-	if (sst->is_recovery) {
-		cnl_dsp_disable_core(sst, SKL_DSP_CORE0_MASK);
-		ret = cnl_load_base_firmware(sst);
-		if (ret < 0)
-			return ret;
-	}
-
 	skl_dsp_init_core_state(sst);
 
 	if (ctx->lib_count > 1) {
