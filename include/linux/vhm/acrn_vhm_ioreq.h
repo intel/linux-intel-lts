@@ -161,6 +161,15 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm);
 int acrn_ioreq_complete_request(int client_id, uint64_t vcpu);
 
 /**
+ * acrn_ioreq_clear_request - clear all guest requests
+ *
+ * @vm: pointer to guest VM
+ *
+ * Return:
+ */
+void acrn_ioreq_clear_request(struct vhm_vm *vm);
+
+/**
  * acrn_ioreq_intercept_bdf - set intercept bdf info of ioreq client
  *
  * @client_id: client id to identify ioreq client
