@@ -22,7 +22,6 @@
 #include <linux/pci.h>
 #include <linux/pm_runtime.h>
 #include <linux/delay.h>
-#include <linux/timer.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include "skl.h"
@@ -520,19 +519,12 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
 		struct snd_soc_dai *dai)
 {
 	struct skl *skl = get_skl_ctx(dai->dev);
-	struct skl_monitor *monitor = &skl->monitor_dsp;
 	struct skl_sst *ctx = skl->skl_sst;
 	struct skl_module_cfg *mconfig;
 	struct hdac_bus *bus = get_bus_ctx(substream);
 	struct hdac_ext_stream *stream = get_hdac_ext_stream(substream);
-	struct snd_soc_dapm_widget *w;
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct hdac_stream *azx_dev;
-#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
-	u32 interval;
-	int i;
-#endif
-	bool is_running = false;
+	struct snd_soc_dapm_widget *w;
 	int ret;
 
 	mconfig = skl_tplg_fe_get_cpr_module(dai, substream->stream);
@@ -576,25 +568,6 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
 		ret = skl_decoupled_trigger(substream, cmd);
 		if (ret < 0)
 			return ret;
-		/*
-		 * Period elapsed interrupts with multiple streams are not
-		 * consistent on FPGA. However, it works without any issues on
-		 * RVP. So, using the default max value for FPGA
-		 */
-#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
-		/*
-		 * To be on the safer side, restricting the minimal interval to
-		 * 10ms
-		 */
-		interval =  SKL_MIN_TIME_INTERVAL +
-				((2 * runtime->period_size * 1000) /
-				runtime->rate);
-		monitor->intervals[hdac_stream(stream)->index] = interval;
-		if (interval > monitor->interval)
-			monitor->interval = interval;
-#else
-		monitor->interval = SKL_MAX_TIME_INTERVAL;
-#endif
 		return skl_run_pipe(ctx, mconfig->pipe);
 		break;
 
@@ -622,26 +595,6 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
 							hdac_stream(stream));
 			snd_hdac_ext_stream_decouple(bus, stream, false);
 		}
-
-		list_for_each_entry(azx_dev, &bus->stream_list, list) {
-			if (azx_dev->running) {
-				is_running = true;
-				break;
-			}
-		}
-		monitor->intervals[hdac_stream(stream)->index] = 0;
-		if (!is_running)
-			del_timer(&skl->monitor_dsp.timer);
-#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
-		else {
-			interval = SKL_MIN_TIME_INTERVAL;
-			for (i = 0; i < bus->num_streams; i++) {
-				if (monitor->intervals[i] > interval)
-					interval = monitor->intervals[i];
-			}
-			monitor->interval = interval;
-		}
-#endif
 		break;
 
 	default:

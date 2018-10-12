@@ -21,7 +21,6 @@
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 
-#include <linux/timer.h>
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/pm_runtime.h>
@@ -36,8 +35,6 @@
 #include <sound/hda_i915.h>
 #include <sound/compress_driver.h>
 #include "skl.h"
-#include "../common/sst-dsp.h"
-#include "../common/sst-dsp-priv.h"
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
 #include "skl-topology.h"
@@ -251,7 +248,6 @@ static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
 static irqreturn_t skl_interrupt(int irq, void *dev_id)
 {
 	struct hdac_bus *bus = dev_id;
-	struct skl *skl = bus_to_skl(bus);
 	u32 status;
 	u32 mask, int_enable;
 	int ret = IRQ_NONE;
@@ -283,8 +279,6 @@ static irqreturn_t skl_interrupt(int irq, void *dev_id)
 		/* Disable stream interrupts; Re-enable in bottom half */
 		int_enable = snd_hdac_chip_readl(bus, INTCTL);
 		snd_hdac_chip_writel(bus, INTCTL, (int_enable & (~mask)));
-		mod_timer(&skl->monitor_dsp.timer, jiffies +
-			msecs_to_jiffies(skl->monitor_dsp.interval));
 		ret = IRQ_WAKE_THREAD;
 	} else
 		ret = IRQ_HANDLED;
@@ -868,22 +862,6 @@ out_err:
 		err = snd_hdac_display_power(bus, false);
 }
 
-static int skl_init_recovery(struct skl *skl)
-{
-	struct skl_monitor *monitor = &skl->monitor_dsp;
-
-	INIT_WORK(&monitor->mwork, skl_trigger_recovery);
-	monitor->interval = SKL_MIN_TIME_INTERVAL;
-
-	monitor->intervals = devm_kzalloc(&skl->pci->dev,
-					skl->hbus.num_streams * sizeof(u32),
-					GFP_KERNEL);
-	if (!monitor->intervals)
-		return -ENOMEM;
-	timer_setup(&monitor->timer, skl_timer_cb, 0);
-	return 0;
-}
-
 /*
  * constructor
  */
@@ -1006,10 +984,6 @@ static int skl_probe(struct pci_dev *pci,
 	err = skl_first_init(bus);
 	if (err < 0)
 		goto out_free;
-
-	err = skl_init_recovery(skl);
-	if (err < 0)
-		return err;
 
 	skl->pci_id = pci->device;
 
