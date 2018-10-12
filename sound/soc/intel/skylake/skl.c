@@ -466,6 +466,7 @@ static int skl_resume(struct device *dev)
 			snd_hdac_bus_init_cmd_io(bus);
 	} else {
 		ret = _skl_resume(bus);
+		skl_dum_set(bus);
 
 		/* turn off the links which are off before suspend */
 		list_for_each_entry(hlink, &bus->hlink_list, list) {
