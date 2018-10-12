@@ -135,6 +135,14 @@ static inline bool is_range_type(uint32_t type)
 	return (type == REQ_MMIO || type == REQ_PORTIO || type == REQ_WP);
 }
 
+static inline bool has_pending_request(struct ioreq_client *client)
+{
+	if (client)
+		return !bitmap_empty(client->ioreqs_map, VHM_REQUEST_MAX);
+	else
+		return false;
+}
+
 static int alloc_client(void)
 {
 	struct ioreq_client *client;
@@ -221,6 +229,50 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 	return client_id;
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_create_client);
+
+void acrn_ioreq_clear_request(struct vhm_vm *vm)
+{
+	struct ioreq_client *client;
+	struct list_head *pos;
+	bool has_pending = false;
+	int retry_cnt = 10;
+	int bit;
+
+	/*
+	 * Now, ioreq clearing only happens when do VM reset. Current
+	 * implementation is waiting all ioreq clients except the DM
+	 * one have no pending ioreqs in 10ms per loop
+	 */
+
+	do {
+		spin_lock(&vm->ioreq_client_lock);
+		list_for_each(pos, &vm->ioreq_client_list) {
+			client = container_of(pos, struct ioreq_client, list);
+			if (vm->ioreq_fallback_client == client->id)
+				continue;
+			has_pending = has_pending_request(client);
+			if (has_pending)
+				break;
+		}
+		spin_unlock(&vm->ioreq_client_lock);
+
+		if (has_pending)
+			schedule_timeout_interruptible(HZ / 100);
+	} while (has_pending && --retry_cnt > 0);
+
+	if (retry_cnt == 0)
+		pr_warn("ioreq client[%d] cannot flush pending request!\n",
+				client->id);
+
+	/* Clear all ioreqs belong to DM. */
+	if (vm->ioreq_fallback_client > 0) {
+		bit = -1;
+		client = clients[vm->ioreq_fallback_client];
+		while ((bit = find_next_bit(client->ioreqs_map,
+				VHM_REQUEST_MAX, bit + 1)) < VHM_REQUEST_MAX)
+			acrn_ioreq_complete_request(client->id, bit);
+	}
+}
 
 int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name)
 {
@@ -435,14 +487,6 @@ static inline bool is_destroying(struct ioreq_client *client)
 		return client->destroying;
 	else
 		return true;
-}
-
-static inline bool has_pending_request(struct ioreq_client *client)
-{
-	if (client)
-		return !bitmap_empty(client->ioreqs_map, VHM_REQUEST_MAX);
-	else
-		return false;
 }
 
 struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)

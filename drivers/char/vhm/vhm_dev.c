@@ -411,6 +411,24 @@ create_vm_fail:
 		break;
 	}
 
+	case IC_CLEAR_VM_IOREQ: {
+		/*
+		 * TODO: Query VM status with additional hypercall.
+		 * VM should be in paused status.
+		 *
+		 * In SMP SOS, we need flush the current pending ioreq dispatch
+		 * tasklet and finish it before clearing all ioreq of this VM.
+		 * With tasklet_kill, there still be a very rare race which
+		 * might lost one ioreq tasklet for other VMs. So arm one after
+		 * the clearing. It's harmless.
+		 */
+		tasklet_schedule(&vhm_io_req_tasklet);
+		tasklet_kill(&vhm_io_req_tasklet);
+		tasklet_schedule(&vhm_io_req_tasklet);
+		acrn_ioreq_clear_request(vm);
+		break;
+	}
+
 	case IC_SET_IRQLINE: {
 		ret = hcall_set_irqline(vm->vmid, ioctl_param);
 		if (ret < 0) {
