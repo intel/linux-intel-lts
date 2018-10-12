@@ -1972,13 +1972,9 @@ static int skl_tplg_mixer_event(struct snd_soc_dapm_widget *w,
 		return skl_tplg_mixer_dapm_post_pmu_event(w, skl);
 
 	case SND_SOC_DAPM_PRE_PMD:
-		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
-			return 0;
 		return skl_tplg_mixer_dapm_pre_pmd_event(w, skl);
 
 	case SND_SOC_DAPM_POST_PMD:
-		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
-			return 0;
 		return skl_tplg_mixer_dapm_post_pmd_event(w, skl);
 	}
 
@@ -2003,8 +1999,6 @@ static int skl_tplg_pga_event(struct snd_soc_dapm_widget *w,
 		return skl_tplg_pga_dapm_pre_pmu_event(w, skl);
 
 	case SND_SOC_DAPM_POST_PMD:
-		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
-			return 0;
 		return skl_tplg_pga_dapm_post_pmd_event(w, skl);
 	}
 
