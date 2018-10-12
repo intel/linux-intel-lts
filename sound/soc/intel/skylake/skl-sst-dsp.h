@@ -22,7 +22,6 @@
 #include <sound/memalloc.h>
 #include <uapi/sound/snd_sst_tokens.h>
 #include "skl-sst-cldma.h"
-#include "skl.h"
 
 struct sst_dsp;
 struct skl_sst;
@@ -271,7 +270,6 @@ struct sst_dsp *skl_dsp_ctx_init(struct device *dev,
 		struct sst_dsp_device *sst_dev, int irq);
 int skl_dsp_acquire_irq(struct sst_dsp *sst);
 bool is_skl_dsp_running(struct sst_dsp *ctx);
-void skl_do_recovery(struct skl *skl);
 
 unsigned int skl_dsp_get_enabled_cores(struct sst_dsp *ctx);
 void skl_dsp_init_core_state(struct sst_dsp *ctx);

@@ -293,8 +293,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 		.loader_ops = bxt_get_loader_ops,
 		.init = bxt_sst_dsp_init,
 		.init_fw = bxt_sst_init_fw,
-		.cleanup = bxt_sst_dsp_cleanup,
-		.do_recovery = skl_do_recovery
+		.cleanup = bxt_sst_dsp_cleanup
 	},
 	{
 		.id = 0x3198,
@@ -302,8 +301,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 		.loader_ops = bxt_get_loader_ops,
 		.init = bxt_sst_dsp_init,
 		.init_fw = bxt_sst_init_fw,
-		.cleanup = bxt_sst_dsp_cleanup,
-		.do_recovery = skl_do_recovery
+		.cleanup = bxt_sst_dsp_cleanup
 	},
 	{
 		.id = 0x9dc8,
@@ -311,8 +309,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 		.loader_ops = bxt_get_loader_ops,
 		.init = cnl_sst_dsp_init,
 		.init_fw = cnl_sst_init_fw,
-		.cleanup = cnl_sst_dsp_cleanup,
-		.do_recovery = skl_do_recovery
+		.cleanup = cnl_sst_dsp_cleanup
 	},
 	{
 		.id = 0x34c8,
@@ -320,8 +317,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
 		.loader_ops = bxt_get_loader_ops,
 		.init = cnl_sst_dsp_init,
 		.init_fw = cnl_sst_init_fw,
-		.cleanup = cnl_sst_dsp_cleanup,
-		.do_recovery = skl_do_recovery
+		.cleanup = cnl_sst_dsp_cleanup
 	},
 };
 
@@ -366,47 +362,6 @@ static int cnl_sdw_bra_pipe_trigger(struct skl_sst *ctx, bool enable,
 
 error:
 	return ret;
-}
-
-void skl_do_recovery(struct skl *skl)
-{
-	struct snd_soc_component *soc_component = skl->component;
-	const struct skl_dsp_ops *ops;
-	struct snd_soc_card *card;
-	struct hdac_stream *azx_dev;
-	struct hdac_bus *bus = skl_to_bus(skl);
-	struct snd_pcm_substream *substream = NULL;
-	struct hdac_ext_stream *stream;
-
-	skl->skl_sst->dsp->is_recovery = true;
-	skl_dsp_reset_core_state(skl->skl_sst->dsp);
-	card = soc_component->card;
-	snd_soc_suspend(card->dev);
-	skl_cleanup_resources(skl);
-	skl_reset_instance_id(skl->skl_sst);
-
-	/* Free up DMA channel 0 for firmware re-download */
-	list_for_each_entry(azx_dev, &bus->stream_list, list) {
-		if (azx_dev->stream_tag == 1 &&
-			azx_dev->direction == SNDRV_PCM_STREAM_PLAYBACK) {
-			if (azx_dev->opened) {
-				substream = azx_dev->substream;
-				stream = stream_to_hdac_ext_stream(azx_dev);
-				snd_hdac_ext_stream_release(stream,
-					skl_get_host_stream_type(bus));
-			}
-			break;
-		}
-	}
-	ops = skl_get_dsp_ops(skl->pci->device);
-	if (ops->init_fw(soc_component->dev, skl->skl_sst) < 0)
-		dev_err(skl->skl_sst->dev, "Recovery failed\n");
-	if (substream != NULL) {
-		stream = snd_hdac_ext_stream_assign(bus, substream,
-					skl_get_host_stream_type(bus));
-	}
-	snd_soc_resume(card->dev);
-	skl->skl_sst->dsp->is_recovery = false;
 }
 
 void skl_trigger_recovery(struct work_struct *work)

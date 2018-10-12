@@ -317,7 +317,6 @@ struct skl_pipe_params {
 	int stream;
 	unsigned int host_bps;
 	unsigned int link_bps;
-	struct snd_pcm_substream *substream;
 };
 
 struct skl_pipe_fmt {
@@ -617,7 +616,6 @@ int skl_pcm_host_dma_prepare(struct device *dev,
 			struct skl_pipe_params *params);
 int skl_pcm_link_dma_prepare(struct device *dev,
 			struct skl_pipe_params *params);
-enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus);
 
 int skl_dai_load(struct snd_soc_component *cmp, int index,
 		struct snd_soc_dai_driver *dai_drv,
