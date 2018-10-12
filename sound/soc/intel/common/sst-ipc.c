@@ -98,10 +98,6 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
 	struct ipc_message *msg;
 	unsigned long flags;
 
-	if (ipc->dsp->is_recovery) {
-		dev_dbg(ipc->dev, "Recovery in progress..\n");
-		return 0;
-	}
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
 
 	msg = msg_get_empty(ipc);
