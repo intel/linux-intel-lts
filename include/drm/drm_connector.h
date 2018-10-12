@@ -460,6 +460,12 @@ struct drm_connector_state {
 	 * drm_writeback_signal_completion()
 	 */
 	struct drm_writeback_job *writeback_job;
+
+	/**
+	 * @cp_srm_blob_id: Connector property to pass the SRM table for content
+	 * protection. This is most commonly used for HDCP.
+	 */
+	unsigned int cp_srm_blob_id;
 };
 
 /**
@@ -923,6 +929,12 @@ struct drm_connector {
 	struct drm_property_blob *cp_downstream_blob_ptr;
 
 	/**
+	 * @cp_srm_property: DRM BLOB property for content
+	 * protection SRM information.
+	 */
+	struct drm_property *cp_srm_property;
+
+	/**
 	 * @path_blob_ptr:
 	 *
 	 * DRM blob property data for the DP MST path property. This should only
@@ -1193,6 +1205,7 @@ int drm_connector_attach_content_protection_property(
 		struct drm_connector *connector);
 int drm_connector_attach_cp_downstream_property(
 				struct drm_connector *connector);
+int drm_connector_attach_cp_srm_property(struct drm_connector *connector);
 int drm_mode_create_aspect_ratio_property(struct drm_device *dev);
 int drm_mode_create_content_type_property(struct drm_device *dev);
 void drm_hdmi_avi_infoframe_content_type(struct hdmi_avi_infoframe *frame,

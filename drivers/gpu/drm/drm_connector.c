@@ -1384,6 +1384,41 @@ int drm_connector_attach_cp_downstream_property(
 EXPORT_SYMBOL(drm_connector_attach_cp_downstream_property);
 
 /**
+ * drm_connector_attach_cp_srm_property - attach cp srm
+ * property
+ *
+ * @connector: connector to attach cp srm property on.
+ *
+ * This is used to add support for sending the SRM table from userspace to
+ * kernel on selected connectors. Protected content provider will provide
+ * the system renewability Message(SRM) to userspace before requesting for
+ * HDCP on a port. Hence if a Port supports content protection (mostly HDCP)
+ * then this property will be attached to receive the SRM for revocation check
+ * of the ksvs.
+ *
+ * The srm blob id will be set to &drm_connector_state.cp_srm_blob_id
+ *
+ * Returns:
+ * Zero on success, negative errno on failure.
+ */
+int drm_connector_attach_cp_srm_property(struct drm_connector *connector)
+{
+	struct drm_device *dev = connector->dev;
+	struct drm_property *prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB, "CP_SRM", 0);
+	if (!prop)
+		return -ENOMEM;
+
+	drm_object_attach_property(&connector->base, prop, 0);
+	connector->cp_srm_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_connector_attach_cp_srm_property);
+
+
+/**
  * drm_mode_create_aspect_ratio_property - create aspect ratio property
  * @dev: DRM device
  *
