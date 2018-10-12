@@ -23,7 +23,6 @@
 
 #include <sound/hda_register.h>
 #include <sound/hdaudio_ext.h>
-#include <linux/timer.h>
 #include <sound/soc.h>
 #include "skl-nhlt.h"
 #include "skl-ssp-clk.h"
@@ -52,9 +51,6 @@
 #define SKL_MAX_DMA_CFG		24
 #define BXT_INSTANCE_ID		0
 #define BXT_BASE_FW_MODULE_ID	0
-
-#define SKL_MAX_TIME_INTERVAL 1000
-#define SKL_MIN_TIME_INTERVAL 10
 
 struct skl_dsp_resource {
 	u32 max_mcps;
@@ -126,14 +122,6 @@ struct ep_group_cnt {
 	int *vbus_id;
 };
 
-/* For crash recovery */
-struct skl_monitor {
-	struct work_struct mwork;
-	struct timer_list timer;
-	u32 interval;
-	u32 *intervals;
-};
-
 struct skl {
 	struct hdac_bus hbus;
 	struct pci_dev *pci;
@@ -149,7 +137,6 @@ struct skl {
 	struct nhlt_acpi_table *nhlt; /* nhlt ptr */
 	struct skl_sst *skl_sst; /* sst skl ctx */
 
-	struct skl_monitor monitor_dsp;
 	struct skl_dsp_resource resource;
 	struct list_head ppl_list;
 	struct list_head bind_list;
@@ -198,7 +185,6 @@ struct skl_dsp_ops {
 			struct skl_sst **skl_sst, void *ptr);
 	int (*init_fw)(struct device *dev, struct skl_sst *ctx);
 	void (*cleanup)(struct device *dev, struct skl_sst *ctx);
-	void (*do_recovery)(struct skl *skl);
 };
 
 int skl_platform_unregister(struct device *dev);
@@ -232,8 +218,6 @@ struct skl_clk_parent_src *skl_get_parent_clk(u8 clk_id);
 int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
 				u32 caps_size, u32 node_id);
 
-void skl_timer_cb(struct timer_list *t);
-void skl_trigger_recovery(struct work_struct *work);
 struct skl_module_cfg;
 
 #ifdef CONFIG_DEBUG_FS
