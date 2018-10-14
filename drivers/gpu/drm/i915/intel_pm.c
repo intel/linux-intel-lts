@@ -4546,6 +4546,11 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
 	if (!intel_wm_plane_visible(cstate, intel_pstate))
 		return 0;
 
+	if (plane_id == 1 && !fb) {
+		DRM_DEBUG_KMS("Invalid fb for plane\n");
+		return -EINVAL;
+	}
+
 	/* only NV12 format has two planes */
 	if (plane_id == 1 && fb->format->format != DRM_FORMAT_NV12) {
 		DRM_DEBUG_KMS("Non NV12 format have single plane\n");
