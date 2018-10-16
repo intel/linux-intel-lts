@@ -69,6 +69,11 @@
 #define HC_ID_GEN_BASE               0x0UL
 #define HC_GET_API_VERSION          _HC_ID(HC_ID, HC_ID_GEN_BASE + 0x00)
 #define HC_SOS_OFFLINE_CPU          _HC_ID(HC_ID, HC_ID_GEN_BASE + 0x01)
+/* this is the temporally added hypercall.
+ * after HYPERVISOR_CALLBACK_VECTOR is switched in both kernel and hypervisor,
+ * this will be removed.
+ */
+#define HC_SET_CALLBACK_VECTOR		_HC_ID(HC_ID, HC_ID_GEN_BASE + 0x02)
 
 /* VM management */
 #define HC_ID_VM_BASE               0x10UL
