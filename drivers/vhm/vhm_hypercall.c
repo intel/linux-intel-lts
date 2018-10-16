@@ -182,3 +182,8 @@ inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr)
 {
 	return  acrn_hypercall2(HC_VM_INTR_MONITOR, vmid, addr);
 }
+
+inline long hcall_set_callback_vector(unsigned long intr_vector)
+{
+	return acrn_hypercall1(HC_SET_CALLBACK_VECTOR, intr_vector);
+}

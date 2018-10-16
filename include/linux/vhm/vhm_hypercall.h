@@ -139,6 +139,7 @@ static inline long acrn_hypercall4(unsigned long hcall_id, unsigned long param1,
 
 inline long hcall_sos_offline_cpu(unsigned long cpu);
 inline long hcall_get_api_version(unsigned long api_version);
+inline long hcall_set_callback_vector(unsigned long intr_vector);
 inline long hcall_create_vm(unsigned long vminfo);
 inline long hcall_start_vm(unsigned long vmid);
 inline long hcall_pause_vm(unsigned long vmid);
