@@ -434,6 +434,9 @@ struct intel_connector {
 	unsigned int revocated_ksv_cnt;
 	u8 *revocated_ksv_list;
 	u32 srm_blob_id;
+
+	/* Downstream info like, depth, device_count, bksv and ksv_list etc */
+	struct cp_downstream_info *downstream_info;
 };
 
 struct intel_digital_connector_state {
