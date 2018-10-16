@@ -25,4 +25,7 @@ mei-txe-objs += hw-txe.o
 mei-$(CONFIG_EVENT_TRACING) += mei-trace.o
 CFLAGS_mei-trace.o = -I$(src)
 
+obj-$(CONFIG_INTEL_MEI_VIRTIO) += mei-virtio.o
+mei-virtio-objs := hw-virtio.o
+
 obj-$(CONFIG_INTEL_MEI_SPD) += spd/
