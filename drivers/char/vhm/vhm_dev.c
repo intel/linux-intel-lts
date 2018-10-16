@@ -85,6 +85,7 @@
 #include <linux/vhm/vhm_eventfd.h>
 
 #include <asm/hypervisor.h>
+#include <asm/acrnhyper.h>
 
 #define  DEVICE_NAME "acrn_vhm"
 #define  CLASS_NAME  "vhm"
@@ -676,7 +677,6 @@ static struct attribute_group vhm_attr_group = {
 #define SUPPORT_HV_API_VERSION_MINOR	0
 static int __init vhm_init(void)
 {
-	unsigned long flag;
 	struct hc_api_version api_version = {0, 0};
 
 	if (x86_hyper_type != X86_HYPER_ACRN)
@@ -727,14 +727,8 @@ static int __init vhm_init(void)
 	}
 	pr_info("register IPI handler\n");
 	tasklet_init(&vhm_io_req_tasklet, io_req_tasklet, 0);
-	if (x86_platform_ipi_callback) {
-		pr_warn("vhm: ipi callback was occupied\n");
-		return -EINVAL;
-	}
-	local_irq_save(flag);
-	x86_platform_ipi_callback = vhm_intr_handler;
-	local_irq_restore(flag);
 
+	acrn_setup_intr_irq(vhm_intr_handler);
 	if (sysfs_create_group(&vhm_device->kobj, &vhm_attr_group)) {
 		pr_warn("vhm: sysfs create failed\n");
 		return -EINVAL;
@@ -746,6 +740,7 @@ static int __init vhm_init(void)
 static void __exit vhm_exit(void)
 {
 	tasklet_kill(&vhm_io_req_tasklet);
+	acrn_remove_intr_irq();
 	device_destroy(vhm_class, MKDEV(major, 0));
 	class_unregister(vhm_class);
 	class_destroy(vhm_class);
