@@ -708,8 +708,8 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
 	msg = skl_ipc_reply_get_msg(ipc, *ipc_header);
+	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 	if (msg == NULL) {
-		spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 		dev_dbg(ipc->dev, "ipc: rx list is empty\n");
 		return;
 	}
@@ -753,7 +753,7 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 
 		}
 	}
-
+	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
 	sst_ipc_tx_msg_reply_complete(ipc, msg);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 }
