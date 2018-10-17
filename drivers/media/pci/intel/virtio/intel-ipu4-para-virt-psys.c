@@ -45,6 +45,7 @@ extern long virt_psys_compat_ioctl32(struct file *file, unsigned int cmd,
 
 static dev_t virt_psys_dev_t;
 static struct virt_ipu_psys *g_psys;
+static struct class *virt_psys_class;
 
 static DECLARE_BITMAP(virt_psys_devices, IPU_PSYS_NUM_DEVICES);
 static DEFINE_MUTEX(psys_mutex);
@@ -646,6 +647,7 @@ static void virt_psys_dev_release(struct device *dev)
 }
 void virt_psys_exit(void)
 {
+	class_unregister(virt_psys_class);
 	unregister_chrdev_region(virt_psys_dev_t, IPU_PSYS_NUM_DEVICES);
 	if (g_psys)
 		kfree(g_psys);
@@ -679,6 +681,13 @@ int virt_psys_init(struct ipu4_virtio_ctx *fe_ctx)
 	}
 	mutex_lock(&psys_mutex);
 
+	virt_psys_class = class_create(THIS_MODULE, IPU_PSYS_NAME);
+	if (IS_ERR(virt_psys_class)) {
+		unregister_chrdev_region(virt_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+		pr_err("Failed to register device class %s\n",	IPU_PSYS_NAME);
+		return PTR_ERR(virt_psys_class);
+	}
+
 	minor = find_next_zero_bit(virt_psys_devices, IPU_PSYS_NUM_DEVICES, 0);
 	if (minor == IPU_PSYS_NUM_DEVICES) {
 		pr_err("too many devices\n");
@@ -703,6 +712,8 @@ int virt_psys_init(struct ipu4_virtio_ctx *fe_ctx)
 	set_bit(minor, virt_psys_devices);
 
 	mutex_init(&g_psys->mutex);
+
+	g_psys->dev.class = virt_psys_class;
 	g_psys->dev.devt = MKDEV(MAJOR(virt_psys_dev_t), minor);
 	g_psys->dev.release = virt_psys_dev_release;
 	dev_set_name(&g_psys->dev, "ipu-psys%d", minor);
