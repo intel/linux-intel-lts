@@ -3,6 +3,8 @@
  * Copyright (c) 2018-2019 Intel Corporation.
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
+
 #include <linux/fs.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -11,6 +13,8 @@
 #include <linux/slab.h>
 #include <linux/rpmb.h>
 #include <crypto/hash.h>
+
+#include "key.h"
 
 /**
  * struct rpmb_mux_dev - device which can support RPMB partition
@@ -60,13 +64,6 @@ static int rpmb_mux_open(struct inode *inode, struct file *fp)
 
 static int rpmb_mux_release(struct inode *inode, struct file *fp)
 {
-	return 0;
-}
-
-static int rpmb_key_retrieval(void *rpmb_key)
-{
-	/* hard code */
-	memset(rpmb_key, 0x31, 32);
 	return 0;
 }
 
@@ -566,6 +563,7 @@ static int rpmb_add_device(struct device *dev, struct class_interface *intf)
 {
 	struct rpmb_mux_dev *mux_dev;
 	struct rpmb_dev *rdev = to_rpmb_dev(dev);
+	u8 rpmb_key[RPMB_MAX_PARTITION_NUMBER][RPMB_KEY_LENGTH];
 	int ret;
 
 	mux_dev = container_of(intf, struct rpmb_mux_dev, rpmb_interface);
@@ -589,7 +587,38 @@ static int rpmb_add_device(struct device *dev, struct class_interface *intf)
 
 	mutex_unlock(&mux_dev->lock);
 
+	memset(rpmb_key, 0, sizeof(rpmb_key));
+	ret = rpmb_key_get(mux_dev->rdev->ops->dev_id,
+			   mux_dev->rdev->ops->dev_id_len,
+			   RPMB_MAX_PARTITION_NUMBER,
+			   rpmb_key);
+	if (ret) {
+		dev_err(&rdev->dev, "rpmb_key_get failed: %d.\n", ret);
+		goto err_rpmb_key_get;
+	}
+	memcpy(mux_dev->rpmb_key, &rpmb_key[0], sizeof(mux_dev->rpmb_key));
+	memset(rpmb_key, 0, sizeof(rpmb_key));
+
+	ret = crypto_shash_setkey(mux_dev->hash_desc->tfm,
+				  mux_dev->rpmb_key, 32);
+	if (ret) {
+		dev_err(&rdev->dev, "set key failed = %d\n", ret);
+		goto err_crypto_shash_setkey;
+	}
+
 	return 0;
+
+err_crypto_shash_setkey:
+	memset(mux_dev->rpmb_key, 0, sizeof(mux_dev->rpmb_key));
+err_rpmb_key_get:
+	rpmb_mux_hmac_256_free(mux_dev);
+	device_destroy(rpmb_mux_class, rpmb_mux_devt);
+	class_destroy(rpmb_mux_class);
+	cdev_del(&mux_dev->cdev);
+	kfree(mux_dev);
+	unregister_chrdev_region(rpmb_mux_devt, 0);
+
+	return ret;
 }
 
 static void rpmb_remove_device(struct device *dev, struct class_interface *intf)
@@ -660,19 +689,6 @@ static int __init rpmb_mux_init(void)
 		goto err_rpmb_mux_hmac_256_alloc;
 	}
 
-	ret = rpmb_key_retrieval(mux_dev->rpmb_key);
-	if (ret) {
-		pr_err("rpmb_key_retrieval failed.\n");
-		goto err_rpmb_key_retrieval;
-	}
-
-	ret = crypto_shash_setkey(mux_dev->hash_desc->tfm,
-				  mux_dev->rpmb_key, 32);
-	if (ret) {
-		pr_err("set key failed = %d\n", ret);
-		goto err_crypto_shash_setkey;
-	}
-
 	mux_dev->rpmb_interface.add_dev    = rpmb_add_device;
 	mux_dev->rpmb_interface.remove_dev = rpmb_remove_device;
 	mux_dev->rpmb_interface.class      = &rpmb_class;
@@ -686,10 +702,6 @@ static int __init rpmb_mux_init(void)
 	return 0;
 
 err_class_interface_register:
-err_crypto_shash_setkey:
-	memset(mux_dev->rpmb_key, 0, sizeof(mux_dev->rpmb_key));
-err_rpmb_key_retrieval:
-	rpmb_mux_hmac_256_free(mux_dev);
 err_rpmb_mux_hmac_256_alloc:
 	device_destroy(rpmb_mux_class, rpmb_mux_devt);
 err_device_create:

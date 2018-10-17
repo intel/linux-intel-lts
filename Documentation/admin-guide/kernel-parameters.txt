@@ -756,6 +756,10 @@
 			Format: <port#>,<type>
 			See also Documentation/input/devices/joystick-parport.rst
 
+	dev_sec_info.param_addr=
+			[BOOT] address of automotive bootloader (abl)
+			security parameters.
+
 	ddebug_query=	[KNL,DYNAMIC_DEBUG] Enable debug messages at early boot
 			time. See
 			Documentation/admin-guide/dynamic-debug-howto.rst for
