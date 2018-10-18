@@ -689,7 +689,9 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct intel_device_info *intel_info =
 		(struct intel_device_info *) ent->driver_data;
+#ifndef CONFIG_DRM_I915_LOAD_ASYNC_SUPPORT
 	int err;
+#endif
 
 	if (IS_ALPHA_SUPPORT(intel_info) && !i915_modparams.alpha_support) {
 		DRM_INFO("The driver support for your hardware in this kernel version is alpha quality\n"
@@ -713,6 +715,9 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (vga_switcheroo_client_probe_defer(pdev))
 		return -EPROBE_DEFER;
 
+#ifdef CONFIG_DRM_I915_LOAD_ASYNC_SUPPORT
+	i915_driver_load_async(pdev, ent);
+#else
 	err = i915_driver_load(pdev, ent);
 	if (err)
 		return err;
@@ -727,7 +732,7 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		i915_pci_remove(pdev);
 		return err > 0 ? -ENOTTY : err;
 	}
-
+#endif
 	return 0;
 }
 

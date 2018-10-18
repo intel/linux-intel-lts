@@ -147,6 +147,13 @@ config DRM_I915_GVT_ACRN_GVT
           Choose this option if you want to enable ACRN_GVT support for
           Intel GVT-g under ACRN hypervisor environment.
 
+config DRM_I915_LOAD_ASYNC_SUPPORT
+       bool "Async i915_driver_load support"
+       default n
+       depends on DRM_I915
+       help
+         Choose this option to support async i915_driver_load for boot-up time saving
+
 menu "drm/i915 Debugging"
 depends on DRM_I915
 depends on EXPERT
