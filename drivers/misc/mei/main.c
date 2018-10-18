@@ -126,7 +126,7 @@ static int mei_release(struct inode *inode, struct file *file)
 
 	rets = mei_cl_disconnect(cl);
 
-	mei_cl_flush_queues(cl, file);
+	mei_cl_flush_queues(cl, NULL);
 	cl_dbg(dev, cl, "removing\n");
 
 	mei_cl_unlink(cl);
@@ -433,7 +433,7 @@ end:
 	return rets;
 }
 
-static int mei_cl_vt_support_check(struct mei_device *dev, const uuid_le *uuid)
+static int mei_vt_support_check(struct mei_device *dev, const uuid_le *uuid)
 {
 	struct mei_me_client *me_cl;
 	int ret;
@@ -628,7 +628,11 @@ static long mei_ioctl(struct file *file, unsigned int cmd, unsigned long data)
 		props = &conn.out_client_properties;
 		vtag = 0;
 
-		if (!mei_cl_vt_support_check(dev, cl_uuid))
+		rets = mei_vt_support_check(dev, cl_uuid);
+		if (rets == -ENOTTY)
+			goto out;
+
+		if (!rets)
 			rets = mei_ioctl_connect_vtag(file, cl_uuid, props,
 						      vtag);
 		else
@@ -658,12 +662,12 @@ static long mei_ioctl(struct file *file, unsigned int cmd, unsigned long data)
 		props = &conn_vtag.out_client_properties;
 		vtag = conn_vtag.connect.vtag;
 
-		if (mei_cl_vt_support_check(dev, cl_uuid)) {
+		rets = mei_vt_support_check(dev, cl_uuid);
+		if (rets == -EOPNOTSUPP)
 			dev_dbg(dev->dev, "FW Client %pUl does not support vtags\n",
 				cl_uuid);
-			rets = -EOPNOTSUPP;
+		if (rets)
 			goto out;
-		}
 
 		if (!vtag) {
 			dev_dbg(dev->dev, "vtag can't be zero\n");

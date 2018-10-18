@@ -447,6 +447,20 @@ static void mei_io_list_free_fp(struct list_head *head, const struct file *fp)
 }
 
 /**
+ * mei_cl_free_pending - free pending cb
+ *
+ * @cl: host client
+ */
+static void mei_cl_free_pending(struct mei_cl *cl)
+{
+	struct mei_cl_cb *cb;
+
+	cb = list_first_entry_or_null(&cl->rd_pending, struct mei_cl_cb, list);
+	if (cb)
+		mei_io_cb_free(cb);
+}
+
+/**
  * mei_cl_alloc_cb - a convenient wrapper for allocating read cb
  *
  * @cl: host client
@@ -555,7 +569,8 @@ int mei_cl_flush_queues(struct mei_cl *cl, const struct file *fp)
 	mei_io_tx_list_free_cl(&cl->dev->write_waiting_list, cl);
 	mei_io_list_flush_cl(&cl->dev->ctrl_wr_list, cl);
 	mei_io_list_flush_cl(&cl->dev->ctrl_rd_list, cl);
-	mei_io_list_free_fp(&cl->rd_pending, fp);
+	if (!fp)
+		mei_cl_free_pending(cl);
 	spin_lock(&cl->rd_completed_lock);
 	mei_io_list_free_fp(&cl->rd_completed, fp);
 	spin_unlock(&cl->rd_completed_lock);
@@ -1288,20 +1303,38 @@ static void mei_cl_read_vtag_add_fc(struct mei_cl *cl)
 	}
 }
 
+static int mei_cl_vt_support_check(struct mei_cl *cl)
+{
+	struct mei_device *dev = cl->dev;
+
+	if (!dev->hbm_f_vt_supported)
+		return -EOPNOTSUPP;
+
+	if (!cl->me_cl)
+		return 0;
+
+	return cl->me_cl->props.vt_supported ? 0 : -EOPNOTSUPP;
+}
+
 void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb)
 {
 	const struct file *fp;
 
-	fp = mei_cl_fp_by_vtag(cl, cb->vtag);
-	if (fp)
+	if (!mei_cl_vt_support_check(cl)) {
+		fp = mei_cl_fp_by_vtag(cl, cb->vtag);
+		if (!fp) {
+			/* client already disconnected, discarding */
+			mei_io_cb_free(cb);
+			return;
+		}
 		cb->fp = fp;
-	mei_cl_reset_read_by_vtag(cl, cb->vtag);
+		mei_cl_reset_read_by_vtag(cl, cb->vtag);
+		mei_cl_read_vtag_add_fc(cl);
+	}
 
 	spin_lock(&cl->rd_completed_lock);
 	list_add_tail(&cb->list, &cl->rd_completed);
 	spin_unlock(&cl->rd_completed_lock);
-
-	mei_cl_read_vtag_add_fc(cl);
 }
 
 /**
