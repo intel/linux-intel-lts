@@ -1,9 +1,9 @@
-menu "hyper_dmabuf options"
-
-config HYPER_DMABUF
-	bool "Enables hyper dmabuf driver"
+menuconfig HYPER_DMABUF
+	bool "configure HyperDMABUF driver"
 	default y
 	depends on (X86=y || X86_64=y)
+
+if HYPER_DMABUF
 
 choice
 	prompt "Hypervisor"
@@ -11,34 +11,37 @@ choice
 	default HYPER_DMABUF_XEN
 
 config HYPER_DMABUF_XEN
-	bool "Configure hyper_dmabuf for XEN hypervisor"
-	depends on HYPER_DMABUF && XEN
+	bool "XEN"
+	depends on XEN
 	help
 	  Configuring hyper_dmabuf driver for XEN hypervisor
 
 config HYPER_DMABUF_ACRN
-	bool "Configure hyper_dmabuf for ACRN hypervisor"
-	depends on HYPER_DMABUF && ACRN_VIRTIO_DEVICES
+	bool "ACRN"
+	depends on ACRN_VIRTIO_DEVICES
+	select VIRTIO
 	help
 	  Configuring hyper_dmabuf driver for ACRN hypervisor
 endchoice
 
 choice
         prompt "Virtio driver type"
-        depends on HYPER_DMABUF && HYPER_DMABUF_ACRN
+        depends on HYPER_DMABUF_ACRN
         default HYPER_DMABUF_VIRTIO_BE
 
 config HYPER_DMABUF_VIRTIO_BE
 	depends on VBS && DRM_I915_GVT
-	bool "Configure hyper_dmabuf as virtio backend"
+	bool "virtio backend (SOS)"
 	help
 	  Configuring hyper_dmabuf driver as virtio backend
+	  running from service OS
 
 config HYPER_DMABUF_VIRTIO_FE
 	depends on ACRN_VIRTIO_DEVICES
-	bool "Configure hyper_dmabuf as virtio frontend"
+	bool "virtio frontend (UOS)"
 	help
 	  Configuring hyper_dmabuf driver as virtio frontend
+	  running from guest OS
 endchoice
 
 config HYPER_DMABUF_SYSFS
@@ -69,4 +72,4 @@ config HYPER_DMABUF_XEN_AUTO_RX_CH_ADD
 	  domain then initialize matched rx comm ch automatically for any
 	  existing tx comm chs.
 
-endmenu
+endif
