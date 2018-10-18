@@ -3310,7 +3310,7 @@ static void __exit mmc_blk_exit(void)
 	bus_unregister(&mmc_rpmb_bus_type);
 }
 
-module_init(mmc_blk_init);
+fs_initcall_sync(mmc_blk_init);
 module_exit(mmc_blk_exit);
 
 MODULE_LICENSE("GPL");
