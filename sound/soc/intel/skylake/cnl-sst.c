@@ -273,10 +273,6 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
 		goto load_base_firmware_failed;
 	}
 
-	ret = skl_validate_fw_version(cnl);
-	if (ret < 0)
-		goto load_base_firmware_failed;
-
 	fw_property = cnl->fw_property;
 	if (fw_property.memory_reclaimed <= 0) {
 		dev_err(ctx->dev, "Memory reclaim not enabled:%d\n",
@@ -729,25 +725,22 @@ static void skl_unregister_sdw_masters(struct skl_sst *ctx)
 }
 
 int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
-		     const char *fw_name, const struct skl_dsp_ops *dsp_ops,
+		     const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
 		     struct skl_sst **dsp, void *ptr)
 {
 	struct skl_sst *cnl;
 	struct sst_dsp *sst;
-	struct skl_dsp_loader_ops loader_ops;
 	u32 dsp_wp[] = {CNL_ADSP_WP_DSP0, CNL_ADSP_WP_DSP1, CNL_ADSP_WP_DSP2,
 				CNL_ADSP_WP_DSP3};
 	int ret;
 
-	loader_ops = dsp_ops->loader_ops();
-	ret = skl_sst_ctx_init(dev, irq, fw_name, loader_ops, dsp, &cnl_dev);
+	ret = skl_sst_ctx_init(dev, irq, fw_name, dsp_ops, dsp, &cnl_dev);
 	if (ret < 0) {
 		dev_err(dev, "%s: no device\n", __func__);
 		return ret;
 	}
 
 	cnl = *dsp;
-	cnl->dsp_ops = dsp_ops;
 	sst = cnl->dsp;
 	sst->fw_ops = cnl_fw_ops;
 	sst->addr.lpe = mmio_base;
