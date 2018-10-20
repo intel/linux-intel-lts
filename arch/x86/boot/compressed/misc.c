@@ -319,6 +319,66 @@ static void parse_elf(void *output)
 	free(phdrs);
 }
 
+#ifdef CONFIG_TURBO_BEFORE_DECOMPRESS
+static inline unsigned long long native_read_msr_local(
+				unsigned int msr)
+{
+	DECLARE_ARGS(val, low, high);
+	asm volatile("rdmsr" : EAX_EDX_RET(val, low, high) : "c" (msr));
+	return EAX_EDX_VAL(val, low, high);
+}
+
+static inline void native_write_msr_local(unsigned int msr,
+				unsigned low, unsigned high)
+{
+	asm volatile("wrmsr" : : "c" (msr),
+		"a"(low), "d" (high) : "memory");
+}
+
+#define rdmsrl_local(msr, val)			\
+	((val) = native_read_msr_local((msr)))
+
+static inline void wrmsrl_local(unsigned msr, u64 val)
+{
+	native_write_msr_local(msr, (u32)val, (u32)(val >> 32));
+}
+
+static int core_get_max_pstate(void)
+{
+	u64 value;
+
+	rdmsrl_local(MSR_PLATFORM_INFO, value);
+	return (value >> 8) & 0xFF;
+}
+
+static int core_get_turbo_pstate(void)
+{
+	u64 value;
+	int nont, ret;
+
+	rdmsrl_local(MSR_TURBO_RATIO_LIMIT, value);
+	nont = core_get_max_pstate();
+	ret = (value) & 255;
+	if (ret <= nont)
+		ret = nont;
+	return ret;
+}
+
+static void core_set_pstate(int pstate)
+{
+	u64 val;
+
+	val = (u64)(pstate << 8);
+
+	wrmsrl_local(MSR_IA32_PERF_CTL, val);
+}
+
+static void cpu_turbo_once(void)
+{
+	core_set_pstate(core_get_turbo_pstate());
+}
+#endif
+
 /*
  * The compressed kernel image (ZO), has been moved so that its position
  * is against the end of the buffer used to hold the uncompressed kernel
@@ -363,6 +423,10 @@ asmlinkage __visible void *extract_kernel(void *rmode, memptr heap,
 
 	lines = boot_params->screen_info.orig_video_lines;
 	cols = boot_params->screen_info.orig_video_cols;
+
+#ifdef CONFIG_TURBO_BEFORE_DECOMPRESS
+	cpu_turbo_once();
+#endif
 
 	console_init();
 	debug_putstr("early console in extract_kernel\n");
