@@ -2428,6 +2428,25 @@ static void stmmac_configure_cbs(struct stmmac_priv *priv)
 	}
 }
 
+static int stmmac_set_tbs_launchtime(struct stmmac_priv *priv,
+				     struct dma_desc *desc,
+				     u64 tx_time)
+{
+	struct dma_enhanced_tx_desc *enhtxdesc;
+	u32 launchtime_ns;
+	u8 launchtime_s;
+
+	enhtxdesc = container_of(desc, struct dma_enhanced_tx_desc, basic);
+	launchtime_ns = do_div(tx_time, NSEC_PER_SEC);
+	launchtime_s = tx_time;
+
+	enhtxdesc->etdes4 = launchtime_s & ETDESC4_LT_SEC;
+	enhtxdesc->etdes5 = launchtime_ns & ETDESC5_LT_NANOSEC;
+	enhtxdesc->etdes4 |= ETDESC4_LTV;
+
+	return 0;
+}
+
 /**
  *  stmmac_rx_queue_dma_chan_map - Map RX queue to RX dma channel
  *  @priv: driver private structure
@@ -3527,6 +3546,20 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (has_vlan)
 		stmmac_set_desc_vlan(priv, first, STMMAC_VLAN_INSERT);
 
+	/* Fill the Enhanced Tx Descriptor with launch time.
+	 * If skb is fragmented, only the 1st descriptor will be filled.
+	 * Drop the skb and show warning when launch time value
+	 * is invalid.
+	 */
+	if (priv->plat->tx_queues_cfg[queue].tbs_en && skb->tstamp &&
+	    priv->enhanced_tx_desc) {
+		if (stmmac_set_tbs_launchtime(priv, first,
+					      ktime_to_ns(skb->tstamp))) {
+			netdev_warn(priv->dev, "Launch time setting failed\n");
+			goto tbs_err;
+		}
+	}
+
 	enh_desc = priv->plat->enh_desc;
 	/* To program the descriptors according to the size of the frame */
 	if (enh_desc)
@@ -3702,6 +3735,11 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 
 dma_map_err:
 	netdev_err(priv->dev, "Tx DMA map failed\n");
+	dev_kfree_skb(skb);
+	priv->dev->stats.tx_dropped++;
+	return NETDEV_TX_OK;
+
+tbs_err:
 	dev_kfree_skb(skb);
 	priv->dev->stats.tx_dropped++;
 	return NETDEV_TX_OK;
@@ -4504,6 +4542,8 @@ static int stmmac_setup_tc(struct net_device *ndev, enum tc_setup_type type,
 		return stmmac_tc_setup_cbs(priv, priv, type_data);
 	case TC_SETUP_QDISC_TAPRIO:
 		return stmmac_tc_setup_taprio(priv, priv, type_data);
+	case TC_SETUP_QDISC_ETF:
+		return stmmac_tc_setup_etf(priv, priv, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}

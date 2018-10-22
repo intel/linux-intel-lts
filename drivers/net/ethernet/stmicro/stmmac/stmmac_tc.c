@@ -731,10 +731,31 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 	return ret;
 }
 
+static int tc_setup_etf(struct stmmac_priv *priv,
+			struct tc_etf_qopt_offload *qopt)
+{
+	if (!priv->enhanced_tx_desc)
+		return -EOPNOTSUPP;
+
+	if (priv->speed == SPEED_10)
+		return -EOPNOTSUPP;
+
+	if (priv->tso && qopt->enable) {
+		dev_warn(priv->device,
+			 "TSO is ON, please disable it to enable TBS\n");
+		return -EOPNOTSUPP;
+	}
+
+	priv->plat->tx_queues_cfg[qopt->queue].tbs_en = qopt->enable;
+
+	return 0;
+}
+
 const struct stmmac_tc_ops dwmac510_tc_ops = {
 	.init = tc_init,
 	.setup_cls_u32 = tc_setup_cls_u32,
 	.setup_cbs = tc_setup_cbs,
 	.setup_cls = tc_setup_cls,
 	.setup_taprio = tc_setup_taprio,
+	.setup_etf = tc_setup_etf,
 };
