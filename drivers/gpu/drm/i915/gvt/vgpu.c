@@ -117,6 +117,8 @@ static struct {
  *
  * Initialize vGPU type list based on available resource.
  *
+ * Returns:
+ * Zero on success, negative error code if failed.
  */
 int intel_gvt_init_vgpu_types(struct intel_gvt *gvt)
 {
