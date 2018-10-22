@@ -39,7 +39,7 @@
 /**
  * intel_vgpu_gpa_to_mmio_offset - translate a GPA to MMIO offset
  * @vgpu: a vGPU
- *
+ * @gpa: guest physical address
  * Returns:
  * Zero on success, negative error code if failed
  */
@@ -236,7 +236,7 @@ out:
 /**
  * intel_vgpu_reset_mmio - reset virtual MMIO space
  * @vgpu: a vGPU
- *
+ * @dmlr: vGPU Device Model Level Reset or GT Reset
  */
 void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 {
