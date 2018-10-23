@@ -57,3 +57,36 @@ config VIDEO_INTEL_IPU_WERROR
 	  Recommended for driver developers only.
 
 	  If in doubt, say "N".
+
+config VIDEO_INTEL_ICI
+        depends on VIDEO_INTEL_IPU
+        bool "Compile for ICI driver"
+        ---help---
+        If selected ICI driver will be compiled
+
+config VIDEO_INTEL_UOS
+        bool "Compile driver per UOS"
+        ---help---
+        If selected UOS driver components will be compiled
+
+config VIDEO_INTEL_IPU_ACRN
+        depends on X86_64
+        bool "Compile for virtio mediation"
+
+choice
+    prompt "Virtio driver type"
+    depends on VIDEO_INTEL_IPU_ACRN
+    default VIDEO_INTEL_IPU_VIRTIO_BE
+
+config VIDEO_INTEL_IPU_VIRTIO_BE
+    bool "Configure IPU4 as virtio backend"
+    depends on VBS
+        ---help---
+    Configuring IPU4 driver as virtio backend
+
+config VIDEO_INTEL_IPU_VIRTIO_FE
+    bool "Configure IPU4 as virtio frontend"
+    ---help---
+    Configuring IPU4 driver as virtio frontend
+
+endchoice
