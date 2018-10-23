@@ -169,9 +169,4 @@ int intel_vgpu_decode_cursor_plane(struct intel_vgpu *vgpu,
 	struct intel_vgpu_cursor_plane_format *plane);
 int intel_vgpu_decode_sprite_plane(struct intel_vgpu *vgpu,
 	struct intel_vgpu_sprite_plane_format *plane);
-
-extern
-int intel_vgpu_decode_fb_format(struct intel_gvt *pdev, int vmid,
-				struct intel_vgpu_fb_format *fb);
-
 #endif
