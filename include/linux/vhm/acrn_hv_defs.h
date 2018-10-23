@@ -117,6 +117,7 @@
 #define HC_ID_DBG_BASE              0x60UL
 #define HC_SETUP_SBUF               _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x00)
 #define HC_SETUP_HV_NPK_LOG         _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x01)
+#define HC_PROFILING_OPS            _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x02)
 
 /* Power management */
 #define HC_ID_PM_BASE               0x80UL
@@ -246,4 +247,15 @@ struct hc_api_version {
 	uint32_t minor_version;
 } __attribute__((aligned(8)));
 
+
+enum profiling_cmd_type {
+       PROFILING_MSR_OPS = 0,
+       PROFILING_GET_VMINFO,
+       PROFILING_GET_VERSION,
+       PROFILING_GET_CONTROL_SWITCH,
+       PROFILING_SET_CONTROL_SWITCH,
+       PROFILING_CONFIG_PMI,
+       PROFILING_CONFIG_VMSWITCH,
+       PROFILING_GET_PCPUID,
+};
 #endif /* ACRN_HV_DEFS_H */

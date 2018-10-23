@@ -178,6 +178,11 @@ inline long hcall_vm_gpa2hpa(unsigned long vmid, unsigned long addr)
 	return  acrn_hypercall2(HC_VM_GPA2HPA, vmid, addr);
 }
 
+inline long hcall_profiling_ops(unsigned long cmd, unsigned long msr_nodes)
+{
+	return acrn_hypercall2(HC_PROFILING_OPS, cmd, msr_nodes);
+}
+
 inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr)
 {
 	return  acrn_hypercall2(HC_VM_INTR_MONITOR, vmid, addr);
