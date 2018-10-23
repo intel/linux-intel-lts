@@ -70,6 +70,8 @@
 enum sbuf_type {
 	ACRN_TRACE,
 	ACRN_HVLOG,
+	ACRN_SEP,
+	ACRN_SOCWATCH,
 	ACRN_SBUF_TYPE_MAX,
 };
 /**
