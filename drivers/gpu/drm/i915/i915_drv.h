@@ -1802,8 +1802,16 @@ static inline bool intel_vgpu_active(struct drm_i915_private *dev_priv)
 int i915_getparam_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file_priv);
 
+#ifdef CONFIG_DRM_I915_GVT
 int i915_gem_gvtbuffer_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
+#else
+static inline int i915_gem_gvtbuffer_ioctl(struct drm_device *dev, void *data,
+			     struct drm_file *file)
+{
+	return -EINVAL;
+}
+#endif
 
 /* i915_gem.c */
 int i915_gem_init_userptr(struct drm_i915_private *dev_priv);

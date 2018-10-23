@@ -141,53 +141,59 @@ static int gvt_decode_information(struct drm_device *dev,
 				  struct drm_i915_gem_gvtbuffer *args)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
-	struct intel_vgpu_fb_format fb;
-	struct intel_vgpu_primary_plane_format *p;
-	struct intel_vgpu_cursor_plane_format *c;
-	struct intel_vgpu_pipe_format *pipe;
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	u32 id = args->id;
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_vgpu_primary_plane_format p;
+	struct intel_vgpu_cursor_plane_format c;
+	struct intel_vgpu *vgpu = NULL;
+	int ret;
+	int i;
 
-	if (intel_vgpu_decode_fb_format(dev_priv->gvt, id, &fb))
+	if (!intel_gvt_active(dev_priv))
 		return -EINVAL;
-#else
-	return -EINVAL;
-#endif
 
-	pipe = ((args->pipe_id >= I915_MAX_PIPES) ?
-		NULL : &fb.pipes[args->pipe_id]);
+	mutex_lock(&gvt->lock);
+	for_each_active_vgpu(gvt, vgpu, i)
+		if (vgpu->id == args->id)
+			break;
 
-	if (!pipe || !pipe->primary.enabled) {
-		DRM_DEBUG_DRIVER("GVT_GEM: Invalid pipe_id: %d\n",
-				 args->pipe_id);
-		return -EINVAL;
+	if (!vgpu) {
+		gvt_err("Invalid vgpu ID (%d)\n", args->id);
+		mutex_unlock(&gvt->lock);
+		return -ENODEV;
 	}
+	mutex_unlock(&gvt->lock);
 
 	if ((args->plane_id) == I915_GVT_PLANE_PRIMARY) {
-		p = &pipe->primary;
-		args->enabled = p->enabled;
-		args->x_offset = p->x_offset;
-		args->y_offset = p->y_offset;
-		args->start = p->base;
-		args->width = p->width;
-		args->height = p->height;
-		args->stride = p->stride;
-		args->bpp = p->bpp;
-		args->hw_format = p->hw_format;
-		args->drm_format = p->drm_format;
-		args->tiled = p->tiled;
+		ret = intel_vgpu_decode_primary_plane(vgpu, &p);
+		if (ret)
+			return ret;
+
+		args->enabled = p.enabled;
+		args->x_offset = p.x_offset;
+		args->y_offset = p.y_offset;
+		args->start = p.base;
+		args->width = p.width;
+		args->height = p.height;
+		args->stride = p.stride;
+		args->bpp = p.bpp;
+		args->hw_format = p.hw_format;
+		args->drm_format = p.drm_format;
+		args->tiled = p.tiled;
 	} else if ((args->plane_id) == I915_GVT_PLANE_CURSOR) {
-		c = &pipe->cursor;
-		args->enabled = c->enabled;
-		args->x_offset = c->x_hot;
-		args->y_offset = c->y_hot;
-		args->x_pos = c->x_pos;
-		args->y_pos = c->y_pos;
-		args->start = c->base;
-		args->width = c->width;
-		args->height = c->height;
-		args->stride = c->width * (c->bpp / 8);
-		args->bpp = c->bpp;
+		ret = intel_vgpu_decode_cursor_plane(vgpu, &c);
+		if (ret)
+			return ret;
+
+		args->enabled = c.enabled;
+		args->x_offset = c.x_hot;
+		args->y_offset = c.y_hot;
+		args->x_pos = c.x_pos;
+		args->y_pos = c.y_pos;
+		args->start = c.base;
+		args->width = c.width;
+		args->height = c.height;
+		args->stride = c.width * (c.bpp / 8);
+		args->bpp = c.bpp;
 		args->tiled = 0;
 	} else {
 		DRM_DEBUG_DRIVER("GVT_GEM: Invalid plaine_id: %d\n",
