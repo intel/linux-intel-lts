@@ -115,6 +115,8 @@ i915_gem_object_create_gvtbuffer(struct drm_device *dev,
 				 u32 start, u32 num_pages)
 {
 	struct drm_i915_gem_object *obj;
+	struct drm_i915_private *i915 = to_i915(dev);
+
 	obj = i915_gem_object_alloc(to_i915(dev));
 	if (obj == NULL)
 		return NULL;
@@ -134,6 +136,11 @@ i915_gem_object_create_gvtbuffer(struct drm_device *dev,
 
 	DRM_DEBUG_DRIVER("GVT_GEM: backing store base = 0x%x pages = 0x%x\n",
 			 start, num_pages);
+
+	spin_lock(&i915->mm.obj_lock);
+	list_add(&obj->mm.link, &i915->mm.unbound_list);
+	spin_unlock(&i915->mm.obj_lock);
+
 	return obj;
 }
 
