@@ -1,7 +1,7 @@
 menuconfig HYPER_DMABUF
 	bool "configure HyperDMABUF driver"
 	default y
-	depends on (X86=y || X86_64=y)
+	depends on X86_64
 
 if HYPER_DMABUF
 
