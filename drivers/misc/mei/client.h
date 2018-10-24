@@ -104,6 +104,7 @@ struct mei_cl_cb *mei_cl_enqueue_ctrl_wr_cb(struct mei_cl *cl, size_t length,
 					    const struct file *fp);
 int mei_cl_flush_queues(struct mei_cl *cl, const struct file *fp);
 
+struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag);
 const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag);
 /*
  *  MEI input output function prototype

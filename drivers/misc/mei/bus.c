@@ -495,6 +495,16 @@ static void mei_cl_bus_module_put(struct mei_cl_device *cldev)
 	module_put(cldev->bus->dev->driver->owner);
 }
 
+static int mei_cldev_vt_support_check(struct mei_cl_device *cldev)
+{
+	struct mei_device *bus = cldev->bus;
+
+	if (!bus->hbm_f_vt_supported)
+		return -EOPNOTSUPP;
+
+	return cldev->me_cl->props.vt_supported ? 0 : -EOPNOTSUPP;
+}
+
 /**
  * mei_cldev_enable - enable me client device
  *     create connection with me client
@@ -507,6 +517,7 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 {
 	struct mei_device *bus = cldev->bus;
 	struct mei_cl *cl;
+	struct mei_cl_vtag *cl_vtag;
 	int ret;
 
 	cl = cldev->cl;
@@ -529,6 +540,19 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 		dev_err(&cldev->dev, "me client is not active\n");
 		ret = -ENOTTY;
 		goto out;
+	}
+
+	if (!mei_cldev_vt_support_check(cldev)) {
+		if (!list_first_entry_or_null(&cl->vtag_map,
+					      struct mei_cl_vtag, list)) {
+			cl_vtag = mei_cl_vtag_alloc(NULL, 0);
+			if (IS_ERR(cl_vtag)) {
+				ret = -ENOMEM;
+				goto out;
+			}
+
+			list_add_tail(&cl_vtag->list, &cl->vtag_map);
+		}
 	}
 
 	ret = mei_cl_connect(cl, cldev->me_cl, NULL);
@@ -573,6 +597,7 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 {
 	struct mei_device *bus;
 	struct mei_cl *cl;
+	struct mei_cl_vtag *cl_vtag;
 	int err;
 
 	if (!cldev)
@@ -585,6 +610,13 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 	mei_cldev_unregister_callbacks(cldev);
 
 	mutex_lock(&bus->device_lock);
+
+	cl_vtag = list_first_entry_or_null(&cl->vtag_map,
+					   struct mei_cl_vtag, list);
+	if (cl_vtag) {
+		list_del(&cl_vtag->list);
+		kfree(cl_vtag);
+	}
 
 	if (!mei_cl_is_connected(cl)) {
 		dev_dbg(bus->dev, "Already disconnected\n");

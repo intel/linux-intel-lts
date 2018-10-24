@@ -1267,6 +1267,21 @@ static int mei_cl_tx_flow_ctrl_creds_reduce(struct mei_cl *cl)
 	return 0;
 }
 
+struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag)
+{
+	struct mei_cl_vtag *cl_vtag;
+
+	cl_vtag = kzalloc(sizeof(*cl_vtag), GFP_KERNEL);
+	if (!cl_vtag)
+		return ERR_PTR(-ENOMEM);
+
+	INIT_LIST_HEAD(&cl_vtag->list);
+	cl_vtag->vtag = vtag;
+	cl_vtag->fp = fp;
+
+	return cl_vtag;
+}
+
 const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag)
 {
 	struct mei_cl_vtag *vtag_l;
@@ -1275,7 +1290,7 @@ const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag)
 		if (vtag_l->vtag == vtag)
 			return vtag_l->fp;
 
-	return NULL;
+	return ERR_PTR(-ENOENT);
 }
 
 static void mei_cl_reset_read_by_vtag(const struct mei_cl *cl, u8 vtag)
@@ -1325,7 +1340,7 @@ void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb)
 
 	if (!mei_cl_vt_support_check(cl)) {
 		fp = mei_cl_fp_by_vtag(cl, cb->vtag);
-		if (!fp) {
+		if (IS_ERR(fp)) {
 			/* client already disconnected, discarding */
 			mei_io_cb_free(cb);
 			return;

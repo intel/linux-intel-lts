@@ -453,21 +453,6 @@ static int mei_vt_support_check(struct mei_device *dev, const uuid_le *uuid)
 	return ret;
 }
 
-static struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag)
-{
-	struct mei_cl_vtag *cl_vtag;
-
-	cl_vtag = kzalloc(sizeof(*cl_vtag), GFP_KERNEL);
-	if (!cl_vtag)
-		return ERR_PTR(-ENOMEM);
-
-	INIT_LIST_HEAD(&cl_vtag->list);
-	cl_vtag->vtag = vtag;
-	cl_vtag->fp = fp;
-
-	return cl_vtag;
-}
-
 static int mei_ioctl_connect_vtag(struct file *file,
 				  const uuid_le *in_client_uuid,
 				  struct mei_client *client,
@@ -498,7 +483,7 @@ static int mei_ioctl_connect_vtag(struct file *file,
 			continue;
 
 		/* if tag already exist try another fp */
-		if (mei_cl_fp_by_vtag(pos, vtag))
+		if (!IS_ERR(mei_cl_fp_by_vtag(pos, vtag)))
 			continue;
 
 		/* replace cl with acquired one */
