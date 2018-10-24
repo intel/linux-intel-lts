@@ -4956,6 +4956,10 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 	}
 
 	/* Check src format */
+	if (!fb) {
+		DRM_ERROR("skl_update_scaler_plane(): fb is invalid\n");
+		return 0;
+	}
 	switch (fb->format->format) {
 	case DRM_FORMAT_RGB565:
 	case DRM_FORMAT_XBGR8888:

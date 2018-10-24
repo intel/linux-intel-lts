@@ -816,6 +816,11 @@ static bool intel_wm_plane_visible(const struct intel_crtc_state *crtc_state,
 		return true;
 	}
 
+	if(!plane_state) {
+		DRM_ERROR("intel_wm_plane_visible(): plane_state==NULL and return 0\n");
+		return false;
+	}
+
 	/*
 	 * Treat cursor with fb as always visible since cursor updates
 	 * can happen faster than the vrefresh rate, and the current
@@ -4025,6 +4030,10 @@ skl_plane_downscale_amount(const struct intel_crtc_state *cstate,
 		return mul_fixed16(u32_to_fixed16(1), u32_to_fixed16(1));
 	}
 
+	if (WARN_ON_ONCE(!pstate)) {
+		return u32_to_fixed16(0);
+	}
+
 	if (WARN_ON(!intel_wm_plane_visible(cstate, pstate)))
 		return u32_to_fixed16(0);
 
@@ -4570,6 +4579,10 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
 		goto calculate_wm;
 	}
 
+	if (!fb || !intel_pstate) {
+		DRM_ERROR("invalid fb:%p intel_pstate:%p\n", fb, intel_pstate);
+		return -EINVAL;
+	}
 	wp->y_tiled = fb->modifier == I915_FORMAT_MOD_Y_TILED ||
 		      fb->modifier == I915_FORMAT_MOD_Yf_TILED ||
 		      fb->modifier == I915_FORMAT_MOD_Y_TILED_CCS ||
@@ -4601,7 +4614,7 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
 	else
 		wp->dbuf_block_size = 512;
 
-	if (drm_rotation_90_or_270(pstate->rotation)) {
+	if (pstate && drm_rotation_90_or_270(pstate->rotation)) {
 
 		switch (wp->cpp) {
 		case 1:
