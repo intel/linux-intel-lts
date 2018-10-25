@@ -1461,6 +1461,7 @@ struct vm_struct *find_vm_area(const void *addr)
 
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(find_vm_area);
 
 /**
  *	remove_vm_area  -  find and remove a continuous kernel virtual area
