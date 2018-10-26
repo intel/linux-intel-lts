@@ -928,6 +928,7 @@ struct v4l2_plane {
  * @length:	size in bytes of the buffer (NOT its payload) for single-plane
  *		buffers (when type != *_MPLANE); number of elements in the
  *		planes array for multi-plane buffers
+* @request: this buffer should use this request
  *
  * Contains data exchanged by application and driver using one of the Streaming
  * I/O methods.
@@ -951,7 +952,10 @@ struct v4l2_buffer {
 		__s32		fd;
 	} m;
 	__u32			length;
+	union {
+	__u32			request;
 	__u32			reserved2;
+	};
 	__u32			reserved;
 };
 
