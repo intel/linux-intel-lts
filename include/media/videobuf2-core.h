@@ -516,6 +516,7 @@ struct vb2_queue {
 	unsigned			fileio_write_immediately:1;
 	unsigned			allow_zero_bytesused:1;
 	unsigned		   quirk_poll_must_check_waiting_for_buffers:1;
+	unsigned			allow_requests:1;
 
 	struct mutex			*lock;
 	void				*owner;
