@@ -238,11 +238,11 @@ static ssize_t mod_control_write(struct file *file,
 
 	default:
 		if (mbsz)
-			retval = sst_ipc_tx_message_wait(&ctx->ipc, *ipc_header,
+			retval = skl_ipc_tx_message_wait(&ctx->ipc, *ipc_header,
 				mod_set_get->mailbx, mbsz, NULL, NULL);
 
 		else
-			retval = sst_ipc_tx_message_wait(&ctx->ipc, *ipc_header,
+			retval = skl_ipc_tx_message_wait(&ctx->ipc, *ipc_header,
 				NULL, 0, NULL, NULL);
 
 		break;
