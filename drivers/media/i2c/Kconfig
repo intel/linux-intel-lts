@@ -1074,6 +1074,12 @@ config VIDEO_TI964
 	---help---
 	This is a driver for TI964 camera.
 
+config VIDEO_MAX9286
+	tristate "MAX96705/MAX9286 Serializer/Deserializer"
+	depends on I2C && VIDEO_V4L2 && REGMAP_I2C
+	---help---
+	This is a MAXIM 96705 Serializer and MAXIM 9286 CSI-2 Deserializer driver.
+
 endmenu
 
 menu "Sensors used on soc_camera driver"
