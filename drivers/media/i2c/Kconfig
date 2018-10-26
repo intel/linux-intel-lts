@@ -1068,6 +1068,12 @@ config VIDEO_I2C
 	  To compile this driver as a module, choose M here: the
 	  module will be called video-i2c
 
+config VIDEO_TI964
+	tristate "TI964 driver support"
+	depends on I2C && VIDEO_V4L2
+	---help---
+	This is a driver for TI964 camera.
+
 endmenu
 
 menu "Sensors used on soc_camera driver"
