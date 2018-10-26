@@ -481,7 +481,7 @@ struct v4l2_buffer32 {
 		__s32		fd;
 	} m;
 	__u32			length;
-	__u32			reserved2;
+	__u32			request;
 	__u32			reserved;
 };
 
@@ -581,6 +581,7 @@ static int get_v4l2_buffer32(struct v4l2_buffer __user *p64,
 {
 	u32 type;
 	u32 length;
+	u32 request;
 	enum v4l2_memory memory;
 	struct v4l2_plane32 __user *uplane32;
 	struct v4l2_plane __user *uplane;
@@ -595,7 +596,9 @@ static int get_v4l2_buffer32(struct v4l2_buffer __user *p64,
 	    get_user(memory, &p32->memory) ||
 	    put_user(memory, &p64->memory) ||
 	    get_user(length, &p32->length) ||
-	    put_user(length, &p64->length))
+	    put_user(length, &p64->length) ||
+	    get_user(request, &p32->request) ||
+	    put_user(request, &p64->request))
 		return -EFAULT;
 
 	if (V4L2_TYPE_IS_OUTPUT(type))
@@ -677,6 +680,7 @@ static int put_v4l2_buffer32(struct v4l2_buffer __user *p64,
 {
 	u32 type;
 	u32 length;
+	u32 request;
 	enum v4l2_memory memory;
 	struct v4l2_plane32 __user *uplane32;
 	struct v4l2_plane *uplane;
@@ -698,10 +702,12 @@ static int put_v4l2_buffer32(struct v4l2_buffer __user *p64,
 	    assign_in_user(&p32->timestamp.tv_usec, &p64->timestamp.tv_usec) ||
 	    copy_in_user(&p32->timecode, &p64->timecode, sizeof(p64->timecode)) ||
 	    assign_in_user(&p32->sequence, &p64->sequence) ||
-	    assign_in_user(&p32->reserved2, &p64->reserved2) ||
+	    assign_in_user(&p32->request, &p64->request) ||
 	    assign_in_user(&p32->reserved, &p64->reserved) ||
 	    get_user(length, &p64->length) ||
-	    put_user(length, &p32->length))
+	    put_user(length, &p32->length) ||
+	    get_user(request, &p64->length) ||
+	    put_user(request, &p32->length))
 		return -EFAULT;
 
 	if (V4L2_TYPE_IS_MULTIPLANAR(type)) {
