@@ -127,21 +127,6 @@ inline long hcall_notify_req_finish(unsigned long vmid, unsigned long vcpu)
 	return acrn_hypercall2(HC_NOTIFY_REQUEST_FINISH, vmid, vcpu);
 }
 
-inline long hcall_assert_irqline(unsigned long vmid, unsigned long irq)
-{
-	return acrn_hypercall2(HC_ASSERT_IRQLINE, vmid, irq);
-}
-
-inline long hcall_deassert_irqline(unsigned long vmid, unsigned long irq)
-{
-	return acrn_hypercall2(HC_DEASSERT_IRQLINE, vmid, irq);
-}
-
-inline long hcall_pulse_irqline(unsigned long vmid, unsigned long irq)
-{
-	return acrn_hypercall2(HC_PULSE_IRQLINE, vmid, irq);
-}
-
 inline long hcall_set_irqline(unsigned long vmid, unsigned long op)
 {
 	return acrn_hypercall2(HC_SET_IRQLINE, vmid, op);

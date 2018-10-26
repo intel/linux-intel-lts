@@ -395,47 +395,6 @@ create_vm_fail:
 		break;
 	}
 
-	case IC_ASSERT_IRQLINE: {
-		struct acrn_irqline irq;
-
-		if (copy_from_user(&irq, (void *)ioctl_param, sizeof(irq)))
-			return -EFAULT;
-
-		ret = hcall_assert_irqline(vm->vmid, virt_to_phys(&irq));
-		if (ret < 0) {
-			pr_err("vhm: failed to assert irq!\n");
-			return -EFAULT;
-		}
-		break;
-	}
-	case IC_DEASSERT_IRQLINE: {
-		struct acrn_irqline irq;
-
-		if (copy_from_user(&irq, (void *)ioctl_param, sizeof(irq)))
-			return -EFAULT;
-
-		ret = hcall_deassert_irqline(vm->vmid, virt_to_phys(&irq));
-		if (ret < 0) {
-			pr_err("vhm: failed to deassert irq!\n");
-			return -EFAULT;
-		}
-		break;
-	}
-	case IC_PULSE_IRQLINE: {
-		struct acrn_irqline irq;
-
-		if (copy_from_user(&irq, (void *)ioctl_param, sizeof(irq)))
-			return -EFAULT;
-
-		ret = hcall_pulse_irqline(vm->vmid,
-					virt_to_phys(&irq));
-		if (ret < 0) {
-			pr_err("vhm: failed to assert irq!\n");
-			return -EFAULT;
-		}
-		break;
-	}
-
 	case IC_SET_IRQLINE: {
 		ret = hcall_set_irqline(vm->vmid, ioctl_param);
 		if (ret < 0) {
