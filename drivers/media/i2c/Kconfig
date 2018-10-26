@@ -1080,6 +1080,12 @@ config VIDEO_MAX9286
 	---help---
 	This is a MAXIM 96705 Serializer and MAXIM 9286 CSI-2 Deserializer driver.
 
+config VIDEO_TI960
+	tristate "TI960 driver support"
+	depends on I2C && VIDEO_V4L2
+	---help---
+	This is a driver for TI960 Deserializer.
+
 endmenu
 
 menu "Sensors used on soc_camera driver"
