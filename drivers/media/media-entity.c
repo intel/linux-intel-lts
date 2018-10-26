@@ -332,7 +332,9 @@ void media_graph_walk_start(struct media_graph *graph,
 
 	graph->top = 0;
 	graph->stack[graph->top].entity = NULL;
-	stack_push(graph, entity, 0, -1);
+	stack_push(graph, entity,
+			entity->start ? entity->start->index : 0, -1);
+	entity->start = NULL;
 	dev_dbg(entity->graph_obj.mdev->dev,
 		"begin graph walk at '%s'\n", entity->name);
 }
