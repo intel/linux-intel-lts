@@ -284,6 +284,7 @@ struct media_entity {
 	int internal_idx;
 
 	struct media_pad *pads;
+	struct media_pad *start;
 	struct list_head links;
 
 	const struct media_entity_operations *ops;
