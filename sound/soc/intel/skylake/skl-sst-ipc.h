@@ -413,6 +413,8 @@ struct skl_module_notify {
 
 irqreturn_t skl_dsp_irq_thread_handler(int irq, void *context);
 
+int skl_ipc_tx_message_wait(struct sst_generic_ipc *ipc, u64 header,
+	void *tx_data, size_t tx_bytes, void *rx_data, size_t *rx_bytes);
 int skl_ipc_create_pipeline(struct sst_generic_ipc *sst_ipc,
 		u16 ppl_mem_size, u8 ppl_type, u8 instance_id, u8 lp_mode);
 
