@@ -33,7 +33,6 @@
  *
  */
 #include <asm/hypervisor.h>
-#include <linux/vhm/vhm_msi.h>
 #include <asm/acrnhyper.h>
 #include <asm/irq_vectors.h>
 #include <asm/irq_regs.h>
@@ -46,10 +45,6 @@ static uint32_t __init acrn_detect(void)
 
 static void __init acrn_init_platform(void)
 {
-#if  defined(CONFIG_PCI_MSI) && defined(CONFIG_ACRN_VHM)
-	pv_irq_ops.write_msi = acrn_write_msi_msg;
-#endif
-
 	alloc_intr_gate(HYPERVISOR_CALLBACK_VECTOR,
                                 acrn_hv_callback_vector);
 }

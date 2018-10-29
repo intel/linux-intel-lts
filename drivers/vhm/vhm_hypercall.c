@@ -158,11 +158,6 @@ inline long hcall_reset_ptdev_intr_info(unsigned long vmid,
 	return acrn_hypercall2(HC_RESET_PTDEV_INTR_INFO, vmid, pt_irq);
 }
 
-inline long hcall_remap_pci_msix(unsigned long vmid, unsigned long msi)
-{
-	return  acrn_hypercall2(HC_VM_PCI_MSIX_REMAP, vmid, msi);
-}
-
 inline long hcall_vm_gpa2hpa(unsigned long vmid, unsigned long addr)
 {
 	return  acrn_hypercall2(HC_VM_GPA2HPA, vmid, addr);
