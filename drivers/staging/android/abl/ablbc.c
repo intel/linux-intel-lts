@@ -94,6 +94,8 @@ struct nvram_msg {
 static const struct name2id NAME2ID[] = {
 	{ "main",	0x00 },
 	{ "android",	0x00 },
+	{ "adb",        0x00 },
+	{ "shell",      0x00 },
 	{ "bootloader",	0x01 },
 	{ "fastboot",	0x01 },
 	{ "elk",	0x02 },
