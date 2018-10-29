@@ -9,6 +9,8 @@
 extern const unsigned char pcie_link_speed[];
 extern bool pci_early_dump;
 
+struct msi_desc;
+
 bool pcie_cap_has_lnkctl(const struct pci_dev *dev);
 
 /* Functions internal to the PCI core code */
