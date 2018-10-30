@@ -21,10 +21,7 @@
 #include <sound/soc.h>
 #include <sound/tlv.h>
 #include <sound/pcm_params.h>
-#include <linux/mutex.h>
 #include "tdf8532.h"
-
-static DEFINE_MUTEX(tdf8532_lock);
 
 static int __tdf8532_build_pkt(struct tdf8532_priv *dev_data,
 				va_list valist,	u8 *payload)
@@ -213,12 +210,11 @@ out:
 
 static int tdf8532_start_play(struct tdf8532_priv *tdf8532)
 {
-	int ret = 0;
+	int ret;
 
-	mutex_lock(&tdf8532_lock);
 	ret = tdf8532_amp_write(tdf8532, SET_CLK_STATE, CLK_CONNECT);
 	if (ret < 0)
-		goto out;
+		return ret;
 
 	ret = tdf8532_amp_write(tdf8532, SET_CHNL_ENABLE,
 			CHNL_MASK(tdf8532->channels));
@@ -226,22 +222,22 @@ static int tdf8532_start_play(struct tdf8532_priv *tdf8532)
 	if (ret >= 0)
 		ret = tdf8532_wait_state(tdf8532, STATE_PLAY, ACK_TIMEOUT);
 
-out:
-	if (ret >= 0)
-		tdf8532->powered = 1;
-	mutex_unlock(&tdf8532_lock);
 	return ret;
 }
 
+
 static int tdf8532_stop_play(struct tdf8532_priv *tdf8532)
 {
-	int ret = 0;
+	int ret;
+
 	ret = tdf8532_amp_write(tdf8532, SET_CHNL_DISABLE,
 			CHNL_MASK(tdf8532->channels));
 	if (ret < 0)
 		goto out;
 
-	tdf8532_wait_state(tdf8532, STATE_STBY, ACK_TIMEOUT);
+	ret = tdf8532_wait_state(tdf8532, STATE_STBY, ACK_TIMEOUT);
+	if (ret < 0)
+		goto out;
 
 	ret = tdf8532_amp_write(tdf8532, SET_CLK_STATE, CLK_DISCONNECT);
 	if (ret < 0)
@@ -253,17 +249,30 @@ out:
 	return ret;
 }
 
-static int tdf8532_dai_trigger_pb(struct snd_pcm_substream *substream, int cmd,
+
+static int tdf8532_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 		struct snd_soc_dai *dai)
 {
 	int ret = 0;
 	struct snd_soc_component *component = dai->component;
 	struct tdf8532_priv *tdf8532 = snd_soc_component_get_drvdata(component);
-	dev_dbg(component->dev, "%s: cmd:%d substream:%d\n", __func__, cmd,
-		substream->stream);
 
-	if (cmd == SNDRV_PCM_TRIGGER_START && !tdf8532->powered)
+	dev_dbg(component->dev, "%s: cmd = %d\n", __func__, cmd);
+
+	switch (cmd) {
+	case SNDRV_PCM_TRIGGER_START:
+	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
+	case SNDRV_PCM_TRIGGER_RESUME:
 		ret = tdf8532_start_play(tdf8532);
+		break;
+	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+	case SNDRV_PCM_TRIGGER_SUSPEND:
+	case SNDRV_PCM_TRIGGER_STOP:
+		/* WA on unexpected codec down during S3
+		 SNDRV_PCM_TRIGGER_STOP fails so skip set ret */
+		tdf8532_stop_play(tdf8532);
+		break;
+	}
 
 	return ret;
 }
@@ -272,48 +281,25 @@ static int tdf8532_mute(struct snd_soc_dai *dai, int mute)
 {
 	struct snd_soc_component *component = dai->component;
 	struct tdf8532_priv *tdf8532 = snd_soc_component_get_drvdata(component);
-	int ret;
 
-	dev_dbg(component->dev, "%s mute:%d\n", __func__, mute);
-	mutex_lock(&tdf8532_lock);
-	ret = tdf8532_amp_write(tdf8532, (mute)?SET_CHNL_MUTE:SET_CHNL_UNMUTE,
-		CHNL_MASK(CHNL_MAX));
-	mutex_unlock(&tdf8532_lock);
-	return ret;
+	dev_dbg(component->dev, "%s\n", __func__);
+
+	if (mute)
+		return tdf8532_amp_write(tdf8532, SET_CHNL_MUTE,
+				CHNL_MASK(CHNL_MAX));
+	else
+		return tdf8532_amp_write(tdf8532, SET_CHNL_UNMUTE,
+				CHNL_MASK(CHNL_MAX));
 }
 
-static const struct snd_soc_dai_ops tdf8532_dai_ops_pb = {
-	.trigger  = tdf8532_dai_trigger_pb,
+static const struct snd_soc_dai_ops tdf8532_dai_ops = {
+	.trigger  = tdf8532_dai_trigger,
 	.digital_mute = tdf8532_mute,
 };
 
-static int tdf8532_resume(struct snd_soc_component *component)
-{
-	int ret;
-	struct tdf8532_priv *tdf8532 = snd_soc_component_get_drvdata(component);
-	u8 cur_state = STATE_NONE;
-	struct get_dev_status_repl *status_repl = NULL;
+static struct snd_soc_component_driver  soc_component_tdf8532;
 
-	dev_dbg(component->dev, "%s\n", __func__);
-	mutex_lock(&tdf8532_lock);
-	ret = tdf8532_get_state(tdf8532, &status_repl);
-	mutex_unlock(&tdf8532_lock);
-	if (ret < 0)
-		goto out;
-	cur_state = status_repl->state;
-	dev_dbg(component->dev, "%s cur_state:%d\n", __func__, cur_state);
-	if (cur_state < STATE_PLAY)
-		tdf8532_start_play(tdf8532);
-out:
-
-	return 0;
-}
-
-static const struct snd_soc_component_driver soc_component_tdf8532 = {
-	.resume = tdf8532_resume,
-};
-
-static struct snd_soc_dai_driver tdf8532_dai_pb[] = {
+static struct snd_soc_dai_driver tdf8532_dai[] = {
 	{
 		.name = "tdf8532-hifi",
 		.playback = {
@@ -323,7 +309,7 @@ static struct snd_soc_dai_driver tdf8532_dai_pb[] = {
 			.rates = SNDRV_PCM_RATE_48000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
 		},
-		.ops = &tdf8532_dai_ops_pb,
+		.ops = &tdf8532_dai_ops,
 	}
 };
 
@@ -346,12 +332,11 @@ static int tdf8532_i2c_probe(struct i2c_client *i2c,
 	dev_data->i2c = i2c;
 	dev_data->pkt_id = 0;
 	dev_data->channels = 4;
-	dev_data->powered = 0;
 
 	i2c_set_clientdata(i2c, dev_data);
 
 	ret = devm_snd_soc_register_component(&i2c->dev, &soc_component_tdf8532,
-			tdf8532_dai_pb, ARRAY_SIZE(tdf8532_dai_pb));
+			tdf8532_dai, ARRAY_SIZE(tdf8532_dai));
 	if (ret != 0) {
 		dev_err(&i2c->dev, "Failed to register codec: %d\n", ret);
 		goto out;
