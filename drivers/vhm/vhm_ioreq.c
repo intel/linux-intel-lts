@@ -660,6 +660,32 @@ static void acrn_ioreq_notify_client(struct ioreq_client *client)
 		wake_up_interruptible(&client->wq);
 }
 
+static int ioreq_complete_request(unsigned long vmid, int vcpu,
+		struct vhm_request *vhm_req)
+{
+	bool polling_mode;
+
+	polling_mode = vhm_req->completion_polling;
+	smp_mb();
+	atomic_set(&vhm_req->processed, REQ_STATE_COMPLETE);
+	/*
+	 * In polling mode, HV will poll ioreqs' completion.
+	 * Once marked the ioreq as REQ_STATE_COMPLETE, hypervisor side
+	 * can poll the result and continue the IO flow. Thus, we don't
+	 * need to notify hypervisor by hypercall.
+	 * Please note, we need get completion_polling before set the request
+	 * as complete, or we will race with hypervisor.
+	 */
+	if (!polling_mode) {
+		if (hcall_notify_req_finish(vmid, vcpu) < 0) {
+			pr_err("vhm-ioreq: notify request complete failed!\n");
+			return -EFAULT;
+		}
+	}
+
+	return 0;
+}
+
 static bool req_in_range(struct ioreq_range *range, struct vhm_request *req)
 {
 	bool ret = false;
@@ -719,6 +745,7 @@ static int cached_enable;
 static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
 {
 	int req_handled = 0;
+	int err = 0;
 
 	/*XXX: like DM, assume cfg address write is size 4 */
 	if (is_cfg_addr(req)) {
@@ -763,17 +790,10 @@ static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
 		}
 	}
 
-	if (req_handled) {
-		smp_mb();
-		atomic_set(&req->processed, REQ_STATE_COMPLETE);
-		if (hcall_notify_req_finish(vm->vmid, vcpu) < 0) {
-			pr_err("vhm-ioreq: failed to "
-				"notify request finished !\n");
-			return -EFAULT;
-		}
-	}
+	if (req_handled)
+		err = ioreq_complete_request(vm->vmid, vcpu, req);
 
-	return req_handled;
+	return err ? err: req_handled;
 }
 
 static bool bdf_match(struct ioreq_client *client)
@@ -881,7 +901,6 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
 		struct vhm_request *vhm_req)
 {
 	struct ioreq_client *client;
-	int ret;
 
 	if (client_id < 0 || client_id >= MAX_CLIENT) {
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
@@ -899,16 +918,7 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
 		vhm_req += vcpu;
 	}
 
-	smp_mb();
-	atomic_set(&vhm_req->processed, REQ_STATE_COMPLETE);
-
-	ret = hcall_notify_req_finish(client->vmid, vcpu);
-	if (ret < 0) {
-		pr_err("vhm-ioreq: failed to notify request finished !\n");
-		return -EFAULT;
-	}
-
-	return 0;
+	return ioreq_complete_request(client->vmid, vcpu, vhm_req);
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_complete_request);
 
