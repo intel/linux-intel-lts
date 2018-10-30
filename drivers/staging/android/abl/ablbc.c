@@ -294,47 +294,6 @@ static int set_reboot_target(const char *name)
 
 static const unsigned int DEFAULT_TARGET_INDEX;
 
-static const char * const cold_reset[] = {
-	"/vendor/bin/cansend",
-	"slcan0",
-	"0000FFFF#05015555555555",
-	NULL};
-static const char * const suppress_heartbeat[] = {
-	"/vendor/bin/cansend",
-	"slcan0",
-	"0000FFFF#01035555555555",
-	NULL};
-static const char * const reboot_request[] = {
-	"/vendor/bin/cansend",
-	"slcan0",
-	"0000FFFF#03015555555555",
-	NULL};
-
-static int execute_slcan_command(const char *cmd[])
-{
-#ifdef CONFIG_SEND_SLCAN_ENABLE
-	struct subprocess_info *sub_info;
-	int ret = -1;
-
-	sub_info = call_usermodehelper_setup((char *)cmd[0],
-		(char **)cmd,(char **) NULL, GFP_KERNEL,
-		(void *)NULL, (void*)NULL, (void*)NULL);
-
-	if (sub_info) {
-		ret = call_usermodehelper_exec(sub_info,
-			UMH_WAIT_PROC);
-		pr_info("Exec cmd=%s ret=%d\n", cmd[0], ret);
-	}
-
-	if (ret)
-		pr_err("Failure on cmd=%s ret=%d\n", cmd[0], ret);
-
-	return ret;
-#else
-	return 0;
-#endif
-}
-
 static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 				      unsigned long what, void *data)
 {
@@ -350,17 +309,6 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 				__func__, ret);
 	}
 
-	ret = execute_slcan_command((const char **)suppress_heartbeat);
-	if (ret)
-		goto done;
-
-	ret = execute_slcan_command((const char **)reboot_request);
-	if (ret)
-		goto done;
-
-	ret = execute_slcan_command((const char **)cold_reset);
-
-done:
 	return NOTIFY_DONE;
 }
 
