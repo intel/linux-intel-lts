@@ -1243,7 +1243,8 @@ static int soc_probe_component(struct snd_soc_card *card,
 	struct snd_soc_dai *dai;
 	int ret;
 
-	if (!strcmp(component->name, "snd-soc-dummy"))
+	if (!strcmp(component->name, "snd-soc-dummy") &&
+		!IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH))
 		return 0;
 
 	if (component->card) {
