@@ -2136,80 +2136,79 @@ int skl_platform_register(struct device *dev)
 	struct hdac_bus *bus = dev_get_drvdata(dev);
 	struct skl *skl = bus_to_skl(bus);
 	struct snd_soc_dai_driver *dais;
-	int num_dais = ARRAY_SIZE(skl_platform_dai);
+	const int num_platform_dais = ARRAY_SIZE(skl_platform_dai);
+	const int num_fe_dais = ARRAY_SIZE(skl_fe_dai);
 	int total_dais;
 	int i, index;
 
 	INIT_LIST_HEAD(&skl->ppl_list);
 	INIT_LIST_HEAD(&skl->bind_list);
 
-	skl->dais = kmemdup(skl_platform_dai, sizeof(skl_platform_dai),
-			    GFP_KERNEL);
 	skl->grp_cnt.vbus_id = devm_kcalloc(dev, skl->nhlt->endpoint_count,
 						sizeof(int), GFP_KERNEL);
-	if (!skl->grp_cnt.vbus_id)
-		return -ENOMEM;
-
-	skl_nhlt_get_ep_cnt(skl, NHLT_LINK_SSP);
-
-	total_dais = num_dais + skl->grp_cnt.cnt;
-
-	skl->dais = devm_kcalloc(dev, total_dais, sizeof(*dais), GFP_KERNEL);
-
-	if (!skl->dais) {
+	if (!skl->grp_cnt.vbus_id) {
 		ret = -ENOMEM;
 		goto err;
 	}
 
-	memcpy(skl->dais, skl_platform_dai, sizeof(skl_platform_dai));
+	skl_nhlt_get_ep_cnt(skl, NHLT_LINK_SSP);
 
-	for (i = 0; i < skl->grp_cnt.cnt; i++) {
-		index = num_dais + i;
+	total_dais = num_platform_dais + skl->grp_cnt.cnt;
+	if (!skl->use_tplg_pcm)
+		total_dais += num_fe_dais;
 
-		memcpy(&skl->dais[index], &ssp_dai_info, sizeof(ssp_dai_info));
-
-		skl->dais[index].name = kasprintf(GFP_KERNEL, "SSP%d Pin",
-				skl->grp_cnt.vbus_id[i]);
-		if (!skl->dais[index].name)
-			return -ENOMEM;
-
-		skl->dais[index].playback.stream_name = kasprintf(GFP_KERNEL,
-				"ssp%d Tx", skl->grp_cnt.vbus_id[i]);
-		if (!skl->dais[index].playback.stream_name) {
-			kfree(skl->dais[index].name);
-			return -ENOMEM;
-		}
-
-		skl->dais[index].capture.stream_name = kasprintf(GFP_KERNEL,
-				"ssp%d Rx", skl->grp_cnt.vbus_id[i]);
-		if (!skl->dais[index].capture.stream_name) {
-			kfree(skl->dais[index].name);
-			kfree(skl->dais[index].playback.stream_name);
-			return -ENOMEM;
-		}
+	dais = devm_kcalloc(dev, total_dais, sizeof(*dais), GFP_KERNEL);
+	if (!dais) {
+		ret = -ENOMEM;
+		goto err;
 	}
 
-	if (!skl->use_tplg_pcm) {
-		total_dais += ARRAY_SIZE(skl_fe_dai);
-		dais = krealloc(skl->dais, (total_dais * sizeof(*dais)),
-							GFP_KERNEL);
-		if (!dais) {
+	memcpy(dais, skl_platform_dai, sizeof(skl_platform_dai));
+
+	for (i = 0; i < skl->grp_cnt.cnt; i++) {
+		index = num_platform_dais + i;
+
+		memcpy(&dais[index], &ssp_dai_info, sizeof(ssp_dai_info));
+
+		dais[index].name = devm_kasprintf(dev, GFP_KERNEL, "SSP%d Pin",
+				skl->grp_cnt.vbus_id[i]);
+		if (!dais[index].name) {
 			ret = -ENOMEM;
 			goto err;
 		}
 
-		skl->dais = dais;
-		memcpy(&skl->dais[num_dais + skl->grp_cnt.cnt], skl_fe_dai,
-		       sizeof(skl_fe_dai));
-		
-		num_dais = total_dais;
+		dais[index].playback.stream_name = devm_kasprintf(dev,
+				GFP_KERNEL, "ssp%d Tx",
+				skl->grp_cnt.vbus_id[i]);
+		if (!dais[index].playback.stream_name) {
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		dais[index].capture.stream_name = devm_kasprintf(dev,
+				GFP_KERNEL, "ssp%d Rx",
+				skl->grp_cnt.vbus_id[i]);
+		if (!dais[index].capture.stream_name) {
+			ret = -ENOMEM;
+			goto err;
+		}
 	}
 
-	ret = devm_snd_soc_register_component(dev, &skl_component,
-					 skl->dais, total_dais);
+	if (!skl->use_tplg_pcm)
+		memcpy(&dais[num_platform_dais + skl->grp_cnt.cnt],
+		       skl_fe_dai, sizeof(skl_fe_dai));
+
+	ret = devm_snd_soc_register_component(dev, &skl_component, dais,
+					      total_dais);
 	if (ret)
-		dev_err(dev, "soc component registration failed %d\n", ret);
+		goto err;
+
+	skl->dais = dais;
+
+	return 0;
+
 err:
+	dev_err(dev, "soc component registration failed %d\n", ret);
 	return ret;
 }
 
@@ -2225,8 +2224,6 @@ int skl_platform_unregister(struct device *dev)
 			kfree(modules);
 		}
 	}
-
-	kfree(skl->dais);
 
 	return 0;
 }
