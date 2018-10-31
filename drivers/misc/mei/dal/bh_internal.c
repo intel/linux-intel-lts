@@ -27,6 +27,7 @@ static u64 bh_host_id_number = MSG_SEQ_START_NUMBER;
  * @host_id: session host id
  * @response: response buffer
  * @complete: request completion
+ * @refcnt: reference counter
  * @ret: return value of the request
  */
 struct bh_request_cmd {
@@ -37,6 +38,7 @@ struct bh_request_cmd {
 	u64 host_id;
 	void *response;
 	struct completion complete;
+	struct kref refcnt;
 	int ret;
 };
 
@@ -173,7 +175,7 @@ static struct bh_request_cmd *bh_request_alloc(const void *hdr,
 	request->conn_idx = conn_idx;
 	request->host_id = host_id;
 
-	init_completion(&request->complete);
+	kref_init(&request->refcnt);
 
 	return request;
 }
@@ -398,66 +400,80 @@ static int bh_send_recv_message(struct bh_request_cmd *request)
 	return bh_recv_message(request);
 }
 
-static void bh_request_work(struct work_struct *work)
+static void bh_kref_release(struct kref *ref)
 {
-	struct bh_service *bh_srv;
-	struct bh_request_cmd *request;
-	struct bh_command_header *h;
+	struct bh_request_cmd *request =
+		container_of(ref, struct bh_request_cmd, refcnt);
+
+	bh_request_free(request);
+}
+
+/**
+ * bh_kref_release_worker() - release bh_request from a background worker
+ * @ref: reference counter of the bh_request object
+ */
+static void bh_kref_release_worker(struct kref *ref)
+{
 	struct bh_response_header *resp_hdr;
-	int ret;
-
-	bh_srv = container_of(work, struct bh_service, work);
-
-	mutex_lock(&bh_srv->request_lock);
-	request = list_first_entry_or_null(&bh_srv->request_list,
-					   struct bh_request_cmd, link);
-	if (!request) {
-		ret = -EINVAL;
-		goto out_free;
-	}
-
-	list_del_init(&request->link);
-
-	if (!request->cmd_len || !request->cmd) {
-		ret = -EINVAL;
-		goto out_free;
-	}
-
-	ret = bh_send_recv_message(request);
-	request->ret = ret;
-
-	if (wq_has_sleeper(&request->complete.wait)) {
-		mutex_unlock(&bh_srv->request_lock);
-		complete(&request->complete);
-		return;
-	}
+	struct bh_command_header *h;
+	struct bh_request_cmd *request =
+		container_of(ref, struct bh_request_cmd, refcnt);
 
 	/* no one waits for the response - clean up is needed */
 	pr_debug("no waiter - clean up is needed\n");
+
+	if (!request->cmd_len || !request->cmd || !request->response)
+		goto out;
+
 	resp_hdr = (struct bh_response_header *)request->response;
 	/*
 	 * if the command was open_session and
 	 * it was succeeded then close the session
 	 */
-	if (ret || resp_hdr->code)
-		goto out_free;
+	if (request->ret || resp_hdr->code)
+		goto out;
 
 	h = (struct bh_command_header *)request->cmd;
 	if (bh_msg_is_cmd_open_session(h)) {
 		char cmdbuf[CMD_BUF_SIZE(struct bh_close_jta_session_cmd)];
+		struct bh_request_cmd *close_req;
 		u64 host_id = request->host_id;
 
-		bh_request_free(request);
-
 		bh_prep_session_close_cmd(cmdbuf, resp_hdr->ta_session_id);
-		request = bh_request_alloc(cmdbuf, sizeof(cmdbuf), NULL, 0,
-					   CONN_IDX_IVM, host_id);
-		if (!IS_ERR(request))
-			bh_send_recv_message(request);
+		close_req = bh_request_alloc(cmdbuf, sizeof(cmdbuf), NULL, 0,
+					     CONN_IDX_IVM, host_id);
+		if (IS_ERR(close_req))
+			goto out;
+
+		bh_send_recv_message(close_req);
+		bh_request_free(close_req);
+	}
+out:
+	bh_request_free(request);
+}
+
+static void bh_request_work(struct work_struct *work)
+{
+	struct bh_service *bh_srv;
+	struct bh_request_cmd *request, *next;
+	int ret;
+
+	bh_srv = container_of(work, struct bh_service, work);
+
+	mutex_lock(&bh_srv->request_lock);
+	list_for_each_entry_safe(request, next, &bh_srv->request_list, link) {
+		list_del_init(&request->link);
+		if (!request->cmd_len || !request->cmd)
+			goto out_free;
+
+		ret = bh_send_recv_message(request);
+		request->ret = ret;
+
+		complete(&request->complete);
+out_free:
+		kref_put(&request->refcnt, bh_kref_release_worker);
 	}
 
-out_free:
-	bh_request_free(request);
 	mutex_unlock(&bh_srv->request_lock);
 }
 
@@ -493,14 +509,23 @@ int bh_request(unsigned int conn_idx, void *cmd_hdr, unsigned int cmd_hdr_len,
 	list_add_tail(&request->link, &bh_srvc.request_list);
 	mutex_unlock(&bh_srvc.request_lock);
 
+	/*
+	 * Call kref_get before scheduling the worker thread,
+	 * to avoid race condition
+	 */
+
+	init_completion(&request->complete);
+	kref_get(&request->refcnt);
 	schedule_work(&bh_srvc.work);
 	ret = wait_for_completion_interruptible(&request->complete);
 	/*
-	 * if wait was interrupted than do not free allocated memory.
-	 * it is used by the worker
+	 * If wait was interrupted than decrease refcnt
+	 * The worker thread will release the memory
 	 */
-	if (ret)
+	if (ret) {
+		kref_put(&request->refcnt, bh_kref_release);
 		return ret;
+	}
 
 	mutex_lock(&bh_srvc.request_lock);
 
@@ -510,7 +535,7 @@ int bh_request(unsigned int conn_idx, void *cmd_hdr, unsigned int cmd_hdr_len,
 
 	ret = request->ret;
 
-	bh_request_free(request);
+	kref_put(&request->refcnt, bh_kref_release);
 
 	mutex_unlock(&bh_srvc.request_lock);
 
