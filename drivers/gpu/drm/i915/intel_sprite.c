@@ -317,6 +317,7 @@ skl_update_plane(struct intel_plane *plane,
 	uint32_t y = plane_state->main.y;
 	uint32_t src_w = drm_rect_width(&plane_state->base.src) >> 16;
 	uint32_t src_h = drm_rect_height(&plane_state->base.src) >> 16;
+	uint32_t val;
 	unsigned long irqflags;
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
@@ -398,8 +399,16 @@ skl_update_plane(struct intel_plane *plane,
 	}
 
 	I915_WRITE_FW(PLANE_CTL(pipe, plane_id), plane_ctl);
-	I915_WRITE_FW(PLANE_SURF(pipe, plane_id),
-		      intel_plane_ggtt_offset(plane_state) + surf_addr);
+
+	val = intel_plane_ggtt_offset(plane_state) + surf_addr;
+
+	if (plane_state->base.decryption_reqd)
+		val |= PLANE_SURF_DECRYPTION_ENABLED;
+	else
+		val &= ~PLANE_SURF_DECRYPTION_ENABLED;
+
+	I915_WRITE_FW(PLANE_SURF(pipe, plane_id), val);
+
 	POSTING_READ_FW(PLANE_SURF(pipe, plane_id));
 
 	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);

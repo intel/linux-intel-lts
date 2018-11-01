@@ -173,7 +173,13 @@ struct drm_plane_state {
 	 * crtc!=NULL, due to clipping.
 	 */
 	bool visible;
-
+	/**
+	 * @decryption_reqd:
+	 *
+	 * Plane decryption required. This enables/disables the plane level
+	 * framebuffer decryption.
+	 */
+	bool decryption_reqd;
 	/**
 	 * @commit: Tracks the pending commit to prevent use-after-free conditions,
 	 * and for async plane updates.
@@ -652,6 +658,14 @@ struct drm_plane {
 	 * Optional zpos property for this plane. See
 	 * drm_plane_create_zpos_property().
 	 */
+	/**
+	 * @decryption_property:
+	 *
+	 * Plane decryption property for enabling/disabling plane
+	 * level framebuffer decryption.
+	 */
+	struct drm_property *decryption_property;
+
 	struct drm_property *zpos_property;
 	/**
 	 * @rotation_property:
