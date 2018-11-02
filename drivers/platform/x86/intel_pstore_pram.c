@@ -1,5 +1,7 @@
 /*
+ * Intel Pstore Pram Driver: Currently supports APL
  * Copyright (c) 2015, Intel Corporation.
+ * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -133,3 +135,8 @@ static void __exit intel_pram_exit(void)
 	kfree(pram_data);
 }
 module_exit(intel_pram_exit);
+
+MODULE_AUTHOR("Baofeng Tian <baofeng.tian@intel.com>");
+MODULE_DESCRIPTION("Intel Pstore Pram Interface");
+MODULE_VERSION("1.0.0");
+MODULE_LICENSE("GPL");
