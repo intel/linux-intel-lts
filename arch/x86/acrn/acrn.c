@@ -56,8 +56,8 @@ static void acrn_pin_vcpu(int cpu)
 
 static bool acrn_x2apic_available(void)
 {
-	/* do not support x2apic */
-	return false;
+	/* ACRN supports x2apic emulation */
+	return true;
 }
 
 static void __init acrn_init_mem_mapping(void)
