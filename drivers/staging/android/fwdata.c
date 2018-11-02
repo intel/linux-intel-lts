@@ -400,3 +400,8 @@ static struct platform_driver android_fwdata_driver = {
 };
 
 module_platform_driver(android_fwdata_driver);
+
+MODULE_AUTHOR("Yu Ning <yu.ning@intel.com>");
+MODULE_AUTHOR("Biyi Li <biyix.li@intel.com>");
+MODULE_DESCRIPTION("Intel fwdata driver");
+MODULE_LICENSE("GPL v2");
