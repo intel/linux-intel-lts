@@ -1158,6 +1158,7 @@ static int virt_ici_pipeline_init(void)
 	pipeline_dev->dev.release = base_device_release;
 	strlcpy(pipeline_dev->name, pipeline_dev->dev.kobj.name, sizeof(pipeline_dev->name));
 	pipeline_dev->minor = MINOR_PIPELINE;
+	mutex_init(&pipeline_dev->mutex);
 
 	return 0;
 }
