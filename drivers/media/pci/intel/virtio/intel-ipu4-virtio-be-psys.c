@@ -3,6 +3,7 @@
  * Copyright (C) 2018 Intel Corporation
  */
 
+#include <linux/syscalls.h>
 #include "ipu-psys.h"
 
 #include <linux/vhm/acrn_vhm_mm.h>
@@ -24,6 +25,10 @@ int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
 	int status = 0;
 
 	status = fh->vfops->unmap_buf(fh, req_info);
+
+	/*Only doing this in mediated mode because 
+	fd passed from SOS to user space is invalid in UOS.*/
+	ksys_close(req_info->request->op[0]);
 
 	if (status)
 		return IPU4_REQ_ERROR;
