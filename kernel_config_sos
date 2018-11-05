@@ -1559,7 +1559,8 @@ CONFIG_PREVENT_FIRMWARE_BUILD=y
 # Firmware loader
 #
 CONFIG_FW_LOADER=y
-CONFIG_EXTRA_FIRMWARE=""
+CONFIG_EXTRA_FIRMWARE="i915/skl_dmc_ver1_26.bin i915/kbl_dmc_ver1_01.bin i915/kbl_huc_ver02_00_1810.bin i915/bxt_dmc_ver1_07.bin i915/bxt_guc_ver9_29.bin i915/bxt_huc_ver01_07_1398.bin intel/reef-apl.ri intel/reef-apl.tplg"
+CONFIG_EXTRA_FIRMWARE_DIR="firmware"
 CONFIG_FW_LOADER_USER_HELPER=y
 CONFIG_FW_LOADER_USER_HELPER_FALLBACK=y
 CONFIG_WANT_DEV_COREDUMP=y
