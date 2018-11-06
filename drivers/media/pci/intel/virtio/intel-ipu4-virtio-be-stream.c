@@ -329,7 +329,6 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
 int process_stream_on(struct ipu4_virtio_req_info *req_info)
 {
 	struct stream_node *sn = NULL;
-	struct ici_isys_stream *as;
 	struct ici_stream_device *strm_dev;
 	int err, found;
 	struct ipu4_virtio_req *req = req_info->request;

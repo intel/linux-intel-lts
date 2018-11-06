@@ -156,7 +156,7 @@ static void handle_vq_kick(int client_id, int vq_idx)
 	if (be == NULL) {
 		pr_err("%s: client %d not found!\n",
 				__func__, client_id);
-		return -EINVAL;
+		return;
 	}
 
 	if (!be) {
@@ -170,7 +170,7 @@ static void handle_vq_kick(int client_id, int vq_idx)
 		virtio_vq_getchain(vq, &idx, &iov, 1, NULL);
 
 		pr_debug("%s: vq index: %d vq buf index: %d req ptr: %lu\n",
-						__func__, vq_idx, idx, iov.iov_base);
+						__func__, vq_idx, idx, (long unsigned)iov.iov_base);
 		/* device specific operations, for example: */
 		if (iov.iov_len != sizeof(struct ipu4_virtio_req)) {
 			if (iov.iov_len == sizeof(int)) {
