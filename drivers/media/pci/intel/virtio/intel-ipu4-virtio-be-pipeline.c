@@ -14,8 +14,8 @@
 #include "intel-ipu4-virtio-be-pipeline.h"
 #include "./ici/ici-isys-pipeline.h"
 #include "./ici/ici-isys-pipeline-device.h"
-#include "intel-ipu4-virtio-be.h"
 #include "intel-ipu4-virtio-be-request-queue.h"
+#include "intel-ipu4-virtio-be.h"
 
 static struct file *pipeline;
 static int guestID = -1;
