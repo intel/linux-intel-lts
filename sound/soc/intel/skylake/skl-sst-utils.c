@@ -28,7 +28,8 @@
 #define TYPE0_EXCEPTION 0
 #define TYPE1_EXCEPTION 1
 #define TYPE2_EXCEPTION 2
-#define MAX_CRASH_DATA_TYPES 3
+#define TYPE3_EXCEPTION 3
+#define MAX_CRASH_DATA_TYPES 4
 #define CRASH_DUMP_VERSION 0x1
 /* FW Extended Manifest Header id = $AE1 */
 #define SKL_EXT_MANIFEST_HEADER_MAGIC   0x31454124
@@ -391,7 +392,7 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	void *coredump, *ext_core_dump;
 	void *fw_reg_addr, *offset;
 	struct pci_dev *pci = to_pci_dev(ctx->dsp->dev);
-	u16 length0, length1, length2;
+	u16 length0, length1, length2, length3;
 	struct adsp_crash_hdr *crash_data_hdr;
 	struct adsp_type0_crash_data *type0_data;
 	struct adsp_type1_crash_data *type1_data;
@@ -426,11 +427,12 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	length0 = sizeof(*type0_data) / sizeof(u32);
 	length1 = (num_mod * sizeof(*type1_data)) / sizeof(u32);
 	length2 = sizeof(*type2_data) / sizeof(u32);
+	length3 = sz_ext_dump / sizeof(u32);
 
 	/* type1 data size is calculated based on number of modules */
 	size_core_dump = (MAX_CRASH_DATA_TYPES * sizeof(*crash_data_hdr)) +
 			sizeof(*type0_data) + (num_mod * sizeof(*type1_data)) +
-			sizeof(*type2_data) + sz_ext_dump;
+			sizeof(*type2_data);
 
 	coredump = vzalloc(size_core_dump + sz_ext_dump);
 	if (!coredump){
@@ -478,10 +480,16 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 			ctx->dsp->addr.w0_stat_sz);
 	memcpy_fromio(type2_data->fwreg, (const void __iomem *)fw_reg_addr,
 						sizeof(*type2_data));
+	offset += sizeof(*type2_data);
 
 	if (sz_ext_dump) {
-		offset = coredump + size_core_dump;
+		/* Fill type3 header and data */
+		crash_data_hdr = (struct adsp_crash_hdr *) offset;
+		crash_data_hdr->type = TYPE3_EXCEPTION;
+		crash_data_hdr->length = length3;
+		offset += sizeof(*crash_data_hdr);
 		memcpy(offset, ext_core_dump, sz_ext_dump);
+		offset += sz_ext_dump;
 	}
 
 	vfree(ext_core_dump);
