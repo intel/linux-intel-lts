@@ -309,10 +309,10 @@ EXPORT_SYMBOL_GPL(skl_put_pvt_id);
 /* This function checks tha available data on the core id
  * passed as an argument and returns the bytes available
  */
-int skl_check_ext_excep_data_avail(struct skl_sst *ctx, int idx)
+static int skl_check_ext_excep_data_avail(struct skl_sst *ctx, int idx)
 {
 	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
-	u8 *base = (u8 *)ctx->dsp->trace_wind.addr;
+	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
 	u32 read, write;
 	u32 *ptr;
 
@@ -335,11 +335,11 @@ int skl_check_ext_excep_data_avail(struct skl_sst *ctx, int idx)
  * Data is read into the buffer passed as *ext_core_dump.
  * number of bytes read is updated in the sz_ext_dump
  */
-void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
+static void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
 			void *ext_core_dump, int *sz_ext_dump)
 {
 	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
-	u8 *base = (u8 *)ctx->dsp->trace_wind.addr;
+	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
 	u32 read, write;
 	int offset = *sz_ext_dump;
 	u32 *ptr;
@@ -356,7 +356,7 @@ void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
 
 	if (write > read) {
 		memcpy_fromio((ext_core_dump + offset),
-				(base + 8 + read),
+			(const void __iomem *)(base + 8 + read),
 				(write - read));
 		*sz_ext_dump = offset + write - read;
 		/* advance read pointer */
@@ -364,13 +364,14 @@ void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
 	} else {
 		/* wrap around condition - copy till the end */
 		memcpy_fromio((ext_core_dump + offset),
-				(base + 8 + read),
+			(const void __iomem *)(base + 8 + read),
 				(size - 8 - read));
 		*sz_ext_dump = offset + size - 8 - read;
 		offset = *sz_ext_dump;
 
 		/* copy from the beginnning */
-		memcpy_fromio((ext_core_dump + offset), (base + 8), write);
+		memcpy_fromio((ext_core_dump + offset),
+			(const void __iomem *) (base + 8), write);
 		*sz_ext_dump = offset + write;
 		/* update the read pointer */
 		ptr[0] = write;
@@ -380,7 +381,7 @@ void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
 
 int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 {
-	int num_mod = 0, size_core_dump, sz_ext_dump = 0, idx = 0;;
+	int num_mod = 0, size_core_dump, sz_ext_dump = 0, idx = 0;
 	struct uuid_module *module, *module1;
 	void *coredump, *ext_core_dump;
 	void *fw_reg_addr, *offset;
@@ -468,8 +469,10 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	crash_data_hdr->length = length2;
 	offset += sizeof(*crash_data_hdr);
 	type2_data = (struct adsp_type2_crash_data *) offset;
-	fw_reg_addr = ctx->dsp->mailbox.in_base - ctx->dsp->addr.w0_stat_sz;
-	memcpy_fromio(type2_data->fwreg, fw_reg_addr, sizeof(*type2_data));
+	fw_reg_addr = (void __force*)(ctx->dsp->mailbox.in_base -
+			ctx->dsp->addr.w0_stat_sz);
+	memcpy_fromio(type2_data->fwreg, (const void __iomem *)fw_reg_addr,
+						sizeof(*type2_data));
 
 	if (sz_ext_dump) {
 		offset = coredump + size_core_dump;
