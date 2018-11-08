@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2003-2018, Intel Corporation. All rights reserved
+ * Copyright (c) 2003-2019, Intel Corporation. All rights reserved
  * Intel Management Engine Interface (Intel MEI) Linux driver
  */
 
@@ -197,19 +197,79 @@ enum mei_cl_connect_status {
 /*
  * Client Disconnect Status
  */
-enum  mei_cl_disconnect_status {
+enum mei_cl_disconnect_status {
 	MEI_CL_DISCONN_SUCCESS = MEI_HBMS_SUCCESS
 };
 
+enum mei_ext_hdr_type {
+	MEI_EXT_HDR_NONE = 0,
+	MEI_EXT_HDR_VTAG = 1,
+	MEI_EXT_HDR_GSC = 2,
+};
+
 /**
- * struct mei_msg_extd_hdr - mei extended header
- *
- * @vtag: virtual tag.
- * @reserved: reserved.
+ * struct mei_ext_hdr - extend header descriptor (TLV)
+ * @type: enum mei_ext_hdr_type
+ * @length: length exluding descriptor
+ * @ext_payload: payload of the specific extended header
+ * @hdr: place holder for actuall header
  */
-struct mei_msg_extd_hdr {
-	u8 vtag;
-	u8 reserved[3];
+struct mei_ext_hdr {
+	u8 type;
+	u8 length;
+	u8 ext_payload[2];
+	u8 hdr[0];
+};
+
+/**
+ * struct mei_ext_meta_hdr - extend header meta data
+ * @count: number of headers
+ * @size: total size of the extended header list excluding meta header
+ * @reserved: reserved
+ */
+struct mei_ext_meta_hdr {
+	u8 count;
+	u8 size;
+	u8 reserved[2];
+	struct mei_ext_hdr hdrs[0];
+};
+
+static inline struct mei_ext_hdr *mei_ext_begin(struct mei_ext_meta_hdr *meta)
+{
+	return meta->hdrs;
+}
+
+static inline struct mei_ext_hdr *mei_ext_next(struct mei_ext_hdr *ext)
+{
+	return (struct mei_ext_hdr *)(ext->hdr + (ext->length * 4));
+}
+
+static inline bool mei_ext_last(struct mei_ext_meta_hdr *meta,
+				struct mei_ext_hdr *ext)
+{
+	return (u8 *)ext >= (u8 *)meta + sizeof(*meta) + (meta->size * 4);
+}
+
+struct mei_gcs_sgl {
+	u32 low;
+	u32 high;
+	u32 length;
+} __packed;
+
+struct mei_ext_hdr_gcs_h2f {
+	u32                fence_id;
+	u32                addr_type;
+	u32                input_address_count;
+	u32                output_address_count;
+	struct mei_gcs_sgl input_buffer[0];
+	struct mei_gcs_sgl output_buffer[0];
+} __packed;
+
+struct mei_ext_hdr_gcs_f2h {
+	u8  client_id;
+	u8  reserved[3];
+	u32 fence_id;
+	u32 total_bytes_written;
 } __packed;
 
 /**
@@ -236,8 +296,6 @@ struct mei_msg_hdr {
 	u32 msg_complete:1;
 	u32 extension[0];
 } __packed;
-
-#define MEI_MSG_HDR_MAX 3
 
 struct mei_bus_message {
 	u8 hbm_cmd;
@@ -451,19 +509,17 @@ struct hbm_notification_request {
 
 /**
  * struct hbm_notification_response - start/stop notification response
- *
  * @hbm_cmd: bus message command header
  * @me_addr: address of the client in ME
- * @host_addr: - address of the client in the driver
+ * @host_addr: address of the client in the driver
  * @status: (mei_hbm_status) response status for the request
- *  - MEI_HBMS_SUCCESS: successful stop/start
- *  - MEI_HBMS_CLIENT_NOT_FOUND: if the connection could not be found.
- *  - MEI_HBMS_ALREADY_STARTED: for start requests for a previously
- *                         started notification.
- *  - MEI_HBMS_NOT_STARTED: for stop request for a connected client for whom
+ * * MEI_HBMS_SUCCESS: successful stop/start
+ * * MEI_HBMS_CLIENT_NOT_FOUND: if the connection could not be found.
+ * * MEI_HBMS_ALREADY_STARTED: for start requests for a previously
+ *                             started notification.
+ * * MEI_HBMS_NOT_STARTED: for stop request for a connected client for whom
  *                         asynchronous notifications are currently disabled.
- *
- * @start:  start = 1 or stop = 0 asynchronous notifications
+ * @start: start = 1 or stop = 0 asynchronous notifications
  * @reserved: reserved
  */
 struct hbm_notification_response {

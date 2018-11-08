@@ -426,6 +426,7 @@ struct mei_fw_version {
  *
  * @rd_msg_buf  : control messages buffer
  * @rd_msg_hdr  : read message header storage
+ * @rd_msg_hdr_count : how many dwords were already read from header
  *
  * @hbuf_is_ready : query if the host host/write buffer is ready
  * @dr_dscr: DMA ring descriptors: TX, RX, and CTRL
@@ -507,7 +508,8 @@ struct mei_device {
 #endif /* CONFIG_PM */
 
 	unsigned char rd_msg_buf[MEI_RD_MSG_BUF_SIZE];
-	u32 rd_msg_hdr[MEI_MSG_HDR_MAX];
+	u32 rd_msg_hdr[MEI_RD_MSG_BUF_SIZE];
+	int rd_msg_hdr_count;
 
 	/* write buffer */
 	bool hbuf_is_ready;
