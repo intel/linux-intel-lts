@@ -173,8 +173,6 @@ int map_gttmmio(struct intel_vgpu *vgpu, bool map)
 	end = start +
 		(vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_GTTMMIO].size >> 1);
 
-	WARN_ON((end - start) != gvt_ggtt_sz(vgpu->gvt));
-
 	gvt_dbg_mmio("%s start=%llx end=%llx map=%d\n",
 				__func__, start, end, map);
 
