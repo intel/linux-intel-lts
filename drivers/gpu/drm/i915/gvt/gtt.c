@@ -1594,7 +1594,7 @@ static void free_ggtt_virtual_page_table(struct intel_vgpu_mm *mm)
 static void *alloc_ggtt_virtual_page_table(struct intel_vgpu_mm *mm)
 {
 	struct intel_vgpu *vgpu = mm->vgpu;
-	unsigned int page_count = gvt_ggtt_sz(vgpu->gvt) >> PAGE_SHIFT;
+	unsigned int page_count;
 	struct intel_vgpu_gm *gm = &vgpu->gm;
 	struct page **pages = NULL;
 	struct page *p;
@@ -1604,8 +1604,11 @@ static void *alloc_ggtt_virtual_page_table(struct intel_vgpu_mm *mm)
 	struct sg_table *st;
 	struct scatterlist *sg;
 	struct sgt_iter sgt_iter;
-	unsigned int npages = page_count;
+	int npages;
 
+	page_count = ALIGN(gvt_ggtt_sz(vgpu->gvt), 1 << PMD_SHIFT)
+		>> PAGE_SHIFT;
+	npages = page_count;
 	/*
 	 * page_table_entry_size is bigger than the size alloc_pages can
 	 * allocate, We have to split it according to the PMD size (2M).
@@ -1633,7 +1636,7 @@ static void *alloc_ggtt_virtual_page_table(struct intel_vgpu_mm *mm)
 		sg_set_page(sg, p, PAGE_SIZE << order, 0);
 		st->nents++;
 		npages -= 1 << order;
-		if (!npages) {
+		if (npages <= 0) {
 			sg_mark_end(sg);
 			break;
 		}
