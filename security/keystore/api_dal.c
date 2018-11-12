@@ -112,20 +112,19 @@ static int dal_keystore_register_client(enum keystore_seed_type seed_type,
 		goto err;
 	}
 
-	memcpy(input, client_id, sizeof(client_id));
-	index += sizeof(client_id);
+	memcpy(input, client_id, KEYSTORE_MAX_CLIENT_ID_SIZE);
+	index += KEYSTORE_MAX_CLIENT_ID_SIZE;
 	memcpy(input + index, client_ticket, KEYSTORE_CLIENT_TICKET_SIZE);
 	index += KEYSTORE_CLIENT_TICKET_SIZE;
 	pack_int_to_buf(seed_type, input + index);
 	index += 2;
 
-cmd_retry:
 	res = send_and_receive(commandId, input, index,
 		&out_buf, &output_len, &response_code);
 
 	res = handle_command_response(res, response_code, &retry, NULL, NULL);
 	if (res) {
-		ks_info(KBUILD_MODNAME ": %s Error in send_and_receive: command id = %d %d %d\n",
+		ks_info(KBUILD_MODNAME ": %s Error in send_and_receive: command id = %d %d %lu\n",
 					 __func__, commandId, res,
 					 response_code);
 
@@ -366,15 +365,6 @@ static int get_cached_wrapped_key_size(void)
 	return -EFAULT;
 }
 
-static int get_cached_key_size(void)
-{
-	if (key_info.keyspec != KEYSPEC_INVALID) {
-		if (key_info.key_size != 0)
-			return key_info.key_size;
-	}
-	return -EFAULT;
-}
-
 static void cache_wrapped_key_size(enum keystore_key_spec keyspec,
 				uint32_t wrap_key_size)
 {
@@ -556,7 +546,7 @@ cmd_retry:
 	}
 
 	if (res) {
-		ks_err(KBUILD_MODNAME ": %s Error in send_and_receive: command id = %d %d %d\n",
+		ks_err(KBUILD_MODNAME ": %s Error in send_and_receive: command id = %d %d %lu\n",
 			__func__, commandId, res, response_code);
 
 		goto exit;
@@ -645,6 +635,9 @@ int dal_keystore_load_key(const uint8_t *client_ticket,
 	uint8_t *out_buf = NULL;
 	int retry = 0;
 	size_t index = 0;
+	uint8_t input[KEYSTORE_MAX_CLIENT_ID_SIZE
+				  + KEYSTORE_CLIENT_TICKET_SIZE
+				  + wrapped_key_size];
 
 	FUNC_BEGIN;
 
@@ -658,12 +651,7 @@ int dal_keystore_load_key(const uint8_t *client_ticket,
 		return -EINVAL;
 	}
 
-	uint8_t input[KEYSTORE_MAX_CLIENT_ID_SIZE
-				  + KEYSTORE_CLIENT_TICKET_SIZE
-				  + wrapped_key_size];
-
 	res = dal_calc_clientid(client_id, KEYSTORE_MAX_CLIENT_ID_SIZE);
-
 	if (res) {
 		ks_err(KBUILD_MODNAME ": %s Error calculating client ID: %d\n",
 				__func__, res);
@@ -834,8 +822,8 @@ int dal_keystore_encrypt(const uint8_t *client_ticket, int slot_id,
 
 	if (key_spec != KEYSPEC_DAL_WRAPPED_KEY ||
 		wrapped_key_size > DAL_KEYSTORE_MAX_WRAP_KEY_LEN) {
-			ks_err(KBUILD_MODNAME ": %s: Invalid key retrived from wrapped key cache.\n",
-				   __func__, res);
+		ks_err(KBUILD_MODNAME ": %s: Invalid key %d retrived from wrapped key cache.\n",
+				   __func__, key_spec);
 		goto exit;
 	}
 
@@ -986,8 +974,8 @@ int dal_keystore_decrypt(const uint8_t *client_ticket, int slot_id,
 
 	if (key_spec != KEYSPEC_DAL_WRAPPED_KEY ||
 		wrapped_key_size > DAL_KEYSTORE_MAX_WRAP_KEY_LEN) {
-			ks_err(KBUILD_MODNAME ": %s: Invalid key retrived from wrapped key cache.\n",
-				   __func__, res);
+		ks_err(KBUILD_MODNAME ": %s: Invalid key %d retrived from wrapped key cache.\n",
+				   __func__, key_spec);
 		goto exit;
 	}
 
