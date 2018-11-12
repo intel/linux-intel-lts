@@ -65,6 +65,8 @@ static const struct drm_i915_gem_object_ops i915_gem_gvtbuffer_ops = {
 #define GEN7_DECODE_PTE(pte) \
 	((dma_addr_t)(((((u64)pte) & 0x7f0) << 28) | (u64)(pte & 0xfffff000)))
 
+#define PLANE_CTL_TILED_SHIFT 10
+
 static struct sg_table *
 i915_create_sg_pages_for_gvtbuffer(struct drm_device *dev,
 			     u32 start, u32 num_pages)
@@ -185,7 +187,7 @@ static int gvt_decode_information(struct drm_device *dev,
 		args->bpp = p.bpp;
 		args->hw_format = p.hw_format;
 		args->drm_format = p.drm_format;
-		args->tiled = p.tiled;
+		args->tiled = p.tiled >> PLANE_CTL_TILED_SHIFT;
 	} else if ((args->plane_id) == I915_GVT_PLANE_CURSOR) {
 		ret = intel_vgpu_decode_cursor_plane(vgpu, &c);
 		if (ret)
