@@ -993,12 +993,16 @@ static void complete_current_workload(struct intel_gvt *gvt, int ring_id)
 static void inject_error_cs_irq(struct intel_vgpu *vgpu, int ring_id)
 {
 	enum intel_gvt_event_type events[] = {
-		RCS_CMD_STREAMER_ERR,
-		BCS_CMD_STREAMER_ERR,
-		VCS_CMD_STREAMER_ERR,
-		VCS2_CMD_STREAMER_ERR,
-		VECS_CMD_STREAMER_ERR,
+		[RCS] = RCS_CMD_STREAMER_ERR,
+		[BCS] = BCS_CMD_STREAMER_ERR,
+		[VCS] = VCS_CMD_STREAMER_ERR,
+		[VCS2] = VCS2_CMD_STREAMER_ERR,
+		[VECS] = VECS_CMD_STREAMER_ERR,
 	};
+
+	if (unlikely(events[ring_id] == 0))
+		return;
+
 	intel_vgpu_trigger_virtual_event(vgpu, events[ring_id]);
 }
 
