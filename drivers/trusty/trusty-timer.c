@@ -143,8 +143,7 @@ static int trusty_timer_probe(struct platform_device *pdev)
 	ret = trusty_call_notifier_register(s->trusty_dev, &s->call_notifier);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to register call notifier\n");
-		kfree(s);
-		return ret;
+		goto error_call_notifier;
 	}
 
 	INIT_WORK(&s->timer.work, timer_work_func);
@@ -153,6 +152,7 @@ static int trusty_timer_probe(struct platform_device *pdev)
 
 	return 0;
 
+error_call_notifier:
 	destroy_workqueue(s->workqueue);
 err_allocate_work_queue:
 	kfree(s);
