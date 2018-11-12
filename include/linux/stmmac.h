@@ -205,6 +205,9 @@ struct plat_stmmacenet_data {
 	int msi_sfty_ue_vec;
 	int msi_rx_base_vec;
 	int msi_tx_base_vec;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int msi_network_proxy_vec;
+#endif
 	bool vlan_fail_q_en;
 	u8 vlan_fail_q;
 	bool speed_2500_en;

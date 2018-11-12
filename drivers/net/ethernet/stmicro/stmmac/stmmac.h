@@ -34,6 +34,9 @@ struct stmmac_resources {
 	int sfty_ue_irq;
 	int rx_irq[MTL_MAX_RX_QUEUES];
 	int tx_irq[MTL_MAX_TX_QUEUES];
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int netprox_irq;
+#endif
 };
 
 struct stmmac_tx_info {
@@ -228,6 +231,9 @@ struct stmmac_priv {
 	int sfty_ue_irq;
 	int rx_irq[MTL_MAX_RX_QUEUES];
 	int tx_irq[MTL_MAX_TX_QUEUES];
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int netprox_irq;
+#endif
 	/*irq name */
 	char int_name_mac[IFNAMSIZ + 9];
 	char int_name_wol[IFNAMSIZ + 9];
@@ -236,6 +242,9 @@ struct stmmac_priv {
 	char int_name_sfty_ue[IFNAMSIZ + 9];
 	char int_name_rx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 9];
 	char int_name_tx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 9];
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	char int_name_netprox_irq[IFNAMSIZ + 9];
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *dbgfs_dir;
