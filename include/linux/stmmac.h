@@ -193,6 +193,9 @@ struct plat_stmmacenet_data {
 	int mac_port_sel_speed;
 	bool en_tx_lpi_clockgating;
 	int has_xgmac;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int has_netproxy;
+#endif
 	bool multi_msi_en;
 	int msi_mac_vec;
 	int msi_wol_vec;

@@ -47,6 +47,9 @@
 #include "hwif.h"
 #include "intel_serdes.h"
 #include "stmmac_tsn.h"
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+#include "stmmac_netproxy.h"
+#endif
 
 #define	STMMAC_ALIGN(x)		__ALIGN_KERNEL(x, SMP_CACHE_BYTES)
 #define	TSO_MAX_BUFF_SIZE	(SZ_16K - 1)
@@ -2314,8 +2317,10 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 	u32 rx_channels_count = priv->plat->rx_queues_to_use;
 	u32 tx_channels_count = priv->plat->tx_queues_to_use;
 	u32 dma_csr_ch = max(rx_channels_count, tx_channels_count);
+#ifndef CONFIG_STMMAC_NETWORK_PROXY
 	struct stmmac_rx_queue *rx_q;
 	struct stmmac_tx_queue *tx_q;
+#endif
 	u32 chan = 0;
 	int atds = 0;
 	int ret = 0;
@@ -2328,11 +2333,17 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 	if (priv->extend_desc && (priv->mode == STMMAC_RING_MODE))
 		atds = 1;
 
-	ret = stmmac_reset(priv, priv->ioaddr);
-	if (ret) {
-		dev_err(priv->device, "Failed to reset the dma\n");
-		return ret;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (!priv->networkproxy_exit) {
+#endif
+		ret = stmmac_reset(priv, priv->ioaddr);
+		if (ret) {
+			dev_err(priv->device, "Failed to reset the dma\n");
+			return ret;
+		}
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
 	}
+#endif
 
 	/* DMA Configuration */
 	stmmac_dma_init(priv, priv->ioaddr, priv->plat->dma_cfg, atds);
@@ -2343,7 +2354,9 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 	/* DMA CSR Channel configuration */
 	for (chan = 0; chan < dma_csr_ch; chan++)
 		stmmac_init_chan(priv, priv->ioaddr, priv->plat->dma_cfg, chan);
-
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	stmmac_config_dma_channel(priv);
+#else
 	/* DMA RX Channel Configuration */
 	for (chan = 0; chan < rx_channels_count; chan++) {
 		rx_q = &priv->rx_queue[chan];
@@ -2369,6 +2382,7 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 		stmmac_set_tx_tail_ptr(priv, priv->ioaddr,
 				       tx_q->tx_tail_addr, chan);
 	}
+#endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
 
 	return ret;
 }
@@ -3185,6 +3199,11 @@ static int stmmac_open(struct net_device *dev)
 		pci_write_config_dword(pdev, 0xE0, value);
 	}
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy)
+		stmmac_netproxy_register(dev);
+#endif
+
 	return 0;
 
 phy_conv_error:
@@ -3260,6 +3279,11 @@ static int stmmac_release(struct net_device *dev)
 	stmmac_release_ptp(priv);
 
 	stmmac_tsn_hw_unsetup(priv, priv->hw, dev);
+
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy)
+		stmmac_netproxy_deregister(dev);
+#endif
 
 	return 0;
 }
@@ -5557,6 +5581,80 @@ int stmmac_dvr_remove(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(stmmac_dvr_remove);
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+/**
+ * stmmac_suspend_common - suspend common callback
+ * @priv: driver private structure
+ * @ndev: net device structure
+ * Description: this is the function to suspend the device and it is called
+ * by the platform driver to stop the network queue, release the resources,
+ * clean and release driver resources.
+ */
+int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
+{
+	mutex_lock(&priv->lock);
+
+	netif_device_detach(ndev);
+
+	stmmac_disable_all_queues(priv);
+
+	/* Stop TX/RX DMA */
+	stmmac_stop_all_dma(priv);
+	stmmac_stop_mac_tx(priv, priv->ioaddr);
+
+	mutex_unlock(&priv->lock);
+
+	priv->speed = SPEED_UNKNOWN;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_suspend_common);
+
+/**
+ * stmmac_suspend_main - suspend main callback
+ * @priv: driver private structure
+ * @ndev: net device structure
+ * Description: suspend and program the PMT register (for WoL).
+ */
+int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
+{
+	if (!ndev || !netif_running(ndev))
+		return 0;
+
+	phylink_stop(priv->phylink);
+
+	stmmac_suspend_common(priv, ndev);
+
+	mutex_lock(&priv->lock);
+
+	stmmac_stop_mac_rx(priv, priv->ioaddr);
+
+	/* Enable Power down mode by programming the PMT regs */
+	if (device_may_wakeup(priv->device)) {
+		stmmac_pmt(priv, priv->hw, priv->wolopts);
+		priv->irq_wake = 1;
+	} else {
+		stmmac_mac_set(priv, priv->ioaddr, false);
+		pinctrl_pm_select_sleep_state(priv->device);
+		/* Disable clock in case of PWM is off */
+		clk_disable(priv->plat->pclk);
+		clk_disable(priv->plat->stmmac_clk);
+	}
+
+	if (stmmac_has_tsn_feat(priv, priv->hw, ndev, TSN_FEAT_ID_FPE)) {
+		/* Keep the FPE enable/disable state before suspend */
+		priv->hw->cached_fpe_en = priv->hw->tsn_info.fpe_cfg.enable;
+		netdev_info(ndev, "FPE: cached Enable %d",
+			    priv->hw->cached_fpe_en);
+		stmmac_fpe_set_enable(priv, priv->hw, ndev, false);
+	}
+
+	mutex_unlock(&priv->lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_suspend_main);
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
+
 /**
  * stmmac_suspend - suspend callback
  * @dev: device pointer
@@ -5568,7 +5666,9 @@ int stmmac_suspend(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
-
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	stmmac_pm_suspend(priv, priv, ndev);
+#else
 	if (!ndev || !netif_running(ndev))
 		return 0;
 
@@ -5616,6 +5716,8 @@ int stmmac_suspend(struct device *dev)
 	mutex_unlock(&priv->lock);
 
 	priv->speed = SPEED_UNKNOWN;
+#endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(stmmac_suspend);
@@ -5646,6 +5748,122 @@ static void stmmac_reset_queues_param(struct stmmac_priv *priv)
 	}
 }
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+/**
+ * stmmac_resume_common - common resume callback
+ * @priv: driver private structure
+ * @ndev: net device structure
+ * Description: when resume this function is invoked to setup the DMA and CORE
+ * in a usable state.
+ */
+int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev)
+{
+	mutex_lock(&priv->lock);
+
+	stmmac_reset_queues_param(priv);
+
+	stmmac_clear_descriptors(priv);
+
+	stmmac_hw_setup(ndev, false);
+	stmmac_init_coalesce(priv);
+	stmmac_set_rx_mode(ndev);
+
+	stmmac_restore_hw_vlan_rx_fltr(priv, ndev, priv->hw);
+
+	stmmac_enable_all_queues(priv);
+
+	mutex_unlock(&priv->lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_resume_common);
+
+/**
+ * stmmac_resume_main - main resume callback
+ * @priv: driver private structure
+ * @ndev: net device structure
+ * Description: program the PMT register (for WoL) and resume
+ */
+int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
+{
+	if (!netif_running(ndev))
+		return 0;
+
+	/* Power Down bit, into the PM register, is cleared
+	 * automatically as soon as a magic packet or a Wake-up frame
+	 * is received. Anyway, it's better to manually clear
+	 * this bit because it can generate problems while resuming
+	 * from another devices (e.g. serial console).
+	 */
+	if (device_may_wakeup(priv->device)) {
+		mutex_lock(&priv->lock);
+		stmmac_pmt(priv, priv->hw, 0);
+		mutex_unlock(&priv->lock);
+		priv->irq_wake = 0;
+	} else {
+		pinctrl_pm_select_default_state(priv->device);
+		/* enable the clk previously disabled */
+		clk_enable(priv->plat->stmmac_clk);
+		clk_enable(priv->plat->pclk);
+		/* reset the phy so that it's ready */
+		if (priv->mii)
+			stmmac_mdio_reset(priv->mii);
+	}
+
+	netif_device_attach(ndev);
+
+	stmmac_resume_common(priv, ndev);
+
+	phylink_start(priv->phylink);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_resume_main);
+
+int stmmac_config_dma_channel(struct stmmac_priv *priv)
+{
+	u32 rx_channels_count = priv->plat->rx_queues_to_use;
+	u32 tx_channels_count = priv->plat->tx_queues_to_use;
+	struct stmmac_rx_queue *rx_q;
+	struct stmmac_tx_queue *tx_q;
+	u32 chan = 0;
+	int ret = 0;
+
+	if (!priv->plat->dma_cfg || !priv->plat->dma_cfg->pbl) {
+		dev_err(priv->device, "Invalid DMA configuration\n");
+		return -EINVAL;
+	}
+
+	/* DMA RX Channel Configuration */
+	for (chan = 0; chan < rx_channels_count; chan++) {
+		rx_q = &priv->rx_queue[chan];
+
+		stmmac_init_rx_chan(priv, priv->ioaddr, priv->plat->dma_cfg,
+				    rx_q->dma_rx_phy, chan);
+
+		rx_q->rx_tail_addr = rx_q->dma_rx_phy +
+				     (priv->dma_rx_size *
+				      sizeof(struct dma_desc));
+		stmmac_set_rx_tail_ptr(priv, priv->ioaddr,
+				       rx_q->rx_tail_addr, chan);
+	}
+
+	/* DMA TX Channel Configuration */
+	for (chan = 0; chan < tx_channels_count; chan++) {
+		tx_q = &priv->tx_queue[chan];
+
+		stmmac_init_tx_chan(priv, priv->ioaddr, priv->plat->dma_cfg,
+				    tx_q->dma_tx_phy, chan);
+
+		tx_q->tx_tail_addr = tx_q->dma_tx_phy;
+		stmmac_set_tx_tail_ptr(priv, priv->ioaddr,
+				       tx_q->tx_tail_addr, chan);
+	}
+
+	return ret;
+}
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
+
 /**
  * stmmac_resume - resume callback
  * @dev: device pointer
@@ -5656,7 +5874,9 @@ int stmmac_resume(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
-
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	stmmac_pm_resume(priv, priv, ndev);
+#else
 	if (!netif_running(ndev))
 		return 0;
 
@@ -5708,6 +5928,7 @@ int stmmac_resume(struct device *dev)
 	}
 
 	phylink_mac_change(priv->phylink, true);
+#endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
 
 	return 0;
 }
@@ -5777,6 +5998,13 @@ static void __exit stmmac_exit(void)
 	debugfs_remove_recursive(stmmac_fs_dir);
 #endif
 }
+
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+const struct stmmac_pm_ops dwmac_pm_ops = {
+	.suspend = stmmac_suspend_main,
+	.resume = stmmac_resume_main,
+};
+#endif
 
 module_init(stmmac_init)
 module_exit(stmmac_exit)

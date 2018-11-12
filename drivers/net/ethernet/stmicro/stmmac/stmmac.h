@@ -244,6 +244,12 @@ struct stmmac_priv {
 	unsigned long state;
 	struct workqueue_struct *wq;
 	struct work_struct service_task;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	/* Network Proxy A2H Worker */
+	struct workqueue_struct *netprox_wq;
+	struct work_struct netprox_task;
+	bool networkproxy_exit;
+#endif
 
 	/* TC Handling */
 	unsigned int tc_entries_max;
@@ -286,6 +292,13 @@ void stmmac_disable_eee_mode(struct stmmac_priv *priv);
 bool stmmac_eee_init(struct stmmac_priv *priv);
 int stmmac_reinit_queues(struct net_device *dev, u32 rx_cnt, u32 tx_cnt);
 int stmmac_reinit_ringparam(struct net_device *dev, u32 rx_size, u32 tx_size);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+int stmmac_config_dma_channel(struct stmmac_priv *priv);
+int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
+#endif
 
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,

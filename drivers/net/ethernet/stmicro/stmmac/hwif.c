@@ -386,6 +386,12 @@ int stmmac_hwif_init(struct stmmac_priv *priv)
 		if (mac->mdio_intr_en)
 			init_waitqueue_head(&mac->mdio_busy_wait);
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+		if (priv->plat->has_netproxy)
+			mac->pm = &dwmac_netprox_pm_ops;
+		else
+			mac->pm = &dwmac_pm_ops;
+#endif
 		priv->hw = mac;
 		priv->ptpaddr = priv->ioaddr + entry->regs.ptp_off;
 		priv->mmcaddr = priv->ioaddr + entry->regs.mmc_off;
