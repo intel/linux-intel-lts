@@ -263,6 +263,7 @@ static DRV_BOOL linuxos_Equal_VM_Exe_File(struct vm_area_struct *vma)
  */
 static S32 linuxos_Map_Kernel_Modules(void)
 {
+#if defined(CONFIG_MODULES)
 	struct module *current_module;
 	struct list_head *modules;
 	U16 exec_mode;
@@ -274,7 +275,7 @@ static S32 linuxos_Map_Kernel_Modules(void)
 
 	SEP_DRV_LOG_TRACE_IN("");
 
-#if defined(CONFIG_MODULES)
+
 	mutex_lock(&module_mutex);
 
 #if defined(DRV_EM64T)

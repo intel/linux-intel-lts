@@ -317,7 +317,6 @@ static void sys_info_Fill_CPUID(U32 num_cpuids, U32 basic_funcs,
 	VTSA_CPUID *cpuid_el;
 	U32 shift_nbits_core = 0;
 	U32 shift_nbits_pkg = 0;
-	// U32 family = 0;
 	U32 model = 0;
 	DRV_BOOL ht_supported = FALSE;
 	U32 apic_id = 0;
@@ -490,11 +489,9 @@ static void sys_info_Fill_CPUID(U32 num_cpuids, U32 basic_funcs,
 							MSR_FB_PCARD_ID_FUSE);
 				}
 			} else if (cpuid_function == 1) {
-				// family = (U32)(rax >> 8 & 0x0f);
 				/* extended model bits */
 				model = (U32)(rax >> 12 & 0xf0) |
 					(U32)(rax >> 4 & 0x0f);
-				// model |= (U32)(rax >> 4 & 0x0f);
 				ht_supported = (rdx >> 28) & 1 ? TRUE : FALSE;
 				num_logical_per_physical =
 					(U32)((rbx & 0xff0000) >> 16);

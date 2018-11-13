@@ -961,7 +961,6 @@ VOID PEBS_Flush_Buffer(VOID *param)
 	U64 pebs_overflow_status = 0;
 	U64 lbr_tos_from_ip = 0ULL;
 	DRV_BOOL counter_overflowed = FALSE;
-	// ECB pecb;
 	CPU_STATE pcpu;
 	EVENT_DESC evt_desc;
 	BUFFER_DESC bd;
@@ -1003,8 +1002,6 @@ VOID PEBS_Flush_Buffer(VOID *param)
 		SEP_DRV_LOG_TRACE("Pebs_overflow_status = 0x%llx, i=%d.",
 				  pebs_overflow_status, i);
 
-		// pecb = LWPMU_DEVICE_PMU_register_data(
-		// 	&devices[dev_idx])[cur_grp];
 		FOR_EACH_DATA_REG(pecb, j)
 		{
 			if ((!DEV_CONFIG_enable_adaptive_pebs(pcfg) &&

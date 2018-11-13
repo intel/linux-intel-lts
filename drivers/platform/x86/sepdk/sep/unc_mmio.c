@@ -251,9 +251,7 @@ static void unc_mmio_Enable_PMU(PVOID param)
 	U32 idx_w = 0;
 	U32 event_code = 0;
 	U32 counter = 0;
-	// U32 num_events = 0;
 	U32 entry = 0;
-	// U32 num_pkgs = num_packages;
 	U32 dev_node = 0;
 
 	SEP_DRV_LOG_TRACE_IN("Param: %p.", param);
@@ -282,16 +280,11 @@ static void unc_mmio_Enable_PMU(PVOID param)
 		return;
 	}
 
-	// if (DEV_UNC_CONFIG_device_type(pcfg_unc) == DRV_SINGLE_INSTANCE) {
-	// 	num_pkgs = 1;
-	// }
-
 	virtual_addr = virtual_address_table(dev_node, entry);
 
 	// NOTE THAT the enable function currently captures previous values
 	// for EMON collection to avoid unnecessary memory copy.
 	if (DRV_CONFIG_emon_mode(drv_cfg)) {
-		// num_events = ECB_num_events(pecb);
 		idx_w = ECB_operations_register_start(pecb,
 						      PMU_OPERATION_WRITE);
 		FOR_EACH_REG_UNC_OPERATION(pecb, dev_idx, idx,
@@ -577,7 +570,7 @@ static VOID unc_mmio_Trigger_Read(PVOID param, U32 id)
 			}
 			value = SYS_MMIO_Read64(virtual_addr, offset_delta);
 		} else {
-			value = SYS_MMIO_Read32((volatile unsigned int *)virtual_addr, offset_delta);
+			value = SYS_MMIO_Read32(virtual_addr, offset_delta);
 		}
 		value &= (U64)ECB_entries_max_bits(pecb, idx);
 
@@ -640,7 +633,6 @@ static VOID unc_mmio_Read_PMU_Data(PVOID param)
 	U32 idx_w = 0;
 	U32 event_code = 0;
 	U32 counter = 0;
-	// U32 num_events = 0;
 	U32 package_num;
 	U32 entry = 0;
 	U32 dev_node = 0;
@@ -672,8 +664,6 @@ static VOID unc_mmio_Read_PMU_Data(PVOID param)
 	}
 
 	virtual_addr = virtual_address_table(dev_node, entry);
-
-	// num_events = ECB_num_events(pecb);
 
 	idx_w = ECB_operations_register_start(pecb, PMU_OPERATION_WRITE);
 
