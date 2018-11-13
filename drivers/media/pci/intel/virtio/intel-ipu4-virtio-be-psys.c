@@ -68,7 +68,15 @@ int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
 {
-	return IPU4_REQ_ERROR;
+	struct ipu_psys_fh *fh = psys_file->private_data;
+	int status = 0;
+
+	status = fh->vfops->dqevent(fh, req_info, psys_file->f_flags);
+
+	if (status)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
@@ -101,7 +109,7 @@ int process_psys_open(struct ipu4_virtio_req_info *req_info)
 {
 	pr_info("%s: /dev/ipu-psys0", __func__);
 
-	psys_file = filp_open("/dev/ipu-psys0", O_RDWR | O_NONBLOCK, 0);
+	psys_file = filp_open("/dev/ipu-psys0", req_info->request->op[0], 0);
 
 	if (psys_file == NULL) {
 		pr_err("%s: Native IPU psys device not found",
@@ -123,7 +131,15 @@ int process_psys_close(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_poll(struct ipu4_virtio_req_info *req_info)
 {
-	return IPU4_REQ_ERROR;
+	struct ipu_psys_fh *fh = psys_file->private_data;
+	int status = 0;
+
+	status = fh->vfops->poll(fh, req_info);
+
+	if (status)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_psys_mapbuf_thread(void *data)

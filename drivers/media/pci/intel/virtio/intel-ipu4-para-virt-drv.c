@@ -598,11 +598,10 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device 
 	struct ipu4_virtio_req *req;
 	struct virtual_stream *vstream = dev_to_vstream(dev);
 	struct ipu4_virtio_ctx *fe_ctx = vstream->ctx;
-	struct ici_stream_device *strm_dev = file->private_data;
 	int rval = 0;
 	int op[2];
 
-	dev_dbg(&strm_dev->dev, "stream_fop_poll %d\n", vstream->virt_dev_id);
+	dev_dbg(&dev->dev, "stream_fop_poll %d\n", vstream->virt_dev_id);
 	get_device(&dev->dev);
 
 	req = ipu4_virtio_fe_req_queue_get();
@@ -617,13 +616,16 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device 
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 										IPU_VIRTIO_QUEUE_0);
 	if (rval) {
-		dev_err(&strm_dev->dev, "polling failed\n");
+		dev_err(&dev->dev, "polling failed\n");
 		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
+
+	rval = req->func_ret;
+
 	ipu4_virtio_fe_req_queue_put(req);
 
-	return req->func_ret;
+	return rval;
 }
 
 static int virt_stream_fop_open(struct inode *inode, struct file *file)

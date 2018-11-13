@@ -19,10 +19,18 @@ struct psys_fops_virt {
 	int (*qcmd)(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info);
 	int (*dqevent)(struct ipu_psys_fh *fh,
-			struct ipu4_virtio_req_info *req_info);
+			struct ipu4_virtio_req_info *req_info,
+			unsigned int f_flags);
 	int (*get_buf)(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info);
+	int (*poll)(struct ipu_psys_fh *fh,
+			struct ipu4_virtio_req_info *req_info);
 };
+
+//Function define in ipu-psys.c
+long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh);
+//Function define in ipu4-psys.c
+void ipu_psys_kcmd_free(struct ipu_psys_kcmd *kcmd);
 
 extern struct psys_fops_virt psys_vfops;
 
