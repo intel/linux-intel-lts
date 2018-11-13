@@ -1,0 +1,63 @@
+#
+# THE SEP KERNEL DRIVER UNDER LINUX*
+#
+config INTEL_SEP
+	bool "Sampling Enabling Product (SEP)"
+	help
+	  SEP is a command line tool for doing hardware-based sampling using
+	  event-based sampling (EBS).
+	depends on X86 || X86_64
+
+config SEP
+	tristate "SEP kernel driver"
+	depends on INTEL_SEP
+	default m
+
+config SEP_ACRN
+	tristate "SEP kernel driver"
+	depends on INTEL_SEP && ACRN_VHM
+	default m
+
+config SEP_PAX
+	tristate "PAX kernel driver from SEP"
+	depends on INTEL_SEP
+	depends on SEP
+	default m
+
+config SEP_PER_USER_MODE
+	bool "Use Per User Mode on SEP"
+	depends on INTEL_SEP
+	default n
+
+choice
+	prompt "Choose log mode"
+	default SEP_STANDARD_MODE
+	depends on INTEL_SEP
+	help
+	  This option allows to select logging mode.
+
+config SEP_STANDARD_MODE
+	bool "Use standard logging mode"
+
+config SEP_MINLOG_MODE
+	bool "Use min logging mode"
+	help
+	  WARNING: Using minimal logging mode.
+	  This may make troubleshooting more difficult.
+
+config SEP_MAXLOG_MODE
+	bool "Use max logging mode"
+	help
+	  WARNING: Using maximal logging mode.
+	  This may increase overhead
+
+endchoice
+
+config SEP_PRIVATE_BUILD
+	bool "Is this build an Internal and Private build"
+	depends on INTEL_SEP
+	default y
+	help
+	  Select Yes if this is an Intel Internal Build
+
+

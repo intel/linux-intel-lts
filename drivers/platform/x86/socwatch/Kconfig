@@ -1,0 +1,6 @@
+menuconfig INTEL_SOCWATCH
+	depends on X86
+	tristate "SocWatch Driver Support"
+	default m
+	help
+	  Say Y here to enable SocWatch driver
