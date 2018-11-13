@@ -399,7 +399,6 @@ static VOID unc_gt_Read_PMU_Data(PVOID param)
 	U32 dev_idx;
 	U32 this_cpu;
 	CPU_STATE pcpu;
-	// U32 cur_grp;
 	U32 offset_delta;
 	U32 tmp_value_lo = 0;
 	U32 tmp_value_hi = 0;
@@ -418,7 +417,6 @@ static VOID unc_gt_Read_PMU_Data(PVOID param)
 	}
 
 	package_num = core_to_package_map[this_cpu];
-	// cur_grp = LWPMU_DEVICE_cur_group(&devices[(dev_idx)])[package_num];
 
 	FOR_EACH_PCI_DATA_REG_RAW(pecb, i, dev_idx)
 	{

@@ -53,7 +53,7 @@ extern DISPATCH_NODE unc_power_dispatch;
 #include <asm/msr.h>
 
 #define SYS_MMIO_Read32(base, offset)                                       \
-	((base) ? readl((void __iomem *)((UIOP)(base) + (offset))) : 0)
+	((base) ? readl((void __iomem *)(base) + (offset)) : 0)
 extern U64 SYS_MMIO_Read64(U64 baseAddress, U64 offset);
 
 extern U64 SYS_Read_MSR(U32 msr);
