@@ -123,7 +123,7 @@ struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
  * Tracepoint probe register/unregister functions and
  * helper macros.
  */
-#ifdef CONFIG_TRACEPOINTS
+#if IS_ENABLED(CONFIG_TRACEPOINTS)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
 #define DO_REGISTER_SW_TRACEPOINT_PROBE(node, name, probe)                     \
 	WARN_ON(register_trace_##name(probe))
@@ -532,7 +532,7 @@ static const struct sw_trace_notifier_name s_notifier_names[] = {
 				    "HOTCPU-NOTIFIER" },
 };
 
-#ifdef CONFIG_TRACEPOINTS
+#if IS_ENABLED(CONFIG_TRACEPOINTS)
 /*
  * A list of supported tracepoints.
  */
@@ -2131,7 +2131,7 @@ static void sw_extract_tracepoint_callback(struct tracepoint *tp, void *priv)
 int sw_extract_trace_notifier_providers(void)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0) &&                          \
-	defined(CONFIG_TRACEPOINTS)
+	IS_ENABLED(CONFIG_TRACEPOINTS)
 	int numCallbacks = 0;
 
 	for_each_kernel_tracepoint(&sw_extract_tracepoint_callback,
@@ -2212,6 +2212,7 @@ int sw_add_trace_notifier_providers(void)
 			return -EIO;
 		}
 	}
+#if IS_ENABLED(CONFIG_TRACEPOINTS)
 	/*
 	 * Add the cpu hot plug notifier.
 	 */
@@ -2223,6 +2224,7 @@ int sw_add_trace_notifier_providers(void)
 			return -EIO;
 		}
 	}
+#endif // CONFIG_TRACEPOINTS
 	return PW_SUCCESS;
 }
 /*
