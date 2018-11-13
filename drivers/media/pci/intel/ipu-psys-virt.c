@@ -50,6 +50,8 @@
 
 extern struct dma_buf_ops ipu_dma_buf_ops;
 
+#define POLL_WAIT 500 //500ms
+
 int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info)
 {
@@ -62,6 +64,7 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 	u32 client_pkg_offset;
 	struct ipu_psys_manifest_wrap *manifest_wrap;
 	struct ipu_psys_manifest *manifest;
+	void *manifest_data;
 
 	manifest_wrap = (struct ipu_psys_manifest_wrap *)map_guest_phys(
 										req_info->domid,
@@ -80,6 +83,16 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 										);
 	if (manifest == NULL) {
 		pr_err("%s: failed to get ipu_psys_manifest", __func__);
+		return -EFAULT;
+	}
+
+	manifest_data = (void *)map_guest_phys(
+							req_info->domid,
+							manifest_wrap->manifest_data,
+							PAGE_SIZE
+							);
+	if (manifest_data == NULL) {
+		pr_err("%s: failed to get manifest_data", __func__);
 		return -EFAULT;
 	}
 
@@ -113,9 +126,9 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 		return -EFAULT;
 	}
 
-	memcpy(&manifest_wrap->manifest,
-			(uint8_t *) client_pkg + client_pkg->pg_manifest_offs,
-			manifest->size);
+	memcpy(manifest_data,
+		(uint8_t *) client_pkg + client_pkg->pg_manifest_offs,
+		manifest->size);
 
 	return 0;
 }
@@ -129,44 +142,11 @@ int virt_ipu_psys_map_buf(struct ipu_psys_fh *fh,
 int virt_ipu_psys_unmap_buf(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info)
 {
-	struct ipu_psys_kbuffer *kbuf;
-	struct ipu_psys *psys = fh->psys;
-	struct dma_buf *dmabuf;
 	int fd;
 
 	fd = req_info->request->op[0];
-	mutex_lock(&fh->mutex);
-	kbuf = ipu_psys_lookup_kbuffer(fh, fd);
-	if (!kbuf) {
-		dev_dbg(&psys->adev->dev, "buffer %d not found\n", fd);
-		mutex_unlock(&fh->mutex);
-		return -EINVAL;
-	}
 
-	/* From now on it is not safe to use this kbuffer */
-	kbuf->valid = false;
-
-	dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
-	dma_buf_unmap_attachment(kbuf->db_attach, kbuf->sgt, DMA_BIDIRECTIONAL);
-
-	dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
-
-	dmabuf = kbuf->dbuf;
-
-	kbuf->db_attach = NULL;
-	kbuf->dbuf = NULL;
-
-	list_del(&kbuf->list);
-
-	if (!kbuf->userptr)
-		kfree(kbuf);
-
-	mutex_unlock(&fh->mutex);
-	dma_buf_put(dmabuf);
-
-	dev_dbg(&psys->adev->dev, "IOC_UNMAPBUF: fd %d\n", fd);
-
-	return 0;
+	return ipu_psys_unmapbuf(fd, fh);
 }
 
 int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
@@ -176,9 +156,52 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
 }
 
 int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
+			struct ipu4_virtio_req_info *req_info,
+			unsigned int f_flags)
+{
+	struct ipu_psys_event *event;
+
+	event = (struct ipu_psys_event *)map_guest_phys(
+									req_info->domid,
+									req_info->request->payload,
+									PAGE_SIZE
+									);
+	if (event == NULL) {
+		pr_err("%s: failed to get payload", __func__);
+		return -EFAULT;
+	}
+
+	return ipu_ioctl_dqevent(event, fh, f_flags);
+}
+
+int virt_ipu_psys_poll(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info)
 {
-	return -1;
+	struct ipu_psys *psys = fh->psys;
+	long time_remain = -1;
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
+
+	dev_dbg(&psys->adev->dev, "ipu psys poll\n");
+
+	add_wait_queue(&fh->wait, &wait);
+	while (1) {
+		if (ipu_get_completed_kcmd(fh) ||
+			time_remain == 0)
+			break;
+		time_remain =
+			wait_woken(&wait, TASK_INTERRUPTIBLE, POLL_WAIT);
+	}
+	remove_wait_queue(&fh->wait, &wait);
+
+	if (time_remain)
+		req_info->request->func_ret = POLLIN;
+	else
+		req_info->request->func_ret = 0;
+
+	dev_dbg(&psys->adev->dev, "ipu psys poll res %u\n",
+						req_info->request->func_ret);
+
+	return 0;
 }
 
 int __map_buf(struct ipu_psys_fh *fh,
@@ -379,4 +402,5 @@ struct psys_fops_virt psys_vfops = {
 	.qcmd = virt_ipu_psys_qcmd,
 	.dqevent = virt_ipu_psys_dqevent,
 	.get_buf = virt_ipu_psys_get_buf,
+	.poll = virt_ipu_psys_poll,
 };

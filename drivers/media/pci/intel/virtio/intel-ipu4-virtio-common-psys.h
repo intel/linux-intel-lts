@@ -8,11 +8,7 @@
 
 struct ipu_psys_manifest_wrap {
 	u64 psys_manifest;
-	//since the manifest memory is allocated by user space
-	//and the struct ia_cipr_buffer_t is not expose to
-	//driver. We assume the size is less than 1 page and
-	//allocate the max.
-	int8_t manifest[PAGE_SIZE];
+	u64 manifest_data;
 };
 
 struct ipu_psys_usrptr_map {

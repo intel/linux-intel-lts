@@ -185,7 +185,7 @@ int process_poll(struct ipu4_virtio_req_info *req_info)
 			!list_empty(&as->buf_list.putbuf_list),
 			POLL_WAIT);
 		if (time_remain) {
-			req->func_ret = 1;
+			req->func_ret = POLLIN;
 			return IPU4_REQ_PROCESSED;
 		} else {
 			pr_err("%s poll timeout! %d", __func__, req->op[0]);
