@@ -266,7 +266,6 @@ VOID UNC_COMMON_PCI_Scan_For_Uncore(PVOID param, U32 dev_node,
 VOID UNC_COMMON_Get_Platform_Topology(U32 dev_node)
 {
 	U32 num_registers = 0;
-	// U32 device_index = 0;
 	U32 bus_num = 0;
 	U32 i = 0;
 	U32 func_num = 0;
@@ -298,8 +297,6 @@ VOID UNC_COMMON_Get_Platform_Topology(U32 dev_node)
 		&platform_topology_prog_node, dev_node);
 	topology_regs = PLATFORM_TOPOLOGY_PROG_topology_topology_regs(
 		&platform_topology_prog_node, dev_node);
-	// device_index = PLATFORM_TOPOLOGY_PROG_topology_device_device_index(
-		// &platform_topology_prog_node, dev_node);
 
 	for (i = 0; i < num_pkgs; i++) {
 		for (len = 0; len < num_registers; len++) {
