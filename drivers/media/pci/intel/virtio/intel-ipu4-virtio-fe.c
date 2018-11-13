@@ -157,7 +157,7 @@ static int ipu_virtio_fe_send_req(int vmid, struct ipu4_virtio_req *req,
 	ipu_virtio_fe_register_buffer(ipu4_virtio_fe, req, sizeof(*req), idx);
 	wait_for_completion(req->wait);
 
-	return ret;
+	return req->stat;
 }
 static int ipu_virtio_fe_get_vmid(void)
 {

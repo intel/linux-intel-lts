@@ -124,9 +124,9 @@ enum intel_ipu4_virtio_command {
 };
 
 enum intel_ipu4_virtio_req_feedback {
+	IPU4_REQ_ERROR = -1,
 	IPU4_REQ_PROCESSED,
 	IPU4_REQ_PENDING,
-	IPU4_REQ_ERROR,
 	IPU4_REQ_NOT_RESPONDED
 };
 

@@ -25,7 +25,6 @@
 #define phys_to_page(x) pfn_to_page((x) >> PAGE_SHIFT)
 
 static dev_t virt_pipeline_dev_t;
-static struct class *virt_pipeline_class;
 static struct ici_isys_pipeline_device *pipeline_dev;
 
 static dev_t virt_stream_dev_t;
@@ -1218,13 +1217,6 @@ static int virt_ici_pipeline_init(void)
 		return rval;
 	}
 
-	virt_pipeline_class = class_create(THIS_MODULE, ICI_PIPELINE_DEVICE_NAME);
-	if (IS_ERR(virt_pipeline_class)) {
-		unregister_chrdev_region(virt_pipeline_dev_t, MAX_PIPELINE_DEVICES);
-			pr_err("Failed to register device class %s\n", ICI_PIPELINE_DEVICE_NAME);
-		return PTR_ERR(virt_pipeline_class);
-	}
-
 	pipeline_dev = kzalloc(sizeof(*pipeline_dev), GFP_KERNEL);
 	if (!pipeline_dev)
 		return -ENOMEM;
@@ -1238,7 +1230,6 @@ static int virt_ici_pipeline_init(void)
 			return rval;
 	}
 
-	pipeline_dev->dev.class = virt_pipeline_class;
 	pipeline_dev->dev.devt = MKDEV(MAJOR_PIPELINE, MINOR_PIPELINE);
 	dev_set_name(&pipeline_dev->dev, "%s", ICI_PIPELINE_DEVICE_NAME);
 
@@ -1312,9 +1303,13 @@ static int virt_fe_probe(void)
 
 	return rval;
 }
+static int virt_fe_remove(void)
+{
+	ipu4_virtio_fe_req_queue_free();
+	return 0;
+}
 static void virt_ici_pipeline_exit(void)
 {
-	class_unregister(virt_pipeline_class);
 	unregister_chrdev_region(virt_pipeline_dev_t, MAX_PIPELINE_DEVICES);
 	if (pipeline_dev)
 		kfree((void *)pipeline_dev);
@@ -1348,6 +1343,7 @@ static int __init virt_ipu_init(void)
 }
 static void __exit virt_ipu_exit(void)
 {
+	virt_fe_remove();
     virt_ici_exit();
     virt_psys_exit();
 }

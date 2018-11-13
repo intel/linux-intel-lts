@@ -50,8 +50,6 @@ void intel_ipu4_virtio_create_req(struct ipu4_virtio_req *req,
 			req->op[i] = op[i];
 		break;
 	case IPU4_CMD_PSYS_OPEN:
-		req->op[0] = op[0];
-		break;
 	case IPU4_CMD_PSYS_CLOSE:
 	case IPU4_CMD_PSYS_POLL:
 	case IPU4_CMD_PSYS_MAPBUF:

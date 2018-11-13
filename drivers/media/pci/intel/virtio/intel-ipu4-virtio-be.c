@@ -396,10 +396,11 @@ int notify_fe(int status, struct ipu4_virtio_req_info *req_info)
 	struct ipu4_virtio_be_priv *be;
 	unsigned long flags = 0;
 
-	pr_debug("%s: notifying fe %d vq idx: %d cmd: %d",
+	pr_debug("%s: stream: %d vq idx: %d cmd: %d stat: %d",
 		__func__, req_info->request->op[0],
 		req_info->vq_info.vq_idx,
-		req_info->request->cmd);
+		req_info->request->cmd,
+		status);
 
 	be = ipu_vbk_hash_find(req_info->client_id);
 	if (be == NULL) {

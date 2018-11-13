@@ -29,7 +29,8 @@ int process_pipeline_open(struct ipu4_virtio_req_info *req_info)
 	}
 
 	pr_info("process_device_open: /dev/intel_pipeline");
-	pipeline = filp_open("/dev/intel_pipeline", O_RDWR | O_NONBLOCK, 0);
+	if (!pipeline)
+		pipeline = filp_open("/dev/intel_pipeline", O_RDWR | O_NONBLOCK, 0);
 	guestID = domid;
 
 	return IPU4_REQ_PROCESSED;
@@ -41,8 +42,10 @@ int process_pipeline_close(struct ipu4_virtio_req_info *req_info)
 
 	pr_info("%s: %d", __func__, req->op[0]);
 
-	filp_close(pipeline, 0);
+	if (pipeline)
+		filp_close(pipeline, 0);
 	guestID = -1;
+	pipeline = NULL;
 
 	return IPU4_REQ_PROCESSED;
 }

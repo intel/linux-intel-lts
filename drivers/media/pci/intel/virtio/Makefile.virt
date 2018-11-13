@@ -6,13 +6,13 @@ TARGET_MODULE:=intel-ipu-virt-$(IPU_STEP)
 
 $(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-common.o
 
-
 ifdef CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-request-queue.o
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-pipeline.o
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-bridge.o
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be.o
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-stream.o
+	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-psys.o
 else
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-fe-request-queue.o
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-fe-pipeline.o
@@ -22,4 +22,4 @@ else
 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-para-virt-psys.o
 endif
 
-obj-$(CONFIG_VIDEO_INTEL_IPU_ACRN) := $(TARGET_MODULE).o
+obj-$(CONFIG_VIDEO_INTEL_IPU_ACRN) += $(TARGET_MODULE).o
