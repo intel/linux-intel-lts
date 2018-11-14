@@ -112,6 +112,41 @@ static void ici_put_userpages(struct device *dev,
 	up_read(&mm->mmap_sem);
 }
 
+static void ici_put_userpages_virt(struct device *dev,
+					struct ici_kframe_plane
+					*kframe_plane)
+{
+	struct sg_table *sgt = kframe_plane->sgt;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+    DEFINE_DMA_ATTRS(attrs);
+#else
+    unsigned long attrs;
+#endif
+
+	struct mm_struct* mm = current->active_mm;
+	if (!mm){
+		dev_err(dev, "Failed to get active mm_struct ptr from current process.\n");
+		return;
+	}
+
+	down_read(&mm->mmap_sem);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
+	dma_unmap_sg_attrs(kframe_plane->dev, sgt->sgl, sgt->orig_nents,
+				DMA_FROM_DEVICE, &attrs);
+#else
+    attrs = DMA_ATTR_SKIP_CPU_SYNC;
+	dma_unmap_sg_attrs(kframe_plane->dev, sgt->sgl, sgt->orig_nents,
+				DMA_FROM_DEVICE, attrs);
+#endif
+
+	kfree(sgt);
+	kframe_plane->sgt = NULL;
+
+	up_read(&mm->mmap_sem);
+}
+
 static void ici_put_dma(struct device *dev,
 					struct ici_kframe_plane
 					*kframe_plane)
@@ -408,7 +443,6 @@ int ici_isys_get_buf(struct ici_isys_stream *as,
 		return 0;
 	}
 
-
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
@@ -673,6 +707,26 @@ static void unmap_buf(struct ici_frame_buf_wrapper *buf)
 	}
 }
 
+static void unmap_buf_virt(struct ici_frame_buf_wrapper *buf)
+{
+	int i;
+
+	for (i = 0; i < buf->frame_info.num_planes; i++) {
+		struct ici_kframe_plane *kframe_plane =
+			&buf->kframe_info.planes[i];
+		switch (kframe_plane->mem_type) {
+		case ICI_MEM_USERPTR:
+			ici_put_userpages_virt(kframe_plane->dev,
+						kframe_plane);
+		break;
+		default:
+			dev_err(&buf->buf_list->strm_dev->dev, "not supported memory type: %d\n",
+				kframe_plane->mem_type);
+		break;
+		}
+	}
+}
+
 void ici_isys_frame_buf_stream_cancel(struct
 						  ici_isys_stream
 						  *as)
@@ -681,19 +735,29 @@ void ici_isys_frame_buf_stream_cancel(struct
 	struct ici_frame_buf_wrapper *buf;
 	struct ici_frame_buf_wrapper *next_buf;
 
+	mutex_lock(&buf_list->mutex);
+
 	list_for_each_entry_safe(buf, next_buf, &buf_list->getbuf_list, node) {
 		list_del(&buf->node);
-		unmap_buf(buf);
+		if (as->strm_dev.virt_dev_id < 0)
+			unmap_buf(buf);
+		else
+			unmap_buf_virt(buf);
 	}
 	list_for_each_entry_safe(buf, next_buf, &buf_list->putbuf_list, node) {
 		list_del(&buf->node);
-		unmap_buf(buf);
+		if (as->strm_dev.virt_dev_id < 0)
+			unmap_buf(buf);
+		else
+			unmap_buf_virt(buf);
 	}
 	list_for_each_entry_safe(buf, next_buf, &buf_list->interlacebuf_list,
 								node) {
 		list_del(&buf->node);
 		unmap_buf(buf);
 	}
+
+	mutex_unlock(&buf_list->mutex);
 }
 
 int ici_isys_frame_buf_add_next(

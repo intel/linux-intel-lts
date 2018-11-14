@@ -65,6 +65,7 @@ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
 
 	err = dev->pipeline_ioctl_ops->pipeline_enum_nodes(pipeline, dev, host_virt);
 
+	unmap_guest_phys(domid, req->payload);
 	if (err)
 		return IPU4_REQ_ERROR;
 	else
@@ -88,6 +89,7 @@ int process_enum_links(struct ipu4_virtio_req_info *req_info)
 	}
 	err = dev->pipeline_ioctl_ops->pipeline_enum_links(pipeline, dev, host_virt);
 
+	unmap_guest_phys(domid, req->payload);
 	if (err)
 		return IPU4_REQ_ERROR;
 	else
@@ -110,6 +112,7 @@ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
 	}
 	err = dev->pipeline_ioctl_ops->pad_get_supported_format(pipeline, dev, host_virt);
 
+	unmap_guest_phys(domid, req->payload);
 	if (err)
 		return IPU4_REQ_ERROR;
 	else
@@ -133,6 +136,7 @@ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
 	}
 	err = dev->pipeline_ioctl_ops->pad_set_ffmt(pipeline, dev, host_virt);
 
+	unmap_guest_phys(domid, req->payload);
 	if (err)
 		return IPU4_REQ_ERROR;
 	else
@@ -156,6 +160,7 @@ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
 	}
 	err = dev->pipeline_ioctl_ops->pad_get_ffmt(pipeline, dev, host_virt);
 
+	unmap_guest_phys(domid, req->payload);
 	if (err)
 		return IPU4_REQ_ERROR;
 	else
@@ -179,6 +184,7 @@ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
 	}
 	err = dev->pipeline_ioctl_ops->pipeline_setup_pipe(pipeline, dev, host_virt);
 
+	unmap_guest_phys(domid, req->payload);
 	if (err)
 		return IPU4_REQ_ERROR;
 	else
@@ -202,6 +208,7 @@ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
 	}
 	err = dev->pipeline_ioctl_ops->pad_set_sel(pipeline, dev, host_virt);
 
+	unmap_guest_phys(domid, req->payload);
 	if (err)
 		return IPU4_REQ_ERROR;
 	else
@@ -225,6 +232,7 @@ int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
 	}
 	err = dev->pipeline_ioctl_ops->pad_get_sel(pipeline, dev, host_virt);
 
+	unmap_guest_phys(domid, req->payload);
 	if (err)
 		return IPU4_REQ_ERROR;
 	else
