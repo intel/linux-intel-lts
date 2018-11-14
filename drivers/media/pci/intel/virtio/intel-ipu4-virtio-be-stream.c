@@ -141,6 +141,7 @@ int process_set_format(struct ipu4_virtio_req_info *req_info)
 	if (err)
 		pr_err("intel_ipu4_pvirt: internal set fmt failed\n");
 
+	unmap_guest_phys(domid, req->payload);
 	return IPU4_REQ_PROCESSED;
 }
 
@@ -238,6 +239,7 @@ int process_put_buf(struct ipu4_virtio_req_info *req_info)
 	if (err)
 		pr_err("process_put_buf: ici_put_buf failed\n");
 
+	unmap_guest_phys(domid, req->payload);
 	return IPU4_REQ_PROCESSED;
 }
 
@@ -250,7 +252,7 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
 	void *pageaddr;
 	u64 *page_table = NULL;
 	struct page **data_pages = NULL;
-	int err, found;
+	int err, found, status;
 	struct ipu4_virtio_req *req = req_info->request;
 	int domid = req_info->domid;
 
@@ -277,12 +279,14 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
 	shared_buf = (struct ici_frame_buf_wrapper *)map_guest_phys(domid, req->payload, PAGE_SIZE);
 	if (!shared_buf) {
 		pr_err("SOS Failed to map Buffer from UserOS\n");
-		req->stat = IPU4_REQ_ERROR;
+		status = IPU4_REQ_ERROR;
+		goto exit;
 	}
 	data_pages = kcalloc(shared_buf->kframe_info.planes[0].npages, sizeof(struct page *), GFP_KERNEL);
 	if (data_pages == NULL) {
 		pr_err("SOS Failed alloc data page set\n");
-		req->stat = IPU4_REQ_ERROR;
+		status = IPU4_REQ_ERROR;
+		goto exit_payload;
 	}
 	pr_debug("Total number of pages:%d\n", shared_buf->kframe_info.planes[0].npages);
 
@@ -291,10 +295,9 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
 	if (page_table == NULL) {
 		pr_err("SOS Failed to map page table\n");
 		req->stat = IPU4_REQ_ERROR;
-		kfree(data_pages);
-		return IPU4_REQ_ERROR;
+		status = IPU4_REQ_ERROR;
+		goto exit_payload;
 	}
-
 	else {
 		 pr_debug("SOS first page %lld\n", page_table[0]);
 		 k = 0;
@@ -314,16 +317,28 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
 	strm_dev = sn->f->private_data;
 	if (strm_dev == NULL) {
 		pr_err("Native IPU stream device not found\n");
-		kfree(data_pages);
-		return IPU4_REQ_ERROR;
+		status = IPU4_REQ_ERROR;
+		goto exit_page_table;
 	}
 	err = strm_dev->ipu_ioctl_ops->ici_get_buf_virt(sn->f, strm_dev, shared_buf, data_pages);
 
-	if (err)
+	if (err) {
 		pr_err("process_get_buf: ici_get_buf_virt failed\n");
+		status = IPU4_REQ_ERROR;
+	}
+	else
+		status = IPU4_REQ_PROCESSED;
 
+exit_page_table:
+	for (i = 0; i < shared_buf->kframe_info.planes[0].npages; i++)
+		unmap_guest_phys(domid, page_table[i]);
+	unmap_guest_phys(domid, shared_buf->kframe_info.planes[0].page_table_ref);
+exit_payload:
 	kfree(data_pages);
-	return IPU4_REQ_PROCESSED;
+	unmap_guest_phys(domid, req->payload);
+exit:
+	req->stat = status;
+	return status;
 }
 
 int process_stream_on(struct ipu4_virtio_req_info *req_info)

@@ -22,6 +22,7 @@
 #include "./ici/ici-isys-stream.h"
 #include "./ici/ici-isys-pipeline-device.h"
 
+#define phys_to_page(x) pfn_to_page((x) >> PAGE_SHIFT)
 
 static dev_t virt_pipeline_dev_t;
 static struct class *virt_pipeline_class;
@@ -130,7 +131,6 @@ static int get_userpages(struct device *dev, struct ici_frame_plane *frame_plane
 	struct page **pages;
 	int nr = 0;
 	int ret = 0;
-	struct sg_table *sgt;
 	unsigned int i;
 	u64 page_table_ref;
 	u64 *page_table;
@@ -150,15 +150,12 @@ static int get_userpages(struct device *dev, struct ici_frame_plane *frame_plane
 	}
 
 	pr_debug("%s:%d Number of Pages:%d frame_length:%d\n", __func__, __LINE__, npages, frame_plane->length);
-	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
-	if (!sgt)
-		return -ENOMEM;
 	if (array_size <= PAGE_SIZE)
 		pages = kzalloc(array_size, GFP_KERNEL);
 	else
 		pages = vzalloc(array_size);
 	if (!pages)
-		return -ENOMEM;
+		goto error_free_page_table;
 
 	down_read(&current->mm->mmap_sem);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
@@ -177,14 +174,28 @@ static int get_userpages(struct device *dev, struct ici_frame_plane *frame_plane
 	page_table_ref = virt_to_phys(page_table);
 	kframe_plane->page_table_ref = page_table_ref;
 	kframe_plane->npages = npages;
+
+	if (pages) {
+		if (array_size <= PAGE_SIZE)
+			kfree(pages);
+		else
+			vfree(pages);
+	}
+
 	up_read(&current->mm->mmap_sem);
 	return ret;
+
 error_free_pages:
 	if (pages) {
 		for (i = 0; i < nr; i++)
 			put_page(pages[i]);
 	}
-	kfree(sgt);
+	if (array_size <= PAGE_SIZE)
+		kfree(pages);
+	else
+		vfree(pages);
+error_free_page_table:
+	kfree(page_table);
 	return -ENOMEM;
 }
 
@@ -343,6 +354,54 @@ struct ici_frame_buf_wrapper *get_buf(struct virtual_stream *vstream, struct ici
 	return buf;
 }
 
+static void virt_ici_put_userpages(struct device *dev,
+					struct ici_kframe_plane
+					*kframe_plane)
+{
+	unsigned int i;
+	struct page *pages;
+	u64 *page_table;
+
+	struct mm_struct* mm = current->active_mm;
+	if (!mm){
+		dev_err(dev, "Failed to get active mm_struct ptr from current process.\n");
+		return;
+	}
+
+	down_read(&mm->mmap_sem);
+
+	page_table = phys_to_virt(kframe_plane->page_table_ref);
+	for (i = 0; i < kframe_plane->npages; i++) {
+		pages = phys_to_page(page_table[i]);
+		set_page_dirty_lock(pages);
+		put_page(pages);
+	}
+
+	kfree(page_table);
+
+	up_read(&mm->mmap_sem);
+}
+
+static void virt_unmap_buf(struct ici_frame_buf_wrapper *buf)
+{
+	int i;
+
+	for (i = 0; i < buf->frame_info.num_planes; i++) {
+		struct ici_kframe_plane *kframe_plane =
+			&buf->kframe_info.planes[i];
+		switch (kframe_plane->mem_type) {
+		case ICI_MEM_USERPTR:
+			virt_ici_put_userpages(kframe_plane->dev,
+						kframe_plane);
+		break;
+		default:
+			dev_err(&buf->buf_list->strm_dev->dev, "not supported memory type: %d\n",
+				kframe_plane->mem_type);
+		break;
+		}
+	}
+}
+
 //Call from Stream-OFF and if Stream-ON fails
 void buf_stream_cancel(struct virtual_stream *vstream)
 {
@@ -353,10 +412,12 @@ void buf_stream_cancel(struct virtual_stream *vstream)
 	list_for_each_entry_safe(buf, next_buf,
 			&buf_list->getbuf_list, uos_node) {
 		list_del(&buf->uos_node);
+		virt_unmap_buf(buf);
 	}
 	list_for_each_entry_safe(buf, next_buf,
 			&buf_list->putbuf_list, uos_node) {
 		list_del(&buf->uos_node);
+		virt_unmap_buf(buf);
 	}
 }
 
