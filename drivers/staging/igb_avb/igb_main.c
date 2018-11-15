@@ -9259,6 +9259,10 @@ static int __igb_shutdown(struct pci_dev *pdev, bool *enable_wake,
 	int retval = 0;
 #endif
 
+	del_timer_sync(&adapter->watchdog_timer);
+	del_timer_sync(&adapter->phy_info_timer);
+	cancel_work_sync(&adapter->watchdog_task);
+
 	netif_device_detach(netdev);
 
 	status = E1000_READ_REG(hw, E1000_STATUS);
@@ -9394,6 +9398,8 @@ static int igb_resume(struct pci_dev *pdev)
 
 	netif_device_attach(netdev);
 
+	timer_setup(&adapter->watchdog_timer, &igb_watchdog, 0);
+	timer_setup(&adapter->phy_info_timer, &igb_update_phy_info, 0);
 	return 0;
 }
 
