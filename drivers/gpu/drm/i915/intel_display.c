@@ -13964,7 +13964,8 @@ intel_skl_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe,
 	if (ret)
 		goto fail;
 
-	supported_rotations = DRM_MODE_ROTATE_0;
+	supported_rotations = DRM_MODE_ROTATE_0 | DRM_MODE_ROTATE_90 |
+			DRM_MODE_ROTATE_180 | DRM_MODE_ROTATE_270;
 	if (INTEL_GEN(dev_priv) >= 4)
 		drm_plane_create_rotation_property(&intel_plane->base,
 						   DRM_MODE_ROTATE_0,
