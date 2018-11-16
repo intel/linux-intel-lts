@@ -20,6 +20,8 @@
 #define MAX_PIPELINE_DEVICES 1
 #define MAX_ISYS_VIRT_STREAM 34
 
+#define phys_to_page(x) pfn_to_page((x) >> PAGE_SHIFT)
+
 enum virio_queue_type {
       IPU_VIRTIO_QUEUE_0 = 0,
       IPU_VIRTIO_QUEUE_1,
