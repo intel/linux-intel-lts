@@ -16,6 +16,7 @@
 #include <linux/module.h>
 #include <linux/version.h>
 #include <linux/poll.h>
+#include <linux/hashtable.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 #include <linux/sched.h>
 #else
@@ -35,8 +36,11 @@
 #include "intel-ipu4-virtio-fe-request-queue.h"
 #include "intel-ipu4-virtio-fe-payload.h"
 
+#define FD_MAX_SIZE	8
 #define IPU_PSYS_NUM_DEVICES		4
 #define IPU_PSYS_NAME	"intel-ipu4-psys"
+
+DECLARE_HASHTABLE(FD_BUF_HASH, FD_MAX_SIZE);
 
 #ifdef CONFIG_COMPAT
 extern long virt_psys_compat_ioctl32(struct file *file, unsigned int cmd,
@@ -247,22 +251,22 @@ int psys_get_userpages(struct ipu_psys_buffer *buf,
 		pages = vzalloc(array_size);
 	if (!pages) {
 		pr_err("%s: failed to get userpages:%d", __func__, -ENOMEM);
-		kfree(page_table);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto exit_page_table;
 	}
 
 	down_read(&current->mm->mmap_sem);
 	vma = find_vma(current->mm, start);
 	if (!vma) {
 		ret = -EFAULT;
-		goto error_up_read;
+		goto exit_up_read;
 	}
 
 	if (vma->vm_end < start + buf->len) {
 		pr_err("%s: vma at %lu is too small for %llu bytes",
 			__func__, start, buf->len);
 		ret = -EFAULT;
-		goto error_up_read;
+		goto exit_up_read;
 	}
 
 	/*
@@ -279,7 +283,7 @@ int psys_get_userpages(struct ipu_psys_buffer *buf,
 
 			ret = follow_pfn(vma, io_start, &pfn);
 			if (ret)
-				goto error_up_read;
+				goto exit_up_read;
 			pages[nr] = pfn_to_page(pfn);
 		}
 	} else {
@@ -295,34 +299,88 @@ int psys_get_userpages(struct ipu_psys_buffer *buf,
 #endif
 				   pages, NULL);
 		if (nr < npages)
-			goto error_up_read;
+			goto exit_pages;
 	}
 
 	for (i = 0; i < npages; i++)
 		page_table[i] = page_to_phys(pages[i]);
 
 	map->page_table_ref = virt_to_phys(page_table);
+	map->len = buf->len;
+	map->userptr = buf->base.userptr;
 
 	up_read(&current->mm->mmap_sem);
 
 	map->npages = npages;
 
-	return 0;
-
-error_up_read:
-	kfree(page_table);
-	up_read(&current->mm->mmap_sem);
-	if (!map->vma_is_io)
-		while (nr > 0)
-			put_page(pages[--nr]);
-
-	kfree(page_table);
 	if (array_size <= PAGE_SIZE)
 		kfree(pages);
 	else
 		vfree(pages);
 
+	return 0;
+
+exit_pages:
+	if (!map->vma_is_io)
+		while (nr > 0)
+			put_page(pages[--nr]);
+
+	if (array_size <= PAGE_SIZE)
+		kfree(pages);
+	else
+		vfree(pages);
+exit_up_read:
+	up_read(&current->mm->mmap_sem);
+exit_page_table:
+	kfree(page_table);
+
 	return ret;
+}
+
+static void psys_put_userpages(struct ipu_psys_usrptr_map *map)
+{
+	unsigned long start, end;
+	int npages, i;
+	u64 *page_table;
+	struct page *pages;
+	struct mm_struct* mm;
+
+	start = (unsigned long)map->userptr;
+	end = PAGE_ALIGN(start + map->len);
+	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
+
+	mm = current->active_mm;
+	if (!mm){
+		pr_err("%s: Failed to get active mm_struct ptr from current process",
+			__func__);
+		return;
+	}
+
+	down_read(&mm->mmap_sem);
+
+	page_table = phys_to_virt(map->page_table_ref);
+	for (i = 0; i < npages; i++) {
+		pages = phys_to_page(page_table[i]);
+		set_page_dirty_lock(pages);
+		put_page(pages);
+	}
+
+	kfree(page_table);
+
+	up_read(&mm->mmap_sem);
+}
+
+static struct ipu_psys_buffer_wrap *ipu_psys_buf_lookup(
+											int fd)
+{
+	struct ipu_psys_buffer_wrap *psys_buf_wrap;
+
+	hash_for_each_possible(FD_BUF_HASH, psys_buf_wrap, node, fd) {
+		if (psys_buf_wrap)
+			return psys_buf_wrap;
+	}
+
+	return NULL;
 }
 
 int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
@@ -357,14 +415,23 @@ int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
 									IPU_VIRTIO_QUEUE_1);
 	if (rval) {
 		pr_err("%s: Failed to get buf", __func__);
+		psys_put_userpages(&attach->map);
 		goto error_exit;
 	}
 
+	mutex_lock(&fh->mutex);
+	if(!ipu_psys_buf_lookup(buf->base.fd)) {
+		hash_add(FD_BUF_HASH, &attach->node, buf->base.fd);
+	}
+	mutex_unlock(&fh->mutex);
+
+	goto exit;
+
 error_exit:
 
-	kfree(phys_to_virt(attach->map.page_table_ref));
 	kfree(attach);
 
+exit:
 	ipu4_virtio_fe_req_queue_put(req);
 
 	pr_debug("%s: processing ended %d", __func__, rval);
@@ -377,6 +444,7 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
 	struct virt_ipu_psys *psys = fh->psys;
 	struct ipu4_virtio_req *req;
 	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
+	struct ipu_psys_buffer_wrap *psys_buf_wrap;
 	int rval = 0, op[1];
 
 	pr_debug("%s: processing start", __func__);
@@ -395,6 +463,15 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
 		pr_err("%s: Failed to unmapbuf", __func__);
 		goto error_exit;
 	}
+
+	mutex_lock(&fh->mutex);
+	psys_buf_wrap = ipu_psys_buf_lookup(fd);
+	if (psys_buf_wrap) {
+		psys_put_userpages(&psys_buf_wrap->map);
+		hash_del(&psys_buf_wrap->node);
+		kfree(psys_buf_wrap);
+	}
+	mutex_unlock(&fh->mutex);
 
 error_exit:
 
@@ -487,6 +564,8 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 	union kargs *data = NULL;
 
 	struct virt_ipu_psys_fh *fh = file->private_data;
+	if(fh == NULL)
+		return -EFAULT;
 	void __user *up = (void __user *)arg;
 	bool copy = (cmd != IPU_IOC_MAPBUF && cmd != IPU_IOC_UNMAPBUF);
 
@@ -574,6 +653,8 @@ static int virt_psys_open(struct inode *inode, struct file *file)
 	if (!fh)
 	  return -ENOMEM;
 	mutex_init(&fh->bs_mutex);
+	INIT_LIST_HEAD(&fh->bufmap);
+	hash_init(FD_BUF_HASH);
 
 	fh->psys = psys;
 	file->private_data = fh;
@@ -605,7 +686,9 @@ static int virt_psys_release(struct inode *inode, struct file *file)
 	struct virt_ipu_psys *psys = inode_to_ipu_psys(inode);
 	struct ipu4_virtio_req *req;
 	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
-	int rval = 0;
+	struct ipu_psys_buffer_wrap *psys_buf_wrap;
+	struct virt_ipu_psys_fh *fh = file->private_data;
+	int rval = 0, bkt;
 
 	pr_debug("%s: processing start", __func__);
 
@@ -625,6 +708,17 @@ static int virt_psys_release(struct inode *inode, struct file *file)
 	   return rval;
 	}
 	ipu4_virtio_fe_req_queue_put(req);
+
+	mutex_lock(&fh->mutex);
+	/* clean up buffers */
+	if(!hash_empty(FD_BUF_HASH)) {
+		hash_for_each(FD_BUF_HASH, bkt, psys_buf_wrap, node) {
+			psys_put_userpages(&psys_buf_wrap->map);
+			hash_del(&psys_buf_wrap->node);
+			kfree(psys_buf_wrap);
+		}
+	}
+	mutex_unlock(&fh->mutex);
 
 	kfree(file->private_data);
 

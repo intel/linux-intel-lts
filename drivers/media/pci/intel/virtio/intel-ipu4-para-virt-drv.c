@@ -22,8 +22,6 @@
 #include "./ici/ici-isys-stream.h"
 #include "./ici/ici-isys-pipeline-device.h"
 
-#define phys_to_page(x) pfn_to_page((x) >> PAGE_SHIFT)
-
 static dev_t virt_pipeline_dev_t;
 static struct ici_isys_pipeline_device *pipeline_dev;
 
