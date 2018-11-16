@@ -15,9 +15,12 @@ struct ipu_psys_usrptr_map {
 	bool vma_is_io;
 	u64 page_table_ref;
 	size_t npages;
+	u64 len;
+	void *userptr;
 };
 
 struct ipu_psys_buffer_wrap {
+	struct hlist_node node;
 	u64 psys_buf;
 	struct ipu_psys_usrptr_map map;
 };

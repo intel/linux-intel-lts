@@ -55,6 +55,9 @@ int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
 
 	*psys_caps = fh->psys->caps;
 
+	unmap_guest_phys(req_info->domid,
+			req_info->request->payload);
+
 	if (status)
 		return IPU4_REQ_ERROR;
 	else
