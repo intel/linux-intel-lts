@@ -94,11 +94,6 @@ enum cbc_error cbc_mux_multiplexer_transmit_buffer(
 			(u8) channel_idx,
 			config->cbc_mux_channel_list[channel_idx].priority,
 			cbc_buffer);
-
-		/* Send to debug device */
-		channel = &config->cbc_mux_channel_list[CBC_CHANNEL_DEBUG_OUT];
-		if (channel && channel->buffer_receive)
-			channel->buffer_receive(channel->data, cbc_buffer);
 	}
 
 	/* Send to debug device */
