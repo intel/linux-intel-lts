@@ -142,6 +142,8 @@ int drm_plane_create_decryption_property(struct drm_plane *plane)
 
 	return 0;
 }
+EXPORT_SYMBOL(drm_plane_create_decryption_property);
+
 /**
  * drm_plane_create_alpha_property - create a new alpha property
  * @plane: drm plane
