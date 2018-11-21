@@ -10,6 +10,9 @@
 #include "ipu.h"
 #include "ipu-pdata.h"
 #include "ipu-fw-psys.h"
+#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
+#include "ipu-psys-virt.h"
+#endif
 #include "ipu-platform-psys.h"
 
 #define IPU_PSYS_PG_POOL_SIZE 16
@@ -76,6 +79,7 @@ struct ipu_psys_resource_alloc {
 
 struct task_struct;
 struct ipu_psys {
+	struct ipu_psys_capability caps;
 	struct cdev cdev;
 	struct device dev;
 
@@ -115,6 +119,9 @@ struct ipu_psys {
 };
 
 struct ipu_psys_fh {
+#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
+	const struct psys_fops_virt *vfops;
+#endif
 	struct ipu_psys *psys;
 	struct mutex mutex;	/* Protects bufmap & kcmds fields */
 	struct list_head list;

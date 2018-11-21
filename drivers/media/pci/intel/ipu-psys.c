@@ -78,11 +78,6 @@ static struct bus_type ipu_psys_bus = {
 	.name = IPU_PSYS_NAME,
 };
 
-static struct ipu_psys_capability caps = {
-	.version = 1,
-	.driver = "ipu-psys",
-};
-
 struct ipu_psys_pg *__get_pg_buf(struct ipu_psys *psys, size_t pg_size)
 {
 	struct ipu_psys_pg *kpg;
@@ -163,6 +158,13 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 	if (!sgt)
 		return -ENOMEM;
 
+	if (attach->npages != 0) {
+		pages = attach->pages;
+		npages = attach->npages;
+		attach->vma_is_io = 1;
+		goto skip_pages;
+	}
+
 	if (array_size <= PAGE_SIZE)
 		pages = kzalloc(array_size, GFP_KERNEL);
 	else
@@ -219,6 +221,10 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 	}
 	up_read(&current->mm->mmap_sem);
 
+	attach->pages = pages;
+	attach->npages = npages;
+
+skip_pages:
 	ret = sg_alloc_table_from_pages(sgt, pages, npages,
 					start & ~PAGE_MASK, attach->len,
 					GFP_KERNEL);
@@ -226,8 +232,6 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 		goto error;
 
 	attach->sgt = sgt;
-	attach->pages = pages;
-	attach->npages = npages;
 
 	return 0;
 
@@ -435,7 +439,7 @@ static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, void *vaddr)
 	vm_unmap_ram(vaddr, ipu_attach->npages);
 }
 
-static struct dma_buf_ops ipu_dma_buf_ops = {
+struct dma_buf_ops ipu_dma_buf_ops = {
 	.attach = ipu_dma_buf_attach,
 	.detach = ipu_dma_buf_detach,
 	.map_dma_buf = ipu_dma_buf_map,
@@ -477,6 +481,11 @@ static int ipu_psys_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 
 	fh->psys = psys;
+
+#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
+	fh->vfops = &psys_vfops;
+#endif
+
 	file->private_data = fh;
 
 	mutex_init(&fh->mutex);
@@ -705,7 +714,7 @@ error_put:
 	return ret;
 }
 
-static long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
+long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
 {
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys *psys = fh->psys;
@@ -844,7 +853,7 @@ static long ipu_psys_ioctl(struct file *file, unsigned int cmd,
 		err = ipu_psys_unmapbuf(arg, fh);
 		break;
 	case IPU_IOC_QUERYCAP:
-		karg.caps = caps;
+		karg.caps = fh->psys->caps;
 		break;
 	case IPU_IOC_GETBUF:
 		err = ipu_psys_getbuf(&karg.buf, fh);
@@ -1400,9 +1409,9 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	isp->pkg_dir_dma_addr = psys->pkg_dir_dma_addr;
 	isp->pkg_dir_size = psys->pkg_dir_size;
 
-	caps.pg_count = ipu_cpd_pkg_dir_get_num_entries(psys->pkg_dir);
+	psys->caps.pg_count = ipu_cpd_pkg_dir_get_num_entries(psys->pkg_dir);
 
-	dev_info(&adev->dev, "pkg_dir entry count:%d\n", caps.pg_count);
+	dev_info(&adev->dev, "pkg_dir entry count:%d\n", psys->caps.pg_count);
 	if (async_fw_init) {
 		INIT_DELAYED_WORK((struct delayed_work *)&fw_init_task,
 				  run_fw_init_work);
@@ -1429,8 +1438,8 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	}
 
 	/* Add the hw stepping information to caps */
-	strlcpy(caps.dev_model, IPU_MEDIA_DEV_MODEL_NAME,
-		sizeof(caps.dev_model));
+	strlcpy(psys->caps.dev_model, IPU_MEDIA_DEV_MODEL_NAME,
+		sizeof(psys->caps.dev_model));
 
 	pm_runtime_allow(&adev->dev);
 	pm_runtime_enable(&adev->dev);
