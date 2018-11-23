@@ -15,6 +15,8 @@
 
 static DEFINE_IDA(index_ida);
 
+#define REQ_TIMEOUT 3000 //3s
+
 struct ipu4_virtio_uos {
 	struct virtqueue *vq[IPU_VIRTIO_QUEUE_MAX];
 	char name[25];
@@ -41,7 +43,8 @@ static void ipu_virtio_fe_tx_done_vq_0(struct virtqueue *vq)
 		spin_unlock_irqrestore(&priv->lock, flags);
 		if (req != NULL &&
 			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
-			complete(req->wait);
+			req->completed = true;
+			wake_up(req->wait);
 		}
 	} while (req != NULL);
 
@@ -61,7 +64,8 @@ static void ipu_virtio_fe_tx_done_vq_1(struct virtqueue *vq)
 		spin_unlock_irqrestore(&priv->lock, flags);
 		if (req != NULL &&
 			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
-			complete(req->wait);
+			req->completed = true;
+			wake_up(req->wait);
 		}
 	} while (req != NULL);
 
@@ -154,10 +158,17 @@ static int ipu_virtio_fe_send_req(int vmid, struct ipu4_virtio_req *req,
 		pr_err("IPU Backend not connected\n");
 		return -ENOENT;
 	}
+	req->completed = false;
 	ipu_virtio_fe_register_buffer(ipu4_virtio_fe, req, sizeof(*req), idx);
-	wait_for_completion(req->wait);
+	ret = wait_event_timeout(*req->wait,
+						req->completed,REQ_TIMEOUT);
 
-	return req->stat;
+	if(ret)
+		return req->stat;
+	else {
+		pr_err("%s: send request timeout!!!", __func__);
+		return -1;
+	}
 }
 static int ipu_virtio_fe_get_vmid(void)
 {
