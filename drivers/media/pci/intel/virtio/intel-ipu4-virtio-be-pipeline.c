@@ -60,7 +60,8 @@ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
 
 	pr_debug("%s\n", __func__);
 
-	host_virt = (struct ici_node_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_node_desc));
 	if (host_virt == NULL) {
 		pr_err("process_enum_nodes: NULL host_virt");
 		return IPU4_REQ_ERROR;
@@ -85,7 +86,8 @@ int process_enum_links(struct ipu4_virtio_req_info *req_info)
 
 	pr_debug("%s\n", __func__);
 
-	host_virt = (struct ici_links_query *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_links_query));
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
 		return IPU4_REQ_ERROR;
@@ -108,7 +110,8 @@ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
 
 	pr_debug("%s\n", __func__);
 
-	host_virt = (struct ici_pad_supported_format_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+				sizeof(struct ici_pad_supported_format_desc));
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
 		return IPU4_REQ_ERROR;
@@ -132,7 +135,8 @@ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
 
 	pr_debug("%s\n", __func__);
 
-	host_virt = (struct ici_pad_framefmt *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_pad_framefmt));
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
 		return IPU4_REQ_ERROR;
@@ -156,7 +160,8 @@ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
 
 	pr_debug("%s\n", __func__);
 
-	host_virt = (struct ici_pad_framefmt *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_pad_framefmt));
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
 		return IPU4_REQ_ERROR;
@@ -180,7 +185,8 @@ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
 
 	pr_debug("%s\n", __func__);
 
-	host_virt = (struct ici_link_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_link_desc));
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
 		return IPU4_REQ_ERROR;
@@ -204,7 +210,8 @@ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
 
 	pr_debug("%s\n", __func__);
 
-	host_virt = (struct ici_pad_selection *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_pad_selection));
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
 		return IPU4_REQ_ERROR;
@@ -228,7 +235,8 @@ int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
 
 	pr_debug("%s\n", __func__);
 
-	host_virt = (struct ici_pad_selection *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_pad_selection));
 	if (host_virt == NULL) {
 		pr_err("%s: NULL host_virt\n", __func__);
 		return IPU4_REQ_ERROR;
@@ -341,27 +349,3 @@ int process_setup_pipe_thread(void *data)
 	do_exit(0);
 	return 0;
 }
-
-/*
-	union isys_ioctl_cmd_args {
-		struct ici_node_desc node_desc;
-		struct ici_link_desc link;
-		struct ici_pad_framefmt pad_prop;
-		struct ici_pad_supported_format_desc
-			format_desc;
-		struct ici_links_query links_query;
-		struct ici_pad_selection pad_sel;
-	};
-
-	.pipeline_setup_pipe = ici_setup_link,
-	.pipeline_enum_nodes = pipeline_enum_nodes,
-	.pipeline_enum_links = pipeline_enum_links,
-	.pad_set_ffmt = ici_pipeline_set_ffmt,
-	.pad_get_ffmt = ici_pipeline_get_ffmt,
-	.pad_get_supported_format =
-		ici_pipeline_get_supported_format,
-	.pad_set_sel = ici_pipeline_set_sel,
-	.pad_get_sel = ici_pipeline_get_sel,
-
-*/
-

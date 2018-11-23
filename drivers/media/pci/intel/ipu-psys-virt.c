@@ -67,28 +67,24 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 	void *manifest_data;
 	int status = 0;
 
-	manifest_wrap = (struct ipu_psys_manifest_wrap *)map_guest_phys(
-										req_info->domid,
-										req_info->request->payload,
-										PAGE_SIZE
-										);
+	manifest_wrap = map_guest_phys(req_info->domid,
+					req_info->request->payload,
+					sizeof(struct ipu_psys_manifest_wrap));
 	if (manifest_wrap == NULL) {
 		pr_err("%s: failed to get payload", __func__);
 		return -EFAULT;
 	}
 
-	manifest = (struct ipu_psys_manifest *)map_guest_phys(
-										req_info->domid,
-										manifest_wrap->psys_manifest,
-										PAGE_SIZE
-										);
+	manifest = map_guest_phys(req_info->domid,
+				manifest_wrap->psys_manifest,
+				sizeof(struct ipu_psys_manifest));
 	if (manifest == NULL) {
 		pr_err("%s: failed to get ipu_psys_manifest", __func__);
 		status = -EFAULT;
 		goto exit_payload;
 	}
 
-	manifest_data = (void *)map_guest_phys(
+	manifest_data = map_guest_phys(
 							req_info->domid,
 							manifest_wrap->manifest_data,
 							PAGE_SIZE
@@ -439,22 +435,18 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
 	if (psys->adev->isp->flr_done)
 		return -EIO;
 
-	cmd_wrap = (struct ipu_psys_command_wrap *)map_guest_phys(
-										req_info->domid,
-										req_info->request->payload,
-										PAGE_SIZE
-										);
+	cmd_wrap = map_guest_phys(req_info->domid,
+				req_info->request->payload,
+				sizeof(struct ipu_psys_command_wrap));
 
 	if (cmd_wrap == NULL) {
 		pr_err("%s: failed to get payload", __func__);
 		return -EFAULT;
 	}
 
-	cmd = (struct ipu_psys_command *)map_guest_phys(
-										req_info->domid,
-										cmd_wrap->psys_command,
-										PAGE_SIZE
-										);
+	cmd = map_guest_phys(req_info->domid,
+			cmd_wrap->psys_command,
+			sizeof(struct ipu_psys_command));
 
 	if (cmd == NULL) {
 		pr_err("%s: failed to get ipu_psys_command", __func__);
@@ -462,11 +454,9 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
 		goto exit_payload;
 	}
 
-	pg_manifest = (void *)map_guest_phys(
-										req_info->domid,
-										cmd_wrap->psys_manifest,
-										PAGE_SIZE
-										);
+	pg_manifest = map_guest_phys(req_info->domid,
+							cmd_wrap->psys_manifest,
+							cmd->pg_manifest_size);
 
 	if (pg_manifest == NULL) {
 		pr_err("%s: failed to get pg_manifest", __func__);
@@ -474,11 +464,9 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
 		goto exit_psys_command;
 	}
 
-	buffers = (struct ipu_psys_buffer *)map_guest_phys(
-										req_info->domid,
-										cmd_wrap->psys_buffer,
-										PAGE_SIZE
-										);
+	buffers = map_guest_phys(req_info->domid,
+				cmd_wrap->psys_buffer,
+				sizeof(struct ipu_psys_buffer));
 
 	if (buffers == NULL) {
 		pr_err("%s: failed to get ipu_psys_buffers", __func__);
@@ -513,11 +501,9 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
 	struct ipu_psys_event *event;
 	int status = 0;
 
-	event = (struct ipu_psys_event *)map_guest_phys(
-									req_info->domid,
-									req_info->request->payload,
-									PAGE_SIZE
-									);
+	event = map_guest_phys(req_info->domid,
+				req_info->request->payload,
+				sizeof(struct ipu_psys_event));
 	if (event == NULL) {
 		pr_err("%s: failed to get payload", __func__);
 		return -EFAULT;
@@ -604,8 +590,9 @@ int __map_buf(struct ipu_psys_fh *fh,
 	pr_debug("%s: Total number of pages:%lu",
 		__func__, buf_wrap->map.npages);
 
-	page_table = (u64 *)map_guest_phys(domid,
-		buf_wrap->map.page_table_ref, PAGE_SIZE);
+	page_table = map_guest_phys(domid,
+		buf_wrap->map.page_table_ref,
+		sizeof(u64) * buf_wrap->map.npages);
 
 	if (page_table == NULL) {
 		pr_err("%s: Failed to map page table", __func__);
@@ -691,21 +678,17 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys *psys = fh->psys;
 
-	buf_wrap = (struct ipu_psys_buffer_wrap *)map_guest_phys(
-										req_info->domid,
-										req_info->request->payload,
-										PAGE_SIZE
-										);
+	buf_wrap = map_guest_phys(req_info->domid,
+				req_info->request->payload,
+				sizeof(struct ipu_psys_buffer_wrap));
 	if (buf_wrap == NULL) {
 		pr_err("%s: failed to get payload", __func__);
 		return -EFAULT;
 	}
 
-	buf = (struct ipu_psys_buffer *)map_guest_phys(
-										req_info->domid,
-										buf_wrap->psys_buf,
-										PAGE_SIZE
-										);
+	buf = map_guest_phys(req_info->domid,
+				buf_wrap->psys_buf,
+				sizeof(struct ipu_psys_buffer));
 	if (buf == NULL) {
 		pr_err("%s: failed to get ipu_psys_buffer", __func__);
 		ret = -EFAULT;
