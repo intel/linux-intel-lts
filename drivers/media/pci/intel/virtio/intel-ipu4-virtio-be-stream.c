@@ -130,7 +130,8 @@ int process_set_format(struct ipu4_virtio_req_info *req_info)
 		return IPU4_REQ_ERROR;
 	}
 
-	host_virt = (struct ici_stream_format *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_stream_format));
 	if (host_virt == NULL) {
 		pr_err("process_set_format: NULL host_virt");
 		return IPU4_REQ_ERROR;
@@ -229,7 +230,8 @@ int process_put_buf(struct ipu4_virtio_req_info *req_info)
 		return IPU4_REQ_ERROR;
 	}
 
-	host_virt = (struct ici_frame_info *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	host_virt = map_guest_phys(domid, req->payload,
+						sizeof(struct ici_frame_info));
 	if (host_virt == NULL) {
 		pr_err("process_put_buf: NULL host_virt");
 		return IPU4_REQ_ERROR;
@@ -276,7 +278,8 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
 	}
 
 	pr_debug("GET_BUF: Mapping buffer\n");
-	shared_buf = (struct ici_frame_buf_wrapper *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+	shared_buf = map_guest_phys(domid, req->payload,
+					sizeof(struct ici_frame_buf_wrapper));
 	if (!shared_buf) {
 		pr_err("SOS Failed to map Buffer from UserOS\n");
 		status = IPU4_REQ_ERROR;
@@ -290,7 +293,8 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
 	}
 	pr_debug("Total number of pages:%d\n", shared_buf->kframe_info.planes[0].npages);
 
-	page_table = (u64 *)map_guest_phys(domid, shared_buf->kframe_info.planes[0].page_table_ref, PAGE_SIZE);
+	page_table = map_guest_phys(domid, shared_buf->kframe_info.planes[0].page_table_ref,
+								shared_buf->kframe_info.planes[0].npages * sizeof(u64));
 
 	if (page_table == NULL) {
 		pr_err("SOS Failed to map page table\n");
