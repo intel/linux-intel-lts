@@ -320,8 +320,8 @@ static int skl_check_ext_excep_data_avail(struct skl_sst *ctx, int idx)
 	/* move to the source dsp tracing window */
         base += (idx * size);
         ptr = (u32 *) base;
-        read = ptr[0];
-        write = ptr[1];
+        read = readl(ptr);
+        write = readl(ptr+1);
 
 	if (write == read)
 		return 0;
@@ -348,8 +348,8 @@ static void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
 	/* move to the current core's tracing window */
 	base += (idx * size);
 	ptr = (u32 *) base;
-	read = ptr[0];
-	write = ptr[1];
+	read = readl(ptr);
+	write = readl(ptr+1);
 
 	/* in case of read = write, just return */
 	if (read == write)
@@ -361,7 +361,6 @@ static void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
 				(write - read));
 		*sz_ext_dump = offset + write - read;
 		/* advance read pointer */
-		ptr[0] += write - read;
 	} else {
 		/* wrap around condition - copy till the end */
 		memcpy_fromio((ext_core_dump + offset),
@@ -375,8 +374,8 @@ static void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
 			(const void __iomem *) (base + 8), write);
 		*sz_ext_dump = offset + write;
 		/* update the read pointer */
-		ptr[0] = write;
 	}
+	writel(write, ptr);
 }
 
 
