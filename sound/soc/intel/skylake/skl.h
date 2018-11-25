@@ -222,6 +222,8 @@ struct skl_module_cfg;
 
 int skl_pcm_new(struct snd_soc_pcm_runtime *rtd);
 void skl_pcm_free(struct snd_pcm *pcm);
+int skl_platform_component_register(struct device *dev,
+	const struct snd_soc_component_driver *component_drv);
 int skl_platform_soc_probe(struct snd_soc_component *component);
 int skl_platform_open(struct snd_pcm_substream *substream);
 int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
