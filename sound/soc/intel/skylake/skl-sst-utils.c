@@ -592,6 +592,7 @@ free_uuid_list:
 	skl_freeup_uuid_list(skl);
 	return ret;
 }
+EXPORT_SYMBOL(snd_skl_parse_uuids);
 
 static int skl_parse_hw_config_info(struct sst_dsp *ctx, u8 *src, int limit)
 {
@@ -803,6 +804,7 @@ int skl_prepare_lib_load(struct skl_sst *skl, struct skl_lib_info *linfo,
 
 	return 0;
 }
+EXPORT_SYMBOL(skl_prepare_lib_load);
 
 void skl_release_library(struct skl_lib_info *linfo, int lib_count)
 {
