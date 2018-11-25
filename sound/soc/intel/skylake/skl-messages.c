@@ -1176,6 +1176,7 @@ const struct skl_dsp_ops *skl_get_dsp_ops(int pci_id)
 
 	return NULL;
 }
+EXPORT_SYMBOL(skl_get_dsp_ops);
 
 int skl_init_dsp(struct skl *skl)
 {
