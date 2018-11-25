@@ -139,11 +139,14 @@ int process_set_format(struct ipu4_virtio_req_info *req_info)
 
 	err = strm_dev->ipu_ioctl_ops->ici_set_format(sn->f, strm_dev, host_virt);
 
-	if (err)
-		pr_err("intel_ipu4_pvirt: internal set fmt failed\n");
-
 	unmap_guest_phys(domid, req->payload);
-	return IPU4_REQ_PROCESSED;
+
+	if (err) {
+		pr_err("intel_ipu4_pvirt: internal set fmt failed\n");
+		return IPU4_REQ_ERROR;
+	}
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_poll(struct ipu4_virtio_req_info *req_info)
@@ -238,11 +241,14 @@ int process_put_buf(struct ipu4_virtio_req_info *req_info)
 	}
 	err = strm_dev->ipu_ioctl_ops->ici_put_buf(sn->f, strm_dev, host_virt);
 
-	if (err)
-		pr_err("process_put_buf: ici_put_buf failed\n");
-
 	unmap_guest_phys(domid, req->payload);
-	return IPU4_REQ_PROCESSED;
+
+	if (err) {
+		pr_err("process_put_buf: ici_put_buf failed\n");
+		return IPU4_REQ_ERROR;
+	}
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_get_buf(struct ipu4_virtio_req_info *req_info)
@@ -379,10 +385,12 @@ int process_stream_on(struct ipu4_virtio_req_info *req_info)
 
 	err = strm_dev->ipu_ioctl_ops->ici_stream_on(sn->f, strm_dev);
 
-	if (err)
+	if (err) {
 		pr_err("process_stream_on: stream on failed\n");
-
-	return IPU4_REQ_PROCESSED;
+		return IPU4_REQ_ERROR;
+	}
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_stream_off(struct ipu4_virtio_req_info *req_info)
@@ -419,11 +427,12 @@ int process_stream_off(struct ipu4_virtio_req_info *req_info)
 
 	err = strm_dev->ipu_ioctl_ops->ici_stream_off(sn->f, strm_dev);
 
-	if (err)
-		pr_err("%s: stream off failed\n",
-												__func__);
-
-	return IPU4_REQ_PROCESSED;
+	if (err) {
+		pr_err("%s: stream off failed\n", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_set_format_thread(void *data)
