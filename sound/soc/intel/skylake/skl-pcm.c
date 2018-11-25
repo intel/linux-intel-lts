@@ -950,7 +950,9 @@ static const struct snd_soc_dai_ops skl_dmic_dai_ops = {
 };
 
 static const struct snd_soc_dai_ops skl_be_ssp_dai_ops = {
+#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_FE)
 	.hw_params = skl_be_hw_params,
+#endif
 };
 
 static const struct snd_soc_dai_ops skl_link_dai_ops = {
