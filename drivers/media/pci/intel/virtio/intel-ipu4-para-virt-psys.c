@@ -106,6 +106,8 @@ error_exit:
 	kfree(manifest_data);
 	kfree(manifest_wrap);
 
+	rval = req->func_ret;
+
 	ipu4_virtio_fe_req_queue_put(req);
 
 	pr_debug("%s: processing ended %d", __func__, rval);
@@ -138,6 +140,8 @@ int ipu_query_caps(struct ipu_psys_capability *caps,
 		ipu4_virtio_fe_req_queue_put(req);
 		return rval;
 	}
+
+	rval = req->func_ret;
 
 	ipu4_virtio_fe_req_queue_put(req);
 
@@ -217,6 +221,8 @@ error_exit:
 	if (pg_manifest) kfree(pg_manifest);
 	if (cmd_wrap) kfree(cmd_wrap);
 	if (psys_buffers) kfree(psys_buffers);
+
+	rval = req->func_ret;
 
 	ipu4_virtio_fe_req_queue_put(req);
 
@@ -432,6 +438,9 @@ error_exit:
 	kfree(attach);
 
 exit:
+
+	rval = req->func_ret;
+
 	ipu4_virtio_fe_req_queue_put(req);
 
 	pr_debug("%s: processing ended %d", __func__, rval);
@@ -474,6 +483,8 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
 	mutex_unlock(&fh->mutex);
 
 error_exit:
+
+	rval = req->func_ret;
 
 	ipu4_virtio_fe_req_queue_put(req);
 
@@ -542,6 +553,8 @@ long ipu_ioctl_dqevent(struct ipu_psys_event *event,
 	}
 
 error_exit:
+
+	rval = req->func_ret;
 
 	ipu4_virtio_fe_req_queue_put(req);
 

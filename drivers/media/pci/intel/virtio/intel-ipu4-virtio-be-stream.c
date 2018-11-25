@@ -188,13 +188,16 @@ int process_poll(struct ipu4_virtio_req_info *req_info)
 			as->buf_list.wait,
 			!list_empty(&as->buf_list.putbuf_list),
 			POLL_WAIT);
-		if (time_remain) {
-			req->func_ret = POLLIN;
-			return IPU4_REQ_PROCESSED;
-		} else {
-			pr_err("%s poll timeout! %d", __func__, req->op[0]);
+		if((time_remain == -ERESTARTSYS) ||
+			time_remain == 0) {
+			pr_err("%s poll timeout or unexpected wake up! code:%d port:%d",
+							__func__, time_remain, req->op[0]);
 			req->func_ret = 0;
 			return IPU4_REQ_ERROR;
+		}
+		else {
+			req->func_ret = POLLIN;
+			return IPU4_REQ_PROCESSED;
 		}
 	}
 }
