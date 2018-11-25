@@ -238,8 +238,10 @@ static void skl_dum_set(struct hdac_bus *bus)
 /* called from IRQ */
 static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
 {
-	if (hstr->substream)
+	if (hstr->substream) {
+		skl_notify_stream_update(bus, hstr->substream);
 		snd_pcm_period_elapsed(hstr->substream);
+	}
 	else if (hstr->stream) {
 		skl_get_total_bytes_transferred(hstr);
 		snd_compr_fragment_elapsed(hstr->stream);
