@@ -143,3 +143,6 @@ endif ## SND_SOC_INTEL_SST_TOPLEVEL
 
 # ASoC codec drivers
 source "sound/soc/intel/boards/Kconfig"
+
+# Virtualization for Skylake
+source "sound/soc/intel/skylake/virtio/Kconfig"
