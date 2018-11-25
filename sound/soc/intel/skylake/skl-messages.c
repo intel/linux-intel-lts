@@ -33,6 +33,7 @@
 #include <linux/sdw/sdw_cnl.h>
 #include <linux/sdw_bus.h>
 #include <asm/set_memory.h>
+#include "virtio/skl-virtio.h"
 
 #define ASRC_MODE_UPLINK	2
 #define ASRC_MODE_DOWNLINK	1
@@ -318,6 +319,16 @@ static const struct skl_dsp_ops dsp_ops[] = {
 		.init_fw = cnl_sst_init_fw,
 		.cleanup = cnl_sst_dsp_cleanup
 	},
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_FE)
+	{
+		.id = 0x8063,
+		.num_cores = 2,
+		.loader_ops = bxt_get_loader_ops,
+		.init = vfe_sst_dsp_init,
+		.init_fw = vfe_sst_init_fw,
+		.cleanup = vfe_sst_dsp_cleanup
+	},
+#endif
 };
 
 static int cnl_sdw_bra_pipe_trigger(struct skl_sst *ctx, bool enable,
