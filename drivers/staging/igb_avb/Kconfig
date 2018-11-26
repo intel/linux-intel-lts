@@ -1,6 +1,6 @@
 config IGB_AVB
 	tristate "Avnu IGB AVB driver"
-	depends on IGB=n && E1000=n && E1000E=n && PCI
+	depends on IGB=n && PCI
 	select DCA
 	default n
 	---help---
