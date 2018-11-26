@@ -91,11 +91,17 @@ struct cbc_buffer *cbc_memory_pool_get_buffer(struct cbc_memory_pool *pool)
 
 void cbc_buffer_release(struct cbc_buffer *buffer)
 {
+	int tmp;
 
 	if (!buffer)
 		return;
 
-	atomic_dec(&buffer->refcount);
+	atomic_read(&buffer->refcount);
+
+	tmp = atomic_dec_return(&buffer->refcount);
+	if (tmp == 0)
+		memset(buffer->data, 0xCD, CBC_BUFFER_SIZE);
+
 }
 
 void cbc_buffer_increment_ref(struct cbc_buffer *buffer)
@@ -116,13 +122,13 @@ int cbc_buffer_queue_enqueue(struct cbc_buffer_queue *queue,
 	if (!queue || !buffer)
 		return 0;
 
-	if (queue->read == ((queue->write + 1) & CBC_QUEUE_BM)) {
+	if (queue->read + CBC_QUEUE_LENGTH == queue->write) {
 		pr_err("cbc buffer queue full\n");
 		return 0;
 	}
-	queue->queue[queue->write] = buffer;
-	queue->write = ((++queue->write) & CBC_QUEUE_BM);
 
+	queue->queue[queue->write & CBC_QUEUE_BM] = buffer;
+	queue->write++;
 	return 1;
 }
 
@@ -138,9 +144,9 @@ struct cbc_buffer *cbc_buffer_queue_dequeue(struct cbc_buffer_queue *queue)
 		return buffer;
 	}
 
-	buffer = queue->queue[queue->read];
-	queue->queue[queue->read] = NULL;
-	queue->read = ((++queue->read) & CBC_QUEUE_BM);
+	buffer = queue->queue[queue->read & CBC_QUEUE_BM];
+	queue->queue[queue->read & CBC_QUEUE_BM] = NULL;
+	queue->read++;
 
 	return buffer;
 }
