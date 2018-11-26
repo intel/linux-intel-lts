@@ -53,7 +53,7 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
-#include <linux/version.h> // "LINUX_VERSION_CODE"
+#include <linux/version.h> /* "LINUX_VERSION_CODE" */
 #include <linux/hrtimer.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)
 #include <asm/cputime.h>
@@ -69,14 +69,16 @@
 #include <trace/events/power.h>
 #include <trace/events/sched.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
-#include <asm/trace/irq_vectors.h> // for the various APIC vector tracepoints (e.g. "thermal_apic", "local_timer" etc.)
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
-struct pool_workqueue; // Forward declaration to avoid compiler warnings
-struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
+#include <asm/trace/irq_vectors.h> /* for the various APIC vector tracepoints
+				    *  (e.g. "thermal_apic",
+				    *  "local_timer" etc.) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+struct pool_workqueue;
+struct cpu_workqueue_struct;
 #include <trace/events/workqueue.h>
-#include <linux/suspend.h> // for 'pm_notifier'
-#include <linux/cpufreq.h> // for "cpufreq_notifier"
-#include <linux/cpu.h> // for 'CPU_UP_PREPARE' etc
+#include <linux/suspend.h> /* for 'pm_notifier' */
+#include <linux/cpufreq.h> /* for "cpufreq_notifier" */
+#include <linux/cpu.h> /* for 'CPU_UP_PREPARE' etc */
 
 #include "sw_kernel_defines.h"
 #include "sw_collector.h"
@@ -92,11 +94,11 @@ struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
  */
 #ifndef __get_cpu_var
 /*
-     * Kernels >= 3.19 don't include a definition
-     * of '__get_cpu_var'. Create one now.
-     */
+ * Kernels >= 3.19 don't include a definition
+ * of '__get_cpu_var'. Create one now.
+ */
 #define __get_cpu_var(var) (*this_cpu_ptr(&var))
-#endif // __get_cpu_var
+#endif /* __get_cpu_var */
 
 #define BEGIN_LOCAL_IRQ_STATS_READ(p)                                          \
 	do {                                                                   \
@@ -115,10 +117,11 @@ struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
  */
 #ifdef CONFIG_TIMER_STATS
 #define GET_TIMER_THREAD_ID(t)                                                 \
-	((t)->start_pid) /* 'start_pid' is actually the thread ID of the thread that initialized the timer */
+	((t)->start_pid) /* 'start_pid' is actually the thread ID
+			  * of the thread that initialized the timer */
 #else
 #define GET_TIMER_THREAD_ID(t) (-1)
-#endif // CONFIG_TIMER_STATS
+#endif /* CONFIG_TIMER_STATS */
 /*
  * Tracepoint probe register/unregister functions and
  * helper macros.
@@ -140,10 +143,10 @@ struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
 #define DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, name, probe)                   \
 	tracepoint_probe_unregister(node->tp, probe, NULL)
 #endif
-#else // CONFIG_TRACEPOINTS
+#else /* CONFIG_TRACEPOINTS */
 #define DO_REGISTER_SW_TRACEPOINT_PROBE(...) /* NOP */
 #define DO_UNREGISTER_SW_TRACEPOINT_PROBE(...) /* NOP */
-#endif // CONFIG_TRACEPOINTS
+#endif /* CONFIG_TRACEPOINTS */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
 #define _DEFINE_PROBE_FUNCTION(name, ...) static void name(__VA_ARGS__)
 #else
@@ -196,8 +199,8 @@ struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
 #define PROBE_WAKE_UNLOCK_PARAMS                                               \
 	sw_probe_wakeup_source_deactivate_i, const char *name,                 \
 		unsigned int state
-#endif // version
-#endif // CONFIG_ANDROID
+#endif /* version */
+#endif /* CONFIG_ANDROID */
 
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35)
 #define PROBE_WORKQUEUE_PARAMS                                                 \
@@ -252,7 +255,8 @@ struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
 		      (node = &s_notifier_collector_lists[idx]);               \
 	     ++idx)
 /*
- * Use these macros if all tracepoint ID numbers ARE contiguous from 0 -- max tracepoint ID #
+ * Use these macros if all tracepoint ID numbers
+ * ARE contiguous from 0 -- max tracepoint ID #
  */
 #if 0
 #define IS_VALID_TRACE_NOTIFIER_ID(id)                                         \
@@ -260,9 +264,10 @@ struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
 #define GET_COLLECTOR_TRACE_NODE(id) (&s_trace_collector_lists[id])
 #define FOR_EACH_trace_notifier_id(idx)                                        \
 	for (idx = 0; idx < SW_ARRAY_SIZE(s_trace_collector_lists); ++idx)
-#endif // if 0
+#endif /* if 0 */
 /*
- * Use these macros if all tracepoint ID numbers are NOT contiguous from 0 -- max tracepoint ID #
+ * Use these macros if all tracepoint ID numbers
+ * are NOT contiguous from 0 -- max tracepoint ID #
  */
 #define GET_COLLECTOR_TRACE_NODE(idx)                                          \
 	({                                                                     \
@@ -308,7 +313,8 @@ int sw_unregister_trace_cpu_idle_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_cpu_frequency_i(struct sw_trace_notifier_data *node);
 int sw_unregister_trace_cpu_frequency_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_irq_handler_entry_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_irq_handler_entry_i(struct sw_trace_notifier_data *node);
+int sw_unregister_trace_irq_handler_entry_i(struct sw_trace_notifier_data
+					    *node);
 int sw_register_trace_timer_expire_entry_i(struct sw_trace_notifier_data *node);
 int sw_unregister_trace_timer_expire_entry_i(
 	struct sw_trace_notifier_data *node);
@@ -329,15 +335,16 @@ int sw_register_trace_thermal_apic_entry_i(struct sw_trace_notifier_data *node);
 int sw_unregister_trace_thermal_apic_entry_i(
 	struct sw_trace_notifier_data *node);
 int sw_register_trace_thermal_apic_exit_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_thermal_apic_exit_i(struct sw_trace_notifier_data *node);
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
+int sw_unregister_trace_thermal_apic_exit_i(struct sw_trace_notifier_data
+					    *node);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
 #if IS_ENABLED(CONFIG_ANDROID)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
 int sw_register_trace_wake_lock_i(struct sw_trace_notifier_data *node);
 int sw_unregister_trace_wake_lock_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_wake_unlock_i(struct sw_trace_notifier_data *node);
 int sw_unregister_trace_wake_unlock_i(struct sw_trace_notifier_data *node);
-#else // LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
 int sw_register_trace_wakeup_source_activate_i(
 	struct sw_trace_notifier_data *node);
 int sw_unregister_trace_wakeup_source_activate_i(
@@ -346,9 +353,10 @@ int sw_register_trace_wakeup_source_deactivate_i(
 	struct sw_trace_notifier_data *node);
 int sw_unregister_trace_wakeup_source_deactivate_i(
 	struct sw_trace_notifier_data *node);
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
-#endif // CONFIG_ANDROID
-int sw_register_trace_workqueue_execution_i(struct sw_trace_notifier_data *node);
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0) */
+#endif /* CONFIG_ANDROID */
+int sw_register_trace_workqueue_execution_i(struct sw_trace_notifier_data
+					    *node);
 int sw_unregister_trace_workqueue_execution_i(
 	struct sw_trace_notifier_data *node);
 int sw_register_trace_sched_switch_i(struct sw_trace_notifier_data *node);
@@ -399,15 +407,16 @@ void sw_handle_reset_messages_i(struct sw_trace_notifier_data *node);
  * For overhead measurements.
  */
 DECLARE_OVERHEAD_VARS(
-	sw_handle_timer_wakeup_helper_i); // for the "timer_expire" family of probes
-DECLARE_OVERHEAD_VARS(sw_handle_irq_wakeup_i); // for IRQ wakeups
-DECLARE_OVERHEAD_VARS(sw_handle_sched_wakeup_i); // for SCHED
-DECLARE_OVERHEAD_VARS(sw_tps_i); // for TPS
-DECLARE_OVERHEAD_VARS(sw_tpf_i); // for TPF
+	sw_handle_timer_wakeup_helper_i); /* for the "timer_expire"
+					     family of probes */
+DECLARE_OVERHEAD_VARS(sw_handle_irq_wakeup_i); /* for IRQ wakeups */
+DECLARE_OVERHEAD_VARS(sw_handle_sched_wakeup_i); /* for SCHED */
+DECLARE_OVERHEAD_VARS(sw_tps_i); /* for TPS */
+DECLARE_OVERHEAD_VARS(sw_tpf_i); /* for TPF */
 DECLARE_OVERHEAD_VARS(sw_process_fork_exit_helper_i);
 #if IS_ENABLED(CONFIG_ANDROID)
-DECLARE_OVERHEAD_VARS(sw_handle_wakelock_i); // for wake lock/unlock
-#endif // CONFIG_ANDROID
+DECLARE_OVERHEAD_VARS(sw_handle_wakelock_i); /* for wake lock/unlock */
+#endif /* CONFIG_ANDROID */
 DECLARE_OVERHEAD_VARS(sw_handle_workqueue_wakeup_helper_i);
 DECLARE_OVERHEAD_VARS(sw_handle_sched_switch_helper_i);
 /*
@@ -428,10 +437,14 @@ static DEFINE_PER_CPU(u64, sw_num_local_apic_timer_inters);
  * Set to 'false' in TPS probe.
  */
 static bool sw_wakeup_event_flag = true;
+
+#if IS_ENABLED(CONFIG_TRACEPOINTS)
 /*
  * Scheduler-based polling emulation.
  */
 static DEFINE_PER_CPU(unsigned long, sw_pcpu_polling_jiff);
+#endif /* CONFIG_TRACEPOINTS */
+
 pw_u16_t sw_min_polling_interval_msecs;
 
 /*
@@ -454,11 +467,12 @@ enum sw_trace_id {
 	SW_TRACE_ID_WORKQUEUE_EXECUTE_START,
 	SW_TRACE_ID_SCHED_SWITCH,
 };
+
 /*
  * IDs for supported notifiers.
  */
 enum sw_notifier_id {
-	SW_NOTIFIER_ID_SUSPEND, // TODO: change name?
+	SW_NOTIFIER_ID_SUSPEND, /* TODO: change name? */
 	SW_NOTIFIER_ID_SUSPEND_ENTER,
 	SW_NOTIFIER_ID_SUSPEND_EXIT,
 	SW_NOTIFIER_ID_HIBERNATE,
@@ -468,6 +482,7 @@ enum sw_notifier_id {
 	SW_NOTIFIER_ID_CPUFREQ,
 	SW_NOTIFIER_ID_HOTCPU,
 };
+
 /*
  * Names for supported tracepoints. A tracepoint
  * 'name' consists of two strings: a "kernel" string
@@ -494,12 +509,12 @@ static const struct sw_trace_notifier_name s_trace_names[] = {
 					     "THERMAL-THROTTLE-ENTRY" },
 	[SW_TRACE_ID_THERMAL_APIC_EXIT] = { "thermal_apic_exit",
 					    "THERMAL-THROTTLE-EXIT" },
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
 #if IS_ENABLED(CONFIG_ANDROID)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
 	[SW_TRACE_ID_WAKE_LOCK] = { "wake_lock", "WAKE-LOCK" },
 	[SW_TRACE_ID_WAKE_UNLOCK] = { "wake_unlock", "WAKE-UNLOCK" },
-#else // LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
 	[SW_TRACE_ID_WAKE_LOCK] = { "wakeup_source_activate", "WAKE-LOCK" },
 	[SW_TRACE_ID_WAKE_UNLOCK] = { "wakeup_source_deactivate",
 				      "WAKE-UNLOCK" },
@@ -588,7 +603,7 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 	  &s_trace_names[SW_TRACE_ID_THERMAL_APIC_EXIT],
 	  &sw_register_trace_thermal_apic_exit_i,
 	  &sw_unregister_trace_thermal_apic_exit_i, NULL },
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
 /* Wakelocks have multiple tracepoints, depending on kernel version */
 #if IS_ENABLED(CONFIG_ANDROID)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
@@ -599,7 +614,7 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 	  &s_trace_names[SW_TRACE_ID_WAKE_UNLOCK],
 	  &sw_register_trace_wake_unlock_i, &sw_unregister_trace_wake_unlock_i,
 	  NULL },
-#else // LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
 	{ SW_TRACE_COLLECTOR_TRACEPOINT, &s_trace_names[SW_TRACE_ID_WAKE_LOCK],
 	  &sw_register_trace_wakeup_source_activate_i,
 	  &sw_unregister_trace_wakeup_source_activate_i, NULL },
@@ -607,8 +622,8 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 	  &s_trace_names[SW_TRACE_ID_WAKE_UNLOCK],
 	  &sw_register_trace_wakeup_source_deactivate_i,
 	  &sw_unregister_trace_wakeup_source_deactivate_i, NULL },
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)
-#endif // CONFIG_ANDROID
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0) */
+#endif /* CONFIG_ANDROID */
 	{ SW_TRACE_COLLECTOR_TRACEPOINT,
 	  &s_trace_names[SW_TRACE_ID_WORKQUEUE_EXECUTE_START],
 	  &sw_register_trace_workqueue_execution_i,
@@ -618,6 +633,7 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 	  &sw_register_trace_sched_switch_i,
 	  &sw_unregister_trace_sched_switch_i, NULL },
 };
+
 /*
  * List of supported notifiers.
  */
@@ -645,6 +661,7 @@ static struct sw_trace_notifier_data s_notifier_collector_lists[] = {
 	  &s_notifier_names[SW_NOTIFIER_ID_CPUFREQ],
 	  &sw_register_cpufreq_notifier_i, &sw_unregister_cpufreq_notifier_i },
 };
+
 /*
  * Special entry for CPU notifier (i.e. "hotplug" notifier)
  * We don't want these to be visible to the user.
@@ -657,8 +674,7 @@ static struct sw_trace_notifier_data s_hotplug_notifier_data = {
 	NULL,
 	true /* always register */
 };
-
-#else // !CONFIG_TRACEPOINTS
+#else /* !CONFIG_TRACEPOINTS */
 /*
  * A list of supported tracepoints.
  */
@@ -670,7 +686,7 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 static struct sw_trace_notifier_data s_notifier_collector_lists[] = {
 	/* EMPTY */ };
 
-#endif // CONFIG_TRACEPOINTS
+#endif /* CONFIG_TRACEPOINTS */
 
 /*
  * Macros to retrieve tracepoint and notifier IDs.
@@ -687,6 +703,7 @@ static struct sw_trace_notifier_data s_notifier_collector_lists[] = {
  * Function definitions.
  * -------------------------------------------------
  */
+
 /*
  * Retrieve a TSC value
  */
@@ -697,6 +714,7 @@ static inline u64 sw_tscval(void)
 	asm volatile("rdtsc" : "=a"(low), "=d"(high));
 	return low | ((unsigned long long)high) << 32;
 };
+
 u64 sw_timestamp(void)
 {
 	struct timespec ts;
@@ -704,6 +722,7 @@ u64 sw_timestamp(void)
 	getnstimeofday(&ts);
 	return (ts.tv_sec * 1000000000ULL + ts.tv_nsec);
 }
+
 /*
  * Basically the same as arch/x86/kernel/irq.c --> "arch_irq_stat_cpu(cpu)"
  */
@@ -718,16 +737,17 @@ u64 sw_my_local_arch_irq_stats_cpu_i(void)
 	{
 #ifndef __arm__
 		sum += stats->__nmi_count;
-		// #ifdef CONFIG_X86_LOCAL_APIC
+#if IS_ENABLED(CONFIG_X86_LOCAL_APIC)
 		sum += stats->apic_timer_irqs;
-// #endif
+		sum += stats->irq_spurious_count;
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
 		sum += stats->x86_platform_ipis;
-#endif // 2,6,34
+#endif /* 2,6,34 */
 		sum += stats->apic_perf_irqs;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
 		sum += stats->apic_irq_work_irqs;
-#endif // 3,5,0
+#endif /* 3,5,0 */
 #ifdef CONFIG_SMP
 		sum += stats->irq_call_count;
 		sum += stats->irq_resched_count;
@@ -736,7 +756,7 @@ u64 sw_my_local_arch_irq_stats_cpu_i(void)
 #ifdef CONFIG_X86_THERMAL_VECTOR
 		sum += stats->irq_thermal_count;
 #endif
-		sum += stats->irq_spurious_count; // should NEVER be non-zero!!!
+
 #else
 		sum += stats->__softirq_pending;
 #ifdef CONFIG_SMP
@@ -769,6 +789,7 @@ void sw_handle_trace_notifier_i(struct sw_trace_notifier_data *node)
 		sw_handle_per_cpu_msg(curr);
 	}
 };
+
 /*
  * Generic tracepoint/notifier handling function.
  */
@@ -784,6 +805,7 @@ void sw_handle_trace_notifier_on_cpu_i(int cpu,
 		sw_handle_per_cpu_msg_on_cpu(cpu, curr);
 	}
 };
+
 void sw_handle_reset_messages_i(struct sw_trace_notifier_data *node)
 {
 	struct sw_collector_data *curr = NULL;
@@ -797,32 +819,11 @@ void sw_handle_reset_messages_i(struct sw_trace_notifier_data *node)
 		sw_schedule_work(&curr->cpumask, &sw_handle_per_cpu_msg, curr);
 	}
 }
+
 /*
  * Tracepoint helpers.
  */
-/*
- * IRQ wakeup handling function.
- */
-static void sw_handle_irq_wakeup_i(struct sw_collector_data *node, int irq)
-{
-	int cpu = RAW_CPU();
-	sw_driver_msg_t *msg = GET_MSG_SLOT_FOR_CPU(node->msg, cpu,
-						    node->per_msg_payload_size);
-	// char *dst_vals = (char *)(unsigned long)msg->p_payload;
-	char *dst_vals = msg->p_payload;
 
-	// msg->tsc = sw_timestamp(); // msg TSC assigned when msg is written to buffer
-	msg->cpuidx = cpu;
-
-	/*
-	 * IRQ handling ==> only return the irq number
-	 */
-	*((int *)dst_vals) = irq;
-
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
-		pw_pr_warn("WARNING: could NOT produce message!\n");
-	}
-};
 /*
  * TIMER wakeup handling function.
  */
@@ -832,10 +833,11 @@ static void sw_handle_timer_wakeup_i(struct sw_collector_data *node, pid_t pid,
 	int cpu = RAW_CPU();
 	sw_driver_msg_t *msg = GET_MSG_SLOT_FOR_CPU(node->msg, cpu,
 						    node->per_msg_payload_size);
-	// char *dst_vals = (char *)(unsigned long)msg->p_payload;
+	/* char *dst_vals = (char *)(unsigned long)msg->p_payload; */
 	char *dst_vals = msg->p_payload;
 
-	// msg->tsc = sw_timestamp(); // msg TSC assigned when msg is written to buffer
+	/* msg->tsc = sw_timestamp(); */
+	/* msg TSC assigned when msg is written to buffer */
 	msg->cpuidx = cpu;
 
 	/*
@@ -850,6 +852,7 @@ static void sw_handle_timer_wakeup_i(struct sw_collector_data *node, pid_t pid,
 	}
 	pw_pr_debug("HANDLED timer expire for %d, %d\n", pid, tid);
 };
+
 /*
  * Helper function for {hr}timer expires. Required for overhead tracking.
  */
@@ -872,6 +875,7 @@ void sw_handle_timer_wakeup_helper_i(struct sw_collector_data *curr,
 		sw_handle_timer_wakeup_i(curr, pid, tid);
 	}
 };
+
 /*
  * SCHED wakeup handling function.
  */
@@ -881,10 +885,11 @@ void sw_handle_sched_wakeup_i(struct sw_collector_data *node, int source_cpu,
 	int cpu = source_cpu;
 	sw_driver_msg_t *msg = GET_MSG_SLOT_FOR_CPU(node->msg, cpu,
 						    node->per_msg_payload_size);
-	// char *dst_vals = (char *)(unsigned long)msg->p_payload;
+	/* char *dst_vals = (char *)(unsigned long)msg->p_payload; */
 	char *dst_vals = msg->p_payload;
 
-	// msg->tsc = sw_timestamp(); // msg TSC assigned when msg is written to buffer
+	/* msg->tsc = sw_timestamp(); */
+	/* msg TSC assigned when msg is written to buffer */
 	msg->cpuidx = source_cpu;
 
 	/*
@@ -898,6 +903,7 @@ void sw_handle_sched_wakeup_i(struct sw_collector_data *node, int source_cpu,
 		pw_pr_warn("WARNING: could NOT produce message!\n");
 	}
 };
+
 /*
  * APIC timer wakeup
  */
@@ -909,9 +915,10 @@ void sw_handle_apic_timer_wakeup_i(struct sw_collector_data *node)
 	int cpu = RAW_CPU();
 	sw_driver_msg_t *msg = GET_MSG_SLOT_FOR_CPU(node->msg, cpu,
 						    node->per_msg_payload_size);
-	// char *dst_vals = (char *)(unsigned long)msg->p_payload;
+	/* char *dst_vals = (char *)(unsigned long)msg->p_payload; */
 
-	// msg->tsc = sw_timestamp(); // msg TSC assigned when msg is written to buffer
+	/* msg->tsc = sw_timestamp(); */
+	/* msg TSC assigned when msg is written to buffer */
 	msg->cpuidx = cpu;
 
 	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
@@ -919,6 +926,7 @@ void sw_handle_apic_timer_wakeup_i(struct sw_collector_data *node)
 	}
 	pw_pr_debug("HANDLED APIC timer wakeup for cpu = %d\n", cpu);
 };
+
 /*
  * Helper function for workqueue executions. Required for overhead tracking.
  */
@@ -928,7 +936,8 @@ void sw_handle_workqueue_wakeup_helper_i(int cpu,
 	sw_driver_msg_t *msg = GET_MSG_SLOT_FOR_CPU(node->msg, cpu,
 						    node->per_msg_payload_size);
 
-	// msg->tsc = sw_timestamp(); // msg TSC assigned when msg is written to buffer
+	/* msg->tsc = sw_timestamp(); */
+	/* msg TSC assigned when msg is written to buffer */
 	msg->cpuidx = cpu;
 
 	/*
@@ -938,6 +947,7 @@ void sw_handle_workqueue_wakeup_helper_i(int cpu,
 		pw_pr_error("WARNING: could NOT produce message!\n");
 	}
 };
+
 /*
  * Helper function for sched_switch. Required for overhead tracking.
  */
@@ -1003,9 +1013,11 @@ void sw_handle_sched_switch_helper_i(void)
 /*
  * Probe functions.
  */
+
 /*
  * 1. TPS
  */
+
 /*
  * Check IPI wakeups within the cpu_idle tracepoint.
  */
@@ -1039,6 +1051,7 @@ void sw_tps_apic_i(int cpu)
 		}
 	}
 };
+
 /*
  * Perform any user-defined tasks within the
  * cpu_idle tracepoint.
@@ -1053,6 +1066,7 @@ void sw_tps_tps_i(int cpu)
 	}
 	sw_handle_trace_notifier_i(tps_node);
 };
+
 /*
  * Perform any wakeup-related tasks within the
  * cpu_idle tracepoint.
@@ -1067,6 +1081,7 @@ void sw_tps_wakeup_i(int cpu)
 	sw_wakeup_event_flag = false;
 	RESET_VALID_WAKEUP_EVENT_COUNTER(cpu);
 };
+
 void sw_tps_i(void)
 {
 	/*
@@ -1080,6 +1095,19 @@ void sw_tps_i(void)
 	sw_tps_wakeup_i(cpu);
 };
 
+/*
+ * 2. TPF
+ */
+
+/*
+ * Helper function for overhead measurements.
+ */
+void sw_tpf_i(int cpu, struct sw_trace_notifier_data *node)
+{
+	sw_handle_trace_notifier_on_cpu_i((int)cpu, node);
+};
+
+#if IS_ENABLED(CONFIG_TRACEPOINTS)
 DEFINE_PROBE_FUNCTION(PROBE_TPS_PARAMS)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 38)
@@ -1090,22 +1118,11 @@ DEFINE_PROBE_FUNCTION(PROBE_TPS_PARAMS)
 	DO_PER_CPU_OVERHEAD_FUNC(sw_tps_i);
 };
 
-/*
- * 2. TPF
- */
-/*
- * Helper function for overhead measurements.
- */
-void sw_tpf_i(int cpu, struct sw_trace_notifier_data *node)
-{
-	sw_handle_trace_notifier_on_cpu_i((int)cpu, node);
-};
-
 DEFINE_PROBE_FUNCTION(PROBE_TPF_PARAMS)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
 	int cpu = RAW_CPU();
-#endif // version < 2.6.38
+#endif /* version < 2.6.38 */
 	static struct sw_trace_notifier_data *node;
 
 	if (unlikely(node == NULL)) {
@@ -1113,6 +1130,31 @@ DEFINE_PROBE_FUNCTION(PROBE_TPF_PARAMS)
 		pw_pr_debug("NODE = %p\n", node);
 	}
 	DO_PER_CPU_OVERHEAD_FUNC(sw_tpf_i, (int)cpu, node);
+};
+
+/*
+ * IRQ wakeup handling function.
+ */
+static void sw_handle_irq_wakeup_i(struct sw_collector_data *node, int irq)
+{
+	int cpu = RAW_CPU();
+	sw_driver_msg_t *msg = GET_MSG_SLOT_FOR_CPU(node->msg, cpu,
+						    node->per_msg_payload_size);
+	/* char *dst_vals = (char *)(unsigned long)msg->p_payload; */
+	char *dst_vals = msg->p_payload;
+
+	/* msg->tsc = sw_timestamp(); */
+	/* msg TSC assigned when msg is written to buffer */
+	msg->cpuidx = cpu;
+
+	/*
+	 * IRQ handling ==> only return the irq number
+	 */
+	*((int *)dst_vals) = irq;
+
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
+		pw_pr_warn("WARNING: could NOT produce message!\n");
+	}
 };
 
 /*
@@ -1136,6 +1178,7 @@ DEFINE_PROBE_FUNCTION(PROBE_IRQ_PARAMS)
 		DO_PER_CPU_OVERHEAD_FUNC(sw_handle_irq_wakeup_i, curr, irq);
 	}
 };
+
 /*
  * 4. TIMER expire
  */
@@ -1158,6 +1201,7 @@ DEFINE_PROBE_FUNCTION(PROBE_TIMER_ARGS)
 	DO_PER_CPU_OVERHEAD_FUNC(sw_handle_timer_wakeup_helper_i, curr, node,
 				 tid);
 };
+
 /*
  * 5. HRTIMER expire
  */
@@ -1180,6 +1224,7 @@ DEFINE_PROBE_FUNCTION(PROBE_HRTIMER_PARAMS)
 	DO_PER_CPU_OVERHEAD_FUNC(sw_handle_timer_wakeup_helper_i, curr, node,
 				 tid);
 };
+
 /*
  * 6. SCHED wakeup
  */
@@ -1206,14 +1251,16 @@ DEFINE_PROBE_FUNCTION(PROBE_SCHED_WAKEUP_PARAMS)
 		return;
 	}
 	list_for_each_entry(curr, &node->list, list) {
-		// sw_handle_sched_wakeup_i(curr, source_cpu, target_cpu);
+		/* sw_handle_sched_wakeup_i(curr, source_cpu, target_cpu); */
 		DO_PER_CPU_OVERHEAD_FUNC(sw_handle_sched_wakeup_i, curr,
 					 source_cpu, target_cpu);
 	}
 };
+
 /*
  * 8. PROCESS fork
  */
+
 /*
  * Helper for PROCESS fork, PROCESS exit
  */
@@ -1266,6 +1313,7 @@ DEFINE_PROBE_FUNCTION(PROBE_PROCESS_FORK_PARAMS)
 					 child, true /* true ==> fork */);
 	}
 };
+
 /*
  * 9. PROCESS exit
  */
@@ -1302,6 +1350,7 @@ DEFINE_PROBE_FUNCTION(PROBE_THERMAL_APIC_ENTRY_PARAMS)
 	}
 	DO_PER_CPU_OVERHEAD_FUNC(sw_tpf_i, (int)cpu, node);
 };
+
 /*
  * 10. THERMAL_APIC exit
  */
@@ -1316,12 +1365,13 @@ DEFINE_PROBE_FUNCTION(PROBE_THERMAL_APIC_EXIT_PARAMS)
 	}
 	DO_PER_CPU_OVERHEAD_FUNC(sw_tpf_i, (int)cpu, node);
 };
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
 
 #if IS_ENABLED(CONFIG_ANDROID)
 /*
  * 11. WAKE lock / WAKEUP source activate.
  */
+
 /*
  * Helper function to produce wake lock/unlock messages.
  */
@@ -1358,6 +1408,7 @@ void sw_produce_wakelock_msg_i(int cpu, struct sw_collector_data *node,
 		pw_pr_warn("WARNING: could NOT produce message!\n");
 	}
 };
+
 /*
  * Helper function to handle wake lock/unlock callbacks.
  */
@@ -1377,6 +1428,7 @@ void sw_handle_wakelock_i(int cpu, struct sw_trace_notifier_data *node,
 					  tid, proc_name);
 	}
 };
+
 DEFINE_PROBE_FUNCTION(PROBE_WAKE_LOCK_PARAMS)
 {
 	int cpu = RAW_CPU();
@@ -1400,10 +1452,11 @@ DEFINE_PROBE_FUNCTION(PROBE_WAKE_LOCK_PARAMS)
 		type = SW_WAKE_LOCK_TIMEOUT;
 		timeout = jiffies_to_msecs(lock->expires - jiffies);
 	}
-#endif //LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0) */
 	DO_PER_CPU_OVERHEAD_FUNC(sw_handle_wakelock_i, cpu, node, name,
 				 (int)type, timeout);
 };
+
 /*
  * 11. WAKE unlock / WAKEUP source deactivate.
  */
@@ -1423,7 +1476,7 @@ DEFINE_PROBE_FUNCTION(PROBE_WAKE_UNLOCK_PARAMS)
 	DO_PER_CPU_OVERHEAD_FUNC(sw_handle_wakelock_i, cpu, node, name,
 				 (int)type, 0 /*timeout*/);
 };
-#endif // CONFIG_ANDROID
+#endif /* CONFIG_ANDROID */
 
 /*
  * 12. WORKQUEUE
@@ -1474,10 +1527,10 @@ static void sw_send_pm_notification_i(int value)
 	msg = (struct sw_driver_msg *)buffer;
 	msg->tsc = sw_timestamp();
 	msg->cpuidx = RAW_CPU();
-	msg->plugin_id = 0; // "0" indicates a system message
-	msg->metric_id = 1; // "1" indicates a suspend/resume message (TODO)
-	msg->msg_id =
-		0; /* don't care; TODO: use the 'msg_id' to encode the 'value'? */
+	msg->plugin_id = 0; /* "0" indicates a system message */
+	msg->metric_id = 1; /* "1" indicates a suspend/resume message (TODO) */
+	msg->msg_id = 0;
+	/* don't care; TODO: use the 'msg_id' to encode the 'value'? */
 	msg->payload_len = sizeof(value);
 	msg->p_payload = buffer + sizeof(*msg);
 	*((int *)msg->p_payload) = value;
@@ -1501,6 +1554,7 @@ static bool sw_is_reset_i(void)
 
 	return is_reset;
 }
+
 static void sw_probe_pm_helper_i(int id, int both_id, bool is_enter,
 				 enum sw_pm_action action, enum sw_pm_mode mode)
 {
@@ -1541,8 +1595,9 @@ static bool sw_is_suspend_via_firmware(void)
 	return true;
 }
 
-static int sw_probe_pm_notifier_i(struct notifier_block *block, unsigned long state,
-			   void *dummy)
+static int sw_probe_pm_notifier_i(struct notifier_block *block,
+				  unsigned long state,
+				  void *dummy)
 {
 	static const struct {
 		enum sw_pm_action action;
@@ -1582,8 +1637,9 @@ static int sw_probe_pm_notifier_i(struct notifier_block *block, unsigned long st
 	return NOTIFY_DONE;
 }
 
-static void sw_store_topology_change_i(enum cpu_action type, int cpu, int core_id,
-				int pkg_id)
+static void sw_store_topology_change_i(enum cpu_action type,
+				       int cpu, int core_id,
+				       int pkg_id)
 {
 	struct sw_topology_node *node = sw_kmalloc(sizeof(*node), GFP_ATOMIC);
 
@@ -1601,6 +1657,7 @@ static void sw_store_topology_change_i(enum cpu_action type, int cpu, int core_i
 	SW_LIST_ADD(&sw_topology_list, node, list);
 	++sw_num_topology_entries;
 }
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 int sw_probe_hotplug_notifier_i(struct notifier_block *block,
 				unsigned long action, void *pcpu)
@@ -1679,6 +1736,7 @@ static void sw_probe_cpuhp_helper_i(unsigned int cpu, enum cpu_action action)
 		break;
 	}
 }
+
 static int sw_probe_cpu_offline_i(unsigned int cpu)
 {
 	printk(KERN_INFO "DEBUG: offline notification for cpu %u at %llu\n",
@@ -1686,6 +1744,7 @@ static int sw_probe_cpu_offline_i(unsigned int cpu)
 	sw_probe_cpuhp_helper_i(cpu, SW_CPU_ACTION_OFFLINE);
 	return 0;
 }
+
 static int sw_probe_cpu_online_i(unsigned int cpu)
 {
 	printk(KERN_INFO "DEBUG: online notification for cpu %u at %llu\n", cpu,
@@ -1694,7 +1753,7 @@ static int sw_probe_cpu_online_i(unsigned int cpu)
 	sw_probe_cpuhp_helper_i(cpu, SW_CPU_ACTION_ONLINE);
 	return 0;
 }
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
 
 /*
  * 2. CPUFREQ notifier
@@ -1722,6 +1781,7 @@ static int sw_probe_cpufreq_notifier_i(struct notifier_block *block,
 	}
 	return NOTIFY_DONE;
 }
+
 /*
  * 1. TPS.
  */
@@ -1730,21 +1790,23 @@ int sw_register_trace_cpu_idle_i(struct sw_trace_notifier_data *node)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, power_start,
 					sw_probe_power_start_i);
-#else // kernel version >= 2.6.38
+#else /* kernel version >= 2.6.38 */
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, cpu_idle, sw_probe_cpu_idle_i);
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38) */
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_cpu_idle_i(struct sw_trace_notifier_data *node)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, power_start,
 					  sw_probe_power_start_i);
-#else // kernel version >= 2.6.38
+#else /* kernel version >= 2.6.38 */
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, cpu_idle, sw_probe_cpu_idle_i);
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38) */
 	return PW_SUCCESS;
 };
+
 /*
  * 2. TPF
  */
@@ -1753,23 +1815,25 @@ int sw_register_trace_cpu_frequency_i(struct sw_trace_notifier_data *node)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, power_frequency,
 					sw_probe_power_frequency_i);
-#else // kernel version >= 2.6.38
+#else /* kernel version >= 2.6.38 */
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, cpu_frequency,
 					sw_probe_cpu_frequency_i);
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38) */
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_cpu_frequency_i(struct sw_trace_notifier_data *node)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, power_frequency,
 					  sw_probe_power_frequency_i);
-#else // kernel version >= 2.6.38
+#else /* kernel version >= 2.6.38 */
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, cpu_frequency,
 					  sw_probe_cpu_frequency_i);
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38) */
 	return PW_SUCCESS;
 };
+
 /*
  * 3. IRQ handler entry
  */
@@ -1779,12 +1843,14 @@ int sw_register_trace_irq_handler_entry_i(struct sw_trace_notifier_data *node)
 					sw_probe_irq_handler_entry_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_irq_handler_entry_i(struct sw_trace_notifier_data *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, irq_handler_entry,
 					  sw_probe_irq_handler_entry_i);
 	return PW_SUCCESS;
 };
+
 /*
  * 4. TIMER expire.
  */
@@ -1794,21 +1860,26 @@ int sw_register_trace_timer_expire_entry_i(struct sw_trace_notifier_data *node)
 					sw_probe_timer_expire_entry_i);
 	return PW_SUCCESS;
 };
-int sw_unregister_trace_timer_expire_entry_i(struct sw_trace_notifier_data *node)
+
+int sw_unregister_trace_timer_expire_entry_i(struct sw_trace_notifier_data
+					     *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, timer_expire_entry,
 					  sw_probe_timer_expire_entry_i);
 	return PW_SUCCESS;
 };
+
 /*
  * 5. HRTIMER expire.
  */
-int sw_register_trace_hrtimer_expire_entry_i(struct sw_trace_notifier_data *node)
+int sw_register_trace_hrtimer_expire_entry_i(struct sw_trace_notifier_data
+					     *node)
 {
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, hrtimer_expire_entry,
 					sw_probe_hrtimer_expire_entry_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_hrtimer_expire_entry_i(
 	struct sw_trace_notifier_data *node)
 {
@@ -1816,6 +1887,7 @@ int sw_unregister_trace_hrtimer_expire_entry_i(
 					  sw_probe_hrtimer_expire_entry_i);
 	return PW_SUCCESS;
 };
+
 /*
  * 6. SCHED wakeup
  */
@@ -1825,12 +1897,14 @@ int sw_register_trace_sched_wakeup_i(struct sw_trace_notifier_data *node)
 					sw_probe_sched_wakeup_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_sched_wakeup_i(struct sw_trace_notifier_data *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, sched_wakeup,
 					  sw_probe_sched_wakeup_i);
 	return PW_SUCCESS;
 };
+
 /*
  * 8. PROCESS fork
  */
@@ -1840,12 +1914,15 @@ int sw_register_trace_sched_process_fork_i(struct sw_trace_notifier_data *node)
 					sw_probe_sched_process_fork_i);
 	return PW_SUCCESS;
 };
-int sw_unregister_trace_sched_process_fork_i(struct sw_trace_notifier_data *node)
+
+int sw_unregister_trace_sched_process_fork_i(struct sw_trace_notifier_data
+					     *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, sched_process_fork,
 					  sw_probe_sched_process_fork_i);
 	return PW_SUCCESS;
 };
+
 /*
  * 9. PROCESS exit
  */
@@ -1855,12 +1932,15 @@ int sw_register_trace_sched_process_exit_i(struct sw_trace_notifier_data *node)
 					sw_probe_sched_process_exit_i);
 	return PW_SUCCESS;
 };
-int sw_unregister_trace_sched_process_exit_i(struct sw_trace_notifier_data *node)
+
+int sw_unregister_trace_sched_process_exit_i(struct sw_trace_notifier_data
+					     *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, sched_process_exit,
 					  sw_probe_sched_process_exit_i);
 	return PW_SUCCESS;
 };
+
 /*
  * 10. THERMAL_APIC entry
  */
@@ -1871,12 +1951,15 @@ int sw_register_trace_thermal_apic_entry_i(struct sw_trace_notifier_data *node)
 					sw_probe_thermal_apic_entry_i);
 	return PW_SUCCESS;
 };
-int sw_unregister_trace_thermal_apic_entry_i(struct sw_trace_notifier_data *node)
+
+int sw_unregister_trace_thermal_apic_entry_i(struct sw_trace_notifier_data
+					     *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, thermal_apic_entry,
 					  sw_probe_thermal_apic_entry_i);
 	return PW_SUCCESS;
 };
+
 /*
  * 10. THERMAL_APIC exit
  */
@@ -1886,13 +1969,15 @@ int sw_register_trace_thermal_apic_exit_i(struct sw_trace_notifier_data *node)
 					sw_probe_thermal_apic_exit_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_thermal_apic_exit_i(struct sw_trace_notifier_data *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, thermal_apic_exit,
 					  sw_probe_thermal_apic_exit_i);
 	return PW_SUCCESS;
 };
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+
 /*
  * 11. WAKE lock / WAKEUP source activate.
  */
@@ -1903,13 +1988,14 @@ int sw_register_trace_wake_lock_i(struct sw_trace_notifier_data *node)
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, wake_lock, sw_probe_wake_lock_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_wake_lock_i(struct sw_trace_notifier_data *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, wake_lock,
 					  sw_probe_wake_lock_i);
 	return PW_SUCCESS;
 };
-#else // LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
 int sw_register_trace_wakeup_source_activate_i(
 	struct sw_trace_notifier_data *node)
 {
@@ -1917,6 +2003,7 @@ int sw_register_trace_wakeup_source_activate_i(
 					sw_probe_wakeup_source_activate_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_wakeup_source_activate_i(
 	struct sw_trace_notifier_data *node)
 {
@@ -1924,7 +2011,8 @@ int sw_unregister_trace_wakeup_source_activate_i(
 					  sw_probe_wakeup_source_activate_i);
 	return PW_SUCCESS;
 };
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0) */
+
 /*
  * 11. WAKE unlock / WAKEUP source deactivate.
  */
@@ -1935,13 +2023,15 @@ int sw_register_trace_wake_unlock_i(struct sw_trace_notifier_data *node)
 					sw_probe_wake_unlock_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_wake_unlock_i(struct sw_trace_notifier_data *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, wake_unlock,
 					  sw_probe_wake_unlock_i);
 	return PW_SUCCESS;
 };
-#else // LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
 int sw_register_trace_wakeup_source_deactivate_i(
 	struct sw_trace_notifier_data *node)
 {
@@ -1949,6 +2039,7 @@ int sw_register_trace_wakeup_source_deactivate_i(
 					sw_probe_wakeup_source_deactivate_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_wakeup_source_deactivate_i(
 	struct sw_trace_notifier_data *node)
 {
@@ -1956,8 +2047,9 @@ int sw_unregister_trace_wakeup_source_deactivate_i(
 					  sw_probe_wakeup_source_deactivate_i);
 	return PW_SUCCESS;
 };
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
-#endif // CONFIG_ANDROID
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0) */
+#endif /* CONFIG_ANDROID */
+
 /*
  * 12. WORKQUEUE execution.
  */
@@ -1972,6 +2064,7 @@ int sw_register_trace_workqueue_execution_i(struct sw_trace_notifier_data *node)
 #endif
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_workqueue_execution_i(
 	struct sw_trace_notifier_data *node)
 {
@@ -1984,6 +2077,7 @@ int sw_unregister_trace_workqueue_execution_i(
 #endif
 	return PW_SUCCESS;
 };
+
 /*
  * 13. SCHED switch
  */
@@ -2005,49 +2099,58 @@ int sw_register_trace_sched_switch_i(struct sw_trace_notifier_data *node)
 					sw_probe_sched_switch_i);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_trace_sched_switch_i(struct sw_trace_notifier_data *node)
 {
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, sched_switch,
 					  sw_probe_sched_switch_i);
 	return PW_SUCCESS;
 };
+
 /*
  * Notifier register/unregister functions.
  */
+
 /*
  * 1. SUSPEND notifier.
  */
 static struct notifier_block sw_pm_notifier = {
 	.notifier_call = &sw_probe_pm_notifier_i,
 };
+
 int sw_register_pm_notifier_i(struct sw_trace_notifier_data *node)
 {
 	register_pm_notifier(&sw_pm_notifier);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_pm_notifier_i(struct sw_trace_notifier_data *node)
 {
 	unregister_pm_notifier(&sw_pm_notifier);
 	return PW_SUCCESS;
 };
+
 /*
  * 2. CPUFREQ notifier.
  */
 static struct notifier_block sw_cpufreq_notifier = {
 	.notifier_call = &sw_probe_cpufreq_notifier_i,
 };
+
 int sw_register_cpufreq_notifier_i(struct sw_trace_notifier_data *node)
 {
 	cpufreq_register_notifier(&sw_cpufreq_notifier,
 				  CPUFREQ_TRANSITION_NOTIFIER);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_cpufreq_notifier_i(struct sw_trace_notifier_data *node)
 {
 	cpufreq_unregister_notifier(&sw_cpufreq_notifier,
 				    CPUFREQ_TRANSITION_NOTIFIER);
 	return PW_SUCCESS;
 };
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 /*
  * 3. CPU hot plug notifier.
@@ -2061,12 +2164,14 @@ int sw_register_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 	register_hotcpu_notifier(&sw_cpu_hotplug_notifier);
 	return PW_SUCCESS;
 };
+
 int sw_unregister_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 {
 	unregister_hotcpu_notifier(&sw_cpu_hotplug_notifier);
 	return PW_SUCCESS;
 };
-#else // LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) */
 static int sw_cpuhp_state = -1;
 int sw_register_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 {
@@ -2080,6 +2185,7 @@ int sw_register_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 	}
 	return 0;
 };
+
 int sw_unregister_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 {
 	if (sw_cpuhp_state >= 0) {
@@ -2087,7 +2193,7 @@ int sw_unregister_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 	}
 	return 0;
 };
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
 
 /*
  * Tracepoint extraction routines.
@@ -2122,11 +2228,12 @@ static void sw_extract_tracepoint_callback(struct tracepoint *tp, void *priv)
 		}
 	}
 };
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0) */
+#endif /* CONFIG_TRACEPOINTS */
 
 /*
- * Retrieve the list of tracepoint structs to use when registering and unregistering
- * tracepoint handlers.
+ * Retrieve the list of tracepoint structs to use
+ * when registering and unregistering tracepoint handlers.
  */
 int sw_extract_trace_notifier_providers(void)
 {
@@ -2143,7 +2250,7 @@ int sw_extract_trace_notifier_providers(void)
 		printk(KERN_WARNING
 		       "WARNING: Could NOT find tracepoint structs for some tracepoints!\n");
 	}
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0) */
 	return PW_SUCCESS;
 };
 
@@ -2183,12 +2290,13 @@ void sw_print_trace_notifier_provider_overheads(void)
 #if IS_ENABLED(CONFIG_ANDROID)
 	PRINT_CUMULATIVE_OVERHEAD_PARAMS(sw_handle_wakelock_i,
 					 "WAKE LOCK/UNLOCK");
-#endif // CONFIG_ANDROID
+#endif /* CONFIG_ANDROID */
 	PRINT_CUMULATIVE_OVERHEAD_PARAMS(sw_handle_workqueue_wakeup_helper_i,
 					 "WORKQUEUE");
 	PRINT_CUMULATIVE_OVERHEAD_PARAMS(sw_handle_sched_switch_helper_i,
 					 "SCHED SWITCH");
 };
+
 /*
  * Add all trace/notifier providers.
  */
@@ -2224,9 +2332,10 @@ int sw_add_trace_notifier_providers(void)
 			return -EIO;
 		}
 	}
-#endif // CONFIG_TRACEPOINTS
+#endif /* CONFIG_TRACEPOINTS */
 	return PW_SUCCESS;
 }
+
 /*
  * Remove previously added providers.
  */
