@@ -18,10 +18,8 @@
 
 void cbc_device_init(struct cbc_device_data *cd)
 {
-	if (cd) {
-		spin_lock_init(&cd->cbc_device_lock);
+	if (cd)
 		INIT_LIST_HEAD(&cd->open_files_head);
-	}
 }
 
 void cbc_file_init(struct cbc_file_data *file)
