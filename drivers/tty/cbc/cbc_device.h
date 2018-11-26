@@ -22,7 +22,6 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/wait.h>
-#include <linux/spinlock.h>
 
 
 #include "cbc_types.h"
@@ -50,8 +49,6 @@ struct cbc_device_data {
 	char *device_name;
 	enum cbc_device_type device_type;
 	struct device *device;
-	/* lock to sync demuxed_receive with cbc_device_release and open */
-	spinlock_t cbc_device_lock;
 	struct list_head open_files_head;
 };
 
