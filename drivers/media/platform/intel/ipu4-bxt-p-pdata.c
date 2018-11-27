@@ -828,6 +828,30 @@ static struct ti964_subdev_info ti964_subdevs_2[] = {
 		.suffix = 'h',
 	},
 #endif
+#ifdef CONFIG_INTEL_IPU4_MAGNA
+	{
+		.board_info = {
+			.type = CRLMODULE_NAME,
+			.addr = MAGNA_ADDRESS_A,
+			.platform_data = &magna_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
+		.rx_port = 0,
+		.phy_i2c_addr = MAGNA_PHY_ADDR,
+		.suffix = 'e',
+	},
+	{
+		.board_info = {
+			  .type = CRLMODULE_NAME,
+			  .addr = MAGNA_ADDRESS_B,
+			  .platform_data = &magna_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
+		.rx_port = 1,
+		.phy_i2c_addr = MAGNA_PHY_ADDR,
+		.suffix = 'f',
+	},
+#endif
 };
 
 static struct ti964_pdata ti964_pdata = {
@@ -1093,6 +1117,30 @@ static struct ti964_subdev_info as_1140_ti964_subdevs_2[] = {
 		.rx_port = 3,
 		.phy_i2c_addr = OV10640_I2C_PHY_ADDR,
 		.suffix = 'h',
+	},
+#endif
+#ifdef CONFIG_INTEL_IPU4_MAGNA
+	{
+		.board_info = {
+			.type = CRLMODULE_NAME,
+			.addr = MAGNA_ADDRESS_A,
+			.platform_data = &magna_pdata,
+		},
+		.i2c_adapter_id = AS_1140_TI964_I2C_ADAPTER_2,
+		.rx_port = 0,
+		.phy_i2c_addr = MAGNA_PHY_ADDR,
+		.suffix = 'e',
+	},
+	{
+		.board_info = {
+			  .type = CRLMODULE_NAME,
+			  .addr = MAGNA_ADDRESS_B,
+			  .platform_data = &magna_pdata,
+		},
+		.i2c_adapter_id = AS_1140_TI964_I2C_ADAPTER_2,
+		.rx_port = 1,
+		.phy_i2c_addr = MAGNA_PHY_ADDR,
+		.suffix = 'f',
 	},
 #endif
 };
