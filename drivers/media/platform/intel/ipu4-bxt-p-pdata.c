@@ -528,6 +528,7 @@ static struct ipu_isys_subdev_info video_aggre_b_stub_sd = {
 #define MAGNA_LANES		4
 #define MAGNA_PHY_ADDR	0x60 /* 0x30 for 7bit addr */
 #define MAGNA_ADDRESS_A	0x61
+#define MAGNA_ADDRESS_B 0x62
 
 static struct crlmodule_platform_data magna_pdata = {
 	.lanes = MAGNA_LANES,
@@ -719,6 +720,17 @@ static struct ti964_subdev_info ti964_subdevs[] = {
 		.rx_port = 0,
 		.phy_i2c_addr = MAGNA_PHY_ADDR,
 		.suffix = 'a',
+	},
+	{
+		.board_info = {
+			  .type = CRLMODULE_NAME,
+			  .addr = MAGNA_ADDRESS_B,
+			  .platform_data = &magna_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER,
+		.rx_port = 1,
+		.phy_i2c_addr = MAGNA_PHY_ADDR,
+		.suffix = 'b',
 	},
 #endif
 };
