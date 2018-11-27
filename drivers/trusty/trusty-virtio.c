@@ -335,7 +335,7 @@ static struct virtqueue *_find_vq(struct virtio_device *vdev,
 	 */
 	tvr->vr_descr->pa = (u32)HIULINT(pa);
 
-	dev_info(&vdev->dev, "vring%d: va(pa)  %p(%llx) qsz %d notifyid %d\n",
+	dev_dbg(&vdev->dev, "vring%d: va(pa)  %p(%llx) qsz %d notifyid %d\n",
 		 id, tvr->vaddr, (u64)tvr->paddr, tvr->elem_num, tvr->notifyid);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
