@@ -850,8 +850,8 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 	trace_ipu_sof_seqid(ev.u.frame_sync.frame_sequence, csi2->index, vc);
 	v4l2_event_queue(vdev, &ev);
 	dev_dbg(&csi2->isys->adev->dev,
-		"sof_event::csi2-%i sequence: %i, vc: %d, stream_id: %d\n",
-		csi2->index, ev.u.frame_sync.frame_sequence, vc, ip->stream_id);
+		"sof_event::csi2-%i CPU-timestamp:%lld, sequence:%i, vc:%d, stream_id:%d\n",
+		csi2->index, ktime_get_ns(), ev.u.frame_sync.frame_sequence, vc, ip->stream_id);
 }
 
 void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)

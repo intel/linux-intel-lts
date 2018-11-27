@@ -1148,8 +1148,8 @@ ipu_isys_buf_calc_sequence_time(struct ipu_isys_buffer *ib,
 	vbuf->vb2_buf.timestamp = ns;
 	vbuf->sequence = sequence;
 
-	dev_dbg(&av->isys->adev->dev, "buffer: %s: buffer done %u\n",
-		av->vdev.name, vb->index);
+	dev_dbg(&av->isys->adev->dev, "buffer: %s: buffer done, CPU-timestamp:%lld, sequence:%d, vc:%d, index:%d, vbuf timestamp:%lld, endl\n",
+		av->vdev.name, ktime_get_ns(), sequence, ip->vc, vb->index, vbuf->vb2_buf.timestamp);
 #endif
 }
 
