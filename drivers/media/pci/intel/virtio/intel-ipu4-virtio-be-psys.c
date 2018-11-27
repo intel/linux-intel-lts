@@ -12,8 +12,6 @@
 #include "intel-ipu4-virtio-be-request-queue.h"
 #include "intel-ipu4-virtio-be.h"
 
-struct file *psys_file;
-
 int process_psys_mapbuf(struct ipu4_virtio_req_info *req_info)
 {
 	return IPU4_REQ_ERROR;
@@ -21,8 +19,13 @@ int process_psys_mapbuf(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
 {
-	struct ipu_psys_fh *fh = psys_file->private_data;
 	int status = 0;
+
+	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
+	if(!fh) {
+		pr_err("%s NULL file handler", __func__);
+		return IPU4_REQ_ERROR;
+	}
 
 	status = fh->vfops->unmap_buf(fh, req_info);
 
@@ -40,7 +43,7 @@ int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
 {
-	struct ipu_psys_fh *fh = psys_file->private_data;
+	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
 	int status = 0;
 
 	struct ipu_psys_capability *psys_caps;
@@ -73,7 +76,7 @@ int process_psys_putbuf(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
 {
-	struct ipu_psys_fh *fh = psys_file->private_data;
+	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
 	int status = 0;
 
 	status = fh->vfops->qcmd(fh, req_info);
@@ -88,10 +91,10 @@ int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
 {
-	struct ipu_psys_fh *fh = psys_file->private_data;
+	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
 	int status = 0;
 
-	status = fh->vfops->dqevent(fh, req_info, psys_file->f_flags);
+	status = fh->vfops->dqevent(fh, req_info, req_info->request->be_fh->f_flags);
 
 	req_info->request->func_ret = status;
 
@@ -103,7 +106,7 @@ int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
 {
-	struct ipu_psys_fh *fh = psys_file->private_data;
+	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
 	int status = 0;
 
 	status = fh->vfops->get_buf(fh, req_info);
@@ -118,7 +121,7 @@ int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_get_manifest(struct ipu4_virtio_req_info *req_info)
 {
-	struct ipu_psys_fh *fh = psys_file->private_data;
+	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
 	int status = 0;
 
 	status = fh->vfops->get_manifest(fh, req_info);
@@ -133,15 +136,18 @@ int process_psys_get_manifest(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_open(struct ipu4_virtio_req_info *req_info)
 {
+	struct file *fh;
 	pr_info("%s: /dev/ipu-psys0", __func__);
 
-	psys_file = filp_open("/dev/ipu-psys0", req_info->request->op[0], 0);
+	fh = filp_open("/dev/ipu-psys0", req_info->request->op[0], 0);
 
-	if (psys_file == NULL) {
+	if (fh == NULL) {
 		pr_err("%s: Native IPU psys device not found",
 										__func__);
 		return IPU4_REQ_ERROR;
 	}
+
+	req_info->request->be_fh = fh;
 
 	return IPU4_REQ_PROCESSED;
 }
@@ -150,14 +156,14 @@ int process_psys_close(struct ipu4_virtio_req_info *req_info)
 {
 	pr_info("%s: /dev/ipu-psys0", __func__);
 
-	filp_close(psys_file, 0);
+	filp_close(req_info->request->be_fh, 0);
 
 	return IPU4_REQ_PROCESSED;
 }
 
 int process_psys_poll(struct ipu4_virtio_req_info *req_info)
 {
-	struct ipu_psys_fh *fh = psys_file->private_data;
+	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
 	int status = 0;
 
 	status = fh->vfops->poll(fh, req_info);

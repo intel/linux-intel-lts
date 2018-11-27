@@ -86,6 +86,8 @@ int ipu_get_manifest(struct ipu_psys_manifest *m,
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_GET_MANIFEST, NULL);
 
+	req->be_fh = fh->be_fh;
+
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 									IPU_VIRTIO_QUEUE_1);
 	if (rval) {
@@ -132,6 +134,8 @@ int ipu_query_caps(struct ipu_psys_capability *caps,
 	req->payload = virt_to_phys(caps);
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_QUERYCAP, NULL);
+
+	req->be_fh = fh->be_fh;
 
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 									IPU_VIRTIO_QUEUE_1);
@@ -208,6 +212,8 @@ int ipu_psys_kcmd_new(struct ipu_psys_command *cmd,
 	req->payload = virt_to_phys(cmd_wrap);
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_QCMD, NULL);
+
+	req->be_fh = fh->be_fh;
 
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 									IPU_VIRTIO_QUEUE_1);
@@ -417,6 +423,8 @@ int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_GETBUF, NULL);
 
+	req->be_fh = fh->be_fh;
+
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 									IPU_VIRTIO_QUEUE_1);
 	if (rval) {
@@ -466,6 +474,8 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_UNMAPBUF, &op[0]);
 
+	req->be_fh = fh->be_fh;
+
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 									IPU_VIRTIO_QUEUE_1);
 	if (rval) {
@@ -510,6 +520,8 @@ unsigned int virt_psys_poll(struct file *file,
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_POLL, NULL);
 
+	req->be_fh = fh->be_fh;
+
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 									IPU_VIRTIO_QUEUE_1);
 	if (rval) {
@@ -544,6 +556,8 @@ long ipu_ioctl_dqevent(struct ipu_psys_event *event,
 	req->payload = virt_to_phys(event);
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_DQEVENT, NULL);
+
+	req->be_fh = fh->be_fh;
 
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 									IPU_VIRTIO_QUEUE_1);
@@ -670,7 +684,6 @@ static int virt_psys_open(struct inode *inode, struct file *file)
 	hash_init(FD_BUF_HASH);
 
 	fh->psys = psys;
-	file->private_data = fh;
 
 	req = ipu4_virtio_fe_req_queue_get();
 	if (!req) {
@@ -689,6 +702,10 @@ static int virt_psys_open(struct inode *inode, struct file *file)
 	   ipu4_virtio_fe_req_queue_put(req);
 	   return rval;
 	}
+
+	fh->be_fh = req->be_fh;
+	file->private_data = fh;
+
 	ipu4_virtio_fe_req_queue_put(req);
 
 	return rval;
@@ -712,6 +729,8 @@ static int virt_psys_release(struct inode *inode, struct file *file)
 	}
 
 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_CLOSE, NULL);
+
+	req->be_fh = fh->be_fh;
 
 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
 					  IPU_VIRTIO_QUEUE_1);

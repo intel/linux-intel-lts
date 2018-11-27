@@ -37,6 +37,7 @@ struct ipu4_virtio_req {
 	wait_queue_head_t *wait;
 	bool completed;
 	u64 payload;
+	struct file *be_fh;
 };
 struct test_payload {
 	unsigned int data1;
