@@ -58,6 +58,8 @@ obj-y				+= char/
 # iommu/ comes before gpu as gpu are using iommu controllers
 obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 
+obj-y                          += mmc/
+
 # gpu/ comes after char for AGP vs DRM startup and after iommu
 obj-y				+= gpu/
 
@@ -129,7 +131,6 @@ obj-$(CONFIG_EISA)		+= eisa/
 obj-$(CONFIG_PM_OPP)		+= opp/
 obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
-obj-y				+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
 obj-$(CONFIG_NEW_LEDS)		+= leds/
 obj-$(CONFIG_INFINIBAND)	+= infiniband/
