@@ -124,7 +124,7 @@ u32 ipu_isys_subdev_code_to_uncompressed(u32 sink_code);
 
 enum ipu_isys_subdev_pixelorder ipu_isys_subdev_get_pixelorder(u32 code);
 
-void ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
+int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
 				   struct v4l2_subdev_fh *cfg,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
@@ -137,7 +137,7 @@ void ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 				   enum isys_subdev_prop_tgt tgt,
 				   unsigned int pad, unsigned int which);
 
-void ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
+int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
 				      struct v4l2_subdev_fh *cfg,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
