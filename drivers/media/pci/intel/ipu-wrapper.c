@@ -51,6 +51,7 @@ static struct wrapper_base *get_mem_sub_system(int mmid)
 
 	if (mmid == PSYS_MMID)
 		return &psys;
+
 	WARN(1, "Invalid mem subsystem");
 	return NULL;
 }
