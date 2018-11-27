@@ -108,7 +108,13 @@ int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
 		WARN_ON(1);
 		return -ENODEV;
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler,
+				ext_sd->v4l2_dev->mdev,
+				&cs);
+#else
 	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler, &cs);
+#endif
 	if (rval) {
 		dev_info(&csi2->isys->adev->dev, "can't get link frequency\n");
 		return rval;
