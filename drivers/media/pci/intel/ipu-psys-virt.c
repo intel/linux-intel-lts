@@ -499,7 +499,11 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
 			unsigned int f_flags)
 {
 	struct ipu_psys_event *event;
-	int status = 0;
+	struct ipu_psys_kcmd *kcmd = NULL;
+	int status = 0, time_remain = -1;
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
+
+	pr_debug("%s: IOC_DQEVENT", __func__);
 
 	event = map_guest_phys(req_info->domid,
 				req_info->request->payload,
@@ -509,8 +513,39 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
 		return -EFAULT;
 	}
 
-	status = ipu_ioctl_dqevent(event, fh, f_flags);
+	add_wait_queue(&fh->wait, &wait);
+	while (1) {
+		if (ipu_get_completed_kcmd(fh) ||
+			time_remain == 0)
+			break;
+		time_remain =
+			wait_woken(&wait, TASK_INTERRUPTIBLE, POLL_WAIT);
+	}
+	remove_wait_queue(&fh->wait, &wait);
 
+	if ((time_remain == 0) || (time_remain == -ERESTARTSYS)) {
+		pr_err("%s: poll timeout or unexpected wake up %d",
+								__func__, time_remain);
+		req_info->request->func_ret = 0;
+		goto error_exit;
+	}
+
+	mutex_lock(&fh->mutex);
+	if (!kcmd) {
+		kcmd = __ipu_get_completed_kcmd(fh);
+		if (!kcmd) {
+			mutex_unlock(&fh->mutex);
+			return -ENODATA;
+		}
+	}
+
+	*event = kcmd->ev;
+	ipu_psys_kcmd_free(kcmd);
+	mutex_unlock(&fh->mutex);
+
+	req_info->request->func_ret = POLLIN;
+
+error_exit:
 	unmap_guest_phys(req_info->domid,
 				req_info->request->payload);
 
