@@ -506,6 +506,8 @@ int bh_request(unsigned int conn_idx, void *cmd_hdr, unsigned int cmd_hdr_len,
 		return PTR_ERR(request);
 	}
 
+	init_completion(&request->complete);
+	kref_get(&request->refcnt);
 	list_add_tail(&request->link, &bh_srvc.request_list);
 	mutex_unlock(&bh_srvc.request_lock);
 
@@ -514,8 +516,6 @@ int bh_request(unsigned int conn_idx, void *cmd_hdr, unsigned int cmd_hdr_len,
 	 * to avoid race condition
 	 */
 
-	init_completion(&request->complete);
-	kref_get(&request->refcnt);
 	schedule_work(&bh_srvc.work);
 	ret = wait_for_completion_interruptible(&request->complete);
 	/*
