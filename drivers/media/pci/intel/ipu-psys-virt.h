@@ -31,6 +31,7 @@ struct psys_fops_virt {
 long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh);
 //Function define in ipu4-psys.c
 void ipu_psys_kcmd_free(struct ipu_psys_kcmd *kcmd);
+struct ipu_psys_kcmd *__ipu_get_completed_kcmd(struct ipu_psys_fh *fh);
 
 extern struct psys_fops_virt psys_vfops;
 
