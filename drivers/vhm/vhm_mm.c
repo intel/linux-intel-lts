@@ -53,54 +53,14 @@
  *
  */
 
-#include <linux/init.h>
-#include <linux/interrupt.h>
 #include <linux/module.h>
-#include <linux/device.h>
 #include <linux/kernel.h>
-#include <linux/dma-mapping.h>
-#include <linux/gfp.h>
-#include <linux/mm.h>
-#include <linux/fs.h>
-#include <linux/poll.h>
-#include <linux/wait.h>
-#include <linux/slab.h>
-#include <linux/sched.h>
-#include <linux/list.h>
-#include <linux/uaccess.h>
-#include <linux/io.h>
 
 #include <linux/vhm/vhm_ioctl_defs.h>
 #include <linux/vhm/acrn_hv_defs.h>
 #include <linux/vhm/acrn_vhm_mm.h>
 #include <linux/vhm/vhm_vm_mngt.h>
 #include <linux/vhm/vhm_hypercall.h>
-
-static u64 _alloc_memblk(struct device *dev, size_t len)
-{
-	unsigned int count;
-	struct page *page;
-
-	if (!PAGE_ALIGNED(len)) {
-		pr_warn("alloc size of memblk must be page aligned\n");
-		return 0ULL;
-	}
-
-	count = PAGE_ALIGN(len) >> PAGE_SHIFT;
-	page = dma_alloc_from_contiguous(dev, count, 1, GFP_KERNEL);
-	if (page)
-		return page_to_phys(page);
-	else
-		return 0ULL;
-}
-
-static bool _free_memblk(struct device *dev, u64 vm0_gpa, size_t len)
-{
-	unsigned int count = PAGE_ALIGN(len) >> PAGE_SHIFT;
-	struct page *page = pfn_to_page(vm0_gpa >> PAGE_SHIFT);
-
-	return dma_release_from_contiguous(dev, page, count);
-}
 
 static int set_memory_region(unsigned long vmid,
 		struct vm_memory_region *region)
@@ -231,31 +191,6 @@ int unmap_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
 void free_guest_mem(struct vhm_vm *vm)
 {
 	return hugepage_free_guest(vm);
-}
-
-#define TRUSTY_MEM_GPA_BASE (511UL * 1024UL * 1024UL * 1024UL)
-#define TRUSTY_MEM_SIZE    (0x01000000)
-int init_trusty(struct vhm_vm *vm)
-{
-	unsigned long host_gpa, guest_gpa = TRUSTY_MEM_GPA_BASE;
-	unsigned long len = TRUSTY_MEM_SIZE;
-
-	host_gpa = _alloc_memblk(vm->dev, TRUSTY_MEM_SIZE);
-	if (host_gpa == 0ULL)
-		return -ENOMEM;
-
-	vm->trusty_host_gpa = host_gpa;
-
-	pr_info("VHM: set ept for trusty memory [host_gpa=0x%lx, "
-		"guest_gpa=0x%lx, len=0x%lx]", host_gpa, guest_gpa, len);
-	return add_memory_region(vm->vmid, guest_gpa, host_gpa, len,
-		MEM_TYPE_WB, MEM_ACCESS_RWX);
-}
-
-void deinit_trusty(struct vhm_vm *vm)
-{
-	_free_memblk(vm->dev, vm->trusty_host_gpa, TRUSTY_MEM_SIZE);
-	vm->trusty_host_gpa = 0;
 }
 
 void *map_guest_phys(unsigned long vmid, u64 guest_phys, size_t size)
