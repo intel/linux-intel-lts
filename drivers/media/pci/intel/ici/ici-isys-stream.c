@@ -139,7 +139,6 @@ static int pipeline_set_power(struct ici_isys_stream *as,
 static int intel_ipu4_isys_library_close(struct ici_isys *isys)
 {
 	struct device *dev = &isys->adev->dev;
-	int timeout = IPU_ISYS_TURNOFF_TIMEOUT;
 	int rval;
 
 	/*
@@ -151,13 +150,10 @@ static int intel_ipu4_isys_library_close(struct ici_isys *isys)
 	if (rval)
 		dev_err(dev, "Device close failure: %d\n", rval);
 
-	/* release probably fails if the close failed. Let's try still */
-	do {
-		usleep_range(IPU_ISYS_TURNOFF_DELAY_US,
-			2 * IPU_ISYS_TURNOFF_DELAY_US);
-		rval = ipu_lib_call_notrace(device_release, isys, 0);
-		timeout--;
-	} while (rval != 0 && timeout);
+	//sleep for 0.5s to 1s
+	usleep_range(500 * IPU_ISYS_TURNOFF_DELAY_US,
+				1000 * IPU_ISYS_TURNOFF_DELAY_US);
+	rval = ipu_lib_call_notrace(device_release, isys, 0);
 
 	if (!rval)
 		isys->fwcom = NULL; /* No further actions needed */
