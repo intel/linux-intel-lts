@@ -82,9 +82,6 @@
 #define REQUEST_READ	0
 #define REQUEST_WRITE	1
 
-/* Generic VM flags from guest OS */
-#define SECURE_WORLD_ENABLED    (1UL<<0)  /* Whether secure world is enabled */
-
 /**
  * @brief Hypercall
  *

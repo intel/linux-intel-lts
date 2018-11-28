@@ -199,18 +199,10 @@ static long vhm_dev_ioctl(struct file *filep,
 		}
 		vm->vmid = created_vm.vmid;
 
-		if (created_vm.vm_flag & SECURE_WORLD_ENABLED) {
-			ret = init_trusty(vm);
-			if (ret < 0) {
-				pr_err("vhm: failed to init trusty for VM!\n");
-				goto create_vm_fail;
-			}
-		}
-
 		if (created_vm.req_buf) {
 			ret = acrn_ioreq_init(vm, created_vm.req_buf);
 			if (ret < 0)
-				goto ioreq_buf_fail;
+				goto create_vm_fail;
 		}
 
 		acrn_ioeventfd_init(vm->vmid);
@@ -218,9 +210,7 @@ static long vhm_dev_ioctl(struct file *filep,
 
 		pr_info("vhm: VM %d created\n", created_vm.vmid);
 		break;
-ioreq_buf_fail:
-		if (created_vm.vm_flag & SECURE_WORLD_ENABLED)
-			deinit_trusty(vm);
+
 create_vm_fail:
 		hcall_destroy_vm(created_vm.vmid);
 		vm->vmid = ACRN_INVALID_VMID;
@@ -263,8 +253,6 @@ create_vm_fail:
 			pr_err("failed to destroy VM %ld\n", vm->vmid);
 			return -EFAULT;
 		}
-		if (vm->trusty_host_gpa)
-			deinit_trusty(vm);
 		vm->vmid = ACRN_INVALID_VMID;
 		break;
 	}

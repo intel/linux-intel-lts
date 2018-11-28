@@ -77,7 +77,6 @@ extern struct mutex vhm_vm_list_lock;
  * @dev: pointer to dev of linux device mode
  * @list: list of vhm_vm
  * @vmid: guest vmid
- * @trusty_host_gpa: host physical address of continuous memory for Trusty
  * @ioreq_fallback_client: default ioreq client
  * @refcnt: reference count of guest
  * @hugepage_lock:  mutex to protect hugepage_hlist
@@ -93,7 +92,6 @@ struct vhm_vm {
 	struct device *dev;
 	struct list_head list;
 	unsigned long vmid;
-	unsigned long trusty_host_gpa;
 	int ioreq_fallback_client;
 	long refcnt;
 	struct mutex hugepage_lock;
