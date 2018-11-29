@@ -22,7 +22,8 @@ enum mei_spd_state {
  *
  * @cldev:     client bus device
  * @gpp:       GPP partition block device
- * @gpp_partition_id: GPP partition id (1-6)
+ * @gpp_partition_id: GPP partition id (0-7)
+ * @rpmb_partition_id: RPMB partition id (0-3)
  * @gpp_interface: gpp class interface for discovery
  * @dev_type:  storage device type
  * @dev_id_sz: device id size
@@ -39,7 +40,8 @@ enum mei_spd_state {
 struct mei_spd {
 	struct mei_cl_device *cldev;
 	struct block_device *gpp;
-	u32    gpp_partition_id;
+	u8     gpp_partition_id;
+	u8     rpmb_partition_id;
 	struct class_interface gpp_interface;
 	u32    dev_type;
 	u32    dev_id_sz;

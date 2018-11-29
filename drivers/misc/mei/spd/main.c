@@ -99,7 +99,7 @@ static int mei_spd_remove(struct mei_cl_device *cldev)
 			     0x99, 0xcb, 0x9e, 0x22, 0x74, 0x97, 0x8c, 0xa8)
 
 static struct mei_cl_device_id mei_spd_tbl[] = {
-	{ .uuid = MEI_SPD_UUID,  .version = MEI_CL_VERSION_ANY},
+	{ .uuid = MEI_SPD_UUID,  .version = 0x3},
 	/* required last entry */
 	{ }
 };

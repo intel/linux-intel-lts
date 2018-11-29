@@ -34,6 +34,10 @@ const char *spd_cmd_str(enum spd_cmd_type cmd)
 	SPD_CMD(TRIM);
 	SPD_CMD(INIT);
 	SPD_CMD(STORAGE_STATUS);
+	SPD_CMD(ALLOCATE_BUFFER);
+	SPD_CMD(WRITE_FROM_BUFFER);
+	SPD_CMD(READ_FROM_BUFFER);
+	SPD_CMD(MANAGE_CRITICAL_SECTION);
 	SPD_CMD(MAX);
 	default:
 		return "unknown";
@@ -121,11 +125,12 @@ int mei_spd_cmd_init_req(struct mei_spd *spd)
 static int mei_spd_cmd_init_rsp(struct mei_spd *spd, struct spd_cmd *cmd,
 				ssize_t cmd_sz)
 {
-	int type;
-	int gpp_id;
-	int i;
+	unsigned int type;
+	unsigned int gpp_id;
+	unsigned int rpmb_id;
+	unsigned int i;
 
-	if (cmd_sz < spd_cmd_size(init_resp)) {
+	if (cmd_sz < (ssize_t)spd_cmd_size(init_resp)) {
 		spd_err(spd, "Wrong init response size\n");
 		return -EINVAL;
 	}
@@ -134,23 +139,44 @@ static int mei_spd_cmd_init_rsp(struct mei_spd *spd, struct spd_cmd *cmd,
 		return -EPROTO;
 
 	type = cmd->init_rsp.type;
-	gpp_id = cmd->init_rsp.gpp_partition_id;
+	gpp_id  = cmd->init_rsp.gpp_partition_id;
+	rpmb_id = cmd->init_rsp.rpmb_partition_id;
+
+	spd_dbg(spd, "cmd init rsp : type [%d] gpp_id [%d] rpmb_id [%d]\n",
+		type, gpp_id, rpmb_id);
 
 	switch (type) {
 	case SPD_TYPE_EMMC:
-		if (gpp_id < 1 || gpp_id > 4) {
+		if (gpp_id > 4) {
 			spd_err(spd, "%s unsupported gpp id %d\n",
 				mei_spd_dev_str(type), gpp_id);
 			return -EINVAL;
 		}
+
+		/* Only one RPMB partition exists for EMMC */
+		rpmb_id = 0;
 		break;
 
 	case SPD_TYPE_UFS:
-		if (gpp_id < 1 || gpp_id > 6) {
+		if (gpp_id > 7) {
 			spd_err(spd, "%s unsupported gpp id %d\n",
 				mei_spd_dev_str(type), gpp_id);
 			return -EINVAL;
 		}
+
+		/* For UFS version 2.0 and 2.1 the RPMB od must be 0  */
+		/* because there is only one RPMB partition.          */
+		/* For UFS version 3.0 there can be up to 4 RPMBs and */
+		/* the RPMB id is later being used in CDB format of   */
+		/* Security Protocol IN/OUT Commands ( Security       */
+		/* Protocol Specific field.                           */
+		/* See the UFS Version 3.0 spec for details           */
+		if (rpmb_id > 3) {
+			spd_err(spd, "%s unsupported rpmb id %d\n",
+				mei_spd_dev_str(type), rpmb_id);
+			return -EINVAL;
+		}
+
 		break;
 
 	default:
@@ -160,7 +186,8 @@ static int mei_spd_cmd_init_rsp(struct mei_spd *spd, struct spd_cmd *cmd,
 	}
 
 	spd->dev_type = type;
-	spd->gpp_partition_id = gpp_id;
+	spd->gpp_partition_id  = gpp_id;
+	spd->rpmb_partition_id = rpmb_id;
 
 	if (cmd->init_rsp.serial_no_sz != 0) {
 		if (cmd->init_rsp.serial_no_sz !=

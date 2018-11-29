@@ -18,7 +18,11 @@
  * @SPD_GPP_READ_CMD   : GPP read request.                [TEE -> Host]
  * @SPD_TRIM_CMD       : TRIM command                     [TEE -> Host]
  * @SPD_INIT_CMD : initial handshake between host and fw. [Host -> TEE]
- * @SPD_STORAGE_STATUS_CMD : the backing storage status.  [Host -> TEE]
+ * @SPD_STORAGE_STATUS_CMD  : the backing storage status. [Host -> TEE]
+ * @SPD_ALLOCATE_BUFFER_CMD : not used by the SW.         [TEE -> Host]
+ * @SPD_WRITE_FROM_BUFFER_CMD : not used by the SW.       [TEE -> Host]
+ * @SPD_READ_FROM_BUFFER_CMD  : not used by the SW.       [TEE -> Host]
+ * @SPD_MANAGE_CRITICAL_SECTION_CMD : not used by the SW  [TEE -> Host]
  * @SPD_MAX_CMD: Upper command sentinel.
  */
 enum spd_cmd_type {
@@ -32,6 +36,10 @@ enum spd_cmd_type {
 	SPD_TRIM_CMD,
 	SPD_INIT_CMD,
 	SPD_STORAGE_STATUS_CMD,
+	SPD_ALLOCATE_BUFFER_CMD,
+	SPD_WRITE_FROM_BUFFER_CMD,
+	SPD_READ_FROM_BUFFER_CMD,
+	SPD_MANAGE_CRITICAL_SECTION_CMD,
 	SPD_MAX_CMD,
 };
 
@@ -85,6 +93,11 @@ struct spd_cmd_hdr {
  *     UFS:  LUN Number (0-7)
  *     EMMC: 1-4.
  *     0xff: GPP not supported
+ * @rpmb_partition_id: rpmb_partition:
+ *     UFS:  W-LUN Number (0-3)
+ *     EMMC: Not defined
+ *     0xff: RPMB not supported
+ * @reserved: reserved
  * @type: storage hw type
  *    SPD_TYPE_EMMC
  *    SPD_TYPE_UFS
@@ -93,6 +106,8 @@ struct spd_cmd_hdr {
  */
 struct spd_cmd_init_resp {
 	u32 gpp_partition_id;
+	u32 rpmb_partition_id;
+	u32 reserved[2];
 	u32 type;
 	u32 serial_no_sz;
 	u8  serial_no[0];
@@ -107,10 +122,26 @@ struct spd_cmd_init_resp {
  * @rpmb_on: availability of the backing storage
  *      0 - RPMB partition is accessible
  *      1 - RPBM partition is not accessible
+ * @boot_on: availability of the boot partition
+ *      0 - boot partition is accessible
+ *      1 - boot partition is not accessible
+ * @reserved: reserved
+ * @critical_section: support of critical section message
+ *      0 - critical section off
+ *      1 - critical section on
+ * @buffer_dma_support: buffer dma support capability
+ *      0 - buffer dma support disabled
+ *      1 - buffer dma support enabled
+ * @reserved_capabilities: reserved
  */
 struct spd_cmd_storage_status_req {
 	u32 gpp_on;
 	u32 rpmb_on;
+	u32 boot_on;
+	u32 reserved[2];
+	u32 critical_section;
+	u32 buffer_dma_support : 1;
+	u32 reserved_capabilities : 31;
 } __packed;
 
 /**

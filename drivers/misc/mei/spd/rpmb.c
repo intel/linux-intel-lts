@@ -18,7 +18,8 @@ static int mei_spd_rpmb_start(struct mei_spd *spd, struct rpmb_dev *rdev)
 	}
 
 	spd->rdev = rpmb_dev_get(rdev);
-	spd_dbg(spd, "rpmb partition created\n");
+	spd->rdev->target = spd->rpmb_partition_id;
+	spd_dbg(spd, "rpmb partition created, target %d\n", spd->rdev->target);
 	return 0;
 }
 
