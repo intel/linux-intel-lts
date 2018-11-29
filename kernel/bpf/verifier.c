@@ -5325,9 +5325,9 @@ static int do_check(struct bpf_verifier_env *env)
 					return -EACCES;
 				}
 
-				err = check_return_code(env);
+			/*	err = check_return_code(env);
 				if (err)
-					return err;
+					return err;*/
 process_bpf_exit:
 				err = pop_stack(env, &env->prev_insn_idx,
 						&env->insn_idx);
