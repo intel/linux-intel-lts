@@ -741,6 +741,7 @@ static int __init vhm_init(void)
 		return -EINVAL;
 	}
 
+	acrn_ioreq_driver_init();
 	pr_info("vhm: Virtio & Hypervisor service module initialized\n");
 	return 0;
 }
