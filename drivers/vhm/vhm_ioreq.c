@@ -730,12 +730,8 @@ static bool is_cfg_data(struct vhm_request *req)
 		req->reqs.pio_request.address < 0xcfc+4));
 }
 
-static int cached_bus;
-static int cached_dev;
-static int cached_func;
-static int cached_reg;
-static int cached_enable;
-#define PCI_REGMAX      255     /* highest supported config register addr.*/
+#define PCI_LOWREG_MASK 255     /* the low 8-bit of supported pci_reg addr.*/
+#define PCI_HIGHREG_MASK 0xF00  /* the high 4-bit of supported pci_reg addr */
 #define PCI_FUNCMAX	7       /* highest supported function number */
 #define PCI_SLOTMAX	31      /* highest supported slot number */
 #define PCI_BUSMAX	255     /* highest supported bus number */
@@ -749,42 +745,37 @@ static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
 	if (is_cfg_addr(req)) {
 		if (req->reqs.pio_request.direction == REQUEST_WRITE) {
 			if (req->reqs.pio_request.size == 4) {
-				int value = req->reqs.pio_request.value;
 
-				cached_bus = (value >> 16) & PCI_BUSMAX;
-				cached_dev = (value >> 11) & PCI_SLOTMAX;
-				cached_func = (value >> 8) & PCI_FUNCMAX;
-				cached_reg = value & PCI_REGMAX;
-				cached_enable =
-					(value & CONF1_ENABLE) == CONF1_ENABLE;
+				vm->pci_conf_addr = (uint32_t ) req->reqs.pio_request.value;
 				req_handled = 1;
 			}
 		} else {
 			if (req->reqs.pio_request.size == 4) {
 				req->reqs.pio_request.value =
-					(cached_bus << 16) |
-					(cached_dev << 11) | (cached_func << 8)
-					| cached_reg;
-				if (cached_enable)
-					req->reqs.pio_request.value |=
-					CONF1_ENABLE;
+					vm->pci_conf_addr;
 				req_handled = 1;
 			}
 		}
 	} else if (is_cfg_data(req)) {
-		if (!cached_enable) {
+		if (!(vm->pci_conf_addr & CONF1_ENABLE)) {
 			if (req->reqs.pio_request.direction == REQUEST_READ)
 				req->reqs.pio_request.value = 0xffffffff;
 			req_handled = 1;
 		} else {
 			/* pci request is same as io request at top */
 			int offset = req->reqs.pio_request.address - 0xcfc;
+			int pci_reg;
 
 			req->type = REQ_PCICFG;
-			req->reqs.pci_request.bus = cached_bus;
-			req->reqs.pci_request.dev = cached_dev;
-			req->reqs.pci_request.func = cached_func;
-			req->reqs.pci_request.reg = cached_reg + offset;
+			req->reqs.pci_request.bus = (vm->pci_conf_addr >> 16) &
+							PCI_BUSMAX;
+			req->reqs.pci_request.dev = (vm->pci_conf_addr >> 11) &
+							PCI_SLOTMAX;
+			req->reqs.pci_request.func = (vm->pci_conf_addr >> 8) &
+							PCI_FUNCMAX;
+			pci_reg = (vm->pci_conf_addr & PCI_LOWREG_MASK) +
+					((vm->pci_conf_addr >> 16) & PCI_HIGHREG_MASK);
+			req->reqs.pci_request.reg = pci_reg + offset;
 		}
 	}
 
@@ -794,8 +785,13 @@ static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
 	return err ? err: req_handled;
 }
 
-static bool bdf_match(struct ioreq_client *client)
+static bool bdf_match(struct vhm_vm *vm, struct ioreq_client *client)
 {
+	int cached_bus, cached_dev, cached_func;
+
+	cached_bus = (vm->pci_conf_addr >> 16) & PCI_BUSMAX;
+	cached_dev = (vm->pci_conf_addr >> 11) & PCI_SLOTMAX;
+	cached_func = (vm->pci_conf_addr >> 8) & PCI_FUNCMAX;
 	return (client->trap_bdf &&
 		client->pci_bus == cached_bus &&
 		client->pci_dev == cached_dev &&
@@ -821,7 +817,7 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 		}
 
 		if (req->type == REQ_PCICFG) {
-			if (bdf_match(client)) { /* bdf match client */
+			if (bdf_match(vm, client)) { /* bdf match client */
 				target_client = client;
 				break;
 			} else /* other or fallback client */

@@ -87,6 +87,7 @@ extern struct mutex vhm_vm_list_lock;
  * @ioreq_client_list: list of ioreq clients
  * @req_buf: request buffer shared between HV, SOS and UOS
  * @pg: pointer to linux page which holds req_buf
+ * @pci_conf_addr: the access-trapped pci_conf_addr
  */
 struct vhm_vm {
 	struct device *dev;
@@ -102,6 +103,7 @@ struct vhm_vm {
 	struct list_head ioreq_client_list;
 	struct vhm_request_buffer *req_buf;
 	struct page *pg;
+	uint32_t pci_conf_addr;
 };
 
 /**
