@@ -198,4 +198,5 @@ void acrn_ioreq_free(struct vhm_vm *vm);
 int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name);
 unsigned int vhm_dev_poll(struct file *filep, poll_table *wait);
 
+void acrn_ioreq_driver_init(void);
 #endif
