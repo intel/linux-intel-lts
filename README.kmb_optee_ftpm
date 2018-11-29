@@ -1,0 +1,15 @@
+IP Block: OPTEE core driver
+Platform Affect: (ARM64) IOTG KeemBay
+BugFix: None
+
+
+This branch pull implements a driver provides support to communicate to a fTPM Trusted
+Application (TA) running within a ARM TEE, in this case OP-TEE.  It uses the tee framework
+for SMC trigger into the TEE OS and provides TCG CRB like interfaces to communicate
+to the fTPM TA running with the TEE.
+
+The follow defconfig must be enabled for driver to compile
+ONFIG_TCG_FTPM_OPTEE
+CONFIG_TCG_TPM
+
+compatible devicetree node "tcg,fwtpm" to be set for initialize the driver.
