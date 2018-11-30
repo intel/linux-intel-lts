@@ -41,6 +41,8 @@
 #include <linux/time.h>
 
 static struct snd_skl_vfe *skl_vfe;
+static char *domain_name = "GuestOS";
+static u32 domain_id = ~0;
 
 static struct snd_skl_vfe *get_virtio_audio_fe(void)
 {
@@ -161,6 +163,9 @@ static int vfe_send_msg(struct snd_skl_vfe *vfe,
 	if (!msg)
 		return -ENOMEM;
 
+	strncpy(msg_header->domain_name, domain_name,
+		ARRAY_SIZE(msg_header->domain_name));
+	msg_header->domain_id = domain_id;
 	memcpy(&msg->header, msg_header, sizeof(msg->header));
 	msg->tx_data = tx_data;
 	msg->tx_size = tx_size;
@@ -231,7 +236,8 @@ static int vfe_send_pos_request(struct snd_skl_vfe *vfe,
 }
 
 static int vfe_send_kctl_msg(struct snd_skl_vfe *vfe,
-	struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+	struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol,
+	struct vfe_kctl_result *result)
 {
 	struct vfe_kctl_value kcontrol_value;
 	struct vfe_msg_header msg_header;
@@ -243,7 +249,8 @@ static int vfe_send_kctl_msg(struct snd_skl_vfe *vfe,
 	kcontrol_value.value = *ucontrol;
 
 	return vfe_send_msg(vfe, &msg_header, &kcontrol_value,
-			sizeof(kcontrol_value), NULL, 0);
+			sizeof(kcontrol_value), result,
+			sizeof(struct vfe_kctl_result));
 }
 
 
@@ -434,16 +441,22 @@ send_back_msg:
 int vfe_kcontrol_put(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
+	struct vfe_kctl_result result;
 	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 	struct vfe_kcontrol *vfe_kcontrol = vfe_find_kcontrol(vfe, kcontrol);
-	int ret;
+	int ret = 0;
 
-	vfe_send_kctl_msg(vfe, kcontrol, ucontrol);
+	ret = vfe_send_kctl_msg(vfe, kcontrol, ucontrol, &result);
+	if (ret < 0)
+		return ret;
+
+	if (result.ret < 0)
+		return result.ret;
 
 	if (vfe_kcontrol->put)
 		ret = vfe_kcontrol->put(kcontrol, ucontrol);
 
-	return 0;
+	return ret;
 }
 
 static struct vfe_msg_header
@@ -1123,6 +1136,8 @@ static struct virtio_driver vfe_audio_driver = {
 };
 
 module_virtio_driver(vfe_audio_driver);
+module_param(domain_name, charp, 0444);
+module_param(domain_id, uint, 0444);
 
 MODULE_DEVICE_TABLE(virtio, id_table);
 MODULE_DESCRIPTION("Intel Broxton Virtio FE Driver");
