@@ -317,6 +317,10 @@ static u32 linear_gain[] = {
 
 static void skl_init_single_module_pipe(struct snd_soc_dapm_widget *w,
 						struct skl *skl);
+static int skl_tplg_get_str_tkn(struct device *dev,
+		struct snd_soc_tplg_vendor_array *array,
+		struct skl *skl,
+		struct skl_module_cfg *mconfig);
 
 void skl_tplg_d0i3_get(struct skl *skl, enum d0i3_capability caps)
 {
@@ -2834,6 +2838,7 @@ skl_tplg_fe_get_cpr_module(struct snd_soc_dai *dai, int stream)
 
 	return NULL;
 }
+EXPORT_SYMBOL(skl_tplg_fe_get_cpr_module);
 
 static struct skl_module_cfg *skl_get_mconfig_pb_cpr(
 		struct snd_soc_dai *dai, struct snd_soc_dapm_widget *w)
@@ -3478,6 +3483,23 @@ static int skl_tplg_fill_pin(struct device *dev,
 	return 0;
 }
 
+static int skl_tplg_fill_kctl_domain(struct device *dev,
+		struct skl_module_cfg *mconfig,
+		struct snd_soc_tplg_vendor_value_elem *tkn_elem)
+{
+	struct skl_kctl_domain *kctl_domain;
+
+	if (list_empty(&mconfig->kctl_domains))
+		return -EINVAL;
+
+	kctl_domain = list_last_entry(&mconfig->kctl_domains,
+		struct skl_kctl_domain, list);
+
+	kctl_domain->domain_id = tkn_elem->value;
+
+	return 0;
+}
+
 /*
  * Parse for pin config specific tokens to fill up the
  * module private data
@@ -3909,6 +3931,19 @@ static int skl_tplg_get_token(struct device *dev,
 
 		break;
 
+	case SKL_TKN_U32_DOMAIN_ID:
+		mconfig->domain_id = tkn_elem->value;
+		break;
+
+	case SKL_TKN_U32_CTL_DOMAIN_ID:
+		ret = skl_tplg_fill_kctl_domain(dev,
+			mconfig, tkn_elem);
+
+		if (ret < 0)
+			return ret;
+
+		break;
+
 	case SKL_TKN_U32_FMT_CFG_IDX:
 		if (tkn_elem->value > SKL_MAX_PARAMS_TYPES)
 			return -EINVAL;
@@ -3999,7 +4034,14 @@ static int skl_tplg_get_tokens(struct device *dev,
 
 		switch (array->type) {
 		case SND_SOC_TPLG_TUPLE_TYPE_STRING:
-			dev_warn(dev, "no string tokens expected for skl tplg\n");
+			ret = skl_tplg_get_str_tkn(dev, array, skl, mconfig);
+
+			if (ret < 0)
+				return ret;
+			tkn_count = ret;
+
+			tuple_size += tkn_count *
+				sizeof(struct snd_soc_tplg_vendor_string_elem);
 			continue;
 
 		case SND_SOC_TPLG_TUPLE_TYPE_UUID:
@@ -4395,6 +4437,8 @@ static int skl_tplg_widget_load(struct snd_soc_component *cmpnt, int index,
 	if (!mconfig)
 		return -ENOMEM;
 
+	INIT_LIST_HEAD(&mconfig->kctl_domains);
+
 	if (skl->nr_modules == 0) {
 		mconfig->module = devm_kzalloc(bus->dev,
 				sizeof(*mconfig->module), GFP_KERNEL);
@@ -4542,6 +4586,23 @@ static int skl_tplg_control_load(struct snd_soc_component *cmpnt,
 	return 0;
 }
 
+static int skl_tplg_fill_str_ctl_tkn(struct device *dev,
+		struct snd_soc_tplg_vendor_string_elem *str_elem,
+		struct skl_module_cfg *mconfig)
+{
+	struct skl_kctl_domain *kctl_domain =
+			devm_kzalloc(dev, sizeof(*kctl_domain), GFP_KERNEL);
+
+	if (!kctl_domain)
+		return -ENOMEM;
+
+	strncpy(kctl_domain->name, str_elem->string,
+		ARRAY_SIZE(kctl_domain->name));
+	list_add_tail(&kctl_domain->list, &mconfig->kctl_domains);
+
+	return 1;
+}
+
 static int skl_tplg_fill_str_mfest_tkn(struct device *dev,
 		struct snd_soc_tplg_vendor_string_elem *str_elem,
 		struct skl *skl)
@@ -4573,14 +4634,26 @@ static int skl_tplg_fill_str_mfest_tkn(struct device *dev,
 
 static int skl_tplg_get_str_tkn(struct device *dev,
 		struct snd_soc_tplg_vendor_array *array,
-		struct skl *skl)
+		struct skl *skl,
+		struct skl_module_cfg *mconfig)
 {
 	int tkn_count = 0, ret;
 	struct snd_soc_tplg_vendor_string_elem *str_elem;
 
 	str_elem = (struct snd_soc_tplg_vendor_string_elem *)array->value;
 	while (tkn_count < array->num_elems) {
-		ret = skl_tplg_fill_str_mfest_tkn(dev, str_elem, skl);
+		switch (str_elem->token) {
+		case SKL_TKN_STR_LIB_NAME:
+			ret = skl_tplg_fill_str_mfest_tkn(dev, str_elem, skl);
+			break;
+		case SKL_TKN_STR_CTL_NAME:
+			ret = skl_tplg_fill_str_ctl_tkn(dev, str_elem, mconfig);
+			break;
+		default:
+			dev_err(dev, "Token %d not handled\n",
+				str_elem->token);
+			return -EINVAL;
+		}
 		str_elem++;
 
 		if (ret < 0)
@@ -5002,7 +5075,7 @@ static int skl_tplg_get_manifest_tkn(struct device *dev,
 		off += array->size;
 		switch (array->type) {
 		case SND_SOC_TPLG_TUPLE_TYPE_STRING:
-			ret = skl_tplg_get_str_tkn(dev, array, skl);
+			ret = skl_tplg_get_str_tkn(dev, array, skl, NULL);
 
 			if (ret < 0)
 				return ret;

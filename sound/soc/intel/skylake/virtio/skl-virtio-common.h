@@ -27,6 +27,8 @@
 #define SKL_VIRTIO_IPC_MSG 0
 #define SKL_VIRTIO_IPC_REPLY 1
 
+#define SKL_VIRTIO_DOMAIN_NAME_LEN 20
+
 struct vfe_dsp_ipc_msg {
 	u64 header;
 	struct ipc_message *ipc;
@@ -45,6 +47,8 @@ struct vfe_kctl_info {
 
 struct vfe_msg_header {
 	int cmd;
+	u32 domain_id;
+	char domain_name[SKL_VIRTIO_DOMAIN_NAME_LEN];
 
 	union {
 		struct vfe_pcm_info pcm;
@@ -125,6 +129,10 @@ struct vfe_hw_pos_request {
 };
 
 struct vfe_pcm_result {
+	int ret;
+};
+
+struct vfe_kctl_result {
 	int ret;
 };
 
