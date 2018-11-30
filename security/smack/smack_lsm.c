@@ -423,6 +423,7 @@ static int smk_ptrace_rule_check(struct task_struct *tracer,
 	rcu_read_lock();
 	tracercred = __task_cred(tracer);
 	tsp = smack_cred(tracercred);
+	tracer_known = smk_of_task(tsp);
 
 	if ((mode & PTRACE_MODE_ATTACH) &&
 	    (smack_ptrace_rule == SMACK_PTRACE_EXACT ||
