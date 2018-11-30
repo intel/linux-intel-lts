@@ -1081,15 +1081,13 @@ void acrn_ioreq_free(struct vhm_vm *vm)
 	 * The below is used to assure that the client is still released even when
 	 * it is not called.
 	 */
-	if (!test_and_set_bit(VHM_VM_IOREQ, &vm->flags)) {
-		get_vm(vm);
-		list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
-			struct ioreq_client *client =
-				container_of(pos, struct ioreq_client, list);
-			acrn_ioreq_destroy_client(client->id);
-		}
-		put_vm(vm);
+	get_vm(vm);
+	list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
+		struct ioreq_client *client =
+			container_of(pos, struct ioreq_client, list);
+		acrn_ioreq_destroy_client(client->id);
 	}
+	put_vm(vm);
 
 }
 

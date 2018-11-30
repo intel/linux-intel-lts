@@ -170,7 +170,8 @@ static long vhm_dev_ioctl(struct file *filep,
 		pr_err("vhm: invalid VM !\n");
 		return -EFAULT;
 	}
-	if ((vm->vmid == ACRN_INVALID_VMID) && (ioctl_num != IC_CREATE_VM)) {
+	if (((vm->vmid == ACRN_INVALID_VMID) && (ioctl_num != IC_CREATE_VM)) ||
+			test_bit(VHM_VM_DESTROYED, &vm->flags)) {
 		pr_err("vhm: invalid VM ID !\n");
 		return -EFAULT;
 	}
@@ -251,15 +252,7 @@ create_vm_fail:
 	}
 
 	case IC_DESTROY_VM: {
-		acrn_ioeventfd_deinit(vm->vmid);
-		acrn_irqfd_deinit(vm->vmid);
-		acrn_ioreq_free(vm);
-		ret = hcall_destroy_vm(vm->vmid);
-		if (ret < 0) {
-			pr_err("failed to destroy VM %ld\n", vm->vmid);
-			return -EFAULT;
-		}
-		vm->vmid = ACRN_INVALID_VMID;
+		ret = vhm_vm_destroy(vm);
 		break;
 	}
 
@@ -666,6 +659,28 @@ static void vhm_intr_handler(void)
 	tasklet_schedule(&vhm_io_req_tasklet);
 }
 
+int vhm_vm_destroy(struct vhm_vm *vm)
+{
+	int ret;
+
+	if (test_and_set_bit(VHM_VM_DESTROYED, &vm->flags))
+		return -ENODEV;
+
+	acrn_ioeventfd_deinit(vm->vmid);
+	acrn_irqfd_deinit(vm->vmid);
+	acrn_ioreq_free(vm);
+
+	ret = hcall_destroy_vm(vm->vmid);
+	if (ret < 0)
+		pr_err("Failed to destroy VM %ld!\n", vm->vmid);
+	write_lock_bh(&vhm_vm_list_lock);
+	list_del_init(&vm->list);
+	write_unlock_bh(&vhm_vm_list_lock);
+	vm->vmid = ACRN_INVALID_VMID;
+
+	return 0;
+}
+
 static int vhm_dev_release(struct inode *inodep, struct file *filep)
 {
 	struct vhm_vm *vm = filep->private_data;
@@ -674,10 +689,7 @@ static int vhm_dev_release(struct inode *inodep, struct file *filep)
 		pr_err("vhm: invalid VM !\n");
 		return -EFAULT;
 	}
-	acrn_ioreq_free(vm);
-	write_lock_bh(&vhm_vm_list_lock);
-	list_del_init(&vm->list);
-	write_unlock_bh(&vhm_vm_list_lock);
+	vhm_vm_destroy(vm);
 	put_vm(vm);
 	filep->private_data = NULL;
 	return 0;

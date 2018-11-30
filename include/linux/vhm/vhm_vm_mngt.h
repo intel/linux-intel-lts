@@ -73,8 +73,11 @@ extern rwlock_t vhm_vm_list_lock;
 #define HUGEPAGE_HLIST_ARRAY_SIZE	(HUGEPAGE_2M_HLIST_ARRAY_SIZE + \
 						HUGEPAGE_1G_HLIST_ARRAY_SIZE)
 
-enum VM_FREE_BITS {
-	VHM_VM_IOREQ = 0,
+/**
+ * enum vhm_vm_flags - vhm vm flags definition
+ */
+enum vhm_vm_flags {
+	VHM_VM_DESTROYED = 0,
 };
 
 /**
@@ -183,6 +186,15 @@ int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
  * Return: host physical address, <0 on error
  */
 unsigned long vhm_vm_gpa2hpa(unsigned long vmid, unsigned long gpa);
+
+/**
+ * vhm_vm_destroy() - destroy VM and release its resources
+ *
+ * @vm: pointer to vhm_vm which identify specific guest
+ *
+ * Return: 0 on success, <0 on error
+ */
+int vhm_vm_destroy(struct vhm_vm *vm);
 
 void vm_list_add(struct list_head *list);
 
