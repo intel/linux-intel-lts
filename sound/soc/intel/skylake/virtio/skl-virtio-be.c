@@ -32,6 +32,7 @@
 #include "skl-virtio-be.h"
 #include "../skl.h"
 #include "../skl-sst-ipc.h"
+#include "../skl-topology.h"
 
 const struct vbe_substream_info *vbe_find_substream_info_by_pcm(
 	const struct snd_skl_vbe *vbe, char *pcm_id, int direction)
@@ -73,12 +74,31 @@ static const struct snd_kcontrol *vbe_skl_find_kcontrol_by_name(
 {
 	const struct snd_kcontrol *kcontrol;
 
+	if (unlikely(!skl || !skl->component || !skl->component->card))
+		return NULL;
+
 	list_for_each_entry(
 		kcontrol, &skl->component->card->snd_card->controls, list) {
 		if (strncmp(kcontrol->id.name, kcontrol_name,
 			ARRAY_SIZE(kcontrol->id.name)) == 0)
 			return kcontrol;
 	}
+	return NULL;
+}
+
+struct snd_soc_dapm_widget *vbe_skl_find_kcontrol_widget(
+	const struct skl *sdev,	const struct snd_kcontrol *kcontrol)
+{
+	struct snd_soc_dapm_widget *w;
+	int i;
+
+	list_for_each_entry(w, &sdev->component->card->widgets, list) {
+		for (i = 0; i < w->num_kcontrols; i++) {
+			if (kcontrol == w->kcontrols[i])
+				return w;
+		}
+	}
+
 	return NULL;
 }
 
@@ -91,13 +111,17 @@ inline int vbe_skl_is_valid_pcm_id(char *pcm_id)
 	return 0;
 }
 
-static const struct snd_soc_pcm_runtime *vbe_skl_find_rtd_by_pcm_id(
+static const struct snd_soc_pcm_runtime *
+vbe_skl_find_rtd_by_pcm_id(
 	const struct skl *skl, char *pcm_name)
 {
 	const struct snd_soc_pcm_runtime *rtd;
 	int ret = vbe_skl_is_valid_pcm_id(pcm_name);
 
 	if (ret < 0)
+		return NULL;
+
+	if (unlikely(!skl || !skl->component || !skl->component->card))
 		return NULL;
 
 	list_for_each_entry(rtd, &skl->component->card->rtd_list, list) {
@@ -355,6 +379,47 @@ static int vbe_skl_add_substream_info(struct snd_skl_vbe *vbe,
 	return 0;
 }
 
+static int vbe_skl_pcm_get_domain_id(const struct skl *sdev,
+	const char *pcm_id, int direction, int *domain_id)
+{
+	const struct snd_soc_pcm_runtime *rtd;
+	struct skl_module_cfg *mconfig = NULL;
+
+	if (unlikely(!domain_id))
+		return -EINVAL;
+
+	rtd = vbe_skl_find_rtd_by_pcm_id(sdev, pcm_id);
+	if (!rtd)
+		return -ENODEV;
+
+	if (rtd->cpu_dai)
+		mconfig = skl_tplg_fe_get_cpr_module(rtd->cpu_dai, direction);
+
+	if (mconfig) {
+		*domain_id = mconfig->domain_id;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+static int vbe_skl_pcm_check_permission(const struct skl *sdev,
+	int domain_id, const char *pcm_id, int direction)
+{
+	int pcm_domain_id;
+	int ret = 0;
+
+	ret = vbe_skl_pcm_get_domain_id(sdev, pcm_id,
+			direction, &pcm_domain_id);
+	if (ret < 0)
+		return ret;
+
+	if (domain_id != pcm_domain_id)
+		return -EACCES;
+
+	return ret;
+}
+
 static int vbe_skl_pcm_open(const struct snd_skl_vbe *vbe,
 		const struct skl *sdev,
 		int vm_id, const struct vbe_ipc_msg *msg)
@@ -372,26 +437,34 @@ static int vbe_skl_pcm_open(const struct snd_skl_vbe *vbe,
 	if (!pcm) {
 		dev_err(&sdev->pci->dev, "Can not find PCM [%s].\n",
 			pcm_desc->pcm_id);
-		return -ENODEV;
+		ret = -ENODEV;
+		goto ret_err;
 	}
+
+	ret = vbe_skl_pcm_check_permission(sdev,
+		msg->header->domain_id, pcm_desc->pcm_id, direction);
+	if (ret < 0)
+		goto ret_err;
 
 	substream = pcm->streams[direction].substream;
 	runtime = substream->runtime;
 
-	if (substream->ref_count > 0)
-		return -EBUSY;
+	if (substream->ref_count > 0) {
+		ret = -EBUSY;
+		goto ret_err;
+	}
 
 	ret = vbe_skl_allocate_runtime(sdev->component->card, substream);
 	if (ret < 0)
-		return ret;
+		goto ret_err;
 	ret = vbe_skl_add_substream_info(vbe, substream);
 	if (ret < 0)
-		return ret;
+		goto ret_err;
 	substream->ref_count++;  /* set it used */
-
 	rtd = substream->private_data;
 	ret = rtd->ops.open(substream);
 
+ret_err:
 	if (vbe_result)
 		vbe_result->ret = ret;
 
@@ -480,17 +553,88 @@ static int vbe_skl_pcm_trigger(struct skl *sdev, int vm_id,
 	return rtd->ops.trigger(substream, cmd);
 }
 
+static int vbe_skl_kcontrol_find_domain_id(const struct snd_kcontrol *kcontrol,
+	struct skl_module_cfg *mconfig)
+{
+	struct skl_kctl_domain *domain;
+	bool name_match = false;
+
+	list_for_each_entry(domain, &mconfig->kctl_domains, list) {
+		name_match = strncmp(domain->name, kcontrol->id.name,
+			ARRAY_SIZE(domain->name)) == 0;
+		if (name_match)
+			return domain->domain_id;
+	}
+
+	return 0;
+}
+
+static int vbe_skl_kcontrol_get_domain_id(const struct skl *sdev,
+	const struct snd_kcontrol *kcontrol, int *domain_id)
+{
+	struct skl_module_cfg *mconfig;
+	struct snd_soc_dapm_widget *w;
+	void *priv = kcontrol->private_data;
+	int ret = 0;
+
+	if (unlikely(!domain_id))
+		return -EINVAL;
+
+	*domain_id = 0;
+
+	if (priv == sdev->component ||
+		priv == sdev->component->card)
+		return 0;
+
+
+	w = vbe_skl_find_kcontrol_widget(sdev, kcontrol);
+	if (w) {
+		mconfig = w->priv;
+		*domain_id = vbe_skl_kcontrol_find_domain_id(kcontrol, mconfig);
+	}
+
+	return 0;
+}
+
+static int vbe_skl_kcontrol_check_permission(const struct skl *sdev,
+	int domain_id, const struct snd_kcontrol *kcontrol)
+{
+	int kcontrol_domain_id;
+	int ret;
+
+	ret = vbe_skl_kcontrol_get_domain_id(sdev, kcontrol,
+		&kcontrol_domain_id);
+	if (ret < 0)
+		return ret;
+
+	if (kcontrol_domain_id != domain_id)
+		return -EACCES;
+
+	return 0;
+}
+
 static int vbe_skl_kcontrol_put(const struct skl *sdev, int vm_id,
 		const struct snd_kcontrol *kcontrol,
 		const struct vbe_ipc_msg *msg)
 {
 	const struct vfe_kctl_value *kcontrol_val =
 			(struct vfe_kctl_value *)msg->tx_data;
+	struct vfe_kctl_result *result = msg->rx_data;
+	int ret = 0;
+
+	ret = vbe_skl_kcontrol_check_permission(sdev,
+		msg->header->domain_id, kcontrol);
+	if (ret < 0)
+		goto ret_result;
 
 	if (kcontrol->put)
-		return kcontrol->put(kcontrol, &kcontrol_val->value);
+		ret = kcontrol->put(kcontrol, &kcontrol_val->value);
 
-	return 0;
+ret_result:
+	if (result)
+		result->ret = ret;
+
+	return ret;
 }
 
 static int vbe_skl_cfg_hda(const struct skl *sdev, int vm_id,

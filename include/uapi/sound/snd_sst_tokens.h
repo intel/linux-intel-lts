@@ -283,6 +283,13 @@
  *
  * %SKL_TKN_U32_FMT_CFG_IDX:    Format config index
  *
+ * %SKL_TKN_U32_DOMAIN_ID:      Widget domain ID
+ *
+ * %SKL_TKN_U32_CTL_DOMAIN_ID:  Control domain ID
+ *
+ * %SKL_TKN_STR_CTL_NAME:       Name of control to which the domain ID should
+ *                              be assigned
+ *
  * module_id and loadable flags dont have tokens as these values will be
  * read from the DSP FW manifest
  *
@@ -396,7 +403,11 @@ enum SKL_TKNS {
 	SKL_TKN_U32_SCH_SYS_TICK_CFG,
 
 	SKL_TKN_U32_FMT_CFG_IDX,
-	SKL_TKN_MAX = SKL_TKN_U32_FMT_CFG_IDX,
+
+	SKL_TKN_U32_DOMAIN_ID,
+	SKL_TKN_U32_CTL_DOMAIN_ID,
+	SKL_TKN_STR_CTL_NAME,
+	SKL_TKN_MAX = SKL_TKN_STR_CTL_NAME,
 };
 
 /*
