@@ -30,6 +30,8 @@ int ipu_fw_psys_pg_processing_cycles(struct ipu_psys_kcmd *kcmd)
 	return 0;
 }
 
+
+
 int ipu_fw_psys_pg_disown(struct ipu_psys_kcmd *kcmd)
 {
 	struct ipu_fw_psys_cmd *psys_cmd;
