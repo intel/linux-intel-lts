@@ -1071,19 +1071,19 @@ config VIDEO_I2C
 
 config VIDEO_TI964
 	tristate "TI964 driver support"
-	depends on I2C && VIDEO_V4L2
+	depends on I2C && MEDIA_CONTROLLER && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
 	---help---
 	This is a driver for TI964 camera.
 
 config VIDEO_MAX9286
 	tristate "MAX96705/MAX9286 Serializer/Deserializer"
-	depends on I2C && VIDEO_V4L2 && REGMAP_I2C
+	depends on I2C && MEDIA_CONTROLLER && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API && REGMAP_I2C
 	---help---
 	This is a MAXIM 96705 Serializer and MAXIM 9286 CSI-2 Deserializer driver.
 
 config VIDEO_TI960
 	tristate "TI960 driver support"
-	depends on I2C && VIDEO_V4L2
+	depends on I2C && MEDIA_CONTROLLER && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
 	---help---
 	This is a driver for TI960 Deserializer.
 
