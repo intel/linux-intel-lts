@@ -364,6 +364,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!isp)
 		return -ENOMEM;
 
+	dev_set_name(&pdev->dev, "intel-ipu");
 	isp->pdev = pdev;
 	INIT_LIST_HEAD(&isp->devices);
 
