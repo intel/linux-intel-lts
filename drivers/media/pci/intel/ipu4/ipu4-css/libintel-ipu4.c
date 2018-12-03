@@ -56,9 +56,11 @@ int ipu_fw_isys_close(struct ipu_isys *isys)
 	 * some time as the FW must stop its actions including code fetch
 	 * to SP icache.
 	 */
+	mutex_lock(&isys->lib_mutex);
 	spin_lock_irqsave(&isys->power_lock, flags);
-	rval = ipu_lib_call(device_close, isys);
+	rval = ipu_lib_call_notrace_unlocked(device_close, isys);
 	spin_unlock_irqrestore(&isys->power_lock, flags);
+	mutex_unlock(&isys->lib_mutex);
 	if (rval)
 		dev_err(dev, "Device close failure: %d\n", rval);
 
