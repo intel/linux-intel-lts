@@ -1401,7 +1401,7 @@ config VIDEO_S5C73M3
 
 config VIDEO_TI960
 	tristate "TI960 driver support"
-	depends on I2C && VIDEO_V4L2
+	depends on I2C && MEDIA_CONTROLLER && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
     depends on GPIOLIB
 	help
 	  This is a driver for TI960 Deserializer.
