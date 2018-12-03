@@ -109,6 +109,10 @@ struct ipu_isys {
 	bool csi2_cse_ipc_not_supported;
 	unsigned int video_opened;
 	unsigned int stream_opened;
+#if !defined(CONFIG_VIDEO_INTEL_IPU4) && !defined(CONFIG_VIDEO_INTEL_IPU4P)
+	unsigned int sensor_types[N_IPU_FW_ISYS_SENSOR_TYPE];
+#endif
+
 	struct dentry *debugfsdir;
 	struct mutex mutex;	/* Serialise isys video open/release related */
 	struct mutex stream_mutex;	/* Stream start, stop, queueing reqs */
