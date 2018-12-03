@@ -221,13 +221,11 @@ static void handle_vq_kick(int client_id, int vq_idx)
 
 static int handle_kick(int client_id, long unsigned *ioreqs_map)
 {
-	int val[IPU_VIRTIO_QUEUE_MAX], i, count;
+	int *val, i, count;
 	struct ipu4_virtio_be_priv *priv;
 
 	if (unlikely(bitmap_empty(ioreqs_map, VHM_REQUEST_MAX)))
 		return -EINVAL;
-
-	pr_debug("%s: IPU VBK handle kick!\n", __func__);
 
 	priv = ipu_vbk_hash_find(client_id);
 	if (priv == NULL) {
@@ -236,13 +234,19 @@ static int handle_kick(int client_id, long unsigned *ioreqs_map)
 		return -EINVAL;
 	}
 
-	count = virtio_vqs_index_get(&priv->dev, ioreqs_map, val, IPU_VIRTIO_QUEUE_MAX);
+	val = kzalloc(priv->dev._ctx.max_vcpu * sizeof(int),
+										GFP_KERNEL);
+
+	count = virtio_vqs_index_get(&priv->dev, ioreqs_map, val,
+								priv->dev._ctx.max_vcpu);
 
 	for (i = 0; i < count; i++) {
 		if (val[i] >= 0) {
 			handle_vq_kick(client_id, val[i]);
 		}
 	}
+
+	kfree(val);
 
 	return 0;
 }
