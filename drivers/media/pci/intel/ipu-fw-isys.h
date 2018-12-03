@@ -596,6 +596,8 @@ struct ipu_fw_isys_output_pin_info_abi {
 	u8 ft;
 	u8 reserved;
 	u8 reserve_compression;
+	u8 snoopable;
+	u32 sensor_type;
 };
 
 /**
