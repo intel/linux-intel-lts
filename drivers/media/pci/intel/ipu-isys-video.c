@@ -991,7 +991,6 @@ void ipu_isys_prepare_firmware_stream_cfg_default(
 {
 	struct ipu_isys_pipeline *ip =
 	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
-
 	struct ipu_isys_queue *aq = &av->aq;
 	struct ipu_fw_isys_output_pin_info_abi *pin_info;
 #if !defined(CONFIG_VIDEO_INTEL_IPU4) && !defined(CONFIG_VIDEO_INTEL_IPU4P)

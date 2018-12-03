@@ -156,6 +156,10 @@ ipu_fw_isys_dump_stream_cfg(struct device *dev,
 			stream_cfg->output_pins[i].send_irq);
 		dev_dbg(dev, "Reserve compression %d\n",
 			stream_cfg->output_pins[i].reserve_compression);
+		dev_dbg(dev, "snoopable %d\n",
+			stream_cfg->output_pins[i].snoopable);
+		dev_dbg(dev, "sensor type %d\n",
+			stream_cfg->output_pins[i].sensor_type);
 		dev_dbg(dev, "----------------\n");
 	}
 
