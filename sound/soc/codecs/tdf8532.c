@@ -21,7 +21,10 @@
 #include <sound/soc.h>
 #include <sound/tlv.h>
 #include <sound/pcm_params.h>
+#include <linux/mutex.h>
 #include "tdf8532.h"
+
+static DEFINE_MUTEX(tdf8532_lock);
 
 static int __tdf8532_build_pkt(struct tdf8532_priv *dev_data,
 				va_list valist,	u8 *payload)
@@ -212,24 +215,28 @@ static int tdf8532_start_play(struct tdf8532_priv *tdf8532)
 {
 	int ret;
 
+	mutex_lock(&tdf8532_lock);
 	ret = tdf8532_amp_write(tdf8532, SET_CLK_STATE, CLK_CONNECT);
 	if (ret < 0)
-		return ret;
+		goto out;
 
 	ret = tdf8532_amp_write(tdf8532, SET_CHNL_ENABLE,
 			CHNL_MASK(tdf8532->channels));
+	if (ret < 0)
+		goto out;
 
-	if (ret >= 0)
-		ret = tdf8532_wait_state(tdf8532, STATE_PLAY, ACK_TIMEOUT);
+	ret = tdf8532_wait_state(tdf8532, STATE_PLAY, ACK_TIMEOUT);
 
+out:
+	mutex_unlock(&tdf8532_lock);
 	return ret;
 }
-
 
 static int tdf8532_stop_play(struct tdf8532_priv *tdf8532)
 {
 	int ret;
 
+	mutex_lock(&tdf8532_lock);
 	ret = tdf8532_amp_write(tdf8532, SET_CHNL_DISABLE,
 			CHNL_MASK(tdf8532->channels));
 	if (ret < 0)
@@ -246,9 +253,9 @@ static int tdf8532_stop_play(struct tdf8532_priv *tdf8532)
 	ret = tdf8532_wait_state(tdf8532, STATE_IDLE, ACK_TIMEOUT);
 
 out:
+	mutex_unlock(&tdf8532_lock);
 	return ret;
 }
-
 
 static int tdf8532_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 		struct snd_soc_dai *dai)
@@ -257,7 +264,8 @@ static int tdf8532_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 	struct snd_soc_component *component = dai->component;
 	struct tdf8532_priv *tdf8532 = snd_soc_component_get_drvdata(component);
 
-	dev_dbg(component->dev, "%s: cmd = %d\n", __func__, cmd);
+	dev_dbg(component->dev, "%s: cmd: %d, stream dir: %d\n", __func__, cmd,
+		substream->stream);
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
@@ -281,15 +289,15 @@ static int tdf8532_mute(struct snd_soc_dai *dai, int mute)
 {
 	struct snd_soc_component *component = dai->component;
 	struct tdf8532_priv *tdf8532 = snd_soc_component_get_drvdata(component);
+	int ret;
 
-	dev_dbg(component->dev, "%s\n", __func__);
+	dev_dbg(component->dev, "%s: mute: %d\n", __func__, mute);
 
-	if (mute)
-		return tdf8532_amp_write(tdf8532, SET_CHNL_MUTE,
+	mutex_lock(&tdf8532_lock);
+	ret = tdf8532_amp_write(tdf8532, mute ? SET_CHNL_MUTE : SET_CHNL_UNMUTE,
 				CHNL_MASK(CHNL_MAX));
-	else
-		return tdf8532_amp_write(tdf8532, SET_CHNL_UNMUTE,
-				CHNL_MASK(CHNL_MAX));
+	mutex_unlock(&tdf8532_lock);
+	return ret;
 }
 
 static const struct snd_soc_dai_ops tdf8532_dai_ops = {
