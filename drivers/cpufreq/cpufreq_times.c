@@ -348,6 +348,62 @@ void cpufreq_acct_update_power(struct task_struct *p, u64 cputime)
 	spin_unlock_irqrestore(&uid_lock, flags);
 }
 
+#define CPU_FREQ_STEPS 100000
+// Suppose all cores have same freq count
+static int all_freq_count;
+int cpufreq_table_get_closed_index(int cpu, unsigned int freq)
+{
+	int i;
+	unsigned int rounded_freq;
+
+	rounded_freq = freq + CPU_FREQ_STEPS / 2;
+	for (i = 0; i < all_freq_count; i++) {
+		if ((rounded_freq - all_freqs[cpu]->freq_table[i]) / CPU_FREQ_STEPS == 0)
+			return i;
+	}
+	return -1;
+}
+
+void cpufreq_times_create_policy_no_freq_table(struct cpufreq_policy *policy)
+{
+	int cpu, index, i;
+	unsigned int count = 0;
+	struct cpu_freqs *freqs;
+	void *tmp;
+
+	if (all_freqs[policy->cpu])
+		return;
+
+	count = (policy->max - policy->min) / CPU_FREQ_STEPS + 1;
+	if ((policy->max - policy->min) % CPU_FREQ_STEPS)
+		count++;
+
+	if (count > 100)
+		return;
+
+	tmp =  kzalloc(sizeof(*freqs) + sizeof(freqs->freq_table[0]) * count,
+		       GFP_KERNEL);
+	if (!tmp)
+		return;
+
+	freqs = tmp;
+	freqs->max_state = count;
+	all_freq_count = count;
+
+	freqs->freq_table[0] = policy->min;
+	freqs->freq_table[count - 1] = policy->max;
+	for (i = 1; i < count - 1; i++)
+		freqs->freq_table[i] = policy->min + i * CPU_FREQ_STEPS;
+	freqs->offset = next_offset;
+	WRITE_ONCE(next_offset, freqs->offset + count);
+	for_each_cpu(cpu, policy->related_cpus)
+		all_freqs[cpu] = freqs;
+
+	index = cpufreq_table_get_closed_index(policy->cpu, policy->cur);
+	if (index >= 0)
+		WRITE_ONCE(freqs->last_index, index);
+}
+
 void cpufreq_times_create_policy(struct cpufreq_policy *policy)
 {
 	int cpu, index;
@@ -360,8 +416,10 @@ void cpufreq_times_create_policy(struct cpufreq_policy *policy)
 		return;
 
 	table = policy->freq_table;
-	if (!table)
+	if (!table) {
+		cpufreq_times_create_policy_no_freq_table(policy);
 		return;
+	}
 
 	cpufreq_for_each_entry(pos, table)
 		count++;
@@ -421,7 +479,11 @@ void cpufreq_times_record_transition(struct cpufreq_freqs *freq)
 	if (!policy)
 		return;
 
-	index = cpufreq_frequency_table_get_index(policy, freq->new);
+	if (policy->freq_table)
+		index = cpufreq_frequency_table_get_index(policy, freq->new);
+	else
+		index = cpufreq_table_get_closed_index(policy->cpu, freq->new);
+
 	if (index >= 0)
 		WRITE_ONCE(freqs->last_index, index);
 

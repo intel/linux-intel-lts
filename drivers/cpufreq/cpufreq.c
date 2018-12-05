@@ -357,6 +357,7 @@ static void cpufreq_notify_transition(struct cpufreq_policy *policy,
 		}
 
 		cpufreq_stats_record_transition(policy, freqs->new);
+		freqs->cpu = policy->cpu;
 		cpufreq_times_record_transition(freqs);
 		policy->cur = freqs->new;
 	}
