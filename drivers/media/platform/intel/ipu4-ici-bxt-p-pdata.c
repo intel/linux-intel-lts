@@ -24,7 +24,7 @@
 #define ADV7481_CVBS_I2C_ADDRESS	0xe1
 static struct crlmodule_lite_platform_data adv7481_hdmi_pdata_lite = {
 #if (!IS_ENABLED(CONFIG_VIDEO_INTEL_UOS))
-// 	xshutdown GPIO pin unavailable on ACRN UOS
+//	xshutdown GPIO pin unavailable on ACRN UOS
 	.xshutdown = GPIO_BASE + 63,
 #endif
 	.lanes = ADV7481_HDMI_LANES,
@@ -51,7 +51,7 @@ static struct ipu_isys_subdev_info adv7481_hdmi_crl_sd_lite = {
 
 static struct crlmodule_lite_platform_data adv7481_cvbs_pdata_lite = {
 #if (!IS_ENABLED(CONFIG_VIDEO_INTEL_UOS))
-// 	xshutdown GPIO pin unavailable on ACRN UOS
+//	xshutdown GPIO pin unavailable on ACRN UOS
 	.xshutdown = GPIO_BASE + 63,
 #endif
 	.lanes = ADV7481_CVBS_LANES,
@@ -141,7 +141,7 @@ static struct crlmodule_lite_platform_data magna_ti964_pdata = {
 	.xshutdown = GPIO_BASE + 63,
 	.lanes = MAGNA_TI964_MIPI_LANES,
 	.ext_clk = 24000000,
-        .op_sys_clock = (uint64_t []){ 400000000 },
+		.op_sys_clock = (uint64_t []){ 400000000 },
 	.module_name = "MAGNA_TI964",
 };
 static struct ipu_isys_csi2_config magna_ti964_csi2_cfg = {
@@ -154,11 +154,186 @@ static struct ipu_isys_subdev_info magna_ti964_crl_sd = {
 		.board_info = {
 			I2C_BOARD_INFO(CRLMODULE_LITE_NAME, TI964_I2C_ADDRESS),
 			.platform_data = &magna_ti964_pdata,
-               },
+			   },
 		.i2c_adapter_id = 0,
-       }
+	   }
 };
 
+#endif
+
+#if IS_ENABLED(CONFIG_INTEL_IPU4_OV10635)
+#define OV10635_LANES			4
+#define OV10635_I2C_PHY_ADDR	0x60 /* 0x30 for 7bit addr */
+#define OV10635A_I2C_ADDRESS	0x61
+#define OV10635B_I2C_ADDRESS	0x62
+#define OV10635C_I2C_ADDRESS	0x63
+#define OV10635D_I2C_ADDRESS	0x64
+
+static struct crlmodule_lite_platform_data ov10635_pdata = {
+		.lanes = OV10635_LANES,
+		.ext_clk = 24000000,
+		.op_sys_clock = (uint64_t []){ 400000000 },
+		.module_name = "OV10635",
+		.id_string = "0xa6 0x35",
+
+		/*
+		 * The pin number of xshutdown will be determined
+		 * and replaced inside TI964 driver.
+		 * The number here stands for which GPIO to connect with.
+		 * 1 means to connect sensor xshutdown to GPIO1
+		 */
+		.xshutdown = 0,
+};
+#endif
+
+#if IS_ENABLED(CONFIG_VIDEO_TI964_ICI)
+#define TI964_I2C_ADAPTER	2
+#define TI964_I2C_ADAPTER_2	4
+#define TI964_I2C_ADDRESS	0x3d
+#define TI964_LANES		4
+
+static struct ipu_isys_csi2_config ti964_csi2_cfg = {
+	.nlanes = TI964_LANES,
+	.port = 0,
+};
+
+static struct ipu_isys_csi2_config ti964_csi2_cfg_2 = {
+	.nlanes = TI964_LANES,
+	.port = 4,
+};
+static struct ti964_subdev_info ti964_subdevs[] = {
+#ifdef CONFIG_INTEL_IPU4_OV10635
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV10635A_I2C_ADDRESS,
+			.platform_data = &ov10635_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER,
+		.rx_port = 0,
+		.phy_i2c_addr = OV10635_I2C_PHY_ADDR,
+		.suffix = 'a',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV10635B_I2C_ADDRESS,
+			.platform_data = &ov10635_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER,
+		.rx_port = 1,
+		.phy_i2c_addr = OV10635_I2C_PHY_ADDR,
+		.suffix = 'b',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV10635C_I2C_ADDRESS,
+			.platform_data = &ov10635_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER,
+		.rx_port = 2,
+		.phy_i2c_addr = OV10635_I2C_PHY_ADDR,
+		.suffix = 'c',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV10635D_I2C_ADDRESS,
+			.platform_data = &ov10635_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER,
+		.rx_port = 3,
+		.phy_i2c_addr = OV10635_I2C_PHY_ADDR,
+		.suffix = 'd',
+	},
+#endif
+};
+static struct ti964_subdev_info ti964_subdevs_2[] = {
+#ifdef CONFIG_INTEL_IPU4_OV10635
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV10635A_I2C_ADDRESS,
+			.platform_data = &ov10635_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
+		.rx_port = 0,
+		.phy_i2c_addr = OV10635_I2C_PHY_ADDR,
+		.suffix = 'e',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV10635B_I2C_ADDRESS,
+			.platform_data = &ov10635_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
+		.rx_port = 1,
+		.phy_i2c_addr = OV10635_I2C_PHY_ADDR,
+		.suffix = 'f',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV10635C_I2C_ADDRESS,
+			.platform_data = &ov10635_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
+		.rx_port = 2,
+		.phy_i2c_addr = OV10635_I2C_PHY_ADDR,
+		.suffix = 'g',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV10635D_I2C_ADDRESS,
+			.platform_data = &ov10635_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
+		.rx_port = 3,
+		.phy_i2c_addr = OV10635_I2C_PHY_ADDR,
+		.suffix = 'h',
+	},
+#endif
+};
+static struct ti964_pdata ti964_pdata = {
+	.subdev_info = ti964_subdevs,
+	.subdev_num = ARRAY_SIZE(ti964_subdevs),
+	.reset_gpio = GPIO_BASE + 62,
+	.suffix = 'a',
+};
+
+static struct ipu_isys_subdev_info ti964_sd = {
+	.csi2 = &ti964_csi2_cfg,
+	.i2c = {
+		.board_info = {
+			 .type = "ti964",
+			 .addr = TI964_I2C_ADDRESS,
+			 .platform_data = &ti964_pdata,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER,
+	}
+};
+
+static struct ti964_pdata ti964_pdata_2 = {
+	.subdev_info = ti964_subdevs_2,
+	.subdev_num = ARRAY_SIZE(ti964_subdevs_2),
+	.reset_gpio = GPIO_BASE + 69,
+	.suffix = 'b',
+};
+
+static struct ipu_isys_subdev_info ti964_sd_2 = {
+	.csi2 = &ti964_csi2_cfg_2,
+	.i2c = {
+		.board_info = {
+			 .type = "ti964",
+			 .addr = TI964_I2C_ADDRESS,
+			 .platform_data = &ti964_pdata_2,
+		},
+		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
+	}
+};
 #endif
 
 /*
@@ -184,8 +359,12 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&adv7481_eval_crl_sd_lite,
 		&adv7481b_eval_crl_sd_lite,
 #endif
+#ifdef CONFIG_VIDEO_TI964_ICI
+		&ti964_sd,
+		&ti964_sd_2,
+#endif
 #ifdef CONFIG_INTEL_IPU4_MAGNA_TI964
-               &magna_ti964_crl_sd,
+			   &magna_ti964_crl_sd,
 #endif
 		NULL,
 	},

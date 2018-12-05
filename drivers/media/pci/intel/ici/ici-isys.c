@@ -121,7 +121,7 @@ static int isys_determine_legacy_csi_lane_configuration(struct ici_isys *isys)
 			if (!isys->ici_csi2[j].nlanes)
 				continue;
 			if (csi_lanes_to_cfg[i].port_lanes[j] !=
-			    isys->ici_csi2[j].nlanes)
+				isys->ici_csi2[j].nlanes)
 				break;
 		}
 
@@ -162,7 +162,7 @@ static int isys_determine_csi_combo_lane_configuration(struct ici_isys *isys)
 			if (!isys->ici_csi2[j + IPU_ISYS_MAX_CSI2_LEGACY_PORTS].nlanes)
 				continue;
 			if (csi_lanes_to_cfg[i].port_lanes[j] !=
-			    isys->ici_csi2[j + IPU_ISYS_MAX_CSI2_LEGACY_PORTS].nlanes)
+				isys->ici_csi2[j + IPU_ISYS_MAX_CSI2_LEGACY_PORTS].nlanes)
 				break;
 		}
 
@@ -197,7 +197,7 @@ static int isys_i2c_test(struct device *dev, void *priv)
 		return 0;
 
 	if (i2c_adapter_id(client->adapter) != test->bus_nr
-	    || client->addr != test->addr)
+		|| client->addr != test->addr)
 		return 0;
 
 	test->client = client;
@@ -258,6 +258,7 @@ static int ext_device_setup_node(void* ipu_data,
 	struct ici_isys *isys = ipu_data;
 	sd->node.sd = sd;
 	sd->node.external = true;
+
 	rval = ici_isys_pipeline_node_init(
 		isys, &sd->node, name, sd->num_pads, sd->pads);
 	if (rval)
@@ -286,26 +287,24 @@ static int isys_complete_ext_device_registration(
 		return rval;
 	}
 	if (csi2) {
-        for (i = 0; i < NR_OF_CSI2_VC; i++) {
-            rval = node_pad_create_link(&sd->node, sd->src_pad,
-                    &isys->ici_csi2[csi2->port].asd[i].node,
-                    CSI2_ICI_PAD_SINK, 0);
-            if (rval) {
-                dev_warn(&isys->adev->dev,
-                        "can't create link from external node\n");
-                return rval;
-            }
-
-            isys->ici_csi2[csi2->port].nlanes = csi2->nlanes;
-            isys->ici_csi2[csi2->port].ext_sd = sd;
-        }
-    }
+		for (i = 0; i < NR_OF_CSI2_VC; i++) {
+			rval = sd_register.create_link(&sd->node, sd->src_pad,
+				&isys->ici_csi2[csi2->port].asd[i].node,
+				CSI2_ICI_PAD_SINK, 0);
+			if (rval) {
+				dev_warn(&isys->adev->dev,
+					"can't create link from external node\n");
+			}
+			isys->ici_csi2[csi2->port].nlanes = csi2->nlanes;
+			isys->ici_csi2[csi2->port].ext_sd = sd;
+		}
+	}
 	return 0;
 }
 
 static int isys_register_ext_subdev(struct ici_isys *isys,
-				    struct ipu_isys_subdev_info *sd_info,
-				    bool acpi_only)
+					struct ipu_isys_subdev_info *sd_info,
+					bool acpi_only)
 {
 	struct i2c_adapter *adapter =
 		i2c_get_adapter(sd_info->i2c.i2c_adapter_id);
@@ -326,7 +325,7 @@ static int isys_register_ext_subdev(struct ici_isys *isys,
 		dev_info(&isys->adev->dev, "sensor device on CSI port: %d\n",
 			sd_info->csi2->port);
 		if (sd_info->csi2->port >= IPU_ISYS_MAX_CSI2_PORTS ||
-		    !isys->ici_csi2[sd_info->csi2->port].isys) {
+			!isys->ici_csi2[sd_info->csi2->port].isys) {
 			dev_warn(&isys->adev->dev, "invalid csi2 port %u\n",
 				 sd_info->csi2->port);
 			rval = -EINVAL;
@@ -387,7 +386,6 @@ static int isys_register_ext_subdev(struct ici_isys *isys,
 		rval = -EINVAL;
 		goto skip_put_adapter;
 	}
-
 	return isys_complete_ext_device_registration(isys, sd, sd_info->csi2);
 
 skip_put_adapter:
@@ -415,11 +413,11 @@ static int isys_acpi_add_device(struct device *dev, void *priv,
 		return -ENODEV;
 
 	/* Lock the module so we can safely get the v4l2_subdev pointer */
-        if (!try_module_get(client->dev.driver->owner))
+		if (!try_module_get(client->dev.driver->owner))
 		return -ENODEV;
 
 	sd = i2c_get_clientdata(client);
-        module_put(client->dev.driver->owner);
+		module_put(client->dev.driver->owner);
 	if (!sd) {
 		dev_warn(&isys->adev->dev, "can't create new i2c subdev\n");
 		return -ENODEV;
@@ -449,7 +447,7 @@ static void isys_register_ext_subdevs(struct ici_isys *isys)
 	/* Handle real ACPI stuff */
 	request_module("ipu4-acpi");
 	ipu_get_acpi_devices(isys, &isys->adev->dev,
-				    isys_acpi_add_device);
+					isys_acpi_add_device);
 }
 
 static void isys_unregister_subdevices(struct ici_isys *isys)
@@ -460,7 +458,7 @@ static void isys_unregister_subdevices(struct ici_isys *isys)
 		&isys->pdata->ipdata->csi2;
 	unsigned int i;
 
-    for (i = 0; i < NR_OF_CSI2_BE_SOC_STREAMS; i++) {
+	for (i = 0; i < NR_OF_CSI2_BE_SOC_STREAMS; i++) {
 		ici_isys_csi2_be_cleanup(&isys->ici_csi2_be[i]);
 	}
 
@@ -513,19 +511,19 @@ static int isys_register_subdevices(struct ici_isys *isys)
 		}
 	}
 
-    for (i = 0; i < csi2->nports; i++) {
-        for (j = 0; j < NR_OF_CSI2_VC; j++ ) {
-            rval = node_pad_create_link(
-                    &isys->ici_csi2[i].asd[j].node, CSI2_ICI_PAD_SOURCE,
-                    &isys->ici_csi2_be[ICI_BE_RAW].asd.node,
-                    CSI2_BE_ICI_PAD_SINK, 0);
-            if (rval) {
-                dev_info(&isys->adev->dev,
-                        "can't create link between csi2 and csi2_be\n");
-                goto fail;
-            }
+	for (i = 0; i < csi2->nports; i++) {
+		for (j = 0; j < NR_OF_CSI2_VC; j++) {
+			rval = node_pad_create_link(
+					&isys->ici_csi2[i].asd[j].node, CSI2_ICI_PAD_SOURCE,
+					&isys->ici_csi2_be[ICI_BE_RAW].asd.node,
+					CSI2_BE_ICI_PAD_SINK, 0);
+			if (rval) {
+				dev_info(&isys->adev->dev,
+						"can't create link between csi2 and csi2_be\n");
+				goto fail;
+			}
 
-            for (k = 1; k < NR_OF_CSI2_BE_SOC_STREAMS; k++ ) {
+			for (k = 1; k < NR_OF_CSI2_BE_SOC_STREAMS; k++) {
 				rval = node_pad_create_link(
 					&isys->ici_csi2[i].asd[j].node, CSI2_ICI_PAD_SOURCE,
 					&isys->ici_csi2_be[k].asd.node,
@@ -535,7 +533,7 @@ static int isys_register_subdevices(struct ici_isys *isys)
 						"can't create link between csi2 and csi2_be soc\n");
 					goto fail;
 				}
-       		 	}
+				}
 		}
 	}
 
@@ -550,18 +548,18 @@ static int isys_register_subdevices(struct ici_isys *isys)
 			goto fail;
 		}
 
-        for (j = 1; j < NR_OF_CSI2_BE_SOC_STREAMS; j++) {
-		    rval = node_pad_create_link(
-			    &isys->ici_tpg[i].asd.node, TPG_PAD_SOURCE,
-			    &isys->ici_csi2_be[j].asd.node,
-			    CSI2_BE_ICI_PAD_SINK, 0);
-		    if (rval) {
-			    dev_info(&isys->adev->dev,
-			    	"can't create link between tpg and csi2_be soc\n");
-			    goto fail;
-		    }
-        }
-    }
+		for (j = 1; j < NR_OF_CSI2_BE_SOC_STREAMS; j++) {
+			rval = node_pad_create_link(
+				&isys->ici_tpg[i].asd.node, TPG_PAD_SOURCE,
+				&isys->ici_csi2_be[j].asd.node,
+				CSI2_BE_ICI_PAD_SINK, 0);
+			if (rval) {
+				dev_info(&isys->adev->dev,
+					"can't create link between tpg and csi2_be soc\n");
+				goto fail;
+			}
+		}
+	}
 
 	return 0;
 
@@ -581,7 +579,7 @@ static int isys_register_devices(struct ici_isys *isys)
 		dev_info(&isys->pipeline_dev.dev, "can't register pipeline device\n");
 		return rval;
 	}
-
+	dev_info(&isys->pipeline_dev.dev, "@%s\n", __func__);
 	rval = isys_register_subdevices(isys);
 	if (rval)
 		goto out_pipeline_device_unregister;
@@ -601,8 +599,8 @@ static int isys_register_devices(struct ici_isys *isys)
 
 #ifndef CONFIG_PM
 	ipu_buttress_csi_port_config(isys->adev->isp,
-					    isys->legacy_port_cfg,
-					    isys->combo_port_cfg);
+						isys->legacy_port_cfg,
+						isys->combo_port_cfg);
 #endif
 #endif
 	return 0;
@@ -632,11 +630,11 @@ static void isys_setup_hw(struct ici_isys *isys)
 
 	/* Enable irqs for all MIPI busses */
 	irqs = IPU_ISYS_UNISPART_IRQ_CSI2(0) |
-	       IPU_ISYS_UNISPART_IRQ_CSI2(1) |
-	       IPU_ISYS_UNISPART_IRQ_CSI2(2) |
-	       IPU_ISYS_UNISPART_IRQ_CSI2(3) |
-	       IPU_ISYS_UNISPART_IRQ_CSI2(4) |
-	       IPU_ISYS_UNISPART_IRQ_CSI2(5);
+		   IPU_ISYS_UNISPART_IRQ_CSI2(1) |
+		   IPU_ISYS_UNISPART_IRQ_CSI2(2) |
+		   IPU_ISYS_UNISPART_IRQ_CSI2(3) |
+		   IPU_ISYS_UNISPART_IRQ_CSI2(4) |
+		   IPU_ISYS_UNISPART_IRQ_CSI2(5);
 
 	irqs |= IPU_ISYS_UNISPART_IRQ_SW;
 
@@ -652,7 +650,7 @@ static void isys_setup_hw(struct ici_isys *isys)
 	/* Write CDC FIFO threshold values for isys */
 	for (i = 0; i < isys->pdata->ipdata->hw_variant.cdc_fifos; i++)
 		writel(isys->pdata->ipdata->hw_variant.cdc_fifo_threshold[i],
-		       base + IPU_REG_ISYS_CDC_THRESHOLD(i));
+			   base + IPU_REG_ISYS_CDC_THRESHOLD(i));
 }
 
 #ifdef CONFIG_PM
@@ -674,8 +672,8 @@ static int isys_runtime_pm_resume(struct device *dev)
 	pm_qos_update_request(&isys->pm_qos, ISYS_PM_QOS_VALUE);
 #if 0
 	ipu_buttress_csi_port_config(isp,
-					    isys->legacy_port_cfg,
-					    isys->combo_port_cfg);
+						isys->legacy_port_cfg,
+						isys->combo_port_cfg);
 #endif
 	ret = ipu_buttress_start_tsc_sync(isp);
 	if (ret)
@@ -762,8 +760,8 @@ static void isys_remove(struct ipu_bus_device *adev)
 
 	if (!isp->secure_mode) {
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
-					    isys->pkg_dir_dma_addr,
-					    isys->pkg_dir_size);
+						isys->pkg_dir_dma_addr,
+						isys->pkg_dir_size);
 		ipu_buttress_unmap_fw_image(adev, &isys->fw_sgt);
 		release_firmware(isys->fw);
 	}
@@ -836,50 +834,50 @@ err:
 
 static int alloc_fw_msg_buffers(struct ici_isys *isys, int amount)
 {
-        dma_addr_t dma_addr;
-        struct isys_fw_msgs *addr;
-        unsigned int i;
-        unsigned long flags;
+		dma_addr_t dma_addr;
+		struct isys_fw_msgs *addr;
+		unsigned int i;
+		unsigned long flags;
 
-        for (i = 0; i < amount; i++) {
-                addr = dma_alloc_attrs(&isys->adev->dev,
-                                       sizeof(struct isys_fw_msgs),
-                                       &dma_addr, GFP_KERNEL,
+		for (i = 0; i < amount; i++) {
+				addr = dma_alloc_attrs(&isys->adev->dev,
+									   sizeof(struct isys_fw_msgs),
+									   &dma_addr, GFP_KERNEL,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-                                       NULL
+									   NULL
 #else
-                                       0
+									   0
 #endif
-                    );
-                if (!addr)
-                        break;
-                addr->dma_addr = dma_addr;
+					);
+				if (!addr)
+						break;
+				addr->dma_addr = dma_addr;
 
-                spin_lock_irqsave(&isys->listlock, flags);
-                list_add(&addr->head, &isys->framebuflist);
-                spin_unlock_irqrestore(&isys->listlock, flags);
-        }
-        if (i == amount)
-                return 0;
-        spin_lock_irqsave(&isys->listlock, flags);
-        while (!list_empty(&isys->framebuflist)) {
-                addr = list_first_entry(&isys->framebuflist,
-                                        struct isys_fw_msgs, head);
-                list_del(&addr->head);
-                spin_unlock_irqrestore(&isys->listlock, flags);
-                dma_free_attrs(&isys->adev->dev,
-                               sizeof(struct isys_fw_msgs),
-                               addr, addr->dma_addr,
+				spin_lock_irqsave(&isys->listlock, flags);
+				list_add(&addr->head, &isys->framebuflist);
+				spin_unlock_irqrestore(&isys->listlock, flags);
+		}
+		if (i == amount)
+				return 0;
+		spin_lock_irqsave(&isys->listlock, flags);
+		while (!list_empty(&isys->framebuflist)) {
+				addr = list_first_entry(&isys->framebuflist,
+										struct isys_fw_msgs, head);
+				list_del(&addr->head);
+				spin_unlock_irqrestore(&isys->listlock, flags);
+				dma_free_attrs(&isys->adev->dev,
+							   sizeof(struct isys_fw_msgs),
+							   addr, addr->dma_addr,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-                               NULL
+							   NULL
 #else
-                               0
+							   0
 #endif
-                    );
-                spin_lock_irqsave(&isys->listlock, flags);
-        }
-        spin_unlock_irqrestore(&isys->listlock, flags);
-        return -ENOMEM;
+					);
+				spin_lock_irqsave(&isys->listlock, flags);
+		}
+		spin_unlock_irqrestore(&isys->listlock, flags);
+		return -ENOMEM;
 }
 
 static int isys_probe(struct ipu_bus_device *adev)
@@ -936,9 +934,9 @@ static int isys_probe(struct ipu_bus_device *adev)
 	mutex_init(&isys->stream_mutex);
 	mutex_init(&isys->lib_mutex);
 
-        spin_lock_init(&isys->listlock);
-        INIT_LIST_HEAD(&isys->framebuflist);
-        INIT_LIST_HEAD(&isys->framebuflist_fw);
+		spin_lock_init(&isys->listlock);
+		INIT_LIST_HEAD(&isys->framebuflist);
+		INIT_LIST_HEAD(&isys->framebuflist_fw);
 
 	dev_info(&adev->dev, "isys probe %p %p\n", adev, &adev->dev);
 	ipu_bus_set_drvdata(adev, isys);
@@ -973,12 +971,12 @@ static int isys_probe(struct ipu_bus_device *adev)
 	intel_ipu4_isys_init_debugfs(isys);
 
 	ipu_trace_init(adev->isp, isys->pdata->base, &adev->dev,
-			      isys_trace_blocks);
+				  isys_trace_blocks);
 
 	pm_qos_add_request(&isys->pm_qos, PM_QOS_CPU_DMA_LATENCY,
 			PM_QOS_DEFAULT_VALUE);
 
-        alloc_fw_msg_buffers(isys, 20);
+		alloc_fw_msg_buffers(isys, 20);
 
 	pm_runtime_allow(&adev->dev);
 	pm_runtime_enable(&adev->dev);
@@ -993,8 +991,8 @@ static int isys_probe(struct ipu_bus_device *adev)
 out_remove_pkg_dir_shared_buffer:
 	if (!isp->secure_mode)
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
-					    isys->pkg_dir_dma_addr,
-					    isys->pkg_dir_size);
+						isys->pkg_dir_dma_addr,
+						isys->pkg_dir_size);
 remove_shared_buffer:
 	if (!isp->secure_mode)
 		ipu_buttress_unmap_fw_image(
@@ -1016,10 +1014,10 @@ release_firmware:
 		isys->short_packet_trace_buffer,
 		isys->short_packet_trace_buffer_dma_addr, &attrs);
 #else
-        dma_free_attrs(&adev->dev,
-                IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE,
-                isys->short_packet_trace_buffer,
-                isys->short_packet_trace_buffer_dma_addr, attrs);
+		dma_free_attrs(&adev->dev,
+				IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE,
+				isys->short_packet_trace_buffer,
+				isys->short_packet_trace_buffer_dma_addr, attrs);
 #endif
 	return rval;
 }
@@ -1031,20 +1029,20 @@ struct fwmsg {
 };
 
 static const struct fwmsg fw_msg[] = {
-	{ IA_CSS_ISYS_RESP_TYPE_STREAM_OPEN_DONE,    "STREAM_OPEN_DONE", 0 },
-	{ IA_CSS_ISYS_RESP_TYPE_STREAM_CLOSE_ACK,    "STREAM_CLOSE_ACK", 0 },
-	{ IA_CSS_ISYS_RESP_TYPE_STREAM_START_ACK,    "STREAM_START_ACK", 0 },
+	{ IA_CSS_ISYS_RESP_TYPE_STREAM_OPEN_DONE,	 "STREAM_OPEN_DONE", 0 },
+	{ IA_CSS_ISYS_RESP_TYPE_STREAM_CLOSE_ACK,	 "STREAM_CLOSE_ACK", 0 },
+	{ IA_CSS_ISYS_RESP_TYPE_STREAM_START_ACK,	 "STREAM_START_ACK", 0 },
 	{ IA_CSS_ISYS_RESP_TYPE_STREAM_START_AND_CAPTURE_ACK,
 	  "STREAM_START_AND_CAPTURE_ACK", 0 },
-	{ IA_CSS_ISYS_RESP_TYPE_STREAM_STOP_ACK,     "STREAM_STOP_ACK", 0 },
-	{ IA_CSS_ISYS_RESP_TYPE_STREAM_FLUSH_ACK,    "STREAM_FLUSH_ACK", 0 },
-	{ IA_CSS_ISYS_RESP_TYPE_PIN_DATA_READY,      "PIN_DATA_READY", 1 },
+	{ IA_CSS_ISYS_RESP_TYPE_STREAM_STOP_ACK,	 "STREAM_STOP_ACK", 0 },
+	{ IA_CSS_ISYS_RESP_TYPE_STREAM_FLUSH_ACK,	 "STREAM_FLUSH_ACK", 0 },
+	{ IA_CSS_ISYS_RESP_TYPE_PIN_DATA_READY,		 "PIN_DATA_READY", 1 },
 	{ IA_CSS_ISYS_RESP_TYPE_STREAM_CAPTURE_ACK,  "STREAM_CAPTURE_ACK", 0 },
 	{ IA_CSS_ISYS_RESP_TYPE_STREAM_START_AND_CAPTURE_DONE,
 	  "STREAM_START_AND_CAPTURE_DONE", 1 },
 	{ IA_CSS_ISYS_RESP_TYPE_STREAM_CAPTURE_DONE, "STREAM_CAPTURE_DONE", 1 },
-	{ IA_CSS_ISYS_RESP_TYPE_FRAME_SOF,           "FRAME_SOF", 1 },
-	{ IA_CSS_ISYS_RESP_TYPE_FRAME_EOF,           "FRAME_EOF", 1 },
+	{ IA_CSS_ISYS_RESP_TYPE_FRAME_SOF,			 "FRAME_SOF", 1 },
+	{ IA_CSS_ISYS_RESP_TYPE_FRAME_EOF,			 "FRAME_EOF", 1 },
 	{ -1, "UNKNOWN MESSAGE", 0 },
 };
 
@@ -1107,7 +1105,7 @@ static int isys_isr_one_ici(struct ipu_bus_device *adev)
 		return 0;
 
 	rval = ipu_lib_call_notrace_unlocked(stream_handle_response,
-						    isys, &resp);
+							isys, &resp);
 	if (rval < 0)
 		return rval;
 
@@ -1177,7 +1175,7 @@ static int isys_isr_one_ici(struct ipu_bus_device *adev)
 		break;
 	case IA_CSS_ISYS_RESP_TYPE_PIN_DATA_READY:
 		if (resp.pin_id <  IPU_ISYS_OUTPUT_PINS &&
-		    pipe->output_pins[resp.pin_id].pin_ready)
+			pipe->output_pins[resp.pin_id].pin_ready)
 			pipe->output_pins[resp.pin_id].pin_ready(pipe, &resp);
 		else
 			dev_err(&adev->dev,
@@ -1191,7 +1189,7 @@ static int isys_isr_one_ici(struct ipu_bus_device *adev)
 	case IA_CSS_ISYS_RESP_TYPE_STREAM_CAPTURE_DONE:
 
 		if(pipe->interlaced && pipe->short_packet_source ==
-            IPU_ISYS_SHORT_PACKET_FROM_TUNIT) {
+			IPU_ISYS_SHORT_PACKET_FROM_TUNIT) {
 			unsigned int i = pipe->short_packet_trace_index;
 			bool msg_matched = false;
 			unsigned int monitor_id;
@@ -1219,17 +1217,17 @@ static int isys_isr_one_ici(struct ipu_bus_device *adev)
 
 				i = (i + 1) % IPU_ISYS_SHORT_PACKET_TRACE_MSG_NUMBER;
 				if (msg.cmd == TRACE_REG_CMD_TYPE_D64MTS &&
-				    msg.monitor_id == monitor_id &&
-				    msg.fs == 1 &&
-				    msg.port == pipe->csi2->index &&
-				    msg.vc == pipe->vc &&
-				    delta_time_us < IPU_ISYS_SHORT_PACKET_TRACE_MAX_TIMESHIFT) {
-					    pipe->cur_field = (msg.sequence % 2) ?
-                            ICI_FIELD_TOP : ICI_FIELD_BOTTOM;
-					    pipe->short_packet_trace_index = i;
-					    msg_matched = true;
-					    dev_dbg(&isys->adev->dev,"Interlaced field ready. field = %d\n",
-                            pipe->cur_field);
+					msg.monitor_id == monitor_id &&
+					msg.fs == 1 &&
+					msg.port == pipe->csi2->index &&
+					msg.vc == pipe->vc &&
+					delta_time_us < IPU_ISYS_SHORT_PACKET_TRACE_MAX_TIMESHIFT) {
+						pipe->cur_field = (msg.sequence % 2) ?
+							ICI_FIELD_TOP : ICI_FIELD_BOTTOM;
+						pipe->short_packet_trace_index = i;
+						msg_matched = true;
+						dev_dbg(&isys->adev->dev, "Interlaced field ready. field = %d\n",
+							pipe->cur_field);
 					break;
 				}
 			} while (i != pipe->short_packet_trace_index);
@@ -1269,10 +1267,10 @@ static irqreturn_t isys_isr(struct ipu_bus_device *adev)
 	}
 
 	status = readl(isys->pdata->base +
-		       IPU_REG_ISYS_UNISPART_IRQ_STATUS);
+			   IPU_REG_ISYS_UNISPART_IRQ_STATUS);
 	do {
 		writel(status, isys->pdata->base +
-		       IPU_REG_ISYS_UNISPART_IRQ_CLEAR);
+			   IPU_REG_ISYS_UNISPART_IRQ_CLEAR);
 
 		if (isys->isr_csi2_bits & status) {
 			unsigned int i;
@@ -1281,7 +1279,7 @@ static irqreturn_t isys_isr(struct ipu_bus_device *adev)
 				if (status &
 				 IPU_ISYS_UNISPART_IRQ_CSI2(i)){
 
-				    ici_isys_csi2_isr(
+					ici_isys_csi2_isr(
 						&isys->ici_csi2[i]);
 				}
 			}
@@ -1300,7 +1298,7 @@ static irqreturn_t isys_isr(struct ipu_bus_device *adev)
 		 * events.
 		 */
 		if (status & IPU_ISYS_UNISPART_IRQ_SW &&
-		    !isys_isr_one_ici(adev))
+			!isys_isr_one_ici(adev))
 			status = IPU_ISYS_UNISPART_IRQ_SW;
 		else
 			status = 0;

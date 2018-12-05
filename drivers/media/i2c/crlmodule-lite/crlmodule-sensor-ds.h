@@ -426,6 +426,7 @@ struct crl_power_seq_entity {
 	unsigned int undo_val; /* Undo value if any previous step failed */
 	unsigned int delay; /* delay in micro seconds */
 	struct regulator *regulator_priv; /* R/W */
+	struct gpio_desc *gpiod_priv;
 };
 
 struct crl_nvm_blob {
