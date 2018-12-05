@@ -1097,4 +1097,8 @@ endif
 
 endmenu
 
+if VIDEO_INTEL_ICI
+	source "drivers/media/i2c/ici/Kconfig"
+endif
+
 endif
