@@ -34,6 +34,8 @@ static int virt_stream_devs_registered;
 static int stream_dev_init;
 
 static struct ipu4_virtio_ctx *g_fe_priv;
+static struct mutex pipeline_fop_mutex;
+static bool pipeline_open;
 
 #ifdef CONFIG_COMPAT
 struct timeval32 {
@@ -977,9 +979,16 @@ static int virt_pipeline_fop_open(struct inode *inode, struct file *file)
 
 	file->private_data = dev;
 
+	mutex_lock(&pipeline_fop_mutex);
+
+	if(pipeline_open)
+		goto exit;
+
 	req = ipu4_virtio_fe_req_queue_get();
-	if (!req)
-		return -ENOMEM;
+	if (!req) {
+		rval = -ENOMEM;
+		goto exit;
+	}
 
 	op[0] = dev->minor;
 	op[1] = 0;
@@ -991,9 +1000,16 @@ static int virt_pipeline_fop_open(struct inode *inode, struct file *file)
 	if (rval) {
 		pr_err("Failed to open virtual device\n");
 		ipu4_virtio_fe_req_queue_put(req);
-		return rval;
+		goto exit;
 	}
+
+	pipeline_open = true;
+
 	ipu4_virtio_fe_req_queue_put(req);
+
+exit:
+	mutex_unlock(&pipeline_fop_mutex);
+
 	return rval;
 }
 
@@ -1008,9 +1024,16 @@ static int virt_pipeline_fop_release(struct inode *inode, struct file *file)
 
 	put_device(&pipe_dev->dev);
 
+	mutex_lock(&pipeline_fop_mutex);
+
+	if(!pipeline_open)
+		goto exit;
+
 	req = ipu4_virtio_fe_req_queue_get();
-	if (!req)
-		return -ENOMEM;
+	if (!req) {
+		rval = -ENOMEM;
+		goto exit;
+	}
 
 	op[0] = pipe_dev->minor;
 	op[1] = 0;
@@ -1021,9 +1044,15 @@ static int virt_pipeline_fop_release(struct inode *inode, struct file *file)
 	if (rval) {
 		pr_err("Failed to close virtual device\n");
 		ipu4_virtio_fe_req_queue_put(req);
-		return rval;
+		goto exit;
 	}
+
+	pipeline_open = false;
+
 	ipu4_virtio_fe_req_queue_put(req);
+
+exit:
+	mutex_unlock(&pipeline_fop_mutex);
 
 	return rval;
 }
@@ -1220,6 +1249,8 @@ static int virt_ici_pipeline_init(void)
 	strlcpy(pipeline_dev->name, pipeline_dev->dev.kobj.name, sizeof(pipeline_dev->name));
 	pipeline_dev->minor = MINOR_PIPELINE;
 	mutex_init(&pipeline_dev->mutex);
+	mutex_init(&pipeline_fop_mutex);
+	pipeline_open = false;
 
 	return 0;
 }
