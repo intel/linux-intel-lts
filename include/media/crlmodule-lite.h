@@ -19,7 +19,9 @@ struct crlmodule_lite_platform_data {
 
 	int xshutdown;			/* gpio */
 	char module_name[16]; /* module name from ACPI */
+	const char *id_string;
 	char suffix; /* suffix to identify multi sensors, abcd.. */
+	unsigned int high_framevalid_flags; /* high framevaild flags*/
 };
 
 #endif /* __CRLMODULE_LITE_H  */
