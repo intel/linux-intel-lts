@@ -62,6 +62,15 @@
 #ifndef _VBS_H_
 #define _VBS_H_
 
+#ifdef __KERNEL__
+#include <linux/types.h>
+#else
+#include <stdint.h>
+#endif
+
+#include <linux/atomic.h>
+#include <linux/virtio_ring.h>
+#include <linux/virtio_config.h>
 #include <linux/vbs/vbs_common_if.h>
 #include <linux/vhm/acrn_common.h>
 #include <linux/vhm/acrn_vhm_ioreq.h>
@@ -91,30 +100,6 @@ struct ctx {
 	int max_vcpu;
 	struct vhm_request *req_buf;
 };
-
-struct virtio_desc {			/* AKA vring_desc */
-	uint64_t addr;			/* guest physical address */
-	uint32_t len;			/* length of scatter/gather seg */
-	uint16_t flags;			/* desc flags */
-	uint16_t next;			/* next desc if F_NEXT */
-} __attribute__((packed));
-
-struct virtio_used {			/* AKA vring_used_elem */
-	uint32_t idx;			/* head of used descriptor chain */
-	uint32_t len;			/* length written-to */
-} __attribute__((packed));
-
-struct vring_avail {
-	uint16_t flags;			/* vring_avail flags */
-	uint16_t idx;			/* counts to 65535, then cycles */
-	uint16_t ring[];		/* size N, reported in QNUM value */
-} __attribute__((packed));
-
-struct vring_used {
-	uint16_t flags;			/* vring_used flags */
-	uint16_t idx;			/* counts to 65535, then cycles */
-	struct virtio_used ring[];	/* size N */
-} __attribute__((packed));
 
 /**
  * struct virtio_vq_info - virtqueue data structure
@@ -147,7 +132,7 @@ struct virtio_vq_info {
 	uint16_t save_used;
 
 	/* private: descriptor array */
-	volatile struct virtio_desc *desc;
+	volatile struct vring_desc *desc;
 	/* private: the "avail" ring */
 	volatile struct vring_avail *avail;
 	/* private: the "used" ring */

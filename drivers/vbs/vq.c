@@ -75,7 +75,7 @@ void * paddr_guest2host(struct ctx *ctx, uintptr_t gaddr, size_t len)
  * helper function for vq_getchain():
  * record the i'th "real" descriptor.
  */
-static inline void _vq_record(int i, volatile struct virtio_desc *vd,
+static inline void _vq_record(int i, volatile struct vring_desc *vd,
 			      struct ctx *ctx, struct iovec *iov,
 			      int n_iov, uint16_t *flags)
 {
@@ -140,7 +140,7 @@ int virtio_vq_getchain(struct virtio_vq_info *vq, uint16_t *pidx,
 	struct virtio_dev_info *dev;
 	const char *name;
 
-	volatile struct virtio_desc *vdir, *vindir, *vp;
+	volatile struct vring_desc *vdir, *vindir, *vp;
 
 	dev = vq->dev;
 	name = dev->name;
@@ -193,7 +193,7 @@ int virtio_vq_getchain(struct virtio_vq_info *vq, uint16_t *pidx,
 			_vq_record(i, vdir, ctx, iov, n_iov, flags);
 			i++;
 		} else if ((dev->negotiated_features &
-			    VIRTIO_RING_F_INDIRECT_DESC) == 0) {
+			    (1U << VIRTIO_RING_F_INDIRECT_DESC)) == 0) {
 			pr_err("%s: descriptor has forbidden INDIRECT flag, "
 			       "driver confused?\r\n", name);
 			return -1;
@@ -271,7 +271,7 @@ void virtio_vq_relchain(struct virtio_vq_info *vq, uint16_t idx,
 {
 	uint16_t uidx, mask;
 	volatile struct vring_used *vuh;
-	volatile struct virtio_used *vue;
+	volatile struct vring_used_elem *vue;
 
 	/*
 	 * Notes:
@@ -288,7 +288,7 @@ void virtio_vq_relchain(struct virtio_vq_info *vq, uint16_t idx,
 
 	uidx = vuh->idx;
 	vue = &vuh->ring[uidx++ & mask];
-	vue->idx = idx;
+	vue->id = idx;
 	vue->len = iolen;
 	vuh->idx = uidx;
 }
@@ -329,9 +329,9 @@ void virtio_vq_endchains(struct virtio_vq_info *vq, int used_all_avail)
 	old_idx = vq->save_used;
 	vq->save_used = new_idx = vq->used->idx;
 	if (used_all_avail &&
-	    (dev->negotiated_features & VIRTIO_F_NOTIFY_ON_EMPTY))
+	    (dev->negotiated_features & (1U << VIRTIO_F_NOTIFY_ON_EMPTY)))
 		intr = 1;
-	else if (dev->negotiated_features & VIRTIO_RING_F_EVENT_IDX) {
+	else if (dev->negotiated_features & (1U << VIRTIO_RING_F_EVENT_IDX)) {
 		event_idx = VQ_USED_EVENT_IDX(vq);
 		/*
 		 * This calculation is per docs and the kernel
@@ -368,8 +368,8 @@ void virtio_vq_init(struct virtio_vq_info *vq, uint32_t pfn)
 	base = paddr_guest2host(ctx, phys, size);
 
 	/* First page(s) are descriptors... */
-	vq->desc = (struct virtio_desc *)base;
-	base += vq->qsize * sizeof(struct virtio_desc);
+	vq->desc = (struct vring_desc *)base;
+	base += vq->qsize * sizeof(struct vring_desc);
 
 	/* ... immediately followed by "avail" ring (entirely uint16_t's) */
 	vq->avail = (struct vring_avail *)base;
