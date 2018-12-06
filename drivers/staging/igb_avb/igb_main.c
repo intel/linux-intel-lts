@@ -4297,7 +4297,7 @@ void igb_clean_rx_ring(struct igb_ring *rx_ring)
 			dma_unmap_single(rx_ring->dev,
 					 buffer_info->dma,
 					 rx_ring->rx_buffer_len,
-					 DMA_FROM_DEVICE);
+					 DMA_BIDIRECTIONAL);
 			buffer_info->dma = 0;
 		}
 
@@ -4312,7 +4312,7 @@ void igb_clean_rx_ring(struct igb_ring *rx_ring)
 		dma_unmap_page(rx_ring->dev,
 			       buffer_info->dma,
 			       PAGE_SIZE,
-			       DMA_FROM_DEVICE);
+			       DMA_BIDIRECTIONAL);
 		__free_page(buffer_info->page);
 
 		buffer_info->page = NULL;
@@ -7517,7 +7517,7 @@ static void igb_reuse_rx_page(struct igb_ring *rx_ring,
 	dma_sync_single_range_for_device(rx_ring->dev, old_buff->dma,
 					 old_buff->page_offset,
 					 IGB_RX_BUFSZ,
-					 DMA_FROM_DEVICE);
+					 DMA_BIDIRECTIONAL);
 }
 
 static bool igb_can_reuse_rx_page(struct igb_rx_buffer *rx_buffer,
@@ -7649,7 +7649,7 @@ static struct sk_buff *igb_fetch_rx_buffer(struct igb_ring *rx_ring,
 				      rx_buffer->dma,
 				      rx_buffer->page_offset,
 				      IGB_RX_BUFSZ,
-				      DMA_FROM_DEVICE);
+				      DMA_BIDIRECTIONAL);
 
 	/* pull page into skb */
 	if (igb_add_rx_frag(rx_ring, rx_buffer, rx_desc, skb)) {
@@ -7658,7 +7658,7 @@ static struct sk_buff *igb_fetch_rx_buffer(struct igb_ring *rx_ring,
 	} else {
 		/* we are not reusing the buffer so unmap it */
 		dma_unmap_page(rx_ring->dev, rx_buffer->dma,
-			       PAGE_SIZE, DMA_FROM_DEVICE);
+			       PAGE_SIZE, DMA_BIDIRECTIONAL);
 	}
 
 	/* clear contents of rx_buffer */
@@ -8333,7 +8333,7 @@ static bool igb_clean_rx_irq(struct igb_q_vector *q_vector, int budget)
 
 		dma_unmap_single(rx_ring->dev, rx_buffer->dma,
 				 rx_ring->rx_buffer_len,
-				 DMA_FROM_DEVICE);
+				 DMA_BIDIRECTIONAL);
 		rx_buffer->dma = 0;
 
 		if (igb_test_staterr(rx_desc,
@@ -8719,7 +8719,7 @@ static bool igb_alloc_mapped_skb(struct igb_ring *rx_ring,
 	}
 
 	dma = dma_map_single(rx_ring->dev, skb->data,
-			     rx_ring->rx_buffer_len, DMA_FROM_DEVICE);
+			     rx_ring->rx_buffer_len, DMA_BIDIRECTIONAL);
 
 	/* if mapping failed free memory back to system since
 	 * there isn't much point in holding memory we can't use
@@ -8755,7 +8755,7 @@ static bool igb_alloc_mapped_page(struct igb_ring *rx_ring,
 	}
 
 	/* map page for use */
-	dma = dma_map_page(rx_ring->dev, page, 0, PAGE_SIZE, DMA_FROM_DEVICE);
+	dma = dma_map_page(rx_ring->dev, page, 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
 
 	/*
 	 * if mapping failed free memory back to system since
@@ -10438,7 +10438,7 @@ static long igb_mapbuf_user(struct file *file, void __user *arg, int ring)
 	}
 
 	page_dma = dma_map_page(pci_dev_to_dev(adapter->pdev), page,
-			0, PAGE_SIZE, DMA_FROM_DEVICE);
+			0, PAGE_SIZE, DMA_BIDIRECTIONAL);
 
 	if (dma_mapping_error(pci_dev_to_dev(adapter->pdev), page_dma)) {
 		err = -ENOMEM;
@@ -10467,7 +10467,7 @@ static long igb_mapbuf_user(struct file *file, void __user *arg, int ring)
 copy_failed:
 	dma_unmap_page(pci_dev_to_dev(adapter->pdev),
 			userpage->page_dma, PAGE_SIZE,
-			DMA_FROM_DEVICE);
+			DMA_BIDIRECTIONAL);
 map_failed:
 	put_page(userpage->page);
 page_failed:
@@ -10693,7 +10693,7 @@ static long igb_unmapbuf(struct file *file, void __user *arg, int ring)
 		dma_unmap_page(pci_dev_to_dev(adapter->pdev),
 				userpage->page_dma,
 				PAGE_SIZE,
-				DMA_FROM_DEVICE);
+				DMA_BIDIRECTIONAL);
 
 		put_page(userpage->page);
 
@@ -10801,7 +10801,7 @@ static int igb_close_file(struct inode *inode, struct file *file)
 		dma_unmap_page(pci_dev_to_dev(adapter->pdev),
 						userpage->page_dma,
 						PAGE_SIZE,
-						DMA_FROM_DEVICE);
+						DMA_BIDIRECTIONAL);
 
 		put_page(userpage->page);
 
