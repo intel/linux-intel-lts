@@ -49,6 +49,7 @@
  *
  */
 #include <linux/types.h>
+#include <linux/module.h>
 #include <linux/vhm/acrn_hv_defs.h>
 #include <linux/vhm/vhm_hypercall.h>
 
@@ -192,3 +193,9 @@ inline long hcall_set_callback_vector(unsigned long intr_vector)
 {
 	return acrn_hypercall1(HC_SET_CALLBACK_VECTOR, intr_vector);
 }
+
+inline long hcall_get_hw_info(unsigned long hw_info)
+{
+	return acrn_hypercall1(HC_GET_HW_INFO, hw_info);
+}
+EXPORT_SYMBOL(hcall_get_hw_info);

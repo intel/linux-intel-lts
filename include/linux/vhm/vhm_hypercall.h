@@ -170,5 +170,6 @@ inline long hcall_remap_pci_msix(unsigned long vmid, unsigned long msi);
 inline long hcall_vm_gpa2hpa(unsigned long vmid, unsigned long addr);
 inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr);
 inline long hcall_profiling_ops(unsigned long cmd, unsigned long msr_nodes);
+inline long hcall_get_hw_info(unsigned long hw_info);
 
 #endif /* VHM_HYPERCALL_H */
