@@ -119,7 +119,7 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
 	spin_lock_init(&vm->ioreq_client_lock);
 
 	vm_mutex_lock(&vhm_vm_list_lock);
-	vm->refcnt = 1;
+	atomic_set(&vm->refcnt, 1);
 	vm_list_add(&vm->list);
 	vm_mutex_unlock(&vhm_vm_list_lock);
 	filep->private_data = vm;
@@ -248,6 +248,7 @@ create_vm_fail:
 	case IC_DESTROY_VM: {
 		acrn_ioeventfd_deinit(vm->vmid);
 		acrn_irqfd_deinit(vm->vmid);
+		acrn_ioreq_free(vm);
 		ret = hcall_destroy_vm(vm->vmid);
 		if (ret < 0) {
 			pr_err("failed to destroy VM %ld\n", vm->vmid);
@@ -631,6 +632,7 @@ static int vhm_dev_release(struct inode *inodep, struct file *filep)
 		pr_err("vhm: invalid VM !\n");
 		return -EFAULT;
 	}
+	acrn_ioreq_free(vm);
 	put_vm(vm);
 	filep->private_data = NULL;
 	return 0;

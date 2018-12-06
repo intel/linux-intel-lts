@@ -253,8 +253,6 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 	list_add(&client->list, &vm->ioreq_client_list);
 	spin_unlock_irqrestore(&vm->ioreq_client_lock, flags);
 
-	put_vm(vm);
-
 	pr_info("vhm-ioreq: created ioreq client %d\n", client_id);
 
 	return client_id;
@@ -383,6 +381,7 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 		vm->ioreq_fallback_client = -1;
 
 	acrn_ioreq_put_client(client);
+	put_vm(vm);
 }
 
 void acrn_ioreq_destroy_client(int client_id)
@@ -576,11 +575,20 @@ static int ioreq_client_thread(void *data)
 {
 	struct ioreq_client *client;
 	int ret, client_id = (unsigned long)data;
+	struct vhm_vm *vm;
 
 	client = acrn_ioreq_get_client(client_id);
 
 	if (!client)
 		return 0;
+
+	vm = find_get_vm(client->vmid);
+	if (unlikely(vm == NULL)) {
+		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
+			client->vmid);
+		acrn_ioreq_put_client(client);
+		return -EINVAL;
+	}
 
 	while (1) {
 		if (is_destroying(client)) {
@@ -607,6 +615,7 @@ static int ioreq_client_thread(void *data)
 
 	set_bit(IOREQ_CLIENT_EXIT, &client->flags);
 	acrn_ioreq_put_client(client);
+	put_vm(vm);
 	return 0;
 }
 
@@ -1055,17 +1064,16 @@ void acrn_ioreq_free(struct vhm_vm *vm)
 	 * The below is used to assure that the client is still released even when
 	 * it is not called.
 	 */
-	list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
-		struct ioreq_client *client =
-			container_of(pos, struct ioreq_client, list);
-		acrn_ioreq_destroy_client(client->id);
+	if (!test_and_set_bit(VHM_VM_IOREQ, &vm->flags)) {
+		get_vm(vm);
+		list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
+			struct ioreq_client *client =
+				container_of(pos, struct ioreq_client, list);
+			acrn_ioreq_destroy_client(client->id);
+		}
+		put_vm(vm);
 	}
 
-	if (vm->req_buf && vm->pg) {
-		put_page(vm->pg);
-		vm->pg = NULL;
-		vm->req_buf = NULL;
-	}
 }
 
 void acrn_ioreq_driver_init()
