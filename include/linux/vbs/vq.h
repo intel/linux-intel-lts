@@ -77,26 +77,7 @@
 #define	VQ_ALLOC			0x01
 #define	VQ_BROKED			0x02
 
-/*
- * Feature flags.
- * Note: bits 0 through 23 are reserved to each device type.
- */
-#define VIRTIO_F_NOTIFY_ON_EMPTY	(1 << 24)
-#define VIRTIO_RING_F_INDIRECT_DESC	(1 << 28)
-#define VIRTIO_RING_F_EVENT_IDX		(1 << 29)
-
 #define	VQ_MAX_DESCRIPTORS		512
-
-/* virtio_desc flags */
-#define VRING_DESC_F_NEXT		(1 << 0)
-#define VRING_DESC_F_WRITE		(1 << 1)
-#define VRING_DESC_F_INDIRECT		(1 << 2)
-
-/* vring_avail flags */
-#define VRING_AVAIL_F_NO_INTERRUPT	1
-
-/* vring_used flags */
-#define VRING_USED_F_NO_NOTIFY		1
 
 /* Functions for dealing with generalized "virtual devices" */
 #define VQ_USED_EVENT_IDX(vq) ((vq)->avail->ring[(vq)->qsize])
@@ -113,11 +94,11 @@ static inline size_t virtio_vq_ring_size(unsigned int qsz)
 	size_t size;
 
 	/* constant 3 below = va_flags, va_idx, va_used_event */
-	size = sizeof(struct virtio_desc) * qsz + sizeof(uint16_t) * (3 + qsz);
+	size = sizeof(struct vring_desc) * qsz + sizeof(uint16_t) * (3 + qsz);
 	size = roundup2(size, VRING_ALIGN);
 
 	/* constant 3 below = vu_flags, vu_idx, vu_avail_event */
-	size += sizeof(uint16_t) * 3 + sizeof(struct virtio_used) * qsz;
+	size += sizeof(uint16_t) * 3 + sizeof(struct vring_used_elem) * qsz;
 	size = roundup2(size, VRING_ALIGN);
 
 	return size;
