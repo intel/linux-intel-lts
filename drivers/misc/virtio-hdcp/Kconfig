@@ -1,0 +1,5 @@
+config INTEL_HDCP_VIRTIO
+        tristate "Intel HDCP Virtio Front-end Driver"
+        depends on X86 && PCI && VIRTIO_PCI
+        help
+          HDCP Virtio Front-end driver for virtualized system
