@@ -2,8 +2,6 @@
 snd-soc-skl-objs := skl.o skl-sdw-pcm.o skl-pcm.o skl-nhlt.o skl-messages.o \
 skl-topology.o skl-compress.o skl-probe.o
 
-include sound/soc/intel/skylake/virtio/Makefile
-
 ifdef CONFIG_DEBUG_FS
   snd-soc-skl-objs += skl-debug.o
 endif
@@ -23,3 +21,6 @@ obj-$(CONFIG_SND_SOC_INTEL_SKYLAKE) += snd-soc-skl-ipc.o
 snd-soc-skl-ssp-clk-objs := skl-ssp-clk.o
 
 obj-$(CONFIG_SND_SOC_INTEL_SKYLAKE_SSP_CLK) += snd-soc-skl-ssp-clk.o
+
+obj-$(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_FE) += virtio/
+obj-$(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_BE) += virtio/

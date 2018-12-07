@@ -5339,7 +5339,7 @@ int skl_tplg_init(struct snd_soc_component *component, struct hdac_bus *bus)
 	struct skl *skl = bus_to_skl(bus);
 	struct skl_pipeline *ppl;
 
-	ret = request_firmware(&fw, skl->tplg_name, bus->dev);
+	ret = skl->skl_sst->request_tplg(skl, &fw);
 	if (ret < 0) {
 		dev_info(bus->dev, "tplg fw %s load failed with %d, falling back to dfw_sst.bin",
 				skl->tplg_name, ret);

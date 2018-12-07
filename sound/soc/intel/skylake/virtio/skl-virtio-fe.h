@@ -24,6 +24,15 @@ struct vfe_substream_info {
 	struct list_head list;
 };
 
+struct vskl_vfe_tplg {
+	struct firmware tplg_data;
+	u64 data_ready;
+
+	struct mutex tplg_lock;
+	wait_queue_head_t waitq;
+	bool load_completed;
+};
+
 struct snd_skl_vfe {
 	struct skl sdev;
 	struct virtio_device *vdev;
@@ -32,6 +41,10 @@ struct snd_skl_vfe {
 	void *in_buff[VFE_MSG_BUFF_NUM];
 
 	struct kctl_proxy kcon_proxy;
+	struct vskl_vfe_tplg tplg;
+	struct mutex tplg_init_lock;
+
+	struct work_struct init_work;
 
 	/* position update work */
 	struct work_struct posn_update_work;

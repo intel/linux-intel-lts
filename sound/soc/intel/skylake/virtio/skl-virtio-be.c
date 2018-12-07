@@ -35,6 +35,16 @@
 #include "../skl-topology.h"
 #include "skl-virtio.h"
 
+static struct snd_skl_vbe *get_virtio_audio_be(void)
+{
+	return &get_virtio_audio()->vbe;
+}
+
+struct kctl_proxy *get_kctl_proxy(void)
+{
+	return &get_virtio_audio_be()->kcon_proxy;
+}
+
 const struct vbe_substream_info *vbe_find_substream_info_by_pcm(
 	const struct snd_skl_vbe *vbe, char *pcm_id, int direction)
 {
@@ -59,15 +69,9 @@ inline const struct vbe_substream_info *vbe_find_substream_info(
 static const struct vbe_substream_info *vbe_skl_find_substream_info(
 	const struct skl *sdev, const struct snd_pcm_substream *substr)
 {
-	const struct snd_skl_vbe *vbe;
-	const struct vbe_substream_info *info;
+	const struct snd_skl_vbe *vbe = skl_get_vbe(sdev);
 
-	list_for_each_entry(vbe, &sdev->vbe_list, list) {
-		info = vbe_find_substream_info(vbe, substr);
-		if (info != NULL)
-			return info;
-	}
-	return NULL;
+	return vbe_find_substream_info(vbe, substr);
 }
 
 struct snd_soc_dapm_widget *vbe_skl_find_kcontrol_widget(
@@ -170,12 +174,23 @@ static void vbe_skl_send_or_enqueue(const struct snd_skl_vbe *vbe,
 	}
 }
 
+void vbe_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
+{
+	struct skl *skl = bus_to_skl(bus);
+	struct snd_skl_vbe *vbe = skl_get_vbe(skl);
+
+	if (hstr->substream)
+		skl_notify_stream_update(bus, hstr->substream);
+
+	vbe->nops.hda_irq_ack(bus, hstr);
+}
+
 int vbe_send_kctl_msg(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol,
 		struct vfe_kctl_result *result)
 {
 	struct vfe_pending_msg kctl_msg;
-	const struct snd_skl_vbe *vbe = get_first_vbe();
+	const struct snd_skl_vbe *vbe = &get_virtio_audio()->vbe;
 	const struct virtio_vq_info *vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
 	bool endchain;
 
@@ -548,6 +563,67 @@ static int vbe_skl_pcm_hw_params(const struct skl *sdev, int vm_id,
 	return ret;
 }
 
+static int vbe_skl_send_tplg_data(struct snd_skl_vbe *vbe,
+	const struct skl *sdev, const struct firmware *tplg,
+	int vm_id)
+{
+	struct vfe_pending_msg tplg_msg;
+	struct vfe_tplg_data *tplg_data = &tplg_msg.msg.tplg_data;
+	int rem_data = tplg->size, offset;
+	u8 *data_ptr = tplg->data;
+	const struct virtio_vq_info *vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
+
+	tplg_msg.sizeof_msg = sizeof(struct vfe_tplg_data);
+	tplg_data->msg_type = VFE_MSG_TPLG_DATA;
+
+	u32 chunk_length;
+	u8 data[SKL_VIRTIO_TPLG_CHUNK_SIZE];
+
+	for (offset = 0; offset < tplg->size;
+		offset += SKL_VIRTIO_TPLG_CHUNK_SIZE,
+		rem_data -= SKL_VIRTIO_TPLG_CHUNK_SIZE) {
+
+		tplg_data->offset = offset;
+		tplg_data->chunk_size = rem_data > SKL_VIRTIO_TPLG_CHUNK_SIZE ?
+			SKL_VIRTIO_TPLG_CHUNK_SIZE : rem_data;
+		memcpy(tplg_data->data, data_ptr, tplg_data->chunk_size);
+		data_ptr += tplg_data->chunk_size;
+
+		vbe_skl_send_or_enqueue(vbe, vq, &tplg_msg);
+	}
+
+	return 0;
+}
+
+static int vbe_skl_tplg_size(struct snd_skl_vbe *vbe, const struct skl *sdev,
+	int vm_id, const struct vbe_ipc_msg *msg)
+{
+	const struct firmware *tplg;
+	char *tplg_name;
+	int chunks, data, ret;
+	struct vfe_tplg_size *tplg_size = msg->rx_data;
+
+	if (!tplg_size)
+		return -EINVAL;
+
+	//TODO: get tplg file name by guest domain ID
+	tplg_name = "guest_tplg.bin";
+	ret = request_firmware(&tplg, tplg_name, vbe->dev);
+	if (ret < 0)
+		return ret;
+
+	tplg_size->chunk_size = SKL_VIRTIO_TPLG_CHUNK_SIZE;
+	tplg_size->size = tplg->size;
+	tplg_size->chunks = tplg_size->size / SKL_VIRTIO_TPLG_CHUNK_SIZE +
+		tplg_size->size % SKL_VIRTIO_TPLG_CHUNK_SIZE ? 1 : 0;
+
+	vbe_skl_send_tplg_data(vbe, sdev, tplg, vm_id);
+
+	release_firmware(tplg);
+
+	return 0;
+}
+
 static int vbe_skl_pcm_trigger(struct skl *sdev, int vm_id,
 		const struct vbe_substream_info *substr_info,
 		const struct vbe_ipc_msg *msg)
@@ -608,12 +684,12 @@ static int vbe_skl_kcontrol_check_permission(u32 domain_id,
 {
 	int kcontrol_domain_id;
 	int ret;
-	struct skl *sdev = snd_skl_get_virtio_audio();
+	struct skl *skl = get_virtio_audio()->skl;
 
-	if (sdev == NULL)
+	if (skl == NULL)
 		return -EINVAL;
 
-	ret = vbe_skl_kcontrol_get_domain_id(sdev, kcontrol,
+	ret = vbe_skl_kcontrol_get_domain_id(skl, kcontrol,
 		&kcontrol_domain_id);
 	if (ret < 0)
 		return ret;
@@ -666,6 +742,23 @@ static int vbe_skl_msg_cfg_handle(struct snd_skl_vbe *vbe,
 		dev_err(vbe->dev, "Unknown command %d for config get message.\n",
 				msg->header->cmd);
 		break;
+	}
+
+	return 0;
+}
+
+int vbe_skl_msg_tplg_handle(const struct snd_skl_vbe *vbe,
+		const struct skl *sdev, int vm_id, struct vbe_ipc_msg *msg)
+{
+	u32 domain_id = msg->header->domain_id;
+
+	switch (msg->header->cmd) {
+	case VFE_MSG_TPLG_SIZE:
+		return vbe_skl_tplg_size(vbe, sdev, vm_id, msg);
+	default:
+		dev_err(vbe->dev, "Unknown command %d for tplg [%s].\n",
+			msg->header->cmd);
+	break;
 	}
 
 	return 0;
@@ -726,6 +819,7 @@ int vbe_skl_msg_kcontrol_handle(const struct snd_skl_vbe *vbe,
 
 	return 0;
 }
+
 static int vbe_skl_not_fwd(const struct snd_skl_vbe *vbe,
 	const struct skl *sdev, int vm_id, void *ipc_bufs[SKL_VIRTIO_NOT_VQ_SZ],
 	size_t ipc_lens[SKL_VIRTIO_NOT_VQ_SZ])
@@ -750,7 +844,7 @@ static int vbe_skl_not_fwd(const struct snd_skl_vbe *vbe,
 	case VFE_MSG_KCTL:
 		return vbe_skl_msg_kcontrol_handle(vbe, vm_id, &msg);
 	case VFE_MSG_TPLG:
-		//not supported yet
+		return vbe_skl_msg_tplg_handle(vbe, sdev, vm_id, &msg);
 		break;
 	case VFE_MSG_CFG:
 		return vbe_skl_msg_cfg_handle(vbe, sdev, vm_id, &msg);
@@ -941,4 +1035,30 @@ void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx)
 		dev_err(vbe->dev, "idx %d is invalid\n", vq_idx);
 		break;
 	}
+}
+
+int vbe_skl_attach(struct snd_skl_vbe *vbe, struct skl *skl)
+{
+	vbe->sdev = skl;
+
+	vbe->nops.hda_irq_ack = skl->skl_sst->hda_irq_ack;
+	skl->skl_sst->hda_irq_ack = vbe_stream_update;
+
+	return 0;
+}
+
+int vbe_skl_detach(struct snd_skl_vbe *vbe, struct skl *skl)
+{
+	if (!vbe->sdev)
+		return 0;
+
+	skl->skl_sst->request_tplg = vbe->nops.request_tplg;
+	skl->skl_sst->hda_irq_ack = vbe->nops.hda_irq_ack;
+
+	/* TODO: Notify FE, close all streams opened by FE and delete all
+	 * pending messages
+	 */
+
+	vbe->sdev = NULL;
+	return 0;
 }

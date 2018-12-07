@@ -251,6 +251,8 @@ struct skl_notify_kctrl_info {
 	struct snd_kcontrol *notify_kctl;
 };
 
+struct skl;
+
 struct skl_sst {
 	struct device *dev;
 	struct sst_dsp *dsp;
@@ -304,6 +306,9 @@ struct skl_sst {
 	int num_sdw_controllers;
 	/* Array of sdw masters */
 	struct sdw_master *mstr;
+	void (*hda_irq_ack)(struct hdac_bus *bus, struct hdac_stream *hstr);
+
+	int (*request_tplg)(struct skl *skl, const struct firmware **fw);
 
 	struct skl_probe_config probe_config;
 
