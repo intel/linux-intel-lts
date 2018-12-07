@@ -21,13 +21,31 @@
 #define SKL_VIRTIO_MSG_TX  1
 #define SKL_VIRTIO_MSG_RX  2
 
+struct skl;
+struct vskl;
 struct snd_skl_vbe;
+
+#define skl_get_vrtdata(skl) \
+	(dev_get_drvdata(&skl->virt_dev->dev))
+#define skl_get_vrtpdata(skl) \
+	((struct skl_virt_pdata *)(skl_get_vrtdata(skl)))
+#define skl_to_vskl(skl) \
+	((struct vskl *)(skl_get_vrtpdata(skl)->private_data))
+#define skl_get_vbe(skl) (&(skl_to_vskl(skl))->vbe)
+#define vskl_get_vbe(vskl) (&vskl->vbe)
 
 extern int snd_skl_vbe_register(struct skl *sdev, struct snd_skl_vbe **svbe);
 extern int snd_skl_vbe_register_client(struct snd_skl_vbe *vbe);
 extern void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx);
-extern struct snd_skl_vbe *get_first_vbe(void);
-extern void *snd_skl_get_virtio_audio(void);
+
+int vbe_skl_attach(struct snd_skl_vbe *vbe, struct skl *skl);
+int vbe_skl_detach(struct snd_skl_vbe *vbe, struct skl *skl);
+struct vskl *get_virtio_audio(void);
+
+struct vskl_native_ops {
+	int (*request_tplg)(struct skl *skl, const struct firmware **fw);
+	void (*hda_irq_ack)(struct hdac_bus *bus, struct hdac_stream *hstr);
+};
 
 struct vbe_substream_info {
 	struct snd_pcm *pcm;
@@ -37,7 +55,6 @@ struct vbe_substream_info {
 	struct snd_skl_vbe *vbe;
 	struct list_head list;
 };
-
 
 struct snd_skl_vbe {
 	struct skl *sdev;
@@ -53,6 +70,8 @@ struct snd_skl_vbe {
 	struct list_head list;
 	struct list_head pending_msg_list;
 
+	struct vskl_native_ops nops;
+
 	int vmid;  /* vm id number */
 };
 
@@ -64,13 +83,14 @@ struct snd_skl_vbe_client {
 	struct vhm_request *req_buf;
 };
 
-struct virtio_miscdev {
+struct vskl {
 	struct device *dev;
-	int (*open)(struct file *f, void *data);
-	long (*ioctl)(struct file *f, void *data, unsigned int ioctl,
-		      unsigned long arg);
-	int (*release)(struct file *f, void *data);
-	void *priv;
+	struct snd_skl_vbe vbe;
+
+	struct skl *skl;
 };
+
+void skl_notify_stream_update(struct hdac_bus *bus,
+		struct snd_pcm_substream *substr);
 
 #endif

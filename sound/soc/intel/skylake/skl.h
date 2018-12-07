@@ -52,6 +52,21 @@
 #define BXT_INSTANCE_ID		0
 #define BXT_BASE_FW_MODULE_ID	0
 
+struct skl;
+
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_BE)
+int skl_virt_device_register(struct skl *skl);
+void skl_virt_device_unregister(struct skl *skl);
+#else
+static inline int skl_virt_device_register(struct skl *skl)
+{
+	return 0;
+}
+static inline void skl_virt_device_unregister(struct skl *skl)
+{
+}
+#endif
+
 struct skl_dsp_resource {
 	u32 max_mcps;
 	u32 max_mem;
@@ -130,6 +145,7 @@ struct skl {
 	struct platform_device *dmic_dev;
 	struct platform_device *i2s_dev;
 	struct platform_device *clk_dev;
+	struct platform_device *virt_dev;
 	struct snd_soc_component *component;
 	struct snd_soc_dai_driver *dais;
 
@@ -159,9 +175,11 @@ struct skl {
 	bool nhlt_override;
 	bool mod_set_get_status;
 	struct ep_group_cnt grp_cnt;
+};
 
-	/* list of virtual BE services */
-	struct list_head vbe_list;
+struct skl_virt_pdata {
+	struct skl *skl;
+	void *private_data;
 };
 
 #define skl_to_bus(s)  (&(s)->hbus)
