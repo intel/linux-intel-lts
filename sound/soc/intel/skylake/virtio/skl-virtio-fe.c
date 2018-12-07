@@ -417,6 +417,28 @@ static void vfe_handle_posn(struct snd_skl_vfe *vfe,
 	snd_pcm_period_elapsed(substr_info->substream);
 }
 
+static void vfe_handle_tplg(struct snd_skl_vfe *vfe,
+	struct vfe_tplg_data *tplg_data)
+{
+	u8 *data_ptr;
+
+	dev_dbg(&vfe->vdev->dev,
+		"Tplg chunk received offset %d chunk size %d\n",
+		tplg_data->offset, tplg_data->chunk_size);
+
+	mutex_lock(&vfe->tplg.tplg_lock);
+	data_ptr = vfe->tplg.tplg_data.data + tplg_data->offset;
+	memcpy(data_ptr, tplg_data->data, tplg_data->chunk_size);
+	vfe->tplg.data_ready += tplg_data->chunk_size;
+
+	if (vfe->tplg.data_ready >= vfe->tplg.tplg_data.size) {
+		vfe->tplg.load_completed = true;
+		wake_up(&vfe->tplg.waitq);
+	}
+
+	mutex_unlock(&vfe->tplg.tplg_lock);
+}
+
 static void vfe_message_loop(struct work_struct *work)
 {
 	struct vfe_inbox_header *header;
@@ -441,10 +463,15 @@ static void vfe_message_loop(struct work_struct *work)
 			kctl_ipc_handle(0u, &kctln->kcontrol,
 				&kctln->kcontrol_value, &result);
 			break;
+		case VFE_MSG_TPLG_DATA:
+			vfe_handle_tplg(vfe,
+				(struct vfe_tplg_data *)header);
+			break;
 		default:
 			dev_err(&vfe->vdev->dev,
 				"Invalid msg Type (%d)\n", header->msg_type);
 		}
+		vfe_put_inbox_buffer(vfe, header);
 	}
 	vfe_put_inbox_buffer(vfe, header);
 }
@@ -874,9 +901,63 @@ static struct nhlt_acpi_table *vfe_skl_nhlt_init(struct device *dev)
 	return nhlt;
 }
 
-
 void vfe_skl_pci_dev_release(struct device *dev)
 {
+}
+
+static int vfe_request_topology(struct skl *skl, const struct firmware **fw)
+{
+	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
+
+	mutex_lock(&vfe->tplg_init_lock);
+	*fw = &vfe->tplg.tplg_data;
+	mutex_unlock(&vfe->tplg_init_lock);
+
+	return 0;
+}
+
+static int vfe_init_tplg(struct snd_skl_vfe *vfe, struct skl *skl)
+{
+	struct vfe_msg_header msg_header;
+	struct vfe_tplg_size tplg_size;
+	int ret;
+	u8 *tplg_data;
+
+	mutex_init(&vfe->tplg_init_lock);
+	mutex_lock(&vfe->tplg_init_lock);
+
+	mutex_init(&vfe->tplg.tplg_lock);
+	init_waitqueue_head(&vfe->tplg.waitq);
+	vfe->tplg.load_completed = false;
+
+	strcpy(skl->tplg_name, "5a98-INTEL-NHLT-GPA-11-tplg.bin");
+	skl->skl_sst->request_tplg = vfe_request_topology;
+
+	mutex_lock(&vfe->tplg.tplg_lock);
+	msg_header.cmd = VFE_MSG_TPLG_SIZE;
+	ret = vfe_send_msg(vfe, &msg_header,
+		NULL, 0, &tplg_size, sizeof(tplg_size));
+	if (ret < 0)
+		goto error_handl;
+
+	tplg_data = devm_kzalloc(&vfe->vdev->dev,
+		tplg_size.size, GFP_KERNEL);
+	if (!tplg_data) {
+		ret = -ENOMEM;
+		goto error_handl;
+	}
+
+	vfe->tplg.tplg_data.data = tplg_data;
+	vfe->tplg.tplg_data.size = tplg_size.size;
+
+error_handl:
+	mutex_unlock(&vfe->tplg.tplg_lock);
+	if (ret == 0)
+		wait_event(vfe->tplg.waitq, vfe->tplg.load_completed);
+
+	mutex_unlock(&vfe->tplg_init_lock);
+
+	return ret;
 }
 
 static int vfe_skl_init(struct virtio_device *vdev)
@@ -914,11 +995,13 @@ static int vfe_skl_init(struct virtio_device *vdev)
 	if (err < 0)
 		goto error;
 
-	strcpy(skl->tplg_name, "5a98-INTEL-NHLT-GPA-11-tplg.bin");
-
 	err = vfe_skl_init_dsp(skl);
 	if (err < 0)
 		goto error;
+
+	err = vfe_init_tplg(vfe, skl);
+	if (err < 0)
+		return err;
 
 	err = vfe_platform_register(vfe, &vdev->dev);
 	if (err < 0)
@@ -1017,6 +1100,10 @@ static int vfe_init(struct virtio_device *vdev)
 	ret = vfe_skl_init(vdev);
 	if (ret < 0)
 		goto err;
+
+	ret = vfe_skl_init(vdev);
+	if (ret < 0)
+		return ret;
 
 	return 0;
 

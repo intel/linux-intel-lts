@@ -28,6 +28,7 @@
 #define SKL_VIRTIO_IPC_REPLY 1
 
 #define SKL_VIRTIO_DOMAIN_NAME_LEN 20
+#define SKL_VIRTIO_TPLG_CHUNK_SIZE 2048
 
 struct vfe_dsp_ipc_msg {
 	u64 header;
@@ -151,6 +152,19 @@ struct vfe_hw_pos_request {
 	u64 stream_pos;
 };
 
+struct vfe_tplg_size {
+	u32 chunk_size;
+	u32 chunks;
+	u64 size;
+};
+
+struct vfe_tplg_data {
+	int msg_type;
+	u32 offset;
+	u32 chunk_size;
+	u8 data[SKL_VIRTIO_TPLG_CHUNK_SIZE];
+};
+
 struct vfe_kctl_noti {
 	int msg_type;
 	struct vfe_kctl_info kcontrol;
@@ -160,6 +174,7 @@ struct vfe_kctl_noti {
 union inbox_msg {
 	struct vfe_hw_pos_request posn;
 	struct vfe_kctl_noti kctln;
+	struct vfe_tplg_data tplg_data;
 };
 
 struct vfe_pending_msg {
@@ -185,6 +200,9 @@ enum vfe_ipc_msg_type {
 	VFE_MSG_PCM_TRIGGER = VFE_MSG_PCM | 0x05,
 
 	VFE_MSG_KCTL_SET = VFE_MSG_KCTL | 0x01,
+
+	VFE_MSG_TPLG_SIZE = VFE_MSG_TPLG | 0x01,
+	VFE_MSG_TPLG_DATA = VFE_MSG_TPLG | 0x02,
 
 	VFE_MSG_CFG_HDA = VFE_MSG_CFG | 0x01,
 
