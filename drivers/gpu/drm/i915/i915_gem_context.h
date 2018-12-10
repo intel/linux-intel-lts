@@ -147,6 +147,19 @@ struct i915_gem_context {
 
 	struct i915_sched_attr sched;
 
+	/**
+	 * @preempt_timeout: QoS guarantee for the high priority context
+	 *
+	 * Some clients need a guarantee that they will start executing
+	 * within a certain window, even at the expense of others. This entails
+	 * that if a preemption request is not honoured by the active context
+	 * within the timeout, we will reset the GPU to evict the hog and
+	 * run the high priority context instead.
+	 *
+	 * Timeout is stored in nanoseconds.
+	 */
+	u32 preempt_timeout;
+
 	/** ggtt_offset_bias: placement restriction for context objects */
 	u32 ggtt_offset_bias;
 
