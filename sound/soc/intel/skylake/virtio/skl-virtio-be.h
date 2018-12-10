@@ -26,6 +26,8 @@ struct snd_skl_vbe;
 extern int snd_skl_vbe_register(struct skl *sdev, struct snd_skl_vbe **svbe);
 extern int snd_skl_vbe_register_client(struct snd_skl_vbe *vbe);
 extern void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx);
+extern struct snd_skl_vbe *get_first_vbe(void);
+extern void *snd_skl_get_virtio_audio(void);
 
 struct vbe_substream_info {
 	struct snd_pcm *pcm;
@@ -42,13 +44,14 @@ struct snd_skl_vbe {
 	struct device *dev;
 	struct virtio_dev_info dev_info;
 	struct virtio_vq_info vqs[SKL_VIRTIO_NUM_OF_VQS];
+	struct kctl_proxy kcon_proxy;
 
 	spinlock_t posn_lock;
 
 	struct list_head client_list;
 	struct list_head substr_info_list;
 	struct list_head list;
-	struct list_head posn_list;
+	struct list_head pending_msg_list;
 
 	int vmid;  /* vm id number */
 };

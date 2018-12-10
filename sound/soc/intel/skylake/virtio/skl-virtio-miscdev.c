@@ -43,6 +43,26 @@ void *snd_skl_get_virtio_audio(void)
 	return NULL;
 }
 
+struct snd_skl_vbe *get_first_vbe()
+{
+	struct skl *sdev = snd_skl_get_virtio_audio();
+
+	return list_first_entry_or_null(&sdev->vbe_list,
+			struct snd_skl_vbe, list);
+}
+
+struct kctl_proxy *get_kctl_proxy(void)
+{
+	struct snd_skl_vbe *vbe = get_first_vbe();
+
+	if (vbe != NULL)
+		return &vbe->kcon_proxy;
+
+	return NULL;
+}
+
+
+
 /* find client from client ID */
 static struct snd_skl_vbe_client *vbe_client_find(struct skl *sdev,
 								int client_id)
@@ -137,7 +157,7 @@ int snd_skl_virtio_register_vbe(struct skl *sdev, struct snd_skl_vbe **svbe)
 
 	INIT_LIST_HEAD(&vbe->client_list);
 	INIT_LIST_HEAD(&vbe->substr_info_list);
-	INIT_LIST_HEAD(&vbe->posn_list);
+	INIT_LIST_HEAD(&vbe->pending_msg_list);
 	spin_lock_init(&vbe->posn_lock);
 	vbe->sdev = sdev;
 	vbe->dev = dev;
