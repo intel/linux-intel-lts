@@ -13,6 +13,7 @@
 #include "skl-virtio-common.h"
 
 #define VFE_MSG_MSEC_TIMEOUT 100
+#define VFE_MSG_BUFF_NUM 3
 
 struct vfe_substream_info {
 	struct snd_pcm *pcm;
@@ -23,23 +24,19 @@ struct vfe_substream_info {
 	struct list_head list;
 };
 
-struct vfe_kcontrol {
-	struct snd_kcontrol *kcontrol;
-	struct list_head list;
-
-	snd_kcontrol_put_t *put;
-};
-
 struct snd_skl_vfe {
 	struct skl sdev;
 	struct virtio_device *vdev;
 
 	struct ipc_message *msg;
-	struct vfe_hw_pos_request *pos_not;
+	void *in_buff[VFE_MSG_BUFF_NUM];
+
+	struct kctl_proxy kcon_proxy;
 
 	/* position update work */
 	struct work_struct posn_update_work;
 	struct work_struct msg_timeout_work;
+	struct work_struct message_loop_work;
 
 	spinlock_t ipc_vq_lock;
 	/* IPC cmd from frontend to backend */

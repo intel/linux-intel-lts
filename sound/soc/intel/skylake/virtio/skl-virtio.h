@@ -32,4 +32,7 @@ extern void vfe_sst_dsp_cleanup(struct device *dev, struct skl_sst *ctx);
 
 #endif
 
+void kctl_notify_machine_ready(struct snd_soc_card *card);
+
 #endif //__SOUND_SOC_SKL_VIRTIO_H
+

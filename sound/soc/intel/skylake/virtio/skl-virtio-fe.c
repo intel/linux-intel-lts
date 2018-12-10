@@ -49,6 +49,11 @@ static struct snd_skl_vfe *get_virtio_audio_fe(void)
 	return skl_vfe;
 }
 
+struct kctl_proxy *get_kctl_proxy(void)
+{
+	return &get_virtio_audio_fe()->kcon_proxy;
+}
+
 struct vfe_substream_info *vfe_find_substream_info_by_pcm(
 	struct snd_skl_vfe *vfe, char *pcm_id, int direction)
 {
@@ -85,19 +90,6 @@ inline int vfe_is_valid_fe_substream(struct snd_pcm_substream *substream)
 	return vfe_is_valid_pcm_id(substream->pcm->id);
 }
 
-struct vfe_kcontrol *vfe_find_kcontrol(struct snd_skl_vfe *vfe,
-	struct snd_kcontrol *kcontrol)
-{
-	struct vfe_kcontrol *vfe_kcontrol;
-
-	list_for_each_entry(vfe_kcontrol, &vfe->kcontrols_list, list) {
-		if (kcontrol == vfe_kcontrol->kcontrol)
-			return vfe_kcontrol;
-	}
-
-	return NULL;
-}
-
 const struct snd_pcm *vfe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
 {
 	const struct snd_soc_pcm_runtime *rtd;
@@ -112,6 +104,14 @@ const struct snd_pcm *vfe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
 			return rtd->pcm;
 	}
 	return NULL;
+}
+
+static inline vfe_vq_kick(struct snd_skl_vfe *vfe, struct virtqueue *vq)
+{
+	unsigned long irq_flags;
+	spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
+	virtqueue_kick(vq);
+	spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
 }
 
 static int vfe_send_virtio_msg(struct snd_skl_vfe *vfe,
@@ -139,9 +139,7 @@ static int vfe_send_virtio_msg(struct snd_skl_vfe *vfe,
 		return ret;
 	}
 
-	spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
-	virtqueue_kick(vq);
-	spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
+	vfe_vq_kick(vfe, vq);
 
 	return 0;
 }
@@ -224,21 +222,10 @@ out_no_mem:
 	return -ENOMEM;
 }
 
-static int vfe_send_pos_request(struct snd_skl_vfe *vfe,
-		struct vfe_hw_pos_request *request)
+static int vfe_send_kctl_msg(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol, struct vfe_kctl_result *result)
 {
-	struct scatterlist sg;
-
-	sg_init_one(&sg, request, sizeof(*request));
-
-	return vfe_send_virtio_msg(vfe, vfe->ipc_not_rx_vq,
-			&sg, 1, request, false);
-}
-
-static int vfe_send_kctl_msg(struct snd_skl_vfe *vfe,
-	struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol,
-	struct vfe_kctl_result *result)
-{
+	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 	struct vfe_kctl_value kcontrol_value;
 	struct vfe_msg_header msg_header;
 	struct vfe_kctl_info *kctl_desc = &msg_header.desc.kcontrol;
@@ -253,6 +240,22 @@ static int vfe_send_kctl_msg(struct snd_skl_vfe *vfe,
 			sizeof(struct vfe_kctl_result));
 }
 
+static int vfe_skl_kcontrol_check_permission(u32 domain_id,
+		const struct snd_kcontrol *kcontrol)
+{
+	return 0;
+}
+
+static int vfe_put_inbox_buffer(struct snd_skl_vfe *vfe,
+		void *buff)
+{
+	struct scatterlist sg;
+
+	sg_init_one(&sg, buff, sizeof(union inbox_msg));
+
+	return vfe_send_virtio_msg(vfe, vfe->ipc_not_rx_vq,
+			&sg, 1, buff, false);
+}
 
 //TODO: make it to use same mechanism as vfe_send_pcm_msg
 static int vfe_send_dsp_ipc_msg(struct snd_skl_vfe *vfe,
@@ -392,71 +395,58 @@ static void vfe_not_handle_rx(struct virtqueue *vq)
 	struct snd_skl_vfe *vfe;
 
 	vfe = vq->vdev->priv;
-	schedule_work(&vfe->posn_update_work);
+	schedule_work(&vfe->message_loop_work);
 }
 
-static void vfe_posn_update(struct work_struct *work)
+static void vfe_handle_posn(struct snd_skl_vfe *vfe,
+		struct vfe_hw_pos_request *pos_req)
 {
-	struct snd_pcm_substream *substream;
-	struct vfe_hw_pos_request *pos_req;
-	struct virtqueue *vq;
 	unsigned long irq_flags;
-	unsigned int buflen = 0;
 	struct vfe_substream_info *substr_info;
+
+	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
+	substr_info = vfe_find_substream_info_by_pcm(vfe,
+		pos_req->pcm_id, pos_req->stream_dir);
+	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
+
+	// substream may be already closed on FE side
+	if (!substr_info)
+		return;
+
+	substr_info->hw_ptr = pos_req->stream_pos;
+	snd_pcm_period_elapsed(substr_info->substream);
+}
+
+static void vfe_message_loop(struct work_struct *work)
+{
+	struct vfe_inbox_header *header;
+	struct vfe_kctl_noti *kctln;
+	struct virtqueue *vq;
+	unsigned int buflen = 0;
+	struct vfe_kctl_result result;
+
 	struct snd_skl_vfe *vfe =
-		container_of(work, struct snd_skl_vfe, posn_update_work);
+		container_of(work, struct snd_skl_vfe, message_loop_work);
 
 	vq = vfe->ipc_not_rx_vq;
 
-	while (true) {
-		spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
-		pos_req = virtqueue_get_buf(vq, &buflen);
-		spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
-
-		if (pos_req == NULL)
+	while ((header = virtqueue_get_buf(vq, &buflen)) != NULL) {
+		switch (header->msg_type) {
+		case VFE_MSG_POS_NOTI:
+			vfe_handle_posn(vfe,
+				(struct vfe_hw_pos_request *)header);
 			break;
-
-		spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
-		substr_info = vfe_find_substream_info_by_pcm(vfe,
-			pos_req->pcm_id, pos_req->stream_dir);
-
-		// substream may be already closed on FE side
-		if (!substr_info) {
-			spin_unlock_irqrestore(&vfe->substream_info_lock,
-				irq_flags);
-			goto send_back_msg;
+		case VFE_MSG_KCTL_SET:
+			kctln = (struct vfe_kctl_noti *)header;
+			kctl_ipc_handle(0u, &kctln->kcontrol,
+				&kctln->kcontrol_value, &result);
+			break;
+		default:
+			dev_err(&vfe->vdev->dev,
+				"Invalid msg Type (%d)\n", header->msg_type);
 		}
-
-		substr_info->hw_ptr = pos_req->stream_pos;
-		substream = substr_info->substream;
-		spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
-
-		snd_pcm_period_elapsed(substream);
-
-send_back_msg:
-		vfe_send_pos_request(vfe, pos_req);
 	}
-}
-
-int vfe_kcontrol_put(struct snd_kcontrol *kcontrol,
-	struct snd_ctl_elem_value *ucontrol)
-{
-	struct vfe_kctl_result result;
-	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
-	struct vfe_kcontrol *vfe_kcontrol = vfe_find_kcontrol(vfe, kcontrol);
-	int ret = 0;
-
-	ret = vfe_send_kctl_msg(vfe, kcontrol, ucontrol, &result);
-	if (ret < 0)
-		return ret;
-
-	if (result.ret < 0)
-		return result.ret;
-
-	if (vfe_kcontrol->put)
-		ret = vfe_kcontrol->put(kcontrol, ucontrol);
-
-	return ret;
+	vfe_put_inbox_buffer(vfe, header);
 }
 
 static struct vfe_msg_header
@@ -703,37 +693,6 @@ static struct pci_device_id vfe_pci_device_id = {
 	PCI_DEVICE(0x8086, 0x8063),
 	.driver_data = (unsigned long)&vfe_acpi_mach
 };
-
-int vfe_wrap_kcontrol(struct snd_skl_vfe *vfe, struct snd_kcontrol *kcontrol)
-{
-	struct vfe_kcontrol *vfe_kcontrol = devm_kzalloc(&vfe->vdev->dev,
-		sizeof(*vfe_kcontrol), GFP_KERNEL);
-
-	if (!vfe_kcontrol)
-		return -ENOMEM;
-
-	vfe_kcontrol->kcontrol = kcontrol;
-	vfe_kcontrol->put = kcontrol->put;
-	kcontrol->put = vfe_kcontrol_put;
-
-	list_add(&vfe_kcontrol->list, &vfe->kcontrols_list);
-	return 0;
-}
-
-int vfe_wrap_native_driver(struct snd_skl_vfe *vfe,
-	struct platform_device *pdev, struct snd_soc_card *card)
-{
-	struct snd_kcontrol *kctl;
-	int ret;
-
-	list_for_each_entry(kctl, &card->snd_card->controls, list) {
-		ret = vfe_wrap_kcontrol(vfe, kctl);
-		if (ret < 0)
-			return ret;
-	}
-
-	return 0;
-}
 
 static struct snd_pcm_ops vfe_platform_ops = {
 	.open = vfe_pcm_open,
@@ -982,11 +941,11 @@ static int vfe_init_vqs(struct snd_skl_vfe *vfe)
 	int ret;
 	struct virtio_device *vdev = vfe->vdev;
 	vq_callback_t *cbs[SKL_VIRTIO_NUM_OF_VQS] =	{
-			vfe_cmd_tx_done,
-			vfe_cmd_handle_rx,
-			vfe_not_tx_done,
-			vfe_not_handle_rx
-	};
+				vfe_cmd_tx_done,
+				vfe_cmd_handle_rx,
+				vfe_not_tx_done,
+				vfe_not_handle_rx
+		};
 
 	/* find virt queue for vfe to send/receive IPC message. */
 	ret = virtio_find_vqs(vfe->vdev, SKL_VIRTIO_NUM_OF_VQS,
@@ -1006,10 +965,27 @@ static int vfe_init_vqs(struct snd_skl_vfe *vfe)
 	return 0;
 }
 
+static void vfe_send_queues(struct virtio_device *vdev)
+{
+	int idx;
+	struct snd_skl_vfe *vfe = vdev->priv;
+
+	for (idx = 0; idx < VFE_MSG_BUFF_NUM; ++idx) {
+		vfe->in_buff[idx] = devm_kmalloc(&vdev->dev,
+				sizeof(union inbox_msg), GFP_KERNEL);
+		if (!vfe->in_buff[idx])
+			return -ENOMEM;
+
+		vfe_put_inbox_buffer(vfe, vfe->in_buff[idx]);
+	}
+	vfe_vq_kick(vfe, vfe->ipc_not_rx_vq);
+}
+
 static int vfe_init(struct virtio_device *vdev)
 {
 	struct snd_skl_vfe *vfe;
 	int ret;
+	struct kctl_ops kt_ops;
 
 	vfe = devm_kzalloc(&vdev->dev, sizeof(*vfe), GFP_KERNEL);
 	if (!vfe)
@@ -1023,23 +999,20 @@ static int vfe_init(struct virtio_device *vdev)
 	spin_lock_init(&vfe->substream_info_lock);
 	INIT_LIST_HEAD(&vfe->substr_info_list);
 	spin_lock_init(&vfe->ipc_vq_lock);
-	INIT_WORK(&vfe->posn_update_work, vfe_posn_update);
 	INIT_LIST_HEAD(&vfe->expired_msg_list);
 	INIT_WORK(&vfe->msg_timeout_work, vfe_not_tx_timeout_handler);
-
-	vfe->send_dsp_ipc_msg = vfe_send_dsp_ipc_msg;
-	vfe->notify_machine_probe = vfe_wrap_native_driver;
 
 	ret = vfe_init_vqs(vfe);
 	if (ret < 0)
 		goto err;
 
-	vfe->pos_not = devm_kmalloc(&vdev->dev,
-			sizeof(*vfe->pos_not), GFP_KERNEL);
-	if (!vfe->pos_not)
-		goto no_mem;
+	INIT_WORK(&vfe->message_loop_work, vfe_message_loop);
 
-	vfe_send_pos_request(vfe, vfe->pos_not);
+	kctl_init_proxy(&vdev->dev, &kt_ops);
+
+	vfe->send_dsp_ipc_msg = vfe_send_dsp_ipc_msg;
+
+	vfe_send_queues(vdev);
 
 	ret = vfe_skl_init(vdev);
 	if (ret < 0)
@@ -1082,7 +1055,7 @@ static void vfe_remove(struct virtio_device *vdev)
 	if (!vfe)
 		return;
 
-	cancel_work_sync(&vfe->posn_update_work);
+	cancel_work_sync(&vfe->message_loop_work);
 	vfe_machine_device_unregister(&vfe->sdev);
 }
 
@@ -1109,7 +1082,7 @@ static int vfe_restore(struct virtio_device *vdev)
 	if (ret < 0)
 		return ret;
 
-	vfe_send_pos_request(vfe, vfe->pos_not);
+	vfe_send_queues(vdev);
 
 	return 0;
 }

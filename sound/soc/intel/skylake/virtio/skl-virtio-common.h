@@ -121,13 +121,6 @@ struct vfe_pcm_hw_params {
 	uint32_t host_period_bytes;
 };
 
-struct vfe_hw_pos_request {
-	char pcm_id[64];
-	u32 stream_dir;
-	u64 stream_pos;
-	struct list_head list;
-};
-
 struct vfe_pcm_result {
 	int ret;
 };
@@ -147,6 +140,34 @@ struct vfe_hda_cfg {
 	u8 pb_streams;
 };
 
+struct vfe_inbox_header {
+	int msg_type;
+};
+
+struct vfe_hw_pos_request {
+	int msg_type;
+	char pcm_id[64];
+	u32 stream_dir;
+	u64 stream_pos;
+};
+
+struct vfe_kctl_noti {
+	int msg_type;
+	struct vfe_kctl_info kcontrol;
+	struct vfe_kctl_value kcontrol_value;
+};
+
+union inbox_msg {
+	struct vfe_hw_pos_request posn;
+	struct vfe_kctl_noti kctln;
+};
+
+struct vfe_pending_msg {
+	union inbox_msg msg;
+	unsigned int sizeof_msg;
+	struct list_head list;
+};
+
 #define VFE_MSG_TYPE_OFFSET 8
 #define VFE_MSG_TYPE_MASK (0xFF << VFE_MSG_TYPE_OFFSET)
 
@@ -155,6 +176,7 @@ enum vfe_ipc_msg_type {
 	VFE_MSG_KCTL = 2 << VFE_MSG_TYPE_OFFSET,
 	VFE_MSG_TPLG = 3 << VFE_MSG_TYPE_OFFSET,
 	VFE_MSG_CFG = 4 << VFE_MSG_TYPE_OFFSET,
+	VFE_MSG_POS = 5 << VFE_MSG_TYPE_OFFSET,
 
 	VFE_MSG_PCM_OPEN = VFE_MSG_PCM | 0x01,
 	VFE_MSG_PCM_CLOSE = VFE_MSG_PCM | 0x02,
@@ -165,6 +187,37 @@ enum vfe_ipc_msg_type {
 	VFE_MSG_KCTL_SET = VFE_MSG_KCTL | 0x01,
 
 	VFE_MSG_CFG_HDA = VFE_MSG_CFG | 0x01,
+
+	VFE_MSG_POS_NOTI = VFE_MSG_POS | 0x01,
 };
+
+struct kctl_wrapper {
+	struct snd_kcontrol *kcontrol;
+	struct list_head list;
+	snd_kcontrol_put_t *put;
+};
+
+typedef int (*kctl_send_op)(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol,
+		struct vfe_kctl_result *result);
+
+typedef int (*kctl_perm_op)(u32 domain_id,
+		const struct snd_kcontrol *kcontrol);
+
+struct kctl_ops {
+	kctl_send_op send_noti;
+	kctl_perm_op check_permission;
+};
+
+struct kctl_proxy {
+	struct device *alloc_dev;
+	struct kctl_ops ops;
+	struct list_head kcontrols_list;
+};
+
+struct kctl_proxy *get_kctl_proxy(void);
+int kctl_ipc_handle(u32 domain_id, const struct vfe_kctl_info *kctl_info,
+	struct vfe_kctl_value *kcontrol_val, struct vfe_kctl_result *result);
+void kctl_init_proxy(struct device *dev, struct kctl_ops *kt_ops);
 
 #endif
