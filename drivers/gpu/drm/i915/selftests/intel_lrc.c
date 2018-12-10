@@ -629,6 +629,116 @@ err_unlock:
 	return err;
 }
 
+static void __softirq_begin(void)
+{
+	local_bh_disable();
+}
+
+static void __softirq_end(void)
+{
+	local_bh_enable();
+}
+
+static void __hardirq_begin(void)
+{
+	local_irq_disable();
+}
+
+static void __hardirq_end(void)
+{
+	local_irq_enable();
+}
+
+static int live_preempt_reset(void *arg)
+{
+	struct drm_i915_private *i915 = arg;
+	struct intel_engine_cs *engine;
+	struct i915_gem_context *ctx;
+	enum intel_engine_id id;
+	struct spinner spin;
+	int err = -ENOMEM;
+
+	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
+		return 0;
+
+	mutex_lock(&i915->drm.struct_mutex);
+
+	if (spinner_init(&spin, i915))
+		goto err_unlock;
+
+	ctx = kernel_context(i915);
+	if (!ctx)
+		goto err_spin;
+
+	for_each_engine(engine, i915, id) {
+		static const struct {
+			const char *name;
+			void (*critical_section_begin)(void);
+			void (*critical_section_end)(void);
+		} phases[] = {
+			{ "softirq", __softirq_begin, __softirq_end },
+			{ "hardirq", __hardirq_begin, __hardirq_end },
+			{ }
+		};
+		struct tasklet_struct *t = &engine->execlists.tasklet;
+		const typeof(*phases) *p;
+
+		for (p = phases; p->name; p++) {
+			struct i915_request *rq;
+
+			rq = spinner_create_request(&spin, ctx, engine,
+						    MI_NOOP);
+			if (IS_ERR(rq)) {
+				err = PTR_ERR(rq);
+				goto err_ctx;
+			}
+
+			i915_request_add(rq);
+			if (!wait_for_spinner(&spin, rq)) {
+				i915_gem_set_wedged(i915);
+				err = -EIO;
+				goto err_ctx;
+			}
+
+			/* Flush to give try_preempt_reset a chance */
+			tasklet_schedule(t);
+			tasklet_kill(t);
+			GEM_BUG_ON(i915_request_completed(rq));
+
+			GEM_TRACE("%s triggering %s reset\n",
+				  engine->name, p->name);
+			p->critical_section_begin();
+
+			mark_preemption_hang(&engine->execlists);
+			err = try_preempt_reset(&engine->execlists);
+
+			p->critical_section_end();
+			if (err) {
+				pr_err("Preempt softirq reset failed on %s, tasklet state %lx\n",
+				       engine->name, t->state);
+				spinner_end(&spin);
+				i915_gem_set_wedged(i915);
+				goto err_ctx;
+			}
+
+			if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
+				err = -EIO;
+				goto err_ctx;
+			}
+		}
+	}
+
+	err = 0;
+err_ctx:
+	kernel_context_close(ctx);
+err_spin:
+	spinner_fini(&spin);
+err_unlock:
+	igt_flush_test(i915, I915_WAIT_LOCKED);
+	mutex_unlock(&i915->drm.struct_mutex);
+	return err;
+}
+
 int intel_execlists_live_selftests(struct drm_i915_private *i915)
 {
 	static const struct i915_subtest tests[] = {
@@ -637,6 +747,7 @@ int intel_execlists_live_selftests(struct drm_i915_private *i915)
 		SUBTEST(live_late_preempt),
 		SUBTEST(live_preempt_hang),
 		SUBTEST(live_preempt_timeout),
+		SUBTEST(live_preempt_reset),
 	};
 
 	if (!HAS_EXECLISTS(i915))

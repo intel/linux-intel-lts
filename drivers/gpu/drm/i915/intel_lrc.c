@@ -611,6 +611,37 @@ static void inject_preempt_context(struct intel_engine_cs *engine)
 	execlists_set_active(execlists, EXECLISTS_ACTIVE_PREEMPT);
 }
 
+static int try_preempt_reset(struct intel_engine_execlists *execlists)
+{
+	struct tasklet_struct * const t = &execlists->tasklet;
+	int err = -EBUSY;
+
+	if (tasklet_trylock(t)) {
+		struct intel_engine_cs *engine =
+			container_of(execlists, typeof(*engine), execlists);
+		const unsigned int bit = I915_RESET_ENGINE + engine->id;
+		unsigned long *lock = &engine->i915->gpu_error.flags;
+
+		t->func(t->data);
+		if (!execlists_is_active(execlists,
+					 EXECLISTS_ACTIVE_PREEMPT_TIMEOUT)) {
+			/* Nothing to do; the tasklet was just delayed. */
+			err = 0;
+		} else if (!test_and_set_bit(bit, lock)) {
+			tasklet_disable_nosync(t);
+			err = i915_reset_engine(engine, "preemption time out");
+			tasklet_enable(t);
+
+			clear_bit(bit, lock);
+			wake_up_bit(lock, bit);
+		}
+
+		tasklet_unlock(t);
+	}
+
+	return err;
+}
+
 static enum hrtimer_restart preempt_timeout(struct hrtimer *hrtimer)
 {
 	struct intel_engine_execlists *execlists =
@@ -633,7 +664,8 @@ static enum hrtimer_restart preempt_timeout(struct hrtimer *hrtimer)
 		intel_engine_dump(engine, &p, "%s\n", engine->name);
 	}
 
-	queue_work(system_highpri_wq, &execlists->preempt_reset);
+	if (try_preempt_reset(execlists))
+		queue_work(system_highpri_wq, &execlists->preempt_reset);
 
 	return HRTIMER_NORESTART;
 }
