@@ -1128,7 +1128,7 @@ void i915_request_add(struct i915_request *request)
 	local_bh_disable();
 	rcu_read_lock(); /* RCU serialisation for set-wedged protection */
 	if (engine->schedule)
-		engine->schedule(request, &request->gem_context->sched);
+		engine->schedule(request, &request->gem_context->sched, 0);
 	rcu_read_unlock();
 	i915_sw_fence_commit(&request->submit);
 	local_bh_enable(); /* Kick the execlists tasklet if just scheduled */

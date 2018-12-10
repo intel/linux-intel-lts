@@ -413,7 +413,7 @@ static int live_late_preempt(void *arg)
 		}
 
 		attr.priority = I915_PRIORITY_MAX;
-		engine->schedule(rq, &attr);
+		engine->schedule(rq, &attr, 0);
 
 		if (!wait_for_spinner(&spin_hi, rq)) {
 			pr_err("High priority context failed to preempt the low priority context\n");
@@ -739,6 +739,113 @@ err_unlock:
 	return err;
 }
 
+static int live_late_preempt_timeout(void *arg)
+{
+	struct drm_i915_private *i915 = arg;
+	struct i915_gem_context *ctx_hi, *ctx_lo;
+	struct spinner spin_hi, spin_lo;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id;
+	int err = -ENOMEM;
+
+	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
+		return 0;
+
+	mutex_lock(&i915->drm.struct_mutex);
+
+	if (spinner_init(&spin_hi, i915))
+		goto err_unlock;
+
+	if (spinner_init(&spin_lo, i915))
+		goto err_spin_hi;
+
+	ctx_hi = kernel_context(i915);
+	if (!ctx_hi)
+		goto err_spin_lo;
+
+	ctx_lo = kernel_context(i915);
+	if (!ctx_lo)
+		goto err_ctx_hi;
+
+	for_each_engine(engine, i915, id) {
+		struct i915_request *rq;
+
+		rq = spinner_create_request(&spin_lo, ctx_lo, engine, MI_NOOP);
+		if (IS_ERR(rq)) {
+			err = PTR_ERR(rq);
+			goto err_ctx_lo;
+		}
+
+		i915_request_add(rq);
+		if (!wait_for_spinner(&spin_lo, rq)) {
+			pr_err("First context failed to start\n");
+			goto err_wedged;
+		}
+
+		rq = spinner_create_request(&spin_hi, ctx_hi, engine, MI_NOOP);
+		if (IS_ERR(rq)) {
+			spinner_end(&spin_lo);
+			err = PTR_ERR(rq);
+			goto err_ctx_lo;
+		}
+
+		i915_request_add(rq);
+		if (wait_for_spinner(&spin_hi, rq)) {
+			pr_err("Second context overtook first?\n");
+			goto err_wedged;
+		}
+
+		GEM_TRACE("%s rescheduling (no timeout)\n", engine->name);
+		engine->schedule(rq, &(struct i915_sched_attr){
+				 .priority = 1,
+				 }, 0);
+
+		if (wait_for_spinner(&spin_hi, rq)) {
+			pr_err("High priority context overtook first without an arbitration point?\n");
+			goto err_wedged;
+		}
+
+		GEM_TRACE("%s rescheduling (with timeout)\n", engine->name);
+		engine->schedule(rq, &(struct i915_sched_attr){
+				 .priority = 2,
+				 }, 10 * 1000 /* 10us */);
+
+		if (!wait_for_spinner(&spin_hi, rq)) {
+			pr_err("High priority context failed to force itself in front of the low priority context\n");
+			GEM_TRACE_DUMP();
+			goto err_wedged;
+		}
+
+		spinner_end(&spin_hi);
+		spinner_end(&spin_lo);
+		if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
+			err = -EIO;
+			goto err_ctx_lo;
+		}
+	}
+
+	err = 0;
+err_ctx_lo:
+	kernel_context_close(ctx_lo);
+err_ctx_hi:
+	kernel_context_close(ctx_hi);
+err_spin_lo:
+	spinner_fini(&spin_lo);
+err_spin_hi:
+	spinner_fini(&spin_hi);
+err_unlock:
+	igt_flush_test(i915, I915_WAIT_LOCKED);
+	mutex_unlock(&i915->drm.struct_mutex);
+	return err;
+
+err_wedged:
+	spinner_end(&spin_hi);
+	spinner_end(&spin_lo);
+	i915_gem_set_wedged(i915);
+	err = -EIO;
+	goto err_ctx_lo;
+}
+
 int intel_execlists_live_selftests(struct drm_i915_private *i915)
 {
 	static const struct i915_subtest tests[] = {
@@ -748,6 +855,7 @@ int intel_execlists_live_selftests(struct drm_i915_private *i915)
 		SUBTEST(live_preempt_hang),
 		SUBTEST(live_preempt_timeout),
 		SUBTEST(live_preempt_reset),
+		SUBTEST(live_late_preempt_timeout),
 	};
 
 	if (!HAS_EXECLISTS(i915))
