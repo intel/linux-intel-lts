@@ -239,6 +239,22 @@ config SND_SOC_INTEL_BXT_RT298_MACH
 	   Say Y or m if you have such a device. This is a recommended option.
 	   If unsure select "N".
 
+config SND_SOC_INTEL_BXT_SOS_TDF8532_MACH
+	tristate
+	select SND_SOC_TDF8532
+
+config SND_SOC_INTEL_BXT_SOS_TDF8532
+	bool
+	prompt "Broxton with TDF8532 in I2S mode and SOS support"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	select SND_SOC_INTEL_BXT_SOS_TDF8532_MACH
+	help
+	  This adds support for ASoC machine driver for Broxton IVI GP MRB
+	  platforms with TDF8532 I2S audio codec. This version of machine driver
+	  supports virtio sound card BE on Service OS.
+	  Say Y or m if you have such a device. This is a recommended option.
+	  If unsure select "N".
+
 config SND_SOC_INTEL_KBL_RT5663_MAX98927_MACH
 	tristate "KBL with RT5663 and MAX98927 in I2S Mode"
 	depends on MFD_INTEL_LPSS && I2C && ACPI

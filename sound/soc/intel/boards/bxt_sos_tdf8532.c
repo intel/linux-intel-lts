@@ -1,34 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0+
 //
-// skl-virtio-card.c  --  ASoC cAVS virtio sound card
+// bxt_sos_tdf8532.c  --  Intel Broxton-P I2S Machine Driver with SOS support
 //
-// Copyright (C) 2018 Intel Corporation.
+// Copyright (C) 2019 Intel Corporation.
 //
-// Authors: Furtak, Pawel <pawel.furtak@intel.com>
-//          Janca, Grzegorz <grzegorz.janca@intel.com>
+// Authors: Jablonski, Wojciech <wojciech.jablonski@intel.com>
 //
-//  This module registers virtio sound card as a machine driver
+//  Intel Broxton-P I2S Machine Driver for IVI reference platform. This version
+//  of machine driver supports virtio sound card BE on Service OS
+//  The driver created based on regular tdf8532(bxt_tdf8532.c)
 
-#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
-#include <linux/acpi.h>
-#include <linux/device.h>
-#include <linux/dmi.h>
-#include <linux/slab.h>
+#include <sound/core.h>
 #include <sound/pcm.h>
-#include <sound/pcm_params.h>
 #include <sound/soc.h>
-#include <sound/jack.h>
+#include <sound/pcm_params.h>
 
-#include "skl-virtio.h"
-
-struct snd_kcontrol_new skl_virtio_controls[] = {
+static const struct snd_kcontrol_new broxton_tdf8532_controls[] = {
 	SOC_DAPM_PIN_SWITCH("Speaker"),
+	SOC_DAPM_PIN_SWITCH("SpeakerSos"),
 };
 
-static const struct snd_soc_dapm_widget skl_virtio_widgets[] = {
+static const struct snd_soc_dapm_widget broxton_tdf8532_widgets[] = {
 	SND_SOC_DAPM_SPK("Speaker", NULL),
+	SND_SOC_DAPM_SPK("SpeakerSos", NULL),
 	SND_SOC_DAPM_MIC("DiranaCp", NULL),
 	SND_SOC_DAPM_HP("DiranaPb", NULL),
 	SND_SOC_DAPM_MIC("HdmiIn", NULL),
@@ -40,9 +36,13 @@ static const struct snd_soc_dapm_widget skl_virtio_widgets[] = {
 	SND_SOC_DAPM_HP("ModemUl", NULL),
 };
 
-static const struct snd_soc_dapm_route skl_virtio_map[] = {
+static const struct snd_soc_dapm_route broxton_tdf8532_map[] = {
+
 	/* Speaker BE connections */
 	{ "Speaker", NULL, "ssp4 Tx"},
+	{ "ssp4 Tx", NULL, "codec0_out"},
+
+	{ "SpeakerSos", NULL, "ssp4 Tx"},
 	{ "ssp4 Tx", NULL, "codec0_out"},
 
 	{ "dirana_in", NULL, "ssp2 Rx"},
@@ -79,17 +79,49 @@ static const struct snd_soc_dapm_route skl_virtio_map[] = {
 	{ "ssp3 Tx", NULL, "Modem_ssp3_out"},
 };
 
-static struct snd_soc_dai_link skl_virtio_dais[] = {
+static int bxt_tdf8532_ssp2_fixup(struct snd_soc_pcm_runtime *rtd,
+				struct snd_pcm_hw_params *params)
+{
+	struct snd_mask *fmt = hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT);
+
+	/* set SSP to 32 bit */
+	snd_mask_none(fmt);
+	snd_mask_set(fmt, SNDRV_PCM_FORMAT_S32_LE);
+
+	return 0;
+}
+
+/* broxton digital audio interface glue - connects codec <--> CPU */
+static struct snd_soc_dai_link broxton_tdf8532_dais[] = {
 	/* Front End DAI links */
 	{
 		.name = "Speaker Port",
 		.stream_name = "Speaker",
 		.cpu_dai_name = "Speaker Pin",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.nonatomic = 1,
 		.dynamic = 1,
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {
+			SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST
+		},
+		.dpcm_playback = 1,
+	},
+	{
+		.name = "SpeakerSos Port",
+		.stream_name = "SpeakerSos",
+		.cpu_dai_name = "SpeakerSos Pin",
+		.platform_name = "0000:00:0e.0",
+		.nonatomic = 1,
+		.dynamic = 1,
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {
+			SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST
+		},
 		.dpcm_playback = 1,
 	},
 	{
@@ -98,22 +130,26 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "Dirana Cp Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.init = NULL,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
 		.nonatomic = 1,
 		.dynamic = 1,
 	},
-		{
+	{
 		.name = "Dirana Playback Port",
 		.stream_name = "Dirana Pb",
 		.cpu_dai_name = "Dirana Pb Pin",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.nonatomic = 1,
 		.dynamic = 1,
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {
+			SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST
+		},
 		.dpcm_playback = 1,
 	},
 	{
@@ -122,7 +158,7 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "TestPin Cp Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.init = NULL,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
@@ -133,11 +169,15 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.name = "TestPin Playback Port",
 		.stream_name = "TestPin Pb",
 		.cpu_dai_name = "TestPin Pb Pin",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.nonatomic = 1,
 		.dynamic = 1,
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {
+			SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST
+		},
 		.dpcm_playback = 1,
 	},
 	{
@@ -146,7 +186,7 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "BtHfp Cp Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.init = NULL,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
@@ -157,11 +197,15 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.name = "BtHfp Playback Port",
 		.stream_name = "BtHfp Pb",
 		.cpu_dai_name = "BtHfp Pb Pin",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.nonatomic = 1,
 		.dynamic = 1,
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {
+			SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST
+		},
 		.dpcm_playback = 1,
 	},
 	{
@@ -170,7 +214,7 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "Modem Cp Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.init = NULL,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
@@ -181,11 +225,15 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.name = "Modem Playback Port",
 		.stream_name = "Modem Pb",
 		.cpu_dai_name = "Modem Pb Pin",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.nonatomic = 1,
 		.dynamic = 1,
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+		.trigger = {
+			SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST
+		},
 		.dpcm_playback = 1,
 	},
 	{
@@ -194,7 +242,7 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "HDMI Cp Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.init = NULL,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
@@ -207,7 +255,7 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "Dirana Aux Cp Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.init = NULL,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
@@ -220,15 +268,55 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "Dirana Tuner Cp Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.init = NULL,
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
 		.nonatomic = 1,
 		.dynamic = 1,
 	},
-
-
+	/* Probe DAI links*/
+	{
+		.name = "Bxt Compress Probe playback",
+		.stream_name = "Probe Playback",
+		.cpu_dai_name = "Compress Probe0 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:00:0e.0",
+		.init = NULL,
+		.nonatomic = 1,
+	},
+	{
+		.name = "Bxt Compress Probe capture",
+		.stream_name = "Probe Capture",
+		.cpu_dai_name = "Compress Probe1 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:00:0e.0",
+		.init = NULL,
+		.nonatomic = 1,
+	},
+	/* Trace Buffer DAI links */
+	{
+		.name = "Bxt Trace Buffer0",
+		.stream_name = "Core 0 Trace Buffer",
+		.cpu_dai_name = "TraceBuffer0 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:00:0e.0",
+		.capture_only = true,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = "Bxt Trace Buffer1",
+		.stream_name = "Core 1 Trace Buffer",
+		.cpu_dai_name = "TraceBuffer1 Pin",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "0000:00:0e.0",
+		.capture_only = true,
+		.ignore_suspend = 1,
+	},
 	/* Back End DAI links */
 	{
 		/* SSP0 - BT */
@@ -237,7 +325,7 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "SSP0 Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.dpcm_playback = 1,
@@ -250,7 +338,7 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "SSP1 Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.no_pcm = 1,
@@ -262,20 +350,21 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "SSP2 Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.dpcm_playback = 1,
 		.no_pcm = 1,
+		.be_hw_params_fixup = bxt_tdf8532_ssp2_fixup,
 	},
-		{
+	{
 		/* SSP3 - Modem */
 		.name = "SSP3-Codec",
 		.id = 3,
 		.cpu_dai_name = "SSP3 Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.dpcm_playback = 1,
@@ -286,9 +375,9 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.name = "SSP4-Codec",
 		.id = 4,
 		.cpu_dai_name = "SSP4 Pin",
-		.codec_name = "snd-soc-dummy",
-		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.codec_name = "i2c-INT34C3:00",
+		.codec_dai_name = "tdf8532-hifi",
+		.platform_name = "0000:00:0e.0",
 		.ignore_suspend = 1,
 		.dpcm_playback = 1,
 		.no_pcm = 1,
@@ -300,68 +389,63 @@ static struct snd_soc_dai_link skl_virtio_dais[] = {
 		.cpu_dai_name = "SSP5 Pin",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
-		.platform_name = "virtio4",
+		.platform_name = "0000:00:0e.0",
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.dpcm_playback = 1,
 		.no_pcm = 1,
 	},
-
 };
 
-static int skl_virtio_add_dai_link(struct snd_soc_card *card,
-			    struct snd_soc_dai_link *link)
+static int bxt_add_dai_link(struct snd_soc_card *card,
+			struct snd_soc_dai_link *link)
 {
-	link->platform_name = "virtio4";
+	link->platform_name = "0000:00:0e.0";
 	link->nonatomic = 1;
 	return 0;
 }
 
-static struct snd_soc_card skl_virtio_card = {
-	.name = "skl_virtio_card",
-	.dai_link = skl_virtio_dais,
-	.num_links = ARRAY_SIZE(skl_virtio_dais),
-	.controls = skl_virtio_controls,
-	.num_controls = ARRAY_SIZE(skl_virtio_controls),
-	.dapm_widgets = skl_virtio_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(skl_virtio_widgets),
-	.dapm_routes = skl_virtio_map,
-	.num_dapm_routes = ARRAY_SIZE(skl_virtio_map),
+/* broxton audio machine driver for TDF8532 */
+static struct snd_soc_card broxton_tdf8532 = {
+	.name = "broxton_tdf8532",
+	.dai_link = broxton_tdf8532_dais,
+	.num_links = ARRAY_SIZE(broxton_tdf8532_dais),
+	.controls = broxton_tdf8532_controls,
+	.num_controls = ARRAY_SIZE(broxton_tdf8532_controls),
+	.dapm_widgets = broxton_tdf8532_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(broxton_tdf8532_widgets),
+	.dapm_routes = broxton_tdf8532_map,
+	.num_dapm_routes = ARRAY_SIZE(broxton_tdf8532_map),
 	.fully_routed = true,
-	.add_dai_link = skl_virtio_add_dai_link,
+	.add_dai_link = bxt_add_dai_link,
 };
 
-static int skl_virtio_card_probe(struct platform_device *pdev)
+static int broxton_tdf8532_audio_probe(struct platform_device *pdev)
 {
-	int ret;
-	struct snd_soc_card *card = &skl_virtio_card;
-
-	card->dev = &pdev->dev;
-	ret = devm_snd_soc_register_card(&pdev->dev, card);
-	if (ret < 0)
-		return ret;
-
-	kctl_notify_machine_ready(card);
-	return ret;
+	dev_info(&pdev->dev, "%s registering %s\n", __func__, pdev->name);
+	broxton_tdf8532.dev = &pdev->dev;
+	return snd_soc_register_card(&broxton_tdf8532);
 }
 
-static int skl_virtio_card_remove(struct platform_device *pdev)
+static int broxton_tdf8532_audio_remove(struct platform_device *pdev)
 {
-	snd_soc_unregister_card(&skl_virtio_card);
+	snd_soc_unregister_card(&broxton_tdf8532);
 	return 0;
 }
 
-static struct platform_driver skl_virtio_audio = {
-	.probe = skl_virtio_card_probe,
-	.remove = skl_virtio_card_remove,
+static struct platform_driver broxton_tdf8532_audio = {
+	.probe = broxton_tdf8532_audio_probe,
+	.remove = broxton_tdf8532_audio_remove,
 	.driver = {
-		.name = "skl_virtio_card",
+		.name = "bxt_tdf8532",
 		.pm = &snd_soc_pm_ops,
 	},
 };
-module_platform_driver(skl_virtio_audio)
 
-MODULE_DESCRIPTION("ASoC cAVS virtio sound card");
-MODULE_AUTHOR("Pawel Furtak");
+module_platform_driver(broxton_tdf8532_audio)
+
+/* Module information */
+MODULE_DESCRIPTION("Intel SST Audio for Broxton GP MRB SOS");
 MODULE_LICENSE("GPL v2");
-MODULE_ALIAS("platform:skl-virtio-card");
+MODULE_ALIAS("platform:gpmrb_machine");
+MODULE_ALIAS("platform:bxt_tdf8532");

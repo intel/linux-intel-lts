@@ -33,6 +33,7 @@
 #include "../skl.h"
 #include "../skl-sst-ipc.h"
 #include "../skl-topology.h"
+#include "skl-virtio.h"
 
 const struct vbe_substream_info *vbe_find_substream_info_by_pcm(
 	const struct snd_skl_vbe *vbe, char *pcm_id, int direction)
@@ -65,23 +66,6 @@ static const struct vbe_substream_info *vbe_skl_find_substream_info(
 		info = vbe_find_substream_info(vbe, substr);
 		if (info != NULL)
 			return info;
-	}
-	return NULL;
-}
-
-static const struct snd_kcontrol *vbe_skl_find_kcontrol_by_name(
-	const struct skl *skl, char *kcontrol_name)
-{
-	const struct snd_kcontrol *kcontrol;
-
-	if (unlikely(!skl || !skl->component || !skl->component->card))
-		return NULL;
-
-	list_for_each_entry(
-		kcontrol, &skl->component->card->snd_card->controls, list) {
-		if (strncmp(kcontrol->id.name, kcontrol_name,
-			ARRAY_SIZE(kcontrol->id.name)) == 0)
-			return kcontrol;
 	}
 	return NULL;
 }
@@ -144,30 +128,69 @@ const struct snd_pcm *vbe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
 	return rtd ? rtd->pcm : NULL;
 }
 
-static bool vbe_skl_fill_posn_vqbuf(const struct snd_skl_vbe *vbe,
-		const struct virtio_vq_info *vq,
-		const struct vfe_hw_pos_request *posn)
+static bool vbe_skl_try_send(const struct snd_skl_vbe *vbe,
+		const struct virtio_vq_info *vq, void *buff,
+		unsigned int size)
 {
-	const struct device *dev = vbe->dev;
 	const struct iovec iov;
+	struct vfe_inbox_buff *save_buff;
 	u16 idx;
-	int ret;
 
-	if (virtio_vq_has_descs(vq)) {
-		ret = virtio_vq_getchain(vq, &idx, &iov, 1, NULL);
-		if (ret <= 0)
-			return false;
-
-		if (iov.iov_len < sizeof(const struct vfe_hw_pos_request)) {
-			dev_err(dev, "iov len %lu, expecting len %lu\n",
-				iov.iov_len, sizeof(*posn));
+	if (virtio_vq_has_descs(vq) &&
+		(virtio_vq_getchain(vq, &idx, &iov, 1, NULL) > 0)) {
+		if (iov.iov_len < size) {
+			dev_err(vbe->dev, "iov len %lu, expecting len %lu\n",
+				iov.iov_len, size);
 			virtio_vq_relchain(vq, idx, iov.iov_len);
 		}
-		memcpy(iov.iov_base, posn, sizeof(*posn));
+		memcpy(iov.iov_base, buff, size);
 		virtio_vq_relchain(vq, idx, iov.iov_len);
+		virtio_vq_endchains(vq, true);
 		return true;
 	}
 	return false;
+}
+
+
+static void vbe_skl_send_or_enqueue(const struct snd_skl_vbe *vbe,
+		const struct virtio_vq_info *vq,
+		struct vfe_pending_msg *pen_msg)
+{
+	struct vfe_pending_msg *save_msg;
+
+	if (vbe_skl_try_send(vbe, vq,
+		(void *)&pen_msg->msg, pen_msg->sizeof_msg) == false) {
+		save_msg = kzalloc(sizeof(*save_msg), GFP_KERNEL);
+		if (!save_msg) {
+			dev_err(vbe->dev, "Failed to allocate kctl_req memory");
+			return;
+		}
+		*save_msg = *pen_msg;
+		list_add_tail(&save_msg->list, &vbe->pending_msg_list);
+	}
+}
+
+int vbe_send_kctl_msg(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol,
+		struct vfe_kctl_result *result)
+{
+	struct vfe_pending_msg kctl_msg;
+	const struct snd_skl_vbe *vbe = get_first_vbe();
+	const struct virtio_vq_info *vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
+	bool endchain;
+
+	kctl_msg.msg.posn.msg_type = VFE_MSG_KCTL_SET;
+	strncpy(kctl_msg.msg.kctln.kcontrol.kcontrol_id, kcontrol->id.name,
+			ARRAY_SIZE(kcontrol->id.name));
+
+	kctl_msg.msg.kctln.kcontrol_value.value = *ucontrol;
+
+	kctl_msg.sizeof_msg = sizeof(struct vfe_kctl_noti);
+
+	vbe_skl_send_or_enqueue(vbe, vq, &kctl_msg);
+
+	result->ret = 0;
+	return 0;
 }
 
 void skl_notify_stream_update(struct hdac_bus *bus,
@@ -176,10 +199,9 @@ void skl_notify_stream_update(struct hdac_bus *bus,
 	const struct skl *skl = bus_to_skl(bus);
 	const struct vbe_substream_info *substr_info;
 	const struct snd_soc_pcm_runtime *rtd;
-	struct vfe_hw_pos_request pos_req, *hw_pos_req;
+	struct vfe_pending_msg pos_req;
 	const struct snd_skl_vbe *vbe;
 	const struct virtio_vq_info *vq;
-	bool endchain;
 
 	substr_info = vbe_skl_find_substream_info(skl, substream);
 	if (!substr_info)
@@ -187,33 +209,18 @@ void skl_notify_stream_update(struct hdac_bus *bus,
 
 	rtd = substream->private_data;
 
-	pos_req.stream_dir = substr_info->direction;
-	pos_req.stream_pos = rtd->ops.pointer(substream);
-	strncpy(pos_req.pcm_id, substream->pcm->id,
+	pos_req.msg.posn.msg_type = VFE_MSG_POS_NOTI;
+	pos_req.msg.posn.stream_dir = substr_info->direction;
+	pos_req.msg.posn.stream_pos = rtd->ops.pointer(substream);
+	strncpy(pos_req.msg.posn.pcm_id, substream->pcm->id,
 		ARRAY_SIZE(substream->pcm->id));
+
+	pos_req.sizeof_msg = sizeof(struct vfe_hw_pos_request);
 
 	vbe = substr_info->vbe;
 	vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
 
-	/*
-	 * let's try to get a notification RX vq available buffer
-	 * If there is an available buffer, let's notify immediately
-	 */
-	endchain = vbe_skl_fill_posn_vqbuf(vbe, vq, &pos_req);
-	if (endchain == true) {
-		virtio_vq_endchains(vq, true);
-		return;
-	}
-
-	hw_pos_req = kzalloc(sizeof(*hw_pos_req), GFP_KERNEL);
-	if (!hw_pos_req)
-		return;
-
-	*hw_pos_req = pos_req;
-	list_add_tail(&hw_pos_req->list, &vbe->posn_list);
-
-	if (endchain == true)
-		virtio_vq_endchains(vq, true);
+	vbe_skl_send_or_enqueue(vbe, vq, &pos_req);
 }
 
 int vbe_skl_allocate_runtime(const struct snd_soc_card *card,
@@ -596,11 +603,15 @@ static int vbe_skl_kcontrol_get_domain_id(const struct skl *sdev,
 	return 0;
 }
 
-static int vbe_skl_kcontrol_check_permission(const struct skl *sdev,
-	int domain_id, const struct snd_kcontrol *kcontrol)
+static int vbe_skl_kcontrol_check_permission(u32 domain_id,
+		const struct snd_kcontrol *kcontrol)
 {
 	int kcontrol_domain_id;
 	int ret;
+	struct skl *sdev = snd_skl_get_virtio_audio();
+
+	if (sdev == NULL)
+		return -EINVAL;
 
 	ret = vbe_skl_kcontrol_get_domain_id(sdev, kcontrol,
 		&kcontrol_domain_id);
@@ -611,30 +622,6 @@ static int vbe_skl_kcontrol_check_permission(const struct skl *sdev,
 		return -EACCES;
 
 	return 0;
-}
-
-static int vbe_skl_kcontrol_put(const struct skl *sdev, int vm_id,
-		const struct snd_kcontrol *kcontrol,
-		const struct vbe_ipc_msg *msg)
-{
-	const struct vfe_kctl_value *kcontrol_val =
-			(struct vfe_kctl_value *)msg->tx_data;
-	struct vfe_kctl_result *result = msg->rx_data;
-	int ret = 0;
-
-	ret = vbe_skl_kcontrol_check_permission(sdev,
-		msg->header->domain_id, kcontrol);
-	if (ret < 0)
-		goto ret_result;
-
-	if (kcontrol->put)
-		ret = kcontrol->put(kcontrol, &kcontrol_val->value);
-
-ret_result:
-	if (result)
-		result->ret = ret;
-
-	return ret;
 }
 
 static int vbe_skl_cfg_hda(const struct skl *sdev, int vm_id,
@@ -662,38 +649,18 @@ static int vbe_skl_cfg_hda(const struct skl *sdev, int vm_id,
 	return 0;
 }
 
-static int vbe_skl_msg_kcontrol_handle(const struct snd_skl_vbe *vbe,
-		const struct skl *sdev,
-		int vm_id, const struct vbe_ipc_msg *msg)
-{
-	const struct vfe_kctl_info *kctl_desc = &msg->header->desc.kcontrol;
-	const struct snd_kcontrol *kcontrol =
-		vbe_skl_find_kcontrol_by_name(sdev, kctl_desc->kcontrol_id);
-
-	if (!kcontrol) {
-		dev_err(vbe->dev, "Can not find kcontrol [%s].\n",
-			kctl_desc->kcontrol_id);
-		return -ENODEV;
-	}
-
-	switch (msg->header->cmd) {
-	case VFE_MSG_KCTL_SET:
-		return vbe_skl_kcontrol_put(sdev, vm_id, kcontrol, msg);
-	default:
-		dev_err(vbe->dev, "Unknown command %d for kcontrol [%s].\n",
-			msg->header->cmd, kctl_desc->kcontrol_id);
-	break;
-	}
-
-	return 0;
-}
-
-static int vbe_skl_msg_cfg_handle(const struct snd_skl_vbe *vbe,
+static int vbe_skl_msg_cfg_handle(struct snd_skl_vbe *vbe,
 		const struct skl *sdev,
 		int vm_id, struct vbe_ipc_msg *msg)
 {
+	struct kctl_ops kt_ops;
+
 	switch (msg->header->cmd) {
 	case VFE_MSG_CFG_HDA:
+		kt_ops.check_permission = &vbe_skl_kcontrol_check_permission;
+		kt_ops.send_noti = &vbe_send_kctl_msg;
+		kctl_init_proxy(vbe->dev, &kt_ops);
+		kctl_notify_machine_ready(sdev->component->card);
 		return vbe_skl_cfg_hda(sdev, vm_id, msg);
 	default:
 		dev_err(vbe->dev, "Unknown command %d for config get message.\n",
@@ -741,6 +708,24 @@ static int vbe_skl_msg_pcm_handle(const struct snd_skl_vbe *vbe,
 	return 0;
 }
 
+int vbe_skl_msg_kcontrol_handle(const struct snd_skl_vbe *vbe,
+		int vm_id, const struct vbe_ipc_msg *msg)
+{
+	const struct vfe_kctl_info *kctl_desc = &msg->header->desc.kcontrol;
+	u32 domain_id = msg->header->domain_id;
+
+	switch (msg->header->cmd) {
+	case VFE_MSG_KCTL_SET:
+		return kctl_ipc_handle(domain_id, kctl_desc,
+				msg->tx_data, msg->rx_data);
+	default:
+		dev_err(vbe->dev, "Unknown command %d for kcontrol [%s].\n",
+			msg->header->cmd, kctl_desc->kcontrol_id);
+	break;
+	}
+
+	return 0;
+}
 static int vbe_skl_not_fwd(const struct snd_skl_vbe *vbe,
 	const struct skl *sdev, int vm_id, void *ipc_bufs[SKL_VIRTIO_NOT_VQ_SZ],
 	size_t ipc_lens[SKL_VIRTIO_NOT_VQ_SZ])
@@ -763,7 +748,7 @@ static int vbe_skl_not_fwd(const struct snd_skl_vbe *vbe,
 	case VFE_MSG_PCM:
 		return vbe_skl_msg_pcm_handle(vbe, sdev, vm_id, &msg);
 	case VFE_MSG_KCTL:
-		return vbe_skl_msg_kcontrol_handle(vbe, sdev, vm_id, &msg);
+		return vbe_skl_msg_kcontrol_handle(vbe, vm_id, &msg);
 	case VFE_MSG_TPLG:
 		//not supported yet
 		break;
@@ -783,20 +768,20 @@ static int vbe_skl_ipc_fwd(const struct snd_skl_vbe *vbe,
 	int ret;
 
 	dev_dbg(vbe->dev, "IPC forward request. Header:0X%016llX tx_data:%p\n",
-				ipc_data->header,
-				ipc_data->data_size ? &ipc_data->data : NULL);
+			ipc_data->header,
+			ipc_data->data_size ? &ipc_data->data : NULL);
 	dev_dbg(vbe->dev, "tx_size:%zu rx_data:%p rx_size:%zu\n",
-				ipc_data->data_size,
-				*reply_sz ? reply_buf : NULL,
-				*reply_sz);
+			ipc_data->data_size,
+			*reply_sz ? reply_buf : NULL,
+			*reply_sz);
 
 	/* Tx IPC and wait for response */
 	ret = *reply_sz <= 0 ? 0 : sst_ipc_tx_message_wait(&skl_sst->ipc,
-				ipc_data->header,
-				ipc_data->data_size ? &ipc_data->data : NULL,
-				ipc_data->data_size,
-				*reply_sz ? reply_buf : NULL,
-				reply_sz);
+			ipc_data->header,
+			ipc_data->data_size ? &ipc_data->data : NULL,
+			ipc_data->data_size,
+			*reply_sz ? reply_buf : NULL,
+			reply_sz);
 
 	if (ret < 0) {
 		dev_dbg(vbe->dev, "IPC reply error:%d\n", ret);
@@ -804,7 +789,7 @@ static int vbe_skl_ipc_fwd(const struct snd_skl_vbe *vbe,
 	}
 	if (*reply_sz > 0) {
 		print_hex_dump(KERN_DEBUG, "IPC response:", DUMP_PREFIX_OFFSET,
-				8, 4, (char *)reply_buf, *reply_sz, false);
+			8, 4, (char *)reply_buf, *reply_sz, false);
 	}
 
 	return 0;
@@ -912,23 +897,23 @@ static void vbe_skl_ipc_fe_cmd_get(const struct snd_skl_vbe *vbe, int vq_idx)
 static void vbe_skl_ipc_fe_not_reply_get(struct snd_skl_vbe *vbe, int vq_idx)
 {
 	const struct virtio_vq_info *vq;
-	const struct vfe_hw_pos_request *entry;
+	const struct vfe_pending_msg *entry;
 	unsigned long flags;
-	bool endchain;
+	bool sent;
 
-	if (list_empty(&vbe->posn_list))
+	if (list_empty(&vbe->pending_msg_list))
 		return;
 
 	vq = &vbe->vqs[vq_idx];
-	entry = list_first_entry(&vbe->posn_list,
-				 struct vfe_hw_pos_request, list);
+	entry = list_first_entry(&vbe->pending_msg_list,
+				 struct vfe_pending_msg, list);
 
-	endchain = vbe_skl_fill_posn_vqbuf(vbe, vq, entry);
+	sent = vbe_skl_try_send(vbe, vq,
+		(void *)&entry->msg, entry->sizeof_msg);
 
-	if (endchain == true) {
+	if (sent == true) {
 		list_del(&entry->list);
 		kfree(entry);
-		virtio_vq_endchains(vq, true);
 	}
 }
 
