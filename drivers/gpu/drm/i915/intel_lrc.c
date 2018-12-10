@@ -611,6 +611,52 @@ static void inject_preempt_context(struct intel_engine_cs *engine)
 	execlists_set_active(execlists, EXECLISTS_ACTIVE_PREEMPT);
 }
 
+static enum hrtimer_restart preempt_timeout(struct hrtimer *hrtimer)
+{
+	struct intel_engine_execlists *execlists =
+		container_of(hrtimer, typeof(*execlists), preempt_timer);
+
+	GEM_TRACE("%s active=%x\n",
+		  container_of(execlists,
+			       struct intel_engine_cs,
+			       execlists)->name,
+		  execlists->active);
+
+	if (!execlists_is_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT))
+		return HRTIMER_NORESTART;
+
+	if (GEM_SHOW_DEBUG()) {
+		struct intel_engine_cs *engine =
+			container_of(execlists, typeof(*engine), execlists);
+		struct drm_printer p = drm_debug_printer(__func__);
+
+		intel_engine_dump(engine, &p, "%s\n", engine->name);
+	}
+
+	queue_work(system_highpri_wq, &execlists->preempt_reset);
+
+	return HRTIMER_NORESTART;
+}
+
+static void preempt_reset(struct work_struct *work)
+{
+	struct intel_engine_execlists *execlists =
+		container_of(work, typeof(*execlists), preempt_reset);
+	struct intel_engine_cs *engine =
+		  container_of(execlists, struct intel_engine_cs, execlists);
+
+	GEM_TRACE("%s\n", engine->name);
+
+	tasklet_disable(&execlists->tasklet);
+
+	execlists->tasklet.func(execlists->tasklet.data);
+	if (execlists_is_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT))
+		i915_handle_error(engine->i915, BIT(engine->id), 0,
+				  "preemption time out on %s", engine->name);
+
+	tasklet_enable(&execlists->tasklet);
+}
+
 static void complete_preempt_context(struct intel_engine_execlists *execlists)
 {
 	GEM_BUG_ON(!execlists_is_active(execlists, EXECLISTS_ACTIVE_PREEMPT));
@@ -704,7 +750,7 @@ static void execlists_dequeue(struct intel_engine_cs *engine)
 		 * priorities of the ports haven't been switch.
 		 */
 		if (port_count(&port[1]))
-			return;
+			goto clear_preempt_timeout;
 
 		/*
 		 * WaIdleLiteRestore:bdw,skl
@@ -810,6 +856,9 @@ done:
 	/* We must always keep the beast fed if we have work piled up */
 	GEM_BUG_ON(rb_first_cached(&execlists->queue) &&
 		   !port_isset(execlists->port));
+
+clear_preempt_timeout:
+	execlists_clear_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
 
 	/* Re-evaluate the executing context setup after each preemptive kick */
 	if (last)
@@ -1131,8 +1180,30 @@ static void queue_request(struct intel_engine_cs *engine,
 		      &lookup_priolist(engine, prio)->requests);
 }
 
-static void __update_queue(struct intel_engine_cs *engine, int prio)
+static void __update_queue(struct intel_engine_cs *engine,
+			  int prio, unsigned int timeout)
 {
+	struct intel_engine_execlists * const execlists = &engine->execlists;
+
+	GEM_TRACE("%s prio=%d (previous=%d)\n",
+		  engine->name, prio, execlists->queue_priority);
+
+	if (unlikely(execlists_is_active(execlists,
+					 EXECLISTS_ACTIVE_PREEMPT_TIMEOUT)))
+		hrtimer_cancel(&execlists->preempt_timer);
+
+	/* Set a timer to force preemption vs hostile userspace */
+	if (timeout &&
+	    __execlists_need_preempt(prio, execlists->queue_priority)) {
+		GEM_TRACE("%s preempt timeout=%uns\n", engine->name, timeout);
+
+		execlists_set_active(execlists,
+				     EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
+		hrtimer_start(&execlists->preempt_timer,
+			      ns_to_ktime(timeout),
+			      HRTIMER_MODE_REL);
+	}
+
 	engine->execlists.queue_priority = prio;
 }
 
@@ -1149,10 +1220,11 @@ static void __submit_queue_imm(struct intel_engine_cs *engine)
 		tasklet_hi_schedule(&execlists->tasklet);
 }
 
-static void submit_queue(struct intel_engine_cs *engine, int prio)
+static void submit_queue(struct intel_engine_cs *engine,
+			int prio, unsigned int timeout)
 {
 	if (prio > engine->execlists.queue_priority) {
-		__update_queue(engine, prio);
+		__update_queue(engine, prio, timeout);
 		__submit_queue_imm(engine);
 	}
 }
@@ -1170,7 +1242,7 @@ static void execlists_submit_request(struct i915_request *request)
 	GEM_BUG_ON(RB_EMPTY_ROOT(&engine->execlists.queue.rb_root));
 	GEM_BUG_ON(list_empty(&request->sched.link));
 
-	submit_queue(engine, rq_prio(request));
+	submit_queue(engine, rq_prio(request), 0);
 
 	spin_unlock_irqrestore(&engine->timeline.lock, flags);
 }
@@ -1300,7 +1372,7 @@ static void execlists_schedule(struct i915_request *request,
 		if (prio > engine->execlists.queue_priority &&
 		    i915_sw_fence_done(&sched_to_request(node)->submit)) {
 			/* defer submission until after all of our updates */
-			__update_queue(engine, prio);
+			__update_queue(engine, prio, 0);
 			tasklet_hi_schedule(&engine->execlists.tasklet);
 		}
 	}
@@ -2435,6 +2507,9 @@ logical_ring_setup(struct intel_engine_cs *engine)
 
 	tasklet_init(&engine->execlists.tasklet,
 		     execlists_submission_tasklet, (unsigned long)engine);
+
+	INIT_WORK(&engine->execlists.preempt_reset, preempt_reset);
+	engine->execlists.preempt_timer.function = preempt_timeout;
 
 	logical_ring_default_vfuncs(engine);
 	logical_ring_default_irqs(engine);
