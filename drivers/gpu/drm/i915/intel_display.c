@@ -13061,7 +13061,8 @@ static void fb_obj_bump_render_priority(struct drm_i915_gem_object *obj)
 		.priority = I915_PRIORITY_DISPLAY,
 	};
 
-	i915_gem_object_wait_priority(obj, 0, &attr);
+	i915_gem_object_wait_priority(obj, 0,
+				      &attr, I915_PREEMPTION_TIMEOUT_DISPLAY);
 }
 
 /**
@@ -13140,6 +13141,20 @@ intel_prepare_plane_fb(struct drm_plane *plane,
 
 	ret = intel_plane_pin_fb(to_intel_plane_state(new_state));
 
+	/*
+	 * Reschedule our dependencies, and ensure we run within a timeout.
+	 *
+	 * Note that if the timeout is exceeded, then whoever was running that
+	 * prevented us from acquiring the GPU is declared rogue and reset. An
+	 * unresponsive process will then be banned in order to preserve
+	 * interactivity. Since this can be seen as a bit heavy-handed, we
+	 * select a timeout for when the dropped frames start to become a
+	 * noticeable nuisance for the user (100 ms, i.e. preemption was
+	 * blocked for more than a few frames). Note, this is only a timeout
+	 * for a delay in preempting the current request in order to run our
+	 * dependency chain, our dependency chain may itself take a long time
+	 * to run to completion before we can present the framebuffer.
+	 */
 	fb_obj_bump_render_priority(obj);
 
 	mutex_unlock(&dev_priv->drm.struct_mutex);

@@ -1417,7 +1417,8 @@ i915_gem_object_wait_reservation(struct reservation_object *resv,
 }
 
 static void __fence_set_priority(struct dma_fence *fence,
-				 const struct i915_sched_attr *attr)
+				 const struct i915_sched_attr *attr,
+				 unsigned int timeout)
 {
 	struct i915_request *rq;
 	struct intel_engine_cs *engine;
@@ -1431,13 +1432,14 @@ static void __fence_set_priority(struct dma_fence *fence,
 	local_bh_disable();
 	rcu_read_lock(); /* RCU serialisation for set-wedged protection */
 	if (engine->schedule)
-		engine->schedule(rq, attr, 0);
+		engine->schedule(rq, attr, timeout);
 	rcu_read_unlock();
 	local_bh_enable(); /* kick the tasklets if queues were reprioritised */
 }
 
 static void fence_set_priority(struct dma_fence *fence,
-			       const struct i915_sched_attr *attr)
+			       const struct i915_sched_attr *attr,
+			       unsigned int timeout)
 {
 	/* Recurse once into a fence-array */
 	if (dma_fence_is_array(fence)) {
@@ -1445,16 +1447,17 @@ static void fence_set_priority(struct dma_fence *fence,
 		int i;
 
 		for (i = 0; i < array->num_fences; i++)
-			__fence_set_priority(array->fences[i], attr);
+			__fence_set_priority(array->fences[i], attr, timeout);
 	} else {
-		__fence_set_priority(fence, attr);
+		__fence_set_priority(fence, attr, timeout);
 	}
 }
 
 int
 i915_gem_object_wait_priority(struct drm_i915_gem_object *obj,
 			      unsigned int flags,
-			      const struct i915_sched_attr *attr)
+			      const struct i915_sched_attr *attr,
+			      unsigned int timeout)
 {
 	struct dma_fence *excl;
 
@@ -1469,7 +1472,7 @@ i915_gem_object_wait_priority(struct drm_i915_gem_object *obj,
 			return ret;
 
 		for (i = 0; i < count; i++) {
-			fence_set_priority(shared[i], attr);
+			fence_set_priority(shared[i], attr, timeout);
 			dma_fence_put(shared[i]);
 		}
 
@@ -1479,7 +1482,7 @@ i915_gem_object_wait_priority(struct drm_i915_gem_object *obj,
 	}
 
 	if (excl) {
-		fence_set_priority(excl, attr);
+		fence_set_priority(excl, attr, timeout);
 		dma_fence_put(excl);
 	}
 	return 0;
