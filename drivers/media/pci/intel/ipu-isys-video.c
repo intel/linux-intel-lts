@@ -1615,7 +1615,9 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 		if (ip->csi2) {
 			if (ip->csi2->stream_count == 1) {
 				v4l2_subdev_call(esd, video, s_stream, state);
+#if defined(CONFIG_VIDEO_INTEL_IPU4) || defined(CONFIG_VIDEO_INTEL_IPU4P)
 				ipu_isys_csi2_wait_last_eof(ip->csi2);
+#endif
 			}
 		} else {
 			v4l2_subdev_call(esd, video, s_stream, state);
