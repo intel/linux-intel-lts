@@ -18,6 +18,45 @@
 #include "ipu-dma.h"
 #include "ipu-mmu.h"
 
+static void ici_dma_clear_buffer(struct page *page, size_t size,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       struct dma_attrs *attrs
+#else
+			       unsigned long attrs
+#endif
+				)
+{
+	/*
+	 * Ensure that the allocated pages are zeroed, and that any data
+	 * lurking in the kernel direct-mapped region is invalidated.
+	 */
+	if (PageHighMem(page)) {
+		for (; size > 0; page++, size -= PAGE_SIZE) {
+			void *ptr = kmap_atomic(page);
+
+			memset(ptr, 0, PAGE_SIZE);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			if (!dma_get_attr(DMA_ATTR_SKIP_CPU_SYNC, attrs))
+#else
+			if ((attrs & DMA_ATTR_SKIP_CPU_SYNC) == 0)
+#endif
+				clflush_cache_range(ptr, PAGE_SIZE);
+			kunmap_atomic(ptr);
+		}
+	} else {
+		void *ptr = page_address(page);
+
+		memset(ptr, 0, size);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+		if (!dma_get_attr(DMA_ATTR_SKIP_CPU_SYNC, attrs))
+#else
+		if ((attrs & DMA_ATTR_SKIP_CPU_SYNC) == 0)
+#endif
+			clflush_cache_range(ptr, size);
+	}
+}
+
+
 static struct page **__intel_ipu4_dma_alloc(struct device *dev,
 					    size_t buf_size,
 					    gfp_t gfp,
@@ -58,6 +97,7 @@ static struct page **__intel_ipu4_dma_alloc(struct device *dev,
 				page_list[i + j] = page_list[i] + j;
 		}
 
+		ici_dma_clear_buffer(page_list[i], PAGE_SIZE << order, attrs);
 		i += 1 << order;
 		num_pages -= 1 << order;
 	}
@@ -89,6 +129,7 @@ static int __intel_ipu4_dma_free(struct device *dev, struct page **page_list,
 
 	for (i = 0; i < num_pages; i++) {
 		if (page_list[i]) {
+			ici_dma_clear_buffer(page_list[i], PAGE_SIZE, attrs);
 			__free_pages(page_list[i], 0);
 		}
 	}
@@ -189,11 +230,11 @@ out_vunmap:
 	vunmap(area->addr);
 
 out_unmap:
-	__intel_ipu4_dma_free(dev, pages, size, attrs);
 	for (i--; i >= 0; i--) {
 		iommu_unmap(mmu->dmap->domain, (iova->pfn_lo + i) << PAGE_SHIFT,
 			    PAGE_SIZE);
 	}
+	__intel_ipu4_dma_free(dev, pages, size, attrs);
 out_free_iova:
 	__free_iova(&mmu->dmap->iovad, iova);
 
@@ -212,6 +253,7 @@ static void intel_ipu4_dma_free(struct device *dev, size_t size, void *vaddr,
 	struct device *aiommu = to_ipu_bus_device(dev)->iommu;
 	struct ipu_mmu *mmu = dev_get_drvdata(aiommu);
 	struct vm_struct *area = find_vm_area(vaddr);
+	struct page **pages;
 	struct iova *iova = find_iova(&mmu->dmap->iovad,
 				dma_handle >> PAGE_SHIFT);
 
@@ -225,12 +267,14 @@ static void intel_ipu4_dma_free(struct device *dev, size_t size, void *vaddr,
 
 	size = PAGE_ALIGN(size);
 
+	pages = area->pages;
+
 	vunmap(vaddr);
 
 	iommu_unmap(mmu->dmap->domain, iova->pfn_lo << PAGE_SHIFT,
 		(iova->pfn_hi - iova->pfn_lo + 1) << PAGE_SHIFT);
 
-	__intel_ipu4_dma_free(dev, area->pages, size, attrs);
+	__intel_ipu4_dma_free(dev, pages, size, attrs);
 
 	__free_iova(&mmu->dmap->iovad, iova);
 
