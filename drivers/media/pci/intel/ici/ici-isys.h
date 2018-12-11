@@ -57,10 +57,10 @@
 #define INTEL_IPU4_ISYS_CSI2_LONG_PACKET_FOOTER_SIZE	32
 
 /*
- * For B0/1: FW support max 6 streams
+ * For B0/1: FW support max 8 streams
  */
-#define INTEL_IPU4_ISYS_MAX_STREAMS		6
-
+#define INTEL_IPU4_ISYS_MAX_STREAMS		8
+#define NR_OF_CSI2_BE_STREAMS		(NR_OF_CSI2_BE_SOC_STREAMS + 1)
 
 #define IPU_ISYS_MIN_WIDTH		1U
 #define IPU_ISYS_MIN_HEIGHT		1U
@@ -129,7 +129,7 @@ struct ici_isys {
 	struct ici_isys_pipeline *ici_pipes[IPU_ISYS_MAX_STREAMS];
 	struct ici_isys_csi2 ici_csi2[IPU_ISYS_MAX_CSI2_PORTS];
 	struct ici_isys_tpg ici_tpg[2]; // TODO map to a macro
-	struct ici_isys_csi2_be ici_csi2_be[NR_OF_CSI2_BE_SOC_STREAMS];
+	struct ici_isys_csi2_be ici_csi2_be[NR_OF_CSI2_BE_STREAMS];
 	unsigned int ici_stream_opened;
 
 	const struct firmware *fw;
@@ -145,21 +145,21 @@ struct ici_isys {
 	dma_addr_t short_packet_trace_buffer_dma_addr;
 	u64 tsc_timer_base;
 	u64 tunit_timer_base;
-        spinlock_t listlock;    /* Protect framebuflist */
-        struct list_head framebuflist;
-        struct list_head framebuflist_fw;
+		spinlock_t listlock;	/* Protect framebuflist */
+		struct list_head framebuflist;
+		struct list_head framebuflist_fw;
 };
 
 int intel_ipu4_isys_isr_run_ici(void *ptr);
 
 struct isys_fw_msgs {
-        union {
-                u64 dummy;
-                struct ipu_fw_isys_frame_buff_set_abi frame;
-                struct ipu_fw_isys_stream_cfg_data_abi stream;
-        } fw_msg;
-        struct list_head head;
-        dma_addr_t dma_addr;
+		union {
+				u64 dummy;
+				struct ipu_fw_isys_frame_buff_set_abi frame;
+				struct ipu_fw_isys_stream_cfg_data_abi stream;
+		} fw_msg;
+		struct list_head head;
+		dma_addr_t dma_addr;
 };
 
 #define ipu_lib_call_notrace_unlocked(func, isys, ...)		\
