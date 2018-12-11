@@ -239,6 +239,12 @@ void intel_gvt_deactivate_vgpu(struct intel_vgpu *vgpu)
 
 	intel_vgpu_stop_schedule(vgpu);
 
+	/**
+	* the pending workloads might be resubmitted to HW GPU before cleanup
+	* @intel_gvt_reset_vgpu_locked once start schedule.
+	*/
+	intel_vgpu_clean_workloads(vgpu, ALL_ENGINES);
+
 	mutex_unlock(&vgpu->vgpu_lock);
 }
 
