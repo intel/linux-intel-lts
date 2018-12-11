@@ -299,8 +299,9 @@ void acrn_ioreq_clear_request(struct vhm_vm *vm)
 		if (!client)
 			return;
 
+		bit = -1;
 		while ((bit = find_next_bit(client->ioreqs_map,
-				0, VHM_REQUEST_MAX)) ==	VHM_REQUEST_MAX)
+				VHM_REQUEST_MAX, bit + 1)) < VHM_REQUEST_MAX)
 			acrn_ioreq_complete_request(client->id, bit, NULL);
 		acrn_ioreq_put_client(client);
 	}
