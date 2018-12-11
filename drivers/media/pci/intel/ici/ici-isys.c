@@ -458,7 +458,7 @@ static void isys_unregister_subdevices(struct ici_isys *isys)
 		&isys->pdata->ipdata->csi2;
 	unsigned int i;
 
-	for (i = 0; i < NR_OF_CSI2_BE_SOC_STREAMS; i++) {
+	for (i = 0; i < NR_OF_CSI2_BE_STREAMS; i++) {
 		ici_isys_csi2_be_cleanup(&isys->ici_csi2_be[i]);
 	}
 
@@ -503,7 +503,7 @@ static int isys_register_subdevices(struct ici_isys *isys)
 			goto fail;
 	}
 
-	for (i = 0; i < NR_OF_CSI2_BE_SOC_STREAMS; i++) {
+	for (i = 0; i < NR_OF_CSI2_BE_STREAMS; i++) {
 		rval = ici_isys_csi2_be_init(&isys->ici_csi2_be[i],
 				isys, i);
 		if (rval) {
@@ -523,7 +523,7 @@ static int isys_register_subdevices(struct ici_isys *isys)
 				goto fail;
 			}
 
-			for (k = 1; k < NR_OF_CSI2_BE_SOC_STREAMS; k++) {
+			for (k = 1; k < NR_OF_CSI2_BE_STREAMS; k++) {
 				rval = node_pad_create_link(
 					&isys->ici_csi2[i].asd[j].node, CSI2_ICI_PAD_SOURCE,
 					&isys->ici_csi2_be[k].asd.node,
@@ -548,7 +548,7 @@ static int isys_register_subdevices(struct ici_isys *isys)
 			goto fail;
 		}
 
-		for (j = 1; j < NR_OF_CSI2_BE_SOC_STREAMS; j++) {
+		for (j = 1; j < NR_OF_CSI2_BE_STREAMS; j++) {
 			rval = node_pad_create_link(
 				&isys->ici_tpg[i].asd.node, TPG_PAD_SOURCE,
 				&isys->ici_csi2_be[j].asd.node,
