@@ -513,7 +513,12 @@ int i915_gem_contexts_init(struct drm_i915_private *dev_priv)
 	 * For easy recognisablity, we want the kernel context to be 0 and then
 	 * all user contexts will have non-zero hw_id.
 	 */
-	GEM_BUG_ON(ctx->hw_id);
+	if (intel_vgpu_active(dev_priv)){
+		/* remove vgpu_id from context hw_id */
+		GEM_BUG_ON(ctx->hw_id & ~(0x7 << SIZE_CONTEXT_HW_ID_GVT));
+	} else {
+		GEM_BUG_ON(ctx->hw_id);
+	}
 	dev_priv->kernel_context = ctx;
 
 	/* highest priority; preempting task */

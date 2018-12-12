@@ -55,6 +55,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/init.h>
+#include <linux/mm.h>
 #include <asm/processor.h>
 #include <linux/vhm/acrn_hv_defs.h>
 #include <linux/vhm/vhm_ioctl_defs.h>
@@ -72,7 +73,7 @@ struct vhm_vm *find_get_vm(unsigned long vmid)
 	mutex_lock(&vhm_vm_list_lock);
 	list_for_each_entry(vm, &vhm_vm_list, list) {
 		if (vm->vmid == vmid) {
-			vm->refcnt++;
+			atomic_inc(&vm->refcnt);
 			mutex_unlock(&vhm_vm_list_lock);
 			return vm;
 		}
@@ -84,18 +85,29 @@ EXPORT_SYMBOL_GPL(find_get_vm);
 
 void put_vm(struct vhm_vm *vm)
 {
-	mutex_lock(&vhm_vm_list_lock);
-	vm->refcnt--;
-	if (vm->refcnt == 0) {
+	if (atomic_dec_and_test(&vm->refcnt)) {
+		mutex_lock(&vhm_vm_list_lock);
 		list_del(&vm->list);
+		mutex_unlock(&vhm_vm_list_lock);
 		free_guest_mem(vm);
-		acrn_ioreq_free(vm);
+
+		if (vm->req_buf && vm->pg) {
+			put_page(vm->pg);
+			vm->pg = NULL;
+			vm->req_buf = NULL;
+		}
+
 		kfree(vm);
 		pr_info("vhm: freed vm\n");
 	}
-	mutex_unlock(&vhm_vm_list_lock);
 }
 EXPORT_SYMBOL_GPL(put_vm);
+
+void get_vm(struct vhm_vm *vm)
+{
+	atomic_inc(&vm->refcnt);
+}
+EXPORT_SYMBOL_GPL(get_vm);
 
 int vhm_get_vm_info(unsigned long vmid, struct vm_info *info)
 {

@@ -267,11 +267,9 @@ static int acrngt_emulation_thread(void *priv)
 				if (ret)
 					handle_request_error(vgpu);
 
-				smp_mb();
-				atomic_set(&req->processed, REQ_STATE_COMPLETE);
 				/* complete request */
 				if (acrn_ioreq_complete_request(info->client,
-						vcpu))
+						vcpu, req))
 					gvt_err("failed complete request\n");
 			}
 		}
@@ -431,13 +429,6 @@ static int acrngt_sysfs_add_instance(struct acrngt_hvm_params *vp)
 	struct acrngt_hvm_dev *info;
 
 	struct intel_vgpu_type type = acrngt_priv.gvt->types[0];
-
-	/* todo: wa patch due to plane restriction patches are not porting */
-	acrngt_priv.gvt->pipe_info[1].plane_owner[0] = 1;
-	acrngt_priv.gvt->pipe_info[1].plane_owner[1] = 1;
-	acrngt_priv.gvt->pipe_info[1].plane_owner[2] = 1;
-	acrngt_priv.gvt->pipe_info[1].plane_owner[3] = 1;
-
 	type.low_gm_size = vp->aperture_sz * VMEM_1MB;
 	type.high_gm_size = (vp->gm_sz - vp->aperture_sz) * VMEM_1MB;
 	type.fence = vp->fence_sz;

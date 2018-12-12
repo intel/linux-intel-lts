@@ -386,8 +386,7 @@ static int acrn_ioeventfd_dispatch_ioreq(int client_id,
 			mutex_unlock(&info->ioeventfds_lock);
 
 next_ioreq:
-			atomic_set(&req->processed, REQ_STATE_COMPLETE);
-			acrn_ioreq_complete_request(client_id, vcpu);
+			acrn_ioreq_complete_request(client_id, vcpu, req);
 		}
 	}
 

@@ -76,9 +76,6 @@
 #define REQUEST_READ	0
 #define REQUEST_WRITE	1
 
-/* Generic VM flags from guest OS */
-#define SECURE_WORLD_ENABLED    (1UL<<0)  /* Whether secure world is enabled */
-
 /**
  * @brief Hypercall
  *
@@ -184,9 +181,17 @@ struct vhm_request {
 	uint32_t type;
 
 	/**
-	 * @reserved0: Reserved fields. Byte offset: 4.
+	 * @completion_polling: Hypervisor will poll completion if set.
+	 *
+	 * Byte offset: 4.
 	 */
-	uint32_t reserved0[15];
+	uint32_t completion_polling;
+
+
+	/**
+	 * @reserved0: Reserved fields. Byte offset: 8.
+	 */
+	uint32_t reserved0[14];
 
 	/**
 	 * @reqs: Details about this request.

@@ -159,7 +159,7 @@ struct virtio_vq_info {
  */
 struct virtio_dev_info {
 	/* dev info from VBS */
-	/** @name[]: VBS device name */
+	/** @name: VBS device name */
 	char name[VBS_NAME_LEN];
 	/** @_ctx: VM context this device belongs to */
 	struct ctx _ctx;

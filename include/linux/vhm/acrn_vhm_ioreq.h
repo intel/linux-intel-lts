@@ -155,10 +155,21 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm);
  *
  * @client_id: client id to identify ioreq client
  * @vcpu: identify request submitter
+ * @vhm_req: the request for fast grab
  *
  * Return: 0 on success, <0 on error
  */
-int acrn_ioreq_complete_request(int client_id, uint64_t vcpu);
+int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
+		struct vhm_request *vhm_req);
+
+/**
+ * acrn_ioreq_clear_request - clear all guest requests
+ *
+ * @vm: pointer to guest VM
+ *
+ * Return:
+ */
+void acrn_ioreq_clear_request(struct vhm_vm *vm);
 
 /**
  * acrn_ioreq_intercept_bdf - set intercept bdf info of ioreq client
@@ -187,4 +198,5 @@ void acrn_ioreq_free(struct vhm_vm *vm);
 int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name);
 unsigned int vhm_dev_poll(struct file *filep, poll_table *wait);
 
+void acrn_ioreq_driver_init(void);
 #endif

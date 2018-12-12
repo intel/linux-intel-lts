@@ -69,13 +69,17 @@ extern struct mutex vhm_vm_list_lock;
 #define HUGEPAGE_1G_HLIST_ARRAY_SIZE	1
 #define HUGEPAGE_HLIST_ARRAY_SIZE	(HUGEPAGE_2M_HLIST_ARRAY_SIZE + \
 						HUGEPAGE_1G_HLIST_ARRAY_SIZE)
+
+enum VM_FREE_BITS {
+	VHM_VM_IOREQ = 0,
+};
+
 /**
  * struct vhm_vm - data structure to track guest
  *
  * @dev: pointer to dev of linux device mode
  * @list: list of vhm_vm
  * @vmid: guest vmid
- * @trusty_host_gpa: host physical address of continuous memory for Trusty
  * @ioreq_fallback_client: default ioreq client
  * @refcnt: reference count of guest
  * @hugepage_lock:  mutex to protect hugepage_hlist
@@ -86,14 +90,15 @@ extern struct mutex vhm_vm_list_lock;
  * @ioreq_client_list: list of ioreq clients
  * @req_buf: request buffer shared between HV, SOS and UOS
  * @pg: pointer to linux page which holds req_buf
+ * @pci_conf_addr: the access-trapped pci_conf_addr
+ * @flags: the flags of vhm_vm for some resources
  */
 struct vhm_vm {
 	struct device *dev;
 	struct list_head list;
 	unsigned long vmid;
-	unsigned long trusty_host_gpa;
 	int ioreq_fallback_client;
-	long refcnt;
+	atomic_t refcnt;
 	struct mutex hugepage_lock;
 	struct hlist_head hugepage_hlist[HUGEPAGE_HLIST_ARRAY_SIZE];
 	atomic_t vcpu_num;
@@ -102,6 +107,8 @@ struct vhm_vm {
 	struct list_head ioreq_client_list;
 	struct vhm_request_buffer *req_buf;
 	struct page *pg;
+	uint32_t pci_conf_addr;
+	unsigned long flags;
 };
 
 /**
@@ -132,6 +139,14 @@ struct vhm_vm *find_get_vm(unsigned long vmid);
  * Return:
  */
 void put_vm(struct vhm_vm *vm);
+
+/**
+ * get_vm() - increase the refcnt of vhm_vm
+ * @vm: pointer to vhm_vm which identify specific guest
+ *
+ * Return:
+ */
+void get_vm(struct vhm_vm *vm);
 
 /**
  * vhm_get_vm_info() - get vm_info of specific guest

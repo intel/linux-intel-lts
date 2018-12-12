@@ -51,6 +51,7 @@
  *
  */
 
+#include <linux/bitops.h>
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/freezer.h>
@@ -64,12 +65,21 @@
 #include <linux/vhm/acrn_vhm_ioreq.h>
 #include <linux/vhm/vhm_vm_mngt.h>
 #include <linux/vhm/vhm_hypercall.h>
+#include <linux/idr.h>
+
+static DEFINE_SPINLOCK(client_lock);
+static struct idr	idr_client;
 
 struct ioreq_range {
 	struct list_head list;
 	uint32_t type;
 	long start;
 	long end;
+};
+
+enum IOREQ_CLIENT_BITS {
+        IOREQ_CLIENT_DESTROYING = 0,
+        IOREQ_CLIENT_EXIT,
 };
 
 struct ioreq_client {
@@ -91,8 +101,7 @@ struct ioreq_client {
 	 */
 	bool fallback;
 
-	volatile bool destroying;
-	volatile bool kthread_exit;
+	unsigned long flags;
 
 	/* client covered io ranges - N/A for fallback client */
 	struct list_head range_list;
@@ -122,12 +131,10 @@ struct ioreq_client {
 	int pci_bus;
 	int pci_dev;
 	int pci_func;
+	atomic_t refcnt;
 };
 
-#define MAX_CLIENT 64
-static struct ioreq_client *clients[MAX_CLIENT];
-static DECLARE_BITMAP(client_bitmap, MAX_CLIENT);
-
+#define MAX_CLIENT 1024
 static void acrn_ioreq_notify_client(struct ioreq_client *client);
 
 static inline bool is_range_type(uint32_t type)
@@ -135,33 +142,59 @@ static inline bool is_range_type(uint32_t type)
 	return (type == REQ_MMIO || type == REQ_PORTIO || type == REQ_WP);
 }
 
+static inline bool has_pending_request(struct ioreq_client *client)
+{
+	if (client)
+		return !bitmap_empty(client->ioreqs_map, VHM_REQUEST_MAX);
+	else
+		return false;
+}
+
 static int alloc_client(void)
 {
 	struct ioreq_client *client;
-	int i;
-
-	i = find_first_zero_bit(client_bitmap, MAX_CLIENT);
-	if (i >= MAX_CLIENT)
-		return -ENOMEM;
-	set_bit(i, client_bitmap);
+	int ret;
 
 	client = kzalloc(sizeof(struct ioreq_client), GFP_KERNEL);
 	if (!client)
 		return -ENOMEM;
-	client->id = i;
-	client->kthread_exit = true;
-	clients[i] = client;
+	atomic_set(&client->refcnt, 1);
 
-	return i;
+	spin_lock_bh(&client_lock);
+	ret = idr_alloc_cyclic(&idr_client, client, 1, MAX_CLIENT, GFP_NOWAIT);
+	spin_unlock_bh(&client_lock);
+
+	if (ret < 0) {
+		kfree(client);
+		return -EINVAL;
+	}
+
+	client->id = ret;
+	set_bit(IOREQ_CLIENT_EXIT, &client->flags);
+
+	return ret;
 }
 
-static void free_client(int i)
+static struct ioreq_client *acrn_ioreq_get_client(int client_id)
 {
-	if (i < MAX_CLIENT && i >= 0) {
-		if (test_and_clear_bit(i, client_bitmap)) {
-			kfree(clients[i]);
-			clients[i] = NULL;
-		}
+	struct ioreq_client *obj;
+
+	spin_lock_bh(&client_lock);
+	obj = idr_find(&idr_client, client_id);
+	if (obj)
+		atomic_inc(&obj->refcnt);
+	spin_unlock_bh(&client_lock);
+
+	return obj;
+}
+
+
+static void acrn_ioreq_put_client(struct ioreq_client *client)
+{
+	if (atomic_dec_and_test(&client->refcnt)) {
+		/* The client should be released when refcnt = 0 */
+		/* TBD: Do we need to free the other resources? */
+		kfree(client);
 	}
 }
 
@@ -196,7 +229,12 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 		return -EINVAL;
 	}
 
-	client = clients[client_id];
+	client = acrn_ioreq_get_client(client_id);
+	if (unlikely(client == NULL)) {
+		pr_err("failed to get the client.\n");
+		put_vm(vm);
+		return -EINVAL;
+	}
 
 	if (handler) {
 		client->handler = handler;
@@ -210,11 +248,10 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 	INIT_LIST_HEAD(&client->range_list);
 	init_waitqueue_head(&client->wq);
 
+	/* When it is added to ioreq_client_list, the refcnt is increased */
 	spin_lock_irqsave(&vm->ioreq_client_lock, flags);
 	list_add(&client->list, &vm->ioreq_client_list);
 	spin_unlock_irqrestore(&vm->ioreq_client_lock, flags);
-
-	put_vm(vm);
 
 	pr_info("vhm-ioreq: created ioreq client %d\n", client_id);
 
@@ -222,10 +259,58 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_create_client);
 
+void acrn_ioreq_clear_request(struct vhm_vm *vm)
+{
+	struct ioreq_client *client;
+	struct list_head *pos;
+	bool has_pending = false;
+	int retry_cnt = 10;
+	int bit;
+
+	/*
+	 * Now, ioreq clearing only happens when do VM reset. Current
+	 * implementation is waiting all ioreq clients except the DM
+	 * one have no pending ioreqs in 10ms per loop
+	 */
+
+	do {
+		spin_lock(&vm->ioreq_client_lock);
+		list_for_each(pos, &vm->ioreq_client_list) {
+			client = container_of(pos, struct ioreq_client, list);
+			if (vm->ioreq_fallback_client == client->id)
+				continue;
+			has_pending = has_pending_request(client);
+			if (has_pending)
+				break;
+		}
+		spin_unlock(&vm->ioreq_client_lock);
+
+		if (has_pending)
+			schedule_timeout_interruptible(HZ / 100);
+	} while (has_pending && --retry_cnt > 0);
+
+	if (retry_cnt == 0)
+		pr_warn("ioreq client[%d] cannot flush pending request!\n",
+				client->id);
+
+	/* Clear all ioreqs belong to DM. */
+	if (vm->ioreq_fallback_client > 0) {
+		client = acrn_ioreq_get_client(vm->ioreq_fallback_client);
+		if (!client)
+			return;
+
+		while ((bit = find_next_bit(client->ioreqs_map,
+				0, VHM_REQUEST_MAX)) ==	VHM_REQUEST_MAX)
+			acrn_ioreq_complete_request(client->id, bit, NULL);
+		acrn_ioreq_put_client(client);
+	}
+}
+
 int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name)
 {
 	struct vhm_vm *vm;
 	int client_id;
+	struct ioreq_client *client;
 
 	vm = find_get_vm(vmid);
 	if (unlikely(vm == NULL)) {
@@ -248,27 +333,33 @@ int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name)
 		return -EINVAL;
 	}
 
-	clients[client_id]->fallback = true;
+	client = acrn_ioreq_get_client(client_id);
+	if (unlikely(client == NULL)) {
+		pr_err("failed to get the client.\n");
+		put_vm(vm);
+		return -EINVAL;
+	}
+
+	client->fallback = true;
 	vm->ioreq_fallback_client = client_id;
 
+	acrn_ioreq_put_client(client);
 	put_vm(vm);
 
 	return client_id;
 }
 
+/* When one client is removed from VM, the refcnt is decreased */
 static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 		struct vhm_vm *vm)
 {
 	struct list_head *pos, *tmp;
 	unsigned long flags;
 
-	client->destroying = true;
+	set_bit(IOREQ_CLIENT_DESTROYING, &client->flags);
 	acrn_ioreq_notify_client(client);
 
-	/* the client thread will mark kthread_exit flag as true before exit,
-	 * so wait for it exited.
-	 */
-	while (client->vhm_create_kthread && !client->kthread_exit)
+	while (client->vhm_create_kthread && !test_bit(IOREQ_CLIENT_EXIT, &client->flags))
 		msleep(10);
 
 	spin_lock_irqsave(&client->range_lock, flags);
@@ -287,7 +378,8 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 	if (client->id == vm->ioreq_fallback_client)
 		vm->ioreq_fallback_client = -1;
 
-	free_client(client->id);
+	acrn_ioreq_put_client(client);
+	put_vm(vm);
 }
 
 void acrn_ioreq_destroy_client(int client_id)
@@ -299,11 +391,14 @@ void acrn_ioreq_destroy_client(int client_id)
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return;
 	}
-	client = clients[client_id];
-	if (!client) {
-		pr_err("vhm-ioreq: no client for id %d\n", client_id);
+
+	spin_lock_bh(&client_lock);
+	client = idr_remove(&idr_client, client_id);
+	spin_unlock_bh(&client_lock);
+
+	/* When the client_id is already released, just keep silience can returnd */
+	if (!client)
 		return;
-	}
 
 	might_sleep();
 
@@ -311,10 +406,12 @@ void acrn_ioreq_destroy_client(int client_id)
 	if (unlikely(vm == NULL)) {
 		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
 			client->vmid);
+		acrn_ioreq_put_client(client);
 		return;
 	}
 
 	acrn_ioreq_destroy_client_pervm(client, vm);
+	acrn_ioreq_put_client(client);
 
 	put_vm(vm);
 }
@@ -350,14 +447,14 @@ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return -EFAULT;
 	}
-	client = clients[client_id];
-	if (!client) {
-		pr_err("vhm-ioreq: no client for id %d\n", client_id);
+	if (end < start) {
+		pr_err("vhm-ioreq: end < start\n");
 		return -EFAULT;
 	}
 
-	if (end < start) {
-		pr_err("vhm-ioreq: end < start\n");
+	client = acrn_ioreq_get_client(client_id);
+	if (!client) {
+		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return -EFAULT;
 	}
 
@@ -366,6 +463,7 @@ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
 	range = kzalloc(sizeof(struct ioreq_range), GFP_KERNEL);
 	if (!range) {
 		pr_err("vhm-ioreq: failed to alloc ioreq range\n");
+		acrn_ioreq_put_client(client);
 		return -ENOMEM;
 	}
 	range->type = type;
@@ -375,6 +473,7 @@ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
 	spin_lock_irqsave(&client->range_lock, flags);
 	list_add(&range->list, &client->range_list);
 	spin_unlock_irqrestore(&client->range_lock, flags);
+	acrn_ioreq_put_client(client);
 
 	return 0;
 }
@@ -392,14 +491,14 @@ int acrn_ioreq_del_iorange(int client_id, uint32_t type,
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return -EFAULT;
 	}
-	client = clients[client_id];
-	if (!client) {
-		pr_err("vhm-ioreq: no client for id %d\n", client_id);
+	if (end < start) {
+		pr_err("vhm-ioreq: end < start\n");
 		return -EFAULT;
 	}
 
-	if (end < start) {
-		pr_err("vhm-ioreq: end < start\n");
+	client = acrn_ioreq_get_client(client_id);
+	if (!client) {
+		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return -EFAULT;
 	}
 
@@ -424,6 +523,7 @@ int acrn_ioreq_del_iorange(int client_id, uint32_t type,
 		}
 	}
 	spin_unlock_irqrestore(&client->range_lock, flags);
+	acrn_ioreq_put_client(client);
 
 	return 0;
 }
@@ -432,17 +532,9 @@ EXPORT_SYMBOL_GPL(acrn_ioreq_del_iorange);
 static inline bool is_destroying(struct ioreq_client *client)
 {
 	if (client)
-		return client->destroying;
+		return test_bit(IOREQ_CLIENT_DESTROYING, &client->flags);
 	else
 		return true;
-}
-
-static inline bool has_pending_request(struct ioreq_client *client)
-{
-	if (client)
-		return !bitmap_empty(client->ioreqs_map, VHM_REQUEST_MAX);
-	else
-		return false;
 }
 
 struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
@@ -454,7 +546,7 @@ struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return NULL;
 	}
-	client = clients[client_id];
+	client = acrn_ioreq_get_client(client_id);
 	if (!client) {
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return NULL;
@@ -463,6 +555,7 @@ struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
 	if (unlikely(vm == NULL)) {
 		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
 			client->vmid);
+		acrn_ioreq_put_client(client);
 		return NULL;
 	}
 
@@ -471,6 +564,7 @@ struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
 			"for vmid %ld\n", client->vmid);
 	}
 	put_vm(vm);
+	acrn_ioreq_put_client(client);
 	return (struct vhm_request *)vm->req_buf;
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_get_reqbuf);
@@ -479,9 +573,22 @@ static int ioreq_client_thread(void *data)
 {
 	struct ioreq_client *client;
 	int ret, client_id = (unsigned long)data;
+	struct vhm_vm *vm;
+
+	client = acrn_ioreq_get_client(client_id);
+
+	if (!client)
+		return 0;
+
+	vm = find_get_vm(client->vmid);
+	if (unlikely(vm == NULL)) {
+		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
+			client->vmid);
+		acrn_ioreq_put_client(client);
+		return -EINVAL;
+	}
 
 	while (1) {
-		client = clients[client_id];
 		if (is_destroying(client)) {
 			pr_info("vhm-ioreq: client destroying->stop thread\n");
 			break;
@@ -504,10 +611,9 @@ static int ioreq_client_thread(void *data)
 				is_destroying(client)));
 	}
 
-	/* the client thread such as for hyper-dma will exit from here,
-	 * so mark kthread_exit as true before exit */
-	client->kthread_exit = true;
-
+	set_bit(IOREQ_CLIENT_EXIT, &client->flags);
+	acrn_ioreq_put_client(client);
+	put_vm(vm);
 	return 0;
 }
 
@@ -519,7 +625,7 @@ int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop)
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return -EFAULT;
 	}
-	client = clients[client_id];
+	client = acrn_ioreq_get_client(client_id);
 	if (!client) {
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return -EFAULT;
@@ -529,6 +635,7 @@ int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop)
 		if (client->thread) {
 			pr_warn("vhm-ioreq: kthread already exist"
 					" for client %s\n", client->name);
+			acrn_ioreq_put_client(client);
 			return 0;
 		}
 		client->thread = kthread_run(ioreq_client_thread,
@@ -538,11 +645,12 @@ int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop)
 		if (IS_ERR(client->thread)) {
 			pr_err("vhm-ioreq: failed to run kthread "
 					"for client %s\n", client->name);
+			acrn_ioreq_put_client(client);
 			return -ENOMEM;
 		}
-		client->kthread_exit = false;
+		clear_bit(IOREQ_CLIENT_EXIT, &client->flags);
 	} else {
-		client->kthread_exit = false;
+		clear_bit(IOREQ_CLIENT_EXIT, &client->flags);
 		might_sleep();
 
 		if (check_kthread_stop) {
@@ -551,7 +659,7 @@ int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop)
 				has_pending_request(client) ||
 				is_destroying(client)));
 			if (kthread_should_stop())
-				client->kthread_exit = true;
+				set_bit(IOREQ_CLIENT_EXIT, &client->flags);
 		} else {
 			wait_event_freezable(client->wq,
 				(has_pending_request(client) ||
@@ -559,13 +667,13 @@ int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop)
 		}
 
 		if (is_destroying(client)) {
-			/* the client thread for vcpu will exit from here,
-			 * so mark kthread_exit as true before exit */
-			client->kthread_exit = true;
+			set_bit(IOREQ_CLIENT_EXIT, &client->flags);
+			acrn_ioreq_put_client(client);
 			return 1;
 		}
 	}
 
+	acrn_ioreq_put_client(client);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_attach_client);
@@ -578,7 +686,7 @@ void acrn_ioreq_intercept_bdf(int client_id, int bus, int dev, int func)
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return;
 	}
-	client = clients[client_id];
+	client = acrn_ioreq_get_client(client_id);
 	if (!client) {
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return;
@@ -587,6 +695,7 @@ void acrn_ioreq_intercept_bdf(int client_id, int bus, int dev, int func)
 	client->pci_bus = bus;
 	client->pci_dev = dev;
 	client->pci_func = func;
+	acrn_ioreq_put_client(client);
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_intercept_bdf);
 
@@ -598,7 +707,7 @@ void acrn_ioreq_unintercept_bdf(int client_id)
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return;
 	}
-	client = clients[client_id];
+	client = acrn_ioreq_get_client(client_id);
 	if (!client) {
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return;
@@ -607,6 +716,7 @@ void acrn_ioreq_unintercept_bdf(int client_id)
 	client->pci_bus = -1;
 	client->pci_dev = -1;
 	client->pci_func = -1;
+	acrn_ioreq_put_client(client);
 }
 
 static void acrn_ioreq_notify_client(struct ioreq_client *client)
@@ -614,6 +724,32 @@ static void acrn_ioreq_notify_client(struct ioreq_client *client)
 	/* if client thread is in waitqueue, wake up it */
 	if (waitqueue_active(&client->wq))
 		wake_up_interruptible(&client->wq);
+}
+
+static int ioreq_complete_request(unsigned long vmid, int vcpu,
+		struct vhm_request *vhm_req)
+{
+	bool polling_mode;
+
+	polling_mode = vhm_req->completion_polling;
+	smp_mb();
+	atomic_set(&vhm_req->processed, REQ_STATE_COMPLETE);
+	/*
+	 * In polling mode, HV will poll ioreqs' completion.
+	 * Once marked the ioreq as REQ_STATE_COMPLETE, hypervisor side
+	 * can poll the result and continue the IO flow. Thus, we don't
+	 * need to notify hypervisor by hypercall.
+	 * Please note, we need get completion_polling before set the request
+	 * as complete, or we will race with hypervisor.
+	 */
+	if (!polling_mode) {
+		if (hcall_notify_req_finish(vmid, vcpu) < 0) {
+			pr_err("vhm-ioreq: notify request complete failed!\n");
+			return -EFAULT;
+		}
+	}
+
+	return 0;
 }
 
 static bool req_in_range(struct ioreq_range *range, struct vhm_request *req)
@@ -662,12 +798,8 @@ static bool is_cfg_data(struct vhm_request *req)
 		req->reqs.pio_request.address < 0xcfc+4));
 }
 
-static int cached_bus;
-static int cached_dev;
-static int cached_func;
-static int cached_reg;
-static int cached_enable;
-#define PCI_REGMAX      255     /* highest supported config register addr.*/
+#define PCI_LOWREG_MASK 255     /* the low 8-bit of supported pci_reg addr.*/
+#define PCI_HIGHREG_MASK 0xF00  /* the high 4-bit of supported pci_reg addr */
 #define PCI_FUNCMAX	7       /* highest supported function number */
 #define PCI_SLOTMAX	31      /* highest supported slot number */
 #define PCI_BUSMAX	255     /* highest supported bus number */
@@ -675,65 +807,59 @@ static int cached_enable;
 static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
 {
 	int req_handled = 0;
+	int err = 0;
 
 	/*XXX: like DM, assume cfg address write is size 4 */
 	if (is_cfg_addr(req)) {
 		if (req->reqs.pio_request.direction == REQUEST_WRITE) {
 			if (req->reqs.pio_request.size == 4) {
-				int value = req->reqs.pio_request.value;
 
-				cached_bus = (value >> 16) & PCI_BUSMAX;
-				cached_dev = (value >> 11) & PCI_SLOTMAX;
-				cached_func = (value >> 8) & PCI_FUNCMAX;
-				cached_reg = value & PCI_REGMAX;
-				cached_enable =
-					(value & CONF1_ENABLE) == CONF1_ENABLE;
+				vm->pci_conf_addr = (uint32_t ) req->reqs.pio_request.value;
 				req_handled = 1;
 			}
 		} else {
 			if (req->reqs.pio_request.size == 4) {
 				req->reqs.pio_request.value =
-					(cached_bus << 16) |
-					(cached_dev << 11) | (cached_func << 8)
-					| cached_reg;
-				if (cached_enable)
-					req->reqs.pio_request.value |=
-					CONF1_ENABLE;
+					vm->pci_conf_addr;
 				req_handled = 1;
 			}
 		}
 	} else if (is_cfg_data(req)) {
-		if (!cached_enable) {
+		if (!(vm->pci_conf_addr & CONF1_ENABLE)) {
 			if (req->reqs.pio_request.direction == REQUEST_READ)
 				req->reqs.pio_request.value = 0xffffffff;
 			req_handled = 1;
 		} else {
 			/* pci request is same as io request at top */
 			int offset = req->reqs.pio_request.address - 0xcfc;
+			int pci_reg;
 
 			req->type = REQ_PCICFG;
-			req->reqs.pci_request.bus = cached_bus;
-			req->reqs.pci_request.dev = cached_dev;
-			req->reqs.pci_request.func = cached_func;
-			req->reqs.pci_request.reg = cached_reg + offset;
+			req->reqs.pci_request.bus = (vm->pci_conf_addr >> 16) &
+							PCI_BUSMAX;
+			req->reqs.pci_request.dev = (vm->pci_conf_addr >> 11) &
+							PCI_SLOTMAX;
+			req->reqs.pci_request.func = (vm->pci_conf_addr >> 8) &
+							PCI_FUNCMAX;
+			pci_reg = (vm->pci_conf_addr & PCI_LOWREG_MASK) +
+					((vm->pci_conf_addr >> 16) & PCI_HIGHREG_MASK);
+			req->reqs.pci_request.reg = pci_reg + offset;
 		}
 	}
 
-	if (req_handled) {
-		smp_mb();
-		atomic_set(&req->processed, REQ_STATE_COMPLETE);
-		if (hcall_notify_req_finish(vm->vmid, vcpu) < 0) {
-			pr_err("vhm-ioreq: failed to "
-				"notify request finished !\n");
-			return -EFAULT;
-		}
-	}
+	if (req_handled)
+		err = ioreq_complete_request(vm->vmid, vcpu, req);
 
-	return req_handled;
+	return err ? err: req_handled;
 }
 
-static bool bdf_match(struct ioreq_client *client)
+static bool bdf_match(struct vhm_vm *vm, struct ioreq_client *client)
 {
+	int cached_bus, cached_dev, cached_func;
+
+	cached_bus = (vm->pci_conf_addr >> 16) & PCI_BUSMAX;
+	cached_dev = (vm->pci_conf_addr >> 11) & PCI_SLOTMAX;
+	cached_func = (vm->pci_conf_addr >> 8) & PCI_FUNCMAX;
 	return (client->trap_bdf &&
 		client->pci_bus == cached_bus &&
 		client->pci_dev == cached_dev &&
@@ -745,22 +871,24 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 {
 	struct list_head *pos, *range_pos;
 	struct ioreq_client *client;
-	struct ioreq_client *target_client = NULL, *fallback_client = NULL;
+	int target_client,fallback_client;
 	struct ioreq_range *range;
 	bool found = false;
 
+	target_client = 0;
+	fallback_client = 0;
 	spin_lock(&vm->ioreq_client_lock);
 	list_for_each(pos, &vm->ioreq_client_list) {
 		client = container_of(pos, struct ioreq_client, list);
 
 		if (client->fallback) {
-			fallback_client = client;
+			fallback_client = client->id;
 			continue;
 		}
 
 		if (req->type == REQ_PCICFG) {
-			if (bdf_match(client)) { /* bdf match client */
-				target_client = client;
+			if (bdf_match(vm, client)) { /* bdf match client */
+				target_client = client->id;
 				break;
 			} else /* other or fallback client */
 				continue;
@@ -772,7 +900,7 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 			container_of(range_pos, struct ioreq_range, list);
 			if (req_in_range(range, req)) {
 				found = true;
-				target_client = client;
+				target_client = client->id;
 				break;
 			}
 		}
@@ -783,11 +911,11 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 	}
 	spin_unlock(&vm->ioreq_client_lock);
 
-	if (target_client)
-		return target_client;
+	if (target_client > 0)
+		return acrn_ioreq_get_client(target_client);
 
-	if (fallback_client)
-		return fallback_client;
+	if (fallback_client > 0)
+		return acrn_ioreq_get_client(fallback_client);
 
 	return NULL;
 }
@@ -818,6 +946,7 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
 				req->client = client->id;
 				atomic_set(&req->processed, REQ_STATE_PROCESSING);
 				set_bit(i, client->ioreqs_map);
+				acrn_ioreq_put_client(client);
 			}
 		}
 	}
@@ -833,7 +962,8 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
 	return 0;
 }
 
-int acrn_ioreq_complete_request(int client_id, uint64_t vcpu)
+int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
+		struct vhm_request *vhm_req)
 {
 	struct ioreq_client *client;
 	int ret;
@@ -842,20 +972,22 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu)
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return -EINVAL;
 	}
-	client = clients[client_id];
+	client = acrn_ioreq_get_client(client_id);
 	if (!client) {
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return -EINVAL;
 	}
 
 	clear_bit(vcpu, client->ioreqs_map);
-	ret = hcall_notify_req_finish(client->vmid, vcpu);
-	if (ret < 0) {
-		pr_err("vhm-ioreq: failed to notify request finished !\n");
-		return -EFAULT;
+	if (!vhm_req) {
+		vhm_req = acrn_ioreq_get_reqbuf(client_id);
+		vhm_req += vcpu;
 	}
 
-	return 0;
+	ret = ioreq_complete_request(client->vmid, vcpu, vhm_req);
+	acrn_ioreq_put_client(client);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_complete_request);
 
@@ -872,7 +1004,7 @@ unsigned int vhm_dev_poll(struct file *filep, poll_table *wait)
 		return ret;
 	}
 
-	fallback_client = clients[vm->ioreq_fallback_client];
+	fallback_client = acrn_ioreq_get_client(vm->ioreq_fallback_client);
 	if (!fallback_client) {
 		pr_err("vhm-ioreq: no client for id %d\n",
 			vm->ioreq_fallback_client);
@@ -883,6 +1015,8 @@ unsigned int vhm_dev_poll(struct file *filep, poll_table *wait)
 	if (has_pending_request(fallback_client) ||
 		is_destroying(fallback_client))
 		ret = POLLIN | POLLRDNORM;
+
+	acrn_ioreq_put_client(fallback_client);
 
 	return ret;
 }
@@ -913,9 +1047,6 @@ int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma)
 		return -EFAULT;
 	}
 
-	/* reserve 0, let client_id start from 1 */
-	set_bit(0, client_bitmap);
-
 	pr_info("vhm-ioreq: init request buffer @ %p!\n",
 		vm->req_buf);
 
@@ -926,15 +1057,24 @@ void acrn_ioreq_free(struct vhm_vm *vm)
 {
 	struct list_head *pos, *tmp;
 
-	list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
-		struct ioreq_client *client =
-			container_of(pos, struct ioreq_client, list);
-		acrn_ioreq_destroy_client_pervm(client, vm);
+	/* When acrn_ioreq_destory_client is called, it will be released
+	 * and removed from vm->ioreq_client_list.
+	 * The below is used to assure that the client is still released even when
+	 * it is not called.
+	 */
+	if (!test_and_set_bit(VHM_VM_IOREQ, &vm->flags)) {
+		get_vm(vm);
+		list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
+			struct ioreq_client *client =
+				container_of(pos, struct ioreq_client, list);
+			acrn_ioreq_destroy_client(client->id);
+		}
+		put_vm(vm);
 	}
 
-	if (vm->req_buf && vm->pg) {
-		put_page(vm->pg);
-		vm->pg = NULL;
-		vm->req_buf = NULL;
-	}
+}
+
+void acrn_ioreq_driver_init()
+{
+	idr_init(&idr_client);
 }

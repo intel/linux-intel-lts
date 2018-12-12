@@ -74,9 +74,9 @@
 	for ((idx) = 0; (idx) < (hvlog_type); (idx)++)
 
 enum sbuf_hvlog_index {
-	ACRN_CURRNET_HVLOG = 0,
-	ACRN_LAST_HVLOG,
-	ACRN_HVLOG_TYPE
+	SBUF_CUR_HVLOG = 0,
+	SBUF_LAST_HVLOG,
+	SBUF_HVLOG_TYPES
 };
 
 struct acrn_hvlog {
@@ -208,8 +208,8 @@ static const struct file_operations acrn_hvlog_fops = {
 	.read = acrn_hvlog_read,
 };
 
-static struct acrn_hvlog acrn_hvlog_devs[ACRN_HVLOG_TYPE][PCPU_NRS] = {
-	[ACRN_CURRNET_HVLOG] = {
+static struct acrn_hvlog acrn_hvlog_devs[SBUF_HVLOG_TYPES][PCPU_NRS] = {
+	[SBUF_CUR_HVLOG] = {
 		{
 			.miscdev = {
 				.name   = "acrn_hvlog_cur_0",
@@ -243,7 +243,7 @@ static struct acrn_hvlog acrn_hvlog_devs[ACRN_HVLOG_TYPE][PCPU_NRS] = {
 			.pcpu_num = 3,
 		},
 	},
-	[ACRN_LAST_HVLOG] = {
+	[SBUF_LAST_HVLOG] = {
 		{
 			.miscdev = {
 				.name   = "acrn_hvlog_last_0",
@@ -321,9 +321,9 @@ static int __init acrn_hvlog_init(void)
 			continue;
 
 		foreach_cpu(pcpu_id, PCPU_NRS) {
-			acrn_hvlog_devs[ACRN_LAST_HVLOG][pcpu_id].sbuf =
+			acrn_hvlog_devs[SBUF_LAST_HVLOG][pcpu_id].sbuf =
 					hvlog_mark_unread(sbuf0[pcpu_id]);
-			acrn_hvlog_devs[ACRN_CURRNET_HVLOG][pcpu_id].sbuf =
+			acrn_hvlog_devs[SBUF_CUR_HVLOG][pcpu_id].sbuf =
 				sbuf_construct(ele_num, ele_size,
 					logbuf_base1 + size * pcpu_id);
 		}
@@ -336,19 +336,19 @@ static int __init acrn_hvlog_init(void)
 				continue;
 
 			foreach_cpu(pcpu_id, PCPU_NRS) {
-				acrn_hvlog_devs[ACRN_LAST_HVLOG][pcpu_id].sbuf =
+				acrn_hvlog_devs[SBUF_LAST_HVLOG][pcpu_id].sbuf =
 					hvlog_mark_unread(sbuf1[pcpu_id]);
 			}
 		}
 		foreach_cpu(pcpu_id, PCPU_NRS) {
-			acrn_hvlog_devs[ACRN_CURRNET_HVLOG][pcpu_id].sbuf =
+			acrn_hvlog_devs[SBUF_CUR_HVLOG][pcpu_id].sbuf =
 				sbuf_construct(ele_num, ele_size,
 					logbuf_base0 + size * pcpu_id);
 		}
 		sbuf_constructed = true;
 	}
 
-	idx = ACRN_CURRNET_HVLOG;
+	idx = SBUF_CUR_HVLOG;
 	{
 		foreach_cpu(pcpu_id, PCPU_NRS) {
 			ret = sbuf_share_setup(pcpu_id, ACRN_HVLOG,
@@ -361,7 +361,7 @@ static int __init acrn_hvlog_init(void)
 		}
 	}
 
-	foreach_hvlog_type(idx, ACRN_HVLOG_TYPE) {
+	foreach_hvlog_type(idx, SBUF_HVLOG_TYPES) {
 		foreach_cpu(pcpu_id, PCPU_NRS) {
 			atomic_set(&acrn_hvlog_devs[idx][pcpu_id].open_cnt, 0);
 
@@ -390,7 +390,7 @@ reg_err:
 
 	pcpu_id = PCPU_NRS;
 setup_err:
-	idx = ACRN_CURRNET_HVLOG;
+	idx = SBUF_CUR_HVLOG;
 	{
 		foreach_cpu(j, pcpu_id) {
 			sbuf_share_setup(j, ACRN_HVLOG, 0);
@@ -408,13 +408,13 @@ static void __exit acrn_hvlog_exit(void)
 
 	pr_info("%s\n", __func__);
 
-	foreach_hvlog_type(idx, ACRN_HVLOG_TYPE) {
+	foreach_hvlog_type(idx, SBUF_HVLOG_TYPES) {
 		foreach_cpu(pcpu_id, PCPU_NRS) {
 			misc_deregister(&acrn_hvlog_devs[idx][pcpu_id].miscdev);
 		}
 	}
 
-	idx = ACRN_CURRNET_HVLOG;
+	idx = SBUF_CUR_HVLOG;
 	{
 		foreach_cpu(pcpu_id, PCPU_NRS) {
 			sbuf_share_setup(pcpu_id, ACRN_HVLOG, 0);

@@ -200,9 +200,7 @@ int virtio_vqs_index_get(struct virtio_dev_info *dev,
 					vqs_index[idx++] =
 						req->reqs.mmio_request.value;
 			}
-			smp_mb();
-			atomic_set(&req->processed, REQ_STATE_COMPLETE);
-			acrn_ioreq_complete_request(req->client, vcpu);
+			acrn_ioreq_complete_request(req->client, vcpu, req);
 		}
 	}
 

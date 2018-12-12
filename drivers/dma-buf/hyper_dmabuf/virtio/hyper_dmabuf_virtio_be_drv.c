@@ -186,9 +186,8 @@ static int virtio_be_handle_kick(int client_id, unsigned long *ioreqs_map)
 			else
 				val = req->reqs.pio_request.value;
 
-			smp_mb();
-			atomic_set(&req->processed, REQ_STATE_COMPLETE);
-			acrn_ioreq_complete_request(fe_info->client_id, vcpu);
+			acrn_ioreq_complete_request(
+					fe_info->client_id, vcpu, req);
 		}
 	}
 

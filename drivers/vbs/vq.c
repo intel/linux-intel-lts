@@ -243,6 +243,7 @@ loopy:
 	       name, i);
 	return -1;
 }
+EXPORT_SYMBOL(virtio_vq_getchain);
 
 /*
  * Return the currently-first request chain back to the available queue.
@@ -254,6 +255,7 @@ void virtio_vq_retchain(struct virtio_vq_info *vq)
 {
 	vq->last_avail--;
 }
+EXPORT_SYMBOL(virtio_vq_retchain);
 
 /*
  * Return specified request chain to the guest, setting its I/O length
@@ -288,6 +290,7 @@ void virtio_vq_relchain(struct virtio_vq_info *vq, uint16_t idx,
 	vue->len = iolen;
 	vuh->idx = uidx;
 }
+EXPORT_SYMBOL(virtio_vq_relchain);
 
 /*
  * Driver has finished processing "available" chains and calling
@@ -340,6 +343,7 @@ void virtio_vq_endchains(struct virtio_vq_info *vq, int used_all_avail)
 	if (intr)
 		virtio_vq_interrupt(dev, vq);
 }
+EXPORT_SYMBOL(virtio_vq_endchains);
 
 /*
  * Initialize the currently-selected virtqueue.

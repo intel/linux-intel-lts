@@ -131,7 +131,7 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
 	spin_lock_init(&vm->ioreq_client_lock);
 
 	vm_mutex_lock(&vhm_vm_list_lock);
-	vm->refcnt = 1;
+	atomic_set(&vm->refcnt, 1);
 	vm_list_add(&vm->list);
 	vm_mutex_unlock(&vhm_vm_list_lock);
 	filep->private_data = vm;
@@ -224,18 +224,10 @@ static long vhm_dev_ioctl(struct file *filep,
 		}
 		vm->vmid = created_vm.vmid;
 
-		if (created_vm.vm_flag & SECURE_WORLD_ENABLED) {
-			ret = init_trusty(vm);
-			if (ret < 0) {
-				pr_err("vhm: failed to init trusty for VM!\n");
-				goto create_vm_fail;
-			}
-		}
-
 		if (created_vm.req_buf) {
 			ret = acrn_ioreq_init(vm, created_vm.req_buf);
 			if (ret < 0)
-				goto ioreq_buf_fail;
+				goto create_vm_fail;
 		}
 
 		acrn_ioeventfd_init(vm->vmid);
@@ -243,9 +235,7 @@ static long vhm_dev_ioctl(struct file *filep,
 
 		pr_info("vhm: VM %d created\n", created_vm.vmid);
 		break;
-ioreq_buf_fail:
-		if (created_vm.vm_flag & SECURE_WORLD_ENABLED)
-			deinit_trusty(vm);
+
 create_vm_fail:
 		hcall_destroy_vm(created_vm.vmid);
 		vm->vmid = ACRN_INVALID_VMID;
@@ -283,13 +273,12 @@ create_vm_fail:
 	case IC_DESTROY_VM: {
 		acrn_ioeventfd_deinit(vm->vmid);
 		acrn_irqfd_deinit(vm->vmid);
+		acrn_ioreq_free(vm);
 		ret = hcall_destroy_vm(vm->vmid);
 		if (ret < 0) {
 			pr_err("failed to destroy VM %ld\n", vm->vmid);
 			return -EFAULT;
 		}
-		if (vm->trusty_host_gpa)
-			deinit_trusty(vm);
 		vm->vmid = ACRN_INVALID_VMID;
 		break;
 	}
@@ -389,9 +378,28 @@ create_vm_fail:
 					sizeof(notify)))
 			return -EFAULT;
 
-		ret = acrn_ioreq_complete_request(notify.client_id, notify.vcpu);
+		ret = acrn_ioreq_complete_request(notify.client_id,
+				notify.vcpu, NULL);
 		if (ret < 0)
 			return -EFAULT;
+		break;
+	}
+
+	case IC_CLEAR_VM_IOREQ: {
+		/*
+		 * TODO: Query VM status with additional hypercall.
+		 * VM should be in paused status.
+		 *
+		 * In SMP SOS, we need flush the current pending ioreq dispatch
+		 * tasklet and finish it before clearing all ioreq of this VM.
+		 * With tasklet_kill, there still be a very rare race which
+		 * might lost one ioreq tasklet for other VMs. So arm one after
+		 * the clearing. It's harmless.
+		 */
+		tasklet_schedule(&vhm_io_req_tasklet);
+		tasklet_kill(&vhm_io_req_tasklet);
+		tasklet_schedule(&vhm_io_req_tasklet);
+		acrn_ioreq_clear_request(vm);
 		break;
 	}
 
@@ -520,12 +528,6 @@ create_vm_fail:
 
 		if (copy_from_user(&msix_remap,
 			(void *)ioctl_param, sizeof(msix_remap)))
-			return -EFAULT;
-
-		ret = hcall_remap_pci_msix(vm->vmid, virt_to_phys(&msix_remap));
-
-		if (copy_to_user((void *)ioctl_param,
-				&msix_remap, sizeof(msix_remap)))
 			return -EFAULT;
 
 		if (msix_remap.msix) {
@@ -691,6 +693,7 @@ static int vhm_dev_release(struct inode *inodep, struct file *filep)
 		pr_err("vhm: invalid VM !\n");
 		return -EFAULT;
 	}
+	acrn_ioreq_free(vm);
 	put_vm(vm);
 	filep->private_data = NULL;
 	return 0;
@@ -814,6 +817,7 @@ static int __init vhm_init(void)
 		return -EINVAL;
 	}
 
+	acrn_ioreq_driver_init();
 	pr_info("vhm: Virtio & Hypervisor service module initialized\n");
 	return 0;
 }

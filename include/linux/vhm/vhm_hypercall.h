@@ -167,7 +167,6 @@ inline long hcall_set_ptdev_intr_info(unsigned long vmid,
 		unsigned long pt_irq);
 inline long hcall_reset_ptdev_intr_info(unsigned long vmid,
 		unsigned long pt_irq);
-inline long hcall_remap_pci_msix(unsigned long vmid, unsigned long msi);
 inline long hcall_vm_gpa2hpa(unsigned long vmid, unsigned long addr);
 inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr);
 inline long hcall_profiling_ops(unsigned long cmd, unsigned long msr_nodes);
