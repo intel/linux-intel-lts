@@ -273,4 +273,4 @@ module_platform_driver(broxton_audio)
 /* Module information */
 MODULE_DESCRIPTION("Intel SST Audio for Broxton ULL Machine");
 MODULE_LICENSE("GPL v2");
-MODULE_ALIAS("platform:bxtp_i2s_ull");
+MODULE_ALIAS("platform:bxt_tdf8532");
