@@ -59,9 +59,12 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/major.h>
+#include <linux/slab.h>
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/vhm/vhm_hypercall.h>
+#include <linux/vhm/acrn_hv_defs.h>
 
 #include <asm/hypervisor.h>
 
@@ -76,38 +79,19 @@
 #define foreach_cpu(cpu, cpu_num)					\
 	for ((cpu) = 0; (cpu) < (cpu_num); (cpu)++)
 
-#define MAX_NR_CPUS	4
+#define DEFAULT_NR_CPUS	4
 /* actual physical cpu number, initialized by module init */
-static int pcpu_num;
+static int pcpu_num = DEFAULT_NR_CPUS;
 
-static int nr_cpus = MAX_NR_CPUS;
-module_param(nr_cpus, int, S_IRUSR | S_IWUSR);
+struct acrn_trace {
+	struct miscdevice miscdev;
+	char name[24];
+	shared_buf_t *sbuf;
+	atomic_t open_cnt;
+	uint16_t pcpu_id;
+};
 
-static atomic_t open_cnt[MAX_NR_CPUS];
-static shared_buf_t *sbuf_per_cpu[MAX_NR_CPUS];
-
-static inline int get_id_from_devname(struct file *filep)
-{
-	uint32_t cpuid;
-	int err;
-	char id_str[16];
-	struct miscdevice *dev = filep->private_data;
-
-	strncpy(id_str, (void *)dev->name + sizeof("acrn_trace_") - 1, 16);
-	id_str[15] = '\0';
-	err = kstrtoul(&id_str[0], 10, (unsigned long *)&cpuid);
-
-	if (err)
-		return err;
-
-	if (cpuid >= pcpu_num) {
-		pr_err("%s, failed to get cpuid, cpuid %d\n",
-			__func__, cpuid);
-		return -1;
-	}
-
-	return cpuid;
-}
+static struct acrn_trace *acrn_trace_devs;
 
 /************************************************************************
  *
@@ -116,51 +100,62 @@ static inline int get_id_from_devname(struct file *filep)
  ***********************************************************************/
 static int acrn_trace_open(struct inode *inode, struct file *filep)
 {
-	int cpuid = get_id_from_devname(filep);
+	struct acrn_trace *dev;
 
-	pr_debug("%s, cpu %d\n", __func__, cpuid);
-	if (cpuid < 0)
-		return -ENXIO;
+	dev = container_of(filep->private_data, struct acrn_trace, miscdev);
+	if (!dev) {
+		pr_err("No such dev\n");
+		return -ENODEV;
+	}
+	pr_debug("%s, cpu %d\n", __func__, dev->pcpu_id);
 
 	/* More than one reader at the same time could get data messed up */
-	if (atomic_read(&open_cnt[cpuid]))
+	if (atomic_read(&dev->open_cnt))
 		return -EBUSY;
 
-	atomic_inc(&open_cnt[cpuid]);
+	atomic_inc(&dev->open_cnt);
 
 	return 0;
 }
 
 static int acrn_trace_release(struct inode *inode, struct file *filep)
 {
-	int cpuid = get_id_from_devname(filep);
+	struct acrn_trace *dev;
 
-	pr_debug("%s, cpu %d\n", __func__, cpuid);
-	if (cpuid < 0)
-		return -ENXIO;
+	dev = container_of(filep->private_data, struct acrn_trace, miscdev);
+	if (!dev) {
+		pr_err("No such dev\n");
+		return -ENODEV;
+	}
 
-	atomic_dec(&open_cnt[cpuid]);
+	pr_debug("%s, cpu %d\n", __func__, dev->pcpu_id);
+
+	atomic_dec(&dev->open_cnt);
 
 	return 0;
 }
 
 static int acrn_trace_mmap(struct file *filep, struct vm_area_struct *vma)
 {
-	int cpuid = get_id_from_devname(filep);
 	phys_addr_t paddr;
+	struct acrn_trace *dev;
 
-	pr_debug("%s, cpu %d\n", __func__, cpuid);
-	if (cpuid < 0)
-		return -ENXIO;
+	dev = container_of(filep->private_data, struct acrn_trace, miscdev);
+	if (!dev) {
+		pr_err("No such dev\n");
+		return -ENODEV;
+	}
 
-	BUG_ON(!virt_addr_valid(sbuf_per_cpu[cpuid]));
-	paddr = virt_to_phys(sbuf_per_cpu[cpuid]);
+	pr_debug("%s, cpu %d\n", __func__, dev->pcpu_id);
+
+	WARN_ON(!virt_addr_valid(dev->sbuf));
+	paddr = virt_to_phys(dev->sbuf);
 
 	if (remap_pfn_range(vma, vma->vm_start,
 				paddr >> PAGE_SHIFT,
 				vma->vm_end - vma->vm_start,
 				vma->vm_page_prot)) {
-		pr_err("Failed to mmap sbuf for cpu%d\n", cpuid);
+		pr_err("Failed to mmap sbuf for cpu%d\n", dev->pcpu_id);
 		return -EAGAIN;
 	}
 
@@ -174,37 +169,6 @@ static const struct file_operations acrn_trace_fops = {
 	.mmap   = acrn_trace_mmap,
 };
 
-static struct miscdevice acrn_trace_dev0 = {
-	.name   = "acrn_trace_0",
-	.minor  = MISC_DYNAMIC_MINOR,
-	.fops   = &acrn_trace_fops,
-};
-
-static struct miscdevice acrn_trace_dev1 = {
-	.name   = "acrn_trace_1",
-	.minor  = MISC_DYNAMIC_MINOR,
-	.fops   = &acrn_trace_fops,
-};
-
-static struct miscdevice acrn_trace_dev2 = {
-	.name   = "acrn_trace_2",
-	.minor  = MISC_DYNAMIC_MINOR,
-	.fops   = &acrn_trace_fops,
-};
-
-static struct miscdevice acrn_trace_dev3 = {
-	.name   = "acrn_trace_3",
-	.minor  = MISC_DYNAMIC_MINOR,
-	.fops   = &acrn_trace_fops,
-};
-
-static struct miscdevice *acrn_trace_devs[4] = {
-	&acrn_trace_dev0,
-	&acrn_trace_dev1,
-	&acrn_trace_dev2,
-	&acrn_trace_dev3,
-};
-
 /*
  * acrn_trace_init()
  */
@@ -212,34 +176,37 @@ static int __init acrn_trace_init(void)
 {
 	int ret = 0;
 	int i, cpu;
+	shared_buf_t *sbuf;
+	struct miscdevice *miscdev;
+	struct acrn_hw_info hw_info;
 
 	if (x86_hyper_type != X86_HYPER_ACRN) {
 		pr_err("acrn_trace: not support acrn hypervisor!\n");
 		return -EINVAL;
 	}
 
-	/* TBD: we could get the native cpu number by hypercall later */
-	pr_info("%s, cpu_num %d\n", __func__, nr_cpus);
-	if (nr_cpus > MAX_NR_CPUS) {
-		pr_err("nr_cpus %d exceed MAX_NR_CPUS %d !\n",
-			nr_cpus, MAX_NR_CPUS);
-		return -EINVAL;
-	}
-	pcpu_num = nr_cpus;
+	ret = hcall_get_hw_info(virt_to_phys(&hw_info));
+	if (!ret)
+		pcpu_num = hw_info.cpu_num;
+
+	acrn_trace_devs = kcalloc(pcpu_num, sizeof(struct acrn_trace),
+				GFP_KERNEL);
+	if (!acrn_trace_devs)
+		return -ENOMEM;
 
 	foreach_cpu(cpu, pcpu_num) {
 		/* allocate shared_buf */
-		sbuf_per_cpu[cpu] = sbuf_allocate(TRACE_ELEMENT_NUM,
-							TRACE_ELEMENT_SIZE);
-		if (!sbuf_per_cpu[cpu]) {
-			pr_err("Failed alloc SBuf, cpuid %d\n", cpu);
+		sbuf = sbuf_allocate(TRACE_ELEMENT_NUM, TRACE_ELEMENT_SIZE);
+		if (!sbuf) {
 			ret = -ENOMEM;
 			goto out_free;
 		}
+		acrn_trace_devs[cpu].sbuf = sbuf;
 	}
 
 	foreach_cpu(cpu, pcpu_num) {
-		ret = sbuf_share_setup(cpu, ACRN_TRACE, sbuf_per_cpu[cpu]);
+		sbuf = acrn_trace_devs[cpu].sbuf;
+		ret = sbuf_share_setup(cpu, ACRN_TRACE, sbuf);
 		if (ret < 0) {
 			pr_err("Failed to setup SBuf, cpuid %d\n", cpu);
 			goto out_sbuf;
@@ -247,7 +214,17 @@ static int __init acrn_trace_init(void)
 	}
 
 	foreach_cpu(cpu, pcpu_num) {
-		ret = misc_register(acrn_trace_devs[cpu]);
+		acrn_trace_devs[cpu].pcpu_id = cpu;
+
+		miscdev = &acrn_trace_devs[cpu].miscdev;
+		snprintf(acrn_trace_devs[cpu].name,
+				sizeof(acrn_trace_devs[cpu].name),
+				"acrn_trace_%d", cpu);
+		miscdev->name = acrn_trace_devs[cpu].name;
+		miscdev->minor = MISC_DYNAMIC_MINOR;
+		miscdev->fops = &acrn_trace_fops;
+
+		ret = misc_register(&acrn_trace_devs[cpu].miscdev);
 		if (ret < 0) {
 			pr_err("Failed to register acrn_trace_%d, errno %d\n",
 				cpu, ret);
@@ -255,11 +232,12 @@ static int __init acrn_trace_init(void)
 		}
 	}
 
+	pr_info("Initialized acrn trace module with %u cpu\n", pcpu_num);
 	return ret;
 
 out_dereg:
 	for (i = --cpu; i >= 0; i--)
-		misc_deregister(acrn_trace_devs[i]);
+		misc_deregister(&acrn_trace_devs[i].miscdev);
 	cpu = pcpu_num;
 
 out_sbuf:
@@ -269,7 +247,8 @@ out_sbuf:
 
 out_free:
 	for (i = --cpu; i >= 0; i--)
-		sbuf_free(sbuf_per_cpu[i]);
+		sbuf_free(acrn_trace_devs[i].sbuf);
+	kfree(acrn_trace_devs);
 
 	return ret;
 }
@@ -285,14 +264,16 @@ static void __exit acrn_trace_exit(void)
 
 	foreach_cpu(cpu, pcpu_num) {
 		/* deregister devices */
-		misc_deregister(acrn_trace_devs[cpu]);
+		misc_deregister(&acrn_trace_devs[cpu].miscdev);
 
 		/* set sbuf pointer to NULL in HV */
 		sbuf_share_setup(cpu, ACRN_TRACE, NULL);
 
-		/* free sbuf, sbuf_per_cpu[cpu] should be set NULL */
-		sbuf_free(sbuf_per_cpu[cpu]);
+		/* free sbuf, per-cpu sbuf should be set NULL */
+		sbuf_free(acrn_trace_devs[cpu].sbuf);
 	}
+
+	kfree(acrn_trace_devs);
 }
 
 module_init(acrn_trace_init);
