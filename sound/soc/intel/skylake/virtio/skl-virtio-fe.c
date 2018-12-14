@@ -240,12 +240,6 @@ static int vfe_send_kctl_msg(struct snd_kcontrol *kcontrol,
 			sizeof(struct vfe_kctl_result));
 }
 
-static int vfe_skl_kcontrol_check_permission(u32 domain_id,
-		const struct snd_kcontrol *kcontrol)
-{
-	return 0;
-}
-
 static int vfe_put_inbox_buffer(struct snd_skl_vfe *vfe,
 		void *buff)
 {
@@ -460,7 +454,7 @@ static void vfe_message_loop(struct work_struct *work)
 			break;
 		case VFE_MSG_KCTL_SET:
 			kctln = (struct vfe_kctl_noti *)header;
-			kctl_ipc_handle(0u, &kctln->kcontrol,
+			kctl_ipc_handle(domain_id, &kctln->kcontrol,
 				&kctln->kcontrol_value, &result);
 			break;
 		case VFE_MSG_TPLG_DATA:
@@ -475,6 +469,18 @@ static void vfe_message_loop(struct work_struct *work)
 	}
 	vfe_put_inbox_buffer(vfe, header);
 }
+
+static int vfe_skl_kcontrol_get_domain_id(const struct snd_kcontrol *kcontrol,
+		u32 *dom_id)
+{
+	*dom_id = domain_id;
+	return 0;
+}
+
+static struct kctl_ops vfe_kctl_ops = {
+		.get_domain_id = vfe_skl_kcontrol_get_domain_id,
+		.send_noti = vfe_send_kctl_msg,
+};
 
 static struct vfe_msg_header
 vfe_get_pcm_msg_header(enum vfe_ipc_msg_type msg_type,
@@ -1068,7 +1074,6 @@ static int vfe_init(struct virtio_device *vdev)
 {
 	struct snd_skl_vfe *vfe;
 	int ret;
-	struct kctl_ops kt_ops;
 
 	vfe = devm_kzalloc(&vdev->dev, sizeof(*vfe), GFP_KERNEL);
 	if (!vfe)
@@ -1091,7 +1096,7 @@ static int vfe_init(struct virtio_device *vdev)
 
 	INIT_WORK(&vfe->message_loop_work, vfe_message_loop);
 
-	kctl_init_proxy(&vdev->dev, &kt_ops);
+	kctl_init_proxy(&vdev->dev, &vfe_kctl_ops);
 
 	vfe->send_dsp_ipc_msg = vfe_send_dsp_ipc_msg;
 
@@ -1100,10 +1105,6 @@ static int vfe_init(struct virtio_device *vdev)
 	ret = vfe_skl_init(vdev);
 	if (ret < 0)
 		goto err;
-
-	ret = vfe_skl_init(vdev);
-	if (ret < 0)
-		return ret;
 
 	return 0;
 
