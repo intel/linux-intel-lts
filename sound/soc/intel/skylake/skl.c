@@ -42,6 +42,7 @@
 #if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
 static struct skl_machine_pdata skl_dmic_data;
 #endif
+#include "virtio/skl-virtio.h"
 
 /*
  * initialize the PCI registers
@@ -1055,6 +1056,7 @@ nhlt_continue:
 	if (err < 0)
 		goto out_dsp_free;
 
+	snd_soc_skl_virtio_miscdev_register(skl);
 	schedule_work(&skl->probe_work);
 
 	return 0;
