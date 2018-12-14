@@ -159,6 +159,9 @@ struct skl {
 	bool nhlt_override;
 	bool mod_set_get_status;
 	struct ep_group_cnt grp_cnt;
+
+	/* list of virtual BE services */
+	struct list_head vbe_list;
 };
 
 #define skl_to_bus(s)  (&(s)->hbus)
