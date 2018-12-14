@@ -192,6 +192,12 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
 				BXT_DE_PORT_HP_DDIC;
 		}
 
+		vgpu_vreg_t(vgpu, SKL_FUSE_STATUS) |=
+				SKL_FUSE_DOWNLOAD_STATUS |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG0) |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG1) |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG2);
+
 		return;
 	}
 
