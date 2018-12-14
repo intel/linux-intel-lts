@@ -636,7 +636,7 @@ static int vbe_skl_pcm_trigger(struct skl *sdev, int vm_id,
 	return rtd->ops.trigger(substream, cmd);
 }
 
-static int vbe_skl_kcontrol_find_domain_id(const struct snd_kcontrol *kcontrol,
+static u32 vbe_skl_kcontrol_find_domain_id(const struct snd_kcontrol *kcontrol,
 	struct skl_module_cfg *mconfig)
 {
 	struct skl_kctl_domain *domain;
@@ -652,13 +652,17 @@ static int vbe_skl_kcontrol_find_domain_id(const struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static int vbe_skl_kcontrol_get_domain_id(const struct skl *sdev,
-	const struct snd_kcontrol *kcontrol, int *domain_id)
+static int vbe_skl_kcontrol_get_domain_id(const struct snd_kcontrol *kcontrol,
+		u32 *domain_id)
 {
 	struct skl_module_cfg *mconfig;
 	struct snd_soc_dapm_widget *w;
 	void *priv = kcontrol->private_data;
 	int ret = 0;
+	struct skl *sdev = get_virtio_audio()->skl;
+
+	if (sdev == NULL)
+		return -EINVAL;
 
 	if (unlikely(!domain_id))
 		return -EINVAL;
@@ -679,26 +683,10 @@ static int vbe_skl_kcontrol_get_domain_id(const struct skl *sdev,
 	return 0;
 }
 
-static int vbe_skl_kcontrol_check_permission(u32 domain_id,
-		const struct snd_kcontrol *kcontrol)
-{
-	int kcontrol_domain_id;
-	int ret;
-	struct skl *skl = get_virtio_audio()->skl;
-
-	if (skl == NULL)
-		return -EINVAL;
-
-	ret = vbe_skl_kcontrol_get_domain_id(skl, kcontrol,
-		&kcontrol_domain_id);
-	if (ret < 0)
-		return ret;
-
-	if (kcontrol_domain_id != domain_id)
-		return -EACCES;
-
-	return 0;
-}
+static struct kctl_ops vbe_kctl_ops = {
+		.get_domain_id = vbe_skl_kcontrol_get_domain_id,
+		.send_noti = vbe_send_kctl_msg,
+};
 
 static int vbe_skl_cfg_hda(const struct skl *sdev, int vm_id,
 		const struct vbe_ipc_msg *msg)
@@ -733,9 +721,7 @@ static int vbe_skl_msg_cfg_handle(struct snd_skl_vbe *vbe,
 
 	switch (msg->header->cmd) {
 	case VFE_MSG_CFG_HDA:
-		kt_ops.check_permission = &vbe_skl_kcontrol_check_permission;
-		kt_ops.send_noti = &vbe_send_kctl_msg;
-		kctl_init_proxy(vbe->dev, &kt_ops);
+		kctl_init_proxy(vbe->dev, &vbe_kctl_ops);
 		kctl_notify_machine_ready(sdev->component->card);
 		return vbe_skl_cfg_hda(sdev, vm_id, msg);
 	default:
