@@ -668,6 +668,16 @@ static int skl_tplg_update_be_blob(struct snd_soc_dapm_widget *w,
 		return 0;
 
 	dev_dbg(ctx->dev, "Applying default cfg blob\n");
+
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_FE)
+	/*
+	 * FIXME: dev_type from topology for should be SKL_DEVICE_VIRTUAL
+	 * and the if should be removed
+	 * FE does not need information about BE dais/blobs so exit
+	 */
+	return 0;
+#endif
+
 	switch (m_cfg->dev_type) {
 	case SKL_DEVICE_DMIC:
 		link_type = NHLT_LINK_DMIC;
