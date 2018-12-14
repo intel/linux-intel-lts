@@ -219,18 +219,24 @@ typedef int (*kctl_send_op)(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol,
 		struct vfe_kctl_result *result);
 
-typedef int (*kctl_perm_op)(u32 domain_id,
-		const struct snd_kcontrol *kcontrol);
+typedef int (*kctl_dom_op)(const struct snd_kcontrol *kcontrol,
+		u32 *domain_id);
 
 struct kctl_ops {
 	kctl_send_op send_noti;
-	kctl_perm_op check_permission;
+	kctl_dom_op get_domain_id;
+};
+
+struct kctl_domain {
+	u32 domain_id;
+	struct list_head kcontrols_list;
+	struct list_head list;
 };
 
 struct kctl_proxy {
 	struct device *alloc_dev;
 	struct kctl_ops ops;
-	struct list_head kcontrols_list;
+	struct list_head domain_list;
 };
 
 struct kctl_proxy *get_kctl_proxy(void);

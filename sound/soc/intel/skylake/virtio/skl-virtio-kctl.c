@@ -15,17 +15,52 @@
 #include <linux/device.h>
 #include "skl-virtio-common.h"
 
-static struct kctl_wrapper *kctl_find_by_name(
-		struct kctl_proxy *proxy, const char *kcontrol_name)
+static struct kctl_domain *find_domain(struct kctl_proxy *proxy,
+		u32 domain_id)
 {
+	struct kctl_domain *domain;
+
+	list_for_each_entry(domain, &proxy->domain_list, list) {
+		if (domain->domain_id == domain_id)
+			return domain;
+	}
+	return NULL;
+}
+
+static struct kctl_domain *get_domain(struct kctl_proxy *proxy,
+		u32 domain_id)
+{
+	struct kctl_domain *domain = find_domain(proxy, domain_id);
+
+	if (domain == NULL) {
+		domain = devm_kzalloc(proxy->alloc_dev,
+				sizeof(*domain), GFP_KERNEL);
+
+		if (!domain)
+			return NULL;
+
+		domain->domain_id = domain_id;
+		list_add(&domain->list, &proxy->domain_list);
+		INIT_LIST_HEAD(&domain->kcontrols_list);
+	}
+
+	return domain;
+}
+
+static struct kctl_wrapper *kctl_find_by_name(struct kctl_proxy *proxy,
+		u32 domain_id, const char *kcontrol_name)
+{
+	struct kctl_domain *domain = find_domain(proxy, domain_id);
 	struct kctl_wrapper *kwrapper;
 	struct snd_kcontrol *kcontrol;
 
-	list_for_each_entry(kwrapper, &proxy->kcontrols_list, list) {
-		kcontrol = kwrapper->kcontrol;
-		if (strncmp(kcontrol->id.name, kcontrol_name,
-			ARRAY_SIZE(kcontrol->id.name)) == 0)
-			return kwrapper;
+	if (domain) {
+		list_for_each_entry(kwrapper, &domain->kcontrols_list, list) {
+			kcontrol = kwrapper->kcontrol;
+			if (strncmp(kcontrol->id.name, kcontrol_name,
+				ARRAY_SIZE(kcontrol->id.name)) == 0)
+				return kwrapper;
+		}
 	}
 	return NULL;
 }
@@ -34,19 +69,22 @@ void kctl_init_proxy(struct device *dev, struct kctl_ops *kt_ops)
 {
 	struct kctl_proxy *proxy = get_kctl_proxy();
 
-	INIT_LIST_HEAD(&proxy->kcontrols_list);
+	INIT_LIST_HEAD(&proxy->domain_list);
 	proxy->ops = *kt_ops;
 	proxy->alloc_dev = dev;
 }
 
 struct kctl_wrapper *kctl_find_by_address(struct kctl_proxy *proxy,
-	struct snd_kcontrol *kcontrol)
+		u32 domain_id, struct snd_kcontrol *kcontrol)
 {
+	struct kctl_domain *domain = find_domain(proxy, domain_id);
 	struct kctl_wrapper *kwrapper;
 
-	list_for_each_entry(kwrapper, &proxy->kcontrols_list, list) {
-		if (kcontrol == kwrapper->kcontrol)
-			return kwrapper;
+	if (domain) {
+		list_for_each_entry(kwrapper, &domain->kcontrols_list, list) {
+			if (kcontrol == kwrapper->kcontrol)
+				return kwrapper;
+		}
 	}
 	return NULL;
 }
@@ -54,11 +92,20 @@ struct kctl_wrapper *kctl_find_by_address(struct kctl_proxy *proxy,
 int kctl_put(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
+	u32 domain_id;
 	struct vfe_kctl_result result;
 	struct kctl_proxy *proxy = get_kctl_proxy();
-	struct kctl_wrapper *vfe_kcontrol =
-			kctl_find_by_address(proxy, kcontrol);
+	struct kctl_wrapper *vfe_kcontrol;
 	int ret;
+
+	ret = proxy->ops.get_domain_id(kcontrol, &domain_id);
+	if (ret != 0)
+		return ret;
+
+	vfe_kcontrol = kctl_find_by_address(proxy, domain_id, kcontrol);
+
+	if (!vfe_kcontrol)
+		return -EPERM;
 
 	ret = proxy->ops.send_noti(kcontrol, ucontrol, &result);
 	if (ret < 0)
@@ -76,7 +123,20 @@ int kctl_put(struct snd_kcontrol *kcontrol,
 int kctl_wrap_kcontrol(struct kctl_proxy *proxy,
 		struct snd_kcontrol *kcontrol)
 {
-	struct kctl_wrapper *vfe_kcontrol = devm_kzalloc(proxy->alloc_dev,
+	u32 domain_id;
+	struct kctl_wrapper *vfe_kcontrol;
+	struct kctl_domain *domain;
+	int ret = proxy->ops.get_domain_id(kcontrol, &domain_id);
+
+	if ((ret != 0) || (domain_id == 0))
+		return ret;
+
+	domain = get_domain(proxy, domain_id);
+
+	if (!domain)
+		return -ENOMEM;
+
+	vfe_kcontrol = devm_kzalloc(proxy->alloc_dev,
 		sizeof(*vfe_kcontrol), GFP_KERNEL);
 
 	if (!vfe_kcontrol)
@@ -85,9 +145,38 @@ int kctl_wrap_kcontrol(struct kctl_proxy *proxy,
 	vfe_kcontrol->kcontrol = kcontrol;
 	vfe_kcontrol->put = kcontrol->put;
 	kcontrol->put = kctl_put;
+	//kcontrol->id.device = domain_id;
 
-	list_add(&vfe_kcontrol->list, &proxy->kcontrols_list);
+	list_add(&vfe_kcontrol->list, &domain->kcontrols_list);
 	return 0;
+}
+
+static void kctl_clean_list(struct list_head *kcontrols_list,
+		struct device *alloc_dev)
+{
+	struct kctl_wrapper *kwrapper;
+
+	while (!list_empty(kcontrols_list)) {
+		kwrapper = list_first_entry(kcontrols_list,
+				struct kctl_wrapper, list);
+		list_del(&kwrapper->list);
+		devm_kfree(alloc_dev, kwrapper);
+
+	}
+}
+
+static void kctl_clean_domain_list(struct kctl_proxy *proxy)
+{
+	struct kctl_domain *domain;
+
+	while (!list_empty(&proxy->domain_list)) {
+		domain = list_first_entry(&proxy->domain_list,
+				struct kctl_domain, list);
+		kctl_clean_list(&domain->kcontrols_list, proxy->alloc_dev);
+		list_del(&domain->kcontrols_list);
+		devm_kfree(proxy->alloc_dev, domain);
+
+	}
 }
 
 void kctl_notify_machine_ready(struct snd_soc_card *card)
@@ -95,6 +184,9 @@ void kctl_notify_machine_ready(struct snd_soc_card *card)
 	struct snd_kcontrol *kctl;
 	struct kctl_proxy *proxy = get_kctl_proxy();
 	int ret;
+
+	//to be sure if lis is empty
+	kctl_clean_domain_list(proxy);
 
 	list_for_each_entry(kctl, &card->snd_card->controls, list) {
 		ret = kctl_wrap_kcontrol(proxy, kctl);
@@ -110,19 +202,16 @@ int kctl_ipc_handle(u32 domain_id, const struct vfe_kctl_info *kctl_info,
 {
 	struct kctl_proxy *proxy = get_kctl_proxy();
 	struct kctl_wrapper *kcontrol =
-		kctl_find_by_name(proxy, kctl_info->kcontrol_id);
+		kctl_find_by_name(proxy, domain_id, kctl_info->kcontrol_id);
 	int ret;
 
 	if (!kcontrol) {
-		dev_err(proxy->alloc_dev, "Can not find kcontrol [%s].\n",
-				kctl_info->kcontrol_id);
-		ret = -ENODEV;
+		dev_err(proxy->alloc_dev,
+				"Can not find kcontrol [name=\"%s\", domain_id=%u].\n",
+				kctl_info->kcontrol_id, domain_id);
+		ret = -EPERM;
 		goto ret_result;
 	}
-
-	ret = proxy->ops.check_permission(domain_id, kcontrol->kcontrol);
-	if (ret < 0)
-		goto ret_result;
 
 	if (kcontrol->put)
 		ret = kcontrol->put(kcontrol->kcontrol, &kcontrol_val->value);
