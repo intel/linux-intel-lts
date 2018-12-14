@@ -220,6 +220,13 @@ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
 
 struct skl_module_cfg;
 
+int skl_pcm_new(struct snd_soc_pcm_runtime *rtd);
+void skl_pcm_free(struct snd_pcm *pcm);
+int skl_platform_soc_probe(struct snd_soc_component *component);
+int skl_platform_open(struct snd_pcm_substream *substream);
+int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
+	int cmd);
+
 #ifdef CONFIG_DEBUG_FS
 struct skl_debug *skl_debugfs_init(struct skl *skl);
 void skl_debug_init_module(struct skl_debug *d,
