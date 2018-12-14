@@ -983,6 +983,10 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
 	clear_bit(vcpu, client->ioreqs_map);
 	if (!vhm_req) {
 		vhm_req = acrn_ioreq_get_reqbuf(client_id);
+		if (!vhm_req) {
+			acrn_ioreq_put_client(client);
+			return -EINVAL;
+		}
 		vhm_req += vcpu;
 	}
 
