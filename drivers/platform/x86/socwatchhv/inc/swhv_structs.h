@@ -117,26 +117,37 @@ struct swhv_driver_switch_io_descriptor {
 
 #pragma pack(push, 1)
 typedef struct swhv_driver_io_descriptor {
-	pw_u16_t collection_type; // One of 'enum swhv_collector_type'
-	pw_s16_t collection_command; // One of 'enum swhv_io_cmd'
-	pw_u16_t counter_size_in_bytes; // The number of bytes to READ or WRITE
+	pw_u16_t collection_type; /* One of 'enum swhv_collector_type' */
+	pw_s16_t collection_command; /* One of 'enum swhv_io_cmd' */
+	pw_u16_t counter_size_in_bytes; /* The number of bytes to
+					 * READ or WRITE
+					 */
 	union {
 		struct swhv_driver_msr_io_descriptor msr_descriptor;
 		struct swhv_driver_switch_io_descriptor switch_descriptor;
 	};
-	pw_u64_t write_value; // The value to WRITE
+	pw_u64_t write_value; /* The value to WRITE */
 } swhv_driver_io_descriptor_t;
 #pragma pack(pop)
 
 #pragma pack(push, 1)
 struct swhv_driver_interface_info {
-	pw_s16_t cpu_mask; // On which CPU(s) should the driver read the data?
-		// Currently:  -2 ==> read on ALL CPUs,
-		//             -1 ==> read on ANY CPU,
-		//           >= 0 ==> the specific CPU to read on
-	pw_s16_t sample_id; // Sample ID, used to map it back to Metric Plugin, Metric and Msg ID combo
-	pw_u16_t num_io_descriptors; // Number of descriptors in the array, below.
-	pw_u8_t descriptors[1]; // Array of swhv_driver_io_descriptor structs.
+	pw_s16_t cpu_mask; /* On which CPU(s) should the driver
+			    * read the data?
+			    */
+		/* Currently:  -2 ==> read on ALL CPUs,
+		 *             -1 ==> read on ANY CPU,
+		 *           >= 0 ==> the specific CPU to read on
+		 */
+	pw_s16_t sample_id; /* Sample ID, used to map it back
+			     * to Metric Plugin, Metric and Msg ID combo
+			     */
+	pw_u16_t num_io_descriptors; /* Number of descriptors in the array,
+				      * below.
+				      */
+	pw_u8_t descriptors[1]; /* Array of swhv_driver_io_descriptor
+				 * structs.
+				 */
 };
 #pragma pack(pop)
 #define SWHV_DRIVER_INTERFACE_INFO_HEADER_SIZE()                               \
@@ -144,8 +155,13 @@ struct swhv_driver_interface_info {
 
 #pragma pack(push, 1)
 struct swhv_driver_interface_msg {
-	pw_u16_t num_infos; // Number of 'swhv_driver_interface_info' structs contained within the 'infos' variable, below
-	// pw_u16_t infos_size_bytes; // Size of data inlined within the 'infos' variable, below
+	pw_u16_t num_infos; /* Number of 'swhv_driver_interface_info'
+			     * structs contained within the 'infos' variable,
+			     * below
+			     */
+	/* pw_u16_t infos_size_bytes; Size of data inlined within
+	 * the 'infos' variable, below
+	 */
 	pw_u8_t infos[1];
 };
 #pragma pack(pop)
@@ -161,7 +177,7 @@ struct swhv_driver_interface_msg {
 typedef enum PROFILING_SOCWATCH_FEATURE {
 	SOCWATCH_COMMAND = 0,
 	SOCWATCH_VM_SWITCH_TRACING,
-	MAX_SOCWATCH_FEATURE_ID,
+	MAX_SOCWATCH_FEATURE_ID
 } profiling_socwatch_feature;
 
 typedef enum PROFILING_SOCWATCH_FEATURE acrn_type;
@@ -170,22 +186,22 @@ typedef enum PROFILING_SOCWATCH_FEATURE acrn_type;
  * current default ACRN header
  */
 struct data_header {
-	uint32_t collector_id;
+	int32_t collector_id;
 	uint16_t cpu_id;
 	uint16_t data_type;
 	uint64_t tsc;
 	uint64_t payload_size;
 	uint64_t reserved;
 } __attribute__((aligned(32)));
-#define ACRN_MSG_HEADER_SIZE (sizeof(struct data_header))
+#define ACRN_MSG_HEADER_SIZE ((uint64_t)sizeof(struct data_header))
 
 struct vm_switch_trace {
+	uint64_t vm_enter_tsc;
+	uint64_t vm_exit_tsc;
+	uint64_t vm_exit_reason;
 	int32_t os_id;
-	uint64_t vmenter_tsc;
-	uint64_t vmexit_tsc;
-	uint64_t vmexit_reason;
 } __attribute__((aligned(32)));
-#define VM_SWITCH_TRACE_SIZE (sizeof(struct vm_switch_trace))
+#define VM_SWITCH_TRACE_SIZE ((uint64_t)sizeof(struct vm_switch_trace))
 
 #define MAX_NR_VCPUS 8
 #define MAX_NR_VMS 6
@@ -197,7 +213,7 @@ struct profiling_vcpu_pcpu_map {
 } __attribute__((aligned(8)));
 
 struct profiling_vm_info {
-	int32_t vm_id;
+	int32_t vm_id_num;
 	unsigned char guid[16];
 	char vm_name[16];
 	int32_t num_vcpus;
@@ -218,9 +234,9 @@ typedef struct vm_switch_trace vmswitch_trace_t;
 /*
  * ACRN specific constants shared between the driver and user-mode
  */
-// Per CPU buffer size
+/* Per CPU buffer size */
 #define ACRN_BUF_SIZE ((4 * 1024 * 1024) - SBUF_HEAD_SIZE /* 64 bytes */)
-// Size of buffer at which data should be transferred to user-mode
+/* Size of buffer at which data should be transferred to user-mode */
 #define ACRN_BUF_TRANSFER_SIZE (ACRN_BUF_SIZE / 2)
 /*
  * The ACRN 'sbuf' buffers consist of fixed size elements.
@@ -231,4 +247,4 @@ typedef struct vm_switch_trace vmswitch_trace_t;
 #define ACRN_BUF_ELEMENT_NUM (ACRN_BUF_SIZE / ACRN_BUF_ELEMENT_SIZE)
 #define ACRN_BUF_FILLED_SIZE(sbuf) (sbuf->size - sbuf_available_space(sbuf))
 
-#endif // _SWHV_STRUCTS_H_
+#endif /* _SWHV_STRUCTS_H_ */

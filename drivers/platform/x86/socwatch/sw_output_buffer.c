@@ -163,7 +163,7 @@ DECLARE_OVERHEAD_VARS(sw_produce_generic_msg_i);
 /*
  * Per-cpu output buffers.
  */
-static sw_output_buffer_t *per_cpu_output_buffers = NULL;
+static sw_output_buffer_t *per_cpu_output_buffers;
 /*
  * Variables for book keeping.
  */
@@ -176,7 +176,7 @@ SW_DECLARE_SPINLOCK(sw_polled_lock);
 /*
  * Buffer allocation size.
  */
-unsigned long sw_buffer_alloc_size = (1 << 16); // 64 KB
+unsigned long sw_buffer_alloc_size = (1 << 16); /* 64 KB */
 
 /* -------------------------------------------------
  * Function definitions.
@@ -242,8 +242,8 @@ static int sw_produce_polled_msg_i(struct sw_driver_msg *msg,
 			 * are always CPU agnostic (otherwise they would
 			 * be invoked from within a preempt_disable()d context
 			 * in 'sw_handle_collector_node_i()', which ensures they
-			 * will be enqueued within the 'sw_produce_generic_msg_on_cpu()'
-			 * function).
+			 * will be enqueued within the
+			 * 'sw_produce_generic_msg_on_cpu()' function).
 			 */
 			msg->cpuidx = cpu;
 			memcpy(dst, msg, SW_DRIVER_MSG_HEADER_SIZE());
@@ -553,10 +553,10 @@ size_t sw_consume_data(u32 mask, void __user *buffer, size_t bytes_to_read)
 	seg = &buff->buffers[which_seg];
 
 	bytes_not_copied = sw_copy_to_user(buffer, seg->buffer,
-					   seg->bytes_written); // dst, src
+					   seg->bytes_written); /* dst, src */
 
-	// bytes_not_copied =
-	// copy_to_user(buffer, seg->buffer, seg->bytes_written); // dst,src
+	/* bytes_not_copied = */
+	/* copy_to_user(buffer, seg->buffer, seg->bytes_written);  dst,src */
 	if (likely(bytes_not_copied == 0)) {
 		bytes_read = seg->bytes_written;
 	} else {

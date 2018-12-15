@@ -57,8 +57,8 @@
 #ifndef _SWHV_DRIVER_H_
 #define _SWHV_DRIVER_H_ 1
 
-#include <linux/version.h> // LINUX_VERSION_CODE
-#include <linux/vmalloc.h> // vmalloc
+#include <linux/version.h> /* LINUX_VERSION_CODE */
+#include <linux/vmalloc.h> /* vmalloc */
 #include "swhv_defines.h"
 #include "sw_kernel_defines.h"
 #include "pw_version.h"
@@ -68,17 +68,17 @@
 #define MOBILEVISOR 1
 #define ACRN 2
 
-// define this flag to have IDT entry programmed for SoCWatch IRQ handler
+/* define this flag to have IDT entry programmed for SoCWatch IRQ handler */
 #define SOCWATCH_IDT_IRQ 1
 
 extern void SYS_Perfvec_Handler(void);
 extern short SYS_Get_cs(void);
 
 #if defined(SWDRV_IA32) && (SOCWATCH_IDT_IRQ)
-extern void *SYS_Get_IDT_Base_HWR(void); /// IDT base from hardware IDTR
+extern void *SYS_Get_IDT_Base_HWR(void); /* IDT base from hardware IDTR */
 
 #define SYS_Get_IDT_Base SYS_Get_IDT_Base_HWR
-#endif // defined(SWDRV_IA32) && (SOCWATCH_IDT_IRQ)
+#endif /* defined(SWDRV_IA32) && (SOCWATCH_IDT_IRQ) */
 
 #if defined(SWDRV_EM64T) && (SOCWATCH_IDT_IRQ)
 extern void SYS_Get_IDT_Base(void **);
@@ -87,10 +87,10 @@ extern void SYS_Get_IDT_Base(void **);
 typedef struct gate_struct gate_struct_t;
 #else
 typedef struct gate_struct64 gate_struct_t;
-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
-#endif // defined(SWDRV_EM64T) && (SOCWATCH_IDT_IRQ)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25) */
+#endif /* defined(SWDRV_EM64T) && (SOCWATCH_IDT_IRQ) */
 
-// miscellaneous defines
+/* miscellaneous defines */
 #define CPU() (raw_smp_processor_id())
 #define GET_BOOL_STRING(b) ((b) ? "TRUE" : "FALSE")
 
@@ -106,4 +106,4 @@ typedef struct gate_struct64 gate_struct_t;
 
 typedef struct PWCollector_msg PWCollector_msg_t;
 
-#endif // _SWHV_DRIVER_H_
+#endif /* _SWHV_DRIVER_H_ */

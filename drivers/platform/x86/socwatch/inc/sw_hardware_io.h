@@ -74,13 +74,15 @@ typedef bool (*sw_hw_op_post_config_func_t)(void);
 /**
  * struct sw_hw_ops - Operations for each of the HW collection mechanisms
  *                    in swkernelcollector.
- * @name:           A descriptive name used to identify this particular operation.
+ * @name:           A descriptive name used to identify this particular
+ *                  operation.
  * @init:           Initialize a metric's collection.
  * @read:           Read a metric's data.
  * @write:          Write to the HW for the metric(?).
  * @print:          Print out the data.
  * @reset:          Opposite of init--called after we're done collecting.
- * @available:      Decide whether this H/W op is available on the current platform.
+ * @available:      Decide whether this H/W op is available on the current
+ *                  platform.
  * @post_config:    Perform any post-configuration steps.
  */
 struct sw_hw_ops {
@@ -115,4 +117,4 @@ int sw_register_hw_ops(void);
  */
 void sw_free_hw_ops(void);
 
-#endif // __SW_HARDWARE_IO_H__
+#endif /* __SW_HARDWARE_IO_H__ */

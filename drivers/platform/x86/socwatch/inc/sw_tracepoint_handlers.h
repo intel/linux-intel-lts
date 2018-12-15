@@ -67,9 +67,14 @@ enum sw_trace_data_type {
 
 struct sw_trace_notifier_name {
 	const char *
-		kernel_name; // The tracepoint name; used by the kernel to identify tracepoints
+		kernel_name; /* The tracepoint name; used by the kernel
+			      * to identify tracepoints
+			      */
 	const char *
-		abstract_name; // An abstract name used by plugins to specify tracepoints-of-interest; shared with Ring-3
+		abstract_name; /* An abstract name used by plugins to
+				* specify tracepoints-of-interest;
+				* shared with Ring-3
+				*/
 };
 
 typedef struct sw_trace_notifier_data sw_trace_notifier_data_t;
@@ -79,17 +84,27 @@ typedef int (*sw_trace_notifier_unregister_func)(
 	struct sw_trace_notifier_data *node);
 
 struct sw_trace_notifier_data {
-	enum sw_trace_data_type type; // Tracepoint or Notifier
-	const struct sw_trace_notifier_name *name; // Tracepoint name(s)
-	sw_trace_notifier_register_func probe_register; // probe register function
-	sw_trace_notifier_unregister_func probe_unregister; // probe unregister function
+	enum sw_trace_data_type type; /* Tracepoint or Notifier */
+	const struct sw_trace_notifier_name *name; /* Tracepoint name(s) */
+	sw_trace_notifier_register_func probe_register; /* probe register
+							 * function
+							 */
+	sw_trace_notifier_unregister_func probe_unregister; /* probe unregister
+							     * function
+							     */
 	struct tracepoint *tp;
-	bool always_register; // Set to TRUE if this tracepoint/notifier must ALWAYS be registered, regardless
-		// of whether the user has specified anything to collect
+	bool always_register; /* Set to TRUE if this tracepoint/notifier
+			       * must ALWAYS be registered, regardless
+			       * of whether the user has specified
+			       * anything to collect
+			       */
 	bool was_registered;
 	SW_DEFINE_LIST_HEAD(
 		list,
-		sw_collector_data); // List of 'sw_collector_data' instances for this tracepoint or notifier
+		sw_collector_data); /* List of 'sw_collector_data'
+				     * instances for this tracepoint
+				     * or notifier
+				     */
 };
 
 struct sw_topology_node {
@@ -99,8 +114,10 @@ struct sw_topology_node {
 };
 SW_DECLARE_LIST_HEAD(
 	sw_topology_list,
-	sw_topology_node); // List of entries tracking changes in CPU topology
-extern size_t sw_num_topology_entries; // Size of the 'sw_topology_list'
+	sw_topology_node); /* List of entries tracking
+			    * changes in CPU topology
+			    */
+extern size_t sw_num_topology_entries; /* Size of the 'sw_topology_list' */
 
 int sw_extract_tracepoints(void);
 int sw_register_trace_notifiers(void);
@@ -139,4 +156,4 @@ sw_get_trace_notifier_abstract_name(struct sw_trace_notifier_data *node);
  */
 void sw_clear_topology_list(void);
 
-#endif // __SW_TRACEPOINT_HANDLERS_H__
+#endif /* __SW_TRACEPOINT_HANDLERS_H__ */

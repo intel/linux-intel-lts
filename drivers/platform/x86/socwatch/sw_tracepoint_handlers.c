@@ -78,7 +78,7 @@ static int s_trace_idx = -1, s_notifier_idx = -1;
 
 SW_DEFINE_LIST_HEAD(sw_topology_list, sw_topology_node) =
 	SW_LIST_HEAD_INITIALIZER(sw_topology_list);
-size_t sw_num_topology_entries = 0;
+size_t sw_num_topology_entries;
 
 /* -------------------------------------------------
  * Function definitions.
@@ -102,7 +102,8 @@ void sw_print_trace_notifier_overheads(void)
 static int sw_for_each_node_i(void *list_head,
 			      int (*func)(struct sw_trace_notifier_data *node,
 					  void *priv),
-			      void *priv, bool return_on_error) {
+			      void *priv, bool return_on_error)
+{
 	SW_LIST_HEAD_VAR(sw_trace_list_node) * head = list_head;
 	int retval = PW_SUCCESS;
 	struct sw_trace_list_node *lnode = NULL;
@@ -121,7 +122,8 @@ static int sw_for_each_node_i(void *list_head,
 
 int sw_for_each_tracepoint_node(int (*func)(struct sw_trace_notifier_data *node,
 					    void *priv),
-				void *priv, bool return_on_error) {
+				void *priv, bool return_on_error)
+{
 	if (func) {
 		return sw_for_each_node_i(&s_trace_list, func, priv,
 					  return_on_error);
@@ -131,7 +133,8 @@ int sw_for_each_tracepoint_node(int (*func)(struct sw_trace_notifier_data *node,
 
 int sw_for_each_notifier_node(int (*func)(struct sw_trace_notifier_data *node,
 					  void *priv),
-			      void *priv, bool return_on_error) {
+			      void *priv, bool return_on_error)
+{
 	if (func) {
 		return sw_for_each_node_i(&s_notifier_list, func, priv,
 					  return_on_error);

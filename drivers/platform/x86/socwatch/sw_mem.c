@@ -92,7 +92,7 @@ static atomic_t pw_mem_should_panic = ATOMIC_INIT(0);
 		__tmp;                                                         \
 	})
 
-#else // if !DO_MEM_PANIC_ON_ALLOC_ERROR
+#else /* if !DO_MEM_PANIC_ON_ALLOC_ERROR */
 
 #define MEM_PANIC()
 #define SHOULD_TRACE() (true)
@@ -305,7 +305,7 @@ void sw_kfree(const void *obj)
 	kfree(tmp);
 };
 
-#else // !DO_TRACK_MEMORY_USAGE
+#else /* !DO_TRACK_MEMORY_USAGE */
 
 void *sw_kmalloc(size_t size, gfp_t flags)
 {
@@ -328,4 +328,4 @@ void sw_kfree(const void *mem)
 	kfree(mem);
 };
 
-#endif // DO_TRACK_MEMORY_USAGE
+#endif /* DO_TRACK_MEMORY_USAGE */

@@ -103,21 +103,22 @@ extern void CONTROL_Invoke_Cpu(int cpu_idx, void (*func)(pvoid), pvoid ctx)
  * @fn VOID CONTROL_Invoke_Parallel_Service(func, ctx, blocking, exclude)
  *
  * @param    func     - function to be invoked by each core in the system
- * @param    ctx      - pointer to the parameter block for each function invocation
+ * @param    ctx      - pointer to the parameter block for each function
+ *                      invocation
  * @param    blocking - Wait for invoked function to complete
  * @param    exclude  - exclude the current core from executing the code
  *
  * @returns  None
  *
- * @brief    Service routine to handle all kinds of parallel invoke on all CPU calls
+ * @brief    Service routine to handle all kinds of parallel invoke on
+ *           all CPU calls
  *
  * <I>Special Notes:</I>
  *           Invoke the function provided in parallel in either a blocking or
  *           non-blocking mode.  The current core may be excluded if desired.
  *           NOTE - Do not call this function directly from source code.
- *           Use the aliases CONTROL_Invoke_Parallel(), CONTROL_Invoke_Parallel_NB(),
- *           or CONTROL_Invoke_Parallel_XS().
- *
+ *           Use the aliases CONTROL_Invoke_Parallel(),
+ *            CONTROL_Invoke_Parallel_NB(), or CONTROL_Invoke_Parallel_XS().
  */
 extern void CONTROL_Invoke_Parallel_Service(void (*func)(pvoid), pvoid ctx,
 					    int blocking, int exclude)

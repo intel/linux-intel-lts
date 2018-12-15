@@ -152,7 +152,7 @@
 
 			.macro RESTORE_ALL RESTORE_EXTRA_REGS RESTORE_C_REGS
 		REMOVE_PT_GPREGS_FROM_STACK.endm
-#endif //CONFIG_X86_64
+#endif /*CONFIG_X86_64 */
 #endif
 
 #endif
