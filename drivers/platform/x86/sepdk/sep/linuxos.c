@@ -81,8 +81,6 @@ static enum cpuhp_state cpuhp_sepdrv_state;
 #endif
 extern wait_queue_head_t wait_exit;
 
-static PVOID local_tasklist_lock;
-
 #define MY_TASK PROFILE_TASK_EXIT
 #define MY_UNMAP PROFILE_MUNMAP
 #ifdef CONFIG_X86_64
@@ -869,25 +867,6 @@ OS_STATUS LINUXOS_Enum_Process_Modules(DRV_BOOL at_end)
 		return OS_SUCCESS;
 	}
 
-	if (!local_tasklist_lock) {
-		local_tasklist_lock =
-			(PVOID)(UIOP)UTILITY_Find_Symbol("tasklist_lock");
-		if (!local_tasklist_lock) {
-			SEP_DRV_LOG_WARNING("Could not find tasklist_lock.");
-		}
-	}
-
-	// In some machines the tasklist_lock symbol does not exist.
-	// For temporary solution we skip the lock if there is no tasklist_lock
-	if (local_tasklist_lock) {
-#if defined(                                                                   \
-	DEFINE_QRWLOCK) // assuming that if DEFINE_QRWLOCK is defined, then tasklist_lock was defined using it
-		qread_lock(local_tasklist_lock);
-#else
-		read_lock(local_tasklist_lock);
-#endif
-	}
-
 	FOR_EACH_TASK(p)
 	{
 		struct mm_struct *mm;
@@ -920,14 +899,6 @@ OS_STATUS LINUXOS_Enum_Process_Modules(DRV_BOOL at_end)
 		UTILITY_up_read_mm(mm);
 		mmput(mm);
 		n++;
-	}
-
-	if (local_tasklist_lock) {
-#if defined(DEFINE_QRWLOCK)
-		qread_unlock(local_tasklist_lock);
-#else
-		read_unlock(local_tasklist_lock);
-#endif
 	}
 
 	SEP_DRV_LOG_TRACE("Enum_Process_Modules done with %d tasks.", n);
@@ -1424,24 +1395,6 @@ DRV_BOOL LINUXOS_Check_KVM_Guest_Process(void)
 
 	SEP_DRV_LOG_TRACE_IN("");
 
-	if (!local_tasklist_lock) {
-		local_tasklist_lock =
-			(PVOID)(UIOP)UTILITY_Find_Symbol("tasklist_lock");
-		if (!local_tasklist_lock) {
-			SEP_DRV_LOG_WARNING("Could not find tasklist_lock.");
-		}
-	}
-
-	// In some machines the tasklist_lock symbol does not exist.
-	// For temporary solution we skip the lock if there is no tasklist_lock
-	if (local_tasklist_lock) {
-#if defined(DEFINE_QRWLOCK)
-		qread_lock(local_tasklist_lock);
-#else
-		read_lock(local_tasklist_lock);
-#endif
-	}
-
 	FOR_EACH_TASK(p)
 	{
 		// if (p == NULL) {
@@ -1452,25 +1405,9 @@ DRV_BOOL LINUXOS_Check_KVM_Guest_Process(void)
 			0; // making sure there is a trailing 0
 
 		if (!strncmp(p->comm, "qemu-kvm", 8)) {
-			if (local_tasklist_lock) {
-#if defined(DEFINE_QRWLOCK)
-				qread_unlock(local_tasklist_lock);
-#else
-				read_unlock(local_tasklist_lock);
-#endif
-			}
-
 			SEP_DRV_LOG_INIT_TRACE_OUT("TRUE (found qemu-kvm!).");
 			return TRUE;
 		}
-	}
-
-	if (local_tasklist_lock) {
-#if defined(DEFINE_QRWLOCK)
-		qread_unlock(local_tasklist_lock);
-#else
-		read_unlock(local_tasklist_lock);
-#endif
 	}
 
 	SEP_DRV_LOG_TRACE_OUT("FALSE");

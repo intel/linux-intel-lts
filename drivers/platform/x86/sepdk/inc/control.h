@@ -300,7 +300,11 @@ extern U32 *occupied_core_ids;
  *         CPU number of the processor being executed on
  *
  */
+#if !defined(DRV_SEP_ACRN_ON)
 #define CONTROL_THIS_CPU() smp_processor_id()
+#else
+#define CONTROL_THIS_CPU() raw_smp_processor_id()
+#endif
 
 /*
  * CONTROL_THIS_RAW_CPU()

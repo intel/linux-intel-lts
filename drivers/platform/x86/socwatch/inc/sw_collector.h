@@ -62,7 +62,7 @@
  */
 struct sw_hw_ops;
 
-// TODO: convert from 'list_head' to 'hlist_head'
+/* TODO: convert from 'list_head' to 'hlist_head' */
 /**
  * struct - sw_collector_data
  * Information about the collector to be invoked at collection time.
@@ -133,4 +133,4 @@ void sw_set_collector_ops(const struct sw_hw_ops *hw_ops);
  */
 extern int sw_process_snapshot(enum sw_when_type when);
 extern int sw_process_snapshot_on_cpu(enum sw_when_type when, int cpu);
-#endif // __SW_COLLECTOR_H__
+#endif /* __SW_COLLECTOR_H__ */

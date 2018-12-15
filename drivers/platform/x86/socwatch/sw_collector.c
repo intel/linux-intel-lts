@@ -498,7 +498,7 @@ void sw_handle_per_cpu_msg_i(void *info, enum sw_wakeup_action action)
 	const struct sw_hw_ops **ops = node->ops;
 	bool wasAnyWrite = false;
 
-	// msg TSC assigned when msg is written to buffer
+	/* msg TSC assigned when msg is written to buffer */
 	msg->cpuidx = cpu;
 
 	for (i = 0; i < num_descriptors; ++i,
@@ -696,7 +696,8 @@ void sw_handle_per_cpu_msg_on_cpu(int cpu, void *info)
 		smp_call_function_single(
 			cpu, &sw_handle_per_cpu_msg_no_sched, info,
 			false /* false ==> do NOT wait for function
-				 completion */);
+			       * completion
+			       */);
 	}
 }
 

@@ -79,4 +79,4 @@ int sw_add_trace_notifier_providers(void);
  * Remove previously added providers.
  */
 void sw_remove_trace_notifier_providers(void);
-#endif // __SW_TRACE_NOTIFIER_PROVIDER_H__
+#endif /* __SW_TRACE_NOTIFIER_PROVIDER_H__ */

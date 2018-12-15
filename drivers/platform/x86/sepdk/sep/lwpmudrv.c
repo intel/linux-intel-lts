@@ -100,9 +100,6 @@ MODULE_VERSION(SEP_NAME "_" SEP_VERSION_STR);
 MODULE_LICENSE("Dual BSD/GPL");
 
 static struct task_struct *abnormal_handler;
-#if defined(DRV_SEP_ACRN_ON)
-static struct task_struct *acrn_buffer_handler[MAX_NR_PCPUS] = { NULL };
-#endif
 
 typedef struct LWPMU_DEV_NODE_S LWPMU_DEV_NODE;
 typedef LWPMU_DEV_NODE * LWPMU_DEV;
@@ -159,8 +156,10 @@ U32 osid = OS_ID_NATIVE;
 DRV_BOOL sched_switch_enabled = FALSE;
 
 #if defined(DRV_SEP_ACRN_ON)
-struct profiling_vm_info_list *vm_info_list;
-shared_buf_t **samp_buf_per_cpu;
+struct profiling_vm_info_list  *vm_info_list;
+static struct timer_list       *buffer_read_timer;
+static unsigned long            buffer_timer_interval;
+shared_buf_t                  **samp_buf_per_cpu;
 #endif
 
 #define UNCORE_EM_GROUP_SWAP_FACTOR 100
@@ -1875,13 +1874,16 @@ static VOID lwpmudrv_Write_Uncore(PVOID param)
  */
 static VOID lwpmudrv_Write_Op(PVOID param)
 {
-	U32 this_cpu = CONTROL_THIS_CPU();
-
-	U32 dev_idx = core_to_dev_map[this_cpu];
-	DISPATCH dispatch = LWPMU_DEVICE_dispatch(&devices[dev_idx]);
+	U32 this_cpu;
+	U32 dev_idx;
+	DISPATCH dispatch;
 	U32 switch_grp = 0;
 
 	SEP_DRV_LOG_TRACE_IN("");
+
+	this_cpu = CONTROL_THIS_CPU();
+	dev_idx = core_to_dev_map[this_cpu];
+	dispatch = LWPMU_DEVICE_dispatch(&devices[dev_idx]);
 
 	if (dispatch != NULL && dispatch->write != NULL) {
 		dispatch->write((VOID *)(size_t)0);
@@ -2217,6 +2219,49 @@ static VOID lwpmudrv_Trigger_Read(
 	SEP_DRV_LOG_TRACE_OUT("Success.");
 }
 
+
+#if defined(DRV_SEP_ACRN_ON)
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn static VOID lwpmudrv_ACRN_Buffer_Read(void)
+ *
+ * @param - none
+ *
+ * @return - OS_STATUS
+ *
+ * @brief Read the ACRN Buffer Data.
+ *
+ * <I>Special Notes</I>
+ */
+static VOID lwpmudrv_ACRN_Buffer_Read(
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
+	struct timer_list *tl
+#else
+	unsigned long arg
+#endif
+)
+{
+	SEP_DRV_LOG_TRACE_IN("");
+
+	if (GET_DRIVER_STATE() != DRV_STATE_RUNNING) {
+		SEP_DRV_LOG_TRACE_OUT("Success: driver state is not RUNNING");
+		return;
+	}
+
+	CONTROL_Invoke_Parallel(PMI_Buffer_Handler, NULL);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
+	mod_timer(buffer_read_timer, jiffies + buffer_timer_interval);
+#else
+	buffer_read_timer->expires = jiffies + buffer_timer_interval;
+	add_timer(buffer_read_timer);
+#endif
+
+	SEP_DRV_LOG_TRACE_OUT("Success.");
+}
+#endif
+
+
 /* ------------------------------------------------------------------------- */
 /*!
  * @fn static void lwmudrv_Read_Specific_TSC (PVOID param)
@@ -2309,6 +2354,73 @@ static VOID lwpmudrv_Uncore_Start_Timer(void)
 
 	SEP_DRV_LOG_FLOW_OUT("");
 }
+
+
+#if defined(DRV_SEP_ACRN_ON)
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn          VOID lwpmudrv_ACRN_Flush_Stop_Timer (void)
+ *
+ * @brief       Stop the ACRN buffer read timer
+ *
+ * @param       none
+ *
+ * @return      none
+ *
+ * <I>Special Notes:</I>
+ */
+static VOID lwpmudrv_ACRN_Flush_Stop_Timer(void)
+{
+	SEP_DRV_LOG_FLOW_IN("");
+
+	if (buffer_read_timer == NULL) {
+		return;
+	}
+
+	del_timer_sync(buffer_read_timer);
+	buffer_read_timer = CONTROL_Free_Memory(buffer_read_timer);
+
+	SEP_DRV_LOG_FLOW_OUT("");
+}
+
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn          OS_STATUS lwpmudrv_ACRN_Flush_Start_Timer (void)
+ *
+ * @brief       Start the ACRN buffer read timer
+ *
+ * @param       none
+ *
+ * @return      OS_STATUS
+ *
+ * <I>Special Notes:</I>
+ */
+static VOID lwpmudrv_ACRN_Flush_Start_Timer(void)
+{
+	SEP_DRV_LOG_FLOW_IN("");
+
+	buffer_timer_interval = msecs_to_jiffies(10);
+	buffer_read_timer = CONTROL_Allocate_Memory(sizeof(struct timer_list));
+	if (buffer_read_timer == NULL) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT(
+			"Memory allocation failure for buffer_read_timer!");
+		return;
+	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
+	timer_setup(buffer_read_timer, lwpmudrv_ACRN_Buffer_Read, 0);
+	mod_timer(buffer_read_timer, jiffies + buffer_timer_interval);
+#else
+	init_timer(buffer_read_timer);
+	buffer_read_timer->function = lwpmudrv_ACRN_Buffer_Read;
+	buffer_read_timer->expires = jiffies + buffer_timer_interval;
+	add_timer(buffer_read_timer);
+#endif
+
+	SEP_DRV_LOG_FLOW_OUT("");
+}
+#endif
+
 
 /* ------------------------------------------------------------------------- */
 /*!
@@ -3918,7 +4030,6 @@ static OS_STATUS lwpmudrv_Start(void)
 #endif
 #if defined(DRV_SEP_ACRN_ON)
 	struct profiling_control *control = NULL;
-	S32 i;
 #endif
 
 	SEP_DRV_LOG_FLOW_IN("");
@@ -3988,12 +4099,11 @@ static OS_STATUS lwpmudrv_Start(void)
 		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_CONTROL_SWITCH,
 				virt_to_phys(control));
 
-		SEP_PRINT_DEBUG("ACRN profiling collection running 0x%llx\n",
+		SEP_DRV_LOG_TRACE("ACRN profiling collection running 0x%llx\n",
 				control->switches);
 
 		if (DRV_CONFIG_counting_mode(drv_cfg) == FALSE) {
-			control->switches |= (1 << CORE_PMU_SAMPLING) |
-					     (1 << VM_SWITCH_TRACING);
+			control->switches |= (1 << CORE_PMU_SAMPLING);
 			if (DEV_CONFIG_collect_lbrs(cur_pcfg)) {
 				control->switches |= (1 << LBR_PMU_SAMPLING);
 			}
@@ -4005,23 +4115,7 @@ static OS_STATUS lwpmudrv_Start(void)
 				virt_to_phys(control));
 		control = CONTROL_Free_Memory(control);
 
-		if (DRV_CONFIG_counting_mode(drv_cfg) == FALSE) {
-			char kthread_name[MAXNAMELEN];
-			for (i = 0; i < GLOBAL_STATE_num_cpus(driver_state);
-			     i++) {
-				snprintf(kthread_name, MAXNAMELEN, "%s_%d",
-					 "SEPDRV_BUFFER_HANDLER", i);
-				acrn_buffer_handler[i] =
-					kthread_create(PMI_Buffer_Handler,
-						       (VOID *)(size_t)i,
-						       kthread_name);
-				if (acrn_buffer_handler[i]) {
-					wake_up_process(acrn_buffer_handler[i]);
-				}
-			}
-			SEP_PRINT_DEBUG(
-				"lwpmudrv_Prepare_Stop: flushed all the remaining buffer\n");
-		}
+		lwpmudrv_ACRN_Flush_Start_Timer();
 #endif
 
 #if defined(BUILD_CHIPSET)
@@ -4151,12 +4245,12 @@ static OS_STATUS lwpmudrv_Prepare_Stop(void)
 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_CONTROL_SWITCH,
 			virt_to_phys(control));
 
-	SEP_PRINT_DEBUG("ACRN profiling collection running 0x%llx\n",
+	SEP_DRV_LOG_TRACE("ACRN profiling collection running 0x%llx\n",
 			control->switches);
 
 	if (DRV_CONFIG_counting_mode(drv_cfg) == FALSE) {
 		control->switches &=
-			~((1 << CORE_PMU_SAMPLING) | (1 << VM_SWITCH_TRACING));
+			~(1 << CORE_PMU_SAMPLING);
 	} else {
 		control->switches &= ~(1 << CORE_PMU_COUNTING);
 	}
@@ -4164,6 +4258,10 @@ static OS_STATUS lwpmudrv_Prepare_Stop(void)
 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_SET_CONTROL_SWITCH,
 			virt_to_phys(control));
 	control = CONTROL_Free_Memory(control);
+
+	lwpmudrv_ACRN_Flush_Stop_Timer();
+        SEP_DRV_LOG_TRACE("Calling final PMI_Buffer_Handler\n");
+	CONTROL_Invoke_Parallel(PMI_Buffer_Handler, NULL);
 #endif
 
 	SEP_DRV_LOG_TRACE("Outside of all interrupts.");

@@ -59,7 +59,7 @@
 /*
  * Special mask for the case where all buffers have been flushed.
  */
-// #define sw_ALL_WRITES_DONE_MASK 0xffffffff
+/* #define sw_ALL_WRITES_DONE_MASK 0xffffffff */
 #define SW_ALL_WRITES_DONE_MASK ((u32)-1)
 /*
  * Special mask for the case where no data is available to be read.
@@ -133,4 +133,4 @@ void sw_cancel_reader(void);
  */
 void sw_print_reader_stats(void);
 
-#endif // _SW_OUTPUT_BUFFER_H_
+#endif /* _SW_OUTPUT_BUFFER_H_ */

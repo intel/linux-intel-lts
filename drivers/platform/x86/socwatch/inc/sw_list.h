@@ -73,4 +73,4 @@
 #define SW_LIST_EMPTY(head) list_empty(head)
 #define SW_LIST_HEAD_INITIALIZER(head) LIST_HEAD_INIT(head)
 
-#endif // __SW_LIST_H__
+#endif /* __SW_LIST_H__ */
