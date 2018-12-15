@@ -95,14 +95,15 @@ struct sw_key_value_payload {
 	(sizeof(struct sw_key_value_payload) - sizeof(char[1]))
 
 typedef enum sw_kernel_wakelock_type {
-	SW_WAKE_LOCK = 0, // A kernel wakelock was acquired
-	SW_WAKE_UNLOCK = 1, // A kernel wakelock was released
+	SW_WAKE_LOCK = 0, /* A kernel wakelock was acquired */
+	SW_WAKE_UNLOCK = 1, /* A kernel wakelock was released */
 	SW_WAKE_LOCK_TIMEOUT =
-		2, // A kernel wakelock was acquired with a timeout
-	SW_WAKE_LOCK_INITIAL = 3, // A kernel wakelock was acquired before the
-	//   collection started
-	SW_WAKE_UNLOCK_ALL = 4, // All previously held kernel wakelocks were
-	//   released -- used in ACPI S3 notifications
+		2, /* A kernel wakelock was acquired with a timeout */
+	SW_WAKE_LOCK_INITIAL = 3, /* A kernel wakelock was acquired
+				   * before the collection started
+				   */
+	SW_WAKE_UNLOCK_ALL = 4, /* All previously held kernel wakelocks were */
+	/*   released -- used in ACPI S3 notifications */
 } sw_kernel_wakelock_type_t;
 
 typedef enum sw_when_type {
@@ -141,23 +142,27 @@ struct sw_driver_ipc_mmio_io_descriptor {
 #ifdef SWW_MERGE
 #pragma warning(push)
 #pragma warning(                                                               \
-	disable : 4201) // disable C4201: nonstandard extension used: nameless struct/union
+	disable : 4201) /* disable C4201: nonstandard extension used:
+			 * nameless struct/union
+			 */
 #endif
 		struct {
 			pw_u16_t command;
 			pw_u16_t sub_command;
 		};
 #ifdef SWW_MERGE
-#pragma warning(pop) // enable C4201
+#pragma warning(pop) /* enable C4201 */
 #endif
 		union {
-			pw_u32_t ipc_command; // (sub_command << 12) | (command)
-			pw_u8_t is_gbe; // Used only for GBE MMIO
+			pw_u32_t ipc_command; /* (sub_command << 12)
+					       * | (command)
+					       */
+			pw_u8_t is_gbe; /* Used only for GBE MMIO */
 		};
 	};
-	// TODO: add a section for 'ctrl_address' and 'ctrl_remapped_address'
+	/* TODO: add a section for 'ctrl_address' and 'ctrl_remapped_address' */
 	union {
-		pw_u64_t data_address; // Will be "io_remapped"
+		pw_u64_t data_address; /* Will be "io_remapped" */
 		pw_u64_t data_remapped_address;
 	};
 };
@@ -181,16 +186,18 @@ struct sw_driver_pci_io_descriptor {
 
 #pragma pack(push, 1)
 struct sw_driver_configdb_io_descriptor {
-	// pw_u32_t port;
-	// pw_u32_t offset;
+	/* pw_u32_t port; */
+	/* pw_u32_t offset; */
 	pw_u32_t address;
 };
 #pragma pack(pop)
 
 #pragma pack(push, 1)
 struct sw_driver_trace_args_io_descriptor {
-	pw_u8_t num_args; // Number of valid entries in the 'args' array, below; 1 <= num_args <= 7
-	pw_u8_t args[7]; // Max of 7 args can be recorded
+	pw_u8_t num_args; /* Number of valid entries in the 'args' array,
+			   * below; 1 <= num_args <= 7
+			   */
+	pw_u8_t args[7]; /* Max of 7 args can be recorded */
 };
 #pragma pack(pop)
 
@@ -303,9 +310,11 @@ struct sw_driver_pch_mailbox_io_descriptor {
 #pragma pack(push, 1)
 typedef struct sw_driver_io_descriptor {
 	pw_u16_t collection_type;
-	// TODO: specify READ/WRITE
-	pw_s16_t collection_command; // One of 'enum sw_io_cmd'
-	pw_u16_t counter_size_in_bytes; // The number of bytes to READ or WRITE
+	/* TODO: specify READ/WRITE */
+	pw_s16_t collection_command; /* One of 'enum sw_io_cmd' */
+	pw_u16_t counter_size_in_bytes; /* The number of bytes to
+					 * READ or WRITE
+					 */
 	union {
 		struct sw_driver_msr_io_descriptor msr_descriptor;
 		struct sw_driver_ipc_mmio_io_descriptor ipc_descriptor;
@@ -318,7 +327,7 @@ typedef struct sw_driver_io_descriptor {
 			pch_mailbox_descriptor;
 		struct sw_driver_mailbox_io_descriptor mailbox_descriptor;
 	};
-	pw_u64_t write_value; // The value to WRITE
+	pw_u64_t write_value; /* The value to WRITE */
 } sw_driver_io_descriptor_t;
 #pragma pack(pop)
 
@@ -334,17 +343,23 @@ typedef struct sw_driver_io_descriptor {
 struct sw_driver_interface_info {
 	pw_u64_t tracepoint_id_mask;
 	pw_u64_t notifier_id_mask;
-	pw_s16_t cpu_mask; // On which CPU(s) should the driver read the data?
-		// Currently:  -2 ==> read on ALL CPUs,
-		//             -1 ==> read on ANY CPU,
-		//           >= 0 ==> the specific CPU to read on
-	pw_s16_t plugin_id; // Metric Plugin SID
-	pw_s16_t metric_id; // Domain-specific ID assigned by each Metric Plugin
-	pw_s16_t msg_id; // Msg ID retrieved from the SoC Watch config file
-	pw_u16_t num_io_descriptors; // Number of descriptors in the array, below.
-	pw_u8_t trigger_bits; // Mask of 'when bits' to fire this collector.
-	pw_u16_t sampling_interval_msec; // Sampling interval, in msecs
-	pw_u8_t descriptors[1]; // Array of sw_driver_io_descriptor structs.
+	pw_s16_t cpu_mask; /* On which CPU(s) should the driver
+			    * read the data?
+			    * Currently:  -2 ==> read on ALL CPUs,
+			    *             -1 ==> read on ANY CPU,
+			    *           >= 0 ==> the specific CPU to read on
+			    */
+	pw_s16_t plugin_id; /* Metric Plugin SID */
+	pw_s16_t metric_id; /* Domain-specific ID assigned by each
+			     * Metric Plugin
+			     */
+	pw_s16_t msg_id; /* Msg ID retrieved from the SoC Watch config file */
+	pw_u16_t num_io_descriptors; /* Number of descriptors in the array,
+				      * below.
+				      */
+	pw_u8_t trigger_bits; /* Mask of 'when bits' to fire this collector. */
+	pw_u16_t sampling_interval_msec; /* Sampling interval, in msecs */
+	pw_u8_t descriptors[1]; /* Array of sw_driver_io_descriptor structs. */
 };
 #pragma pack(pop)
 
@@ -353,11 +368,20 @@ struct sw_driver_interface_info {
 
 #pragma pack(push, 1)
 struct sw_driver_interface_msg {
-	pw_u16_t num_infos; // Number of 'sw_driver_interface_info' structs contained within the 'infos' variable, below
-	pw_u16_t min_polling_interval_msecs; // Min time to wait before polling; used exclusively
-		// with the low overhead, context-switch based
-		// polling mode
-	// pw_u16_t infos_size_bytes; // Size of data inlined within the 'infos' variable, below
+	pw_u16_t num_infos; /* Number of 'sw_driver_interface_info'
+			     * structs contained within the 'infos' variable,
+			     * below
+			     */
+	pw_u16_t min_polling_interval_msecs; /* Min time to wait before
+					      * polling; used exclusively
+					      * with the low overhead,
+					      * context-switch based
+					      * polling mode
+					      */
+					      /* pw_u16_t infos_size_bytes;
+					       * Size of data inlined within the
+					       * 'infos' variable, below
+					       */
 	pw_u8_t infos[1];
 };
 #pragma pack(pop)
@@ -374,7 +398,7 @@ typedef enum sw_name_id_type {
 #pragma pack(push, 1)
 struct sw_name_id_pair {
 	pw_u16_t id;
-	pw_u16_t type; // One of 'sw_name_id_type'
+	pw_u16_t type; /* One of 'sw_name_id_type' */
 	struct sw_string_type name;
 };
 #pragma pack(pop)
@@ -399,14 +423,16 @@ struct sw_name_info_msg {
 typedef struct sw_driver_msg {
 	pw_u64_t tsc;
 	pw_u16_t cpuidx;
-	pw_u8_t plugin_id; // Cannot have more than 256 plugins
-	pw_u8_t metric_id; // Each plugin cannot handle more than 256 metrics
-	pw_u8_t msg_id; // Each metric cannot have more than 256 components
+	pw_u8_t plugin_id; /* Cannot have more than 256 plugins */
+	pw_u8_t metric_id; /* Each plugin cannot handle more than 256 metrics */
+	pw_u8_t msg_id; /* Each metric cannot have more than 256 components */
 	pw_u16_t payload_len;
-	// pw_u64_t p_payload;  // Ptr to payload
+	/* pw_u64_t p_payload;  Ptr to payload */
 	union {
-		pw_u64_t __dummy; // Ensure size of struct is consistent on x86, x64
-		char *p_payload; // Ptr to payload (collected data values).
+		pw_u64_t __dummy; /* Ensure size of struct is
+				   * consistent on x86, x64
+				   */
+		char *p_payload; /* Ptr to payload (collected data values). */
 	};
 } sw_driver_msg_t;
 #pragma pack(pop)
@@ -438,11 +464,11 @@ enum cpu_action {
 };
 #pragma pack(push, 1)
 struct sw_driver_topology_change {
-	pw_u64_t timestamp; // timestamp
-	enum cpu_action type; // One of 'enum cpu_action'
-	pw_u16_t cpu; // logical cpu
-	pw_u16_t core; // core id
-	pw_u16_t pkg; // pkg/physical id
+	pw_u64_t timestamp; /* timestamp */
+	enum cpu_action type; /* One of 'enum cpu_action' */
+	pw_u16_t cpu; /* logical cpu */
+	pw_u16_t core; /* core id */
+	pw_u16_t pkg; /* pkg/physical id */
 };
 struct sw_driver_topology_msg {
 	pw_u16_t num_entries;
@@ -482,8 +508,8 @@ enum sw_pm_mode {
 struct sw_driver_ioctl_arg {
 	pw_s32_t in_len;
 	pw_s32_t out_len;
-	// pw_u64_t p_in_arg; // Pointer to input arg
-	// pw_u64_t p_out_arg; // Pointer to output arg
+	/* pw_u64_t p_in_arg; Pointer to input arg */
+	/* pw_u64_t p_out_arg; Pointer to output arg */
 	char *in_arg;
 	char *out_arg;
 };
@@ -491,11 +517,11 @@ struct sw_driver_ioctl_arg {
 
 #pragma pack(push, 1)
 typedef struct sw_driver_msg_interval {
-	pw_u8_t plugin_id; // Cannot have more than 256 plugins
-	pw_u8_t metric_id; // Each plugin cannot handle more than 256 metrics
-	pw_u8_t msg_id; // Each metric cannot have more than 256 components
-	pw_u16_t interval; // collection interval
+	pw_u8_t plugin_id; /* Cannot have more than 256 plugins */
+	pw_u8_t metric_id; /* Each plugin cannot handle more than 256 metrics */
+	pw_u8_t msg_id; /* Each metric cannot have more than 256 components */
+	pw_u16_t interval; /* collection interval */
 } sw_driver_msg_interval_t;
 #pragma pack(pop)
 
-#endif // __SW_STRUCTS_H__
+#endif /* __SW_STRUCTS_H__ */

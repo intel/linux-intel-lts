@@ -57,8 +57,8 @@
 #ifndef _SW_TELEM_H_
 #define _SW_TELEM_H_ 1
 
-#include "sw_structs.h" // sw_driver_io_descriptor
-#include "sw_types.h" // u8 and other types
+#include "sw_structs.h" /* sw_driver_io_descriptor */
+#include "sw_types.h" /* u8 and other types */
 
 int sw_telem_init_func(struct sw_driver_io_descriptor *descriptor);
 void sw_read_telem_info(char *dst_vals, int cpu,

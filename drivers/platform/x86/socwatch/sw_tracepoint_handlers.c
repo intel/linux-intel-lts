@@ -78,7 +78,7 @@ static int s_trace_idx = -1, s_notifier_idx = -1;
 
 SW_DEFINE_LIST_HEAD(sw_topology_list, sw_topology_node) =
 	SW_LIST_HEAD_INITIALIZER(sw_topology_list);
-size_t sw_num_topology_entries = 0;
+size_t sw_num_topology_entries;
 
 /* -------------------------------------------------
  * Function definitions.

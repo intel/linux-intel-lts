@@ -63,8 +63,8 @@
 /*
  * Called from Ring-3.
  */
-#include <stdint.h> // Grab 'uint64_t' etc.
-#include <unistd.h> // Grab 'pid_t'
+#include <stdint.h> /* Grab 'uint64_t' etc. */
+#include <unistd.h> /* Grab 'pid_t' */
 /*
  * UNSIGNED types...
  */
@@ -80,7 +80,7 @@ typedef int16_t s16;
 typedef int32_t s32;
 typedef int64_t s64;
 
-#endif // __KERNEL__
+#endif /* __KERNEL__ */
 
 #elif defined(_WIN32)
 /*
@@ -100,7 +100,7 @@ typedef signed long long s64;
 typedef s32 pid_t;
 typedef s32 ssize_t;
 
-#endif // _WIN32
+#endif /* _WIN32 */
 
 /* ************************************
  * Common to both operating systems.
@@ -129,4 +129,4 @@ typedef void *pvoid;
 #define TRUE 1
 #define FALSE 0
 
-#endif // _PW_TYPES_H_
+#endif /* _PW_TYPES_H_ */

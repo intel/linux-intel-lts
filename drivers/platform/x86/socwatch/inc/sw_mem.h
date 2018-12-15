@@ -79,4 +79,4 @@ void sw_release_pages(unsigned long addr, unsigned int alloc_size_in_bytes);
 u64 sw_get_total_bytes_alloced(void);
 u64 sw_get_max_bytes_alloced(void);
 u64 sw_get_curr_bytes_alloced(void);
-#endif // _SW_MEM_H_
+#endif /* _SW_MEM_H_ */

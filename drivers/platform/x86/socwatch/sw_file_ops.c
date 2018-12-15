@@ -53,18 +53,18 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
-#include <linux/module.h> // try_module_get
-#include <linux/fs.h> // inode
-#include <linux/device.h> // class_create
-#include <linux/cdev.h> // cdev_alloc
-#include <linux/version.h> // LINUX_VERSION_CODE
+#include <linux/module.h> /* try_module_get */
+#include <linux/fs.h> /* inode */
+#include <linux/device.h> /* class_create */
+#include <linux/cdev.h> /* cdev_alloc */
+#include <linux/version.h> /* LINUX_VERSION_CODE */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
-#include <asm/uaccess.h> // copy_to_user
+#include <asm/uaccess.h> /* copy_to_user */
 #else
-#include <linux/uaccess.h> // copy_to_user
-#endif // LINUX_VERSION_CODE
-#include <linux/wait.h> // wait_event_interruptible
-#include <linux/sched.h> // TASK_INTERRUPTIBLE
+#include <linux/uaccess.h> /* copy_to_user */
+#endif /* LINUX_VERSION_CODE */
+#include <linux/wait.h> /* wait_event_interruptible */
+#include <linux/sched.h> /* TASK_INTERRUPTIBLE */
 
 #include "sw_kernel_defines.h"
 #include "sw_types.h"
@@ -131,7 +131,7 @@ static struct file_operations s_fops = {
 	.unlocked_ioctl = &sw_device_unlocked_ioctl_i,
 #if defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
 	.compat_ioctl = &sw_device_compat_ioctl_i,
-#endif // COMPAT && x64
+#endif /* COMPAT && x64 */
 	.release = &sw_device_release_i,
 };
 /*
@@ -154,7 +154,7 @@ static struct sw_file_ops *s_file_ops;
  * Is the device open right now? Used to prevent
  * concurent access into the same device.
  */
-#define DEV_IS_OPEN 0 // see if device is in use
+#define DEV_IS_OPEN 0 /* see if device is in use */
 static volatile sw_bits_t dev_status;
 
 /*
@@ -169,12 +169,12 @@ static int sw_device_open_i(struct inode *inode, struct file *file)
 	 * We don't want to talk to two processes at the same time
 	 */
 	if (test_and_set_bit(DEV_IS_OPEN, &dev_status)) {
-		// Device is busy
+		/* Device is busy */
 		return -EBUSY;
 	}
 
 	if (!try_module_get(THIS_MODULE)) {
-		// No such device
+		/* No such device */
 		return -ENODEV;
 	}
 	pw_pr_debug("OK, allowed client open!\n");
@@ -231,14 +231,14 @@ static ssize_t sw_device_read_i(struct file *file, char __user *user_buffer,
 	 * Are we done producing/consuming?
 	 */
 	if (val == SW_ALL_WRITES_DONE_MASK) {
-		return 0; // "0" ==> EOF
+		return 0; /* "0" ==> EOF */
 	}
 	/*
 	 * Copy the buffer contents into userspace.
 	 */
 	bytes_read = sw_consume_data(
 		val, user_buffer,
-		length); // 'read' returns # of bytes actually read
+		length); /* 'read' returns # of bytes actually read */
 	if (unlikely(bytes_read == 0)) {
 		/* Cannot be EOF since that has already been checked above */
 		return -EIO;

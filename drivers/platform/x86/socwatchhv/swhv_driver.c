@@ -85,6 +85,7 @@
  * Compile-time constants
  * *******************************************
  */
+
 /* *******************************************
  * Local data structures.
  * *******************************************
@@ -101,7 +102,7 @@ struct spdrv_ioctl_arg32 {
 	compat_caddr_t in_arg;
 	compat_caddr_t out_arg;
 };
-#endif // COMPAT && x64
+#endif /* COMPAT && x64 */
 
 static int sp_dev_major_num = -1;
 static dev_t sp_dev;
@@ -114,7 +115,7 @@ static struct class *sp_class;
  */
 
 /* Per-CPU variable containing the currently running vcpu. */
-//static DEFINE_PER_CPU(int, curr_vcpu) = 0;
+/*static DEFINE_PER_CPU(int, curr_vcpu) = 0; */
 
 /* *******************************************
  * Function definitions.
@@ -273,7 +274,7 @@ static long device_compat_ioctl(struct file *file, unsigned int ioctl_num,
 	}
 	return handle_ioctl(_IOC_NR(ioctl_num), remote_args);
 };
-#endif // COMPAT && x64
+#endif /* COMPAT && x64 */
 
 static int device_open(struct inode *inode, struct file *file)
 {
@@ -295,7 +296,7 @@ static struct file_operations s_fops = {
 	.unlocked_ioctl = &device_unlocked_ioctl,
 #if defined(HAVE_COMPAT_IOCTL) && defined(CONFIG_X86_64)
 	.compat_ioctl = &device_compat_ioctl,
-#endif // COMPAT && x64
+#endif /* COMPAT && x64 */
 };
 
 static void cleanup_error(void)
@@ -312,7 +313,7 @@ int __init swhv_load_driver(void)
 	int error;
 	struct device *dev;
 
-	// create the char device "sp"
+	/* create the char device "sp" */
 	alloc_chrdev_region(&sp_dev, 0, 1, SWHV_DEVICE_NAME);
 	sp_dev_major_num = MAJOR(sp_dev);
 	sp_class = class_create(THIS_MODULE, SWHV_DEVICE_NAME);
@@ -354,7 +355,7 @@ int __init swhv_load_driver(void)
 cleanup_return_error:
 	cleanup_error_i();
 
-	// release char device
+	/* release char device */
 	cleanup_error();
 	return error;
 }
@@ -363,7 +364,7 @@ static void __exit swhv_unload_driver(void)
 {
 	swhv_unload_driver_i();
 
-	// release char device
+	/* release char device */
 	cleanup_error();
 }
 

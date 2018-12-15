@@ -63,11 +63,11 @@
 #include <linux/ioctl.h>
 #if defined(HAVE_COMPAT_IOCTL) && defined(CONFIG_X86_64)
 #include <linux/compat.h>
-#endif // COMPAT && x64
-#else // !__KERNEL__
+#endif /* COMPAT && x64 */
+#else /* !__KERNEL__ */
 #include <sys/ioctl.h>
-#endif // __KERNEL__
-#endif // __linux__
+#endif /* __KERNEL__ */
+#endif /* __linux__ */
 /*
  * Path to the Hypervisor driver device file.
  */
@@ -159,6 +159,6 @@ enum swhv_ioctl_cmd {
 	_IOWR(SP_IOC_MAGIC, SWHVDRV_OPERATION_MSR_READ, compat_uptr_t)
 #define SWHVDRV_IOCTL_POLL32                                                   \
 	_IO(SP_IOC_MAGIC, SWHVDRV_OPERATION_POLL, compat_uptr_t)
-#endif // COMPAT && x64
+#endif /* COMPAT && x64 */
 
-#endif // __SWHV_IOCTL_H__
+#endif /* __SWHV_IOCTL_H__ */

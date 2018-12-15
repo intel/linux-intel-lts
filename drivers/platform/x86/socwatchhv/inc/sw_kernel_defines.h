@@ -61,7 +61,7 @@
 #if defined(__APPLE__)
 #define likely(x) (x)
 #define unlikely(x) (x)
-#endif // __APPLE__
+#endif /* __APPLE__ */
 
 #if !defined(__APPLE__)
 #define CPU() (raw_smp_processor_id())
@@ -69,7 +69,7 @@
 #else
 #define CPU() (cpu_number())
 #define RAW_CPU() (cpu_number())
-#endif // __APPLE__
+#endif /* __APPLE__ */
 
 #define TID() (current->pid)
 #define PID() (current->tgid)
@@ -101,12 +101,12 @@
 #if !DO_OVERHEAD_MEASUREMENTS
 #undef DO_OVERHEAD_MEASUREMENTS
 #define DO_OVERHEAD_MEASUREMENTS 1
-#endif // DO_OVERHEAD_MEASUREMENTS
+#endif /* DO_OVERHEAD_MEASUREMENTS */
 #if !DO_TRACK_MEMORY_USAGE
 #undef DO_TRACK_MEMORY_USAGE
 #define DO_TRACK_MEMORY_USAGE 1
-#endif // DO_TRACK_MEMORY_USAGE
-#endif // CONFIG_SOCWATCH_DRIVER_PROFILING
+#endif /* DO_TRACK_MEMORY_USAGE */
+#endif /* CONFIG_SOCWATCH_DRIVER_PROFILING */
 /*
  * Should we allow debug output.
  * Set to: "1" ==> 'OUTPUT' is enabled.
@@ -142,7 +142,7 @@
 #define pw_pr_warn(...)
 #endif
 #define pw_pr_force(...) IOLog(__VA_ARGS__)
-#endif // __APPLE__
+#endif /* __APPLE__ */
 
 /*
  * Macro for driver error messages.
@@ -159,6 +159,6 @@
 #else
 #define pw_pr_error(...)
 #endif
-#endif // __APPLE__
+#endif /* __APPLE__ */
 
-#endif // _SW_KERNEL_DEFINES_H_
+#endif /* _SW_KERNEL_DEFINES_H_ */

@@ -133,8 +133,8 @@ static bool sw_should_flush_buffer_i(void);
  */
 struct swa_internal_state {
 	sw_driver_collection_cmd_t
-		cmd; // indicates which command was specified
-		     // last e.g. START, STOP etc.
+		cmd; /* indicates which command was specified */
+		     /* last e.g. START, STOP etc. */
 	/*
 	 * Should we write to our per-cpu output buffers?
 	 * YES if we're actively collecting.
@@ -146,7 +146,7 @@ struct swa_internal_state {
 	 * (See "device_read" for an explanation)
 	 */
 	bool drain_buffers;
-	// Others...
+	/* Others... */
 };
 
 /* -------------------------------------------------
@@ -196,7 +196,7 @@ static struct sw_file_ops s_ops = {
  * that you declare here *MUST* match the function name!
  */
 
-DECLARE_OVERHEAD_VARS(sw_collection_poll_i); // for POLL
+DECLARE_OVERHEAD_VARS(sw_collection_poll_i); /* for POLL */
 DECLARE_OVERHEAD_VARS(sw_any_seg_full);
 
 /*
@@ -206,7 +206,7 @@ DECLARE_OVERHEAD_VARS(sw_any_seg_full);
 #if DO_DEBUG_OUTPUT
 static const char *s_when_type_names[] = { "BEGIN", "POLL", "NOTIFIER",
 					   "TRACEPOINT", "END" };
-#endif // DO_DEBUG_OUTPUT
+#endif /* DO_DEBUG_OUTPUT */
 
 /* -------------------------------------------------
  * Function definitions.
@@ -332,7 +332,8 @@ void sw_iterate_driver_info_lists_i(void)
 		pw_pr_debug("ITERATING list %s\n", s_when_type_names[which]);
 		if (sw_handle_collector_list(
 			    &sw_collector_lists[which],
-			    &sw_print_collector_node_i)) { // Should NEVER happen!
+			    &sw_print_collector_node_i)) {
+			/* Should NEVER happen! */
 			pw_pr_error(
 				"WARNING: error occurred while printing values!\n");
 		}
@@ -578,7 +579,7 @@ int sw_collection_stop_i(void)
 	pw_pr_force(
 		"DEBUG: there were %llu samples produced and %llu samples dropped in buffer v5!\n",
 		sw_num_samples_produced, sw_num_samples_dropped);
-#endif // DO_OVERHEAD_MEASUREMENTS
+#endif /* DO_OVERHEAD_MEASUREMENTS */
 	/*
 	 * DEBUG: iterate over collection lists.
 	 */
@@ -594,7 +595,7 @@ int sw_collection_stop_i(void)
 	pw_pr_debug("OK, STOPPED collection!\n");
 #if DO_OVERHEAD_MEASUREMENTS
 	pw_pr_force("There were %d poll ticks!\n", num_times_polled);
-#endif // DO_OVERHEAD_MEASUREMENTS
+#endif /* DO_OVERHEAD_MEASUREMENTS */
 	return PW_SUCCESS;
 }
 
@@ -723,7 +724,7 @@ sw_set_driver_infos_i(struct sw_driver_interface_msg __user *remote_msg,
 			(unsigned int)dst_idx);
 		for (i = SW_WHEN_TYPE_BEGIN; i <= SW_WHEN_TYPE_END;
 		     ++i, read_triggers >>= 1) {
-			if (read_triggers & 0x1) { // Bit 'i' is set
+			if (read_triggers & 0x1) { /* Bit 'i' is set */
 				pw_pr_debug("BIT %d is SET!\n", i);
 				if (i == SW_WHEN_TYPE_TRACEPOINT) {
 					struct tn_data tn_data = {
@@ -734,9 +735,9 @@ sw_set_driver_infos_i(struct sw_driver_interface_msg __user *remote_msg,
 						"TRACEPOINT, MASK = 0x%llx\n",
 						local_info->tracepoint_id_mask);
 					sw_for_each_tracepoint_node(
-						&sw_add_trace_notifier_driver_info_i,
-						&tn_data,
-						false /*return-on-error*/);
+					   &sw_add_trace_notifier_driver_info_i,
+					   &tn_data,
+					   false /*return-on-error*/);
 				} else if (i == SW_WHEN_TYPE_NOTIFIER) {
 					struct tn_data tn_data = {
 						local_info,
@@ -746,9 +747,9 @@ sw_set_driver_infos_i(struct sw_driver_interface_msg __user *remote_msg,
 						"NOTIFIER, MASK = 0x%llx\n",
 						local_info->notifier_id_mask);
 					sw_for_each_notifier_node(
-						&sw_add_trace_notifier_driver_info_i,
-						&tn_data,
-						false /*return-on-error*/);
+					   &sw_add_trace_notifier_driver_info_i,
+					   &tn_data,
+					   false /*return-on-error*/);
 				} else {
 					if (sw_add_driver_info(
 						    &sw_collector_lists[i],
@@ -814,7 +815,7 @@ static long sw_handle_cmd_i(sw_driver_collection_cmd_t cmd,
 			return -PW_ERROR;
 		}
 	}
-#endif // DO_COUNT_DROPPED_SAMPLES
+#endif /* DO_COUNT_DROPPED_SAMPLES */
 	return PW_SUCCESS;
 }
 
@@ -823,7 +824,7 @@ static int sw_do_parse_sfi_oemb_table(struct sfi_table_header *header)
 {
 #ifdef CONFIG_X86_WANT_INTEL_MID
 	struct sfi_table_oemb *oemb = (struct sfi_table_oemb *)
-		header; // 'struct sfi_table_oemb' defined in 'intel-mid.h'
+		header; /* 'struct sfi_table_oemb' defined in 'intel-mid.h' */
 	if (!oemb) {
 		pw_pr_error("ERROR: NULL sfi table header!\n");
 		return -PW_ERROR;
@@ -833,10 +834,10 @@ static int sw_do_parse_sfi_oemb_table(struct sfi_table_header *header)
 	pw_pr_debug("DEBUG: major = %u, minor = %u\n",
 		    oemb->scu_runtime_major_version,
 		    oemb->scu_runtime_minor_version);
-#endif // CONFIG_X86_WANT_INTEL_MID
+#endif /* CONFIG_X86_WANT_INTEL_MID */
 	return PW_SUCCESS;
 }
-#endif // SFI_SIG_OEMB
+#endif /* SFI_SIG_OEMB */
 
 static void sw_do_extract_scu_fw_version(void)
 {
@@ -846,7 +847,7 @@ static void sw_do_extract_scu_fw_version(void)
 			    &sw_do_parse_sfi_oemb_table)) {
 		pw_pr_force("WARNING: NO SFI information!\n");
 	}
-#endif // SFI_SIG_OEMB
+#endif /* SFI_SIG_OEMB */
 }
 
 static int sw_gather_trace_notifier_i(struct sw_trace_notifier_data *node,
@@ -864,7 +865,8 @@ static int sw_gather_trace_notifier_i(struct sw_trace_notifier_data *node,
 		++msg->num_name_id_pairs;
 		pair->type = type;
 		pair->id = (u16)id;
-		str->len = strlen(abstract_name) + 1; // "+1" for trailing '\0'
+		/* "+1" for trailing '\0' */
+		str->len = strlen(abstract_name) + 1;
 		memcpy(&str->data[0], abstract_name, str->len);
 
 		pw_pr_debug("TP[%d] = %s (%u)\n",
@@ -937,7 +939,7 @@ static int sw_gather_hw_op_i(const struct sw_hw_ops *op, void *priv)
 			pair->type = SW_NAME_TYPE_COLLECTOR;
 			pair->id = (u16)id;
 			str->len = strlen(abstract_name) +
-				   1; // "+1" for trailing '\0'
+				   1; /* "+1" for trailing '\0' */
 			memcpy(&str->data[0], abstract_name, str->len);
 
 			*idx += SW_NAME_ID_HEADER_SIZE() +
@@ -1206,11 +1208,11 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
 
 			cpumask_clear(&cpumask);
 			switch (local_info->cpu_mask) {
-			case -1: // IO on ANY CPU (assume current CPU)
+			case -1: /* IO on ANY CPU (assume current CPU) */
 				cpumask_set_cpu(RAW_CPU(), &cpumask);
 				pw_pr_debug("ANY CPU\n");
 				break;
-			default: // IO on a particular CPU
+			default: /* IO on a particular CPU */
 				cpumask_set_cpu(local_info->cpu_mask, &cpumask);
 				pw_pr_debug("[%d] setting for %d\n", RAW_CPU(),
 					    local_info->cpu_mask);
@@ -1398,7 +1400,7 @@ int sw_load_driver_i(void)
 #ifdef CONFIG_X86_WANT_INTEL_MID
 	pw_pr_force("SOC Identifier = %u, Stepping = %u\n",
 		    intel_mid_identify_cpu(), intel_mid_soc_stepping());
-#endif // CONFIG_X86_WANT_INTEL_MID
+#endif /* CONFIG_X86_WANT_INTEL_MID */
 	pw_pr_force("-----------------------------------------\n");
 	return PW_SUCCESS;
 
@@ -1460,7 +1462,7 @@ void sw_unload_driver_i(void)
 				"***********************************************************************\n");
 		}
 	}
-#endif // DO_TRACK_MEMORY_USAGE
+#endif /* DO_TRACK_MEMORY_USAGE */
 	pw_pr_force("-----------------------------------------\n");
 }
 

@@ -85,7 +85,7 @@ void sw_schedule_work(const struct cpumask *mask, void (*work)(void *),
 	 * Did the user ask us to run on 'ANY' CPU?
 	 */
 	if (cpumask_empty(mask)) {
-		(*work)(data); // Call on current CPU
+		(*work)(data); /* Call on current CPU */
 	} else {
 		preempt_disable();
 		{
@@ -93,7 +93,7 @@ void sw_schedule_work(const struct cpumask *mask, void (*work)(void *),
 			 * Did the user ask to run on this CPU?
 			 */
 			if (cpumask_test_cpu(RAW_CPU(), mask)) {
-				(*work)(data); // Call on current CPU
+				(*work)(data); /* Call on current CPU */
 			}
 			/*
 			 * OK, now check other CPUs.
@@ -120,7 +120,7 @@ void sw_put_cpu(unsigned long flags)
 
 #ifndef CONFIG_NR_CPUS_PER_MODULE
 #define CONFIG_NR_CPUS_PER_MODULE 2
-#endif // CONFIG_NR_CPUS_PER_MODULE
+#endif /* CONFIG_NR_CPUS_PER_MODULE */
 
 static void sw_get_cpu_sibling_mask(int cpu, struct cpumask *sibling_mask)
 {
@@ -168,8 +168,8 @@ int sw_set_module_scope_for_cpus(void)
 		 */
 		if (cpumask_subset(&sibling_mask, policy->cpus)) {
 			/*
-			 * 'sibling_mask' is already a subset of affected_cpus -- nothing
-			 * to do on this CPU.
+			 * 'sibling_mask' is already a subset of
+			 * affected_cpus -- nothing to do on this CPU.
 			 */
 			cpufreq_cpu_put(policy);
 			continue;

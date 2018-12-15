@@ -84,7 +84,7 @@ int sbuf_get_variable(struct shared_buf *sbuf, void **data, uint32_t size)
 
 	from = (void *)sbuf + SBUF_HEAD_SIZE + sbuf->head;
 
-	if (next_head < sbuf->head) { // wrap-around
+	if (next_head < sbuf->head) { /* wrap-around */
 		/* copy first part */
 		offset = sbuf->size - sbuf->head;
 		memcpy(*data, from, offset);
@@ -140,7 +140,7 @@ int sbuf_get_wrapper(struct shared_buf *sbuf, uint8_t **data)
 
 	header = vmalloc(sizeof(ACRN_MSG_HEADER_SIZE));
 	memset(header, 0, sizeof(ACRN_MSG_HEADER_SIZE));
-	//read header
+	/*read header */
 	sbuf_get(sbuf, (uint8_t *)header);
 
 	payload_size = header->payload_size;
@@ -149,7 +149,7 @@ int sbuf_get_wrapper(struct shared_buf *sbuf, uint8_t **data)
 
 	sample = vmalloc(sample_size);
 
-	//copy header
+	/*copy header */
 	memcpy((void *)sample, (void *)header, ACRN_MSG_HEADER_SIZE);
 
 	sample_offset += ACRN_MSG_HEADER_SIZE;
@@ -183,4 +183,4 @@ int sbuf_get_wrapper(struct shared_buf *sbuf, uint8_t **data)
 	vfree(header);
 	return sample_size;
 }
-#endif // _SWHV_ACRN_SBUF_H_
+#endif /* _SWHV_ACRN_SBUF_H_ */
