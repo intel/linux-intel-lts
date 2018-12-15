@@ -64,4 +64,4 @@
 #define SWHVDRV_VERSION_MINOR 0
 #define SWHVDRV_VERSION_OTHER 0
 
-#endif // _PW_VERSION_H_
+#endif /* _PW_VERSION_H_ */

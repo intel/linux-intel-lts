@@ -82,18 +82,18 @@
 
 #ifndef __get_cpu_var
 /*
-     * Kernels >= 3.19 don't include a definition
-     * of '__get_cpu_var'. Create one now.
-     */
+ * Kernels >= 3.19 don't include a definition
+ * of '__get_cpu_var'. Create one now.
+ */
 #define __get_cpu_var(var) (*this_cpu_ptr(&var))
-#endif // __get_cpu_var
+#endif /* __get_cpu_var */
 #ifndef __raw_get_cpu_var
 /*
-     * Kernels >= 3.19 don't include a definition
-     * of '__raw_get_cpu_var'. Create one now.
-     */
+ * Kernels >= 3.19 don't include a definition
+ * of '__raw_get_cpu_var'. Create one now.
+ */
 #define __raw_get_cpu_var(var) (*raw_cpu_ptr(&var))
-#endif // __get_cpu_var
+#endif /* __get_cpu_var */
 
 extern u64 sw_timestamp(void);
 
@@ -171,7 +171,7 @@ extern u64 sw_timestamp(void);
 		__ret;							\
 	})
 
-#else // !DO_OVERHEAD_MEASUREMENTS
+#else /* !DO_OVERHEAD_MEASUREMENTS */
 #define DECLARE_OVERHEAD_VARS(name)					\
 	static inline void name##_print_cumulative_overhead_params(	\
 		const char *str)					\
@@ -181,9 +181,9 @@ extern u64 sw_timestamp(void);
 #define DO_PER_CPU_OVERHEAD_FUNC(func, ...) func(__VA_ARGS__)
 #define DO_PER_CPU_OVERHEAD_FUNC_RET(type, func, ...) func(__VA_ARGS__)
 
-#endif // DO_OVERHEAD_MEASUREMENTS
+#endif /* DO_OVERHEAD_MEASUREMENTS */
 
 #define PRINT_CUMULATIVE_OVERHEAD_PARAMS(name, str)	\
 	name##_print_cumulative_overhead_params(str)
 
-#endif // _PW_OVERHEAD_MEASUREMENTS_H_
+#endif /* _PW_OVERHEAD_MEASUREMENTS_H_ */

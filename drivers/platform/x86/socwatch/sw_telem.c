@@ -299,7 +299,9 @@ int sw_telem_init_func(struct sw_driver_io_descriptor *descriptor)
 	/* Check if we've already added this ID */
 	for (idx = 0; idx < *unit_idx && idx < MAX_TELEM_EVENTS; ++idx) {
 		if (s_event_map[unit][idx] == id) {
-			/* Invariant: idx contains the index of the new data item. */
+			/* Invariant: idx contains the
+			 * index of the new data item.
+			 */
 			/* Save the index for later fast lookup. */
 			td->idx = (u16)idx;
 			return 0;
@@ -330,7 +332,8 @@ int sw_telem_init_func(struct sw_driver_io_descriptor *descriptor)
  * @descriptor:         The descriptor containing the data ID to read
  * @data_size_in_bytes: The # of bytes in the result (always 8)
  *
- * Returns: Nothing, but stores SW_TELEM_READ_FAIL_VALUE to dest if the read fails.
+ * Returns: Nothing, but stores SW_TELEM_READ_FAIL_VALUE to dest
+ * if the read fails.
  */
 void sw_read_telem_info(char *dest, int cpu,
 			const sw_driver_io_descriptor_t *descriptor,
@@ -348,7 +351,7 @@ void sw_read_telem_info(char *dest, int cpu,
 #define TELEM_PKT_SIZE 16 /* sizeof(struct telemetry_evtlog) + padding */
 	static struct telemetry_evtlog events[MAX_TELEM_EVENTS];
 
-	// Get the event index
+	/* Get the event index */
 	if (IS_SCALED_ID(td)) {
 		unsigned char *scaled_ids;
 
@@ -401,8 +404,10 @@ void sw_read_telem_info(char *dest, int cpu,
 	}
 
 	if (retry_count) {
-		// TODO: Resolve if we should return something other than
-		//       SW_TELEM_READ_FAIL_VALUE, if the actual data happens to be that.
+		/* TODO: Resolve if we should return something other than
+		 *       SW_TELEM_READ_FAIL_VALUE, if the actual data
+		 *	 happens to be that.
+		 */
 		*data_dest = events[idx].telem_evtlog;
 	} else {
 		*data_dest = SW_TELEM_READ_FAIL_VALUE;

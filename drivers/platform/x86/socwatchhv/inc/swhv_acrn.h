@@ -12,8 +12,8 @@
 #include <linux/wait.h>
 #include <linux/sched.h>
 #include <asm/io.h>
-#include <linux/version.h> // LINUX_VERSION_CODE
-#include <linux/list.h> // for struct list_head
+#include <linux/version.h> /* LINUX_VERSION_CODE */
+#include <linux/list.h> /* for struct list_head */
 
 #include "swhv_defines.h"
 #include "pw_version.h"
@@ -78,7 +78,7 @@ struct profiling_msr_op {
 struct profiling_msr_ops_list {
 	int32_t collector_id;
 	uint32_t num_entries;
-	int32_t msr_op_state; // enum value from 'MSR_CMD_STATUS'
+	int32_t msr_op_state; /* enum value from 'MSR_CMD_STATUS' */
 	struct profiling_msr_op entries[MAX_MSR_LIST_NUM];
 };
 
@@ -114,4 +114,4 @@ typedef struct swhv_acrn_msr_collector_data {
 	struct profiling_msr_ops_list *msr_ops_list;
 	size_t per_msg_payload_size;
 } swhv_acrn_msr_collector_data_t;
-#endif // _SWHV_ACRN_H_
+#endif /* _SWHV_ACRN_H_ */

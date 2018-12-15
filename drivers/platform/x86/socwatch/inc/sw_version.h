@@ -71,4 +71,4 @@
 #define SOCWATCH_VERSION_MINOR 8
 #define SOCWATCH_VERSION_OTHER 0
 
-#endif // __SW_VERSION_H__
+#endif /* __SW_VERSION_H__ */

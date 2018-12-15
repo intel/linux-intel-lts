@@ -66,28 +66,28 @@
 #include <linux/slab.h>
 #include <linux/cpumask.h>
 #include <linux/hrtimer.h>
-#include <linux/fs.h> // inode
-#include <linux/device.h> // class_create
-#include <linux/cdev.h> // cdev_alloc
-#include <linux/vmalloc.h> // vmalloc
-#include <linux/sched.h> // TASK_INTERRUPTIBLE
-#include <linux/wait.h> // wait_event_interruptible
-#include <linux/pci.h> // pci_get_bus_and_slot
-#include <linux/version.h> // LINUX_VERSION_CODE
-#include <linux/sfi.h> // For SFI F/W version
+#include <linux/fs.h> /* inode */
+#include <linux/device.h> /* class_create */
+#include <linux/cdev.h> /* cdev_alloc */
+#include <linux/vmalloc.h> /* vmalloc */
+#include <linux/sched.h> /* TASK_INTERRUPTIBLE */
+#include <linux/wait.h> /* wait_event_interruptible */
+#include <linux/pci.h> /* pci_get_bus_and_slot */
+#include <linux/version.h> /* LINUX_VERSION_CODE */
+#include <linux/sfi.h> /* For SFI F/W version */
 #include <asm/hardirq.h>
 #include <linux/cpufreq.h>
-#include <asm/local.h> // local_t
-#include <linux/hardirq.h> // "in_atomic"
+#include <asm/local.h> /* local_t */
+#include <linux/hardirq.h> /* "in_atomic" */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
-#include <asm/uaccess.h> // copy_to_user
+#include <asm/uaccess.h> /* copy_to_user */
 #else
-#include <linux/uaccess.h> // copy_to_user
-#endif // LINUX_VERSION_CODE
+#include <linux/uaccess.h> /* copy_to_user */
+#endif /* LINUX_VERSION_CODE */
 
 #ifdef CONFIG_X86_WANT_INTEL_MID
 #include <asm/intel-mid.h>
-#endif // CONFIG_X86_WANT_INTEL_MID
+#endif /* CONFIG_X86_WANT_INTEL_MID */
 /*
  * End taken from sw_driver
  */
@@ -135,4 +135,4 @@ int sw_set_module_scope_for_cpus(void);
  */
 int sw_reset_module_scope_for_cpus(void);
 
-#endif // __SW_DATA_STRUCTS_H__
+#endif /* __SW_DATA_STRUCTS_H__ */
