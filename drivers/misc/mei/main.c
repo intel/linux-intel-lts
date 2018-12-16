@@ -125,6 +125,12 @@ static int mei_release(struct inode *inode, struct file *file)
 	}
 
 	rets = mei_cl_disconnect(cl);
+	/* Check again: This is necessary since disconnect releases the lock. */
+	if (!list_empty(&cl->vtag_map)) {
+		cl_dbg(dev, cl, "not the last vtag after disconnect\n");
+		mei_cl_flush_queues(cl, file);
+		goto out;
+	}
 
 	mei_cl_flush_queues(cl, NULL);
 	cl_dbg(dev, cl, "removing\n");
