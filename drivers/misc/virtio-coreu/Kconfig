@@ -1,0 +1,5 @@
+config INTEL_COREU_VIRTIO
+        tristate "Intel CoreU virtio front end driver"
+        depends on X86 && PCI && VIRTIO_PCI
+        help
+          CoreU virtio front end driver for virtualized system
