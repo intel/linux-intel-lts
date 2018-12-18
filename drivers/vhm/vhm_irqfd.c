@@ -171,15 +171,14 @@ static void vhm_irqfd_shutdown(struct acrn_vhm_irqfd *irqfd)
 
 static void vhm_irqfd_shutdown_work(struct work_struct *work)
 {
-	unsigned long flags;
 	struct acrn_vhm_irqfd *irqfd =
 		container_of(work, struct acrn_vhm_irqfd, shutdown);
 	struct vhm_irqfd_info *info = irqfd->info;
 
-	spin_lock_irqsave(&info->irqfds_lock, flags);
+	spin_lock(&info->irqfds_lock);
 	if (vhm_irqfd_is_active(info, irqfd))
 		vhm_irqfd_shutdown(irqfd);
-	spin_unlock_irqrestore(&info->irqfds_lock, flags);
+	spin_unlock(&info->irqfds_lock);
 }
 
 /*
@@ -251,19 +250,19 @@ static int acrn_irqfd_assign(struct vhm_irqfd_info *info,
 	init_waitqueue_func_entry(&irqfd->wait, vhm_irqfd_wakeup);
 	init_poll_funcptr(&irqfd->pt, vhm_irqfd_poll_func);
 
-	spin_lock_irq(&info->irqfds_lock);
+	spin_lock(&info->irqfds_lock);
 
 	list_for_each_entry(tmp, &info->irqfds, list) {
 		if (irqfd->eventfd != tmp->eventfd)
 			continue;
 		/* This fd is used for another irq already. */
 		ret = -EBUSY;
-		spin_unlock_irq(&info->irqfds_lock);
+		spin_unlock(&info->irqfds_lock);
 		goto fail;
 	}
 	list_add_tail(&irqfd->list, &info->irqfds);
 
-	spin_unlock_irq(&info->irqfds_lock);
+	spin_unlock(&info->irqfds_lock);
 
 	/* Check the pending event in this stage */
 	events = f.file->f_op->poll(f.file, &irqfd->pt);
@@ -294,7 +293,7 @@ static int acrn_irqfd_deassign(struct vhm_irqfd_info *info,
 	if (IS_ERR(eventfd))
 		return PTR_ERR(eventfd);
 
-	spin_lock_irq(&info->irqfds_lock);
+	spin_lock(&info->irqfds_lock);
 
 	list_for_each_entry_safe(irqfd, tmp, &info->irqfds, list) {
 		if (irqfd->eventfd == eventfd) {
@@ -303,7 +302,7 @@ static int acrn_irqfd_deassign(struct vhm_irqfd_info *info,
 		}
 	}
 
-	spin_unlock_irq(&info->irqfds_lock);
+	spin_unlock(&info->irqfds_lock);
 	eventfd_ctx_put(eventfd);
 
 	return 0;
@@ -371,10 +370,10 @@ void acrn_irqfd_deinit(uint16_t vmid)
 
 	destroy_workqueue(info->wq);
 
-	spin_lock_irq(&info->irqfds_lock);
+	spin_lock(&info->irqfds_lock);
 	list_for_each_entry_safe(irqfd, tmp, &info->irqfds, list)
 		vhm_irqfd_shutdown(irqfd);
-	spin_unlock_irq(&info->irqfds_lock);
+	spin_unlock(&info->irqfds_lock);
 
 	/* put one more to release it */
 	put_irqfd_info(info);
