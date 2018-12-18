@@ -64,21 +64,21 @@
 #include <linux/vhm/vhm_hypercall.h>
 
 LIST_HEAD(vhm_vm_list);
-DEFINE_MUTEX(vhm_vm_list_lock);
+DEFINE_RWLOCK(vhm_vm_list_lock);
 
 struct vhm_vm *find_get_vm(unsigned long vmid)
 {
 	struct vhm_vm *vm;
 
-	mutex_lock(&vhm_vm_list_lock);
+	read_lock_bh(&vhm_vm_list_lock);
 	list_for_each_entry(vm, &vhm_vm_list, list) {
 		if (vm->vmid == vmid) {
 			atomic_inc(&vm->refcnt);
-			mutex_unlock(&vhm_vm_list_lock);
+			read_unlock_bh(&vhm_vm_list_lock);
 			return vm;
 		}
 	}
-	mutex_unlock(&vhm_vm_list_lock);
+	read_unlock_bh(&vhm_vm_list_lock);
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(find_get_vm);
@@ -86,9 +86,6 @@ EXPORT_SYMBOL_GPL(find_get_vm);
 void put_vm(struct vhm_vm *vm)
 {
 	if (atomic_dec_and_test(&vm->refcnt)) {
-		mutex_lock(&vhm_vm_list_lock);
-		list_del(&vm->list);
-		mutex_unlock(&vhm_vm_list_lock);
 		free_guest_mem(vm);
 
 		if (vm->req_buf && vm->pg) {
@@ -166,14 +163,4 @@ EXPORT_SYMBOL_GPL(vhm_vm_gpa2hpa);
 void vm_list_add(struct list_head *list)
 {
 	list_add(list, &vhm_vm_list);
-}
-
-void vm_mutex_lock(struct mutex *mlock)
-{
-	mutex_lock(mlock);
-}
-
-void vm_mutex_unlock(struct mutex *mlock)
-{
-	mutex_unlock(mlock);
 }

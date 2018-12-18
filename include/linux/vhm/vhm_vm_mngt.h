@@ -63,9 +63,10 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/spinlock_types.h>
+#include <linux/rwlock_types.h>
 
 extern struct list_head vhm_vm_list;
-extern struct mutex vhm_vm_list_lock;
+extern rwlock_t vhm_vm_list_lock;
 
 #define HUGEPAGE_2M_HLIST_ARRAY_SIZE	16
 #define HUGEPAGE_1G_HLIST_ARRAY_SIZE	1
@@ -184,7 +185,5 @@ int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
 unsigned long vhm_vm_gpa2hpa(unsigned long vmid, unsigned long gpa);
 
 void vm_list_add(struct list_head *list);
-void vm_mutex_lock(struct mutex *mlock);
-void vm_mutex_unlock(struct mutex *mlock);
 
 #endif

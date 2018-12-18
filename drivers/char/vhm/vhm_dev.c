@@ -118,10 +118,10 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
 	INIT_LIST_HEAD(&vm->ioreq_client_list);
 	spin_lock_init(&vm->ioreq_client_lock);
 
-	vm_mutex_lock(&vhm_vm_list_lock);
 	atomic_set(&vm->refcnt, 1);
+	write_lock_bh(&vhm_vm_list_lock);
 	vm_list_add(&vm->list);
-	vm_mutex_unlock(&vhm_vm_list_lock);
+	write_unlock_bh(&vhm_vm_list_lock);
 	filep->private_data = vm;
 	return 0;
 }
@@ -611,12 +611,14 @@ static void io_req_tasklet(unsigned long data)
 {
 	struct vhm_vm *vm;
 
+	read_lock(&vhm_vm_list_lock);
 	list_for_each_entry(vm, &vhm_vm_list, list) {
 		if (!vm || !vm->req_buf)
 			continue;
 
 		acrn_ioreq_distribute_request(vm);
 	}
+	read_unlock(&vhm_vm_list_lock);
 }
 
 static void vhm_intr_handler(void)
@@ -633,6 +635,9 @@ static int vhm_dev_release(struct inode *inodep, struct file *filep)
 		return -EFAULT;
 	}
 	acrn_ioreq_free(vm);
+	write_lock_bh(&vhm_vm_list_lock);
+	list_del_init(&vm->list);
+	write_unlock_bh(&vhm_vm_list_lock);
 	put_vm(vm);
 	filep->private_data = NULL;
 	return 0;
