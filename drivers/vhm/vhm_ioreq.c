@@ -132,6 +132,8 @@ struct ioreq_client {
 	int pci_dev;
 	int pci_func;
 	atomic_t refcnt;
+	/* Add the vhm_vm that contains the ioreq_client */
+	struct vhm_vm *ref_vm;
 };
 
 #define MAX_CLIENT 1024
@@ -192,9 +194,11 @@ static struct ioreq_client *acrn_ioreq_get_client(int client_id)
 static void acrn_ioreq_put_client(struct ioreq_client *client)
 {
 	if (atomic_dec_and_test(&client->refcnt)) {
+		struct vhm_vm *ref_vm = client->ref_vm;
 		/* The client should be released when refcnt = 0 */
 		/* TBD: Do we need to free the other resources? */
 		kfree(client);
+		put_vm(ref_vm);
 	}
 }
 
@@ -242,6 +246,7 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 	}
 
 	client->vmid = vmid;
+	client->ref_vm = vm;
 	if (name)
 		strncpy(client->name, name, sizeof(client->name) - 1);
 	spin_lock_init(&client->range_lock);
@@ -381,12 +386,10 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 		vm->ioreq_fallback_client = -1;
 
 	acrn_ioreq_put_client(client);
-	put_vm(vm);
 }
 
 void acrn_ioreq_destroy_client(int client_id)
 {
-	struct vhm_vm *vm;
 	struct ioreq_client *client;
 
 	if (client_id < 0 || client_id >= MAX_CLIENT) {
@@ -404,18 +407,8 @@ void acrn_ioreq_destroy_client(int client_id)
 
 	might_sleep();
 
-	vm = find_get_vm(client->vmid);
-	if (unlikely(vm == NULL)) {
-		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
-			client->vmid);
-		acrn_ioreq_put_client(client);
-		return;
-	}
-
-	acrn_ioreq_destroy_client_pervm(client, vm);
+	acrn_ioreq_destroy_client_pervm(client, client->ref_vm);
 	acrn_ioreq_put_client(client);
-
-	put_vm(vm);
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_destroy_client);
 
@@ -553,19 +546,11 @@ struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
 		return NULL;
 	}
-	vm = find_get_vm(client->vmid);
-	if (unlikely(vm == NULL)) {
-		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
-			client->vmid);
-		acrn_ioreq_put_client(client);
-		return NULL;
-	}
-
-	if (vm->req_buf == NULL) {
+	vm = client->ref_vm;
+	if (unlikely(vm == NULL || vm->req_buf == NULL)) {
 		pr_warn("vhm-ioreq: the req buf page not ready yet "
 			"for vmid %ld\n", client->vmid);
 	}
-	put_vm(vm);
 	acrn_ioreq_put_client(client);
 	return (struct vhm_request *)vm->req_buf;
 }
@@ -582,7 +567,7 @@ static int ioreq_client_thread(void *data)
 	if (!client)
 		return 0;
 
-	vm = find_get_vm(client->vmid);
+	vm = client->ref_vm;
 	if (unlikely(vm == NULL)) {
 		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
 			client->vmid);
@@ -615,7 +600,6 @@ static int ioreq_client_thread(void *data)
 
 	set_bit(IOREQ_CLIENT_EXIT, &client->flags);
 	acrn_ioreq_put_client(client);
-	put_vm(vm);
 	return 0;
 }
 
