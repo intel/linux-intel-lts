@@ -207,7 +207,6 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 {
 	struct vhm_vm *vm;
 	struct ioreq_client *client;
-	unsigned long flags;
 	int client_id;
 
 	might_sleep();
@@ -254,9 +253,9 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
 	init_waitqueue_head(&client->wq);
 
 	/* When it is added to ioreq_client_list, the refcnt is increased */
-	spin_lock_irqsave(&vm->ioreq_client_lock, flags);
+	spin_lock_bh(&vm->ioreq_client_lock);
 	list_add(&client->list, &vm->ioreq_client_list);
-	spin_unlock_irqrestore(&vm->ioreq_client_lock, flags);
+	spin_unlock_bh(&vm->ioreq_client_lock);
 
 	pr_info("vhm-ioreq: created ioreq client %d\n", client_id);
 
@@ -279,7 +278,7 @@ void acrn_ioreq_clear_request(struct vhm_vm *vm)
 	 */
 
 	do {
-		spin_lock(&vm->ioreq_client_lock);
+		spin_lock_bh(&vm->ioreq_client_lock);
 		list_for_each(pos, &vm->ioreq_client_list) {
 			client = container_of(pos, struct ioreq_client, list);
 			if (vm->ioreq_fallback_client == client->id)
@@ -288,7 +287,7 @@ void acrn_ioreq_clear_request(struct vhm_vm *vm)
 			if (has_pending)
 				break;
 		}
-		spin_unlock(&vm->ioreq_client_lock);
+		spin_unlock_bh(&vm->ioreq_client_lock);
 
 		if (has_pending)
 			schedule_timeout_interruptible(HZ / 100);
@@ -361,7 +360,6 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 		struct vhm_vm *vm)
 {
 	struct list_head *pos, *tmp;
-	unsigned long flags;
 
 	set_bit(IOREQ_CLIENT_DESTROYING, &client->flags);
 	acrn_ioreq_notify_client(client);
@@ -369,18 +367,18 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 	while (client->vhm_create_kthread && !test_bit(IOREQ_CLIENT_EXIT, &client->flags))
 		msleep(10);
 
-	spin_lock_irqsave(&client->range_lock, flags);
+	spin_lock_bh(&client->range_lock);
 	list_for_each_safe(pos, tmp, &client->range_list) {
 		struct ioreq_range *range =
 			container_of(pos, struct ioreq_range, list);
 		list_del(&range->list);
 		kfree(range);
 	}
-	spin_unlock_irqrestore(&client->range_lock, flags);
+	spin_unlock_bh(&client->range_lock);
 
-	spin_lock_irqsave(&vm->ioreq_client_lock, flags);
+	spin_lock_bh(&vm->ioreq_client_lock);
 	list_del(&client->list);
-	spin_unlock_irqrestore(&vm->ioreq_client_lock, flags);
+	spin_unlock_bh(&vm->ioreq_client_lock);
 
 	if (client->id == vm->ioreq_fallback_client)
 		vm->ioreq_fallback_client = -1;
@@ -415,16 +413,15 @@ EXPORT_SYMBOL_GPL(acrn_ioreq_destroy_client);
 static void __attribute__((unused)) dump_iorange(struct ioreq_client *client)
 {
 	struct list_head *pos;
-	unsigned long flags;
 
-	spin_lock_irqsave(&client->range_lock, flags);
+	spin_lock_bh(&client->range_lock);
 	list_for_each(pos, &client->range_list) {
 		struct ioreq_range *range =
 			container_of(pos, struct ioreq_range, list);
 		pr_debug("\tio range: type %d, start 0x%lx, "
 			"end 0x%lx\n", range->type, range->start, range->end);
 	}
-	spin_unlock_irqrestore(&client->range_lock, flags);
+	spin_unlock_bh(&client->range_lock);
 }
 
 /*
@@ -436,7 +433,6 @@ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
 {
 	struct ioreq_client *client;
 	struct ioreq_range *range;
-	unsigned long flags;
 
 	if (client_id < 0 || client_id >= MAX_CLIENT) {
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
@@ -465,9 +461,9 @@ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
 	range->start = start;
 	range->end = end;
 
-	spin_lock_irqsave(&client->range_lock, flags);
+	spin_lock_bh(&client->range_lock);
 	list_add(&range->list, &client->range_list);
-	spin_unlock_irqrestore(&client->range_lock, flags);
+	spin_unlock_bh(&client->range_lock);
 	acrn_ioreq_put_client(client);
 
 	return 0;
@@ -480,7 +476,6 @@ int acrn_ioreq_del_iorange(int client_id, uint32_t type,
 	struct ioreq_client *client;
 	struct ioreq_range *range;
 	struct list_head *pos, *tmp;
-	unsigned long flags;
 
 	if (client_id < 0 || client_id >= MAX_CLIENT) {
 		pr_err("vhm-ioreq: no client for id %d\n", client_id);
@@ -499,7 +494,7 @@ int acrn_ioreq_del_iorange(int client_id, uint32_t type,
 
 	might_sleep();
 
-	spin_lock_irqsave(&client->range_lock, flags);
+	spin_lock_bh(&client->range_lock);
 	list_for_each_safe(pos, tmp, &client->range_list) {
 		range = container_of(pos, struct ioreq_range, list);
 		if (range->type == type) {
@@ -517,7 +512,7 @@ int acrn_ioreq_del_iorange(int client_id, uint32_t type,
 			}
 		}
 	}
-	spin_unlock_irqrestore(&client->range_lock, flags);
+	spin_unlock_bh(&client->range_lock);
 	acrn_ioreq_put_client(client);
 
 	return 0;
@@ -863,7 +858,7 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 
 	target_client = 0;
 	fallback_client = 0;
-	spin_lock(&vm->ioreq_client_lock);
+	spin_lock_bh(&vm->ioreq_client_lock);
 	list_for_each(pos, &vm->ioreq_client_list) {
 		client = container_of(pos, struct ioreq_client, list);
 
@@ -880,7 +875,7 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 				continue;
 		}
 
-		spin_lock(&client->range_lock);
+		spin_lock_bh(&client->range_lock);
 		list_for_each(range_pos, &client->range_list) {
 			range =
 			container_of(range_pos, struct ioreq_range, list);
@@ -890,12 +885,12 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 				break;
 			}
 		}
-		spin_unlock(&client->range_lock);
+		spin_unlock_bh(&client->range_lock);
 
 		if (found)
 			break;
 	}
-	spin_unlock(&vm->ioreq_client_lock);
+	spin_unlock_bh(&vm->ioreq_client_lock);
 
 	if (target_client > 0)
 		return acrn_ioreq_get_client(target_client);
