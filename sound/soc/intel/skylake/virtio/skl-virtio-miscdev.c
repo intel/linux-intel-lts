@@ -113,7 +113,7 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
 		}
 
 		atomic_set(&req->processed, REQ_STATE_COMPLETE);
-		acrn_ioreq_complete_request(client->vhm_client_id, i);
+		acrn_ioreq_complete_request(client->vhm_client_id, i, NULL);
 
 		/* handle VQ kick if needed */
 		if (handle)
