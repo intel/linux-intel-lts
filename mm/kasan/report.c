@@ -200,7 +200,7 @@ static inline void fail_non_kasan_kunit_test(void) { }
 
 #endif /* CONFIG_KUNIT */
 
-static DEFINE_RAW_SPINLOCK(report_lock);
+static DEFINE_HARD_SPINLOCK(report_lock);
 
 static void start_report(unsigned long *flags, bool sync)
 {
