@@ -1243,6 +1243,7 @@ int skl_init_dsp(struct skl *skl)
 	dev_dbg(bus->dev, "dsp registration status=%d\n", ret);
 
 	INIT_LIST_HEAD(&skl->skl_sst->notify_kctls);
+	INIT_LIST_HEAD(&skl->skl_sst->tplg_domains);
 
 	/* Set DMA clock controls */
 	ret = skl_dsp_set_dma_clk_controls(skl->skl_sst);

@@ -325,6 +325,8 @@ struct skl_sst {
 	struct skl_sysfs_tree *sysfs_tree;
 
 	struct list_head notify_kctls;
+
+	struct list_head tplg_domains;
 };
 
 struct skl_ipc_init_instance_msg {

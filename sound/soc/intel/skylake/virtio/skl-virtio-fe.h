@@ -13,6 +13,7 @@
 #include "skl-virtio-common.h"
 
 #define VFE_MSG_MSEC_TIMEOUT 100
+#define VFE_TPLG_LOAD_TIMEOUT 1000
 #define VFE_MSG_BUFF_NUM 3
 
 struct vfe_substream_info {
@@ -42,7 +43,6 @@ struct snd_skl_vfe {
 
 	struct kctl_proxy kcon_proxy;
 	struct vskl_vfe_tplg tplg;
-	struct mutex tplg_init_lock;
 
 	struct work_struct init_work;
 
