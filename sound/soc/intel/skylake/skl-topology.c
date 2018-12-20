@@ -3483,6 +3483,23 @@ static int skl_tplg_fill_pin(struct device *dev,
 	return 0;
 }
 
+static int skl_tplg_fill_tplg_domain_info(struct device *dev,
+		struct skl *skl,
+		struct snd_soc_tplg_vendor_value_elem *tkn_elem)
+{
+	struct skl_tplg_domain *tplg_domain;
+
+	if (list_empty(&skl->skl_sst->tplg_domains))
+		return -EINVAL;
+
+	tplg_domain = list_last_entry(&skl->skl_sst->tplg_domains,
+		struct skl_tplg_domain, list);
+
+	tplg_domain->domain_id = tkn_elem->value;
+
+	return 0;
+}
+
 static int skl_tplg_fill_kctl_domain(struct device *dev,
 		struct skl_module_cfg *mconfig,
 		struct snd_soc_tplg_vendor_value_elem *tkn_elem)
@@ -3931,7 +3948,7 @@ static int skl_tplg_get_token(struct device *dev,
 
 		break;
 
-	case SKL_TKN_U32_DOMAIN_ID:
+	case SKL_TKN_U32_MOD_DOMAIN_ID:
 		mconfig->domain_id = tkn_elem->value;
 		break;
 
@@ -4603,11 +4620,49 @@ static int skl_tplg_fill_str_ctl_tkn(struct device *dev,
 	return 1;
 }
 
+static int skl_tplg_fill_str_tplg_domain_tkn(struct device *dev,
+		struct snd_soc_tplg_vendor_string_elem *str_elem,
+		struct skl *skl)
+{
+	struct skl_tplg_domain *tplg_domain;
+
+	switch (str_elem->token) {
+	case SKL_TKN_STR_DOMAIN_NAME:
+		tplg_domain =
+			devm_kzalloc(dev, sizeof(*tplg_domain), GFP_KERNEL);
+
+		if (!tplg_domain)
+			return -ENOMEM;
+
+		strncpy(tplg_domain->domain_name,
+			str_elem->string,
+			ARRAY_SIZE(tplg_domain->domain_name));
+		list_add_tail(&tplg_domain->list, &skl->skl_sst->tplg_domains);
+		break;
+	case SKL_TKN_STR_DOMAIN_TPLG:
+		if (list_empty(&skl->skl_sst->tplg_domains))
+			return -EINVAL;
+
+		tplg_domain = list_last_entry(&skl->skl_sst->tplg_domains,
+			struct skl_tplg_domain, list);
+
+		strncpy(tplg_domain->tplg_name,
+			str_elem->string,
+			ARRAY_SIZE(tplg_domain->tplg_name));
+		break;
+	default:
+		dev_err(dev, "Not a domain token %d\n", str_elem->token);
+		break;
+	}
+
+	return 0;
+}
+
 static int skl_tplg_fill_str_mfest_tkn(struct device *dev,
 		struct snd_soc_tplg_vendor_string_elem *str_elem,
 		struct skl *skl)
 {
-	int tkn_count = 0;
+	int ret, tkn_count = 0;
 	static int ref_count;
 
 	switch (str_elem->token) {
@@ -4622,7 +4677,12 @@ static int skl_tplg_fill_str_mfest_tkn(struct device *dev,
 			ARRAY_SIZE(skl->skl_sst->lib_info[ref_count].name));
 		ref_count++;
 		break;
-
+	case SKL_TKN_STR_DOMAIN_NAME:
+	case SKL_TKN_STR_DOMAIN_TPLG:
+		ret = skl_tplg_fill_str_tplg_domain_tkn(dev, str_elem, skl);
+		if (ret < 0)
+			return ret;
+	break;
 	default:
 		dev_err(dev, "Not a string token %d\n", str_elem->token);
 		break;
@@ -4644,6 +4704,8 @@ static int skl_tplg_get_str_tkn(struct device *dev,
 	while (tkn_count < array->num_elems) {
 		switch (str_elem->token) {
 		case SKL_TKN_STR_LIB_NAME:
+		case SKL_TKN_STR_DOMAIN_NAME:
+		case SKL_TKN_STR_DOMAIN_TPLG:
 			ret = skl_tplg_fill_str_mfest_tkn(dev, str_elem, skl);
 			break;
 		case SKL_TKN_STR_CTL_NAME:
@@ -5022,6 +5084,14 @@ static int skl_tplg_get_int_tkn(struct device *dev,
 		else
 			ret = skl_tplg_mfest_fill_dmactrl(dev, &skl->cfg.dmactrl_cfg,
 					 tkn_elem);
+		if (ret < 0)
+			return ret;
+		break;
+
+	case SKL_TKN_U32_DOMAIN_ID:
+		ret = skl_tplg_fill_tplg_domain_info(dev,
+			skl, tkn_elem);
+
 		if (ret < 0)
 			return ret;
 		break;

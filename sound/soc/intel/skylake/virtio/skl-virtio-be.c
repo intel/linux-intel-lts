@@ -90,6 +90,33 @@ struct snd_soc_dapm_widget *vbe_skl_find_kcontrol_widget(
 	return NULL;
 }
 
+struct skl_tplg_domain *vbe_skl_find_tplg_domain_by_name(
+	const struct skl *skl, char *domain_name)
+{
+	struct skl_tplg_domain *tplg_domain;
+
+	list_for_each_entry(tplg_domain, &skl->skl_sst->tplg_domains, list) {
+		if (strncmp(tplg_domain->domain_name, domain_name,
+				ARRAY_SIZE(tplg_domain->domain_name)) == 0)
+			return tplg_domain;
+	}
+
+	return NULL;
+}
+
+struct skl_tplg_domain *vbe_skl_find_tplg_domain_by_id(
+	const struct skl *skl, u32 domain_id)
+{
+	struct skl_tplg_domain *tplg_domain;
+
+	list_for_each_entry(tplg_domain, &skl->skl_sst->tplg_domains, list) {
+		if (tplg_domain->domain_id == domain_id)
+			return tplg_domain;
+	}
+
+	return NULL;
+}
+
 inline int vbe_skl_is_valid_pcm_id(char *pcm_id)
 {
 	if (pcm_id == NULL || strlen(pcm_id) == 0 ||
@@ -595,29 +622,41 @@ static int vbe_skl_send_tplg_data(struct snd_skl_vbe *vbe,
 	return 0;
 }
 
-static int vbe_skl_tplg_size(struct snd_skl_vbe *vbe, const struct skl *sdev,
+static int vbe_skl_tplg_info(struct snd_skl_vbe *vbe, const struct skl *skl,
 	int vm_id, const struct vbe_ipc_msg *msg)
 {
+	struct skl_tplg_domain *tplg_domain;
 	const struct firmware *tplg;
 	char *tplg_name;
 	int chunks, data, ret;
-	struct vfe_tplg_size *tplg_size = msg->rx_data;
+	struct vfe_tplg_info *tplg_info = msg->rx_data;
 
-	if (!tplg_size)
+	if (!tplg_info)
 		return -EINVAL;
 
-	//TODO: get tplg file name by guest domain ID
-	tplg_name = "guest_tplg.bin";
+	tplg_domain = vbe_skl_find_tplg_domain_by_name(skl,
+		msg->header->domain_name);
+	if (!tplg_domain) {
+		dev_err(vbe->dev,
+			"Could not find topology definition for Guest %s",
+			msg->header->domain_name);
+		return -EINVAL;
+	}
+
+	tplg_name = tplg_domain->tplg_name;
 	ret = request_firmware(&tplg, tplg_name, vbe->dev);
 	if (ret < 0)
 		return ret;
 
-	tplg_size->chunk_size = SKL_VIRTIO_TPLG_CHUNK_SIZE;
-	tplg_size->size = tplg->size;
-	tplg_size->chunks = tplg_size->size / SKL_VIRTIO_TPLG_CHUNK_SIZE +
-		tplg_size->size % SKL_VIRTIO_TPLG_CHUNK_SIZE ? 1 : 0;
+	strncpy(tplg_info->tplg_name, tplg_domain->tplg_name,
+		ARRAY_SIZE(tplg_info->tplg_name));
+	tplg_info->domain_id = tplg_domain->domain_id;
+	tplg_info->chunk_size = SKL_VIRTIO_TPLG_CHUNK_SIZE;
+	tplg_info->size = tplg->size;
+	tplg_info->chunks = tplg_info->size / SKL_VIRTIO_TPLG_CHUNK_SIZE +
+		tplg_info->size % SKL_VIRTIO_TPLG_CHUNK_SIZE ? 1 : 0;
 
-	vbe_skl_send_tplg_data(vbe, sdev, tplg, vm_id);
+	vbe_skl_send_tplg_data(vbe, skl, tplg, vm_id);
 
 	release_firmware(tplg);
 
@@ -739,8 +778,8 @@ int vbe_skl_msg_tplg_handle(const struct snd_skl_vbe *vbe,
 	u32 domain_id = msg->header->domain_id;
 
 	switch (msg->header->cmd) {
-	case VFE_MSG_TPLG_SIZE:
-		return vbe_skl_tplg_size(vbe, sdev, vm_id, msg);
+	case VFE_MSG_TPLG_INFO:
+		return vbe_skl_tplg_info(vbe, sdev, vm_id, msg);
 	default:
 		dev_err(vbe->dev, "Unknown command %d for tplg [%s].\n",
 			msg->header->cmd);

@@ -90,22 +90,6 @@ inline int vfe_is_valid_fe_substream(struct snd_pcm_substream *substream)
 	return vfe_is_valid_pcm_id(substream->pcm->id);
 }
 
-const struct snd_pcm *vfe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
-{
-	const struct snd_soc_pcm_runtime *rtd;
-	int ret = vfe_is_valid_pcm_id(pcm_name);
-
-	if (ret < 0)
-		return NULL;
-
-	list_for_each_entry(rtd, &skl->component->card->rtd_list, list) {
-		if (strncmp(rtd->pcm->id, pcm_name,
-				ARRAY_SIZE(rtd->pcm->id)) == 0)
-			return rtd->pcm;
-	}
-	return NULL;
-}
-
 static inline vfe_vq_kick(struct snd_skl_vfe *vfe, struct virtqueue *vq)
 {
 	unsigned long irq_flags;
@@ -124,7 +108,6 @@ static int vfe_send_virtio_msg(struct snd_skl_vfe *vfe,
 	if (!vq)
 		return -EINVAL;
 
-
 	spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
 	if (out)
 		ret = virtqueue_add_outbuf(vq, sgs, sg_count, data, GFP_KERNEL);
@@ -142,6 +125,22 @@ static int vfe_send_virtio_msg(struct snd_skl_vfe *vfe,
 	vfe_vq_kick(vfe, vq);
 
 	return 0;
+}
+
+const struct snd_pcm *vfe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
+{
+	const struct snd_soc_pcm_runtime *rtd;
+	int ret = vfe_is_valid_pcm_id(pcm_name);
+
+	if (ret < 0)
+		return NULL;
+
+	list_for_each_entry(rtd, &skl->component->card->rtd_list, list) {
+		if (strncmp(rtd->pcm->id, pcm_name,
+				ARRAY_SIZE(rtd->pcm->id)) == 0)
+			return rtd->pcm;
+	}
+	return NULL;
 }
 
 static int vfe_send_msg(struct snd_skl_vfe *vfe,
@@ -467,7 +466,6 @@ static void vfe_message_loop(struct work_struct *work)
 		}
 		vfe_put_inbox_buffer(vfe, header);
 	}
-	vfe_put_inbox_buffer(vfe, header);
 }
 
 static int vfe_skl_kcontrol_get_domain_id(const struct snd_kcontrol *kcontrol,
@@ -820,6 +818,7 @@ static int vfe_skl_init_dsp(struct skl *skl)
 		return -ENOMEM;
 
 	INIT_LIST_HEAD(&skl->skl_sst->notify_kctls);
+	INIT_LIST_HEAD(&skl->skl_sst->tplg_domains);
 
 	return ret;
 }
@@ -913,11 +912,20 @@ void vfe_skl_pci_dev_release(struct device *dev)
 
 static int vfe_request_topology(struct skl *skl, const struct firmware **fw)
 {
+	int ret;
 	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 
-	mutex_lock(&vfe->tplg_init_lock);
+	ret = wait_event_timeout(vfe->tplg.waitq,
+		vfe->tplg.load_completed,
+		msecs_to_jiffies(VFE_TPLG_LOAD_TIMEOUT));
+
+	if (ret == 0) {
+		dev_err(&vfe->vdev->dev,
+			"Failed to receive topology from BE service");
+		return -ETIMEDOUT;
+	}
+
 	*fw = &vfe->tplg.tplg_data;
-	mutex_unlock(&vfe->tplg_init_lock);
 
 	return 0;
 }
@@ -925,43 +933,41 @@ static int vfe_request_topology(struct skl *skl, const struct firmware **fw)
 static int vfe_init_tplg(struct snd_skl_vfe *vfe, struct skl *skl)
 {
 	struct vfe_msg_header msg_header;
-	struct vfe_tplg_size tplg_size;
+	struct vfe_tplg_info tplg_info;
 	int ret;
 	u8 *tplg_data;
 
-	mutex_init(&vfe->tplg_init_lock);
-	mutex_lock(&vfe->tplg_init_lock);
 
 	mutex_init(&vfe->tplg.tplg_lock);
 	init_waitqueue_head(&vfe->tplg.waitq);
 	vfe->tplg.load_completed = false;
 
-	strcpy(skl->tplg_name, "5a98-INTEL-NHLT-GPA-11-tplg.bin");
 	skl->skl_sst->request_tplg = vfe_request_topology;
 
 	mutex_lock(&vfe->tplg.tplg_lock);
-	msg_header.cmd = VFE_MSG_TPLG_SIZE;
+	msg_header.cmd = VFE_MSG_TPLG_INFO;
 	ret = vfe_send_msg(vfe, &msg_header,
-		NULL, 0, &tplg_size, sizeof(tplg_size));
+		NULL, 0, &tplg_info, sizeof(tplg_info));
 	if (ret < 0)
 		goto error_handl;
 
+	//TODO: get result from vBE
+
 	tplg_data = devm_kzalloc(&vfe->vdev->dev,
-		tplg_size.size, GFP_KERNEL);
+		tplg_info.size, GFP_KERNEL);
 	if (!tplg_data) {
 		ret = -ENOMEM;
 		goto error_handl;
 	}
 
+	domain_id = tplg_info.domain_id;
 	vfe->tplg.tplg_data.data = tplg_data;
-	vfe->tplg.tplg_data.size = tplg_size.size;
+	vfe->tplg.tplg_data.size = tplg_info.size;
+	strncpy(skl->tplg_name, tplg_info.tplg_name,
+		ARRAY_SIZE(skl->tplg_name));
 
 error_handl:
 	mutex_unlock(&vfe->tplg.tplg_lock);
-	if (ret == 0)
-		wait_event(vfe->tplg.waitq, vfe->tplg.load_completed);
-
-	mutex_unlock(&vfe->tplg_init_lock);
 
 	return ret;
 }
@@ -1198,7 +1204,6 @@ static struct virtio_driver vfe_audio_driver = {
 
 module_virtio_driver(vfe_audio_driver);
 module_param(domain_name, charp, 0444);
-module_param(domain_id, uint, 0444);
 
 MODULE_DEVICE_TABLE(virtio, id_table);
 MODULE_DESCRIPTION("Intel Broxton Virtio FE Driver");
