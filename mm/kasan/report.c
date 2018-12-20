@@ -78,7 +78,7 @@ static void print_error_description(struct kasan_access_info *info)
 		info->access_addr, current->comm, task_pid_nr(current));
 }
 
-static DEFINE_SPINLOCK(report_lock);
+static DEFINE_HARD_SPINLOCK(report_lock);
 
 static void start_report(unsigned long *flags)
 {
@@ -86,7 +86,7 @@ static void start_report(unsigned long *flags)
 	 * Make sure we don't end up in loop.
 	 */
 	kasan_disable_current();
-	spin_lock_irqsave(&report_lock, *flags);
+	raw_spin_lock_irqsave(&report_lock, *flags);
 	pr_err("==================================================================\n");
 }
 
@@ -94,7 +94,7 @@ static void end_report(unsigned long *flags)
 {
 	pr_err("==================================================================\n");
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
-	spin_unlock_irqrestore(&report_lock, *flags);
+	raw_spin_unlock_irqrestore(&report_lock, *flags);
 	if (panic_on_warn && !test_bit(KASAN_BIT_MULTI_SHOT, &kasan_flags)) {
 		/*
 		 * This thread may hit another WARN() in the panic path.
