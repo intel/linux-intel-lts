@@ -428,6 +428,13 @@ struct skl_gain_data {
 	u32 volume[MAX_NUM_CHANNELS];
 };
 
+struct skl_tplg_domain {
+	unsigned char domain_name[SNDRV_CTL_ELEM_ID_NAME_MAXLEN];
+	unsigned char tplg_name[SNDRV_CTL_ELEM_ID_NAME_MAXLEN];
+	u32 domain_id;
+	struct list_head list;
+};
+
 struct skl_kctl_domain {
 	unsigned char name[SNDRV_CTL_ELEM_ID_NAME_MAXLEN];
 	u32 domain_id;
