@@ -205,6 +205,13 @@ config X86
 	select VIRT_TO_BUS
 	select X86_FEATURE_NAMES		if PROC_FS
 
+config TURBO_BEFORE_DECOMPRESS
+        bool "Turbo CPU freq before kernel decompress"
+        depends on X86_64
+        ---help---
+          Make CPU frequency start to run at P0 state before
+          kenrel decompress of system boot.
+
 config INSTRUCTION_DECODER
 	def_bool y
 	depends on KPROBES || PERF_EVENTS || UPROBES
