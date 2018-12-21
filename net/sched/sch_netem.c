@@ -621,6 +621,7 @@ deliver:
 			qdisc_qstats_backlog_dec(sch, skb);
 			skb->next = NULL;
 			skb->prev = NULL;
+			skb->tstamp = netem_skb_cb(skb)->tstamp_save;
 			/* skb->dev shares skb->rbnode area,
 			 * we need to restore its value.
 			 */
