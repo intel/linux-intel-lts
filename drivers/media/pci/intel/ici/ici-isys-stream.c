@@ -930,8 +930,8 @@ out_cleanup_short_packet:
 	ici_isys_frame_buf_short_packet_destroy(as);
 
 out_requeue:
-	ici_isys_frame_buf_stream_cancel(as);
 	mutex_unlock(&as->isys->stream_mutex);
+	ici_isys_frame_buf_stream_cancel(as);
 	pipeline_set_power(as, 0);
 	return rval;
 }
@@ -1176,9 +1176,10 @@ static int stream_fop_release(struct inode *inode, struct file *file)
 	int ret = 0;
 	DEBUGK("%s: stream release (%p)\n", __func__, as);
 
-	if (as->ip.streaming) {
+	if (as->ip.streaming)
 		ici_isys_stream_off(file, NULL);
-	}
+	else
+		ici_isys_frame_buf_stream_cancel(as);
 
 	mutex_lock(&as->isys->mutex);
 

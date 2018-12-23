@@ -740,11 +740,12 @@ void ici_isys_frame_buf_stream_cancel(struct
 {
 	struct ici_isys_frame_buf_list *buf_list = &as->buf_list;
 	struct ici_frame_buf_wrapper *buf;
-	struct ici_frame_buf_wrapper *next_buf;
 	unsigned long flags = 0;
 
-	list_for_each_entry_safe(buf, next_buf, &buf_list->getbuf_list, node) {
+	while (!list_empty(&buf_list->getbuf_list)) {
 		spin_lock_irqsave(&buf_list->lock, flags);
+		buf = list_entry(buf_list->getbuf_list.next,
+			struct ici_frame_buf_wrapper, node);
 		list_del(&buf->node);
 		spin_unlock_irqrestore(&buf_list->lock, flags);
 		if (as->strm_dev.virt_dev_id < 0)
@@ -753,8 +754,10 @@ void ici_isys_frame_buf_stream_cancel(struct
 			unmap_buf_virt(buf);
 	}
 
-	list_for_each_entry_safe(buf, next_buf, &buf_list->putbuf_list, node) {
+	while (!list_empty(&buf_list->putbuf_list)) {
 		spin_lock_irqsave(&buf_list->lock, flags);
+		buf = list_entry(buf_list->putbuf_list.next,
+			struct ici_frame_buf_wrapper, node);
 		list_del(&buf->node);
 		spin_unlock_irqrestore(&buf_list->lock, flags);
 		if (as->strm_dev.virt_dev_id < 0)
@@ -763,9 +766,10 @@ void ici_isys_frame_buf_stream_cancel(struct
 			unmap_buf_virt(buf);
 	}
 
-	list_for_each_entry_safe(buf, next_buf, &buf_list->interlacebuf_list,
-								node) {
+	while (!list_empty(&buf_list->interlacebuf_list)) {
 		spin_lock_irqsave(&buf_list->short_packet_queue_lock, flags);
+		buf = list_entry(buf_list->interlacebuf_list.next,
+			struct ici_frame_buf_wrapper, node);
 		list_del(&buf->node);
 		spin_unlock_irqrestore(&buf_list->short_packet_queue_lock, flags);
 		unmap_buf(buf);

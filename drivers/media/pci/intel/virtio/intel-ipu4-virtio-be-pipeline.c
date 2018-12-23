@@ -53,12 +53,24 @@ int process_pipeline_close(struct ipu4_virtio_req_info *req_info)
 int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+	struct ici_isys_pipeline_device *dev;
 	struct ici_node_desc *host_virt;
-	struct ipu4_virtio_req *req = req_info->request;
+	struct ipu4_virtio_req *req;
 	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
+
+	if (!pipeline) {
+		pr_err("%s: NULL pipeline", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	dev = pipeline->private_data;
+
+	if (!req_info) {
+		pr_err("%s: NULL req_info", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
 						sizeof(struct ici_node_desc));
@@ -79,12 +91,24 @@ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
 int process_enum_links(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+	struct ici_isys_pipeline_device *dev;
 	struct ici_links_query *host_virt;
-	struct ipu4_virtio_req *req = req_info->request;
+	struct ipu4_virtio_req *req;
 	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
+
+	if (!pipeline) {
+		pr_err("%s: NULL pipeline", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	dev = pipeline->private_data;
+
+	if (!req_info) {
+		pr_err("%s: NULL req_info", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
 						sizeof(struct ici_links_query));
@@ -103,12 +127,24 @@ int process_enum_links(struct ipu4_virtio_req_info *req_info)
 int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_supported_format_desc *host_virt;
-	struct ipu4_virtio_req *req = req_info->request;
+	struct ipu4_virtio_req *req;
 	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
+
+	if (!pipeline) {
+		pr_err("%s: NULL pipeline", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	dev = pipeline->private_data;
+
+	if (!req_info) {
+		pr_err("%s: NULL req_info", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
 				sizeof(struct ici_pad_supported_format_desc));
@@ -128,12 +164,24 @@ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
 int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_framefmt *host_virt;
-	struct ipu4_virtio_req *req = req_info->request;
+	struct ipu4_virtio_req *req;
 	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
+
+	if (!pipeline) {
+		pr_err("%s: NULL pipeline", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	dev = pipeline->private_data;
+
+	if (!req_info) {
+		pr_err("%s: NULL req_info", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
 						sizeof(struct ici_pad_framefmt));
@@ -153,12 +201,24 @@ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
 int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_framefmt *host_virt;
-	struct ipu4_virtio_req *req = req_info->request;
+	struct ipu4_virtio_req *req;
 	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
+
+	if (!pipeline) {
+		pr_err("%s: NULL pipeline", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	dev = pipeline->private_data;
+
+	if (!req_info) {
+		pr_err("%s: NULL req_info", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
 						sizeof(struct ici_pad_framefmt));
@@ -178,12 +238,24 @@ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
 int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+	struct ici_isys_pipeline_device *dev;
 	struct ici_link_desc *host_virt;
-	struct ipu4_virtio_req *req = req_info->request;
+	struct ipu4_virtio_req *req;
 	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
+
+	if (!pipeline) {
+		pr_err("%s: NULL pipeline", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	dev = pipeline->private_data;
+
+	if (!req_info) {
+		pr_err("%s: NULL req_info", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
 						sizeof(struct ici_link_desc));
@@ -203,12 +275,24 @@ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
 int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_selection *host_virt;
-	struct ipu4_virtio_req *req = req_info->request;
+	struct ipu4_virtio_req *req;
 	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
+
+	if (!pipeline) {
+		pr_err("%s: NULL pipeline", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	dev = pipeline->private_data;
+
+	if (!req_info) {
+		pr_err("%s: NULL req_info", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
 						sizeof(struct ici_pad_selection));
@@ -228,12 +312,24 @@ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
 int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
 {
 	int err = 0;
-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_selection *host_virt;
-	struct ipu4_virtio_req *req = req_info->request;
+	struct ipu4_virtio_req *req;
 	int domid = req_info->domid;
 
 	pr_debug("%s\n", __func__);
+
+	if (!pipeline) {
+		pr_err("%s: NULL pipeline", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	dev = pipeline->private_data;
+
+	if (!req_info) {
+		pr_err("%s: NULL req_info", __func__);
+		return IPU4_REQ_ERROR;
+	}
+	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
 						sizeof(struct ici_pad_selection));

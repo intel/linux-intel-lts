@@ -695,6 +695,8 @@ static int virt_stream_fop_release(struct inode *inode, struct file *file)
 	}
 	ipu4_virtio_fe_req_queue_put(req);
 
+	buf_stream_cancel(vstream);
+
 	return rval;
 }
 
