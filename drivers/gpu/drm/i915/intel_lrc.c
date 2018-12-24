@@ -1300,7 +1300,8 @@ sched_lock_engine(struct i915_sched_node *node, struct intel_engine_cs *locked)
 }
 
 static void execlists_schedule(struct i915_request *request,
-			       const struct i915_sched_attr *attr)
+			       const struct i915_sched_attr *attr,
+			       unsigned int timeout)
 {
 	struct i915_priolist *uninitialized_var(pl);
 	struct intel_engine_cs *engine, *last;
@@ -1404,7 +1405,7 @@ static void execlists_schedule(struct i915_request *request,
 		if (prio > engine->execlists.queue_priority &&
 		    i915_sw_fence_done(&sched_to_request(node)->submit)) {
 			/* defer submission until after all of our updates */
-			__update_queue(engine, prio, 0);
+			__update_queue(engine, prio, timeout);
 			tasklet_hi_schedule(&engine->execlists.tasklet);
 		}
 	}
