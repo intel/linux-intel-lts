@@ -276,8 +276,9 @@ struct intel_engine_execlists {
 	 */
 	unsigned int active;
 #define EXECLISTS_ACTIVE_USER 0
-#define EXECLISTS_ACTIVE_PREEMPT 1
-#define EXECLISTS_ACTIVE_HWACK 2
+#define EXECLISTS_ACTIVE_HWACK 1
+#define EXECLISTS_ACTIVE_PREEMPT 2
+#define EXECLISTS_ACTIVE_PREEMPT_TIMEOUT 3
 
 	/**
 	 * @port_mask: number of execlist ports - 1
@@ -324,6 +325,9 @@ struct intel_engine_execlists {
 	 * @preempt_complete_status: expected CSB upon completing preemption
 	 */
 	u32 preempt_complete_status;
+
+	struct hrtimer preempt_timer;
+	struct work_struct preempt_reset;
 
 	/**
 	 * @csb_write_reset: reset value for CSB write pointer

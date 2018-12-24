@@ -468,6 +468,9 @@ static void intel_engine_init_execlist(struct intel_engine_cs *engine)
 
 	execlists->queue_priority = INT_MIN;
 	execlists->queue = RB_ROOT_CACHED;
+
+	hrtimer_init(&execlists->preempt_timer,
+		     CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 }
 
 /**
@@ -1109,6 +1112,7 @@ void intel_engines_park(struct drm_i915_private *i915)
 
 	for_each_engine(engine, i915, id) {
 		/* Flush the residual irq tasklets first. */
+		hrtimer_cancel(&engine->execlists.preempt_timer);
 		intel_engine_disarm_breadcrumbs(engine);
 		tasklet_kill(&engine->execlists.tasklet);
 
