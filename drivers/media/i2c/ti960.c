@@ -76,6 +76,8 @@ static const u8 ti960_op_sys_clock_reg_val[] = {
  *    orders must be defined.
  */
 static const struct ti960_csi_data_format va_csi_data_formats[] = {
+	{ MEDIA_BUS_FMT_YUYV8_1X16, 16, 16, PIXEL_ORDER_GBRG, 0x1e},
+	{ MEDIA_BUS_FMT_UYVY8_1X16, 16, 16, PIXEL_ORDER_GBRG, 0X1e},
 	{ MEDIA_BUS_FMT_SGRBG16_1X16, 16, 16, PIXEL_ORDER_GRBG, 0x2e },
 	{ MEDIA_BUS_FMT_SRGGB16_1X16, 16, 16, PIXEL_ORDER_RGGB, 0x2e },
 	{ MEDIA_BUS_FMT_SBGGR16_1X16, 16, 16, PIXEL_ORDER_BGGR, 0x2e },
@@ -91,6 +93,8 @@ static const struct ti960_csi_data_format va_csi_data_formats[] = {
 };
 
 static const uint32_t ti960_supported_codes_pad[] = {
+	MEDIA_BUS_FMT_YUYV8_1X16,
+	MEDIA_BUS_FMT_UYVY8_1X16,
 	MEDIA_BUS_FMT_SBGGR16_1X16,
 	MEDIA_BUS_FMT_SGBRG16_1X16,
 	MEDIA_BUS_FMT_SGRBG16_1X16,
@@ -1203,11 +1207,11 @@ static int ti960_probe(struct i2c_client *client,
 		return -ENOMEM;
 
 	for (i = 0; i < va->nstreams; i++) {
-		va->ti960_route[i].sink_pad = i / 2;
-		va->ti960_route[i].sink_stream = i % 2;
+		va->ti960_route[i].sink_pad = i;
+		va->ti960_route[i].sink_stream = i;
 		va->ti960_route[i].source_pad = TI960_PAD_SOURCE;
-		va->ti960_route[i].source_stream = i % 2;
-		va->ti960_route[i].flags = MEDIA_PAD_FL_MULTIPLEX;
+		va->ti960_route[i].source_stream = i;
+//		va->ti960_route[i].flags = MEDIA_PAD_FL_MULTIPLEX;
 	}
 
 	va->regmap8 = devm_regmap_init_i2c(client,
