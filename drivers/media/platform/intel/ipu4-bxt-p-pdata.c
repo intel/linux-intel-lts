@@ -1260,6 +1260,29 @@ static struct crlmodule_platform_data ov495_pdata = {
 };
 #endif
 
+#ifdef CONFIG_INTEL_IPU4_OV495
+#define OV495_LANES    4
+#define OV495_I2C_PHY_ADDR   0x48
+#define OV495A_I2C_ADDRESS   0x30
+#define OV495B_I2C_ADDRESS   0x31
+#define OV495C_I2C_ADDRESS   0x32
+#define OV495D_I2C_ADDRESS   0x33
+
+#define OV495A_SER_ADDRESS   0x58
+#define OV495B_SER_ADDRESS   0x59
+#define OV495C_SER_ADDRESS   0x5a
+#define OV495D_SER_ADDRESS   0x5b
+
+static struct crlmodule_platform_data ov495_pdata = {
+	.lanes = OV495_LANES,
+	.ext_clk = 27000000,
+	.op_sys_clock = (uint64_t[]){ 87750000 },
+	.module_name = "OV495",
+	.id_string = "0x51 0x49 0x56 0x4f",
+	.xshutdown = 1,
+};
+#endif
+
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
 #define TI960_I2C_ADAPTER	2
 #define TI960_I2C_ADAPTER_2	4
