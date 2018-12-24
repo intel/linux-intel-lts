@@ -1459,6 +1459,18 @@ struct drm_i915_gem_context_param {
 #define   I915_CONTEXT_MAX_USER_PRIORITY	1023 /* inclusive */
 #define   I915_CONTEXT_DEFAULT_PRIORITY		0
 #define   I915_CONTEXT_MIN_USER_PRIORITY	-1023 /* inclusive */
+
+/*
+ * I915_CONTEXT_PARAM_PREEMPT_TIMEOUT:
+ *
+ * Preemption timeout give in nanoseconds.
+ *
+ * Only allowed for privileged clients (CAP_SYS_ADMIN), this property allows
+ * the preempting context to kick out a GPU hog using a GPU reset if they do
+ * not honour our preemption request in time.
+ */
+#define I915_CONTEXT_PARAM_PREEMPT_TIMEOUT	0x7
+
 	__u64 value;
 };
 

@@ -1261,20 +1261,20 @@ static void submit_queue(struct intel_engine_cs *engine,
 	}
 }
 
-static void execlists_submit_request(struct i915_request *request)
+static void execlists_submit_request(struct i915_request *rq)
 {
-	struct intel_engine_cs *engine = request->engine;
+	struct intel_engine_cs *engine = rq->engine;
 	unsigned long flags;
 
 	/* Will be called from irq-context when using foreign fences. */
 	spin_lock_irqsave(&engine->timeline.lock, flags);
 
-	queue_request(engine, &request->sched, rq_prio(request));
+	queue_request(engine, &rq->sched, rq_prio(rq));
 
 	GEM_BUG_ON(RB_EMPTY_ROOT(&engine->execlists.queue.rb_root));
-	GEM_BUG_ON(list_empty(&request->sched.link));
+	GEM_BUG_ON(list_empty(&rq->sched.link));
 
-	submit_queue(engine, rq_prio(request), 0);
+	submit_queue(engine, rq_prio(rq), rq->gem_context->preempt_timeout);
 
 	spin_unlock_irqrestore(&engine->timeline.lock, flags);
 }

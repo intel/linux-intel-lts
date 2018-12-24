@@ -869,6 +869,15 @@ int i915_gem_context_getparam_ioctl(struct drm_device *dev, void *data,
 	case I915_CONTEXT_PARAM_PRIORITY:
 		args->value = ctx->sched.priority;
 		break;
+	case I915_CONTEXT_PARAM_PREEMPT_TIMEOUT:
+		if (!(to_i915(dev)->caps.scheduler & I915_SCHEDULER_CAP_PREEMPTION))
+			ret = -ENODEV;
+		else if (args->size)
+			ret = -EINVAL;
+		else
+			args->value = ctx->preempt_timeout;
+		break;
+
 	default:
 		ret = -EINVAL;
 		break;
@@ -942,6 +951,19 @@ int i915_gem_context_setparam_ioctl(struct drm_device *dev, void *data,
 			else
 				ctx->sched.priority = priority;
 		}
+		break;
+
+	case I915_CONTEXT_PARAM_PREEMPT_TIMEOUT:
+		if (args->size)
+			ret = -EINVAL;
+		else if (args->value > U32_MAX)
+			ret = -EINVAL;
+		else if (!(to_i915(dev)->caps.scheduler & I915_SCHEDULER_CAP_PREEMPTION))
+			ret = -ENODEV;
+		else if (args->value && !capable(CAP_SYS_ADMIN))
+			ret = -EPERM;
+		else
+			ctx->preempt_timeout = args->value;
 		break;
 
 	default:
