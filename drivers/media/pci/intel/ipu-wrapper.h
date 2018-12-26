@@ -9,7 +9,6 @@
 
 #define ISYS_MMID 1
 #define PSYS_MMID 0
-
 struct device;
 
 void ipu_wrapper_init(int mmid, struct device *dev, void __iomem *base);
