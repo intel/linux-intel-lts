@@ -42,11 +42,9 @@ int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
 	int status = 0;
 
 	struct ipu_psys_capability *psys_caps;
-	psys_caps = (struct ipu_psys_capability *)map_guest_phys(
-										req_info->domid,
-										req_info->request->payload,
-										PAGE_SIZE
-										);
+	psys_caps = map_guest_phys(req_info->domid,
+						req_info->request->payload,
+						sizeof(struct ipu_psys_capability));
 	if (psys_caps == NULL) {
 		pr_err("%s: failed to get ipu_psys_capability %u %llu",
 			__func__, req_info->domid, req_info->request->payload);
