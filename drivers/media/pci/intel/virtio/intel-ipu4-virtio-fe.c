@@ -41,7 +41,7 @@ static void ipu_virtio_fe_tx_done_vq_0(struct virtqueue *vq)
 		spin_unlock_irqrestore(&priv->lock, flags);
 		if (req != NULL &&
 			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
-			complete(&req->wait);
+			complete(req->wait);
 		}
 	} while (req != NULL);
 
@@ -61,7 +61,7 @@ static void ipu_virtio_fe_tx_done_vq_1(struct virtqueue *vq)
 		spin_unlock_irqrestore(&priv->lock, flags);
 		if (req != NULL &&
 			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
-			complete(&req->wait);
+			complete(req->wait);
 		}
 	} while (req != NULL);
 
@@ -155,7 +155,7 @@ static int ipu_virtio_fe_send_req(int vmid, struct ipu4_virtio_req *req,
 		return -ENOENT;
 	}
 	ipu_virtio_fe_register_buffer(ipu4_virtio_fe, req, sizeof(*req), idx);
-	wait_for_completion(&req->wait);
+	wait_for_completion(req->wait);
 
 	return ret;
 }
