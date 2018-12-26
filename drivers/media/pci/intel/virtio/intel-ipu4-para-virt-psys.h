@@ -29,6 +29,7 @@ struct virt_ipu_psys_fh {
 	wait_queue_head_t wait;
 	struct mutex bs_mutex;	/* Protects buf_set field */
 	struct list_head buf_sets;
+	struct file *be_fh;
 };
 int virt_psys_init(struct ipu4_virtio_ctx *fe_ctx);
 void virt_psys_exit(void);
