@@ -8,6 +8,7 @@
 #include <linux/dma-buf.h>
 #include <linux/firmware.h>
 #include <linux/fs.h>
+#include <linux/file.h>
 #include <linux/highmem.h>
 #include <linux/init_task.h>
 #include <linux/kthread.h>
@@ -29,6 +30,9 @@
 #endif
 
 #include "intel-ipu4-para-virt-psys.h"
+#include "intel-ipu4-virtio-common.h"
+#include "intel-ipu4-virtio-fe-request-queue.h"
+#include "intel-ipu4-virtio-fe-payload.h"
 
 #define IPU_PSYS_NUM_DEVICES		4
 #define IPU_PSYS_NAME	"intel-ipu4-psys"
@@ -41,6 +45,12 @@ static struct ipu_psys_capability caps = {
 	.version = 1,
 	.driver = "ipu-psys",
 };
+
+static long ipu_get_manifest(struct ipu_psys_manifest *manifest,
+			     struct virt_ipu_psys_fh *fh) {
+
+    return 0;
+}
 
 static unsigned int virt_psys_poll(struct file *file,
                           struct poll_table_struct *wait)
@@ -55,7 +65,7 @@ long virt_psys_compat_ioctl32(struct file *file, unsigned int cmd,
     int err = 0;
 
     if (err)
-		return err;
+	return err;
 
     return 0;
 }
@@ -71,6 +81,7 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 	} karg;
 
     int err = 0;
+    struct virt_ipu_psys_fh *fh = file->private_data;
     void __user *up = (void __user *)arg;
 	bool copy = (cmd != IPU_IOC_MAPBUF && cmd != IPU_IOC_UNMAPBUF);
 
@@ -107,7 +118,7 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 		//err = ipu_ioctl_dqevent(&karg.ev, fh, file->f_flags);
 		break;
 	case IPU_IOC_GET_MANIFEST:
-		//err = ipu_get_manifest(&karg.m, fh);
+		err = ipu_get_manifest(&karg.m, fh);
 		break;
 	default:
 		err = -ENOTTY;
@@ -120,15 +131,47 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
 }
 static int virt_psys_open(struct inode *inode, struct file *file)
 {
-    int rval;
+    struct virt_ipu_psys *psys = inode_to_ipu_psys(inode);
+    struct virt_ipu_psys_fh *fh;
+    struct ipu4_virtio_req *req;
+    struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
+    int op[2];
+    int rval = 0;
 
+    pr_debug("virt psys open\n");
+
+    fh = kzalloc(sizeof(*fh), GFP_KERNEL);
+    if (!fh)
+      return -ENOMEM;
+    mutex_init(&fh->bs_mutex);
+
+    fh->psys = psys;
+    file->private_data = fh;
+
+    req = ipu4_virtio_fe_req_queue_get();
+    if (!req) {
+	dev_err(&psys->dev, "Virtio Req buffer failed\n");
+	return -ENOMEM;
+    }
+    op[0] = 0;
+
+    intel_ipu4_virtio_create_req(req, IPU4_CMD_DEVICE_OPEN, &op[0]);
+
+    rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+				      IPU_VIRTIO_QUEUE_1);
+    if (rval) {
+	dev_err(&psys->dev, "Failed to PSYS open virtual device\n");
+	ipu4_virtio_fe_req_queue_put(req);
+	return rval;
+    }
+    ipu4_virtio_fe_req_queue_put(req);
 
     return rval;
 }
 
 static int virt_psys_release(struct inode *inode, struct file *file)
 {
-    int rval;
+    int rval = 0;
 
     return rval;
 }
@@ -154,11 +197,14 @@ void virt_psys_exit(void)
 
 }
 
-int virt_psys_init(void)
+int virt_psys_init(struct ipu4_virtio_ctx *fe_ctx)
 {
     struct virt_ipu_psys *psys;
     unsigned int minor;
     int rval = -E2BIG;
+
+    if (!fe_ctx)
+    	return -ENOMEM;
 
     rval = alloc_chrdev_region(&virt_psys_dev_t, 0,
 			IPU_PSYS_NUM_DEVICES, IPU_PSYS_NAME);
@@ -201,8 +247,10 @@ int virt_psys_init(void)
         goto out_mutex_destroy;
     }
     /* Add the hw stepping information to caps */
-	strlcpy(caps.dev_model, IPU_MEDIA_DEV_MODEL_NAME,
-		sizeof(caps.dev_model));
+    strlcpy(caps.dev_model, IPU_MEDIA_DEV_MODEL_NAME,
+	    sizeof(caps.dev_model));
+
+    psys->ctx = fe_ctx;
 
     pr_info("psys probe minor: %d\n", minor);
 
