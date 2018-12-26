@@ -30,6 +30,8 @@ int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
 	fd passed from SOS to user space is invalid in UOS.*/
 	ksys_close(req_info->request->op[0]);
 
+	req_info->request->func_ret = status;
+
 	if (status)
 		return IPU4_REQ_ERROR;
 	else
@@ -56,6 +58,8 @@ int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
 	unmap_guest_phys(req_info->domid,
 			req_info->request->payload);
 
+	req_info->request->func_ret = status;
+
 	if (status)
 		return IPU4_REQ_ERROR;
 	else
@@ -74,6 +78,8 @@ int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
 
 	status = fh->vfops->qcmd(fh, req_info);
 
+	req_info->request->func_ret = status;
+
 	if (status)
 		return IPU4_REQ_ERROR;
 	else
@@ -86,6 +92,8 @@ int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
 	int status = 0;
 
 	status = fh->vfops->dqevent(fh, req_info, psys_file->f_flags);
+
+	req_info->request->func_ret = status;
 
 	if (status)
 		return IPU4_REQ_ERROR;
@@ -100,6 +108,8 @@ int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
 
 	status = fh->vfops->get_buf(fh, req_info);
 
+	req_info->request->func_ret = status;
+
 	if (status)
 		return IPU4_REQ_ERROR;
 	else
@@ -112,6 +122,8 @@ int process_psys_get_manifest(struct ipu4_virtio_req_info *req_info)
 	int status = 0;
 
 	status = fh->vfops->get_manifest(fh, req_info);
+
+	req_info->request->func_ret = status;
 
 	if (status)
 		return IPU4_REQ_ERROR;
