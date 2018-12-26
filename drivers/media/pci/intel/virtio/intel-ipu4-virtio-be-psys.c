@@ -63,7 +63,15 @@ int process_psys_putbuf(struct ipu4_virtio_req_info *req_info)
 
 int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
 {
-	return IPU4_REQ_ERROR;
+	struct ipu_psys_fh *fh = psys_file->private_data;
+	int status = 0;
+
+	status = fh->vfops->qcmd(fh, req_info);
+
+	if (status)
+		return IPU4_REQ_ERROR;
+	else
+		return IPU4_REQ_PROCESSED;
 }
 
 int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
