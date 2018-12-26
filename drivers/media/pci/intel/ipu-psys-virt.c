@@ -65,6 +65,7 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 	struct ipu_psys_manifest_wrap *manifest_wrap;
 	struct ipu_psys_manifest *manifest;
 	void *manifest_data;
+	int status = 0;
 
 	manifest_wrap = (struct ipu_psys_manifest_wrap *)map_guest_phys(
 										req_info->domid,
@@ -83,7 +84,8 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 										);
 	if (manifest == NULL) {
 		pr_err("%s: failed to get ipu_psys_manifest", __func__);
-		return -EFAULT;
+		status = -EFAULT;
+		goto exit_payload;
 	}
 
 	manifest_data = (void *)map_guest_phys(
@@ -93,7 +95,8 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 							);
 	if (manifest_data == NULL) {
 		pr_err("%s: failed to get manifest_data", __func__);
-		return -EFAULT;
+		status = -EFAULT;
+		goto exit_psys_manifest;
 	}
 
 	host_fw_data = (void *)isp->cpd_fw->data;
@@ -102,14 +105,16 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 	entries = ipu_cpd_pkg_dir_get_num_entries(psys->pkg_dir);
 	if (!manifest || manifest->index > entries - 1) {
 		dev_err(&psys->adev->dev, "invalid argument\n");
-		return -EINVAL;
+		status = -EINVAL;
+		goto exit_manifest_data;
 	}
 
 	if (!ipu_cpd_pkg_dir_get_size(psys->pkg_dir, manifest->index) ||
 		ipu_cpd_pkg_dir_get_type(psys->pkg_dir, manifest->index) <
 		IPU_CPD_PKG_DIR_CLIENT_PG_TYPE) {
 		dev_dbg(&psys->adev->dev, "invalid pkg dir entry\n");
-		return -ENOENT;
+		status = -ENOENT;
+		goto exit_manifest_data;
 	}
 
 	client_pkg_offset = ipu_cpd_pkg_dir_get_address(psys->pkg_dir,
@@ -123,14 +128,27 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
 		pr_err("%s: manifest size is more than 1 page %d",
 										__func__,
 										manifest->size);
-		return -EFAULT;
+		status = -EFAULT;
+		goto exit_manifest_data;
 	}
 
 	memcpy(manifest_data,
 		(uint8_t *) client_pkg + client_pkg->pg_manifest_offs,
 		manifest->size);
 
-	return 0;
+exit_manifest_data:
+	unmap_guest_phys(req_info->domid,
+					manifest_wrap->manifest_data);
+
+exit_psys_manifest:
+	unmap_guest_phys(req_info->domid,
+					manifest_wrap->psys_manifest);
+
+exit_payload:
+	unmap_guest_phys(req_info->domid,
+					req_info->request->payload);
+
+	return status;
 }
 
 int virt_ipu_psys_map_buf(struct ipu_psys_fh *fh,
@@ -440,7 +458,8 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
 
 	if (cmd == NULL) {
 		pr_err("%s: failed to get ipu_psys_command", __func__);
-		return -EFAULT;
+		ret = -EFAULT;
+		goto exit_payload;
 	}
 
 	pg_manifest = (void *)map_guest_phys(
@@ -451,7 +470,8 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
 
 	if (pg_manifest == NULL) {
 		pr_err("%s: failed to get pg_manifest", __func__);
-		return -EFAULT;
+		ret = -EFAULT;
+		goto exit_psys_command;
 	}
 
 	buffers = (struct ipu_psys_buffer *)map_guest_phys(
@@ -462,10 +482,26 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
 
 	if (buffers == NULL) {
 		pr_err("%s: failed to get ipu_psys_buffers", __func__);
-		return -EFAULT;
+		ret = -EFAULT;
+		goto exit_psys_manifest;
 	}
 
 	ret = virt_ipu_psys_kcmd_new(cmd, buffers, pg_manifest, fh);
+
+	unmap_guest_phys(req_info->domid,
+					cmd_wrap->psys_buffer);
+
+exit_psys_manifest:
+	unmap_guest_phys(req_info->domid,
+					cmd_wrap->psys_manifest);
+
+exit_psys_command:
+	unmap_guest_phys(req_info->domid,
+					cmd_wrap->psys_command);
+
+exit_payload:
+	unmap_guest_phys(req_info->domid,
+				req_info->request->payload);
 
 	return ret;
 }
@@ -475,6 +511,7 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
 			unsigned int f_flags)
 {
 	struct ipu_psys_event *event;
+	int status = 0;
 
 	event = (struct ipu_psys_event *)map_guest_phys(
 									req_info->domid,
@@ -486,7 +523,12 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
 		return -EFAULT;
 	}
 
-	return ipu_ioctl_dqevent(event, fh, f_flags);
+	status = ipu_ioctl_dqevent(event, fh, f_flags);
+
+	unmap_guest_phys(req_info->domid,
+				req_info->request->payload);
+
+	return status;
 }
 
 int virt_ipu_psys_poll(struct ipu_psys_fh *fh,
@@ -526,7 +568,7 @@ int __map_buf(struct ipu_psys_fh *fh,
 {
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dbuf;
-	int ret = -1, i;
+	int ret = -1, i, array_size;
 	struct ipu_dma_buf_attach *ipu_attach;
 	struct page **data_pages = NULL;
 	u64 *page_table = NULL;
@@ -549,10 +591,14 @@ int __map_buf(struct ipu_psys_fh *fh,
 		goto error_put;
 	}
 
-	data_pages = kcalloc(buf_wrap->map.npages, sizeof(struct page *), GFP_KERNEL);
+	array_size = buf_wrap->map.npages * sizeof(struct page *);
+	if (array_size <= PAGE_SIZE)
+		data_pages = kzalloc(array_size, GFP_KERNEL);
+	else
+		data_pages = vzalloc(array_size);
 	if (data_pages == NULL) {
 		pr_err("%s: Failed alloc data page set", __func__);
-		goto error_put;
+		goto error_detach;
 	}
 
 	pr_debug("%s: Total number of pages:%lu",
@@ -573,7 +619,8 @@ int __map_buf(struct ipu_psys_fh *fh,
 					page_table[i], PAGE_SIZE);
 			if (pageaddr == NULL) {
 				pr_err("%s: Cannot map pages from UOS", __func__);
-				break;
+				kfree(data_pages);
+				goto error_page_table_ref;
 			}
 			data_pages[i] = virt_to_page(pageaddr);
 		}
@@ -589,18 +636,26 @@ int __map_buf(struct ipu_psys_fh *fh,
 		ret = -EINVAL;
 		kbuf->sgt = NULL;
 		dev_dbg(&psys->adev->dev, "map attachment failed\n");
-		goto error_detach;
+		kfree(data_pages);
+		goto error_page_table;
 	}
 
 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
 
 	kbuf->kaddr = dma_buf_vmap(kbuf->dbuf);
 	if (!kbuf->kaddr) {
+		kfree(data_pages);
 		ret = -EINVAL;
 		goto error_unmap;
 	}
 
 	kbuf->valid = true;
+
+	for (i = 0; i < buf_wrap->map.npages; i++)
+		unmap_guest_phys(domid, page_table[i]);
+
+	unmap_guest_phys(domid,
+		buf_wrap->map.page_table_ref);
 
 	mutex_unlock(&fh->mutex);
 
@@ -608,6 +663,12 @@ int __map_buf(struct ipu_psys_fh *fh,
 
 error_unmap:
 	dma_buf_unmap_attachment(kbuf->db_attach, kbuf->sgt, DMA_BIDIRECTIONAL);
+error_page_table:
+	for (i = 0; i < buf_wrap->map.npages; i++)
+		unmap_guest_phys(domid, page_table[i]);
+error_page_table_ref:
+	unmap_guest_phys(domid,
+		buf_wrap->map.page_table_ref);
 error_detach:
 	dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
 	kbuf->db_attach = NULL;
@@ -624,7 +685,7 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
 			struct ipu4_virtio_req_info *req_info)
 {
 	struct dma_buf *dbuf;
-	int ret;
+	int ret = 0;
 	struct ipu_psys_buffer_wrap *buf_wrap;
 	struct ipu_psys_buffer *buf;
 	struct ipu_psys_kbuffer *kbuf;
@@ -647,7 +708,8 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
 										);
 	if (buf == NULL) {
 		pr_err("%s: failed to get ipu_psys_buffer", __func__);
-		return -EFAULT;
+		ret = -EFAULT;
+		goto exit_payload;
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
@@ -656,12 +718,15 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
 
 	if (!buf->base.userptr) {
 		dev_err(&psys->adev->dev, "Buffer allocation not supported\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit_psys_buf;
 	}
 
 	kbuf = kzalloc(sizeof(*kbuf), GFP_KERNEL);
-	if (!kbuf)
-		return -ENOMEM;
+	if (!kbuf) {
+		ret = -ENOMEM;
+		goto exit_psys_buf;
+	}
 
 	kbuf->len = buf->len;
 	kbuf->userptr = buf->base.userptr;
@@ -679,13 +744,14 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
 #endif
 	if (IS_ERR(dbuf)) {
 		kfree(kbuf);
-		return PTR_ERR(dbuf);
+		ret = PTR_ERR(dbuf);
+		goto exit_psys_buf;
 	}
 
 	ret = dma_buf_fd(dbuf, 0);
 	if (ret < 0) {
 		kfree(kbuf);
-		return ret;
+		goto exit_psys_buf;
 	}
 
 	dev_dbg(&psys->adev->dev, "IOC_GETBUF: userptr %p", buf->base.userptr);
@@ -698,7 +764,7 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
 	ret = __map_buf(fh, buf_wrap, kbuf, req_info->domid, kbuf->fd);
 	if (ret < 0) {
 		kfree(kbuf);
-		return ret;
+		goto exit_psys_buf;
 	}
 
 	mutex_lock(&fh->mutex);
@@ -707,7 +773,14 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
 
 	dev_dbg(&psys->adev->dev, "to %d\n", buf->base.fd);
 
-	return 0;
+exit_psys_buf:
+	unmap_guest_phys(req_info->domid,
+					buf_wrap->psys_buf);
+exit_payload:
+	unmap_guest_phys(req_info->domid,
+				req_info->request->payload);
+
+	return ret;
 }
 
 struct psys_fops_virt psys_vfops = {
