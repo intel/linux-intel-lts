@@ -1932,8 +1932,8 @@ static int shadow_mm_pv(struct intel_vgpu_mm *mm)
 
 	mm->ppgtt_mm.ppgtt = i915_ppgtt_create(gvt->dev_priv, NULL);
 	if (IS_ERR(mm->ppgtt_mm.ppgtt)) {
-		gvt_vgpu_err("fail to create ppgtt for pdp 0x%llx\n",
-				px_dma(&mm->ppgtt_mm.ppgtt->pml4));
+		gvt_vgpu_err("fail to create ppgtt: %ld\n",
+				PTR_ERR(mm->ppgtt_mm.ppgtt));
 		return PTR_ERR(mm->ppgtt_mm.ppgtt);
 	}
 
