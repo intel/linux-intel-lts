@@ -43,6 +43,7 @@ ici-isys-mod-objs += \
 obj-$(CONFIG_VIDEO_INTEL_IPU)          += ici-isys-mod.o
 
 intel-ipu4-psys-objs	+= ../ipu-psys.o \
+			   ../ipu-psys-virt.o \
 			   ../ipu4/ipu4-resources.o \
 			   ../ipu4/ipu4-psys.o \
 

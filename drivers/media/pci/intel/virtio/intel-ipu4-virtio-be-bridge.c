@@ -16,6 +16,7 @@
 #include "./ici/ici-isys-frame-buf.h"
 #include "intel-ipu4-virtio-be-pipeline.h"
 #include "intel-ipu4-virtio-be-stream.h"
+#include "intel-ipu4-virtio-be-psys.h"
 
 int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 {
@@ -195,6 +196,83 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 						__func__, req->op[0]);
 			kthread_run(process_pad_get_sel_thread, req_info,
 								"process_pad_get_sel");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_MAPBUF:
+			pr_debug("%s process_psys_mapbuf_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_mapbuf_thread, req_info,
+								"process_psys_mapbuf_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_UNMAPBUF:
+			pr_debug("%s process_psys_unmapbuf_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_unmapbuf_thread, req_info,
+								"process_psys_unmapbuf_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_QUERYCAP:
+			pr_debug("%s process_psys_querycap_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_querycap_thread, req_info,
+								"process_psys_querycap_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_GETBUF:
+			pr_debug("%s process_psys_getbuf_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_getbuf_thread, req_info,
+								"process_psys_getbuf_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_PUTBUF:
+			pr_debug("%s process_psys_putbuf_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_putbuf_thread, req_info,
+								"process_psys_putbuf_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_QCMD:
+			pr_debug("%s process_psys_qcmd_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_qcmd_thread, req_info,
+								"process_psys_qcmd_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_DQEVENT:
+			pr_debug("%s process_psys_dqevent_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_dqevent_thread, req_info,
+								"process_psys_dqevent_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_GET_MANIFEST:
+			pr_debug("%s process_psys_get_manifest_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_get_manifest_thread, req_info,
+								"process_psys_get_manifest_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_OPEN:
+			pr_debug("%s process_psys_open_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_open_thread, req_info,
+								"process_psys_open_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_CLOSE:
+			pr_debug("%s process_psys_close_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_close_thread, req_info,
+								"process_psys_close_thread");
+			req->stat = IPU4_REQ_PENDING;
+			break;
+	case IPU4_CMD_PSYS_POLL:
+			pr_debug("%s process_psys_poll_thread %d",
+						__func__, req->op[0]);
+			kthread_run(process_psys_poll_thread, req_info,
+								"process_psys_poll_thread");
 			req->stat = IPU4_REQ_PENDING;
 			break;
 	default:

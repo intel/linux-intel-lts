@@ -7,6 +7,7 @@
 #define __IPU4_VIRTIO_BE__
 
 #include <linux/vbs/vbs.h>
+#include "intel-ipu4-virtio-be-request-queue.h"
 
 enum poll_status {
 	IPU4_POLL_PENDING = 0,
