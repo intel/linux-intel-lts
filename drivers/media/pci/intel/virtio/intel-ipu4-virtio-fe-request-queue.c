@@ -25,8 +25,8 @@ int ipu4_virtio_fe_req_queue_init(void)
 														__func__);
 			return -1;
 		}
-		req->wait = kzalloc(sizeof(struct completion), GFP_KERNEL);
-		init_completion(req->wait);
+		req->wait = kzalloc(sizeof(wait_queue_head_t), GFP_KERNEL);
+		init_waitqueue_head(req->wait);
 		ipu4_virtio_ring_push(&ipu4_virtio_fe_req_queue, req);
 	}
 	return 0;
@@ -57,8 +57,6 @@ struct ipu4_virtio_req *ipu4_virtio_fe_req_queue_get(void)
 	spin_lock_irqsave(&ipu4_virtio_fe_req_queue.lock, flags);
 	req = ipu4_virtio_ring_pop(&ipu4_virtio_fe_req_queue);
 	spin_unlock_irqrestore(&ipu4_virtio_fe_req_queue.lock, flags);
-	if (req)
-		reinit_completion(req->wait);
 	return req;
 }
 
