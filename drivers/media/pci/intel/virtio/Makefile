@@ -8,3 +8,4 @@ include $(srcpath)/$(src)/Makefile.virt
 
 ccflags-y += -I$(srcpath)/$(src)/../../../../../include/
 ccflags-y += -I$(srcpath)/$(src)/../
+ccflags-y += -I$(srcpath)/$(src)/../ipu4/
