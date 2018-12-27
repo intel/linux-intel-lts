@@ -139,6 +139,7 @@ static int pipeline_set_power(struct ici_isys_stream *as,
 static int intel_ipu4_isys_library_close(struct ici_isys *isys)
 {
 	struct device *dev = &isys->adev->dev;
+	int timeout = IPU_ISYS_TURNOFF_TIMEOUT;
 	int rval;
 	unsigned long flags;
 	/*
@@ -146,16 +147,21 @@ static int intel_ipu4_isys_library_close(struct ici_isys *isys)
 	 * some time as the FW must stop its actions including code fetch
 	 * to SP icache.
 	*/
+	mutex_lock(&(isys)->lib_mutex);
 	spin_lock_irqsave(&isys->power_lock, flags);
-	rval = ipu_lib_call(device_close, isys);
+	rval = ipu_lib_call_notrace_unlocked(device_close, isys);
 	spin_unlock_irqrestore(&isys->power_lock, flags);
+	mutex_unlock(&(isys)->lib_mutex);
 	if (rval)
 		dev_err(dev, "Device close failure: %d\n", rval);
 
-	//sleep for 0.5s to 1s
-	usleep_range(500 * IPU_ISYS_TURNOFF_DELAY_US,
-				1000 * IPU_ISYS_TURNOFF_DELAY_US);
-	rval = ipu_lib_call_notrace(device_release, isys, 0);
+	/* release probably fails if the close failed. Let's try still */
+	do {
+		usleep_range(IPU_ISYS_TURNOFF_DELAY_US,
+			2 * IPU_ISYS_TURNOFF_DELAY_US);
+		rval = ipu_lib_call_notrace(device_release, isys, 0);
+		timeout--;
+	} while (rval != 0 && timeout);
 
 	spin_lock_irqsave(&isys->power_lock, flags);
 	if (!rval)

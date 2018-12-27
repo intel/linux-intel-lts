@@ -77,9 +77,9 @@ static void ici_put_userpages(struct device *dev,
 	struct scatterlist *sgl;
 	unsigned int i;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    DEFINE_DMA_ATTRS(attrs);
+	DEFINE_DMA_ATTRS(attrs);
 #else
-    unsigned long attrs;
+	unsigned long attrs;
 #endif
 
 	struct mm_struct* mm = current->active_mm;
@@ -95,7 +95,7 @@ static void ici_put_userpages(struct device *dev,
 	dma_unmap_sg_attrs(kframe_plane->dev, sgt->sgl, sgt->orig_nents,
 				DMA_FROM_DEVICE, &attrs);
 #else
-    attrs = DMA_ATTR_SKIP_CPU_SYNC;
+	attrs = DMA_ATTR_SKIP_CPU_SYNC;
 	dma_unmap_sg_attrs(kframe_plane->dev, sgt->sgl, sgt->orig_nents,
 				DMA_FROM_DEVICE, attrs);
 #endif
@@ -125,9 +125,9 @@ static void ici_put_userpages_virt(struct device *dev,
 {
 	struct sg_table *sgt = kframe_plane->sgt;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    DEFINE_DMA_ATTRS(attrs);
+	DEFINE_DMA_ATTRS(attrs);
 #else
-    unsigned long attrs;
+	unsigned long attrs;
 #endif
 
 	struct mm_struct* mm = current->active_mm;
@@ -143,7 +143,7 @@ static void ici_put_userpages_virt(struct device *dev,
 	dma_unmap_sg_attrs(kframe_plane->dev, sgt->sgl, sgt->orig_nents,
 				DMA_FROM_DEVICE, &attrs);
 #else
-    attrs = DMA_ATTR_SKIP_CPU_SYNC;
+	attrs = DMA_ATTR_SKIP_CPU_SYNC;
 	dma_unmap_sg_attrs(kframe_plane->dev, sgt->sgl, sgt->orig_nents,
 				DMA_FROM_DEVICE, attrs);
 #endif
@@ -255,9 +255,9 @@ static int ici_get_userpages(struct device *dev,
 	struct sg_table *sgt;
 	unsigned int i;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    DEFINE_DMA_ATTRS(attrs);
+	DEFINE_DMA_ATTRS(attrs);
 #else
-    unsigned long attrs;
+	unsigned long attrs;
 #endif
 
 	addr = (unsigned long)frame_plane->mem.userptr;
@@ -289,12 +289,12 @@ static int ici_get_userpages(struct device *dev,
 				current, current->mm,
 				start, npages, 1, 0, pages, NULL);
 #else
-    nr = get_user_pages(start, npages, FOLL_WRITE, pages, NULL);
+	nr = get_user_pages(start, npages, FOLL_WRITE, pages, NULL);
 #endif
 	if (nr < npages)
 		goto error_free_pages;
 
-    ret = sg_alloc_table_from_pages(sgt, pages, npages,
+	ret = sg_alloc_table_from_pages(sgt, pages, npages,
 					addr & ~PAGE_MASK, frame_plane->length,
 					GFP_KERNEL);
 	if (ret) {
@@ -305,13 +305,13 @@ static int ici_get_userpages(struct device *dev,
 
 	kframe_plane->dev = dev;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
+	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
 	sgt->nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 					DMA_FROM_DEVICE, &attrs);
 #else
-    attrs = DMA_ATTR_SKIP_CPU_SYNC;
-    sgt->nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
-                    DMA_FROM_DEVICE, attrs);
+	attrs = DMA_ATTR_SKIP_CPU_SYNC;
+	sgt->nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
+					DMA_FROM_DEVICE, attrs);
 #endif
 
 	if (sgt->nents <= 0) {
@@ -334,10 +334,10 @@ error_free_page_list:
 
 error_dma_map:
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
+	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 			DMA_FROM_DEVICE, &attrs);
 #else
-    dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
+	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 			DMA_FROM_DEVICE, attrs);
 #endif
 
@@ -362,9 +362,9 @@ static int ici_get_userpages_virt(struct device *dev,
 	int ret = 0;
 	struct sg_table *sgt;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    DEFINE_DMA_ATTRS(attrs);
+	DEFINE_DMA_ATTRS(attrs);
 #else
-    unsigned long attrs;
+	unsigned long attrs;
 #endif
 
 	addr = (unsigned long)frame_plane->mem.userptr;
@@ -377,7 +377,7 @@ static int ici_get_userpages_virt(struct device *dev,
 	if (!sgt)
 		return -ENOMEM;
 
-    ret = sg_alloc_table_from_pages(sgt, pages, npages,
+	ret = sg_alloc_table_from_pages(sgt, pages, npages,
 					addr & ~PAGE_MASK, frame_plane->length,
 					GFP_KERNEL);
 	if (ret) {
@@ -388,12 +388,12 @@ static int ici_get_userpages_virt(struct device *dev,
 
 	kframe_plane->dev = dev;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
+	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
 	sgt->nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 					DMA_FROM_DEVICE, &attrs);
 #else
-    attrs = DMA_ATTR_SKIP_CPU_SYNC;
-    sgt->nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
+	attrs = DMA_ATTR_SKIP_CPU_SYNC;
+	sgt->nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 				DMA_FROM_DEVICE, attrs);
 #endif
 
@@ -410,10 +410,10 @@ error_free_page_list:
 
 error_dma_map:
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
+	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 			DMA_FROM_DEVICE, &attrs);
 #else
-    dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
+	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 			DMA_FROM_DEVICE, attrs);
 #endif
 
@@ -595,9 +595,9 @@ int ici_isys_put_buf(struct ici_isys_stream *as,
 			rval = wait_event_interruptible(buf_list->wait,
 							!list_empty(&buf_list->
 								putbuf_list));
-			spin_lock_irqsave(&buf_list->lock, flags);
 			if (rval == -ERESTARTSYS)
 				return rval;
+			spin_lock_irqsave(&buf_list->lock, flags);
 		}
 	}
 
@@ -606,16 +606,21 @@ int ici_isys_put_buf(struct ici_isys_stream *as,
 		return -ENODATA;
 	}
 
-	buf = list_entry(buf_list->putbuf_list.next,
-			struct ici_frame_buf_wrapper, node);
-	list_del(&buf->node);
-
-	buf->state = ICI_BUF_DONE;
-	list_add_tail(&buf->node,
-						&buf_list->getbuf_list);
+	// FIXME: This is different from ICG V4L2 implementation which uses time stamp
+	// to sort frames
+	list_for_each_entry(buf, &buf_list->putbuf_list, node) {
+		if (buf->state == ICI_BUF_READY  && buf->frame_info.frame_buf_id ==
+			frame_info->frame_buf_id) {
+			list_del(&buf->node);
+			memcpy(frame_info, &buf->frame_info, sizeof(buf->frame_info));
+			buf->state = ICI_BUF_DONE;
+			list_add_tail(&buf->node,
+				&buf_list->getbuf_list);
+			break;
+		}
+	}
 	spin_unlock_irqrestore(&buf_list->lock, flags);
 
-	memcpy(frame_info, &buf->frame_info, sizeof(buf->frame_info));
 	return 0;
 }
 
@@ -639,7 +644,7 @@ void ici_isys_frame_buf_ready(struct ici_isys_pipeline
 {
 	struct ici_frame_buf_wrapper *buf;
 	struct ici_isys_stream *as =
-	    ici_pipeline_to_stream(ip);
+		ici_pipeline_to_stream(ip);
 	struct ici_isys_frame_buf_list *buf_list = &as->buf_list;
 	struct ici_isys *isys = as->isys;
 	unsigned long flags = 0;
@@ -809,7 +814,7 @@ int ici_isys_frame_buf_add_next(
 	css_buf->send_irq_sof = 1;
 	css_buf->output_pins[buf_list->fw_output].addr =
 		(uint32_t)buf->kframe_info.planes[0].dma_addr;
-    css_buf->output_pins[buf_list->fw_output].out_buf_id =
+	css_buf->output_pins[buf_list->fw_output].out_buf_id =
 		buf->buf_id + 1;
 
 	if (buf_list->short_packet_bufs) {
@@ -925,16 +930,16 @@ void ici_isys_frame_buf_short_packet_destroy(
 {
 	struct ici_isys_frame_buf_list *buf_list =
 		&as->buf_list;
-    unsigned int i;
+	unsigned int i;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    struct dma_attrs attrs;
+	struct dma_attrs attrs;
 	init_dma_attrs(&attrs);
 	dma_set_attr(DMA_ATTR_NON_CONSISTENT, &attrs);
 #else
-    unsigned long attrs;
-    attrs = DMA_ATTR_NON_CONSISTENT;
+	unsigned long attrs;
+	attrs = DMA_ATTR_NON_CONSISTENT;
 #endif
-    if (!buf_list->short_packet_bufs)
+	if (!buf_list->short_packet_bufs)
 		return;
 
 	for (i = 0 ; i < ICI_ISYS_SHORT_PACKET_BUFFER_NUM ;
@@ -963,9 +968,9 @@ int ici_isys_frame_buf_short_packet_setup(
 	struct ici_isys_frame_buf_list *buf_list =
 		&as->buf_list;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-    struct dma_attrs attrs;
+	struct dma_attrs attrs;
 #else
-    unsigned long attrs;
+	unsigned long attrs;
 #endif
 	unsigned int i;
 	size_t buf_size;
@@ -982,10 +987,10 @@ int ici_isys_frame_buf_short_packet_setup(
 	init_dma_attrs(&attrs);
 	dma_set_attr(DMA_ATTR_NON_CONSISTENT, &attrs);
 #else
-    attrs = DMA_ATTR_NON_CONSISTENT;
+	attrs = DMA_ATTR_NON_CONSISTENT;
 #endif
 
-    as->ip.cur_field = ICI_FIELD_TOP;
+	as->ip.cur_field = ICI_FIELD_TOP;
 
 	buf_list->short_packet_bufs = kzalloc(
 		sizeof(struct ici_frame_short_buf) *
