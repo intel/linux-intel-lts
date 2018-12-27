@@ -23,7 +23,7 @@
  */
 
 #define BXT_HUC_FW_MAJOR 01
-#define BXT_HUC_FW_MINOR 0x08
+#define BXT_HUC_FW_MINOR 8
 #define BXT_BLD_NUM 2893
 
 #define SKL_HUC_FW_MAJOR 01
