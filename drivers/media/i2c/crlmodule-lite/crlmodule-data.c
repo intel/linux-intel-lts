@@ -9,6 +9,7 @@
 #include "crl_adv7481_eval_configuration.h"
 #include "crl_magna_configuration_ti964.h"
 #include "crl_ov10635_configuration.h"
+#include "crl_ar0231at_configuration.h"
 
 static const struct crlmodule_sensors supported_sensors[] = {
 	{ "ADV7481 CVBS", "adv7481_cvbs", &adv7481_cvbs_crl_configuration },
@@ -19,6 +20,7 @@ static const struct crlmodule_sensors supported_sensors[] = {
 	{ "i2c-ADV7481A:00", "adv7481_hdmi", &adv7481_hdmi_crl_configuration },
 	{ "i2c-ADV7481B:00", "adv7481_cvbs", &adv7481_cvbs_crl_configuration },
 	{ "OV10635", "ov10635", &ov10635_crl_configuration },
+	{ "AR0231AT", "ar0231at", &ar0231at_crl_configuration },
 };
 
 /*
