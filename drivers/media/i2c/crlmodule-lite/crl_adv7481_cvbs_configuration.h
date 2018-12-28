@@ -9,33 +9,51 @@
 #include "crlmodule-sensor-ds.h"
 
 static struct crl_register_write_rep adv7481_cvbs_powerup_regset[] = {
-	{0x0E, CRL_REG_LEN_08BIT, 0xFF, 0xE0}, //LLC/PIX/AUD/SPI PINS TRISTATED
-	{0x0F, CRL_REG_LEN_08BIT, 0x00, 0xF2}, //Exit Power Down Mode
-	{0x52, CRL_REG_LEN_08BIT, 0xCD, 0xF2}, //ADI Required Write
-	{0x00, CRL_REG_LEN_08BIT, 0x00, 0xF2}, //INSEL = CVBS in on Ain 1
-	{0x0E, CRL_REG_LEN_08BIT, 0x80, 0xF2}, //ADI Required Write
-	{0x9C, CRL_REG_LEN_08BIT, 0x00, 0xF2}, //ADI Required Write
-	{0x9C, CRL_REG_LEN_08BIT, 0xFF, 0xF2}, //ADI Required Write
-	{0x0E, CRL_REG_LEN_08BIT, 0x00, 0xF2}, //ADI Required Write
-	{0x80, CRL_REG_LEN_08BIT, 0x51, 0xF2}, //ADI Required Write
-	{0x81, CRL_REG_LEN_08BIT, 0x51, 0xF2}, //ADI Required Write
-	{0x82, CRL_REG_LEN_08BIT, 0x68, 0xF2}, //ADI Required Write
-	{0x03, CRL_REG_LEN_08BIT, 0x42, 0xF2}, //Tri-S Output Drivers, PwrDwn 656 pads
-	{0x04, CRL_REG_LEN_08BIT, 0x07, 0xF2}, //Power-up INTRQ pad, & Enable SFL
-	{0x13, CRL_REG_LEN_08BIT, 0x00, 0xF2}, //ADI Required Write
-	{0x17, CRL_REG_LEN_08BIT, 0x41, 0xF2}, //Select SH1
-	{0x31, CRL_REG_LEN_08BIT, 0x12, 0xF2}, //ADI Required Write
-	{0x10, CRL_REG_LEN_08BIT, 0xC0, 0xE0}, //Enable 1-Lane MIPI Tx, enable pixel output and route SD through Pixel port
-	{0x00, CRL_REG_LEN_08BIT, 0x81, 0x90}, //Enable 1-lane MIPI
-	{0x00, CRL_REG_LEN_08BIT, 0xA1, 0x90}, //Set Auto DPHY Timing
-	{0xF0, CRL_REG_LEN_08BIT, 0x00, 0x94}, //ADI Required Write
-	{0xD2, CRL_REG_LEN_08BIT, 0x40, 0x90}, //ADI Required Write
-	{0xC4, CRL_REG_LEN_08BIT, 0x0A, 0x90}, //ADI Required Write
-	{0x71, CRL_REG_LEN_08BIT, 0x33, 0x90}, //ADI Required Write
-	{0x72, CRL_REG_LEN_08BIT, 0x11, 0x90}, //ADI Required Write
-	{0xF0, CRL_REG_LEN_08BIT, 0x00, 0x90}, //i2c_dphy_pwdn - 1'b0
-	{0x31, CRL_REG_LEN_08BIT, 0x82, 0x90}, //ADI Required Write
-	{0x1E, CRL_REG_LEN_08BIT, 0xC0, 0x90}, //ADI Required Write
+	{0x0E, CRL_REG_LEN_08BIT, 0xFF, 0xE0}, /* LLC/PIX/AUD/
+					SPI PINS TRISTATED */
+	{0x0F, CRL_REG_LEN_08BIT, 0x00, 0xF2}, /* Exit Power Down Mode */
+	{0x52, CRL_REG_LEN_08BIT, 0xC0, 0xF2}, /* ADI Required Write */
+	{0x00, CRL_REG_LEN_08BIT, 0x0E, 0xF2}, /* INSEL = CVBS in on Ain 1 */
+	{0x0E, CRL_REG_LEN_08BIT, 0x80, 0xF2}, /* ADI Required Write */
+	{0x9C, CRL_REG_LEN_08BIT, 0x00, 0xF2}, /* ADI Required Write */
+	{0x9C, CRL_REG_LEN_08BIT, 0xFF, 0xF2}, /* ADI Required Write */
+	{0x0E, CRL_REG_LEN_08BIT, 0x00, 0xF2}, /* ADI Required Write */
+	{0x5A, CRL_REG_LEN_08BIT, 0x90, 0xF2}, /* ADI Required Write */
+	{0x60, CRL_REG_LEN_08BIT, 0xA0, 0xF2}, /* ADI Required Write */
+	{0x00, CRL_REG_LEN_DELAY, 0x19, 0x00}, /* Delay 25*/
+	{0x60, CRL_REG_LEN_08BIT, 0xB0, 0xF2}, /* ADI Required Write */
+	{0x5F, CRL_REG_LEN_08BIT, 0xA8, 0xF2},
+	{0x0E, CRL_REG_LEN_08BIT, 0x80, 0xF2}, /* ADI Required Write */
+	{0xB6, CRL_REG_LEN_08BIT, 0x08, 0xF2}, /* ADI Required Write */
+	{0xC0, CRL_REG_LEN_08BIT, 0xA0, 0xF2}, /* ADI Required Write */
+	{0xD9, CRL_REG_LEN_08BIT, 0x44, 0xF2},
+	{0x0E, CRL_REG_LEN_08BIT, 0x40, 0xF2},
+	{0xE0, CRL_REG_LEN_08BIT, 0x01, 0xF2}, /* Fast Lock enable*/
+	{0x0E, CRL_REG_LEN_08BIT, 0x00, 0xF2}, /* ADI Required Write */
+	{0x80, CRL_REG_LEN_08BIT, 0x51, 0xF2}, /* ADI Required Write */
+	{0x81, CRL_REG_LEN_08BIT, 0x51, 0xF2}, /* ADI Required Write */
+	{0x82, CRL_REG_LEN_08BIT, 0x68, 0xF2}, /* ADI Required Write */
+	{0x03, CRL_REG_LEN_08BIT, 0x42, 0xF2}, /* Tri-S Output Drivers,
+					PwrDwn 656 pads */
+	{0x04, CRL_REG_LEN_08BIT, 0x07, 0xF2}, /* Power-up INTRQ pad,
+					& Enable SFL */
+	{0x13, CRL_REG_LEN_08BIT, 0x00, 0xF2}, /* ADI Required Write */
+	{0x17, CRL_REG_LEN_08BIT, 0x41, 0xF2}, /* Select SH1 */
+	{0x31, CRL_REG_LEN_08BIT, 0x12, 0xF2}, /* ADI Required Write */
+	{0x10, CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE, 0x70, 0xE0, 0x70 },
+	 /* Enable 1-Lane MIPI Tx,
+					enable pixel output and route
+					SD through Pixel port */
+	{0x00, CRL_REG_LEN_08BIT, 0x81, 0x90}, /* Enable 1-lane MIPI */
+	{0x00, CRL_REG_LEN_08BIT, 0xA1, 0x90}, /* Set Auto DPHY Timing */
+	{0xF0, CRL_REG_LEN_08BIT, 0x00, 0x94}, /* ADI Required Write */
+	{0xD2, CRL_REG_LEN_08BIT, 0x40, 0x90}, /* ADI Required Write */
+	{0xC4, CRL_REG_LEN_08BIT, 0x0A, 0x90}, /* ADI Required Write */
+	{0x71, CRL_REG_LEN_08BIT, 0x33, 0x90}, /* ADI Required Write */
+	{0x72, CRL_REG_LEN_08BIT, 0x11, 0x90}, /* ADI Required Write */
+	{0xF0, CRL_REG_LEN_08BIT, 0x00, 0x90}, /* i2c_dphy_pwdn - 1'b0 */
+	{0x31, CRL_REG_LEN_08BIT, 0x82, 0x90}, /* ADI Required Write */
+	{0x1E, CRL_REG_LEN_08BIT, 0xC0, 0x90}, /* ADI Required Write */
 };
 
 
