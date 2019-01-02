@@ -66,7 +66,7 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
 	struct snd_skl_vbe_client *client;
 	struct snd_skl_vbe *vbe;
 	struct skl *sdev = snd_skl_get_virtio_audio();
-	int i, handle;
+	int vcpu, handle;
 
 	if (!sdev) {
 		pr_err("error: no BE registered for SOF!\n");
@@ -85,14 +85,16 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
 	vbe = client->vbe;
 
 	/* go through all vcpu for the valid request buffer */
-	for (i = 0; i < client->max_vcpu; i++) {
-		req = &client->req_buf[i];
-		handle = 0;
-
-		/* ignore if not processing state */
-		if (atomic_read(&req->processed) != REQ_STATE_PROCESSING)
+	while (1) {
+		vcpu = find_first_bit(ioreqs_map, client->max_vcpu);
+		if (vcpu == client->max_vcpu)
+			break;
+		req = &client->req_buf[vcpu];
+		if (atomic_read(&req->processed) != REQ_STATE_PROCESSING ||
+				req->client != client->vhm_client_id)
 			continue;
 
+		handle = 0;
 		dev_dbg(sdev->skl_sst->dev,
 			"ioreq type %d, direction %d, addr 0x%llx, size 0x%llx, value 0x%x\n",
 			 req->type,
@@ -112,8 +114,7 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
 				(handle = 1) : (handle = 0);
 		}
 
-		atomic_set(&req->processed, REQ_STATE_COMPLETE);
-		acrn_ioreq_complete_request(client->vhm_client_id, i, req);
+		acrn_ioreq_complete_request(client->vhm_client_id, vcpu, req);
 
 		/* handle VQ kick if needed */
 		if (handle)
