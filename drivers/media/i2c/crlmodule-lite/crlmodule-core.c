@@ -2246,7 +2246,6 @@ static int crlmodule_init_subdevs(
 	struct ici_ext_subdev *subdev)
 {
 	struct crl_sensor *sensor = to_crlmodule_sensor(subdev);
-	struct crlmodule_lite_platform_data *platform_data = sensor->platform_data;
 	struct i2c_client *client = sensor->src->sd.client;
 	struct crl_subdev *prev_sd = NULL;
 	int i = 0;
