@@ -415,7 +415,9 @@ int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
 
 	attach->psys_buf = virt_to_phys(buf);
 
-	if (psys_get_userpages(buf, &attach->map)) {
+	rval = psys_get_userpages(buf, &attach->map);
+	if (rval) {
+		req->func_ret = rval;
 		goto error_exit;
 	}
 
