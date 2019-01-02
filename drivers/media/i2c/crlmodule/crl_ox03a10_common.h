@@ -174,7 +174,6 @@ static struct crl_register_write_rep ox03a10_1920_1088_12DCG[] = {
 	{ 0x3101, CRL_REG_LEN_08BIT, 0x32 },
 	{ 0x3192, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x3193, CRL_REG_LEN_08BIT, 0x00 },
-	{ 0x3206, CRL_REG_LEN_08BIT, 0xc8 },
 	{ 0x3216, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x3304, CRL_REG_LEN_08BIT, 0x04 },
 	{ 0x3400, CRL_REG_LEN_08BIT, 0x08 },
@@ -253,8 +252,6 @@ static struct crl_register_write_rep ox03a10_1920_1088_12DCG[] = {
 	{ 0x3809, CRL_REG_LEN_08BIT, 0x80 },
 	{ 0x380a, CRL_REG_LEN_08BIT, 0x04 },
 	{ 0x380b, CRL_REG_LEN_08BIT, 0x40 },
-	{ 0x380e, CRL_REG_LEN_08BIT, 0x05 },
-	{ 0x380f, CRL_REG_LEN_08BIT, 0x40 },
 	{ 0x3810, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x3813, CRL_REG_LEN_08BIT, 0x04 },
 	{ 0x381c, CRL_REG_LEN_08BIT, 0x08 },
@@ -522,16 +519,25 @@ static struct crl_register_write_rep ox03a10_1920_1088_12DCG[] = {
 	{ 0x50c2, CRL_REG_LEN_08BIT, 0xb0 },
 	{ 0x5102, CRL_REG_LEN_08BIT, 0xb0 },
 	{ 0x380e, CRL_REG_LEN_08BIT, 0x05 },
-	{ 0x380f, CRL_REG_LEN_08BIT, 0x34 },
+	{ 0x380f, CRL_REG_LEN_08BIT, 0x6d },
 	{ 0x380c, CRL_REG_LEN_08BIT, 0x08 },
 	{ 0x380d, CRL_REG_LEN_08BIT, 0x78 },
 	{ 0x384c, CRL_REG_LEN_08BIT, 0x02 },
 	{ 0x384d, CRL_REG_LEN_08BIT, 0x14 },
 	{ 0x460a, CRL_REG_LEN_08BIT, 0x0e },
 	/* embedded data */
+	{ 0x3206, CRL_REG_LEN_08BIT, 0x08 },
+	{ 0x484c, CRL_REG_LEN_08BIT, 0x02 },
 	{ 0x3208, CRL_REG_LEN_08BIT, 0x04 },
-	{ 0x3800, CRL_REG_LEN_08BIT, 0x03 },
-	{ 0x4800, CRL_REG_LEN_08BIT, 0x02 },
+	{ 0x483e, CRL_REG_LEN_08BIT, 0x02 },/* frame counter */
+	{ 0x3501, CRL_REG_LEN_08BIT, 0x02 },/* DCG exp */
+	{ 0x3581, CRL_REG_LEN_08BIT, 0x02 },/* VS exp */
+	{ 0x350a, CRL_REG_LEN_08BIT, 0x03 },/* HCG Dgain */
+	{ 0x354a, CRL_REG_LEN_08BIT, 0x03 },/* LCG Dgain */
+	{ 0x358a, CRL_REG_LEN_08BIT, 0x03 },/* VS Dgain */
+	{ 0x3508, CRL_REG_LEN_08BIT, 0x02 },/* HCG Again */
+	{ 0x3548, CRL_REG_LEN_08BIT, 0x02 },/* LCG Again */
+	{ 0x3588, CRL_REG_LEN_08BIT, 0x02 },/* VS Again */
 	{ 0x3208, CRL_REG_LEN_08BIT, 0x14 },
 	{ 0x3208, CRL_REG_LEN_08BIT, 0x05 },
 	{ 0x5000, CRL_REG_LEN_08BIT, 0x10 },
@@ -545,10 +551,7 @@ static struct crl_register_write_rep ox03a10_1920_1088_12DCG[] = {
 	{ 0x0100, CRL_REG_LEN_08BIT, 0x01 },
 };
 
-
 static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
-	{ 0x0103, CRL_REG_LEN_08BIT, 0x01 },
-	{ 0x00, CRL_REG_LEN_DELAY, 0x64 }, /* Delay 100 ms */
 	{ 0x4d07, CRL_REG_LEN_08BIT, 0x21 },
 	{ 0x4d0e, CRL_REG_LEN_08BIT, 0x80 },
 	{ 0x4d11, CRL_REG_LEN_08BIT, 0x7d },
@@ -640,10 +643,6 @@ static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
 	{ 0x3216, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x3400, CRL_REG_LEN_08BIT, 0x08 },
 	{ 0x3409, CRL_REG_LEN_08BIT, 0x02 },
-	{ 0x3501, CRL_REG_LEN_08BIT, 0x00 },
-	{ 0x3502, CRL_REG_LEN_08BIT, 0x40 },
-	{ 0x3581, CRL_REG_LEN_08BIT, 0x00 },
-	{ 0x3582, CRL_REG_LEN_08BIT, 0x40 },
 	{ 0x3600, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x3602, CRL_REG_LEN_08BIT, 0x42 },
 	{ 0x3603, CRL_REG_LEN_08BIT, 0xe3 },
@@ -695,7 +694,7 @@ static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
 	{ 0x3668, CRL_REG_LEN_08BIT, 0x95 },
 	{ 0x3669, CRL_REG_LEN_08BIT, 0x2c },
 	{ 0x366f, CRL_REG_LEN_08BIT, 0xc4 },
-	{ 0x3671, CRL_REG_LEN_08BIT, 0x2f },
+	{ 0x3671, CRL_REG_LEN_08BIT, 0x37 },
 	{ 0x3673, CRL_REG_LEN_08BIT, 0x6a },
 	{ 0x3674, CRL_REG_LEN_08BIT, 0x32 },
 	{ 0x3675, CRL_REG_LEN_08BIT, 0x7a },
@@ -703,11 +702,11 @@ static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
 	{ 0x3800, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x3801, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x3802, CRL_REG_LEN_08BIT, 0x00 },
-	{ 0x3803, CRL_REG_LEN_08BIT, 0x04 },
+	{ 0x3803, CRL_REG_LEN_08BIT, 0x05 },
 	{ 0x3804, CRL_REG_LEN_08BIT, 0x07 },
 	{ 0x3805, CRL_REG_LEN_08BIT, 0x8f },
 	{ 0x3806, CRL_REG_LEN_08BIT, 0x05 },
-	{ 0x3807, CRL_REG_LEN_08BIT, 0x0b },
+	{ 0x3807, CRL_REG_LEN_08BIT, 0x0c },
 	{ 0x3808, CRL_REG_LEN_08BIT, 0x07 },
 	{ 0x3809, CRL_REG_LEN_08BIT, 0x80 },
 	{ 0x380a, CRL_REG_LEN_08BIT, 0x05 },
@@ -717,11 +716,9 @@ static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
 	{ 0x380e, CRL_REG_LEN_08BIT, 0x05 },
 	{ 0x380f, CRL_REG_LEN_08BIT, 0x40 },
 	{ 0x3810, CRL_REG_LEN_08BIT, 0x00 },
-	{ 0x3811, CRL_REG_LEN_08BIT, 0x08 },
 	{ 0x3813, CRL_REG_LEN_08BIT, 0x04 },
 	{ 0x381c, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x3820, CRL_REG_LEN_08BIT, 0x00 },
-	{ 0x3821, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x3822, CRL_REG_LEN_08BIT, 0x14 },
 	{ 0x3832, CRL_REG_LEN_08BIT, 0x10 },
 	{ 0x3833, CRL_REG_LEN_08BIT, 0x01 },
@@ -965,19 +962,36 @@ static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
 	{ 0x5201, CRL_REG_LEN_08BIT, 0x70 },
 	{ 0x5202, CRL_REG_LEN_08BIT, 0x73 },
 	{ 0x5203, CRL_REG_LEN_08BIT, 0xff },
-	{ 0x380c, CRL_REG_LEN_08BIT, 0x0a },
-	{ 0x380d, CRL_REG_LEN_08BIT, 0x90 },
+	{ 0x380c, CRL_REG_LEN_08BIT, 0x08 },
+	{ 0x380d, CRL_REG_LEN_08BIT, 0x7b },
 	{ 0x380e, CRL_REG_LEN_08BIT, 0x05 },
 	{ 0x380f, CRL_REG_LEN_08BIT, 0x37 },
-	{ 0x3501, CRL_REG_LEN_08BIT, 0x03 },
-	{ 0x3502, CRL_REG_LEN_08BIT, 0x21 },
-	{ 0x3508, CRL_REG_LEN_08BIT, 0x04 },
-	{ 0x3548, CRL_REG_LEN_08BIT, 0x01 },
-	{ 0x3549, CRL_REG_LEN_08BIT, 0xa0 },
-	{ 0x354a, CRL_REG_LEN_08BIT, 0x01 },
-	{ 0x354b, CRL_REG_LEN_08BIT, 0x20 },
+	/* embedded data */
+	{ 0x3206, CRL_REG_LEN_08BIT, 0x08 },
+	{ 0x484c, CRL_REG_LEN_08BIT, 0x02 },
+	{ 0x3208, CRL_REG_LEN_08BIT, 0x04 },
+	{ 0x483e, CRL_REG_LEN_08BIT, 0x02 },/* frame counter */
+	{ 0x3501, CRL_REG_LEN_08BIT, 0x02 },/* DCG exp */
+	{ 0x3581, CRL_REG_LEN_08BIT, 0x02 },/* VS exp */
+	{ 0x350a, CRL_REG_LEN_08BIT, 0x03 },/* HCG Dgain */
+	{ 0x354a, CRL_REG_LEN_08BIT, 0x03 },/* LCG Dgain */
+	{ 0x358a, CRL_REG_LEN_08BIT, 0x03 },/* VS Dgain */
+	{ 0x3508, CRL_REG_LEN_08BIT, 0x02 },/* HCG Again */
+	{ 0x3548, CRL_REG_LEN_08BIT, 0x02 },/* LCG Again */
+	{ 0x3588, CRL_REG_LEN_08BIT, 0x02 },/* VS Again */
+	{ 0x3208, CRL_REG_LEN_08BIT, 0x14 },
+	{ 0x3208, CRL_REG_LEN_08BIT, 0x05 },
+	{ 0x5000, CRL_REG_LEN_08BIT, 0x10 },
+	{ 0x0304, CRL_REG_LEN_08BIT, 0x19 },
+	{ 0x3208, CRL_REG_LEN_08BIT, 0x15 },
+	{ 0x3217, CRL_REG_LEN_08BIT, 0xbb },
+	{ 0x3219, CRL_REG_LEN_08BIT, 0x55 },
+	{ 0x3216, CRL_REG_LEN_08BIT, 0x02 },
+	{ 0x3221, CRL_REG_LEN_08BIT, 0x02 },/* enable CRC */
+	{ 0x366f, CRL_REG_LEN_08BIT, 0xf4 },/* front 2 rows, end 2 rows */
 	{ 0x0100, CRL_REG_LEN_08BIT, 0x01 },
 };
+
 static struct crl_register_write_rep ox03a10_1920_1088_12DCG_12VS[] = {
 	{ 0x4d09, CRL_REG_LEN_08BIT, 0x5f },
 	{ 0x0104, CRL_REG_LEN_08BIT, 0x04 },

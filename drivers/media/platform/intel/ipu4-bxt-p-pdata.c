@@ -1230,6 +1230,7 @@ static struct crlmodule_platform_data ox03a10_ficosa_pdata = {
 };
 #endif
 
+
 #ifdef CONFIG_INTEL_IPU4_OV495
 #define OV495_LANES    4
 #define OV495_I2C_PHY_ADDR   0x48
@@ -1257,29 +1258,6 @@ static struct crlmodule_platform_data ov495_pdata = {
 	.fsin = 2, /* gpio 2 used for FSIN */
 	.reset = 0, /* gpio 0 used for RESET */
 	.module_flags = CRL_MODULE_FL_RESET,
-};
-#endif
-
-#ifdef CONFIG_INTEL_IPU4_OV495
-#define OV495_LANES    4
-#define OV495_I2C_PHY_ADDR   0x48
-#define OV495A_I2C_ADDRESS   0x30
-#define OV495B_I2C_ADDRESS   0x31
-#define OV495C_I2C_ADDRESS   0x32
-#define OV495D_I2C_ADDRESS   0x33
-
-#define OV495A_SER_ADDRESS   0x58
-#define OV495B_SER_ADDRESS   0x59
-#define OV495C_SER_ADDRESS   0x5a
-#define OV495D_SER_ADDRESS   0x5b
-
-static struct crlmodule_platform_data ov495_pdata = {
-	.lanes = OV495_LANES,
-	.ext_clk = 27000000,
-	.op_sys_clock = (uint64_t[]){ 87750000 },
-	.module_name = "OV495",
-	.id_string = "0x51 0x49 0x56 0x4f",
-	.xshutdown = 1,
 };
 #endif
 
@@ -1409,6 +1387,32 @@ static struct ti960_subdev_info ti960_subdevs[] = {
 };
 
 static struct ti960_subdev_info ti960_subdevs_2[] = {
+#ifdef CONFIG_INTEL_IPU4_OX03A10
+	{
+		.board_info = {
+			.type = CRLMODULE_NAME,
+			.addr = OX03A10A_I2C_ADDRESS,
+			.platform_data = &ox03a10_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER,
+		.rx_port = 0,
+		.phy_i2c_addr = OX03A10_I2C_PHY_ADDR,
+		.ser_alias = OX03A10A_SER_ADDRESS,
+		.suffix = 'a',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_NAME,
+			.addr = OX03A10B_I2C_ADDRESS,
+			.platform_data = &ox03a10_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER,
+		.rx_port = 1,
+		.phy_i2c_addr = OX03A10_I2C_PHY_ADDR,
+		.ser_alias = OX03A10B_SER_ADDRESS,
+		.suffix = 'b',
+	},
+#endif
 #ifdef CONFIG_INTEL_IPU4_OV495
 	{
 		.board_info = {
@@ -1457,32 +1461,6 @@ static struct ti960_subdev_info ti960_subdevs_2[] = {
 		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
 		.ser_alias = OV495D_SER_ADDRESS,
 		.suffix = 'h',
-	},
-#endif
-#ifdef CONFIG_INTEL_IPU4_OX03A10
-	{
-		.board_info = {
-			.type = CRLMODULE_NAME,
-			.addr = OX03A10A_I2C_ADDRESS,
-			.platform_data = &ox03a10_pdata,
-		},
-		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
-		.rx_port = 0,
-		.phy_i2c_addr = OX03A10_I2C_PHY_ADDR,
-		.ser_alias = OX03A10A_SER_ADDRESS,
-		.suffix = 'e',
-	},
-	{
-		.board_info = {
-			.type = CRLMODULE_NAME,
-			.addr = OX03A10B_I2C_ADDRESS,
-			.platform_data = &ox03a10_pdata,
-		},
-		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
-		.rx_port = 1,
-		.phy_i2c_addr = OX03A10_I2C_PHY_ADDR,
-		.ser_alias = OX03A10B_SER_ADDRESS,
-		.suffix = 'f',
 	},
 #endif
 #ifdef CONFIG_INTEL_IPU4_OX03A10_FICOSA

@@ -155,6 +155,7 @@ static int buf_prepare(struct vb2_buffer *vb)
 	u32 request_state;
 	unsigned long flags;
 	int rval;
+
 	if (av->isys->adev->isp->flr_done)
 		return -EIO;
 
@@ -208,6 +209,7 @@ static void buf_finish(struct vb2_buffer *vb)
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(vb->vb2_queue);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
 	struct ipu_isys_buffer *ib = vb2_buffer_to_ipu_isys_buffer(vb);
+
 	dev_dbg(&av->isys->adev->dev, "buffer: %s: %s\n", av->vdev.name,
 		__func__);
 
@@ -1165,9 +1167,7 @@ void ipu_isys_queue_buf_done(struct ipu_isys_buffer *ib)
 		 */
 		atomic_set(&ib->str2mmio_flag, 0);
 	} else {
-		vb2_buffer_done(vb, vb->vb2_queue->error ?
-		VB2_BUF_STATE_ERROR :
-		VB2_BUF_STATE_DONE);
+		vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
 	}
 }
 
