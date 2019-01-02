@@ -495,6 +495,33 @@ static int ti960_open(struct v4l2_subdev *subdev,
 	return 0;
 }
 
+static int ti960_map_subdevs_addr(struct ti960 *va)
+{
+	unsigned short rx_port, phy_i2c_addr, alias_i2c_addr;
+	int i, rval;
+
+	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
+		rx_port = va->sub_devs[i].rx_port;
+		phy_i2c_addr = va->sub_devs[i].phy_i2c_addr;
+		alias_i2c_addr = va->sub_devs[i].alias_i2c_addr;
+
+		if (!phy_i2c_addr || !alias_i2c_addr)
+			continue;
+
+		rval = ti960_map_phy_i2c_addr(va, rx_port, phy_i2c_addr);
+		if (rval)
+			return rval;
+
+		/* set 7bit alias i2c addr */
+		rval = ti960_map_alias_i2c_addr(va, rx_port,
+						alias_i2c_addr << 1);
+		if (rval)
+			return rval;
+	}
+
+	return 0;
+}
+
 static int ti960_registered(struct v4l2_subdev *subdev)
 {
 	struct ti960 *va = to_ti960(subdev);
@@ -602,6 +629,9 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 		}
 		k++;
 	}
+	rval = ti960_map_subdevs_addr(va);
+	if (rval)
+		return rval;
 
 	return 0;
 }
@@ -704,33 +734,6 @@ static int ti960_rx_port_config(struct ti960 *va, int sink, int rx_port)
 	/*
 	 * TODO: CSI VC MAPPING.
 	 */
-
-	return 0;
-}
-
-static int ti960_map_subdevs_addr(struct ti960 *va)
-{
-	unsigned short rx_port, phy_i2c_addr, alias_i2c_addr;
-	int i, rval;
-
-	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
-		rx_port = va->sub_devs[i].rx_port;
-		phy_i2c_addr = va->sub_devs[i].phy_i2c_addr;
-		alias_i2c_addr = va->sub_devs[i].alias_i2c_addr;
-
-		if (!phy_i2c_addr || !alias_i2c_addr)
-			continue;
-
-		rval = ti960_map_phy_i2c_addr(va, rx_port, phy_i2c_addr);
-		if (rval)
-			return rval;
-
-		/* set 7bit alias i2c addr */
-		rval = ti960_map_alias_i2c_addr(va, rx_port,
-						alias_i2c_addr << 1);
-		if (rval)
-			return rval;
-	}
 
 	return 0;
 }
