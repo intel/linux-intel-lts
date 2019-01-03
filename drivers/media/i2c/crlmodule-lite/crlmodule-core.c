@@ -2203,10 +2203,10 @@ static int crlmodule_set_power(
 	struct i2c_client *client = sensor->src->sd.client;
 	int ret = 0;
 
-	pr_err("crlmodule_set_power %d\n", on);
+	dev_err(&client->dev, "crlmodule_set_power %d\n", on);
 	if (on) {
 		ret = pm_runtime_get_sync(&client->dev);
-		pr_err("crlmodule_set_power val %d\n", ret);
+		dev_err(&client->dev, "crlmodule_set_power val %d\n", ret);
 		if (ret < 0) {
 			pm_runtime_put(&client->dev);
 			return ret;
@@ -2218,7 +2218,7 @@ static int crlmodule_set_power(
 		usleep_range(2000, 3000);
 		ret = crlmodule_run_poweron_init(sensor);
 		if (ret < 0) {
-			pr_err("crlmodule_set_power err (2) %d\n", ret);
+			dev_err(&client->dev, "crlmodule_set_power err (2) %d\n", ret);
 			pm_runtime_put(&client->dev);
 			goto out;
 		}
@@ -2234,7 +2234,7 @@ out:
 	if (!on)
 		pm_runtime_put(&client->dev);
 
-	pr_err("crlmodule_set_power ret %d\n", ret);
+	dev_err(&client->dev, "crlmodule_set_power ret %d\n", ret);
 	return ret;
 }
 

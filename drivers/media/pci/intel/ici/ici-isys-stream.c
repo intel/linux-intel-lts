@@ -109,7 +109,7 @@ static int pipeline_set_node_power(void* cb_data,
 {
 	struct pipeline_power_data* pwr_data = cb_data;
 	struct ici_isys_stream *as = pwr_data->as;
-	dev_info(&as->isys->adev->dev,
+	dev_dbg(&as->isys->adev->dev,
 		"Set ext sd \"%s\" power to %d\n",
 		node->name, pwr_data->power);
 	if (node->node_set_power) {
@@ -467,40 +467,41 @@ static int start_stream_firmware(struct ici_isys_stream *as)
 
 	reinit_completion(&ip->stream_open_completion);
 /* SKTODO: Debug start */
-	printk("SKTODO: My stream open\n");
-	printk("ia_css_isys_stream_source src = %d\n", stream_cfg.src);
-	printk("ia_css_isys_mipi_vc vc = %d\n", stream_cfg.vc);
-	printk("ia_css_isys_isl_use isl_use = %d\n", stream_cfg.isl_use);
-	printk("compfmt = %u\n", stream_cfg.compfmt);
-	printk("struct ia_css_isys_isa_cfg isa_cfg");
+	dev_dbg(dev, "SKTODO: My stream open\n");
+	dev_dbg(dev, "ia_css_isys_stream_source src = %d\n", stream_cfg.src);
+	dev_dbg(dev, "ia_css_isys_mipi_vc vc = %d\n", stream_cfg.vc);
+	dev_dbg(dev, "ia_css_isys_isl_use isl_use = %d\n", stream_cfg.isl_use);
+	dev_dbg(dev, "compfmt = %u\n", stream_cfg.compfmt);
+	dev_dbg(dev, "struct ia_css_isys_isa_cfg isa_cfg");
 	for ( i = 0 ; i < N_IA_CSS_ISYS_CROPPING_LOCATION ; i++ ) {
-		printk("crop[%d].top_offset = %d\n", i, stream_cfg.crop[i].top_offset);
-		printk("crop[%d].left_offset = %d\n", i, stream_cfg.crop[i].left_offset);
-		printk("crop[%d].bottom_offset = %d\n", i, stream_cfg.crop[i].bottom_offset);
-		printk("crop[%d].right_offset = %d\n", i, stream_cfg.crop[i].right_offset);
+		dev_dbg(dev, "crop[%d].top_offset = %d\n", i, stream_cfg.crop[i].top_offset);
+		dev_dbg(dev, "crop[%d].left_offset = %d\n", i, stream_cfg.crop[i].left_offset);
+		dev_dbg(dev, "crop[%d].bottom_offset = %d\n", i, stream_cfg.crop[i].bottom_offset);
+		dev_dbg(dev, "crop[%d].right_offset = %d\n", i, stream_cfg.crop[i].right_offset);
 	}
-	printk("send_irq_sof_discarded = %u\n", stream_cfg.send_irq_sof_discarded);
-	printk("send_irq_eof_discarded = %u\n", stream_cfg.send_irq_eof_discarded);
-	printk("send_resp_sof_discarded = %u\n", stream_cfg.send_resp_sof_discarded);
-	printk("send_resp_eof_discarded = %u\n", stream_cfg.send_resp_eof_discarded);
-	printk("nof_input_pins = %u\n", stream_cfg.nof_input_pins);
-	printk("nof_output_pins = %u\n", stream_cfg.nof_output_pins);
+	dev_dbg(dev, "send_irq_sof_discarded = %u\n", stream_cfg.send_irq_sof_discarded);
+	dev_dbg(dev, "send_irq_eof_discarded = %u\n", stream_cfg.send_irq_eof_discarded);
+	dev_dbg(dev, "send_resp_sof_discarded = %u\n", stream_cfg.send_resp_sof_discarded);
+	dev_dbg(dev, "send_resp_eof_discarded = %u\n", stream_cfg.send_resp_eof_discarded);
+	dev_dbg(dev, "nof_input_pins = %u\n", stream_cfg.nof_input_pins);
+	dev_dbg(dev, "nof_output_pins = %u\n", stream_cfg.nof_output_pins);
 	for (i = 0 ; i < stream_cfg.nof_input_pins ; i++) {
-		printk("input_pins[%d].input_res.width = %u\n", i, stream_cfg.input_pins[i].input_res.width);
-		printk("input_pins[%d].input_res.height = %u\n", i, stream_cfg.input_pins[i].input_res.height);
-		printk("input_pins[%d].dt = %d\n", i, stream_cfg.input_pins[i].dt);
-		printk("input_pins[%d].mipi_store_mode = %d\n", i, stream_cfg.input_pins[i].mipi_store_mode);
+		dev_dbg(dev, "input_pins[%d].input_res.width = %u\n", i, stream_cfg.input_pins[i].input_res.width);
+		dev_dbg(dev, "input_pins[%d].input_res.height = %u\n", i, stream_cfg.input_pins[i].input_res.height);
+		dev_dbg(dev, "input_pins[%d].dt = %d\n", i, stream_cfg.input_pins[i].dt);
+		dev_dbg(dev, "input_pins[%d].mipi_store_mode = %d\n", i, stream_cfg.input_pins[i].mipi_store_mode);
 	}
 	for (i = 0 ; i < stream_cfg.nof_output_pins ; i++) {
-		printk("output_pins[%d].input_pin_id = %u\n", i, stream_cfg.output_pins[i].input_pin_id);
-		printk("output_pins[%d].output_res.width = %u\n", i, stream_cfg.output_pins[i].output_res.width);
-		printk("output_pins[%d].output_res.height = %u\n", i, stream_cfg.output_pins[i].output_res.height);
-		printk("output_pins[%d].stride = %u\n", i, stream_cfg.output_pins[i].stride);
-		printk("output_pins[%d].pt = %d\n", i, stream_cfg.output_pins[i].pt);
-		printk("output_pins[%d].ft = %d\n", i, stream_cfg.output_pins[i].ft);
-		printk("output_pins[%d].watermark_in_lines = %u\n", i, stream_cfg.output_pins[i].watermark_in_lines);
-		printk("output_pins[%d].send_irq = %u\n", i, stream_cfg.output_pins[i].send_irq);
+		dev_dbg(dev, "output_pins[%d].input_pin_id = %u\n", i, stream_cfg.output_pins[i].input_pin_id);
+		dev_dbg(dev, "output_pins[%d].output_res.width = %u\n", i, stream_cfg.output_pins[i].output_res.width);
+		dev_dbg(dev, "output_pins[%d].output_res.height = %u\n", i, stream_cfg.output_pins[i].output_res.height);
+		dev_dbg(dev, "output_pins[%d].stride = %u\n", i, stream_cfg.output_pins[i].stride);
+		dev_dbg(dev, "output_pins[%d].pt = %d\n", i, stream_cfg.output_pins[i].pt);
+		dev_dbg(dev, "output_pins[%d].ft = %d\n", i, stream_cfg.output_pins[i].ft);
+		dev_dbg(dev, "output_pins[%d].watermark_in_lines = %u\n", i, stream_cfg.output_pins[i].watermark_in_lines);
+		dev_dbg(dev, "output_pins[%d].send_irq = %u\n", i, stream_cfg.output_pins[i].send_irq);
 	}
+
 /* SKTODO: Debug end */
 	rval = ipu_lib_call(stream_open, as->isys, ip->stream_handle, &stream_cfg);
 	if (rval < 0) {
@@ -688,7 +689,7 @@ static int pipeline_validate_node(void* cb_data,
 	int rval;
 	struct ici_isys_pipeline *ip = cb_data;
 
-	dev_err(&ip->pipeline_dev->dev, "Validating node %s\n",
+	dev_dbg(&ip->pipeline_dev->dev, "Validating node %s\n",
 		src_node->name);
 	if (src_node->node_pipeline_validate) {
 		rval = src_node->node_pipeline_validate(&ip->pipe,
@@ -1081,7 +1082,7 @@ static int stream_fop_open(struct inode *inode, struct file *file)
 		to_ipu_bus_device(&isys->adev->dev);
 	struct ipu_device *isp = adev->isp;
 	int rval;
-	DEBUGK("%s: stream open (%p)\n", __func__, as);
+	dev_dbg(&isys->adev->dev, "%s: stream open (%p)\n", __func__, as);
 
 	mutex_lock(&isys->mutex);
 	if (isys->reset_needed) {
@@ -1174,7 +1175,7 @@ static int stream_fop_release(struct inode *inode, struct file *file)
 		inode_to_intel_ipu_stream_device(inode);
 	struct ici_isys_stream* as = dev_to_stream(strm_dev);
 	int ret = 0;
-	DEBUGK("%s: stream release (%p)\n", __func__, as);
+	dev_dbg(&as->isys->adev->dev, "%s: stream release (%p)\n", __func__, as);
 
 	if (as->ip.streaming)
 		ici_isys_stream_off(file, NULL);
@@ -1228,7 +1229,7 @@ static int ici_isys_set_format(struct file *file, void *fh,
 		dev_to_stream(file->private_data);
 	struct ici_isys *isys = as->isys;
 
-	DEBUGK("%s: ici stream set format (%p)\n \
+	dev_dbg(&isys->adev->dev, "%s: ici stream set format (%p)\n \
 		width: %u, height: %u, pixelformat: %u, field: %u, colorspace: %u\n",
 			__func__, as,
 			sf->ffmt.width,
@@ -1238,7 +1239,7 @@ static int ici_isys_set_format(struct file *file, void *fh,
 			sf->ffmt.colorspace);
 
 	if (sf->ffmt.field == ICI_FIELD_ALTERNATE) {
-		DEBUGK("Interlaced enabled\n");
+		dev_dbg(&isys->adev->dev, "Interlaced enabled\n");
 		as->ip.interlaced = true;
 		as->ip.short_packet_source = 1;
 	} else {
