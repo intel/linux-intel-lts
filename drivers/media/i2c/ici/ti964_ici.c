@@ -565,6 +565,7 @@ static int ti964_set_power(struct ici_isys_node *node, int on)
 	return regmap_write(va->regmap8, TI964_CSI_CTL, val);
 }
 
+#ifdef TEST_PATTERN
 static int ti964_tp_set_stream(struct ici_ext_subdev *subdev, int enable)
 {
 	struct ti964 *va = to_ti964(subdev);
@@ -588,6 +589,7 @@ static int ti964_tp_set_stream(struct ici_ext_subdev *subdev, int enable)
 
 	return 0;
 }
+#endif
 
 static int ti964_rx_port_config(struct ti964 *va, int sink, int rx_port)
 {
