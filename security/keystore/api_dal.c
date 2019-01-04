@@ -112,8 +112,8 @@ static int dal_keystore_register_client(enum keystore_seed_type seed_type,
 		goto err;
 	}
 
-	memcpy(input, client_id, sizeof(client_id));
-	index += sizeof(client_id);
+	memcpy(input, client_id, KEYSTORE_MAX_CLIENT_ID_SIZE);
+	index += KEYSTORE_MAX_CLIENT_ID_SIZE;
 	memcpy(input + index, client_ticket, KEYSTORE_CLIENT_TICKET_SIZE);
 	index += KEYSTORE_CLIENT_TICKET_SIZE;
 	pack_int_to_buf(seed_type, input + index);
