@@ -187,7 +187,7 @@ static struct crlmodule_lite_platform_data ov10635_pdata = {
 };
 #endif
 
-#if IS_ENABLED(CONFIG_VIDEO_TI964_ICI)
+#ifdef CONFIG_VIDEO_TI964_ICI
 #define TI964_I2C_ADAPTER	2
 #define TI964_I2C_ADAPTER_2	4
 #define TI964_I2C_ADDRESS	0x3d
