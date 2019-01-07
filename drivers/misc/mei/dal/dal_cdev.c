@@ -107,6 +107,9 @@ static ssize_t dal_dev_read(struct file *fp, char __user *buf,
 	size_t r_len, len;
 	unsigned int copied;
 
+	if (!buf)
+		return -EINVAL;
+
 	ret = dal_wait_for_read(dc);
 	if (ret)
 		return ret;
