@@ -371,6 +371,9 @@ struct intel_gvt {
 
 	struct dentry *debugfs_root;
 	struct work_struct active_hp_work;
+
+	void *intel_gvt_vreg_pool[GVT_MAX_VGPU];
+	bool intel_gvt_vreg_allocated[GVT_MAX_VGPU];
 };
 
 static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
@@ -759,6 +762,8 @@ void intel_gvt_debugfs_remove_vgpu(struct intel_vgpu *vgpu);
 int intel_gvt_debugfs_init(struct intel_gvt *gvt);
 void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
 
+void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu);
+void intel_gvt_free_vreg(struct intel_vgpu *vgpu);
 
 bool is_force_nonpriv_mmio(unsigned int offset);
 

@@ -354,6 +354,57 @@ void intel_gvt_allocate_ddb(struct intel_gvt *gvt,
 	}
 }
 
+static int intel_gvt_init_vreg_pool(struct intel_gvt *gvt)
+{
+	int i = 0;
+	const struct intel_gvt_device_info *info = &gvt->device_info;
+
+	for (i = 0; i < GVT_MAX_VGPU; i++) {
+		gvt->intel_gvt_vreg_pool[i] = (void *)__get_free_pages(
+			GFP_KERNEL, info->mmio_size_order);
+		if (!gvt->intel_gvt_vreg_pool[i])
+			return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void intel_gvt_clean_vreg_pool(struct intel_gvt *gvt)
+{
+	int i = 0;
+	const struct intel_gvt_device_info *info = &gvt->device_info;
+
+	for (i = 0; i < GVT_MAX_VGPU && gvt->intel_gvt_vreg_pool[i]; i++)
+		free_pages((unsigned long) gvt->intel_gvt_vreg_pool[i],
+				info->mmio_size_order);
+}
+
+void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu)
+{
+	int id = vgpu->id - 1;
+	struct intel_gvt *gvt = vgpu->gvt;
+
+	if (id < 0 || id >= GVT_MAX_VGPU ||
+		gvt->intel_gvt_vreg_pool[id] == NULL ||
+		gvt->intel_gvt_vreg_allocated[id])
+		return NULL;
+
+	gvt->intel_gvt_vreg_allocated[id] = true;
+	return gvt->intel_gvt_vreg_pool[id];
+}
+
+void intel_gvt_free_vreg(struct intel_vgpu *vgpu)
+{
+	int id = vgpu->id - 1;
+	struct intel_gvt *gvt = vgpu->gvt;
+
+	if (id < 0 || id >= GVT_MAX_VGPU ||
+		gvt->intel_gvt_vreg_pool[id] == NULL ||
+		!gvt->intel_gvt_vreg_allocated[id])
+		return;
+	gvt->intel_gvt_vreg_allocated[id] = false;
+}
+
 /**
  * intel_gvt_clean_device - clean a GVT device
  * @gvt: intel gvt device
@@ -369,6 +420,7 @@ void intel_gvt_clean_device(struct drm_i915_private *dev_priv)
 	if (WARN_ON(!gvt))
 		return;
 
+	intel_gvt_clean_vreg_pool(gvt);
 	intel_gvt_destroy_idle_vgpu(gvt->idle_vgpu);
 	intel_gvt_hypervisor_host_exit(&dev_priv->drm.pdev->dev, gvt);
 	intel_gvt_cleanup_vgpu_type_groups(gvt);
@@ -497,6 +549,12 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
 	}
 	gvt->idle_vgpu = vgpu;
 
+	ret = intel_gvt_init_vreg_pool(gvt);
+	if (ret) {
+		gvt_err("failed to init vreg pool\n");
+		goto out_clean_vreg;
+	}
+
 	ret = intel_gvt_debugfs_init(gvt);
 	if (ret)
 		gvt_err("debugfs registeration failed, go on.\n");
@@ -525,6 +583,8 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
 	gvt_dbg_core("gvt device initialization is done\n");
 	return 0;
 
+out_clean_vreg:
+	intel_gvt_clean_vreg_pool(gvt);
 out_clean_types:
 	intel_gvt_clean_vgpu_types(gvt);
 out_clean_thread:
