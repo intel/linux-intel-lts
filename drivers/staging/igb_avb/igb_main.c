@@ -484,8 +484,6 @@ u32 e1000_read_reg(struct e1000_hw *hw, u32 reg)
 		hw->hw_addr = NULL;
 		netif_device_detach(netdev);
 		netdev_err(netdev, "PCIe link lost, device now detached\n");
-
-		WARN_ON(1, "Error reading reg 0x%x", reg);
 	}
 
 	return value;
@@ -3622,7 +3620,7 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
 			tdba & 0x00000000ffffffffULL);
 	E1000_WRITE_REG(hw, E1000_TDBAH(reg_idx), tdba >> 32);
 
-	ring->tail = hw->io_addr + E1000_TDT(reg_idx);
+	ring->tail = hw->hw_addr + E1000_TDT(reg_idx);
 	E1000_WRITE_REG(hw, E1000_TDH(reg_idx), 0);
 	writel(0, ring->tail);
 
