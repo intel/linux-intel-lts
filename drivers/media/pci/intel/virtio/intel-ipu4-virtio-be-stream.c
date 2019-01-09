@@ -20,7 +20,7 @@
 #include "intel-ipu4-virtio-be.h"
 
 #define MAX_SIZE 6 // max 2^6
-#define POLL_WAIT 500 //500ms
+#define POLL_WAIT 5000 //5s
 
 #define dev_to_stream(dev) \
 	container_of(dev, struct ici_isys_stream, strm_dev)
@@ -186,12 +186,16 @@ int process_poll(struct ipu4_virtio_req_info *req_info)
 	} else {
 		time_remain = wait_event_interruptible_timeout(
 			as->buf_list.wait,
-			!list_empty(&as->buf_list.putbuf_list),
+			!list_empty(&as->buf_list.putbuf_list) ||
+			!as->ip.streaming,
 			POLL_WAIT);
 		if((time_remain == -ERESTARTSYS) ||
-			time_remain == 0) {
-			pr_err("%s poll timeout or unexpected wake up! code:%d port:%d",
-							__func__, time_remain, req->op[0]);
+			time_remain == 0 ||
+			!as->ip.streaming) {
+			pr_err("%s poll timeout or unexpected wake up! code:%d streaming: %d port:%d",
+							__func__, time_remain,
+							as->ip.streaming,
+							req->op[0]);
 			req->func_ret = 0;
 			return IPU4_REQ_ERROR;
 		}
@@ -400,6 +404,7 @@ int process_stream_off(struct ipu4_virtio_req_info *req_info)
 {
 	struct stream_node *sn = NULL;
 	struct ici_stream_device *strm_dev;
+	struct ici_isys_stream *as;
 	int err, found;
 	struct ipu4_virtio_req *req = req_info->request;
 
@@ -433,9 +438,11 @@ int process_stream_off(struct ipu4_virtio_req_info *req_info)
 	if (err) {
 		pr_err("%s: stream off failed\n", __func__);
 		return IPU4_REQ_ERROR;
-	}
-	else
+	} else {
+		as = dev_to_stream(strm_dev);
+		wake_up_interruptible(&as->buf_list.wait);
 		return IPU4_REQ_PROCESSED;
+	}
 }
 
 int process_set_format_thread(void *data)
