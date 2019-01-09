@@ -199,30 +199,31 @@ struct vm_switch_trace {
 	uint64_t vm_enter_tsc;
 	uint64_t vm_exit_tsc;
 	uint64_t vm_exit_reason;
-	int32_t os_id;
+	uint16_t os_id;
+	uint16_t reserved;
 } __attribute__((aligned(32)));
 #define VM_SWITCH_TRACE_SIZE ((uint64_t)sizeof(struct vm_switch_trace))
 
-#define MAX_NR_VCPUS 8
-#define MAX_NR_VMS 6
+#define CONFIG_MAX_VCPUS_PER_VM 8
+#define CONFIG_MAX_VM_NUM       6
 
 struct profiling_vcpu_pcpu_map {
-	int32_t vcpu_id;
-	int32_t pcpu_id;
-	int32_t apic_id;
+	int16_t vcpu_id;
+	int16_t pcpu_id;
+	uint32_t apic_id;
 } __attribute__((aligned(8)));
 
 struct profiling_vm_info {
-	int32_t vm_id_num;
-	unsigned char guid[16];
+	uint16_t vm_id_num;
+	uint8_t guid[16];
 	char vm_name[16];
-	int32_t num_vcpus;
-	struct profiling_vcpu_pcpu_map cpu_map[MAX_NR_VCPUS];
+	uint16_t num_vcpus;
+	struct profiling_vcpu_pcpu_map cpu_map[CONFIG_MAX_VCPUS_PER_VM];
 } __attribute__((aligned(8)));
 
 struct profiling_vm_info_list {
-	int32_t num_vms;
-	struct profiling_vm_info vm_list[MAX_NR_VMS];
+	uint16_t num_vms;
+	struct profiling_vm_info vm_list[CONFIG_MAX_VM_NUM];
 } __attribute__((aligned(8)));
 
 /*
