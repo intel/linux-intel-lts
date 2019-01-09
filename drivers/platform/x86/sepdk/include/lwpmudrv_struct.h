@@ -1646,14 +1646,14 @@ typedef CPU_MAP_TRACE_NODE * CPU_MAP_TRACE;
 struct CPU_MAP_TRACE_NODE_S {
 	U64 tsc;
 	U32 os_id;
-	U32 vcpu_id;
-	U32 pcpu_id;
+	U16 vcpu_id;
+	U16 pcpu_id;
 	U8 is_static : 1;
 	U8 initial : 1;
 	U8 reserved1 : 6;
 	U8 reserved2;
 	U16 reserved3;
-	U64 reserved4;
+	U32 reserved4;
 };
 
 #define CPU_MAP_TRACE_tsc(x) ((x)->tsc)
