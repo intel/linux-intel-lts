@@ -102,7 +102,7 @@ struct GLOBAL_STATE_NODE_S {
 typedef struct CPU_STATE_NODE_S CPU_STATE_NODE;
 typedef CPU_STATE_NODE * CPU_STATE;
 struct CPU_STATE_NODE_S {
-	S32 apic_id; // Processor ID on the system bus
+	U32 apic_id; // Processor ID on the system bus
 	PVOID apic_linear_addr; // linear address of local apic
 	PVOID apic_physical_addr; // physical address of local apic
 

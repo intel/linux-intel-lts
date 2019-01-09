@@ -65,7 +65,7 @@ static VOID apic_Get_APIC_ID(S32 cpu)
 	U32 apic_id = 0;
 	CPU_STATE pcpu;
 #if defined(DRV_SEP_ACRN_ON)
-	U32 i;
+	U16 i;
 #endif
 
 	SEP_DRV_LOG_TRACE_IN("CPU: %d.", cpu);
@@ -108,7 +108,7 @@ static VOID apic_Get_APIC_ID(S32 cpu)
 			"apic_Get_APIC_ID: Error in reading APIC ID on ACRN\n");
 	} else {
 		for (i = 0; i < vm_info_list->num_vms; i++) {
-			if (vm_info_list->vm_list[i].vm_id == 0xFFFFFFFF) {
+			if (vm_info_list->vm_list[i].vm_id == 0xFFFF) {
 				CPU_STATE_apic_id(pcpu) =
 					vm_info_list->vm_list[i]
 						.cpu_map[cpu]
