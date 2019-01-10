@@ -234,12 +234,10 @@ struct hc_ptdev_irq {
 	uint16_t phys_bdf;	/* IN: Device physical BDF# */
 	union {
 		struct {
-			uint8_t virt_pin;	/* IN: virtual IOAPIC pin */
-			uint8_t reserved0[3];	/* Reserved */
-			uint8_t phys_pin;	/* IN: physical IOAPIC pin */
-			uint8_t reserved1[3];	/* Reserved */
+			uint32_t virt_pin;	/* IN: virtual IOAPIC pin */
+			uint32_t phys_pin;	/* IN: physical IOAPIC pin */
 			bool pic_pin;		/* IN: pin from PIC? */
-			uint8_t reserved2[3];	/* Reserved */
+			uint8_t reserved[3];	/* Reserved */
 		} intx;
 		struct {
 			/* IN: vector count of MSI/MSIX */
