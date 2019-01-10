@@ -49,7 +49,7 @@ static int vskl_vbs_handle_kick(int client_id, unsigned long *ioreqs_map)
 {
 	struct vhm_request *req;
 	struct snd_skl_vbe_client *client;
-	int i, handle;
+	int vcpu, handle;
 	struct vskl *vskl = get_virtio_audio();
 	struct snd_skl_vbe *vbe = &vskl->vbe;
 
@@ -69,14 +69,16 @@ static int vskl_vbs_handle_kick(int client_id, unsigned long *ioreqs_map)
 	}
 
 	/* go through all vcpu for the valid request buffer */
-	for (i = 0; i < client->max_vcpu; i++) {
-		req = &client->req_buf[i];
-		handle = 0;
-
-		/* ignore if not processing state */
-		if (atomic_read(&req->processed) != REQ_STATE_PROCESSING)
+	while (1) {
+		vcpu = find_first_bit(ioreqs_map, client->max_vcpu);
+		if (vcpu == client->max_vcpu)
+			break;
+		req = &client->req_buf[vcpu];
+		if (atomic_read(&req->processed) != REQ_STATE_PROCESSING ||
+				req->client != client->vhm_client_id)
 			continue;
 
+		handle = 0;
 		dev_dbg(vskl->dev,
 			"ioreq type %d, direction %d, addr 0x%llx, size 0x%llx, value 0x%x\n",
 			 req->type,
@@ -96,8 +98,7 @@ static int vskl_vbs_handle_kick(int client_id, unsigned long *ioreqs_map)
 				(handle = 1) : (handle = 0);
 		}
 
-		atomic_set(&req->processed, REQ_STATE_COMPLETE);
-		acrn_ioreq_complete_request(client->vhm_client_id, i, req);
+		acrn_ioreq_complete_request(client->vhm_client_id, vcpu, req);
 
 		/* handle VQ kick if needed */
 		if (handle)
