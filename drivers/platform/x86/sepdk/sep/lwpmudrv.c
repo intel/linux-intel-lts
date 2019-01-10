@@ -4902,11 +4902,20 @@ static OS_STATUS lwpmudrv_Samp_Find_Physical_Address(IOCTL_ARGS arg)
 		return OS_FAULT;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	/* 'type' field has been removed */
+	if (!access_ok((void __user *)search_addr,
+		       sizeof(CHIPSET_PCI_SEARCH_ADDR_NODE))) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT("Access not OK!");
+		return OS_FAULT;
+	}
+#else
 	if (!access_ok(VERIFY_WRITE, (void __user *)search_addr,
 		       sizeof(CHIPSET_PCI_SEARCH_ADDR_NODE))) {
 		SEP_DRV_LOG_ERROR_FLOW_OUT("Access not OK!");
 		return OS_FAULT;
 	}
+#endif
 
 	if (copy_from_user(&user_addr, (void __user *)search_addr,
 			   sizeof(CHIPSET_PCI_SEARCH_ADDR_NODE))) {
