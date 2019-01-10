@@ -40,6 +40,7 @@
 #include <linux/vhm/acrn_vhm_mm.h>
 #include "../hyper_dmabuf_msg.h"
 #include "../hyper_dmabuf_drv.h"
+#include "../hyper_dmabuf_list.h"
 #include "hyper_dmabuf_virtio_common.h"
 #include "hyper_dmabuf_virtio_fe_list.h"
 #include "hyper_dmabuf_virtio_shm.h"
@@ -330,6 +331,7 @@ static void cleanup_fe(struct virtio_fe_info *fe_info, void *attr)
 
 		acrn_ioreq_destroy_client(fe_info->client_id);
 		virtio_fe_remove(fe_info->client_id);
+		hyper_dmabuf_remove_imported_vmid(fe_info->vmid);
 		kfree(fe_info);
 	}
 }

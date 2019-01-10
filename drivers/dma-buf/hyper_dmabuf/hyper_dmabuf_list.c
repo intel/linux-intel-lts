@@ -290,3 +290,18 @@ void hyper_dmabuf_foreach_exported(
 		func(info_entry->exported, attr);
 	}
 }
+
+void hyper_dmabuf_remove_imported_vmid(int vmid)
+{
+	struct list_entry_imported *info_entry;
+	struct hlist_node *tmp;
+	int bkt;
+
+	hash_for_each_safe(hyper_dmabuf_hash_imported, bkt, tmp,
+		info_entry, node) {
+		if (HYPER_DMABUF_DOM_ID(info_entry->imported->hid) == vmid) {
+			hash_del(&info_entry->node);
+			kfree(info_entry);
+		}
+	}
+}
