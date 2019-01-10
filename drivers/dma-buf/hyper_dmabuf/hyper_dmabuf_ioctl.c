@@ -450,6 +450,23 @@ static int hyper_dmabuf_export_fd_ioctl(struct file *filp, void *data)
 
 	mutex_lock(&hy_drv_priv->lock);
 
+	if (imported->dma_buf) {
+		if (imported->valid == false) {
+			mutex_unlock(&hy_drv_priv->lock);
+			dev_err(hy_drv_priv->dev,
+				"Buffer is released {id:%d key:%d %d %d}, cannot import\n",
+				imported->hid.id, imported->hid.rng_key[0],
+				imported->hid.rng_key[1], imported->hid.rng_key[2]);
+			return -EINVAL;
+		}
+		get_dma_buf(imported->dma_buf);
+		export_fd_attr->fd = dma_buf_fd(imported->dma_buf,
+						export_fd_attr->flags);
+		mutex_unlock(&hy_drv_priv->lock);
+		dev_dbg(hy_drv_priv->dev, "%s exit\n", __func__);
+		return 0;
+	}
+
 	imported->importers++;
 
 	/* send notification for export_fd to exporter */
