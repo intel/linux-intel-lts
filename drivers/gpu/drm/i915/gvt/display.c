@@ -555,8 +555,7 @@ int setup_virtual_monitors(struct intel_vgpu *vgpu)
 			    !bxt_check_planes(vgpu, pipe))
 				continue;
 			/* Get (Dom0) port associated with current pipe. */
-			port = enc_to_dig_port(
-					&(connector->encoder->base))->base.port;
+			port = connector->encoder->port;
 			ret = setup_virtual_monitor(vgpu, port,
 				type, 0, connector->detect_edid,
 				!gvt_emulate_hdmi);
