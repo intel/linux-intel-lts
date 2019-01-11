@@ -516,6 +516,9 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 	struct ipu_psys *psys = inode_to_ipu_psys(inode);
 	struct ipu_psys_fh *fh = file->private_data;
 	struct ipu_psys_kbuffer *kbuf, *kbuf0;
+#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
+	struct ipu_dma_buf_attach *ipu_attach;
+#endif
 
 	mutex_lock(&fh->mutex);
 	/* clean up buffers */
@@ -526,6 +529,11 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 			if (kbuf->dbuf && kbuf->db_attach) {
 				struct dma_buf *dbuf;
 				kbuf->valid = false;
+#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
+				ipu_attach = kbuf->db_attach->priv;
+				if (ipu_attach->vma_is_io)
+					ksys_close(kbuf->fd);
+#endif
 				dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
 				dma_buf_unmap_attachment(kbuf->db_attach,
 							 kbuf->sgt,
@@ -535,9 +543,6 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 				kbuf->dbuf = NULL;
 				kbuf->db_attach = NULL;
 				dma_buf_put(dbuf);
-#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
-				ksys_close(kbuf->fd);
-#endif
 			} else {
 				if (kbuf->db_attach)
 					ipu_psys_put_userpages(
