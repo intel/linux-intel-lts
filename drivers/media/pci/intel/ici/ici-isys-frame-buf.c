@@ -698,10 +698,12 @@ void ici_isys_frame_buf_ready(struct ici_isys_pipeline
 static void unmap_buf(struct ici_frame_buf_wrapper *buf)
 {
 	int i;
-
+	dev_dbg(&buf->buf_list->strm_dev->dev, "buf: %p\n", buf);
 	for (i = 0; i < buf->frame_info.num_planes; i++) {
 		struct ici_kframe_plane *kframe_plane =
 			&buf->kframe_info.planes[i];
+		dev_dbg(&buf->buf_list->strm_dev->dev, "kframe_plane: %p\n",
+			kframe_plane);
 		switch (kframe_plane->mem_type) {
 		case ICI_MEM_USERPTR:
 			ici_put_userpages(kframe_plane->dev,
@@ -747,36 +749,52 @@ void ici_isys_frame_buf_stream_cancel(struct
 	struct ici_frame_buf_wrapper *buf;
 	unsigned long flags = 0;
 
-	while (!list_empty(&buf_list->getbuf_list)) {
+	while (1) {
 		spin_lock_irqsave(&buf_list->lock, flags);
+		if (list_empty(&buf_list->getbuf_list)) {
+			spin_unlock_irqrestore(&buf_list->lock, flags);
+			break;
+		}
 		buf = list_entry(buf_list->getbuf_list.next,
 			struct ici_frame_buf_wrapper, node);
 		list_del(&buf->node);
 		spin_unlock_irqrestore(&buf_list->lock, flags);
+		dev_dbg(&buf_list->strm_dev->dev, "buf: %p\n", buf);
 		if (as->strm_dev.virt_dev_id < 0)
 			unmap_buf(buf);
 		else
 			unmap_buf_virt(buf);
 	}
 
-	while (!list_empty(&buf_list->putbuf_list)) {
+	while (1) {
 		spin_lock_irqsave(&buf_list->lock, flags);
+		if (list_empty(&buf_list->putbuf_list)) {
+			spin_unlock_irqrestore(&buf_list->lock, flags);
+			break;
+		}
 		buf = list_entry(buf_list->putbuf_list.next,
 			struct ici_frame_buf_wrapper, node);
 		list_del(&buf->node);
 		spin_unlock_irqrestore(&buf_list->lock, flags);
+		dev_dbg(&buf_list->strm_dev->dev, "buf: %p\n", buf);
 		if (as->strm_dev.virt_dev_id < 0)
 			unmap_buf(buf);
 		else
 			unmap_buf_virt(buf);
 	}
 
-	while (!list_empty(&buf_list->interlacebuf_list)) {
+	while (1) {
 		spin_lock_irqsave(&buf_list->short_packet_queue_lock, flags);
+		if (list_empty(&buf_list->interlacebuf_list)) {
+			spin_unlock_irqrestore
+				(&buf_list->short_packet_queue_lock, flags);
+			break;
+		}
 		buf = list_entry(buf_list->interlacebuf_list.next,
 			struct ici_frame_buf_wrapper, node);
 		list_del(&buf->node);
 		spin_unlock_irqrestore(&buf_list->short_packet_queue_lock, flags);
+		dev_dbg(&buf_list->strm_dev->dev, "buf: %p\n", buf);
 		unmap_buf(buf);
 	}
 }
