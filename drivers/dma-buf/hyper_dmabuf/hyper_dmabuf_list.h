@@ -61,6 +61,7 @@ struct imported_sgt_info *hyper_dmabuf_find_imported(hyper_dmabuf_id_t hid);
 int hyper_dmabuf_remove_exported(hyper_dmabuf_id_t hid);
 
 int hyper_dmabuf_remove_imported(hyper_dmabuf_id_t hid);
+void hyper_dmabuf_remove_imported_vmid(int vmid);
 
 void hyper_dmabuf_foreach_exported(void (*func)(struct exported_sgt_info *,
 				   void *attr), void *attr);
