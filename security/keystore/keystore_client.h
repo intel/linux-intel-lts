@@ -43,6 +43,11 @@
  *
  * Returns: 0 if OK or negative error code.
  */
+#ifdef CONFIG_APPLICATION_AUTH
+int keystore_calc_clientid(u8 *client_id, const unsigned int client_id_size,
+		int timeout, u16 caps);
+#else
 int keystore_calc_clientid(u8 *client_id, const unsigned int client_id_size);
+#endif
 
 #endif /* KEYSTORE_CLIENT_ID */
