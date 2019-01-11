@@ -707,7 +707,6 @@ static void igb_configure_msix(struct igb_adapter *adapter)
 static int igb_request_msix(struct igb_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
-	struct e1000_hw *hw = &adapter->hw;
 	int i, err = 0, vector = 0, free_vector = 0;
 
 	err = request_irq(adapter->msix_entries[vector].vector,
@@ -720,7 +719,7 @@ static int igb_request_msix(struct igb_adapter *adapter)
 
 		vector++;
 
-		q_vector->itr_register = hw->hw_addr + E1000_EITR(vector);
+		q_vector->itr_register = adapter->io_addr + E1000_EITR(vector);
 
 		if (q_vector->rx.ring && q_vector->tx.ring)
 			sprintf(q_vector->name, "%s-TxRx-%u", netdev->name,
@@ -1198,7 +1197,7 @@ static int igb_alloc_q_vector(struct igb_adapter *adapter,
 	q_vector->tx.work_limit = adapter->tx_work_limit;
 
 	/* initialize ITR configuration */
-	q_vector->itr_register = adapter->hw.hw_addr + E1000_EITR(0);
+	q_vector->itr_register = adapter->io_addr + E1000_EITR(0);
 	q_vector->itr_val = IGB_START_ITR;
 
 	/* initialize pointer to rings */
@@ -2720,10 +2719,11 @@ static int igb_probe(struct pci_dev *pdev,
 		goto err_ioremap;
 #endif
 	err = -EIO;
-	hw->hw_addr = ioremap(pci_resource_start(pdev, 0),
-			      pci_resource_len(pdev, 0));
-	if (!hw->hw_addr)
+	adapter->io_addr = pci_iomap(pdev, 0, 0);
+	if (!adapter->io_addr)
 		goto err_ioremap;
+	/* hw->hw_addr can be altered, we'll use adapter->io_addr for unmap */
+	hw->hw_addr = adapter->io_addr;
 
 #ifdef HAVE_NET_DEVICE_OPS
 	netdev->netdev_ops = &igb_netdev_ops;
@@ -3138,7 +3138,7 @@ err_eeprom:
 err_sw_init:
 	igb_clear_interrupt_scheme(adapter);
 	igb_reset_sriov_capability(adapter);
-	iounmap(hw->hw_addr);
+	pci_iounmap(pdev, adapter->io_addr);
 err_ioremap:
 	free_netdev(netdev);
 err_alloc_etherdev:
@@ -3221,7 +3221,7 @@ static void igb_remove(struct pci_dev *pdev)
 
 	igb_clear_interrupt_scheme(adapter);
 
-	iounmap(hw->hw_addr);
+	pci_iounmap(pdev, adapter->io_addr);
 	if (hw->flash_address)
 		iounmap(hw->flash_address);
 	pci_release_selected_regions(pdev,
@@ -3620,7 +3620,7 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
 			tdba & 0x00000000ffffffffULL);
 	E1000_WRITE_REG(hw, E1000_TDBAH(reg_idx), tdba >> 32);
 
-	ring->tail = hw->hw_addr + E1000_TDT(reg_idx);
+	ring->tail = adapter->io_addr + E1000_TDT(reg_idx);
 	E1000_WRITE_REG(hw, E1000_TDH(reg_idx), 0);
 	writel(0, ring->tail);
 
@@ -4051,7 +4051,7 @@ void igb_configure_rx_ring(struct igb_adapter *adapter,
 			ring->count * sizeof(union e1000_adv_rx_desc));
 
 	/* initialize head and tail */
-	ring->tail = hw->hw_addr + E1000_RDT(reg_idx);
+	ring->tail = adapter->io_addr + E1000_RDT(reg_idx);
 	E1000_WRITE_REG(hw, E1000_RDH(reg_idx), 0);
 	writel(0, ring->tail);
 
@@ -9637,6 +9637,11 @@ static pci_ers_result_t igb_io_slot_reset(struct pci_dev *pdev)
 
 		pci_enable_wake(pdev, PCI_D3hot, 0);
 		pci_enable_wake(pdev, PCI_D3cold, 0);
+
+		/* In case of PCI error, adapter lose its HW address
+		 * so we should re-assign it here.
+		 */
+		hw->hw_addr = adapter->io_addr;
 
 		schedule_work(&adapter->reset_task);
 		E1000_WRITE_REG(hw, E1000_WUS, ~0);
