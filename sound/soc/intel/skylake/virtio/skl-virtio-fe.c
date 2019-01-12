@@ -164,20 +164,23 @@ static int vfe_send_msg(struct snd_skl_vfe *vfe,
 	if (msg->rx_buf)
 		sg_set_buf(&sgs[2], msg->rx_buf, rx_size);
 
+	if (rx_data) {
+		init_waitqueue_head(&waitq);
+
+		msg->waitq = &waitq;
+		msg->completed = &completed;
+	}
+
 	ret = vfe_send_virtio_msg(vfe, vfe->ipc_not_tx_vq, sgs, 3, msg, true);
 	if (ret < 0)
 		return ret;
 
 	// If response is expected, wait for it
 	if (rx_data) {
-		init_waitqueue_head(&waitq);
-
-		msg->waitq = &waitq;
-		msg->completed = &completed;
-
 		ret = wait_event_timeout(waitq, completed,
 				msecs_to_jiffies(VFE_MSG_MSEC_TIMEOUT));
 		if (ret == 0) {
+			atomic_set(&msg->status, VFE_MSG_TIMED_OUT);
 			dev_err(&vfe->vdev->dev, "Response from backend timed out\n");
 			return -ETIMEDOUT;
 		}
@@ -286,16 +289,19 @@ static void vfe_cmd_handle_rx(struct virtqueue *vq)
 static void vfe_not_tx_done(struct virtqueue *vq)
 {
 	struct snd_skl_vfe *vfe = vq->vdev->priv;
+	enum vfe_ipc_msg_status msg_status;
 	struct vfe_ipc_msg *msg;
 	unsigned int buflen = 0;
 
 	while ((msg = virtqueue_get_buf(vfe->ipc_not_tx_vq, &buflen))
 			!= NULL) {
 
-		kfree(msg->tx_buf);
+		msg_status = atomic_read(&msg->status);
+		if (msg_status != VFE_MSG_PENDING)
+			goto free_msg;
+
 		if (msg->rx_buf) {
 			memcpy(msg->rx_data, msg->rx_buf, msg->rx_size);
-			kfree(msg->rx_buf);
 		}
 
 		if (msg->waitq && msg->completed) {
@@ -303,6 +309,9 @@ static void vfe_not_tx_done(struct virtqueue *vq)
 			wake_up(msg->waitq);
 		}
 
+free_msg:
+		kfree(msg->tx_buf);
+		kfree(msg->rx_buf);
 		kfree(msg);
 	}
 }
@@ -331,16 +340,18 @@ static void vfe_posn_update(struct work_struct *work)
 	vq = vfe->ipc_not_rx_vq;
 
 	while ((pos_req = virtqueue_get_buf(vq, &buflen)) != NULL) {
-		vfe_send_pos_request(vfe, pos_req);
 		substr_info = vfe_find_substream_info_by_pcm(vfe,
 			pos_req->pcm_id, pos_req->stream_dir);
 
 		// substream may be already closed on FE side
 		if (!substr_info)
-			return;
+			goto send_back_msg;
 
 		substr_info->hw_ptr = pos_req->stream_pos;
 		snd_pcm_period_elapsed(substr_info->substream);
+
+send_back_msg:
+		vfe_send_pos_request(vfe, pos_req);
 	}
 }
 
