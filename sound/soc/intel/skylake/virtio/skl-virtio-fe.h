@@ -40,6 +40,7 @@ struct snd_skl_vfe {
 	/* position update work */
 	struct work_struct posn_update_work;
 
+	spinlock_t ipc_vq_lock;
 	/* IPC cmd from frontend to backend */
 	struct virtqueue           *ipc_cmd_tx_vq;
 	/* IPC cmd reply from backend to frontend */
