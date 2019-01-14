@@ -543,9 +543,6 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 				kbuf->dbuf = NULL;
 				kbuf->db_attach = NULL;
 				dma_buf_put(dbuf);
-#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
-				ksys_close(kbuf->fd);
-#endif
 			} else {
 				if (kbuf->db_attach)
 					ipu_psys_put_userpages(
