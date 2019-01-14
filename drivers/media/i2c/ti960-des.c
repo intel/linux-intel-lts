@@ -1314,6 +1314,9 @@ static int ti960_init(struct ti960 *va)
 	unsigned int reset_gpio = va->pdata->reset_gpio;
 	int i, rval;
 	unsigned int val;
+	int m;
+	int rx_port = 0;
+	int ser_alias = 0;
 
 	gpio_set_value(reset_gpio, 1);
 	usleep_range(2000, 3000);
@@ -1339,6 +1342,11 @@ static int ti960_init(struct ti960 *va)
 	}
 	usleep_range(10000, 11000);
 
+	/*
+	 * fixed value of sensor phy, ser_alias, port config for ti960 each port,
+	 * not yet known sensor platform data here.
+	 */
+	ser_alias = 0x58;
 	for (i = 0; i < ARRAY_SIZE(ti960_init_settings); i++) {
 		rval = regmap_write(va->regmap8,
 			ti960_init_settings[i].reg,
@@ -1353,6 +1361,58 @@ static int ti960_init(struct ti960 *va)
 
 	/* wait for ti953 ready */
 	msleep(200);
+	for (i = 0; i < ARRAY_SIZE(ti953_init_settings); i++) {
+		rval = ti953_reg_write(va, rx_port, ser_alias,
+			ti953_init_settings[i].reg,
+			ti953_init_settings[i].val);
+		if (rval) {
+			dev_err(va->sd.dev, "port %d, ti953 write timeout %d\n", 0, rval);
+			break;
+		}
+	}
+
+	for (m = 0; m < ARRAY_SIZE(ti960_init_settings_2); m++) {
+		rval = regmap_write(va->regmap8,
+			ti960_init_settings_2[m].reg,
+			ti960_init_settings_2[m].val);
+		if (rval) {
+			dev_err(va->sd.dev,
+				"Failed to write TI960 init setting 2, reg %2x, val %2x\n",
+				ti960_init_settings_2[m].reg, ti960_init_settings_2[m].val);
+			break;
+		}
+	}
+
+	rval = regmap_write(va->regmap8, TI960_RX_PORT_SEL,
+		(rx_port << 4) + (1 << rx_port));
+	if (rval)
+		return rval;
+	for (m = 1; m < ARRAY_SIZE(ti960_init_settings_3); m++) {
+		rval = regmap_write(va->regmap8,
+			ti960_init_settings_3[m].reg,
+			ti960_init_settings_3[m].val);
+		if (rval) {
+			dev_err(va->sd.dev,
+				"Failed to write TI960 init setting 2, reg %2x, val %2x\n",
+				ti960_init_settings_3[m].reg, ti960_init_settings_3[m].val);
+			break;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(ti953_init_settings_2); i++) {
+		rval = ti953_reg_write(va, rx_port, ser_alias,
+			ti953_init_settings_2[i].reg,
+			ti953_init_settings_2[i].val);
+		if (rval) {
+			dev_err(va->sd.dev, "port %d, ti953 write timeout %d\n", 0, rval);
+			break;
+		}
+	}
+
+	/* reset and power for ti953 */
+	ti953_reg_write(va, 0, ser_alias, 0x0d, 00);
+	msleep(50);
+	ti953_reg_write(va, 0, ser_alias, 0x0d, 0x3);
 
 	rval = ti960_map_subdevs_addr(va);
 	if (rval)
