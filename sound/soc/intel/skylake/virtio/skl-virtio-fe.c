@@ -100,15 +100,19 @@ static int vfe_send_virtio_msg(struct snd_skl_vfe *vfe,
 	struct virtqueue *vq, struct scatterlist *sgs, int sg_count,
 	void *data, bool out)
 {
+	unsigned long irq_flags;
 	int ret;
 
 	if (!vq)
 		return -EINVAL;
 
+
+	spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
 	if (out)
 		ret = virtqueue_add_outbuf(vq, sgs, sg_count, data, GFP_KERNEL);
 	else
 		ret = virtqueue_add_inbuf(vq, sgs, sg_count, data, GFP_KERNEL);
+	spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
 
 	if (ret < 0) {
 		dev_err(&vfe->vdev->dev,
@@ -117,7 +121,10 @@ static int vfe_send_virtio_msg(struct snd_skl_vfe *vfe,
 		return ret;
 	}
 
+	spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
 	virtqueue_kick(vq);
+	spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
+
 	return 0;
 }
 
@@ -270,10 +277,17 @@ static void vfe_cmd_tx_done(struct virtqueue *vq)
 {
 	struct snd_skl_vfe *vfe = vq->vdev->priv;
 	struct vfe_dsp_ipc_msg *msg;
+	unsigned long irq_flags;
 	unsigned int buflen = 0;
 
-	while ((msg = virtqueue_get_buf(vfe->ipc_cmd_tx_vq, &buflen))
-			!= NULL)	{
+	while (true) {
+		spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
+		msg = virtqueue_get_buf(vfe->ipc_cmd_tx_vq, &buflen);
+		spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
+
+		if (msg == NULL)
+			break;
+
 		msg->ipc->complete = true;
 		list_del(&msg->ipc->list);
 		sst_ipc_tx_msg_reply_complete(&vfe->sdev.skl_sst->ipc,
@@ -290,11 +304,18 @@ static void vfe_not_tx_done(struct virtqueue *vq)
 {
 	struct snd_skl_vfe *vfe = vq->vdev->priv;
 	enum vfe_ipc_msg_status msg_status;
+	unsigned long irq_flags;
 	struct vfe_ipc_msg *msg;
 	unsigned int buflen = 0;
 
-	while ((msg = virtqueue_get_buf(vfe->ipc_not_tx_vq, &buflen))
-			!= NULL) {
+
+	while (true) {
+		spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
+		msg = virtqueue_get_buf(vfe->ipc_not_tx_vq, &buflen);
+		spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
+
+		if (msg == NULL)
+			break;
 
 		msg_status = atomic_read(&msg->status);
 		if (msg_status != VFE_MSG_PENDING)
@@ -332,6 +353,7 @@ static void vfe_posn_update(struct work_struct *work)
 {
 	struct vfe_hw_pos_request *pos_req;
 	struct virtqueue *vq;
+	unsigned long irq_flags;
 	unsigned int buflen = 0;
 	struct vfe_substream_info *substr_info;
 	struct snd_skl_vfe *vfe =
@@ -339,7 +361,14 @@ static void vfe_posn_update(struct work_struct *work)
 
 	vq = vfe->ipc_not_rx_vq;
 
-	while ((pos_req = virtqueue_get_buf(vq, &buflen)) != NULL) {
+	while (true) {
+		spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
+		pos_req = virtqueue_get_buf(vq, &buflen);
+		spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
+
+		if (pos_req == NULL)
+			break;
+
 		substr_info = vfe_find_substream_info_by_pcm(vfe,
 			pos_req->pcm_id, pos_req->stream_dir);
 
@@ -847,6 +876,7 @@ static int vfe_init(struct virtio_device *vdev)
 		return ret;
 	}
 
+	spin_lock_init(&vfe->ipc_vq_lock);
 	/* virtques */
 	vfe->ipc_cmd_tx_vq = vqs[SKL_VIRTIO_IPC_CMD_TX_VQ];
 	vfe->ipc_cmd_rx_vq = vqs[SKL_VIRTIO_IPC_CMD_RX_VQ];
