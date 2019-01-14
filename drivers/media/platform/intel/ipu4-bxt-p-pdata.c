@@ -1238,7 +1238,7 @@ static struct crlmodule_platform_data ov495_pdata = {
 
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
 #define TI960_I2C_ADAPTER	2
-#define TI960_I2C_ADAPTER_2	7
+#define TI960_I2C_ADAPTER_2	4
 #define TI960_LANES	4
 
 static struct ipu_isys_csi2_config ti960_csi2_cfg = {
