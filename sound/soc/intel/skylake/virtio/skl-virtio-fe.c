@@ -351,6 +351,7 @@ static void vfe_not_handle_rx(struct virtqueue *vq)
 
 static void vfe_posn_update(struct work_struct *work)
 {
+	struct snd_pcm_substream *substream;
 	struct vfe_hw_pos_request *pos_req;
 	struct virtqueue *vq;
 	unsigned long irq_flags;
@@ -369,15 +370,22 @@ static void vfe_posn_update(struct work_struct *work)
 		if (pos_req == NULL)
 			break;
 
+		spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
 		substr_info = vfe_find_substream_info_by_pcm(vfe,
 			pos_req->pcm_id, pos_req->stream_dir);
 
 		// substream may be already closed on FE side
-		if (!substr_info)
+		if (!substr_info) {
+			spin_unlock_irqrestore(&vfe->substream_info_lock,
+				irq_flags);
 			goto send_back_msg;
+		}
 
 		substr_info->hw_ptr = pos_req->stream_pos;
-		snd_pcm_period_elapsed(substr_info->substream);
+		substream = substr_info->substream;
+		spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
+
+		snd_pcm_period_elapsed(substream);
 
 send_back_msg:
 		vfe_send_pos_request(vfe, pos_req);
@@ -418,7 +426,8 @@ int vfe_pcm_open(struct snd_pcm_substream *substream)
 {
 	struct vfe_substream_info *substr_info;
 	struct vfe_msg_header msg_header;
-	struct vfe_pcm_result vbe_result;
+	struct vfe_pcm_result vbe_result = { .ret = -EIO };
+	unsigned long irq_flags;
 	int ret;
 	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 
@@ -438,6 +447,9 @@ int vfe_pcm_open(struct snd_pcm_substream *substream)
 	if (ret < 0)
 		return ret;
 
+	if (vbe_result.ret < 0)
+		return vbe_result.ret;
+
 	substr_info = kzalloc(sizeof(*substr_info), GFP_KERNEL);
 	if (!substr_info)
 		return -ENOMEM;
@@ -446,7 +458,9 @@ int vfe_pcm_open(struct snd_pcm_substream *substream)
 	substr_info->substream = substream;
 	substr_info->direction = substream->stream;
 
+	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
 	list_add(&substr_info->list, &vfe->substr_info_list);
+	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
 
 	return vbe_result.ret;
 }
@@ -456,6 +470,7 @@ int vfe_pcm_close(struct snd_pcm_substream *substream)
 	struct vfe_substream_info *sstream_info;
 	struct vfe_msg_header msg_header;
 	struct vfe_pcm_result vbe_result;
+	unsigned long irq_flags;
 	int ret;
 	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 
@@ -463,12 +478,14 @@ int vfe_pcm_close(struct snd_pcm_substream *substream)
 	if (ret)
 		return 0;
 
+	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
 	sstream_info = vfe_find_substream_info(vfe, substream);
 
 	if (sstream_info) {
 		list_del(&sstream_info->list);
 		kfree(sstream_info);
 	}
+	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
 
 	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_CLOSE, substream);
 
@@ -573,7 +590,7 @@ snd_pcm_uframes_t vfe_pcm_pointer(struct snd_pcm_substream *substream)
 	struct vfe_substream_info *substr_info =
 		vfe_find_substream_info(vfe, substream);
 
-	return substr_info->hw_ptr;
+	return substr_info ? substr_info->hw_ptr : 0;
 }
 
 static const char *const vfe_skl_vq_names[SKL_VIRTIO_NUM_OF_VQS] = {
@@ -866,6 +883,8 @@ static int vfe_init(struct virtio_device *vdev)
 	vdev->priv = vfe;
 
 	INIT_LIST_HEAD(&vfe->kcontrols_list);
+
+	spin_lock_init(&vfe->substream_info_lock);
 	INIT_LIST_HEAD(&vfe->substr_info_list);
 
 	/* find virt queue for vfe to send/receive IPC message. */
