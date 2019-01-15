@@ -138,6 +138,7 @@ int keystore_sha256_block(const void *data, unsigned int size,
 
 	if (result_size < crypto_shash_digestsize(tfm)) {
 		crypto_free_shash(tfm);
+		kzfree(sdesc);
 		return -EINVAL;
 	}
 
