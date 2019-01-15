@@ -448,6 +448,8 @@ long keystore_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case KEYSTORE_IOC_VERSION:
 		res = version_op(&op.version);
+		break;
+
 	case KEYSTORE_IOC_REGISTER:
 		res = register_op(&op.register_client_type);
 		break;
