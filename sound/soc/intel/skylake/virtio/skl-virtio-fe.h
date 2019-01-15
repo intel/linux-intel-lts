@@ -51,6 +51,8 @@ struct snd_skl_vfe {
 	struct virtqueue           *ipc_not_tx_vq;
 
 	struct list_head kcontrols_list;
+
+	spinlock_t substream_info_lock;
 	struct list_head substr_info_list;
 
 	int (*send_dsp_ipc_msg)(struct snd_skl_vfe *vfe,
