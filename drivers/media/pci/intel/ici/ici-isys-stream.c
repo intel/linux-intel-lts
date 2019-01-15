@@ -545,7 +545,7 @@ static int start_stream_firmware(struct ici_isys_stream *as)
 
 	reinit_completion(&ip->stream_start_completion);
 	rval = ipu_lib_call(stream_start, as->isys, ip->stream_handle,
-				   NULL);
+				   &css_buf);
 	if (rval < 0) {
 		dev_err(dev, "can't start streaming (%d)\n", rval);
 		goto out_stream_close;
