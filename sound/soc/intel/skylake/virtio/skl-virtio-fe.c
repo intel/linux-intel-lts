@@ -96,6 +96,22 @@ struct vfe_kcontrol *vfe_find_kcontrol(struct snd_skl_vfe *vfe,
 	return NULL;
 }
 
+const struct snd_pcm *vfe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
+{
+	const struct snd_soc_pcm_runtime *rtd;
+	int ret = vfe_is_valid_pcm_id(pcm_name);
+
+	if (ret < 0)
+		return NULL;
+
+	list_for_each_entry(rtd, &skl->component->card->rtd_list, list) {
+		if (strncmp(rtd->pcm->id, pcm_name,
+				ARRAY_SIZE(rtd->pcm->id)) == 0)
+			return rtd->pcm;
+	}
+	return NULL;
+}
+
 static int vfe_send_virtio_msg(struct snd_skl_vfe *vfe,
 	struct virtqueue *vq, struct scatterlist *sgs, int sg_count,
 	void *data, bool out)
@@ -318,8 +334,10 @@ static void vfe_not_tx_done(struct virtqueue *vq)
 			break;
 
 		msg_status = atomic_read(&msg->status);
-		if (msg_status != VFE_MSG_PENDING)
+		if (msg_status == VFE_MSG_TIMED_OUT) {
+			vfe_handle_timedout_not_tx_msg(vfe, msg);
 			goto free_msg;
+		}
 
 		if (msg->rx_buf) {
 			memcpy(msg->rx_data, msg->rx_buf, msg->rx_size);
@@ -591,6 +609,47 @@ snd_pcm_uframes_t vfe_pcm_pointer(struct snd_pcm_substream *substream)
 		vfe_find_substream_info(vfe, substream);
 
 	return substr_info ? substr_info->hw_ptr : 0;
+}
+
+static void vfe_handle_timedout_pcm_msg(struct snd_skl_vfe *vfe,
+	struct vfe_ipc_msg *msg)
+{
+	struct snd_pcm_substream *substream;
+	const struct vfe_pcm_info *pcm_desc = &msg->header.desc.pcm;
+	const struct snd_pcm *pcm =
+		vfe_skl_find_pcm_by_name(&vfe->sdev, pcm_desc->pcm_id);
+	int direction = pcm_desc->direction;
+
+	if (!pcm)
+		return;
+
+	substream = pcm->streams[direction].substream;
+
+	switch (msg->header.cmd) {
+	case VFE_MSG_PCM_OPEN:
+		vfe_pcm_close(substream);
+	break;
+	default:
+		dev_info(&vfe->vdev->dev,
+			"Timed out PCM message %d not handled",
+			msg->header.cmd);
+	break;
+	}
+}
+
+void vfe_handle_timedout_not_tx_msg(struct snd_skl_vfe *vfe,
+	struct vfe_ipc_msg *msg)
+{
+	switch (msg->header.cmd & VFE_MSG_TYPE_MASK) {
+	case VFE_MSG_PCM:
+		vfe_handle_timedout_pcm_msg(vfe, msg);
+	break;
+	default:
+		dev_info(&vfe->vdev->dev,
+			"Timed out message %d not handled",
+			msg->header.cmd);
+	break;
+	}
 }
 
 static const char *const vfe_skl_vq_names[SKL_VIRTIO_NUM_OF_VQS] = {
