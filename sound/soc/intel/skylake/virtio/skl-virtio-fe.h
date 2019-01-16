@@ -61,4 +61,7 @@ struct snd_skl_vfe {
 		struct platform_device *pdev, struct snd_soc_card *card);
 };
 
+void vfe_handle_timedout_not_tx_msg(struct snd_skl_vfe *vfe,
+	struct vfe_ipc_msg *msg);
+
 #endif
