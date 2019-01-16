@@ -27,6 +27,7 @@
 
 DECLARE_HASHTABLE(STREAM_NODE_HASH, MAX_SIZE);
 static bool hash_initialised;
+static spinlock_t stream_node_hash_lock;
 
 struct stream_node {
 	int client_id;
@@ -34,8 +35,34 @@ struct stream_node {
 	struct hlist_node node;
 };
 
-int process_device_open(struct ipu4_virtio_req_info *req_info)
+void cleanup_stream(void)
 {
+	struct stream_node *sn = NULL;
+	unsigned long flags = 0;
+	int bkt;
+	struct hlist_node *tmp;
+
+	//To clean up SOS when uos got rebooted and stream did not
+	//get closed properly. Current implementation only handle
+	//for single UOS.
+	spin_lock_irqsave(&stream_node_hash_lock, flags);
+	if (!hash_empty(STREAM_NODE_HASH)) {
+		hash_for_each_safe(STREAM_NODE_HASH, bkt, tmp, sn, node) {
+			if (sn != NULL) {
+				pr_debug("%s: performing stream clean up!",
+								__func__);
+				filp_close(sn->f, 0);
+				hash_del(&sn->node);
+				kfree(sn);
+			}
+		}
+	}
+	spin_unlock_irqrestore(&stream_node_hash_lock, flags);
+}
+
+static int process_device_open(struct ipu4_virtio_req_info *req_info)
+{
+	unsigned long flags = 0;
 	char node_name[25];
 	struct stream_node *sn = NULL;
 	struct ici_stream_device *strm_dev;
@@ -45,17 +72,27 @@ int process_device_open(struct ipu4_virtio_req_info *req_info)
 	if (!hash_initialised) {
 		hash_init(STREAM_NODE_HASH);
 		hash_initialised = true;
+		spin_lock_init(&stream_node_hash_lock);
 	}
+
+	spin_lock_irqsave(&stream_node_hash_lock, flags);
 	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
 		if (sn != NULL) {
 			if (sn->client_id != domid) {
-				pr_err("process_device_open: stream device %d already opened by other guest!", sn->client_id);
+				pr_err("%s: stream device %d already opened by other guest!",
+					__func__, sn->client_id);
+				spin_unlock_irqrestore(&stream_node_hash_lock,
+													flags);
 				return IPU4_REQ_ERROR;
 			}
-			pr_info("process_device_open: stream device %d already opened by client %d", req->op[0], domid);
-			return IPU4_REQ_PROCESSED;
+			pr_info("%s: stream device %d already opened by client %d",
+				__func__, req->op[0], domid);
+			spin_unlock_irqrestore(&stream_node_hash_lock,
+												flags);
+			return IPU4_REQ_ERROR;
 		}
 	}
+	spin_unlock_irqrestore(&stream_node_hash_lock, flags);
 
 	sprintf(node_name, "/dev/intel_stream%d", req->op[0]);
 	pr_info("process_device_open: %s", node_name);
@@ -70,14 +107,18 @@ int process_device_open(struct ipu4_virtio_req_info *req_info)
 	strm_dev->virt_dev_id = req->op[0];
 
 	sn->client_id = domid;
+	spin_lock_irqsave(&stream_node_hash_lock, flags);
 	hash_add(STREAM_NODE_HASH, &sn->node, req->op[0]);
+	spin_unlock_irqrestore(&stream_node_hash_lock, flags);
 
 	return IPU4_REQ_PROCESSED;
 }
 
-int process_device_close(struct ipu4_virtio_req_info *req_info)
+static int process_device_close(struct ipu4_virtio_req_info *req_info)
 {
+	unsigned long flags = 0;
 	struct stream_node *sn = NULL;
+	struct hlist_node *tmp;
 	struct ipu4_virtio_req *req = req_info->request;
 
 	if (!hash_initialised)
@@ -85,13 +126,16 @@ int process_device_close(struct ipu4_virtio_req_info *req_info)
 
 	pr_info("process_device_close: %d", req->op[0]);
 
-	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
+	spin_lock_irqsave(&stream_node_hash_lock, flags);
+	hash_for_each_possible_safe(STREAM_NODE_HASH, sn,
+							tmp, node, req->op[0]) {
 		if (sn != NULL) {
-			hash_del(&sn->node);
 			filp_close(sn->f, 0);
+			hash_del(&sn->node);
 			kfree(sn);
 		}
 	}
+	spin_unlock_irqrestore(&stream_node_hash_lock, flags);
 
 	return IPU4_REQ_PROCESSED;
 }
@@ -176,6 +220,7 @@ int process_poll(struct ipu4_virtio_req_info *req_info)
 	}
 
 	as = dev_to_stream(sn->f->private_data);
+
 	spin_lock_irqsave(&as->buf_list.lock, flags);
 	empty = list_empty(&as->buf_list.putbuf_list);
 	spin_unlock_irqrestore(&as->buf_list.lock, flags);

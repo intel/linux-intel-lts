@@ -63,9 +63,11 @@ struct ipu4_virtio_fe_info *ipu4_virtio_fe_find_by_vmid(int vmid)
 int ipu4_virtio_fe_remove(int client_id)
 {
 	struct ipu4_virtio_fe_info_entry *info_entry;
+	struct hlist_node *tmp;
 	int bkt;
 
-	hash_for_each(ipu4_virtio_fe_hash, bkt, info_entry, node)
+	hash_for_each_safe(ipu4_virtio_fe_hash, bkt,
+						tmp, info_entry, node)
 		if (info_entry->info->client_id == client_id) {
 			hash_del(&info_entry->node);
 			kfree(info_entry);
