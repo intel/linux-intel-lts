@@ -65,6 +65,8 @@ static void ipu_vbk_stop_vq(struct ipu4_virtio_be_priv *rng,
 static void ipu_vbk_flush_vq(struct ipu4_virtio_be_priv *rng, int index);
 #endif
 
+extern void cleanup_stream(void);
+
 /* hash table related functions */
 static void ipu_vbk_hash_init(void)
 {
@@ -107,6 +109,7 @@ static struct ipu4_virtio_be_priv *ipu_vbk_hash_find(int client_id)
 static int ipu_vbk_hash_del(int client_id)
 {
 	struct ipu4_virtio_be_priv *entry;
+	struct hlist_node *tmp;
 	int bkt;
 
 	if (!ipu_vbk_hash_initialized) {
@@ -114,7 +117,7 @@ static int ipu_vbk_hash_del(int client_id)
 		return -1;
 	}
 
-	hash_for_each(HASH_NAME, bkt, entry, node)
+	hash_for_each_safe(HASH_NAME, bkt, tmp, entry, node)
 		if (virtio_dev_client_id(&entry->dev) == client_id) {
 			hash_del(&entry->node);
 			return 0;
@@ -128,6 +131,7 @@ static int ipu_vbk_hash_del(int client_id)
 static int ipu_vbk_hash_del_all(void)
 {
 	struct ipu4_virtio_be_priv *entry;
+	struct hlist_node *tmp;
 	int bkt;
 
 	if (!ipu_vbk_hash_initialized) {
@@ -135,7 +139,7 @@ static int ipu_vbk_hash_del_all(void)
 		return -1;
 	}
 
-	hash_for_each(HASH_NAME, bkt, entry, node)
+	hash_for_each_safe(HASH_NAME, bkt, tmp, entry, node)
 		hash_del(&entry->node);
 
 	return 0;
@@ -305,6 +309,8 @@ static int ipu_vbk_release(struct inode *inode, struct file *f)
 	if (!priv)
 		pr_err("%s: UNLIKELY rng NULL!\n",
 		       __func__);
+
+	cleanup_stream();
 
 	ipu_vbk_stop(priv);
 	ipu_vbk_flush(priv);

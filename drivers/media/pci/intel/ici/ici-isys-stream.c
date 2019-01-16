@@ -957,11 +957,18 @@ static int ici_isys_stream_off(struct file *file, void *fh)
 	if (ip->streaming)
 		ici_isys_set_streaming(as, 0);
 
-	ip->streaming = 0;
 	ici_isys_frame_buf_short_packet_destroy(as);
 	mutex_unlock(&as->isys->stream_mutex);
 
 	ici_isys_frame_buf_stream_cancel(as);
+
+	mutex_lock(&as->isys->stream_mutex);
+	//streaming always should be turned off last.
+	//This variable prevents other streams from
+	//starting before we are done with cleanup.
+	ip->streaming = 0;
+	mutex_unlock(&as->isys->stream_mutex);
+
 	pipeline_set_power(as, 0);
 	return 0;
 }
@@ -1453,7 +1460,6 @@ void ici_isys_stream_cleanup(struct ici_isys_stream *as)
 	stream_device_unregister(&as->strm_dev);
 	node_pads_cleanup(&as->asd->node);
 	mutex_destroy(&as->mutex);
-	//intel_ipu4_isys_framebuf_cleanup(&as->buf_list);
 }
 
 #endif //ICI_ENABLED
