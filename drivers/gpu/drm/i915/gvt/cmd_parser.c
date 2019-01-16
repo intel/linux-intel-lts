@@ -808,7 +808,7 @@ static bool is_shadowed_mmio(unsigned int offset)
 	return ret;
 }
 
-static inline bool is_force_nonpriv_mmio(unsigned int offset)
+bool is_force_nonpriv_mmio(unsigned int offset)
 {
 	return (offset >= 0x24d0 && offset < 0x2500);
 }
@@ -918,6 +918,15 @@ static int cmd_reg_handler(struct parser_exec_state *s,
 		}
 	}
 
+	/* Re-direct the non-context MMIO access to VGT_SCRATCH_REG, it
+	 * has no functional impact to HW.
+	 */
+	if (!strcmp(cmd, "lri") || !strcmp(cmd, "lrr-dst")
+		|| !strcmp(cmd, "lrm") || !strcmp(cmd, "pipe_ctrl")) {
+		if (intel_gvt_mmio_is_non_context(gvt, offset))
+			patch_value(s, cmd_ptr(s, index), VGT_SCRATCH_REG);
+	}
+
 	/* TODO: Update the global mask if this MMIO is a masked-MMIO */
 	intel_gvt_mmio_set_cmd_accessed(gvt, offset);
 	return 0;
@@ -957,6 +966,32 @@ static int cmd_handler_lri(struct parser_exec_state *s)
 		ret |= cmd_reg_handler(s, cmd_reg(s, i), i, "lri");
 		if (ret)
 			break;
+
+		if (s->vgpu->entire_nonctxmmio_checked
+				&& intel_gvt_mmio_is_non_context(gvt,
+				cmd_reg(s, i))) {
+			int offset = cmd_reg(s, i);
+			int value = cmd_val(s, i + 1);
+
+			if (intel_gvt_mmio_has_mode_mask(gvt, offset)) {
+				u32 mask = value >> 16;
+
+				vgpu_vreg(s->vgpu, offset) =
+					(vgpu_vreg(s->vgpu, offset) & ~mask)
+					| (value & mask);
+			} else {
+				vgpu_vreg(s->vgpu, offset) = value;
+			}
+
+			if (gvt_host_reg(gvt, offset) !=
+					vgpu_vreg(s->vgpu, offset)) {
+
+				gvt_err("vgpu%d unexpected non-context MMIO "
+					"access by cmd 0x%x:0x%x,0x%x\n",
+					s->vgpu->id, offset, value,
+					gvt_host_reg(gvt, offset));
+			}
+		}
 	}
 	return ret;
 }
@@ -1840,6 +1875,8 @@ static int cmd_handler_mi_batch_buffer_start(struct parser_exec_state *s)
 	return ret;
 }
 
+static int mi_noop_index;
+
 static struct cmd_info cmd_info[] = {
 	{"MI_NOOP", OP_MI_NOOP, F_LEN_CONST, R_ALL, D_ALL, 0, 1, NULL},
 
@@ -2525,7 +2562,12 @@ static int cmd_parser_exec(struct parser_exec_state *s)
 
 	cmd = cmd_val(s, 0);
 
-	info = get_cmd_info(s->vgpu->gvt, cmd, s->ring_id);
+	/* fastpath for MI_NOOP */
+	if (cmd == MI_NOOP)
+		info = &cmd_info[mi_noop_index];
+	else
+		info = get_cmd_info(s->vgpu->gvt, cmd, s->ring_id);
+
 	if (info == NULL) {
 		gvt_vgpu_err("unknown cmd 0x%x, opcode=0x%x, addr_type=%s, ring %d, workload=%p\n",
 				cmd, get_opcode(cmd, s->ring_id),
@@ -2708,6 +2750,33 @@ static int scan_wa_ctx(struct intel_shadow_wa_ctx *wa_ctx)
 		wa_ctx->indirect_ctx.guest_gma, ring_size);
 out:
 	return ret;
+}
+
+#define GEN8_PDPES    4
+int gvt_emit_pdps(struct intel_vgpu_workload *workload)
+{
+	const int num_cmds = GEN8_PDPES * 2;
+	struct i915_request *req = workload->req;
+	struct intel_engine_cs *engine = req->engine;
+	u32 *cs;
+	u32 *pdps = (u32 *)(workload->shadow_mm->ppgtt_mm.shadow_pdps);
+	int i;
+
+	cs = intel_ring_begin(req, num_cmds * 2 + 2);
+	if (IS_ERR(cs))
+		return PTR_ERR(cs);
+
+	*cs++ = MI_LOAD_REGISTER_IMM(num_cmds);
+	for (i = 0; i < GEN8_PDPES; i++) {
+		*cs++ = i915_mmio_reg_offset(GEN8_RING_PDP_LDW(engine, i));
+		*cs++ = pdps[i * 2];
+		*cs++ = i915_mmio_reg_offset(GEN8_RING_PDP_UDW(engine, i));
+		*cs++ = pdps[i * 2 + 1];
+	}
+	*cs++ = MI_NOOP;
+	intel_ring_advance(req, cs);
+
+	return 0;
 }
 
 static int shadow_workload_ring_buffer(struct intel_vgpu_workload *workload)
@@ -2928,6 +2997,8 @@ static int init_cmd_table(struct intel_gvt *gvt)
 			kfree(e);
 			return -EEXIST;
 		}
+		if (cmd_info[i].opcode == OP_MI_NOOP)
+			mi_noop_index = i;
 
 		INIT_HLIST_NODE(&e->hlist);
 		add_cmd_entry(gvt, e);

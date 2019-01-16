@@ -309,13 +309,23 @@ static u32 nfqnl_get_sk_secctx(struct sk_buff *skb, char **secdata)
 {
 	u32 seclen = 0;
 #if IS_ENABLED(CONFIG_NETWORK_SECMARK)
+	struct secids secid;
+
 	if (!skb || !sk_fullsock(skb->sk))
 		return 0;
 
 	read_lock_bh(&skb->sk->sk_callback_lock);
 
-	if (skb->secmark)
-		security_secid_to_secctx(skb->secmark, secdata, &seclen);
+	if (skb->secmark) {
+#ifdef CONFIG_SECURITY_STACKING
+		secid_init(&secid);
+		secid.selinux = skb->secmark;
+		secid.smack = skb->secmark;
+#else
+		secid.common = skb->secmark;
+#endif
+		security_secid_to_secctx(&secid, secdata, &seclen);
+	}
 
 	read_unlock_bh(&skb->sk->sk_callback_lock);
 #endif

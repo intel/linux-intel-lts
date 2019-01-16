@@ -122,6 +122,19 @@ struct mei_msg_data {
 	unsigned char *data;
 };
 
+/**
+ * struct mei_dma_dscr - dma address descriptor
+ *
+ * @vaddr: dma buffer virtual address
+ * @daddr: dma buffer physical address
+ * @size : dma buffer size
+ */
+struct mei_dma_dscr {
+	void *vaddr;
+	dma_addr_t daddr;
+	size_t size;
+};
+
 /* Maximum number of processed FW status registers */
 #define MEI_FW_STATUS_MAX 6
 /* Minimal  buffer for FW status string (8 bytes in dw + space or '\0') */
@@ -171,6 +184,7 @@ struct mei_cl;
  * @fop_type: file operation type
  * @buf: buffer for data associated with the callback
  * @buf_idx: last read index
+ * @vtag: vm tag
  * @fp: pointer to file structure
  * @status: io status of the cb
  * @internal: communication between driver and FW flag
@@ -182,10 +196,18 @@ struct mei_cl_cb {
 	enum mei_cb_file_ops fop_type;
 	struct mei_msg_data buf;
 	size_t buf_idx;
+	u8 vtag;
 	const struct file *fp;
 	int status;
 	u32 internal:1;
 	u32 blocking:1;
+};
+
+struct mei_cl_vtag {
+	struct list_head list;
+	const struct file *fp;
+	u8 vtag;
+	u8 pending_read:1;
 };
 
 /**
@@ -204,6 +226,7 @@ struct mei_cl_cb {
  * @me_cl: fw client connected
  * @fp: file associated with client
  * @host_client_id: host id
+ * @vtag_map: vm tag map
  * @tx_flow_ctrl_creds: transmit flow credentials
  * @rx_flow_ctrl_creds: receive flow credentials
  * @timer_count:  watchdog timer for operation completion
@@ -212,6 +235,7 @@ struct mei_cl_cb {
  * @tx_cb_queued: number of tx callbacks in queue
  * @writing_state: state of the tx
  * @rd_pending: pending read credits
+ * @rd_completed_lock: protects rd_completed queue
  * @rd_completed: completed read
  *
  * @cldev: device on the mei client bus
@@ -229,6 +253,7 @@ struct mei_cl {
 	struct mei_me_client *me_cl;
 	const struct file *fp;
 	u8 host_client_id;
+	struct list_head vtag_map;
 	u8 tx_flow_ctrl_creds;
 	u8 rx_flow_ctrl_creds;
 	u8 timer_count;
@@ -237,6 +262,7 @@ struct mei_cl {
 	u8 tx_cb_queued;
 	enum mei_file_transaction_states writing_state;
 	struct list_head rd_pending;
+	spinlock_t rd_completed_lock; /* protects rd_completed queue */
 	struct list_head rd_completed;
 
 	struct mei_cl_device *cldev;
@@ -409,6 +435,7 @@ struct mei_fw_version {
  * @rd_msg_hdr  : read message header storage
  *
  * @hbuf_is_ready : query if the host host/write buffer is ready
+ * @dr_dscr: DMA ring descriptors: TX, RX, and CTRL
  *
  * @version     : HBM protocol version in use
  * @hbm_f_pg_supported  : hbm feature pgi protocol
@@ -419,6 +446,8 @@ struct mei_fw_version {
  * @hbm_f_ie_supported  : hbm feature immediate reply to enum request
  * @hbm_f_os_supported  : hbm feature support OS ver message
  * @hbm_f_dr_supported  : hbm feature dma ring supported
+ * @hbm_f_vm_supported  : hbm feature vm tag supported
+ * @hbm_f_cap_supported : hbm feature capabilities message supported
  *
  * @fw_ver : FW versions
  *
@@ -437,6 +466,8 @@ struct mei_fw_version {
  * @cl_bus_lock : client bus list lock
  *
  * @dbgfs_dir   : debugfs mei root directory
+ *
+ * @sysfs_state : sysfs state object
  *
  * @ops:        : hw specific operations
  * @hw          : hw specific data
@@ -483,10 +514,12 @@ struct mei_device {
 #endif /* CONFIG_PM */
 
 	unsigned char rd_msg_buf[MEI_RD_MSG_BUF_SIZE];
-	u32 rd_msg_hdr;
+	u32 rd_msg_hdr[MEI_MSG_HDR_MAX];
 
 	/* write buffer */
 	bool hbuf_is_ready;
+
+	struct mei_dma_dscr dr_dscr[DMA_DSCR_NUM];
 
 	struct hbm_version version;
 	unsigned int hbm_f_pg_supported:1;
@@ -497,6 +530,8 @@ struct mei_device {
 	unsigned int hbm_f_ie_supported:1;
 	unsigned int hbm_f_os_supported:1;
 	unsigned int hbm_f_dr_supported:1;
+	unsigned int hbm_f_vm_supported:1;
+	unsigned int hbm_f_cap_supported:1;
 
 	struct mei_fw_version fw_ver[MEI_MAX_FW_VER_BLOCKS];
 
@@ -519,6 +554,7 @@ struct mei_device {
 	struct dentry *dbgfs_dir;
 #endif /* CONFIG_DEBUG_FS */
 
+	struct kernfs_node *sysfs_state;
 
 	const struct mei_hw_ops *ops;
 	char hw[0] __aligned(sizeof(void *));
@@ -577,6 +613,22 @@ int mei_start(struct mei_device *dev);
 int mei_restart(struct mei_device *dev);
 void mei_stop(struct mei_device *dev);
 void mei_cancel_work(struct mei_device *dev);
+
+static inline void mei_set_devstate(struct mei_device *dev,
+				    enum mei_dev_state state)
+{
+	dev->dev_state = state;
+	if (dev->sysfs_state)
+		sysfs_notify_dirent(dev->sysfs_state);
+}
+
+int mei_dmam_ring_alloc(struct mei_device *dev);
+void mei_dmam_ring_free(struct mei_device *dev);
+bool mei_dma_ring_is_allocated(struct mei_device *dev);
+void mei_dma_ring_reset(struct mei_device *dev);
+void mei_dma_ring_read(struct mei_device *dev, unsigned char *buf, u32 len);
+void mei_dma_ring_write(struct mei_device *dev, unsigned char *buf, u32 len);
+u32 mei_dma_ring_empty_slots(struct mei_device *dev);
 
 /*
  *  MEI interrupt functions prototype
@@ -716,10 +768,11 @@ static inline void mei_dbgfs_deregister(struct mei_device *dev) {}
 int mei_register(struct mei_device *dev, struct device *parent);
 void mei_deregister(struct mei_device *dev);
 
-#define MEI_HDR_FMT "hdr:host=%02d me=%02d len=%d dma=%1d internal=%1d comp=%1d"
+#define MEI_HDR_FMT "hdr:host=%02d me=%02d len=%d dma=%1d ext=%1d internal=%1d comp=%1d"
 #define MEI_HDR_PRM(hdr)                  \
 	(hdr)->host_addr, (hdr)->me_addr, \
-	(hdr)->length, (hdr)->dma_ring, (hdr)->internal, (hdr)->msg_complete
+	(hdr)->length, (hdr)->dma_ring, (hdr)->extended, \
+	(hdr)->internal, (hdr)->msg_complete
 
 ssize_t mei_fw_status2str(struct mei_fw_status *fw_sts, char *buf, size_t len);
 /**

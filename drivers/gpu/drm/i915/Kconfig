@@ -84,6 +84,16 @@ config DRM_I915_COMPRESS_ERROR
 
 	  If in doubt, say "Y".
 
+config DRM_I915_MEMTRACK
+	bool "Enable shmem usage status track"
+	depends on DRM_I915_CAPTURE_ERROR
+	default y
+	help
+	  This option enables shmem usage status track of system summary and
+          each process.
+
+	  If in doubt, say "N".
+
 config DRM_I915_USERPTR
 	bool "Always enable userptr support"
 	depends on DRM_I915
@@ -127,6 +137,15 @@ config DRM_I915_GVT_KVMGT
 	help
 	  Choose this option if you want to enable KVMGT support for
 	  Intel GVT-g.
+config DRM_I915_GVT_ACRN_GVT
+	tristate "Enable ACRN support for Intel GVT-g"
+	depends on DRM_I915_GVT
+	depends on ACRN
+	depends on ACRN_VHM
+	default n
+	help
+          Choose this option if you want to enable ACRN_GVT support for
+          Intel GVT-g under ACRN hypervisor environment.
 
 menu "drm/i915 Debugging"
 depends on DRM_I915

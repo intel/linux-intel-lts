@@ -1,0 +1,17 @@
+Linux kernel security module stacking
+============
+
+This enables full stacking of Linux security modules.
+It allows "major" security modules to be used at the same time.
+The major security modules are:
+	SELinux
+	Smack
+	TOMOYO
+	AppArmor
+
+This is platform agnostic.
+
+This is not a bug fix. This removes a longstanding limitation
+that the kernel can support only one major security module at
+a time. There are no know bugs introduced by this code.
+

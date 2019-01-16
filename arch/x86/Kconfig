@@ -782,6 +782,8 @@ config QUEUED_LOCK_STAT
 	  behavior of paravirtualized queued spinlocks and report
 	  them on debugfs.
 
+source "arch/x86/acrn/Kconfig"
+
 source "arch/x86/xen/Kconfig"
 
 config KVM_GUEST
@@ -1484,6 +1486,14 @@ config X86_DIRECT_GBPAGES
 	  linear 1 GB mappings (even if the CPU otherwise
 	  supports them), so don't confuse the user by printing
 	  that we have them enabled.
+
+config X86_CPA_STATISTICS
+	bool "Enable statistic for Change Page Attribute"
+	depends on DEBUG_FS
+	---help---
+	  Expose statistics about the Change Page Attribute mechanims, which
+	  helps to determine the effectivness of preserving large and huge
+	  page mappings when mapping protections are changed.
 
 config ARCH_HAS_MEM_ENCRYPT
 	def_bool y

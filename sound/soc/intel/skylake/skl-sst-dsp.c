@@ -17,6 +17,7 @@
  */
 #include <sound/pcm.h>
 
+#include <linux/delay.h>
 #include "../common/sst-dsp.h"
 #include "../common/sst-ipc.h"
 #include "../common/sst-dsp-priv.h"
@@ -26,13 +27,6 @@
 #define SKL_DSP_PU_TO		50
 #define SKL_DSP_PD_TO		50
 #define SKL_DSP_RESET_TO	50
-
-void skl_dsp_set_state_locked(struct sst_dsp *ctx, int state)
-{
-	mutex_lock(&ctx->mutex);
-	ctx->sst_state = state;
-	mutex_unlock(&ctx->mutex);
-}
 
 /*
  * Initialize core power state and usage count. To be called after
@@ -52,6 +46,18 @@ void skl_dsp_init_core_state(struct sst_dsp *ctx)
 		skl->cores.usage_count[i] = 0;
 	}
 }
+
+void skl_dsp_reset_core_state(struct sst_dsp *ctx)
+{
+	struct skl_sst *skl = ctx->thread_context;
+	int i;
+
+	for (i = 0; i < skl->cores.count; i++) {
+		skl->cores.state[i] = SKL_DSP_RESET;
+		skl->cores.usage_count[i] = 0;
+	}
+}
+EXPORT_SYMBOL_GPL(skl_dsp_reset_core_state);
 
 /* Get the mask for all enabled cores */
 unsigned int skl_dsp_get_enabled_cores(struct sst_dsp *ctx)
@@ -160,10 +166,23 @@ is_skl_dsp_core_enable(struct sst_dsp *ctx, unsigned int core_mask)
 
 static int skl_dsp_reset_core(struct sst_dsp *ctx, unsigned int core_mask)
 {
+	int ret;
+
 	/* stall core */
 	sst_dsp_shim_update_bits_unlocked(ctx, SKL_ADSP_REG_ADSPCS,
 			SKL_ADSPCS_CSTALL_MASK(core_mask),
 			SKL_ADSPCS_CSTALL_MASK(core_mask));
+
+	/* poll with timeout to check if operation successful */
+	ret = sst_dsp_register_poll(ctx,
+			SKL_ADSP_REG_ADSPCS,
+			SKL_ADSPCS_CSTALL_MASK(core_mask),
+			SKL_ADSPCS_CSTALL_MASK(core_mask),
+			SKL_DSP_PU_TO,
+			"Stall Core");
+
+	if (ret < 0)
+		return ret;
 
 	/* set reset state */
 	return skl_dsp_core_set_reset_state(ctx, core_mask);
@@ -182,6 +201,19 @@ int skl_dsp_start_core(struct sst_dsp *ctx, unsigned int core_mask)
 	dev_dbg(ctx->dev, "unstall/run core: core_mask = %x\n", core_mask);
 	sst_dsp_shim_update_bits_unlocked(ctx, SKL_ADSP_REG_ADSPCS,
 			SKL_ADSPCS_CSTALL_MASK(core_mask), 0);
+
+	/* poll with timeout to check if operation successful */
+	ret = sst_dsp_register_poll(ctx,
+			SKL_ADSP_REG_ADSPCS,
+			SKL_ADSPCS_CSTALL_MASK(core_mask),
+			0,
+			SKL_DSP_PU_TO,
+			"Unstall Core");
+	if (ret < 0)
+		return ret;
+
+	/* delay to ensure proper signal propagation after unreset/unstall */
+	usleep_range(1000, 1500);
 
 	if (!is_skl_dsp_core_enable(ctx, core_mask)) {
 		skl_dsp_reset_core(ctx, core_mask);
@@ -278,6 +310,7 @@ int skl_dsp_disable_core(struct sst_dsp *ctx, unsigned int core_mask)
 
 	return ret;
 }
+EXPORT_SYMBOL(skl_dsp_disable_core);
 
 int skl_dsp_boot(struct sst_dsp *ctx)
 {
@@ -465,6 +498,8 @@ EXPORT_SYMBOL_GPL(skl_dsp_free);
 
 bool is_skl_dsp_running(struct sst_dsp *ctx)
 {
-	return (ctx->sst_state == SKL_DSP_RUNNING);
+	struct skl_sst *skl_sst = ctx->thread_context;
+
+	return (skl_sst->cores.state[SKL_DSP_CORE0_ID] != SKL_DSP_RESET);
 }
 EXPORT_SYMBOL_GPL(is_skl_dsp_running);

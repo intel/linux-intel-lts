@@ -748,6 +748,7 @@ static bool __guc_dequeue(struct intel_engine_cs *engine)
 			kmem_cache_free(engine->i915->priorities, p);
 	}
 done:
+	execlists_clear_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
 	execlists->queue_priority = rb ? to_priolist(rb)->priority : INT_MIN;
 	if (submit)
 		port_assign(port, last);

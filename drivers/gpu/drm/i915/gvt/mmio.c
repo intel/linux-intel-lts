@@ -39,7 +39,7 @@
 /**
  * intel_vgpu_gpa_to_mmio_offset - translate a GPA to MMIO offset
  * @vgpu: a vGPU
- *
+ * @gpa: guest physical address
  * Returns:
  * Zero on success, negative error code if failed
  */
@@ -213,6 +213,14 @@ int intel_vgpu_emulate_mmio_write(struct intel_vgpu *vgpu, uint64_t pa,
 	if (ret < 0)
 		goto err;
 
+	if (vgpu->entire_nonctxmmio_checked
+		&& intel_gvt_mmio_is_non_context(vgpu->gvt, offset)
+		&& vgpu_vreg(vgpu, offset) != gvt_host_reg(gvt, offset)) {
+		gvt_err("vgpu%d unexpected non-context MMIO change at 0x%x:0x%x,0x%x\n",
+			vgpu->id, offset, vgpu_vreg(vgpu, offset),
+			gvt_host_reg(gvt, offset));
+	}
+
 	intel_gvt_mmio_set_accessed(gvt, offset);
 	ret = 0;
 	goto out;
@@ -228,13 +236,14 @@ out:
 /**
  * intel_vgpu_reset_mmio - reset virtual MMIO space
  * @vgpu: a vGPU
- *
+ * @dmlr: vGPU Device Model Level Reset or GT Reset
  */
 void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 {
 	struct intel_gvt *gvt = vgpu->gvt;
 	const struct intel_gvt_device_info *info = &gvt->device_info;
 	void  *mmio = gvt->firmware.mmio;
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
 
 	if (dmlr) {
 		memcpy(vgpu->mmio.vreg, mmio, info->mmio_size);
@@ -282,6 +291,23 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 		memcpy(vgpu->mmio.sreg, mmio, GVT_GEN8_MMIO_RESET_OFFSET);
 	}
 
+	/* below vreg init value are got from handler.c,
+	 * which won't change during vgpu life cycle
+	 */
+	vgpu_vreg(vgpu, 0xe651c) = 1 << 17;
+	vgpu_vreg(vgpu, 0xe661c) = 1 << 17;
+	vgpu_vreg(vgpu, 0xe671c) = 1 << 17;
+	vgpu_vreg(vgpu, 0xe681c) = 1 << 17;
+	vgpu_vreg(vgpu, 0xe6c04) = 3;
+	vgpu_vreg(vgpu, 0xe6e1c) = 0x2f << 16;
+
+	if (HAS_HUC_UCODE(dev_priv)) {
+		mmio_hw_access_pre(dev_priv);
+		vgpu_vreg_t(vgpu, HUC_STATUS2) = I915_READ(HUC_STATUS2);
+		mmio_hw_access_post(dev_priv);
+	}
+	/* Non-context MMIOs need entire check again if mmio/vgpu reset */
+	vgpu->entire_nonctxmmio_checked = false;
 }
 
 /**
@@ -295,11 +321,20 @@ int intel_vgpu_init_mmio(struct intel_vgpu *vgpu)
 {
 	const struct intel_gvt_device_info *info = &vgpu->gvt->device_info;
 
-	vgpu->mmio.vreg = vzalloc(array_size(info->mmio_size, 2));
+	BUILD_BUG_ON(sizeof(struct gvt_shared_page) != PAGE_SIZE);
+
+	vgpu->mmio.sreg = vzalloc(info->mmio_size);
+	vgpu->mmio.vreg = intel_gvt_allocate_vreg(vgpu);
 	if (!vgpu->mmio.vreg)
 		return -ENOMEM;
 
-	vgpu->mmio.sreg = vgpu->mmio.vreg + info->mmio_size;
+	vgpu->mmio.shared_page = (struct gvt_shared_page *) __get_free_pages(
+			GFP_KERNEL, 0);
+	if (!vgpu->mmio.shared_page) {
+		intel_gvt_free_vreg(vgpu);
+		vgpu->mmio.vreg = NULL;
+		return -ENOMEM;
+	}
 
 	intel_vgpu_reset_mmio(vgpu, true);
 
@@ -313,6 +348,8 @@ int intel_vgpu_init_mmio(struct intel_vgpu *vgpu)
  */
 void intel_vgpu_clean_mmio(struct intel_vgpu *vgpu)
 {
-	vfree(vgpu->mmio.vreg);
-	vgpu->mmio.vreg = vgpu->mmio.sreg = NULL;
+	vfree(vgpu->mmio.sreg);
+	intel_gvt_free_vreg(vgpu);
+	free_pages((unsigned long) vgpu->mmio.shared_page, 0);
+	vgpu->mmio.vreg = vgpu->mmio.sreg = vgpu->mmio.shared_page = NULL;
 }

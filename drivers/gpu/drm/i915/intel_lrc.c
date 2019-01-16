@@ -186,7 +186,8 @@ static inline bool need_preempt(const struct intel_engine_cs *engine,
 				const struct i915_request *last,
 				int prio)
 {
-	return (intel_engine_has_preemption(engine) &&
+	return (!intel_vgpu_active(engine->i915) &&
+		intel_engine_has_preemption(engine) &&
 		__execlists_need_preempt(prio, rq_prio(last)) &&
 		!i915_request_completed(last));
 }
@@ -468,6 +469,8 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 	struct intel_engine_execlists *execlists = &engine->execlists;
 	struct execlist_port *port = execlists->port;
 	unsigned int n;
+	u32 descs[4];
+	int i = 0;
 
 	/*
 	 * We can skip acquiring intel_runtime_pm_get() here as it was taken
@@ -510,10 +513,27 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 			GEM_BUG_ON(!n);
 			desc = 0;
 		}
+		if (intel_vgpu_active(engine->i915) &&
+				PVMMIO_LEVEL(engine->i915, PVMMIO_ELSP_SUBMIT)) {
+			BUG_ON(i >= 4);
+			descs[i] = upper_32_bits(desc);
+			descs[i + 1] = lower_32_bits(desc);
+			i += 2;
+			continue;
+		}
 
 		write_desc(execlists, desc, n);
 	}
-
+	if (intel_vgpu_active(engine->i915) &&
+			PVMMIO_LEVEL(engine->i915, PVMMIO_ELSP_SUBMIT)) {
+		u32 __iomem *elsp_data = engine->i915->shared_page->elsp_data;
+		spin_lock(&engine->i915->shared_page_lock);
+		writel(descs[0], elsp_data);
+		writel(descs[1], elsp_data + 1);
+		writel(descs[2], elsp_data + 2);
+		writel(descs[3], execlists->submit_reg);
+		spin_unlock(&engine->i915->shared_page_lock);
+	}
 	/* we need to manually load the submit queue */
 	if (execlists->ctrl_reg)
 		writel(EL_CTRL_LOAD, execlists->ctrl_reg);
@@ -569,10 +589,24 @@ static void inject_preempt_context(struct intel_engine_cs *engine)
 	 * the state of the GPU is known (idle).
 	 */
 	GEM_TRACE("%s\n", engine->name);
-	for (n = execlists_num_ports(execlists); --n; )
-		write_desc(execlists, 0, n);
 
-	write_desc(execlists, ce->lrc_desc, n);
+	if (intel_vgpu_active(engine->i915) &&
+			PVMMIO_LEVEL(engine->i915, PVMMIO_ELSP_SUBMIT)) {
+		u32 __iomem *elsp_data = engine->i915->shared_page->elsp_data;
+
+		spin_lock(&engine->i915->shared_page_lock);
+		writel(0, elsp_data);
+		writel(0, elsp_data + 1);
+		writel(upper_32_bits(ce->lrc_desc), elsp_data + 2);
+		writel(lower_32_bits(ce->lrc_desc), execlists->submit_reg);
+		spin_unlock(&engine->i915->shared_page_lock);
+
+	} else {
+		for (n = execlists_num_ports(execlists); --n; )
+			write_desc(execlists, 0, n);
+
+		write_desc(execlists, ce->lrc_desc, n);
+	}
 
 	/* we need to manually load the submit queue */
 	if (execlists->ctrl_reg)
@@ -580,6 +614,84 @@ static void inject_preempt_context(struct intel_engine_cs *engine)
 
 	execlists_clear_active(execlists, EXECLISTS_ACTIVE_HWACK);
 	execlists_set_active(execlists, EXECLISTS_ACTIVE_PREEMPT);
+}
+
+static int try_preempt_reset(struct intel_engine_execlists *execlists)
+{
+	struct tasklet_struct * const t = &execlists->tasklet;
+	int err = -EBUSY;
+
+	if (tasklet_trylock(t)) {
+		struct intel_engine_cs *engine =
+			container_of(execlists, typeof(*engine), execlists);
+		const unsigned int bit = I915_RESET_ENGINE + engine->id;
+		unsigned long *lock = &engine->i915->gpu_error.flags;
+
+		t->func(t->data);
+		if (!execlists_is_active(execlists,
+					 EXECLISTS_ACTIVE_PREEMPT_TIMEOUT)) {
+			/* Nothing to do; the tasklet was just delayed. */
+			err = 0;
+		} else if (!test_and_set_bit(bit, lock)) {
+			tasklet_disable_nosync(t);
+			err = i915_reset_engine(engine, "preemption time out");
+			tasklet_enable(t);
+
+			clear_bit(bit, lock);
+			wake_up_bit(lock, bit);
+		}
+
+		tasklet_unlock(t);
+	}
+
+	return err;
+}
+
+static enum hrtimer_restart preempt_timeout(struct hrtimer *hrtimer)
+{
+	struct intel_engine_execlists *execlists =
+		container_of(hrtimer, typeof(*execlists), preempt_timer);
+
+	GEM_TRACE("%s active=%x\n",
+		  container_of(execlists,
+			       struct intel_engine_cs,
+			       execlists)->name,
+		  execlists->active);
+
+	if (!execlists_is_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT))
+		return HRTIMER_NORESTART;
+
+	if (GEM_SHOW_DEBUG()) {
+		struct intel_engine_cs *engine =
+			container_of(execlists, typeof(*engine), execlists);
+		struct drm_printer p = drm_debug_printer(__func__);
+
+		intel_engine_dump(engine, &p, "%s\n", engine->name);
+	}
+
+	if (try_preempt_reset(execlists))
+		queue_work(system_highpri_wq, &execlists->preempt_reset);
+
+	return HRTIMER_NORESTART;
+}
+
+static void preempt_reset(struct work_struct *work)
+{
+	struct intel_engine_execlists *execlists =
+		container_of(work, typeof(*execlists), preempt_reset);
+	struct intel_engine_cs *engine =
+		  container_of(execlists, struct intel_engine_cs, execlists);
+
+	GEM_TRACE("%s\n", engine->name);
+
+	tasklet_disable(&execlists->tasklet);
+
+	execlists->tasklet.func(execlists->tasklet.data);
+	if (execlists_is_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT))
+		i915_handle_error(engine->i915, BIT(engine->id), 0,
+				  "preemption time out on %s", engine->name);
+
+	tasklet_enable(&execlists->tasklet);
 }
 
 static void complete_preempt_context(struct intel_engine_execlists *execlists)
@@ -675,7 +787,7 @@ static void execlists_dequeue(struct intel_engine_cs *engine)
 		 * priorities of the ports haven't been switch.
 		 */
 		if (port_count(&port[1]))
-			return;
+			goto clear_preempt_timeout;
 
 		/*
 		 * WaIdleLiteRestore:bdw,skl
@@ -781,6 +893,9 @@ done:
 	/* We must always keep the beast fed if we have work piled up */
 	GEM_BUG_ON(rb_first_cached(&execlists->queue) &&
 		   !port_isset(execlists->port));
+
+clear_preempt_timeout:
+	execlists_clear_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
 
 	/* Re-evaluate the executing context setup after each preemptive kick */
 	if (last)
@@ -1102,8 +1217,30 @@ static void queue_request(struct intel_engine_cs *engine,
 		      &lookup_priolist(engine, prio)->requests);
 }
 
-static void __update_queue(struct intel_engine_cs *engine, int prio)
+static void __update_queue(struct intel_engine_cs *engine,
+			  int prio, unsigned int timeout)
 {
+	struct intel_engine_execlists * const execlists = &engine->execlists;
+
+	GEM_TRACE("%s prio=%d (previous=%d)\n",
+		  engine->name, prio, execlists->queue_priority);
+
+	if (unlikely(execlists_is_active(execlists,
+					 EXECLISTS_ACTIVE_PREEMPT_TIMEOUT)))
+		hrtimer_cancel(&execlists->preempt_timer);
+
+	/* Set a timer to force preemption vs hostile userspace */
+	if (timeout &&
+	    __execlists_need_preempt(prio, execlists->queue_priority)) {
+		GEM_TRACE("%s preempt timeout=%uns\n", engine->name, timeout);
+
+		execlists_set_active(execlists,
+				     EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
+		hrtimer_start(&execlists->preempt_timer,
+			      ns_to_ktime(timeout),
+			      HRTIMER_MODE_REL);
+	}
+
 	engine->execlists.queue_priority = prio;
 }
 
@@ -1120,28 +1257,29 @@ static void __submit_queue_imm(struct intel_engine_cs *engine)
 		tasklet_hi_schedule(&execlists->tasklet);
 }
 
-static void submit_queue(struct intel_engine_cs *engine, int prio)
+static void submit_queue(struct intel_engine_cs *engine,
+			int prio, unsigned int timeout)
 {
 	if (prio > engine->execlists.queue_priority) {
-		__update_queue(engine, prio);
+		__update_queue(engine, prio, timeout);
 		__submit_queue_imm(engine);
 	}
 }
 
-static void execlists_submit_request(struct i915_request *request)
+static void execlists_submit_request(struct i915_request *rq)
 {
-	struct intel_engine_cs *engine = request->engine;
+	struct intel_engine_cs *engine = rq->engine;
 	unsigned long flags;
 
 	/* Will be called from irq-context when using foreign fences. */
 	spin_lock_irqsave(&engine->timeline.lock, flags);
 
-	queue_request(engine, &request->sched, rq_prio(request));
+	queue_request(engine, &rq->sched, rq_prio(rq));
 
 	GEM_BUG_ON(RB_EMPTY_ROOT(&engine->execlists.queue.rb_root));
-	GEM_BUG_ON(list_empty(&request->sched.link));
+	GEM_BUG_ON(list_empty(&rq->sched.link));
 
-	submit_queue(engine, rq_prio(request));
+	submit_queue(engine, rq_prio(rq), rq->gem_context->preempt_timeout);
 
 	spin_unlock_irqrestore(&engine->timeline.lock, flags);
 }
@@ -1167,7 +1305,8 @@ sched_lock_engine(struct i915_sched_node *node, struct intel_engine_cs *locked)
 }
 
 static void execlists_schedule(struct i915_request *request,
-			       const struct i915_sched_attr *attr)
+			       const struct i915_sched_attr *attr,
+			       unsigned int timeout)
 {
 	struct i915_priolist *uninitialized_var(pl);
 	struct intel_engine_cs *engine, *last;
@@ -1271,7 +1410,7 @@ static void execlists_schedule(struct i915_request *request,
 		if (prio > engine->execlists.queue_priority &&
 		    i915_sw_fence_done(&sched_to_request(node)->submit)) {
 			/* defer submission until after all of our updates */
-			__update_queue(engine, prio);
+			__update_queue(engine, prio, timeout);
 			tasklet_hi_schedule(&engine->execlists.tasklet);
 		}
 	}
@@ -2386,6 +2525,16 @@ logical_ring_default_irqs(struct intel_engine_cs *engine)
 	engine->irq_keep_mask = GT_CONTEXT_SWITCH_INTERRUPT << shift;
 }
 
+static void i915_error_reset(struct work_struct *work) {
+	struct intel_engine_cs *engine =
+		container_of(work, struct intel_engine_cs,
+			     reset_work);
+	i915_handle_error(engine->i915, 1 << engine->id,
+			I915_ERROR_CAPTURE,
+			"Received error interrupt from engine %d",
+			engine->id);
+}
+
 static void
 logical_ring_setup(struct intel_engine_cs *engine)
 {
@@ -2397,8 +2546,13 @@ logical_ring_setup(struct intel_engine_cs *engine)
 	tasklet_init(&engine->execlists.tasklet,
 		     execlists_submission_tasklet, (unsigned long)engine);
 
+	INIT_WORK(&engine->execlists.preempt_reset, preempt_reset);
+	engine->execlists.preempt_timer.function = preempt_timeout;
+
 	logical_ring_default_vfuncs(engine);
 	logical_ring_default_irqs(engine);
+
+	INIT_WORK(&engine->reset_work, i915_error_reset);
 }
 
 static bool csb_force_mmio(struct drm_i915_private *i915)
@@ -2728,6 +2882,14 @@ populate_lr_context(struct i915_gem_context *ctx,
 		regs[CTX_CONTEXT_CONTROL + 1] |=
 			_MASKED_BIT_ENABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT |
 					   CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT);
+
+	/* write the context's pid and hw_id/cid to the per-context HWS page */
+	if(intel_vgpu_active(engine->i915) && pid_nr(ctx->pid)) {
+		*(u32*)(vaddr + LRC_PPHWSP_PN * PAGE_SIZE + I915_GEM_HWS_PID_ADDR)
+			= pid_nr(ctx->pid) & 0x3fffff;
+		*(u32*)(vaddr + LRC_PPHWSP_PN * PAGE_SIZE + I915_GEM_HWS_CID_ADDR)
+			= ctx->hw_id & 0x3fffff;
+	}
 
 err_unpin_ctx:
 	i915_gem_object_unpin_map(ctx_obj);

@@ -241,6 +241,7 @@ int drm_connector_init(struct drm_device *dev,
 	INIT_LIST_HEAD(&connector->modes);
 	mutex_init(&connector->mutex);
 	connector->edid_blob_ptr = NULL;
+	connector->cp_downstream_blob_ptr = NULL;
 	connector->status = connector_status_unknown;
 	connector->display_info.panel_orientation =
 		DRM_MODE_PANEL_ORIENTATION_UNKNOWN;
@@ -1347,6 +1348,77 @@ int drm_connector_attach_content_protection_property(
 EXPORT_SYMBOL(drm_connector_attach_content_protection_property);
 
 /**
+ * drm_connector_attach_cp_downstream_property - attach cp downstream
+ * property
+ *
+ * @connector: connector to attach cp downstream property on.
+ *
+ * This is used to add support for content protection downstream info on
+ * select connectors. when Intel platform is configured as repeater,
+ * this downstream info is used by userspace, to complete the repeater
+ * authentication of HDCP specification with upstream HDCP transmitter.
+ *
+ * The cp downstream will be set to &drm_connector_state.cp_downstream
+ *
+ * Returns:
+ * Zero on success, negative errno on failure.
+ */
+int drm_connector_attach_cp_downstream_property(
+		struct drm_connector *connector)
+{
+	struct drm_device *dev = connector->dev;
+	struct drm_property *prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB |
+				   DRM_MODE_PROP_IMMUTABLE,
+				   "CP_Downstream_Info", 0);
+	if (!prop)
+		return -ENOMEM;
+
+	drm_object_attach_property(&connector->base, prop, 0);
+
+	connector->cp_downstream_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_connector_attach_cp_downstream_property);
+
+/**
+ * drm_connector_attach_cp_srm_property - attach cp srm
+ * property
+ *
+ * @connector: connector to attach cp srm property on.
+ *
+ * This is used to add support for sending the SRM table from userspace to
+ * kernel on selected connectors. Protected content provider will provide
+ * the system renewability Message(SRM) to userspace before requesting for
+ * HDCP on a port. Hence if a Port supports content protection (mostly HDCP)
+ * then this property will be attached to receive the SRM for revocation check
+ * of the ksvs.
+ *
+ * The srm blob id will be set to &drm_connector_state.cp_srm_blob_id
+ *
+ * Returns:
+ * Zero on success, negative errno on failure.
+ */
+int drm_connector_attach_cp_srm_property(struct drm_connector *connector)
+{
+	struct drm_device *dev = connector->dev;
+	struct drm_property *prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB, "CP_SRM", 0);
+	if (!prop)
+		return -ENOMEM;
+
+	drm_object_attach_property(&connector->base, prop, 0);
+	connector->cp_srm_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_connector_attach_cp_srm_property);
+
+
+/**
  * drm_mode_create_aspect_ratio_property - create aspect ratio property
  * @dev: DRM device
  *
@@ -1577,6 +1649,38 @@ void drm_connector_set_link_status_property(struct drm_connector *connector,
 	drm_modeset_unlock(&dev->mode_config.connection_mutex);
 }
 EXPORT_SYMBOL(drm_connector_set_link_status_property);
+
+/**
+ * drm_mode_connector_update_cp_downstream_property - update the cp_downstream
+ *			property of a connector
+ * @connector: drm connector
+ * @cp_downstream_info: new value of the cp_downstream property
+ *
+ * This function creates a new blob modeset object and assigns its id to the
+ * connector's cp_downstream property.
+ *
+ * Returns:
+ * Zero on success, negative errno on failure.
+ */
+int drm_mode_connector_update_cp_downstream_property(
+			struct drm_connector *connector,
+			const struct cp_downstream_info *info)
+{
+	struct drm_device *dev = connector->dev;
+	int ret;
+
+	if (!info)
+		return -EINVAL;
+
+	ret = drm_property_replace_global_blob(dev,
+					&connector->cp_downstream_blob_ptr,
+					sizeof(struct cp_downstream_info),
+					info,
+					&connector->base,
+					connector->cp_downstream_property);
+	return ret;
+}
+EXPORT_SYMBOL(drm_mode_connector_update_cp_downstream_property);
 
 /**
  * drm_connector_init_panel_orientation_property -

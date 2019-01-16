@@ -36,7 +36,7 @@ static ssize_t mei_dbgfs_read_meclients(struct file *fp, char __user *ubuf,
 	int ret;
 
 #define HDR \
-"  |id|fix|         UUID                       |con|msg len|sb|refc|\n"
+"  |id|fix|         UUID                       |con|msg len|sb|refc|vm|\n"
 
 	down_read(&dev->me_clients_rwsem);
 	list_for_each_entry(me_cl, &dev->me_clients, list)
@@ -60,14 +60,15 @@ static ssize_t mei_dbgfs_read_meclients(struct file *fp, char __user *ubuf,
 
 		if (mei_me_cl_get(me_cl)) {
 			pos += scnprintf(buf + pos, bufsz - pos,
-				"%2d|%2d|%3d|%pUl|%3d|%7d|%2d|%4d|\n",
+				"%2d|%2d|%3d|%pUl|%3d|%7d|%2d|%4d|%2d|\n",
 				i++, me_cl->client_id,
 				me_cl->props.fixed_address,
 				&me_cl->props.protocol_name,
 				me_cl->props.max_number_of_connections,
 				me_cl->props.max_msg_length,
 				me_cl->props.single_recv_buf,
-				kref_read(&me_cl->refcnt));
+				kref_read(&me_cl->refcnt),
+				me_cl->props.vm_supported);
 
 			mei_me_cl_put(me_cl);
 		}
@@ -185,6 +186,10 @@ static ssize_t mei_dbgfs_read_devstate(struct file *fp, char __user *ubuf,
 				 dev->hbm_f_os_supported);
 		pos += scnprintf(buf + pos, bufsz - pos, "\tDR: %01d\n",
 				 dev->hbm_f_dr_supported);
+		pos += scnprintf(buf + pos, bufsz - pos, "\tVM: %01d\n",
+				 dev->hbm_f_vm_supported);
+		pos += scnprintf(buf + pos, bufsz - pos, "\tCAP: %01d\n",
+				 dev->hbm_f_cap_supported);
 	}
 
 	pos += scnprintf(buf + pos, bufsz - pos, "pg:  %s, %s\n",

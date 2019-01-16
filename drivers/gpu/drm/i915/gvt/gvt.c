@@ -44,6 +44,7 @@ struct intel_gvt_host intel_gvt_host;
 static const char * const supported_hypervisors[] = {
 	[INTEL_GVT_HYPERVISOR_XEN] = "XEN",
 	[INTEL_GVT_HYPERVISOR_KVM] = "KVM",
+	[INTEL_GVT_HYPERVISOR_ACRN] = "ACRN",
 };
 
 static struct intel_vgpu_type *intel_gvt_find_vgpu_type(struct intel_gvt *gvt,
@@ -221,6 +222,11 @@ int intel_gvt_init_host(void)
 				symbol_get(kvmgt_mpt), "kvmgt");
 		intel_gvt_host.hypervisor_type = INTEL_GVT_HYPERVISOR_KVM;
 #endif
+		/* not in Xen. Try ACRN */
+		intel_gvt_host.mpt = try_then_request_module(
+				symbol_get(acrn_gvt_mpt), "acrn_gvt");
+		intel_gvt_host.hypervisor_type = INTEL_GVT_HYPERVISOR_ACRN;
+		printk("acrngt %s\n", intel_gvt_host.mpt?"found":"not found");
 	}
 
 	/* Fail to load MPT modules - bail out */
@@ -242,6 +248,8 @@ static void init_device_info(struct intel_gvt *gvt)
 	info->max_support_vgpus = 8;
 	info->cfg_space_size = PCI_CFG_SPACE_EXP_SIZE;
 	info->mmio_size = 2 * 1024 * 1024;
+	/* order of mmio size. assert(2^order == mmio_size) */
+	info->mmio_size_order = 9;
 	info->mmio_bar = 0;
 	info->gtt_start_offset = 8 * 1024 * 1024;
 	info->gtt_entry_size = 8;
@@ -301,6 +309,102 @@ static int init_service_thread(struct intel_gvt *gvt)
 	return 0;
 }
 
+void intel_gvt_init_pipe_info(struct intel_gvt *gvt);
+
+/*
+ * When enabling multi-plane in DomU, an issue is that the PLANE_BUF_CFG
+ * register cannot be updated dynamically, since Dom0 has no idea of the
+ * plane information of DomU's planes, so here we statically allocate the
+ * ddb entries for all the possible enabled planes.
+ */
+void intel_gvt_allocate_ddb(struct intel_gvt *gvt,
+		struct skl_ddb_allocation *ddb, unsigned int active_crtcs)
+{
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+	unsigned int pipe_size, ddb_size, plane_size, plane_cnt;
+	u16 start, end;
+	enum pipe pipe;
+	enum plane_id plane;
+	int i = 0;
+	int num_active = hweight32(active_crtcs);
+
+	if (!num_active)
+		return;
+
+	ddb_size = INTEL_INFO(dev_priv)->ddb_size;
+	ddb_size -= 4; /* 4 blocks for bypass path allocation */
+	pipe_size = ddb_size / num_active;
+
+	memset(ddb, 0, sizeof(*ddb));
+	for_each_pipe_masked(dev_priv, pipe, active_crtcs) {
+		start = pipe_size * (i++);
+		end = start + pipe_size;
+		ddb->plane[pipe][PLANE_CURSOR].start = end - 8;
+		ddb->plane[pipe][PLANE_CURSOR].end = end;
+
+		plane_cnt = (INTEL_INFO(dev_priv)->num_sprites[pipe] + 1);
+		plane_size = (pipe_size - 8) / plane_cnt;
+
+		for_each_universal_plane(dev_priv, pipe, plane) {
+			ddb->plane[pipe][plane].start = start +
+				(plane * (pipe_size - 8) / plane_cnt);
+			ddb->plane[pipe][plane].end =
+				ddb->plane[pipe][plane].start + plane_size;
+		}
+	}
+}
+
+static int intel_gvt_init_vreg_pool(struct intel_gvt *gvt)
+{
+	int i = 0;
+	const struct intel_gvt_device_info *info = &gvt->device_info;
+
+	for (i = 0; i < GVT_MAX_VGPU; i++) {
+		gvt->intel_gvt_vreg_pool[i] = (void *)__get_free_pages(
+			GFP_KERNEL, info->mmio_size_order);
+		if (!gvt->intel_gvt_vreg_pool[i])
+			return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void intel_gvt_clean_vreg_pool(struct intel_gvt *gvt)
+{
+	int i = 0;
+	const struct intel_gvt_device_info *info = &gvt->device_info;
+
+	for (i = 0; i < GVT_MAX_VGPU && gvt->intel_gvt_vreg_pool[i]; i++)
+		free_pages((unsigned long) gvt->intel_gvt_vreg_pool[i],
+				info->mmio_size_order);
+}
+
+void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu)
+{
+	int id = vgpu->id - 1;
+	struct intel_gvt *gvt = vgpu->gvt;
+
+	if (id < 0 || id >= GVT_MAX_VGPU ||
+		gvt->intel_gvt_vreg_pool[id] == NULL ||
+		gvt->intel_gvt_vreg_allocated[id])
+		return NULL;
+
+	gvt->intel_gvt_vreg_allocated[id] = true;
+	return gvt->intel_gvt_vreg_pool[id];
+}
+
+void intel_gvt_free_vreg(struct intel_vgpu *vgpu)
+{
+	int id = vgpu->id - 1;
+	struct intel_gvt *gvt = vgpu->gvt;
+
+	if (id < 0 || id >= GVT_MAX_VGPU ||
+		gvt->intel_gvt_vreg_pool[id] == NULL ||
+		!gvt->intel_gvt_vreg_allocated[id])
+		return;
+	gvt->intel_gvt_vreg_allocated[id] = false;
+}
+
 /**
  * intel_gvt_clean_device - clean a GVT device
  * @gvt: intel gvt device
@@ -316,6 +420,7 @@ void intel_gvt_clean_device(struct drm_i915_private *dev_priv)
 	if (WARN_ON(!gvt))
 		return;
 
+	intel_gvt_clean_vreg_pool(gvt);
 	intel_gvt_destroy_idle_vgpu(gvt->idle_vgpu);
 	intel_gvt_hypervisor_host_exit(&dev_priv->drm.pdev->dev, gvt);
 	intel_gvt_cleanup_vgpu_type_groups(gvt);
@@ -335,6 +440,12 @@ void intel_gvt_clean_device(struct drm_i915_private *dev_priv)
 	kfree(dev_priv->gvt);
 	dev_priv->gvt = NULL;
 }
+
+#define BITS_PER_DOMAIN 4
+#define MAX_PLANES_PER_DOMAIN 4
+#define DOMAIN_PLANE_OWNER(owner, pipe, plane) \
+		((((owner) >> (pipe) * BITS_PER_DOMAIN * MAX_PLANES_PER_DOMAIN) >>  \
+		  BITS_PER_DOMAIN * (plane)) & 0xf)
 
 /**
  * intel_gvt_init_device - initialize a GVT device
@@ -421,6 +532,8 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
 		goto out_clean_types;
 	}
 
+	intel_gvt_init_pipe_info(gvt);
+
 	ret = intel_gvt_hypervisor_host_init(&dev_priv->drm.pdev->dev, gvt,
 				&intel_gvt_ops);
 	if (ret) {
@@ -436,14 +549,42 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
 	}
 	gvt->idle_vgpu = vgpu;
 
+	ret = intel_gvt_init_vreg_pool(gvt);
+	if (ret) {
+		gvt_err("failed to init vreg pool\n");
+		goto out_clean_vreg;
+	}
+
 	ret = intel_gvt_debugfs_init(gvt);
 	if (ret)
 		gvt_err("debugfs registeration failed, go on.\n");
 
-	gvt_dbg_core("gvt device initialization is done\n");
 	dev_priv->gvt = gvt;
+
+	if (i915_modparams.avail_planes_per_pipe) {
+		unsigned long long domain_plane_owners;
+		int plane;
+		enum pipe pipe;
+
+		/*
+		 * Each nibble represents domain id
+		 * ids can be from 0-F. 0 for Dom0, 1,2,3...0xF for DomUs
+		 * plane_owner[i] holds the id of the domain that owns it,eg:0,1,2 etc
+		 */
+		domain_plane_owners = i915_modparams.domain_plane_owners;
+		for_each_pipe(dev_priv, pipe) {
+			for_each_universal_plane(dev_priv, pipe, plane) {
+				gvt->pipe_info[pipe].plane_owner[plane] =
+					DOMAIN_PLANE_OWNER(domain_plane_owners, pipe, plane);
+			}
+		}
+	}
+
+	gvt_dbg_core("gvt device initialization is done\n");
 	return 0;
 
+out_clean_vreg:
+	intel_gvt_clean_vreg_pool(gvt);
 out_clean_types:
 	intel_gvt_clean_vgpu_types(gvt);
 out_clean_thread:
@@ -466,6 +607,14 @@ out_clean_idr:
 	idr_destroy(&gvt->vgpu_idr);
 	kfree(gvt);
 	return ret;
+}
+
+int gvt_dom0_ready(struct drm_i915_private *dev_priv)
+{
+	if (!intel_gvt_active(dev_priv))
+		return 0;
+
+	return intel_gvt_hypervisor_dom0_ready();
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT_KVMGT)

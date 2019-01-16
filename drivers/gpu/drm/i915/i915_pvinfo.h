@@ -28,6 +28,12 @@
 #define VGT_PVINFO_PAGE	0x78000
 #define VGT_PVINFO_SIZE	0x1000
 
+/* Scratch reg used for redirecting command access to registers, any
+ * command access to PVINFO page would be discarded, so it has no HW
+ * impact.
+ */
+#define VGT_SCRATCH_REG VGT_PVINFO_PAGE
+
 /*
  * The following structure pages are defined in GEN MMIO space
  * for virtualization. (One page for now)
@@ -46,7 +52,81 @@ enum vgt_g2v_type {
 	VGT_G2V_PPGTT_L4_PAGE_TABLE_DESTROY,
 	VGT_G2V_EXECLIST_CONTEXT_CREATE,
 	VGT_G2V_EXECLIST_CONTEXT_DESTROY,
+	VGT_G2V_PPGTT_L4_ALLOC,
+	VGT_G2V_PPGTT_L4_CLEAR,
+	VGT_G2V_PPGTT_L4_INSERT,
+	VGT_G2V_GGTT_INSERT,
+	VGT_G2V_GGTT_CLEAR,
 	VGT_G2V_MAX,
+};
+
+#define PLANE_COLOR_CTL_BIT	(1 << 0)
+#define PLANE_KEY_BIT		(1 << 1)
+#define PLANE_SCALER_BIT	(1 << 2)
+
+struct pv_plane_update {
+	u32 flags;
+	u32 plane_color_ctl;
+	u32 plane_key_val;
+	u32 plane_key_max;
+	u32 plane_key_msk;
+	u32 plane_offset;
+	u32 plane_stride;
+	u32 plane_size;
+	u32 plane_aux_dist;
+	u32 plane_aux_offset;
+	u32 ps_ctrl;
+	u32 ps_pwr_gate;
+	u32 ps_win_ps;
+	u32 ps_win_sz;
+	u32 plane_pos;
+	u32 plane_ctl;
+};
+
+struct pv_plane_wm_update {
+	u32 max_wm_level;
+	u32 plane_wm_level[8];
+	u32 plane_trans_wm_level;
+	u32 plane_buf_cfg;
+};
+
+struct pv_ppgtt_update {
+	u64 pdp;
+	u64 start;
+	u64 length;
+	u32 cache_level;
+};
+
+struct pv_ggtt_update {
+	u64 start;
+	u64 length;
+	u32 cache_level;
+};
+
+/* shared page(4KB) between gvt and VM, located at the first page next
+ * to MMIO region(2MB size normally).
+ */
+struct gvt_shared_page {
+	u32 elsp_data[4];
+	u32 reg_addr;
+	struct pv_plane_update pv_plane;
+	struct pv_plane_wm_update pv_plane_wm;
+	struct pv_ppgtt_update pv_ppgtt;
+	struct pv_ggtt_update pv_ggtt;
+	u32 rsvd2[0x400 - 46];
+};
+
+#define VGPU_PVMMIO(vgpu) vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio))
+
+/*
+ * define different levels of PVMMIO optimization
+ */
+enum pvmmio_levels {
+	PVMMIO_ELSP_SUBMIT = 0x1,
+	PVMMIO_PLANE_UPDATE = 0x2,
+	PVMMIO_PLANE_WM_UPDATE = 0x4,
+	PVMMIO_PPGTT_UPDATE = 0x10,
+	PVMMIO_GGTT_UPDATE = 0x20,
 };
 
 /*
@@ -55,6 +135,9 @@ enum vgt_g2v_type {
 #define VGT_CAPS_FULL_48BIT_PPGTT	BIT(2)
 #define VGT_CAPS_HWSP_EMULATION		BIT(3)
 #define VGT_CAPS_HUGE_GTT		BIT(4)
+
+#define PVMMIO_LEVEL(dev_priv, level) \
+	(intel_vgpu_active(dev_priv) && (i915_modparams.enable_pvmmio & level))
 
 struct vgt_if {
 	u64 magic;		/* VGT_MAGIC */
@@ -106,8 +189,11 @@ struct vgt_if {
 
 	u32 execlist_context_descriptor_lo;
 	u32 execlist_context_descriptor_hi;
+	u32 enable_pvmmio;
+	u32 pv_mmio;
+	u32 scaler_owned;
 
-	u32  rsv7[0x200 - 24];    /* pad to one page */
+	u32  rsv7[0x200 - 27];    /* pad to one page */
 } __packed;
 
 #define vgtif_reg(x) \

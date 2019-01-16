@@ -737,6 +737,7 @@ static struct pci_driver i915_pci_driver = {
 	.probe = i915_pci_probe,
 	.remove = i915_pci_remove,
 	.driver.pm = &i915_pm_ops,
+	.driver.probe_type = PROBE_PREFER_ASYNCHRONOUS
 };
 
 static int __init i915_init(void)

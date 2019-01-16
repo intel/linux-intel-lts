@@ -275,7 +275,7 @@ out_audit:
 int smk_curacc(struct smack_known *obj_known,
 	       u32 mode, struct smk_audit_info *a)
 {
-	struct task_smack *tsp = current_security();
+	struct task_smack *tsp = smack_cred(current_cred());
 
 	return smk_tskacc(tsp, obj_known, mode, a);
 }
@@ -550,7 +550,9 @@ struct smack_known *smk_import_entry(const char *string, int len)
 	skp->smk_secid = smack_next_secid++;
 	skp->smk_netlabel.domain = skp->smk_known;
 	skp->smk_netlabel.flags =
-		NETLBL_SECATTR_DOMAIN | NETLBL_SECATTR_MLS_LVL;
+		NETLBL_SECATTR_DOMAIN | NETLBL_SECATTR_MLS_LVL |
+		NETLBL_SECATTR_SECID;
+	skp->smk_netlabel.attr.secid.smack = skp->smk_secid;
 	/*
 	 * If direct labeling works use it.
 	 * Otherwise use mapped labeling.
@@ -635,7 +637,7 @@ DEFINE_MUTEX(smack_onlycap_lock);
  */
 bool smack_privileged_cred(int cap, const struct cred *cred)
 {
-	struct task_smack *tsp = cred->security;
+	struct task_smack *tsp = smack_cred(cred);
 	struct smack_known *skp = tsp->smk_task;
 	struct smack_known_list_elem *sklep;
 	int rc;

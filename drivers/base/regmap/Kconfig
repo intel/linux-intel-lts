@@ -49,3 +49,14 @@ config REGMAP_SOUNDWIRE
 config REGMAP_SCCB
 	tristate
 	depends on I2C
+
+config REGMAP_HWSPINLOCK
+	bool
+
+config REGMAP_SDW
+	default n
+	tristate "Regmap support for soundwire"
+	depends on SDW
+	help
+	  Enable this if regmap support is required for
+	  soundwire slave devices.

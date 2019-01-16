@@ -22,6 +22,7 @@
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <uapi/sound/skl-tplg-interface.h>
+#include <linux/delay.h>
 #include "skl-sst-dsp.h"
 #include "cnl-sst-dsp.h"
 #include "skl-sst-ipc.h"
@@ -29,6 +30,14 @@
 #include "../common/sst-dsp.h"
 #include "../common/sst-dsp-priv.h"
 #include "skl-topology.h"
+#include <linux/sdw/sdw_cnl.h>
+#include <linux/sdw_bus.h>
+#include <asm/set_memory.h>
+#include "virtio/skl-virtio.h"
+
+#define ASRC_MODE_UPLINK	2
+#define ASRC_MODE_DOWNLINK	1
+#define SKL_ENABLE_ALL_CHANNELS  0xffffffff
 
 static int skl_alloc_dma_buf(struct device *dev,
 		struct snd_dma_buffer *dmab, size_t size)
@@ -64,6 +73,59 @@ void skl_dsp_set_astate_cfg(struct skl_sst *ctx, u32 cnt, void *data)
 				sizeof(cnt));
 
 	skl_ipc_set_large_config(&ctx->ipc, &msg, data);
+}
+
+#define ENABLE_LOGS		6
+#define FW_LOGGING_AGING_TIMER_PERIOD 100
+#define FW_LOG_FIFO_FULL_TIMER_PERIOD 100
+
+/* set firmware logging state via IPC */
+int skl_dsp_enable_logging(struct sst_generic_ipc *ipc, int core, int enable)
+{
+	struct skl_log_state_msg log_msg;
+	struct skl_ipc_large_config_msg msg = {0};
+	int ret = 0;
+
+	log_msg.aging_timer_period = FW_LOGGING_AGING_TIMER_PERIOD;
+	log_msg.fifo_full_timer_period = FW_LOG_FIFO_FULL_TIMER_PERIOD;
+
+	log_msg.core_mask = (1 << core);
+	log_msg.logs_core[core].enable = enable;
+	log_msg.logs_core[core].priority = ipc->dsp->trace_wind.log_priority;
+
+	msg.large_param_id = ENABLE_LOGS;
+	msg.param_data_size = sizeof(log_msg);
+
+	ret = skl_ipc_set_large_config(ipc, &msg, (u32 *)&log_msg);
+
+	return ret;
+}
+
+#define SYSTEM_TIME		20
+
+/* set system time to DSP via IPC */
+int skl_dsp_set_system_time(struct skl_sst *skl_sst)
+{
+	struct sst_generic_ipc *ipc = &skl_sst->ipc;
+	struct SystemTime sys_time_msg;
+	struct skl_ipc_large_config_msg msg = {0};
+	struct timeval tv;
+	u64 sys_time;
+	u64 mask = 0x00000000FFFFFFFF;
+	int ret;
+
+	do_gettimeofday(&tv);
+
+	/* DSP firmware expects UTC time in micro seconds */
+	sys_time = tv.tv_sec*1000*1000 + tv.tv_usec;
+	sys_time_msg.val_l = sys_time & mask;
+	sys_time_msg.val_u = (sys_time & (~mask)) >> 32;
+
+	msg.large_param_id = SYSTEM_TIME;
+	msg.param_data_size = sizeof(sys_time_msg);
+
+	ret = skl_ipc_set_large_config(ipc, &msg, (u32 *)&sys_time_msg);
+	return ret;
 }
 
 #define NOTIFICATION_PARAM_ID 3
@@ -106,7 +168,9 @@ static int skl_dsp_setup_spib(struct device *dev, unsigned int size,
 }
 
 static int skl_dsp_prepare(struct device *dev, unsigned int format,
-			unsigned int size, struct snd_dma_buffer *dmab)
+						unsigned int size,
+						struct snd_dma_buffer *dmab,
+						int direction)
 {
 	struct hdac_bus *bus = dev_get_drvdata(dev);
 	struct hdac_ext_stream *estream;
@@ -118,7 +182,8 @@ static int skl_dsp_prepare(struct device *dev, unsigned int format,
 		return -ENODEV;
 
 	memset(&substream, 0, sizeof(substream));
-	substream.stream = SNDRV_PCM_STREAM_PLAYBACK;
+
+	substream.stream = direction;
 
 	estream = snd_hdac_ext_stream_assign(bus, &substream,
 					HDAC_EXT_STREAM_TYPE_HOST);
@@ -137,7 +202,8 @@ static int skl_dsp_prepare(struct device *dev, unsigned int format,
 	return stream->stream_tag;
 }
 
-static int skl_dsp_trigger(struct device *dev, bool start, int stream_tag)
+static int skl_dsp_trigger(struct device *dev, bool start, int stream_tag,
+							int direction)
 {
 	struct hdac_bus *bus = dev_get_drvdata(dev);
 	struct hdac_stream *stream;
@@ -145,8 +211,7 @@ static int skl_dsp_trigger(struct device *dev, bool start, int stream_tag)
 	if (!bus)
 		return -ENODEV;
 
-	stream = snd_hdac_get_stream(bus,
-		SNDRV_PCM_STREAM_PLAYBACK, stream_tag);
+	stream = snd_hdac_get_stream(bus, direction, stream_tag);
 	if (!stream)
 		return -EINVAL;
 
@@ -155,8 +220,8 @@ static int skl_dsp_trigger(struct device *dev, bool start, int stream_tag)
 	return 0;
 }
 
-static int skl_dsp_cleanup(struct device *dev,
-		struct snd_dma_buffer *dmab, int stream_tag)
+static int skl_dsp_cleanup(struct device *dev, struct snd_dma_buffer *dmab,
+				int stream_tag, int direction)
 {
 	struct hdac_bus *bus = dev_get_drvdata(dev);
 	struct hdac_stream *stream;
@@ -165,8 +230,7 @@ static int skl_dsp_cleanup(struct device *dev,
 	if (!bus)
 		return -ENODEV;
 
-	stream = snd_hdac_get_stream(bus,
-		SNDRV_PCM_STREAM_PLAYBACK, stream_tag);
+	stream = snd_hdac_get_stream(bus, direction, stream_tag);
 	if (!stream)
 		return -EINVAL;
 
@@ -247,7 +311,870 @@ static const struct skl_dsp_ops dsp_ops[] = {
 		.init_fw = cnl_sst_init_fw,
 		.cleanup = cnl_sst_dsp_cleanup
 	},
+	{
+		.id = 0x34c8,
+		.num_cores = 4,
+		.loader_ops = bxt_get_loader_ops,
+		.init = cnl_sst_dsp_init,
+		.init_fw = cnl_sst_init_fw,
+		.cleanup = cnl_sst_dsp_cleanup
+	},
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_FE)
+	{
+		.id = 0x8063,
+		.num_cores = 2,
+		.loader_ops = bxt_get_loader_ops,
+		.init = vfe_sst_dsp_init,
+		.init_fw = vfe_sst_init_fw,
+		.cleanup = vfe_sst_dsp_cleanup
+	},
+#endif
 };
+
+static int cnl_sdw_bra_pipe_trigger(struct skl_sst *ctx, bool enable,
+				unsigned int mstr_num)
+{
+	struct bra_conf *bra_data = &ctx->bra_pipe_data[mstr_num];
+	int ret;
+
+	if (enable) {
+
+		/* Run CP Pipeline */
+		ret = skl_run_pipe(ctx, bra_data->cp_pipe);
+		if (ret < 0) {
+			dev_err(ctx->dev, "BRA: RX run pipeline failed: 0x%x\n", ret);
+			goto error;
+		}
+
+		/* Run PB Pipeline */
+		ret = skl_run_pipe(ctx, bra_data->pb_pipe);
+		if (ret < 0) {
+			dev_err(ctx->dev, "BRA: TX run pipeline failed: 0x%x\n", ret);
+			goto error;
+		}
+
+	} else {
+
+		/* Stop playback pipeline */
+		ret = skl_stop_pipe(ctx, bra_data->pb_pipe);
+		if (ret < 0) {
+			dev_err(ctx->dev, "BRA: TX stop pipeline failed: 0x%x\n", ret);
+			goto error;
+		}
+
+		/* Stop capture pipeline */
+		ret = skl_stop_pipe(ctx, bra_data->cp_pipe);
+		if (ret < 0) {
+			dev_err(ctx->dev, "BRA: RX stop pipeline failed: 0x%x\n", ret);
+			goto error;
+		}
+	}
+
+error:
+	return ret;
+}
+
+static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
+					unsigned int mstr_num)
+{
+	struct bra_conf *bra_data = &ctx->bra_pipe_data[mstr_num];
+	struct skl_pipe *host_cpr_pipe = NULL;
+	struct skl_pipe_params host_cpr_params;
+	struct skl_module_cfg *host_cpr_cfg = NULL, *link_cpr_cfg = NULL;
+	struct skl_module *host_cpr_mod = NULL, *link_cpr_mod = NULL;
+	int ret;
+	struct skl_module_fmt *in_fmt, *out_fmt;
+	u8 guid[16] = { 131, 12, 160, 155, 18, 202, 131,
+			74, 148, 60, 31, 162, 232, 47, 157, 218 };
+
+	host_cpr_cfg = kzalloc(sizeof(*host_cpr_cfg), GFP_KERNEL);
+	if (!host_cpr_cfg) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg = kzalloc(sizeof(*link_cpr_cfg), GFP_KERNEL);
+	if (!link_cpr_cfg) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	host_cpr_mod = kzalloc(sizeof(*host_cpr_mod), GFP_KERNEL);
+	if (!host_cpr_mod) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_mod = kzalloc(sizeof(*link_cpr_mod), GFP_KERNEL);
+	if (!link_cpr_mod) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->module = link_cpr_mod;
+	host_cpr_cfg->module = host_cpr_mod;
+
+	/*
+	 * To get the pvt id, UUID of the module config is
+	 * necessary. Hence hardocde this to the UUID fof copier
+	 * module
+	 */
+	memcpy(host_cpr_cfg->guid, &guid, 16);
+	memcpy(link_cpr_cfg->guid, &guid, 16);
+	in_fmt = &host_cpr_cfg->module->formats[0].inputs[0].fmt;
+	out_fmt = &host_cpr_cfg->module->formats[0].outputs[0].fmt;
+
+	/* Playback pipeline */
+	host_cpr_pipe = kzalloc(sizeof(struct skl_pipe), GFP_KERNEL);
+	if (!host_cpr_pipe) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	host_cpr_cfg->fmt_idx = 0;
+	host_cpr_cfg->res_idx = 0;
+	link_cpr_cfg->fmt_idx = 0;
+	link_cpr_cfg->res_idx = 0;
+	bra_data->pb_pipe = host_cpr_pipe;
+
+	host_cpr_pipe->p_params = &host_cpr_params;
+	host_cpr_cfg->pipe = host_cpr_pipe;
+
+	host_cpr_pipe->ppl_id = 1;
+	host_cpr_pipe->pipe_priority = 0;
+	host_cpr_pipe->conn_type = 0;
+	host_cpr_pipe->memory_pages = 2;
+
+	ret = skl_create_pipeline(ctx, host_cpr_cfg->pipe);
+	if (ret < 0)
+		goto error;
+
+	host_cpr_params.host_dma_id = (bra_data->pb_stream_tag - 1);
+	host_cpr_params.link_dma_id = 0;
+	host_cpr_params.ch = 1;
+	host_cpr_params.s_freq = 96000;
+	host_cpr_params.s_fmt = 32;
+	host_cpr_params.linktype = 0;
+	host_cpr_params.stream = 0;
+	host_cpr_cfg->id.module_id = skl_get_module_id(ctx,
+					(uuid_le *)host_cpr_cfg->guid);
+
+	host_cpr_cfg->id.instance_id = 1;
+	host_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
+		(uuid_le *)host_cpr_cfg->guid, host_cpr_cfg->id.instance_id);
+	if (host_cpr_cfg->id.pvt_id < 0)
+		return -EINVAL;
+
+	host_cpr_cfg->module->resources[0].cps = 100000;
+	host_cpr_cfg->module->resources[0].is_pages = 0;
+	host_cpr_cfg->module->resources[0].ibs = 384;
+	host_cpr_cfg->module->resources[0].obs = 384;
+	host_cpr_cfg->core_id = 0;
+	host_cpr_cfg->module->max_input_pins = 1;
+	host_cpr_cfg->module->max_output_pins = 1;
+	host_cpr_cfg->module->loadable = 0;
+	host_cpr_cfg->domain = 0;
+	host_cpr_cfg->m_type = SKL_MODULE_TYPE_COPIER;
+	host_cpr_cfg->dev_type = SKL_DEVICE_HDAHOST;
+	host_cpr_cfg->hw_conn_type = SKL_CONN_SOURCE;
+	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
+	host_cpr_cfg->module->resources[0].dma_buffer_size = 2;
+	host_cpr_cfg->converter = 0;
+	host_cpr_cfg->vbus_id = 0;
+	host_cpr_cfg->sdw_agg_enable = 0;
+	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
+
+	in_fmt->channels = 1;
+	in_fmt->s_freq = 96000;
+	in_fmt->bit_depth = 32;
+	in_fmt->valid_bit_depth = 24;
+	in_fmt->ch_cfg = 0;
+	in_fmt->interleaving_style = 0;
+	in_fmt->sample_type = 0;
+	in_fmt->ch_map = 0xFFFFFFF1;
+
+	out_fmt->channels = 1;
+	out_fmt->s_freq = 96000;
+	out_fmt->bit_depth = 32;
+	out_fmt->valid_bit_depth = 24;
+	out_fmt->ch_cfg = 0;
+	out_fmt->interleaving_style = 0;
+	out_fmt->sample_type = 0;
+	out_fmt->ch_map = 0xFFFFFFF1;
+
+	host_cpr_cfg->m_in_pin = kcalloc(host_cpr_cfg->module->max_input_pins,
+					sizeof(*host_cpr_cfg->m_in_pin),
+					GFP_KERNEL);
+	if (!host_cpr_cfg->m_in_pin) {
+		ret =  -ENOMEM;
+		goto error;
+	}
+
+	host_cpr_cfg->m_out_pin = kcalloc(host_cpr_cfg->module->max_output_pins,
+					sizeof(*host_cpr_cfg->m_out_pin),
+					GFP_KERNEL);
+	if (!host_cpr_cfg->m_out_pin) {
+		ret =  -ENOMEM;
+		goto error;
+	}
+
+	host_cpr_cfg->m_in_pin[0].id.module_id =
+		host_cpr_cfg->id.module_id;
+	host_cpr_cfg->m_in_pin[0].id.instance_id =
+		host_cpr_cfg->id.instance_id;
+	host_cpr_cfg->m_in_pin[0].in_use = false;
+	host_cpr_cfg->m_in_pin[0].is_dynamic = true;
+	host_cpr_cfg->m_in_pin[0].pin_state = SKL_PIN_UNBIND;
+
+	host_cpr_cfg->m_out_pin[0].id.module_id =
+		host_cpr_cfg->id.module_id;
+	host_cpr_cfg->m_out_pin[0].id.instance_id =
+		host_cpr_cfg->id.instance_id;
+	host_cpr_cfg->m_out_pin[0].in_use = false;
+	host_cpr_cfg->m_out_pin[0].is_dynamic = true;
+	host_cpr_cfg->m_out_pin[0].pin_state = SKL_PIN_UNBIND;
+
+	memcpy(link_cpr_cfg, host_cpr_cfg,
+			sizeof(struct skl_module_cfg));
+
+	link_cpr_cfg->id.instance_id = 2;
+	link_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
+		(uuid_le *)link_cpr_cfg->guid, link_cpr_cfg->id.instance_id);
+	if (link_cpr_cfg->id.pvt_id < 0)
+		return -EINVAL;
+
+	link_cpr_cfg->dev_type = SKL_DEVICE_SDW_PCM;
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	link_cpr_cfg->sdw_stream_num = 0x3;
+#else
+	link_cpr_cfg->sdw_stream_num = 0x13;
+#endif
+	link_cpr_cfg->hw_conn_type = SKL_CONN_SOURCE;
+
+	link_cpr_cfg->m_in_pin = kcalloc(link_cpr_cfg->module->max_input_pins,
+					sizeof(*link_cpr_cfg->m_in_pin),
+					GFP_KERNEL);
+	if (!link_cpr_cfg->m_in_pin) {
+		ret =  -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->m_out_pin = kcalloc(link_cpr_cfg->module->max_output_pins,
+					sizeof(*link_cpr_cfg->m_out_pin),
+					GFP_KERNEL);
+	if (!link_cpr_cfg->m_out_pin) {
+		ret =  -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->m_in_pin[0].id.module_id =
+		link_cpr_cfg->id.module_id;
+	link_cpr_cfg->m_in_pin[0].id.instance_id =
+		link_cpr_cfg->id.instance_id;
+	link_cpr_cfg->m_in_pin[0].in_use = false;
+	link_cpr_cfg->m_in_pin[0].is_dynamic = true;
+	link_cpr_cfg->m_in_pin[0].pin_state = SKL_PIN_UNBIND;
+
+	link_cpr_cfg->m_out_pin[0].id.module_id =
+		link_cpr_cfg->id.module_id;
+	link_cpr_cfg->m_out_pin[0].id.instance_id =
+		link_cpr_cfg->id.instance_id;
+	link_cpr_cfg->m_out_pin[0].in_use = false;
+	link_cpr_cfg->m_out_pin[0].is_dynamic = true;
+	link_cpr_cfg->m_out_pin[0].pin_state = SKL_PIN_UNBIND;
+
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size =
+							(sizeof(u32) * 4);
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps =
+				kzalloc((sizeof(u32) * 4), GFP_KERNEL);
+	if (!link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[0] = 0x0;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[1] = 0x1;
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1003;
+#else
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1013;
+#endif
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[3] = 0x0;
+
+	/* Init PB CPR1 module */
+	ret = skl_init_module(ctx, host_cpr_cfg);
+	if (ret < 0)
+		goto error;
+
+	/* Init PB CPR2 module */
+	ret = skl_init_module(ctx, link_cpr_cfg);
+	if (ret < 0)
+		goto error;
+
+	/* Bind PB CPR1 and CPR2 module */
+	ret = skl_bind_modules(ctx, host_cpr_cfg, link_cpr_cfg);
+	if (ret < 0)
+		goto error;
+
+error:
+	/* Free up all memory allocated */
+	kfree(host_cpr_cfg->m_in_pin);
+	kfree(host_cpr_cfg->m_out_pin);
+	kfree(link_cpr_cfg->m_in_pin);
+	kfree(link_cpr_cfg->m_out_pin);
+	kfree(link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps);
+	kfree(host_cpr_cfg);
+	kfree(link_cpr_cfg);
+	kfree(host_cpr_mod);
+	kfree(link_cpr_mod);
+
+	return ret;
+}
+
+static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
+					unsigned int mstr_num)
+{
+	struct bra_conf *bra_data = &ctx->bra_pipe_data[mstr_num];
+	struct skl_pipe *link_cpr_pipe = NULL;
+	struct skl_pipe_params link_cpr_params;
+	struct skl_module *host_cpr_mod = NULL, *link_cpr_mod = NULL;
+	struct skl_module_cfg *link_cpr_cfg = NULL, *host_cpr_cfg = NULL;
+	int ret;
+	struct skl_module_fmt *in_fmt, *out_fmt;
+	u8 guid[16] = { 131, 12, 160, 155, 18, 202, 131,
+			74, 148, 60, 31, 162, 232, 47, 157, 218 };
+
+	link_cpr_cfg = kzalloc(sizeof(*link_cpr_cfg), GFP_KERNEL);
+	if (!link_cpr_cfg) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	host_cpr_cfg = kzalloc(sizeof(*host_cpr_cfg), GFP_KERNEL);
+	if (!host_cpr_cfg) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	host_cpr_mod = kzalloc(sizeof(*host_cpr_mod), GFP_KERNEL);
+	if (!host_cpr_mod) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_mod = kzalloc(sizeof(*link_cpr_mod), GFP_KERNEL);
+	if (!link_cpr_mod) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->module = link_cpr_mod;
+	host_cpr_cfg->module = host_cpr_mod;
+
+
+	/*
+	 * To get the pvt id, UUID of the module config is
+	 * necessary. Hence hardocde this to the UUID fof copier
+	 * module
+	 */
+	memcpy(host_cpr_cfg->guid, &guid, 16);
+	memcpy(link_cpr_cfg->guid, &guid, 16);
+	in_fmt = &link_cpr_cfg->module->formats[0].inputs[0].fmt;
+	out_fmt = &link_cpr_cfg->module->formats[0].outputs[0].fmt;
+
+	/* Capture Pipeline */
+	link_cpr_pipe = kzalloc(sizeof(struct skl_pipe), GFP_KERNEL);
+	if (!link_cpr_pipe) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->fmt_idx = 0;
+	link_cpr_cfg->res_idx = 0;
+	host_cpr_cfg->fmt_idx = 0;
+	host_cpr_cfg->res_idx = 0;
+	bra_data->cp_pipe = link_cpr_pipe;
+	link_cpr_pipe->p_params = &link_cpr_params;
+	link_cpr_cfg->pipe = link_cpr_pipe;
+
+	link_cpr_pipe->ppl_id = 2;
+	link_cpr_pipe->pipe_priority = 0;
+	link_cpr_pipe->conn_type = 0;
+	link_cpr_pipe->memory_pages = 2;
+
+	/* Create Capture Pipeline */
+	ret = skl_create_pipeline(ctx, link_cpr_cfg->pipe);
+	if (ret < 0)
+		goto error;
+
+	link_cpr_params.host_dma_id = 0;
+	link_cpr_params.link_dma_id = 0;
+	link_cpr_params.ch = 6;
+	link_cpr_params.s_freq = 48000;
+	link_cpr_params.s_fmt = 32;
+	link_cpr_params.linktype = 0;
+	link_cpr_params.stream = 0;
+	link_cpr_cfg->id.module_id = skl_get_module_id(ctx,
+					(uuid_le *)link_cpr_cfg->guid);
+
+	link_cpr_cfg->id.instance_id = 3;
+	link_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
+		(uuid_le *)link_cpr_cfg->guid, link_cpr_cfg->id.instance_id);
+	if (link_cpr_cfg->id.pvt_id < 0)
+		return -EINVAL;
+
+	link_cpr_cfg->module->resources[0].cps = 100000;
+	link_cpr_cfg->module->resources[0].is_pages = 0;
+	link_cpr_cfg->module->resources[0].ibs = 1152;
+	link_cpr_cfg->module->resources[0].obs = 1152;
+	link_cpr_cfg->core_id = 0;
+	link_cpr_cfg->module->max_input_pins = 1;
+	link_cpr_cfg->module->max_output_pins = 1;
+	link_cpr_cfg->module->loadable = 0;
+	link_cpr_cfg->domain = 0;
+	link_cpr_cfg->m_type = SKL_MODULE_TYPE_COPIER;
+	link_cpr_cfg->dev_type = SKL_DEVICE_SDW_PCM;
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	link_cpr_cfg->sdw_stream_num = 0x4;
+#else
+	link_cpr_cfg->sdw_stream_num = 0x14;
+#endif
+	link_cpr_cfg->hw_conn_type = SKL_CONN_SINK;
+
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
+	link_cpr_cfg->module->resources[0].dma_buffer_size = 2;
+	link_cpr_cfg->converter = 0;
+	link_cpr_cfg->vbus_id = 0;
+	link_cpr_cfg->sdw_agg_enable = 0;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size =
+							(sizeof(u32) * 4);
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps =
+				kzalloc((sizeof(u32) * 4), GFP_KERNEL);
+	if (!link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[0] = 0x0;
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[1] = 0x1;
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1104;
+#else
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1114;
+#endif
+	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[3] = 0x1;
+
+	in_fmt->channels = 6;
+	in_fmt->s_freq = 48000;
+	in_fmt->bit_depth = 32;
+	in_fmt->valid_bit_depth = 24;
+	in_fmt->ch_cfg = 8;
+	in_fmt->interleaving_style = 0;
+	in_fmt->sample_type = 0;
+	in_fmt->ch_map = 0xFF657120;
+
+	out_fmt->channels = 6;
+	out_fmt->s_freq = 48000;
+	out_fmt->bit_depth = 32;
+	out_fmt->valid_bit_depth = 24;
+	out_fmt->ch_cfg = 8;
+	out_fmt->interleaving_style = 0;
+	out_fmt->sample_type = 0;
+	out_fmt->ch_map = 0xFF657120;
+
+	link_cpr_cfg->m_in_pin = kcalloc(link_cpr_cfg->module->max_input_pins,
+					sizeof(*link_cpr_cfg->m_in_pin),
+					GFP_KERNEL);
+	if (!link_cpr_cfg->m_in_pin) {
+		ret =  -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->m_out_pin = kcalloc(link_cpr_cfg->module->max_output_pins,
+					sizeof(*link_cpr_cfg->m_out_pin),
+					GFP_KERNEL);
+	if (!link_cpr_cfg->m_out_pin) {
+		ret =  -ENOMEM;
+		goto error;
+	}
+
+	link_cpr_cfg->m_in_pin[0].id.module_id =
+		link_cpr_cfg->id.module_id;
+	link_cpr_cfg->m_in_pin[0].id.instance_id =
+		link_cpr_cfg->id.instance_id;
+	link_cpr_cfg->m_in_pin[0].in_use = false;
+	link_cpr_cfg->m_in_pin[0].is_dynamic = true;
+	link_cpr_cfg->m_in_pin[0].pin_state = SKL_PIN_UNBIND;
+
+	link_cpr_cfg->m_out_pin[0].id.module_id =
+		link_cpr_cfg->id.module_id;
+	link_cpr_cfg->m_out_pin[0].id.instance_id =
+		link_cpr_cfg->id.instance_id;
+	link_cpr_cfg->m_out_pin[0].in_use = false;
+	link_cpr_cfg->m_out_pin[0].is_dynamic = true;
+	link_cpr_cfg->m_out_pin[0].pin_state = SKL_PIN_UNBIND;
+
+	memcpy(host_cpr_cfg, link_cpr_cfg,
+			sizeof(struct skl_module_cfg));
+
+	host_cpr_cfg->id.instance_id = 4;
+	host_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
+		(uuid_le *)host_cpr_cfg->guid, host_cpr_cfg->id.instance_id);
+	if (host_cpr_cfg->id.pvt_id < 0)
+		return -EINVAL;
+
+	host_cpr_cfg->dev_type = SKL_DEVICE_HDAHOST;
+	host_cpr_cfg->hw_conn_type = SKL_CONN_SINK;
+	link_cpr_params.host_dma_id = (bra_data->cp_stream_tag - 1);
+	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
+	host_cpr_cfg->m_in_pin = kcalloc(host_cpr_cfg->module->max_input_pins,
+					sizeof(*host_cpr_cfg->m_in_pin),
+					GFP_KERNEL);
+	if (!host_cpr_cfg->m_in_pin) {
+		ret =  -ENOMEM;
+		goto error;
+	}
+
+	host_cpr_cfg->m_out_pin = kcalloc(host_cpr_cfg->module->max_output_pins,
+					sizeof(*host_cpr_cfg->m_out_pin),
+					GFP_KERNEL);
+	if (!host_cpr_cfg->m_out_pin) {
+		ret =  -ENOMEM;
+		goto error;
+	}
+
+	host_cpr_cfg->m_in_pin[0].id.module_id =
+		host_cpr_cfg->id.module_id;
+	host_cpr_cfg->m_in_pin[0].id.instance_id =
+		host_cpr_cfg->id.instance_id;
+	host_cpr_cfg->m_in_pin[0].in_use = false;
+	host_cpr_cfg->m_in_pin[0].is_dynamic = true;
+	host_cpr_cfg->m_in_pin[0].pin_state = SKL_PIN_UNBIND;
+
+	host_cpr_cfg->m_out_pin[0].id.module_id =
+		host_cpr_cfg->id.module_id;
+	host_cpr_cfg->m_out_pin[0].id.instance_id =
+		host_cpr_cfg->id.instance_id;
+	host_cpr_cfg->m_out_pin[0].in_use = false;
+	host_cpr_cfg->m_out_pin[0].is_dynamic = true;
+	host_cpr_cfg->m_out_pin[0].pin_state = SKL_PIN_UNBIND;
+
+	/* Init CP CPR1 module */
+	ret = skl_init_module(ctx, link_cpr_cfg);
+	if (ret < 0)
+		goto error;
+
+	/* Init CP CPR2 module */
+	ret = skl_init_module(ctx, host_cpr_cfg);
+	if (ret < 0)
+		goto error;
+
+	/* Bind CP CPR1 and CPR2 module */
+	ret = skl_bind_modules(ctx, link_cpr_cfg, host_cpr_cfg);
+	if (ret < 0)
+		goto error;
+
+
+error:
+	/* Free up all memory allocated */
+	kfree(link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps);
+	kfree(link_cpr_cfg->m_in_pin);
+	kfree(link_cpr_cfg->m_out_pin);
+	kfree(host_cpr_cfg->m_in_pin);
+	kfree(host_cpr_cfg->m_out_pin);
+	kfree(link_cpr_cfg);
+	kfree(host_cpr_cfg);
+	kfree(host_cpr_mod);
+	kfree(link_cpr_mod);
+	return ret;
+}
+
+static int cnl_sdw_bra_pipe_setup(struct skl_sst *ctx, bool enable,
+						unsigned int mstr_num)
+{
+	struct bra_conf *bra_data = &ctx->bra_pipe_data[mstr_num];
+	int ret;
+
+	/*
+	 * This function creates TX and TX pipelines for BRA transfers.
+	 * TODO: Currently the pipelines are created manually. All the
+	 * values needs to be received from XML based on the configuration
+	 * used.
+	 */
+
+	if (enable) {
+
+		/* Create playback pipeline */
+		ret = cnl_sdw_bra_pipe_cfg_pb(ctx, mstr_num);
+		if (ret < 0)
+			goto error;
+
+		/* Create capture pipeline */
+		ret = cnl_sdw_bra_pipe_cfg_cp(ctx, mstr_num);
+		if (ret < 0)
+			goto error;
+	} else {
+
+		/* Delete playback pipeline */
+		ret = skl_delete_pipe(ctx, bra_data->pb_pipe);
+		if (ret < 0)
+			goto error;
+
+		/* Delete capture pipeline */
+		ret = skl_delete_pipe(ctx, bra_data->cp_pipe);
+		if (ret < 0)
+			goto error;
+	}
+
+	if (enable)
+		return 0;
+error:
+	/* Free up all memory allocated */
+	kfree(bra_data->pb_pipe);
+	kfree(bra_data->cp_pipe);
+
+	return ret;
+}
+
+static int cnl_sdw_bra_dma_trigger(struct skl_sst *ctx, bool enable,
+			unsigned int mstr_num)
+{
+	struct sst_dsp *dsp_ctx = ctx->dsp;
+	struct bra_conf *bra_data = &ctx->bra_pipe_data[mstr_num];
+	int ret;
+
+	if (enable) {
+
+		ret = dsp_ctx->dsp_ops.trigger(dsp_ctx->dev, true,
+						bra_data->cp_stream_tag,
+						SNDRV_PCM_STREAM_CAPTURE);
+		if (ret < 0) {
+			dev_err(ctx->dev, "BRA: RX DMA trigger failed: 0x%x\n", ret);
+			goto bra_dma_failed;
+		}
+
+		ret = dsp_ctx->dsp_ops.trigger(dsp_ctx->dev, true,
+						bra_data->pb_stream_tag,
+						SNDRV_PCM_STREAM_PLAYBACK);
+		if (ret < 0) {
+			dev_err(ctx->dev, "BRA: TX DMA trigger failed: 0x%x\n", ret);
+			goto bra_dma_failed;
+		}
+
+	} else {
+
+		ret = dsp_ctx->dsp_ops.trigger(dsp_ctx->dev, false,
+						bra_data->cp_stream_tag,
+						SNDRV_PCM_STREAM_CAPTURE);
+		if (ret < 0) {
+			dev_err(ctx->dev, "BRA: RX DMA trigger stop failed: 0x%x\n", ret);
+			goto bra_dma_failed;
+		}
+		ret = dsp_ctx->dsp_ops.trigger(dsp_ctx->dev, false,
+						bra_data->pb_stream_tag,
+						SNDRV_PCM_STREAM_PLAYBACK);
+		if (ret < 0) {
+			dev_err(ctx->dev, "BRA: TX DMA trigger stop failed: 0x%x\n", ret);
+			goto bra_dma_failed;
+		}
+	}
+
+	if (enable)
+		return 0;
+
+bra_dma_failed:
+
+	/* Free up resources */
+	dsp_ctx->dsp_ops.cleanup(dsp_ctx->dev, &bra_data->pb_dmab,
+						bra_data->pb_stream_tag,
+						SNDRV_PCM_STREAM_PLAYBACK);
+	dsp_ctx->dsp_ops.cleanup(dsp_ctx->dev, &bra_data->cp_dmab,
+						bra_data->cp_stream_tag,
+						SNDRV_PCM_STREAM_CAPTURE);
+
+	return ret;
+}
+
+
+static int cnl_sdw_bra_dma_setup(struct skl_sst *ctx, bool enable,
+						struct bra_info *info)
+{
+	struct sst_dsp *dsp_ctx = ctx->dsp;
+	struct bra_conf *bra_data = &ctx->bra_pipe_data[info->mstr_num];
+	struct snd_dma_buffer *pb_dmab = &bra_data->pb_dmab;
+	struct snd_dma_buffer *cp_dmab = &bra_data->cp_dmab;
+	u32 pb_pages = 0, cp_pages = 0;
+	int pb_block_size = info->tx_block_size;
+	int cp_block_size = info->rx_block_size;
+	int ret = 0;
+
+	/*
+	 * TODO: In future below approach can be replaced by component
+	 * framework
+	 */
+	if (enable) {
+
+		/*
+		 * Take below number for BRA DMA format
+		 * Format = (32 * 2 = 64) = 0x40 Size = 0x80
+		 */
+
+		/* Prepare TX Host DMA */
+		bra_data->pb_stream_tag = dsp_ctx->dsp_ops.prepare(dsp_ctx->dev,
+						0x40, pb_block_size,
+						pb_dmab,
+						SNDRV_PCM_STREAM_PLAYBACK);
+		if (bra_data->pb_stream_tag <= 0) {
+			dev_err(dsp_ctx->dev, "BRA: PB DMA prepare failed: 0x%x\n",
+						bra_data->pb_stream_tag);
+			ret = -EINVAL;
+			goto bra_dma_failed;
+		}
+
+		pb_pages = (pb_block_size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+		set_memory_uc((unsigned long) pb_dmab->area, pb_pages);
+		memcpy(pb_dmab->area, info->tx_ptr, pb_block_size);
+
+		/* Prepare RX Host DMA */
+		bra_data->cp_stream_tag = dsp_ctx->dsp_ops.prepare(dsp_ctx->dev,
+						0x40, cp_block_size,
+						cp_dmab,
+						SNDRV_PCM_STREAM_CAPTURE);
+		if (bra_data->cp_stream_tag <= 0) {
+			dev_err(dsp_ctx->dev, "BRA: CP DMA prepare failed: 0x%x\n",
+						bra_data->cp_stream_tag);
+			ret = -EINVAL;
+			goto bra_dma_failed;
+		}
+
+		cp_pages = (cp_block_size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+		set_memory_uc((unsigned long) cp_dmab->area, cp_pages);
+
+	} else {
+
+		ret = dsp_ctx->dsp_ops.cleanup(dsp_ctx->dev, &bra_data->pb_dmab,
+						bra_data->pb_stream_tag,
+						SNDRV_PCM_STREAM_PLAYBACK);
+		if (ret < 0)
+			goto bra_dma_failed;
+
+		ret = dsp_ctx->dsp_ops.cleanup(dsp_ctx->dev, &bra_data->cp_dmab,
+						bra_data->cp_stream_tag,
+						SNDRV_PCM_STREAM_CAPTURE);
+		if (ret < 0)
+			goto bra_dma_failed;
+
+	}
+
+bra_dma_failed:
+
+	return ret;
+}
+
+static int cnl_sdw_bra_setup(void *context, bool enable,
+			struct bra_info *info)
+{
+	struct skl_sst *ctx = context;
+	int ret;
+
+	if (enable) {
+
+		/* Setup Host DMA */
+		ret = cnl_sdw_bra_dma_setup(ctx, true, info);
+		if (ret < 0)
+			goto error;
+
+		/* Create Pipeline */
+		ret = cnl_sdw_bra_pipe_setup(ctx, true, info->mstr_num);
+		if (ret < 0)
+			goto error;
+
+	} else {
+
+		/* De-setup Host DMA */
+		ret = cnl_sdw_bra_dma_setup(ctx, false, info);
+		if (ret < 0)
+			goto error;
+
+		/* Delete Pipeline */
+		ret = cnl_sdw_bra_pipe_setup(ctx, false, info->mstr_num);
+		if (ret < 0)
+			goto error;
+
+	}
+
+error:
+	return ret;
+}
+
+
+static int cnl_sdw_bra_xfer(void *context, bool enable,
+						struct bra_info *info)
+{
+
+	struct skl_sst *ctx = context;
+	struct bra_conf *bra_data = &ctx->bra_pipe_data[info->mstr_num];
+	struct snd_dma_buffer *cp_dmab = &bra_data->cp_dmab;
+	int ret;
+
+	if (enable) {
+
+		/*
+		 * TODO: Need to check on how to check on RX buffer
+		 * completion. Approaches can be used:
+		 * 1. Check any of LPIB, SPIB or DPIB register for
+		 * xfer completion.
+		 * 2. Add Interrupt of completion (IOC) for RX DMA buffer.
+		 * This needs to adds changes in common infrastructure code
+		 * only for BRA feature.
+		 * Currenly we are just sleeping for 100 ms and copying
+		 * data to appropriate RX buffer.
+		 */
+
+		/* Trigger Host DMA */
+		ret = cnl_sdw_bra_dma_trigger(ctx, true, info->mstr_num);
+		if (ret < 0)
+			goto error;
+
+		/* Trigger Pipeline */
+		ret = cnl_sdw_bra_pipe_trigger(ctx, true, info->mstr_num);
+		if (ret < 0)
+			goto error;
+
+
+		/* Sleep for 100 ms */
+		msleep(100);
+
+		/* TODO: Remove below hex dump print */
+		print_hex_dump(KERN_DEBUG, "BRA CP DMA BUFFER DUMP RCVD:", DUMP_PREFIX_OFFSET, 8, 4,
+			     cp_dmab->area, cp_dmab->bytes, false);
+
+		/* Copy data in RX buffer */
+		memcpy(info->rx_ptr, cp_dmab->area, info->rx_block_size);
+
+	} else {
+
+		/* Stop Host DMA */
+		ret = cnl_sdw_bra_dma_trigger(ctx, false, info->mstr_num);
+		if (ret < 0)
+			goto error;
+
+		/* Stop Pipeline */
+		ret = cnl_sdw_bra_pipe_trigger(ctx, false, info->mstr_num);
+		if (ret < 0)
+			goto error;
+	}
+
+error:
+	return ret;
+}
+
+
+struct cnl_bra_operation cnl_sdw_bra_ops = {
+	.bra_platform_setup = cnl_sdw_bra_setup,
+	.bra_platform_xfer = cnl_sdw_bra_xfer,
+};
+
 
 const struct skl_dsp_ops *skl_get_dsp_ops(int pci_id)
 {
@@ -260,6 +1187,7 @@ const struct skl_dsp_ops *skl_get_dsp_ops(int pci_id)
 
 	return NULL;
 }
+EXPORT_SYMBOL(skl_get_dsp_ops);
 
 int skl_init_dsp(struct skl *skl)
 {
@@ -289,9 +1217,8 @@ int skl_init_dsp(struct skl *skl)
 	}
 
 	loader_ops = ops->loader_ops();
-	ret = ops->init(bus->dev, mmio_base, irq,
-				skl->fw_name, loader_ops,
-				&skl->skl_sst);
+	ret = ops->init(bus->dev, mmio_base, irq, skl->fw_name, loader_ops,
+					&skl->skl_sst, &cnl_sdw_bra_ops);
 
 	if (ret < 0)
 		goto unmap_mmio;
@@ -315,6 +1242,12 @@ int skl_init_dsp(struct skl *skl)
 
 	dev_dbg(bus->dev, "dsp registration status=%d\n", ret);
 
+	INIT_LIST_HEAD(&skl->skl_sst->notify_kctls);
+
+	/* Set DMA clock controls */
+	ret = skl_dsp_set_dma_clk_controls(skl->skl_sst);
+	if (ret < 0)
+		return ret;
 	return 0;
 
 free_core_state:
@@ -330,10 +1263,13 @@ int skl_free_dsp(struct skl *skl)
 {
 	struct hdac_bus *bus = skl_to_bus(skl);
 	struct skl_sst *ctx = skl->skl_sst;
+	struct skl_fw_property_info fw_property = skl->skl_sst->fw_property;
+	struct skl_scheduler_config sch_config = fw_property.scheduler_config;
 
 	/* disable  ppcap interrupt */
 	snd_hdac_ext_bus_ppcap_int_enable(bus, false);
 
+	skl_module_sysfs_exit(skl->skl_sst);
 	ctx->dsp_ops->cleanup(bus->dev, ctx);
 
 	kfree(ctx->cores.state);
@@ -341,6 +1277,9 @@ int skl_free_dsp(struct skl *skl)
 
 	if (ctx->dsp->addr.lpe)
 		iounmap(ctx->dsp->addr.lpe);
+
+	kfree(fw_property.dma_config);
+	kfree(sch_config.sys_tick_cfg);
 
 	return 0;
 }
@@ -430,6 +1369,10 @@ int skl_resume_dsp(struct skl *skl)
 		skl_dsp_set_astate_cfg(skl->skl_sst, skl->cfg.astate_cfg->count,
 					skl->cfg.astate_cfg);
 	}
+
+	/* Set the FW config info from topology */
+	skl_tplg_fw_cfg_set(skl);
+
 	return ret;
 }
 
@@ -475,10 +1418,11 @@ static void skl_set_base_module_format(struct skl_sst *ctx,
 	base_cfg->audio_fmt.bit_depth = format->bit_depth;
 	base_cfg->audio_fmt.valid_bit_depth = format->valid_bit_depth;
 	base_cfg->audio_fmt.ch_cfg = format->ch_cfg;
+	base_cfg->audio_fmt.sample_type = format->sample_type;
 
-	dev_dbg(ctx->dev, "bit_depth=%x valid_bd=%x ch_config=%x\n",
+	dev_dbg(ctx->dev, "bit_depth=%x valid_bd=%x ch_config=%x sample_type:%x\n",
 			format->bit_depth, format->valid_bit_depth,
-			format->ch_cfg);
+			format->ch_cfg, format->sample_type);
 
 	base_cfg->audio_fmt.channel_map = format->ch_map;
 
@@ -497,15 +1441,15 @@ static void skl_set_base_module_format(struct skl_sst *ctx,
 static void skl_copy_copier_caps(struct skl_module_cfg *mconfig,
 				struct skl_cpr_cfg *cpr_mconfig)
 {
-	if (mconfig->formats_config.caps_size == 0)
+	if (mconfig->formats_config[SKL_PARAM_INIT].caps_size == 0)
 		return;
 
 	memcpy(cpr_mconfig->gtw_cfg.config_data,
-			mconfig->formats_config.caps,
-			mconfig->formats_config.caps_size);
+			mconfig->formats_config[SKL_PARAM_INIT].caps,
+			mconfig->formats_config[SKL_PARAM_INIT].caps_size);
 
 	cpr_mconfig->gtw_cfg.config_length =
-			(mconfig->formats_config.caps_size) / 4;
+			(mconfig->formats_config[SKL_PARAM_INIT].caps_size) / 4;
 }
 
 #define SKL_NON_GATEWAY_CPR_NODE_ID 0xFFFFFFFF
@@ -560,6 +1504,17 @@ static u32 skl_get_node_id(struct skl_sst *ctx,
 			SKL_DMA_HDA_HOST_OUTPUT_CLASS :
 			SKL_DMA_HDA_HOST_INPUT_CLASS;
 		node_id.node.vindex = params->host_dma_id;
+		break;
+	case SKL_DEVICE_SDW_PCM:
+	case SKL_DEVICE_SDW_PDM:
+		node_id.node.dma_type =
+			(SKL_CONN_SOURCE == mconfig->hw_conn_type) ?
+			SKL_DMA_SDW_LINK_OUTPUT_CLASS :
+			SKL_DMA_SDW_LINK_INPUT_CLASS;
+		if (mconfig->sdw_agg_enable)
+			node_id.node.vindex = 0x50;
+		else
+			node_id.node.vindex = mconfig->sdw_stream_num;
 		break;
 
 	default:
@@ -672,9 +1627,94 @@ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
 	err = skl_ipc_set_large_config(&ctx->ipc, &msg, (u32 *)dma_ctrl);
 
 	kfree(dma_ctrl);
+
 	return err;
 }
 EXPORT_SYMBOL_GPL(skl_dsp_set_dma_control);
+
+static u32 skl_prepare_i2s_node_id(u32 instance, u8 dev_type,
+				u32 dir, u32 time_slot)
+{
+	union skl_connector_node_id node_id = {0};
+	union skl_ssp_dma_node ssp_node  = {0};
+
+	node_id.node.dma_type = (dir == SNDRV_PCM_STREAM_PLAYBACK) ?
+					SKL_DMA_I2S_LINK_OUTPUT_CLASS :
+					SKL_DMA_I2S_LINK_INPUT_CLASS;
+	ssp_node.dma_node.time_slot_index = time_slot;
+	ssp_node.dma_node.i2s_instance = instance;
+	node_id.node.vindex = ssp_node.val;
+
+	return node_id.val;
+}
+
+int skl_dsp_set_dma_clk_controls(struct skl_sst *ctx)
+{
+	struct nhlt_specific_cfg *cfg = NULL;
+	struct skl *skl = get_skl_ctx(ctx->dev);
+	struct skl_dmactrl_config *dmactrl_cfg = &skl->cfg.dmactrl_cfg;
+	struct skl_dmctrl_hdr *hdr;
+	u8 *dma_ctrl_config;
+	void *i2s_config = NULL;
+	u32 i2s_config_size, node_id;
+	int i, ret = 0;
+
+	if (!skl->cfg.dmactrl_cfg.size)
+		return 0;
+
+	for (i = 0; i < SKL_MAX_DMACTRL; i++) {
+		hdr = &dmactrl_cfg->hdr[i];
+
+		/* get nhlt specific config info */
+		cfg = skl_get_nhlt_specific_cfg(skl, hdr->vbus_id,
+					NHLT_LINK_SSP, hdr->fmt,
+					hdr->ch, hdr->freq,
+					hdr->direction, NHLT_DEVICE_I2S);
+
+		if (cfg && hdr->data_size) {
+			print_hex_dump(KERN_DEBUG, "NHLT blob Info:",
+					DUMP_PREFIX_OFFSET, 8, 4,
+					cfg->caps, cfg->size, false);
+
+			i2s_config_size = cfg->size + hdr->data_size;
+			i2s_config = kzalloc(i2s_config_size, GFP_KERNEL);
+			if (!i2s_config)
+				return -ENOMEM;
+
+			/* copy blob */
+			memcpy(i2s_config, cfg->caps, cfg->size);
+
+			/* copy additional dma controls informatioin */
+			dma_ctrl_config = (u8 *)i2s_config + cfg->size;
+			memcpy(dma_ctrl_config, hdr->data, hdr->data_size);
+
+			print_hex_dump(KERN_DEBUG, "Blob + DMA Control Info:",
+					DUMP_PREFIX_OFFSET, 8, 4,
+					i2s_config, i2s_config_size, false);
+
+			/* get node id */
+			node_id = skl_prepare_i2s_node_id(hdr->vbus_id,
+							SKL_DEVICE_I2S,
+							hdr->direction,
+							hdr->tdm_slot);
+
+			ret = skl_dsp_set_dma_control(ctx, (u32 *)i2s_config,
+							i2s_config_size, node_id);
+
+			kfree(i2s_config);
+
+			if (ret < 0)
+				return ret;
+
+		} else {
+			dev_err(ctx->dev, "Failed to get NHLT config: vbusi_id=%d ch=%d fmt=%d s_rate=%d\n",
+				hdr->vbus_id, hdr->ch, hdr->fmt, hdr->freq);
+			return -EIO;
+		}
+	}
+
+	return 0;
+}
 
 static void skl_setup_out_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
@@ -698,6 +1738,22 @@ static void skl_setup_out_format(struct skl_sst *ctx,
 		out_fmt->number_of_channels, format->s_freq, format->bit_depth);
 }
 
+static int skl_set_gain_format(struct skl_sst *ctx,
+			struct skl_module_cfg *mconfig,
+			struct skl_gain_module_config *gain_mconfig)
+{
+	struct skl_gain_data *gain_fmt = mconfig->gain_data;
+
+	skl_set_base_module_format(ctx, mconfig,
+			(struct skl_base_cfg *)gain_mconfig);
+	gain_mconfig->gain_cfg.channel_id = SKL_ENABLE_ALL_CHANNELS;
+	gain_mconfig->gain_cfg.target_volume = gain_fmt->volume[0];
+	gain_mconfig->gain_cfg.ramp_type = gain_fmt->ramp_type;
+	gain_mconfig->gain_cfg.ramp_duration = gain_fmt->ramp_duration;
+
+	return 0;
+}
+
 /*
  * DSP needs SRC module for frequency conversion, SRC takes base module
  * configuration and the target frequency as extra parameter passed as src
@@ -715,6 +1771,14 @@ static void skl_set_src_format(struct skl_sst *ctx,
 		(struct skl_base_cfg *)src_mconfig);
 
 	src_mconfig->src_cfg = fmt->s_freq;
+
+	if (mconfig->m_type == SKL_MODULE_TYPE_ASRC) {
+		if (mconfig->pipe->p_params->stream ==
+				SNDRV_PCM_STREAM_PLAYBACK)
+			src_mconfig->mode = ASRC_MODE_DOWNLINK;
+		else
+			src_mconfig->mode = ASRC_MODE_UPLINK;
+	}
 }
 
 /*
@@ -756,6 +1820,35 @@ static void skl_set_copier_format(struct skl_sst *ctx,
 	skl_setup_cpr_gateway_cfg(ctx, mconfig, cpr_mconfig);
 }
 
+static void skl_setup_probe_gateway_cfg(struct skl_sst *ctx,
+			struct skl_module_cfg *mconfig,
+			struct skl_probe_cfg *probe_cfg)
+{
+	union skl_connector_node_id node_id = {0};
+	struct skl_module_res *res;
+	struct skl_probe_config *pconfig = &ctx->probe_config;
+
+	res = &mconfig->module->resources[mconfig->res_idx];
+
+	pconfig->edma_buffsize = res->dma_buffer_size;
+
+	node_id.node.dma_type = pconfig->edma_type;
+	node_id.node.vindex = pconfig->edma_id;
+	probe_cfg->prb_cfg.dma_buffer_size = pconfig->edma_buffsize;
+
+	memcpy(&(probe_cfg->prb_cfg.node_id), &node_id, sizeof(u32));
+}
+
+static void skl_set_probe_format(struct skl_sst *ctx,
+			struct skl_module_cfg *mconfig,
+			struct skl_probe_cfg *probe_mconfig)
+{
+	struct skl_base_cfg *base_cfg = (struct skl_base_cfg *)probe_mconfig;
+
+	skl_set_base_module_format(ctx, mconfig, base_cfg);
+	skl_setup_probe_gateway_cfg(ctx, mconfig, probe_mconfig);
+}
+
 /*
  * Algo module are DSP pre processing modules. Algo module take base module
  * configuration and params
@@ -769,12 +1862,12 @@ static void skl_set_algo_format(struct skl_sst *ctx,
 
 	skl_set_base_module_format(ctx, mconfig, base_cfg);
 
-	if (mconfig->formats_config.caps_size == 0)
+	if (mconfig->formats_config[SKL_PARAM_INIT].caps_size == 0)
 		return;
 
 	memcpy(algo_mcfg->params,
-			mconfig->formats_config.caps,
-			mconfig->formats_config.caps_size);
+			mconfig->formats_config[SKL_PARAM_INIT].caps,
+			mconfig->formats_config[SKL_PARAM_INIT].caps_size);
 
 }
 
@@ -801,14 +1894,19 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig)
 {
 	u16 param_size;
+	struct skl_module_iface *m_intf;
 
 	switch (mconfig->m_type) {
 	case SKL_MODULE_TYPE_COPIER:
 		param_size = sizeof(struct skl_cpr_cfg);
-		param_size += mconfig->formats_config.caps_size;
+		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 		return param_size;
 
+	case SKL_MODULE_TYPE_PROBE:
+		return sizeof(struct skl_probe_cfg);
+
 	case SKL_MODULE_TYPE_SRCINT:
+	case SKL_MODULE_TYPE_ASRC:
 		return sizeof(struct skl_src_module_cfg);
 
 	case SKL_MODULE_TYPE_UPDWMIX:
@@ -816,13 +1914,20 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 
 	case SKL_MODULE_TYPE_ALGO:
 		param_size = sizeof(struct skl_base_cfg);
-		param_size += mconfig->formats_config.caps_size;
+		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 		return param_size;
 
 	case SKL_MODULE_TYPE_BASE_OUTFMT:
 	case SKL_MODULE_TYPE_MIC_SELECT:
 	case SKL_MODULE_TYPE_KPB:
 		return sizeof(struct skl_base_outfmt_cfg);
+
+	case SKL_MODULE_TYPE_GAIN:
+		m_intf = &mconfig->module->formats[mconfig->fmt_idx];
+		param_size = sizeof(struct skl_base_cfg);
+		param_size += sizeof(struct skl_gain_config)
+			* m_intf->outputs[0].fmt.channels;
+		return param_size;
 
 	default:
 		/*
@@ -862,7 +1967,12 @@ static int skl_set_module_format(struct skl_sst *ctx,
 		skl_set_copier_format(ctx, module_config, *param_data);
 		break;
 
+	case SKL_MODULE_TYPE_PROBE:
+		skl_set_probe_format(ctx, module_config, *param_data);
+		break;
+
 	case SKL_MODULE_TYPE_SRCINT:
+	case SKL_MODULE_TYPE_ASRC:
 		skl_set_src_format(ctx, module_config, *param_data);
 		break;
 
@@ -878,6 +1988,10 @@ static int skl_set_module_format(struct skl_sst *ctx,
 	case SKL_MODULE_TYPE_MIC_SELECT:
 	case SKL_MODULE_TYPE_KPB:
 		skl_set_base_outfmt_format(ctx, module_config, *param_data);
+		break;
+
+	case SKL_MODULE_TYPE_GAIN:
+		skl_set_gain_format(ctx, module_config, *param_data);
 		break;
 
 	default:
@@ -1029,6 +2143,70 @@ int skl_init_module(struct skl_sst *ctx,
 	return ret;
 }
 
+int skl_init_probe_module(struct skl_sst *ctx,
+			struct skl_module_cfg *mconfig)
+{
+	u16 module_config_size = 0;
+	void *param_data = NULL;
+	int ret;
+	struct skl_ipc_init_instance_msg msg;
+
+	dev_dbg(ctx->dev, "%s: module_id = %d instance=%d\n", __func__,
+		 mconfig->id.module_id, mconfig->id.instance_id);
+
+
+	ret = skl_set_module_format(ctx, mconfig,
+			&module_config_size, &param_data);
+	if (ret < 0) {
+		dev_err(ctx->dev, "Failed to set module format ret=%d\n", ret);
+		return ret;
+	}
+
+	msg.module_id = mconfig->id.module_id;
+	msg.instance_id = mconfig->id.instance_id;
+	msg.ppl_instance_id = -1;
+	msg.param_data_size = module_config_size;
+	msg.core_id = mconfig->core_id;
+	msg.domain = mconfig->domain;
+
+	ret = skl_ipc_init_instance(&ctx->ipc, &msg, param_data);
+	if (ret < 0) {
+		dev_err(ctx->dev, "Failed to init instance ret=%d\n", ret);
+		kfree(param_data);
+		return ret;
+	}
+	mconfig->m_state = SKL_MODULE_INIT_DONE;
+	kfree(param_data);
+	return ret;
+}
+
+int skl_uninit_probe_module(struct skl_sst *ctx,
+			struct skl_module_cfg *mconfig)
+{
+	u16 module_config_size = 0;
+	int ret;
+	struct skl_ipc_init_instance_msg msg;
+
+	dev_dbg(ctx->dev, "%s: module_id = %d instance=%d\n", __func__,
+		 mconfig->id.module_id, mconfig->id.instance_id);
+
+	msg.module_id = mconfig->id.module_id;
+	msg.instance_id = mconfig->id.instance_id;
+	msg.ppl_instance_id = -1;
+	msg.param_data_size = module_config_size;
+	msg.core_id = mconfig->core_id;
+	msg.domain = mconfig->domain;
+
+	ret = skl_ipc_delete_instance(&ctx->ipc, &msg);
+	if (ret < 0) {
+		dev_err(ctx->dev, "Failed to delete instance ret=%d\n", ret);
+		return ret;
+	}
+	mconfig->m_state = SKL_MODULE_UNINIT;
+
+	return ret;
+}
+
 static void skl_dump_bind_info(struct skl_sst *ctx, struct skl_module_cfg
 	*src_module, struct skl_module_cfg *dst_module)
 {
@@ -1041,6 +2219,84 @@ static void skl_dump_bind_info(struct skl_sst *ctx, struct skl_module_cfg
 		src_module->m_state, dst_module->m_state);
 }
 
+int skl_probe_point_disconnect_ext(struct skl_sst *ctx,
+				struct snd_soc_dapm_widget *w)
+{
+	struct skl_ipc_large_config_msg msg;
+	struct skl_probe_config *pconfig = &ctx->probe_config;
+	struct skl_module_cfg *mcfg;
+	u32 probe_point[NO_OF_EXTRACTOR] = {0};
+	int store_prb_pt_index[NO_OF_EXTRACTOR] = {0};
+	int n = 0, i;
+	int ret = 0;
+	int no_of_extractor = pconfig->no_extractor;
+
+	dev_dbg(ctx->dev, "Disconnecting extractor probe points\n");
+	mcfg = w->priv;
+	msg.module_id = mcfg->id.module_id;
+	msg.instance_id = mcfg->id.instance_id;
+	msg.large_param_id = SKL_PROBE_DISCONNECT;
+
+	for (i = 0; i < no_of_extractor; i++) {
+		if (pconfig->eprobe[i].state == SKL_PROBE_STATE_EXT_CONNECTED) {
+			probe_point[n] = pconfig->eprobe[i].probe_point_id;
+			store_prb_pt_index[i] = 1;
+			n++;
+		}
+	}
+	if (n == 0)
+		return ret;
+
+	msg.param_data_size = n * sizeof(u32);
+	dev_dbg(ctx->dev, "setting module params size=%d\n",
+					msg.param_data_size);
+	ret = skl_ipc_set_large_config(&ctx->ipc, &msg, probe_point);
+	if (ret < 0)
+		return -EINVAL;
+
+	for (i = 0; i < pconfig->no_extractor; i++) {
+		if (store_prb_pt_index[i]) {
+			pconfig->eprobe[i].state = SKL_PROBE_STATE_EXT_NONE;
+			dev_dbg(ctx->dev, "eprobe[%d].state %d\n",
+					i, pconfig->eprobe[i].state);
+		}
+	}
+
+	return ret;
+}
+
+int skl_probe_point_disconnect_inj(struct skl_sst *ctx,
+				struct snd_soc_dapm_widget *w, int index)
+{
+	struct skl_ipc_large_config_msg msg;
+	struct skl_probe_config *pconfig = &ctx->probe_config;
+	struct skl_module_cfg *mcfg;
+	u32 probe_point = 0;
+	int ret = 0;
+
+	if (pconfig->iprobe[index].state == SKL_PROBE_STATE_INJ_CONNECTED) {
+		dev_dbg(ctx->dev, "Disconnecting injector probe point\n");
+		mcfg = w->priv;
+		msg.module_id = mcfg->id.module_id;
+		msg.instance_id = mcfg->id.instance_id;
+		msg.large_param_id = SKL_PROBE_DISCONNECT;
+		probe_point = pconfig->iprobe[index].probe_point_id;
+		msg.param_data_size = sizeof(u32);
+
+		dev_dbg(ctx->dev, "setting module params size=%d\n",
+						msg.param_data_size);
+		ret = skl_ipc_set_large_config(&ctx->ipc, &msg, &probe_point);
+		if (ret < 0)
+			return -EINVAL;
+
+		pconfig->iprobe[index].state = SKL_PROBE_STATE_INJ_DISCONNECTED;
+		dev_dbg(ctx->dev, "iprobe[%d].state %d\n",
+				index, pconfig->iprobe[index].state);
+	}
+
+	return ret;
+
+}
 /*
  * On module freeup, we need to unbind the module with modules
  * it is already bind.
@@ -1118,6 +2374,70 @@ static void fill_pin_params(struct skl_audio_data_format *pin_fmt,
 
 #define CPR_SINK_FMT_PARAM_ID 2
 
+static struct
+skl_module_fmt *skl_get_pin_format(struct skl_module_cfg *mconfig,
+				   u8 pin_direction, u8 pin_idx)
+{
+	struct skl_module *module = mconfig->module;
+	int fmt_idx = mconfig->fmt_idx;
+	struct skl_module_iface *intf;
+	struct skl_module_fmt *pin_fmt;
+
+	intf = &module->formats[fmt_idx];
+
+	if (pin_direction == SKL_INPUT_PIN)
+		pin_fmt = &intf->inputs[pin_idx].fmt;
+	else
+		pin_fmt = &intf->outputs[pin_idx].fmt;
+
+	return pin_fmt;
+}
+
+/*
+ * This function checks for source module and destination module format
+ * mismatch
+ */
+static void skl_module_format_mismatch_detection(struct skl_sst *ctx,
+					struct skl_module_cfg *src_mcfg,
+					struct skl_module_cfg *dst_mcfg,
+					int src_index, int dst_index)
+{
+	struct skl_module_fmt *src_fmt, *dst_fmt;
+
+	src_fmt = skl_get_pin_format(src_mcfg, SKL_OUTPUT_PIN, src_index);
+	dst_fmt = skl_get_pin_format(dst_mcfg, SKL_INPUT_PIN, dst_index);
+
+	if(memcmp(src_fmt, dst_fmt, sizeof(*src_fmt))) {
+		dev_warn(ctx->dev, "#### src and dst format mismatch: ####\n");
+		dev_warn(ctx->dev, "pipe=%d src module_id=%d src instance_id=%d\n",
+					src_mcfg->pipe->ppl_id,
+					src_mcfg->id.module_id,
+					src_mcfg->id.pvt_id);
+
+		dev_warn(ctx->dev, "pipe=%d dst module_id=%d dst instance_id=%d\n",
+					dst_mcfg->pipe->ppl_id,
+					dst_mcfg->id.module_id,
+					dst_mcfg->id.pvt_id);
+
+		dev_warn(ctx->dev, "channels: src=%d dst=%d\n",
+				src_fmt->channels, dst_fmt->channels);
+		dev_warn(ctx->dev, "s_freq: src=%d dst=%d\n",
+				src_fmt->s_freq, dst_fmt->s_freq);
+		dev_warn(ctx->dev, "bit_depth: src=%d dst=%d\n",
+				src_fmt->bit_depth, dst_fmt->bit_depth);
+		dev_warn(ctx->dev, "valid_bit_depth: src=%d dst=%d\n",
+				src_fmt->valid_bit_depth, dst_fmt->valid_bit_depth);
+		dev_warn(ctx->dev, "ch_cfg: src=%d dst=%d\n",
+				src_fmt->ch_cfg, dst_fmt->ch_cfg);
+		dev_warn(ctx->dev, "interleaving_style: src=%d dst=%d\n",
+				src_fmt->interleaving_style, dst_fmt->interleaving_style);
+		dev_warn(ctx->dev, "sample_type: src=%d dst=%d\n",
+				src_fmt->sample_type, dst_fmt->sample_type);
+		dev_warn(ctx->dev, "ch_map: src=%d dst=%d\n",
+				src_fmt->ch_map, dst_fmt->ch_map);
+	}
+}
+
 /*
  * Once a module is instantiated it need to be 'bind' with other modules in
  * the pipeline. For binding we need to find the module pins which are bind
@@ -1184,6 +2504,9 @@ int skl_bind_modules(struct skl_sst *ctx,
 	dev_dbg(ctx->dev, "src queue = %d dst queue =%d\n",
 			 msg.src_queue, msg.dst_queue);
 
+	skl_module_format_mismatch_detection(ctx, src_mcfg, dst_mcfg,
+						src_index, dst_index);
+
 	msg.module_id = src_mcfg->id.module_id;
 	msg.instance_id = src_mcfg->id.pvt_id;
 	msg.dst_module_id = dst_mcfg->id.module_id;
@@ -1235,13 +2558,16 @@ int skl_create_pipeline(struct skl_sst *ctx, struct skl_pipe *pipe)
 	}
 
 	pipe->state = SKL_PIPE_CREATED;
+	skl_dbg_event(ctx, pipe->state);
 
 	return 0;
 }
 
 /*
  * A pipeline needs to be deleted on cleanup. If a pipeline is running, then
- * pause the pipeline first and then delete it
+ * pause the pipeline first and then delete it. There is also case in which
+ * pipeline needs to be reset before deletion, so always reset as it doesn't
+ * change anything in other cases.
  * The pipe delete is done by sending delete pipeline IPC. DSP will stop the
  * DMA engines and releases resources
  */
@@ -1250,6 +2576,10 @@ int skl_delete_pipe(struct skl_sst *ctx, struct skl_pipe *pipe)
 	int ret;
 
 	dev_dbg(ctx->dev, "%s: pipe = %d\n", __func__, pipe->ppl_id);
+
+	/* If pipe was not created in FW, do not try to delete it */
+	if (pipe->state < SKL_PIPE_CREATED)
+		return 0;
 
 	/* If pipe is started, do stop the pipe in FW. */
 	if (pipe->state >= SKL_PIPE_STARTED) {
@@ -1262,9 +2592,14 @@ int skl_delete_pipe(struct skl_sst *ctx, struct skl_pipe *pipe)
 		pipe->state = SKL_PIPE_PAUSED;
 	}
 
-	/* If pipe was not created in FW, do not try to delete it */
-	if (pipe->state < SKL_PIPE_CREATED)
-		return 0;
+	/* reset pipe state before deletion */
+	ret = skl_set_pipe_state(ctx, pipe, PPL_RESET);
+	if (ret < 0) {
+		dev_err(ctx->dev, "Failed to reset pipe ret=%d\n", ret);
+		return ret;
+	}
+
+	pipe->state = SKL_PIPE_RESET;
 
 	ret = skl_ipc_delete_pipeline(&ctx->ipc, pipe->ppl_id);
 	if (ret < 0) {
@@ -1273,6 +2608,11 @@ int skl_delete_pipe(struct skl_sst *ctx, struct skl_pipe *pipe)
 	}
 
 	pipe->state = SKL_PIPE_INVALID;
+	skl_dbg_event(ctx, pipe->state);
+	ret = skl_notify_tplg_change(ctx, SKL_TPLG_CHG_NOTIFY_PIPELINE_DELETE);
+	if (ret < 0)
+		dev_warn(ctx->dev,
+			"update of topology event delete pipe failed\n");
 
 	return ret;
 }
@@ -1308,6 +2648,10 @@ int skl_run_pipe(struct skl_sst *ctx, struct skl_pipe *pipe)
 	}
 
 	pipe->state = SKL_PIPE_STARTED;
+	ret = skl_notify_tplg_change(ctx, SKL_TPLG_CHG_NOTIFY_PIPELINE_START);
+	if (ret < 0)
+		dev_warn(ctx->dev,
+			"update of topology event run pipe failed\n");
 
 	return 0;
 }
@@ -1384,5 +2728,6 @@ int skl_get_module_params(struct skl_sst *ctx, u32 *params, int size,
 	msg.param_data_size = size;
 	msg.large_param_id = param_id;
 
-	return skl_ipc_get_large_config(&ctx->ipc, &msg, params);
+	return skl_ipc_get_large_config(&ctx->ipc, &msg, params, NULL,
+			0, NULL);
 }

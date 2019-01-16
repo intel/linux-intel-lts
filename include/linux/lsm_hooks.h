@@ -28,6 +28,7 @@
 #include <linux/security.h>
 #include <linux/init.h>
 #include <linux/rculist.h>
+#include <net/netlabel.h>
 
 /**
  * union security_list_options - Linux Security Module hook function list
@@ -850,9 +851,8 @@
  *	SO_GETPEERSEC.  For tcp sockets this can be meaningful if the
  *	socket is associated with an ipsec SA.
  *	@sock is the local socket.
- *	@optval userspace memory where the security state is to be copied.
- *	@optlen userspace int where the module should copy the actual length
- *	of the security state.
+ *	@optval the security state.
+ *	@optlen the actual length of the security state.
  *	@len as input is the maximum length to copy to userspace provided
  *	by the caller.
  *	Return 0 if all is well, otherwise, typical getsockopt return
@@ -1552,7 +1552,7 @@ union security_list_options {
 					int flags);
 	int (*inode_listsecurity)(struct inode *inode, char *buffer,
 					size_t buffer_size);
-	void (*inode_getsecid)(struct inode *inode, u32 *secid);
+	void (*inode_getsecid)(struct inode *inode, struct secids *secid);
 	int (*inode_copy_up)(struct dentry *src, struct cred **new);
 	int (*inode_copy_up_xattr)(const char *name);
 
@@ -1582,8 +1582,8 @@ union security_list_options {
 	int (*cred_prepare)(struct cred *new, const struct cred *old,
 				gfp_t gfp);
 	void (*cred_transfer)(struct cred *new, const struct cred *old);
-	void (*cred_getsecid)(const struct cred *c, u32 *secid);
-	int (*kernel_act_as)(struct cred *new, u32 secid);
+	void (*cred_getsecid)(const struct cred *c, struct secids *secid);
+	int (*kernel_act_as)(struct cred *new, struct secids *secid);
 	int (*kernel_create_files_as)(struct cred *new, struct inode *inode);
 	int (*kernel_module_request)(char *kmod_name);
 	int (*kernel_load_data)(enum kernel_load_data_id id);
@@ -1595,7 +1595,7 @@ union security_list_options {
 	int (*task_setpgid)(struct task_struct *p, pid_t pgid);
 	int (*task_getpgid)(struct task_struct *p);
 	int (*task_getsid)(struct task_struct *p);
-	void (*task_getsecid)(struct task_struct *p, u32 *secid);
+	void (*task_getsecid)(struct task_struct *p, struct secids *secid);
 	int (*task_setnice)(struct task_struct *p, int nice);
 	int (*task_setioprio)(struct task_struct *p, int ioprio);
 	int (*task_getioprio)(struct task_struct *p);
@@ -1613,7 +1613,7 @@ union security_list_options {
 	void (*task_to_inode)(struct task_struct *p, struct inode *inode);
 
 	int (*ipc_permission)(struct kern_ipc_perm *ipcp, short flag);
-	void (*ipc_getsecid)(struct kern_ipc_perm *ipcp, u32 *secid);
+	void (*ipc_getsecid)(struct kern_ipc_perm *ipcp, struct secids *secid);
 
 	int (*msg_msg_alloc_security)(struct msg_msg *msg);
 	void (*msg_msg_free_security)(struct msg_msg *msg);
@@ -1649,8 +1649,10 @@ union security_list_options {
 	int (*getprocattr)(struct task_struct *p, char *name, char **value);
 	int (*setprocattr)(const char *name, void *value, size_t size);
 	int (*ismaclabel)(const char *name);
-	int (*secid_to_secctx)(u32 secid, char **secdata, u32 *seclen);
-	int (*secctx_to_secid)(const char *secdata, u32 seclen, u32 *secid);
+	int (*secid_to_secctx)(struct secids *secid, char **secdata,
+				u32 *seclen);
+	int (*secctx_to_secid)(const char *secdata, u32 seclen,
+				struct secids *secid);
 	void (*release_secctx)(char *secdata, u32 seclen);
 
 	void (*inode_invalidate_secctx)(struct inode *inode);
@@ -1683,24 +1685,24 @@ union security_list_options {
 	int (*socket_setsockopt)(struct socket *sock, int level, int optname);
 	int (*socket_shutdown)(struct socket *sock, int how);
 	int (*socket_sock_rcv_skb)(struct sock *sk, struct sk_buff *skb);
-	int (*socket_getpeersec_stream)(struct socket *sock,
-					char __user *optval,
-					int __user *optlen, unsigned len);
+	int (*socket_getpeersec_stream)(struct socket *sock, char **optval,
+					int *optlen, unsigned int len);
 	int (*socket_getpeersec_dgram)(struct socket *sock,
-					struct sk_buff *skb, u32 *secid);
+					struct sk_buff *skb,
+					struct secids *secid);
 	int (*sk_alloc_security)(struct sock *sk, int family, gfp_t priority);
 	void (*sk_free_security)(struct sock *sk);
 	void (*sk_clone_security)(const struct sock *sk, struct sock *newsk);
-	void (*sk_getsecid)(struct sock *sk, u32 *secid);
+	void (*sk_getsecid)(struct sock *sk, struct secids *secid);
 	void (*sock_graft)(struct sock *sk, struct socket *parent);
 	int (*inet_conn_request)(struct sock *sk, struct sk_buff *skb,
 					struct request_sock *req);
 	void (*inet_csk_clone)(struct sock *newsk,
 				const struct request_sock *req);
 	void (*inet_conn_established)(struct sock *sk, struct sk_buff *skb);
-	int (*secmark_relabel_packet)(u32 secid);
-	void (*secmark_refcount_inc)(void);
-	void (*secmark_refcount_dec)(void);
+	int (*secmark_relabel_packet)(struct secids *secid);
+	void (*secmark_refcount_inc)(u8 lsm);
+	void (*secmark_refcount_dec)(u8 lsm);
 	void (*req_classify_flow)(const struct request_sock *req,
 					struct flowi *fl);
 	int (*tun_dev_alloc_security)(void **security);
@@ -1737,15 +1739,16 @@ union security_list_options {
 				struct xfrm_user_sec_ctx *sec_ctx);
 	int (*xfrm_state_alloc_acquire)(struct xfrm_state *x,
 					struct xfrm_sec_ctx *polsec,
-					u32 secid);
+					const struct secids *secid);
 	void (*xfrm_state_free_security)(struct xfrm_state *x);
 	int (*xfrm_state_delete_security)(struct xfrm_state *x);
-	int (*xfrm_policy_lookup)(struct xfrm_sec_ctx *ctx, u32 fl_secid,
-					u8 dir);
+	int (*xfrm_policy_lookup)(struct xfrm_sec_ctx *ctx,
+					struct secids *fl_secid, u8 dir);
 	int (*xfrm_state_pol_flow_match)(struct xfrm_state *x,
 						struct xfrm_policy *xp,
 						const struct flowi *fl);
-	int (*xfrm_decode_session)(struct sk_buff *skb, u32 *secid, int ckall);
+	int (*xfrm_decode_session)(struct sk_buff *skb, struct secids *secid,
+					int ckall);
 #endif	/* CONFIG_SECURITY_NETWORK_XFRM */
 
 	/* key management security hooks */
@@ -1762,8 +1765,8 @@ union security_list_options {
 	int (*audit_rule_init)(u32 field, u32 op, char *rulestr,
 				void **lsmrule);
 	int (*audit_rule_known)(struct audit_krule *krule);
-	int (*audit_rule_match)(u32 secid, u32 field, u32 op, void *lsmrule,
-				struct audit_context *actx);
+	int (*audit_rule_match)(struct secids *secid, u32 field, u32 op,
+				void *lsmrule, struct audit_context *actx);
 	void (*audit_rule_free)(void *lsmrule);
 #endif /* CONFIG_AUDIT */
 
@@ -2025,6 +2028,21 @@ struct security_hook_list {
 } __randomize_layout;
 
 /*
+ * Security blob size or offset data.
+ */
+struct lsm_blob_sizes {
+	int	lbs_cred;
+	int	lbs_file;
+	int	lbs_inode;
+	int	lbs_ipc;
+	int	lbs_key;
+	int	lbs_msg_msg;
+	int	lbs_sock;
+	int	lbs_superblock;
+	int	lbs_task;
+};
+
+/*
  * Initializing a security_hook_list structure takes
  * up a lot of space in a source file. This macro takes
  * care of the common case and reduces the amount of
@@ -2036,6 +2054,7 @@ struct security_hook_list {
 extern struct security_hook_heads security_hook_heads;
 extern char *lsm_names;
 
+extern void security_add_blobs(struct lsm_blob_sizes *needed);
 extern void security_add_hooks(struct security_hook_list *hooks, int count,
 				char *lsm);
 
@@ -2069,7 +2088,7 @@ static inline void security_delete_hooks(struct security_hook_list *hooks,
 #define __lsm_ro_after_init	__ro_after_init
 #endif /* CONFIG_SECURITY_WRITABLE_HOOKS */
 
-extern int __init security_module_enable(const char *module);
+extern bool __init security_module_enable(const char *lsm, const bool stacked);
 extern void __init capability_add_hooks(void);
 #ifdef CONFIG_SECURITY_YAMA
 extern void __init yama_add_hooks(void);
@@ -2081,5 +2100,21 @@ void __init loadpin_add_hooks(void);
 #else
 static inline void loadpin_add_hooks(void) { };
 #endif
+
+extern int lsm_cred_alloc(struct cred *cred, gfp_t gfp);
+extern int lsm_inode_alloc(struct inode *inode);
+
+#ifdef CONFIG_SECURITY
+void lsm_early_cred(struct cred *cred);
+void lsm_early_task(struct task_struct *task);
+void lsm_early_inode(struct inode *inode);
+#endif
+
+#ifdef CONFIG_NETLABEL
+extern int lsm_sock_vet_attr(struct sock *sk,
+			     struct netlbl_lsm_secattr *secattr, u32 flags);
+#define LSM_SOCK_SELINUX	0x00000001
+#define LSM_SOCK_SMACK		0x00000002
+#endif /* CONFIG_NETLABEL */
 
 #endif /* ! __LINUX_LSM_HOOKS_H */

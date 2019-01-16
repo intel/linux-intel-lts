@@ -63,6 +63,9 @@
 #define GEN9_GUC_FW_RESERVED	(128 * 1024)
 #define GEN9_GUC_WOPCM_OFFSET	(GUC_WOPCM_RESERVED + GEN9_GUC_FW_RESERVED)
 
+#define GEN9_GUC_9_29_SIZE      ((142 * 1024) + 768)
+#define GEN9_HUC_1_07_SIZE      ((150 * 1024) + 576)
+
 /**
  * intel_wopcm_init_early() - Early initialization of the WOPCM.
  * @wopcm: pointer to intel_wopcm.
@@ -155,8 +158,8 @@ static inline int check_hw_restriction(struct drm_i915_private *i915,
 int intel_wopcm_init(struct intel_wopcm *wopcm)
 {
 	struct drm_i915_private *i915 = wopcm_to_i915(wopcm);
-	u32 guc_fw_size = intel_uc_fw_get_upload_size(&i915->guc.fw);
-	u32 huc_fw_size = intel_uc_fw_get_upload_size(&i915->huc.fw);
+	u32 guc_fw_size = GEN9_GUC_9_29_SIZE;
+	u32 huc_fw_size = GEN9_HUC_1_07_SIZE;
 	u32 ctx_rsvd = context_reserved_size(i915);
 	u32 guc_wopcm_base;
 	u32 guc_wopcm_size;
@@ -206,6 +209,13 @@ int intel_wopcm_init(struct intel_wopcm *wopcm)
 
 	wopcm->guc.base = guc_wopcm_base;
 	wopcm->guc.size = guc_wopcm_size;
+
+	/*
+	 * In deferred fw loading, we defer the intel_guc_init which will
+	 * initialize the guc.ggtt_pin_bias. As it relies on wopcm size,
+	 * set the ggtt_pin_bias after wopcm initialization
+	 */
+	i915->guc.ggtt_pin_bias = i915->wopcm.size - i915->wopcm.guc.base;
 
 	return 0;
 }

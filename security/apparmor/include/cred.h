@@ -23,8 +23,30 @@
 #include "policy_ns.h"
 #include "task.h"
 
-#define cred_label(X) ((X)->security)
+static inline struct aa_label *cred_label(const struct cred *cred)
+{
+#ifdef CONFIG_SECURITY_STACKING
+	struct aa_label **blob = cred->security + apparmor_blob_sizes.lbs_cred;
+#else
+	struct aa_label **blob = cred->security;
+#endif
 
+	AA_BUG(!blob);
+	return *blob;
+}
+
+static inline void set_cred_label(const struct cred *cred,
+				  struct aa_label *label)
+{
+#ifdef CONFIG_SECURITY_STACKING
+	struct aa_label **blob = cred->security + apparmor_blob_sizes.lbs_cred;
+#else
+	struct aa_label **blob = cred->security;
+#endif
+
+	AA_BUG(!blob);
+	*blob = label;
+}
 
 /**
  * aa_cred_raw_label - obtain cred's label

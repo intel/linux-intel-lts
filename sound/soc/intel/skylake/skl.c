@@ -33,9 +33,16 @@
 #include <sound/hda_register.h>
 #include <sound/hdaudio.h>
 #include <sound/hda_i915.h>
+#include <sound/compress_driver.h>
 #include "skl.h"
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
+#include "skl-topology.h"
+
+#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+static struct skl_machine_pdata skl_dmic_data;
+#endif
+#include "virtio/skl-virtio.h"
 
 /*
  * initialize the PCI registers
@@ -185,26 +192,78 @@ void skl_update_d0i3c(struct device *dev, bool enable)
 			snd_hdac_chip_readb(bus, VS_D0I3C));
 }
 
+static void skl_get_total_bytes_transferred(struct hdac_stream *hstr)
+{
+	int pos, no_of_bytes;
+	unsigned int prev_pos;
+
+	div_u64_rem(hstr->curr_pos,
+		   hstr->stream->runtime->buffer_size, &prev_pos);
+	pos = snd_hdac_stream_get_pos_posbuf(hstr);
+
+	if (pos < prev_pos)
+		no_of_bytes = (hstr->stream->runtime->buffer_size - prev_pos) +  pos;
+	else
+		no_of_bytes = pos - prev_pos;
+
+	hstr->curr_pos += no_of_bytes;
+}
+
+/*
+ * skl_dum_set - Set the DUM bit in EM2 register to fix the IP bug
+ * of incorrect postion reporting for capture stream.
+ */
+static void skl_dum_set(struct hdac_bus *bus)
+{
+	u32 reg;
+	u8 val;
+
+	/*
+	 * For the DUM bit to be set, CRST needs to be out of reset state
+	 */
+	val = snd_hdac_chip_readb(bus, GCTL) & AZX_GCTL_RESET;
+	if (!val) {
+		skl_enable_miscbdcge(bus->dev, false);
+		snd_hdac_bus_exit_link_reset(bus);
+		skl_enable_miscbdcge(bus->dev, true);
+	}
+	/*
+	 * Set the DUM bit in EM2 register to fix the IP bug of incorrect
+	 * postion reporting for capture stream.
+	 */
+	reg  = snd_hdac_chip_readl(bus, VS_EM2);
+	snd_hdac_chip_writel(bus, VS_EM2, (reg | AZX_EM2_DUM_MASK));
+}
+
 /* called from IRQ */
 static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
 {
-	snd_pcm_period_elapsed(hstr->substream);
+	if (hstr->substream) {
+		skl_notify_stream_update(bus, hstr->substream);
+		snd_pcm_period_elapsed(hstr->substream);
+	}
+	else if (hstr->stream) {
+		skl_get_total_bytes_transferred(hstr);
+		snd_compr_fragment_elapsed(hstr->stream);
+	}
 }
 
 static irqreturn_t skl_interrupt(int irq, void *dev_id)
 {
 	struct hdac_bus *bus = dev_id;
 	u32 status;
+	u32 mask, int_enable;
+	int ret = IRQ_NONE;
 
 	if (!pm_runtime_active(bus->dev))
-		return IRQ_NONE;
+		return ret;
 
 	spin_lock(&bus->reg_lock);
 
 	status = snd_hdac_chip_readl(bus, INTSTS);
 	if (status == 0 || status == 0xffffffff) {
 		spin_unlock(&bus->reg_lock);
-		return IRQ_NONE;
+		return ret;
 	}
 
 	/* clear rirb int */
@@ -215,20 +274,41 @@ static irqreturn_t skl_interrupt(int irq, void *dev_id)
 		snd_hdac_chip_writeb(bus, RIRBSTS, RIRB_INT_MASK);
 	}
 
-	spin_unlock(&bus->reg_lock);
+	mask = (0x1 << bus->num_streams) - 1;
 
-	return snd_hdac_chip_readl(bus, INTSTS) ? IRQ_WAKE_THREAD : IRQ_HANDLED;
+	status = snd_hdac_chip_readl(bus, INTSTS);
+	status &= mask;
+	if (status) {
+		/* Disable stream interrupts; Re-enable in bottom half */
+		int_enable = snd_hdac_chip_readl(bus, INTCTL);
+		snd_hdac_chip_writel(bus, INTCTL, (int_enable & (~mask)));
+		ret = IRQ_WAKE_THREAD;
+	} else
+		ret = IRQ_HANDLED;
+
+	spin_unlock(&bus->reg_lock);
+	return ret;
+
 }
 
 static irqreturn_t skl_threaded_handler(int irq, void *dev_id)
 {
 	struct hdac_bus *bus = dev_id;
 	u32 status;
+	u32 int_enable;
+	u32 mask;
+	unsigned long flags;
 
 	status = snd_hdac_chip_readl(bus, INTSTS);
 
 	snd_hdac_bus_handle_stream_irq(bus, status, skl_stream_update);
 
+	/* Re-enable stream interrupts */
+	mask = (0x1 << bus->num_streams) - 1;
+	spin_lock_irqsave(&bus->reg_lock, flags);
+	int_enable = snd_hdac_chip_readl(bus, INTCTL);
+	snd_hdac_chip_writel(bus, INTCTL, (int_enable | mask));
+	spin_unlock_irqrestore(&bus->reg_lock, flags);
 	return IRQ_HANDLED;
 }
 
@@ -345,7 +425,7 @@ static int skl_resume(struct device *dev)
 	struct hdac_bus *bus = pci_get_drvdata(pci);
 	struct skl *skl  = bus_to_skl(bus);
 	struct hdac_ext_link *hlink = NULL;
-	int ret;
+	int ret = 0;
 
 	/* Turned OFF in HDMI codec driver after codec reconfiguration */
 	if (IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)) {
@@ -380,6 +460,7 @@ static int skl_resume(struct device *dev)
 			snd_hdac_bus_init_cmd_io(bus);
 	} else {
 		ret = _skl_resume(bus);
+		skl_dum_set(bus);
 
 		/* turn off the links which are off before suspend */
 		list_for_each_entry(hlink, &bus->hlink_list, list) {
@@ -478,12 +559,17 @@ static int skl_find_machine(struct skl *skl, void *driver_data)
 	struct snd_soc_acpi_mach *mach = driver_data;
 	struct skl_machine_pdata *pdata;
 
+	if (IS_ENABLED(CONFIG_SND_SOC_RT700) ||
+	    IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA))
+		goto out;
+
 	mach = snd_soc_acpi_find_machine(mach);
 	if (mach == NULL) {
 		dev_err(bus->dev, "No matching machine driver found\n");
 		return -ENODEV;
 	}
 
+out:
 	skl->mach = mach;
 	skl->fw_name = mach->fw_filename;
 	pdata = mach->pdata;
@@ -838,11 +924,7 @@ static int skl_first_init(struct hdac_bus *bus)
 
 	snd_hdac_bus_parse_capabilities(bus);
 
-	if (skl_acquire_irq(bus, 0) < 0)
-		return -EBUSY;
-
 	pci_set_master(pci);
-	synchronize_irq(bus->irq);
 
 	gcap = snd_hdac_chip_readw(bus, GCAP);
 	dev_dbg(bus->dev, "chipset global capabilities = 0x%x\n", gcap);
@@ -875,8 +957,16 @@ static int skl_first_init(struct hdac_bus *bus)
 	if (err < 0)
 		return err;
 
+	err = skl_acquire_irq(bus, 0);
+	if (err < 0)
+		return err;
+
+	synchronize_irq(bus->irq);
+
 	/* initialize chip */
 	skl_init_pci(skl);
+
+	skl_dum_set(bus);
 
 	return skl_init_chip(bus, true);
 }
@@ -886,6 +976,7 @@ static int skl_probe(struct pci_dev *pci,
 {
 	struct skl *skl;
 	struct hdac_bus *bus = NULL;
+	const struct firmware __maybe_unused *nhlt_fw = NULL;
 	int err;
 
 	/* we use ext core ops, so provide NULL for ops here */
@@ -903,6 +994,8 @@ static int skl_probe(struct pci_dev *pci,
 
 	device_disable_async_suspend(bus->dev);
 
+#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	skl->nhlt_version = skl_get_nhlt_version(bus->dev);
 	skl->nhlt = skl_nhlt_init(bus->dev);
 
 	if (skl->nhlt == NULL) {
@@ -916,7 +1009,25 @@ static int skl_probe(struct pci_dev *pci,
 
 	skl_nhlt_update_topology_bin(skl);
 
+#else
+	if (request_firmware(&nhlt_fw, "intel/nhlt_blob.bin", bus->dev)) {
+		dev_err(bus->dev, "Request nhlt fw failed, continuing..\n");
+		goto nhlt_continue;
+	}
+
+	skl->nhlt = devm_kzalloc(&pci->dev, nhlt_fw->size, GFP_KERNEL);
+	if (skl->nhlt == NULL)
+		return -ENOMEM;
+	memcpy(skl->nhlt, nhlt_fw->data, nhlt_fw->size);
+	release_firmware(nhlt_fw);
+
+nhlt_continue:
+#endif
 	pci_set_drvdata(skl->pci, bus);
+
+#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	skl_dmic_data.dmic_num = skl_get_dmic_geo(skl);
+#endif
 
 	/* check if dsp is there */
 	if (bus->ppcap) {
@@ -947,6 +1058,7 @@ static int skl_probe(struct pci_dev *pci,
 	if (err < 0)
 		goto out_dsp_free;
 
+	snd_soc_skl_virtio_miscdev_register(skl);
 	schedule_work(&skl->probe_work);
 
 	return 0;
@@ -979,6 +1091,17 @@ static void skl_shutdown(struct pci_dev *pci)
 		return;
 
 	snd_hdac_ext_stop_streams(bus);
+	snd_hdac_ext_bus_link_power_down_all(bus);
+	skl_dsp_sleep(skl->skl_sst->dsp);
+	/* While doing the warm reboot testing, some times dsp core is on
+	 * when system goes to shutdown. When cores.usage_count is
+	 * equal to zero then driver puts the dsp core to zero. On few
+	 * warm reboots cores.usage_count is not equal to zero and dsp
+	 * core is ON even system goes to shutdown. Force the dsp cores
+	 * off without checking the usage_count.
+	 */
+	skl_dsp_disable_core(skl->skl_sst->dsp, SKL_DSP_CORE0_ID);
+
 	list_for_each_entry(s, &bus->stream_list, list) {
 		stream = stream_to_hdac_ext_stream(s);
 		snd_hdac_ext_stream_decouple(bus, stream, false);
@@ -992,6 +1115,7 @@ static void skl_remove(struct pci_dev *pci)
 	struct hdac_bus *bus = pci_get_drvdata(pci);
 	struct skl *skl = bus_to_skl(bus);
 
+	skl_delete_notify_kctl_list(skl->skl_sst);
 	release_firmware(skl->tplg);
 
 	pm_runtime_get_noresume(&pci->dev);
@@ -1028,6 +1152,9 @@ static const struct pci_device_id skl_ids[] = {
 	/* CNL */
 	{ PCI_DEVICE(0x8086, 0x9dc8),
 		.driver_data = (unsigned long)&snd_soc_acpi_intel_cnl_machines},
+	/* ICL */
+	{ PCI_DEVICE(0x8086, 0x34c8),
+		.driver_data = (unsigned long)&snd_soc_acpi_intel_icl_machines},
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, skl_ids);

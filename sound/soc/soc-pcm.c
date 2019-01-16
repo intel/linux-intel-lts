@@ -831,8 +831,10 @@ static int soc_pcm_prepare(struct snd_pcm_substream *substream)
 		cancel_delayed_work(&rtd->delayed_work);
 	}
 
-	snd_soc_dapm_stream_event(rtd, substream->stream,
+	ret = snd_soc_dapm_stream_event(rtd, substream->stream,
 			SND_SOC_DAPM_STREAM_START);
+	if (ret < 0)
+		goto out;
 
 	for (i = 0; i < rtd->num_codecs; i++)
 		snd_soc_dai_digital_mute(rtd->codec_dais[i], 0,
@@ -863,7 +865,7 @@ int soc_dai_hw_params(struct snd_pcm_substream *substream,
 	int ret;
 
 	/* perform any topology hw_params fixups before DAI  */
-	if (rtd->dai_link->be_hw_params_fixup) {
+	if (rtd && rtd->dai_link->be_hw_params_fixup) {
 		ret = rtd->dai_link->be_hw_params_fixup(rtd, params);
 		if (ret < 0) {
 			dev_err(rtd->dev,
@@ -1620,6 +1622,8 @@ int dpcm_be_dai_startup(struct snd_soc_pcm_runtime *fe, int stream)
 		if (be->dpcm[stream].users++ != 0)
 			continue;
 
+		be_substream->runtime = be->dpcm[stream].runtime;
+
 		if ((be->dpcm[stream].state != SND_SOC_DPCM_STATE_NEW) &&
 		    (be->dpcm[stream].state != SND_SOC_DPCM_STATE_CLOSE))
 			continue;
@@ -1627,7 +1631,6 @@ int dpcm_be_dai_startup(struct snd_soc_pcm_runtime *fe, int stream)
 		dev_dbg(be->dev, "ASoC: open %s BE %s\n",
 			stream ? "capture" : "playback", be->dai_link->name);
 
-		be_substream->runtime = be->dpcm[stream].runtime;
 		err = soc_pcm_open(be_substream);
 		if (err < 0) {
 			dev_err(be->dev, "ASoC: BE open failed %d\n", err);

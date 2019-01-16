@@ -65,3 +65,18 @@ Description:	Display the ME firmware version.
 		<platform>:<major>.<minor>.<milestone>.<build_no>.
 		There can be up to three such blocks for different
 		FW components.
+
+What:		/sys/class/mei/meiN/dev_state
+Date:		Sep 2019
+KernelVersion:	4.19
+Contact:	Tomas Winkler <tomas.winkler@intel.com>
+Description:	Display the ME device state.
+
+		The device state can have following values:
+		INITIALIZING
+		INIT_CLIENTS
+		ENABLED
+		RESETTING
+		DISABLED
+		POWER_DOWN
+		POWER_UP

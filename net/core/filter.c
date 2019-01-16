@@ -4286,7 +4286,7 @@ static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 		err = fib_table_lookup(tb, &fl4, &res, FIB_LOOKUP_NOREF);
 	} else {
 		fl4.flowi4_mark = 0;
-		fl4.flowi4_secid = 0;
+		secid_init(&fl4.flowi4_secid);
 		fl4.flowi4_tun_key.tun_id = 0;
 		fl4.flowi4_uid = sock_net_uid(net, NULL);
 
@@ -4397,7 +4397,7 @@ static int bpf_ipv6_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 		f6i = ipv6_stub->fib6_table_lookup(net, tb, oif, &fl6, strict);
 	} else {
 		fl6.flowi6_mark = 0;
-		fl6.flowi6_secid = 0;
+		secid_init(&fl6.flowi6_secid);
 		fl6.flowi6_tun_key.tun_id = 0;
 		fl6.flowi6_uid = sock_net_uid(net, NULL);
 

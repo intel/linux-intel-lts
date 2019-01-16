@@ -12507,6 +12507,11 @@ L:	linux-serial@vger.kernel.org
 S:	Odd Fixes
 F:	drivers/tty/serial/rp2.*
 
+CARRIER BOARD COMMUNICAION DRIVER
+M:	G Jaya Kumaran, Vineetha <vineetha.g.jaya.kumaran@intel.com>
+S:	Supported
+F:	drivers/tty/cbc/*
+
 ROHM MULTIFUNCTION BD9571MWV-M PMIC DEVICE DRIVERS
 M:	Marek Vasut <marek.vasut+renesas@gmail.com>
 L:	linux-kernel@vger.kernel.org
@@ -12526,6 +12531,17 @@ S:	Maintained
 F:	include/net/rose.h
 F:	include/uapi/linux/rose.h
 F:	net/rose/
+
+RPMB SUBSYSTEM
+M:	Tomas Winkler <tomas.winkler@intel.com>
+L:	linux-kernel@vger.kernel.org
+S:	Supported
+F:	drivers/char/rpmb/*
+F:	include/uapi/linux/rpmb.h
+F:	include/linux/rpmb.h
+F:	Documentation/ABI/testing/sysfs-class-rpmb
+F:	Documentation/driver-api/rpmb.rst
+F:	tools/rpmb/
 
 RTL2830 MEDIA DRIVER
 M:	Antti Palosaari <crope@iki.fi>
@@ -16260,3 +16276,4 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
 S:	Buried alive in reporters
 F:	*
 F:	*/
+

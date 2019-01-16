@@ -56,6 +56,10 @@ static const u8 pci_cfg_space_rw_bmp[PCI_INTERRUPT_LINE + 4] = {
 
 /**
  * vgpu_pci_cfg_mem_write - write virtual cfg space memory
+ * @vgpu: a vGPU
+ * @off: offset into the PCI configuration space
+ * @src: data buffer write to vGPU's emulated configure space
+ * @bytes: size of data to write in bytes
  *
  * Use this function to write virtual cfg space memory.
  * For standard cfg space, only RW bits can be changed,
@@ -91,6 +95,11 @@ static void vgpu_pci_cfg_mem_write(struct intel_vgpu *vgpu, unsigned int off,
 
 /**
  * intel_vgpu_emulate_cfg_read - emulate vGPU configuration space read
+ *
+ * @vgpu: a vGPU
+ * @offset: offset into the PCI configuration space
+ * @p_data: data buffer read from vGPU's emulated configure space
+ * @bytes: size of data to read in bytes
  *
  * Returns:
  * Zero on success, negative error code if failed.
@@ -136,6 +145,52 @@ static int map_aperture(struct intel_vgpu *vgpu, bool map)
 
 	vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_APERTURE].tracked = map;
 	return 0;
+}
+
+int map_gttmmio(struct intel_vgpu *vgpu, bool map)
+{
+	struct intel_vgpu_gm *gm = &vgpu->gm;
+	unsigned long mfn;
+	struct scatterlist *sg;
+	struct sg_table *st = gm->st;
+	u64 start, end;
+	int ret = 0;
+
+	if (!st) {
+		DRM_INFO("no scatter list, fallback to disable ggtt pv\n");
+		return -EINVAL;
+	}
+
+	if (vgpu->gtt.ggtt_pv_mapped == map) {
+		/* If it is already set as the target state, skip it */
+		return ret;
+	}
+
+	start = *(u64 *)(vgpu_cfg_space(vgpu) + PCI_BASE_ADDRESS_0);
+	start &= ~GENMASK(3, 0);
+	start += vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_GTTMMIO].size >> 1;
+
+	end = start +
+		(vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_GTTMMIO].size >> 1);
+
+	gvt_dbg_mmio("%s start=%llx end=%llx map=%d\n",
+				__func__, start, end, map);
+
+	start >>= PAGE_SHIFT;
+	for (sg = st->sgl; sg; sg = __sg_next(sg)) {
+		mfn = page_to_pfn(sg_page(sg));
+		gvt_dbg_mmio("page=%p mfn=%lx size=%x start=%llx\n",
+			sg_page(sg), mfn, sg->length, start);
+		ret = intel_gvt_hypervisor_map_gfn_to_mfn(vgpu, start,
+				mfn, sg->length >> PAGE_SHIFT, map);
+		if (ret)
+			return ret;
+		start += sg->length >> PAGE_SHIFT;
+	}
+
+	vgpu->gtt.ggtt_pv_mapped = map;
+
+	return ret;
 }
 
 static int trap_gttmmio(struct intel_vgpu *vgpu, bool trap)
@@ -278,6 +333,10 @@ static int emulate_pci_bar_write(struct intel_vgpu *vgpu, unsigned int offset,
 
 /**
  * intel_vgpu_emulate_cfg_read - emulate vGPU configuration space write
+ * @vgpu: a vGPU
+ * @offset: offset into the PCI configuration space
+ * @p_data: data buffer write to vGPU's emulated configure space
+ * @bytes: size of data to write in bytes
  *
  * Returns:
  * Zero on success, negative error code if failed.
@@ -295,9 +354,22 @@ int intel_vgpu_emulate_cfg_write(struct intel_vgpu *vgpu, unsigned int offset,
 
 	/* First check if it's PCI_COMMAND */
 	if (IS_ALIGNED(offset, 2) && offset == PCI_COMMAND) {
-		if (WARN_ON(bytes > 2))
+		if (WARN_ON(bytes != 2 && bytes != 4))
 			return -EINVAL;
-		return emulate_pci_command_write(vgpu, offset, p_data, bytes);
+
+		ret = -EINVAL;
+		if (bytes == 2)
+			ret = emulate_pci_command_write(vgpu, offset,
+							p_data, bytes);
+		if (bytes ==  4) {
+			ret = emulate_pci_command_write(vgpu, offset,
+							p_data, 2);
+			if (ret)
+				return ret;
+			vgpu_pci_cfg_mem_write(vgpu, offset + 2,
+					       (u8 *)p_data + 2, 2);
+		}
+		return ret;
 	}
 
 	switch (rounddown(offset, 4)) {
@@ -322,6 +394,15 @@ int intel_vgpu_emulate_cfg_write(struct intel_vgpu *vgpu, unsigned int offset,
 	case INTEL_GVT_PCI_OPREGION:
 		if (WARN_ON(!IS_ALIGNED(offset, 4)))
 			return -EINVAL;
+
+		/*
+		 * To support virtual display, we need to override the real VBT in the
+		 * OpRegion. So here we don't report OpRegion to guest.
+		 */
+		if (IS_BROXTON(vgpu->gvt->dev_priv) ||
+				IS_KABYLAKE(vgpu->gvt->dev_priv))
+			return 0;
+
 		ret = intel_vgpu_opregion_base_write_handler(vgpu,
 						   *(u32 *)p_data);
 		if (ret)
@@ -399,6 +480,8 @@ void intel_vgpu_reset_cfg_space(struct intel_vgpu *vgpu)
 				INTEL_GVT_PCI_CLASS_VGA_OTHER;
 
 	if (cmd & PCI_COMMAND_MEMORY) {
+		if (VGPU_PVMMIO(vgpu))
+			set_pvmmio(vgpu, false);
 		trap_gttmmio(vgpu, false);
 		map_aperture(vgpu, false);
 	}

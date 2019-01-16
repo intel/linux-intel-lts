@@ -55,6 +55,8 @@ struct drm_printer;
 	param(int, edp_vswing, 0) \
 	param(int, reset, 2) \
 	param(unsigned int, inject_load_failure, 0) \
+	param(unsigned int, avail_planes_per_pipe, 0) \
+	param(unsigned long long, domain_plane_owners, 0) \
 	/* leave bools at the end to not create holes */ \
 	param(bool, alpha_support, IS_ENABLED(CONFIG_DRM_I915_ALPHA_SUPPORT)) \
 	param(bool, enable_hangcheck, true) \
@@ -68,7 +70,14 @@ struct drm_printer;
 	param(bool, nuclear_pageflip, false) \
 	param(bool, enable_dp_mst, true) \
 	param(bool, enable_dpcd_backlight, false) \
-	param(bool, enable_gvt, false)
+	param(int, domain_scaler_owner, 0x11100) \
+	param(unsigned int, enable_pvmmio, \
+			PVMMIO_ELSP_SUBMIT | PVMMIO_PLANE_UPDATE \
+			| PVMMIO_PLANE_WM_UPDATE | PVMMIO_PPGTT_UPDATE \
+			| PVMMIO_GGTT_UPDATE ) \
+	param(int, gvt_workload_priority, 0) \
+	param(bool, enable_gvt, false) \
+	param(bool, enable_conformance_check, true)
 
 #define MEMBER(T, member, ...) T member;
 struct i915_params {

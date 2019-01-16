@@ -97,6 +97,8 @@ struct media_graph {
 	struct {
 		struct media_entity *entity;
 		struct list_head *link;
+		int stream;
+		int pad;
 	} stack[MEDIA_ENTITY_ENUM_MAX_DEPTH];
 
 	struct media_entity_enum ent_enum;
@@ -183,6 +185,9 @@ struct media_pad {
  * @link_validate:	Return whether a link is valid from the entity point of
  *			view. The media_pipeline_start() function
  *			validates all links by calling this operation. Optional.
+ * @has_route:		Return whether a route exists inside the entity between
+ *			two given pads. Optional. If the operation isn't
+ *			implemented all pads will be considered as connected.
  *
  * .. note::
  *
@@ -195,6 +200,8 @@ struct media_entity_operations {
 			  const struct media_pad *local,
 			  const struct media_pad *remote, u32 flags);
 	int (*link_validate)(struct media_link *link);
+	bool (*has_route)(struct media_entity *entity, unsigned int pad0,
+			  unsigned int pad1, int *stream);
 };
 
 /**
@@ -277,6 +284,7 @@ struct media_entity {
 	int internal_idx;
 
 	struct media_pad *pads;
+	struct media_pad *start;
 	struct list_head links;
 
 	const struct media_entity_operations *ops;
@@ -878,6 +886,9 @@ void media_graph_walk_cleanup(struct media_graph *graph);
  * The function will return immediately if @entity is %NULL.
  */
 void media_entity_put(struct media_entity *entity);
+
+bool media_entity_has_route(struct media_entity *entity, unsigned int sink,
+                           unsigned int source);
 
 /**
  * media_graph_walk_start - Start walking the media graph at a

@@ -209,6 +209,34 @@ extern "C" {
 #define DRM_MODE_CONTENT_PROTECTION_DESIRED     1
 #define DRM_MODE_CONTENT_PROTECTION_ENABLED     2
 
+#define DRM_MODE_HDCP_KSV_LEN			5
+#define DRM_MODE_HDCP_MAX_DEVICE_CNT		127
+
+struct cp_downstream_info {
+
+	/* KSV of immediate HDCP Sink. In Little-Endian Format. */
+	char bksv[DRM_MODE_HDCP_KSV_LEN];
+
+	/* Whether Immediate HDCP sink is a repeater? */
+	bool is_repeater;
+
+	/* Depth received from immediate downstream repeater */
+	__u8 depth;
+
+	/* Device count received from immediate downstream repeater */
+	__u32 device_count;
+
+	/*
+	 * Max buffer required to hold ksv list received from immediate
+	 * repeater. In this array first device_count * DRM_MODE_HDCP_KSV_LEN
+	 * will hold the valid ksv bytes.
+	 * If authentication specification is
+	 *	HDCP1.4 - each KSV's Bytes will be in Little-Endian format.
+	 *	HDCP2.2 - each KSV's Bytes will be in Big-Endian format.
+	 */
+	char ksv_list[DRM_MODE_HDCP_KSV_LEN * DRM_MODE_HDCP_MAX_DEVICE_CNT];
+};
+
 struct drm_mode_modeinfo {
 	__u32 clock;
 	__u16 hdisplay;
@@ -617,6 +645,13 @@ struct drm_color_ctm {
 	 * (not two's complement!) format.
 	 */
 	__u64 matrix[9];
+};
+
+struct drm_color_ctm_post_offset {
+	/* Data is U0.16 fixed point format. */
+	__u16 red;
+	__u16 green;
+	__u16 blue;
 };
 
 struct drm_color_lut {

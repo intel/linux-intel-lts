@@ -130,7 +130,7 @@ enum intel_gvt_mm_type {
 	INTEL_GVT_MM_PPGTT,
 };
 
-#define GVT_RING_CTX_NR_PDPS	GEN8_3LVL_PDPES
+#define GVT_RING_CTX_NR_PDPS   GEN8_3LVL_PDPES
 
 struct intel_vgpu_mm {
 	enum intel_gvt_mm_type type;
@@ -153,6 +153,7 @@ struct intel_vgpu_mm {
 
 			struct list_head list;
 			struct list_head lru_list;
+			struct i915_hw_ppgtt *ppgtt;
 		} ppgtt_mm;
 		struct {
 			void *virtual_ggtt;
@@ -197,6 +198,9 @@ struct intel_vgpu_gtt {
 	struct list_head oos_page_list_head;
 	struct list_head post_shadow_list_head;
 	struct intel_vgpu_scratch_pt scratch_pt[GTT_TYPE_MAX];
+
+	/* indicate whether the PV mapped is enabled for ggtt */
+	bool ggtt_pv_mapped;
 };
 
 extern int intel_vgpu_init_gtt(struct intel_vgpu *vgpu);
@@ -270,5 +274,18 @@ int intel_vgpu_emulate_ggtt_mmio_read(struct intel_vgpu *vgpu,
 
 int intel_vgpu_emulate_ggtt_mmio_write(struct intel_vgpu *vgpu,
 	unsigned int off, void *p_data, unsigned int bytes);
+
+int intel_vgpu_g2v_pv_ppgtt_alloc_4lvl(struct intel_vgpu *vgpu,
+		int page_table_level);
+
+int intel_vgpu_g2v_pv_ppgtt_clear_4lvl(struct intel_vgpu *vgpu,
+		int page_table_level);
+
+int intel_vgpu_g2v_pv_ppgtt_insert_4lvl(struct intel_vgpu *vgpu,
+		int page_table_level);
+
+int intel_vgpu_g2v_pv_ggtt_insert(struct intel_vgpu *vgpu);
+
+int intel_vgpu_g2v_pv_ggtt_clear(struct intel_vgpu *vgpu);
 
 #endif /* _GVT_GTT_H_ */

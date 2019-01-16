@@ -1323,7 +1323,7 @@ int audit_filter(int msgtype, unsigned int listtype)
 		for (i = 0; i < e->rule.field_count; i++) {
 			struct audit_field *f = &e->rule.fields[i];
 			pid_t pid;
-			u32 sid;
+			struct secids sid;
 
 			switch (f->type) {
 			case AUDIT_PID:
@@ -1354,7 +1354,7 @@ int audit_filter(int msgtype, unsigned int listtype)
 			case AUDIT_SUBJ_CLR:
 				if (f->lsm_rule) {
 					security_task_getsecid(current, &sid);
-					result = security_audit_rule_match(sid,
+					result = security_audit_rule_match(&sid,
 							f->type, f->op, f->lsm_rule, NULL);
 				}
 				break;

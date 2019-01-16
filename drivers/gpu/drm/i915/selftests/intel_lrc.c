@@ -413,7 +413,7 @@ static int live_late_preempt(void *arg)
 		}
 
 		attr.priority = I915_PRIORITY_MAX;
-		engine->schedule(rq, &attr);
+		engine->schedule(rq, &attr, 0);
 
 		if (!wait_for_spinner(&spin_hi, rq)) {
 			pr_err("High priority context failed to preempt the low priority context\n");
@@ -565,6 +565,371 @@ err_unlock:
 	return err;
 }
 
+static void mark_preemption_hang(struct intel_engine_execlists *execlists)
+{
+	execlists_set_active(execlists, EXECLISTS_ACTIVE_PREEMPT);
+	execlists_set_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
+}
+
+static int live_preempt_timeout(void *arg)
+{
+	struct drm_i915_private *i915 = arg;
+	struct intel_engine_cs *engine;
+	struct i915_gem_context *ctx;
+	enum intel_engine_id id;
+	struct spinner spin;
+	int err = -ENOMEM;
+
+	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
+		return 0;
+
+	mutex_lock(&i915->drm.struct_mutex);
+
+	if (spinner_init(&spin, i915))
+		goto err_unlock;
+
+	ctx = kernel_context(i915);
+	if (!ctx)
+		goto err_spin;
+
+	for_each_engine(engine, i915, id) {
+		struct i915_request *rq;
+
+		rq = spinner_create_request(&spin, ctx, engine, MI_NOOP);
+		if (IS_ERR(rq)) {
+			err = PTR_ERR(rq);
+			goto err_ctx;
+		}
+
+		i915_request_add(rq);
+		if (!wait_for_spinner(&spin, rq)) {
+			i915_gem_set_wedged(i915);
+			err = -EIO;
+			goto err_ctx;
+		}
+
+		GEM_TRACE("%s triggering reset\n", engine->name);
+		mark_preemption_hang(&engine->execlists);
+		preempt_reset(&engine->execlists.preempt_reset);
+
+		if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
+			err = -EIO;
+			goto err_ctx;
+		}
+	}
+
+	err = 0;
+err_ctx:
+	kernel_context_close(ctx);
+err_spin:
+	spinner_fini(&spin);
+err_unlock:
+	igt_flush_test(i915, I915_WAIT_LOCKED);
+	mutex_unlock(&i915->drm.struct_mutex);
+	return err;
+}
+
+static void __softirq_begin(void)
+{
+	local_bh_disable();
+}
+
+static void __softirq_end(void)
+{
+	local_bh_enable();
+}
+
+static void __hardirq_begin(void)
+{
+	local_irq_disable();
+}
+
+static void __hardirq_end(void)
+{
+	local_irq_enable();
+}
+
+static int live_preempt_reset(void *arg)
+{
+	struct drm_i915_private *i915 = arg;
+	struct intel_engine_cs *engine;
+	struct i915_gem_context *ctx;
+	enum intel_engine_id id;
+	struct spinner spin;
+	int err = -ENOMEM;
+
+	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
+		return 0;
+
+	mutex_lock(&i915->drm.struct_mutex);
+
+	if (spinner_init(&spin, i915))
+		goto err_unlock;
+
+	ctx = kernel_context(i915);
+	if (!ctx)
+		goto err_spin;
+
+	for_each_engine(engine, i915, id) {
+		static const struct {
+			const char *name;
+			void (*critical_section_begin)(void);
+			void (*critical_section_end)(void);
+		} phases[] = {
+			{ "softirq", __softirq_begin, __softirq_end },
+			{ "hardirq", __hardirq_begin, __hardirq_end },
+			{ }
+		};
+		struct tasklet_struct *t = &engine->execlists.tasklet;
+		const typeof(*phases) *p;
+
+		for (p = phases; p->name; p++) {
+			struct i915_request *rq;
+
+			rq = spinner_create_request(&spin, ctx, engine,
+						    MI_NOOP);
+			if (IS_ERR(rq)) {
+				err = PTR_ERR(rq);
+				goto err_ctx;
+			}
+
+			i915_request_add(rq);
+			if (!wait_for_spinner(&spin, rq)) {
+				i915_gem_set_wedged(i915);
+				err = -EIO;
+				goto err_ctx;
+			}
+
+			/* Flush to give try_preempt_reset a chance */
+			tasklet_schedule(t);
+			tasklet_kill(t);
+			GEM_BUG_ON(i915_request_completed(rq));
+
+			GEM_TRACE("%s triggering %s reset\n",
+				  engine->name, p->name);
+			p->critical_section_begin();
+
+			mark_preemption_hang(&engine->execlists);
+			err = try_preempt_reset(&engine->execlists);
+
+			p->critical_section_end();
+			if (err) {
+				pr_err("Preempt softirq reset failed on %s, tasklet state %lx\n",
+				       engine->name, t->state);
+				spinner_end(&spin);
+				i915_gem_set_wedged(i915);
+				goto err_ctx;
+			}
+
+			if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
+				err = -EIO;
+				goto err_ctx;
+			}
+		}
+	}
+
+	err = 0;
+err_ctx:
+	kernel_context_close(ctx);
+err_spin:
+	spinner_fini(&spin);
+err_unlock:
+	igt_flush_test(i915, I915_WAIT_LOCKED);
+	mutex_unlock(&i915->drm.struct_mutex);
+	return err;
+}
+
+static int live_late_preempt_timeout(void *arg)
+{
+	struct drm_i915_private *i915 = arg;
+	struct i915_gem_context *ctx_hi, *ctx_lo;
+	struct spinner spin_hi, spin_lo;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id;
+	int err = -ENOMEM;
+
+	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
+		return 0;
+
+	mutex_lock(&i915->drm.struct_mutex);
+
+	if (spinner_init(&spin_hi, i915))
+		goto err_unlock;
+
+	if (spinner_init(&spin_lo, i915))
+		goto err_spin_hi;
+
+	ctx_hi = kernel_context(i915);
+	if (!ctx_hi)
+		goto err_spin_lo;
+
+	ctx_lo = kernel_context(i915);
+	if (!ctx_lo)
+		goto err_ctx_hi;
+
+	for_each_engine(engine, i915, id) {
+		struct i915_request *rq;
+
+		rq = spinner_create_request(&spin_lo, ctx_lo, engine, MI_NOOP);
+		if (IS_ERR(rq)) {
+			err = PTR_ERR(rq);
+			goto err_ctx_lo;
+		}
+
+		i915_request_add(rq);
+		if (!wait_for_spinner(&spin_lo, rq)) {
+			pr_err("First context failed to start\n");
+			goto err_wedged;
+		}
+
+		rq = spinner_create_request(&spin_hi, ctx_hi, engine, MI_NOOP);
+		if (IS_ERR(rq)) {
+			spinner_end(&spin_lo);
+			err = PTR_ERR(rq);
+			goto err_ctx_lo;
+		}
+
+		i915_request_add(rq);
+		if (wait_for_spinner(&spin_hi, rq)) {
+			pr_err("Second context overtook first?\n");
+			goto err_wedged;
+		}
+
+		GEM_TRACE("%s rescheduling (no timeout)\n", engine->name);
+		engine->schedule(rq, &(struct i915_sched_attr){
+				 .priority = 1,
+				 }, 0);
+
+		if (wait_for_spinner(&spin_hi, rq)) {
+			pr_err("High priority context overtook first without an arbitration point?\n");
+			goto err_wedged;
+		}
+
+		GEM_TRACE("%s rescheduling (with timeout)\n", engine->name);
+		engine->schedule(rq, &(struct i915_sched_attr){
+				 .priority = 2,
+				 }, 10 * 1000 /* 10us */);
+
+		if (!wait_for_spinner(&spin_hi, rq)) {
+			pr_err("High priority context failed to force itself in front of the low priority context\n");
+			GEM_TRACE_DUMP();
+			goto err_wedged;
+		}
+
+		spinner_end(&spin_hi);
+		spinner_end(&spin_lo);
+		if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
+			err = -EIO;
+			goto err_ctx_lo;
+		}
+	}
+
+	err = 0;
+err_ctx_lo:
+	kernel_context_close(ctx_lo);
+err_ctx_hi:
+	kernel_context_close(ctx_hi);
+err_spin_lo:
+	spinner_fini(&spin_lo);
+err_spin_hi:
+	spinner_fini(&spin_hi);
+err_unlock:
+	igt_flush_test(i915, I915_WAIT_LOCKED);
+	mutex_unlock(&i915->drm.struct_mutex);
+	return err;
+
+err_wedged:
+	spinner_end(&spin_hi);
+	spinner_end(&spin_lo);
+	i915_gem_set_wedged(i915);
+	err = -EIO;
+	goto err_ctx_lo;
+}
+
+static int live_context_preempt_timeout(void *arg)
+{
+	struct drm_i915_private *i915 = arg;
+	struct i915_gem_context *ctx_hi, *ctx_lo;
+	struct spinner spin_hi, spin_lo;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id;
+	int err = -ENOMEM;
+
+	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
+		return 0;
+
+	mutex_lock(&i915->drm.struct_mutex);
+
+	if (spinner_init(&spin_hi, i915))
+		goto err_unlock;
+
+	if (spinner_init(&spin_lo, i915))
+		goto err_spin_hi;
+
+	ctx_hi = kernel_context(i915);
+	if (!ctx_hi)
+		goto err_spin_lo;
+	ctx_hi->sched.priority = I915_CONTEXT_MAX_USER_PRIORITY;
+	ctx_hi->preempt_timeout = 50 * 1000; /* 50us */
+
+	ctx_lo = kernel_context(i915);
+	if (!ctx_lo)
+		goto err_ctx_hi;
+	ctx_lo->sched.priority = I915_CONTEXT_MIN_USER_PRIORITY;
+
+	for_each_engine(engine, i915, id) {
+		struct i915_request *rq;
+
+		rq = spinner_create_request(&spin_lo, ctx_lo, engine, MI_NOOP);
+		if (IS_ERR(rq)) {
+			err = PTR_ERR(rq);
+			goto err_ctx_lo;
+		}
+
+		i915_request_add(rq);
+		if (!wait_for_spinner(&spin_lo, rq)) {
+			i915_gem_set_wedged(i915);
+			err = -EIO;
+			goto err_ctx_lo;
+		}
+
+		rq = spinner_create_request(&spin_hi, ctx_hi, engine, MI_NOOP);
+		if (IS_ERR(rq)) {
+			spinner_end(&spin_lo);
+			err = PTR_ERR(rq);
+			goto err_ctx_lo;
+		}
+
+		i915_request_add(rq);
+		if (!wait_for_spinner(&spin_hi, rq)) {
+			i915_gem_set_wedged(i915);
+			err = -EIO;
+			goto err_ctx_lo;
+		}
+
+		spinner_end(&spin_hi);
+		spinner_end(&spin_lo);
+		if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
+			err = -EIO;
+			goto err_ctx_lo;
+		}
+	}
+
+	err = 0;
+err_ctx_lo:
+	kernel_context_close(ctx_lo);
+err_ctx_hi:
+	kernel_context_close(ctx_hi);
+err_spin_lo:
+	spinner_fini(&spin_lo);
+err_spin_hi:
+	spinner_fini(&spin_hi);
+err_unlock:
+	igt_flush_test(i915, I915_WAIT_LOCKED);
+	mutex_unlock(&i915->drm.struct_mutex);
+	return err;
+}
+
 int intel_execlists_live_selftests(struct drm_i915_private *i915)
 {
 	static const struct i915_subtest tests[] = {
@@ -572,6 +937,10 @@ int intel_execlists_live_selftests(struct drm_i915_private *i915)
 		SUBTEST(live_preempt),
 		SUBTEST(live_late_preempt),
 		SUBTEST(live_preempt_hang),
+		SUBTEST(live_preempt_timeout),
+		SUBTEST(live_preempt_reset),
+		SUBTEST(live_late_preempt_timeout),
+		SUBTEST(live_context_preempt_timeout),
 	};
 
 	if (!HAS_EXECLISTS(i915))

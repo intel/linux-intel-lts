@@ -28,7 +28,6 @@
 #include "client.h"
 
 #define to_mei_cl_driver(d) container_of(d, struct mei_cl_driver, driver)
-#define to_mei_cl_device(d) container_of(d, struct mei_cl_device, dev)
 
 /**
  * __mei_cl_send - internal client send (write)
@@ -162,7 +161,7 @@ ssize_t __mei_cl_recv(struct mei_cl *cl, u8 *buf, size_t length,
 		if (timeout) {
 			rets = wait_event_interruptible_timeout
 					(cl->rx_wait,
-					(!list_empty(&cl->rd_completed)) ||
+					mei_cl_read_cb(cl, NULL) ||
 					(!mei_cl_is_connected(cl)),
 					msecs_to_jiffies(timeout));
 			if (rets == 0)
@@ -175,7 +174,7 @@ ssize_t __mei_cl_recv(struct mei_cl *cl, u8 *buf, size_t length,
 		} else {
 			if (wait_event_interruptible
 					(cl->rx_wait,
-					(!list_empty(&cl->rd_completed)) ||
+					mei_cl_read_cb(cl, NULL) ||
 					(!mei_cl_is_connected(cl)))) {
 				if (signal_pending(current))
 					return -EINTR;
@@ -208,7 +207,7 @@ copy:
 	rets = r_length;
 
 free:
-	mei_io_cb_free(cb);
+	mei_cl_del_rd_completed(cl, cb);
 out:
 	mutex_unlock(&bus->device_lock);
 
@@ -505,6 +504,16 @@ static void mei_cl_bus_module_put(struct mei_cl_device *cldev)
 	module_put(cldev->bus->dev->driver->owner);
 }
 
+static int mei_cldev_vm_support_check(struct mei_cl_device *cldev)
+{
+	struct mei_device *bus = cldev->bus;
+
+	if (!bus->hbm_f_vm_supported)
+		return -EOPNOTSUPP;
+
+	return cldev->me_cl->props.vm_supported ? 0 : -EOPNOTSUPP;
+}
+
 /**
  * mei_cldev_enable - enable me client device
  *     create connection with me client
@@ -517,6 +526,7 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 {
 	struct mei_device *bus = cldev->bus;
 	struct mei_cl *cl;
+	struct mei_cl_vtag *cl_vtag;
 	int ret;
 
 	cl = cldev->cl;
@@ -545,6 +555,16 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 		dev_err(&cldev->dev, "get hw module failed");
 		ret = -ENODEV;
 		goto out;
+	}
+
+	if (!mei_cldev_vm_support_check(cldev)) {
+		cl_vtag = mei_cl_vtag_alloc(NULL, 0);
+		if (IS_ERR(cl_vtag)) {
+			ret = -ENOMEM;
+			goto out;
+		}
+
+		list_add_tail(&cl_vtag->list, &cl->vtag_map);
 	}
 
 	ret = mei_cl_connect(cl, cldev->me_cl, NULL);
@@ -591,6 +611,7 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 {
 	struct mei_device *bus;
 	struct mei_cl *cl;
+	struct mei_cl_vtag *cl_vtag;
 	int err;
 
 	if (!cldev)
@@ -603,6 +624,13 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 	mei_cldev_unregister_callbacks(cldev);
 
 	mutex_lock(&bus->device_lock);
+
+	cl_vtag = list_first_entry_or_null(&cl->vtag_map,
+					   struct mei_cl_vtag, list);
+	if (cl_vtag) {
+		list_del(&cl_vtag->list);
+		kfree(cl_vtag);
+	}
 
 	if (!mei_cl_is_connected(cl)) {
 		dev_dbg(bus->dev, "Already disconnected\n");
@@ -802,11 +830,55 @@ static ssize_t modalias_show(struct device *dev, struct device_attribute *a,
 }
 static DEVICE_ATTR_RO(modalias);
 
+static ssize_t max_conn_show(struct device *dev, struct device_attribute *a,
+			     char *buf)
+{
+	struct mei_cl_device *cldev = to_mei_cl_device(dev);
+	u8 maxconn = mei_me_cl_max_conn(cldev->me_cl);
+
+	return scnprintf(buf, PAGE_SIZE, "%d", maxconn);
+}
+static DEVICE_ATTR_RO(max_conn);
+
+static ssize_t fixed_show(struct device *dev, struct device_attribute *a,
+			  char *buf)
+{
+	struct mei_cl_device *cldev = to_mei_cl_device(dev);
+	u8 fixed = mei_me_cl_fixed(cldev->me_cl);
+
+	return scnprintf(buf, PAGE_SIZE, "%d", fixed);
+}
+static DEVICE_ATTR_RO(fixed);
+
+static ssize_t vtag_show(struct device *dev, struct device_attribute *a,
+			 char *buf)
+{
+	struct mei_cl_device *cldev = to_mei_cl_device(dev);
+	bool vm = mei_me_cl_vm(cldev->me_cl);
+
+	return scnprintf(buf, PAGE_SIZE, "%d", vm);
+}
+static DEVICE_ATTR_RO(vtag);
+
+static ssize_t max_len_show(struct device *dev, struct device_attribute *a,
+			    char *buf)
+{
+	struct mei_cl_device *cldev = to_mei_cl_device(dev);
+	u32 maxlen = mei_me_cl_max_len(cldev->me_cl);
+
+	return scnprintf(buf, PAGE_SIZE, "%u", maxlen);
+}
+static DEVICE_ATTR_RO(max_len);
+
 static struct attribute *mei_cldev_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_uuid.attr,
 	&dev_attr_version.attr,
 	&dev_attr_modalias.attr,
+	&dev_attr_max_conn.attr,
+	&dev_attr_fixed.attr,
+	&dev_attr_vtag.attr,
+	&dev_attr_max_len.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mei_cldev);

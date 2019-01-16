@@ -1082,7 +1082,8 @@ static int xfrm_policy_match(const struct xfrm_policy *pol,
 
 	match = xfrm_selector_match(sel, fl, family);
 	if (match)
-		ret = security_xfrm_policy_lookup(pol->security, fl->flowi_secid,
+		ret = security_xfrm_policy_lookup(pol->security,
+						  &fl->flowi_secid,
 						  dir);
 
 	return ret;
@@ -1201,7 +1202,7 @@ static struct xfrm_policy *xfrm_sk_policy_lookup(const struct sock *sk, int dir,
 				goto out;
 			}
 			err = security_xfrm_policy_lookup(pol->security,
-						      fl->flowi_secid,
+						      &fl->flowi_secid,
 						      dir);
 			if (!err) {
 				if (!xfrm_pol_hold_rcu(pol))

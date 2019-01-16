@@ -232,6 +232,56 @@
  *                              from source specified by clock source.
  *
  * %SKL_TKN_U32_ASTATE_CLK_SRC: Clock source for A-State entry
+ * %SKL_TKN_U32_AGG_NUM_MASTERS:
+ *                              Number of aggregated masters
+ *
+ * %SKL_TKN_U32_AGG_LINK_ID:    Aggregated master's instance id
+ *
+ * %SKL_TKN_U32_AGG_CH_MASK:    Represents channels driven by the master
+ *
+ * %SKL_TKN_U32_AGG_ID:         Aggregation id is a non zero identifier to
+ *                              indicate if this endpoint is participating
+ *                              in aggregation.
+ *
+ * %SKL_TKN_U32_DMACTRL_CFG_IDX:
+ *				Config index to fill up DMA control params
+ *
+ * %SKL_TKN_U32_DMACTRL_CFG_SIZE:
+ *				Size information of DMA control params
+ *
+ * %SKL_TKN_U32_DMA_IDX         Config index to fill up DMA config info
+ *                              from the manifest.
+ *
+ * %SKL_TKN_U32_DMA_TYPE:       Types of FW configs
+ *                              DMA_CONFIG, SCHEDULER_CONFIG.
+ *
+ * %SKL_TKN_U32_DMA_SIZE:       DMA buffer Size
+ *
+ * %SKL_TKN_U32_DMA_MAX_SIZE:   Maximum DMA buffer size
+ *
+ * %SKL_TKN_U32_DMA_MIN_SIZE:   Minimum DMA buffer size
+ *
+ * %SKL_TKN_U32_SCH_TYPE:       Types of FW configs: SCHEDULER_CONFIG
+ *
+ * %SKL_TKN_U32_SCH_SIZE:       Scheduler config size
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_MUL:
+ *                              System tick multiplier
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_DIV:
+ *                              System tick divider
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_LL_SRC:
+ *                              Low Latency interrupt source
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN:
+ *                              Config length
+ *
+ * %SKL_TKN_U32_SCH_SYS_TICK_CFG:
+ *                              Config contain capture on which SSP to
+ *                              active the FW
+ *
+ * %SKL_TKN_U32_FMT_CFG_IDX:    Format config index
  *
  * module_id and loadable flags dont have tokens as these values will be
  * read from the DSP FW manifest
@@ -324,7 +374,45 @@ enum SKL_TKNS {
 	SKL_TKN_U32_ASTATE_COUNT,
 	SKL_TKN_U32_ASTATE_KCPS,
 	SKL_TKN_U32_ASTATE_CLK_SRC,
-	SKL_TKN_MAX = SKL_TKN_U32_ASTATE_CLK_SRC,
+
+	SKL_TKN_U32_AGG_NUM_MASTERS,
+	SKL_TKN_U32_AGG_LINK_ID,
+	SKL_TKN_U32_AGG_CH_MASK,
+	SKL_TKN_U32_AGG_ID,
+	SKL_TKN_U32_DMACTRL_CFG_IDX,
+	SKL_TKN_U32_DMACTRL_CFG_SIZE,
+	SKL_TKN_U32_DMA_IDX,
+	SKL_TKN_U32_DMA_TYPE,
+	SKL_TKN_U32_DMA_SIZE,
+	SKL_TKN_U32_DMA_MAX_SIZE,
+	SKL_TKN_U32_DMA_MIN_SIZE,
+
+	SKL_TKN_U32_SCH_TYPE,
+	SKL_TKN_U32_SCH_SIZE,
+	SKL_TKN_U32_SCH_SYS_TICK_MUL,
+	SKL_TKN_U32_SCH_SYS_TICK_DIV,
+	SKL_TKN_U32_SCH_SYS_TICK_LL_SRC,
+	SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN,
+	SKL_TKN_U32_SCH_SYS_TICK_CFG,
+
+	SKL_TKN_U32_FMT_CFG_IDX,
+	SKL_TKN_MAX = SKL_TKN_U32_FMT_CFG_IDX,
+};
+
+/*
+ * Topology change notification events along with time at which
+ * the change occurred in topology.
+ */
+enum skl_event_type {
+	SKL_TPLG_CHG_NOTIFY_PIPELINE_START = 1,
+	SKL_TPLG_CHG_NOTIFY_PIPELINE_DELETE,
+	SKL_TPLG_CHG_NOTIFY_DSP_D0,
+	SKL_TPLG_CHG_NOTIFY_DSP_D3,
+};
+
+struct skl_tcn_events {
+	enum skl_event_type type;
+	struct timeval tv;
 };
 
 #endif

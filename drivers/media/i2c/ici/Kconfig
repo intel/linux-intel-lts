@@ -1,0 +1,19 @@
+if VIDEO_INTEL_ICI
+
+menu "Deserializers for ICI"
+
+config VIDEO_TI964_ICI
+	tristate "TI964 driver support"
+	depends on I2C && VIDEO_INTEL_ICI
+	---help---
+	This is a driver for TI964 camera for ICI.
+
+config VIDEO_MAX9286_ICI
+	tristate "MAX9286 driver support"
+	depends on I2C && VIDEO_INTEL_ICI
+	---help---
+	This is a driver for MAX9286 camera for ICI.
+
+endmenu
+
+endif

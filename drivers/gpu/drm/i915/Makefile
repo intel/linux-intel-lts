@@ -183,7 +183,7 @@ i915-y += i915_perf.o \
 	  i915_oa_icl.o
 
 ifeq ($(CONFIG_DRM_I915_GVT),y)
-i915-y += intel_gvt.o
+i915-y += intel_gvt.o i915_gem_gvtbuffer.o
 include $(src)/gvt/Makefile
 endif
 

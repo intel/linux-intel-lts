@@ -295,6 +295,130 @@ config SND_SOC_INTEL_GLK_RT5682_MAX98357A_MACH
 	   Say Y if you have such a device.
 	   If unsure select "N".
 
+config SND_SOC_INTEL_CNL_CS42L42_MACH
+        tristate "Cannonlake with CS42L42 SDW mode"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	select SND_SOC_CS42L42
+	select SND_SOC_DMIC
+	help
+	   This adds support for ASoC CS42L42 codec SDW machine driver. This
+	   will create an alsa sound card for CS42L42.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_CNL_RT700_MACH
+        tristate "Cannonlake with RT700 SDW mode"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	select SND_SOC_RT700
+	select SND_SOC_DMIC
+        help
+	   This adds support for ASoC RT700 codec SDW machine driver. This will
+	   create an alsa sound card for RT700.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_CNL_SVFPGA_MACH
+        tristate "Cannonlake with SVFPGA PDM SDW mode"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	select SND_SOC_SVFPGA
+	select SND_SOC_DMIC
+        help
+	   This adds support for ASoC SVFPGA PDM codec SDW machine driver. This
+	   will create an alsa sound card for SVFPGA.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_CNL_RT274_MACH
+	tristate "Cannonlake with RT274 I2S mode"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	select SND_SOC_RT274
+	select SND_SOC_DMIC
+	select SND_SOC_HDAC_HDMI
+        help
+	   This adds support for ASoC machine driver for Cannonlake platform
+	   with RT274 I2S audio codec.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_ICL_RT274_MACH
+        tristate "Icelake with RT274 I2S mode"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	select SND_SOC_RT274
+	select SND_SOC_DMIC
+        help
+	   This adds support for ASoC machine driver for Icelake platform with
+	   RT274 I2S audio codec.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_BXT_TDF8532_MACH
+        tristate "Broxton with TDF8532 I2S mode"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+        select SND_SOC_TDF8532
+        help
+	   This adds support for ASoC machine driver for Broxton IVI GP MRB
+	   platforms with TDF8532 I2S audio codec.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_BXT_ULL_MACH
+        tristate "Broxton ULL reference for GP MRB platform"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+        help
+	   This adds support for ASoC machine driver for Broxton ULL GP MRB
+	   platform.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_KBLR_RT298_MACH
+       tristate "ASoC Audio driver for KBL-R with RT298 I2S mode"
+       depends on X86 && ACPI && I2C
+       depends on SND_SOC_INTEL_SKYLAKE
+       select SND_SOC_RT298
+       select SND_SOC_DMIC
+       select SND_SOC_HDAC_HDMI
+       help
+          This adds support for ASoC machine driver for Kabylake-R platform
+          with RT298 I2S audio codec.
+          Say Y if you have such a device.
+          If unsure select "N".
+
+config SND_SOC_INTEL_BXTP_IVI_RSE_MACH
+	tristate "ASoC Audio driver for BXTP IVI RSE with Dummy Codecs"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	help
+	   This adds support for ASoC machine driver for Broxton-P platforms
+	   with Dummy I2S audio codec for IVI Rear Seat Unit.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_BXTP_IVI_HU_MACH
+	tristate "ASoC Audio driver for BXTP IVI HU with Dummy Codecs"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	help
+	   This adds support for ASoC machine driver for Broxton-P platforms
+	   with Dummy I2S audio codec for IVI Head Unit.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_BXTP_IVI_M3_MACH
+	tristate "ASoC Audio driver for BXTP IVI M3 with Dummy Codecs"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+        help
+	   This adds support for ASoC machine driver for Broxton-P platforms
+	   with Dummy I2S audio codec for IVI M3 topology.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
+config SND_SOC_INTEL_BXTP_IVI_GENERIC_MACH
+	tristate "ASoC Audio driver for BXTP IVI GENERIC with Dummy Codecs"
+	depends on MFD_INTEL_LPSS && I2C && ACPI
+	help
+	   This adds support for ASoC machine driver for Broxton-P platforms
+	   with Dummy I2S audio codec for IVI generic topology.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
 endif ## SND_SOC_INTEL_SKYLAKE
 
 endif ## SND_SOC_INTEL_MACH

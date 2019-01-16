@@ -43,6 +43,7 @@
 #include <linux/string.h>
 #include <linux/jhash.h>
 #include <linux/audit.h>
+#include <linux/security.h>
 #include <linux/slab.h>
 #include <net/ip.h>
 #include <net/icmp.h>
@@ -120,6 +121,9 @@ int cipso_v4_rbm_strictvalid = 1;
 /* Base length of the local tag (non-standard tag).
  *  Tag definition (may change between kernel versions)
  *
+ * If module stacking is not enabled or if there is exactly
+ * one security module that uses secids.
+ *
  * 0          8          16         24         32
  * +----------+----------+----------+----------+
  * | 10000000 | 00000110 | 32-bit secid value  |
@@ -127,8 +131,17 @@ int cipso_v4_rbm_strictvalid = 1;
  * | in (host byte order)|
  * +----------+----------+
  *
+ * If module stacking is enabled
+ *
+ * 0          8          16         24         32
+ * +----------+----------+----------+----------+ ... +----------+----------+
+ * | 10000000 | 00000110 | 32-bit secid value  |     | 32-bit secid value  |
+ * +----------+----------+----------+----------+ ... +----------+----------+
+ * | in (host byte order)|
+ * +----------+----------+
+ *
  */
-#define CIPSO_V4_TAG_LOC_BLEN         6
+#define CIPSO_V4_TAG_LOC_BLEN         (2 + sizeof(struct secids))
 
 /*
  * Helper Functions
@@ -1480,7 +1493,7 @@ static int cipso_v4_gentag_loc(const struct cipso_v4_doi *doi_def,
 
 	buffer[0] = CIPSO_V4_TAG_LOCAL;
 	buffer[1] = CIPSO_V4_TAG_LOC_BLEN;
-	*(u32 *)&buffer[2] = secattr->attr.secid;
+	memcpy(&buffer[2], &secattr->attr.secid, sizeof(struct secids));
 
 	return CIPSO_V4_TAG_LOC_BLEN;
 }
@@ -1500,7 +1513,7 @@ static int cipso_v4_parsetag_loc(const struct cipso_v4_doi *doi_def,
 				 const unsigned char *tag,
 				 struct netlbl_lsm_secattr *secattr)
 {
-	secattr->attr.secid = *(u32 *)&tag[2];
+	memcpy(&secattr->attr.secid, &tag[2], sizeof(struct secids));
 	secattr->flags |= NETLBL_SECATTR_SECID;
 
 	return 0;

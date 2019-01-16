@@ -91,6 +91,7 @@
 #include "i915_drv.h"
 #include "i915_trace.h"
 #include "intel_workarounds.h"
+#include "i915_vgpu.h"
 
 #define ALL_L3_SLICES(dev) (1 << NUM_L3_SLICES(dev)) - 1
 
@@ -136,7 +137,12 @@ static void i915_gem_context_free(struct i915_gem_context *ctx)
 
 	list_del(&ctx->link);
 
-	ida_simple_remove(&ctx->i915->contexts.hw_ida, ctx->hw_id);
+	if (intel_vgpu_active(ctx->i915))
+		ida_simple_remove(&ctx->i915->contexts.hw_ida, ctx->hw_id &
+				~(0x7 << SIZE_CONTEXT_HW_ID_GVT));
+	else
+		ida_simple_remove(&ctx->i915->contexts.hw_ida, ctx->hw_id);
+
 	kfree_rcu(ctx, rcu);
 }
 
@@ -217,6 +223,8 @@ static int assign_hw_id(struct drm_i915_private *dev_priv, unsigned *out)
 		 */
 		if (USES_GUC_SUBMISSION(dev_priv))
 			max = MAX_GUC_CONTEXT_HW_ID;
+		else if (intel_vgpu_active(dev_priv) || intel_gvt_active(dev_priv))
+			max = MAX_CONTEXT_HW_ID_GVT;
 		else
 			max = MAX_CONTEXT_HW_ID;
 	}
@@ -234,6 +242,12 @@ static int assign_hw_id(struct drm_i915_private *dev_priv, unsigned *out)
 				     0, max, GFP_KERNEL);
 		if (ret < 0)
 			return ret;
+	}
+
+	if (intel_vgpu_active(dev_priv)) {
+		/* add vgpu_id to context hw_id */
+		ret = ret | (I915_READ(vgtif_reg(vgt_id))
+				<< SIZE_CONTEXT_HW_ID_GVT);
 	}
 
 	*out = ret;
@@ -499,7 +513,12 @@ int i915_gem_contexts_init(struct drm_i915_private *dev_priv)
 	 * For easy recognisablity, we want the kernel context to be 0 and then
 	 * all user contexts will have non-zero hw_id.
 	 */
-	GEM_BUG_ON(ctx->hw_id);
+	if (intel_vgpu_active(dev_priv)){
+		/* remove vgpu_id from context hw_id */
+		GEM_BUG_ON(ctx->hw_id & ~(0x7 << SIZE_CONTEXT_HW_ID_GVT));
+	} else {
+		GEM_BUG_ON(ctx->hw_id);
+	}
 	dev_priv->kernel_context = ctx;
 
 	/* highest priority; preempting task */
@@ -548,23 +567,55 @@ static int context_idr_cleanup(int id, void *p, void *data)
 	return 0;
 }
 
+int i915_gem_context_first_open(struct drm_i915_private *dev_priv)
+{
+	int ret;
+
+	lockdep_assert_held(&dev_priv->drm.struct_mutex);
+
+	DRM_DEBUG_DRIVER("Late initialization starting\n");
+
+	intel_runtime_pm_get(dev_priv);
+	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
+
+	ret = i915_gem_init_hw_late(dev_priv);
+	if (ret == 0)
+		dev_priv->contexts_ready = true;
+	else
+		DRM_ERROR("Late initialization failed: %d\n", ret);
+
+	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
+	intel_runtime_pm_put(dev_priv);
+
+	return ret;
+}
+
 int i915_gem_context_open(struct drm_i915_private *i915,
 			  struct drm_file *file)
 {
 	struct drm_i915_file_private *file_priv = file->driver_priv;
 	struct i915_gem_context *ctx;
+	int ret = 0;
 
 	idr_init(&file_priv->context_idr);
 
 	mutex_lock(&i915->drm.struct_mutex);
-	ctx = i915_gem_create_context(i915, file_priv);
-	mutex_unlock(&i915->drm.struct_mutex);
-	if (IS_ERR(ctx)) {
-		idr_destroy(&file_priv->context_idr);
-		return PTR_ERR(ctx);
+
+	if (!(i915->contexts_ready))
+		ret = i915_gem_context_first_open(i915);
+
+	if (ret == 0) {
+		ctx = i915_gem_create_context(i915, file_priv);
+		if (IS_ERR(ctx))
+			ret = PTR_ERR(ctx);
+
+		GEM_BUG_ON(i915_gem_context_is_kernel(ctx));
 	}
 
-	GEM_BUG_ON(i915_gem_context_is_kernel(ctx));
+	mutex_unlock(&i915->drm.struct_mutex);
+
+	if (ret)
+		idr_destroy(&file_priv->context_idr);
 
 	return 0;
 }
@@ -818,6 +869,15 @@ int i915_gem_context_getparam_ioctl(struct drm_device *dev, void *data,
 	case I915_CONTEXT_PARAM_PRIORITY:
 		args->value = ctx->sched.priority;
 		break;
+	case I915_CONTEXT_PARAM_PREEMPT_TIMEOUT:
+		if (!(to_i915(dev)->caps.scheduler & I915_SCHEDULER_CAP_PREEMPTION))
+			ret = -ENODEV;
+		else if (args->size)
+			ret = -EINVAL;
+		else
+			args->value = ctx->preempt_timeout;
+		break;
+
 	default:
 		ret = -EINVAL;
 		break;
@@ -891,6 +951,19 @@ int i915_gem_context_setparam_ioctl(struct drm_device *dev, void *data,
 			else
 				ctx->sched.priority = priority;
 		}
+		break;
+
+	case I915_CONTEXT_PARAM_PREEMPT_TIMEOUT:
+		if (args->size)
+			ret = -EINVAL;
+		else if (args->value > U32_MAX)
+			ret = -EINVAL;
+		else if (!(to_i915(dev)->caps.scheduler & I915_SCHEDULER_CAP_PREEMPTION))
+			ret = -ENODEV;
+		else if (args->value && !capable(CAP_SYS_ADMIN))
+			ret = -EPERM;
+		else
+			ctx->preempt_timeout = args->value;
 		break;
 
 	default:

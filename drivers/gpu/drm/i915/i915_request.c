@@ -1054,6 +1054,7 @@ void i915_request_add(struct i915_request *request)
 
 	lockdep_assert_held(&request->i915->drm.struct_mutex);
 	trace_i915_request_add(request);
+	trace_i915_request_add_domain(request);
 
 	/*
 	 * Make sure that no request gazumped us - if it was allocated after
@@ -1126,8 +1127,11 @@ void i915_request_add(struct i915_request *request)
 	 */
 	local_bh_disable();
 	rcu_read_lock(); /* RCU serialisation for set-wedged protection */
-	if (engine->schedule)
-		engine->schedule(request, &request->gem_context->sched);
+	if (engine->schedule) {
+		engine->schedule(request,
+				 &request->gem_context->sched,
+				 request->gem_context->preempt_timeout);
+	}
 	rcu_read_unlock();
 	i915_sw_fence_commit(&request->submit);
 	local_bh_enable(); /* Kick the execlists tasklet if just scheduled */

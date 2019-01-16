@@ -19,8 +19,9 @@
 #include "skl.h"
 #include "skl-sst-dsp.h"
 #include "skl-sst-ipc.h"
+#include "skl-fwlog.h"
 #include "sound/hdaudio_ext.h"
-
+#include "skl-topology.h"
 
 #define IPC_IXC_STATUS_BITS		24
 
@@ -53,6 +54,10 @@
 #define IPC_MSG_DIR(x)			(((x) & IPC_MSG_DIR_MASK) \
 					<< IPC_MSG_DIR_SHIFT)
 /* Global Notification Message */
+#define IPC_GLB_NOTIFY_CORE_SHIFT	12
+#define IPC_GLB_NOTIFY_CORE_MASK	0xF
+#define IPC_GLB_NOTIFY_CORE_ID(x)	(((x) >> IPC_GLB_NOTIFY_CORE_SHIFT) \
+					& IPC_GLB_NOTIFY_CORE_MASK)
 #define IPC_GLB_NOTIFY_TYPE_SHIFT	16
 #define IPC_GLB_NOTIFY_TYPE_MASK	0xFF
 #define IPC_GLB_NOTIFY_TYPE(x)		(((x) >> IPC_GLB_NOTIFY_TYPE_SHIFT) \
@@ -193,6 +198,13 @@
 #define IPC_D0IX_STREAMING(x)		(((x) & IPC_D0IX_STREAMING_MASK) \
 					<< IPC_D0IX_STREAMING_SHIFT)
 
+/* Offset to get the event data for module notification */
+#define MOD_DATA_OFFSET		12
+#define SET_LARGE_CFG_FW_CONFIG		7
+
+#define DSP_EXCEP_CORE_MASK		0x3
+#define DSP_EXCEP_STACK_SIZE_SHIFT	2
+#define SKL_FW_RSRCE_EVNT_DATA_SZ	6
 
 enum skl_ipc_msg_target {
 	IPC_FW_GEN_MSG = 0,
@@ -219,6 +231,28 @@ enum skl_ipc_glb_type {
 	IPC_GLB_LOAD_LIBRARY = 24,
 	IPC_GLB_NOTIFY = 26,
 	IPC_GLB_MAX_IPC_MSG_NUMBER = 31 /* Maximum message number */
+};
+
+/* Resource Event Types */
+enum skl_ipc_resource_event_type {
+	SKL_BUDGET_VIOLATION = 0,
+	SKL_MIXER_UNDERRUN = 1,
+	SKL_STREAM_DATA_SEGMENT = 2,
+	SKL_PROCESS_DATA_ERR = 3,
+	SKL_STACK_OVERFLOW = 4,
+	SKL_BUFFERING_MODE_CHANGED = 5,
+	SKL_GATEWAY_UNDERRUN = 6,
+	SKL_GATEWAY_OVERRUN = 7,
+	SKL_EDF_DOMAIN_UNSTABLE = 8,
+	SKL_WCLK_SAMPLE_COUNT = 9,
+	SKL_GATEWAY_HIGH_THRESHOLD = 10,
+	SKL_GATEWAY_LOW_THRESHOLD = 11,
+	SKL_I2S_BCE_DETECTED = 12,
+	SKL_I2S_CLK_STATE_CHANGED = 13,
+	SKL_I2S_SINK_MODE_CHANGED = 14,
+	SKL_I2S_SOURCE_MODE_CHANGED = 15,
+	SKL_SRE_DRIFT_TOO_HIGH = 16,
+	SKL_INVALID_RESORUCE_EVENT_TYPE = 17
 };
 
 enum skl_ipc_glb_reply {
@@ -267,7 +301,10 @@ enum skl_ipc_notification_type {
 	IPC_GLB_NOTIFY_RESOURCE_EVENT = 5,
 	IPC_GLB_NOTIFY_LOG_BUFFER_STATUS = 6,
 	IPC_GLB_NOTIFY_TIMESTAMP_CAPTURED = 7,
-	IPC_GLB_NOTIFY_FW_READY = 8
+	IPC_GLB_NOTIFY_FW_READY = 8,
+	IPC_GLB_NOTIFY_FW_AUD_CLASS_RESULT = 9,
+	IPC_GLB_NOTIFY_EXCEPTION_CAUGHT = 10,
+	IPC_GLB_MODULE_NOTIFICATION = 12
 };
 
 /* Module Message Types */
@@ -280,8 +317,16 @@ enum skl_ipc_module_msg {
 	IPC_MOD_BIND = 5,
 	IPC_MOD_UNBIND = 6,
 	IPC_MOD_SET_DX = 7,
-	IPC_MOD_SET_D0IX = 8
+	IPC_MOD_SET_D0IX = 8,
+	IPC_MOD_DELETE_INSTANCE = 11
 };
+
+struct skl_event_notify {
+	u32 resource_type;
+	u32 resource_id;
+	u32 event_type;
+	u32 event_data[SKL_FW_RSRCE_EVNT_DATA_SZ];
+} __packed;
 
 void skl_ipc_tx_data_copy(struct ipc_message *msg, char *tx_data,
 		size_t tx_size)
@@ -296,6 +341,39 @@ static bool skl_ipc_is_dsp_busy(struct sst_dsp *dsp)
 
 	hipci = sst_dsp_shim_read_unlocked(dsp, SKL_ADSP_REG_HIPCI);
 	return (hipci & SKL_ADSP_REG_HIPCI_BUSY);
+}
+
+static void skl_ipc_tx_msgs_direct(struct sst_generic_ipc *ipc)
+{
+        struct ipc_message *msg;
+        unsigned long flags;
+
+        spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+
+        if (list_empty(&ipc->tx_list) || ipc->pending) {
+                spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+                return;
+        }
+
+        /* if the DSP is busy, we will TX messages after IRQ.
+         * also postpone if we are in the middle of procesing completion irq*/
+        if (ipc->ops.is_dsp_busy && ipc->ops.is_dsp_busy(ipc->dsp)) {
+                dev_dbg(ipc->dev, "skl_ipc_tx_msgs_direct dsp busy\n");
+                spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+                return;
+        }
+
+        msg = list_first_entry(&ipc->tx_list, struct ipc_message, list);
+        list_move(&msg->list, &ipc->rx_list);
+
+        dev_dbg(ipc->dev, "skl_ipc_tx_msgs_direct sending message, header - %#.16lx\n",
+                                (unsigned long)msg->header);
+        print_hex_dump_debug("Params:", DUMP_PREFIX_OFFSET, 8, 4,
+                             msg->tx_data, msg->tx_size, false);
+        if (ipc->ops.tx_msg != NULL)
+                ipc->ops.tx_msg(ipc, msg);
+
+        spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 }
 
 /* Lock to be held by caller */
@@ -342,15 +420,204 @@ static struct ipc_message *skl_ipc_reply_get_msg(struct sst_generic_ipc *ipc,
 
 	msg = list_first_entry(&ipc->rx_list, struct ipc_message, list);
 
+	list_del(&msg->list);
 out:
 	return msg;
 
+}
+
+static int skl_process_module_notification(struct skl_sst *skl)
+{
+	struct skl_notify_data *notify_data;
+	struct skl_module_notify mod_notif;
+	u32 notify_data_sz;
+	char *module_data;
+
+	dev_dbg(skl->dev, "***** Module Notification ******\n");
+	/* read module notification structure from mailbox */
+	sst_dsp_inbox_read(skl->dsp, &mod_notif,
+				sizeof(struct skl_module_notify));
+
+	notify_data_sz = sizeof(mod_notif) + mod_notif.event_data_size;
+	notify_data = kzalloc((sizeof(*notify_data) + notify_data_sz),
+							GFP_KERNEL);
+
+	if (!notify_data)
+		return -ENOMEM;
+
+	/* read the complete notification message */
+	sst_dsp_inbox_read(skl->dsp, notify_data->data, notify_data_sz);
+
+	notify_data->length = notify_data_sz;
+	notify_data->type = 0xFF;
+
+	/* Module notification data to console */
+	dev_dbg(skl->dev, "Module Id    = %#x\n",
+					(mod_notif.unique_id >> 16));
+	dev_dbg(skl->dev, "Instanse Id  = %#x\n",
+					(mod_notif.unique_id & 0x0000FFFF));
+	dev_dbg(skl->dev, "Data Size    = %d bytes\n",
+					mod_notif.event_data_size);
+
+	module_data = notify_data->data;
+
+	print_hex_dump(KERN_DEBUG, "DATA: ", MOD_DATA_OFFSET, 8, 4,
+				module_data, notify_data->length, false);
+
+	skl->notify_ops.notify_cb(skl, IPC_GLB_MODULE_NOTIFICATION,
+							notify_data);
+	kfree(notify_data);
+
+	return 0;
+}
+
+static void
+skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+{
+	int core, size;
+	u32 *ptr;
+	u8 *base;
+	u32 write, read;
+
+#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	core = 0;
+#else
+	core = IPC_GLB_NOTIFY_CORE_ID(header.primary);
+#endif
+	if (!(BIT(core) & sst->trace_wind.flags)) {
+		dev_err(sst->dev, "Logging is disabled on dsp %d\n", core);
+		return;
+	}
+	if (skl_dsp_get_buff_users(sst, core) > 2) {
+		dev_err(sst->dev, "Can't handle log buffer notification, \
+			previous writer is not finished yet !\n \
+			dropping log buffer\n");
+		return;
+	}
+	skl_dsp_get_log_buff(sst, core);
+#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	size = sst->trace_wind.size;
+#else
+	size = sst->trace_wind.size/sst->trace_wind.nr_dsp;
+#endif
+	base = (u8 *)sst->trace_wind.addr;
+	/* move to the source dsp tracing window */
+	base += (core * size);
+	ptr = (u32 *) base;
+	read = ptr[0];
+	write = ptr[1];
+	if (write > read) {
+		skl_dsp_write_log(sst, (void __iomem *)(base + 8 + read),
+					core, (write - read));
+		/* read pointer */
+		ptr[0] += write - read;
+	} else {
+		skl_dsp_write_log(sst, (void __iomem *) (base + 8 + read),
+					core, size - 8 - read);
+		skl_dsp_write_log(sst, (void __iomem *) (base + 8),
+					core, write);
+		ptr[0] = write;
+	}
+	skl_dsp_put_log_buff(sst, core);
+}
+
+static void
+skl_parse_resource_event(struct skl_sst *skl, struct skl_ipc_header header)
+{
+	struct skl_event_notify notify;
+	struct sst_dsp *sst = skl->dsp;
+
+	/* read the message contents from mailbox */
+	sst_dsp_inbox_read(sst, &notify, sizeof(struct skl_event_notify));
+
+	/* notify user about the event type */
+	switch (notify.event_type) {
+
+	case SKL_BUDGET_VIOLATION:
+		dev_err(sst->dev, "MCPS Budget Violation: %x\n",
+					header.primary);
+		break;
+	case SKL_MIXER_UNDERRUN:
+		dev_err(sst->dev, "Mixer Underrun Detected: %x\n",
+					header.primary);
+		break;
+	case SKL_STREAM_DATA_SEGMENT:
+		dev_err(sst->dev, "Stream Data Segment: %x\n",
+					header.primary);
+		break;
+	case SKL_PROCESS_DATA_ERR:
+		dev_err(sst->dev, "Process Data Error: %x\n",
+					header.primary);
+		break;
+	case SKL_STACK_OVERFLOW:
+		dev_err(sst->dev, "Stack Overflow: %x\n",
+					header.primary);
+		break;
+	case SKL_BUFFERING_MODE_CHANGED:
+		dev_err(sst->dev, "Buffering Mode Changed: %x\n",
+					header.primary);
+		break;
+	case SKL_GATEWAY_UNDERRUN:
+		dev_err(sst->dev, "Gateway Underrun Detected: %x\n",
+					header.primary);
+		break;
+	case SKL_GATEWAY_OVERRUN:
+		dev_err(sst->dev, "Gateway Overrun Detected: %x\n",
+					header.primary);
+		break;
+	case SKL_WCLK_SAMPLE_COUNT:
+		dev_err(sst->dev,
+			"FW Wclk and Sample count Notif Detected: %x\n",
+					header.primary);
+		break;
+	case SKL_GATEWAY_HIGH_THRESHOLD:
+		dev_err(sst->dev, "IPC gateway reached high threshold: %x\n",
+					header.primary);
+		break;
+	case SKL_GATEWAY_LOW_THRESHOLD:
+		dev_err(sst->dev, "IPC gateway reached low threshold: %x\n",
+					header.primary);
+		break;
+	case SKL_I2S_BCE_DETECTED:
+		dev_err(sst->dev, "Bit Count Error detected on I2S port: %x\n",
+					header.primary);
+		break;
+	case SKL_I2S_CLK_STATE_CHANGED:
+		dev_err(sst->dev, "Clock detected/loss on I2S port: %x\n",
+					header.primary);
+		break;
+	case SKL_I2S_SINK_MODE_CHANGED:
+		dev_err(sst->dev, "I2S Sink started/stopped dropping \
+			data in non-blk mode: %x\n", header.primary);
+		break;
+	case SKL_I2S_SOURCE_MODE_CHANGED:
+		dev_err(sst->dev, "I2S Source started/stopped generating 0's \
+			in non-blk mode: %x\n", header.primary);
+		break;
+	case SKL_SRE_DRIFT_TOO_HIGH:
+		dev_err(sst->dev,
+			"Frequency drift exceeded limit in SRE: %x\n",
+					header.primary);
+		break;
+	case SKL_INVALID_RESORUCE_EVENT_TYPE:
+		dev_err(sst->dev, "Invalid type: %x\n", header.primary);
+		break;
+	default:
+		dev_err(sst->dev, "ipc: Unhandled resource event=%x",
+					header.primary);
+		break;
+	}
+
+	print_hex_dump(KERN_DEBUG, "Params:",
+			DUMP_PREFIX_OFFSET, 8, 4,
+			&notify, sizeof(struct skl_event_notify), false);
 }
 
 int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 		struct skl_ipc_header header)
 {
 	struct skl_sst *skl = container_of(ipc, struct skl_sst, ipc);
+	int ret;
 
 	if (IPC_GLB_NOTIFY_MSG_TYPE(header.primary)) {
 		switch (IPC_GLB_NOTIFY_TYPE(header.primary)) {
@@ -360,13 +627,16 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 			break;
 
 		case IPC_GLB_NOTIFY_RESOURCE_EVENT:
-			dev_err(ipc->dev, "MCPS Budget Violation: %x\n",
-						header.primary);
+			skl_parse_resource_event(skl, header);
 			break;
 
 		case IPC_GLB_NOTIFY_FW_READY:
 			skl->boot_complete = true;
 			wake_up(&skl->boot_wait);
+			break;
+
+		case IPC_GLB_NOTIFY_LOG_BUFFER_STATUS:
+			skl_process_log_buffer(skl->dsp, header);
 			break;
 
 		case IPC_GLB_NOTIFY_PHRASE_DETECTED:
@@ -380,6 +650,27 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 			 */
 			skl->enable_miscbdcge(ipc->dev, false);
 			skl->miscbdcg_disabled = true;
+			break;
+		case IPC_GLB_NOTIFY_EXCEPTION_CAUGHT:
+			dev_err(ipc->dev, "*****Exception Detected  on core id: %d \n",(header.extension & DSP_EXCEP_CORE_MASK));
+			dev_err(ipc->dev, "Exception Stack size is %d\n", (header.extension >> DSP_EXCEP_STACK_SIZE_SHIFT));
+			/* hexdump of the fw core exception record reg */
+			ret = skl_dsp_crash_dump_read(skl,
+						(header.extension >> DSP_EXCEP_STACK_SIZE_SHIFT));
+			if (ret < 0) {
+				dev_err(ipc->dev,
+					"dsp crash dump read fail:%d\n", ret);
+				return ret;
+			}
+			break;
+
+		case IPC_GLB_MODULE_NOTIFICATION:
+			ret = skl_process_module_notification(skl);
+			if (ret < 0) {
+				dev_err(ipc->dev,
+				"Module Notification read fail:%d\n", ret);
+				return ret;
+			}
 			break;
 
 		default:
@@ -427,6 +718,10 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 	if (reply == IPC_GLB_REPLY_SUCCESS) {
 		dev_dbg(ipc->dev, "ipc FW reply %x: success\n", header.primary);
 		/* copy the rx data from the mailbox */
+		if (IPC_GLB_NOTIFY_MSG_TYPE(header.primary) ==
+				IPC_MOD_LARGE_CONFIG_GET)
+			msg->rx_size = header.extension &
+				IPC_DATA_OFFSET_SZ_MASK;
 		sst_dsp_inbox_read(ipc->dsp, msg->rx_data, msg->rx_size);
 		switch (IPC_GLB_NOTIFY_MSG_TYPE(header.primary)) {
 		case IPC_GLB_LOAD_MULTIPLE_MODS:
@@ -458,9 +753,7 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 
 		}
 	}
-
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
-	list_del(&msg->list);
 	sst_ipc_tx_msg_reply_complete(ipc, msg);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 }
@@ -593,6 +886,7 @@ int skl_ipc_init(struct device *dev, struct skl_sst *skl)
 
 	ipc->ops.tx_msg = skl_ipc_tx_msg;
 	ipc->ops.tx_data_copy = skl_ipc_tx_data_copy;
+	ipc->ops.direct_tx_msg = skl_ipc_tx_msgs_direct;
 	ipc->ops.is_dsp_busy = skl_ipc_is_dsp_busy;
 
 	return 0;
@@ -628,7 +922,7 @@ int skl_ipc_create_pipeline(struct sst_generic_ipc *ipc,
 	header.extension = IPC_PPL_LP_MODE(lp_mode);
 
 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: create pipeline fail, err: %d\n", ret);
 		return ret;
@@ -650,7 +944,7 @@ int skl_ipc_delete_pipeline(struct sst_generic_ipc *ipc, u8 instance_id)
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 
 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: delete pipeline failed, err %d\n", ret);
 		return ret;
@@ -674,7 +968,7 @@ int skl_ipc_set_pipeline_state(struct sst_generic_ipc *ipc,
 	header.primary |= IPC_PPL_STATE(state);
 
 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: set pipeline state failed, err: %d\n", ret);
 		return ret;
@@ -697,7 +991,7 @@ skl_ipc_save_pipeline(struct sst_generic_ipc *ipc, u8 instance_id, int dma_id)
 
 	header.extension = IPC_DMA_ID(dma_id);
 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: save pipeline failed, err: %d\n", ret);
 		return ret;
@@ -719,7 +1013,7 @@ int skl_ipc_restore_pipeline(struct sst_generic_ipc *ipc, u8 instance_id)
 	header.primary |= IPC_INSTANCE_ID(instance_id);
 
 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: restore  pipeline failed, err: %d\n", ret);
 		return ret;
@@ -745,7 +1039,7 @@ int skl_ipc_set_dx(struct sst_generic_ipc *ipc, u8 instance_id,
 	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
 			 header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
-				dx, sizeof(*dx), NULL, 0);
+				dx, sizeof(*dx), NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: set dx failed, err %d\n", ret);
 		return ret;
@@ -754,6 +1048,33 @@ int skl_ipc_set_dx(struct sst_generic_ipc *ipc, u8 instance_id,
 	return ret;
 }
 EXPORT_SYMBOL_GPL(skl_ipc_set_dx);
+
+int skl_ipc_delete_instance(struct sst_generic_ipc *ipc,
+			struct skl_ipc_init_instance_msg *msg)
+{
+	struct skl_ipc_header header = {0};
+	u64 *ipc_header = (u64 *)(&header);
+	int ret;
+
+	header.primary = IPC_MSG_TARGET(IPC_MOD_MSG);
+	header.primary |= IPC_MSG_DIR(IPC_MSG_REQUEST);
+	header.primary |= IPC_GLB_TYPE(IPC_MOD_DELETE_INSTANCE);
+	header.primary |= IPC_MOD_INSTANCE_ID(msg->instance_id);
+	header.primary |= IPC_MOD_ID(msg->module_id);
+
+	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
+			 header.primary, header.extension);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL,
+			msg->param_data_size, NULL, NULL);
+
+	if (ret < 0) {
+		dev_err(ipc->dev, "ipc: delete instance failed\n");
+		return ret;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(skl_ipc_delete_instance);
 
 int skl_ipc_init_instance(struct sst_generic_ipc *ipc,
 		struct skl_ipc_init_instance_msg *msg, void *param_data)
@@ -782,7 +1103,7 @@ int skl_ipc_init_instance(struct sst_generic_ipc *ipc,
 	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
 			 header.primary, header.extension);
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, param_data,
-			msg->param_data_size, NULL, 0);
+			msg->param_data_size, NULL, NULL);
 
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: init instance failed\n");
@@ -814,7 +1135,7 @@ int skl_ipc_bind_unbind(struct sst_generic_ipc *ipc,
 
 	dev_dbg(ipc->dev, "In %s hdr=%x ext=%x\n", __func__, header.primary,
 			 header.extension);
-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
 	if (ret < 0) {
 		dev_err(ipc->dev, "ipc: bind/unbind failed\n");
 		return ret;
@@ -842,8 +1163,8 @@ int skl_ipc_load_modules(struct sst_generic_ipc *ipc,
 	header.primary |= IPC_GLB_TYPE(IPC_GLB_LOAD_MULTIPLE_MODS);
 	header.primary |= IPC_LOAD_MODULE_CNT(module_cnt);
 
-	ret = sst_ipc_tx_message_nowait(ipc, *ipc_header, data,
-				(sizeof(u16) * module_cnt));
+	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, data,
+				(sizeof(u16) * module_cnt), NULL, NULL);
 	if (ret < 0)
 		dev_err(ipc->dev, "ipc: load modules failed :%d\n", ret);
 
@@ -864,7 +1185,7 @@ int skl_ipc_unload_modules(struct sst_generic_ipc *ipc, u8 module_cnt,
 	header.primary |= IPC_LOAD_MODULE_CNT(module_cnt);
 
 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, data,
-				(sizeof(u16) * module_cnt), NULL, 0);
+				(sizeof(u16) * module_cnt), NULL, NULL);
 	if (ret < 0)
 		dev_err(ipc->dev, "ipc: unload modules failed :%d\n", ret);
 
@@ -905,7 +1226,7 @@ int skl_ipc_set_large_config(struct sst_generic_ipc *ipc,
 			(unsigned)data_offset, (unsigned)tx_size);
 		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
 					  ((char *)param) + data_offset,
-					  tx_size, NULL, 0);
+					  tx_size, NULL, NULL);
 		if (ret < 0) {
 			dev_err(ipc->dev,
 				"ipc: set large config fail, err: %d\n", ret);
@@ -927,12 +1248,13 @@ int skl_ipc_set_large_config(struct sst_generic_ipc *ipc,
 EXPORT_SYMBOL_GPL(skl_ipc_set_large_config);
 
 int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
-		struct skl_ipc_large_config_msg *msg, u32 *param)
+		struct skl_ipc_large_config_msg *msg, u32 *param,
+		u32 *txparam, u32 tx_bytes, size_t *rx_bytes)
 {
 	struct skl_ipc_header header = {0};
 	u64 *ipc_header = (u64 *)(&header);
 	int ret = 0;
-	size_t sz_remaining, rx_size, data_offset;
+	size_t sz_remaining, rx_size, data_offset, inbox_sz;
 
 	header.primary = IPC_MSG_TARGET(IPC_MOD_MSG);
 	header.primary |= IPC_MSG_DIR(IPC_MSG_REQUEST);
@@ -940,42 +1262,86 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
 	header.primary |= IPC_MOD_INSTANCE_ID(msg->instance_id);
 	header.primary |= IPC_MOD_ID(msg->module_id);
 
-	header.extension = IPC_DATA_OFFSET_SZ(msg->param_data_size);
+	if (!tx_bytes)
+		header.extension = IPC_DATA_OFFSET_SZ(msg->param_data_size);
+	else
+		header.extension = IPC_DATA_OFFSET_SZ(tx_bytes);
+
 	header.extension |= IPC_LARGE_PARAM_ID(msg->large_param_id);
 	header.extension |= IPC_FINAL_BLOCK(1);
 	header.extension |= IPC_INITIAL_BLOCK(1);
 
 	sz_remaining = msg->param_data_size;
 	data_offset = 0;
+	inbox_sz = ipc->dsp->mailbox.in_size;
+
+	if (msg->param_data_size >= inbox_sz)
+		header.extension |= IPC_FINAL_BLOCK(0);
 
 	while (sz_remaining != 0) {
-		rx_size = sz_remaining > SKL_ADSP_W1_SZ
-				? SKL_ADSP_W1_SZ : sz_remaining;
+		rx_size = sz_remaining > inbox_sz
+				? inbox_sz : sz_remaining;
 		if (rx_size == sz_remaining)
 			header.extension |= IPC_FINAL_BLOCK(1);
 
-		ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0,
-					      ((char *)param) + data_offset,
-					      msg->param_data_size);
+		dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
+			header.primary, header.extension);
+		dev_dbg(ipc->dev, "receiving offset: %#x, size: %#x\n",
+			(unsigned)data_offset, (unsigned)rx_size);
+
+		if (rx_bytes != NULL)
+			*rx_bytes = rx_size;
+
+		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
+			((char *)txparam), tx_bytes,
+			((char *)param) + data_offset, rx_bytes);
+
 		if (ret < 0) {
 			dev_err(ipc->dev,
 				"ipc: get large config fail, err: %d\n", ret);
 			return ret;
 		}
+		/* exit as this is the final block */
+		if (header.extension | (0 << IPC_FINAL_BLOCK_SHIFT))
+			break;
+
+		if (rx_bytes != NULL)
+			rx_size = *rx_bytes;
+
 		sz_remaining -= rx_size;
+
 		data_offset = msg->param_data_size - sz_remaining;
 
 		/* clear the fields */
 		header.extension &= IPC_INITIAL_BLOCK_CLEAR;
 		header.extension &= IPC_DATA_OFFSET_SZ_CLEAR;
 		/* fill the fields */
-		header.extension |= IPC_INITIAL_BLOCK(1);
+		header.extension |= IPC_INITIAL_BLOCK(0);
 		header.extension |= IPC_DATA_OFFSET_SZ(data_offset);
 	}
 
 	return ret;
 }
 EXPORT_SYMBOL_GPL(skl_ipc_get_large_config);
+
+void skl_ipc_set_fw_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
+			u16 module_id, u32 *data)
+{
+	struct skl_ipc_large_config_msg msg = {0};
+	u32 size_offset = 1;
+	int ret;
+
+	msg.module_id = module_id;
+	msg.instance_id = instance_id;
+	msg.large_param_id = SET_LARGE_CFG_FW_CONFIG;
+	/* size of total message = size of payload + size of headers*/
+	msg.param_data_size = data[size_offset] + (2 * sizeof(u32));
+
+	ret = skl_ipc_set_large_config(ipc, &msg, data);
+	if (ret < 0)
+		dev_err(ipc->dev, "ipc: set fw config failed, err %d\n", ret);
+}
+EXPORT_SYMBOL_GPL(skl_ipc_set_fw_cfg);
 
 int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
 				u8 dma_id, u8 table_id, bool wait)
@@ -992,7 +1358,7 @@ int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
 
 	if (wait)
 		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
-					NULL, 0, NULL, 0);
+					NULL, 0, NULL, NULL);
 	else
 		ret = sst_ipc_tx_message_nowait(ipc, *ipc_header, NULL, 0);
 

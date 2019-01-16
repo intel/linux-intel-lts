@@ -276,8 +276,9 @@ struct intel_engine_execlists {
 	 */
 	unsigned int active;
 #define EXECLISTS_ACTIVE_USER 0
-#define EXECLISTS_ACTIVE_PREEMPT 1
-#define EXECLISTS_ACTIVE_HWACK 2
+#define EXECLISTS_ACTIVE_HWACK 1
+#define EXECLISTS_ACTIVE_PREEMPT 2
+#define EXECLISTS_ACTIVE_PREEMPT_TIMEOUT 3
 
 	/**
 	 * @port_mask: number of execlist ports - 1
@@ -324,6 +325,9 @@ struct intel_engine_execlists {
 	 * @preempt_complete_status: expected CSB upon completing preemption
 	 */
 	u32 preempt_complete_status;
+
+	struct hrtimer preempt_timer;
+	struct work_struct preempt_reset;
 
 	/**
 	 * @csb_write_reset: reset value for CSB write pointer
@@ -486,14 +490,16 @@ struct intel_engine_cs {
 	 */
 	void		(*submit_request)(struct i915_request *rq);
 
-	/* Call when the priority on a request has changed and it and its
+	/*
+	 * Call when the priority on a request has changed and it and its
 	 * dependencies may need rescheduling. Note the request itself may
 	 * not be ready to run!
 	 *
 	 * Called under the struct_mutex.
 	 */
 	void		(*schedule)(struct i915_request *request,
-				    const struct i915_sched_attr *attr);
+				    const struct i915_sched_attr *attr,
+				    unsigned int timeout);
 
 	/*
 	 * Cancel all requests on the hardware, or queued for execution.
@@ -567,6 +573,7 @@ struct intel_engine_cs {
 	} semaphore;
 
 	struct intel_engine_execlists execlists;
+	struct work_struct reset_work;
 
 	/* Contexts are pinned whilst they are active on the GPU. The last
 	 * context executed remains active whilst the GPU is idle - the
@@ -788,6 +795,11 @@ intel_write_status_page(struct intel_engine_cs *engine, int reg, u32 value)
 #define I915_GEM_HWS_PREEMPT_ADDR (I915_GEM_HWS_PREEMPT_INDEX << MI_STORE_DWORD_INDEX_SHIFT)
 #define I915_GEM_HWS_SCRATCH_INDEX	0x40
 #define I915_GEM_HWS_SCRATCH_ADDR (I915_GEM_HWS_SCRATCH_INDEX << MI_STORE_DWORD_INDEX_SHIFT)
+
+#define I915_GEM_HWS_PID_INDEX 0x50
+#define I915_GEM_HWS_PID_ADDR (I915_GEM_HWS_PID_INDEX << MI_STORE_DWORD_INDEX_SHIFT)
+#define I915_GEM_HWS_CID_INDEX 0x58
+#define I915_GEM_HWS_CID_ADDR (I915_GEM_HWS_CID_INDEX << MI_STORE_DWORD_INDEX_SHIFT)
 
 #define I915_HWS_CSB_BUF0_INDEX		0x10
 #define I915_HWS_CSB_WRITE_INDEX	0x1f

@@ -28,6 +28,23 @@ static guid_t osc_guid =
 	GUID_INIT(0xA69F886E, 0x6CEB, 0x4594,
 		  0xA4, 0x1F, 0x7B, 0x5D, 0xCE, 0x24, 0xC5, 0x53);
 
+#define NHLT_ACPI_HEADER_SIG	"NHLT"
+
+int skl_get_nhlt_version(struct device *dev)
+{
+	const char *version;
+	int ret;
+
+	ret = device_property_read_string(dev, "nhlt-version", &version);
+	if (!ret) {
+		if (!strncmp(version, "1.8-0", strlen("1.8-0")))
+			return VERSION_1;
+		else
+			return VERSION_INVALID;
+	}
+	/* if reading fails, assume we are on older platforms */
+	return VERSION_0;
+}
 
 struct nhlt_acpi_table *skl_nhlt_init(struct device *dev)
 {
@@ -132,6 +149,26 @@ static bool skl_check_ep_match(struct device *dev, struct nhlt_endpoint *epnt,
 	}
 
 	return false;
+}
+
+struct nhlt_specific_cfg *
+skl_get_nhlt_specific_cfg(struct skl *skl, u32 instance, u8 link_type,
+		u8 s_fmt, u8 num_ch, u32 s_rate, u8 dir, u8 dev_type)
+{
+	struct nhlt_specific_cfg *cfg = NULL;
+	struct hdac_bus *bus = &skl->hbus;
+
+	/* update the blob based on virtual bus_id*/
+	if (!skl->nhlt_override) {
+		dev_warn(bus->dev, "Querying NHLT blob from ACPI NHLT table !!\n");
+		cfg = skl_get_ep_blob(skl, instance, link_type, s_fmt,
+				num_ch, s_rate, dir, dev_type);
+	} else {
+		dev_warn(bus->dev, "Querying NHLT blob from Debugfs!!\n");
+		cfg = skl_nhlt_get_debugfs_blob(skl->debugfs, link_type, instance, dir);
+	}
+
+	return cfg;
 }
 
 struct nhlt_specific_cfg
@@ -445,6 +482,42 @@ void skl_get_clks(struct skl *skl, struct skl_ssp_clk *ssp_clks)
 
 			skl_get_ssp_clks(skl, ssp_clks, fmt, id);
 			skl_get_mclk(skl, ssp_clks, fmt, id);
+		}
+		epnt = (struct nhlt_endpoint *)((u8 *)epnt + epnt->length);
+	}
+}
+
+static bool is_vbus_id_exist(struct skl *skl, int vbus_id)
+{
+	bool ret = false;
+	int i;
+
+	for (i = 0; i < skl->nhlt->endpoint_count; i++) {
+		if (vbus_id == skl->grp_cnt.vbus_id[i])
+			return true;
+	}
+	return ret;
+}
+
+/*
+ * This function gets endpoint count and vbus_id for the specific link type
+ *  passed as parameter.
+ */
+void skl_nhlt_get_ep_cnt(struct skl *skl, int link_type)
+{
+	struct nhlt_endpoint *epnt = (struct nhlt_endpoint *) skl->nhlt->desc;
+	int i;
+
+	skl->grp_cnt.cnt = 0;
+	memset(skl->grp_cnt.vbus_id, 0xff,
+		(sizeof(int) * skl->nhlt->endpoint_count));
+
+	for (i = 0; i < skl->nhlt->endpoint_count; i++) {
+
+		if (epnt->linktype == link_type) {
+			if (!is_vbus_id_exist(skl, epnt->virtual_bus_id))
+				skl->grp_cnt.vbus_id[skl->grp_cnt.cnt++] =
+						epnt->virtual_bus_id;
 		}
 		epnt = (struct nhlt_endpoint *)((u8 *)epnt + epnt->length);
 	}

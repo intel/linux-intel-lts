@@ -60,13 +60,17 @@ struct intel_gvt_mpt {
 			      unsigned long mfn, unsigned int nr, bool map);
 	int (*set_trap_area)(unsigned long handle, u64 start, u64 end,
 			     bool map);
+	int (*set_pvmmio)(unsigned long handle, u64 start, u64 end,
+			     bool map);
 	int (*set_opregion)(void *vgpu);
 	int (*get_vfio_device)(void *vgpu);
 	void (*put_vfio_device)(void *vgpu);
 	bool (*is_valid_gfn)(unsigned long handle, unsigned long gfn);
+	int (*dom0_ready)(void);
 };
 
 extern struct intel_gvt_mpt xengt_mpt;
 extern struct intel_gvt_mpt kvmgt_mpt;
+extern struct intel_gvt_mpt acrn_gvt_mpt;
 
 #endif /* _GVT_HYPERCALL_H_ */

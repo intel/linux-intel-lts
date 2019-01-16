@@ -1939,6 +1939,49 @@ static void describe_ctx_ring(struct seq_file *m, struct intel_ring *ring)
 		   ring->space, ring->head, ring->tail, ring->emit);
 }
 
+bool is_shadow_context(struct i915_gem_context *ctx)
+{
+	if (ctx->name && !strncmp(ctx->name, "Shadow Context", 14))
+		return true;
+
+	return false;
+}
+
+int get_vgt_id(struct i915_gem_context *ctx)
+{
+	int vgt_id;
+
+	vgt_id = 0;
+
+	if (is_shadow_context(ctx))
+		sscanf(ctx->name, "Shadow Context %d", &vgt_id);
+
+	return vgt_id;
+}
+
+int get_pid_shadowed(struct i915_gem_context *ctx,
+		struct intel_engine_cs *engine)
+{
+	int pid, vgt_id;
+
+	sscanf(ctx->name, "Shadow Context %d", &vgt_id);
+	pid = intel_read_status_page(engine, I915_GEM_HWS_PID_INDEX + vgt_id);
+	return pid;
+}
+
+static void describe_ctx_ring_shadowed(struct seq_file *m,
+		struct i915_gem_context *ctx, struct intel_ring *ring,
+		struct intel_engine_cs *engine)
+{
+	int pid, cid, vgt_id;
+
+	sscanf(ctx->name, "Shadow Context %d", &vgt_id);
+	pid = intel_read_status_page(engine, I915_GEM_HWS_PID_INDEX + vgt_id);
+	cid = intel_read_status_page(engine, I915_GEM_HWS_CID_INDEX + vgt_id);
+	seq_printf(m, " (Current DomU Process PID: %d, CID: %d)",
+			pid, cid);
+}
+
 static int i915_context_status(struct seq_file *m, void *unused)
 {
 	struct drm_i915_private *dev_priv = node_to_i915(m->private);
@@ -1953,6 +1996,7 @@ static int i915_context_status(struct seq_file *m, void *unused)
 		return ret;
 
 	list_for_each_entry(ctx, &dev_priv->contexts.list, link) {
+		bool is_shadow_context = false;
 		seq_printf(m, "HW context %u ", ctx->hw_id);
 		if (ctx->pid) {
 			struct task_struct *task;
@@ -1963,6 +2007,9 @@ static int i915_context_status(struct seq_file *m, void *unused)
 					   task->comm, task->pid);
 				put_task_struct(task);
 			}
+		} else if (ctx->name && !strncmp(ctx->name, "Shadow Context", 14)) {
+			seq_puts(m, "DomU Shadow Context ");
+			is_shadow_context = true;
 		} else if (IS_ERR(ctx->file_priv)) {
 			seq_puts(m, "(deleted) ");
 		} else {
@@ -1975,12 +2022,19 @@ static int i915_context_status(struct seq_file *m, void *unused)
 		for_each_engine(engine, dev_priv, id) {
 			struct intel_context *ce =
 				to_intel_context(ctx, engine);
+			u64 lrc_desc = ce->lrc_desc;
 
+			seq_printf(m, "ctx id 0x%x ", (uint32_t)((lrc_desc >> 12) &
+					0xFFFFF));
 			seq_printf(m, "%s: ", engine->name);
 			if (ce->state)
 				describe_obj(m, ce->state->obj);
-			if (ce->ring)
+			if (ce->ring) {
 				describe_ctx_ring(m, ce->ring);
+				if(is_shadow_context)
+					describe_ctx_ring_shadowed(m, ctx,
+							ce->ring, engine);
+			}
 			seq_putc(m, '\n');
 		}
 
@@ -2954,15 +3008,23 @@ static void intel_crtc_info(struct seq_file *m, struct intel_crtc *intel_crtc)
 	struct drm_device *dev = &dev_priv->drm;
 	struct drm_crtc *crtc = &intel_crtc->base;
 	struct intel_encoder *intel_encoder;
-	struct drm_plane_state *plane_state = crtc->primary->state;
-	struct drm_framebuffer *fb = plane_state->fb;
+	struct drm_plane_state *plane_state;
+	struct drm_framebuffer *fb;
 
-	if (fb)
-		seq_printf(m, "\tfb: %d, pos: %dx%d, size: %dx%d\n",
+	if (!crtc->primary) {
+		seq_puts(m, "\tno primary plane\n");
+	} else {
+		plane_state = crtc->primary->state;
+		fb = plane_state->fb;
+
+		if (fb)
+			seq_printf(m, "\tfb: %d, pos: %dx%d, size: %dx%d\n",
 			   fb->base.id, plane_state->src_x >> 16,
 			   plane_state->src_y >> 16, fb->width, fb->height);
-	else
-		seq_puts(m, "\tprimary plane disabled\n");
+		else
+			seq_puts(m, "\tprimary plane disabled\n");
+	}
+
 	for_each_encoder_on_crtc(dev, crtc, intel_encoder)
 		intel_encoder_info(m, intel_crtc, intel_encoder);
 }
@@ -3207,13 +3269,18 @@ static int i915_display_info(struct seq_file *m, void *unused)
 
 			intel_crtc_info(m, crtc);
 
-			seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x\n",
-				   yesno(cursor->base.state->visible),
-				   cursor->base.state->crtc_x,
-				   cursor->base.state->crtc_y,
-				   cursor->base.state->crtc_w,
-				   cursor->base.state->crtc_h,
-				   cursor->cursor.base);
+			if (cursor) {
+				seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x\n",
+						yesno(cursor->base.state->visible),
+						cursor->base.state->crtc_x,
+						cursor->base.state->crtc_y,
+						cursor->base.state->crtc_w,
+						cursor->base.state->crtc_h,
+						cursor->cursor.base);
+			} else {
+				seq_puts(m, "\tNo cursor plane available on this platform\n");
+			}
+
 			intel_scaler_info(m, crtc);
 			intel_plane_info(m, crtc);
 		}
@@ -3999,6 +4066,9 @@ i915_wedged_set(void *data, u64 val)
 	struct drm_i915_private *i915 = data;
 	struct intel_engine_cs *engine;
 	unsigned int tmp;
+
+	if (intel_vgpu_active(i915))
+		return -EINVAL;
 
 	/*
 	 * There is no safeguard against this debugfs entry colliding

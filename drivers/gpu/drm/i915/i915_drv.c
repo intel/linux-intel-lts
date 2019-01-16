@@ -51,6 +51,7 @@
 #include "i915_pmu.h"
 #include "i915_query.h"
 #include "i915_vgpu.h"
+#include "intel_uc.h"
 #include "intel_drv.h"
 #include "intel_uc.h"
 
@@ -895,6 +896,7 @@ static int i915_driver_init_early(struct drm_i915_private *dev_priv,
 		     sizeof(device_info->platform_mask) * BITS_PER_BYTE);
 	BUG_ON(device_info->gen > sizeof(device_info->gen_mask) * BITS_PER_BYTE);
 	spin_lock_init(&dev_priv->irq_lock);
+	spin_lock_init(&dev_priv->shared_page_lock);
 	spin_lock_init(&dev_priv->gpu_error.lock);
 	mutex_init(&dev_priv->backlight_lock);
 	spin_lock_init(&dev_priv->uncore.lock);
@@ -991,6 +993,9 @@ static void i915_mmio_cleanup(struct drm_i915_private *dev_priv)
 
 	intel_teardown_mchbar(dev_priv);
 	pci_iounmap(pdev, dev_priv->regs);
+	if (intel_vgpu_active(dev_priv) && dev_priv->shared_page)
+		pci_iounmap(pdev, dev_priv->shared_page);
+
 }
 
 /**
@@ -1024,6 +1029,21 @@ static int i915_driver_init_mmio(struct drm_i915_private *dev_priv)
 
 	intel_uc_init_mmio(dev_priv);
 
+	if (intel_vgpu_active(dev_priv) && i915_modparams.enable_pvmmio) {
+		u32 bar = 0;
+		u32 mmio_size = 2 * 1024 * 1024;
+
+		/* Map a share page from the end of 2M mmio region in bar0. */
+		dev_priv->shared_page = (struct gvt_shared_page *)
+			pci_iomap_range(dev_priv->drm.pdev, bar,
+			mmio_size, PAGE_SIZE);
+		if (dev_priv->shared_page == NULL) {
+			ret = -EIO;
+			DRM_ERROR("ivi: failed to map share page.\n");
+			goto err_uncore;
+		}
+	}
+
 	ret = intel_engines_init_mmio(dev_priv);
 	if (ret)
 		goto err_uncore;
@@ -1033,6 +1053,8 @@ static int i915_driver_init_mmio(struct drm_i915_private *dev_priv)
 	return 0;
 
 err_uncore:
+	if (intel_vgpu_active(dev_priv) && dev_priv->shared_page)
+		pci_iounmap(dev_priv->drm.pdev, dev_priv->shared_page);
 	intel_uncore_fini(dev_priv);
 err_bridge:
 	pci_dev_put(dev_priv->bridge_dev);
@@ -1318,6 +1340,24 @@ static void i915_welcome_messages(struct drm_i915_private *dev_priv)
 		DRM_INFO("DRM_I915_DEBUG_GEM enabled\n");
 }
 
+static inline int get_max_avail_pipes(struct drm_i915_private *dev_priv)
+{
+	enum pipe pipe;
+	int index = 0;
+
+	if (!intel_vgpu_active(dev_priv) ||
+	    !i915_modparams.avail_planes_per_pipe)
+		return INTEL_INFO(dev_priv)->num_pipes;
+
+	for_each_pipe(dev_priv, pipe) {
+		if (AVAIL_PLANE_PER_PIPE(dev_priv, i915_modparams.avail_planes_per_pipe,
+					pipe))
+			index++;
+	}
+
+	return index;
+}
+
 /**
  * i915_driver_load - setup chip and create an initial config
  * @pdev: PCI device
@@ -1335,6 +1375,7 @@ int i915_driver_load(struct pci_dev *pdev, const struct pci_device_id *ent)
 		(struct intel_device_info *)ent->driver_data;
 	struct drm_i915_private *dev_priv;
 	int ret;
+	int num_crtcs = 0;
 
 	/* Enable nuclear pageflip on ILK+ */
 	if (!i915_modparams.nuclear_pageflip && match_info->gen < 5)
@@ -1386,9 +1427,9 @@ int i915_driver_load(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * of the i915_driver_init_/i915_driver_register functions according
 	 * to the role/effect of the given init step.
 	 */
-	if (INTEL_INFO(dev_priv)->num_pipes) {
-		ret = drm_vblank_init(&dev_priv->drm,
-				      INTEL_INFO(dev_priv)->num_pipes);
+	num_crtcs = get_max_avail_pipes(dev_priv);
+	if (num_crtcs) {
+		ret = drm_vblank_init(&dev_priv->drm, num_crtcs);
 		if (ret)
 			goto out_cleanup_hw;
 	}
@@ -1515,6 +1556,10 @@ static void i915_driver_postclose(struct drm_device *dev, struct drm_file *file)
 	i915_gem_context_close(file);
 	i915_gem_release(dev, file);
 	mutex_unlock(&dev->struct_mutex);
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	kfree(file_priv->process_name);
+#endif
 
 	kfree(file_priv);
 }
@@ -2860,6 +2905,7 @@ static const struct drm_ioctl_desc i915_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(I915_PERF_ADD_CONFIG, i915_perf_add_config_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_PERF_REMOVE_CONFIG, i915_perf_remove_config_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_QUERY, i915_query_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(I915_GEM_GVTBUFFER, i915_gem_gvtbuffer_ioctl, DRM_RENDER_ALLOW),
 };
 
 static struct drm_driver driver = {
@@ -2874,6 +2920,9 @@ static struct drm_driver driver = {
 	.lastclose = i915_driver_lastclose,
 	.postclose = i915_driver_postclose,
 
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	.gem_open_object = i915_gem_open_object,
+#endif
 	.gem_close_object = i915_gem_close_object,
 	.gem_free_object_unlocked = i915_gem_free_object,
 	.gem_vm_ops = &i915_gem_vm_ops,

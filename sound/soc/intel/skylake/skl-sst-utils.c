@@ -16,6 +16,8 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/uuid.h>
+#include <linux/devcoredump.h>
+#include <linux/pci.h>
 #include "skl-sst-dsp.h"
 #include "../common/sst-dsp.h"
 #include "../common/sst-dsp-priv.h"
@@ -23,10 +25,42 @@
 
 
 #define UUID_STR_SIZE 37
-#define DEFAULT_HASH_SHA256_LEN 32
-
+#define TYPE0_EXCEPTION 0
+#define TYPE1_EXCEPTION 1
+#define TYPE2_EXCEPTION 2
+#define MAX_CRASH_DATA_TYPES 3
+#define CRASH_DUMP_VERSION 0x1
 /* FW Extended Manifest Header id = $AE1 */
 #define SKL_EXT_MANIFEST_HEADER_MAGIC   0x31454124
+#define MAX_DSP_EXCEPTION_STACK_SIZE (64*1024)
+
+/* FW adds headers and trailing patters to extended crash data */
+#define EXTRA_BYTES	256
+
+#define UUID_ATTR_RO(_name) \
+	struct uuid_attribute uuid_attr_##_name = __ATTR_RO(_name)
+
+struct skl_sysfs_tree {
+	struct kobject *dsp_kobj;
+	struct kobject *modules_kobj;
+	struct skl_sysfs_module **mod_obj;
+};
+
+struct skl_sysfs_module {
+	struct kobject kobj;
+	struct uuid_module *uuid_mod;
+	struct list_head *module_list;
+	int fw_ops_load_mod;
+};
+
+struct uuid_attribute {
+	struct attribute	attr;
+	ssize_t (*show)(struct skl_sysfs_module *modinfo_obj,
+			struct uuid_attribute *attr, char *buf);
+	ssize_t (*store)(struct skl_sysfs_module *modinfo_obj,
+			struct uuid_attribute *attr, const char *buf,
+			size_t count);
+};
 
 struct UUID {
 	u8 id[16];
@@ -101,6 +135,31 @@ struct skl_ext_manifest_hdr {
 	u16 version_minor;
 	u32 entries;
 };
+
+struct adsp_crash_hdr {
+	u16 type;
+	u16 length;
+	char data[0];
+} __packed;
+
+struct adsp_type0_crash_data {
+	u32 crash_dump_ver;
+	u16 bus_dev_id;
+	u16 cavs_hw_version;
+	struct fw_version fw_ver;
+	struct sw_version sw_ver;
+} __packed;
+
+struct adsp_type1_crash_data {
+	u32 mod_uuid[4];
+	u32 hash[2];
+	u16 mod_id;
+	u16 rsvd;
+} __packed;
+
+struct adsp_type2_crash_data {
+	u32 fwreg[FW_REG_SZ];
+} __packed;
 
 static int skl_get_pvtid_map(struct uuid_module *module, int instance_id)
 {
@@ -237,6 +296,201 @@ int skl_put_pvt_id(struct skl_sst *ctx, uuid_le *uuid_mod, int *pvt_id)
 }
 EXPORT_SYMBOL_GPL(skl_put_pvt_id);
 
+void skl_reset_instance_id(struct skl_sst *ctx)
+{
+	struct uuid_module *module;
+	int size, i;
+
+	list_for_each_entry(module, &ctx->uuid_list, list) {
+
+		for (i = 0; i < MAX_INSTANCE_BUFF; i++)
+			module->pvt_id[i] = 0;
+
+		size = sizeof(int) * module->max_instance;
+		memset(module->instance_id, -1, size);
+	}
+}
+EXPORT_SYMBOL_GPL(skl_reset_instance_id);
+
+/* This function checks tha available data on the core id
+ * passed as an argument and returns the bytes available
+ */
+static int skl_check_ext_excep_data_avail(struct skl_sst *ctx, int idx)
+{
+	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
+	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
+	u32 read, write;
+	u32 *ptr;
+
+	/* move to the source dsp tracing window */
+        base += (idx * size);
+        ptr = (u32 *) base;
+        read = ptr[0];
+        write = ptr[1];
+
+	if (write == read)
+		return 0;
+        else if (write > read)
+		return (write - read);
+	else
+		return (size - 8 - read + write);
+}
+
+/* Function to read the extended DSP crash information from the
+ * log buffer memory window, on per core basis.
+ * Data is read into the buffer passed as *ext_core_dump.
+ * number of bytes read is updated in the sz_ext_dump
+ */
+static void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
+			void *ext_core_dump, int *sz_ext_dump)
+{
+	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
+	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
+	u32 read, write;
+	int offset = *sz_ext_dump;
+	u32 *ptr;
+
+	/* move to the current core's tracing window */
+	base += (idx * size);
+	ptr = (u32 *) base;
+	read = ptr[0];
+	write = ptr[1];
+
+	/* in case of read = write, just return */
+	if (read == write)
+		return;
+
+	if (write > read) {
+		memcpy_fromio((ext_core_dump + offset),
+			(const void __iomem *)(base + 8 + read),
+				(write - read));
+		*sz_ext_dump = offset + write - read;
+		/* advance read pointer */
+		ptr[0] += write - read;
+	} else {
+		/* wrap around condition - copy till the end */
+		memcpy_fromio((ext_core_dump + offset),
+			(const void __iomem *)(base + 8 + read),
+				(size - 8 - read));
+		*sz_ext_dump = offset + size - 8 - read;
+		offset = *sz_ext_dump;
+
+		/* copy from the beginnning */
+		memcpy_fromio((ext_core_dump + offset),
+			(const void __iomem *) (base + 8), write);
+		*sz_ext_dump = offset + write;
+		/* update the read pointer */
+		ptr[0] = write;
+	}
+}
+
+int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
+{
+	int num_mod = 0, size_core_dump, sz_ext_dump = 0, idx = 0;
+	struct uuid_module *module, *module1;
+	void *coredump, *ext_core_dump;
+	void *fw_reg_addr, *offset;
+	struct pci_dev *pci = to_pci_dev(ctx->dsp->dev);
+	u16 length0, length1, length2;
+	struct adsp_crash_hdr *crash_data_hdr;
+	struct adsp_type0_crash_data *type0_data;
+	struct adsp_type1_crash_data *type1_data;
+	struct adsp_type2_crash_data *type2_data;
+	struct sst_dsp *sst = ctx->dsp;
+
+	if (list_empty(&ctx->uuid_list))
+		dev_info(ctx->dev, "Module list is empty\n");
+
+	list_for_each_entry(module1, &ctx->uuid_list, list) {
+		num_mod++;
+	}
+
+	if(stack_size)
+		ext_core_dump = vzalloc(stack_size + EXTRA_BYTES);
+	else
+		ext_core_dump = vzalloc(MAX_DSP_EXCEPTION_STACK_SIZE + EXTRA_BYTES);
+        if (!ext_core_dump) {
+                dev_err(ctx->dsp->dev, "failed to allocate memory for FW Stack\n");
+                return -ENOMEM;
+        }
+	for (idx = 0; idx < sst->trace_wind.nr_dsp; idx++) {
+		if(skl_check_ext_excep_data_avail(ctx, idx) != 0) {
+			while(sz_ext_dump < stack_size) {
+				skl_read_ext_exception_data(ctx, idx,
+						ext_core_dump, &sz_ext_dump);
+			}
+		}
+	}
+
+	/* Length representing in DWORD */
+	length0 = sizeof(*type0_data) / sizeof(u32);
+	length1 = (num_mod * sizeof(*type1_data)) / sizeof(u32);
+	length2 = sizeof(*type2_data) / sizeof(u32);
+
+	/* type1 data size is calculated based on number of modules */
+	size_core_dump = (MAX_CRASH_DATA_TYPES * sizeof(*crash_data_hdr)) +
+			sizeof(*type0_data) + (num_mod * sizeof(*type1_data)) +
+			sizeof(*type2_data) + sz_ext_dump;
+
+	coredump = vzalloc(size_core_dump + sz_ext_dump);
+	if (!coredump){
+		dev_err(ctx->dsp->dev, "failed to allocate memory \n");
+		vfree(ext_core_dump);
+		return -ENOMEM;
+	}
+
+	offset = coredump;
+
+	/* Fill type0 header and data */
+	crash_data_hdr = (struct adsp_crash_hdr *) offset;
+	crash_data_hdr->type = TYPE0_EXCEPTION;
+	crash_data_hdr->length = length0;
+	offset += sizeof(*crash_data_hdr);
+	type0_data = (struct adsp_type0_crash_data *) offset;
+	type0_data->crash_dump_ver = CRASH_DUMP_VERSION;
+	type0_data->bus_dev_id = pci->device;
+	offset += sizeof(*type0_data);
+
+	/* Fill type1 header and data */
+	crash_data_hdr = (struct adsp_crash_hdr *) offset;
+	crash_data_hdr->type = TYPE1_EXCEPTION;
+	crash_data_hdr->length = length1;
+	offset += sizeof(*crash_data_hdr);
+	type1_data = (struct adsp_type1_crash_data *) offset;
+	list_for_each_entry(module, &ctx->uuid_list, list) {
+		memcpy(type1_data->mod_uuid, &(module->uuid),
+					(sizeof(type1_data->mod_uuid)));
+		memcpy(type1_data->hash, &(module->hash),
+					(sizeof(type1_data->hash)));
+		memcpy(&type1_data->mod_id, &(module->id),
+					(sizeof(type1_data->mod_id)));
+		type1_data++;
+	}
+	offset += (num_mod * sizeof(*type1_data));
+
+	/* Fill type2 header and data */
+	crash_data_hdr = (struct adsp_crash_hdr *) offset;
+	crash_data_hdr->type = TYPE2_EXCEPTION;
+	crash_data_hdr->length = length2;
+	offset += sizeof(*crash_data_hdr);
+	type2_data = (struct adsp_type2_crash_data *) offset;
+	fw_reg_addr = (void __force*)(ctx->dsp->mailbox.in_base -
+			ctx->dsp->addr.w0_stat_sz);
+	memcpy_fromio(type2_data->fwreg, (const void __iomem *)fw_reg_addr,
+						sizeof(*type2_data));
+
+	if (sz_ext_dump) {
+		offset = coredump + size_core_dump;
+		memcpy(offset, ext_core_dump, sz_ext_dump);
+	}
+
+	vfree(ext_core_dump);
+
+	dev_coredumpv(ctx->dsp->dev, coredump,
+			size_core_dump + sz_ext_dump, GFP_KERNEL);
+	return 0;
+}
+
 /*
  * Parse the firmware binary to get the UUID, module id
  * and loadable flags
@@ -271,6 +525,10 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
 	}
 
 	adsp_hdr = (struct adsp_fw_hdr *)(buf + offset);
+
+	dev_info(ctx->dev, "ADSP FW Name: %.*s, Version: %d.%d.%d.%d\n",
+		 (int) sizeof(adsp_hdr->name), adsp_hdr->name, adsp_hdr->major,
+		 adsp_hdr->minor, adsp_hdr->hotfix, adsp_hdr->build);
 
 	/* check 1st module entry is in file */
 	safe_file += adsp_hdr->len + sizeof(*mod_entry);
@@ -319,6 +577,7 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
 			ret = -ENOMEM;
 			goto free_uuid_list;
 		}
+		memcpy(&module->hash, mod_entry->hash1, sizeof(module->hash));
 
 		list_add_tail(&module->list, &skl->uuid_list);
 
@@ -331,6 +590,118 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
 
 free_uuid_list:
 	skl_freeup_uuid_list(skl);
+	return ret;
+}
+EXPORT_SYMBOL(snd_skl_parse_uuids);
+
+static int skl_parse_hw_config_info(struct sst_dsp *ctx, u8 *src, int limit)
+{
+	struct  skl_tlv_message *message;
+	int offset = 0, shift;
+	u32 *value;
+	struct skl_sst *skl = ctx->thread_context;
+	struct skl_hw_property_info *hw_property = &skl->hw_property;
+	enum skl_hw_info_type type;
+
+	while (offset < limit) {
+
+		message = (struct skl_tlv_message *)src;
+		if (message == NULL)
+		break;
+
+		/* Skip TLV header to read value */
+		src += sizeof(struct skl_tlv_message);
+
+		value = (u32 *)src;
+		type = message->type;
+
+		switch (type) {
+		case SKL_CAVS_VERSION:
+			hw_property->cavs_version = *value;
+			break;
+
+		case SKL_DSP_CORES:
+			hw_property->dsp_cores = *value;
+			break;
+
+		case SKL_MEM_PAGE_TYPES:
+			hw_property->mem_page_bytes = *value;
+			break;
+
+		case SKL_TOTAL_PHYS_MEM_PAGES:
+			hw_property->total_phys_mem_pages = *value;
+			break;
+
+		case SKL_I2S_CAPS:
+			memcpy(&hw_property->i2s_caps, value,
+				sizeof(hw_property->i2s_caps));
+			break;
+
+		case SKL_GPDMA_CAPS:
+			memcpy(&hw_property->gpdma_caps, value,
+				sizeof(hw_property->gpdma_caps));
+			break;
+
+		case SKL_GATEWAY_COUNT:
+			hw_property->gateway_count = *value;
+			break;
+
+		case SKL_HB_EBB_COUNT:
+			hw_property->hb_ebb_count = *value;
+			break;
+
+		case SKL_LP_EBB_COUNT:
+			hw_property->lp_ebb_count = *value;
+			break;
+
+		case SKL_EBB_SIZE_BYTES:
+			hw_property->ebb_size_bytes = *value;
+			break;
+
+		default:
+			dev_err(ctx->dev, "Invalid hw info type:%d \n", type);
+			break;
+		}
+
+		shift = message->length + sizeof(*message);
+		offset += shift;
+		/* skip over to next tlv data */
+		src += message->length;
+	}
+
+	return 0;
+}
+
+int skl_get_hardware_configuration(struct sst_dsp *ctx)
+{
+	struct skl_ipc_large_config_msg msg;
+	struct skl_sst *skl = ctx->thread_context;
+	u8 *ipc_data;
+	int ret = 0;
+	size_t rx_bytes;
+
+	ipc_data = kzalloc(DSP_BUF, GFP_KERNEL);
+	if (!ipc_data)
+		return -ENOMEM;
+
+	msg.module_id = 0;
+	msg.instance_id = 0;
+	msg.large_param_id = HARDWARE_CONFIG;
+	msg.param_data_size = DSP_BUF;
+
+	ret = skl_ipc_get_large_config(&skl->ipc, &msg,
+		(u32 *)ipc_data, NULL, 0, &rx_bytes);
+	if (ret < 0) {
+		dev_err(ctx->dev, "failed to get hw configuration !!!\n");
+		goto err;
+	}
+
+	ret = skl_parse_hw_config_info(ctx, ipc_data, rx_bytes);
+	if (ret < 0)
+		dev_err(ctx->dev, "failed to parse configuration !!!\n");
+
+err:
+	kfree(ipc_data);
 	return ret;
 }
 
@@ -433,6 +804,7 @@ int skl_prepare_lib_load(struct skl_sst *skl, struct skl_lib_info *linfo,
 
 	return 0;
 }
+EXPORT_SYMBOL(skl_prepare_lib_load);
 
 void skl_release_library(struct skl_lib_info *linfo, int lib_count)
 {
@@ -446,3 +818,437 @@ void skl_release_library(struct skl_lib_info *linfo, int lib_count)
 		}
 	}
 }
+static int skl_fill_sch_cfg(
+		struct skl_fw_property_info *fw_property,
+		u32 *src)
+{
+	struct skl_scheduler_config *sch_config =
+		&(fw_property->scheduler_config);
+
+	sch_config->sys_tick_multiplier = *src;
+	sch_config->sys_tick_divider = *(src + 1);
+	sch_config->sys_tick_source = *(src + 2);
+	sch_config->sys_tick_cfg_length = *(src + 3);
+
+	if (sch_config->sys_tick_cfg_length > 0) {
+		sch_config->sys_tick_cfg =
+			kcalloc(sch_config->sys_tick_cfg_length,
+					sizeof(*sch_config->sys_tick_cfg),
+					GFP_KERNEL);
+
+		if (!sch_config->sys_tick_cfg)
+			return -ENOMEM;
+
+		memcpy(sch_config->sys_tick_cfg,
+				src + 4,
+				sch_config->sys_tick_cfg_length *
+				sizeof(*sch_config->sys_tick_cfg));
+	}
+	return 0;
+}
+
+static int skl_fill_dma_cfg(struct skl_tlv_message *message,
+		struct skl_fw_property_info *fw_property, u32 *src)
+{
+	struct skl_dma_buff_config dma_buff_cfg;
+
+	fw_property->num_dma_cfg = message->length /
+		sizeof(dma_buff_cfg);
+
+	if (fw_property->num_dma_cfg > 0) {
+		fw_property->dma_config =
+			kcalloc(fw_property->num_dma_cfg,
+					sizeof(dma_buff_cfg),
+					GFP_KERNEL);
+
+		if (!fw_property->dma_config)
+			return -ENOMEM;
+
+		memcpy(fw_property->dma_config, src,
+				message->length);
+	}
+	return 0;
+}
+
+static int skl_parse_fw_config_info(struct sst_dsp *ctx,
+		u8 *src, int limit)
+{
+	struct skl_tlv_message *message;
+	int offset = 0, shift, ret = 0;
+	u32 *value;
+	struct skl_sst *skl = ctx->thread_context;
+	struct skl_fw_property_info *fw_property = &skl->fw_property;
+	enum skl_fw_info_type type;
+	struct skl_scheduler_config *sch_config =
+		&fw_property->scheduler_config;
+
+	while (offset < limit) {
+
+		message = (struct skl_tlv_message *)src;
+		if (message == NULL)
+			break;
+
+		/* Skip TLV header to read value */
+		src += sizeof(*message);
+
+		value = (u32 *)src;
+		type = message->type;
+
+		switch (type) {
+		case SKL_FW_VERSION:
+			memcpy(&fw_property->version, value,
+					sizeof(fw_property->version));
+			break;
+
+		case SKL_MEMORY_RECLAIMED:
+			fw_property->memory_reclaimed = *value;
+			break;
+
+		case SKL_SLOW_CLOCK_FREQ_HZ:
+			fw_property->slow_clock_freq_hz = *value;
+			break;
+
+		case SKL_FAST_CLOCK_FREQ_HZ:
+			fw_property->fast_clock_freq_hz = *value;
+			break;
+
+		case SKL_DMA_BUFFER_CONFIG:
+			ret = skl_fill_dma_cfg(message, fw_property, value);
+			if (ret < 0)
+				goto err;
+			break;
+
+		case SKL_ALH_SUPPORT_LEVEL:
+			fw_property->alh_support = *value;
+			break;
+
+		case SKL_IPC_DL_MAILBOX_BYTES:
+			fw_property->ipc_dl_mailbox_bytes = *value;
+			break;
+
+		case SKL_IPC_UL_MAILBOX_BYTES:
+			fw_property->ipc_ul_mailbox_bytes = *value;
+			break;
+
+		case SKL_TRACE_LOG_BYTES:
+			fw_property->trace_log_bytes = *value;
+			break;
+
+		case SKL_MAX_PPL_COUNT:
+			fw_property->max_ppl_count = *value;
+			break;
+
+		case SKL_MAX_ASTATE_COUNT:
+			fw_property->max_astate_count = *value;
+			break;
+
+		case SKL_MAX_MODULE_PIN_COUNT:
+			fw_property->max_module_pin_count = *value;
+			break;
+
+		case SKL_MODULES_COUNT:
+			fw_property->modules_count = *value;
+			break;
+
+		case SKL_MAX_MOD_INST_COUNT:
+			fw_property->max_mod_inst_count = *value;
+			break;
+
+		case SKL_MAX_LL_TASKS_PER_PRI_COUNT:
+			fw_property->max_ll_tasks_per_pri_count = *value;
+			break;
+
+		case SKL_LL_PRI_COUNT:
+			fw_property->ll_pri_count = *value;
+			break;
+
+		case SKL_MAX_DP_TASKS_COUNT:
+			fw_property->max_dp_tasks_count = *value;
+			break;
+
+		case SKL_MAX_LIBS_COUNT:
+			fw_property->max_libs_count = *value;
+			break;
+
+		case SKL_SCHEDULER_CONFIG:
+			ret = skl_fill_sch_cfg(fw_property, value);
+			if (ret < 0)
+				goto err;
+			break;
+
+		case SKL_XTAL_FREQ_HZ:
+			fw_property->xtal_freq_hz = *value;
+			break;
+
+		case SKL_CLOCKS_CONFIG:
+			memcpy(&(fw_property->clk_config), value,
+					message->length);
+			break;
+
+		default:
+			dev_err(ctx->dev, "Invalid fw info type:%d !!\n",
+					type);
+			break;
+		}
+
+		shift = message->length + sizeof(*message);
+		offset += shift;
+		/* skip over to next tlv data */
+		src += message->length;
+	}
+err:
+	if (ret < 0) {
+		kfree(fw_property->dma_config);
+		kfree(sch_config->sys_tick_cfg);
+	}
+
+	return ret;
+}
+
+int skl_notify_tplg_change(struct skl_sst *ctx, int type)
+{
+	struct skl_notify_data *notify_data;
+
+	notify_data = kzalloc(sizeof(*notify_data), GFP_KERNEL);
+	if (!notify_data)
+		return -ENOMEM;
+
+	notify_data->type = 0xFF;
+	notify_data->length = sizeof(struct skl_tcn_events);
+	notify_data->tcn_data.type = type;
+	do_gettimeofday(&(notify_data->tcn_data.tv));
+	ctx->notify_ops.notify_cb(ctx, SKL_TPLG_CHG_NOTIFY, notify_data);
+	kfree(notify_data);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(skl_notify_tplg_change);
+
+int skl_get_firmware_configuration(struct sst_dsp *ctx)
+{
+	struct skl_ipc_large_config_msg msg;
+	struct skl_sst *skl = ctx->thread_context;
+	u8 *ipc_data;
+	int ret = 0;
+	size_t rx_bytes;
+
+	ipc_data = kzalloc(DSP_BUF, GFP_KERNEL);
+	if (!ipc_data)
+		return -ENOMEM;
+
+	msg.module_id = 0;
+	msg.instance_id = 0;
+	msg.large_param_id = FIRMWARE_CONFIG;
+	msg.param_data_size = DSP_BUF;
+
+	ret = skl_ipc_get_large_config(&skl->ipc, &msg,
+			(u32 *)ipc_data, NULL, 0, &rx_bytes);
+	if (ret < 0) {
+		dev_err(ctx->dev, "failed to get fw configuration !!!\n");
+		goto err;
+	}
+
+	ret = skl_parse_fw_config_info(ctx, ipc_data, rx_bytes);
+	if (ret < 0)
+		dev_err(ctx->dev, "failed to parse configuration !!!\n");
+
+err:
+	kfree(ipc_data);
+	return ret;
+}
+
+static ssize_t uuid_attr_show(struct kobject *kobj, struct attribute *attr,
+				char *buf)
+{
+	struct uuid_attribute *uuid_attr =
+		container_of(attr, struct uuid_attribute, attr);
+	struct skl_sysfs_module *modinfo_obj =
+		container_of(kobj, struct skl_sysfs_module, kobj);
+
+	if (uuid_attr->show)
+		return uuid_attr->show(modinfo_obj, uuid_attr, buf);
+
+	return 0;
+}
+
+static const struct sysfs_ops uuid_sysfs_ops = {
+	.show	= uuid_attr_show,
+};
+
+static void uuid_release(struct kobject *kobj)
+{
+	struct skl_sysfs_module *modinfo_obj =
+		container_of(kobj, struct skl_sysfs_module, kobj);
+
+	kfree(modinfo_obj);
+}
+
+static struct kobj_type uuid_ktype = {
+	.release        = uuid_release,
+	.sysfs_ops	= &uuid_sysfs_ops,
+};
+
+static ssize_t loaded_show(struct skl_sysfs_module *modinfo_obj,
+				struct uuid_attribute *attr, char *buf)
+{
+	struct skl_module_table *module_list;
+
+	if ((!modinfo_obj->fw_ops_load_mod) ||
+		(modinfo_obj->fw_ops_load_mod &&
+		!modinfo_obj->uuid_mod->is_loadable))
+		return sprintf(buf, "%d\n", true);
+
+	if (list_empty(modinfo_obj->module_list))
+		return sprintf(buf, "%d\n", false);
+
+	list_for_each_entry(module_list, modinfo_obj->module_list, list) {
+		if (module_list->mod_info->mod_id
+					== modinfo_obj->uuid_mod->id)
+			return sprintf(buf, "%d\n", module_list->usage_cnt);
+	}
+
+	return sprintf(buf, "%d\n", false);
+}
+
+static ssize_t hash_show(struct skl_sysfs_module *modinfo_obj,
+				struct uuid_attribute *attr, char *buf)
+{
+	int ret = 0;
+	int i;
+
+	for (i = 0; i < DEFAULT_HASH_SHA256_LEN; i++)
+		ret += sprintf(buf + ret, "%d ",
+					modinfo_obj->uuid_mod->hash[i]);
+	ret += sprintf(buf + ret, "\n");
+
+	return ret;
+}
+
+
+static ssize_t id_show(struct skl_sysfs_module *modinfo_obj,
+				struct uuid_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", modinfo_obj->uuid_mod->id);
+}
+
+static UUID_ATTR_RO(loaded);
+static UUID_ATTR_RO(hash);
+static UUID_ATTR_RO(id);
+
+static struct attribute *modules_attrs[] = {
+	&uuid_attr_loaded.attr,
+	&uuid_attr_hash.attr,
+	&uuid_attr_id.attr,
+	NULL,
+};
+
+static const struct attribute_group uuid_group = {
+	.attrs = modules_attrs,
+};
+
+static void free_uuid_node(struct kobject *kobj,
+			     const struct attribute_group *group)
+{
+	if (kobj) {
+		sysfs_remove_group(kobj, group);
+		kobject_put(kobj);
+	}
+}
+
+void skl_module_sysfs_exit(struct skl_sst *ctx)
+{
+	struct skl_sysfs_tree *tree = ctx->sysfs_tree;
+	struct skl_sysfs_module **m;
+
+	if (!tree)
+		return;
+
+	if (tree->mod_obj) {
+		for (m = tree->mod_obj; *m; m++)
+			free_uuid_node(&(*m)->kobj, &uuid_group);
+		kfree(tree->mod_obj);
+	}
+
+	if (tree->modules_kobj)
+		kobject_put(tree->modules_kobj);
+
+	if (tree->dsp_kobj)
+		kobject_put(tree->dsp_kobj);
+
+	kfree(tree);
+	ctx->sysfs_tree = NULL;
+}
+EXPORT_SYMBOL_GPL(skl_module_sysfs_exit);
+
+int skl_module_sysfs_init(struct skl_sst *ctx, struct kobject *kobj)
+{
+	struct uuid_module *module;
+	struct skl_sysfs_module *modinfo_obj;
+	int count = 0;
+	int max_mod = 0;
+	int ret = 0;
+	unsigned int uuid_size = sizeof(module->uuid);
+	char uuid_name[uuid_size];
+
+	if (list_empty(&ctx->uuid_list))
+		return 0;
+
+	ctx->sysfs_tree = kzalloc(sizeof(*ctx->sysfs_tree), GFP_KERNEL);
+	if (!ctx->sysfs_tree) {
+		ret = -ENOMEM;
+		goto err_sysfs_exit;
+	}
+
+	ctx->sysfs_tree->dsp_kobj = kobject_create_and_add("dsp", kobj);
+	if (!ctx->sysfs_tree->dsp_kobj)
+		goto err_sysfs_exit;
+
+	ctx->sysfs_tree->modules_kobj = kobject_create_and_add("modules",
+						ctx->sysfs_tree->dsp_kobj);
+	if (!ctx->sysfs_tree->modules_kobj)
+		goto err_sysfs_exit;
+
+	list_for_each_entry(module, &ctx->uuid_list, list)
+		max_mod++;
+
+	ctx->sysfs_tree->mod_obj = kcalloc(max_mod + 1,
+			sizeof(*ctx->sysfs_tree->mod_obj), GFP_KERNEL);
+	if (!ctx->sysfs_tree->mod_obj) {
+		ret = -ENOMEM;
+		goto err_sysfs_exit;
+	}
+
+	list_for_each_entry(module, &ctx->uuid_list, list) {
+		modinfo_obj = kzalloc(sizeof(*modinfo_obj), GFP_KERNEL);
+		if (!modinfo_obj) {
+			ret = -ENOMEM;
+			goto err_sysfs_exit;
+		}
+
+		snprintf(uuid_name, sizeof(uuid_name), "%pUL", &module->uuid);
+		ret = kobject_init_and_add(&modinfo_obj->kobj, &uuid_ktype,
+				ctx->sysfs_tree->modules_kobj, uuid_name);
+		if (ret < 0)
+			goto err_sysfs_exit;
+
+		ret = sysfs_create_group(&modinfo_obj->kobj, &uuid_group);
+		if (ret < 0)
+			goto err_sysfs_exit;
+
+		modinfo_obj->uuid_mod = module;
+		modinfo_obj->module_list = &ctx->dsp->module_list;
+		modinfo_obj->fw_ops_load_mod =
+				(ctx->dsp->fw_ops.load_mod == NULL) ? 0 : 1;
+
+		ctx->sysfs_tree->mod_obj[count] = modinfo_obj;
+		count++;
+	}
+
+	return 0;
+
+err_sysfs_exit:
+	skl_module_sysfs_exit(ctx);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(skl_module_sysfs_init);

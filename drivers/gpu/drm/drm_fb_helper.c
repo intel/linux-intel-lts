@@ -552,6 +552,8 @@ static bool drm_fb_helper_is_bound(struct drm_fb_helper *fb_helper)
 
 	drm_for_each_crtc(crtc, dev) {
 		drm_modeset_lock(&crtc->mutex, NULL);
+		if (!crtc->primary)
+			continue;
 		if (crtc->primary->fb)
 			crtcs_bound++;
 		if (crtc->primary->fb == fb_helper->fb)
@@ -1443,6 +1445,7 @@ retry:
 		replaced  = drm_property_replace_blob(&crtc_state->degamma_lut,
 						      NULL);
 		replaced |= drm_property_replace_blob(&crtc_state->ctm, NULL);
+		replaced |= drm_property_replace_blob(&crtc_state->ctm_post_offset, NULL);
 		replaced |= drm_property_replace_blob(&crtc_state->gamma_lut,
 						      gamma_lut);
 		crtc_state->color_mgmt_changed |= replaced;

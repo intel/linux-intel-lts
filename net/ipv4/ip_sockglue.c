@@ -131,14 +131,16 @@ static void ip_cmsg_recv_checksum(struct msghdr *msg, struct sk_buff *skb,
 static void ip_cmsg_recv_security(struct msghdr *msg, struct sk_buff *skb)
 {
 	char *secdata;
-	u32 seclen, secid;
+	u32 seclen;
+	struct secids secid;
 	int err;
 
+	secid_init(&secid);
 	err = security_socket_getpeersec_dgram(NULL, skb, &secid);
 	if (err)
 		return;
 
-	err = security_secid_to_secctx(secid, &secdata, &seclen);
+	err = security_secid_to_secctx(&secid, &secdata, &seclen);
 	if (err)
 		return;
 

@@ -144,7 +144,7 @@ static struct engine_mmio gen9_engine_mmio_list[] __cacheline_aligned = {
 	{RCS, GAMT_CHKN_BIT_REG, 0x0, false}, /* 0x4ab8 */
 
 	{RCS, GEN9_GAMT_ECO_REG_RW_IA, 0x0, false}, /* 0x4ab0 */
-	{RCS, GEN9_CSFE_CHICKEN1_RCS, 0x0, false}, /* 0x20d4 */
+	{RCS, GEN9_CSFE_CHICKEN1_RCS, 0xffff, false}, /* 0x20d4 */
 
 	{RCS, GEN8_GARBCNTL, 0x0, false}, /* 0xb004 */
 	{RCS, GEN7_FF_THREAD_MODE, 0x0, false}, /* 0x20a0 */
@@ -171,6 +171,8 @@ static void load_render_mocs(struct drm_i915_private *dev_priv)
 	int ring_id, i;
 
 	for (ring_id = 0; ring_id < ARRAY_SIZE(regs); ring_id++) {
+		if (!HAS_ENGINE(dev_priv, ring_id))
+			continue;
 		offset.reg = regs[ring_id];
 		for (i = 0; i < GEN9_MOCS_SIZE; i++) {
 			gen9_render_mocs.control_table[ring_id][i] =
@@ -567,6 +569,86 @@ void intel_gvt_switch_mmio(struct intel_vgpu *pre,
 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
 }
 
+#define MMIO_COMPARE(vgpu, reg, mask) ({			\
+	int ret;						\
+	u32 value = vgpu_vreg(vgpu, reg);			\
+	u32 host_value = gvt_host_reg(vgpu->gvt, reg);		\
+								\
+	if (mask) {						\
+		value &= mask;					\
+		host_value &= mask;				\
+	}							\
+	if (host_value == value) {				\
+		ret = 0;					\
+	} else {						\
+		gvt_err("vgpu%d unconformance mmio 0x%x:0x%x,0x%x\n",	\
+			vgpu->id, reg,				\
+			vgpu_vreg(vgpu, reg),			\
+			gvt_host_reg(vgpu->gvt, reg));		\
+		ret = -EINVAL;					\
+	}							\
+	ret;							\
+	})
+
+static int noncontext_mmio_compare(struct intel_vgpu *vgpu, int ring_id)
+{
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+	struct engine_mmio *mmio, *mmio_list;
+	struct intel_engine_cs *engine = dev_priv->engine[ring_id];
+
+	mmio_list = vgpu->gvt->engine_mmio_list.mmio;
+
+	for (mmio = mmio_list; i915_mmio_reg_valid(mmio->reg); mmio++) {
+		if (mmio->ring_id != ring_id || mmio->in_context
+			|| is_force_nonpriv_mmio(mmio->reg.reg)
+			|| mmio->reg.reg == RING_MODE_GEN7(engine).reg)
+			continue;
+
+		if (MMIO_COMPARE(vgpu, mmio->reg.reg, mmio->mask))
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void get_host_mmio_snapshot(struct intel_gvt *gvt)
+{
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+	struct engine_mmio *mmio, *mmio_list;
+
+	mmio_list = gvt->engine_mmio_list.mmio;
+
+	if (!gvt->mmio.host_cache_initialized) {
+		/* Snapshot all the non-context MMIOs */
+		for (mmio = mmio_list; i915_mmio_reg_valid(mmio->reg); mmio++) {
+			if (mmio->in_context)
+				continue;
+
+			gvt_host_reg(gvt, mmio->reg.reg) =
+				I915_READ_FW(mmio->reg);
+			if (mmio->mask)
+				gvt_host_reg(gvt, mmio->reg.reg) &= mmio->mask;
+		}
+		gvt->mmio.host_cache_initialized = true;
+	}
+}
+
+int intel_gvt_vgpu_conformance_check(struct intel_vgpu *vgpu, int ring_id)
+{
+	int ret;
+
+	get_host_mmio_snapshot(vgpu->gvt);
+
+	ret = noncontext_mmio_compare(vgpu, ring_id);
+	if (ret)
+		goto err;
+
+	return 0;
+err:
+	return ret;
+}
+
+
 /**
  * intel_gvt_init_engine_mmio_context - Initiate the engine mmio list
  * @gvt: GVT device
@@ -588,6 +670,8 @@ void intel_gvt_init_engine_mmio_context(struct intel_gvt *gvt)
 		if (mmio->in_context) {
 			gvt->engine_mmio_list.ctx_mmio_count[mmio->ring_id]++;
 			intel_gvt_mmio_set_in_ctx(gvt, mmio->reg.reg);
+		} else {
+			intel_gvt_mmio_set_non_context(gvt, mmio->reg.reg);
 		}
 	}
 }
