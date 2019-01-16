@@ -719,6 +719,7 @@ static int virt_psys_release(struct inode *inode, struct file *file)
 	struct ipu4_virtio_req *req;
 	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
 	struct ipu_psys_buffer_wrap *psys_buf_wrap;
+	struct hlist_node *tmp;
 	struct virt_ipu_psys_fh *fh = file->private_data;
 	int rval = 0, bkt;
 
@@ -746,7 +747,8 @@ static int virt_psys_release(struct inode *inode, struct file *file)
 	mutex_lock(&fh->mutex);
 	/* clean up buffers */
 	if(!hash_empty(FD_BUF_HASH)) {
-		hash_for_each(FD_BUF_HASH, bkt, psys_buf_wrap, node) {
+		hash_for_each_safe(FD_BUF_HASH, bkt, tmp,
+						psys_buf_wrap, node) {
 			psys_put_userpages(&psys_buf_wrap->map);
 			hash_del(&psys_buf_wrap->node);
 			kfree(psys_buf_wrap);
