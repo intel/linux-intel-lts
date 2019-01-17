@@ -881,6 +881,11 @@ static struct nhlt_acpi_table *vfe_skl_nhlt_init(struct device *dev)
 	return nhlt;
 }
 
+
+void vfe_skl_pci_dev_release(struct device *dev)
+{
+}
+
 static int vfe_skl_init(struct virtio_device *vdev)
 {
 	int err;
@@ -892,7 +897,19 @@ static int vfe_skl_init(struct virtio_device *vdev)
 		return -ENOMEM;
 
 	skl->pci->device = vfe_pci_device_id.device;
-	skl->pci->dev = vdev->dev;
+	device_initialize(&skl->pci->dev);
+	skl->pci->dev.parent = &vfe->vdev->dev;
+	skl->pci->dev.release = vfe_skl_pci_dev_release;
+	skl->pci->dev.bus = vfe->vdev->dev.bus;
+	skl->pci->dev.coherent_dma_mask = vfe->vdev->dev.coherent_dma_mask;
+	skl->pci->dev.dma_mask = &skl->pci->dev.coherent_dma_mask;
+
+	dev_set_name(&skl->pci->dev, "%s", "audio-virtio");
+	err = device_add(&skl->pci->dev);
+	if (err < 0)
+		goto error;
+
+	dev_set_drvdata(&skl->pci->dev, vfe);
 
 	skl->mach = &vfe_acpi_mach;
 	skl->mach->pdata = &vfe;
@@ -902,23 +919,27 @@ static int vfe_skl_init(struct virtio_device *vdev)
 
 	err = vfe_skl_init_hbus(vfe, skl);
 	if (err < 0)
-		return err;
+		goto error;
 
 	strcpy(skl->tplg_name, "5a98-INTEL-NHLT-GPA-11-tplg.bin");
 
 	err = vfe_skl_init_dsp(skl);
 	if (err < 0)
-		return err;
+		goto error;
 
 	err = vfe_platform_register(vfe, &vdev->dev);
 	if (err < 0)
-		return err;
+		goto error;
 
 	err = vfe_machine_device_register(vfe, skl);
 	if (err < 0)
-		return err;
+		goto error;
 
 	return 0;
+
+error:
+	device_unregister(&skl->pci->dev);
+	return err;
 }
 
 static int vfe_init(struct virtio_device *vdev)
@@ -935,7 +956,7 @@ static int vfe_init(struct virtio_device *vdev)
 
 	vfe = devm_kzalloc(&vdev->dev, sizeof(*vfe), GFP_KERNEL);
 	if (!vfe)
-		return -ENOMEM;
+		goto no_mem;
 
 	skl_vfe = vfe;
 	vfe->vdev = vdev;
@@ -951,7 +972,7 @@ static int vfe_init(struct virtio_device *vdev)
 			      vqs, cbs, vfe_skl_vq_names, NULL);
 	if (ret) {
 		dev_err(&vdev->dev, "error: find vqs fail with %d\n", ret);
-		return ret;
+		goto err;
 	}
 
 	spin_lock_init(&vfe->ipc_vq_lock);
@@ -967,18 +988,25 @@ static int vfe_init(struct virtio_device *vdev)
 
 	vfe->send_dsp_ipc_msg = vfe_send_dsp_ipc_msg;
 	vfe->notify_machine_probe = vfe_wrap_native_driver;
-	ret = vfe_skl_init(vdev);
-	if (ret < 0)
-		return ret;
 
 	vfe->pos_not = devm_kmalloc(&vdev->dev,
 			sizeof(*vfe->pos_not), GFP_KERNEL);
 	if (!vfe->pos_not)
-		return -ENOMEM;
+		goto no_mem;
 
 	vfe_send_pos_request(vfe, vfe->pos_not);
 
+	ret = vfe_skl_init(vdev);
+	if (ret < 0)
+		goto err;
+
 	return 0;
+
+no_mem:
+	ret = -ENOMEM;
+err:
+	vdev->priv = NULL;
+	return ret;
 }
 
 /*
@@ -1006,6 +1034,8 @@ static int vfe_probe(struct virtio_device *vdev)
 static void vfe_remove(struct virtio_device *vdev)
 {
 	struct snd_skl_vfe *vfe = vdev->priv;
+	if (!vfe)
+		return;
 
 	cancel_work_sync(&vfe->posn_update_work);
 	vfe_machine_device_unregister(&vfe->sdev);
