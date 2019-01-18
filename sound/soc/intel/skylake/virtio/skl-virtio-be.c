@@ -46,11 +46,11 @@ struct kctl_proxy *get_kctl_proxy(void)
 }
 
 const struct vbe_substream_info *vbe_find_substream_info_by_pcm(
-	const struct snd_skl_vbe *vbe, char *pcm_id, int direction)
+	const struct snd_skl_vbe_client *client, char *pcm_id, int direction)
 {
 	const struct vbe_substream_info *info;
 
-	list_for_each_entry(info, &vbe->substr_info_list, list) {
+	list_for_each_entry(info, &client->substr_info_list, list) {
 		if (info->direction == direction &&
 			strncmp(info->pcm->id, pcm_id,
 					ARRAY_SIZE(info->pcm->id)) == 0)
@@ -59,11 +59,19 @@ const struct vbe_substream_info *vbe_find_substream_info_by_pcm(
 	return NULL;
 }
 
-inline const struct vbe_substream_info *vbe_find_substream_info(
+const struct vbe_substream_info *vbe_find_substream_info(
 	const struct snd_skl_vbe *vbe, const struct snd_pcm_substream *substr)
 {
-	return vbe_find_substream_info_by_pcm(vbe, substr->pcm->id,
-			substr->stream);
+	struct snd_skl_vbe_client *client;
+	const struct vbe_substream_info *info;
+
+	list_for_each_entry(client, &vbe->client_list, list) {
+		info = vbe_find_substream_info_by_pcm(client,
+				substr->pcm->id, substr->stream);
+		if (info)
+			return info;
+	}
+	return NULL;
 }
 
 static const struct vbe_substream_info *vbe_skl_find_substream_info(
@@ -354,22 +362,24 @@ void vbe_skl_initialize_substream_runtime(struct snd_pcm_runtime *runtime,
 	runtime->boundary = runtime->buffer_size << 4;
 }
 
-static int vbe_skl_prepare_dma(const struct snd_pcm_substream *substream,
-	int vm_id, const struct vfe_pcm_dma_conf *dma_conf)
+static int vbe_skl_prepare_dma(struct vbe_substream_info *substr_info,
+	int vm_id, struct vfe_pcm_dma_conf *dma_conf)
 {
 	const struct snd_sg_buf *sg_buf;
 	int cnt;
-	u64 pcm_buffer_gpa = dma_conf->addr & ~(u64)0xfff;
+	u64 pcm_buffer_gpa = dma_conf->addr;
 	u64 pcm_buffer_hpa = vhm_vm_gpa2hpa(vm_id, pcm_buffer_gpa);
 
 	if (!pcm_buffer_hpa)
 		return -EINVAL;
 
-	sg_buf = snd_pcm_substream_sgbuf(substream);
+	sg_buf = snd_pcm_substream_sgbuf(substr_info->substream);
 	if (!sg_buf)
 		return -EINVAL;
 
-	sg_buf->table[0].addr = pcm_buffer_hpa | 0x10;
+	substr_info->native_dma_addr = sg_buf->table[0].addr;
+	sg_buf->table[0].addr = pcm_buffer_hpa;
+	pcm_buffer_hpa &= ~(u64)0xfff;
 	for (cnt = 1; cnt < sg_buf->pages; cnt++) {
 		pcm_buffer_hpa += PAGE_SIZE;
 		sg_buf->table[cnt].addr = pcm_buffer_hpa;
@@ -410,21 +420,30 @@ static int vbe_skl_assemble_params(struct vfe_pcm_hw_params *vfe_params,
 	return 0;
 }
 
-static int vbe_skl_add_substream_info(struct snd_skl_vbe *vbe,
+static int vbe_skl_add_substream_info(struct snd_skl_vbe *vbe, int vm_id,
 		const struct snd_pcm_substream *substream)
 {
 	struct vbe_substream_info *substr_info =
 		kzalloc(sizeof(*substr_info), GFP_KERNEL);
+	/*TODO: call vbe_client_find with proper client_id*/
+	struct snd_skl_vbe_client *client = list_first_entry_or_null(
+			&vbe->client_list, struct snd_skl_vbe_client, list);
 
 	if (!substr_info)
 		return -ENOMEM;
+
+	if (!client) {
+		dev_err(vbe->dev,
+			"Can not find active client [%d].\n", vm_id);
+		return -EINVAL;
+	}
 
 	substr_info->pcm = substream->pcm;
 	substr_info->substream = substream;
 	substr_info->direction = substream->stream;
 	substr_info->vbe = vbe;
 
-	list_add(&substr_info->list, &vbe->substr_info_list);
+	list_add(&substr_info->list, &client->substr_info_list);
 	return 0;
 }
 
@@ -506,7 +525,7 @@ static int vbe_skl_pcm_open(const struct snd_skl_vbe *vbe,
 	ret = vbe_skl_allocate_runtime(sdev->component->card, substream);
 	if (ret < 0)
 		goto ret_err;
-	ret = vbe_skl_add_substream_info(vbe, substream);
+	ret = vbe_skl_add_substream_info(vbe, vm_id, substream);
 	if (ret < 0)
 		goto ret_err;
 	substream->ref_count++;  /* set it used */
@@ -525,9 +544,21 @@ static int vbe_skl_pcm_close(const struct skl *sdev, int vm_id,
 		const struct vbe_ipc_msg *msg)
 {
 	struct snd_soc_pcm_runtime *rtd;
-	int ret;
+	int ret, cnt;
 	struct snd_pcm_substream *substream = substr_info->substream;
 	struct vfe_pcm_result *vbe_result = msg->rx_data;
+
+	const struct snd_sg_buf *sg_buf =
+			snd_pcm_substream_sgbuf(substr_info->substream);
+	u64 native_addr = substr_info->native_dma_addr;
+
+	/* restore original dma pages */
+	sg_buf->table[0].addr = native_addr;
+	native_addr &= ~(u64)0xfff;
+	for (cnt = 1; cnt < sg_buf->pages; cnt++) {
+		native_addr += PAGE_SIZE;
+		sg_buf->table[cnt].addr = native_addr;
+	}
 
 	list_del(&substr_info->list);
 	kfree(substr_info);
@@ -552,7 +583,7 @@ static int vbe_skl_pcm_prepare(const struct skl *sdev, int vm_id,
 	const struct vfe_pcm_dma_conf *dma_params = msg->tx_data;
 	struct vfe_pcm_result *vbe_result = msg->rx_data;
 
-	ret = vbe_skl_prepare_dma(substream, vm_id, dma_params);
+	ret = vbe_skl_prepare_dma(substr_info, vm_id, dma_params);
 	if (ret < 0)
 		return ret;
 
@@ -563,6 +594,22 @@ static int vbe_skl_pcm_prepare(const struct skl *sdev, int vm_id,
 		vbe_result->ret = ret;
 
 	return ret;
+}
+
+void vbe_skl_pcm_close_all(struct snd_skl_vbe *vbe,
+		struct snd_skl_vbe_client *client)
+{
+	const struct vbe_substream_info *info;
+	struct vbe_ipc_msg msg;
+	int ret;
+
+	msg.rx_data = NULL;
+	list_for_each_entry(info, &client->substr_info_list, list) {
+		ret = vbe_skl_pcm_close(vbe->sdev, 0, info, &msg);
+		if (ret < 0)
+			dev_err(vbe->dev,
+				"Could not close PCM %.64s\n", info->pcm->id);
+	}
 }
 
 struct snd_pcm_hw_params hw_params;
@@ -760,8 +807,6 @@ static int vbe_skl_msg_cfg_handle(struct snd_skl_vbe *vbe,
 
 	switch (msg->header->cmd) {
 	case VFE_MSG_CFG_HDA:
-		kctl_init_proxy(vbe->dev, &vbe_kctl_ops);
-		kctl_notify_machine_ready(sdev->component->card);
 		return vbe_skl_cfg_hda(sdev, vm_id, msg);
 	default:
 		dev_err(vbe->dev, "Unknown command %d for config get message.\n",
@@ -795,13 +840,24 @@ static int vbe_skl_msg_pcm_handle(const struct snd_skl_vbe *vbe,
 	const struct vbe_substream_info *substream_info;
 	char *pcm_id;
 	int direction;
+	/* TODO: call vbe_client_find with proper client_id */
+	struct snd_skl_vbe_client *client = list_first_entry_or_null(
+			&vbe->client_list, struct snd_skl_vbe_client, list);
+
+
+	if (!client) {
+		dev_err(vbe->dev,
+			"Can not find active client [%d].\n", vm_id);
+		return -EINVAL;
+	}
 
 	if (msg->header->cmd == VFE_MSG_PCM_OPEN)
 		return vbe_skl_pcm_open(vbe, sdev, vm_id, msg);
 
 	pcm_id = msg->header->desc.pcm.pcm_id;
 	direction = msg->header->desc.pcm.direction;
-	substream_info = vbe_find_substream_info_by_pcm(vbe, pcm_id, direction);
+	substream_info = vbe_find_substream_info_by_pcm(client,
+			pcm_id, direction);
 
 	if (!substream_info) {
 		dev_err(vbe->dev,
@@ -870,7 +926,6 @@ static int vbe_skl_not_fwd(const struct snd_skl_vbe *vbe,
 		return vbe_skl_msg_kcontrol_handle(vbe, vm_id, &msg);
 	case VFE_MSG_TPLG:
 		return vbe_skl_msg_tplg_handle(vbe, sdev, vm_id, &msg);
-		break;
 	case VFE_MSG_CFG:
 		return vbe_skl_msg_cfg_handle(vbe, sdev, vm_id, &msg);
 	}
@@ -1020,19 +1075,21 @@ static void vbe_skl_ipc_fe_not_reply_get(struct snd_skl_vbe *vbe, int vq_idx)
 	unsigned long flags;
 	bool sent;
 
-	if (list_empty(&vbe->pending_msg_list))
-		return;
+	while (!list_empty(&vbe->pending_msg_list)) {
+		vq = &vbe->vqs[vq_idx];
+		entry = list_first_entry(&vbe->pending_msg_list,
+				struct vfe_pending_msg, list);
 
-	vq = &vbe->vqs[vq_idx];
-	entry = list_first_entry(&vbe->pending_msg_list,
-				 struct vfe_pending_msg, list);
+		sent = vbe_skl_try_send(vbe, vq,
+				(void *)&entry->msg, entry->sizeof_msg);
 
-	sent = vbe_skl_try_send(vbe, vq,
-		(void *)&entry->msg, entry->sizeof_msg);
-
-	if (sent == true) {
-		list_del(&entry->list);
-		kfree(entry);
+		if (sent == true) {
+			list_del(&entry->list);
+			kfree(entry);
+		} else {
+			/* break and handle in next kick */
+			break;
+		}
 	}
 }
 
@@ -1064,26 +1121,40 @@ void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx)
 
 int vbe_skl_attach(struct snd_skl_vbe *vbe, struct skl *skl)
 {
-	vbe->sdev = skl;
+	static bool kctl_init;
 
-	vbe->nops.hda_irq_ack = skl->skl_sst->hda_irq_ack;
-	skl->skl_sst->hda_irq_ack = vbe_stream_update;
+	if (!kctl_init) {
+		kctl_init_proxy(vbe->dev, &vbe_kctl_ops);
+		kctl_notify_machine_ready(vbe->sdev->component->card);
+		kctl_init = true;
+	}
 
 	return 0;
 }
 
 int vbe_skl_detach(struct snd_skl_vbe *vbe, struct skl *skl)
 {
-	if (!vbe->sdev)
-		return 0;
-
-	skl->skl_sst->request_tplg = vbe->nops.request_tplg;
-	skl->skl_sst->hda_irq_ack = vbe->nops.hda_irq_ack;
-
 	/* TODO: Notify FE, close all streams opened by FE and delete all
 	 * pending messages
 	 */
 
-	vbe->sdev = NULL;
 	return 0;
+}
+
+void vbe_skl_bind(struct snd_skl_vbe *vbe, struct skl *skl)
+{
+	vbe->sdev = skl;
+	vbe->nops.request_tplg = skl->skl_sst->request_tplg;
+	vbe->nops.hda_irq_ack = skl->skl_sst->hda_irq_ack;
+	skl->skl_sst->hda_irq_ack = vbe_stream_update;
+}
+
+void vbe_skl_unbind(struct snd_skl_vbe *vbe, struct skl *skl)
+{
+	if (!vbe->sdev)
+		return;
+
+	skl->skl_sst->request_tplg = vbe->nops.request_tplg;
+	skl->skl_sst->hda_irq_ack = vbe->nops.hda_irq_ack;
+	vbe->sdev = NULL;
 }

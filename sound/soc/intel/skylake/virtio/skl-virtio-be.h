@@ -40,6 +40,8 @@ extern void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx);
 
 int vbe_skl_attach(struct snd_skl_vbe *vbe, struct skl *skl);
 int vbe_skl_detach(struct snd_skl_vbe *vbe, struct skl *skl);
+void vbe_skl_bind(struct snd_skl_vbe *vbe, struct skl *skl);
+void vbe_skl_unbind(struct snd_skl_vbe *vbe, struct skl *skl);
 struct vskl *get_virtio_audio(void);
 
 struct vskl_native_ops {
@@ -50,6 +52,7 @@ struct vskl_native_ops {
 struct vbe_substream_info {
 	struct snd_pcm *pcm;
 	struct snd_pcm_substream *substream;
+	dma_addr_t native_dma_addr;
 	int direction;
 
 	struct snd_skl_vbe *vbe;
@@ -79,6 +82,7 @@ struct snd_skl_vbe_client {
 	struct snd_skl_vbe *vbe;
 	int vhm_client_id;
 	int max_vcpu;
+	struct list_head substr_info_list;
 	struct list_head list;
 	struct vhm_request *req_buf;
 };
@@ -92,5 +96,9 @@ struct vskl {
 
 void skl_notify_stream_update(struct hdac_bus *bus,
 		struct snd_pcm_substream *substr);
+struct snd_skl_vbe_client *vbe_client_find(struct snd_skl_vbe *vbe,
+	int client_id);
+void vbe_skl_pcm_close_all(struct snd_skl_vbe *vbe,
+		struct snd_skl_vbe_client *client);
 
 #endif
