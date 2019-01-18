@@ -32,7 +32,7 @@ struct vskl *get_virtio_audio(void)
 }
 
 /* find client from client ID */
-static struct snd_skl_vbe_client *vbe_client_find(struct snd_skl_vbe *vbe,
+struct snd_skl_vbe_client *vbe_client_find(struct snd_skl_vbe *vbe,
 	int client_id)
 {
 	struct snd_skl_vbe_client *client;
@@ -115,7 +115,6 @@ int vskl_vbs_init_be(struct vskl *vskl, struct snd_skl_vbe *vbe)
 	int i;
 
 	INIT_LIST_HEAD(&vbe->client_list);
-	INIT_LIST_HEAD(&vbe->substr_info_list);
 	INIT_LIST_HEAD(&vbe->pending_msg_list);
 	spin_lock_init(&vbe->posn_lock);
 	vbe->dev = dev;
@@ -194,6 +193,7 @@ int vskl_vbs_register_client(struct snd_skl_vbe *vbe)
 	/* just attach once as vhm will kick kthread */
 	acrn_ioreq_attach_client(client->vhm_client_id, 0);
 
+	INIT_LIST_HEAD(&client->substr_info_list);
 	/* complete client init and add to list */
 	list_add(&client->list, &vbe->client_list);
 
@@ -203,6 +203,22 @@ err:
 	return -EINVAL;
 }
 
+static void vskl_vbs_close_client(struct snd_skl_vbe *vbe)
+{
+	struct snd_skl_vbe_client *client;
+
+	if (!list_empty(&vbe->client_list)) {
+		client = list_first_entry(&vbe->client_list,
+				struct snd_skl_vbe_client, list);
+		vbe_skl_pcm_close_all(vbe, client);
+		acrn_ioreq_destroy_client(client->vhm_client_id);
+		list_del(&client->list);
+
+	} else {
+		pr_err("%s: vbs client not present!\n", __func__);
+	}
+
+}
 static int vskl_vbs_audio_open(struct inode *inode, struct file *f)
 {
 	struct vskl *vskl = get_virtio_audio();
@@ -228,7 +244,6 @@ static long vskl_vbs_audio_ioctl(struct file *f, unsigned int ioctl,
 		ret = virtio_vqs_ioctl(&vbe->dev_info, ioctl, argp);
 		if (ret)
 			return ret;
-
 		ret = vskl_vbs_register_client(vbe);
 		if (ret)
 			return ret;
@@ -246,7 +261,8 @@ static int vskl_vbs_audio_release(struct inode *inode, struct file *f)
 {
 	struct vskl *vskl = get_virtio_audio();
 
-	return vbe_skl_detach(&vskl->vbe, vskl->skl);
+	vskl_vbs_close_client(&vskl->vbe);
+	return 0;
 }
 
 static const struct file_operations vskl_vbs_audio_fops = {
@@ -283,8 +299,9 @@ static int vskl_vbs_init(struct vskl *vskl)
 static int vskl_vbs_close(struct vskl *vskl)
 {
 	misc_deregister(&vskl_vbs_audio_k);
+	vbe_skl_unbind(&vskl->vbe, vskl->skl);
 
-	return vbe_skl_detach(&vskl->vbe, vskl->skl);
+	return 0;
 }
 
 static int vskl_init(struct vskl *vskl, struct skl *skl, struct device *dev)
@@ -300,7 +317,7 @@ static int vskl_init(struct vskl *vskl, struct skl *skl, struct device *dev)
 			"Failed to initialize BE service (error: %d)\n", ret);
 		return ret;
 	}
-
+	vbe_skl_bind(&vskl->vbe, vskl->skl);
 	virtio_audio = vskl;
 
 	return 0;
