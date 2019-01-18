@@ -830,6 +830,12 @@ int ici_isys_frame_buf_add_next(
 		buf->frame_info.frame_planes[0].mem.userptr);
 
 	css_buf->send_irq_sof = 1;
+	css_buf->send_resp_sof = 1;
+	css_buf->send_irq_eof = 1;
+	css_buf->send_resp_eof = 1;
+	css_buf->send_irq_capture_ack = 1;
+	css_buf->send_irq_capture_done = 1;
+
 	css_buf->output_pins[buf_list->fw_output].addr =
 		(uint32_t)buf->kframe_info.planes[0].dma_addr;
 	css_buf->output_pins[buf_list->fw_output].out_buf_id =
