@@ -543,4 +543,5 @@ source "drivers/misc/cxl/Kconfig"
 source "drivers/misc/ocxl/Kconfig"
 source "drivers/misc/cardreader/Kconfig"
 source "drivers/misc/virtio-hdcp/Kconfig"
+source "drivers/misc/virtio-coreu/Kconfig"
 endmenu
