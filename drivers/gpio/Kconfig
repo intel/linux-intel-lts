@@ -1322,6 +1322,16 @@ config GPIO_SODAVILLE
 	help
 	  Say Y here to support Intel Sodaville GPIO.
 
+config GPIO_VIRTIO
+	tristate "GPIO virtio-based front-end driver"
+	depends on X86 && PCI && VIRTIO_PCI
+	help
+	  This module implements GPIO emulation over virtio transport.
+
+	  Say Y or M here to build GPIO virtio front-end driver.
+
+	  If the driver is built as a module, it will be called gpio-virtio.
+
 endmenu
 
 menu "SPI GPIO expanders"
