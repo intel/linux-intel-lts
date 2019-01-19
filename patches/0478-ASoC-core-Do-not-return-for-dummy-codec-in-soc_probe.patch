@@ -1,0 +1,32 @@
+From 1dc9129b7a90f0de53a31e5fd10f3ff9915e7c57 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Tue, 16 Aug 2016 16:26:31 +0530
+Subject: [PATCH 0478/1132] ASoC: core: Do not return for dummy codec in
+ soc_probe_component
+
+Change-Id: I1bcf17ab9731675e4586382054e5d44645cb18f9
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/soc-core.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/soc-core.c b/sound/soc/soc-core.c
+index 18a7c5e..d0a5af6 100644
+--- a/sound/soc/soc-core.c
++++ b/sound/soc/soc-core.c
+@@ -1242,10 +1242,10 @@ static int soc_probe_component(struct snd_soc_card *card,
+ 	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(component);
+ 	struct snd_soc_dai *dai;
+ 	int ret;
+-
++#if 0
+ 	if (!strcmp(component->name, "snd-soc-dummy"))
+ 		return 0;
+-
++#endif
+ 	if (component->card) {
+ 		if (component->card != card) {
+ 			dev_err(component->dev,
+-- 
+2.7.4
+

@@ -1,0 +1,117 @@
+From 5e7fdd65ee0fe764d10a034e74ea6d62f814d366 Mon Sep 17 00:00:00 2001
+From: Mousumi Jana <mousumix.jana@intel.com>
+Date: Wed, 30 Aug 2017 20:52:51 +0530
+Subject: [PATCH 0634/1132] ASoC: Intel: Skylake: Support for Probe DMA Buffer
+ size
+
+This patch removes hard coding of buffer size for Probe
+Module. For probe, DMA Buffer size is calculated as-
+
+2 * [Probe Hdr + ((SRate/1000)*(ch)*(sch_time_ms)*(bytes per sample)) +
+Probe Footer]
+where, Probe Header and footer are 24 and 8 bytes respectively.
+
+Hence this value is topology specific and is to be used
+from XML as dma_buffer_size value for Probe Module.
+
+Change-Id: I2f1d388d5e4f77731f7fa3753eac4550bd5ae57b
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c |  5 +++++
+ sound/soc/intel/skylake/skl-probe.c    |  8 --------
+ sound/soc/intel/skylake/skl-topology.c | 15 +--------------
+ 3 files changed, 6 insertions(+), 22 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index ea500be..6cf06fa 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -1782,8 +1782,13 @@ static void skl_setup_probe_gateway_cfg(struct skl_sst *ctx,
+ 			struct skl_probe_cfg *probe_cfg)
+ {
+ 	union skl_connector_node_id node_id = {0};
++	struct skl_module_res *res;
+ 	struct skl_probe_config *pconfig = &ctx->probe_config;
+ 
++	res = &mconfig->module->resources[mconfig->res_idx];
++
++	pconfig->edma_buffsize = res->dma_buffer_size;
++
+ 	node_id.node.dma_type = pconfig->edma_type;
+ 	node_id.node.vindex = pconfig->edma_id;
+ 	probe_cfg->prb_cfg.dma_buffer_size = pconfig->edma_buffsize;
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index b563dc3..0716bf6 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -34,13 +34,6 @@
+ #define USE_SPIB 0
+ 
+ /*
+- * DMA buffer size needed for 48KHz, 4 channel, 32 bit data
+- * scheduled at 4ms  for 2 probe packets is
+- * 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
+- */
+-#define SKL_EXTRACT_PROBE_DMA_BUFF_SIZE 6208
+-
+-/*
+  * ========================
+  * PROBE STATE TRANSITIONS:
+  * ========================
+@@ -103,7 +96,6 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
+ 	dev_dbg(dai->dev, "%s dev is  %s\n",  __func__, dev_name(dai->dev));
+ 
+ 	if ((pconfig->i_refc + pconfig->e_refc) == 0) {
+-		pconfig->edma_buffsize = SKL_EXTRACT_PROBE_DMA_BUFF_SIZE;
+ 		pconfig->edma_type = SKL_DMA_HDA_HOST_INPUT_CLASS;
+ 		/*
+ 		 * Extractor DMA is to be assigned when the first probe
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index bf93980..7a7f19c 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -37,12 +37,6 @@
+ #define SKL_FMT_FIXUP_MASK		(1 << 2)
+ #define SKL_IN_DIR_BIT_MASK		BIT(0)
+ #define SKL_PIN_COUNT_MASK		GENMASK(7, 4)
+-/*
+- * DMA buffer size needed for 48KHz, 4 channel, 32 bit data
+- * scheduled at 4ms  for 2 probe packets is
+- * 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
+- */
+-#define SKL_INJECT_PROBE_DMA_BUFF_SIZE 6208
+ 
+ static const int mic_mono_list[] = {
+ 0, 1, 2, 3,
+@@ -110,13 +104,6 @@ void skl_tplg_d0i3_put(struct skl *skl, enum d0i3_capability caps)
+ }
+ 
+ /*
+- * DMA buffer size needed for 48KHz, 4 channel, 32 bit data
+- * scheduled at 4ms  for 2 probe packets is
+- * 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
+- */
+-#define SKL_INJECT_PROBE_DMA_BUFF_SIZE 6208
+-
+-/*
+  * SKL DSP driver modelling uses only few DAPM widgets so for rest we will
+  * ignore. This helpers checks if the SKL driver handles this widget type
+  */
+@@ -531,7 +518,7 @@ int skl_probe_attach_inj_dma(struct snd_soc_dapm_widget *w,
+ 		ad.node_id.node.vindex = pconfig->iprobe[index].dma_id;
+ 		ad.node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
+ 		ad.node_id.node.rsvd = 0;
+-		ad.dma_buff_size = SKL_INJECT_PROBE_DMA_BUFF_SIZE;
++		ad.dma_buff_size = pconfig->edma_buffsize;
+ 
+ 		ret = skl_set_module_params(ctx, (void *)&ad,
+ 					sizeof(struct skl_probe_attach_inj_dma),
+-- 
+2.7.4
+

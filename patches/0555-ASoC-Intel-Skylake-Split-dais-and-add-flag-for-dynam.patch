@@ -1,0 +1,179 @@
+From be82674ee47107226e20c43a7dc844e353d61495 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Mon, 6 Mar 2017 09:47:50 +0530
+Subject: [PATCH 0555/1132] ASoC: Intel: Skylake: Split dais and add flag for
+ dynamic dais
+
+Since FE dais can come from topology, split the FE dais from
+existing dai array and use module param to decide to register
+them during probe.
+
+Updated commit message:
+Split dai change is already merged in #c3ae22e39db79 ("ASoC: Intel: Skylake:
+Add flag to check to register FE dais from topology"). With this patch only
+the remaining the dais are added.
+
+Change-Id: I9f5d3d89e070b65800ada57746df21d1f6754e78
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Reviewed-on:
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 118 +++++++++++++++++++-------------------
+ 1 file changed, 59 insertions(+), 59 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 1da4850..7ac209d 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -963,46 +963,6 @@ static struct snd_soc_dai_ops skl_sdw_dai_ops = {
+ 
+ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ {
+-	.name = "TraceBuffer0 Pin",
+-	.compress_new = snd_soc_new_compress,
+-	.cops = &skl_trace_compr_ops,
+-	.capture = {
+-		.stream_name = "TraceBuffer0 Capture",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_MONO,
+-	},
+-},
+-{
+-	.name = "TraceBuffer1 Pin",
+-	.compress_new = snd_soc_new_compress,
+-	.cops = &skl_trace_compr_ops,
+-	.capture = {
+-		.stream_name = "TraceBuffer1 Capture",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_MONO,
+-	},
+-},
+-{
+-	.name = "TraceBuffer2 Pin",
+-	.compress_new = snd_soc_new_compress,
+-	.cops = &skl_trace_compr_ops,
+-	.capture = {
+-		.stream_name = "TraceBuffer2 Capture",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_MONO,
+-	},
+-},
+-{
+-	.name = "TraceBuffer3 Pin",
+-	.compress_new = snd_soc_new_compress,
+-	.cops = &skl_trace_compr_ops,
+-	.capture = {
+-		.stream_name = "TraceBuffer3 Capture",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_MONO,
+-	},
+-},
+-{
+ 	.name = "System Pin",
+ 	.ops = &skl_pcm_dai_ops,
+ 	.playback = {
+@@ -1082,24 +1042,6 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ 	},
+ },
+ {
+-	.name = "Compress Probe0 Pin",
+-	.compress_new = snd_soc_new_compress,
+-	.cops = &skl_probe_compr_ops,
+-	.playback = {
+-		.stream_name = "Probe Playback",
+-		.channels_min = HDA_MONO,
+-	},
+-},
+-{
+-	.name = "Compress Probe1 Pin",
+-	.compress_new = snd_soc_new_compress,
+-	.cops = &skl_probe_compr_ops,
+-	.capture = {
+-			.stream_name = "Probe Capture",
+-			.channels_min = HDA_MONO,
+-	},
+-},
+-{
+ 	.name = "LowLatency Pin",
+ 	.ops = &skl_pcm_dai_ops,
+ 	.playback = {
+@@ -1173,7 +1115,7 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ },
+ };
+ 
+-/* BE CPU  Dais */
++/* BE cpu dais and compress dais*/
+ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ {
+ 	.name = "SSP0 Pin",
+@@ -1485,6 +1427,64 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 	},
+ 
+ },
++{
++	.name = "TraceBuffer0 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_trace_compr_ops,
++	.capture = {
++		.stream_name = "TraceBuffer0 Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++	},
++},
++{
++	.name = "TraceBuffer1 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_trace_compr_ops,
++	.capture = {
++		.stream_name = "TraceBuffer1 Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++	},
++},
++{
++	.name = "TraceBuffer2 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_trace_compr_ops,
++	.capture = {
++		.stream_name = "TraceBuffer2 Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++	},
++},
++{
++	.name = "TraceBuffer3 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_trace_compr_ops,
++	.capture = {
++		.stream_name = "TraceBuffer3 Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++	},
++},
++{
++	.name = "Compress Probe0 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_probe_compr_ops,
++	.playback = {
++		.stream_name = "Probe Playback",
++		.channels_min = HDA_MONO,
++	},
++},
++{
++	.name = "Compress Probe1 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_probe_compr_ops,
++	.capture = {
++			.stream_name = "Probe Capture",
++			.channels_min = HDA_MONO,
++	},
++},
+ };
+ 
+ int skl_dai_load(struct snd_soc_component *cmp, int index,
+-- 
+2.7.4
+

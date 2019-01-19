@@ -1,0 +1,70 @@
+From b5a33824465210e0c30412f9558b4dd7e1b0ed32 Mon Sep 17 00:00:00 2001
+From: Jeeja KP <jeeja.kp@intel.com>
+Date: Wed, 16 Sep 2015 01:56:54 +0530
+Subject: [PATCH 0475/1132] ASoC: core: Adds support for DSP loopback dai link
+
+Only codec-codec dai link is supported. This patch adds support
+for dsp loopback dai link
+
+Change-Id: I6163e5e572116aeac026ee1815708f7342ae1e3f
+Signed-off-by: Jeeja KP <jeeja.kp@intel.com>
+---
+ include/sound/soc.h  |  3 +++
+ sound/soc/soc-core.c | 20 ++++++++++++++++----
+ 2 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/include/sound/soc.h b/include/sound/soc.h
+index 41cec42..c32c6aa 100644
+--- a/include/sound/soc.h
++++ b/include/sound/soc.h
+@@ -920,6 +920,9 @@ struct snd_soc_dai_link {
+ 	const struct snd_soc_pcm_stream *params;
+ 	unsigned int num_params;
+ 
++	/* flag to create dsp loopback link */
++	unsigned int dsp_loopback:1;
++
+ 	unsigned int dai_fmt;           /* format to set on init */
+ 
+ 	enum snd_soc_dpcm_trigger trigger[2]; /* trigger type for DPCM */
+diff --git a/sound/soc/soc-core.c b/sound/soc/soc-core.c
+index 7f30e8a..18a7c5e 100644
+--- a/sound/soc/soc-core.c
++++ b/sound/soc/soc-core.c
+@@ -1444,8 +1444,14 @@ static int soc_link_dai_widgets(struct snd_soc_card *card,
+ 		dev_warn(card->dev, "ASoC: Multiple codecs not supported yet\n");
+ 
+ 	/* link the DAI widgets */
+-	sink = codec_dai->playback_widget;
+-	source = cpu_dai->capture_widget;
++	if (!dai_link->dsp_loopback) {
++		sink = codec_dai->playback_widget;
++		source = cpu_dai->capture_widget;
++	} else {
++		sink = codec_dai->playback_widget;
++		source = cpu_dai->playback_widget;
++	}
++
+ 	if (sink && source) {
+ 		ret = snd_soc_dapm_new_pcm(card, rtd, dai_link->params,
+ 					   dai_link->num_params,
+@@ -1457,8 +1463,14 @@ static int soc_link_dai_widgets(struct snd_soc_card *card,
+ 		}
+ 	}
+ 
+-	sink = cpu_dai->playback_widget;
+-	source = codec_dai->capture_widget;
++	if (!dai_link->dsp_loopback) {
++		sink = cpu_dai->playback_widget;
++		source = codec_dai->capture_widget;
++	} else {
++		sink = cpu_dai->capture_widget;
++		source = codec_dai->capture_widget;
++	}
++
+ 	if (sink && source) {
+ 		ret = snd_soc_dapm_new_pcm(card, rtd, dai_link->params,
+ 					   dai_link->num_params,
+-- 
+2.7.4
+

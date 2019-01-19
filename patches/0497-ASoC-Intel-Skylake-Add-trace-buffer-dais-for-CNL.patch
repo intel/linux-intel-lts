@@ -1,0 +1,73 @@
+From 7e4c137cacc1acc89401fc7d6af7e0b75fb7eeea Mon Sep 17 00:00:00 2001
+From: "Panwar, Ashish" <ashish.panwar@intel.com>
+Date: Fri, 18 Mar 2016 16:02:19 +0530
+Subject: [PATCH 0497/1132] ASoC: Intel: Skylake: Add trace buffer dais for CNL
+
+CNL needs 4 dais for logging, one for each core. Added 2
+more dais here. It depends on the machine driver to make
+use of appropriate dais based on the hardware platform.
+
+Change-Id: If9df857895b8261cfebd61617542365187499ea1
+Signed-off-by: Panwar, Ashish <ashish.panwar@intel.com>
+Reviewed-on:
+Reviewed-by: Shah, Hardik T <hardik.t.shah@intel.com>
+Tested-by: Shah, Hardik T <hardik.t.shah@intel.com>
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 26 +++++++++++++++++++++++++-
+ 1 file changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index d462b1b..dc842e2 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -742,6 +742,10 @@ static int skl_get_compr_core(struct snd_compr_stream *stream)
+ 		return 0;
+ 	else if (!strcmp(dai->name, "TraceBuffer1 Pin"))
+ 		return 1;
++	else if (!strcmp(dai->name, "TraceBuffer2 Pin"))
++		return 2;
++	else if (!strcmp(dai->name, "TraceBuffer3 Pin"))
++		return 3;
+ 	else
+ 		return INT_MIN;
+ }
+@@ -900,7 +904,7 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ 	.compress_new = snd_soc_new_compress,
+ 	.cops = &skl_trace_compr_ops,
+ 	.capture = {
+-		.stream_name = "TraceBuffer Capture",
++		.stream_name = "TraceBuffer0 Capture",
+ 		.channels_min = HDA_MONO,
+ 		.channels_max = HDA_MONO,
+ 	},
+@@ -916,6 +920,26 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ 	},
+ },
+ {
++	.name = "TraceBuffer2 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_trace_compr_ops,
++	.capture = {
++		.stream_name = "TraceBuffer2 Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++	},
++},
++{
++	.name = "TraceBuffer3 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_trace_compr_ops,
++	.capture = {
++		.stream_name = "TraceBuffer3 Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++	},
++},
++{
+ 	.name = "System Pin",
+ 	.ops = &skl_pcm_dai_ops,
+ 	.playback = {
+-- 
+2.7.4
+

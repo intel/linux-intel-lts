@@ -1,0 +1,159 @@
+From 652570df6fe8b4a454d15f8ae140dce449897462 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Fri, 26 Oct 2018 09:52:04 +0800
+Subject: [PATCH 0306/1132] videodev2.h: Add request field to v4l2_buffer
+
+When queuing buffers allow for passing the request ID that
+should be associated with this buffer.
+
+Signed-off-by: Chang Ying <ying.chang@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/common/videobuf2/videobuf2-v4l2.c | 10 ++++++++--
+ drivers/media/v4l2-core/v4l2-compat-ioctl32.c   | 14 ++++++++++----
+ include/media/videobuf2-core.h                  |  1 +
+ include/media/videobuf2-v4l2.h                  |  2 ++
+ include/uapi/linux/videodev2.h                  |  4 ++++
+ 5 files changed, 25 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/media/common/videobuf2/videobuf2-v4l2.c b/drivers/media/common/videobuf2/videobuf2-v4l2.c
+index 886a2d8..5b678ea 100644
+--- a/drivers/media/common/videobuf2/videobuf2-v4l2.c
++++ b/drivers/media/common/videobuf2/videobuf2-v4l2.c
+@@ -178,6 +178,11 @@ static int vb2_queue_or_prepare_buf(struct vb2_queue *q, struct v4l2_buffer *b,
+ 		return -EINVAL;
+ 	}
+ 
++	if (!q->allow_requests && b->request) {
++		dprintk(1, "%s: unsupported request ID\n", opname);
++		return -EINVAL;
++	}
++
+ 	return __verify_planes_array(q->bufs[b->index], b);
+ }
+ 
+@@ -203,8 +208,8 @@ static void __fill_v4l2_buffer(struct vb2_buffer *vb, void *pb)
+ 	b->timestamp = ns_to_timeval(vb->timestamp);
+ 	b->timecode = vbuf->timecode;
+ 	b->sequence = vbuf->sequence;
+-	b->reserved2 = 0;
+-	b->reserved = 0;
++	b->request = vbuf->request;
++	b->reserved = vbuf->reserved;
+ 
+ 	if (q->is_multiplanar) {
+ 		/*
+@@ -320,6 +325,7 @@ static int __fill_vb2_buffer(struct vb2_buffer *vb,
+ 	}
+ 	vb->timestamp = 0;
+ 	vbuf->sequence = 0;
++	vbuf->request = b->request;
+ 
+ 	if (V4L2_TYPE_IS_MULTIPLANAR(b->type)) {
+ 		if (b->memory == VB2_MEMORY_USERPTR) {
+diff --git a/drivers/media/v4l2-core/v4l2-compat-ioctl32.c b/drivers/media/v4l2-core/v4l2-compat-ioctl32.c
+index 6481212..2226539 100644
+--- a/drivers/media/v4l2-core/v4l2-compat-ioctl32.c
++++ b/drivers/media/v4l2-core/v4l2-compat-ioctl32.c
+@@ -481,7 +481,7 @@ struct v4l2_buffer32 {
+ 		__s32		fd;
+ 	} m;
+ 	__u32			length;
+-	__u32			reserved2;
++	__u32			request;
+ 	__u32			reserved;
+ };
+ 
+@@ -581,6 +581,7 @@ static int get_v4l2_buffer32(struct v4l2_buffer __user *p64,
+ {
+ 	u32 type;
+ 	u32 length;
++	u32 request;
+ 	enum v4l2_memory memory;
+ 	struct v4l2_plane32 __user *uplane32;
+ 	struct v4l2_plane __user *uplane;
+@@ -595,7 +596,9 @@ static int get_v4l2_buffer32(struct v4l2_buffer __user *p64,
+ 	    get_user(memory, &p32->memory) ||
+ 	    put_user(memory, &p64->memory) ||
+ 	    get_user(length, &p32->length) ||
+-	    put_user(length, &p64->length))
++	    put_user(length, &p64->length) ||
++	    get_user(request, &p32->request) ||
++	    put_user(request, &p64->request))
+ 		return -EFAULT;
+ 
+ 	if (V4L2_TYPE_IS_OUTPUT(type))
+@@ -677,6 +680,7 @@ static int put_v4l2_buffer32(struct v4l2_buffer __user *p64,
+ {
+ 	u32 type;
+ 	u32 length;
++	u32 request;
+ 	enum v4l2_memory memory;
+ 	struct v4l2_plane32 __user *uplane32;
+ 	struct v4l2_plane *uplane;
+@@ -698,10 +702,12 @@ static int put_v4l2_buffer32(struct v4l2_buffer __user *p64,
+ 	    assign_in_user(&p32->timestamp.tv_usec, &p64->timestamp.tv_usec) ||
+ 	    copy_in_user(&p32->timecode, &p64->timecode, sizeof(p64->timecode)) ||
+ 	    assign_in_user(&p32->sequence, &p64->sequence) ||
+-	    assign_in_user(&p32->reserved2, &p64->reserved2) ||
++	    assign_in_user(&p32->request, &p64->request) ||
+ 	    assign_in_user(&p32->reserved, &p64->reserved) ||
+ 	    get_user(length, &p64->length) ||
+-	    put_user(length, &p32->length))
++	    put_user(length, &p32->length) ||
++	    get_user(request, &p64->length) ||
++	    put_user(request, &p32->length))
+ 		return -EFAULT;
+ 
+ 	if (V4L2_TYPE_IS_MULTIPLANAR(type)) {
+diff --git a/include/media/videobuf2-core.h b/include/media/videobuf2-core.h
+index f6818f73..aba09cef 100644
+--- a/include/media/videobuf2-core.h
++++ b/include/media/videobuf2-core.h
+@@ -516,6 +516,7 @@ struct vb2_queue {
+ 	unsigned			fileio_write_immediately:1;
+ 	unsigned			allow_zero_bytesused:1;
+ 	unsigned		   quirk_poll_must_check_waiting_for_buffers:1;
++	unsigned			allow_requests:1;
+ 
+ 	struct mutex			*lock;
+ 	void				*owner;
+diff --git a/include/media/videobuf2-v4l2.h b/include/media/videobuf2-v4l2.h
+index 3d5e2d7..317c2b7 100644
+--- a/include/media/videobuf2-v4l2.h
++++ b/include/media/videobuf2-v4l2.h
+@@ -43,6 +43,8 @@ struct vb2_v4l2_buffer {
+ 	__u32			field;
+ 	struct v4l2_timecode	timecode;
+ 	__u32			sequence;
++	__u32			request;
++	__u32			reserved;
+ };
+ 
+ /*
+diff --git a/include/uapi/linux/videodev2.h b/include/uapi/linux/videodev2.h
+index 1aae2e4..fef1758 100644
+--- a/include/uapi/linux/videodev2.h
++++ b/include/uapi/linux/videodev2.h
+@@ -928,6 +928,7 @@ struct v4l2_plane {
+  * @length:	size in bytes of the buffer (NOT its payload) for single-plane
+  *		buffers (when type != *_MPLANE); number of elements in the
+  *		planes array for multi-plane buffers
++* @request: this buffer should use this request
+  *
+  * Contains data exchanged by application and driver using one of the Streaming
+  * I/O methods.
+@@ -951,7 +952,10 @@ struct v4l2_buffer {
+ 		__s32		fd;
+ 	} m;
+ 	__u32			length;
++	union {
++	__u32			request;
+ 	__u32			reserved2;
++	};
+ 	__u32			reserved;
+ };
+ 
+-- 
+2.7.4
+

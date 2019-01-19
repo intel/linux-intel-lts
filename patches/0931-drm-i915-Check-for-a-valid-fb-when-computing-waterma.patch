@@ -1,0 +1,36 @@
+From 85df987becaa05fd38797fdbad68524fdde710b1 Mon Sep 17 00:00:00 2001
+From: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Date: Sun, 14 Oct 2018 16:41:07 -0700
+Subject: [PATCH 0931/1132] drm/i915: Check for a valid fb when computing
+ watermarks
+
+fb must be valid when we are computing watermarks for a plane or
+else we will run into a crash. Checking to see if it is indeed
+valid and returning EINVAL if it's not.
+
+https://github.com/projectacrn/acrn-hypervisor/issues/1459
+Signed-off-by: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/gpu/drm/i915/intel_pm.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/intel_pm.c b/drivers/gpu/drm/i915/intel_pm.c
+index 64e1b61..53bc383 100644
+--- a/drivers/gpu/drm/i915/intel_pm.c
++++ b/drivers/gpu/drm/i915/intel_pm.c
+@@ -4546,6 +4546,11 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
+ 	if (!intel_wm_plane_visible(cstate, intel_pstate))
+ 		return 0;
+ 
++	if (plane_id == 1 && !fb) {
++		DRM_DEBUG_KMS("Invalid fb for plane\n");
++		return -EINVAL;
++	}
++
+ 	/* only NV12 format has two planes */
+ 	if (plane_id == 1 && fb->format->format != DRM_FORMAT_NV12) {
+ 		DRM_DEBUG_KMS("Non NV12 format have single plane\n");
+-- 
+2.7.4
+

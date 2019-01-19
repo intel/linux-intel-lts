@@ -1,0 +1,80 @@
+From 34a602bb69dc5eeb1adbd6b12510f43cafb7d897 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Thu, 10 Jan 2019 15:18:03 +0800
+Subject: [PATCH 1125/1132] drivers/hyper_dmabuf: Remove the imported dma_buf
+ with closed domid
+
+When one VM is closed, the BE driver should remove the corresponding
+imported dma_buf that is based on the closed dmid. Otherwise it can't be
+released when the guest OS exits without sending unexport notification.
+
+Change-Id: If588089abdb8c6595404cb65abdaa1f0ddb22031
+Tracked-On: projectacrn/acrn-hypervisor#2237
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Reviewed-by: Liu, Shuo <shuo.a.liu@intel.com>
+Acked-by: Dongwon Kim <dongwon.kim@intel.com>
+Tracked-On: PKT-1657
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c          | 15 +++++++++++++++
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.h          |  1 +
+ .../hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c      |  2 ++
+ 3 files changed, 18 insertions(+)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c
+index 84cfb06..7b6ce1f 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c
+@@ -290,3 +290,18 @@ void hyper_dmabuf_foreach_exported(
+ 		func(info_entry->exported, attr);
+ 	}
+ }
++
++void hyper_dmabuf_remove_imported_vmid(int vmid)
++{
++	struct list_entry_imported *info_entry;
++	struct hlist_node *tmp;
++	int bkt;
++
++	hash_for_each_safe(hyper_dmabuf_hash_imported, bkt, tmp,
++		info_entry, node) {
++		if (HYPER_DMABUF_DOM_ID(info_entry->imported->hid) == vmid) {
++			hash_del(&info_entry->node);
++			kfree(info_entry);
++		}
++	}
++}
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.h b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.h
+index f7102f5..81250e5c 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.h
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.h
+@@ -61,6 +61,7 @@ struct imported_sgt_info *hyper_dmabuf_find_imported(hyper_dmabuf_id_t hid);
+ int hyper_dmabuf_remove_exported(hyper_dmabuf_id_t hid);
+ 
+ int hyper_dmabuf_remove_imported(hyper_dmabuf_id_t hid);
++void hyper_dmabuf_remove_imported_vmid(int vmid);
+ 
+ void hyper_dmabuf_foreach_exported(void (*func)(struct exported_sgt_info *,
+ 				   void *attr), void *attr);
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+index 1be0218..c297939 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+@@ -40,6 +40,7 @@
+ #include <linux/vhm/acrn_vhm_mm.h>
+ #include "../hyper_dmabuf_msg.h"
+ #include "../hyper_dmabuf_drv.h"
++#include "../hyper_dmabuf_list.h"
+ #include "hyper_dmabuf_virtio_common.h"
+ #include "hyper_dmabuf_virtio_fe_list.h"
+ #include "hyper_dmabuf_virtio_shm.h"
+@@ -329,6 +330,7 @@ static void cleanup_fe(struct virtio_fe_info *fe_info, void *attr)
+ 
+ 		acrn_ioreq_destroy_client(fe_info->client_id);
+ 		virtio_fe_remove(fe_info->client_id);
++		hyper_dmabuf_remove_imported_vmid(fe_info->vmid);
+ 		kfree(fe_info);
+ 	}
+ }
+-- 
+2.7.4
+

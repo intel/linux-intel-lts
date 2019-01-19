@@ -1,0 +1,170 @@
+From f78e41493957adee40ddae8937a7a1185c9adb04 Mon Sep 17 00:00:00 2001
+From: Victor Sun <victor.sun@intel.com>
+Date: Fri, 31 Aug 2018 10:59:00 +0800
+Subject: [PATCH 0784/1132] VHM: add service to support px data transition
+
+The px data is hard coded within HV, DM will get these data to build
+DSDT for UOS. With this DSDT, UOS would have capability on Px control
+if acpi-cpufreq driver is enabled in kernel.
+
+So this patch is to add the service to interact with both HV and DM.
+
+The detailed working rationale is illustrated in HV patch set.
+
+Change-Id: Icfd01880dcfe0fd938a05c6f31614dfdcd48631a
+Tracked-On: 212378
+Signed-off-by: Victor Sun <victor.sun@intel.com>
+Reviewed-on:
+---
+ drivers/char/vhm/vhm_dev.c         | 40 ++++++++++++++++++++++++++++++++++++++
+ drivers/vhm/vhm_hypercall.c        |  5 +++++
+ include/linux/vhm/acrn_common.h    | 23 ++++++++++++++++++++++
+ include/linux/vhm/acrn_hv_defs.h   |  4 ++++
+ include/linux/vhm/vhm_hypercall.h  |  1 +
+ include/linux/vhm/vhm_ioctl_defs.h |  4 ++++
+ 6 files changed, 77 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index f4d2ec2..5000ed8 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -532,6 +532,46 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
++	case IC_PM_GET_CPU_STATE: {
++		uint64_t cmd;
++
++		if (copy_from_user(&cmd,
++				(void *)ioctl_param, sizeof(cmd)))
++			return -EFAULT;
++
++		switch (cmd & PMCMD_TYPE_MASK) {
++		case PMCMD_GET_PX_CNT: {
++			uint8_t px_cnt;
++
++			ret = hcall_get_cpu_state(cmd, virt_to_phys(&px_cnt));
++			if (ret < 0)
++				return -EFAULT;
++
++			if (copy_to_user((void *)ioctl_param,
++					&px_cnt, sizeof(px_cnt)))
++					ret = -EFAULT;
++
++			break;
++		}
++		case PMCMD_GET_PX_DATA: {
++			struct cpu_px_data px_data;
++
++			ret = hcall_get_cpu_state(cmd, virt_to_phys(&px_data));
++			if (ret < 0)
++				return -EFAULT;
++
++			if (copy_to_user((void *)ioctl_param,
++					&px_data, sizeof(px_data)))
++					ret = -EFAULT;
++			break;
++		}
++		default:
++			ret = -EFAULT;
++			break;
++		}
++		break;
++	}
++
+ 	default:
+ 		pr_warn("Unknown IOCTL 0x%x\n", ioctl_num);
+ 		ret = 0;
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index d0da22f..df87feb 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -82,6 +82,11 @@ inline long hcall_setup_sbuf(unsigned long sbuf_head)
+ 	return acrn_hypercall1(HC_SETUP_SBUF, sbuf_head);
+ }
+ 
++inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa)
++{
++	return acrn_hypercall2(HC_PM_GET_CPU_STATE, cmd, state_pa);
++}
++
+ inline long hcall_set_memmap(unsigned long vmid, unsigned long memmap)
+ {
+ 	return acrn_hypercall2(HC_VM_SET_MEMMAP, vmid, memmap);
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index f27feb7..d48fe80 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -206,4 +206,27 @@ struct acrn_vm_pci_msix_remap {
+  */
+ #define GUEST_CFG_OFFSET 	0xd0000
+ 
++struct cpu_px_data {
++	uint64_t core_frequency;	/* megahertz */
++	uint64_t power;			/* milliWatts */
++	uint64_t transition_latency;	/* microseconds */
++	uint64_t bus_master_latency;	/* microseconds */
++	uint64_t control;		/* control value */
++	uint64_t status;		/* success indicator */
++} __attribute__((aligned(8)));
++
++#define PMCMD_VMID_MASK		0xff000000
++#define PMCMD_VCPUID_MASK	0x00ff0000
++#define PMCMD_STATE_NUM_MASK	0x0000ff00
++#define PMCMD_TYPE_MASK		0x000000ff
++
++#define PMCMD_VMID_SHIFT	24
++#define PMCMD_VCPUID_SHIFT	16
++#define PMCMD_STATE_NUM_SHIFT	8
++
++enum pm_cmd_type {
++	PMCMD_GET_PX_CNT,
++	PMCMD_GET_PX_DATA,
++};
++
+ #endif /* ACRN_COMMON_H */
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 411f197..d2da1a7 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -106,6 +106,10 @@
+ #define HC_ID_DBG_BASE              0x60UL
+ #define HC_SETUP_SBUF               _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x00)
+ 
++/* Power management */
++#define HC_ID_PM_BASE               0x80UL
++#define HC_PM_GET_CPU_STATE         _HC_ID(HC_ID, HC_ID_PM_BASE + 0x00)
++
+ #define ACRN_DOM0_VMID (0UL)
+ #define ACRN_INVALID_VMID (-1)
+ #define ACRN_INVALID_HPA (-1UL)
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index e56a16c..2372906 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -144,6 +144,7 @@ inline long hcall_pause_vm(unsigned long vmid);
+ inline long hcall_destroy_vm(unsigned long vmid);
+ inline long hcall_query_vm_state(unsigned long vmid);
+ inline long hcall_setup_sbuf(unsigned long sbuf_head);
++inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa);
+ inline long hcall_set_memmap(unsigned long vmid,
+ 		unsigned long memmap);
+ inline long hcall_set_ioreq_buffer(unsigned long vmid,
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index eb8d0d0..3b05d82 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -101,6 +101,10 @@
+ #define IC_SET_PTDEV_INTR_INFO         _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x03)
+ #define IC_RESET_PTDEV_INTR_INFO       _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x04)
+ 
++/* Power management */
++#define IC_ID_PM_BASE                   0x60UL
++#define IC_PM_GET_CPU_STATE            _IC_ID(IC_ID, IC_ID_PM_BASE + 0x00)
++
+ /**
+  * struct vm_memseg - memory segment info for guest
+  *
+-- 
+2.7.4
+

@@ -1,0 +1,113 @@
+From 6b5f75ee5b3a03efcaf722d123b277c430c77254 Mon Sep 17 00:00:00 2001
+From: "Sinha, Mohit" <mohit.sinha@intel.com>
+Date: Thu, 26 Oct 2017 14:52:16 +0530
+Subject: [PATCH 0649/1132] ASoC: Intel: Skylake: Avoid global kcontrol pointer
+ for event handling
+
+The audio driver registers multiple kcontrols to represent
+multiple events like topology change or async notifications.
+However, using a single global variable to cache and to
+point to these several kcontrols in skl_dsp_cb_event()
+resulted in incorrect pointer being accessed.
+Hence use a local variable to point to the kcontrol for the
+current event handled by skl_dsp_cb_event()
+
+Change-Id: I6230650153abbe59fe54e70d81718702f05d6d77
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: B, Jayachandran <jayachandran.b@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: audio_build
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.h  |  2 --
+ sound/soc/intel/skylake/skl-topology.c | 29 ++++++++++++++---------------
+ 2 files changed, 14 insertions(+), 17 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 76e83d2..4fa372c1 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -319,8 +319,6 @@ struct skl_sst {
+ 	/* sysfs for module info */
+ 	struct skl_sysfs_tree *sysfs_tree;
+ 
+-	struct snd_kcontrol *kcontrol;
+-
+ 	struct list_head notify_kctls;
+ };
+ 
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index fd04b51..98b668e 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -3169,6 +3169,7 @@ int skl_dsp_cb_event(struct skl_sst *ctx, unsigned int event,
+ 	struct skl *skl = get_skl_ctx(ctx->dev);
+ 	struct snd_soc_component *component = skl->component;
+ 	struct skl_module_notify *m_notification = NULL;
++	struct snd_kcontrol *kcontrol;
+ 	struct skl_algo_data *bc;
+ 	u8 param_length;
+ 
+@@ -3176,17 +3177,15 @@ int skl_dsp_cb_event(struct skl_sst *ctx, unsigned int event,
+ 	case SKL_TPLG_CHG_NOTIFY:
+ 		card = component->card;
+ 
+-		if (!ctx->kcontrol) {
+-			ctx->kcontrol = snd_soc_card_get_kcontrol(card,
+-					"Topology Change Notification");
+-			if (!ctx->kcontrol) {
+-				dev_dbg(ctx->dev,
+-					"NOTIFICATION Controls not found\n");
+-				return -EINVAL;
+-			}
++		kcontrol = snd_soc_card_get_kcontrol(card,
++				"Topology Change Notification");
++		if (!kcontrol) {
++			dev_warn(ctx->dev,
++				"NOTIFICATION Controls not found\n");
++			return -EINVAL;
+ 		}
+ 
+-		sb = (struct soc_bytes_ext *)ctx->kcontrol->private_value;
++		sb = (struct soc_bytes_ext *)kcontrol->private_value;
+ 		if (!sb->dobj.private) {
+ 			sb->dobj.private = devm_kzalloc(ctx->dev,
+ 				sizeof(*notify_data), GFP_KERNEL);
+@@ -3196,25 +3195,25 @@ int skl_dsp_cb_event(struct skl_sst *ctx, unsigned int event,
+ 
+ 		memcpy(sb->dobj.private, notify_data, sizeof(*notify_data));
+ 		snd_ctl_notify(card->snd_card, SNDRV_CTL_EVENT_MASK_VALUE,
+-							&ctx->kcontrol->id);
++							&kcontrol->id);
+ 		break;
+ 	case SKL_EVENT_GLB_MODULE_NOTIFICATION:
+ 		m_notification = (struct skl_module_notify *)notify_data->data;
+ 		card = component->card;
+-		ctx->kcontrol = skl_get_notify_kcontrol(ctx, card->snd_card,
++		kcontrol = skl_get_notify_kcontrol(ctx, card->snd_card,
+ 					m_notification->unique_id);
+-		if (!ctx->kcontrol) {
+-			dev_dbg(ctx->dev, "Module notify control not found\n");
++		if (!kcontrol) {
++			dev_warn(ctx->dev, "Module notify control not found\n");
+ 			return -EINVAL;
+ 		}
+ 
+-		sb = (struct soc_bytes_ext *)ctx->kcontrol->private_value;
++		sb = (struct soc_bytes_ext *)kcontrol->private_value;
+ 		bc = (struct skl_algo_data *)sb->dobj.private;
+ 		param_length = sizeof(struct skl_notify_data)
+ 					+ notify_data->length;
+ 		memcpy(bc->params, (char *)notify_data, param_length);
+ 		snd_ctl_notify(card->snd_card,
+-				SNDRV_CTL_EVENT_MASK_VALUE, &ctx->kcontrol->id);
++				SNDRV_CTL_EVENT_MASK_VALUE, &kcontrol->id);
+ 		break;
+ 	default:
+ 		return -EINVAL;
+-- 
+2.7.4
+

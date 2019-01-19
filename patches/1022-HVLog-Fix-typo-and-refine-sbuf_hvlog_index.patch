@@ -1,0 +1,126 @@
+From d719ea64624533fac9b851b72a4575152d30fdfe Mon Sep 17 00:00:00 2001
+From: Kaige Fu <kaige.fu@intel.com>
+Date: Wed, 14 Nov 2018 21:36:38 +0800
+Subject: [PATCH 1022/1132] HVLog: Fix typo and refine sbuf_hvlog_index
+
+This patch fixes typo of ACRN_CURRNET_HVLOG and replace prefix "ACRN_"
+with "SUBF_".
+
+Tracked-On: PKT-1592
+Tracked-On: projectacrn/acrn-hypervisor#1801
+Signed-off-by: Kaige Fu <kaige.fu@intel.com>
+Suggested-by: Yan, Like <like.yan@intel.com>
+Reviewed-by: Yan, Like <like.yan@intel.com>
+---
+ drivers/acrn/acrn_hvlog.c | 30 +++++++++++++++---------------
+ 1 file changed, 15 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/acrn/acrn_hvlog.c b/drivers/acrn/acrn_hvlog.c
+index 6d27b79..84e04ee 100644
+--- a/drivers/acrn/acrn_hvlog.c
++++ b/drivers/acrn/acrn_hvlog.c
+@@ -74,9 +74,9 @@
+ 	for ((idx) = 0; (idx) < (hvlog_type); (idx)++)
+ 
+ enum sbuf_hvlog_index {
+-	ACRN_CURRNET_HVLOG = 0,
+-	ACRN_LAST_HVLOG,
+-	ACRN_HVLOG_TYPE
++	SBUF_CUR_HVLOG = 0,
++	SBUF_LAST_HVLOG,
++	SBUF_HVLOG_TYPES
+ };
+ 
+ struct acrn_hvlog {
+@@ -208,8 +208,8 @@ static const struct file_operations acrn_hvlog_fops = {
+ 	.read = acrn_hvlog_read,
+ };
+ 
+-static struct acrn_hvlog acrn_hvlog_devs[ACRN_HVLOG_TYPE][PCPU_NRS] = {
+-	[ACRN_CURRNET_HVLOG] = {
++static struct acrn_hvlog acrn_hvlog_devs[SBUF_HVLOG_TYPES][PCPU_NRS] = {
++	[SBUF_CUR_HVLOG] = {
+ 		{
+ 			.miscdev = {
+ 				.name   = "acrn_hvlog_cur_0",
+@@ -243,7 +243,7 @@ static struct acrn_hvlog acrn_hvlog_devs[ACRN_HVLOG_TYPE][PCPU_NRS] = {
+ 			.pcpu_num = 3,
+ 		},
+ 	},
+-	[ACRN_LAST_HVLOG] = {
++	[SBUF_LAST_HVLOG] = {
+ 		{
+ 			.miscdev = {
+ 				.name   = "acrn_hvlog_last_0",
+@@ -321,9 +321,9 @@ static int __init acrn_hvlog_init(void)
+ 			continue;
+ 
+ 		foreach_cpu(pcpu_id, PCPU_NRS) {
+-			acrn_hvlog_devs[ACRN_LAST_HVLOG][pcpu_id].sbuf =
++			acrn_hvlog_devs[SBUF_LAST_HVLOG][pcpu_id].sbuf =
+ 					hvlog_mark_unread(sbuf0[pcpu_id]);
+-			acrn_hvlog_devs[ACRN_CURRNET_HVLOG][pcpu_id].sbuf =
++			acrn_hvlog_devs[SBUF_CUR_HVLOG][pcpu_id].sbuf =
+ 				sbuf_construct(ele_num, ele_size,
+ 					logbuf_base1 + size * pcpu_id);
+ 		}
+@@ -336,19 +336,19 @@ static int __init acrn_hvlog_init(void)
+ 				continue;
+ 
+ 			foreach_cpu(pcpu_id, PCPU_NRS) {
+-				acrn_hvlog_devs[ACRN_LAST_HVLOG][pcpu_id].sbuf =
++				acrn_hvlog_devs[SBUF_LAST_HVLOG][pcpu_id].sbuf =
+ 					hvlog_mark_unread(sbuf1[pcpu_id]);
+ 			}
+ 		}
+ 		foreach_cpu(pcpu_id, PCPU_NRS) {
+-			acrn_hvlog_devs[ACRN_CURRNET_HVLOG][pcpu_id].sbuf =
++			acrn_hvlog_devs[SBUF_CUR_HVLOG][pcpu_id].sbuf =
+ 				sbuf_construct(ele_num, ele_size,
+ 					logbuf_base0 + size * pcpu_id);
+ 		}
+ 		sbuf_constructed = true;
+ 	}
+ 
+-	idx = ACRN_CURRNET_HVLOG;
++	idx = SBUF_CUR_HVLOG;
+ 	{
+ 		foreach_cpu(pcpu_id, PCPU_NRS) {
+ 			ret = sbuf_share_setup(pcpu_id, ACRN_HVLOG,
+@@ -361,7 +361,7 @@ static int __init acrn_hvlog_init(void)
+ 		}
+ 	}
+ 
+-	foreach_hvlog_type(idx, ACRN_HVLOG_TYPE) {
++	foreach_hvlog_type(idx, SBUF_HVLOG_TYPES) {
+ 		foreach_cpu(pcpu_id, PCPU_NRS) {
+ 			atomic_set(&acrn_hvlog_devs[idx][pcpu_id].open_cnt, 0);
+ 
+@@ -390,7 +390,7 @@ static int __init acrn_hvlog_init(void)
+ 
+ 	pcpu_id = PCPU_NRS;
+ setup_err:
+-	idx = ACRN_CURRNET_HVLOG;
++	idx = SBUF_CUR_HVLOG;
+ 	{
+ 		foreach_cpu(j, pcpu_id) {
+ 			sbuf_share_setup(j, ACRN_HVLOG, 0);
+@@ -408,13 +408,13 @@ static void __exit acrn_hvlog_exit(void)
+ 
+ 	pr_info("%s\n", __func__);
+ 
+-	foreach_hvlog_type(idx, ACRN_HVLOG_TYPE) {
++	foreach_hvlog_type(idx, SBUF_HVLOG_TYPES) {
+ 		foreach_cpu(pcpu_id, PCPU_NRS) {
+ 			misc_deregister(&acrn_hvlog_devs[idx][pcpu_id].miscdev);
+ 		}
+ 	}
+ 
+-	idx = ACRN_CURRNET_HVLOG;
++	idx = SBUF_CUR_HVLOG;
+ 	{
+ 		foreach_cpu(pcpu_id, PCPU_NRS) {
+ 			sbuf_share_setup(pcpu_id, ACRN_HVLOG, 0);
+-- 
+2.7.4
+

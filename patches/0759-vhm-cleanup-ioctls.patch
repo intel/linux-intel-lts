@@ -1,0 +1,76 @@
+From 822bb11c873176f655c4ce02e1d9e17fa5797f0b Mon Sep 17 00:00:00 2001
+From: Edwin Zhai <edwin.zhai@intel.com>
+Date: Fri, 31 Aug 2018 10:58:57 +0800
+Subject: [PATCH 0759/1132] vhm: cleanup ioctls
+
+Redefine ioctl command number
+
+Change-Id: I555cdbdd03c50f9fa5b66eb95d61c8d83c60a276
+Tracked-On: 212688
+Signed-off-by: Edwin Zhai <edwin.zhai@intel.com>
+---
+ include/linux/vhm/vhm_ioctl_defs.h | 27 +++++++++++++++------------
+ 1 file changed, 15 insertions(+), 12 deletions(-)
+
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 60bfb29..d00b658 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -53,26 +53,29 @@
+  * Commmon IOCTL ID defination for VHM/DM
+  */
+ #define _IC_ID(x, y) (((x)<<24)|(y))
+-#define IC_ID 0x5FUL
++#define IC_ID 0x43UL
++
++/* General */
++#define IC_ID_GEN_BASE                  0x0UL
++#define IC_GET_API_VERSION             _IC_ID(IC_ID, IC_ID_GEN_BASE + 0x00)
+ 
+ /* VM management */
+-#define IC_ID_VM_BASE                  0x0UL
+-#define IC_GET_API_VERSION             _IC_ID(IC_ID, IC_ID_VM_BASE + 0x00)
+-#define IC_CREATE_VM                   _IC_ID(IC_ID, IC_ID_VM_BASE + 0x01)
+-#define IC_DESTROY_VM                  _IC_ID(IC_ID, IC_ID_VM_BASE + 0x02)
+-#define IC_START_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
+-#define IC_PAUSE_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x04)
+-#define	IC_CREATE_VCPU                 _IC_ID(IC_ID, IC_ID_VM_BASE + 0x05)
++#define IC_ID_VM_BASE                  0x10UL
++#define IC_CREATE_VM                   _IC_ID(IC_ID, IC_ID_VM_BASE + 0x00)
++#define IC_DESTROY_VM                  _IC_ID(IC_ID, IC_ID_VM_BASE + 0x01)
++#define IC_START_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x02)
++#define IC_PAUSE_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
++#define	IC_CREATE_VCPU                 _IC_ID(IC_ID, IC_ID_VM_BASE + 0x04)
+ 
+ /* IRQ and Interrupts */
+-#define IC_ID_IRQ_BASE                 0x100UL
++#define IC_ID_IRQ_BASE                 0x20UL
+ #define IC_ASSERT_IRQLINE              _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x00)
+ #define IC_DEASSERT_IRQLINE            _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x01)
+ #define IC_PULSE_IRQLINE               _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x02)
+ #define IC_INJECT_MSI                  _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x03)
+ 
+ /* DM ioreq management */
+-#define IC_ID_IOREQ_BASE                0x200UL
++#define IC_ID_IOREQ_BASE                0x30UL
+ #define IC_SET_IOREQ_BUFFER             _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x00)
+ #define IC_NOTIFY_REQUEST_FINISH        _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x01)
+ #define IC_CREATE_IOREQ_CLIENT          _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x02)
+@@ -81,12 +84,12 @@
+ 
+ 
+ /* Guest memory management */
+-#define IC_ID_MEM_BASE                  0x300UL
++#define IC_ID_MEM_BASE                  0x40UL
+ #define IC_ALLOC_MEMSEG                 _IC_ID(IC_ID, IC_ID_MEM_BASE + 0x00)
+ #define IC_SET_MEMSEG                   _IC_ID(IC_ID, IC_ID_MEM_BASE + 0x01)
+ 
+ /* PCI assignment*/
+-#define IC_ID_PCI_BASE                  0x400UL
++#define IC_ID_PCI_BASE                  0x50UL
+ #define IC_ASSIGN_PTDEV                _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x00)
+ #define IC_DEASSIGN_PTDEV              _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x01)
+ #define IC_VM_PCI_MSIX_REMAP           _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x02)
+-- 
+2.7.4
+

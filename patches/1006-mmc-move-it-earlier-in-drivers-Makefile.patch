@@ -1,0 +1,41 @@
+From c01211fc7dcbd294b1578253eb03c4068fc0c2ab Mon Sep 17 00:00:00 2001
+From: "Wood, Brian J" <brian.j.wood@intel.com>
+Date: Tue, 27 Nov 2018 13:31:10 -0800
+Subject: [PATCH 1006/1132] mmc: move it earlier in drivers/Makefile
+
+This is a forward-ported patch from 4.14 PKT kernel, which
+lifts the eMMC rootfs detection earlier and helps on
+total kernel boot time.
+
+Change-Id: I4a74a6fffd19a219440853df6645e1fba7456f15
+Tracked-On: PKT-1565
+Signed-off-by: Feng Tang <feng.tang@intel.com>
+Signed-off-by: Wood, Brian J <brian.j.wood@intel.com>
+---
+ drivers/Makefile | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/Makefile b/drivers/Makefile
+index b45c736..78ef69c 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -58,6 +58,8 @@ obj-y				+= char/
+ # iommu/ comes before gpu as gpu are using iommu controllers
+ obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
+ 
++obj-y                          += mmc/
++
+ # gpu/ comes after char for AGP vs DRM startup and after iommu
+ obj-y				+= gpu/
+ 
+@@ -128,7 +130,6 @@ obj-$(CONFIG_EISA)		+= eisa/
+ obj-$(CONFIG_PM_OPP)		+= opp/
+ obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
+ obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
+-obj-y				+= mmc/
+ obj-$(CONFIG_MEMSTICK)		+= memstick/
+ obj-$(CONFIG_NEW_LEDS)		+= leds/
+ obj-$(CONFIG_INFINIBAND)	+= infiniband/
+-- 
+2.7.4
+

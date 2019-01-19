@@ -1,0 +1,31 @@
+From 18fdc45762a76a284fbc4b4ede8a0cd221487139 Mon Sep 17 00:00:00 2001
+From: Wei Liu <weix.w.liu@intel.com>
+Date: Thu, 19 Jul 2018 15:04:40 +0800
+Subject: [PATCH 0896/1132] kernel/hyper_dmabuf: disable hyper_dmabuf on arch
+ arm64
+
+hyper_dmabuf should not be enabled while make allyesconfig
+on arch arm64, this patch will disable the option and fix
+the compile error
+
+Signed-off-by: Wei Liu <weix.w.liu@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/Kconfig b/drivers/dma-buf/hyper_dmabuf/Kconfig
+index 999900b..1d91a11 100644
+--- a/drivers/dma-buf/hyper_dmabuf/Kconfig
++++ b/drivers/dma-buf/hyper_dmabuf/Kconfig
+@@ -3,7 +3,7 @@ menu "hyper_dmabuf options"
+ config HYPER_DMABUF
+ 	bool "Enables hyper dmabuf driver"
+ 	default y
+-	depends on (X86=y || X86_64=y || 64BIT=y)
++	depends on (X86=y || X86_64=y)
+ 
+ choice
+ 	prompt "Hypervisor"
+-- 
+2.7.4
+

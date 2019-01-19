@@ -1,0 +1,73 @@
+From 8e39d61d1f1d99fb5ddea91d460f02d655966f5f Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Mon, 17 Sep 2018 16:29:15 +0200
+Subject: [PATCH 0270/1132] x86/mm/cpa: Optimize same protection check
+
+When the existing mapping is correct and the new requested page protections
+are the same as the existing ones, then further checks can be omitted and the
+large page can be preserved. The slow path 4k wise check will not come up with
+a different result.
+
+Before:
+
+ 1G pages checked:                    2
+ 1G pages sameprot:                   0
+ 1G pages preserved:                  0
+ 2M pages checked:                  540
+ 2M pages sameprot:                 466
+ 2M pages preserved:                 47
+ 4K pages checked:               800709
+ 4K pages set-checked:             7668
+
+After:
+
+ 1G pages checked:                    2
+ 1G pages sameprot:                   0
+ 1G pages preserved:                  0
+ 2M pages checked:                  538
+ 2M pages sameprot:                 466
+ 2M pages preserved:                 47
+ 4K pages checked:               560642
+ 4K pages set-checked:             7668
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Reviewed-by: Dave Hansen <dave.hansen@intel.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Bin Yang <bin.yang@intel.com>
+Cc: Mark Gross <mark.gross@intel.com>
+Link: https://lkml.kernel.org/r/20180917143546.424477581@linutronix.de
+
+Cc: Zhang Ning <ning.a.zhang@intel.com>
+Signed-off-by: Lili Li <lili.li@intel.com>
+---
+ arch/x86/mm/pageattr.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/arch/x86/mm/pageattr.c b/arch/x86/mm/pageattr.c
+index c1bd803a..a447566 100644
+--- a/arch/x86/mm/pageattr.c
++++ b/arch/x86/mm/pageattr.c
+@@ -840,6 +840,20 @@ static int __should_split_large_page(pte_t *kpte, unsigned long address,
+ 	}
+ 
+ 	/*
++	 * Optimization: If the requested pgprot is the same as the current
++	 * pgprot, then the large page can be preserved and no updates are
++	 * required independent of alignment and length of the requested
++	 * range. The above already established that the current pgprot is
++	 * correct, which in consequence makes the requested pgprot correct
++	 * as well if it is the same. The static protection scan below will
++	 * not come to a different conclusion.
++	 */
++	if (pgprot_val(req_prot) == pgprot_val(old_prot)) {
++		cpa_inc_lp_sameprot(level);
++		return 0;
++	}
++
++	/*
+ 	 * Make sure that the requested pgprot does not violate the static
+ 	 * protections. Check the full large page whether one of the pages
+ 	 * in it results in a different pgprot than the first one of the
+-- 
+2.7.4
+

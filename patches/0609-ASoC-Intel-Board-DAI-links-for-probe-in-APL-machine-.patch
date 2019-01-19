@@ -1,0 +1,53 @@
+From 8a3a2d7bb4ab7771712a829ad6a5dd557e9ad4ae Mon Sep 17 00:00:00 2001
+From: Pramod Kumar Yadav <pramodx.k.yadav@intel.com>
+Date: Tue, 26 Apr 2016 15:49:45 +0530
+Subject: [PATCH 0609/1132] ASoC: Intel: Board: DAI links for probe in APL
+ machine driver
+
+Added two DAI link, one for each playback & capture, for probe
+
+Change-Id: I4acd2e9421a96a1bd6938b8e5c8644a739c856a0
+Signed-off-by: Pramod Yadav <pramodx.k.yadav@intel.com>
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/boards/bxt_rt298.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/sound/soc/intel/boards/bxt_rt298.c b/sound/soc/intel/boards/bxt_rt298.c
+index a06f504..9d40c40 100644
+--- a/sound/soc/intel/boards/bxt_rt298.c
++++ b/sound/soc/intel/boards/bxt_rt298.c
+@@ -428,6 +428,27 @@ static struct snd_soc_dai_link broxton_rt298_dais[] = {
+ 		.nonatomic = 1,
+ 		.dynamic = 1,
+ 	},
++	/* Probe DAI links */
++	{
++		.name = "Bxt Compress Probe playback",
++		.stream_name = "Probe Playback",
++		.cpu_dai_name = "Compress Probe0 Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.nonatomic = 1,
++	},
++	{
++		.name = "Bxt Compress Probe capture",
++		.stream_name = "Probe Capture",
++		.cpu_dai_name = "Compress Probe1 Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.nonatomic = 1,
++	},
+ 	/* Trace Buffer DAI links */
+ 	{
+ 		.name = "Bxt Trace Buffer0",
+-- 
+2.7.4
+

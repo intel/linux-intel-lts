@@ -1,0 +1,70 @@
+From 5c9fdf4d4399e46821088bb6a7e9b78d8cfa8c27 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Thu, 26 Jul 2018 15:17:00 +0800
+Subject: [PATCH 0917/1132] kernel/drm/i915: Check the plane_state->fb to avoid
+ Null pointer
+
+After the boot option of "enable_initial_modeset=1" is added for gvt-g,
+the function of disable_planes will assign the Null fb for each plane.
+In such case it is possible that the plane_state->fb is NULL when
+calling intel_can_enable_sagv. Then it will trigger the kernel panic.
+
+This is to fix the kernel panic on KBL-NUC.
+ BUG: unable to handle kernel NULL pointer dereference at 0000000000000068
+ IP: intel_can_enable_sagv+0x1a7/0x1c0
+ PGD 0 P4D 0
+ Oops: 0000 [#1] PREEMPT SMP
+ Modules linked in:
+ CPU: 0 PID: 111 Comm: kworker/0:2 Tainted: G     U          4.14.55-65.pk414-sos #1
+ Hardware name: Dell Inc. OptiPlex 7050/062KRH, BIOS 1.5.2 06/19/2017
+ Workqueue: events modeset_config_fn
+ task: ffff9c020a36a100 task.stack: ffff9c0205ac4000
+ RIP: 0010:intel_can_enable_sagv+0x1a7/0x1c0
+ RSP: 0000:ffff9c0205ac7bd8 EFLAGS: 00010246
+ RAX: 0000000000000000 RBX: 000000000000001e RCX: ffff9c020a388400
+ RDX: 0000000000000063 RSI: 0000000000000000 RDI: ffff9c02056f5000
+ RBP: ffff9c0205ac7bf0 R08: ffff9c020a398498 R09: 0000000000000000
+ R10: 0100000000000001 R11: 000000000000002a R12: ffff9c020576ec00
+ R13: ffff9c020a398000 R14: ffff9c0205770000 R15: 0000000000000003
+ FS:  0000000000000000(0000) GS:ffff9c021dc00000(0000) knlGS:0000000000000000
+ CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+ CR2: 0000000000000068 CR3: 0000000153813000 CR4: 00000000003406f0
+ DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+ DR3: 0000000000000000 DR6: 00000000fffe0ff0 DR7: 0000000000000400
+ Call Trace:
+  intel_atomic_commit_tail+0x9fe/0xfc0
+  ? __i915_sw_fence_complete+0x127/0x1c0
+  intel_atomic_commit+0x191/0x240
+  drm_atomic_commit+0x51/0x60
+  modeset_config_fn+0x4fb/0xc20
+  ? __switch_to_asm+0x30/0x60
+  process_one_work+0x192/0x3a0
+  worker_thread+0x41/0x3b0
+  kthread+0x132/0x150
+  ? wq_sysfs_prep_attrs+0x50/0x50
+  ? kthread_create_on_node+0x40/0x40
+  ret_from_fork+0x3a/0x50
+ Code: e8 07 00 00 17 74 19 39 da 0f 8d 3b ff ff ff e9 b6 fe ff ff 5b b8 01 00 00 00 41 5c 41 5d 5d c3 48 8b 81 80 02 00 00 48 8b 40 10 <4c> 39 50 68 75 d6 83 c2 0f eb d1 66 66 2e 0f 1f 84
+ RIP: intel_can_enable_sagv+0x1a7/0x1c0 RSP: ffff9c0205ac7bd8
+
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+---
+ drivers/gpu/drm/i915/intel_pm.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/gpu/drm/i915/intel_pm.c b/drivers/gpu/drm/i915/intel_pm.c
+index bbbea83..2bb47a9 100644
+--- a/drivers/gpu/drm/i915/intel_pm.c
++++ b/drivers/gpu/drm/i915/intel_pm.c
+@@ -3802,6 +3802,7 @@ bool intel_can_enable_sagv(struct drm_atomic_state *state)
+ 		latency = dev_priv->wm.skl_latency[level];
+ 
+ 		if (skl_needs_memory_bw_wa(intel_state) &&
++		    plane->base.state->fb &&
+ 		    plane->base.state->fb->modifier ==
+ 		    I915_FORMAT_MOD_X_TILED)
+ 			latency += 15;
+-- 
+2.7.4
+

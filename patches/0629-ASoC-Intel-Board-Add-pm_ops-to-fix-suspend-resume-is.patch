@@ -1,0 +1,38 @@
+From 19e6469d9e5179522b61b64f555b2b90a2639f92 Mon Sep 17 00:00:00 2001
+From: "Kareem,Shaik" <kareem.m.shaik@intel.com>
+Date: Wed, 30 Aug 2017 16:46:40 +0530
+Subject: [PATCH 0629/1132] ASoC: Intel: Board: Add pm_ops to fix
+ suspend/resume issue
+
+Audio playback not resumed after it is suspended. Add snd_soc_pm_ops to
+execute power management operation.
+
+Change-Id: I84ccf6a0ac7e35c1f79971ee59555f24024d4309
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: H S, Vijay <vijay.h.s@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: audio_build
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/boards/bxt_tdf8532.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/soc/intel/boards/bxt_tdf8532.c b/sound/soc/intel/boards/bxt_tdf8532.c
+index 325b59a..c7b7fe3 100644
+--- a/sound/soc/intel/boards/bxt_tdf8532.c
++++ b/sound/soc/intel/boards/bxt_tdf8532.c
+@@ -240,6 +240,7 @@ static struct platform_driver broxton_tdf8532_audio = {
+ 	.remove = broxton_tdf8532_audio_remove,
+ 	.driver = {
+ 		.name = "bxt_tdf8532",
++		.pm = &snd_soc_pm_ops,
+ 	},
+ };
+ 
+-- 
+2.7.4
+

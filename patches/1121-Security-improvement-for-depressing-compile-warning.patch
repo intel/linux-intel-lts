@@ -1,0 +1,107 @@
+From 8cbaac21736f41312d1496c4f201fd0fe01ae9ea Mon Sep 17 00:00:00 2001
+From: Zhou Furong <furong.zhou@intel.com>
+Date: Fri, 4 Jan 2019 08:42:57 +0800
+Subject: [PATCH 1121/1132] Security: improvement for depressing compile
+ warning
+
+Pepressing compile warnings by update print format,
+remove not used label and not used static function,
+move variable definition to beginning.
+
+Change-Id: I97cbfb23be76ada5c0b7bc3e737387f0d30d99c3
+Tracked-On: PKT-1639
+Signed-off-by: Zhou Furong <furong.zhou@intel.com>
+---
+ security/keystore/api_dal.c | 29 +++++++++--------------------
+ 1 file changed, 9 insertions(+), 20 deletions(-)
+
+diff --git a/security/keystore/api_dal.c b/security/keystore/api_dal.c
+index d4f083a..31c351e 100644
+--- a/security/keystore/api_dal.c
++++ b/security/keystore/api_dal.c
+@@ -119,13 +119,12 @@ static int dal_keystore_register_client(enum keystore_seed_type seed_type,
+ 	pack_int_to_buf(seed_type, input + index);
+ 	index += 2;
+ 
+-cmd_retry:
+ 	res = send_and_receive(commandId, input, index,
+ 		&out_buf, &output_len, &response_code);
+ 
+ 	res = handle_command_response(res, response_code, &retry, NULL, NULL);
+ 	if (res) {
+-		ks_info(KBUILD_MODNAME ": %s Error in send_and_receive: command id = %d %d %d\n",
++		ks_info(KBUILD_MODNAME ": %s Error in send_and_receive: command id = %d %d %lu\n",
+ 					 __func__, commandId, res,
+ 					 response_code);
+ 
+@@ -366,15 +365,6 @@ static int get_cached_wrapped_key_size(void)
+ 	return -EFAULT;
+ }
+ 
+-static int get_cached_key_size(void)
+-{
+-	if (key_info.keyspec != KEYSPEC_INVALID) {
+-		if (key_info.key_size != 0)
+-			return key_info.key_size;
+-	}
+-	return -EFAULT;
+-}
+-
+ static void cache_wrapped_key_size(enum keystore_key_spec keyspec,
+ 				uint32_t wrap_key_size)
+ {
+@@ -556,7 +546,7 @@ int dal_keystore_wrap_key(const uint8_t *client_ticket,
+ 	}
+ 
+ 	if (res) {
+-		ks_err(KBUILD_MODNAME ": %s Error in send_and_receive: command id = %d %d %d\n",
++		ks_err(KBUILD_MODNAME ": %s Error in send_and_receive: command id = %d %d %lu\n",
+ 			__func__, commandId, res, response_code);
+ 
+ 		goto exit;
+@@ -645,6 +635,9 @@ int dal_keystore_load_key(const uint8_t *client_ticket,
+ 	uint8_t *out_buf = NULL;
+ 	int retry = 0;
+ 	size_t index = 0;
++	uint8_t input[KEYSTORE_MAX_CLIENT_ID_SIZE
++				  + KEYSTORE_CLIENT_TICKET_SIZE
++				  + wrapped_key_size];
+ 
+ 	FUNC_BEGIN;
+ 
+@@ -658,10 +651,6 @@ int dal_keystore_load_key(const uint8_t *client_ticket,
+ 		return -EINVAL;
+ 	}
+ 
+-	uint8_t input[KEYSTORE_MAX_CLIENT_ID_SIZE
+-				  + KEYSTORE_CLIENT_TICKET_SIZE
+-				  + wrapped_key_size];
+-
+ 	res = dal_calc_clientid(client_id, KEYSTORE_MAX_CLIENT_ID_SIZE);
+ 
+ 	if (res) {
+@@ -834,8 +823,8 @@ int dal_keystore_encrypt(const uint8_t *client_ticket, int slot_id,
+ 
+ 	if (key_spec != KEYSPEC_DAL_WRAPPED_KEY ||
+ 		wrapped_key_size > DAL_KEYSTORE_MAX_WRAP_KEY_LEN) {
+-			ks_err(KBUILD_MODNAME ": %s: Invalid key retrived from wrapped key cache.\n",
+-				   __func__, res);
++		ks_err(KBUILD_MODNAME ": %s: Invalid key %d retrived from wrapped key cache.\n",
++			   __func__, key_spec);
+ 		goto exit;
+ 	}
+ 
+@@ -986,8 +975,8 @@ int dal_keystore_decrypt(const uint8_t *client_ticket, int slot_id,
+ 
+ 	if (key_spec != KEYSPEC_DAL_WRAPPED_KEY ||
+ 		wrapped_key_size > DAL_KEYSTORE_MAX_WRAP_KEY_LEN) {
+-			ks_err(KBUILD_MODNAME ": %s: Invalid key retrived from wrapped key cache.\n",
+-				   __func__, res);
++		ks_err(KBUILD_MODNAME ": %s: Invalid key %d retrived from wrapped key cache.\n",
++			   __func__, key_spec);
+ 		goto exit;
+ 	}
+ 
+-- 
+2.7.4
+

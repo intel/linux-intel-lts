@@ -1,0 +1,47 @@
+From 7340701385ff84f5e5a60ae2057d2284960b4b2d Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Tue, 10 Jul 2018 09:55:30 +0800
+Subject: [PATCH 0875/1132] drm/i915/gvt: don't treat EINVAL if trap
+ pci_command and pci_status together
+
+Previously we only support single pci_command writing trap. While when
+system suspends, pci_command and pci_status are written together in 32
+bits, GVT-g also need trap them in such scenario.
+
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/cfg_space.c | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/cfg_space.c b/drivers/gpu/drm/i915/gvt/cfg_space.c
+index 707b0a5..f6bcfcb 100644
+--- a/drivers/gpu/drm/i915/gvt/cfg_space.c
++++ b/drivers/gpu/drm/i915/gvt/cfg_space.c
+@@ -295,9 +295,22 @@ int intel_vgpu_emulate_cfg_write(struct intel_vgpu *vgpu, unsigned int offset,
+ 
+ 	/* First check if it's PCI_COMMAND */
+ 	if (IS_ALIGNED(offset, 2) && offset == PCI_COMMAND) {
+-		if (WARN_ON(bytes > 2))
++		if (WARN_ON(bytes != 2 && bytes != 4))
+ 			return -EINVAL;
+-		return emulate_pci_command_write(vgpu, offset, p_data, bytes);
++
++		ret = -EINVAL;
++		if (bytes == 2)
++			ret = emulate_pci_command_write(vgpu, offset,
++							p_data, bytes);
++		if (bytes ==  4) {
++			ret = emulate_pci_command_write(vgpu, offset,
++							p_data, 2);
++			if (ret)
++				return ret;
++			vgpu_pci_cfg_mem_write(vgpu, offset + 2,
++					       (u8 *)p_data + 2, 2);
++		}
++		return ret;
+ 	}
+ 
+ 	switch (rounddown(offset, 4)) {
+-- 
+2.7.4
+

@@ -1,0 +1,212 @@
+From 901c27bd9129d7512117e87d2cd416767876affd Mon Sep 17 00:00:00 2001
+From: "Kareem,Shaik" <kareem.m.shaik@intel.com>
+Date: Thu, 15 Jun 2017 13:25:09 +0530
+Subject: [PATCH 0613/1132] ASoC: Intel: Skylake: Parse manifest data to fill
+ DMA control parameters
+
+DMA control parameters are required in order to initialize or
+modify DMA gateway configuration in ADSP Firmware. These parameters
+are kept in the manifest data blocks and driver should read these
+values from this manifest.
+
+This patch parses manifest private data blocks and fill DMA control
+configuration structure in driver accordingly.
+
+Change-Id: Icb01a78c1869181681c7d82f49069dc666be4444
+Signed-off-by: Kareem,Shaik <kareem.m.shaik@intel.com>
+---
+ include/uapi/sound/snd_sst_tokens.h    | 11 ++++-
+ sound/soc/intel/skylake/skl-topology.c | 85 ++++++++++++++++++++++++++++++++--
+ sound/soc/intel/skylake/skl.h          | 21 +++++++++
+ 3 files changed, 111 insertions(+), 6 deletions(-)
+
+diff --git a/include/uapi/sound/snd_sst_tokens.h b/include/uapi/sound/snd_sst_tokens.h
+index 5d3d81a..7c01494 100644
+--- a/include/uapi/sound/snd_sst_tokens.h
++++ b/include/uapi/sound/snd_sst_tokens.h
+@@ -243,6 +243,12 @@
+  *                              indicate if this endpoint is participating
+  *                              in aggregation.
+  *
++ * %SKL_TKN_U32_DMACTRL_CFG_IDX:
++ *				Config index to fill up DMA control params
++ *
++ * %SKL_TKN_U32_DMACTRL_CFG_SIZE:
++ *				Size information of DMA control params
++ *
+  * module_id and loadable flags dont have tokens as these values will be
+  * read from the DSP FW manifest
+  *
+@@ -339,8 +345,9 @@ enum SKL_TKNS {
+ 	SKL_TKN_U32_AGG_LINK_ID,
+ 	SKL_TKN_U32_AGG_CH_MASK,
+ 	SKL_TKN_U32_AGG_ID,
+-
+-	SKL_TKN_MAX = SKL_TKN_U32_AGG_ID,
++	SKL_TKN_U32_DMACTRL_CFG_IDX,
++	SKL_TKN_U32_DMACTRL_CFG_SIZE,
++	SKL_TKN_MAX = SKL_TKN_U32_DMACTRL_CFG_SIZE,
+ };
+ 
+ #endif
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 5f51deb..87f204b 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -3926,6 +3926,63 @@ static int skl_tplg_get_str_tkn(struct device *dev,
+ 	return tkn_count;
+ }
+ 
++static int skl_tplg_mfest_fill_dmactrl(struct device *dev,
++		struct skl_dmactrl_config *dmactrl_cfg,
++		struct snd_soc_tplg_vendor_value_elem *tkn_elem)
++{
++
++	u32 cfg_idx = dmactrl_cfg->idx;
++	struct skl_dmctrl_hdr *hdr = &dmactrl_cfg->hdr[cfg_idx];
++
++	switch (tkn_elem->token) {
++	case SKL_TKN_U32_FMT_CH:
++		hdr->ch = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_FMT_FREQ:
++		hdr->freq = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_FMT_BIT_DEPTH:
++		hdr->fmt = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_PIPE_DIRECTION:
++		hdr->direction = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U8_TIME_SLOT:
++		hdr->tdm_slot = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_VBUS_ID:
++		hdr->vbus_id = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_DMACTRL_CFG_IDX:
++		dmactrl_cfg->idx  = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_DMACTRL_CFG_SIZE:
++		if (tkn_elem->value && !hdr->data) {
++			hdr->data = devm_kzalloc(dev,
++				tkn_elem->value, GFP_KERNEL);
++			if (!hdr->data)
++				return -ENOMEM;
++			hdr->data_size = tkn_elem->value;
++		} else {
++			hdr->data_size = 0;
++			dev_err(dev, "Invalid dmactrl info \n");
++		}
++		break;
++	default:
++		dev_err(dev, "Invalid token %d\n", tkn_elem->token);
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
+ static int skl_tplg_manifest_fill_fmt(struct device *dev,
+ 		struct skl_module_iface *fmt,
+ 		struct snd_soc_tplg_vendor_value_elem *tkn_elem,
+@@ -4164,8 +4221,17 @@ static int skl_tplg_get_int_tkn(struct device *dev,
+ 	case SKL_TKN_U32_FMT_SAMPLE_TYPE:
+ 	case SKL_TKN_U32_FMT_CH_MAP:
+ 	case SKL_TKN_MM_U32_INTF_PIN_ID:
+-		ret = skl_tplg_manifest_fill_fmt(dev, fmt, tkn_elem,
+-						 dir, pin_idx);
++	case SKL_TKN_U32_PIPE_DIRECTION:
++	case SKL_TKN_U8_TIME_SLOT:
++	case SKL_TKN_U32_VBUS_ID:
++	case SKL_TKN_U32_DMACTRL_CFG_IDX:
++	case SKL_TKN_U32_DMACTRL_CFG_SIZE:
++		if (skl->modules)
++			ret = skl_tplg_manifest_fill_fmt(dev, fmt, tkn_elem,
++							 dir, pin_idx);
++		else
++			ret = skl_tplg_mfest_fill_dmactrl(dev, &skl->cfg.dmactrl_cfg,
++					 tkn_elem);
+ 		if (ret < 0)
+ 			return ret;
+ 		break;
+@@ -4268,8 +4334,9 @@ static int skl_tplg_get_manifest_data(struct snd_soc_tplg_manifest *manifest,
+ {
+ 	struct snd_soc_tplg_vendor_array *array;
+ 	int num_blocks, block_size = 0, block_type, off = 0;
++	struct skl_dmctrl_hdr *dmactrl_hdr;
++	int cfg_idx, ret;
+ 	char *data;
+-	int ret;
+ 
+ 	/* Read the NUM_DATA_BLOCKS descriptor */
+ 	array = (struct snd_soc_tplg_vendor_array *)manifest->priv.data;
+@@ -4314,7 +4381,17 @@ static int skl_tplg_get_manifest_data(struct snd_soc_tplg_manifest *manifest,
+ 
+ 			--num_blocks;
+ 		} else {
+-			return -EINVAL;
++			cfg_idx = skl->cfg.dmactrl_cfg.idx;
++			if (cfg_idx < SKL_MAX_DMACTRL) {
++				dmactrl_hdr = &skl->cfg.dmactrl_cfg.hdr[cfg_idx];
++				if (dmactrl_hdr->data && (dmactrl_hdr->data_size == block_size))
++					memcpy(dmactrl_hdr->data, data, block_size);
++			} else {
++				dev_err(dev, "error block_idx value exceeding %d\n", cfg_idx);
++				return -EINVAL;
++			}
++			ret = block_size;
++			--num_blocks;
+ 		}
+ 		off += ret;
+ 	}
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 2883d86..51cc193 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -47,6 +47,8 @@
+ #define AZX_EM2_DUM_MASK		(1 << 23)
+ 
+ #define AZX_REG_VS_EM2_L1SEN		BIT(13)
++#define SKL_MAX_DMA_CFG    24
++#define SKL_MAX_DMACTRL		7
+ 
+ struct skl_dsp_resource {
+ 	u32 max_mcps;
+@@ -67,7 +69,26 @@ struct skl_astate_config {
+ 	struct skl_astate_param astate_table[0];
+ };
+ 
++struct skl_dmctrl_hdr {
++	u32 vbus_id;
++	u32 freq;
++	u32 tdm_slot;
++	u32 fmt;
++	u32 direction;
++	u32 ch;
++	u32 data_size;
++	u32 *data;
++} __packed;
++
++struct skl_dmactrl_config {
++	u32 type;
++	u32 size;
++	u32 idx;
++	struct skl_dmctrl_hdr hdr[SKL_MAX_DMACTRL];
++} __packed;
++
+ struct skl_fw_config {
++	struct skl_dmactrl_config dmactrl_cfg;
+ 	struct skl_astate_config *astate_cfg;
+ };
+ 
+-- 
+2.7.4
+

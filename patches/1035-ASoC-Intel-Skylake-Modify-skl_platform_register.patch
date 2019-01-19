@@ -1,0 +1,71 @@
+From 9be17071eabce18a05ad5b5fc59c598201c1d779 Mon Sep 17 00:00:00 2001
+From: Pawel Furtak <pawel.furtak@intel.com>
+Date: Sun, 25 Nov 2018 17:04:36 +0100
+Subject: [PATCH 1035/1132] ASoC: Intel: Skylake: Modify skl_platform_register
+
+Modify skl_platform_register function to allow registration
+of different component driver.
+
+Change-Id: I4a6474a37b8c40e33b1d0484cfab4f17aac81000
+Signed-off-by: Pawel Furtak <pawel.furtak@intel.com>
+Tracked-On: OAM-72189
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 12 ++++++++++--
+ sound/soc/intel/skylake/skl.h     |  2 ++
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 7bc37e2..06b6163 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -2135,7 +2135,8 @@ static struct snd_soc_dai_driver ssp_dai_info = {
+ 	},
+ };
+ 
+-int skl_platform_register(struct device *dev)
++int skl_platform_component_register(struct device *dev,
++	const struct snd_soc_component_driver *component_drv)
+ {
+ 	int ret;
+ 	struct hdac_bus *bus = dev_get_drvdata(dev);
+@@ -2203,7 +2204,7 @@ int skl_platform_register(struct device *dev)
+ 		memcpy(&dais[num_platform_dais + skl->grp_cnt.cnt],
+ 		       skl_fe_dai, sizeof(skl_fe_dai));
+ 
+-	ret = devm_snd_soc_register_component(dev, &skl_component, dais,
++	ret = devm_snd_soc_register_component(dev, component_drv, dais,
+ 					      total_dais);
+ 	if (ret)
+ 		goto err;
+@@ -2216,6 +2217,13 @@ int skl_platform_register(struct device *dev)
+ 	dev_err(dev, "soc component registration failed %d\n", ret);
+ 	return ret;
+ }
++EXPORT_SYMBOL(skl_platform_component_register);
++
++int skl_platform_register(struct device *dev)
++{
++	return skl_platform_component_register(dev, &skl_component);
++}
++EXPORT_SYMBOL(skl_platform_register);
+ 
+ int skl_platform_unregister(struct device *dev)
+ {
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index a1536d32..94cabe5 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -222,6 +222,8 @@ struct skl_module_cfg;
+ 
+ int skl_pcm_new(struct snd_soc_pcm_runtime *rtd);
+ void skl_pcm_free(struct snd_pcm *pcm);
++int skl_platform_component_register(struct device *dev,
++	const struct snd_soc_component_driver *component_drv);
+ int skl_platform_soc_probe(struct snd_soc_component *component);
+ int skl_platform_open(struct snd_pcm_substream *substream);
+ int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
+-- 
+2.7.4
+

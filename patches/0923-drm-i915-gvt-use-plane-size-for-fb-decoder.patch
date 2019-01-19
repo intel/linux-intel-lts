@@ -1,0 +1,78 @@
+From a8c43a1e5244b92bc80ee86f5bc3cdd242dd7fcd Mon Sep 17 00:00:00 2001
+From: Zhipeng Gong <zhipeng.gong@intel.com>
+Date: Thu, 20 Sep 2018 13:10:45 +0800
+Subject: [PATCH 0923/1132] drm/i915/gvt: use plane size for fb decoder
+
+Current fb decoder returns pipe src size to user space,
+while ggtt surface sharing only show primary plane framebuffer.
+When plane fb size is smaller than pipe size, some garbages
+are showed.
+
+This patch change fb decoder to use plane size to avoid
+those garbages.
+
+v2:
+- align size to PAGE_SIZE
+
+Tracked-On: projectacrn/acrn-hypervisor#1301
+Signed-off-by: Zhipeng Gong <zhipeng.gong@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/fb_decoder.c     | 9 +++++----
+ drivers/gpu/drm/i915/gvt/fb_decoder.h     | 4 ++++
+ drivers/gpu/drm/i915/i915_gem_gvtbuffer.c | 3 +--
+ 3 files changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/fb_decoder.c b/drivers/gpu/drm/i915/gvt/fb_decoder.c
+index 28f02cb..f8ce268 100644
+--- a/drivers/gpu/drm/i915/gvt/fb_decoder.c
++++ b/drivers/gpu/drm/i915/gvt/fb_decoder.c
+@@ -267,11 +267,12 @@ int intel_vgpu_decode_primary_plane(struct intel_vgpu *vgpu,
+ 			(_PRI_PLANE_STRIDE_MASK >> 6) :
+ 				_PRI_PLANE_STRIDE_MASK, plane->bpp);
+ 
+-	plane->width = (vgpu_vreg_t(vgpu, PIPESRC(pipe)) & _PIPE_H_SRCSZ_MASK) >>
+-		_PIPE_H_SRCSZ_SHIFT;
++	plane->width = vgpu_vreg_t(vgpu, PLANE_SIZE(pipe, PLANE_PRIMARY))&
++					_PLANE_SIZE_WIDTH_MASK;
++
+ 	plane->width += 1;
+-	plane->height = (vgpu_vreg_t(vgpu, PIPESRC(pipe)) &
+-			_PIPE_V_SRCSZ_MASK) >> _PIPE_V_SRCSZ_SHIFT;
++	plane->height = (vgpu_vreg_t(vgpu, PLANE_SIZE(pipe, PLANE_PRIMARY)) &
++			 _PLANE_SIZE_HEIGHT_MASK) >> _PLANE_SIZE_HEIGHT_SHIFT;
+ 	plane->height += 1;	/* raw height is one minus the real value */
+ 
+ 	val = vgpu_vreg_t(vgpu, DSPTILEOFF(pipe));
+diff --git a/drivers/gpu/drm/i915/gvt/fb_decoder.h b/drivers/gpu/drm/i915/gvt/fb_decoder.h
+index a202f9f..5162675 100644
+--- a/drivers/gpu/drm/i915/gvt/fb_decoder.h
++++ b/drivers/gpu/drm/i915/gvt/fb_decoder.h
+@@ -50,6 +50,10 @@
+ #define _PRI_PLANE_Y_OFF_SHIFT		16
+ #define _PRI_PLANE_Y_OFF_MASK		(0xfff << _PRI_PLANE_Y_OFF_SHIFT)
+ 
++#define _PLANE_SIZE_HEIGHT_SHIFT	16
++#define _PLANE_SIZE_HEIGHT_MASK		(0xfff << _PLANE_SIZE_HEIGHT_SHIFT)
++#define _PLANE_SIZE_WIDTH_MASK		0x1fff
++
+ #define _CURSOR_MODE			0x3f
+ #define _CURSOR_ALPHA_FORCE_SHIFT	8
+ #define _CURSOR_ALPHA_FORCE_MASK	(0x3 << _CURSOR_ALPHA_FORCE_SHIFT)
+diff --git a/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c b/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+index fe72309..f482ece 100644
+--- a/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
++++ b/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+@@ -195,8 +195,7 @@ static int gvt_decode_information(struct drm_device *dev,
+ 		return -EINVAL;
+ 	}
+ 
+-	args->size = (((args->width * args->height * args->bpp) / 8) +
+-		      (PAGE_SIZE - 1)) >> PAGE_SHIFT;
++	args->size = ALIGN(args->stride * args->height, PAGE_SIZE) >> PAGE_SHIFT;
+ 
+ 	if (args->start & (PAGE_SIZE - 1)) {
+ 		DRM_DEBUG_DRIVER("GVT_GEM: Not aligned fb start address: "
+-- 
+2.7.4
+

@@ -1,0 +1,211 @@
+From b229a681a1d48d4ba7c8bc5bc2dff48e0831a7c1 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Wed, 7 Mar 2018 09:31:29 +0200
+Subject: [PATCH 0385/1132] tpm: factor out tpm_startup function
+
+TPM manual startup is used only from within TPM 1.x or TPM 2.x
+code, hence remove tpm_startup() function from tpm-interface.c
+and add two static functions implementations tpm1_startup()
+and tpm2_startup() into to tpm1-cmd.c and tpm2-cmd.c respectively.
+
+V2-V2: Resend.
+V4: Fix the commit message.
+V5: 1. A small fix in the kdoc.
+    2. Fixed Jarkko's name in Tested-by.
+V6: Rebase
+
+Change-Id: I0f4809e1ad3a23784a73f60ed3f8dc245f19117f
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Tested-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+---
+ drivers/char/tpm/tpm-interface.c | 41 ----------------------------------------
+ drivers/char/tpm/tpm.h           |  1 -
+ drivers/char/tpm/tpm1-cmd.c      | 37 +++++++++++++++++++++++++++++++++++-
+ drivers/char/tpm/tpm2-cmd.c      | 34 +++++++++++++++++++++++++++++++--
+ 4 files changed, 68 insertions(+), 45 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-interface.c b/drivers/char/tpm/tpm-interface.c
+index e7f220f..54b8170 100644
+--- a/drivers/char/tpm/tpm-interface.c
++++ b/drivers/char/tpm/tpm-interface.c
+@@ -414,47 +414,6 @@ ssize_t tpm_transmit_cmd(struct tpm_chip *chip, struct tpm_space *space,
+ }
+ EXPORT_SYMBOL_GPL(tpm_transmit_cmd);
+ 
+-#define TPM_ORD_STARTUP 153
+-#define TPM_ST_CLEAR 1
+-
+-/**
+- * tpm_startup - turn on the TPM
+- * @chip: TPM chip to use
+- *
+- * Normally the firmware should start the TPM. This function is provided as a
+- * workaround if this does not happen. A legal case for this could be for
+- * example when a TPM emulator is used.
+- *
+- * Return: same as tpm_transmit_cmd()
+- */
+-int tpm_startup(struct tpm_chip *chip)
+-{
+-	struct tpm_buf buf;
+-	int rc;
+-
+-	dev_info(&chip->dev, "starting up the TPM manually\n");
+-
+-	if (chip->flags & TPM_CHIP_FLAG_TPM2) {
+-		rc = tpm_buf_init(&buf, TPM2_ST_NO_SESSIONS, TPM2_CC_STARTUP);
+-		if (rc < 0)
+-			return rc;
+-
+-		tpm_buf_append_u16(&buf, TPM2_SU_CLEAR);
+-	} else {
+-		rc = tpm_buf_init(&buf, TPM_TAG_RQU_COMMAND, TPM_ORD_STARTUP);
+-		if (rc < 0)
+-			return rc;
+-
+-		tpm_buf_append_u16(&buf, TPM_ST_CLEAR);
+-	}
+-
+-	rc = tpm_transmit_cmd(chip, NULL, buf.data, PAGE_SIZE, 0, 0,
+-			      "attempting to start the TPM");
+-
+-	tpm_buf_destroy(&buf);
+-	return rc;
+-}
+-
+ int tpm_get_timeouts(struct tpm_chip *chip)
+ {
+ 	if (chip->flags & TPM_CHIP_FLAG_HAVE_TIMEOUTS)
+diff --git a/drivers/char/tpm/tpm.h b/drivers/char/tpm/tpm.h
+index 754f7bc..2eb73f6 100644
+--- a/drivers/char/tpm/tpm.h
++++ b/drivers/char/tpm/tpm.h
+@@ -540,7 +540,6 @@ ssize_t tpm_transmit_cmd(struct tpm_chip *chip, struct tpm_space *space,
+ 			 void *buf, size_t bufsiz,
+ 			 size_t min_rsp_body_length, unsigned int flags,
+ 			 const char *desc);
+-int tpm_startup(struct tpm_chip *chip);
+ int tpm_get_timeouts(struct tpm_chip *);
+ 
+ int tpm1_pm_suspend(struct tpm_chip *chip, int tpm_suspend_pcr);
+diff --git a/drivers/char/tpm/tpm1-cmd.c b/drivers/char/tpm/tpm1-cmd.c
+index 3bd9f1f..8a84db31 100644
+--- a/drivers/char/tpm/tpm1-cmd.c
++++ b/drivers/char/tpm/tpm1-cmd.c
+@@ -308,6 +308,40 @@ unsigned long tpm1_calc_ordinal_duration(struct tpm_chip *chip, u32 ordinal)
+ 		return duration;
+ }
+ 
++#define TPM_ORD_STARTUP 153
++#define TPM_ST_CLEAR 1
++
++/**
++ * tpm_startup() - turn on the TPM
++ * @chip: TPM chip to use
++ *
++ * Normally the firmware should start the TPM. This function is provided as a
++ * workaround if this does not happen. A legal case for this could be for
++ * example when a TPM emulator is used.
++ *
++ * Return: same as tpm_transmit_cmd()
++ */
++static int tpm1_startup(struct tpm_chip *chip)
++{
++	struct tpm_buf buf;
++	int rc;
++
++	dev_info(&chip->dev, "starting up the TPM manually\n");
++
++	rc = tpm_buf_init(&buf, TPM_TAG_RQU_COMMAND, TPM_ORD_STARTUP);
++	if (rc < 0)
++		return rc;
++
++	tpm_buf_append_u16(&buf, TPM_ST_CLEAR);
++
++	rc = tpm_transmit_cmd(chip, NULL, buf.data, PAGE_SIZE, 0, 0,
++			      "attempting to start the TPM");
++
++	tpm_buf_destroy(&buf);
++
++	return rc;
++}
++
+ int tpm1_get_timeouts(struct tpm_chip *chip)
+ {
+ 	cap_t cap;
+@@ -317,7 +351,7 @@ int tpm1_get_timeouts(struct tpm_chip *chip)
+ 	rc = tpm1_getcap(chip, TPM_CAP_PROP_TIS_TIMEOUT, &cap, NULL,
+ 			 sizeof(cap.timeout));
+ 	if (rc == TPM_ERR_INVALID_POSTINIT) {
+-		if (tpm_startup(chip))
++		if (tpm1_startup(chip))
+ 			return rc;
+ 
+ 		rc = tpm1_getcap(chip, TPM_CAP_PROP_TIS_TIMEOUT, &cap,
+@@ -727,3 +761,4 @@ int tpm1_pm_suspend(struct tpm_chip *chip, int tpm_suspend_pcr)
+ 
+ 	return rc;
+ }
++
+diff --git a/drivers/char/tpm/tpm2-cmd.c b/drivers/char/tpm/tpm2-cmd.c
+index dd2e98f..6ca4fc0 100644
+--- a/drivers/char/tpm/tpm2-cmd.c
++++ b/drivers/char/tpm/tpm2-cmd.c
+@@ -949,6 +949,36 @@ static int tpm2_get_cc_attrs_tbl(struct tpm_chip *chip)
+ }
+ 
+ /**
++ * tpm2_startup - turn on the TPM
++ * @chip: TPM chip to use
++ *
++ * Normally the firmware should start the TPM. This function is provided as a
++ * workaround if this does not happen. A legal case for this could be for
++ * example when a TPM emulator is used.
++ *
++ * Return: same as tpm_transmit_cmd()
++ */
++
++static int tpm2_startup(struct tpm_chip *chip)
++{
++	struct tpm_buf buf;
++	int rc;
++
++	dev_info(&chip->dev, "starting up the TPM manually\n");
++
++	rc = tpm_buf_init(&buf, TPM2_ST_NO_SESSIONS, TPM2_CC_STARTUP);
++	if (rc < 0)
++		return rc;
++
++	tpm_buf_append_u16(&buf, TPM2_SU_CLEAR);
++	rc = tpm_transmit_cmd(chip, NULL, buf.data, PAGE_SIZE, 0, 0,
++			      "attempting to start the TPM");
++	tpm_buf_destroy(&buf);
++
++	return rc;
++}
++
++/**
+  * tpm2_auto_startup - Perform the standard automatic TPM initialization
+  *                     sequence
+  * @chip: TPM chip to use
+@@ -959,7 +989,7 @@ int tpm2_auto_startup(struct tpm_chip *chip)
+ {
+ 	int rc;
+ 
+-	rc = tpm_get_timeouts(chip);
++	rc = tpm2_get_timeouts(chip);
+ 	if (rc)
+ 		goto out;
+ 
+@@ -968,7 +998,7 @@ int tpm2_auto_startup(struct tpm_chip *chip)
+ 		goto out;
+ 
+ 	if (rc == TPM2_RC_INITIALIZE) {
+-		rc = tpm_startup(chip);
++		rc = tpm2_startup(chip);
+ 		if (rc)
+ 			goto out;
+ 
+-- 
+2.7.4
+

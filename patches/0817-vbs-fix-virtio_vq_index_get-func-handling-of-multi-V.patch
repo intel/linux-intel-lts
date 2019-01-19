@@ -1,0 +1,118 @@
+From 69b9bf16a8d486cd8c3f60d31dde6b60101990f3 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:03 +0800
+Subject: [PATCH 0817/1132] vbs: fix virtio_vq_index_get func handling of multi
+ VQ concurrent request.
+
+Under multiple VQ use case, it is possible to have concurrent requests.
+Added support to return multiple vq index from all vcpu.
+
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/vbs/vbs.c       | 27 ++++++++++++++++++++++-----
+ drivers/vbs/vbs_rng.c   |  2 +-
+ include/linux/vbs/vbs.h | 11 ++++++++---
+ 3 files changed, 31 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/vbs/vbs.c b/drivers/vbs/vbs.c
+index c2d8a52..0e0516a 100644
+--- a/drivers/vbs/vbs.c
++++ b/drivers/vbs/vbs.c
+@@ -148,9 +148,12 @@ long virtio_dev_deregister(struct virtio_dev_info *dev)
+ 	return 0;
+ }
+ 
+-int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map)
++int virtio_vqs_index_get(struct virtio_dev_info *dev,
++						unsigned long *ioreqs_map,
++						int *vqs_index,
++						int max_vqs_index)
+ {
+-	int val = -1;
++	int idx = 0;
+ 	struct vhm_request *req;
+ 	int vcpu;
+ 
+@@ -178,10 +181,24 @@ int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map)
+ 			} else {
+ 				pr_debug("%s: write request! type %d\n",
+ 						__func__, req->type);
++
++				if (idx == max_vqs_index) {
++					pr_warn("%s: The allocated vqs\n"
++						"size (%d) is smaller than the\n"
++						"number of vcpu (%d)! This\n"
++						"might caused the process of\n"
++						"some requests be delayed.",
++						__func__, max_vqs_index,
++						dev->_ctx.max_vcpu);
++					break;
++				}
++
+ 				if (dev->io_range_type == PIO_RANGE)
+-					val = req->reqs.pio_request.value;
++					vqs_index[idx++] =
++						req->reqs.pio_request.value;
+ 				else
+-					val = req->reqs.mmio_request.value;
++					vqs_index[idx++] =
++						req->reqs.mmio_request.value;
+ 			}
+ 			smp_mb();
+ 			atomic_set(&req->processed, REQ_STATE_COMPLETE);
+@@ -189,7 +206,7 @@ int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map)
+ 		}
+ 	}
+ 
+-	return val;
++	return idx;
+ }
+ 
+ static long virtio_vqs_info_set(struct virtio_dev_info *dev,
+diff --git a/drivers/vbs/vbs_rng.c b/drivers/vbs/vbs_rng.c
+index fd2bb27..c5e28cc 100644
+--- a/drivers/vbs/vbs_rng.c
++++ b/drivers/vbs/vbs_rng.c
+@@ -268,7 +268,7 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
+ 		return -EINVAL;
+ 	}
+ 
+-	val = virtio_vq_index_get(&rng->dev, ioreqs_map);
++	virtio_vqs_index_get(&rng->dev, ioreqs_map, &val, 1);
+ 
+ 	if (val >= 0)
+ 		handle_vq_kick(rng, val);
+diff --git a/include/linux/vbs/vbs.h b/include/linux/vbs/vbs.h
+index 30df8eb..d9d932c 100644
+--- a/include/linux/vbs/vbs.h
++++ b/include/linux/vbs/vbs.h
+@@ -262,7 +262,7 @@ long virtio_dev_register(struct virtio_dev_info *dev);
+ long virtio_dev_deregister(struct virtio_dev_info *dev);
+ 
+ /**
+- * virtio_vq_index_get - get virtqueue index that frontend kicks
++ * virtio_vqs_index_get - get virtqueue indexes that frontend kicks
+  *
+  * This API is normally called in the VBS-K device's callback
+  * function, to get value write to the "kick" register from
+@@ -270,10 +270,15 @@ long virtio_dev_deregister(struct virtio_dev_info *dev);
+  *
+  * @dev: Pointer to VBS-K device data struct
+  * @ioreqs_map: requests bitmap need to handle, provided by VHM
++ * @vqs_index: array to store the vq indexes
++ * @max_vqs_index: size of vqs_index array
+  *
+- * Return: >=0 on virtqueue index, <0 on error
++ * Return: Number of vq request
+  */
+-int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map);
++int virtio_vqs_index_get(struct virtio_dev_info *dev,
++						unsigned long *ioreqs_map,
++						int *vqs_index,
++						int max_vqs_index);
+ 
+ /**
+  * virtio_dev_reset - reset a VBS-K device
+-- 
+2.7.4
+

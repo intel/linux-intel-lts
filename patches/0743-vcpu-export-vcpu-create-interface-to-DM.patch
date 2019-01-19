@@ -1,0 +1,90 @@
+From 28fd4a66514a0806a707dc8fd15ac518e6fbff65 Mon Sep 17 00:00:00 2001
+From: Yin Fengwei <fengwei.yin@intel.com>
+Date: Fri, 31 Aug 2018 10:58:56 +0800
+Subject: [PATCH 0743/1132] vcpu: export vcpu create interface to DM
+
+Change-Id: I64a179c2452f67285f347bbaa60c702dec5f55de
+Tracked-On: 218445
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 17 +++++++++++++++++
+ include/linux/vhm/acrn_common.h    |  5 +++++
+ include/linux/vhm/acrn_hv_defs.h   |  1 +
+ include/linux/vhm/vhm_ioctl_defs.h |  1 +
+ 4 files changed, 24 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 32de7ae..d7ad18f 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -224,6 +224,23 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		return ret;
+ 	}
+ 
++	case IC_CREATE_VCPU: {
++		struct acrn_create_vcpu cv;
++
++		if (copy_from_user(&cv, (void *)ioctl_param,
++				sizeof(struct acrn_create_vcpu)))
++			return -EFAULT;
++
++		ret = acrn_hypercall2(HC_CREATE_VCPU, vm->vmid,
++				virt_to_phys(&cv));
++		if (ret < 0) {
++			pr_err("vhm: failed to create vcpu %ld!\n", cv.vcpuid);
++			return -EFAULT;
++		}
++
++		return ret;
++	}
++
+ 	case IC_ALLOC_MEMSEG: {
+ 		struct vm_memseg memseg;
+ 
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 5723e5e..2fa43a2 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -193,6 +193,11 @@ struct acrn_create_vm {
+ 	unsigned long vcpu_num;		/* IN: VM vcpu number */
+ } __attribute__((aligned(8)));
+ 
++struct acrn_create_vcpu {
++	int vcpuid;			/* IN: vcpu id */
++	int pcpuid;			/* IN: pcpu id */
++} __attribute__((aligned(8)));
++
+ struct acrn_set_ioreq_buffer {
+ 	long req_buf;			/* IN: gpa of per VM request_buffer*/
+ } __attribute__((aligned(8)));
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 3e43da5..329c38b 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -73,6 +73,7 @@
+ #define HC_RESUME_VM                _HC_ID(HC_ID, HC_ID_VM_BASE + 0x03)
+ #define HC_PAUSE_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x04)
+ #define HC_QUERY_VMSTATE            _HC_ID(HC_ID, HC_ID_VM_BASE + 0x05)
++#define HC_CREATE_VCPU              _HC_ID(HC_ID, HC_ID_VM_BASE + 0x06)
+ 
+ /* IRQ and Interrupts */
+ #define HC_ID_IRQ_BASE              0x100UL
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 8d03d38..5ec2d10 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -63,6 +63,7 @@
+ #define IC_RESUME_VM                   _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
+ #define IC_PAUSE_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x04)
+ #define IC_QUERY_VMSTATE               _IC_ID(IC_ID, IC_ID_VM_BASE + 0x05)
++#define	IC_CREATE_VCPU                 _IC_ID(IC_ID, IC_ID_VM_BASE + 0x06)
+ 
+ /* IRQ and Interrupts */
+ #define IC_ID_IRQ_BASE                 0x100UL
+-- 
+2.7.4
+

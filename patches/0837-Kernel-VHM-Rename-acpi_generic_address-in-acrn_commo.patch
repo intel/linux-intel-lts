@@ -1,0 +1,56 @@
+From fd7af0e7b67008412cc59f9a5e62d2a7a87c3a51 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Fri, 14 Sep 2018 16:10:16 +0800
+Subject: [PATCH 0837/1132] Kernel/VHM: Rename acpi_generic_address in
+ acrn_common.h to avoid redefinition
+
+Currently the acpi_generic_address is defined in acrn_common.h. And it is also
+defined in include/linux/acpi.h. If the two files are included by one driver,
+it will complain the redefinition of acpi_generic_address.
+So it is renamed to avoid the redefinition conflict.
+
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ include/linux/vhm/acrn_common.h | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 6949924..179957d 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -481,7 +481,7 @@ struct acrn_vm_pci_msix_remap {
+ #define SPACE_PLATFORM_COMM     10
+ #define SPACE_FFixedHW          0x7F
+ 
+-struct acpi_generic_address {
++struct acrn_generic_address {
+ 	uint8_t 	space_id;
+ 	uint8_t 	bit_width;
+ 	uint8_t 	bit_offset;
+@@ -490,7 +490,7 @@ struct acpi_generic_address {
+ } __attribute__((aligned(8)));
+ 
+ struct cpu_cx_data {
+-	struct acpi_generic_address cx_reg;
++	struct acrn_generic_address cx_reg;
+ 	uint8_t 	type;
+ 	uint32_t	latency;
+ 	uint64_t	power;
+@@ -512,10 +512,10 @@ struct acpi_sstate_pkg {
+ } __attribute__((aligned(8)));
+ 
+ struct acpi_sstate_data {
+-	struct acpi_generic_address pm1a_evt;
+-	struct acpi_generic_address pm1b_evt;
+-	struct acpi_generic_address pm1a_cnt;
+-	struct acpi_generic_address pm1b_cnt;
++	struct acrn_generic_address pm1a_evt;
++	struct acrn_generic_address pm1b_evt;
++	struct acrn_generic_address pm1a_cnt;
++	struct acrn_generic_address pm1b_cnt;
+ 	struct acpi_sstate_pkg s3_pkg;
+ 	struct acpi_sstate_pkg s5_pkg;
+ 	uint32_t *wake_vector_32;
+-- 
+2.7.4
+

@@ -1,0 +1,536 @@
+From d63a27b93d5a799b2d9ab349e62f211af1bc2cf2 Mon Sep 17 00:00:00 2001
+From: Leoni Prodduvaka <leoni.prodduvaka@intel.com>
+Date: Thu, 16 Mar 2017 21:49:33 +0530
+Subject: [PATCH 0568/1132] ASoC: Intel: Change sst_ipc_tx_message_wait api to
+ return valid data
+
+Since the firmware returns the rx_bytes as a part of ipc response
+the api parameter is changed to pointer to accommodate the change.
+
+Change-Id: I7d5ae8bfaa1e7514fe91b03e2a4e9113956c984a
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/baytrail/sst-baytrail-ipc.c |  7 +++---
+ sound/soc/intel/common/sst-ipc.c            | 35 +++++++++++++++++++++--------
+ sound/soc/intel/common/sst-ipc.h            |  3 ++-
+ sound/soc/intel/haswell/sst-haswell-ipc.c   | 28 +++++++++++++----------
+ sound/soc/intel/skylake/skl-debug.c         | 16 ++++++++-----
+ sound/soc/intel/skylake/skl-messages.c      |  3 ++-
+ sound/soc/intel/skylake/skl-sst-ipc.c       | 34 ++++++++++++++--------------
+ sound/soc/intel/skylake/skl-sst-ipc.h       |  2 +-
+ 8 files changed, 78 insertions(+), 50 deletions(-)
+
+diff --git a/sound/soc/intel/baytrail/sst-baytrail-ipc.c b/sound/soc/intel/baytrail/sst-baytrail-ipc.c
+index 260447d..403dac3 100644
+--- a/sound/soc/intel/baytrail/sst-baytrail-ipc.c
++++ b/sound/soc/intel/baytrail/sst-baytrail-ipc.c
+@@ -420,13 +420,14 @@ int sst_byt_stream_commit(struct sst_byt *byt, struct sst_byt_stream *stream)
+ 	struct sst_byt_alloc_response *reply = &stream->reply;
+ 	u64 header;
+ 	int ret;
++	size_t rx_bytes = sizeof(*reply);
+ 
+ 	header = sst_byt_header(IPC_IA_ALLOC_STREAM,
+ 				sizeof(*str_req) + sizeof(u32),
+ 				true, stream->str_id);
+ 	ret = sst_ipc_tx_message_wait(&byt->ipc, header, str_req,
+ 				      sizeof(*str_req),
+-				      reply, sizeof(*reply));
++				      reply, &rx_bytes);
+ 	if (ret < 0) {
+ 		dev_err(byt->dev, "ipc: error stream commit failed\n");
+ 		return ret;
+@@ -448,7 +449,7 @@ int sst_byt_stream_free(struct sst_byt *byt, struct sst_byt_stream *stream)
+ 		goto out;
+ 
+ 	header = sst_byt_header(IPC_IA_FREE_STREAM, 0, false, stream->str_id);
+-	ret = sst_ipc_tx_message_wait(&byt->ipc, header, NULL, 0, NULL, 0);
++	ret = sst_ipc_tx_message_wait(&byt->ipc, header, NULL, 0, NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(byt->dev, "ipc: free stream %d failed\n",
+ 			stream->str_id);
+@@ -473,7 +474,7 @@ static int sst_byt_stream_operations(struct sst_byt *byt, int type,
+ 	header = sst_byt_header(type, 0, false, stream_id);
+ 	if (wait)
+ 		return sst_ipc_tx_message_wait(&byt->ipc, header, NULL,
+-						0, NULL, 0);
++						0, NULL, NULL);
+ 	else
+ 		return sst_ipc_tx_message_nowait(&byt->ipc, header,
+ 						NULL, 0);
+diff --git a/sound/soc/intel/common/sst-ipc.c b/sound/soc/intel/common/sst-ipc.c
+index dcff138..f4b0950 100644
+--- a/sound/soc/intel/common/sst-ipc.c
++++ b/sound/soc/intel/common/sst-ipc.c
+@@ -52,7 +52,7 @@ static struct ipc_message *msg_get_empty(struct sst_generic_ipc *ipc)
+ }
+ 
+ static int tx_wait_done(struct sst_generic_ipc *ipc,
+-	struct ipc_message *msg, void *rx_data)
++	struct ipc_message *msg, void *rx_data, size_t *rx_bytes)
+ {
+ 	unsigned long flags;
+ 	int ret;
+@@ -71,11 +71,21 @@ static int tx_wait_done(struct sst_generic_ipc *ipc,
+ 	} else {
+ 
+ 		/* copy the data returned from DSP */
+-		if (msg->rx_size)
++		if ((rx_bytes != NULL) &&
++				(msg->rx_size > *rx_bytes)) {
++			dev_err(ipc->dev, "rx size is more than expected\n");
++			ret = -EINVAL;
++			goto err;
++		}
++
++		if (msg->rx_size) {
++			if (rx_bytes != NULL)
++				*rx_bytes = msg->rx_size;
+ 			memcpy(rx_data, msg->rx_data, msg->rx_size);
++		}
+ 		ret = msg->errno;
+ 	}
+-
++err:
+ 	list_add_tail(&msg->list, &ipc->empty_list);
+ 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+ 	return ret;
+@@ -83,7 +93,7 @@ static int tx_wait_done(struct sst_generic_ipc *ipc,
+ 
+ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
+ 	void *tx_data, size_t tx_bytes, void *rx_data,
+-	size_t rx_bytes, int wait)
++	size_t *rx_bytes, int wait)
+ {
+ 	struct ipc_message *msg;
+ 	unsigned long flags;
+@@ -98,7 +108,12 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
+ 
+ 	msg->header = header;
+ 	msg->tx_size = tx_bytes;
+-	msg->rx_size = rx_bytes;
++
++	if (!rx_bytes)
++		msg->rx_size = 0;
++	else
++		msg->rx_size = *rx_bytes;
++
+ 	msg->wait = wait;
+ 	msg->errno = 0;
+ 	msg->pending = false;
+@@ -112,7 +127,8 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
+ 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+ 
+ 	if (wait)
+-		return tx_wait_done(ipc, msg, rx_data);
++		return tx_wait_done(ipc, msg, rx_data,
++				rx_bytes);
+ 	else
+ 		return 0;
+ }
+@@ -183,7 +199,8 @@ static void ipc_tx_msgs(struct work_struct *work)
+ }
+ 
+ int sst_ipc_tx_message_wait(struct sst_generic_ipc *ipc, u64 header,
+-	void *tx_data, size_t tx_bytes, void *rx_data, size_t rx_bytes)
++		void *tx_data, size_t tx_bytes, void *rx_data,
++		size_t *rx_bytes)
+ {
+ 	int ret;
+ 
+@@ -211,7 +228,7 @@ int sst_ipc_tx_message_nowait(struct sst_generic_ipc *ipc, u64 header,
+ 	void *tx_data, size_t tx_bytes)
+ {
+ 	return ipc_tx_message(ipc, header, tx_data, tx_bytes,
+-		NULL, 0, 0);
++		NULL, NULL, 0);
+ }
+ EXPORT_SYMBOL_GPL(sst_ipc_tx_message_nowait);
+ 
+@@ -219,7 +236,7 @@ int sst_ipc_tx_message_nopm(struct sst_generic_ipc *ipc, u64 header,
+ 	void *tx_data, size_t tx_bytes, void *rx_data, size_t rx_bytes)
+ {
+ 	return ipc_tx_message(ipc, header, tx_data, tx_bytes,
+-		rx_data, rx_bytes, 1);
++		rx_data, &rx_bytes, 1);
+ }
+ EXPORT_SYMBOL_GPL(sst_ipc_tx_message_nopm);
+ 
+diff --git a/sound/soc/intel/common/sst-ipc.h b/sound/soc/intel/common/sst-ipc.h
+index 7ed42a6..4cfa9e3 100644
+--- a/sound/soc/intel/common/sst-ipc.h
++++ b/sound/soc/intel/common/sst-ipc.h
+@@ -75,7 +75,8 @@ struct sst_generic_ipc {
+ };
+ 
+ int sst_ipc_tx_message_wait(struct sst_generic_ipc *ipc, u64 header,
+-	void *tx_data, size_t tx_bytes, void *rx_data, size_t rx_bytes);
++	void *tx_data, size_t tx_bytes, void *rx_data,
++	size_t *rx_bytes);
+ 
+ int sst_ipc_tx_message_nowait(struct sst_generic_ipc *ipc, u64 header,
+ 	void *tx_data, size_t tx_bytes);
+diff --git a/sound/soc/intel/haswell/sst-haswell-ipc.c b/sound/soc/intel/haswell/sst-haswell-ipc.c
+index d33bdaf..557f780 100644
+--- a/sound/soc/intel/haswell/sst-haswell-ipc.c
++++ b/sound/soc/intel/haswell/sst-haswell-ipc.c
+@@ -826,10 +826,11 @@ int sst_hsw_fw_get_version(struct sst_hsw *hsw,
+ 	struct sst_hsw_ipc_fw_version *version)
+ {
+ 	int ret;
++	size_t rx_bytes = sizeof(*version);
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc,
+ 		IPC_GLB_TYPE(IPC_GLB_GET_FW_VERSION),
+-		NULL, 0, version, sizeof(*version));
++		NULL, 0, version, &rx_bytes);
+ 	if (ret < 0)
+ 		dev_err(hsw->dev, "error: get version failed\n");
+ 
+@@ -893,7 +894,7 @@ int sst_hsw_stream_set_volume(struct sst_hsw *hsw,
+ 	}
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header, req,
+-		sizeof(*req), NULL, 0);
++		sizeof(*req), NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(hsw->dev, "error: set stream volume failed\n");
+ 		return ret;
+@@ -959,7 +960,7 @@ int sst_hsw_mixer_set_volume(struct sst_hsw *hsw, u32 stage_id, u32 channel,
+ 	req.target_volume = volume;
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header, &req,
+-		sizeof(req), NULL, 0);
++		sizeof(req), NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(hsw->dev, "error: set mixer volume failed\n");
+ 		return ret;
+@@ -1018,7 +1019,7 @@ int sst_hsw_stream_free(struct sst_hsw *hsw, struct sst_hsw_stream *stream)
+ 	header = IPC_GLB_TYPE(IPC_GLB_FREE_STREAM);
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header, &stream->free_req,
+-		sizeof(stream->free_req), NULL, 0);
++		sizeof(stream->free_req), NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(hsw->dev, "error: free stream %d failed\n",
+ 			stream->free_req.stream_id);
+@@ -1194,6 +1195,7 @@ int sst_hsw_stream_commit(struct sst_hsw *hsw, struct sst_hsw_stream *stream)
+ 	struct sst_hsw_ipc_stream_alloc_reply *reply = &stream->reply;
+ 	u32 header;
+ 	int ret;
++	size_t rx_bytes = sizeof(*reply);
+ 
+ 	if (!stream) {
+ 		dev_warn(hsw->dev, "warning: stream is NULL, no stream to commit, ignore it.\n");
+@@ -1210,7 +1212,7 @@ int sst_hsw_stream_commit(struct sst_hsw *hsw, struct sst_hsw_stream *stream)
+ 	header = IPC_GLB_TYPE(IPC_GLB_ALLOCATE_STREAM);
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header, str_req,
+-		sizeof(*str_req), reply, sizeof(*reply));
++		sizeof(*str_req), reply, &rx_bytes);
+ 	if (ret < 0) {
+ 		dev_err(hsw->dev, "error: stream commit failed\n");
+ 		return ret;
+@@ -1253,6 +1255,7 @@ int sst_hsw_mixer_get_info(struct sst_hsw *hsw)
+ 	struct sst_hsw_ipc_stream_info_reply *reply;
+ 	u32 header;
+ 	int ret;
++	size_t rx_bytes = sizeof(*reply);
+ 
+ 	reply = &hsw->mixer_info;
+ 	header = IPC_GLB_TYPE(IPC_GLB_GET_MIXER_STREAM_INFO);
+@@ -1260,7 +1263,7 @@ int sst_hsw_mixer_get_info(struct sst_hsw *hsw)
+ 	trace_ipc_request("get global mixer info", 0);
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header, NULL, 0,
+-		reply, sizeof(*reply));
++		reply, &rx_bytes);
+ 	if (ret < 0) {
+ 		dev_err(hsw->dev, "error: get stream info failed\n");
+ 		return ret;
+@@ -1282,7 +1285,7 @@ static int sst_hsw_stream_operations(struct sst_hsw *hsw, int type,
+ 
+ 	if (wait)
+ 		return sst_ipc_tx_message_wait(&hsw->ipc, header,
+-			NULL, 0, NULL, 0);
++			NULL, 0, NULL, NULL);
+ 	else
+ 		return sst_ipc_tx_message_nowait(&hsw->ipc, header, NULL, 0);
+ }
+@@ -1412,7 +1415,7 @@ int sst_hsw_device_set_config(struct sst_hsw *hsw,
+ 	header = IPC_GLB_TYPE(IPC_GLB_SET_DEVICE_FORMATS);
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header, &config,
+-		sizeof(config), NULL, 0);
++		sizeof(config), NULL, NULL);
+ 	if (ret < 0)
+ 		dev_err(hsw->dev, "error: set device formats failed\n");
+ 
+@@ -1426,6 +1429,7 @@ int sst_hsw_dx_set_state(struct sst_hsw *hsw,
+ {
+ 	u32 header, state_;
+ 	int ret, item;
++	size_t rx_bytes = sizeof(*dx);
+ 
+ 	header = IPC_GLB_TYPE(IPC_GLB_ENTER_DX_STATE);
+ 	state_ = state;
+@@ -1433,7 +1437,7 @@ int sst_hsw_dx_set_state(struct sst_hsw *hsw,
+ 	trace_ipc_request("PM enter Dx state", state);
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header, &state_,
+-		sizeof(state_), dx, sizeof(*dx));
++		sizeof(state_), dx, &rx_bytes);
+ 	if (ret < 0) {
+ 		dev_err(hsw->dev, "ipc: error set dx state %d failed\n", state);
+ 		return ret;
+@@ -1948,7 +1952,7 @@ int sst_hsw_module_enable(struct sst_hsw *hsw,
+ 		config.map.module_entries[0].entry_point);
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header,
+-			&config, sizeof(config), NULL, 0);
++			&config, sizeof(config), NULL, NULL);
+ 	if (ret < 0)
+ 		dev_err(dev, "ipc: module enable failed - %d\n", ret);
+ 	else
+@@ -1986,7 +1990,7 @@ int sst_hsw_module_disable(struct sst_hsw *hsw,
+ 			IPC_MODULE_OPERATION(IPC_MODULE_DISABLE) |
+ 			IPC_MODULE_ID(module_id);
+ 
+-	ret = sst_ipc_tx_message_wait(&hsw->ipc, header,  NULL, 0, NULL, 0);
++	ret = sst_ipc_tx_message_wait(&hsw->ipc, header,  NULL, 0, NULL, NULL);
+ 	if (ret < 0)
+ 		dev_err(dev, "module disable failed - %d\n", ret);
+ 	else
+@@ -2039,7 +2043,7 @@ int sst_hsw_module_set_param(struct sst_hsw *hsw,
+ 	parameter->data_size = param_size;
+ 
+ 	ret = sst_ipc_tx_message_wait(&hsw->ipc, header,
+-		parameter, transfer_parameter_size , NULL, 0);
++		parameter, transfer_parameter_size, NULL, NULL);
+ 	if (ret < 0)
+ 		dev_err(dev, "ipc: module set parameter failed - %d\n", ret);
+ 
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index 8a20f86..5cc274a 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -231,10 +231,12 @@ static ssize_t mod_control_write(struct file *file,
+ 
+ 		if (mbsz)
+ 			retval = skl_ipc_get_large_config(&ctx->ipc, &msg,
+-				large_data, &(mod_set_get->mailbx[0]), mbsz);
++				large_data, &(mod_set_get->mailbx[0]),
++				mbsz, NULL);
+ 		else
+ 			retval = skl_ipc_get_large_config(&ctx->ipc,
+-					&msg, large_data, NULL, 0);
++					&msg, large_data, NULL,
++					0, NULL);
+ 
+ 		d->ipc_data[0] = msg.param_data_size;
+ 		memcpy(&d->ipc_data[1], large_data, msg.param_data_size);
+@@ -256,11 +258,11 @@ static ssize_t mod_control_write(struct file *file,
+ 	default:
+ 		if (mbsz)
+ 			retval = sst_ipc_tx_message_wait(&ctx->ipc, *ipc_header,
+-				mod_set_get->mailbx, mbsz, NULL, 0);
++				mod_set_get->mailbx, mbsz, NULL, NULL);
+ 
+ 		else
+ 			retval = sst_ipc_tx_message_wait(&ctx->ipc, *ipc_header,
+-				NULL, 0, NULL, 0);
++				NULL, 0, NULL, NULL);
+ 
+ 		d->ipc_data[0] = 0;
+ 		break;
+@@ -717,10 +719,12 @@ static ssize_t adsp_control_write(struct file *file,
+ 
+ 	if (tx_param == 1)
+ 		skl_ipc_get_large_config(&ctx->ipc, &msg,
+-				ipc_data, &tx_data, sizeof(u32));
++				ipc_data, &tx_data,
++				sizeof(u32), NULL);
+ 	else
+ 		skl_ipc_get_large_config(&ctx->ipc, &msg,
+-							ipc_data, NULL, 0);
++				ipc_data, NULL,
++				0, NULL);
+ 
+ 	memset(&d->fw_ipc_data.mailbx[0], 0, DSP_BUF);
+ 
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 7945173..4a0ad29 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -2347,5 +2347,6 @@ int skl_get_module_params(struct skl_sst *ctx, u32 *params, int size,
+ 	msg.param_data_size = size;
+ 	msg.large_param_id = param_id;
+ 
+-	return skl_ipc_get_large_config(&ctx->ipc, &msg, params, NULL, 0);
++	return skl_ipc_get_large_config(&ctx->ipc, &msg, params, NULL,
++			0, NULL);
+ }
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index 7b6ce92..bf9f97b 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -676,7 +676,7 @@ int skl_ipc_create_pipeline(struct sst_generic_ipc *ipc,
+ 	header.extension = IPC_PPL_LP_MODE(lp_mode);
+ 
+ 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
++	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: create pipeline fail, err: %d\n", ret);
+ 		return ret;
+@@ -698,7 +698,7 @@ int skl_ipc_delete_pipeline(struct sst_generic_ipc *ipc, u8 instance_id)
+ 	header.primary |= IPC_INSTANCE_ID(instance_id);
+ 
+ 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
++	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: delete pipeline failed, err %d\n", ret);
+ 		return ret;
+@@ -722,7 +722,7 @@ int skl_ipc_set_pipeline_state(struct sst_generic_ipc *ipc,
+ 	header.primary |= IPC_PPL_STATE(state);
+ 
+ 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
++	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: set pipeline state failed, err: %d\n", ret);
+ 		return ret;
+@@ -745,7 +745,7 @@ skl_ipc_save_pipeline(struct sst_generic_ipc *ipc, u8 instance_id, int dma_id)
+ 
+ 	header.extension = IPC_DMA_ID(dma_id);
+ 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
++	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: save pipeline failed, err: %d\n", ret);
+ 		return ret;
+@@ -767,7 +767,7 @@ int skl_ipc_restore_pipeline(struct sst_generic_ipc *ipc, u8 instance_id)
+ 	header.primary |= IPC_INSTANCE_ID(instance_id);
+ 
+ 	dev_dbg(ipc->dev, "In %s header=%d\n", __func__, header.primary);
+-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
++	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: restore  pipeline failed, err: %d\n", ret);
+ 		return ret;
+@@ -793,7 +793,7 @@ int skl_ipc_set_dx(struct sst_generic_ipc *ipc, u8 instance_id,
+ 	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
+ 			 header.primary, header.extension);
+ 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
+-				dx, sizeof(*dx), NULL, 0);
++				dx, sizeof(*dx), NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: set dx failed, err %d\n", ret);
+ 		return ret;
+@@ -819,7 +819,7 @@ int skl_ipc_delete_instance(struct sst_generic_ipc *ipc,
+ 	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
+ 			 header.primary, header.extension);
+ 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL,
+-			msg->param_data_size, NULL, 0);
++			msg->param_data_size, NULL, NULL);
+ 
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: delete instance failed\n");
+@@ -857,7 +857,7 @@ int skl_ipc_init_instance(struct sst_generic_ipc *ipc,
+ 	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
+ 			 header.primary, header.extension);
+ 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, param_data,
+-			msg->param_data_size, NULL, 0);
++			msg->param_data_size, NULL, NULL);
+ 
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: init instance failed\n");
+@@ -889,7 +889,7 @@ int skl_ipc_bind_unbind(struct sst_generic_ipc *ipc,
+ 
+ 	dev_dbg(ipc->dev, "In %s hdr=%x ext=%x\n", __func__, header.primary,
+ 			 header.extension);
+-	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, 0);
++	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0, NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_err(ipc->dev, "ipc: bind/unbind failed\n");
+ 		return ret;
+@@ -917,8 +917,8 @@ int skl_ipc_load_modules(struct sst_generic_ipc *ipc,
+ 	header.primary |= IPC_GLB_TYPE(IPC_GLB_LOAD_MULTIPLE_MODS);
+ 	header.primary |= IPC_LOAD_MODULE_CNT(module_cnt);
+ 
+-	ret = sst_ipc_tx_message_nowait(ipc, *ipc_header, data,
+-				(sizeof(u16) * module_cnt));
++	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, data,
++				(sizeof(u16) * module_cnt), NULL, NULL);
+ 	if (ret < 0)
+ 		dev_err(ipc->dev, "ipc: load modules failed :%d\n", ret);
+ 
+@@ -939,7 +939,7 @@ int skl_ipc_unload_modules(struct sst_generic_ipc *ipc, u8 module_cnt,
+ 	header.primary |= IPC_LOAD_MODULE_CNT(module_cnt);
+ 
+ 	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, data,
+-				(sizeof(u16) * module_cnt), NULL, 0);
++				(sizeof(u16) * module_cnt), NULL, NULL);
+ 	if (ret < 0)
+ 		dev_err(ipc->dev, "ipc: unload modules failed :%d\n", ret);
+ 
+@@ -980,7 +980,7 @@ int skl_ipc_set_large_config(struct sst_generic_ipc *ipc,
+ 			(unsigned)data_offset, (unsigned)tx_size);
+ 		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
+ 					  ((char *)param) + data_offset,
+-					  tx_size, NULL, 0);
++					  tx_size, NULL, NULL);
+ 		if (ret < 0) {
+ 			dev_err(ipc->dev,
+ 				"ipc: set large config fail, err: %d\n", ret);
+@@ -1003,7 +1003,7 @@ EXPORT_SYMBOL_GPL(skl_ipc_set_large_config);
+ 
+ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+ 		struct skl_ipc_large_config_msg *msg, u32 *param,
+-		u32 *txparam, u32 size)
++		u32 *txparam, u32 tx_bytes, size_t *rx_bytes)
+ {
+ 	struct skl_ipc_header header = {0};
+ 	u64 *ipc_header = (u64 *)(&header);
+@@ -1040,8 +1040,8 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+ 			(unsigned)data_offset, (unsigned)rx_size);
+ 
+ 		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
+-			((char *)txparam), size, ((char *)param) + data_offset,
+-					      rx_size);
++			((char *)txparam), tx_bytes,
++			((char *)param) + data_offset, &rx_size);
+ 		if (ret < 0) {
+ 			dev_err(ipc->dev,
+ 				"ipc: get large config fail, err: %d\n", ret);
+@@ -1077,7 +1077,7 @@ int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
+ 
+ 	if (wait)
+ 		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
+-					NULL, 0, NULL, 0);
++					NULL, 0, NULL, NULL);
+ 	else
+ 		ret = sst_ipc_tx_message_nowait(ipc, *ipc_header, NULL, 0);
+ 
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 6c037d2..bc02740 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -259,7 +259,7 @@ int skl_ipc_set_large_config(struct sst_generic_ipc *ipc,
+ 
+ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+ 		struct skl_ipc_large_config_msg *msg, u32 *param,
+-		u32 *txparam, u32 size);
++		u32 *txparam, u32 tx_bytes, size_t *rx_bytes);
+ 
+ int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
+ 			u8 dma_id, u8 table_id, bool wait);
+-- 
+2.7.4
+

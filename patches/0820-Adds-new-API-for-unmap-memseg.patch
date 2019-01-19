@@ -1,0 +1,105 @@
+From 95aab65505a638bbb1fd5d0097372f0a9298fb59 Mon Sep 17 00:00:00 2001
+From: Edwin Zhai <edwin.zhai@intel.com>
+Date: Wed, 5 Sep 2018 09:35:05 +0800
+Subject: [PATCH 0820/1132] Adds new API for unmap memseg
+
+It is required when DM unmap ptdev BAR in deinit
+
+Tracked-on: projectacrn/acrn-hypervisor#1146
+Signed-off-by: Edwin Zhai <edwin.zhai@intel.com>
+Reviewed-by: Yin Fengwei <fengwei.yin@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 11 +++++++++++
+ drivers/vhm/vhm_mm.c               | 17 +++++++++++++++++
+ include/linux/vhm/acrn_vhm_mm.h    | 11 +++++++++++
+ include/linux/vhm/vhm_ioctl_defs.h |  1 +
+ 4 files changed, 40 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 152aba2..6e351c3 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -316,6 +316,17 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
++	case IC_UNSET_MEMSEG: {
++		struct vm_memmap memmap;
++
++		if (copy_from_user(&memmap, (void *)ioctl_param,
++			sizeof(struct vm_memmap)))
++			return -EFAULT;
++
++		ret = unmap_guest_memseg(vm, &memmap);
++		break;
++	}
++
+ 	case IC_SET_IOREQ_BUFFER: {
+ 		/* init ioreq buffer */
+ 		ret = acrn_ioreq_init(vm, (unsigned long)ioctl_param);
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index 4d5854d..6bea6688 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -208,6 +208,23 @@ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 	return 0;
+ }
+ 
++int unmap_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
++{
++	/* only handle mmio */
++	if (memmap->type != VM_MEMMAP_MMIO) {
++		pr_err("vhm: %s invalid memmap type: %d for unmap\n",
++			__func__, memmap->type);
++		return -EINVAL;
++	}
++
++	if (del_memory_region(vm->vmid, memmap->gpa, memmap->len) < 0) {
++		pr_err("vhm: failed to del memory region %ld!\n", vm->vmid);
++		return -EFAULT;
++	}
++
++	return 0;
++}
++
+ void free_guest_mem(struct vhm_vm *vm)
+ {
+ 	return hugepage_free_guest(vm);
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 62aed34..7b6b1b4 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -169,6 +169,17 @@ void free_guest_mem(struct vhm_vm *vm);
+  */
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
+ 
++/**
++ * unmap_guest_memseg - unset guest mmapping of memory set by
++ * map_guest_memseg
++ *
++ * @vm: pointer to guest vm
++ * @memmap: pointer to guest memory mapping info
++ *
++ * Return:
++ */
++int unmap_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
++
+ int init_trusty(struct vhm_vm *vm);
+ void deinit_trusty(struct vhm_vm *vm);
+ 
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index cf4f632..6c09157 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -94,6 +94,7 @@
+ /* IC_ALLOC_MEMSEG not used */
+ #define IC_ALLOC_MEMSEG                 _IC_ID(IC_ID, IC_ID_MEM_BASE + 0x00)
+ #define IC_SET_MEMSEG                   _IC_ID(IC_ID, IC_ID_MEM_BASE + 0x01)
++#define IC_UNSET_MEMSEG                 _IC_ID(IC_ID, IC_ID_MEM_BASE + 0x02)
+ 
+ /* PCI assignment*/
+ #define IC_ID_PCI_BASE                  0x50UL
+-- 
+2.7.4
+

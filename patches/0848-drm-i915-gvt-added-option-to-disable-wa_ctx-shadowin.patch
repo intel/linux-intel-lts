@@ -1,0 +1,76 @@
+From f84fc11dd2ea6d750f29f0a6fc6da031217127b2 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 14 Sep 2018 16:10:17 +0800
+Subject: [PATCH 0848/1132] drm/i915/gvt: added option to disable wa_ctx
+ shadowing
+
+This patch add an option in GVTg to disable shadowing wa_ctx. In current
+IVI environment, since Dom0 and DomU has the same i915, the wa_ctx of
+them is same. So no need to do shadow copy of wa_ctx.
+By default, shadowing wa_ctx is disabled. If for testing purpose, people
+can enable it manually by modifying the code.
+
+Change-Id: I535af0a720e7ccfbca80686e45c79c5c2a3dd9c6
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-on:
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/scheduler.c | 18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/scheduler.c b/drivers/gpu/drm/i915/gvt/scheduler.c
+index f0f0ada..9d8f0bf 100644
+--- a/drivers/gpu/drm/i915/gvt/scheduler.c
++++ b/drivers/gpu/drm/i915/gvt/scheduler.c
+@@ -41,6 +41,8 @@
+ #define RING_CTX_OFF(x) \
+ 	offsetof(struct execlist_ring_context, x)
+ 
++bool gvt_shadow_wa_ctx = false;
++
+ static void set_context_pdp_root_pointer(
+ 		struct execlist_ring_context *ring_context,
+ 		u32 pdp[8])
+@@ -403,7 +405,8 @@ int intel_gvt_scan_and_shadow_workload(struct intel_vgpu_workload *workload)
+ 		goto err_unpin;
+ 
+ 	if ((workload->ring_id == RCS) &&
+-	    (workload->wa_ctx.indirect_ctx.size != 0)) {
++	    (workload->wa_ctx.indirect_ctx.size != 0)
++	    && gvt_shadow_wa_ctx) {
+ 		ret = intel_gvt_scan_and_shadow_wa_ctx(&workload->wa_ctx);
+ 		if (ret)
+ 			goto err_shadow;
+@@ -628,10 +631,12 @@ static int prepare_workload(struct intel_vgpu_workload *workload)
+ 		goto err_unpin_mm;
+ 	}
+ 
+-	ret = prepare_shadow_wa_ctx(&workload->wa_ctx);
+-	if (ret) {
+-		gvt_vgpu_err("fail to prepare_shadow_wa_ctx\n");
+-		goto err_shadow_batch;
++	if (gvt_shadow_wa_ctx) {
++		ret = prepare_shadow_wa_ctx(&workload->wa_ctx);
++		if (ret) {
++			gvt_vgpu_err("fail to prepare_shadow_wa_ctx\n");
++			goto err_shadow_batch;
++		}
+ 	}
+ 
+ 	if (workload->prepare) {
+@@ -887,7 +892,8 @@ static void complete_current_workload(struct intel_gvt *gvt, int ring_id)
+ 
+ 	if (!workload->status) {
+ 		release_shadow_batch_buffer(workload);
+-		release_shadow_wa_ctx(&workload->wa_ctx);
++		if(gvt_shadow_wa_ctx)
++			release_shadow_wa_ctx(&workload->wa_ctx);
+ 	}
+ 
+ 	if (workload->status || (vgpu->resetting_eng & ENGINE_MASK(ring_id))) {
+-- 
+2.7.4
+

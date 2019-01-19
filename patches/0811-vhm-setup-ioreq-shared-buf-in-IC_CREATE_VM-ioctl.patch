@@ -1,0 +1,93 @@
+From 8f1b18f40ea6efd3514a8e7e78a1de3a9a4c5a5a Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:03 +0800
+Subject: [PATCH 0811/1132] vhm: setup ioreq shared buf in IC_CREATE_VM ioctl
+
+ioreq shared buffer page is a necessary for each VM. So separate VM
+creating and shared buffer page setup into two ioctls is meaningless.
+
+This patch intends to move the ioreq shared buffer page setup into
+IC_CREATE_VM ioctl. With this change, we can create vhm ioreq client
+just after CREATE_VM step.
+We need be careful with the compatibility. To achieve it safely, we will
+do,
+  1) Do shared page setup in IC_CREATE_VM, what this patch do exactly
+  2) Move the shared page setup action into vm creating in DM.
+  3) Remove the ioctl IC_SET_IOREQ_BUFFER in kernel.
+
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Acked-by: Eddie Dong <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c      | 12 +++++++++++-
+ drivers/vhm/vhm_ioreq.c         |  2 +-
+ include/linux/vhm/acrn_common.h |  5 ++++-
+ 3 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 1286f77..152aba2 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -230,8 +230,17 @@ static long vhm_dev_ioctl(struct file *filep,
+ 			}
+ 		}
+ 
++		if (created_vm.req_buf) {
++			ret = acrn_ioreq_init(vm, created_vm.req_buf);
++			if (ret < 0)
++				goto ioreq_buf_fail;
++		}
++
+ 		pr_info("vhm: VM %d created\n", created_vm.vmid);
+ 		break;
++ioreq_buf_fail:
++		if (created_vm.vm_flag & SECURE_WORLD_ENABLED)
++			deinit_trusty(vm);
+ create_vm_fail:
+ 		hcall_destroy_vm(created_vm.vmid);
+ 		vm->vmid = ACRN_INVALID_VMID;
+@@ -310,8 +319,9 @@ static long vhm_dev_ioctl(struct file *filep,
+ 	case IC_SET_IOREQ_BUFFER: {
+ 		/* init ioreq buffer */
+ 		ret = acrn_ioreq_init(vm, (unsigned long)ioctl_param);
+-		if (ret < 0)
++		if (ret < 0 && ret != -EEXIST)
+ 			return ret;
++		ret = 0;
+ 		break;
+ 	}
+ 
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index 5716bc5..960723b 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -881,7 +881,7 @@ int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma)
+ 	int ret;
+ 
+ 	if (vm->req_buf)
+-		BUG();
++		return -EEXIST;
+ 
+ 	ret = get_user_pages_fast(vma, 1, 1, &page);
+ 	if (unlikely(ret != 1) || (page == NULL)) {
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 6269b07..dfe8930 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -253,8 +253,11 @@ struct acrn_create_vm {
+ 	 */
+ 	uint64_t vm_flag;
+ 
++	/** guest physical address of VM request_buffer */
++	uint64_t req_buf;
++
+ 	/** Reserved for future use*/
+-	uint8_t  reserved2[24];
++	uint8_t  reserved2[16];
+ } __attribute__((aligned(8)));
+ 
+ /**
+-- 
+2.7.4
+

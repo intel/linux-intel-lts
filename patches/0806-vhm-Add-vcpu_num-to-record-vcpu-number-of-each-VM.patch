@@ -1,0 +1,72 @@
+From 7fb45c2cfc733ee0741b0742b36fc64024ed2ff8 Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0806/1132] vhm: Add vcpu_num to record vcpu number of each VM
+
+Add a new field 'vcpu_num' in vhm_vm struct to count the number of vcpu
+of this VM. And uses atomic operation to avoid lock.
+
+There is no vcpu_num decrease as we don't have vcpu destroying.
+
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Anthony Xu <anthony.xu@intel.com>
+Reviewed-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c      | 1 +
+ drivers/vhm/vhm_ioreq.c         | 6 +++---
+ include/linux/vhm/vhm_vm_mngt.h | 2 ++
+ 3 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 39204b5..5884fd2 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -285,6 +285,7 @@ static long vhm_dev_ioctl(struct file *filep,
+ 			pr_err("vhm: failed to create vcpu %d!\n", cv.vcpu_id);
+ 			return -EFAULT;
+ 		}
++		atomic_inc(&vm->vcpu_num);
+ 
+ 		return ret;
+ 	}
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index b570b82..bf55a01 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -783,10 +783,10 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
+ 	struct vhm_request *req;
+ 	struct list_head *pos;
+ 	struct ioreq_client *client;
+-	int i;
++	int i, vcpu_num;
+ 
+-	/* TODO: replace VHM_REQUEST_MAX with vcpu num get at runtime */
+-	for (i = 0; i < VHM_REQUEST_MAX; i++) {
++	vcpu_num = atomic_read(&vm->vcpu_num);
++	for (i = 0; i < vcpu_num; i++) {
+ 		req = vm->req_buf->req_queue + i;
+ 		if (req->valid && (req->processed == REQ_STATE_PENDING)) {
+ 			if (handle_cf8cfc(vm, req, i))
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index 29fee8f..d3b26bd 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -80,6 +80,7 @@ extern struct mutex vhm_vm_list_lock;
+  * @refcnt: reference count of guest
+  * @hugepage_lock:  mutex to protect hugepage_hlist
+  * @hugepage_hlist: hash list of hugepage
++ * @vcpu_num: vcpu number
+  * @max_gfn: maximum guest page frame number
+  * @ioreq_client_lock: spinlock to protect ioreq_client_list
+  * @ioreq_client_list: list of ioreq clients
+@@ -95,6 +96,7 @@ struct vhm_vm {
+ 	long refcnt;
+ 	struct mutex hugepage_lock;
+ 	struct hlist_head hugepage_hlist[HUGEPAGE_HLIST_ARRAY_SIZE];
++	atomic_t vcpu_num;
+ 	int max_gfn;
+ 	spinlock_t ioreq_client_lock;
+ 	struct list_head ioreq_client_list;
+-- 
+2.7.4
+

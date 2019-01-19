@@ -1,0 +1,37 @@
+From 5b64fa7d208db03b3aea01e38b85a6a970420880 Mon Sep 17 00:00:00 2001
+From: "Shaik, ShahinaX" <shahinax.shaik@intel.com>
+Date: Tue, 15 May 2018 23:41:08 +0530
+Subject: [PATCH 0689/1132] Revert "ASoC: tdf8532: Fix Audio memory leakage at
+ boot time"
+
+This reverts commit c7083ded28e697dadc4cf0ef838220260e4a10f4.
+
+Change-Id: I77b671edc5c02c2ddab7cc834ee8626845df7489
+Signed-off-by: Shaik, ShahinaX <shahinax.shaik@intel.com>
+Reviewed-on:
+Reviewed-by: Tewani, Pradeep D <pradeep.d.tewani@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/codecs/tdf8532.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/sound/soc/codecs/tdf8532.c b/sound/soc/codecs/tdf8532.c
+index 68decd0..a5e2a02 100644
+--- a/sound/soc/codecs/tdf8532.c
++++ b/sound/soc/codecs/tdf8532.c
+@@ -165,8 +165,6 @@ static int tdf8532_get_state(struct tdf8532_priv *dev_data,
+ 	*status_repl = (struct get_dev_status_repl *) repl_buff;
+ 
+ out:
+-	if (repl_buff)
+-		kfree(repl_buff);
+ 	return ret;
+ }
+ 
+-- 
+2.7.4
+

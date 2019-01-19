@@ -1,0 +1,68 @@
+From 3fc0750509943d304ca5e5261e474062d2e10a84 Mon Sep 17 00:00:00 2001
+From: Leoni Prodduvaka <leoni.prodduvaka@intel.com>
+Date: Thu, 16 Mar 2017 21:50:51 +0530
+Subject: [PATCH 0569/1132] ASoC: Intel: Skylake: Extract the receive response
+ size returned by the FW
+
+The driver uses the rx_bytes value returned from firmware to copy the
+response of the ipc.
+
+Change-Id: I76b78c01ef83b28d6328de66249af84b4c99700f
+Signed-off-by: Dharageswari R <dharageswari.r@intel.com>
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index bf9f97b..b3591c8 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -475,6 +475,10 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
+ 	if (reply == IPC_GLB_REPLY_SUCCESS) {
+ 		dev_dbg(ipc->dev, "ipc FW reply %x: success\n", header.primary);
+ 		/* copy the rx data from the mailbox */
++		if (IPC_GLB_NOTIFY_MSG_TYPE(header.primary) ==
++				IPC_MOD_LARGE_CONFIG_GET)
++			msg->rx_size = header.extension &
++				IPC_DATA_OFFSET_SZ_MASK;
+ 		sst_dsp_inbox_read(ipc->dsp, msg->rx_data, msg->rx_size);
+ 		switch (IPC_GLB_NOTIFY_MSG_TYPE(header.primary)) {
+ 		case IPC_GLB_LOAD_MULTIPLE_MODS:
+@@ -1039,15 +1043,27 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+ 		dev_dbg(ipc->dev, "receiving offset: %#x, size: %#x\n",
+ 			(unsigned)data_offset, (unsigned)rx_size);
+ 
++		if (rx_bytes != NULL)
++			*rx_bytes = rx_size;
++
+ 		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
+ 			((char *)txparam), tx_bytes,
+-			((char *)param) + data_offset, &rx_size);
++			((char *)param) + data_offset, rx_bytes);
++
+ 		if (ret < 0) {
+ 			dev_err(ipc->dev,
+ 				"ipc: get large config fail, err: %d\n", ret);
+ 			return ret;
+ 		}
++		/* exit as this is the final block */
++		if (header.extension | (0 << IPC_FINAL_BLOCK_SHIFT))
++			break;
++
++		if (rx_bytes != NULL)
++			rx_size = *rx_bytes;
++
+ 		sz_remaining -= rx_size;
++
+ 		data_offset = msg->param_data_size - sz_remaining;
+ 
+ 		/* clear the fields */
+-- 
+2.7.4
+

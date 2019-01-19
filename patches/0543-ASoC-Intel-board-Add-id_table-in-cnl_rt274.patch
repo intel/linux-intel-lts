@@ -1,0 +1,52 @@
+From 31331b6960bb783819c2ccf64eee675356b05f3b Mon Sep 17 00:00:00 2001
+From: Dharageswari R <dharageswari.r@intel.com>
+Date: Wed, 3 Jan 2007 09:21:03 +0530
+Subject: [PATCH 0543/1132] ASoC: Intel: board: Add id_table in cnl_rt274
+
+ICL and CNL use the same machine driver with rt274 codec.
+Hence added id_table to facilitate this.
+
+Change-Id: I7484f774c1fc2b1c3c779f0f084585fbf02966a2
+Signed-off-by: Dharageswari R <dharageswari.r@intel.com>
+Reviewed-on:
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/boards/cnl_rt274.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/sound/soc/intel/boards/cnl_rt274.c b/sound/soc/intel/boards/cnl_rt274.c
+index 1b788f8..20058f9c 100644
+--- a/sound/soc/intel/boards/cnl_rt274.c
++++ b/sound/soc/intel/boards/cnl_rt274.c
+@@ -370,12 +370,19 @@ static int snd_cnl_rt274_mc_probe(struct platform_device *pdev)
+ 	return devm_snd_soc_register_card(&pdev->dev, &snd_soc_card_cnl);
+ }
+ 
++static const struct platform_device_id cnl_board_ids[] = {
++	{ .name = "cnl_rt274" },
++	{ .name = "icl_rt274" },
++	{ }
++};
++
+ static struct platform_driver snd_cnl_rt274_driver = {
+ 	.driver = {
+ 		.name = "cnl_rt274",
+ 		.pm = &snd_soc_pm_ops,
+ 	},
+ 	.probe = snd_cnl_rt274_mc_probe,
++	.id_table = cnl_board_ids,
+ };
+ 
+ module_platform_driver(snd_cnl_rt274_driver);
+@@ -383,3 +390,4 @@ module_platform_driver(snd_cnl_rt274_driver);
+ MODULE_AUTHOR("Guneshwor Singh <guneshwor.o.singh@intel.com>");
+ MODULE_LICENSE("GPL v2");
+ MODULE_ALIAS("platform:cnl_rt274");
++MODULE_ALIAS("platform:icl_rt274");
+-- 
+2.7.4
+

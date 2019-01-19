@@ -1,0 +1,1534 @@
+From ec89b5c335cba1d0088c847d0585ac4320ff70ae Mon Sep 17 00:00:00 2001
+From: Divya Prakash <divya1.prakash@intel.com>
+Date: Wed, 20 Apr 2016 10:08:03 +0530
+Subject: [PATCH 0507/1132] ASoC: Intel: Add Probe compress APIs
+
+Using the compress framework, introduce probe
+compress dai APIs to open, set parameters, start,
+stop, and close a probe stream.
+
+Change-Id: Id869e23c5a59602f171aadff89bf5acb0419abab
+Signed-off-by: Divya Prakash
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+
+ASoC: Intel: Skylake: Add probe CPU dai and DAI ops
+
+Add 2 CPU dais, one each for extractor and injector
+and register the corresponding DAI ops
+
+Change-Id: I0df64b2b6a1e242f8e10bec833c3f5ab28aa2d84
+Signed-off-by: Divya Prakash
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+
+ASoC: Intel: Maintain the platform compress APIs as common code.
+
+Keep the platform driver compress APIs in a seperate
+file for common use across different compress DAI ops
+
+Change-Id: I62f2396f5e04007ba1454a2187c807c196547c4a
+Signed-off-by: Divya Prakash
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+
+ASoC: Intel: Implement probe TLV handler
+
+Implement probe TLV handler to set and get
+probe points. The controls parameters contains
+following information:
+- whether it is a connection or disconnection
+- whether the probe type is injector, extractor
+or injector-reextract
+- Probe point to probe, uniquely represented by
+Module ID, Instance ID, queue type and index
+
+This information is parsed by the driver in the
+handler to send the corrensponding IPC and IPC
+payload.Therefore a custom TLV handler implementation
+is required for probe.
+
+Change-Id: I54d6dc656b0629d85d64a793d54b29f02cc43c35
+Signed-off-by: Divya Prakash
+Signed-off-by: Mousumi Jana <mousumix.jana@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+
+ASoC: Intel: Probe stream operations in alignment with new firmware interface
+
+Based on the new firmware interface and IPCs, following
+are implemented:
+- Probe as a standalone module and not as a pipeline
+- Probe module initialization, gateway configuration
+  and deletion
+- Single extractor and multiple injector stream setup
+- Caching stream info such as DMA channel, buffer size,
+  DMA type for all streams
+- Single probe instance running for all extractors and
+  injectors
+- IPCs for connection, disconnection and DMA attach
+
+Change-Id: Icad5108227ff12a7f6cb23b3ae47358f1c8f2cf4
+Signed-off-by: Divya Prakash
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+
+ALSA: hda: ext: KW fixes for probe feature in hdac_ext stream
+
+This patch will add fixes for below klocwork errors,
+
+1. Null pointer 'res' that comes from line 528 may be
+   dereferenced at line 560.
+2. Pointer 'res' checked for NULL at line 552 may be
+   dereferenced at line 560.
+
+Change-Id: I083c779466589db36d38ccfdda2483004deaeb43
+Signed-off-by: G Kranthi <gudishax.kranthikumar@intel.com>
+Reviewed-on:
+Reviewed-by: B, Jayachandran <jayachandran.b@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+
+ALSA: hda: KW fixes for probe feature
+
+This patch will add fixes for below klocwork errors,
+
+1. Null pointer 'dma_buffer_p' that comes from line 390
+   may be passed to function and can be dereferenced
+   there by passing argument 2 to function 'setup_bdle'
+   at line 443.
+2. Null pointer 'runtime' that comes from line 472 may
+   be dereferenced at line 490.
+
+Change-Id: Iee59594e8571c06568980204f7352583554c5bf1
+Signed-off-by: G Kranthi <gudishax.kranthikumar@intel.com>
+Reviewed-on:
+Reviewed-by: B, Jayachandran <jayachandran.b@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ include/uapi/sound/skl-tplg-interface.h |  13 ++
+ sound/hda/ext/hdac_ext_stream.c         |   4 +-
+ sound/hda/hdac_stream.c                 |  11 +-
+ sound/soc/intel/skylake/Makefile        |   2 +-
+ sound/soc/intel/skylake/skl-compress.c  | 132 +++++++++++++
+ sound/soc/intel/skylake/skl-compress.h  |  35 ++++
+ sound/soc/intel/skylake/skl-messages.c  | 123 ++++++++++++
+ sound/soc/intel/skylake/skl-pcm.c       |  57 +++++-
+ sound/soc/intel/skylake/skl-probe.c     | 324 ++++++++++++++++++++++++++++++++
+ sound/soc/intel/skylake/skl-probe.h     |  37 ++++
+ sound/soc/intel/skylake/skl-sst-ipc.h   |  31 +++
+ sound/soc/intel/skylake/skl-topology.c  | 220 +++++++++++++++++++++-
+ sound/soc/intel/skylake/skl-topology.h  |  48 ++++-
+ sound/soc/intel/skylake/skl.c           |  23 ++-
+ 14 files changed, 1048 insertions(+), 12 deletions(-)
+ create mode 100644 sound/soc/intel/skylake/skl-compress.c
+ create mode 100644 sound/soc/intel/skylake/skl-compress.h
+ create mode 100644 sound/soc/intel/skylake/skl-probe.c
+ create mode 100644 sound/soc/intel/skylake/skl-probe.h
+
+diff --git a/include/uapi/sound/skl-tplg-interface.h b/include/uapi/sound/skl-tplg-interface.h
+index 47f0338..e1a7771 100644
+--- a/include/uapi/sound/skl-tplg-interface.h
++++ b/include/uapi/sound/skl-tplg-interface.h
+@@ -18,6 +18,7 @@
+  */
+ #define SKL_CONTROL_TYPE_BYTE_TLV	0x100
+ #define SKL_CONTROL_TYPE_MIC_SELECT	0x102
++#define SKL_CONTROL_TYPE_BYTE_PROBE	0x101
+ 
+ #define HDA_SST_CFG_MAX	900 /* size of copier cfg*/
+ #define MAX_IN_QUEUE 8
+@@ -79,6 +80,7 @@ enum skl_module_type {
+ 	SKL_MODULE_TYPE_BASE_OUTFMT,
+ 	SKL_MODULE_TYPE_KPB,
+ 	SKL_MODULE_TYPE_MIC_SELECT,
++	SKL_MODULE_TYPE_PROBE
+ };
+ 
+ enum skl_core_affinity {
+@@ -153,6 +155,17 @@ enum skl_module_param_type {
+ 	SKL_PARAM_BIND
+ };
+ 
++enum skl_probe_connect_type {
++	SKL_PROBE_CONNECT = 3,
++	SKL_PROBE_DISCONNECT
++};
++
++enum skl_probe_direction {
++	SKL_PROBE_EXTRACT = 0,
++	SKL_PROBE_INJECT,
++	SKL_PROBE_INJECT_REEXTRACT
++};
++
+ struct skl_dfw_sdw_aggdata {
+ 	u32 alh_stream_num;
+ 	u32 channel_mask;
+diff --git a/sound/hda/ext/hdac_ext_stream.c b/sound/hda/ext/hdac_ext_stream.c
+index 4bd95f4b2..1b2a1c9 100644
+--- a/sound/hda/ext/hdac_ext_stream.c
++++ b/sound/hda/ext/hdac_ext_stream.c
+@@ -586,9 +586,9 @@ hdac_ext_host_stream_compr_assign(struct hdac_ext_bus *ebus,
+ 		res->hstream.running = 0;
+ 		res->hstream.stream = substream;
+ 		spin_unlock_irq(&hbus->reg_lock);
+-	}
+-	 dev_dbg(hbus->dev, "Stream tag = %d, index = %d\n",
++		dev_dbg(hbus->dev, "Stream tag = %d, index = %d\n",
+ 				res->hstream.stream_tag, res->hstream.index);
++	}
+ 	return res;
+ }
+ EXPORT_SYMBOL_GPL(hdac_ext_host_stream_compr_assign);
+diff --git a/sound/hda/hdac_stream.c b/sound/hda/hdac_stream.c
+index d3b1e22..3c0c7c3 100644
+--- a/sound/hda/hdac_stream.c
++++ b/sound/hda/hdac_stream.c
+@@ -378,7 +378,8 @@ int snd_hdac_stream_setup_periods(struct hdac_stream *azx_dev)
+ 	} else if (csubstream) {
+ 		cruntime = csubstream->runtime;
+ 		dma_buffer_p = csubstream->runtime->dma_buffer_p;
+-	}
++	} else
++		return -EINVAL;
+ 
+ 	/* reset BDL address */
+ 	snd_hdac_stream_writel(azx_dev, SD_BDLPL, 0);
+@@ -453,27 +454,29 @@ int snd_hdac_stream_set_params(struct hdac_stream *azx_dev,
+ 	struct snd_pcm_runtime *runtime = NULL;
+ 	struct snd_compr_runtime *cruntime = NULL;
+ 	int err;
++	unsigned int no_period_wakeup;
+ 
+ 	if (substream) {
+ 		runtime = substream->runtime;
+ 		bufsize = snd_pcm_lib_buffer_bytes(substream);
+ 		period_bytes = snd_pcm_lib_period_bytes(substream);
++		no_period_wakeup = runtime->no_period_wakeup;
+ 	} else if (csubstream) {
+ 		cruntime = csubstream->runtime;
+ 		bufsize = cruntime->buffer_size;
+ 		period_bytes = cruntime->fragment_size;
++		no_period_wakeup  = 0;
+ 	} else
+ 		return -EINVAL;
+ 
+ 	if (bufsize != azx_dev->bufsize ||
+ 	    period_bytes != azx_dev->period_bytes ||
+ 	    format_val != azx_dev->format_val ||
+-	    runtime->no_period_wakeup != azx_dev->no_period_wakeup) {
++	    no_period_wakeup != azx_dev->no_period_wakeup) {
+ 		azx_dev->bufsize = bufsize;
+ 		azx_dev->period_bytes = period_bytes;
+ 		azx_dev->format_val = format_val;
+-		if (substream)
+-			azx_dev->no_period_wakeup = runtime->no_period_wakeup;
++		azx_dev->no_period_wakeup = no_period_wakeup;
+ 		err = snd_hdac_stream_setup_periods(azx_dev);
+ 		if (err < 0)
+ 			return err;
+diff --git a/sound/soc/intel/skylake/Makefile b/sound/soc/intel/skylake/Makefile
+index 831218e..9a3ddb9 100644
+--- a/sound/soc/intel/skylake/Makefile
++++ b/sound/soc/intel/skylake/Makefile
+@@ -1,6 +1,6 @@
+ # SPDX-License-Identifier: GPL-2.0
+ snd-soc-skl-objs := skl.o skl-sdw-pcm.o skl-pcm.o skl-nhlt.o skl-messages.o \
+-skl-topology.o
++skl-topology.o skl-compress.o skl-probe.o
+ 
+ ifdef CONFIG_DEBUG_FS
+   snd-soc-skl-objs += skl-debug.o
+diff --git a/sound/soc/intel/skylake/skl-compress.c b/sound/soc/intel/skylake/skl-compress.c
+new file mode 100644
+index 0000000..c8b26e8
+--- /dev/null
++++ b/sound/soc/intel/skylake/skl-compress.c
+@@ -0,0 +1,132 @@
++
++/*
++ *  skl-compress.c -ASoC HDA Platform driver file implementing compress functionality
++ *
++ *  Copyright (C) 2015-2016 Intel Corp
++ *  Author:  Divya Prakash <divya1.prakash@intel.com>
++ *
++ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; version 2 of the License.
++ *
++ *  This program is distributed in the hope that it will be useful, but
++ *  WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  General Public License for more details.
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ */
++
++#include <linux/pci.h>
++#include <linux/pm_runtime.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include "skl.h"
++inline
++struct hdac_ext_stream *get_hdac_ext_compr_stream(struct snd_compr_stream *stream)
++{
++	return stream->runtime->private_data;
++}
++
++struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream)
++{
++	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
++	struct hdac_stream *hstream = hdac_stream(stream);
++	struct hdac_bus *bus = hstream->bus;
++
++	return hbus_to_ebus(bus);
++}
++
++void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
++				struct snd_dma_buffer *bufp, size_t size)
++{
++	struct snd_compr_runtime *runtime = substream->runtime;
++
++	if (bufp) {
++		runtime->dma_buffer_p = bufp;
++		runtime->dma_area = bufp->area;
++		runtime->dma_addr = bufp->addr;
++		runtime->dma_bytes = size;
++	} else {
++		runtime->dma_buffer_p = NULL;
++		runtime->dma_area = NULL;
++		runtime->dma_addr = 0;
++		runtime->dma_bytes = 0;
++	}
++}
++
++int skl_compr_malloc_pages(struct snd_compr_stream *substream,
++					struct hdac_ext_bus *ebus, size_t size)
++{
++	struct snd_compr_runtime *runtime;
++	struct snd_dma_buffer *dmab = NULL;
++	struct skl *skl = ebus_to_skl(ebus);
++
++	runtime = substream->runtime;
++
++	dmab = kzalloc(sizeof(*dmab), GFP_KERNEL);
++	if (!dmab)
++		return -ENOMEM;
++	substream->dma_buffer.dev.type = SNDRV_DMA_TYPE_DEV_SG;
++	substream->dma_buffer.dev.dev = snd_dma_pci_data(skl->pci);
++	dmab->dev = substream->dma_buffer.dev;
++	if (snd_dma_alloc_pages(substream->dma_buffer.dev.type,
++				substream->dma_buffer.dev.dev,
++				size, dmab) < 0) {
++		dev_err(ebus_to_hbus(ebus)->dev,
++			"Error in snd_dma_alloc_pages\n");
++		kfree(dmab);
++		return -ENOMEM;
++	}
++	skl_set_compr_runtime_buffer(substream, dmab, size);
++
++	return 1;
++}
++
++int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
++				 struct snd_compr_stream *substream,
++				 size_t size)
++{
++	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
++	int ret;
++
++	hdac_stream(stream)->bufsize = 0;
++	hdac_stream(stream)->period_bytes = 0;
++	hdac_stream(stream)->format_val = 0;
++
++	ret = skl_compr_malloc_pages(substream, ebus, size);
++	if (ret < 0)
++		return ret;
++	ebus->bus.io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
++
++	return ret;
++}
++
++int skl_compr_free_pages(struct snd_compr_stream *substream)
++{
++	struct snd_compr_runtime *runtime;
++
++	runtime = substream->runtime;
++	if (runtime->dma_area == NULL)
++		return 0;
++
++	if (runtime->dma_buffer_p != &substream->dma_buffer) {
++		/* it's a newly allocated buffer.  release it now. */
++		snd_dma_free_pages(runtime->dma_buffer_p);
++		kfree(runtime->dma_buffer_p);
++	}
++
++	skl_set_compr_runtime_buffer(substream, NULL, 0);
++	return 0;
++}
++
++int skl_substream_free_compr_pages(struct hdac_bus *bus,
++				struct snd_compr_stream *substream)
++{
++	bus->io_ops->mark_pages_uc((substream)->runtime->dma_buffer_p, false);
++
++	return skl_compr_free_pages(substream);
++}
+diff --git a/sound/soc/intel/skylake/skl-compress.h b/sound/soc/intel/skylake/skl-compress.h
+new file mode 100644
+index 0000000..9fcf6c38f
+--- /dev/null
++++ b/sound/soc/intel/skylake/skl-compress.h
+@@ -0,0 +1,35 @@
++
++/*
++ *  skl-compress.h - Skylake compress header file
++ *
++ *  Copyright (C) 2015-16 Intel Corp
++ *  Author: Divya Prakash <divya1.prakash@intel.com>
++ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; version 2 of the License.
++ *
++ *  This program is distributed in the hope that it will be useful, but
++ *  WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  General Public License for more details.
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ */
++
++inline
++struct hdac_ext_stream *get_hdac_ext_compr_stream(struct snd_compr_stream *stream);
++struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream);
++void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
++				struct snd_dma_buffer *bufp, size_t size);
++int skl_compr_malloc_pages(struct snd_compr_stream *substream,
++					struct hdac_ext_bus *ebus, size_t size);
++int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
++				 struct snd_compr_stream *substream,
++				 size_t size);
++int skl_compr_free_pages(struct snd_compr_stream *substream);
++int skl_substream_free_compr_pages(struct hdac_bus *bus,
++				struct snd_compr_stream *substream);
++
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 4f88595..fa8ef71 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -787,6 +787,30 @@ static void skl_set_copier_format(struct skl_sst *ctx,
+ 	skl_setup_cpr_gateway_cfg(ctx, mconfig, cpr_mconfig);
+ }
+ 
++static void skl_setup_probe_gateway_cfg(struct skl_sst *ctx,
++			struct skl_module_cfg *mconfig,
++			struct skl_probe_cfg *probe_cfg)
++{
++	union skl_connector_node_id node_id = {0};
++	struct skl_probe_config *pconfig = &ctx->probe_config;
++
++	node_id.node.dma_type = pconfig->edma_type;
++	node_id.node.vindex = pconfig->edma_id;
++	probe_cfg->prb_cfg.dma_buffer_size = pconfig->edma_buffsize;
++
++	memcpy(&(probe_cfg->prb_cfg.node_id), &node_id, sizeof(u32));
++}
++
++static void skl_set_probe_format(struct skl_sst *ctx,
++			struct skl_module_cfg *mconfig,
++			struct skl_probe_cfg *probe_mconfig)
++{
++	struct skl_base_cfg *base_cfg = (struct skl_base_cfg *)probe_mconfig;
++
++	skl_set_base_module_format(ctx, mconfig, base_cfg);
++	skl_setup_probe_gateway_cfg(ctx, mconfig, probe_mconfig);
++}
++
+ /*
+  * Algo module are DSP pre processing modules. Algo module take base module
+  * configuration and params
+@@ -839,6 +863,9 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
+ 		param_size += mconfig->formats_config.caps_size;
+ 		return param_size;
+ 
++	case SKL_MODULE_TYPE_PROBE:
++		return sizeof(struct skl_probe_cfg);
++
+ 	case SKL_MODULE_TYPE_SRCINT:
+ 		return sizeof(struct skl_src_module_cfg);
+ 
+@@ -893,6 +920,10 @@ static int skl_set_module_format(struct skl_sst *ctx,
+ 		skl_set_copier_format(ctx, module_config, *param_data);
+ 		break;
+ 
++	case SKL_MODULE_TYPE_PROBE:
++		skl_set_probe_format(ctx, module_config, *param_data);
++		break;
++
+ 	case SKL_MODULE_TYPE_SRCINT:
+ 		skl_set_src_format(ctx, module_config, *param_data);
+ 		break;
+@@ -1060,6 +1091,70 @@ int skl_init_module(struct skl_sst *ctx,
+ 	return ret;
+ }
+ 
++int skl_init_probe_module(struct skl_sst *ctx,
++			struct skl_module_cfg *mconfig)
++{
++	u16 module_config_size = 0;
++	void *param_data = NULL;
++	int ret;
++	struct skl_ipc_init_instance_msg msg;
++
++	dev_dbg(ctx->dev, "%s: module_id = %d instance=%d\n", __func__,
++		 mconfig->id.module_id, mconfig->id.instance_id);
++
++
++	ret = skl_set_module_format(ctx, mconfig,
++			&module_config_size, &param_data);
++	if (ret < 0) {
++		dev_err(ctx->dev, "Failed to set module format ret=%d\n", ret);
++		return ret;
++	}
++
++	msg.module_id = mconfig->id.module_id;
++	msg.instance_id = mconfig->id.instance_id;
++	msg.ppl_instance_id = -1;
++	msg.param_data_size = module_config_size;
++	msg.core_id = mconfig->core_id;
++	msg.domain = mconfig->domain;
++
++	ret = skl_ipc_init_instance(&ctx->ipc, &msg, param_data);
++	if (ret < 0) {
++		dev_err(ctx->dev, "Failed to init instance ret=%d\n", ret);
++		kfree(param_data);
++		return ret;
++	}
++	mconfig->m_state = SKL_MODULE_INIT_DONE;
++	kfree(param_data);
++	return ret;
++}
++
++int skl_uninit_probe_module(struct skl_sst *ctx,
++			struct skl_module_cfg *mconfig)
++{
++	u16 module_config_size = 0;
++	int ret;
++	struct skl_ipc_init_instance_msg msg;
++
++	dev_dbg(ctx->dev, "%s: module_id = %d instance=%d\n", __func__,
++		 mconfig->id.module_id, mconfig->id.instance_id);
++
++	msg.module_id = mconfig->id.module_id;
++	msg.instance_id = mconfig->id.instance_id;
++	msg.ppl_instance_id = -1;
++	msg.param_data_size = module_config_size;
++	msg.core_id = mconfig->core_id;
++	msg.domain = mconfig->domain;
++
++	ret = skl_ipc_delete_instance(&ctx->ipc, &msg);
++	if (ret < 0) {
++		dev_err(ctx->dev, "Failed to delete instance ret=%d\n", ret);
++		return ret;
++	}
++	mconfig->m_state = SKL_MODULE_UNINIT;
++
++	return ret;
++}
++
+ static void skl_dump_bind_info(struct skl_sst *ctx, struct skl_module_cfg
+ 	*src_module, struct skl_module_cfg *dst_module)
+ {
+@@ -1072,6 +1167,34 @@ static void skl_dump_bind_info(struct skl_sst *ctx, struct skl_module_cfg
+ 		src_module->m_state, dst_module->m_state);
+ }
+ 
++int skl_disconnect_probe_point(struct skl_sst *ctx,
++				struct snd_soc_dapm_widget *w)
++{
++	struct skl_ipc_large_config_msg msg;
++	struct skl_probe_config *pconfig = &ctx->probe_config;
++	struct skl_module_cfg *mcfg;
++	int probe_point[8] = {0};
++	int n = 0, i;
++	int no_of_extractor = pconfig->no_extractor;
++
++	dev_dbg(ctx->dev, "Disconnecting probe\n");
++	mcfg = w->priv;
++	msg.module_id = mcfg->id.module_id;
++	msg.instance_id = mcfg->id.instance_id;
++	msg.large_param_id = SKL_PROBE_DISCONNECT;
++
++	for (i = 0; i < no_of_extractor; i++) {
++		if (pconfig->eprobe[i].set) {
++			probe_point[n] = pconfig->eprobe[i].id;
++			pconfig->eprobe[i].set = -1;
++			n++;
++		}
++	}
++
++	msg.param_data_size = n * sizeof(u32);
++	return skl_ipc_set_large_config(&ctx->ipc, &msg,
++						probe_point);
++}
+ /*
+  * On module freeup, we need to unbind the module with modules
+  * it is already bind.
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 388397d..65a1106 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -30,6 +30,7 @@
+ #include "skl-sst-ipc.h"
+ #include "skl-sdw-pcm.h"
+ #include "skl-fwlog.h"
++#include "skl-probe.h"
+ 
+ #define HDA_MONO 1
+ #define HDA_STEREO 2
+@@ -826,13 +827,15 @@ static int skl_trace_compr_copy(struct snd_compr_stream *stream,
+ 				char __user *dest, size_t count)
+ {
+ 	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
++	struct snd_soc_pcm_runtime *rtd = stream->private_data;
++	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+ 	struct sst_dsp *sst = skl_sst->dsp;
+ 	int core = skl_get_compr_core(stream);
+ 
+ 	if (skl_is_logging_core(core))
+ 		return skl_dsp_copy_log_user(sst, core, dest, count);
+ 	else
+-		return 0;
++		return skl_probe_compr_copy(stream, dest, count, cpu_dai);
+ }
+ 
+ static int skl_trace_compr_free(struct snd_compr_stream *stream,
+@@ -859,6 +862,15 @@ static struct snd_compr_ops skl_platform_compr_ops = {
+ 	.copy = skl_trace_compr_copy,
+ };
+ 
++static struct snd_soc_cdai_ops skl_probe_compr_ops = {
++	.startup = skl_probe_compr_open,
++	.shutdown = skl_probe_compr_close,
++	.trigger = skl_probe_compr_trigger,
++	.ack = skl_probe_compr_ack,
++	.pointer = skl_probe_compr_tstamp,
++	.set_params = skl_probe_compr_set_params,
++};
++
+ static struct snd_soc_cdai_ops skl_trace_compr_ops = {
+ 	.shutdown = skl_trace_compr_free,
+ 	.pointer = skl_trace_compr_tstamp,
+@@ -1011,6 +1023,24 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ 	},
+ },
+ {
++	.name = "Compress Probe0 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_probe_compr_ops,
++	.playback = {
++		.stream_name = "Probe Playback",
++		.channels_min = HDA_MONO,
++	},
++},
++{
++	.name = "Compress Probe1 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_probe_compr_ops,
++	.capture = {
++			.stream_name = "Probe Capture",
++			.channels_min = HDA_MONO,
++	},
++},
++{
+ 	.name = "LowLatency Pin",
+ 	.ops = &skl_pcm_dai_ops,
+ 	.playback = {
+@@ -1692,6 +1722,29 @@ static int skl_populate_modules(struct skl *skl)
+ 
+ 	return ret;
+ }
++static int skl_get_probe_widget(struct snd_soc_component *component,
++							struct skl *skl)
++{
++	struct skl_probe_config *pconfig = &skl->skl_sst->probe_config;
++	struct snd_soc_dapm_widget *w;
++
++	list_for_each_entry(w, &component->card->widgets, list) {
++		if (is_skl_dsp_widget_type(w, skl->skl_sst->dev) &&
++				(strstr(w->name, "probe") != NULL)) {
++			pconfig->w = w;
++
++			dev_dbg(component->dev, "widget type=%d name=%s\n",
++							w->id, w->name);
++			break;
++		}
++	}
++
++	pconfig->probe_count = 0;
++	pconfig->no_injector = 6;
++	pconfig->no_extractor = 8;
++
++	return 0;
++}
+ 
+ static int skl_platform_soc_probe(struct snd_soc_component *component)
+ {
+@@ -1746,6 +1799,8 @@ static int skl_platform_soc_probe(struct snd_soc_component *component)
+ 					skl->cfg.astate_cfg->count,
+ 					skl->cfg.astate_cfg);
+ 		}
++
++		skl_get_probe_widget(component, skl);
+ 	}
+ 	pm_runtime_mark_last_busy(component->dev);
+ 	pm_runtime_put_autosuspend(component->dev);
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+new file mode 100644
+index 0000000..7c206ec
+--- /dev/null
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -0,0 +1,324 @@
++/*
++ *  skl-probe.c -ASoC HDA Platform driver file implementing probe functionality
++ *
++ *  Copyright (C) 2015-2016 Intel Corp
++ *  Author:  Divya Prakash <divya1.prakash@intel.com>
++ *
++ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; version 2 of the License.
++ *
++ *  This program is distributed in the hope that it will be useful, but
++ *  WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  General Public License for more details.
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ */
++
++#include <linux/pci.h>
++#include <linux/pm_runtime.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include "skl.h"
++#include "skl-topology.h"
++#include "skl-sst-ipc.h"
++#include "skl-compress.h"
++
++#define USE_SPIB 0
++
++static int set_injector_stream(struct hdac_ext_stream *stream,
++						struct snd_soc_dai *dai)
++{
++	/*
++	 * In the case of injector probe since there can be multiple
++	 * streams, we derive the injector stream number from the dai
++	 * that is opened.
++	 */
++	struct skl *skl = get_skl_ctx(dai->dev);
++	struct skl_probe_config *pconfig =  &skl->skl_sst->probe_config;
++	int i;
++
++	if ((i = skl_get_probe_index(dai, pconfig)) != -1) {
++		pconfig->iprobe[i].stream = stream;
++		pconfig->iprobe[i].dma_id =
++				hdac_stream(stream)->stream_tag - 1;
++	}
++	return 0;
++}
++
++int skl_probe_compr_open(struct snd_compr_stream *substream,
++						struct snd_soc_dai *dai)
++{
++	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
++	struct hdac_ext_stream *stream = NULL;
++	struct snd_compr_runtime *runtime = substream->runtime;
++	struct skl *skl = get_skl_ctx(dai->dev);
++	struct skl_probe_config *pconfig =  &skl->skl_sst->probe_config;
++
++	dev_dbg(dai->dev, "%s dev is  %s\n",  __func__, dev_name(dai->dev));
++
++	if (!pconfig->probe_count) {
++		/*TODO: Configuring the right DMA buffer size*/
++		pconfig->edma_buffsize = 832;
++		pconfig->edma_type = SKL_DMA_HDA_HOST_INPUT_CLASS;
++		pconfig->estream = hdac_ext_host_stream_compr_assign(ebus,
++								substream,
++							SND_COMPRESS_CAPTURE);
++		pconfig->edma_id = hdac_stream(pconfig->estream)->stream_tag - 1;
++	}
++
++	if (substream->direction == SND_COMPRESS_PLAYBACK) {
++		stream = hdac_ext_host_stream_compr_assign(ebus, substream,
++							SND_COMPRESS_PLAYBACK);
++		set_injector_stream(stream, dai);
++		runtime->private_data = stream;
++
++	} else if (substream->direction == SND_COMPRESS_CAPTURE) {
++		stream = pconfig->estream;
++		runtime->private_data = pconfig->estream;
++	}
++
++	if (stream == NULL) {
++		dev_err(dai->dev, "stream = NULL\n");
++		return -EBUSY;
++	}
++
++	hdac_stream(stream)->curr_pos = 0;
++
++	return 0;
++}
++
++int skl_probe_compr_set_params(struct snd_compr_stream *substream,
++					struct snd_compr_params *params,
++							struct snd_soc_dai *dai)
++{
++
++	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
++	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
++	struct snd_compr_runtime *runtime = substream->runtime;
++	struct skl *skl = get_skl_ctx(dai->dev);
++	struct skl_probe_config *pconfig =  &skl->skl_sst->probe_config;
++	struct skl_module_cfg *mconfig = pconfig->w->priv;
++	int ret, dma_id;
++	unsigned int format_val = 0;
++	int err;
++
++	dev_dbg(dai->dev, "%s: %s\n", __func__, dai->name);
++	ret = skl_substream_alloc_compr_pages(ebus, substream,
++				runtime->fragments*runtime->fragment_size);
++	if (ret < 0)
++		return ret;
++
++	dma_id = hdac_stream(stream)->stream_tag - 1;
++	dev_dbg(dai->dev, "dma_id=%d\n", dma_id);
++
++	if (hdac_stream(stream)->prepared) {
++		dev_dbg(dai->dev, "already stream is prepared - returning\n");
++		return 0;
++	}
++
++	snd_hdac_stream_reset(hdac_stream(stream));
++
++	err = snd_hdac_stream_set_params(hdac_stream(stream), format_val);
++	if (err < 0)
++		return err;
++
++	err = snd_hdac_stream_setup(hdac_stream(stream));
++	if (err < 0) {
++		dev_err(dai->dev, "snd_hdac_stream_setup err = %d\n", err);
++		return err;
++	}
++
++	hdac_stream(stream)->prepared = 1;
++
++	/* Initialize probe module only the first time */
++	if (!pconfig->probe_count) {
++
++		ret = skl_init_probe_module(skl->skl_sst, mconfig);
++		if (ret < 0)
++			return ret;
++	}
++
++	if (substream->direction == SND_COMPRESS_PLAYBACK)
++		skl_tplg_attach_probe_dma(pconfig->w, skl->skl_sst, dai);
++
++	skl_tplg_set_probe_params(pconfig->w, skl->skl_sst, substream->direction, dai);
++	pconfig->probe_count++;
++
++#if USE_SPIB
++	snd_hdac_ext_stream_spbcap_enable(ebus, 1, hdac_stream(stream)->index);
++#endif
++	return 0;
++}
++
++int skl_probe_compr_close(struct snd_compr_stream *substream,
++						struct snd_soc_dai *dai)
++{
++	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
++	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
++	struct skl *skl = get_skl_ctx(dai->dev);
++	struct skl_probe_config *pconfig =  &skl->skl_sst->probe_config;
++	int ret;
++
++	dev_dbg(dai->dev, "%s: %s\n", __func__, dai->name);
++#if USE_SPIB
++	snd_hdac_ext_stream_spbcap_enable(ebus, 0, hdac_stream(stream)->index);
++#endif
++
++	if (!--pconfig->probe_count) {
++		skl_disconnect_probe_point(skl->skl_sst, pconfig->w);
++		ret = skl_uninit_probe_module(skl->skl_sst, pconfig->w->priv);
++		if (ret < 0)
++			return ret;
++	}
++
++	snd_hdac_stream_cleanup(hdac_stream(stream));
++	hdac_stream(stream)->prepared = 0;
++
++	skl_substream_free_compr_pages(ebus_to_hbus(ebus), substream);
++
++	snd_hdac_ext_stream_release(stream, HDAC_EXT_STREAM_TYPE_HOST);
++
++	return 0;
++}
++
++int skl_probe_compr_ack(struct snd_compr_stream *substream, size_t bytes,
++							struct snd_soc_dai *dai)
++{
++	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
++	struct hdac_bus *bus = ebus_to_hbus(ebus);
++	u64 new_spib_pos;
++	struct snd_compr_runtime *runtime = substream->runtime;
++	u64 spib_pos = div64_u64(runtime->total_bytes_available,
++				    runtime->buffer_size);
++
++	spib_pos = runtime->total_bytes_available -
++		      (spib_pos * runtime->buffer_size);
++	/*SPIB position is a wrap around counter that indicates
++	the position relative to the buffer start address*/
++	new_spib_pos = (spib_pos + bytes) % runtime->buffer_size;
++
++	if (!bus->spbcap) {
++		dev_err(dai->dev, "Address of SPB capability is NULL");
++		return -EINVAL;
++	}
++#if USE_SPIB
++	writel(new_spib_pos, stream->spib_addr);
++#endif
++	return 0;
++}
++
++int skl_probe_compr_tstamp(struct snd_compr_stream *stream,
++		struct snd_compr_tstamp *tstamp, struct snd_soc_dai *dai)
++{
++	struct hdac_ext_stream *hstream = get_hdac_ext_compr_stream(stream);
++
++	tstamp->copied_total = hstream->hstream.curr_pos;
++
++	return 0;
++
++}
++
++int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
++					size_t count, struct snd_soc_dai *dai)
++{
++	int offset = 0, availcount = 0, retval = 0, copy;
++	void *dstn;
++
++	if (stream->direction == SND_COMPRESS_CAPTURE) {
++		offset = stream->runtime->total_bytes_transferred %
++						stream->runtime->buffer_size;
++		dstn = stream->runtime->dma_area + offset;
++		availcount = (stream->runtime->buffer_size - offset);
++		if (count > availcount) {
++
++			retval = copy_to_user(buf, dstn, availcount);
++			retval += copy_to_user(buf + availcount,
++					stream->runtime->dma_area,
++							count - availcount);
++		} else
++			retval = copy_to_user(buf, stream->runtime->dma_area
++							+ offset, count);
++
++		if (!retval)
++			retval = count;
++		else
++			retval = count - retval;
++
++	} else if (stream->direction == SND_COMPRESS_PLAYBACK) {
++
++		offset = stream->runtime->total_bytes_available %
++						stream->runtime->buffer_size;
++		dstn = stream->runtime->dma_area + offset;
++
++		if (count < stream->runtime->buffer_size - offset)
++			retval = copy_from_user(dstn, buf, count);
++		else {
++			copy = stream->runtime->buffer_size - offset;
++			retval = copy_from_user(dstn, buf, copy);
++			retval += copy_from_user(stream->runtime->dma_area,
++						buf + copy, count - copy);
++		}
++			if (!retval)
++				retval = count;
++			else
++				retval = count - retval;
++	}
++
++#if USE_SPIB
++	spib_pos = (offset + retval)%stream->runtime->dma_bytes;
++	snd_hdac_ext_stream_set_spib(ebus, estream, spib_pos);
++#endif
++
++	return retval;
++
++}
++
++int skl_probe_compr_trigger(struct snd_compr_stream *substream, int cmd,
++							struct snd_soc_dai *dai)
++{
++	struct hdac_ext_bus *ebus = get_bus_compr_ctx(substream);
++	struct hdac_bus *bus = ebus_to_hbus(ebus);
++	struct hdac_ext_stream *stream;
++	struct hdac_stream *hstr;
++	int start;
++	unsigned long cookie;
++
++	stream = get_hdac_ext_compr_stream(substream);
++	hstr = hdac_stream(stream);
++
++	if (!hstr->prepared)
++		return -EPIPE;
++
++	switch (cmd) {
++	case SNDRV_PCM_TRIGGER_START:
++	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
++	case SNDRV_PCM_TRIGGER_RESUME:
++		start = 1;
++		break;
++
++	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
++	case SNDRV_PCM_TRIGGER_SUSPEND:
++	case SNDRV_PCM_TRIGGER_STOP:
++		start = 0;
++		break;
++
++	default:
++		return -EINVAL;
++	}
++
++	spin_lock_irqsave(&bus->reg_lock, cookie);
++
++	if (start)
++		snd_hdac_stream_start(hdac_stream(stream), true);
++	else
++		snd_hdac_stream_stop(hdac_stream(stream));
++
++	spin_unlock_irqrestore(&bus->reg_lock, cookie);
++
++	return 0;
++}
+diff --git a/sound/soc/intel/skylake/skl-probe.h b/sound/soc/intel/skylake/skl-probe.h
+new file mode 100644
+index 0000000..a7b8f34
+--- /dev/null
++++ b/sound/soc/intel/skylake/skl-probe.h
+@@ -0,0 +1,37 @@
++
++/*
++ *  skl-probe.h - Skylake probe header file
++ *
++ *  Copyright (C) 2015-16 Intel Corp
++ *  Author: Divya Prakash <divya1.prakash@intel.com>
++ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; version 2 of the License.
++ *
++ *  This program is distributed in the hope that it will be useful, but
++ *  WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  General Public License for more details.
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ */
++
++int skl_probe_compr_open(struct snd_compr_stream *substream,
++					struct snd_soc_dai *dai);
++
++int skl_probe_compr_set_params(struct snd_compr_stream *substream,
++			struct snd_compr_params *params, struct snd_soc_dai *dai);
++
++int skl_probe_compr_tstamp(struct snd_compr_stream *stream,
++			struct snd_compr_tstamp *tstamp, struct snd_soc_dai *dai);
++int skl_probe_compr_close(struct snd_compr_stream *substream,
++					struct snd_soc_dai *dai);
++int skl_probe_compr_ack(struct snd_compr_stream *substream, size_t bytes,
++					struct snd_soc_dai *dai);
++int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
++					size_t count, struct snd_soc_dai *dai);
++int skl_probe_compr_trigger(struct snd_compr_stream *substream, int cmd,
++					struct snd_soc_dai *dai);
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index eb030df..0437e4c 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -18,11 +18,15 @@
+ 
+ #include <linux/irqreturn.h>
+ #include "../common/sst-ipc.h"
++#include "skl-sst-dsp.h"
+ 
+ struct sst_dsp;
+ struct skl_sst;
+ struct sst_generic_ipc;
+ 
++#define NO_OF_INJECTOR 6
++#define NO_OF_EXTRACTOR 8
++
+ enum skl_ipc_pipeline_state {
+ 	PPL_INVALID_STATE =	0,
+ 	PPL_UNINITIALIZED =	1,
+@@ -75,6 +79,32 @@ struct skl_lib_info {
+ 	const struct firmware *fw;
+ };
+ 
++struct injector_data {
++	int set;
++	int id;
++	struct hdac_ext_stream *stream;
++	int dma_id;
++	int dma_buf_size;
++};
++
++struct extractor_data {
++	int set;
++	int id;
++};
++
++struct skl_probe_config {
++	struct snd_soc_dapm_widget *w;
++	int probe_count;
++	int edma_id;
++	int edma_type;
++	int edma_buffsize;
++	int no_extractor;
++	int no_injector;
++	struct hdac_ext_stream *estream;
++	struct injector_data iprobe[NO_OF_INJECTOR];
++	struct extractor_data eprobe[NO_OF_EXTRACTOR];
++};
++
+ struct skl_sst {
+ 	struct device *dev;
+ 	struct sst_dsp *dsp;
+@@ -126,6 +156,7 @@ struct skl_sst {
+ 	int num_sdw_controllers;
+ 	/* Array of sdw masters */
+ 	struct sdw_master *mstr;
++	struct skl_probe_config probe_config;
+ };
+ 
+ struct skl_ipc_init_instance_msg {
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 6bd9174..7aefd1c 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -96,7 +96,7 @@ void skl_tplg_d0i3_put(struct skl *skl, enum d0i3_capability caps)
+  * SKL DSP driver modelling uses only few DAPM widgets so for rest we will
+  * ignore. This helpers checks if the SKL driver handles this widget type
+  */
+-static int is_skl_dsp_widget_type(struct snd_soc_dapm_widget *w,
++int is_skl_dsp_widget_type(struct snd_soc_dapm_widget *w,
+ 				  struct device *dev)
+ {
+ 	if (w->dapm->dev != dev)
+@@ -479,12 +479,111 @@ static void skl_tplg_update_module_params(struct snd_soc_dapm_widget *w,
+ 	skl_dump_mconfig(ctx, m_cfg);
+ }
+ 
++int skl_get_probe_index(struct snd_soc_dai *dai,
++				struct skl_probe_config *pconfig)
++{
++	int i, ret = -1;
++	char pos[4];
++
++	for (i = 0; i < pconfig->no_injector; i++) {
++		snprintf(pos, 4, "%d", i);
++		if (strstr(dai->name, pos))
++			return i;
++	}
++	return ret;
++}
++
++int skl_tplg_attach_probe_dma(struct snd_soc_dapm_widget *w,
++					struct skl_sst *ctx, struct snd_soc_dai *dai)
++{
++	int i, ret;
++	struct skl_module_cfg *mconfig = w->priv;
++	struct skl_attach_probe_dma ad;
++	struct skl_probe_config *pconfig = &ctx->probe_config;
++
++	if ((i = skl_get_probe_index(dai, pconfig)) != -1) {
++		ad.node_id.node.vindex = pconfig->iprobe[i].dma_id;
++		ad.node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
++		ad.node_id.node.rsvd = 0;
++		ad.dma_buff_size = 1536;/* TODO:Configure based on calculation*/
++	}
++
++	ret = skl_set_module_params(ctx, (u32 *)&ad,
++			sizeof(struct skl_attach_probe_dma), 1, mconfig);
++	return ret;
++
++}
++
++int skl_tplg_set_probe_params(struct snd_soc_dapm_widget *w,
++					struct skl_sst *ctx, int direction,
++					struct snd_soc_dai *dai)
++{
++	int i, ret = 0, n = 0;
++	struct skl_module_cfg *mconfig = w->priv;
++	const struct snd_kcontrol_new *k;
++	struct soc_bytes_ext *sb;
++	struct skl_probe_data *bc;
++	struct skl_probe_config *pconfig = &ctx->probe_config;
++	struct probe_pt_param prb_pt_param[8] = {{0}};
++
++	if (direction == SND_COMPRESS_PLAYBACK) {
++
++		/* only one injector point can be set at a time*/
++		n = skl_get_probe_index(dai, pconfig);
++		k = &w->kcontrol_news[pconfig->no_extractor + n];
++
++		if (k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK) {
++			sb = (void *) k->private_value;
++			bc = (struct skl_probe_data *)sb->dobj.private;
++			pr_debug("bc->is_ext_inj = %d, bc->params = %d, bc->is_connect = %d \n",
++						bc->is_ext_inj, bc->params, bc->is_connect);
++			if (!(bc->is_ext_inj == SKL_PROBE_INJECT ||
++					bc->is_ext_inj == SKL_PROBE_INJECT_REEXTRACT))
++				return -EINVAL;
++
++			prb_pt_param[0].params = (int)bc->params;
++			prb_pt_param[0].connection = bc->is_ext_inj;
++			prb_pt_param[0].node_id =  pconfig->iprobe[n].dma_id;
++			ret = skl_set_module_params(ctx, (void *)prb_pt_param, sizeof(struct probe_pt_param),
++							bc->is_connect, mconfig);
++		}
++
++	} else if (direction == SND_COMPRESS_CAPTURE) {
++
++		/*multiple extractor points can be set simultaneously*/
++		for (i = 0; i < pconfig->no_extractor; i++) {
++			k = &w->kcontrol_news[i];
++			if (k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK) {
++				sb = (void *) k->private_value;
++				bc = (struct skl_probe_data *)sb->dobj.private;
++
++				pr_debug("bc->is_ext_inj = %d, bc->params = %d, bc->is_connect = %d \n",
++							bc->is_ext_inj, bc->params, bc->is_connect);
++				if (bc->is_ext_inj == SKL_PROBE_EXTRACT &&
++						pconfig->eprobe[i].set == 1) {
++					pr_debug("Retrieving the exractor params \n");
++					prb_pt_param[n].params = (int)bc->params;
++					prb_pt_param[n].connection = bc->is_ext_inj;
++					prb_pt_param[n].node_id = -1;
++					n++;
++				}
++			}
++		}
++
++		if (n > 0)
++			ret = skl_set_module_params(ctx, (void *)prb_pt_param, n * sizeof(struct probe_pt_param),
++						SKL_PROBE_CONNECT, mconfig);
++
++	}
++	return ret;
++}
++
+ /*
+  * some modules can have multiple params set from user control and
+  * need to be set after module is initialized. If set_param flag is
+  * set module params will be done after module is initialised.
+  */
+-static int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
++int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
+ 						struct skl_sst *ctx)
+ {
+ 	int i, ret;
+@@ -1691,6 +1790,121 @@ static void skl_tplg_fill_dma_id(struct skl_module_cfg *mcfg,
+ 		memcpy(pipe->p_params, params, sizeof(*params));
+ 	}
+ }
++static int skl_cache_probe_param(struct snd_kcontrol *kctl,
++			struct skl_probe_data *ap, struct skl_sst *ctx)
++{
++	struct skl_probe_config *pconfig = &ctx->probe_config;
++	union skl_connector_node_id node_id = {-1};
++	int index = -1, i;
++	char buf[20], pos[10];
++
++	if (ap->is_ext_inj == SKL_PROBE_EXTRACT) {
++		/* From the control ID get the extractor index */
++		for (i = 0; i < pconfig->no_extractor; i++) {
++			strcpy(buf, "Extractor");
++			snprintf(pos, 4, "%d", i);
++			if (strstr(kctl->id.name, strcat(buf, pos))) {
++				index = i;
++				break;
++			}
++		}
++		pr_debug("Setting extractor probe index %d\n", index);
++		memcpy(&ap->node_id, &node_id, sizeof(u32));
++		pconfig->eprobe[index].id = ap->params;
++		if (ap->is_connect == SKL_PROBE_CONNECT)
++			pconfig->eprobe[index].set = 1;
++		else if (ap->is_connect == SKL_PROBE_DISCONNECT)
++			pconfig->eprobe[index].set = -1;
++
++	} else {
++		/* From the control ID get the injector index */
++		for (i = 0; i < pconfig->no_injector; i++) {
++			strcpy(buf, "Injector");
++			snprintf(pos, 4, "%d", i);
++			if (strstr(kctl->id.name, strcat(buf, pos))) {
++				index = i;
++				break;
++			}
++		}
++		pconfig->iprobe[index].id = ap->params;
++		node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
++		node_id.node.vindex = pconfig->iprobe[index].dma_id;
++		memcpy(&ap->node_id, &node_id, sizeof(u32));
++		if (ap->is_connect == SKL_PROBE_CONNECT)
++			pconfig->iprobe[index].set = 1;
++		else if (ap->is_connect == SKL_PROBE_DISCONNECT)
++			pconfig->iprobe[index].set = -1;
++	}
++	return 0;
++}
++
++static int skl_tplg_tlv_probe_set(struct snd_kcontrol *kcontrol,
++			const unsigned int __user *data, unsigned int size)
++{
++	struct snd_soc_dapm_context *dapm =
++				snd_soc_dapm_kcontrol_dapm(kcontrol);
++	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_widget(kcontrol);
++	struct skl_module_cfg *mconfig = w->priv;
++	struct soc_bytes_ext *sb = (void *) kcontrol->private_value;
++	struct skl_probe_data *ap = (struct skl_probe_data *)sb->dobj.private;
++	struct skl *skl = get_skl_ctx(dapm->dev);
++	struct skl_probe_config *pconfig = &skl->skl_sst->probe_config;
++	struct probe_pt_param connect_point;
++	int disconnect_point;
++	void *offset;
++
++	dev_dbg(dapm->dev, "in %s control=%s\n", __func__, kcontrol->id.name);
++	dev_dbg(dapm->dev, "size = %u, %#x\n", size, size);
++
++	if (data) {
++		offset = (unsigned char *)data;
++		offset += 2 * sizeof(u32); /* To skip TLV heeader */
++		if (copy_from_user(&ap->is_connect,
++					offset, sizeof(ap->is_connect)))
++			return -EIO;
++
++		offset += sizeof(ap->is_connect);
++		if (copy_from_user(&ap->is_ext_inj,
++					offset, sizeof(ap->is_ext_inj)))
++			return -EIO;
++
++		offset += sizeof(ap->is_ext_inj);
++		if (copy_from_user(&ap->params,
++					offset, sizeof(ap->params)))
++			return -EIO;
++
++		dev_dbg(dapm->dev, "connect state = %d, extract_inject = %d, params = %d \n",
++						ap->is_connect, ap->is_ext_inj, ap->params);
++
++		skl_cache_probe_param(kcontrol, ap, skl->skl_sst);
++
++		if (pconfig->probe_count) {
++			/* In the case of extraction, additional probe points can be set when
++			 * the stream is in progress and the driver can immediately send the
++			 * connect IPC. But in the case of injector, for each probe point
++			 * connection a new stream with the DAI number corresponding to that
++			 * control has to be opened. Hence below check ensures that the
++			 * connect IPC is sent only in case of extractor.
++			 */
++			if ((ap->is_connect == SKL_PROBE_CONNECT)
++				&& (ap->is_ext_inj == SKL_PROBE_EXTRACT)) {
++
++				memcpy(&connect_point.params, &ap->params, sizeof(u32));
++				connect_point.connection = ap->is_ext_inj;
++				memcpy(&connect_point.node_id, (&ap->node_id), sizeof(u32));
++				return skl_set_module_params(skl->skl_sst, (void *)&connect_point,
++						sizeof(struct probe_pt_param), ap->is_connect, mconfig);
++
++			} else if (ap->is_connect == SKL_PROBE_DISCONNECT) {
++
++				disconnect_point = (int)ap->params;
++				return skl_set_module_params(skl->skl_sst, (void *)&disconnect_point,
++						sizeof(disconnect_point), ap->is_connect, mconfig);
++			}
++		}
++	}
++	return 0;
++}
+ 
+ /*
+  * The FE params are passed by hw_params of the DAI.
+@@ -2059,6 +2273,8 @@ static const struct snd_soc_tplg_widget_events skl_tplg_widget_ops[] = {
+ static const struct snd_soc_tplg_bytes_ext_ops skl_tlv_ops[] = {
+ 	{SKL_CONTROL_TYPE_BYTE_TLV, skl_tplg_tlv_control_get,
+ 					skl_tplg_tlv_control_set},
++	{SKL_CONTROL_TYPE_BYTE_PROBE, skl_tplg_tlv_control_get,
++					skl_tplg_tlv_probe_set},
+ };
+ 
+ static const struct snd_soc_tplg_kcontrol_ops skl_tplg_kcontrol_ops[] = {
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 5998e69..9415270 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -96,6 +96,11 @@ enum skl_widget_type {
+ 	SKL_WIDGET_PGA = 3,
+ 	SKL_WIDGET_MUX = 4
+ };
++struct probe_pt_param {
++	u32 params;
++	u32 connection;
++	u32 node_id;
++};
+ 
+ struct skl_audio_data_format {
+ 	enum skl_s_freq s_freq;
+@@ -117,6 +122,16 @@ struct skl_base_cfg {
+ 	struct skl_audio_data_format audio_fmt;
+ };
+ 
++struct skl_probe_gtw_cfg {
++	u32 node_id;
++	u32 dma_buffer_size;
++} __packed;
++
++struct skl_probe_cfg {
++	struct skl_base_cfg base_cfg;
++	struct skl_probe_gtw_cfg prb_cfg;
++} __packed;
++
+ struct skl_cpr_gtw_cfg {
+ 	u32 node_id;
+ 	u32 dma_buffer_size;
+@@ -448,6 +463,17 @@ struct skl_algo_data {
+ 	char *params;
+ };
+ 
++struct skl_probe_data {
++	u8 is_connect;
++	u32 is_ext_inj;
++	u32 params;
++	u32 node_id;
++} __packed;
++
++struct skl_attach_probe_dma {
++	union skl_connector_node_id node_id;
++	u32 dma_buff_size;
++} __packed;
+ struct skl_pipeline {
+ 	struct skl_pipe *pipe;
+ 	struct list_head node;
+@@ -479,6 +505,7 @@ static inline struct skl *get_skl_ctx(struct device *dev)
+ 	return bus_to_skl(bus);
+ }
+ 
++struct skl_probe_config;
+ int skl_tplg_be_update_params(struct snd_soc_dai *dai,
+ 	struct skl_pipe_params *params);
+ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
+@@ -509,12 +536,28 @@ int skl_reset_pipe(struct skl_sst *ctx, struct skl_pipe *pipe);
+ 
+ int skl_init_module(struct skl_sst *ctx, struct skl_module_cfg *module_config);
+ 
++int skl_init_probe_module(struct skl_sst *ctx, struct skl_module_cfg *module_config);
++
++int skl_uninit_probe_module(struct skl_sst *ctx, struct skl_module_cfg *module_config);
++
++int skl_get_probe_index(struct snd_soc_dai *dai,
++				struct skl_probe_config *pconfig);
++
++int skl_tplg_attach_probe_dma(struct snd_soc_dapm_widget *w,
++					struct skl_sst *ctx, struct snd_soc_dai *dai);
++int skl_tplg_set_probe_params(struct snd_soc_dapm_widget *w,
++						struct skl_sst *ctx, int direction,
++						struct snd_soc_dai *dai);
++int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
++						struct skl_sst *ctx);
++
+ int skl_bind_modules(struct skl_sst *ctx, struct skl_module_cfg
+ 	*src_module, struct skl_module_cfg *dst_module);
+ 
+ int skl_unbind_modules(struct skl_sst *ctx, struct skl_module_cfg
+ 	*src_module, struct skl_module_cfg *dst_module);
+-
++int skl_disconnect_probe_point(struct skl_sst *ctx,
++					struct snd_soc_dapm_widget *w);
+ int skl_set_module_params(struct skl_sst *ctx, u32 *params, int size,
+ 			u32 param_id, struct skl_module_cfg *mcfg);
+ int skl_get_module_params(struct skl_sst *ctx, u32 *params, int size,
+@@ -522,6 +565,9 @@ int skl_get_module_params(struct skl_sst *ctx, u32 *params, int size,
+ 
+ struct skl_module_cfg *skl_tplg_be_get_cpr_module(struct snd_soc_dai *dai,
+ 								int stream);
++
++int is_skl_dsp_widget_type(struct snd_soc_dapm_widget *w,
++						struct device *dev);
+ enum skl_bitdepth skl_get_bit_depth(int params);
+ int skl_pcm_host_dma_prepare(struct device *dev,
+ 			struct skl_pipe_params *params);
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index e2b9c7c..d1b2740 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -33,6 +33,7 @@
+ #include <sound/hda_register.h>
+ #include <sound/hdaudio.h>
+ #include <sound/hda_i915.h>
++#include <sound/compress_driver.h>
+ #include "skl.h"
+ #include "skl-sst-dsp.h"
+ #include "skl-sst-ipc.h"
+@@ -185,10 +186,30 @@ void skl_update_d0i3c(struct device *dev, bool enable)
+ 			snd_hdac_chip_readb(bus, VS_D0I3C));
+ }
+ 
++static void skl_get_total_bytes_transferred(struct hdac_stream *hstr)
++{
++	int pos, prev_pos, no_of_bytes;
++
++	prev_pos = hstr->curr_pos % hstr->stream->runtime->buffer_size;
++	pos = snd_hdac_stream_get_pos_posbuf(hstr);
++
++	if (pos < prev_pos)
++		no_of_bytes = (hstr->stream->runtime->buffer_size - prev_pos) +  pos;
++	else
++		no_of_bytes = pos - prev_pos;
++
++	hstr->curr_pos += no_of_bytes;
++}
++
+ /* called from IRQ */
+ static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
+ {
+-	snd_pcm_period_elapsed(hstr->substream);
++	if (hstr->substream)
++		snd_pcm_period_elapsed(hstr->substream);
++	else if (hstr->stream) {
++		skl_get_total_bytes_transferred(hstr);
++		snd_compr_fragment_elapsed(hstr->stream);
++	}
+ }
+ 
+ static irqreturn_t skl_interrupt(int irq, void *dev_id)
+-- 
+2.7.4
+

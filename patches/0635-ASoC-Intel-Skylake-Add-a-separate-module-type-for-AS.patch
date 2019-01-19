@@ -1,0 +1,105 @@
+From aa89e243cceccb99156edd48f5d3a72bf7c4ec6c Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Mon, 21 Aug 2017 22:03:10 +0530
+Subject: [PATCH 0635/1132] ASoC: Intel: Skylake: Add a separate module type
+ for ASRC algo
+
+ASRC algorithm has the same interfaces like the SRC algorithm.
+This patch distinguishes both of them with similar names
+so as to enable using them in the same topology
+
+One parameter called mode has been added to ASRC init structure
+whose value is dependent on stream direction.
+
+Recommendation from the FW team is to set asrc mode = 2 for
+capture and asrc mode = 1 for playback for better signal
+quality
+
+Change-Id: I26961f8601bbaba71ebd3944438ebfa294774037
+Signed-off-by: Sameer Sharma <sameerx.sharma@intel.com>
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Reviewed-on:
+Reviewed-by: Sinha, Mohit <mohit.sinha@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ include/uapi/sound/skl-tplg-interface.h |  3 ++-
+ sound/soc/intel/skylake/skl-messages.c  | 13 +++++++++++++
+ sound/soc/intel/skylake/skl-topology.h  |  1 +
+ 3 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/include/uapi/sound/skl-tplg-interface.h b/include/uapi/sound/skl-tplg-interface.h
+index 89844fb..a3f0890 100644
+--- a/include/uapi/sound/skl-tplg-interface.h
++++ b/include/uapi/sound/skl-tplg-interface.h
+@@ -81,7 +81,8 @@ enum skl_module_type {
+ 	SKL_MODULE_TYPE_BASE_OUTFMT,
+ 	SKL_MODULE_TYPE_KPB,
+ 	SKL_MODULE_TYPE_MIC_SELECT,
+-	SKL_MODULE_TYPE_PROBE
++	SKL_MODULE_TYPE_PROBE,
++	SKL_MODULE_TYPE_ASRC
+ };
+ 
+ enum skl_core_affinity {
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 6cf06fa..d0d60d7 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -34,6 +34,9 @@
+ #include <linux/sdw_bus.h>
+ #include <asm/set_memory.h>
+ 
++#define ASRC_MODE_UPLINK	2
++#define ASRC_MODE_DOWNLINK	1
++
+ static int skl_alloc_dma_buf(struct device *dev,
+ 		struct snd_dma_buffer *dmab, size_t size)
+ {
+@@ -1736,6 +1739,14 @@ static void skl_set_src_format(struct skl_sst *ctx,
+ 		(struct skl_base_cfg *)src_mconfig);
+ 
+ 	src_mconfig->src_cfg = fmt->s_freq;
++
++	if (mconfig->m_type == SKL_MODULE_TYPE_ASRC) {
++		if (mconfig->pipe->p_params->stream ==
++				SNDRV_PCM_STREAM_PLAYBACK)
++			src_mconfig->mode = ASRC_MODE_DOWNLINK;
++		else
++			src_mconfig->mode = ASRC_MODE_UPLINK;
++	}
+ }
+ 
+ /*
+@@ -1862,6 +1873,7 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
+ 		return sizeof(struct skl_probe_cfg);
+ 
+ 	case SKL_MODULE_TYPE_SRCINT:
++	case SKL_MODULE_TYPE_ASRC:
+ 		return sizeof(struct skl_src_module_cfg);
+ 
+ 	case SKL_MODULE_TYPE_UPDWMIX:
+@@ -1920,6 +1932,7 @@ static int skl_set_module_format(struct skl_sst *ctx,
+ 		break;
+ 
+ 	case SKL_MODULE_TYPE_SRCINT:
++	case SKL_MODULE_TYPE_ASRC:
+ 		skl_set_src_format(ctx, module_config, *param_data);
+ 		break;
+ 
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 12639e4..f9ac42c 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -167,6 +167,7 @@ struct skl_cpr_pin_fmt {
+ struct skl_src_module_cfg {
+ 	struct skl_base_cfg base_cfg;
+ 	enum skl_s_freq src_cfg;
++	u32 mode;
+ } __packed;
+ 
+ struct notification_mask {
+-- 
+2.7.4
+

@@ -1,0 +1,51 @@
+From 7f42b7041e6e61ab81530e2283ebe6ed81a5193c Mon Sep 17 00:00:00 2001
+From: Pawel Furtak <pawel.furtak@intel.com>
+Date: Sun, 25 Nov 2018 17:32:28 +0100
+Subject: [PATCH 1037/1132] ASoC: Intel: Skylake: Add support for Virtio SST
+
+This patch adds virtio SST ops to dsp_ops list
+for skylake. To avoid building of virtio sst driver in
+native build, virtio ops are included only if virtualization
+is enabled.
+
+Change-Id: Ic8d8b04cdfbf10a98ab289835169cde8d2acd8f4
+Signed-off-by: Pawel Furtak <pawel.furtak@intel.com>
+Tracked-On: OAM-72189
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 814b6a5..7446172 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -33,6 +33,7 @@
+ #include <linux/sdw/sdw_cnl.h>
+ #include <linux/sdw_bus.h>
+ #include <asm/set_memory.h>
++#include "virtio/skl-virtio.h"
+ 
+ #define ASRC_MODE_UPLINK	2
+ #define ASRC_MODE_DOWNLINK	1
+@@ -318,6 +319,16 @@ static const struct skl_dsp_ops dsp_ops[] = {
+ 		.init_fw = cnl_sst_init_fw,
+ 		.cleanup = cnl_sst_dsp_cleanup
+ 	},
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_FE)
++	{
++		.id = 0x8063,
++		.num_cores = 2,
++		.loader_ops = bxt_get_loader_ops,
++		.init = vfe_sst_dsp_init,
++		.init_fw = vfe_sst_init_fw,
++		.cleanup = vfe_sst_dsp_cleanup
++	},
++#endif
+ };
+ 
+ static int cnl_sdw_bra_pipe_trigger(struct skl_sst *ctx, bool enable,
+-- 
+2.7.4
+

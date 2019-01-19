@@ -1,0 +1,137 @@
+From 7b92000a17fa9a8aea149156e1548165a2fa5120 Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Thu, 18 Oct 2018 17:40:29 +0300
+Subject: [PATCH 0417/1132] mei: keep pending read on one client disconnect
+
+Keep pending read callback for sake of other clients.
+Drop data that came for already disconnected client.
+
+Change-Id: I36fc4c3799b70ca7774ca4875a36a5ca43d06c18
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ drivers/misc/mei/client.c | 45 +++++++++++++++++++++++++++++++++++++++------
+ drivers/misc/mei/main.c   |  8 ++++----
+ 2 files changed, 43 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/misc/mei/client.c b/drivers/misc/mei/client.c
+index 07bd98b..01fbbe3 100644
+--- a/drivers/misc/mei/client.c
++++ b/drivers/misc/mei/client.c
+@@ -454,6 +454,20 @@ static void mei_io_list_free_fp(struct list_head *head, const struct file *fp)
+ }
+ 
+ /**
++ * mei_cl_free_pending - free pending cb
++ *
++ * @cl: host client
++ */
++static void mei_cl_free_pending(struct mei_cl *cl)
++{
++	struct mei_cl_cb *cb;
++
++	cb = list_first_entry_or_null(&cl->rd_pending, struct mei_cl_cb, list);
++	if (cb)
++		mei_io_cb_free(cb);
++}
++
++/**
+  * mei_cl_alloc_cb - a convenient wrapper for allocating read cb
+  *
+  * @cl: host client
+@@ -562,7 +576,8 @@ int mei_cl_flush_queues(struct mei_cl *cl, const struct file *fp)
+ 	mei_io_tx_list_free_cl(&cl->dev->write_waiting_list, cl);
+ 	mei_io_list_flush_cl(&cl->dev->ctrl_wr_list, cl);
+ 	mei_io_list_flush_cl(&cl->dev->ctrl_rd_list, cl);
+-	mei_io_list_free_fp(&cl->rd_pending, fp);
++	if (!fp)
++		mei_cl_free_pending(cl);
+ 	spin_lock(&cl->rd_completed_lock);
+ 	mei_io_list_free_fp(&cl->rd_completed, fp);
+ 	spin_unlock(&cl->rd_completed_lock);
+@@ -1295,20 +1310,38 @@ static void mei_cl_read_vtag_add_fc(struct mei_cl *cl)
+ 	}
+ }
+ 
++static int mei_cl_vm_support_check(struct mei_cl *cl)
++{
++	struct mei_device *dev = cl->dev;
++
++	if (!dev->hbm_f_vm_supported)
++		return -EOPNOTSUPP;
++
++	if (!cl->me_cl)
++		return 0;
++
++	return cl->me_cl->props.vm_supported ? 0 : -EOPNOTSUPP;
++}
++
+ void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb)
+ {
+ 	const struct file *fp;
+ 
+-	fp = mei_cl_fp_by_vtag(cl, cb->vtag);
+-	if (fp)
++	if (!mei_cl_vm_support_check(cl)) {
++		fp = mei_cl_fp_by_vtag(cl, cb->vtag);
++		if (!fp) {
++			/* client already disconnected, discarding */
++			mei_io_cb_free(cb);
++			return;
++		}
+ 		cb->fp = fp;
+-	mei_cl_reset_read_by_vtag(cl, cb->vtag);
++		mei_cl_reset_read_by_vtag(cl, cb->vtag);
++		mei_cl_read_vtag_add_fc(cl);
++	}
+ 
+ 	spin_lock(&cl->rd_completed_lock);
+ 	list_add_tail(&cb->list, &cl->rd_completed);
+ 	spin_unlock(&cl->rd_completed_lock);
+-
+-	mei_cl_read_vtag_add_fc(cl);
+ }
+ 
+ /**
+diff --git a/drivers/misc/mei/main.c b/drivers/misc/mei/main.c
+index 697f18d..7e6c358 100644
+--- a/drivers/misc/mei/main.c
++++ b/drivers/misc/mei/main.c
+@@ -129,7 +129,7 @@ static int mei_release(struct inode *inode, struct file *file)
+ 
+ 	rets = mei_cl_disconnect(cl);
+ 
+-	mei_cl_flush_queues(cl, file);
++	mei_cl_flush_queues(cl, NULL);
+ 	cl_dbg(dev, cl, "removing\n");
+ 
+ 	mei_cl_unlink(cl);
+@@ -436,7 +436,7 @@ static int mei_ioctl_connect_client(struct file *file,
+ 	return rets;
+ }
+ 
+-static int mei_cl_vm_support_check(struct mei_device *dev, const uuid_le *uuid)
++static int mei_vm_support_check(struct mei_device *dev, const uuid_le *uuid)
+ {
+ 	struct mei_me_client *me_cl;
+ 	int ret;
+@@ -633,7 +633,7 @@ static long mei_ioctl(struct file *file, unsigned int cmd, unsigned long data)
+ 		props = &conn.out_client_properties;
+ 		vtag = 0;
+ 
+-		if (!mei_cl_vm_support_check(dev, cl_uuid))
++		if (!mei_vm_support_check(dev, cl_uuid))
+ 			rets = mei_ioctl_connect_vtag(file, cl_uuid, props,
+ 						      vtag);
+ 		else
+@@ -663,7 +663,7 @@ static long mei_ioctl(struct file *file, unsigned int cmd, unsigned long data)
+ 		props = &conn_vtag.out_client_properties;
+ 		vtag = conn_vtag.connect.vtag;
+ 
+-		if (mei_cl_vm_support_check(dev, cl_uuid)) {
++		if (mei_vm_support_check(dev, cl_uuid)) {
+ 			dev_dbg(dev->dev, "FW Client %pUl does not support vtags\n",
+ 				cl_uuid);
+ 			rets = -EOPNOTSUPP;
+-- 
+2.7.4
+

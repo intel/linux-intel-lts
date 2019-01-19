@@ -1,0 +1,105 @@
+From c9b55e655ea1fdc7e2b0949506579dd8a3153fa2 Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:55 +0800
+Subject: [PATCH 0738/1132] VHM: add API to get vm info
+
+Added API vhm_get_vm_info: get guest vm's max_vcpu & max_gfn
+
+Change-Id: Ibe668c75e893092a1e5ea824aa09d9b65825fabb
+Tracked-On: 218445
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/vhm/vhm_mm.c            |  9 +++++++--
+ drivers/vhm/vhm_vm_mngt.c       | 17 +++++++++++++++++
+ include/linux/vhm/vhm_vm_mngt.h |  7 +++++++
+ 3 files changed, 31 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index ea7604b..61ebb8c 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -117,6 +117,7 @@ int alloc_guest_memseg(struct vhm_vm *vm, struct vm_memseg *memseg)
+ {
+ 	struct guest_memseg *seg;
+ 	u64 base;
++	int max_gfn;
+ 
+ 	seg = kzalloc(sizeof(struct guest_memseg), GFP_KERNEL);
+ 	if (seg == NULL)
+@@ -134,9 +135,13 @@ int alloc_guest_memseg(struct vhm_vm *vm, struct vm_memseg *memseg)
+ 	strncpy(seg->name, memseg->name, SPECNAMELEN + 1);
+ 	seg->gpa = memseg->gpa;
+ 
++	max_gfn = (seg->gpa + seg->len) >> PAGE_SHIFT;
++	if (vm->max_gfn < max_gfn)
++		vm->max_gfn = max_gfn;
++
+ 	pr_info("VHM: alloc memseg[%s] with len=0x%lx, base=0x%llx,"
+-		" and its guest gpa = 0x%llx\n",
+-		seg->name, seg->len, seg->base, seg->gpa);
++		" and its guest gpa = 0x%llx, vm max_gfn 0x%x\n",
++		seg->name, seg->len, seg->base, seg->gpa, vm->max_gfn);
+ 
+ 	seg->vma_count = 0;
+ 	mutex_lock(&vm->seg_lock);
+diff --git a/drivers/vhm/vhm_vm_mngt.c b/drivers/vhm/vhm_vm_mngt.c
+index 048ab41..d1aa4ba 100644
+--- a/drivers/vhm/vhm_vm_mngt.c
++++ b/drivers/vhm/vhm_vm_mngt.c
+@@ -95,6 +95,23 @@ void put_vm(struct vhm_vm *vm)
+ 	mutex_unlock(&vhm_vm_list_lock);
+ }
+ 
++int vhm_get_vm_info(unsigned long vmid, struct vm_info *info)
++{
++	struct vhm_vm *vm;
++
++	vm = find_get_vm(vmid);
++	if (unlikely(vm == NULL)) {
++		pr_err("vhm: failed to find vm from vmid %ld\n",
++			vmid);
++		return -EINVAL;
++	}
++	/*TODO: hardcode max_vcpu here, should be fixed by getting at runtime */
++	info->max_vcpu = 4;
++	info->max_gfn = vm->max_gfn;
++	put_vm(vm);
++	return 0;
++}
++
+ int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
+ 		unsigned long msi_data)
+ {
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index fb02c00..77c21c4 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -69,14 +69,21 @@ struct vhm_vm {
+ 	long refcnt;
+ 	struct mutex seg_lock;
+ 	struct list_head memseg_list;
++	int max_gfn;
+ 	spinlock_t ioreq_client_lock;
+ 	struct list_head ioreq_client_list;
+ 	struct vhm_request_buffer *req_buf;
+ 	struct page *pg;
+ };
+ 
++struct vm_info {
++	int max_vcpu;
++	int max_gfn;
++};
++
+ struct vhm_vm *find_get_vm(unsigned long vmid);
+ void put_vm(struct vhm_vm *vm);
++int vhm_get_vm_info(unsigned long vmid, struct vm_info *info);
+ int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
+ 	unsigned long msi_data);
+ 
+-- 
+2.7.4
+

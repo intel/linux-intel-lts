@@ -1,0 +1,54 @@
+From ef7e477d2c0213897af5a52fefcf39d5198f5bed Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Wed, 14 Feb 2018 06:39:45 +0530
+Subject: [PATCH 0703/1132] ASoC: Intel: BXT: Remove compile warnings
+
+Remove compile warnings from the function bxt_load_base_firmware
+
+Change-Id: I88b13e9dc045ecc57b989a96e83c7da1683b0e3b
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Reviewed-on:
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Tr, HarishkumarX <harishkumarx.tr@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, ShahinaX <shahinax.shaik@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/skylake/bxt-sst.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/bxt-sst.c b/sound/soc/intel/skylake/bxt-sst.c
+index 47b2a24..bac77f8 100644
+--- a/sound/soc/intel/skylake/bxt-sst.c
++++ b/sound/soc/intel/skylake/bxt-sst.c
+@@ -277,14 +277,14 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
+ 				sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE),
+ 				sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS));
+ 
+-			dev_err(ctx->dev, "Itertion %d Core En/ROM load fail:%d\n", i,ret);
++			dev_err(ctx->dev, "Iteration %d Core En/ROM load fail:%d\n", i, ret);
+ 			continue;
+ 		}
+-		dev_dbg(ctx->dev, "Itertion %d ROM load Success:%d,%d\n", i,ret);
++		dev_dbg(ctx->dev, "Iteration %d ROM load Success:%d\n", i, ret);
+ 
+ 		ret = sst_transfer_fw_host_dma(ctx);
+ 		if (ret < 0) {
+-			dev_err(ctx->dev, "Itertion %d Transfer firmware failed %d\n", i,ret);
++			dev_err(ctx->dev, "Iteration %d Transfer firmware failed %d\n", i, ret);
+ 			dev_info(ctx->dev, "Error code=0x%x: FW status=0x%x\n",
+ 				sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE),
+ 				sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS));
+@@ -293,7 +293,7 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
+ 			skl_dsp_disable_core(ctx, SKL_DSP_CORE0_MASK);
+ 			continue;
+ 		}
+-		dev_dbg(ctx->dev, "Itertion %d FW transfer Success:%d,%d\n", i,ret);
++		dev_dbg(ctx->dev, "Iteration %d FW transfer Success:%d\n", i, ret);
+ 
+ 		if (ret == 0)
+ 			break;
+-- 
+2.7.4
+

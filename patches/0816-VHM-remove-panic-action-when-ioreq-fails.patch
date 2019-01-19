@@ -1,0 +1,46 @@
+From 8c2dd68ab7251560761f5626eef12739618b6abb Mon Sep 17 00:00:00 2001
+From: Minggui Cao <minggui.cao@intel.com>
+Date: Fri, 31 Aug 2018 10:59:03 +0800
+Subject: [PATCH 0816/1132] VHM: remove panic action when ioreq fails.
+
+handle the ioreq failed cases instead of calling BUG(), which
+will cause system panic directly.
+
+Signed-off-by: Minggui Cao <minggui.cao@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/vhm/vhm_ioreq.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index 960723b..da61069 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -483,8 +483,10 @@ static int ioreq_client_thread(void *data)
+ 			if (client->handler) {
+ 				ret = client->handler(client->id,
+ 					client->ioreqs_map);
+-				if (ret < 0)
+-					BUG();
++				if (ret < 0) {
++					pr_err("vhm-ioreq: err:%d\n", ret);
++					break;
++				}
+ 			} else {
+ 				pr_err("vhm-ioreq: no ioreq handler\n");
+ 				break;
+@@ -799,9 +801,8 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
+ 			client = acrn_ioreq_find_client_by_request(vm, req);
+ 			if (client == NULL) {
+ 				pr_err("vhm-ioreq: failed to "
+-						"find ioreq client -> "
+-						"BUG\n");
+-				BUG();
++						"find ioreq client\n");
++				return -EINVAL;
+ 			} else {
+ 				req->client = client->id;
+ 				atomic_set(&req->processed, REQ_STATE_PROCESSING);
+-- 
+2.7.4
+

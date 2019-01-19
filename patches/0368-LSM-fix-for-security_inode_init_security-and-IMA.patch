@@ -1,0 +1,43 @@
+From 6c456df5777859fecf3fac48bfda5cbfe3ea1c25 Mon Sep 17 00:00:00 2001
+From: Casey Schaufler <casey.schaufler@intel.com>
+Date: Thu, 20 Sep 2018 15:58:32 -0700
+Subject: [PATCH 0368/1132] LSM: fix for security_inode_init_security and IMA
+
+Correct the initialization of inodes with regard to IMA.
+
+Signed-off-by: Casey Schaufler <casey.schaufler@intel.com>
+Signed-off-by: Min He <min.he@intel.com>
+---
+ security/security.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/security/security.c b/security/security.c
+index e581893..cf79a07 100644
+--- a/security/security.c
++++ b/security/security.c
+@@ -955,9 +955,9 @@ int security_inode_init_security(struct inode *inode, struct inode *dir,
+ 	}
+ 
+ 	if (ret == 0) {
+-		rc = evm_inode_init_security(inode, new_xattrs, evm_xattr);
+-		if (rc == 0)
+-			rc = initxattrs(inode, new_xattrs, fs_data);
++		ret = evm_inode_init_security(inode, new_xattrs, evm_xattr);
++		if (ret == 0)
++			ret = initxattrs(inode, new_xattrs, fs_data);
+ 	}
+ 
+ 	if (lsm_xattr != new_xattrs) {
+@@ -965,9 +965,6 @@ int security_inode_init_security(struct inode *inode, struct inode *dir,
+ 			kfree(xattr->value);
+ 	}
+ 
+-	if (rc != 0)
+-		return rc;
+-
+ 	return (ret == -EOPNOTSUPP) ? 0 : ret;
+ }
+ EXPORT_SYMBOL(security_inode_init_security);
+-- 
+2.7.4
+

@@ -1,0 +1,32 @@
+From ab7afc898441aa1ca2345635cced4f0fc4f22ef2 Mon Sep 17 00:00:00 2001
+From: Wei Liu <weix.w.liu@intel.com>
+Date: Wed, 24 Oct 2018 10:25:38 +0800
+Subject: [PATCH 0935/1132] hyper-dmabuf: disable hyper-dmabuf on arch x86
+
+Since hyper-dmabuf enabled treat warnings message as error.
+And the warnings will be generated when make target as i386.
+This patch will disable hyer-dmabuf on x86 to fix hyper-dmabuf warnings.
+
+Tracked-On: projectacrn/acrn-hypervisor#1572
+Signed-off-by: Wei Liu <weix.w.liu@intel.com>
+Acked-by: Kim, Dongwon <dongwon.kim@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/Kconfig b/drivers/dma-buf/hyper_dmabuf/Kconfig
+index f15a8cd..17ea5b8 100644
+--- a/drivers/dma-buf/hyper_dmabuf/Kconfig
++++ b/drivers/dma-buf/hyper_dmabuf/Kconfig
+@@ -1,7 +1,7 @@
+ menuconfig HYPER_DMABUF
+ 	bool "configure HyperDMABUF driver"
+ 	default y
+-	depends on (X86=y || X86_64=y)
++	depends on X86_64
+ 
+ if HYPER_DMABUF
+ 
+-- 
+2.7.4
+

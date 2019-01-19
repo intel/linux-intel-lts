@@ -1,0 +1,60 @@
+From b3f580c160d2ee881f0b402df6a3a56cb8b90eed Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Wed, 9 May 2018 09:18:17 +0300
+Subject: [PATCH 0413/1132] mei: add vtag support bit in client properties
+
+Change-Id: I8b1c80bf0d8a5f3fea4ec1e8e604f6cc8d16a7b8
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ drivers/misc/mei/debugfs.c | 7 ++++---
+ drivers/misc/mei/hw.h      | 3 ++-
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/misc/mei/debugfs.c b/drivers/misc/mei/debugfs.c
+index 67689cf..0a254cc 100644
+--- a/drivers/misc/mei/debugfs.c
++++ b/drivers/misc/mei/debugfs.c
+@@ -36,7 +36,7 @@ static ssize_t mei_dbgfs_read_meclients(struct file *fp, char __user *ubuf,
+ 	int ret;
+ 
+ #define HDR \
+-"  |id|fix|         UUID                       |con|msg len|sb|refc|\n"
++"  |id|fix|         UUID                       |con|msg len|sb|refc|vm|\n"
+ 
+ 	down_read(&dev->me_clients_rwsem);
+ 	list_for_each_entry(me_cl, &dev->me_clients, list)
+@@ -60,14 +60,15 @@ static ssize_t mei_dbgfs_read_meclients(struct file *fp, char __user *ubuf,
+ 
+ 		if (mei_me_cl_get(me_cl)) {
+ 			pos += scnprintf(buf + pos, bufsz - pos,
+-				"%2d|%2d|%3d|%pUl|%3d|%7d|%2d|%4d|\n",
++				"%2d|%2d|%3d|%pUl|%3d|%7d|%2d|%4d|%2d|\n",
+ 				i++, me_cl->client_id,
+ 				me_cl->props.fixed_address,
+ 				&me_cl->props.protocol_name,
+ 				me_cl->props.max_number_of_connections,
+ 				me_cl->props.max_msg_length,
+ 				me_cl->props.single_recv_buf,
+-				kref_read(&me_cl->refcnt));
++				kref_read(&me_cl->refcnt),
++				me_cl->props.vm_supported);
+ 
+ 			mei_me_cl_put(me_cl);
+ 		}
+diff --git a/drivers/misc/mei/hw.h b/drivers/misc/mei/hw.h
+index b4e0002..0a58234 100644
+--- a/drivers/misc/mei/hw.h
++++ b/drivers/misc/mei/hw.h
+@@ -340,7 +340,8 @@ struct mei_client_properties {
+ 	u8 max_number_of_connections;
+ 	u8 fixed_address;
+ 	u8 single_recv_buf:1;
+-	u8 reserved:7;
++	u8 vm_supported:1;
++	u8 reserved:6;
+ 	u32 max_msg_length;
+ } __packed;
+ 
+-- 
+2.7.4
+

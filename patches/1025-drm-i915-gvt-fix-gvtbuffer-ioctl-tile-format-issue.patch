@@ -1,0 +1,45 @@
+From 87809acca79b5b203252d67253f5249d0a376b10 Mon Sep 17 00:00:00 2001
+From: Zhipeng Gong <zhipeng.gong@intel.com>
+Date: Mon, 12 Nov 2018 09:50:48 +0800
+Subject: [PATCH 1025/1132] drm/i915/gvt: fix gvtbuffer ioctl tile format issue
+
+primary buffer decoder function return tile format with 10 bits shift.
+while gvtbuffer ioctl args tiled is defined to one byte, as a result
+zero is alwasy returned to user space.
+
+This is used to convert the driver tile format to align the requirement
+of gvtbuffer_ioctl args.
+
+Tracked-On: PKT-1592
+Tracked-On: projectacrn/acrn-hypervisor#1576
+Signed-off-by: Zhipeng Gong <zhipeng.gong@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem_gvtbuffer.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c b/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+index fb1ced0..c345996 100644
+--- a/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
++++ b/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+@@ -65,6 +65,8 @@ static const struct drm_i915_gem_object_ops i915_gem_gvtbuffer_ops = {
+ #define GEN7_DECODE_PTE(pte) \
+ 	((dma_addr_t)(((((u64)pte) & 0x7f0) << 28) | (u64)(pte & 0xfffff000)))
+ 
++#define PLANE_CTL_TILED_SHIFT 10
++
+ static struct sg_table *
+ i915_create_sg_pages_for_gvtbuffer(struct drm_device *dev,
+ 			     u32 start, u32 num_pages)
+@@ -185,7 +187,7 @@ static int gvt_decode_information(struct drm_device *dev,
+ 		args->bpp = p.bpp;
+ 		args->hw_format = p.hw_format;
+ 		args->drm_format = p.drm_format;
+-		args->tiled = p.tiled;
++		args->tiled = p.tiled >> PLANE_CTL_TILED_SHIFT;
+ 	} else if ((args->plane_id) == I915_GVT_PLANE_CURSOR) {
+ 		ret = intel_vgpu_decode_cursor_plane(vgpu, &c);
+ 		if (ret)
+-- 
+2.7.4
+

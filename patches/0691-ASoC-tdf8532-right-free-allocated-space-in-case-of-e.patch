@@ -1,0 +1,78 @@
+From fb75a5ff296cea13609132cbcbc8f9252ded7a28 Mon Sep 17 00:00:00 2001
+From: Liu Changcheng <changcheng.liu@intel.com>
+Date: Fri, 11 May 2018 17:11:42 +0800
+Subject: [PATCH 0691/1132] ASoC: tdf8532: right free allocated space in case
+ of error
+
+1. Check allocated space before using it.
+2. The repl_buff parameter in tdf8523_single_read is used to store
+the read data from i2c interface. When the data isn't right read,
+the pre-allocate space should be freed and the content of repl_buff
+should be set as NULL in case of being wrong used by the caller.
+3. In the wrong case i.e. ret != len, return -EINVAL
+
+Change-Id: I3d0e12a9fcb6516716efc92eb734a0248ab3fb28
+Tracked-On:
+Signed-off-by: Liu Changcheng <changcheng.liu@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, ShahinaX <shahinax.shaik@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Tewani, Pradeep D <pradeep.d.tewani@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/codecs/tdf8532.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/codecs/tdf8532.c b/sound/soc/codecs/tdf8532.c
+index dd4cebe..86b7430 100644
+--- a/sound/soc/codecs/tdf8532.c
++++ b/sound/soc/codecs/tdf8532.c
+@@ -107,11 +107,11 @@ static uint8_t tdf8532_read_wait_ack(struct tdf8532_priv *dev_data,
+ 	return ret;
+ }
+ 
+-static uint8_t tdf8532_single_read(struct tdf8532_priv *dev_data,
++static int tdf8532_single_read(struct tdf8532_priv *dev_data,
+ 						char **repl_buff)
+ {
+ 	int ret;
+-	uint8_t len;
++	int len;
+ 
+ 	struct device *dev = &(dev_data->i2c->dev);
+ 
+@@ -126,6 +126,10 @@ static uint8_t tdf8532_single_read(struct tdf8532_priv *dev_data,
+ 	len = ret + HEADER_SIZE;
+ 
+ 	*repl_buff = kzalloc(len, GFP_KERNEL);
++	if (*repl_buff == NULL) {
++		ret = -ENOMEM;
++		goto out;
++	}
+ 
+ 	ret = i2c_master_recv(dev_data->i2c, *repl_buff, len);
+ 
+@@ -136,6 +140,8 @@ static uint8_t tdf8532_single_read(struct tdf8532_priv *dev_data,
+ 		dev_err(dev,
+ 				"i2c recv packet returned: %d (expected: %d)\n",
+ 				ret, len);
++
++		ret = -EINVAL;
+ 		goto out_free;
+ 	}
+ 
+@@ -143,7 +149,7 @@ static uint8_t tdf8532_single_read(struct tdf8532_priv *dev_data,
+ 
+ out_free:
+ 	kfree(*repl_buff);
+-	repl_buff = NULL;
++	*repl_buff = NULL;
+ out:
+ 	return ret;
+ }
+-- 
+2.7.4
+

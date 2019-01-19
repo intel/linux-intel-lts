@@ -1,0 +1,195 @@
+From fcf241e1a4d9c92773023b87908b34d82787af0d Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0807/1132] vhm: mark pending ioreqs in bitmap then dispatch it
+ to vhm client
+
+Currently, we are passing the req_count to vhm client which is useless.
+Clients need get the ioreq shared buffer and the vcpu number of this VM,
+then loop all the vcpu ioreq slots to find the ones to handle.
+
+The patch will record pending ioreqs of the vhm client into a bitmap,
+then vhm client can process the ioreq directly according to the bitmap.
+
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Reviewed-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/vbs/vbs.c                  | 16 ++++++++--------
+ drivers/vbs/vbs_rng.c              |  8 ++++----
+ drivers/vhm/vhm_ioreq.c            | 10 +++++-----
+ include/linux/vbs/vbs.h            |  6 +++---
+ include/linux/vhm/acrn_vhm_ioreq.h |  2 +-
+ 5 files changed, 21 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/vbs/vbs.c b/drivers/vbs/vbs.c
+index 6c36436..1d2e1b4 100644
+--- a/drivers/vbs/vbs.c
++++ b/drivers/vbs/vbs.c
+@@ -145,22 +145,22 @@ long virtio_dev_deregister(struct virtio_dev_info *dev)
+ 	return 0;
+ }
+ 
+-int virtio_vq_index_get(struct virtio_dev_info *dev, int req_cnt)
++int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map)
+ {
+ 	int val = -1;
+ 	struct vhm_request *req;
+-	int i;
+-
+-	if (unlikely(req_cnt <= 0))
+-		return -EINVAL;
++	int vcpu;
+ 
+ 	if (dev == NULL) {
+ 		pr_err("%s: dev is NULL!\n", __func__);
+ 		return -EINVAL;
+ 	}
+ 
+-	for (i = 0; i < dev->_ctx.max_vcpu; i++) {
+-		req = &dev->_ctx.req_buf[i];
++	while (1) {
++		vcpu = find_first_bit(ioreqs_map, dev->_ctx.max_vcpu);
++		if (vcpu == dev->_ctx.max_vcpu)
++			break;
++		req = &dev->_ctx.req_buf[vcpu];
+ 		if (req->valid && req->processed == REQ_STATE_PROCESSING &&
+ 		    req->client == dev->_ctx.vhm_client_id) {
+ 			if (req->reqs.pio_request.direction == REQUEST_READ) {
+@@ -181,7 +181,7 @@ int virtio_vq_index_get(struct virtio_dev_info *dev, int req_cnt)
+ 					val = req->reqs.mmio_request.value;
+ 			}
+ 			req->processed = REQ_STATE_SUCCESS;
+-			acrn_ioreq_complete_request(dev->_ctx.vhm_client_id, i);
++			acrn_ioreq_complete_request(req->client, vcpu);
+ 		}
+ 	}
+ 
+diff --git a/drivers/vbs/vbs_rng.c b/drivers/vbs/vbs_rng.c
+index 88f6108..569d1d5 100644
+--- a/drivers/vbs/vbs_rng.c
++++ b/drivers/vbs/vbs_rng.c
+@@ -122,7 +122,7 @@ static int vbs_rng_hash_initialized = 0;
+ static int vbs_rng_connection_cnt = 0;
+ 
+ /* function declarations */
+-static int handle_kick(int client_id, int req_cnt);
++static int handle_kick(int client_id, unsigned long *ioreqs_map);
+ static void vbs_rng_reset(struct vbs_rng *rng);
+ static void vbs_rng_stop(struct vbs_rng *rng);
+ static void vbs_rng_flush(struct vbs_rng *rng);
+@@ -251,12 +251,12 @@ static void handle_vq_kick(struct vbs_rng *rng, int vq_idx)
+ 	virtio_vq_endchains(vq, 1);	/* Generate interrupt if appropriate. */
+ }
+ 
+-static int handle_kick(int client_id, int req_cnt)
++static int handle_kick(int client_id, unsigned long *ioreqs_map)
+ {
+ 	int val = -1;
+ 	struct vbs_rng *rng;
+ 
+-	if (unlikely(req_cnt <= 0))
++	if (unlikely(bitmap_empty(ioreqs_map, VHM_REQUEST_MAX) <= 0))
+ 		return -EINVAL;
+ 
+ 	pr_debug("%s: handle kick!\n", __func__);
+@@ -268,7 +268,7 @@ static int handle_kick(int client_id, int req_cnt)
+ 		return -EINVAL;
+ 	}
+ 
+-	val = virtio_vq_index_get(&rng->dev, req_cnt);
++	val = virtio_vq_index_get(&rng->dev, ioreqs_map);
+ 
+ 	if (val >= 0)
+ 		handle_vq_kick(rng, val);
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index bf55a01..c91a605 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -101,7 +101,7 @@ struct ioreq_client {
+ 	/*
+ 	 *   this req records the req number this client need handle
+ 	 */
+-	atomic_t req;
++	DECLARE_BITMAP(ioreqs_map, VHM_REQUEST_MAX);
+ 
+ 	/*
+ 	 * client ioreq handler:
+@@ -434,7 +434,7 @@ static inline bool is_destroying(struct ioreq_client *client)
+ static inline bool has_pending_request(struct ioreq_client *client)
+ {
+ 	if (client)
+-		return (atomic_read(&client->req) > 0);
++		return !bitmap_empty(client->ioreqs_map, VHM_REQUEST_MAX);
+ 	else
+ 		return false;
+ }
+@@ -482,7 +482,7 @@ static int ioreq_client_thread(void *data)
+ 		if (has_pending_request(client)) {
+ 			if (client->handler) {
+ 				ret = client->handler(client->id,
+-					client->req.counter);
++					client->ioreqs_map);
+ 				if (ret < 0)
+ 					BUG();
+ 			} else {
+@@ -800,7 +800,7 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
+ 			} else {
+ 				req->processed = REQ_STATE_PROCESSING;
+ 				req->client = client->id;
+-				atomic_inc(&client->req);
++				set_bit(i, client->ioreqs_map);
+ 			}
+ 		}
+ 	}
+@@ -831,7 +831,7 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu)
+ 		return -EINVAL;
+ 	}
+ 
+-	atomic_dec(&client->req);
++	clear_bit(vcpu, client->ioreqs_map);
+ 	ret = hcall_notify_req_finish(client->vmid, vcpu);
+ 	if (ret < 0) {
+ 		pr_err("vhm-ioreq: failed to notify request finished !\n");
+diff --git a/include/linux/vbs/vbs.h b/include/linux/vbs/vbs.h
+index e4ecba0..33ca072 100644
+--- a/include/linux/vbs/vbs.h
++++ b/include/linux/vbs/vbs.h
+@@ -181,7 +181,7 @@ struct virtio_dev_info {
+ 	 * This is the callback function to be registered to VHM,
+ 	 * so that VBS gets notified when frontend accessed the register.
+ 	 */
+-	int (*dev_notify)(int, int);
++	int (*dev_notify)(int, unsigned long *);
+ 	/** @vqs: virtqueue(s) of this device */
+ 	struct virtio_vq_info *vqs;
+ 	/** @curq: current virtqueue index */
+@@ -269,10 +269,10 @@ long virtio_dev_deregister(struct virtio_dev_info *dev);
+  * frontend.
+  *
+  * @dev: Pointer to VBS-K device data struct
+- * @req_cnt: Number of requests need to handle, provided by VHM
++ * @ioreqs_map: requests bitmap need to handle, provided by VHM
+  *
+  * Return: >=0 on virtqueue index, <0 on error
+  */
+-int virtio_vq_index_get(struct virtio_dev_info *dev, int req_cnt);
++int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map);
+ 
+ #endif
+diff --git a/include/linux/vhm/acrn_vhm_ioreq.h b/include/linux/vhm/acrn_vhm_ioreq.h
+index fbf69b3..52b3ac8 100644
+--- a/include/linux/vhm/acrn_vhm_ioreq.h
++++ b/include/linux/vhm/acrn_vhm_ioreq.h
+@@ -61,7 +61,7 @@
+ #include <linux/poll.h>
+ #include <linux/vhm/vhm_vm_mngt.h>
+ 
+-typedef	int (*ioreq_handler_t)(int client_id, int req);
++typedef	int (*ioreq_handler_t)(int client_id, unsigned long *ioreqs_map);
+ 
+ /**
+  * acrn_ioreq_create_client - create ioreq client
+-- 
+2.7.4
+

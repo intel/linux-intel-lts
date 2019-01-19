@@ -1,0 +1,42 @@
+From 953d3f3621241025b23220727f3269c20609c951 Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Tue, 12 Jul 2016 10:57:10 +0530
+Subject: [PATCH 0513/1132] ASoC: Intel: Skylake: Probe-Increase Injector DMA
+ buffer size
+
+    DMA buffer size needed for 48KHz, 4 channel, 32 bit data scheduled
+    at 4ms for 2 probe packets is = 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
+    This is the worst case buffer for current set of usecases.
+    Increase the DMA buffer size to this value for now until an optimal
+    buffer size value is arrived at.
+
+Change-Id: Iaf7c3229c6217c10c0c6871c358e9df74b552414
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-on:
+Reviewed-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+Tested-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index a27112b..113fa33 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -99,6 +99,13 @@ void skl_tplg_d0i3_put(struct skl *skl, enum d0i3_capability caps)
+ }
+ 
+ /*
++ * DMA buffer size needed for 48KHz, 4 channel, 32 bit data
++ * scheduled at 4ms  for 2 probe packets is
++ * 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
++ */
++#define SKL_INJECT_PROBE_DMA_BUFF_SIZE 6208
++
++/*
+  * SKL DSP driver modelling uses only few DAPM widgets so for rest we will
+  * ignore. This helpers checks if the SKL driver handles this widget type
+  */
+-- 
+2.7.4
+

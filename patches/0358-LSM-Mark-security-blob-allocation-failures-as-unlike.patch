@@ -1,0 +1,57 @@
+From eba3ba6abd23418d7043d210562492644c1f07a5 Mon Sep 17 00:00:00 2001
+From: Casey Schaufler <casey@schaufler-ca.com>
+Date: Thu, 10 May 2018 14:33:57 -0700
+Subject: [PATCH 0358/1132] LSM: Mark security blob allocation failures as
+ unlikely
+
+The allocation of security blobs is unlikely to fail.
+Mark the checks thus for performance reasons.
+
+Signed-off-by: Casey Schaufler <casey@schaufler-ca.com>
+---
+ security/security.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/security/security.c b/security/security.c
+index ce78c0e..ccf2593 100644
+--- a/security/security.c
++++ b/security/security.c
+@@ -1250,7 +1250,7 @@ int security_file_alloc(struct file *file)
+ {
+ 	int rc = lsm_file_alloc(file);
+ 
+-	if (rc)
++	if (unlikely(rc))
+ 		return rc;
+ 	rc = call_int_hook(file_alloc_security, 0, file);
+ 	if (unlikely(rc))
+@@ -1373,7 +1373,7 @@ int security_task_alloc(struct task_struct *task, unsigned long clone_flags)
+ {
+ 	int rc = lsm_task_alloc(task);
+ 
+-	if (rc)
++	if (unlikely(rc))
+ 		return rc;
+ 	rc = call_int_hook(task_alloc, 0, task, clone_flags);
+ 	if (unlikely(rc))
+@@ -1393,7 +1393,7 @@ int security_cred_alloc_blank(struct cred *cred, gfp_t gfp)
+ {
+ 	int rc = lsm_cred_alloc(cred, gfp);
+ 
+-	if (rc)
++	if (unlikely(rc))
+ 		return rc;
+ 
+ 	rc = call_int_hook(cred_alloc_blank, 0, cred, gfp);
+@@ -1414,7 +1414,7 @@ int security_prepare_creds(struct cred *new, const struct cred *old, gfp_t gfp)
+ {
+ 	int rc = lsm_cred_alloc(new, gfp);
+ 
+-	if (rc)
++	if (unlikely(rc))
+ 		return rc;
+ 
+ 	rc = call_int_hook(cred_prepare, 0, new, old, gfp);
+-- 
+2.7.4
+

@@ -1,0 +1,97 @@
+From d79baf240718d48da26b4575358f6547ab4bcf0e Mon Sep 17 00:00:00 2001
+From: Pei Zhang <pei.zhang@intel.com>
+Date: Fri, 14 Sep 2018 16:10:17 +0800
+Subject: [PATCH 0847/1132] drm/i915/gvt: add some MMIO value initialization
+
+There are some virtual MMIO registers contains static value which won't
+be changed by guest writing. Those registers could be optimized with a
+static value initialization, and do nothing in write handler.
+
+Change-Id: I1a85f717ef23c171651f1a1cad5c73880d538e3d
+Signed-off-by: Pei Zhang <pei.zhang@intel.com>
+Acknowledged-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/handlers.c | 32 +++++++-------------------------
+ drivers/gpu/drm/i915/gvt/mmio.c     |  9 +++++++++
+ 2 files changed, 16 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/handlers.c b/drivers/gpu/drm/i915/gvt/handlers.c
+index e185532..495d6a2 100644
+--- a/drivers/gpu/drm/i915/gvt/handlers.c
++++ b/drivers/gpu/drm/i915/gvt/handlers.c
+@@ -413,27 +413,9 @@ static int lcpll_ctl_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
+ 	return 0;
+ }
+ 
+-static int dpy_reg_mmio_read(struct intel_vgpu *vgpu, unsigned int offset,
++static int mmio_write_empty(struct intel_vgpu *vgpu, unsigned int offset,
+ 		void *p_data, unsigned int bytes)
+ {
+-	switch (offset) {
+-	case 0xe651c:
+-	case 0xe661c:
+-	case 0xe671c:
+-	case 0xe681c:
+-		vgpu_vreg(vgpu, offset) = 1 << 17;
+-		break;
+-	case 0xe6c04:
+-		vgpu_vreg(vgpu, offset) = 0x3;
+-		break;
+-	case 0xe6e1c:
+-		vgpu_vreg(vgpu, offset) = 0x2f << 16;
+-		break;
+-	default:
+-		return -EINVAL;
+-	}
+-
+-	read_vreg(vgpu, offset, p_data, bytes);
+ 	return 0;
+ }
+ 
+@@ -2240,12 +2222,12 @@ static int init_generic_mmio_info(struct intel_gvt *gvt)
+ 	MMIO_D(PCH_PP_ON_DELAYS, D_ALL);
+ 	MMIO_D(PCH_PP_OFF_DELAYS, D_ALL);
+ 
+-	MMIO_DH(_MMIO(0xe651c), D_ALL, dpy_reg_mmio_read, NULL);
+-	MMIO_DH(_MMIO(0xe661c), D_ALL, dpy_reg_mmio_read, NULL);
+-	MMIO_DH(_MMIO(0xe671c), D_ALL, dpy_reg_mmio_read, NULL);
+-	MMIO_DH(_MMIO(0xe681c), D_ALL, dpy_reg_mmio_read, NULL);
+-	MMIO_DH(_MMIO(0xe6c04), D_ALL, dpy_reg_mmio_read, NULL);
+-	MMIO_DH(_MMIO(0xe6e1c), D_ALL, dpy_reg_mmio_read, NULL);
++	MMIO_DH(_MMIO(0xe651c), D_ALL, NULL, mmio_write_empty);
++	MMIO_DH(_MMIO(0xe661c), D_ALL, NULL, mmio_write_empty);
++	MMIO_DH(_MMIO(0xe671c), D_ALL, NULL, mmio_write_empty);
++	MMIO_DH(_MMIO(0xe681c), D_ALL, NULL, mmio_write_empty);
++	MMIO_DH(_MMIO(0xe6c04), D_ALL, NULL, mmio_write_empty);
++	MMIO_DH(_MMIO(0xe6e1c), D_ALL, NULL, mmio_write_empty);
+ 
+ 	MMIO_RO(PCH_PORT_HOTPLUG, D_ALL, 0,
+ 		PORTA_HOTPLUG_STATUS_MASK
+diff --git a/drivers/gpu/drm/i915/gvt/mmio.c b/drivers/gpu/drm/i915/gvt/mmio.c
+index 9bb9a85..4149eae 100644
+--- a/drivers/gpu/drm/i915/gvt/mmio.c
++++ b/drivers/gpu/drm/i915/gvt/mmio.c
+@@ -282,6 +282,15 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
+ 		memcpy(vgpu->mmio.sreg, mmio, GVT_GEN8_MMIO_RESET_OFFSET);
+ 	}
+ 
++	/* below vreg init value are got from handler.c,
++	 * which won't change during vgpu life cycle
++	 */
++	vgpu_vreg(vgpu, 0xe651c) = 1 << 17;
++	vgpu_vreg(vgpu, 0xe661c) = 1 << 17;
++	vgpu_vreg(vgpu, 0xe671c) = 1 << 17;
++	vgpu_vreg(vgpu, 0xe681c) = 1 << 17;
++	vgpu_vreg(vgpu, 0xe6c04) = 3;
++	vgpu_vreg(vgpu, 0xe6e1c) = 0x2f << 16;
+ }
+ 
+ /**
+-- 
+2.7.4
+

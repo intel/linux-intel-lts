@@ -1,0 +1,75 @@
+From be50054a18cde58d2d7b16cfe659a48026f8e88f Mon Sep 17 00:00:00 2001
+From: Zhipeng Gong <zhipeng.gong@intel.com>
+Date: Wed, 26 Dec 2018 14:04:37 +0800
+Subject: [PATCH 1099/1132] drm/i915/gvt: fix kernel panic when fail to create
+ ppgtt
+
+Fix the panic when fails to create ppgtt, the issue is because
+ppgtt->pml4 is accessed when IS_ERR(ppgtt) is true.
+
+BUG: unable to handle kernel NULL pointer dereference at
+00000000000002bc
+PGD 0 P4D 0
+Oops: 0000 [#1] PREEMPT SMP
+CPU: 0 PID: 485 Comm: acrngt_emulatio Tainted: G     U  W
+4.19.8-quilt-2e5dc0ac-00005-g100be0b #4
+RIP: 0010:shadow_ppgtt_mm+0x3d5/0x420
+Code: b6 e8 d2 e3 9d ff eb de 48 c7 c6 b0 ca 76 b6 48 c7 c7 e1 b1 79 b6
+e8 1a f8 97 ff 0f 0b b8 ea ff ff ff e9 5d fd ff ff 4d 85 ff <48> 8b 90
+c8 02 00 00 74 26 49 81 ff 00 f0 ff ff 77 1d 41 8b 77 48
+RSP: 0018:ffff951d8faf3c90 EFLAGS: 00010286
+RAX: fffffffffffffff4 RBX: ffff951da180a540 RCX: ffffd157896a7307
+RDX: 0000000000000004 RSI: ffffffffb565c878 RDI: 0000000000000286
+RBP: ffff951d8faf3d00 R08: 0000000000000000 R09: 0000000000aaaaaa
+R10: 0000000000000000 R11: 00000000ffffffff R12: ffff951da180a540
+R13: ffff951c58e78838 R14: ffff951da180a5b8 R15: ffffadb242239000
+FS:  0000000000000000(0000) GS:ffff951db3a00000(0000)
+knlGS:0000000000000000
+CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+CR2: 00000000000002bc CR3: 0000000265b7c000 CR4: 00000000003406f0
+Call Trace:
+ ? kmem_cache_alloc_trace+0x1f1/0x260
+ ? __switch_to_asm+0x40/0x70
+ ? __switch_to_asm+0x34/0x70
+ intel_vgpu_create_ppgtt_mm+0xa0/0x1b0
+ intel_vgpu_get_ppgtt_mm+0x4d/0x90
+ pvinfo_mmio_write+0x222/0x2d0
+ ? _raw_spin_unlock_irqrestore+0x43/0x60
+ ? finish_wait+0x72/0x90
+ ? trace_hardirqs_on+0x38/0x100
+ intel_vgpu_mmio_reg_rw+0x190/0x4c0
+ ? __might_sleep+0x4a/0x80
+ intel_vgpu_emulate_mmio_write+0x13d/0x2b0
+ acrngt_emulation_thread+0x2c8/0x400
+ kthread+0x12c/0x150
+ ? acrngt_dma_unmap_guest_page+0x10/0x10
+ ? kthread_create_worker_on_cpu+0x70/0x70
+ ret_from_fork+0x3a/0x50
+
+Change-Id: I37356d70c28a7de825e249ad02904905e375888b
+Tracked-On: projectacrn/acrn-hypervisor#2191
+Signed-off-by: Zhipeng Gong <zhipeng.gong@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+Tracked-On: PKT-1633
+---
+ drivers/gpu/drm/i915/gvt/gtt.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/gtt.c b/drivers/gpu/drm/i915/gvt/gtt.c
+index 5d46957..0119a47 100644
+--- a/drivers/gpu/drm/i915/gvt/gtt.c
++++ b/drivers/gpu/drm/i915/gvt/gtt.c
+@@ -1932,8 +1932,8 @@ static int shadow_mm_pv(struct intel_vgpu_mm *mm)
+ 
+ 	mm->ppgtt_mm.ppgtt = i915_ppgtt_create(gvt->dev_priv, NULL);
+ 	if (IS_ERR(mm->ppgtt_mm.ppgtt)) {
+-		gvt_vgpu_err("fail to create ppgtt for pdp 0x%llx\n",
+-				px_dma(&mm->ppgtt_mm.ppgtt->pml4));
++		gvt_vgpu_err("fail to create ppgtt: %ld\n",
++				PTR_ERR(mm->ppgtt_mm.ppgtt));
+ 		return PTR_ERR(mm->ppgtt_mm.ppgtt);
+ 	}
+ 
+-- 
+2.7.4
+

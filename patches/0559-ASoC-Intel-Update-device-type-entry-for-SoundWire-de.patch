@@ -1,0 +1,87 @@
+From 7146a7c4d86ccc15126619069646158c4edf64ec Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Fri, 17 Feb 2017 11:58:27 +0530
+Subject: [PATCH 0559/1132] ASoC: Intel: Update device type entry for SoundWire
+ device
+
+SoundWire device type is updated as SoundWire PCM and SoundWire
+PDM type. This information will be used to assign SoundWire
+stream type (PCM or PDM).
+
+Change-Id: Ide861544b6f175153431cc1e411591f9a45e44e4
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ include/uapi/sound/skl-tplg-interface.h | 3 ++-
+ sound/soc/intel/skylake/skl-messages.c  | 7 ++++---
+ sound/soc/intel/skylake/skl-topology.c  | 3 ++-
+ 3 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/include/uapi/sound/skl-tplg-interface.h b/include/uapi/sound/skl-tplg-interface.h
+index e1a7771..c014543 100644
+--- a/include/uapi/sound/skl-tplg-interface.h
++++ b/include/uapi/sound/skl-tplg-interface.h
+@@ -108,7 +108,8 @@ enum skl_dev_type {
+ 	SKL_DEVICE_SLIMBUS = 0x3,
+ 	SKL_DEVICE_HDALINK = 0x4,
+ 	SKL_DEVICE_HDAHOST = 0x5,
+-	SKL_DEVICE_SDW = 0x6,
++	SKL_DEVICE_SDW_PCM = 0x6,
++	SKL_DEVICE_SDW_PDM = 0x7,
+ 	SKL_DEVICE_NONE
+ };
+ 
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 495f82f..b4b2d1d 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -476,7 +476,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
+ 	if (link_cpr_cfg.id.pvt_id < 0)
+ 		return -EINVAL;
+ 
+-	link_cpr_cfg.dev_type = SKL_DEVICE_SDW;
++	link_cpr_cfg.dev_type = SKL_DEVICE_SDW_PCM;
+ #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+ 	link_cpr_cfg.sdw_stream_num = 0x3;
+ #else
+@@ -640,7 +640,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
+ 	link_cpr_cfg.module->loadable = 0;
+ 	link_cpr_cfg.domain = 0;
+ 	link_cpr_cfg.m_type = SKL_MODULE_TYPE_COPIER;
+-	link_cpr_cfg.dev_type = SKL_DEVICE_SDW;
++	link_cpr_cfg.dev_type = SKL_DEVICE_SDW_PCM;
+ #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+ 	link_cpr_cfg.sdw_stream_num = 0x4;
+ #else
+@@ -1392,7 +1392,8 @@ static u32 skl_get_node_id(struct skl_sst *ctx,
+ 			SKL_DMA_HDA_HOST_INPUT_CLASS;
+ 		node_id.node.vindex = params->host_dma_id;
+ 		break;
+-	case SKL_DEVICE_SDW:
++	case SKL_DEVICE_SDW_PCM:
++	case SKL_DEVICE_SDW_PDM:
+ 		node_id.node.dma_type =
+ 			(SKL_CONN_SOURCE == mconfig->hw_conn_type) ?
+ 			SKL_DMA_SDW_LINK_OUTPUT_CLASS :
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 113fa33..e5853df1 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -2120,7 +2120,8 @@ static u8 skl_tplg_be_link_type(int dev_type)
+ 	case SKL_DEVICE_HDALINK:
+ 		ret = NHLT_LINK_HDA;
+ 		break;
+-	case SKL_DEVICE_SDW:
++	case SKL_DEVICE_SDW_PCM:
++	case SKL_DEVICE_SDW_PDM:
+ 		ret = NHLT_LINK_SDW;
+ 		break;
+ 	default:
+-- 
+2.7.4
+

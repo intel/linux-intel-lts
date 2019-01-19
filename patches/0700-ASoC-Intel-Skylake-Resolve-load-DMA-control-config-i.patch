@@ -1,0 +1,41 @@
+From 9776da4acbb872160a7d79d618bd247a02f70ae9 Mon Sep 17 00:00:00 2001
+From: "Shaik, ShahinaX" <shahinax.shaik@intel.com>
+Date: Wed, 23 May 2018 21:17:13 +0530
+Subject: [PATCH 0700/1132] ASoC: Intel: Skylake: Resolve load DMA control
+ config issue
+
+Audio driver doesn't load dmactrl_cfg after adding it
+in topology xml.
+
+There is no value assigned to dmactrl_cfg.size when dmactrl_cfg is
+parsed from topology xml by codec. But it checks for
+dmactrl_cfg.size when dmactrl_cfg is send to DSP. This Patch resolve
+this issue.
+
+Change-Id: I7caac5281cd1a6151ca7874f3b74865d91347065
+Signed-off-by: Shaik, ShahinaX <shahinax.shaik@intel.com>
+Reviewed-on:
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 1606aee..b2f62a2 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -4633,6 +4633,7 @@ static int skl_tplg_mfest_fill_dmactrl(struct device *dev,
+ 			if (!hdr->data)
+ 				return -ENOMEM;
+ 			hdr->data_size = tkn_elem->value;
++			dmactrl_cfg->size = hdr->data_size;
+ 		} else {
+ 			hdr->data_size = 0;
+ 			dev_err(dev, "Invalid dmactrl info \n");
+-- 
+2.7.4
+

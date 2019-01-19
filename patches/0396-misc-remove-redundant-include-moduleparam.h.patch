@@ -1,0 +1,45 @@
+From f58d14664146126b66af5c12039bee9b8757309d Mon Sep 17 00:00:00 2001
+From: zhong jiang <zhongjiang@huawei.com>
+Date: Tue, 18 Sep 2018 16:59:34 +0800
+Subject: [PATCH 0396/1132] misc: remove redundant include moduleparam.h
+
+module.h already contains moduleparam.h,  so it is safe to remove
+the redundant include.
+
+The issue is detected with the help of Coccinelle.
+
+Signed-off-by: zhong jiang <zhongjiang@huawei.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+(cherry picked from commit 7052c5e12851ed5882ca0d0d201060511e8ffa02)
+---
+ drivers/misc/mei/bus-fixup.c      | 1 -
+ drivers/misc/vmw_vmci/vmci_host.c | 1 -
+ 2 files changed, 2 deletions(-)
+
+diff --git a/drivers/misc/mei/bus-fixup.c b/drivers/misc/mei/bus-fixup.c
+index a6f41f9..80215c3 100644
+--- a/drivers/misc/mei/bus-fixup.c
++++ b/drivers/misc/mei/bus-fixup.c
+@@ -17,7 +17,6 @@
+ #include <linux/kernel.h>
+ #include <linux/sched.h>
+ #include <linux/module.h>
+-#include <linux/moduleparam.h>
+ #include <linux/device.h>
+ #include <linux/slab.h>
+ #include <linux/uuid.h>
+diff --git a/drivers/misc/vmw_vmci/vmci_host.c b/drivers/misc/vmw_vmci/vmci_host.c
+index 83e0c95..be732e5 100644
+--- a/drivers/misc/vmw_vmci/vmci_host.c
++++ b/drivers/misc/vmw_vmci/vmci_host.c
+@@ -15,7 +15,6 @@
+ 
+ #include <linux/vmw_vmci_defs.h>
+ #include <linux/vmw_vmci_api.h>
+-#include <linux/moduleparam.h>
+ #include <linux/miscdevice.h>
+ #include <linux/interrupt.h>
+ #include <linux/highmem.h>
+-- 
+2.7.4
+

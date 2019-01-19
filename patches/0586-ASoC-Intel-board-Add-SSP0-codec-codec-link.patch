@@ -1,0 +1,62 @@
+From 31d7d5a70bf7d0b4e7a80776b51fcf2deca81c32 Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Wed, 12 Apr 2017 16:07:43 +0530
+Subject: [PATCH 0586/1132] ASoC: Intel: board: Add SSP0 codec-codec link
+
+Change-Id: I111f0405411125a8176aa6e9c8295f72059ab2e2
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/boards/cnl_rt274.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/sound/soc/intel/boards/cnl_rt274.c b/sound/soc/intel/boards/cnl_rt274.c
+index 21b40b8..3615c79 100644
+--- a/sound/soc/intel/boards/cnl_rt274.c
++++ b/sound/soc/intel/boards/cnl_rt274.c
+@@ -60,6 +60,14 @@ static const struct snd_soc_dapm_widget cnl_rt274_widgets[] = {
+ 	SND_SOC_DAPM_MIC("SoC DMIC", NULL),
+ };
+ 
++static const struct snd_soc_pcm_stream dai_params_codec = {
++	.formats = SNDRV_PCM_FMTBIT_S24_LE,
++	.rate_min = 48000,
++	.rate_max = 48000,
++	.channels_min = 2,
++	.channels_max = 2,
++};
++
+ static int cnl_dmic_fixup(struct snd_soc_pcm_runtime *rtd,
+ 				struct snd_pcm_hw_params *params)
+ {
+@@ -286,6 +294,20 @@ static struct snd_soc_dai_link cnl_rt274_msic_dailink[] = {
+ 		.dpcm_capture = 1,
+ 		.be_hw_params_fixup = cnl_dmic_fixup,
+ 	},
++	/* codec-codec link */
++	{
++		.name = "CNL SSP0-Loop Port",
++		.stream_name = "CNL SSP0-Loop",
++		.cpu_dai_name = "SSP0 Pin",
++		.platform_name = pname,
++		.codec_name = cname,
++		.codec_dai_name = "rt274-aif1",
++		.params = &dai_params_codec,
++		.dsp_loopback = true,
++		.dai_fmt = SND_SOC_DAIFMT_DSP_A |
++			SND_SOC_DAIFMT_NB_NF |
++			SND_SOC_DAIFMT_CBS_CFS,
++	},
+ };
+ 
+ static int
+-- 
+2.7.4
+

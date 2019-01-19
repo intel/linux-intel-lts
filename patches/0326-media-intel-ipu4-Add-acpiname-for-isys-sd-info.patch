@@ -1,0 +1,28 @@
+From edc370ad43f58c8e79843791fea11be8a5b37ecc Mon Sep 17 00:00:00 2001
+From: "Yew, Chang Ching" <chang.ching.yew@intel.com>
+Date: Tue, 23 Oct 2018 17:03:22 +0800
+Subject: [PATCH 0326/1132] media: intel-ipu4: Add acpiname for isys sd info
+
+ACPI support is still required for ACRN SOS for sensor enumeration
+Therefore the acpiname field is added back to isys subdev info
+
+Signed-off-by: Yew, Chang Ching <chang.ching.yew@intel.com>
+---
+ include/media/ipu-isys.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/media/ipu-isys.h b/include/media/ipu-isys.h
+index f809ef3..b2acb94 100644
+--- a/include/media/ipu-isys.h
++++ b/include/media/ipu-isys.h
+@@ -22,6 +22,7 @@ struct ipu_isys_subdev_i2c_info {
+ struct ipu_isys_subdev_info {
+ 	struct ipu_isys_csi2_config *csi2;
+ 	struct ipu_isys_subdev_i2c_info i2c;
++	char *acpiname;
+ };
+ 
+ struct ipu_isys_clk_mapping {
+-- 
+2.7.4
+

@@ -1,0 +1,58 @@
+From 1880ad6a68c19057e7c6b46863b88a30ab4c956a Mon Sep 17 00:00:00 2001
+From: Li Zhijian <lizhijian@cn.fujitsu.com>
+Date: Wed, 22 Aug 2018 16:12:20 +0000
+Subject: [PATCH 0818/1132] vhm: init client->kthread_exit true
+
+Previously, there is a deadlock at below case
+- acrn-dm create gvt instance successfully
+- acrn-dm open uos image failed(wrong image path), the acrn-dm does some cleanup,
+  like destroy gvt instance
+then acrn-dm stucks.
+
+when destroying gvt instance, it waits client->kthread_exit to be true
+while client->kthread_exit is set to be 0 at initializing and the thread
+is not created/started actually.
+
+V3: add vhm_create_kthread as a condition (Yakui)
+
+Signed-off-by: Li Zhijian <lizhijian@cn.fujitsu.com>
+Reviewed-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/vhm/vhm_ioreq.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index da61069..0bcb0e0 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -149,6 +149,7 @@ static int alloc_client(void)
+ 	if (!client)
+ 		return -ENOMEM;
+ 	client->id = i;
++	client->kthread_exit = true;
+ 	clients[i] = client;
+ 
+ 	return i;
+@@ -266,7 +267,7 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
+ 	/* the client thread will mark kthread_exit flag as true before exit,
+ 	 * so wait for it exited.
+ 	 */
+-	while (!client->kthread_exit)
++	while (client->vhm_create_kthread && !client->kthread_exit)
+ 		msleep(10);
+ 
+ 	spin_lock_irqsave(&client->range_lock, flags);
+@@ -533,7 +534,9 @@ int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop)
+ 					"for client %s\n", client->name);
+ 			return -ENOMEM;
+ 		}
++		client->kthread_exit = false;
+ 	} else {
++		client->kthread_exit = false;
+ 		might_sleep();
+ 
+ 		if (check_kthread_stop) {
+-- 
+2.7.4
+

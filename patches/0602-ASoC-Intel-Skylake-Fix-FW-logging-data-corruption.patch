@@ -1,0 +1,43 @@
+From 66d3a7399ae43167b090e958fce6259d941e3d56 Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Mon, 7 Nov 2016 13:38:52 +0530
+Subject: [PATCH 0602/1132] ASoC: Intel: Skylake: Fix FW logging data
+ corruption
+
+As per the new logging scheme introduced in latest firmware,
+the log buffer read/write pointers are located at the base
+of the log buffer for each core. Hence, while reading log data
+during buffer wrap around, the data count needs to be decremented
+to skip these pointers. This patch fixes the issue.
+
+Change-Id: I2fc52125823cc0e317eb56d217b95ad56589df28
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Sangaraju, KarthikeyaX <karthikeyax.sangaraju@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index 1c53ba3..508382d 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -394,7 +394,7 @@ skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+ 		ptr[0] += write - read;
+ 	} else {
+ 		skl_dsp_write_log(sst, (void __iomem *) (base + 8 + read),
+-					core, size - read);
++					core, size - 8 - read);
+ 		skl_dsp_write_log(sst, (void __iomem *) (base + 8),
+ 					core, write);
+ 		ptr[0] = write;
+-- 
+2.7.4
+

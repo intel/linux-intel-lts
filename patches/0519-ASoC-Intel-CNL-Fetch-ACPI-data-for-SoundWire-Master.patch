@@ -1,0 +1,229 @@
+From 7868cb38020c1ed778c9fe0a6c2caca0e99ea3fc Mon Sep 17 00:00:00 2001
+From: Anil Bhawangirkar <anil.k.bhawangirkar@intel.com>
+Date: Wed, 17 Aug 2016 12:19:51 +0530
+Subject: [PATCH 0519/1132] ASoC: Intel: CNL: Fetch ACPI data for SoundWire
+ Master
+
+The DSDT table contains information about the SoundWire capabalities
+for Master controller and device. This patch add API's which fetch
+the SoundWire capabilities for Master.
+
+Change-Id: Iddb147a48faaf67f7fb4ee378e72858cb14e721a
+Signed-off-by: Anil Bhawangirkar <anil.k.bhawangirkar@intel.com>
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ include/linux/sdw/sdw_cnl.h        |   8 +-
+ sound/soc/intel/skylake/Makefile   |   4 +
+ sound/soc/intel/skylake/cnl-acpi.c | 160 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 169 insertions(+), 3 deletions(-)
+ create mode 100644 sound/soc/intel/skylake/cnl-acpi.c
+
+diff --git a/include/linux/sdw/sdw_cnl.h b/include/linux/sdw/sdw_cnl.h
+index 6a9281c..1a40244 100644
+--- a/include/linux/sdw/sdw_cnl.h
++++ b/include/linux/sdw/sdw_cnl.h
+@@ -27,7 +27,7 @@
+ 
+ #define SDW_CNL_PM_TIMEOUT	3000 /* ms */
+ 
+-#define CNL_SDW_MAX_PORTS				15
++#define CNL_SDW_MAX_PORTS				9
+ 
+ /* Maximum number hardware tries to send command if the command failed */
+ #define CNL_SDW_MAX_CMD_RETRIES			15
+@@ -119,7 +119,9 @@ struct cnl_sdw_port *cnl_sdw_alloc_port(struct sdw_master *mstr, int ch_count,
+ 				enum sdw_data_direction direction,
+ 				enum cnl_sdw_pdi_stream_type stream_type);
+ void cnl_sdw_free_port(struct sdw_master *mstr, int port_num);
+-
+-
++int cnl_sdw_get_master_caps(struct device *dev,
++				struct sdw_master_capabilities *m_cap);
++int cnl_sdw_get_master_dev_caps(struct device *dev,
++		struct sdw_master_capabilities *m_cap, int dev_port_num);
+ #endif
+ 
+diff --git a/sound/soc/intel/skylake/Makefile b/sound/soc/intel/skylake/Makefile
+index 9a3ddb9..7b8cf11 100644
+--- a/sound/soc/intel/skylake/Makefile
++++ b/sound/soc/intel/skylake/Makefile
+@@ -13,6 +13,10 @@ snd-soc-skl-ipc-objs := skl-sst-ipc.o skl-sst-dsp.o cnl-sst-dsp.o \
+ 		skl-sst-cldma.o skl-sst.o bxt-sst.o cnl-sst.o \
+ 		skl-sst-utils.o skl-fwlog.o
+ 
++ifdef CONFIG_SDW
++  snd-soc-skl-ipc-objs += cnl-acpi.o
++endif
++
+ obj-$(CONFIG_SND_SOC_INTEL_SKYLAKE) += snd-soc-skl-ipc.o
+ 
+ #Skylake Clock device support
+diff --git a/sound/soc/intel/skylake/cnl-acpi.c b/sound/soc/intel/skylake/cnl-acpi.c
+new file mode 100644
+index 0000000..1bee574f
+--- /dev/null
++++ b/sound/soc/intel/skylake/cnl-acpi.c
+@@ -0,0 +1,160 @@
++/*
++ *  cnl-acpi.c - Intel CNL Platform ACPI parsing
++ *
++ *  Copyright (C) 2016 Intel Corp
++ *
++ *  Author: Anil Bhawangirkar <anil.k.bhawangirkar@intel.com>
++ *
++ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; version 2 of the License.
++ *
++ *  This program is distributed in the hope that it will be useful, but
++ *  WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  General Public License for more details.
++ *
++ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ */
++
++#include <linux/acpi.h>
++#include <acpi/acpixf.h>
++#include <acpi/acexcep.h>
++#include <acpi/actypes.h>
++#include <linux/sdw_bus.h>
++#include <linux/sdw/sdw_cnl.h>
++
++/*
++ * This is SoundWire device path defined for Master and Slave.
++ */
++static acpi_string path_sdw_dev[] = {"SWD0.", "SWD1.", "SWD2.", "SWD3.",
++			"SWD4.", "SWD5.", "SWD6.", "SWD7.", "SWD8."};
++#define DSDT_ACPI_PATH "\\_SB.PCI0.RP01.PXSX.HDAS.SNDW"
++#define SDW_PATH_CTRL_MAX 4
++#define SDW_PATH_DEV_MAX 9
++ACPI_MODULE_NAME("ACPI");
++
++static union acpi_object *sdw_dpn_extract_capab(union acpi_object *obj)
++{
++	union acpi_object *data, *package1, *package2;
++
++	data = &obj->package.elements[1];
++	package1 = &data->package.elements[0];
++	package2 = &package1->package.elements[1];
++	return package2;
++}
++
++static union acpi_object *sdw_scd_extract_capab(union acpi_object *obj)
++{
++	union acpi_object *data, *package1, *package2, *package3;
++
++	data = &obj->package.elements[1];
++	package1 = &data->package.elements[3];
++	package2 = &package1->package.elements[1];
++	package3 = &package2->package.elements[0];
++	return package3;
++}
++
++static union acpi_object *sdw_acpi_init_object(struct device *dev, char path[])
++{
++	struct acpi_buffer buf = {ACPI_ALLOCATE_BUFFER, NULL};
++	union acpi_object *obj;
++	acpi_handle handle;
++	acpi_status status;
++
++	status = acpi_get_handle(NULL, DSDT_ACPI_PATH, &handle);
++	if (ACPI_FAILURE(status)) {
++		dev_err(dev, "ACPI Object evaluation is failed...\n");
++		return NULL;
++	}
++
++	status = acpi_evaluate_object(handle, path, NULL, &buf);
++	if (ACPI_FAILURE(status)) {
++		if (status != AE_NOT_FOUND)
++			ACPI_EXCEPTION((AE_INFO, status, "Invalid pathname\n"));
++		return NULL;
++	}
++	obj = buf.pointer;
++	return obj;
++}
++
++static int sdw_fill_master_dpn_caps(struct sdw_master_capabilities *map,
++							union acpi_object *obj)
++{
++	struct sdw_mstr_dpn_capabilities *dpn_cap;
++	union acpi_object *ret_data;
++
++	dpn_cap = &map->sdw_dpn_cap[0];
++	ret_data = sdw_dpn_extract_capab(obj);
++	dpn_cap->dpn_type = ret_data->integer.value;
++	return 0;
++}
++
++static int sdw_fill_master_scd_caps(struct sdw_master_capabilities *map,
++							union acpi_object *obj)
++{
++	union acpi_object *ret_data;
++
++	ret_data = sdw_scd_extract_capab(obj);
++	map->base_clk_freq = ret_data->integer.value;
++	return 0;
++}
++
++static int sdw_acpi_mstr_map_data(struct sdw_master_capabilities *mcap,
++			struct device *dev, acpi_string path_name, char path[])
++{
++	union acpi_object *obj;
++
++	obj = sdw_acpi_init_object(dev, path);
++	if (obj && (obj->type == ACPI_TYPE_PACKAGE)) {
++		if (!strcmp(path_name, "SCD"))
++			sdw_fill_master_scd_caps(mcap, obj);
++		else if (!strcmp(path_name, "DPN"))
++			sdw_fill_master_dpn_caps(mcap, obj);
++	}
++
++	kfree(obj);
++	return 0;
++}
++
++/*
++ * get the ACPI data for SoundWire Master contoller capablities
++ */
++int cnl_sdw_get_master_caps(struct device *dev,
++		struct sdw_master_capabilities *m_cap)
++{
++	acpi_string path_sdw_ctrl = {"SCD"};
++	char path[SDW_PATH_CTRL_MAX];
++
++	strcpy(path, path_sdw_ctrl);
++	sdw_acpi_mstr_map_data(m_cap, dev, path_sdw_ctrl, path);
++	if (!m_cap) {
++		dev_err(dev, "SoundWire controller mapping failed...\n");
++		return -EINVAL;
++	}
++	return 0;
++}
++EXPORT_SYMBOL_GPL(cnl_sdw_get_master_caps);
++
++/*
++ * get the ACPI data for SoundWire Master devices capabilities
++ */
++int cnl_sdw_get_master_dev_caps(struct device *dev,
++		struct sdw_master_capabilities *m_cap, int dev_port_num)
++{
++	acpi_string path_sdw_dpn = {"DPN"};
++	char path[SDW_PATH_DEV_MAX];
++
++	snprintf(path, sizeof(path), "%s%s",
++				path_sdw_dev[dev_port_num], path_sdw_dpn);
++	sdw_acpi_mstr_map_data(m_cap, dev, path_sdw_dpn, path);
++	if (!m_cap) {
++		dev_err(dev, "SoundWire device mapping failed...\n");
++		return -EINVAL;
++	}
++	return 0;
++}
++EXPORT_SYMBOL_GPL(cnl_sdw_get_master_dev_caps);
+-- 
+2.7.4
+

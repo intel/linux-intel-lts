@@ -1,0 +1,621 @@
+From d3cf16c02f6c47cb52beae907996944359a43bfe Mon Sep 17 00:00:00 2001
+From: Qi Yadong <yadong.qi@intel.com>
+Date: Wed, 17 Oct 2018 15:10:41 +0800
+Subject: [PATCH 0297/1132] rpmb: mux: add key retrieval for RPMB multiplexor
+
+Retrieve a RPMB key from a bootloader.
+Currently automotive bootloader and slim bootloader are
+supported.
+
+Change-Id: If5ab4024fc1cf02967fdc88f097f6918d3833b2b
+Signed-off-by: Qi Yadong <yadong.qi@intel.com>
+Signed-off-by: Huang, Yang <yang.huang@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ Documentation/admin-guide/kernel-parameters.txt |   4 +
+ drivers/char/rpmb/mux/Makefile                  |   3 +
+ drivers/char/rpmb/mux/key.c                     |  58 +++++++++
+ drivers/char/rpmb/mux/key.h                     |  24 ++++
+ drivers/char/rpmb/mux/key_abl.c                 | 143 ++++++++++++++++++++
+ drivers/char/rpmb/mux/key_abl.h                 |   9 ++
+ drivers/char/rpmb/mux/key_sbl.c                 | 166 ++++++++++++++++++++++++
+ drivers/char/rpmb/mux/key_sbl.h                 |   9 ++
+ drivers/char/rpmb/mux/mux.c                     |  60 +++++----
+ 9 files changed, 452 insertions(+), 24 deletions(-)
+ create mode 100644 drivers/char/rpmb/mux/key.c
+ create mode 100644 drivers/char/rpmb/mux/key.h
+ create mode 100644 drivers/char/rpmb/mux/key_abl.c
+ create mode 100644 drivers/char/rpmb/mux/key_abl.h
+ create mode 100644 drivers/char/rpmb/mux/key_sbl.c
+ create mode 100644 drivers/char/rpmb/mux/key_sbl.h
+
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index 0c404cd..f70a6d0 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -741,6 +741,10 @@
+ 			Format: <port#>,<type>
+ 			See also Documentation/input/devices/joystick-parport.rst
+ 
++	dev_sec_info.param_addr=
++			[BOOT] address of automotive bootloader (abl)
++			security parameters.
++
+ 	ddebug_query=	[KNL,DYNAMIC_DEBUG] Enable debug messages at early boot
+ 			time. See
+ 			Documentation/admin-guide/dynamic-debug-howto.rst for
+diff --git a/drivers/char/rpmb/mux/Makefile b/drivers/char/rpmb/mux/Makefile
+index 23234a8..94999dd 100644
+--- a/drivers/char/rpmb/mux/Makefile
++++ b/drivers/char/rpmb/mux/Makefile
+@@ -1,5 +1,8 @@
+ obj-$(CONFIG_RPMB_MUX) += rpmb_mux.o
+ rpmb_mux-objs := mux.o
+ rpmb_mux-objs += mux_hkdf.o
++rpmb_mux-objs += key.o
++rpmb_mux-objs += key_abl.o
++rpmb_mux-objs += key_sbl.o
+ 
+ ccflags-y += -D__CHECK_ENDIAN__
+diff --git a/drivers/char/rpmb/mux/key.c b/drivers/char/rpmb/mux/key.c
+new file mode 100644
+index 0000000..e9df047
+--- /dev/null
++++ b/drivers/char/rpmb/mux/key.c
+@@ -0,0 +1,58 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * RPMB Key management: key retrieval
++ *
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
++ */
++
++#define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/kernel.h>
++
++#include "key.h"
++#include "key_sbl.h"
++#include "key_abl.h"
++
++static ulong sbl_params_addr;
++static ulong abl_params_addr;
++
++static int __init get_sbl_params_addr(char *str)
++{
++	if (kstrtoul(str, 16, &sbl_params_addr)) {
++		pr_err("Failed to parse ImageBootParamsAddr\n");
++		return -EINVAL;
++	}
++
++	return 0;
++}
++__setup("ImageBootParamsAddr=", get_sbl_params_addr);
++
++static int __init get_abl_params_addr(char *str)
++{
++	if (kstrtoul(str, 16, &abl_params_addr)) {
++		pr_err("Failed to parse dev_sec_info.param\n");
++		return -EINVAL;
++	}
++
++	return 0;
++}
++__setup("dev_sec_info.param_addr=", get_abl_params_addr);
++
++int rpmb_key_get(const u8 *dev_id, size_t dev_id_len,
++		 size_t max_partition_num, u8 rpmb_key[][RPMB_KEY_LENGTH])
++{
++	int ret = -1;
++
++	if (sbl_params_addr)
++		ret = rpmb_key_sbl_get(sbl_params_addr, max_partition_num,
++				       rpmb_key);
++	else if (abl_params_addr)
++		ret = rpmb_key_abl_get(abl_params_addr, dev_id, dev_id_len,
++				       max_partition_num, rpmb_key);
++	else
++		pr_err("Failed to get boot_params from the command line!\n");
++
++	return ret;
++}
+diff --git a/drivers/char/rpmb/mux/key.h b/drivers/char/rpmb/mux/key.h
+new file mode 100644
+index 0000000..8c17fbc
+--- /dev/null
++++ b/drivers/char/rpmb/mux/key.h
+@@ -0,0 +1,24 @@
++/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
++/*
++ * RPMB Key management: retrieve and distribute
++ *
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
++ */
++
++#ifndef __RPMB_KEY_H__
++#define __RPMB_KEY_H__
++
++/*
++ * Storage may support multiple rpmb partitions, but the specification
++ * does not specify the max number of rpmb partitions.
++ * Here we use 6 for now. In future, this may need to be expanded
++ * dynamically.
++ */
++#define RPMB_MAX_PARTITION_NUMBER 6U
++
++#define RPMB_KEY_LENGTH 64U
++
++int rpmb_key_get(const u8 *dev_id, size_t dev_id_len,
++		 size_t max_partition_num, u8 rpmb_key[][RPMB_KEY_LENGTH]);
++
++#endif /* !__RPMB_KEY_H__ */
+diff --git a/drivers/char/rpmb/mux/key_abl.c b/drivers/char/rpmb/mux/key_abl.c
+new file mode 100644
+index 0000000..bcb7355
+--- /dev/null
++++ b/drivers/char/rpmb/mux/key_abl.c
+@@ -0,0 +1,143 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Parse legacy seed from ABL(Automotive Bootloader). Derive a rpmb key
++ * with the legacy seed.
++ *
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
++ */
++
++#define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
++
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/kernel.h>
++#include <linux/mm.h>
++#include <linux/io.h>
++#include <crypto/hash.h>
++
++#include "key.h"
++#include "key_abl.h"
++#include "mux_hkdf.h"
++
++#define ABL_SEED_LEN 32U
++#define ABL_SEED_LIST_MAX 4U
++#define EMMC_SERIAL_LEN 15U
++
++struct abl_seed_info {
++	u8 svn;
++	u8 reserved[3];
++	u8 seed[ABL_SEED_LEN];
++};
++
++struct dev_sec_info {
++	u32 size_of_this_struct;
++	u32 version;
++	u32 num_seeds;
++	struct abl_seed_info seed_list[ABL_SEED_LIST_MAX];
++};
++
++/*
++ * The output serial is concatenation of mmc product name with a string
++ * representation of PSN.
++ */
++static int rpmb_key_abl_build_serial(const u8 *cid, u8 *serial)
++{
++	u32 psn;
++
++	if (!cid || !serial)
++		return -EFAULT;
++
++	psn = (cid[9] << 24) | (cid[8] << 16) | (cid[15] << 8) | cid[14];
++
++	serial[0] = cid[0];
++	serial[1] = cid[7];
++	serial[2] = cid[6];
++	serial[3] = cid[5];
++	serial[4] = cid[4];
++	serial[5] = cid[11];
++
++	snprintf(&serial[6], 9, "%08x", psn);
++
++	return 0;
++}
++
++int rpmb_key_abl_get(ulong params_addr, const u8 *dev_id, size_t dev_id_len,
++		     size_t max_partition_num, u8 rpmb_key[][RPMB_KEY_LENGTH])
++{
++	u32 i, legacy_seed_index = 0;
++	struct dev_sec_info *sec_info;
++	struct abl_seed_info *seed_list;
++	u8 serial[EMMC_SERIAL_LEN] = {0};
++	int ret;
++
++	if (!params_addr || !dev_id || !dev_id_len || !max_partition_num) {
++		pr_err("Invalid input params!\n");
++		return -EFAULT;
++	}
++
++	ret = rpmb_key_abl_build_serial(dev_id, serial);
++	if (ret) {
++		pr_err("Failed to build serial from cid\n");
++		return -EFAULT;
++	}
++
++	sec_info = memremap(params_addr, sizeof(*sec_info), MEMREMAP_WB);
++	if (!sec_info) {
++		pr_err("Remap params_addr failed!\n");
++		return -EFAULT;
++	}
++	seed_list = &sec_info->seed_list[0];
++
++	/*
++	 * The seed_list must contain at least 2 seeds: 1 is legacy
++	 * seed and others are SVN based seed.
++	 */
++	if (sec_info->num_seeds < 2U ||
++	    sec_info->num_seeds > ABL_SEED_LIST_MAX) {
++		pr_err("Invalid seed number!\n");
++		memunmap(sec_info);
++		return -EFAULT;
++	}
++
++	/*
++	 * The seed_list from ABL contains several seeds which based on SVN
++	 * and one legacy seed which is not based on SVN. The legacy seed's
++	 * svn value is minimum in the seed list. And CSE ensures at least two
++	 * seeds will be generated which will contain the legacy seed.
++	 * Here find the legacy seed index first.
++	 */
++	for (i = 1; i < sec_info->num_seeds; i++) {
++		if (seed_list[i].svn < seed_list[legacy_seed_index].svn)
++			legacy_seed_index = i;
++	}
++
++	/*
++	 * The eMMC Field Firmware Update would impact below fields of
++	 * CID(Card Identification):
++	 *     CID[6]:PRV (Product Revision)
++	 *     CID[0]:CRC (CRC7 checksum)
++	 * Mapping relation between CID and eMMC serial:
++	 *     serial[0] = CID[0]
++	 *     serial[2] = CID[6]
++	 * So mask off serial[0]/serial[2] fields when using eMMC serial
++	 * to derive rpmb key.
++	 */
++	serial[0] ^= serial[0];
++	serial[2] ^= serial[2];
++
++	/*
++	 * Derive RPMB key from legacy seed with storage serial number.
++	 * Currently, only support eMMC storage device, UFS storage device is
++	 * not supported.
++	 */
++	ret = mux_hkdf_sha256(&rpmb_key[0][0], SHA256_HASH_SIZE,
++			      (const u8 *)&seed_list[legacy_seed_index].seed[0],
++			      ABL_SEED_LEN,
++			      NULL, 0,
++			      (const u8 *)serial, sizeof(serial));
++
++	memset(&seed_list[legacy_seed_index], 0, sizeof(struct abl_seed_info));
++	memunmap(sec_info);
++
++	return ret;
++}
+diff --git a/drivers/char/rpmb/mux/key_abl.h b/drivers/char/rpmb/mux/key_abl.h
+new file mode 100644
+index 0000000..0d2a09a
+--- /dev/null
++++ b/drivers/char/rpmb/mux/key_abl.h
+@@ -0,0 +1,9 @@
++/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
++
++#ifndef __RPMB_KEY_ABL__
++#define __RPMB_KEY_ABL__
++
++int rpmb_key_abl_get(ulong params_addr, const u8 *dev_id, size_t dev_id_len,
++		     size_t max_partition_num, u8 rpmb_key[][RPMB_KEY_LENGTH]);
++
++#endif /* !__RPMB_KEY_ABL__ */
+diff --git a/drivers/char/rpmb/mux/key_sbl.c b/drivers/char/rpmb/mux/key_sbl.c
+new file mode 100644
+index 0000000..8a238ac
+--- /dev/null
++++ b/drivers/char/rpmb/mux/key_sbl.c
+@@ -0,0 +1,166 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Parse RPMB key from SBL(SlimBootloader).
++ *
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
++ */
++
++#define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
++
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/kernel.h>
++#include <linux/mm.h>
++#include <linux/io.h>
++
++#include "key.h"
++#include "key_sbl.h"
++
++#define SEED_ENTRY_TYPE_SVNSEED             0x1U
++#define SEED_ENTRY_TYPE_RPMBSEED            0x2U
++
++#define SEED_ENTRY_USAGE_BASE_ON_SERIAL     0x1U
++#define SEED_ENTRY_USAGE_NOT_BASE_ON_SERIAL 0x2U
++
++struct image_boot_params {
++	u32 size_of_this_struct;
++	u32 version;
++	u64 p_seed_list;
++	u64 p_platform_info;
++	u64 reserved;
++};
++
++struct seed_entry {
++	/* SVN based seed or RPMB seed or attestation key_box */
++	u8 type;
++	/* For SVN seed: useed or dseed
++	 * For RPMB seed: serial number based or not
++	 */
++	u8 usage;
++	/* index for the same type and usage seed */
++	u8 index;
++	u8 reserved;
++	/* reserved for future use */
++	u16 flags;
++	/* Total size of this seed entry */
++	u16 seed_entry_size;
++	/* SVN seed: struct seed_info
++	 * RPMB seed: u8 rpmb_seed[key_len]
++	 */
++	u8 seed[0];
++};
++
++struct seed_list_hob {
++	u8 revision;
++	u8 rsvd0[3];
++	u32 buffer_size;
++	u8 total_seed_count;
++	u8 rsvd1[3];
++	struct seed_entry entry[0];
++};
++
++static int rpmb_key_sbl_parse_seed_list(struct seed_list_hob *seed_hob,
++					size_t max_partition_num,
++					u8 rpmb_seed[][RPMB_KEY_LENGTH])
++{
++	u8 i;
++	u8 index = 0U;
++	struct seed_entry *entry;
++
++	if (!seed_hob || !max_partition_num) {
++		pr_warn("Invalid input parameters!\n");
++		goto fail;
++	}
++
++	if (seed_hob->total_seed_count == 0U) {
++		pr_warn("Total seed count is 0.\n");
++		goto fail;
++	}
++
++	entry = seed_hob->entry;
++
++	for (i = 0U; i < seed_hob->total_seed_count; i++) {
++		if ((u8 *)entry >= (u8 *)seed_hob + seed_hob->buffer_size) {
++			pr_warn("Exceed memory boundray!\n");
++			goto fail;
++		}
++
++		/* retrieve rpmb seed */
++		if (entry->type == SEED_ENTRY_TYPE_RPMBSEED) {
++			if (entry->index != 0) {
++				pr_warn("RPMB usage mismatch!\n");
++				goto fail;
++			}
++
++			/* The seed_entry with same type/usage are always
++			 * arranged by index in order of 0~3.
++			 */
++			if (entry->index != index) {
++				pr_warn("Index mismatch.\n");
++				goto fail;
++			}
++
++			if (entry->index > max_partition_num) {
++				pr_warn("Index exceed max number!\n");
++				goto fail;
++			}
++
++			memcpy(&rpmb_seed[index], entry->seed, RPMB_KEY_LENGTH);
++			index++;
++
++			/* erase original seed in seed entry */
++			memset(entry->seed, 0U, RPMB_KEY_LENGTH);
++		}
++
++		entry = (struct seed_entry *)((u8 *)entry +
++						entry->seed_entry_size);
++	}
++
++	return 0;
++
++fail:
++	return -EFAULT;
++}
++
++int rpmb_key_sbl_get(ulong params_addr, size_t max_partition_num,
++		     u8 rpmb_key[][RPMB_KEY_LENGTH])
++{
++	struct image_boot_params *boot_params = NULL;
++	struct seed_list_hob *seed_list = NULL;
++	u32 remap_buffer_size = 0;
++
++	if (!params_addr || !max_partition_num) {
++		pr_err("Invalid input params!\n");
++		goto fail;
++	}
++
++	boot_params = memremap(params_addr, sizeof(*boot_params), MEMREMAP_WB);
++	if (!boot_params) {
++		pr_err("Remap params_addr failed!\n");
++		goto fail;
++	}
++
++	seed_list = memremap(boot_params->p_seed_list,
++			     sizeof(*seed_list), MEMREMAP_WB);
++	if (!seed_list) {
++		pr_err("Remap seed_list failed!\n");
++		goto fail;
++	}
++
++	remap_buffer_size = seed_list->buffer_size;
++	memunmap(seed_list);
++
++	/* Remap with actual buffer size */
++	seed_list = memremap(boot_params->p_seed_list,
++			     remap_buffer_size, MEMREMAP_WB);
++
++	return rpmb_key_sbl_parse_seed_list(seed_list, max_partition_num,
++					    rpmb_key);
++
++fail:
++	if (seed_list)
++		memunmap(seed_list);
++	if (boot_params)
++		memunmap(boot_params);
++	return -EFAULT;
++}
+diff --git a/drivers/char/rpmb/mux/key_sbl.h b/drivers/char/rpmb/mux/key_sbl.h
+new file mode 100644
+index 0000000..0483c17
+--- /dev/null
++++ b/drivers/char/rpmb/mux/key_sbl.h
+@@ -0,0 +1,9 @@
++/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
++
++#ifndef __RPMB_KEY_SBL__
++#define __RPMB_KEY_SBL__
++
++int rpmb_key_sbl_get(ulong params_addr, size_t max_partition_num,
++		     u8 rpmb_key[][RPMB_KEY_LENGTH]);
++
++#endif /* __RPMB_KEY_SBL__ */
+diff --git a/drivers/char/rpmb/mux/mux.c b/drivers/char/rpmb/mux/mux.c
+index 5590119..c7caa04 100644
+--- a/drivers/char/rpmb/mux/mux.c
++++ b/drivers/char/rpmb/mux/mux.c
+@@ -5,6 +5,8 @@
+  * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  */
+ 
++#define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
++
+ #include <linux/fs.h>
+ #include <linux/module.h>
+ #include <linux/compat.h>
+@@ -17,6 +19,8 @@
+ #include <linux/rpmb.h>
+ #include <crypto/hash.h>
+ 
++#include "key.h"
++
+ /**
+  * struct rpmb_mux_dev - device which can support RPMB partition
+  * @lock           : the device lock
+@@ -68,13 +72,6 @@ static int rpmb_mux_release(struct inode *inode, struct file *fp)
+ 	return 0;
+ }
+ 
+-static int rpmb_key_retrieval(void *rpmb_key)
+-{
+-	/* hard code */
+-	memset(rpmb_key, 0x31, 32);
+-	return 0;
+-}
+-
+ static int rpmb_mux_hmac_256_alloc(struct rpmb_mux_dev *mux_dev)
+ {
+ 	struct shash_desc *desc;
+@@ -571,6 +568,7 @@ static int rpmb_add_device(struct device *dev, struct class_interface *intf)
+ {
+ 	struct rpmb_mux_dev *mux_dev;
+ 	struct rpmb_dev *rdev = to_rpmb_dev(dev);
++	u8 rpmb_key[RPMB_MAX_PARTITION_NUMBER][RPMB_KEY_LENGTH];
+ 	int ret;
+ 
+ 	mux_dev = container_of(intf, struct rpmb_mux_dev, rpmb_interface);
+@@ -594,7 +592,38 @@ static int rpmb_add_device(struct device *dev, struct class_interface *intf)
+ 
+ 	mutex_unlock(&mux_dev->lock);
+ 
++	memset(rpmb_key, 0, sizeof(rpmb_key));
++	ret = rpmb_key_get(mux_dev->rdev->ops->dev_id,
++			   mux_dev->rdev->ops->dev_id_len,
++			   RPMB_MAX_PARTITION_NUMBER,
++			   rpmb_key);
++	if (ret) {
++		dev_err(&rdev->dev, "rpmb_key_get failed.\n");
++		goto err_rpmb_key_get;
++	}
++	memcpy(mux_dev->rpmb_key, &rpmb_key[0], sizeof(mux_dev->rpmb_key));
++	memset(rpmb_key, 0, sizeof(rpmb_key));
++
++	ret = crypto_shash_setkey(mux_dev->hash_desc->tfm,
++				  mux_dev->rpmb_key, 32);
++	if (ret) {
++		dev_err(&rdev->dev, "set key failed = %d\n", ret);
++		goto err_crypto_shash_setkey;
++	}
++
+ 	return 0;
++
++err_crypto_shash_setkey:
++	memset(mux_dev->rpmb_key, 0, sizeof(mux_dev->rpmb_key));
++err_rpmb_key_get:
++	rpmb_mux_hmac_256_free(mux_dev);
++	device_destroy(rpmb_mux_class, rpmb_mux_devt);
++	class_destroy(rpmb_mux_class);
++	cdev_del(&mux_dev->cdev);
++	kfree(mux_dev);
++	unregister_chrdev_region(rpmb_mux_devt, 0);
++
++	return ret;
+ }
+ 
+ static void rpmb_remove_device(struct device *dev, struct class_interface *intf)
+@@ -676,19 +705,6 @@ static int __init rpmb_mux_init(void)
+ 		goto err_rpmb_mux_hmac_256_alloc;
+ 	}
+ 
+-	ret = rpmb_key_retrieval(mux_dev->rpmb_key);
+-	if (ret) {
+-		pr_err("rpmb_key_retrieval failed.\n");
+-		goto err_rpmb_key_retrieval;
+-	}
+-
+-	ret = crypto_shash_setkey(mux_dev->hash_desc->tfm,
+-				  mux_dev->rpmb_key, 32);
+-	if (ret) {
+-		pr_err("set key failed = %d\n", ret);
+-		goto err_crypto_shash_setkey;
+-	}
+-
+ 	mux_dev->rpmb_interface.add_dev    = rpmb_add_device;
+ 	mux_dev->rpmb_interface.remove_dev = rpmb_remove_device;
+ 	mux_dev->rpmb_interface.class      = &rpmb_class;
+@@ -702,10 +718,6 @@ static int __init rpmb_mux_init(void)
+ 	return 0;
+ 
+ err_class_interface_register:
+-err_crypto_shash_setkey:
+-	memset(mux_dev->rpmb_key, 0, sizeof(mux_dev->rpmb_key));
+-err_rpmb_key_retrieval:
+-	rpmb_mux_hmac_256_free(mux_dev);
+ err_rpmb_mux_hmac_256_alloc:
+ 	device_destroy(rpmb_mux_class, rpmb_mux_devt);
+ err_device_create:
+-- 
+2.7.4
+

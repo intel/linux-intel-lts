@@ -1,0 +1,37 @@
+From db8bb0d3ada066dc38b66611af65bcfa267bf600 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Mon, 6 Mar 2017 09:56:10 +0530
+Subject: [PATCH 0556/1132] ASoC: Intel: Skylake: Add component ops for dai
+ load
+
+Since FE dais can come from topology, add component ops
+for the same.
+
+Change-Id: I868be6943a69d0dafc6fb04b91f70be576318400
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Reviewed-on:
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index b8a1d8b..d17809b 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -617,4 +617,7 @@ int skl_tplg_dsp_log_get(struct snd_kcontrol *kcontrol,
+ 			 struct snd_ctl_elem_value *ucontrol);
+ int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
+ 			 struct snd_ctl_elem_value *ucontrol);
++
++int skl_dai_load(struct snd_soc_component *cmp,
++		 struct snd_soc_dai_driver *pcm_dai);
+ #endif
+-- 
+2.7.4
+

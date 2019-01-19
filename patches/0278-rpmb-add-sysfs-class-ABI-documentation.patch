@@ -1,0 +1,64 @@
+From 8ccfd0283613fa0e944a31c22ec68e1e25a03b2b Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Sun, 13 Mar 2016 13:36:52 +0200
+Subject: [PATCH 0278/1132] rpmb: add sysfs-class ABI documentation
+
+V2: resend
+V3: add more verbose description
+V4: resend
+V5: adjust date and kernel version
+V6: adjust date and kernel version
+V7: adjust date and kernel version
+V8: adjust date and kernel version
+V9: adjust date and kernel version
+
+Change-Id: I2d71ca467e5960ca93c904e92cfcf69591a3de59
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ Documentation/ABI/testing/sysfs-class-rpmb | 20 ++++++++++++++++++++
+ MAINTAINERS                                |  1 +
+ 2 files changed, 21 insertions(+)
+ create mode 100644 Documentation/ABI/testing/sysfs-class-rpmb
+
+diff --git a/Documentation/ABI/testing/sysfs-class-rpmb b/Documentation/ABI/testing/sysfs-class-rpmb
+new file mode 100644
+index 0000000..a9d45aa
+--- /dev/null
++++ b/Documentation/ABI/testing/sysfs-class-rpmb
+@@ -0,0 +1,20 @@
++What:		/sys/class/rpmb/
++Date:		Jul 2018
++KernelVersion:	4.18
++Contact:	Tomas Winkler <tomas.winkler@intel.com>
++Description:
++		The rpmb/ class sub-directory belongs to RPMB device class.
++
++		Few storage technologies such is EMMC, UFS, and NVMe support
++		Replay Protected Memory Block (RPMB) hardware partition with
++		common protocol and similar frame layout.
++		Such a partition provides authenticated and replay protected access,
++		hence suitable as a secure storage.
++
++What:		/sys/class/rpmb/rpmbN/
++Date:		Jul 2018
++KernelVersion:	4.18
++Contact:	Tomas Winkler <tomas.winkler@intel.com>
++Description:
++		The /sys/class/rpmb/rpmbN directory is created for
++		each RPMB registered device.
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 249b994..7135116 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -12533,6 +12533,7 @@ L:	linux-kernel@vger.kernel.org
+ S:	Supported
+ F:	drivers/char/rpmb/*
+ F:	include/linux/rpmb.h
++F:	Documentation/ABI/testing/sysfs-class-rpmb
+ 
+ RTL2830 MEDIA DRIVER
+ M:	Antti Palosaari <crope@iki.fi>
+-- 
+2.7.4
+

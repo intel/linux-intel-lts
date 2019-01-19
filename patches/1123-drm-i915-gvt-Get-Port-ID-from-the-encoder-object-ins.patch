@@ -1,0 +1,37 @@
+From 0303a3c81463cdd8edb91857ae7bdea9dca9750b Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Thu, 10 Jan 2019 15:17:56 +0800
+Subject: [PATCH 1123/1132] drm/i915/gvt: Get Port ID from the encoder object
+ instead of using enc_to_dig_port
+
+Using enc_to_dig_port() to determine the port id may not be applicable to
+some types of encoders like MIPI-DSI. Therefore, retrieve the port id from
+the encoder object.
+
+Change-Id: I55f323957afe1ecc487bbe732e4bd41ae3c09b98
+Tracked-On: projectacrn/acrn-hypervisor/issues/2288
+Signed-off-by: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Tracked-On: PKT-1657
+---
+ drivers/gpu/drm/i915/gvt/display.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/display.c b/drivers/gpu/drm/i915/gvt/display.c
+index 700bf9f..afe9eaf 100644
+--- a/drivers/gpu/drm/i915/gvt/display.c
++++ b/drivers/gpu/drm/i915/gvt/display.c
+@@ -555,8 +555,7 @@ int setup_virtual_monitors(struct intel_vgpu *vgpu)
+ 			    !bxt_check_planes(vgpu, pipe))
+ 				continue;
+ 			/* Get (Dom0) port associated with current pipe. */
+-			port = enc_to_dig_port(
+-					&(connector->encoder->base))->base.port;
++			port = connector->encoder->port;
+ 			ret = setup_virtual_monitor(vgpu, port,
+ 				type, 0, connector->detect_edid,
+ 				!gvt_emulate_hdmi);
+-- 
+2.7.4
+

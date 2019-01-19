@@ -1,0 +1,394 @@
+From 9e9a12e450880ac75034f0ab39cd81229fed4302 Mon Sep 17 00:00:00 2001
+From: Yael Samet <yael.samet@intel.com>
+Date: Tue, 5 Sep 2017 14:07:32 +0300
+Subject: [PATCH 0428/1132] mei: dal: add character device for user space
+ interface
+
+DAL user space interface allows sending and receiving of DAL messages,
+from and to user-space, usually between JHI server to DAL FW.
+DAL module is in pass-through mode.
+This patch adds the character device interface.
+
+Change-Id: I5f6d2c17744ad2481387c9a4427c8de5962bca8d
+Signed-off-by: Yael Samet <yael.samet@intel.com>
+---
+ drivers/misc/mei/dal/Makefile    |   1 +
+ drivers/misc/mei/dal/dal_cdev.c  | 243 +++++++++++++++++++++++++++++++++++++++
+ drivers/misc/mei/dal/dal_cdev.h  |  13 +++
+ drivers/misc/mei/dal/dal_class.c |  31 ++++-
+ 4 files changed, 283 insertions(+), 5 deletions(-)
+ create mode 100644 drivers/misc/mei/dal/dal_cdev.c
+ create mode 100644 drivers/misc/mei/dal/dal_cdev.h
+
+diff --git a/drivers/misc/mei/dal/Makefile b/drivers/misc/mei/dal/Makefile
+index e073531..705f53e 100644
+--- a/drivers/misc/mei/dal/Makefile
++++ b/drivers/misc/mei/dal/Makefile
+@@ -7,3 +7,4 @@ mei_dal-objs := dal_class.o
+ mei_dal-objs += acp_parser.o
+ mei_dal-objs += bh_external.o
+ mei_dal-objs += bh_internal.o
++mei_dal-objs += dal_cdev.o
+diff --git a/drivers/misc/mei/dal/dal_cdev.c b/drivers/misc/mei/dal/dal_cdev.c
+new file mode 100644
+index 0000000..48f209a
+--- /dev/null
++++ b/drivers/misc/mei/dal/dal_cdev.c
+@@ -0,0 +1,243 @@
++// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/fs.h>
++#include <linux/device.h>
++#include <linux/init.h>
++#include <linux/mutex.h>
++#include <linux/wait.h>
++#include <linux/poll.h>
++#include <linux/slab.h>
++#include <linux/sched.h>
++#include <linux/cdev.h>
++#include <linux/printk.h>
++#include <linux/mei_cl_bus.h>
++#include <linux/notifier.h>
++
++#include "dal_dev.h"
++#include "dal_cdev.h"
++
++/* KDI user space devices major and minor numbers */
++static dev_t dal_devt;
++
++/**
++ * dal_dev_open - dal cdev open function
++ *
++ * @inode: pointer to inode structure
++ * @fp: pointer to file structure
++ *
++ * Return: 0 on success
++ *         <0 on failure
++ */
++static int dal_dev_open(struct inode *inode, struct file *fp)
++{
++	int ret;
++	struct dal_device *ddev;
++
++	ddev = container_of(inode->i_cdev, struct dal_device, cdev);
++	if (!ddev)
++		return -ENODEV;
++
++	/* single open */
++	if (test_and_set_bit(DAL_DEV_OPENED, &ddev->status))
++		return -EBUSY;
++
++	ret = dal_dc_setup(ddev, DAL_INTF_CDEV);
++	if (ret)
++		goto err;
++
++	fp->private_data = ddev->clients[DAL_INTF_CDEV];
++
++	return nonseekable_open(inode, fp);
++
++err:
++	clear_bit(DAL_DEV_OPENED, &ddev->status);
++	return ret;
++}
++
++/**
++ * dal_dev_release - dal cdev release function
++ *
++ * @inode: pointer to inode structure
++ * @fp: pointer to file structure
++ *
++ * Return: 0 on success
++ *         <0 on failure
++ */
++static int dal_dev_release(struct inode *inode, struct file *fp)
++{
++	struct dal_client *dc = fp->private_data;
++	struct dal_device *ddev = dc->ddev;
++
++	if (mutex_lock_interruptible(&ddev->context_lock)) {
++		dev_dbg(&ddev->dev, "signal interrupted\n");
++		return -ERESTARTSYS;
++	}
++
++	dal_dc_destroy(ddev, dc->intf);
++
++	mutex_unlock(&ddev->context_lock);
++
++	clear_bit(DAL_DEV_OPENED, &ddev->status);
++
++	return 0;
++}
++
++/**
++ * dal_dev_read - dal cdev read function
++ *
++ * @fp: pointer to file structure
++ * @buf: pointer to user buffer
++ * @count: buffer length
++ * @off: data offset in buffer
++ *
++ * Return: >=0 data length on success
++ *         <0 on failure
++ */
++static ssize_t dal_dev_read(struct file *fp, char __user *buf,
++			    size_t count, loff_t *off)
++{
++	struct dal_client *dc = fp->private_data;
++	struct dal_device *ddev = dc->ddev;
++	int ret;
++	size_t r_len, len;
++	unsigned int copied;
++
++	ret = dal_wait_for_read(dc);
++	if (ret)
++		return ret;
++
++	if (kfifo_is_empty(&dc->read_queue))
++		return 0;
++
++	r_len = kfifo_out(&dc->read_queue, &len, sizeof(len));
++	if (r_len != sizeof(len) || len > count) {
++		dev_dbg(&ddev->dev, "could not copy buffer: src size = %zd, dest size = %zu\n",
++			len, count);
++		return -EFAULT;
++	}
++
++	ret = kfifo_to_user(&dc->read_queue, buf, count, &copied);
++	if (ret) {
++		dev_dbg(&ddev->dev, "copy_to_user() failed\n");
++		return -EFAULT;
++	}
++
++	/*FIXME: need to drop rest of the data */
++
++	return copied;
++}
++
++/**
++ * dal_dev_write - dal cdev write function
++ *
++ * @fp: pointer to file structure
++ * @buff: pointer to user buffer
++ * @count: buffer length
++ * @off: data offset in buffer
++ *
++ * Return: >=0 data length on success
++ *         <0 on failure
++ */
++static ssize_t dal_dev_write(struct file *fp, const char __user *buff,
++			     size_t count, loff_t *off)
++{
++	struct dal_device *ddev;
++	struct dal_client *dc = fp->private_data;
++	void *data;
++	int ret;
++
++	ddev = dc->ddev;
++
++	if (count > DAL_MAX_BUFFER_SIZE) {
++		dev_dbg(&ddev->dev, "count is too big, count = %zu\n", count);
++		return -EMSGSIZE;
++	}
++
++	if (count == 0)
++		return 0;
++
++	if (!buff)
++		return -EINVAL;
++
++	data =  memdup_user(buff, count);
++	if (IS_ERR(data))
++		return PTR_ERR(data);
++
++	ret = dal_write(dc, data, count, 0);
++
++	kfree(data);
++
++	return ret;
++}
++
++static const struct file_operations mei_dal_fops = {
++	.owner    = THIS_MODULE,
++	.open     = dal_dev_open,
++	.release  = dal_dev_release,
++	.read     = dal_dev_read,
++	.write    = dal_dev_write,
++	.llseek   = no_llseek,
++};
++
++/**
++ * dal_dev_del - delete dal cdev
++ *
++ * @ddev: dal device
++ */
++void dal_dev_del(struct dal_device *ddev)
++{
++	cdev_del(&ddev->cdev);
++}
++
++/**
++ * dal_dev_setup - initialize dal cdev
++ *
++ * @ddev: dal device
++ */
++void dal_dev_setup(struct dal_device *ddev)
++{
++	dev_t devno;
++
++	cdev_init(&ddev->cdev, &mei_dal_fops);
++	devno = MKDEV(MAJOR(dal_devt), ddev->device_id);
++	ddev->cdev.owner = THIS_MODULE;
++	ddev->dev.devt = devno;
++	ddev->cdev.kobj.parent = &ddev->dev.kobj;
++}
++
++/**
++ * dal_dev_add - add dal cdev
++ *
++ * @ddev: dal device
++ *
++ * Return: 0 on success
++ *         <0 on failure
++ */
++int dal_dev_add(struct dal_device *ddev)
++{
++	return cdev_add(&ddev->cdev, ddev->dev.devt, 1);
++}
++
++/**
++ * dal_dev_init - allocate dev_t number
++ *
++ * Return: 0 on success
++ *         <0 on failure
++ */
++int __init dal_dev_init(void)
++{
++	return alloc_chrdev_region(&dal_devt, 0, DAL_MEI_DEVICE_MAX, "dal");
++}
++
++/**
++ * dal_dev_exit - unregister allocated dev_t number
++ */
++void dal_dev_exit(void)
++{
++	unregister_chrdev_region(dal_devt, DAL_MEI_DEVICE_MAX);
++}
+diff --git a/drivers/misc/mei/dal/dal_cdev.h b/drivers/misc/mei/dal/dal_cdev.h
+new file mode 100644
+index 0000000..2547701
+--- /dev/null
++++ b/drivers/misc/mei/dal/dal_cdev.h
+@@ -0,0 +1,13 @@
++/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#ifndef __MEI_DAL_DEV_H__
++#define __MEI_DAL_DEV_H__
++void dal_dev_del(struct dal_device *ddev);
++void dal_dev_setup(struct dal_device *ddev);
++int dal_dev_add(struct dal_device *ddev);
++int __init dal_dev_init(void);
++void dal_dev_exit(void);
++#endif /* __MEI_DAL_DEV_H__ */
+diff --git a/drivers/misc/mei/dal/dal_class.c b/drivers/misc/mei/dal/dal_class.c
+index 607c63c..ccdf973 100644
+--- a/drivers/misc/mei/dal/dal_class.c
++++ b/drivers/misc/mei/dal/dal_class.c
+@@ -22,6 +22,7 @@
+ #include "bh_cmd_defs.h"
+ #include "bh_errcode.h"
+ #include "dal_dev.h"
++#include "dal_cdev.h"
+ 
+ /*
+  * this class contains the 3 mei_cl_device, ivm, sdm, rtm.
+@@ -612,6 +613,8 @@ static int dal_remove(struct mei_cl_device *cldev)
+ 	if (!ddev)
+ 		return 0;
+ 
++	dal_dev_del(ddev);
++
+ 	ddev->is_device_removed = 1;
+ 	/* make sure the above is set */
+ 	smp_mb();
+@@ -674,25 +677,34 @@ static int dal_probe(struct mei_cl_device *cldev,
+ 	ddev->dev.release = dal_device_release;
+ 	dev_set_name(&ddev->dev, "dal%d", ddev->device_id);
+ 
++	dal_dev_setup(ddev);
++
+ 	ret = device_register(&ddev->dev);
+ 	if (ret) {
+ 		dev_err(pdev, "unable to register device\n");
+-		goto err;
++		goto err_unregister;
+ 	}
+ 
+ 	ddev->bh_fw_msg.msg = kzalloc(DAL_MAX_BUFFER_SIZE, GFP_KERNEL);
+ 	if (!ddev->bh_fw_msg.msg) {
+ 		ret = -ENOMEM;
+-		goto err;
++		goto err_unregister;
+ 	}
+ 
+ 	ret = dal_mei_enable(ddev);
+ 	if (ret < 0)
+-		goto err;
++		goto err_unregister;
++
++	ret = dal_dev_add(ddev);
++	if (ret)
++		goto err_disable;
+ 
+ 	return 0;
+ 
+-err:
++err_disable:
++	mei_cldev_set_drvdata(cldev, NULL);
++	mei_cldev_disable(cldev);
++err_unregister:
+ 	device_unregister(&ddev->dev);
+ 	return ret;
+ }
+@@ -738,6 +750,7 @@ static void __exit mei_dal_exit(void)
+ {
+ 	mei_cldev_driver_unregister(&dal_driver);
+ 
++	dal_dev_exit();
+ 	class_destroy(dal_class);
+ }
+ 
+@@ -757,14 +770,22 @@ static int __init mei_dal_init(void)
+ 		return PTR_ERR(dal_class);
+ 	}
+ 
++	ret = dal_dev_init();
++	if (ret < 0) {
++		pr_err("failed allocate chrdev region = %d\n", ret);
++		goto err_class;
++	}
++
+ 	ret = mei_cldev_driver_register(&dal_driver);
+ 	if (ret < 0) {
+ 		pr_err("mei_cl_driver_register failed with status = %d\n", ret);
+-		goto err_class;
++		goto err_dev;
+ 	}
+ 
+ 	return 0;
+ 
++err_dev:
++	dal_dev_exit();
+ err_class:
+ 	class_destroy(dal_class);
+ 	return ret;
+-- 
+2.7.4
+

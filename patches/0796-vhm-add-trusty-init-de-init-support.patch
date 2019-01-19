@@ -1,0 +1,112 @@
+From 67bc659281466e07c43b8ebb8d5f10fe80c19ea6 Mon Sep 17 00:00:00 2001
+From: Mingqiang Chi <mingqiang.chi@intel.com>
+Date: Fri, 31 Aug 2018 10:59:01 +0800
+Subject: [PATCH 0796/1132] vhm: add trusty init/de-init support
+
+vhm will allocate trusty memory from cma then do ept map for a VM with trusty.
+vhm will de-init trusty for a VM during its destroying.
+
+Signed-off-by: Mingqiang Chi <mingqiang.chi@intel.com>
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Acked-by: Eddie Dong <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c      | 10 ++++++++++
+ drivers/vhm/vhm_mm.c            | 25 +++++++++++++++++++++++++
+ include/linux/vhm/acrn_vhm_mm.h |  3 +++
+ include/linux/vhm/vhm_vm_mngt.h |  1 +
+ 4 files changed, 39 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 75cdbb7..964aee2 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -226,6 +226,14 @@ static long vhm_dev_ioctl(struct file *filep,
+ 
+ 		vm->vmid = created_vm.vmid;
+ 
++		if (created_vm.vm_flag & SECURE_WORLD_ENABLED) {
++			ret = init_trusty(vm);
++			if (ret < 0) {
++				pr_err("vhm: failed to init trusty for VM!\n");
++				return ret;
++			}
++		}
++
+ 		pr_info("vhm: VM %d created\n", created_vm.vmid);
+ 		break;
+ 	}
+@@ -258,6 +266,8 @@ static long vhm_dev_ioctl(struct file *filep,
+ 	}
+ 
+ 	case IC_DESTROY_VM: {
++		if (vm->trusty_host_gpa)
++			deinit_trusty(vm);
+ 		ret = hcall_destroy_vm(vm->vmid);
+ 		if (ret < 0) {
+ 			pr_err("failed to destroy VM %ld\n", vm->vmid);
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index fb09ed2..bff4482 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -305,6 +305,31 @@ int check_guest_mem(struct vhm_vm *vm)
+ 	return 0;
+ }
+ 
++#define TRUSTY_MEM_GPA_BASE (511UL * 1024UL * 1024UL * 1024UL)
++#define TRUSTY_MEM_SIZE    (0x01000000)
++int init_trusty(struct vhm_vm *vm)
++{
++	unsigned long host_gpa, guest_gpa = TRUSTY_MEM_GPA_BASE;
++	unsigned long len = TRUSTY_MEM_SIZE;
++
++	host_gpa = _alloc_memblk(vm->dev, TRUSTY_MEM_SIZE);
++	if (host_gpa == 0ULL)
++		return -ENOMEM;
++
++	vm->trusty_host_gpa = host_gpa;
++
++	pr_info("VHM: set ept for trusty memory [host_gpa=0x%lx, "
++		"guest_gpa=0x%lx, len=0x%lx]", host_gpa, guest_gpa, len);
++	return _mem_set_memmap(vm->vmid, guest_gpa, host_gpa, len,
++		MEM_TYPE_WB, MEM_ACCESS_RWX, MAP_MEM);
++}
++
++void deinit_trusty(struct vhm_vm *vm)
++{
++	_free_memblk(vm->dev, vm->trusty_host_gpa, TRUSTY_MEM_SIZE);
++	vm->trusty_host_gpa = 0;
++}
++
+ static void guest_vm_open(struct vm_area_struct *vma)
+ {
+ 	struct vhm_vm *vm = vma->vm_file->private_data;
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 87d668f..5ff9af9 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -198,6 +198,9 @@ int alloc_guest_memseg(struct vhm_vm *vm, struct vm_memseg *memseg);
+  */
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
+ 
++int init_trusty(struct vhm_vm *vm);
++void deinit_trusty(struct vhm_vm *vm);
++
+ int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len,
+ 	unsigned int mem_type, unsigned int mem_access_right,
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index 14e9fe7..b5f6ca1 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -94,6 +94,7 @@ struct vhm_vm {
+ 	struct device *dev;
+ 	struct list_head list;
+ 	unsigned long vmid;
++	unsigned long trusty_host_gpa;
+ 	int ioreq_fallback_client;
+ 	long refcnt;
+ 	struct mutex seg_lock;
+-- 
+2.7.4
+

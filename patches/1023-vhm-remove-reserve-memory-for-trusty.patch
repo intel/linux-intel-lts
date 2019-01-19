@@ -1,0 +1,221 @@
+From 68c45769ad362b9c5a3430df5b188ace3ec583a1 Mon Sep 17 00:00:00 2001
+From: "Li, Fei1" <fei1.li@intel.com>
+Date: Wed, 28 Nov 2018 23:32:05 +0800
+Subject: [PATCH 1023/1132] vhm: remove "reserve memory for trusty"
+
+Allocate memory for trusty in SOS kernel may failed after running
+a long time since there can not find a continue 16 MB memory. So
+we would reserve memory for trusty in ACRN hypervisor in that case
+the allocation will not fail again.
+
+Tracked-On: PKT-1592
+Tracked-On: https://github.com/projectacrn/acrn-hypervisor/issues/1942
+Signed-off-by: Li, Fei1 <fei1.li@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c      | 16 ++--------
+ drivers/vhm/Kconfig             |  1 -
+ drivers/vhm/vhm_mm.c            | 65 -----------------------------------------
+ include/linux/vhm/acrn_common.h |  3 --
+ include/linux/vhm/acrn_vhm_mm.h |  3 --
+ include/linux/vhm/vhm_vm_mngt.h |  2 --
+ 6 files changed, 2 insertions(+), 88 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 33df39be..59dd49b 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -224,18 +224,10 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		}
+ 		vm->vmid = created_vm.vmid;
+ 
+-		if (created_vm.vm_flag & SECURE_WORLD_ENABLED) {
+-			ret = init_trusty(vm);
+-			if (ret < 0) {
+-				pr_err("vhm: failed to init trusty for VM!\n");
+-				goto create_vm_fail;
+-			}
+-		}
+-
+ 		if (created_vm.req_buf) {
+ 			ret = acrn_ioreq_init(vm, created_vm.req_buf);
+ 			if (ret < 0)
+-				goto ioreq_buf_fail;
++				goto create_vm_fail;
+ 		}
+ 
+ 		acrn_ioeventfd_init(vm->vmid);
+@@ -243,9 +235,7 @@ static long vhm_dev_ioctl(struct file *filep,
+ 
+ 		pr_info("vhm: VM %d created\n", created_vm.vmid);
+ 		break;
+-ioreq_buf_fail:
+-		if (created_vm.vm_flag & SECURE_WORLD_ENABLED)
+-			deinit_trusty(vm);
++
+ create_vm_fail:
+ 		hcall_destroy_vm(created_vm.vmid);
+ 		vm->vmid = ACRN_INVALID_VMID;
+@@ -288,8 +278,6 @@ static long vhm_dev_ioctl(struct file *filep,
+ 			pr_err("failed to destroy VM %ld\n", vm->vmid);
+ 			return -EFAULT;
+ 		}
+-		if (vm->trusty_host_gpa)
+-			deinit_trusty(vm);
+ 		vm->vmid = ACRN_INVALID_VMID;
+ 		break;
+ 	}
+diff --git a/drivers/vhm/Kconfig b/drivers/vhm/Kconfig
+index 4ddb131..42ae269 100644
+--- a/drivers/vhm/Kconfig
++++ b/drivers/vhm/Kconfig
+@@ -1,7 +1,6 @@
+ config ACRN_VHM
+ 	bool "Intel ACRN Hypervisor Virtio and Hypervisor service Module (VHM)"
+ 	depends on ACRN
+-	depends on DMA_CMA
+ 	depends on PCI_MSI
+ 	depends on HUGETLBFS
+ 	depends on !VMAP_STACK
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index 0b9168f..494461b 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -53,22 +53,8 @@
+  *
+  */
+ 
+-#include <linux/init.h>
+-#include <linux/interrupt.h>
+ #include <linux/module.h>
+-#include <linux/device.h>
+ #include <linux/kernel.h>
+-#include <linux/dma-mapping.h>
+-#include <linux/gfp.h>
+-#include <linux/mm.h>
+-#include <linux/fs.h>
+-#include <linux/poll.h>
+-#include <linux/wait.h>
+-#include <linux/slab.h>
+-#include <linux/sched.h>
+-#include <linux/list.h>
+-#include <linux/uaccess.h>
+-#include <linux/io.h>
+ 
+ #include <linux/vhm/vhm_ioctl_defs.h>
+ #include <linux/vhm/acrn_hv_defs.h>
+@@ -76,32 +62,6 @@
+ #include <linux/vhm/vhm_vm_mngt.h>
+ #include <linux/vhm/vhm_hypercall.h>
+ 
+-static u64 _alloc_memblk(struct device *dev, size_t len)
+-{
+-	unsigned int count;
+-	struct page *page;
+-
+-	if (!PAGE_ALIGNED(len)) {
+-		pr_warn("alloc size of memblk must be page aligned\n");
+-		return 0ULL;
+-	}
+-
+-	count = PAGE_ALIGN(len) >> PAGE_SHIFT;
+-	page = dma_alloc_from_contiguous(dev, count, 1, GFP_KERNEL);
+-	if (page)
+-		return page_to_phys(page);
+-	else
+-		return 0ULL;
+-}
+-
+-static bool _free_memblk(struct device *dev, u64 vm0_gpa, size_t len)
+-{
+-	unsigned int count = PAGE_ALIGN(len) >> PAGE_SHIFT;
+-	struct page *page = pfn_to_page(vm0_gpa >> PAGE_SHIFT);
+-
+-	return dma_release_from_contiguous(dev, page, count);
+-}
+-
+ static int set_memory_region(unsigned long vmid,
+ 		struct vm_memory_region *region)
+ {
+@@ -233,31 +193,6 @@ void free_guest_mem(struct vhm_vm *vm)
+ 	return hugepage_free_guest(vm);
+ }
+ 
+-#define TRUSTY_MEM_GPA_BASE (511UL * 1024UL * 1024UL * 1024UL)
+-#define TRUSTY_MEM_SIZE    (0x01000000)
+-int init_trusty(struct vhm_vm *vm)
+-{
+-	unsigned long host_gpa, guest_gpa = TRUSTY_MEM_GPA_BASE;
+-	unsigned long len = TRUSTY_MEM_SIZE;
+-
+-	host_gpa = _alloc_memblk(vm->dev, TRUSTY_MEM_SIZE);
+-	if (host_gpa == 0ULL)
+-		return -ENOMEM;
+-
+-	vm->trusty_host_gpa = host_gpa;
+-
+-	pr_info("VHM: set ept for trusty memory [host_gpa=0x%lx, "
+-		"guest_gpa=0x%lx, len=0x%lx]", host_gpa, guest_gpa, len);
+-	return add_memory_region(vm->vmid, guest_gpa, host_gpa, len,
+-		MEM_TYPE_WB, MEM_ACCESS_RWX);
+-}
+-
+-void deinit_trusty(struct vhm_vm *vm)
+-{
+-	_free_memblk(vm->dev, vm->trusty_host_gpa, TRUSTY_MEM_SIZE);
+-	vm->trusty_host_gpa = 0;
+-}
+-
+ void *map_guest_phys(unsigned long vmid, u64 guest_phys, size_t size)
+ {
+ 	struct vhm_vm *vm;
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 330af71..1c47a52 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -76,9 +76,6 @@
+ #define REQUEST_READ	0
+ #define REQUEST_WRITE	1
+ 
+-/* Generic VM flags from guest OS */
+-#define SECURE_WORLD_ENABLED    (1UL<<0)  /* Whether secure world is enabled */
+-
+ /**
+  * @brief Hypercall
+  *
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 7b6b1b4..49c4299 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -180,9 +180,6 @@ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
+  */
+ int unmap_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
+ 
+-int init_trusty(struct vhm_vm *vm);
+-void deinit_trusty(struct vhm_vm *vm);
+-
+ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap);
+ void hugepage_free_guest(struct vhm_vm *vm);
+ void *hugepage_map_guest_phys(struct vhm_vm *vm, u64 guest_phys, size_t size);
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index d3b26bd..65f6474 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -75,7 +75,6 @@ extern struct mutex vhm_vm_list_lock;
+  * @dev: pointer to dev of linux device mode
+  * @list: list of vhm_vm
+  * @vmid: guest vmid
+- * @trusty_host_gpa: host physical address of continuous memory for Trusty
+  * @ioreq_fallback_client: default ioreq client
+  * @refcnt: reference count of guest
+  * @hugepage_lock:  mutex to protect hugepage_hlist
+@@ -91,7 +90,6 @@ struct vhm_vm {
+ 	struct device *dev;
+ 	struct list_head list;
+ 	unsigned long vmid;
+-	unsigned long trusty_host_gpa;
+ 	int ioreq_fallback_client;
+ 	long refcnt;
+ 	struct mutex hugepage_lock;
+-- 
+2.7.4
+

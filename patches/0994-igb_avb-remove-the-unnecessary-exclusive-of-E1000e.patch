@@ -1,0 +1,32 @@
+From 2e77ce088dc12fbca39e9c7e9e08de2634204271 Mon Sep 17 00:00:00 2001
+From: Fei Yang <fei.yang@intel.com>
+Date: Mon, 26 Nov 2018 11:14:52 -0800
+Subject: [PATCH 0994/1132] igb_avb: remove the unnecessary exclusive of E1000e
+
+We tested against APL-MRB board and KBL-NUC. The igb_avb and E1000e
+actually have no conflict between them on PCI IDs.
+
+E1000e PCI IDs haven't support for i210 series which igb_avb covers.
+
+Tracked-On: PKT-1558
+Signed-off-by: Du, Alek <alek.du@intel.com>
+Signed-off-by: Fei Yang <fei.yang@intel.com>
+---
+ drivers/staging/igb_avb/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/staging/igb_avb/Kconfig b/drivers/staging/igb_avb/Kconfig
+index 5f4b325..b432034 100644
+--- a/drivers/staging/igb_avb/Kconfig
++++ b/drivers/staging/igb_avb/Kconfig
+@@ -1,6 +1,6 @@
+ config IGB_AVB
+ 	tristate "Avnu IGB AVB driver"
+-	depends on IGB=n && E1000=n && E1000E=n && PCI
++	depends on IGB=n && PCI
+ 	select DCA
+ 	default n
+ 	---help---
+-- 
+2.7.4
+

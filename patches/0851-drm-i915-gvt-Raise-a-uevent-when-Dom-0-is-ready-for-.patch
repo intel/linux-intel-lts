@@ -1,0 +1,122 @@
+From 546f5a8240cf0abd9d2841949d24117af4bb03d0 Mon Sep 17 00:00:00 2001
+From: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Date: Wed, 13 Sep 2017 17:29:57 -0700
+Subject: [PATCH 0851/1132] drm/i915/gvt: Raise a uevent when Dom 0 is ready
+ for Dom U
+
+HV vendors want to know when Dom 0 is ready to start a Dom U
+because they want to start Dom U as early as possible. This
+feature informs XenGT module as soon as Dom 0 is ready. In our
+example, we raise a uevent from XenGT module but the HV vendors
+are free to change the module to do any custom action that they
+want.
+
+Change-Id: Ibfdaca65002825e14e15527c386db00f59b372e5
+Signed-off-by: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-on:
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/gvt.c       |  8 ++++++++
+ drivers/gpu/drm/i915/gvt/gvt.h       |  1 +
+ drivers/gpu/drm/i915/gvt/hypercall.h |  1 +
+ drivers/gpu/drm/i915/gvt/mpt.h       |  8 ++++++++
+ drivers/gpu/drm/i915/intel_display.c | 13 +++++++++++++
+ 5 files changed, 31 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.c b/drivers/gpu/drm/i915/gvt/gvt.c
+index 8523fbc..25e0a58 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.c
++++ b/drivers/gpu/drm/i915/gvt/gvt.c
+@@ -511,6 +511,14 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
+ 	return ret;
+ }
+ 
++int gvt_dom0_ready(struct drm_i915_private *dev_priv)
++{
++	if (!intel_gvt_active(dev_priv))
++		return 0;
++
++	return intel_gvt_hypervisor_dom0_ready();
++}
++
+ #if IS_ENABLED(CONFIG_DRM_I915_GVT_KVMGT)
+ MODULE_SOFTDEP("pre: kvmgt");
+ #endif
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.h b/drivers/gpu/drm/i915/gvt/gvt.h
+index 47ed178..9c29192 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.h
++++ b/drivers/gpu/drm/i915/gvt/gvt.h
+@@ -592,6 +592,7 @@ struct intel_gvt_ops {
+ 				     unsigned int);
+ };
+ 
++int gvt_dom0_ready(struct drm_i915_private *dev_priv);
+ 
+ enum {
+ 	GVT_FAILSAFE_UNSUPPORTED_GUEST,
+diff --git a/drivers/gpu/drm/i915/gvt/hypercall.h b/drivers/gpu/drm/i915/gvt/hypercall.h
+index 5af11cf..f14cff3 100644
+--- a/drivers/gpu/drm/i915/gvt/hypercall.h
++++ b/drivers/gpu/drm/i915/gvt/hypercall.h
+@@ -64,6 +64,7 @@ struct intel_gvt_mpt {
+ 	int (*get_vfio_device)(void *vgpu);
+ 	void (*put_vfio_device)(void *vgpu);
+ 	bool (*is_valid_gfn)(unsigned long handle, unsigned long gfn);
++	int (*dom0_ready)(void);
+ };
+ 
+ extern struct intel_gvt_mpt xengt_mpt;
+diff --git a/drivers/gpu/drm/i915/gvt/mpt.h b/drivers/gpu/drm/i915/gvt/mpt.h
+index 67f19992..feed7ad 100644
+--- a/drivers/gpu/drm/i915/gvt/mpt.h
++++ b/drivers/gpu/drm/i915/gvt/mpt.h
+@@ -362,4 +362,12 @@ static inline bool intel_gvt_hypervisor_is_valid_gfn(
+ 	return intel_gvt_host.mpt->is_valid_gfn(vgpu->handle, gfn);
+ }
+ 
++static inline int intel_gvt_hypervisor_dom0_ready(void)
++{
++	if (!intel_gvt_host.mpt->dom0_ready)
++		return 0;
++
++	return intel_gvt_host.mpt->dom0_ready();
++}
++
+ #endif /* _GVT_MPT_H_ */
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 5bd3c1f..cf60488 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -49,6 +49,10 @@
+ #include <linux/dma_remapping.h>
+ #include <linux/reservation.h>
+ 
++#if IS_ENABLED(CONFIG_DRM_I915_GVT)
++#include "gvt.h"
++#endif
++
+ /* Primary plane formats for gen <= 3 */
+ static const uint32_t i8xx_primary_formats[] = {
+ 	DRM_FORMAT_C8,
+@@ -14328,6 +14332,15 @@ static void intel_setup_outputs(struct drm_i915_private *dev_priv)
+ 			intel_encoder_clones(encoder);
+ 	}
+ 
++#if IS_ENABLED(CONFIG_DRM_I915_GVT)
++	/*
++	 * Encoders have been initialized. If we are in VGT mode,
++	 * let's inform the HV that it can start Dom U as Dom 0
++	 * is ready to accept new Dom Us.
++	 */
++	gvt_dom0_ready(dev_priv);
++#endif
++
+ 	intel_init_pch_refclk(dev_priv);
+ 
+ 	drm_helper_move_panel_connectors_to_head(&dev_priv->drm);
+-- 
+2.7.4
+

@@ -1,0 +1,85 @@
+From 7272ec325839bcead682de20234fd2aa8f17ac18 Mon Sep 17 00:00:00 2001
+From: Divya Prakash <divya1.prakash@intel.com>
+Date: Sun, 10 Apr 2016 13:36:16 +0530
+Subject: [PATCH 0506/1132] ASoC: Intel: Add delete module IPC
+
+This IPC is to explicitly delete a module instance.
+Till now, destroying a pipe was taking care of deleting
+module instance in the pipe. This IPC would be needed in
+the case of standalone modules like probe.
+
+Change-Id: I6aa9bec8ae3b3311a3c43257cdcd354c7fd3712b
+Signed-off-by: Divya Prakash
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.c | 30 +++++++++++++++++++++++++++++-
+ sound/soc/intel/skylake/skl-sst-ipc.h |  3 +++
+ 2 files changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index d34ff3f..b83a307 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -284,7 +284,8 @@ enum skl_ipc_module_msg {
+ 	IPC_MOD_BIND = 5,
+ 	IPC_MOD_UNBIND = 6,
+ 	IPC_MOD_SET_DX = 7,
+-	IPC_MOD_SET_D0IX = 8
++	IPC_MOD_SET_D0IX = 8,
++	IPC_MOD_DELETE_INSTANCE = 11
+ };
+ 
+ void skl_ipc_tx_data_copy(struct ipc_message *msg, char *tx_data,
+@@ -802,6 +803,33 @@ int skl_ipc_set_dx(struct sst_generic_ipc *ipc, u8 instance_id,
+ }
+ EXPORT_SYMBOL_GPL(skl_ipc_set_dx);
+ 
++int skl_ipc_delete_instance(struct sst_generic_ipc *ipc,
++			struct skl_ipc_init_instance_msg *msg)
++{
++	struct skl_ipc_header header = {0};
++	u64 *ipc_header = (u64 *)(&header);
++	int ret;
++
++	header.primary = IPC_MSG_TARGET(IPC_MOD_MSG);
++	header.primary |= IPC_MSG_DIR(IPC_MSG_REQUEST);
++	header.primary |= IPC_GLB_TYPE(IPC_MOD_DELETE_INSTANCE);
++	header.primary |= IPC_MOD_INSTANCE_ID(msg->instance_id);
++	header.primary |= IPC_MOD_ID(msg->module_id);
++
++	dev_dbg(ipc->dev, "In %s primary =%x ext=%x\n", __func__,
++			 header.primary, header.extension);
++	ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL,
++			msg->param_data_size, NULL, 0);
++
++	if (ret < 0) {
++		dev_err(ipc->dev, "ipc: delete instance failed\n");
++		return ret;
++	}
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(skl_ipc_delete_instance);
++
+ int skl_ipc_init_instance(struct sst_generic_ipc *ipc,
+ 		struct skl_ipc_init_instance_msg *msg, void *param_data)
+ {
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index a8de8cf..eb030df 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -194,6 +194,9 @@ int skl_ipc_restore_pipeline(struct sst_generic_ipc *ipc, u8 instance_id);
+ int skl_ipc_init_instance(struct sst_generic_ipc *sst_ipc,
+ 		struct skl_ipc_init_instance_msg *msg, void *param_data);
+ 
++int skl_ipc_delete_instance(struct sst_generic_ipc *sst_ipc,
++				struct skl_ipc_init_instance_msg *msg);
++
+ int skl_ipc_bind_unbind(struct sst_generic_ipc *sst_ipc,
+ 		struct skl_ipc_bind_unbind_msg *msg);
+ 
+-- 
+2.7.4
+

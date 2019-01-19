@@ -1,0 +1,34 @@
+From bb834cf4101c1f32d9da0e97cfa3e2fc6fe0acbc Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Tue, 9 Oct 2018 16:41:21 +0800
+Subject: [PATCH 0912/1132] drm/i915: diable huge page ppgtt when using PVMMIO
+ ppgtt update
+
+When using PVMMIO ppgtt update, it's too complex and has performance
+impact to support huge page PPGTT, so we will disable this feature in
+this patch.
+
+Tracked-On: projectacrn/acrn-hypervisor#1413
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Xinyun Liu <xinyun.liu@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem.c b/drivers/gpu/drm/i915/i915_gem.c
+index 28e4d82..f60e68d 100644
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -5454,7 +5454,8 @@ int i915_gem_init(struct drm_i915_private *dev_priv)
+ 	int ret;
+ 
+ 	/* We need to fallback to 4K pages if host doesn't support huge gtt. */
+-	if (intel_vgpu_active(dev_priv) && !intel_vgpu_has_huge_gtt(dev_priv))
++	if ((intel_vgpu_active(dev_priv) && !intel_vgpu_has_huge_gtt(dev_priv))
++			|| PVMMIO_LEVEL(dev_priv, PVMMIO_PPGTT_UPDATE))
+ 		mkwrite_device_info(dev_priv)->page_sizes =
+ 			I915_GTT_PAGE_SIZE_4K;
+ 
+-- 
+2.7.4
+

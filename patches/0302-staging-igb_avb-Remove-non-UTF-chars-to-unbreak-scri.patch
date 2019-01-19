@@ -1,0 +1,27 @@
+From 29e051ae0fdd3360a6a560c164437d7b25645ed5 Mon Sep 17 00:00:00 2001
+From: "Vyas, Tarun" <tarun.vyas@intel.com>
+Date: Thu, 4 Oct 2018 16:53:20 +0000
+Subject: [PATCH 0302/1132] staging: igb_avb: Remove non-UTF chars to unbreak
+ scripts
+
+Signed-off-by: Tarun Vyas <tarun.vyas@intel.com>
+---
+ drivers/staging/igb_avb/igb_avb.7 | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/staging/igb_avb/igb_avb.7 b/drivers/staging/igb_avb/igb_avb.7
+index ed8dba1..d17b3de 100755
+--- a/drivers/staging/igb_avb/igb_avb.7
++++ b/drivers/staging/igb_avb/igb_avb.7
+@@ -202,7 +202,7 @@ NOTE: EEE support requires autonegotiation.
+ .B Default Value: 
+ 0 (disabled)
+ .IP
+-Enables or disables DMA Coalescing feature. Values are in usec’s and increase the internal DMA Coalescing feature’s internal timer. DMA (Direct Memory Access) allows the network device to move packet data directly to the system's memory, 
++Enables or disables DMA Coalescing feature. Values are in usecs and increase the internal DMA Coalescing features internal timer. DMA (Direct Memory Access) allows the network device to move packet data directly to the system's memory, 
+   reducing CPU utilitzation. However, the frequency and random intervals at
+   which packets arrive do not allow the system to enter a lower power state. 
+   DMA Coalescing allows the adapter to collect packets before it initiates a 
+-- 
+2.7.4
+

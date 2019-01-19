@@ -1,0 +1,41 @@
+From c303feea31e9eb1b054cefded83d0564c59be6ae Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Fri, 17 Feb 2017 12:08:49 +0530
+Subject: [PATCH 0560/1132] ASoC: Intel: Skylake: Use device type to determine
+ SoundWire stream type
+
+To determine SoundWire stream type, device type information is
+used instead of pdi type.
+
+Change-Id: I98ba5b7141b1a6b865f38697510fb9439dd4816c
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl-sdw-pcm.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sdw-pcm.c b/sound/soc/intel/skylake/skl-sdw-pcm.c
+index 2c5ba97..6b8c4db 100644
+--- a/sound/soc/intel/skylake/skl-sdw-pcm.c
++++ b/sound/soc/intel/skylake/skl-sdw-pcm.c
+@@ -90,9 +90,10 @@ int cnl_sdw_startup(struct snd_pcm_substream *substream,
+ 		ret = -ENOMEM;
+ 		goto alloc_failed;
+ 	}
+-	if (m_cfg->pdi_type == SKL_PDI_PCM)
++
++	if (m_cfg->dev_type == SKL_DEVICE_SDW_PCM)
+ 		dma->stream_type = CNL_SDW_PDI_TYPE_PCM;
+-	else if (m_cfg->pdi_type == SKL_PDI_PDM)
++	else if (m_cfg->dev_type == SKL_DEVICE_SDW_PDM)
+ 		dma->stream_type = CNL_SDW_PDI_TYPE_PDM;
+ 	else {
+ 		dev_err(dai->dev, "Stream type not known\n");
+-- 
+2.7.4
+

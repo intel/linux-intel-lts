@@ -1,0 +1,45 @@
+From 4e487e2f0a29ea1c8a9c1c061f44262400eb881f Mon Sep 17 00:00:00 2001
+From: spoluri <sarat.chandra.poluri@intel.com>
+Date: Mon, 5 Nov 2018 15:52:27 -0800
+Subject: [PATCH 1087/1132] media: intel-ipu4: [VIRT] Fix 1st run hang and 3rd
+ run crash issue when running single PG use cases.
+
+The issue was the fd created in SOS kernel driver is not valid in UOS and hence the fd does not get closed. Hence, the fd never gets released in SOS and over successive runs, the need to expand file descriptor numbers causes the eventual crash. This requires us to close the fd in SOS using sys_close. There is potential for issue in some corner cases in UOS.
+
+Change-Id: Icbb9d2e96dbb2061c497b5415f5f7bdbd1091c44
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Signed-off-by: spoluri <sarat.chandra.poluri@intel.com>
+---
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+index e906f14..309929a 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+@@ -3,6 +3,7 @@
+  * Copyright (C) 2018 Intel Corporation
+  */
+ 
++#include <linux/syscalls.h>
+ #include "ipu-psys.h"
+ 
+ #include <linux/vhm/acrn_vhm_mm.h>
+@@ -25,6 +26,10 @@ int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
+ 
+ 	status = fh->vfops->unmap_buf(fh, req_info);
+ 
++	/*Only doing this in mediated mode because 
++	fd passed from SOS to user space is invalid in UOS.*/
++	ksys_close(req_info->request->op[0]);
++
+ 	if (status)
+ 		return IPU4_REQ_ERROR;
+ 	else
+-- 
+2.7.4
+

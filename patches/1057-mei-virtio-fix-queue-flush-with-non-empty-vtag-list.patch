@@ -1,0 +1,34 @@
+From a97408b5c974679ff8a2c966db3396f4fea53533 Mon Sep 17 00:00:00 2001
+From: Aviad Nissel <aviad.nissel@intel.com>
+Date: Sun, 16 Dec 2018 14:16:11 +0200
+Subject: [PATCH 1057/1132] mei: virtio: fix queue flush with non empty vtag
+ list
+
+Tracked-On: PKT-1620
+Change-Id: Ie2e930d4033ee17f1920dfc4619be0fe3cde4119
+Signed-off-by: Aviad Nissel <aviad.nissel@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/main.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/misc/mei/main.c b/drivers/misc/mei/main.c
+index 86d81cb..e253905 100644
+--- a/drivers/misc/mei/main.c
++++ b/drivers/misc/mei/main.c
+@@ -128,6 +128,12 @@ static int mei_release(struct inode *inode, struct file *file)
+ 	}
+ 
+ 	rets = mei_cl_disconnect(cl);
++	/* Check again: This is necessary since disconnect releases the lock. */
++	if (!list_empty(&cl->vtag_map)) {
++		cl_dbg(dev, cl, "not the last vtag after disconnect\n");
++		mei_cl_flush_queues(cl, file);
++		goto out;
++	}
+ 
+ 	mei_cl_flush_queues(cl, NULL);
+ 	cl_dbg(dev, cl, "removing\n");
+-- 
+2.7.4
+

@@ -1,0 +1,40 @@
+From 7e55455a7344a9d4d1a45ef22cb6fa4f94a40398 Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Wed, 11 Jan 2017 18:43:31 +0530
+Subject: [PATCH 0552/1132] ASoC: Intel: Add Icelake machine id to use WM8281
+
+Icelake supports WM8281 codec as well, hence updating
+the machine id list.
+
+Change-Id: I7f18b9cc11d06f2d3c535a611b5bd2894b9ab2ad
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-on:
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 42b23c3..46fc036 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1223,6 +1223,13 @@ static struct snd_soc_acpi_mach sst_icl_devdata[] = {
+ 		.fw_filename = "intel/dsp_fw_icl.bin",
+ 		.pdata = &cnl_pdata,
+ 	},
++#elif IS_ENABLED(CONFIG_SND_SOC_WM5110)
++	{
++		.id = "dummy",
++		.drv_name = "icl_wm8281",
++		.fw_filename = "intel/dsp_fw_icl.bin",
++		.pdata = &cnl_pdata,
++	},
+ #else
+ 	{
+ 		.id = "dummy",
+-- 
+2.7.4
+

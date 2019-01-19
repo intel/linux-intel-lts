@@ -1,0 +1,36 @@
+From e970af3777d8462ccc38a41ca6a9d39c8cfe796f Mon Sep 17 00:00:00 2001
+From: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Date: Fri, 5 Oct 2018 15:42:53 +0300
+Subject: [PATCH 0963/1132] stm class: Clean up stp_configfs_init
+
+Minor code shortening, no functional changes.
+
+Signed-off-by: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Tested-by: Mathieu Poirier <mathieu.poirier@linaro.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/hwtracing/stm/policy.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/drivers/hwtracing/stm/policy.c b/drivers/hwtracing/stm/policy.c
+index 530448b..a505f05 100644
+--- a/drivers/hwtracing/stm/policy.c
++++ b/drivers/hwtracing/stm/policy.c
+@@ -461,13 +461,9 @@ void stp_policy_node_put(struct stp_policy_node *policy_node)
+ 
+ int __init stp_configfs_init(void)
+ {
+-	int err;
+-
+ 	config_group_init(&stp_policy_subsys.su_group);
+ 	mutex_init(&stp_policy_subsys.su_mutex);
+-	err = configfs_register_subsystem(&stp_policy_subsys);
+-
+-	return err;
++	return configfs_register_subsystem(&stp_policy_subsys);
+ }
+ 
+ void __exit stp_configfs_exit(void)
+-- 
+2.7.4
+

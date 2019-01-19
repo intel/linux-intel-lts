@@ -1,0 +1,269 @@
+From e15d9326aebc4633b3d63623351b287736c343b1 Mon Sep 17 00:00:00 2001
+From: "Shaik, Kareem M" <kareem.m.shaik@intel.com>
+Date: Thu, 26 Oct 2017 02:56:25 +0530
+Subject: [PATCH 0653/1132] ASoC: Intel: Skylake: Add support to configure ADSP
+ Scheduler
+
+ADSP scheduler can be configured to run either from
+1. Internal Timer
+2. DMA completion interrupts from SSP/DMIC
+This patch adds support to send this information to the ADSP
+during every D0/D3 cycle as a Large Config Set IPC.
+In addition to providing the source, there is a provision
+to alter the LL task period to values less than 1ms.
+
+Change-Id: Id856ef66a0930c6dceab804f8081c7449527476b
+Signed-off-by: Kareem Shaik <kareem.m.shaik@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ include/uapi/sound/snd_sst_tokens.h    | 29 +++++++++++++++++++++-
+ sound/soc/intel/skylake/skl-messages.c |  9 +++----
+ sound/soc/intel/skylake/skl-pcm.c      | 16 ++++++-------
+ sound/soc/intel/skylake/skl-sst-ipc.c  |  6 ++---
+ sound/soc/intel/skylake/skl-sst-ipc.h  |  2 +-
+ sound/soc/intel/skylake/skl-topology.c | 44 ++++++++++++++++++++++++++++++++++
+ sound/soc/intel/skylake/skl-topology.h |  1 +
+ sound/soc/intel/skylake/skl.h          | 11 +++++++++
+ 8 files changed, 99 insertions(+), 19 deletions(-)
+
+diff --git a/include/uapi/sound/snd_sst_tokens.h b/include/uapi/sound/snd_sst_tokens.h
+index b29d07b..ba4806d 100644
+--- a/include/uapi/sound/snd_sst_tokens.h
++++ b/include/uapi/sound/snd_sst_tokens.h
+@@ -261,6 +261,25 @@
+  *
+  * %SKL_TKN_U32_DMA_MIN_SIZE:   Minimum DMA buffer size
+  *
++ * %SKL_TKN_U32_SCH_TYPE:       Types of FW configs: SCHEDULER_CONFIG
++ *
++ * %SKL_TKN_U32_SCH_SIZE:       Scheduler config size
++ *
++ * %SKL_TKN_U32_SCH_SYS_TICK_MUL:
++ *                              System tick multiplier
++ *
++ * %SKL_TKN_U32_SCH_SYS_TICK_DIV:
++ *                              System tick divider
++ *
++ * %SKL_TKN_U32_SCH_SYS_TICK_LL_SRC:
++ *                              Low Latency interrupt source
++ *
++ * %SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN:
++ *                              Config length
++ *
++ * %SKL_TKN_U32_SCH_SYS_TICK_CFG:
++ *                              Config contain capture on which SSP to
++ *                              active the FW
+  *
+  * module_id and loadable flags dont have tokens as these values will be
+  * read from the DSP FW manifest
+@@ -365,7 +384,15 @@ enum SKL_TKNS {
+ 	SKL_TKN_U32_DMA_SIZE,
+ 	SKL_TKN_U32_DMA_MAX_SIZE,
+ 	SKL_TKN_U32_DMA_MIN_SIZE,
+-	SKL_TKN_MAX = SKL_TKN_U32_DMA_MIN_SIZE,
++
++	SKL_TKN_U32_SCH_TYPE,
++	SKL_TKN_U32_SCH_SIZE,
++	SKL_TKN_U32_SCH_SYS_TICK_MUL,
++	SKL_TKN_U32_SCH_SYS_TICK_DIV,
++	SKL_TKN_U32_SCH_SYS_TICK_LL_SRC,
++	SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN,
++	SKL_TKN_U32_SCH_SYS_TICK_CFG,
++	SKL_TKN_MAX = SKL_TKN_U32_SCH_SYS_TICK_CFG,
+ };
+ 
+ /*
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 84acb06..b97255b 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -1356,13 +1356,10 @@ int skl_resume_dsp(struct skl *skl)
+ 					skl->cfg.astate_cfg);
+ 	}
+ 
+-	/* Set DMA buffer configuration */
+-	if (skl->cfg.dmacfg.size)
+-		skl_ipc_set_dma_cfg(&skl->skl_sst->ipc, BXT_INSTANCE_ID,
+-			BXT_BASE_FW_MODULE_ID, (u32 *)(&skl->cfg.dmacfg));
++	/* Set the FW config info from topology */
++	skl_tplg_fw_cfg_set(skl);
+ 
+-	/* Set DMA clock controls */
+-	return skl_dsp_set_dma_clk_controls(skl->skl_sst);
++	return ret;
+ }
+ 
+ enum skl_bitdepth skl_get_bit_depth(int params)
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 8702f0c..cd036f5 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1872,14 +1872,14 @@ static int skl_platform_soc_probe(struct snd_soc_component *component)
+ 			return ret;
+ 		}
+ 
+-		/* Set DMA buffer configuration */
+-		if (skl->cfg.dmacfg.size)
+-			skl_ipc_set_dma_cfg(&skl->skl_sst->ipc,
+-				BXT_INSTANCE_ID, BXT_BASE_FW_MODULE_ID,
+-						(u32 *)(&skl->cfg.dmacfg));
+-
+-		/* Set DMA clock controls */
+-		skl_dsp_set_dma_clk_controls(skl->skl_sst);
++		if (skl->cfg.astate_cfg != NULL) {
++			skl_dsp_set_astate_cfg(skl->skl_sst,
++					skl->cfg.astate_cfg->count,
++					skl->cfg.astate_cfg);
++		}
++
++		/* Set the FW config info from topology */
++		skl_tplg_fw_cfg_set(skl);
+ 
+ 		skl_populate_modules(skl);
+ 		skl->skl_sst->update_d0i3c = skl_update_d0i3c;
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index d7c75da..13917d5 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -1165,7 +1165,7 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+ }
+ EXPORT_SYMBOL_GPL(skl_ipc_get_large_config);
+ 
+-void skl_ipc_set_dma_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
++void skl_ipc_set_fw_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
+ 			u16 module_id, u32 *data)
+ {
+ 	struct skl_ipc_large_config_msg msg = {0};
+@@ -1180,9 +1180,9 @@ void skl_ipc_set_dma_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
+ 
+ 	ret = skl_ipc_set_large_config(ipc, &msg, data);
+ 	if (ret < 0)
+-		dev_err(ipc->dev, "ipc: set dma config failed, err %d\n", ret);
++		dev_err(ipc->dev, "ipc: set fw config failed, err %d\n", ret);
+ }
+-EXPORT_SYMBOL_GPL(skl_ipc_set_dma_cfg);
++EXPORT_SYMBOL_GPL(skl_ipc_set_fw_cfg);
+ 
+ int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
+ 				u8 dma_id, u8 table_id, bool wait)
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 4fa372c1..4b3c7e2 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -472,6 +472,6 @@ void skl_ipc_tx_data_copy(struct ipc_message *msg, char *tx_data,
+ int skl_notify_tplg_change(struct skl_sst *ctx, int type);
+ int skl_dsp_crash_dump_read(struct skl_sst *ctx);
+ 
+-void skl_ipc_set_dma_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
++void skl_ipc_set_fw_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
+ 			u16 module_id, u32 *data);
+ #endif /* __SKL_IPC_H */
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 98b668e..e532881 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -4798,6 +4798,34 @@ static int skl_tplg_get_int_tkn(struct device *dev,
+ 							tkn_elem->value;
+ 		break;
+ 
++	case SKL_TKN_U32_SCH_TYPE:
++		skl->cfg.sch_cfg.type = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_SCH_SIZE:
++		skl->cfg.sch_cfg.length = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_SCH_SYS_TICK_MUL:
++		skl->cfg.sch_cfg.sys_tick_mul = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_SCH_SYS_TICK_DIV:
++		skl->cfg.sch_cfg.sys_tick_div = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_SCH_SYS_TICK_LL_SRC:
++		skl->cfg.sch_cfg.sys_tick_ll_src = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN:
++		skl->cfg.sch_cfg.sys_tick_cfg_len = tkn_elem->value;
++		break;
++
++	case SKL_TKN_U32_SCH_SYS_TICK_CFG:
++		skl->cfg.sch_cfg.sys_tick_cfg = tkn_elem->value;
++		break;
++
+ 	case SKL_TKN_U8_IN_PIN_TYPE:
+ 	case SKL_TKN_U8_OUT_PIN_TYPE:
+ 	case SKL_TKN_U8_IN_QUEUE_COUNT:
+@@ -5142,6 +5170,22 @@ static int skl_tplg_create_pipe_widget_list(struct snd_soc_component *component)
+ 	return 0;
+ }
+ 
++void skl_tplg_fw_cfg_set(struct skl *skl)
++{
++	/* Set DMA buffer configuration */
++	if (skl->cfg.dmacfg.size)
++		skl_ipc_set_fw_cfg(&skl->skl_sst->ipc, SKL_INSTANCE_ID,
++			SKL_BASE_FW_MODULE_ID, (u32 *)(&skl->cfg.dmacfg));
++
++	/* set scheduler config if available */
++	if (skl->cfg.sch_cfg.length)
++		skl_ipc_set_fw_cfg(&skl->skl_sst->ipc, SKL_INSTANCE_ID,
++			SKL_BASE_FW_MODULE_ID, (u32 *)(&skl->cfg.sch_cfg));
++
++	/* Set DMA clock controls */
++	skl_dsp_set_dma_clk_controls(skl->skl_sst);
++}
++
+ static void skl_tplg_set_pipe_type(struct skl *skl, struct skl_pipe *pipe)
+ {
+ 	struct skl_pipe_module *w_module;
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index cc23a18..cd1827e 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -636,5 +636,6 @@ int skl_create_notify_kctl_list(struct skl_sst *skl_sst,
+ void skl_delete_notify_kctl_list(struct skl_sst *skl_sst);
+ struct snd_kcontrol *skl_get_notify_kcontrol(struct skl_sst *skl,
+ 				struct snd_card *card, u32 notify_id);
++void skl_tplg_fw_cfg_set(struct skl *skl);
+ 
+ #endif
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index c8a2c27..b75dc47 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -82,6 +82,16 @@ struct skl_dma_buff_cfg {
+ 	struct skl_dma_config dma_cfg[SKL_MAX_DMA_CFG];
+ } __packed;
+ 
++struct skl_sch_config {
++	u32 type;
++	u32 length;
++	u32 sys_tick_mul;
++	u32 sys_tick_div;
++	u32 sys_tick_ll_src;
++	u32 sys_tick_cfg_len;
++	u32 sys_tick_cfg;
++};
++
+ struct skl_dmctrl_hdr {
+ 	u32 vbus_id;
+ 	u32 freq;
+@@ -102,6 +112,7 @@ struct skl_dmactrl_config {
+ 
+ struct skl_fw_config {
+ 	struct skl_dma_buff_cfg dmacfg;
++	struct skl_sch_config sch_cfg;
+ 	struct skl_dmactrl_config dmactrl_cfg;
+ 	struct skl_astate_config *astate_cfg;
+ };
+-- 
+2.7.4
+

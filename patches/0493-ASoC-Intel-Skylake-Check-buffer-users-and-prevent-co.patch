@@ -1,0 +1,70 @@
+From 3f0b8cb43a0c4c5ec1029eac713597d791c0df83 Mon Sep 17 00:00:00 2001
+From: "Panwar, Ashish" <ashish.panwar@intel.com>
+Date: Fri, 26 Feb 2016 02:02:48 +0530
+Subject: [PATCH 0493/1132] ASoC: Intel: Skylake: Check buffer users and
+ prevent concurrent writers
+
+More than one writer on log buffer will cause data corruption.
+Fix this by checking for an existing writer and dropping log buffer
+status notification if the prev writer is still writing. Despite the fear
+of loosing some data, it helps in maintaining the sanity of logs.
+
+Change-Id: Id85827221fa50b71da48087f82ac08ed488f9929
+Signed-off-by: Panwar, Ashish <ashish.panwar@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/soc/intel/skylake/skl-fwlog.c   | 7 +++++++
+ sound/soc/intel/skylake/skl-fwlog.h   | 1 +
+ sound/soc/intel/skylake/skl-sst-ipc.c | 6 ++++++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-fwlog.c b/sound/soc/intel/skylake/skl-fwlog.c
+index bc25b9e..96c5d24 100644
+--- a/sound/soc/intel/skylake/skl-fwlog.c
++++ b/sound/soc/intel/skylake/skl-fwlog.c
+@@ -98,6 +98,13 @@ unsigned long skl_dsp_log_avail(struct sst_dsp *sst, int core)
+ }
+ EXPORT_SYMBOL(skl_dsp_log_avail);
+ 
++int skl_dsp_get_buff_users(struct sst_dsp *sst, int core)
++{
++	struct sst_dbg_rbuffer *buff = sst->trace_wind.dbg_buffers[core];
++
++	return refcount_read(&buff->refcount.refcount);
++}
++
+ void skl_dsp_write_log(struct sst_dsp *sst, void __iomem *src, int core,
+ 				int count)
+ {
+diff --git a/sound/soc/intel/skylake/skl-fwlog.h b/sound/soc/intel/skylake/skl-fwlog.h
+index 06304de..d6307ca 100644
+--- a/sound/soc/intel/skylake/skl-fwlog.h
++++ b/sound/soc/intel/skylake/skl-fwlog.h
+@@ -17,4 +17,5 @@ int skl_dsp_copy_log_user(struct sst_dsp *sst, int core, void __user *dest,
+ void skl_dsp_get_log_buff(struct sst_dsp *sst, int core);
+ void skl_dsp_put_log_buff(struct sst_dsp *sst, int core);
+ void skl_dsp_done_log_buffer(struct sst_dsp *sst, int core);
++int skl_dsp_get_buff_users(struct sst_dsp *sst, int core);
+ #endif /* __SKL_FWLOG_H__ */
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index 9864801..36c22c5 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -363,6 +363,12 @@ skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+ 		dev_err(sst->dev, "Logging is disabled on dsp %d\n", core);
+ 		return;
+ 	}
++	if (skl_dsp_get_buff_users(sst, core) > 2) {
++		dev_err(sst->dev, "Can't handle log buffer notification, \
++			previous writer is not finished yet !\n \
++			dropping log buffer\n");
++		return;
++	}
+ 	skl_dsp_get_log_buff(sst, core);
+ 	size = sst->trace_wind.size/sst->trace_wind.nr_dsp;
+ 	base = (u8 *)sst->trace_wind.addr;
+-- 
+2.7.4
+

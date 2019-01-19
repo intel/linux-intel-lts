@@ -1,0 +1,37 @@
+From d5a9f665a0a8ba6a9e3ad6b73d064680b67b36f1 Mon Sep 17 00:00:00 2001
+From: "he, bo" <bo.he@intel.com>
+Date: Sat, 29 Sep 2018 14:18:12 +0800
+Subject: [PATCH 0723/1132] fix the invalid double free in tdf8532 i2c read
+ error
+
+tdf8532_single_read() is defined as return uint8_t, the error
+ret is defined as int, when it run into the error case,
+the tdf8532_single_read() won't return the error, it will
+cause the double free.
+
+Change-Id: I6be1438472f5f2c553e80703f761bd28d0e16d3e
+Tracked-On:
+Signed-off-by: he, bo <bo.he@intel.com>
+Reviewed-on:
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/codecs/tdf8532.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/codecs/tdf8532.c b/sound/soc/codecs/tdf8532.c
+index f306b59..02e63f9 100644
+--- a/sound/soc/codecs/tdf8532.c
++++ b/sound/soc/codecs/tdf8532.c
+@@ -83,7 +83,7 @@ static int __tdf8532_single_write(struct tdf8532_priv *dev_data,
+ }
+ 
+ 
+-static uint8_t tdf8532_read_wait_ack(struct tdf8532_priv *dev_data,
++static int tdf8532_read_wait_ack(struct tdf8532_priv *dev_data,
+ 						unsigned long timeout)
+ {
+ 	uint8_t ack_repl[HEADER_SIZE] = {0, 0, 0};
+-- 
+2.7.4
+

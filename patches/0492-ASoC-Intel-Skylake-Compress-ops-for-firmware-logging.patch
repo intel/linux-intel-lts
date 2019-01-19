@@ -1,0 +1,290 @@
+From 6737510b7d871d1379004d6d323b517121d7eee1 Mon Sep 17 00:00:00 2001
+From: "Panwar, Ashish" <ashish.panwar@intel.com>
+Date: Wed, 20 Jan 2016 19:22:05 +0530
+Subject: [PATCH 0492/1132] ASoC: Intel: Skylake: Compress ops for firmware
+ logging.
+
+Implementation of compress ops for firmware logging. These ops are
+used to transfer data from driver buffer to user space. Compress
+device to DSP core mapping is determined by the DAI name.
+
+Change-Id: I760f07873cb259a58fb0f517f958b4043719d8a6
+Signed-off-by: Panwar, Ashish <ashish.panwar@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/Kconfig                |   1 +
+ sound/soc/intel/skylake/skl-messages.c |  22 +++++
+ sound/soc/intel/skylake/skl-pcm.c      | 157 +++++++++++++++++++++++++++++++++
+ sound/soc/intel/skylake/skl-sst-ipc.h  |  12 +++
+ 4 files changed, 192 insertions(+)
+
+diff --git a/sound/soc/intel/Kconfig b/sound/soc/intel/Kconfig
+index 221283d..2f56dbf 100644
+--- a/sound/soc/intel/Kconfig
++++ b/sound/soc/intel/Kconfig
+@@ -111,6 +111,7 @@ config SND_SOC_INTEL_SKYLAKE
+ 	select SND_HDA_DSP_LOADER
+ 	select SND_SOC_TOPOLOGY
+ 	select SND_SOC_INTEL_SST
++	select SND_SOC_COMPRESS
+ 	select SND_SOC_ACPI_INTEL_MATCH
+ 	help
+ 	  If you have a Intel Skylake/Broxton/ApolloLake/KabyLake/
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index a9eaa4a..d012198 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -66,6 +66,28 @@ void skl_dsp_set_astate_cfg(struct skl_sst *ctx, u32 cnt, void *data)
+ 	skl_ipc_set_large_config(&ctx->ipc, &msg, data);
+ }
+ 
++#define ENABLE_LOGS		6
++#define DEFAULT_LOG_PRIORITY	5
++
++/* set firmware logging state via IPC */
++int skl_dsp_enable_logging(struct sst_generic_ipc *ipc, int core, int enable)
++{
++	struct skl_log_state_msg log_msg;
++	struct skl_ipc_large_config_msg msg = {0};
++	int ret = 0;
++
++	log_msg.core_mask = (1 << core);
++	log_msg.logs_core[core].enable = enable;
++	log_msg.logs_core[core].priority = DEFAULT_LOG_PRIORITY;
++
++	msg.large_param_id = ENABLE_LOGS;
++	msg.param_data_size = sizeof(log_msg);
++
++	ret = skl_ipc_set_large_config(ipc, &msg, (u32 *)&log_msg);
++
++	return ret;
++}
++
+ #define NOTIFICATION_PARAM_ID 3
+ #define NOTIFICATION_MASK 0xf
+ 
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index f27b718..284e34f 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -29,6 +29,7 @@
+ #include "skl-sst-dsp.h"
+ #include "skl-sst-ipc.h"
+ #include "skl-sdw-pcm.h"
++#include "skl-fwlog.h"
+ 
+ #define HDA_MONO 1
+ #define HDA_STEREO 2
+@@ -724,6 +725,141 @@ static void skl_sdw_shutdown(struct snd_pcm_substream *substream,
+ 	pm_runtime_put_autosuspend(dai->dev);
+ }
+ 
++static bool skl_is_core_valid(int core)
++{
++	if (core != INT_MIN)
++		return true;
++	else
++		return false;
++}
++
++static int skl_get_compr_core(struct snd_compr_stream *stream)
++{
++	struct snd_soc_pcm_runtime *rtd = stream->private_data;
++	struct snd_soc_dai *dai = rtd->cpu_dai;
++
++	if (!strcmp(dai->name, "TraceBuffer0 Pin"))
++		return 0;
++	else if (!strcmp(dai->name, "TraceBuffer1 Pin"))
++		return 1;
++	else
++		return INT_MIN;
++}
++
++static int skl_is_logging_core(int core)
++{
++	if (core == 0 || core == 1)
++		return 1;
++	else
++		return 0;
++}
++
++static struct skl_sst *skl_get_sst_compr(struct snd_compr_stream *stream)
++{
++	struct snd_soc_pcm_runtime *rtd = stream->private_data;
++	struct snd_soc_dai *dai = rtd->cpu_dai;
++	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
++	struct skl *skl = ebus_to_skl(ebus);
++	struct skl_sst *sst = skl->skl_sst;
++
++	return sst;
++}
++
++static int skl_trace_compr_set_params(struct snd_compr_stream *stream,
++					struct snd_compr_params *params,
++						struct snd_soc_dai *cpu_dai)
++{
++	int ret;
++	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
++	struct sst_dsp *sst = skl_sst->dsp;
++	struct sst_generic_ipc *ipc = &skl_sst->ipc;
++	int size = params->buffer.fragment_size * params->buffer.fragments;
++	int core = skl_get_compr_core(stream);
++
++	if (!skl_is_core_valid(core))
++		return -EINVAL;
++
++	if (size & (size - 1)) {
++		dev_err(sst->dev, "Buffer size must be a power of 2\n");
++		return -EINVAL;
++	}
++
++	ret = skl_dsp_init_log_buffer(sst, size, core, stream);
++	if (ret) {
++		dev_err(sst->dev, "set params failed for dsp %d\n", core);
++		return ret;
++	}
++
++	skl_dsp_get_log_buff(sst, core);
++	sst->trace_wind.flags |= BIT(core);
++	ret = skl_dsp_enable_logging(ipc, core, 1);
++	if (ret < 0) {
++		dev_err(sst->dev, "enable logs failed for dsp %d\n", core);
++		sst->trace_wind.flags &= ~BIT(core);
++		skl_dsp_put_log_buff(sst, core);
++		return ret;
++	}
++	return 0;
++}
++
++static int skl_trace_compr_tstamp(struct snd_compr_stream *stream,
++					struct snd_compr_tstamp *tstamp,
++						struct snd_soc_dai *cpu_dai)
++{
++	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
++	struct sst_dsp *sst = skl_sst->dsp;
++	int core = skl_get_compr_core(stream);
++
++	if (!skl_is_core_valid(core))
++		return -EINVAL;
++
++	tstamp->copied_total = skl_dsp_log_avail(sst, core);
++	return 0;
++}
++
++static int skl_trace_compr_copy(struct snd_compr_stream *stream,
++				char __user *dest, size_t count)
++{
++	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
++	struct sst_dsp *sst = skl_sst->dsp;
++	int core = skl_get_compr_core(stream);
++
++	if (skl_is_logging_core(core))
++		return skl_dsp_copy_log_user(sst, core, dest, count);
++	else
++		return 0;
++}
++
++static int skl_trace_compr_free(struct snd_compr_stream *stream,
++						struct snd_soc_dai *cpu_dai)
++{
++	struct skl_sst *skl_sst = skl_get_sst_compr(stream);
++	struct sst_dsp *sst = skl_sst->dsp;
++	struct sst_generic_ipc *ipc = &skl_sst->ipc;
++	int core = skl_get_compr_core(stream);
++	int is_enabled = sst->trace_wind.flags & BIT(core);
++
++	if (!skl_is_core_valid(core))
++		return -EINVAL;
++	if (is_enabled) {
++		sst->trace_wind.flags &= ~BIT(core);
++		skl_dsp_enable_logging(ipc, core, 0);
++		skl_dsp_put_log_buff(sst, core);
++		skl_dsp_done_log_buffer(sst, core);
++	}
++	return 0;
++}
++
++static struct snd_compr_ops skl_platform_compr_ops = {
++	.copy = skl_trace_compr_copy,
++};
++
++static struct snd_soc_cdai_ops skl_trace_compr_ops = {
++	.shutdown = skl_trace_compr_free,
++	.pointer = skl_trace_compr_tstamp,
++	.set_params = skl_trace_compr_set_params,
++};
++
+ static const struct snd_soc_dai_ops skl_pcm_dai_ops = {
+ 	.startup = skl_pcm_open,
+ 	.shutdown = skl_pcm_close,
+@@ -759,6 +895,26 @@ static struct snd_soc_dai_ops skl_sdw_dai_ops = {
+ 
+ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ {
++	.name = "TraceBuffer0 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_trace_compr_ops,
++	.capture = {
++		.stream_name = "TraceBuffer Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++	},
++},
++{
++	.name = "TraceBuffer1 Pin",
++	.compress_new = snd_soc_new_compress,
++	.cops = &skl_trace_compr_ops,
++	.capture = {
++		.stream_name = "TraceBuffer1 Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++	},
++},
++{
+ 	.name = "System Pin",
+ 	.ops = &skl_pcm_dai_ops,
+ 	.playback = {
+@@ -1576,6 +1732,7 @@ static const struct snd_soc_component_driver skl_component  = {
+ 	.name		= "pcm",
+ 	.probe		= skl_platform_soc_probe,
+ 	.ops		= &skl_platform_ops,
++	.compr_ops	= &skl_platform_compr_ops,
+ 	.pcm_new	= skl_pcm_new,
+ 	.pcm_free	= skl_pcm_free,
+ };
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 10a4869..a8de8cf 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -161,6 +161,16 @@ struct skl_ipc_d0ix_msg {
+ 	u8 wake;
+ };
+ 
++struct skl_log_state {
++	u32	enable;
++	u32	priority;
++};
++
++struct skl_log_state_msg {
++	u32	core_mask;
++	struct	skl_log_state logs_core[2];
++};
++
+ #define SKL_IPC_BOOT_MSECS		3000
+ 
+ #define SKL_IPC_D3_MASK	0
+@@ -210,6 +220,8 @@ int skl_ipc_set_d0ix(struct sst_generic_ipc *ipc,
+ 
+ int skl_ipc_check_D0i0(struct sst_dsp *dsp, bool state);
+ 
++int skl_dsp_enable_logging(struct sst_generic_ipc *ipc, int core, int enable);
++
+ void skl_ipc_int_enable(struct sst_dsp *dsp);
+ void skl_ipc_op_int_enable(struct sst_dsp *ctx);
+ void skl_ipc_op_int_disable(struct sst_dsp *ctx);
+-- 
+2.7.4
+

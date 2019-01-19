@@ -1,0 +1,72 @@
+From 9f857d86aec11a1c4de357fc1ba76d5415002a34 Mon Sep 17 00:00:00 2001
+From: Pawel Furtak <pawel.furtak@intel.com>
+Date: Sun, 25 Nov 2018 17:56:29 +0100
+Subject: [PATCH 1040/1132] ASoC: Intel: Skylake: Workarounds for
+ virtualization
+
+Virtualized system does not configure BE DAIs, instead
+this is done on Service OS side. This patch adds workarounds
+to prevent Guest OS from accessing such configuration.
+
+Change-Id: I97efbff2398b7dfafc90d36eefbc719a12e4e1c3
+Signed-off-by: Pawel Furtak <pawel.furtak@intel.com>
+Tracked-On: OAM-72189
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/Makefile       |  2 ++
+ sound/soc/intel/skylake/skl-pcm.c      |  2 ++
+ sound/soc/intel/skylake/skl-topology.c | 10 ++++++++++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/Makefile b/sound/soc/intel/skylake/Makefile
+index f36c0bb..66d2fd1 100644
+--- a/sound/soc/intel/skylake/Makefile
++++ b/sound/soc/intel/skylake/Makefile
+@@ -2,6 +2,8 @@
+ snd-soc-skl-objs := skl.o skl-sdw-pcm.o skl-pcm.o skl-nhlt.o skl-messages.o \
+ skl-topology.o skl-compress.o skl-probe.o
+ 
++include sound/soc/intel/skylake/virtio/Makefile
++
+ ifdef CONFIG_DEBUG_FS
+   snd-soc-skl-objs += skl-debug.o
+ endif
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 06b6163..4cf1c29 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -950,7 +950,9 @@ static const struct snd_soc_dai_ops skl_dmic_dai_ops = {
+ };
+ 
+ static const struct snd_soc_dai_ops skl_be_ssp_dai_ops = {
++#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_FE)
+ 	.hw_params = skl_be_hw_params,
++#endif
+ };
+ 
+ static const struct snd_soc_dai_ops skl_link_dai_ops = {
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 17efe6f..573d78b 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -668,6 +668,16 @@ static int skl_tplg_update_be_blob(struct snd_soc_dapm_widget *w,
+ 		return 0;
+ 
+ 	dev_dbg(ctx->dev, "Applying default cfg blob\n");
++
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_SKYLAKE_VIRTIO_FE)
++	/*
++	 * FIXME: dev_type from topology for should be SKL_DEVICE_VIRTUAL
++	 * and the if should be removed
++	 * FE does not need information about BE dais/blobs so exit
++	 */
++	return 0;
++#endif
++
+ 	switch (m_cfg->dev_type) {
+ 	case SKL_DEVICE_DMIC:
+ 		link_type = NHLT_LINK_DMIC;
+-- 
+2.7.4
+

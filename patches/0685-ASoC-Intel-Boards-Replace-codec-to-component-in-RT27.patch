@@ -1,0 +1,41 @@
+From 1762a257b2166fd11659e136a3fe0c1d3b9175d3 Mon Sep 17 00:00:00 2001
+From: Shahina Shaik <shahinax.shaik@intel.com>
+Date: Mon, 30 Apr 2018 18:47:02 +0530
+Subject: [PATCH 0685/1132] ASoC: Intel: Boards: Replace codec to component in
+ RT274 machine driver
+
+As the framework is changed in kernel 4.17 version,
+replace codec variable with component and use component specific
+function to set jack.
+
+Change-Id: Id6d1cda7968a5d524a3210f1b38221214c2bb67d
+Signed-off-by: Shahina Shaik <shahinax.shaik@intel.com>
+---
+ sound/soc/intel/boards/cnl_rt274.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/boards/cnl_rt274.c b/sound/soc/intel/boards/cnl_rt274.c
+index 5570474..890e474 100644
+--- a/sound/soc/intel/boards/cnl_rt274.c
++++ b/sound/soc/intel/boards/cnl_rt274.c
+@@ -188,7 +188,7 @@ static const struct snd_soc_dapm_route cnl_map[] = {
+ static int cnl_rt274_init(struct snd_soc_pcm_runtime *runtime)
+ {
+ 	int ret;
+-	struct snd_soc_codec *codec = runtime->codec;
++	struct snd_soc_component *component = runtime->codec_dai->component;
+ 	struct snd_soc_card *card = runtime->card;
+ 	struct snd_soc_dai *codec_dai = runtime->codec_dai;
+ 
+@@ -199,7 +199,7 @@ static int cnl_rt274_init(struct snd_soc_pcm_runtime *runtime)
+ 	if (ret)
+ 		return ret;
+ 
+-	snd_soc_codec_set_jack(codec, &cnl_headset, NULL);
++	snd_soc_component_set_jack(component, &cnl_headset, NULL);
+ 
+ 	/* TDM 4 slots 24 bit, set Rx & Tx bitmask to 4 active slots */
+ 	ret = snd_soc_dai_set_tdm_slot(codec_dai, 0xF, 0xF, 4, 24);
+-- 
+2.7.4
+

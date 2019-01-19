@@ -1,0 +1,170 @@
+From df370fe72794af7fcba3b205198b0692e07c1139 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Sun, 25 Nov 2018 23:16:32 +0000
+Subject: [PATCH 1092/1132] media: intel-ipu4: [VIRT] Use native driver
+ function return value for the IOCTL calls.
+
+As libcamhal error handling is dependent on native
+driver return value. Virtualized driver should not
+discard it.
+
+Change-Id: I3d6e225e868c51a4e2df5a29a0b7df2ae3cc66f6
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c  | 13 +++++++++++++
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c  | 12 ++++++++++++
+ .../media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c    | 13 ++++++++-----
+ 3 files changed, 33 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+index 2a669cc..f85f22c 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+@@ -106,6 +106,8 @@ int ipu_get_manifest(struct ipu_psys_manifest *m,
+ 	kfree(manifest_data);
+ 	kfree(manifest_wrap);
+ 
++	rval = req->func_ret;
++
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	pr_debug("%s: processing ended %d", __func__, rval);
+@@ -139,6 +141,8 @@ int ipu_query_caps(struct ipu_psys_capability *caps,
+ 		return rval;
+ 	}
+ 
++	rval = req->func_ret;
++
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	pr_debug("%s: processing ended %d", __func__, rval);
+@@ -218,6 +222,8 @@ int ipu_psys_kcmd_new(struct ipu_psys_command *cmd,
+ 	if (cmd_wrap) kfree(cmd_wrap);
+ 	if (psys_buffers) kfree(psys_buffers);
+ 
++	rval = req->func_ret;
++
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	return rval;
+@@ -432,6 +438,9 @@ int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
+ 	kfree(attach);
+ 
+ exit:
++
++	rval = req->func_ret;
++
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	pr_debug("%s: processing ended %d", __func__, rval);
+@@ -475,6 +484,8 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
+ 
+ error_exit:
+ 
++	rval = req->func_ret;
++
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	pr_debug("%s: processing ended %d", __func__, rval);
+@@ -543,6 +554,8 @@ long ipu_ioctl_dqevent(struct ipu_psys_event *event,
+ 
+ error_exit:
+ 
++	rval = req->func_ret;
++
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	pr_debug("%s: processing ended %d", __func__, rval);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+index 1c71fd3..c69e48c 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+@@ -30,6 +30,8 @@ int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
+ 	fd passed from SOS to user space is invalid in UOS.*/
+ 	ksys_close(req_info->request->op[0]);
+ 
++	req_info->request->func_ret = status;
++
+ 	if (status)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -56,6 +58,8 @@ int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
+ 	unmap_guest_phys(req_info->domid,
+ 			req_info->request->payload);
+ 
++	req_info->request->func_ret = status;
++
+ 	if (status)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -74,6 +78,8 @@ int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
+ 
+ 	status = fh->vfops->qcmd(fh, req_info);
+ 
++	req_info->request->func_ret = status;
++
+ 	if (status)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -87,6 +93,8 @@ int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
+ 
+ 	status = fh->vfops->dqevent(fh, req_info, psys_file->f_flags);
+ 
++	req_info->request->func_ret = status;
++
+ 	if (status)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -100,6 +108,8 @@ int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
+ 
+ 	status = fh->vfops->get_buf(fh, req_info);
+ 
++	req_info->request->func_ret = status;
++
+ 	if (status)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -113,6 +123,8 @@ int process_psys_get_manifest(struct ipu4_virtio_req_info *req_info)
+ 
+ 	status = fh->vfops->get_manifest(fh, req_info);
+ 
++	req_info->request->func_ret = status;
++
+ 	if (status)
+ 		return IPU4_REQ_ERROR;
+ 	else
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+index b47deac..9025b95 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+@@ -188,14 +188,17 @@ int process_poll(struct ipu4_virtio_req_info *req_info)
+ 			as->buf_list.wait,
+ 			!list_empty(&as->buf_list.putbuf_list),
+ 			POLL_WAIT);
+-		if (time_remain) {
+-			req->func_ret = POLLIN;
+-			return IPU4_REQ_PROCESSED;
+-		} else {
+-			pr_err("%s poll timeout! %d", __func__, req->op[0]);
++		if((time_remain == -ERESTARTSYS) ||
++			time_remain == 0) {
++			pr_err("%s poll timeout or unexpected wake up! code:%d port:%d",
++							__func__, time_remain, req->op[0]);
+ 			req->func_ret = 0;
+ 			return IPU4_REQ_ERROR;
+ 		}
++		else {
++			req->func_ret = POLLIN;
++			return IPU4_REQ_PROCESSED;
++		}
+ 	}
+ }
+ 
+-- 
+2.7.4
+

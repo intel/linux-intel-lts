@@ -1,0 +1,38 @@
+From 423fc17ebbe7cb6c13051a257fe27181029de8d9 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Tue, 14 Aug 2018 02:24:22 +0000
+Subject: [PATCH 0918/1132] drm/i915: fix a kernel panic issue of plane
+ restriction
+
+When plane restriction feature enabled in sevice os, there could be the
+case that there're some CRTC's without a primary plane. If we don't
+assign any plane of pipe A to sos, like i915.avail_planes_per_pipe
+=0x000F00, it will cause kernel panic when booting because it assumes
+primary plane existing in intel_find_initial_plane_obj().
+
+Added a check to the primary plane in CRTC to avoid such kind of issue.
+
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Tracked-on: https://github.com/projectacrn/acrn-hypervisor/issues/1155
+---
+ drivers/gpu/drm/i915/intel_display.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 46513ac..26df8df 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -15536,7 +15536,7 @@ int intel_modeset_init(struct drm_device *dev)
+ 	for_each_intel_crtc(dev, crtc) {
+ 		struct intel_initial_plane_config plane_config = {};
+ 
+-		if (!crtc->active)
++		if (!crtc->active || !crtc->base.primary)
+ 			continue;
+ 
+ 		/*
+-- 
+2.7.4
+

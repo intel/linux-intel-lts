@@ -1,0 +1,35 @@
+From 6de0ebe76b043b27a739186cc151c89d8437f832 Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Wed, 29 Aug 2018 12:08:45 +0800
+Subject: [PATCH 0887/1132] drm/i915/gvt: enable plane wm pvmmio level through
+ enable_pvmmio param
+
+plane wm update pvmmio level is 0x4, need set it in enable_pvmmio for both
+SOS and UOS kernel driver.
+Patch for both SOS and UOS.
+
+V2: use PVMMIO_PLANE_WM_UPDATE bit definition to improve readability
+
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+Reviewed-by: Min He <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/gpu/drm/i915/i915_params.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_params.h b/drivers/gpu/drm/i915/i915_params.h
+index 2e56ea5..28769e6 100644
+--- a/drivers/gpu/drm/i915/i915_params.h
++++ b/drivers/gpu/drm/i915/i915_params.h
+@@ -71,7 +71,7 @@ struct drm_printer;
+ 	param(int, domain_scaler_owner, 0x11100) \
+ 	param(unsigned int, enable_pvmmio, \
+ 			PVMMIO_ELSP_SUBMIT | PVMMIO_PLANE_UPDATE \
+-			| PVMMIO_PPGTT_UPDATE) \
++			| PVMMIO_PLANE_WM_UPDATE | PVMMIO_PPGTT_UPDATE) \
+ 	param(bool, enable_gvt, false)
+ 
+ #define MEMBER(T, member, ...) T member;
+-- 
+2.7.4
+

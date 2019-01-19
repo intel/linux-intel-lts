@@ -1,0 +1,180 @@
+From bb4a488e3451d0e72945d983c684926cd38f63e6 Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Wed, 24 Oct 2018 14:30:40 +0300
+Subject: [PATCH 0420/1132] mei: bus: use zero vtag for bus clients.
+
+Once vtags are enabled a zero vtag is required
+for the read flow to work for also for devices on mei client bus.
+
+Change-Id: I932ca3227348fa3415a8a7b4689b4da32e363594
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/bus.c    | 29 +++++++++++++++++++++++++++++
+ drivers/misc/mei/client.c | 19 +++++++++++++++++--
+ drivers/misc/mei/client.h |  1 +
+ drivers/misc/mei/main.c   | 17 +----------------
+ 4 files changed, 48 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/misc/mei/bus.c b/drivers/misc/mei/bus.c
+index f4a7bea..2c4a1c3 100644
+--- a/drivers/misc/mei/bus.c
++++ b/drivers/misc/mei/bus.c
+@@ -504,6 +504,16 @@ static void mei_cl_bus_module_put(struct mei_cl_device *cldev)
+ 	module_put(cldev->bus->dev->driver->owner);
+ }
+ 
++static int mei_cldev_vm_support_check(struct mei_cl_device *cldev)
++{
++	struct mei_device *bus = cldev->bus;
++
++	if (!bus->hbm_f_vm_supported)
++		return -EOPNOTSUPP;
++
++	return cldev->me_cl->props.vm_supported ? 0 : -EOPNOTSUPP;
++}
++
+ /**
+  * mei_cldev_enable - enable me client device
+  *     create connection with me client
+@@ -516,6 +526,7 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
+ {
+ 	struct mei_device *bus = cldev->bus;
+ 	struct mei_cl *cl;
++	struct mei_cl_vtag *cl_vtag;
+ 	int ret;
+ 
+ 	cl = cldev->cl;
+@@ -546,6 +557,16 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
+ 		goto out;
+ 	}
+ 
++	if (!mei_cldev_vm_support_check(cldev)) {
++		cl_vtag = mei_cl_vtag_alloc(NULL, 0);
++		if (IS_ERR(cl_vtag)) {
++			ret = -ENOMEM;
++			goto out;
++		}
++
++		list_add_tail(&cl_vtag->list, &cl->vtag_map);
++	}
++
+ 	ret = mei_cl_connect(cl, cldev->me_cl, NULL);
+ 	if (ret < 0) {
+ 		dev_err(&cldev->dev, "cannot connect\n");
+@@ -590,6 +611,7 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
+ {
+ 	struct mei_device *bus;
+ 	struct mei_cl *cl;
++	struct mei_cl_vtag *cl_vtag;
+ 	int err;
+ 
+ 	if (!cldev)
+@@ -603,6 +625,13 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
+ 
+ 	mutex_lock(&bus->device_lock);
+ 
++	cl_vtag = list_first_entry_or_null(&cl->vtag_map,
++					   struct mei_cl_vtag, list);
++	if (cl_vtag) {
++		list_del(&cl_vtag->list);
++		kfree(cl_vtag);
++	}
++
+ 	if (!mei_cl_is_connected(cl)) {
+ 		dev_dbg(bus->dev, "Already disconnected\n");
+ 		err = 0;
+diff --git a/drivers/misc/mei/client.c b/drivers/misc/mei/client.c
+index ef26233..657973b 100644
+--- a/drivers/misc/mei/client.c
++++ b/drivers/misc/mei/client.c
+@@ -1277,6 +1277,21 @@ static int mei_cl_tx_flow_ctrl_creds_reduce(struct mei_cl *cl)
+ 	return 0;
+ }
+ 
++struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag)
++{
++	struct mei_cl_vtag *cl_vtag;
++
++	cl_vtag = kzalloc(sizeof(*cl_vtag), GFP_KERNEL);
++	if (!cl_vtag)
++		return ERR_PTR(-ENOMEM);
++
++	INIT_LIST_HEAD(&cl_vtag->list);
++	cl_vtag->vtag = vtag;
++	cl_vtag->fp = fp;
++
++	return cl_vtag;
++}
++
+ const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag)
+ {
+ 	struct mei_cl_vtag *vtag_l;
+@@ -1285,7 +1300,7 @@ const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag)
+ 		if (vtag_l->vtag == vtag)
+ 			return vtag_l->fp;
+ 
+-	return NULL;
++	return ERR_PTR(-ENOENT);
+ }
+ 
+ static void mei_cl_reset_read_by_vtag(const struct mei_cl *cl, u8 vtag)
+@@ -1335,7 +1350,7 @@ void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb)
+ 
+ 	if (!mei_cl_vm_support_check(cl)) {
+ 		fp = mei_cl_fp_by_vtag(cl, cb->vtag);
+-		if (!fp) {
++		if (IS_ERR(fp)) {
+ 			/* client already disconnected, discarding */
+ 			mei_io_cb_free(cb);
+ 			return;
+diff --git a/drivers/misc/mei/client.h b/drivers/misc/mei/client.h
+index 1ac297f..eb14709 100644
+--- a/drivers/misc/mei/client.h
++++ b/drivers/misc/mei/client.h
+@@ -114,6 +114,7 @@ struct mei_cl_cb *mei_cl_enqueue_ctrl_wr_cb(struct mei_cl *cl, size_t length,
+ 					    const struct file *fp);
+ int mei_cl_flush_queues(struct mei_cl *cl, const struct file *fp);
+ 
++struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag);
+ const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag);
+ /*
+  *  MEI input output function prototype
+diff --git a/drivers/misc/mei/main.c b/drivers/misc/mei/main.c
+index 7e6c358..59a6a7a 100644
+--- a/drivers/misc/mei/main.c
++++ b/drivers/misc/mei/main.c
+@@ -458,21 +458,6 @@ static int mei_vm_support_check(struct mei_device *dev, const uuid_le *uuid)
+ 	return ret;
+ }
+ 
+-static struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag)
+-{
+-	struct mei_cl_vtag *cl_vtag;
+-
+-	cl_vtag = kzalloc(sizeof(*cl_vtag), GFP_KERNEL);
+-	if (!cl_vtag)
+-		return ERR_PTR(-ENOMEM);
+-
+-	INIT_LIST_HEAD(&cl_vtag->list);
+-	cl_vtag->vtag = vtag;
+-	cl_vtag->fp = fp;
+-
+-	return cl_vtag;
+-}
+-
+ static int mei_ioctl_connect_vtag(struct file *file,
+ 				  const uuid_le *in_client_uuid,
+ 				  struct mei_client *client,
+@@ -503,7 +488,7 @@ static int mei_ioctl_connect_vtag(struct file *file,
+ 			continue;
+ 
+ 		/* if tag already exist try another fp */
+-		if (mei_cl_fp_by_vtag(pos, vtag))
++		if (!IS_ERR(mei_cl_fp_by_vtag(pos, vtag)))
+ 			continue;
+ 
+ 		/* replace cl with acquired one */
+-- 
+2.7.4
+

@@ -1,0 +1,44 @@
+From 8dfc4e8924719c01c84a771e68b3efc3aac60528 Mon Sep 17 00:00:00 2001
+From: Hardik T Shah <hardik.t.shah@intel.com>
+Date: Sat, 23 Apr 2016 18:06:12 +0530
+Subject: [PATCH 0456/1132] ASoC:SKL: Add DAI for the SoundWire PDM interface.
+
+Add DAI for the PDM Capture between PDM Codec and
+SoundWire Master.
+
+Change-Id: I6d7ba95d06ee7143cb303dcf0a8ae436f6aa1742
+Signed-off-by: Hardik T Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+---
+ sound/soc/intel/skylake/skl-pcm.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index d411cf2..da44617 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1111,6 +1111,21 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 		.rates = SNDRV_PCM_RATE_48000,
+ 		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+ 	},
++},
++{
++	/* Currently adding 1 capture pin, for PDM ideally it
++	 * should be coming from CLT based on endpoints to be supported
++	 */
++	.name = "SDW PDM Pin",
++	.ops = &skl_sdw_dai_ops,
++	.capture = {
++		.stream_name = "SDW Rx1",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_QUAD,
++		.rates = SNDRV_PCM_RATE_48000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE,
++	},
++
+ 
+ 
+ },
+-- 
+2.7.4
+

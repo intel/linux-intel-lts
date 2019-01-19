@@ -1,0 +1,42 @@
+From 7d4c77cc2da98cd69b0b5522d0850eda139b899b Mon Sep 17 00:00:00 2001
+From: Leoni Prodduvaka <leoni.prodduvaka@intel.com>
+Date: Tue, 18 Apr 2017 23:02:32 +0530
+Subject: [PATCH 0590/1132] ASoC: Intel: Boards: Add support for ICL FPGA SDW
+ Aggregation
+
+Aggregation is performed on ICL FPGA with Master 1 and Master2
+hence added slave id
+
+Change-Id: Ic6506769242c099582b7435ca2bd338d3a7ff919
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/boards/cnl_rt700.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/sound/soc/intel/boards/cnl_rt700.c b/sound/soc/intel/boards/cnl_rt700.c
+index ee8fe39..dcb02b0 100644
+--- a/sound/soc/intel/boards/cnl_rt700.c
++++ b/sound/soc/intel/boards/cnl_rt700.c
+@@ -168,8 +168,12 @@ static int cnl_dmic_fixup(struct snd_soc_pcm_runtime *rtd,
+ 
+ #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+ static const char pname[] = "0000:02:18.0";
++#ifndef CONFIG_SND_SOC_SDW_AGGM1M2
+ static const char cname[] = "sdw-slave0-10:02:5d:07:01:00";
+ #else
++static const char cname[] = "sdw-slave1-10:02:5d:07:01:01";
++#endif
++#else
+ static const char pname[] = "0000:00:1f.3";
+ static const char cname[] = "sdw-slave1-10:02:5d:07:00:01";
+ #endif
+-- 
+2.7.4
+

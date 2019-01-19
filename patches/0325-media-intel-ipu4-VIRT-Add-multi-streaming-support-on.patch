@@ -1,0 +1,2607 @@
+From 937e4531854de4d4a05cfb76175c042b106bb025 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Tue, 2 Oct 2018 08:50:23 +0800
+Subject: [PATCH 0325/1132] media: intel-ipu4: [VIRT] Add multi streaming
+ support on guest OS
+
+Change-Id: I416c99a032e9f2a9611c43ca917b28e3ff70fe18
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/ici/ici-isys-frame-buf.c   |  12 +-
+ drivers/media/pci/intel/ici/ici-isys-stream.h      |   1 -
+ drivers/media/pci/intel/virtio/Makefile.virt       |   2 +
+ .../pci/intel/virtio/intel-ipu4-para-virt-drv.c    | 199 +++++--------------
+ .../pci/intel/virtio/intel-ipu4-para-virt-drv.h    |   4 -
+ .../pci/intel/virtio/intel-ipu4-virtio-be-bridge.c | 179 ++++++++---------
+ .../pci/intel/virtio/intel-ipu4-virtio-be-bridge.h |   5 +-
+ .../intel/virtio/intel-ipu4-virtio-be-pipeline.c   | 203 ++++++++++++++++---
+ .../intel/virtio/intel-ipu4-virtio-be-pipeline.h   |  20 +-
+ .../virtio/intel-ipu4-virtio-be-request-queue.c    |  57 ++++++
+ .../virtio/intel-ipu4-virtio-be-request-queue.h    |  27 +++
+ .../pci/intel/virtio/intel-ipu4-virtio-be-stream.c | 216 +++++++++++++++------
+ .../pci/intel/virtio/intel-ipu4-virtio-be-stream.h |  20 +-
+ .../media/pci/intel/virtio/intel-ipu4-virtio-be.c  | 152 +++++++--------
+ .../media/pci/intel/virtio/intel-ipu4-virtio-be.h  |  12 +-
+ .../pci/intel/virtio/intel-ipu4-virtio-common.c    |  77 ++++++++
+ .../pci/intel/virtio/intel-ipu4-virtio-common.h    |  45 ++++-
+ .../intel/virtio/intel-ipu4-virtio-fe-pipeline.c   |   7 +-
+ .../virtio/intel-ipu4-virtio-fe-request-queue.c    |  72 +++++++
+ .../virtio/intel-ipu4-virtio-fe-request-queue.h    |  14 ++
+ .../media/pci/intel/virtio/intel-ipu4-virtio-fe.c  |  65 ++++---
+ 21 files changed, 914 insertions(+), 475 deletions(-)
+ create mode 100644 drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-request-queue.c
+ create mode 100644 drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-request-queue.h
+ create mode 100644 drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
+ create mode 100644 drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.h
+
+diff --git a/drivers/media/pci/intel/ici/ici-isys-frame-buf.c b/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
+index 8e62c27..bd99ba1 100644
+--- a/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
++++ b/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
+@@ -495,6 +495,9 @@ int ici_isys_get_buf_virt(struct ici_isys_stream *as,
+ 		return 0;
+ 	}
+ 
++	pr_debug("%s: creating new buf object\n", __func__);
++	pr_debug("%s: mem.userptr %lu", __func__,
++		frame_buf->frame_info.frame_planes[0].mem.userptr);
+ 
+ 	buf = frame_buf;
+ 
+@@ -585,6 +588,8 @@ static void frame_buf_done(
+ 	list_add_tail(&buf->node, &buf_list->putbuf_list);
+ 	spin_unlock_irqrestore(&buf_list->lock, flags);
+ 	wake_up_interruptible(&buf_list->wait);
++	pr_debug("%s: Frame data arrived! %lu", __func__,
++		buf->frame_info.frame_planes[0].mem.userptr);
+ }
+ 
+ void ici_isys_frame_buf_ready(struct ici_isys_pipeline
+@@ -639,8 +644,6 @@ void ici_isys_frame_buf_ready(struct ici_isys_pipeline
+ 	} else {
+ 		buf->frame_info.field = ICI_FIELD_NONE;
+ 		frame_buf_done(buf_list, buf);
+-		if (as->frame_done_notify_queue)
+-			as->frame_done_notify_queue();
+ 	}
+ 
+ 	dev_dbg(&isys->adev->dev, "buffer: found buffer %p\n", buf);
+@@ -720,6 +723,9 @@ int ici_isys_frame_buf_add_next(
+ 	buf->state = ICI_BUF_ACTIVE;
+ 	mutex_unlock(&buf_list->mutex);
+ 
++	pr_debug("%s: add buf to FW! %lu", __func__,
++		buf->frame_info.frame_planes[0].mem.userptr);
++
+ 	css_buf->send_irq_sof = 1;
+ 	css_buf->output_pins[buf_list->fw_output].addr =
+ 		(uint32_t)buf->kframe_info.planes[0].dma_addr;
+@@ -797,8 +803,6 @@ void ici_isys_frame_buf_capture_done(
+ 			buf->frame_info.field = ip->cur_field;
+ 			list_del(&buf->node);
+ 			frame_buf_done(buf_list, buf);
+-		if (as->frame_done_notify_queue)
+-			as->frame_done_notify_queue();
+ 		}
+ 	}
+ }
+diff --git a/drivers/media/pci/intel/ici/ici-isys-stream.h b/drivers/media/pci/intel/ici/ici-isys-stream.h
+index 77d89ed..457b123 100644
+--- a/drivers/media/pci/intel/ici/ici-isys-stream.h
++++ b/drivers/media/pci/intel/ici/ici-isys-stream.h
+@@ -50,7 +50,6 @@ struct ici_isys_stream {
+ 	void (*prepare_firmware_stream_cfg)(
+ 		struct ici_isys_stream *as,
+ 		struct ia_css_isys_stream_cfg_data *cfg);
+-	int (*frame_done_notify_queue)(void);
+ };
+ 
+ #define to_intel_ipu4_isys_ici_stream(__buf_list) \
+diff --git a/drivers/media/pci/intel/virtio/Makefile.virt b/drivers/media/pci/intel/virtio/Makefile.virt
+index c3c30c4..75f481b 100644
+--- a/drivers/media/pci/intel/virtio/Makefile.virt
++++ b/drivers/media/pci/intel/virtio/Makefile.virt
+@@ -8,11 +8,13 @@ $(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-common.o
+ 
+ 
+ ifdef CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE
++	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-request-queue.o
+ 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-pipeline.o
+ 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-bridge.o
+ 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be.o
+ 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-be-stream.o
+ else
++	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-fe-request-queue.o
+ 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-fe-pipeline.o
+ 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-fe-payload.o
+ 	$(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-fe.o
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+index 3f6d541..2327584 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+@@ -18,6 +18,7 @@
+ #include "intel-ipu4-para-virt-drv.h"
+ #include "intel-ipu4-virtio-fe-pipeline.h"
+ #include "intel-ipu4-virtio-fe-payload.h"
++#include "intel-ipu4-virtio-fe-request-queue.h"
+ #include "./ici/ici-isys-stream.h"
+ #include "./ici/ici-isys-pipeline-device.h"
+ 
+@@ -33,8 +34,6 @@ static int stream_dev_init;
+ 
+ static struct ipu4_virtio_ctx *g_fe_priv;
+ 
+-struct mutex fop_mutex;
+-
+ #ifdef CONFIG_COMPAT
+ struct timeval32 {
+ 	__u32 tv_sec;
+@@ -219,63 +218,6 @@ static struct ici_frame_buf_wrapper *frame_buf_lookup(struct ici_isys_frame_buf_
+ 	}
+ 	return NULL;
+ }
+-static void put_userpages(struct ici_kframe_plane *kframe_plane)
+-{
+-	struct sg_table *sgt = kframe_plane->sgt;
+-	struct scatterlist *sgl;
+-	unsigned int i;
+-	struct mm_struct *mm = current->active_mm;
+-
+-	if (!mm) {
+-		pr_err("Failed to get active mm_struct ptr from current process.\n");
+-		return;
+-	}
+-
+-	down_read(&mm->mmap_sem);
+-	for_each_sg(sgt->sgl, sgl, sgt->orig_nents, i) {
+-		struct page *page = sg_page(sgl);
+-
+-		unsigned int npages = PAGE_ALIGN(sgl->offset + sgl->length)	>> PAGE_SHIFT;
+-		unsigned int page_no;
+-
+-		for (page_no = 0; page_no < npages; ++page_no, ++page) {
+-			set_page_dirty_lock(page);
+-			put_page(page);
+-		}
+-	}
+-
+-	kfree(sgt);
+-	kframe_plane->sgt = NULL;
+-
+-	up_read(&mm->mmap_sem);
+-}
+-
+-static void put_dma(struct ici_kframe_plane	*kframe_plane)
+-{
+-	struct sg_table *sgt = kframe_plane->sgt;
+-
+-	if (WARN_ON(!kframe_plane->db_attach)) {
+-		pr_err("trying to unpin a not attached buffer\n");
+-		return;
+-	}
+-
+-	if (WARN_ON(!sgt)) {
+-		pr_err("dmabuf buffer is already unpinned\n");
+-		return;
+-	}
+-
+-	if (kframe_plane->kaddr) {
+-		dma_buf_vunmap(kframe_plane->db_attach->dmabuf,
+-		kframe_plane->kaddr);
+-		kframe_plane->kaddr = NULL;
+-	}
+-	dma_buf_unmap_attachment(kframe_plane->db_attach, sgt,
+-							 DMA_BIDIRECTIONAL);
+-
+-	kframe_plane->dma_addr = 0;
+-	kframe_plane->sgt = NULL;
+-
+-}
+ 
+ static int map_dma(struct device *dev, struct ici_frame_plane *frame_plane,
+ 				   struct ici_kframe_plane	*kframe_plane)
+@@ -332,26 +274,6 @@ static int map_dma(struct device *dev, struct ici_frame_plane *frame_plane,
+ 	return ret;
+ }
+ 
+-static void unmap_buf(struct ici_frame_buf_wrapper *buf)
+-{
+-	int i;
+-
+-	for (i = 0; i < buf->frame_info.num_planes; i++) {
+-		struct ici_kframe_plane *kframe_plane =
+-			&buf->kframe_info.planes[i];
+-		switch (kframe_plane->mem_type) {
+-		case ICI_MEM_USERPTR:
+-			put_userpages(kframe_plane);
+-		break;
+-		case ICI_MEM_DMABUF:
+-			put_dma(kframe_plane);
+-		break;
+-		default:
+-			pr_debug("not supported memory type: %d\n", kframe_plane->mem_type);
+-		break;
+-		}
+-	}
+-}
+ struct ici_frame_buf_wrapper *get_buf(struct virtual_stream *vstream, struct ici_frame_info *frame_info)
+ {
+ 	int res;
+@@ -450,7 +372,7 @@ static int virt_isys_set_format(struct file *file, void *fh,
+ 
+ 	pr_debug("Calling Set Format\n");
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 	op[0] = vstream->virt_dev_id;
+@@ -463,10 +385,10 @@ static int virt_isys_set_format(struct file *file, void *fh,
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+ 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	return rval;
+ }
+@@ -480,7 +402,8 @@ static int virt_isys_stream_on(struct file *file, void *fh)
+ 	int rval = 0;
+ 	int op[10];
+ 	pr_debug("Calling Stream ON\n");
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 	op[0] = vstream->virt_dev_id;
+@@ -491,14 +414,10 @@ static int virt_isys_stream_on(struct file *file, void *fh)
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+ 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
+-
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+-	if (!req && !fe_ctx)
+-		return -ENOMEM;
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	return rval;
+ }
+@@ -513,7 +432,7 @@ static int virt_isys_stream_off(struct file *file, void *fh)
+ 	int op[10];
+ 
+ 	pr_debug("Calling Stream OFF\n");
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 	op[0] = vstream->virt_dev_id;
+@@ -524,10 +443,10 @@ static int virt_isys_stream_off(struct file *file, void *fh)
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+ 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	buf_stream_cancel(vstream);
+ 
+@@ -545,7 +464,7 @@ static int virt_isys_getbuf(struct file *file, void *fh,
+ 	int rval = 0;
+ 	int op[3];
+ 
+-	pr_debug("Calling Get Buffer\n");
++	pr_debug("%s stream %d", __func__, vstream->virt_dev_id);
+ 
+ 	buf = get_buf(vstream, user_frame_info);
+ 	if (!buf) {
+@@ -553,7 +472,7 @@ static int virt_isys_getbuf(struct file *file, void *fh,
+ 		return -ENOMEM;
+ 	}
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 
+@@ -567,10 +486,12 @@ static int virt_isys_getbuf(struct file *file, void *fh,
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+ 		dev_err(&strm_dev->dev, "Failed to Get Buffer\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
++	ipu4_virtio_fe_req_queue_put(req);
++
++	pr_debug("%s exit stream %d", __func__, vstream->virt_dev_id);
+ 
+ 	return rval;
+ }
+@@ -585,9 +506,9 @@ static int virt_isys_putbuf(struct file *file, void *fh,
+ 	int rval = 0;
+ 	int op[2];
+ 
+-	pr_debug("Calling Put Buffer\n");
++	pr_debug("%s stream %d", __func__, vstream->virt_dev_id);
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 
+@@ -600,14 +521,12 @@ static int virt_isys_putbuf(struct file *file, void *fh,
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+ 		dev_err(&strm_dev->dev, "Failed to Get Buffer\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+-	if (!req && !fe_ctx)
+-		return -ENOMEM;
++	pr_debug("%s exit stream %d", __func__, vstream->virt_dev_id);
+ 
+ 	return rval;
+ }
+@@ -624,7 +543,7 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device
+ 	dev_dbg(&strm_dev->dev, "stream_fop_poll %d\n", vstream->virt_dev_id);
+ 	get_device(&dev->dev);
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 
+@@ -633,22 +552,16 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_POLL, &op[0]);
+ 
+-	mutex_lock(&fop_mutex);
+-
+-	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_1);
++	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
++										IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+-		mutex_unlock(&fop_mutex);
+ 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+-	mutex_unlock(&fop_mutex);
+-
+-	rval = req->func_ret;
+-	kfree(req);
+-
+-	return rval;
++	return req->func_ret;
+ }
+ 
+ static int virt_stream_fop_open(struct inode *inode, struct file *file)
+@@ -667,7 +580,7 @@ static int virt_stream_fop_open(struct inode *inode, struct file *file)
+ 	if (!fe_ctx)
+ 		return -EINVAL;
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req) {
+ 		dev_err(&strm_dev->dev, "Virtio Req buffer failed\n");
+ 		return -ENOMEM;
+@@ -678,18 +591,14 @@ static int virt_stream_fop_open(struct inode *inode, struct file *file)
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_DEVICE_OPEN, &op[0]);
+ 
+-	mutex_lock(&fop_mutex);
+-
+-	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_1);
++	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
++										IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+-		mutex_unlock(&fop_mutex);
+ 		dev_err(&strm_dev->dev, "Failed to open virtual device\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
+-
+-	mutex_unlock(&fop_mutex);
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	return rval;
+ }
+@@ -705,7 +614,7 @@ static int virt_stream_fop_release(struct inode *inode, struct file *file)
+ 	pr_debug("%s %d", __func__, vstream->virt_dev_id);
+ 	put_device(&strm_dev->dev);
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 
+@@ -714,18 +623,14 @@ static int virt_stream_fop_release(struct inode *inode, struct file *file)
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_DEVICE_CLOSE, &op[0]);
+ 
+-	mutex_lock(&fop_mutex);
+-
+-	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true, IPU_VIRTIO_QUEUE_1);
++	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
++										IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+-		mutex_unlock(&fop_mutex);
+ 		dev_err(&strm_dev->dev, "Failed to close virtual device\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
+-
+-	mutex_unlock(&fop_mutex);
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	return rval;
+ }
+@@ -740,10 +645,7 @@ static unsigned int virt_stream_fop_poll(struct file *file,
+ 
+ 	res = stream_fop_poll(file, as);
+ 
+-	//res = POLLIN;
+-
+ 	dev_dbg(&as->dev, "virt_stream_fop_poll res %u\n", res);
+-
+ 	return res;
+ }
+ 
+@@ -1014,7 +916,7 @@ static int virt_pipeline_fop_open(struct inode *inode, struct file *file)
+ 
+ 	file->private_data = dev;
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 
+@@ -1023,14 +925,14 @@ static int virt_pipeline_fop_open(struct inode *inode, struct file *file)
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PIPELINE_OPEN, &op[0]);
+ 
+-	rval = g_fe_priv->bknd_ops->send_req(g_fe_priv->domid, req, true, IPU_VIRTIO_QUEUE_1);
++	rval = g_fe_priv->bknd_ops->send_req(g_fe_priv->domid, req, true,
++											IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+ 		pr_err("Failed to open virtual device\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
+-
++	ipu4_virtio_fe_req_queue_put(req);
+ 	return rval;
+ }
+ 
+@@ -1045,7 +947,7 @@ static int virt_pipeline_fop_release(struct inode *inode, struct file *file)
+ 
+ 	put_device(&pipe_dev->dev);
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 
+@@ -1054,13 +956,13 @@ static int virt_pipeline_fop_release(struct inode *inode, struct file *file)
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PIPELINE_CLOSE, &op[0]);
+ 
+-	rval = g_fe_priv->bknd_ops->send_req(g_fe_priv->domid, req, true, IPU_VIRTIO_QUEUE_1);
++	rval = g_fe_priv->bknd_ops->send_req(g_fe_priv->domid, req, true, IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+ 		pr_err("Failed to close virtual device\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+-	kfree(req);
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	return rval;
+ }
+@@ -1271,7 +1173,6 @@ static int __init virt_ici_init(void)
+ 		if (!vstream)
+ 			return -ENOMEM;
+ 		mutex_init(&vstream->mutex);
+-		mutex_init(&fop_mutex);
+ 		vstream->strm_dev.mutex = &vstream->mutex;
+ 
+ 		rval = virt_frame_buf_init(&vstream->buf_list);
+@@ -1288,6 +1189,10 @@ static int __init virt_ici_init(void)
+ 			goto init_fail;
+ 	}
+ 
++	rval = ipu4_virtio_fe_req_queue_init();
++	if (rval)
++		goto init_fail;
++
+ 	rval = virt_ici_pipeline_init();
+ 	if (rval)
+ 		goto init_fail;
+@@ -1297,7 +1202,6 @@ static int __init virt_ici_init(void)
+ 
+ init_fail:
+ 	mutex_destroy(&vstream->mutex);
+-	mutex_destroy(&fop_mutex);
+ 	kfree(vstream);
+ 	return rval;
+ }
+@@ -1318,6 +1222,7 @@ static void __exit virt_ici_exit(void)
+ {
+ 	virt_ici_stream_exit();
+ 	virt_ici_pipeline_exit();
++	ipu4_virtio_fe_req_queue_free();
+ }
+ 
+ module_init(virt_ici_init);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.h b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.h
+index f44954b..d6d9210 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.h
+@@ -18,10 +18,6 @@
+ #include "./ici/ici-isys-frame-buf.h"
+ #include "intel-ipu4-virtio-common.h"
+ 
+-#define MAX_STREAM_DEVICES 64
+-#define MAX_PIPELINE_DEVICES 1
+-#define MAX_ISYS_VIRT_STREAM 34
+-
+ struct virtual_stream {
+ 	struct mutex mutex;
+ 	struct ici_stream_device strm_dev;
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c
+index b88fe6d..3b5eae6 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c
+@@ -10,15 +10,18 @@
+ #include <linux/miscdevice.h>
+ #include <linux/fs.h>
+ #include <linux/syscalls.h>
++#include <linux/kthread.h>
+ 
+ #include "intel-ipu4-virtio-be-bridge.h"
+ #include "./ici/ici-isys-frame-buf.h"
+ #include "intel-ipu4-virtio-be-pipeline.h"
+ #include "intel-ipu4-virtio-be-stream.h"
+ 
+-int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
++int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int ret = 0;
++	struct ipu4_virtio_req *req = req_info->request;
++
+ 	if (!req) {
+ 		pr_err("IPU mediator: request is NULL\n");
+ 		return -EINVAL;
+@@ -28,6 +31,10 @@ int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
+ 			pr_err("IPU mediator: invalid command\n");
+ 			return -EINVAL;
+ 	}
++
++	if (!req_info)
++		return -1;
++
+ 	switch (req->cmd) {
+ 	case IPU4_CMD_POLL:
+ 			/*
+@@ -35,9 +42,11 @@ int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
+ 			 * op0 - virtual device node number
+ 			 * op1 - Actual device fd. By default set to 0
+ 			 */
+-			pr_debug("%s: process_poll pre", __func__);
+-			req->stat = process_poll(domid, req);
+-			pr_debug("%s: process_poll post", __func__);
++			pr_debug("%s: process_poll %d",
++						__func__, req->op[0]);
++			kthread_run(process_poll_thread, req_info,
++								"process_poll");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_DEVICE_OPEN:
+ 			/*
+@@ -46,11 +55,9 @@ int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
+ 			 * op1 - Actual device fd. By default set to 0
+ 			 */
+ 			pr_debug("DEVICE_OPEN: virtual_dev_id:%d actual_fd:%d\n", req->op[0], req->op[1]);
+-			ret = process_device_open(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			kthread_run(process_device_open_thread, req_info,
++								"process_device_open");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_DEVICE_CLOSE:
+ 			/*
+@@ -59,11 +66,9 @@ int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
+ 			 * op1 - Actual device fd. By default set to 0
+ 			 */
+ 			pr_debug("DEVICE_CLOSE: virtual_dev_id:%d actual_fd:%d\n", req->op[0], req->op[1]);
+-			ret = process_device_close(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			kthread_run(process_device_close_thread, req_info,
++								"process_device_close");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_STREAM_ON:
+ 			/* Start Stream
+@@ -71,11 +76,9 @@ int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
+ 			 * op1 - Actual device fd. By default set to 0
+ 			 */
+ 			pr_debug("STREAM ON: virtual_dev_id:%d actual_fd:%d\n", req->op[0], req->op[1]);
+-			ret = process_stream_on(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			kthread_run(process_stream_on_thread, req_info,
++								"process_stream_on");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_STREAM_OFF:
+ 			/* Stop Stream
+@@ -83,11 +86,9 @@ int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
+ 			 * op1 - Actual device fd. By default set to 0
+ 			 */
+ 			pr_debug("STREAM OFF: virtual_dev_id:%d actual_fd:%d\n", req->op[0], req->op[1]);
+-			ret = process_stream_off(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			kthread_run(process_stream_off_thread, req_info,
++								"process_stream_off");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_GET_BUF:
+ 			/* Set Format of a given video node
+@@ -99,11 +100,11 @@ int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
+ 			 * op5 - Length of Buffer
+ 			 */
+ 
+-			ret = process_get_buf(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_get_buf %d",
++						__func__, req->op[0]);
++			kthread_run(process_get_buf_thread, req_info,
++								"process_get_buf");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_PUT_BUF:
+ 			/* Set Format of a given video node
+@@ -111,88 +112,88 @@ int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req)
+ 			 * op1 - Actual device fd. By default set to 0
+ 			 * op2 - Memory Type 1: USER_PTR 2: DMA_PTR
+ 			 */
+-			ret = process_put_buf(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_put_buf %d",
++						__func__, req->op[0]);
++			kthread_run(process_put_buf_thread, req_info,
++								"process_put_buf");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_SET_FORMAT:
+-			ret = process_set_format(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_set_format %d",
++						__func__, req->op[0]);
++			kthread_run(process_set_format_thread, req_info,
++								"process_set_format");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_PIPELINE_OPEN:
+-			ret = process_pipeline_open(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_pipeline_open %d",
++						__func__, req->op[0]);
++			kthread_run(process_pipeline_open_thread, req_info,
++								"process_pipeline_open");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_PIPELINE_CLOSE:
+-			ret = process_pipeline_close(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_pipeline_close %d",
++						__func__, req->op[0]);
++			kthread_run(process_pipeline_close_thread, req_info,
++								"process_pipeline_close");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_ENUM_NODES:
+-			ret = process_enum_nodes(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_enum_nodes %d",
++						__func__, req->op[0]);
++			kthread_run(process_enum_nodes_thread, req_info,
++								"process_enum_nodes");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_ENUM_LINKS:
+-			ret = process_enum_links(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_enum_links %d",
++						__func__, req->op[0]);
++			kthread_run(process_enum_links_thread, req_info,
++								"process_enum_links");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_SETUP_PIPE:
+-			ret = process_setup_pipe(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_setup_pipe %d",
++						__func__, req->op[0]);
++			kthread_run(process_setup_pipe_thread, req_info,
++								"process_setup_pipe");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_SET_FRAMEFMT:
+-			ret = process_set_framefmt(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_set_framefmt %d",
++						__func__, req->op[0]);
++			kthread_run(process_set_framefmt_thread, req_info,
++								"process_set_framefmt");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_GET_FRAMEFMT:
+-			ret = process_get_framefmt(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_get_framefmt %d",
++						__func__, req->op[0]);
++			kthread_run(process_get_framefmt_thread, req_info,
++								"process_get_framefmt");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_GET_SUPPORTED_FRAMEFMT:
+-			ret = process_get_supported_framefmt(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_get_supported_framefmt %d",
++						__func__, req->op[0]);
++			kthread_run(process_get_supported_framefmt_thread,
++				req_info, "process_get_supported_framefmt");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_SET_SELECTION:
+-			ret = process_pad_set_sel(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_pad_set_sel %d",
++						__func__, req->op[0]);
++			kthread_run(process_pad_set_sel_thread, req_info,
++								"process_pad_set_sel");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	case IPU4_CMD_GET_SELECTION:
+-			ret = process_pad_get_sel(domid, req);
+-			if (ret)
+-				req->stat = IPU4_REQ_ERROR;
+-			else
+-				req->stat = IPU4_REQ_PROCESSED;
++			pr_debug("%s process_pad_get_sel %d",
++						__func__, req->op[0]);
++			kthread_run(process_pad_get_sel_thread, req_info,
++								"process_pad_get_sel");
++			req->stat = IPU4_REQ_PENDING;
+ 			break;
+ 	default:
+ 			return -EINVAL;
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.h
+index 25238f2..1808588 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.h
+@@ -12,14 +12,13 @@
+ #include <linux/vhm/acrn_vhm_mm.h>
+ 
+ #include "intel-ipu4-virtio-common.h"
++#include "intel-ipu4-virtio-be-request-queue.h"
+ 
+-int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req);
++int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info);
+ 
+ void intel_ipu4_virtio_create_req(struct ipu4_virtio_req *req,
+ 			     enum intel_ipu4_virtio_command cmd, int *op);
+ 
+-int intel_ipu4_virtio_msg_parse(int domid, struct ipu4_virtio_req *req);
+-
+ 
+ #endif
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+index 3adf5b4..0864211 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+@@ -14,176 +14,321 @@
+ #include "intel-ipu4-virtio-be-pipeline.h"
+ #include "./ici/ici-isys-pipeline.h"
+ #include "./ici/ici-isys-pipeline-device.h"
++#include "intel-ipu4-virtio-be.h"
++#include "intel-ipu4-virtio-be-request-queue.h"
+ 
+ static struct file *pipeline;
+ static int guestID = -1;
+ 
+-int process_pipeline_open(int domid, struct ipu4_virtio_req *req)
++int process_pipeline_open(struct ipu4_virtio_req_info *req_info)
+ {
++	int domid = req_info->domid;
+ 	if (guestID != -1 && guestID != domid) {
+ 		pr_err("%s: pipeline device already opened by other guest! %d %d", __func__, guestID, domid);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	pr_info("process_device_open: /dev/intel_pipeline");
+ 	pipeline = filp_open("/dev/intel_pipeline", O_RDWR | O_NONBLOCK, 0);
+ 	guestID = domid;
+ 
+-	return 0;
++	return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_pipeline_close(int domid, struct ipu4_virtio_req *req)
++int process_pipeline_close(struct ipu4_virtio_req_info *req_info)
+ {
++	struct ipu4_virtio_req *req = req_info->request;
++
+ 	pr_info("%s: %d", __func__, req->op[0]);
+ 
+ 	filp_close(pipeline, 0);
+ 	guestID = -1;
+ 
+-	return 0;
++	return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_enum_nodes(int domid, struct ipu4_virtio_req *req)
++int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+ 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+ 	struct ici_node_desc *host_virt;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+ 	host_virt = (struct ici_node_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("process_enum_nodes: NULL host_virt");
+-		return 0;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	err = dev->pipeline_ioctl_ops->pipeline_enum_nodes(pipeline, dev, host_virt);
+ 
+-	return err;
++	if (err)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_enum_links(int domid, struct ipu4_virtio_req *req)
++int process_enum_links(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+ 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+ 	struct ici_links_query *host_virt;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+ 	host_virt = (struct ici_links_query *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+-		return 0;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pipeline_enum_links(pipeline, dev, host_virt);
+ 
+-	return err;
++	if (err)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+-int process_get_supported_framefmt(int domid, struct ipu4_virtio_req *req)
++int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+ 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+ 	struct ici_pad_supported_format_desc *host_virt;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+ 	host_virt = (struct ici_pad_supported_format_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+-		return 0;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_get_supported_format(pipeline, dev, host_virt);
+ 
+-	return err;
++	if (err)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_set_framefmt(int domid, struct ipu4_virtio_req *req)
++int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+ 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+ 	struct ici_pad_framefmt *host_virt;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+ 	host_virt = (struct ici_pad_framefmt *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+-		return 0;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_set_ffmt(pipeline, dev, host_virt);
+ 
+-	return err;
++	if (err)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_get_framefmt(int domid, struct ipu4_virtio_req *req)
++int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+ 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+ 	struct ici_pad_framefmt *host_virt;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+ 	host_virt = (struct ici_pad_framefmt *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+-		return 0;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_get_ffmt(pipeline, dev, host_virt);
+ 
+-	return err;
++	if (err)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_setup_pipe(int domid, struct ipu4_virtio_req *req)
++int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+ 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+ 	struct ici_link_desc *host_virt;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+ 	host_virt = (struct ici_link_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+-		return 0;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pipeline_setup_pipe(pipeline, dev, host_virt);
+ 
+-	return err;
++	if (err)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_pad_set_sel(int domid, struct ipu4_virtio_req *req)
++int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+ 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+ 	struct ici_pad_selection *host_virt;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+ 	host_virt = (struct ici_pad_selection *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+-		return 0;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_set_sel(pipeline, dev, host_virt);
+ 
+-	return err;
++	if (err)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_pad_get_sel(int domid, struct ipu4_virtio_req *req)
++int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+ 	struct ici_isys_pipeline_device *dev = pipeline->private_data;
+ 	struct ici_pad_selection *host_virt;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+ 	host_virt = (struct ici_pad_selection *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+-		return 0;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_get_sel(pipeline, dev, host_virt);
+ 
+-	return err;
++	if (err)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
++}
++
++int process_pipeline_open_thread(void *data)
++{
++	int status;
++
++	status = process_pipeline_open(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_pipeline_close_thread(void *data)
++{
++	int status;
++
++	status = process_pipeline_close(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_enum_nodes_thread(void *data)
++{
++	int status;
++
++	status = process_enum_nodes(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_enum_links_thread(void *data)
++{
++	int status;
++
++	status = process_enum_links(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_get_supported_framefmt_thread(void *data)
++{
++	int status;
++
++	status = process_get_supported_framefmt(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_set_framefmt_thread(void *data)
++{
++	int status;
++
++	status = process_set_framefmt(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_get_framefmt_thread(void *data)
++{
++	int status;
++
++	status = process_get_framefmt(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_pad_set_sel_thread(void *data)
++{
++	int status;
++
++	status = process_pad_set_sel(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_pad_get_sel_thread(void *data)
++{
++	int status;
++
++	status = process_pad_get_sel(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_setup_pipe_thread(void *data)
++{
++	int status;
++
++	status = process_setup_pipe(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
+ }
+ 
+ /*
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.h
+index df65e88..3da8c24 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.h
+@@ -11,16 +11,16 @@
+ 
+ #include "intel-ipu4-virtio-common.h"
+ 
+-int process_pipeline_open(int domid, struct ipu4_virtio_req *req);
+-int process_pipeline_close(int domid, struct ipu4_virtio_req *req);
+-int process_enum_nodes(int domid, struct ipu4_virtio_req *req);
+-int process_enum_links(int domid, struct ipu4_virtio_req *req);
+-int process_get_supported_framefmt(int domid, struct ipu4_virtio_req *req);
+-int process_set_framefmt(int domid, struct ipu4_virtio_req *req);
+-int process_get_framefmt(int domid, struct ipu4_virtio_req *req);
+-int process_pad_set_sel(int domid, struct ipu4_virtio_req *req);
+-int process_pad_get_sel(int domid, struct ipu4_virtio_req *req);
+-int process_setup_pipe(int domid, struct ipu4_virtio_req *req);
++int process_pipeline_open_thread(void *data);
++int process_pipeline_close_thread(void *data);
++int process_enum_nodes_thread(void *data);
++int process_enum_links_thread(void *data);
++int process_get_supported_framefmt_thread(void *data);
++int process_set_framefmt_thread(void *data);
++int process_get_framefmt_thread(void *data);
++int process_pad_set_sel_thread(void *data);
++int process_pad_get_sel_thread(void *data);
++int process_setup_pipe_thread(void *data);
+ 
+ #endif
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-request-queue.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-request-queue.c
+new file mode 100644
+index 0000000..cee9b55
+--- /dev/null
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-request-queue.c
+@@ -0,0 +1,57 @@
++// SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
++/*
++ * Copyright (C) 2018 Intel Corporation
++ */
++
++#include <linux/virtio.h>
++#include <linux/spinlock.h>
++#include "intel-ipu4-virtio-common.h"
++#include "intel-ipu4-virtio-be-request-queue.h"
++
++struct ipu4_virtio_ring ipu4_virtio_be_req_queue;
++
++int ipu4_virtio_be_req_queue_init(void)
++{
++	int i;
++	struct ipu4_virtio_req_info *req;
++
++	if (ipu4_virtio_ring_init(&ipu4_virtio_be_req_queue, REQ_RING_SIZE))
++		return -1;
++
++	for (i = 0; i < REQ_RING_SIZE; i++) {
++		req = kcalloc(1, sizeof(struct ipu4_virtio_req_info), GFP_KERNEL);
++		if (req == NULL) {
++			pr_err("%s failed to allocate memory for ipu4_virtio_req_info",
++														__func__);
++			return -1;
++		}
++		ipu4_virtio_ring_push(&ipu4_virtio_be_req_queue, req);
++	}
++	return 0;
++}
++
++void ipu4_virtio_be_req_queue_free(void)
++{
++	int i;
++	struct ipu4_virtio_req_info *req_info;
++
++	for (i = 0; i < REQ_RING_SIZE; i++) {
++		req_info = ipu4_virtio_ring_pop(&ipu4_virtio_be_req_queue);
++		if (req_info)
++			kfree(req_info);
++		else
++			break;
++	}
++	ipu4_virtio_ring_free(&ipu4_virtio_be_req_queue);
++}
++
++struct ipu4_virtio_req_info *ipu4_virtio_be_req_queue_get(void)
++{
++	return ipu4_virtio_ring_pop(&ipu4_virtio_be_req_queue);
++}
++
++int ipu4_virtio_be_req_queue_put(
++			struct ipu4_virtio_req_info *req)
++{
++	return ipu4_virtio_ring_push(&ipu4_virtio_be_req_queue, req);
++}
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-request-queue.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-request-queue.h
+new file mode 100644
+index 0000000..febcf73
+--- /dev/null
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-request-queue.h
+@@ -0,0 +1,27 @@
++/* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0) */
++/*
++ * Copyright (C) 2018 Intel Corporation
++ */
++
++#ifndef IPU4_VIRTIO_FE_REQUEST_QUEUE_H
++#define IPU4_VIRTIO_FE_REQUEST_QUEUE_H
++
++struct ipu4_virtio_vq_info {
++	int vq_idx;
++	int req_len;
++	uint16_t vq_buf_idx;
++};
++
++struct ipu4_virtio_req_info {
++	struct ipu4_virtio_req *request;
++	struct ipu4_virtio_vq_info vq_info;
++	int domid;
++	int client_id;
++};
++
++int ipu4_virtio_be_req_queue_init(void);
++void ipu4_virtio_be_req_queue_free(void);
++struct ipu4_virtio_req_info *ipu4_virtio_be_req_queue_get(void);
++int ipu4_virtio_be_req_queue_put(struct ipu4_virtio_req_info *req);
++
++#endif
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+index 9c6bbf6..c3257ea 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+@@ -8,9 +8,9 @@
+ #include <linux/errno.h>
+ #include <linux/slab.h>
+ #include <linux/poll.h>
+-
+ #include <linux/hashtable.h>
+ #include <linux/pagemap.h>
++
+ #include <media/ici.h>
+ #include <linux/vhm/acrn_vhm_mm.h>
+ #include "./ici/ici-isys-stream-device.h"
+@@ -20,6 +20,7 @@
+ #include "intel-ipu4-virtio-be.h"
+ 
+ #define MAX_SIZE 6 // max 2^6
++#define POLL_WAIT 500 //500ms
+ 
+ #define dev_to_stream(dev) \
+ 	container_of(dev, struct ici_isys_stream, strm_dev)
+@@ -33,16 +34,13 @@ struct stream_node {
+ 	struct hlist_node node;
+ };
+ 
+-int frame_done_callback(void)
+-{
+-	notify_fe();
+-	return 0;
+-}
+-
+-int process_device_open(int domid, struct ipu4_virtio_req *req)
++int process_device_open(struct ipu4_virtio_req_info *req_info)
+ {
+ 	char node_name[25];
+ 	struct stream_node *sn = NULL;
++	struct ici_stream_device *strm_dev;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	if (!hash_initialised) {
+ 		hash_init(STREAM_NODE_HASH);
+@@ -52,10 +50,10 @@ int process_device_open(int domid, struct ipu4_virtio_req *req)
+ 		if (sn != NULL) {
+ 			if (sn->client_id != domid) {
+ 				pr_err("process_device_open: stream device %d already opened by other guest!", sn->client_id);
+-				return -EBUSY;
++				return IPU4_REQ_ERROR;
+ 			}
+ 			pr_info("process_device_open: stream device %d already opened by client %d", req->op[0], domid);
+-			return 0;
++			return IPU4_REQ_PROCESSED;
+ 		}
+ 	}
+ 
+@@ -63,44 +61,54 @@ int process_device_open(int domid, struct ipu4_virtio_req *req)
+ 	pr_info("process_device_open: %s", node_name);
+ 	sn = kzalloc(sizeof(struct stream_node), GFP_KERNEL);
+ 	sn->f = filp_open(node_name, O_RDWR | O_NONBLOCK, 0);
+-	sn->client_id = domid;
+ 
++	strm_dev = sn->f->private_data;
++	if (strm_dev == NULL) {
++		pr_err("Native IPU stream device not found\n");
++		return IPU4_REQ_ERROR;
++	}
++	strm_dev->virt_dev_id = req->op[0];
++
++	sn->client_id = domid;
+ 	hash_add(STREAM_NODE_HASH, &sn->node, req->op[0]);
+ 
+-	return 0;
++	return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_device_close(int domid, struct ipu4_virtio_req *req)
++int process_device_close(struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct stream_node *sn = NULL;
++	struct ipu4_virtio_req *req = req_info->request;
++
+ 	if (!hash_initialised)
+-		return 0; //no node has been opened, do nothing
++		return IPU4_REQ_PROCESSED; //no node has been opened, do nothing
+ 
+ 	pr_info("process_device_close: %d", req->op[0]);
+ 
+ 	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
+ 		if (sn != NULL) {
+-			pr_err("process_device_close: %d closed", req->op[0]);
+ 			hash_del(&sn->node);
+ 			filp_close(sn->f, 0);
+ 			kfree(sn);
+ 		}
+ 	}
+ 
+-	return 0;
++	return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_set_format(int domid, struct ipu4_virtio_req *req)
++int process_set_format(struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct stream_node *sn = NULL;
+ 	struct ici_stream_device *strm_dev;
+ 	struct ici_stream_format *host_virt;
+ 	int err, found;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("process_set_format: %d %d", hash_initialised, req->op[0]);
+ 
+ 	if (!hash_initialised)
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 
+ 	found = 0;
+ 	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
+@@ -113,19 +121,19 @@ int process_set_format(int domid, struct ipu4_virtio_req *req)
+ 
+ 	if (!found) {
+ 		pr_debug("%s: stream not found %d\n", __func__, req->op[0]);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	strm_dev = sn->f->private_data;
+ 	if (strm_dev == NULL) {
+ 		pr_err("Native IPU stream device not found\n");
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	host_virt = (struct ici_stream_format *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("process_set_format: NULL host_virt");
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	err = strm_dev->ipu_ioctl_ops->ici_set_format(sn->f, strm_dev, host_virt);
+@@ -133,33 +141,33 @@ int process_set_format(int domid, struct ipu4_virtio_req *req)
+ 	if (err)
+ 		pr_err("intel_ipu4_pvirt: internal set fmt failed\n");
+ 
+-	return 0;
++	return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_poll(int domid, struct ipu4_virtio_req *req)
++int process_poll(struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct stream_node *sn = NULL;
+ 	struct ici_isys_stream *as;
+ 	bool found, empty;
+ 	unsigned long flags = 0;
++	struct ipu4_virtio_req *req = req_info->request;
++	int time_remain;
+ 
+ 	pr_debug("%s: %d %d", __func__, hash_initialised, req->op[0]);
+ 
+ 	if (!hash_initialised)
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 
+ 	found = false;
+ 	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
+ 		if (sn != NULL) {
+-			pr_debug("process_put_buf: node %d %p", req->op[0], sn);
+ 			found = true;
+ 			break;
+ 		}
+ 	}
+-
+ 	if (!found) {
+ 		pr_debug("%s: stream not found %d\n", __func__, req->op[0]);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	as = dev_to_stream(sn->f->private_data);
+@@ -168,22 +176,37 @@ int process_poll(int domid, struct ipu4_virtio_req *req)
+ 	spin_unlock_irqrestore(&as->buf_list.lock, flags);
+ 	if (!empty) {
+ 		req->func_ret = 1;
++		pr_debug("%s: done", __func__);
+ 		return IPU4_REQ_PROCESSED;
+-	} else
+-		return IPU4_REQ_NEEDS_FOLLOW_UP;
++	} else {
++		time_remain = wait_event_interruptible_timeout(
++			as->buf_list.wait,
++			!list_empty(&as->buf_list.putbuf_list),
++			POLL_WAIT);
++		if (time_remain) {
++			req->func_ret = 1;
++			return IPU4_REQ_PROCESSED;
++		} else {
++			pr_err("%s poll timeout! %d", __func__, req->op[0]);
++			req->func_ret = 0;
++			return IPU4_REQ_ERROR;
++		}
++	}
+ }
+ 
+-int process_put_buf(int domid, struct ipu4_virtio_req *req)
++int process_put_buf(struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct stream_node *sn = NULL;
+ 	struct ici_stream_device *strm_dev;
+ 	struct ici_frame_info *host_virt;
+ 	int err, found;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("process_put_buf: %d %d", hash_initialised, req->op[0]);
+ 
+ 	if (!hash_initialised)
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 
+ 	found = 0;
+ 	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
+@@ -196,29 +219,29 @@ int process_put_buf(int domid, struct ipu4_virtio_req *req)
+ 
+ 	if (!found) {
+ 		pr_debug("%s: stream not found %d\n", __func__, req->op[0]);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	strm_dev = sn->f->private_data;
+ 	if (strm_dev == NULL) {
+ 		pr_err("Native IPU stream device not found\n");
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	host_virt = (struct ici_frame_info *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (host_virt == NULL) {
+ 		pr_err("process_put_buf: NULL host_virt");
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = strm_dev->ipu_ioctl_ops->ici_put_buf(sn->f, strm_dev, host_virt);
+ 
+ 	if (err)
+ 		pr_err("process_put_buf: ici_put_buf failed\n");
+ 
+-	return 0;
++	return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_get_buf(int domid, struct ipu4_virtio_req *req)
++int process_get_buf(struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct stream_node *sn = NULL;
+ 	struct ici_frame_buf_wrapper *shared_buf;
+@@ -228,11 +251,13 @@ int process_get_buf(int domid, struct ipu4_virtio_req *req)
+ 	u64 *page_table = NULL;
+ 	struct page **data_pages = NULL;
+ 	int err, found;
++	struct ipu4_virtio_req *req = req_info->request;
++	int domid = req_info->domid;
+ 
+ 	pr_debug("process_get_buf: %d %d", hash_initialised, req->op[0]);
+ 
+ 	if (!hash_initialised)
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 
+ 	found = 0;
+ 	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
+@@ -245,7 +270,7 @@ int process_get_buf(int domid, struct ipu4_virtio_req *req)
+ 
+ 	if (!found) {
+ 		pr_debug("%s: stream not found %d\n", __func__, req->op[0]);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	pr_debug("GET_BUF: Mapping buffer\n");
+@@ -267,7 +292,7 @@ int process_get_buf(int domid, struct ipu4_virtio_req *req)
+ 		pr_err("SOS Failed to map page table\n");
+ 		req->stat = IPU4_REQ_ERROR;
+ 		kfree(data_pages);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	else {
+@@ -290,7 +315,7 @@ int process_get_buf(int domid, struct ipu4_virtio_req *req)
+ 	if (strm_dev == NULL) {
+ 		pr_err("Native IPU stream device not found\n");
+ 		kfree(data_pages);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 	err = strm_dev->ipu_ioctl_ops->ici_get_buf_virt(sn->f, strm_dev, shared_buf, data_pages);
+ 
+@@ -298,20 +323,21 @@ int process_get_buf(int domid, struct ipu4_virtio_req *req)
+ 		pr_err("process_get_buf: ici_get_buf_virt failed\n");
+ 
+ 	kfree(data_pages);
+-	return 0;
++	return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_stream_on(int domid, struct ipu4_virtio_req *req)
++int process_stream_on(struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct stream_node *sn = NULL;
+ 	struct ici_isys_stream *as;
+ 	struct ici_stream_device *strm_dev;
+ 	int err, found;
++	struct ipu4_virtio_req *req = req_info->request;
+ 
+ 	pr_debug("process_stream_on: %d %d", hash_initialised, req->op[0]);
+ 
+ 	if (!hash_initialised)
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 
+ 	found = 0;
+ 	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
+@@ -324,37 +350,34 @@ int process_stream_on(int domid, struct ipu4_virtio_req *req)
+ 
+ 	if (!found) {
+ 		pr_debug("%s: stream not found %d\n", __func__, req->op[0]);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	strm_dev = sn->f->private_data;
+ 	if (strm_dev == NULL) {
+ 		pr_err("Native IPU stream device not found\n");
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+-	as = dev_to_stream(strm_dev);
+-	as->frame_done_notify_queue = frame_done_callback;
+-
+ 	err = strm_dev->ipu_ioctl_ops->ici_stream_on(sn->f, strm_dev);
+ 
+ 	if (err)
+ 		pr_err("process_stream_on: stream on failed\n");
+ 
+-	return 0;
++	return IPU4_REQ_PROCESSED;
+ }
+ 
+-int process_stream_off(int domid, struct ipu4_virtio_req *req)
++int process_stream_off(struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct stream_node *sn = NULL;
+ 	struct ici_stream_device *strm_dev;
+-	struct ici_isys_stream *as;
+ 	int err, found;
++	struct ipu4_virtio_req *req = req_info->request;
+ 
+ 	pr_debug("process_stream_off: %d %d", hash_initialised, req->op[0]);
+ 
+ 	if (!hash_initialised)
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 
+ 	found = 0;
+ 	hash_for_each_possible(STREAM_NODE_HASH, sn, node, req->op[0]) {
+@@ -367,23 +390,100 @@ int process_stream_off(int domid, struct ipu4_virtio_req *req)
+ 
+ 	if (!found) {
+ 		pr_debug("%s: stream not found %d\n", __func__, req->op[0]);
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	strm_dev = sn->f->private_data;
+ 	if (strm_dev == NULL) {
+ 		pr_err("Native IPU stream device not found\n");
+-		return -1;
++		return IPU4_REQ_ERROR;
+ 	}
+ 
+ 	err = strm_dev->ipu_ioctl_ops->ici_stream_off(sn->f, strm_dev);
+ 
+ 	if (err)
+-		pr_err("process_stream_off: stream off failed\n");
++		pr_err("%s: stream off failed\n",
++												__func__);
++
++	return IPU4_REQ_PROCESSED;
++}
+ 
+-	as = dev_to_stream(strm_dev);
+-	as->frame_done_notify_queue();
+-	as->frame_done_notify_queue = NULL;
++int process_set_format_thread(void *data)
++{
++	int status;
++
++	status = process_set_format(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_device_open_thread(void *data)
++{
++	int status;
++
++	status = process_device_open(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_device_close_thread(void *data)
++{
++	int status;
++
++	status = process_device_close(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_poll_thread(void *data)
++{
++	int status;
++
++	status = process_poll(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_put_buf_thread(void *data)
++{
++	int status;
++
++	status = process_put_buf(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_stream_on_thread(void *data)
++{
++	int status;
++
++	status = process_stream_on(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_stream_off_thread(void *data)
++{
++	int status;
++
++	status = process_stream_off(data);
++	notify_fe(status, data);
++	do_exit(0);
++	return 0;
++}
++
++int process_get_buf_thread(void *data)
++{
++	int status;
+ 
++	status = process_get_buf(data);
++	notify_fe(status, data);
++	do_exit(0);
+ 	return 0;
+ }
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.h
+index 0d85b35..04a84a4 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.h
+@@ -10,16 +10,16 @@
+ #include <linux/errno.h>
+ 
+ #include "intel-ipu4-virtio-common.h"
+-
+-int process_set_format(int domid, struct ipu4_virtio_req *req);
+-int process_device_open(int domid, struct ipu4_virtio_req *req);
+-int process_device_close(int domid, struct ipu4_virtio_req *req);
+-int process_poll(int domid, struct ipu4_virtio_req *req);
+-int process_put_buf(int domid, struct ipu4_virtio_req *req);
+-int process_stream_on(int domid, struct ipu4_virtio_req *req);
+-int process_stream_off(int domid, struct ipu4_virtio_req *req);
+-int process_get_buf(int domid, struct ipu4_virtio_req *req);
+-
++#include "intel-ipu4-virtio-be-request-queue.h"
++
++int process_set_format_thread(void *data);
++int process_device_open_thread(void *data);
++int process_device_close_thread(void *data);
++int process_poll_thread(void *data);
++int process_put_buf_thread(void *data);
++int process_stream_on_thread(void *data);
++int process_stream_off_thread(void *data);
++int process_get_buf_thread(void *data);
+ 
+ #endif
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c
+index aa64d09..4359d7b 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c
+@@ -17,6 +17,7 @@
+ #include "intel-ipu4-virtio-common.h"
+ #include "intel-ipu4-virtio-be-bridge.h"
+ #include "intel-ipu4-virtio-be.h"
++#include "intel-ipu4-virtio-be-request-queue.h"
+ 
+ /**
+  * struct ipu4_virtio_be_priv - Backend of virtio-rng based on VBS-K
+@@ -31,8 +32,8 @@ struct ipu4_virtio_be_priv {
+ 	struct virtio_dev_info dev;
+ 	struct virtio_vq_info vqs[IPU_VIRTIO_QUEUE_MAX];
+ 	bool busy;
+-	struct ipu4_virtio_req *pending_tx_req;
+-	struct mutex lock;
++	struct mutex mlock;
++	spinlock_t slock;
+ 	/*
+ 	 * Each VBS-K module might serve multiple connections
+ 	 * from multiple guests/device models/VBS-Us, so better
+@@ -42,22 +43,12 @@ struct ipu4_virtio_be_priv {
+ 	struct hlist_node node;
+ };
+ 
+-struct vq_request_data {
+-	struct virtio_vq_info *vq;
+-	struct ipu4_virtio_req *req;
+-	int len;
+-	uint16_t idx;
+-};
+-
+-struct vq_request_data vq_req;
+-
+ #define RNG_MAX_HASH_BITS 4		/* MAX is 2^4 */
+ #define HASH_NAME vbs_hash
+ 
+ DECLARE_HASHTABLE(HASH_NAME, RNG_MAX_HASH_BITS);
+ static int ipu_vbk_hash_initialized;
+ static int ipu_vbk_connection_cnt;
+-
+ /* function declarations */
+ static int handle_kick(int client_id, long unsigned int *req_cnt);
+ static void ipu_vbk_reset(struct ipu4_virtio_be_priv *rng);
+@@ -150,19 +141,23 @@ static int ipu_vbk_hash_del_all(void)
+ 	return 0;
+ }
+ 
+-static void handle_vq_kick(struct ipu4_virtio_be_priv *priv, int vq_idx)
++static void handle_vq_kick(int client_id, int vq_idx)
+ {
+ 	struct iovec iov;
+ 	struct ipu4_virtio_be_priv *be;
+ 	struct virtio_vq_info *vq;
++	struct ipu4_virtio_req_info *req_info = NULL;
+ 	struct ipu4_virtio_req *req = NULL;
+ 	int len;
+ 	int ret;
+ 	uint16_t idx;
+ 
+-	pr_debug("%s: vq_idx %d\n", __func__, vq_idx);
+-
+-	be = priv;
++	be = ipu_vbk_hash_find(client_id);
++	if (be == NULL) {
++		pr_err("%s: client %d not found!\n",
++				__func__, client_id);
++		return -EINVAL;
++	}
+ 
+ 	if (!be) {
+ 		pr_err("rng is NULL! Cannot proceed!\n");
+@@ -174,9 +169,9 @@ static void handle_vq_kick(struct ipu4_virtio_be_priv *priv, int vq_idx)
+ 	while (virtio_vq_has_descs(vq)) {
+ 		virtio_vq_getchain(vq, &idx, &iov, 1, NULL);
+ 
++		pr_debug("%s: vq index: %d vq buf index: %d req ptr: %lu\n",
++						__func__, vq_idx, idx, iov.iov_base);
+ 		/* device specific operations, for example: */
+-		pr_debug("iov base %p len %lx\n", iov.iov_base, iov.iov_len);
+-
+ 		if (iov.iov_len != sizeof(struct ipu4_virtio_req)) {
+ 			if (iov.iov_len == sizeof(int)) {
+ 					*((int *)iov.iov_base) = 1;
+@@ -195,20 +190,32 @@ static void handle_vq_kick(struct ipu4_virtio_be_priv *priv, int vq_idx)
+ 			continue;
+ 		}
+ 
+-		req = (struct ipu4_virtio_req *)iov.iov_base;
+-		ret = intel_ipu4_virtio_msg_parse(1, req);
+-		len = iov.iov_len;
++		req_info = ipu4_virtio_be_req_queue_get();
++		if (req_info) {
++			req = (struct ipu4_virtio_req *)iov.iov_base;
++			req_info->request = req;
++			req_info->vq_info.req_len = iov.iov_len;
++			req_info->vq_info.vq_buf_idx = idx;
++			req_info->vq_info.vq_idx = vq_idx;
++			req_info->domid = 1;
++			req_info->client_id = client_id;
++			ret = intel_ipu4_virtio_msg_parse(req_info);
++		} else {
++			pr_err("%s: Failed to get request buffer from queue!", __func__);
++			virtio_vq_relchain(vq, idx, iov.iov_len);
++			continue;
++		}
+ 
+-		if (req->stat == IPU4_REQ_NEEDS_FOLLOW_UP) {
+-			vq_req.vq = vq;
+-			vq_req.req = req;
+-			vq_req.idx = idx;
+-			vq_req.len = len;
+-		} else
+-			virtio_vq_relchain(vq, idx, len);
++		if (req->stat != IPU4_REQ_PENDING) {
++			virtio_vq_relchain(vq, idx, iov.iov_len);
++			ipu4_virtio_be_req_queue_put(req_info);
++		}
++		pr_debug("%s ending request for stream %d",
++			__func__, req->op[0]);
+ 	}
+ 	pr_debug("IPU VBK data process on VQ Done\n");
+-	if (req && req->stat != IPU4_REQ_NEEDS_FOLLOW_UP)
++	if ((req == NULL) || (req && req->stat !=
++						IPU4_REQ_PENDING))
+ 		virtio_vq_endchains(vq, 1);
+ }
+ 
+@@ -229,11 +236,11 @@ static int handle_kick(int client_id, long unsigned *ioreqs_map)
+ 		return -EINVAL;
+ 	}
+ 
+-	count = ipu_virtio_vqs_index_get(&priv->dev, ioreqs_map, val, IPU_VIRTIO_QUEUE_MAX);
++	count = virtio_vqs_index_get(&priv->dev, ioreqs_map, val, IPU_VIRTIO_QUEUE_MAX);
+ 
+ 	for (i = 0; i < count; i++) {
+ 		if (val[i] >= 0) {
+-			handle_vq_kick(priv, val[i]);
++			handle_vq_kick(client_id, val[i]);
+ 		}
+ 	}
+ 
+@@ -273,16 +280,16 @@ static int ipu_vbk_open(struct inode *inode, struct file *f)
+ 
+ 	virtio_dev_init(dev, vqs, IPU_VIRTIO_QUEUE_MAX);
+ 
+-	priv->pending_tx_req = kcalloc(1, sizeof(struct ipu4_virtio_req),
+-								GFP_KERNEL);
+-
+-	mutex_init(&priv->lock);
++	mutex_init(&priv->mlock);
++	spin_lock_init(&priv->slock);
+ 
+ 	f->private_data = priv;
+ 
+ 	/* init a hash table to maintain multi-connections */
+ 	ipu_vbk_hash_init();
+ 
++	ipu4_virtio_be_req_queue_init();
++
+ 	return 0;
+ }
+ 
+@@ -315,6 +322,8 @@ static int ipu_vbk_release(struct inode *inode, struct file *f)
+ 
+ 	kfree(priv);
+ 
++	ipu4_virtio_be_req_queue_free();
++
+ 	pr_debug("%s done\n", __func__);
+ 	return 0;
+ }
+@@ -381,63 +390,36 @@ static long ipu_vbk_ioctl(struct file *f, unsigned int ioctl,
+ 	}
+ }
+ 
+-int notify_fe(void)
++int notify_fe(int status, struct ipu4_virtio_req_info *req_info)
+ {
+-	if (vq_req.vq) {
+-		pr_debug("%s: notifying fe", __func__);
+-		vq_req.req->func_ret = 1;
+-		virtio_vq_relchain(vq_req.vq, vq_req.idx, vq_req.len);
+-		virtio_vq_endchains(vq_req.vq, 1);
+-		vq_req.vq = NULL;
+-	} else
+-		pr_debug("%s: NULL vq!", __func__);
+-
+-	return 0;
+-}
++	struct virtio_vq_info *vq;
++	struct ipu4_virtio_be_priv *be;
++	unsigned long flags = 0;
+ 
+-int ipu_virtio_vqs_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map,
+-				int *vqs_index, int max_vqs_index)
+-{
+-	int idx = 0;
+-	struct vhm_request *req;
+-	int vcpu;
++	pr_debug("%s: notifying fe %d vq idx: %d cmd: %d",
++		__func__, req_info->request->op[0],
++		req_info->vq_info.vq_idx,
++		req_info->request->cmd);
+ 
+-	if (dev == NULL) {
+-		pr_err("%s: dev is NULL!\n", __func__);
++	be = ipu_vbk_hash_find(req_info->client_id);
++	if (be == NULL) {
++		pr_err("%s: client %d not found!\n",
++				__func__, req_info->client_id);
+ 		return -EINVAL;
+ 	}
+ 
+-	while (idx < max_vqs_index) {
+-		vcpu = find_first_bit(ioreqs_map, dev->_ctx.max_vcpu);
+-		if (vcpu == dev->_ctx.max_vcpu)
+-			break;
+-		req = &dev->_ctx.req_buf[vcpu];
+-		if (atomic_read(&req->processed) == REQ_STATE_PROCESSING &&
+-		    req->client == dev->_ctx.vhm_client_id) {
+-			if (req->reqs.pio_request.direction == REQUEST_READ) {
+-				/* currently we handle kick only,
+-				 * so read will return 0
+-				 */
+-				pr_debug("%s: read request!\n", __func__);
+-				if (dev->io_range_type == PIO_RANGE)
+-					req->reqs.pio_request.value = 0;
+-				else
+-					req->reqs.mmio_request.value = 0;
+-			} else {
+-				pr_debug("%s: write request! type %d\n",
+-						__func__, req->type);
+-				if (dev->io_range_type == PIO_RANGE)
+-					vqs_index[idx++] = req->reqs.pio_request.value;
+-				else
+-					vqs_index[idx++] = req->reqs.mmio_request.value;
+-			}
+-			smp_mb();
+-			atomic_set(&req->processed, REQ_STATE_COMPLETE);
+-			acrn_ioreq_complete_request(req->client, vcpu);
+-		}
+-	}
++	vq = &(be->vqs[req_info->vq_info.vq_idx]);
++
++	req_info->request->stat = status;
+ 
+-	return idx;
++	spin_lock_irqsave(&be->slock, flags);
++	virtio_vq_relchain(vq, req_info->vq_info.vq_buf_idx,
++				req_info->vq_info.req_len);
++	virtio_vq_endchains(vq, 1);
++	ipu4_virtio_be_req_queue_put(req_info);
++	spin_unlock_irqrestore(&be->slock, flags);
++
++	return 0;
+ }
+ 
+ /* device specific function to cleanup itself */
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.h
+index 999b543..14929bb 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.h
+@@ -8,8 +8,14 @@
+ 
+ #include <linux/vbs/vbs.h>
+ 
+-int notify_fe(void);
+-int ipu_virtio_vqs_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map,
+-						int *vqs_index, int max_vqs_index);
++enum poll_status {
++	IPU4_POLL_PENDING = 0,
++	IPU4_POLL_AVAILABLE,
++	IPU4_POLL_STOP,
++	IPU4_POLL_SLEEP
++};
++
++int notify_fe(int status, struct ipu4_virtio_req_info *req_info);
++void notify_poll_thread(int stream_id, enum poll_status status);
+ 
+ #endif
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.c
+index 457c6bd..5e3b53c 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.c
+@@ -59,3 +59,80 @@ struct ipu4_virtio_fe_info *ipu4_virtio_fe_find_by_vmid(int vmid)
+ 
+ 	return NULL;
+ }
++
++int ipu4_virtio_fe_remove(int client_id)
++{
++	struct ipu4_virtio_fe_info_entry *info_entry;
++	int bkt;
++
++	hash_for_each(ipu4_virtio_fe_hash, bkt, info_entry, node)
++		if (info_entry->info->client_id == client_id) {
++			hash_del(&info_entry->node);
++			kfree(info_entry);
++			return 0;
++		}
++
++	return -ENOENT;
++}
++
++int ipu4_virtio_ring_init(struct ipu4_virtio_ring *ring,
++			  int ring_size)
++{
++	ring->buffer = kcalloc(1, ring_size * sizeof(u64), GFP_KERNEL);
++
++	if (!ring->buffer) {
++		pr_err("%s: failed to allocate memory!", __func__);
++		return -ENOMEM;
++	}
++
++	ring->head = 0;
++	ring->tail = 0;
++	ring->used = 0;
++	ring->ring_size = ring_size;
++	spin_lock_init(&ring->lock);
++
++	return 0;
++}
++
++void ipu4_virtio_ring_free(struct ipu4_virtio_ring *ring)
++{
++	kfree(ring->buffer);
++	ring->buffer = NULL;
++}
++
++int ipu4_virtio_ring_push(struct ipu4_virtio_ring *ring, void *data)
++{
++	int next;
++
++	if (ring->used == ring->ring_size) {//ring full
++		pr_err("%s: Ring is full!! %d", __func__, ring->used);
++		return -1;
++	}
++
++	next = ring->head + 1;
++	next %= ring->ring_size;
++	ring->buffer[ring->head] = (u64)data;
++	ring->head = next;
++	ring->used++;
++
++	return 0;
++}
++
++void *ipu4_virtio_ring_pop(struct ipu4_virtio_ring *ring)
++{
++	int next;
++	void *data;
++
++	if (ring->used == 0)
++		return NULL;
++
++	next = ring->tail + 1;
++	next %= ring->ring_size;
++
++	data = (void *) ring->buffer[ring->tail];
++	ring->tail = next;
++
++	ring->used--;
++
++	return data;
++}
+\ No newline at end of file
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+index 8b2260b..78f40c3 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+@@ -6,20 +6,19 @@
+ #ifndef __IPU4_VIRTIO_COMMON_H__
+ #define __IPU4_VIRTIO_COMMON_H__
+ 
+-
+ /*
+  * CWP uses physicall addresses for memory sharing,
+  * so size of one page ref will be 64-bits
+  */
+ 
+ #define REFS_PER_PAGE (PAGE_SIZE/sizeof(u64))
+-
+ /* Defines size of requests circular buffer */
+ #define REQ_RING_SIZE 128
+-
+ #define MAX_NUMBER_OF_OPERANDS 64
+-
+ #define MAX_ENTRY_FE 7
++#define MAX_STREAM_DEVICES 64
++#define MAX_PIPELINE_DEVICES 1
++#define MAX_ISYS_VIRT_STREAM 34
+ 
+ enum virio_queue_type {
+       IPU_VIRTIO_QUEUE_0 = 0,
+@@ -33,6 +32,8 @@ struct ipu4_virtio_req {
+ 	unsigned int cmd;
+ 	unsigned int func_ret;
+ 	unsigned int op[MAX_NUMBER_OF_OPERANDS];
++	struct completion wait;
++	struct list_head node;
+ 	u64 payload;
+ };
+ struct test_payload {
+@@ -114,10 +115,44 @@ enum intel_ipu4_virtio_command {
+ 
+ enum intel_ipu4_virtio_req_feedback {
+ 	IPU4_REQ_PROCESSED,
+-	IPU4_REQ_NEEDS_FOLLOW_UP,
++	IPU4_REQ_PENDING,
+ 	IPU4_REQ_ERROR,
+ 	IPU4_REQ_NOT_RESPONDED
+ };
++
++struct ipu4_virtio_ring {
++	/* Buffer allocated for keeping ring entries */
++	u64 *buffer;
++
++	/* Index pointing to next free element in ring */
++	int head;
++
++	/* Index pointing to last released element in ring */
++	int tail;
++
++	/* Total number of elements that ring can contain */
++	int ring_size;
++
++	/* Number of location in ring has been used */
++	unsigned int used;
++
++	/* Multi thread sync */
++	spinlock_t lock;
++};
++
++/* Create the ring buffer with given size */
++int ipu4_virtio_ring_init(struct ipu4_virtio_ring *ring,
++			  int ring_size);
++
++/* Frees the ring buffers */
++void ipu4_virtio_ring_free(struct ipu4_virtio_ring *ring);
++
++/* Add a buffer to ring */
++int ipu4_virtio_ring_push(struct ipu4_virtio_ring *ring, void *data);
++
++/* Grab a buffer from ring */
++void *ipu4_virtio_ring_pop(struct ipu4_virtio_ring *ring);
++
+ extern struct ipu4_bknd_ops ipu4_virtio_bknd_ops;
+ 
+ void ipu4_virtio_fe_table_init(void);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-pipeline.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-pipeline.c
+index 0f5d8b6..8122d81 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-pipeline.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-pipeline.c
+@@ -11,6 +11,7 @@
+ 
+ #include "intel-ipu4-virtio-fe-payload.h"
+ #include "intel-ipu4-virtio-fe-pipeline.h"
++#include "intel-ipu4-virtio-fe-request-queue.h"
+ 
+ int process_pipeline(struct file *file, struct ipu4_virtio_ctx *fe_priv,
+ 			void *data, int cmd)
+@@ -22,7 +23,7 @@ int process_pipeline(struct file *file, struct ipu4_virtio_ctx *fe_priv,
+ 	op[0] = 0;
+ 	op[1] = 0;
+ 
+-	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
++	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 
+@@ -33,11 +34,11 @@ int process_pipeline(struct file *file, struct ipu4_virtio_ctx *fe_priv,
+ 	rval = fe_priv->bknd_ops->send_req(fe_priv->domid, req, true, IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+ 		pr_err("Failed to send request to BE\n");
+-		kfree(req);
++		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
+ 
+-	kfree(req);
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	return rval;
+ }
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
+new file mode 100644
+index 0000000..09294da
+--- /dev/null
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
+@@ -0,0 +1,72 @@
++// SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
++/*
++ * Copyright (C) 2018 Intel Corporation
++ */
++
++#include <linux/virtio.h>
++#include <linux/spinlock.h>
++#include "intel-ipu4-virtio-common.h"
++#include "intel-ipu4-virtio-fe-request-queue.h"
++
++struct ipu4_virtio_ring ipu4_virtio_fe_req_queue;
++
++int ipu4_virtio_fe_req_queue_init(void)
++{
++	int i;
++	struct ipu4_virtio_req *req;
++
++	if (ipu4_virtio_ring_init(&ipu4_virtio_fe_req_queue, REQ_RING_SIZE))
++		return -1;
++
++	for (i = 0; i < REQ_RING_SIZE; i++) {
++		req = kcalloc(1, sizeof(struct ipu4_virtio_req), GFP_KERNEL);
++		if (req == NULL) {
++			pr_err("%s failed to allocate memory for ipu4_virtio_req",
++														__func__);
++			return -1;
++		}
++		init_completion(&req->wait);
++		ipu4_virtio_ring_push(&ipu4_virtio_fe_req_queue, req);
++	}
++	return 0;
++}
++
++void ipu4_virtio_fe_req_queue_free(void)
++{
++	int i;
++	struct ipu4_virtio_req *req;
++
++	for (i = 0; i < REQ_RING_SIZE; i++) {
++		req = ipu4_virtio_ring_pop(&ipu4_virtio_fe_req_queue);
++		if (req)
++			kfree(req);
++		else
++			break;
++	}
++	ipu4_virtio_ring_free(&ipu4_virtio_fe_req_queue);
++}
++
++struct ipu4_virtio_req *ipu4_virtio_fe_req_queue_get(void)
++{
++	struct ipu4_virtio_req *req;
++	unsigned long flags = 0;
++
++	spin_lock_irqsave(&ipu4_virtio_fe_req_queue.lock, flags);
++	req = ipu4_virtio_ring_pop(&ipu4_virtio_fe_req_queue);
++	spin_unlock_irqrestore(&ipu4_virtio_fe_req_queue.lock, flags);
++	if (req)
++		reinit_completion(&req->wait);
++	return req;
++}
++
++int ipu4_virtio_fe_req_queue_put(
++			struct ipu4_virtio_req *req)
++{
++	unsigned long flags = 0;
++	int status;
++
++	spin_lock_irqsave(&ipu4_virtio_fe_req_queue.lock, flags);
++	status = ipu4_virtio_ring_push(&ipu4_virtio_fe_req_queue, req);
++	spin_unlock_irqrestore(&ipu4_virtio_fe_req_queue.lock, flags);
++	return status;
++}
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.h
+new file mode 100644
+index 0000000..9a36c99
+--- /dev/null
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.h
+@@ -0,0 +1,14 @@
++/* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0) */
++/*
++ * Copyright (C) 2018 Intel Corporation
++ */
++
++#ifndef IPU4_VIRTIO_FE_REQUEST_QUEUE_H
++#define IPU4_VIRTIO_FE_REQUEST_QUEUE_H
++
++int ipu4_virtio_fe_req_queue_init(void);
++void ipu4_virtio_fe_req_queue_free(void);
++struct ipu4_virtio_req *ipu4_virtio_fe_req_queue_get(void);
++int ipu4_virtio_fe_req_queue_put(struct ipu4_virtio_req *req);
++
++#endif
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
+index d95e52a..29b8b47 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
+@@ -17,40 +17,54 @@ static DEFINE_IDA(index_ida);
+ 
+ struct ipu4_virtio_uos {
+ 	struct virtqueue *vq[IPU_VIRTIO_QUEUE_MAX];
+-	struct completion have_data;
+ 	char name[25];
+ 	unsigned int data_avail;
++	spinlock_t lock;
+ 	int index;
+ 	bool busy;
+ 	int vmid;
+ };
+ 
+-struct completion completion_queue[IPU_VIRTIO_QUEUE_MAX];
+-
+ /* Assuming there will be one FE instance per VM */
+ static struct ipu4_virtio_uos *ipu4_virtio_fe;
+ 
+ static void ipu_virtio_fe_tx_done_vq_0(struct virtqueue *vq)
+ {
+ 	struct ipu4_virtio_uos *priv = (struct ipu4_virtio_uos *)vq->vdev->priv;
++	struct ipu4_virtio_req *req;
++	unsigned long flags = 0;
++
++	do {
++		spin_lock_irqsave(&priv->lock, flags);
++		req = (struct ipu4_virtio_req *)
++			virtqueue_get_buf(vq, &priv->data_avail);
++		spin_unlock_irqrestore(&priv->lock, flags);
++		if (req != NULL &&
++			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
++			complete(&req->wait);
++		}
++	} while (req != NULL);
+ 
+-	/* We can get spurious callbacks, e.g. shared IRQs + virtio_pci. */
+-	if (!virtqueue_get_buf(vq, &priv->data_avail))
+-		return;
+-
+-	complete(&completion_queue[0]);
+ 	pr_debug("IPU FE:%s vmid:%d TX for VQ 0 done\n", __func__, priv->vmid);
+ }
+ 
+ static void ipu_virtio_fe_tx_done_vq_1(struct virtqueue *vq)
+ {
+ 	struct ipu4_virtio_uos *priv = (struct ipu4_virtio_uos *)vq->vdev->priv;
++	struct ipu4_virtio_req *req;
++	unsigned long flags = 0;
++
++	do {
++		spin_lock_irqsave(&priv->lock, flags);
++		req = (struct ipu4_virtio_req *)
++			virtqueue_get_buf(vq, &priv->data_avail);
++		spin_unlock_irqrestore(&priv->lock, flags);
++		if (req != NULL &&
++			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
++			complete(&req->wait);
++		}
++	} while (req != NULL);
+ 
+-	/* We can get spurious callbacks, e.g. shared IRQs + virtio_pci. */
+-	if (!virtqueue_get_buf(vq, &priv->data_avail))
+-		return;
+-
+-	complete(&completion_queue[1]);
+ 	pr_debug("IPU FE:%s vmid:%d TX for VQ 1 done\n", __func__, priv->vmid);
+ }
+ 
+@@ -59,6 +73,8 @@ static void ipu_virtio_fe_register_buffer(struct ipu4_virtio_uos *vi, void *buf,
+ 		int nqueue)
+ {
+ 	struct scatterlist sg;
++	unsigned long flags = 0;
++
+ 	if (nqueue >= IPU_VIRTIO_QUEUE_MAX) {
+ 		pr_debug("Number of queue exceeding max queue number\n");
+ 			return;
+@@ -66,19 +82,25 @@ static void ipu_virtio_fe_register_buffer(struct ipu4_virtio_uos *vi, void *buf,
+ 
+ 	sg_init_one(&sg, buf, size);
+ 
++	spin_lock_irqsave(&vi->lock, flags);
+ 	/* There should always be room for one buffer. */
+ 	virtqueue_add_inbuf(vi->vq[nqueue], &sg, 1, buf, GFP_KERNEL);
+ 
++	spin_unlock_irqrestore(&vi->lock, flags);
++
+ 	virtqueue_kick(vi->vq[nqueue]);
+ }
+ 
+ static int ipu_virtio_fe_probe_common(struct virtio_device *vdev)
+ {
+-	int err, index, i;
++	int err, index;
+ 	struct ipu4_virtio_uos *priv = NULL;
+-	vq_callback_t *callbacks[] = {ipu_virtio_fe_tx_done_vq_0,
++	vq_callback_t *callbacks[] = {
++							ipu_virtio_fe_tx_done_vq_0,
+ 							ipu_virtio_fe_tx_done_vq_1};
+-	static const char *names[] = {"csi_queue_0", "csi_queue_1"};
++	static const char * const names[] = {
++							"csi_queue_0",
++							"csi_queue_1"};
+ 	priv = kzalloc(sizeof(struct ipu4_virtio_uos), GFP_KERNEL);
+ 	if (!priv)
+ 		return -ENOMEM;
+@@ -89,8 +111,6 @@ static int ipu_virtio_fe_probe_common(struct virtio_device *vdev)
+ 		goto err_ida;
+ 	}
+ 	sprintf(priv->name, "virtio_.%d", index);
+-	for (i = 0; i < IPU_VIRTIO_QUEUE_MAX; i++)
+-		init_completion(&completion_queue[i]);
+ 	priv->vmid = -1;
+ 	vdev->priv = priv;
+ 	err = virtio_find_vqs(vdev, IPU_VIRTIO_QUEUE_MAX,
+@@ -98,6 +118,8 @@ static int ipu_virtio_fe_probe_common(struct virtio_device *vdev)
+ 	if (err)
+ 		goto err_find;
+ 
++	spin_lock_init(&priv->lock);
++
+ 	ipu4_virtio_fe = priv;
+ 
+ 	return 0;
+@@ -112,11 +134,8 @@ static int ipu_virtio_fe_probe_common(struct virtio_device *vdev)
+ static void ipu_virtio_fe_remove_common(struct virtio_device *vdev)
+ {
+ 	struct ipu4_virtio_uos *priv = vdev->priv;
+-	int i;
+ 
+ 	priv->data_avail = 0;
+-	for (i = 0; i < IPU_VIRTIO_QUEUE_MAX; i++)
+-		complete(&completion_queue[i]);
+ 	vdev->config->reset(vdev);
+ 	priv->busy = false;
+ 
+@@ -135,10 +154,8 @@ static int ipu_virtio_fe_send_req(int vmid, struct ipu4_virtio_req *req,
+ 		pr_err("IPU Backend not connected\n");
+ 		return -ENOENT;
+ 	}
+-
+-	init_completion(&completion_queue[idx]);
+ 	ipu_virtio_fe_register_buffer(ipu4_virtio_fe, req, sizeof(*req), idx);
+-	wait_for_completion(&completion_queue[idx]);
++	wait_for_completion(&req->wait);
+ 
+ 	return ret;
+ }
+-- 
+2.7.4
+

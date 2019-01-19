@@ -1,0 +1,56 @@
+From 28169b3c4f023d26a066b0030f3848337bf1f99a Mon Sep 17 00:00:00 2001
+From: Hardik T Shah <hardik.t.shah@intel.com>
+Date: Thu, 17 Mar 2016 17:44:39 +0530
+Subject: [PATCH 0455/1132] ASoC:CNL: Add support for DMIC link in SDW machine
+ driver.
+
+Add support for DMIC link in the SoundWire machine driver.
+
+Change-Id: Ia491792ea9561c6f4cf11250167d6eda82b8d555
+Signed-off-by: Hardik T Shah <hardik.t.shah@intel.com>
+---
+ sound/soc/intel/boards/cnl_cs42l42.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/sound/soc/intel/boards/cnl_cs42l42.c b/sound/soc/intel/boards/cnl_cs42l42.c
+index 78fb9cc..879aa4e 100644
+--- a/sound/soc/intel/boards/cnl_cs42l42.c
++++ b/sound/soc/intel/boards/cnl_cs42l42.c
+@@ -47,6 +47,7 @@ struct cnl_cs42l42_mc_private {
+ static const struct snd_soc_dapm_widget cnl_cs42l42_widgets[] = {
+ 	SND_SOC_DAPM_HP("Headphones", NULL),
+ 	SND_SOC_DAPM_MIC("AMIC", NULL),
++	SND_SOC_DAPM_MIC("SoC DMIC", NULL),
+ };
+ 
+ static const struct snd_soc_dapm_route cnl_cs42l42_map[] = {
+@@ -62,6 +63,9 @@ static const struct snd_soc_dapm_route cnl_cs42l42_map[] = {
+ 	{ "sdw_codec0_in", NULL, "SDW Rx" },
+ 	{ "SDW Rx", NULL, "Capture" },
+ 
++	{"DMic", NULL, "SoC DMIC"},
++	{"DMIC01 Rx", NULL, "Capture"},
++	{"dmic01_hifi", NULL, "DMIC01 Rx"},
+ 
+ };
+ 
+@@ -158,6 +162,16 @@ static int cnl_cs42l42_codec_fixup(struct snd_soc_pcm_runtime *rtd,
+ 	return 0;
+ }
+ 
++static int cnl_dmic_fixup(struct snd_soc_pcm_runtime *rtd,
++				struct snd_pcm_hw_params *params)
++{
++	struct snd_interval *channels = hw_param_interval(params,
++						SNDRV_PCM_HW_PARAM_CHANNELS);
++	channels->min = channels->max = 2;
++
++	return 0;
++}
++
+ struct snd_soc_dai_link cnl_cs42l42_msic_dailink[] = {
+ 	{
+ 		.name = "Bxtn Audio Port",
+-- 
+2.7.4
+

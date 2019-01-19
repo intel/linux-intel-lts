@@ -1,0 +1,101 @@
+From 1f0bbeeb8e871c6c38f3bd35e25c5ff428b16f79 Mon Sep 17 00:00:00 2001
+From: Jayachandran B <jayachandran.b@intel.com>
+Date: Thu, 11 Feb 2016 20:02:14 +0530
+Subject: [PATCH 0573/1132] ASoC: Intel: Skylake: Better handling of stream
+ interrupts
+
+There are storm of interrupts while audio is running.
+It seems like we have level triggered irq for audio.
+We need to disable the source of IRQ and re-enable
+them after we handle them.
+So here we are disabling them in main irq handler and
+re-enable them in bottom half.
+
+Change-Id: I482dacb83f61229783bfe0c61721b73f47ee4703
+Tracked-On:
+Signed-off-by: Jayachandran B <jayachandran.b@intel.com>
+Signed-off-by: Ramesh Babu <Ramesh.Babu@intel.com>
+Reviewed-on:
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 29 ++++++++++++++++++++++++++---
+ 1 file changed, 26 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 46fc036..251fa4f 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -216,16 +216,18 @@ static irqreturn_t skl_interrupt(int irq, void *dev_id)
+ {
+ 	struct hdac_bus *bus = dev_id;
+ 	u32 status;
++	u32 mask, int_enable;
++	int ret = IRQ_NONE;
+ 
+ 	if (!pm_runtime_active(bus->dev))
+-		return IRQ_NONE;
++		return ret;
+ 
+ 	spin_lock(&bus->reg_lock);
+ 
+ 	status = snd_hdac_chip_readl(bus, INTSTS);
+ 	if (status == 0 || status == 0xffffffff) {
+ 		spin_unlock(&bus->reg_lock);
+-		return IRQ_NONE;
++		return ret;
+ 	}
+ 
+ 	/* clear rirb int */
+@@ -236,20 +238,41 @@ static irqreturn_t skl_interrupt(int irq, void *dev_id)
+ 		snd_hdac_chip_writeb(bus, RIRBSTS, RIRB_INT_MASK);
+ 	}
+ 
++	mask = (0x1 << ebus->num_streams) - 1;
++
++	status = snd_hdac_chip_readl(bus, INTSTS);
++	status &= mask;
++	if (status) {
++		/* Disable stream interrupts; Re-enable in bottom half */
++		int_enable = snd_hdac_chip_readl(bus, INTCTL);
++		snd_hdac_chip_writel(bus, INTCTL, (int_enable & (~mask)));
++		ret = IRQ_WAKE_THREAD;
++	} else
++		ret = IRQ_HANDLED;
++
+ 	spin_unlock(&bus->reg_lock);
++	return ret;
+ 
+-	return snd_hdac_chip_readl(bus, INTSTS) ? IRQ_WAKE_THREAD : IRQ_HANDLED;
+ }
+ 
+ static irqreturn_t skl_threaded_handler(int irq, void *dev_id)
+ {
+ 	struct hdac_bus *bus = dev_id;
+ 	u32 status;
++	u32 int_enable;
++	u32 mask;
++	unsigned long flags;
+ 
+ 	status = snd_hdac_chip_readl(bus, INTSTS);
+ 
+ 	snd_hdac_bus_handle_stream_irq(bus, status, skl_stream_update);
+ 
++	/* Re-enable stream interrupts */
++	mask = (0x1 << ebus->num_streams) - 1;
++	spin_lock_irqsave(&bus->reg_lock, flags);
++	int_enable = snd_hdac_chip_readl(bus, INTCTL);
++	snd_hdac_chip_writel(bus, INTCTL, (int_enable | mask));
++	spin_unlock_irqrestore(&bus->reg_lock, flags);
+ 	return IRQ_HANDLED;
+ }
+ 
+-- 
+2.7.4
+

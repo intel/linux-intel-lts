@@ -1,0 +1,65 @@
+From 0d4ee1151b39bc85dcba00e087cac9005350c9ed Mon Sep 17 00:00:00 2001
+From: "he, bo" <bo.he@intel.com>
+Date: Tue, 18 Dec 2018 11:31:08 +0800
+Subject: [PATCH 1060/1132] rcu: Do RCU GP kthread self-wakeup from softirq and
+ interrupt
+
+The rcu_gp_kthread_wake() function is invoked when it might be necessary
+to wake the RCU grace-period kthread.  Because self-wakeups are normally
+a useless waste of CPU cycles, if rcu_gp_kthread_wake() is invoked from
+this kthread, it naturally refuses to do the wakeup.
+
+Unfortunately, natural though it might be, this heuristic fails when
+rcu_gp_kthread_wake() is invoked from an interrupt or softirq handler
+that interrupted the grace-period kthread just after the final check of
+the wait-event condition but just before the schedule() call.  In this
+case, a wakeup is required, even though the call to rcu_gp_kthread_wake()
+is within the RCU grace-period kthread's context.  Failing to provide
+this wakeup can result in grace periods failing to start, which in turn
+results in out-of-memory conditions.
+
+This race window is quite narrow, but it actually did happen during real
+testing.  It would of course need to be fixed even if it was strictly
+theoretical in nature.
+
+This patch does not Cc stable because it does not apply cleanly to
+earlier kernel versions.
+
+Fixes: 48a7639ce80c ("rcu: Make callers awaken grace-period kthread")
+[ paulmck: Switch from !in_softirq() to "!in_interrupt() &&
+  !in_serving_softirq() to avoid redundant wakeups and to handle the
+   interrupt-handler (as opposed to softirq-handler) scenario called out
+   above. ]
+Signed-off-by: Paul E. McKenney <paulmck@linux.ibm.com>
+
+Change-Id: I58cc9b05a54cfe0b8af8b630a7e26f25c355d9e8
+Tracked-On: PKT-1623
+Reported-by: "He, Bo" <bo.he@intel.com>
+Co-developed-by: "Zhang, Jun" <jun.zhang@intel.com>
+Co-developed-by: "He, Bo" <bo.he@intel.com>
+Signed-off: "Zhang, Jun" <jun.zhang@intel.com>
+Signed-off: "He, Bo" <bo.he@intel.com>
+Signed-off: "xiao, jin" <jin.xiao@intel.com>
+Signed-off: Bai, Jie A <jie.a.bai@intel.com>
+Signed-off-by: "Zhang, Jun" <jun.zhang@intel.com>
+---
+ kernel/rcu/tree.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/rcu/tree.c b/kernel/rcu/tree.c
+index d2f0c72..ea2e5c7 100644
+--- a/kernel/rcu/tree.c
++++ b/kernel/rcu/tree.c
+@@ -1731,7 +1731,8 @@ static bool rcu_future_gp_cleanup(struct rcu_state *rsp, struct rcu_node *rnp)
+  */
+ static void rcu_gp_kthread_wake(struct rcu_state *rsp)
+ {
+-	if (current == rsp->gp_kthread ||
++	if ((current == rsp->gp_kthread &&
++	     !in_interrupt() && !in_serving_softirq()) ||
+ 	    !READ_ONCE(rsp->gp_flags) ||
+ 	    !rsp->gp_kthread)
+ 		return;
+-- 
+2.7.4
+

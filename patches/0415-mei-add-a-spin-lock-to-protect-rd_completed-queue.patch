@@ -1,0 +1,191 @@
+From 0847747b198376c5a0e296891c482be5bf0be8b9 Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Sun, 12 Aug 2018 14:21:27 +0300
+Subject: [PATCH 0415/1132] mei: add a spin lock to protect rd_completed queue
+
+This will add ability to access read completed queue
+outside of the driver big lock.
+
+Change-Id: I5713f32bca80b4b6ac3bf7cb9b21726b3ce7a224
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/bus.c     |  6 +++---
+ drivers/misc/mei/client.c  | 19 +++++++++++++------
+ drivers/misc/mei/client.h  | 20 ++++++++++++++++++--
+ drivers/misc/mei/main.c    |  6 +++---
+ drivers/misc/mei/mei_dev.h |  2 ++
+ 5 files changed, 39 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/misc/mei/bus.c b/drivers/misc/mei/bus.c
+index e5456fa..f4a7bea 100644
+--- a/drivers/misc/mei/bus.c
++++ b/drivers/misc/mei/bus.c
+@@ -161,7 +161,7 @@ ssize_t __mei_cl_recv(struct mei_cl *cl, u8 *buf, size_t length,
+ 		if (timeout) {
+ 			rets = wait_event_interruptible_timeout
+ 					(cl->rx_wait,
+-					(!list_empty(&cl->rd_completed)) ||
++					mei_cl_read_cb(cl, NULL) ||
+ 					(!mei_cl_is_connected(cl)),
+ 					msecs_to_jiffies(timeout));
+ 			if (rets == 0)
+@@ -174,7 +174,7 @@ ssize_t __mei_cl_recv(struct mei_cl *cl, u8 *buf, size_t length,
+ 		} else {
+ 			if (wait_event_interruptible
+ 					(cl->rx_wait,
+-					(!list_empty(&cl->rd_completed)) ||
++					mei_cl_read_cb(cl, NULL) ||
+ 					(!mei_cl_is_connected(cl)))) {
+ 				if (signal_pending(current))
+ 					return -EINTR;
+@@ -207,7 +207,7 @@ ssize_t __mei_cl_recv(struct mei_cl *cl, u8 *buf, size_t length,
+ 	rets = r_length;
+ 
+ free:
+-	mei_io_cb_free(cb);
++	mei_cl_del_rd_completed(cl, cb);
+ out:
+ 	mutex_unlock(&bus->device_lock);
+ 
+diff --git a/drivers/misc/mei/client.c b/drivers/misc/mei/client.c
+index 42f2e30..24dc7ae 100644
+--- a/drivers/misc/mei/client.c
++++ b/drivers/misc/mei/client.c
+@@ -511,15 +511,19 @@ struct mei_cl_cb *mei_cl_enqueue_ctrl_wr_cb(struct mei_cl *cl, size_t length,
+  *
+  * Return: cb on success, NULL if cb is not found
+  */
+-struct mei_cl_cb *mei_cl_read_cb(const struct mei_cl *cl, const struct file *fp)
++struct mei_cl_cb *mei_cl_read_cb(struct mei_cl *cl, const struct file *fp)
+ {
+ 	struct mei_cl_cb *cb;
++	struct mei_cl_cb *ret_cb = NULL;
+ 
++	spin_lock(&cl->rd_completed_lock);
+ 	list_for_each_entry(cb, &cl->rd_completed, list)
+-		if (!fp || fp == cb->fp)
+-			return cb;
+-
+-	return NULL;
++		if (!fp || fp == cb->fp) {
++			ret_cb = cb;
++			break;
++		}
++	spin_unlock(&cl->rd_completed_lock);
++	return ret_cb;
+ }
+ 
+ /**
+@@ -545,7 +549,9 @@ int mei_cl_flush_queues(struct mei_cl *cl, const struct file *fp)
+ 	mei_io_list_flush_cl(&cl->dev->ctrl_wr_list, cl);
+ 	mei_io_list_flush_cl(&cl->dev->ctrl_rd_list, cl);
+ 	mei_io_list_free_fp(&cl->rd_pending, fp);
++	spin_lock(&cl->rd_completed_lock);
+ 	mei_io_list_free_fp(&cl->rd_completed, fp);
++	spin_unlock(&cl->rd_completed_lock);
+ 
+ 	return 0;
+ }
+@@ -563,6 +569,7 @@ static void mei_cl_init(struct mei_cl *cl, struct mei_device *dev)
+ 	init_waitqueue_head(&cl->rx_wait);
+ 	init_waitqueue_head(&cl->tx_wait);
+ 	init_waitqueue_head(&cl->ev_wait);
++	spin_lock_init(&cl->rd_completed_lock);
+ 	INIT_LIST_HEAD(&cl->rd_completed);
+ 	INIT_LIST_HEAD(&cl->rd_pending);
+ 	INIT_LIST_HEAD(&cl->link);
+@@ -1841,7 +1848,7 @@ void mei_cl_complete(struct mei_cl *cl, struct mei_cl_cb *cb)
+ 		break;
+ 
+ 	case MEI_FOP_READ:
+-		list_add_tail(&cb->list, &cl->rd_completed);
++		mei_cl_add_rd_completed(cl, cb);
+ 		if (!mei_cl_is_fixed_address(cl) &&
+ 		    !WARN_ON(!cl->rx_flow_ctrl_creds))
+ 			cl->rx_flow_ctrl_creds--;
+diff --git a/drivers/misc/mei/client.h b/drivers/misc/mei/client.h
+index 64e318f..13223b5 100644
+--- a/drivers/misc/mei/client.h
++++ b/drivers/misc/mei/client.h
+@@ -95,8 +95,24 @@ int mei_cl_unlink(struct mei_cl *cl);
+ 
+ struct mei_cl *mei_cl_alloc_linked(struct mei_device *dev);
+ 
+-struct mei_cl_cb *mei_cl_read_cb(const struct mei_cl *cl,
+-				 const struct file *fp);
++struct mei_cl_cb *mei_cl_read_cb(struct mei_cl *cl, const struct file *fp);
++
++static inline void mei_cl_add_rd_completed(struct mei_cl *cl,
++					   struct mei_cl_cb *cb)
++{
++	spin_lock(&cl->rd_completed_lock);
++	list_add_tail(&cb->list, &cl->rd_completed);
++	spin_unlock(&cl->rd_completed_lock);
++}
++
++static inline void mei_cl_del_rd_completed(struct mei_cl *cl,
++					   struct mei_cl_cb *cb)
++{
++	spin_lock(&cl->rd_completed_lock);
++	mei_io_cb_free(cb);
++	spin_unlock(&cl->rd_completed_lock);
++}
++
+ struct mei_cl_cb *mei_cl_alloc_cb(struct mei_cl *cl, size_t length,
+ 				  enum mei_cb_file_ops type,
+ 				  const struct file *fp);
+diff --git a/drivers/misc/mei/main.c b/drivers/misc/mei/main.c
+index 87281b3..6227b40 100644
+--- a/drivers/misc/mei/main.c
++++ b/drivers/misc/mei/main.c
+@@ -181,7 +181,7 @@ static ssize_t mei_read(struct file *file, char __user *ubuf,
+ 
+ 	mutex_unlock(&dev->device_lock);
+ 	if (wait_event_interruptible(cl->rx_wait,
+-				     !list_empty(&cl->rd_completed) ||
++				     mei_cl_read_cb(cl, file) ||
+ 				     !mei_cl_is_connected(cl))) {
+ 		if (signal_pending(current))
+ 			return -EINTR;
+@@ -232,7 +232,7 @@ static ssize_t mei_read(struct file *file, char __user *ubuf,
+ 		goto out;
+ 
+ free:
+-	mei_io_cb_free(cb);
++	mei_cl_del_rd_completed(cl, cb);
+ 	*offset = 0;
+ 
+ out:
+@@ -593,7 +593,7 @@ static __poll_t mei_poll(struct file *file, poll_table *wait)
+ 	if (req_events & (EPOLLIN | EPOLLRDNORM)) {
+ 		poll_wait(file, &cl->rx_wait, wait);
+ 
+-		if (!list_empty(&cl->rd_completed))
++		if (mei_cl_read_cb(cl, file))
+ 			mask |= EPOLLIN | EPOLLRDNORM;
+ 		else
+ 			mei_cl_read_start(cl, mei_cl_mtu(cl), file);
+diff --git a/drivers/misc/mei/mei_dev.h b/drivers/misc/mei/mei_dev.h
+index 5f033b7..7058475 100644
+--- a/drivers/misc/mei/mei_dev.h
++++ b/drivers/misc/mei/mei_dev.h
+@@ -227,6 +227,7 @@ struct mei_cl_cb {
+  * @tx_cb_queued: number of tx callbacks in queue
+  * @writing_state: state of the tx
+  * @rd_pending: pending read credits
++ * @rd_completed_lock: protects rd_completed queue
+  * @rd_completed: completed read
+  *
+  * @cldev: device on the mei client bus
+@@ -252,6 +253,7 @@ struct mei_cl {
+ 	u8 tx_cb_queued;
+ 	enum mei_file_transaction_states writing_state;
+ 	struct list_head rd_pending;
++	spinlock_t rd_completed_lock; /* protects rd_completed queue */
+ 	struct list_head rd_completed;
+ 
+ 	struct mei_cl_device *cldev;
+-- 
+2.7.4
+

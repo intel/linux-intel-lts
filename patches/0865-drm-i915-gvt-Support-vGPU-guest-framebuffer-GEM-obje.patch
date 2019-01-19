@@ -1,0 +1,577 @@
+From 5f8f77e6c1e832c925678c48b92b777c3e5195b5 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 14 Sep 2018 16:10:19 +0800
+Subject: [PATCH 0865/1132] drm/i915/gvt: Support vGPU guest framebuffer GEM
+ object
+
+In the compositor mode of display, dom0/host needs to get the guest
+framebuffer to do more rendering, so that the guest VM's screen can
+show up in more fancy way, e.g., in an X window of dom0/host.
+
+In order to do that, a new gem object type "gvtbuffer" is introduced
+to i915. Different from normal gem object in i915, gvtbuffer does not
+have its own backing storage. Instead, it borrows the page frames
+of guest VM's framebuffer as its own backing storage.
+
+From high level, it works this way:
+a) gvt notifies kernel/userspace the guest OS page flip by
+monitoring the related guest MMIO changes and commands.
+b) user space issue IOCTL to create gvtbuffer gem object.
+c) kernel creates the gem object, and record the guest FB base
+address (gfx address) from MMIO.
+d) When needed, the gvtbuffer will be bound to graphics
+memory, and be used as normal gem object for rendering.
+
+Guest framebuffer must be inside GGTT, whereas the gvtbuffer can be
+in either GGTT or PPGTT, depending on the requirement of the
+rendering.
+
+Since the gvtbuffer corresponds to the guest framebuffer, which is
+from guest physical memory, we may not be able to get "page struct"
+for them. But i915 gem framework has had similar cases. A gem
+object can have stolen memory as its backing storage. In such case,
+the backing storage does not have "page struct" as well, and i915 has
+handled the case in the framework well.
+
+This patch was originally from daivid.j.cowperthwaite@intel.com, and
+pretty some changes were made since then.
+
+Change-Id: Ic0821f58dd568217a44b1b478c9659c709889c43
+Signed-off-by: Zhiyuan Lv <zhiyuan.lv@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/Makefile             |   1 +
+ drivers/gpu/drm/i915/gvt/fb_decoder.c     |  68 +++++++
+ drivers/gpu/drm/i915/gvt/fb_decoder.h     |   4 +
+ drivers/gpu/drm/i915/i915_drv.c           |   1 +
+ drivers/gpu/drm/i915/i915_drv.h           |   2 +
+ drivers/gpu/drm/i915/i915_gem_gvtbuffer.c | 293 ++++++++++++++++++++++++++++++
+ include/uapi/drm/drm_fourcc.h             |   9 +
+ include/uapi/drm/i915_drm.h               |  40 ++++
+ 8 files changed, 418 insertions(+)
+ create mode 100644 drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+
+diff --git a/drivers/gpu/drm/i915/Makefile b/drivers/gpu/drm/i915/Makefile
+index 5794f10..a5198df 100644
+--- a/drivers/gpu/drm/i915/Makefile
++++ b/drivers/gpu/drm/i915/Makefile
+@@ -79,6 +79,7 @@ i915-y += i915_cmd_parser.o \
+ 	  i915_trace_points.o \
+ 	  i915_vma.o \
+ 	  intel_breadcrumbs.o \
++	  i915_gem_gvtbuffer.o \
+ 	  intel_engine_cs.o \
+ 	  intel_hangcheck.o \
+ 	  intel_lrc.o \
+diff --git a/drivers/gpu/drm/i915/gvt/fb_decoder.c b/drivers/gpu/drm/i915/gvt/fb_decoder.c
+index 85e6736..28f02cb 100644
+--- a/drivers/gpu/drm/i915/gvt/fb_decoder.c
++++ b/drivers/gpu/drm/i915/gvt/fb_decoder.c
+@@ -37,6 +37,7 @@
+ #include "i915_drv.h"
+ #include "gvt.h"
+ #include "i915_pvinfo.h"
++#include "fb_decoder.h"
+ 
+ #define PRIMARY_FORMAT_NUM	16
+ struct pixel_format {
+@@ -511,3 +512,70 @@ int intel_vgpu_decode_sprite_plane(struct intel_vgpu *vgpu,
+ 
+ 	return 0;
+ }
++
++/**
++ * intel_vgpu_decode_fb_format - Decode framebuffer information from raw vMMIO
++ * @gvt: GVT device
++ * @vmid: guest domain ID
++ * @fb: frame buffer infomation of guest.
++ * This function is called for query frame buffer format, so that gl can
++ * display guest fb in Dom0
++ *
++ * Returns:
++ * Zero on success, negative error code if failed.
++ */
++int intel_vgpu_decode_fb_format(struct intel_gvt *gvt, int id,
++				struct intel_vgpu_fb_format *fb)
++
++{
++	int i;
++	struct intel_vgpu *vgpu = NULL;
++	int ret = 0;
++	struct drm_i915_private *dev_priv = gvt->dev_priv;
++
++	if (!fb)
++		return -EINVAL;
++
++	/* TODO: use fine-grained refcnt later */
++	mutex_lock(&gvt->lock);
++
++	for_each_active_vgpu(gvt, vgpu, i)
++		if (vgpu->id == id)
++			break;
++
++	if (!vgpu) {
++		gvt_err("Invalid vgpu ID (%d)\n", id);
++		mutex_unlock(&gvt->lock);
++		return -ENODEV;
++	}
++
++	for (i = 0; i < I915_MAX_PIPES; i++) {
++		struct intel_vgpu_pipe_format *pipe = &fb->pipes[i];
++		u32 ddi_func_ctl = vgpu_vreg_t(vgpu, TRANS_DDI_FUNC_CTL(i));
++
++		if (!(ddi_func_ctl & TRANS_DDI_FUNC_ENABLE)) {
++			pipe->ddi_port = DDI_PORT_NONE;
++		} else {
++			u32 port = (ddi_func_ctl & TRANS_DDI_PORT_MASK) >>
++						TRANS_DDI_PORT_SHIFT;
++			if (port <= DDI_PORT_E)
++				pipe->ddi_port = port;
++			else
++				pipe->ddi_port = DDI_PORT_NONE;
++		}
++
++		ret |= intel_vgpu_decode_primary_plane(vgpu, &pipe->primary);
++		ret |= intel_vgpu_decode_sprite_plane(vgpu, &pipe->sprite);
++		ret |= intel_vgpu_decode_cursor_plane(vgpu, &pipe->cursor);
++
++		if (ret) {
++			gvt_err("Decode format error for pipe(%d)\n", i);
++			ret = -EINVAL;
++			break;
++		}
++	}
++
++	mutex_unlock(&gvt->lock);
++
++	return ret;
++}
+diff --git a/drivers/gpu/drm/i915/gvt/fb_decoder.h b/drivers/gpu/drm/i915/gvt/fb_decoder.h
+index 60c1550..a202f9f 100644
+--- a/drivers/gpu/drm/i915/gvt/fb_decoder.h
++++ b/drivers/gpu/drm/i915/gvt/fb_decoder.h
+@@ -166,4 +166,8 @@ int intel_vgpu_decode_cursor_plane(struct intel_vgpu *vgpu,
+ int intel_vgpu_decode_sprite_plane(struct intel_vgpu *vgpu,
+ 	struct intel_vgpu_sprite_plane_format *plane);
+ 
++extern
++int intel_vgpu_decode_fb_format(struct intel_gvt *pdev, int vmid,
++				struct intel_vgpu_fb_format *fb);
++
+ #endif
+diff --git a/drivers/gpu/drm/i915/i915_drv.c b/drivers/gpu/drm/i915/i915_drv.c
+index f8cfd16..91fd59f 100644
+--- a/drivers/gpu/drm/i915/i915_drv.c
++++ b/drivers/gpu/drm/i915/i915_drv.c
+@@ -2860,6 +2860,7 @@ static const struct drm_ioctl_desc i915_ioctls[] = {
+ 	DRM_IOCTL_DEF_DRV(I915_PERF_ADD_CONFIG, i915_perf_add_config_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
+ 	DRM_IOCTL_DEF_DRV(I915_PERF_REMOVE_CONFIG, i915_perf_remove_config_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
+ 	DRM_IOCTL_DEF_DRV(I915_QUERY, i915_query_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
++	DRM_IOCTL_DEF_DRV(I915_GEM_GVTBUFFER, i915_gem_gvtbuffer_ioctl, DRM_RENDER_ALLOW),
+ };
+ 
+ static struct drm_driver driver = {
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index 5418ca7..219fa27 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -3246,6 +3246,8 @@ int i915_perf_remove_config_ioctl(struct drm_device *dev, void *data,
+ void i915_oa_init_reg_state(struct intel_engine_cs *engine,
+ 			    struct i915_gem_context *ctx,
+ 			    uint32_t *reg_state);
++int i915_gem_gvtbuffer_ioctl(struct drm_device *dev, void *data,
++			     struct drm_file *file);
+ 
+ /* i915_gem_evict.c */
+ int __must_check i915_gem_evict_something(struct i915_address_space *vm,
+diff --git a/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c b/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+new file mode 100644
+index 0000000..fe72309
+--- /dev/null
++++ b/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+@@ -0,0 +1,293 @@
++/*
++ * Copyright © 2012 - 2015 Intel Corporation
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ *
++ */
++
++#include "i915_drv.h"
++#include "i915_trace.h"
++#include "intel_drv.h"
++#include <linux/swap.h>
++
++#include "gvt/gvt.h"
++#include "gvt/fb_decoder.h"
++
++static int
++i915_gem_gvtbuffer_get_pages(struct drm_i915_gem_object *obj)
++{
++	BUG();
++	return -EINVAL;
++}
++
++static void i915_gem_gvtbuffer_put_pages(struct drm_i915_gem_object *obj,
++					 struct sg_table *pages)
++{
++	/* like stolen memory, this should only be called during free
++	 * after clearing pin count.
++	 */
++	sg_free_table(pages);
++	kfree(pages);
++}
++
++static void
++i915_gem_gvtbuffer_release(struct drm_i915_gem_object *obj)
++{
++	i915_gem_object_unpin_pages(obj);
++}
++
++static const struct drm_i915_gem_object_ops i915_gem_gvtbuffer_ops = {
++	.get_pages = i915_gem_gvtbuffer_get_pages,
++	.put_pages = i915_gem_gvtbuffer_put_pages,
++	.release = i915_gem_gvtbuffer_release,
++};
++
++#define GEN8_DECODE_PTE(pte) \
++	((dma_addr_t)(((((u64)pte) >> 12) & 0x7ffffffULL) << 12))
++
++#define GEN7_DECODE_PTE(pte) \
++	((dma_addr_t)(((((u64)pte) & 0x7f0) << 28) | (u64)(pte & 0xfffff000)))
++
++static struct sg_table *
++i915_create_sg_pages_for_gvtbuffer(struct drm_device *dev,
++			     u32 start, u32 num_pages)
++{
++	struct drm_i915_private *dev_priv = dev->dev_private;
++	struct sg_table *st;
++	struct scatterlist *sg;
++	int i;
++
++	st = kmalloc(sizeof(*st), GFP_KERNEL);
++	if (st == NULL)
++		return NULL;
++
++	if (sg_alloc_table(st, num_pages, GFP_KERNEL)) {
++		kfree(st);
++		return NULL;
++	}
++
++	if (INTEL_INFO(dev_priv)->gen >= 8) {
++		gen8_pte_t __iomem *gtt_entries =
++			(gen8_pte_t __iomem *)dev_priv->ggtt.gsm +
++			(start >> PAGE_SHIFT);
++		for_each_sg(st->sgl, sg, num_pages, i) {
++			sg->offset = 0;
++			sg->length = PAGE_SIZE;
++			sg_dma_address(sg) =
++				GEN8_DECODE_PTE(readq(&gtt_entries[i]));
++			sg_dma_len(sg) = PAGE_SIZE;
++		}
++	} else {
++		gen6_pte_t __iomem *gtt_entries =
++			(gen6_pte_t __iomem *)dev_priv->ggtt.gsm +
++			(start >> PAGE_SHIFT);
++		for_each_sg(st->sgl, sg, num_pages, i) {
++			sg->offset = 0;
++			sg->length = PAGE_SIZE;
++			sg_dma_address(sg) =
++				GEN7_DECODE_PTE(readq(&gtt_entries[i]));
++			sg_dma_len(sg) = PAGE_SIZE;
++		}
++	}
++
++	return st;
++}
++
++struct drm_i915_gem_object *
++i915_gem_object_create_gvtbuffer(struct drm_device *dev,
++				 u32 start, u32 num_pages)
++{
++	struct drm_i915_gem_object *obj;
++	obj = i915_gem_object_alloc(to_i915(dev));
++	if (obj == NULL)
++		return NULL;
++
++	drm_gem_private_object_init(dev, &obj->base, num_pages << PAGE_SHIFT);
++	i915_gem_object_init(obj, &i915_gem_gvtbuffer_ops);
++
++	obj->mm.pages = i915_create_sg_pages_for_gvtbuffer(dev, start, num_pages);
++	if (obj->mm.pages == NULL) {
++		i915_gem_object_free(obj);
++		return NULL;
++	}
++
++	if (i915_gem_object_pin_pages(obj))
++		printk(KERN_ERR "%s:%d> Pin pages failed!\n", __func__, __LINE__);
++	obj->cache_level = I915_CACHE_L3_LLC;
++
++	DRM_DEBUG_DRIVER("GVT_GEM: backing store base = 0x%x pages = 0x%x\n",
++			 start, num_pages);
++	return obj;
++}
++
++static int gvt_decode_information(struct drm_device *dev,
++				  struct drm_i915_gem_gvtbuffer *args)
++{
++	struct drm_i915_private *dev_priv = dev->dev_private;
++	struct intel_vgpu_fb_format fb;
++	struct intel_vgpu_primary_plane_format *p;
++	struct intel_vgpu_cursor_plane_format *c;
++	struct intel_vgpu_pipe_format *pipe;
++#if IS_ENABLED(CONFIG_DRM_I915_GVT)
++	u32 id = args->id;
++
++	if (intel_vgpu_decode_fb_format(dev_priv->gvt, id, &fb))
++		return -EINVAL;
++#else
++	return -EINVAL;
++#endif
++
++	pipe = ((args->pipe_id >= I915_MAX_PIPES) ?
++		NULL : &fb.pipes[args->pipe_id]);
++
++	if (!pipe || !pipe->primary.enabled) {
++		DRM_DEBUG_DRIVER("GVT_GEM: Invalid pipe_id: %d\n",
++				 args->pipe_id);
++		return -EINVAL;
++	}
++
++	if ((args->plane_id) == I915_GVT_PLANE_PRIMARY) {
++		p = &pipe->primary;
++		args->enabled = p->enabled;
++		args->x_offset = p->x_offset;
++		args->y_offset = p->y_offset;
++		args->start = p->base;
++		args->width = p->width;
++		args->height = p->height;
++		args->stride = p->stride;
++		args->bpp = p->bpp;
++		args->hw_format = p->hw_format;
++		args->drm_format = p->drm_format;
++		args->tiled = p->tiled;
++	} else if ((args->plane_id) == I915_GVT_PLANE_CURSOR) {
++		c = &pipe->cursor;
++		args->enabled = c->enabled;
++		args->x_offset = c->x_hot;
++		args->y_offset = c->y_hot;
++		args->x_pos = c->x_pos;
++		args->y_pos = c->y_pos;
++		args->start = c->base;
++		args->width = c->width;
++		args->height = c->height;
++		args->stride = c->width * (c->bpp / 8);
++		args->bpp = c->bpp;
++		args->tiled = 0;
++	} else {
++		DRM_DEBUG_DRIVER("GVT_GEM: Invalid plaine_id: %d\n",
++				 args->plane_id);
++		return -EINVAL;
++	}
++
++	args->size = (((args->width * args->height * args->bpp) / 8) +
++		      (PAGE_SIZE - 1)) >> PAGE_SHIFT;
++
++	if (args->start & (PAGE_SIZE - 1)) {
++		DRM_DEBUG_DRIVER("GVT_GEM: Not aligned fb start address: "
++				 "0x%x\n", args->start);
++		return -EINVAL;
++	}
++
++	if (((args->start >> PAGE_SHIFT) + args->size) >
++	    ggtt_total_entries(&dev_priv->ggtt)) {
++		DRM_DEBUG_DRIVER("GVT: Invalid GTT offset or size\n");
++		return -EINVAL;
++	}
++	return 0;
++}
++
++/**
++ * Creates a new mm object that wraps some user memory.
++ */
++int
++i915_gem_gvtbuffer_ioctl(struct drm_device *dev, void *data,
++			 struct drm_file *file)
++{
++	struct drm_i915_private *dev_priv = to_i915(dev);
++	struct drm_i915_gem_gvtbuffer *args = data;
++	struct drm_i915_gem_object *obj;
++	u32 handle;
++	int ret = 0;
++
++	if (INTEL_INFO(dev_priv)->gen < 7)
++		return -EPERM;
++
++	if (args->flags & I915_GVTBUFFER_CHECK_CAPABILITY)
++		return 0;
++#if 0
++	if (!gvt_check_host())
++		return -EPERM;
++#endif
++	/* if args->start != 0 do not decode, but use it as ggtt offset*/
++	if (args->start == 0) {
++		ret = gvt_decode_information(dev, args);
++		if (ret)
++			return ret;
++	}
++
++	if (ret)
++		return ret;
++
++	if (args->flags & I915_GVTBUFFER_QUERY_ONLY)
++		return 0;
++
++	obj = i915_gem_object_create_gvtbuffer(dev, args->start, args->size);
++	if (!obj) {
++		DRM_DEBUG_DRIVER("GVT_GEM: Failed to create gem object"
++					" for VM FB!\n");
++		return -EINVAL;
++	}
++
++	if (IS_SKYLAKE(dev_priv) || IS_BROXTON(dev_priv) ||
++			IS_KABYLAKE(dev_priv)) {
++		unsigned int tiling_mode = I915_TILING_NONE;
++		unsigned int stride = 0;
++
++		switch (args->tiled << 10) {
++		case PLANE_CTL_TILED_LINEAR:
++			/* Default valid value */
++			break;
++		case PLANE_CTL_TILED_X:
++			tiling_mode = I915_TILING_X;
++			stride = args->stride;
++			break;
++		case PLANE_CTL_TILED_Y:
++			tiling_mode = I915_TILING_Y;
++			stride = args->stride;
++			break;
++		default:
++			DRM_ERROR("gvt: tiling mode %d not supported\n", args->tiled);
++		}
++		obj->tiling_and_stride = tiling_mode | stride;
++	} else {
++		obj->tiling_and_stride = (args->tiled ? I915_TILING_X : I915_TILING_NONE) |
++			                 (args->tiled ? args->stride : 0);
++	}
++
++	ret = drm_gem_handle_create(file, &obj->base, &handle);
++
++	/* drop reference from allocate - handle holds it now */
++	i915_gem_object_put(obj);
++
++	if (ret)
++		return ret;
++
++	args->handle = handle;
++	return 0;
++}
+diff --git a/include/uapi/drm/drm_fourcc.h b/include/uapi/drm/drm_fourcc.h
+index 721ab7e..39b9a73 100644
+--- a/include/uapi/drm/drm_fourcc.h
++++ b/include/uapi/drm/drm_fourcc.h
+@@ -100,6 +100,15 @@ extern "C" {
+ #define DRM_FORMAT_RGBX1010102	fourcc_code('R', 'X', '3', '0') /* [31:0] R:G:B:x 10:10:10:2 little endian */
+ #define DRM_FORMAT_BGRX1010102	fourcc_code('B', 'X', '3', '0') /* [31:0] B:G:R:x 10:10:10:2 little endian */
+ 
++/* 64 bpp RGB, below two items is add by VGT project, the reason as below:
++ * 1. Current version DRM code is not contains 64 bpp RGB definations.
++ * 2. VGT should support 64 bpp RGB for Windows 10 guest.
++ * 3. VGT add the 64 bpp RGB definations temperarily, before the DRM code add these definations.
++ */
++#define DRM_FORMAT_XRGB161616_VGT  fourcc_code('X', 'R', '4', '8') /* [63:0] x:R:G:B 16:16:16:16 little endian */
++#define DRM_FORMAT_XBGR161616_VGT  fourcc_code('X', 'B', '4', '8') /* [63:0] x:B:G:R 16:16:16:16 little endian */
++
++
+ #define DRM_FORMAT_ARGB2101010	fourcc_code('A', 'R', '3', '0') /* [31:0] A:R:G:B 2:10:10:10 little endian */
+ #define DRM_FORMAT_ABGR2101010	fourcc_code('A', 'B', '3', '0') /* [31:0] A:B:G:R 2:10:10:10 little endian */
+ #define DRM_FORMAT_RGBA1010102	fourcc_code('R', 'A', '3', '0') /* [31:0] R:G:B:A 10:10:10:2 little endian */
+diff --git a/include/uapi/drm/i915_drm.h b/include/uapi/drm/i915_drm.h
+index 7f5634c..fc70f54 100644
+--- a/include/uapi/drm/i915_drm.h
++++ b/include/uapi/drm/i915_drm.h
+@@ -319,6 +319,7 @@ typedef struct _drm_i915_sarea {
+ #define DRM_I915_PERF_ADD_CONFIG	0x37
+ #define DRM_I915_PERF_REMOVE_CONFIG	0x38
+ #define DRM_I915_QUERY			0x39
++#define DRM_I915_GEM_GVTBUFFER		0x40
+ 
+ #define DRM_IOCTL_I915_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_I915_INIT, drm_i915_init_t)
+ #define DRM_IOCTL_I915_FLUSH		DRM_IO ( DRM_COMMAND_BASE + DRM_I915_FLUSH)
+@@ -378,6 +379,8 @@ typedef struct _drm_i915_sarea {
+ #define DRM_IOCTL_I915_PERF_REMOVE_CONFIG	DRM_IOW(DRM_COMMAND_BASE + DRM_I915_PERF_REMOVE_CONFIG, __u64)
+ #define DRM_IOCTL_I915_QUERY			DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_QUERY, struct drm_i915_query)
+ 
++#define DRM_IOCTL_I915_GEM_GVTBUFFER		DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GEM_GVTBUFFER, struct drm_i915_gem_gvtbuffer)
++
+ /* Allow drivers to submit batchbuffers directly to hardware, relying
+  * on the security mechanisms provided by hardware.
+  */
+@@ -1717,6 +1720,43 @@ struct drm_i915_query_topology_info {
+ 	__u8 data[];
+ };
+ 
++struct drm_i915_gem_gvtbuffer {
++        __u32 id;
++	__u32 plane_id;
++#define I915_GVT_PLANE_PRIMARY 1
++#define I915_GVT_PLANE_SPRITE 2
++#define I915_GVT_PLANE_CURSOR 3
++	__u32 pipe_id;
++	__u32 phys_pipe_id;
++	__u8  enabled;
++	__u8  tiled;
++	__u32 bpp;
++	__u32 hw_format;
++	__u32 drm_format;
++	__u32 start;
++	__u32 x_pos;
++	__u32 y_pos;
++	__u32 x_offset;
++	__u32 y_offset;
++	__u32 size;
++	__u32 width;
++	__u32 height;
++	__u32 stride;
++	__u64 user_ptr;
++	__u32 user_size;
++	__u32 flags;
++#define I915_GVTBUFFER_READ_ONLY (1<<0)
++#define I915_GVTBUFFER_QUERY_ONLY (1<<1)
++#define I915_GVTBUFFER_CHECK_CAPABILITY (1<<2)
++#define I915_GVTBUFFER_UNSYNCHRONIZED 0x80000000
++	/**
++	 * Returned handle for the object.
++	 *
++	 * Object handles are nonzero.
++	 */
++	__u32 handle;
++};
++
+ #if defined(__cplusplus)
+ }
+ #endif
+-- 
+2.7.4
+

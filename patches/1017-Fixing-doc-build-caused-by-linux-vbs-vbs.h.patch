@@ -1,0 +1,28 @@
+From 23b8cefa4d064f02f5632dc1eeb8996f418c6016 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Tue, 6 Nov 2018 08:25:41 +0800
+Subject: [PATCH 1017/1132] Fixing doc build caused by linux/vbs/vbs.h
+
+Tracked-On: PKT-1592
+Tracked-on: https://github.com/projectacrn/acrn-hypervisor/issues/1669
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ include/linux/vbs/vbs.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/vbs/vbs.h b/include/linux/vbs/vbs.h
+index d9d932c..a72bb96 100644
+--- a/include/linux/vbs/vbs.h
++++ b/include/linux/vbs/vbs.h
+@@ -159,7 +159,7 @@ struct virtio_vq_info {
+  */
+ struct virtio_dev_info {
+ 	/* dev info from VBS */
+-	/** @name[]: VBS device name */
++	/** @name: VBS device name */
+ 	char name[VBS_NAME_LEN];
+ 	/** @_ctx: VM context this device belongs to */
+ 	struct ctx _ctx;
+-- 
+2.7.4
+

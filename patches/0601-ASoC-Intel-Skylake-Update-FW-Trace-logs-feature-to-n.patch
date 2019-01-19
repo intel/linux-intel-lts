@@ -1,0 +1,84 @@
+From 726f89d897c1f13641ec2cf17d745bee223d5757 Mon Sep 17 00:00:00 2001
+From: Mousumi Jana <mousumix.jana@intel.com>
+Date: Sat, 3 Sep 2016 02:56:03 +0530
+Subject: [PATCH 0601/1132] ASoC: Intel: Skylake: Update FW Trace logs feature
+ to new interface
+
+FW trace logs feature has been changed according to a new
+implementation from the firmware.
+1. Core Mask has been updated to support 4 cores
+2. Read and Write pointers of the trace buffer are moved to the
+   base of the Trace window of the FW
+This patch contains the related driver changes
+
+Change-Id: Ie2336b5df91bfe291bb871c00726779ac77c0472
+Signed-off-by: Mousumi Jana <mousumix.jana@intel.com>
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+Reviewed-on:
+Reviewed-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+Tested-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.c | 27 +++++++++++++++++++--------
+ 1 file changed, 19 insertions(+), 8 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index b3591c8..1c53ba3 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -53,8 +53,8 @@
+ #define IPC_MSG_DIR(x)			(((x) & IPC_MSG_DIR_MASK) \
+ 					<< IPC_MSG_DIR_SHIFT)
+ /* Global Notification Message */
+-#define IPC_GLB_NOTIFY_CORE_SHIFT	15
+-#define IPC_GLB_NOTIFY_CORE_MASK	0x1
++#define IPC_GLB_NOTIFY_CORE_SHIFT	12
++#define IPC_GLB_NOTIFY_CORE_MASK	0xF
+ #define IPC_GLB_NOTIFY_CORE_ID(x)	(((x) >> IPC_GLB_NOTIFY_CORE_SHIFT) \
+ 					& IPC_GLB_NOTIFY_CORE_MASK)
+ #define IPC_GLB_NOTIFY_TYPE_SHIFT	16
+@@ -356,8 +356,9 @@ static void
+ skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+ {
+ 	int core, size;
+-	u32 *ptr, avail;
++	u32 *ptr;
+ 	u8 *base;
++	u32 write, read;
+ 
+ #if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+ 	core = 0;
+@@ -383,11 +384,21 @@ skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+ 	base = (u8 *)sst->trace_wind.addr;
+ 	/* move to the source dsp tracing window */
+ 	base += (core * size);
+-	ptr = (u32 *)sst->trace_wind.dsp_wps[core];
+-	avail = *ptr;
+-	if (avail < size/2)
+-		base += size/2;
+-	skl_dsp_write_log(sst, (void __iomem *)base, core, size/2);
++	ptr = (u32 *) base;
++	read = ptr[0];
++	write = ptr[1];
++	if (write > read) {
++		skl_dsp_write_log(sst, (void __iomem *)(base + 8 + read),
++					core, (write - read));
++		/* read pointer */
++		ptr[0] += write - read;
++	} else {
++		skl_dsp_write_log(sst, (void __iomem *) (base + 8 + read),
++					core, size - read);
++		skl_dsp_write_log(sst, (void __iomem *) (base + 8),
++					core, write);
++		ptr[0] = write;
++	}
+ 	skl_dsp_put_log_buff(sst, core);
+ }
+ 
+-- 
+2.7.4
+

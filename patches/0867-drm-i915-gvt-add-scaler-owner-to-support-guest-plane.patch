@@ -1,0 +1,134 @@
+From 130ea131726397fbb93d103ab2ca736675afbfb7 Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Fri, 14 Sep 2018 16:10:19 +0800
+Subject: [PATCH 0867/1132] drm/i915/gvt: add scaler owner to support guest
+ plane scaling
+
+It is to support plane scaling feature, add scaler owner to
+avoid con-current scaler access. Such ownership is passed
+from SOS side through pvmmio scaler_owned member.
+Guest OS patch.
+
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+---
+ drivers/gpu/drm/i915/i915_drv.h      |  1 +
+ drivers/gpu/drm/i915/i915_pvinfo.h   |  3 ++-
+ drivers/gpu/drm/i915/i915_vgpu.c     |  2 ++
+ drivers/gpu/drm/i915/intel_atomic.c  | 14 +++++++++-----
+ drivers/gpu/drm/i915/intel_display.c |  8 +++++++-
+ drivers/gpu/drm/i915/intel_drv.h     |  1 +
+ 6 files changed, 22 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index 219fa27..9d446a0a 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -1306,6 +1306,7 @@ struct i915_workarounds {
+ struct i915_virtual_gpu {
+ 	bool active;
+ 	u32 caps;
++	u32 scaler_owned;
+ };
+ 
+ /* used in computing the new watermarks state */
+diff --git a/drivers/gpu/drm/i915/i915_pvinfo.h b/drivers/gpu/drm/i915/i915_pvinfo.h
+index eeaa3d5..dc9bdea 100644
+--- a/drivers/gpu/drm/i915/i915_pvinfo.h
++++ b/drivers/gpu/drm/i915/i915_pvinfo.h
+@@ -106,8 +106,9 @@ struct vgt_if {
+ 
+ 	u32 execlist_context_descriptor_lo;
+ 	u32 execlist_context_descriptor_hi;
++	u32 scaler_owned;
+ 
+-	u32  rsv7[0x200 - 24];    /* pad to one page */
++	u32  rsv7[0x200 - 25];    /* pad to one page */
+ } __packed;
+ 
+ #define vgtif_reg(x) \
+diff --git a/drivers/gpu/drm/i915/i915_vgpu.c b/drivers/gpu/drm/i915/i915_vgpu.c
+index 869cf4a..0f6182f 100644
+--- a/drivers/gpu/drm/i915/i915_vgpu.c
++++ b/drivers/gpu/drm/i915/i915_vgpu.c
+@@ -76,6 +76,8 @@ void i915_check_vgpu(struct drm_i915_private *dev_priv)
+ 	}
+ 
+ 	dev_priv->vgpu.caps = __raw_i915_read32(dev_priv, vgtif_reg(vgt_caps));
++	dev_priv->vgpu.scaler_owned =
++			__raw_i915_read32(dev_priv, vgtif_reg(scaler_owned));
+ 
+ 	dev_priv->vgpu.active = true;
+ 	DRM_INFO("Virtual GPU for Intel GVT-g detected.\n");
+diff --git a/drivers/gpu/drm/i915/intel_atomic.c b/drivers/gpu/drm/i915/intel_atomic.c
+index b04952b..ec4a73e 100644
+--- a/drivers/gpu/drm/i915/intel_atomic.c
++++ b/drivers/gpu/drm/i915/intel_atomic.c
+@@ -316,7 +316,8 @@ int intel_atomic_setup_scalers(struct drm_i915_private *dev_priv,
+ 		if (*scaler_id < 0) {
+ 			/* find a free scaler */
+ 			for (j = 0; j < intel_crtc->num_scalers; j++) {
+-				if (!scaler_state->scalers[j].in_use) {
++				if (!scaler_state->scalers[j].in_use &&
++				    scaler_state->scalers[j].owned == 1) {
+ 					scaler_state->scalers[j].in_use = 1;
+ 					*scaler_id = j;
+ 					DRM_DEBUG_KMS("Attached scaler id %u.%u to %s:%d\n",
+@@ -350,10 +351,13 @@ int intel_atomic_setup_scalers(struct drm_i915_private *dev_priv,
+ 			 * scaler 0 operates in high quality (HQ) mode.
+ 			 * In this case use scaler 0 to take advantage of HQ mode
+ 			 */
+-			*scaler_id = 0;
+-			scaler_state->scalers[0].in_use = 1;
+-			scaler_state->scalers[0].mode = PS_SCALER_MODE_HQ;
+-			scaler_state->scalers[1].in_use = 0;
++			if (scaler_state->scalers[0].owned == 1) {
++				*scaler_id = 0;
++				scaler_state->scalers[0].in_use = 1;
++				scaler_state->scalers[0].mode =
++						PS_SCALER_MODE_HQ;
++				scaler_state->scalers[1].in_use = 0;
++			}
+ 		} else {
+ 			scaler_state->scalers[*scaler_id].mode = PS_SCALER_MODE_DYN;
+ 		}
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index cf60488..1129168 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -8741,7 +8741,8 @@ static void skylake_get_pfit_config(struct intel_crtc *crtc,
+ 	/* find scaler attached to this pipe */
+ 	for (i = 0; i < crtc->num_scalers; i++) {
+ 		ps_ctrl = I915_READ(SKL_PS_CTRL(crtc->pipe, i));
+-		if (ps_ctrl & PS_SCALER_EN && !(ps_ctrl & PS_PLANE_SEL_MASK)) {
++		if (ps_ctrl & PS_SCALER_EN && !(ps_ctrl & PS_PLANE_SEL_MASK) &&
++		    scaler_state->scalers[i].owned) {
+ 			id = i;
+ 			pipe_config->pch_pfit.enabled = true;
+ 			pipe_config->pch_pfit.pos = I915_READ(SKL_PS_WIN_POS(crtc->pipe, i));
+@@ -13928,6 +13929,11 @@ static void intel_crtc_init_scalers(struct intel_crtc *crtc,
+ 
+ 		scaler->in_use = 0;
+ 		scaler->mode = PS_SCALER_MODE_DYN;
++		scaler->owned = 1;
++		if (intel_vgpu_active(dev_priv) &&
++			 !(1 << (crtc->pipe * SKL_NUM_SCALERS + i) &
++			  dev_priv->vgpu.scaler_owned))
++			scaler->owned = 0;
+ 	}
+ 
+ 	scaler_state->scaler_id = -1;
+diff --git a/drivers/gpu/drm/i915/intel_drv.h b/drivers/gpu/drm/i915/intel_drv.h
+index b64da55..098c288 100644
+--- a/drivers/gpu/drm/i915/intel_drv.h
++++ b/drivers/gpu/drm/i915/intel_drv.h
+@@ -564,6 +564,7 @@ struct intel_initial_plane_config {
+ struct intel_scaler {
+ 	int in_use;
+ 	uint32_t mode;
++	int owned;
+ };
+ 
+ struct intel_crtc_scaler_state {
+-- 
+2.7.4
+

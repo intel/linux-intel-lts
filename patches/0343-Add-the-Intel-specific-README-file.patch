@@ -1,0 +1,39 @@
+From 1d91b1c07beb2bb2110e141c8414f0a3e386fec6 Mon Sep 17 00:00:00 2001
+From: Casey Schaufler <casey.schaufler@intel.com>
+Date: Thu, 6 Sep 2018 09:32:19 -0700
+Subject: [PATCH 0343/1132] Add the Intel specific README file
+
+Add the required Intel information.
+
+Signed-off-by: Casey Schaufler <casey.schaufler@intel.com>
+---
+ README.intel.lsm-stacking | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+ create mode 100644 README.intel.lsm-stacking
+
+diff --git a/README.intel.lsm-stacking b/README.intel.lsm-stacking
+new file mode 100644
+index 0000000..402d16e
+--- /dev/null
++++ b/README.intel.lsm-stacking
+@@ -0,0 +1,17 @@
++Linux kernel security module stacking
++============
++
++This enables full stacking of Linux security modules.
++It allows "major" security modules to be used at the same time.
++The major security modules are:
++	SELinux
++	Smack
++	TOMOYO
++	AppArmor
++
++This is platform agnostic.
++
++This is not a bug fix. This removes a longstanding limitation
++that the kernel can support only one major security module at
++a time. There are no know bugs introduced by this code.
++
+-- 
+2.7.4
+

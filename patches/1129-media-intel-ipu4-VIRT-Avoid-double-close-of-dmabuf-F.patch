@@ -1,0 +1,58 @@
+From 0ee7bd92ead8dbaa804d935dcf09bcdc9a6cf5f6 Mon Sep 17 00:00:00 2001
+From: "Yew, Chang Ching" <chang.ching.yew@intel.com>
+Date: Fri, 11 Jan 2019 14:46:30 +0800
+Subject: [PATCH 1129/1132] media: intel-ipu4: [VIRT] Avoid double close of
+ dmabuf FD.
+
+Message for Open Source:
+This patch is to fix the ksys_close call for
+camera streaming for SOS case where the dmabuf fd
+is close by user space. Added check to only close
+the dmabuf fd for virtualized case.
+
+Change-Id: I3b03d72bd5ce4f22a08542be1f03b022b29f4fcc
+Tracked-On: #JOLINUX-2973
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/ipu-psys.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu-psys.c b/drivers/media/pci/intel/ipu-psys.c
+index f342951..345285c 100644
+--- a/drivers/media/pci/intel/ipu-psys.c
++++ b/drivers/media/pci/intel/ipu-psys.c
+@@ -516,6 +516,9 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
+ 	struct ipu_psys *psys = inode_to_ipu_psys(inode);
+ 	struct ipu_psys_fh *fh = file->private_data;
+ 	struct ipu_psys_kbuffer *kbuf, *kbuf0;
++#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
++	struct ipu_dma_buf_attach *ipu_attach;
++#endif
+ 
+ 	mutex_lock(&fh->mutex);
+ 	/* clean up buffers */
+@@ -526,6 +529,11 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
+ 			if (kbuf->dbuf && kbuf->db_attach) {
+ 				struct dma_buf *dbuf;
+ 				kbuf->valid = false;
++#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
++				ipu_attach = kbuf->db_attach->priv;
++				if (ipu_attach->vma_is_io)
++					ksys_close(kbuf->fd);
++#endif
+ 				dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
+ 				dma_buf_unmap_attachment(kbuf->db_attach,
+ 							 kbuf->sgt,
+@@ -535,9 +543,6 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
+ 				kbuf->dbuf = NULL;
+ 				kbuf->db_attach = NULL;
+ 				dma_buf_put(dbuf);
+-#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
+-				ksys_close(kbuf->fd);
+-#endif
+ 			} else {
+ 				if (kbuf->db_attach)
+ 					ipu_psys_put_userpages(
+-- 
+2.7.4
+

@@ -1,0 +1,169 @@
+From 24ecb5b621ec431e4f7828534875a6be28517670 Mon Sep 17 00:00:00 2001
+From: Hao Li <hao.l.li@intel.com>
+Date: Fri, 31 Aug 2018 10:58:58 +0800
+Subject: [PATCH 0762/1132] virtio framework: support ACRN virtio devices
+
+To support ACRN virtio devices which use Intel VID:DID,
+relax virtio device probing conditions in frontend virtio framework.
+
+Change-Id: I9a49ad3fbdbd0a615398218382624031d6908526
+Tracked-On: 219551
+Signed-off-by: Hao Li <hao.l.li@intel.com>
+Reviewed-on:
+Reviewed-by: Liu, Fuzhong <fuzhong.liu@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/virtio/Kconfig             | 17 +++++++++++++++++
+ drivers/virtio/virtio_pci_common.c | 29 +++++++++++++++++++++++++++++
+ drivers/virtio/virtio_pci_legacy.c | 10 ++++++++++
+ drivers/virtio/virtio_pci_modern.c | 15 +++++++++++++++
+ include/uapi/linux/virtio_ids.h    | 13 +++++++++++++
+ 5 files changed, 84 insertions(+)
+
+diff --git a/drivers/virtio/Kconfig b/drivers/virtio/Kconfig
+index 3589764..51d43fd 100644
+--- a/drivers/virtio/Kconfig
++++ b/drivers/virtio/Kconfig
+@@ -83,4 +83,21 @@ config VIRTIO_MMIO_CMDLINE_DEVICES
+ 
+ 	 If unsure, say 'N'.
+ 
++config ACRN_VIRTIO_DEVICES
++	bool "Support for ACRN virtio devices drivers in frontend/guest"
++	default n
++	depends on VIRTIO_PCI
++	---help---
++          ACRN virtio devices support in frontend/guest.
++
++	  This option enables support for ACRN virtio devices which use Intel
++	  vendor ID and device IDs, by extending virtio frontend framework
++	  a little bit so that virtio PCI driver could be loaded for these
++	  devices.
++
++          Eventually if all devices obtain virtio VID and DIDs, we don't
++          need this option anymore.
++
++	  If unsure, say 'N'.
++
+ endif # VIRTIO_MENU
+diff --git a/drivers/virtio/virtio_pci_common.c b/drivers/virtio/virtio_pci_common.c
+index 465a6f5..9bb79f5 100644
+--- a/drivers/virtio/virtio_pci_common.c
++++ b/drivers/virtio/virtio_pci_common.c
+@@ -494,6 +494,35 @@ static const struct dev_pm_ops virtio_pci_pm_ops = {
+ /* Qumranet donated their vendor ID for devices 0x1000 thru 0x10FF. */
+ static const struct pci_device_id virtio_pci_id_table[] = {
+ 	{ PCI_DEVICE(PCI_VENDOR_ID_REDHAT_QUMRANET, PCI_ANY_ID) },
++#ifdef CONFIG_ACRN_VIRTIO_DEVICES
++	/*
++	 * To support ACRN virtio devices which haven't obtained valid
++	 * virtio VID:DID in time, we relax the probing conditions a little.
++	 */
++#define ACRN_VIRTIO_DEVICE_ID_RPMB 0x8601
++	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_RPMB) },
++
++#define ACRN_VIRTIO_DEVICE_ID_HECI 0x8602
++	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_HECI) },
++
++#define ACRN_VIRTIO_DEVICE_ID_AUDIO 0x8603
++	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_AUDIO) },
++
++#define ACRN_VIRTIO_DEVICE_ID_IPU 0x8604
++	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_IPU) },
++
++#define ACRN_VIRTIO_DEVICE_ID_TSN 0x8605
++	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_TSN) },
++
++#define ACRN_VIRTIO_DEVICE_ID_HYPERDMABUF 0x8606
++	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_HYPERDMABUF) },
++
++#define ACRN_VIRTIO_DEVICE_ID_HDCP 0x8607
++	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_HDCP) },
++
++#define ACRN_VIRTIO_DEVICE_ID_COREU 0x8608
++	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_COREU) },
++#endif /* CONFIG_ACRN_VIRTIO_DEVICES */
+ 	{ 0 }
+ };
+ 
+diff --git a/drivers/virtio/virtio_pci_legacy.c b/drivers/virtio/virtio_pci_legacy.c
+index de062fb..b21f103 100644
+--- a/drivers/virtio/virtio_pci_legacy.c
++++ b/drivers/virtio/virtio_pci_legacy.c
+@@ -215,9 +215,19 @@ int virtio_pci_legacy_probe(struct virtio_pci_device *vp_dev)
+ 	struct pci_dev *pci_dev = vp_dev->pci_dev;
+ 	int rc;
+ 
++#ifdef CONFIG_ACRN_VIRTIO_DEVICES
++	/*
++	 * To support ACRN virtio devices which haven't obtained valid
++	 * virtio VID:DID in time, we relax the probing conditions a little.
++	 */
++	if (pci_dev->vendor == PCI_VENDOR_ID_REDHAT_QUMRANET &&
++	    (pci_dev->device < 0x1000 || pci_dev->device > 0x103f))
++		return -ENODEV;
++#else
+ 	/* We only own devices >= 0x1000 and <= 0x103f: leave the rest. */
+ 	if (pci_dev->device < 0x1000 || pci_dev->device > 0x103f)
+ 		return -ENODEV;
++#endif /* CONFIG_ACRN_VIRTIO_DEVICES */
+ 
+ 	if (pci_dev->revision != VIRTIO_PCI_ABI_VERSION) {
+ 		printk(KERN_ERR "virtio_pci: expected ABI version %d, got %d\n",
+diff --git a/drivers/virtio/virtio_pci_modern.c b/drivers/virtio/virtio_pci_modern.c
+index 07571da..b7474e0 100644
+--- a/drivers/virtio/virtio_pci_modern.c
++++ b/drivers/virtio/virtio_pci_modern.c
+@@ -590,11 +590,26 @@ int virtio_pci_modern_probe(struct virtio_pci_device *vp_dev)
+ 
+ 	check_offsets();
+ 
++#ifdef CONFIG_ACRN_VIRTIO_DEVICES
++	/*
++	 * To support ACRN virtio devices which haven't obtained valid
++	 * virtio VID:DID in time, we relax the probing conditions a little.
++	 */
++	if (pci_dev->vendor == PCI_VENDOR_ID_REDHAT_QUMRANET &&
++	    (pci_dev->device < 0x1000 || pci_dev->device > 0x107f))
++		return -ENODEV;
++
++	if ((pci_dev->vendor == PCI_VENDOR_ID_REDHAT_QUMRANET &&
++	     pci_dev->device < 0x1040) ||
++	    (pci_dev->vendor == PCI_VENDOR_ID_INTEL &&
++	     pci_dev->device < 0x8640)) {
++#else
+ 	/* We only own devices >= 0x1000 and <= 0x107f: leave the rest. */
+ 	if (pci_dev->device < 0x1000 || pci_dev->device > 0x107f)
+ 		return -ENODEV;
+ 
+ 	if (pci_dev->device < 0x1040) {
++#endif /* CONFIG_ACRN_VIRTIO_DEVICES */
+ 		/* Transitional devices: use the PCI subsystem device id as
+ 		 * virtio device id, same as legacy driver always did.
+ 		 */
+diff --git a/include/uapi/linux/virtio_ids.h b/include/uapi/linux/virtio_ids.h
+index 6d5c3b2..a950196 100644
+--- a/include/uapi/linux/virtio_ids.h
++++ b/include/uapi/linux/virtio_ids.h
+@@ -44,4 +44,17 @@
+ #define VIRTIO_ID_VSOCK        19 /* virtio vsock transport */
+ #define VIRTIO_ID_CRYPTO       20 /* virtio crypto */
+ 
++#ifdef CONFIG_ACRN_VIRTIO_DEVICES
++/* ACRN virtio device types */
++#define	VIRTIO_ID_RPMB		0xFFFF
++#define	VIRTIO_ID_HECI		0xFFFE
++#define	VIRTIO_ID_AUDIO		0xFFFD
++#define	VIRTIO_ID_IPU		0xFFFC
++#define	VIRTIO_ID_TSN		0xFFFB
++#define	VIRTIO_ID_HYPERDMABUF	0xFFFA
++#define	VIRTIO_ID_HDCP		0xFFF9
++#define	VIRTIO_ID_COREU		0xFFF8
++
++#endif /* CONFIG_ACRN_VIRTIO_DEVICES */
++
+ #endif /* _LINUX_VIRTIO_IDS_H */
+-- 
+2.7.4
+

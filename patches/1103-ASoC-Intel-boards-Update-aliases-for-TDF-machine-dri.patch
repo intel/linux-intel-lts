@@ -1,0 +1,46 @@
+From 2f9e9cd92584c579b6c3abc6ef5e60ed908c68bd Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Mateusz=20G=C3=B3rski?= <mateusz.gorski@intel.com>
+Date: Thu, 13 Dec 2018 12:36:24 +0100
+Subject: [PATCH 1103/1132] ASoC: Intel: boards: Update aliases for TDF machine
+ drivers.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This patch removes obsolete machine drivers aliases.
+
+Change-Id: I7512a0ffcd06f3cf6474bb0c716206c08c129e5e
+Signed-off-by: Mateusz Górski <mateusz.gorski@intel.com>
+Tracked-On: OAM-74899
+Reviewed-by: Slawinski, AmadeuszX <amadeuszx.slawinski@intel.com>
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Reviewed-by: Lewandowski, Gustaw <gustaw.lewandowski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/boards/bxt_ivi_ull.c | 2 +-
+ sound/soc/intel/boards/bxt_tdf8532.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/boards/bxt_ivi_ull.c b/sound/soc/intel/boards/bxt_ivi_ull.c
+index fe9e285..ba5293d 100644
+--- a/sound/soc/intel/boards/bxt_ivi_ull.c
++++ b/sound/soc/intel/boards/bxt_ivi_ull.c
+@@ -273,4 +273,4 @@ module_platform_driver(broxton_audio)
+ /* Module information */
+ MODULE_DESCRIPTION("Intel SST Audio for Broxton ULL Machine");
+ MODULE_LICENSE("GPL v2");
+-MODULE_ALIAS("platform:bxtp_i2s_ull");
++MODULE_ALIAS("platform:bxt_tdf8532");
+diff --git a/sound/soc/intel/boards/bxt_tdf8532.c b/sound/soc/intel/boards/bxt_tdf8532.c
+index 8e99342..464bbd8 100644
+--- a/sound/soc/intel/boards/bxt_tdf8532.c
++++ b/sound/soc/intel/boards/bxt_tdf8532.c
+@@ -429,4 +429,4 @@ module_platform_driver(broxton_tdf8532_audio)
+ /* Module information */
+ MODULE_DESCRIPTION("Intel SST Audio for Broxton GP MRB");
+ MODULE_LICENSE("GPL v2");
+-MODULE_ALIAS("platform:gpmrb_machine");
++MODULE_ALIAS("platform:bxt_tdf8532");
+-- 
+2.7.4
+

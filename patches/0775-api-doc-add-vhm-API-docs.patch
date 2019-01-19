@@ -1,0 +1,561 @@
+From f77589fbc1ce830ab3cbc4016b6e886755776b40 Mon Sep 17 00:00:00 2001
+From: Yin Fengwei <fengwei.yin@intel.com>
+Date: Fri, 31 Aug 2018 10:58:59 +0800
+Subject: [PATCH 0775/1132] api doc: add vhm API docs
+
+Change-Id: If6df309ea215c1592ce41f7da724388ff1084087
+Tracked-On: 220254
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+Reviewed-on:
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+Reviewed-on:
+---
+ Documentation/virtual/acrn/vhm.rst |   8 +++
+ include/linux/vhm/acrn_vhm_ioreq.h | 106 +++++++++++++++++++++++++++++++++
+ include/linux/vhm/acrn_vhm_mm.h    | 119 ++++++++++++++++++++++++++++++++++++-
+ include/linux/vhm/vhm_ioctl_defs.h |  60 ++++++++++++++++---
+ include/linux/vhm/vhm_vm_mngt.h    |  73 +++++++++++++++++++++++
+ 5 files changed, 358 insertions(+), 8 deletions(-)
+
+diff --git a/Documentation/virtual/acrn/vhm.rst b/Documentation/virtual/acrn/vhm.rst
+index 56d498a..901cff4 100644
+--- a/Documentation/virtual/acrn/vhm.rst
++++ b/Documentation/virtual/acrn/vhm.rst
+@@ -3,3 +3,11 @@ Virtio and Hypervisor Module (VHM)
+ ==================================
+ 
+ The Virtio and Hypervisor service Module (VHM) in part of ACRN Project.
++
++APIs:
++-----
++
++.. kernel-doc:: include/linux/vhm/acrn_vhm_ioreq.h
++.. kernel-doc:: include/linux/vhm/acrn_vhm_mm.h
++.. kernel-doc:: include/linux/vhm/vhm_ioctl_defs.h
++.. kernel-doc:: include/linux/vhm/vhm_vm_mngt.h
+diff --git a/include/linux/vhm/acrn_vhm_ioreq.h b/include/linux/vhm/acrn_vhm_ioreq.h
+index fcec2c1..de3a8aa 100644
+--- a/include/linux/vhm/acrn_vhm_ioreq.h
++++ b/include/linux/vhm/acrn_vhm_ioreq.h
+@@ -51,6 +51,12 @@
+  *
+  */
+ 
++/**
++ * @file acrn_vhm_ioreq.h
++ *
++ * @brief Virtio and Hypervisor Module(VHM) ioreq APIs
++ */
++
+ #ifndef __ACRN_VHM_IOREQ_H__
+ #define __ACRN_VHM_IOREQ_H__
+ 
+@@ -59,22 +65,122 @@
+ 
+ typedef	int (*ioreq_handler_t)(int client_id, int req);
+ 
++/**
++ * acrn_ioreq_create_client - create ioreq client
++ *
++ * @vmid: ID to identify guest
++ * @handler: ioreq_handler of ioreq client
++ *           If client want request handled in client thread context, set
++ *           this parameter to NULL. If client want request handled out of
++ *           client thread context, set handler function pointer of its own.
++ *           VHM will create kernel thread and call handler to handle request
++ *
++ * @name: the name of ioreq client
++ *
++ * Return: client id on success, <0 on error
++ */
+ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
+ 	char *name);
++
++/**
++ * acrn_ioreq_destroy_client - destroy ioreq client
++ *
++ * @client_id: client id to identify ioreq client
++ *
++ * Return:
++ */
+ void acrn_ioreq_destroy_client(int client_id);
+ 
++/**
++ * acrn_ioreq_add_iorange - add iorange monitored by ioreq client
++ *
++ * @client_id: client id to identify ioreq client
++ * @type: iorange type
++ * @start: iorange start address
++ * @end: iorange end address
++ *
++ * Return: 0 on success, <0 on error
++ */
+ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
+ 	long start, long end);
++
++/**
++ * acrn_ioreq_del_iorange - del iorange monitored by ioreq client
++ *
++ * @client_id: client id to identify ioreq client
++ * @type: iorange type
++ * @start: iorange start address
++ * @end: iorange end address
++ *
++ * Return: 0 on success, <0 on error
++ */
+ int acrn_ioreq_del_iorange(int client_id, uint32_t type,
+ 	long start, long end);
+ 
++/**
++ * acrn_ioreq_get_reqbuf - get request buffer
++ * request buffer is shared by all clients in one guest
++ *
++ * @client_id: client id to identify ioreq client
++ *
++ * Return: pointer to request buffer, NULL on error
++ */
+ struct vhm_request *acrn_ioreq_get_reqbuf(int client_id);
++
++/**
++ * acrn_ioreq_attach_client - start handle request for ioreq client
++ * If request is handled out of client thread context, this function is
++ * only called once to be ready to handle new request.
++ *
++ * If request is handled in client thread context, this function must
++ * be called every time after the previous request handling is completed
++ * to be ready to handle new request.
++ *
++ * @client_id: client id to identify ioreq client
++ * @check_kthread_stop: whether check current kthread should be stopped
++ *
++ * Return: 0 on success, <0 on error, 1 if ioreq client is destroying
++ */
+ int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop);
+ 
++/**
++ * acrn_ioreq_distribute_request - deliver request to corresponding client
++ *
++ * @vm: pointer to guest
++ *
++ * Return: 0 always
++ */
+ int acrn_ioreq_distribute_request(struct vhm_vm *vm);
++
++/**
++ * acrn_ioreq_complete_request - notify guest request handling is completed
++ *
++ * @client_id: client id to identify ioreq client
++ * @vcpu: identify request submitter
++ *
++ * Return: 0 on success, <0 on error
++ */
+ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu);
+ 
++/**
++ * acrn_ioreq_intercept_bdf - set intercept bdf info of ioreq client
++ *
++ * @client_id: client id to identify ioreq client
++ * @bus: bus number
++ * @dev: device number
++ * @func: function number
++ *
++ * Return:
++ */
+ void acrn_ioreq_intercept_bdf(int client_id, int bus, int dev, int func);
++
++/**
++ * acrn_ioreq_unintercept_bdf - clear intercept bdf info of ioreq client
++ *
++ * @client_id: client id to identify ioreq client
++ *
++ * Return:
++ */
+ void acrn_ioreq_unintercept_bdf(int client_id);
+ 
+ /* IOReq APIs */
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index ba85589..ba383b3 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -51,25 +51,115 @@
+  *
+  */
+ 
++/**
++ * @file acrn_vhm_mm.h
++ *
++ * @brief Virtio and Hypervisor Module memory manager APIs
++ */
++
+ #ifndef __ACRN_VHM_MM_H__
+ #define __ACRN_VHM_MM_H__
+ 
+ #include <linux/vhm/vhm_ioctl_defs.h>
+ #include <linux/vhm/vhm_vm_mngt.h>
+ 
+-/* 1:1 mapping for service OS */
++/**
++ * acrn_hpa2gpa - physical address conversion
++ *
++ * convert host physical address (hpa) to guest physical address (gpa)
++ * gpa and hpa is 1:1 mapping for service OS
++ *
++ * @hpa: host physical address
++ *
++ * Return: guest physical address
++ */
+ static inline unsigned long  acrn_hpa2gpa(unsigned long hpa)
+ {
+ 	return hpa;
+ }
+ 
++/**
++ * map_guest_phys - map guest physical address
++ *
++ * to SOS kernel virtual address
++ *
++ * @vmid: guest vmid
++ * @uos_phy: phsical address in guest
++ * @size: the memory size mapped
++ *
++ * Return: SOS kernel virtual address, NULL on error
++ */
+ void *map_guest_phys(unsigned long vmid, u64 uos_phys, size_t size);
++
++/**
++ * unmap_guest_phys - unmap guest physical address
++ *
++ * @vmid: guest vmid
++ * @uos_phy: phsical address in guest
++ *
++ * Return: 0 on success, <0 for error.
++ */
+ int unmap_guest_phys(unsigned long vmid, u64 uos_phys);
++
++/**
++ * set_mmio_map - map mmio EPT mapping between UOS gpa and SOS gpa
++ *
++ * @vmid: guest vmid
++ * @guest_gpa: gpa of UOS
++ * @host_gpa: gpa of SOS
++ * @len: memory mapped length
++ * @mem_type: memory mapping type. Possilble value could be:
++ *                    MEM_TYPE_WB
++ *                    MEM_TYPE_WT
++ *                    MEM_TYPE_UC
++ *                    MEM_TYPE_WC
++ *                    MEM_TYPE_WP
++ * @mem_access_right: memory mapping access. Possible value could be:
++ *                    MEM_ACCESS_READ
++ *                    MEM_ACCESS_WRITE
++ *                    MEM_ACCESS_EXEC
++ *                    MEM_ACCESS_RWX
++ *
++ * Return: 0 on success, <0 for error.
++ */
+ int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len,
+ 	unsigned int mem_type, unsigned int mem_access_right);
++
++/**
++ * unset_mmio_map - unmap mmio mapping between UOS gpa and SOS gpa
++ *
++ * @vmid: guest vmid
++ * @guest_gpa: gpa of UOS
++ * @host_gpa: gpa of SOS
++ * @len: memory mapped length
++ *
++ * Return: 0 on success, <0 for error.
++ */
+ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len);
++
++/**
++ * update_memmap_attr - update mmio EPT mapping between UOS gpa and SOS gpa
++ *
++ * @vmid: guest vmid
++ * @guest_gpa: gpa of UOS
++ * @host_gpa: gpa of SOS
++ * @len: memory mapped length
++ * @mem_type: memory mapping type. Possilble value could be:
++ *                    MEM_TYPE_WB
++ *                    MEM_TYPE_WT
++ *                    MEM_TYPE_UC
++ *                    MEM_TYPE_WC
++ *                    MEM_TYPE_WP
++ * @mem_access_right: memory mapping access. Possible value could be:
++ *                    MEM_ACCESS_READ
++ *                    MEM_ACCESS_WRITE
++ *                    MEM_ACCESS_EXEC
++ *                    MEM_ACCESS_RWX
++ *
++ * Return: 0 on success, <0 for error.
++ */
+ int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len,
+ 	unsigned int mem_type, unsigned int mem_access_right);
+@@ -77,9 +167,36 @@ int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+ int vhm_dev_mmap(struct file *file, struct vm_area_struct *vma);
+ 
+ int check_guest_mem(struct vhm_vm *vm);
++
++/**
++ * free_guest_mem - free memory of guest
++ *
++ * @vm: pointer to guest vm
++ *
++ * Return:
++ */
+ void free_guest_mem(struct vhm_vm *vm);
+ 
++/**
++ * alloc_guest_memseg - alloc memory of guest according to pre-defined
++ * memory segment info
++ *
++ * @vm: pointer to guest vm
++ * @memseg: pointer to guest memory segment info
++ *
++ * Return:
++ */
+ int alloc_guest_memseg(struct vhm_vm *vm, struct vm_memseg *memseg);
++
++/**
++ * map_guest_memseg - map EPT mmapping of memory of guest according to
++ * pre-defined memory mapping info
++ *
++ * @vm: pointer to guest vm
++ * @memmap: pointer to guest memory mapping info
++ *
++ * Return:
++ */
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
+ 
+ #endif
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 9f2f21a..5bc7c66 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -43,6 +43,12 @@
+  * $FreeBSD$
+  */
+ 
++/**
++ * @file vhm_ioctl_defs.h
++ *
++ * @brief Virtio and Hypervisor Module definition for ioctl to user space
++ */
++
+ #ifndef	_VHM_IOCTL_DEFS_H_
+ #define	_VHM_IOCTL_DEFS_H_
+ 
+@@ -95,6 +101,12 @@
+ #define IC_SET_PTDEV_INTR_INFO         _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x03)
+ #define IC_RESET_PTDEV_INTR_INFO       _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x04)
+ 
++/**
++ * struct vm_memseg - memory segment info for guest
++ *
++ * @len: length of memory segment
++ * @gpa: guest physical start address of memory segment
++ */
+ struct vm_memseg {
+ 	uint64_t len;
+ 	uint64_t gpa;
+@@ -103,6 +115,15 @@ struct vm_memseg {
+ #define VM_SYSMEM       0
+ #define VM_MMIO         1
+ 
++/**
++ * struct vm_memmap - EPT memory mapping info for guest
++ *
++ * @type: memory mapping type
++ * @gpa: guest physical start address of memory mapping
++ * @hpa: host physical start address of memory
++ * @len: the length of memory range mapped
++ * @prot: memory mapping attribute
++ */
+ struct vm_memmap {
+ 	uint32_t type;
+ 	uint32_t reserved;
+@@ -112,38 +133,63 @@ struct vm_memmap {
+ 	uint32_t prot;	/* RWX */
+ };
+ 
++/**
++ * struct ic_ptdev_irq - pass thru device irq data structure
++ */
+ struct ic_ptdev_irq {
+ #define IRQ_INTX 0
+ #define IRQ_MSI 1
+ #define IRQ_MSIX 2
++	/** @type: irq type */
+ 	uint32_t type;
++	/** @virt_bdf: virtual bdf description of pass thru device */
+ 	uint16_t virt_bdf;	/* IN: Device virtual BDF# */
++	/** @phy_bdf: physical bdf description of pass thru device */
+ 	uint16_t phys_bdf;	/* IN: Device physical BDF# */
++	/** union */
+ 	union {
++		/** struct intx - info of IOAPIC/PIC interrupt */
+ 		struct {
+-			uint32_t virt_pin;	/* IN: virtual IOAPIC pin */
+-			uint32_t phys_pin;	/* IN: physical IOAPIC pin */
+-			uint32_t is_pic_pin;	/* IN: pin from PIC? */
++			/** @virt_pin: virtual IOAPIC pin */
++			uint32_t virt_pin;
++			/** @phys_pin: physical IOAPIC pin */
++			uint32_t phys_pin;
++			/** @pic_pin: PIC pin */
++			uint32_t is_pic_pin;
+ 		} intx;
++
++		/** struct msix - info of MSI/MSIX interrupt */
+ 		struct {
+-			/* IN: vector count of MSI/MSIX,
+-                         * Keep this filed on top of msix */
++                        /* Keep this filed on top of msix */
++			/** @vector_cnt: vector count of MSI/MSIX */
+ 			uint32_t vector_cnt;
+ 
+-			/* IN: size of MSI-X table (round up to 4K) */
++			/** @table_size: size of MSIX table(round up to 4K) */
+ 			uint32_t table_size;
+ 
+-			/* IN: physical address of MSI-X table */
++			/** @table_paddr: physical address of MSIX table */
+ 			uint64_t table_paddr;
+ 		} msix;
+ 	};
+ };
+ 
++/**
++ * struct ioreq_notify - data strcture to notify hypervisor ioreq is handled
++ *
++ * @client_id: client id to identify ioreq client
++ * @vcpu: identify the ioreq submitter
++ */
+ struct ioreq_notify {
+        int32_t client_id;
+        uint32_t vcpu;
+ };
+ 
++/**
++ * struct api_version - data structure to track VHM API version
++ *
++ * @major_version: major version of VHM API
++ * @minor_version: minor version of VHM API
++ */
+ struct api_version {
+ 	uint32_t major_version;
+ 	uint32_t minor_version;
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index 5edacb3..e7bc8b2 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -53,6 +53,12 @@
+  * Jason Chen CJ <jason.cj.chen@intel.com>
+  *
+  */
++
++/**
++ * @file vhm_vm_mngt.h
++ *
++ * @brief Virtio and Hypervisor Module(VHM) management APIs
++ */
+ #ifndef VHM_VM_MNGT_H
+ #define VHM_VM_MNGT_H
+ 
+@@ -61,6 +67,22 @@
+ extern struct list_head vhm_vm_list;
+ extern struct mutex vhm_vm_list_lock;
+ 
++/**
++ * struct vhm_vm - data structure to track guest
++ *
++ * @dev: pointer to dev of linux device mode
++ * @list: list of vhm_vm
++ * @vmid: guest vmid
++ * @ioreq_fallback_client: default ioreq client
++ * @refcnt: reference count of guest
++ * @seg_lock:  mutex to protect memseg_list
++ * @memseg_list: list of memseg
++ * @max_gfn: maximum guest page frame number
++ * @ioreq_client_lock: spinlock to protect ioreq_client_list
++ * @ioreq_client_list: list of ioreq clients
++ * @req_buf: request buffer shared between HV, SOS and UOS
++ * @pg: pointer to linux page which holds req_buf
++ */
+ struct vhm_vm {
+ 	struct device *dev;
+ 	struct list_head list;
+@@ -76,16 +98,67 @@ struct vhm_vm {
+ 	struct page *pg;
+ };
+ 
++/**
++ * struct vm_info - data structure to track guest info
++ *
++ * @max_vcpu: maximum vcpu number of guest
++ * @max_gfn: maximum guest page frame number
++ */
+ struct vm_info {
+ 	int max_vcpu;
+ 	int max_gfn;
+ };
+ 
++/**
++ * struct find_get_vm - find and hold vhm_vm of guest according to guest vmid
++ *
++ * @vmid: guest vmid
++ *
++ * Return: pointer to vhm_vm, NULL if can't find vm matching vmid
++ */
+ struct vhm_vm *find_get_vm(unsigned long vmid);
++
++/**
++ * struct put_vm - release vhm_vm of guest according to guest vmid
++ * If the latest reference count drops to zero, free vhm_vm as well
++ *
++ * @vm: pointer to vhm_vm which identrify specific guest
++ *
++ * Return:
++ */
+ void put_vm(struct vhm_vm *vm);
++
++/**
++ * struct vhm_get_vm_info - get vm_info of specific guest
++ *
++ * @vmid: guest vmid
++ * @info: pointer to vm_info for returned vm_info
++ *
++ * Return: 0 on success, <0 on error
++ */
+ int vhm_get_vm_info(unsigned long vmid, struct vm_info *info);
++
++/**
++ * struct vhm_inject_msi - inject MSI interrupt to guest
++ *
++ * @vmid: guest vmid
++ * @msi_addr: MSI addr matches MSI spec
++ * @msi_data: MSI data matches MSI spec
++ *
++ * Return: 0 on success, <0 on error
++ */
+ int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
+ 	unsigned long msi_data);
++
++/**
++ * struct vhm_vm_gpa2hpa - convert guest physical address to
++ * host physical address
++ *
++ * @vmid: guest vmid
++ * @gap: guest physical address
++ *
++ * Return: host physical address, <0 on error
++ */
+ unsigned long vhm_vm_gpa2hpa(unsigned long vmid, unsigned long gpa);
+ 
+ void vm_list_add(struct list_head *list);
+-- 
+2.7.4
+

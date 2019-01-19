@@ -1,0 +1,33 @@
+From 1e7892c21a82307145a7ee86abab653867a33e1e Mon Sep 17 00:00:00 2001
+From: Zhipeng Gong <zhipeng.gong@intel.com>
+Date: Thu, 26 Jul 2018 10:03:02 +0800
+Subject: [PATCH 0890/1132] drm/i915/gvt: enable pv global gtt update by
+ default
+
+This patch enables pv ggtt update by default.
+It is needed for both uos and sos.
+
+Tracked-On: projectacrn/acrn-hypervisor#994
+Signed-off-by: Zhipeng Gong <zhipeng.gong@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/i915_params.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_params.h b/drivers/gpu/drm/i915/i915_params.h
+index 28769e6..40aee5b 100644
+--- a/drivers/gpu/drm/i915/i915_params.h
++++ b/drivers/gpu/drm/i915/i915_params.h
+@@ -71,7 +71,8 @@ struct drm_printer;
+ 	param(int, domain_scaler_owner, 0x11100) \
+ 	param(unsigned int, enable_pvmmio, \
+ 			PVMMIO_ELSP_SUBMIT | PVMMIO_PLANE_UPDATE \
+-			| PVMMIO_PLANE_WM_UPDATE | PVMMIO_PPGTT_UPDATE) \
++			| PVMMIO_PLANE_WM_UPDATE | PVMMIO_PPGTT_UPDATE \
++			| PVMMIO_GGTT_UPDATE ) \
+ 	param(bool, enable_gvt, false)
+ 
+ #define MEMBER(T, member, ...) T member;
+-- 
+2.7.4
+

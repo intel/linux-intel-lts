@@ -1,0 +1,41 @@
+From a34bbf4fdc44383320769451df2d6e1898016d96 Mon Sep 17 00:00:00 2001
+From: mark gross <mark.gross@intel.com>
+Date: Fri, 30 Nov 2018 15:42:56 -0800
+Subject: [PATCH 1005/1132] v4.19.5 update: fix up intel_display.c
+
+---
+ drivers/gpu/drm/i915/intel_display.c | 11 +++--------
+ 1 file changed, 3 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 1bd92ba..3f31224 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -15950,9 +15950,6 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
+ 			dev_priv->active_crtcs |=
+ 				1 << drm_crtc_index(&crtc->base);
+ 
+-		if (crtc->base.primary)
+-			readout_plane_state(crtc);
+-
+ 		DRM_DEBUG_KMS("[CRTC:%d:%s] hw state readout: %s\n",
+ 			      crtc->base.base.id, crtc->base.name,
+ 			      enableddisabled(crtc_state->base.active));
+@@ -16162,11 +16159,9 @@ intel_modeset_setup_hw_state(struct drm_device *dev,
+ 		intel_sanitize_encoder(encoder);
+ 
+ 	for_each_intel_crtc(&dev_priv->drm, crtc) {
+-		if (crtc) {
+-			intel_sanitize_crtc(crtc, ctx);
+-			intel_dump_pipe_config(crtc, crtc->config,
+-					"[setup_hw_state]");
+-		}
++		intel_sanitize_crtc(crtc, ctx);
++		intel_dump_pipe_config(crtc, crtc->config,
++				       "[setup_hw_state]");
+ 	}
+ 
+ 	intel_modeset_update_connector_atomic_state(dev);
+-- 
+2.7.4
+

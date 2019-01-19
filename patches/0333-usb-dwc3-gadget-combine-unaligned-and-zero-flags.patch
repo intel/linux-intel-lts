@@ -1,0 +1,122 @@
+From a84d7a7ca0cf8f77b8144462940fad272a9547b1 Mon Sep 17 00:00:00 2001
+From: Felipe Balbi <felipe.balbi@linux.intel.com>
+Date: Wed, 1 Aug 2018 13:15:05 +0300
+Subject: [PATCH 0333/1132] usb: dwc3: gadget: combine unaligned and zero flags
+
+Both flags are used for the same purpose in dwc3: appending an extra
+TRB at the end to deal with controller requirements. By combining both
+flags into one, we make it clear that the situation is the same and
+that they should be treated equally.
+
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+---
+ drivers/usb/dwc3/core.h   |  7 +++----
+ drivers/usb/dwc3/gadget.c | 17 ++++++++---------
+ 2 files changed, 11 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/usb/dwc3/core.h b/drivers/usb/dwc3/core.h
+index 5bfb625..4872cba 100644
+--- a/drivers/usb/dwc3/core.h
++++ b/drivers/usb/dwc3/core.h
+@@ -847,11 +847,11 @@ struct dwc3_hwparams {
+  * @epnum: endpoint number to which this request refers
+  * @trb: pointer to struct dwc3_trb
+  * @trb_dma: DMA address of @trb
+- * @unaligned: true for OUT endpoints with length not divisible by maxp
++ * @needs_extra_trb: true when request needs one extra TRB (either due to ZLP
++ *	or unaligned OUT)
+  * @direction: IN or OUT direction flag
+  * @mapped: true when request has been dma-mapped
+  * @started: request is started
+- * @zero: wants a ZLP
+  */
+ struct dwc3_request {
+ 	struct usb_request	request;
+@@ -867,11 +867,10 @@ struct dwc3_request {
+ 	struct dwc3_trb		*trb;
+ 	dma_addr_t		trb_dma;
+ 
+-	unsigned		unaligned:1;
++	unsigned		needs_extra_trb:1;
+ 	unsigned		direction:1;
+ 	unsigned		mapped:1;
+ 	unsigned		started:1;
+-	unsigned		zero:1;
+ };
+ 
+ /*
+diff --git a/drivers/usb/dwc3/gadget.c b/drivers/usb/dwc3/gadget.c
+index 8d11461..5da7cb6 100644
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -1065,7 +1065,7 @@ static void dwc3_prepare_one_trb_sg(struct dwc3_ep *dep,
+ 			struct dwc3	*dwc = dep->dwc;
+ 			struct dwc3_trb	*trb;
+ 
+-			req->unaligned = true;
++			req->needs_extra_trb = true;
+ 
+ 			/* prepare normal TRB */
+ 			dwc3_prepare_one_trb(dep, req, true, i);
+@@ -1109,7 +1109,7 @@ static void dwc3_prepare_one_trb_linear(struct dwc3_ep *dep,
+ 		struct dwc3	*dwc = dep->dwc;
+ 		struct dwc3_trb	*trb;
+ 
+-		req->unaligned = true;
++		req->needs_extra_trb = true;
+ 
+ 		/* prepare normal TRB */
+ 		dwc3_prepare_one_trb(dep, req, true, 0);
+@@ -1125,7 +1125,7 @@ static void dwc3_prepare_one_trb_linear(struct dwc3_ep *dep,
+ 		struct dwc3	*dwc = dep->dwc;
+ 		struct dwc3_trb	*trb;
+ 
+-		req->zero = true;
++		req->needs_extra_trb = true;
+ 
+ 		/* prepare normal TRB */
+ 		dwc3_prepare_one_trb(dep, req, true, 0);
+@@ -1407,7 +1407,7 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 					dwc3_ep_inc_deq(dep);
+ 				}
+ 
+-				if (r->unaligned || r->zero) {
++				if (r->needs_extra_trb) {
+ 					trb = r->trb + r->num_pending_sgs + 1;
+ 					trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+ 					dwc3_ep_inc_deq(dep);
+@@ -1418,7 +1418,7 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 				trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+ 				dwc3_ep_inc_deq(dep);
+ 
+-				if (r->unaligned || r->zero) {
++				if (r->needs_extra_trb) {
+ 					trb = r->trb + 1;
+ 					trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+ 					dwc3_ep_inc_deq(dep);
+@@ -2270,7 +2270,7 @@ static int dwc3_gadget_ep_reclaim_completed_trb(struct dwc3_ep *dep,
+ 	 * with one TRB pending in the ring. We need to manually clear HWO bit
+ 	 * from that TRB.
+ 	 */
+-	if ((req->zero || req->unaligned) && !(trb->ctrl & DWC3_TRB_CTRL_CHN)) {
++	if (req->needs_extra_trb && !(trb->ctrl & DWC3_TRB_CTRL_CHN)) {
+ 		trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+ 		return 1;
+ 	}
+@@ -2347,11 +2347,10 @@ static int dwc3_gadget_ep_cleanup_completed_request(struct dwc3_ep *dep,
+ 		ret = dwc3_gadget_ep_reclaim_trb_linear(dep, req, event,
+ 				status);
+ 
+-	if (req->unaligned || req->zero) {
++	if (req->needs_extra_trb) {
+ 		ret = dwc3_gadget_ep_reclaim_trb_linear(dep, req, event,
+ 				status);
+-		req->unaligned = false;
+-		req->zero = false;
++		req->needs_extra_trb = false;
+ 	}
+ 
+ 	req->request.actual = req->request.length - req->remaining;
+-- 
+2.7.4
+

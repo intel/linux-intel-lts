@@ -1,0 +1,34 @@
+From f603c9178370809edcf6f7eca51eb7117a884f46 Mon Sep 17 00:00:00 2001
+From: Shuo A Liu <shuo.a.liu@intel.com>
+Date: Tue, 11 Dec 2018 11:49:17 +0800
+Subject: [PATCH 1049/1132] vhm: Correct the parameters usage in find_next_bit
+
+the parameters of find_next_bit when clear ioreqs of devicemodel was not
+right. Correct them and make sure the clearing works.
+
+Tracked-On: projectacrn/acrn-hypervisor#1821
+Signed-off-by: Shuo A Liu <shuo.a.liu@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Tracked-On: PKT-1617
+---
+ drivers/vhm/vhm_ioreq.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index 3a8f692..2f37ef9 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -299,8 +299,9 @@ void acrn_ioreq_clear_request(struct vhm_vm *vm)
+ 		if (!client)
+ 			return;
+ 
++		bit = -1;
+ 		while ((bit = find_next_bit(client->ioreqs_map,
+-				0, VHM_REQUEST_MAX)) ==	VHM_REQUEST_MAX)
++				VHM_REQUEST_MAX, bit + 1)) < VHM_REQUEST_MAX)
+ 			acrn_ioreq_complete_request(client->id, bit, NULL);
+ 		acrn_ioreq_put_client(client);
+ 	}
+-- 
+2.7.4
+

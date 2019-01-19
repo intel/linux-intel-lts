@@ -1,0 +1,34 @@
+From abf054678dccab9de29bc17aa913b6b314b83547 Mon Sep 17 00:00:00 2001
+From: Zhipeng Gong <zhipeng.gong@intel.com>
+Date: Tue, 10 Jul 2018 15:29:22 +0800
+Subject: [PATCH 0884/1132] drm/i915/gvt: enable pv ppgtt update by default
+
+This patch enables pv ppgtt update by default.
+
+It is needed for both uos and sos.
+
+Tracked-On: #874
+Signed-off-by: Zhipeng Gong <zhipeng.gong@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/gpu/drm/i915/i915_params.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_params.h b/drivers/gpu/drm/i915/i915_params.h
+index d9b901f..2e56ea5 100644
+--- a/drivers/gpu/drm/i915/i915_params.h
++++ b/drivers/gpu/drm/i915/i915_params.h
+@@ -70,7 +70,8 @@ struct drm_printer;
+ 	param(bool, enable_dpcd_backlight, false) \
+ 	param(int, domain_scaler_owner, 0x11100) \
+ 	param(unsigned int, enable_pvmmio, \
+-			PVMMIO_ELSP_SUBMIT | PVMMIO_PLANE_UPDATE) \
++			PVMMIO_ELSP_SUBMIT | PVMMIO_PLANE_UPDATE \
++			| PVMMIO_PPGTT_UPDATE) \
+ 	param(bool, enable_gvt, false)
+ 
+ #define MEMBER(T, member, ...) T member;
+-- 
+2.7.4
+

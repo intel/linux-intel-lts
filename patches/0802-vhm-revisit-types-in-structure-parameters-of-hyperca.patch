@@ -1,0 +1,215 @@
+From 5dc7f138623d1dbef0a8f8dfa30f41a480b37533 Mon Sep 17 00:00:00 2001
+From: Junjie Mao <junjie.mao@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0802/1132] vhm: revisit types in structure parameters of
+ hypercalls
+
+While fixing the MISRA C violations related to integral types, we have unified
+the type of the following data:
+
+    uint8_t:
+        phys_pin, virt_pin, vpic_pin, ioapic_pin, vioapic_pin
+
+    uint16_t:
+        vm_id, pcpu_id, vcpu_id, vpid
+
+    uint32_t:
+        vector, irq
+
+This patch revisits the types of the fields in vhm_request as well as the
+structures used as parameters in the hypercalls, and make them aligned with the
+types the hypervisor uses for such data. Reserved fields are added to keep the
+size and layout of the structures. Implicit paddings are also made explicit as
+reserved fields.
+
+This is the update on the VHM side in correspondance to the same changes in the
+hypervisor and device model.
+
+v1 -> v2:
+
+    * Make reserved fields unsigned.
+    * Combine continuous reserved fields using proper arrays.
+    * Make msix_entry_index unsigned as it is used in this way in both the
+      hypervisor and kernel.
+
+Signed-off-by: Junjie Mao <junjie.mao@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ include/linux/vhm/acrn_common.h  | 54 +++++++++++++++++++++++++---------------
+ include/linux/vhm/acrn_hv_defs.h | 17 +++++++++----
+ 2 files changed, 46 insertions(+), 25 deletions(-)
+
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 7482320..91951b7 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -87,17 +87,17 @@
+ struct mmio_request {
+ 	uint32_t direction;
+ 	uint32_t reserved;
+-	int64_t address;
+-	int64_t size;
+-	int64_t value;
++	uint64_t address;
++	uint64_t size;
++	uint64_t value;
+ } __attribute__((aligned(8)));
+ 
+ struct pio_request {
+ 	uint32_t direction;
+ 	uint32_t reserved;
+-	int64_t address;
+-	int64_t size;
+-	int32_t value;
++	uint64_t address;
++	uint64_t size;
++	uint32_t value;
+ } __attribute__((aligned(8)));
+ 
+ struct pci_request {
+@@ -114,16 +114,15 @@ struct pci_request {
+ /* vhm_request are 256Bytes aligned */
+ struct vhm_request {
+ 	/* offset: 0bytes - 63bytes */
+-	union {
+-		uint32_t type;
+-		int32_t reserved0[16];
+-	};
++	uint32_t type;
++	uint32_t reserved0[15];
++
+ 	/* offset: 64bytes-127bytes */
+ 	union {
+ 		struct pio_request pio_request;
+ 		struct pci_request pci_request;
+ 		struct mmio_request mmio_request;
+-		int64_t reserved1[8];
++		uint64_t reserved1[8];
+ 	} reqs;
+ 
+ 	/* True: valid req which need VHM to process.
+@@ -145,7 +144,7 @@ struct vhm_request {
+ struct vhm_request_buffer {
+ 	union {
+ 		struct vhm_request req_queue[VHM_REQUEST_MAX];
+-		int8_t reserved[4096];
++		uint8_t reserved[4096];
+ 	};
+ } __attribute__((aligned(4096)));
+ 
+@@ -154,10 +153,16 @@ struct vhm_request_buffer {
+  */
+ struct acrn_create_vm {
+ 	/** created vmid return to VHM. Keep it first field */
+-	int32_t vmid;
++	uint16_t vmid;
++
++	/** Reserved */
++	uint16_t reserved0;
+ 
+ 	/** VCPU numbers this VM want to create */
+-	uint32_t vcpu_num;
++	uint16_t vcpu_num;
++
++	/** Reserved */
++	uint16_t reserved1;
+ 
+ 	/** the GUID of this VM */
+ 	uint8_t	 GUID[16];
+@@ -168,7 +173,7 @@ struct acrn_create_vm {
+ 	uint64_t vm_flag;
+ 
+ 	/** Reserved for future use*/
+-	uint8_t  reserved[24];
++	uint8_t  reserved2[24];
+ } __attribute__((aligned(8)));
+ 
+ /**
+@@ -214,12 +219,18 @@ struct acrn_irqline {
+ 	uint32_t reserved;
+ 
+ 	/** pic IRQ for ISA type */
+-	uint64_t pic_irq;
++	uint32_t pic_irq;
++
++	/** Reserved */
++	uint32_t reserved0;
+ 
+ 	/** ioapic IRQ for IOAPIC & ISA TYPE,
+-	 *  if -1 then this IRQ will not be injected
++	 *  if ~0U then this IRQ will not be injected
+ 	 */
+-	uint64_t ioapic_irq;
++	uint32_t ioapic_irq;
++
++	/** Reserved */
++	uint32_t reserved1;
+ } __attribute__((aligned(8)));
+ 
+ /**
+@@ -240,7 +251,10 @@ struct acrn_msi_entry {
+  */
+ struct acrn_nmi_entry {
+ 	/** virtual CPU ID to inject */
+-	int64_t vcpu_id;
++	uint16_t vcpu_id;
++
++	/** Reserved */
++	uint16_t reserved[3];
+ } __attribute__((aligned(8)));
+ 
+ /**
+@@ -279,7 +293,7 @@ struct acrn_vm_pci_msix_remap {
+ 	/** if the pass-through PCI device is MSI-X, this field contains
+ 	 *  the MSI-X entry table index
+ 	 */
+-	int32_t msix_entry_index;
++	uint32_t msix_entry_index;
+ 
+ 	/** if the pass-through PCI device is MSI-X, this field contains
+ 	 *  Vector Control for MSI-X Entry, field defined in MSI-X spec
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 31cdebe..67316fb 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -170,7 +170,10 @@ struct memory_map {
+ 
+ struct set_memmaps {
+ 	/*IN: vmid for this hypercall */
+-	uint64_t vmid;
++	uint16_t vmid;
++
++	/** Reserved */
++	uint16_t reserved[3];
+ 
+ 	/* IN: multi memmaps numbers */
+ 	uint32_t memmaps_num;
+@@ -184,7 +187,8 @@ struct set_memmaps {
+ } __attribute__((aligned(8)));
+ 
+ struct sbuf_setup_param {
+-	uint32_t pcpu_id;
++	uint16_t pcpu_id;
++	uint16_t reserved;
+ 	uint32_t sbuf_id;
+ 	uint64_t gpa;
+ } __attribute__((aligned(8)));
+@@ -203,9 +207,12 @@ struct hc_ptdev_irq {
+ 	uint16_t phys_bdf;	/* IN: Device physical BDF# */
+ 	union {
+ 		struct {
+-			uint32_t virt_pin;	/* IN: virtual IOAPIC pin */
+-			uint32_t phys_pin;	/* IN: physical IOAPIC pin */
+-			uint32_t pic_pin;	/* IN: pin from PIC? */
++			uint8_t virt_pin;	/* IN: virtual IOAPIC pin */
++			uint8_t reserved0[3];	/* Reserved */
++			uint8_t phys_pin;	/* IN: physical IOAPIC pin */
++			uint8_t reserved1[3];	/* Reserved */
++			bool pic_pin;		/* IN: pin from PIC? */
++			uint8_t reserved2[3];	/* Reserved */
+ 		} intx;
+ 		struct {
+ 			/* IN: vector count of MSI/MSIX */
+-- 
+2.7.4
+

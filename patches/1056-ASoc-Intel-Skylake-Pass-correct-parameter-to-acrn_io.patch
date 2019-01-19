@@ -1,0 +1,32 @@
+From 0f9e567dd4ef86b2b5343e33b24ad6911e88e3f7 Mon Sep 17 00:00:00 2001
+From: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Date: Wed, 19 Dec 2018 18:08:33 +0530
+Subject: [PATCH 1056/1132] ASoc: Intel: Skylake: Pass correct parameter to
+ acrn_ioreq_complete_request function
+
+Function call acrn_ioreq_complete_request() expects vhm_request ptr
+instead of NULL.
+
+Change-Id: I8be72cc1f0d23acb257236703e41b8b7072088d4
+Signed-off-by: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Tracked-On: PKT-1618
+---
+ sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c b/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
+index 4548112..225b2ab 100644
+--- a/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
++++ b/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
+@@ -113,7 +113,7 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
+ 		}
+ 
+ 		atomic_set(&req->processed, REQ_STATE_COMPLETE);
+-		acrn_ioreq_complete_request(client->vhm_client_id, i, NULL);
++		acrn_ioreq_complete_request(client->vhm_client_id, i, req);
+ 
+ 		/* handle VQ kick if needed */
+ 		if (handle)
+-- 
+2.7.4
+

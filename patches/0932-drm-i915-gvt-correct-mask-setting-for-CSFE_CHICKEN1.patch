@@ -1,0 +1,34 @@
+From 2570e2c1bdb55c0f492d7172696f14abf9c8fcc3 Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Wed, 19 Sep 2018 15:28:53 +0800
+Subject: [PATCH 0932/1132] drm/i915/gvt: correct mask setting for
+ CSFE_CHICKEN1
+
+CSFE_CHICKEN1(0x20d4) needs access with mask. This is caught in AcrnGT
+conformance check test:
+
+[drm:intel_gvt_vgpu_conformance_check]
+	*ERROR* gvt: vgpu1 unconformance mmio 0x20d4:0x40004,0x4
+
+Tracked-On: projectacrn/acrn-hypervisor#1459
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/mmio_context.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/mmio_context.c b/drivers/gpu/drm/i915/gvt/mmio_context.c
+index e6c592f..dc0a147 100644
+--- a/drivers/gpu/drm/i915/gvt/mmio_context.c
++++ b/drivers/gpu/drm/i915/gvt/mmio_context.c
+@@ -144,7 +144,7 @@ static struct engine_mmio gen9_engine_mmio_list[] __cacheline_aligned = {
+ 	{RCS, GAMT_CHKN_BIT_REG, 0x0, false}, /* 0x4ab8 */
+ 
+ 	{RCS, GEN9_GAMT_ECO_REG_RW_IA, 0x0, false}, /* 0x4ab0 */
+-	{RCS, GEN9_CSFE_CHICKEN1_RCS, 0x0, false}, /* 0x20d4 */
++	{RCS, GEN9_CSFE_CHICKEN1_RCS, 0xffff, false}, /* 0x20d4 */
+ 
+ 	{RCS, GEN8_GARBCNTL, 0x0, false}, /* 0xb004 */
+ 	{RCS, GEN7_FF_THREAD_MODE, 0x0, false}, /* 0x20a0 */
+-- 
+2.7.4
+

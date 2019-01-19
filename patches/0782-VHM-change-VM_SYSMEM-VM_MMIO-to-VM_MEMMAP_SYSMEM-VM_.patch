@@ -1,0 +1,67 @@
+From 107fe8432a596d3522aacde20f4c6b2b4a95fce3 Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:59:00 +0800
+Subject: [PATCH 0782/1132] VHM: change VM_SYSMEM/VM_MMIO to
+ VM_MEMMAP_SYSMEM/VM_MEMMAP_MMIO
+
+Change-Id: I7dc07502530ae47c6f9a3bc6a29fc271a053e8da
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-on:
+---
+ drivers/vhm/vhm_mm.c               | 4 ++--
+ include/linux/vhm/vhm_ioctl_defs.h | 9 +++++----
+ 2 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index cc08fd9..728998d 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -270,13 +270,13 @@ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 	unsigned long guest_gpa, host_gpa;
+ 
+ 	/* hugetlb use vma to do the mapping */
+-	if (memmap->type == VM_SYSMEM && memmap->using_vma)
++	if (memmap->type == VM_MEMMAP_SYSMEM && memmap->using_vma)
+ 		return hugepage_map_guest(vm, memmap);
+ 
+ 	mutex_lock(&vm->seg_lock);
+ 
+ 	/* cma or mmio */
+-	if (memmap->type == VM_SYSMEM) {
++	if (memmap->type == VM_MEMMAP_SYSMEM) {
+ 		list_for_each_entry(seg, &vm->memseg_list, list) {
+ 			if (seg->gpa == memmap->gpa
+ 				&& seg->len == memmap->len)
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index a0a830d..eb8d0d0 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -112,8 +112,8 @@ struct vm_memseg {
+ 	uint64_t gpa;
+ };
+ 
+-#define VM_SYSMEM       0
+-#define VM_MMIO         1
++#define VM_MEMMAP_SYSMEM       0
++#define VM_MEMMAP_MMIO         1
+ 
+ /**
+  * struct vm_memmap - EPT memory mapping info for guest
+@@ -130,11 +130,12 @@ struct vm_memmap {
+ 	/** union */
+ 	union {
+ 		/** @hpa: host physical start address of memory,
+-		 * only for type == VM_MMIO
++		 * only for type == VM_MEMMAP_MMIO
+ 		 */
+ 		uint64_t hpa;
+ 		/** @vma_base: service OS user virtual start address of
+-		 * memory, only for type == VM_SYSMEM && using_vma == true
++		 * memory, only for type == VM_MEMMAP_SYSMEM &&
++		 * using_vma == true
+ 		 */
+ 		uint64_t vma_base;
+ 	};
+-- 
+2.7.4
+

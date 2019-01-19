@@ -1,0 +1,67 @@
+From 1c7abd599fc9554b734105cdc58256ef36e08f6b Mon Sep 17 00:00:00 2001
+From: Hardik Shah <hardik.t.shah@intel.com>
+Date: Mon, 2 May 2016 15:09:22 +0530
+Subject: [PATCH 0473/1132] ASoC:CNL: Add support for aggregated gateways.
+
+Gateway Link copier needs to be programmed differently
+for aggregated case. Add support for SoundWire aggregated
+gateway programming.
+
+Change-Id: I91925fbeff68b8ecbb1dd13591f6a185a1cdd8d8
+Signed-off-by: Hardik Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c |  5 ++++-
+ sound/soc/intel/skylake/skl-topology.h | 12 ++++++++++++
+ 2 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index f63b50e..a9eaa4a 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -566,7 +566,10 @@ static u32 skl_get_node_id(struct skl_sst *ctx,
+ 			(SKL_CONN_SOURCE == mconfig->hw_conn_type) ?
+ 			SKL_DMA_SDW_LINK_OUTPUT_CLASS :
+ 			SKL_DMA_SDW_LINK_INPUT_CLASS;
+-		node_id.node.vindex = mconfig->sdw_stream_num;
++		if (mconfig->sdw_agg_enable)
++			node_id.node.vindex = 0x50;
++		else
++			node_id.node.vindex = mconfig->sdw_stream_num;
+ 		break;
+ 
+ 	default:
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 353c90c..44e4109 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -383,6 +383,16 @@ struct skl_module {
+ 	struct skl_module_iface formats[SKL_MAX_MODULE_FORMATS];
+ };
+ 
++struct skl_sdw_agg_data {
++	int alh_stream_num;
++	int ch_mask;
++};
++
++struct skl_sdw_aggregation {
++	int num_masters;
++	struct skl_sdw_agg_data agg_data[4];
++};
++
+ struct skl_module_cfg {
+ 	u8 guid[16];
+ 	struct skl_module_inst_id id;
+@@ -418,6 +428,8 @@ struct skl_module_cfg {
+ 	u32 dma_buffer_size; /* in milli seconds */
+ 	u8 pdi_type;
+ 	u32 sdw_stream_num;
++	bool sdw_agg_enable;
++	struct skl_sdw_aggregation sdw_agg;
+ 	struct skl_module_pin *m_in_pin;
+ 	struct skl_module_pin *m_out_pin;
+ 	enum skl_module_type m_type;
+-- 
+2.7.4
+

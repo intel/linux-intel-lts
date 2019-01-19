@@ -1,0 +1,30 @@
+From 66215308de1b4e6034cbbff54bdb01df38e4a4c9 Mon Sep 17 00:00:00 2001
+From: Michal Wasko <michal.wasko@intel.com>
+Date: Fri, 12 Oct 2018 14:23:43 +0200
+Subject: [PATCH 0730/1132] ASoC: Intel: Skylake: Set DUM bit in EM2 register
+ on skl resume
+
+Issue fix the IP bug of incorrect position
+reporting for capture stream
+
+Change-Id: I4b6c4ae28937ad4ee5df9d878b278efcfacc2695
+Signed-off-by: Michal Wasko <michal.wasko@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 5d1cbe4..777e7bf 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -466,6 +466,7 @@ static int skl_resume(struct device *dev)
+ 			snd_hdac_bus_init_cmd_io(bus);
+ 	} else {
+ 		ret = _skl_resume(bus);
++		skl_dum_set(bus);
+ 
+ 		/* turn off the links which are off before suspend */
+ 		list_for_each_entry(hlink, &bus->hlink_list, list) {
+-- 
+2.7.4
+

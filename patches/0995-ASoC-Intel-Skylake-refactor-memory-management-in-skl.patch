@@ -1,0 +1,163 @@
+From 282a3262bc961d56dc7ccd272d5ba752ac6b14ea Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Amadeusz=20S=C5=82awi=C5=84ski?=
+ <amadeuszx.slawinski@intel.com>
+Date: Wed, 31 Oct 2018 11:22:58 +0100
+Subject: [PATCH 0995/1132] ASoC: Intel: Skylake: refactor memory management in
+ skl_platform_register
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+since "ASoC: Intel: Skylake: Create SSP BE dais dynamically"
+we do weird things to allocate and free memory
+
+to fix this just calculate needed memory for dais beforehand and use it
+also allocate stream names using devm interface, so we don't need to
+manually manage them
+
+Change-Id: I51e70c310478e9610257a75e2bb8b259517ba2bc
+Signed-off-by: Amadeusz Sławiński <amadeuszx.slawinski@intel.com>
+Reviewed-by: Lewandowski, Gustaw <gustaw.lewandowski@intel.com>
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Lewandowski, Gustaw <gustaw.lewandowski@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 85 +++++++++++++++++++--------------------
+ 1 file changed, 41 insertions(+), 44 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 9a3b036..453aa7b 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -2136,80 +2136,79 @@ int skl_platform_register(struct device *dev)
+ 	struct hdac_bus *bus = dev_get_drvdata(dev);
+ 	struct skl *skl = bus_to_skl(bus);
+ 	struct snd_soc_dai_driver *dais;
+-	int num_dais = ARRAY_SIZE(skl_platform_dai);
++	const int num_platform_dais = ARRAY_SIZE(skl_platform_dai);
++	const int num_fe_dais = ARRAY_SIZE(skl_fe_dai);
+ 	int total_dais;
+ 	int i, index;
+ 
+ 	INIT_LIST_HEAD(&skl->ppl_list);
+ 	INIT_LIST_HEAD(&skl->bind_list);
+ 
+-	skl->dais = kmemdup(skl_platform_dai, sizeof(skl_platform_dai),
+-			    GFP_KERNEL);
+ 	skl->grp_cnt.vbus_id = devm_kcalloc(dev, skl->nhlt->endpoint_count,
+ 						sizeof(int), GFP_KERNEL);
+-	if (!skl->grp_cnt.vbus_id)
+-		return -ENOMEM;
++	if (!skl->grp_cnt.vbus_id) {
++		ret = -ENOMEM;
++		goto err;
++	}
+ 
+ 	skl_nhlt_get_ep_cnt(skl, NHLT_LINK_SSP);
+ 
+-	total_dais = num_dais + skl->grp_cnt.cnt;
+-
+-	skl->dais = devm_kcalloc(dev, total_dais, sizeof(*dais), GFP_KERNEL);
++	total_dais = num_platform_dais + skl->grp_cnt.cnt;
++	if (!skl->use_tplg_pcm)
++		total_dais += num_fe_dais;
+ 
+-	if (!skl->dais) {
++	dais = devm_kcalloc(dev, total_dais, sizeof(*dais), GFP_KERNEL);
++	if (!dais) {
+ 		ret = -ENOMEM;
+ 		goto err;
+ 	}
+ 
+-	memcpy(skl->dais, skl_platform_dai, sizeof(skl_platform_dai));
++	memcpy(dais, skl_platform_dai, sizeof(skl_platform_dai));
+ 
+ 	for (i = 0; i < skl->grp_cnt.cnt; i++) {
+-		index = num_dais + i;
++		index = num_platform_dais + i;
+ 
+-		memcpy(&skl->dais[index], &ssp_dai_info, sizeof(ssp_dai_info));
++		memcpy(&dais[index], &ssp_dai_info, sizeof(ssp_dai_info));
+ 
+-		skl->dais[index].name = kasprintf(GFP_KERNEL, "SSP%d Pin",
++		dais[index].name = devm_kasprintf(dev, GFP_KERNEL, "SSP%d Pin",
+ 				skl->grp_cnt.vbus_id[i]);
+-		if (!skl->dais[index].name)
+-			return -ENOMEM;
+-
+-		skl->dais[index].playback.stream_name = kasprintf(GFP_KERNEL,
+-				"ssp%d Tx", skl->grp_cnt.vbus_id[i]);
+-		if (!skl->dais[index].playback.stream_name) {
+-			kfree(skl->dais[index].name);
+-			return -ENOMEM;
++		if (!dais[index].name) {
++			ret = -ENOMEM;
++			goto err;
+ 		}
+ 
+-		skl->dais[index].capture.stream_name = kasprintf(GFP_KERNEL,
+-				"ssp%d Rx", skl->grp_cnt.vbus_id[i]);
+-		if (!skl->dais[index].capture.stream_name) {
+-			kfree(skl->dais[index].name);
+-			kfree(skl->dais[index].playback.stream_name);
+-			return -ENOMEM;
++		dais[index].playback.stream_name = devm_kasprintf(dev,
++				GFP_KERNEL, "ssp%d Tx",
++				skl->grp_cnt.vbus_id[i]);
++		if (!dais[index].playback.stream_name) {
++			ret = -ENOMEM;
++			goto err;
+ 		}
+-	}
+ 
+-	if (!skl->use_tplg_pcm) {
+-		total_dais += ARRAY_SIZE(skl_fe_dai);
+-		dais = krealloc(skl->dais, (total_dais * sizeof(*dais)),
+-							GFP_KERNEL);
+-		if (!dais) {
++		dais[index].capture.stream_name = devm_kasprintf(dev,
++				GFP_KERNEL, "ssp%d Rx",
++				skl->grp_cnt.vbus_id[i]);
++		if (!dais[index].capture.stream_name) {
+ 			ret = -ENOMEM;
+ 			goto err;
+ 		}
+-
+-		skl->dais = dais;
+-		memcpy(&skl->dais[num_dais + skl->grp_cnt.cnt], skl_fe_dai,
+-		       sizeof(skl_fe_dai));
+-		
+-		num_dais = total_dais;
+ 	}
+ 
+-	ret = devm_snd_soc_register_component(dev, &skl_component,
+-					 skl->dais, total_dais);
++	if (!skl->use_tplg_pcm)
++		memcpy(&dais[num_platform_dais + skl->grp_cnt.cnt],
++		       skl_fe_dai, sizeof(skl_fe_dai));
++
++	ret = devm_snd_soc_register_component(dev, &skl_component, dais,
++					      total_dais);
+ 	if (ret)
+-		dev_err(dev, "soc component registration failed %d\n", ret);
++		goto err;
++
++	skl->dais = dais;
++
++	return 0;
++
+ err:
++	dev_err(dev, "soc component registration failed %d\n", ret);
+ 	return ret;
+ }
+ 
+@@ -2226,7 +2225,5 @@ int skl_platform_unregister(struct device *dev)
+ 		}
+ 	}
+ 
+-	kfree(skl->dais);
+-
+ 	return 0;
+ }
+-- 
+2.7.4
+

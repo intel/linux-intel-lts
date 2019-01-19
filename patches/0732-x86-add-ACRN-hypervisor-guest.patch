@@ -1,0 +1,200 @@
+From 6a5d516b4448d66caf26ebac69f0bf3a5c65d9f8 Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:54 +0800
+Subject: [PATCH 0732/1132] x86: add ACRN hypervisor guest
+
+add x86_hyper_acrn into supported hypervisors array, which enabling
+ACRN services guest run on ACRN hypervisor.
+
+And it is restricted to X86_64.
+
+Change-Id: Ib9e7d9a8e971d5f32290953b4916dea064de8638
+Tracked-On: 218445
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Signed-off-by: Jack Ren <jack.ren@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ arch/x86/Kbuild                   |  2 ++
+ arch/x86/Kconfig                  |  2 ++
+ arch/x86/acrn/Kconfig             | 15 +++++++++
+ arch/x86/acrn/Makefile            |  2 ++
+ arch/x86/acrn/acrn.c              | 71 +++++++++++++++++++++++++++++++++++++++
+ arch/x86/include/asm/hypervisor.h |  1 +
+ arch/x86/kernel/cpu/hypervisor.c  |  4 +++
+ 7 files changed, 97 insertions(+)
+ create mode 100644 arch/x86/acrn/Kconfig
+ create mode 100644 arch/x86/acrn/Makefile
+ create mode 100644 arch/x86/acrn/acrn.c
+
+diff --git a/arch/x86/Kbuild b/arch/x86/Kbuild
+index 0038a2d..4662192 100644
+--- a/arch/x86/Kbuild
++++ b/arch/x86/Kbuild
+@@ -7,6 +7,8 @@ obj-$(CONFIG_KVM) += kvm/
+ # Xen paravirtualization support
+ obj-$(CONFIG_XEN) += xen/
+ 
++obj-$(CONFIG_ACRN) += acrn/
++
+ # Hyper-V paravirtualization support
+ obj-$(subst m,y,$(CONFIG_HYPERV)) += hyperv/
+ 
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index 3f69f22..1767308 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -782,6 +782,8 @@ config QUEUED_LOCK_STAT
+ 	  behavior of paravirtualized queued spinlocks and report
+ 	  them on debugfs.
+ 
++source "arch/x86/acrn/Kconfig"
++
+ source "arch/x86/xen/Kconfig"
+ 
+ config KVM_GUEST
+diff --git a/arch/x86/acrn/Kconfig b/arch/x86/acrn/Kconfig
+new file mode 100644
+index 0000000..0ba9e36
+--- /dev/null
++++ b/arch/x86/acrn/Kconfig
+@@ -0,0 +1,15 @@
++# SPDX-License-Identifier: GPL-2.0
++#
++# This Kconfig describes ACRN options
++#
++
++config ACRN
++	bool "Enable services run on ACRN hypervisor"
++	depends on X86_64
++	depends on PARAVIRT
++	depends on DMA_CMA
++	depends on !INTEL_IOMMU
++	depends on !VMAP_STACK
++	help
++	  This option is needed if were to run ACRN services linux on top of
++	  ACRN hypervisor.
+diff --git a/arch/x86/acrn/Makefile b/arch/x86/acrn/Makefile
+new file mode 100644
+index 0000000..d961d8c
+--- /dev/null
++++ b/arch/x86/acrn/Makefile
+@@ -0,0 +1,2 @@
++# SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_ACRN)	+= acrn.o
+diff --git a/arch/x86/acrn/acrn.c b/arch/x86/acrn/acrn.c
+new file mode 100644
+index 0000000..a042b54
+--- /dev/null
++++ b/arch/x86/acrn/acrn.c
+@@ -0,0 +1,71 @@
++/*
++ * ACRN hypervisor support
++ *
++ * Copyright (C) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Jason Chen CJ <jason.cj.chen@intel.com>
++ *
++ */
++#include <asm/hypervisor.h>
++
++static uint32_t __init acrn_detect(void)
++{
++	return hypervisor_cpuid_base("ACRNACRNACRN\0\0", 0);
++}
++
++static void __init acrn_init_platform(void)
++{
++}
++
++static void acrn_pin_vcpu(int cpu)
++{
++	/* do nothing here now */
++}
++
++static bool acrn_x2apic_available(void)
++{
++	/* do not support x2apic */
++	return false;
++}
++
++static void __init acrn_init_mem_mapping(void)
++{
++	/* do nothing here now */
++}
++
++const struct hypervisor_x86 x86_hyper_acrn = {
++	.name                   = "ACRN",
++	.detect                 = acrn_detect,
++	.type                 	= X86_HYPER_ACRN,
++	.init.init_platform     = acrn_init_platform,
++	.runtime.pin_vcpu       = acrn_pin_vcpu,
++	.init.x2apic_available  = acrn_x2apic_available,
++	.init.init_mem_mapping	= acrn_init_mem_mapping,
++};
++EXPORT_SYMBOL(x86_hyper_acrn);
+diff --git a/arch/x86/include/asm/hypervisor.h b/arch/x86/include/asm/hypervisor.h
+index 8c5aaba..50a30f6 100644
+--- a/arch/x86/include/asm/hypervisor.h
++++ b/arch/x86/include/asm/hypervisor.h
+@@ -29,6 +29,7 @@ enum x86_hypervisor_type {
+ 	X86_HYPER_XEN_HVM,
+ 	X86_HYPER_KVM,
+ 	X86_HYPER_JAILHOUSE,
++	X86_HYPER_ACRN,
+ };
+ 
+ #ifdef CONFIG_HYPERVISOR_GUEST
+diff --git a/arch/x86/kernel/cpu/hypervisor.c b/arch/x86/kernel/cpu/hypervisor.c
+index 479ca47..5a6f072 100644
+--- a/arch/x86/kernel/cpu/hypervisor.c
++++ b/arch/x86/kernel/cpu/hypervisor.c
+@@ -32,6 +32,7 @@ extern const struct hypervisor_x86 x86_hyper_xen_pv;
+ extern const struct hypervisor_x86 x86_hyper_xen_hvm;
+ extern const struct hypervisor_x86 x86_hyper_kvm;
+ extern const struct hypervisor_x86 x86_hyper_jailhouse;
++extern const struct hypervisor_x86 x86_hyper_acrn;
+ 
+ static const __initconst struct hypervisor_x86 * const hypervisors[] =
+ {
+@@ -49,6 +50,9 @@ static const __initconst struct hypervisor_x86 * const hypervisors[] =
+ #ifdef CONFIG_JAILHOUSE_GUEST
+ 	&x86_hyper_jailhouse,
+ #endif
++#ifdef CONFIG_ACRN
++	&x86_hyper_acrn,
++#endif
+ };
+ 
+ enum x86_hypervisor_type x86_hyper_type;
+-- 
+2.7.4
+

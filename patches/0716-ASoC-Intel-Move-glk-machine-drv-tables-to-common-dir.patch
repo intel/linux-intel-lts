@@ -1,0 +1,42 @@
+From 73a674304709ca06e57d6cf4284eca6a3eb80efd Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Tue, 14 Aug 2018 12:15:45 +0200
+Subject: [PATCH 0716/1132] ASoC: Intel: Move glk machine drv tables to common
+ directory.
+
+Align with machine-drv-tables declaration model present on upstream.
+Tables are moved from skl.c into separate file within common directory
+dedicated to glk-specific data only.
+
+Change-Id: I3c2c0ee4eeffddb495dfd765788b9cc861e7741e
+Depends-On: Ia7c823611f6e0f14a94447399cdcafe9aeb5e51e
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+Reviewed-on:
+Reviewed-by: Uzieblo, Olgierd <olgierd.uzieblo@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 9 ---------
+ 1 file changed, 9 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index fba0fae..f24d759 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1158,15 +1158,6 @@ static struct skl_machine_pdata cnl_pdata = {
+ 	.use_tplg_pcm = true,
+ };
+ 
+-static struct snd_soc_acpi_mach sst_glk_devdata[] = {
+-	{
+-		.id = "INT343A",
+-		.drv_name = "glk_alc298s_i2s",
+-		.fw_filename = "intel/dsp_fw_glk.bin",
+-	},
+-	{}
+-};
+-
+ static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
+ #if !IS_ENABLED(CONFIG_SND_SOC_RT700)
+ 	{
+-- 
+2.7.4
+

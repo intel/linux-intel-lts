@@ -1,0 +1,1223 @@
+From b48be53a5e283d3a1fab67d517e9dbd62786d333 Mon Sep 17 00:00:00 2001
+From: Hardik T Shah <hardik.t.shah@intel.com>
+Date: Sat, 23 Apr 2016 18:41:07 +0530
+Subject: [PATCH 0458/1132] ASoC:Codecs: Add support for SV FPGA SoundWire PDM
+ Codec.
+
+Change-Id: I4f48659c9be3238b78ee911449557142a694bf0b
+Signed-off-by: Hardik T Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+---
+ sound/soc/codecs/Kconfig      |  17 ++
+ sound/soc/codecs/Makefile     |   6 +
+ sound/soc/codecs/svfpga-i2c.c |  90 ++++++++
+ sound/soc/codecs/svfpga-sdw.c | 142 +++++++++++++
+ sound/soc/codecs/svfpga.c     | 485 ++++++++++++++++++++++++++++++++++++++++++
+ sound/soc/codecs/svfpga.h     | 398 ++++++++++++++++++++++++++++++++++
+ 6 files changed, 1138 insertions(+)
+ create mode 100644 sound/soc/codecs/svfpga-i2c.c
+ create mode 100644 sound/soc/codecs/svfpga-sdw.c
+ create mode 100644 sound/soc/codecs/svfpga.c
+ create mode 100644 sound/soc/codecs/svfpga.h
+
+diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
+index efb095d..461f412 100644
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -234,6 +234,7 @@ config SND_SOC_ALL_CODECS
+ 	select SND_SOC_WM9705 if (SND_SOC_AC97_BUS || SND_SOC_AC97_BUS_NEW)
+ 	select SND_SOC_WM9712 if (SND_SOC_AC97_BUS || SND_SOC_AC97_BUS_NEW)
+ 	select SND_SOC_WM9713 if (SND_SOC_AC97_BUS || SND_SOC_AC97_BUS_NEW)
++	select SND_SOC_SVFPGA_I2C if I2C
+         help
+           Normally ASoC codec drivers are only built if a machine driver which
+           uses them is also built since they are only usable with a machine
+@@ -465,6 +466,22 @@ config SND_SOC_CS42L42
+ 	tristate "Cirrus Logic CS42L42 CODEC"
+ 	depends on I2C
+ 
++config SND_SOC_SVFPGA
++	tristate "Intel SVFPGA Codec"
++	depends on I2C
++	depends on SDW
++
++config SND_SOC_SVFPGA_SDW
++	tristate "Intel SVFPGA Codec - SDW"
++	depends on SDW
++	select SND_SOC_SVFPGA
++	select REGMAP_SDW
++
++config SND_SOC_SVFPGA_I2C
++	tristate "Intel SVFPGA Codec - I2C"
++	depends on I2C
++	select SND_SOC_SVFPGA
++
+ config SND_SOC_CS42L51
+ 	tristate
+ 
+diff --git a/sound/soc/codecs/Makefile b/sound/soc/codecs/Makefile
+index 7ae7c85..f37fca3 100644
+--- a/sound/soc/codecs/Makefile
++++ b/sound/soc/codecs/Makefile
+@@ -46,6 +46,9 @@ snd-soc-cs35l33-objs := cs35l33.o
+ snd-soc-cs35l34-objs := cs35l34.o
+ snd-soc-cs35l35-objs := cs35l35.o
+ snd-soc-cs42l42-objs := cs42l42.o
++snd-soc-svfpga-objs := svfpga.o
++snd-soc-svfpga-i2c-objs := svfpga-i2c.o
++snd-soc-svfpga-sdw-objs := svfpga-sdw.o
+ snd-soc-cs42l51-objs := cs42l51.o
+ snd-soc-cs42l51-i2c-objs := cs42l51-i2c.o
+ snd-soc-cs42l52-objs := cs42l52.o
+@@ -306,6 +309,9 @@ obj-$(CONFIG_SND_SOC_CS35L33)	+= snd-soc-cs35l33.o
+ obj-$(CONFIG_SND_SOC_CS35L34)	+= snd-soc-cs35l34.o
+ obj-$(CONFIG_SND_SOC_CS35L35)	+= snd-soc-cs35l35.o
+ obj-$(CONFIG_SND_SOC_CS42L42)	+= snd-soc-cs42l42.o
++obj-$(CONFIG_SND_SOC_SVFPGA)	+= snd-soc-svfpga.o
++obj-$(CONFIG_SND_SOC_SVFPGA_I2C)	+= snd-soc-svfpga-i2c.o
++obj-$(CONFIG_SND_SOC_SVFPGA_SDW)	+= snd-soc-svfpga-sdw.o
+ obj-$(CONFIG_SND_SOC_CS42L51)	+= snd-soc-cs42l51.o
+ obj-$(CONFIG_SND_SOC_CS42L51_I2C)	+= snd-soc-cs42l51-i2c.o
+ obj-$(CONFIG_SND_SOC_CS42L52)	+= snd-soc-cs42l52.o
+diff --git a/sound/soc/codecs/svfpga-i2c.c b/sound/soc/codecs/svfpga-i2c.c
+new file mode 100644
+index 0000000..07dc09f
+--- /dev/null
++++ b/sound/soc/codecs/svfpga-i2c.c
+@@ -0,0 +1,90 @@
++/*
++ * svfpga-i2c.c -- SVFPGA ALSA SoC audio driver
++ *
++ * Copyright 2015 Intel, Inc.
++ *
++ * Author: Hardik Shah <hardik.t.shah@intel.com>
++ * Dummy ASoC Codec Driver based Cirrus Logic CS42L42 Codec
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/version.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/delay.h>
++#include <linux/i2c.h>
++#include <linux/sdw_bus.h>
++#include <linux/gpio.h>
++#include <linux/regmap.h>
++#include <linux/slab.h>
++#include <linux/platform_device.h>
++#include <linux/regulator/consumer.h>
++#include <linux/gpio/consumer.h>
++#include <linux/of.h>
++#include <linux/of_gpio.h>
++#include <linux/of_device.h>
++#include <sound/core.h>
++#include <sound/pcm.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include <sound/soc-dapm.h>
++#include <sound/initval.h>
++#include <sound/tlv.h>
++#include "svfpga.h"
++
++extern const struct regmap_config svfpga_i2c_regmap;
++extern const struct dev_pm_ops svfpga_runtime_pm;
++static int svfpga_i2c_probe(struct i2c_client *i2c,
++				 const struct i2c_device_id *i2c_id)
++{
++	struct regmap *regmap;
++
++	if (!i2c_check_functionality(i2c->adapter, I2C_FUNC_SMBUS_BYTE_DATA))
++		return -EINVAL;
++
++	regmap = devm_regmap_init_i2c(i2c, &svfpga_i2c_regmap);
++	return svfpga_probe(&i2c->dev, regmap, NULL);
++}
++
++static int svfpga_i2c_remove(struct i2c_client *i2c)
++{
++	return svfpga_remove(&i2c->dev);
++}
++
++static const struct of_device_id svfpga_of_match[] = {
++	{ .compatible = "svfpga", },
++	{},
++};
++MODULE_DEVICE_TABLE(of, svfpga_of_match);
++
++
++static const struct i2c_device_id svfpga_id[] = {
++	{"svfpga", 0},
++	{}
++};
++
++MODULE_DEVICE_TABLE(i2c, svfpga_id);
++
++static struct i2c_driver svfpga_i2c_driver = {
++	.driver = {
++		   .name = "svfpga",
++		   .pm = &svfpga_runtime_pm,
++		   .of_match_table = svfpga_of_match,
++		   },
++	.id_table = svfpga_id,
++	.probe = svfpga_i2c_probe,
++	.remove = svfpga_i2c_remove,
++};
++
++module_i2c_driver(svfpga_i2c_driver);
++
++MODULE_DESCRIPTION("ASoC SVFPGA driver I2C");
++MODULE_DESCRIPTION("ASoC SVFPGA driver SDW");
++MODULE_AUTHOR("Hardik shah, Intel Inc, <hardik.t.shah@intel.com");
++MODULE_LICENSE("GPL");
++
+diff --git a/sound/soc/codecs/svfpga-sdw.c b/sound/soc/codecs/svfpga-sdw.c
+new file mode 100644
+index 0000000..1fa06ef
+--- /dev/null
++++ b/sound/soc/codecs/svfpga-sdw.c
+@@ -0,0 +1,142 @@
++/*
++ * svfpga-i2c.c -- SVFPGA ALSA SoC audio driver
++ *
++ * Copyright 2015 Intel, Inc.
++ *
++ * Author: Hardik Shah <hardik.t.shah@intel.com>
++ * Dummy ASoC Codec Driver based Cirrus Logic CS42L42 Codec
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++
++#include <linux/delay.h>
++#include <linux/sdw_bus.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/regmap.h>
++#include <sound/soc.h>
++#include "svfpga.h"
++
++extern const struct regmap_config svfpga_sdw_regmap;
++extern const struct dev_pm_ops svfpga_runtime_pm;
++
++static int svfpga_register_sdw_capabilties(struct sdw_slv *sdw,
++				 const struct sdw_slv_id *sdw_id)
++{
++	struct sdw_slv_capabilities cap;
++	struct sdw_slv_dpn_capabilities *dpn_cap = NULL;
++	struct port_audio_mode_properties *prop = NULL;
++	int i, j;
++
++	cap.wake_up_unavailable = true;
++	cap.test_mode_supported = false;
++	cap.clock_stop1_mode_supported = false;
++	cap.simplified_clock_stop_prepare = false;
++	cap.highphy_capable = true;
++	cap.paging_supported = false;
++	cap.bank_delay_support = false;
++	cap.port_15_read_behavior = 0;
++	cap.sdw_dp0_supported = false;
++	cap.num_of_sdw_ports = 3;
++	cap.sdw_dpn_cap = devm_kzalloc(&sdw->dev,
++			((sizeof(struct sdw_slv_dpn_capabilities)) *
++			cap.num_of_sdw_ports), GFP_KERNEL);
++	for (i = 0; i < cap.num_of_sdw_ports; i++) {
++		dpn_cap = &cap.sdw_dpn_cap[i];
++		if (i == 0 || i == 2)
++			dpn_cap->port_direction = SDW_PORT_SOURCE;
++		else
++			dpn_cap->port_direction = SDW_PORT_SINK;
++
++		dpn_cap->port_number = i+1;
++		dpn_cap->max_word_length =  24;
++		dpn_cap->min_word_length = 16;
++		dpn_cap->num_word_length = 0;
++		dpn_cap->word_length_buffer = NULL;
++		dpn_cap->dpn_type = SDW_FULL_DP;
++		dpn_cap->dpn_grouping = SDW_BLOCKGROUPCOUNT_1;
++		dpn_cap->prepare_ch = SDW_SIMPLIFIED_CP_SM;
++		dpn_cap->imp_def_intr_mask = 0x0;
++		dpn_cap->min_ch_num = 1;
++		dpn_cap->max_ch_num = 2;
++		dpn_cap->num_ch_supported = 0;
++		dpn_cap->ch_supported = NULL;
++		dpn_cap->port_flow_mode_mask = SDW_PORT_FLOW_MODE_ISOCHRONOUS;
++		dpn_cap->block_packing_mode_mask =
++				SDW_PORT_BLK_PKG_MODE_BLK_PER_PORT_MASK |
++				SDW_PORT_BLK_PKG_MODE_BLK_PER_CH_MASK;
++		dpn_cap->port_encoding_type_mask =
++				SDW_PORT_ENCODING_TYPE_TWOS_CMPLMNT |
++				SDW_PORT_ENCODING_TYPE_SIGN_MAGNITUDE |
++				SDW_PORT_ENCODING_TYPE_IEEE_32_FLOAT;
++		dpn_cap->num_audio_modes = 1;
++
++		dpn_cap->mode_properties = devm_kzalloc(&sdw->dev,
++				((sizeof(struct port_audio_mode_properties)) *
++				dpn_cap->num_audio_modes), GFP_KERNEL);
++		for (j = 0; j < dpn_cap->num_audio_modes; j++) {
++			prop = &dpn_cap->mode_properties[j];
++			prop->max_frequency = 16000000;
++			prop->min_frequency = 1000000;
++			prop->num_freq_configs = 0;
++			prop->freq_supported = NULL;
++			prop->glitchless_transitions_mask = 0x1;
++			prop->max_sampling_frequency = 192000;
++			prop->min_sampling_frequency = 8000;
++			prop->num_sampling_freq_configs = 0;
++			prop->sampling_freq_config = NULL;
++			prop->ch_prepare_behavior = SDW_CH_PREP_ANY_TIME;
++		}
++	}
++	return sdw_register_slave_capabilities(sdw, &cap);
++
++}
++static int svfpga_sdw_probe(struct sdw_slv *sdw,
++				 const struct sdw_slv_id *sdw_id)
++{
++	struct regmap *regmap;
++	int ret;
++
++	/* Wait for codec internal initialization for 2.5ms minimum */
++	msleep(5);
++	regmap = devm_regmap_init_sdwint(sdw, &svfpga_sdw_regmap);
++	if (!regmap)
++		return -EINVAL;
++	ret = svfpga_register_sdw_capabilties(sdw, sdw_id);
++	if (ret)
++		return ret;
++	return svfpga_probe(&sdw->dev, regmap, sdw);
++}
++
++static int svfpga_sdw_remove(struct sdw_slv *sdw)
++{
++	return svfpga_remove(&sdw->dev);
++}
++
++static const struct sdw_slv_id svfpga_id[] = {
++	{"00:01:fa:42:42:00", 0},
++	{"14:13:20:05:86:80", 0},
++	{}
++};
++
++MODULE_DEVICE_TABLE(sdwint, svfpga_id);
++
++static struct sdw_slave_driver svfpga_sdw_driver = {
++	.driver_type = SDW_DRIVER_TYPE_SLAVE,
++	.driver = {
++		   .name = "svfpga-codec",
++		   .pm = &svfpga_runtime_pm,
++		   },
++	.probe = svfpga_sdw_probe,
++	.remove = svfpga_sdw_remove,
++	.id_table = svfpga_id,
++};
++
++module_sdw_slave_driver(svfpga_sdw_driver);
++
++MODULE_DESCRIPTION("ASoC SVFPGA driver SDW");
++MODULE_AUTHOR("Hardik shah, Intel Inc, <hardik.t.shah@intel.com");
++MODULE_LICENSE("GPL");
+diff --git a/sound/soc/codecs/svfpga.c b/sound/soc/codecs/svfpga.c
+new file mode 100644
+index 0000000..49904dd
+--- /dev/null
++++ b/sound/soc/codecs/svfpga.c
+@@ -0,0 +1,485 @@
++/*
++ * svfpga.c -- SVFPGA ALSA SoC audio driver
++ *
++ * Copyright 2015 Intel, Inc.
++ *
++ * Author: Hardik Shah <hardik.t.shah@intel.com>
++ * Dummy ASoC Codec Driver based Cirrus Logic CS42L42 Codec
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++
++/* #define DEBUG 1 */
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/version.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/delay.h>
++#include <linux/i2c.h>
++#include <linux/pm_runtime.h>
++#include <linux/pm.h>
++#include <linux/sdw_bus.h>
++#include <linux/gpio.h>
++#include <linux/regmap.h>
++#include <linux/slab.h>
++#include <linux/platform_device.h>
++#include <linux/regulator/consumer.h>
++#include <linux/gpio/consumer.h>
++#include <linux/of.h>
++#include <linux/of_gpio.h>
++#include <linux/of_device.h>
++#include <sound/core.h>
++#include <sound/pcm.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include <sound/soc-dapm.h>
++#include <sound/initval.h>
++#include <sound/tlv.h>
++
++#include "svfpga.h"
++
++struct sdw_stream_data {
++	int stream_tag;
++};
++
++
++
++static const struct reg_default svfpga_reg_defaults[] = {
++};
++
++static bool svfpga_readable_register(struct device *dev, unsigned int reg)
++{
++	return false;
++}
++
++static bool svfpga_volatile_register(struct device *dev, unsigned int reg)
++{
++	return false;
++}
++
++static const struct regmap_range_cfg svfpga_page_range = {
++	.name = "Pages",
++	.range_min = 0,
++	.range_max = 0,
++	.selector_reg = SVFPGA_PAGE_REGISTER,
++	.selector_mask = 0xff,
++	.selector_shift = 0,
++	.window_start = 0,
++	.window_len = 256,
++};
++
++const struct regmap_config svfpga_i2c_regmap = {
++	.reg_bits = 8,
++	.val_bits = 8,
++
++	.readable_reg = svfpga_readable_register,
++	.volatile_reg = svfpga_volatile_register,
++
++	.ranges = &svfpga_page_range,
++	.num_ranges = 1,
++
++	.max_register = 0,
++	.reg_defaults = svfpga_reg_defaults,
++	.num_reg_defaults = ARRAY_SIZE(svfpga_reg_defaults),
++	.cache_type = REGCACHE_RBTREE,
++};
++EXPORT_SYMBOL(svfpga_i2c_regmap);
++
++const struct regmap_config svfpga_sdw_regmap = {
++	.reg_bits = 32,
++	.val_bits = 8,
++
++	.readable_reg = svfpga_readable_register,
++	.volatile_reg = svfpga_volatile_register,
++
++	.max_register = SVFPGA_MAX_REGISTER,
++	.reg_defaults = svfpga_reg_defaults,
++	.num_reg_defaults = ARRAY_SIZE(svfpga_reg_defaults),
++	.cache_type = REGCACHE_RBTREE,
++};
++EXPORT_SYMBOL(svfpga_sdw_regmap);
++
++static int svfpga_hpdrv_evt(struct snd_soc_dapm_widget *w,
++				struct snd_kcontrol *kcontrol, int event)
++{
++	return 0;
++}
++
++static const struct snd_soc_dapm_widget svfpga_dapm_widgets[] = {
++	SND_SOC_DAPM_OUTPUT("HP"),
++	SND_SOC_DAPM_INPUT("I2NP"),
++	SND_SOC_DAPM_AIF_IN("SDIN", NULL, 0, SVFPGA_ASP_CLK_CFG,
++					SVFPGA_ASP_SCLK_EN_SHIFT, false),
++	SND_SOC_DAPM_OUT_DRV_E("HPDRV", SND_SOC_NOPM, 0,
++					0, NULL, 0, svfpga_hpdrv_evt,
++					SND_SOC_DAPM_POST_PMU |
++					SND_SOC_DAPM_PRE_PMD)
++};
++
++static const struct snd_soc_dapm_route svfpga_audio_map[] = {
++	{"SDIN", NULL, "Playback"},
++	{"HPDRV", NULL, "SDIN"},
++	{"HP", NULL, "HPDRV"},
++	{"Capture", NULL, "I2NP"},
++
++};
++
++static int svfpga_set_bias_level(struct snd_soc_component *component,
++					enum snd_soc_bias_level level)
++{
++	return 0;
++}
++
++static const struct snd_soc_component_driver soc_codec_dev_svfpga = {
++	.set_bias_level = svfpga_set_bias_level,
++	.dapm_widgets = svfpga_dapm_widgets,
++	.num_dapm_widgets = ARRAY_SIZE(svfpga_dapm_widgets),
++	.dapm_routes = svfpga_audio_map,
++	.num_dapm_routes = ARRAY_SIZE(svfpga_audio_map),
++};
++
++static int svfpga_program_stream_tag(struct snd_pcm_substream *substream,
++			struct snd_soc_dai *dai, int stream_tag)
++{
++	struct sdw_stream_data *stream_data;
++
++	stream_data = kzalloc(sizeof(*stream_data), GFP_KERNEL);
++	if (!stream_data)
++		return -ENOMEM;
++	stream_data->stream_tag = stream_tag;
++	snd_soc_dai_set_dma_data(dai, substream, stream_data);
++	return 0;
++}
++
++static int svfpga_remove_stream_tag(struct snd_pcm_substream *substream,
++       struct snd_soc_dai *dai)
++
++{
++	struct sdw_stream_data *stream_data;
++
++	stream_data = snd_soc_dai_get_dma_data(dai, substream);
++	kfree(stream_data);
++	return 0;
++}
++
++
++
++static int svfpga_pcm_hw_params(struct snd_pcm_substream *substream,
++				     struct snd_pcm_hw_params *params,
++				     struct snd_soc_dai *dai)
++{
++	struct snd_soc_component *component = dai->component;
++	struct svfpga_private *svfpga = snd_soc_component_get_drvdata(component);
++	int retval;
++	enum sdw_data_direction direction;
++	struct sdw_stream_config stream_config;
++	struct sdw_port_config port_config;
++	struct sdw_port_cfg port_cfg;
++	struct sdw_stream_data *stream;
++	int port;
++	int num_channels;
++	int upscale_factor = 16;
++
++	stream = snd_soc_dai_get_dma_data(dai, substream);
++
++	if (!svfpga->sdw)
++		return 0;
++
++	/* SoundWire specific configuration */
++	/* This code assumes port 1 for playback and port 2 for capture */
++	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
++		direction = SDW_DATA_DIR_IN;
++		port = 2;
++	} else {
++		direction = SDW_DATA_DIR_OUT;
++		port = 0;
++	}
++	stream_config.frame_rate =  params_rate(params);
++	stream_config.frame_rate *= upscale_factor;
++	stream_config.channel_count = params_channels(params);
++	stream_config.bps =
++			snd_pcm_format_width(params_format(params));
++	stream_config.bps = 1;
++	stream_config.direction = direction;
++	retval = sdw_config_stream(svfpga->sdw->mstr, svfpga->sdw, &stream_config,
++							stream->stream_tag);
++	if (retval) {
++		dev_err(dai->dev, "Unable to configure the stream\n");
++		return retval;
++	}
++	port_config.num_ports = 1;
++	port_config.port_cfg = &port_cfg;
++	port_cfg.port_num = port;
++	num_channels = params_channels(params);
++	port_cfg.ch_mask = (1 << (num_channels))  - 1;
++	retval = sdw_config_port(svfpga->sdw->mstr, svfpga->sdw,
++		&port_config, stream->stream_tag);
++	if (retval) {
++		dev_err(dai->dev, "Unable to configure port\n");
++		return retval;
++	}
++
++	return retval;
++}
++
++int svfpga_pcm_hw_free(struct snd_pcm_substream *substream,
++				struct snd_soc_dai *dai)
++{
++	struct snd_soc_component *component = dai->component;
++	struct svfpga_private *svfpga = snd_soc_component_get_drvdata(component);
++	struct sdw_stream_data *stream = snd_soc_dai_get_dma_data(dai,
++			substream);
++	if (!svfpga->sdw)
++		return 0;
++	sdw_release_stream(svfpga->sdw->mstr, svfpga->sdw, stream->stream_tag);
++	return 0;
++}
++
++static struct snd_soc_dai_ops svfpga_ops = {
++	.hw_params	= svfpga_pcm_hw_params,
++	.hw_free	= svfpga_pcm_hw_free,
++	.program_stream_tag     = svfpga_program_stream_tag,
++	.remove_stream_tag      = svfpga_remove_stream_tag,
++};
++
++static struct snd_soc_dai_driver svfpga_dai = {
++		.name = "svfpga",
++		.playback = {
++			.stream_name = "Playback",
++			.channels_min = 1,
++			.channels_max = 2,
++			.rates = SNDRV_PCM_RATE_48000,
++			.formats = SNDRV_PCM_FMTBIT_S16_LE,
++		},
++		.capture = {
++			.stream_name = "Capture",
++			.channels_min = 1,
++			.channels_max = 2,
++			.rates = SNDRV_PCM_RATE_48000,
++			.formats = SNDRV_PCM_FMTBIT_S16_LE,
++		},
++		.ops = &svfpga_ops,
++};
++
++int svfpga_probe(struct device *dev, struct regmap *regmap,
++					struct sdw_slv *slave)
++{
++	struct svfpga_private *svfpga;
++	int ret;
++	struct sdw_msg rd_msg, wr_msg;
++	u8 rbuf[1] = {0}, wbuf[1] = {0};
++
++
++	svfpga = devm_kzalloc(dev, sizeof(struct svfpga_private),
++			       GFP_KERNEL);
++	if (!svfpga)
++		return -ENOMEM;
++
++	dev_set_drvdata(dev, svfpga);
++
++	svfpga->regmap = regmap;
++	svfpga->sdw = slave;
++	ret =  devm_snd_soc_register_component(dev,
++			&soc_codec_dev_svfpga, &svfpga_dai, 1);
++	dev_info(&slave->dev, "Configuring codec for pattern\n");
++
++	wr_msg.ssp_tag = 0;
++	wr_msg.flag = SDW_MSG_FLAG_WRITE;
++	wr_msg.addr = 0x8;
++	wr_msg.len = 1;
++	wr_msg.buf = wbuf;
++	wr_msg.slave_addr = slave->slv_number;
++	wr_msg.addr_page1 = 0x0;
++	wr_msg.addr_page2 = 0x0;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x1804;
++	wbuf[0] = 0x1;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	rd_msg.ssp_tag = 0;
++	rd_msg.flag = SDW_MSG_FLAG_READ;
++	rd_msg.addr = 0x180b;
++	rd_msg.len = 1;
++	rd_msg.buf = rbuf;
++	rd_msg.slave_addr = slave->slv_number;
++	rd_msg.addr_page1 = 0x0;
++	rd_msg.addr_page2 = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &rd_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x180b;
++	wbuf[0] = 0x1a;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x180c;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x180d;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x180e;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x180f;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x1810;
++	wbuf[0] = 0xb8;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x1811;
++	wbuf[0] = 0xd;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x1812;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x1813;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x181c;
++	wbuf[0] = 0x6e;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x181d;
++	wbuf[0] = 0x3;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x181e;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x181f;
++	wbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	wr_msg.addr = 0x180b;
++	wbuf[0] = 0x1b;
++	ret = sdw_slave_transfer(slave->mstr, &wr_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	rd_msg.addr = 0x180b;
++	rbuf[0] = 0x0;
++	ret = sdw_slave_transfer(slave->mstr, &rd_msg, 1);
++	if (ret != 1) {
++		ret = -EINVAL;
++		dev_err(&slave->dev, "Interrupt status read failed for slave %x\n", slave->slv_number);
++		goto out;
++	}
++	dev_info(&slave->dev, "Codec programmed with Value %x\n", rbuf[0]);
++	return ret;
++out:
++	return -EIO;
++}
++EXPORT_SYMBOL(svfpga_probe);
++
++int svfpga_remove(struct device *dev)
++{
++
++	dev_info(dev, "Removing\n");
++
++	return 0;
++}
++EXPORT_SYMBOL(svfpga_remove);
++
++#ifdef CONFIG_PM
++static int svfpga_runtime_suspend(struct device *dev)
++{
++	return 0;
++}
++
++static int svfpga_runtime_resume(struct device *dev)
++{
++
++	return 0;
++}
++#endif
++
++const struct dev_pm_ops svfpga_runtime_pm = {
++	SET_RUNTIME_PM_OPS(svfpga_runtime_suspend, svfpga_runtime_resume,
++			   NULL)
++};
++EXPORT_SYMBOL(svfpga_runtime_pm);
++
++MODULE_DESCRIPTION("ASoC SVFPGA driver");
++MODULE_DESCRIPTION("ASoC SVFPGA driver SDW");
++MODULE_AUTHOR("Hardik shah, Intel Inc, <hardik.t.shah@intel.com");
++MODULE_LICENSE("GPL");
+diff --git a/sound/soc/codecs/svfpga.h b/sound/soc/codecs/svfpga.h
+new file mode 100644
+index 0000000..e9757e5
+--- /dev/null
++++ b/sound/soc/codecs/svfpga.h
+@@ -0,0 +1,398 @@
++/*
++ * svfpga.h -- SVFPGA ALSA SoC audio driver header
++ *
++ * Copyright 2015 Intel, Inc.
++ *
++ * Author: Hardik Shah <hardik.t.shah@intel.com>
++ * Dummy ASoC Codec Driver based Cirrus Logic CS42L42 Codec
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++
++#ifndef __SVFPGA_H__
++#define __SVFPGA_H__
++
++#include <linux/regulator/consumer.h>
++
++#define SVFPGA_PAGE_REGISTER	0x00	/* Page Select Register */
++#define SVFPGA_WIN_START	0x00
++#define SVFPGA_WIN_LEN		0x100
++#define SVFPGA_RANGE_MIN	0x00
++#define SVFPGA_RANGE_MAX	0x7F
++
++#define SVFPGA_PAGE_10		0x9000
++#define SVFPGA_PAGE_11		0x9100
++#define SVFPGA_PAGE_12		0x9200
++#define SVFPGA_PAGE_13		0x9300
++#define SVFPGA_PAGE_15		0x9500
++#define SVFPGA_PAGE_19		0x9900
++#define SVFPGA_PAGE_1B		0x9B00
++#define SVFPGA_PAGE_1C		0x9C00
++#define SVFPGA_PAGE_1D		0x9D00
++#define SVFPGA_PAGE_1F		0x9F00
++#define SVFPGA_PAGE_20		0xA000
++#define SVFPGA_PAGE_21		0xA100
++#define SVFPGA_PAGE_23		0xA300
++#define SVFPGA_PAGE_24		0xA400
++#define SVFPGA_PAGE_25		0xA500
++#define SVFPGA_PAGE_26		0xA600
++#define SVFPGA_PAGE_28		0xA800
++#define SVFPGA_PAGE_29		0xA900
++#define SVFPGA_PAGE_2A		0xAA00
++#define SVFPGA_PAGE_30		0xB000
++
++#define SVFPGA_CHIP_ID		0x42A42
++
++/* Page 0x10 Global Registers */
++#define SVFPGA_DEVID_AB		(SVFPGA_PAGE_10 + 0x01)
++#define SVFPGA_DEVID_CD		(SVFPGA_PAGE_10 + 0x02)
++#define SVFPGA_DEVID_E			(SVFPGA_PAGE_10 + 0x03)
++#define SVFPGA_FABID			(SVFPGA_PAGE_10 + 0x04)
++#define SVFPGA_REVID			(SVFPGA_PAGE_10 + 0x05)
++#define SVFPGA_FRZ_CTL			(SVFPGA_PAGE_10 + 0x06)
++#define SVFPGA_SRC_CTL			(SVFPGA_PAGE_10 + 0x07)
++#define SVFPGA_MCLK_STAT		(SVFPGA_PAGE_10 + 0x08)
++
++#define SVFPGA_MCLK_CTL		(SVFPGA_PAGE_10 + 0x09)
++#define SVFPGA_INTERNAL_FS_SHIFT	1
++#define SVFPGA_INTERNAL_FS_MASK	(1 << SVFPGA_INTERNAL_FS_SHIFT)
++
++#define SVFPGA_SFTRAMP_RATE		(SVFPGA_PAGE_10 + 0x0A)
++#define SVFPGA_I2C_DEBOUNCE		(SVFPGA_PAGE_10 + 0x0E)
++#define SVFPGA_I2C_STRETCH		(SVFPGA_PAGE_10 + 0x0F)
++#define SVFPGA_I2C_TIMEOUT		(SVFPGA_PAGE_10 + 0x10)
++
++/* Page 0x11 Power and Headset Detect Registers */
++#define SVFPGA_PWR_CTL1		(SVFPGA_PAGE_11 + 0x01)
++#define SVFPGA_ASP_DAI_PDN_SHIFT	6
++#define SVFPGA_ASP_DAI_PDN_MASK	(1 << SVFPGA_ASP_DAI_PDN_SHIFT)
++#define SVFPGA_MIXER_PDN_SHIFT		5
++#define SVFPGA_MIXER_PDN_MASK		(1 << SVFPGA_MIXER_PDN_SHIFT)
++#define SVFPGA_HP_PDN_SHIFT		3
++#define SVFPGA_HP_PDN_MASK		(1 << SVFPGA_HP_PDN_SHIFT)
++#define SVFPGA_PDN_ALL_SHIFT		0
++#define SVFPGA_PDN_ALL_MASK		(1 << SVFPGA_PDN_ALL_SHIFT)
++
++#define SVFPGA_PWR_CTL2		(SVFPGA_PAGE_11 + 0x02)
++#define SVFPGA_PWR_CTL3		(SVFPGA_PAGE_11 + 0x03)
++#define SVFPGA_RSENSE_CTL1		(SVFPGA_PAGE_11 + 0x04)
++#define SVFPGA_RSENSE_CTL2		(SVFPGA_PAGE_11 + 0x05)
++
++#define SVFPGA_OSC_SWITCH		(SVFPGA_PAGE_11 + 0x07)
++#define SVFPGA_SCLK_PRESENT_SHIFT	0
++#define SVFPGA_SCLK_PRESENT_MASK	(1 << SVFPGA_SCLK_PRESENT_SHIFT)
++
++#define SVFPGA_OSC_SWITCH_STATUS	(SVFPGA_PAGE_11 + 0x09)
++#define SVFPGA_RSENSE_CTL3		(SVFPGA_PAGE_11 + 0x12)
++#define SVFPGA_TSENSE_CTL		(SVFPGA_PAGE_11 + 0x13)
++#define SVFPGA_TRSENSE_STATUS		(SVFPGA_PAGE_11 + 0x15)
++#define SVFPGA_HSDET_CTL1		(SVFPGA_PAGE_11 + 0x1F)
++#define SVFPGA_HSDET_CTL2		(SVFPGA_PAGE_11 + 0x20)
++#define SVFPGA_HS_SWITCH_CTL		(SVFPGA_PAGE_11 + 0x21)
++#define SVFPGA_HS_DET_STATUS		(SVFPGA_PAGE_11 + 0x24)
++#define SVFPGA_HS_CLAMP_DISABLE	(SVFPGA_PAGE_11 + 0x29)
++
++/* Page 0x12 Clocking Registers */
++#define SVFPGA_MCLK_SRC_SEL		(SVFPGA_PAGE_12 + 0x01)
++#define SVFPGA_MCLKDIV_SHIFT		1
++#define SVFPGA_MCLKDIV_MASK		(1 << SVFPGA_MCLKDIV_SHIFT)
++#define SVFPGA_MCLK_SRC_SEL_SHIFT	0
++#define SVFPGA_MCLK_SRC_SEL_MASK	(1 << SVFPGA_MCLK_SRC_SEL_SHIFT)
++
++#define SVFPGA_SPDIF_CLK_CFG		(SVFPGA_PAGE_12 + 0x02)
++
++#define SVFPGA_FSYNC_PW_LOWER		(SVFPGA_PAGE_12 + 0x03)
++#define SVFPGA_FSYNC_PW_UPPER		(SVFPGA_PAGE_12 + 0x04)
++#define SVFPGA_FSYNC_PULSE_WIDTH_SHIFT	0
++#define SVFPGA_FSYNC_PULSE_WIDTH_MASK	(0xff << SVFPGA_FSYNC_PULSE_WIDTH_SHIFT)
++
++#define SVFPGA_FSYNC_P_LOWER		(SVFPGA_PAGE_12 + 0x05)
++#define SVFPGA_FSYNC_P_UPPER		(SVFPGA_PAGE_12 + 0x06)
++#define SVFPGA_FSYNC_PERIOD_SHIFT	0
++#define SVFPGA_FSYNC_PERIOD_MASK	(0xff << SVFPGA_FSYNC_PERIOD_SHIFT)
++
++#define SVFPGA_ASP_CLK_CFG		(SVFPGA_PAGE_12 + 0x07)
++#define SVFPGA_ASP_SCLK_EN_SHIFT	5
++#define SVFPGA_ASP_SCLK_EN_MASK	(1 << SVFPGA_ASP_SCLK_EN_SHIFT)
++#define SVFPGA_ASP_MASTER_MODE		0x01
++#define SVFPGA_ASP_SLAVE_MODE		0x00
++#define SVFPGA_ASP_MODE_SHIFT		4
++#define SVFPGA_ASP_MODE_MASK		(1 << SVFPGA_ASP_MODE_SHIFT)
++#define SVFPGA_ASP_SCPOL_IN_DAC_SHIFT	2
++#define SVFPGA_ASP_SCPOL_IN_DAC_MASK	(1 << SVFPGA_ASP_SCPOL_IN_DAC_SHIFT)
++#define SVFPGA_ASP_LCPOL_IN_SHIFT	0
++#define SVFPGA_ASP_LCPOL_IN_MASK	(1 << SVFPGA_ASP_LCPOL_IN_SHIFT)
++#define SVFPGA_ASP_POL_INV		1
++
++#define SVFPGA_ASP_FRM_CFG		(SVFPGA_PAGE_12 + 0x08)
++#define SVFPGA_ASP_5050_SHIFT		3
++#define SVFPGA_ASP_5050_MASK		(1 << SVFPGA_ASP_5050_SHIFT)
++#define SVFPGA_ASP_FSD_SHIFT		0
++#define SVFPGA_ASP_FSD_MASK		(7 << SVFPGA_ASP_FSD_SHIFT)
++#define SVFPGA_ASP_FSD_1_0		2
++
++#define SVFPGA_FS_RATE_EN		(SVFPGA_PAGE_12 + 0x09)
++#define SVFPGA_FS_EN_SHIFT		0
++#define SVFPGA_FS_EN_MASK		(0xf << SVFPGA_FS_EN_SHIFT)
++#define SVFPGA_FS_EN_IASRC_96K		0x1
++#define SVFPGA_FS_EN_OASRC_96K		0x2
++
++#define SVFPGA_IN_ASRC_CLK		(SVFPGA_PAGE_12 + 0x0A)
++#define SVFPGA_CLK_IASRC_SEL_SHIFT	0
++#define SVFPGA_CLK_IASRC_SEL_MASK	(1 << SVFPGA_CLK_IASRC_SEL_SHIFT)
++#define SVFPGA_CLK_IASRC_SEL_12	1
++
++#define SVFPGA_OUT_ASRC_CLK		(SVFPGA_PAGE_12 + 0x0B)
++#define SVFPGA_CLK_OASRC_SEL_SHIFT	0
++#define SVFPGA_CLK_OASRC_SEL_MASK	(1 << SVFPGA_CLK_OASRC_SEL_SHIFT)
++#define SVFPGA_CLK_OASRC_SEL_12	1
++
++#define SVFPGA_PLL_DIV_CFG1		(SVFPGA_PAGE_12 + 0x0C)
++#define SVFPGA_SCLK_PREDIV_SHIFT	0
++#define SVFPGA_SCLK_PREDIV_MASK	(3 << SVFPGA_SCLK_PREDIV_SHIFT)
++
++/* Page 0x13 Interrupt Registers */
++/* Interrupts */
++#define SVFPGA_ADC_OVFL_STATUS		(SVFPGA_PAGE_13 + 0x01)
++#define SVFPGA_MIXER_STATUS		(SVFPGA_PAGE_13 + 0x02)
++#define SVFPGA_SRC_STATUS		(SVFPGA_PAGE_13 + 0x03)
++#define SVFPGA_ASP_RX_STATUS		(SVFPGA_PAGE_13 + 0x04)
++#define SVFPGA_ASP_TX_STATUS		(SVFPGA_PAGE_13 + 0x05)
++#define SVFPGA_CODEC_STATUS		(SVFPGA_PAGE_13 + 0x08)
++#define SVFPGA_ALTDET_STATUS1		(SVFPGA_PAGE_13 + 0x09)
++#define SVFPGA_ALTDET_STATUS2		(SVFPGA_PAGE_13 + 0x0A)
++#define SVFPGA_DACADC_LSTATUS		(SVFPGA_PAGE_13 + 0x0B)
++#define SVFPGA_VPMON_STATUS		(SVFPGA_PAGE_13 + 0x0D)
++#define SVFPGA_PLL_LOCK		(SVFPGA_PAGE_13 + 0x0E)
++#define SVFPGA_TSRS_PLUG_STATUS	(SVFPGA_PAGE_13 + 0x0F)
++/* Masks */
++#define SVFPGA_ADC_OVFL_MASK		(SVFPGA_PAGE_13 + 0x16)
++#define SVFPGA_MIXER_MASK		(SVFPGA_PAGE_13 + 0x17)
++#define SVFPGA_SRC_MASK		(SVFPGA_PAGE_13 + 0x18)
++#define SVFPGA_ASP_RX_MASK		(SVFPGA_PAGE_13 + 0x19)
++#define SVFPGA_ASP_TX_MASK		(SVFPGA_PAGE_13 + 0x1A)
++#define SVFPGA_CODEC_MASK		(SVFPGA_PAGE_13 + 0x1B)
++#define SVFPGA_DACADC_LMASK		(SVFPGA_PAGE_13 + 0x1C)
++#define SVFPGA_VPMON_MASK		(SVFPGA_PAGE_13 + 0x1E)
++#define SVFPGA_PLL_LOCK_MASK		(SVFPGA_PAGE_13 + 0x1F)
++#define SVFPGA_TSRS_PLUG_MASK		(SVFPGA_PAGE_13 + 0x20)
++
++/* Page 0x15 Fractional-N PLL Registers */
++#define SVFPGA_PLL_CTL1		(SVFPGA_PAGE_15 + 0x01)
++#define SVFPGA_PLL_START_SHIFT		0
++#define SVFPGA_PLL_START_MASK		(1 << SVFPGA_PLL_START_SHIFT)
++
++#define SVFPGA_PLL_DIV_FRAC0		(SVFPGA_PAGE_15 + 0x02)
++#define SVFPGA_PLL_DIV_FRAC_SHIFT	0
++#define SVFPGA_PLL_DIV_FRAC_MASK	(0xff << SVFPGA_PLL_DIV_FRAC_SHIFT)
++#define SVFPGA_PLL_DIV_FRAC1		(SVFPGA_PAGE_15 + 0x03)
++#define SVFPGA_PLL_DIV_FRAC2		(SVFPGA_PAGE_15 + 0x04)
++
++#define SVFPGA_PLL_DIV_INT		(SVFPGA_PAGE_15 + 0x05)
++#define SVFPGA_PLL_DIV_INT_SHIFT	0
++#define SVFPGA_PLL_DIV_INT_MASK	(0xff << SVFPGA_PLL_DIV_INT_SHIFT)
++
++#define SVFPGA_PLL_CTL3		(SVFPGA_PAGE_15 + 0x08)
++#define SVFPGA_PLL_DIVOUT_SHIFT	0
++#define SVFPGA_PLL_DIVOUT_MASK		(0xff << SVFPGA_PLL_DIVOUT_SHIFT)
++
++#define SVFPGA_PLL_CAL_RATIO		(SVFPGA_PAGE_15 + 0x0A)
++#define SVFPGA_PLL_CAL_RATIO_SHIFT	0
++#define SVFPGA_PLL_CAL_RATIO_MASK	(0xff << SVFPGA_PLL_CAL_RATIO_SHIFT)
++
++#define SVFPGA_PLL_CTL4		(SVFPGA_PAGE_15 + 0x1B)
++#define SVFPGA_PLL_MODE_SHIFT		0
++#define SVFPGA_PLL_MODE_MASK		(3 << SVFPGA_PLL_MODE_SHIFT)
++
++/* Page 0x19 HP Load Detect Registers */
++#define SVFPGA_LOAD_DET_RCSTAT		(SVFPGA_PAGE_19 + 0x25)
++#define SVFPGA_RLA_STAT_SHIFT		0
++#define SVFPGA_RLA_STAT_MASK		(3 << SVFPGA_RLA_STAT_SHIFT)
++#define SVFPGA_RLA_STAT_15_OHM		0
++
++#define SVFPGA_LOAD_DET_DONE		(SVFPGA_PAGE_19 + 0x26)
++#define SVFPGA_LOAD_DET_EN		(SVFPGA_PAGE_19 + 0x27)
++
++/* Page 0x1B Headset Interface Registers */
++#define SVFPGA_HSBIAS_SC_AUTOCTL	(SVFPGA_PAGE_1B + 0x70)
++#define SVFPGA_WAKE_CTL		(SVFPGA_PAGE_1B + 0x71)
++#define SVFPGA_ADC_DISABLE_MUTE	(SVFPGA_PAGE_1B + 0x72)
++#define SVFPGA_TIPSENSE_CTL		(SVFPGA_PAGE_1B + 0x73)
++#define SVFPGA_MISC_DET_CTL		(SVFPGA_PAGE_1B + 0x74)
++#define SVFPGA_MIC_DET_CTL1		(SVFPGA_PAGE_1B + 0x75)
++#define SVFPGA_MIC_DET_CTL2		(SVFPGA_PAGE_1B + 0x76)
++#define SVFPGA_DET_STATUS1		(SVFPGA_PAGE_1B + 0x77)
++#define SVFPGA_DET_STATUS2		(SVFPGA_PAGE_1B + 0x78)
++#define SVFPGA_DET_MASK1		(SVFPGA_PAGE_1B + 0x79)
++#define SVFPGA_DET_MASK2		(SVFPGA_PAGE_1B + 0x7A)
++
++/* Page 0x1C Headset Bias Registers */
++#define SVFPGA_HS_BIAS_CTL		(SVFPGA_PAGE_1C + 0x03)
++
++/* Page 0x1D ADC Registers */
++#define SVFPGA_ADC_CTL			(SVFPGA_PAGE_1D + 0x01)
++#define SVFPGA_ADC_NOTCH_DIS_SHIFT		5
++#define SVFPGA_ADC_FORCE_WEAK_VCM_SHIFT	4
++#define SVFPGA_ADC_INV_SHIFT			2
++#define SVFPGA_ADC_DIG_BOOST_SHIFT		0
++
++#define SVFPGA_ADC_VOLUME		(SVFPGA_PAGE_1D + 0x03)
++#define SVFPGA_ADC_VOL_SHIFT		0
++
++#define SVFPGA_ADC_WNF_HPF_CTL		(SVFPGA_PAGE_1D + 0x04)
++#define SVFPGA_ADC_WNF_CF_SHIFT	4
++#define SVFPGA_ADC_WNF_EN_SHIFT	3
++#define SVFPGA_ADC_HPF_CF_SHIFT	1
++#define SVFPGA_ADC_HPF_EN_SHIFT	0
++
++/* Page 0x1F DAC Registers */
++#define SVFPGA_DAC_CTL1		(SVFPGA_PAGE_1F + 0x01)
++#define SVFPGA_DACB_INV_SHIFT		1
++#define SVFPGA_DACA_INV_SHIFT		0
++
++#define SVFPGA_DAC_CTL2		(SVFPGA_PAGE_1F + 0x06)
++#define SVFPGA_HPOUT_LOAD_SHIFT	3
++#define SVFPGA_HPOUT_LOAD_MASK		(1 << SVFPGA_HPOUT_LOAD_SHIFT)
++#define SVFPGA_HPOUT_CLAMP_SHIFT	2
++#define SVFPGA_HPOUT_CLAMP_MASK	(1 << SVFPGA_HPOUT_CLAMP_SHIFT)
++#define SVFPGA_DAC_HPF_EN_SHIFT	1
++#define SVFPGA_DAC_HPF_EN_MASK		(1 << SVFPGA_DAC_HPF_EN_SHIFT)
++
++/* Page 0x20 HP CTL Registers */
++#define SVFPGA_HP_CTL			(SVFPGA_PAGE_20 + 0x01)
++#define SVFPGA_HP_ANA_BMUTE_SHIFT	3
++#define SVFPGA_HP_ANA_BMUTE_MASK	(1 << SVFPGA_HP_ANA_BMUTE_SHIFT)
++#define SVFPGA_HP_ANA_AMUTE_SHIFT	2
++#define SVFPGA_HP_ANA_AMUTE_MASK	(1 << SVFPGA_HP_ANA_AMUTE_SHIFT)
++#define SVFPGA_HP_FULL_SCALE_VOL_SHIFT	1
++#define SVFPGA_HP_FULL_SCALE_VOL_MASK	(1 << SVFPGA_HP_FULL_SCALE_VOL_SHIFT)
++
++/* Page 0x21 Class H Registers */
++#define SVFPGA_CLASSH_CTL		(SVFPGA_PAGE_21 + 0x01)
++
++/* Page 0x23 Mixer Volume Registers */
++#define SVFPGA_MIXER_CHA_VOL		(SVFPGA_PAGE_23 + 0x01)
++#define SVFPGA_MIXER_ADC_VOL		(SVFPGA_PAGE_23 + 0x02)
++#define SVFPGA_MIXER_CHB_VOL		(SVFPGA_PAGE_23 + 0x03)
++#define SVFPGA_MIXER_CH_VOL_SHIFT	0
++#define SVFPGA_MIXER_CH_VOL_MASK	(0x3f << SVFPGA_MIXER_CH_VOL_SHIFT)
++
++/* Page 0x24 EQ Registers */
++#define SVFPGA_EQ_COEF_IN0		(SVFPGA_PAGE_24 + 0x01)
++#define SVFPGA_EQ_COEF_IN1		(SVFPGA_PAGE_24 + 0x02)
++#define SVFPGA_EQ_COEF_IN2		(SVFPGA_PAGE_24 + 0x03)
++#define SVFPGA_EQ_COEF_IN3		(SVFPGA_PAGE_24 + 0x04)
++#define SVFPGA_EQ_COEF_RW		(SVFPGA_PAGE_24 + 0x06)
++#define SVFPGA_EQ_COEF_OUT0		(SVFPGA_PAGE_24 + 0x07)
++#define SVFPGA_EQ_COEF_OUT1		(SVFPGA_PAGE_24 + 0x08)
++#define SVFPGA_EQ_COEF_OUT2		(SVFPGA_PAGE_24 + 0x09)
++#define SVFPGA_EQ_COEF_OUT3		(SVFPGA_PAGE_24 + 0x0A)
++#define SVFPGA_EQ_INIT_STAT		(SVFPGA_PAGE_24 + 0x0B)
++#define SVFPGA_EQ_START_FILT		(SVFPGA_PAGE_24 + 0x0C)
++#define SVFPGA_EQ_MUTE_CTL		(SVFPGA_PAGE_24 + 0x0E)
++
++/* Page 0x25 Audio Port Registers */
++#define SVFPGA_SP_RX_CH_SEL		(SVFPGA_PAGE_25 + 0x01)
++#define SVFPGA_SP_RX_ISOC_CTL		(SVFPGA_PAGE_25 + 0x02)
++#define SVFPGA_SP_RX_FS		(SVFPGA_PAGE_25 + 0x03)
++#define CS42l42_SPDIF_CH_SEL		(SVFPGA_PAGE_25 + 0x04)
++#define SVFPGA_SP_TX_ISOC_CTL		(SVFPGA_PAGE_25 + 0x05)
++#define SVFPGA_SP_TX_FS		(SVFPGA_PAGE_25 + 0x06)
++#define SVFPGA_SPDIF_SW_CTL1		(SVFPGA_PAGE_25 + 0x07)
++
++/* Page 0x26 SRC Registers */
++#define SVFPGA_SRC_SDIN_FS		(SVFPGA_PAGE_26 + 0x01)
++#define SVFPGA_SRC_SDOUT_FS		(SVFPGA_PAGE_26 + 0x09)
++
++/* Page 0x28 S/PDIF Registers */
++#define SVFPGA_SPDIF_CTL1		(SVFPGA_PAGE_28 + 0x01)
++#define SVFPGA_SPDIF_CTL2		(SVFPGA_PAGE_28 + 0x02)
++#define SVFPGA_SPDIF_CTL3		(SVFPGA_PAGE_28 + 0x03)
++#define SVFPGA_SPDIF_CTL4		(SVFPGA_PAGE_28 + 0x04)
++
++/* Page 0x29 Serial Port TX Registers */
++#define SVFPGA_ASP_TX_SZ_EN		(SVFPGA_PAGE_29 + 0x01)
++#define SVFPGA_ASP_TX_CH_EN		(SVFPGA_PAGE_29 + 0x02)
++#define SVFPGA_ASP_TX_CH_AP_RES	(SVFPGA_PAGE_29 + 0x03)
++#define SVFPGA_ASP_TX_CH1_BIT_MSB	(SVFPGA_PAGE_29 + 0x04)
++#define SVFPGA_ASP_TX_CH1_BIT_LSB	(SVFPGA_PAGE_29 + 0x05)
++#define SVFPGA_ASP_TX_HIZ_DLY_CFG	(SVFPGA_PAGE_29 + 0x06)
++#define SVFPGA_ASP_TX_CH2_BIT_MSB	(SVFPGA_PAGE_29 + 0x0A)
++#define SVFPGA_ASP_TX_CH2_BIT_LSB	(SVFPGA_PAGE_29 + 0x0B)
++
++/* Page 0x2A Serial Port RX Registers */
++#define SVFPGA_ASP_RX_DAI0_EN		(SVFPGA_PAGE_2A + 0x01)
++#define SVFPGA_ASP_RX0_CH_EN_SHIFT	2
++#define SVFPGA_ASP_RX0_CH_EN_MASK	(0xf << SVFPGA_ASP_RX0_CH_EN_SHIFT)
++#define SVFPGA_ASP_RX0_CH1_EN		1
++#define SVFPGA_ASP_RX0_CH2_EN		2
++#define SVFPGA_ASP_RX0_CH3_EN		4
++#define SVFPGA_ASP_RX0_CH4_EN		8
++
++#define SVFPGA_ASP_RX_DAI0_CH1_AP_RES	(SVFPGA_PAGE_2A + 0x02)
++#define SVFPGA_ASP_RX_DAI0_CH1_BIT_MSB	(SVFPGA_PAGE_2A + 0x03)
++#define SVFPGA_ASP_RX_DAI0_CH1_BIT_LSB	(SVFPGA_PAGE_2A + 0x04)
++#define SVFPGA_ASP_RX_DAI0_CH2_AP_RES	(SVFPGA_PAGE_2A + 0x05)
++#define SVFPGA_ASP_RX_DAI0_CH2_BIT_MSB	(SVFPGA_PAGE_2A + 0x06)
++#define SVFPGA_ASP_RX_DAI0_CH2_BIT_LSB	(SVFPGA_PAGE_2A + 0x07)
++#define SVFPGA_ASP_RX_DAI0_CH3_AP_RES	(SVFPGA_PAGE_2A + 0x08)
++#define SVFPGA_ASP_RX_DAI0_CH3_BIT_MSB	(SVFPGA_PAGE_2A + 0x09)
++#define SVFPGA_ASP_RX_DAI0_CH3_BIT_LSB	(SVFPGA_PAGE_2A + 0x0A)
++#define SVFPGA_ASP_RX_DAI0_CH4_AP_RES	(SVFPGA_PAGE_2A + 0x0B)
++#define SVFPGA_ASP_RX_DAI0_CH4_BIT_MSB	(SVFPGA_PAGE_2A + 0x0C)
++#define SVFPGA_ASP_RX_DAI0_CH4_BIT_LSB	(SVFPGA_PAGE_2A + 0x0D)
++#define SVFPGA_ASP_RX_DAI1_CH1_AP_RES	(SVFPGA_PAGE_2A + 0x0E)
++#define SVFPGA_ASP_RX_DAI1_CH1_BIT_MSB	(SVFPGA_PAGE_2A + 0x0F)
++#define SVFPGA_ASP_RX_DAI1_CH1_BIT_LSB	(SVFPGA_PAGE_2A + 0x10)
++#define SVFPGA_ASP_RX_DAI1_CH2_AP_RES	(SVFPGA_PAGE_2A + 0x11)
++#define SVFPGA_ASP_RX_DAI1_CH2_BIT_MSB	(SVFPGA_PAGE_2A + 0x12)
++#define SVFPGA_ASP_RX_DAI1_CH2_BIT_LSB	(SVFPGA_PAGE_2A + 0x13)
++
++#define SVFPGA_ASP_RX_CH_AP_SHIFT	6
++#define SVFPGA_ASP_RX_CH_AP_MASK	(1 << SVFPGA_ASP_RX_CH_AP_SHIFT)
++#define SVFPGA_ASP_RX_CH_AP_LOW	0
++#define SVFPGA_ASP_RX_CH_AP_HI		1
++#define SVFPGA_ASP_RX_CH_RES_SHIFT	0
++#define SVFPGA_ASP_RX_CH_RES_MASK	(3 << SVFPGA_ASP_RX_CH_RES_SHIFT)
++#define SVFPGA_ASP_RX_CH_RES_32	3
++#define SVFPGA_ASP_RX_CH_BIT_ST_SHIFT	0
++#define SVFPGA_ASP_RX_CH_BIT_ST_MASK	(0xff << SVFPGA_ASP_RX_CH_BIT_ST_SHIFT)
++
++/* Page 0x30 ID Registers */
++#define SVFPGA_SUB_REVID		(SVFPGA_PAGE_30 + 0x14)
++#define SVFPGA_MAX_REGISTER		(SVFPGA_PAGE_30 + 0x14)
++
++#define SVFPGA_SUPPORTED_RATE	48000
++
++/* Defines for fracturing values spread across multiple registers */
++#define SVFPGA_FRAC0_VAL(val)	((val) & 0x0000ff)
++#define SVFPGA_FRAC1_VAL(val)	(((val) & 0x00ff00) >> 8)
++#define SVFPGA_FRAC2_VAL(val)	(((val) & 0xff0000) >> 16)
++
++#define SVFPGA_NUM_SUPPLIES 5
++static const char *const svfpga_supply_names[SVFPGA_NUM_SUPPLIES] = {
++	"VA",
++	"VP",
++	"VCP",
++	"VD_FILT",
++	"VL",
++};
++
++struct  svfpga_private {
++	struct regmap *regmap;
++	struct snd_soc_codec *codec;
++	struct regulator_bulk_data supplies[SVFPGA_NUM_SUPPLIES];
++	struct gpio_desc *reset_gpio;
++	u32 sclk;
++	u8 hpout_load;
++	u8 hpout_clamp;
++	struct sdw_slv *sdw;
++};
++
++int svfpga_probe(struct device *dev, struct regmap *regmap,
++					struct sdw_slv *slave);
++int svfpga_remove(struct device *dev);
++#endif /* __SVFPGA_H__ */
+-- 
+2.7.4
+

@@ -1,0 +1,40 @@
+From 6c850d896262aeb57aff8b7d3c0df76cf9a0acdc Mon Sep 17 00:00:00 2001
+From: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Date: Wed, 19 Dec 2018 13:20:56 +0530
+Subject: [PATCH 1047/1132] ASoc: Intel: Skylake: Fix build issue in skl virtio
+ driver
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+skl-virtio-miscdev driver build fails with following error.
+
+sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c:116:3: \
+	error: too few arguments to function ‘acrn_ioreq_complete_request’
+   acrn_ioreq_complete_request(client->vhm_client_id, i);
+   ^
+
+Fix it.
+
+Signed-off-by: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Tracked-On: PKT-1618
+---
+ sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c b/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
+index fa97278..4548112 100644
+--- a/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
++++ b/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
+@@ -113,7 +113,7 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
+ 		}
+ 
+ 		atomic_set(&req->processed, REQ_STATE_COMPLETE);
+-		acrn_ioreq_complete_request(client->vhm_client_id, i);
++		acrn_ioreq_complete_request(client->vhm_client_id, i, NULL);
+ 
+ 		/* handle VQ kick if needed */
+ 		if (handle)
+-- 
+2.7.4
+

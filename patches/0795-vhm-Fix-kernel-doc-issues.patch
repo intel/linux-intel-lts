@@ -1,0 +1,186 @@
+From e382736527ad1bdc1a6d51ddef57f5f38fce765d Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:01 +0800
+Subject: [PATCH 0795/1132] vhm: Fix kernel-doc issues
+
+Some comments are not in kernel-doc format so got error like:
+
+include/linux/vhm/vhm_vm_mngt.h:128: error: Cannot parse struct or
+union!
+
+Some are typo or not updated,eg:
+
+include/linux/vhm/acrn_vhm_mm.h:93: warning: Excess function parameter
+'uos_phy' description in 'map_guest_phys'
+
+V2: More typo fix and re-wording on Geoffroy's suggestion
+V1: Fixed kernel-doc format issue
+
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: Geoffroy Van Cutsem <geoffroy.vancutsem@intel.com>
+Reviewed-by: Eddie Dong <eddie.dong@intel.com>
+---
+ include/linux/vhm/acrn_vhm_mm.h    | 12 +++++-------
+ include/linux/vhm/vhm_ioctl_defs.h | 10 +++++-----
+ include/linux/vhm/vhm_vm_mngt.h    | 16 ++++++++--------
+ 3 files changed, 18 insertions(+), 20 deletions(-)
+
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 712860b..87d668f 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -80,12 +80,10 @@ static inline unsigned long  acrn_hpa2gpa(unsigned long hpa)
+ }
+ 
+ /**
+- * map_guest_phys - map guest physical address
+- *
+- * to SOS kernel virtual address
++ * map_guest_phys - map guest physical address to SOS kernel virtual address
+  *
+  * @vmid: guest vmid
+- * @uos_phy: phsical address in guest
++ * @uos_phys: physical address in guest
+  * @size: the memory size mapped
+  *
+  * Return: SOS kernel virtual address, NULL on error
+@@ -96,7 +94,7 @@ void *map_guest_phys(unsigned long vmid, u64 uos_phys, size_t size);
+  * unmap_guest_phys - unmap guest physical address
+  *
+  * @vmid: guest vmid
+- * @uos_phy: phsical address in guest
++ * @uos_phys: physical address in guest
+  *
+  * Return: 0 on success, <0 for error.
+  */
+@@ -109,7 +107,7 @@ int unmap_guest_phys(unsigned long vmid, u64 uos_phys);
+  * @guest_gpa: gpa of UOS
+  * @host_gpa: gpa of SOS
+  * @len: memory mapped length
+- * @mem_type: memory mapping type. Possilble value could be:
++ * @mem_type: memory mapping type. Possible value could be:
+  *                    MEM_TYPE_WB
+  *                    MEM_TYPE_WT
+  *                    MEM_TYPE_UC
+@@ -147,7 +145,7 @@ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+  * @guest_gpa: gpa of UOS
+  * @host_gpa: gpa of SOS
+  * @len: memory mapped length
+- * @mem_type: memory mapping type. Possilble value could be:
++ * @mem_type: memory mapping type. Possible value could be:
+  *                    MEM_TYPE_WB
+  *                    MEM_TYPE_WT
+  *                    MEM_TYPE_UC
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index a9e7161..9a7189f 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -52,11 +52,11 @@
+ #ifndef	_VHM_IOCTL_DEFS_H_
+ #define	_VHM_IOCTL_DEFS_H_
+ 
+-/* Commmon structures for ACRN/VHM/DM */
++/* Common structures for ACRN/VHM/DM */
+ #include "acrn_common.h"
+ 
+ /*
+- * Commmon IOCTL ID defination for VHM/DM
++ * Common IOCTL ID definition for VHM/DM
+  */
+ #define _IC_ID(x, y) (((x)<<24)|(y))
+ #define IC_ID 0x43UL
+@@ -162,7 +162,7 @@ struct ic_ptdev_irq {
+ 	uint32_t type;
+ 	/** @virt_bdf: virtual bdf description of pass thru device */
+ 	uint16_t virt_bdf;	/* IN: Device virtual BDF# */
+-	/** @phy_bdf: physical bdf description of pass thru device */
++	/** @phys_bdf: physical bdf description of pass thru device */
+ 	uint16_t phys_bdf;	/* IN: Device physical BDF# */
+ 	/** union */
+ 	union {
+@@ -172,7 +172,7 @@ struct ic_ptdev_irq {
+ 			uint32_t virt_pin;
+ 			/** @phys_pin: physical IOAPIC pin */
+ 			uint32_t phys_pin;
+-			/** @pic_pin: PIC pin */
++			/** @is_pic_pin: PIC pin */
+ 			uint32_t is_pic_pin;
+ 		} intx;
+ 
+@@ -192,7 +192,7 @@ struct ic_ptdev_irq {
+ };
+ 
+ /**
+- * struct ioreq_notify - data strcture to notify hypervisor ioreq is handled
++ * struct ioreq_notify - data structure to notify hypervisor ioreq is handled
+  *
+  * @client_id: client id to identify ioreq client
+  * @vcpu: identify the ioreq submitter
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index f0a7e1c..14e9fe7 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -88,6 +88,7 @@ extern struct mutex vhm_vm_list_lock;
+  * @ioreq_client_list: list of ioreq clients
+  * @req_buf: request buffer shared between HV, SOS and UOS
+  * @pg: pointer to linux page which holds req_buf
++ * @hugetlb_enabled: flag to enable/disable hugetlb page ept mapping
+  */
+ struct vhm_vm {
+ 	struct device *dev;
+@@ -119,7 +120,7 @@ struct vm_info {
+ };
+ 
+ /**
+- * struct find_get_vm - find and hold vhm_vm of guest according to guest vmid
++ * find_get_vm() - find and keep guest vhm_vm based on the vmid
+  *
+  * @vmid: guest vmid
+  *
+@@ -128,17 +129,16 @@ struct vm_info {
+ struct vhm_vm *find_get_vm(unsigned long vmid);
+ 
+ /**
+- * struct put_vm - release vhm_vm of guest according to guest vmid
++ * put_vm() - release vhm_vm of guest according to guest vmid
+  * If the latest reference count drops to zero, free vhm_vm as well
+- *
+- * @vm: pointer to vhm_vm which identrify specific guest
++ * @vm: pointer to vhm_vm which identify specific guest
+  *
+  * Return:
+  */
+ void put_vm(struct vhm_vm *vm);
+ 
+ /**
+- * struct vhm_get_vm_info - get vm_info of specific guest
++ * vhm_get_vm_info() - get vm_info of specific guest
+  *
+  * @vmid: guest vmid
+  * @info: pointer to vm_info for returned vm_info
+@@ -148,7 +148,7 @@ void put_vm(struct vhm_vm *vm);
+ int vhm_get_vm_info(unsigned long vmid, struct vm_info *info);
+ 
+ /**
+- * struct vhm_inject_msi - inject MSI interrupt to guest
++ * vhm_inject_msi() - inject MSI interrupt to guest
+  *
+  * @vmid: guest vmid
+  * @msi_addr: MSI addr matches MSI spec
+@@ -160,11 +160,11 @@ int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
+ 	unsigned long msi_data);
+ 
+ /**
+- * struct vhm_vm_gpa2hpa - convert guest physical address to
++ * vhm_vm_gpa2hpa() - convert guest physical address to
+  * host physical address
+  *
+  * @vmid: guest vmid
+- * @gap: guest physical address
++ * @gpa: guest physical address
+  *
+  * Return: host physical address, <0 on error
+  */
+-- 
+2.7.4
+

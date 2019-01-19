@@ -1,0 +1,54 @@
+From f4f788375b507605f336e8521a041b2a2e57e3f4 Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0805/1132] vhm: remove re-schedule for ioreq tasklet
+
+io_req_tasklet can process all existing or even incoming ioreqs in the
+ioreq shared page once. So when the ioreq IPI rising, we needn't rearm
+the tasklet if the previous one havn't got running. tasklet_schedule
+can gurantee to execute once after schedule, and all pending ioreqs
+can be processed once. tasklet_schedule also can rearm the running
+tasklet so no ioreq interrupt lost.
+
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c | 11 +----------
+ 1 file changed, 1 insertion(+), 10 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index e454b9e..39204b5 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -96,7 +96,6 @@ static int    major;
+ static struct class *vhm_class;
+ static struct device *vhm_device;
+ static struct tasklet_struct vhm_io_req_tasklet;
+-static atomic_t ioreq_retry = ATOMIC_INIT(0);
+ 
+ struct table_iomems {
+ 	/* list node for this table_iomems */
+@@ -622,19 +621,11 @@ static void io_req_tasklet(unsigned long data)
+ 
+ 		acrn_ioreq_distribute_request(vm);
+ 	}
+-
+-	if (atomic_read(&ioreq_retry) > 0) {
+-		atomic_dec(&ioreq_retry);
+-		tasklet_schedule(&vhm_io_req_tasklet);
+-	}
+ }
+ 
+ static void vhm_intr_handler(void)
+ {
+-	if (test_bit(TASKLET_STATE_SCHED, &(vhm_io_req_tasklet.state)))
+-		atomic_inc(&ioreq_retry);
+-	else
+-		tasklet_schedule(&vhm_io_req_tasklet);
++	tasklet_schedule(&vhm_io_req_tasklet);
+ }
+ 
+ static int vhm_dev_release(struct inode *inodep, struct file *filep)
+-- 
+2.7.4
+

@@ -1,0 +1,36 @@
+From 58bfdd7ad985276a66dd4f261a1c483d121789d9 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Thu, 10 Jan 2019 15:18:07 +0800
+Subject: [PATCH 1126/1132] drivers/hyper_dmabuf: Remove from imported_list to
+ avoid exporting dma_buf later after receiving unexport notification
+
+After the FE sends the UNEXPORT msg notification, it should not be
+exported any more. So it needs to be removed from the imported_list.
+In such case it can assure that it won't export the DMA_BUF again later
+for imported ID info that is already released.
+
+Change-Id: I2e18a2af7196682ad04046a11a28cdd75cae274a
+Tracked-On: projectacrn/acrn-hypervisor#2237
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Reviewed-by: Liu, Shuo <shuo.a.liu@intel.com>
+Acked-by: Dongwon Kim <dongwon.kim@intel.com>
+Tracked-On: PKT-1657
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
+index fe9e4e2..48db3fd 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
+@@ -316,6 +316,7 @@ int hyper_dmabuf_msg_parse(int domid, struct hyper_dmabuf_req *req)
+ 				 * anymore.
+ 				 */
+ 				imported->valid = false;
++				hyper_dmabuf_remove_imported(hid);
+ 			} else {
+ 				/* No one is using buffer, remove it from
+ 				 * imported list
+-- 
+2.7.4
+

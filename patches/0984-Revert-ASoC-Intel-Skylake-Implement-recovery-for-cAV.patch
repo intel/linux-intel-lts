@@ -1,0 +1,255 @@
+From 82c1b1c0a2e2fb9956e882f3d7ed94d776f13590 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Fri, 12 Oct 2018 16:32:05 +0200
+Subject: [PATCH 0984/1132] Revert "ASoC: Intel: Skylake: Implement recovery
+ for cAVS platforms"
+
+Currently implemented recovery flow for Skylake and child platforms is
+invalid. During suspend/ resume (D3 -> D0) flow, driver incorrectly
+awaits FW_READY nofitication when firmware is already loaded and
+DSP cores are up and running, thus causing timeout and failure
+of D0 process.
+
+This patch is a part of patchset that reverts this implementation until
+appropriate one is available.
+
+Change-Id: Ibb4b43a63f608e82e321c76ad7f1c82dbd90d6ce
+Tracked-On: OAM-71679
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/common/sst-dsp-priv.h  |  1 -
+ sound/soc/intel/skylake/bxt-sst.c      |  3 --
+ sound/soc/intel/skylake/cnl-sst.c      |  7 -----
+ sound/soc/intel/skylake/skl-messages.c | 53 +++-------------------------------
+ sound/soc/intel/skylake/skl-pcm.c      |  2 --
+ sound/soc/intel/skylake/skl-sst-dsp.h  |  2 --
+ sound/soc/intel/skylake/skl-topology.c |  1 -
+ sound/soc/intel/skylake/skl-topology.h |  2 --
+ sound/soc/intel/skylake/skl.c          |  3 --
+ 9 files changed, 4 insertions(+), 70 deletions(-)
+
+diff --git a/sound/soc/intel/common/sst-dsp-priv.h b/sound/soc/intel/common/sst-dsp-priv.h
+index b9935fd..196bb7d 100644
+--- a/sound/soc/intel/common/sst-dsp-priv.h
++++ b/sound/soc/intel/common/sst-dsp-priv.h
+@@ -355,7 +355,6 @@ struct sst_dsp {
+ 	/* To allocate CL dma buffers */
+ 	struct skl_dsp_loader_ops dsp_ops;
+ 	struct skl_dsp_fw_ops fw_ops;
+-	bool is_recovery;
+ 	struct skl_cl_dev cl_dev;
+ 	u32 intr_status;
+ 	const struct firmware *fw;
+diff --git a/sound/soc/intel/skylake/bxt-sst.c b/sound/soc/intel/skylake/bxt-sst.c
+index cde519d..b158883 100644
+--- a/sound/soc/intel/skylake/bxt-sst.c
++++ b/sound/soc/intel/skylake/bxt-sst.c
+@@ -688,9 +688,6 @@ int bxt_sst_init_fw(struct device *dev, struct skl_sst *ctx)
+ 	int ret;
+ 	struct sst_dsp *sst = ctx->dsp;
+ 
+-	if (sst->is_recovery)
+-		skl_dsp_disable_core(sst, SKL_DSP_CORE0_MASK);
+-
+ 	ret = sst->fw_ops.load_fw(sst);
+ 	if (ret < 0) {
+ 		dev_err(dev, "Load base fw failed: %x\n", ret);
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 19398e2..dc4a295 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -803,13 +803,6 @@ int cnl_sst_init_fw(struct device *dev, struct skl_sst *ctx)
+ 	struct sst_dsp *sst = ctx->dsp;
+ 	int ret;
+ 
+-	if (sst->is_recovery) {
+-		cnl_dsp_disable_core(sst, SKL_DSP_CORE0_MASK);
+-		ret = cnl_load_base_firmware(sst);
+-		if (ret < 0)
+-			return ret;
+-	}
+-
+ 	skl_dsp_init_core_state(sst);
+ 
+ 	if (ctx->lib_count > 1) {
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index a1d9c84..111e241 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -293,8 +293,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
+ 		.loader_ops = bxt_get_loader_ops,
+ 		.init = bxt_sst_dsp_init,
+ 		.init_fw = bxt_sst_init_fw,
+-		.cleanup = bxt_sst_dsp_cleanup,
+-		.do_recovery = skl_do_recovery
++		.cleanup = bxt_sst_dsp_cleanup
+ 	},
+ 	{
+ 		.id = 0x3198,
+@@ -302,8 +301,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
+ 		.loader_ops = bxt_get_loader_ops,
+ 		.init = bxt_sst_dsp_init,
+ 		.init_fw = bxt_sst_init_fw,
+-		.cleanup = bxt_sst_dsp_cleanup,
+-		.do_recovery = skl_do_recovery
++		.cleanup = bxt_sst_dsp_cleanup
+ 	},
+ 	{
+ 		.id = 0x9dc8,
+@@ -311,8 +309,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
+ 		.loader_ops = bxt_get_loader_ops,
+ 		.init = cnl_sst_dsp_init,
+ 		.init_fw = cnl_sst_init_fw,
+-		.cleanup = cnl_sst_dsp_cleanup,
+-		.do_recovery = skl_do_recovery
++		.cleanup = cnl_sst_dsp_cleanup
+ 	},
+ 	{
+ 		.id = 0x34c8,
+@@ -320,8 +317,7 @@ static const struct skl_dsp_ops dsp_ops[] = {
+ 		.loader_ops = bxt_get_loader_ops,
+ 		.init = cnl_sst_dsp_init,
+ 		.init_fw = cnl_sst_init_fw,
+-		.cleanup = cnl_sst_dsp_cleanup,
+-		.do_recovery = skl_do_recovery
++		.cleanup = cnl_sst_dsp_cleanup
+ 	},
+ };
+ 
+@@ -368,47 +364,6 @@ static int cnl_sdw_bra_pipe_trigger(struct skl_sst *ctx, bool enable,
+ 	return ret;
+ }
+ 
+-void skl_do_recovery(struct skl *skl)
+-{
+-	struct snd_soc_component *soc_component = skl->component;
+-	const struct skl_dsp_ops *ops;
+-	struct snd_soc_card *card;
+-	struct hdac_stream *azx_dev;
+-	struct hdac_bus *bus = skl_to_bus(skl);
+-	struct snd_pcm_substream *substream = NULL;
+-	struct hdac_ext_stream *stream;
+-
+-	skl->skl_sst->dsp->is_recovery = true;
+-	skl_dsp_reset_core_state(skl->skl_sst->dsp);
+-	card = soc_component->card;
+-	snd_soc_suspend(card->dev);
+-	skl_cleanup_resources(skl);
+-	skl_reset_instance_id(skl->skl_sst);
+-
+-	/* Free up DMA channel 0 for firmware re-download */
+-	list_for_each_entry(azx_dev, &bus->stream_list, list) {
+-		if (azx_dev->stream_tag == 1 &&
+-			azx_dev->direction == SNDRV_PCM_STREAM_PLAYBACK) {
+-			if (azx_dev->opened) {
+-				substream = azx_dev->substream;
+-				stream = stream_to_hdac_ext_stream(azx_dev);
+-				snd_hdac_ext_stream_release(stream,
+-					skl_get_host_stream_type(bus));
+-			}
+-			break;
+-		}
+-	}
+-	ops = skl_get_dsp_ops(skl->pci->device);
+-	if (ops->init_fw(soc_component->dev, skl->skl_sst) < 0)
+-		dev_err(skl->skl_sst->dev, "Recovery failed\n");
+-	if (substream != NULL) {
+-		stream = snd_hdac_ext_stream_assign(bus, substream,
+-					skl_get_host_stream_type(bus));
+-	}
+-	snd_soc_resume(card->dev);
+-	skl->skl_sst->dsp->is_recovery = false;
+-}
+-
+ void skl_trigger_recovery(struct work_struct *work)
+ {
+ 	struct skl_monitor *monitor_dsp = container_of(work,
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 2aedbc2..f886dc8 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -189,7 +189,6 @@ int skl_pcm_host_dma_prepare(struct device *dev, struct skl_pipe_params *params)
+ 					params->host_dma_id + 1);
+ 	if (!hstream)
+ 		return -EINVAL;
+-	hstream->substream = params->substream;
+ 
+ 	stream = stream_to_hdac_ext_stream(hstream);
+ 	snd_hdac_ext_stream_decouple(bus, stream, true);
+@@ -374,7 +373,6 @@ static int skl_pcm_hw_params(struct snd_pcm_substream *substream,
+ 	p_params.host_dma_id = dma_id;
+ 	p_params.stream = substream->stream;
+ 	p_params.format = params_format(params);
+-	p_params.substream = substream;
+ 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+ 		p_params.host_bps = dai->driver->playback.sig_bits;
+ 	else
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.h b/sound/soc/intel/skylake/skl-sst-dsp.h
+index dc793d5..ef9bf4a 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.h
++++ b/sound/soc/intel/skylake/skl-sst-dsp.h
+@@ -22,7 +22,6 @@
+ #include <sound/memalloc.h>
+ #include <uapi/sound/snd_sst_tokens.h>
+ #include "skl-sst-cldma.h"
+-#include "skl.h"
+ 
+ struct sst_dsp;
+ struct skl_sst;
+@@ -271,7 +270,6 @@ struct sst_dsp *skl_dsp_ctx_init(struct device *dev,
+ 		struct sst_dsp_device *sst_dev, int irq);
+ int skl_dsp_acquire_irq(struct sst_dsp *sst);
+ bool is_skl_dsp_running(struct sst_dsp *ctx);
+-void skl_do_recovery(struct skl *skl);
+ 
+ unsigned int skl_dsp_get_enabled_cores(struct sst_dsp *ctx);
+ void skl_dsp_init_core_state(struct sst_dsp *ctx);
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 9d57fc8..17efe6f 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -2511,7 +2511,6 @@ static void skl_tplg_fill_dma_id(struct skl_module_cfg *mcfg,
+ 		pipe->p_params->s_freq = params->s_freq;
+ 		pipe->p_params->stream = params->stream;
+ 		pipe->p_params->format = params->format;
+-		pipe->p_params->substream = params->substream;
+ 
+ 	} else {
+ 		memcpy(pipe->p_params, params, sizeof(*params));
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index da3c8d1..6d09d8d 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -317,7 +317,6 @@ struct skl_pipe_params {
+ 	int stream;
+ 	unsigned int host_bps;
+ 	unsigned int link_bps;
+-	struct snd_pcm_substream *substream;
+ };
+ 
+ struct skl_pipe_fmt {
+@@ -617,7 +616,6 @@ int skl_pcm_host_dma_prepare(struct device *dev,
+ 			struct skl_pipe_params *params);
+ int skl_pcm_link_dma_prepare(struct device *dev,
+ 			struct skl_pipe_params *params);
+-enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus);
+ 
+ int skl_dai_load(struct snd_soc_component *cmp, int index,
+ 		struct snd_soc_dai_driver *dai_drv,
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 777e7bf..8528a8a 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -392,9 +392,6 @@ static int skl_suspend(struct device *dev)
+ 	struct skl *skl  = bus_to_skl(bus);
+ 	int ret = 0;
+ 
+-	if (skl->skl_sst->dsp->is_recovery)
+-		return -EBUSY;
+-
+ 	/*
+ 	 * Do not suspend if streams which are marked ignore suspend are
+ 	 * running, we need to save the state for these and continue
+-- 
+2.7.4
+

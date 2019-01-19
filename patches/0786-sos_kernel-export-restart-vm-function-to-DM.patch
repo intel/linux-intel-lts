@@ -1,0 +1,94 @@
+From c9b5db29642c082e92f7644207b424e297fe593a Mon Sep 17 00:00:00 2001
+From: Yin Fengwei <fengwei.yin@intel.com>
+Date: Fri, 31 Aug 2018 10:59:00 +0800
+Subject: [PATCH 0786/1132] sos_kernel: export restart vm function to DM.
+
+Two major changes:
+ - Add ioctl interface to invoke vm restart between DM and vhm
+ - Add hypercall interface to invoke vm restart between vhm and hv
+
+Change-Id: If5d1555b2fe7b6e3ef9dad2c471b67ff1ac888c9
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 9 +++++++++
+ drivers/vhm/vhm_hypercall.c        | 5 +++++
+ include/linux/vhm/acrn_hv_defs.h   | 1 +
+ include/linux/vhm/vhm_hypercall.h  | 1 +
+ include/linux/vhm/vhm_ioctl_defs.h | 1 +
+ 5 files changed, 17 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 5000ed8..29b9624 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -235,6 +235,15 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
++	case IC_RESTART_VM: {
++		ret = hcall_restart_vm(vm->vmid);
++		if (ret < 0) {
++			pr_err("vhm: failed to restart VM %ld!\n", vm->vmid);
++			return -EFAULT;
++		}
++		break;
++	}
++
+ 	case IC_DESTROY_VM: {
+ 		ret = hcall_destroy_vm(vm->vmid);
+ 		if (ret < 0) {
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index df87feb..463cd71 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -72,6 +72,11 @@ inline long hcall_pause_vm(unsigned long vmid)
+ 	return acrn_hypercall1(HC_PAUSE_VM, vmid);
+ }
+ 
++inline long hcall_restart_vm(unsigned long vmid)
++{
++	return acrn_hypercall1(HC_RESTART_VM, vmid);
++}
++
+ inline long hcall_destroy_vm(unsigned long vmid)
+ {
+ 	return  acrn_hypercall1(HC_DESTROY_VM, vmid);
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index d2da1a7..8dc5b37 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -76,6 +76,7 @@
+ #define HC_START_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x02)
+ #define HC_PAUSE_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x03)
+ #define HC_CREATE_VCPU              _HC_ID(HC_ID, HC_ID_VM_BASE + 0x04)
++#define HC_RESTART_VM               _HC_ID(HC_ID, HC_ID_VM_BASE + 0x05)
+ 
+ /* IRQ and Interrupts */
+ #define HC_ID_IRQ_BASE              0x20UL
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index 2372906..38a9cb9 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -142,6 +142,7 @@ inline long hcall_create_vm(unsigned long vminfo);
+ inline long hcall_start_vm(unsigned long vmid);
+ inline long hcall_pause_vm(unsigned long vmid);
+ inline long hcall_destroy_vm(unsigned long vmid);
++inline long hcall_restart_vm(unsigned long vmid);
+ inline long hcall_query_vm_state(unsigned long vmid);
+ inline long hcall_setup_sbuf(unsigned long sbuf_head);
+ inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa);
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 3b05d82..028096b 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -72,6 +72,7 @@
+ #define IC_START_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x02)
+ #define IC_PAUSE_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
+ #define	IC_CREATE_VCPU                 _IC_ID(IC_ID, IC_ID_VM_BASE + 0x04)
++#define IC_RESTART_VM                  _IC_ID(IC_ID, IC_ID_VM_BASE + 0x05)
+ 
+ /* IRQ and Interrupts */
+ #define IC_ID_IRQ_BASE                 0x20UL
+-- 
+2.7.4
+

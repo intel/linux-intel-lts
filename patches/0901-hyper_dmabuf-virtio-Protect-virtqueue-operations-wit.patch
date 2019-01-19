@@ -1,0 +1,97 @@
+From a7b1e0ca5bfcb82c285aa6aa3879358e06b02afb Mon Sep 17 00:00:00 2001
+From: Mateusz Polrola <mateuszx.potrola@intel.com>
+Date: Wed, 22 Aug 2018 14:27:16 +0200
+Subject: [PATCH 0901/1132] hyper_dmabuf/virtio: Protect virtqueue operations
+ with spinlock.
+
+virtqueue_add_*/virtqueue_get_buf are not safe to run in parallel as
+they operate on the same structs, so code that uses them must ensure
+that they won't run in parallel, as that can lead to corruption of
+virtqueue data.
+In case of hyper dmabuf TX queue operations can be run from different
+threads and need to be protected with spinlock, RX queue operations
+are always done from one thread and do not require lock.
+
+This fixes: RTC252213
+
+Signed-off-by: Mateusz Polrola <mateuszx.potrola@intel.com>
+---
+ .../hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c        | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c
+index 9ae2904..5ef8801 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c
+@@ -53,6 +53,11 @@ struct virtio_hdma_fe_priv {
+ 	struct virtio_comm_ring tx_ring;
+ 	struct virtio_comm_ring rx_ring;
+ 	int vmid;
++	/*
++	 * Lock to protect operations on virtqueue
++	 * which are not safe to run concurrently
++	 */
++	spinlock_t lock;
+ };
+ 
+ /* Assuming there will be one FE instance per VM */
+@@ -68,6 +73,7 @@ static void virtio_hdma_fe_tx_done(struct virtqueue *vq)
+ 	struct virtio_hdma_fe_priv *priv =
+ 		(struct virtio_hdma_fe_priv *) vq->vdev->priv;
+ 	int len;
++	unsigned long flags;
+ 
+ 	if (priv == NULL) {
+ 		dev_dbg(hy_drv_priv->dev,
+@@ -75,6 +81,7 @@ static void virtio_hdma_fe_tx_done(struct virtqueue *vq)
+ 		return;
+ 	}
+ 
++	spin_lock_irqsave(&priv->lock, flags);
+ 	/* Make sure that all pending responses are processed */
+ 	while (virtqueue_get_buf(vq, &len)) {
+ 		if (len == sizeof(struct hyper_dmabuf_req)) {
+@@ -83,6 +90,7 @@ static void virtio_hdma_fe_tx_done(struct virtqueue *vq)
+ 			virtio_comm_ring_pop(&priv->tx_ring);
+ 		}
+ 	}
++	spin_unlock_irqrestore(&priv->lock, flags);
+ }
+ 
+ /*
+@@ -165,6 +173,8 @@ static int virtio_hdma_fe_probe_common(struct virtio_device *vdev)
+ 	/* Set vmid to -1 to mark that it is not initialized yet */
+ 	priv->vmid = -1;
+ 
++	spin_lock_init(&priv->lock);
++
+ 	vdev->priv = priv;
+ 
+ 	ret = virtio_find_vqs(vdev, HDMA_VIRTIO_QUEUE_MAX,
+@@ -317,6 +327,7 @@ static int virtio_hdma_fe_send_req(int vmid, struct hyper_dmabuf_req *req,
+ 	struct virtio_hdma_fe_priv *priv = hyper_dmabuf_virtio_fe;
+ 	struct hyper_dmabuf_req *tx_req;
+ 	int timeout = 1000;
++	unsigned long flags;
+ 
+ 	if (priv == NULL) {
+ 		dev_err(hy_drv_priv->dev,
+@@ -337,6 +348,7 @@ static int virtio_hdma_fe_send_req(int vmid, struct hyper_dmabuf_req *req,
+ 		return -EBUSY;
+ 	}
+ 
++	spin_lock_irqsave(&priv->lock, flags);
+ 	/* Get free buffer for sending request from ring */
+ 	tx_req = (struct hyper_dmabuf_req *)
+ 			virtio_comm_ring_push(&priv->tx_ring);
+@@ -348,6 +360,7 @@ static int virtio_hdma_fe_send_req(int vmid, struct hyper_dmabuf_req *req,
+ 	virtio_hdma_fe_queue_buffer(hyper_dmabuf_virtio_fe,
+ 			       HDMA_VIRTIO_TX_QUEUE,
+ 			       tx_req, sizeof(*tx_req));
++	spin_unlock_irqrestore(&priv->lock, flags);
+ 
+ 	if (wait) {
+ 		while (timeout--) {
+-- 
+2.7.4
+

@@ -1,0 +1,153 @@
+From e5d7ca3117d99dd8626966e9b4b1407ab49175f5 Mon Sep 17 00:00:00 2001
+From: Hao Li <hao.l.li@intel.com>
+Date: Fri, 31 Aug 2018 10:58:59 +0800
+Subject: [PATCH 0777/1132] license: update intel license for ACRN VBS
+
+Change-Id: I9afb8d0b45075051e59307b41f6754ebabfe6808
+Tracked-On: 219330
+Signed-off-by: Hao Li <hao.l.li@intel.com>
+Reviewed-on:
+---
+ drivers/vbs/vbs.c                 | 4 ++--
+ drivers/vbs/vbs_rng.c             | 4 ++--
+ drivers/vbs/vq.c                  | 4 ++--
+ include/linux/vbs/vbs.h           | 4 ++--
+ include/linux/vbs/vbs_common_if.h | 4 ++--
+ include/linux/vbs/vq.h            | 4 ++--
+ 6 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/vbs/vbs.c b/drivers/vbs/vbs.c
+index 9d96f45..6c36436 100644
+--- a/drivers/vbs/vbs.c
++++ b/drivers/vbs/vbs.c
+@@ -7,7 +7,7 @@
+  *
+  * GPL LICENSE SUMMARY
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of version 2 of the GNU General Public License as
+@@ -22,7 +22,7 @@
+  *
+  * BSD LICENSE
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+diff --git a/drivers/vbs/vbs_rng.c b/drivers/vbs/vbs_rng.c
+index 2c71186..cdfed63 100644
+--- a/drivers/vbs/vbs_rng.c
++++ b/drivers/vbs/vbs_rng.c
+@@ -7,7 +7,7 @@
+  *
+  * GPL LICENSE SUMMARY
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of version 2 of the GNU General Public License as
+@@ -22,7 +22,7 @@
+  *
+  * BSD LICENSE
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+diff --git a/drivers/vbs/vq.c b/drivers/vbs/vq.c
+index 886f482..9f7a829 100644
+--- a/drivers/vbs/vq.c
++++ b/drivers/vbs/vq.c
+@@ -7,7 +7,7 @@
+  *
+  * GPL LICENSE SUMMARY
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of version 2 of the GNU General Public License as
+@@ -22,7 +22,7 @@
+  *
+  * BSD LICENSE
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+diff --git a/include/linux/vbs/vbs.h b/include/linux/vbs/vbs.h
+index 725f162..e4ecba0 100644
+--- a/include/linux/vbs/vbs.h
++++ b/include/linux/vbs/vbs.h
+@@ -7,7 +7,7 @@
+  *
+  * GPL LICENSE SUMMARY
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of version 2 of the GNU General Public License as
+@@ -22,7 +22,7 @@
+  *
+  * BSD LICENSE
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+diff --git a/include/linux/vbs/vbs_common_if.h b/include/linux/vbs/vbs_common_if.h
+index 91eb4e0..25d6002 100644
+--- a/include/linux/vbs/vbs_common_if.h
++++ b/include/linux/vbs/vbs_common_if.h
+@@ -7,7 +7,7 @@
+  *
+  * GPL LICENSE SUMMARY
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of version 2 of the GNU General Public License as
+@@ -22,7 +22,7 @@
+  *
+  * BSD LICENSE
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+diff --git a/include/linux/vbs/vq.h b/include/linux/vbs/vq.h
+index 6474665..ca14f8f 100644
+--- a/include/linux/vbs/vq.h
++++ b/include/linux/vbs/vq.h
+@@ -7,7 +7,7 @@
+  *
+  * GPL LICENSE SUMMARY
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of version 2 of the GNU General Public License as
+@@ -22,7 +22,7 @@
+  *
+  * BSD LICENSE
+  *
+- * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+-- 
+2.7.4
+

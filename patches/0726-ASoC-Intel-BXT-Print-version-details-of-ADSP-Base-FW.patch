@@ -1,0 +1,36 @@
+From 4edbd8813ef0cf6720a672e69170f907fc7fc922 Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Wed, 22 Nov 2017 17:28:42 +0530
+Subject: [PATCH 0726/1132] ASoC: Intel: BXT: Print version details of ADSP
+ Base FW
+
+Print the major, minor, hotfix and build number of
+the ADSP FW binary that is loaded with the current software.
+
+Change-Id: I38fd347ffefb4eca857227b34d84bf90fc3a102f
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+(cherry picked from commit eec2300236d4e0a86a6229716bb622d4e4df738d)
+Signed-off-by: Tomasz Medrek <tomaszx.medrek@intel.com>
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-utils.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-utils.c b/sound/soc/intel/skylake/skl-sst-utils.c
+index 7c86742..02583e4 100644
+--- a/sound/soc/intel/skylake/skl-sst-utils.c
++++ b/sound/soc/intel/skylake/skl-sst-utils.c
+@@ -526,6 +526,10 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
+ 
+ 	adsp_hdr = (struct adsp_fw_hdr *)(buf + offset);
+ 
++	dev_info(ctx->dev, "ADSP FW Version: %d.%d.%d.%d\n",
++		 adsp_hdr->major, adsp_hdr->minor,
++		 adsp_hdr->hotfix, adsp_hdr->build);
++
+ 	/* check 1st module entry is in file */
+ 	safe_file += adsp_hdr->len + sizeof(*mod_entry);
+ 	if (stripped_fw.size <= safe_file) {
+-- 
+2.7.4
+

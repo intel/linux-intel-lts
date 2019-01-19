@@ -1,0 +1,35 @@
+From 64eb56c3fd2890319d24ed7e6d16397502d5db26 Mon Sep 17 00:00:00 2001
+From: Jian Jun Chen <jian.jun.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:59:03 +0800
+Subject: [PATCH 0815/1132] VBS-K: fix a bug due to incorrect check of return
+ value of bitmap_empty
+
+When no bits are set in ioreqs_map, bitmap_empty returns 1. In this case
+we can just return 0 since no virtqueues are kicked.
+
+Signed-off-by: Jian Jun Chen <jian.jun.chen@intel.com>
+Reviewed-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Yu Wang <yu1.wang@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/vbs/vbs_rng.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/vbs/vbs_rng.c b/drivers/vbs/vbs_rng.c
+index 45e17b0..fd2bb27 100644
+--- a/drivers/vbs/vbs_rng.c
++++ b/drivers/vbs/vbs_rng.c
+@@ -256,8 +256,8 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
+ 	int val = -1;
+ 	struct vbs_rng *rng;
+ 
+-	if (unlikely(bitmap_empty(ioreqs_map, VHM_REQUEST_MAX) <= 0))
+-		return -EINVAL;
++	if (unlikely(bitmap_empty(ioreqs_map, VHM_REQUEST_MAX)))
++		return 0;
+ 
+ 	pr_debug("%s: handle kick!\n", __func__);
+ 
+-- 
+2.7.4
+

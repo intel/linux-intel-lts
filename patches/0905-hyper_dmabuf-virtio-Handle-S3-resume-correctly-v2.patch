@@ -1,0 +1,112 @@
+From 3c0b30c982f5b914b9ded943650b5c2244e79d08 Mon Sep 17 00:00:00 2001
+From: Mateusz Polrola <mateuszx.potrola@intel.com>
+Date: Fri, 24 Aug 2018 09:25:03 +0200
+Subject: [PATCH 0905/1132] hyper_dmabuf/virtio: Handle S3 resume correctly
+ (v2)
+
+After resume from S3 virtqueues are reset, so buffers for communication
+from SOS to UOS needs to be reinitialized.
+That cannot be done directly in resume routine, as that point virtio PCI
+device is not yet fully restored, because of that it has to be scheduled
+to run after some short delay.
+
+v2: changes:
+- schedule reinit of communication from SOS to UOS immediately at the
+  end of restore routine
+- Wait for virtio device to become ready  before actually doing reinit
+  of communication
+
+Signed-off-by: Mateusz Polrola <mateuszx.potrola@intel.com>
+---
+ .../virtio/hyper_dmabuf_virtio_fe_drv.c            | 49 ++++++++++++++++++++--
+ 1 file changed, 45 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c
+index 5ef8801..e0c8111 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_fe_drv.c
+@@ -32,6 +32,7 @@
+ #include <linux/virtio.h>
+ #include <linux/virtio_ids.h>
+ #include <linux/virtio_config.h>
++#include <linux/workqueue.h>
+ #include "../hyper_dmabuf_msg.h"
+ #include "../hyper_dmabuf_drv.h"
+ #include "hyper_dmabuf_virtio_common.h"
+@@ -222,14 +223,20 @@ static void virtio_hdma_fe_remove(struct virtio_device *vdev)
+ 	virtio_hdma_fe_remove_common(vdev);
+ }
+ 
++struct virtio_hdma_restore_work
++{
++	struct work_struct work;
++	struct virtio_device *dev;
++};
++
+ /*
+  * Queues empty requests buffers to backend,
+  * which will be used by it to send requests back to frontend.
+  */
+-static void virtio_hdma_fe_scan(struct virtio_device *vdev)
++static void virtio_hdma_query_vmid(struct virtio_device *vdev)
+ {
+-	struct virtio_hdma_fe_priv *priv =
+-		(struct virtio_hdma_fe_priv *) vdev->priv;
++        struct virtio_hdma_fe_priv *priv =
++                (struct virtio_hdma_fe_priv *) vdev->priv;
+ 	struct hyper_dmabuf_req *rx_req;
+ 	int timeout = 1000;
+ 
+@@ -266,6 +273,29 @@ static void virtio_hdma_fe_scan(struct virtio_device *vdev)
+ 	}
+ }
+ 
++/*
++ * Queues empty requests buffers to backend,
++ * which will be used by it to send requests back to frontend.
++ */
++static void virtio_hdma_fe_scan(struct virtio_device *vdev)
++{
++	virtio_hdma_query_vmid(vdev);
++}
++
++static void virtio_hdma_restore_bh(struct work_struct *w)
++{
++	struct virtio_hdma_restore_work *work =
++		(struct virtio_hdma_restore_work *) w;
++
++	while (!(VIRTIO_CONFIG_S_DRIVER_OK &
++		 work->dev->config->get_status(work->dev))) {
++		usleep_range(100, 120);
++	}
++
++	virtio_hdma_query_vmid(work->dev);
++	kfree(w);
++}
++
+ #ifdef CONFIG_PM_SLEEP
+ static int virtio_hdma_fe_freeze(struct virtio_device *vdev)
+ {
+@@ -275,7 +305,18 @@ static int virtio_hdma_fe_freeze(struct virtio_device *vdev)
+ 
+ static int virtio_hdma_fe_restore(struct virtio_device *vdev)
+ {
+-	return virtio_hdma_fe_probe_common(vdev);
++	struct virtio_hdma_restore_work *work;
++	int ret;
++
++	ret = virtio_hdma_fe_probe_common(vdev);
++	if (!ret) {
++		work = kmalloc(sizeof(*work), GFP_KERNEL);
++		INIT_WORK(&work->work, virtio_hdma_restore_bh);
++		work->dev = vdev;
++		schedule_work(&work->work);
++	}
++
++	return ret;
+ }
+ #endif
+ 
+-- 
+2.7.4
+

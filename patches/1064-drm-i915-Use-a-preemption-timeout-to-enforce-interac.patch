@@ -1,0 +1,148 @@
+From 1e30d3001d2691c06db38d04ad48fc3155280cca Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Mon, 10 Dec 2018 04:34:10 -0500
+Subject: [PATCH 1064/1132] drm/i915: Use a preemption timeout to enforce
+ interactivity
+
+Use a liberal timeout of 20ms to ensure that the rendering for an
+interactive pageflip is started in a timely fashion, and that
+user interaction is not blocked by GPU, or CPU, hogs. This is at the cost
+of resetting whoever was blocking the preemption, likely leading to that
+context/process being banned from submitting future requests.
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+
+backporting from: https://patchwork.freedesktop.org/series/43299/
+Tracked-On: OLINUX-5626
+
+Signed-off-by: kimsehun <se.hun.kim@intel.com>
+---
+ drivers/gpu/drm/i915/i915_drv.h      |  4 +++-
+ drivers/gpu/drm/i915/i915_gem.c      | 19 +++++++++++--------
+ drivers/gpu/drm/i915/intel_display.c | 17 ++++++++++++++++-
+ 3 files changed, 30 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index de3db57..c0633ea 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -3205,8 +3205,10 @@ int i915_gem_object_wait(struct drm_i915_gem_object *obj,
+ 			 struct intel_rps_client *rps);
+ int i915_gem_object_wait_priority(struct drm_i915_gem_object *obj,
+ 				  unsigned int flags,
+-				  const struct i915_sched_attr *attr);
++				  const struct i915_sched_attr *attr,
++				  unsigned int timeout);
+ #define I915_PRIORITY_DISPLAY I915_PRIORITY_MAX
++#define I915_PREEMPTION_TIMEOUT_DISPLAY (100 * 1000 * 1000) /* 100 ms / 10Hz */
+ 
+ int __must_check
+ i915_gem_object_set_to_wc_domain(struct drm_i915_gem_object *obj, bool write);
+diff --git a/drivers/gpu/drm/i915/i915_gem.c b/drivers/gpu/drm/i915/i915_gem.c
+index 29fba96..abf74c3 100644
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -1417,7 +1417,8 @@ i915_gem_object_wait_reservation(struct reservation_object *resv,
+ }
+ 
+ static void __fence_set_priority(struct dma_fence *fence,
+-				 const struct i915_sched_attr *attr)
++				 const struct i915_sched_attr *attr,
++				 unsigned int timeout)
+ {
+ 	struct i915_request *rq;
+ 	struct intel_engine_cs *engine;
+@@ -1431,13 +1432,14 @@ static void __fence_set_priority(struct dma_fence *fence,
+ 	local_bh_disable();
+ 	rcu_read_lock(); /* RCU serialisation for set-wedged protection */
+ 	if (engine->schedule)
+-		engine->schedule(rq, attr, 0);
++		engine->schedule(rq, attr, timeout);
+ 	rcu_read_unlock();
+ 	local_bh_enable(); /* kick the tasklets if queues were reprioritised */
+ }
+ 
+ static void fence_set_priority(struct dma_fence *fence,
+-			       const struct i915_sched_attr *attr)
++			       const struct i915_sched_attr *attr,
++			       unsigned int timeout)
+ {
+ 	/* Recurse once into a fence-array */
+ 	if (dma_fence_is_array(fence)) {
+@@ -1445,16 +1447,17 @@ static void fence_set_priority(struct dma_fence *fence,
+ 		int i;
+ 
+ 		for (i = 0; i < array->num_fences; i++)
+-			__fence_set_priority(array->fences[i], attr);
++			__fence_set_priority(array->fences[i], attr, timeout);
+ 	} else {
+-		__fence_set_priority(fence, attr);
++		__fence_set_priority(fence, attr, timeout);
+ 	}
+ }
+ 
+ int
+ i915_gem_object_wait_priority(struct drm_i915_gem_object *obj,
+ 			      unsigned int flags,
+-			      const struct i915_sched_attr *attr)
++			      const struct i915_sched_attr *attr,
++			      unsigned int timeout)
+ {
+ 	struct dma_fence *excl;
+ 
+@@ -1469,7 +1472,7 @@ i915_gem_object_wait_priority(struct drm_i915_gem_object *obj,
+ 			return ret;
+ 
+ 		for (i = 0; i < count; i++) {
+-			fence_set_priority(shared[i], attr);
++			fence_set_priority(shared[i], attr, timeout);
+ 			dma_fence_put(shared[i]);
+ 		}
+ 
+@@ -1479,7 +1482,7 @@ i915_gem_object_wait_priority(struct drm_i915_gem_object *obj,
+ 	}
+ 
+ 	if (excl) {
+-		fence_set_priority(excl, attr);
++		fence_set_priority(excl, attr, timeout);
+ 		dma_fence_put(excl);
+ 	}
+ 	return 0;
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 3f31224..223cda4 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -13061,7 +13061,8 @@ static void fb_obj_bump_render_priority(struct drm_i915_gem_object *obj)
+ 		.priority = I915_PRIORITY_DISPLAY,
+ 	};
+ 
+-	i915_gem_object_wait_priority(obj, 0, &attr);
++	i915_gem_object_wait_priority(obj, 0,
++				      &attr, I915_PREEMPTION_TIMEOUT_DISPLAY);
+ }
+ 
+ /**
+@@ -13140,6 +13141,20 @@ intel_prepare_plane_fb(struct drm_plane *plane,
+ 
+ 	ret = intel_plane_pin_fb(to_intel_plane_state(new_state));
+ 
++	/*
++	 * Reschedule our dependencies, and ensure we run within a timeout.
++	 *
++	 * Note that if the timeout is exceeded, then whoever was running that
++	 * prevented us from acquiring the GPU is declared rogue and reset. An
++	 * unresponsive process will then be banned in order to preserve
++	 * interactivity. Since this can be seen as a bit heavy-handed, we
++	 * select a timeout for when the dropped frames start to become a
++	 * noticeable nuisance for the user (100 ms, i.e. preemption was
++	 * blocked for more than a few frames). Note, this is only a timeout
++	 * for a delay in preempting the current request in order to run our
++	 * dependency chain, our dependency chain may itself take a long time
++	 * to run to completion before we can present the framebuffer.
++	 */
+ 	fb_obj_bump_render_priority(obj);
+ 
+ 	mutex_unlock(&dev_priv->drm.struct_mutex);
+-- 
+2.7.4
+

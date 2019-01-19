@@ -1,0 +1,50 @@
+From db291f1984fc0b890ca97b8829930a7c32dbe598 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 14 Sep 2018 16:10:16 +0800
+Subject: [PATCH 0840/1132] drm/i915/gvt: passthru PIPE_DSL regiser to guest
+
+Change-Id: I4d903a982052b8b241f090a91e2251d66bba2778
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-on:
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/handlers.c | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/handlers.c b/drivers/gpu/drm/i915/gvt/handlers.c
+index e89d228..7f7f2fb 100644
+--- a/drivers/gpu/drm/i915/gvt/handlers.c
++++ b/drivers/gpu/drm/i915/gvt/handlers.c
+@@ -530,6 +530,14 @@ static int force_nonpriv_write(struct intel_vgpu *vgpu,
+ 	return 0;
+ }
+ 
++static int pipe_dsl_mmio_read(struct intel_vgpu *vgpu,
++		unsigned int offset, void *p_data, unsigned int bytes)
++{
++	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
++	vgpu_vreg(vgpu, offset) = I915_READ(_MMIO(offset));
++	return intel_vgpu_default_mmio_read(vgpu, offset, p_data, bytes);
++}
++
+ static int ddi_buf_ctl_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
+ 		void *p_data, unsigned int bytes)
+ {
+@@ -1909,9 +1917,9 @@ static int init_generic_mmio_info(struct intel_gvt *gvt)
+ 	MMIO_D(_MMIO(0xc4040), D_ALL);
+ 	MMIO_D(DERRMR, D_ALL);
+ 
+-	MMIO_D(PIPEDSL(PIPE_A), D_ALL);
+-	MMIO_D(PIPEDSL(PIPE_B), D_ALL);
+-	MMIO_D(PIPEDSL(PIPE_C), D_ALL);
++	MMIO_DH(PIPEDSL(PIPE_A), D_ALL, pipe_dsl_mmio_read, NULL);
++	MMIO_DH(PIPEDSL(PIPE_B), D_ALL, pipe_dsl_mmio_read, NULL);
++	MMIO_DH(PIPEDSL(PIPE_C), D_ALL, pipe_dsl_mmio_read, NULL);
+ 	MMIO_D(PIPEDSL(_PIPE_EDP), D_ALL);
+ 
+ 	MMIO_DH(PIPECONF(PIPE_A), D_ALL, NULL, pipeconf_mmio_write);
+-- 
+2.7.4
+

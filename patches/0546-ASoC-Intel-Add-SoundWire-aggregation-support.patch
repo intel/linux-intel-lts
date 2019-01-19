@@ -1,0 +1,86 @@
+From e33a787791add043a7f5806900bd1def168d59ed Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Fri, 6 Jan 2017 16:06:23 +0530
+Subject: [PATCH 0546/1132] ASoC: Intel: Add SoundWire aggregation support
+
+This patch adds aggregation support on Master 1 and Master 2
+under CONFIG_SND_SOC_SDW_AGGM1M2 config. It also removes
+Maxim FPGA codec aggregation related changes.
+
+Change-Id: I3ae6755543c4992a2dcddb4ab86ca3c503a9bd36
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c     | 12 ++++--------
+ sound/soc/intel/skylake/skl-sdw-pcm.c |  4 ++--
+ 2 files changed, 6 insertions(+), 10 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index ae3c6aa..790af248 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -526,11 +526,7 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 	struct cnl_bra_operation *p_ptr = ptr;
+ 	int ret = 0, i, j, k, wl = 0;
+ 	/* TODO: This number 4 should come from ACPI */
+-#if defined(CONFIG_SDW_MAXIM_SLAVE) || defined(CONFIG_SND_SOC_MXFPGA)
+-	dsp->num_sdw_controllers = 3;
+-#else
+ 	dsp->num_sdw_controllers = 4;
+-#endif
+ 	master = devm_kzalloc(dev,
+ 			(sizeof(*master) * dsp->num_sdw_controllers),
+ 			GFP_KERNEL);
+@@ -636,18 +632,18 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 		switch (i) {
+ 		case 0:
+ 			p_data->sdw_regs = mmio_base + CNL_SDW_LINK_0_BASE;
+-#ifdef CONFIG_SND_SOC_MXFPGA
+-			master[i].link_sync_mask = 0x1;
+-#endif
+ 			break;
+ 		case 1:
+ 			p_data->sdw_regs = mmio_base + CNL_SDW_LINK_1_BASE;
+-#ifdef CONFIG_SND_SOC_MXFPGA
++#ifdef CONFIG_SND_SOC_SDW_AGGM1M2
+ 			master[i].link_sync_mask = 0x2;
+ #endif
+ 			break;
+ 		case 2:
+ 			p_data->sdw_regs = mmio_base + CNL_SDW_LINK_2_BASE;
++#ifdef CONFIG_SND_SOC_SDW_AGGM1M2
++			master[i].link_sync_mask = 0x4;
++#endif
+ 			break;
+ 		case 3:
+ 			p_data->sdw_regs = mmio_base + CNL_SDW_LINK_3_BASE;
+diff --git a/sound/soc/intel/skylake/skl-sdw-pcm.c b/sound/soc/intel/skylake/skl-sdw-pcm.c
+index 564602c..2c5ba97 100644
+--- a/sound/soc/intel/skylake/skl-sdw-pcm.c
++++ b/sound/soc/intel/skylake/skl-sdw-pcm.c
+@@ -47,7 +47,7 @@ struct sdw_dma_data {
+ 	int mstr_nr;
+ };
+ 
+-#ifdef CONFIG_SND_SOC_MXFPGA
++#ifdef CONFIG_SND_SOC_SDW_AGGM1M2
+ static char uuid_playback[] = "Agg_p";
+ static char uuid_capture[] = "Agg_c";
+ #endif
+@@ -102,7 +102,7 @@ int cnl_sdw_startup(struct snd_pcm_substream *substream,
+ 	dma->mstr_nr = sdw_ctrl_nr;
+ 	snd_soc_dai_set_dma_data(dai, substream, dma);
+ 
+-#ifdef CONFIG_SND_SOC_MXFPGA
++#ifdef CONFIG_SND_SOC_SDW_AGGM1M2
+ 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+ 		uuid = uuid_playback;
+ 	else
+-- 
+2.7.4
+

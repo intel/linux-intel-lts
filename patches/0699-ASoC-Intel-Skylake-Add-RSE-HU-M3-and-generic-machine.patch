@@ -1,0 +1,55 @@
+From fbf81a77dca5e2b1f1e6259a3dcf96185836b60e Mon Sep 17 00:00:00 2001
+From: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Date: Mon, 7 May 2018 16:38:11 +0530
+Subject: [PATCH 0699/1132] ASoC: Intel: Skylake: Add RSE, HU, M3 and generic
+ machine driver entry
+
+This patch adds driver names of RSE, HU, M3 and generic machine drivers
+to driver data.
+Also adds the name of the FW file that has to be loaded when IVI machine
+drivers are enabled.
+
+Change-Id: I39eafec466e83a56ee7ada22b6b47927e7533ece
+Signed-off-by: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Reviewed-on:
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index a5082c8..126b455 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1216,8 +1216,25 @@ static struct snd_soc_acpi_mach sst_skl_devdata[] = {
+ static struct snd_soc_acpi_mach sst_bxtp_devdata[] = {
+ 	{
+ 		.id = "INT343A",
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_RSE_MACH)
++		.drv_name = "bxt_ivi_rse_i2s",
++#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_HU_MACH)
++		.drv_name = "bxt_ivi_hu_i2s",
++#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_M3_MACH)
++		.drv_name = "bxt_ivi_m3_i2s",
++#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_GENERIC_MACH)
++		.drv_name = "bxt_ivi_generic_i2s",
++#else
+ 		.drv_name = "bxt_alc298s_i2s",
++#endif
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_RSE_MACH) || \
++IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_HU_MACH) || \
++IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_M3_MACH) || \
++IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_GENERIC_MACH)
++		.fw_filename = "intel/ADSPFW.bin"
++#else
+ 		.fw_filename = "intel/dsp_fw_bxtn.bin",
++#endif
+ 	},
+ 	{
+ 		.id = "DLGS7219",
+-- 
+2.7.4
+

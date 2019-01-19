@@ -1,0 +1,38 @@
+From 4680e8622d385f185df5e27c53614eebde3b1c41 Mon Sep 17 00:00:00 2001
+From: Jayachandran B <jayachandran.b@intel.com>
+Date: Tue, 14 Jun 2016 10:39:48 +0530
+Subject: [PATCH 0510/1132] ASoC: Intel: Skylake: Probe-Limit the bytes to copy
+
+If userspace happens to issue a copy with count > ring buffer size,
+limit the count to the allocated ring buffer size to avoid out of
+bound access into the buffer.
+
+Change-Id: I7acbfb64bda299237a9d56bbac4a022d36b28bfd
+Signed-off-by: Jayachandran B <jayachandran.b@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/soc/intel/skylake/skl-probe.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index 7d23798..507513e 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -230,6 +230,12 @@ int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
+ {
+ 	int offset = 0, availcount = 0, retval = 0, copy;
+ 	void *dstn;
++	/*
++	 * If userspace happens to issue a copy with count > ring buffer size,
++	 * limit the count to the allocated ring buffer size.
++	 */
++	if (count > stream->runtime->buffer_size)
++		count = stream->runtime->buffer_size;
+ 
+ 	if (stream->direction == SND_COMPRESS_CAPTURE) {
+ 		offset = stream->runtime->total_bytes_transferred %
+-- 
+2.7.4
+

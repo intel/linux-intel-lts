@@ -1,0 +1,68 @@
+From 5564a553b710a95648db108af16d528dd6834d71 Mon Sep 17 00:00:00 2001
+From: "R, Dharageswari" <dharageswari.r@intel.com>
+Date: Mon, 25 Dec 2017 07:07:11 +0530
+Subject: [PATCH 0669/1132] ASoC: Intel: Skylake: Fix the is_dsp_running() to
+ return core0 state
+
+DSP state is mainly dependent on the core0 state.
+This patches fixes the is_dsp_running callback to return
+dsp state based on core0 state.
+
+Change-Id: I60297162b6512b2092886f4ae8cbcd286bafdf09
+Signed-off-by: R, Dharageswari <dharageswari.r@intel.com>
+Signed-off-by: Pradeep Tewani <pradeep.d.tewani@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Periyasamy, SriramX <sriramx.periyasamy@intel.com>
+Reviewed-by: Prakash, Divya1
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/common/sst-dsp-priv.h |  1 -
+ sound/soc/intel/skylake/skl-sst-dsp.c | 11 +++--------
+ 2 files changed, 3 insertions(+), 9 deletions(-)
+
+diff --git a/sound/soc/intel/common/sst-dsp-priv.h b/sound/soc/intel/common/sst-dsp-priv.h
+index 8e80c6f..196bb7d 100644
+--- a/sound/soc/intel/common/sst-dsp-priv.h
++++ b/sound/soc/intel/common/sst-dsp-priv.h
+@@ -355,7 +355,6 @@ struct sst_dsp {
+ 	/* To allocate CL dma buffers */
+ 	struct skl_dsp_loader_ops dsp_ops;
+ 	struct skl_dsp_fw_ops fw_ops;
+-	int sst_state;
+ 	struct skl_cl_dev cl_dev;
+ 	u32 intr_status;
+ 	const struct firmware *fw;
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.c b/sound/soc/intel/skylake/skl-sst-dsp.c
+index 0b1cc44..485c8b8 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.c
++++ b/sound/soc/intel/skylake/skl-sst-dsp.c
+@@ -28,13 +28,6 @@
+ #define SKL_DSP_PD_TO		50
+ #define SKL_DSP_RESET_TO	50
+ 
+-void skl_dsp_set_state_locked(struct sst_dsp *ctx, int state)
+-{
+-	mutex_lock(&ctx->mutex);
+-	ctx->sst_state = state;
+-	mutex_unlock(&ctx->mutex);
+-}
+-
+ /*
+  * Initialize core power state and usage count. To be called after
+  * successful first boot. Hence core 0 will be running and other cores
+@@ -504,6 +497,8 @@ EXPORT_SYMBOL_GPL(skl_dsp_free);
+ 
+ bool is_skl_dsp_running(struct sst_dsp *ctx)
+ {
+-	return (ctx->sst_state == SKL_DSP_RUNNING);
++	struct skl_sst *skl_sst = ctx->thread_context;
++
++	return (skl_sst->cores.state[SKL_DSP_CORE0_ID] != SKL_DSP_RESET);
+ }
+ EXPORT_SYMBOL_GPL(is_skl_dsp_running);
+-- 
+2.7.4
+

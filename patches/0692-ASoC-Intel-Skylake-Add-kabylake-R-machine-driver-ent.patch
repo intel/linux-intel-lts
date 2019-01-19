@@ -1,0 +1,39 @@
+From 70769ea51ba15881700cb6aeaed021158ab8bce1 Mon Sep 17 00:00:00 2001
+From: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Date: Thu, 23 Nov 2017 20:52:05 +0530
+Subject: [PATCH 0692/1132] ASoC: Intel: Skylake: Add kabylake R machine driver
+ entry
+
+This patch adds acpi entry for kabylake R I2S machine driver,
+which makes use of ALC298 codec.
+
+Change-Id: Ie61f3c3e2759cd3a1b1380870307654e0d773ce7
+Signed-off-by: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Reviewed-on:
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: Periyasamy, SriramX <sriramx.periyasamy@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 94f5ced..a5082c8 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1242,7 +1242,11 @@ static struct snd_soc_acpi_mach sst_bxtp_devdata[] = {
+ static struct snd_soc_acpi_mach sst_kbl_devdata[] = {
+ 	{
+ 		.id = "INT343A",
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_KBLR_RT298_MACH)
++		.drv_name = "kblr_alc298s_i2s",
++#else
+ 		.drv_name = "kbl_alc286s_i2s",
++#endif
+ 		.fw_filename = "intel/dsp_fw_kbl.bin",
+ 	},
+ 	{
+-- 
+2.7.4
+

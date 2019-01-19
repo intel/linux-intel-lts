@@ -1,0 +1,31 @@
+From fe63a39164f668ec6940433865e80f480e67febc Mon Sep 17 00:00:00 2001
+From: Yin Fengwei <fengwei.yin@intel.com>
+Date: Fri, 31 Aug 2018 10:58:59 +0800
+Subject: [PATCH 0773/1132] vhm cleanup: update one field name in vhm
+
+Change-Id: Ib125147ff72b566b183d20496251fa74244d7970
+Tracked-On: 212688
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+Reviewed-on:
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ include/linux/vhm/vhm_ioctl_defs.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 494213a..9f2f21a 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -123,7 +123,7 @@ struct ic_ptdev_irq {
+ 		struct {
+ 			uint32_t virt_pin;	/* IN: virtual IOAPIC pin */
+ 			uint32_t phys_pin;	/* IN: physical IOAPIC pin */
+-			uint32_t pic_pin;	/* IN: pin from PIC? */
++			uint32_t is_pic_pin;	/* IN: pin from PIC? */
+ 		} intx;
+ 		struct {
+ 			/* IN: vector count of MSI/MSIX,
+-- 
+2.7.4
+

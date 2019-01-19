@@ -1,0 +1,74 @@
+From 6dfe207b61fda42cb1464fb5438086b677ce578d Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Tue, 21 Feb 2017 15:51:38 +0530
+Subject: [PATCH 0561/1132] ASoC: Intel: Remove pdi_type support from topology
+
+The pdi_type tag used for SoundWire device type
+is not used, so removing support from driver.
+
+Change-Id: I77a71c02cc0b2b51edce24aa667549e24752d095
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ include/uapi/sound/skl-tplg-interface.h | 6 ------
+ sound/soc/intel/skylake/skl-messages.c  | 2 --
+ sound/soc/intel/skylake/skl-topology.h  | 1 -
+ 3 files changed, 9 deletions(-)
+
+diff --git a/include/uapi/sound/skl-tplg-interface.h b/include/uapi/sound/skl-tplg-interface.h
+index c014543..fc4e4324 100644
+--- a/include/uapi/sound/skl-tplg-interface.h
++++ b/include/uapi/sound/skl-tplg-interface.h
+@@ -113,12 +113,6 @@ enum skl_dev_type {
+ 	SKL_DEVICE_NONE
+ };
+ 
+-enum skl_pdi_type {
+-	SKL_PDI_PCM = 0,
+-	SKL_PDI_PDM = 1,
+-	SKL_PDI_INVALID = 2
+-};
+-
+ /**
+  * enum skl_interleaving - interleaving style
+  *
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index b4b2d1d..7945173 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -411,7 +411,6 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
+ 	host_cpr_cfg.hw_conn_type = SKL_CONN_SOURCE;
+ 	host_cpr_cfg.formats_config.caps_size = 0;
+ 	host_cpr_cfg.module->resources[0].dma_buffer_size = 2;
+-	host_cpr_cfg.pdi_type = 0;
+ 	host_cpr_cfg.converter = 0;
+ 	host_cpr_cfg.vbus_id = 0;
+ 	host_cpr_cfg.sdw_agg_enable = 0;
+@@ -650,7 +649,6 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
+ 
+ 	link_cpr_cfg.formats_config.caps_size = 0;
+ 	link_cpr_cfg.module->resources[0].dma_buffer_size = 2;
+-	link_cpr_cfg.pdi_type = 0;
+ 	link_cpr_cfg.converter = 0;
+ 	link_cpr_cfg.vbus_id = 0;
+ 	link_cpr_cfg.sdw_agg_enable = 0;
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index d17809b..0026524 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -442,7 +442,6 @@ struct skl_module_cfg {
+ 	u32 mem_pages;
+ 	enum d0i3_capability d0i3_caps;
+ 	u32 dma_buffer_size; /* in milli seconds */
+-	u8 pdi_type;
+ 	u32 sdw_stream_num;
+ 	bool sdw_agg_enable;
+ 	struct skl_sdw_aggregation sdw_agg;
+-- 
+2.7.4
+

@@ -1,0 +1,146 @@
+From acf0986736b09857c524b84f93a12b895098981f Mon Sep 17 00:00:00 2001
+From: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Date: Tue, 16 Oct 2018 14:13:40 +0300
+Subject: [PATCH 0977/1132] lib: Fix ia64 bootloader linkage
+
+kbuild robot reports that since commit ce76d938dd98 ("lib: Add memcat_p():
+paste 2 pointer arrays together") the ia64/hp/sim/boot fails to link:
+
+> LD      arch/ia64/hp/sim/boot/bootloader
+> lib/string.o: In function `__memcat_p':
+> string.c:(.text+0x1f22): undefined reference to `__kmalloc'
+> string.c:(.text+0x1ff2): undefined reference to `__kmalloc'
+> make[1]: *** [arch/ia64/hp/sim/boot/Makefile:37: arch/ia64/hp/sim/boot/bootloader] Error 1
+
+The reason is, the above commit, via __memcat_p(), adds a call to
+__kmalloc to string.o, which happens to be used in the bootloader, but
+there's no kmalloc or slab or anything.
+
+Since the linker would only pull in objects that contain referenced
+symbols, moving __memcat_p() to a different compilation unit solves the
+problem.
+
+Fixes: ce76d938dd98 ("lib: Add memcat_p(): paste 2 pointer arrays together")
+Signed-off-by: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Reported-by: kbuild test robot <lkp@intel.com>
+Cc: Fenghua Yu <fenghua.yu@intel.com>
+Cc: Tony Luck <tony.luck@intel.com>
+Cc: Joe Perches <joe@perches.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ lib/Makefile        |  2 +-
+ lib/memcat_p.c      | 34 ++++++++++++++++++++++++++++++++++
+ lib/string.c        | 30 ------------------------------
+ lib/test_memcat_p.c |  2 +-
+ 4 files changed, 36 insertions(+), 32 deletions(-)
+ create mode 100644 lib/memcat_p.c
+
+diff --git a/lib/Makefile b/lib/Makefile
+index 02f5f81..df0eeb6 100644
+--- a/lib/Makefile
++++ b/lib/Makefile
+@@ -24,7 +24,7 @@ lib-y := ctype.o string.o vsprintf.o cmdline.o \
+ 	 flex_proportions.o ratelimit.o show_mem.o \
+ 	 is_single_threaded.o plist.o decompress.o kobject_uevent.o \
+ 	 earlycpio.o seq_buf.o siphash.o dec_and_lock.o \
+-	 nmi_backtrace.o nodemask.o win_minmax.o
++	 nmi_backtrace.o nodemask.o win_minmax.o memcat_p.o
+ 
+ lib-$(CONFIG_PRINTK) += dump_stack.o
+ lib-$(CONFIG_MMU) += ioremap.o
+diff --git a/lib/memcat_p.c b/lib/memcat_p.c
+new file mode 100644
+index 0000000..b810fbc
+--- /dev/null
++++ b/lib/memcat_p.c
+@@ -0,0 +1,34 @@
++// SPDX-License-Identifier: GPL-2.0
++
++#include <linux/slab.h>
++
++/*
++ * Merge two NULL-terminated pointer arrays into a newly allocated
++ * array, which is also NULL-terminated. Nomenclature is inspired by
++ * memset_p() and memcat() found elsewhere in the kernel source tree.
++ */
++void **__memcat_p(void **a, void **b)
++{
++	void **p = a, **new;
++	int nr;
++
++	/* count the elements in both arrays */
++	for (nr = 0, p = a; *p; nr++, p++)
++		;
++	for (p = b; *p; nr++, p++)
++		;
++	/* one for the NULL-terminator */
++	nr++;
++
++	new = kmalloc_array(nr, sizeof(void *), GFP_KERNEL);
++	if (!new)
++		return NULL;
++
++	/* nr -> last index; p points to NULL in b[] */
++	for (nr--; nr >= 0; nr--, p = p == b ? &a[nr] : p - 1)
++		new[nr] = *p;
++
++	return new;
++}
++EXPORT_SYMBOL_GPL(__memcat_p);
++
+diff --git a/lib/string.c b/lib/string.c
+index 453f359..38e4ca0 100644
+--- a/lib/string.c
++++ b/lib/string.c
+@@ -891,36 +891,6 @@ void *memscan(void *addr, int c, size_t size)
+ EXPORT_SYMBOL(memscan);
+ #endif
+ 
+-/*
+- * Merge two NULL-terminated pointer arrays into a newly allocated
+- * array, which is also NULL-terminated. Nomenclature is inspired by
+- * memset_p() and memcat() found elsewhere in the kernel source tree.
+- */
+-void **__memcat_p(void **a, void **b)
+-{
+-	void **p = a, **new;
+-	int nr;
+-
+-	/* count the elements in both arrays */
+-	for (nr = 0, p = a; *p; nr++, p++)
+-		;
+-	for (p = b; *p; nr++, p++)
+-		;
+-	/* one for the NULL-terminator */
+-	nr++;
+-
+-	new = kmalloc_array(nr, sizeof(void *), GFP_KERNEL);
+-	if (!new)
+-		return NULL;
+-
+-	/* nr -> last index; p points to NULL in b[] */
+-	for (nr--; nr >= 0; nr--, p = p == b ? &a[nr] : p - 1)
+-		new[nr] = *p;
+-
+-	return new;
+-}
+-EXPORT_SYMBOL_GPL(__memcat_p);
+-
+ #ifndef __HAVE_ARCH_STRSTR
+ /**
+  * strstr - Find the first substring in a %NUL terminated string
+diff --git a/lib/test_memcat_p.c b/lib/test_memcat_p.c
+index 2b163a7..849c477 100644
+--- a/lib/test_memcat_p.c
++++ b/lib/test_memcat_p.c
+@@ -1,6 +1,6 @@
+ // SPDX-License-Identifier: GPL-2.0
+ /*
+- * Test cases for memcat_p() in lib/string.c
++ * Test cases for memcat_p() in lib/memcat_p.c
+  */
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+-- 
+2.7.4
+

@@ -1,0 +1,29 @@
+From f038048262469a2d9f1a61ca26f1ebe8762839a1 Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Tue, 15 Nov 2016 11:47:04 +0200
+Subject: [PATCH 0407/1132] mei: bump hbm version to 2.1
+
+Bump HBM version to 2.1 to indicate DMA transfer support.
+
+Change-Id: Ib5671fca70e1f8a294c6c5d491f7664a618eb16b
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ drivers/misc/mei/hw.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mei/hw.h b/drivers/misc/mei/hw.h
+index acbccb8..2b7f767 100644
+--- a/drivers/misc/mei/hw.h
++++ b/drivers/misc/mei/hw.h
+@@ -35,7 +35,7 @@
+ /*
+  * MEI Version
+  */
+-#define HBM_MINOR_VERSION                   0
++#define HBM_MINOR_VERSION                   1
+ #define HBM_MAJOR_VERSION                   2
+ 
+ /*
+-- 
+2.7.4
+

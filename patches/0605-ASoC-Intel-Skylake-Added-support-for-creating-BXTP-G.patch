@@ -1,0 +1,41 @@
+From f5c5cb804e700dc8d2db4b7ab64d305fc5d2d5f6 Mon Sep 17 00:00:00 2001
+From: "Sinha, Mohit" <mohit.sinha@intel.com>
+Date: Thu, 8 Jun 2017 20:37:58 +0530
+Subject: [PATCH 0605/1132] ASoC: Intel: Skylake: Added support for creating
+ BXTP GPMRB machine with TDF8532 codec
+
+GPMRB board has TDF8532 codec on board, so added the machine name.
+
+Change-Id: Icdcb03e1068b11de12740ba9b9c4e7e83050aab0
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: B, Jayachandran <jayachandran.b@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index d47a0f0..4b18925 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1182,6 +1182,11 @@ static struct snd_soc_acpi_mach sst_bxtp_devdata[] = {
+ 		.machine_quirk = snd_soc_acpi_codec_list,
+ 		.quirk_data = &bxt_codecs,
+ 	},
++	{
++		.id = "INT34C3",
++		.drv_name = "bxt_tdf8532",
++		.fw_filename = "intel/dsp_fw_bxtn.bin",
++	},
+ 	{}
+ };
+ 
+-- 
+2.7.4
+

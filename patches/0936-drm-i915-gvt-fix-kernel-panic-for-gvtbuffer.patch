@@ -1,0 +1,46 @@
+From 5c7c03781afae3cdc74c2c483235a1637582cbe7 Mon Sep 17 00:00:00 2001
+From: Zhipeng Gong <zhipeng.gong@intel.com>
+Date: Tue, 23 Oct 2018 16:36:52 +0800
+Subject: [PATCH 0936/1132] drm/i915/gvt: fix kernel panic for gvtbuffer
+
+The obj created in i915_gem_object_create_gvtbuffer does not init
+obj->mm.link. when __i915_gem_free_objects call
+list_del_init(&obj->mm.link), it causes kernel panic.
+
+This patch fix it by add obj->mm.link to unbound list.
+
+Tracked-On: projectacrn/acrn-hypervisor#1576
+Signed-off-by: Zhipeng Gong <zhipeng.gong@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem_gvtbuffer.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c b/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+index f482ece..6e58fa1 100644
+--- a/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
++++ b/drivers/gpu/drm/i915/i915_gem_gvtbuffer.c
+@@ -115,6 +115,8 @@ i915_gem_object_create_gvtbuffer(struct drm_device *dev,
+ 				 u32 start, u32 num_pages)
+ {
+ 	struct drm_i915_gem_object *obj;
++	struct drm_i915_private *i915 = to_i915(dev);
++
+ 	obj = i915_gem_object_alloc(to_i915(dev));
+ 	if (obj == NULL)
+ 		return NULL;
+@@ -134,6 +136,11 @@ i915_gem_object_create_gvtbuffer(struct drm_device *dev,
+ 
+ 	DRM_DEBUG_DRIVER("GVT_GEM: backing store base = 0x%x pages = 0x%x\n",
+ 			 start, num_pages);
++
++	spin_lock(&i915->mm.obj_lock);
++	list_add(&obj->mm.link, &i915->mm.unbound_list);
++	spin_unlock(&i915->mm.obj_lock);
++
+ 	return obj;
+ }
+ 
+-- 
+2.7.4
+

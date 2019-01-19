@@ -1,0 +1,149 @@
+From 43fbdd7c348bf5b04d364506da647a1c4407c903 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Tue, 14 Aug 2018 12:41:13 +0200
+Subject: [PATCH 0717/1132] ASoC: Intel: Move icl machine drv tables to common
+ directory.
+
+Align with machine-drv-tables declaration model present on upstream.
+Tables are moved from skl.c into separate file within common directory
+dedicated to icl-specific data only.
+
+Change-Id: I67ead17edb1bc469894a053e7d85b67409eeb2e6
+Depends-On: I3c2c0ee4eeffddb495dfd765788b9cc861e7741e
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+Reviewed-on:
+Reviewed-by: Uzieblo, Olgierd <olgierd.uzieblo@intel.com>
+---
+ include/sound/soc-acpi-intel-match.h              |  1 +
+ sound/soc/intel/common/Makefile                   |  2 +-
+ sound/soc/intel/common/soc-acpi-intel-icl-match.c | 46 +++++++++++++++++++++++
+ sound/soc/intel/skylake/skl.c                     | 29 +-------------
+ 4 files changed, 49 insertions(+), 29 deletions(-)
+ create mode 100644 sound/soc/intel/common/soc-acpi-intel-icl-match.c
+
+diff --git a/include/sound/soc-acpi-intel-match.h b/include/sound/soc-acpi-intel-match.h
+index bb1d24b..5409661 100644
+--- a/include/sound/soc-acpi-intel-match.h
++++ b/include/sound/soc-acpi-intel-match.h
+@@ -24,5 +24,6 @@ extern struct snd_soc_acpi_mach snd_soc_acpi_intel_kbl_machines[];
+ extern struct snd_soc_acpi_mach snd_soc_acpi_intel_bxt_machines[];
+ extern struct snd_soc_acpi_mach snd_soc_acpi_intel_glk_machines[];
+ extern struct snd_soc_acpi_mach snd_soc_acpi_intel_cnl_machines[];
++extern struct snd_soc_acpi_mach snd_soc_acpi_intel_icl_machines[];
+ 
+ #endif
+diff --git a/sound/soc/intel/common/Makefile b/sound/soc/intel/common/Makefile
+index 915a34c..fd52419 100644
+--- a/sound/soc/intel/common/Makefile
++++ b/sound/soc/intel/common/Makefile
+@@ -7,7 +7,7 @@ snd-soc-acpi-intel-match-objs := soc-acpi-intel-byt-match.o soc-acpi-intel-cht-m
+ 	soc-acpi-intel-hsw-bdw-match.o \
+ 	soc-acpi-intel-skl-match.o soc-acpi-intel-kbl-match.o \
+ 	soc-acpi-intel-bxt-match.o soc-acpi-intel-glk-match.o \
+-	soc-acpi-intel-cnl-match.o
++	soc-acpi-intel-cnl-match.o soc-acpi-intel-icl-match.o
+ 
+ obj-$(CONFIG_SND_SOC_INTEL_SST) += snd-soc-sst-dsp.o snd-soc-sst-ipc.o
+ obj-$(CONFIG_SND_SOC_INTEL_SST_ACPI) += snd-soc-sst-acpi.o
+diff --git a/sound/soc/intel/common/soc-acpi-intel-icl-match.c b/sound/soc/intel/common/soc-acpi-intel-icl-match.c
+new file mode 100644
+index 0000000..94a7e56
+--- /dev/null
++++ b/sound/soc/intel/common/soc-acpi-intel-icl-match.c
+@@ -0,0 +1,46 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * soc-apci-intel-icl-match.c - tables and support for ICL ACPI enumeration.
++ *
++ * Copyright (c) 2018, Intel Corporation.
++ *
++ */
++
++#include <sound/soc-acpi.h>
++#include <sound/soc-acpi-intel-match.h>
++#include "../skylake/skl.h"
++
++static struct skl_machine_pdata icl_pdata = {
++	.use_tplg_pcm = true,
++};
++
++struct snd_soc_acpi_mach snd_soc_acpi_intel_icl_machines[] = {
++#if IS_ENABLED(CONFIG_SND_SOC_RT700)
++	{
++		.id = "dummy",
++		.drv_name = "icl_rt700",
++		.fw_filename = "intel/dsp_fw_icl.bin",
++		.pdata = &icl_pdata,
++	},
++#elif IS_ENABLED(CONFIG_SND_SOC_WM5110)
++	{
++		.id = "dummy",
++		.drv_name = "icl_wm8281",
++		.fw_filename = "intel/dsp_fw_icl.bin",
++		.pdata = &icl_pdata,
++	},
++#else
++	{
++		.id = "dummy",
++		.drv_name = "icl_rt274",
++		.fw_filename = "intel/dsp_fw_icl.bin",
++		.pdata = &icl_pdata,
++	},
++
++#endif
++	{}
++};
++EXPORT_SYMBOL_GPL(snd_soc_acpi_intel_icl_machines);
++
++MODULE_LICENSE("GPL v2");
++MODULE_DESCRIPTION("Intel Common ACPI Match module");
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index f24d759..5c3db44 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1176,33 +1176,6 @@ static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
+ 	{}
+ };
+ 
+-static struct snd_soc_acpi_mach sst_icl_devdata[] = {
+-#if IS_ENABLED(CONFIG_SND_SOC_RT700)
+-	{
+-		.id = "dummy",
+-		.drv_name = "icl_rt700",
+-		.fw_filename = "intel/dsp_fw_icl.bin",
+-		.pdata = &cnl_pdata,
+-	},
+-#elif IS_ENABLED(CONFIG_SND_SOC_WM5110)
+-	{
+-		.id = "dummy",
+-		.drv_name = "icl_wm8281",
+-		.fw_filename = "intel/dsp_fw_icl.bin",
+-		.pdata = &cnl_pdata,
+-	},
+-#else
+-	{
+-		.id = "dummy",
+-		.drv_name = "icl_rt274",
+-		.fw_filename = "intel/dsp_fw_icl.bin",
+-		.pdata = &cnl_pdata,
+-	},
+-
+-#endif
+-	{}
+-};
+-
+ /* PCI IDs */
+ static const struct pci_device_id skl_ids[] = {
+ 	/* Sunrise Point-LP */
+@@ -1222,7 +1195,7 @@ static const struct pci_device_id skl_ids[] = {
+ 		.driver_data = (unsigned long)&snd_soc_acpi_intel_cnl_machines},
+ 	/* ICL */
+ 	{ PCI_DEVICE(0x8086, 0x34c8),
+-		.driver_data = (unsigned long)&sst_icl_devdata},
++		.driver_data = (unsigned long)&snd_soc_acpi_intel_icl_machines},
+ 	{ 0, }
+ };
+ MODULE_DEVICE_TABLE(pci, skl_ids);
+-- 
+2.7.4
+

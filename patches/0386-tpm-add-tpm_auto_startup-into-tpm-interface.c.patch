@@ -1,0 +1,85 @@
+From 6f161272aca7261057f58bba172ad28474dba715 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Sat, 15 Sep 2018 20:46:07 +0300
+Subject: [PATCH 0386/1132] tpm: add tpm_auto_startup() into tpm-interface.c
+
+Add wrapper tpm_auto_startup() to tpm-interface.c
+instead of open coded decision between TPM 1.x and TPM 2.x
+in tpm-chip.c
+
+V3: New in the series.
+V4: Fix the commit message.
+V5: Resend.
+
+Change-Id: I5725e1d8bfb6cfbd708135cbd10e2071a5bcd608
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Tested-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+---
+ drivers/char/tpm/tpm-chip.c      | 11 +++--------
+ drivers/char/tpm/tpm-interface.c | 15 +++++++++++++++
+ drivers/char/tpm/tpm.h           |  1 +
+ 3 files changed, 19 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-chip.c b/drivers/char/tpm/tpm-chip.c
+index 46caadc..32db846 100644
+--- a/drivers/char/tpm/tpm-chip.c
++++ b/drivers/char/tpm/tpm-chip.c
+@@ -451,14 +451,9 @@ int tpm_chip_register(struct tpm_chip *chip)
+ {
+ 	int rc;
+ 
+-	if (chip->ops->flags & TPM_OPS_AUTO_STARTUP) {
+-		if (chip->flags & TPM_CHIP_FLAG_TPM2)
+-			rc = tpm2_auto_startup(chip);
+-		else
+-			rc = tpm1_auto_startup(chip);
+-		if (rc)
+-			return rc;
+-	}
++	rc = tpm_auto_startup(chip);
++	if (rc)
++		return rc;
+ 
+ 	tpm_sysfs_add_device(chip);
+ 
+diff --git a/drivers/char/tpm/tpm-interface.c b/drivers/char/tpm/tpm-interface.c
+index 54b8170..69e007a 100644
+--- a/drivers/char/tpm/tpm-interface.c
++++ b/drivers/char/tpm/tpm-interface.c
+@@ -545,6 +545,21 @@ int tpm_send(struct tpm_chip *chip, void *cmd, size_t buflen)
+ }
+ EXPORT_SYMBOL_GPL(tpm_send);
+ 
++int tpm_auto_startup(struct tpm_chip *chip)
++{
++	int rc;
++
++	if (!(chip->ops->flags & TPM_OPS_AUTO_STARTUP))
++		return 0;
++
++	if (chip->flags & TPM_CHIP_FLAG_TPM2)
++		rc = tpm2_auto_startup(chip);
++	else
++		rc = tpm1_auto_startup(chip);
++
++	return rc;
++}
++
+ /*
+  * We are about to suspend. Save the TPM state
+  * so that it can be restored.
+diff --git a/drivers/char/tpm/tpm.h b/drivers/char/tpm/tpm.h
+index 2eb73f6..daca1d0 100644
+--- a/drivers/char/tpm/tpm.h
++++ b/drivers/char/tpm/tpm.h
+@@ -541,6 +541,7 @@ ssize_t tpm_transmit_cmd(struct tpm_chip *chip, struct tpm_space *space,
+ 			 size_t min_rsp_body_length, unsigned int flags,
+ 			 const char *desc);
+ int tpm_get_timeouts(struct tpm_chip *);
++int tpm_auto_startup(struct tpm_chip *chip);
+ 
+ int tpm1_pm_suspend(struct tpm_chip *chip, int tpm_suspend_pcr);
+ int tpm1_auto_startup(struct tpm_chip *chip);
+-- 
+2.7.4
+

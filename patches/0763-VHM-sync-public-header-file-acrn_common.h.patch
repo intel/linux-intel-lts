@@ -1,0 +1,42 @@
+From 19e5aa7d62e45e1d3539012981da2e89ad8c44d6 Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:58 +0800
+Subject: [PATCH 0763/1132] VHM: sync public header file acrn_common.h
+
+Change-Id: I1e0ac4d26b22cda4d1db81a83dca8d8806405a8c
+Tracked-On: 212688
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ include/linux/vhm/acrn_common.h | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index a6f4664..f27feb7 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -144,7 +144,7 @@ struct acrn_create_vm {
+ 	int32_t vmid;	/* OUT: return vmid to VHM. Keep it first field */
+ 	uint32_t vcpu_num;	/* IN: VM vcpu number */
+ 	uint8_t	 GUID[16];	/* IN: GUID of this vm */
+-	uint8_t	 trusty_enabled;/* IN: whether trusty is enabled */
++	uint8_t	 secure_world_enabled;/* IN: whether Secure World is enabled */
+ 	uint8_t  reserved[31];	/* Reserved for future use */
+ } __attribute__((aligned(8)));
+ 
+@@ -197,4 +197,13 @@ struct acrn_vm_pci_msix_remap {
+ 	uint32_t vector_ctl;
+ } __attribute__((aligned(8)));
+ 
++/* It's designed to support passing DM config data pointer, based on it,
++ * hypervisor would parse then pass DM defined configration to GUEST vcpu
++ * when booting guest VM.
++ * the address 0xd0000 here is designed by DM, as it arranged all memory
++ * layout below 1M, DM should make sure there is no overlap for the address
++ * 0xd0000 usage.
++ */
++#define GUEST_CFG_OFFSET 	0xd0000
++
+ #endif /* ACRN_COMMON_H */
+-- 
+2.7.4
+

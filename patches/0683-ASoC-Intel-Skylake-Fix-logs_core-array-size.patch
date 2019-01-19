@@ -1,0 +1,33 @@
+From 338aa55f63cd19f6304b584682427061a099d7c3 Mon Sep 17 00:00:00 2001
+From: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Date: Fri, 23 Feb 2018 15:47:19 +0530
+Subject: [PATCH 0683/1132] ASoC: Intel: Skylake: Fix logs_core array size
+
+2 extra trace buffer dais were added for CNL but logs_core array size
+had not been updated to accommodate this.
+
+Fix the logs_core array size to correct value.
+
+Fixes: ccc6166da92f ("ASoC: Intel: Skylake: Add trace buffer dais for CNL")
+Change-Id: I2ec363e22605d60ec886fdea20a600c9583a4b4e
+Signed-off-by: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 36e699a..436e036 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -365,7 +365,7 @@ struct skl_log_state_msg {
+ 	uint32_t  fifo_full_timer_period;
+ 
+ 	u32	core_mask;
+-	struct	skl_log_state logs_core[2];
++	struct	skl_log_state logs_core[4];
+ };
+ 
+ struct SystemTime {
+-- 
+2.7.4
+

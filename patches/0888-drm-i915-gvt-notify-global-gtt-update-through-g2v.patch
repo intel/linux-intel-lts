@@ -1,0 +1,146 @@
+From ef2272cc8ecbecf5d67414917f38b83723b76572 Mon Sep 17 00:00:00 2001
+From: Zhipeng Gong <zhipeng.gong@intel.com>
+Date: Fri, 14 Sep 2018 16:10:21 +0800
+Subject: [PATCH 0888/1132] drm/i915/gvt: notify global gtt update through g2v
+
+This patch extends g2v notification to notify host GVT-g of
+ggtt update from guest, including ggtt_insert_entries and
+ggtt_clear_range. This patch also add one new pvmmio level
+to control ggtt update.
+
+This patch is needed for both uos and sos.
+
+v2:
+- calculate num_entries from gtt_entries.
+
+v3:
+- pass cache_level to GVT-g
+- consolidate the same code into a function.
+
+Tracked-On: projectacrn/acrn-hypervisor#994
+Signed-off-by: Zhipeng Gong <zhipeng.gong@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem_gtt.c | 40 +++++++++++++++++++++++++++++++++++++
+ drivers/gpu/drm/i915/i915_pvinfo.h  | 12 ++++++++++-
+ 2 files changed, 51 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem_gtt.c b/drivers/gpu/drm/i915/i915_gem_gtt.c
+index 8b5b524..fee8fde 100644
+--- a/drivers/gpu/drm/i915/i915_gem_gtt.c
++++ b/drivers/gpu/drm/i915/i915_gem_gtt.c
+@@ -2503,6 +2503,17 @@ static void gen8_set_pte(void __iomem *addr, gen8_pte_t pte)
+ 	writeq(pte, addr);
+ }
+ 
++static void vgpu_ggtt_insert(struct drm_i915_private *dev_priv,
++	u64 start, int num_entries, enum i915_cache_level level)
++{
++	struct gvt_shared_page *shared_page = dev_priv->shared_page;
++
++	writeq(start, &shared_page->pv_ggtt.start);
++	writeq(num_entries, &shared_page->pv_ggtt.length);
++	writel(level, &shared_page->pv_ggtt.cache_level);
++	I915_WRITE(vgtif_reg(g2v_notify), VGT_G2V_GGTT_INSERT);
++}
++
+ static void gen8_ggtt_insert_page(struct i915_address_space *vm,
+ 				  dma_addr_t addr,
+ 				  u64 offset,
+@@ -2515,6 +2526,11 @@ static void gen8_ggtt_insert_page(struct i915_address_space *vm,
+ 
+ 	gen8_set_pte(pte, gen8_pte_encode(addr, level, 0));
+ 
++	if (PVMMIO_LEVEL(vm->i915, PVMMIO_GGTT_UPDATE)) {
++		vgpu_ggtt_insert(vm->i915, offset, 1, level);
++		return;
++	}
++
+ 	ggtt->invalidate(vm->i915);
+ }
+ 
+@@ -2539,6 +2555,20 @@ static void gen8_ggtt_insert_entries(struct i915_address_space *vm,
+ 	for_each_sgt_dma(addr, sgt_iter, vma->pages)
+ 		gen8_set_pte(gtt_entries++, pte_encode | addr);
+ 
++	if (PVMMIO_LEVEL(vm->i915, PVMMIO_GGTT_UPDATE)) {
++		int num_entries = gtt_entries -
++				   ((gen8_pte_t __iomem *)ggtt->gsm +
++				    (vma->node.start >> PAGE_SHIFT));
++		/*
++		 * Sometimes number of entries does not match vma node size.
++		 * Pass number of pte entries instead.
++		 */
++		vgpu_ggtt_insert(vm->i915, vma->node.start,
++				 num_entries, level);
++		return;
++	}
++
++
+ 	/*
+ 	 * We want to flush the TLBs only after we're certain all the PTE
+ 	 * updates have finished.
+@@ -2612,6 +2642,16 @@ static void gen8_ggtt_clear_range(struct i915_address_space *vm,
+ 
+ 	for (i = 0; i < num_entries; i++)
+ 		gen8_set_pte(&gtt_base[i], scratch_pte);
++
++	if (PVMMIO_LEVEL(vm->i915, PVMMIO_GGTT_UPDATE)) {
++		struct drm_i915_private *dev_priv = vm->i915;
++		struct gvt_shared_page *shared_page = dev_priv->shared_page;
++
++		writeq(start, &shared_page->pv_ggtt.start);
++		writeq(length, &shared_page->pv_ggtt.length);
++		I915_WRITE(vgtif_reg(g2v_notify), VGT_G2V_GGTT_CLEAR);
++	}
++
+ }
+ 
+ static void bxt_vtd_ggtt_wa(struct i915_address_space *vm)
+diff --git a/drivers/gpu/drm/i915/i915_pvinfo.h b/drivers/gpu/drm/i915/i915_pvinfo.h
+index 82ab32e..c15d457 100644
+--- a/drivers/gpu/drm/i915/i915_pvinfo.h
++++ b/drivers/gpu/drm/i915/i915_pvinfo.h
+@@ -49,6 +49,8 @@ enum vgt_g2v_type {
+ 	VGT_G2V_PPGTT_L4_ALLOC,
+ 	VGT_G2V_PPGTT_L4_CLEAR,
+ 	VGT_G2V_PPGTT_L4_INSERT,
++	VGT_G2V_GGTT_INSERT,
++	VGT_G2V_GGTT_CLEAR,
+ 	VGT_G2V_MAX,
+ };
+ 
+@@ -89,6 +91,12 @@ struct pv_ppgtt_update {
+ 	u32 cache_level;
+ };
+ 
++struct pv_ggtt_update {
++	u64 start;
++	u64 length;
++	u32 cache_level;
++};
++
+ /* shared page(4KB) between gvt and VM, located at the first page next
+  * to MMIO region(2MB size normally).
+  */
+@@ -98,7 +106,8 @@ struct gvt_shared_page {
+ 	struct pv_plane_update pv_plane;
+ 	struct pv_plane_wm_update pv_plane_wm;
+ 	struct pv_ppgtt_update pv_ppgtt;
+-	u32 rsvd2[0x400 - 40];
++	struct pv_ggtt_update pv_ggtt;
++	u32 rsvd2[0x400 - 46];
+ };
+ 
+ #define VGPU_PVMMIO(vgpu) vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio))
+@@ -111,6 +120,7 @@ enum pvmmio_levels {
+ 	PVMMIO_PLANE_UPDATE = 0x2,
+ 	PVMMIO_PLANE_WM_UPDATE = 0x4,
+ 	PVMMIO_PPGTT_UPDATE = 0x10,
++	PVMMIO_GGTT_UPDATE = 0x20,
+ };
+ 
+ /*
+-- 
+2.7.4
+

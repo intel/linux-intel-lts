@@ -1,0 +1,40 @@
+From 04b42d5b0215e746e8d6225336bd538385943b53 Mon Sep 17 00:00:00 2001
+From: Jeremy Compostella <jeremy.compostella@intel.com>
+Date: Thu, 8 Nov 2018 11:11:00 +0530
+Subject: [PATCH 0298/1132] serial: 8250_dma: stop ongoing RX DMA on exception
+
+If we get an exeption interrupt. i.e. UART_IIR_RLSI, stop
+any ongoing RX DMA transfer otherwise it might generate
+more spurious interrupts and make port unavailable anymore.
+
+As has been seen on Intel Broxton system:
+...
+[  168.526281] serial8250: too much work for irq5
+[  168.535908] serial8250: too much work for irq5
+[  173.449464] serial8250_interrupt: 4439 callbacks suppressed
+[  173.455694] serial8250: too much work for irq5
+...
+
+Signed-off-by: Jeremy Compostella <jeremy.compostella@intel.com>
+---
+ drivers/tty/serial/8250/8250_port.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/tty/serial/8250/8250_port.c b/drivers/tty/serial/8250/8250_port.c
+index a2705b4..3d15be9 100644
+--- a/drivers/tty/serial/8250/8250_port.c
++++ b/drivers/tty/serial/8250/8250_port.c
+@@ -1846,9 +1846,8 @@ static bool handle_rx_dma(struct uart_8250_port *up, unsigned int iir)
+ {
+ 	switch (iir & 0x3f) {
+ 	case UART_IIR_RX_TIMEOUT:
+-		serial8250_rx_dma_flush(up);
+-		/* fall-through */
+ 	case UART_IIR_RLSI:
++		serial8250_rx_dma_flush(up);
+ 		return true;
+ 	}
+ 	return up->dma->rx_dma(up);
+-- 
+2.7.4
+

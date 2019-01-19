@@ -1,0 +1,82 @@
+From 153d23ed64c1b17ba01aaac5284c6ebf290e8480 Mon Sep 17 00:00:00 2001
+From: Felipe Balbi <felipe.balbi@linux.intel.com>
+Date: Wed, 1 Aug 2018 13:32:07 +0300
+Subject: [PATCH 0334/1132] usb: dwc3: gadget: track number of TRBs per request
+
+This will help us remove the wait_event() from our ->dequeue().
+
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+---
+ drivers/usb/dwc3/core.h   | 3 +++
+ drivers/usb/dwc3/gadget.c | 6 ++++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/drivers/usb/dwc3/core.h b/drivers/usb/dwc3/core.h
+index 4872cba..0de78cb 100644
+--- a/drivers/usb/dwc3/core.h
++++ b/drivers/usb/dwc3/core.h
+@@ -847,6 +847,7 @@ struct dwc3_hwparams {
+  * @epnum: endpoint number to which this request refers
+  * @trb: pointer to struct dwc3_trb
+  * @trb_dma: DMA address of @trb
++ * @num_trbs: number of TRBs used by this request
+  * @needs_extra_trb: true when request needs one extra TRB (either due to ZLP
+  *	or unaligned OUT)
+  * @direction: IN or OUT direction flag
+@@ -867,6 +868,8 @@ struct dwc3_request {
+ 	struct dwc3_trb		*trb;
+ 	dma_addr_t		trb_dma;
+ 
++	unsigned		num_trbs;
++
+ 	unsigned		needs_extra_trb:1;
+ 	unsigned		direction:1;
+ 	unsigned		mapped:1;
+diff --git a/drivers/usb/dwc3/gadget.c b/drivers/usb/dwc3/gadget.c
+index 5da7cb6..fdb5d8a 100644
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -1038,6 +1038,8 @@ static void dwc3_prepare_one_trb(struct dwc3_ep *dep,
+ 		req->trb_dma = dwc3_trb_dma_offset(dep, trb);
+ 	}
+ 
++	req->num_trbs++;
++
+ 	__dwc3_prepare_one_trb(dep, trb, dma, length, chain, node,
+ 			stream_id, short_not_ok, no_interrupt);
+ }
+@@ -1072,6 +1074,7 @@ static void dwc3_prepare_one_trb_sg(struct dwc3_ep *dep,
+ 
+ 			/* Now prepare one extra TRB to align transfer size */
+ 			trb = &dep->trb_pool[dep->trb_enqueue];
++			req->num_trbs++;
+ 			__dwc3_prepare_one_trb(dep, trb, dwc->bounce_addr,
+ 					maxp - rem, false, 1,
+ 					req->request.stream_id,
+@@ -1116,6 +1119,7 @@ static void dwc3_prepare_one_trb_linear(struct dwc3_ep *dep,
+ 
+ 		/* Now prepare one extra TRB to align transfer size */
+ 		trb = &dep->trb_pool[dep->trb_enqueue];
++		req->num_trbs++;
+ 		__dwc3_prepare_one_trb(dep, trb, dwc->bounce_addr, maxp - rem,
+ 				false, 1, req->request.stream_id,
+ 				req->request.short_not_ok,
+@@ -1132,6 +1136,7 @@ static void dwc3_prepare_one_trb_linear(struct dwc3_ep *dep,
+ 
+ 		/* Now prepare one extra TRB to handle ZLP */
+ 		trb = &dep->trb_pool[dep->trb_enqueue];
++		req->num_trbs++;
+ 		__dwc3_prepare_one_trb(dep, trb, dwc->bounce_addr, 0,
+ 				false, 1, req->request.stream_id,
+ 				req->request.short_not_ok,
+@@ -2251,6 +2256,7 @@ static int dwc3_gadget_ep_reclaim_completed_trb(struct dwc3_ep *dep,
+ 	dwc3_ep_inc_deq(dep);
+ 
+ 	trace_dwc3_complete_trb(dep, trb);
++	req->num_trbs--;
+ 
+ 	/*
+ 	 * If we're in the middle of series of chained TRBs and we
+-- 
+2.7.4
+

@@ -1,0 +1,95 @@
+From 3fb7d28e97b5445eea4180ce6b0cc745bdf5f52e Mon Sep 17 00:00:00 2001
+From: Mitul Chokshi <mitul.chokshi@intel.com>
+Date: Fri, 14 Sep 2018 16:10:18 +0800
+Subject: [PATCH 0861/1132] drm/i915/gvt: Add vgt-id in context id
+
+Context id is reported to OABUFFER along with performance statistics
+counter. So when performance monitoring code gets the Context id, it
+can extract vm-id to identify which VM submitted given context.
+v2: define SIZE_CONTEXT_HW_ID even when CONFIG_DRM_I915_GVT is not set,
+which fixes RTC defect 192523.
+
+Change-Id: I7e8ed7f741e2f41e2e9da4b7bdd463dfd3e2fe12
+Signed-off-by: Mitul Chokshi <mitul.chokshi@intel.com>
+Signed-off-by: Daniel van der Wath <danielx.j.van.der.wath@intel.com>
+Reviewed-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-by: Adebisi, YetundeX <yetundex.adebisi@intel.com>
+Verified-by: Van Der Wath, Daniel J <danielx.j.van.der.wath@intel.com>
+(cherry picked from commit 3e52d8f679eb93c2c1eb7e0f69de34c7d78260d2)
+(cherry picked from commit 74c64f2595b70a2079c28bbda960fff7d3e99289)
+Reviewed-on:
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/i915_drv.h         |  4 ++++
+ drivers/gpu/drm/i915/i915_gem_context.c | 16 +++++++++++++++-
+ 2 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index d6c25bea..5418ca7 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -1837,6 +1837,10 @@ struct drm_i915_private {
+ 		 * This is limited in execlists to 21 bits.
+ 		 */
+ 		struct ida hw_ida;
++
++	/* In case of virtualization, 3-bits of vgt-id will be added to hw_id */
++#define SIZE_CONTEXT_HW_ID_GVT (18)
++#define MAX_CONTEXT_HW_ID_GVT (1<<SIZE_CONTEXT_HW_ID_GVT)
+ #define MAX_CONTEXT_HW_ID (1<<21) /* exclusive */
+ #define MAX_GUC_CONTEXT_HW_ID (1 << 20) /* exclusive */
+ #define GEN11_MAX_CONTEXT_HW_ID (1<<11) /* exclusive */
+diff --git a/drivers/gpu/drm/i915/i915_gem_context.c b/drivers/gpu/drm/i915/i915_gem_context.c
+index b10770c..aeb8ec8 100644
+--- a/drivers/gpu/drm/i915/i915_gem_context.c
++++ b/drivers/gpu/drm/i915/i915_gem_context.c
+@@ -91,6 +91,7 @@
+ #include "i915_drv.h"
+ #include "i915_trace.h"
+ #include "intel_workarounds.h"
++#include "i915_vgpu.h"
+ 
+ #define ALL_L3_SLICES(dev) (1 << NUM_L3_SLICES(dev)) - 1
+ 
+@@ -136,7 +137,12 @@ static void i915_gem_context_free(struct i915_gem_context *ctx)
+ 
+ 	list_del(&ctx->link);
+ 
+-	ida_simple_remove(&ctx->i915->contexts.hw_ida, ctx->hw_id);
++	if (intel_vgpu_active(ctx->i915))
++		ida_simple_remove(&ctx->i915->contexts.hw_ida, ctx->hw_id &
++				~(0x7 << SIZE_CONTEXT_HW_ID_GVT));
++	else
++		ida_simple_remove(&ctx->i915->contexts.hw_ida, ctx->hw_id);
++
+ 	kfree_rcu(ctx, rcu);
+ }
+ 
+@@ -217,6 +223,8 @@ static int assign_hw_id(struct drm_i915_private *dev_priv, unsigned *out)
+ 		 */
+ 		if (USES_GUC_SUBMISSION(dev_priv))
+ 			max = MAX_GUC_CONTEXT_HW_ID;
++		else if (intel_vgpu_active(dev_priv) || intel_gvt_active(dev_priv))
++			max = MAX_CONTEXT_HW_ID_GVT;
+ 		else
+ 			max = MAX_CONTEXT_HW_ID;
+ 	}
+@@ -236,6 +244,12 @@ static int assign_hw_id(struct drm_i915_private *dev_priv, unsigned *out)
+ 			return ret;
+ 	}
+ 
++	if (intel_vgpu_active(dev_priv)) {
++		/* add vgpu_id to context hw_id */
++		ret = ret | (I915_READ(vgtif_reg(vgt_id))
++				<< SIZE_CONTEXT_HW_ID_GVT);
++	}
++
+ 	*out = ret;
+ 	return 0;
+ }
+-- 
+2.7.4
+

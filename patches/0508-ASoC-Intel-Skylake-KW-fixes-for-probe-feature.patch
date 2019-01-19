@@ -1,0 +1,108 @@
+From 34bf97429abf9786c090c41a3c38b48f5e8f0fb7 Mon Sep 17 00:00:00 2001
+From: G Kranthi <gudishax.kranthikumar@intel.com>
+Date: Tue, 10 May 2016 11:11:09 +0530
+Subject: [PATCH 0508/1132] ASoC: Intel: Skylake: KW fixes for probe feature
+
+This patch will add fixes for below klocwork errors,
+
+1. Array 'eprobe' of size 8 may use index value(s) -1.
+2. Array 'iprobe' of size 6 may use index value(s) -1.
+3. Pointer 'pconfig->estream' returned from call to
+   function 'hdac_ext_host_stream_compr_assign' at line 68
+   may be NULL and will be dereferenced at line 71.
+
+Change-Id: I407d9b2758addfd78508f96378a00d583c5d8110
+Signed-off-by: G Kranthi <gudishax.kranthikumar@intel.com>
+Reviewed-on:
+Reviewed-by: B, Jayachandran <jayachandran.b@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/soc/intel/skylake/skl-probe.c    |  8 +++++++-
+ sound/soc/intel/skylake/skl-topology.c | 16 +++++++++++++++-
+ 2 files changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index 7c206ec..7c6e377 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -68,6 +68,9 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
+ 		pconfig->estream = hdac_ext_host_stream_compr_assign(ebus,
+ 								substream,
+ 							SND_COMPRESS_CAPTURE);
++		if (!pconfig->estream)
++			return -EINVAL;
++
+ 		pconfig->edma_id = hdac_stream(pconfig->estream)->stream_tag - 1;
+ 	}
+ 
+@@ -146,7 +149,10 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
+ 	if (substream->direction == SND_COMPRESS_PLAYBACK)
+ 		skl_tplg_attach_probe_dma(pconfig->w, skl->skl_sst, dai);
+ 
+-	skl_tplg_set_probe_params(pconfig->w, skl->skl_sst, substream->direction, dai);
++	ret = skl_tplg_set_probe_params(pconfig->w, skl->skl_sst, substream->direction, dai);
++	if (ret < 0)
++		return -EINVAL;
++
+ 	pconfig->probe_count++;
+ 
+ #if USE_SPIB
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 7aefd1c..49f8404f 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -530,6 +530,9 @@ int skl_tplg_set_probe_params(struct snd_soc_dapm_widget *w,
+ 
+ 		/* only one injector point can be set at a time*/
+ 		n = skl_get_probe_index(dai, pconfig);
++		if (n < 0)
++			return -EINVAL;
++
+ 		k = &w->kcontrol_news[pconfig->no_extractor + n];
+ 
+ 		if (k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK) {
+@@ -1808,6 +1811,10 @@ static int skl_cache_probe_param(struct snd_kcontrol *kctl,
+ 				break;
+ 			}
+ 		}
++
++		if (index < 0)
++			return -EINVAL;
++
+ 		pr_debug("Setting extractor probe index %d\n", index);
+ 		memcpy(&ap->node_id, &node_id, sizeof(u32));
+ 		pconfig->eprobe[index].id = ap->params;
+@@ -1826,6 +1833,10 @@ static int skl_cache_probe_param(struct snd_kcontrol *kctl,
+ 				break;
+ 			}
+ 		}
++
++		if (index < 0)
++			return -EINVAL;
++
+ 		pconfig->iprobe[index].id = ap->params;
+ 		node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
+ 		node_id.node.vindex = pconfig->iprobe[index].dma_id;
+@@ -1852,6 +1863,7 @@ static int skl_tplg_tlv_probe_set(struct snd_kcontrol *kcontrol,
+ 	struct probe_pt_param connect_point;
+ 	int disconnect_point;
+ 	void *offset;
++	int ret;
+ 
+ 	dev_dbg(dapm->dev, "in %s control=%s\n", __func__, kcontrol->id.name);
+ 	dev_dbg(dapm->dev, "size = %u, %#x\n", size, size);
+@@ -1876,7 +1888,9 @@ static int skl_tplg_tlv_probe_set(struct snd_kcontrol *kcontrol,
+ 		dev_dbg(dapm->dev, "connect state = %d, extract_inject = %d, params = %d \n",
+ 						ap->is_connect, ap->is_ext_inj, ap->params);
+ 
+-		skl_cache_probe_param(kcontrol, ap, skl->skl_sst);
++		ret = skl_cache_probe_param(kcontrol, ap, skl->skl_sst);
++		if (ret < 0)
++			return -EINVAL;
+ 
+ 		if (pconfig->probe_count) {
+ 			/* In the case of extraction, additional probe points can be set when
+-- 
+2.7.4
+

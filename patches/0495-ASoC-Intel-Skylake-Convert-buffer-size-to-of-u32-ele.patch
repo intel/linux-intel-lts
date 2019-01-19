@@ -1,0 +1,35 @@
+From 2bc6bd489937f2df06e22ff7ed1e90eb233681cf Mon Sep 17 00:00:00 2001
+From: "Panwar, Ashish" <ashish.panwar@intel.com>
+Date: Fri, 4 Mar 2016 11:20:00 +0530
+Subject: [PATCH 0495/1132] ASoC: Intel: Skylake: Convert buffer size to # of
+ u32 elements before allocating memory
+
+While allocating memory, kfifo expects the number of elements in arguments
+and not the # of bytes. Due to this, kfifo is currently allocating 4 times
+the memory requested by user. Convert buffer size to the number of elements
+before allocating memory.
+
+Change-Id: Ib8938bc1645896a5b342aa7fe5602b4e415960a6
+Signed-off-by: Panwar, Ashish <ashish.panwar@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 284e34f..d462b1b 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -779,6 +779,7 @@ static int skl_trace_compr_set_params(struct snd_compr_stream *stream,
+ 	if (!skl_is_core_valid(core))
+ 		return -EINVAL;
+ 
++	size = size / sizeof(u32);
+ 	if (size & (size - 1)) {
+ 		dev_err(sst->dev, "Buffer size must be a power of 2\n");
+ 		return -EINVAL;
+-- 
+2.7.4
+

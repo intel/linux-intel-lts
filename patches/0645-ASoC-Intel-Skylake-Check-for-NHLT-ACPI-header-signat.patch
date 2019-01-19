@@ -1,0 +1,36 @@
+From c01339768936fa6c03c7e584262ce4a469ec35af Mon Sep 17 00:00:00 2001
+From: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Date: Mon, 18 Sep 2017 16:03:41 +0530
+Subject: [PATCH 0645/1132] ASoC: Intel: Skylake: Check for NHLT ACPI header
+ signature
+
+Due to buggy BIOS acpi_evaluate_dsm() may not return the correct NHLT
+table, so check the NHLT table header signature before accessing it.
+
+Change-Id: I525cc504f1cf71d969bdcc2120b8a280dedeb4f5
+Signed-off-by: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-nhlt.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-nhlt.c b/sound/soc/intel/skylake/skl-nhlt.c
+index 742b0cb..284e765 100644
+--- a/sound/soc/intel/skylake/skl-nhlt.c
++++ b/sound/soc/intel/skylake/skl-nhlt.c
+@@ -28,6 +28,8 @@ static guid_t osc_guid =
+ 	GUID_INIT(0xA69F886E, 0x6CEB, 0x4594,
+ 		  0xA4, 0x1F, 0x7B, 0x5D, 0xCE, 0x24, 0xC5, 0x53);
+ 
++#define NHLT_ACPI_HEADER_SIG	"NHLT"
++
+ int skl_get_nhlt_version(struct device *dev)
+ {
+ 	const char *version;
+-- 
+2.7.4
+

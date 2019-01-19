@@ -1,0 +1,497 @@
+From 6de6bcae5fa967f700fad607b1f03641d7744b09 Mon Sep 17 00:00:00 2001
+From: "Shaik, Kareem M" <kareem.m.shaik@intel.com>
+Date: Sat, 18 Nov 2017 03:34:50 +0530
+Subject: [PATCH 0662/1132] ASoC: Intel: Skylake: Support multiple format
+ configs
+
+A module can have two kinds of set params, as per
+topology requirements. For example, one pre-init and
+one post-init. But currently, there is support for
+just one type, as the format_config.
+
+This patch extends the format_configs to 4, so as to
+be able to support pre-init, post-init and post-bind
+type of set params, for the same module, simultaneously.
+
+Change-Id: I5cdf6a921db6e9ffcabda2ec601795564c8f53d2
+Signed-off-by: Kareem Shaik <kareem.m.shaik@intel.com>
+Reviewed-on:
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ include/uapi/sound/snd_sst_tokens.h    |   6 +-
+ sound/soc/intel/skylake/skl-messages.c |  68 +++++++++++----------
+ sound/soc/intel/skylake/skl-topology.c | 108 +++++++++++++++++++++------------
+ sound/soc/intel/skylake/skl-topology.h |   4 +-
+ 4 files changed, 113 insertions(+), 73 deletions(-)
+
+diff --git a/include/uapi/sound/snd_sst_tokens.h b/include/uapi/sound/snd_sst_tokens.h
+index ba4806d..c04dd04 100644
+--- a/include/uapi/sound/snd_sst_tokens.h
++++ b/include/uapi/sound/snd_sst_tokens.h
+@@ -281,6 +281,8 @@
+  *                              Config contain capture on which SSP to
+  *                              active the FW
+  *
++ * %SKL_TKN_U32_FMT_CFG_IDX:    Format config index
++ *
+  * module_id and loadable flags dont have tokens as these values will be
+  * read from the DSP FW manifest
+  *
+@@ -392,7 +394,9 @@ enum SKL_TKNS {
+ 	SKL_TKN_U32_SCH_SYS_TICK_LL_SRC,
+ 	SKL_TKN_U32_SCH_SYS_TICK_CFG_LEN,
+ 	SKL_TKN_U32_SCH_SYS_TICK_CFG,
+-	SKL_TKN_MAX = SKL_TKN_U32_SCH_SYS_TICK_CFG,
++
++	SKL_TKN_U32_FMT_CFG_IDX,
++	SKL_TKN_MAX = SKL_TKN_U32_FMT_CFG_IDX,
+ };
+ 
+ /*
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index b97255b..c6d9cb3 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -466,12 +466,12 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
+ 	host_cpr_cfg->m_type = SKL_MODULE_TYPE_COPIER;
+ 	host_cpr_cfg->dev_type = SKL_DEVICE_HDAHOST;
+ 	host_cpr_cfg->hw_conn_type = SKL_CONN_SOURCE;
+-	host_cpr_cfg->formats_config.caps_size = 0;
++	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
+ 	host_cpr_cfg->module->resources[0].dma_buffer_size = 2;
+ 	host_cpr_cfg->converter = 0;
+ 	host_cpr_cfg->vbus_id = 0;
+ 	host_cpr_cfg->sdw_agg_enable = 0;
+-	host_cpr_cfg->formats_config.caps_size = 0;
++	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
+ 
+ 	in_fmt->channels = 1;
+ 	in_fmt->s_freq = 96000;
+@@ -572,22 +572,23 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
+ 	link_cpr_cfg->m_out_pin[0].is_dynamic = true;
+ 	link_cpr_cfg->m_out_pin[0].pin_state = SKL_PIN_UNBIND;
+ 
+-	link_cpr_cfg->formats_config.caps_size = (sizeof(u32) * 4);
+-	link_cpr_cfg->formats_config.caps = kzalloc((sizeof(u32) * 4),
+-			GFP_KERNEL);
+-	if (!link_cpr_cfg->formats_config.caps) {
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size =
++							(sizeof(u32) * 4);
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps =
++				kzalloc((sizeof(u32) * 4), GFP_KERNEL);
++	if (!link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps) {
+ 		ret = -ENOMEM;
+ 		goto error;
+ 	}
+ 
+-	link_cpr_cfg->formats_config.caps[0] = 0x0;
+-	link_cpr_cfg->formats_config.caps[1] = 0x1;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[0] = 0x0;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[1] = 0x1;
+ #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+-	link_cpr_cfg->formats_config.caps[2] = 0x1003;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1003;
+ #else
+-	link_cpr_cfg->formats_config.caps[2] = 0x1013;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1013;
+ #endif
+-	link_cpr_cfg->formats_config.caps[3] = 0x0;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[3] = 0x0;
+ 
+ 	/* Init PB CPR1 module */
+ 	ret = skl_init_module(ctx, host_cpr_cfg);
+@@ -610,7 +611,7 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
+ 	kfree(host_cpr_cfg->m_out_pin);
+ 	kfree(link_cpr_cfg->m_in_pin);
+ 	kfree(link_cpr_cfg->m_out_pin);
+-	kfree(link_cpr_cfg->formats_config.caps);
++	kfree(link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps);
+ 	kfree(host_cpr_cfg);
+ 	kfree(link_cpr_cfg);
+ 	kfree(host_cpr_mod);
+@@ -729,27 +730,28 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
+ #endif
+ 	link_cpr_cfg->hw_conn_type = SKL_CONN_SINK;
+ 
+-	link_cpr_cfg->formats_config.caps_size = 0;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
+ 	link_cpr_cfg->module->resources[0].dma_buffer_size = 2;
+ 	link_cpr_cfg->converter = 0;
+ 	link_cpr_cfg->vbus_id = 0;
+ 	link_cpr_cfg->sdw_agg_enable = 0;
+-	link_cpr_cfg->formats_config.caps_size = (sizeof(u32) * 4);
+-	link_cpr_cfg->formats_config.caps = kzalloc((sizeof(u32) * 4),
+-			GFP_KERNEL);
+-	if (!link_cpr_cfg->formats_config.caps) {
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size =
++							(sizeof(u32) * 4);
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps =
++				kzalloc((sizeof(u32) * 4), GFP_KERNEL);
++	if (!link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps) {
+ 		ret = -ENOMEM;
+ 		goto error;
+ 	}
+ 
+-	link_cpr_cfg->formats_config.caps[0] = 0x0;
+-	link_cpr_cfg->formats_config.caps[1] = 0x1;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[0] = 0x0;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[1] = 0x1;
+ #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+-	link_cpr_cfg->formats_config.caps[2] = 0x1104;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1104;
+ #else
+-	link_cpr_cfg->formats_config.caps[2] = 0x1114;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[2] = 0x1114;
+ #endif
+-	link_cpr_cfg->formats_config.caps[3] = 0x1;
++	link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps[3] = 0x1;
+ 
+ 	in_fmt->channels = 6;
+ 	in_fmt->s_freq = 48000;
+@@ -813,7 +815,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
+ 	host_cpr_cfg->dev_type = SKL_DEVICE_HDAHOST;
+ 	host_cpr_cfg->hw_conn_type = SKL_CONN_SINK;
+ 	link_cpr_params.host_dma_id = (bra_data->cp_stream_tag - 1);
+-	host_cpr_cfg->formats_config.caps_size = 0;
++	host_cpr_cfg->formats_config[SKL_PARAM_INIT].caps_size = 0;
+ 	host_cpr_cfg->m_in_pin = kcalloc(host_cpr_cfg->module->max_input_pins,
+ 					sizeof(*host_cpr_cfg->m_in_pin),
+ 					GFP_KERNEL);
+@@ -864,7 +866,7 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
+ 
+ error:
+ 	/* Free up all memory allocated */
+-	kfree(link_cpr_cfg->formats_config.caps);
++	kfree(link_cpr_cfg->formats_config[SKL_PARAM_INIT].caps);
+ 	kfree(link_cpr_cfg->m_in_pin);
+ 	kfree(link_cpr_cfg->m_out_pin);
+ 	kfree(host_cpr_cfg->m_in_pin);
+@@ -1427,15 +1429,15 @@ static void skl_set_base_module_format(struct skl_sst *ctx,
+ static void skl_copy_copier_caps(struct skl_module_cfg *mconfig,
+ 				struct skl_cpr_cfg *cpr_mconfig)
+ {
+-	if (mconfig->formats_config.caps_size == 0)
++	if (mconfig->formats_config[SKL_PARAM_INIT].caps_size == 0)
+ 		return;
+ 
+ 	memcpy(cpr_mconfig->gtw_cfg.config_data,
+-			mconfig->formats_config.caps,
+-			mconfig->formats_config.caps_size);
++			mconfig->formats_config[SKL_PARAM_INIT].caps,
++			mconfig->formats_config[SKL_PARAM_INIT].caps_size);
+ 
+ 	cpr_mconfig->gtw_cfg.config_length =
+-			(mconfig->formats_config.caps_size) / 4;
++			(mconfig->formats_config[SKL_PARAM_INIT].caps_size) / 4;
+ }
+ 
+ #define SKL_NON_GATEWAY_CPR_NODE_ID 0xFFFFFFFF
+@@ -1848,12 +1850,12 @@ static void skl_set_algo_format(struct skl_sst *ctx,
+ 
+ 	skl_set_base_module_format(ctx, mconfig, base_cfg);
+ 
+-	if (mconfig->formats_config.caps_size == 0)
++	if (mconfig->formats_config[SKL_PARAM_INIT].caps_size == 0)
+ 		return;
+ 
+ 	memcpy(algo_mcfg->params,
+-			mconfig->formats_config.caps,
+-			mconfig->formats_config.caps_size);
++			mconfig->formats_config[SKL_PARAM_INIT].caps,
++			mconfig->formats_config[SKL_PARAM_INIT].caps_size);
+ 
+ }
+ 
+@@ -1885,7 +1887,7 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
+ 	switch (mconfig->m_type) {
+ 	case SKL_MODULE_TYPE_COPIER:
+ 		param_size = sizeof(struct skl_cpr_cfg);
+-		param_size += mconfig->formats_config.caps_size;
++		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
+ 		return param_size;
+ 
+ 	case SKL_MODULE_TYPE_PROBE:
+@@ -1900,7 +1902,7 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
+ 
+ 	case SKL_MODULE_TYPE_ALGO:
+ 		param_size = sizeof(struct skl_base_cfg);
+-		param_size += mconfig->formats_config.caps_size;
++		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
+ 		return param_size;
+ 
+ 	case SKL_MODULE_TYPE_BASE_OUTFMT:
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index e532881..c0eb735 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -664,7 +664,7 @@ static int skl_tplg_update_be_blob(struct snd_soc_dapm_widget *w,
+ 	struct skl_module_iface *m_iface = &m_cfg->module->formats[fmt_idx];
+ 
+ 	/* check if we already have blob */
+-	if (m_cfg->formats_config.caps_size > 0)
++	if (m_cfg->formats_config[SKL_PARAM_INIT].caps_size > 0)
+ 		return 0;
+ 
+ 	dev_dbg(ctx->dev, "Applying default cfg blob\n");
+@@ -700,8 +700,8 @@ static int skl_tplg_update_be_blob(struct snd_soc_dapm_widget *w,
+ 	cfg = skl_get_ep_blob(skl, m_cfg->vbus_id, link_type,
+ 					s_fmt, ch, s_freq, dir, dev_type);
+ 	if (cfg) {
+-		m_cfg->formats_config.caps_size = cfg->size;
+-		m_cfg->formats_config.caps = (u32 *) &cfg->caps;
++		m_cfg->formats_config[SKL_PARAM_INIT].caps_size = cfg->size;
++		m_cfg->formats_config[SKL_PARAM_INIT].caps = (u32 *) &cfg->caps;
+ 	} else {
+ 		dev_err(ctx->dev, "Blob NULL for id %x type %d dirn %d\n",
+ 					m_cfg->vbus_id, link_type, dir);
+@@ -942,9 +942,10 @@ int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
+ 	struct skl_algo_data *bc;
+ 	struct skl_specific_cfg *sp_cfg;
+ 
+-	if (mconfig->formats_config.caps_size > 0 &&
+-		mconfig->formats_config.set_params == SKL_PARAM_SET) {
+-		sp_cfg = &mconfig->formats_config;
++	if (mconfig->formats_config[SKL_PARAM_SET].caps_size > 0 &&
++		mconfig->formats_config[SKL_PARAM_SET].set_params ==
++							SKL_PARAM_SET) {
++		sp_cfg = &mconfig->formats_config[SKL_PARAM_SET];
+ 		ret = skl_set_module_params(ctx, sp_cfg->caps,
+ 					sp_cfg->caps_size,
+ 					sp_cfg->param_id, mconfig);
+@@ -994,8 +995,10 @@ static int skl_tplg_set_module_init_data(struct snd_soc_dapm_widget *w)
+ 			if (bc->set_params != SKL_PARAM_INIT)
+ 				continue;
+ 
+-			mconfig->formats_config.caps = (u32 *)bc->params;
+-			mconfig->formats_config.caps_size = bc->size;
++			mconfig->formats_config[SKL_PARAM_INIT].caps =
++							(u32 *)bc->params;
++			mconfig->formats_config[SKL_PARAM_INIT].caps_size =
++								bc->size;
+ 
+ 			break;
+ 		}
+@@ -1432,9 +1435,10 @@ static int skl_tplg_set_module_bind_params(struct snd_soc_dapm_widget *w,
+ 			return 0;
+ 	}
+ 
+-	if (mconfig->formats_config.caps_size > 0 &&
+-		mconfig->formats_config.set_params == SKL_PARAM_BIND) {
+-		sp_cfg = &mconfig->formats_config;
++	if (mconfig->formats_config[SKL_PARAM_BIND].caps_size > 0 &&
++		mconfig->formats_config[SKL_PARAM_BIND].set_params ==
++							SKL_PARAM_BIND) {
++		sp_cfg = &mconfig->formats_config[SKL_PARAM_BIND];
+ 		ret = skl_set_module_params(ctx, sp_cfg->caps,
+ 					sp_cfg->caps_size,
+ 					sp_cfg->param_id, mconfig);
+@@ -2390,7 +2394,8 @@ static int skl_tplg_mic_control_get(struct snd_kcontrol *kcontrol,
+ static int skl_fill_mic_sel_params(struct skl_module_cfg *mconfig,
+ 	struct skl_mic_sel_config *mic_cfg, struct device *dev)
+ {
+-	struct skl_specific_cfg *sp_cfg = &mconfig->formats_config;
++	struct skl_specific_cfg *sp_cfg =
++				&mconfig->formats_config[SKL_PARAM_INIT];
+ 
+ 	sp_cfg->caps_size = sizeof(struct skl_mic_sel_config);
+ 	sp_cfg->set_params = SKL_PARAM_SET;
+@@ -2951,8 +2956,8 @@ static int skl_tplg_be_fill_pipe_params(struct snd_soc_dai *dai,
+ 				GFP_KERNEL);
+ 		if (!sdw_cfg)
+ 			return -ENOMEM;
+-		mconfig->formats_config.caps_size = (((sizeof(u32)) *
+-			(mconfig->sdw_agg.num_masters) * 2)
++		mconfig->formats_config[SKL_PARAM_INIT].caps_size =
++			(((sizeof(u32)) * (mconfig->sdw_agg.num_masters) * 2)
+ 			+ (2 * (sizeof(u32))));
+ 
+ 		sdw_cfg->count = mconfig->sdw_agg.num_masters;
+@@ -2967,7 +2972,7 @@ static int skl_tplg_be_fill_pipe_params(struct snd_soc_dai *dai,
+ 			}
+ 		}
+ 		sdw_cfg->count = mconfig->sdw_agg.num_masters;
+-		mconfig->formats_config.caps = (u32 *) sdw_cfg;
++		mconfig->formats_config[SKL_PARAM_INIT].caps = (u32 *) sdw_cfg;
+ 		return 0;
+ 	}
+ 
+@@ -2978,8 +2983,9 @@ static int skl_tplg_be_fill_pipe_params(struct snd_soc_dai *dai,
+ 					dev_type);
+ 
+ 	if (cfg) {
+-		mconfig->formats_config.caps_size = cfg->size;
+-		mconfig->formats_config.caps = (u32 *) &cfg->caps;
++		mconfig->formats_config[SKL_PARAM_INIT].caps_size = cfg->size;
++		mconfig->formats_config[SKL_PARAM_INIT].caps =
++							(u32 *) &cfg->caps;
+ 	} else {
+ 		dev_err(dai->dev, "Blob NULL for id %x type %d dirn %d\n",
+ 					mconfig->vbus_id, link_type,
+@@ -3893,19 +3899,26 @@ static int skl_tplg_get_token(struct device *dev,
+ 
+ 		break;
+ 
++	case SKL_TKN_U32_FMT_CFG_IDX:
++		if (tkn_elem->value > SKL_MAX_PARAMS_TYPES)
++			return -EINVAL;
++
++		mconfig->fmt_cfg_idx = tkn_elem->value;
++		break;
++
+ 	case SKL_TKN_U32_CAPS_SIZE:
+-		mconfig->formats_config.caps_size =
++		mconfig->formats_config[mconfig->fmt_cfg_idx].caps_size =
+ 			tkn_elem->value;
+ 
+ 		break;
+ 
+ 	case SKL_TKN_U32_CAPS_SET_PARAMS:
+-		mconfig->formats_config.set_params =
++		mconfig->formats_config[mconfig->fmt_cfg_idx].set_params =
+ 				tkn_elem->value;
+ 		break;
+ 
+ 	case SKL_TKN_U32_CAPS_PARAMS_ID:
+-		mconfig->formats_config.param_id =
++		mconfig->formats_config[mconfig->fmt_cfg_idx].param_id =
+ 				tkn_elem->value;
+ 		break;
+ 
+@@ -4136,6 +4149,7 @@ static int skl_tplg_get_pvt_data_v4(struct snd_soc_tplg_dapm_widget *tplg_w,
+ 	struct skl_dfw_v4_module *dfw =
+ 				(struct skl_dfw_v4_module *)tplg_w->priv.data;
+ 	int ret;
++	int idx = mconfig->fmt_cfg_idx;
+ 
+ 	dev_dbg(dev, "Parsing Skylake v4 widget topology data\n");
+ 
+@@ -4169,7 +4183,7 @@ static int skl_tplg_get_pvt_data_v4(struct snd_soc_tplg_dapm_widget *tplg_w,
+ 	mconfig->dev_type = dfw->dev_type;
+ 	mconfig->hw_conn_type = dfw->hw_conn_type;
+ 	mconfig->time_slot = dfw->time_slot;
+-	mconfig->formats_config.caps_size = dfw->caps.caps_size;
++	mconfig->formats_config[idx].caps_size = dfw->caps.caps_size;
+ 
+ 	mconfig->m_in_pin = devm_kcalloc(dev,
+ 				MAX_IN_QUEUE, sizeof(*mconfig->m_in_pin),
+@@ -4190,21 +4204,40 @@ static int skl_tplg_get_pvt_data_v4(struct snd_soc_tplg_dapm_widget *tplg_w,
+ 				    dfw->is_dynamic_out_pin,
+ 				    mconfig->module->max_output_pins);
+ 
+-	if (mconfig->formats_config.caps_size) {
+-		mconfig->formats_config.set_params = dfw->caps.set_params;
+-		mconfig->formats_config.param_id = dfw->caps.param_id;
+-		mconfig->formats_config.caps =
+-		devm_kzalloc(dev, mconfig->formats_config.caps_size,
++	if (mconfig->formats_config[idx].caps_size) {
++		mconfig->formats_config[idx].set_params = dfw->caps.set_params;
++		mconfig->formats_config[idx].param_id = dfw->caps.param_id;
++		mconfig->formats_config[idx].caps =
++		devm_kzalloc(dev, mconfig->formats_config[idx].caps_size,
+ 			     GFP_KERNEL);
+-		if (!mconfig->formats_config.caps)
++		if (!mconfig->formats_config[idx].caps)
+ 			return -ENOMEM;
+-		memcpy(mconfig->formats_config.caps, dfw->caps.caps,
++		memcpy(mconfig->formats_config[idx].caps, dfw->caps.caps,
+ 		       dfw->caps.caps_size);
+ 	}
+ 
+ 	return 0;
+ }
+ 
++static int skl_tplg_get_caps_data(struct device *dev, char *data,
++					struct skl_module_cfg *mconfig)
++{
++	int idx;
++
++	idx = mconfig->fmt_cfg_idx;
++	if (mconfig->formats_config[idx].caps_size > 0) {
++		mconfig->formats_config[idx].caps = (u32 *)devm_kzalloc(dev,
++					mconfig->formats_config[idx].caps_size,
++					GFP_KERNEL);
++		if (mconfig->formats_config[idx].caps == NULL)
++			return -ENOMEM;
++		memcpy(mconfig->formats_config[idx].caps, data,
++				mconfig->formats_config[idx].caps_size);
++	}
++
++	return mconfig->formats_config[idx].caps_size;
++}
++
+ /*
+  * Parse the private data for the token and corresponding value.
+  * The private data can have multiple data blocks. So, a data block
+@@ -4265,18 +4298,14 @@ static int skl_tplg_get_pvt_data(struct snd_soc_tplg_dapm_widget *tplg_w,
+ 		if (block_type == SKL_TYPE_TUPLE) {
+ 			ret = skl_tplg_get_tokens(dev, data,
+ 					skl, mconfig, block_size);
+-
+-			if (ret < 0)
+-				return ret;
+-
+-			--num_blocks;
+ 		} else {
+-			if (mconfig->formats_config.caps_size > 0)
+-				memcpy(mconfig->formats_config.caps, data,
+-					mconfig->formats_config.caps_size);
+-			--num_blocks;
+-			ret = mconfig->formats_config.caps_size;
++			ret = skl_tplg_get_caps_data(dev, data, mconfig);
+ 		}
++
++		if (ret < 0)
++			return ret;
++
++		--num_blocks;
+ 		off += ret;
+ 	}
+ 
+@@ -4371,6 +4400,9 @@ static int skl_tplg_widget_load(struct snd_soc_component *cmpnt, int index,
+ 	 */
+ 	mconfig->id.module_id = -1;
+ 
++	/* To provide backward compatibility, set default as SKL_PARAM_INIT */
++	mconfig->fmt_cfg_idx = SKL_PARAM_INIT;
++
+ 	/* Parse private data for tuples */
+ 	ret = skl_tplg_get_pvt_data(tplg_w, skl, bus->dev, mconfig);
+ 	if (ret < 0)
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index cd1827e..97b9614 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -56,6 +56,7 @@
+ #define SKL_MAX_MODULE_FORMATS		64
+ #define SKL_MAX_MODULE_RESOURCES	32
+ #define MAX_NUM_CHANNELS	8
++#define SKL_MAX_PARAMS_TYPES	4
+ 
+ enum skl_channel_index {
+ 	SKL_CHANNEL_LEFT = 0,
+@@ -433,6 +434,7 @@ struct skl_module_cfg {
+ 	struct skl_module *module;
+ 	int res_idx;
+ 	int fmt_idx;
++	int fmt_cfg_idx;
+ 	u8 domain;
+ 	bool homogenous_inputs;
+ 	bool homogenous_outputs;
+@@ -469,7 +471,7 @@ struct skl_module_cfg {
+ 	enum skl_hw_conn_type  hw_conn_type;
+ 	enum skl_module_state m_state;
+ 	struct skl_pipe *pipe;
+-	struct skl_specific_cfg formats_config;
++	struct skl_specific_cfg formats_config[SKL_MAX_PARAMS_TYPES];
+ 	struct skl_pipe_mcfg mod_cfg[SKL_MAX_MODULES_IN_PIPE];
+ 	struct skl_gain_data *gain_data;
+ };
+-- 
+2.7.4
+

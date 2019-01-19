@@ -1,0 +1,27 @@
+From 10d7e17ff47ab6212cbc700db57842cff7c8c6e8 Mon Sep 17 00:00:00 2001
+From: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Date: Fri, 5 Oct 2018 15:43:03 +0300
+Subject: [PATCH 0973/1132] stm class: SPDX-ify the documentation
+
+Add the SPDX header to the STM class documentation.
+
+Signed-off-by: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Tested-by: Mathieu Poirier <mathieu.poirier@linaro.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ Documentation/trace/stm.rst | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Documentation/trace/stm.rst b/Documentation/trace/stm.rst
+index 944994f..99f9996 100644
+--- a/Documentation/trace/stm.rst
++++ b/Documentation/trace/stm.rst
+@@ -1,3 +1,5 @@
++.. SPDX-License-Identifier: GPL-2.0
++
+ ===================
+ System Trace Module
+ ===================
+-- 
+2.7.4
+

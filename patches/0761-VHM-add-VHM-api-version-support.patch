@@ -1,0 +1,64 @@
+From e614e84dd305abd691345cf918fc9e961354b95a Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:58 +0800
+Subject: [PATCH 0761/1132] VHM: add VHM api version support
+
+Change-Id: I36dd051d0cc04720ab8d69817392ff97f1e5ad34
+Tracked-On: 218802
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 16 ++++++++++++++++
+ include/linux/vhm/vhm_ioctl_defs.h |  5 +++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 88fb0fa..27844c8 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -87,6 +87,9 @@
+ #define  DEVICE_NAME "acrn_vhm"
+ #define  CLASS_NAME  "vhm"
+ 
++#define VHM_API_VERSION_MAJOR	1
++#define VHM_API_VERSION_MINOR	0
++
+ static int    major;
+ static struct class *vhm_class;
+ static struct device *vhm_device;
+@@ -156,6 +159,19 @@ static long vhm_dev_ioctl(struct file *filep,
+ 
+ 	trace_printk("[%s] ioctl_num=0x%x\n", __func__, ioctl_num);
+ 
++	if (ioctl_num == IC_GET_API_VERSION) {
++		struct api_version api_version;
++
++		api_version.major_version = VHM_API_VERSION_MAJOR;
++		api_version.minor_version = VHM_API_VERSION_MINOR;
++
++		if (copy_to_user((void *)ioctl_param, &api_version,
++			sizeof(struct api_version)))
++			return -EFAULT;
++
++		return 0;
++	}
++
+ 	memset(&hc_pt_irq, 0, sizeof(hc_pt_irq));
+ 	memset(&ic_pt_irq, 0, sizeof(ic_pt_irq));
+ 	vm = (struct vhm_vm *)filep->private_data;
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index d00b658..258ec39 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -159,4 +159,9 @@ struct ioreq_notify {
+        uint32_t vcpu;
+ };
+ 
++struct api_version {
++	uint32_t major_version;
++	uint32_t minor_version;
++};
++
+ #endif /* VHM_IOCTL_DEFS_H */
+-- 
+2.7.4
+

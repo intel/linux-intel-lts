@@ -1,0 +1,64 @@
+From 7c3d0bdd0371ae93e95a8aeece882b333d9add8e Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Mon, 17 Sep 2018 16:29:13 +0200
+Subject: [PATCH 0268/1132] x86/mm/cpa: Avoid static protection checks on unmap
+
+If the new pgprot has the PRESENT bit cleared, then conflicts vs. RW/NX are
+completely irrelevant.
+
+Before:
+
+ 1G pages checked:                    2
+ 1G pages sameprot:                   0
+ 1G pages preserved:                  0
+ 2M pages checked:                  540
+ 2M pages sameprot:                 466
+ 2M pages preserved:                 47
+ 4K pages checked:               800770
+ 4K pages set-checked:             7668
+
+After:
+
+ 1G pages checked:                    2
+ 1G pages sameprot:                   0
+ 1G pages preserved:                  0
+ 2M pages checked:                  540
+ 2M pages sameprot:                 466
+ 2M pages preserved:                 47
+ 4K pages checked:               800709
+ 4K pages set-checked:             7668
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Reviewed-by: Dave Hansen <dave.hansen@intel.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Bin Yang <bin.yang@intel.com>
+Cc: Mark Gross <mark.gross@intel.com>
+Link: https://lkml.kernel.org/r/20180917143546.245849757@linutronix.de
+
+Cc: Zhang Ning <ning.a.zhang@intel.com>
+Signed-off-by: Lili Li <lili.li@intel.com>
+---
+ arch/x86/mm/pageattr.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/arch/x86/mm/pageattr.c b/arch/x86/mm/pageattr.c
+index 07f465f..18c3eb9 100644
+--- a/arch/x86/mm/pageattr.c
++++ b/arch/x86/mm/pageattr.c
+@@ -526,6 +526,13 @@ static inline pgprot_t static_protections(pgprot_t prot, unsigned long start,
+ 	pgprotval_t forbidden, res;
+ 	unsigned long end;
+ 
++	/*
++	 * There is no point in checking RW/NX conflicts when the requested
++	 * mapping is setting the page !PRESENT.
++	 */
++	if (!(pgprot_val(prot) & _PAGE_PRESENT))
++		return prot;
++
+ 	/* Operate on the virtual address */
+ 	end = start + npg * PAGE_SIZE - 1;
+ 
+-- 
+2.7.4
+

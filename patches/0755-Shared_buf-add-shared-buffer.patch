@@ -1,0 +1,385 @@
+From fe2231296334b843faa97fc08d57ff74daf2c238 Mon Sep 17 00:00:00 2001
+From: "Li, Fei1" <fei1.li@intel.com>
+Date: Fri, 31 Aug 2018 10:58:57 +0800
+Subject: [PATCH 0755/1132] Shared_buf: add shared buffer
+
+Added a ring buffer shared between ACRN hypervisor and service OS.
+
+Change-Id: Ib82f50d842592099629e0f764e0576306252c51b
+Tracked-On: Tracked-On: https://rtc.intel.com/ccm0001001/resource/itemName/com.ibm.team.workitem.WorkItem/216912
+Signed-off-by: Li, Fei1 <fei1.li@intel.com>
+---
+ drivers/Kconfig       |   1 +
+ drivers/Makefile      |   1 +
+ drivers/acrn/Kconfig  |   5 ++
+ drivers/acrn/Makefile |   1 +
+ drivers/acrn/sbuf.c   | 188 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ drivers/acrn/sbuf.h   | 119 ++++++++++++++++++++++++++++++++
+ 6 files changed, 315 insertions(+)
+ create mode 100644 drivers/acrn/Kconfig
+ create mode 100644 drivers/acrn/Makefile
+ create mode 100644 drivers/acrn/sbuf.c
+ create mode 100644 drivers/acrn/sbuf.h
+
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index 97c8a6f..08e4c41 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -222,4 +222,5 @@ source "drivers/slimbus/Kconfig"
+ 
+ source "drivers/vbs/Kconfig"
+ 
++source "drivers/acrn/Kconfig"
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 6095e80..5794c09 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -185,6 +185,7 @@ obj-$(CONFIG_FSI)		+= fsi/
+ obj-$(CONFIG_TEE)		+= tee/
+ obj-$(CONFIG_MULTIPLEXER)	+= mux/
+ obj-$(CONFIG_ACRN) 		+= vhm/
++obj-$(CONFIG_ACRN)		+= acrn/
+ obj-$(CONFIG_UNISYS_VISORBUS)	+= visorbus/
+ obj-$(CONFIG_SIOX)		+= siox/
+ obj-$(CONFIG_GNSS)		+= gnss/
+diff --git a/drivers/acrn/Kconfig b/drivers/acrn/Kconfig
+new file mode 100644
+index 0000000..f25f0ae
+--- /dev/null
++++ b/drivers/acrn/Kconfig
+@@ -0,0 +1,5 @@
++config ACRN_SHARED_BUFFER
++	bool "Intel ACRN SHARED BUFFER"
++	---help---
++	  Ring buffer shared between ACRN Hypervisor and its SOS.
++	  Help ACRN performance profiling.
+diff --git a/drivers/acrn/Makefile b/drivers/acrn/Makefile
+new file mode 100644
+index 0000000..bc475f8
+--- /dev/null
++++ b/drivers/acrn/Makefile
+@@ -0,0 +1 @@
++obj-$(CONFIG_ACRN_SHARED_BUFFER) += sbuf.o
+diff --git a/drivers/acrn/sbuf.c b/drivers/acrn/sbuf.c
+new file mode 100644
+index 0000000..dcf2032
+--- /dev/null
++++ b/drivers/acrn/sbuf.c
+@@ -0,0 +1,188 @@
++/*
++ * shared buffer
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * Contact Information: Li Fei <fei1.li@intel.com>
++ *
++ * BSD LICENSE
++ *
++ * Copyright (C) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Li Fei <fei1.li@intel.com>
++ *
++ */
++
++#define pr_fmt(fmt) "SBuf: " fmt
++
++#include <linux/gfp.h>
++#include <asm/pgtable.h>
++#include "sbuf.h"
++
++static inline bool sbuf_is_empty(shared_buf_t *sbuf)
++{
++	return (sbuf->head == sbuf->tail);
++}
++
++static inline uint32_t sbuf_next_ptr(uint32_t pos,
++		uint32_t span, uint32_t scope)
++{
++	pos += span;
++	pos = (pos >= scope) ? (pos - scope) : pos;
++	return pos;
++}
++
++static inline uint32_t sbuf_calculate_allocate_size(uint32_t ele_num,
++						uint32_t ele_size)
++{
++	uint64_t sbuf_allocate_size;
++
++	sbuf_allocate_size = ele_num * ele_size;
++	sbuf_allocate_size +=  SBUF_HEAD_SIZE;
++	if (sbuf_allocate_size > SBUF_MAX_SIZE) {
++		pr_err("num=0x%x, size=0x%x exceed 0x%llx!\n",
++			ele_num, ele_size, SBUF_MAX_SIZE);
++		return 0;
++	}
++
++	/* align to PAGE_SIZE */
++	return (sbuf_allocate_size + PAGE_SIZE - 1) & PAGE_MASK;
++}
++
++shared_buf_t *sbuf_allocate(uint32_t ele_num, uint32_t ele_size)
++{
++	shared_buf_t *sbuf;
++	struct page *page;
++	uint32_t sbuf_allocate_size;
++
++	if (!ele_num || !ele_size) {
++		pr_err("invalid parameter %s!\n", __func__);
++		return NULL;
++	}
++
++	sbuf_allocate_size = sbuf_calculate_allocate_size(ele_num, ele_size);
++	if (!sbuf_allocate_size)
++		return NULL;
++
++	page = alloc_pages(GFP_KERNEL | __GFP_ZERO,
++					get_order(sbuf_allocate_size));
++	if (page == NULL) {
++		pr_err("failed to alloc pages!\n");
++		return NULL;
++	}
++
++	sbuf = phys_to_virt(page_to_phys(page));
++	sbuf->ele_num = ele_num;
++	sbuf->ele_size = ele_size;
++	sbuf->size = ele_num * ele_size;
++	sbuf->magic = SBUF_MAGIC;
++	pr_info("ele_num=0x%x, ele_size=0x%x allocated!\n",
++		ele_num, ele_size);
++	return sbuf;
++}
++EXPORT_SYMBOL(sbuf_allocate);
++
++void sbuf_free(shared_buf_t *sbuf)
++{
++	uint32_t sbuf_allocate_size;
++
++	if ((sbuf == NULL) || sbuf->magic != SBUF_MAGIC) {
++		pr_err("invalid parameter %s\n", __func__);
++		return;
++	}
++
++	sbuf_allocate_size = sbuf_calculate_allocate_size(sbuf->ele_num,
++						sbuf->ele_size);
++	if (!sbuf_allocate_size)
++		return;
++
++	sbuf->magic = 0;
++	__free_pages((struct page *)virt_to_page(sbuf),
++			get_order(sbuf_allocate_size));
++}
++EXPORT_SYMBOL(sbuf_free);
++
++int sbuf_get(shared_buf_t *sbuf, uint8_t *data)
++{
++	const void *from;
++
++	if ((sbuf == NULL) || (data == NULL))
++		return -EINVAL;
++
++	if (sbuf_is_empty(sbuf)) {
++		/* no data available */
++		return 0;
++	}
++
++	from = (void *)sbuf + SBUF_HEAD_SIZE + sbuf->head;
++
++	memcpy(data, from, sbuf->ele_size);
++
++	sbuf->head = sbuf_next_ptr(sbuf->head, sbuf->ele_size, sbuf->size);
++
++	return sbuf->ele_size;
++}
++EXPORT_SYMBOL(sbuf_get);
++
++shared_buf_t *sbuf_construct(uint32_t ele_num, uint32_t ele_size,
++				uint64_t paddr)
++{
++	shared_buf_t *sbuf;
++
++	if (!ele_num || !ele_size || !paddr)
++		return NULL;
++
++	sbuf = (shared_buf_t *)phys_to_virt(paddr);
++	BUG_ON(!virt_addr_valid(sbuf));
++
++	if ((sbuf->magic == SBUF_MAGIC) &&
++		(sbuf->ele_num == ele_num) &&
++		(sbuf->ele_size == ele_size)) {
++		pr_info("construct sbuf at 0x%llx.\n", paddr);
++		/* return sbuf for dump */
++		return sbuf;
++	}
++
++	return NULL;
++}
++EXPORT_SYMBOL(sbuf_construct);
+diff --git a/drivers/acrn/sbuf.h b/drivers/acrn/sbuf.h
+new file mode 100644
+index 0000000..7f36949
+--- /dev/null
++++ b/drivers/acrn/sbuf.h
+@@ -0,0 +1,119 @@
++/*
++ * shared buffer
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * Contact Information: Li Fei <fei1.li@intel.com>
++ *
++ * BSD LICENSE
++ *
++ * Copyright (C) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Li Fei <fei1.li@intel.com>
++ *
++ */
++
++#ifndef SHARED_BUF_H
++#define SHARED_BUF_H
++
++#include <linux/types.h>
++
++
++#define SBUF_MAGIC	0x5aa57aa71aa13aa3
++#define SBUF_MAX_SIZE	(1ULL << 22)
++#define SBUF_HEAD_SIZE	64
++
++/* sbuf flags */
++#define OVERRUN_CNT_EN	(1ULL << 0) /* whether overrun counting is enabled */
++#define OVERWRITE_EN	(1ULL << 1) /* whether overwrite is enabled */
++
++/**
++ * (sbuf) head + buf (store (ele_num - 1) elements at most)
++ * buffer empty: tail == head
++ * buffer full:  (tail + ele_size) % size == head
++ *
++ *             Base of memory for elements
++ *                |
++ *                |
++ * ---------------------------------------------------------------------------------------
++ * | shared_buf_t | raw data (ele_size)| raw date (ele_size) | ... | raw data (ele_size) |
++ * ---------------------------------------------------------------------------------------
++ * |
++ * |
++ * shared_buf_t *buf
++ */
++
++/* Make sure sizeof(shared_buf_t) == SBUF_HEAD_SIZE */
++typedef struct shared_buf {
++	uint64_t magic;
++	uint32_t ele_num;	/* number of elements */
++	uint32_t ele_size;	/* sizeof of elements */
++	uint32_t head;		/* offset from base, to read */
++	uint32_t tail;		/* offset from base, to write */
++	uint64_t flags;
++	uint32_t overrun_cnt;	/* count of overrun */
++	uint32_t size;		/* ele_num * ele_size */
++	uint32_t padding[6];
++} ____cacheline_aligned shared_buf_t;
++
++static inline void sbuf_clear_flags(shared_buf_t *sbuf, uint64_t flags)
++{
++	sbuf->flags &= ~flags;
++}
++
++static inline void sbuf_set_flags(shared_buf_t *sbuf, uint64_t flags)
++{
++	sbuf->flags = flags;
++}
++
++static inline void sbuf_add_flags(shared_buf_t *sbuf, uint64_t flags)
++{
++	sbuf->flags |= flags;
++}
++
++shared_buf_t *sbuf_allocate(uint32_t ele_num, uint32_t ele_size);
++void sbuf_free(shared_buf_t *sbuf);
++int sbuf_get(shared_buf_t *sbuf, uint8_t *data);
++shared_buf_t *sbuf_construct(uint32_t ele_num, uint32_t ele_size, uint64_t gpa);
++
++#endif /* SHARED_BUF_H */
+-- 
+2.7.4
+

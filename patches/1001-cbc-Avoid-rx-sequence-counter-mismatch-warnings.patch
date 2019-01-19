@@ -1,0 +1,74 @@
+From 9d42eb31b5661c29bff0ede0ed612497a4e3b345 Mon Sep 17 00:00:00 2001
+From: "G Jaya Kumaran, Vineetha" <vineetha.g.jaya.kumaran@intel.com>
+Date: Fri, 25 May 2018 14:24:11 +0800
+Subject: [PATCH 1001/1132] cbc: Avoid rx sequence counter mismatch warnings
+
+The receive sequence counter should only be incremented
+if the checksum passes, to avoid unnecessary spawning
+of receive sequence mismatch warnings.
+
+Change-Id: Id143b57e809c829d96a1f8a9c784d3550b98be43
+Signed-off-by: G Jaya Kumaran, Vineetha <vineetha.g.jaya.kumaran@intel.com>
+Tracked-On: PKT-1554
+---
+ drivers/tty/cbc/cbc_link_layer.c | 30 ++++++++++++++----------------
+ 1 file changed, 14 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/tty/cbc/cbc_link_layer.c b/drivers/tty/cbc/cbc_link_layer.c
+index a55cd8c..bd747aa 100644
+--- a/drivers/tty/cbc/cbc_link_layer.c
++++ b/drivers/tty/cbc/cbc_link_layer.c
+@@ -264,7 +264,8 @@ u8 cbc_core_on_receive_cbc_serial_data(u8 length, const u8 *rx_buf)
+ 	return number_of_bytes_accepted;
+ }
+ 
+-static void _cbc_link_layer_checksum(u8 *rx_cvh_frame, u8 frame_length)
++static void _cbc_link_layer_checksum(u8 *rx_cvh_frame, u8 frame_length,
++						struct cbc_buffer *buffer)
+ {
+ 	u8 expected_checksum = 0U;
+ 	u8 checksum = 0U;
+@@ -302,6 +303,17 @@ static void _cbc_link_layer_checksum(u8 *rx_cvh_frame, u8 frame_length)
+ 			rx_cvh_frame[1]
+ 			& CBC_SEQUENCE_COUNTER_WIDTH_MASK;
+ 		}
++
++		/* Increment seq. counter. */
++		rx_sequence_counter++;
++		rx_sequence_counter &=
++		CBC_SEQUENCE_COUNTER_WIDTH_MASK;
++
++		/* Forward frame to Mux. layer. */
++		buffer->frame_length = frame_length;
++		cbc_mux_multiplexer_process_rx_buffer(buffer);
++		cbc_link_release_rx_data(frame_length);
++		last_rx_frame_valid = 1;
+ 	}
+ 
+ }
+@@ -361,21 +373,7 @@ void cbc_link_layer_rx_handler(void)
+ 			} else if (bytes_avail >= frame_length) {
+ 				/* ok */
+ 				_cbc_link_layer_checksum(rx_cvh_frame,
+-							 frame_length);
+-
+-				/* Increment seq. counter. */
+-				rx_sequence_counter++;
+-				rx_sequence_counter &=
+-				CBC_SEQUENCE_COUNTER_WIDTH_MASK;
+-
+-				/* Forward frame to Mux. layer. */
+-				buffer->frame_length = frame_length;
+-				cbc_mux_multiplexer_process_rx_buffer(
+-							buffer);
+-				cbc_link_release_rx_data(frame_length);
+-
+-					last_rx_frame_valid = 1;
+-				 /* else */
++							 frame_length, buffer);
+ 				number_of_bytes_expected = 0;
+ 			} else {
+ 				/*
+-- 
+2.7.4
+

@@ -1,0 +1,26 @@
+From 2c359cd823974d0d476dc98bf582cabbcc7ce712 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Mon, 19 Sep 2016 13:59:36 +0530
+Subject: [PATCH 0526/1132] ASoC: Intel: CNL: Enable sdw interrupt during D0
+
+Change-Id: I3f34bbbf273da5a0a9a15df319b95178e8b41fa0
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 18be70b..a124dab 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -288,6 +288,7 @@ static int cnl_set_dsp_D0(struct sst_dsp *ctx, unsigned int core_id)
+ 	if (core_id == SKL_DSP_CORE0_ID) {
+ 		/* enable interrupt */
+ 		cnl_ipc_int_enable(ctx);
++		cnl_sdw_int_enable(ctx, true);
+ 		cnl_ipc_op_int_enable(ctx);
+ 		cnl->boot_complete = false;
+ 
+-- 
+2.7.4
+

@@ -1,0 +1,52 @@
+From 3131fbd69c79e545c2a56f6b10b076ea3c9e5e48 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Wed, 17 Oct 2018 19:23:18 +0300
+Subject: [PATCH 0374/1132] tpm: tpm_i2c_nuvoton: use correct command duration
+ for TPM 2.x
+
+tpm_i2c_nuvoton calculated commands duration using TPM 1.x
+values via tpm_calc_ordinal_duration() also for TPM 2.x chips.
+Call tpm2_calc_ordinal_duration() for retrieving ordinal
+duration for TPM 2.X chips.
+
+Change-Id: If979415a7e21daad80c02b08e66ce652d0bc2b6c
+Cc: Nayna Jain <nayna@linux.vnet.ibm.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Reviewed-by: Nayna Jain <nayna@linux.ibm.com>
+Tested-by: Nayna Jain <nayna@linux.ibm.com> (For TPM 2.0)
+---
+ drivers/char/tpm/tpm_i2c_nuvoton.c | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm_i2c_nuvoton.c b/drivers/char/tpm/tpm_i2c_nuvoton.c
+index caa86b1..f74f451 100644
+--- a/drivers/char/tpm/tpm_i2c_nuvoton.c
++++ b/drivers/char/tpm/tpm_i2c_nuvoton.c
+@@ -369,6 +369,7 @@ static int i2c_nuvoton_send(struct tpm_chip *chip, u8 *buf, size_t len)
+ 	struct device *dev = chip->dev.parent;
+ 	struct i2c_client *client = to_i2c_client(dev);
+ 	u32 ordinal;
++	unsigned long duration;
+ 	size_t count = 0;
+ 	int burst_count, bytes2write, retries, rc = -EIO;
+ 
+@@ -455,10 +456,12 @@ static int i2c_nuvoton_send(struct tpm_chip *chip, u8 *buf, size_t len)
+ 		return rc;
+ 	}
+ 	ordinal = be32_to_cpu(*((__be32 *) (buf + 6)));
+-	rc = i2c_nuvoton_wait_for_data_avail(chip,
+-					     tpm_calc_ordinal_duration(chip,
+-								       ordinal),
+-					     &priv->read_queue);
++	if (chip->flags & TPM_CHIP_FLAG_TPM2)
++		duration = tpm2_calc_ordinal_duration(chip, ordinal);
++	else
++		duration = tpm_calc_ordinal_duration(chip, ordinal);
++
++	rc = i2c_nuvoton_wait_for_data_avail(chip, duration, &priv->read_queue);
+ 	if (rc) {
+ 		dev_err(dev, "%s() timeout command duration\n", __func__);
+ 		i2c_nuvoton_ready(chip);
+-- 
+2.7.4
+

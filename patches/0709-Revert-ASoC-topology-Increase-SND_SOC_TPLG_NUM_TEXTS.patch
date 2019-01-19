@@ -1,0 +1,37 @@
+From 9ef2aa4f631befa8175d93d386b506e5106413a3 Mon Sep 17 00:00:00 2001
+From: Gustaw Lewandowski <gustaw.lewandowski@intel.com>
+Date: Tue, 24 Jul 2018 16:30:03 +0200
+Subject: [PATCH 0709/1132] Revert "ASoC: topology: Increase
+ SND_SOC_TPLG_NUM_TEXTS to 32"
+
+This reverts commit 640a66de27627b1f18270497d8e16fec7c9afb58.
+Since correspondig changes to alsa-lib is not properly upstreamed
+we should not introduce such change without ensure backward
+compatibility.
+
+Change-Id: I512b63b0e4dc7bbd889503a560c373c9e396326e
+Reviewed-on:
+Reviewed-by: Slawinski, AmadeuszX <amadeuszx.slawinski@intel.com>
+Reviewed-by: Bozek, DominikX <dominikx.bozek@intel.com>
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ include/uapi/sound/asoc.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/uapi/sound/asoc.h b/include/uapi/sound/asoc.h
+index 5b1411b..a74ca23 100644
+--- a/include/uapi/sound/asoc.h
++++ b/include/uapi/sound/asoc.h
+@@ -88,7 +88,7 @@
+ #define SND_SOC_TPLG_MAGIC		0x41536F43 /* ASoC */
+ 
+ /* string sizes */
+-#define SND_SOC_TPLG_NUM_TEXTS		32
++#define SND_SOC_TPLG_NUM_TEXTS		16
+ 
+ /* ABI version */
+ #define SND_SOC_TPLG_ABI_VERSION	0x5	/* current version */
+-- 
+2.7.4
+

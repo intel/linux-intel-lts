@@ -1,0 +1,60 @@
+From c96fc333eb2d655656294ebfe9438df5c360fea6 Mon Sep 17 00:00:00 2001
+From: Jack Ren <jack.ren@intel.com>
+Date: Fri, 31 Aug 2018 10:59:00 +0800
+Subject: [PATCH 0780/1132] skip sbuf and vhm initialization when booting
+ natively
+
+Change-Id: Ib5cd72c208f6e7cc905418671cd655054132806f
+Tracked-On: 229665
+Signed-off-by: Jack Ren <jack.ren@intel.com>
+Reviewed-on:
+---
+ drivers/acrn/sbuf.c        | 4 ++++
+ drivers/char/vhm/vhm_dev.c | 8 +++-----
+ 2 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/acrn/sbuf.c b/drivers/acrn/sbuf.c
+index a358232..b51ee04 100644
+--- a/drivers/acrn/sbuf.c
++++ b/drivers/acrn/sbuf.c
+@@ -57,6 +57,7 @@
+ 
+ #include <linux/gfp.h>
+ #include <asm/pgtable.h>
++#include <asm/hypervisor.h>
+ #include <linux/vhm/acrn_hv_defs.h>
+ #include <linux/vhm/vhm_hypercall.h>
+ #include "sbuf.h"
+@@ -170,6 +171,9 @@ int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf)
+ {
+ 	struct sbuf_setup_param ssp;
+ 
++	if (x86_hyper_type != X86_HYPER_ACRN)
++		return -ENODEV;
++
+ 	ssp.pcpu_id = pcpu_id;
+ 	ssp.sbuf_id = sbuf_id;
+ 
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index b724c9e..8590d69 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -590,12 +590,10 @@ static int __init vhm_init(void)
+ 	unsigned long flag;
+ 	struct hc_api_version api_version = {0, 0};
+ 
+-	pr_info("vhm: initializing\n");
++	if (x86_hyper_type != X86_HYPER_ACRN)
++		return -ENODEV;
+ 
+-	if (x86_hyper_type != X86_HYPER_ACRN) {
+-		pr_err("vhm: not support acrn hypervisor!\n");
+-		return -EINVAL;
+-	}
++	pr_info("vhm: initializing\n");
+ 
+ 	if (hcall_get_api_version(virt_to_phys(&api_version)) < 0) {
+ 		pr_err("vhm: failed to get api version from Hypervisor !\n");
+-- 
+2.7.4
+

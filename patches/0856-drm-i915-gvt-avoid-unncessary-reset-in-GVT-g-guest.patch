@@ -1,0 +1,36 @@
+From f75cb2956d26e8947ee6ba5589e8ac37d6c962ab Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 14 Sep 2018 16:10:18 +0800
+Subject: [PATCH 0856/1132] drm/i915/gvt: avoid unncessary reset in GVT-g guest
+
+When i915 boots up, it will trigger a reset, but it's unnecessary
+in GVT-g environment, so remove this reset which can reduce guest
+boot time.
+
+Change-Id: Id8c120c3229118af3c41fb1ef4ddbfbf71cb69fe
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-on:
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem.c b/drivers/gpu/drm/i915/i915_gem.c
+index 47cc932..28e4d82 100644
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -5019,7 +5019,8 @@ void i915_gem_sanitize(struct drm_i915_private *i915)
+ 	 * of the reset, so this could be applied to even earlier gen.
+ 	 */
+ 	err = -ENODEV;
+-	if (INTEL_GEN(i915) >= 5 && intel_has_gpu_reset(i915))
++	if (INTEL_GEN(i915) >= 5 && intel_has_gpu_reset(i915) &&
++		!intel_vgpu_active(i915))
+ 		err = WARN_ON(intel_gpu_reset(i915, ALL_ENGINES));
+ 	if (!err)
+ 		intel_engines_sanitize(i915);
+-- 
+2.7.4
+

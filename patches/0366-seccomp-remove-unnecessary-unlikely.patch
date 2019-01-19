@@ -1,0 +1,42 @@
+From 948a318ce9d38897760a844745737e6e7d9e633d Mon Sep 17 00:00:00 2001
+From: Igor Stoppa <igor.stoppa@gmail.com>
+Date: Wed, 5 Sep 2018 23:34:43 +0300
+Subject: [PATCH 0366/1132] seccomp: remove unnecessary unlikely()
+
+WARN_ON() already contains an unlikely(), so it's not necessary to wrap it
+into another.
+
+Signed-off-by: Igor Stoppa <igor.stoppa@huawei.com>
+Acked-by: Kees Cook <keescook@chromium.org>
+Cc: linux-security-module@vger.kernel.org
+Cc: linux-kernel@vger.kernel.org
+Signed-off-by: James Morris <james.morris@microsoft.com>
+---
+ kernel/seccomp.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/seccomp.c b/kernel/seccomp.c
+index fd023ac..5a2a9af4 100644
+--- a/kernel/seccomp.c
++++ b/kernel/seccomp.c
+@@ -195,7 +195,7 @@ static u32 seccomp_run_filters(const struct seccomp_data *sd,
+ 			READ_ONCE(current->seccomp.filter);
+ 
+ 	/* Ensure unexpected behavior doesn't result in failing open. */
+-	if (unlikely(WARN_ON(f == NULL)))
++	if (WARN_ON(f == NULL))
+ 		return SECCOMP_RET_KILL_PROCESS;
+ 
+ 	if (!sd) {
+@@ -297,7 +297,7 @@ static inline pid_t seccomp_can_sync_threads(void)
+ 		/* Return the first thread that cannot be synchronized. */
+ 		failed = task_pid_vnr(thread);
+ 		/* If the pid cannot be resolved, then return -ESRCH */
+-		if (unlikely(WARN_ON(failed == 0)))
++		if (WARN_ON(failed == 0))
+ 			failed = -ESRCH;
+ 		return failed;
+ 	}
+-- 
+2.7.4
+

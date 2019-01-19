@@ -1,0 +1,117 @@
+From 6b145910d97e781ef1d9471fed7af507f8cd8acf Mon Sep 17 00:00:00 2001
+From: Omair M Abdullah <omair.m.abdullah@intel.com>
+Date: Tue, 15 Sep 2015 17:46:57 +0530
+Subject: [PATCH 0485/1132] ASoC: Intel: Skylake: add ssp blob override support
+ for capture
+
+Capture on SSP can have different blob, so add support for different blobs for
+PB/CAP on same SSP.
+
+Signed-off-by: Omair M Abdullah <omair.m.abdullah@intel.com>
+---
+ sound/soc/intel/skylake/skl-debug.c    | 19 ++++++++++++++-----
+ sound/soc/intel/skylake/skl-topology.c |  3 ++-
+ sound/soc/intel/skylake/skl.h          |  7 ++++---
+ 3 files changed, 20 insertions(+), 9 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index 85850b4..52b65bb 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -42,12 +42,13 @@ struct skl_debug {
+ 	struct dentry *modules;
+ 	struct dentry *nhlt;
+ 	u8 fw_read_buff[FW_REG_BUF];
+-	struct nhlt_blob ssp_blob[MAX_SSP];
++	struct nhlt_blob ssp_blob[2*MAX_SSP];
+ 	struct nhlt_blob dmic_blob;
+ };
+ 
+ struct nhlt_specific_cfg
+-*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance)
++*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance,
++		u8 stream)
+ {
+ 	switch (link_type) {
+ 	case NHLT_LINK_DMIC:
+@@ -57,7 +58,10 @@ struct nhlt_specific_cfg
+ 		if (instance >= MAX_SSP)
+ 			return NULL;
+ 
+-		return d->ssp_blob[instance].cfg;
++		if (stream == SNDRV_PCM_STREAM_PLAYBACK)
++			return d->ssp_blob[instance].cfg;
++		else
++			return d->ssp_blob[MAX_SSP + instance].cfg;
+ 
+ 	default:
+ 		break;
+@@ -315,7 +319,7 @@ static void skl_exit_nhlt(struct skl_debug *d)
+ 
+ 	/* free blob memory, if allocated */
+ 	for (i = 0; i < MAX_SSP; i++)
+-		kfree(d->ssp_blob[i].cfg);
++		kfree(d->ssp_blob[MAX_SSP + i].cfg);
+ }
+ 
+ static ssize_t nhlt_control_read(struct file *file,
+@@ -376,11 +380,16 @@ static int skl_init_nhlt(struct skl_debug *d)
+ 	}
+ 
+ 	for (i = 0; i < MAX_SSP; i++) {
+-		snprintf(name, (sizeof(name)-1), "ssp%d", i);
++		snprintf(name, (sizeof(name)-1), "ssp%dp", i);
+ 		if (!debugfs_create_file(name,
+ 					0644, d->nhlt,
+ 					&d->ssp_blob[i], &nhlt_fops))
+ 			dev_err(d->dev, "%s: debugfs init failed\n", name);
++		snprintf(name, (sizeof(name)-1), "ssp%dc", i);
++		if (!debugfs_create_file(name,
++					0644, d->nhlt,
++					&d->ssp_blob[MAX_SSP + i], &nhlt_fops))
++			dev_err(d->dev, "%s: debugfs init failed\n", name);
+ 	}
+ 
+ 	if (!debugfs_create_file("dmic", 0644,
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 8da8ead..8cc33fb 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -1896,7 +1896,8 @@ static int skl_tplg_be_fill_pipe_params(struct snd_soc_dai *dai,
+ 	} else {
+ 		dev_warn(dai->dev, "Querying NHLT blob from Debugfs!!!!\n");
+ 		cfg = skl_nhlt_get_debugfs_blob(skl->debugfs,
+-					link_type, mconfig->vbus_id);
++					link_type, mconfig->vbus_id,
++					params->stream);
+ 	}
+ 	if (cfg) {
+ 		mconfig->formats_config.caps_size = cfg->size;
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 05561be..4056ea3 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -166,8 +166,8 @@ void skl_debug_init_module(struct skl_debug *d,
+ 			struct snd_soc_dapm_widget *w,
+ 			struct skl_module_cfg *mconfig);
+ struct nhlt_specific_cfg
+-*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance);
+-
++*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance,
++			u8 stream);
+ #else
+ static inline struct skl_debug *skl_debugfs_init(struct skl *skl)
+ {
+@@ -178,7 +178,8 @@ static inline void skl_debug_init_module(struct skl_debug *d,
+ 					 struct skl_module_cfg *mconfig)
+ {}
+ static inline struct nhlt_specific_cfg
+-*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance)
++*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance,
++			u8 stream)
+ {
+ 	return NULL;
+ }
+-- 
+2.7.4
+

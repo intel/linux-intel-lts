@@ -1,0 +1,75 @@
+From 138630f8cb13724bbf7d0b6116c65862d0e69968 Mon Sep 17 00:00:00 2001
+From: Felipe Balbi <felipe.balbi@linux.intel.com>
+Date: Wed, 1 Aug 2018 13:37:53 +0300
+Subject: [PATCH 0335/1132] usb: dwc3: gadget: use num_trbs when skipping TRBs
+ on ->dequeue()
+
+Now that we track how many TRBs a request uses, it's easier to skip
+over them in case of a call to usb_ep_dequeue(). Let's do so and
+simplify the code a bit.
+
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+---
+ drivers/usb/dwc3/gadget.c | 28 ++++------------------------
+ 1 file changed, 4 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/usb/dwc3/gadget.c b/drivers/usb/dwc3/gadget.c
+index fdb5d8a..db7c7e2 100644
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -1365,6 +1365,8 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 				break;
+ 		}
+ 		if (r == req) {
++			int i;
++
+ 			/* wait until it is processed */
+ 			dwc3_stop_active_transfer(dep, true);
+ 
+@@ -1402,32 +1404,12 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 			if (!r->trb)
+ 				goto out0;
+ 
+-			if (r->num_pending_sgs) {
++			for (i = 0; i < r->num_trbs; i++) {
+ 				struct dwc3_trb *trb;
+-				int i = 0;
+-
+-				for (i = 0; i < r->num_pending_sgs; i++) {
+-					trb = r->trb + i;
+-					trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+-					dwc3_ep_inc_deq(dep);
+-				}
+-
+-				if (r->needs_extra_trb) {
+-					trb = r->trb + r->num_pending_sgs + 1;
+-					trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+-					dwc3_ep_inc_deq(dep);
+-				}
+-			} else {
+-				struct dwc3_trb *trb = r->trb;
+ 
++				trb = r->trb + i;
+ 				trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+ 				dwc3_ep_inc_deq(dep);
+-
+-				if (r->needs_extra_trb) {
+-					trb = r->trb + 1;
+-					trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+-					dwc3_ep_inc_deq(dep);
+-				}
+ 			}
+ 			goto out1;
+ 		}
+@@ -1438,8 +1420,6 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 	}
+ 
+ out1:
+-	/* giveback the request */
+-
+ 	dwc3_gadget_giveback(dep, req, -ECONNRESET);
+ 
+ out0:
+-- 
+2.7.4
+

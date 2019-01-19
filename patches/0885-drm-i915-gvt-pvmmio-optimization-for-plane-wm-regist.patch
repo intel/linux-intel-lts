@@ -1,0 +1,163 @@
+From 97756b8504e7366ddd6a16cfe8df903f35cd5cda Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Wed, 29 Aug 2018 11:49:44 +0800
+Subject: [PATCH 0885/1132] drm/i915/gvt: pvmmio optimization for plane wm
+ register update
+
+It is performance optimization to reduce plane wm related register trap
+counter. When update plane wm, multiple plane wm related registers are
+updated together, optimize it to firstly cache all register values in
+share page, then only PLANE_NV12_BUF_CFG register writing is trapped.
+Plane pvmmio level is PVMMIO_PLANE_WM_UPDATE.
+If plane restriction feature is enabled, trap handlers for plane wm
+related register are null, then directly return.
+Patch for both SOS and UOS.
+
+V2: when plane restriction feature is enabled, SOS trap handlers for
+plane wm related registers are null, then don't trap
+
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+Reviewed-by: Min He <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/gpu/drm/i915/i915_pvinfo.h | 11 +++++-
+ drivers/gpu/drm/i915/intel_pm.c    | 79 ++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 89 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_pvinfo.h b/drivers/gpu/drm/i915/i915_pvinfo.h
+index 9c76cab..82ab32e 100644
+--- a/drivers/gpu/drm/i915/i915_pvinfo.h
++++ b/drivers/gpu/drm/i915/i915_pvinfo.h
+@@ -75,6 +75,13 @@ struct pv_plane_update {
+ 	u32 plane_ctl;
+ };
+ 
++struct pv_plane_wm_update {
++	u32 max_wm_level;
++	u32 plane_wm_level[8];
++	u32 plane_trans_wm_level;
++	u32 plane_buf_cfg;
++};
++
+ struct pv_ppgtt_update {
+ 	u64 pdp;
+ 	u64 start;
+@@ -89,8 +96,9 @@ struct gvt_shared_page {
+ 	u32 elsp_data[4];
+ 	u32 reg_addr;
+ 	struct pv_plane_update pv_plane;
++	struct pv_plane_wm_update pv_plane_wm;
+ 	struct pv_ppgtt_update pv_ppgtt;
+-	u32 rsvd2[0x400 - 30];
++	u32 rsvd2[0x400 - 40];
+ };
+ 
+ #define VGPU_PVMMIO(vgpu) vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio))
+@@ -101,6 +109,7 @@ struct gvt_shared_page {
+ enum pvmmio_levels {
+ 	PVMMIO_ELSP_SUBMIT = 0x1,
+ 	PVMMIO_PLANE_UPDATE = 0x2,
++	PVMMIO_PLANE_WM_UPDATE = 0x4,
+ 	PVMMIO_PPGTT_UPDATE = 0x10,
+ };
+ 
+diff --git a/drivers/gpu/drm/i915/intel_pm.c b/drivers/gpu/drm/i915/intel_pm.c
+index 01afc76..df17ea5 100644
+--- a/drivers/gpu/drm/i915/intel_pm.c
++++ b/drivers/gpu/drm/i915/intel_pm.c
+@@ -5000,6 +5000,70 @@ static void skl_write_wm_level(struct drm_i915_private *dev_priv,
+ 	I915_WRITE(reg, val);
+ }
+ 
++static void skl_pv_write_wm_level(u32 *plane_wm_level,
++			       const struct skl_wm_level *level)
++{
++	uint32_t val = 0;
++
++	if (level->plane_en) {
++		val |= PLANE_WM_EN;
++		val |= level->plane_res_b;
++		val |= level->plane_res_l << PLANE_WM_LINES_SHIFT;
++	}
++
++	*plane_wm_level = val;
++}
++
++static void skl_pv_ddb_entry_write(u32 *plane_cfg,
++				const struct skl_ddb_entry *entry)
++{
++	if (entry->end)
++		*plane_cfg = (entry->end - 1) << 16 | entry->start;
++	else
++		*plane_cfg = 0;
++}
++
++static void skl_pv_write_plane_wm(struct intel_crtc *intel_crtc,
++				const struct skl_plane_wm *wm,
++				const struct skl_ddb_allocation *ddb,
++				enum plane_id plane_id)
++{
++	int i, level;
++	struct pv_plane_wm_update tmp_plane_wm;
++	struct drm_i915_private *dev_priv = to_i915(intel_crtc->base.dev);
++	int max_level = ilk_wm_max_level(dev_priv);
++	u32 __iomem *pv_plane_wm = (u32 *)&(dev_priv->shared_page->pv_plane_wm);
++	enum pipe pipe = intel_crtc->pipe;
++
++	memset(&tmp_plane_wm, 0, sizeof(struct pv_plane_wm_update));
++	tmp_plane_wm.max_wm_level = max_level;
++	for (level = 0; level <= max_level; level++) {
++		skl_pv_write_wm_level(&tmp_plane_wm.plane_wm_level[level],
++				      &wm->wm[level]);
++	}
++	skl_pv_write_wm_level(&tmp_plane_wm.plane_trans_wm_level,
++			      &wm->trans_wm);
++
++	if (wm->is_planar) {
++		skl_pv_ddb_entry_write(&tmp_plane_wm.plane_buf_cfg,
++				       &ddb->uv_plane[pipe][plane_id]);
++	} else {
++		skl_pv_ddb_entry_write(&tmp_plane_wm.plane_buf_cfg,
++				       &ddb->plane[pipe][plane_id]);
++	}
++
++	spin_lock(&dev_priv->shared_page_lock);
++	for (i = 0; i < sizeof(struct pv_plane_wm_update) / 4; i++)
++		writel(*((u32 *)(&tmp_plane_wm) + i), pv_plane_wm + i);
++	if (wm->is_planar)
++		skl_ddb_entry_write(dev_priv,
++				    PLANE_NV12_BUF_CFG(pipe, plane_id),
++				    &ddb->plane[pipe][plane_id]);
++	else
++		I915_WRITE(PLANE_NV12_BUF_CFG(pipe, plane_id), 0x0);
++	spin_unlock(&dev_priv->shared_page_lock);
++}
++
+ static void skl_write_plane_wm(struct intel_crtc *intel_crtc,
+ 			       const struct skl_plane_wm *wm,
+ 			       const struct skl_ddb_allocation *ddb,
+@@ -5011,6 +5075,21 @@ static void skl_write_plane_wm(struct intel_crtc *intel_crtc,
+ 	int level, max_level = ilk_wm_max_level(dev_priv);
+ 	enum pipe pipe = intel_crtc->pipe;
+ 
++	if (INTEL_GEN(dev_priv) < 11) {
++		/*
++		 * when plane restriction feature is enabled,
++		 * sos trap handlers for plane wm related registers are null
++		 */
++		/* TODO: uncomment when plane restriction feature is enabled */
++#if 0
++		if (i915_modparams.avail_planes_per_pipe)
++			return;
++#endif
++		if (PVMMIO_LEVEL(dev_priv, PVMMIO_PLANE_WM_UPDATE))
++			return skl_pv_write_plane_wm(intel_crtc, wm,
++						     ddb, plane_id);
++	}
++
+ 	for (level = 0; level <= max_level; level++) {
+ 		skl_write_wm_level(dev_priv, PLANE_WM(pipe, plane_id, level),
+ 				   &wm->wm[level]);
+-- 
+2.7.4
+

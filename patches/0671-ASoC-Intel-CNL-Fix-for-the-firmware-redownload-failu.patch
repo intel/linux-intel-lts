@@ -1,0 +1,47 @@
+From ee534e0c20271d1b3742438ad71a7cee3073a3a2 Mon Sep 17 00:00:00 2001
+From: "R, Dharageswari" <dharageswari.r@intel.com>
+Date: Mon, 25 Dec 2017 04:48:41 +0530
+Subject: [PATCH 0671/1132] ASoC: Intel: CNL: Fix for the firmware redownload
+ failure on ICL
+
+There is a bug in hda uncaching mechanism due to which seecond time
+firmware download was failing in the ICL platform. In order to get
+around this, flush_cache_range() is used as WA to maintain the
+integrity of firmware. This patch will be reverted, once the proper
+fix is available
+
+Change-Id: I2efdfe82dc302e8a1b623c905da2ea08084d8074
+Signed-off-by: R, Dharageswari <dharageswari.r@intel.com>
+Signed-off-by: Pradeep Tewani <pradeep.d.tewani@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Prakash, Divya1
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 813cd73..ea7bec1 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -30,6 +30,7 @@
+ #include <linux/sdw_bus.h>
+ #include <linux/sdw/sdw_cnl.h>
+ #include <asm/set_memory.h>
++#include <asm/cacheflush.h>
+ 
+ #include "../common/sst-dsp.h"
+ #include "../common/sst-dsp-priv.h"
+@@ -137,6 +138,7 @@ static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata, u32 fwsize)
+ 	ctx->dsp_ops.stream_tag = stream_tag;
+ 	memcpy(ctx->dmab.area, fwdata, fwsize);
+ 
++	clflush_cache_range(ctx->dmab.area, fwsize);
+ 	/* purge FW request */
+ 	sst_dsp_shim_write(ctx, CNL_ADSP_REG_HIPCIDR,
+ 			   CNL_ADSP_REG_HIPCIDR_BUSY | (CNL_IPC_PURGE |
+-- 
+2.7.4
+

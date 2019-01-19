@@ -1,0 +1,41 @@
+From 5dc819f1cf11711f3eb6707c47bd427783db5f90 Mon Sep 17 00:00:00 2001
+From: "Mallikarjun, chippalkatti" <mallikarjunx.chippalkatti@intel.com>
+Date: Mon, 19 Jun 2017 09:33:05 +0530
+Subject: [PATCH 0647/1132] ASoC: Intel: Skylake: Fix bug in module id
+ retrieval for link copier
+
+This was a copy paste mistake introduced in commit e3bd94ea9644
+("ASoC: Intel: CNL: Retrieve module id from GUID").So, fix it.
+
+Change-Id: Iab9bcf9433f0e2441bf88a886a762b93f5bbdf31
+Signed-off-by: Mallikarjun, chippalkatti <mallikarjunx.chippalkatti@intel.com>
+Reviewed-on:
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: audio_build
+Reviewed-by: Sinha, Mohit <mohit.sinha@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index ba60269..891e248 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -702,8 +702,8 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
+ 	link_cpr_params.s_fmt = 32;
+ 	link_cpr_params.linktype = 0;
+ 	link_cpr_params.stream = 0;
+-	host_cpr_cfg->id.module_id = skl_get_module_id(ctx,
+-					(uuid_le *)host_cpr_cfg->guid);
++	link_cpr_cfg->id.module_id = skl_get_module_id(ctx,
++					(uuid_le *)link_cpr_cfg->guid);
+ 
+ 	link_cpr_cfg->id.instance_id = 3;
+ 	link_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
+-- 
+2.7.4
+

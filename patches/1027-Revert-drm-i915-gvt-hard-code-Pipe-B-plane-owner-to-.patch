@@ -1,0 +1,39 @@
+From 8ed56359b7c16e1648af65212531c8cad705dbfd Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Wed, 28 Nov 2018 09:22:21 +0000
+Subject: [PATCH 1027/1132] Revert "drm/i915/gvt: hard code Pipe B plane owner
+ to UOS"
+
+This reverts commit f6f91287ca27b8205884e903423115218dc72561. After we
+merged plane restriction patches, this wa patch can be reverted and we
+don't need this hard-code assignment anymore.
+
+Tracked-On: PKT-1592
+Tracked-On: https://github.com/projectacrn/acrn-hypervisor/issues/1932
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/acrngt.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/acrngt.c b/drivers/gpu/drm/i915/gvt/acrngt.c
+index 7a0d138..0f1154c 100644
+--- a/drivers/gpu/drm/i915/gvt/acrngt.c
++++ b/drivers/gpu/drm/i915/gvt/acrngt.c
+@@ -429,13 +429,6 @@ static int acrngt_sysfs_add_instance(struct acrngt_hvm_params *vp)
+ 	struct acrngt_hvm_dev *info;
+ 
+ 	struct intel_vgpu_type type = acrngt_priv.gvt->types[0];
+-
+-	/* todo: wa patch due to plane restriction patches are not porting */
+-	acrngt_priv.gvt->pipe_info[1].plane_owner[0] = 1;
+-	acrngt_priv.gvt->pipe_info[1].plane_owner[1] = 1;
+-	acrngt_priv.gvt->pipe_info[1].plane_owner[2] = 1;
+-	acrngt_priv.gvt->pipe_info[1].plane_owner[3] = 1;
+-
+ 	type.low_gm_size = vp->aperture_sz * VMEM_1MB;
+ 	type.high_gm_size = (vp->gm_sz - vp->aperture_sz) * VMEM_1MB;
+ 	type.fence = vp->fence_sz;
+-- 
+2.7.4
+

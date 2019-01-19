@@ -1,0 +1,82 @@
+From d4c9253e3b8869afcdbcfac7d974c658dbe2a5bc Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Tue, 14 Aug 2018 12:34:29 +0200
+Subject: [PATCH 0718/1132] ASoC: Intel: Move cnl machine drv tables to common
+ directory.
+
+Align with machine-drv-tables declaration model present on upstream.
+Tables are moved from skl.c into separate file within common directory
+dedicated to cnl-specific data only.
+
+Change-Id: I9bccf434c9a1d7949e88d0ab363e28c1bd193e75
+Depends-On: I67ead17edb1bc469894a053e7d85b67409eeb2e6
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+Reviewed-on:
+Reviewed-by: Uzieblo, Olgierd <olgierd.uzieblo@intel.com>
+---
+ sound/soc/intel/common/soc-acpi-intel-cnl-match.c |  8 ++++++++
+ sound/soc/intel/skylake/skl.c                     | 22 ----------------------
+ 2 files changed, 8 insertions(+), 22 deletions(-)
+
+diff --git a/sound/soc/intel/common/soc-acpi-intel-cnl-match.c b/sound/soc/intel/common/soc-acpi-intel-cnl-match.c
+index ec8e28e..9abc557 100644
+--- a/sound/soc/intel/common/soc-acpi-intel-cnl-match.c
++++ b/sound/soc/intel/common/soc-acpi-intel-cnl-match.c
+@@ -15,6 +15,7 @@ static struct skl_machine_pdata cnl_pdata = {
+ };
+ 
+ struct snd_soc_acpi_mach snd_soc_acpi_intel_cnl_machines[] = {
++#if !IS_ENABLED(CONFIG_SND_SOC_RT700)
+ 	{
+ 		.id = "INT34C2",
+ 		.drv_name = "cnl_rt274",
+@@ -24,6 +25,13 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_cnl_machines[] = {
+ 		.sof_tplg_filename = "intel/sof-cnl-rt274.tplg",
+ 		.asoc_plat_name = "0000:00:1f.3",
+ 	},
++#else
++	{
++		.drv_name = "cnl_rt700",
++		.fw_filename = "intel/dsp_fw_cnl.bin",
++		.pdata = &cnl_pdata,
++	},
++#endif
+ 	{},
+ };
+ EXPORT_SYMBOL_GPL(snd_soc_acpi_intel_cnl_machines);
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 5c3db44..db823eb 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1154,28 +1154,6 @@ static void skl_remove(struct pci_dev *pci)
+ 	dev_set_drvdata(&pci->dev, NULL);
+ }
+ 
+-static struct skl_machine_pdata cnl_pdata = {
+-	.use_tplg_pcm = true,
+-};
+-
+-static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
+-#if !IS_ENABLED(CONFIG_SND_SOC_RT700)
+-	{
+-		.id = "INT34C2",
+-		.drv_name = "cnl_rt274",
+-		.fw_filename = "intel/dsp_fw_cnl.bin",
+-		.pdata = &cnl_pdata,
+-	},
+-#else
+-	{
+-		.drv_name = "cnl_rt700",
+-		.fw_filename = "intel/dsp_fw_cnl.bin",
+-		.pdata = &cnl_pdata,
+-	},
+-#endif
+-	{}
+-};
+-
+ /* PCI IDs */
+ static const struct pci_device_id skl_ids[] = {
+ 	/* Sunrise Point-LP */
+-- 
+2.7.4
+

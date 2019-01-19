@@ -1,0 +1,58 @@
+From 154a90d3b4a8c8b248b09978ca76bd6b072262b9 Mon Sep 17 00:00:00 2001
+From: Pawel Furtak <pawel.furtak@intel.com>
+Date: Sun, 25 Nov 2018 17:21:39 +0100
+Subject: [PATCH 1036/1132] ASoC: Intel: Skylake: Add Kconfig options for
+ virtualization
+
+This patch adds two modules to Skylake configuration.
+VIRTIO_FE should be enaled on Guest system and
+VIRTIO_BE should be enabled on Service OS.
+
+Change-Id: I619db4fe929f640bdee3e6aa967a75098f1c4195
+Signed-off-by: Pawel Furtak <pawel.furtak@intel.com>
+Tracked-On: OAM-72189
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/Kconfig                |  3 +++
+ sound/soc/intel/skylake/virtio/Kconfig | 17 +++++++++++++++++
+ 2 files changed, 20 insertions(+)
+ create mode 100644 sound/soc/intel/skylake/virtio/Kconfig
+
+diff --git a/sound/soc/intel/Kconfig b/sound/soc/intel/Kconfig
+index e6334dd..70b2eb3 100644
+--- a/sound/soc/intel/Kconfig
++++ b/sound/soc/intel/Kconfig
+@@ -143,3 +143,6 @@ endif ## SND_SOC_INTEL_SST_TOPLEVEL
+ 
+ # ASoC codec drivers
+ source "sound/soc/intel/boards/Kconfig"
++
++# Virtualization for Skylake
++source "sound/soc/intel/skylake/virtio/Kconfig"
+diff --git a/sound/soc/intel/skylake/virtio/Kconfig b/sound/soc/intel/skylake/virtio/Kconfig
+new file mode 100644
+index 0000000..0926781
+--- /dev/null
++++ b/sound/soc/intel/skylake/virtio/Kconfig
+@@ -0,0 +1,17 @@
++config SND_SOC_INTEL_SKYLAKE_VIRTIO_FE
++	tristate "SKL/BXT/KBL/GLK/CNL... Platforms Virtio FrontEnd"
++	depends on ACRN_VIRTIO_DEVICES && SND_SOC_INTEL_SKYLAKE
++	help
++	  Enables virtio frontend for Intel Skylake audio driver.
++	  This option should be enabled only on Guest OS.
++	  Say Y or m if you have such a device.
++	  If unsure select "N".
++
++config SND_SOC_INTEL_SKYLAKE_VIRTIO_BE
++	tristate "SKL/BXT/KBL/GLK/CNL... Platforms Virtio BackEnd"
++	depends on VBS && SND_SOC_INTEL_SKYLAKE
++	help
++	  Enables virtio backend for Intel Skylake audio driver.
++	  This option should be enabled only on Service OS.
++	  Say Y or m if you have such a device.
++	  If unsure select "N".
+-- 
+2.7.4
+

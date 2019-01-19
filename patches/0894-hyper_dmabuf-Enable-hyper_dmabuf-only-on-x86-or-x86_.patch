@@ -1,0 +1,31 @@
+From e2d9731f4d97dba792b25b4c8ea8853b31c12e83 Mon Sep 17 00:00:00 2001
+From: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Date: Thu, 22 Mar 2018 15:11:05 -0700
+Subject: [PATCH 0894/1132] hyper_dmabuf: Enable hyper_dmabuf only on x86 or
+ x86_64
+
+The hyper_dmabuf driver is designed and tested only on x86/x86_64
+architecture based systems. Therefore, disable it when trying to build
+for other architectures.
+
+Signed-off-by: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Reviewed-by: Mateusz Polrola <mateuszx.potrola@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/Kconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/Kconfig b/drivers/dma-buf/hyper_dmabuf/Kconfig
+index 8899216..999900b 100644
+--- a/drivers/dma-buf/hyper_dmabuf/Kconfig
++++ b/drivers/dma-buf/hyper_dmabuf/Kconfig
+@@ -3,6 +3,7 @@ menu "hyper_dmabuf options"
+ config HYPER_DMABUF
+ 	bool "Enables hyper dmabuf driver"
+ 	default y
++	depends on (X86=y || X86_64=y || 64BIT=y)
+ 
+ choice
+ 	prompt "Hypervisor"
+-- 
+2.7.4
+

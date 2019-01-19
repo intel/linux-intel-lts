@@ -1,0 +1,57 @@
+From b911cbf08cb91ccddfbe823277ea66cabae44279 Mon Sep 17 00:00:00 2001
+From: Kamil Kulesza <kamil.kulesza@intel.com>
+Date: Wed, 7 Nov 2018 14:01:13 +0100
+Subject: [PATCH 1007/1132] ASoC: Intel: Skylake Acquire irq after RIRB
+ allocation
+
+Cold reboot stress test found that the hda irq could access rirb ring
+buffer before its memory gets allocated which resulting in null
+pointer dereference inside snd_hdac_bus_update_rirb().
+
+Fix it by moving the skl_acquire_irq after ring buffer allocation.
+While here, also change err return from -EBUSY to actual error code.
+
+Change-Id: I61084e3ca0f311a1c4c045bfa8e0b53c8a8b2678
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Reviewed-by: Lewandowski, Gustaw <gustaw.lewandowski@intel.com>
+Reviewed-by: Wasko, Michal <michal.wasko@intel.com>
+Tested-by: Wasko, Michal <michal.wasko@intel.com>
+Tracked-On: OAM-72066
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+Signed-off-by: Kamil Kulesza <kamil.kulesza@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 8ade895..7979367 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -921,11 +921,7 @@ static int skl_first_init(struct hdac_bus *bus)
+ 
+ 	snd_hdac_bus_parse_capabilities(bus);
+ 
+-	if (skl_acquire_irq(bus, 0) < 0)
+-		return -EBUSY;
+-
+ 	pci_set_master(pci);
+-	synchronize_irq(bus->irq);
+ 
+ 	gcap = snd_hdac_chip_readw(bus, GCAP);
+ 	dev_dbg(bus->dev, "chipset global capabilities = 0x%x\n", gcap);
+@@ -958,6 +954,12 @@ static int skl_first_init(struct hdac_bus *bus)
+ 	if (err < 0)
+ 		return err;
+ 
++	err = skl_acquire_irq(bus, 0);
++	if (err < 0)
++		return err;
++
++	synchronize_irq(bus->irq);
++
+ 	/* initialize chip */
+ 	skl_init_pci(skl);
+ 
+-- 
+2.7.4
+

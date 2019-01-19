@@ -1,0 +1,30 @@
+From 60f183b98fbdc5f6f55ddba8470d7dc5b6a426c3 Mon Sep 17 00:00:00 2001
+From: Wei Liu <weix.w.liu@intel.com>
+Date: Wed, 19 Sep 2018 16:21:22 +0800
+Subject: [PATCH 0907/1132] hyper_dmabuf: fix compile warnings in hyper_dmabuf
+
+This patch fix the compile warnings in hyper_dmabuf
+
+Tracked-On: https://github.com/projectacrn/acrn-hypervisor/issues/1286
+Signed-off-by: Wei Liu <weix.w.liu@intel.com>
+Reviewed-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
+index d91a9eb..fe9e4e2 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
+@@ -217,7 +217,7 @@ static void cmd_process_work(struct work_struct *work)
+ 		dev_dbg(hy_drv_priv->dev, "\tnents %d\n", req->op[4]);
+ 		dev_dbg(hy_drv_priv->dev, "\tfirst offset %d\n", req->op[5]);
+ 		dev_dbg(hy_drv_priv->dev, "\tlast len %d\n", req->op[6]);
+-		dev_dbg(hy_drv_priv->dev, "\tgrefid 0x%lx\n",
++		dev_dbg(hy_drv_priv->dev, "\tgrefid 0x%llx\n",
+ 			(u64)req->op[8] << 32 | req->op[7]);
+ 
+ 		memcpy(imported->priv, &req->op[10], req->op[9]);
+-- 
+2.7.4
+

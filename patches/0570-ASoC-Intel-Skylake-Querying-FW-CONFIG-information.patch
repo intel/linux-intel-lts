@@ -1,0 +1,130 @@
+From 6bc3d44dadbc936550748db74d7c1ea1144948e1 Mon Sep 17 00:00:00 2001
+From: Leoni Prodduvaka <leoni.prodduvaka@intel.com>
+Date: Tue, 7 Feb 2017 18:42:40 +0530
+Subject: [PATCH 0570/1132] ASoC: Intel: Skylake: Querying FW CONFIG
+ information
+
+FW Config information is queried from the firmware.
+This information is useful to set the behavior of the driver.
+[Ex: Memory reclaim]
+
+Change-Id: Idba891a1db4f61bdcce26120974409ffc484770c
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-dsp.h   |  1 +
+ sound/soc/intel/skylake/skl-sst-ipc.h   | 18 ++++++++++++++++++
+ sound/soc/intel/skylake/skl-sst-utils.c | 26 ++++++++++++++++++++++++++
+ sound/soc/intel/skylake/skl-topology.h  | 18 ------------------
+ 4 files changed, 45 insertions(+), 18 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.h b/sound/soc/intel/skylake/skl-sst-dsp.h
+index e874e75..ea6e57e 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.h
++++ b/sound/soc/intel/skylake/skl-sst-dsp.h
+@@ -262,4 +262,5 @@ int skl_prepare_lib_load(struct skl_sst *skl, struct skl_lib_info *linfo,
+ 			unsigned int hdr_offset, int index);
+ void skl_release_library(struct skl_lib_info *linfo, int lib_count);
+ 
++int skl_get_firmware_configuration(struct sst_dsp *ctx);
+ #endif /*__SKL_SST_DSP_H__*/
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index bc02740..0740146 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -39,6 +39,24 @@ enum skl_ipc_pipeline_state {
+ 	PPL_RESTORED =		7
+ };
+ 
++enum base_fw_run_time_param {
++	ADSP_PROPERTIES = 0,
++	ADSP_RESOURCE_STATE = 1,
++	NOTIFICATION_MASK = 3,
++	ASTATE_TABLE = 4,
++	DMA_CONTROL = 5,
++	ENABLE_LOGS = 6,
++	FIRMWARE_CONFIG = 7,
++	HARDWARE_CONFIG = 8,
++	MODULES_INFO = 9,
++	PIPELINE_LIST_INFO = 10,
++	PIPELINE_PROPS = 11,
++	SCHEDULERS_INFO = 12,
++	GATEWAYS_INFO = 13,
++	MEMORY_STATE_INFO = 14,
++	POWER_STATE_INFO = 15
++};
++
+ struct skl_ipc_dxstate_info {
+ 	u32 core_mask;
+ 	u32 dx_mask;
+diff --git a/sound/soc/intel/skylake/skl-sst-utils.c b/sound/soc/intel/skylake/skl-sst-utils.c
+index 2ae4056..59fb24b 100644
+--- a/sound/soc/intel/skylake/skl-sst-utils.c
++++ b/sound/soc/intel/skylake/skl-sst-utils.c
+@@ -446,3 +446,29 @@ void skl_release_library(struct skl_lib_info *linfo, int lib_count)
+ 		}
+ 	}
+ }
++
++int skl_get_firmware_configuration(struct sst_dsp *ctx)
++{
++	struct skl_ipc_large_config_msg msg;
++	struct skl_sst *skl = ctx->thread_context;
++	u8 *ipc_data;
++	int ret = 0;
++	size_t rx_bytes;
++
++	ipc_data = kzalloc(DSP_BUF, GFP_KERNEL);
++	if (!ipc_data)
++		return -ENOMEM;
++
++	msg.module_id = 0;
++	msg.instance_id = 0;
++	msg.large_param_id = FIRMWARE_CONFIG;
++	msg.param_data_size = DSP_BUF;
++
++	ret = skl_ipc_get_large_config(&skl->ipc, &msg,
++			(u32 *)ipc_data, NULL, 0, &rx_bytes);
++	if (ret < 0)
++		dev_err(ctx->dev, "failed to get fw configuration !!!\n");
++
++	kfree(ipc_data);
++	return ret;
++}
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 0026524..676a769 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -514,24 +514,6 @@ struct mod_set_get {
+ 	u32 mailbx[1024];
+ };
+ 
+-enum base_fw_run_time_param {
+-	ADSP_PROPERTIES = 0,
+-	ADSP_RESOURCE_STATE = 1,
+-	NOTIFICATION_MASK = 3,
+-	ASTATE_TABLE = 4,
+-	DMA_CONTROL = 5,
+-	ENABLE_LOGS = 6,
+-	FIRMWARE_CONFIG = 7,
+-	HARDWARE_CONFIG = 8,
+-	MODULES_INFO = 9,
+-	PIPELINE_LIST_INFO = 10,
+-	PIPELINE_PROPS = 11,
+-	SCHEDULERS_INFO = 12,
+-	GATEWAYS_INFO = 13,
+-	MEMORY_STATE_INFO = 14,
+-	POWER_STATE_INFO = 15
+-};
+-
+ struct fw_ipc_data {
+ 	u32 replysz;
+ 	u32 adsp_id;
+-- 
+2.7.4
+

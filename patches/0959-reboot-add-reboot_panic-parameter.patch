@@ -1,0 +1,84 @@
+From 250e9c9e7048b5f0c70f42582369fecb74c85575 Mon Sep 17 00:00:00 2001
+From: Jeremy Rocher <jeremy.rocher@intel.com>
+Date: Wed, 20 Jul 2016 10:00:44 +0200
+Subject: [PATCH 0959/1132] reboot: add reboot_panic parameter
+
+This "reboot_panic" kernel cmdline parameter allow to change the
+reboot mode in case of panic only. It use the same format as the
+"reboot" parameter. Example, for cf9 warm reset in case of panic: reboot_panic=p,w
+
+Signed-off-by: Jeremy Rocher <jeremy.rocher@intel.com>
+Signed-off-by: Tian, Baofeng
+---
+ Documentation/admin-guide/kernel-parameters.txt |  3 +++
+ kernel/reboot.c                                 | 29 ++++++++++++++++++++++++-
+ 2 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index f70a6d0..c5b59d6 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -3907,6 +3907,9 @@
+ 			      reboot_cpu is s[mp]#### with #### being the processor
+ 					to be used for rebooting.
+ 
++	reboot_panic=	[KNL]
++			Same as reboot parameter above but only in case of panic.
++
+ 	relax_domain_level=
+ 			[KNL, SMP] Set scheduler's default relax_domain_level.
+ 			See Documentation/cgroup-v1/cpusets.txt.
+diff --git a/kernel/reboot.c b/kernel/reboot.c
+index 8fb44de..ec01089 100644
+--- a/kernel/reboot.c
++++ b/kernel/reboot.c
+@@ -43,6 +43,7 @@ int reboot_default = 1;
+ int reboot_cpu;
+ enum reboot_type reboot_type = BOOT_ACPI;
+ int reboot_force;
++char *reboot_panic_param;
+ 
+ /*
+  * If set, this is used for preparing the system to power off.
+@@ -515,7 +516,7 @@ void orderly_reboot(void)
+ }
+ EXPORT_SYMBOL_GPL(orderly_reboot);
+ 
+-static int __init reboot_setup(char *str)
++static int reboot_setup(char *str)
+ {
+ 	for (;;) {
+ 		/*
+@@ -582,3 +583,29 @@ static int __init reboot_setup(char *str)
+ 	return 1;
+ }
+ __setup("reboot=", reboot_setup);
++
++static int reboot_panic_notifier_call(struct notifier_block *notifier,
++				      unsigned long what, void *data)
++{
++	if (!reboot_panic_param)
++		return NOTIFY_DONE;
++
++	reboot_setup(reboot_panic_param);
++	pr_info("panic mode set: %s\n", reboot_panic_param);
++
++	return NOTIFY_DONE;
++}
++
++static struct notifier_block reboot_panic_notifier = {
++	.notifier_call  = reboot_panic_notifier_call,
++};
++
++static int __init reboot_panic_setup(char *str)
++{
++	reboot_panic_param = str;
++	atomic_notifier_chain_register(&panic_notifier_list,
++				       &reboot_panic_notifier);
++
++	return 1;
++}
++__setup("reboot_panic=", reboot_panic_setup);
+-- 
+2.7.4
+

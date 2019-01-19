@@ -1,0 +1,122 @@
+From 1428daffcd84cefc40bdf045ee9daf65618c2575 Mon Sep 17 00:00:00 2001
+From: Felipe Balbi <felipe.balbi@linux.intel.com>
+Date: Wed, 1 Aug 2018 13:56:50 +0300
+Subject: [PATCH 0339/1132] usb: dwc3: gadget: remove wait_end_transfer
+
+Now that we have a list of cancelled requests, we can skip over TRBs
+when END_TRANSFER command completes.
+
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+---
+ drivers/usb/dwc3/core.h   |  3 ---
+ drivers/usb/dwc3/gadget.c | 40 +---------------------------------------
+ 2 files changed, 1 insertion(+), 42 deletions(-)
+
+diff --git a/drivers/usb/dwc3/core.h b/drivers/usb/dwc3/core.h
+index 24f0b108..13102850 100644
+--- a/drivers/usb/dwc3/core.h
++++ b/drivers/usb/dwc3/core.h
+@@ -639,7 +639,6 @@ struct dwc3_event_buffer {
+  * @cancelled_list: list of cancelled requests for this endpoint
+  * @pending_list: list of pending requests for this endpoint
+  * @started_list: list of started requests on this endpoint
+- * @wait_end_transfer: wait_queue_head_t for waiting on End Transfer complete
+  * @lock: spinlock for endpoint request queue traversal
+  * @regs: pointer to first endpoint register
+  * @trb_pool: array of transaction buffers
+@@ -664,8 +663,6 @@ struct dwc3_ep {
+ 	struct list_head	pending_list;
+ 	struct list_head	started_list;
+ 
+-	wait_queue_head_t	wait_end_transfer;
+-
+ 	spinlock_t		lock;
+ 	void __iomem		*regs;
+ 
+diff --git a/drivers/usb/dwc3/gadget.c b/drivers/usb/dwc3/gadget.c
+index 3ebb229..9018bac 100644
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -639,8 +639,6 @@ static int __dwc3_gadget_ep_enable(struct dwc3_ep *dep, unsigned int action)
+ 		reg |= DWC3_DALEPENA_EP(dep->number);
+ 		dwc3_writel(dwc->regs, DWC3_DALEPENA, reg);
+ 
+-		init_waitqueue_head(&dep->wait_end_transfer);
+-
+ 		if (usb_endpoint_xfer_control(desc))
+ 			goto out;
+ 
+@@ -1401,15 +1399,11 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 		if (r == req) {
+ 			/* wait until it is processed */
+ 			dwc3_stop_active_transfer(dep, true);
+-			wait_event_lock_irq(dep->wait_end_transfer,
+-					!(dep->flags & DWC3_EP_END_TRANSFER_PENDING),
+-					dwc->lock);
+ 
+ 			if (!r->trb)
+ 				goto out0;
+ 
+ 			dwc3_gadget_move_cancelled_request(req);
+-			dwc3_gadget_ep_cleanup_cancelled_requests(dep);
+ 			goto out0;
+ 		}
+ 		dev_err(dwc->dev, "request %pK was not queued to %s\n",
+@@ -1920,8 +1914,6 @@ static int dwc3_gadget_stop(struct usb_gadget *g)
+ {
+ 	struct dwc3		*dwc = gadget_to_dwc(g);
+ 	unsigned long		flags;
+-	int			epnum;
+-	u32			tmo_eps = 0;
+ 
+ 	spin_lock_irqsave(&dwc->lock, flags);
+ 
+@@ -1930,36 +1922,6 @@ static int dwc3_gadget_stop(struct usb_gadget *g)
+ 
+ 	__dwc3_gadget_stop(dwc);
+ 
+-	for (epnum = 2; epnum < DWC3_ENDPOINTS_NUM; epnum++) {
+-		struct dwc3_ep  *dep = dwc->eps[epnum];
+-		int ret;
+-
+-		if (!dep)
+-			continue;
+-
+-		if (!(dep->flags & DWC3_EP_END_TRANSFER_PENDING))
+-			continue;
+-
+-		ret = wait_event_interruptible_lock_irq_timeout(dep->wait_end_transfer,
+-			    !(dep->flags & DWC3_EP_END_TRANSFER_PENDING),
+-			    dwc->lock, msecs_to_jiffies(5));
+-
+-		if (ret <= 0) {
+-			/* Timed out or interrupted! There's nothing much
+-			 * we can do so we just log here and print which
+-			 * endpoints timed out at the end.
+-			 */
+-			tmo_eps |= 1 << epnum;
+-			dep->flags &= DWC3_EP_END_TRANSFER_PENDING;
+-		}
+-	}
+-
+-	if (tmo_eps) {
+-		dev_err(dwc->dev,
+-			"end transfer timed out on endpoints 0x%x [bitmap]\n",
+-			tmo_eps);
+-	}
+-
+ out:
+ 	dwc->gadget_driver	= NULL;
+ 	spin_unlock_irqrestore(&dwc->lock, flags);
+@@ -2468,7 +2430,7 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
+ 
+ 		if (cmd == DWC3_DEPCMD_ENDTRANSFER) {
+ 			dep->flags &= ~DWC3_EP_END_TRANSFER_PENDING;
+-			wake_up(&dep->wait_end_transfer);
++			dwc3_gadget_ep_cleanup_cancelled_requests(dep);
+ 		}
+ 		break;
+ 	case DWC3_DEPEVT_STREAMEVT:
+-- 
+2.7.4
+

@@ -1,0 +1,51 @@
+From 0de4a7c8e96d2f54e9d14bd3681e81c5fec6d726 Mon Sep 17 00:00:00 2001
+From: Fei Yang <fei.yang@intel.com>
+Date: Mon, 29 Oct 2018 11:45:11 -0700
+Subject: [PATCH 0944/1132] Fix warnings introduced by acrn
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+35 warnings,
+drivers/pci/pci.h:171:41: warning: ‘struct msi_desc’ declared inside parameter list will not be visible outside of this definition or declaration
+
+Introduced by the following patch,
+x86:acrn: add write_msi pv ops to intercept pci msi write with pv method
+
+Add this patch to address it.
+
+Signed-off-by: Fei Yang <fei.yang@intel.com>
+---
+ arch/x86/include/asm/paravirt_types.h | 2 +-
+ drivers/pci/pci.h                     | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/include/asm/paravirt_types.h b/arch/x86/include/asm/paravirt_types.h
+index 06e01d8..9929ab59 100644
+--- a/arch/x86/include/asm/paravirt_types.h
++++ b/arch/x86/include/asm/paravirt_types.h
+@@ -58,7 +58,7 @@ struct mmu_gather;
+ 
+ struct msi_desc;
+ struct msi_msg;
+- 
++
+ /*
+  * Wrapper type for pointers to code which uses the non-standard
+  * calling convention.  See PV_CALL_SAVE_REGS_THUNK below.
+diff --git a/drivers/pci/pci.h b/drivers/pci/pci.h
+index d3fe892..9887a92 100644
+--- a/drivers/pci/pci.h
++++ b/drivers/pci/pci.h
+@@ -9,6 +9,8 @@
+ extern const unsigned char pcie_link_speed[];
+ extern bool pci_early_dump;
+ 
++struct msi_desc;
++
+ bool pcie_cap_has_lnkctl(const struct pci_dev *dev);
+ 
+ /* Functions internal to the PCI core code */
+-- 
+2.7.4
+

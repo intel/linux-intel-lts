@@ -1,0 +1,61 @@
+From c43e76bbfc14fa9b8b5becf3feaca816adcbf0be Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 14 Sep 2018 16:10:18 +0800
+Subject: [PATCH 0855/1132] drm/i915/gvt: remove some initialization of ggtt in
+ GVTg guest
+
+This patch removed the initialization for the ggtt holes in GVT-g guest.
+So that:
+1. can improve the guest boot up time;
+2. avoid boot failure issue when i915.enable_guc_loading != 0.
+
+Signed-off-by: Min He <min.he@intel.com>
+
+Reviewed-by: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Reviewed-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+(cherry picked from commit d1ca0614ef13513202362994d5506ae9a33b3483)
+
+Change-Id: I2d854d5fea65dfbd92c12b9426fa882075d766e1
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem_gtt.c | 17 ++++++++++-------
+ 1 file changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem_gtt.c b/drivers/gpu/drm/i915/i915_gem_gtt.c
+index 5f57f4e..9832b43 100644
+--- a/drivers/gpu/drm/i915/i915_gem_gtt.c
++++ b/drivers/gpu/drm/i915/i915_gem_gtt.c
+@@ -2949,16 +2949,19 @@ int i915_gem_init_ggtt(struct drm_i915_private *dev_priv)
+ 	if (ret)
+ 		return ret;
+ 
+-	/* Clear any non-preallocated blocks */
+-	drm_mm_for_each_hole(entry, &ggtt->vm.mm, hole_start, hole_end) {
+-		DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
++	if (!intel_vgpu_active(dev_priv)) {
++		/* Clear any non-preallocated blocks */
++		drm_mm_for_each_hole(entry, &ggtt->vm.mm, hole_start, hole_end) {
++			DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
+ 			      hole_start, hole_end);
+-		ggtt->vm.clear_range(&ggtt->vm, hole_start,
++			ggtt->vm.clear_range(&ggtt->vm, hole_start,
+ 				     hole_end - hole_start);
+-	}
++		}
+ 
+-	/* And finally clear the reserved guard page */
+-	ggtt->vm.clear_range(&ggtt->vm, ggtt->vm.total - PAGE_SIZE, PAGE_SIZE);
++		/* And finally clear the reserved guard page */
++		ggtt->vm.clear_range(&ggtt->vm, ggtt->vm.total - PAGE_SIZE, PAGE_SIZE);
++
++	}
+ 
+ 	if (USES_PPGTT(dev_priv) && !USES_FULL_PPGTT(dev_priv)) {
+ 		ret = i915_gem_init_aliasing_ppgtt(dev_priv);
+-- 
+2.7.4
+

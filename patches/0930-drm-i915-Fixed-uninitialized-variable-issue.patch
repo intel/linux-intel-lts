@@ -1,0 +1,31 @@
+From 69330f8a51427ed31cb6e2b31c4578c1aeb72a23 Mon Sep 17 00:00:00 2001
+From: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Date: Sun, 14 Oct 2018 16:40:07 -0700
+Subject: [PATCH 0930/1132] drm/i915: Fixed uninitialized variable issue
+
+There could be a circumstance in which ret may not be initialized
+and checking for its value may yield unexpected results.
+
+https://github.com/projectacrn/acrn-hypervisor/issues/1459
+Signed-off-by: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/gpu/drm/i915/intel_display.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 0f63c37..e1ae592 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -15520,7 +15520,7 @@ int intel_modeset_init(struct drm_device *dev)
+ 	}
+ 
+ 	for_each_pipe(dev_priv, pipe) {
+-		int ret;
++		int ret = 0;
+ 
+ 		if (!i915_modparams.avail_planes_per_pipe) {
+ 			ret = intel_crtc_init(dev_priv, pipe);
+-- 
+2.7.4
+

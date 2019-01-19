@@ -1,0 +1,38 @@
+From 074af26b9d8d13bef74d75ef99ead5a015b6d6fc Mon Sep 17 00:00:00 2001
+From: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Date: Wed, 6 Sep 2017 14:04:55 +0530
+Subject: [PATCH 0641/1132] ASoC: Intel: Skylake: Fix codec_dai NULL pointer
+ dereferening
+
+Pointer 'codec_dai' returned from call to cnl_get_codec_dai() can be
+NULL.
+
+Check for the valid pointer before dereferencing.
+
+Change-Id: I783b6220e32a9b8bf7655b92df7a4b034175a509
+Signed-off-by: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Reviewed-on:
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: audio_build
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/boards/cnl_rt274.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sound/soc/intel/boards/cnl_rt274.c b/sound/soc/intel/boards/cnl_rt274.c
+index 07a876f..5570474 100644
+--- a/sound/soc/intel/boards/cnl_rt274.c
++++ b/sound/soc/intel/boards/cnl_rt274.c
+@@ -76,6 +76,8 @@ static int cnl_rt274_clock_control(struct snd_soc_dapm_widget *w,
+ 	int ret = 0, ratio = 100;
+ 	struct snd_soc_dai *codec_dai = cnl_get_codec_dai(card,
+ 							  RT274_CODEC_DAI);
++	if (!codec_dai)
++		return -EINVAL;
+ 
+ 	/* Codec needs clock for Jack detection and button press */
+ 	ret = snd_soc_dai_set_sysclk(codec_dai, RT274_SCLK_S_PLL2,
+-- 
+2.7.4
+

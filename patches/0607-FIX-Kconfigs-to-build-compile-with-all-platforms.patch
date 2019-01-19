@@ -1,0 +1,84 @@
+From 3859f00d8eb489c8f99329d0d8e572c810ee50a3 Mon Sep 17 00:00:00 2001
+From: Anamika Lal <anamikax.lal@intel.com>
+Date: Thu, 29 Jun 2017 11:57:13 +0530
+Subject: [PATCH 0607/1132] FIX Kconfigs to build compile with all platforms
+
+Change-Id: I4e29037b8c4d2068c244b30668133ae243cb957b
+Signed-off-by: Anamika Lal <anamikax.lal@intel.com>
+---
+ drivers/sdw/Kconfig      | 5 +++--
+ sound/soc/codecs/Kconfig | 7 +++----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/sdw/Kconfig b/drivers/sdw/Kconfig
+index 1b7e2cc..660188b 100644
+--- a/drivers/sdw/Kconfig
++++ b/drivers/sdw/Kconfig
+@@ -1,17 +1,18 @@
+ menuconfig SDW
+ 	tristate "SoundWire bus support"
+ 	depends on CRC8
++	depends on X86
+ 	help
+ 	  SoundWire interface is typically used for transporting data
+ 	  related to audio functions.
+ menuconfig SDW_CNL
+ 	tristate "Intel SoundWire master controller support"
+-	depends on SDW
++	depends on SDW && X86
+ 	help
+ 	  Intel SoundWire master controller driver
+ menuconfig SDW_MAXIM_SLAVE
+ 	bool "SoundWire Slave for the Intel CNL FPGA"
+-	depends on SDW
++	depends on SDW && X86
+ 	help
+ 	  SoundWire Slave on FPGA platform for Intel CNL IP
+ 	  Mostly N for all the cases other than CNL Slave FPGA
+diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
+index 006be9a..934bd6e 100644
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -81,7 +81,6 @@ config SND_SOC_ALL_CODECS
+ 	select SND_SOC_ES7134
+ 	select SND_SOC_ES7241
+ 	select SND_SOC_GTM601
+-	select SND_SOC_HDAC_HDMI
+ 	select SND_SOC_ICS43432
+ 	select SND_SOC_INNO_RK3036
+ 	select SND_SOC_ISABELLE if I2C
+@@ -235,7 +234,6 @@ config SND_SOC_ALL_CODECS
+ 	select SND_SOC_WM9705 if (SND_SOC_AC97_BUS || SND_SOC_AC97_BUS_NEW)
+ 	select SND_SOC_WM9712 if (SND_SOC_AC97_BUS || SND_SOC_AC97_BUS_NEW)
+ 	select SND_SOC_WM9713 if (SND_SOC_AC97_BUS || SND_SOC_AC97_BUS_NEW)
+-	select SND_SOC_SVFPGA_I2C if I2C
+         help
+           Normally ASoC codec drivers are only built if a machine driver which
+           uses them is also built since they are only usable with a machine
+@@ -474,13 +472,13 @@ config SND_SOC_SVFPGA
+ 
+ config SND_SOC_SVFPGA_SDW
+ 	tristate "Intel SVFPGA Codec - SDW"
+-	depends on SDW
++	depends on SDW && X86
+ 	select SND_SOC_SVFPGA
+ 	select REGMAP_SDW
+ 
+ config SND_SOC_SVFPGA_I2C
+ 	tristate "Intel SVFPGA Codec - I2C"
+-	depends on I2C
++	depends on I2C && X86
+ 	select SND_SOC_SVFPGA
+ 
+ config SND_SOC_CS42L51
+@@ -628,6 +626,7 @@ config SND_SOC_GTM601
+ 	tristate 'GTM601 UMTS modem audio codec'
+ 
+ config SND_SOC_HDAC_HDMI
++	depends on X86 && ACPI
+ 	tristate
+ 	select SND_HDA_EXT_CORE
+ 	select SND_PCM_ELD
+-- 
+2.7.4
+

@@ -1,0 +1,60 @@
+From a9a69e143dd6e739da86727383671dba1abd480d Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Tue, 31 Jul 2018 12:06:29 +0800
+Subject: [PATCH 0879/1132] drm/i915/gvt: implement gfn_to_mfn with identical
+ 1:1 mapping check
+
+If hypervisor is implementing identical 1:1 memory mapping for sos kernel,
+sos gpa equals to hpa, so we don't need call hypercall for gfn_to_mfn.
+Currently this is a hack solution in function is_identical_mmap, later
+hypervisor will provide one hypercall to let SOS query such kind of info.
+
+V2: add error handling, if map_guest_phys fail, still call vhm_gpa2hpa
+
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/acrngt.c | 22 +++++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/acrngt.c b/drivers/gpu/drm/i915/gvt/acrngt.c
+index c6fff10..abde541 100644
+--- a/drivers/gpu/drm/i915/gvt/acrngt.c
++++ b/drivers/gpu/drm/i915/gvt/acrngt.c
+@@ -787,13 +787,33 @@ static int acrngt_write_gpa(unsigned long handle, unsigned long gpa,
+ 	return 0;
+ }
+ 
++static bool is_identical_mmap(void)
++{
++	/* todo: need add hypercall to get such info from hypervisor */
++	return true;
++}
++
+ static unsigned long acrngt_gfn_to_pfn(unsigned long handle, unsigned long gfn)
+ {
+ 	unsigned long hpa;
+ 	struct acrngt_hvm_dev *info = (struct acrngt_hvm_dev *)handle;
++
+ 	gvt_dbg_core("convert gfn 0x%lx to pfn\n", gfn);
++	if (is_identical_mmap()) {
++		void *va = NULL;
++
++		va = map_guest_phys(info->vm_id, gfn << PAGE_SHIFT,
++				    1 << PAGE_SHIFT);
++		if (!va) {
++			gvt_err("GVT: can not map gfn = 0x%lx!!!\n", gfn);
++			hpa = vhm_vm_gpa2hpa(info->vm_id, gfn << PAGE_SHIFT);
++		} else {
++			hpa = virt_to_phys(va);
++		}
++	} else {
++		hpa = vhm_vm_gpa2hpa(info->vm_id, gfn << PAGE_SHIFT);
++	}
+ 
+-	hpa = vhm_vm_gpa2hpa(info->vm_id, gfn << PAGE_SHIFT);
+ 	return hpa >> PAGE_SHIFT;
+ }
+ 
+-- 
+2.7.4
+

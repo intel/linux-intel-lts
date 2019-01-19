@@ -1,0 +1,3821 @@
+From 08d22eb054e3e4a83234e7a070e300fc514070d1 Mon Sep 17 00:00:00 2001
+From: Jon Moeller <jon.moeller@intel.com>
+Date: Sat, 15 Dec 2018 09:40:13 -0600
+Subject: [PATCH 1045/1132] platform/x86: sep, socwatchhv driver and
+ code-formatting fixes
+
+Fixed some critical bugs in the sep driver for ACRN and remove the
+SEP_PRIVATE_BUILD Kconfig flag.
+
+Fixed bug in socwatchhv ACRN driver with dropped samples for longer
+collections by making the file read non-blocking.
+
+Update swhv_structs.h vm_switch structs to match latest definition.
+
+Changed C++ comments to C-style and fixed several minor checkpatch items.
+
+Change-Id: I334f1f4aa14ee4fa4547f5cb70844c39629efd8a
+Tracked-On: PKT-1610
+Signed-off-by: Jon Moeller <jon.moeller@intel.com>
+---
+ drivers/platform/x86/sepdk/Kconfig                 |   9 --
+ drivers/platform/x86/sepdk/inc/control.h           |   4 +
+ drivers/platform/x86/sepdk/inc/pmi.h               |   2 +-
+ drivers/platform/x86/sepdk/sep/Makefile            |  17 +--
+ drivers/platform/x86/sepdk/sep/linuxos.c           |  63 --------
+ drivers/platform/x86/sepdk/sep/lwpmudrv.c          | 162 +++++++++++++++++----
+ drivers/platform/x86/sepdk/sep/pmi.c               |  58 +++-----
+ drivers/platform/x86/socwatch/inc/sw_collector.h   |   4 +-
+ drivers/platform/x86/socwatch/inc/sw_defines.h     |   4 +-
+ drivers/platform/x86/socwatch/inc/sw_file_ops.h    |   2 +-
+ drivers/platform/x86/socwatch/inc/sw_hardware_io.h |   8 +-
+ drivers/platform/x86/socwatch/inc/sw_internal.h    |  32 ++--
+ drivers/platform/x86/socwatch/inc/sw_ioctl.h       |  54 +++----
+ .../platform/x86/socwatch/inc/sw_kernel_defines.h  |  16 +-
+ drivers/platform/x86/socwatch/inc/sw_list.h        |   2 +-
+ drivers/platform/x86/socwatch/inc/sw_lock_defs.h   |   2 +-
+ drivers/platform/x86/socwatch/inc/sw_mem.h         |   2 +-
+ .../platform/x86/socwatch/inc/sw_ops_provider.h    |   2 +-
+ .../platform/x86/socwatch/inc/sw_output_buffer.h   |   4 +-
+ .../x86/socwatch/inc/sw_overhead_measurements.h    |  22 +--
+ drivers/platform/x86/socwatch/inc/sw_structs.h     | 142 ++++++++++--------
+ drivers/platform/x86/socwatch/inc/sw_telem.h       |   4 +-
+ .../x86/socwatch/inc/sw_trace_notifier_provider.h  |   2 +-
+ .../x86/socwatch/inc/sw_tracepoint_handlers.h      |  41 ++++--
+ drivers/platform/x86/socwatch/inc/sw_types.h       |  22 +--
+ drivers/platform/x86/socwatch/inc/sw_version.h     |   2 +-
+ drivers/platform/x86/socwatch/sw_collector.c       |   5 +-
+ drivers/platform/x86/socwatch/sw_driver.c          |  54 +++----
+ drivers/platform/x86/socwatch/sw_file_ops.c        |  32 ++--
+ drivers/platform/x86/socwatch/sw_internal.c        |  10 +-
+ drivers/platform/x86/socwatch/sw_mem.c             |   6 +-
+ drivers/platform/x86/socwatch/sw_ops_provider.c    |  88 +++++------
+ drivers/platform/x86/socwatch/sw_output_buffer.c   |  14 +-
+ drivers/platform/x86/socwatch/sw_reader.c          |   4 +-
+ drivers/platform/x86/socwatch/sw_telem.c           |  15 +-
+ .../x86/socwatch/sw_trace_notifier_provider.c      |  33 +++--
+ .../platform/x86/socwatch/sw_tracepoint_handlers.c |  11 +-
+ drivers/platform/x86/socwatchhv/control.c          |  11 +-
+ drivers/platform/x86/socwatchhv/inc/asm_helper.h   |   2 +-
+ drivers/platform/x86/socwatchhv/inc/pw_types.h     |  10 +-
+ drivers/platform/x86/socwatchhv/inc/pw_version.h   |   2 +-
+ drivers/platform/x86/socwatchhv/inc/sw_defines.h   |   8 +-
+ drivers/platform/x86/socwatchhv/inc/sw_ioctl.h     |  54 +++----
+ .../x86/socwatchhv/inc/sw_kernel_defines.h         |  16 +-
+ drivers/platform/x86/socwatchhv/inc/sw_structs.h   | 138 +++++++++++-------
+ drivers/platform/x86/socwatchhv/inc/sw_types.h     |  22 +--
+ drivers/platform/x86/socwatchhv/inc/sw_version.h   |   2 +-
+ drivers/platform/x86/socwatchhv/inc/swhv_acrn.h    |   8 +-
+ .../platform/x86/socwatchhv/inc/swhv_acrn_sbuf.h   |   8 +-
+ drivers/platform/x86/socwatchhv/inc/swhv_defines.h |  36 ++---
+ drivers/platform/x86/socwatchhv/inc/swhv_driver.h  |  18 +--
+ drivers/platform/x86/socwatchhv/inc/swhv_ioctl.h   |  12 +-
+ drivers/platform/x86/socwatchhv/inc/swhv_structs.h |  64 +++++---
+ drivers/platform/x86/socwatchhv/swhv_acrn.c        | 107 ++++++--------
+ drivers/platform/x86/socwatchhv/swhv_driver.c      |  15 +-
+ 55 files changed, 800 insertions(+), 687 deletions(-)
+
+diff --git a/drivers/platform/x86/sepdk/Kconfig b/drivers/platform/x86/sepdk/Kconfig
+index ed9c94e..884c505 100755
+--- a/drivers/platform/x86/sepdk/Kconfig
++++ b/drivers/platform/x86/sepdk/Kconfig
+@@ -52,12 +52,3 @@ config SEP_MAXLOG_MODE
+ 	  This may increase overhead
+ 
+ endchoice
+-
+-config SEP_PRIVATE_BUILD
+-	bool "Is this build an Internal and Private build"
+-	depends on INTEL_SEP
+-	default y
+-	help
+-	  Select Yes if this is an Intel Internal Build
+-
+-
+diff --git a/drivers/platform/x86/sepdk/inc/control.h b/drivers/platform/x86/sepdk/inc/control.h
+index ecc93ce..73ecc2e 100644
+--- a/drivers/platform/x86/sepdk/inc/control.h
++++ b/drivers/platform/x86/sepdk/inc/control.h
+@@ -300,7 +300,11 @@ extern U32 *occupied_core_ids;
+  *         CPU number of the processor being executed on
+  *
+  */
++#if !defined(DRV_SEP_ACRN_ON)
+ #define CONTROL_THIS_CPU() smp_processor_id()
++#else
++#define CONTROL_THIS_CPU() raw_smp_processor_id()
++#endif
+ 
+ /*
+  * CONTROL_THIS_RAW_CPU()
+diff --git a/drivers/platform/x86/sepdk/inc/pmi.h b/drivers/platform/x86/sepdk/inc/pmi.h
+index 4fd71f7..88b02b1 100644
+--- a/drivers/platform/x86/sepdk/inc/pmi.h
++++ b/drivers/platform/x86/sepdk/inc/pmi.h
+@@ -57,7 +57,7 @@
+ asmlinkage VOID PMI_Interrupt_Handler(struct pt_regs *regs);
+ 
+ #if defined(DRV_SEP_ACRN_ON)
+-S32 PMI_Buffer_Handler(PVOID data);
++extern VOID PMI_Buffer_Handler(PVOID);
+ #endif
+ 
+ extern U32 pmi_Get_CSD(U32, U32 *, U32 *);
+diff --git a/drivers/platform/x86/sepdk/sep/Makefile b/drivers/platform/x86/sepdk/sep/Makefile
+index 405e55d..c616fc1 100755
+--- a/drivers/platform/x86/sepdk/sep/Makefile
++++ b/drivers/platform/x86/sepdk/sep/Makefile
+@@ -2,7 +2,7 @@ ccflags-y := -I$(src)/../include -I$(src)/../inc -I$(src)/..
+ ccflags-y += -DSEP_CONFIG_MODULE_LAYOUT
+ # TODO: verify kaiser.h
+ #ccflags-y += -DKAISER_HEADER_PRESENT
+-ccflags-y += -DDRV_CPU_HOTPLUG -DDRV_USE_TASKLET_WORKAROUND
++ccflags-y += -DDRV_CPU_HOTPLUG -DDRV_USE_TASKLET_WORKAROUND -DENABLE_CPUS -DBUILD_CHIPSET -DBUILD_GFX
+ 
+ asflags-y := -I$(src)/..
+ 
+@@ -18,10 +18,6 @@ ifdef CONFIG_SEP_MAXLOG_MODE
+ 	ccflags-y += -DDRV_MAXIMAL_LOGGING
+ endif
+ 
+-ifdef CONFIG_SEP_PRIVATE_BUILD
+-	ccflags-y += -DENABLE_CPUS -DBUILD_CHIPSET -DBUILD_GFX
+-endif
+-
+ ifdef CONFIG_SEP_ACRN
+ 	ccflags-y += -DDRV_SEP_ACRN_ON
+ endif
+@@ -50,7 +46,11 @@ sep5-y	:=	lwpmudrv.o        \
+ 		unc_msr.o         \
+ 		unc_common.o      \
+ 		unc_pci.o         \
+-		sepdrv_p_state.o
++		sepdrv_p_state.o  \
++		chap.o            \
++		gmch.o            \
++		gfx.o             \
++		unc_sa.o
+ 
+ 
+ ifdef CONFIG_X86_64
+@@ -60,8 +60,3 @@ endif
+ ifdef CONFIG_X86_32
+ 	sep5-y	+=	sys32.o
+ endif
+-
+-sep5-$(CONFIG_SEP_PRIVATE_BUILD)	+=	chap.o    \
+-						gmch.o    \
+-						gfx.o     \
+-						unc_sa.o
+diff --git a/drivers/platform/x86/sepdk/sep/linuxos.c b/drivers/platform/x86/sepdk/sep/linuxos.c
+index fa29d7f..1f877e6 100755
+--- a/drivers/platform/x86/sepdk/sep/linuxos.c
++++ b/drivers/platform/x86/sepdk/sep/linuxos.c
+@@ -81,8 +81,6 @@ static enum cpuhp_state cpuhp_sepdrv_state;
+ #endif
+ extern wait_queue_head_t wait_exit;
+ 
+-static PVOID local_tasklist_lock;
+-
+ #define MY_TASK PROFILE_TASK_EXIT
+ #define MY_UNMAP PROFILE_MUNMAP
+ #ifdef CONFIG_X86_64
+@@ -869,25 +867,6 @@ OS_STATUS LINUXOS_Enum_Process_Modules(DRV_BOOL at_end)
+ 		return OS_SUCCESS;
+ 	}
+ 
+-	if (!local_tasklist_lock) {
+-		local_tasklist_lock =
+-			(PVOID)(UIOP)UTILITY_Find_Symbol("tasklist_lock");
+-		if (!local_tasklist_lock) {
+-			SEP_DRV_LOG_WARNING("Could not find tasklist_lock.");
+-		}
+-	}
+-
+-	// In some machines the tasklist_lock symbol does not exist.
+-	// For temporary solution we skip the lock if there is no tasklist_lock
+-	if (local_tasklist_lock) {
+-#if defined(                                                                   \
+-	DEFINE_QRWLOCK) // assuming that if DEFINE_QRWLOCK is defined, then tasklist_lock was defined using it
+-		qread_lock(local_tasklist_lock);
+-#else
+-		read_lock(local_tasklist_lock);
+-#endif
+-	}
+-
+ 	FOR_EACH_TASK(p)
+ 	{
+ 		struct mm_struct *mm;
+@@ -922,14 +901,6 @@ OS_STATUS LINUXOS_Enum_Process_Modules(DRV_BOOL at_end)
+ 		n++;
+ 	}
+ 
+-	if (local_tasklist_lock) {
+-#if defined(DEFINE_QRWLOCK)
+-		qread_unlock(local_tasklist_lock);
+-#else
+-		read_unlock(local_tasklist_lock);
+-#endif
+-	}
+-
+ 	SEP_DRV_LOG_TRACE("Enum_Process_Modules done with %d tasks.", n);
+ 
+ 	SEP_DRV_LOG_TRACE_OUT("OS_SUCCESS.");
+@@ -1424,24 +1395,6 @@ DRV_BOOL LINUXOS_Check_KVM_Guest_Process(void)
+ 
+ 	SEP_DRV_LOG_TRACE_IN("");
+ 
+-	if (!local_tasklist_lock) {
+-		local_tasklist_lock =
+-			(PVOID)(UIOP)UTILITY_Find_Symbol("tasklist_lock");
+-		if (!local_tasklist_lock) {
+-			SEP_DRV_LOG_WARNING("Could not find tasklist_lock.");
+-		}
+-	}
+-
+-	// In some machines the tasklist_lock symbol does not exist.
+-	// For temporary solution we skip the lock if there is no tasklist_lock
+-	if (local_tasklist_lock) {
+-#if defined(DEFINE_QRWLOCK)
+-		qread_lock(local_tasklist_lock);
+-#else
+-		read_lock(local_tasklist_lock);
+-#endif
+-	}
+-
+ 	FOR_EACH_TASK(p)
+ 	{
+ 		// if (p == NULL) {
+@@ -1452,27 +1405,11 @@ DRV_BOOL LINUXOS_Check_KVM_Guest_Process(void)
+ 			0; // making sure there is a trailing 0
+ 
+ 		if (!strncmp(p->comm, "qemu-kvm", 8)) {
+-			if (local_tasklist_lock) {
+-#if defined(DEFINE_QRWLOCK)
+-				qread_unlock(local_tasklist_lock);
+-#else
+-				read_unlock(local_tasklist_lock);
+-#endif
+-			}
+-
+ 			SEP_DRV_LOG_INIT_TRACE_OUT("TRUE (found qemu-kvm!).");
+ 			return TRUE;
+ 		}
+ 	}
+ 
+-	if (local_tasklist_lock) {
+-#if defined(DEFINE_QRWLOCK)
+-		qread_unlock(local_tasklist_lock);
+-#else
+-		read_unlock(local_tasklist_lock);
+-#endif
+-	}
+-
+ 	SEP_DRV_LOG_TRACE_OUT("FALSE");
+ 	return FALSE;
+ }
+diff --git a/drivers/platform/x86/sepdk/sep/lwpmudrv.c b/drivers/platform/x86/sepdk/sep/lwpmudrv.c
+index f13552c..bb53962 100755
+--- a/drivers/platform/x86/sepdk/sep/lwpmudrv.c
++++ b/drivers/platform/x86/sepdk/sep/lwpmudrv.c
+@@ -100,9 +100,6 @@ MODULE_VERSION(SEP_NAME "_" SEP_VERSION_STR);
+ MODULE_LICENSE("Dual BSD/GPL");
+ 
+ static struct task_struct *abnormal_handler;
+-#if defined(DRV_SEP_ACRN_ON)
+-static struct task_struct *acrn_buffer_handler[MAX_NR_PCPUS] = { NULL };
+-#endif
+ 
+ typedef struct LWPMU_DEV_NODE_S LWPMU_DEV_NODE;
+ typedef LWPMU_DEV_NODE * LWPMU_DEV;
+@@ -159,8 +156,10 @@ U32 osid = OS_ID_NATIVE;
+ DRV_BOOL sched_switch_enabled = FALSE;
+ 
+ #if defined(DRV_SEP_ACRN_ON)
+-struct profiling_vm_info_list *vm_info_list;
+-shared_buf_t **samp_buf_per_cpu;
++struct profiling_vm_info_list  *vm_info_list;
++static struct timer_list       *buffer_read_timer;
++static unsigned long            buffer_timer_interval;
++shared_buf_t                  **samp_buf_per_cpu;
+ #endif
+ 
+ #define UNCORE_EM_GROUP_SWAP_FACTOR 100
+@@ -1875,14 +1874,17 @@ static VOID lwpmudrv_Write_Uncore(PVOID param)
+  */
+ static VOID lwpmudrv_Write_Op(PVOID param)
+ {
+-	U32 this_cpu = CONTROL_THIS_CPU();
+-
+-	U32 dev_idx = core_to_dev_map[this_cpu];
+-	DISPATCH dispatch = LWPMU_DEVICE_dispatch(&devices[dev_idx]);
++	U32 this_cpu;
++	U32 dev_idx;
++	DISPATCH dispatch;
+ 	U32 switch_grp = 0;
+ 
+ 	SEP_DRV_LOG_TRACE_IN("");
+ 
++	this_cpu = CONTROL_THIS_CPU();
++	dev_idx = core_to_dev_map[this_cpu];
++	dispatch = LWPMU_DEVICE_dispatch(&devices[dev_idx]);
++
+ 	if (dispatch != NULL && dispatch->write != NULL) {
+ 		dispatch->write((VOID *)(size_t)0);
+ 	}
+@@ -2217,6 +2219,49 @@ static VOID lwpmudrv_Trigger_Read(
+ 	SEP_DRV_LOG_TRACE_OUT("Success.");
+ }
+ 
++
++#if defined(DRV_SEP_ACRN_ON)
++/* ------------------------------------------------------------------------- */
++/*!
++ * @fn static VOID lwpmudrv_ACRN_Buffer_Read(void)
++ *
++ * @param - none
++ *
++ * @return - OS_STATUS
++ *
++ * @brief Read the ACRN Buffer Data.
++ *
++ * <I>Special Notes</I>
++ */
++static VOID lwpmudrv_ACRN_Buffer_Read(
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
++	struct timer_list *tl
++#else
++	unsigned long arg
++#endif
++)
++{
++	SEP_DRV_LOG_TRACE_IN("");
++
++	if (GET_DRIVER_STATE() != DRV_STATE_RUNNING) {
++		SEP_DRV_LOG_TRACE_OUT("Success: driver state is not RUNNING");
++		return;
++	}
++
++	CONTROL_Invoke_Parallel(PMI_Buffer_Handler, NULL);
++
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
++	mod_timer(buffer_read_timer, jiffies + buffer_timer_interval);
++#else
++	buffer_read_timer->expires = jiffies + buffer_timer_interval;
++	add_timer(buffer_read_timer);
++#endif
++
++	SEP_DRV_LOG_TRACE_OUT("Success.");
++}
++#endif
++
++
+ /* ------------------------------------------------------------------------- */
+ /*!
+  * @fn static void lwmudrv_Read_Specific_TSC (PVOID param)
+@@ -2310,6 +2355,73 @@ static VOID lwpmudrv_Uncore_Start_Timer(void)
+ 	SEP_DRV_LOG_FLOW_OUT("");
+ }
+ 
++
++#if defined(DRV_SEP_ACRN_ON)
++/* ------------------------------------------------------------------------- */
++/*!
++ * @fn          VOID lwpmudrv_ACRN_Flush_Stop_Timer (void)
++ *
++ * @brief       Stop the ACRN buffer read timer
++ *
++ * @param       none
++ *
++ * @return      none
++ *
++ * <I>Special Notes:</I>
++ */
++static VOID lwpmudrv_ACRN_Flush_Stop_Timer(void)
++{
++	SEP_DRV_LOG_FLOW_IN("");
++
++	if (buffer_read_timer == NULL) {
++		return;
++	}
++
++	del_timer_sync(buffer_read_timer);
++	buffer_read_timer = CONTROL_Free_Memory(buffer_read_timer);
++
++	SEP_DRV_LOG_FLOW_OUT("");
++}
++
++/* ------------------------------------------------------------------------- */
++/*!
++ * @fn          OS_STATUS lwpmudrv_ACRN_Flush_Start_Timer (void)
++ *
++ * @brief       Start the ACRN buffer read timer
++ *
++ * @param       none
++ *
++ * @return      OS_STATUS
++ *
++ * <I>Special Notes:</I>
++ */
++static VOID lwpmudrv_ACRN_Flush_Start_Timer(void)
++{
++	SEP_DRV_LOG_FLOW_IN("");
++
++	buffer_timer_interval = msecs_to_jiffies(10);
++	buffer_read_timer = CONTROL_Allocate_Memory(sizeof(struct timer_list));
++	if (buffer_read_timer == NULL) {
++		SEP_DRV_LOG_ERROR_FLOW_OUT(
++			"Memory allocation failure for buffer_read_timer!");
++		return;
++	}
++
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
++	timer_setup(buffer_read_timer, lwpmudrv_ACRN_Buffer_Read, 0);
++	mod_timer(buffer_read_timer, jiffies + buffer_timer_interval);
++#else
++	init_timer(buffer_read_timer);
++	buffer_read_timer->function = lwpmudrv_ACRN_Buffer_Read;
++	buffer_read_timer->expires = jiffies + buffer_timer_interval;
++	add_timer(buffer_read_timer);
++#endif
++
++	SEP_DRV_LOG_FLOW_OUT("");
++}
++#endif
++
++
+ /* ------------------------------------------------------------------------- */
+ /*!
+  * @fn static OS_STATUS lwpmudrv_Init_Op(void)
+@@ -3918,7 +4030,6 @@ static OS_STATUS lwpmudrv_Start(void)
+ #endif
+ #if defined(DRV_SEP_ACRN_ON)
+ 	struct profiling_control *control = NULL;
+-	S32 i;
+ #endif
+ 
+ 	SEP_DRV_LOG_FLOW_IN("");
+@@ -3988,12 +4099,11 @@ static OS_STATUS lwpmudrv_Start(void)
+ 		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_CONTROL_SWITCH,
+ 				virt_to_phys(control));
+ 
+-		SEP_PRINT_DEBUG("ACRN profiling collection running 0x%llx\n",
++		SEP_DRV_LOG_TRACE("ACRN profiling collection running 0x%llx\n",
+ 				control->switches);
+ 
+ 		if (DRV_CONFIG_counting_mode(drv_cfg) == FALSE) {
+-			control->switches |= (1 << CORE_PMU_SAMPLING) |
+-					     (1 << VM_SWITCH_TRACING);
++			control->switches |= (1 << CORE_PMU_SAMPLING);
+ 			if (DEV_CONFIG_collect_lbrs(cur_pcfg)) {
+ 				control->switches |= (1 << LBR_PMU_SAMPLING);
+ 			}
+@@ -4005,23 +4115,7 @@ static OS_STATUS lwpmudrv_Start(void)
+ 				virt_to_phys(control));
+ 		control = CONTROL_Free_Memory(control);
+ 
+-		if (DRV_CONFIG_counting_mode(drv_cfg) == FALSE) {
+-			char kthread_name[MAXNAMELEN];
+-			for (i = 0; i < GLOBAL_STATE_num_cpus(driver_state);
+-			     i++) {
+-				snprintf(kthread_name, MAXNAMELEN, "%s_%d",
+-					 "SEPDRV_BUFFER_HANDLER", i);
+-				acrn_buffer_handler[i] =
+-					kthread_create(PMI_Buffer_Handler,
+-						       (VOID *)(size_t)i,
+-						       kthread_name);
+-				if (acrn_buffer_handler[i]) {
+-					wake_up_process(acrn_buffer_handler[i]);
+-				}
+-			}
+-			SEP_PRINT_DEBUG(
+-				"lwpmudrv_Prepare_Stop: flushed all the remaining buffer\n");
+-		}
++		lwpmudrv_ACRN_Flush_Start_Timer();
+ #endif
+ 
+ #if defined(BUILD_CHIPSET)
+@@ -4151,12 +4245,12 @@ static OS_STATUS lwpmudrv_Prepare_Stop(void)
+ 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_CONTROL_SWITCH,
+ 			virt_to_phys(control));
+ 
+-	SEP_PRINT_DEBUG("ACRN profiling collection running 0x%llx\n",
++	SEP_DRV_LOG_TRACE("ACRN profiling collection running 0x%llx\n",
+ 			control->switches);
+ 
+ 	if (DRV_CONFIG_counting_mode(drv_cfg) == FALSE) {
+ 		control->switches &=
+-			~((1 << CORE_PMU_SAMPLING) | (1 << VM_SWITCH_TRACING));
++			~(1 << CORE_PMU_SAMPLING);
+ 	} else {
+ 		control->switches &= ~(1 << CORE_PMU_COUNTING);
+ 	}
+@@ -4164,6 +4258,10 @@ static OS_STATUS lwpmudrv_Prepare_Stop(void)
+ 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_SET_CONTROL_SWITCH,
+ 			virt_to_phys(control));
+ 	control = CONTROL_Free_Memory(control);
++
++	lwpmudrv_ACRN_Flush_Stop_Timer();
++        SEP_DRV_LOG_TRACE("Calling final PMI_Buffer_Handler\n");
++	CONTROL_Invoke_Parallel(PMI_Buffer_Handler, NULL);
+ #endif
+ 
+ 	SEP_DRV_LOG_TRACE("Outside of all interrupts.");
+diff --git a/drivers/platform/x86/sepdk/sep/pmi.c b/drivers/platform/x86/sepdk/sep/pmi.c
+index 44f335d..934473f 100755
+--- a/drivers/platform/x86/sepdk/sep/pmi.c
++++ b/drivers/platform/x86/sepdk/sep/pmi.c
+@@ -422,7 +422,7 @@ asmlinkage VOID PMI_Interrupt_Handler(struct pt_regs *regs)
+  *
+  * <I>Special Notes</I>
+  */
+-S32 PMI_Buffer_Handler(PVOID data)
++VOID PMI_Buffer_Handler(PVOID data)
+ {
+ 	SampleRecordPC *psamp;
+ 	CPU_STATE pcpu;
+@@ -442,10 +442,10 @@ S32 PMI_Buffer_Handler(PVOID data)
+ 	U64 overflow_status = 0;
+ 
+ 	if (!pcb || !cpu_buf || !devices) {
+-		return 0;
++		return;
+ 	}
+-	cpu_id = (S32)(size_t)data;
+ 
++	cpu_id = (S32)CONTROL_THIS_CPU();
+ 	pcpu = &pcb[cpu_id];
+ 	bd = &cpu_buf[cpu_id];
+ 	dev_idx = core_to_dev_map[cpu_id];
+@@ -456,8 +456,6 @@ S32 PMI_Buffer_Handler(PVOID data)
+ 
+ 	while (1) {
+ 		if ((GLOBAL_STATE_current_phase(driver_state) ==
+-		     DRV_STATE_PREPARE_STOP) ||
+-		    (GLOBAL_STATE_current_phase(driver_state) ==
+ 		     DRV_STATE_TERMINATING) ||
+ 		    (GLOBAL_STATE_current_phase(driver_state) ==
+ 		     DRV_STATE_STOPPED)) {
+@@ -467,8 +465,8 @@ S32 PMI_Buffer_Handler(PVOID data)
+ 		data_size =
+ 			sbuf_get(samp_buf_per_cpu[cpu_id], (uint8_t *)&header);
+ 		if (data_size <= 0) {
+-			continue;
+-		}
++			goto handler_cleanup;
++                }
+ 		payload_size = 0;
+ 		if ((header.data_type == (1 << CORE_PMU_SAMPLING)) ||
+ 		    (header.data_type == (1 << LBR_PMU_SAMPLING))) {
+@@ -482,51 +480,35 @@ S32 PMI_Buffer_Handler(PVOID data)
+ 				expected_payload_size = 0;
+ 			}
+ 			for (j = 0; j < (expected_payload_size - 1) /
+-							TRACE_ELEMENT_SIZE +
+-						1;
+-			     j++) {
+-				while (1) {
++					TRACE_ELEMENT_SIZE + 1; j++) {
+ 					data_size = sbuf_get(
+ 						samp_buf_per_cpu[cpu_id],
+ 						(uint8_t *)&psample +
+ 							j * TRACE_ELEMENT_SIZE);
+ 					if (data_size <= 0) {
+-						if ((GLOBAL_STATE_current_phase(
+-							     driver_state) ==
+-						     DRV_STATE_PREPARE_STOP) ||
+-						    (GLOBAL_STATE_current_phase(
+-							     driver_state) ==
+-						     DRV_STATE_TERMINATING) ||
+-						    (GLOBAL_STATE_current_phase(
+-							     driver_state) ==
+-						     DRV_STATE_STOPPED)) {
+-							goto handler_cleanup;
+-						}
+-					} else {
+ 						break;
+ 					}
+-				}
+-
+ 				payload_size += data_size;
+ 			}
++			SEP_DRV_LOG_TRACE("payload_size = %x\n", payload_size);
+ 			if (header.payload_size > payload_size) {
+ 				// Mismatch in payload size in header info
+ 				SEP_PRINT_ERROR(
+ 					"Mismatch in data size: header=%llu, payload_size=%d\n",
+ 					header.payload_size, payload_size);
+-				break;
++				goto handler_cleanup;
+ 			}
+ 			if (header.cpu_id != cpu_id) {
+ 				// Mismatch in cpu index in header info
+ 				SEP_PRINT_ERROR(
+ 					"Mismatch in cpu idx: header=%u, buffer=%d\n",
+ 					header.cpu_id, cpu_id);
+-				break;
++				goto handler_cleanup;
+ 			}
+ 
+ 			// Now, handle the sample data in buffer
+ 			overflow_status = psample.csample.overflow_status;
+-			SEP_PRINT_DEBUG("overflow_status cpu%d, value=0x%llx\n",
++			SEP_DRV_LOG_TRACE("overflow_status cpu%d, value=0x%llx\n",
+ 					cpu_id, overflow_status);
+ 
+ 			FOR_EACH_DATA_REG_CPU(pecb, i, cpu_id)
+@@ -546,7 +528,7 @@ S32 PMI_Buffer_Handler(PVOID data)
+ 						ECB_entries_event_id_index(pecb,
+ 									   i));
+ 					evt_desc = desc_data[desc_id];
+-					SEP_PRINT_DEBUG(
++					SEP_DRV_LOG_TRACE(
+ 						"In Interrupt handler: event_id_index=%u, desc_id=%u\n",
+ 						ECB_entries_event_id_index(pecb,
+ 									   i),
+@@ -561,7 +543,7 @@ S32 PMI_Buffer_Handler(PVOID data)
+ 							!SEP_IN_NOTIFICATION,
+ 							cpu_id);
+ 					if (!psamp) {
+-						SEP_PRINT_DEBUG(
++						SEP_DRV_LOG_TRACE(
+ 							"In Interrupt handler: psamp is NULL. No output buffer allocated\n");
+ 						continue;
+ 					}
+@@ -611,30 +593,34 @@ S32 PMI_Buffer_Handler(PVOID data)
+ 							&psample.lsample);
+ 					}
+ 
+-					SEP_PRINT_DEBUG(
++					SEP_DRV_LOG_TRACE(
+ 						"SAMPLE_RECORD_cpu_num(psamp) %x\n",
+ 						SAMPLE_RECORD_cpu_num(psamp));
+-					SEP_PRINT_DEBUG(
++					SEP_DRV_LOG_TRACE(
+ 						"SAMPLE_RECORD_iip(psamp) %x\n",
+ 						SAMPLE_RECORD_iip(psamp));
+-					SEP_PRINT_DEBUG(
++					SEP_DRV_LOG_TRACE(
+ 						"SAMPLE_RECORD_cs(psamp) %x\n",
+ 						SAMPLE_RECORD_cs(psamp));
+-					SEP_PRINT_DEBUG(
++					SEP_DRV_LOG_TRACE(
+ 						"SAMPLE_RECORD_csd(psamp).lowWord %x\n",
+ 						SAMPLE_RECORD_csd(psamp)
+ 							.u1.lowWord);
+-					SEP_PRINT_DEBUG(
++					SEP_DRV_LOG_TRACE(
+ 						"SAMPLE_RECORD_csd(psamp).highWord %x\n",
+ 						SAMPLE_RECORD_csd(psamp)
+ 							.u2.highWord);
+ 				}
+ 			}
+ 			END_FOR_EACH_DATA_REG_CPU;
++		} else if (header.data_type == (1 << VM_SWITCH_TRACING)) {
++			SEP_DRV_LOG_TRACE("Ignoring VM switch trace data\n");
++		} else {
++			SEP_DRV_LOG_TRACE("Unknown data_type %x\n", header.data_type);
+ 		}
+ 	}
+ 
+ handler_cleanup:
+-	return 0;
++	return;
+ }
+ #endif
+diff --git a/drivers/platform/x86/socwatch/inc/sw_collector.h b/drivers/platform/x86/socwatch/inc/sw_collector.h
+index b771ab9..41430cb 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_collector.h
++++ b/drivers/platform/x86/socwatch/inc/sw_collector.h
+@@ -62,7 +62,7 @@
+  */
+ struct sw_hw_ops;
+ 
+-// TODO: convert from 'list_head' to 'hlist_head'
++/* TODO: convert from 'list_head' to 'hlist_head' */
+ /**
+  * struct - sw_collector_data
+  * Information about the collector to be invoked at collection time.
+@@ -133,4 +133,4 @@ void sw_set_collector_ops(const struct sw_hw_ops *hw_ops);
+  */
+ extern int sw_process_snapshot(enum sw_when_type when);
+ extern int sw_process_snapshot_on_cpu(enum sw_when_type when, int cpu);
+-#endif // __SW_COLLECTOR_H__
++#endif /* __SW_COLLECTOR_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_defines.h b/drivers/platform/x86/socwatch/inc/sw_defines.h
+index 15ccca1..ab0f491 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_defines.h
++++ b/drivers/platform/x86/socwatch/inc/sw_defines.h
+@@ -146,11 +146,11 @@ typedef enum {
+ 	SW_COUNTER_HOTKEY_EVENT,
+ 	SW_MAX_COLLECTION_EVENT
+ } collector_stop_event_t;
+-#endif // SWW_MERGE
++#endif /* SWW_MERGE */
+ 
+ #define MAX_UNSIGNED_16_BIT_VALUE 0xFFFF
+ #define MAX_UNSIGNED_24_BIT_VALUE 0xFFFFFF
+ #define MAX_UNSIGNED_32_BIT_VALUE 0xFFFFFFFF
+ #define MAX_UNSIGNED_64_BIT_VALUE 0xFFFFFFFFFFFFFFFF
+ 
+-#endif // _PW_DEFINES_H_
++#endif /* _PW_DEFINES_H_ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_file_ops.h b/drivers/platform/x86/socwatch/inc/sw_file_ops.h
+index 7c5705c..c3a30a1 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_file_ops.h
++++ b/drivers/platform/x86/socwatch/inc/sw_file_ops.h
+@@ -67,4 +67,4 @@ struct sw_file_ops {
+ int sw_register_dev(struct sw_file_ops *ops);
+ void sw_unregister_dev(void);
+ 
+-#endif // __SW_FILE_OPS_H__
++#endif /* __SW_FILE_OPS_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_hardware_io.h b/drivers/platform/x86/socwatch/inc/sw_hardware_io.h
+index f93fa6b..5cc9ebe 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_hardware_io.h
++++ b/drivers/platform/x86/socwatch/inc/sw_hardware_io.h
+@@ -74,13 +74,15 @@ typedef bool (*sw_hw_op_post_config_func_t)(void);
+ /**
+  * struct sw_hw_ops - Operations for each of the HW collection mechanisms
+  *                    in swkernelcollector.
+- * @name:           A descriptive name used to identify this particular operation.
++ * @name:           A descriptive name used to identify this particular
++ *                  operation.
+  * @init:           Initialize a metric's collection.
+  * @read:           Read a metric's data.
+  * @write:          Write to the HW for the metric(?).
+  * @print:          Print out the data.
+  * @reset:          Opposite of init--called after we're done collecting.
+- * @available:      Decide whether this H/W op is available on the current platform.
++ * @available:      Decide whether this H/W op is available on the current
++ *                  platform.
+  * @post_config:    Perform any post-configuration steps.
+  */
+ struct sw_hw_ops {
+@@ -115,4 +117,4 @@ int sw_register_hw_ops(void);
+  */
+ void sw_free_hw_ops(void);
+ 
+-#endif // __SW_HARDWARE_IO_H__
++#endif /* __SW_HARDWARE_IO_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_internal.h b/drivers/platform/x86/socwatch/inc/sw_internal.h
+index 8e88d5d..c8d9da3 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_internal.h
++++ b/drivers/platform/x86/socwatch/inc/sw_internal.h
+@@ -66,28 +66,28 @@
+ #include <linux/slab.h>
+ #include <linux/cpumask.h>
+ #include <linux/hrtimer.h>
+-#include <linux/fs.h> // inode
+-#include <linux/device.h> // class_create
+-#include <linux/cdev.h> // cdev_alloc
+-#include <linux/vmalloc.h> // vmalloc
+-#include <linux/sched.h> // TASK_INTERRUPTIBLE
+-#include <linux/wait.h> // wait_event_interruptible
+-#include <linux/pci.h> // pci_get_bus_and_slot
+-#include <linux/version.h> // LINUX_VERSION_CODE
+-#include <linux/sfi.h> // For SFI F/W version
++#include <linux/fs.h> /* inode */
++#include <linux/device.h> /* class_create */
++#include <linux/cdev.h> /* cdev_alloc */
++#include <linux/vmalloc.h> /* vmalloc */
++#include <linux/sched.h> /* TASK_INTERRUPTIBLE */
++#include <linux/wait.h> /* wait_event_interruptible */
++#include <linux/pci.h> /* pci_get_bus_and_slot */
++#include <linux/version.h> /* LINUX_VERSION_CODE */
++#include <linux/sfi.h> /* For SFI F/W version */
+ #include <asm/hardirq.h>
+ #include <linux/cpufreq.h>
+-#include <asm/local.h> // local_t
+-#include <linux/hardirq.h> // "in_atomic"
++#include <asm/local.h> /* local_t */
++#include <linux/hardirq.h> /* "in_atomic" */
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
+-#include <asm/uaccess.h> // copy_to_user
++#include <asm/uaccess.h> /* copy_to_user */
+ #else
+-#include <linux/uaccess.h> // copy_to_user
+-#endif // LINUX_VERSION_CODE
++#include <linux/uaccess.h> /* copy_to_user */
++#endif /* LINUX_VERSION_CODE */
+ 
+ #ifdef CONFIG_X86_WANT_INTEL_MID
+ #include <asm/intel-mid.h>
+-#endif // CONFIG_X86_WANT_INTEL_MID
++#endif /* CONFIG_X86_WANT_INTEL_MID */
+ /*
+  * End taken from sw_driver
+  */
+@@ -135,4 +135,4 @@ int sw_set_module_scope_for_cpus(void);
+  */
+ int sw_reset_module_scope_for_cpus(void);
+ 
+-#endif // __SW_DATA_STRUCTS_H__
++#endif /* __SW_DATA_STRUCTS_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_ioctl.h b/drivers/platform/x86/socwatch/inc/sw_ioctl.h
+index baf9305..1f8e903 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_ioctl.h
++++ b/drivers/platform/x86/socwatch/inc/sw_ioctl.h
+@@ -62,11 +62,11 @@
+ #if defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
+ #include <asm/compat.h>
+ #include <linux/compat.h>
+-#endif // COMPAT && x64
+-#else // !__KERNEL__
++#endif /* COMPAT && x64 */
++#else /* !__KERNEL__ */
+ #include <sys/ioctl.h>
+-#endif // __KERNEL__
+-#endif // __linux__
++#endif /* __KERNEL__ */
++#endif /* __linux__ */
+ /*
+  * Ensure we pull in definition of 'DO_COUNT_DROPPED_SAMPLES'!
+  */
+@@ -75,8 +75,8 @@
+ #ifdef ONECORE
+ #ifndef __KERNEL__
+ #include <winioctl.h>
+-#endif //__KERNEL__
+-#endif // ONECORE
++#endif /* __KERNEL__ */
++#endif /* ONECORE */
+ 
+ /*
+  * The APWR-specific IOCTL magic
+@@ -84,13 +84,13 @@
+  * are delivered to the correct
+  * driver.
+  */
+-// #define APWR_IOCTL_MAGIC_NUM 0xdead
++/* #define APWR_IOCTL_MAGIC_NUM 0xdead */
+ #define APWR_IOCTL_MAGIC_NUM 100
+ 
+ /*
+  * The name of the device file
+  */
+-// #define DEVICE_FILE_NAME "/dev/pw_driver_char_dev"
++/* #define DEVICE_FILE_NAME "/dev/pw_driver_char_dev" */
+ #define PW_DEVICE_FILE_NAME "/dev/apwr_driver_char_dev"
+ #define PW_DEVICE_NAME "apwr_driver_char_dev"
+ 
+@@ -119,13 +119,13 @@ enum sw_ioctl_cmd {
+  * Where "Read" and "Write" are from the user's perspective
+  * (similar to the file "read" and "write" calls).
+  */
+-#ifdef SWW_MERGE // Windows
+-//
+-// Device type           -- in the "User Defined" range."
+-//
++#ifdef SWW_MERGE /* Windows */
++/*
++ * Device type           -- in the "User Defined" range."
++ */
+ #define POWER_I_CONF_TYPE 40000
+ 
+-// List assigned tracepoint id
++/* List assigned tracepoint id */
+ #define CSIR_TRACEPOINT_ID_MASK 1
+ #define DEVICE_STATE_TRACEPOINT_ID_MASK 2
+ #define CSIR_SEPARATE_TRACEPOINT_ID_MASK 3
+@@ -133,18 +133,18 @@ enum sw_ioctl_cmd {
+ #define DISPLAY_ON_TRACEPOINT_ID_MASK 5
+ 
+ #ifdef SWW_MERGE
+-//
+-// TELEM BAR CONFIG
+-//
++/*
++ * TELEM BAR CONFIG
++ */
+ #define MAX_TELEM_BAR_CFG 3
+ #define TELEM_MCHBAR_CFG 0
+ #define TELEM_IPC1BAR_CFG 1
+ #define TELEM_SSRAMBAR_CFG 2
+ #endif
+ 
+-//
+-// The IOCTL function codes from 0x800 to 0xFFF are for customer use.
+-//
++/*
++ * The IOCTL function codes from 0x800 to 0xFFF are for customer use.
++ */
+ #define PW_IOCTL_CONFIG                                                        \
+ 	CTL_CODE(POWER_I_CONF_TYPE, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
+ #define PW_IOCTL_START_COLLECTION                                              \
+@@ -152,7 +152,7 @@ enum sw_ioctl_cmd {
+ #define PW_IOCTL_STOP_COLLECTION                                               \
+ 	CTL_CODE(POWER_I_CONF_TYPE, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
+ 
+-// TODO: pause, resume, cancel not supported yet
++/* TODO: pause, resume, cancel not supported yet */
+ #define PW_IOCTL_PAUSE_COLLECTION                                              \
+ 	CTL_CODE(POWER_I_CONF_TYPE, 0x903, METHOD_BUFFERED, FILE_ANY_ACCESS)
+ #define PW_IOCTL_RESUME_COLLECTION                                             \
+@@ -201,7 +201,7 @@ enum sw_ioctl_cmd {
+ #define PW_IOCTL_CMD                                                           \
+ 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd,                           \
+ 	     struct sw_driver_ioctl_arg *)
+-#endif // DO_COUNT_DROPPED_SAMPLES
++#endif /* DO_COUNT_DROPPED_SAMPLES */
+ #define PW_IOCTL_POLL _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
+ #define PW_IOCTL_IMMEDIATE_IO                                                  \
+ 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io,                 \
+@@ -227,7 +227,7 @@ enum sw_ioctl_cmd {
+ #define PW_IOCTL_GET_TOPOLOGY_CHANGES                                          \
+ 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes,              \
+ 	     struct sw_driver_ioctl_arg *)
+-#else // __APPLE__
++#else /* __APPLE__ */
+ #define PW_IOCTL_CONFIG                                                        \
+ 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_config,                        \
+ 	     struct sw_driver_ioctl_arg)
+@@ -238,7 +238,7 @@ enum sw_ioctl_cmd {
+ #else
+ #define PW_IOCTL_CMD                                                           \
+ 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd, struct sw_driver_ioctl_arg)
+-#endif // DO_COUNT_DROPPED_SAMPLES
++#endif /* DO_COUNT_DROPPED_SAMPLES */
+ #define PW_IOCTL_POLL _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
+ #define PW_IOCTL_IMMEDIATE_IO                                                  \
+ 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io,                 \
+@@ -264,7 +264,7 @@ enum sw_ioctl_cmd {
+ #define PW_IOCTL_GET_TOPOLOGY_CHANGES                                          \
+ 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes,             \
+ 	      struct sw_driver_ioctl_arg)
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+ /*
+  * 32b-compatible version of the above
+@@ -281,7 +281,7 @@ enum sw_ioctl_cmd {
+ #else
+ #define PW_IOCTL_CMD32                                                         \
+ 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd, compat_uptr_t)
+-#endif // DO_COUNT_DROPPED_SAMPLES
++#endif /* DO_COUNT_DROPPED_SAMPLES */
+ #define PW_IOCTL_POLL32 _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
+ #define PW_IOCTL_IMMEDIATE_IO32                                                \
+ 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io, compat_uptr_t)
+@@ -299,5 +299,5 @@ enum sw_ioctl_cmd {
+ 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_avail_collect, compat_uptr_t)
+ #define PW_IOCTL_GET_TOPOLOGY_CHANGES32                                        \
+ 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes, compat_uptr_t)
+-#endif // defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
+-#endif // __SW_IOCTL_H__
++#endif /* defined(CONFIG_COMPAT) && defined(CONFIG_X86_64) */
++#endif /* __SW_IOCTL_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_kernel_defines.h b/drivers/platform/x86/socwatch/inc/sw_kernel_defines.h
+index 275b1bd..2632864 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_kernel_defines.h
++++ b/drivers/platform/x86/socwatch/inc/sw_kernel_defines.h
+@@ -61,7 +61,7 @@
+ #if defined(__APPLE__)
+ #define likely(x) (x)
+ #define unlikely(x) (x)
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+ #if !defined(__APPLE__)
+ #define CPU() (raw_smp_processor_id())
+@@ -69,7 +69,7 @@
+ #else
+ #define CPU() (cpu_number())
+ #define RAW_CPU() (cpu_number())
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+ #define TID() (current->pid)
+ #define PID() (current->tgid)
+@@ -101,12 +101,12 @@
+ #if !DO_OVERHEAD_MEASUREMENTS
+ #undef DO_OVERHEAD_MEASUREMENTS
+ #define DO_OVERHEAD_MEASUREMENTS 1
+-#endif // DO_OVERHEAD_MEASUREMENTS
++#endif /* DO_OVERHEAD_MEASUREMENTS */
+ #if !DO_TRACK_MEMORY_USAGE
+ #undef DO_TRACK_MEMORY_USAGE
+ #define DO_TRACK_MEMORY_USAGE 1
+-#endif // DO_TRACK_MEMORY_USAGE
+-#endif // DO_DRIVER_PROFILING
++#endif /* DO_TRACK_MEMORY_USAGE */
++#endif /* DO_DRIVER_PROFILING */
+ /*
+  * Should we allow debug output.
+  * Set to: "1" ==> 'OUTPUT' is enabled.
+@@ -142,7 +142,7 @@
+ #define pw_pr_warn(...)
+ #endif
+ #define pw_pr_force(...) IOLog(__VA_ARGS__)
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+ /*
+  * Macro for driver error messages.
+@@ -159,6 +159,6 @@
+ #else
+ #define pw_pr_error(...)
+ #endif
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+-#endif // _SW_KERNEL_DEFINES_H_
++#endif /* _SW_KERNEL_DEFINES_H_ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_list.h b/drivers/platform/x86/socwatch/inc/sw_list.h
+index ecc646a..9c17e50 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_list.h
++++ b/drivers/platform/x86/socwatch/inc/sw_list.h
+@@ -73,4 +73,4 @@
+ #define SW_LIST_EMPTY(head) list_empty(head)
+ #define SW_LIST_HEAD_INITIALIZER(head) LIST_HEAD_INIT(head)
+ 
+-#endif // __SW_LIST_H__
++#endif /* __SW_LIST_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_lock_defs.h b/drivers/platform/x86/socwatch/inc/sw_lock_defs.h
+index 7c9d68c..be44bfa 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_lock_defs.h
++++ b/drivers/platform/x86/socwatch/inc/sw_lock_defs.h
+@@ -95,4 +95,4 @@
+ 	write_unlock_irqrestore(&(l), _tmp_l_flags);                           \
+ 	}
+ 
+-#endif // __SW_LOCK_DEFS_H__
++#endif /* __SW_LOCK_DEFS_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_mem.h b/drivers/platform/x86/socwatch/inc/sw_mem.h
+index 600b888..0d6de7f 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_mem.h
++++ b/drivers/platform/x86/socwatch/inc/sw_mem.h
+@@ -79,4 +79,4 @@ void sw_release_pages(unsigned long addr, unsigned int alloc_size_in_bytes);
+ u64 sw_get_total_bytes_alloced(void);
+ u64 sw_get_max_bytes_alloced(void);
+ u64 sw_get_curr_bytes_alloced(void);
+-#endif // _SW_MEM_H_
++#endif /* _SW_MEM_H_ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_ops_provider.h b/drivers/platform/x86/socwatch/inc/sw_ops_provider.h
+index 43bd73f..bb841bf 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_ops_provider.h
++++ b/drivers/platform/x86/socwatch/inc/sw_ops_provider.h
+@@ -59,4 +59,4 @@
+ int sw_register_ops_providers(void);
+ void sw_free_ops_providers(void);
+ 
+-#endif // __SW_OPS_PROVIDER_H__
++#endif /* __SW_OPS_PROVIDER_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_output_buffer.h b/drivers/platform/x86/socwatch/inc/sw_output_buffer.h
+index 17e5944..8d65182 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_output_buffer.h
++++ b/drivers/platform/x86/socwatch/inc/sw_output_buffer.h
+@@ -59,7 +59,7 @@
+ /*
+  * Special mask for the case where all buffers have been flushed.
+  */
+-// #define sw_ALL_WRITES_DONE_MASK 0xffffffff
++/* #define sw_ALL_WRITES_DONE_MASK 0xffffffff */
+ #define SW_ALL_WRITES_DONE_MASK ((u32)-1)
+ /*
+  * Special mask for the case where no data is available to be read.
+@@ -133,4 +133,4 @@ void sw_cancel_reader(void);
+  */
+ void sw_print_reader_stats(void);
+ 
+-#endif // _SW_OUTPUT_BUFFER_H_
++#endif /* _SW_OUTPUT_BUFFER_H_ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_overhead_measurements.h b/drivers/platform/x86/socwatch/inc/sw_overhead_measurements.h
+index 7d9dc68..4052555 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_overhead_measurements.h
++++ b/drivers/platform/x86/socwatch/inc/sw_overhead_measurements.h
+@@ -82,18 +82,18 @@
+ 
+ #ifndef __get_cpu_var
+ /*
+-     * Kernels >= 3.19 don't include a definition
+-     * of '__get_cpu_var'. Create one now.
+-     */
++ * Kernels >= 3.19 don't include a definition
++ * of '__get_cpu_var'. Create one now.
++ */
+ #define __get_cpu_var(var) (*this_cpu_ptr(&var))
+-#endif // __get_cpu_var
++#endif /* __get_cpu_var */
+ #ifndef __raw_get_cpu_var
+ /*
+-     * Kernels >= 3.19 don't include a definition
+-     * of '__raw_get_cpu_var'. Create one now.
+-     */
++ * Kernels >= 3.19 don't include a definition
++ * of '__raw_get_cpu_var'. Create one now.
++ */
+ #define __raw_get_cpu_var(var) (*raw_cpu_ptr(&var))
+-#endif // __get_cpu_var
++#endif /* __get_cpu_var */
+ 
+ extern u64 sw_timestamp(void);
+ 
+@@ -171,7 +171,7 @@ extern u64 sw_timestamp(void);
+ 		__ret;							\
+ 	})
+ 
+-#else // !DO_OVERHEAD_MEASUREMENTS
++#else /* !DO_OVERHEAD_MEASUREMENTS */
+ #define DECLARE_OVERHEAD_VARS(name)					\
+ 	static inline void name##_print_cumulative_overhead_params(	\
+ 		const char *str)					\
+@@ -181,9 +181,9 @@ extern u64 sw_timestamp(void);
+ #define DO_PER_CPU_OVERHEAD_FUNC(func, ...) func(__VA_ARGS__)
+ #define DO_PER_CPU_OVERHEAD_FUNC_RET(type, func, ...) func(__VA_ARGS__)
+ 
+-#endif // DO_OVERHEAD_MEASUREMENTS
++#endif /* DO_OVERHEAD_MEASUREMENTS */
+ 
+ #define PRINT_CUMULATIVE_OVERHEAD_PARAMS(name, str)	\
+ 	name##_print_cumulative_overhead_params(str)
+ 
+-#endif // _PW_OVERHEAD_MEASUREMENTS_H_
++#endif /* _PW_OVERHEAD_MEASUREMENTS_H_ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_structs.h b/drivers/platform/x86/socwatch/inc/sw_structs.h
+index 7f53a9e..de5ad2b 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_structs.h
++++ b/drivers/platform/x86/socwatch/inc/sw_structs.h
+@@ -95,14 +95,17 @@ struct sw_key_value_payload {
+ 	(sizeof(struct sw_key_value_payload) - sizeof(char[1]))
+ 
+ typedef enum sw_kernel_wakelock_type {
+-	SW_WAKE_LOCK = 0, // A kernel wakelock was acquired
+-	SW_WAKE_UNLOCK = 1, // A kernel wakelock was released
++	SW_WAKE_LOCK = 0, /* A kernel wakelock was acquired */
++	SW_WAKE_UNLOCK = 1, /* A kernel wakelock was released */
+ 	SW_WAKE_LOCK_TIMEOUT =
+-		2, // A kernel wakelock was acquired with a timeout
+-	SW_WAKE_LOCK_INITIAL = 3, // A kernel wakelock was acquired before the
+-	//   collection started
+-	SW_WAKE_UNLOCK_ALL = 4, // All previously held kernel wakelocks were
+-	//   released -- used in ACPI S3 notifications
++		2, /* A kernel wakelock was acquired with a timeout */
++	SW_WAKE_LOCK_INITIAL = 3, /* A kernel wakelock was acquired
++				   * before the
++				   * collection started
++				   */
++	SW_WAKE_UNLOCK_ALL = 4, /* All previously held kernel wakelocks were
++				 * released -- used in ACPI S3 notifications
++				 */
+ } sw_kernel_wakelock_type_t;
+ 
+ typedef enum sw_when_type {
+@@ -115,7 +118,8 @@ typedef enum sw_when_type {
+ } sw_when_type_t;
+ 
+ /**
+- * trigger_bits is defined to use type pw_u8_t that makes only upto 8 types possible
++ * trigger_bits is defined to use type pw_u8_t
++ * that makes only upto 8 types possible
+  */
+ #define SW_TRIGGER_BEGIN_MASK() (1U << SW_WHEN_TYPE_BEGIN)
+ #define SW_TRIGGER_END_MASK() (1U << SW_WHEN_TYPE_END)
+@@ -140,23 +144,27 @@ struct sw_driver_ipc_mmio_io_descriptor {
+ #ifdef SWW_MERGE
+ #pragma warning(push)
+ #pragma warning(                                                               \
+-	disable : 4201) // disable C4201: nonstandard extension used: nameless struct/union
++	disable : 4201) /* disable C4201: nonstandard extension used:
++			 * nameless struct/union
++			 */
+ #endif
+ 		struct {
+ 			pw_u16_t command;
+ 			pw_u16_t sub_command;
+ 		};
+ #ifdef SWW_MERGE
+-#pragma warning(pop) // enable C4201
++#pragma warning(pop) /* enable C4201 */
+ #endif
+ 		union {
+-			pw_u32_t ipc_command; // (sub_command << 12) | (command)
+-			pw_u8_t is_gbe; // Used only for GBE MMIO
++			pw_u32_t ipc_command; /* (sub_command << 12)
++					       * | (command)
++					       */
++			pw_u8_t is_gbe; /* Used only for GBE MMIO */
+ 		};
+ 	};
+-	// TODO: add a section for 'ctrl_address' and 'ctrl_remapped_address'
++	/* TODO: add a section for 'ctrl_address' and 'ctrl_remapped_address' */
+ 	union {
+-		pw_u64_t data_address; // Will be "io_remapped"
++		pw_u64_t data_address; /* Will be "io_remapped" */
+ 		pw_u64_t data_remapped_address;
+ 	};
+ };
+@@ -180,16 +188,18 @@ struct sw_driver_pci_io_descriptor {
+ 
+ #pragma pack(push, 1)
+ struct sw_driver_configdb_io_descriptor {
+-	// pw_u32_t port;
+-	// pw_u32_t offset;
++	/* pw_u32_t port; */
++	/* pw_u32_t offset; */
+ 	pw_u32_t address;
+ };
+ #pragma pack(pop)
+ 
+ #pragma pack(push, 1)
+ struct sw_driver_trace_args_io_descriptor {
+-	pw_u8_t num_args; // Number of valid entries in the 'args' array, below; 1 <= num_args <= 7
+-	pw_u8_t args[7]; // Max of 7 args can be recorded
++	pw_u8_t num_args; /* Number of valid entries in the 'args' array,
++			   * below; 1 <= num_args <= 7
++			   */
++	pw_u8_t args[7]; /* Max of 7 args can be recorded */
+ };
+ #pragma pack(pop)
+ 
+@@ -302,9 +312,11 @@ struct sw_driver_pch_mailbox_io_descriptor {
+ #pragma pack(push, 1)
+ typedef struct sw_driver_io_descriptor {
+ 	pw_u16_t collection_type;
+-	// TODO: specify READ/WRITE
+-	pw_s16_t collection_command; // One of 'enum sw_io_cmd'
+-	pw_u16_t counter_size_in_bytes; // The number of bytes to READ or WRITE
++	/* TODO: specify READ/WRITE */
++	pw_s16_t collection_command; /* One of 'enum sw_io_cmd' */
++	pw_u16_t counter_size_in_bytes; /* The number of bytes to
++					 * READ or WRITE
++					 */
+ 	union {
+ 		struct sw_driver_msr_io_descriptor msr_descriptor;
+ 		struct sw_driver_ipc_mmio_io_descriptor ipc_descriptor;
+@@ -317,7 +329,7 @@ typedef struct sw_driver_io_descriptor {
+ 			pch_mailbox_descriptor;
+ 		struct sw_driver_mailbox_io_descriptor mailbox_descriptor;
+ 	};
+-	pw_u64_t write_value; // The value to WRITE
++	pw_u64_t write_value; /* The value to WRITE */
+ } sw_driver_io_descriptor_t;
+ #pragma pack(pop)
+ 
+@@ -333,17 +345,23 @@ typedef struct sw_driver_io_descriptor {
+ struct sw_driver_interface_info {
+ 	pw_u64_t tracepoint_id_mask;
+ 	pw_u64_t notifier_id_mask;
+-	pw_s16_t cpu_mask; // On which CPU(s) should the driver read the data?
+-		// Currently:  -2 ==> read on ALL CPUs,
+-		//             -1 ==> read on ANY CPU,
+-		//           >= 0 ==> the specific CPU to read on
+-	pw_s16_t plugin_id; // Metric Plugin SID
+-	pw_s16_t metric_id; // Domain-specific ID assigned by each Metric Plugin
+-	pw_s16_t msg_id; // Msg ID retrieved from the SoC Watch config file
+-	pw_u16_t num_io_descriptors; // Number of descriptors in the array, below.
+-	pw_u8_t trigger_bits; // Mask of 'when bits' to fire this collector.
+-	pw_u16_t sampling_interval_msec; // Sampling interval, in msecs
+-	pw_u8_t descriptors[1]; // Array of sw_driver_io_descriptor structs.
++	pw_s16_t cpu_mask; /* On which CPU(s) should the driver
++			    * read the data?
++			    * Currently:  -2 ==> read on ALL CPUs,
++			    *             -1 ==> read on ANY CPU,
++			    *           >= 0 ==> the specific CPU to read on
++			    */
++	pw_s16_t plugin_id; /* Metric Plugin SID */
++	pw_s16_t metric_id; /* Domain-specific ID assigned by
++			     * each Metric Plugin
++			     */
++	pw_s16_t msg_id; /* Msg ID retrieved from the SoC Watch config file */
++	pw_u16_t num_io_descriptors; /* Number of descriptors in the array,
++				      * below.
++				      */
++	pw_u8_t trigger_bits; /* Mask of 'when bits' to fire this collector. */
++	pw_u16_t sampling_interval_msec; /* Sampling interval, in msecs */
++	pw_u8_t descriptors[1]; /* Array of sw_driver_io_descriptor structs. */
+ };
+ #pragma pack(pop)
+ 
+@@ -352,11 +370,19 @@ struct sw_driver_interface_info {
+ 
+ #pragma pack(push, 1)
+ struct sw_driver_interface_msg {
+-	pw_u16_t num_infos; // Number of 'sw_driver_interface_info' structs contained within the 'infos' variable, below
+-	pw_u16_t min_polling_interval_msecs; // Min time to wait before polling; used exclusively
+-		// with the low overhead, context-switch based
+-		// polling mode
+-	// pw_u16_t infos_size_bytes; // Size of data inlined within the 'infos' variable, below
++	pw_u16_t num_infos; /* Number of 'sw_driver_interface_info'
++			     * structs contained within the 'infos' variable,
++			     * below
++			     */
++	pw_u16_t min_polling_interval_msecs; /* Min time to wait before
++					      * polling; used exclusively
++					      * with the low overhead,
++					      * context-switch based
++					      * polling mode
++					      */
++	/* pw_u16_t infos_size_bytes; Size of data inlined
++	 * within the 'infos' variable, below
++	 */
+ 	pw_u8_t infos[1];
+ };
+ #pragma pack(pop)
+@@ -373,7 +399,7 @@ typedef enum sw_name_id_type {
+ #pragma pack(push, 1)
+ struct sw_name_id_pair {
+ 	pw_u16_t id;
+-	pw_u16_t type; // One of 'sw_name_id_type'
++	pw_u16_t type; /* One of 'sw_name_id_type' */
+ 	struct sw_string_type name;
+ };
+ #pragma pack(pop)
+@@ -398,14 +424,16 @@ struct sw_name_info_msg {
+ typedef struct sw_driver_msg {
+ 	pw_u64_t tsc;
+ 	pw_u16_t cpuidx;
+-	pw_u8_t plugin_id; // Cannot have more than 256 plugins
+-	pw_u8_t metric_id; // Each plugin cannot handle more than 256 metrics
+-	pw_u8_t msg_id; // Each metric cannot have more than 256 components
++	pw_u8_t plugin_id; /* Cannot have more than 256 plugins */
++	pw_u8_t metric_id; /* Each plugin cannot handle more than 256 metrics */
++	pw_u8_t msg_id; /* Each metric cannot have more than 256 components */
+ 	pw_u16_t payload_len;
+-	// pw_u64_t p_payload;  // Ptr to payload
++	/* pw_u64_t p_payload; Ptr to payload */
+ 	union {
+-		pw_u64_t __dummy; // Ensure size of struct is consistent on x86, x64
+-		char *p_payload; // Ptr to payload (collected data values).
++		pw_u64_t __dummy; /* Ensure size of struct is consistent
++				   * on x86, x64
++				   */
++		char *p_payload; /* Ptr to payload (collected data values). */
+ 	};
+ } sw_driver_msg_t;
+ #pragma pack(pop)
+@@ -437,11 +465,11 @@ enum cpu_action {
+ };
+ #pragma pack(push, 1)
+ struct sw_driver_topology_change {
+-	pw_u64_t timestamp; // timestamp
+-	enum cpu_action type; // One of 'enum cpu_action'
+-	pw_u16_t cpu; // logical cpu
+-	pw_u16_t core; // core id
+-	pw_u16_t pkg; // pkg/physical id
++	pw_u64_t timestamp; /* timestamp */
++	enum cpu_action type; /* One of 'enum cpu_action' */
++	pw_u16_t cpu; /* logical cpu */
++	pw_u16_t core; /* core id */
++	pw_u16_t pkg; /* pkg/physical id */
+ };
+ struct sw_driver_topology_msg {
+ 	pw_u16_t num_entries;
+@@ -481,8 +509,8 @@ enum sw_pm_mode {
+ struct sw_driver_ioctl_arg {
+ 	pw_s32_t in_len;
+ 	pw_s32_t out_len;
+-	// pw_u64_t p_in_arg; // Pointer to input arg
+-	// pw_u64_t p_out_arg; // Pointer to output arg
++	/* pw_u64_t p_in_arg; Pointer to input arg */
++	/* pw_u64_t p_out_arg; Pointer to output arg */
+ 	char *in_arg;
+ 	char *out_arg;
+ };
+@@ -490,11 +518,11 @@ struct sw_driver_ioctl_arg {
+ 
+ #pragma pack(push, 1)
+ typedef struct sw_driver_msg_interval {
+-	pw_u8_t plugin_id; // Cannot have more than 256 plugins
+-	pw_u8_t metric_id; // Each plugin cannot handle more than 256 metrics
+-	pw_u8_t msg_id; // Each metric cannot have more than 256 components
+-	pw_u16_t interval; // collection interval
++	pw_u8_t plugin_id; /* Cannot have more than 256 plugins */
++	pw_u8_t metric_id; /* Each plugin cannot handle more than 256 metrics */
++	pw_u8_t msg_id; /* Each metric cannot have more than 256 components */
++	pw_u16_t interval; /* collection interval */
+ } sw_driver_msg_interval_t;
+ #pragma pack(pop)
+ 
+-#endif // __SW_STRUCTS_H__
++#endif /* __SW_STRUCTS_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_telem.h b/drivers/platform/x86/socwatch/inc/sw_telem.h
+index 52e5119..e324ff6 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_telem.h
++++ b/drivers/platform/x86/socwatch/inc/sw_telem.h
+@@ -57,8 +57,8 @@
+ #ifndef _SW_TELEM_H_
+ #define _SW_TELEM_H_ 1
+ 
+-#include "sw_structs.h" // sw_driver_io_descriptor
+-#include "sw_types.h" // u8 and other types
++#include "sw_structs.h" /* sw_driver_io_descriptor */
++#include "sw_types.h" /* u8 and other types */
+ 
+ int sw_telem_init_func(struct sw_driver_io_descriptor *descriptor);
+ void sw_read_telem_info(char *dst_vals, int cpu,
+diff --git a/drivers/platform/x86/socwatch/inc/sw_trace_notifier_provider.h b/drivers/platform/x86/socwatch/inc/sw_trace_notifier_provider.h
+index 3834a16..3ec4930 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_trace_notifier_provider.h
++++ b/drivers/platform/x86/socwatch/inc/sw_trace_notifier_provider.h
+@@ -79,4 +79,4 @@ int sw_add_trace_notifier_providers(void);
+  * Remove previously added providers.
+  */
+ void sw_remove_trace_notifier_providers(void);
+-#endif // __SW_TRACE_NOTIFIER_PROVIDER_H__
++#endif /* __SW_TRACE_NOTIFIER_PROVIDER_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_tracepoint_handlers.h b/drivers/platform/x86/socwatch/inc/sw_tracepoint_handlers.h
+index db8294a..d8a54c0 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_tracepoint_handlers.h
++++ b/drivers/platform/x86/socwatch/inc/sw_tracepoint_handlers.h
+@@ -67,9 +67,14 @@ enum sw_trace_data_type {
+ 
+ struct sw_trace_notifier_name {
+ 	const char *
+-		kernel_name; // The tracepoint name; used by the kernel to identify tracepoints
++		kernel_name; /* The tracepoint name; used by the kernel
++			      * to identify tracepoints
++			      */
+ 	const char *
+-		abstract_name; // An abstract name used by plugins to specify tracepoints-of-interest; shared with Ring-3
++		abstract_name; /* An abstract name used by plugins to
++				* specify tracepoints-of-interest;
++				* shared with Ring-3
++				*/
+ };
+ 
+ typedef struct sw_trace_notifier_data sw_trace_notifier_data_t;
+@@ -79,17 +84,27 @@ typedef int (*sw_trace_notifier_unregister_func)(
+ 	struct sw_trace_notifier_data *node);
+ 
+ struct sw_trace_notifier_data {
+-	enum sw_trace_data_type type; // Tracepoint or Notifier
+-	const struct sw_trace_notifier_name *name; // Tracepoint name(s)
+-	sw_trace_notifier_register_func probe_register; // probe register function
+-	sw_trace_notifier_unregister_func probe_unregister; // probe unregister function
++	enum sw_trace_data_type type; /* Tracepoint or Notifier */
++	const struct sw_trace_notifier_name *name; /* Tracepoint name(s) */
++	sw_trace_notifier_register_func probe_register; /* probe register
++							 * function
++							 */
++	sw_trace_notifier_unregister_func probe_unregister; /* probe unregister
++							     * function
++							     */
+ 	struct tracepoint *tp;
+-	bool always_register; // Set to TRUE if this tracepoint/notifier must ALWAYS be registered, regardless
+-		// of whether the user has specified anything to collect
++	bool always_register; /* Set to TRUE if this tracepoint/notifier
++			       * must ALWAYS be registered, regardless
++			       * of whether the user has specified
++			       * anything to collect
++			       */
+ 	bool was_registered;
+ 	SW_DEFINE_LIST_HEAD(
+ 		list,
+-		sw_collector_data); // List of 'sw_collector_data' instances for this tracepoint or notifier
++		sw_collector_data); /* List of 'sw_collector_data'
++				     * instances for this tracepoint
++				     * or notifier
++				     */
+ };
+ 
+ struct sw_topology_node {
+@@ -99,8 +114,10 @@ struct sw_topology_node {
+ };
+ SW_DECLARE_LIST_HEAD(
+ 	sw_topology_list,
+-	sw_topology_node); // List of entries tracking changes in CPU topology
+-extern size_t sw_num_topology_entries; // Size of the 'sw_topology_list'
++	sw_topology_node); /* List of entries tracking
++			    * changes in CPU topology
++			    */
++extern size_t sw_num_topology_entries; /* Size of the 'sw_topology_list' */
+ 
+ int sw_extract_tracepoints(void);
+ int sw_register_trace_notifiers(void);
+@@ -139,4 +156,4 @@ sw_get_trace_notifier_abstract_name(struct sw_trace_notifier_data *node);
+  */
+ void sw_clear_topology_list(void);
+ 
+-#endif // __SW_TRACEPOINT_HANDLERS_H__
++#endif /* __SW_TRACEPOINT_HANDLERS_H__ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_types.h b/drivers/platform/x86/socwatch/inc/sw_types.h
+index 914ce98..156c92c 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_types.h
++++ b/drivers/platform/x86/socwatch/inc/sw_types.h
+@@ -63,8 +63,8 @@
+ /*
+  * Called from Ring-3.
+  */
+-#include <stdint.h> // Grab 'uint64_t' etc.
+-#include <unistd.h> // Grab 'pid_t'
++#include <stdint.h> /* Grab 'uint64_t' etc. */
++#include <unistd.h> /* Grab 'pid_t' */
+ /*
+  * UNSIGNED types...
+  */
+@@ -80,26 +80,26 @@ typedef int16_t s16;
+ typedef int32_t s32;
+ typedef int64_t s64;
+ 
+-#else // __KERNEL__
++#else /* __KERNEL__ */
+ #if !defined(__APPLE__)
+ #include <linux/types.h>
+-#else // __APPLE__
++#else /* __APPLE__ */
+ #include <sys/types.h>
+-#include <stdint.h> // Grab 'uint64_t' etc.
++#include <stdint.h> /* Grab 'uint64_t' etc. */
+ 
+ typedef uint8_t u8;
+ typedef uint16_t u16;
+ typedef uint32_t u32;
+ typedef uint64_t u64;
+ /*
+-* SIGNED types...
+-*/
++ * SIGNED types...
++ */
+ typedef int8_t s8;
+ typedef int16_t s16;
+ typedef int32_t s32;
+ typedef int64_t s64;
+-#endif // __APPLE__
+-#endif // __KERNEL__
++#endif /* __APPLE__ */
++#endif /* __KERNEL__ */
+ 
+ #elif defined(_WIN32)
+ typedef __int32 int32_t;
+@@ -125,7 +125,7 @@ typedef signed long long s64;
+ typedef s32 pid_t;
+ typedef s32 ssize_t;
+ 
+-#endif // _WIN32
++#endif /* _WIN32 */
+ 
+ /* ************************************
+  * Common to both operating systems.
+@@ -149,4 +149,4 @@ typedef s64 pw_s64_t;
+ 
+ typedef pid_t pw_pid_t;
+ 
+-#endif // _PW_TYPES_H_
++#endif /* _PW_TYPES_H_ */
+diff --git a/drivers/platform/x86/socwatch/inc/sw_version.h b/drivers/platform/x86/socwatch/inc/sw_version.h
+index 5797edf..5476b0d 100644
+--- a/drivers/platform/x86/socwatch/inc/sw_version.h
++++ b/drivers/platform/x86/socwatch/inc/sw_version.h
+@@ -71,4 +71,4 @@
+ #define SOCWATCH_VERSION_MINOR 8
+ #define SOCWATCH_VERSION_OTHER 0
+ 
+-#endif // __SW_VERSION_H__
++#endif /* __SW_VERSION_H__ */
+diff --git a/drivers/platform/x86/socwatch/sw_collector.c b/drivers/platform/x86/socwatch/sw_collector.c
+index a6c8a9c..db855ba 100644
+--- a/drivers/platform/x86/socwatch/sw_collector.c
++++ b/drivers/platform/x86/socwatch/sw_collector.c
+@@ -498,7 +498,7 @@ void sw_handle_per_cpu_msg_i(void *info, enum sw_wakeup_action action)
+ 	const struct sw_hw_ops **ops = node->ops;
+ 	bool wasAnyWrite = false;
+ 
+-	// msg TSC assigned when msg is written to buffer
++	/* msg TSC assigned when msg is written to buffer */
+ 	msg->cpuidx = cpu;
+ 
+ 	for (i = 0; i < num_descriptors; ++i,
+@@ -696,7 +696,8 @@ void sw_handle_per_cpu_msg_on_cpu(int cpu, void *info)
+ 		smp_call_function_single(
+ 			cpu, &sw_handle_per_cpu_msg_no_sched, info,
+ 			false /* false ==> do NOT wait for function
+-				 completion */);
++			       * completion
++			       */);
+ 	}
+ }
+ 
+diff --git a/drivers/platform/x86/socwatch/sw_driver.c b/drivers/platform/x86/socwatch/sw_driver.c
+index 35b516c..661a425 100644
+--- a/drivers/platform/x86/socwatch/sw_driver.c
++++ b/drivers/platform/x86/socwatch/sw_driver.c
+@@ -133,8 +133,8 @@ static bool sw_should_flush_buffer_i(void);
+  */
+ struct swa_internal_state {
+ 	sw_driver_collection_cmd_t
+-		cmd; // indicates which command was specified
+-		     // last e.g. START, STOP etc.
++		cmd; /* indicates which command was specified */
++		     /* last e.g. START, STOP etc. */
+ 	/*
+ 	 * Should we write to our per-cpu output buffers?
+ 	 * YES if we're actively collecting.
+@@ -146,7 +146,7 @@ struct swa_internal_state {
+ 	 * (See "device_read" for an explanation)
+ 	 */
+ 	bool drain_buffers;
+-	// Others...
++	/* Others... */
+ };
+ 
+ /* -------------------------------------------------
+@@ -196,7 +196,7 @@ static struct sw_file_ops s_ops = {
+  * that you declare here *MUST* match the function name!
+  */
+ 
+-DECLARE_OVERHEAD_VARS(sw_collection_poll_i); // for POLL
++DECLARE_OVERHEAD_VARS(sw_collection_poll_i); /* for POLL */
+ DECLARE_OVERHEAD_VARS(sw_any_seg_full);
+ 
+ /*
+@@ -206,7 +206,7 @@ DECLARE_OVERHEAD_VARS(sw_any_seg_full);
+ #if DO_DEBUG_OUTPUT
+ static const char *s_when_type_names[] = { "BEGIN", "POLL", "NOTIFIER",
+ 					   "TRACEPOINT", "END" };
+-#endif // DO_DEBUG_OUTPUT
++#endif /* DO_DEBUG_OUTPUT */
+ 
+ /* -------------------------------------------------
+  * Function definitions.
+@@ -332,7 +332,8 @@ void sw_iterate_driver_info_lists_i(void)
+ 		pw_pr_debug("ITERATING list %s\n", s_when_type_names[which]);
+ 		if (sw_handle_collector_list(
+ 			    &sw_collector_lists[which],
+-			    &sw_print_collector_node_i)) { // Should NEVER happen!
++			    &sw_print_collector_node_i)) {
++			/* Should NEVER happen! */
+ 			pw_pr_error(
+ 				"WARNING: error occurred while printing values!\n");
+ 		}
+@@ -578,7 +579,7 @@ int sw_collection_stop_i(void)
+ 	pw_pr_force(
+ 		"DEBUG: there were %llu samples produced and %llu samples dropped in buffer v5!\n",
+ 		sw_num_samples_produced, sw_num_samples_dropped);
+-#endif // DO_OVERHEAD_MEASUREMENTS
++#endif /* DO_OVERHEAD_MEASUREMENTS */
+ 	/*
+ 	 * DEBUG: iterate over collection lists.
+ 	 */
+@@ -594,7 +595,7 @@ int sw_collection_stop_i(void)
+ 	pw_pr_debug("OK, STOPPED collection!\n");
+ #if DO_OVERHEAD_MEASUREMENTS
+ 	pw_pr_force("There were %d poll ticks!\n", num_times_polled);
+-#endif // DO_OVERHEAD_MEASUREMENTS
++#endif /* DO_OVERHEAD_MEASUREMENTS */
+ 	return PW_SUCCESS;
+ }
+ 
+@@ -723,7 +724,7 @@ sw_set_driver_infos_i(struct sw_driver_interface_msg __user *remote_msg,
+ 			(unsigned int)dst_idx);
+ 		for (i = SW_WHEN_TYPE_BEGIN; i <= SW_WHEN_TYPE_END;
+ 		     ++i, read_triggers >>= 1) {
+-			if (read_triggers & 0x1) { // Bit 'i' is set
++			if (read_triggers & 0x1) { /* Bit 'i' is set */
+ 				pw_pr_debug("BIT %d is SET!\n", i);
+ 				if (i == SW_WHEN_TYPE_TRACEPOINT) {
+ 					struct tn_data tn_data = {
+@@ -734,9 +735,9 @@ sw_set_driver_infos_i(struct sw_driver_interface_msg __user *remote_msg,
+ 						"TRACEPOINT, MASK = 0x%llx\n",
+ 						local_info->tracepoint_id_mask);
+ 					sw_for_each_tracepoint_node(
+-						&sw_add_trace_notifier_driver_info_i,
+-						&tn_data,
+-						false /*return-on-error*/);
++					   &sw_add_trace_notifier_driver_info_i,
++					   &tn_data,
++					   false /*return-on-error*/);
+ 				} else if (i == SW_WHEN_TYPE_NOTIFIER) {
+ 					struct tn_data tn_data = {
+ 						local_info,
+@@ -746,9 +747,9 @@ sw_set_driver_infos_i(struct sw_driver_interface_msg __user *remote_msg,
+ 						"NOTIFIER, MASK = 0x%llx\n",
+ 						local_info->notifier_id_mask);
+ 					sw_for_each_notifier_node(
+-						&sw_add_trace_notifier_driver_info_i,
+-						&tn_data,
+-						false /*return-on-error*/);
++					   &sw_add_trace_notifier_driver_info_i,
++					   &tn_data,
++					   false /*return-on-error*/);
+ 				} else {
+ 					if (sw_add_driver_info(
+ 						    &sw_collector_lists[i],
+@@ -814,7 +815,7 @@ static long sw_handle_cmd_i(sw_driver_collection_cmd_t cmd,
+ 			return -PW_ERROR;
+ 		}
+ 	}
+-#endif // DO_COUNT_DROPPED_SAMPLES
++#endif /* DO_COUNT_DROPPED_SAMPLES */
+ 	return PW_SUCCESS;
+ }
+ 
+@@ -823,7 +824,7 @@ static int sw_do_parse_sfi_oemb_table(struct sfi_table_header *header)
+ {
+ #ifdef CONFIG_X86_WANT_INTEL_MID
+ 	struct sfi_table_oemb *oemb = (struct sfi_table_oemb *)
+-		header; // 'struct sfi_table_oemb' defined in 'intel-mid.h'
++		header; /* 'struct sfi_table_oemb' defined in 'intel-mid.h' */
+ 	if (!oemb) {
+ 		pw_pr_error("ERROR: NULL sfi table header!\n");
+ 		return -PW_ERROR;
+@@ -833,10 +834,10 @@ static int sw_do_parse_sfi_oemb_table(struct sfi_table_header *header)
+ 	pw_pr_debug("DEBUG: major = %u, minor = %u\n",
+ 		    oemb->scu_runtime_major_version,
+ 		    oemb->scu_runtime_minor_version);
+-#endif // CONFIG_X86_WANT_INTEL_MID
++#endif /* CONFIG_X86_WANT_INTEL_MID */
+ 	return PW_SUCCESS;
+ }
+-#endif // SFI_SIG_OEMB
++#endif /* SFI_SIG_OEMB */
+ 
+ static void sw_do_extract_scu_fw_version(void)
+ {
+@@ -846,7 +847,7 @@ static void sw_do_extract_scu_fw_version(void)
+ 			    &sw_do_parse_sfi_oemb_table)) {
+ 		pw_pr_force("WARNING: NO SFI information!\n");
+ 	}
+-#endif // SFI_SIG_OEMB
++#endif /* SFI_SIG_OEMB */
+ }
+ 
+ static int sw_gather_trace_notifier_i(struct sw_trace_notifier_data *node,
+@@ -864,7 +865,8 @@ static int sw_gather_trace_notifier_i(struct sw_trace_notifier_data *node,
+ 		++msg->num_name_id_pairs;
+ 		pair->type = type;
+ 		pair->id = (u16)id;
+-		str->len = strlen(abstract_name) + 1; // "+1" for trailing '\0'
++		/* "+1" for trailing '\0' */
++		str->len = strlen(abstract_name) + 1;
+ 		memcpy(&str->data[0], abstract_name, str->len);
+ 
+ 		pw_pr_debug("TP[%d] = %s (%u)\n",
+@@ -937,7 +939,7 @@ static int sw_gather_hw_op_i(const struct sw_hw_ops *op, void *priv)
+ 			pair->type = SW_NAME_TYPE_COLLECTOR;
+ 			pair->id = (u16)id;
+ 			str->len = strlen(abstract_name) +
+-				   1; // "+1" for trailing '\0'
++				   1; /* "+1" for trailing '\0' */
+ 			memcpy(&str->data[0], abstract_name, str->len);
+ 
+ 			*idx += SW_NAME_ID_HEADER_SIZE() +
+@@ -1206,11 +1208,11 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
+ 
+ 			cpumask_clear(&cpumask);
+ 			switch (local_info->cpu_mask) {
+-			case -1: // IO on ANY CPU (assume current CPU)
++			case -1: /* IO on ANY CPU (assume current CPU) */
+ 				cpumask_set_cpu(RAW_CPU(), &cpumask);
+ 				pw_pr_debug("ANY CPU\n");
+ 				break;
+-			default: // IO on a particular CPU
++			default: /* IO on a particular CPU */
+ 				cpumask_set_cpu(local_info->cpu_mask, &cpumask);
+ 				pw_pr_debug("[%d] setting for %d\n", RAW_CPU(),
+ 					    local_info->cpu_mask);
+@@ -1398,7 +1400,7 @@ int sw_load_driver_i(void)
+ #ifdef CONFIG_X86_WANT_INTEL_MID
+ 	pw_pr_force("SOC Identifier = %u, Stepping = %u\n",
+ 		    intel_mid_identify_cpu(), intel_mid_soc_stepping());
+-#endif // CONFIG_X86_WANT_INTEL_MID
++#endif /* CONFIG_X86_WANT_INTEL_MID */
+ 	pw_pr_force("-----------------------------------------\n");
+ 	return PW_SUCCESS;
+ 
+@@ -1460,7 +1462,7 @@ void sw_unload_driver_i(void)
+ 				"***********************************************************************\n");
+ 		}
+ 	}
+-#endif // DO_TRACK_MEMORY_USAGE
++#endif /* DO_TRACK_MEMORY_USAGE */
+ 	pw_pr_force("-----------------------------------------\n");
+ }
+ 
+diff --git a/drivers/platform/x86/socwatch/sw_file_ops.c b/drivers/platform/x86/socwatch/sw_file_ops.c
+index 06c8880..ea84d25 100644
+--- a/drivers/platform/x86/socwatch/sw_file_ops.c
++++ b/drivers/platform/x86/socwatch/sw_file_ops.c
+@@ -53,18 +53,18 @@
+   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ */
+-#include <linux/module.h> // try_module_get
+-#include <linux/fs.h> // inode
+-#include <linux/device.h> // class_create
+-#include <linux/cdev.h> // cdev_alloc
+-#include <linux/version.h> // LINUX_VERSION_CODE
++#include <linux/module.h> /* try_module_get */
++#include <linux/fs.h> /* inode */
++#include <linux/device.h> /* class_create */
++#include <linux/cdev.h> /* cdev_alloc */
++#include <linux/version.h> /* LINUX_VERSION_CODE */
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
+-#include <asm/uaccess.h> // copy_to_user
++#include <asm/uaccess.h> /* copy_to_user */
+ #else
+-#include <linux/uaccess.h> // copy_to_user
+-#endif // LINUX_VERSION_CODE
+-#include <linux/wait.h> // wait_event_interruptible
+-#include <linux/sched.h> // TASK_INTERRUPTIBLE
++#include <linux/uaccess.h> /* copy_to_user */
++#endif /* LINUX_VERSION_CODE */
++#include <linux/wait.h> /* wait_event_interruptible */
++#include <linux/sched.h> /* TASK_INTERRUPTIBLE */
+ 
+ #include "sw_kernel_defines.h"
+ #include "sw_types.h"
+@@ -131,7 +131,7 @@ static struct file_operations s_fops = {
+ 	.unlocked_ioctl = &sw_device_unlocked_ioctl_i,
+ #if defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
+ 	.compat_ioctl = &sw_device_compat_ioctl_i,
+-#endif // COMPAT && x64
++#endif /* COMPAT && x64 */
+ 	.release = &sw_device_release_i,
+ };
+ /*
+@@ -154,7 +154,7 @@ static struct sw_file_ops *s_file_ops;
+  * Is the device open right now? Used to prevent
+  * concurent access into the same device.
+  */
+-#define DEV_IS_OPEN 0 // see if device is in use
++#define DEV_IS_OPEN 0 /* see if device is in use */
+ static volatile sw_bits_t dev_status;
+ 
+ /*
+@@ -169,12 +169,12 @@ static int sw_device_open_i(struct inode *inode, struct file *file)
+ 	 * We don't want to talk to two processes at the same time
+ 	 */
+ 	if (test_and_set_bit(DEV_IS_OPEN, &dev_status)) {
+-		// Device is busy
++		/* Device is busy */
+ 		return -EBUSY;
+ 	}
+ 
+ 	if (!try_module_get(THIS_MODULE)) {
+-		// No such device
++		/* No such device */
+ 		return -ENODEV;
+ 	}
+ 	pw_pr_debug("OK, allowed client open!\n");
+@@ -231,14 +231,14 @@ static ssize_t sw_device_read_i(struct file *file, char __user *user_buffer,
+ 	 * Are we done producing/consuming?
+ 	 */
+ 	if (val == SW_ALL_WRITES_DONE_MASK) {
+-		return 0; // "0" ==> EOF
++		return 0; /* "0" ==> EOF */
+ 	}
+ 	/*
+ 	 * Copy the buffer contents into userspace.
+ 	 */
+ 	bytes_read = sw_consume_data(
+ 		val, user_buffer,
+-		length); // 'read' returns # of bytes actually read
++		length); /* 'read' returns # of bytes actually read */
+ 	if (unlikely(bytes_read == 0)) {
+ 		/* Cannot be EOF since that has already been checked above */
+ 		return -EIO;
+diff --git a/drivers/platform/x86/socwatch/sw_internal.c b/drivers/platform/x86/socwatch/sw_internal.c
+index a4a4dca..04544b8 100644
+--- a/drivers/platform/x86/socwatch/sw_internal.c
++++ b/drivers/platform/x86/socwatch/sw_internal.c
+@@ -85,7 +85,7 @@ void sw_schedule_work(const struct cpumask *mask, void (*work)(void *),
+ 	 * Did the user ask us to run on 'ANY' CPU?
+ 	 */
+ 	if (cpumask_empty(mask)) {
+-		(*work)(data); // Call on current CPU
++		(*work)(data); /* Call on current CPU */
+ 	} else {
+ 		preempt_disable();
+ 		{
+@@ -93,7 +93,7 @@ void sw_schedule_work(const struct cpumask *mask, void (*work)(void *),
+ 			 * Did the user ask to run on this CPU?
+ 			 */
+ 			if (cpumask_test_cpu(RAW_CPU(), mask)) {
+-				(*work)(data); // Call on current CPU
++				(*work)(data); /* Call on current CPU */
+ 			}
+ 			/*
+ 			 * OK, now check other CPUs.
+@@ -120,7 +120,7 @@ void sw_put_cpu(unsigned long flags)
+ 
+ #ifndef CONFIG_NR_CPUS_PER_MODULE
+ #define CONFIG_NR_CPUS_PER_MODULE 2
+-#endif // CONFIG_NR_CPUS_PER_MODULE
++#endif /* CONFIG_NR_CPUS_PER_MODULE */
+ 
+ static void sw_get_cpu_sibling_mask(int cpu, struct cpumask *sibling_mask)
+ {
+@@ -168,8 +168,8 @@ int sw_set_module_scope_for_cpus(void)
+ 		 */
+ 		if (cpumask_subset(&sibling_mask, policy->cpus)) {
+ 			/*
+-			 * 'sibling_mask' is already a subset of affected_cpus -- nothing
+-			 * to do on this CPU.
++			 * 'sibling_mask' is already a subset of
++			 * affected_cpus -- nothing to do on this CPU.
+ 			 */
+ 			cpufreq_cpu_put(policy);
+ 			continue;
+diff --git a/drivers/platform/x86/socwatch/sw_mem.c b/drivers/platform/x86/socwatch/sw_mem.c
+index 0d1231c..ac77253 100644
+--- a/drivers/platform/x86/socwatch/sw_mem.c
++++ b/drivers/platform/x86/socwatch/sw_mem.c
+@@ -92,7 +92,7 @@ static atomic_t pw_mem_should_panic = ATOMIC_INIT(0);
+ 		__tmp;                                                         \
+ 	})
+ 
+-#else // if !DO_MEM_PANIC_ON_ALLOC_ERROR
++#else /* if !DO_MEM_PANIC_ON_ALLOC_ERROR */
+ 
+ #define MEM_PANIC()
+ #define SHOULD_TRACE() (true)
+@@ -305,7 +305,7 @@ void sw_kfree(const void *obj)
+ 	kfree(tmp);
+ };
+ 
+-#else // !DO_TRACK_MEMORY_USAGE
++#else /* !DO_TRACK_MEMORY_USAGE */
+ 
+ void *sw_kmalloc(size_t size, gfp_t flags)
+ {
+@@ -328,4 +328,4 @@ void sw_kfree(const void *mem)
+ 	kfree(mem);
+ };
+ 
+-#endif // DO_TRACK_MEMORY_USAGE
++#endif /* DO_TRACK_MEMORY_USAGE */
+diff --git a/drivers/platform/x86/socwatch/sw_ops_provider.c b/drivers/platform/x86/socwatch/sw_ops_provider.c
+index 1eb60d1..6e0c772 100644
+--- a/drivers/platform/x86/socwatch/sw_ops_provider.c
++++ b/drivers/platform/x86/socwatch/sw_ops_provider.c
+@@ -55,12 +55,12 @@
+ */
+ #include <linux/kernel.h>
+ #include <linux/errno.h>
+-#include <linux/pci.h> // "pci_get_domain_bus_and_slot"
+-#include <linux/delay.h> // "udelay"
++#include <linux/pci.h> /* "pci_get_domain_bus_and_slot" */
++#include <linux/delay.h> /* "udelay" */
+ #include <asm/msr.h>
+ #ifdef CONFIG_RPMSG_IPC
+ #include <asm/intel_mid_rpmsg.h>
+-#endif // CONFIG_RPMSG_IPC
++#endif /* CONFIG_RPMSG_IPC */
+ 
+ #include "sw_types.h"
+ #include "sw_kernel_defines.h"
+@@ -74,7 +74,8 @@
+ /*
+  * Should we be doing 'direct' PCI reads and writes?
+  * '1' ==> YES, call "pci_{read,write}_config_dword()" directly
+- * '0' ==> NO, Use the "intel_mid_msgbus_{read32,write32}_raw()" API (defined in 'intel_mid_pcihelpers.c')
++ * '0' ==> NO, Use the "intel_mid_msgbus_{read32,write32}_raw()"
++ *         API (defined in 'intel_mid_pcihelpers.c')
+  */
+ #define DO_DIRECT_PCI_READ_WRITE 0
+ #if !IS_ENABLED(CONFIG_ANDROID) || !defined(CONFIG_X86_WANT_INTEL_MID)
+@@ -99,9 +100,9 @@
+ #define NUM_RETRY 100
+ #define USEC_DELAY 100
+ 
+-#define EXTCNF_CTRL 0xF00 // offset for hw semaphore.
+-#define FWSM_CTRL 0x5B54 // offset for fw semaphore
+-#define GBE_CTRL_OFFSET 0x34 // GBE LPM offset
++#define EXTCNF_CTRL 0xF00 /* offset for hw semaphore. */
++#define FWSM_CTRL 0x5B54 /* offset for fw semaphore */
++#define GBE_CTRL_OFFSET 0x34 /* GBE LPM offset */
+ 
+ #define IS_HW_SEMAPHORE_SET(data) (data & (pw_u64_t)(0x1 << 6))
+ #define IS_FW_SEMAPHORE_SET(data) (data & (pw_u64_t)0x1)
+@@ -346,11 +347,11 @@ static const struct sw_hw_ops s_hw_ops[] = {
+ int sw_ipc_mmio_descriptor_init_func_i(
+ 	struct sw_driver_io_descriptor *descriptor)
+ {
+-	// Perform any required 'io_remap' calls here
++	/* Perform any required 'io_remap' calls here */
+ 	struct sw_driver_ipc_mmio_io_descriptor *__ipc_mmio = NULL;
+ 	u64 data_address = 0;
+ 
+-	if (!descriptor) { // Should NEVER happen
++	if (!descriptor) { /* Should NEVER happen */
+ 		return -PW_ERROR;
+ 	}
+ 	if (descriptor->collection_type == SW_IO_IPC) {
+@@ -363,12 +364,12 @@ int sw_ipc_mmio_descriptor_init_func_i(
+ 		    __ipc_mmio->data_address);
+ 	data_address = __ipc_mmio->data_address;
+ 	/*
+-	  if (__ipc_mmio->command || __ipc_mmio->sub_command) {
+-	  __ipc_mmio->ipc_command =
+-	  ((pw_u32_t)__ipc_mmio->sub_command << 12)
+-	  | (pw_u32_t)__ipc_mmio->command;
+-	  }
+-	*/
++	 * if (__ipc_mmio->command || __ipc_mmio->sub_command) {
++	 * __ipc_mmio->ipc_command =
++	 * ((pw_u32_t)__ipc_mmio->sub_command << 12)
++	 * | (pw_u32_t)__ipc_mmio->command;
++	 * }
++	 */
+ 	if (data_address) {
+ 		__ipc_mmio->data_remapped_address =
+ 			(pw_u64_t)(unsigned long)ioremap_nocache(
+@@ -393,14 +394,14 @@ int sw_ipc_mmio_descriptor_init_func_i(
+ 						      FWSM_CTRL;
+ 					s_gbe_semaphore.hw_semaphore =
+ 						ioremap_nocache(
+-							(unsigned long)hw_addr,
+-							descriptor
+-								->counter_size_in_bytes);
++						       (unsigned long)hw_addr,
++						       descriptor
++						       ->counter_size_in_bytes);
+ 					s_gbe_semaphore.fw_semaphore =
+ 						ioremap_nocache(
+-							(unsigned long)fw_addr,
+-							descriptor
+-								->counter_size_in_bytes);
++						       (unsigned long)fw_addr,
++						       descriptor
++						       ->counter_size_in_bytes);
+ 					if (s_gbe_semaphore.hw_semaphore ==
+ 						    NULL ||
+ 					    s_gbe_semaphore.fw_semaphore ==
+@@ -418,7 +419,7 @@ int sw_ipc_mmio_descriptor_init_func_i(
+ 							s_gbe_semaphore
+ 								.fw_semaphore,
+ 						descriptor
+-							->counter_size_in_bytes);
++						->counter_size_in_bytes);
+ 				}
+ 			}
+ 		}
+@@ -429,10 +430,10 @@ int sw_ipc_mmio_descriptor_init_func_i(
+ int sw_pch_mailbox_descriptor_init_func_i(
+ 	struct sw_driver_io_descriptor *descriptor)
+ {
+-	// Perform any required 'io_remap' calls here
++	/* Perform any required 'io_remap' calls here */
+ 	struct sw_driver_pch_mailbox_io_descriptor *__pch_mailbox = NULL;
+ 
+-	if (!descriptor) { // Should NEVER happen
++	if (!descriptor) { /* Should NEVER happen */
+ 		return -PW_ERROR;
+ 	}
+ 	__pch_mailbox = &descriptor->pch_mailbox_descriptor;
+@@ -478,12 +479,13 @@ int sw_pch_mailbox_descriptor_init_func_i(
+ 	return PW_SUCCESS;
+ }
+ 
+-int sw_mailbox_descriptor_init_func_i(struct sw_driver_io_descriptor *descriptor)
++int sw_mailbox_descriptor_init_func_i(struct sw_driver_io_descriptor
++				      *descriptor)
+ {
+-	// Perform any required 'io_remap' calls here
++	/* Perform any required 'io_remap' calls here */
+ 	struct sw_driver_mailbox_io_descriptor *__mailbox = NULL;
+ 
+-	if (!descriptor) { // Should NEVER happen
++	if (!descriptor) { /* Should NEVER happen */
+ 		return -PW_ERROR;
+ 	}
+ 	__mailbox = &descriptor->mailbox_descriptor;
+@@ -561,7 +563,7 @@ void sw_read_msr_info_i(char *dst_vals, int cpu,
+ #define SW_DO_IPC(cmd, sub_cmd) rpmsg_send_generic_simple_command(cmd, sub_cmd)
+ #else
+ #define SW_DO_IPC(cmd, sub_cmd) (-ENODEV)
+-#endif // CONFIG_RPMSG_IPC
++#endif /* CONFIG_RPMSG_IPC */
+ 
+ void sw_read_ipc_info_i(char *dst_vals, int cpu,
+ 			const struct sw_driver_io_descriptor *descriptors,
+@@ -581,7 +583,7 @@ void sw_read_ipc_info_i(char *dst_vals, int cpu,
+ 	}
+ 
+ 	if (remapped_address) {
+-		// memcpy(&value, (void *)remapped_address, counter_size_in_bytes);
++		/* memcpy(&value, (void *)remapped_address, counter_size_in_bytes); */
+ 		pw_pr_debug("COPYING MMIO size %u\n", counter_size_in_bytes);
+ 		memcpy(dst_vals, (void *)remapped_address,
+ 		       counter_size_in_bytes);
+@@ -648,8 +650,8 @@ void sw_read_mmio_info_i(char *dst_vals, int cpu,
+ }
+ 
+ void sw_read_pch_mailbox_info_i(char *dst_vals, int cpu,
+-				const struct sw_driver_io_descriptor *descriptor,
+-				u16 counter_size_in_bytes)
++				const struct sw_driver_io_descriptor
++				*descriptor, u16 counter_size_in_bytes)
+ {
+ 	/*
+ 	 * TODO: spinlock?
+@@ -870,7 +872,7 @@ void sw_read_socperf_info_i(char *dst_vals, int cpu,
+ 
+ 	memset(socperf_buffer, 0, counter_size_in_bytes);
+ 	SOCPERF_Read_Data2(socperf_buffer);
+-#endif // IS_ENABLED(CONFIG_INTEL_SOCPERF)
++#endif /* IS_ENABLED(CONFIG_INTEL_SOCPERF) */
+ 	return;
+ }
+ 
+@@ -883,7 +885,7 @@ bool sw_socperf_available_i(void)
+ 	bool retVal = false;
+ #if IS_ENABLED(CONFIG_INTEL_SOCPERF)
+ 	retVal = true;
+-#endif // IS_ENABLED(CONFIG_INTEL_SOCPERF)
++#endif /* IS_ENABLED(CONFIG_INTEL_SOCPERF) */
+ 	return retVal;
+ }
+ 
+@@ -905,9 +907,9 @@ u32 sw_platform_configdb_read32(u32 address)
+ 				       SW_PCI_MSG_CTRL_REG /*ctrl-offset*/,
+ 				       address /*ctrl-value*/,
+ 				       SW_PCI_MSG_DATA_REG /*data-offset*/);
+-#else // !DO_DIRECT_PCI_READ_WRITE
++#else /* !DO_DIRECT_PCI_READ_WRITE */
+ 	read_value = intel_mid_msgbus_read32_raw(address);
+-#endif // if DO_DIRECT_PCI_READ_WRITE
++#endif /* if DO_DIRECT_PCI_READ_WRITE */
+ 	pw_pr_debug("address = %u, value = %u\n", address, read_value);
+ 	return read_value;
+ }
+@@ -917,18 +919,18 @@ u32 sw_platform_pci_read32(u32 bus, u32 device, u32 function, u32 write_offset,
+ {
+ 	u32 read_value = 0;
+ 	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(
+-		0, bus, PCI_DEVFN(device, function)); // 0, PCI_DEVFN(0, 0));
++		0, bus, PCI_DEVFN(device, function)); /* 0, PCI_DEVFN(0, 0)); */
+ 	if (!pci_root) {
+ 		return 0; /* Application will verify the data */
+ 	}
+ 	if (write_offset) {
+ 		pci_write_config_dword(
+ 			pci_root, write_offset,
+-			write_value); // SW_PCI_MSG_CTRL_REG, address);
++			write_value); /* SW_PCI_MSG_CTRL_REG, address); */
+ 	}
+ 	pci_read_config_dword(
+ 		pci_root, read_offset,
+-		&read_value); // SW_PCI_MSG_DATA_REG, &read_value);
++		&read_value); /* SW_PCI_MSG_DATA_REG, &read_value); */
+ 	return read_value;
+ }
+ 
+@@ -1074,7 +1076,7 @@ bool sw_platform_pci_write32(u32 bus, u32 device, u32 function,
+ 			     u32 write_offset, u32 data_value)
+ {
+ 	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(
+-		0, bus, PCI_DEVFN(device, function)); // 0, PCI_DEVFN(0, 0));
++		0, bus, PCI_DEVFN(device, function)); /* 0, PCI_DEVFN(0, 0)); */
+ 	if (!pci_root) {
+ 		return false;
+ 	}
+@@ -1100,7 +1102,7 @@ int sw_ipc_mmio_descriptor_reset_func_i(
+ 	/* Unmap previously mapped memory here */
+ 	struct sw_driver_ipc_mmio_io_descriptor *__ipc_mmio = NULL;
+ 
+-	if (!descriptor) { // Should NEVER happen
++	if (!descriptor) { /* Should NEVER happen */
+ 		return -PW_ERROR;
+ 	}
+ 	if (descriptor->collection_type == SW_IO_IPC) {
+@@ -1139,7 +1141,7 @@ int sw_pch_mailbox_descriptor_reset_func_i(
+ 	/* Unmap previously mapped memory here */
+ 	struct sw_driver_pch_mailbox_io_descriptor *__pch_mailbox = NULL;
+ 
+-	if (!descriptor) { // Should NEVER happen
++	if (!descriptor) { /* Should NEVER happen */
+ 		return -PW_ERROR;
+ 	}
+ 	__pch_mailbox =
+@@ -1175,7 +1177,7 @@ int sw_mailbox_descriptor_reset_func_i(
+ 	/* Unmap previously mapped memory here */
+ 	struct sw_driver_mailbox_io_descriptor *__mailbox = NULL;
+ 
+-	if (!descriptor) { // Should NEVER happen
++	if (!descriptor) { /* Should NEVER happen */
+ 		return -PW_ERROR;
+ 	}
+ 	__mailbox = (struct sw_driver_mailbox_io_descriptor *)&descriptor
+@@ -1221,5 +1223,5 @@ int sw_register_ops_providers(void)
+ 
+ void sw_free_ops_providers(void)
+ {
+-	// NOP
++	/* NOP */
+ }
+diff --git a/drivers/platform/x86/socwatch/sw_output_buffer.c b/drivers/platform/x86/socwatch/sw_output_buffer.c
+index d3b8e58..a0c1c5f 100644
+--- a/drivers/platform/x86/socwatch/sw_output_buffer.c
++++ b/drivers/platform/x86/socwatch/sw_output_buffer.c
+@@ -163,7 +163,7 @@ DECLARE_OVERHEAD_VARS(sw_produce_generic_msg_i);
+ /*
+  * Per-cpu output buffers.
+  */
+-static sw_output_buffer_t *per_cpu_output_buffers = NULL;
++static sw_output_buffer_t *per_cpu_output_buffers;
+ /*
+  * Variables for book keeping.
+  */
+@@ -176,7 +176,7 @@ SW_DECLARE_SPINLOCK(sw_polled_lock);
+ /*
+  * Buffer allocation size.
+  */
+-unsigned long sw_buffer_alloc_size = (1 << 16); // 64 KB
++unsigned long sw_buffer_alloc_size = (1 << 16); /* 64 KB */
+ 
+ /* -------------------------------------------------
+  * Function definitions.
+@@ -242,8 +242,8 @@ static int sw_produce_polled_msg_i(struct sw_driver_msg *msg,
+ 			 * are always CPU agnostic (otherwise they would
+ 			 * be invoked from within a preempt_disable()d context
+ 			 * in 'sw_handle_collector_node_i()', which ensures they
+-			 * will be enqueued within the 'sw_produce_generic_msg_on_cpu()'
+-			 * function).
++			 * will be enqueued within the
++			 * 'sw_produce_generic_msg_on_cpu()' function).
+ 			 */
+ 			msg->cpuidx = cpu;
+ 			memcpy(dst, msg, SW_DRIVER_MSG_HEADER_SIZE());
+@@ -553,10 +553,10 @@ size_t sw_consume_data(u32 mask, void __user *buffer, size_t bytes_to_read)
+ 	seg = &buff->buffers[which_seg];
+ 
+ 	bytes_not_copied = sw_copy_to_user(buffer, seg->buffer,
+-					   seg->bytes_written); // dst, src
++					   seg->bytes_written); /* dst, src */
+ 
+-	// bytes_not_copied =
+-	// copy_to_user(buffer, seg->buffer, seg->bytes_written); // dst,src
++	/* bytes_not_copied = */
++	/* copy_to_user(buffer, seg->buffer, seg->bytes_written);  dst,src */
+ 	if (likely(bytes_not_copied == 0)) {
+ 		bytes_read = seg->bytes_written;
+ 	} else {
+diff --git a/drivers/platform/x86/socwatch/sw_reader.c b/drivers/platform/x86/socwatch/sw_reader.c
+index c94e7e8..2e55ae1 100644
+--- a/drivers/platform/x86/socwatch/sw_reader.c
++++ b/drivers/platform/x86/socwatch/sw_reader.c
+@@ -123,7 +123,7 @@ void sw_wakeup_reader(enum sw_wakeup_action action)
+ 		if (!hrtimer_active(&s_reader_wakeup_timer)) {
+ 			ktime_t ktime =
+ 				ns_to_ktime(SW_BUFFER_CLEANUP_TIMER_DELAY_NSEC);
+-			// TODO: possible race here -- introduce locks?
++			/* TODO: possible race here -- introduce locks? */
+ 			hrtimer_start(&s_reader_wakeup_timer, ktime,
+ 				      HRTIMER_MODE_REL);
+ 		}
+@@ -159,5 +159,5 @@ void sw_print_reader_stats(void)
+ #if DO_OVERHEAD_MEASUREMENTS
+ 	printk(KERN_INFO "# reader queue timer fires = %d\n",
+ 	       s_num_timer_fires);
+-#endif // OVERHEAD
++#endif /* OVERHEAD */
+ }
+diff --git a/drivers/platform/x86/socwatch/sw_telem.c b/drivers/platform/x86/socwatch/sw_telem.c
+index 9f8beb5..eccb37d 100644
+--- a/drivers/platform/x86/socwatch/sw_telem.c
++++ b/drivers/platform/x86/socwatch/sw_telem.c
+@@ -299,7 +299,9 @@ int sw_telem_init_func(struct sw_driver_io_descriptor *descriptor)
+ 	/* Check if we've already added this ID */
+ 	for (idx = 0; idx < *unit_idx && idx < MAX_TELEM_EVENTS; ++idx) {
+ 		if (s_event_map[unit][idx] == id) {
+-			/* Invariant: idx contains the index of the new data item. */
++			/* Invariant: idx contains the
++			 * index of the new data item.
++			 */
+ 			/* Save the index for later fast lookup. */
+ 			td->idx = (u16)idx;
+ 			return 0;
+@@ -330,7 +332,8 @@ int sw_telem_init_func(struct sw_driver_io_descriptor *descriptor)
+  * @descriptor:         The descriptor containing the data ID to read
+  * @data_size_in_bytes: The # of bytes in the result (always 8)
+  *
+- * Returns: Nothing, but stores SW_TELEM_READ_FAIL_VALUE to dest if the read fails.
++ * Returns: Nothing, but stores SW_TELEM_READ_FAIL_VALUE to dest
++ * if the read fails.
+  */
+ void sw_read_telem_info(char *dest, int cpu,
+ 			const sw_driver_io_descriptor_t *descriptor,
+@@ -348,7 +351,7 @@ void sw_read_telem_info(char *dest, int cpu,
+ #define TELEM_PKT_SIZE 16 /* sizeof(struct telemetry_evtlog) + padding */
+ 	static struct telemetry_evtlog events[MAX_TELEM_EVENTS];
+ 
+-	// Get the event index
++	/* Get the event index */
+ 	if (IS_SCALED_ID(td)) {
+ 		unsigned char *scaled_ids;
+ 
+@@ -401,8 +404,10 @@ void sw_read_telem_info(char *dest, int cpu,
+ 	}
+ 
+ 	if (retry_count) {
+-		// TODO: Resolve if we should return something other than
+-		//       SW_TELEM_READ_FAIL_VALUE, if the actual data happens to be that.
++		/* TODO: Resolve if we should return something other than
++		 *       SW_TELEM_READ_FAIL_VALUE, if the actual data
++		 *	 happens to be that.
++		 */
+ 		*data_dest = events[idx].telem_evtlog;
+ 	} else {
+ 		*data_dest = SW_TELEM_READ_FAIL_VALUE;
+diff --git a/drivers/platform/x86/socwatch/sw_trace_notifier_provider.c b/drivers/platform/x86/socwatch/sw_trace_notifier_provider.c
+index d6ff34b..153fa70 100644
+--- a/drivers/platform/x86/socwatch/sw_trace_notifier_provider.c
++++ b/drivers/platform/x86/socwatch/sw_trace_notifier_provider.c
+@@ -71,7 +71,8 @@
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+ #include <asm/trace/irq_vectors.h> /* for the various APIC vector tracepoints
+ 				    *  (e.g. "thermal_apic",
+-				    *  "local_timer" etc.) */
++				    *  "local_timer" etc.)
++				    */
+ #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+ struct pool_workqueue;
+ struct cpu_workqueue_struct;
+@@ -118,7 +119,8 @@ struct cpu_workqueue_struct;
+ #ifdef CONFIG_TIMER_STATS
+ #define GET_TIMER_THREAD_ID(t)                                                 \
+ 	((t)->start_pid) /* 'start_pid' is actually the thread ID
+-			  * of the thread that initialized the timer */
++			  * of the thread that initialized the timer
++			  */
+ #else
+ #define GET_TIMER_THREAD_ID(t) (-1)
+ #endif /* CONFIG_TIMER_STATS */
+@@ -408,7 +410,8 @@ void sw_handle_reset_messages_i(struct sw_trace_notifier_data *node);
+  */
+ DECLARE_OVERHEAD_VARS(
+ 	sw_handle_timer_wakeup_helper_i); /* for the "timer_expire"
+-					     family of probes */
++					   *   family of probes
++					   */
+ DECLARE_OVERHEAD_VARS(sw_handle_irq_wakeup_i); /* for IRQ wakeups */
+ DECLARE_OVERHEAD_VARS(sw_handle_sched_wakeup_i); /* for SCHED */
+ DECLARE_OVERHEAD_VARS(sw_tps_i); /* for TPS */
+@@ -642,13 +645,15 @@ static struct sw_trace_notifier_data s_notifier_collector_lists[] = {
+ 	  &s_notifier_names[SW_NOTIFIER_ID_SUSPEND], &sw_register_pm_notifier_i,
+ 	  &sw_unregister_pm_notifier_i, NULL, true /* always register */ },
+ 	/* Placeholder for suspend enter/exit -- these will be called
+-	   from within the pm notifier */
++	 * from within the pm notifier
++	 */
+ 	{ SW_TRACE_COLLECTOR_NOTIFIER,
+ 	  &s_notifier_names[SW_NOTIFIER_ID_SUSPEND_ENTER], NULL, NULL, NULL },
+ 	{ SW_TRACE_COLLECTOR_NOTIFIER,
+ 	  &s_notifier_names[SW_NOTIFIER_ID_SUSPEND_EXIT], NULL, NULL, NULL },
+ 	/* Placeholder for hibernate enter/exit -- these will be called
+-	   from within the pm notifier */
++	 * from within the pm notifier
++	 */
+ 	{ SW_TRACE_COLLECTOR_NOTIFIER,
+ 	  &s_notifier_names[SW_NOTIFIER_ID_HIBERNATE], NULL, NULL, NULL },
+ 	{ SW_TRACE_COLLECTOR_NOTIFIER,
+@@ -979,7 +984,8 @@ void sw_handle_sched_switch_helper_i(void)
+ 				timeout = sw_min_polling_interval_msecs;
+ 			}
+ 			/* Has there been enough time since the last
+-			   collection point? */
++			 * collection point?
++			 */
+ 			if (delta_msecs < timeout) {
+ 				continue;
+ 			}
+@@ -987,11 +993,13 @@ void sw_handle_sched_switch_helper_i(void)
+ 			if (cpumask_test_cpu(
+ 				    RAW_CPU(),
+ 				    mask) /* This msg must be handled on
+-					     the current CPU */
++					   * the current CPU
++					   */
+ 			    ||
+ 			    cpumask_empty(
+ 				    mask) /* This msg may be handled by
+-					     any CPU */) {
++					   * any CPU
++					   */) {
+ 				if (!CAS64(&curr->last_update_jiffies,
+ 					   prev_jiff, curr_jiff)) {
+ 					/*
+@@ -1679,7 +1687,8 @@ int sw_probe_hotplug_notifier_i(struct notifier_block *block,
+ 	case CPU_ONLINE:
+ 	case CPU_ONLINE_FROZEN:
+ 		/* CPU is online -- first store top change
+-		   then take BEGIN snapshot */
++		 * then take BEGIN snapshot
++		 */
+ 		sw_store_topology_change_i(SW_CPU_ACTION_ONLINE, cpu, core_id,
+ 					   pkg_id);
+ 		sw_process_snapshot_on_cpu(SW_WHEN_TYPE_BEGIN, cpu);
+@@ -1722,13 +1731,15 @@ static void sw_probe_cpuhp_helper_i(unsigned int cpu, enum cpu_action action)
+ 		break;
+ 	case SW_CPU_ACTION_ONLINE:
+ 		/* CPU is online -- first store top change
+-		   then take BEGIN snapshot */
++		 * then take BEGIN snapshot
++		 */
+ 		sw_store_topology_change_i(action, cpu, core_id, pkg_id);
+ 		sw_process_snapshot_on_cpu(SW_WHEN_TYPE_BEGIN, cpu);
+ 		break;
+ 	case SW_CPU_ACTION_OFFLINE:
+ 		/* CPU is preparing to go offline -- take
+-		   END snapshot then store top change */
++		 * END snapshot then store top change
++		 */
+ 		sw_process_snapshot_on_cpu(SW_WHEN_TYPE_END, cpu);
+ 		sw_store_topology_change_i(action, cpu, core_id, pkg_id);
+ 		break;
+diff --git a/drivers/platform/x86/socwatch/sw_tracepoint_handlers.c b/drivers/platform/x86/socwatch/sw_tracepoint_handlers.c
+index bc335ce..8154f6b 100644
+--- a/drivers/platform/x86/socwatch/sw_tracepoint_handlers.c
++++ b/drivers/platform/x86/socwatch/sw_tracepoint_handlers.c
+@@ -78,7 +78,7 @@ static int s_trace_idx = -1, s_notifier_idx = -1;
+ 
+ SW_DEFINE_LIST_HEAD(sw_topology_list, sw_topology_node) =
+ 	SW_LIST_HEAD_INITIALIZER(sw_topology_list);
+-size_t sw_num_topology_entries = 0;
++size_t sw_num_topology_entries;
+ 
+ /* -------------------------------------------------
+  * Function definitions.
+@@ -102,7 +102,8 @@ void sw_print_trace_notifier_overheads(void)
+ static int sw_for_each_node_i(void *list_head,
+ 			      int (*func)(struct sw_trace_notifier_data *node,
+ 					  void *priv),
+-			      void *priv, bool return_on_error) {
++			      void *priv, bool return_on_error)
++{
+ 	SW_LIST_HEAD_VAR(sw_trace_list_node) * head = list_head;
+ 	int retval = PW_SUCCESS;
+ 	struct sw_trace_list_node *lnode = NULL;
+@@ -121,7 +122,8 @@ static int sw_for_each_node_i(void *list_head,
+ 
+ int sw_for_each_tracepoint_node(int (*func)(struct sw_trace_notifier_data *node,
+ 					    void *priv),
+-				void *priv, bool return_on_error) {
++				void *priv, bool return_on_error)
++{
+ 	if (func) {
+ 		return sw_for_each_node_i(&s_trace_list, func, priv,
+ 					  return_on_error);
+@@ -131,7 +133,8 @@ int sw_for_each_tracepoint_node(int (*func)(struct sw_trace_notifier_data *node,
+ 
+ int sw_for_each_notifier_node(int (*func)(struct sw_trace_notifier_data *node,
+ 					  void *priv),
+-			      void *priv, bool return_on_error) {
++			      void *priv, bool return_on_error)
++{
+ 	if (func) {
+ 		return sw_for_each_node_i(&s_notifier_list, func, priv,
+ 					  return_on_error);
+diff --git a/drivers/platform/x86/socwatchhv/control.c b/drivers/platform/x86/socwatchhv/control.c
+index 4d1c384..120705e 100644
+--- a/drivers/platform/x86/socwatchhv/control.c
++++ b/drivers/platform/x86/socwatchhv/control.c
+@@ -103,21 +103,22 @@ extern void CONTROL_Invoke_Cpu(int cpu_idx, void (*func)(pvoid), pvoid ctx)
+  * @fn VOID CONTROL_Invoke_Parallel_Service(func, ctx, blocking, exclude)
+  *
+  * @param    func     - function to be invoked by each core in the system
+- * @param    ctx      - pointer to the parameter block for each function invocation
++ * @param    ctx      - pointer to the parameter block for each function
++ *                      invocation
+  * @param    blocking - Wait for invoked function to complete
+  * @param    exclude  - exclude the current core from executing the code
+  *
+  * @returns  None
+  *
+- * @brief    Service routine to handle all kinds of parallel invoke on all CPU calls
++ * @brief    Service routine to handle all kinds of parallel invoke on
++ *           all CPU calls
+  *
+  * <I>Special Notes:</I>
+  *           Invoke the function provided in parallel in either a blocking or
+  *           non-blocking mode.  The current core may be excluded if desired.
+  *           NOTE - Do not call this function directly from source code.
+- *           Use the aliases CONTROL_Invoke_Parallel(), CONTROL_Invoke_Parallel_NB(),
+- *           or CONTROL_Invoke_Parallel_XS().
+- *
++ *           Use the aliases CONTROL_Invoke_Parallel(),
++ *            CONTROL_Invoke_Parallel_NB(), or CONTROL_Invoke_Parallel_XS().
+  */
+ extern void CONTROL_Invoke_Parallel_Service(void (*func)(pvoid), pvoid ctx,
+ 					    int blocking, int exclude)
+diff --git a/drivers/platform/x86/socwatchhv/inc/asm_helper.h b/drivers/platform/x86/socwatchhv/inc/asm_helper.h
+index d09a3bb..10e9519 100644
+--- a/drivers/platform/x86/socwatchhv/inc/asm_helper.h
++++ b/drivers/platform/x86/socwatchhv/inc/asm_helper.h
+@@ -152,7 +152,7 @@
+ 
+ 			.macro RESTORE_ALL RESTORE_EXTRA_REGS RESTORE_C_REGS
+ 		REMOVE_PT_GPREGS_FROM_STACK.endm
+-#endif //CONFIG_X86_64
++#endif /*CONFIG_X86_64 */
+ #endif
+ 
+ #endif
+diff --git a/drivers/platform/x86/socwatchhv/inc/pw_types.h b/drivers/platform/x86/socwatchhv/inc/pw_types.h
+index b8a3ac8..8b56e5c 100644
+--- a/drivers/platform/x86/socwatchhv/inc/pw_types.h
++++ b/drivers/platform/x86/socwatchhv/inc/pw_types.h
+@@ -63,8 +63,8 @@
+ /*
+  * Called from Ring-3.
+  */
+-#include <stdint.h> // Grab 'uint64_t' etc.
+-#include <unistd.h> // Grab 'pid_t'
++#include <stdint.h> /* Grab 'uint64_t' etc. */
++#include <unistd.h> /* Grab 'pid_t' */
+ /*
+  * UNSIGNED types...
+  */
+@@ -80,7 +80,7 @@ typedef int16_t s16;
+ typedef int32_t s32;
+ typedef int64_t s64;
+ 
+-#endif // __KERNEL__
++#endif /* __KERNEL__ */
+ 
+ #elif defined(_WIN32)
+ /*
+@@ -100,7 +100,7 @@ typedef signed long long s64;
+ typedef s32 pid_t;
+ typedef s32 ssize_t;
+ 
+-#endif // _WIN32
++#endif /* _WIN32 */
+ 
+ /* ************************************
+  * Common to both operating systems.
+@@ -129,4 +129,4 @@ typedef void *pvoid;
+ #define TRUE 1
+ #define FALSE 0
+ 
+-#endif // _PW_TYPES_H_
++#endif /* _PW_TYPES_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/pw_version.h b/drivers/platform/x86/socwatchhv/inc/pw_version.h
+index 8e1cf1c..7f1a40d 100644
+--- a/drivers/platform/x86/socwatchhv/inc/pw_version.h
++++ b/drivers/platform/x86/socwatchhv/inc/pw_version.h
+@@ -64,4 +64,4 @@
+ #define SWHVDRV_VERSION_MINOR 0
+ #define SWHVDRV_VERSION_OTHER 0
+ 
+-#endif // _PW_VERSION_H_
++#endif /* _PW_VERSION_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/sw_defines.h b/drivers/platform/x86/socwatchhv/inc/sw_defines.h
+index 9c89958..f0ef6ba 100644
+--- a/drivers/platform/x86/socwatchhv/inc/sw_defines.h
++++ b/drivers/platform/x86/socwatchhv/inc/sw_defines.h
+@@ -72,8 +72,8 @@
+  */
+ #define TO_ULL(x) (unsigned long long)(x)
+ /*
+-* Convert an arg to 'long long'
+-*/
++ * Convert an arg to 'long long'
++ */
+ #define TO_LL(x) (long long)(x)
+ /*
+  * Convert an arg to 'unsigned long'
+@@ -146,11 +146,11 @@ typedef enum {
+ 	SW_COUNTER_HOTKEY_EVENT,
+ 	SW_MAX_COLLECTION_EVENT
+ } collector_stop_event_t;
+-#endif // SWW_MERGE
++#endif /* SWW_MERGE */
+ 
+ #define MAX_UNSIGNED_16_BIT_VALUE 0xFFFF
+ #define MAX_UNSIGNED_24_BIT_VALUE 0xFFFFFF
+ #define MAX_UNSIGNED_32_BIT_VALUE 0xFFFFFFFF
+ #define MAX_UNSIGNED_64_BIT_VALUE 0xFFFFFFFFFFFFFFFF
+ 
+-#endif // _PW_DEFINES_H_
++#endif /* _PW_DEFINES_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/sw_ioctl.h b/drivers/platform/x86/socwatchhv/inc/sw_ioctl.h
+index baf9305..1f8e903 100644
+--- a/drivers/platform/x86/socwatchhv/inc/sw_ioctl.h
++++ b/drivers/platform/x86/socwatchhv/inc/sw_ioctl.h
+@@ -62,11 +62,11 @@
+ #if defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
+ #include <asm/compat.h>
+ #include <linux/compat.h>
+-#endif // COMPAT && x64
+-#else // !__KERNEL__
++#endif /* COMPAT && x64 */
++#else /* !__KERNEL__ */
+ #include <sys/ioctl.h>
+-#endif // __KERNEL__
+-#endif // __linux__
++#endif /* __KERNEL__ */
++#endif /* __linux__ */
+ /*
+  * Ensure we pull in definition of 'DO_COUNT_DROPPED_SAMPLES'!
+  */
+@@ -75,8 +75,8 @@
+ #ifdef ONECORE
+ #ifndef __KERNEL__
+ #include <winioctl.h>
+-#endif //__KERNEL__
+-#endif // ONECORE
++#endif /* __KERNEL__ */
++#endif /* ONECORE */
+ 
+ /*
+  * The APWR-specific IOCTL magic
+@@ -84,13 +84,13 @@
+  * are delivered to the correct
+  * driver.
+  */
+-// #define APWR_IOCTL_MAGIC_NUM 0xdead
++/* #define APWR_IOCTL_MAGIC_NUM 0xdead */
+ #define APWR_IOCTL_MAGIC_NUM 100
+ 
+ /*
+  * The name of the device file
+  */
+-// #define DEVICE_FILE_NAME "/dev/pw_driver_char_dev"
++/* #define DEVICE_FILE_NAME "/dev/pw_driver_char_dev" */
+ #define PW_DEVICE_FILE_NAME "/dev/apwr_driver_char_dev"
+ #define PW_DEVICE_NAME "apwr_driver_char_dev"
+ 
+@@ -119,13 +119,13 @@ enum sw_ioctl_cmd {
+  * Where "Read" and "Write" are from the user's perspective
+  * (similar to the file "read" and "write" calls).
+  */
+-#ifdef SWW_MERGE // Windows
+-//
+-// Device type           -- in the "User Defined" range."
+-//
++#ifdef SWW_MERGE /* Windows */
++/*
++ * Device type           -- in the "User Defined" range."
++ */
+ #define POWER_I_CONF_TYPE 40000
+ 
+-// List assigned tracepoint id
++/* List assigned tracepoint id */
+ #define CSIR_TRACEPOINT_ID_MASK 1
+ #define DEVICE_STATE_TRACEPOINT_ID_MASK 2
+ #define CSIR_SEPARATE_TRACEPOINT_ID_MASK 3
+@@ -133,18 +133,18 @@ enum sw_ioctl_cmd {
+ #define DISPLAY_ON_TRACEPOINT_ID_MASK 5
+ 
+ #ifdef SWW_MERGE
+-//
+-// TELEM BAR CONFIG
+-//
++/*
++ * TELEM BAR CONFIG
++ */
+ #define MAX_TELEM_BAR_CFG 3
+ #define TELEM_MCHBAR_CFG 0
+ #define TELEM_IPC1BAR_CFG 1
+ #define TELEM_SSRAMBAR_CFG 2
+ #endif
+ 
+-//
+-// The IOCTL function codes from 0x800 to 0xFFF are for customer use.
+-//
++/*
++ * The IOCTL function codes from 0x800 to 0xFFF are for customer use.
++ */
+ #define PW_IOCTL_CONFIG                                                        \
+ 	CTL_CODE(POWER_I_CONF_TYPE, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
+ #define PW_IOCTL_START_COLLECTION                                              \
+@@ -152,7 +152,7 @@ enum sw_ioctl_cmd {
+ #define PW_IOCTL_STOP_COLLECTION                                               \
+ 	CTL_CODE(POWER_I_CONF_TYPE, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
+ 
+-// TODO: pause, resume, cancel not supported yet
++/* TODO: pause, resume, cancel not supported yet */
+ #define PW_IOCTL_PAUSE_COLLECTION                                              \
+ 	CTL_CODE(POWER_I_CONF_TYPE, 0x903, METHOD_BUFFERED, FILE_ANY_ACCESS)
+ #define PW_IOCTL_RESUME_COLLECTION                                             \
+@@ -201,7 +201,7 @@ enum sw_ioctl_cmd {
+ #define PW_IOCTL_CMD                                                           \
+ 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd,                           \
+ 	     struct sw_driver_ioctl_arg *)
+-#endif // DO_COUNT_DROPPED_SAMPLES
++#endif /* DO_COUNT_DROPPED_SAMPLES */
+ #define PW_IOCTL_POLL _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
+ #define PW_IOCTL_IMMEDIATE_IO                                                  \
+ 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io,                 \
+@@ -227,7 +227,7 @@ enum sw_ioctl_cmd {
+ #define PW_IOCTL_GET_TOPOLOGY_CHANGES                                          \
+ 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes,              \
+ 	     struct sw_driver_ioctl_arg *)
+-#else // __APPLE__
++#else /* __APPLE__ */
+ #define PW_IOCTL_CONFIG                                                        \
+ 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_config,                        \
+ 	     struct sw_driver_ioctl_arg)
+@@ -238,7 +238,7 @@ enum sw_ioctl_cmd {
+ #else
+ #define PW_IOCTL_CMD                                                           \
+ 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd, struct sw_driver_ioctl_arg)
+-#endif // DO_COUNT_DROPPED_SAMPLES
++#endif /* DO_COUNT_DROPPED_SAMPLES */
+ #define PW_IOCTL_POLL _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
+ #define PW_IOCTL_IMMEDIATE_IO                                                  \
+ 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io,                 \
+@@ -264,7 +264,7 @@ enum sw_ioctl_cmd {
+ #define PW_IOCTL_GET_TOPOLOGY_CHANGES                                          \
+ 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes,             \
+ 	      struct sw_driver_ioctl_arg)
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+ /*
+  * 32b-compatible version of the above
+@@ -281,7 +281,7 @@ enum sw_ioctl_cmd {
+ #else
+ #define PW_IOCTL_CMD32                                                         \
+ 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd, compat_uptr_t)
+-#endif // DO_COUNT_DROPPED_SAMPLES
++#endif /* DO_COUNT_DROPPED_SAMPLES */
+ #define PW_IOCTL_POLL32 _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
+ #define PW_IOCTL_IMMEDIATE_IO32                                                \
+ 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io, compat_uptr_t)
+@@ -299,5 +299,5 @@ enum sw_ioctl_cmd {
+ 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_avail_collect, compat_uptr_t)
+ #define PW_IOCTL_GET_TOPOLOGY_CHANGES32                                        \
+ 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes, compat_uptr_t)
+-#endif // defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
+-#endif // __SW_IOCTL_H__
++#endif /* defined(CONFIG_COMPAT) && defined(CONFIG_X86_64) */
++#endif /* __SW_IOCTL_H__ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/sw_kernel_defines.h b/drivers/platform/x86/socwatchhv/inc/sw_kernel_defines.h
+index 23e939a..d970236 100644
+--- a/drivers/platform/x86/socwatchhv/inc/sw_kernel_defines.h
++++ b/drivers/platform/x86/socwatchhv/inc/sw_kernel_defines.h
+@@ -61,7 +61,7 @@
+ #if defined(__APPLE__)
+ #define likely(x) (x)
+ #define unlikely(x) (x)
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+ #if !defined(__APPLE__)
+ #define CPU() (raw_smp_processor_id())
+@@ -69,7 +69,7 @@
+ #else
+ #define CPU() (cpu_number())
+ #define RAW_CPU() (cpu_number())
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+ #define TID() (current->pid)
+ #define PID() (current->tgid)
+@@ -101,12 +101,12 @@
+ #if !DO_OVERHEAD_MEASUREMENTS
+ #undef DO_OVERHEAD_MEASUREMENTS
+ #define DO_OVERHEAD_MEASUREMENTS 1
+-#endif // DO_OVERHEAD_MEASUREMENTS
++#endif /* DO_OVERHEAD_MEASUREMENTS */
+ #if !DO_TRACK_MEMORY_USAGE
+ #undef DO_TRACK_MEMORY_USAGE
+ #define DO_TRACK_MEMORY_USAGE 1
+-#endif // DO_TRACK_MEMORY_USAGE
+-#endif // CONFIG_SOCWATCH_DRIVER_PROFILING
++#endif /* DO_TRACK_MEMORY_USAGE */
++#endif /* CONFIG_SOCWATCH_DRIVER_PROFILING */
+ /*
+  * Should we allow debug output.
+  * Set to: "1" ==> 'OUTPUT' is enabled.
+@@ -142,7 +142,7 @@
+ #define pw_pr_warn(...)
+ #endif
+ #define pw_pr_force(...) IOLog(__VA_ARGS__)
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+ /*
+  * Macro for driver error messages.
+@@ -159,6 +159,6 @@
+ #else
+ #define pw_pr_error(...)
+ #endif
+-#endif // __APPLE__
++#endif /* __APPLE__ */
+ 
+-#endif // _SW_KERNEL_DEFINES_H_
++#endif /* _SW_KERNEL_DEFINES_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/sw_structs.h b/drivers/platform/x86/socwatchhv/inc/sw_structs.h
+index 94e58b5..baac852 100644
+--- a/drivers/platform/x86/socwatchhv/inc/sw_structs.h
++++ b/drivers/platform/x86/socwatchhv/inc/sw_structs.h
+@@ -95,14 +95,15 @@ struct sw_key_value_payload {
+ 	(sizeof(struct sw_key_value_payload) - sizeof(char[1]))
+ 
+ typedef enum sw_kernel_wakelock_type {
+-	SW_WAKE_LOCK = 0, // A kernel wakelock was acquired
+-	SW_WAKE_UNLOCK = 1, // A kernel wakelock was released
++	SW_WAKE_LOCK = 0, /* A kernel wakelock was acquired */
++	SW_WAKE_UNLOCK = 1, /* A kernel wakelock was released */
+ 	SW_WAKE_LOCK_TIMEOUT =
+-		2, // A kernel wakelock was acquired with a timeout
+-	SW_WAKE_LOCK_INITIAL = 3, // A kernel wakelock was acquired before the
+-	//   collection started
+-	SW_WAKE_UNLOCK_ALL = 4, // All previously held kernel wakelocks were
+-	//   released -- used in ACPI S3 notifications
++		2, /* A kernel wakelock was acquired with a timeout */
++	SW_WAKE_LOCK_INITIAL = 3, /* A kernel wakelock was acquired
++				   * before the collection started
++				   */
++	SW_WAKE_UNLOCK_ALL = 4, /* All previously held kernel wakelocks were */
++	/*   released -- used in ACPI S3 notifications */
+ } sw_kernel_wakelock_type_t;
+ 
+ typedef enum sw_when_type {
+@@ -141,23 +142,27 @@ struct sw_driver_ipc_mmio_io_descriptor {
+ #ifdef SWW_MERGE
+ #pragma warning(push)
+ #pragma warning(                                                               \
+-	disable : 4201) // disable C4201: nonstandard extension used: nameless struct/union
++	disable : 4201) /* disable C4201: nonstandard extension used:
++			 * nameless struct/union
++			 */
+ #endif
+ 		struct {
+ 			pw_u16_t command;
+ 			pw_u16_t sub_command;
+ 		};
+ #ifdef SWW_MERGE
+-#pragma warning(pop) // enable C4201
++#pragma warning(pop) /* enable C4201 */
+ #endif
+ 		union {
+-			pw_u32_t ipc_command; // (sub_command << 12) | (command)
+-			pw_u8_t is_gbe; // Used only for GBE MMIO
++			pw_u32_t ipc_command; /* (sub_command << 12)
++					       * | (command)
++					       */
++			pw_u8_t is_gbe; /* Used only for GBE MMIO */
+ 		};
+ 	};
+-	// TODO: add a section for 'ctrl_address' and 'ctrl_remapped_address'
++	/* TODO: add a section for 'ctrl_address' and 'ctrl_remapped_address' */
+ 	union {
+-		pw_u64_t data_address; // Will be "io_remapped"
++		pw_u64_t data_address; /* Will be "io_remapped" */
+ 		pw_u64_t data_remapped_address;
+ 	};
+ };
+@@ -181,16 +186,18 @@ struct sw_driver_pci_io_descriptor {
+ 
+ #pragma pack(push, 1)
+ struct sw_driver_configdb_io_descriptor {
+-	// pw_u32_t port;
+-	// pw_u32_t offset;
++	/* pw_u32_t port; */
++	/* pw_u32_t offset; */
+ 	pw_u32_t address;
+ };
+ #pragma pack(pop)
+ 
+ #pragma pack(push, 1)
+ struct sw_driver_trace_args_io_descriptor {
+-	pw_u8_t num_args; // Number of valid entries in the 'args' array, below; 1 <= num_args <= 7
+-	pw_u8_t args[7]; // Max of 7 args can be recorded
++	pw_u8_t num_args; /* Number of valid entries in the 'args' array,
++			   * below; 1 <= num_args <= 7
++			   */
++	pw_u8_t args[7]; /* Max of 7 args can be recorded */
+ };
+ #pragma pack(pop)
+ 
+@@ -303,9 +310,11 @@ struct sw_driver_pch_mailbox_io_descriptor {
+ #pragma pack(push, 1)
+ typedef struct sw_driver_io_descriptor {
+ 	pw_u16_t collection_type;
+-	// TODO: specify READ/WRITE
+-	pw_s16_t collection_command; // One of 'enum sw_io_cmd'
+-	pw_u16_t counter_size_in_bytes; // The number of bytes to READ or WRITE
++	/* TODO: specify READ/WRITE */
++	pw_s16_t collection_command; /* One of 'enum sw_io_cmd' */
++	pw_u16_t counter_size_in_bytes; /* The number of bytes to
++					 * READ or WRITE
++					 */
+ 	union {
+ 		struct sw_driver_msr_io_descriptor msr_descriptor;
+ 		struct sw_driver_ipc_mmio_io_descriptor ipc_descriptor;
+@@ -318,7 +327,7 @@ typedef struct sw_driver_io_descriptor {
+ 			pch_mailbox_descriptor;
+ 		struct sw_driver_mailbox_io_descriptor mailbox_descriptor;
+ 	};
+-	pw_u64_t write_value; // The value to WRITE
++	pw_u64_t write_value; /* The value to WRITE */
+ } sw_driver_io_descriptor_t;
+ #pragma pack(pop)
+ 
+@@ -334,17 +343,23 @@ typedef struct sw_driver_io_descriptor {
+ struct sw_driver_interface_info {
+ 	pw_u64_t tracepoint_id_mask;
+ 	pw_u64_t notifier_id_mask;
+-	pw_s16_t cpu_mask; // On which CPU(s) should the driver read the data?
+-		// Currently:  -2 ==> read on ALL CPUs,
+-		//             -1 ==> read on ANY CPU,
+-		//           >= 0 ==> the specific CPU to read on
+-	pw_s16_t plugin_id; // Metric Plugin SID
+-	pw_s16_t metric_id; // Domain-specific ID assigned by each Metric Plugin
+-	pw_s16_t msg_id; // Msg ID retrieved from the SoC Watch config file
+-	pw_u16_t num_io_descriptors; // Number of descriptors in the array, below.
+-	pw_u8_t trigger_bits; // Mask of 'when bits' to fire this collector.
+-	pw_u16_t sampling_interval_msec; // Sampling interval, in msecs
+-	pw_u8_t descriptors[1]; // Array of sw_driver_io_descriptor structs.
++	pw_s16_t cpu_mask; /* On which CPU(s) should the driver
++			    * read the data?
++			    * Currently:  -2 ==> read on ALL CPUs,
++			    *             -1 ==> read on ANY CPU,
++			    *           >= 0 ==> the specific CPU to read on
++			    */
++	pw_s16_t plugin_id; /* Metric Plugin SID */
++	pw_s16_t metric_id; /* Domain-specific ID assigned by each
++			     * Metric Plugin
++			     */
++	pw_s16_t msg_id; /* Msg ID retrieved from the SoC Watch config file */
++	pw_u16_t num_io_descriptors; /* Number of descriptors in the array,
++				      * below.
++				      */
++	pw_u8_t trigger_bits; /* Mask of 'when bits' to fire this collector. */
++	pw_u16_t sampling_interval_msec; /* Sampling interval, in msecs */
++	pw_u8_t descriptors[1]; /* Array of sw_driver_io_descriptor structs. */
+ };
+ #pragma pack(pop)
+ 
+@@ -353,11 +368,20 @@ struct sw_driver_interface_info {
+ 
+ #pragma pack(push, 1)
+ struct sw_driver_interface_msg {
+-	pw_u16_t num_infos; // Number of 'sw_driver_interface_info' structs contained within the 'infos' variable, below
+-	pw_u16_t min_polling_interval_msecs; // Min time to wait before polling; used exclusively
+-		// with the low overhead, context-switch based
+-		// polling mode
+-	// pw_u16_t infos_size_bytes; // Size of data inlined within the 'infos' variable, below
++	pw_u16_t num_infos; /* Number of 'sw_driver_interface_info'
++			     * structs contained within the 'infos' variable,
++			     * below
++			     */
++	pw_u16_t min_polling_interval_msecs; /* Min time to wait before
++					      * polling; used exclusively
++					      * with the low overhead,
++					      * context-switch based
++					      * polling mode
++					      */
++					      /* pw_u16_t infos_size_bytes;
++					       * Size of data inlined within the
++					       * 'infos' variable, below
++					       */
+ 	pw_u8_t infos[1];
+ };
+ #pragma pack(pop)
+@@ -374,7 +398,7 @@ typedef enum sw_name_id_type {
+ #pragma pack(push, 1)
+ struct sw_name_id_pair {
+ 	pw_u16_t id;
+-	pw_u16_t type; // One of 'sw_name_id_type'
++	pw_u16_t type; /* One of 'sw_name_id_type' */
+ 	struct sw_string_type name;
+ };
+ #pragma pack(pop)
+@@ -399,14 +423,16 @@ struct sw_name_info_msg {
+ typedef struct sw_driver_msg {
+ 	pw_u64_t tsc;
+ 	pw_u16_t cpuidx;
+-	pw_u8_t plugin_id; // Cannot have more than 256 plugins
+-	pw_u8_t metric_id; // Each plugin cannot handle more than 256 metrics
+-	pw_u8_t msg_id; // Each metric cannot have more than 256 components
++	pw_u8_t plugin_id; /* Cannot have more than 256 plugins */
++	pw_u8_t metric_id; /* Each plugin cannot handle more than 256 metrics */
++	pw_u8_t msg_id; /* Each metric cannot have more than 256 components */
+ 	pw_u16_t payload_len;
+-	// pw_u64_t p_payload;  // Ptr to payload
++	/* pw_u64_t p_payload;  Ptr to payload */
+ 	union {
+-		pw_u64_t __dummy; // Ensure size of struct is consistent on x86, x64
+-		char *p_payload; // Ptr to payload (collected data values).
++		pw_u64_t __dummy; /* Ensure size of struct is
++				   * consistent on x86, x64
++				   */
++		char *p_payload; /* Ptr to payload (collected data values). */
+ 	};
+ } sw_driver_msg_t;
+ #pragma pack(pop)
+@@ -438,11 +464,11 @@ enum cpu_action {
+ };
+ #pragma pack(push, 1)
+ struct sw_driver_topology_change {
+-	pw_u64_t timestamp; // timestamp
+-	enum cpu_action type; // One of 'enum cpu_action'
+-	pw_u16_t cpu; // logical cpu
+-	pw_u16_t core; // core id
+-	pw_u16_t pkg; // pkg/physical id
++	pw_u64_t timestamp; /* timestamp */
++	enum cpu_action type; /* One of 'enum cpu_action' */
++	pw_u16_t cpu; /* logical cpu */
++	pw_u16_t core; /* core id */
++	pw_u16_t pkg; /* pkg/physical id */
+ };
+ struct sw_driver_topology_msg {
+ 	pw_u16_t num_entries;
+@@ -482,8 +508,8 @@ enum sw_pm_mode {
+ struct sw_driver_ioctl_arg {
+ 	pw_s32_t in_len;
+ 	pw_s32_t out_len;
+-	// pw_u64_t p_in_arg; // Pointer to input arg
+-	// pw_u64_t p_out_arg; // Pointer to output arg
++	/* pw_u64_t p_in_arg; Pointer to input arg */
++	/* pw_u64_t p_out_arg; Pointer to output arg */
+ 	char *in_arg;
+ 	char *out_arg;
+ };
+@@ -491,11 +517,11 @@ struct sw_driver_ioctl_arg {
+ 
+ #pragma pack(push, 1)
+ typedef struct sw_driver_msg_interval {
+-	pw_u8_t plugin_id; // Cannot have more than 256 plugins
+-	pw_u8_t metric_id; // Each plugin cannot handle more than 256 metrics
+-	pw_u8_t msg_id; // Each metric cannot have more than 256 components
+-	pw_u16_t interval; // collection interval
++	pw_u8_t plugin_id; /* Cannot have more than 256 plugins */
++	pw_u8_t metric_id; /* Each plugin cannot handle more than 256 metrics */
++	pw_u8_t msg_id; /* Each metric cannot have more than 256 components */
++	pw_u16_t interval; /* collection interval */
+ } sw_driver_msg_interval_t;
+ #pragma pack(pop)
+ 
+-#endif // __SW_STRUCTS_H__
++#endif /* __SW_STRUCTS_H__ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/sw_types.h b/drivers/platform/x86/socwatchhv/inc/sw_types.h
+index 914ce98..156c92c 100644
+--- a/drivers/platform/x86/socwatchhv/inc/sw_types.h
++++ b/drivers/platform/x86/socwatchhv/inc/sw_types.h
+@@ -63,8 +63,8 @@
+ /*
+  * Called from Ring-3.
+  */
+-#include <stdint.h> // Grab 'uint64_t' etc.
+-#include <unistd.h> // Grab 'pid_t'
++#include <stdint.h> /* Grab 'uint64_t' etc. */
++#include <unistd.h> /* Grab 'pid_t' */
+ /*
+  * UNSIGNED types...
+  */
+@@ -80,26 +80,26 @@ typedef int16_t s16;
+ typedef int32_t s32;
+ typedef int64_t s64;
+ 
+-#else // __KERNEL__
++#else /* __KERNEL__ */
+ #if !defined(__APPLE__)
+ #include <linux/types.h>
+-#else // __APPLE__
++#else /* __APPLE__ */
+ #include <sys/types.h>
+-#include <stdint.h> // Grab 'uint64_t' etc.
++#include <stdint.h> /* Grab 'uint64_t' etc. */
+ 
+ typedef uint8_t u8;
+ typedef uint16_t u16;
+ typedef uint32_t u32;
+ typedef uint64_t u64;
+ /*
+-* SIGNED types...
+-*/
++ * SIGNED types...
++ */
+ typedef int8_t s8;
+ typedef int16_t s16;
+ typedef int32_t s32;
+ typedef int64_t s64;
+-#endif // __APPLE__
+-#endif // __KERNEL__
++#endif /* __APPLE__ */
++#endif /* __KERNEL__ */
+ 
+ #elif defined(_WIN32)
+ typedef __int32 int32_t;
+@@ -125,7 +125,7 @@ typedef signed long long s64;
+ typedef s32 pid_t;
+ typedef s32 ssize_t;
+ 
+-#endif // _WIN32
++#endif /* _WIN32 */
+ 
+ /* ************************************
+  * Common to both operating systems.
+@@ -149,4 +149,4 @@ typedef s64 pw_s64_t;
+ 
+ typedef pid_t pw_pid_t;
+ 
+-#endif // _PW_TYPES_H_
++#endif /* _PW_TYPES_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/sw_version.h b/drivers/platform/x86/socwatchhv/inc/sw_version.h
+index 5797edf..5476b0d 100644
+--- a/drivers/platform/x86/socwatchhv/inc/sw_version.h
++++ b/drivers/platform/x86/socwatchhv/inc/sw_version.h
+@@ -71,4 +71,4 @@
+ #define SOCWATCH_VERSION_MINOR 8
+ #define SOCWATCH_VERSION_OTHER 0
+ 
+-#endif // __SW_VERSION_H__
++#endif /* __SW_VERSION_H__ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/swhv_acrn.h b/drivers/platform/x86/socwatchhv/inc/swhv_acrn.h
+index 06a9e09..2bcc97a 100644
+--- a/drivers/platform/x86/socwatchhv/inc/swhv_acrn.h
++++ b/drivers/platform/x86/socwatchhv/inc/swhv_acrn.h
+@@ -12,8 +12,8 @@
+ #include <linux/wait.h>
+ #include <linux/sched.h>
+ #include <asm/io.h>
+-#include <linux/version.h> // LINUX_VERSION_CODE
+-#include <linux/list.h> // for struct list_head
++#include <linux/version.h> /* LINUX_VERSION_CODE */
++#include <linux/list.h> /* for struct list_head */
+ 
+ #include "swhv_defines.h"
+ #include "pw_version.h"
+@@ -78,7 +78,7 @@ struct profiling_msr_op {
+ struct profiling_msr_ops_list {
+ 	int32_t collector_id;
+ 	uint32_t num_entries;
+-	int32_t msr_op_state; // enum value from 'MSR_CMD_STATUS'
++	int32_t msr_op_state; /* enum value from 'MSR_CMD_STATUS' */
+ 	struct profiling_msr_op entries[MAX_MSR_LIST_NUM];
+ };
+ 
+@@ -114,4 +114,4 @@ typedef struct swhv_acrn_msr_collector_data {
+ 	struct profiling_msr_ops_list *msr_ops_list;
+ 	size_t per_msg_payload_size;
+ } swhv_acrn_msr_collector_data_t;
+-#endif // _SWHV_ACRN_H_
++#endif /* _SWHV_ACRN_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/swhv_acrn_sbuf.h b/drivers/platform/x86/socwatchhv/inc/swhv_acrn_sbuf.h
+index c5a08d1..5f62c2d 100644
+--- a/drivers/platform/x86/socwatchhv/inc/swhv_acrn_sbuf.h
++++ b/drivers/platform/x86/socwatchhv/inc/swhv_acrn_sbuf.h
+@@ -84,7 +84,7 @@ int sbuf_get_variable(struct shared_buf *sbuf, void **data, uint32_t size)
+ 
+ 	from = (void *)sbuf + SBUF_HEAD_SIZE + sbuf->head;
+ 
+-	if (next_head < sbuf->head) { // wrap-around
++	if (next_head < sbuf->head) { /* wrap-around */
+ 		/* copy first part */
+ 		offset = sbuf->size - sbuf->head;
+ 		memcpy(*data, from, offset);
+@@ -140,7 +140,7 @@ int sbuf_get_wrapper(struct shared_buf *sbuf, uint8_t **data)
+ 
+ 	header = vmalloc(sizeof(ACRN_MSG_HEADER_SIZE));
+ 	memset(header, 0, sizeof(ACRN_MSG_HEADER_SIZE));
+-	//read header
++	/*read header */
+ 	sbuf_get(sbuf, (uint8_t *)header);
+ 
+ 	payload_size = header->payload_size;
+@@ -149,7 +149,7 @@ int sbuf_get_wrapper(struct shared_buf *sbuf, uint8_t **data)
+ 
+ 	sample = vmalloc(sample_size);
+ 
+-	//copy header
++	/*copy header */
+ 	memcpy((void *)sample, (void *)header, ACRN_MSG_HEADER_SIZE);
+ 
+ 	sample_offset += ACRN_MSG_HEADER_SIZE;
+@@ -183,4 +183,4 @@ int sbuf_get_wrapper(struct shared_buf *sbuf, uint8_t **data)
+ 	vfree(header);
+ 	return sample_size;
+ }
+-#endif // _SWHV_ACRN_SBUF_H_
++#endif /* _SWHV_ACRN_SBUF_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/swhv_defines.h b/drivers/platform/x86/socwatchhv/inc/swhv_defines.h
+index 65239d5..2f51a5d 100644
+--- a/drivers/platform/x86/socwatchhv/inc/swhv_defines.h
++++ b/drivers/platform/x86/socwatchhv/inc/swhv_defines.h
+@@ -66,26 +66,26 @@
+ #define PW_ERROR 1
+ #define PW_SUCCESS_NO_COLLECT 2
+ 
+-//
+-// Start off with none of the OS'es are defined
+-//
++/*
++ * Start off with none of the OS'es are defined
++ */
+ #undef SWDRV_OS_LINUX
+ #undef SWDRV_OS_ANDROID
+ #undef SWDRV_OS_UNIX
+ 
+-//
+-// Make sure none of the architectures is defined here
+-//
++/*
++ * Make sure none of the architectures is defined here
++ */
+ #undef SWDRV_IA32
+ #undef SWDRV_EM64T
+ 
+-//
+-// Make sure one (and only one) of the OS'es gets defined here
+-//
+-// Unfortunately entirex defines _WIN32 so we need to check for linux
+-// first.  The definition of these flags is one and only one
+-// _OS_xxx is allowed to be defined.
+-//
++/*
++ * Make sure one (and only one) of the OS'es gets defined here
++ *
++ * Unfortunately entirex defines _WIN32 so we need to check for linux
++ * first.  The definition of these flags is one and only one
++ * _OS_xxx is allowed to be defined.
++ */
+ #if defined(__ANDROID__)
+ #define SWDRV_OS_ANDROID
+ #define SWDRV_OS_UNIX
+@@ -96,10 +96,10 @@
+ #error "Compiling for an unknown OS"
+ #endif
+ 
+-//
+-// Make sure one (and only one) architecture is defined here
+-// as well as one (and only one) pointer__ size
+-//
++/*
++ * Make sure one (and only one) architecture is defined here
++ * as well as one (and only one) pointer__ size
++ */
+ #if defined(_M_IX86) || defined(__i386__)
+ #define SWDRV_IA32
+ #elif defined(_M_AMD64) || defined(__x86_64__)
+@@ -108,4 +108,4 @@
+ #error "Unknown architecture for compilation"
+ #endif
+ 
+-#endif // _SWHV_DEFINES_H_
++#endif /* _SWHV_DEFINES_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/swhv_driver.h b/drivers/platform/x86/socwatchhv/inc/swhv_driver.h
+index 8ad0d67..f2f9f66 100644
+--- a/drivers/platform/x86/socwatchhv/inc/swhv_driver.h
++++ b/drivers/platform/x86/socwatchhv/inc/swhv_driver.h
+@@ -57,8 +57,8 @@
+ #ifndef _SWHV_DRIVER_H_
+ #define _SWHV_DRIVER_H_ 1
+ 
+-#include <linux/version.h> // LINUX_VERSION_CODE
+-#include <linux/vmalloc.h> // vmalloc
++#include <linux/version.h> /* LINUX_VERSION_CODE */
++#include <linux/vmalloc.h> /* vmalloc */
+ #include "swhv_defines.h"
+ #include "sw_kernel_defines.h"
+ #include "pw_version.h"
+@@ -68,17 +68,17 @@
+ #define MOBILEVISOR 1
+ #define ACRN 2
+ 
+-// define this flag to have IDT entry programmed for SoCWatch IRQ handler
++/* define this flag to have IDT entry programmed for SoCWatch IRQ handler */
+ #define SOCWATCH_IDT_IRQ 1
+ 
+ extern void SYS_Perfvec_Handler(void);
+ extern short SYS_Get_cs(void);
+ 
+ #if defined(SWDRV_IA32) && (SOCWATCH_IDT_IRQ)
+-extern void *SYS_Get_IDT_Base_HWR(void); /// IDT base from hardware IDTR
++extern void *SYS_Get_IDT_Base_HWR(void); /* IDT base from hardware IDTR */
+ 
+ #define SYS_Get_IDT_Base SYS_Get_IDT_Base_HWR
+-#endif // defined(SWDRV_IA32) && (SOCWATCH_IDT_IRQ)
++#endif /* defined(SWDRV_IA32) && (SOCWATCH_IDT_IRQ) */
+ 
+ #if defined(SWDRV_EM64T) && (SOCWATCH_IDT_IRQ)
+ extern void SYS_Get_IDT_Base(void **);
+@@ -87,10 +87,10 @@ extern void SYS_Get_IDT_Base(void **);
+ typedef struct gate_struct gate_struct_t;
+ #else
+ typedef struct gate_struct64 gate_struct_t;
+-#endif // LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
+-#endif // defined(SWDRV_EM64T) && (SOCWATCH_IDT_IRQ)
++#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25) */
++#endif /* defined(SWDRV_EM64T) && (SOCWATCH_IDT_IRQ) */
+ 
+-// miscellaneous defines
++/* miscellaneous defines */
+ #define CPU() (raw_smp_processor_id())
+ #define GET_BOOL_STRING(b) ((b) ? "TRUE" : "FALSE")
+ 
+@@ -106,4 +106,4 @@ typedef struct gate_struct64 gate_struct_t;
+ 
+ typedef struct PWCollector_msg PWCollector_msg_t;
+ 
+-#endif // _SWHV_DRIVER_H_
++#endif /* _SWHV_DRIVER_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/swhv_ioctl.h b/drivers/platform/x86/socwatchhv/inc/swhv_ioctl.h
+index 690bbcd..0d2a368 100644
+--- a/drivers/platform/x86/socwatchhv/inc/swhv_ioctl.h
++++ b/drivers/platform/x86/socwatchhv/inc/swhv_ioctl.h
+@@ -63,11 +63,11 @@
+ #include <linux/ioctl.h>
+ #if defined(HAVE_COMPAT_IOCTL) && defined(CONFIG_X86_64)
+ #include <linux/compat.h>
+-#endif // COMPAT && x64
+-#else // !__KERNEL__
++#endif /* COMPAT && x64 */
++#else /* !__KERNEL__ */
+ #include <sys/ioctl.h>
+-#endif // __KERNEL__
+-#endif // __linux__
++#endif /* __KERNEL__ */
++#endif /* __linux__ */
+ /*
+  * Path to the Hypervisor driver device file.
+  */
+@@ -159,6 +159,6 @@ enum swhv_ioctl_cmd {
+ 	_IOWR(SP_IOC_MAGIC, SWHVDRV_OPERATION_MSR_READ, compat_uptr_t)
+ #define SWHVDRV_IOCTL_POLL32                                                   \
+ 	_IO(SP_IOC_MAGIC, SWHVDRV_OPERATION_POLL, compat_uptr_t)
+-#endif // COMPAT && x64
++#endif /* COMPAT && x64 */
+ 
+-#endif // __SWHV_IOCTL_H__
++#endif /* __SWHV_IOCTL_H__ */
+diff --git a/drivers/platform/x86/socwatchhv/inc/swhv_structs.h b/drivers/platform/x86/socwatchhv/inc/swhv_structs.h
+index 67bac8e..d5fd717 100644
+--- a/drivers/platform/x86/socwatchhv/inc/swhv_structs.h
++++ b/drivers/platform/x86/socwatchhv/inc/swhv_structs.h
+@@ -117,26 +117,37 @@ struct swhv_driver_switch_io_descriptor {
+ 
+ #pragma pack(push, 1)
+ typedef struct swhv_driver_io_descriptor {
+-	pw_u16_t collection_type; // One of 'enum swhv_collector_type'
+-	pw_s16_t collection_command; // One of 'enum swhv_io_cmd'
+-	pw_u16_t counter_size_in_bytes; // The number of bytes to READ or WRITE
++	pw_u16_t collection_type; /* One of 'enum swhv_collector_type' */
++	pw_s16_t collection_command; /* One of 'enum swhv_io_cmd' */
++	pw_u16_t counter_size_in_bytes; /* The number of bytes to
++					 * READ or WRITE
++					 */
+ 	union {
+ 		struct swhv_driver_msr_io_descriptor msr_descriptor;
+ 		struct swhv_driver_switch_io_descriptor switch_descriptor;
+ 	};
+-	pw_u64_t write_value; // The value to WRITE
++	pw_u64_t write_value; /* The value to WRITE */
+ } swhv_driver_io_descriptor_t;
+ #pragma pack(pop)
+ 
+ #pragma pack(push, 1)
+ struct swhv_driver_interface_info {
+-	pw_s16_t cpu_mask; // On which CPU(s) should the driver read the data?
+-		// Currently:  -2 ==> read on ALL CPUs,
+-		//             -1 ==> read on ANY CPU,
+-		//           >= 0 ==> the specific CPU to read on
+-	pw_s16_t sample_id; // Sample ID, used to map it back to Metric Plugin, Metric and Msg ID combo
+-	pw_u16_t num_io_descriptors; // Number of descriptors in the array, below.
+-	pw_u8_t descriptors[1]; // Array of swhv_driver_io_descriptor structs.
++	pw_s16_t cpu_mask; /* On which CPU(s) should the driver
++			    * read the data?
++			    */
++		/* Currently:  -2 ==> read on ALL CPUs,
++		 *             -1 ==> read on ANY CPU,
++		 *           >= 0 ==> the specific CPU to read on
++		 */
++	pw_s16_t sample_id; /* Sample ID, used to map it back
++			     * to Metric Plugin, Metric and Msg ID combo
++			     */
++	pw_u16_t num_io_descriptors; /* Number of descriptors in the array,
++				      * below.
++				      */
++	pw_u8_t descriptors[1]; /* Array of swhv_driver_io_descriptor
++				 * structs.
++				 */
+ };
+ #pragma pack(pop)
+ #define SWHV_DRIVER_INTERFACE_INFO_HEADER_SIZE()                               \
+@@ -144,8 +155,13 @@ struct swhv_driver_interface_info {
+ 
+ #pragma pack(push, 1)
+ struct swhv_driver_interface_msg {
+-	pw_u16_t num_infos; // Number of 'swhv_driver_interface_info' structs contained within the 'infos' variable, below
+-	// pw_u16_t infos_size_bytes; // Size of data inlined within the 'infos' variable, below
++	pw_u16_t num_infos; /* Number of 'swhv_driver_interface_info'
++			     * structs contained within the 'infos' variable,
++			     * below
++			     */
++	/* pw_u16_t infos_size_bytes; Size of data inlined within
++	 * the 'infos' variable, below
++	 */
+ 	pw_u8_t infos[1];
+ };
+ #pragma pack(pop)
+@@ -161,7 +177,7 @@ struct swhv_driver_interface_msg {
+ typedef enum PROFILING_SOCWATCH_FEATURE {
+ 	SOCWATCH_COMMAND = 0,
+ 	SOCWATCH_VM_SWITCH_TRACING,
+-	MAX_SOCWATCH_FEATURE_ID,
++	MAX_SOCWATCH_FEATURE_ID
+ } profiling_socwatch_feature;
+ 
+ typedef enum PROFILING_SOCWATCH_FEATURE acrn_type;
+@@ -170,22 +186,22 @@ typedef enum PROFILING_SOCWATCH_FEATURE acrn_type;
+  * current default ACRN header
+  */
+ struct data_header {
+-	uint32_t collector_id;
++	int32_t collector_id;
+ 	uint16_t cpu_id;
+ 	uint16_t data_type;
+ 	uint64_t tsc;
+ 	uint64_t payload_size;
+ 	uint64_t reserved;
+ } __attribute__((aligned(32)));
+-#define ACRN_MSG_HEADER_SIZE (sizeof(struct data_header))
++#define ACRN_MSG_HEADER_SIZE ((uint64_t)sizeof(struct data_header))
+ 
+ struct vm_switch_trace {
++	uint64_t vm_enter_tsc;
++	uint64_t vm_exit_tsc;
++	uint64_t vm_exit_reason;
+ 	int32_t os_id;
+-	uint64_t vmenter_tsc;
+-	uint64_t vmexit_tsc;
+-	uint64_t vmexit_reason;
+ } __attribute__((aligned(32)));
+-#define VM_SWITCH_TRACE_SIZE (sizeof(struct vm_switch_trace))
++#define VM_SWITCH_TRACE_SIZE ((uint64_t)sizeof(struct vm_switch_trace))
+ 
+ #define MAX_NR_VCPUS 8
+ #define MAX_NR_VMS 6
+@@ -197,7 +213,7 @@ struct profiling_vcpu_pcpu_map {
+ } __attribute__((aligned(8)));
+ 
+ struct profiling_vm_info {
+-	int32_t vm_id;
++	int32_t vm_id_num;
+ 	unsigned char guid[16];
+ 	char vm_name[16];
+ 	int32_t num_vcpus;
+@@ -218,9 +234,9 @@ typedef struct vm_switch_trace vmswitch_trace_t;
+ /*
+  * ACRN specific constants shared between the driver and user-mode
+  */
+-// Per CPU buffer size
++/* Per CPU buffer size */
+ #define ACRN_BUF_SIZE ((4 * 1024 * 1024) - SBUF_HEAD_SIZE /* 64 bytes */)
+-// Size of buffer at which data should be transferred to user-mode
++/* Size of buffer at which data should be transferred to user-mode */
+ #define ACRN_BUF_TRANSFER_SIZE (ACRN_BUF_SIZE / 2)
+ /*
+  * The ACRN 'sbuf' buffers consist of fixed size elements.
+@@ -231,4 +247,4 @@ typedef struct vm_switch_trace vmswitch_trace_t;
+ #define ACRN_BUF_ELEMENT_NUM (ACRN_BUF_SIZE / ACRN_BUF_ELEMENT_SIZE)
+ #define ACRN_BUF_FILLED_SIZE(sbuf) (sbuf->size - sbuf_available_space(sbuf))
+ 
+-#endif // _SWHV_STRUCTS_H_
++#endif /* _SWHV_STRUCTS_H_ */
+diff --git a/drivers/platform/x86/socwatchhv/swhv_acrn.c b/drivers/platform/x86/socwatchhv/swhv_acrn.c
+index 926ff09..962db47 100644
+--- a/drivers/platform/x86/socwatchhv/swhv_acrn.c
++++ b/drivers/platform/x86/socwatchhv/swhv_acrn.c
+@@ -34,10 +34,9 @@
+ static int pcpu_num;
+ bool flush_mode;
+ 
+-wait_queue_head_t read_queue;
+-
+-//TODO is this needed?
+-//module_param(nr_cpus, int, S_IRUSR | S_IWUSR);
++/* TODO is this needed?
++ * module_param(nr_cpus, int, S_IRUSR | S_IWUSR);
++ */
+ 
+ static struct shared_buf **sbuf_per_cpu;
+ 
+@@ -101,7 +100,7 @@ int swhv_add_driver_msr_io_desc(struct swhv_acrn_msr_collector_data *node,
+ 	pw_u16_t num_entries;
+ 	struct profiling_msr_op *msr_op = NULL;
+ 
+-	// Confirm this is an MSR IO descriptor
++	/* Confirm this is an MSR IO descriptor */
+ 	if (info->collection_type != SWHV_COLLECTOR_TYPE_MSR) {
+ 		pw_pr_error(
+ 			"ERROR trying to configure MSR collector with other data!\n");
+@@ -165,7 +164,7 @@ int swhv_init_per_cpu_buffers(void)
+ 		}
+ 	}
+ 
+-	//TODO understand the use of this API
++	/* TODO understand the use of this API */
+ 	foreach_cpu(cpu, pcpu_num)
+ 	{
+ 		ret = sbuf_share_setup(cpu, ACRN_SOCWATCH, sbuf_per_cpu[cpu]);
+@@ -199,8 +198,9 @@ void swhv_destroy_per_cpu_buffers(void)
+ 
+ 	foreach_cpu(cpu, pcpu_num)
+ 	{
+-		//TODO anything else to de-register?
+-		/* deregister devices */
++		/* TODO anything else to de-register?
++		 * deregister devices
++		 */
+ 
+ 		/* set sbuf pointer to NULL in HV */
+ 		sbuf_share_setup(cpu, ACRN_SOCWATCH, NULL);
+@@ -254,18 +254,21 @@ void swhv_handle_hypervisor_collector(uint32_t control_cmd)
+ 
+ 	acrn_profiling_control->collector_id = COLLECTOR_SOCWATCH;
+ 
+-	if (control_cmd == 1) { // start collection + send switch bitmask
++	if (control_cmd == 1) { /* start collection + send switch bitmask */
+ 		pw_pr_debug("STARTING ACRN PROFILING SERVICE\n");
+ 		global_collection_switch |=
+-			control_cmd;	// first bit controls start/stop
+-					// of collection
+-	} else if (control_cmd == 0) { // stop collection + reset switch bitmask
++			control_cmd;	/* first bit controls start/stop
++					 * of collection
++					 */
++	} else if (control_cmd == 0) { /* stop collection
++					* + reset switch bitmask
++					*/
+ 		pw_pr_debug("STOPPING ACRN PROFILING SERVICE\n");
+ 		global_collection_switch = control_cmd;
+ 	}
+ 	acrn_profiling_control->switches = global_collection_switch;
+ 
+-	// send collection command + switch bitmask
++	/* send collection command + switch bitmask */
+ 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_SET_CONTROL_SWITCH,
+ 			virt_to_phys(acrn_profiling_control));
+ 	kfree(acrn_profiling_control);
+@@ -277,7 +280,6 @@ int swhv_handle_msr_collector_list(void)
+ 
+ 	SW_LIST_HEAD_VAR(swhv_acrn_msr_collector_data) * head = list_head;
+ 	int retVal = PW_SUCCESS;
+-	int dummy_cpu = 0;
+ 	struct swhv_acrn_msr_collector_data *curr = NULL;
+ 
+ 	if (SW_LIST_EMPTY(&swhv_msr_collector)) {
+@@ -292,18 +294,10 @@ int swhv_handle_msr_collector_list(void)
+ 	{
+ 		pw_pr_debug("HANDLING MSR NODE\n");
+ 
+-		//hypervisor call to do immediate MSR read
++		/*hypervisor call to do immediate MSR read */
+ 		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
+ 				virt_to_phys(curr->msr_ops_list));
+ 	}
+-	if (buffer_not_ready(&dummy_cpu) == false) {
+-		/*
+-		 * force the device_read function to check if any buffers are
+-		 * filled with data above 'ACRN_BUF_TRANSFER_SIZE' size and
+-		 * if yes, copy to userspace
+-		 */
+-		wake_up_interruptible(&read_queue);
+-	}
+ 	return retVal;
+ }
+ 
+@@ -341,7 +335,7 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
+ 	 */
+ 	swhv_destroy_msr_collector_list();
+ 
+-	// clear the collection bitmask
++	/* clear the collection bitmask */
+ 	global_collection_switch = 0;
+ 
+ 	num_infos = local_msg->num_infos;
+@@ -394,8 +388,9 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
+ 
+ 				global_collection_switch = local_config_bitmap;
+ 
+-				// only one set of collection switches are
+-				// expected, we are done configuring
++				/* only one set of collection switches are
++				 * expected, we are done configuring
++				 */
+ 				done = 1;
+ 				break;
+ 			} else {
+@@ -412,23 +407,19 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
+ 
+ long swhv_stop(void)
+ {
+-	uint32_t control = 0; // stop collection command
++	uint32_t control = 0; /* stop collection command */
+ 
+ 	pw_pr_debug("socwatch: stop called\n");
+ 
+-	//If MSR ops are present, perform them to get begin snapshot data.
++	/*If MSR ops are present, perform them to get begin snapshot data. */
+ 	swhv_handle_msr_collector_list();
+ 
+-	// stop collection + reset switch bitmask
++	/* stop collection + reset switch bitmask */
+ 	swhv_handle_hypervisor_collector(control);
+ 
+-	// flush partially filled hypervisor buffers
++	/* flush partially filled hypervisor buffers */
+ 	flush_mode = true;
+ 
+-	// force the device_read function to check if any
+-	// buffers are partially filled with data
+-	wake_up_interruptible(&read_queue);
+-
+ 	/*
+ 	 * Clear out the MSR collector list.
+ 	 */
+@@ -439,7 +430,7 @@ long swhv_stop(void)
+ 
+ long swhv_start(void)
+ {
+-	uint32_t control = 1; // start collection command
++	uint32_t control = 1; /* start collection command */
+ #if 0
+ 	struct profiling_vm_info_list *vm_info_list = NULL;
+ 	int i;
+@@ -448,15 +439,16 @@ long swhv_start(void)
+ 
+ 	flush_mode = false;
+ 
+-	// start collection + send switch bitmask
++	/* start collection + send switch bitmask */
+ 	swhv_handle_hypervisor_collector(control);
+ 
+-	//If MSR ops are present, perform them to get begin snapshot data.
++	/* If MSR ops are present, perform them to get begin snapshot data. */
+ 	swhv_handle_msr_collector_list();
+ 
+ #if 0
+-	// Expand this eventually to retrieve VM-realted info from the hypervisor
+-	// Leaving it here for now.
++	/* Expand this eventually to retrieve VM-related info
++	 * from the hypervisor. Leaving it here for now.
++	 */
+ 	vm_info_list = kmalloc(sizeof(struct profiling_vm_info_list),
+ 			       GFP_KERNEL);
+ 	memset(vm_info_list, 0, sizeof(struct profiling_vm_info_list));
+@@ -541,16 +533,16 @@ long swhv_msr_read(u32 __user *remote_in_args, u64 __user *remote_args)
+ 		msr_read_ops_list[cpu].entries[0].msr_id = msr_addr;
+ 		msr_read_ops_list[cpu].entries[0].msr_op_type = MSR_OP_READ;
+ 		msr_read_ops_list[cpu].entries[1].msr_id =
+-			-1; // the next entry is expected to be set to -1
++			-1; /* the next entry is expected to be set to -1 */
+ 		msr_read_ops_list[cpu].entries[1].param =
+-			0; // set to 0 to not generate sample in hypervisor
++			0; /* set to 0 to not generate sample in hypervisor */
+ 	}
+ 
+-	//hypervisor call to do immediate MSR read
++	/* hypervisor call to do immediate MSR read */
+ 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
+ 			virt_to_phys(msr_read_ops_list));
+ 
+-	// copy value to remote args, pick from any CPU
++	/* copy value to remote args, pick from any CPU */
+ 	value = msr_read_ops_list[0].entries[0].value;
+ 
+ 	if (copy_to_user(remote_args, &value, sizeof(value))) {
+@@ -617,7 +609,7 @@ ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
+ 			goto ret_free;
+ 		}
+ 		if (bytes_read) {
+-			// copy data to device file
++			/* copy data to device file */
+ 			if (bytes_read > bytes_to_read) {
+ 				pw_pr_error("user buffer is too small\n");
+ 				ret = -PW_ERROR;
+@@ -626,14 +618,14 @@ ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
+ 
+ 			bytes_not_copied = copy_to_user(user_buffer, data_read,
+ 							bytes_read);
+-			//TODO check if this is meaningful enough to have
+-			//*offset += bytes_read - bytes_not_copied;
++			/* TODO check if this is meaningful enough to have */
++			/* *offset += bytes_read - bytes_not_copied; */
+ 
+ 			if (bytes_not_copied) {
+ 				pw_pr_error(
+ 					"transferring data to user mode failed, bytes %ld\n",
+ 					bytes_not_copied);
+-				// copy_to_user returns an unsigned
++				/* copy_to_user returns an unsigned */
+ 				ret = -EIO;
+ 				goto ret_free;
+ 			}
+@@ -652,9 +644,10 @@ ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
+ 
+ bool buffer_not_ready(int *cpu)
+ {
+-	// cycle through and confirm buffers on all CPUs
+-	// are less than ACRN_BUF_TRANSFER_SIZE
+-	// as well as flush mode has not been requested
++	/* cycle through and confirm buffers on all CPUs
++	 * are less than ACRN_BUF_TRANSFER_SIZE
++	 * as well as flush mode has not been requested
++	 */
+ 	int i = 0;
+ 	bool not_enough_data = true;
+ 
+@@ -688,12 +681,10 @@ ssize_t device_read_i(struct file *file, char __user *user_buffer,
+ 	int cpu = 0;
+ 
+ 	pw_pr_debug("%s - usermode attempting to read device file\n", __func__);
+-
+-	if (wait_event_interruptible(read_queue, !buffer_not_ready(&cpu))) {
+-		pw_pr_error("%s - wait_event_interruptible failed\n", __func__);
+-		return -ERESTARTSYS;
++	if (buffer_not_ready(&cpu)) {
++		pw_pr_debug("%s - no buffer ready to be read\n", __func__);
++		return bytes_read;
+ 	}
+-	pw_pr_debug("%s - wait_event cleared\n", __func__);
+ 
+ 	if (flush_mode) {
+ 		pw_pr_debug("flush mode on, ready to flush a buffer\n");
+@@ -708,7 +699,7 @@ ssize_t device_read_i(struct file *file, char __user *user_buffer,
+ 
+ void cleanup_error_i(void)
+ {
+-	// NOP for acrn
++	/* NOP for acrn */
+ }
+ 
+ int swhv_load_driver_i(void)
+@@ -729,10 +720,6 @@ int swhv_load_driver_i(void)
+ 		return ret;
+ 	}
+ 
+-	// initialize a work queue to be used for signalling when
+-	// data is ready to copy to usermode
+-	init_waitqueue_head(&read_queue);
+-
+ 	swhv_init_msr_collector_list();
+ 
+ 	return ret;
+diff --git a/drivers/platform/x86/socwatchhv/swhv_driver.c b/drivers/platform/x86/socwatchhv/swhv_driver.c
+index 369d8a6..7a4e6c5 100644
+--- a/drivers/platform/x86/socwatchhv/swhv_driver.c
++++ b/drivers/platform/x86/socwatchhv/swhv_driver.c
+@@ -85,6 +85,7 @@
+  * Compile-time constants
+  * *******************************************
+  */
++
+ /* *******************************************
+  * Local data structures.
+  * *******************************************
+@@ -101,7 +102,7 @@ struct spdrv_ioctl_arg32 {
+ 	compat_caddr_t in_arg;
+ 	compat_caddr_t out_arg;
+ };
+-#endif // COMPAT && x64
++#endif /* COMPAT && x64 */
+ 
+ static int sp_dev_major_num = -1;
+ static dev_t sp_dev;
+@@ -114,7 +115,7 @@ static struct class *sp_class;
+  */
+ 
+ /* Per-CPU variable containing the currently running vcpu. */
+-//static DEFINE_PER_CPU(int, curr_vcpu) = 0;
++/*static DEFINE_PER_CPU(int, curr_vcpu) = 0; */
+ 
+ /* *******************************************
+  * Function definitions.
+@@ -273,7 +274,7 @@ static long device_compat_ioctl(struct file *file, unsigned int ioctl_num,
+ 	}
+ 	return handle_ioctl(_IOC_NR(ioctl_num), remote_args);
+ };
+-#endif // COMPAT && x64
++#endif /* COMPAT && x64 */
+ 
+ static int device_open(struct inode *inode, struct file *file)
+ {
+@@ -295,7 +296,7 @@ static struct file_operations s_fops = {
+ 	.unlocked_ioctl = &device_unlocked_ioctl,
+ #if defined(HAVE_COMPAT_IOCTL) && defined(CONFIG_X86_64)
+ 	.compat_ioctl = &device_compat_ioctl,
+-#endif // COMPAT && x64
++#endif /* COMPAT && x64 */
+ };
+ 
+ static void cleanup_error(void)
+@@ -312,7 +313,7 @@ int __init swhv_load_driver(void)
+ 	int error;
+ 	struct device *dev;
+ 
+-	// create the char device "sp"
++	/* create the char device "sp" */
+ 	alloc_chrdev_region(&sp_dev, 0, 1, SWHV_DEVICE_NAME);
+ 	sp_dev_major_num = MAJOR(sp_dev);
+ 	sp_class = class_create(THIS_MODULE, SWHV_DEVICE_NAME);
+@@ -354,7 +355,7 @@ int __init swhv_load_driver(void)
+ cleanup_return_error:
+ 	cleanup_error_i();
+ 
+-	// release char device
++	/* release char device */
+ 	cleanup_error();
+ 	return error;
+ }
+@@ -363,7 +364,7 @@ static void __exit swhv_unload_driver(void)
+ {
+ 	swhv_unload_driver_i();
+ 
+-	// release char device
++	/* release char device */
+ 	cleanup_error();
+ }
+ 
+-- 
+2.7.4
+

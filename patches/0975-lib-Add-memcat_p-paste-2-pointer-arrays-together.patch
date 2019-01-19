@@ -1,0 +1,251 @@
+From e14d3e62b10644ae2a41f2b0da291ca5fde7c3d4 Mon Sep 17 00:00:00 2001
+From: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Date: Fri, 5 Oct 2018 15:43:05 +0300
+Subject: [PATCH 0975/1132] lib: Add memcat_p(): paste 2 pointer arrays
+ together
+
+This adds a helper to paste 2 pointer arrays together, useful for merging
+various types of attribute arrays. There are a few places in the kernel
+tree where this is open coded, and I just added one more in the STM class.
+
+The naming is inspired by memset_p() and memcat(), and partial credit for
+it goes to Andy Shevchenko.
+
+This patch adds the function wrapped in a type-enforcing macro and a test
+module.
+
+Signed-off-by: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Tested-by: Mathieu Poirier <mathieu.poirier@linaro.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ include/linux/string.h |   7 +++
+ lib/Kconfig.debug      |   8 ++++
+ lib/Makefile           |   1 +
+ lib/string.c           |  31 +++++++++++++
+ lib/test_memcat_p.c    | 115 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 162 insertions(+)
+ create mode 100644 lib/test_memcat_p.c
+
+diff --git a/include/linux/string.h b/include/linux/string.h
+index 4a5a0eb..27d0482 100644
+--- a/include/linux/string.h
++++ b/include/linux/string.h
+@@ -131,6 +131,13 @@ static inline void *memset_p(void **p, void *v, __kernel_size_t n)
+ 		return memset64((uint64_t *)p, (uintptr_t)v, n);
+ }
+ 
++extern void **__memcat_p(void **a, void **b);
++#define memcat_p(a, b) ({					\
++	BUILD_BUG_ON_MSG(!__same_type(*(a), *(b)),		\
++			 "type mismatch in memcat_p()");	\
++	(typeof(*a) *)__memcat_p((void **)(a), (void **)(b));	\
++})
++
+ #ifndef __HAVE_ARCH_MEMCPY
+ extern void * memcpy(void *,const void *,__kernel_size_t);
+ #endif
+diff --git a/lib/Kconfig.debug b/lib/Kconfig.debug
+index 92e7d88..f1a7e6b 100644
+--- a/lib/Kconfig.debug
++++ b/lib/Kconfig.debug
+@@ -1965,6 +1965,14 @@ config TEST_DEBUG_VIRTUAL
+ 
+ 	  If unsure, say N.
+ 
++config TEST_MEMCAT_P
++	tristate "Test memcat_p() helper function"
++	help
++	  Test the memcat_p() helper for correctly merging two
++	  pointer arrays together.
++
++	  If unsure, say N.
++
+ endif # RUNTIME_TESTING_MENU
+ 
+ config MEMTEST
+diff --git a/lib/Makefile b/lib/Makefile
+index 4238764..02f5f81 100644
+--- a/lib/Makefile
++++ b/lib/Makefile
+@@ -71,6 +71,7 @@ obj-$(CONFIG_TEST_UUID) += test_uuid.o
+ obj-$(CONFIG_TEST_PARMAN) += test_parman.o
+ obj-$(CONFIG_TEST_KMOD) += test_kmod.o
+ obj-$(CONFIG_TEST_DEBUG_VIRTUAL) += test_debug_virtual.o
++obj-$(CONFIG_TEST_MEMCAT_P) += test_memcat_p.o
+ 
+ ifeq ($(CONFIG_DEBUG_KOBJECT),y)
+ CFLAGS_kobject.o += -DDEBUG
+diff --git a/lib/string.c b/lib/string.c
+index 2c0900a..453f359 100644
+--- a/lib/string.c
++++ b/lib/string.c
+@@ -27,6 +27,7 @@
+ #include <linux/export.h>
+ #include <linux/bug.h>
+ #include <linux/errno.h>
++#include <linux/slab.h>
+ 
+ #include <asm/byteorder.h>
+ #include <asm/word-at-a-time.h>
+@@ -890,6 +891,36 @@ void *memscan(void *addr, int c, size_t size)
+ EXPORT_SYMBOL(memscan);
+ #endif
+ 
++/*
++ * Merge two NULL-terminated pointer arrays into a newly allocated
++ * array, which is also NULL-terminated. Nomenclature is inspired by
++ * memset_p() and memcat() found elsewhere in the kernel source tree.
++ */
++void **__memcat_p(void **a, void **b)
++{
++	void **p = a, **new;
++	int nr;
++
++	/* count the elements in both arrays */
++	for (nr = 0, p = a; *p; nr++, p++)
++		;
++	for (p = b; *p; nr++, p++)
++		;
++	/* one for the NULL-terminator */
++	nr++;
++
++	new = kmalloc_array(nr, sizeof(void *), GFP_KERNEL);
++	if (!new)
++		return NULL;
++
++	/* nr -> last index; p points to NULL in b[] */
++	for (nr--; nr >= 0; nr--, p = p == b ? &a[nr] : p - 1)
++		new[nr] = *p;
++
++	return new;
++}
++EXPORT_SYMBOL_GPL(__memcat_p);
++
+ #ifndef __HAVE_ARCH_STRSTR
+ /**
+  * strstr - Find the first substring in a %NUL terminated string
+diff --git a/lib/test_memcat_p.c b/lib/test_memcat_p.c
+new file mode 100644
+index 0000000..2b163a7
+--- /dev/null
++++ b/lib/test_memcat_p.c
+@@ -0,0 +1,115 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Test cases for memcat_p() in lib/string.c
++ */
++#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
++
++#include <linux/string.h>
++#include <linux/slab.h>
++#include <linux/module.h>
++
++struct test_struct {
++	int		num;
++	unsigned int	magic;
++};
++
++#define MAGIC		0xf00ff00f
++/* Size of each of the NULL-terminated input arrays */
++#define INPUT_MAX	128
++/* Expected number of non-NULL elements in the output array */
++#define EXPECT		(INPUT_MAX * 2 - 2)
++
++static int __init test_memcat_p_init(void)
++{
++	struct test_struct **in0, **in1, **out, **p;
++	int err = -ENOMEM, i, r, total = 0;
++
++	in0 = kcalloc(INPUT_MAX, sizeof(*in0), GFP_KERNEL);
++	if (!in0)
++		return err;
++
++	in1 = kcalloc(INPUT_MAX, sizeof(*in1), GFP_KERNEL);
++	if (!in1)
++		goto err_free_in0;
++
++	for (i = 0, r = 1; i < INPUT_MAX - 1; i++) {
++		in0[i] = kmalloc(sizeof(**in0), GFP_KERNEL);
++		if (!in0[i])
++			goto err_free_elements;
++
++		in1[i] = kmalloc(sizeof(**in1), GFP_KERNEL);
++		if (!in1[i]) {
++			kfree(in0[i]);
++			goto err_free_elements;
++		}
++
++		/* lifted from test_sort.c */
++		r = (r * 725861) % 6599;
++		in0[i]->num = r;
++		in1[i]->num = -r;
++		in0[i]->magic = MAGIC;
++		in1[i]->magic = MAGIC;
++	}
++
++	in0[i] = in1[i] = NULL;
++
++	out = memcat_p(in0, in1);
++	if (!out)
++		goto err_free_all_elements;
++
++	err = -EINVAL;
++	for (i = 0, p = out; *p && (i < INPUT_MAX * 2 - 1); p++, i++) {
++		total += (*p)->num;
++
++		if ((*p)->magic != MAGIC) {
++			pr_err("test failed: wrong magic at %d: %u\n", i,
++			       (*p)->magic);
++			goto err_free_out;
++		}
++	}
++
++	if (total) {
++		pr_err("test failed: expected zero total, got %d\n", total);
++		goto err_free_out;
++	}
++
++	if (i != EXPECT) {
++		pr_err("test failed: expected output size %d, got %d\n",
++		       EXPECT, i);
++		goto err_free_out;
++	}
++
++	for (i = 0; i < INPUT_MAX - 1; i++)
++		if (out[i] != in0[i] || out[i + INPUT_MAX - 1] != in1[i]) {
++			pr_err("test failed: wrong element order at %d\n", i);
++			goto err_free_out;
++		}
++
++	err = 0;
++	pr_info("test passed\n");
++
++err_free_out:
++	kfree(out);
++err_free_all_elements:
++	i = INPUT_MAX;
++err_free_elements:
++	for (i--; i >= 0; i--) {
++		kfree(in1[i]);
++		kfree(in0[i]);
++	}
++
++	kfree(in1);
++err_free_in0:
++	kfree(in0);
++
++	return err;
++}
++
++static void __exit test_memcat_p_exit(void)
++{
++}
++
++module_init(test_memcat_p_init);
++module_exit(test_memcat_p_exit);
++
++MODULE_LICENSE("GPL");
+-- 
+2.7.4
+

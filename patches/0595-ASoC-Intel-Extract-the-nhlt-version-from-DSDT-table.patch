@@ -1,0 +1,91 @@
+From 7a2a46ec29eb71b52e2d405f634eede0d780c751 Mon Sep 17 00:00:00 2001
+From: Leoni Prodduvaka <leoni.prodduvaka@intel.com>
+Date: Thu, 18 May 2017 21:56:06 +0530
+Subject: [PATCH 0595/1132] ASoC: Intel: Extract the "nhlt-version" from DSDT
+ table
+
+This patch extracts the "nhlt-version" from the DSDT table present at
+/sys/firmware/acpi/tables/DSDT.
+
+Change-Id: Icf20d440ff8a2e9e5f1ae1aacd1f1e0991235672
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: audio_build
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-nhlt.c | 15 +++++++++++++++
+ sound/soc/intel/skylake/skl-nhlt.h |  6 ++++++
+ sound/soc/intel/skylake/skl.h      |  2 ++
+ 3 files changed, 23 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-nhlt.c b/sound/soc/intel/skylake/skl-nhlt.c
+index 01a050c..b2873dd 100644
+--- a/sound/soc/intel/skylake/skl-nhlt.c
++++ b/sound/soc/intel/skylake/skl-nhlt.c
+@@ -28,6 +28,21 @@ static guid_t osc_guid =
+ 	GUID_INIT(0xA69F886E, 0x6CEB, 0x4594,
+ 		  0xA4, 0x1F, 0x7B, 0x5D, 0xCE, 0x24, 0xC5, 0x53);
+ 
++int skl_get_nhlt_version(struct device *dev)
++{
++	const char *version;
++	int ret;
++
++	ret = device_property_read_string(dev, "nhlt-version", &version);
++	if (!ret) {
++		if (!strncmp(version, "1.8-0", strlen("1.8-0")))
++			return VERSION_1;
++		else
++			return VERSION_INVALID;
++	}
++	/* if reading fails, assume we are on older platforms */
++	return VERSION_0;
++}
+ 
+ struct nhlt_acpi_table *skl_nhlt_init(struct device *dev)
+ {
+diff --git a/sound/soc/intel/skylake/skl-nhlt.h b/sound/soc/intel/skylake/skl-nhlt.h
+index fc17da50..62550a7 100644
+--- a/sound/soc/intel/skylake/skl-nhlt.h
++++ b/sound/soc/intel/skylake/skl-nhlt.h
+@@ -59,6 +59,12 @@ enum nhlt_device_type {
+ 	NHLT_DEVICE_INVALID
+ };
+ 
++enum nhlt_version_type {
++	VERSION_INVALID = -1,
++	VERSION_0,
++	VERSION_1,
++};
++
+ struct nhlt_specific_cfg {
+ 	u32 size;
+ 	u8 caps[0];
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 66f34ce..01d5451 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -82,6 +82,7 @@ struct skl {
+ 	struct snd_soc_component *component;
+ 	struct snd_soc_dai_driver *dais;
+ 
++	unsigned int nhlt_version;
+ 	struct nhlt_acpi_table *nhlt; /* nhlt ptr */
+ 	struct skl_sst *skl_sst; /* sst skl ctx */
+ 
+@@ -137,6 +138,7 @@ struct skl_dsp_ops {
+ int skl_platform_unregister(struct device *dev);
+ int skl_platform_register(struct device *dev);
+ 
++int skl_get_nhlt_version(struct device *dev);
+ struct nhlt_acpi_table *skl_nhlt_init(struct device *dev);
+ void skl_nhlt_free(struct nhlt_acpi_table *addr);
+ struct nhlt_specific_cfg *skl_get_ep_blob(struct skl *skl, u32 instance,
+-- 
+2.7.4
+

@@ -1,0 +1,142 @@
+From b6b94033e24c06ae455efe066dbe642714ad5248 Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Tue, 2 Aug 2016 17:00:12 +0530
+Subject: [PATCH 0611/1132] ASoC: Intel: Skylake: Probe DMA release for
+ extractor
+
+1. Extractor DMA is to be assigned when the first probe stream (irrespective
+of whether it is injector or extractor) is opened. But if the first probe
+stream is injector, we get injector's substream pointer and we do not
+have the right substream pointer for extractor.
+
+The existing code passed injector's substream while assigning extractor
+DMA.This patch sets NULL for substream while assigning the DMA for
+extractor and sets the correct substream pointer later when open is
+indeed for extractor.
+
+2. DMA reset for extractor should not be done after  probe module is
+initialized.
+The existing code reset DMA in hw_params. This can result in DMA reset
+after probe module init when  injector and extractor are started one
+after the other.
+
+3. Extractor DMA is assigned in compr_open for the first probe stream
+irrespective of whether it is injector or extractor.
+So DMA release for extractor should be done in the case where
+a injector probe alone was started and stopped without starting
+any extractor.
+
+This patch moves the DMA reset from hw params to immediately after DMA
+assignment in open call back for both injector and extractor.
+
+Change-Id: I2604796d81e2e6da5acd3977774887a0b2e14559
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: audio_build
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl-probe.c | 48 ++++++++++++++++++++++++++++++-------
+ 1 file changed, 40 insertions(+), 8 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index 9ccd19d..b563dc3 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -105,29 +105,51 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
+ 	if ((pconfig->i_refc + pconfig->e_refc) == 0) {
+ 		pconfig->edma_buffsize = SKL_EXTRACT_PROBE_DMA_BUFF_SIZE;
+ 		pconfig->edma_type = SKL_DMA_HDA_HOST_INPUT_CLASS;
++		/*
++		 * Extractor DMA is to be assigned when the first probe
++		 * stream(irrespective of whether it is injector or extractor)
++		 * is opened. But if the first probe stream is injector, we
++		 * get injector's substream pointer and we do not have the
++		 * right substream pointer for extractor. So, pass NULL for
++		 * substream while assigning the DMA for extractor and set the
++		 * correct substream pointer later when open is indeed for
++		 * extractor.
++		 */
+ 		pconfig->estream = hdac_ext_host_stream_compr_assign(ebus,
+-								substream,
++								NULL,
+ 							SND_COMPRESS_CAPTURE);
+-		if (!pconfig->estream)
++		if (!pconfig->estream) {
++			dev_err(dai->dev, "Failed to assign extractor stream\n");
+ 			return -EINVAL;
++		}
+ 
+ 		pconfig->edma_id = hdac_stream(pconfig->estream)->stream_tag - 1;
++		snd_hdac_stream_reset(hdac_stream(pconfig->estream));
+ 	}
+ 
+ 	if (substream->direction == SND_COMPRESS_PLAYBACK) {
+ 		stream = hdac_ext_host_stream_compr_assign(ebus, substream,
+ 							SND_COMPRESS_PLAYBACK);
++		if (stream == NULL) {
++			if ((pconfig->i_refc + pconfig->e_refc) == 0)
++				snd_hdac_ext_stream_release(pconfig->estream,
++						HDAC_EXT_STREAM_TYPE_HOST);
++
++			dev_err(dai->dev, "Failed to assign injector stream\n");
++			return -EBUSY;
++		}
+ 		set_injector_stream(stream, dai);
+ 		runtime->private_data = stream;
++		snd_hdac_stream_reset(hdac_stream(stream));
+ 
+ 	} else if (substream->direction == SND_COMPRESS_CAPTURE) {
+ 		stream = pconfig->estream;
+ 		runtime->private_data = pconfig->estream;
+-	}
+-
+-	if (stream == NULL) {
+-		dev_err(dai->dev, "stream = NULL\n");
+-		return -EBUSY;
++		/*
++		 * Open is indeed for extractor. So, set the correct substream
++		 * pointer now.
++		 */
++		stream->hstream.stream = substream;
+ 	}
+ 
+ 	hdac_stream(stream)->curr_pos = 0;
+@@ -166,7 +188,6 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
+ 	dma_id = hdac_stream(stream)->stream_tag - 1;
+ 	dev_dbg(dai->dev, "dma_id=%d\n", dma_id);
+ 
+-	snd_hdac_stream_reset(hdac_stream(stream));
+ 
+ 	err = snd_hdac_stream_set_params(hdac_stream(stream), format_val);
+ 	if (err < 0)
+@@ -254,6 +275,16 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
+ 		ret = skl_uninit_probe_module(skl->skl_sst, pconfig->w->priv);
+ 		if (ret < 0)
+ 			return ret;
++
++		/*
++		 * Extractor DMA is assigned in compr_open for the first probe stream
++		 * irrespective of whether it is injector or extractor.
++		 * So DMA release for extractor should be done in the case where
++		 * a injector probe alone was started and stopped without
++		 * starting any extractor.
++		 */
++		if (substream->direction == SND_COMPRESS_PLAYBACK)
++			snd_hdac_ext_stream_release(pconfig->estream, HDAC_EXT_STREAM_TYPE_HOST);
+ 	}
+ 
+ 	snd_hdac_stream_cleanup(hdac_stream(stream));
+@@ -261,6 +292,7 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
+ 
+ 	skl_substream_free_compr_pages(ebus_to_hbus(ebus), substream);
+ 
++	/* Release the particular injector/extractor stream getting closed */
+ 	snd_hdac_ext_stream_release(stream, HDAC_EXT_STREAM_TYPE_HOST);
+ 
+ 	return 0;
+-- 
+2.7.4
+

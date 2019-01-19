@@ -1,0 +1,48 @@
+From f4d4f7e361e5d44f187de5c97c35a8e0cd86643e Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Thu, 7 Sep 2017 09:59:36 +0530
+Subject: [PATCH 0632/1132] ASoC: Intel: Skylake: Move prototype to appropriate
+ header
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+skl_dsp_crash_dump_read is defined in skl-sst-ipc.c and but skl-topology.h
+in which its prototype lives, is not included in skl-sst-ipc.c. So move the
+prototype to skl-sst-ipc.h so as to avoid compiler warning below:
+
+warning: no previous prototype for ‘skl_dsp_crash_dump_read’ [-Wmissing-prototypes]
+
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.h  | 2 ++
+ sound/soc/intel/skylake/skl-topology.h | 2 --
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 5db66e2..30ba9a9 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -472,4 +472,6 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
+ void skl_ipc_tx_data_copy(struct ipc_message *msg, char *tx_data,
+ 		size_t tx_size);
+ int skl_notify_tplg_change(struct skl_sst *ctx, int type);
++int skl_dsp_crash_dump_read(struct skl_sst *ctx);
++
+ #endif /* __SKL_IPC_H */
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 4c09a089..12639e4 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -613,8 +613,6 @@ int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
+ 
+ int skl_dai_load(struct snd_soc_component *cmp,
+ 		 struct snd_soc_dai_driver *pcm_dai);
+-int skl_dsp_crash_dump_read(struct skl_sst *ctx);
+-
+ int skl_tplg_change_notification_get(struct snd_kcontrol *kcontrol,
+ 			unsigned int __user *data, unsigned int size);
+ struct snd_kcontrol *skl_search_notify_kctl(struct skl_sst *skl,
+-- 
+2.7.4
+

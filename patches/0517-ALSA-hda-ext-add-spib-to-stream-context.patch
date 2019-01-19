@@ -1,0 +1,53 @@
+From dc4118185fbe26d606f2e1c63ce3424c9dda5f1d Mon Sep 17 00:00:00 2001
+From: Ramesh Babu <ramesh.babu@intel.com>
+Date: Mon, 6 Jun 2016 13:13:15 +0530
+Subject: [PATCH 0517/1132] ALSA: hda: ext: add spib to stream context.
+
+Platforms like skylake support SPIB (software position index in
+Buffer) capability, through which application pointer can be
+programmed in DMA. This helps DMA stop rendering stale data.
+
+This patch saves spib values in stream context which can be
+restored during resume from S3.
+
+Change-Id: I2992242087ee0732b6fc571b5e65eb59aa1fa251
+Signed-off-by: Ramesh Babu <ramesh.babu@intel.com>
+Signed-off-by: Subhransu S. Prusty <subhransu.s.prusty@intel.com>
+Signed-off-by: Mallikarjun, chippalkatti <mallikarjunx.chippalkatti@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ include/sound/hdaudio_ext.h     | 1 +
+ sound/hda/ext/hdac_ext_stream.c | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/include/sound/hdaudio_ext.h b/include/sound/hdaudio_ext.h
+index 2d93a03..6218167 100644
+--- a/include/sound/hdaudio_ext.h
++++ b/include/sound/hdaudio_ext.h
+@@ -67,6 +67,7 @@ struct hdac_ext_stream {
+ 
+ 	u32 dpib;
+ 	u32 lpib;
++	u32 spib;
+ 	bool decoupled:1;
+ 	bool link_locked:1;
+ 	bool link_prepared;
+diff --git a/sound/hda/ext/hdac_ext_stream.c b/sound/hda/ext/hdac_ext_stream.c
+index 1b2a1c9..0ede36f 100644
+--- a/sound/hda/ext/hdac_ext_stream.c
++++ b/sound/hda/ext/hdac_ext_stream.c
+@@ -450,6 +450,8 @@ int snd_hdac_ext_stream_set_spib(struct hdac_bus *bus,
+ 	}
+ 
+ 	writel(value, stream->spib_addr);
++	/* save the value in stream context */
++	stream->spib = value;
+ 
+ 	return 0;
+ }
+-- 
+2.7.4
+

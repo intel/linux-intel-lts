@@ -1,0 +1,36 @@
+From 30f3230108b323730fb7bc97211d8dff9e2f33e5 Mon Sep 17 00:00:00 2001
+From: Feng Tang <feng.tang@intel.com>
+Date: Tue, 11 Dec 2018 11:27:52 +0800
+Subject: [PATCH 1033/1132] i915: make driver init async
+
+Making i915 driver init async will help much on boot time, which
+will also help to meet the tough GP2.0 boot time target,
+
+The patch has been submitted to upstream half a year ago, and after
+discussing many rounds, no technical issue/open was left. Though
+it's not merged yet, it still means the quality of the patch passed
+the reviews of upstream.
+
+Upstream discussion thread: https://www.spinics.net/lists/intel-gfx/msg167120.html
+
+Tracked-On: PKT-1601
+Signed-off-by: Feng Tang <feng.tang@intel.com>
+---
+ drivers/gpu/drm/i915/i915_pci.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/gpu/drm/i915/i915_pci.c b/drivers/gpu/drm/i915/i915_pci.c
+index 1df3ce1..fcf5e3f 100644
+--- a/drivers/gpu/drm/i915/i915_pci.c
++++ b/drivers/gpu/drm/i915/i915_pci.c
+@@ -737,6 +737,7 @@ static struct pci_driver i915_pci_driver = {
+ 	.probe = i915_pci_probe,
+ 	.remove = i915_pci_remove,
+ 	.driver.pm = &i915_pm_ops,
++	.driver.probe_type = PROBE_PREFER_ASYNCHRONOUS
+ };
+ 
+ static int __init i915_init(void)
+-- 
+2.7.4
+

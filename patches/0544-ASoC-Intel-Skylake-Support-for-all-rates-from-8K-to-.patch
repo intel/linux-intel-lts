@@ -1,0 +1,100 @@
+From 9952896d59713390b62d0adbbc088be794a4be0e Mon Sep 17 00:00:00 2001
+From: Mousami Jana <mousami.janax@intel.com>
+Date: Mon, 19 Dec 2016 12:00:13 +0530
+Subject: [PATCH 0544/1132] ASoC: Intel: Skylake: Support for all rates from 8K
+ to 192K
+
+Add support for all sample rates in FE pipelines which are
+required for IVI usecases.
+
+Platform capabilities have been changed to support all rates
+via SNDRV_PCM_RATE_KNOT. Supported rates are validated
+against a constraint list. The list contains the rates supported
+by the DSP FW's rate conversion algorithm.
+
+Change-Id: I28f275e0f0a9f2a497d8d0a9ab9b2a5b2b067e46
+Signed-off-by: Mousumi Jana <mousumix.jana@intel.com>
+Signed-off-by: Yadav, PramodX K <pramodx.k.yadav@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+Reviewed-on:
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 37 +++++++++++++++++++++++++++++++++----
+ 1 file changed, 33 insertions(+), 4 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index ac1eef7..a6901c2 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -50,9 +50,8 @@ static const struct snd_pcm_hardware azx_pcm_hw = {
+ 				 SNDRV_PCM_INFO_NO_STATUS_MMAP),
+ 	.formats =		SNDRV_PCM_FMTBIT_S16_LE |
+ 				SNDRV_PCM_FMTBIT_S32_LE |
+-				SNDRV_PCM_FMTBIT_S24_LE,
+-	.rates =		SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_16000 |
+-				SNDRV_PCM_RATE_8000,
++				SNDRV_PCM_FMTBIT_S24_LE, /* TODO Add constraints to other machine drivers */
++	.rates =		SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+ 	.rate_min =		8000,
+ 	.rate_max =		48000,
+ 	.channels_min =		1,
+@@ -124,6 +123,31 @@ static enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus)
+ 		return HDAC_EXT_STREAM_TYPE_COUPLED;
+ }
+ 
++static unsigned int rates[] = {
++       8000,
++       11025,
++       12000,
++       16000,
++       22050,
++       24000,
++       32000,
++       44100,
++       48000,
++       64000,
++       88200,
++       96000,
++       128000,
++       176400,
++       192000,
++};
++
++static struct snd_pcm_hw_constraint_list hw_rates = {
++       .count = ARRAY_SIZE(rates),
++       .list = rates,
++       .mask = 0,
++};
++
++
+ /*
+  * check if the stream opened is marked as ignore_suspend by machine, if so
+  * then enable suspend_active refcount
+@@ -246,6 +270,11 @@ static int skl_pcm_open(struct snd_pcm_substream *substream,
+ 
+ 	skl_set_pcm_constrains(bus, runtime);
+ 
++	snd_pcm_hw_constraint_list(runtime, 0,
++			SNDRV_PCM_HW_PARAM_RATE,
++                                     &hw_rates);
++
++
+ 	/*
+ 	 * disable WALLCLOCK timestamps for capture streams
+ 	 * until we figure out how to handle digital inputs
+@@ -974,7 +1003,7 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ 		.stream_name = "System Playback",
+ 		.channels_min = HDA_MONO,
+ 		.channels_max = HDA_STEREO,
+-		.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_8000,
++		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+ 		.formats = SNDRV_PCM_FMTBIT_S16_LE |
+ 			SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
+ 		.sig_bits = 32,
+-- 
+2.7.4
+

@@ -1,0 +1,35 @@
+From b8f4afcb60ddd9dba2ecfd66e6d5d58fd4808343 Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0808/1132] vhm: use correct string length
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix below compile warning:
+drivers/vhm/vhm_ioreq.c:207:3: warning: ‘strncpy’ specified bound 16
+equals destination size [-Wstringop-truncation]
+   strncpy(client->name, name, sizeof(client->name));
+
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/vhm/vhm_ioreq.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index c91a605..5cb15b5 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -204,7 +204,7 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
+ 
+ 	client->vmid = vmid;
+ 	if (name)
+-		strncpy(client->name, name, 16);
++		strncpy(client->name, name, sizeof(client->name) - 1);
+ 	spin_lock_init(&client->range_lock);
+ 	INIT_LIST_HEAD(&client->range_list);
+ 	init_waitqueue_head(&client->wq);
+-- 
+2.7.4
+

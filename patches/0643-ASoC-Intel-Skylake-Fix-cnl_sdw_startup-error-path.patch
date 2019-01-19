@@ -1,0 +1,56 @@
+From 782b8168195e558098daf95d5fcad6a75918240d Mon Sep 17 00:00:00 2001
+From: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Date: Wed, 6 Sep 2017 14:04:57 +0530
+Subject: [PATCH 0643/1132] ASoC: Intel: Skylake: Fix cnl_sdw_startup() error
+ path
+
+In cnl_sdw_startup function, error -EINVAL is returned after invalid
+stream type is detected without freeing the previously allocated
+sdw_dma_data memory.
+
+Add the missing error handling path to avoid memory leak.
+
+Change-Id: Iacdc9608ad65075d68ff46e0410c49c8358491cf
+Signed-off-by: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Reviewed-on:
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: audio_build
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sdw-pcm.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sdw-pcm.c b/sound/soc/intel/skylake/skl-sdw-pcm.c
+index 6b8c4db..955c952 100644
+--- a/sound/soc/intel/skylake/skl-sdw-pcm.c
++++ b/sound/soc/intel/skylake/skl-sdw-pcm.c
+@@ -97,7 +97,8 @@ int cnl_sdw_startup(struct snd_pcm_substream *substream,
+ 		dma->stream_type = CNL_SDW_PDI_TYPE_PDM;
+ 	else {
+ 		dev_err(dai->dev, "Stream type not known\n");
+-		return -EINVAL;
++		ret = -EINVAL;
++		goto free_dma;
+ 	}
+ 	dma->mstr = mstr;
+ 	dma->mstr_nr = sdw_ctrl_nr;
+@@ -113,13 +114,13 @@ int cnl_sdw_startup(struct snd_pcm_substream *substream,
+ 	if (ret) {
+ 		dev_err(dai->dev, "Unable to allocate stream tag");
+ 		ret =  -EINVAL;
+-		goto alloc_stream_tag_failed;
++		goto free_dma;
+ 	}
+ 	ret = snd_soc_dai_program_stream_tag(substream, dai, dma->stream_tag);
+ 
+ 	dma->stream_state = STREAM_STATE_ALLOC_STREAM_TAG;
+ 	return 0;
+-alloc_stream_tag_failed:
++free_dma:
+ 	kfree(dma);
+ alloc_failed:
+ 	sdw_put_master(mstr);
+-- 
+2.7.4
+

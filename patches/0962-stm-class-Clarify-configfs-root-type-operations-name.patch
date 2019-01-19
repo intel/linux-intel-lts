@@ -1,0 +1,58 @@
+From c4d7ec571a1a54cd1f912d8bf795aa098acd66eb Mon Sep 17 00:00:00 2001
+From: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Date: Fri, 5 Oct 2018 15:42:52 +0300
+Subject: [PATCH 0962/1132] stm class: Clarify configfs root type/operations
+ names
+
+The current naming of stp-policy root type and group ops is confusing,
+rename them for better readability.
+
+Signed-off-by: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Tested-by: Mathieu Poirier <mathieu.poirier@linaro.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/hwtracing/stm/policy.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/hwtracing/stm/policy.c b/drivers/hwtracing/stm/policy.c
+index 15d35d8..530448b 100644
+--- a/drivers/hwtracing/stm/policy.c
++++ b/drivers/hwtracing/stm/policy.c
+@@ -311,7 +311,7 @@ static const struct config_item_type stp_policy_type = {
+ };
+ 
+ static struct config_group *
+-stp_policies_make(struct config_group *group, const char *name)
++stp_policy_make(struct config_group *group, const char *name)
+ {
+ 	struct config_group *ret;
+ 	struct stm_device *stm;
+@@ -368,12 +368,12 @@ stp_policies_make(struct config_group *group, const char *name)
+ 	return ret;
+ }
+ 
+-static struct configfs_group_operations stp_policies_group_ops = {
+-	.make_group	= stp_policies_make,
++static struct configfs_group_operations stp_policy_root_group_ops = {
++	.make_group	= stp_policy_make,
+ };
+ 
+-static const struct config_item_type stp_policies_type = {
+-	.ct_group_ops	= &stp_policies_group_ops,
++static const struct config_item_type stp_policy_root_type = {
++	.ct_group_ops	= &stp_policy_root_group_ops,
+ 	.ct_owner	= THIS_MODULE,
+ };
+ 
+@@ -381,7 +381,7 @@ static struct configfs_subsystem stp_policy_subsys = {
+ 	.su_group = {
+ 		.cg_item = {
+ 			.ci_namebuf	= "stp-policy",
+-			.ci_type	= &stp_policies_type,
++			.ci_type	= &stp_policy_root_type,
+ 		},
+ 	},
+ };
+-- 
+2.7.4
+

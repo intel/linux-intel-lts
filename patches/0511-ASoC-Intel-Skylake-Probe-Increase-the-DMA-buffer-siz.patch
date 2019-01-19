@@ -1,0 +1,52 @@
+From b08df3ee8cbda859b2db76dc422a6393678fd8f5 Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Tue, 14 Jun 2016 16:37:20 +0530
+Subject: [PATCH 0511/1132] ASoC: Intel: Skylake:Probe-Increase the DMA buffer
+ size
+
+DMA buffer size needed for 48KHz, 4 channel, 32 bit data scheduled
+at 4ms for 2 probe packets is = 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
+This is the worst case buffer for current set of usecases.
+Increase the DMA buffer size to this value for now until an optimal
+buffer size value is arrived at.
+
+Change-Id: I4b902f8c078a9a3c2e19c82b0ebeaf99dd99c2b1
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/soc/intel/skylake/skl-probe.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index 507513e..9c4d96e 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -30,6 +30,13 @@
+ 
+ #define USE_SPIB 0
+ 
++/*
++ * DMA buffer size needed for 48KHz, 4 channel, 32 bit data
++ * scheduled at 4ms  for 2 probe packets is
++ * 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
++ */
++#define SKL_EXTRACT_PROBE_DMA_BUFF_SIZE 6208
++
+ static int set_injector_stream(struct hdac_ext_stream *stream,
+ 						struct snd_soc_dai *dai)
+ {
+@@ -62,8 +69,7 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
+ 	dev_dbg(dai->dev, "%s dev is  %s\n",  __func__, dev_name(dai->dev));
+ 
+ 	if (!pconfig->probe_count) {
+-		/*TODO: Configuring the right DMA buffer size*/
+-		pconfig->edma_buffsize = 832;
++		pconfig->edma_buffsize = SKL_EXTRACT_PROBE_DMA_BUFF_SIZE;
+ 		pconfig->edma_type = SKL_DMA_HDA_HOST_INPUT_CLASS;
+ 		pconfig->estream = hdac_ext_host_stream_compr_assign(ebus,
+ 								substream,
+-- 
+2.7.4
+

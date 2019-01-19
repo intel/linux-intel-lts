@@ -1,0 +1,50 @@
+From 2efd3e56f853533aba5ee26caf6bf40a1b532b10 Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Tue, 27 Mar 2018 22:59:22 +0800
+Subject: [PATCH 0866/1132] drm/i915/gvt: unset DDI_BUF_CTL_ENABLE during port
+ emulation reset
+
+HDMI port enabling will assert port status, if it's already set during
+reset stage, i915 will pop up warning message. Unset those bits to avoid
+such warning message.
+
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+Change-Id: Ic8c738baa472d7f1086081cb1b634670327aae97
+---
+ drivers/gpu/drm/i915/gvt/display.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/display.c b/drivers/gpu/drm/i915/gvt/display.c
+index 40ecca2..58b32dbd 100644
+--- a/drivers/gpu/drm/i915/gvt/display.c
++++ b/drivers/gpu/drm/i915/gvt/display.c
+@@ -228,7 +228,7 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
+ 			vgpu_vreg_t(vgpu, PORT_CLK_SEL(PORT_B)) |=
+ 				PORT_CLK_SEL_LCPLL_810;
+ 		}
+-		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_B)) |= DDI_BUF_CTL_ENABLE;
++		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_B)) &= ~DDI_BUF_CTL_ENABLE;
+ 		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_B)) &= ~DDI_BUF_IS_IDLE;
+ 		vgpu_vreg_t(vgpu, SDEISR) |= SDE_PORTB_HOTPLUG_CPT;
+ 	}
+@@ -248,7 +248,7 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
+ 			vgpu_vreg_t(vgpu, PORT_CLK_SEL(PORT_C)) |=
+ 				PORT_CLK_SEL_LCPLL_810;
+ 		}
+-		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_C)) |= DDI_BUF_CTL_ENABLE;
++		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_C)) &= ~DDI_BUF_CTL_ENABLE;
+ 		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_C)) &= ~DDI_BUF_IS_IDLE;
+ 		vgpu_vreg_t(vgpu, SFUSE_STRAP) |= SFUSE_STRAP_DDIC_DETECTED;
+ 	}
+@@ -268,7 +268,7 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
+ 			vgpu_vreg_t(vgpu, PORT_CLK_SEL(PORT_D)) |=
+ 				PORT_CLK_SEL_LCPLL_810;
+ 		}
+-		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_D)) |= DDI_BUF_CTL_ENABLE;
++		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_D)) &= ~DDI_BUF_CTL_ENABLE;
+ 		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_D)) &= ~DDI_BUF_IS_IDLE;
+ 		vgpu_vreg_t(vgpu, SFUSE_STRAP) |= SFUSE_STRAP_DDID_DETECTED;
+ 	}
+-- 
+2.7.4
+

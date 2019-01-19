@@ -1,0 +1,83 @@
+From 503e2ae991a91c502fa54dab27756c1510f91e18 Mon Sep 17 00:00:00 2001
+From: Weinan Li <weinan.z.li@intel.com>
+Date: Tue, 17 Apr 2018 14:37:26 +0800
+Subject: [PATCH 1101/1132] drm/i915/gvt: force to active the high-performance
+ mode during vGPU busy
+
+With the RPS interrupt, KMD can adjust the GPU frequency dynamically for
+power saving. It works well in the non-virtualized environment, but there
+is more latency imported by VMM and virtual interrupt handler which may
+break the RPS policy work model, and GPU works in inefficient mode. Here
+we force to active the high-performance mode when detect vgpu is busy until
+the GPU runs into idle.
+
+Change-Id: I7bc506b811a94314f068a7891b5e250a6f3f7162
+Tracked-On: projectacrn/acrn-hypervisor/issues/2227
+Signed-off-by: Weinan Li <weinan.z.li@intel.com>
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Tracked-On: PKT-1642
+---
+ drivers/gpu/drm/i915/gvt/gvt.h       |  1 +
+ drivers/gpu/drm/i915/gvt/scheduler.c | 19 +++++++++++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.h b/drivers/gpu/drm/i915/gvt/gvt.h
+index 7da1e9b..9f3fed2 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.h
++++ b/drivers/gpu/drm/i915/gvt/gvt.h
+@@ -370,6 +370,7 @@ struct intel_gvt {
+ 	} engine_mmio_list;
+ 
+ 	struct dentry *debugfs_root;
++	struct work_struct active_hp_work;
+ };
+ 
+ static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
+diff --git a/drivers/gpu/drm/i915/gvt/scheduler.c b/drivers/gpu/drm/i915/gvt/scheduler.c
+index 31ebb62..51060ff 100644
+--- a/drivers/gpu/drm/i915/gvt/scheduler.c
++++ b/drivers/gpu/drm/i915/gvt/scheduler.c
+@@ -265,6 +265,22 @@ static void save_ring_hw_state(struct intel_vgpu *vgpu, int ring_id)
+ }
+ */
+ 
++static void active_hp_work(struct work_struct *work)
++{
++	struct intel_gvt *gvt =
++		container_of(work, struct intel_gvt, active_hp_work);
++	struct drm_i915_private *dev_priv = gvt->dev_priv;
++
++	gen6_disable_rps_interrupts(dev_priv);
++
++	if (READ_ONCE(dev_priv->gt_pm.rps.cur_freq) <
++	    READ_ONCE(dev_priv->gt_pm.rps.rp0_freq)) {
++		mutex_lock(&dev_priv->pcu_lock);
++		intel_set_rps(dev_priv, dev_priv->gt_pm.rps.rp0_freq);
++		mutex_unlock(&dev_priv->pcu_lock);
++	}
++}
++
+ static int shadow_context_status_change(struct notifier_block *nb,
+ 		unsigned long action, void *data)
+ {
+@@ -284,6 +300,7 @@ static int shadow_context_status_change(struct notifier_block *nb,
+ 
+ 	switch (action) {
+ 	case INTEL_CONTEXT_SCHEDULE_IN:
++		schedule_work(&gvt->active_hp_work);
+ 		atomic_set(&workload->shadow_ctx_active, 1);
+ 		break;
+ 	case INTEL_CONTEXT_SCHEDULE_OUT:
+@@ -1170,6 +1187,8 @@ int intel_gvt_init_workload_scheduler(struct intel_gvt *gvt)
+ 		atomic_notifier_chain_register(&engine->context_status_notifier,
+ 					&gvt->shadow_ctx_notifier_block[i]);
+ 	}
++	INIT_WORK(&gvt->active_hp_work, active_hp_work);
++
+ 	return 0;
+ err:
+ 	intel_gvt_clean_workload_scheduler(gvt);
+-- 
+2.7.4
+

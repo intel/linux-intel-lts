@@ -1,0 +1,56 @@
+From 75d013764b18f17537866933e4a0687cd1aa020a Mon Sep 17 00:00:00 2001
+From: "Romli, Khairul Anuar" <khairul.anuar.romli@intel.com>
+Date: Wed, 21 Nov 2018 10:09:42 +0800
+Subject: [PATCH 0993/1132] drm/i915: Add missing decryption bit implementation
+
+This patch add missing implementation from Enable plane decryption bit
+patch. This is to ensure the property is being handle within intel
+display.
+
+This patch must be squash with:
+Enable plane decryption bit
+
+Tracked-On: OAM-71494
+Signed-off-by: Romli, Khairul Anuar <khairul.anuar.romli@intel.com>
+---
+ drivers/gpu/drm/drm_blend.c          | 2 ++
+ drivers/gpu/drm/i915/intel_display.c | 6 +++++-
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/drm_blend.c b/drivers/gpu/drm/drm_blend.c
+index 273fdf3..183a7f6 100644
+--- a/drivers/gpu/drm/drm_blend.c
++++ b/drivers/gpu/drm/drm_blend.c
+@@ -142,6 +142,8 @@ int drm_plane_create_decryption_property(struct drm_plane *plane)
+ 
+ 	return 0;
+ }
++EXPORT_SYMBOL(drm_plane_create_decryption_property);
++
+ /**
+  * drm_plane_create_alpha_property - create a new alpha property
+  * @plane: drm plane
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 335b185..1bd92ba 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -13854,11 +13854,15 @@ intel_primary_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe)
+ 		supported_rotations = DRM_MODE_ROTATE_0;
+ 	}
+ 
+-	if (INTEL_GEN(dev_priv) >= 4)
++	if (INTEL_GEN(dev_priv) >= 4) {
+ 		drm_plane_create_rotation_property(&primary->base,
+ 						   DRM_MODE_ROTATE_0,
+ 						   supported_rotations);
+ 
++		if (drm_plane_create_decryption_property(&primary->base))
++			DRM_ERROR("Failed to create decryption property\n");
++	}
++
+ 	if (INTEL_GEN(dev_priv) >= 9)
+ 		drm_plane_create_color_properties(&primary->base,
+ 						  BIT(DRM_COLOR_YCBCR_BT601) |
+-- 
+2.7.4
+

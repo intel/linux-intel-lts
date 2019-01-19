@@ -1,0 +1,52 @@
+From d0cfad1333a8d3bd4a13b4bedb5658a3df3f9654 Mon Sep 17 00:00:00 2001
+From: "Li, Fei1" <fei1.li@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0801/1132] sos: vhm: remove MAP_MMIO
+
+Now the MAP_MMIO has no difference with MAP_MEM. So there's no needs
+to keep it.
+
+Signed-off-by: Li, Fei1 <fei1.li@intel.com>
+Acked-by: Eddie Dong <eddie.dong@intel.com>
+---
+ drivers/vhm/vhm_mm.c             | 4 ++--
+ include/linux/vhm/acrn_hv_defs.h | 1 -
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index c7ca102..f663558 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -135,7 +135,7 @@ int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned int mem_type, unsigned mem_access_right)
+ {
+ 	return _mem_set_memmap(vmid, guest_gpa, host_gpa, len,
+-		mem_type, mem_access_right, MAP_MMIO);
++		mem_type, mem_access_right, MAP_MEM);
+ }
+ 
+ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+@@ -187,7 +187,7 @@ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 	host_gpa = acrn_hpa2gpa(memmap->hpa);
+ 	mem_type = MEM_TYPE_UC;
+ 	mem_access_right = (memmap->prot & MEM_ACCESS_RIGHT_MASK);
+-	type = MAP_MMIO;
++	type = MAP_MEM;
+ 
+ 	if (_mem_set_memmap(vm->vmid, guest_gpa, host_gpa, memmap->len,
+ 		mem_type, mem_access_right, type) < 0) {
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index f51f56b..31cdebe 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -134,7 +134,6 @@
+ 
+ struct vm_set_memmap {
+ #define MAP_MEM		0
+-#define MAP_MMIO	1
+ #define MAP_UNMAP	2
+ 	uint32_t type;
+ 
+-- 
+2.7.4
+

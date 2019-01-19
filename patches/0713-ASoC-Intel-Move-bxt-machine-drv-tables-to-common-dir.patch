@@ -1,0 +1,173 @@
+From a3eea36294fa762828ddc4f62e30e164f80f88e6 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Tue, 14 Aug 2018 11:38:49 +0200
+Subject: [PATCH 0713/1132] ASoC: Intel: Move bxt machine drv tables to common
+ directory.
+
+Align with machine-drv-tables declaration model present on upstream.
+Tables are moved from skl.c into separate file within common directory
+dedicated to bxt-specific data only.
+
+Change-Id: I6780bcd1506709757e673130ffc0ce6d0b26709f
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+Reviewed-on:
+Reviewed-by: Uzieblo, Olgierd <olgierd.uzieblo@intel.com>
+---
+ sound/soc/intel/common/soc-acpi-intel-bxt-match.c | 33 +++++++++++++
+ sound/soc/intel/skylake/skl.c                     | 57 -----------------------
+ 2 files changed, 33 insertions(+), 57 deletions(-)
+
+diff --git a/sound/soc/intel/common/soc-acpi-intel-bxt-match.c b/sound/soc/intel/common/soc-acpi-intel-bxt-match.c
+index f39386e5..77cbd98 100644
+--- a/sound/soc/intel/common/soc-acpi-intel-bxt-match.c
++++ b/sound/soc/intel/common/soc-acpi-intel-bxt-match.c
+@@ -8,17 +8,39 @@
+ 
+ #include <sound/soc-acpi.h>
+ #include <sound/soc-acpi-intel-match.h>
++#include "../skylake/skl.h"
+ 
+ static struct snd_soc_acpi_codecs bxt_codecs = {
+ 	.num_codecs = 1,
+ 	.codecs = {"MX98357A"}
+ };
+ 
++static struct skl_machine_pdata bxt_pdata = {
++	.use_tplg_pcm = true,
++};
++
+ struct snd_soc_acpi_mach snd_soc_acpi_intel_bxt_machines[] = {
+ 	{
+ 		.id = "INT343A",
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_RSE_MACH)
++		.drv_name = "bxt_ivi_rse_i2s",
++#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_HU_MACH)
++		.drv_name = "bxt_ivi_hu_i2s",
++#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_M3_MACH)
++		.drv_name = "bxt_ivi_m3_i2s",
++#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_GENERIC_MACH)
++		.drv_name = "bxt_ivi_generic_i2s",
++#else
+ 		.drv_name = "bxt_alc298s_i2s",
++#endif
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_RSE_MACH) || \
++	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_HU_MACH) || \
++	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_M3_MACH) || \
++	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_GENERIC_MACH)
++		.fw_filename = "intel/ADSPFW.bin"
++#else
+ 		.fw_filename = "intel/dsp_fw_bxtn.bin",
++#endif
+ 	},
+ 	{
+ 		.id = "DLGS7219",
+@@ -44,13 +66,24 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_bxt_machines[] = {
+ 		.sof_tplg_filename = "intel/sof-apl-wm8804.tplg",
+ 		.asoc_plat_name = "0000:00:0e.0",
+ 	},
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
++	{
++		.id = "INT34C3",
++		.drv_name = "bxt_ivi_ull",
++		.fw_filename = "intel/dsp_fw_ull_bxtn.bin",
++		.pdata = &bxt_pdata,
++	},
++#else
+ 	{
+ 		.id = "INT34C3",
+ 		.drv_name = "bxt_tdf8532",
++		.fw_filename = "intel/dsp_fw_bxtn.bin",
+ 		.sof_fw_filename = "intel/sof-apl.ri",
+ 		.sof_tplg_filename = "intel/sof-apl-tdf8532.tplg",
+ 		.asoc_plat_name = "0000:00:0e.0",
++		.pdata = &bxt_pdata,
+ 	},
++#endif
+ 	{},
+ };
+ EXPORT_SYMBOL_GPL(snd_soc_acpi_intel_bxt_machines);
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 3687668..875a487 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1164,11 +1164,6 @@ static struct snd_soc_acpi_codecs kbl_codecs = {
+ 	.codecs = {"10508825"}
+ };
+ 
+-static struct snd_soc_acpi_codecs bxt_codecs = {
+-	.num_codecs = 1,
+-	.codecs = {"MX98357A"}
+-};
+-
+ static struct snd_soc_acpi_codecs kbl_poppy_codecs = {
+ 	.num_codecs = 1,
+ 	.codecs = {"10EC5663"}
+@@ -1188,10 +1183,6 @@ static struct skl_machine_pdata cnl_pdata = {
+ 	.use_tplg_pcm = true,
+ };
+ 
+-static struct skl_machine_pdata bxt_pdata = {
+-       .use_tplg_pcm = true,
+-};
+-
+ static struct snd_soc_acpi_mach sst_skl_devdata[] = {
+ 	{
+ 		.id = "INT343A",
+@@ -1217,54 +1208,6 @@ static struct snd_soc_acpi_mach sst_skl_devdata[] = {
+ 	{}
+ };
+ 
+-static struct snd_soc_acpi_mach sst_bxtp_devdata[] = {
+-	{
+-		.id = "INT343A",
+-#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_RSE_MACH)
+-		.drv_name = "bxt_ivi_rse_i2s",
+-#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_HU_MACH)
+-		.drv_name = "bxt_ivi_hu_i2s",
+-#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_M3_MACH)
+-		.drv_name = "bxt_ivi_m3_i2s",
+-#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_GENERIC_MACH)
+-		.drv_name = "bxt_ivi_generic_i2s",
+-#else
+-		.drv_name = "bxt_alc298s_i2s",
+-#endif
+-#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_RSE_MACH) || \
+-IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_HU_MACH) || \
+-IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_M3_MACH) || \
+-IS_ENABLED(CONFIG_SND_SOC_INTEL_BXTP_IVI_GENERIC_MACH)
+-		.fw_filename = "intel/ADSPFW.bin"
+-#else
+-		.fw_filename = "intel/dsp_fw_bxtn.bin",
+-#endif
+-	},
+-	{
+-		.id = "DLGS7219",
+-		.drv_name = "bxt_da7219_max98357a_i2s",
+-		.fw_filename = "intel/dsp_fw_bxtn.bin",
+-		.machine_quirk = snd_soc_acpi_codec_list,
+-		.quirk_data = &bxt_codecs,
+-	},
+-#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_TDF8532_MACH)
+-	{
+-		.id = "INT34C3",
+-		.drv_name = "bxt_tdf8532",
+-		.fw_filename = "intel/dsp_fw_bxtn.bin",
+-		.pdata = &bxt_pdata,
+-	},
+-#elif IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
+-	{
+-		.id = "INT34C3",
+-		.drv_name = "bxt_ivi_ull",
+-		.fw_filename = "intel/dsp_fw_ull_bxtn.bin",
+-		.pdata = &bxt_pdata,
+-	},
+-#endif
+-	{}
+-};
+-
+ static struct snd_soc_acpi_mach sst_kbl_devdata[] = {
+ 	{
+ 		.id = "INT343A",
+-- 
+2.7.4
+

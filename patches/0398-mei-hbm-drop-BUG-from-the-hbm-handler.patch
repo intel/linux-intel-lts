@@ -1,0 +1,35 @@
+From df8540a35b807d6c008f47f0c92fdce1ea2cf411 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Mon, 17 Sep 2018 13:12:50 +0000
+Subject: [PATCH 0398/1132] mei: hbm: drop BUG() from the hbm handler
+
+Drop BUG() from the hbm handler in order not to crash the whole
+kernel on faulty firmware implementation. Instead of it, just return
+an error resulting into link reset.
+There is no any known issue of faulty firmware in this matter,
+the change is just to ease the development.
+
+Change-Id: Ib0d0400af88b349b835ac79ed1802c7fe1352a44
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/hbm.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mei/hbm.c b/drivers/misc/mei/hbm.c
+index e56f3e7..fe67381 100644
+--- a/drivers/misc/mei/hbm.c
++++ b/drivers/misc/mei/hbm.c
+@@ -1271,8 +1271,8 @@ int mei_hbm_dispatch(struct mei_device *dev, struct mei_msg_hdr *hdr)
+ 		break;
+ 
+ 	default:
+-		BUG();
+-		break;
++		WARN(1, "hbm: wrong command %d\n", mei_msg->hbm_cmd);
++		return -EPROTO;
+ 
+ 	}
+ 	return 0;
+-- 
+2.7.4
+

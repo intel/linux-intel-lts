@@ -1,0 +1,328 @@
+From 5374bbb02b4fb37f03bf7054056596e0fbe55c6b Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Mon, 10 Dec 2018 04:31:54 -0500
+Subject: [PATCH 1061/1132] drm/i915/execlists: Force preemption via reset on
+ timeout
+
+Install a timer when trying to preempt on behalf of an important
+context such that if the active context does not honour the preemption
+request within the desired timeout, then we reset the GPU to allow the
+important context to run.
+
+v2: Install the timer on scheduling the preempt request; long before we
+even try to inject preemption into the ELSP, as the tasklet/injection
+may itself be blocked.
+v3: Update the guc to handle the preemption/tasklet timer.
+v4: rebased to kernel 4.19
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+
+backporting from: https://patchwork.freedesktop.org/series/43299/
+Fix code conflicts
+Tracked-On: OLINUX-3692
+
+Signed-off-by: kimsehun <se.hun.kim@intel.com>
+---
+ drivers/gpu/drm/i915/intel_engine_cs.c      |  4 ++
+ drivers/gpu/drm/i915/intel_guc_submission.c |  1 +
+ drivers/gpu/drm/i915/intel_lrc.c            | 87 +++++++++++++++++++++++++++--
+ drivers/gpu/drm/i915/intel_ringbuffer.h     |  8 ++-
+ drivers/gpu/drm/i915/selftests/intel_lrc.c  | 65 +++++++++++++++++++++
+ 5 files changed, 157 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_engine_cs.c b/drivers/gpu/drm/i915/intel_engine_cs.c
+index 2d19528..7f3bcbd 100644
+--- a/drivers/gpu/drm/i915/intel_engine_cs.c
++++ b/drivers/gpu/drm/i915/intel_engine_cs.c
+@@ -468,6 +468,9 @@ static void intel_engine_init_execlist(struct intel_engine_cs *engine)
+ 
+ 	execlists->queue_priority = INT_MIN;
+ 	execlists->queue = RB_ROOT_CACHED;
++
++	hrtimer_init(&execlists->preempt_timer,
++		     CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+ }
+ 
+ /**
+@@ -1109,6 +1112,7 @@ void intel_engines_park(struct drm_i915_private *i915)
+ 
+ 	for_each_engine(engine, i915, id) {
+ 		/* Flush the residual irq tasklets first. */
++		hrtimer_cancel(&engine->execlists.preempt_timer);
+ 		intel_engine_disarm_breadcrumbs(engine);
+ 		tasklet_kill(&engine->execlists.tasklet);
+ 
+diff --git a/drivers/gpu/drm/i915/intel_guc_submission.c b/drivers/gpu/drm/i915/intel_guc_submission.c
+index 4aa5e64..84e79f8 100644
+--- a/drivers/gpu/drm/i915/intel_guc_submission.c
++++ b/drivers/gpu/drm/i915/intel_guc_submission.c
+@@ -748,6 +748,7 @@ static bool __guc_dequeue(struct intel_engine_cs *engine)
+ 			kmem_cache_free(engine->i915->priorities, p);
+ 	}
+ done:
++	execlists_clear_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
+ 	execlists->queue_priority = rb ? to_priolist(rb)->priority : INT_MIN;
+ 	if (submit)
+ 		port_assign(port, last);
+diff --git a/drivers/gpu/drm/i915/intel_lrc.c b/drivers/gpu/drm/i915/intel_lrc.c
+index 098464d..1c9e204 100644
+--- a/drivers/gpu/drm/i915/intel_lrc.c
++++ b/drivers/gpu/drm/i915/intel_lrc.c
+@@ -616,6 +616,52 @@ static void inject_preempt_context(struct intel_engine_cs *engine)
+ 	execlists_set_active(execlists, EXECLISTS_ACTIVE_PREEMPT);
+ }
+ 
++static enum hrtimer_restart preempt_timeout(struct hrtimer *hrtimer)
++{
++	struct intel_engine_execlists *execlists =
++		container_of(hrtimer, typeof(*execlists), preempt_timer);
++
++	GEM_TRACE("%s active=%x\n",
++		  container_of(execlists,
++			       struct intel_engine_cs,
++			       execlists)->name,
++		  execlists->active);
++
++	if (!execlists_is_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT))
++		return HRTIMER_NORESTART;
++
++	if (GEM_SHOW_DEBUG()) {
++		struct intel_engine_cs *engine =
++			container_of(execlists, typeof(*engine), execlists);
++		struct drm_printer p = drm_debug_printer(__func__);
++
++		intel_engine_dump(engine, &p, "%s\n", engine->name);
++	}
++
++	queue_work(system_highpri_wq, &execlists->preempt_reset);
++
++	return HRTIMER_NORESTART;
++}
++
++static void preempt_reset(struct work_struct *work)
++{
++	struct intel_engine_execlists *execlists =
++		container_of(work, typeof(*execlists), preempt_reset);
++	struct intel_engine_cs *engine =
++		  container_of(execlists, struct intel_engine_cs, execlists);
++
++	GEM_TRACE("%s\n", engine->name);
++
++	tasklet_disable(&execlists->tasklet);
++
++	execlists->tasklet.func(execlists->tasklet.data);
++	if (execlists_is_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT))
++		i915_handle_error(engine->i915, BIT(engine->id), 0,
++				  "preemption time out on %s", engine->name);
++
++	tasklet_enable(&execlists->tasklet);
++}
++
+ static void complete_preempt_context(struct intel_engine_execlists *execlists)
+ {
+ 	GEM_BUG_ON(!execlists_is_active(execlists, EXECLISTS_ACTIVE_PREEMPT));
+@@ -709,7 +755,7 @@ static void execlists_dequeue(struct intel_engine_cs *engine)
+ 		 * priorities of the ports haven't been switch.
+ 		 */
+ 		if (port_count(&port[1]))
+-			return;
++			goto clear_preempt_timeout;
+ 
+ 		/*
+ 		 * WaIdleLiteRestore:bdw,skl
+@@ -816,6 +862,9 @@ static void execlists_dequeue(struct intel_engine_cs *engine)
+ 	GEM_BUG_ON(rb_first_cached(&execlists->queue) &&
+ 		   !port_isset(execlists->port));
+ 
++clear_preempt_timeout:
++	execlists_clear_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
++
+ 	/* Re-evaluate the executing context setup after each preemptive kick */
+ 	if (last)
+ 		execlists_user_begin(execlists, execlists->port);
+@@ -1136,8 +1185,30 @@ static void queue_request(struct intel_engine_cs *engine,
+ 		      &lookup_priolist(engine, prio)->requests);
+ }
+ 
+-static void __update_queue(struct intel_engine_cs *engine, int prio)
++static void __update_queue(struct intel_engine_cs *engine,
++			  int prio, unsigned int timeout)
+ {
++	struct intel_engine_execlists * const execlists = &engine->execlists;
++
++	GEM_TRACE("%s prio=%d (previous=%d)\n",
++		  engine->name, prio, execlists->queue_priority);
++
++	if (unlikely(execlists_is_active(execlists,
++					 EXECLISTS_ACTIVE_PREEMPT_TIMEOUT)))
++		hrtimer_cancel(&execlists->preempt_timer);
++
++	/* Set a timer to force preemption vs hostile userspace */
++	if (timeout &&
++	    __execlists_need_preempt(prio, execlists->queue_priority)) {
++		GEM_TRACE("%s preempt timeout=%uns\n", engine->name, timeout);
++
++		execlists_set_active(execlists,
++				     EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
++		hrtimer_start(&execlists->preempt_timer,
++			      ns_to_ktime(timeout),
++			      HRTIMER_MODE_REL);
++	}
++
+ 	engine->execlists.queue_priority = prio;
+ }
+ 
+@@ -1154,10 +1225,11 @@ static void __submit_queue_imm(struct intel_engine_cs *engine)
+ 		tasklet_hi_schedule(&execlists->tasklet);
+ }
+ 
+-static void submit_queue(struct intel_engine_cs *engine, int prio)
++static void submit_queue(struct intel_engine_cs *engine,
++			int prio, unsigned int timeout)
+ {
+ 	if (prio > engine->execlists.queue_priority) {
+-		__update_queue(engine, prio);
++		__update_queue(engine, prio, timeout);
+ 		__submit_queue_imm(engine);
+ 	}
+ }
+@@ -1175,7 +1247,7 @@ static void execlists_submit_request(struct i915_request *request)
+ 	GEM_BUG_ON(RB_EMPTY_ROOT(&engine->execlists.queue.rb_root));
+ 	GEM_BUG_ON(list_empty(&request->sched.link));
+ 
+-	submit_queue(engine, rq_prio(request));
++	submit_queue(engine, rq_prio(request), 0);
+ 
+ 	spin_unlock_irqrestore(&engine->timeline.lock, flags);
+ }
+@@ -1305,7 +1377,7 @@ static void execlists_schedule(struct i915_request *request,
+ 		if (prio > engine->execlists.queue_priority &&
+ 		    i915_sw_fence_done(&sched_to_request(node)->submit)) {
+ 			/* defer submission until after all of our updates */
+-			__update_queue(engine, prio);
++			__update_queue(engine, prio, 0);
+ 			tasklet_hi_schedule(&engine->execlists.tasklet);
+ 		}
+ 	}
+@@ -2441,6 +2513,9 @@ logical_ring_setup(struct intel_engine_cs *engine)
+ 	tasklet_init(&engine->execlists.tasklet,
+ 		     execlists_submission_tasklet, (unsigned long)engine);
+ 
++	INIT_WORK(&engine->execlists.preempt_reset, preempt_reset);
++	engine->execlists.preempt_timer.function = preempt_timeout;
++
+ 	logical_ring_default_vfuncs(engine);
+ 	logical_ring_default_irqs(engine);
+ 
+diff --git a/drivers/gpu/drm/i915/intel_ringbuffer.h b/drivers/gpu/drm/i915/intel_ringbuffer.h
+index ff42345d7..a0118fb 100644
+--- a/drivers/gpu/drm/i915/intel_ringbuffer.h
++++ b/drivers/gpu/drm/i915/intel_ringbuffer.h
+@@ -276,8 +276,9 @@ struct intel_engine_execlists {
+ 	 */
+ 	unsigned int active;
+ #define EXECLISTS_ACTIVE_USER 0
+-#define EXECLISTS_ACTIVE_PREEMPT 1
+-#define EXECLISTS_ACTIVE_HWACK 2
++#define EXECLISTS_ACTIVE_HWACK 1
++#define EXECLISTS_ACTIVE_PREEMPT 2
++#define EXECLISTS_ACTIVE_PREEMPT_TIMEOUT 3
+ 
+ 	/**
+ 	 * @port_mask: number of execlist ports - 1
+@@ -325,6 +326,9 @@ struct intel_engine_execlists {
+ 	 */
+ 	u32 preempt_complete_status;
+ 
++	struct hrtimer preempt_timer;
++	struct work_struct preempt_reset;
++
+ 	/**
+ 	 * @csb_write_reset: reset value for CSB write pointer
+ 	 *
+diff --git a/drivers/gpu/drm/i915/selftests/intel_lrc.c b/drivers/gpu/drm/i915/selftests/intel_lrc.c
+index 582566f..dc8e217 100644
+--- a/drivers/gpu/drm/i915/selftests/intel_lrc.c
++++ b/drivers/gpu/drm/i915/selftests/intel_lrc.c
+@@ -565,6 +565,70 @@ static int live_preempt_hang(void *arg)
+ 	return err;
+ }
+ 
++static void mark_preemption_hang(struct intel_engine_execlists *execlists)
++{
++	execlists_set_active(execlists, EXECLISTS_ACTIVE_PREEMPT);
++	execlists_set_active(execlists, EXECLISTS_ACTIVE_PREEMPT_TIMEOUT);
++}
++
++static int live_preempt_timeout(void *arg)
++{
++	struct drm_i915_private *i915 = arg;
++	struct intel_engine_cs *engine;
++	struct i915_gem_context *ctx;
++	enum intel_engine_id id;
++	struct spinner spin;
++	int err = -ENOMEM;
++
++	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
++		return 0;
++
++	mutex_lock(&i915->drm.struct_mutex);
++
++	if (spinner_init(&spin, i915))
++		goto err_unlock;
++
++	ctx = kernel_context(i915);
++	if (!ctx)
++		goto err_spin;
++
++	for_each_engine(engine, i915, id) {
++		struct i915_request *rq;
++
++		rq = spinner_create_request(&spin, ctx, engine, MI_NOOP);
++		if (IS_ERR(rq)) {
++			err = PTR_ERR(rq);
++			goto err_ctx;
++		}
++
++		i915_request_add(rq);
++		if (!wait_for_spinner(&spin, rq)) {
++			i915_gem_set_wedged(i915);
++			err = -EIO;
++			goto err_ctx;
++		}
++
++		GEM_TRACE("%s triggering reset\n", engine->name);
++		mark_preemption_hang(&engine->execlists);
++		preempt_reset(&engine->execlists.preempt_reset);
++
++		if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
++			err = -EIO;
++			goto err_ctx;
++		}
++	}
++
++	err = 0;
++err_ctx:
++	kernel_context_close(ctx);
++err_spin:
++	spinner_fini(&spin);
++err_unlock:
++	igt_flush_test(i915, I915_WAIT_LOCKED);
++	mutex_unlock(&i915->drm.struct_mutex);
++	return err;
++}
++
+ int intel_execlists_live_selftests(struct drm_i915_private *i915)
+ {
+ 	static const struct i915_subtest tests[] = {
+@@ -572,6 +636,7 @@ int intel_execlists_live_selftests(struct drm_i915_private *i915)
+ 		SUBTEST(live_preempt),
+ 		SUBTEST(live_late_preempt),
+ 		SUBTEST(live_preempt_hang),
++		SUBTEST(live_preempt_timeout),
+ 	};
+ 
+ 	if (!HAS_EXECLISTS(i915))
+-- 
+2.7.4
+

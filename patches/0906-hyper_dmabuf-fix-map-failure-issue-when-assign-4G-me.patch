@@ -1,0 +1,275 @@
+From c0fe5d2382c878afb6cbd92d821c5397d32c40f0 Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Mon, 27 Aug 2018 09:34:15 +0200
+Subject: [PATCH 0906/1132] hyper_dmabuf: fix map failure issue when assign 4G
+ memory to UOS (v2)
+
+When assign 4G memory to UOS, 32bit GPA ref_handle will overflow, instead
+we need set ref_handle as unsigned long to fix this issue. op is int type,
+then we need use two int op[7] and op[8] to pass ref_handle.
+
+v2 changes:
+- Aligned Xen backend with backend interface changes
+
+Change-Id: Ibc827e54897b0b48a4056d8df400d0bf4b3e923f
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+Signed-off-by: Mateusz Polrola <mateuszx.potrola@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_drv.h    |  2 +-
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c  | 15 ++++++----
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c    | 35 ++++++++++++----------
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_struct.h |  2 +-
+ .../hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.c  |  8 ++---
+ .../hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.h  |  2 +-
+ .../hyper_dmabuf/xen/hyper_dmabuf_xen_shm.c        |  4 +--
+ .../hyper_dmabuf/xen/hyper_dmabuf_xen_shm.h        |  4 +--
+ 8 files changed, 39 insertions(+), 33 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_drv.h b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_drv.h
+index 45c24fd..ad4839b 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_drv.h
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_drv.h
+@@ -83,7 +83,7 @@ struct hyper_dmabuf_bknd_ops {
+ 	int (*get_vm_id)(void);
+ 
+ 	/* get pages shared via hypervisor-specific method */
+-	int (*share_pages)(struct page **, int, int, void **);
++	long (*share_pages)(struct page **, int, int, void **);
+ 
+ 	/* make shared pages unshared via hypervisor specific method */
+ 	int (*unshare_pages)(void **, int);
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
+index 66cdcf6..62f83cc 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
+@@ -86,6 +86,7 @@ static int send_export_msg(struct exported_sgt_info *exported,
+ 	struct hyper_dmabuf_req *req;
+ 	int op[MAX_NUMBER_OF_OPERANDS] = {0};
+ 	int ret, i;
++	long tmp;
+ 
+ 	/* now create request for importer via ring */
+ 	op[0] = exported->hid.id;
+@@ -97,18 +98,20 @@ static int send_export_msg(struct exported_sgt_info *exported,
+ 		op[4] = pg_info->nents;
+ 		op[5] = pg_info->frst_ofst;
+ 		op[6] = pg_info->last_len;
+-		op[7] = bknd_ops->share_pages(pg_info->pgs, exported->rdomid,
++		tmp = bknd_ops->share_pages(pg_info->pgs, exported->rdomid,
+ 					 pg_info->nents, &exported->refs_info);
+-		if (op[7] < 0) {
++		if (tmp < 0) {
+ 			dev_err(hy_drv_priv->dev, "pages sharing failed\n");
+-			return op[7];
++			return tmp;
+ 		}
++		op[7] = tmp & 0xffffffff;
++		op[8] = (tmp >> 32) & 0xffffffff;
+ 	}
+ 
+-	op[8] = exported->sz_priv;
++	op[9] = exported->sz_priv;
+ 
+ 	/* driver/application specific private info */
+-	memcpy(&op[9], exported->priv, op[8]);
++	memcpy(&op[10], exported->priv, op[9]);
+ 
+ 	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
+ 
+@@ -501,7 +504,7 @@ static int hyper_dmabuf_export_fd_ioctl(struct file *filp, void *data)
+ 	ret = 0;
+ 
+ 	dev_dbg(hy_drv_priv->dev,
+-		"Found buffer gref %d off %d\n",
++		"Found buffer gref 0x%lx off %d\n",
+ 		imported->ref_handle, imported->frst_ofst);
+ 
+ 	dev_dbg(hy_drv_priv->dev,
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
+index c5d99d2f..d91a9eb 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
+@@ -59,13 +59,14 @@ void hyper_dmabuf_create_req(struct hyper_dmabuf_req *req,
+ 		 * op4 : number of pages to be shared
+ 		 * op5 : offset of data in the first page
+ 		 * op6 : length of data in the last page
+-		 * op7 : top-level reference number for shared pages
+-		 * op8 : size of private data (from op9)
+-		 * op9 ~ : Driver-specific private data
++		 * op7 : 32 LSB of top-level reference number for shared pages
++		 * op8 : 32 MSB of top-level reference number for shared pages
++		 * op9 : size of private data (from op9)
++		 * op10 ~ : Driver-specific private data
+ 		 *	   (e.g. graphic buffer's meta info)
+ 		 */
+ 
+-		memcpy(&req->op[0], &op[0], 9 * sizeof(int) + op[8]);
++		memcpy(&req->op[0], &op[0], 10 * sizeof(int) + op[9]);
+ 		break;
+ 
+ 	case HYPER_DMABUF_NOTIFY_UNEXPORT:
+@@ -136,9 +137,10 @@ static void cmd_process_work(struct work_struct *work)
+ 		 * op4 : number of pages to be shared
+ 		 * op5 : offset of data in the first page
+ 		 * op6 : length of data in the last page
+-		 * op7 : top-level reference number for shared pages
+-		 * op8 : size of private data (from op9)
+-		 * op9 ~ : Driver-specific private data
++		 * op7 : 32 LSB of top-level reference number for shared pages
++		 * op8 : 32 MSB of top-level reference number for shared pages
++		 * op9 : size of private data (from op9)
++		 * op10 ~ : Driver-specific private data
+ 		 *         (e.g. graphic buffer's meta info)
+ 		 */
+ 
+@@ -162,10 +164,10 @@ static void cmd_process_work(struct work_struct *work)
+ 			/* if size of new private data is different,
+ 			 * we reallocate it.
+ 			 */
+-			if (imported->sz_priv != req->op[8]) {
++			if (imported->sz_priv != req->op[9]) {
+ 				kfree(imported->priv);
+-				imported->sz_priv = req->op[8];
+-				imported->priv = kcalloc(1, req->op[8],
++				imported->sz_priv = req->op[9];
++				imported->priv = kcalloc(1, req->op[9],
+ 							 GFP_KERNEL);
+ 				if (!imported->priv) {
+ 					/* set it invalid */
+@@ -175,7 +177,7 @@ static void cmd_process_work(struct work_struct *work)
+ 			}
+ 
+ 			/* updating priv data */
+-			memcpy(imported->priv, &req->op[9], req->op[8]);
++			memcpy(imported->priv, &req->op[10], req->op[9]);
+ 
+ #ifdef CONFIG_HYPER_DMABUF_EVENT_GEN
+ 			/* generating import event */
+@@ -190,8 +192,8 @@ static void cmd_process_work(struct work_struct *work)
+ 		if (!imported)
+ 			break;
+ 
+-		imported->sz_priv = req->op[8];
+-		imported->priv = kcalloc(1, req->op[8], GFP_KERNEL);
++		imported->sz_priv = req->op[9];
++		imported->priv = kcalloc(1, req->op[9], GFP_KERNEL);
+ 
+ 		if (!imported->priv) {
+ 			kfree(imported);
+@@ -206,7 +208,7 @@ static void cmd_process_work(struct work_struct *work)
+ 		imported->nents = req->op[4];
+ 		imported->frst_ofst = req->op[5];
+ 		imported->last_len = req->op[6];
+-		imported->ref_handle = req->op[7];
++		imported->ref_handle = (u64)req->op[8] << 32 | req->op[7];
+ 
+ 		dev_dbg(hy_drv_priv->dev, "DMABUF was exported\n");
+ 		dev_dbg(hy_drv_priv->dev, "\thid{id:%d key:%d %d %d}\n",
+@@ -215,9 +217,10 @@ static void cmd_process_work(struct work_struct *work)
+ 		dev_dbg(hy_drv_priv->dev, "\tnents %d\n", req->op[4]);
+ 		dev_dbg(hy_drv_priv->dev, "\tfirst offset %d\n", req->op[5]);
+ 		dev_dbg(hy_drv_priv->dev, "\tlast len %d\n", req->op[6]);
+-		dev_dbg(hy_drv_priv->dev, "\tgrefid %d\n", req->op[7]);
++		dev_dbg(hy_drv_priv->dev, "\tgrefid 0x%lx\n",
++			(u64)req->op[8] << 32 | req->op[7]);
+ 
+-		memcpy(imported->priv, &req->op[9], req->op[8]);
++		memcpy(imported->priv, &req->op[10], req->op[9]);
+ 
+ 		imported->valid = true;
+ 		hyper_dmabuf_register_imported(imported);
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_struct.h b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_struct.h
+index a11f804..f7b7de0 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_struct.h
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_struct.h
+@@ -117,7 +117,7 @@ struct imported_sgt_info {
+ 	hyper_dmabuf_id_t hid; /* unique id for shared dmabuf imported */
+ 
+ 	/* hypervisor-specific handle to pages */
+-	int ref_handle;
++	unsigned long ref_handle;
+ 
+ 	/* offset and size info of DMA_BUF */
+ 	int frst_ofst;
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.c
+index be5141c..b18f7ca 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.c
+@@ -56,7 +56,7 @@ struct virtio_shared_pages_info {
+ #endif
+ 
+ #ifdef CONFIG_HYPER_DMABUF_VIRTIO_BE
+-static int virtio_be_share_pages(struct page **pages,
++static long virtio_be_share_pages(struct page **pages,
+ 				 int vmid,
+ 				 int nents,
+ 				 void **refs_info)
+@@ -208,7 +208,7 @@ static int virtio_be_unmap_shared_pages(void **refs_info, int nents)
+ 	return 0;
+ }
+ #else
+-static int virtio_fe_share_pages(struct page **pages,
++static long virtio_fe_share_pages(struct page **pages,
+ 			  int domid, int nents,
+ 			  void **refs_info)
+ {
+@@ -292,11 +292,11 @@ static int virtio_fe_unmap_shared_pages(void **refs_info, int nents)
+ 
+ #endif
+ 
+-int virtio_share_pages(struct page **pages,
++long virtio_share_pages(struct page **pages,
+ 		       int domid, int nents,
+ 		       void **refs_info)
+ {
+-	int ret;
++	long ret;
+ #ifdef CONFIG_HYPER_DMABUF_VIRTIO_BE
+ 	ret = virtio_be_share_pages(pages, domid, nents, refs_info);
+ #else
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.h b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.h
+index 05cbf57..55f3e13 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.h
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_shm.h
+@@ -25,7 +25,7 @@
+ #ifndef __HYPER_DMABUF_VIRTIO_SHM_H__
+ #define __HYPER_DMABUF_VIRTIO_SHM_H__
+ 
+-int virtio_share_pages(struct page **pages,
++long virtio_share_pages(struct page **pages,
+ 		       int domid, int nents,
+ 		       void **refs_info);
+ 
+diff --git a/drivers/dma-buf/hyper_dmabuf/xen/hyper_dmabuf_xen_shm.c b/drivers/dma-buf/hyper_dmabuf/xen/hyper_dmabuf_xen_shm.c
+index c6a15f1..5889485 100644
+--- a/drivers/dma-buf/hyper_dmabuf/xen/hyper_dmabuf_xen_shm.c
++++ b/drivers/dma-buf/hyper_dmabuf/xen/hyper_dmabuf_xen_shm.c
+@@ -73,8 +73,8 @@
+  *
+  * Returns refid of top level page.
+  */
+-int xen_be_share_pages(struct page **pages, int domid, int nents,
+-		       void **refs_info)
++long xen_be_share_pages(struct page **pages, int domid, int nents,
++		        void **refs_info)
+ {
+ 	grant_ref_t lvl3_gref;
+ 	grant_ref_t *lvl2_table;
+diff --git a/drivers/dma-buf/hyper_dmabuf/xen/hyper_dmabuf_xen_shm.h b/drivers/dma-buf/hyper_dmabuf/xen/hyper_dmabuf_xen_shm.h
+index d5236b5..f23deb3 100644
+--- a/drivers/dma-buf/hyper_dmabuf/xen/hyper_dmabuf_xen_shm.h
++++ b/drivers/dma-buf/hyper_dmabuf/xen/hyper_dmabuf_xen_shm.h
+@@ -29,8 +29,8 @@
+  * create a table with those in 1st level shared pages then return reference
+  * numbers for this top level table.
+  */
+-int xen_be_share_pages(struct page **pages, int domid, int nents,
+-		    void **refs_info);
++long xen_be_share_pages(struct page **pages, int domid, int nents,
++			void **refs_info);
+ 
+ int xen_be_unshare_pages(void **refs_info, int nents);
+ 
+-- 
+2.7.4
+

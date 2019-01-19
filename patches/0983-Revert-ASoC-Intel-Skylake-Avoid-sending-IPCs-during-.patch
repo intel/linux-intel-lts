@@ -1,0 +1,68 @@
+From 7d0b4a4a64ff344e29f1d3d92580554fd8770c75 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Fri, 12 Oct 2018 16:04:51 +0200
+Subject: [PATCH 0983/1132] Revert "ASoC: Intel: Skylake: Avoid sending IPCs
+ during the crash recovery"
+
+Currently implemented recovery flow for Skylake and child platforms is
+invalid. During suspend/ resume (D3 -> D0) flow, driver incorrectly
+awaits FW_READY nofitication when firmware is already loaded and
+DSP cores are up and running, thus causing timeout and failure
+of D0 process.
+
+This patch is a part of patchset that reverts this implementation until
+appropriate one is available.
+
+Change-Id: I2c99f6f4e39b46e379f2a97aa857d17d991f049f
+Tracked-On: OAM-71679
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/common/sst-ipc.c       | 4 ----
+ sound/soc/intel/skylake/skl-topology.c | 6 ------
+ 2 files changed, 10 deletions(-)
+
+diff --git a/sound/soc/intel/common/sst-ipc.c b/sound/soc/intel/common/sst-ipc.c
+index 0037e21..e5d2df7 100644
+--- a/sound/soc/intel/common/sst-ipc.c
++++ b/sound/soc/intel/common/sst-ipc.c
+@@ -98,10 +98,6 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
+ 	struct ipc_message *msg;
+ 	unsigned long flags;
+ 
+-	if (ipc->dsp->is_recovery) {
+-		dev_dbg(ipc->dev, "Recovery in progress..\n");
+-		return 0;
+-	}
+ 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+ 
+ 	msg = msg_get_empty(ipc);
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index e1ce9a7..9d57fc8 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -1972,13 +1972,9 @@ static int skl_tplg_mixer_event(struct snd_soc_dapm_widget *w,
+ 		return skl_tplg_mixer_dapm_post_pmu_event(w, skl);
+ 
+ 	case SND_SOC_DAPM_PRE_PMD:
+-		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
+-			return 0;
+ 		return skl_tplg_mixer_dapm_pre_pmd_event(w, skl);
+ 
+ 	case SND_SOC_DAPM_POST_PMD:
+-		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
+-			return 0;
+ 		return skl_tplg_mixer_dapm_post_pmd_event(w, skl);
+ 	}
+ 
+@@ -2003,8 +1999,6 @@ static int skl_tplg_pga_event(struct snd_soc_dapm_widget *w,
+ 		return skl_tplg_pga_dapm_pre_pmu_event(w, skl);
+ 
+ 	case SND_SOC_DAPM_POST_PMD:
+-		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
+-			return 0;
+ 		return skl_tplg_pga_dapm_post_pmd_event(w, skl);
+ 	}
+ 
+-- 
+2.7.4
+

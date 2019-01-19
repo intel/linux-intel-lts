@@ -1,0 +1,91 @@
+From 4a85106fef4a495bf803ffeadb9eb81c278e5132 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Wed, 20 Sep 2017 14:29:38 +0530
+Subject: [PATCH 0655/1132] ASoC: Intel: Skylake: Replace modulus operator with
+ div_u64_rem.
+
+Linking errors are observed when compiled for 32 bit architecture as
+shown below:
+
+sound/soc/intel/skylake/skl.o: In function `skl_stream_update':
+skl.c:(.text+0x213): undefined reference to `__umoddi3'
+sound/soc/intel/skylake/skl-probe.o: In function `skl_probe_compr_copy':
+skl-probe.c:(.text+0x3f7): undefined reference to `__umoddi3'
+skl-probe.c:(.text+0x459): undefined reference to `__umoddi3'
+
+The error for __umoddi3 is observed due to usage of modulus operator on
+u64 variable which is unsupported for i386. To fix this, use div_u64_rem
+instead.
+
+Change-Id: I3ebba0c28ac50215dc4efff7356a31ba4db930f6
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Signed-off-by: Dronamraju, Santosh Pavan KumarX <santosh.pavan.kumarx.dronamraju@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Tewani, Pradeep D <pradeep.d.tewani@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-probe.c | 11 ++++++-----
+ sound/soc/intel/skylake/skl.c       |  6 ++++--
+ 2 files changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index 4a22c75..2d9d0ea 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -335,7 +335,8 @@ int skl_probe_compr_tstamp(struct snd_compr_stream *stream,
+ int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
+ 					size_t count, struct snd_soc_dai *dai)
+ {
+-	int offset = 0, availcount = 0, retval = 0, copy;
++	int availcount = 0, retval = 0, copy;
++	unsigned int offset = 0;
+ 	void *dstn;
+ 	/*
+ 	 * If userspace happens to issue a copy with count > ring buffer size,
+@@ -345,8 +346,8 @@ int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
+ 		count = stream->runtime->buffer_size;
+ 
+ 	if (stream->direction == SND_COMPRESS_CAPTURE) {
+-		offset = stream->runtime->total_bytes_transferred %
+-						stream->runtime->buffer_size;
++		div_u64_rem(stream->runtime->total_bytes_transferred,
++			    stream->runtime->buffer_size, &offset);
+ 		dstn = stream->runtime->dma_area + offset;
+ 		availcount = (stream->runtime->buffer_size - offset);
+ 		if (count > availcount) {
+@@ -366,8 +367,8 @@ int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
+ 
+ 	} else if (stream->direction == SND_COMPRESS_PLAYBACK) {
+ 
+-		offset = stream->runtime->total_bytes_available %
+-						stream->runtime->buffer_size;
++		div_u64_rem(stream->runtime->total_bytes_available,
++			    stream->runtime->buffer_size, &offset);
+ 		dstn = stream->runtime->dma_area + offset;
+ 
+ 		if (count < stream->runtime->buffer_size - offset)
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 51ae10c..dbff6a4 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -189,9 +189,11 @@ void skl_update_d0i3c(struct device *dev, bool enable)
+ 
+ static void skl_get_total_bytes_transferred(struct hdac_stream *hstr)
+ {
+-	int pos, prev_pos, no_of_bytes;
++	int pos, no_of_bytes;
++	unsigned int prev_pos;
+ 
+-	prev_pos = hstr->curr_pos % hstr->stream->runtime->buffer_size;
++	div_u64_rem(hstr->curr_pos,
++		   hstr->stream->runtime->buffer_size, &prev_pos);
+ 	pos = snd_hdac_stream_get_pos_posbuf(hstr);
+ 
+ 	if (pos < prev_pos)
+-- 
+2.7.4
+

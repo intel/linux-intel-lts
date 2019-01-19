@@ -1,0 +1,31 @@
+From 7123063b76c5b8c17ebbf9d14e125e3348504a4f Mon Sep 17 00:00:00 2001
+From: Ding Xiang <dingxiang@cmss.chinamobile.com>
+Date: Tue, 4 Sep 2018 16:41:39 +0800
+Subject: [PATCH 0342/1132] security: tomoyo: Fix obsolete function
+
+simple_strtoul is obsolete, and use kstrtouint instead
+
+Signed-off-by: Ding Xiang <dingxiang@cmss.chinamobile.com>
+Acked-by: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Signed-off-by: James Morris <james.morris@microsoft.com>
+---
+ security/tomoyo/common.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/security/tomoyo/common.c b/security/tomoyo/common.c
+index 03923a1..9b38f94 100644
+--- a/security/tomoyo/common.c
++++ b/security/tomoyo/common.c
+@@ -1660,7 +1660,8 @@ static void tomoyo_read_pid(struct tomoyo_io_buffer *head)
+ 	head->r.eof = true;
+ 	if (tomoyo_str_starts(&buf, "global-pid "))
+ 		global_pid = true;
+-	pid = (unsigned int) simple_strtoul(buf, NULL, 10);
++	if (kstrtouint(buf, 10, &pid))
++		return;
+ 	rcu_read_lock();
+ 	if (global_pid)
+ 		p = find_task_by_pid_ns(pid, &init_pid_ns);
+-- 
+2.7.4
+

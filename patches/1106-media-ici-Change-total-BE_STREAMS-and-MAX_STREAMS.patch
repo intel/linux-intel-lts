@@ -1,0 +1,118 @@
+From 66f2129112d19bfe83ea4b7bc74baceed2bb0dcc Mon Sep 17 00:00:00 2001
+From: "Gopal, Puunithaaraj" <puunithaaraj.gopal@intel.com>
+Date: Tue, 11 Dec 2018 23:31:18 +0800
+Subject: [PATCH 1106/1132] media: ici: Change total BE_STREAMS and MAX_STREAMS
+
+Update the maximum number of simultaneous BE SOC streams to 8
+
+Change-Id: I537aa645f7d8116e9470807e88e649e47136f72e
+Tracked-On: PKT-1644
+Tracked-On: OAM-74863
+Signed-off-by: Gopal, Puunithaaraj <puunithaaraj.gopal@intel.com>
+---
+ drivers/media/pci/intel/ici/ici-isys.c |  8 ++++----
+ drivers/media/pci/intel/ici/ici-isys.h | 28 ++++++++++++++--------------
+ 2 files changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ici/ici-isys.c b/drivers/media/pci/intel/ici/ici-isys.c
+index ecae4d5..848fac9 100644
+--- a/drivers/media/pci/intel/ici/ici-isys.c
++++ b/drivers/media/pci/intel/ici/ici-isys.c
+@@ -458,7 +458,7 @@ static void isys_unregister_subdevices(struct ici_isys *isys)
+ 		&isys->pdata->ipdata->csi2;
+ 	unsigned int i;
+ 
+-	for (i = 0; i < NR_OF_CSI2_BE_SOC_STREAMS; i++) {
++	for (i = 0; i < NR_OF_CSI2_BE_STREAMS; i++) {
+ 		ici_isys_csi2_be_cleanup(&isys->ici_csi2_be[i]);
+ 	}
+ 
+@@ -503,7 +503,7 @@ static int isys_register_subdevices(struct ici_isys *isys)
+ 			goto fail;
+ 	}
+ 
+-	for (i = 0; i < NR_OF_CSI2_BE_SOC_STREAMS; i++) {
++	for (i = 0; i < NR_OF_CSI2_BE_STREAMS; i++) {
+ 		rval = ici_isys_csi2_be_init(&isys->ici_csi2_be[i],
+ 				isys, i);
+ 		if (rval) {
+@@ -523,7 +523,7 @@ static int isys_register_subdevices(struct ici_isys *isys)
+ 				goto fail;
+ 			}
+ 
+-			for (k = 1; k < NR_OF_CSI2_BE_SOC_STREAMS; k++) {
++			for (k = 1; k < NR_OF_CSI2_BE_STREAMS; k++) {
+ 				rval = node_pad_create_link(
+ 					&isys->ici_csi2[i].asd[j].node, CSI2_ICI_PAD_SOURCE,
+ 					&isys->ici_csi2_be[k].asd.node,
+@@ -548,7 +548,7 @@ static int isys_register_subdevices(struct ici_isys *isys)
+ 			goto fail;
+ 		}
+ 
+-		for (j = 1; j < NR_OF_CSI2_BE_SOC_STREAMS; j++) {
++		for (j = 1; j < NR_OF_CSI2_BE_STREAMS; j++) {
+ 			rval = node_pad_create_link(
+ 				&isys->ici_tpg[i].asd.node, TPG_PAD_SOURCE,
+ 				&isys->ici_csi2_be[j].asd.node,
+diff --git a/drivers/media/pci/intel/ici/ici-isys.h b/drivers/media/pci/intel/ici/ici-isys.h
+index ffd21a9..db46d7e 100644
+--- a/drivers/media/pci/intel/ici/ici-isys.h
++++ b/drivers/media/pci/intel/ici/ici-isys.h
+@@ -57,10 +57,10 @@
+ #define INTEL_IPU4_ISYS_CSI2_LONG_PACKET_FOOTER_SIZE	32
+ 
+ /*
+- * For B0/1: FW support max 6 streams
++ * For B0/1: FW support max 8 streams
+  */
+-#define INTEL_IPU4_ISYS_MAX_STREAMS		6
+-
++#define INTEL_IPU4_ISYS_MAX_STREAMS		8
++#define NR_OF_CSI2_BE_STREAMS		(NR_OF_CSI2_BE_SOC_STREAMS + 1)
+ 
+ #define IPU_ISYS_MIN_WIDTH		1U
+ #define IPU_ISYS_MIN_HEIGHT		1U
+@@ -129,7 +129,7 @@ struct ici_isys {
+ 	struct ici_isys_pipeline *ici_pipes[IPU_ISYS_MAX_STREAMS];
+ 	struct ici_isys_csi2 ici_csi2[IPU_ISYS_MAX_CSI2_PORTS];
+ 	struct ici_isys_tpg ici_tpg[2]; // TODO map to a macro
+-	struct ici_isys_csi2_be ici_csi2_be[NR_OF_CSI2_BE_SOC_STREAMS];
++	struct ici_isys_csi2_be ici_csi2_be[NR_OF_CSI2_BE_STREAMS];
+ 	unsigned int ici_stream_opened;
+ 
+ 	const struct firmware *fw;
+@@ -145,21 +145,21 @@ struct ici_isys {
+ 	dma_addr_t short_packet_trace_buffer_dma_addr;
+ 	u64 tsc_timer_base;
+ 	u64 tunit_timer_base;
+-        spinlock_t listlock;    /* Protect framebuflist */
+-        struct list_head framebuflist;
+-        struct list_head framebuflist_fw;
++		spinlock_t listlock;	/* Protect framebuflist */
++		struct list_head framebuflist;
++		struct list_head framebuflist_fw;
+ };
+ 
+ int intel_ipu4_isys_isr_run_ici(void *ptr);
+ 
+ struct isys_fw_msgs {
+-        union {
+-                u64 dummy;
+-                struct ipu_fw_isys_frame_buff_set_abi frame;
+-                struct ipu_fw_isys_stream_cfg_data_abi stream;
+-        } fw_msg;
+-        struct list_head head;
+-        dma_addr_t dma_addr;
++		union {
++				u64 dummy;
++				struct ipu_fw_isys_frame_buff_set_abi frame;
++				struct ipu_fw_isys_stream_cfg_data_abi stream;
++		} fw_msg;
++		struct list_head head;
++		dma_addr_t dma_addr;
+ };
+ 
+ #define ipu_lib_call_notrace_unlocked(func, isys, ...)		\
+-- 
+2.7.4
+

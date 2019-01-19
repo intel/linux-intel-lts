@@ -1,0 +1,68 @@
+From c29b83097733290bfed308e0aa7502fcfb7cf0f2 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Tue, 16 Oct 2018 13:38:22 +0800
+Subject: [PATCH 0834/1132] VHM: Add one hypercall to configure the up-notifier
+ interrupt vector
+
+Currently the acrn-hypervisor is using the PLATFORM_IPI vector to notify
+the sos_kernel. And then sos_kernel will handle the notification from acrn
+hypervisor in PLATFORM_IPI ISR. But as the PLATFORM_IPI ISR can be registered
+by the other modules, it will have the conflict when trying to register
+acrn intr ISR. So the HYPERVISOR_CALLBACK_VECTOR will be used instead.
+
+In order to switch the notification vector from PLATFORM_IPI to
+HYPERVISOR_CALLBACK_VECTOR, one API is added so that sos can configure
+the up-notifier interrrupt vector.
+
+Tracked-on: https://github.com/projectacrn/acrn-hypervisor/issues/1325
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/vhm/vhm_hypercall.c       | 5 +++++
+ include/linux/vhm/acrn_hv_defs.h  | 5 +++++
+ include/linux/vhm/vhm_hypercall.h | 1 +
+ 3 files changed, 11 insertions(+)
+
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index 9a76102..f3348f7 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -187,3 +187,8 @@ inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr)
+ {
+ 	return  acrn_hypercall2(HC_VM_INTR_MONITOR, vmid, addr);
+ }
++
++inline long hcall_set_callback_vector(unsigned long intr_vector)
++{
++	return acrn_hypercall1(HC_SET_CALLBACK_VECTOR, intr_vector);
++}
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index c74f05f..c13257f 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -69,6 +69,11 @@
+ #define HC_ID_GEN_BASE               0x0UL
+ #define HC_GET_API_VERSION          _HC_ID(HC_ID, HC_ID_GEN_BASE + 0x00)
+ #define HC_SOS_OFFLINE_CPU          _HC_ID(HC_ID, HC_ID_GEN_BASE + 0x01)
++/* this is the temporally added hypercall.
++ * after HYPERVISOR_CALLBACK_VECTOR is switched in both kernel and hypervisor,
++ * this will be removed.
++ */
++#define HC_SET_CALLBACK_VECTOR		_HC_ID(HC_ID, HC_ID_GEN_BASE + 0x02)
+ 
+ /* VM management */
+ #define HC_ID_VM_BASE               0x10UL
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index 7f8b6bc..1300699 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -139,6 +139,7 @@ static inline long acrn_hypercall4(unsigned long hcall_id, unsigned long param1,
+ 
+ inline long hcall_sos_offline_cpu(unsigned long cpu);
+ inline long hcall_get_api_version(unsigned long api_version);
++inline long hcall_set_callback_vector(unsigned long intr_vector);
+ inline long hcall_create_vm(unsigned long vminfo);
+ inline long hcall_start_vm(unsigned long vmid);
+ inline long hcall_pause_vm(unsigned long vmid);
+-- 
+2.7.4
+

@@ -1,0 +1,231 @@
+From 64d5695b8d32527d1e509dc5aaddd8816a4416e7 Mon Sep 17 00:00:00 2001
+From: "Diwakar, Praveen" <praveen.diwakar@intel.com>
+Date: Wed, 28 Jun 2017 16:42:00 +0530
+Subject: [PATCH 0592/1132] ASoC: Intel: Skylake: Add support for getting hw
+ config from DSP
+
+This patch gets hw config from DSP by sending hw config ipc.
+
+Signed-off-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-dsp.h   |  14 ++++
+ sound/soc/intel/skylake/skl-sst-ipc.h   |  41 ++++++++++++
+ sound/soc/intel/skylake/skl-sst-utils.c | 111 ++++++++++++++++++++++++++++++++
+ 3 files changed, 166 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.h b/sound/soc/intel/skylake/skl-sst-dsp.h
+index 402fb87..baec422 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.h
++++ b/sound/soc/intel/skylake/skl-sst-dsp.h
+@@ -163,6 +163,19 @@ enum skl_fw_info_type {
+ 	SKL_CLOCKS_CONFIG,
+ };
+ 
++enum skl_hw_info_type {
++	SKL_CAVS_VERSION = 0,
++	SKL_DSP_CORES,
++	SKL_MEM_PAGE_TYPES,
++	SKL_TOTAL_PHYS_MEM_PAGES,
++	SKL_I2S_CAPS,
++	SKL_GPDMA_CAPS,
++	SKL_GATEWAY_COUNT,
++	SKL_HB_EBB_COUNT,
++	SKL_LP_EBB_COUNT,
++	SKL_EBB_SIZE_BYTES,
++};
++
+ /* DSP Core state */
+ enum skl_dsp_states {
+ 	SKL_DSP_RUNNING = 1,
+@@ -299,6 +312,7 @@ int skl_prepare_lib_load(struct skl_sst *skl, struct skl_lib_info *linfo,
+ void skl_release_library(struct skl_lib_info *linfo, int lib_count);
+ 
+ int skl_get_firmware_configuration(struct sst_dsp *ctx);
++int skl_get_hardware_configuration(struct sst_dsp *ctx);
+ 
+ int bxt_set_dsp_D0i0(struct sst_dsp *ctx);
+ 
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index f3b8d7b..43d3eed 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -188,6 +188,44 @@ struct skl_fw_property_info {
+ 	struct skl_dma_buff_config *dma_config;
+ };
+ 
++enum skl_cavs_version {
++	CAVS_VER_NA = 0x0,
++	CAVS_VER_1_5 = 0x1005,
++	CAVS_VER_1_8 = 0x1008
++};
++
++enum skl_i2s_version {
++	I2S_VER_15_SKYLAKE = 0x00000,
++	I2S_VER_15_BROXTON = 0x10000,
++	I2S_VER_15_BROXTON_P = 0x20000
++};
++
++struct skl_i2s_capabilities {
++	enum skl_i2s_version version;
++	u32 controller_count;
++	u32 *controller_base_addr;
++};
++
++struct skl_gpdma_capabilities {
++	u32 lp_ctrl_count;
++	u32 *lp_ch_count;
++	u32 hp_ctrl_count;
++	u32 *hp_ch_count;
++};
++
++struct skl_hw_property_info {
++	enum skl_cavs_version cavs_version;
++	u32 dsp_cores;
++	u32 mem_page_bytes;
++	u32 total_phys_mem_pages;
++	struct skl_i2s_capabilities i2s_caps;
++	struct skl_gpdma_capabilities gpdma_caps;
++	u32 gateway_count;
++	u32 hb_ebb_count;
++	u32 lp_ebb_count;
++	u32 ebb_size_bytes;
++};
++
+ struct skl_sst {
+ 	struct device *dev;
+ 	struct sst_dsp *dsp;
+@@ -248,6 +286,9 @@ struct skl_sst {
+ 	/* firmware configuration information */
+ 	struct skl_fw_property_info fw_property;
+ 
++	/* hardware configuration information */
++	struct skl_hw_property_info hw_property;
++
+ 	/* sysfs for module info */
+ 	struct skl_sysfs_tree *sysfs_tree;
+ };
+diff --git a/sound/soc/intel/skylake/skl-sst-utils.c b/sound/soc/intel/skylake/skl-sst-utils.c
+index 0eaa88e..7288893 100644
+--- a/sound/soc/intel/skylake/skl-sst-utils.c
++++ b/sound/soc/intel/skylake/skl-sst-utils.c
+@@ -359,6 +359,117 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
+ 	return ret;
+ }
+ 
++static int skl_parse_hw_config_info(struct sst_dsp *ctx, u8 *src, int limit)
++{
++	struct  skl_tlv_message *message;
++	int offset = 0, shift;
++	u32 *value;
++	struct skl_sst *skl = ctx->thread_context;
++	struct skl_hw_property_info *hw_property = &skl->hw_property;
++	enum skl_hw_info_type type;
++
++	while (offset < limit) {
++
++		message = (struct skl_tlv_message *)src;
++		if (message == NULL)
++		break;
++
++		/* Skip TLV header to read value */
++		src += sizeof(struct skl_tlv_message);
++
++		value = (u32 *)src;
++		type = message->type;
++
++		switch (type) {
++		case SKL_CAVS_VERSION:
++			hw_property->cavs_version = *value;
++			break;
++
++		case SKL_DSP_CORES:
++			hw_property->dsp_cores = *value;
++			break;
++
++		case SKL_MEM_PAGE_TYPES:
++			hw_property->mem_page_bytes = *value;
++			break;
++
++		case SKL_TOTAL_PHYS_MEM_PAGES:
++			hw_property->total_phys_mem_pages = *value;
++			break;
++
++		case SKL_I2S_CAPS:
++			memcpy(&hw_property->i2s_caps, value,
++				sizeof(hw_property->i2s_caps));
++			break;
++
++		case SKL_GPDMA_CAPS:
++			memcpy(&hw_property->gpdma_caps, value,
++				sizeof(hw_property->gpdma_caps));
++			break;
++
++		case SKL_GATEWAY_COUNT:
++			hw_property->gateway_count = *value;
++			break;
++
++		case SKL_HB_EBB_COUNT:
++			hw_property->hb_ebb_count = *value;
++			break;
++
++		case SKL_LP_EBB_COUNT:
++			hw_property->lp_ebb_count = *value;
++			break;
++
++		case SKL_EBB_SIZE_BYTES:
++			hw_property->ebb_size_bytes = *value;
++			break;
++
++		default:
++			dev_err(ctx->dev, "Invalid hw info type:%d \n", type);
++			break;
++		}
++
++		shift = message->length + sizeof(*message);
++		offset += shift;
++		/* skip over to next tlv data */
++		src += message->length;
++	}
++
++	return 0;
++}
++
++int skl_get_hardware_configuration(struct sst_dsp *ctx)
++{
++	struct skl_ipc_large_config_msg msg;
++	struct skl_sst *skl = ctx->thread_context;
++	u8 *ipc_data;
++	int ret = 0;
++	size_t rx_bytes;
++
++	ipc_data = kzalloc(DSP_BUF, GFP_KERNEL);
++	if (!ipc_data)
++		return -ENOMEM;
++
++	msg.module_id = 0;
++	msg.instance_id = 0;
++	msg.large_param_id = HARDWARE_CONFIG;
++	msg.param_data_size = DSP_BUF;
++
++	ret = skl_ipc_get_large_config(&skl->ipc, &msg,
++		(u32 *)ipc_data, NULL, 0, &rx_bytes);
++	if (ret < 0) {
++		dev_err(ctx->dev, "failed to get hw configuration !!!\n");
++		goto err;
++	}
++
++	ret = skl_parse_hw_config_info(ctx, ipc_data, rx_bytes);
++	if (ret < 0)
++		dev_err(ctx->dev, "failed to parse configuration !!!\n");
++
++err:
++	kfree(ipc_data);
++	return ret;
++}
++
+ void skl_freeup_uuid_list(struct skl_sst *ctx)
+ {
+ 	struct uuid_module *uuid, *_uuid;
+-- 
+2.7.4
+

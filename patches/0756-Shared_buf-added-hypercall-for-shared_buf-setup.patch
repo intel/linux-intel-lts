@@ -1,0 +1,111 @@
+From a5c12e3a18e4f7c44b2f1a6e43aed5d57c718850 Mon Sep 17 00:00:00 2001
+From: "Li, Fei1" <fei1.li@intel.com>
+Date: Fri, 31 Aug 2018 10:58:57 +0800
+Subject: [PATCH 0756/1132] Shared_buf: added hypercall for shared_buf setup
+
+Change-Id: I24ad2f767c7d633ad41d787c7d1a052b0fb75fb4
+Tracked-On: https://rtc.intel.com/ccm0001001/resource/itemName/com.ibm.team.workitem.WorkItem/216912
+Signed-off-by: Li, Fei1 <fei1.li@intel.com>
+---
+ drivers/acrn/sbuf.c               | 21 +++++++++++++++++++++
+ drivers/acrn/sbuf.h               |  1 +
+ drivers/vhm/vhm_hypercall.c       |  5 +++++
+ include/linux/vhm/acrn_hv_defs.h  |  2 +-
+ include/linux/vhm/vhm_hypercall.h |  1 +
+ 5 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/acrn/sbuf.c b/drivers/acrn/sbuf.c
+index dcf2032..8849ce2 100644
+--- a/drivers/acrn/sbuf.c
++++ b/drivers/acrn/sbuf.c
+@@ -57,6 +57,8 @@
+ 
+ #include <linux/gfp.h>
+ #include <asm/pgtable.h>
++#include <linux/vhm/acrn_hv_defs.h>
++#include <linux/vhm/vhm_hypercall.h>
+ #include "sbuf.h"
+ 
+ static inline bool sbuf_is_empty(shared_buf_t *sbuf)
+@@ -164,6 +166,25 @@ int sbuf_get(shared_buf_t *sbuf, uint8_t *data)
+ }
+ EXPORT_SYMBOL(sbuf_get);
+ 
++int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf)
++{
++	struct sbuf_setup_param ssp;
++
++	ssp.pcpu_id = pcpu_id;
++	ssp.sbuf_id = sbuf_id;
++
++	if (!sbuf) {
++		ssp.gpa = 0;
++	} else {
++		BUG_ON(!virt_addr_valid(sbuf));
++		ssp.gpa = virt_to_phys(sbuf);
++	}
++	pr_info("setup phys add = 0x%llx\n", ssp.gpa);
++
++	return hcall_setup_sbuf(virt_to_phys(&ssp));
++}
++EXPORT_SYMBOL(sbuf_share_setup);
++
+ shared_buf_t *sbuf_construct(uint32_t ele_num, uint32_t ele_size,
+ 				uint64_t paddr)
+ {
+diff --git a/drivers/acrn/sbuf.h b/drivers/acrn/sbuf.h
+index 7f36949..73608c3 100644
+--- a/drivers/acrn/sbuf.h
++++ b/drivers/acrn/sbuf.h
+@@ -114,6 +114,7 @@ static inline void sbuf_add_flags(shared_buf_t *sbuf, uint64_t flags)
+ shared_buf_t *sbuf_allocate(uint32_t ele_num, uint32_t ele_size);
+ void sbuf_free(shared_buf_t *sbuf);
+ int sbuf_get(shared_buf_t *sbuf, uint8_t *data);
++int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf);
+ shared_buf_t *sbuf_construct(uint32_t ele_num, uint32_t ele_size, uint64_t gpa);
+ 
+ #endif /* SHARED_BUF_H */
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index 741b8bd..d0da22f 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -77,6 +77,11 @@ inline long hcall_destroy_vm(unsigned long vmid)
+ 	return  acrn_hypercall1(HC_DESTROY_VM, vmid);
+ }
+ 
++inline long hcall_setup_sbuf(unsigned long sbuf_head)
++{
++	return acrn_hypercall1(HC_SETUP_SBUF, sbuf_head);
++}
++
+ inline long hcall_set_memmap(unsigned long vmid, unsigned long memmap)
+ {
+ 	return acrn_hypercall2(HC_VM_SET_MEMMAP, vmid, memmap);
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index bb57fb4..688d69b 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -104,7 +104,7 @@
+ 
+ /* DEBUG */
+ #define HC_ID_DBG_BASE              0x60UL
+-#define HC_SBUF_SETUP               _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x00)
++#define HC_SETUP_SBUF               _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x00)
+ 
+ #define ACRN_DOM0_VMID (0UL)
+ #define ACRN_INVALID_VMID (-1)
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index f4a5793..e56a16c 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -143,6 +143,7 @@ inline long hcall_start_vm(unsigned long vmid);
+ inline long hcall_pause_vm(unsigned long vmid);
+ inline long hcall_destroy_vm(unsigned long vmid);
+ inline long hcall_query_vm_state(unsigned long vmid);
++inline long hcall_setup_sbuf(unsigned long sbuf_head);
+ inline long hcall_set_memmap(unsigned long vmid,
+ 		unsigned long memmap);
+ inline long hcall_set_ioreq_buffer(unsigned long vmid,
+-- 
+2.7.4
+

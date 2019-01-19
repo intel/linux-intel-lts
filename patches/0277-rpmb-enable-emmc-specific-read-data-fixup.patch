@@ -1,0 +1,78 @@
+From 3f2b676b9ba9b1a215f994c5458ddf460e7e9122 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Sun, 7 Aug 2016 11:27:08 +0300
+Subject: [PATCH 0277/1132] rpmb: enable emmc specific read data fixup
+
+For eMMC the block count of the RPMB read operation is not indicated in
+the original RPMB Data Read Request packet.
+This might be different then the implementation of other protocol
+standards.
+This patch implements a fixup for this behavior.
+
+V6: New in the series.
+V7: Resend
+V8: Resend.
+V9: Scan all the frames in the sequence.
+
+Change-Id: I34a4aeccbd0294b2c7c83837faa4ba5a54b9be48
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+Tested-by: Avri Altman <avri.altman@sandisk.com>
+---
+ drivers/char/rpmb/core.c | 33 +++++++++++++++++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+
+diff --git a/drivers/char/rpmb/core.c b/drivers/char/rpmb/core.c
+index 69a5901..3bf3f0d 100644
+--- a/drivers/char/rpmb/core.c
++++ b/drivers/char/rpmb/core.c
+@@ -37,6 +37,38 @@ void rpmb_dev_put(struct rpmb_dev *rdev)
+ EXPORT_SYMBOL_GPL(rpmb_dev_put);
+ 
+ /**
++ * rpmb_cmd_fixup - fixup rpmb command
++ *
++ * @rdev: rpmb device
++ * @cmds: rpmb command list
++ * @ncmds: number of commands
++ *
++ */
++static void rpmb_cmd_fixup(struct rpmb_dev *rdev,
++			   struct rpmb_cmd *cmds, u32 ncmds)
++{
++	int i;
++
++	if (RPMB_TYPE_HW(rdev->ops->type) != RPMB_TYPE_EMMC)
++		return;
++
++	/* Fixup RPMB_READ_DATA specific to eMMC
++	 * The block count of the RPMB read operation is not indicated
++	 * in the original RPMB Data Read Request packet.
++	 * This is different then implementation for other protocol
++	 * standards.
++	 */
++	for (i = 0; i < ncmds; i++) {
++		struct rpmb_frame_jdec *frame = cmds[i].frames;
++
++		if (frame->req_resp == cpu_to_be16(RPMB_READ_DATA)) {
++			dev_dbg(&rdev->dev, "Fixing up READ_DATA frame to block_count=0\n");
++			frame->block_count = 0;
++		}
++	}
++}
++
++/**
+  * rpmb_cmd_seq - send RPMB command sequence
+  *
+  * @rdev: rpmb device
+@@ -58,6 +90,7 @@ int rpmb_cmd_seq(struct rpmb_dev *rdev, struct rpmb_cmd *cmds, u32 ncmds)
+ 	mutex_lock(&rdev->lock);
+ 	err = -EOPNOTSUPP;
+ 	if (rdev->ops && rdev->ops->cmd_seq) {
++		rpmb_cmd_fixup(rdev, cmds, ncmds);
+ 		err = rdev->ops->cmd_seq(rdev->dev.parent, rdev->target,
+ 					 cmds, ncmds);
+ 	}
+-- 
+2.7.4
+

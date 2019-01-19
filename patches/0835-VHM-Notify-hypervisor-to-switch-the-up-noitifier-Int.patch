@@ -1,0 +1,70 @@
+From 732cee3c112602ef075d0eb976500127d7e3729d Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Tue, 16 Oct 2018 13:38:25 +0800
+Subject: [PATCH 0835/1132] VHM: Notify hypervisor to switch the up-noitifier
+ Interrupt vector
+
+Currently the acrn-hypervisor is using the PLATFORM_IPI vector to notify
+the sos_kernel. And then sos_kernel will handle the notification from acrn
+hypervisor in PLATFORM_IPI ISR. But as the PLATFORM_IPI ISR can be registered
+by the other modules, it will have the conflict when trying to register
+acrn intr ISR. So the HYPERVISOR_CALLBACK_VECTOR will be used instead.
+
+This patch tries to notify the hypervisor so that the hypervisor notifies
+the kernel by using HYPERVISOR_CALLBACK_VECTOR instead of PLATFORM_IPI.
+
+Tracked-on: https://github.com/projectacrn/acrn-hypervisor/issues/1325
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c | 20 ++++++++++++++------
+ 1 file changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index c6a97e8..f730467c 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -86,6 +86,7 @@
+ #include <linux/vhm/vhm_eventfd.h>
+ 
+ #include <asm/hypervisor.h>
++#include <asm/acrnhyper.h>
+ 
+ #define  DEVICE_NAME "acrn_vhm"
+ #define  CLASS_NAME  "vhm"
+@@ -835,13 +836,19 @@ static int __init vhm_init(void)
+ 	}
+ 	pr_info("register IPI handler\n");
+ 	tasklet_init(&vhm_io_req_tasklet, io_req_tasklet, 0);
+-	if (x86_platform_ipi_callback) {
+-		pr_warn("vhm: ipi callback was occupied\n");
+-		return -EINVAL;
++
++	if (hcall_set_callback_vector(HYPERVISOR_CALLBACK_VECTOR)) {
++		if (x86_platform_ipi_callback) {
++			pr_warn("vhm: ipi callback was occupied\n");
++			return -EINVAL;
++		}
++		local_irq_save(flag);
++		x86_platform_ipi_callback = vhm_intr_handler;
++		local_irq_restore(flag);
++	}
++	else {
++		acrn_setup_intr_irq(vhm_intr_handler);
+ 	}
+-	local_irq_save(flag);
+-	x86_platform_ipi_callback = vhm_intr_handler;
+-	local_irq_restore(flag);
+ 
+ 	if (sysfs_create_group(&vhm_device->kobj, &vhm_attr_group)) {
+ 		pr_warn("vhm: sysfs create failed\n");
+@@ -854,6 +861,7 @@ static int __init vhm_init(void)
+ static void __exit vhm_exit(void)
+ {
+ 	tasklet_kill(&vhm_io_req_tasklet);
++	acrn_remove_intr_irq();
+ 	device_destroy(vhm_class, MKDEV(major, 0));
+ 	class_unregister(vhm_class);
+ 	class_destroy(vhm_class);
+-- 
+2.7.4
+

@@ -1,0 +1,30 @@
+From 43b953c7099af06d50eb42f8f0975fde13c3bf42 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Tue, 29 Mar 2016 16:14:01 +0300
+Subject: [PATCH 0292/1132] block: export block_class to be used by class
+ interfaces
+
+Enable access to block devices via class_interface outside
+of the block subsystem.
+
+Change-Id: I6115a9b4655e47ec42e47c9720da8784139557bd
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ block/genhd.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block/genhd.c b/block/genhd.c
+index be5bab2..4c777e1 100644
+--- a/block/genhd.c
++++ b/block/genhd.c
+@@ -1284,6 +1284,7 @@ static void disk_release(struct device *dev)
+ struct class block_class = {
+ 	.name		= "block",
+ };
++EXPORT_SYMBOL_GPL(block_class);
+ 
+ static char *block_devnode(struct device *dev, umode_t *mode,
+ 			   kuid_t *uid, kgid_t *gid)
+-- 
+2.7.4
+

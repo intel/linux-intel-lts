@@ -1,0 +1,65 @@
+From 2c0c0f4fb1c006691210c4f555a64410b2c7eb63 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Tue, 6 Nov 2018 18:59:34 +0000
+Subject: [PATCH 0328/1132] media: intel-ipu4: [VIRT] Fixed warning for "Add
+ multi streaming support on guest OS" patch.
+
+Change-Id: I812a79ecb9f946dbf985d4595f1db42d7630877d
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c | 2 +-
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c   | 1 -
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c          | 4 ++--
+ 3 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+index 0864211..322d8ea 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+@@ -14,8 +14,8 @@
+ #include "intel-ipu4-virtio-be-pipeline.h"
+ #include "./ici/ici-isys-pipeline.h"
+ #include "./ici/ici-isys-pipeline-device.h"
+-#include "intel-ipu4-virtio-be.h"
+ #include "intel-ipu4-virtio-be-request-queue.h"
++#include "intel-ipu4-virtio-be.h"
+ 
+ static struct file *pipeline;
+ static int guestID = -1;
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+index c3257ea..ab06be7 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+@@ -329,7 +329,6 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
+ int process_stream_on(struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct stream_node *sn = NULL;
+-	struct ici_isys_stream *as;
+ 	struct ici_stream_device *strm_dev;
+ 	int err, found;
+ 	struct ipu4_virtio_req *req = req_info->request;
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c
+index 4359d7b..cb642f4 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be.c
+@@ -156,7 +156,7 @@ static void handle_vq_kick(int client_id, int vq_idx)
+ 	if (be == NULL) {
+ 		pr_err("%s: client %d not found!\n",
+ 				__func__, client_id);
+-		return -EINVAL;
++		return;
+ 	}
+ 
+ 	if (!be) {
+@@ -170,7 +170,7 @@ static void handle_vq_kick(int client_id, int vq_idx)
+ 		virtio_vq_getchain(vq, &idx, &iov, 1, NULL);
+ 
+ 		pr_debug("%s: vq index: %d vq buf index: %d req ptr: %lu\n",
+-						__func__, vq_idx, idx, iov.iov_base);
++						__func__, vq_idx, idx, (long unsigned)iov.iov_base);
+ 		/* device specific operations, for example: */
+ 		if (iov.iov_len != sizeof(struct ipu4_virtio_req)) {
+ 			if (iov.iov_len == sizeof(int)) {
+-- 
+2.7.4
+

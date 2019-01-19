@@ -1,0 +1,77 @@
+From 7b5f00ff355b6b40dfb5926e86d8b3e01eea2494 Mon Sep 17 00:00:00 2001
+From: Alice Liu <alice.liu@intel.com>
+Date: Thu, 10 Nov 2016 20:11:59 +0800
+Subject: [PATCH 0329/1132] dwc3 setup highspeed to USB3.0 on bxtp platform
+
+We find USB3.0 dwc3 can't work at superspeed on bxtp platform. We
+setup dwc3 highspeed to enable USB3.0 on bxtp platform.
+
+Change-Id: I48df90c39b652f8e2a48598e9e31947e5d68ca17
+Tracked-On:
+Signed-off-by: xiao jin <jin.xiao@intel.com>
+Signed-off-by: Liu, Alice <alice.liu@intel.com>
+Signed-off-by: Greniger, Jacek <jacekx.greniger@intel.com>
+(cherry picked from commit 4fc6d0494f0d5f21223c5b3f802a116a757c5893)
+---
+ drivers/usb/dwc3/gadget.c | 29 +++++++++++++++++++++++++++--
+ 1 file changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/dwc3/gadget.c b/drivers/usb/dwc3/gadget.c
+index 558949b..8d11461 100644
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -18,6 +18,7 @@
+ #include <linux/io.h>
+ #include <linux/list.h>
+ #include <linux/dma-mapping.h>
++#include <asm/processor.h>
+ 
+ #include <linux/usb/ch9.h>
+ #include <linux/usb/gadget.h>
+@@ -1805,6 +1806,17 @@ static void dwc3_gadget_setup_nump(struct dwc3 *dwc)
+ 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
+ }
+ 
++static inline bool platform_is_bxtp(void)
++{
++#ifdef CONFIG_X86_64
++	if ((boot_cpu_data.x86_model == 0x5c)
++		&& (boot_cpu_data.x86_stepping >= 0x8)
++		&& (boot_cpu_data.x86_stepping <= 0xf))
++		return true;
++#endif
++	return false;
++}
++
+ static int __dwc3_gadget_start(struct dwc3 *dwc)
+ {
+ 	struct dwc3_ep		*dep;
+@@ -2013,10 +2025,23 @@ static void dwc3_gadget_set_speed(struct usb_gadget *g,
+ 			reg |= DWC3_DCFG_HIGHSPEED;
+ 			break;
+ 		case USB_SPEED_SUPER:
+-			reg |= DWC3_DCFG_SUPERSPEED;
++			/*
++			 * WORKAROUND: BXTP platform USB3.0 port SS fail,
++			 * We switch SS to HS to enable USB3.0.
++			 */
++			if (platform_is_bxtp())
++				reg |= DWC3_DCFG_HIGHSPEED;
++			else
++				reg |= DWC3_DCFG_SUPERSPEED;
+ 			break;
+ 		case USB_SPEED_SUPER_PLUS:
+-			if (dwc3_is_usb31(dwc))
++			/*
++			 * WORKAROUND: BXTP platform USB3.0 port SS fail,
++			 * We switch SS to HS to enable USB3.0.
++			 */
++			if (platform_is_bxtp())
++				reg |= DWC3_DCFG_HIGHSPEED;
++			else if (dwc3_is_usb31(dwc))
+ 				reg |= DWC3_DCFG_SUPERSPEED_PLUS;
+ 			else
+ 				reg |= DWC3_DCFG_SUPERSPEED;
+-- 
+2.7.4
+

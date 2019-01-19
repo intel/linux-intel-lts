@@ -1,0 +1,39 @@
+From b494f1a81849d2348fe9816fe5caa0a5bbadabb9 Mon Sep 17 00:00:00 2001
+From: Gustaw Lewandowski <gustaw.lewandowski@intel.com>
+Date: Wed, 17 Oct 2018 12:14:39 +0200
+Subject: [PATCH 0729/1132] ASoC: Intel: Skylake: Fix for lockup in
+ sst_ipc_tx_message_wait
+
+Change-Id: I25540f4255813a4eb83a12a7495c4cb84afcb741
+Signed-off-by: Michal Wasko <michal.wasko@intel.com>
+Signed-off-by: Gustaw Lewandowski <gustaw.lewandowski@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index 0e7b5ce..9f2621d 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -708,8 +708,8 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
+ 
+ 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+ 	msg = skl_ipc_reply_get_msg(ipc, *ipc_header);
++	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+ 	if (msg == NULL) {
+-		spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+ 		dev_dbg(ipc->dev, "ipc: rx list is empty\n");
+ 		return;
+ 	}
+@@ -753,7 +753,7 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
+ 
+ 		}
+ 	}
+-
++	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+ 	sst_ipc_tx_msg_reply_complete(ipc, msg);
+ 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+ }
+-- 
+2.7.4
+

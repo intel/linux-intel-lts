@@ -1,0 +1,172 @@
+From ff8ee2431917f2141cbcf5ac5df271a775834eda Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Fri, 12 Oct 2018 17:29:35 +0800
+Subject: [PATCH 1019/1132] vhm: Add ioctl IC_CLEAR_VM_IOREQ to cleanup VM
+ ioreqs
+
+DM need cleanup all ioreqs of the VM in some situations, such as VM
+reset. This ioctl should be used after VM paused as there is not new
+ioreqs. The call is synchronous waiting for ioreqs(except DM's)
+completed and reset their status in VHM. DM ones pending ioreqs will be
+completed directly without handle.
+
+Tracked-On: PKT-1592
+Tracked-On: projectacrn/acrn-hypervisor#1821
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Zhao, Yakui <yakui.zhao@intel.com>
+Acked-by: Anthony Xu <anthony.xu@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 18 ++++++++++++
+ drivers/vhm/vhm_ioreq.c            | 59 ++++++++++++++++++++++++++++++++------
+ include/linux/vhm/acrn_vhm_ioreq.h |  9 ++++++
+ include/linux/vhm/vhm_ioctl_defs.h |  1 +
+ 4 files changed, 79 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index dbed2df..6970def 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -395,6 +395,24 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
++	case IC_CLEAR_VM_IOREQ: {
++		/*
++		 * TODO: Query VM status with additional hypercall.
++		 * VM should be in paused status.
++		 *
++		 * In SMP SOS, we need flush the current pending ioreq dispatch
++		 * tasklet and finish it before clearing all ioreq of this VM.
++		 * With tasklet_kill, there still be a very rare race which
++		 * might lost one ioreq tasklet for other VMs. So arm one after
++		 * the clearing. It's harmless.
++		 */
++		tasklet_schedule(&vhm_io_req_tasklet);
++		tasklet_kill(&vhm_io_req_tasklet);
++		tasklet_schedule(&vhm_io_req_tasklet);
++		acrn_ioreq_clear_request(vm);
++		break;
++	}
++
+ 	case IC_SET_IRQLINE: {
+ 		ret = hcall_set_irqline(vm->vmid, ioctl_param);
+ 		if (ret < 0) {
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index ff19cc3..1759fd4 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -135,6 +135,14 @@ static inline bool is_range_type(uint32_t type)
+ 	return (type == REQ_MMIO || type == REQ_PORTIO || type == REQ_WP);
+ }
+ 
++static inline bool has_pending_request(struct ioreq_client *client)
++{
++	if (client)
++		return !bitmap_empty(client->ioreqs_map, VHM_REQUEST_MAX);
++	else
++		return false;
++}
++
+ static int alloc_client(void)
+ {
+ 	struct ioreq_client *client;
+@@ -222,6 +230,49 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
+ }
+ EXPORT_SYMBOL_GPL(acrn_ioreq_create_client);
+ 
++void acrn_ioreq_clear_request(struct vhm_vm *vm)
++{
++	struct ioreq_client *client;
++	struct list_head *pos;
++	bool has_pending = false;
++	int retry_cnt = 10;
++	int bit;
++
++	/*
++	 * Now, ioreq clearing only happens when do VM reset. Current
++	 * implementation is waiting all ioreq clients except the DM
++	 * one have no pending ioreqs in 10ms per loop
++	 */
++
++	do {
++		spin_lock(&vm->ioreq_client_lock);
++		list_for_each(pos, &vm->ioreq_client_list) {
++			client = container_of(pos, struct ioreq_client, list);
++			if (vm->ioreq_fallback_client == client->id)
++				continue;
++			has_pending = has_pending_request(client);
++			if (has_pending)
++				break;
++		}
++		spin_unlock(&vm->ioreq_client_lock);
++
++		if (has_pending)
++			schedule_timeout_interruptible(HZ / 100);
++	} while (has_pending && --retry_cnt > 0);
++
++	if (retry_cnt == 0)
++		pr_warn("ioreq client[%d] cannot flush pending request!\n",
++				client->id);
++
++	/* Clear all ioreqs belong to DM. */
++	if (vm->ioreq_fallback_client > 0) {
++		client = clients[vm->ioreq_fallback_client];
++		while ((bit = find_next_bit(client->ioreqs_map,
++				0, VHM_REQUEST_MAX)) ==	VHM_REQUEST_MAX)
++			acrn_ioreq_complete_request(client->id, bit);
++	}
++}
++
+ int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name)
+ {
+ 	struct vhm_vm *vm;
+@@ -437,14 +488,6 @@ static inline bool is_destroying(struct ioreq_client *client)
+ 		return true;
+ }
+ 
+-static inline bool has_pending_request(struct ioreq_client *client)
+-{
+-	if (client)
+-		return !bitmap_empty(client->ioreqs_map, VHM_REQUEST_MAX);
+-	else
+-		return false;
+-}
+-
+ struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
+ {
+ 	struct ioreq_client *client;
+diff --git a/include/linux/vhm/acrn_vhm_ioreq.h b/include/linux/vhm/acrn_vhm_ioreq.h
+index 52b3ac8..5b32f15 100644
+--- a/include/linux/vhm/acrn_vhm_ioreq.h
++++ b/include/linux/vhm/acrn_vhm_ioreq.h
+@@ -161,6 +161,15 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm);
+ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu);
+ 
+ /**
++ * acrn_ioreq_clear_request - clear all guest requests
++ *
++ * @vm: pointer to guest VM
++ *
++ * Return:
++ */
++void acrn_ioreq_clear_request(struct vhm_vm *vm);
++
++/**
+  * acrn_ioreq_intercept_bdf - set intercept bdf info of ioreq client
+  *
+  * @client_id: client id to identify ioreq client
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 19ebf54..a98b003 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -88,6 +88,7 @@
+ #define IC_CREATE_IOREQ_CLIENT          _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x02)
+ #define IC_ATTACH_IOREQ_CLIENT          _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x03)
+ #define IC_DESTROY_IOREQ_CLIENT         _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x04)
++#define IC_CLEAR_VM_IOREQ               _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x05)
+ 
+ /* Guest memory management */
+ #define IC_ID_MEM_BASE                  0x40UL
+-- 
+2.7.4
+

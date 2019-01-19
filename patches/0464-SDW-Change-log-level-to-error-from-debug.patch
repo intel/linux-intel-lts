@@ -1,0 +1,31 @@
+From fa69bc0222b6e6b60bec8426610644131725c9ea Mon Sep 17 00:00:00 2001
+From: Hardik Shah <hardik.t.shah@intel.com>
+Date: Fri, 29 Apr 2016 14:59:48 +0530
+Subject: [PATCH 0464/1132] SDW: Change log level to error from debug.
+
+For any errors, log level should be error.
+By mistake it was debug.
+
+Change-Id: I81d55a2efaae172329515f6e000bbed3063400ef
+Signed-off-by: Hardik Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+---
+ drivers/sdw/sdw.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/sdw/sdw.c b/drivers/sdw/sdw.c
+index 5f4aea0..78c8cfd 100644
+--- a/drivers/sdw/sdw.c
++++ b/drivers/sdw/sdw.c
+@@ -1844,7 +1844,7 @@ int sdw_config_stream(struct sdw_master *mstr,
+ 		}
+ 	}
+ 	if (!sdw_rt) {
+-		dev_dbg(&mstr->dev, "Valid stream tag not found\n");
++		dev_err(&mstr->dev, "Valid stream tag not found\n");
+ 		ret = -EINVAL;
+ 		goto out;
+ 	}
+-- 
+2.7.4
+

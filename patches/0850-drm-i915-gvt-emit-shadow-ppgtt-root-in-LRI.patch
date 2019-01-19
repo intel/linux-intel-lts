@@ -1,0 +1,95 @@
+From acec48602faf319c96535845deb7b8830dcb45eb Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 14 Sep 2018 16:10:17 +0800
+Subject: [PATCH 0850/1132] drm/i915/gvt: emit shadow ppgtt root in LRI
+
+Usually the PDP/PML4 root poiners should be updated through the context,
+however, on BXT, we found that sometimes the PDP/PML4 root pointers will
+be reverted back to an old value, which causes GPU hang. The reason is
+still unclear, but by adding LRI command in the ring buffer, we are able
+to update the PDP/PML4 root pointers successfully.
+So far we will treat this patch as a workaround, unless we figure out
+why the PDP/PML4 root pointers was reverted back.
+
+Change-Id: Id65f7621ed9d45073f220fd2d91112558e7820d9
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/cmd_parser.c | 27 +++++++++++++++++++++++++++
+ drivers/gpu/drm/i915/gvt/cmd_parser.h |  1 +
+ drivers/gpu/drm/i915/gvt/scheduler.c  |  8 ++++++++
+ 3 files changed, 36 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gvt/cmd_parser.c b/drivers/gpu/drm/i915/gvt/cmd_parser.c
+index a614db3..95244b2 100644
+--- a/drivers/gpu/drm/i915/gvt/cmd_parser.c
++++ b/drivers/gpu/drm/i915/gvt/cmd_parser.c
+@@ -2710,6 +2710,33 @@ static int scan_wa_ctx(struct intel_shadow_wa_ctx *wa_ctx)
+ 	return ret;
+ }
+ 
++#define GEN8_PDPES    4
++int gvt_emit_pdps(struct intel_vgpu_workload *workload)
++{
++	const int num_cmds = GEN8_PDPES * 2;
++	struct i915_request *req = workload->req;
++	struct intel_engine_cs *engine = req->engine;
++	u32 *cs;
++	u32 *pdps = (u32 *)(workload->shadow_mm->ppgtt_mm.shadow_pdps);
++	int i;
++
++	cs = intel_ring_begin(req, num_cmds * 2 + 2);
++	if (IS_ERR(cs))
++		return PTR_ERR(cs);
++
++	*cs++ = MI_LOAD_REGISTER_IMM(num_cmds);
++	for (i = 0; i < GEN8_PDPES; i++) {
++		*cs++ = i915_mmio_reg_offset(GEN8_RING_PDP_LDW(engine, i));
++		*cs++ = pdps[i * 2];
++		*cs++ = i915_mmio_reg_offset(GEN8_RING_PDP_UDW(engine, i));
++		*cs++ = pdps[i * 2 + 1];
++	}
++	*cs++ = MI_NOOP;
++	intel_ring_advance(req, cs);
++
++	return 0;
++}
++
+ static int shadow_workload_ring_buffer(struct intel_vgpu_workload *workload)
+ {
+ 	struct intel_vgpu *vgpu = workload->vgpu;
+diff --git a/drivers/gpu/drm/i915/gvt/cmd_parser.h b/drivers/gpu/drm/i915/gvt/cmd_parser.h
+index 2867036..1356803 100644
+--- a/drivers/gpu/drm/i915/gvt/cmd_parser.h
++++ b/drivers/gpu/drm/i915/gvt/cmd_parser.h
+@@ -46,4 +46,5 @@ int intel_gvt_scan_and_shadow_ringbuffer(struct intel_vgpu_workload *workload);
+ 
+ int intel_gvt_scan_and_shadow_wa_ctx(struct intel_shadow_wa_ctx *wa_ctx);
+ 
++int gvt_emit_pdps(struct intel_vgpu_workload *workload);
+ #endif
+diff --git a/drivers/gpu/drm/i915/gvt/scheduler.c b/drivers/gpu/drm/i915/gvt/scheduler.c
+index 9d8f0bf..7243324 100644
+--- a/drivers/gpu/drm/i915/gvt/scheduler.c
++++ b/drivers/gpu/drm/i915/gvt/scheduler.c
+@@ -619,6 +619,14 @@ static int prepare_workload(struct intel_vgpu_workload *workload)
+ 		goto err_unpin_mm;
+ 	}
+ 
++	/* we consider this as an workaround to avoid the situation that
++	 * PDP's not updated, and right now we only limit it to BXT platform
++	 * since it's not reported on the other platforms
++	 */
++	if (IS_BROXTON(vgpu->gvt->dev_priv)) {
++		gvt_emit_pdps(workload);
++	}
++
+ 	ret = copy_workload_to_ring_buffer(workload);
+ 	if (ret) {
+ 		gvt_vgpu_err("fail to generate request\n");
+-- 
+2.7.4
+

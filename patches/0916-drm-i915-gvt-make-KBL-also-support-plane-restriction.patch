@@ -1,0 +1,34 @@
+From d51a89c4676367a5649eed6d64ab511b5d26ba80 Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Tue, 26 Jun 2018 08:49:50 +0800
+Subject: [PATCH 0916/1132] drm/i915/gvt: make KBL also support plane
+ restriction feature
+
+previously plane restriction feature was for APL only, we need extend
+this feature to KBL also.
+
+Change-Id: I192ad3419b96bc34702189fc9c6a3b463ae50061
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+Reviewed-by: Min He <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/intel_display.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 50f3784..46513ac 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -15397,8 +15397,8 @@ static void intel_update_fdi_pll_freq(struct drm_i915_private *dev_priv)
+ 
+ static int intel_sanitize_plane_restriction(struct drm_i915_private *dev_priv)
+ {
+-	/*plane restriction feature is only for APL for now*/
+-	if (!IS_BROXTON(dev_priv)) {
++	/*plane restriction feature is only for APL and KBL for now*/
++	if (!(IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv))) {
+ 		i915_modparams.avail_planes_per_pipe = 0;
+ 		DRM_INFO("Turning off Plane Restrictions feature\n");
+ 	}
+-- 
+2.7.4
+

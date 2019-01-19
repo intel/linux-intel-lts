@@ -1,0 +1,43 @@
+From 70da12af0615a0cb0b0d2409f61143fc51b4b987 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Fri, 28 Sep 2018 23:27:48 +0300
+Subject: [PATCH 0397/1132] mei: replace POLL* with EPOLL* for write queues.
+
+Looks like during merging the bulk POLL* -> EPOLL* replacement
+missed the patch
+'commit af336cabe083 ("mei: limit the number of queued writes")'
+
+Fix sparse warning:
+drivers/misc/mei/main.c:602:13: warning: restricted __poll_t degrades to integer
+drivers/misc/mei/main.c:605:30: warning: invalid assignment: |=
+drivers/misc/mei/main.c:605:30:    left side has type restricted __poll_t
+drivers/misc/mei/main.c:605:30:    right side has type int
+
+Fixes: af336cabe083 ("mei: limit the number of queued writes")
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+(cherry picked from commit 03b2cbb6ea3c73e08fcf72d9ef8e286c4dcbd1fe)
+---
+ drivers/misc/mei/main.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mei/main.c b/drivers/misc/mei/main.c
+index 4d77a6a..87281b3 100644
+--- a/drivers/misc/mei/main.c
++++ b/drivers/misc/mei/main.c
+@@ -599,10 +599,10 @@ static __poll_t mei_poll(struct file *file, poll_table *wait)
+ 			mei_cl_read_start(cl, mei_cl_mtu(cl), file);
+ 	}
+ 
+-	if (req_events & (POLLOUT | POLLWRNORM)) {
++	if (req_events & (EPOLLOUT | EPOLLWRNORM)) {
+ 		poll_wait(file, &cl->tx_wait, wait);
+ 		if (cl->tx_cb_queued < dev->tx_queue_limit)
+-			mask |= POLLOUT | POLLWRNORM;
++			mask |= EPOLLOUT | EPOLLWRNORM;
+ 	}
+ 
+ out:
+-- 
+2.7.4
+

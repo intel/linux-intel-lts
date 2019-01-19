@@ -1,0 +1,88 @@
+From 541319690c6506d48da7a80c879dc8407fa5ff4d Mon Sep 17 00:00:00 2001
+From: Hardik T Shah <hardik.t.shah@intel.com>
+Date: Tue, 6 Dec 2016 15:22:43 +0530
+Subject: [PATCH 0574/1132] ASoC: Intel: Skylake: Set DUM bit in EM2 register
+
+HW recommends that we set DUM bit so that DPIB write request
+will occur every frame regardless whether DPIB has changed or not.
+
+Change-Id: I84933645bef2a22ce4758b29e6f618f2ac37a8e9
+Signed-off-by: Senthilnathan Veppur <senthilnathanx.veppur@intel.com>
+Signed-off-by: Dharageswari R <dharageswari.r@intel.com>
+Signed-off-by: GuruprasadX Pawse <guruprasadx.pawse@intel.com>
+Signed-off-by: Hardik T Shah <hardik.t.shah@intel.com>
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Sangaraju, KarthikeyaX <karthikeyax.sangaraju@intel.com>
+Reviewed-on:
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 29 +++++++++++++++++++++++++++++
+ sound/soc/intel/skylake/skl.h |  1 +
+ 2 files changed, 30 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 251fa4f..d47a0f0 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -201,6 +201,33 @@ static void skl_get_total_bytes_transferred(struct hdac_stream *hstr)
+ 	hstr->curr_pos += no_of_bytes;
+ }
+ 
++/*
++ * skl_dum_set - Set the DUM bit in EM2 register to fix the IP bug
++ * of incorrect postion reporting for capture stream.
++ */
++static void skl_dum_set(struct hdac_ext_bus *ebus)
++{
++	struct hdac_bus *bus = ebus_to_hbus(ebus);
++	u32 reg;
++	u8 val;
++
++	/*
++	 * For the DUM bit to be set, CRST needs to be out of reset state
++	 */
++	val = snd_hdac_chip_readb(bus, GCTL) & AZX_GCTL_RESET;
++	if (!val) {
++		skl_enable_miscbdcge(bus->dev, false);
++		snd_hdac_bus_exit_link_reset(bus);
++		skl_enable_miscbdcge(bus->dev, true);
++	}
++	/*
++	 * Set the DUM bit in EM2 register to fix the IP bug of incorrect
++	 * postion reporting for capture stream.
++	 */
++	reg  = snd_hdac_chip_readl(bus, VS_EM2);
++	snd_hdac_chip_writel(bus, VS_EM2, (reg | AZX_EM2_DUM_MASK));
++}
++
+ /* called from IRQ */
+ static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
+ {
+@@ -927,6 +954,8 @@ static int skl_first_init(struct hdac_bus *bus)
+ 	/* initialize chip */
+ 	skl_init_pci(skl);
+ 
++	skl_dum_set(ebus);
++
+ 	return skl_init_chip(bus, true);
+ }
+ 
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 2bafc7d..10a414d 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -44,6 +44,7 @@
+ #define DMA_CLK_CONTROLS	1
+ #define DMA_TRANSMITION_START	2
+ #define DMA_TRANSMITION_STOP	3
++#define AZX_EM2_DUM_MASK		(1 << 23)
+ 
+ #define AZX_REG_VS_EM2_L1SEN		BIT(13)
+ 
+-- 
+2.7.4
+

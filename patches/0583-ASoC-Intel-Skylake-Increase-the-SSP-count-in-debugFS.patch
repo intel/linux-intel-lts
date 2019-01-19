@@ -1,0 +1,36 @@
+From 29235a501035f01c9537b4d5e692166de64764e1 Mon Sep 17 00:00:00 2001
+From: Ramesh Babu <ramesh.babu@intel.com>
+Date: Fri, 9 Oct 2015 01:31:44 +0530
+Subject: [PATCH 0583/1132] ASoC: Intel: Skylake: Increase the SSP count in
+ debugFS
+
+Some of Broxton SKUs has 6 SSP ports, hence
+support them in debugFS.
+
+Change-Id: I0b8fdf9feed0a4484789f750134d7734e805e5bc
+Signed-off-by: Ramesh Babu <ramesh.babu@intel.com>
+Reviewed-on:
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl-debug.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index 6dc4ef3..07b3309 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -29,7 +29,7 @@
+ #define MOD_BUF (2 * PAGE_SIZE)
+ #define FW_REG_BUF	PAGE_SIZE
+ #define FW_REG_SIZE	0x60
+-#define MAX_SSP 	4
++#define MAX_SSP 	6
+ #define MAX_SZ 1025
+ #define IPC_MOD_LARGE_CONFIG_GET 3
+ #define IPC_MOD_LARGE_CONFIG_SET 4
+-- 
+2.7.4
+

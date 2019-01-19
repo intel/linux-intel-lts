@@ -1,0 +1,48 @@
+From f45f2e684f25853bf3170c20dd865fa5eed1e220 Mon Sep 17 00:00:00 2001
+From: Casey Schaufler <casey.schaufler@intel.com>
+Date: Fri, 7 Sep 2018 12:21:46 -0700
+Subject: [PATCH 0367/1132] LSM: Fix secid initialization in security.h
+
+The secid initialization for the case where security
+modules are disabled uses a non-existent field.
+Correct the code to use a field that exists.
+
+Signed-off-by: Casey Schaufler <casey.schaufler@intel.com>
+---
+ include/linux/security.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/security.h b/include/linux/security.h
+index 35f08a8..5324f52 100644
+--- a/include/linux/security.h
++++ b/include/linux/security.h
+@@ -875,7 +875,7 @@ static inline int security_inode_listsecurity(struct inode *inode, char *buffer,
+ static inline void security_inode_getsecid(struct inode *inode,
+ 					   struct secids *secid)
+ {
+-	secid->secmark = 0;
++	secid->common = 0;
+ }
+ 
+ static inline int security_inode_copy_up(struct dentry *src, struct cred **new)
+@@ -1047,7 +1047,7 @@ static inline int security_task_getsid(struct task_struct *p)
+ static inline void security_task_getsecid(struct task_struct *p,
+ 					  struct secids *secid)
+ {
+-	secid->secmark = 0;
++	secid->common = 0;
+ }
+ 
+ static inline int security_task_setnice(struct task_struct *p, int nice)
+@@ -1122,7 +1122,7 @@ static inline int security_ipc_permission(struct kern_ipc_perm *ipcp,
+ static inline void security_ipc_getsecid(struct kern_ipc_perm *ipcp,
+ 					 struct secids *secid)
+ {
+-	secid->secmark = 0;
++	secid->common = 0;
+ }
+ 
+ static inline int security_msg_msg_alloc(struct msg_msg *msg)
+-- 
+2.7.4
+

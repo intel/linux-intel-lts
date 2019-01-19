@@ -1,0 +1,253 @@
+From 4d4da128dba2767dcdcf15907e28e047ef786730 Mon Sep 17 00:00:00 2001
+From: "Kareem,Shaik" <kareem.m.shaik@intel.com>
+Date: Thu, 15 Jun 2017 13:40:04 +0530
+Subject: [PATCH 0614/1132] ASoC: Intel: Skylake: Add support for always on CLK
+ configuration
+
+For some platforms it is required that ADSP generate BCLK, Frame_sync
+and MCLK regardless of whether audio stream is active or not. Clock
+generation is controlled by ADSP Firmware, so driver can configure that
+by sending DMA control IPC. The configuration for clock is prepared
+using DMA control manifest data.
+
+This patch prepares DMA control IPC by extracting specific ACPI NHLT
+blob using DMA control manifest data and appending Firmware gateway
+configuration to NHLT blob. Firmware Gateway configuration is available
+in DMA control manifest data.
+
+Finally DMA control IPC is sent to ADSP after firmware download is
+completed and ADSP enters D0 state.
+
+Change-Id: I65b090931c5ccaf1189c700975a1da6a772a44d8
+Signed-off-by: Kareem,Shaik <kareem.m.shaik@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c | 92 ++++++++++++++++++++++++++++++++++
+ sound/soc/intel/skylake/skl-nhlt.c     | 20 ++++++++
+ sound/soc/intel/skylake/skl-pcm.c      |  4 ++
+ sound/soc/intel/skylake/skl-topology.c | 11 ++--
+ sound/soc/intel/skylake/skl-topology.h |  1 +
+ sound/soc/intel/skylake/skl.h          |  3 ++
+ 6 files changed, 123 insertions(+), 8 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index b52f1c0..1fd9a3a 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -1169,6 +1169,10 @@ int skl_init_dsp(struct skl *skl)
+ 
+ 	dev_dbg(bus->dev, "dsp registration status=%d\n", ret);
+ 
++	/* Set DMA clock controls */
++	ret = skl_dsp_set_dma_clk_controls(skl->skl_sst);
++	if (ret < 0)
++		return ret;
+ 	return 0;
+ 
+ free_core_state:
+@@ -1291,6 +1295,9 @@ int skl_resume_dsp(struct skl *skl)
+ 					skl->cfg.astate_cfg);
+ 	}
+ 	return ret;
++
++	/* Set DMA clock controls */
++	return skl_dsp_set_dma_clk_controls(skl->skl_sst);
+ }
+ 
+ enum skl_bitdepth skl_get_bit_depth(int params)
+@@ -1544,10 +1551,95 @@ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
+ 	err = skl_ipc_set_large_config(&ctx->ipc, &msg, (u32 *)dma_ctrl);
+ 
+ 	kfree(dma_ctrl);
++
+ 	return err;
+ }
+ EXPORT_SYMBOL_GPL(skl_dsp_set_dma_control);
+ 
++static u32 skl_prepare_i2s_node_id(u32 instance, u8 dev_type,
++				u32 dir, u32 time_slot)
++{
++	union skl_connector_node_id node_id = {0};
++	union skl_ssp_dma_node ssp_node  = {0};
++
++	node_id.node.dma_type = (dir == SNDRV_PCM_STREAM_PLAYBACK) ?
++					SKL_DMA_I2S_LINK_OUTPUT_CLASS :
++					SKL_DMA_I2S_LINK_INPUT_CLASS;
++	ssp_node.dma_node.time_slot_index = time_slot;
++	ssp_node.dma_node.i2s_instance = instance;
++	node_id.node.vindex = ssp_node.val;
++
++	return node_id.val;
++}
++
++int skl_dsp_set_dma_clk_controls(struct skl_sst *ctx)
++{
++	struct nhlt_specific_cfg *cfg = NULL;
++	struct skl *skl = get_skl_ctx(ctx->dev);
++	struct skl_dmactrl_config *dmactrl_cfg = &skl->cfg.dmactrl_cfg;
++	struct skl_dmctrl_hdr *hdr;
++	u8 *dma_ctrl_config;
++	void *i2s_config = NULL;
++	u32 i2s_config_size, node_id;
++	int i, ret = 0;
++
++	if (!skl->cfg.dmactrl_cfg.size)
++		return 0;
++
++	for (i = 0; i < SKL_MAX_DMACTRL; i++) {
++		hdr = &dmactrl_cfg->hdr[i];
++
++		/* get nhlt specific config info */
++		cfg = skl_get_nhlt_specific_cfg(skl, hdr->vbus_id,
++					NHLT_LINK_SSP, hdr->fmt,
++					hdr->ch, hdr->freq,
++					hdr->direction, NHLT_DEVICE_I2S);
++
++		if (cfg && hdr->data_size) {
++			print_hex_dump(KERN_DEBUG, "NHLT blob Info:",
++					DUMP_PREFIX_OFFSET, 8, 4,
++					cfg->caps, cfg->size, false);
++
++			i2s_config_size = cfg->size + hdr->data_size;
++			i2s_config = kzalloc(i2s_config_size, GFP_KERNEL);
++			if (!i2s_config)
++				return -ENOMEM;
++
++			/* copy blob */
++			memcpy(i2s_config, cfg->caps, cfg->size);
++
++			/* copy additional dma controls informatioin */
++			dma_ctrl_config = (u8 *)i2s_config + cfg->size;
++			memcpy(dma_ctrl_config, hdr->data, hdr->data_size);
++
++			print_hex_dump(KERN_DEBUG, "Blob + DMA Control Info:",
++					DUMP_PREFIX_OFFSET, 8, 4,
++					i2s_config, i2s_config_size, false);
++
++			/* get node id */
++			node_id = skl_prepare_i2s_node_id(hdr->vbus_id,
++							SKL_DEVICE_I2S,
++							hdr->direction,
++							hdr->tdm_slot);
++
++			ret = skl_dsp_set_dma_control(ctx, (u32 *)i2s_config,
++							i2s_config_size, node_id);
++
++			kfree(i2s_config);
++
++			if (ret < 0)
++				return ret;
++
++		} else {
++			dev_err(ctx->dev, "Failed to get NHLT config: vbusi_id=%d ch=%d fmt=%d s_rate=%d\n",
++				hdr->vbus_id, hdr->ch, hdr->fmt, hdr->freq);
++			return -EIO;
++		}
++	}
++
++	return 0;
++}
++
+ static void skl_setup_out_format(struct skl_sst *ctx,
+ 			struct skl_module_cfg *mconfig,
+ 			struct skl_audio_data_format *out_fmt)
+diff --git a/sound/soc/intel/skylake/skl-nhlt.c b/sound/soc/intel/skylake/skl-nhlt.c
+index cf3d381..742b0cb 100644
+--- a/sound/soc/intel/skylake/skl-nhlt.c
++++ b/sound/soc/intel/skylake/skl-nhlt.c
+@@ -149,6 +149,26 @@ static bool skl_check_ep_match(struct device *dev, struct nhlt_endpoint *epnt,
+ 	return false;
+ }
+ 
++struct nhlt_specific_cfg *
++skl_get_nhlt_specific_cfg(struct skl *skl, u32 instance, u8 link_type,
++		u8 s_fmt, u8 num_ch, u32 s_rate, u8 dir, u8 dev_type)
++{
++	struct nhlt_specific_cfg *cfg = NULL;
++	struct hdac_ext_bus *ebus = &skl->ebus;
++
++	/* update the blob based on virtual bus_id*/
++	if (!skl->nhlt_override) {
++		dev_warn(ebus_to_hbus(ebus)->dev, "Querying NHLT blob from ACPI NHLT table !!\n");
++		cfg = skl_get_ep_blob(skl, instance, link_type, s_fmt,
++				num_ch, s_rate, dir, dev_type);
++	} else {
++		dev_warn(ebus_to_hbus(ebus)->dev, "Querying NHLT blob from Debugfs!!\n");
++		cfg = skl_nhlt_get_debugfs_blob(skl->debugfs, link_type, instance, dir);
++	}
++
++	return cfg;
++}
++
+ struct nhlt_specific_cfg
+ *skl_get_ep_blob(struct skl *skl, u32 instance, u8 link_type,
+ 			u8 s_fmt, u8 num_ch, u32 s_rate,
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 1a722d2..7fda668 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1845,6 +1845,10 @@ static int skl_platform_soc_probe(struct snd_soc_component *component)
+ 			dev_err(component->dev, "Failed to boot first fw: %d\n", ret);
+ 			return ret;
+ 		}
++
++		/* Set DMA clock controls */
++		skl_dsp_set_dma_clk_controls(skl->skl_sst);
++
+ 		skl_populate_modules(skl);
+ 		skl->skl_sst->update_d0i3c = skl_update_d0i3c;
+ 		skl_dsp_enable_notification(skl->skl_sst, false);
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 87f204b..351897b 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -2548,18 +2548,13 @@ static int skl_tplg_be_fill_pipe_params(struct snd_soc_dai *dai,
+ 		mconfig->formats_config.caps = (u32 *) sdw_cfg;
+ 		return 0;
+ 	}
++
+ 	/* update the blob based on virtual bus_id*/
+-	if (!skl->nhlt_override) {
+-		cfg = skl_get_ep_blob(skl, mconfig->vbus_id, link_type,
++	cfg = skl_get_nhlt_specific_cfg(skl, mconfig->vbus_id, link_type,
+ 					params->s_fmt, params->ch,
+ 					params->s_freq, params->stream,
+ 					dev_type);
+-	} else {
+-		dev_warn(dai->dev, "Querying NHLT blob from Debugfs!!!!\n");
+-		cfg = skl_nhlt_get_debugfs_blob(skl->debugfs,
+-					link_type, mconfig->vbus_id,
+-					params->stream);
+-	}
++
+ 	if (cfg) {
+ 		mconfig->formats_config.caps_size = cfg->size;
+ 		mconfig->formats_config.caps = (u32 *) &cfg->caps;
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 07d041f..8dbe73e 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -530,6 +530,7 @@ struct fw_ipc_data {
+ 
+ int skl_tplg_be_update_params(struct snd_soc_dai *dai,
+ 	struct skl_pipe_params *params);
++int skl_dsp_set_dma_clk_controls(struct skl_sst *ctx);
+ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
+ 			u32 caps_size, u32 node_id);
+ void skl_tplg_set_be_dmic_config(struct snd_soc_dai *dai,
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 51cc193..318b3c5 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -172,6 +172,9 @@ void skl_nhlt_free(struct nhlt_acpi_table *addr);
+ struct nhlt_specific_cfg *skl_get_ep_blob(struct skl *skl, u32 instance,
+ 					u8 link_type, u8 s_fmt, u8 no_ch,
+ 					u32 s_rate, u8 dirn, u8 dev_type);
++struct nhlt_specific_cfg *
++skl_get_nhlt_specific_cfg(struct skl *skl, u32 instance, u8 link_type,
++		u8 s_fmt, u8 num_ch, u32 s_rate, u8 dir, u8 dev_type);
+ 
+ int skl_get_dmic_geo(struct skl *skl);
+ int skl_nhlt_update_topology_bin(struct skl *skl);
+-- 
+2.7.4
+

@@ -1,0 +1,153 @@
+From 648a0e5bd18bcb4924b6b868ae9391f86bef44dd Mon Sep 17 00:00:00 2001
+From: Tadeusz Struk <tadeusz.struk@intel.com>
+Date: Mon, 10 Sep 2018 10:18:28 -0700
+Subject: [PATCH 0371/1132] tpm: add ptr to the tpm_space struct to file_priv
+
+Add a ptr to struct tpm_space to the file_priv and consolidate
+of the write operations for the two interfaces.
+
+Signed-off-by: Tadeusz Struk <tadeusz.struk@intel.com>
+Tested-by: Philip Tricca <philip.b.tricca@intel.com>
+Reviewed-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+Signed-off--by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+---
+ drivers/char/tpm/tpm-dev-common.c |  8 +++++---
+ drivers/char/tpm/tpm-dev.c        | 10 ++--------
+ drivers/char/tpm/tpm-dev.h        |  5 +++--
+ drivers/char/tpm/tpmrm-dev.c      | 14 ++------------
+ 4 files changed, 12 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-dev-common.c b/drivers/char/tpm/tpm-dev-common.c
+index e4a04b2..f0c033b 100644
+--- a/drivers/char/tpm/tpm-dev-common.c
++++ b/drivers/char/tpm/tpm-dev-common.c
+@@ -43,9 +43,11 @@ static void timeout_work(struct work_struct *work)
+ }
+ 
+ void tpm_common_open(struct file *file, struct tpm_chip *chip,
+-		     struct file_priv *priv)
++		     struct file_priv *priv, struct tpm_space *space)
+ {
+ 	priv->chip = chip;
++	priv->space = space;
++
+ 	mutex_init(&priv->buffer_mutex);
+ 	timer_setup(&priv->user_read_timer, user_reader_timeout, 0);
+ 	INIT_WORK(&priv->work, timeout_work);
+@@ -79,7 +81,7 @@ ssize_t tpm_common_read(struct file *file, char __user *buf,
+ }
+ 
+ ssize_t tpm_common_write(struct file *file, const char __user *buf,
+-			 size_t size, loff_t *off, struct tpm_space *space)
++			 size_t size, loff_t *off)
+ {
+ 	struct file_priv *priv = file->private_data;
+ 	size_t in_size = size;
+@@ -119,7 +121,7 @@ ssize_t tpm_common_write(struct file *file, const char __user *buf,
+ 		mutex_unlock(&priv->buffer_mutex);
+ 		return -EPIPE;
+ 	}
+-	out_size = tpm_transmit(priv->chip, space, priv->data_buffer,
++	out_size = tpm_transmit(priv->chip, priv->space, priv->data_buffer,
+ 				sizeof(priv->data_buffer), 0);
+ 
+ 	tpm_put_ops(priv->chip);
+diff --git a/drivers/char/tpm/tpm-dev.c b/drivers/char/tpm/tpm-dev.c
+index ebd74ab..98b9630 100644
+--- a/drivers/char/tpm/tpm-dev.c
++++ b/drivers/char/tpm/tpm-dev.c
+@@ -39,7 +39,7 @@ static int tpm_open(struct inode *inode, struct file *file)
+ 	if (priv == NULL)
+ 		goto out;
+ 
+-	tpm_common_open(file, chip, priv);
++	tpm_common_open(file, chip, priv, NULL);
+ 
+ 	return 0;
+ 
+@@ -48,12 +48,6 @@ static int tpm_open(struct inode *inode, struct file *file)
+ 	return -ENOMEM;
+ }
+ 
+-static ssize_t tpm_write(struct file *file, const char __user *buf,
+-			 size_t size, loff_t *off)
+-{
+-	return tpm_common_write(file, buf, size, off, NULL);
+-}
+-
+ /*
+  * Called on file close
+  */
+@@ -73,6 +67,6 @@ const struct file_operations tpm_fops = {
+ 	.llseek = no_llseek,
+ 	.open = tpm_open,
+ 	.read = tpm_common_read,
+-	.write = tpm_write,
++	.write = tpm_common_write,
+ 	.release = tpm_release,
+ };
+diff --git a/drivers/char/tpm/tpm-dev.h b/drivers/char/tpm/tpm-dev.h
+index b24cfb4..4048677 100644
+--- a/drivers/char/tpm/tpm-dev.h
++++ b/drivers/char/tpm/tpm-dev.h
+@@ -6,6 +6,7 @@
+ 
+ struct file_priv {
+ 	struct tpm_chip *chip;
++	struct tpm_space *space;
+ 
+ 	/* Data passed to and from the tpm via the read/write calls */
+ 	size_t data_pending;
+@@ -18,11 +19,11 @@ struct file_priv {
+ };
+ 
+ void tpm_common_open(struct file *file, struct tpm_chip *chip,
+-		     struct file_priv *priv);
++		     struct file_priv *priv, struct tpm_space *space);
+ ssize_t tpm_common_read(struct file *file, char __user *buf,
+ 			size_t size, loff_t *off);
+ ssize_t tpm_common_write(struct file *file, const char __user *buf,
+-			 size_t size, loff_t *off, struct tpm_space *space);
++			 size_t size, loff_t *off);
+ void tpm_common_release(struct file *file, struct file_priv *priv);
+ 
+ #endif
+diff --git a/drivers/char/tpm/tpmrm-dev.c b/drivers/char/tpm/tpmrm-dev.c
+index 1a0e97a..96006c6 100644
+--- a/drivers/char/tpm/tpmrm-dev.c
++++ b/drivers/char/tpm/tpmrm-dev.c
+@@ -28,7 +28,7 @@ static int tpmrm_open(struct inode *inode, struct file *file)
+ 		return -ENOMEM;
+ 	}
+ 
+-	tpm_common_open(file, chip, &priv->priv);
++	tpm_common_open(file, chip, &priv->priv, &priv->space);
+ 
+ 	return 0;
+ }
+@@ -45,21 +45,11 @@ static int tpmrm_release(struct inode *inode, struct file *file)
+ 	return 0;
+ }
+ 
+-static ssize_t tpmrm_write(struct file *file, const char __user *buf,
+-		   size_t size, loff_t *off)
+-{
+-	struct file_priv *fpriv = file->private_data;
+-	struct tpmrm_priv *priv = container_of(fpriv, struct tpmrm_priv, priv);
+-
+-	return tpm_common_write(file, buf, size, off, &priv->space);
+-}
+-
+ const struct file_operations tpmrm_fops = {
+ 	.owner = THIS_MODULE,
+ 	.llseek = no_llseek,
+ 	.open = tpmrm_open,
+ 	.read = tpm_common_read,
+-	.write = tpmrm_write,
++	.write = tpm_common_write,
+ 	.release = tpmrm_release,
+ };
+-
+-- 
+2.7.4
+

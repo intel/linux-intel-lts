@@ -1,0 +1,52 @@
+From f9095f02c765f758ea461a807014302c3d8485b4 Mon Sep 17 00:00:00 2001
+From: Zhang Yanmin <yanmin.zhang@intel.com>
+Date: Thu, 12 Apr 2018 17:05:23 +0530
+Subject: [PATCH 0687/1132] ASoC: Intel: Disable dsp core in skl_shutdown
+
+skl_shutdown requires to put dsp cores quiescent else leads
+to the issue when PMC timeout while waiting for IP SIDE_POK_STS
+and PRIM_POK_STS deassertions
+
+Change-Id: I6c654e5afeb9267b0887a70722fce9f4afa8a1d9
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Signed-off-by: Zhang Yanmin <yanmin.zhang@intel.com>
+Reviewed-on:
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Periyasamy, SriramX <sriramx.periyasamy@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/hda/ext/hdac_ext_stream.c | 1 -
+ sound/soc/intel/skylake/skl.c   | 2 ++
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sound/hda/ext/hdac_ext_stream.c b/sound/hda/ext/hdac_ext_stream.c
+index 0ede36f..492f858 100644
+--- a/sound/hda/ext/hdac_ext_stream.c
++++ b/sound/hda/ext/hdac_ext_stream.c
+@@ -489,7 +489,6 @@ void snd_hdac_ext_stop_streams(struct hdac_bus *bus)
+ 	if (bus->chip_init) {
+ 		list_for_each_entry(stream, &bus->stream_list, list)
+ 			snd_hdac_stream_stop(stream);
+-		snd_hdac_bus_stop_chip(bus);
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(snd_hdac_ext_stop_streams);
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index cd24989..94f5ced 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1110,6 +1110,8 @@ static void skl_shutdown(struct pci_dev *pci)
+ 		return;
+ 
+ 	snd_hdac_ext_stop_streams(bus);
++	snd_hdac_ext_bus_link_power_down_all(bus);
++	skl_dsp_sleep(skl->skl_sst->dsp);
+ 	/* While doing the warm reboot testing, some times dsp core is on
+ 	 * when system goes to shutdown. When cores.usage_count is
+ 	 * equal to zero then driver puts the dsp core to zero. On few
+-- 
+2.7.4
+

@@ -1,0 +1,211 @@
+From c4c6d3e9776db9beff421ec49759d56f2cd246ee Mon Sep 17 00:00:00 2001
+From: Zhipeng Gong <zhipeng.gong@intel.com>
+Date: Tue, 8 Jan 2019 10:55:55 +0800
+Subject: [PATCH 1120/1132] drm/i915/gvt: allocate memory for vreg mmio during
+ boot time
+
+vreg mmio needs 2M contiguous pages. sometimes it fails to allocate
+2M pages when system memory is too fragmented, as a result GVT fails
+to create a vgpu for the guest.
+
+The patch pre-allocates some pools for vreg mmio to avoid this situation.
+It fixes this failure:
+
+page allocation failure: order:9, mode:0x6000c0(GFP_KERNEL),
+nodemask=(null)
+mevent cpuset=/ mems_allowed=0
+CPU: 0 PID: 537 Comm: mevent Tainted: G     U  WC
+4.19.8-1901020539.iot-lts2018-sos #1
+Call Trace:
+ dump_stack+0x8e/0xca
+ warn_alloc.cold.125+0x62/0xe3
+ ? __alloc_pages_direct_compact+0x51/0x100
+ __alloc_pages_slowpath+0xde1/0xe10
+ ? vmap_page_range_noflush+0x248/0x350
+ __alloc_pages_nodemask+0x2b1/0x2d0
+ __get_free_pages+0x15/0x40
+ intel_vgpu_init_mmio+0x38/0xa0
+ intel_gvt_create_vgpu+0x18e/0x350
+ acrngt_instance_create+0x5e/0x210
+ acrngt_sysfs_add_instance+0x9a/0x160
+ acrngt_sysfs_instance_manage+0xb1/0x1d0
+ kobj_attr_store+0x17/0x30
+ sysfs_kf_write+0x3b/0x50
+ kernfs_fop_write+0x10d/0x1b0
+ __vfs_write+0x3a/0x170
+ ? __this_cpu_preempt_check+0x13/0x20
+ vfs_write+0xbd/0x1c0
+ ksys_write+0x58/0xc0
+ __x64_sys_write+0x1a/0x20
+ do_syscall_64+0x5b/0x110
+ entry_SYSCALL_64_after_hwframe+0x49/0xbe
+
+v2: move variables to struct and add id < 0 check
+
+Tracked-On: projectacrn/acrn-hypervisor#2249
+Signed-off-by: Zhipeng Gong <zhipeng.gong@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+[ Resolve conflicts: drivers/gpu/drm/i915/gvt/gvt.h ]
+Tracked-On: PKT-1648
+Signed-off-by: Nikunj A. Dadhania <nikunj.dadhania@intel.com>
+
+Change-Id: I1537ece66be9ffdca513b60306890bd58746f9c0
+---
+ drivers/gpu/drm/i915/gvt/gvt.c  | 60 +++++++++++++++++++++++++++++++++++++++++
+ drivers/gpu/drm/i915/gvt/gvt.h  |  5 ++++
+ drivers/gpu/drm/i915/gvt/mmio.c |  9 +++----
+ 3 files changed, 68 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.c b/drivers/gpu/drm/i915/gvt/gvt.c
+index 3105afe..72b7dca 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.c
++++ b/drivers/gpu/drm/i915/gvt/gvt.c
+@@ -354,6 +354,57 @@ void intel_gvt_allocate_ddb(struct intel_gvt *gvt,
+ 	}
+ }
+ 
++static int intel_gvt_init_vreg_pool(struct intel_gvt *gvt)
++{
++	int i = 0;
++	const struct intel_gvt_device_info *info = &gvt->device_info;
++
++	for (i = 0; i < GVT_MAX_VGPU; i++) {
++		gvt->intel_gvt_vreg_pool[i] = (void *)__get_free_pages(
++			GFP_KERNEL, info->mmio_size_order);
++		if (!gvt->intel_gvt_vreg_pool[i])
++			return -ENOMEM;
++	}
++
++	return 0;
++}
++
++static void intel_gvt_clean_vreg_pool(struct intel_gvt *gvt)
++{
++	int i = 0;
++	const struct intel_gvt_device_info *info = &gvt->device_info;
++
++	for (i = 0; i < GVT_MAX_VGPU && gvt->intel_gvt_vreg_pool[i]; i++)
++		free_pages((unsigned long) gvt->intel_gvt_vreg_pool[i],
++				info->mmio_size_order);
++}
++
++void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu)
++{
++	int id = vgpu->id - 1;
++	struct intel_gvt *gvt = vgpu->gvt;
++
++	if (id < 0 || id >= GVT_MAX_VGPU ||
++		gvt->intel_gvt_vreg_pool[id] == NULL ||
++		gvt->intel_gvt_vreg_allocated[id])
++		return NULL;
++
++	gvt->intel_gvt_vreg_allocated[id] = true;
++	return gvt->intel_gvt_vreg_pool[id];
++}
++
++void intel_gvt_free_vreg(struct intel_vgpu *vgpu)
++{
++	int id = vgpu->id - 1;
++	struct intel_gvt *gvt = vgpu->gvt;
++
++	if (id < 0 || id >= GVT_MAX_VGPU ||
++		gvt->intel_gvt_vreg_pool[id] == NULL ||
++		!gvt->intel_gvt_vreg_allocated[id])
++		return;
++	gvt->intel_gvt_vreg_allocated[id] = false;
++}
++
+ /**
+  * intel_gvt_clean_device - clean a GVT device
+  * @gvt: intel gvt device
+@@ -369,6 +420,7 @@ void intel_gvt_clean_device(struct drm_i915_private *dev_priv)
+ 	if (WARN_ON(!gvt))
+ 		return;
+ 
++	intel_gvt_clean_vreg_pool(gvt);
+ 	intel_gvt_destroy_idle_vgpu(gvt->idle_vgpu);
+ 	intel_gvt_hypervisor_host_exit(&dev_priv->drm.pdev->dev, gvt);
+ 	intel_gvt_cleanup_vgpu_type_groups(gvt);
+@@ -497,6 +549,12 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
+ 	}
+ 	gvt->idle_vgpu = vgpu;
+ 
++	ret = intel_gvt_init_vreg_pool(gvt);
++	if (ret) {
++		gvt_err("failed to init vreg pool\n");
++		goto out_clean_vreg;
++	}
++
+ 	ret = intel_gvt_debugfs_init(gvt);
+ 	if (ret)
+ 		gvt_err("debugfs registeration failed, go on.\n");
+@@ -525,6 +583,8 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
+ 	gvt_dbg_core("gvt device initialization is done\n");
+ 	return 0;
+ 
++out_clean_vreg:
++	intel_gvt_clean_vreg_pool(gvt);
+ out_clean_types:
+ 	intel_gvt_clean_vgpu_types(gvt);
+ out_clean_thread:
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.h b/drivers/gpu/drm/i915/gvt/gvt.h
+index 9f3fed2..cf68915 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.h
++++ b/drivers/gpu/drm/i915/gvt/gvt.h
+@@ -371,6 +371,9 @@ struct intel_gvt {
+ 
+ 	struct dentry *debugfs_root;
+ 	struct work_struct active_hp_work;
++
++	void *intel_gvt_vreg_pool[GVT_MAX_VGPU];
++	bool intel_gvt_vreg_allocated[GVT_MAX_VGPU];
+ };
+ 
+ static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
+@@ -759,6 +762,8 @@ void intel_gvt_debugfs_remove_vgpu(struct intel_vgpu *vgpu);
+ int intel_gvt_debugfs_init(struct intel_gvt *gvt);
+ void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
+ 
++void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu);
++void intel_gvt_free_vreg(struct intel_vgpu *vgpu);
+ 
+ bool is_force_nonpriv_mmio(unsigned int offset);
+ 
+diff --git a/drivers/gpu/drm/i915/gvt/mmio.c b/drivers/gpu/drm/i915/gvt/mmio.c
+index 8a28db9..e6e3839 100644
+--- a/drivers/gpu/drm/i915/gvt/mmio.c
++++ b/drivers/gpu/drm/i915/gvt/mmio.c
+@@ -324,15 +324,14 @@ int intel_vgpu_init_mmio(struct intel_vgpu *vgpu)
+ 	BUILD_BUG_ON(sizeof(struct gvt_shared_page) != PAGE_SIZE);
+ 
+ 	vgpu->mmio.sreg = vzalloc(info->mmio_size);
+-	vgpu->mmio.vreg = (void *)__get_free_pages(GFP_KERNEL,
+-			info->mmio_size_order);
++	vgpu->mmio.vreg = intel_gvt_allocate_vreg(vgpu);
+ 	if (!vgpu->mmio.vreg)
+ 		return -ENOMEM;
+ 
+ 	vgpu->mmio.shared_page = (struct gvt_shared_page *) __get_free_pages(
+ 			GFP_KERNEL, 0);
+ 	if (!vgpu->mmio.shared_page) {
+-		vfree(vgpu->mmio.vreg);
++		intel_gvt_free_vreg(vgpu);
+ 		vgpu->mmio.vreg = NULL;
+ 		return -ENOMEM;
+ 	}
+@@ -349,10 +348,8 @@ int intel_vgpu_init_mmio(struct intel_vgpu *vgpu)
+  */
+ void intel_vgpu_clean_mmio(struct intel_vgpu *vgpu)
+ {
+-	const struct intel_gvt_device_info *info = &vgpu->gvt->device_info;
+-
+ 	vfree(vgpu->mmio.sreg);
+-	free_pages((unsigned long) vgpu->mmio.vreg, info->mmio_size_order);
++	intel_gvt_free_vreg(vgpu);
+ 	free_pages((unsigned long) vgpu->mmio.shared_page, 0);
+ 	vgpu->mmio.vreg = vgpu->mmio.sreg = vgpu->mmio.shared_page = NULL;
+ }
+-- 
+2.7.4
+

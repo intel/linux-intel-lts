@@ -1,0 +1,115 @@
+From 87d82853a87c9573a7494f4ca783b723ee95acc8 Mon Sep 17 00:00:00 2001
+From: "Li, Fei1" <fei1.li@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0800/1132] sos: vhm: remove hugetlb_enabled flag
+
+Since we only have hugetlb memory allocation mechanism, there no needs
+hugetlb_enabled to indicate we're using hugetlb.
+
+Signed-off-by: Li, Fei1 <fei1.li@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c      |  1 -
+ drivers/vhm/vhm_hugetlb.c       |  1 -
+ drivers/vhm/vhm_mm.c            | 17 +++++++----------
+ include/linux/vhm/vhm_vm_mngt.h |  2 --
+ 4 files changed, 7 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 3dca3b36..e454b9e 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -131,7 +131,6 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
+ 
+ 	vm_mutex_lock(&vhm_vm_list_lock);
+ 	vm->refcnt = 1;
+-	vm->hugetlb_enabled = 0;
+ 	vm_list_add(&vm->list);
+ 	vm_mutex_unlock(&vhm_vm_list_lock);
+ 	filep->private_data = vm;
+diff --git a/drivers/vhm/vhm_hugetlb.c b/drivers/vhm/vhm_hugetlb.c
+index 9c39f91..a83f00a 100644
+--- a/drivers/vhm/vhm_hugetlb.c
++++ b/drivers/vhm/vhm_hugetlb.c
+@@ -194,7 +194,6 @@ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 	}
+ 
+ 	__free_page(memmaps_buf_pg);
+-	vm->hugetlb_enabled = 1;
+ 
+ 	return 0;
+ err:
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index 3c0c2ac..c7ca102 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -200,8 +200,7 @@ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 
+ void free_guest_mem(struct vhm_vm *vm)
+ {
+-	if (vm->hugetlb_enabled)
+-		return hugepage_free_guest(vm);
++	return hugepage_free_guest(vm);
+ }
+ 
+ #define TRUSTY_MEM_GPA_BASE (511UL * 1024UL * 1024UL * 1024UL)
+@@ -232,14 +231,13 @@ void deinit_trusty(struct vhm_vm *vm)
+ void *map_guest_phys(unsigned long vmid, u64 guest_phys, size_t size)
+ {
+ 	struct vhm_vm *vm;
+-	void *ret = NULL;
++	void *ret;
+ 
+ 	vm = find_get_vm(vmid);
+ 	if (vm == NULL)
+-		return ret;
++		return NULL;
+ 
+-	if (vm->hugetlb_enabled)
+-		ret = hugepage_map_guest_phys(vm, guest_phys, size);
++	ret = hugepage_map_guest_phys(vm, guest_phys, size);
+ 
+ 	put_vm(vm);
+ 
+@@ -250,16 +248,15 @@ EXPORT_SYMBOL(map_guest_phys);
+ int unmap_guest_phys(unsigned long vmid, u64 guest_phys)
+ {
+ 	struct vhm_vm *vm;
+-	int ret = -ESRCH;
++	int ret;
+ 
+ 	vm = find_get_vm(vmid);
+ 	if (vm == NULL) {
+ 		pr_warn("vm_list corrupted\n");
+-		return ret;
++		return -ESRCH;
+ 	}
+ 
+-	if (vm->hugetlb_enabled)
+-		ret = hugepage_unmap_guest_phys(vm, guest_phys);
++	ret = hugepage_unmap_guest_phys(vm, guest_phys);
+ 
+ 	put_vm(vm);
+ 	return ret;
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index 91cd13d..29fee8f 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -85,7 +85,6 @@ extern struct mutex vhm_vm_list_lock;
+  * @ioreq_client_list: list of ioreq clients
+  * @req_buf: request buffer shared between HV, SOS and UOS
+  * @pg: pointer to linux page which holds req_buf
+- * @hugetlb_enabled: flag to enable/disable hugetlb page ept mapping
+  */
+ struct vhm_vm {
+ 	struct device *dev;
+@@ -101,7 +100,6 @@ struct vhm_vm {
+ 	struct list_head ioreq_client_list;
+ 	struct vhm_request_buffer *req_buf;
+ 	struct page *pg;
+-	int hugetlb_enabled;
+ };
+ 
+ /**
+-- 
+2.7.4
+

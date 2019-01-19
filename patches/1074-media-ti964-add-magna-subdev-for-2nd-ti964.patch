@@ -1,0 +1,84 @@
+From d52e370e9f37021f1a219264a69bc1a8cc5e2fe6 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Tue, 27 Nov 2018 19:32:26 +0800
+Subject: [PATCH 1074/1132] media: ti964: add magna subdev for 2nd ti964
+
+add magna subdev for 2nd ti964 also.
+
+Change-Id: I10c2433f5f9841037d627e52963ab29a942d9857
+Tracked-On: PKT-1624
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/platform/intel/ipu4-bxt-p-pdata.c | 48 +++++++++++++++++++++++++
+ 1 file changed, 48 insertions(+)
+
+diff --git a/drivers/media/platform/intel/ipu4-bxt-p-pdata.c b/drivers/media/platform/intel/ipu4-bxt-p-pdata.c
+index 8bdbdda..de76065 100644
+--- a/drivers/media/platform/intel/ipu4-bxt-p-pdata.c
++++ b/drivers/media/platform/intel/ipu4-bxt-p-pdata.c
+@@ -828,6 +828,30 @@ static struct ti964_subdev_info ti964_subdevs_2[] = {
+ 		.suffix = 'h',
+ 	},
+ #endif
++#ifdef CONFIG_INTEL_IPU4_MAGNA
++	{
++		.board_info = {
++			.type = CRLMODULE_NAME,
++			.addr = MAGNA_ADDRESS_A,
++			.platform_data = &magna_pdata,
++		},
++		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
++		.rx_port = 0,
++		.phy_i2c_addr = MAGNA_PHY_ADDR,
++		.suffix = 'e',
++	},
++	{
++		.board_info = {
++			  .type = CRLMODULE_NAME,
++			  .addr = MAGNA_ADDRESS_B,
++			  .platform_data = &magna_pdata,
++		},
++		.i2c_adapter_id = TI964_I2C_ADAPTER_2,
++		.rx_port = 1,
++		.phy_i2c_addr = MAGNA_PHY_ADDR,
++		.suffix = 'f',
++	},
++#endif
+ };
+ 
+ static struct ti964_pdata ti964_pdata = {
+@@ -1095,6 +1119,30 @@ static struct ti964_subdev_info as_1140_ti964_subdevs_2[] = {
+ 		.suffix = 'h',
+ 	},
+ #endif
++#ifdef CONFIG_INTEL_IPU4_MAGNA
++	{
++		.board_info = {
++			.type = CRLMODULE_NAME,
++			.addr = MAGNA_ADDRESS_A,
++			.platform_data = &magna_pdata,
++		},
++		.i2c_adapter_id = AS_1140_TI964_I2C_ADAPTER_2,
++		.rx_port = 0,
++		.phy_i2c_addr = MAGNA_PHY_ADDR,
++		.suffix = 'e',
++	},
++	{
++		.board_info = {
++			  .type = CRLMODULE_NAME,
++			  .addr = MAGNA_ADDRESS_B,
++			  .platform_data = &magna_pdata,
++		},
++		.i2c_adapter_id = AS_1140_TI964_I2C_ADAPTER_2,
++		.rx_port = 1,
++		.phy_i2c_addr = MAGNA_PHY_ADDR,
++		.suffix = 'f',
++	},
++#endif
+ };
+ 
+ static struct ti964_pdata as_1140_ti964_pdata = {
+-- 
+2.7.4
+

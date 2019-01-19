@@ -1,0 +1,212 @@
+From 53ab91b3afe6a1b97b9681470f77f94c54775d51 Mon Sep 17 00:00:00 2001
+From: Badiuzzaman Iskhandar <badiuzzaman.azzarfan.bin.iskhandar@intel.com>
+Date: Tue, 9 Oct 2018 15:51:18 +0800
+Subject: [PATCH 0949/1132] MUST_REBASE [IOTG]: drm/i915: Allow late GuC/HuC
+ loading
+
+This patch allows for the GuC and HuC to be loaded until the first
+device is open (instead of during the driver initialisation).
+
+Delaying the fw load prevents a load failure when the partition that the
+firmware is supposed to be on has not been mounted yet, as is the case
+in Android.
+
+During i915 init, if huc/guc enabled, the huc/guc fw sizes need to be known.
+As we defer the fw fetch later, the fw sizes can't be determined.
+ggtt_pin_bias relies on the fw size as well.
+
+MUST_REBASE: The hw_late code is part of a solution for loading firmware
+of a file system that has not been mounted yet. Only a problem
+on Android. This patch is a rewrote from similar patch in 4.11
+
+Change-Id: Ic4f414deed9961d73c25434b3d8698ae9fbb425c
+Tracked-On:
+Signed-off-by: Badiuzzaman Iskhandar <badiuzzaman.azzarfan.bin.iskhandar@intel.com>
+---
+ drivers/gpu/drm/i915/i915_drv.h         |  3 +++
+ drivers/gpu/drm/i915/i915_gem.c         | 48 +++++++++++++++++++++++++++------
+ drivers/gpu/drm/i915/i915_gem_context.c | 44 +++++++++++++++++++++++++-----
+ drivers/gpu/drm/i915/intel_wopcm.c      |  7 +++++
+ 4 files changed, 88 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index 2de144a..de3db57 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -2145,6 +2145,8 @@ struct drm_i915_private {
+ 
+ 	struct i915_pmu pmu;
+ 
++    bool contexts_ready; /* for deferred initialization */
++
+ 	/*
+ 	 * NOTE: This is the dri1/ums dungeon, don't add stuff here. Your patch
+ 	 * will be rejected. Instead look for a better place.
+@@ -3187,6 +3189,7 @@ void i915_gem_reset_engine(struct intel_engine_cs *engine,
+ void i915_gem_init_mmio(struct drm_i915_private *i915);
+ int __must_check i915_gem_init(struct drm_i915_private *dev_priv);
+ int __must_check i915_gem_init_hw(struct drm_i915_private *dev_priv);
++int __must_check i915_gem_init_hw_late(struct drm_i915_private *dev_priv);
+ void i915_gem_init_swizzling(struct drm_i915_private *dev_priv);
+ void i915_gem_fini(struct drm_i915_private *dev_priv);
+ void i915_gem_cleanup_engines(struct drm_i915_private *dev_priv);
+diff --git a/drivers/gpu/drm/i915/i915_gem.c b/drivers/gpu/drm/i915/i915_gem.c
+index 1d10dba..f72b5e8 100644
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -6154,6 +6154,28 @@ static int __i915_gem_restart_engines(void *data)
+ 	return 0;
+ }
+ 
++int i915_gem_init_hw_late(struct drm_i915_private *dev_priv)
++{
++	int ret;
++
++	/*
++	 * Place for things that can be delayed until the first context
++	 * is open. For example, fw loading in android.
++	 */
++
++	/* fetch firmware */
++	intel_uc_init_misc(dev_priv);
++
++	/* Load fw. We can't enable contexts until all firmware is loaded */
++	ret = intel_uc_init_hw(dev_priv);
++	if (ret) {
++		DRM_ERROR("Late init: enabling uc failed (%d)\n", ret);
++		return ret;
++	}
++
++	return 0;
++}
++
+ int i915_gem_init_hw(struct drm_i915_private *dev_priv)
+ {
+ 	int ret;
+@@ -6212,11 +6234,17 @@ int i915_gem_init_hw(struct drm_i915_private *dev_priv)
+ 		goto out;
+ 	}
+ 
+-	/* We can't enable contexts until all firmware is loaded */
+-	ret = intel_uc_init_hw(dev_priv);
+-	if (ret) {
+-		DRM_ERROR("Enabling uc failed (%d)\n", ret);
+-		goto out;
++	/*
++	 * Don't call i915_gem_init_hw_late() the very first time (during
++	 * driver load); it will get called during first open instead.
++	 * It should only be called on subsequent (re-initialization) passes.
++	 */
++	if (dev_priv->contexts_ready) {
++		ret = i915_gem_init_hw_late(dev_priv);
++		if (ret)
++			goto out;
++	} else {
++		DRM_DEBUG_DRIVER("Deferring late initialization\n");
+ 	}
+ 
+ 	intel_mocs_init_l3cc_table(dev_priv);
+@@ -6380,9 +6408,13 @@ int i915_gem_init(struct drm_i915_private *dev_priv)
+ 	if (ret)
+ 		return ret;
+ 
+-	ret = intel_uc_init_misc(dev_priv);
+-	if (ret)
+-		return ret;
++	/*
++	 * ANDROID: fetch fw during drm_open instead
++	 * due to filesystem is not up yet during driver init
++	 * ret = intel_uc_init_misc(dev_priv);
++	 * if (ret)
++	 * 	return ret;
++	 */
+ 
+ 	ret = intel_wopcm_init(&dev_priv->wopcm);
+ 	if (ret)
+diff --git a/drivers/gpu/drm/i915/i915_gem_context.c b/drivers/gpu/drm/i915/i915_gem_context.c
+index aeb8ec8..0c8c68a 100644
+--- a/drivers/gpu/drm/i915/i915_gem_context.c
++++ b/drivers/gpu/drm/i915/i915_gem_context.c
+@@ -562,23 +562,55 @@ static int context_idr_cleanup(int id, void *p, void *data)
+ 	return 0;
+ }
+ 
++int i915_gem_context_first_open(struct drm_i915_private *dev_priv)
++{
++	int ret;
++
++	lockdep_assert_held(&dev_priv->drm.struct_mutex);
++
++	DRM_DEBUG_DRIVER("Late initialization starting\n");
++
++	intel_runtime_pm_get(dev_priv);
++	intel_uncore_forcewake_get(dev_priv, FORCEWAKE_ALL);
++
++	ret = i915_gem_init_hw_late(dev_priv);
++	if (ret == 0)
++		dev_priv->contexts_ready = true;
++	else
++		DRM_ERROR("Late initialization failed: %d\n", ret);
++
++	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
++	intel_runtime_pm_put(dev_priv);
++
++	return ret;
++}
++
+ int i915_gem_context_open(struct drm_i915_private *i915,
+ 			  struct drm_file *file)
+ {
+ 	struct drm_i915_file_private *file_priv = file->driver_priv;
+ 	struct i915_gem_context *ctx;
++	int ret = 0;
+ 
+ 	idr_init(&file_priv->context_idr);
+ 
+ 	mutex_lock(&i915->drm.struct_mutex);
+-	ctx = i915_gem_create_context(i915, file_priv);
+-	mutex_unlock(&i915->drm.struct_mutex);
+-	if (IS_ERR(ctx)) {
+-		idr_destroy(&file_priv->context_idr);
+-		return PTR_ERR(ctx);
++
++	if (!(i915->contexts_ready))
++		ret = i915_gem_context_first_open(i915);
++
++	if (ret == 0) {
++		ctx = i915_gem_create_context(i915, file_priv);
++		if (IS_ERR(ctx))
++			ret = PTR_ERR(ctx);
++
++		GEM_BUG_ON(i915_gem_context_is_kernel(ctx));
+ 	}
+ 
+-	GEM_BUG_ON(i915_gem_context_is_kernel(ctx));
++	mutex_unlock(&i915->drm.struct_mutex);
++
++	if (ret)
++		idr_destroy(&file_priv->context_idr);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/gpu/drm/i915/intel_wopcm.c b/drivers/gpu/drm/i915/intel_wopcm.c
+index 74bf76f..5ff877e 100644
+--- a/drivers/gpu/drm/i915/intel_wopcm.c
++++ b/drivers/gpu/drm/i915/intel_wopcm.c
+@@ -207,6 +207,13 @@ int intel_wopcm_init(struct intel_wopcm *wopcm)
+ 	wopcm->guc.base = guc_wopcm_base;
+ 	wopcm->guc.size = guc_wopcm_size;
+ 
++	/*
++	 * In deferred fw loading, we defer the intel_guc_init which will
++	 * initialize the guc.ggtt_pin_bias. As it relies on wopcm size,
++	 * set the ggtt_pin_bias after wopcm initialization
++	 */
++	i915->guc.ggtt_pin_bias = i915->wopcm.size - i915->wopcm.guc.base;
++
+ 	return 0;
+ }
+ 
+-- 
+2.7.4
+

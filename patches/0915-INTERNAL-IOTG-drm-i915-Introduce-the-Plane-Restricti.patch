@@ -1,0 +1,953 @@
+From c199257aa1047128a81947f287ab6e0c85a1d1ab Mon Sep 17 00:00:00 2001
+From: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Date: Mon, 12 Mar 2018 17:52:42 -0700
+Subject: [PATCH 0915/1132] INTERNAL [IOTG] drm/i915: Introduce the Plane
+ Restriction feature
+
+This feature allows restrictions to the way planes are created in the
+driver. Currently driver creates a primary plane and all the sprite
+planes that are possible depending on the underlying hardware.This feature
+allows restrictions on the number and type of planes that are created.
+To accomodate the legacy APIs the first plane that is created is
+designated as DRM_PLANE_TYPE_PRIMARY.
+Usecase is to restrict the planes that are available for each
+domain. Each domain passes in the plane mask through command line
+paramenter- available_planes_per_pipe. Only these planes are created
+for each domain. Another parameter domain_plane_owners is passed
+into dom0 so that gvt is aware of the plane ownership for all the domains
+and can restrict access.
+DDBs are written once for all planes in Dom0 when in a virtualized
+environment.
+
+v2(ssingh) : Ported this patch to 4.19 kernel.
+
+Signed-off-by: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Signed-off-by: Anitha Chrisanthus <anitha.chrisanthus@intel.com>
+Signed-off-by: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Change-Id: I293c490be8994bb525e511c8d1b8324b3c70932c
+---
+ drivers/gpu/drm/i915/gvt/display.c   |  20 +++
+ drivers/gpu/drm/i915/gvt/gvt.c       |  28 +++-
+ drivers/gpu/drm/i915/gvt/handlers.c  |  10 +-
+ drivers/gpu/drm/i915/i915_drv.c      |  25 +++-
+ drivers/gpu/drm/i915/i915_drv.h      |   5 +
+ drivers/gpu/drm/i915/i915_params.c   |  52 +++++++
+ drivers/gpu/drm/i915/i915_params.h   |   2 +
+ drivers/gpu/drm/i915/intel_display.c | 255 +++++++++++++++++++++++++++++++++--
+ drivers/gpu/drm/i915/intel_drv.h     |   3 +
+ drivers/gpu/drm/i915/intel_pm.c      | 142 ++++++++++++++++---
+ drivers/gpu/drm/i915/intel_sprite.c  |   2 +-
+ 11 files changed, 509 insertions(+), 35 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/display.c b/drivers/gpu/drm/i915/gvt/display.c
+index 73a2dbba..b013d1b 100644
+--- a/drivers/gpu/drm/i915/gvt/display.c
++++ b/drivers/gpu/drm/i915/gvt/display.c
+@@ -485,6 +485,22 @@ static void intel_gvt_vblank_work(struct work_struct *w)
+ 	((((owner) >> (pipe) * BITS_PER_DOMAIN * MAX_SCALERS_PER_DOMAIN) >>  \
+ 	BITS_PER_DOMAIN * (scaler)) & 0xf)
+ 
++int bxt_check_planes(struct intel_vgpu *vgpu, int pipe)
++{
++	int plane = 0;
++	bool ret = false;
++
++	for (plane = 0;
++	     plane < ((INTEL_INFO(vgpu->gvt->dev_priv)->num_sprites[pipe]) + 1);
++	     plane++) {
++		if (vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id) {
++			ret = true;
++			break;
++		}
++	}
++	return ret;
++}
++
+ void intel_gvt_init_pipe_info(struct intel_gvt *gvt)
+ {
+ 	enum pipe pipe;
+@@ -528,6 +544,10 @@ int setup_virtual_monitors(struct intel_vgpu *vgpu)
+ 	for_each_intel_connector_iter(connector, &conn_iter) {
+ 		if (connector->encoder->get_hw_state(connector->encoder, &pipe)
+ 				&& connector->detect_edid) {
++			/* if no planes are allocated for this pipe, skip it */
++			if (i915_modparams.avail_planes_per_pipe &&
++			    !bxt_check_planes(vgpu, pipe))
++				continue;
+ 			/* Get (Dom0) port associated with current pipe. */
+ 			port = enc_to_dig_port(
+ 					&(connector->encoder->base))->base.port;
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.c b/drivers/gpu/drm/i915/gvt/gvt.c
+index 940443f..3105afe 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.c
++++ b/drivers/gpu/drm/i915/gvt/gvt.c
+@@ -389,6 +389,12 @@ void intel_gvt_clean_device(struct drm_i915_private *dev_priv)
+ 	dev_priv->gvt = NULL;
+ }
+ 
++#define BITS_PER_DOMAIN 4
++#define MAX_PLANES_PER_DOMAIN 4
++#define DOMAIN_PLANE_OWNER(owner, pipe, plane) \
++		((((owner) >> (pipe) * BITS_PER_DOMAIN * MAX_PLANES_PER_DOMAIN) >>  \
++		  BITS_PER_DOMAIN * (plane)) & 0xf)
++
+ /**
+  * intel_gvt_init_device - initialize a GVT device
+  * @dev_priv: drm i915 private data
+@@ -495,8 +501,28 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
+ 	if (ret)
+ 		gvt_err("debugfs registeration failed, go on.\n");
+ 
+-	gvt_dbg_core("gvt device initialization is done\n");
+ 	dev_priv->gvt = gvt;
++
++	if (i915_modparams.avail_planes_per_pipe) {
++		unsigned long long domain_plane_owners;
++		int plane;
++		enum pipe pipe;
++
++		/*
++		 * Each nibble represents domain id
++		 * ids can be from 0-F. 0 for Dom0, 1,2,3...0xF for DomUs
++		 * plane_owner[i] holds the id of the domain that owns it,eg:0,1,2 etc
++		 */
++		domain_plane_owners = i915_modparams.domain_plane_owners;
++		for_each_pipe(dev_priv, pipe) {
++			for_each_universal_plane(dev_priv, pipe, plane) {
++				gvt->pipe_info[pipe].plane_owner[plane] =
++					DOMAIN_PLANE_OWNER(domain_plane_owners, pipe, plane);
++			}
++		}
++	}
++
++	gvt_dbg_core("gvt device initialization is done\n");
+ 	return 0;
+ 
+ out_clean_types:
+diff --git a/drivers/gpu/drm/i915/gvt/handlers.c b/drivers/gpu/drm/i915/gvt/handlers.c
+index 8fa3bed..ec0886a 100644
+--- a/drivers/gpu/drm/i915/gvt/handlers.c
++++ b/drivers/gpu/drm/i915/gvt/handlers.c
+@@ -3127,8 +3127,14 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
+ 	MMIO_PLANES_DH(PLANE_AUX_DIST, D_SKL_PLUS, NULL, skl_plane_mmio_write);
+ 	MMIO_PLANES_DH(PLANE_AUX_OFFSET, D_SKL_PLUS, NULL, skl_plane_mmio_write);
+ 
+-	MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, skl_plane_mmio_write);
+-	MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, skl_plane_mmio_write);
++	if (i915_modparams.avail_planes_per_pipe) {
++		MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, NULL);
++		MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, NULL);
++	} else {
++		MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, skl_plane_mmio_write);
++		MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, skl_plane_mmio_write);
++	}
++
+ 	MMIO_PLANES_DH(PLANE_NV12_BUF_CFG, D_SKL_PLUS, NULL,
+ 		       pv_plane_wm_mmio_write);
+ 	MMIO_PLANES_DH(PLANE_BUF_CFG, D_SKL_PLUS, NULL, NULL);
+diff --git a/drivers/gpu/drm/i915/i915_drv.c b/drivers/gpu/drm/i915/i915_drv.c
+index 06b7861..8f7ed15 100644
+--- a/drivers/gpu/drm/i915/i915_drv.c
++++ b/drivers/gpu/drm/i915/i915_drv.c
+@@ -1340,6 +1340,24 @@ static void i915_welcome_messages(struct drm_i915_private *dev_priv)
+ 		DRM_INFO("DRM_I915_DEBUG_GEM enabled\n");
+ }
+ 
++static inline int get_max_avail_pipes(struct drm_i915_private *dev_priv)
++{
++	enum pipe pipe;
++	int index = 0;
++
++	if (!intel_vgpu_active(dev_priv) ||
++	    !i915_modparams.avail_planes_per_pipe)
++		return INTEL_INFO(dev_priv)->num_pipes;
++
++	for_each_pipe(dev_priv, pipe) {
++		if (AVAIL_PLANE_PER_PIPE(dev_priv, i915_modparams.avail_planes_per_pipe,
++					pipe))
++			index++;
++	}
++
++	return index;
++}
++
+ /**
+  * i915_driver_load - setup chip and create an initial config
+  * @pdev: PCI device
+@@ -1357,6 +1375,7 @@ int i915_driver_load(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		(struct intel_device_info *)ent->driver_data;
+ 	struct drm_i915_private *dev_priv;
+ 	int ret;
++	int num_crtcs = 0;
+ 
+ 	/* Enable nuclear pageflip on ILK+ */
+ 	if (!i915_modparams.nuclear_pageflip && match_info->gen < 5)
+@@ -1408,9 +1427,9 @@ int i915_driver_load(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	 * of the i915_driver_init_/i915_driver_register functions according
+ 	 * to the role/effect of the given init step.
+ 	 */
+-	if (INTEL_INFO(dev_priv)->num_pipes) {
+-		ret = drm_vblank_init(&dev_priv->drm,
+-				      INTEL_INFO(dev_priv)->num_pipes);
++	num_crtcs = get_max_avail_pipes(dev_priv);
++	if (num_crtcs) {
++		ret = drm_vblank_init(&dev_priv->drm, num_crtcs);
+ 		if (ret)
+ 			goto out_cleanup_hw;
+ 	}
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index d1e2d2b..489f255 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -2672,6 +2672,11 @@ intel_info(const struct drm_i915_private *dev_priv)
+ #define GT_FREQUENCY_MULTIPLIER 50
+ #define GEN9_FREQ_SCALER 3
+ 
++#define BITS_PER_PIPE 8
++#define AVAIL_PLANE_PER_PIPE(dev_priv, mask, pipe)  \
++	(((mask) >> (pipe) * BITS_PER_PIPE) & \
++	   ((1 << ((INTEL_INFO(dev_priv)->num_sprites[pipe]) + 1)) - 1))
++
+ #include "i915_trace.h"
+ 
+ static inline bool intel_vtd_active(void)
+diff --git a/drivers/gpu/drm/i915/i915_params.c b/drivers/gpu/drm/i915/i915_params.c
+index 062190f..4ffdd533 100644
+--- a/drivers/gpu/drm/i915/i915_params.c
++++ b/drivers/gpu/drm/i915/i915_params.c
+@@ -201,6 +201,56 @@ i915_param_named(enable_pvmmio, uint, 0400,
+ 	"Enable pv mmio feature and set pvmmio level, default 1."
+ 	"This parameter could only set from host, guest value is set through vgt_if");
+ 
++/* pipeA = BITS 0-3, pipeB = BITS 8-11, pipeC = BITS 16-18
++ * +----------+-------+---------+--------+--------+--------+--------+
++ * |unused    |unused |  Pipe C | unused | Pipe B | unused | Pipe A |
++ * +----------+-------+---------+--------+--------+--------+--------+
++ * 31         23      18        15       11       7        3        0
++ *
++ *
++ * BITS 0,1,2,3 - needs to be set planes assigned for pipes A and B
++ * and BITs 0,1,2 - for pipe C
++ * eg: avail_planes_per_pipe = 0x3 - pipe A=2(planes 1 and 2) , pipeB=0 and pipeC=0 planes
++ * eg: avail_planes_per_pipe = 0x5 - pipe A=2(planes 1 and 3) , pipeB=0 and pipeC=0 planes
++ * avail_planes_per_pipe = 0x030701 - pipe A =1(plane 1, pipeB=3(planes 1,2 and 3), pipeC=2( planes 1 and 2)
++ *
++ */
++i915_param_named_unsafe(avail_planes_per_pipe, uint, 0400,
++	"plane mask for each	pipe: \
++	set BITS 0-3:pipeA 8-11:pipeB 16-18:pipeC to specify the planes that \
++	are available eg: 0x030701 : planes 1:pipeA 1,2,3:pipeB \
++	1,2:pipeC (0x0 - default value)");
++
++/* pipeA = BITS 0-15 pipeB = 16-31, pipeC = 32-47
++ *
++ * +----------+------------+-------------+------------+
++ * |unused    |  Pipe C    |   Pipe B    |   Pipe A   |
++ * +----------+------------+-------------+------------+
++ * 63         47           31            15           0
++ *
++ * Each nibble represents domain id. 0 for Dom0, 1,2,3...0xF for DomUs
++ * eg: domain_plane_owners = 0x022111000010 // 0x0221|1100|0010
++ * plane		 domain
++ * plane_owner1A -0
++ * plane_owner2A -1
++ * plane_owner3A -0
++ * plane_owner4A -0
++ * plane_owner1B -0
++ * plane_owner2B -0
++ * plane_owner3B -1
++ * plane_owner4B -1
++ * plane_owner1C -1
++ * plane_owner2C -2
++ * plane_owner3C -2
++ *
++ *
++ */
++i915_param_named_unsafe(domain_plane_owners, ullong, 0400,
++	"plane owners for each domain and for each pipe \
++	ids can be from 0-F,  eg: domain_plane_owners = 0x022111000010 \
++	planes owner: 3C:2 2C:2 1C:1 4B:1 3B:1 2B:1 1B:0 4A:0 3A:0 2A:1 1A:0 \
++	(0x0 - default value)");
++
+ static __always_inline void _print_param(struct drm_printer *p,
+ 					 const char *name,
+ 					 const char *type,
+@@ -212,6 +262,8 @@ static __always_inline void _print_param(struct drm_printer *p,
+ 		drm_printf(p, "i915.%s=%d\n", name, *(const int *)x);
+ 	else if (!__builtin_strcmp(type, "unsigned int"))
+ 		drm_printf(p, "i915.%s=%u\n", name, *(const unsigned int *)x);
++	else if (!__builtin_strcmp(type, "unsigned long long"))
++		drm_printf(p, "i915.%s=%llu\n", name, *(const unsigned long long *)x);
+ 	else if (!__builtin_strcmp(type, "char *"))
+ 		drm_printf(p, "i915.%s=%s\n", name, *(const char **)x);
+ 	else
+diff --git a/drivers/gpu/drm/i915/i915_params.h b/drivers/gpu/drm/i915/i915_params.h
+index 40aee5b..6b0f98c 100644
+--- a/drivers/gpu/drm/i915/i915_params.h
++++ b/drivers/gpu/drm/i915/i915_params.h
+@@ -55,6 +55,8 @@ struct drm_printer;
+ 	param(int, edp_vswing, 0) \
+ 	param(int, reset, 2) \
+ 	param(unsigned int, inject_load_failure, 0) \
++	param(unsigned int, avail_planes_per_pipe, 0) \
++	param(unsigned long long, domain_plane_owners, 0) \
+ 	/* leave bools at the end to not create holes */ \
+ 	param(bool, alpha_support, IS_ENABLED(CONFIG_DRM_I915_ALPHA_SUPPORT)) \
+ 	param(bool, enable_hangcheck, true) \
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index ec19f6c..50f3784 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -5371,15 +5371,37 @@ static void intel_pre_plane_update(struct intel_crtc_state *old_crtc_state,
+ 		intel_update_watermarks(crtc);
+ }
+ 
++static void disable_primary_plane(struct drm_i915_private *dev_priv, int pipe)
++{
++	u32 val;
++
++	val = I915_READ(PLANE_CTL(pipe, PLANE_PRIMARY));
++	if (val & PLANE_CTL_ENABLE) {
++		I915_WRITE(PLANE_CTL(pipe, PLANE_PRIMARY), 0);
++		I915_WRITE(PLANE_SURF(pipe, PLANE_PRIMARY), 0);
++		POSTING_READ(PLANE_SURF(pipe, PLANE_PRIMARY));
++	}
++}
++
+ static void intel_crtc_disable_planes(struct drm_crtc *crtc, unsigned plane_mask)
+ {
+ 	struct drm_device *dev = crtc->dev;
++	struct drm_i915_private *dev_priv = to_i915(dev);
+ 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
+ 	struct drm_plane *p;
+ 	int pipe = intel_crtc->pipe;
+ 
+ 	intel_crtc_dpms_overlay_disable(intel_crtc);
+ 
++	/*
++	 * On BIOS based systems, if Dom0 doesn't own Plane 0 (Primary Plane),
++	 * then during modeset, it wouldn't be able to disable this plane and
++	 * this can lead to unexpected behavior after the modeset. Therefore,
++	 * disable the primary plane if it was enabled by the BIOS/GOP.
++	 */
++	if (dev_priv->gvt && i915_modparams.avail_planes_per_pipe)
++		disable_primary_plane(dev_priv, pipe);
++
+ 	drm_for_each_plane_mask(p, dev, plane_mask)
+ 		to_intel_plane(p)->disable_plane(to_intel_plane(p), intel_crtc);
+ 
+@@ -11643,7 +11665,8 @@ static void verify_wm_state(struct drm_crtc *crtc,
+ 	const enum pipe pipe = intel_crtc->pipe;
+ 	int plane, level, max_level = ilk_wm_max_level(dev_priv);
+ 
+-	if (INTEL_GEN(dev_priv) < 9 || !new_state->active)
++	if (INTEL_GEN(dev_priv) < 9 || !new_state->active ||
++	    i915_modparams.avail_planes_per_pipe)
+ 		return;
+ 
+ 	skl_pipe_wm_get_hw_state(crtc, &hw_wm);
+@@ -13840,6 +13863,109 @@ intel_primary_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe)
+ }
+ 
+ static struct intel_plane *
++intel_skl_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe,
++		       int plane, bool is_primary)
++{
++	struct intel_plane *intel_plane = NULL;
++	struct intel_plane_state *state = NULL;
++	unsigned long possible_crtcs;
++	const uint32_t *plane_formats;
++	unsigned int supported_rotations, plane_type;
++	unsigned int num_formats;
++	const uint64_t *modifiers;
++	int ret;
++
++	intel_plane = kzalloc(sizeof(*intel_plane), GFP_KERNEL);
++	if (!intel_plane) {
++		ret = -ENOMEM;
++		goto fail;
++	}
++
++	state = intel_create_plane_state(&intel_plane->base);
++	if (!state) {
++		ret = -ENOMEM;
++		goto fail;
++	}
++
++	intel_plane->base.state = &state->base;
++	intel_plane->can_scale = false;
++	state->scaler_id = -1;
++	intel_plane->pipe = pipe;
++
++	/*
++	 * On gen2/3 only plane A can do FBC, but the panel fitter and LVDS
++	 * port is hooked to pipe B. Hence we want plane A feeding pipe B.
++	 */
++	if (is_primary) {
++		intel_plane->i9xx_plane = (enum i9xx_plane_id) pipe;
++		intel_plane->check_plane = intel_check_primary_plane;
++		plane_type = DRM_PLANE_TYPE_PRIMARY;
++	} else {
++		intel_plane->i9xx_plane = (enum i9xx_plane_id) plane;
++		intel_plane->check_plane = intel_check_sprite_plane;
++		plane_type = DRM_PLANE_TYPE_OVERLAY;
++	}
++
++	if (plane == PLANE_PRIMARY) {
++		intel_plane->frontbuffer_bit = INTEL_FRONTBUFFER(pipe, plane);
++		intel_plane->update_plane = skl_update_plane;
++		intel_plane->disable_plane = skl_disable_plane;
++		intel_plane->get_hw_state = skl_plane_get_hw_state;
++	} else {
++		intel_plane->frontbuffer_bit = INTEL_FRONTBUFFER(pipe, plane);
++		intel_plane->update_plane = skl_update_plane;
++		intel_plane->disable_plane = skl_disable_plane;
++		intel_plane->get_hw_state = skl_plane_get_hw_state;
++	}
++
++	intel_plane->id = plane;
++	plane_formats = skl_primary_formats;
++
++	if (pipe < PIPE_C)
++		modifiers = skl_format_modifiers_ccs;
++	else
++		modifiers = skl_format_modifiers_noccs;
++
++	num_formats = ARRAY_SIZE(skl_primary_formats);
++
++	/*
++	 * Drop final format (NV12) for pipes or hardware steppings
++	 * that don't support it.
++	 */
++	if (IS_BXT_REVID(dev_priv, 0, BXT_REVID_C0) || pipe >= PIPE_C
++			|| plane >= 2)
++		num_formats--;
++
++
++	possible_crtcs = (1 << dev_priv->drm.mode_config.num_crtc);
++	ret = drm_universal_plane_init(&dev_priv->drm, &intel_plane->base,
++			possible_crtcs, &skl_plane_funcs,
++			plane_formats, num_formats,
++			modifiers,
++			plane_type,
++			"plane %d%c", plane+1, pipe_name(pipe));
++
++	if (ret)
++		goto fail;
++
++	supported_rotations = DRM_MODE_ROTATE_0;
++	if (INTEL_GEN(dev_priv) >= 4)
++		drm_plane_create_rotation_property(&intel_plane->base,
++						   DRM_MODE_ROTATE_0,
++						   supported_rotations);
++
++	drm_plane_helper_add(&intel_plane->base, &intel_plane_helper_funcs);
++
++	return intel_plane;
++
++fail:
++	kfree(state);
++	kfree(intel_plane);
++
++	return ERR_PTR(ret);
++}
++
++static struct intel_plane *
+ intel_cursor_plane_create(struct drm_i915_private *dev_priv,
+ 			  enum pipe pipe)
+ {
+@@ -13948,6 +14074,79 @@ static void intel_crtc_init_scalers(struct intel_crtc *crtc,
+ 	scaler_state->scaler_id = -1;
+ }
+ 
++static int intel_crtc_init_restrict_planes(struct drm_i915_private *dev_priv,
++					   enum pipe pipe, int planes_mask)
++{
++	struct intel_crtc *intel_crtc;
++	struct intel_crtc_state *crtc_state;
++	struct intel_plane *primary = NULL, *intel_plane = NULL;
++	bool is_primary = true;
++	int plane, ret, crtc_plane;
++
++	intel_crtc = kzalloc(sizeof(*intel_crtc), GFP_KERNEL);
++	if (!intel_crtc)
++		return -ENOMEM;
++
++	crtc_state = kzalloc(sizeof(*crtc_state), GFP_KERNEL);
++	if (!crtc_state) {
++		ret = -ENOMEM;
++		goto fail;
++	}
++	intel_crtc->config = crtc_state;
++	intel_crtc->base.state = &crtc_state->base;
++	crtc_state->base.crtc = &intel_crtc->base;
++
++	for_each_universal_plane(dev_priv, pipe, plane) {
++		if (planes_mask & BIT(plane)) {
++			intel_plane = intel_skl_plane_create(dev_priv,
++					pipe, plane, is_primary);
++			if (IS_ERR(intel_plane)) {
++				DRM_DEBUG_KMS(" plane %d failed for pipe %d\n", plane, pipe);
++				ret = PTR_ERR(intel_plane);
++				goto fail;
++			}
++			if (is_primary) {
++				primary = intel_plane;
++				is_primary = false;
++			}
++			DRM_DEBUG_KMS(" plane %d created for pipe %d\n", plane, pipe);
++			intel_crtc->plane_ids_mask |= BIT(intel_plane->id);
++		}
++	}
++
++	ret = drm_crtc_init_with_planes(&dev_priv->drm,
++			&intel_crtc->base,
++			primary ? &primary->base : NULL, NULL,
++			&intel_crtc_funcs,
++			"pipe %c", pipe_name(pipe));
++	if (ret)
++		goto fail;
++
++	intel_crtc->pipe = pipe;
++	crtc_plane = primary ? primary->i9xx_plane : 0;
++
++	dev_priv->plane_to_crtc_mapping[crtc_plane] = intel_crtc;
++	dev_priv->pipe_to_crtc_mapping[intel_crtc->pipe] = intel_crtc;
++
++	drm_crtc_helper_add(&intel_crtc->base, &intel_helper_funcs);
++
++	intel_color_init(&intel_crtc->base);
++
++	WARN_ON(drm_crtc_index(&intel_crtc->base) != intel_crtc->pipe);
++
++	return 0;
++
++fail:
++	/*
++	 * drm_mode_config_cleanup() will free up any
++	 * crtcs/planes already initialized.
++	 */
++	kfree(crtc_state);
++	kfree(intel_crtc);
++
++	return ret;
++}
++
+ static int intel_crtc_init(struct drm_i915_private *dev_priv, enum pipe pipe)
+ {
+ 	struct intel_crtc *intel_crtc;
+@@ -15195,12 +15394,26 @@ static void intel_update_fdi_pll_freq(struct drm_i915_private *dev_priv)
+ 	DRM_DEBUG_DRIVER("FDI PLL freq=%d\n", dev_priv->fdi_pll_freq);
+ }
+ 
++
++static int intel_sanitize_plane_restriction(struct drm_i915_private *dev_priv)
++{
++	/*plane restriction feature is only for APL for now*/
++	if (!IS_BROXTON(dev_priv)) {
++		i915_modparams.avail_planes_per_pipe = 0;
++		DRM_INFO("Turning off Plane Restrictions feature\n");
++	}
++
++	return i915_modparams.avail_planes_per_pipe;
++}
++
+ int intel_modeset_init(struct drm_device *dev)
+ {
+ 	struct drm_i915_private *dev_priv = to_i915(dev);
+ 	struct i915_ggtt *ggtt = &dev_priv->ggtt;
+ 	enum pipe pipe;
+ 	struct intel_crtc *crtc;
++	unsigned int  planes_mask[I915_MAX_PIPES];
++	unsigned int avail_plane_per_pipe_mask = 0;
+ 
+ 	dev_priv->modeset_wq = alloc_ordered_workqueue("i915_modeset", 0);
+ 
+@@ -15274,10 +15487,29 @@ int intel_modeset_init(struct drm_device *dev)
+ 		      INTEL_INFO(dev_priv)->num_pipes,
+ 		      INTEL_INFO(dev_priv)->num_pipes > 1 ? "s" : "");
+ 
++	avail_plane_per_pipe_mask = intel_sanitize_plane_restriction(dev_priv);
++	DRM_DEBUG_KMS("avail_planes_per_pipe = 0x%x \n", i915_modparams.avail_planes_per_pipe);
++	DRM_DEBUG_KMS("domain_plane_owners = 0x%llx \n", i915_modparams.domain_plane_owners);
++
++	for_each_pipe(dev_priv, pipe) {
++		planes_mask[pipe] = AVAIL_PLANE_PER_PIPE(dev_priv,
++							 avail_plane_per_pipe_mask, pipe);
++		DRM_DEBUG_KMS("for pipe %d plane_mask = %d \n", pipe, planes_mask[pipe]);
++	}
++
+ 	for_each_pipe(dev_priv, pipe) {
+ 		int ret;
+ 
+-		ret = intel_crtc_init(dev_priv, pipe);
++		if (!i915_modparams.avail_planes_per_pipe) {
++			ret = intel_crtc_init(dev_priv, pipe);
++		} else {
++			if (!intel_vgpu_active(dev_priv) || (intel_vgpu_active(dev_priv)
++							 && planes_mask[pipe])) {
++				ret = intel_crtc_init_restrict_planes(dev_priv,
++								      pipe,
++								      planes_mask[pipe]);
++			}
++		}
+ 		if (ret) {
+ 			drm_mode_config_cleanup(dev);
+ 			return ret;
+@@ -15715,10 +15947,15 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
+ 			struct intel_crtc_state *crtc_state;
+ 
+ 			crtc = intel_get_crtc_for_pipe(dev_priv, pipe);
+-			crtc_state = to_intel_crtc_state(crtc->base.state);
++			if (!crtc) {
++				encoder->base.crtc = NULL;
++			} else {
++				crtc_state = to_intel_crtc_state(crtc->base.state);
+ 
+-			encoder->base.crtc = &crtc->base;
+-			encoder->get_config(encoder, crtc_state);
++				encoder->base.crtc = &crtc->base;
++				encoder->get_config(encoder, crtc_state);
++
++			}
+ 		} else {
+ 			encoder->base.crtc = NULL;
+ 		}
+@@ -15884,9 +16121,11 @@ intel_modeset_setup_hw_state(struct drm_device *dev,
+ 		intel_sanitize_encoder(encoder);
+ 
+ 	for_each_intel_crtc(&dev_priv->drm, crtc) {
+-		intel_sanitize_crtc(crtc, ctx);
+-		intel_dump_pipe_config(crtc, crtc->config,
+-				       "[setup_hw_state]");
++		if (crtc) {
++			intel_sanitize_crtc(crtc, ctx);
++			intel_dump_pipe_config(crtc, crtc->config,
++					"[setup_hw_state]");
++		}
+ 	}
+ 
+ 	intel_modeset_update_connector_atomic_state(dev);
+diff --git a/drivers/gpu/drm/i915/intel_drv.h b/drivers/gpu/drm/i915/intel_drv.h
+index 49d4282..c829047 100644
+--- a/drivers/gpu/drm/i915/intel_drv.h
++++ b/drivers/gpu/drm/i915/intel_drv.h
+@@ -2114,6 +2114,9 @@ int intel_sprite_set_colorkey_ioctl(struct drm_device *dev, void *data,
+ 				    struct drm_file *file_priv);
+ void intel_pipe_update_start(const struct intel_crtc_state *new_crtc_state);
+ void intel_pipe_update_end(struct intel_crtc_state *new_crtc_state);
++int intel_check_sprite_plane(struct intel_plane *plane,
++		struct intel_crtc_state *crtc_state,
++		struct intel_plane_state *state);
+ void skl_update_plane(struct intel_plane *plane,
+ 		      const struct intel_crtc_state *crtc_state,
+ 		      const struct intel_plane_state *plane_state);
+diff --git a/drivers/gpu/drm/i915/intel_pm.c b/drivers/gpu/drm/i915/intel_pm.c
+index 2f20205..bbbea83 100644
+--- a/drivers/gpu/drm/i915/intel_pm.c
++++ b/drivers/gpu/drm/i915/intel_pm.c
+@@ -807,11 +807,14 @@ static int intel_wm_num_levels(struct drm_i915_private *dev_priv)
+ static bool intel_wm_plane_visible(const struct intel_crtc_state *crtc_state,
+ 				   const struct intel_plane_state *plane_state)
+ {
+-	struct intel_plane *plane = to_intel_plane(plane_state->base.plane);
++	struct intel_plane *plane = plane_state ? to_intel_plane(plane_state->base.plane) : NULL;
+ 
+ 	/* FIXME check the 'enable' instead */
+ 	if (!crtc_state->base.active)
+ 		return false;
++	if (!plane_state && i915_modparams.avail_planes_per_pipe) {
++		return true;
++	}
+ 
+ 	/*
+ 	 * Treat cursor with fb as always visible since cursor updates
+@@ -4012,11 +4015,15 @@ static uint_fixed_16_16_t
+ skl_plane_downscale_amount(const struct intel_crtc_state *cstate,
+ 			   const struct intel_plane_state *pstate)
+ {
+-	struct intel_plane *plane = to_intel_plane(pstate->base.plane);
++	struct intel_plane *plane = pstate ? to_intel_plane(pstate->base.plane) : NULL;
+ 	uint32_t src_w, src_h, dst_w, dst_h;
+ 	uint_fixed_16_16_t fp_w_ratio, fp_h_ratio;
+ 	uint_fixed_16_16_t downscale_h, downscale_w;
+ 
++	if (!pstate && i915_modparams.avail_planes_per_pipe) {
++		return mul_fixed16(u32_to_fixed16(1), u32_to_fixed16(1));
++	}
++
+ 	if (WARN_ON(!intel_wm_plane_visible(cstate, pstate)))
+ 		return u32_to_fixed16(0);
+ 
+@@ -4527,9 +4534,9 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
+ 			    const struct intel_plane_state *intel_pstate,
+ 			    struct skl_wm_params *wp, int plane_id)
+ {
+-	struct intel_plane *plane = to_intel_plane(intel_pstate->base.plane);
+-	const struct drm_plane_state *pstate = &intel_pstate->base;
+-	const struct drm_framebuffer *fb = pstate->fb;
++	struct intel_plane *plane = intel_pstate ? to_intel_plane(intel_pstate->base.plane) : NULL;
++	const struct drm_plane_state *pstate = intel_pstate ? &intel_pstate->base : NULL;
++	const struct drm_framebuffer *fb = pstate ? pstate->fb : NULL;
+ 	uint32_t interm_pbpl;
+ 	struct intel_atomic_state *state =
+ 		to_intel_atomic_state(cstate->base.state);
+@@ -4544,6 +4551,19 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
+ 		return -EINVAL;
+ 	}
+ 
++	if (!intel_pstate && i915_modparams.avail_planes_per_pipe) {
++		wp->y_tiled = false;
++		wp->x_tiled = true;
++		wp->cpp = 4;
++		wp->y_min_scanlines = 8;
++		wp->rc_surface = fb ? fb->modifier == I915_FORMAT_MOD_Y_TILED_CCS ||
++			 fb->modifier == I915_FORMAT_MOD_Yf_TILED_CCS : 0;
++		wp->is_planar = fb ? fb->format->format == DRM_FORMAT_NV12 : 0;
++		wp->width = cstate->pipe_src_w;
++		wp->dbuf_block_size = 512;
++		goto calculate_wm;
++	}
++
+ 	wp->y_tiled = fb->modifier == I915_FORMAT_MOD_Y_TILED ||
+ 		      fb->modifier == I915_FORMAT_MOD_Yf_TILED ||
+ 		      fb->modifier == I915_FORMAT_MOD_Y_TILED_CCS ||
+@@ -4568,8 +4588,6 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
+ 		wp->width /= 2;
+ 
+ 	wp->cpp = fb->format->cpp[plane_id];
+-	wp->plane_pixel_rate = skl_adjusted_plane_pixel_rate(cstate,
+-							     intel_pstate);
+ 
+ 	if (INTEL_GEN(dev_priv) >= 11 &&
+ 	    fb->modifier == I915_FORMAT_MOD_Yf_TILED && wp->cpp == 8)
+@@ -4600,6 +4618,9 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
+ 	if (apply_memory_bw_wa)
+ 		wp->y_min_scanlines *= 2;
+ 
++calculate_wm:
++	wp->plane_pixel_rate = skl_adjusted_plane_pixel_rate(cstate,
++							     intel_pstate);
+ 	wp->plane_bytes_per_line = wp->width * wp->cpp;
+ 	if (wp->y_tiled) {
+ 		interm_pbpl = DIV_ROUND_UP(wp->plane_bytes_per_line *
+@@ -4638,7 +4659,8 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
+ 				const struct skl_wm_level *result_prev,
+ 				struct skl_wm_level *result /* out */)
+ {
+-	const struct drm_plane_state *pstate = &intel_pstate->base;
++	const struct drm_plane_state *pstate = intel_pstate ? &intel_pstate->base : NULL;
++	const struct drm_framebuffer *fb = pstate ? pstate->fb : NULL;
+ 	uint32_t latency = dev_priv->wm.skl_latency[level];
+ 	uint_fixed_16_16_t method1, method2;
+ 	uint_fixed_16_16_t selected_result;
+@@ -4691,7 +4713,7 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
+ 					 wp->plane_blocks_per_line);
+ 
+ 	/* Display WA #1125: skl,bxt,kbl,glk */
+-	if (level == 0 && wp->rc_surface)
++	if (fb && level == 0 && wp->rc_surface)
+ 		res_blocks += fixed16_to_u32_round_up(wp->y_tile_minimum);
+ 
+ 	/* Display WA #1126: skl,bxt,kbl,glk */
+@@ -4749,12 +4771,16 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
+ 		if (level) {
+ 			return 0;
+ 		} else {
+-			struct drm_plane *plane = pstate->plane;
++			struct drm_plane *plane = pstate ? pstate->plane : NULL;
+ 
+ 			DRM_DEBUG_KMS("Requested display configuration exceeds system watermark limitations\n");
+-			DRM_DEBUG_KMS("[PLANE:%d:%s] blocks required = %u/%u, lines required = %u/31\n",
++
++			if (plane) {
++				DRM_DEBUG_KMS("[PLANE:%d:%s] blocks required = %u/%u, lines required = %u/31\n",
+ 				      plane->base.id, plane->name,
+ 				      res_blocks, ddb_allocation, res_lines);
++			}
++
+ 			return -EINVAL;
+ 		}
+ 	}
+@@ -4785,18 +4811,16 @@ skl_compute_wm_levels(const struct drm_i915_private *dev_priv,
+ 		      const struct intel_plane_state *intel_pstate,
+ 		      const struct skl_wm_params *wm_params,
+ 		      struct skl_plane_wm *wm,
+-		      int plane_id)
++		      int plane_id,
++		      enum plane_id intel_plane_id)
+ {
+ 	struct intel_crtc *intel_crtc = to_intel_crtc(cstate->base.crtc);
+-	struct drm_plane *plane = intel_pstate->base.plane;
+-	struct intel_plane *intel_plane = to_intel_plane(plane);
+ 	uint16_t ddb_blocks;
+ 	enum pipe pipe = intel_crtc->pipe;
+ 	int level, max_level = ilk_wm_max_level(dev_priv);
+-	enum plane_id intel_plane_id = intel_plane->id;
+ 	int ret;
+ 
+-	if (WARN_ON(!intel_pstate->base.fb))
++	if (WARN_ON(intel_pstate && !intel_pstate->base.fb))
+ 		return -EINVAL;
+ 
+ 	ddb_blocks = plane_id ?
+@@ -4826,7 +4850,8 @@ skl_compute_wm_levels(const struct drm_i915_private *dev_priv,
+ 			return ret;
+ 	}
+ 
+-	if (intel_pstate->base.fb->format->format == DRM_FORMAT_NV12)
++	if (intel_pstate &&
++			intel_pstate->base.fb->format->format == DRM_FORMAT_NV12)
+ 		wm->is_planar = true;
+ 
+ 	return 0;
+@@ -4910,6 +4935,64 @@ static void skl_compute_transition_wm(struct intel_crtc_state *cstate,
+ 	trans_wm->plane_en = false;
+ }
+ 
++static int skl_build_pipe_all_plane_wm(struct intel_crtc_state *cstate,
++			     struct skl_ddb_allocation *ddb,
++			     struct skl_pipe_wm *pipe_wm)
++{
++	struct drm_device *dev = cstate->base.crtc->dev;
++	const struct drm_i915_private *dev_priv = to_i915(dev);
++	struct skl_plane_wm *wm;
++	struct intel_crtc *crtc = to_intel_crtc(cstate->base.crtc);
++	struct drm_crtc_state *crtc_state = &cstate->base;
++	struct drm_plane *plane;
++	const struct drm_plane_state *pstate;
++	struct intel_plane_state *intel_pstate;
++	int pipe = crtc->pipe;
++	int plane_id;
++	int ret;
++
++	memset(pipe_wm->planes, 0, sizeof(pipe_wm->planes));
++
++	/*
++	 * Since Dom0 may not own all planes on this pipe, there will
++	 * not be a valid intel_plane for the planes it doesn't own.
++	 * Therefore, we have to pass NULL to skl_compute_wm_level()
++	 * which will then know that this plane is not owned by Dom0
++	 * and hence will use width and height from the crtc and will
++	 * also assume cpp = 4 and tiling = x_tiled.
++	 */
++	for_each_universal_plane(dev_priv, pipe, plane_id) {
++		struct skl_wm_params wm_params;
++		uint16_t ddb_blocks;
++		intel_pstate = NULL;
++
++		drm_atomic_crtc_state_for_each_plane_state(plane, pstate, crtc_state) {
++			if (plane_id == to_intel_plane(plane)->id) {
++				intel_pstate = to_intel_plane_state(pstate);
++				break;
++			}
++		}
++
++		wm = &pipe_wm->planes[plane_id];
++		ddb_blocks = skl_ddb_entry_size(&ddb->plane[pipe][plane_id]);
++		ret = skl_compute_plane_wm_params(dev_priv, cstate,
++						  intel_pstate, &wm_params, 0);
++		if (ret)
++			return ret;
++
++		ret = skl_compute_wm_levels(dev_priv, ddb, cstate,
++					    intel_pstate, &wm_params, wm, 0, plane_id);
++		if (ret)
++			return ret;
++
++		skl_compute_transition_wm(cstate, &wm_params, &wm->wm[0],
++				ddb_blocks, &wm->trans_wm);
++	}
++	pipe_wm->linetime = skl_compute_linetime_wm(cstate);
++
++	return 0;
++}
++
+ static int skl_build_pipe_wm(struct intel_crtc_state *cstate,
+ 			     struct skl_ddb_allocation *ddb,
+ 			     struct skl_pipe_wm *pipe_wm)
+@@ -4945,7 +5028,7 @@ static int skl_build_pipe_wm(struct intel_crtc_state *cstate,
+ 			return ret;
+ 
+ 		ret = skl_compute_wm_levels(dev_priv, ddb, cstate,
+-					    intel_pstate, &wm_params, wm, 0);
++					    intel_pstate, &wm_params, wm, 0, plane_id);
+ 		if (ret)
+ 			return ret;
+ 
+@@ -4965,7 +5048,7 @@ static int skl_build_pipe_wm(struct intel_crtc_state *cstate,
+ 
+ 			ret = skl_compute_wm_levels(dev_priv, ddb, cstate,
+ 						    intel_pstate, &wm_params,
+-						    wm, 1);
++						    wm, 1, plane_id);
+ 			if (ret)
+ 				return ret;
+ 		}
+@@ -5182,7 +5265,10 @@ static int skl_update_pipe_wm(struct drm_crtc_state *cstate,
+ 	struct intel_crtc_state *intel_cstate = to_intel_crtc_state(cstate);
+ 	int ret;
+ 
+-	ret = skl_build_pipe_wm(intel_cstate, ddb, pipe_wm);
++	if (i915_modparams.avail_planes_per_pipe)
++		ret = skl_build_pipe_all_plane_wm(intel_cstate, ddb, pipe_wm);
++	else
++		ret = skl_build_pipe_wm(intel_cstate, ddb, pipe_wm);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -5426,10 +5512,14 @@ skl_compute_wm(struct drm_atomic_state *state)
+ 	struct drm_crtc_state *cstate;
+ 	struct intel_atomic_state *intel_state = to_intel_atomic_state(state);
+ 	struct skl_ddb_values *results = &intel_state->wm_results;
++	struct drm_i915_private *dev_priv = to_i915(intel_state->base.dev);
+ 	struct skl_pipe_wm *pipe_wm;
+ 	bool changed = false;
+ 	int ret, i;
+ 
++	if (intel_vgpu_active(dev_priv) && i915_modparams.avail_planes_per_pipe)
++		return 0;
++
+ 	/* Clear all dirty flags */
+ 	results->dirty_pipes = 0;
+ 
+@@ -5488,11 +5578,23 @@ static void skl_atomic_update_crtc_wm(struct intel_atomic_state *state,
+ 	enum pipe pipe = crtc->pipe;
+ 	enum plane_id plane_id;
+ 
++	if (intel_vgpu_active(dev_priv) && i915_modparams.avail_planes_per_pipe)
++		return;
++
+ 	if (!(state->wm_results.dirty_pipes & drm_crtc_mask(&crtc->base)))
+ 		return;
+ 
+ 	I915_WRITE(PIPE_WM_LINETIME(pipe), pipe_wm->linetime);
+ 
++	if (i915_modparams.avail_planes_per_pipe) {
++		for_each_universal_plane(dev_priv, pipe, plane_id) {
++			skl_write_plane_wm(crtc, &pipe_wm->planes[plane_id],
++					ddb, plane_id);
++		}
++
++		return;
++	}
++
+ 	for_each_plane_id_on_crtc(crtc, plane_id) {
+ #if IS_ENABLED(CONFIG_DRM_I915_GVT)
+ 		if (dev_priv->gvt &&
+diff --git a/drivers/gpu/drm/i915/intel_sprite.c b/drivers/gpu/drm/i915/intel_sprite.c
+index 9716552..0abc2db 100644
+--- a/drivers/gpu/drm/i915/intel_sprite.c
++++ b/drivers/gpu/drm/i915/intel_sprite.c
+@@ -1042,7 +1042,7 @@ g4x_plane_get_hw_state(struct intel_plane *plane,
+ 	return ret;
+ }
+ 
+-static int
++int
+ intel_check_sprite_plane(struct intel_plane *plane,
+ 			 struct intel_crtc_state *crtc_state,
+ 			 struct intel_plane_state *state)
+-- 
+2.7.4
+

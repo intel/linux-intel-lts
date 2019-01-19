@@ -1,0 +1,53 @@
+From 6a4ad616f5108bb5478ec311a7d2c18e68f884a0 Mon Sep 17 00:00:00 2001
+From: Hardik Shah <hardik.t.shah@intel.com>
+Date: Fri, 29 Apr 2016 16:41:26 +0530
+Subject: [PATCH 0471/1132] REVERTME:ASoC:CNL: Mark SDW master 1 and 2 as
+ aggregated.
+
+This patch is to to test the aggregation. Mark the master1
+and master2 as aggregated
+
+Change-Id: I0fa73fdf12bef071f0054b8844105eac1d698638
+Signed-off-by: Hardik Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+---
+ sound/soc/intel/skylake/cnl-sst.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index e4d5316..0caf9bf 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -509,8 +509,7 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 	struct cnl_sdw_data *p_data;
+ 	int ret = 0, i, j;
+ 	/* TODO: This number 4 should come from ACPI */
+-#ifdef CONFIG_SDW_MAXIM_SLAVE
+-
++#if defined(CONFIG_SDW_MAXIM_SLAVE) || defined(CONFIG_SND_SOC_MXFPGA)
+ 	dsp->num_sdw_controllers = 3;
+ #else
+ 	dsp->num_sdw_controllers = 4;
+@@ -574,12 +573,19 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 				SDW_PORT_BLK_PKG_MODE_BLK_PER_PORT |
+ 				SDW_PORT_BLK_PKG_MODE_BLK_PER_CH;
+ 		}
++		master[i].link_sync_mask = 0x0;
+ 		switch (i) {
+ 		case 0:
+ 			p_data->sdw_regs = mmio_base + CNL_SDW_LINK_0_BASE;
++#ifdef CONFIG_SND_SOC_MXFPGA
++			master[i].link_sync_mask = 0x1;
++#endif
+ 			break;
+ 		case 1:
+ 			p_data->sdw_regs = mmio_base + CNL_SDW_LINK_1_BASE;
++#ifdef CONFIG_SND_SOC_MXFPGA
++			master[i].link_sync_mask = 0x2;
++#endif
+ 			break;
+ 		case 2:
+ 			p_data->sdw_regs = mmio_base + CNL_SDW_LINK_2_BASE;
+-- 
+2.7.4
+

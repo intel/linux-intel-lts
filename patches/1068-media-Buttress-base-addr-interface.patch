@@ -1,0 +1,43 @@
+From 8300bab361f97f5f9f9c16b1d61bad064a698027 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Tue, 27 Nov 2018 19:31:54 +0800
+Subject: [PATCH 1068/1132] media: Buttress base addr interface
+
+Add buttress base addr interface
+
+Change-Id: If8fd80d4bf6635243549e7186ffbbdc6d30b1e99
+Tracked-On: PKT-1624
+Signed-off-by: Yuanxi Guo <yuanxi.guo@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/pci/intel/ipu-wrapper.c | 1 +
+ drivers/media/pci/intel/ipu-wrapper.h | 1 -
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/pci/intel/ipu-wrapper.c b/drivers/media/pci/intel/ipu-wrapper.c
+index 9e06887..47fa062 100644
+--- a/drivers/media/pci/intel/ipu-wrapper.c
++++ b/drivers/media/pci/intel/ipu-wrapper.c
+@@ -51,6 +51,7 @@ static struct wrapper_base *get_mem_sub_system(int mmid)
+ 
+ 	if (mmid == PSYS_MMID)
+ 		return &psys;
++
+ 	WARN(1, "Invalid mem subsystem");
+ 	return NULL;
+ }
+diff --git a/drivers/media/pci/intel/ipu-wrapper.h b/drivers/media/pci/intel/ipu-wrapper.h
+index b7df285..52ca2d1 100644
+--- a/drivers/media/pci/intel/ipu-wrapper.h
++++ b/drivers/media/pci/intel/ipu-wrapper.h
+@@ -9,7 +9,6 @@
+ 
+ #define ISYS_MMID 1
+ #define PSYS_MMID 0
+-
+ struct device;
+ 
+ void ipu_wrapper_init(int mmid, struct device *dev, void __iomem *base);
+-- 
+2.7.4
+

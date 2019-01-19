@@ -1,0 +1,38 @@
+From 911e46933150b791d3878645cad031a4f63ee593 Mon Sep 17 00:00:00 2001
+From: "Shaik, ShahinaX" <shahinax.shaik@intel.com>
+Date: Mon, 5 Feb 2018 20:12:17 +0530
+Subject: [PATCH 0674/1132] ASoC: Intel: Skylake: Update gain interface
+ structure
+
+This patch updates gain structure alignment as per
+firmware interface requirement.
+
+Change-Id: I67d509ec8aaff2f9f02d1ad830f03dca7fa50465
+Signed-off-by: Shaik, ShahinaX <shahinax.shaik@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ include/uapi/sound/skl-tplg-interface.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/uapi/sound/skl-tplg-interface.h b/include/uapi/sound/skl-tplg-interface.h
+index 5e284a4..7fbd306 100644
+--- a/include/uapi/sound/skl-tplg-interface.h
++++ b/include/uapi/sound/skl-tplg-interface.h
+@@ -201,6 +201,7 @@ struct skl_gain_config {
+ 	u32 channel_id;
+ 	u32 target_volume;
+ 	u32 ramp_type;
++	u32 reserved;
+ 	u64 ramp_duration;
+ } __packed;
+ 
+-- 
+2.7.4
+

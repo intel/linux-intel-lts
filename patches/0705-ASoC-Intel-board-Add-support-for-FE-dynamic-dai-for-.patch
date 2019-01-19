@@ -1,0 +1,91 @@
+From 839f940673ae679db253912d8029dd53e2a255cc Mon Sep 17 00:00:00 2001
+From: Sameer Sharma <sameerx.sharma@intel.com>
+Date: Thu, 7 Jun 2018 17:28:42 +0530
+Subject: [PATCH 0705/1132] ASoC: Intel: board: Add support for FE dynamic dai
+ for ULL
+
+FE dai links now come from the topology, so removing them
+from machine driver.
+
+Change-Id: I2ac610902496beecb225fc44e57be28d05fb98a7
+Signed-off-by: Sameer Sharma <sameerx.sharma@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, ShahinaX <shahinax.shaik@intel.com>
+Reviewed-by: Prabhu, PuneethX <puneethx.prabhu@intel.com>
+Reviewed-by: Periyasamy, SriramX <sriramx.periyasamy@intel.com>
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Bozek, DominikX <dominikx.bozek@intel.com>
+Reviewed-by: Lewandowski, Gustaw <gustaw.lewandowski@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/boards/bxt_ivi_ull.c | 54 ------------------------------------
+ 1 file changed, 54 deletions(-)
+
+diff --git a/sound/soc/intel/boards/bxt_ivi_ull.c b/sound/soc/intel/boards/bxt_ivi_ull.c
+index 22ae8ab..fe9e285 100644
+--- a/sound/soc/intel/boards/bxt_ivi_ull.c
++++ b/sound/soc/intel/boards/bxt_ivi_ull.c
+@@ -95,60 +95,6 @@ static const struct snd_soc_dapm_route bxtp_ull_map[] = {
+ 
+ /* broxton digital audio interface glue - connects codec <--> CPU */
+ static struct snd_soc_dai_link bxtp_ull_dais[] = {
+-	{
+-		.name = "Bxt Audio Port 3",
+-		.stream_name = "Stereo-16K SSP4",
+-		.cpu_dai_name = "System Pin 3",
+-		.platform_name = "0000:00:0e.0",
+-		.nonatomic = 1,
+-		.dynamic = 1,
+-		.codec_name = "snd-soc-dummy",
+-		.codec_dai_name = "snd-soc-dummy-dai",
+-		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+-			SND_SOC_DPCM_TRIGGER_POST},
+-		.dpcm_playback = 1,
+-		.dpcm_capture = 1,
+-	},
+-	{
+-		.name = "Bxt Audio Port 4",
+-		.stream_name = "5-ch SSP1",
+-		.cpu_dai_name = "System Pin 4",
+-		.platform_name = "0000:00:0e.0",
+-		.nonatomic = 1,
+-		.dynamic = 1,
+-		.codec_name = "snd-soc-dummy",
+-		.codec_dai_name = "snd-soc-dummy-dai",
+-		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+-			SND_SOC_DPCM_TRIGGER_POST},
+-		.dpcm_playback = 1,
+-	},
+-	{
+-		.name = "Bxt Audio Port 5",
+-		.stream_name = "SSP2 Stream",
+-		.cpu_dai_name = "System Pin 5",
+-		.platform_name = "0000:00:0e.0",
+-		.nonatomic = 1,
+-		.dynamic = 1,
+-		.codec_name = "snd-soc-dummy",
+-		.codec_dai_name = "snd-soc-dummy-dai",
+-		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+-			SND_SOC_DPCM_TRIGGER_POST},
+-		.dpcm_playback = 1,
+-		.dpcm_capture = 1,
+-	},
+-	{
+-		.name = "Bxt Audio Port 6",
+-		.stream_name = "8-Ch SSP0",
+-		.cpu_dai_name = "System Pin 6",
+-		.platform_name = "0000:00:0e.0",
+-		.nonatomic = 1,
+-		.dynamic = 1,
+-		.codec_name = "snd-soc-dummy",
+-		.codec_dai_name = "snd-soc-dummy-dai",
+-		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+-			SND_SOC_DPCM_TRIGGER_POST},
+-		.dpcm_capture = 1,
+-	},
+ 	/* Probe DAI Links */
+ 	{
+ 		.name = "Bxt Compress Probe playback",
+-- 
+2.7.4
+

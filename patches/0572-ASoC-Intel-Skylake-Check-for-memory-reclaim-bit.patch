@@ -1,0 +1,62 @@
+From b7c9e21d42109ba0e4edb3c856aa53324bf11fac Mon Sep 17 00:00:00 2001
+From: Leoni Prodduvaka <leoni.prodduvaka@intel.com>
+Date: Mon, 6 Feb 2017 22:24:18 +0530
+Subject: [PATCH 0572/1132] ASoC: Intel: Skylake: Check for memory reclaim bit
+
+Memory reclaim bit indicates whether legacy DMA memory
+is managed by FW. It would be set by firmware if DMA
+is to be used. Check for the memory reclaimed bit during
+the probe. If the bit is not set then fail the probe.
+
+Change-Id: I8a926ea2b4f86b1f7d66749d2e9809f23308c51c
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 790af248..d5e2c32 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -209,8 +209,10 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
+ {
+ 	struct firmware stripped_fw;
+ 	struct skl_sst *cnl = ctx->thread_context;
++	struct skl_fw_property_info fw_property;
+ 	int ret;
+ 
++	fw_property.memory_reclaimed = -1;
+ 	if (!ctx->fw) {
+ 		ret = request_firmware(&ctx->fw, ctx->fw_name, ctx->dev);
+ 		if (ret < 0) {
+@@ -255,6 +257,21 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
+ 
+ 	cnl->fw_loaded = true;
+ 
++	ret = skl_get_firmware_configuration(ctx);
++	if (ret < 0) {
++		dev_err(ctx->dev, "fwconfig ipc failed !\n");
++		ret = -EIO;
++		goto cnl_load_base_firmware_failed;
++	}
++
++	fw_property = cnl->fw_property;
++	if (fw_property.memory_reclaimed <= 0) {
++		dev_err(ctx->dev, "Memory reclaim not enabled:%d\n",
++			fw_property.memory_reclaimed);
++		ret = -EIO;
++		goto cnl_load_base_firmware_failed;
++	}
++
+ 	return 0;
+ 
+ cnl_load_base_firmware_failed:
+-- 
+2.7.4
+

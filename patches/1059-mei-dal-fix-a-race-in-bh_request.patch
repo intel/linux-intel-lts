@@ -1,0 +1,42 @@
+From ba6219e570f450ae3b6ce6f674229e0169dacf8a Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Tue, 27 Nov 2018 18:27:43 +0200
+Subject: [PATCH 1059/1132] mei: dal: fix a race in bh_request()
+
+Increasing the bh request reference counter at the time placing
+the request on the request list. If the bh_request worker is
+already scheduled it may double free the memory, once from the
+worker and once from the bh_request().
+
+Tracked-On: PKT-1620
+Change-Id: I4bc42f6354eb571946a8510c6649a9bb67bac1a1
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/dal/bh_internal.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mei/dal/bh_internal.c b/drivers/misc/mei/dal/bh_internal.c
+index 48d4e11..a7c2809 100644
+--- a/drivers/misc/mei/dal/bh_internal.c
++++ b/drivers/misc/mei/dal/bh_internal.c
+@@ -506,6 +506,8 @@ int bh_request(unsigned int conn_idx, void *cmd_hdr, unsigned int cmd_hdr_len,
+ 		return PTR_ERR(request);
+ 	}
+ 
++	init_completion(&request->complete);
++	kref_get(&request->refcnt);
+ 	list_add_tail(&request->link, &bh_srvc.request_list);
+ 	mutex_unlock(&bh_srvc.request_lock);
+ 
+@@ -514,8 +516,6 @@ int bh_request(unsigned int conn_idx, void *cmd_hdr, unsigned int cmd_hdr_len,
+ 	 * to avoid race condition
+ 	 */
+ 
+-	init_completion(&request->complete);
+-	kref_get(&request->refcnt);
+ 	schedule_work(&bh_srvc.work);
+ 	ret = wait_for_completion_interruptible(&request->complete);
+ 	/*
+-- 
+2.7.4
+

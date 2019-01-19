@@ -1,0 +1,597 @@
+From 8c6fdd1c8733980c5fc74c1d97e8c3e1fcd041d1 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Mon, 3 Sep 2018 14:42:21 +0200
+Subject: [PATCH 0720/1132] ASoC: Intel: Replace hdac_ext_bus usage with
+ hdac_bus.
+
+This patch updates CoE against following change:
+ALSA: hdac: Remove usage of struct hdac_ext_bus and use hda_bus instead.
+
+This patch also fixes NULL dereference panic within soc_dai_hw_params
+introduced by lastedsoc-framework changes for CoE.
+
+Change-Id: I06600e84714863ec37f551ed5373830dec10c29c
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+---
+ include/sound/hdaudio_ext.h            |  2 +-
+ sound/hda/ext/hdac_ext_stream.c        | 18 +++++++++---------
+ sound/soc/intel/skylake/skl-compress.c | 17 ++++++++---------
+ sound/soc/intel/skylake/skl-compress.h |  6 +++---
+ sound/soc/intel/skylake/skl-messages.c | 10 ++++------
+ sound/soc/intel/skylake/skl-nhlt.c     |  6 +++---
+ sound/soc/intel/skylake/skl-pcm.c      | 18 +++++++++---------
+ sound/soc/intel/skylake/skl-probe.c    | 26 ++++++++++++--------------
+ sound/soc/intel/skylake/skl-topology.c | 18 +++++++++---------
+ sound/soc/intel/skylake/skl-topology.h |  4 ++--
+ sound/soc/intel/skylake/skl.c          | 17 ++++++++++-------
+ sound/soc/soc-pcm.c                    |  2 +-
+ 12 files changed, 71 insertions(+), 73 deletions(-)
+
+diff --git a/include/sound/hdaudio_ext.h b/include/sound/hdaudio_ext.h
+index 6218167..5ebf57f 100644
+--- a/include/sound/hdaudio_ext.h
++++ b/include/sound/hdaudio_ext.h
+@@ -90,7 +90,7 @@ struct hdac_ext_stream *snd_hdac_ext_stream_assign(struct hdac_bus *bus,
+ 					   struct snd_pcm_substream *substream,
+ 					   int type);
+ struct hdac_ext_stream *
+-hdac_ext_host_stream_compr_assign(struct hdac_ext_bus *ebus,
++hdac_ext_host_stream_compr_assign(struct hdac_bus *bus,
+ 				struct snd_compr_stream *substream,
+ 				int direction);
+ void snd_hdac_ext_stream_release(struct hdac_ext_stream *azx_dev, int type);
+diff --git a/sound/hda/ext/hdac_ext_stream.c b/sound/hda/ext/hdac_ext_stream.c
+index 492f858..fa7b80f 100644
+--- a/sound/hda/ext/hdac_ext_stream.c
++++ b/sound/hda/ext/hdac_ext_stream.c
+@@ -552,21 +552,21 @@ int snd_hdac_ext_stream_set_lpib(struct hdac_ext_stream *stream, u32 value)
+ 	return 0;
+ }
+ EXPORT_SYMBOL_GPL(snd_hdac_ext_stream_set_lpib);
++
+ struct hdac_ext_stream *
+-hdac_ext_host_stream_compr_assign(struct hdac_ext_bus *ebus,
++hdac_ext_host_stream_compr_assign(struct hdac_bus *bus,
+ 				struct snd_compr_stream *substream,
+ 				int direction)
+ {
+ 	struct hdac_ext_stream *res = NULL;
+ 	struct hdac_stream *stream = NULL;
+-	struct hdac_bus *hbus = &ebus->bus;
+ 
+-	if (!hbus->ppcap) {
+-		dev_err(hbus->dev, "stream type not supported\n");
++	if (!bus->ppcap) {
++		dev_err(bus->dev, "stream type not supported\n");
+ 		return NULL;
+ 	}
+ 
+-	list_for_each_entry(stream, &hbus->stream_list, list) {
++	list_for_each_entry(stream, &bus->stream_list, list) {
+ 		struct hdac_ext_stream *hstream = container_of(stream,
+ 						struct hdac_ext_stream,
+ 						hstream);
+@@ -575,19 +575,19 @@ hdac_ext_host_stream_compr_assign(struct hdac_ext_bus *ebus,
+ 
+ 		if (!stream->opened) {
+ 			if (!hstream->decoupled)
+-				snd_hdac_ext_stream_decouple(ebus,
++				snd_hdac_ext_stream_decouple(bus,
+ 							hstream, true);
+ 			res = hstream;
+ 			break;
+ 		}
+ 	}
+ 	if (res) {
+-		spin_lock_irq(&hbus->reg_lock);
++		spin_lock_irq(&bus->reg_lock);
+ 		res->hstream.opened = 1;
+ 		res->hstream.running = 0;
+ 		res->hstream.stream = substream;
+-		spin_unlock_irq(&hbus->reg_lock);
+-		dev_dbg(hbus->dev, "Stream tag = %d, index = %d\n",
++		spin_unlock_irq(&bus->reg_lock);
++		dev_dbg(bus->dev, "Stream tag = %d, index = %d\n",
+ 				res->hstream.stream_tag, res->hstream.index);
+ 	}
+ 	return res;
+diff --git a/sound/soc/intel/skylake/skl-compress.c b/sound/soc/intel/skylake/skl-compress.c
+index 67f2b78..d346b08 100644
+--- a/sound/soc/intel/skylake/skl-compress.c
++++ b/sound/soc/intel/skylake/skl-compress.c
+@@ -27,13 +27,12 @@
+ #include "skl.h"
+ #include "skl-compress.h"
+ 
+-struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream)
++struct hdac_bus *get_bus_compr_ctx(struct snd_compr_stream *substream)
+ {
+ 	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
+ 	struct hdac_stream *hstream = hdac_stream(stream);
+-	struct hdac_bus *bus = hstream->bus;
+ 
+-	return hbus_to_ebus(bus);
++	return hstream->bus;
+ }
+ 
+ void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
+@@ -55,10 +54,10 @@ void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
+ }
+ 
+ int skl_compr_malloc_pages(struct snd_compr_stream *substream,
+-					struct hdac_ext_bus *ebus, size_t size)
++					struct hdac_bus *bus, size_t size)
+ {
+ 	struct snd_dma_buffer *dmab = NULL;
+-	struct skl *skl = ebus_to_skl(ebus);
++	struct skl *skl = bus_to_skl(bus);
+ 
+ 	dmab = kzalloc(sizeof(*dmab), GFP_KERNEL);
+ 	if (!dmab)
+@@ -69,7 +68,7 @@ int skl_compr_malloc_pages(struct snd_compr_stream *substream,
+ 	if (snd_dma_alloc_pages(substream->dma_buffer.dev.type,
+ 				substream->dma_buffer.dev.dev,
+ 				size, dmab) < 0) {
+-		dev_err(ebus_to_hbus(ebus)->dev,
++		dev_err(bus->dev,
+ 			"Error in snd_dma_alloc_pages\n");
+ 		kfree(dmab);
+ 		return -ENOMEM;
+@@ -79,7 +78,7 @@ int skl_compr_malloc_pages(struct snd_compr_stream *substream,
+ 	return 1;
+ }
+ 
+-int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
++int skl_substream_alloc_compr_pages(struct hdac_bus *bus,
+ 				 struct snd_compr_stream *substream,
+ 				 size_t size)
+ {
+@@ -90,10 +89,10 @@ int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
+ 	hdac_stream(stream)->period_bytes = 0;
+ 	hdac_stream(stream)->format_val = 0;
+ 
+-	ret = skl_compr_malloc_pages(substream, ebus, size);
++	ret = skl_compr_malloc_pages(substream, bus, size);
+ 	if (ret < 0)
+ 		return ret;
+-	ebus->bus.io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
++	bus->io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
+ 
+ 	return ret;
+ }
+diff --git a/sound/soc/intel/skylake/skl-compress.h b/sound/soc/intel/skylake/skl-compress.h
+index abfff2d..4b7f9d5 100644
+--- a/sound/soc/intel/skylake/skl-compress.h
++++ b/sound/soc/intel/skylake/skl-compress.h
+@@ -20,12 +20,12 @@
+  */
+ #ifndef __SKL_COMPRESS_H__
+ #define __SKL_COMPRESS_H__
+-struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream);
++struct hdac_bus *get_bus_compr_ctx(struct snd_compr_stream *substream);
+ void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
+ 				struct snd_dma_buffer *bufp, size_t size);
+ int skl_compr_malloc_pages(struct snd_compr_stream *substream,
+-					struct hdac_ext_bus *ebus, size_t size);
+-int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
++					struct hdac_bus *bus, size_t size);
++int skl_substream_alloc_compr_pages(struct hdac_bus *bus,
+ 				 struct snd_compr_stream *substream,
+ 				 size_t size);
+ int skl_compr_free_pages(struct snd_compr_stream *substream);
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index f66ae9d..74833f0 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -380,8 +380,7 @@ void skl_do_recovery(struct skl *skl)
+ 	const struct skl_dsp_ops *ops;
+ 	struct snd_soc_card *card;
+ 	struct hdac_stream *azx_dev;
+-	struct hdac_ext_bus *ebus = &skl->ebus;
+-	struct hdac_bus *bus = ebus_to_hbus(ebus);
++	struct hdac_bus *bus = skl_to_bus(skl);
+ 	struct snd_pcm_substream *substream = NULL;
+ 	struct hdac_ext_stream *stream;
+ 
+@@ -400,7 +399,7 @@ void skl_do_recovery(struct skl *skl)
+ 				substream = azx_dev->substream;
+ 				stream = stream_to_hdac_ext_stream(azx_dev);
+ 				snd_hdac_ext_stream_release(stream,
+-					skl_get_host_stream_type(ebus));
++					skl_get_host_stream_type(bus));
+ 			}
+ 			break;
+ 		}
+@@ -409,8 +408,8 @@ void skl_do_recovery(struct skl *skl)
+ 	if (ops->init_fw(soc_component->dev, skl->skl_sst) < 0)
+ 		dev_err(skl->skl_sst->dev, "Recovery failed\n");
+ 	if (substream != NULL) {
+-		stream = snd_hdac_ext_stream_assign(ebus, substream,
+-					skl_get_host_stream_type(ebus));
++		stream = snd_hdac_ext_stream_assign(bus, substream,
++					skl_get_host_stream_type(bus));
+ 	}
+ 	snd_soc_resume(card->dev);
+ 	skl->skl_sst->dsp->is_recovery = false;
+@@ -1266,7 +1265,6 @@ int skl_init_dsp(struct skl *skl)
+ {
+ 	void __iomem *mmio_base;
+ 	struct hdac_bus *bus = skl_to_bus(skl);
+-	struct skl_dsp_loader_ops loader_ops;
+ 	int irq = bus->irq;
+ 	const struct skl_dsp_ops *ops;
+ 	struct skl_dsp_cores *cores;
+diff --git a/sound/soc/intel/skylake/skl-nhlt.c b/sound/soc/intel/skylake/skl-nhlt.c
+index 284e765..73d6c98 100644
+--- a/sound/soc/intel/skylake/skl-nhlt.c
++++ b/sound/soc/intel/skylake/skl-nhlt.c
+@@ -156,15 +156,15 @@ skl_get_nhlt_specific_cfg(struct skl *skl, u32 instance, u8 link_type,
+ 		u8 s_fmt, u8 num_ch, u32 s_rate, u8 dir, u8 dev_type)
+ {
+ 	struct nhlt_specific_cfg *cfg = NULL;
+-	struct hdac_ext_bus *ebus = &skl->ebus;
++	struct hdac_bus *bus = &skl->hbus;
+ 
+ 	/* update the blob based on virtual bus_id*/
+ 	if (!skl->nhlt_override) {
+-		dev_warn(ebus_to_hbus(ebus)->dev, "Querying NHLT blob from ACPI NHLT table !!\n");
++		dev_warn(bus->dev, "Querying NHLT blob from ACPI NHLT table !!\n");
+ 		cfg = skl_get_ep_blob(skl, instance, link_type, s_fmt,
+ 				num_ch, s_rate, dir, dev_type);
+ 	} else {
+-		dev_warn(ebus_to_hbus(ebus)->dev, "Querying NHLT blob from Debugfs!!\n");
++		dev_warn(bus->dev, "Querying NHLT blob from Debugfs!!\n");
+ 		cfg = skl_nhlt_get_debugfs_blob(skl->debugfs, link_type, instance, dir);
+ 	}
+ 
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 6da6b49..fe4cd70 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -95,7 +95,7 @@ static int skl_substream_alloc_pages(struct hdac_bus *bus,
+ 	ret = snd_pcm_lib_malloc_pages(substream, size);
+ 	if (ret < 0)
+ 		return ret;
+-	ebus->bus.io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
++	bus->io_ops->mark_pages_uc(snd_pcm_get_dma_buf(substream), true);
+ 
+ 	return ret;
+ }
+@@ -118,7 +118,7 @@ static void skl_set_pcm_constrains(struct hdac_bus *bus,
+ 				     20, 178000000);
+ }
+ 
+-static enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus)
++enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus)
+ {
+ 	if (bus->ppcap)
+ 		return HDAC_EXT_STREAM_TYPE_HOST;
+@@ -212,7 +212,7 @@ int skl_pcm_host_dma_prepare(struct device *dev, struct skl_pipe_params *params)
+ 	runtime = hdac_stream(stream)->substream->runtime;
+ 	/* enable SPIB if no_rewinds flag is set */
+ 	if (runtime->no_rewinds)
+-		snd_hdac_ext_stream_spbcap_enable(ebus, 1, hstream->index);
++		snd_hdac_ext_stream_spbcap_enable(bus, 1, hstream->index);
+ 
+ 	hdac_stream(stream)->prepared = 1;
+ 
+@@ -442,8 +442,8 @@ static int skl_pcm_hw_free(struct snd_pcm_substream *substream,
+ 	mconfig = skl_tplg_fe_get_cpr_module(dai, substream->stream);
+ 
+ 	if (runtime->no_rewinds) {
+-		snd_hdac_ext_stream_set_spib(ebus, stream, 0);
+-		snd_hdac_ext_stream_spbcap_enable(ebus, 0, hstream->index);
++		snd_hdac_ext_stream_set_spib(bus, stream, 0);
++		snd_hdac_ext_stream_spbcap_enable(bus, 0, hstream->index);
+ 	}
+ 	if (mconfig) {
+ 		ret = skl_reset_pipe(skl->skl_sst, mconfig->pipe);
+@@ -863,8 +863,8 @@ static struct skl_sst *skl_get_sst_compr(struct snd_compr_stream *stream)
+ {
+ 	struct snd_soc_pcm_runtime *rtd = stream->private_data;
+ 	struct snd_soc_dai *dai = rtd->cpu_dai;
+-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
+-	struct skl *skl = ebus_to_skl(ebus);
++	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
++	struct skl *skl = bus_to_skl(bus);
+ 	struct skl_sst *sst = skl->skl_sst;
+ 
+ 	return sst;
+@@ -1589,7 +1589,7 @@ static int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
+ /* update SPIB register with appl position */
+ static int skl_platform_ack(struct snd_pcm_substream *substream)
+ {
+-	struct hdac_ext_bus *ebus = get_bus_ctx(substream);
++	struct hdac_bus *bus = get_bus_ctx(substream);
+ 	struct hdac_ext_stream *estream = get_hdac_ext_stream(substream);
+ 	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	ssize_t appl_pos, buf_size;
+@@ -1606,7 +1606,7 @@ static int skl_platform_ack(struct snd_pcm_substream *substream)
+ 
+ 	/* Allowable value for SPIB is 1 byte to max buffer size */
+ 	spib = (spib == 0) ? buf_size : spib;
+-	snd_hdac_ext_stream_set_spib(ebus, estream, spib);
++	snd_hdac_ext_stream_set_spib(bus, estream, spib);
+ 
+ 	return 0;
+ }
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index 2d9d0ea..166ffa1 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -87,7 +87,7 @@ static int set_injector_stream(struct hdac_ext_stream *stream,
+ int skl_probe_compr_open(struct snd_compr_stream *substream,
+ 						struct snd_soc_dai *dai)
+ {
+-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
++	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
+ 	struct hdac_ext_stream *stream = NULL;
+ 	struct snd_compr_runtime *runtime = substream->runtime;
+ 	struct skl *skl = get_skl_ctx(dai->dev);
+@@ -107,7 +107,7 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
+ 		 * correct substream pointer later when open is indeed for
+ 		 * extractor.
+ 		 */
+-		pconfig->estream = hdac_ext_host_stream_compr_assign(ebus,
++		pconfig->estream = hdac_ext_host_stream_compr_assign(bus,
+ 								NULL,
+ 							SND_COMPRESS_CAPTURE);
+ 		if (!pconfig->estream) {
+@@ -120,7 +120,7 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
+ 	}
+ 
+ 	if (substream->direction == SND_COMPRESS_PLAYBACK) {
+-		stream = hdac_ext_host_stream_compr_assign(ebus, substream,
++		stream = hdac_ext_host_stream_compr_assign(bus, substream,
+ 							SND_COMPRESS_PLAYBACK);
+ 		if (stream == NULL) {
+ 			if ((pconfig->i_refc + pconfig->e_refc) == 0)
+@@ -154,7 +154,7 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
+ 							struct snd_soc_dai *dai)
+ {
+ 
+-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
++	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
+ 	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
+ 	struct snd_compr_runtime *runtime = substream->runtime;
+ 	struct skl *skl = get_skl_ctx(dai->dev);
+@@ -172,7 +172,7 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
+ 		return 0;
+ 	}
+ 
+-	ret = skl_substream_alloc_compr_pages(ebus, substream,
++	ret = skl_substream_alloc_compr_pages(bus, substream,
+ 				runtime->fragments*runtime->fragment_size);
+ 	if (ret < 0)
+ 		return ret;
+@@ -215,7 +215,7 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
+ 	}
+ 
+ #if USE_SPIB
+-	snd_hdac_ext_stream_spbcap_enable(ebus, 1, hdac_stream(stream)->index);
++	snd_hdac_ext_stream_spbcap_enable(bus, 1, hdac_stream(stream)->index);
+ #endif
+ 	return 0;
+ }
+@@ -224,7 +224,7 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
+ 						struct snd_soc_dai *dai)
+ {
+ 	struct hdac_ext_stream *stream = get_hdac_ext_compr_stream(substream);
+-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
++	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
+ 	struct skl *skl = get_skl_ctx(dai->dev);
+ 	struct skl_probe_config *pconfig =  &skl->skl_sst->probe_config;
+ 	struct skl_module_cfg *mconfig = pconfig->w->priv;
+@@ -233,7 +233,7 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
+ 
+ 	dev_dbg(dai->dev, "%s: %s\n", __func__, dai->name);
+ #if USE_SPIB
+-	snd_hdac_ext_stream_spbcap_enable(ebus, 0, hdac_stream(stream)->index);
++	snd_hdac_ext_stream_spbcap_enable(bus, 0, hdac_stream(stream)->index);
+ #endif
+ 	if ((pconfig->i_refc + pconfig->e_refc) == 0)
+ 		goto probe_uninit;
+@@ -282,7 +282,7 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
+ 	snd_hdac_stream_cleanup(hdac_stream(stream));
+ 	hdac_stream(stream)->prepared = 0;
+ 
+-	skl_substream_free_compr_pages(ebus_to_hbus(ebus), substream);
++	skl_substream_free_compr_pages(bus, substream);
+ 
+ 	/* Release the particular injector/extractor stream getting closed */
+ 	snd_hdac_ext_stream_release(stream, HDAC_EXT_STREAM_TYPE_HOST);
+@@ -293,8 +293,7 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
+ int skl_probe_compr_ack(struct snd_compr_stream *substream, size_t bytes,
+ 							struct snd_soc_dai *dai)
+ {
+-	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
+-	struct hdac_bus *bus = ebus_to_hbus(ebus);
++	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
+ 	u64 __maybe_unused new_spib_pos;
+ 	struct snd_compr_runtime *runtime = substream->runtime;
+ 	u64 spib_pos = div64_u64(runtime->total_bytes_available,
+@@ -387,7 +386,7 @@ int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
+ 
+ #if USE_SPIB
+ 	spib_pos = (offset + retval)%stream->runtime->dma_bytes;
+-	snd_hdac_ext_stream_set_spib(ebus, estream, spib_pos);
++	snd_hdac_ext_stream_set_spib(bus, estream, spib_pos);
+ #endif
+ 
+ 	return retval;
+@@ -397,8 +396,7 @@ int skl_probe_compr_copy(struct snd_compr_stream *stream, char __user *buf,
+ int skl_probe_compr_trigger(struct snd_compr_stream *substream, int cmd,
+ 							struct snd_soc_dai *dai)
+ {
+-	struct hdac_ext_bus *ebus = get_bus_compr_ctx(substream);
+-	struct hdac_bus *bus = ebus_to_hbus(ebus);
++	struct hdac_bus *bus = get_bus_compr_ctx(substream);
+ 	struct hdac_ext_stream *stream;
+ 	struct hdac_stream *hstr;
+ 	int start;
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index b2f62a2..e1ce9a7 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -2051,8 +2051,8 @@ int skl_tplg_dsp_log_get(struct snd_kcontrol *kcontrol,
+ 					struct snd_ctl_elem_value *ucontrol)
+ {
+ 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+-	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(component);
+-	struct skl *skl = ebus_to_skl(ebus);
++	struct hdac_bus *bus = snd_soc_component_get_drvdata(component);
++	struct skl *skl = bus_to_skl(bus);
+ 
+ 	ucontrol->value.integer.value[0] = get_dsp_log_priority(skl);
+ 
+@@ -2063,8 +2063,8 @@ int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
+ 					struct snd_ctl_elem_value *ucontrol)
+ {
+ 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+-	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(component);
+-	struct skl *skl = ebus_to_skl(ebus);
++	struct hdac_bus *bus = snd_soc_component_get_drvdata(component);
++	struct skl *skl = bus_to_skl(bus);
+ 
+ 	update_dsp_log_priority(ucontrol->value.integer.value[0], skl);
+ 
+@@ -2260,8 +2260,8 @@ static int skl_tplg_multi_config_get(struct snd_kcontrol *kcontrol,
+ 			struct snd_ctl_elem_value *ucontrol)
+ {
+ 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+-	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(component);
+-	struct skl *skl = ebus_to_skl(ebus);
++	struct hdac_bus *bus = snd_soc_component_get_drvdata(component);
++	struct skl *skl = bus_to_skl(bus);
+ 	struct skl_pipeline *ppl;
+ 	struct skl_pipe *pipe = NULL;
+ 	u32 *pipe_id;
+@@ -2284,8 +2284,8 @@ static int skl_tplg_multi_config_set(struct snd_kcontrol *kcontrol,
+ 			struct snd_ctl_elem_value *ucontrol)
+ {
+ 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+-	struct hdac_ext_bus *ebus = snd_soc_component_get_drvdata(component);
+-	struct skl *skl = ebus_to_skl(ebus);
++	struct hdac_bus *bus = snd_soc_component_get_drvdata(component);
++	struct skl *skl = bus_to_skl(bus);
+ 	struct skl_pipeline *ppl;
+ 	struct skl_pipe *pipe = NULL;
+ 	struct soc_enum *ec = (struct soc_enum *)kcontrol->private_value;
+@@ -4379,7 +4379,7 @@ static int skl_tplg_widget_load(struct snd_soc_component *cmpnt, int index,
+ 				struct snd_soc_dapm_widget *w,
+ 				struct snd_soc_tplg_dapm_widget *tplg_w)
+ {
+-	int ret;
++	int i, ret;
+ 	struct hdac_bus *bus = snd_soc_component_get_drvdata(cmpnt);
+ 	struct skl *skl = bus_to_skl(bus);
+ 	struct skl_module_cfg *mconfig;
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index c0ef5e7..da3c8d1 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -553,7 +553,7 @@ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
+ void skl_tplg_set_be_dmic_config(struct snd_soc_dai *dai,
+ 	struct skl_pipe_params *params, int stream);
+ int skl_tplg_init(struct snd_soc_component *component,
+-				struct hdac_bus *ebus);
++				struct hdac_bus *bus);
+ struct skl_module_cfg *skl_tplg_fe_get_cpr_module(
+ 		struct snd_soc_dai *dai, int stream);
+ int skl_tplg_update_pipe_params(struct device *dev,
+@@ -617,7 +617,7 @@ int skl_pcm_host_dma_prepare(struct device *dev,
+ 			struct skl_pipe_params *params);
+ int skl_pcm_link_dma_prepare(struct device *dev,
+ 			struct skl_pipe_params *params);
+-enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_ext_bus *ebus);
++enum hdac_ext_stream_type skl_get_host_stream_type(struct hdac_bus *bus);
+ 
+ int skl_dai_load(struct snd_soc_component *cmp, int index,
+ 		struct snd_soc_dai_driver *dai_drv,
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index db823eb..5d1cbe4 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -42,6 +42,10 @@
+ #include "skl-sst-ipc.h"
+ #include "skl-topology.h"
+ 
++#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
++static struct skl_machine_pdata skl_dmic_data;
++#endif
++
+ /*
+  * initialize the PCI registers
+  */
+@@ -211,9 +215,8 @@ static void skl_get_total_bytes_transferred(struct hdac_stream *hstr)
+  * skl_dum_set - Set the DUM bit in EM2 register to fix the IP bug
+  * of incorrect postion reporting for capture stream.
+  */
+-static void skl_dum_set(struct hdac_ext_bus *ebus)
++static void skl_dum_set(struct hdac_bus *bus)
+ {
+-	struct hdac_bus *bus = ebus_to_hbus(ebus);
+ 	u32 reg;
+ 	u8 val;
+ 
+@@ -248,7 +251,7 @@ static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
+ static irqreturn_t skl_interrupt(int irq, void *dev_id)
+ {
+ 	struct hdac_bus *bus = dev_id;
+-	struct skl *skl = bus_to_skl(ebus);
++	struct skl *skl = bus_to_skl(bus);
+ 	u32 status;
+ 	u32 mask, int_enable;
+ 	int ret = IRQ_NONE;
+@@ -304,7 +307,7 @@ static irqreturn_t skl_threaded_handler(int irq, void *dev_id)
+ 	snd_hdac_bus_handle_stream_irq(bus, status, skl_stream_update);
+ 
+ 	/* Re-enable stream interrupts */
+-	mask = (0x1 << ebus->num_streams) - 1;
++	mask = (0x1 << bus->num_streams) - 1;
+ 	spin_lock_irqsave(&bus->reg_lock, flags);
+ 	int_enable = snd_hdac_chip_readl(bus, INTCTL);
+ 	snd_hdac_chip_writel(bus, INTCTL, (int_enable | mask));
+@@ -875,7 +878,7 @@ static int skl_init_recovery(struct skl *skl)
+ 	monitor->interval = SKL_MIN_TIME_INTERVAL;
+ 
+ 	monitor->intervals = devm_kzalloc(&skl->pci->dev,
+-					skl->ebus.num_streams * sizeof(u32),
++					skl->hbus.num_streams * sizeof(u32),
+ 					GFP_KERNEL);
+ 	if (!monitor->intervals)
+ 		return -ENOMEM;
+@@ -982,7 +985,7 @@ static int skl_first_init(struct hdac_bus *bus)
+ 	/* initialize chip */
+ 	skl_init_pci(skl);
+ 
+-	skl_dum_set(ebus);
++	skl_dum_set(bus);
+ 
+ 	return skl_init_chip(bus, true);
+ }
+@@ -1043,7 +1046,7 @@ static int skl_probe(struct pci_dev *pci,
+ 
+ nhlt_continue:
+ #endif
+-	pci_set_drvdata(skl->pci, ebus);
++	pci_set_drvdata(skl->pci, bus);
+ 
+ #if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+ 	skl_dmic_data.dmic_num = skl_get_dmic_geo(skl);
+diff --git a/sound/soc/soc-pcm.c b/sound/soc/soc-pcm.c
+index afcb2cf..2a71d8e 100644
+--- a/sound/soc/soc-pcm.c
++++ b/sound/soc/soc-pcm.c
+@@ -863,7 +863,7 @@ int soc_dai_hw_params(struct snd_pcm_substream *substream,
+ 	int ret;
+ 
+ 	/* perform any topology hw_params fixups before DAI  */
+-	if (rtd->dai_link->be_hw_params_fixup) {
++	if (rtd && rtd->dai_link->be_hw_params_fixup) {
+ 		ret = rtd->dai_link->be_hw_params_fixup(rtd, params);
+ 		if (ret < 0) {
+ 			dev_err(rtd->dev,
+-- 
+2.7.4
+

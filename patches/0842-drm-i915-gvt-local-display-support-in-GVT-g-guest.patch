@@ -1,0 +1,107 @@
+From c3a87ebf25b9b225cfad9c29810a3b724e2d7451 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Thu, 28 Dec 2017 12:21:16 +0800
+Subject: [PATCH 0842/1132] drm/i915/gvt: local display support in GVT-g guest
+
+This patch includes below features in GVT-g guest
+1. DP on port A will be treated as external DP
+2. Avoid some unnecessary checks in GVT-g guest
+3. initial default vbt values by using PCH_NONE
+
+Change-Id: I6f6dfa4e5c801e7a63105310d5991adb0a0acad1
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-on:
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/intel_bios.c    |  8 ++++++++
+ drivers/gpu/drm/i915/intel_ddi.c     |  4 ++--
+ drivers/gpu/drm/i915/intel_display.c | 11 ++++++++++-
+ drivers/gpu/drm/i915/intel_dp.c      |  7 ++++++-
+ 4 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_bios.c b/drivers/gpu/drm/i915/intel_bios.c
+index 1faa494..1f99373 100644
+--- a/drivers/gpu/drm/i915/intel_bios.c
++++ b/drivers/gpu/drm/i915/intel_bios.c
+@@ -1726,6 +1726,14 @@ void intel_bios_init(struct drm_i915_private *dev_priv)
+ 		return;
+ 	}
+ 
++	if (HAS_PCH_NOP(dev_priv) && !intel_vgpu_active(dev_priv)) {
++		DRM_DEBUG_KMS("Skipping VBT init due to disabled display.\n");
++		return;
++	}
++	else if (HAS_PCH_NOP(dev_priv)) {
++		dev_priv->pch_type = PCH_NONE;
++	}
++
+ 	init_vbt_defaults(dev_priv);
+ 
+ 	/* If the OpRegion does not have VBT, look in PCI ROM. */
+diff --git a/drivers/gpu/drm/i915/intel_ddi.c b/drivers/gpu/drm/i915/intel_ddi.c
+index c9af348..588b033 100644
+--- a/drivers/gpu/drm/i915/intel_ddi.c
++++ b/drivers/gpu/drm/i915/intel_ddi.c
+@@ -1882,7 +1882,7 @@ bool intel_ddi_connector_get_hw_state(struct intel_connector *intel_connector)
+ 		goto out;
+ 	}
+ 
+-	if (port == PORT_A)
++	if (port == PORT_A && !intel_vgpu_active(dev_priv))
+ 		cpu_transcoder = TRANSCODER_EDP;
+ 	else
+ 		cpu_transcoder = (enum transcoder) pipe;
+@@ -3278,7 +3278,7 @@ static bool intel_ddi_compute_config(struct intel_encoder *encoder,
+ 	enum port port = encoder->port;
+ 	int ret;
+ 
+-	if (port == PORT_A)
++	if (port == PORT_A && !intel_vgpu_active(dev_priv))
+ 		pipe_config->cpu_transcoder = TRANSCODER_EDP;
+ 
+ 	if (intel_crtc_has_type(pipe_config, INTEL_OUTPUT_HDMI))
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 3bd44d0..5bd3c1f 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -11883,7 +11883,16 @@ verify_crtc_state(struct drm_crtc *crtc,
+ 	intel_pipe_config_sanity_check(dev_priv, pipe_config);
+ 
+ 	sw_config = to_intel_crtc_state(new_crtc_state);
+-	if (!intel_pipe_config_compare(dev_priv, sw_config,
++
++	/*
++	 * Only check for pipe config if we are not in a GVT guest environment,
++	 * because such a check in a GVT guest environment doesn't make any sense
++	 * as we don't allow the guest to do a mode set, so there can very well
++	 * be a difference between what it has programmed vs. what the host
++	 * truly configured the HW pipe to be in.
++	 */
++	if (!intel_vgpu_active(dev_priv) &&
++		!intel_pipe_config_compare(dev_priv, sw_config,
+ 				       pipe_config, false)) {
+ 		I915_STATE_WARN(1, "pipe state doesn't match!\n");
+ 		intel_dump_pipe_config(intel_crtc, pipe_config,
+diff --git a/drivers/gpu/drm/i915/intel_dp.c b/drivers/gpu/drm/i915/intel_dp.c
+index e237160..d583d07 100644
+--- a/drivers/gpu/drm/i915/intel_dp.c
++++ b/drivers/gpu/drm/i915/intel_dp.c
+@@ -2075,7 +2075,12 @@ static void wait_panel_status(struct intel_dp *intel_dp,
+ 			I915_READ(pp_stat_reg),
+ 			I915_READ(pp_ctrl_reg));
+ 
+-	if (intel_wait_for_register(dev_priv,
++	/*
++	 * Only wait for panel status if we are not in a GVT guest environment,
++	 * because such a wait in a GVT guest environment doesn't make any sense
++	 * as we are exposing virtual DP monitors to the guest.
++	 */
++	if (!intel_vgpu_active(dev_priv) && intel_wait_for_register(dev_priv,
+ 				    pp_stat_reg, mask, value,
+ 				    5000))
+ 		DRM_ERROR("Panel status timeout: status %08x control %08x\n",
+-- 
+2.7.4
+

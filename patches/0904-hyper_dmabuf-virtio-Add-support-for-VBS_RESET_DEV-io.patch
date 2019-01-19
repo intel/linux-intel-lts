@@ -1,0 +1,102 @@
+From 852b67a4c0a8de79a7d08bba04d7ac9d0210e439 Mon Sep 17 00:00:00 2001
+From: Mateusz Polrola <mateuszx.potrola@intel.com>
+Date: Fri, 24 Aug 2018 09:25:02 +0200
+Subject: [PATCH 0904/1132] hyper_dmabuf/virtio: Add support for VBS_RESET_DEV
+ ioctl (v2)
+
+During VBS_RESET_DEV virtio frontend client will be cleaned up and
+VBS-K device will be restarted.
+
+v2 changes:
+- call virtio_dev_reset from vbs_k_release
+
+Signed-off-by: Mateusz Polrola <mateuszx.potrola@intel.com>
+---
+ .../virtio/hyper_dmabuf_virtio_be_drv.c            | 52 ++++++++++++++--------
+ 1 file changed, 33 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+index c84b2dd..51dd8ed 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+@@ -338,13 +338,6 @@ static int vbs_k_release(struct inode *inode, struct file *f)
+ {
+ 	struct virtio_be_priv *priv =
+ 		(struct virtio_be_priv *) f->private_data;
+-	int i;
+-
+-//	virtio_dev_stop(&priv->dev);
+-//	virtio_dev_cleanup(&priv->dev, false);
+-
+-	for (i = 0; i < HDMA_VIRTIO_QUEUE_MAX; i++)
+-		virtio_vq_reset(&priv->vqs[i]);
+ 
+ 	kfree(priv->pending_tx_req);
+ 	virtio_comm_ring_free(&priv->tx_ring);
+@@ -355,10 +348,25 @@ static int vbs_k_release(struct inode *inode, struct file *f)
+ 	 */
+ 	virtio_fe_foreach(cleanup_fe, priv);
+ 
++	virtio_dev_reset(&priv->dev);
++
+ 	kfree(priv);
+ 	return 0;
+ }
+ 
++static int vbs_k_reset(struct virtio_be_priv *priv)
++{
++	virtio_comm_ring_free(&priv->tx_ring);
++
++	virtio_fe_foreach(cleanup_fe, priv);
++
++	virtio_dev_reset(&priv->dev);
++
++	virtio_comm_ring_init(&priv->tx_ring,
++			      sizeof(struct virtio_be_tx_data),
++			      REQ_RING_SIZE);
++}
++
+ static long vbs_k_ioctl(struct file *f, unsigned int ioctl,
+ 			       unsigned long arg)
+ {
+@@ -374,19 +382,25 @@ static long vbs_k_ioctl(struct file *f, unsigned int ioctl,
+ 		return -EINVAL;
+ 	}
+ 
+-	if (ioctl == VBS_SET_VQ) {
+-		/* Overridden to call additionally
+-		 * virtio_be_register_vhm_client */
+-		r = virtio_vqs_ioctl(&priv->dev, ioctl, argp);
+-		if (r == -ENOIOCTLCMD)
+-			return -EFAULT;
+-
+-		if (virtio_be_register_vhm_client(&priv->dev) < 0)
+-			return -EFAULT;
+-	} else {
+-		r = virtio_dev_ioctl(&priv->dev, ioctl, argp);
+-		if (r == -ENOIOCTLCMD)
++	switch(ioctl) {
++		case VBS_SET_VQ:
++			/* Overridden to call additionally
++			 * virtio_be_register_vhm_client */
+ 			r = virtio_vqs_ioctl(&priv->dev, ioctl, argp);
++			if (r == -ENOIOCTLCMD)
++				return -EFAULT;
++
++			if (virtio_be_register_vhm_client(&priv->dev) < 0)
++				return -EFAULT;
++			break;
++		case VBS_RESET_DEV:
++			vbs_k_reset(priv);
++			break;
++		default:
++			r = virtio_dev_ioctl(&priv->dev, ioctl, argp);
++			if (r == -ENOIOCTLCMD)
++				r = virtio_vqs_ioctl(&priv->dev, ioctl, argp);
++			break;
+ 	}
+ 
+ 	return r;
+-- 
+2.7.4
+

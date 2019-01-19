@@ -1,0 +1,30 @@
+From 3caf2fd17092003acb35d38d2e558597bb8585a3 Mon Sep 17 00:00:00 2001
+From: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Date: Fri, 5 Oct 2018 15:43:04 +0300
+Subject: [PATCH 0974/1132] stm class: heartbeat: Fix whitespace
+
+Fix whitespace in the code for better readability, no functional changes.
+
+Signed-off-by: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Tested-by: Mathieu Poirier <mathieu.poirier@linaro.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/hwtracing/stm/heartbeat.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hwtracing/stm/heartbeat.c b/drivers/hwtracing/stm/heartbeat.c
+index 7db4239..3e7df1c 100644
+--- a/drivers/hwtracing/stm/heartbeat.c
++++ b/drivers/hwtracing/stm/heartbeat.c
+@@ -76,7 +76,7 @@ static int stm_heartbeat_init(void)
+ 			goto fail_unregister;
+ 
+ 		stm_heartbeat[i].data.nr_chans	= 1;
+-		stm_heartbeat[i].data.link		= stm_heartbeat_link;
++		stm_heartbeat[i].data.link	= stm_heartbeat_link;
+ 		stm_heartbeat[i].data.unlink	= stm_heartbeat_unlink;
+ 		hrtimer_init(&stm_heartbeat[i].hrtimer, CLOCK_MONOTONIC,
+ 			     HRTIMER_MODE_ABS);
+-- 
+2.7.4
+

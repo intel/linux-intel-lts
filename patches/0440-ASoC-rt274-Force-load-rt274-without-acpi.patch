@@ -1,0 +1,65 @@
+From 927a6515d89114b1256123dd343dfd21a8144cba Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Thu, 17 Nov 2016 10:57:43 +0530
+Subject: [PATCH 0440/1132] ASoC: rt274: Force load rt274 without acpi
+
+ACPI entries are not present in CNL FPGA BIOS, so force load
+rt274 codec driver. This is required only for FPGA.
+
+Change-Id: If901f6488c7dc7aaa3e7534152f2fe0e953f323f
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/codecs/rt274.c | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/sound/soc/codecs/rt274.c b/sound/soc/codecs/rt274.c
+index d88e673..c5c3ee4 100644
+--- a/sound/soc/codecs/rt274.c
++++ b/sound/soc/codecs/rt274.c
+@@ -1220,7 +1220,39 @@ static struct i2c_driver rt274_i2c_driver = {
+ 	.id_table = rt274_i2c_id,
+ };
+ 
++#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+ module_i2c_driver(rt274_i2c_driver);
++#else
++static struct i2c_board_info rt274_i2c_device = {
++	I2C_BOARD_INFO("rt274", 0x1c),
++};
++
++static int __init rt274_modinit(void)
++{
++	int ret = 0;
++	struct i2c_adapter *adapter;
++	struct i2c_client *client;
++
++	adapter = i2c_get_adapter(0);
++	if (adapter) {
++		client = i2c_new_device(adapter, &rt274_i2c_device);
++		if (!client) {
++			pr_err("can't create i2c device %s\n",
++				rt274_i2c_device.type);
++			i2c_put_adapter(adapter);
++			return -ENODEV;
++		}
++	} else {
++		pr_err("adapter is NULL\n");
++		return -ENODEV;
++	}
++
++	ret = i2c_add_driver(&rt274_i2c_driver);
++
++	return ret;
++}
++module_init(rt274_modinit);
++#endif
+ 
+ MODULE_DESCRIPTION("ASoC RT274 driver");
+ MODULE_AUTHOR("Bard Liao <bardliao@realtek.com>");
+-- 
+2.7.4
+

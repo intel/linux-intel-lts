@@ -1,0 +1,504 @@
+From 20c8bf38377bec96216e89c7a3e027a3901cbee6 Mon Sep 17 00:00:00 2001
+From: Hao Li <hao.l.li@intel.com>
+Date: Fri, 31 Aug 2018 10:58:56 +0800
+Subject: [PATCH 0748/1132] VBS-K: virtqueue initialization API.
+
+This patch added the following to the VBS-K framework:
+ - virtqueue data structures shared between VBS-K and its
+   counterpart in userspace, which is VBS-U;
+ - virtqueue initialization API;
+
+Change-Id: Ib928ea94cb4f33cf30abd17921089afc14518365
+Tracked-On:218445
+Signed-off-by: Hao Li <hao.l.li@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/vbs/Makefile              |   1 +
+ drivers/vbs/vbs.c                 |  75 +++++++++++++++++++++++
+ drivers/vbs/vq.c                  | 125 ++++++++++++++++++++++++++++++++++++++
+ include/linux/vbs/vbs.h           |  57 +++++++++++++++++
+ include/linux/vbs/vbs_common_if.h |  18 ++++++
+ include/linux/vbs/vq.h            |  99 ++++++++++++++++++++++++++++++
+ 6 files changed, 375 insertions(+)
+ create mode 100644 drivers/vbs/vq.c
+ create mode 100644 include/linux/vbs/vq.h
+
+diff --git a/drivers/vbs/Makefile b/drivers/vbs/Makefile
+index b52b65b..cbd5076 100644
+--- a/drivers/vbs/Makefile
++++ b/drivers/vbs/Makefile
+@@ -1,3 +1,4 @@
+ ccflags-$(CONFIG_VBS_DEBUG)	:= -DDEBUG
+ 
+ obj-$(CONFIG_VBS)		+= vbs.o
++obj-$(CONFIG_VBS)		+= vq.o
+diff --git a/drivers/vbs/vbs.c b/drivers/vbs/vbs.c
+index 591d43d..1e7a964 100644
+--- a/drivers/vbs/vbs.c
++++ b/drivers/vbs/vbs.c
+@@ -65,6 +65,66 @@
+ #include <linux/module.h>
+ #include <linux/uaccess.h>
+ #include <linux/vbs/vbs.h>
++#include <linux/vbs/vq.h>
++
++static long virtio_vqs_info_set(struct virtio_dev_info *dev,
++				struct vbs_vqs_info __user *i)
++{
++	struct vbs_vqs_info info;
++	struct virtio_vq_info *vq;
++	int j;
++
++	vq = dev->vqs;
++
++	if (copy_from_user(&info, i, sizeof(struct vbs_vqs_info)))
++		return -EFAULT;
++
++	/* setup struct virtio_vq_info based on info in struct vbs_vq_info */
++	if (dev->nvq && dev->nvq != info.nvq) {
++		pr_err("Oops! dev's nvq != vqs's nvq. Not the same device?\n");
++		return -EFAULT;
++	}
++
++	for (j = 0; j < info.nvq; j++) {
++		vq->qsize = info.vqs[j].qsize;
++		vq->pfn = info.vqs[j].pfn;
++		vq->msix_idx = info.vqs[j].msix_idx;
++		vq->msix_addr = info.vqs[j].msix_addr;
++		vq->msix_data = info.vqs[j].msix_data;
++
++		pr_debug("msix id %x, addr %llx, data %x\n", vq->msix_idx,
++			 vq->msix_addr, vq->msix_data);
++
++		virtio_vq_init(vq, vq->pfn);
++
++		vq++;
++	}
++
++	return 0;
++}
++
++/* invoked by VBS-K device's ioctl routine */
++long virtio_vqs_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
++		      void __user *argp)
++{
++	long ret;
++
++	/*
++	 * Currently we don't conduct ownership checking,
++	 * but assuming caller would have device mutex.
++	 */
++
++	switch (ioctl) {
++	case VBS_SET_VQ:
++		ret = virtio_vqs_info_set(dev, argp);
++		break;
++	default:
++		ret = -ENOIOCTLCMD;
++		break;
++	}
++	return ret;
++}
++EXPORT_SYMBOL_GPL(virtio_vqs_ioctl);
+ 
+ static long virtio_dev_info_set(struct virtio_dev_info *dev,
+ 				struct vbs_dev_info __user *i)
+@@ -77,6 +137,7 @@ static long virtio_dev_info_set(struct virtio_dev_info *dev,
+ 	/* setup struct virtio_dev_info based on info in vbs_dev_info */
+ 	strncpy(dev->name, info.name, VBS_NAME_LEN);
+ 	dev->_ctx.vmid = info.vmid;
++	dev->nvq = info.nvq;
+ 	dev->negotiated_features = info.negotiated_features;
+ 	dev->io_range_start = info.pio_range_start;
+ 	dev->io_range_len = info.pio_range_len;
+@@ -85,6 +146,7 @@ static long virtio_dev_info_set(struct virtio_dev_info *dev,
+ 	return 0;
+ }
+ 
++/* invoked by VBS-K device's ioctl routine */
+ long virtio_dev_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
+ 		      void __user *argp)
+ {
+@@ -107,6 +169,19 @@ long virtio_dev_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
+ }
+ EXPORT_SYMBOL_GPL(virtio_dev_ioctl);
+ 
++/* called in VBS-K device's .open() */
++long virtio_dev_init(struct virtio_dev_info *dev,
++		     struct virtio_vq_info *vqs, int nvq)
++{
++	int i;
++
++	for (i = 0; i < nvq; i++)
++		virtio_vq_reset(&vqs[i]);
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(virtio_dev_init);
++
+ static int __init vbs_init(void)
+ {
+ 	return 0;
+diff --git a/drivers/vbs/vq.c b/drivers/vbs/vq.c
+new file mode 100644
+index 0000000..95a6757
+--- /dev/null
++++ b/drivers/vbs/vq.c
+@@ -0,0 +1,125 @@
++/*
++ * ACRN Project
++ * Virtio Backend Service (VBS) for ACRN hypervisor
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * Contact Information: Hao Li <hao.l.li@intel.com>
++ *
++ * BSD LICENSE
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Chris Torek <torek @ torek net>
++ * Hao Li <hao.l.li@intel.com>
++ *  Created Virtqueue APIs for ACRN VBS framework:
++ *  - VBS-K is a kernel-level virtio framework that can be used for
++ *    virtio backend driver development for ACRN hypervisor.
++ *  - Virtqueue APIs abstract away the details of the internal data
++ *    structures of virtqueue, so that callers could easily access
++ *    the data from guest through virtqueues.
++ */
++
++#include <linux/module.h>
++#include <linux/vbs/vq.h>
++#include <linux/vbs/vbs.h>
++#include <linux/vhm/acrn_vhm_mm.h>
++
++/* helper function for remote memory map */
++void * paddr_guest2host(struct ctx *ctx, uintptr_t gaddr, size_t len)
++{
++	return map_guest_phys(ctx->vmid, gaddr, len);
++}
++
++/*
++ * Initialize the currently-selected virtqueue.
++ * The guest just gave us a page frame number, from which we can
++ * calculate the addresses of the queue.
++ */
++void virtio_vq_init(struct virtio_vq_info *vq, uint32_t pfn)
++{
++	uint64_t phys;
++	size_t size;
++	char *base;
++	struct ctx *ctx;
++
++	ctx = &vq->dev->_ctx;
++
++	phys = (uint64_t)pfn << VRING_PAGE_BITS;
++	size = virtio_vq_ring_size(vq->qsize);
++	base = paddr_guest2host(ctx, phys, size);
++
++	/* First page(s) are descriptors... */
++	vq->desc = (struct virtio_desc *)base;
++	base += vq->qsize * sizeof(struct virtio_desc);
++
++	/* ... immediately followed by "avail" ring (entirely uint16_t's) */
++	vq->avail = (struct vring_avail *)base;
++	base += (2 + vq->qsize + 1) * sizeof(uint16_t);
++
++	/* Then it's rounded up to the next page... */
++	base = (char *)roundup2((uintptr_t)base, VRING_ALIGN);
++
++	/* ... and the last page(s) are the used ring. */
++	vq->used = (struct vring_used *)base;
++
++	/* Mark queue as allocated, and start at 0 when we use it. */
++	vq->flags = VQ_ALLOC;
++	vq->last_avail = 0;
++	vq->save_used = 0;
++}
++
++/* reset one virtqueue, make it invalid */
++void virtio_vq_reset(struct virtio_vq_info *vq)
++{
++	if (!vq) {
++		pr_info("%s: vq is NULL!\n", __func__);
++		return;
++	}
++
++	vq->pfn = 0;
++	vq->msix_idx = VIRTIO_MSI_NO_VECTOR;
++	vq->flags = 0;
++	vq->last_avail = 0;
++	vq->save_used = 0;
++}
+diff --git a/include/linux/vbs/vbs.h b/include/linux/vbs/vbs.h
+index 7b87678..715c491 100644
+--- a/include/linux/vbs/vbs.h
++++ b/include/linux/vbs/vbs.h
+@@ -80,19 +80,76 @@ struct ctx {
+ 	int vmid;
+ };
+ 
++struct virtio_desc {			/* AKA vring_desc */
++	uint64_t addr;			/* guest physical address */
++	uint32_t len;			/* length of scatter/gather seg */
++	uint16_t flags;			/* desc flags */
++	uint16_t next;			/* next desc if F_NEXT */
++} __attribute__((packed));
++
++struct virtio_used {			/* AKA vring_used_elem */
++	uint32_t idx;			/* head of used descriptor chain */
++	uint32_t len;			/* length written-to */
++} __attribute__((packed));
++
++struct vring_avail {
++	uint16_t flags;			/* vring_avail flags */
++	uint16_t idx;			/* counts to 65535, then cycles */
++	uint16_t ring[];		/* size N, reported in QNUM value */
++} __attribute__((packed));
++
++struct vring_used {
++	uint16_t flags;			/* vring_used flags */
++	uint16_t idx;			/* counts to 65535, then cycles */
++	struct virtio_used ring[];	/* size N */
++} __attribute__((packed));
++
++/* struct used to maintain virtqueue info from userspace VBS */
++struct virtio_vq_info {
++	/* virtqueue info from VBS-U */
++	uint16_t qsize;			/* size of this queue (a power of 2) */
++	uint32_t pfn;			/* PFN of virt queue (not shifted!) */
++	uint16_t msix_idx;		/* MSI-X index/VIRTIO_MSI_NO_VECTOR */
++	uint64_t msix_addr;		/* MSI-X address specified by index */
++	uint32_t msix_data;		/* MSI-X data specified by index */
++
++	/* members created in kernel space VBS */
++	int (*vq_notify)(int);		/* vq-wide notification */
++	struct virtio_dev_info *dev;	/* backpointer to virtio_dev_info */
++	uint16_t num;			/* we're the num'th virtqueue */
++	uint16_t flags;			/* virtqueue flags */
++	uint16_t last_avail;		/* a recent value of vq_avail->va_idx */
++	uint16_t save_used;		/* saved vq_used->vu_idx */
++
++	volatile struct virtio_desc *desc;   /* descriptor array */
++	volatile struct vring_avail *avail;  /* the "avail" ring */
++	volatile struct vring_used *used;    /* the "used" ring */
++};
++
+ /* struct used to maintain virtio device info from userspace VBS */
+ struct virtio_dev_info {
+ 	/* dev info from VBS */
+ 	char name[VBS_NAME_LEN];	/* VBS device name */
+ 	struct ctx _ctx;		/* device context */
++	int nvq;			/* number of virtqueues */
+ 	uint32_t negotiated_features;	/* features after guest loads driver */
+ 	uint64_t io_range_start;	/* IO range start of VBS device */
+ 	uint64_t io_range_len;		/* IO range len of VBS device */
+ 	enum IORangeType io_range_type;	/* IO range type, PIO or MMIO */
++
++	/* members created in kernel space VBS */
++	void (*dev_notify)(void *, struct virtio_vq_info *);
++					/* device-wide notification */
++	struct virtio_vq_info *vqs;	/* virtqueue(s) */
++	int curq;			/* current virtqueue index */
+ };
+ 
+ /* VBS Runtime Control APIs */
++long virtio_dev_init(struct virtio_dev_info *dev, struct virtio_vq_info *vqs,
++		     int nvq);
+ long virtio_dev_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
+ 		      void __user *argp);
++long virtio_vqs_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
++		      void __user *argp);
+ 
+ #endif
+diff --git a/include/linux/vbs/vbs_common_if.h b/include/linux/vbs/vbs_common_if.h
+index 78b36a6..91eb4e0 100644
+--- a/include/linux/vbs/vbs_common_if.h
++++ b/include/linux/vbs/vbs_common_if.h
+@@ -59,11 +59,28 @@
+ #ifndef _VBS_COMMON_IF_H_
+ #define _VBS_COMMON_IF_H_
+ 
++#define VBS_MAX_VQ_CNT		10
+ #define VBS_NAME_LEN		32
++#define VIRTIO_MSI_NO_VECTOR	0xFFFF
++
++struct vbs_vq_info {
++	uint16_t qsize;		/* size of this virtqueue (a power of 2) */
++	uint32_t pfn;		/* PFN of virtqueue (not shifted!) */
++	uint16_t msix_idx;	/* MSI-X index, or VIRTIO_MSI_NO_VECTOR */
++	uint64_t msix_addr;	/* MSI-X address specified by index */
++	uint32_t msix_data;	/* MSI-X data specified by index */
++};
++
++struct vbs_vqs_info {
++	uint32_t nvq;		/* number of virtqueues */
++	struct vbs_vq_info vqs[VBS_MAX_VQ_CNT];
++				/* array of struct vbs_vq_info */
++};
+ 
+ struct vbs_dev_info {
+ 	char name[VBS_NAME_LEN];/* VBS name */
+ 	int vmid;		/* id of VM this device belongs to */
++	int nvq;		/* number of virtqueues */
+ 	uint32_t negotiated_features;
+ 				/* features after VIRTIO_CONFIG_S_DRIVER_OK */
+ 	uint64_t pio_range_start;
+@@ -74,5 +91,6 @@ struct vbs_dev_info {
+ #define VBS_IOCTL	0xAF
+ 
+ #define VBS_SET_DEV _IOW(VBS_IOCTL, 0x00, struct vbs_dev_info)
++#define VBS_SET_VQ _IOW(VBS_IOCTL, 0x01, struct vbs_vqs_info)
+ 
+ #endif
+diff --git a/include/linux/vbs/vq.h b/include/linux/vbs/vq.h
+new file mode 100644
+index 0000000..55ff810
+--- /dev/null
++++ b/include/linux/vbs/vq.h
+@@ -0,0 +1,99 @@
++/*
++ * ACRN Project
++ * Virtio Backend Service (VBS) for ACRN hypervisor
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * Contact Information: Hao Li <hao.l.li@intel.com>
++ *
++ * BSD LICENSE
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Chris Torek <torek @ torek net>
++ * Hao Li <hao.l.li@intel.com>
++ *  Define virtqueue data structures and APIs for VBS framework.
++ *  - VBS-K is a kernel-level virtio framework that can be used for
++ *    virtio backend driver development for ACRN hypervisor.
++ *  - VBS-K should be working with VBS-U (Virtio Backend Service in
++ *    User) together, in order to connect with virtio frontend driver.
++ */
++
++#ifndef _VQ_H_
++#define _VQ_H_
++
++#include <linux/uio.h>
++#include <linux/vbs/vbs.h>
++
++/* virtqueue alignment */
++#define VRING_ALIGN			4096
++#define roundup2(x, y) (((x)+((y)-1))&(~((y)-1)))
++
++/* PFN register shift amount */
++#define VRING_PAGE_BITS			12
++
++/* virtqueue flags */
++#define	VQ_ALLOC			0x01
++#define	VQ_BROKED			0x02
++
++/* get virtqueue size according to virtio specification */
++static inline size_t virtio_vq_ring_size(unsigned int qsz)
++{
++	size_t size;
++
++	/* constant 3 below = va_flags, va_idx, va_used_event */
++	size = sizeof(struct virtio_desc) * qsz + sizeof(uint16_t) * (3 + qsz);
++	size = roundup2(size, VRING_ALIGN);
++
++	/* constant 3 below = vu_flags, vu_idx, vu_avail_event */
++	size += sizeof(uint16_t) * 3 + sizeof(struct virtio_used) * qsz;
++	size = roundup2(size, VRING_ALIGN);
++
++	return size;
++}
++
++/* virtqueue initialization APIs */
++void virtio_vq_init(struct virtio_vq_info *vq, uint32_t pfn);
++void virtio_vq_reset(struct virtio_vq_info *vq);
++
++#endif
+-- 
+2.7.4
+

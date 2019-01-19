@@ -1,0 +1,37 @@
+From 8d5fb45c04a109be6f3fb159874ce9bfe375be7f Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Thu, 7 Sep 2017 09:58:03 +0530
+Subject: [PATCH 0631/1132] ASoC: Intel: board: Remove unused function
+ cnl_dmic_fixup
+
+cnl_dmic_fixup is never used, remove it to shun compiler warning.
+
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/boards/cnl_cs42l42.c | 10 ----------
+ 1 file changed, 10 deletions(-)
+
+diff --git a/sound/soc/intel/boards/cnl_cs42l42.c b/sound/soc/intel/boards/cnl_cs42l42.c
+index 879aa4e..bf5885b 100644
+--- a/sound/soc/intel/boards/cnl_cs42l42.c
++++ b/sound/soc/intel/boards/cnl_cs42l42.c
+@@ -162,16 +162,6 @@ static int cnl_cs42l42_codec_fixup(struct snd_soc_pcm_runtime *rtd,
+ 	return 0;
+ }
+ 
+-static int cnl_dmic_fixup(struct snd_soc_pcm_runtime *rtd,
+-				struct snd_pcm_hw_params *params)
+-{
+-	struct snd_interval *channels = hw_param_interval(params,
+-						SNDRV_PCM_HW_PARAM_CHANNELS);
+-	channels->min = channels->max = 2;
+-
+-	return 0;
+-}
+-
+ struct snd_soc_dai_link cnl_cs42l42_msic_dailink[] = {
+ 	{
+ 		.name = "Bxtn Audio Port",
+-- 
+2.7.4
+

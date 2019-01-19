@@ -1,0 +1,55 @@
+From a227bc9aee0643b6ef2f579705f7640478135cf5 Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:03 +0800
+Subject: [PATCH 0810/1132] vhm: Add error handling for IC_CREATE_VM ioctl
+
+If returned with error after hypervisor creating the VM, then we have no
+chance to destroy it. Add the error handling to destroy the VM if fail.
+
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Acked-by: Eddie Dong <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 5884fd2..1286f77 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -216,21 +216,27 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		}
+ 
+ 		if (copy_to_user((void *)ioctl_param, &created_vm,
+-			sizeof(struct acrn_create_vm)))
+-			return -EFAULT;
+-
++			sizeof(struct acrn_create_vm))) {
++			ret = -EFAULT;
++			goto create_vm_fail;
++		}
+ 		vm->vmid = created_vm.vmid;
+ 
+ 		if (created_vm.vm_flag & SECURE_WORLD_ENABLED) {
+ 			ret = init_trusty(vm);
+ 			if (ret < 0) {
+ 				pr_err("vhm: failed to init trusty for VM!\n");
+-				return ret;
++				goto create_vm_fail;
+ 			}
+ 		}
+ 
+ 		pr_info("vhm: VM %d created\n", created_vm.vmid);
+ 		break;
++create_vm_fail:
++		hcall_destroy_vm(created_vm.vmid);
++		vm->vmid = ACRN_INVALID_VMID;
++		break;
++
+ 	}
+ 
+ 	case IC_START_VM: {
+-- 
+2.7.4
+

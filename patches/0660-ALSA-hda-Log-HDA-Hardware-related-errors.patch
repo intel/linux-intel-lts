@@ -1,0 +1,46 @@
+From 94448d4ac0810cd6be38504c9c6b6821a2ad73cf Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Wed, 19 Jul 2017 00:41:43 +0530
+Subject: [PATCH 0660/1132] ALSA: hda: Log HDA Hardware related errors
+
+Detect the timeout while modifying HDA DMA related Registers
+for stream reset and print them to console for user information
+
+Change-Id: Id2441bee1fd6083cd11c4725af2d36cb90e9bf92
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Reviewed-on:
+Reviewed-by: Prakash, Divya1
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/hda/hdac_stream.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/sound/hda/hdac_stream.c b/sound/hda/hdac_stream.c
+index 00954ef..0fdb6dd 100644
+--- a/sound/hda/hdac_stream.c
++++ b/sound/hda/hdac_stream.c
+@@ -147,6 +147,10 @@ void snd_hdac_stream_reset(struct hdac_stream *azx_dev)
+ 		if (val)
+ 			break;
+ 	} while (--timeout);
++
++	if (!timeout)
++		dev_err(azx_dev->bus->dev, "timeout on stream reset entry\n");
++
+ 	val &= ~SD_CTL_STREAM_RESET;
+ 	snd_hdac_stream_writeb(azx_dev, SD_CTL, val);
+ 	udelay(3);
+@@ -160,6 +164,9 @@ void snd_hdac_stream_reset(struct hdac_stream *azx_dev)
+ 			break;
+ 	} while (--timeout);
+ 
++	if (!timeout)
++		dev_err(azx_dev->bus->dev, "timeout on stream reset exit\n");
++
+ 	/* reset first position - may not be synced with hw at this time */
+ 	if (azx_dev->posbuf)
+ 		*azx_dev->posbuf = 0;
+-- 
+2.7.4
+

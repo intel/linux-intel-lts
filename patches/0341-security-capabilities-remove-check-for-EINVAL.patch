@@ -1,0 +1,32 @@
+From 3a1933d601dd529244e4cb7b7254f9d8f811b264 Mon Sep 17 00:00:00 2001
+From: Christian Brauner <christian@brauner.io>
+Date: Wed, 22 Aug 2018 13:52:40 +0200
+Subject: [PATCH 0341/1132] security/capabilities: remove check for -EINVAL
+
+bprm_caps_from_vfs_caps() never returned -EINVAL so remove the
+rc == -EINVAL check.
+
+Signed-off-by: Christian Brauner <christian@brauner.io>
+Reviewed-by: Serge Hallyn <serge@hallyn.com>
+Signed-off-by: James Morris <james.morris@microsoft.com>
+---
+ security/commoncap.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/security/commoncap.c b/security/commoncap.c
+index 2e489d6..18a4fdf 100644
+--- a/security/commoncap.c
++++ b/security/commoncap.c
+@@ -684,9 +684,6 @@ static int get_file_caps(struct linux_binprm *bprm, bool *effective, bool *has_f
+ 	}
+ 
+ 	rc = bprm_caps_from_vfs_caps(&vcaps, bprm, effective, has_fcap);
+-	if (rc == -EINVAL)
+-		printk(KERN_NOTICE "%s: cap_from_disk returned %d for %s\n",
+-		       __func__, rc, bprm->filename);
+ 
+ out:
+ 	if (rc)
+-- 
+2.7.4
+

@@ -1,0 +1,133 @@
+From 25081d3212b4eada4e41fcd356e3a87a348ebc5b Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Mon, 27 Feb 2017 09:09:37 +0530
+Subject: [PATCH 0557/1132] ASoC: Intel: board: Add support for dynamic FE dai
+ link in cnl_rt274 machine
+
+FE dai links now come from topology, so remove them from machine driver.
+Additionally register ops to initialize dai link. Rate constraint is
+not required as rates will come from topology. So remove the startup
+ops as well which sets the rate constraint.
+
+Change-Id: I0fb07c74450bf55415323539e383ef39ed3ff4c4
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Reviewed-on:
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/boards/cnl_rt274.c | 74 ++++++--------------------------------
+ 1 file changed, 10 insertions(+), 64 deletions(-)
+
+diff --git a/sound/soc/intel/boards/cnl_rt274.c b/sound/soc/intel/boards/cnl_rt274.c
+index eebde84..21b40b8 100644
+--- a/sound/soc/intel/boards/cnl_rt274.c
++++ b/sound/soc/intel/boards/cnl_rt274.c
+@@ -124,30 +124,6 @@ static int cnl_rt274_init(struct snd_soc_pcm_runtime *runtime)
+ 	return 0;
+ }
+ 
+-static unsigned int rates_supported[] = {
+-	48000,
+-	32000,
+-	24000,
+-	16000,
+-	8000,
+-};
+-
+-static struct snd_pcm_hw_constraint_list rate_constraints = {
+-	.count = ARRAY_SIZE(rates_supported),
+-	.list  = rates_supported,
+-};
+-
+-static int cnl_fe_startup(struct snd_pcm_substream *substream)
+-{
+-	return snd_pcm_hw_constraint_list(substream->runtime, 0,
+-			SNDRV_PCM_HW_PARAM_RATE,
+-			&rate_constraints);
+-}
+-
+-static struct snd_soc_ops cnl_fe_ops = {
+-	.startup = cnl_fe_startup,
+-};
+-
+ static int cnl_be_fixup(struct snd_soc_pcm_runtime *rtd,
+ 			    struct snd_pcm_hw_params *params)
+ {
+@@ -204,46 +180,6 @@ static const char cname[] = "i2c-INT34C2:00";
+ #endif
+ 
+ static struct snd_soc_dai_link cnl_rt274_msic_dailink[] = {
+-	{
+-		.name = "CNL Audio Port",
+-		.stream_name = "Audio",
+-		.cpu_dai_name = "System Pin",
+-		.codec_name = "snd-soc-dummy",
+-		.codec_dai_name = "snd-soc-dummy-dai",
+-		.platform_name = pname,
+-		.ignore_suspend = 1,
+-		.nonatomic = 1,
+-		.dynamic = 1,
+-		.dpcm_playback = 1,
+-		.dpcm_capture = 1,
+-		.ops = &cnl_fe_ops,
+-	},
+-	{
+-		.name = "CNL Deepbuffer Port",
+-		.stream_name = "Deep Buffer Audio",
+-		.cpu_dai_name = "Deepbuffer Pin",
+-		.codec_name = "snd-soc-dummy",
+-		.codec_dai_name = "snd-soc-dummy-dai",
+-		.platform_name = pname,
+-		.dpcm_playback = 1,
+-		.dpcm_capture = 1,
+-		.ignore_suspend = 1,
+-		.nonatomic = 1,
+-		.dynamic = 1,
+-		.ops = &cnl_fe_ops,
+-	},
+-	{
+-		.name = "CNL Reference Port",
+-		.stream_name = "Reference Capture",
+-		.cpu_dai_name = "Reference Pin",
+-		.codec_name = "snd-soc-dummy",
+-		.codec_dai_name = "snd-soc-dummy-dai",
+-		.platform_name = pname,
+-		.dpcm_capture = 1,
+-		.ignore_suspend = 1,
+-		.nonatomic = 1,
+-		.dynamic = 1,
+-	},
+ 	/* Trace Buffer DAI links */
+ 	{
+ 		.name = "CNL Trace Buffer0",
+@@ -352,6 +288,15 @@ static struct snd_soc_dai_link cnl_rt274_msic_dailink[] = {
+ 	},
+ };
+ 
++static int
++cnl_add_dai_link(struct snd_soc_card *card, struct snd_soc_dai_link *link)
++{
++       link->platform_name = pname;
++       link->nonatomic = 1;
++
++       return 0;
++}
++
+ /* SoC card */
+ static struct snd_soc_card snd_soc_card_cnl = {
+ 	.name = "cnl-audio",
+@@ -363,6 +308,7 @@ static struct snd_soc_card snd_soc_card_cnl = {
+ 	.num_dapm_routes = ARRAY_SIZE(cnl_map),
+ 	.controls = cnl_controls,
+ 	.num_controls = ARRAY_SIZE(cnl_controls),
++	.add_dai_link = cnl_add_dai_link,
+ };
+ 
+ static int snd_cnl_rt274_mc_probe(struct platform_device *pdev)
+-- 
+2.7.4
+

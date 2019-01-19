@@ -1,0 +1,98 @@
+From 873a40e7a5043e5bae9663cf338b888e8d004954 Mon Sep 17 00:00:00 2001
+From: Hardik Shah <hardik.t.shah@intel.com>
+Date: Fri, 29 Apr 2016 16:26:15 +0530
+Subject: [PATCH 0465/1132] SDW:Intel: Enabled the Multimode for Intel SDW
+ master controller.
+
+Initialize the SDW controller for multimode.
+Set the Sync period to default
+Change the default SSP for multimode.
+
+Change-Id: Ie45c00aeeaea5062abe76abb91b7504e4e8b01fb
+Signed-off-by: Hardik Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+---
+ drivers/sdw/sdw_cnl.c      | 25 ++++++++++++++++++++++++-
+ drivers/sdw/sdw_cnl_priv.h | 12 +++++++++---
+ 2 files changed, 33 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/sdw/sdw_cnl.c b/drivers/sdw/sdw_cnl.c
+index 9686aa2..21a61b4 100644
+--- a/drivers/sdw/sdw_cnl.c
++++ b/drivers/sdw/sdw_cnl.c
+@@ -440,7 +440,11 @@ static int sdw_init(struct cnl_sdw *sdw)
+ {
+ 	struct sdw_master *mstr = sdw->mstr;
+ 	struct cnl_sdw_data *data = &sdw->data;
+-	int mcp_config, mcp_control;
++	int mcp_config, mcp_control, sync_reg;
++
++	volatile int sync_update = 0;
++	/* Try 10 times before timing out */
++	int timeout = 10;
+ 	int ret = 0;
+ 
+ 	/* Power up the link controller */
+@@ -454,6 +458,25 @@ static int sdw_init(struct cnl_sdw *sdw)
+ 	/* Switch the ownership to Master IP from glue logic */
+ 	sdw_switch_to_mip(sdw);
+ 
++	/* Set the Sync period to default */
++	sync_reg = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
++	sync_reg |= (SDW_CNL_DEFAULT_SYNC_PERIOD << CNL_SYNC_SYNCPRD_SHIFT);
++	sync_reg |= (0x1 << CNL_SYNC_SYNCCPU_SHIFT);
++	cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_SYNC, sync_reg);
++
++	do {
++		sync_update = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
++		if ((sync_update & CNL_SYNC_SYNCCPU_MASK) == 0)
++			break;
++		timeout--;
++		/* Wait 20ms before each time */
++		msleep(20);
++	} while (timeout != 0);
++	if ((sync_update & CNL_SYNC_SYNCCPU_MASK) != 0) {
++		dev_err(&mstr->dev, "Fail to set sync period\n");
++		return -EINVAL;
++	}
++
+ 	/* Set command acceptance mode. This is required because when
+ 	 * Master broadcasts the clock_stop command to slaves, slaves
+ 	 * might be already suspended, so this return NO ACK, in that
+diff --git a/drivers/sdw/sdw_cnl_priv.h b/drivers/sdw/sdw_cnl_priv.h
+index 914f7ca..c994338 100644
+--- a/drivers/sdw/sdw_cnl_priv.h
++++ b/drivers/sdw/sdw_cnl_priv.h
+@@ -26,11 +26,13 @@
+ #define SDW_CNL_SLAVES_STAT_UPPER_DWORD_SHIFT 32
+ #define SDW_CNL_SLAVE_STATUS_BITS	4
+ #define SDW_CNL_CMD_WORD_LEN	4
+-#define SDW_CNL_DEFAULT_SSP_INTERVAL	0x32
++#define SDW_CNL_DEFAULT_SSP_INTERVAL	0x18
++#define SDW_CNL_DEFAULT_SYNC_PERIOD	0x257F
++
+ #define SDW_CNL_PORT_REG_OFFSET		0x80
+ #define CNL_SDW_SCP_ADDR_REGS		0x2
+ #define SDW_CNL_PCM_PDI_NUM_OFFSET	0x2
+-#define SDW_CNL_PDM_PDI_NUM_OFFSET	0x6
++#define SDW_CNL_PDM_PDI_NUM_OFFSET     0x6
+ 
+ #define SDW_CNL_CTMCTL_REG_OFFSET	0x60
+ #define SDW_CNL_IOCTL_REG_OFFSET	0x60
+@@ -257,8 +259,12 @@
+ #define SDW_CNL_SYNC				0xC
+ #define CNL_SYNC_CMDSYNC_MASK			0x1
+ #define CNL_SYNC_CMDSYNC_SHIFT			16
+-#define CNL_SYNC_SYNCGO_MASK			0x1
++#define CNL_SYNC_SYNCGO_MASK			0x1000000
+ #define CNL_SYNC_SYNCGO_SHIFT			0x18
++#define CNL_SYNC_SYNCPRD_MASK			0x7FFF
++#define CNL_SYNC_SYNCPRD_SHIFT			0x0
++#define CNL_SYNC_SYNCCPU_MASK			0x8000
++#define CNL_SYNC_SYNCCPU_SHIFT			0xF
+ 
+ #define SDW_CNL_CTLSCAP				0x10
+ #define SDW_CNL_CTLS0CM				0x12
+-- 
+2.7.4
+

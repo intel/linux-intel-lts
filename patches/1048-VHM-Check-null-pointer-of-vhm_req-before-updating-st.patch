@@ -1,0 +1,37 @@
+From 58a0e40881bc29bb94af2bc9201f2b800338c10d Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Fri, 14 Dec 2018 11:26:39 +0800
+Subject: [PATCH 1048/1132] VHM: Check null-pointer of vhm_req before updating
+ state of emulated io_request
+
+The function of acrn_ioreq_get_reqbuf can return NULL-pointer when the
+corresponding client_id is freed. In such case the null pointer is used
+in the course of updating state of emulated io_request. This will cause
+the kernel panic.
+
+Traced-On: projectacrn/acrn-hypervisor#2066
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Reviewed-by: Yin, FengWei <fengwei.yin@intel.com>
+Tracked-On: PKT-1617
+---
+ drivers/vhm/vhm_ioreq.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index ac95061..3a8f692 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -981,6 +981,10 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
+ 	clear_bit(vcpu, client->ioreqs_map);
+ 	if (!vhm_req) {
+ 		vhm_req = acrn_ioreq_get_reqbuf(client_id);
++		if (!vhm_req) {
++			acrn_ioreq_put_client(client);
++			return -EINVAL;
++		}
+ 		vhm_req += vcpu;
+ 	}
+ 
+-- 
+2.7.4
+

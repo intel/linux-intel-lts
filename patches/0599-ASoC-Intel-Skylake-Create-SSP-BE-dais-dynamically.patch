@@ -1,0 +1,339 @@
+From 3a2df960fe1db6216518889e95a9eb2662c9e695 Mon Sep 17 00:00:00 2001
+From: "Diwakar, Praveen" <praveen.diwakar@intel.com>
+Date: Tue, 6 Jun 2017 21:04:21 +0530
+Subject: [PATCH 0599/1132] ASoC: Intel: Skylake: Create SSP BE dais
+ dynamically
+
+This patch creates BE SSP dai dynamically, by getting SSP
+link information from NHLT.
+
+Change-Id: I2b6e45125a3fbd1e7f155efe86b5fb1a983c0f41
+Signed-off-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-nhlt.c |  36 +++++++
+ sound/soc/intel/skylake/skl-pcm.c  | 195 +++++++++++++------------------------
+ sound/soc/intel/skylake/skl.h      |   7 ++
+ 3 files changed, 111 insertions(+), 127 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-nhlt.c b/sound/soc/intel/skylake/skl-nhlt.c
+index b2873dd..cf3d381 100644
+--- a/sound/soc/intel/skylake/skl-nhlt.c
++++ b/sound/soc/intel/skylake/skl-nhlt.c
+@@ -464,3 +464,39 @@ void skl_get_clks(struct skl *skl, struct skl_ssp_clk *ssp_clks)
+ 		epnt = (struct nhlt_endpoint *)((u8 *)epnt + epnt->length);
+ 	}
+ }
++
++static bool is_vbus_id_exist(struct skl *skl, int vbus_id)
++{
++	bool ret = false;
++	int i;
++
++	for (i = 0; i < skl->nhlt->endpoint_count; i++) {
++		if (vbus_id == skl->grp_cnt.vbus_id[i])
++			return true;
++	}
++	return ret;
++}
++
++/*
++ * This function gets endpoint count and vbus_id for the specific link type
++ *  passed as parameter.
++ */
++void skl_nhlt_get_ep_cnt(struct skl *skl, int link_type)
++{
++	struct nhlt_endpoint *epnt = (struct nhlt_endpoint *) skl->nhlt->desc;
++	int i;
++
++	skl->grp_cnt.cnt = 0;
++	memset(skl->grp_cnt.vbus_id, 0xff,
++		(sizeof(int) * skl->nhlt->endpoint_count));
++
++	for (i = 0; i < skl->nhlt->endpoint_count; i++) {
++
++		if (epnt->linktype == link_type) {
++			if (!is_vbus_id_exist(skl, epnt->virtual_bus_id))
++				skl->grp_cnt.vbus_id[skl->grp_cnt.cnt++] =
++						epnt->virtual_bus_id;
++		}
++		epnt = (struct nhlt_endpoint *)((u8 *)epnt + epnt->length);
++	}
++}
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index c1ddf5c..96c912b 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1118,126 +1118,6 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ /* BE cpu dais and compress dais*/
+ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ {
+-	.name = "SSP0 Pin",
+-	.ops = &skl_be_ssp_dai_ops,
+-	.playback = {
+-		.stream_name = "ssp0 Tx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-	.capture = {
+-		.stream_name = "ssp0 Rx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-},
+-{
+-	.name = "SSP1 Pin",
+-	.ops = &skl_be_ssp_dai_ops,
+-	.playback = {
+-		.stream_name = "ssp1 Tx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-	.capture = {
+-		.stream_name = "ssp1 Rx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-},
+-{
+-	.name = "SSP2 Pin",
+-	.ops = &skl_be_ssp_dai_ops,
+-	.playback = {
+-		.stream_name = "ssp2 Tx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-	.capture = {
+-		.stream_name = "ssp2 Rx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-},
+-{
+-	.name = "SSP3 Pin",
+-	.ops = &skl_be_ssp_dai_ops,
+-	.playback = {
+-		.stream_name = "ssp3 Tx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-	.capture = {
+-		.stream_name = "ssp3 Rx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-},
+-{
+-	.name = "SSP4 Pin",
+-	.ops = &skl_be_ssp_dai_ops,
+-	.playback = {
+-		.stream_name = "ssp4 Tx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-	.capture = {
+-		.stream_name = "ssp4 Rx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-},
+-{
+-	.name = "SSP5 Pin",
+-	.ops = &skl_be_ssp_dai_ops,
+-	.playback = {
+-		.stream_name = "ssp5 Tx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-	.capture = {
+-		.stream_name = "ssp5 Rx",
+-		.channels_min = HDA_MONO,
+-		.channels_max = HDA_8_CH,
+-		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+-			SNDRV_PCM_FMTBIT_S32_LE,
+-	},
+-},
+-{
+ 	.name = "iDisp1 Pin",
+ 	.ops = &skl_link_dai_ops,
+ 	.playback = {
+@@ -1994,40 +1874,101 @@ static const struct snd_soc_component_driver skl_component  = {
+ 	.num_controls	= ARRAY_SIZE(skl_controls),
+ };
+ 
++static struct snd_soc_dai_driver ssp_dai_info = {
++	.ops = &skl_be_ssp_dai_ops,
++	.playback = {
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			   SNDRV_PCM_FMTBIT_S32_LE,
++	},
++	.capture = {
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			   SNDRV_PCM_FMTBIT_S32_LE,
++	},
++};
++
+ int skl_platform_register(struct device *dev)
+ {
+ 	int ret;
+-	struct snd_soc_dai_driver *dais;
+-	int num_dais = ARRAY_SIZE(skl_platform_dai);
+ 	struct hdac_bus *bus = dev_get_drvdata(dev);
+ 	struct skl *skl = bus_to_skl(bus);
++	struct snd_soc_dai_driver *dais;
++	int num_dais = ARRAY_SIZE(skl_platform_dai);
++	int total_dais;
++	int i, index;
+ 
+ 	INIT_LIST_HEAD(&skl->ppl_list);
+ 	INIT_LIST_HEAD(&skl->bind_list);
+ 
+ 	skl->dais = kmemdup(skl_platform_dai, sizeof(skl_platform_dai),
+ 			    GFP_KERNEL);
++	skl->grp_cnt.vbus_id = devm_kcalloc(dev, skl->nhlt->endpoint_count,
++						sizeof(int), GFP_KERNEL);
++	if (!skl->grp_cnt.vbus_id)
++		return -ENOMEM;
++
++	skl_nhlt_get_ep_cnt(skl, NHLT_LINK_SSP);
++
++	total_dais = num_dais + skl->grp_cnt.cnt;
++
++	skl->dais = devm_kcalloc(dev, total_dais, sizeof(*dais), GFP_KERNEL);
++
+ 	if (!skl->dais) {
+ 		ret = -ENOMEM;
+ 		goto err;
+ 	}
+ 
++	memcpy(skl->dais, skl_platform_dai, sizeof(skl_platform_dai));
++
++	for (i = 0; i < skl->grp_cnt.cnt; i++) {
++		index = num_dais + i;
++
++		memcpy(&skl->dais[index], &ssp_dai_info, sizeof(ssp_dai_info));
++
++		skl->dais[index].name = kasprintf(GFP_KERNEL, "SSP%d Pin",
++				skl->grp_cnt.vbus_id[i]);
++		if (!skl->dais[index].name)
++			return -ENOMEM;
++
++		skl->dais[index].playback.stream_name = kasprintf(GFP_KERNEL,
++				"ssp%d Tx", skl->grp_cnt.vbus_id[i]);
++		if (!skl->dais[index].playback.stream_name) {
++			kfree(skl->dais[index].name);
++			return -ENOMEM;
++		}
++
++		skl->dais[index].capture.stream_name = kasprintf(GFP_KERNEL,
++				"ssp%d Rx", skl->grp_cnt.vbus_id[i]);
++		if (!skl->dais[index].capture.stream_name) {
++			kfree(skl->dais[index].name);
++			kfree(skl->dais[index].playback.stream_name);
++			return -ENOMEM;
++		}
++	}
++
+ 	if (!skl->use_tplg_pcm) {
+-		dais = krealloc(skl->dais, sizeof(skl_fe_dai) +
+-				sizeof(skl_platform_dai), GFP_KERNEL);
++		total_dais += ARRAY_SIZE(skl_fe_dai);
++		dais = krealloc(skl->dais, (total_dais * sizeof(*dais)),
++							GFP_KERNEL);
+ 		if (!dais) {
+ 			ret = -ENOMEM;
+ 			goto err;
+ 		}
+ 
+ 		skl->dais = dais;
+-		memcpy(&skl->dais[ARRAY_SIZE(skl_platform_dai)], skl_fe_dai,
++		memcpy(&skl->dais[num_dais + skl->grp_cnt.cnt], skl_fe_dai,
+ 		       sizeof(skl_fe_dai));
+-		num_dais += ARRAY_SIZE(skl_fe_dai);
++		
++		num_dais = total_dais;
+ 	}
+ 
+ 	ret = devm_snd_soc_register_component(dev, &skl_component,
+-					 skl->dais, num_dais);
++					 skl->dais, total_dais);
+ 	if (ret)
+ 		dev_err(dev, "soc component registration failed %d\n", ret);
+ err:
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 01d5451..2883d86 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -71,6 +71,11 @@ struct skl_fw_config {
+ 	struct skl_astate_config *astate_cfg;
+ };
+ 
++struct ep_group_cnt {
++	int cnt;
++	int *vbus_id;
++};
++
+ struct skl {
+ 	struct hdac_bus hbus;
+ 	struct pci_dev *pci;
+@@ -107,6 +112,7 @@ struct skl {
+ 	struct snd_soc_acpi_mach *mach;
+ 	bool nhlt_override;
+ 	bool mod_set_get_status;
++	struct ep_group_cnt grp_cnt;
+ };
+ 
+ #define skl_to_bus(s)  (&(s)->hbus)
+@@ -139,6 +145,7 @@ int skl_platform_unregister(struct device *dev);
+ int skl_platform_register(struct device *dev);
+ 
+ int skl_get_nhlt_version(struct device *dev);
++void skl_nhlt_get_ep_cnt(struct skl *skl, int link_type);
+ struct nhlt_acpi_table *skl_nhlt_init(struct device *dev);
+ void skl_nhlt_free(struct nhlt_acpi_table *addr);
+ struct nhlt_specific_cfg *skl_get_ep_blob(struct skl *skl, u32 instance,
+-- 
+2.7.4
+

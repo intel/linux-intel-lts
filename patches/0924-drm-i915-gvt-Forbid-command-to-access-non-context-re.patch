@@ -1,0 +1,160 @@
+From 88d1559fa18e24db0ca9da155638744b1ec218eb Mon Sep 17 00:00:00 2001
+From: Ping Gao <ping.a.gao@intel.com>
+Date: Wed, 30 Aug 2017 14:59:22 +0800
+Subject: [PATCH 0924/1132] drm/i915/gvt: Forbid command to access non-context
+ registers
+
+After MMIO save/restore removing, the guest cannot access non-context
+registers through cmd. This patch implement it by replacing the
+target non-context register with a non-functional one in related
+commands.
+
+v2: 1. sort the non-context MMIO lists for searching friendly.
+    2. add a new flag F_NON_CONTEXT, it help to do fast non-context
+	MMIOs checking during runtime.
+
+v3: Mark non-context MMIOs by walk the array.
+v4: Define PVINFO page as a target scratch reg to redirect the cmd access.
+
+Signed-off-by: Ping Gao <ping.a.gao@intel.com>
+Reviewed-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+
+v5: Rebase v4.19, fix conflict and reuse the code in
+ 6cef21a19649 - drm/i915/gvt: update vreg on inhibit context lri command
+ 410a63dd8ccf - drm/i915/gvt: Introduce non-context MMIO check routines
+ and change mmio_attribute type to u16
+
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/cmd_parser.c   |  9 +++++++++
+ drivers/gpu/drm/i915/gvt/gvt.h          | 29 ++++++++++++++++++++++++++++-
+ drivers/gpu/drm/i915/gvt/handlers.c     |  2 +-
+ drivers/gpu/drm/i915/gvt/mmio_context.c |  2 ++
+ drivers/gpu/drm/i915/i915_pvinfo.h      |  6 ++++++
+ 5 files changed, 46 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/cmd_parser.c b/drivers/gpu/drm/i915/gvt/cmd_parser.c
+index 8d130d4..729eb0f 100644
+--- a/drivers/gpu/drm/i915/gvt/cmd_parser.c
++++ b/drivers/gpu/drm/i915/gvt/cmd_parser.c
+@@ -918,6 +918,15 @@ static int cmd_reg_handler(struct parser_exec_state *s,
+ 		}
+ 	}
+ 
++	/* Re-direct the non-context MMIO access to VGT_SCRATCH_REG, it
++	 * has no functional impact to HW.
++	 */
++	if (!strcmp(cmd, "lri") || !strcmp(cmd, "lrr-dst")
++		|| !strcmp(cmd, "lrm") || !strcmp(cmd, "pipe_ctrl")) {
++		if (intel_gvt_mmio_is_non_context(gvt, offset))
++			patch_value(s, cmd_ptr(s, index), VGT_SCRATCH_REG);
++	}
++
+ 	/* TODO: Update the global mask if this MMIO is a masked-MMIO */
+ 	intel_gvt_mmio_set_cmd_accessed(gvt, offset);
+ 	return 0;
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.h b/drivers/gpu/drm/i915/gvt/gvt.h
+index bbf2489..68cc50f 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.h
++++ b/drivers/gpu/drm/i915/gvt/gvt.h
+@@ -266,7 +266,7 @@ struct gvt_mmio_block {
+ #define INTEL_GVT_MMIO_HASH_BITS 11
+ 
+ struct intel_gvt_mmio {
+-	u8 *mmio_attribute;
++	u16 *mmio_attribute;
+ /* Register contains RO bits */
+ #define F_RO		(1 << 0)
+ /* Register contains graphics address */
+@@ -283,6 +283,8 @@ struct intel_gvt_mmio {
+ #define F_UNALIGN	(1 << 6)
+ /* This reg is saved/restored in context */
+ #define F_IN_CTX	(1 << 7)
++/* This reg is not in the context */
++#define F_NON_CONTEXT	(1 << 8)
+ 
+ 	struct gvt_mmio_block *mmio_block;
+ 	unsigned int num_mmio_block;
+@@ -719,6 +721,31 @@ static inline void intel_gvt_mmio_set_in_ctx(
+ 	gvt->mmio.mmio_attribute[offset >> 2] |= F_IN_CTX;
+ }
+ 
++/**
++ * intel_gvt_mmio_is_non_context - check a MMIO is non-context
++ * @gvt: a GVT device
++ * @offset: register offset
++ *
++ */
++static inline bool intel_gvt_mmio_is_non_context(
++		struct intel_gvt *gvt, unsigned int offset)
++{
++	return gvt->mmio.mmio_attribute[offset >> 2] & F_NON_CONTEXT;
++}
++
++/**
++ * intel_gvt_mmio_set_non_context - mark a MMIO is non-context
++
++ * @gvt: a GVT device
++ * @offset: register offset
++ *
++ */
++static inline void intel_gvt_mmio_set_non_context(
++		struct intel_gvt *gvt, unsigned int offset)
++{
++	gvt->mmio.mmio_attribute[offset >> 2] |= F_NON_CONTEXT;
++}
++
+ int intel_gvt_debugfs_add_vgpu(struct intel_vgpu *vgpu);
+ void intel_gvt_debugfs_remove_vgpu(struct intel_vgpu *vgpu);
+ int intel_gvt_debugfs_init(struct intel_gvt *gvt);
+diff --git a/drivers/gpu/drm/i915/gvt/handlers.c b/drivers/gpu/drm/i915/gvt/handlers.c
+index 0fc1fb3..ce25433 100644
+--- a/drivers/gpu/drm/i915/gvt/handlers.c
++++ b/drivers/gpu/drm/i915/gvt/handlers.c
+@@ -92,7 +92,7 @@ static struct intel_gvt_mmio_info *find_mmio_info(struct intel_gvt *gvt,
+ }
+ 
+ static int new_mmio_info(struct intel_gvt *gvt,
+-		u32 offset, u8 flags, u32 size,
++		u32 offset, u16 flags, u32 size,
+ 		u32 addr_mask, u32 ro_mask, u32 device,
+ 		gvt_mmio_func read, gvt_mmio_func write)
+ {
+diff --git a/drivers/gpu/drm/i915/gvt/mmio_context.c b/drivers/gpu/drm/i915/gvt/mmio_context.c
+index e872f48..0221e87 100644
+--- a/drivers/gpu/drm/i915/gvt/mmio_context.c
++++ b/drivers/gpu/drm/i915/gvt/mmio_context.c
+@@ -588,6 +588,8 @@ void intel_gvt_init_engine_mmio_context(struct intel_gvt *gvt)
+ 		if (mmio->in_context) {
+ 			gvt->engine_mmio_list.ctx_mmio_count[mmio->ring_id]++;
+ 			intel_gvt_mmio_set_in_ctx(gvt, mmio->reg.reg);
++		} else {
++			intel_gvt_mmio_set_non_context(gvt, mmio->reg.reg);
+ 		}
+ 	}
+ }
+diff --git a/drivers/gpu/drm/i915/i915_pvinfo.h b/drivers/gpu/drm/i915/i915_pvinfo.h
+index c15d457..fd26872 100644
+--- a/drivers/gpu/drm/i915/i915_pvinfo.h
++++ b/drivers/gpu/drm/i915/i915_pvinfo.h
+@@ -28,6 +28,12 @@
+ #define VGT_PVINFO_PAGE	0x78000
+ #define VGT_PVINFO_SIZE	0x1000
+ 
++/* Scratch reg used for redirecting command access to registers, any
++ * command access to PVINFO page would be discarded, so it has no HW
++ * impact.
++ */
++#define VGT_SCRATCH_REG VGT_PVINFO_PAGE
++
+ /*
+  * The following structure pages are defined in GEN MMIO space
+  * for virtualization. (One page for now)
+-- 
+2.7.4
+

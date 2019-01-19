@@ -1,0 +1,38 @@
+From 02b70f49e468feded723761358704ed7b0b8bec0 Mon Sep 17 00:00:00 2001
+From: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Date: Tue, 15 May 2018 12:01:07 +0530
+Subject: [PATCH 0704/1132] ASoC: topology: Increase SND_SOC_TPLG_NUM_TEXTS to
+ 32
+
+ITT supports maximum of 32 path configs for a path. But,
+kernel supports upto 16 path configs.
+So, increase SND_SOC_TPLG_NUM_TEXTS to 32 to support 32
+path configs for a path.
+
+Change-Id: Idc3bb893829e5a7a58a001fe28773257f96c11e1
+Signed-off-by: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Reviewed-on:
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ include/uapi/sound/asoc.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/uapi/sound/asoc.h b/include/uapi/sound/asoc.h
+index a74ca23..5b1411b 100644
+--- a/include/uapi/sound/asoc.h
++++ b/include/uapi/sound/asoc.h
+@@ -88,7 +88,7 @@
+ #define SND_SOC_TPLG_MAGIC		0x41536F43 /* ASoC */
+ 
+ /* string sizes */
+-#define SND_SOC_TPLG_NUM_TEXTS		16
++#define SND_SOC_TPLG_NUM_TEXTS		32
+ 
+ /* ABI version */
+ #define SND_SOC_TPLG_ABI_VERSION	0x5	/* current version */
+-- 
+2.7.4
+

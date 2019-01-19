@@ -1,0 +1,65 @@
+From 7f51e4bd5a06297c97f9554af643335b338beffa Mon Sep 17 00:00:00 2001
+From: "Shaik, ShahinaX" <shahinax.shaik@intel.com>
+Date: Mon, 2 Apr 2018 23:37:54 +0530
+Subject: [PATCH 0678/1132] ASoC: tdf8532: Fix Audio memory leakage at boot
+ time
+
+Fix kmemleak issue in tdf8532_get_state function by
+relasing the local allocated memory before exiting
+the function.
+
+kmemleak backtrace:
+
+unreferenced object 0xffff880270cabd40 (size 32):
+  comm "alsa_aplay", pid 2409, jiffies 4294673205 (age 91.856s)
+  hex dump (first 32 bytes):
+    02 00 03 80 80 01 00 00 00 00 00 00 00 00 00 00  ................
+    00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+  backtrace:
+    [<ffffffff81ae64ca>] kmemleak_alloc+0x4a/0xa0
+    [<ffffffff81200088>] __kmalloc+0x128/0x210
+    [<ffffffffc00d7426>] tdf8532_wait_state.constprop.5+0x116/0x250 [snd_soc_tdf8532]
+    [<ffffffffc00d76a8>] tdf8532_dai_trigger+0x148/0x14d [snd_soc_tdf8532]
+    [<ffffffff819036d5>] soc_pcm_trigger+0x75/0x130
+    [<ffffffff81904829>] dpcm_do_trigger.isra.6+0x29/0x90
+    [<ffffffff81904990>] dpcm_be_dai_trigger+0x100/0x350
+    [<ffffffff81904d1a>] dpcm_fe_dai_do_trigger+0x13a/0x200
+    [<ffffffff81904e18>] dpcm_fe_dai_trigger+0x38/0x40
+    [<ffffffff818d049a>] snd_pcm_do_start+0x2a/0x30
+    [<ffffffff818d039b>] snd_pcm_action_single+0x3b/0x90
+    [<ffffffff818d11d1>] snd_pcm_action+0xe1/0x110
+    [<ffffffff818d49e8>] snd_pcm_common_ioctl1+0x318/0xc90
+    [<ffffffff818d54ff>] snd_pcm_playback_ioctl1+0x19f/0x250
+    [<ffffffff818d55d7>] snd_pcm_playback_ioctl+0x27/0x40
+    [<ffffffff81232618>] do_vfs_ioctl+0xa8/0x620
+
+Change-Id: I8621e17997022274509554139097d849b211f384
+Signed-off-by: Shaik, ShahinaX <shahinax.shaik@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Periyasamy, SriramX <sriramx.periyasamy@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/codecs/tdf8532.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sound/soc/codecs/tdf8532.c b/sound/soc/codecs/tdf8532.c
+index a5e2a02..68decd0 100644
+--- a/sound/soc/codecs/tdf8532.c
++++ b/sound/soc/codecs/tdf8532.c
+@@ -165,6 +165,8 @@ static int tdf8532_get_state(struct tdf8532_priv *dev_data,
+ 	*status_repl = (struct get_dev_status_repl *) repl_buff;
+ 
+ out:
++	if (repl_buff)
++		kfree(repl_buff);
+ 	return ret;
+ }
+ 
+-- 
+2.7.4
+

@@ -1,0 +1,55 @@
+From 232947c05f8210d6faac2d1f8f529c227fac7419 Mon Sep 17 00:00:00 2001
+From: xiao jin <jin.xiao@intel.com>
+Date: Thu, 12 Apr 2018 17:32:04 +0530
+Subject: [PATCH 0688/1132] ASoC: soc-pcm: Fix FE and BE race when accessing
+ substream->runtime
+
+After start of FE and BE, FE might close without triggering
+STOP, and substream->runtime gets freed. However, BE remains
+at START state and BE's substream->runtime still points to the
+freed runtime.
+
+Later if FE gets opened/started again, and triggers STOP, then
+skl_platform_pcm_trigger accesses the freed old runtime data.
+
+Fix is by assigning be_substream->runtime in dpcm_be_dai_startup
+when BE's state is START.
+
+Change-Id: If1fd0464a3c6c2a3e22c8b2af7ccc68c801e0e80
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Signed-off-by: xiao jin <jin.xiao@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Shaik, ShahinaX <shahinax.shaik@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/soc-pcm.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/soc-pcm.c b/sound/soc/soc-pcm.c
+index e8b98bfd..afcb2cf 100644
+--- a/sound/soc/soc-pcm.c
++++ b/sound/soc/soc-pcm.c
+@@ -1620,6 +1620,8 @@ int dpcm_be_dai_startup(struct snd_soc_pcm_runtime *fe, int stream)
+ 		if (be->dpcm[stream].users++ != 0)
+ 			continue;
+ 
++		be_substream->runtime = be->dpcm[stream].runtime;
++
+ 		if ((be->dpcm[stream].state != SND_SOC_DPCM_STATE_NEW) &&
+ 		    (be->dpcm[stream].state != SND_SOC_DPCM_STATE_CLOSE))
+ 			continue;
+@@ -1627,7 +1629,6 @@ int dpcm_be_dai_startup(struct snd_soc_pcm_runtime *fe, int stream)
+ 		dev_dbg(be->dev, "ASoC: open %s BE %s\n",
+ 			stream ? "capture" : "playback", be->dai_link->name);
+ 
+-		be_substream->runtime = be->dpcm[stream].runtime;
+ 		err = soc_pcm_open(be_substream);
+ 		if (err < 0) {
+ 			dev_err(be->dev, "ASoC: BE open failed %d\n", err);
+-- 
+2.7.4
+

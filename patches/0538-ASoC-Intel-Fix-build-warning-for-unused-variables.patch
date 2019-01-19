@@ -1,0 +1,137 @@
+From 9455b9c52acf6f3a159d0dfa393dca73aa85099e Mon Sep 17 00:00:00 2001
+From: Jaikrishna Nemallapudi <jaikrishnax.nemallapudi@intel.com>
+Date: Wed, 14 Dec 2016 17:12:45 +0530
+Subject: [PATCH 0538/1132] ASoC: Intel: Fix build warning for unused variables
+
+This patch initialize uninitialized variables reported as build warnings.
+
+Change-Id: Idaa8c3d5992a9d29d21646d653a2db57e8bbbd2a
+Signed-off-by: Jaikrishna Nemallapudi <jaikrishnax.nemallapudi@intel.com>
+Reviewed-on:
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/skl-compress.c | 4 +---
+ sound/soc/intel/skylake/skl-compress.h | 5 +++--
+ sound/soc/intel/skylake/skl-debug.c    | 5 +++++
+ sound/soc/intel/skylake/skl-probe.c    | 5 ++++-
+ sound/soc/intel/skylake/skl.c          | 2 +-
+ 5 files changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-compress.c b/sound/soc/intel/skylake/skl-compress.c
+index c8b26e8..a0b33e1 100644
+--- a/sound/soc/intel/skylake/skl-compress.c
++++ b/sound/soc/intel/skylake/skl-compress.c
+@@ -25,6 +25,7 @@
+ #include <sound/pcm_params.h>
+ #include <sound/soc.h>
+ #include "skl.h"
++#include "skl-compress.h"
+ inline
+ struct hdac_ext_stream *get_hdac_ext_compr_stream(struct snd_compr_stream *stream)
+ {
+@@ -61,12 +62,9 @@ void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
+ int skl_compr_malloc_pages(struct snd_compr_stream *substream,
+ 					struct hdac_ext_bus *ebus, size_t size)
+ {
+-	struct snd_compr_runtime *runtime;
+ 	struct snd_dma_buffer *dmab = NULL;
+ 	struct skl *skl = ebus_to_skl(ebus);
+ 
+-	runtime = substream->runtime;
+-
+ 	dmab = kzalloc(sizeof(*dmab), GFP_KERNEL);
+ 	if (!dmab)
+ 		return -ENOMEM;
+diff --git a/sound/soc/intel/skylake/skl-compress.h b/sound/soc/intel/skylake/skl-compress.h
+index 9fcf6c38f..2db3473 100644
+--- a/sound/soc/intel/skylake/skl-compress.h
++++ b/sound/soc/intel/skylake/skl-compress.h
+@@ -18,7 +18,8 @@
+  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  *
+  */
+-
++#ifndef __SKL_COMPRESS_H__
++#define __SKL_COMPRESS_H__
+ inline
+ struct hdac_ext_stream *get_hdac_ext_compr_stream(struct snd_compr_stream *stream);
+ struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream);
+@@ -32,4 +33,4 @@ int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
+ int skl_compr_free_pages(struct snd_compr_stream *substream);
+ int skl_substream_free_compr_pages(struct hdac_bus *bus,
+ 				struct snd_compr_stream *substream);
+-
++#endif /* __SKL_COMPRESS_H__*/
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index ff6d835..8a20f86 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -639,6 +639,8 @@ static ssize_t adsp_control_write(struct file *file,
+ 	}
+ 
+ 	err = kstrtouint(buf, 10, &dsp_property);
++	if (err)
++		return -EINVAL;
+ 
+ 	if ((dsp_property == DMA_CONTROL) || (dsp_property == ENABLE_LOGS)) {
+ 		dev_err(d->dev, "invalid input !! not readable\n");
+@@ -648,6 +650,9 @@ static ssize_t adsp_control_write(struct file *file,
+ 
+ 	if (tx_param == 1) {
+ 		err = kstrtouint(id, 10, &tx_param_id);
++		if (err)
++			return -EINVAL;
++
+ 		tx_data = (tx_param_id << 8) | dsp_property;
+ 	}
+ 
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index 9c4d96e..b4f5fe4 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -23,10 +23,13 @@
+ #include <linux/pm_runtime.h>
+ #include <sound/pcm_params.h>
+ #include <sound/soc.h>
++#include "../common/sst-dsp.h"
++#include "../common/sst-dsp-priv.h"
+ #include "skl.h"
+ #include "skl-topology.h"
+ #include "skl-sst-ipc.h"
+ #include "skl-compress.h"
++#include "skl-probe.h"
+ 
+ #define USE_SPIB 0
+ 
+@@ -199,7 +202,7 @@ int skl_probe_compr_ack(struct snd_compr_stream *substream, size_t bytes,
+ {
+ 	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
+ 	struct hdac_bus *bus = ebus_to_hbus(ebus);
+-	u64 new_spib_pos;
++	u64 __maybe_unused new_spib_pos;
+ 	struct snd_compr_runtime *runtime = substream->runtime;
+ 	u64 spib_pos = div64_u64(runtime->total_bytes_available,
+ 				    runtime->buffer_size);
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 429e15a..a70d87e 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -366,7 +366,7 @@ static int skl_resume(struct device *dev)
+ 	struct hdac_bus *bus = pci_get_drvdata(pci);
+ 	struct skl *skl  = bus_to_skl(bus);
+ 	struct hdac_ext_link *hlink = NULL;
+-	int ret;
++	int ret = 0;
+ 
+ 	/* Turned OFF in HDMI codec driver after codec reconfiguration */
+ 	if (IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)) {
+-- 
+2.7.4
+

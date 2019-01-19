@@ -1,0 +1,182 @@
+From e1d5a99613b7b6959781348b35f07e2150740b81 Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Sun, 2 Jul 2017 11:51:00 +0530
+Subject: [PATCH 0535/1132] ASoC: Intel: CNL: Register BRA ops in init.
+
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+---
+ sound/soc/intel/skylake/bxt-sst.c      |  2 +-
+ sound/soc/intel/skylake/cnl-sst-dsp.h  |  2 +-
+ sound/soc/intel/skylake/cnl-sst.c      | 19 ++++++++++++++++---
+ sound/soc/intel/skylake/skl-messages.c |  5 ++---
+ sound/soc/intel/skylake/skl-sst-dsp.h  |  8 ++++----
+ sound/soc/intel/skylake/skl-sst.c      |  3 ++-
+ sound/soc/intel/skylake/skl.h          |  6 +++---
+ 7 files changed, 29 insertions(+), 16 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/bxt-sst.c b/sound/soc/intel/skylake/bxt-sst.c
+index 2b169b4..6f9b24c 100644
+--- a/sound/soc/intel/skylake/bxt-sst.c
++++ b/sound/soc/intel/skylake/bxt-sst.c
+@@ -566,7 +566,7 @@ static struct sst_dsp_device skl_dev = {
+ 
+ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 			const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
+-			struct skl_sst **dsp)
++			struct skl_sst **dsp, void *ptr)
+ {
+ 	struct skl_sst *skl;
+ 	struct sst_dsp *sst;
+diff --git a/sound/soc/intel/skylake/cnl-sst-dsp.h b/sound/soc/intel/skylake/cnl-sst-dsp.h
+index 323cebc..5f0653b 100644
+--- a/sound/soc/intel/skylake/cnl-sst-dsp.h
++++ b/sound/soc/intel/skylake/cnl-sst-dsp.h
+@@ -118,7 +118,7 @@ void cnl_ipc_free(struct sst_generic_ipc *ipc);
+ 
+ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 		     const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
+-		     struct skl_sst **dsp);
++		     struct skl_sst **dsp, void *ptr);
+ int cnl_sst_init_fw(struct device *dev, struct skl_sst *ctx);
+ void cnl_sst_dsp_cleanup(struct device *dev, struct skl_sst *ctx);
+ 
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 784d92d..ae3c6aa 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -516,13 +516,14 @@ static int cnl_ipc_init(struct device *dev, struct skl_sst *cnl)
+ 
+ #if IS_ENABLED(CONFIG_SND_SOC_RT700)
+ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+-			void __iomem *mmio_base, int irq)
++			void __iomem *mmio_base, int irq, void *ptr)
+ {
+ 	struct sdw_master_capabilities *m_cap, *map_data;
+ 	struct sdw_mstr_dp0_capabilities *dp0_cap;
+ 	struct sdw_mstr_dpn_capabilities *dpn_cap;
+ 	struct sdw_master *master;
+ 	struct cnl_sdw_data *p_data;
++	struct cnl_bra_operation *p_ptr = ptr;
+ 	int ret = 0, i, j, k, wl = 0;
+ 	/* TODO: This number 4 should come from ACPI */
+ #if defined(CONFIG_SDW_MAXIM_SLAVE) || defined(CONFIG_SND_SOC_MXFPGA)
+@@ -538,11 +539,18 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 			dsp->num_sdw_controllers = 0;
+ 	}
+ 	dsp->mstr = master;
++
++	dsp->bra_pipe_data = devm_kzalloc(dev,
++				(sizeof(*dsp->bra_pipe_data) *
++				dsp->num_sdw_controllers),
++				GFP_KERNEL);
++
+ 	/* TODO This should come from ACPI */
+ 	for (i = 0; i < dsp->num_sdw_controllers; i++) {
+ 		p_data = devm_kzalloc(dev, sizeof(*p_data), GFP_KERNEL);
+ 		if (!p_data)
+ 			return -ENOMEM;
++
+ 		/* PCI Device is parent of the SoundWire master device */
+ 		/* TODO: All these hardcoding should come from ACPI */
+ 		master[i].dev.parent = dev;
+@@ -651,6 +659,11 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 		p_data->alh_base = mmio_base + CNL_ALH_BASE;
+ 		p_data->inst_id = i;
+ 		p_data->irq = irq;
++
++		p_data->bra_data = kzalloc((sizeof(struct cnl_sdw_bra_cfg)),
++					GFP_KERNEL);
++		p_data->bra_data->drv_data = dsp;
++		p_data->bra_data->bra_ops = p_ptr;
+ 		ret = sdw_add_master_controller(&master[i]);
+ 		if (ret) {
+ 			dev_err(dev, "Failed to register soundwire master\n");
+@@ -676,7 +689,7 @@ static void skl_unregister_sdw_masters(struct skl_sst *ctx)
+ 
+ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 		     const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
+-		     struct skl_sst **dsp)
++		     struct skl_sst **dsp, void *ptr)
+ {
+ 	struct skl_sst *cnl;
+ 	struct sst_dsp *sst;
+@@ -731,7 +744,7 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 	}
+ 
+ #if IS_ENABLED(CONFIG_SND_SOC_RT700)
+-	ret = skl_register_sdw_masters(dev, cnl, mmio_base, irq);
++	ret = skl_register_sdw_masters(dev, cnl, mmio_base, irq, ptr);
+ 	if (ret) {
+ 		dev_err(cnl->dev, "%s SoundWire masters registration failed\n", __func__);
+ 		return ret;
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 28d9904..bb7f242 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -1049,9 +1049,8 @@ int skl_init_dsp(struct skl *skl)
+ 	}
+ 
+ 	loader_ops = ops->loader_ops();
+-	ret = ops->init(bus->dev, mmio_base, irq,
+-				skl->fw_name, loader_ops,
+-				&skl->skl_sst);
++	ret = ops->init(bus->dev, mmio_base, irq, skl->fw_name, loader_ops,
++					&skl->skl_sst, &cnl_sdw_bra_ops);
+ 
+ 	if (ret < 0)
+ 		goto unmap_mmio;
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.h b/sound/soc/intel/skylake/skl-sst-dsp.h
+index 2a3ad2d..e874e75 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.h
++++ b/sound/soc/intel/skylake/skl-sst-dsp.h
+@@ -230,11 +230,11 @@ int skl_dsp_put_core(struct sst_dsp *ctx, unsigned int core_id);
+ 
+ int skl_dsp_boot(struct sst_dsp *ctx);
+ int skl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+-		const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
+-		struct skl_sst **dsp);
++			const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
++			struct skl_sst **dsp, void *ptr);
+ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+-		const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
+-		struct skl_sst **dsp);
++			const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
++			struct skl_sst **dsp, void *ptr);
+ int skl_sst_init_fw(struct device *dev, struct skl_sst *ctx);
+ int bxt_sst_init_fw(struct device *dev, struct skl_sst *ctx);
+ void skl_sst_dsp_cleanup(struct device *dev, struct skl_sst *ctx);
+diff --git a/sound/soc/intel/skylake/skl-sst.c b/sound/soc/intel/skylake/skl-sst.c
+index 5951bbd..277e972 100644
+--- a/sound/soc/intel/skylake/skl-sst.c
++++ b/sound/soc/intel/skylake/skl-sst.c
+@@ -528,7 +528,8 @@ static struct sst_dsp_device skl_dev = {
+ };
+ 
+ int skl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+-		const char *fw_name, struct skl_dsp_loader_ops dsp_ops, struct skl_sst **dsp)
++			const char *fw_name, struct skl_dsp_loader_ops dsp_ops,
++			struct skl_sst **dsp, void *ptr)
+ {
+ 	struct skl_sst *skl;
+ 	struct sst_dsp *sst;
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 4c7cb272..2bafc7d 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -125,10 +125,10 @@ struct skl_dsp_ops {
+ 	int id;
+ 	unsigned int num_cores;
+ 	struct skl_dsp_loader_ops (*loader_ops)(void);
+-	int (*init)(struct device *dev, void __iomem *mmio_base,
+-			int irq, const char *fw_name,
++	int (*init)(struct device *dev, void __iomem *mmio_base, int irq,
++			const char *fw_name,
+ 			struct skl_dsp_loader_ops loader_ops,
+-			struct skl_sst **skl_sst);
++			struct skl_sst **skl_sst, void *ptr);
+ 	int (*init_fw)(struct device *dev, struct skl_sst *ctx);
+ 	void (*cleanup)(struct device *dev, struct skl_sst *ctx);
+ };
+-- 
+2.7.4
+

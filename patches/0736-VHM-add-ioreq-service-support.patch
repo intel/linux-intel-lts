@@ -1,0 +1,1471 @@
+From c3e3b5af2bbd5e09327a4d3515302f5879907658 Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:55 +0800
+Subject: [PATCH 0736/1132] VHM: add ioreq service support
+
+Once there is an IO request, a virtual irq will be injected into service
+OS by ACRN hypervisor.
+The VHM handles this virtual irq (which is based on an ipi vector), parses
+corresponding IO request from shared IOReq buffer then distributes it to
+different ioreq client.
+
+This patch added ioreq service, and defines IOReq APIs like below:
+   int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
+       char *name);
+   void acrn_ioreq_destroy_client(int client_id);
+   int acrn_ioreq_add_iorange(int client_id, enum request_type type,
+       long start, long end);
+   int acrn_ioreq_del_iorange(int client_id, enum request_type type,
+       long start, long end);
+   struct vhm_request * acrn_ioreq_get_reqbuf(int client_id);
+   int acrn_ioreq_attach_client(int client_id);
+   int acrn_ioreq_distribute_request(struct vhm_vm *vm);
+   int acrn_ioreq_complete_request(int client_id);
+
+Change-Id: I828744cb60e1c77543e1fafaa372597173039846
+Tracked-On: 218445
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Signed-off-by: liang ding <liang.ding@intel.com>
+Signed-off-by: Xiao Zheng <xiao.zheng@intel.com>
+Signed-off-by: Mingqiang Chi <mingqiang.chi@intel.com>
+Reviewed-on:
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         |  88 ++++
+ drivers/vhm/Makefile               |   2 +-
+ drivers/vhm/vhm_hypercall.c        |  10 +
+ drivers/vhm/vhm_ioreq.c            | 922 +++++++++++++++++++++++++++++++++++++
+ drivers/vhm/vhm_vm_mngt.c          |   2 +
+ include/linux/vhm/acrn_common.h    | 117 +++++
+ include/linux/vhm/acrn_hv_defs.h   |   5 +
+ include/linux/vhm/acrn_vhm_ioreq.h |  86 ++++
+ include/linux/vhm/vhm_hypercall.h  |   3 +
+ include/linux/vhm/vhm_ioctl_defs.h |   8 +
+ include/linux/vhm/vhm_vm_mngt.h    |   5 +
+ 11 files changed, 1247 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/vhm/vhm_ioreq.c
+ create mode 100644 include/linux/vhm/acrn_vhm_ioreq.h
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 3ea8de27..3129a8f 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -78,6 +78,7 @@
+ 
+ #include <linux/vhm/acrn_hv_defs.h>
+ #include <linux/vhm/vhm_ioctl_defs.h>
++#include <linux/vhm/acrn_vhm_ioreq.h>
+ #include <linux/vhm/acrn_vhm_mm.h>
+ #include <linux/vhm/vhm_vm_mngt.h>
+ #include <linux/vhm/vhm_hypercall.h>
+@@ -88,6 +89,8 @@
+ static int    major;
+ static struct class *vhm_class;
+ static struct device *vhm_device;
++static struct tasklet_struct vhm_io_req_tasklet;
++static atomic_t ioreq_retry = ATOMIC_INIT(0);
+ 
+ static int vhm_dev_open(struct inode *inodep, struct file *filep)
+ {
+@@ -104,6 +107,9 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
+ 	INIT_LIST_HEAD(&vm->memseg_list);
+ 	mutex_init(&vm->seg_lock);
+ 
++	INIT_LIST_HEAD(&vm->ioreq_client_list);
++	spin_lock_init(&vm->ioreq_client_lock);
++
+ 	vm_mutex_lock(&vhm_vm_list_lock);
+ 	vm->refcnt = 1;
+ 	vm_list_add(&vm->list);
+@@ -188,6 +194,50 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
++	case IC_SET_IOREQ_BUFFER: {
++		/* init ioreq buffer */
++		ret = acrn_ioreq_init(vm, (unsigned long)ioctl_param);
++		if (ret < 0)
++			return ret;
++		break;
++	}
++
++	case IC_CREATE_IOREQ_CLIENT: {
++		int client_id;
++
++		client_id = acrn_ioreq_create_fallback_client(vm->vmid, "acrndm");
++		if (client_id < 0)
++			return -EFAULT;
++		return client_id;
++	}
++
++	case IC_DESTROY_IOREQ_CLIENT: {
++		int client = ioctl_param;
++
++		acrn_ioreq_destroy_client(client);
++		break;
++	}
++
++	case IC_ATTACH_IOREQ_CLIENT: {
++		int client = ioctl_param;
++
++		return acrn_ioreq_attach_client(client, 0);
++	}
++
++	case IC_NOTIFY_REQUEST_FINISH: {
++		struct acrn_ioreq_notify notify;
++
++		if (copy_from_user(&notify, (void *)ioctl_param,
++					sizeof(notify)))
++			return -EFAULT;
++
++		ret = acrn_ioreq_complete_request(notify.client_id,
++							notify.vcpu_mask);
++		if (ret < 0)
++			return -EFAULT;
++		break;
++	}
++
+ 	default:
+ 		pr_warn("Unknown IOCTL 0x%x\n", ioctl_num);
+ 		ret = 0;
+@@ -197,6 +247,31 @@ static long vhm_dev_ioctl(struct file *filep,
+ 	return ret;
+ }
+ 
++static void io_req_tasklet(unsigned long data)
++{
++	struct vhm_vm *vm;
++
++	list_for_each_entry(vm, &vhm_vm_list, list) {
++		if (!vm || !vm->req_buf)
++			break;
++
++		acrn_ioreq_distribute_request(vm);
++	}
++
++	if (atomic_read(&ioreq_retry) > 0) {
++		atomic_dec(&ioreq_retry);
++		tasklet_schedule(&vhm_io_req_tasklet);
++	}
++}
++
++static void vhm_intr_handler(void)
++{
++	if (test_bit(TASKLET_STATE_SCHED, &(vhm_io_req_tasklet.state)))
++		atomic_inc(&ioreq_retry);
++	else
++		tasklet_schedule(&vhm_io_req_tasklet);
++}
++
+ static int vhm_dev_release(struct inode *inodep, struct file *filep)
+ {
+ 	struct vhm_vm *vm = filep->private_data;
+@@ -217,10 +292,13 @@ static const struct file_operations fops = {
+ 	.mmap = vhm_dev_mmap,
+ 	.release = vhm_dev_release,
+ 	.unlocked_ioctl = vhm_dev_ioctl,
++	.poll = vhm_dev_poll,
+ };
+ 
+ static int __init vhm_init(void)
+ {
++	unsigned long flag;
++
+ 	pr_info("vhm: initializing\n");
+ 
+ 	/* Try to dynamically allocate a major number for the device */
+@@ -249,12 +327,22 @@ static int __init vhm_init(void)
+ 		pr_warn("vhm: failed to create the device\n");
+ 		return PTR_ERR(vhm_device);
+ 	}
++	pr_info("register IPI handler\n");
++	tasklet_init(&vhm_io_req_tasklet, io_req_tasklet, 0);
++	if (x86_platform_ipi_callback) {
++		pr_warn("vhm: ipi callback was occupied\n");
++		return -EINVAL;
++	}
++	local_irq_save(flag);
++	x86_platform_ipi_callback = vhm_intr_handler;
++	local_irq_restore(flag);
+ 
+ 	pr_info("vhm: Virtio & Hypervisor service module initialized\n");
+ 	return 0;
+ }
+ static void __exit vhm_exit(void)
+ {
++	tasklet_kill(&vhm_io_req_tasklet);
+ 	device_destroy(vhm_class, MKDEV(major, 0));
+ 	class_unregister(vhm_class);
+ 	class_destroy(vhm_class);
+diff --git a/drivers/vhm/Makefile b/drivers/vhm/Makefile
+index 7e5ec42..4bd960d 100644
+--- a/drivers/vhm/Makefile
++++ b/drivers/vhm/Makefile
+@@ -1 +1 @@
+-obj-y += vhm_mm.o vhm_vm_mngt.o vhm_hypercall.o
++obj-y += vhm_mm.o vhm_ioreq.o vhm_vm_mngt.o vhm_hypercall.o
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index d80087b..1b25f4e 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -53,6 +53,16 @@
+ #include <linux/vhm/acrn_hv_defs.h>
+ #include <linux/vhm/vhm_hypercall.h>
+ 
++inline long hcall_set_ioreq_buffer(unsigned long vmid, unsigned long buffer)
++{
++	return acrn_hypercall2(HC_SET_IOREQ_BUFFER, vmid, buffer);
++}
++
++inline long hcall_notify_req_finish(unsigned long vmid, unsigned long vcpu_mask)
++{
++	return acrn_hypercall2(HC_NOTIFY_REQUEST_FINISH,	vmid, vcpu_mask);
++}
++
+ inline long hcall_set_memmap(unsigned long vmid, unsigned long memmap)
+ {
+ 	return acrn_hypercall2(HC_VM_SET_MEMMAP, vmid, memmap);
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+new file mode 100644
+index 0000000..6054e3d0
+--- /dev/null
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -0,0 +1,922 @@
++/*
++ * virtio and hyperviosr service module (VHM): ioreq multi client feature
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * BSD LICENSE
++ *
++ * Copyright (C) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Jason Chen CJ <jason.cj.chen@intel.com>
++ *
++ */
++
++#include <linux/slab.h>
++#include <linux/wait.h>
++#include <linux/freezer.h>
++#include <linux/sched.h>
++#include <linux/kthread.h>
++#include <linux/list.h>
++#include <linux/mm.h>
++#include <linux/poll.h>
++#include <linux/delay.h>
++#include <linux/vhm/acrn_common.h>
++#include <linux/vhm/acrn_vhm_ioreq.h>
++#include <linux/vhm/vhm_vm_mngt.h>
++#include <linux/vhm/vhm_hypercall.h>
++
++struct ioreq_range {
++	struct list_head list;
++	enum request_type type;
++	long start;
++	long end;
++};
++
++struct ioreq_client {
++	/* client name */
++	char name[16];
++	/* client id */
++	int id;
++	/* vm this client belongs to */
++	unsigned long vmid;
++	/* list node for this ioreq_client */
++	struct list_head list;
++	/*
++	 * is this client fallback?
++	 * there is only one fallback client in a vm - dm
++	 * a fallback client shares IOReq buffer pages
++	 * a fallback client handles all left IOReq not handled by other clients
++	 * a fallback client does not need add io ranges
++	 * a fallback client handles ioreq in its own context
++	 */
++	bool fallback;
++
++	bool destroying;
++	bool kthread_exit;
++
++	/* client covered io ranges - N/A for fallback client */
++	struct list_head range_list;
++	spinlock_t range_lock;
++
++	/*
++	 *   this req records the req number this client need handle
++	 */
++	atomic_t req;
++
++	/*
++	 * client ioreq handler:
++	 *   if client provides a handler, it means vhm need create a kthread
++	 *   to call the handler while there is ioreq.
++	 *   if client doesn't provide a handler, client should handle ioreq
++	 *   in its own context when calls acrn_ioreq_attach_client.
++	 *
++	 *   NOTE: for fallback client, there is no ioreq handler.
++	 */
++	ioreq_handler_t handler;
++	bool vhm_create_kthread;
++	struct task_struct *thread;
++	wait_queue_head_t wq;
++
++	/* pci bdf trap */
++	bool trap_bdf;
++	int pci_bus;
++	int pci_dev;
++	int pci_func;
++};
++
++#define MAX_CLIENT 64
++static struct ioreq_client *clients[MAX_CLIENT];
++static DECLARE_BITMAP(client_bitmap, MAX_CLIENT);
++
++static void acrn_ioreq_notify_client(struct ioreq_client *client);
++
++static inline bool is_range_type(enum request_type type)
++{
++	return (type == REQ_MMIO || type == REQ_PORTIO || type == REQ_WP);
++}
++
++static int alloc_client(void)
++{
++	struct ioreq_client *client;
++	int i;
++
++	i = find_first_zero_bit(client_bitmap, MAX_CLIENT);
++	if (i >= MAX_CLIENT)
++		return -ENOMEM;
++	set_bit(i, client_bitmap);
++
++	client = kzalloc(sizeof(struct ioreq_client), GFP_KERNEL);
++	if (!client)
++		return -ENOMEM;
++	client->id = i;
++	clients[i] = client;
++
++	return i;
++}
++
++static void free_client(int i)
++{
++	if (i < MAX_CLIENT && i >= 0) {
++		if (test_and_clear_bit(i, client_bitmap)) {
++			kfree(clients[i]);
++			clients[i] = NULL;
++		}
++	}
++}
++
++int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
++	char *name)
++{
++	struct vhm_vm *vm;
++	struct ioreq_client *client;
++	unsigned long flags;
++	int client_id;
++
++	might_sleep();
++
++	vm = find_get_vm(vmid);
++	if (unlikely(vm == NULL)) {
++		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
++			vmid);
++		return -EINVAL;
++	}
++	if (unlikely(vm->req_buf == NULL)) {
++		pr_err("vhm-ioreq: vm[%ld]'s reqbuf is not ready\n",
++			vmid);
++		put_vm(vm);
++		return -EINVAL;
++	}
++
++	client_id = alloc_client();
++	if (unlikely(client_id < 0)) {
++		pr_err("vhm-ioreq: vm[%ld] failed to alloc ioreq "
++			"client id\n", vmid);
++		put_vm(vm);
++		return -EINVAL;
++	}
++
++	client = clients[client_id];
++
++	if (handler) {
++		client->handler = handler;
++		client->vhm_create_kthread = true;
++	}
++
++	client->vmid = vmid;
++	if (name)
++		strncpy(client->name, name, 16);
++	spin_lock_init(&client->range_lock);
++	INIT_LIST_HEAD(&client->range_list);
++	init_waitqueue_head(&client->wq);
++
++	spin_lock_irqsave(&vm->ioreq_client_lock, flags);
++	list_add(&client->list, &vm->ioreq_client_list);
++	spin_unlock_irqrestore(&vm->ioreq_client_lock, flags);
++
++	put_vm(vm);
++
++	pr_info("vhm-ioreq: created ioreq client %d\n", client_id);
++
++	return client_id;
++}
++
++int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name)
++{
++	struct vhm_vm *vm;
++	int client_id;
++
++	vm = find_get_vm(vmid);
++	if (unlikely(vm == NULL)) {
++		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
++			vmid);
++		return -EINVAL;
++	}
++
++	if (unlikely(vm->ioreq_fallback_client > 0)) {
++		pr_err("vhm-ioreq: there is already fallback "
++				"client exist for vm %ld\n",
++				vmid);
++		put_vm(vm);
++		return -EINVAL;
++	}
++
++	client_id = acrn_ioreq_create_client(vmid, NULL, name);
++	if (unlikely(client_id < 0)) {
++		put_vm(vm);
++		return -EINVAL;
++	}
++
++	clients[client_id]->fallback = true;
++	vm->ioreq_fallback_client = client_id;
++
++	put_vm(vm);
++
++	return client_id;
++}
++
++static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
++		struct vhm_vm *vm)
++{
++	struct list_head *pos, *tmp;
++	unsigned long flags;
++
++	/* blocking operation: notify client for cleanup
++	 * if waitqueue not active, it means client is handling request,
++	 * at that time, we need wait client finish its handling.
++	 */
++	while (!waitqueue_active(&client->wq) && !client->kthread_exit)
++		msleep(10);
++	client->destroying = true;
++	acrn_ioreq_notify_client(client);
++
++	spin_lock_irqsave(&client->range_lock, flags);
++	list_for_each_safe(pos, tmp, &client->range_list) {
++		struct ioreq_range *range =
++			container_of(pos, struct ioreq_range, list);
++		list_del(&range->list);
++		kfree(range);
++	}
++	spin_unlock_irqrestore(&client->range_lock, flags);
++
++	spin_lock_irqsave(&vm->ioreq_client_lock, flags);
++	list_del(&client->list);
++	spin_unlock_irqrestore(&vm->ioreq_client_lock, flags);
++	free_client(client->id);
++
++	if (client->id == vm->ioreq_fallback_client)
++		vm->ioreq_fallback_client = -1;
++}
++
++void acrn_ioreq_destroy_client(int client_id)
++{
++	struct vhm_vm *vm;
++	struct ioreq_client *client;
++
++	if (client_id < 0 || client_id >= MAX_CLIENT) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return;
++	}
++	client = clients[client_id];
++	if (!client) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return;
++	}
++
++	might_sleep();
++
++	vm = find_get_vm(client->vmid);
++	if (unlikely(vm == NULL)) {
++		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
++			client->vmid);
++		return;
++	}
++
++	acrn_ioreq_destroy_client_pervm(client, vm);
++
++	put_vm(vm);
++}
++
++static void __attribute__((unused)) dump_iorange(struct ioreq_client *client)
++{
++	struct list_head *pos;
++	unsigned long flags;
++
++	spin_lock_irqsave(&client->range_lock, flags);
++	list_for_each(pos, &client->range_list) {
++		struct ioreq_range *range =
++			container_of(pos, struct ioreq_range, list);
++		pr_debug("\tio range: type %d, start 0x%lx, "
++			"end 0x%lx\n", range->type, range->start, range->end);
++	}
++	spin_unlock_irqrestore(&client->range_lock, flags);
++}
++
++/*
++ * NOTE: here just add iorange entry directly, no check for the overlap..
++ * please client take care of it
++ */
++int acrn_ioreq_add_iorange(int client_id, enum request_type type,
++	long start, long end)
++{
++	struct ioreq_client *client;
++	struct ioreq_range *range;
++	unsigned long flags;
++
++	if (client_id < 0 || client_id >= MAX_CLIENT) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return -EFAULT;
++	}
++	client = clients[client_id];
++	if (!client) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return -EFAULT;
++	}
++
++	if (end < start) {
++		pr_err("vhm-ioreq: end < start\n");
++		return -EFAULT;
++	}
++
++	might_sleep();
++
++	range = kzalloc(sizeof(struct ioreq_range), GFP_KERNEL);
++	if (!range) {
++		pr_err("vhm-ioreq: failed to alloc ioreq range\n");
++		return -ENOMEM;
++	}
++	range->type = type;
++	range->start = start;
++	range->end = end;
++
++	spin_lock_irqsave(&client->range_lock, flags);
++	list_add(&range->list, &client->range_list);
++	spin_unlock_irqrestore(&client->range_lock, flags);
++
++	return 0;
++}
++
++int acrn_ioreq_del_iorange(int client_id, enum request_type type,
++	long start, long end)
++{
++	struct ioreq_client *client;
++	struct ioreq_range *range;
++	struct list_head *pos, *tmp;
++	unsigned long flags;
++
++	if (client_id < 0 || client_id >= MAX_CLIENT) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return -EFAULT;
++	}
++	client = clients[client_id];
++	if (!client) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return -EFAULT;
++	}
++
++	if (end < start) {
++		pr_err("vhm-ioreq: end < start\n");
++		return -EFAULT;
++	}
++
++	might_sleep();
++
++	spin_lock_irqsave(&client->range_lock, flags);
++	list_for_each_safe(pos, tmp, &client->range_list) {
++		range = container_of(pos, struct ioreq_range, list);
++		if (range->type == type) {
++			if (is_range_type(type)) {
++				if (start == range->start &&
++					end == range->end) {
++					list_del(&range->list);
++					kfree(range);
++					break;
++				}
++			} else {
++				list_del(&range->list);
++				kfree(range);
++				break;
++			}
++		}
++	}
++	spin_unlock_irqrestore(&client->range_lock, flags);
++
++	return 0;
++}
++
++static inline bool is_destroying(struct ioreq_client *client)
++{
++	if (client)
++		return client->destroying;
++	else
++		return true;
++}
++
++static inline bool has_pending_request(struct ioreq_client *client)
++{
++	if (client)
++		return (atomic_read(&client->req) > 0);
++	else
++		return false;
++}
++
++struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
++{
++	struct ioreq_client *client;
++	struct vhm_vm *vm;
++
++	if (client_id < 0 || client_id >= MAX_CLIENT) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return NULL;
++	}
++	client = clients[client_id];
++	if (!client) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return NULL;
++	}
++	vm = find_get_vm(client->vmid);
++	if (unlikely(vm == NULL)) {
++		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
++			client->vmid);
++		return NULL;
++	}
++
++	if (vm->req_buf == NULL) {
++		pr_warn("vhm-ioreq: the req buf page not ready yet "
++			"for vmid %ld\n", client->vmid);
++	}
++	put_vm(vm);
++	return (struct vhm_request *)vm->req_buf;
++}
++
++static int ioreq_client_thread(void *data)
++{
++	struct ioreq_client *client;
++	int ret, client_id = (unsigned long)data;
++
++	while (1) {
++		client = clients[client_id];
++		if (is_destroying(client)) {
++			pr_info("vhm-ioreq: client destroying->stop thread\n");
++			break;
++		}
++		if (has_pending_request(client)) {
++			if (client->handler) {
++				ret = client->handler(client->id,
++					client->req.counter);
++				if (ret < 0)
++					BUG();
++			} else {
++				pr_err("vhm-ioreq: no ioreq handler\n");
++				break;
++			}
++		} else
++			wait_event_freezable(client->wq,
++				(has_pending_request(client) ||
++				is_destroying(client)));
++	}
++
++	return 0;
++}
++
++int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop)
++{
++	struct ioreq_client *client;
++
++	if (client_id < 0 || client_id >= MAX_CLIENT) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return -EFAULT;
++	}
++	client = clients[client_id];
++	if (!client) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return -EFAULT;
++	}
++
++	if (client->vhm_create_kthread) {
++		if (client->thread) {
++			pr_warn("vhm-ioreq: kthread already exist"
++					" for client %s\n", client->name);
++			return 0;
++		}
++		client->thread = kthread_run(ioreq_client_thread,
++				(void *)(unsigned long)client_id,
++				"ioreq_client[%ld]:%s",
++				client->vmid, client->name);
++		if (IS_ERR(client->thread)) {
++			pr_err("vhm-ioreq: failed to run kthread "
++					"for client %s\n", client->name);
++			return -ENOMEM;
++		}
++	} else {
++		might_sleep();
++
++		if (check_kthread_stop) {
++			wait_event_freezable(client->wq,
++				(kthread_should_stop() ||
++				has_pending_request(client) ||
++				is_destroying(client)));
++			if (kthread_should_stop())
++				client->kthread_exit = true;
++		} else {
++			wait_event_freezable(client->wq,
++				(has_pending_request(client) ||
++				is_destroying(client)));
++		}
++
++		if (is_destroying(client))
++			return 1;
++	}
++
++	return 0;
++}
++
++void acrn_ioreq_intercept_bdf(int client_id, int bus, int dev, int func)
++{
++	struct ioreq_client *client;
++
++	if (client_id < 0 || client_id >= MAX_CLIENT) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return;
++	}
++	client = clients[client_id];
++	if (!client) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return;
++	}
++	client->trap_bdf = true;
++	client->pci_bus = bus;
++	client->pci_dev = dev;
++	client->pci_func = func;
++}
++
++void acrn_ioreq_unintercept_bdf(int client_id)
++{
++	struct ioreq_client *client;
++
++	if (client_id < 0 || client_id >= MAX_CLIENT) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return;
++	}
++	client = clients[client_id];
++	if (!client) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return;
++	}
++	client->trap_bdf = false;
++	client->pci_bus = -1;
++	client->pci_dev = -1;
++	client->pci_func = -1;
++}
++
++static void acrn_ioreq_notify_client(struct ioreq_client *client)
++{
++	/* if client thread is in waitqueue, wake up it */
++	if (waitqueue_active(&client->wq))
++		wake_up_interruptible(&client->wq);
++}
++
++static bool req_in_range(struct ioreq_range *range, struct vhm_request *req)
++{
++	bool ret = false;
++
++	if (range->type == req->type) {
++		switch (req->type) {
++		case REQ_MMIO:
++		case REQ_WP:
++		{
++			if (req->reqs.mmio_request.address >= range->start &&
++				(req->reqs.mmio_request.address +
++				req->reqs.mmio_request.size - 1) <= range->end)
++				ret = true;
++			break;
++		}
++		case REQ_PORTIO: {
++			if (req->reqs.pio_request.address >= range->start &&
++				(req->reqs.pio_request.address +
++				req->reqs.pio_request.size - 1) <= range->end)
++				ret = true;
++			break;
++		}
++		case REQ_MSR: /*TODO: add bitmap for MSR range */
++		case REQ_CPUID:
++		case REQ_EXIT:
++		{
++			ret = true;
++			break;
++		}
++
++		default:
++			ret = false;
++			break;
++		}
++	}
++
++	return ret;
++}
++
++static bool is_cfg_addr(struct vhm_request *req)
++{
++	return (req->type == REQ_PORTIO &&
++		(req->reqs.pio_request.address >= 0xcf8 &&
++		req->reqs.pio_request.address < 0xcf8+4));
++}
++
++static bool is_cfg_data(struct vhm_request *req)
++{
++	return (req->type == REQ_PORTIO &&
++		(req->reqs.pio_request.address >= 0xcfc &&
++		req->reqs.pio_request.address < 0xcfc+4));
++}
++
++static int cached_bus;
++static int cached_dev;
++static int cached_func;
++static int cached_reg;
++static int cached_enable;
++#define PCI_REGMAX      255     /* highest supported config register addr.*/
++#define PCI_FUNCMAX	7       /* highest supported function number */
++#define PCI_SLOTMAX	31      /* highest supported slot number */
++#define PCI_BUSMAX	255     /* highest supported bus number */
++#define CONF1_ENABLE	0x80000000ul
++static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
++{
++	int req_handled = 0;
++
++	/*XXX: like DM, assume cfg address write is size 4 */
++	if (is_cfg_addr(req)) {
++		if (req->reqs.pio_request.direction == REQUEST_WRITE) {
++			if (req->reqs.pio_request.size == 4) {
++				int value = req->reqs.pio_request.value;
++
++				cached_bus = (value >> 16) & PCI_BUSMAX;
++				cached_dev = (value >> 11) & PCI_SLOTMAX;
++				cached_func = (value >> 8) & PCI_FUNCMAX;
++				cached_reg = value & PCI_REGMAX;
++				cached_enable =
++					(value & CONF1_ENABLE) == CONF1_ENABLE;
++				req_handled = 1;
++			}
++		} else {
++			if (req->reqs.pio_request.size == 4) {
++				req->reqs.pio_request.value =
++					(cached_bus << 16) |
++					(cached_dev << 11) | (cached_func << 8)
++					| cached_reg;
++				if (cached_enable)
++					req->reqs.pio_request.value |=
++					CONF1_ENABLE;
++				req_handled = 1;
++			}
++		}
++	} else if (is_cfg_data(req)) {
++		if (!cached_enable) {
++			if (req->reqs.pio_request.direction == REQUEST_READ)
++				req->reqs.pio_request.value = 0xffffffff;
++			req_handled = 1;
++		} else {
++			/* pci request is same as io request at top */
++			int offset = req->reqs.pio_request.address - 0xcfc;
++
++			req->type = REQ_PCICFG;
++			req->reqs.pci_request.bus = cached_bus;
++			req->reqs.pci_request.dev = cached_dev;
++			req->reqs.pci_request.func = cached_func;
++			req->reqs.pci_request.reg = cached_reg + offset;
++		}
++	}
++
++	if (req_handled) {
++		req->processed = REQ_STATE_SUCCESS;
++		if (hcall_notify_req_finish(vm->vmid,	1 << vcpu) < 0) {
++			pr_err("vhm-ioreq: failed to "
++				"notify request finished !\n");
++			return -EFAULT;
++		}
++	}
++
++	return req_handled;
++}
++
++static bool bdf_match(struct ioreq_client *client)
++{
++	return (client->trap_bdf &&
++		client->pci_bus == cached_bus &&
++		client->pci_dev == cached_dev &&
++		client->pci_func == cached_func);
++}
++
++static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
++	struct vhm_request *req)
++{
++	struct list_head *pos, *range_pos;
++	struct ioreq_client *client;
++	struct ioreq_client *target_client = NULL, *fallback_client = NULL;
++	struct ioreq_range *range;
++	bool found = false;
++
++	spin_lock(&vm->ioreq_client_lock);
++	list_for_each(pos, &vm->ioreq_client_list) {
++		client = container_of(pos, struct ioreq_client, list);
++
++		if (client->fallback) {
++			fallback_client = client;
++			continue;
++		}
++
++		if (req->type == REQ_PCICFG) {
++			if (bdf_match(client)) { /* bdf match client */
++				target_client = client;
++				break;
++			} else /* other or fallback client */
++				continue;
++		}
++
++		spin_lock(&client->range_lock);
++		list_for_each(range_pos, &client->range_list) {
++			range =
++			container_of(range_pos, struct ioreq_range, list);
++			if (req_in_range(range, req)) {
++				found = true;
++				target_client = client;
++				break;
++			}
++		}
++		spin_unlock(&client->range_lock);
++
++		if (found)
++			break;
++	}
++	spin_unlock(&vm->ioreq_client_lock);
++
++	if (target_client)
++		return target_client;
++
++	if (fallback_client)
++		return fallback_client;
++
++	return NULL;
++}
++
++int acrn_ioreq_distribute_request(struct vhm_vm *vm)
++{
++	struct vhm_request *req;
++	struct list_head *pos;
++	struct ioreq_client *client;
++	int i;
++
++	/* TODO: replace VHM_REQUEST_MAX with vcpu num get at runtime */
++	for (i = 0; i < VHM_REQUEST_MAX; i++) {
++		req = vm->req_buf->req_queue + i;
++		if (req->valid && (req->processed == REQ_STATE_PENDING)) {
++			if (handle_cf8cfc(vm, req, i))
++				continue;
++			client = acrn_ioreq_find_client_by_request(vm, req);
++			if (client == NULL) {
++				pr_err("vhm-ioreq: failed to "
++						"find ioreq client -> "
++						"BUG\n");
++				BUG();
++			} else {
++				req->processed = REQ_STATE_PROCESSING;
++				req->client = client->id;
++				atomic_inc(&client->req);
++			}
++		}
++	}
++
++	spin_lock(&vm->ioreq_client_lock);
++	list_for_each(pos, &vm->ioreq_client_list) {
++		client = container_of(pos, struct ioreq_client, list);
++		if (has_pending_request(client))
++			acrn_ioreq_notify_client(client);
++	}
++	spin_unlock(&vm->ioreq_client_lock);
++
++	return 0;
++}
++
++int acrn_ioreq_complete_request(int client_id, uint64_t vcpu_mask)
++{
++	struct ioreq_client *client;
++	int ret;
++
++	if (client_id < 0 || client_id >= MAX_CLIENT) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return -EINVAL;
++	}
++	client = clients[client_id];
++	if (!client) {
++		pr_err("vhm-ioreq: no client for id %d\n", client_id);
++		return -EINVAL;
++	}
++
++	atomic_sub(bitmap_weight((unsigned long *)&vcpu_mask,
++				VHM_REQUEST_MAX), &client->req);
++	ret = hcall_notify_req_finish(client->vmid, vcpu_mask);
++	if (ret < 0) {
++		pr_err("vhm-ioreq: failed to notify request finished !\n");
++		return -EFAULT;
++	}
++
++	return 0;
++}
++
++unsigned int vhm_dev_poll(struct file *filep, poll_table *wait)
++{
++	struct vhm_vm *vm = filep->private_data;
++	struct ioreq_client *fallback_client;
++	unsigned int ret = 0;
++
++	if (vm == NULL || vm->req_buf == NULL ||
++		vm->ioreq_fallback_client <= 0) {
++		pr_err("vhm: invalid VM !\n");
++		ret = POLLERR;
++		return ret;
++	}
++
++	fallback_client = clients[vm->ioreq_fallback_client];
++	if (!fallback_client) {
++		pr_err("vhm-ioreq: no client for id %d\n",
++			vm->ioreq_fallback_client);
++		return -EINVAL;
++	}
++
++	poll_wait(filep, &fallback_client->wq, wait);
++	if (has_pending_request(fallback_client) ||
++		is_destroying(fallback_client))
++		ret = POLLIN | POLLRDNORM;
++
++	return ret;
++}
++
++int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma)
++{
++	struct acrn_set_ioreq_buffer set_buffer;
++	struct page *page;
++	int ret;
++
++	if (vm->req_buf)
++		BUG();
++
++	ret = get_user_pages_fast(vma, 1, 1, &page);
++	if (unlikely(ret != 1) || (page == NULL)) {
++		pr_err("vhm-ioreq: failed to pin request buffer!\n");
++		return -ENOMEM;
++	}
++
++	vm->req_buf = page_address(page);
++	vm->pg = page;
++
++	set_buffer.req_buf = (long) page_to_phys(page);
++
++	ret = hcall_set_ioreq_buffer(vm->vmid, virt_to_phys(&set_buffer));
++	if (ret < 0) {
++		pr_err("vhm-ioreq: failed to set request buffer !\n");
++		return -EFAULT;
++	}
++
++	/* reserve 0, let client_id start from 1 */
++	set_bit(0, client_bitmap);
++
++	pr_info("vhm-ioreq: init request buffer @ %p!\n",
++		vm->req_buf);
++
++	return 0;
++}
++
++void acrn_ioreq_free(struct vhm_vm *vm)
++{
++	struct list_head *pos, *tmp;
++
++	list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
++		struct ioreq_client *client =
++			container_of(pos, struct ioreq_client, list);
++		acrn_ioreq_destroy_client_pervm(client, vm);
++	}
++
++	if (vm->req_buf && vm->pg) {
++		put_page(vm->pg);
++		vm->pg = NULL;
++		vm->req_buf = NULL;
++	}
++}
+diff --git a/drivers/vhm/vhm_vm_mngt.c b/drivers/vhm/vhm_vm_mngt.c
+index 3c4e6d2..564435f 100644
+--- a/drivers/vhm/vhm_vm_mngt.c
++++ b/drivers/vhm/vhm_vm_mngt.c
+@@ -58,6 +58,7 @@
+ #include <asm/processor.h>
+ #include <linux/vhm/acrn_hv_defs.h>
+ #include <linux/vhm/vhm_ioctl_defs.h>
++#include <linux/vhm/acrn_vhm_ioreq.h>
+ #include <linux/vhm/acrn_vhm_mm.h>
+ #include <linux/vhm/vhm_hypercall.h>
+ 
+@@ -87,6 +88,7 @@ void put_vm(struct vhm_vm *vm)
+ 	if (vm->refcnt == 0) {
+ 		list_del(&vm->list);
+ 		free_guest_mem(vm);
++		acrn_ioreq_free(vm);
+ 		kfree(vm);
+ 		pr_info("vhm: freed vm\n");
+ 	}
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 08e4773..bc22373 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -56,10 +56,127 @@
+  * Commmon structures for ACRN/VHM/DM
+  */
+ 
++/*
++ * IO request
++ */
++#define VHM_REQUEST_MAX 16
++
++enum request_state {
++	REQ_STATE_SUCCESS = 1,
++	REQ_STATE_PENDING = 0,
++	REQ_STATE_PROCESSING = 2,
++	REQ_STATE_FAILED = -1,
++} __attribute__((aligned(4)));
++
++enum request_type {
++	REQ_MSR,
++	REQ_CPUID,
++	REQ_PORTIO,
++	REQ_MMIO,
++	REQ_PCICFG,
++	REQ_WP,
++	REQ_EXIT,
++	REQ_MAX,
++} __attribute__((aligned(4)));
++
++enum request_direction {
++	REQUEST_READ,
++	REQUEST_WRITE,
++	DIRECTION_MAX,
++} __attribute__((aligned(4)));
++
++struct msr_request {
++	enum request_direction direction;
++	long index;
++	long value;
++} __attribute__((aligned(8)));
++
++struct cpuid_request {
++	long eax_in;
++	long ecx_in;
++	long eax_out;
++	long ebx_out;
++	long ecx_out;
++	long edx_out;
++} __attribute__((aligned(8)));
++
++struct mmio_request {
++	enum request_direction direction;
++	long address;
++	long size;
++	long value;
++} __attribute__((aligned(8)));
++
++struct io_request {
++	enum request_direction direction;
++	long address;
++	long size;
++	int value;
++} __attribute__((aligned(8)));
++
++struct pci_request {
++	enum request_direction direction;
++	long reserve; /*io_request address*/
++	long size;
++	int value;
++	int bus;
++	int dev;
++	int func;
++	int reg;
++} __attribute__((aligned(8)));
++
++/* vhm_request are 256Bytes aligned */
++struct vhm_request {
++	/* offset: 0bytes - 63bytes */
++	enum request_type type;
++	int reserved0[15];
++
++	/* offset: 64bytes-127bytes */
++	union {
++		struct msr_request msr_request;
++		struct cpuid_request cpuid_request;
++		struct io_request pio_request;
++		struct pci_request pci_request;
++		struct mmio_request mmio_request;
++		long reserved1[8];
++	} reqs;
++
++	/* True: valid req which need VHM to process.
++	 * ACRN write, VHM read only
++	 **/
++	int valid;
++
++	/* the client which is distributed to handle this request */
++	int client;
++
++	/* 1: VHM had processed and success
++	 *  0: VHM had not yet processed
++	 * -1: VHM failed to process. Invalid request
++	 * VHM write, ACRN read only
++	 **/
++	enum request_state processed;
++} __attribute__((aligned(256)));
++
++struct vhm_request_buffer {
++	union {
++		struct vhm_request req_queue[VHM_REQUEST_MAX];
++		char reserved[4096];
++	};
++} __attribute__((aligned(4096)));
++
+ /* Common API params */
+ struct acrn_create_vm {
+ 	unsigned long vmid;		/* OUT: HV return vmid to VHM */
+ 	unsigned long vcpu_num;		/* IN: VM vcpu number */
+ } __attribute__((aligned(8)));
+ 
++struct acrn_set_ioreq_buffer {
++	long req_buf;			/* IN: gpa of per VM request_buffer*/
++} __attribute__((aligned(8)));
++
++struct acrn_ioreq_notify {
++	int client_id;
++	unsigned long vcpu_mask;
++} __attribute__((aligned(8)));
++
+ #endif /* ACRN_COMMON_H */
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index ab6554d..f57f2b6 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -74,6 +74,11 @@
+ #define HC_PAUSE_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x04)
+ #define HC_QUERY_VMSTATE            _HC_ID(HC_ID, HC_ID_VM_BASE + 0x05)
+ 
++/* DM ioreq management */
++#define HC_ID_IOREQ_BASE            0x200UL
++#define HC_SET_IOREQ_BUFFER         _HC_ID(HC_ID, HC_ID_IOREQ_BASE + 0x00)
++#define HC_NOTIFY_REQUEST_FINISH    _HC_ID(HC_ID, HC_ID_IOREQ_BASE + 0x01)
++
+ /* Guest memory management */
+ #define HC_ID_MEM_BASE              0x300UL
+ #define HC_VM_SET_MEMMAP            _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x00)
+diff --git a/include/linux/vhm/acrn_vhm_ioreq.h b/include/linux/vhm/acrn_vhm_ioreq.h
+new file mode 100644
+index 0000000..0daf46d
+--- /dev/null
++++ b/include/linux/vhm/acrn_vhm_ioreq.h
+@@ -0,0 +1,86 @@
++/*
++ * virtio and hyperviosr service module (VHM): ioreq multi client feature
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * BSD LICENSE
++ *
++ * Copyright (C) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Jason Chen CJ <jason.cj.chen@intel.com>
++ *
++ */
++
++#ifndef __ACRN_VHM_IOREQ_H__
++#define __ACRN_VHM_IOREQ_H__
++
++#include <linux/poll.h>
++#include <linux/vhm/vhm_vm_mngt.h>
++
++typedef	int (*ioreq_handler_t)(int client_id, int req);
++
++int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
++	char *name);
++void acrn_ioreq_destroy_client(int client_id);
++
++int acrn_ioreq_add_iorange(int client_id, enum request_type type,
++	long start, long end);
++int acrn_ioreq_del_iorange(int client_id, enum request_type type,
++	long start, long end);
++
++struct vhm_request *acrn_ioreq_get_reqbuf(int client_id);
++int acrn_ioreq_attach_client(int client_id, bool check_kthread_stop);
++
++int acrn_ioreq_distribute_request(struct vhm_vm *vm);
++int acrn_ioreq_complete_request(int client_id, uint64_t vcpu_mask);
++
++void acrn_ioreq_intercept_bdf(int client_id, int bus, int dev, int func);
++void acrn_ioreq_unintercept_bdf(int client_id);
++
++/* IOReq APIs */
++int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma);
++void acrn_ioreq_free(struct vhm_vm *vm);
++int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name);
++unsigned int vhm_dev_poll(struct file *filep, poll_table *wait);
++
++#endif
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index e098a1f..86b5f57 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -139,6 +139,9 @@ static inline long acrn_hypercall4(unsigned long hyp_id, unsigned long param1,
+ 	return result;
+ }
+ 
++inline long hcall_set_ioreq_buffer(unsigned long vmid, unsigned long buffer);
++inline long hcall_notify_req_finish(unsigned long vmid,
++		unsigned long vcpu_mask);
+ inline long hcall_set_memmap(unsigned long vmid, unsigned long memmap);
+ inline long vhm_create_vm(struct vhm_vm *vm, unsigned long ioctl_param);
+ inline long vhm_resume_vm(struct vhm_vm *vm);
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 8720924..01adcfa 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -64,6 +64,14 @@
+ #define IC_PAUSE_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x04)
+ #define IC_QUERY_VMSTATE               _IC_ID(IC_ID, IC_ID_VM_BASE + 0x05)
+ 
++/* DM ioreq management */
++#define IC_ID_IOREQ_BASE                0x200UL
++#define IC_SET_IOREQ_BUFFER             _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x00)
++#define IC_NOTIFY_REQUEST_FINISH        _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x01)
++#define IC_CREATE_IOREQ_CLIENT          _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x02)
++#define IC_ATTACH_IOREQ_CLIENT          _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x03)
++#define IC_DESTROY_IOREQ_CLIENT         _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x04)
++
+ /* Guest memory management */
+ #define IC_ID_MEM_BASE                  0x300UL
+ #define IC_ALLOC_MEMSEG                 _IC_ID(IC_ID, IC_ID_MEM_BASE + 0x00)
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index 4f1a0db..eb41002 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -65,9 +65,14 @@ struct vhm_vm {
+ 	struct device *dev;
+ 	struct list_head list;
+ 	unsigned long vmid;
++	int ioreq_fallback_client;
+ 	long refcnt;
+ 	struct mutex seg_lock;
+ 	struct list_head memseg_list;
++	spinlock_t ioreq_client_lock;
++	struct list_head ioreq_client_list;
++	struct vhm_request_buffer *req_buf;
++	struct page *pg;
+ };
+ 
+ struct vhm_vm *find_get_vm(unsigned long vmid);
+-- 
+2.7.4
+

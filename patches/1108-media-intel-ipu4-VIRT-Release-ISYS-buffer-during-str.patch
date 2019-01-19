@@ -1,0 +1,336 @@
+From 5f7b70a673bf9f8b905b5da7a6e10efef354a5f2 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Sun, 23 Dec 2018 18:10:21 +0000
+Subject: [PATCH 1108/1132] media: intel-ipu4: [VIRT] Release ISYS buffer
+ during stream node close.
+
+During AaaG reboot testing, sometimes the stream off did not
+get called but only stream node close. This caused
+issue to subsequent run where SOS and UOS get out
+of sync.
+
+Change-Id: Ib79ce44e714d34309c181d9082db7a1d7e70536e
+Tracked-On: OAM-72430
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/ici/ici-isys-frame-buf.c   |  14 ++-
+ drivers/media/pci/intel/ici/ici-isys-stream.c      |   7 +-
+ .../pci/intel/virtio/intel-ipu4-para-virt-drv.c    |   2 +
+ .../intel/virtio/intel-ipu4-virtio-be-pipeline.c   | 128 ++++++++++++++++++---
+ 4 files changed, 127 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ici/ici-isys-frame-buf.c b/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
+index e38ba99..6c2b608 100644
+--- a/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
++++ b/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
+@@ -740,11 +740,12 @@ void ici_isys_frame_buf_stream_cancel(struct
+ {
+ 	struct ici_isys_frame_buf_list *buf_list = &as->buf_list;
+ 	struct ici_frame_buf_wrapper *buf;
+-	struct ici_frame_buf_wrapper *next_buf;
+ 	unsigned long flags = 0;
+ 
+-	list_for_each_entry_safe(buf, next_buf, &buf_list->getbuf_list, node) {
++	while (!list_empty(&buf_list->getbuf_list)) {
+ 		spin_lock_irqsave(&buf_list->lock, flags);
++		buf = list_entry(buf_list->getbuf_list.next,
++			struct ici_frame_buf_wrapper, node);
+ 		list_del(&buf->node);
+ 		spin_unlock_irqrestore(&buf_list->lock, flags);
+ 		if (as->strm_dev.virt_dev_id < 0)
+@@ -753,8 +754,10 @@ void ici_isys_frame_buf_stream_cancel(struct
+ 			unmap_buf_virt(buf);
+ 	}
+ 
+-	list_for_each_entry_safe(buf, next_buf, &buf_list->putbuf_list, node) {
++	while (!list_empty(&buf_list->putbuf_list)) {
+ 		spin_lock_irqsave(&buf_list->lock, flags);
++		buf = list_entry(buf_list->putbuf_list.next,
++			struct ici_frame_buf_wrapper, node);
+ 		list_del(&buf->node);
+ 		spin_unlock_irqrestore(&buf_list->lock, flags);
+ 		if (as->strm_dev.virt_dev_id < 0)
+@@ -763,9 +766,10 @@ void ici_isys_frame_buf_stream_cancel(struct
+ 			unmap_buf_virt(buf);
+ 	}
+ 
+-	list_for_each_entry_safe(buf, next_buf, &buf_list->interlacebuf_list,
+-								node) {
++	while (!list_empty(&buf_list->interlacebuf_list)) {
+ 		spin_lock_irqsave(&buf_list->short_packet_queue_lock, flags);
++		buf = list_entry(buf_list->interlacebuf_list.next,
++			struct ici_frame_buf_wrapper, node);
+ 		list_del(&buf->node);
+ 		spin_unlock_irqrestore(&buf_list->short_packet_queue_lock, flags);
+ 		unmap_buf(buf);
+diff --git a/drivers/media/pci/intel/ici/ici-isys-stream.c b/drivers/media/pci/intel/ici/ici-isys-stream.c
+index e45aa53..65f2c54 100644
+--- a/drivers/media/pci/intel/ici/ici-isys-stream.c
++++ b/drivers/media/pci/intel/ici/ici-isys-stream.c
+@@ -930,8 +930,8 @@ static int ici_isys_stream_on(struct file *file, void *fh)
+ 	ici_isys_frame_buf_short_packet_destroy(as);
+ 
+ out_requeue:
+-	ici_isys_frame_buf_stream_cancel(as);
+ 	mutex_unlock(&as->isys->stream_mutex);
++	ici_isys_frame_buf_stream_cancel(as);
+ 	pipeline_set_power(as, 0);
+ 	return rval;
+ }
+@@ -1176,9 +1176,10 @@ static int stream_fop_release(struct inode *inode, struct file *file)
+ 	int ret = 0;
+ 	DEBUGK("%s: stream release (%p)\n", __func__, as);
+ 
+-	if (as->ip.streaming) {
++	if (as->ip.streaming)
+ 		ici_isys_stream_off(file, NULL);
+-	}
++	else
++		ici_isys_frame_buf_stream_cancel(as);
+ 
+ 	mutex_lock(&as->isys->mutex);
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+index 34da94b..5b4bac2 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+@@ -695,6 +695,8 @@ static int virt_stream_fop_release(struct inode *inode, struct file *file)
+ 	}
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
++	buf_stream_cancel(vstream);
++
+ 	return rval;
+ }
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+index ddbb8a3..81e2826 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+@@ -53,13 +53,25 @@ int process_pipeline_close(struct ipu4_virtio_req_info *req_info)
+ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
++	struct ici_isys_pipeline_device *dev;
+ 	struct ici_node_desc *host_virt;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
+ 	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
++	if (!pipeline) {
++		pr_err("%s: NULL pipeline", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	dev = pipeline->private_data;
++
++	if (!req_info) {
++		pr_err("%s: NULL req_info", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	req = req_info->request;
++
+ 	host_virt = map_guest_phys(domid, req->payload,
+ 						sizeof(struct ici_node_desc));
+ 	if (host_virt == NULL) {
+@@ -79,13 +91,25 @@ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
+ int process_enum_links(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
++	struct ici_isys_pipeline_device *dev;
+ 	struct ici_links_query *host_virt;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
+ 	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
++	if (!pipeline) {
++		pr_err("%s: NULL pipeline", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	dev = pipeline->private_data;
++
++	if (!req_info) {
++		pr_err("%s: NULL req_info", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	req = req_info->request;
++
+ 	host_virt = map_guest_phys(domid, req->payload,
+ 						sizeof(struct ici_links_query));
+ 	if (host_virt == NULL) {
+@@ -103,13 +127,25 @@ int process_enum_links(struct ipu4_virtio_req_info *req_info)
+ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
++	struct ici_isys_pipeline_device *dev;
+ 	struct ici_pad_supported_format_desc *host_virt;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
+ 	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
++	if (!pipeline) {
++		pr_err("%s: NULL pipeline", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	dev = pipeline->private_data;
++
++	if (!req_info) {
++		pr_err("%s: NULL req_info", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	req = req_info->request;
++
+ 	host_virt = map_guest_phys(domid, req->payload,
+ 				sizeof(struct ici_pad_supported_format_desc));
+ 	if (host_virt == NULL) {
+@@ -128,13 +164,25 @@ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
+ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
++	struct ici_isys_pipeline_device *dev;
+ 	struct ici_pad_framefmt *host_virt;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
+ 	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
++	if (!pipeline) {
++		pr_err("%s: NULL pipeline", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	dev = pipeline->private_data;
++
++	if (!req_info) {
++		pr_err("%s: NULL req_info", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	req = req_info->request;
++
+ 	host_virt = map_guest_phys(domid, req->payload,
+ 						sizeof(struct ici_pad_framefmt));
+ 	if (host_virt == NULL) {
+@@ -153,13 +201,25 @@ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
+ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
++	struct ici_isys_pipeline_device *dev;
+ 	struct ici_pad_framefmt *host_virt;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
+ 	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
++	if (!pipeline) {
++		pr_err("%s: NULL pipeline", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	dev = pipeline->private_data;
++
++	if (!req_info) {
++		pr_err("%s: NULL req_info", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	req = req_info->request;
++
+ 	host_virt = map_guest_phys(domid, req->payload,
+ 						sizeof(struct ici_pad_framefmt));
+ 	if (host_virt == NULL) {
+@@ -178,13 +238,25 @@ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
+ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
++	struct ici_isys_pipeline_device *dev;
+ 	struct ici_link_desc *host_virt;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
+ 	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
++	if (!pipeline) {
++		pr_err("%s: NULL pipeline", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	dev = pipeline->private_data;
++
++	if (!req_info) {
++		pr_err("%s: NULL req_info", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	req = req_info->request;
++
+ 	host_virt = map_guest_phys(domid, req->payload,
+ 						sizeof(struct ici_link_desc));
+ 	if (host_virt == NULL) {
+@@ -203,13 +275,25 @@ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
+ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
++	struct ici_isys_pipeline_device *dev;
+ 	struct ici_pad_selection *host_virt;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
+ 	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
++	if (!pipeline) {
++		pr_err("%s: NULL pipeline", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	dev = pipeline->private_data;
++
++	if (!req_info) {
++		pr_err("%s: NULL req_info", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	req = req_info->request;
++
+ 	host_virt = map_guest_phys(domid, req->payload,
+ 						sizeof(struct ici_pad_selection));
+ 	if (host_virt == NULL) {
+@@ -228,13 +312,25 @@ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
+ int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int err = 0;
+-	struct ici_isys_pipeline_device *dev = pipeline->private_data;
++	struct ici_isys_pipeline_device *dev;
+ 	struct ici_pad_selection *host_virt;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
+ 	int domid = req_info->domid;
+ 
+ 	pr_debug("%s\n", __func__);
+ 
++	if (!pipeline) {
++		pr_err("%s: NULL pipeline", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	dev = pipeline->private_data;
++
++	if (!req_info) {
++		pr_err("%s: NULL req_info", __func__);
++		return IPU4_REQ_ERROR;
++	}
++	req = req_info->request;
++
+ 	host_virt = map_guest_phys(domid, req->payload,
+ 						sizeof(struct ici_pad_selection));
+ 	if (host_virt == NULL) {
+-- 
+2.7.4
+

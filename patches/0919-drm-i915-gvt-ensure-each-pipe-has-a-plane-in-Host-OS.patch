@@ -1,0 +1,64 @@
+From f8eb8672355932f355112d1982eec510973effbe Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Fri, 17 Aug 2018 17:54:24 +0800
+Subject: [PATCH 0919/1132] drm/i915/gvt: ensure each pipe has a plane in Host
+ OS
+
+This is a workaround patch to fix black screen issue and pass plane
+restriction tests. Weston 4.0 won't enable the CRTCs which doesn't have
+a primary plane. So explicitly check `avail_planes_per_pipe` to make
+sure each pipe has a primary plane to make weston happy.
+
+Note: When GVT-g enabled with plane restriction feature, User App
+changed mode in host OS will make chaos for guest OS.
+
+v3: remove unnecessary check and fix style per Min's advice
+v2: improve the check logic per Fei's advice
+v1: force enable a plane for each CRTC
+
+Tracked-On: projectacrn/acrn-hypervisor#1131
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: Fei Jiang <fei.jiang@intel.com>
+Reviewed-by: Min He <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/intel_display.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 26df8df..d11ebc7 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -15397,13 +15397,29 @@ static void intel_update_fdi_pll_freq(struct drm_i915_private *dev_priv)
+ 
+ static int intel_sanitize_plane_restriction(struct drm_i915_private *dev_priv)
+ {
++	unsigned int mask;
++
+ 	/*plane restriction feature is only for APL and KBL for now*/
+ 	if (!(IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv))) {
+ 		i915_modparams.avail_planes_per_pipe = 0;
+ 		DRM_INFO("Turning off Plane Restrictions feature\n");
+ 	}
+ 
+-	return i915_modparams.avail_planes_per_pipe;
++	mask = i915_modparams.avail_planes_per_pipe;
++
++	/* make sure SOS has a (dummy) plane per pipe. */
++	if ((IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv)) &&
++			intel_gvt_active(dev_priv)) {
++		enum pipe pipe;
++
++		for_each_pipe(dev_priv, pipe) {
++			if (!AVAIL_PLANE_PER_PIPE(dev_priv, mask, pipe))
++				mask |=  (1 << pipe * BITS_PER_PIPE);
++		}
++		DRM_INFO("Fix internal plane mask: 0x%06x --> 0x%06x",
++				i915_modparams.avail_planes_per_pipe, mask);
++	}
++	return mask;
+ }
+ 
+ int intel_modeset_init(struct drm_device *dev)
+-- 
+2.7.4
+

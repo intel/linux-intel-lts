@@ -1,0 +1,81 @@
+From 38d3a46ff882105dab08d2bbafa416a22e7a2542 Mon Sep 17 00:00:00 2001
+From: Jian Jun Chen <jian.jun.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:59:03 +0800
+Subject: [PATCH 0812/1132] VBS-K: add virtio_dev_reset
+
+A new ioctl VBS_RESET_DEV is introduced to support D3. VBS-U issues
+this ioctl to VBS-K driver when receives reset notification from FE
+driver. VBS-K driver should perform stop/flush/reset to react to this
+ioctl. virtio_dev_reset can be called in VBS-K driver's reset function.
+
+Signed-off-by: Jian Jun Chen <jian.jun.chen@intel.com>
+Reviewed-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Yu Wang <yu1.wang@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/vbs/vbs.c                 | 19 +++++++++++++++++++
+ include/linux/vbs/vbs.h           |  8 ++++++++
+ include/linux/vbs/vbs_common_if.h |  1 +
+ 3 files changed, 28 insertions(+)
+
+diff --git a/drivers/vbs/vbs.c b/drivers/vbs/vbs.c
+index 9b7a279..7427942 100644
+--- a/drivers/vbs/vbs.c
++++ b/drivers/vbs/vbs.c
+@@ -304,6 +304,25 @@ long virtio_dev_init(struct virtio_dev_info *dev,
+ }
+ EXPORT_SYMBOL_GPL(virtio_dev_init);
+ 
++long virtio_dev_reset(struct virtio_dev_info *dev)
++{
++	int i;
++
++	for (i = 0; i < dev->nvq; i++)
++		virtio_vq_reset(&dev->vqs[i]);
++
++	memset(dev->name, 0, sizeof(dev->name));
++	dev->_ctx.vmid = 0;
++	dev->nvq = 0;
++	dev->negotiated_features = 0;
++	dev->io_range_start = 0;
++	dev->io_range_len = 0;
++	dev->io_range_type = PIO_RANGE;
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(virtio_dev_reset);
++
+ static int __init vbs_init(void)
+ {
+ 	return 0;
+diff --git a/include/linux/vbs/vbs.h b/include/linux/vbs/vbs.h
+index 33ca072..30df8eb 100644
+--- a/include/linux/vbs/vbs.h
++++ b/include/linux/vbs/vbs.h
+@@ -275,4 +275,12 @@ long virtio_dev_deregister(struct virtio_dev_info *dev);
+  */
+ int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map);
+ 
++/**
++ * virtio_dev_reset - reset a VBS-K device
++ *
++ * @dev: Pointer to VBS-K device data struct
++ *
++ * Return: 0 on success, <0 on error
++ */
++long virtio_dev_reset(struct virtio_dev_info *dev);
+ #endif
+diff --git a/include/linux/vbs/vbs_common_if.h b/include/linux/vbs/vbs_common_if.h
+index 25d6002..59c6578 100644
+--- a/include/linux/vbs/vbs_common_if.h
++++ b/include/linux/vbs/vbs_common_if.h
+@@ -92,5 +92,6 @@ struct vbs_dev_info {
+ 
+ #define VBS_SET_DEV _IOW(VBS_IOCTL, 0x00, struct vbs_dev_info)
+ #define VBS_SET_VQ _IOW(VBS_IOCTL, 0x01, struct vbs_vqs_info)
++#define VBS_RESET_DEV _IO(VBS_IOCTL, 0x02)
+ 
+ #endif
+-- 
+2.7.4
+

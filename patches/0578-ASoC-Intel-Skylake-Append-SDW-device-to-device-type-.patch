@@ -1,0 +1,44 @@
+From fdff89f1d999e4832deeb929decb0b81bb0e1d8e Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Thu, 27 Apr 2017 14:32:17 +0530
+Subject: [PATCH 0578/1132] ASoC: Intel: Skylake: Append SDW device to device
+ type enum
+
+Append the SDW device type enum to the device type enum instead of
+putting it in between.
+
+Change-Id: Idc6e7a19569bfcb672047311767804177ceb5c4d
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ include/uapi/sound/skl-tplg-interface.h | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/include/uapi/sound/skl-tplg-interface.h b/include/uapi/sound/skl-tplg-interface.h
+index fc4e4324..e5656fc 100644
+--- a/include/uapi/sound/skl-tplg-interface.h
++++ b/include/uapi/sound/skl-tplg-interface.h
+@@ -108,9 +108,10 @@ enum skl_dev_type {
+ 	SKL_DEVICE_SLIMBUS = 0x3,
+ 	SKL_DEVICE_HDALINK = 0x4,
+ 	SKL_DEVICE_HDAHOST = 0x5,
+-	SKL_DEVICE_SDW_PCM = 0x6,
+-	SKL_DEVICE_SDW_PDM = 0x7,
+-	SKL_DEVICE_NONE
++	SKL_DEVICE_NONE = 0x6,
++	SKL_DEVICE_SDW_PCM = 0x7,
++	SKL_DEVICE_SDW_PDM = 0x8,
++	SKL_DEVICE_MAX = SKL_DEVICE_SDW_PDM,
+ };
+ 
+ /**
+-- 
+2.7.4
+

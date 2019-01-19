@@ -1,0 +1,176 @@
+From 9757d529ff8d9be9cce37f9f37a4b9e0c4d016c8 Mon Sep 17 00:00:00 2001
+From: Yonghua Huang <yonghua.huang@intel.com>
+Date: Sat, 27 Oct 2018 02:10:21 +0800
+Subject: [PATCH 0943/1132] kernel: remove deprecated VHM IOCTLs
+
+below IOCTLs are wrapped into IC_SET_IRQLINE:
+
+ - IC_ASSERT_IRQLINE
+ - IC_DEASSERT_IRQLINE
+ - IC_PULSE_IRQLINE
+
+Tracked-On: projectacrn/acrn-hypervisor#861
+Signed-off-by: Yonghua Huang <yonghua.huang@intel.com>
+Acked-by: Anthony Xu <anthony.xu@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 41 --------------------------------------
+ drivers/vhm/vhm_hypercall.c        | 15 --------------
+ include/linux/vhm/acrn_common.h    | 34 -------------------------------
+ include/linux/vhm/acrn_hv_defs.h   |  3 ---
+ include/linux/vhm/vhm_ioctl_defs.h |  3 ---
+ 5 files changed, 96 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index f730467c..a221794 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -395,47 +395,6 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
+-	case IC_ASSERT_IRQLINE: {
+-		struct acrn_irqline irq;
+-
+-		if (copy_from_user(&irq, (void *)ioctl_param, sizeof(irq)))
+-			return -EFAULT;
+-
+-		ret = hcall_assert_irqline(vm->vmid, virt_to_phys(&irq));
+-		if (ret < 0) {
+-			pr_err("vhm: failed to assert irq!\n");
+-			return -EFAULT;
+-		}
+-		break;
+-	}
+-	case IC_DEASSERT_IRQLINE: {
+-		struct acrn_irqline irq;
+-
+-		if (copy_from_user(&irq, (void *)ioctl_param, sizeof(irq)))
+-			return -EFAULT;
+-
+-		ret = hcall_deassert_irqline(vm->vmid, virt_to_phys(&irq));
+-		if (ret < 0) {
+-			pr_err("vhm: failed to deassert irq!\n");
+-			return -EFAULT;
+-		}
+-		break;
+-	}
+-	case IC_PULSE_IRQLINE: {
+-		struct acrn_irqline irq;
+-
+-		if (copy_from_user(&irq, (void *)ioctl_param, sizeof(irq)))
+-			return -EFAULT;
+-
+-		ret = hcall_pulse_irqline(vm->vmid,
+-					virt_to_phys(&irq));
+-		if (ret < 0) {
+-			pr_err("vhm: failed to assert irq!\n");
+-			return -EFAULT;
+-		}
+-		break;
+-	}
+-
+ 	case IC_SET_IRQLINE: {
+ 		ret = hcall_set_irqline(vm->vmid, ioctl_param);
+ 		if (ret < 0) {
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index 6c67d04..55289bd 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -127,21 +127,6 @@ inline long hcall_notify_req_finish(unsigned long vmid, unsigned long vcpu)
+ 	return acrn_hypercall2(HC_NOTIFY_REQUEST_FINISH, vmid, vcpu);
+ }
+ 
+-inline long hcall_assert_irqline(unsigned long vmid, unsigned long irq)
+-{
+-	return acrn_hypercall2(HC_ASSERT_IRQLINE, vmid, irq);
+-}
+-
+-inline long hcall_deassert_irqline(unsigned long vmid, unsigned long irq)
+-{
+-	return acrn_hypercall2(HC_DEASSERT_IRQLINE, vmid, irq);
+-}
+-
+-inline long hcall_pulse_irqline(unsigned long vmid, unsigned long irq)
+-{
+-	return acrn_hypercall2(HC_PULSE_IRQLINE, vmid, irq);
+-}
+-
+ inline long hcall_set_irqline(unsigned long vmid, unsigned long op)
+ {
+ 	return acrn_hypercall2(HC_SET_IRQLINE, vmid, op);
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 179957d..d28ce51 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -354,40 +354,6 @@ struct acrn_set_ioreq_buffer {
+ 	uint64_t req_buf;
+ } __attribute__((aligned(8)));
+ 
+-/** Interrupt type for acrn_irqline: inject interrupt to IOAPIC */
+-#define	ACRN_INTR_TYPE_ISA	0
+-
+-/** Interrupt type for acrn_irqline: inject interrupt to both PIC and IOAPIC */
+-#define	ACRN_INTR_TYPE_IOAPIC	1
+-
+-/**
+- * @brief Info to assert/deassert/pulse a virtual IRQ line for a VM
+- *
+- * the parameter for HC_ASSERT_IRQLINE/HC_DEASSERT_IRQLINE/HC_PULSE_IRQLINE
+- * hypercall
+- */
+-struct acrn_irqline {
+-	/** interrupt type which could be IOAPIC or ISA */
+-	uint32_t intr_type;
+-
+-	/** reserved for alignment padding */
+-	uint32_t reserved;
+-
+-	/** pic IRQ for ISA type */
+-	uint32_t pic_irq;
+-
+-	/** Reserved */
+-	uint32_t reserved0;
+-
+-	/** ioapic IRQ for IOAPIC & ISA TYPE,
+-	 *  if ~0U then this IRQ will not be injected
+-	 */
+-	uint32_t ioapic_irq;
+-
+-	/** Reserved */
+-	uint32_t reserved1;
+-} __attribute__((aligned(8)));
+-
+ /**
+  * @brief Info to inject a MSI interrupt to VM
+  *
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index d916022..af00025 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -87,9 +87,6 @@
+ 
+ /* IRQ and Interrupts */
+ #define HC_ID_IRQ_BASE              0x20UL
+-#define HC_ASSERT_IRQLINE           _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x00)
+-#define HC_DEASSERT_IRQLINE         _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x01)
+-#define HC_PULSE_IRQLINE            _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x02)
+ #define HC_INJECT_MSI               _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x03)
+ #define HC_VM_INTR_MONITOR          _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x04)
+ #define HC_SET_IRQLINE              _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x05)
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 73be2dd..19ebf54 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -77,9 +77,6 @@
+ 
+ /* IRQ and Interrupts */
+ #define IC_ID_IRQ_BASE                 0x20UL
+-#define IC_ASSERT_IRQLINE              _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x00)
+-#define IC_DEASSERT_IRQLINE            _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x01)
+-#define IC_PULSE_IRQLINE               _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x02)
+ #define IC_INJECT_MSI                  _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x03)
+ #define IC_VM_INTR_MONITOR             _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x04)
+ #define IC_SET_IRQLINE                 _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x05)
+-- 
+2.7.4
+

@@ -1,0 +1,55 @@
+From 19782b67b64859b9c3f32dc6b1524479762ca18a Mon Sep 17 00:00:00 2001
+From: Hardik T Shah <hardik.t.shah@intel.com>
+Date: Thu, 10 Mar 2016 12:55:38 +0530
+Subject: [PATCH 0450/1132] ASoC: Intel: Add support to bypass NHLT reading for
+ SDW link.
+
+NHLT reading is not required for the SDW link. So bypass
+NHLT reading for SoundWire link.
+
+Change-Id: I4c256874ce57631e8c3e72f2f033a303acb4006a
+Signed-off-by: Hardik T Shah <hardik.t.shah@intel.com>
+---
+ sound/soc/intel/skylake/skl-nhlt.h     | 1 +
+ sound/soc/intel/skylake/skl-topology.c | 6 ++++--
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-nhlt.h b/sound/soc/intel/skylake/skl-nhlt.h
+index 116534e7..fc17da50 100644
+--- a/sound/soc/intel/skylake/skl-nhlt.h
++++ b/sound/soc/intel/skylake/skl-nhlt.h
+@@ -48,6 +48,7 @@ enum nhlt_link_type {
+ 	NHLT_LINK_DSP = 1,
+ 	NHLT_LINK_DMIC = 2,
+ 	NHLT_LINK_SSP = 3,
++	NHLT_LINK_SDW = 4,
+ 	NHLT_LINK_INVALID
+ };
+ 
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index f99c600..67e8a1f 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -1850,7 +1850,9 @@ static u8 skl_tplg_be_link_type(int dev_type)
+ 	case SKL_DEVICE_HDALINK:
+ 		ret = NHLT_LINK_HDA;
+ 		break;
+-
++	case SKL_DEVICE_SDW:
++		ret = NHLT_LINK_SDW;
++		break;
+ 	default:
+ 		ret = NHLT_LINK_INVALID;
+ 		break;
+@@ -1877,7 +1879,7 @@ static int skl_tplg_be_fill_pipe_params(struct snd_soc_dai *dai,
+ 
+ 	skl_tplg_fill_dma_id(mconfig, params);
+ 
+-	if (link_type == NHLT_LINK_HDA)
++	if (link_type == NHLT_LINK_HDA || link_type == NHLT_LINK_SDW)
+ 		return 0;
+ 
+ 	/* update the blob based on virtual bus_id*/
+-- 
+2.7.4
+

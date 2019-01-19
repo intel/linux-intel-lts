@@ -1,0 +1,649 @@
+From 6a09b2a2e023e96eda1222e1c6498fb63af818ab Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Fri, 16 Nov 2018 09:42:17 +0800
+Subject: [PATCH 1088/1132] media: intel-ipu4: [VIRT] Move the PYSY buffer
+ release from SOS back to UOS.
+
+As the PSYS buffers are allocated by UOS. It should be
+release at UOS rather than SOS. UOS is not aware
+the memory has been release and caused memory being
+double free.
+
+Change-Id: I8e8786d8dc152fc1993d99f3297cd23f901bdc85
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/ipu-psys-virt.c            | 121 +++++++++++++++++----
+ .../pci/intel/virtio/intel-ipu4-para-virt-drv.c    |   2 -
+ .../pci/intel/virtio/intel-ipu4-para-virt-psys.c   | 118 ++++++++++++++++++--
+ .../pci/intel/virtio/intel-ipu4-virtio-be-psys.c   |   3 +
+ .../intel/virtio/intel-ipu4-virtio-common-psys.h   |   3 +
+ .../pci/intel/virtio/intel-ipu4-virtio-common.h    |   2 +
+ 6 files changed, 211 insertions(+), 38 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu-psys-virt.c b/drivers/media/pci/intel/ipu-psys-virt.c
+index af5a822..cbbd8ed9 100644
+--- a/drivers/media/pci/intel/ipu-psys-virt.c
++++ b/drivers/media/pci/intel/ipu-psys-virt.c
+@@ -65,6 +65,7 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 	struct ipu_psys_manifest_wrap *manifest_wrap;
+ 	struct ipu_psys_manifest *manifest;
+ 	void *manifest_data;
++	int status = 0;
+ 
+ 	manifest_wrap = (struct ipu_psys_manifest_wrap *)map_guest_phys(
+ 										req_info->domid,
+@@ -83,7 +84,8 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 										);
+ 	if (manifest == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_manifest", __func__);
+-		return -EFAULT;
++		status = -EFAULT;
++		goto exit_payload;
+ 	}
+ 
+ 	manifest_data = (void *)map_guest_phys(
+@@ -93,7 +95,8 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 							);
+ 	if (manifest_data == NULL) {
+ 		pr_err("%s: failed to get manifest_data", __func__);
+-		return -EFAULT;
++		status = -EFAULT;
++		goto exit_psys_manifest;
+ 	}
+ 
+ 	host_fw_data = (void *)isp->cpd_fw->data;
+@@ -102,14 +105,16 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 	entries = ipu_cpd_pkg_dir_get_num_entries(psys->pkg_dir);
+ 	if (!manifest || manifest->index > entries - 1) {
+ 		dev_err(&psys->adev->dev, "invalid argument\n");
+-		return -EINVAL;
++		status = -EINVAL;
++		goto exit_manifest_data;
+ 	}
+ 
+ 	if (!ipu_cpd_pkg_dir_get_size(psys->pkg_dir, manifest->index) ||
+ 		ipu_cpd_pkg_dir_get_type(psys->pkg_dir, manifest->index) <
+ 		IPU_CPD_PKG_DIR_CLIENT_PG_TYPE) {
+ 		dev_dbg(&psys->adev->dev, "invalid pkg dir entry\n");
+-		return -ENOENT;
++		status = -ENOENT;
++		goto exit_manifest_data;
+ 	}
+ 
+ 	client_pkg_offset = ipu_cpd_pkg_dir_get_address(psys->pkg_dir,
+@@ -123,14 +128,27 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 		pr_err("%s: manifest size is more than 1 page %d",
+ 										__func__,
+ 										manifest->size);
+-		return -EFAULT;
++		status = -EFAULT;
++		goto exit_manifest_data;
+ 	}
+ 
+ 	memcpy(manifest_data,
+ 		(uint8_t *) client_pkg + client_pkg->pg_manifest_offs,
+ 		manifest->size);
+ 
+-	return 0;
++exit_manifest_data:
++	unmap_guest_phys(req_info->domid,
++					manifest_wrap->manifest_data);
++
++exit_psys_manifest:
++	unmap_guest_phys(req_info->domid,
++					manifest_wrap->psys_manifest);
++
++exit_payload:
++	unmap_guest_phys(req_info->domid,
++					req_info->request->payload);
++
++	return status;
+ }
+ 
+ int virt_ipu_psys_map_buf(struct ipu_psys_fh *fh,
+@@ -440,7 +458,8 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
+ 
+ 	if (cmd == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_command", __func__);
+-		return -EFAULT;
++		ret = -EFAULT;
++		goto exit_payload;
+ 	}
+ 
+ 	pg_manifest = (void *)map_guest_phys(
+@@ -451,7 +470,8 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
+ 
+ 	if (pg_manifest == NULL) {
+ 		pr_err("%s: failed to get pg_manifest", __func__);
+-		return -EFAULT;
++		ret = -EFAULT;
++		goto exit_psys_command;
+ 	}
+ 
+ 	buffers = (struct ipu_psys_buffer *)map_guest_phys(
+@@ -462,11 +482,27 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
+ 
+ 	if (buffers == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_buffers", __func__);
+-		return -EFAULT;
++		ret = -EFAULT;
++		goto exit_psys_manifest;
+ 	}
+ 
+ 	ret = virt_ipu_psys_kcmd_new(cmd, buffers, pg_manifest, fh);
+ 
++	unmap_guest_phys(req_info->domid,
++					cmd_wrap->psys_buffer);
++
++exit_psys_manifest:
++	unmap_guest_phys(req_info->domid,
++					cmd_wrap->psys_manifest);
++
++exit_psys_command:
++	unmap_guest_phys(req_info->domid,
++					cmd_wrap->psys_command);
++
++exit_payload:
++	unmap_guest_phys(req_info->domid,
++				req_info->request->payload);
++
+ 	return ret;
+ }
+ 
+@@ -475,6 +511,7 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
+ 			unsigned int f_flags)
+ {
+ 	struct ipu_psys_event *event;
++	int status = 0;
+ 
+ 	event = (struct ipu_psys_event *)map_guest_phys(
+ 									req_info->domid,
+@@ -486,7 +523,12 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
+ 		return -EFAULT;
+ 	}
+ 
+-	return ipu_ioctl_dqevent(event, fh, f_flags);
++	status = ipu_ioctl_dqevent(event, fh, f_flags);
++
++	unmap_guest_phys(req_info->domid,
++				req_info->request->payload);
++
++	return status;
+ }
+ 
+ int virt_ipu_psys_poll(struct ipu_psys_fh *fh,
+@@ -526,7 +568,7 @@ int __map_buf(struct ipu_psys_fh *fh,
+ {
+ 	struct ipu_psys *psys = fh->psys;
+ 	struct dma_buf *dbuf;
+-	int ret = -1, i;
++	int ret = -1, i, array_size;
+ 	struct ipu_dma_buf_attach *ipu_attach;
+ 	struct page **data_pages = NULL;
+ 	u64 *page_table = NULL;
+@@ -549,10 +591,14 @@ int __map_buf(struct ipu_psys_fh *fh,
+ 		goto error_put;
+ 	}
+ 
+-	data_pages = kcalloc(buf_wrap->map.npages, sizeof(struct page *), GFP_KERNEL);
++	array_size = buf_wrap->map.npages * sizeof(struct page *);
++	if (array_size <= PAGE_SIZE)
++		data_pages = kzalloc(array_size, GFP_KERNEL);
++	else
++		data_pages = vzalloc(array_size);
+ 	if (data_pages == NULL) {
+ 		pr_err("%s: Failed alloc data page set", __func__);
+-		goto error_put;
++		goto error_detach;
+ 	}
+ 
+ 	pr_debug("%s: Total number of pages:%lu",
+@@ -573,7 +619,8 @@ int __map_buf(struct ipu_psys_fh *fh,
+ 					page_table[i], PAGE_SIZE);
+ 			if (pageaddr == NULL) {
+ 				pr_err("%s: Cannot map pages from UOS", __func__);
+-				break;
++				kfree(data_pages);
++				goto error_page_table_ref;
+ 			}
+ 			data_pages[i] = virt_to_page(pageaddr);
+ 		}
+@@ -589,25 +636,39 @@ int __map_buf(struct ipu_psys_fh *fh,
+ 		ret = -EINVAL;
+ 		kbuf->sgt = NULL;
+ 		dev_dbg(&psys->adev->dev, "map attachment failed\n");
+-		goto error_detach;
++		kfree(data_pages);
++		goto error_page_table;
+ 	}
+ 
+ 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
+ 
+ 	kbuf->kaddr = dma_buf_vmap(kbuf->dbuf);
+ 	if (!kbuf->kaddr) {
++		kfree(data_pages);
+ 		ret = -EINVAL;
+ 		goto error_unmap;
+ 	}
+ 
+ 	kbuf->valid = true;
+ 
++	for (i = 0; i < buf_wrap->map.npages; i++)
++		unmap_guest_phys(domid, page_table[i]);
++
++	unmap_guest_phys(domid,
++		buf_wrap->map.page_table_ref);
++
+ 	mutex_unlock(&fh->mutex);
+ 
+ 	return 0;
+ 
+ error_unmap:
+ 	dma_buf_unmap_attachment(kbuf->db_attach, kbuf->sgt, DMA_BIDIRECTIONAL);
++error_page_table:
++	for (i = 0; i < buf_wrap->map.npages; i++)
++		unmap_guest_phys(domid, page_table[i]);
++error_page_table_ref:
++	unmap_guest_phys(domid,
++		buf_wrap->map.page_table_ref);
+ error_detach:
+ 	dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
+ 	kbuf->db_attach = NULL;
+@@ -624,7 +685,7 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
+ 			struct ipu4_virtio_req_info *req_info)
+ {
+ 	struct dma_buf *dbuf;
+-	int ret;
++	int ret = 0;
+ 	struct ipu_psys_buffer_wrap *buf_wrap;
+ 	struct ipu_psys_buffer *buf;
+ 	struct ipu_psys_kbuffer *kbuf;
+@@ -647,7 +708,8 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
+ 										);
+ 	if (buf == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_buffer", __func__);
+-		return -EFAULT;
++		ret = -EFAULT;
++		goto exit_payload;
+ 	}
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
+@@ -656,12 +718,15 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
+ 
+ 	if (!buf->base.userptr) {
+ 		dev_err(&psys->adev->dev, "Buffer allocation not supported\n");
+-		return -EINVAL;
++		ret = -EINVAL;
++		goto exit_psys_buf;
+ 	}
+ 
+ 	kbuf = kzalloc(sizeof(*kbuf), GFP_KERNEL);
+-	if (!kbuf)
+-		return -ENOMEM;
++	if (!kbuf) {
++		ret = -ENOMEM;
++		goto exit_psys_buf;
++	}
+ 
+ 	kbuf->len = buf->len;
+ 	kbuf->userptr = buf->base.userptr;
+@@ -679,13 +744,14 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
+ #endif
+ 	if (IS_ERR(dbuf)) {
+ 		kfree(kbuf);
+-		return PTR_ERR(dbuf);
++		ret = PTR_ERR(dbuf);
++		goto exit_psys_buf;
+ 	}
+ 
+ 	ret = dma_buf_fd(dbuf, 0);
+ 	if (ret < 0) {
+ 		kfree(kbuf);
+-		return ret;
++		goto exit_psys_buf;
+ 	}
+ 
+ 	dev_dbg(&psys->adev->dev, "IOC_GETBUF: userptr %p", buf->base.userptr);
+@@ -698,7 +764,7 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
+ 	ret = __map_buf(fh, buf_wrap, kbuf, req_info->domid, kbuf->fd);
+ 	if (ret < 0) {
+ 		kfree(kbuf);
+-		return ret;
++		goto exit_psys_buf;
+ 	}
+ 
+ 	mutex_lock(&fh->mutex);
+@@ -707,7 +773,14 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
+ 
+ 	dev_dbg(&psys->adev->dev, "to %d\n", buf->base.fd);
+ 
+-	return 0;
++exit_psys_buf:
++	unmap_guest_phys(req_info->domid,
++					buf_wrap->psys_buf);
++exit_payload:
++	unmap_guest_phys(req_info->domid,
++				req_info->request->payload);
++
++	return ret;
+ }
+ 
+ struct psys_fops_virt psys_vfops = {
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+index b96e55a..34da94b 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+@@ -22,8 +22,6 @@
+ #include "./ici/ici-isys-stream.h"
+ #include "./ici/ici-isys-pipeline-device.h"
+ 
+-#define phys_to_page(x) pfn_to_page((x) >> PAGE_SHIFT)
+-
+ static dev_t virt_pipeline_dev_t;
+ static struct ici_isys_pipeline_device *pipeline_dev;
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+index d641e40..2a669cc 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+@@ -16,6 +16,7 @@
+ #include <linux/module.h>
+ #include <linux/version.h>
+ #include <linux/poll.h>
++#include <linux/hashtable.h>
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+ #include <linux/sched.h>
+ #else
+@@ -35,9 +36,12 @@
+ #include "intel-ipu4-virtio-fe-request-queue.h"
+ #include "intel-ipu4-virtio-fe-payload.h"
+ 
++#define FD_MAX_SIZE	8
+ #define IPU_PSYS_NUM_DEVICES		4
+ #define IPU_PSYS_NAME	"intel-ipu4-psys"
+ 
++DECLARE_HASHTABLE(FD_BUF_HASH, FD_MAX_SIZE);
++
+ #ifdef CONFIG_COMPAT
+ extern long virt_psys_compat_ioctl32(struct file *file, unsigned int cmd,
+ 			     unsigned long arg);
+@@ -247,22 +251,22 @@ int psys_get_userpages(struct ipu_psys_buffer *buf,
+ 		pages = vzalloc(array_size);
+ 	if (!pages) {
+ 		pr_err("%s: failed to get userpages:%d", __func__, -ENOMEM);
+-		kfree(page_table);
+-		return -ENOMEM;
++		ret = -ENOMEM;
++		goto exit_page_table;
+ 	}
+ 
+ 	down_read(&current->mm->mmap_sem);
+ 	vma = find_vma(current->mm, start);
+ 	if (!vma) {
+ 		ret = -EFAULT;
+-		goto error_up_read;
++		goto exit_up_read;
+ 	}
+ 
+ 	if (vma->vm_end < start + buf->len) {
+ 		pr_err("%s: vma at %lu is too small for %llu bytes",
+ 			__func__, start, buf->len);
+ 		ret = -EFAULT;
+-		goto error_up_read;
++		goto exit_up_read;
+ 	}
+ 
+ 	/*
+@@ -279,7 +283,7 @@ int psys_get_userpages(struct ipu_psys_buffer *buf,
+ 
+ 			ret = follow_pfn(vma, io_start, &pfn);
+ 			if (ret)
+-				goto error_up_read;
++				goto exit_up_read;
+ 			pages[nr] = pfn_to_page(pfn);
+ 		}
+ 	} else {
+@@ -295,36 +299,90 @@ int psys_get_userpages(struct ipu_psys_buffer *buf,
+ #endif
+ 				   pages, NULL);
+ 		if (nr < npages)
+-			goto error_up_read;
++			goto exit_pages;
+ 	}
+ 
+ 	for (i = 0; i < npages; i++)
+ 		page_table[i] = page_to_phys(pages[i]);
+ 
+ 	map->page_table_ref = virt_to_phys(page_table);
++	map->len = buf->len;
++	map->userptr = buf->base.userptr;
+ 
+ 	up_read(&current->mm->mmap_sem);
+ 
+ 	map->npages = npages;
+ 
++	if (array_size <= PAGE_SIZE)
++		kfree(pages);
++	else
++		vfree(pages);
++
+ 	return 0;
+ 
+-error_up_read:
+-	kfree(page_table);
+-	up_read(&current->mm->mmap_sem);
++exit_pages:
+ 	if (!map->vma_is_io)
+ 		while (nr > 0)
+ 			put_page(pages[--nr]);
+ 
+-	kfree(page_table);
+ 	if (array_size <= PAGE_SIZE)
+ 		kfree(pages);
+ 	else
+ 		vfree(pages);
++exit_up_read:
++	up_read(&current->mm->mmap_sem);
++exit_page_table:
++	kfree(page_table);
+ 
+ 	return ret;
+ }
+ 
++static void psys_put_userpages(struct ipu_psys_usrptr_map *map)
++{
++	unsigned long start, end;
++	int npages, i;
++	u64 *page_table;
++	struct page *pages;
++	struct mm_struct* mm;
++
++	start = (unsigned long)map->userptr;
++	end = PAGE_ALIGN(start + map->len);
++	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
++
++	mm = current->active_mm;
++	if (!mm){
++		pr_err("%s: Failed to get active mm_struct ptr from current process",
++			__func__);
++		return;
++	}
++
++	down_read(&mm->mmap_sem);
++
++	page_table = phys_to_virt(map->page_table_ref);
++	for (i = 0; i < npages; i++) {
++		pages = phys_to_page(page_table[i]);
++		set_page_dirty_lock(pages);
++		put_page(pages);
++	}
++
++	kfree(page_table);
++
++	up_read(&mm->mmap_sem);
++}
++
++static struct ipu_psys_buffer_wrap *ipu_psys_buf_lookup(
++											int fd)
++{
++	struct ipu_psys_buffer_wrap *psys_buf_wrap;
++
++	hash_for_each_possible(FD_BUF_HASH, psys_buf_wrap, node, fd) {
++		if (psys_buf_wrap)
++			return psys_buf_wrap;
++	}
++
++	return NULL;
++}
++
+ int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
+ 				struct virt_ipu_psys_fh *fh)
+ {
+@@ -357,14 +415,23 @@ int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
+ 									IPU_VIRTIO_QUEUE_1);
+ 	if (rval) {
+ 		pr_err("%s: Failed to get buf", __func__);
++		psys_put_userpages(&attach->map);
+ 		goto error_exit;
+ 	}
+ 
++	mutex_lock(&fh->mutex);
++	if(!ipu_psys_buf_lookup(buf->base.fd)) {
++		hash_add(FD_BUF_HASH, &attach->node, buf->base.fd);
++	}
++	mutex_unlock(&fh->mutex);
++
++	goto exit;
++
+ error_exit:
+ 
+-	kfree(phys_to_virt(attach->map.page_table_ref));
+ 	kfree(attach);
+ 
++exit:
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	pr_debug("%s: processing ended %d", __func__, rval);
+@@ -377,6 +444,7 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
+ 	struct virt_ipu_psys *psys = fh->psys;
+ 	struct ipu4_virtio_req *req;
+ 	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
++	struct ipu_psys_buffer_wrap *psys_buf_wrap;
+ 	int rval = 0, op[1];
+ 
+ 	pr_debug("%s: processing start", __func__);
+@@ -396,6 +464,15 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
+ 		goto error_exit;
+ 	}
+ 
++	mutex_lock(&fh->mutex);
++	psys_buf_wrap = ipu_psys_buf_lookup(fd);
++	if (psys_buf_wrap) {
++		psys_put_userpages(&psys_buf_wrap->map);
++		hash_del(&psys_buf_wrap->node);
++		kfree(psys_buf_wrap);
++	}
++	mutex_unlock(&fh->mutex);
++
+ error_exit:
+ 
+ 	ipu4_virtio_fe_req_queue_put(req);
+@@ -487,6 +564,8 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
+ 	union kargs *data = NULL;
+ 
+ 	struct virt_ipu_psys_fh *fh = file->private_data;
++	if(fh == NULL)
++		return -EFAULT;
+ 	void __user *up = (void __user *)arg;
+ 	bool copy = (cmd != IPU_IOC_MAPBUF && cmd != IPU_IOC_UNMAPBUF);
+ 
+@@ -574,6 +653,8 @@ static int virt_psys_open(struct inode *inode, struct file *file)
+ 	if (!fh)
+ 	  return -ENOMEM;
+ 	mutex_init(&fh->bs_mutex);
++	INIT_LIST_HEAD(&fh->bufmap);
++	hash_init(FD_BUF_HASH);
+ 
+ 	fh->psys = psys;
+ 	file->private_data = fh;
+@@ -605,7 +686,9 @@ static int virt_psys_release(struct inode *inode, struct file *file)
+ 	struct virt_ipu_psys *psys = inode_to_ipu_psys(inode);
+ 	struct ipu4_virtio_req *req;
+ 	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
+-	int rval = 0;
++	struct ipu_psys_buffer_wrap *psys_buf_wrap;
++	struct virt_ipu_psys_fh *fh = file->private_data;
++	int rval = 0, bkt;
+ 
+ 	pr_debug("%s: processing start", __func__);
+ 
+@@ -626,6 +709,17 @@ static int virt_psys_release(struct inode *inode, struct file *file)
+ 	}
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
++	mutex_lock(&fh->mutex);
++	/* clean up buffers */
++	if(!hash_empty(FD_BUF_HASH)) {
++		hash_for_each(FD_BUF_HASH, bkt, psys_buf_wrap, node) {
++			psys_put_userpages(&psys_buf_wrap->map);
++			hash_del(&psys_buf_wrap->node);
++			kfree(psys_buf_wrap);
++		}
++	}
++	mutex_unlock(&fh->mutex);
++
+ 	kfree(file->private_data);
+ 
+ 	return rval;
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+index 309929a..31b7d14 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+@@ -55,6 +55,9 @@ int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
+ 
+ 	*psys_caps = fh->psys->caps;
+ 
++	unmap_guest_phys(req_info->domid,
++			req_info->request->payload);
++
+ 	if (status)
+ 		return IPU4_REQ_ERROR;
+ 	else
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common-psys.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common-psys.h
+index dbc421a..0d8df64 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common-psys.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common-psys.h
+@@ -15,9 +15,12 @@ struct ipu_psys_usrptr_map {
+ 	bool vma_is_io;
+ 	u64 page_table_ref;
+ 	size_t npages;
++	u64 len;
++	void *userptr;
+ };
+ 
+ struct ipu_psys_buffer_wrap {
++	struct hlist_node node;
+ 	u64 psys_buf;
+ 	struct ipu_psys_usrptr_map map;
+ };
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+index b966d46..52a80cc 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+@@ -20,6 +20,8 @@
+ #define MAX_PIPELINE_DEVICES 1
+ #define MAX_ISYS_VIRT_STREAM 34
+ 
++#define phys_to_page(x) pfn_to_page((x) >> PAGE_SHIFT)
++
+ enum virio_queue_type {
+       IPU_VIRTIO_QUEUE_0 = 0,
+       IPU_VIRTIO_QUEUE_1,
+-- 
+2.7.4
+

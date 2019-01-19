@@ -1,0 +1,43 @@
+From f525fd72d385de66a3d9ee0f436d8af63260dfb7 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Sat, 15 Sep 2018 22:06:46 +0300
+Subject: [PATCH 0387/1132] tpm: tpm-interface.c drop unused macros
+
+The commit:
+"tpm_tis: further simplify calculation of ordinal duration"
+left unused macros, we can drop them now.
+
+Fixes compilation warnings:
+tpm-interface.c:37:0: warning: macro "TPM_PROTECTED_COMMAND" is not used [-Wunused-macros]
+tpm-interface.c:36:0: warning: macro "TSC_MAX_ORDINAL" is not used [-Wunused-macros]
+tpm-interface.c:38:0: warning: macro "TPM_CONNECTION_COMMAND" is not used [-Wunused-macros]
+
+V3: New in the series.
+V4: Fix the commit message.
+
+Fixes: f72864300139 ("tpm_tis: further simplify calculation of ordinal duration")
+Change-Id: I1ea856e2eae6e1b48ece7aefbc224c0e24f420b0
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Reviewed-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+---
+ drivers/char/tpm/tpm-interface.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-interface.c b/drivers/char/tpm/tpm-interface.c
+index 69e007a..ba50554 100644
+--- a/drivers/char/tpm/tpm-interface.c
++++ b/drivers/char/tpm/tpm-interface.c
+@@ -33,10 +33,6 @@
+ 
+ #include "tpm.h"
+ 
+-#define TSC_MAX_ORDINAL 12
+-#define TPM_PROTECTED_COMMAND 0x00
+-#define TPM_CONNECTION_COMMAND 0x40
+-
+ /*
+  * Bug workaround - some TPM's don't flush the most
+  * recently changed pcr on suspend, so force the flush
+-- 
+2.7.4
+

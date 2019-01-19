@@ -1,0 +1,305 @@
+From 7a6160aa582522d4100240126cd6e6ceb270125a Mon Sep 17 00:00:00 2001
+From: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Date: Thu, 8 Mar 2018 11:14:57 -0800
+Subject: [PATCH 0914/1132] INTERNAL [IOTG] drm: Don't assume that the primary
+ plane always exists
+
+In some virtualization use-cases, the operating system and hence
+the graphics drivers may have to deal with a crtc(s) that does not
+have a primary plane associated with it. For such cases, the
+legacy non-atomic APIs should check for the existence of the primary
+plane and return -EINVAL if it's not present.
+
+v2(ssingh) : Ported this patch to 4.19 kernel.
+
+Signed-off-by: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Signed-off-by: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Change-Id: Ie16c4bdd19a3df25ca5c4241ded12b87ca5a106a
+---
+ drivers/gpu/drm/drm_atomic_helper.c  |  5 ++++-
+ drivers/gpu/drm/drm_crtc.c           | 13 ++++++++++++
+ drivers/gpu/drm/drm_crtc_helper.c    | 10 +++++++++
+ drivers/gpu/drm/drm_fb_helper.c      |  2 ++
+ drivers/gpu/drm/drm_framebuffer.c    |  2 +-
+ drivers/gpu/drm/i915/i915_debugfs.c  | 39 ++++++++++++++++++++++++------------
+ drivers/gpu/drm/i915/intel_display.c | 14 ++++++++-----
+ drivers/gpu/drm/i915/intel_fbdev.c   | 11 ++++++++--
+ 8 files changed, 74 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_atomic_helper.c b/drivers/gpu/drm/drm_atomic_helper.c
+index 1bb4c31..07cedcd 100644
+--- a/drivers/gpu/drm/drm_atomic_helper.c
++++ b/drivers/gpu/drm/drm_atomic_helper.c
+@@ -1074,7 +1074,7 @@ drm_atomic_helper_update_legacy_modeset_state(struct drm_device *dev,
+ 		crtc->enabled = new_crtc_state->enable;
+ 
+ 		new_plane_state =
+-			drm_atomic_get_new_plane_state(old_state, primary);
++			primary ? drm_atomic_get_new_plane_state(old_state, primary) : NULL;
+ 
+ 		if (new_plane_state && new_plane_state->crtc == crtc) {
+ 			crtc->x = new_plane_state->src_x >> 16;
+@@ -2916,6 +2916,9 @@ int __drm_atomic_helper_set_config(struct drm_mode_set *set,
+ 	int hdisplay, vdisplay;
+ 	int ret;
+ 
++	if (!crtc->primary)
++		return -EINVAL;
++
+ 	crtc_state = drm_atomic_get_crtc_state(state, crtc);
+ 	if (IS_ERR(crtc_state))
+ 		return PTR_ERR(crtc_state);
+diff --git a/drivers/gpu/drm/drm_crtc.c b/drivers/gpu/drm/drm_crtc.c
+index 9cbe8f5..bd46843 100644
+--- a/drivers/gpu/drm/drm_crtc.c
++++ b/drivers/gpu/drm/drm_crtc.c
+@@ -410,6 +410,9 @@ int drm_mode_getcrtc(struct drm_device *dev,
+ 
+ 	plane = crtc->primary;
+ 
++	if (!crtc->primary)
++		return -EINVAL;
++
+ 	crtc_resp->gamma_size = crtc->gamma_size;
+ 
+ 	drm_modeset_lock(&plane->mutex, NULL);
+@@ -461,6 +464,9 @@ static int __drm_mode_set_config_internal(struct drm_mode_set *set,
+ 	struct drm_crtc *tmp;
+ 	int ret;
+ 
++	if (!crtc->primary)
++		return -EINVAL;
++
+ 	WARN_ON(drm_drv_uses_atomic_modeset(crtc->dev));
+ 
+ 	/*
+@@ -470,6 +476,8 @@ static int __drm_mode_set_config_internal(struct drm_mode_set *set,
+ 	 */
+ 	drm_for_each_crtc(tmp, crtc->dev) {
+ 		struct drm_plane *plane = tmp->primary;
++		if (!tmp->primary)
++			continue;
+ 
+ 		plane->old_fb = plane->fb;
+ 	}
+@@ -486,6 +494,8 @@ static int __drm_mode_set_config_internal(struct drm_mode_set *set,
+ 
+ 	drm_for_each_crtc(tmp, crtc->dev) {
+ 		struct drm_plane *plane = tmp->primary;
++		if (!tmp->primary)
++			continue;
+ 
+ 		if (plane->fb)
+ 			drm_framebuffer_get(plane->fb);
+@@ -606,6 +616,9 @@ int drm_mode_setcrtc(struct drm_device *dev, void *data,
+ 	if (ret)
+ 		goto out;
+ 
++	if (!crtc->primary)
++		return -EINVAL;
++
+ 	if (crtc_req->mode_valid) {
+ 		/* If we have a mode we need a framebuffer. */
+ 		/* If we pass -1, set the mode with the currently bound fb */
+diff --git a/drivers/gpu/drm/drm_crtc_helper.c b/drivers/gpu/drm/drm_crtc_helper.c
+index 5a84c3b..aaa80d6 100644
+--- a/drivers/gpu/drm/drm_crtc_helper.c
++++ b/drivers/gpu/drm/drm_crtc_helper.c
+@@ -185,6 +185,8 @@ static void __drm_helper_disable_unused_functions(struct drm_device *dev)
+ 				(*crtc_funcs->disable)(crtc);
+ 			else
+ 				(*crtc_funcs->dpms)(crtc, DRM_MODE_DPMS_OFF);
++			if (!crtc->primary)
++				continue;
+ 			crtc->primary->fb = NULL;
+ 		}
+ 	}
+@@ -539,6 +541,9 @@ int drm_crtc_helper_set_config(struct drm_mode_set *set,
+ 
+ 	crtc_funcs = set->crtc->helper_private;
+ 
++	if (!set->crtc->primary)
++		return -EINVAL;
++
+ 	if (!set->mode)
+ 		set->fb = NULL;
+ 
+@@ -950,6 +955,8 @@ void drm_helper_resume_force_mode(struct drm_device *dev)
+ 
+ 		if (!crtc->enabled)
+ 			continue;
++		if (!crtc->primary)
++			continue;
+ 
+ 		ret = drm_crtc_helper_set_mode(crtc, &crtc->mode,
+ 					       crtc->x, crtc->y, crtc->primary->fb);
+@@ -1072,6 +1079,9 @@ int drm_helper_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
+ 	struct drm_plane_state *plane_state;
+ 	struct drm_plane *plane = crtc->primary;
+ 
++	if (!plane)
++		return -EINVAL;
++
+ 	if (plane->funcs->atomic_duplicate_state)
+ 		plane_state = plane->funcs->atomic_duplicate_state(plane);
+ 	else {
+diff --git a/drivers/gpu/drm/drm_fb_helper.c b/drivers/gpu/drm/drm_fb_helper.c
+index 9214c8b..62baa31 100644
+--- a/drivers/gpu/drm/drm_fb_helper.c
++++ b/drivers/gpu/drm/drm_fb_helper.c
+@@ -552,6 +552,8 @@ static bool drm_fb_helper_is_bound(struct drm_fb_helper *fb_helper)
+ 
+ 	drm_for_each_crtc(crtc, dev) {
+ 		drm_modeset_lock(&crtc->mutex, NULL);
++		if (!crtc->primary)
++			continue;
+ 		if (crtc->primary->fb)
+ 			crtcs_bound++;
+ 		if (crtc->primary->fb == fb_helper->fb)
+diff --git a/drivers/gpu/drm/drm_framebuffer.c b/drivers/gpu/drm/drm_framebuffer.c
+index 781af1d..d2d2c30 100644
+--- a/drivers/gpu/drm/drm_framebuffer.c
++++ b/drivers/gpu/drm/drm_framebuffer.c
+@@ -891,7 +891,7 @@ static void legacy_remove_fb(struct drm_framebuffer *fb)
+ 	drm_modeset_lock_all(dev);
+ 	/* remove from any CRTC */
+ 	drm_for_each_crtc(crtc, dev) {
+-		if (crtc->primary->fb == fb) {
++		if (crtc->primary && crtc->primary->fb == fb) {
+ 			/* should turn off the crtc */
+ 			if (drm_crtc_force_disable(crtc))
+ 				DRM_ERROR("failed to reset crtc %p when fb was deleted\n", crtc);
+diff --git a/drivers/gpu/drm/i915/i915_debugfs.c b/drivers/gpu/drm/i915/i915_debugfs.c
+index ff6d2c8..89b2863 100644
+--- a/drivers/gpu/drm/i915/i915_debugfs.c
++++ b/drivers/gpu/drm/i915/i915_debugfs.c
+@@ -3008,15 +3008,23 @@ static void intel_crtc_info(struct seq_file *m, struct intel_crtc *intel_crtc)
+ 	struct drm_device *dev = &dev_priv->drm;
+ 	struct drm_crtc *crtc = &intel_crtc->base;
+ 	struct intel_encoder *intel_encoder;
+-	struct drm_plane_state *plane_state = crtc->primary->state;
+-	struct drm_framebuffer *fb = plane_state->fb;
++	struct drm_plane_state *plane_state;
++	struct drm_framebuffer *fb;
+ 
+-	if (fb)
+-		seq_printf(m, "\tfb: %d, pos: %dx%d, size: %dx%d\n",
++	if (!crtc->primary) {
++		seq_puts(m, "\tno primary plane\n");
++	} else {
++		plane_state = crtc->primary->state;
++		fb = plane_state->fb;
++
++		if (fb)
++			seq_printf(m, "\tfb: %d, pos: %dx%d, size: %dx%d\n",
+ 			   fb->base.id, plane_state->src_x >> 16,
+ 			   plane_state->src_y >> 16, fb->width, fb->height);
+-	else
+-		seq_puts(m, "\tprimary plane disabled\n");
++		else
++			seq_puts(m, "\tprimary plane disabled\n");
++	}
++
+ 	for_each_encoder_on_crtc(dev, crtc, intel_encoder)
+ 		intel_encoder_info(m, intel_crtc, intel_encoder);
+ }
+@@ -3261,13 +3269,18 @@ static int i915_display_info(struct seq_file *m, void *unused)
+ 
+ 			intel_crtc_info(m, crtc);
+ 
+-			seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x\n",
+-				   yesno(cursor->base.state->visible),
+-				   cursor->base.state->crtc_x,
+-				   cursor->base.state->crtc_y,
+-				   cursor->base.state->crtc_w,
+-				   cursor->base.state->crtc_h,
+-				   cursor->cursor.base);
++			if (cursor) {
++				seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x\n",
++						yesno(cursor->base.state->visible),
++						cursor->base.state->crtc_x,
++						cursor->base.state->crtc_y,
++						cursor->base.state->crtc_w,
++						cursor->base.state->crtc_h,
++						cursor->cursor.base);
++			} else {
++				seq_puts(m, "\tNo cursor plane available on this platform\n");
++			}
++
+ 			intel_scaler_info(m, crtc);
+ 			intel_plane_info(m, crtc);
+ 		}
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 7295fb6..ec19f6c 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -5250,8 +5250,8 @@ static void intel_post_plane_update(struct intel_crtc_state *old_crtc_state)
+ 		intel_atomic_get_new_crtc_state(to_intel_atomic_state(old_state),
+ 						crtc);
+ 	struct drm_plane *primary = crtc->base.primary;
+-	struct drm_plane_state *old_primary_state =
+-		drm_atomic_get_old_plane_state(old_state, primary);
++	struct drm_plane_state *old_primary_state = primary ?
++		drm_atomic_get_old_plane_state(old_state, primary) : NULL;
+ 
+ 	intel_frontbuffer_flip(to_i915(crtc->base.dev), pipe_config->fb_bits);
+ 
+@@ -5289,8 +5289,8 @@ static void intel_pre_plane_update(struct intel_crtc_state *old_crtc_state,
+ 	struct drm_i915_private *dev_priv = to_i915(dev);
+ 	struct drm_atomic_state *old_state = old_crtc_state->base.state;
+ 	struct drm_plane *primary = crtc->base.primary;
+-	struct drm_plane_state *old_primary_state =
+-		drm_atomic_get_old_plane_state(old_state, primary);
++	struct drm_plane_state *old_primary_state = primary ?
++		drm_atomic_get_old_plane_state(old_state, primary) : NULL;
+ 	bool modeset = needs_modeset(&pipe_config->base);
+ 	struct intel_atomic_state *old_intel_state =
+ 		to_intel_atomic_state(old_state);
+@@ -12428,8 +12428,9 @@ static void intel_update_crtc(struct drm_crtc *crtc,
+ 	struct intel_crtc_state *pipe_config = to_intel_crtc_state(new_crtc_state);
+ 	bool modeset = needs_modeset(new_crtc_state);
+ 	struct intel_plane_state *new_plane_state =
++		crtc->primary ?
+ 		intel_atomic_get_new_plane_state(to_intel_atomic_state(state),
+-						 to_intel_plane(crtc->primary));
++						 to_intel_plane(crtc->primary)) : NULL;
+ 
+ 	if (modeset) {
+ 		update_scanline_offset(intel_crtc);
+@@ -15676,6 +15677,9 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
+ 			dev_priv->active_crtcs |=
+ 				1 << drm_crtc_index(&crtc->base);
+ 
++		if (crtc->base.primary)
++			readout_plane_state(crtc);
++
+ 		DRM_DEBUG_KMS("[CRTC:%d:%s] hw state readout: %s\n",
+ 			      crtc->base.base.id, crtc->base.name,
+ 			      enableddisabled(crtc_state->base.active));
+diff --git a/drivers/gpu/drm/i915/intel_fbdev.c b/drivers/gpu/drm/i915/intel_fbdev.c
+index fb2f9fc..f028a6f 100644
+--- a/drivers/gpu/drm/i915/intel_fbdev.c
++++ b/drivers/gpu/drm/i915/intel_fbdev.c
+@@ -548,10 +548,17 @@ static bool intel_fbdev_init_bios(struct drm_device *dev,
+ 
+ 	/* Find the largest fb */
+ 	for_each_crtc(dev, crtc) {
+-		struct drm_i915_gem_object *obj =
+-			intel_fb_obj(crtc->primary->state->fb);
++		struct drm_i915_gem_object *obj;
+ 		intel_crtc = to_intel_crtc(crtc);
+ 
++		if (!crtc->primary) {
++			DRM_DEBUG_KMS("pipe %c has no primary plane\n",
++				      pipe_name(intel_crtc->pipe));
++			continue;
++		}
++
++		obj = intel_fb_obj(crtc->primary->state->fb);
++
+ 		if (!crtc->state->active || !obj) {
+ 			DRM_DEBUG_KMS("pipe %c not active or no fb, skipping\n",
+ 				      pipe_name(intel_crtc->pipe));
+-- 
+2.7.4
+

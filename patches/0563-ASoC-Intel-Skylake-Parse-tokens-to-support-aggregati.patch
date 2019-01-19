@@ -1,0 +1,68 @@
+From 9018d6e6a5e56712b3c2b20fc59bf3404378b050 Mon Sep 17 00:00:00 2001
+From: Shreyas NC <shreyas.nc@intel.com>
+Date: Wed, 8 Mar 2017 03:09:33 +0530
+Subject: [PATCH 0563/1132] ASoC: Intel: Skylake: Parse tokens to support
+ aggregation
+
+To support aggregation, we need to parse the aggregation
+related tokens like channel mask, number of masters participating
+in aggregation and link id.
+
+So, add parsing logic for the same.
+
+Change-Id: I167a5023bcf7e7bd319ecd249a7a4e7c051ff2c2
+Signed-off-by: Shreyas NC <shreyas.nc@intel.com>
+Reviewed-on:
+Reviewed-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Prodduvaka, Leoni
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index e5853df1..2abb089 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -2720,7 +2720,7 @@ static int skl_tplg_get_token(struct device *dev,
+ 	int tkn_count = 0;
+ 	int ret;
+ 	static int is_pipe_exists;
+-	static int pin_index, dir, conf_idx;
++	static int pin_index, dir, conf_idx, agg_id;
+ 	struct skl_module_iface *iface = NULL;
+ 	struct skl_module_res *res = NULL;
+ 	int res_idx = mconfig->res_idx;
+@@ -2940,6 +2940,23 @@ static int skl_tplg_get_token(struct device *dev,
+ 
+ 		break;
+ 
++	case SKL_TKN_U32_AGG_LINK_ID:
++		agg_id = tkn_elem->value;
++		if (agg_id > SDW_MAX_MASTERS)
++			return -EINVAL;
++		break;
++
++	case SKL_TKN_U32_AGG_NUM_MASTERS:
++		mconfig->sdw_agg.num_masters = tkn_elem->value;
++		mconfig->sdw_agg_enable = (tkn_elem->value > 1)
++					? true : false;
++		break;
++
++	case SKL_TKN_U32_AGG_CH_MASK:
++		mconfig->sdw_agg.agg_data[agg_id].ch_mask =
++				tkn_elem->value;
++		break;
++
+ 	case SKL_TKN_U32_DMA_BUF_SIZE:
+ 		mconfig->dma_buffer_size = tkn_elem->value;
+ 		break;
+-- 
+2.7.4
+

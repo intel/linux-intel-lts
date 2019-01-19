@@ -1,0 +1,228 @@
+From 872ff5f558e76b39617eda43c3fd6e1695cb0da0 Mon Sep 17 00:00:00 2001
+From: "Romli, Khairul Anuar" <khairul.anuar.romli@intel.com>
+Date: Wed, 13 Dec 2017 23:23:08 +0530
+Subject: [PATCH 0951/1132] drm: Add CP downstream_info property
+
+This patch adds a optional CP downstream info blob property to the
+connectors. This enables the Userspace to read the information of HDCP
+authenticated downstream topology.
+
+Driver will updated this blob with all downstream information at the
+end of the authentication.
+
+In case userspace configures this platform as repeater, then this
+information is needed for the authentication with upstream HDCP
+transmitter.
+
+Change-Id: Ic04109af286c0ab30f8a2ae3585700a7218e43fe
+Signed-off-by: Ramalingam C <ramalingam.c@intel.com>
+Signed-off-by: Romli, Khairul Anuar <khairul.anuar.romli@intel.com>
+---
+ drivers/gpu/drm/drm_atomic.c    |  8 ++---
+ drivers/gpu/drm/drm_connector.c | 69 +++++++++++++++++++++++++++++++++++++++++
+ include/drm/drm_connector.h     | 19 +++++++++---
+ include/uapi/drm/drm_mode.h     | 28 +++++++++++++++++
+ 4 files changed, 115 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_atomic.c b/drivers/gpu/drm/drm_atomic.c
+index 281cf9c..c52be07 100644
+--- a/drivers/gpu/drm/drm_atomic.c
++++ b/drivers/gpu/drm/drm_atomic.c
+@@ -1511,11 +1511,9 @@ drm_atomic_connector_get_property(struct drm_connector *connector,
+ 		*val = state->scaling_mode;
+ 	} else if (property == connector->content_protection_property) {
+ 		*val = state->content_protection;
+-	} else if (property == config->writeback_fb_id_property) {
+-		/* Writeback framebuffer is one-shot, write and forget */
+-		*val = 0;
+-	} else if (property == config->writeback_out_fence_ptr_property) {
+-		*val = 0;
++	} else if (property == connector->cp_downstream_property) {
++		*val = connector->cp_downstream_blob_ptr ?
++			connector->cp_downstream_blob_ptr->base.id : 0;
+ 	} else if (connector->funcs->atomic_get_property) {
+ 		return connector->funcs->atomic_get_property(connector,
+ 				state, property, val);
+diff --git a/drivers/gpu/drm/drm_connector.c b/drivers/gpu/drm/drm_connector.c
+index 6011d76..8b21a01 100644
+--- a/drivers/gpu/drm/drm_connector.c
++++ b/drivers/gpu/drm/drm_connector.c
+@@ -241,6 +241,7 @@ int drm_connector_init(struct drm_device *dev,
+ 	INIT_LIST_HEAD(&connector->modes);
+ 	mutex_init(&connector->mutex);
+ 	connector->edid_blob_ptr = NULL;
++	connector->cp_downstream_blob_ptr = NULL;
+ 	connector->status = connector_status_unknown;
+ 	connector->display_info.panel_orientation =
+ 		DRM_MODE_PANEL_ORIENTATION_UNKNOWN;
+@@ -1347,6 +1348,42 @@ int drm_connector_attach_content_protection_property(
+ EXPORT_SYMBOL(drm_connector_attach_content_protection_property);
+ 
+ /**
++ * drm_connector_attach_cp_downstream_property - attach cp downstream
++ * property
++ *
++ * @connector: connector to attach cp downstream property on.
++ *
++ * This is used to add support for content protection downstream info on
++ * select connectors. when Intel platform is configured as repeater,
++ * this downstream info is used by userspace, to complete the repeater
++ * authentication of HDCP specification with upstream HDCP transmitter.
++ *
++ * The cp downstream will be set to &drm_connector_state.cp_downstream
++ *
++ * Returns:
++ * Zero on success, negative errno on failure.
++ */
++int drm_connector_attach_cp_downstream_property(
++		struct drm_connector *connector)
++{
++	struct drm_device *dev = connector->dev;
++	struct drm_property *prop;
++
++	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB |
++				   DRM_MODE_PROP_IMMUTABLE,
++				   "CP_Downstream_Info", 0);
++	if (!prop)
++		return -ENOMEM;
++
++	drm_object_attach_property(&connector->base, prop, 0);
++
++	connector->cp_downstream_property = prop;
++
++	return 0;
++}
++EXPORT_SYMBOL(drm_connector_attach_cp_downstream_property);
++
++/**
+  * drm_mode_create_aspect_ratio_property - create aspect ratio property
+  * @dev: DRM device
+  *
+@@ -1579,6 +1616,38 @@ void drm_connector_set_link_status_property(struct drm_connector *connector,
+ EXPORT_SYMBOL(drm_connector_set_link_status_property);
+ 
+ /**
++ * drm_mode_connector_update_cp_downstream_property - update the cp_downstream
++ *			property of a connector
++ * @connector: drm connector
++ * @cp_downstream_info: new value of the cp_downstream property
++ *
++ * This function creates a new blob modeset object and assigns its id to the
++ * connector's cp_downstream property.
++ *
++ * Returns:
++ * Zero on success, negative errno on failure.
++ */
++int drm_mode_connector_update_cp_downstream_property(
++			struct drm_connector *connector,
++			const struct cp_downstream_info *info)
++{
++	struct drm_device *dev = connector->dev;
++	int ret;
++
++	if (!info)
++		return -EINVAL;
++
++	ret = drm_property_replace_global_blob(dev,
++					&connector->cp_downstream_blob_ptr,
++					sizeof(struct cp_downstream_info),
++					info,
++					&connector->base,
++					connector->cp_downstream_property);
++	return ret;
++}
++EXPORT_SYMBOL(drm_mode_connector_update_cp_downstream_property);
++
++/**
+  * drm_connector_init_panel_orientation_property -
+  *	initialize the connecters panel_orientation property
+  * @connector: connector for which to init the panel-orientation property.
+diff --git a/include/drm/drm_connector.h b/include/drm/drm_connector.h
+index 97ea41d..9fd96c9 100644
+--- a/include/drm/drm_connector.h
++++ b/include/drm/drm_connector.h
+@@ -916,6 +916,13 @@ struct drm_connector {
+ 	struct drm_property *content_protection_property;
+ 
+ 	/**
++	 * @cp_downstream_property: DRM BLOB property for content
++	 * protection downstream information.
++	 */
++	struct drm_property *cp_downstream_property;
++	struct drm_property_blob *cp_downstream_blob_ptr;
++
++	/**
+ 	 * @path_blob_ptr:
+ 	 *
+ 	 * DRM blob property data for the DP MST path property. This should only
+@@ -1184,20 +1191,24 @@ int drm_connector_attach_scaling_mode_property(struct drm_connector *connector,
+ 					       u32 scaling_mode_mask);
+ int drm_connector_attach_content_protection_property(
+ 		struct drm_connector *connector);
++int drm_connector_attach_cp_downstream_property(
++				struct drm_connector *connector);
+ int drm_mode_create_aspect_ratio_property(struct drm_device *dev);
+ int drm_mode_create_content_type_property(struct drm_device *dev);
+ void drm_hdmi_avi_infoframe_content_type(struct hdmi_avi_infoframe *frame,
+ 					 const struct drm_connector_state *conn_state);
+-
+ int drm_mode_create_suggested_offset_properties(struct drm_device *dev);
+ 
+ int drm_connector_set_path_property(struct drm_connector *connector,
+-				    const char *path);
++					const char *path);
+ int drm_connector_set_tile_property(struct drm_connector *connector);
+ int drm_connector_update_edid_property(struct drm_connector *connector,
+-				       const struct edid *edid);
++					const struct edid *edid);
+ void drm_connector_set_link_status_property(struct drm_connector *connector,
+-					    uint64_t link_status);
++						uint64_t link_status);
++int drm_mode_connector_update_cp_downstream_property(
++				struct drm_connector *connector,
++				const struct cp_downstream_info *info);
+ int drm_connector_init_panel_orientation_property(
+ 	struct drm_connector *connector, int width, int height);
+ 
+diff --git a/include/uapi/drm/drm_mode.h b/include/uapi/drm/drm_mode.h
+index 8d67243..926d803 100644
+--- a/include/uapi/drm/drm_mode.h
++++ b/include/uapi/drm/drm_mode.h
+@@ -209,6 +209,34 @@ extern "C" {
+ #define DRM_MODE_CONTENT_PROTECTION_DESIRED     1
+ #define DRM_MODE_CONTENT_PROTECTION_ENABLED     2
+ 
++#define DRM_MODE_HDCP_KSV_LEN			5
++#define DRM_MODE_HDCP_MAX_DEVICE_CNT		127
++
++struct cp_downstream_info {
++
++	/* KSV of immediate HDCP Sink. In Little-Endian Format. */
++	char bksv[DRM_MODE_HDCP_KSV_LEN];
++
++	/* Whether Immediate HDCP sink is a repeater? */
++	bool is_repeater;
++
++	/* Depth received from immediate downstream repeater */
++	__u8 depth;
++
++	/* Device count received from immediate downstream repeater */
++	__u32 device_count;
++
++	/*
++	 * Max buffer required to hold ksv list received from immediate
++	 * repeater. In this array first device_count * DRM_MODE_HDCP_KSV_LEN
++	 * will hold the valid ksv bytes.
++	 * If authentication specification is
++	 *	HDCP1.4 - each KSV's Bytes will be in Little-Endian format.
++	 *	HDCP2.2 - each KSV's Bytes will be in Big-Endian format.
++	 */
++	char ksv_list[DRM_MODE_HDCP_KSV_LEN * DRM_MODE_HDCP_MAX_DEVICE_CNT];
++};
++
+ struct drm_mode_modeinfo {
+ 	__u32 clock;
+ 	__u16 hdisplay;
+-- 
+2.7.4
+

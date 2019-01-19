@@ -1,0 +1,35 @@
+From ebdfec0d566f87725a9b4d5ae7cbd7077b6bbef7 Mon Sep 17 00:00:00 2001
+From: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Date: Tue, 31 Jul 2018 14:39:37 -0700
+Subject: [PATCH 0897/1132] hyper_dmabuf: Remove void* cast in cpu_access
+ function pointers
+
+In dma_buf_ops structure init, hyper_dmabuf_ops_begin_cpu_access() and
+hyper_dmabuf_ops_end_cpu_access() functions are of same type as
+begin_cpu_access() and end_cpu_access() function declartions. So there
+is no need for casting them with void*.
+
+Signed-off-by: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
+index 9157437..e2bdab7 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
+@@ -372,8 +372,8 @@ static const struct dma_buf_ops hyper_dmabuf_ops = {
+ 	.map_dma_buf = hyper_dmabuf_ops_map,
+ 	.unmap_dma_buf = hyper_dmabuf_ops_unmap,
+ 	.release = hyper_dmabuf_ops_release,
+-	.begin_cpu_access = (void *)hyper_dmabuf_ops_begin_cpu_access,
+-	.end_cpu_access = (void *)hyper_dmabuf_ops_end_cpu_access,
++	.begin_cpu_access = hyper_dmabuf_ops_begin_cpu_access,
++	.end_cpu_access = hyper_dmabuf_ops_end_cpu_access,
+ 	.map_atomic = hyper_dmabuf_ops_kmap_atomic,
+ 	.unmap_atomic = hyper_dmabuf_ops_kunmap_atomic,
+ 	.map = hyper_dmabuf_ops_kmap,
+-- 
+2.7.4
+

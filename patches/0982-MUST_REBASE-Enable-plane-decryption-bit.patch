@@ -1,0 +1,177 @@
+From d1436036f40dca2a33e9751157a65a81537252e5 Mon Sep 17 00:00:00 2001
+From: "Romli, Khairul Anuar" <khairul.anuar.romli@intel.com>
+Date: Thu, 1 Nov 2018 14:06:30 +0800
+Subject: [PATCH 0982/1132] MUST_REBASE: Enable plane decryption bit
+
+Enable plane decryption bit if the plane decryption check
+return true. This plane decryption bit will be used for
+content protection use case and have to be set to enable
+to allow protected content able to present.
+
+Change-Id: I1d2aee9251c4a5eeedf952e5996b0406b7e966f1
+Tracked-On: OAM-71494
+Signed-off-by: Hoong Tee, Yeoh <hoong.tee.yeoh@intel.com>
+---
+ drivers/gpu/drm/drm_atomic.c        |  4 ++++
+ drivers/gpu/drm/drm_blend.c         | 30 ++++++++++++++++++++++++++++++
+ drivers/gpu/drm/i915/i915_reg.h     |  1 +
+ drivers/gpu/drm/i915/intel_sprite.c | 13 +++++++++++--
+ include/drm/drm_blend.h             |  1 +
+ include/drm/drm_plane.h             | 16 +++++++++++++++-
+ 6 files changed, 62 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_atomic.c b/drivers/gpu/drm/drm_atomic.c
+index b1fcc77..d3c3c65 100644
+--- a/drivers/gpu/drm/drm_atomic.c
++++ b/drivers/gpu/drm/drm_atomic.c
+@@ -919,6 +919,8 @@ static int drm_atomic_plane_set_property(struct drm_plane *plane,
+ 		state->rotation = val;
+ 	} else if (property == plane->zpos_property) {
+ 		state->zpos = val;
++	} else if (property == plane->decryption_property) {
++		state->decryption_reqd = val;
+ 	} else if (property == plane->color_encoding_property) {
+ 		state->color_encoding = val;
+ 	} else if (property == plane->color_range_property) {
+@@ -987,6 +989,8 @@ drm_atomic_plane_get_property(struct drm_plane *plane,
+ 		*val = state->rotation;
+ 	} else if (property == plane->zpos_property) {
+ 		*val = state->zpos;
++        } else if (property == plane->decryption_property) {
++		*val = state->decryption_reqd;
+ 	} else if (property == plane->color_encoding_property) {
+ 		*val = state->color_encoding;
+ 	} else if (property == plane->color_range_property) {
+diff --git a/drivers/gpu/drm/drm_blend.c b/drivers/gpu/drm/drm_blend.c
+index a16a74d..273fdf3 100644
+--- a/drivers/gpu/drm/drm_blend.c
++++ b/drivers/gpu/drm/drm_blend.c
+@@ -113,6 +113,36 @@
+  */
+ 
+ /**
++* drm_plane_create_decryption_property - create a decryption property
++ * @plane: drm plane
++ *
++ * This function creates a generic decryption property and enables support
++ * for it in the DRM core. It is attached to @plane.
++ *
++ * The decryption property will enable(1) or disable(0) the framebuffer
++ * decryption on this plane.
++ *
++ * Returns:
++ * 0 on success, negative error code on failure.
++ */
++int drm_plane_create_decryption_property(struct drm_plane *plane)
++{
++	struct drm_property *prop;
++
++	prop = drm_property_create_bool(plane->dev, 0,
++					"DECRYPTION");
++	if (!prop)
++		return -ENOMEM;
++
++	drm_object_attach_property(&plane->base, prop, false);
++	plane->decryption_property = prop;
++
++	if (plane->state)
++		plane->state->decryption_reqd = false;
++
++	return 0;
++}
++/**
+  * drm_plane_create_alpha_property - create a new alpha property
+  * @plane: drm plane
+  *
+diff --git a/drivers/gpu/drm/i915/i915_reg.h b/drivers/gpu/drm/i915/i915_reg.h
+index 00b5e45..0297014 100644
+--- a/drivers/gpu/drm/i915/i915_reg.h
++++ b/drivers/gpu/drm/i915/i915_reg.h
+@@ -6544,6 +6544,7 @@ enum {
+ #define   PLANE_CTL_ALPHA_DISABLE		(0 << 4)
+ #define   PLANE_CTL_ALPHA_SW_PREMULTIPLY	(2 << 4)
+ #define   PLANE_CTL_ALPHA_HW_PREMULTIPLY	(3 << 4)
++#define   PLANE_SURF_DECRYPTION_ENABLED         (1 << 2)
+ #define   PLANE_CTL_ROTATE_MASK			0x3
+ #define   PLANE_CTL_ROTATE_0			0x0
+ #define   PLANE_CTL_ROTATE_90			0x1
+diff --git a/drivers/gpu/drm/i915/intel_sprite.c b/drivers/gpu/drm/i915/intel_sprite.c
+index 187e418..c4ae757 100644
+--- a/drivers/gpu/drm/i915/intel_sprite.c
++++ b/drivers/gpu/drm/i915/intel_sprite.c
+@@ -320,6 +320,7 @@ skl_update_plane(struct intel_plane *plane,
+ 	uint32_t y = plane_state->main.y;
+ 	uint32_t src_w = drm_rect_width(&plane_state->base.src) >> 16;
+ 	uint32_t src_h = drm_rect_height(&plane_state->base.src) >> 16;
++	uint32_t val;
+ 	unsigned long irqflags;
+ 
+ #if IS_ENABLED(CONFIG_DRM_I915_GVT)
+@@ -401,8 +402,16 @@ skl_update_plane(struct intel_plane *plane,
+ 	}
+ 
+ 	I915_WRITE_FW(PLANE_CTL(pipe, plane_id), plane_ctl);
+-	I915_WRITE_FW(PLANE_SURF(pipe, plane_id),
+-		      intel_plane_ggtt_offset(plane_state) + surf_addr);
++
++	val = intel_plane_ggtt_offset(plane_state) + surf_addr;
++
++	if (plane_state->base.decryption_reqd)
++		val |= PLANE_SURF_DECRYPTION_ENABLED;
++	else
++		val &= ~PLANE_SURF_DECRYPTION_ENABLED;
++
++	I915_WRITE_FW(PLANE_SURF(pipe, plane_id), val);
++
+ 	POSTING_READ_FW(PLANE_SURF(pipe, plane_id));
+ 
+ 	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
+diff --git a/include/drm/drm_blend.h b/include/drm/drm_blend.h
+index 330c561..74ba3e1 100644
+--- a/include/drm/drm_blend.h
++++ b/include/drm/drm_blend.h
+@@ -39,6 +39,7 @@ static inline bool drm_rotation_90_or_270(unsigned int rotation)
+ #define DRM_BLEND_ALPHA_OPAQUE		0xffff
+ 
+ int drm_plane_create_alpha_property(struct drm_plane *plane);
++int drm_plane_create_decryption_property(struct drm_plane *plane);
+ int drm_plane_create_rotation_property(struct drm_plane *plane,
+ 				       unsigned int rotation,
+ 				       unsigned int supported_rotations);
+diff --git a/include/drm/drm_plane.h b/include/drm/drm_plane.h
+index 8a152dc..47d018e 100644
+--- a/include/drm/drm_plane.h
++++ b/include/drm/drm_plane.h
+@@ -173,7 +173,13 @@ struct drm_plane_state {
+ 	 * crtc!=NULL, due to clipping.
+ 	 */
+ 	bool visible;
+-
++	/**
++	 * @decryption_reqd:
++	 *
++	 * Plane decryption required. This enables/disables the plane level
++	 * framebuffer decryption.
++	 */
++	bool decryption_reqd;
+ 	/**
+ 	 * @commit: Tracks the pending commit to prevent use-after-free conditions,
+ 	 * and for async plane updates.
+@@ -652,6 +658,14 @@ struct drm_plane {
+ 	 * Optional zpos property for this plane. See
+ 	 * drm_plane_create_zpos_property().
+ 	 */
++	/**
++	 * @decryption_property:
++	 *
++	 * Plane decryption property for enabling/disabling plane
++	 * level framebuffer decryption.
++	 */
++	struct drm_property *decryption_property;
++
+ 	struct drm_property *zpos_property;
+ 	/**
+ 	 * @rotation_property:
+-- 
+2.7.4
+

@@ -1,0 +1,27 @@
+From 65ac160e25e9495289c4740bc852aa053af24576 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Thu, 7 Sep 2017 09:56:44 +0530
+Subject: [PATCH 0630/1132] ASoC: rt700: Remove unused variable
+
+Compiler throws warning for unused variable, so remove it.
+
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/codecs/rt700.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/sound/soc/codecs/rt700.c b/sound/soc/codecs/rt700.c
+index a654c09..952140d 100644
+--- a/sound/soc/codecs/rt700.c
++++ b/sound/soc/codecs/rt700.c
+@@ -1789,7 +1789,6 @@ static int rt700_runtime_resume(struct device *dev)
+ {
+ 	struct rt700_priv *rt700 = dev_get_drvdata(dev);
+ 	int ret;
+-	int timeout = 0;
+ 
+ 	if (rt700->sdw) {
+ 		ret = sdw_wait_for_slave_enumeration(rt700->sdw->mstr,
+-- 
+2.7.4
+

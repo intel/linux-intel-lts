@@ -1,0 +1,410 @@
+From 6d29f45f129637fcfb66ea6d666bd78e27f1034f Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Mon, 15 Oct 2018 10:20:13 +0200
+Subject: [PATCH 0985/1132] ASoC: Intel: Restore static FE declaration for
+ bxt_tdf8532.
+
+DAIs and DAI links declared within topology for dynamic DAI load
+currently do not provide all the necessary flags such as SoC
+ignore_suspend, making their description lackluster from driver's
+perspective.
+
+This patch restores static FE declaration which carries all the
+essential information needed for driver to properly handle resume/
+suspend scenarios.
+Once all the necessary data can be accessed from topology, the static
+approach will be removed.
+
+Change-Id: I5a62421183d01e129eef82183d1e228548f69818
+Tracked-On: OAM-71677
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/boards/bxt_tdf8532.c              | 167 ++++++++++++++++++++++
+ sound/soc/intel/common/soc-acpi-intel-bxt-match.c |   6 -
+ sound/soc/intel/skylake/skl-pcm.c                 | 161 +++++++++++++++++++++
+ 3 files changed, 328 insertions(+), 6 deletions(-)
+
+diff --git a/sound/soc/intel/boards/bxt_tdf8532.c b/sound/soc/intel/boards/bxt_tdf8532.c
+index 27361e8f..8e99342 100644
+--- a/sound/soc/intel/boards/bxt_tdf8532.c
++++ b/sound/soc/intel/boards/bxt_tdf8532.c
+@@ -90,6 +90,173 @@ static int bxt_tdf8532_ssp2_fixup(struct snd_soc_pcm_runtime *rtd,
+ 
+ /* broxton digital audio interface glue - connects codec <--> CPU */
+ static struct snd_soc_dai_link broxton_tdf8532_dais[] = {
++	/* Front End DAI links */
++	{
++		.name = "Speaker Port",
++		.stream_name = "Speaker",
++		.cpu_dai_name = "Speaker Pin",
++		.platform_name = "0000:00:0e.0",
++		.nonatomic = 1,
++		.dynamic = 1,
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.trigger = {
++			SND_SOC_DPCM_TRIGGER_POST,
++			SND_SOC_DPCM_TRIGGER_POST
++		},
++		.dpcm_playback = 1,
++	},
++	{
++		.name = "Dirana Capture Port",
++		.stream_name = "Dirana Cp",
++		.cpu_dai_name = "Dirana Cp Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.dpcm_capture = 1,
++		.ignore_suspend = 1,
++		.nonatomic = 1,
++		.dynamic = 1,
++	},
++	{
++		.name = "Dirana Playback Port",
++		.stream_name = "Dirana Pb",
++		.cpu_dai_name = "Dirana Pb Pin",
++		.platform_name = "0000:00:0e.0",
++		.nonatomic = 1,
++		.dynamic = 1,
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.trigger = {
++			SND_SOC_DPCM_TRIGGER_POST,
++			SND_SOC_DPCM_TRIGGER_POST
++		},
++		.dpcm_playback = 1,
++	},
++	{
++		.name = "TestPin Capture Port",
++		.stream_name = "TestPin Cp",
++		.cpu_dai_name = "TestPin Cp Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.dpcm_capture = 1,
++		.ignore_suspend = 1,
++		.nonatomic = 1,
++		.dynamic = 1,
++	},
++	{
++		.name = "TestPin Playback Port",
++		.stream_name = "TestPin Pb",
++		.cpu_dai_name = "TestPin Pb Pin",
++		.platform_name = "0000:00:0e.0",
++		.nonatomic = 1,
++		.dynamic = 1,
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.trigger = {
++			SND_SOC_DPCM_TRIGGER_POST,
++			SND_SOC_DPCM_TRIGGER_POST
++		},
++		.dpcm_playback = 1,
++	},
++	{
++		.name = "BtHfp Capture Port",
++		.stream_name = "BtHfp Cp",
++		.cpu_dai_name = "BtHfp Cp Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.dpcm_capture = 1,
++		.ignore_suspend = 1,
++		.nonatomic = 1,
++		.dynamic = 1,
++	},
++	{
++		.name = "BtHfp Playback Port",
++		.stream_name = "BtHfp Pb",
++		.cpu_dai_name = "BtHfp Pb Pin",
++		.platform_name = "0000:00:0e.0",
++		.nonatomic = 1,
++		.dynamic = 1,
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.trigger = {
++			SND_SOC_DPCM_TRIGGER_POST,
++			SND_SOC_DPCM_TRIGGER_POST
++		},
++		.dpcm_playback = 1,
++	},
++	{
++		.name = "Modem Capture Port",
++		.stream_name = "Modem Cp",
++		.cpu_dai_name = "Modem Cp Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.dpcm_capture = 1,
++		.ignore_suspend = 1,
++		.nonatomic = 1,
++		.dynamic = 1,
++	},
++	{
++		.name = "Modem Playback Port",
++		.stream_name = "Modem Pb",
++		.cpu_dai_name = "Modem Pb Pin",
++		.platform_name = "0000:00:0e.0",
++		.nonatomic = 1,
++		.dynamic = 1,
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.trigger = {
++			SND_SOC_DPCM_TRIGGER_POST,
++			SND_SOC_DPCM_TRIGGER_POST
++		},
++		.dpcm_playback = 1,
++	},
++	{
++		.name = "HDMI Capture Port",
++		.stream_name = "HDMI Cp",
++		.cpu_dai_name = "HDMI Cp Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.dpcm_capture = 1,
++		.ignore_suspend = 1,
++		.nonatomic = 1,
++		.dynamic = 1,
++	},
++	{
++		.name = "Dirana Aux Capture Port",
++		.stream_name = "Dirana Aux Cp",
++		.cpu_dai_name = "Dirana Aux Cp Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.dpcm_capture = 1,
++		.ignore_suspend = 1,
++		.nonatomic = 1,
++		.dynamic = 1,
++	},
++	{
++		.name = "Dirana Tuner Capture Port",
++		.stream_name = "Dirana Tuner Cp",
++		.cpu_dai_name = "Dirana Tuner Cp Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.dpcm_capture = 1,
++		.ignore_suspend = 1,
++		.nonatomic = 1,
++		.dynamic = 1,
++	},
+ 	/* Probe DAI links*/
+ 	{
+ 		.name = "Bxt Compress Probe playback",
+diff --git a/sound/soc/intel/common/soc-acpi-intel-bxt-match.c b/sound/soc/intel/common/soc-acpi-intel-bxt-match.c
+index 77cbd98..4ceb348 100644
+--- a/sound/soc/intel/common/soc-acpi-intel-bxt-match.c
++++ b/sound/soc/intel/common/soc-acpi-intel-bxt-match.c
+@@ -15,10 +15,6 @@ static struct snd_soc_acpi_codecs bxt_codecs = {
+ 	.codecs = {"MX98357A"}
+ };
+ 
+-static struct skl_machine_pdata bxt_pdata = {
+-	.use_tplg_pcm = true,
+-};
+-
+ struct snd_soc_acpi_mach snd_soc_acpi_intel_bxt_machines[] = {
+ 	{
+ 		.id = "INT343A",
+@@ -71,7 +67,6 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_bxt_machines[] = {
+ 		.id = "INT34C3",
+ 		.drv_name = "bxt_ivi_ull",
+ 		.fw_filename = "intel/dsp_fw_ull_bxtn.bin",
+-		.pdata = &bxt_pdata,
+ 	},
+ #else
+ 	{
+@@ -81,7 +76,6 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_bxt_machines[] = {
+ 		.sof_fw_filename = "intel/sof-apl.ri",
+ 		.sof_tplg_filename = "intel/sof-apl-tdf8532.tplg",
+ 		.asoc_plat_name = "0000:00:0e.0",
+-		.pdata = &bxt_pdata,
+ 	},
+ #endif
+ 	{},
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index f886dc8..eec9120 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1022,6 +1022,167 @@ struct skl_dsp_notify_ops cb_ops = {
+ 
+ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ {
++	.name = "Speaker Pin",
++	.ops = &skl_pcm_dai_ops,
++	.playback = {
++		.stream_name = "Speaker Playback",
++		.channels_min = HDA_QUAD,
++		.channels_max = HDA_QUAD,
++		.rates = SNDRV_PCM_RATE_48000,
++		.formats = SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "Dirana Cp Pin",
++	.ops = &skl_pcm_dai_ops,
++	.capture = {
++		.stream_name = "Dirana Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
++			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
++			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
++			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
++			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "Dirana Aux Cp Pin",
++	.ops = &skl_pcm_dai_ops,
++	.capture = {
++		.stream_name = "Dirana Aux Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
++			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
++			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
++			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
++			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "Dirana Tuner Cp Pin",
++	.ops = &skl_pcm_dai_ops,
++	.capture = {
++		.stream_name = "Dirana Tuner Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
++			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
++			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
++			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
++			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "Dirana Pb Pin",
++	.ops = &skl_pcm_dai_ops,
++	.playback = {
++		.stream_name = "Dirana Playback",
++		.channels_min = HDA_STEREO,
++		.channels_max = HDA_STEREO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.formats = SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "HDMI Cp Pin",
++	.ops = &skl_pcm_dai_ops,
++	.capture = {
++		.stream_name = "HDMI PT Capture",
++		.channels_min = HDA_STEREO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_32000 |
++			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
++			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
++			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "TestPin Cp Pin",
++	.ops = &skl_pcm_dai_ops,
++	.capture = {
++		.stream_name = "TestPin PT Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
++			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
++			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
++			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
++			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "TestPin Pb Pin",
++	.ops = &skl_pcm_dai_ops,
++	.playback = {
++		.stream_name = "TestPin PT Playback",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
++			SNDRV_PCM_RATE_22050  | SNDRV_PCM_RATE_32000 |
++			SNDRV_PCM_RATE_44100  | SNDRV_PCM_RATE_48000 |
++			SNDRV_PCM_RATE_88200  | SNDRV_PCM_RATE_96000 |
++			SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "BtHfp Cp Pin",
++	.ops = &skl_pcm_dai_ops,
++	.capture = {
++		.stream_name = "BtHfp PT Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000,
++		.formats = SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "BtHfp Pb Pin",
++	.ops = &skl_pcm_dai_ops,
++	.playback = {
++		.stream_name = "BtHfp PT Playback",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000,
++		.formats = SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "Modem Cp Pin",
++	.ops = &skl_pcm_dai_ops,
++	.capture = {
++		.stream_name = "Modem PT Capture",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000,
++		.formats = SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
++	.name = "Modem Pb Pin",
++	.ops = &skl_pcm_dai_ops,
++	.playback = {
++		.stream_name = "Modem PT Playback",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_MONO,
++		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000,
++		.formats = SNDRV_PCM_FMTBIT_S32_LE,
++	}
++},
++{
+ 	.name = "System Pin",
+ 	.ops = &skl_pcm_dai_ops,
+ 	.playback = {
+-- 
+2.7.4
+

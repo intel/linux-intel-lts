@@ -1,0 +1,70 @@
+From 2444afb9126564c3235d6116b13d998a3c744449 Mon Sep 17 00:00:00 2001
+From: Jeeja KP <jeeja.kp@intel.com>
+Date: Wed, 6 Dec 2006 11:28:06 +0530
+Subject: [PATCH 0537/1132] ASoC: Intel: Add support for Icelake IDs
+
+Icelake is next gen SoC, so add the IDs for Icelake
+
+Change-Id: I1210d2ea5c1d19137cd0829bd0b86a13a8fcd4f
+Signed-off-by: Dharageswari R <dharageswari.r@intel.com>
+Reviewed-on:
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c | 8 ++++++++
+ sound/soc/intel/skylake/skl.c          | 8 ++++++++
+ 2 files changed, 16 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index bb7f242..dde1aeb 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -274,6 +274,14 @@ static const struct skl_dsp_ops dsp_ops[] = {
+ 		.init_fw = cnl_sst_init_fw,
+ 		.cleanup = cnl_sst_dsp_cleanup
+ 	},
++	{
++		.id = 0x34c8,
++		.num_cores = 4,
++		.loader_ops = bxt_get_loader_ops,
++		.init = cnl_sst_dsp_init,
++		.init_fw = cnl_sst_init_fw,
++		.cleanup = cnl_sst_dsp_cleanup
++	},
+ };
+ 
+ static int cnl_sdw_bra_pipe_trigger(struct skl_sst *ctx, bool enable,
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index b037b0d..429e15a 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1215,6 +1215,11 @@ static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
+ 	{}
+ };
+ 
++static struct sst_acpi_mach sst_icl_devdata[] = {
++	{ "dummy", "icl_wm8281", "intel/dsp_fw_icl.bin", NULL, NULL, NULL },
++	{}
++};
++
+ /* PCI IDs */
+ static const struct pci_device_id skl_ids[] = {
+ 	/* Sunrise Point-LP */
+@@ -1232,6 +1237,9 @@ static const struct pci_device_id skl_ids[] = {
+ 	/* CNL */
+ 	{ PCI_DEVICE(0x8086, 0x9dc8),
+ 		.driver_data = (unsigned long)&snd_soc_acpi_intel_cnl_machines},
++	/* ICL */
++	{ PCI_DEVICE(0x8086, 0x34c8),
++		.driver_data = (unsigned long)&sst_icl_devdata},
+ 	{ 0, }
+ };
+ MODULE_DEVICE_TABLE(pci, skl_ids);
+-- 
+2.7.4
+

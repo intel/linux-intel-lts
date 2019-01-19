@@ -1,0 +1,180 @@
+From 8bb824c4b062b0187dcc70705b4e932213a022ad Mon Sep 17 00:00:00 2001
+From: Pei Zhang <pei.zhang@intel.com>
+Date: Fri, 14 Sep 2018 16:10:19 +0800
+Subject: [PATCH 0869/1132] drm/i915/gvt: add module parameter enable_pvmmio
+
+This uint type module parameter is used to control the pvmmio
+features for MMIO emulation in GVT. This parameter is default 0.
+Its permission type is 0400 which means user could only change its
+value through the cmdline, this is to prevent the dynamic modification
+during runtime which would break the pvmmio internal logic.
+
+Notice: this patch is required to be applied to guest kernel.
+
+Change-Id: I570f1fe02101e518595c02fce67601b692871aa9
+Signed-off-by: Pei Zhang <pei.zhang@intel.com>
+Signed-off-by: Jiang, Fei <fei.jiang@intel.com>
+Acknowledged-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/i915_drv.c    | 21 +++++++++++++++++++++
+ drivers/gpu/drm/i915/i915_drv.h    |  1 +
+ drivers/gpu/drm/i915/i915_params.c |  5 +++++
+ drivers/gpu/drm/i915/i915_params.h |  1 +
+ drivers/gpu/drm/i915/i915_pvinfo.h | 13 ++++++++++++-
+ drivers/gpu/drm/i915/i915_vgpu.c   |  9 +++++++++
+ 6 files changed, 49 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.c b/drivers/gpu/drm/i915/i915_drv.c
+index 91fd59f..acc3be5 100644
+--- a/drivers/gpu/drm/i915/i915_drv.c
++++ b/drivers/gpu/drm/i915/i915_drv.c
+@@ -51,6 +51,7 @@
+ #include "i915_pmu.h"
+ #include "i915_query.h"
+ #include "i915_vgpu.h"
++#include "intel_uc.h"
+ #include "intel_drv.h"
+ #include "intel_uc.h"
+ 
+@@ -991,6 +992,9 @@ static void i915_mmio_cleanup(struct drm_i915_private *dev_priv)
+ 
+ 	intel_teardown_mchbar(dev_priv);
+ 	pci_iounmap(pdev, dev_priv->regs);
++	if (intel_vgpu_active(dev_priv) && dev_priv->shared_page)
++		pci_iounmap(pdev, dev_priv->shared_page);
++
+ }
+ 
+ /**
+@@ -1024,6 +1028,21 @@ static int i915_driver_init_mmio(struct drm_i915_private *dev_priv)
+ 
+ 	intel_uc_init_mmio(dev_priv);
+ 
++	if (intel_vgpu_active(dev_priv) && i915_modparams.enable_pvmmio) {
++		u32 bar = 0;
++		u32 mmio_size = 2 * 1024 * 1024;
++
++		/* Map a share page from the end of 2M mmio region in bar0. */
++		dev_priv->shared_page = (struct gvt_shared_page *)
++			pci_iomap_range(dev_priv->drm.pdev, bar,
++			mmio_size, PAGE_SIZE);
++		if (dev_priv->shared_page == NULL) {
++			ret = -EIO;
++			DRM_ERROR("ivi: failed to map share page.\n");
++			goto err_uncore;
++		}
++	}
++
+ 	ret = intel_engines_init_mmio(dev_priv);
+ 	if (ret)
+ 		goto err_uncore;
+@@ -1033,6 +1052,8 @@ static int i915_driver_init_mmio(struct drm_i915_private *dev_priv)
+ 	return 0;
+ 
+ err_uncore:
++	if (intel_vgpu_active(dev_priv) && dev_priv->shared_page)
++		pci_iounmap(dev_priv->drm.pdev, dev_priv->shared_page);
+ 	intel_uncore_fini(dev_priv);
+ err_bridge:
+ 	pci_dev_put(dev_priv->bridge_dev);
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index 9d446a0a..02b4471 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -1590,6 +1590,7 @@ struct drm_i915_private {
+ 	resource_size_t stolen_usable_size;	/* Total size minus reserved ranges */
+ 
+ 	void __iomem *regs;
++	struct gvt_shared_page *shared_page;
+ 
+ 	struct intel_uncore uncore;
+ 
+diff --git a/drivers/gpu/drm/i915/i915_params.c b/drivers/gpu/drm/i915/i915_params.c
+index 8bdd404..062190f 100644
+--- a/drivers/gpu/drm/i915/i915_params.c
++++ b/drivers/gpu/drm/i915/i915_params.c
+@@ -196,6 +196,11 @@ i915_param_named(domain_scaler_owner, int, 0400,
+  *
+  */
+ 
++
++i915_param_named(enable_pvmmio, uint, 0400,
++	"Enable pv mmio feature and set pvmmio level, default 1."
++	"This parameter could only set from host, guest value is set through vgt_if");
++
+ static __always_inline void _print_param(struct drm_printer *p,
+ 					 const char *name,
+ 					 const char *type,
+diff --git a/drivers/gpu/drm/i915/i915_params.h b/drivers/gpu/drm/i915/i915_params.h
+index 74865c2..3580948 100644
+--- a/drivers/gpu/drm/i915/i915_params.h
++++ b/drivers/gpu/drm/i915/i915_params.h
+@@ -69,6 +69,7 @@ struct drm_printer;
+ 	param(bool, enable_dp_mst, true) \
+ 	param(bool, enable_dpcd_backlight, false) \
+ 	param(int, domain_scaler_owner, 0x11100) \
++	param(unsigned int, enable_pvmmio, 0) \
+ 	param(bool, enable_gvt, false)
+ 
+ #define MEMBER(T, member, ...) T member;
+diff --git a/drivers/gpu/drm/i915/i915_pvinfo.h b/drivers/gpu/drm/i915/i915_pvinfo.h
+index dc9bdea..d1a3e3e 100644
+--- a/drivers/gpu/drm/i915/i915_pvinfo.h
++++ b/drivers/gpu/drm/i915/i915_pvinfo.h
+@@ -49,6 +49,15 @@ enum vgt_g2v_type {
+ 	VGT_G2V_MAX,
+ };
+ 
++#define VGPU_PVMMIO(vgpu) vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio))
++
++/*
++ * define different levels of PVMMIO optimization
++ */
++enum pvmmio_levels {
++	PVMMIO_ELSP_SUBMIT = 0x1,
++};
++
+ /*
+  * VGT capabilities type
+  */
+@@ -106,9 +115,11 @@ struct vgt_if {
+ 
+ 	u32 execlist_context_descriptor_lo;
+ 	u32 execlist_context_descriptor_hi;
++	u32 enable_pvmmio;
++	u32 pv_mmio;
+ 	u32 scaler_owned;
+ 
+-	u32  rsv7[0x200 - 25];    /* pad to one page */
++	u32  rsv7[0x200 - 27];    /* pad to one page */
+ } __packed;
+ 
+ #define vgtif_reg(x) \
+diff --git a/drivers/gpu/drm/i915/i915_vgpu.c b/drivers/gpu/drm/i915/i915_vgpu.c
+index 0f6182f..d7a328f 100644
+--- a/drivers/gpu/drm/i915/i915_vgpu.c
++++ b/drivers/gpu/drm/i915/i915_vgpu.c
+@@ -79,6 +79,15 @@ void i915_check_vgpu(struct drm_i915_private *dev_priv)
+ 	dev_priv->vgpu.scaler_owned =
+ 			__raw_i915_read32(dev_priv, vgtif_reg(scaler_owned));
+ 
++	/* If guest wants to enable pvmmio, it needs to enable it explicitly
++	 * through vgt_if interface, and then read back the enable state from
++	 * gvt layer.
++	 */
++	__raw_i915_write32(dev_priv, vgtif_reg(enable_pvmmio),
++			i915_modparams.enable_pvmmio);
++	i915_modparams.enable_pvmmio = __raw_i915_read16(dev_priv,
++			vgtif_reg(enable_pvmmio));
++
+ 	dev_priv->vgpu.active = true;
+ 	DRM_INFO("Virtual GPU for Intel GVT-g detected.\n");
+ }
+-- 
+2.7.4
+

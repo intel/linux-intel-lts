@@ -1,0 +1,492 @@
+From 3e0d36414daa84aba302dd74236d124c18d4437e Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Tue, 13 Nov 2018 00:54:11 +0000
+Subject: [PATCH 1083/1132] media: intel-ipu4: [VIRT] Add support for
+ dqevent/poll IOCTL and file ops.
+
+Change-Id: I55616f2b8c2f52b972747c378a307d1d530cbdcf
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/ipu-psys-virt.c            | 100 +++++++++++++--------
+ drivers/media/pci/intel/ipu-psys-virt.h            |  10 ++-
+ .../pci/intel/virtio/intel-ipu4-para-virt-drv.c    |  10 ++-
+ .../pci/intel/virtio/intel-ipu4-para-virt-psys.c   |  97 +++++++++++++++++---
+ .../pci/intel/virtio/intel-ipu4-virtio-be-psys.c   |  22 ++++-
+ .../pci/intel/virtio/intel-ipu4-virtio-be-stream.c |   2 +-
+ .../intel/virtio/intel-ipu4-virtio-common-psys.h   |   6 +-
+ 7 files changed, 183 insertions(+), 64 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu-psys-virt.c b/drivers/media/pci/intel/ipu-psys-virt.c
+index 8b7bc67..995f7f0 100644
+--- a/drivers/media/pci/intel/ipu-psys-virt.c
++++ b/drivers/media/pci/intel/ipu-psys-virt.c
+@@ -50,6 +50,8 @@
+ 
+ extern struct dma_buf_ops ipu_dma_buf_ops;
+ 
++#define POLL_WAIT 500 //500ms
++
+ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 			struct ipu4_virtio_req_info *req_info)
+ {
+@@ -62,6 +64,7 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 	u32 client_pkg_offset;
+ 	struct ipu_psys_manifest_wrap *manifest_wrap;
+ 	struct ipu_psys_manifest *manifest;
++	void *manifest_data;
+ 
+ 	manifest_wrap = (struct ipu_psys_manifest_wrap *)map_guest_phys(
+ 										req_info->domid,
+@@ -83,6 +86,16 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 		return -EFAULT;
+ 	}
+ 
++	manifest_data = (void *)map_guest_phys(
++							req_info->domid,
++							manifest_wrap->manifest_data,
++							PAGE_SIZE
++							);
++	if (manifest_data == NULL) {
++		pr_err("%s: failed to get manifest_data", __func__);
++		return -EFAULT;
++	}
++
+ 	host_fw_data = (void *)isp->cpd_fw->data;
+ 	dma_fw_data = sg_dma_address(psys->fw_sgt.sgl);
+ 
+@@ -113,9 +126,9 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 		return -EFAULT;
+ 	}
+ 
+-	memcpy(&manifest_wrap->manifest,
+-			(uint8_t *) client_pkg + client_pkg->pg_manifest_offs,
+-			manifest->size);
++	memcpy(manifest_data,
++		(uint8_t *) client_pkg + client_pkg->pg_manifest_offs,
++		manifest->size);
+ 
+ 	return 0;
+ }
+@@ -129,44 +142,11 @@ int virt_ipu_psys_map_buf(struct ipu_psys_fh *fh,
+ int virt_ipu_psys_unmap_buf(struct ipu_psys_fh *fh,
+ 			struct ipu4_virtio_req_info *req_info)
+ {
+-	struct ipu_psys_kbuffer *kbuf;
+-	struct ipu_psys *psys = fh->psys;
+-	struct dma_buf *dmabuf;
+ 	int fd;
+ 
+ 	fd = req_info->request->op[0];
+-	mutex_lock(&fh->mutex);
+-	kbuf = ipu_psys_lookup_kbuffer(fh, fd);
+-	if (!kbuf) {
+-		dev_dbg(&psys->adev->dev, "buffer %d not found\n", fd);
+-		mutex_unlock(&fh->mutex);
+-		return -EINVAL;
+-	}
+-
+-	/* From now on it is not safe to use this kbuffer */
+-	kbuf->valid = false;
+-
+-	dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
+-	dma_buf_unmap_attachment(kbuf->db_attach, kbuf->sgt, DMA_BIDIRECTIONAL);
+-
+-	dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
+-
+-	dmabuf = kbuf->dbuf;
+-
+-	kbuf->db_attach = NULL;
+-	kbuf->dbuf = NULL;
+-
+-	list_del(&kbuf->list);
+-
+-	if (!kbuf->userptr)
+-		kfree(kbuf);
+-
+-	mutex_unlock(&fh->mutex);
+-	dma_buf_put(dmabuf);
+ 
+-	dev_dbg(&psys->adev->dev, "IOC_UNMAPBUF: fd %d\n", fd);
+-
+-	return 0;
++	return ipu_psys_unmapbuf(fd, fh);
+ }
+ 
+ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
+@@ -176,9 +156,52 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
+ }
+ 
+ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
++			struct ipu4_virtio_req_info *req_info,
++			unsigned int f_flags)
++{
++	struct ipu_psys_event *event;
++
++	event = (struct ipu_psys_event *)map_guest_phys(
++									req_info->domid,
++									req_info->request->payload,
++									PAGE_SIZE
++									);
++	if (event == NULL) {
++		pr_err("%s: failed to get payload", __func__);
++		return -EFAULT;
++	}
++
++	return ipu_ioctl_dqevent(event, fh, f_flags);
++}
++
++int virt_ipu_psys_poll(struct ipu_psys_fh *fh,
+ 			struct ipu4_virtio_req_info *req_info)
+ {
+-	return -1;
++	struct ipu_psys *psys = fh->psys;
++	long time_remain = -1;
++	DEFINE_WAIT_FUNC(wait, woken_wake_function);
++
++	dev_dbg(&psys->adev->dev, "ipu psys poll\n");
++
++	add_wait_queue(&fh->wait, &wait);
++	while (1) {
++		if (ipu_get_completed_kcmd(fh) ||
++			time_remain == 0)
++			break;
++		time_remain =
++			wait_woken(&wait, TASK_INTERRUPTIBLE, POLL_WAIT);
++	}
++	remove_wait_queue(&fh->wait, &wait);
++
++	if (time_remain)
++		req_info->request->func_ret = POLLIN;
++	else
++		req_info->request->func_ret = 0;
++
++	dev_dbg(&psys->adev->dev, "ipu psys poll res %u\n",
++						req_info->request->func_ret);
++
++	return 0;
+ }
+ 
+ int __map_buf(struct ipu_psys_fh *fh,
+@@ -379,4 +402,5 @@ struct psys_fops_virt psys_vfops = {
+ 	.qcmd = virt_ipu_psys_qcmd,
+ 	.dqevent = virt_ipu_psys_dqevent,
+ 	.get_buf = virt_ipu_psys_get_buf,
++	.poll = virt_ipu_psys_poll,
+ };
+diff --git a/drivers/media/pci/intel/ipu-psys-virt.h b/drivers/media/pci/intel/ipu-psys-virt.h
+index 3e2488b..91a7bd3 100644
+--- a/drivers/media/pci/intel/ipu-psys-virt.h
++++ b/drivers/media/pci/intel/ipu-psys-virt.h
+@@ -19,11 +19,19 @@ struct psys_fops_virt {
+ 	int (*qcmd)(struct ipu_psys_fh *fh,
+ 			struct ipu4_virtio_req_info *req_info);
+ 	int (*dqevent)(struct ipu_psys_fh *fh,
+-			struct ipu4_virtio_req_info *req_info);
++			struct ipu4_virtio_req_info *req_info,
++			unsigned int f_flags);
+ 	int (*get_buf)(struct ipu_psys_fh *fh,
+ 			struct ipu4_virtio_req_info *req_info);
++	int (*poll)(struct ipu_psys_fh *fh,
++			struct ipu4_virtio_req_info *req_info);
+ };
+ 
++//Function define in ipu-psys.c
++long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh);
++//Function define in ipu4-psys.c
++void ipu_psys_kcmd_free(struct ipu_psys_kcmd *kcmd);
++
+ extern struct psys_fops_virt psys_vfops;
+ 
+ #endif
+\ No newline at end of file
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+index 6a67357..b1ff094 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+@@ -598,11 +598,10 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device
+ 	struct ipu4_virtio_req *req;
+ 	struct virtual_stream *vstream = dev_to_vstream(dev);
+ 	struct ipu4_virtio_ctx *fe_ctx = vstream->ctx;
+-	struct ici_stream_device *strm_dev = file->private_data;
+ 	int rval = 0;
+ 	int op[2];
+ 
+-	dev_dbg(&strm_dev->dev, "stream_fop_poll %d\n", vstream->virt_dev_id);
++	dev_dbg(&dev->dev, "stream_fop_poll %d\n", vstream->virt_dev_id);
+ 	get_device(&dev->dev);
+ 
+ 	req = ipu4_virtio_fe_req_queue_get();
+@@ -617,13 +616,16 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 										IPU_VIRTIO_QUEUE_0);
+ 	if (rval) {
+-		dev_err(&strm_dev->dev, "polling failed\n");
++		dev_err(&dev->dev, "polling failed\n");
+ 		ipu4_virtio_fe_req_queue_put(req);
+ 		return rval;
+ 	}
++
++	rval = req->func_ret;
++
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+-	return req->func_ret;
++	return rval;
+ }
+ 
+ static int virt_stream_fop_open(struct inode *inode, struct file *file)
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+index 0af0614..67602a9 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+@@ -49,21 +49,29 @@ int ipu_get_manifest(struct ipu_psys_manifest *m,
+ 	struct virt_ipu_psys *psys = fh->psys;
+ 	struct ipu4_virtio_req *req;
+ 	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
+-	struct ipu_psys_manifest_wrap *manifest;
++	struct ipu_psys_manifest_wrap *manifest_wrap;
+ 	int rval = 0;
++	void *manifest_data;
+ 
+ 	pr_debug("%s: processing start", __func__);
+ 
+-	manifest = kzalloc(sizeof(struct ipu_psys_manifest_wrap),
++	manifest_wrap = kzalloc(sizeof(struct ipu_psys_manifest_wrap),
+ 								GFP_KERNEL);
+ 
+-	manifest->psys_manifest = virt_to_phys(m);
++	manifest_wrap->psys_manifest = virt_to_phys(m);
++
++	//since the manifest memory is allocated by user space
++	//and the struct ia_cipr_buffer_t is not expose to
++	//driver. We assume the size is less than 1 page and
++	//allocate the max.
++	manifest_data = kzalloc(PAGE_SIZE, GFP_KERNEL);
++	manifest_wrap->manifest_data = virt_to_phys(manifest_data);
+ 
+ 	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req)
+ 		return -ENOMEM;
+ 
+-	req->payload = virt_to_phys(manifest);
++	req->payload = virt_to_phys(manifest_wrap);
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_GET_MANIFEST, NULL);
+ 
+@@ -75,7 +83,7 @@ int ipu_get_manifest(struct ipu_psys_manifest *m,
+ 	}
+ 
+ 	if (m->manifest != NULL && copy_to_user(m->manifest,
+-			manifest->manifest,
++			manifest_data,
+ 			m->size)) {
+ 		pr_err("%s: Failed copy_to_user", __func__);
+ 		rval = -EFAULT;
+@@ -84,7 +92,8 @@ int ipu_get_manifest(struct ipu_psys_manifest *m,
+ 
+ error_exit:
+ 
+-	kfree(manifest);
++	kfree(manifest_data);
++	kfree(manifest_wrap);
+ 
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+@@ -315,10 +324,71 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
+ unsigned int virt_psys_poll(struct file *file,
+ 						  struct poll_table_struct *wait)
+ {
+-	unsigned int  res = 0;
++	struct virt_ipu_psys_fh *fh = file->private_data;
++	struct virt_ipu_psys *psys = fh->psys;
++	struct ipu4_virtio_req *req;
++	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
++	int rval = 0;
++
++	pr_debug("%s: processing start", __func__);
++
++	req = ipu4_virtio_fe_req_queue_get();
++	if (!req)
++		return -ENOMEM;
++
++	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_POLL, NULL);
++
++	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
++									IPU_VIRTIO_QUEUE_1);
++	if (rval) {
++		pr_err("%s: Failed psys polling", __func__);
++		ipu4_virtio_fe_req_queue_put(req);
++		return rval;
++	}
++
++	rval = req->func_ret;
++
++	ipu4_virtio_fe_req_queue_put(req);
++
++	pr_debug("%s: processing ended %d", __func__, rval);
++
++	return rval;
++}
++
++long ipu_ioctl_dqevent(struct ipu_psys_event *event,
++			      struct virt_ipu_psys_fh *fh, unsigned int f_flags)
++{
++	struct virt_ipu_psys *psys = fh->psys;
++	struct ipu4_virtio_req *req;
++	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
++	int rval = 0;
++
++	pr_debug("%s: processing start", __func__);
++
++	req = ipu4_virtio_fe_req_queue_get();
++	if (!req)
++		return -ENOMEM;
++
++	req->payload = virt_to_phys(event);
++
++	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_DQEVENT, NULL);
++
++	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
++									IPU_VIRTIO_QUEUE_1);
++	if (rval) {
++		pr_err("%s: Failed to dqevent", __func__);
++		goto error_exit;
++	}
++
++error_exit:
++
++	ipu4_virtio_fe_req_queue_put(req);
+ 
+-	return res;
++	pr_debug("%s: processing ended %d", __func__, rval);
++
++	return rval;
+ }
++
+ long virt_psys_compat_ioctl32(struct file *file, unsigned int cmd,
+ 						 unsigned long arg)
+ {
+@@ -391,7 +461,7 @@ static long virt_psys_ioctl(struct file *file, unsigned int cmd,
+ 		break;
+ 	case IPU_IOC_DQEVENT:
+ 		pr_debug("%s: IPU_IOC_DQEVENT", __func__);
+-		//err = ipu_ioctl_dqevent(&karg.ev, fh, file->f_flags);
++		err = ipu_ioctl_dqevent(&data->ev, fh, file->f_flags);
+ 		break;
+ 	case IPU_IOC_GET_MANIFEST:
+ 		pr_debug("%s: IPU_IOC_GET_MANIFEST", __func__);
+@@ -422,6 +492,7 @@ static int virt_psys_open(struct inode *inode, struct file *file)
+ 	struct ipu4_virtio_req *req;
+ 	struct ipu4_virtio_ctx *fe_ctx = psys->ctx;
+ 	int rval = 0;
++	unsigned int op[1];
+ 
+ 	pr_debug("virt psys open\n");
+ 
+@@ -439,7 +510,9 @@ static int virt_psys_open(struct inode *inode, struct file *file)
+ 	   return -ENOMEM;
+ 	}
+ 
+-	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_OPEN, NULL);
++	op[0] = file->f_flags;
++
++	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_OPEN, &op[0]);
+ 
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 					  IPU_VIRTIO_QUEUE_1);
+@@ -464,8 +537,8 @@ static int virt_psys_release(struct inode *inode, struct file *file)
+ 
+ 	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req) {
+-	   dev_err(&psys->dev, "Virtio Req buffer failed\n");
+-	   return -ENOMEM;
++		dev_err(&psys->dev, "Virtio Req buffer failed\n");
++		return -ENOMEM;
+ 	}
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_CLOSE, NULL);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+index 86d9d34..de6053b 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+@@ -68,7 +68,15 @@ int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
+ {
+-	return IPU4_REQ_ERROR;
++	struct ipu_psys_fh *fh = psys_file->private_data;
++	int status = 0;
++
++	status = fh->vfops->dqevent(fh, req_info, psys_file->f_flags);
++
++	if (status)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+ 
+ int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
+@@ -101,7 +109,7 @@ int process_psys_open(struct ipu4_virtio_req_info *req_info)
+ {
+ 	pr_info("%s: /dev/ipu-psys0", __func__);
+ 
+-	psys_file = filp_open("/dev/ipu-psys0", O_RDWR | O_NONBLOCK, 0);
++	psys_file = filp_open("/dev/ipu-psys0", req_info->request->op[0], 0);
+ 
+ 	if (psys_file == NULL) {
+ 		pr_err("%s: Native IPU psys device not found",
+@@ -123,7 +131,15 @@ int process_psys_close(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_poll(struct ipu4_virtio_req_info *req_info)
+ {
+-	return IPU4_REQ_ERROR;
++	struct ipu_psys_fh *fh = psys_file->private_data;
++	int status = 0;
++
++	status = fh->vfops->poll(fh, req_info);
++
++	if (status)
++		return IPU4_REQ_ERROR;
++	else
++		return IPU4_REQ_PROCESSED;
+ }
+ 
+ int process_psys_mapbuf_thread(void *data)
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+index a09af6a..5da50e8 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+@@ -185,7 +185,7 @@ int process_poll(struct ipu4_virtio_req_info *req_info)
+ 			!list_empty(&as->buf_list.putbuf_list),
+ 			POLL_WAIT);
+ 		if (time_remain) {
+-			req->func_ret = 1;
++			req->func_ret = POLLIN;
+ 			return IPU4_REQ_PROCESSED;
+ 		} else {
+ 			pr_err("%s poll timeout! %d", __func__, req->op[0]);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common-psys.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common-psys.h
+index a8b905f..737a2bd 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common-psys.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common-psys.h
+@@ -8,11 +8,7 @@
+ 
+ struct ipu_psys_manifest_wrap {
+ 	u64 psys_manifest;
+-	//since the manifest memory is allocated by user space
+-	//and the struct ia_cipr_buffer_t is not expose to
+-	//driver. We assume the size is less than 1 page and
+-	//allocate the max.
+-	int8_t manifest[PAGE_SIZE];
++	u64 manifest_data;
+ };
+ 
+ struct ipu_psys_usrptr_map {
+-- 
+2.7.4
+

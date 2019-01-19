@@ -1,0 +1,82 @@
+From b6a2b73f751d1c9d9e8eb51445a8bdc39882dd11 Mon Sep 17 00:00:00 2001
+From: "Jayanti, Satya Charitardha" <satya.charitardha.jayanti@intel.com>
+Date: Wed, 4 Jan 2017 20:41:55 +0530
+Subject: [PATCH 0564/1132] ASoC: Intel: CNL: Add DAIs for SDW Aggregation
+
+This patch adds DAI to enable Aggregation feature for
+playback and capture on SoundWire Master 1 and Master 2
+with RT700 codec. It also makes changes in channel and
+format configurations for both playback and capture in DAIs.
+
+Change-Id: I252733c39e2e81a2aa8c2e4c44a9416a02aafab2
+Signed-off-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 34 ++++++++++++++++++++++++++++++----
+ 1 file changed, 30 insertions(+), 4 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 7ac209d..265992e 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1354,17 +1354,17 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 	.ops = &skl_sdw_dai_ops,
+ 	.playback = {
+ 		.stream_name = "SDW Tx10",
+-		.channels_min = HDA_STEREO,
++		.channels_min = HDA_MONO,
+ 		.channels_max = HDA_STEREO,
+ 		.rates = SNDRV_PCM_RATE_48000,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+ 	},
+ 	.capture = {
+ 		.stream_name = "SDW Rx10",
+-		.channels_min = HDA_STEREO,
++		.channels_min = HDA_MONO,
+ 		.channels_max = HDA_STEREO,
+ 		.rates = SNDRV_PCM_RATE_48000,
+-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+ 	},
+ },
+ {
+@@ -1405,6 +1405,32 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 	},
+ 
+ },
++#ifdef CONFIG_SND_SOC_SDW_AGGM1M2
++{
++	/*
++	 * Currently adding 1 playback and 1 capture pin, ideally it
++	 * should be coming from CLT based on endpoints to be supported
++	 */
++	.name = "SDW2 Pin",
++	.id = SDW_BE_DAI_ID_MSTR2,
++	.ops = &skl_sdw_dai_ops,
++	.playback = {
++		.stream_name = "SDW2 Tx",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_STEREO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
++	},
++	.capture = {
++		.stream_name = "SDW2 Rx",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_STEREO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
++	},
++
++},
++#endif
+ {
+ 	/* Currently adding 1 playback and 1 capture pin, ideally it
+ 	 * should be coming from CLT based on endpoints to be supported
+-- 
+2.7.4
+

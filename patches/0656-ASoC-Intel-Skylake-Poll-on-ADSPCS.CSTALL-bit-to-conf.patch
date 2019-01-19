@@ -1,0 +1,78 @@
+From 29813b75da958bc8d03718b8f1a7e601a87f287b Mon Sep 17 00:00:00 2001
+From: Mohit Sinha <mohit.sinha@intel.com>
+Date: Thu, 16 Nov 2017 21:35:07 +0530
+Subject: [PATCH 0656/1132] ASoC: Intel: Skylake: Poll on ADSPCS.CSTALL bit to
+ confirm stall state change.
+
+ADSPCS.CSTALL bit should be set/cleared in order to stall/ un-stall
+the DSP core. Since the stall bit(state) transition need not happen
+instantaneously, the driver has to poll on the bit until the correct
+state transition occurs or the polling times out indicating a failure.
+Such a polling was not done in the current code. As a result an
+operation on the core failed because it was attempted without waiting
+for the core to be un-stalled.
+
+Change-Id: I268c89e031acf8a9bb5220ba621e4bf2d99ae745
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: B, Jayachandran <jayachandran.b@intel.com>
+Reviewed-by: audio_build
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-dsp.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.c b/sound/soc/intel/skylake/skl-sst-dsp.c
+index 71e31ad..4b16e00 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.c
++++ b/sound/soc/intel/skylake/skl-sst-dsp.c
+@@ -160,11 +160,24 @@ is_skl_dsp_core_enable(struct sst_dsp *ctx, unsigned int core_mask)
+ 
+ static int skl_dsp_reset_core(struct sst_dsp *ctx, unsigned int core_mask)
+ {
++	int ret;
++
+ 	/* stall core */
+ 	sst_dsp_shim_update_bits_unlocked(ctx, SKL_ADSP_REG_ADSPCS,
+ 			SKL_ADSPCS_CSTALL_MASK(core_mask),
+ 			SKL_ADSPCS_CSTALL_MASK(core_mask));
+ 
++	/* poll with timeout to check if operation successful */
++	ret = sst_dsp_register_poll(ctx,
++			SKL_ADSP_REG_ADSPCS,
++			SKL_ADSPCS_CSTALL_MASK(core_mask),
++			SKL_ADSPCS_CSTALL_MASK(core_mask),
++			SKL_DSP_PU_TO,
++			"Stall Core");
++
++	if (ret < 0)
++		return ret;
++
+ 	/* set reset state */
+ 	return skl_dsp_core_set_reset_state(ctx, core_mask);
+ }
+@@ -183,6 +196,16 @@ int skl_dsp_start_core(struct sst_dsp *ctx, unsigned int core_mask)
+ 	sst_dsp_shim_update_bits_unlocked(ctx, SKL_ADSP_REG_ADSPCS,
+ 			SKL_ADSPCS_CSTALL_MASK(core_mask), 0);
+ 
++	/* poll with timeout to check if operation successful */
++	ret = sst_dsp_register_poll(ctx,
++			SKL_ADSP_REG_ADSPCS,
++			SKL_ADSPCS_CSTALL_MASK(core_mask),
++			0,
++			SKL_DSP_PU_TO,
++			"Unstall Core");
++	if (ret < 0)
++		return ret;
++
+ 	if (!is_skl_dsp_core_enable(ctx, core_mask)) {
+ 		skl_dsp_reset_core(ctx, core_mask);
+ 		dev_err(ctx->dev, "DSP start core failed: core_mask %x\n",
+-- 
+2.7.4
+

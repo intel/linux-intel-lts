@@ -1,0 +1,39 @@
+From ac3254dfa404b8de82910b7871cbed219ebe5e8c Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Mon, 12 Nov 2018 16:25:01 +0800
+Subject: [PATCH 1026/1132] drm/i915/gvt: remove tag from vGPU context ID
+ before check
+
+When GEM_TRACE enabled, vGPU failed to be initialized due to context ID
+check failure. vGPU ID has a tag in bits [18,20], need to handle it
+specially.
+
+Tracked-On: PKT-1592
+Tracked-On: projectacrn/acrn-hypervisor#1805
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem_context.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem_context.c b/drivers/gpu/drm/i915/i915_gem_context.c
+index 0c8c68a..585ebf2 100644
+--- a/drivers/gpu/drm/i915/i915_gem_context.c
++++ b/drivers/gpu/drm/i915/i915_gem_context.c
+@@ -513,7 +513,12 @@ int i915_gem_contexts_init(struct drm_i915_private *dev_priv)
+ 	 * For easy recognisablity, we want the kernel context to be 0 and then
+ 	 * all user contexts will have non-zero hw_id.
+ 	 */
+-	GEM_BUG_ON(ctx->hw_id);
++	if (intel_vgpu_active(dev_priv)){
++		/* remove vgpu_id from context hw_id */
++		GEM_BUG_ON(ctx->hw_id & ~(0x7 << SIZE_CONTEXT_HW_ID_GVT));
++	} else {
++		GEM_BUG_ON(ctx->hw_id);
++	}
+ 	dev_priv->kernel_context = ctx;
+ 
+ 	/* highest priority; preempting task */
+-- 
+2.7.4
+

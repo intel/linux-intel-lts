@@ -1,0 +1,63 @@
+From f937cef89f477649d09857e0049a01105bab04fa Mon Sep 17 00:00:00 2001
+From: Jon Moeller <jon.moeller@intel.com>
+Date: Tue, 13 Nov 2018 13:31:51 -0600
+Subject: [PATCH 0980/1132] Fix for socwatch build error that occurs if
+ CONFIG_TRACEPOINTS is disabled.
+
+Change-Id: I6ce699ed113aecfbcac9bf4751618f15bcb66fac
+Tracked-On: PKT-1523
+Signed-off-by: Jon Moeller <jon.moeller@intel.com>
+---
+ drivers/platform/x86/socwatch/sw_trace_notifier_provider.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/platform/x86/socwatch/sw_trace_notifier_provider.c b/drivers/platform/x86/socwatch/sw_trace_notifier_provider.c
+index 0c41442..a20e056 100644
+--- a/drivers/platform/x86/socwatch/sw_trace_notifier_provider.c
++++ b/drivers/platform/x86/socwatch/sw_trace_notifier_provider.c
+@@ -123,7 +123,7 @@ struct cpu_workqueue_struct; // Forward declaration to avoid compiler warnings
+  * Tracepoint probe register/unregister functions and
+  * helper macros.
+  */
+-#ifdef CONFIG_TRACEPOINTS
++#if IS_ENABLED(CONFIG_TRACEPOINTS)
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
+ #define DO_REGISTER_SW_TRACEPOINT_PROBE(node, name, probe)                     \
+ 	WARN_ON(register_trace_##name(probe))
+@@ -532,7 +532,7 @@ static const struct sw_trace_notifier_name s_notifier_names[] = {
+ 				    "HOTCPU-NOTIFIER" },
+ };
+ 
+-#ifdef CONFIG_TRACEPOINTS
++#if IS_ENABLED(CONFIG_TRACEPOINTS)
+ /*
+  * A list of supported tracepoints.
+  */
+@@ -2131,7 +2131,7 @@ static void sw_extract_tracepoint_callback(struct tracepoint *tp, void *priv)
+ int sw_extract_trace_notifier_providers(void)
+ {
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0) &&                          \
+-	defined(CONFIG_TRACEPOINTS)
++	IS_ENABLED(CONFIG_TRACEPOINTS)
+ 	int numCallbacks = 0;
+ 
+ 	for_each_kernel_tracepoint(&sw_extract_tracepoint_callback,
+@@ -2212,6 +2212,7 @@ int sw_add_trace_notifier_providers(void)
+ 			return -EIO;
+ 		}
+ 	}
++#if IS_ENABLED(CONFIG_TRACEPOINTS)
+ 	/*
+ 	 * Add the cpu hot plug notifier.
+ 	 */
+@@ -2223,6 +2224,7 @@ int sw_add_trace_notifier_providers(void)
+ 			return -EIO;
+ 		}
+ 	}
++#endif // CONFIG_TRACEPOINTS
+ 	return PW_SUCCESS;
+ }
+ /*
+-- 
+2.7.4
+

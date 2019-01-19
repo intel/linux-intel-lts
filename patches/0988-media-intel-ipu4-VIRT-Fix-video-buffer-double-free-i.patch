@@ -1,0 +1,446 @@
+From 1a17f50016a656fcb99f2d4369b0b8fd12b88244 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Wed, 14 Nov 2018 00:11:14 +0000
+Subject: [PATCH 0988/1132] media: intel-ipu4: [VIRT] Fix video buffer double
+ free issue.
+
+The video buffer allocated at UOS are free at SOS.
+This caused a double free when UOS shutdown and
+trying to free the memory again.
+
+Change-Id: I14c877ffc71bf41f4cc6988f1e1d2dbea0944929
+Tracked-On: OAM-71581
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/ici/ici-isys-frame-buf.c   | 70 ++++++++++++++++++++-
+ drivers/media/pci/intel/ici/ici-isys-stream.c      |  2 +
+ .../pci/intel/virtio/intel-ipu4-para-virt-drv.c    | 73 ++++++++++++++++++++--
+ .../intel/virtio/intel-ipu4-virtio-be-pipeline.c   |  8 +++
+ .../pci/intel/virtio/intel-ipu4-virtio-be-stream.c | 37 +++++++----
+ 5 files changed, 170 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ici/ici-isys-frame-buf.c b/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
+index bd99ba1..2ef0c6d 100644
+--- a/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
++++ b/drivers/media/pci/intel/ici/ici-isys-frame-buf.c
+@@ -112,6 +112,41 @@ static void ici_put_userpages(struct device *dev,
+ 	up_read(&mm->mmap_sem);
+ }
+ 
++static void ici_put_userpages_virt(struct device *dev,
++					struct ici_kframe_plane
++					*kframe_plane)
++{
++	struct sg_table *sgt = kframe_plane->sgt;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
++    DEFINE_DMA_ATTRS(attrs);
++#else
++    unsigned long attrs;
++#endif
++
++	struct mm_struct* mm = current->active_mm;
++	if (!mm){
++		dev_err(dev, "Failed to get active mm_struct ptr from current process.\n");
++		return;
++	}
++
++	down_read(&mm->mmap_sem);
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
++	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
++	dma_unmap_sg_attrs(kframe_plane->dev, sgt->sgl, sgt->orig_nents,
++				DMA_FROM_DEVICE, &attrs);
++#else
++    attrs = DMA_ATTR_SKIP_CPU_SYNC;
++	dma_unmap_sg_attrs(kframe_plane->dev, sgt->sgl, sgt->orig_nents,
++				DMA_FROM_DEVICE, attrs);
++#endif
++
++	kfree(sgt);
++	kframe_plane->sgt = NULL;
++
++	up_read(&mm->mmap_sem);
++}
++
+ static void ici_put_dma(struct device *dev,
+ 					struct ici_kframe_plane
+ 					*kframe_plane)
+@@ -408,7 +443,6 @@ int ici_isys_get_buf(struct ici_isys_stream *as,
+ 		return 0;
+ 	}
+ 
+-
+ 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
+ 	if (!buf)
+ 		return -ENOMEM;
+@@ -673,6 +707,26 @@ static void unmap_buf(struct ici_frame_buf_wrapper *buf)
+ 	}
+ }
+ 
++static void unmap_buf_virt(struct ici_frame_buf_wrapper *buf)
++{
++	int i;
++
++	for (i = 0; i < buf->frame_info.num_planes; i++) {
++		struct ici_kframe_plane *kframe_plane =
++			&buf->kframe_info.planes[i];
++		switch (kframe_plane->mem_type) {
++		case ICI_MEM_USERPTR:
++			ici_put_userpages_virt(kframe_plane->dev,
++						kframe_plane);
++		break;
++		default:
++			dev_err(&buf->buf_list->strm_dev->dev, "not supported memory type: %d\n",
++				kframe_plane->mem_type);
++		break;
++		}
++	}
++}
++
+ void ici_isys_frame_buf_stream_cancel(struct
+ 						  ici_isys_stream
+ 						  *as)
+@@ -681,19 +735,29 @@ void ici_isys_frame_buf_stream_cancel(struct
+ 	struct ici_frame_buf_wrapper *buf;
+ 	struct ici_frame_buf_wrapper *next_buf;
+ 
++	mutex_lock(&buf_list->mutex);
++
+ 	list_for_each_entry_safe(buf, next_buf, &buf_list->getbuf_list, node) {
+ 		list_del(&buf->node);
+-		unmap_buf(buf);
++		if (as->strm_dev.virt_dev_id < 0)
++			unmap_buf(buf);
++		else
++			unmap_buf_virt(buf);
+ 	}
+ 	list_for_each_entry_safe(buf, next_buf, &buf_list->putbuf_list, node) {
+ 		list_del(&buf->node);
+-		unmap_buf(buf);
++		if (as->strm_dev.virt_dev_id < 0)
++			unmap_buf(buf);
++		else
++			unmap_buf_virt(buf);
+ 	}
+ 	list_for_each_entry_safe(buf, next_buf, &buf_list->interlacebuf_list,
+ 								node) {
+ 		list_del(&buf->node);
+ 		unmap_buf(buf);
+ 	}
++
++	mutex_unlock(&buf_list->mutex);
+ }
+ 
+ int ici_isys_frame_buf_add_next(
+diff --git a/drivers/media/pci/intel/ici/ici-isys-stream.c b/drivers/media/pci/intel/ici/ici-isys-stream.c
+index 6a2c6e1..3fed154 100644
+--- a/drivers/media/pci/intel/ici/ici-isys-stream.c
++++ b/drivers/media/pci/intel/ici/ici-isys-stream.c
+@@ -1156,6 +1156,8 @@ static int stream_fop_open(struct inode *inode, struct file *file)
+ 
+ 	mutex_unlock(&isys->mutex);
+ 
++	strm_dev->virt_dev_id = -1;
++
+ 	return 0;
+ 
+ out_lib_init:
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+index b6278f7..dc0be87 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+@@ -22,6 +22,7 @@
+ #include "./ici/ici-isys-stream.h"
+ #include "./ici/ici-isys-pipeline-device.h"
+ 
++#define phys_to_page(x) pfn_to_page((x) >> PAGE_SHIFT)
+ 
+ static dev_t virt_pipeline_dev_t;
+ static struct class *virt_pipeline_class;
+@@ -130,7 +131,6 @@ static int get_userpages(struct device *dev, struct ici_frame_plane *frame_plane
+ 	struct page **pages;
+ 	int nr = 0;
+ 	int ret = 0;
+-	struct sg_table *sgt;
+ 	unsigned int i;
+ 	u64 page_table_ref;
+ 	u64 *page_table;
+@@ -150,15 +150,12 @@ static int get_userpages(struct device *dev, struct ici_frame_plane *frame_plane
+ 	}
+ 
+ 	pr_debug("%s:%d Number of Pages:%d frame_length:%d\n", __func__, __LINE__, npages, frame_plane->length);
+-	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
+-	if (!sgt)
+-		return -ENOMEM;
+ 	if (array_size <= PAGE_SIZE)
+ 		pages = kzalloc(array_size, GFP_KERNEL);
+ 	else
+ 		pages = vzalloc(array_size);
+ 	if (!pages)
+-		return -ENOMEM;
++		goto error_free_page_table;
+ 
+ 	down_read(&current->mm->mmap_sem);
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+@@ -177,14 +174,28 @@ static int get_userpages(struct device *dev, struct ici_frame_plane *frame_plane
+ 	page_table_ref = virt_to_phys(page_table);
+ 	kframe_plane->page_table_ref = page_table_ref;
+ 	kframe_plane->npages = npages;
++
++	if (pages) {
++		if (array_size <= PAGE_SIZE)
++			kfree(pages);
++		else
++			vfree(pages);
++	}
++
+ 	up_read(&current->mm->mmap_sem);
+ 	return ret;
++
+ error_free_pages:
+ 	if (pages) {
+ 		for (i = 0; i < nr; i++)
+ 			put_page(pages[i]);
+ 	}
+-	kfree(sgt);
++	if (array_size <= PAGE_SIZE)
++		kfree(pages);
++	else
++		vfree(pages);
++error_free_page_table:
++	kfree(page_table);
+ 	return -ENOMEM;
+ }
+ 
+@@ -343,6 +354,54 @@ struct ici_frame_buf_wrapper *get_buf(struct virtual_stream *vstream, struct ici
+ 	return buf;
+ }
+ 
++static void virt_ici_put_userpages(struct device *dev,
++					struct ici_kframe_plane
++					*kframe_plane)
++{
++	unsigned int i;
++	struct page *pages;
++	u64 *page_table;
++
++	struct mm_struct* mm = current->active_mm;
++	if (!mm){
++		dev_err(dev, "Failed to get active mm_struct ptr from current process.\n");
++		return;
++	}
++
++	down_read(&mm->mmap_sem);
++
++	page_table = phys_to_virt(kframe_plane->page_table_ref);
++	for (i = 0; i < kframe_plane->npages; i++) {
++		pages = phys_to_page(page_table[i]);
++		set_page_dirty_lock(pages);
++		put_page(pages);
++	}
++
++	kfree(page_table);
++
++	up_read(&mm->mmap_sem);
++}
++
++static void virt_unmap_buf(struct ici_frame_buf_wrapper *buf)
++{
++	int i;
++
++	for (i = 0; i < buf->frame_info.num_planes; i++) {
++		struct ici_kframe_plane *kframe_plane =
++			&buf->kframe_info.planes[i];
++		switch (kframe_plane->mem_type) {
++		case ICI_MEM_USERPTR:
++			virt_ici_put_userpages(kframe_plane->dev,
++						kframe_plane);
++		break;
++		default:
++			dev_err(&buf->buf_list->strm_dev->dev, "not supported memory type: %d\n",
++				kframe_plane->mem_type);
++		break;
++		}
++	}
++}
++
+ //Call from Stream-OFF and if Stream-ON fails
+ void buf_stream_cancel(struct virtual_stream *vstream)
+ {
+@@ -353,10 +412,12 @@ void buf_stream_cancel(struct virtual_stream *vstream)
+ 	list_for_each_entry_safe(buf, next_buf,
+ 			&buf_list->getbuf_list, uos_node) {
+ 		list_del(&buf->uos_node);
++		virt_unmap_buf(buf);
+ 	}
+ 	list_for_each_entry_safe(buf, next_buf,
+ 			&buf_list->putbuf_list, uos_node) {
+ 		list_del(&buf->uos_node);
++		virt_unmap_buf(buf);
+ 	}
+ }
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+index 322d8ea..26c1577 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+@@ -65,6 +65,7 @@ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
+ 
+ 	err = dev->pipeline_ioctl_ops->pipeline_enum_nodes(pipeline, dev, host_virt);
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	if (err)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -88,6 +89,7 @@ int process_enum_links(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pipeline_enum_links(pipeline, dev, host_virt);
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	if (err)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -110,6 +112,7 @@ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_get_supported_format(pipeline, dev, host_virt);
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	if (err)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -133,6 +136,7 @@ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_set_ffmt(pipeline, dev, host_virt);
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	if (err)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -156,6 +160,7 @@ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_get_ffmt(pipeline, dev, host_virt);
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	if (err)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -179,6 +184,7 @@ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pipeline_setup_pipe(pipeline, dev, host_virt);
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	if (err)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -202,6 +208,7 @@ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_set_sel(pipeline, dev, host_virt);
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	if (err)
+ 		return IPU4_REQ_ERROR;
+ 	else
+@@ -225,6 +232,7 @@ int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 	err = dev->pipeline_ioctl_ops->pad_get_sel(pipeline, dev, host_virt);
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	if (err)
+ 		return IPU4_REQ_ERROR;
+ 	else
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+index ab06be7..a09af6a 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+@@ -141,6 +141,7 @@ int process_set_format(struct ipu4_virtio_req_info *req_info)
+ 	if (err)
+ 		pr_err("intel_ipu4_pvirt: internal set fmt failed\n");
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	return IPU4_REQ_PROCESSED;
+ }
+ 
+@@ -238,6 +239,7 @@ int process_put_buf(struct ipu4_virtio_req_info *req_info)
+ 	if (err)
+ 		pr_err("process_put_buf: ici_put_buf failed\n");
+ 
++	unmap_guest_phys(domid, req->payload);
+ 	return IPU4_REQ_PROCESSED;
+ }
+ 
+@@ -250,7 +252,7 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
+ 	void *pageaddr;
+ 	u64 *page_table = NULL;
+ 	struct page **data_pages = NULL;
+-	int err, found;
++	int err, found, status;
+ 	struct ipu4_virtio_req *req = req_info->request;
+ 	int domid = req_info->domid;
+ 
+@@ -277,12 +279,14 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
+ 	shared_buf = (struct ici_frame_buf_wrapper *)map_guest_phys(domid, req->payload, PAGE_SIZE);
+ 	if (!shared_buf) {
+ 		pr_err("SOS Failed to map Buffer from UserOS\n");
+-		req->stat = IPU4_REQ_ERROR;
++		status = IPU4_REQ_ERROR;
++		goto exit;
+ 	}
+ 	data_pages = kcalloc(shared_buf->kframe_info.planes[0].npages, sizeof(struct page *), GFP_KERNEL);
+ 	if (data_pages == NULL) {
+ 		pr_err("SOS Failed alloc data page set\n");
+-		req->stat = IPU4_REQ_ERROR;
++		status = IPU4_REQ_ERROR;
++		goto exit_payload;
+ 	}
+ 	pr_debug("Total number of pages:%d\n", shared_buf->kframe_info.planes[0].npages);
+ 
+@@ -291,10 +295,9 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
+ 	if (page_table == NULL) {
+ 		pr_err("SOS Failed to map page table\n");
+ 		req->stat = IPU4_REQ_ERROR;
+-		kfree(data_pages);
+-		return IPU4_REQ_ERROR;
++		status = IPU4_REQ_ERROR;
++		goto exit_payload;
+ 	}
+-
+ 	else {
+ 		 pr_debug("SOS first page %lld\n", page_table[0]);
+ 		 k = 0;
+@@ -314,16 +317,28 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
+ 	strm_dev = sn->f->private_data;
+ 	if (strm_dev == NULL) {
+ 		pr_err("Native IPU stream device not found\n");
+-		kfree(data_pages);
+-		return IPU4_REQ_ERROR;
++		status = IPU4_REQ_ERROR;
++		goto exit_page_table;
+ 	}
+ 	err = strm_dev->ipu_ioctl_ops->ici_get_buf_virt(sn->f, strm_dev, shared_buf, data_pages);
+ 
+-	if (err)
++	if (err) {
+ 		pr_err("process_get_buf: ici_get_buf_virt failed\n");
+-
++		status = IPU4_REQ_ERROR;
++	}
++	else
++		status = IPU4_REQ_PROCESSED;
++
++exit_page_table:
++	for (i = 0; i < shared_buf->kframe_info.planes[0].npages; i++)
++		unmap_guest_phys(domid, page_table[i]);
++	unmap_guest_phys(domid, shared_buf->kframe_info.planes[0].page_table_ref);
++exit_payload:
+ 	kfree(data_pages);
+-	return IPU4_REQ_PROCESSED;
++	unmap_guest_phys(domid, req->payload);
++exit:
++	req->stat = status;
++	return status;
+ }
+ 
+ int process_stream_on(struct ipu4_virtio_req_info *req_info)
+-- 
+2.7.4
+

@@ -1,0 +1,99 @@
+From 47a9897551672d166557390178fc1b95a1eedfe9 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Tue, 4 Sep 2018 01:00:01 +0000
+Subject: [PATCH 0922/1132] drm/i915/gvt: clean up the cfg space and MMIO
+ spaces
+
+When vgpu instance is destroyed, we need to clean up the MMIO and
+aperture regions, which is missing in current code.
+
+Signed-off-by: Min He <min.he@intel.com>
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Tracked-on: https://github.com/projectacrn/acrn-hypervisor/issues/1146
+---
+ drivers/gpu/drm/i915/gvt/acrngt.c    | 13 +++++++++++++
+ drivers/gpu/drm/i915/gvt/cfg_space.c |  2 ++
+ drivers/gpu/drm/i915/gvt/gvt.h       |  2 ++
+ drivers/gpu/drm/i915/gvt/handlers.c  |  2 +-
+ drivers/gpu/drm/i915/gvt/vgpu.c      |  1 +
+ 5 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/acrngt.c b/drivers/gpu/drm/i915/gvt/acrngt.c
+index abde541..20e3e67 100644
+--- a/drivers/gpu/drm/i915/gvt/acrngt.c
++++ b/drivers/gpu/drm/i915/gvt/acrngt.c
+@@ -919,6 +919,19 @@ static int acrngt_set_pvmmio(unsigned long handle, u64 start, u64 end, bool map)
+ 
+ 	} else {
+ 		mfn = acrngt_virt_to_mfn(info->vgpu->mmio.vreg);
++
++		/* scratch reg access is trapped like mmio access, 1 page */
++		rc = acrngt_map_gfn_to_mfn(handle,
++				pfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT),
++				mfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT), 1, 1);
++		if (rc) {
++			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
++					pfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT),
++					mfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT),
++					rc);
++			return rc;
++		}
++
+ 		rc = acrngt_map_gfn_to_mfn(handle, pfn, mfn, mmio_size_fn, map);
+ 		if (rc) {
+ 			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
+diff --git a/drivers/gpu/drm/i915/gvt/cfg_space.c b/drivers/gpu/drm/i915/gvt/cfg_space.c
+index 505e255..8606925 100644
+--- a/drivers/gpu/drm/i915/gvt/cfg_space.c
++++ b/drivers/gpu/drm/i915/gvt/cfg_space.c
+@@ -469,6 +469,8 @@ void intel_vgpu_reset_cfg_space(struct intel_vgpu *vgpu)
+ 				INTEL_GVT_PCI_CLASS_VGA_OTHER;
+ 
+ 	if (cmd & PCI_COMMAND_MEMORY) {
++		if (VGPU_PVMMIO(vgpu))
++			set_pvmmio(vgpu, false);
+ 		trap_gttmmio(vgpu, false);
+ 		map_aperture(vgpu, false);
+ 	}
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.h b/drivers/gpu/drm/i915/gvt/gvt.h
+index f4d9056..bbf2489 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.h
++++ b/drivers/gpu/drm/i915/gvt/gvt.h
+@@ -556,6 +556,8 @@ void intel_vgpu_init_cfg_space(struct intel_vgpu *vgpu,
+ 		bool primary);
+ void intel_vgpu_reset_cfg_space(struct intel_vgpu *vgpu);
+ 
++int set_pvmmio(struct intel_vgpu *vgpu, bool map);
++
+ int intel_vgpu_emulate_cfg_read(struct intel_vgpu *vgpu, unsigned int offset,
+ 		void *p_data, unsigned int bytes);
+ 
+diff --git a/drivers/gpu/drm/i915/gvt/handlers.c b/drivers/gpu/drm/i915/gvt/handlers.c
+index ec0886a..0fc1fb3 100644
+--- a/drivers/gpu/drm/i915/gvt/handlers.c
++++ b/drivers/gpu/drm/i915/gvt/handlers.c
+@@ -1311,7 +1311,7 @@ static int send_display_ready_uevent(struct intel_vgpu *vgpu, int ready)
+ }
+ 
+ #define INTEL_GVT_PCI_BAR_GTTMMIO 0
+-static int set_pvmmio(struct intel_vgpu *vgpu, bool map)
++int set_pvmmio(struct intel_vgpu *vgpu, bool map)
+ {
+ 	u64 start, end;
+ 	u64 val;
+diff --git a/drivers/gpu/drm/i915/gvt/vgpu.c b/drivers/gpu/drm/i915/gvt/vgpu.c
+index 9e4a0b2..511681b 100644
+--- a/drivers/gpu/drm/i915/gvt/vgpu.c
++++ b/drivers/gpu/drm/i915/gvt/vgpu.c
+@@ -300,6 +300,7 @@ void intel_gvt_destroy_vgpu(struct intel_vgpu *vgpu)
+ 	intel_vgpu_clean_gtt(vgpu);
+ 	intel_gvt_hypervisor_detach_vgpu(vgpu);
+ 	intel_vgpu_free_resource(vgpu);
++	intel_vgpu_reset_cfg_space(vgpu);
+ 	intel_vgpu_clean_mmio(vgpu);
+ 	intel_vgpu_dmabuf_cleanup(vgpu);
+ 	mutex_unlock(&vgpu->vgpu_lock);
+-- 
+2.7.4
+

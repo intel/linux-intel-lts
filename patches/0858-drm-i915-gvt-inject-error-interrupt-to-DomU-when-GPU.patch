@@ -1,0 +1,165 @@
+From dcdfa61c75b40390cbfdab645321a1042878492f Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 14 Sep 2018 16:10:18 +0800
+Subject: [PATCH 0858/1132] drm/i915/gvt: inject error interrupt to DomU when
+ GPU hang
+
+When GVT finds a request from DomU causes GPU hang, it will trigger
+an error interrupt to guest, so that DomU can trigger a virtual GPU
+reset.
+
+Change-Id: I49d9339e99ebfdbe9b158ba311655ab356562bae
+Signed-off-by: Min He <min.he@intel.com>
+Signed-off-by: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Reviewed-on:
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/interrupt.c |  7 +++++++
+ drivers/gpu/drm/i915/gvt/interrupt.h |  2 ++
+ drivers/gpu/drm/i915/gvt/scheduler.c | 27 +++++++++++++++++++++++++++
+ drivers/gpu/drm/i915/gvt/scheduler.h |  1 +
+ 4 files changed, 37 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gvt/interrupt.c b/drivers/gpu/drm/i915/gvt/interrupt.c
+index d749d46..06ce906 100644
+--- a/drivers/gpu/drm/i915/gvt/interrupt.c
++++ b/drivers/gpu/drm/i915/gvt/interrupt.c
+@@ -69,6 +69,7 @@ static const char * const irq_name[INTEL_GVT_EVENT_MAX] = {
+ 	[VCS_PAGE_DIRECTORY_FAULT] = "Video page directory faults",
+ 	[VCS_AS_CONTEXT_SWITCH] = "Video AS Context Switch Interrupt",
+ 	[VCS2_MI_USER_INTERRUPT] = "VCS2 Video CS MI USER INTERRUPT",
++	[VCS2_CMD_STREAMER_ERR] = "VCS2 Video CS error interrupt",
+ 	[VCS2_MI_FLUSH_DW] = "VCS2 Video MI FLUSH DW notify",
+ 	[VCS2_AS_CONTEXT_SWITCH] = "VCS2 Context Switch Interrupt",
+ 
+@@ -524,21 +525,26 @@ static void gen8_init_irq(
+ 
+ 	/* GEN8 interrupt GT0 events */
+ 	SET_BIT_INFO(irq, 0, RCS_MI_USER_INTERRUPT, INTEL_GVT_IRQ_INFO_GT0);
++	SET_BIT_INFO(irq, 3, RCS_CMD_STREAMER_ERR, INTEL_GVT_IRQ_INFO_GT0);
+ 	SET_BIT_INFO(irq, 4, RCS_PIPE_CONTROL, INTEL_GVT_IRQ_INFO_GT0);
+ 	SET_BIT_INFO(irq, 8, RCS_AS_CONTEXT_SWITCH, INTEL_GVT_IRQ_INFO_GT0);
+ 
+ 	SET_BIT_INFO(irq, 16, BCS_MI_USER_INTERRUPT, INTEL_GVT_IRQ_INFO_GT0);
++	SET_BIT_INFO(irq, 19, BCS_CMD_STREAMER_ERR, INTEL_GVT_IRQ_INFO_GT0);
+ 	SET_BIT_INFO(irq, 20, BCS_MI_FLUSH_DW, INTEL_GVT_IRQ_INFO_GT0);
+ 	SET_BIT_INFO(irq, 24, BCS_AS_CONTEXT_SWITCH, INTEL_GVT_IRQ_INFO_GT0);
+ 
+ 	/* GEN8 interrupt GT1 events */
+ 	SET_BIT_INFO(irq, 0, VCS_MI_USER_INTERRUPT, INTEL_GVT_IRQ_INFO_GT1);
++	SET_BIT_INFO(irq, 3, VCS_CMD_STREAMER_ERR, INTEL_GVT_IRQ_INFO_GT1);
+ 	SET_BIT_INFO(irq, 4, VCS_MI_FLUSH_DW, INTEL_GVT_IRQ_INFO_GT1);
+ 	SET_BIT_INFO(irq, 8, VCS_AS_CONTEXT_SWITCH, INTEL_GVT_IRQ_INFO_GT1);
+ 
+ 	if (HAS_BSD2(gvt->dev_priv)) {
+ 		SET_BIT_INFO(irq, 16, VCS2_MI_USER_INTERRUPT,
+ 			INTEL_GVT_IRQ_INFO_GT1);
++		SET_BIT_INFO(irq, 19, VCS2_CMD_STREAMER_ERR,
++				INTEL_GVT_IRQ_INFO_GT1);
+ 		SET_BIT_INFO(irq, 20, VCS2_MI_FLUSH_DW,
+ 			INTEL_GVT_IRQ_INFO_GT1);
+ 		SET_BIT_INFO(irq, 24, VCS2_AS_CONTEXT_SWITCH,
+@@ -547,6 +553,7 @@ static void gen8_init_irq(
+ 
+ 	/* GEN8 interrupt GT3 events */
+ 	SET_BIT_INFO(irq, 0, VECS_MI_USER_INTERRUPT, INTEL_GVT_IRQ_INFO_GT3);
++	SET_BIT_INFO(irq, 3, VECS_CMD_STREAMER_ERR, INTEL_GVT_IRQ_INFO_GT3);
+ 	SET_BIT_INFO(irq, 4, VECS_MI_FLUSH_DW, INTEL_GVT_IRQ_INFO_GT3);
+ 	SET_BIT_INFO(irq, 8, VECS_AS_CONTEXT_SWITCH, INTEL_GVT_IRQ_INFO_GT3);
+ 
+diff --git a/drivers/gpu/drm/i915/gvt/interrupt.h b/drivers/gpu/drm/i915/gvt/interrupt.h
+index f7d7ade..6ec761a 100644
+--- a/drivers/gpu/drm/i915/gvt/interrupt.h
++++ b/drivers/gpu/drm/i915/gvt/interrupt.h
+@@ -53,6 +53,7 @@ enum intel_gvt_event_type {
+ 	VCS_AS_CONTEXT_SWITCH,
+ 
+ 	VCS2_MI_USER_INTERRUPT,
++	VCS2_CMD_STREAMER_ERR,
+ 	VCS2_MI_FLUSH_DW,
+ 	VCS2_AS_CONTEXT_SWITCH,
+ 
+@@ -64,6 +65,7 @@ enum intel_gvt_event_type {
+ 	BCS_AS_CONTEXT_SWITCH,
+ 
+ 	VECS_MI_USER_INTERRUPT,
++	VECS_CMD_STREAMER_ERR,
+ 	VECS_MI_FLUSH_DW,
+ 	VECS_AS_CONTEXT_SWITCH,
+ 
+diff --git a/drivers/gpu/drm/i915/gvt/scheduler.c b/drivers/gpu/drm/i915/gvt/scheduler.c
+index 7243324..13f8313 100644
+--- a/drivers/gpu/drm/i915/gvt/scheduler.c
++++ b/drivers/gpu/drm/i915/gvt/scheduler.c
+@@ -682,6 +682,7 @@ static int dispatch_workload(struct intel_vgpu_workload *workload)
+ 
+ 	ret = prepare_workload(workload);
+ 
++	workload->guilty_count = atomic_read(&workload->req->gem_context->guilty_count);
+ out:
+ 	if (ret)
+ 		workload->status = ret;
+@@ -898,6 +899,9 @@ static void complete_current_workload(struct intel_gvt *gvt, int ring_id)
+ 
+ 	list_del_init(&workload->list);
+ 
++	if (workload->status == -EIO)
++		intel_vgpu_reset_submission(vgpu, 1 << ring_id);
++
+ 	if (!workload->status) {
+ 		release_shadow_batch_buffer(workload);
+ 		if(gvt_shadow_wa_ctx)
+@@ -933,6 +937,18 @@ static void complete_current_workload(struct intel_gvt *gvt, int ring_id)
+ 	mutex_unlock(&vgpu->vgpu_lock);
+ }
+ 
++static void inject_error_cs_irq(struct intel_vgpu *vgpu, int ring_id)
++{
++	enum intel_gvt_event_type events[] = {
++		RCS_CMD_STREAMER_ERR,
++		BCS_CMD_STREAMER_ERR,
++		VCS_CMD_STREAMER_ERR,
++		VCS2_CMD_STREAMER_ERR,
++		VECS_CMD_STREAMER_ERR,
++	};
++	intel_vgpu_trigger_virtual_event(vgpu, events[ring_id]);
++}
++
+ struct workload_thread_param {
+ 	struct intel_gvt *gvt;
+ 	int ring_id;
+@@ -1002,6 +1018,17 @@ static int workload_thread(void *priv)
+ 		if (lret >= 0 && workload->status == -EINPROGRESS)
+ 			workload->status = 0;
+ 
++		/*
++		 * increased guilty_count means that this request triggerred
++		 * a GPU reset, so we need to notify the guest about the
++		 * hang.
++		 */
++		if (workload->guilty_count <
++				atomic_read(&workload->req->gem_context->guilty_count)) {
++			workload->status = -EIO;
++			inject_error_cs_irq(workload->vgpu, ring_id);
++		}
++
+ complete:
+ 		gvt_dbg_sched("will complete workload %p, status: %d\n",
+ 				workload, workload->status);
+diff --git a/drivers/gpu/drm/i915/gvt/scheduler.h b/drivers/gpu/drm/i915/gvt/scheduler.h
+index ca5529d..043c2ff 100644
+--- a/drivers/gpu/drm/i915/gvt/scheduler.h
++++ b/drivers/gpu/drm/i915/gvt/scheduler.h
+@@ -84,6 +84,7 @@ struct intel_vgpu_workload {
+ 	/* if this workload has been dispatched to i915? */
+ 	bool dispatched;
+ 	int status;
++	unsigned int guilty_count;
+ 
+ 	struct intel_vgpu_mm *shadow_mm;
+ 
+-- 
+2.7.4
+

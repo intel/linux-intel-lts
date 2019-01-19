@@ -1,0 +1,36 @@
+From da18141cdcae7f6965a6d4d70b0fc0d8e95edd6e Mon Sep 17 00:00:00 2001
+From: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Date: Wed, 6 Sep 2017 14:04:56 +0530
+Subject: [PATCH 0642/1132] ASoC: Intel: Skylake: Check for word_length_buffer
+ allcation failure
+
+word_length_buffer buffer allocation can fail.
+Make sure to return -ENOMEM on word_length_buffer allocation failure
+
+Change-Id: Idf31300cadd6f014f729cae09e981b4459694dd9
+Signed-off-by: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Reviewed-on:
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: audio_build
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index c99b2c9..813cd73 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -638,6 +638,8 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 			dpn_cap->word_length_buffer =
+ 					kzalloc(((sizeof(unsigned int)) *
+ 					dpn_cap->num_word_length), GFP_KERNEL);
++			if (!dpn_cap->word_length_buffer)
++				return -ENOMEM;
+ 			for (k = 0; k < dpn_cap->num_word_length; k++)
+ 				dpn_cap->word_length_buffer[k] = wl = wl + 8;
+ 			wl = 0;
+-- 
+2.7.4
+

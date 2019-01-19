@@ -1,0 +1,50 @@
+From 55d349d36090494f5f39b92a018ea67d8ddd67a5 Mon Sep 17 00:00:00 2001
+From: Sainath Grandhi <sainath.grandhi@intel.com>
+Date: Thu, 13 Sep 2018 16:14:53 +0800
+Subject: [PATCH 0823/1132] Adding kernel parameter for forcing xapic in
+ physical mode
+
+This patch does the following
+Adds a kernel boot parameter xapic_phys to force xAPIC to work in
+physical mode if the boot kernel parameter says so. This is needed for
+VMs running in ACRN partition mode
+
+Tracked-on: projectacrn/acrn-hypervisor#1163
+Signed-off-by: Sainath Grandhi <sainath.grandhi@intel.com>
+---
+ arch/x86/kernel/apic/apic_flat_64.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/arch/x86/kernel/apic/apic_flat_64.c b/arch/x86/kernel/apic/apic_flat_64.c
+index e84c9eb..9ba0ac0 100644
+--- a/arch/x86/kernel/apic/apic_flat_64.c
++++ b/arch/x86/kernel/apic/apic_flat_64.c
+@@ -29,6 +29,15 @@ static struct apic apic_flat;
+ struct apic *apic __ro_after_init = &apic_flat;
+ EXPORT_SYMBOL_GPL(apic);
+ 
++int xapic_phys = 0;
++
++static int set_xapic_phys_mode(char *arg)
++{
++	xapic_phys = 1;
++	return 0;
++}
++early_param("xapic_phys", set_xapic_phys_mode);
++
+ static int flat_acpi_madt_oem_check(char *oem_id, char *oem_table_id)
+ {
+ 	return 1;
+@@ -236,6 +245,9 @@ static void physflat_send_IPI_all(int vector)
+ 
+ static int physflat_probe(void)
+ {
++	if (xapic_phys == 1)
++		return 1;
++
+ 	if (apic == &apic_physflat || num_possible_cpus() > 8 ||
+ 	    jailhouse_paravirt())
+ 		return 1;
+-- 
+2.7.4
+

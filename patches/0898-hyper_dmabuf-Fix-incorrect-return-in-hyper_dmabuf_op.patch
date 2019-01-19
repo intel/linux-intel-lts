@@ -1,0 +1,41 @@
+From 81e126845f03d25384e684cbedbe0aa2f5d6cde6 Mon Sep 17 00:00:00 2001
+From: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Date: Tue, 31 Jul 2018 14:39:38 -0700
+Subject: [PATCH 0898/1132] hyper_dmabuf: Fix incorrect return in
+ hyper_dmabuf_ops_end_cpu_access()
+
+In hyper_dmabuf_ops_end_cpu_access(), currently we don't check for
+return value of sync_request() function and always return zero. This
+is incorrect. This patch fixes this issue.
+
+Signed-off-by: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
+index e2bdab7..a8207b4 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
+@@ -249,16 +249,13 @@ static int hyper_dmabuf_ops_end_cpu_access(struct dma_buf *dmabuf,
+ 					   enum dma_data_direction dir)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!dmabuf->priv)
+ 		return -EINVAL;
+ 
+ 	imported = (struct imported_sgt_info *)dmabuf->priv;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_END_CPU_ACCESS);
+-
+-	return 0;
++	return sync_request(imported->hid, HYPER_DMABUF_OPS_END_CPU_ACCESS);
+ }
+ 
+ static void *hyper_dmabuf_ops_kmap_atomic(struct dma_buf *dmabuf,
+-- 
+2.7.4
+

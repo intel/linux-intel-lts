@@ -1,0 +1,57 @@
+From 3b501b127a162e5fe2d4df9d60db0aede5608553 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Thu, 4 Oct 2018 12:17:27 +0200
+Subject: [PATCH 0724/1132] ASoC: Intel: Skylake: Restore static SSP5 BE
+ declaration.
+
+Skylake driver declares SSP Pin BEs dynamically, based on
+NHLT table data. Number of endpoints extracted from said table,
+present for gp-mrb, differs from one expected by topology.
+
+In consequence, SSP5 Pin cpu dai is not being registered, thus
+routing for TestPin FE fails. Static SSP5 Pin BE declaration
+is restored in order to make TestPin functional again.
+
+Change-Id: I6180117e4bf37c3fe09068ababf855e9b1d2902d
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index fe4cd70..2aedbc2 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1178,6 +1178,29 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ 
+ /* BE cpu dais and compress dais*/
+ static struct snd_soc_dai_driver skl_platform_dai[] = {
++#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_TDF8532_MACH) || \
++	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
++{
++	.name = "SSP5 Pin",
++	.ops = &skl_be_ssp_dai_ops,
++	.playback = {
++		.stream_name = "ssp5 Tx",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			SNDRV_PCM_FMTBIT_S32_LE,
++	},
++	.capture = {
++		.stream_name = "ssp5 Rx",
++		.channels_min = HDA_MONO,
++		.channels_max = HDA_8_CH,
++		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++			SNDRV_PCM_FMTBIT_S32_LE,
++	},
++},
++#endif
+ {
+ 	.name = "iDisp1 Pin",
+ 	.ops = &skl_link_dai_ops,
+-- 
+2.7.4
+

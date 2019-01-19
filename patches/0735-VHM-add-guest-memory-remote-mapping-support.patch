@@ -1,0 +1,127 @@
+From f78f3982dd38f432bb9e455526720a08df0a112b Mon Sep 17 00:00:00 2001
+From: Jason Zeng <jason.zeng@intel.com>
+Date: Fri, 31 Aug 2018 10:58:55 +0800
+Subject: [PATCH 0735/1132] VHM: add guest memory remote mapping support
+
+There is use case which needs do data operation based on guest physical
+address. This patch added such support to do remote mapping for guest
+physical memory.
+
+Change-Id: I37755ddcf742129d272f535e99a070965e01c01e
+Tracked-On: 218445
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: liang ding <liang.ding@intel.com>
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/vhm/vhm_mm.c            | 79 +++++++++++++++++++++++++++++++++++++++++
+ include/linux/vhm/acrn_vhm_mm.h |  2 ++
+ 2 files changed, 81 insertions(+)
+
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index 9dd0b94..ea7604b 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -362,3 +362,82 @@ int vhm_dev_mmap(struct file *file, struct vm_area_struct *vma)
+ 	mutex_unlock(&vm->seg_lock);
+ 	return -EINVAL;
+ }
++
++static void *do_map_guest_phys(struct vhm_vm *vm, u64 guest_phys, size_t size)
++{
++	struct guest_memseg *seg;
++
++	mutex_lock(&vm->seg_lock);
++	list_for_each_entry(seg, &vm->memseg_list, list) {
++		if (seg->segid != VM_SYSMEM)
++			continue;
++
++		if (seg->gpa > guest_phys ||
++		    guest_phys >= seg->gpa + seg->len)
++			continue;
++
++		if (guest_phys + size > seg->gpa + seg->len) {
++			mutex_unlock(&vm->seg_lock);
++			return NULL;
++		}
++
++		mutex_unlock(&vm->seg_lock);
++		return phys_to_virt(seg->base + guest_phys - seg->gpa);
++	}
++	mutex_unlock(&vm->seg_lock);
++	return NULL;
++}
++
++void *map_guest_phys(unsigned long vmid, u64 guest_phys, size_t size)
++{
++	struct vhm_vm *vm;
++	void *ret;
++
++	vm = find_get_vm(vmid);
++	if (vm == NULL)
++		return NULL;
++
++	ret = do_map_guest_phys(vm, guest_phys, size);
++
++	put_vm(vm);
++
++	return ret;
++}
++EXPORT_SYMBOL(map_guest_phys);
++
++static int do_unmap_guest_phys(struct vhm_vm *vm, u64 guest_phys)
++{
++	struct guest_memseg *seg;
++
++	mutex_lock(&vm->seg_lock);
++	list_for_each_entry(seg, &vm->memseg_list, list) {
++		if (seg->segid != VM_SYSMEM)
++			continue;
++
++		if (seg->gpa <= guest_phys &&
++			guest_phys < seg->gpa + seg->len) {
++			mutex_unlock(&vm->seg_lock);
++			return 0;
++		}
++	}
++	mutex_unlock(&vm->seg_lock);
++
++	return -ESRCH;
++}
++
++int unmap_guest_phys(unsigned long vmid, u64 guest_phys)
++{
++	struct vhm_vm *vm;
++	int ret;
++
++	vm = find_get_vm(vmid);
++	if (vm == NULL) {
++		pr_warn("vm_list corrupted\n");
++		return -ESRCH;
++	}
++
++	ret = do_unmap_guest_phys(vm, guest_phys);
++	put_vm(vm);
++	return ret;
++}
++EXPORT_SYMBOL(unmap_guest_phys);
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 325f2b2..e701254 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -70,6 +70,8 @@
+ #define MMU_MEM_ATTR_ALL_WB	0x00000047
+ #define MMU_MEM_ATTR_ALL_WC	0x00000207
+ 
++void *map_guest_phys(unsigned long vmid, u64 uos_phys, size_t size);
++int unmap_guest_phys(unsigned long vmid, u64 uos_phys);
+ int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len, int prot);
+ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-- 
+2.7.4
+

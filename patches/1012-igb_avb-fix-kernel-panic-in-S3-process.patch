@@ -1,0 +1,80 @@
+From da74e74657b8271ccc1200e520c7c412fad83e64 Mon Sep 17 00:00:00 2001
+From: Feng Tang <feng.tang@intel.com>
+Date: Thu, 15 Nov 2018 09:45:37 +0800
+Subject: [PATCH 1012/1132] igb_avb: fix kernel panic in S3 process
+
+We met igb_avb kernel panic during S3 suspend/resume process, the
+panic call stack is:
+
+[61155.772446] BUG: unable to handle kernel paging request at 0000000000003818
+[61155.772448] PGD 0 P4D 0
+[61155.772453] Oops: 0002 [#1] PREEMPT SMP
+[61155.772456] CPU: 2 PID: 20864 Comm: kworker/u8:7 Tainted: G     U  WC        4.19.0-18.iot-lts2018-sos #1
+[61155.772462] Workqueue: events_unbound async_run_entry_fn
+[61155.772473] RIP: 0010:igb_configure_tx_ring+0x134/0x220 [igb_avb]
+[61155.772475] Code: 10 38 00 00 48 98 48 01 c1 48 63 c2 49 89 4d 30 49 8b b4 24 58 04 00 00 48 85 f6 74 0b 48 01 f0 31 d2 89 10 49 8b 4d 30 31 c0 <89> 01 41 8b 84 24 6c 05 00 00 b9 14 01 04 02 83 f8 05 74 0e 83 f8
+[61155.772476] RSP: 0000:ffff88ffb7f2bd38 EFLAGS: 00010246
+[61155.772478] RAX: 0000000000000000 RBX: 0000000000000000 RCX: 0000000000003818
+[61155.772479] RDX: 0000000000003810 RSI: 0000000000000000 RDI: 00000000ffffffff
+[61155.772480] RBP: 0000000000000000 R08: 000000000000007f R09: 000000000000007f
+[61155.772481] R10: 0000000000005c80 R11: 0000000000000000 R12: ffff88ffe849c900
+[61155.772483] R13: ffff88ffe89de240 R14: 000000027c01c000 R15: ffffffff8b564e73
+[61155.772485] FS:  0000000000000000(0000) GS:ffff88fff3b00000(0000) knlGS:0000000000000000
+[61155.772486] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[61155.772487] CR2: 0000000000003818 CR3: 000000022a813000 CR4: 00000000003406e0
+[61155.772488] Call Trace:
+[61155.772502]  igb_configure+0x1a1/0x450 [igb_avb]
+[61155.772510]  __igb_open+0x6f/0x540 [igb_avb]
+[61155.772525]  igb_resume+0xca/0x100 [igb_avb]
+[61155.772533]  dpm_run_callback+0x59/0x180
+[61155.772536]  device_resume+0xc0/0x2a0
+[61155.772538]  async_resume+0x19/0x30
+[61155.772540]  async_run_entry_fn+0x39/0x160
+[61155.772543]  process_one_work+0x19e/0x3d0
+[61155.772546]  worker_thread+0x3d/0x390
+[61155.772550]  kthread+0x11e/0x140
+[61155.772557]  ret_from_fork+0x3a/0x50
+
+The root cause is there is register access after power cycle, specifically
+from the watchdog timer/task.
+
+Fix it by cancelling the watchdog timer/task in suspend hook, and re-enable
+it in resume.
+
+Note: Why that race condition was still happening is something we are not
+completely sure yet, and will still monitoring in the future test.
+
+Change-Id: Id3001fb6bef905aaac2024968707f518eb28a74b
+Tracked-On: PKT-1578
+Signed-off-by: Feng Tang <feng.tang@intel.com>
+---
+ drivers/staging/igb_avb/igb_main.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/staging/igb_avb/igb_main.c b/drivers/staging/igb_avb/igb_main.c
+index ef1b3ad..84ec739 100644
+--- a/drivers/staging/igb_avb/igb_main.c
++++ b/drivers/staging/igb_avb/igb_main.c
+@@ -9259,6 +9259,10 @@ static int __igb_shutdown(struct pci_dev *pdev, bool *enable_wake,
+ 	int retval = 0;
+ #endif
+ 
++	del_timer_sync(&adapter->watchdog_timer);
++	del_timer_sync(&adapter->phy_info_timer);
++	cancel_work_sync(&adapter->watchdog_task);
++
+ 	netif_device_detach(netdev);
+ 
+ 	status = E1000_READ_REG(hw, E1000_STATUS);
+@@ -9394,6 +9398,8 @@ static int igb_resume(struct pci_dev *pdev)
+ 
+ 	netif_device_attach(netdev);
+ 
++	timer_setup(&adapter->watchdog_timer, &igb_watchdog, 0);
++	timer_setup(&adapter->phy_info_timer, &igb_update_phy_info, 0);
+ 	return 0;
+ }
+ 
+-- 
+2.7.4
+

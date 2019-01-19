@@ -1,0 +1,402 @@
+From 3af0acec144d23a3458b480997e3c05a950095a6 Mon Sep 17 00:00:00 2001
+From: Binbin Wu <binbin.wu@intel.com>
+Date: Fri, 31 Aug 2018 10:58:55 +0800
+Subject: [PATCH 0740/1132] VHM: add passthrough device support
+
+add following ioctl in vhm_dev to support device passthrough
+- assign, deassign pass-through device
+   ACRN_ASSIGN_PTDEV
+   ACRN_DEASSIGN_PTDEV
+- set, reset pass-through device intr info
+   ACRN_SET_PTDEV_INTR_INFO
+   ACRN_RESET_PTDEV_INTR_INFO
+reuse exist ioctl to support device passthrough
+- BAR mapping
+   ACRN_IOC_SET_MEMSEG
+- MSI support
+   ACRN_VM_PCI_MSIX_REMAP
+
+Change-Id: I94bbee48e8de1faf70804061c65c2e2855e6bf0f
+Tracked-On: 218445
+Signed-off-by: Gao, Shiqing <shiqing.gao@intel.com>
+Signed-off-by: Binbin Wu <binbin.wu@intel.com>
+Signed-off-by: Edwin Zhai <edwin.zhai@intel.com>
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         |  25 ++++++
+ drivers/vhm/vhm_hypercall.c        | 175 +++++++++++++++++++++++++++++++++++++
+ include/linux/vhm/acrn_common.h    |  43 +++++++++
+ include/linux/vhm/acrn_hv_defs.h   |   8 ++
+ include/linux/vhm/vhm_hypercall.h  |   8 ++
+ include/linux/vhm/vhm_ioctl_defs.h |   9 ++
+ 6 files changed, 268 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 97f7c46..97c20d8 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -267,6 +267,31 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
++	case IC_ASSIGN_PTDEV: {
++		ret = vhm_assign_ptdev(vm, ioctl_param);
++		break;
++	}
++
++	case IC_DEASSIGN_PTDEV: {
++		ret = vhm_deassign_ptdev(vm, ioctl_param);
++		break;
++	}
++
++	case IC_SET_PTDEV_INTR_INFO: {
++		ret = vhm_set_ptdev_intr_info(vm, ioctl_param);
++		break;
++	}
++
++	case IC_RESET_PTDEV_INTR_INFO: {
++		ret = vhm_reset_ptdev_intr_info(vm, ioctl_param);
++		break;
++	}
++
++	case IC_VM_PCI_MSIX_REMAP: {
++		ret = vhm_remap_pci_msix(vm, ioctl_param);
++		break;
++	}
++
+ 	default:
+ 		pr_warn("Unknown IOCTL 0x%x\n", ioctl_num);
+ 		ret = 0;
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index 384b86e..0f3f6c1 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -50,14 +50,30 @@
+  */
+ #include <linux/uaccess.h>
+ #include <linux/io.h>
++#include <linux/pci.h>
+ #include <linux/vhm/acrn_hv_defs.h>
+ #include <linux/vhm/vhm_hypercall.h>
+ 
++/* max num of pass-through devices using msix */
++#define MAX_ENTRY 3
++
++struct table_iomems {
++	/* device's virtual BDF */
++	unsigned short virt_bdf;
++	/* virtual base address of MSI-X table in memory space after ioremap */
++	unsigned long mmap_addr;
++} tables[MAX_ENTRY];
++
+ inline long hcall_inject_msi(unsigned long vmid, unsigned long msi)
+ {
+ 	return acrn_hypercall2(HC_INJECT_MSI, vmid, msi);
+ }
+ 
++inline long hcall_remap_pci_msix(unsigned long vmid, unsigned long msix)
++{
++	return acrn_hypercall2(HC_VM_PCI_MSIX_REMAP, vmid, msix);
++}
++
+ inline long hcall_set_ioreq_buffer(unsigned long vmid, unsigned long buffer)
+ {
+ 	return acrn_hypercall2(HC_SET_IOREQ_BUFFER, vmid, buffer);
+@@ -211,3 +227,162 @@ inline long vhm_pulse_irqline(struct vhm_vm *vm, unsigned long ioctl_param)
+ 
+ 	return ret;
+ }
++
++inline long vhm_assign_ptdev(struct vhm_vm *vm, unsigned long ioctl_param)
++{
++	long ret = 0;
++	uint16_t bdf;
++
++	if (copy_from_user(&bdf,
++				(void *)ioctl_param, sizeof(uint16_t)))
++		return -EFAULT;
++
++	ret = acrn_hypercall2(HC_ASSIGN_PTDEV, vm->vmid,
++			virt_to_phys(&bdf));
++	if (ret < 0) {
++		pr_err("vhm: failed to assign ptdev!\n");
++		return -EFAULT;
++	}
++
++	return ret;
++}
++
++inline long vhm_deassign_ptdev(struct vhm_vm *vm, unsigned long ioctl_param)
++{
++	long ret = 0;
++	uint16_t bdf;
++
++	if (copy_from_user(&bdf,
++				(void *)ioctl_param, sizeof(uint16_t)))
++		return -EFAULT;
++
++	ret = acrn_hypercall2(HC_DEASSIGN_PTDEV, vm->vmid,
++			virt_to_phys(&bdf));
++	if (ret < 0) {
++		pr_err("vhm: failed to deassign ptdev!\n");
++		return -EFAULT;
++	}
++
++	return ret;
++}
++
++inline long vhm_set_ptdev_intr_info(struct vhm_vm *vm,
++		unsigned long ioctl_param)
++{
++	long ret = 0;
++	struct acrn_ptdev_irq pt_irq;
++	int i;
++
++	if (copy_from_user(&pt_irq,
++				(void *)ioctl_param, sizeof(pt_irq)))
++		return -EFAULT;
++
++	ret = acrn_hypercall2(HC_SET_PTDEV_INTR_INFO, vm->vmid,
++			virt_to_phys(&pt_irq));
++	if (ret < 0) {
++		pr_err("vhm: failed to set intr info for ptdev!\n");
++		return -EFAULT;
++	}
++
++	if (pt_irq.msix.table_paddr) {
++		for (i = 0; i < MAX_ENTRY; i++) {
++			if (tables[i].virt_bdf)
++				continue;
++
++			tables[i].virt_bdf = pt_irq.virt_bdf;
++			tables[i].mmap_addr = (unsigned long)
++				ioremap_nocache(pt_irq.msix.table_paddr,
++						pt_irq.msix.table_size);
++			break;
++		}
++	}
++
++	return ret;
++}
++
++inline long vhm_reset_ptdev_intr_info(struct vhm_vm *vm,
++		unsigned long ioctl_param)
++{
++	long ret = 0;
++	struct acrn_ptdev_irq pt_irq;
++	int i;
++
++	if (copy_from_user(&pt_irq,
++				(void *)ioctl_param, sizeof(pt_irq)))
++		return -EFAULT;
++
++	ret = acrn_hypercall2(HC_RESET_PTDEV_INTR_INFO, vm->vmid,
++			virt_to_phys(&pt_irq));
++	if (ret < 0) {
++		pr_err("vhm: failed to reset intr info for ptdev!\n");
++		return -EFAULT;
++	}
++
++	if (pt_irq.msix.table_paddr) {
++		for (i = 0; i < MAX_ENTRY; i++) {
++			if (tables[i].virt_bdf)
++				continue;
++
++			tables[i].virt_bdf = pt_irq.virt_bdf;
++			tables[i].mmap_addr = (unsigned long)
++				ioremap_nocache(pt_irq.msix.table_paddr,
++						pt_irq.msix.table_size);
++			break;
++		}
++	}
++
++	return ret;
++}
++
++inline long vhm_remap_pci_msix(struct vhm_vm *vm, unsigned long ioctl_param)
++{
++	long ret = 0;
++	struct acrn_vm_pci_msix_remap msix_remap;
++
++	if (copy_from_user(&msix_remap,
++				(void *)ioctl_param, sizeof(msix_remap)))
++		return -EFAULT;
++
++	ret = acrn_hypercall2(HC_VM_PCI_MSIX_REMAP, vm->vmid,
++			virt_to_phys(&msix_remap));
++
++	if (copy_to_user((void *)ioctl_param,
++				&msix_remap, sizeof(msix_remap)))
++		return -EFAULT;
++
++	if (msix_remap.msix) {
++		void __iomem *msix_entry;
++		int i;
++
++		for (i = 0; i < MAX_ENTRY; i++) {
++			if (tables[i].virt_bdf == msix_remap.virt_bdf)
++				break;
++		}
++
++		if (!tables[i].mmap_addr)
++			return -EFAULT;
++
++		msix_entry = (void *)(tables[i].mmap_addr +
++			msix_remap.msix_entry_index *
++			PCI_MSIX_ENTRY_SIZE);
++
++		/* mask the entry when setup */
++		writel(PCI_MSIX_ENTRY_CTRL_MASKBIT,
++				msix_entry + PCI_MSIX_ENTRY_VECTOR_CTRL);
++
++		/* setup the msi entry */
++		writel((uint32_t)msix_remap.msi_addr,
++				msix_entry + PCI_MSIX_ENTRY_LOWER_ADDR);
++		writel((uint32_t)(msix_remap.msi_addr >> 32),
++				msix_entry + PCI_MSIX_ENTRY_UPPER_ADDR);
++		writel(msix_remap.msi_data,
++				msix_entry + PCI_MSIX_ENTRY_DATA);
++
++		/* unmask the entry */
++		writel(msix_remap.vector_ctl &
++				PCI_MSIX_ENTRY_CTRL_MASKBIT,
++				msix_entry + PCI_MSIX_ENTRY_VECTOR_CTRL);
++	}
++
++	return ret;
++}
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index f0567aa..5723e5e 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -99,6 +99,15 @@ enum request_direction {
+ 	DIRECTION_MAX,
+ } __attribute__((aligned(4)));
+ 
++/*
++ * IRQ type for ptdev
++ */
++enum irq_type {
++	IRQ_INTX,
++	IRQ_MSI,
++	IRQ_MSIX,
++} __attribute__((aligned(4)));
++
+ struct msr_request {
+ 	enum request_direction direction;
+ 	long index;
+@@ -216,4 +225,38 @@ struct vm_gpa2hpa {
+ 	unsigned long hpa;		/* OUT: -1 means invalid gpa */
+ } __attribute__((aligned(8)));
+ 
++struct acrn_ptdev_irq {
++	enum irq_type type;
++	unsigned short virt_bdf;	/* IN: Device virtual BDF# */
++	unsigned short phys_bdf;	/* IN: Device physical BDF# */
++	union {
++		struct {
++			int virt_pin;	/* IN: virtual IOAPIC pin */
++			int phys_pin;	/* IN: physical IOAPIC pin */
++			bool pic_pin;	/* IN: pin from PIC? */
++		} intx;
++		struct {
++			int vector_cnt;	/* IN: vector count of MSI/MSIX */
++
++			/* IN: physcial address of MSI-X table */
++			unsigned long table_paddr;
++
++			/* IN: size of MSI-X table (round up to 4K) */
++			int table_size;
++		} msix;
++	};
++} __attribute__((aligned(8)));
++
++struct acrn_vm_pci_msix_remap {
++	unsigned short virt_bdf;	/* IN: Device virtual BDF# */
++	unsigned short phys_bdf;	/* IN: Device physical BDF# */
++	unsigned short msi_ctl;		/* IN: PCI MSI/x cap control data */
++	unsigned long msi_addr;		/* IN/OUT: msi address to fix */
++	unsigned int msi_data;		/* IN/OUT: msi data to fix */
++	int msix;			/* IN: 0 - MSI, 1 - MSI-X */
++	int msix_entry_index;		/* IN: MSI-X the entry table index */
++	/* IN: Vector Control for MSI-X Entry, field defined in MSIX spec */
++	unsigned int vector_ctl;
++} __attribute__((aligned(8)));
++
+ #endif /* ACRN_COMMON_H */
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index d527a8f..3e43da5 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -92,6 +92,14 @@
+ #define HC_VM_SET_MEMMAP            _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x00)
+ #define HC_VM_GPA2HPA               _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x01)
+ 
++/* PCI assignment*/
++#define HC_ID_PCI_BASE              0x400UL
++#define HC_ASSIGN_PTDEV             _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x00)
++#define HC_DEASSIGN_PTDEV           _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x01)
++#define HC_VM_PCI_MSIX_REMAP        _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x02)
++#define HC_SET_PTDEV_INTR_INFO      _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x03)
++#define HC_RESET_PTDEV_INTR_INFO    _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x04)
++
+ #define ACRN_DOM0_VMID (0UL)
+ #define ACRN_INVALID_VMID (-1UL)
+ #define ACRN_INVALID_HPA (-1UL)
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index f1ed9a0..ce579e3 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -140,6 +140,7 @@ static inline long acrn_hypercall4(unsigned long hyp_id, unsigned long param1,
+ }
+ 
+ inline long hcall_inject_msi(unsigned long vmid, unsigned long msi);
++inline long hcall_remap_pci_msix(unsigned long vmid, unsigned long msix);
+ inline long hcall_set_ioreq_buffer(unsigned long vmid, unsigned long buffer);
+ inline long hcall_notify_req_finish(unsigned long vmid,
+ 		unsigned long vcpu_mask);
+@@ -153,5 +154,12 @@ inline long vhm_query_vm_state(struct vhm_vm *vm);
+ inline long vhm_assert_irqline(struct vhm_vm *vm, unsigned long ioctl_param);
+ inline long vhm_deassert_irqline(struct vhm_vm *vm, unsigned long ioctl_param);
+ inline long vhm_pulse_irqline(struct vhm_vm *vm, unsigned long ioctl_param);
++inline long vhm_assign_ptdev(struct vhm_vm *vm, unsigned long ioctl_param);
++inline long vhm_deassign_ptdev(struct vhm_vm *vm, unsigned long ioctl_param);
++inline long vhm_set_ptdev_intr_info(struct vhm_vm *vm,
++		unsigned long ioctl_param);
++inline long vhm_reset_ptdev_intr_info(struct vhm_vm *vm,
++		unsigned long ioctl_param);
++inline long vhm_remap_pci_msix(struct vhm_vm *vm, unsigned long ioctl_param);
+ 
+ #endif /* VHM_HYPERCALL_H */
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 3be6aca..8d03d38 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -79,11 +79,20 @@
+ #define IC_ATTACH_IOREQ_CLIENT          _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x03)
+ #define IC_DESTROY_IOREQ_CLIENT         _IC_ID(IC_ID, IC_ID_IOREQ_BASE + 0x04)
+ 
++
+ /* Guest memory management */
+ #define IC_ID_MEM_BASE                  0x300UL
+ #define IC_ALLOC_MEMSEG                 _IC_ID(IC_ID, IC_ID_MEM_BASE + 0x00)
+ #define IC_SET_MEMSEG                   _IC_ID(IC_ID, IC_ID_MEM_BASE + 0x01)
+ 
++/* PCI assignment*/
++#define IC_ID_PCI_BASE                  0x400UL
++#define IC_ASSIGN_PTDEV                _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x00)
++#define IC_DEASSIGN_PTDEV              _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x01)
++#define IC_VM_PCI_MSIX_REMAP           _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x02)
++#define IC_SET_PTDEV_INTR_INFO         _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x03)
++#define IC_RESET_PTDEV_INTR_INFO       _IC_ID(IC_ID, IC_ID_PCI_BASE + 0x04)
++
+ #define SPECNAMELEN 63
+ 
+ enum {
+-- 
+2.7.4
+

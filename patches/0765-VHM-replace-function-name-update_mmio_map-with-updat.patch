@@ -1,0 +1,48 @@
+From 113bbb1c46d8c23fb1ffdc1e3069bf9128949612 Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:58 +0800
+Subject: [PATCH 0765/1132] VHM: replace function name update_mmio_map with
+ update_memmap_attr
+
+Change-Id: Ia4e4c621d4a8bc6738042cede93b9b145af291f9
+Tracked-On: 212688
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/vhm/vhm_mm.c            | 4 ++--
+ include/linux/vhm/acrn_vhm_mm.h | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index b475aa9..712a905 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -191,11 +191,11 @@ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+ 		prot, MAP_UNMAP);
+ }
+ 
+-int update_mmio_map(unsigned long vmid, unsigned long guest_gpa,
++int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len, unsigned int prot)
+ {
+ 	return _mem_set_memmap(vmid, guest_gpa, host_gpa, len,
+-		prot, MAP_MMIO);
++		prot, MAP_MEM);
+ }
+ 
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index f0401ac..2ff1e25 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -69,7 +69,7 @@ int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len, unsigned int prot);
+ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len, unsigned int prot);
+-int update_mmio_map(unsigned long vmid, unsigned long guest_gpa,
++int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len, unsigned int prot);
+ 
+ int vhm_dev_mmap(struct file *file, struct vm_area_struct *vma);
+-- 
+2.7.4
+

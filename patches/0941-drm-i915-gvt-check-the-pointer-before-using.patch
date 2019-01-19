@@ -1,0 +1,102 @@
+From c0e11b319b90d8dec2362b847a0a033dce543d6b Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Wed, 24 Oct 2018 19:50:08 +0800
+Subject: [PATCH 0941/1132] drm/i915/gvt: check the pointer before using
+
+fix issues reported by smatch:
+
+drivers/gpu/drm/i915/intel_pm.c:828 intel_wm_plane_visible() error: we previously assumed 'plane_state' could be null (see line 815)
+drivers/gpu/drm/i915/intel_pm.c:3998 skl_plane_downscale_amount() error: we previously assumed 'pstate' could be null (see line 3985)
+drivers/gpu/drm/i915/intel_pm.c:4534 skl_compute_plane_wm_params() error: we previously assumed 'fb' could be null (see line 4510)
+drivers/gpu/drm/i915/intel_pm.c:4544 skl_compute_plane_wm_params() error: we previously assumed 'intel_pstate' could be null (see line 4521)
+drivers/gpu/drm/i915/intel_pm.c:4565 skl_compute_plane_wm_params() error: we previously assumed 'pstate' could be null (see line 4501)
+
+Tracked-On: projectacrn/acrn-hypervisor#1581
+
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/intel_atomic_plane.c |  3 ++-
+ drivers/gpu/drm/i915/intel_display.c      |  4 ++++
+ drivers/gpu/drm/i915/intel_pm.c           | 15 ++++++++++++++-
+ 3 files changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_atomic_plane.c b/drivers/gpu/drm/i915/intel_atomic_plane.c
+index dcba645..b950fab 100644
+--- a/drivers/gpu/drm/i915/intel_atomic_plane.c
++++ b/drivers/gpu/drm/i915/intel_atomic_plane.c
+@@ -182,7 +182,8 @@ int intel_plane_atomic_check_with_state(const struct intel_crtc_state *old_crtc_
+ 	else
+ 		crtc_state->active_planes &= ~BIT(intel_plane->id);
+ 
+-	if (state->visible && state->fb->format->format == DRM_FORMAT_NV12)
++	if (state->visible && state->fb &&
++			state->fb->format->format == DRM_FORMAT_NV12)
+ 		crtc_state->nv12_planes |= BIT(intel_plane->id);
+ 	else
+ 		crtc_state->nv12_planes &= ~BIT(intel_plane->id);
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index e1ae592..e6cda0d 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -4956,6 +4956,10 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
+ 	}
+ 
+ 	/* Check src format */
++	if (!fb) {
++		DRM_ERROR("skl_update_scaler_plane(): fb is invalid\n");
++		return 0;
++	}
+ 	switch (fb->format->format) {
+ 	case DRM_FORMAT_RGB565:
+ 	case DRM_FORMAT_XBGR8888:
+diff --git a/drivers/gpu/drm/i915/intel_pm.c b/drivers/gpu/drm/i915/intel_pm.c
+index 53bc383..da62058 100644
+--- a/drivers/gpu/drm/i915/intel_pm.c
++++ b/drivers/gpu/drm/i915/intel_pm.c
+@@ -816,6 +816,11 @@ static bool intel_wm_plane_visible(const struct intel_crtc_state *crtc_state,
+ 		return true;
+ 	}
+ 
++	if(!plane_state) {
++		DRM_ERROR("intel_wm_plane_visible(): plane_state==NULL and return 0\n");
++		return false;
++	}
++
+ 	/*
+ 	 * Treat cursor with fb as always visible since cursor updates
+ 	 * can happen faster than the vrefresh rate, and the current
+@@ -4025,6 +4030,10 @@ skl_plane_downscale_amount(const struct intel_crtc_state *cstate,
+ 		return mul_fixed16(u32_to_fixed16(1), u32_to_fixed16(1));
+ 	}
+ 
++	if (WARN_ON_ONCE(!pstate)) {
++		return u32_to_fixed16(0);
++	}
++
+ 	if (WARN_ON(!intel_wm_plane_visible(cstate, pstate)))
+ 		return u32_to_fixed16(0);
+ 
+@@ -4570,6 +4579,10 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
+ 		goto calculate_wm;
+ 	}
+ 
++	if (!fb || !intel_pstate) {
++		DRM_ERROR("invalid fb:%p intel_pstate:%p\n", fb, intel_pstate);
++		return -EINVAL;
++	}
+ 	wp->y_tiled = fb->modifier == I915_FORMAT_MOD_Y_TILED ||
+ 		      fb->modifier == I915_FORMAT_MOD_Yf_TILED ||
+ 		      fb->modifier == I915_FORMAT_MOD_Y_TILED_CCS ||
+@@ -4601,7 +4614,7 @@ skl_compute_plane_wm_params(const struct drm_i915_private *dev_priv,
+ 	else
+ 		wp->dbuf_block_size = 512;
+ 
+-	if (drm_rotation_90_or_270(pstate->rotation)) {
++	if (pstate && drm_rotation_90_or_270(pstate->rotation)) {
+ 
+ 		switch (wp->cpp) {
+ 		case 1:
+-- 
+2.7.4
+

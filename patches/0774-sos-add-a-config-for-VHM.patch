@@ -1,0 +1,114 @@
+From 5cb72002a13ecee978628f8f024d406880817f9e Mon Sep 17 00:00:00 2001
+From: Shiqing Gao <shiqing.gao@intel.com>
+Date: Fri, 31 Aug 2018 10:58:59 +0800
+Subject: [PATCH 0774/1132] sos: add a config for VHM
+
+seperate the config for ACRN and VHM
+
+SOS has to enable both CONFIG_ACRN and CONFIG_ACRN_VHM.
+UOS only needs to enable CONFIG_ACRN. VHM is not used in UOS.
+
+Change-Id: I8529771e1943c18d790230533f7a4bcc84966350
+Tracked-On: 224645
+Signed-off-by: Shiqing Gao <shiqing.gao@intel.com>
+Reviewed-on:
+---
+ arch/x86/acrn/Kconfig |  4 ----
+ arch/x86/acrn/acrn.c  |  2 +-
+ drivers/Kconfig       |  2 ++
+ drivers/Makefile      |  2 +-
+ drivers/char/Makefile |  2 +-
+ drivers/vhm/Kconfig   | 18 ++++++++++++++++++
+ 6 files changed, 23 insertions(+), 7 deletions(-)
+ create mode 100644 drivers/vhm/Kconfig
+
+diff --git a/arch/x86/acrn/Kconfig b/arch/x86/acrn/Kconfig
+index 7788cb8..ce0abc8 100644
+--- a/arch/x86/acrn/Kconfig
++++ b/arch/x86/acrn/Kconfig
+@@ -7,10 +7,6 @@ config ACRN
+ 	bool "Enable services run on ACRN hypervisor"
+ 	depends on X86_64
+ 	depends on PARAVIRT
+-	depends on DMA_CMA
+-	depends on PCI_MSI
+-	depends on !INTEL_IOMMU
+-	depends on !VMAP_STACK
+ 	help
+ 	  This option is needed if were to run ACRN services linux on top of
+ 	  ACRN hypervisor.
+diff --git a/arch/x86/acrn/acrn.c b/arch/x86/acrn/acrn.c
+index 3987e22..eea9db8 100644
+--- a/arch/x86/acrn/acrn.c
++++ b/arch/x86/acrn/acrn.c
+@@ -42,7 +42,7 @@ static uint32_t __init acrn_detect(void)
+ 
+ static void __init acrn_init_platform(void)
+ {
+-#ifdef CONFIG_PCI_MSI
++#if  defined(CONFIG_PCI_MSI) && defined(CONFIG_ACRN_VHM)
+ 	pv_irq_ops.write_msi = acrn_write_msi_msg;
+ #endif
+ }
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index 08e4c41..c94b20a 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -223,4 +223,6 @@ source "drivers/slimbus/Kconfig"
+ source "drivers/vbs/Kconfig"
+ 
+ source "drivers/acrn/Kconfig"
++
++source "drivers/vhm/Kconfig"
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 5794c09..b45c736 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -184,8 +184,8 @@ obj-$(CONFIG_FPGA)		+= fpga/
+ obj-$(CONFIG_FSI)		+= fsi/
+ obj-$(CONFIG_TEE)		+= tee/
+ obj-$(CONFIG_MULTIPLEXER)	+= mux/
+-obj-$(CONFIG_ACRN) 		+= vhm/
+ obj-$(CONFIG_ACRN)		+= acrn/
++obj-$(CONFIG_ACRN_VHM) 		+= vhm/
+ obj-$(CONFIG_UNISYS_VISORBUS)	+= visorbus/
+ obj-$(CONFIG_SIOX)		+= siox/
+ obj-$(CONFIG_GNSS)		+= gnss/
+diff --git a/drivers/char/Makefile b/drivers/char/Makefile
+index 6371793..2f5697e 100644
+--- a/drivers/char/Makefile
++++ b/drivers/char/Makefile
+@@ -59,4 +59,4 @@ obj-$(CONFIG_XILLYBUS)		+= xillybus/
+ obj-$(CONFIG_POWERNV_OP_PANEL)	+= powernv-op-panel.o
+ obj-$(CONFIG_ADI)		+= adi.o
+ obj-$(CONFIG_RPMB)		+= rpmb/
+-obj-$(CONFIG_ACRN)		+= vhm/
++obj-$(CONFIG_ACRN_VHM) 		+= vhm/
+diff --git a/drivers/vhm/Kconfig b/drivers/vhm/Kconfig
+new file mode 100644
+index 0000000..0b0faee
+--- /dev/null
++++ b/drivers/vhm/Kconfig
+@@ -0,0 +1,18 @@
++config ACRN_VHM
++	bool "Intel ACRN Hypervisor Virtio and Hypervisor service Module (VHM)"
++	depends on ACRN
++	depends on DMA_CMA
++	depends on PCI_MSI
++	depends on !INTEL_IOMMU
++	depends on !VMAP_STACK
++	default n
++	---help---
++		This is the Virtio and Hypervisor service Module (VHM) for
++		Intel ACRN hypervisor.
++
++		It is required for Service OS.
++		User OS doesn't need to have this config.
++
++		Say Y for SOS and say N for UOS.
++
++		If unsure, say N.
+-- 
+2.7.4
+

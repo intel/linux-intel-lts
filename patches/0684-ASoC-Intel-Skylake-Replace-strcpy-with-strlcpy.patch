@@ -1,0 +1,29 @@
+From 1e7ef6bf8633511679801ff35a0f3130829acb47 Mon Sep 17 00:00:00 2001
+From: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+Date: Wed, 28 Feb 2018 15:38:13 +0530
+Subject: [PATCH 0684/1132] ASoC: Intel: Skylake: Replace strcpy with strlcpy
+
+Replace strcpy with strlcpy, as it avoids a possible buffer overflow.
+
+Change-Id: I3f612640979d919af513ff2c79d4d0207bb62f5a
+Signed-off-by: Pankaj Bharadiya <pankaj.laxminarayan.bharadiya@intel.com>
+---
+ sound/soc/intel/skylake/cnl-acpi.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/cnl-acpi.c b/sound/soc/intel/skylake/cnl-acpi.c
+index 1bee574f..bda9464 100644
+--- a/sound/soc/intel/skylake/cnl-acpi.c
++++ b/sound/soc/intel/skylake/cnl-acpi.c
+@@ -129,7 +129,7 @@ int cnl_sdw_get_master_caps(struct device *dev,
+ 	acpi_string path_sdw_ctrl = {"SCD"};
+ 	char path[SDW_PATH_CTRL_MAX];
+ 
+-	strcpy(path, path_sdw_ctrl);
++	strlcpy(path, path_sdw_ctrl, sizeof(path));
+ 	sdw_acpi_mstr_map_data(m_cap, dev, path_sdw_ctrl, path);
+ 	if (!m_cap) {
+ 		dev_err(dev, "SoundWire controller mapping failed...\n");
+-- 
+2.7.4
+

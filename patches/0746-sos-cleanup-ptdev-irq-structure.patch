@@ -1,0 +1,182 @@
+From 0bfe2210e72d6c63e89f0fc4bb05ac3626be774b Mon Sep 17 00:00:00 2001
+From: Binbin Wu <binbin.wu@intel.com>
+Date: Fri, 31 Aug 2018 10:58:56 +0800
+Subject: [PATCH 0746/1132] sos: cleanup ptdev irq structure
+
+- Use individual data struct of ptdev irq for ioctl and hypercall
+
+Change-Id: Id7b02038d0c149a0d1206206f18d54c91c7350d3
+Tracked-On: 218445
+Signed-off-by: Binbin Wu <binbin.wu@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 38 ++++++++++++++++++++++----------------
+ include/linux/vhm/acrn_hv_defs.h   | 20 ++++++++++++++++++++
+ include/linux/vhm/vhm_ioctl_defs.h | 27 +++++++++++++++++++++++++++
+ 3 files changed, 69 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 5130fb5..ebada9a 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -151,9 +151,13 @@ static long vhm_dev_ioctl(struct file *filep,
+ {
+ 	long ret = 0;
+ 	struct vhm_vm *vm;
++	struct ic_ptdev_irq ic_pt_irq;
++	struct hc_ptdev_irq hc_pt_irq;
+ 
+ 	trace_printk("[%s] ioctl_num=0x%x\n", __func__, ioctl_num);
+ 
++	memset(&hc_pt_irq, 0, sizeof(hc_pt_irq));
++	memset(&ic_pt_irq, 0, sizeof(ic_pt_irq));
+ 	vm = (struct vhm_vm *)filep->private_data;
+ 	if (vm == NULL) {
+ 		pr_err("vhm: invalid VM !\n");
+@@ -393,28 +397,29 @@ static long vhm_dev_ioctl(struct file *filep,
+ 	}
+ 
+ 	case IC_SET_PTDEV_INTR_INFO: {
+-		struct acrn_ptdev_irq pt_irq;
+ 		struct table_iomems *new;
+ 
+-		if (copy_from_user(&pt_irq,
+-				(void *)ioctl_param, sizeof(pt_irq)))
++		if (copy_from_user(&ic_pt_irq,
++				(void *)ioctl_param, sizeof(ic_pt_irq)))
+ 			return -EFAULT;
+ 
++		memcpy(&hc_pt_irq, &ic_pt_irq, sizeof(hc_pt_irq));
++
+ 		ret = hcall_set_ptdev_intr_info(vm->vmid,
+-				virt_to_phys(&pt_irq));
++				virt_to_phys(&hc_pt_irq));
+ 		if (ret < 0) {
+ 			pr_err("vhm: failed to set intr info for ptdev!\n");
+ 			return -EFAULT;
+ 		}
+ 
+-		if (pt_irq.msix.table_paddr) {
++		if (ic_pt_irq.msix.table_paddr) {
+ 			new = kmalloc(sizeof(struct table_iomems), GFP_KERNEL);
+ 			if (new == NULL)
+ 				return -EFAULT;
+-			new->phys_bdf = pt_irq.phys_bdf;
++			new->phys_bdf = ic_pt_irq.phys_bdf;
+ 			new->mmap_addr = (unsigned long)
+-				ioremap_nocache(pt_irq.msix.table_paddr,
+-					pt_irq.msix.table_size);
++				ioremap_nocache(ic_pt_irq.msix.table_paddr,
++					ic_pt_irq.msix.table_size);
+ 
+ 			mutex_lock(&table_iomems_lock);
+ 			list_add(&new->list, &table_iomems_list);
+@@ -424,28 +429,29 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 	case IC_RESET_PTDEV_INTR_INFO: {
+-		struct acrn_ptdev_irq pt_irq;
+ 		struct table_iomems *new;
+ 
+-		if (copy_from_user(&pt_irq,
+-				(void *)ioctl_param, sizeof(pt_irq)))
++		if (copy_from_user(&ic_pt_irq,
++				(void *)ioctl_param, sizeof(ic_pt_irq)))
+ 			return -EFAULT;
+ 
++		memcpy(&hc_pt_irq, &ic_pt_irq, sizeof(hc_pt_irq));
++
+ 		ret = hcall_reset_ptdev_intr_info(vm->vmid,
+-				virt_to_phys(&pt_irq));
++				virt_to_phys(&hc_pt_irq));
+ 		if (ret < 0) {
+ 			pr_err("vhm: failed to reset intr info for ptdev!\n");
+ 			return -EFAULT;
+ 		}
+ 
+-		if (pt_irq.msix.table_paddr) {
++		if (ic_pt_irq.msix.table_paddr) {
+ 			new = kmalloc(sizeof(struct table_iomems), GFP_KERNEL);
+ 			if (new == NULL)
+ 				return -EFAULT;
+-			new->phys_bdf = pt_irq.phys_bdf;
++			new->phys_bdf = ic_pt_irq.phys_bdf;
+ 			new->mmap_addr = (unsigned long)
+-				ioremap_nocache(pt_irq.msix.table_paddr,
+-					pt_irq.msix.table_size);
++				ioremap_nocache(ic_pt_irq.msix.table_paddr,
++					ic_pt_irq.msix.table_size);
+ 
+ 			mutex_lock(&table_iomems_lock);
+ 			list_add(&new->list, &table_iomems_list);
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 1d21bf2..eeac0e9 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -132,4 +132,24 @@ struct vm_gpa2hpa {
+ 	unsigned long hpa;		/* OUT: -1 means invalid gpa */
+ } __attribute__((aligned(8)));
+ 
++struct hc_ptdev_irq {
++#define IRQ_INTX 0
++#define IRQ_MSI 1
++#define IRQ_MSIX 2
++	uint32_t type;
++	uint16_t virt_bdf;	/* IN: Device virtual BDF# */
++	uint16_t phys_bdf;	/* IN: Device physical BDF# */
++	union {
++		struct {
++			uint32_t virt_pin;	/* IN: virtual IOAPIC pin */
++			uint32_t phys_pin;	/* IN: physical IOAPIC pin */
++			uint32_t pic_pin;	/* IN: pin from PIC? */
++		} intx;
++		struct {
++			/* IN: vector count of MSI/MSIX */
++			uint32_t vector_cnt;
++		} msix;
++	};
++} __attribute__((aligned(8)));
++
+ #endif /* ACRN_HV_DEFS_H */
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 5ec2d10..df07e3c 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -129,4 +129,31 @@ struct vm_memmap {
+ 	};
+ };
+ 
++struct ic_ptdev_irq {
++#define IRQ_INTX 0
++#define IRQ_MSI 1
++#define IRQ_MSIX 2
++	uint32_t type;
++	uint16_t virt_bdf;	/* IN: Device virtual BDF# */
++	uint16_t phys_bdf;	/* IN: Device physical BDF# */
++	union {
++		struct {
++			uint32_t virt_pin;	/* IN: virtual IOAPIC pin */
++			uint32_t phys_pin;	/* IN: physical IOAPIC pin */
++			uint32_t pic_pin;	/* IN: pin from PIC? */
++		} intx;
++		struct {
++			/* IN: vector count of MSI/MSIX,
++                         * Keep this filed on top of msix */
++			uint32_t vector_cnt;
++
++			/* IN: size of MSI-X table (round up to 4K) */
++			uint32_t table_size;
++
++			/* IN: physical address of MSI-X table */
++			uint64_t table_paddr;
++		} msix;
++	};
++};
++
+ #endif /* VHM_IOCTL_DEFS_H */
+-- 
+2.7.4
+

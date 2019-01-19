@@ -1,0 +1,50 @@
+From f577c4459a88b2972645c6e5e4d03ed5acb6ffee Mon Sep 17 00:00:00 2001
+From: "Gogineni, GiribabuX" <giribabux.gogineni@intel.com>
+Date: Tue, 15 Aug 2017 16:36:28 +0530
+Subject: [PATCH 0626/1132] ASoC: tdf8532: Fix compilation warnings
+
+Initialized the reported variables, listed below
+
+warning: 'ret' may be used uninitialized in this
+function
+warning: 'status_repl' may be used uninitialized in this
+function
+
+Change-Id: I6ca5a6e017402a582239d75959c122ffaa9f7298
+Signed-off-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Sinha, Mohit <mohit.sinha@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/codecs/tdf8532.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/sound/soc/codecs/tdf8532.c b/sound/soc/codecs/tdf8532.c
+index 7a3cca0..e723ffe 100644
+--- a/sound/soc/codecs/tdf8532.c
++++ b/sound/soc/codecs/tdf8532.c
+@@ -172,7 +172,7 @@ static int tdf8532_wait_state(struct tdf8532_priv *dev_data, u8 req_state,
+ {
+ 	unsigned long timeout_point = jiffies + msecs_to_jiffies(timeout);
+ 	int ret;
+-	struct get_dev_status_repl *status_repl;
++	struct get_dev_status_repl *status_repl = NULL;
+ 	struct device *dev = &(dev_data->i2c->dev);
+ 
+ 	do {
+@@ -318,9 +318,6 @@ static int tdf8532_i2c_probe(struct i2c_client *i2c,
+ 		goto out;
+ 	}
+ 
+-	if (ret < 0)
+-		dev_err(&i2c->dev, "Failed to set fast mute option: %d\n", ret);
+-
+ 	dev_data->i2c = i2c;
+ 	dev_data->pkt_id = 0;
+ 	dev_data->channels = 4;
+-- 
+2.7.4
+

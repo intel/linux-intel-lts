@@ -1,0 +1,524 @@
+From 4ecda4d86a9d5b33c3799f0db805b4adb3adb59e Mon Sep 17 00:00:00 2001
+From: Hao Li <hao.l.li@intel.com>
+Date: Fri, 31 Aug 2018 10:58:58 +0800
+Subject: [PATCH 0768/1132] api doc: add ACRN VBS API docs
+
+Change-Id: I634c0117392ca529d7bd4b89a02fec43a0f70d63
+Tracked-On: 220254
+Signed-off-by: Hao Li <hao.l.li@intel.com>
+---
+ Documentation/virtual/00-INDEX       |   3 +
+ Documentation/virtual/acrn/00-INDEX  |   8 ++
+ Documentation/virtual/acrn/conf.py   |   5 +
+ Documentation/virtual/acrn/index.rst |  17 ++++
+ Documentation/virtual/acrn/vbs.rst   |  20 ++++
+ Documentation/virtual/acrn/vhm.rst   |   5 +
+ drivers/vbs/vbs_rng.c                |   9 ++
+ include/linux/vbs/vbs.h              | 177 ++++++++++++++++++++++++++++-------
+ include/linux/vbs/vq.h               | 106 +++++++++++++++++++--
+ 9 files changed, 311 insertions(+), 39 deletions(-)
+ create mode 100644 Documentation/virtual/acrn/00-INDEX
+ create mode 100644 Documentation/virtual/acrn/conf.py
+ create mode 100644 Documentation/virtual/acrn/index.rst
+ create mode 100644 Documentation/virtual/acrn/vbs.rst
+ create mode 100644 Documentation/virtual/acrn/vhm.rst
+
+diff --git a/Documentation/virtual/00-INDEX b/Documentation/virtual/00-INDEX
+index af0d239..257aec2 100644
+--- a/Documentation/virtual/00-INDEX
++++ b/Documentation/virtual/00-INDEX
+@@ -9,3 +9,6 @@ kvm/
+ 	- Kernel Virtual Machine.  See also http://linux-kvm.org
+ uml/
+ 	- User Mode Linux, builds/runs Linux kernel as a userspace program.
++
++acrn/
++	- ACRN Project. See also http://github.com/projectacrn/
+diff --git a/Documentation/virtual/acrn/00-INDEX b/Documentation/virtual/acrn/00-INDEX
+new file mode 100644
+index 0000000..5beb50e
+--- /dev/null
++++ b/Documentation/virtual/acrn/00-INDEX
+@@ -0,0 +1,8 @@
++00-INDEX
++	- this file.
++index.rst
++	- Index.
++vhm.rst
++	- virtio and hypervisor service module (VHM) APIs.
++vbs.rst
++	- virtio and backend service (VBS) APIs.
+diff --git a/Documentation/virtual/acrn/conf.py b/Documentation/virtual/acrn/conf.py
+new file mode 100644
+index 0000000..ed247df
+--- /dev/null
++++ b/Documentation/virtual/acrn/conf.py
+@@ -0,0 +1,5 @@
++# -*- coding: utf-8; mode: python -*-
++
++project = "ACRN Project"
++
++tags.add("subproject")
+diff --git a/Documentation/virtual/acrn/index.rst b/Documentation/virtual/acrn/index.rst
+new file mode 100644
+index 0000000..3630d4f
+--- /dev/null
++++ b/Documentation/virtual/acrn/index.rst
+@@ -0,0 +1,17 @@
++.. -*- coding: utf-8; mode: rst -*-
++
++=============================
++ACRN Project
++=============================
++
++.. toctree::
++
++   vbs.rst
++   vhm.rst
++
++.. only::  subproject
++
++   Indices
++   =======
++
++   * :ref:`genindex`
+diff --git a/Documentation/virtual/acrn/vbs.rst b/Documentation/virtual/acrn/vbs.rst
+new file mode 100644
+index 0000000..40a0683
+--- /dev/null
++++ b/Documentation/virtual/acrn/vbs.rst
+@@ -0,0 +1,20 @@
++================================
++Virtio and Backend Service (VBS)
++================================
++
++The Virtio and Backend Service (VBS) in part of ACRN Project.
++
++The VBS can be further divided into two parts: VBS in user space (VBS-U)
++and VBS in kernel space (VBS-K).
++
++Example:
++--------
++A reference driver for VBS-K can be found at :c:type:`struct vbs_rng`.
++
++.. kernel-doc:: drivers/vbs/vbs_rng.c
++
++APIs:
++-----
++
++.. kernel-doc:: include/linux/vbs/vbs.h
++.. kernel-doc:: include/linux/vbs/vq.h
+diff --git a/Documentation/virtual/acrn/vhm.rst b/Documentation/virtual/acrn/vhm.rst
+new file mode 100644
+index 0000000..56d498a
+--- /dev/null
++++ b/Documentation/virtual/acrn/vhm.rst
+@@ -0,0 +1,5 @@
++==================================
++Virtio and Hypervisor Module (VHM)
++==================================
++
++The Virtio and Hypervisor service Module (VHM) in part of ACRN Project.
+diff --git a/drivers/vbs/vbs_rng.c b/drivers/vbs/vbs_rng.c
+index 87965ba..2c71186 100644
+--- a/drivers/vbs/vbs_rng.c
++++ b/drivers/vbs/vbs_rng.c
+@@ -91,6 +91,15 @@ enum {
+  *};
+  */
+ 
++/**
++ * struct vbs_rng - Backend of virtio-rng based on VBS-K
++ *
++ * @dev		: instance of struct virtio_dev_info
++ * @vqs		: instances of struct virtio_vq_info
++ * @hwrng	: device specific member
++ * @node	: hashtable maintaining multiple connections
++ *		  from multiple guests/devices
++ */
+ struct vbs_rng {
+ 	struct virtio_dev_info dev;
+ 	struct virtio_vq_info vqs[VBS_K_RNG_VQ_MAX];
+diff --git a/include/linux/vbs/vbs.h b/include/linux/vbs/vbs.h
+index b2e185e..725f162 100644
+--- a/include/linux/vbs/vbs.h
++++ b/include/linux/vbs/vbs.h
+@@ -66,19 +66,26 @@
+ #include <linux/vhm/acrn_common.h>
+ #include <linux/vhm/acrn_vhm_ioreq.h>
+ 
+-/*
+- * VBS-K device needs to handle frontend driver's kick in kernel.
+- * For virtio 0.9.5, the kick register is a PIO register,
+- * for virtio 1.0+, the kick register could be a MMIO register.
++/**
++ * enum IORangeType - type of registers to be handled in VBS-K
++ *
++ * @PIO_RANGE	: Port I/O registers, for virtio 0.9.5
++ * @MMIO_RANGE	: Memory-Mapped I/O registers, for virtio 1.0+
+  */
+ enum IORangeType {
+ 	PIO_RANGE = 0x0,		/* default */
+ 	MMIO_RANGE = 0x1,
+ };
+ 
+-/* device context */
++/**
++ * struct ctx - VM context this device belongs to
++ *
++ * @vmid		: ID of VM this device belongs to
++ * @vhm_client_id	: ID of VHM client this device registers
++ * @max_vcpu		: number of VCPU in this VM
++ * @req_buf		: request buffers
++ */
+ struct ctx {
+-	/* VHM required info */
+ 	int vmid;
+ 	int vhm_client_id;
+ 	int max_vcpu;
+@@ -109,59 +116,163 @@ struct vring_used {
+ 	struct virtio_used ring[];	/* size N */
+ } __attribute__((packed));
+ 
+-/* struct used to maintain virtqueue info from userspace VBS */
++/**
++ * struct virtio_vq_info - virtqueue data structure
++ */
+ struct virtio_vq_info {
+ 	/* virtqueue info from VBS-U */
+-	uint16_t qsize;			/* size of this queue (a power of 2) */
+-	uint32_t pfn;			/* PFN of virt queue (not shifted!) */
+-	uint16_t msix_idx;		/* MSI-X index/VIRTIO_MSI_NO_VECTOR */
+-	uint64_t msix_addr;		/* MSI-X address specified by index */
+-	uint32_t msix_data;		/* MSI-X data specified by index */
++	/** @qsize: size of this queue (a power of 2) */
++	uint16_t qsize;
++	/** @pfn: PFN of virt queue (not shifted!) */
++	uint32_t pfn;
++	/** @msix_idx: MSI-X index/VIRTIO_MSI_NO_VECTOR */
++	uint16_t msix_idx;
++	/** @msix_addr: MSI-X address specified by index */
++	uint64_t msix_addr;
++	/** @msix_data: MSI-X data specified by index */
++	uint32_t msix_data;
+ 
+ 	/* members created in kernel space VBS */
+-	int (*vq_notify)(int);		/* vq-wide notification */
+-	struct virtio_dev_info *dev;	/* backpointer to virtio_dev_info */
+-	uint16_t num;			/* we're the num'th virtqueue */
+-	uint16_t flags;			/* virtqueue flags */
+-	uint16_t last_avail;		/* a recent value of vq_avail->va_idx */
+-	uint16_t save_used;		/* saved vq_used->vu_idx */
+-
+-	volatile struct virtio_desc *desc;   /* descriptor array */
+-	volatile struct vring_avail *avail;  /* the "avail" ring */
+-	volatile struct vring_used *used;    /* the "used" ring */
++	/** @vq_notify: vq-wide notification */
++	int (*vq_notify)(int);
++	/** @dev: backpointer to virtio_dev_info */
++	struct virtio_dev_info *dev;
++	/** @num: we're the num'th virtqueue */
++	uint16_t num;
++	/** @flags: virtqueue flags */
++	uint16_t flags;
++	/* private: a recent value of vq_avail->va_idx */
++	uint16_t last_avail;
++	/* private: saved vq_used->vu_idx */
++	uint16_t save_used;
++
++	/* private: descriptor array */
++	volatile struct virtio_desc *desc;
++	/* private: the "avail" ring */
++	volatile struct vring_avail *avail;
++	/* private: the "used" ring */
++	volatile struct vring_used *used;
+ };
+ 
+-/* struct used to maintain virtio device info from userspace VBS */
++/**
++ * struct virtio_dev_info - VBS-K device data structure
++ */
+ struct virtio_dev_info {
+ 	/* dev info from VBS */
+-	char name[VBS_NAME_LEN];	/* VBS device name */
+-	struct ctx _ctx;		/* device context */
+-	int nvq;			/* number of virtqueues */
+-	uint32_t negotiated_features;	/* features after guest loads driver */
+-	uint64_t io_range_start;	/* IO range start of VBS device */
+-	uint64_t io_range_len;		/* IO range len of VBS device */
+-	enum IORangeType io_range_type;	/* IO range type, PIO or MMIO */
++	/** @name[]: VBS device name */
++	char name[VBS_NAME_LEN];
++	/** @_ctx: VM context this device belongs to */
++	struct ctx _ctx;
++	/** @nvq: number of virtqueues */
++	int nvq;
++	/** @negotiated_features: features after guest loads driver */
++	uint32_t negotiated_features;
++	/** @io_range_start: start of an IO range VBS needs to handle */
++	uint64_t io_range_start;
++	/** @io_range_len: len of an IO range VBS needs to handle */
++	uint64_t io_range_len;
++	/** @io_range_type: IO range type, PIO or MMIO */
++	enum IORangeType io_range_type;
+ 
+ 	/* members created in kernel space VBS */
+-	int (*dev_notify)(int, int);	/* device-wide notification */
+-	struct virtio_vq_info *vqs;	/* virtqueue(s) */
+-	int curq;			/* current virtqueue index */
++	/**
++	 * @dev_notify: device-wide notification
++	 *
++	 * This is the callback function to be registered to VHM,
++	 * so that VBS gets notified when frontend accessed the register.
++	 */
++	int (*dev_notify)(int, int);
++	/** @vqs: virtqueue(s) of this device */
++	struct virtio_vq_info *vqs;
++	/** @curq: current virtqueue index */
++	int curq;
+ };
+ 
++/**
++ * virtio_dev_client_id - get device's VHM client ID
++ *
++ * @dev: VBS-K device data struct
++ *
++ * Return: device's VHM client ID
++ */
+ static inline int virtio_dev_client_id(struct virtio_dev_info *dev)
+ {
+ 	return dev->_ctx.vhm_client_id;
+ }
+ 
+ /* VBS Runtime Control APIs */
++
++/**
++ * virtio_dev_init - Initialize VBS-K device data structures
++ *
++ * @dev: Pointer to VBS-K device data struct
++ * @vqs: Pointer to VBS-K virtqueue data struct, normally in an array
++ * @nvq: Number of virtqueues this device has
++ *
++ * Return: 0 on success, <0 on error
++ */
+ long virtio_dev_init(struct virtio_dev_info *dev, struct virtio_vq_info *vqs,
+ 		     int nvq);
++
++/**
++ * virtio_dev_ioctl - VBS-K device's common ioctl routine
++ *
++ * @dev: Pointer to VBS-K device data struct
++ * @ioctl: Command of ioctl to device
++ * @argp: Data from user space
++ *
++ * Return: 0 on success, <0 on error
++ */
+ long virtio_dev_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
+ 		      void __user *argp);
++
++/**
++ * virtio_vqs_ioctl - VBS-K vq's common ioctl routine
++ *
++ * @dev: Pointer to VBS-K device data struct
++ * @ioctl: Command of ioctl to virtqueue
++ * @argp: Data from user space
++ *
++ * Return: 0 on success, <0 on error
++ */
+ long virtio_vqs_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
+ 		      void __user *argp);
++
++/**
++ * virtio_dev_register - register a VBS-K device to VHM
++ *
++ * Each VBS-K device will be registered as a VHM client, with the
++ * information including "kick" register location, callback, etc.
++ *
++ * @dev: Pointer to VBS-K device data struct
++ *
++ * Return: 0 on success, <0 on error
++ */
+ long virtio_dev_register(struct virtio_dev_info *dev);
++
++/**
++ * virtio_dev_register - unregister a VBS-K device from VHM
++ *
++ * Destroy the client corresponding to the VBS-K device specified.
++ *
++ * @dev: Pointer to VBS-K device data struct
++ *
++ * Return: 0 on success, <0 on error
++ */
+ long virtio_dev_deregister(struct virtio_dev_info *dev);
++
++/**
++ * virtio_vq_index_get - get virtqueue index that frontend kicks
++ *
++ * This API is normally called in the VBS-K device's callback
++ * function, to get value write to the "kick" register from
++ * frontend.
++ *
++ * @dev: Pointer to VBS-K device data struct
++ * @req_cnt: Number of requests need to handle, provided by VHM
++ *
++ * Return: >=0 on virtqueue index, <0 on error
++ */
+ int virtio_vq_index_get(struct virtio_dev_info *dev, int req_cnt);
+ 
+ #endif
+diff --git a/include/linux/vbs/vq.h b/include/linux/vbs/vq.h
+index 9ebde05..9e865b8 100644
+--- a/include/linux/vbs/vq.h
++++ b/include/linux/vbs/vq.h
+@@ -101,7 +101,13 @@
+ /* Functions for dealing with generalized "virtual devices" */
+ #define VQ_USED_EVENT_IDX(vq) ((vq)->avail->ring[(vq)->qsize])
+ 
+-/* get virtqueue size according to virtio specification */
++/**
++ * virtio_vq_ring_size - Calculate size of a virtqueue
++ *
++ * @qsz: size of raw data in a certain virtqueue
++ *
++ * Return: size of a certain virtqueue
++ */
+ static inline size_t virtio_vq_ring_size(unsigned int qsz)
+ {
+ 	size_t size;
+@@ -117,15 +123,26 @@ static inline size_t virtio_vq_ring_size(unsigned int qsz)
+ 	return size;
+ }
+ 
+-/* Is this ring ready for I/O? */
++/**
++ * virtio_vq_ring_ready - Is this ring ready for I/O?
++ *
++ * @vq: Pointer to struct virtio_vq_info
++ *
++ * Return: 0 on not ready, and 1 on ready
++ */
+ static inline int virtio_vq_ring_ready(struct virtio_vq_info *vq)
+ {
+ 	return (vq->flags & VQ_ALLOC);
+ }
+ 
+-/*
+- * Are there "available" descriptors?  (This does not count
+- * how many, just returns True if there are some).
++/**
++ * virtio_vq_has_descs - Are there "available" descriptors?
++ *
++ * This does not count how many, just returns True if there is any.
++ *
++ * @vq: Pointer to struct virtio_vq_info
++ *
++ * Return: 0 on no available, and non-zero on available
+  */
+ static inline int virtio_vq_has_descs(struct virtio_vq_info *vq)
+ {
+@@ -133,7 +150,16 @@ static inline int virtio_vq_has_descs(struct virtio_vq_info *vq)
+ 			vq->last_avail != vq->avail->idx);
+ }
+ 
+-/* Deliver an interrupt to guest on the given virtual queue */
++/**
++ * virtio_vq_interrupt - Deliver an interrupt to guest on the given
++ *			 virtqueue.
++ *			 MSI-x or a generic MSI interrupt.
++ *
++ * @dev: Pointer to struct virtio_dev_info
++ * @vq: Pointer to struct virtio_vq_info
++ *
++ * Return: NULL
++ */
+ static inline void virtio_vq_interrupt(struct virtio_dev_info *dev,
+ 				       struct virtio_vq_info *vq)
+ {
+@@ -158,15 +184,83 @@ static inline void virtio_vq_interrupt(struct virtio_dev_info *dev,
+ 
+ 
+ /* virtqueue initialization APIs */
++
++/**
++ * virtio_vq_init - Initialize the currently-selected virtqueue
++ *
++ * The guest just gave us a page frame number, from which we can
++ * calculate the addresses of the queue. After calculation, the
++ * addresses are updated in vq's members.
++ *
++ * @vq: Pointer to struct virtio_vq_info
++ * @pfn: page frame number in guest physical address space
++ *
++ * Return: NULL
++ */
+ void virtio_vq_init(struct virtio_vq_info *vq, uint32_t pfn);
++
++/**
++ * virtio_vq_reset - reset one virtqueue, make it invalid
++ *
++ * @vq: Pointer to struct virtio_vq_info
++ *
++ * Return: NULL
++ */
+ void virtio_vq_reset(struct virtio_vq_info *vq);
+ 
+ /* virtqueue runtime APIs */
++
++/**
++ * virtio_vq_getchain - Walk through the chain of descriptors
++ *			involved in a request and put them into
++ *			a given iov[] array
++ *
++ * @vq: Pointer to struct virtio_vq_info
++ * @pidx: Pointer to available ring position
++ * @iov: Pointer to iov[] array prepared by caller
++ * @n_iov: Size of iov[] array
++ * @flags: Pointer to a uint16_t array which will contain flag of
++ *	   each descriptor
++ *
++ * Return: number of descriptors
++ */
+ int virtio_vq_getchain(struct virtio_vq_info *vq, uint16_t *pidx,
+ 		       struct iovec *iov, int n_iov, uint16_t *flags);
++
++/**
++ * virtio_vq_retchain - Return the currently-first request chain
++ *			back to the available ring
++ *
++ * @vq: Pointer to struct virtio_vq_info
++ *
++ * Return: NULL
++ */
+ void virtio_vq_retchain(struct virtio_vq_info *vq);
++
++/**
++ * virtio_vq_relchain - Return specified request chain to the guest,
++ *			setting its I/O length to the provided value
++ *
++ * @vq: Pointer to struct virtio_vq_info
++ * @idx: Pointer to available ring position, returned by vq_getchain()
++ * @iolen: Number of data bytes to be returned to frontend
++ *
++ * Return: NULL
++ */
+ void virtio_vq_relchain(struct virtio_vq_info *vq, uint16_t idx,
+ 			uint32_t iolen);
++
++/**
++ * virtio_vq_endchains - Driver has finished processing "available"
++ *			 chains and calling vq_relchain on each one
++ *
++ * If driver used all the available chains, used_all should be set.
++ *
++ * @vq: Pointer to struct virtio_vq_info
++ * @used_all_avail: Flag indicating if driver used all available chains
++ *
++ * Return: NULL
++ */
+ void virtio_vq_endchains(struct virtio_vq_info *vq, int used_all_avail);
+ 
+ #endif
+-- 
+2.7.4
+

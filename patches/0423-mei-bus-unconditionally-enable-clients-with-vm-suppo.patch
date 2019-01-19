@@ -1,0 +1,47 @@
+From 167e4c984e93ba8e8ee7d91dbb0aba1ab0d74b4a Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Sun, 16 Sep 2018 10:22:51 +0300
+Subject: [PATCH 0423/1132] mei: bus: unconditionally enable clients with vm
+ support
+
+Change-Id: I9d3677d7cf1486ce4d15560a08fed3c6265b603a
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ drivers/misc/mei/bus-fixup.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/misc/mei/bus-fixup.c b/drivers/misc/mei/bus-fixup.c
+index 80215c3..5945e7d 100644
+--- a/drivers/misc/mei/bus-fixup.c
++++ b/drivers/misc/mei/bus-fixup.c
+@@ -460,6 +460,19 @@ static void mei_nfc(struct mei_cl_device *cldev)
+ 	dev_dbg(bus->dev, "end of fixup match = %d\n", cldev->do_match);
+ }
+ 
++/**
++ * vm_support - enable on bus clients with vm support
++ *
++ * @cldev: me clients device
++ */
++static void vm_support(struct mei_cl_device *cldev)
++{
++	dev_dbg(&cldev->dev, "running hook %s\n", __func__);
++
++	if (cldev->me_cl->props.vm_supported == 1)
++		cldev->do_match = 1;
++}
++
+ #define MEI_FIXUP(_uuid, _hook) { _uuid, _hook }
+ 
+ static struct mei_fixup {
+@@ -472,6 +485,7 @@ static struct mei_fixup {
+ 	MEI_FIXUP(MEI_UUID_NFC_HCI, mei_nfc),
+ 	MEI_FIXUP(MEI_UUID_WD, mei_wd),
+ 	MEI_FIXUP(MEI_UUID_MKHIF_FIX, mei_mkhi_fix),
++	MEI_FIXUP(MEI_UUID_ANY, vm_support),
+ };
+ 
+ /**
+-- 
+2.7.4
+

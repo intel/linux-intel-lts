@@ -1,0 +1,135 @@
+From aff834a53834f827625b14ef92ce4f51582bcd9b Mon Sep 17 00:00:00 2001
+From: Jayachandran B <jayachandran.b@intel.com>
+Date: Wed, 27 Jan 2016 09:30:16 +0530
+Subject: [PATCH 0579/1132] ASoC: Intel: Skylake: Debugfs for core power
+ handling
+
+This Debugfs allows to test core power handling.
+
+To turn on a core:
+echo wake n > core_power
+To turn off a core:
+echo sleep n > core_power
+
+where, n is the core id (0 ... num cores on audio IP - 1)
+Note that when core 0 is turned on/off using this debug i/f,
+pm_runtime_get_sync/pm_runtime_put is called. Hence this
+debug i/f can be used for runtime PM unit tests without
+having to run usecases to invoke runtime PM.
+
+Change-Id: Id63fc95d99ed6ed78eccfba134f204fdd2f07629
+Signed-off-by: Jayachandran B <jayachandran.b@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl-debug.c | 75 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 75 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index 5cc274a..2041e33 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -16,6 +16,8 @@
+ #include <linux/pci.h>
+ #include <linux/debugfs.h>
+ #include <uapi/sound/skl-tplg-interface.h>
++#include <linux/pm_runtime.h>
++#include <sound/soc.h>
+ #include "skl.h"
+ #include "skl-sst-dsp.h"
+ #include "skl-sst-ipc.h"
+@@ -764,6 +766,73 @@ static int skl_init_adsp(struct skl_debug *d)
+ 	return 0;
+ }
+ 
++static ssize_t core_power_write(struct file *file,
++		const char __user *user_buf, size_t count, loff_t *ppos)
++{
++	struct skl_debug *d = file->private_data;
++	struct skl_sst *skl_ctx = d->skl->skl_sst;
++	struct sst_dsp *ctx = skl_ctx->dsp;
++	char buf[16];
++	int len = min(count, (sizeof(buf) - 1));
++	unsigned int core_id;
++	char *ptr;
++	int wake;
++	int err;
++
++
++	if (copy_from_user(buf, user_buf, len))
++		return -EFAULT;
++	buf[len] = 0;
++
++	/*
++	 * The buffer content should be "wake n" or "sleep n",
++	 * where n is the core id
++	 */
++	ptr = strnstr(buf, "wake", len);
++	if (ptr) {
++		ptr = ptr + 5;
++		wake = 1;
++	} else {
++		ptr = strnstr(buf, "sleep", len);
++		if (ptr) {
++			ptr = ptr + 6;
++			wake = 0;
++		} else
++			return -EINVAL;
++	}
++
++	err = kstrtouint(ptr, 10, &core_id);
++	if (err) {
++		dev_err(d->dev, "%s: Debugfs kstrtouint returned error = %d\n",
++				__func__, err);
++		return err;
++	}
++
++	dev_info(d->dev, "Debugfs: %s %d\n", wake ? "wake" : "sleep", core_id);
++
++	if (wake) {
++		if (core_id == SKL_DSP_CORE0_ID)
++			pm_runtime_get_sync(d->dev);
++		else
++			skl_dsp_get_core(ctx, core_id);
++	} else {
++		if (core_id == SKL_DSP_CORE0_ID)
++			pm_runtime_put_sync(d->dev);
++		else
++			skl_dsp_put_core(ctx, core_id);
++	}
++
++	/* Userspace has been fiddling around behind the kernel's back */
++	add_taint(TAINT_USER, LOCKDEP_NOW_UNRELIABLE);
++
++	return len;
++}
++static const struct file_operations core_power_fops = {
++	.open = simple_open,
++	.write = core_power_write,
++	.llseek = default_llseek,
++};
++
+ struct skl_debug *skl_debugfs_init(struct skl *skl)
+ {
+ 	struct skl_debug *d;
+@@ -797,6 +866,12 @@ struct skl_debug *skl_debugfs_init(struct skl *skl)
+ 		goto err;
+ 	}
+ 
++	if (!debugfs_create_file("core_power", 0644, d->fs, d,
++			 &core_power_fops)) {
++	dev_err(d->dev, "core power debugfs init failed\n");
++	goto err;
++	}
++
+ 	/* now create the NHLT dir */
+ 	d->nhlt =  debugfs_create_dir("nhlt", d->fs);
+ 	if (IS_ERR(d->nhlt) || !d->nhlt) {
+-- 
+2.7.4
+

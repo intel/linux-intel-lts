@@ -1,0 +1,52 @@
+From e917b46a2a6447eca8140832e13c4606dad87505 Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Tue, 18 Jul 2017 22:56:08 +0530
+Subject: [PATCH 0658/1132] ALSA: hda: Make sure DMA is stopped by reading back
+ the RUN bit
+
+As per HW recommendation, after clearing the RUN bit,
+software must read a 0 from the RUN bit, before modifying
+related control registers or re-starting the DMA engine.
+
+Change-Id: Ied7c3534dde57fab7dc3eea809811933ced555b8
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Reviewed-on:
+Reviewed-by: Prakash, Divya1
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/hda/hdac_stream.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/sound/hda/hdac_stream.c b/sound/hda/hdac_stream.c
+index 3c0c7c3..2ddda76 100644
+--- a/sound/hda/hdac_stream.c
++++ b/sound/hda/hdac_stream.c
+@@ -71,8 +71,24 @@ EXPORT_SYMBOL_GPL(snd_hdac_stream_start);
+  */
+ void snd_hdac_stream_clear(struct hdac_stream *azx_dev)
+ {
++	int timeout;
++	unsigned char val;
++
+ 	snd_hdac_stream_updateb(azx_dev, SD_CTL,
+ 				SD_CTL_DMA_START | SD_INT_MASK, 0);
++
++	timeout = 300;
++	do {
++		udelay(3);
++		val = snd_hdac_stream_readb(azx_dev, SD_CTL) &
++				SD_CTL_DMA_START;
++		if (!val)
++			break;
++	} while (--timeout);
++
++	if (!timeout)
++		dev_err(azx_dev->bus->dev, "unable to stop the stream\n");
++
+ 	snd_hdac_stream_writeb(azx_dev, SD_STS, SD_INT_MASK); /* to be sure */
+ 	azx_dev->running = false;
+ }
+-- 
+2.7.4
+

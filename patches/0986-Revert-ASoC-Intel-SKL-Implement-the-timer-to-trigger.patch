@@ -1,0 +1,299 @@
+From bd8935ffb09e8905a8834ba4e597ccbbcc1c81c2 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Fri, 12 Oct 2018 16:23:47 +0200
+Subject: [PATCH 0986/1132] Revert "ASoC: Intel: SKL: Implement the timer to
+ trigger firmware crash recovery"
+
+Currently implemented recovery flow for Skylake and child platforms is
+invalid. During suspend/ resume (D3 -> D0) flow, driver incorrectly
+awaits FW_READY nofitication when firmware is already loaded and
+DSP cores are up and running, thus causing timeout and failure
+of D0 process.
+
+This patch is a part of patchset that reverts this implementation until
+appropriate one is available
+
+Change-Id: Ie0656450407971207ff927ecab6562587503c8ae
+Tracked-On: OAM-71679
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c | 33 -----------------------
+ sound/soc/intel/skylake/skl-pcm.c      | 49 +---------------------------------
+ sound/soc/intel/skylake/skl.c          | 26 ------------------
+ sound/soc/intel/skylake/skl.h          | 16 -----------
+ 4 files changed, 1 insertion(+), 123 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 111e241..96b0bc3 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -22,7 +22,6 @@
+ #include <sound/core.h>
+ #include <sound/pcm.h>
+ #include <uapi/sound/skl-tplg-interface.h>
+-#include <linux/timer.h>
+ #include <linux/delay.h>
+ #include "skl-sst-dsp.h"
+ #include "cnl-sst-dsp.h"
+@@ -364,38 +363,6 @@ static int cnl_sdw_bra_pipe_trigger(struct skl_sst *ctx, bool enable,
+ 	return ret;
+ }
+ 
+-void skl_trigger_recovery(struct work_struct *work)
+-{
+-	struct skl_monitor *monitor_dsp = container_of(work,
+-						struct skl_monitor, mwork);
+-	struct skl *skl  = container_of(monitor_dsp,
+-						struct skl, monitor_dsp);
+-	const struct skl_dsp_ops *ops;
+-
+-	ops = skl_get_dsp_ops(skl->pci->device);
+-
+-	if (ops->do_recovery)
+-		ops->do_recovery(skl);
+-	return;
+-
+-}
+-
+-void skl_timer_cb(struct timer_list *t)
+-{
+-	struct skl *skl = from_timer(skl, t, monitor_dsp.timer);
+-	struct skl_sst *ctx = skl->skl_sst;
+-	const struct skl_dsp_ops *ops;
+-
+-	ops = skl_get_dsp_ops(skl->pci->device);
+-	ctx->cores.state[SKL_DSP_CORE0_ID] = SKL_DSP_RESET;
+-
+-	if (ops->do_recovery) {
+-		schedule_work(&skl->monitor_dsp.mwork);
+-		del_timer(&skl->monitor_dsp.timer);
+-	}
+-
+-}
+-
+ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
+ 					unsigned int mstr_num)
+ {
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index eec9120..9a3b036 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -22,7 +22,6 @@
+ #include <linux/pci.h>
+ #include <linux/pm_runtime.h>
+ #include <linux/delay.h>
+-#include <linux/timer.h>
+ #include <sound/pcm_params.h>
+ #include <sound/soc.h>
+ #include "skl.h"
+@@ -520,19 +519,12 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
+ 		struct snd_soc_dai *dai)
+ {
+ 	struct skl *skl = get_skl_ctx(dai->dev);
+-	struct skl_monitor *monitor = &skl->monitor_dsp;
+ 	struct skl_sst *ctx = skl->skl_sst;
+ 	struct skl_module_cfg *mconfig;
+ 	struct hdac_bus *bus = get_bus_ctx(substream);
+ 	struct hdac_ext_stream *stream = get_hdac_ext_stream(substream);
+-	struct snd_soc_dapm_widget *w;
+ 	struct snd_pcm_runtime *runtime = substream->runtime;
+-	struct hdac_stream *azx_dev;
+-#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+-	u32 interval;
+-	int i;
+-#endif
+-	bool is_running = false;
++	struct snd_soc_dapm_widget *w;
+ 	int ret;
+ 
+ 	mconfig = skl_tplg_fe_get_cpr_module(dai, substream->stream);
+@@ -576,25 +568,6 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
+ 		ret = skl_decoupled_trigger(substream, cmd);
+ 		if (ret < 0)
+ 			return ret;
+-		/*
+-		 * Period elapsed interrupts with multiple streams are not
+-		 * consistent on FPGA. However, it works without any issues on
+-		 * RVP. So, using the default max value for FPGA
+-		 */
+-#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+-		/*
+-		 * To be on the safer side, restricting the minimal interval to
+-		 * 10ms
+-		 */
+-		interval =  SKL_MIN_TIME_INTERVAL +
+-				((2 * runtime->period_size * 1000) /
+-				runtime->rate);
+-		monitor->intervals[hdac_stream(stream)->index] = interval;
+-		if (interval > monitor->interval)
+-			monitor->interval = interval;
+-#else
+-		monitor->interval = SKL_MAX_TIME_INTERVAL;
+-#endif
+ 		return skl_run_pipe(ctx, mconfig->pipe);
+ 		break;
+ 
+@@ -622,26 +595,6 @@ static int skl_pcm_trigger(struct snd_pcm_substream *substream, int cmd,
+ 							hdac_stream(stream));
+ 			snd_hdac_ext_stream_decouple(bus, stream, false);
+ 		}
+-
+-		list_for_each_entry(azx_dev, &bus->stream_list, list) {
+-			if (azx_dev->running) {
+-				is_running = true;
+-				break;
+-			}
+-		}
+-		monitor->intervals[hdac_stream(stream)->index] = 0;
+-		if (!is_running)
+-			del_timer(&skl->monitor_dsp.timer);
+-#if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+-		else {
+-			interval = SKL_MIN_TIME_INTERVAL;
+-			for (i = 0; i < bus->num_streams; i++) {
+-				if (monitor->intervals[i] > interval)
+-					interval = monitor->intervals[i];
+-			}
+-			monitor->interval = interval;
+-		}
+-#endif
+ 		break;
+ 
+ 	default:
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 8528a8a..8ade895 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -21,7 +21,6 @@
+  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  */
+ 
+-#include <linux/timer.h>
+ #include <linux/module.h>
+ #include <linux/pci.h>
+ #include <linux/pm_runtime.h>
+@@ -36,8 +35,6 @@
+ #include <sound/hda_i915.h>
+ #include <sound/compress_driver.h>
+ #include "skl.h"
+-#include "../common/sst-dsp.h"
+-#include "../common/sst-dsp-priv.h"
+ #include "skl-sst-dsp.h"
+ #include "skl-sst-ipc.h"
+ #include "skl-topology.h"
+@@ -251,7 +248,6 @@ static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
+ static irqreturn_t skl_interrupt(int irq, void *dev_id)
+ {
+ 	struct hdac_bus *bus = dev_id;
+-	struct skl *skl = bus_to_skl(bus);
+ 	u32 status;
+ 	u32 mask, int_enable;
+ 	int ret = IRQ_NONE;
+@@ -283,8 +279,6 @@ static irqreturn_t skl_interrupt(int irq, void *dev_id)
+ 		/* Disable stream interrupts; Re-enable in bottom half */
+ 		int_enable = snd_hdac_chip_readl(bus, INTCTL);
+ 		snd_hdac_chip_writel(bus, INTCTL, (int_enable & (~mask)));
+-		mod_timer(&skl->monitor_dsp.timer, jiffies +
+-			msecs_to_jiffies(skl->monitor_dsp.interval));
+ 		ret = IRQ_WAKE_THREAD;
+ 	} else
+ 		ret = IRQ_HANDLED;
+@@ -868,22 +862,6 @@ static void skl_probe_work(struct work_struct *work)
+ 		err = snd_hdac_display_power(bus, false);
+ }
+ 
+-static int skl_init_recovery(struct skl *skl)
+-{
+-	struct skl_monitor *monitor = &skl->monitor_dsp;
+-
+-	INIT_WORK(&monitor->mwork, skl_trigger_recovery);
+-	monitor->interval = SKL_MIN_TIME_INTERVAL;
+-
+-	monitor->intervals = devm_kzalloc(&skl->pci->dev,
+-					skl->hbus.num_streams * sizeof(u32),
+-					GFP_KERNEL);
+-	if (!monitor->intervals)
+-		return -ENOMEM;
+-	timer_setup(&monitor->timer, skl_timer_cb, 0);
+-	return 0;
+-}
+-
+ /*
+  * constructor
+  */
+@@ -1007,10 +985,6 @@ static int skl_probe(struct pci_dev *pci,
+ 	if (err < 0)
+ 		goto out_free;
+ 
+-	err = skl_init_recovery(skl);
+-	if (err < 0)
+-		return err;
+-
+ 	skl->pci_id = pci->device;
+ 
+ 	device_disable_async_suspend(bus->dev);
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 01053c4..b75dc47 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -23,7 +23,6 @@
+ 
+ #include <sound/hda_register.h>
+ #include <sound/hdaudio_ext.h>
+-#include <linux/timer.h>
+ #include <sound/soc.h>
+ #include "skl-nhlt.h"
+ #include "skl-ssp-clk.h"
+@@ -53,9 +52,6 @@
+ #define BXT_INSTANCE_ID		0
+ #define BXT_BASE_FW_MODULE_ID	0
+ 
+-#define SKL_MAX_TIME_INTERVAL 1000
+-#define SKL_MIN_TIME_INTERVAL 10
+-
+ struct skl_dsp_resource {
+ 	u32 max_mcps;
+ 	u32 max_mem;
+@@ -126,14 +122,6 @@ struct ep_group_cnt {
+ 	int *vbus_id;
+ };
+ 
+-/* For crash recovery */
+-struct skl_monitor {
+-	struct work_struct mwork;
+-	struct timer_list timer;
+-	u32 interval;
+-	u32 *intervals;
+-};
+-
+ struct skl {
+ 	struct hdac_bus hbus;
+ 	struct pci_dev *pci;
+@@ -149,7 +137,6 @@ struct skl {
+ 	struct nhlt_acpi_table *nhlt; /* nhlt ptr */
+ 	struct skl_sst *skl_sst; /* sst skl ctx */
+ 
+-	struct skl_monitor monitor_dsp;
+ 	struct skl_dsp_resource resource;
+ 	struct list_head ppl_list;
+ 	struct list_head bind_list;
+@@ -198,7 +185,6 @@ struct skl_dsp_ops {
+ 			struct skl_sst **skl_sst, void *ptr);
+ 	int (*init_fw)(struct device *dev, struct skl_sst *ctx);
+ 	void (*cleanup)(struct device *dev, struct skl_sst *ctx);
+-	void (*do_recovery)(struct skl *skl);
+ };
+ 
+ int skl_platform_unregister(struct device *dev);
+@@ -232,8 +218,6 @@ struct skl_clk_parent_src *skl_get_parent_clk(u8 clk_id);
+ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
+ 				u32 caps_size, u32 node_id);
+ 
+-void skl_timer_cb(struct timer_list *t);
+-void skl_trigger_recovery(struct work_struct *work);
+ struct skl_module_cfg;
+ 
+ #ifdef CONFIG_DEBUG_FS
+-- 
+2.7.4
+

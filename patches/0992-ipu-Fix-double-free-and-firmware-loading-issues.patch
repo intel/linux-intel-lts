@@ -1,0 +1,43 @@
+From 8a0fdd61936d09bcf016c4cfbedee76ede5481a4 Mon Sep 17 00:00:00 2001
+From: Fei Yang <fei.yang@intel.com>
+Date: Wed, 21 Nov 2018 11:47:06 -0800
+Subject: [PATCH 0992/1132] ipu: Fix double free and firmware loading issues
+
+1. Double free issue:
+   In function request_cpd_fw, tmp allocated by devm_kzalloc will
+   be freed automatically during driver unloading. But it's also being
+   deallocated by release_firmware.
+2. Firmware loading issue:
+   IPU4 firmware authentication requires firmware memory to be allocated
+   by vmalloc, and to be page aligned. However, the current implementation
+   uses kzalloc,
+     tmp->data = kzalloc(device, fw->size, GFP_KERNEL);
+   which makes firmware authentication fail.
+
+Tracked-On: PKT-1517
+Signed-off-by: Zhang Ning <ning.a.zhang@intel.com>
+---
+ drivers/media/pci/intel/ipu.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu.c b/drivers/media/pci/intel/ipu.c
+index 0172c19..b235de1 100644
+--- a/drivers/media/pci/intel/ipu.c
++++ b/drivers/media/pci/intel/ipu.c
+@@ -329,11 +329,11 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
+ 	if (is_vmalloc_addr(fw->data)) {
+ 		*firmware_p = fw;
+ 	} else {
+-		tmp = devm_kzalloc(device, sizeof(struct firmware), GFP_KERNEL);
++		tmp = (struct firmware *)kzalloc(sizeof(struct firmware), GFP_KERNEL);
+ 		if (!tmp)
+ 			return -ENOMEM;
+ 		tmp->size = fw->size;
+-		tmp->data = devm_kzalloc(device, fw->size, GFP_KERNEL);
++		tmp->data = vmalloc(fw->size);
+ 		memcpy((void *)tmp->data, fw->data, fw->size);
+ 		*firmware_p = tmp;
+ 		release_firmware(fw);
+-- 
+2.7.4
+

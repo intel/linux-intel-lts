@@ -1,0 +1,39 @@
+From eed5b2106df15d176f19c4b685f2503e1ca659b2 Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Thu, 25 Feb 2016 11:13:35 +0530
+Subject: [PATCH 0618/1132] ASoC: Intel: Skylake: Send correct size in ipc
+ header for large config
+
+To query information from FW we use "Large Config Get" message which accept
+arguments in the form of extended params. So we need to send a TX message of
+fixed size (8 bytes) to retrieve a large reply. Hence, IPC header should
+reflect correct size of TX message for these messages.
+
+Change-Id: Ib055c879d6e9dc00e8c861ab25ea9d9080e98732
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index 508382d..14802ab 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -1031,7 +1031,11 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+ 	header.primary |= IPC_MOD_INSTANCE_ID(msg->instance_id);
+ 	header.primary |= IPC_MOD_ID(msg->module_id);
+ 
+-	header.extension = IPC_DATA_OFFSET_SZ(msg->param_data_size);
++	if (!tx_bytes)
++		header.extension = IPC_DATA_OFFSET_SZ(msg->param_data_size);
++	else
++		header.extension = IPC_DATA_OFFSET_SZ(tx_bytes);
++
+ 	header.extension |= IPC_LARGE_PARAM_ID(msg->large_param_id);
+ 	header.extension |= IPC_FINAL_BLOCK(1);
+ 	header.extension |= IPC_INITIAL_BLOCK(1);
+-- 
+2.7.4
+

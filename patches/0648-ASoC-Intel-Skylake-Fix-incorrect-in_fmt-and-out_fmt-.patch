@@ -1,0 +1,40 @@
+From 5284f2ad3ad20b6b13618d192ec29e077587730a Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Wed, 11 Oct 2017 10:41:43 +0530
+Subject: [PATCH 0648/1132] ASoC: Intel: Skylake: Fix incorrect in_fmt and
+ out_fmt pointers in BRA playback pipeline
+
+Fix the in_fmt/out_fmt pointers for host copier of playback pipeline.
+
+Change-Id: I8a6c66ec5ebc291ae968ebca779d702cc4de105e
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Sinha, Mohit <mohit.sinha@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: H S, Vijay <vijay.h.s@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 891e248..84acb06 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -410,8 +410,8 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
+ 	 */
+ 	memcpy(host_cpr_cfg->guid, &guid, 16);
+ 	memcpy(link_cpr_cfg->guid, &guid, 16);
+-	in_fmt = &link_cpr_cfg->module->formats[0].inputs[0].fmt;
+-	out_fmt = &link_cpr_cfg->module->formats[0].outputs[0].fmt;
++	in_fmt = &host_cpr_cfg->module->formats[0].inputs[0].fmt;
++	out_fmt = &host_cpr_cfg->module->formats[0].outputs[0].fmt;
+ 
+ 	/* Playback pipeline */
+ 	host_cpr_pipe = kzalloc(sizeof(struct skl_pipe), GFP_KERNEL);
+-- 
+2.7.4
+

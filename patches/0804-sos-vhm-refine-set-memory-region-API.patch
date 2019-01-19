@@ -1,0 +1,463 @@
+From 48a75a6beb9f12f012e6337235e84ba29f202dd9 Mon Sep 17 00:00:00 2001
+From: "Li, Fei1" <fei1.li@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0804/1132] sos: vhm: refine set memory region API
+
+1. rename set_mmio_map to add_memory_region;
+unset_mmio_map to del_memory_region.
+2. rename set_memmap to set_memory_region;
+set_memmaps to set_memory_region;
+3. remove HV_VM_SET_MEMORY_REGION hypercall
+
+Signed-off-by: Li, Fei1 <fei1.li@intel.com>
+Acked-by: Eddie Dong <eddie.dong@intel.com>
+---
+ drivers/vhm/vhm_hugetlb.c         | 61 +++++++++++++--------------
+ drivers/vhm/vhm_hypercall.c       |  9 +---
+ drivers/vhm/vhm_mm.c              | 89 ++++++++++++++++++---------------------
+ include/linux/vhm/acrn_hv_defs.h  | 39 +++++------------
+ include/linux/vhm/acrn_vhm_mm.h   | 31 ++++++--------
+ include/linux/vhm/vhm_hypercall.h |  4 +-
+ 6 files changed, 98 insertions(+), 135 deletions(-)
+
+diff --git a/drivers/vhm/vhm_hugetlb.c b/drivers/vhm/vhm_hugetlb.c
+index a83f00a..34ebbd9 100644
+--- a/drivers/vhm/vhm_hugetlb.c
++++ b/drivers/vhm/vhm_hugetlb.c
+@@ -120,11 +120,11 @@ static int add_guest_map(struct vhm_vm *vm, unsigned long vm0_gpa,
+ 
+ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
+ {
+-	struct page *page = NULL, *memmaps_buf_pg = NULL;
++	struct page *page = NULL, *regions_buf_pg = NULL;
+ 	unsigned long len, guest_gpa, vma;
+-	struct memory_map *memmap_array;
+-	struct set_memmaps memmaps;
+-	int max_size = PAGE_SIZE/sizeof(struct memory_map);
++	struct vm_memory_region *region_array;
++	struct set_regions regions;
++	int max_size = PAGE_SIZE/sizeof(struct vm_memory_region);
+ 	int ret;
+ 
+ 	if (vm == NULL || memmap == NULL)
+@@ -134,14 +134,14 @@ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 	vma = memmap->vma_base;
+ 	guest_gpa = memmap->gpa;
+ 
+-	/* prepare set_memmaps info */
+-	memmaps_buf_pg = alloc_page(GFP_KERNEL);
+-	if (memmaps_buf_pg == NULL)
++	/* prepare set_memory_regions info */
++	regions_buf_pg = alloc_page(GFP_KERNEL);
++	if (regions_buf_pg == NULL)
+ 		return -ENOMEM;
+-	memmaps.memmaps_num = 0;
+-	memmaps.vmid = vm->vmid;
+-	memmaps.memmaps_gpa = page_to_phys(memmaps_buf_pg);
+-	memmap_array = page_to_virt(memmaps_buf_pg);
++	regions.mr_num = 0;
++	regions.vmid = vm->vmid;
++	regions.regions_gpa = page_to_phys(regions_buf_pg);
++	region_array = page_to_virt(regions_buf_pg);
+ 
+ 	while (len > 0) {
+ 		unsigned long vm0_gpa, pagesize;
+@@ -162,24 +162,23 @@ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 			goto err;
+ 		}
+ 
+-		/* fill each memmap region into memmap_array */
+-		memmap_array[memmaps.memmaps_num].type = MAP_MEM;
+-		memmap_array[memmaps.memmaps_num].remote_gpa = guest_gpa;
+-		memmap_array[memmaps.memmaps_num].vm0_gpa = vm0_gpa;
+-		memmap_array[memmaps.memmaps_num].length = pagesize;
+-		memmap_array[memmaps.memmaps_num].prot =
+-				MEM_TYPE_WB & MEM_TYPE_MASK;
+-		memmap_array[memmaps.memmaps_num].prot |=
+-				memmap->prot & MEM_ACCESS_RIGHT_MASK;
+-		memmaps.memmaps_num++;
+-		if (memmaps.memmaps_num == max_size) {
+-			pr_info("region buffer full, set & renew memmaps!\n");
+-			ret = set_memmaps(&memmaps);
++		/* fill each memory region into region_array */
++		region_array[regions.mr_num].type = MR_ADD;
++		region_array[regions.mr_num].gpa = guest_gpa;
++		region_array[regions.mr_num].vm0_gpa = vm0_gpa;
++		region_array[regions.mr_num].size = pagesize;
++		region_array[regions.mr_num].prot =
++				(MEM_TYPE_WB & MEM_TYPE_MASK) |
++				(memmap->prot & MEM_ACCESS_RIGHT_MASK);
++		regions.mr_num++;
++		if (regions.mr_num == max_size) {
++			pr_info("region buffer full, set & renew regions!\n");
++			ret = set_memory_regions(&regions);
+ 			if (ret < 0) {
+-				pr_err("failed to set memmaps,ret=%d!\n", ret);
++				pr_err("failed to set regions,ret=%d!\n", ret);
+ 				goto err;
+ 			}
+-			memmaps.memmaps_num = 0;
++			regions.mr_num = 0;
+ 		}
+ 
+ 		len -= pagesize;
+@@ -187,18 +186,18 @@ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 		guest_gpa += pagesize;
+ 	}
+ 
+-	ret = set_memmaps(&memmaps);
++	ret = set_memory_regions(&regions);
+ 	if (ret < 0) {
+-		pr_err("failed to set memmaps, ret=%d!\n", ret);
++		pr_err("failed to set regions, ret=%d!\n", ret);
+ 		goto err;
+ 	}
+ 
+-	__free_page(memmaps_buf_pg);
++	__free_page(regions_buf_pg);
+ 
+ 	return 0;
+ err:
+-	if (memmaps_buf_pg)
+-		__free_page(memmaps_buf_pg);
++	if (regions_buf_pg)
++		__free_page(regions_buf_pg);
+ 	if (page)
+ 		put_page(page);
+ 	return ret;
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index 8611bb1..9a92d68 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -102,14 +102,9 @@ inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa)
+ 	return acrn_hypercall2(HC_PM_GET_CPU_STATE, cmd, state_pa);
+ }
+ 
+-inline long hcall_set_memmap(unsigned long vmid, unsigned long memmap)
++inline long hcall_set_memory_regions(unsigned long pa_regions)
+ {
+-	return acrn_hypercall2(HC_VM_SET_MEMMAP, vmid, memmap);
+-}
+-
+-inline long hcall_set_memmaps(unsigned long pa_memmaps)
+-{
+-	return acrn_hypercall1(HC_VM_SET_MEMMAPS, pa_memmaps);
++	return acrn_hypercall1(HC_VM_SET_MEMORY_REGIONS, pa_regions);
+ }
+ 
+ inline long hcall_write_protect_page(unsigned long vmid, unsigned long wp)
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index c7ca8e99..4d5854d 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -102,56 +102,59 @@ static bool _free_memblk(struct device *dev, u64 vm0_gpa, size_t len)
+ 	return dma_release_from_contiguous(dev, page, count);
+ }
+ 
+-int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len,
+-	unsigned int mem_type, unsigned int mem_access_right,
+-	unsigned int type)
++static int set_memory_region(unsigned long vmid,
++		struct vm_memory_region *region)
+ {
+-	struct vm_set_memmap set_memmap;
++	struct set_regions regions;
+ 
+-	set_memmap.type = type;
+-	set_memmap.remote_gpa = guest_gpa;
+-	set_memmap.vm0_gpa = host_gpa;
+-	set_memmap.length = len;
+-	set_memmap.prot = set_memmap.prot_2 = ((mem_type & MEM_TYPE_MASK) |
+-			(mem_access_right & MEM_ACCESS_RIGHT_MASK));
++	regions.vmid = vmid;
++	regions.mr_num = 1;
++	regions.regions_gpa = virt_to_phys(region);
+ 
+-	/* hypercall to notify hv the guest EPT setting*/
+-	if (hcall_set_memmap(vmid,
+-			virt_to_phys(&set_memmap)) < 0) {
+-		pr_err("vhm: failed to set memmap %ld!\n", vmid);
++	if (set_memory_regions(&regions) < 0) {
++		pr_err("vhm: failed to set memory region for vm[%ld]!\n", vmid);
+ 		return -EFAULT;
+ 	}
+ 
+-	pr_debug("VHM: set ept for mem map[type=0x%x, host_gpa=0x%lx,"
+-		"guest_gpa=0x%lx,len=0x%lx, prot=0x%x]\n",
+-		type, host_gpa, guest_gpa, len, set_memmap.prot);
+-
+ 	return 0;
+ }
+ 
+-int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len,
++int add_memory_region(unsigned long vmid, unsigned long gpa,
++	unsigned long host_gpa, unsigned long size,
+ 	unsigned int mem_type, unsigned mem_access_right)
+ {
+-	return _mem_set_memmap(vmid, guest_gpa, host_gpa, len,
+-		mem_type, mem_access_right, MAP_MEM);
++	struct vm_memory_region region;
++
++	region.type = MR_ADD;
++	region.gpa = gpa;
++	region.vm0_gpa = host_gpa;
++	region.size = size;
++	region.prot = ((mem_type & MEM_TYPE_MASK) |
++			(mem_access_right & MEM_ACCESS_RIGHT_MASK));
++	return set_memory_region(vmid, &region);
+ }
+ 
+-int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len)
++int del_memory_region(unsigned long vmid, unsigned long gpa,
++	unsigned long size)
+ {
+-	return _mem_set_memmap(vmid, guest_gpa, host_gpa, len,
+-		0, 0,  MAP_UNMAP);
++	struct vm_memory_region region;
++
++	region.type = MR_DEL;
++	region.gpa = gpa;
++	region.vm0_gpa = 0;
++	region.size = size;
++	region.prot = 0;
++
++	return set_memory_region(vmid, &region);
+ }
+ 
+-int set_memmaps(struct set_memmaps *memmaps)
++int set_memory_regions(struct set_regions *regions)
+ {
+-	if (memmaps == NULL)
++	if (regions == NULL)
+ 		return -EINVAL;
+-	if (memmaps->memmaps_num > 0) {
+-		if (hcall_set_memmaps(virt_to_phys(memmaps)) < 0) {
+-			pr_err("vhm: failed to set memmaps!\n");
++	if (regions->mr_num > 0) {
++		if (hcall_set_memory_regions(virt_to_phys(regions)) < 0) {
++			pr_err("vhm: failed to set memory regions!\n");
+ 			return -EFAULT;
+ 		}
+ 	}
+@@ -184,10 +187,6 @@ int write_protect_page(unsigned long vmid,
+ 
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ {
+-	unsigned int type;
+-	unsigned int mem_type, mem_access_right;
+-	unsigned long guest_gpa, host_gpa;
+-
+ 	/* hugetlb use vma to do the mapping */
+ 	if (memmap->type == VM_MEMMAP_SYSMEM && memmap->using_vma)
+ 		return hugepage_map_guest(vm, memmap);
+@@ -198,15 +197,11 @@ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 			__func__, memmap->type);
+ 		return -EINVAL;
+ 	}
+-	guest_gpa = memmap->gpa;
+-	host_gpa = acrn_hpa2gpa(memmap->hpa);
+-	mem_type = MEM_TYPE_UC;
+-	mem_access_right = (memmap->prot & MEM_ACCESS_RIGHT_MASK);
+-	type = MAP_MEM;
+-
+-	if (_mem_set_memmap(vm->vmid, guest_gpa, host_gpa, memmap->len,
+-		mem_type, mem_access_right, type) < 0) {
+-		pr_err("vhm: failed to set memmap %ld!\n", vm->vmid);
++
++	if (add_memory_region(vm->vmid, memmap->gpa,
++			acrn_hpa2gpa(memmap->hpa), memmap->len,
++			MEM_TYPE_UC, memmap->prot) < 0){
++		pr_err("vhm: failed to set memory region %ld!\n", vm->vmid);
+ 		return -EFAULT;
+ 	}
+ 
+@@ -233,8 +228,8 @@ int init_trusty(struct vhm_vm *vm)
+ 
+ 	pr_info("VHM: set ept for trusty memory [host_gpa=0x%lx, "
+ 		"guest_gpa=0x%lx, len=0x%lx]", host_gpa, guest_gpa, len);
+-	return _mem_set_memmap(vm->vmid, guest_gpa, host_gpa, len,
+-		MEM_TYPE_WB, MEM_ACCESS_RWX, MAP_MEM);
++	return add_memory_region(vm->vmid, guest_gpa, host_gpa, len,
++		MEM_TYPE_WB, MEM_ACCESS_RWX);
+ }
+ 
+ void deinit_trusty(struct vhm_vm *vm)
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 74f8a13..223702c 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -93,9 +93,8 @@
+ 
+ /* Guest memory management */
+ #define HC_ID_MEM_BASE              0x40UL
+-#define HC_VM_SET_MEMMAP            _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x00)
+ #define HC_VM_GPA2HPA               _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x01)
+-#define HC_VM_SET_MEMMAPS           _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x02)
++#define HC_VM_SET_MEMORY_REGIONS    _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x02)
+ #define HC_VM_WRITE_PROTECT_PAGE    _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x03)
+ 
+ /* PCI assignment*/
+@@ -133,43 +132,25 @@
+ #define	MEM_TYPE_WP                     0x00000400
+ #define MEM_TYPE_MASK                   0x000007C0
+ 
+-struct vm_set_memmap {
+-#define MAP_MEM		0
+-#define MAP_UNMAP	2
++struct vm_memory_region {
++#define MR_ADD		0
++#define MR_DEL		2
+ 	uint32_t type;
+ 
+ 	/* IN: mem attr */
+ 	uint32_t prot;
+ 
+ 	/* IN: beginning guest GPA to map */
+-	uint64_t remote_gpa;
+-
+-	/* IN: VM0's GPA which foreign gpa will be mapped to */
+-	uint64_t vm0_gpa;
+-
+-	/* IN: length of the range */
+-	uint64_t length;
+-
+-	uint32_t prot_2;
+-} __attribute__((aligned(8)));
+-
+-struct memory_map {
+-	uint32_t type;
+-
+-	/* IN: mem attr */
+-	uint32_t prot;
+-
+-	/* IN: beginning guest GPA to map */
+-	uint64_t remote_gpa;
++	uint64_t gpa;
+ 
+ 	/* IN: VM0's GPA which foreign gpa will be mapped to */
+ 	uint64_t vm0_gpa;
+ 
+-	/* IN: length of the range */
+-	uint64_t length;
++	/* IN: size of the region */
++	uint64_t size;
+ } __attribute__((aligned(8)));
+ 
+-struct set_memmaps {
++struct set_regions {
+ 	/*IN: vmid for this hypercall */
+ 	uint16_t vmid;
+ 
+@@ -177,14 +158,14 @@ struct set_memmaps {
+ 	uint16_t reserved[3];
+ 
+ 	/* IN: multi memmaps numbers */
+-	uint32_t memmaps_num;
++	uint32_t mr_num;
+ 
+ 	/* IN:
+ 	 * the gpa of memmaps buffer, point to the memmaps array:
+ 	 *  	struct memory_map memmap_array[memmaps_num]
+ 	 * the max buffer size is one page.
+ 	 */
+-	uint64_t memmaps_gpa;
++	uint64_t regions_gpa;
+ } __attribute__((aligned(8)));
+ 
+ struct wp_data {
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 0769200..62aed34 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -99,12 +99,12 @@ void *map_guest_phys(unsigned long vmid, u64 uos_phys, size_t size);
+ int unmap_guest_phys(unsigned long vmid, u64 uos_phys);
+ 
+ /**
+- * set_mmio_map - map mmio EPT mapping between UOS gpa and SOS gpa
++ * add_memory_region - add a guest memory region
+  *
+  * @vmid: guest vmid
+- * @guest_gpa: gpa of UOS
++ * @gpa: gpa of UOS
+  * @host_gpa: gpa of SOS
+- * @len: memory mapped length
++ * @size: memory region size
+  * @mem_type: memory mapping type. Possible value could be:
+  *                    MEM_TYPE_WB
+  *                    MEM_TYPE_WT
+@@ -119,22 +119,21 @@ int unmap_guest_phys(unsigned long vmid, u64 uos_phys);
+  *
+  * Return: 0 on success, <0 for error.
+  */
+-int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len,
++int add_memory_region(unsigned long vmid, unsigned long gpa,
++	unsigned long host_gpa, unsigned long size,
+ 	unsigned int mem_type, unsigned int mem_access_right);
+ 
+ /**
+- * unset_mmio_map - unmap mmio mapping between UOS gpa and SOS gpa
++ * del_memory_region - delete a guest memory region
+  *
+  * @vmid: guest vmid
+- * @guest_gpa: gpa of UOS
+- * @host_gpa: gpa of SOS
+- * @len: memory mapped length
++ * @gpa: gpa of UOS
++ * @size: memory region size
+  *
+  * Return: 0 on success, <0 for error.
+  */
+-int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len);
++int del_memory_region(unsigned long vmid, unsigned long gpa,
++	unsigned long size);
+ 
+ /**
+  * write_protect_page - change one page write protection
+@@ -173,21 +172,17 @@ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
+ int init_trusty(struct vhm_vm *vm);
+ void deinit_trusty(struct vhm_vm *vm);
+ 
+-int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len,
+-	unsigned int mem_type, unsigned int mem_access_right,
+-	unsigned int type);
+ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap);
+ void hugepage_free_guest(struct vhm_vm *vm);
+ void *hugepage_map_guest_phys(struct vhm_vm *vm, u64 guest_phys, size_t size);
+ int hugepage_unmap_guest_phys(struct vhm_vm *vm, u64 guest_phys);
+ 
+ /**
+- * set_memmaps - set guest mapping for multi regions
++ * set_memory_regions - set guest mapping for multi regions
+  *
+- * @memmaps: pointer to set_memmaps
++ * @regions: pointer to set_regions
+  *
+  * Return: 0 on success, <0 for error.
+  */
+-int set_memmaps(struct set_memmaps *memmaps);
++int set_memory_regions(struct set_regions *regions);
+ #endif
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index 87a34fe..0a3869b 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -148,9 +148,7 @@ inline long hcall_query_vm_state(unsigned long vmid);
+ inline long hcall_setup_sbuf(unsigned long sbuf_head);
+ inline long hcall_set_sstate_data(unsigned long sx_data_addr);
+ inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa);
+-inline long hcall_set_memmap(unsigned long vmid,
+-		unsigned long memmap);
+-inline long hcall_set_memmaps(unsigned long pa_memmaps);
++inline long hcall_set_memory_regions(unsigned long pa_regions);
+ inline long hcall_write_protect_page(unsigned long vmid,
+ 		unsigned long wp);
+ inline long hcall_set_ioreq_buffer(unsigned long vmid,
+-- 
+2.7.4
+

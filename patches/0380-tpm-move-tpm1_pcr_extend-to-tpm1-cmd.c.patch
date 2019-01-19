@@ -1,0 +1,118 @@
+From 70e5c83353ee566ac5c902592032fffe0dcab058 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Tue, 6 Mar 2018 09:36:11 +0200
+Subject: [PATCH 0380/1132] tpm: move tpm1_pcr_extend to tpm1-cmd.c
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Move tpm1_pcr_extend to tpm1-cmd.c and remove
+unused pcrextend_header structure and
+EXTEND_PCR_RESULT_SIZE and EXTEND_PCR_RESULT_BODY_SIZE
+defines.
+
+Fixes warning:
+drivers/char/tpm/tpm-interface.c:609:38: warning: ‘pcrextend_header’ defined but not used [-Wunused-const-variable=]
+ static const struct tpm_input_header pcrextend_header = {
+                                      ^~~~~~~~~~~~~~~~
+
+V2-V3: Rebase
+V4: Remove defines.
+V5: Resend
+V6: Add Tested-by:
+
+Change-Id: Icaaa1861f8d3da34220ab8e0e19f78ae3dfa1a6e
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Reviewed-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+Reviewed-by: Nayna Jain <nayna@linux.ibm.com>
+Tested-by: Nayna Jain <nayna@linux.ibm.com>
+---
+ drivers/char/tpm/tpm-interface.c | 28 ----------------------------
+ drivers/char/tpm/tpm.h           |  2 ++
+ drivers/char/tpm/tpm1-cmd.c      | 21 +++++++++++++++++++++
+ 3 files changed, 23 insertions(+), 28 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-interface.c b/drivers/char/tpm/tpm-interface.c
+index 20f5c15..177795b4 100644
+--- a/drivers/char/tpm/tpm-interface.c
++++ b/drivers/char/tpm/tpm-interface.c
+@@ -615,34 +615,6 @@ int tpm_pcr_read(struct tpm_chip *chip, int pcr_idx, u8 *res_buf)
+ }
+ EXPORT_SYMBOL_GPL(tpm_pcr_read);
+ 
+-#define TPM_ORD_PCR_EXTEND 20
+-#define EXTEND_PCR_RESULT_SIZE 34
+-#define EXTEND_PCR_RESULT_BODY_SIZE 20
+-static const struct tpm_input_header pcrextend_header = {
+-	.tag = cpu_to_be16(TPM_TAG_RQU_COMMAND),
+-	.length = cpu_to_be32(34),
+-	.ordinal = cpu_to_be32(TPM_ORD_PCR_EXTEND)
+-};
+-
+-static int tpm1_pcr_extend(struct tpm_chip *chip, int pcr_idx, const u8 *hash,
+-			   char *log_msg)
+-{
+-	struct tpm_buf buf;
+-	int rc;
+-
+-	rc = tpm_buf_init(&buf, TPM_TAG_RQU_COMMAND, TPM_ORD_PCR_EXTEND);
+-	if (rc)
+-		return rc;
+-
+-	tpm_buf_append_u32(&buf, pcr_idx);
+-	tpm_buf_append(&buf, hash, TPM_DIGEST_SIZE);
+-
+-	rc = tpm_transmit_cmd(chip, NULL, buf.data, EXTEND_PCR_RESULT_SIZE,
+-			      EXTEND_PCR_RESULT_BODY_SIZE, 0, log_msg);
+-	tpm_buf_destroy(&buf);
+-	return rc;
+-}
+-
+ /**
+  * tpm_pcr_extend - extend a PCR value in SHA1 bank.
+  * @chip:	a &struct tpm_chip instance, %NULL for the default chip
+diff --git a/drivers/char/tpm/tpm.h b/drivers/char/tpm/tpm.h
+index 4ea51bb..221b6dc 100644
+--- a/drivers/char/tpm/tpm.h
++++ b/drivers/char/tpm/tpm.h
+@@ -549,6 +549,8 @@ int tpm_do_selftest(struct tpm_chip *chip);
+ 
+ int tpm1_get_timeouts(struct tpm_chip *chip);
+ unsigned long tpm1_calc_ordinal_duration(struct tpm_chip *chip, u32 ordinal);
++int tpm1_pcr_extend(struct tpm_chip *chip, int pcr_idx, const u8 *hash,
++		    const char *log_msg);
+ unsigned long tpm_calc_ordinal_duration(struct tpm_chip *chip, u32 ordinal);
+ int tpm_pm_suspend(struct device *dev);
+ int tpm_pm_resume(struct device *dev);
+diff --git a/drivers/char/tpm/tpm1-cmd.c b/drivers/char/tpm/tpm1-cmd.c
+index 9789467..ec24239 100644
+--- a/drivers/char/tpm/tpm1-cmd.c
++++ b/drivers/char/tpm/tpm1-cmd.c
+@@ -413,3 +413,24 @@ int tpm1_get_timeouts(struct tpm_chip *chip)
+ 	chip->flags |= TPM_CHIP_FLAG_HAVE_TIMEOUTS;
+ 	return 0;
+ }
++
++#define TPM_ORD_PCR_EXTEND 20
++int tpm1_pcr_extend(struct tpm_chip *chip, int pcr_idx, const u8 *hash,
++		    const char *log_msg)
++{
++	struct tpm_buf buf;
++	int rc;
++
++	rc = tpm_buf_init(&buf, TPM_TAG_RQU_COMMAND, TPM_ORD_PCR_EXTEND);
++	if (rc)
++		return rc;
++
++	tpm_buf_append_u32(&buf, pcr_idx);
++	tpm_buf_append(&buf, hash, TPM_DIGEST_SIZE);
++
++	rc = tpm_transmit_cmd(chip, NULL, buf.data, PAGE_SIZE,
++			      TPM_DIGEST_SIZE, 0, log_msg);
++
++	tpm_buf_destroy(&buf);
++	return rc;
++}
+-- 
+2.7.4
+

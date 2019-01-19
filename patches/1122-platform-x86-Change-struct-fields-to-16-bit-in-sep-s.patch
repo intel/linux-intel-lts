@@ -1,0 +1,171 @@
+From 7e68acdfe5c0c75dc3826f908f173f3e7af8559f Mon Sep 17 00:00:00 2001
+From: Jon Moeller <jon.moeller@intel.com>
+Date: Tue, 8 Jan 2019 20:29:09 -0600
+Subject: [PATCH 1122/1132] platform/x86: Change struct fields to 16-bit in
+ sep, socwatchhv drivers
+
+Changing some fields in structs used by sep and socwatch drivers to match
+16-bit fields in hypervisor to avoid casting.
+
+Change-Id: If3f21f75b559fb19104cbe9137ac54dffc9e4762
+Tracked-On: PKT-1655
+Signed-off-by: Jon Moeller <jon.moeller@intel.com>
+---
+ drivers/platform/x86/sepdk/inc/control.h           |  2 +-
+ drivers/platform/x86/sepdk/inc/lwpmudrv.h          | 15 ++++++-------
+ .../platform/x86/sepdk/include/lwpmudrv_struct.h   |  6 +++---
+ drivers/platform/x86/sepdk/sep/apic.c              |  4 ++--
+ drivers/platform/x86/socwatchhv/inc/swhv_structs.h | 25 +++++++++++-----------
+ 5 files changed, 26 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/platform/x86/sepdk/inc/control.h b/drivers/platform/x86/sepdk/inc/control.h
+index 73ecc2e..5a94c3a 100644
+--- a/drivers/platform/x86/sepdk/inc/control.h
++++ b/drivers/platform/x86/sepdk/inc/control.h
+@@ -102,7 +102,7 @@ struct GLOBAL_STATE_NODE_S {
+ typedef struct CPU_STATE_NODE_S CPU_STATE_NODE;
+ typedef CPU_STATE_NODE * CPU_STATE;
+ struct CPU_STATE_NODE_S {
+-	S32 apic_id; // Processor ID on the system bus
++	U32 apic_id; // Processor ID on the system bus
+ 	PVOID apic_linear_addr; // linear address of local apic
+ 	PVOID apic_physical_addr; // physical address of local apic
+ 
+diff --git a/drivers/platform/x86/sepdk/inc/lwpmudrv.h b/drivers/platform/x86/sepdk/inc/lwpmudrv.h
+index 37c8109..994121d 100644
+--- a/drivers/platform/x86/sepdk/inc/lwpmudrv.h
++++ b/drivers/platform/x86/sepdk/inc/lwpmudrv.h
+@@ -454,9 +454,8 @@ int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf);
+ 
+ extern shared_buf_t **samp_buf_per_cpu;
+ 
+-#define MAX_NR_PCPUS 8
+ #define MAX_NR_VCPUS 8
+-#define MAX_NR_VMS 6
++#define MAX_NR_VMS 4
+ #define MAX_MSR_LIST_NUM 15
+ #define MAX_GROUP_NUM 1
+ 
+@@ -490,21 +489,21 @@ struct profiling_msr_ops_list {
+ };
+ 
+ struct profiling_vcpu_pcpu_map {
+-	int32_t vcpu_id;
+-	int32_t pcpu_id;
+-	int32_t apic_id;
++	int16_t vcpu_id;
++	int16_t pcpu_id;
++	uint32_t apic_id;
+ };
+ 
+ struct profiling_vm_info {
+-	int32_t vm_id;
++	uint16_t vm_id;
+ 	u_char guid[16];
+ 	char vm_name[16];
+-	int32_t num_vcpus;
++	uint16_t num_vcpus;
+ 	struct profiling_vcpu_pcpu_map cpu_map[MAX_NR_VCPUS];
+ };
+ 
+ struct profiling_vm_info_list {
+-	int32_t num_vms;
++	uint16_t num_vms;
+ 	struct profiling_vm_info vm_list[MAX_NR_VMS];
+ };
+ 
+diff --git a/drivers/platform/x86/sepdk/include/lwpmudrv_struct.h b/drivers/platform/x86/sepdk/include/lwpmudrv_struct.h
+index 82819e5..3af04d4 100644
+--- a/drivers/platform/x86/sepdk/include/lwpmudrv_struct.h
++++ b/drivers/platform/x86/sepdk/include/lwpmudrv_struct.h
+@@ -1646,14 +1646,14 @@ typedef CPU_MAP_TRACE_NODE * CPU_MAP_TRACE;
+ struct CPU_MAP_TRACE_NODE_S {
+ 	U64 tsc;
+ 	U32 os_id;
+-	U32 vcpu_id;
+-	U32 pcpu_id;
++	U16 vcpu_id;
++	U16 pcpu_id;
+ 	U8 is_static : 1;
+ 	U8 initial : 1;
+ 	U8 reserved1 : 6;
+ 	U8 reserved2;
+ 	U16 reserved3;
+-	U64 reserved4;
++	U32 reserved4;
+ };
+ 
+ #define CPU_MAP_TRACE_tsc(x) ((x)->tsc)
+diff --git a/drivers/platform/x86/sepdk/sep/apic.c b/drivers/platform/x86/sepdk/sep/apic.c
+index 693c526..8f8bc56 100755
+--- a/drivers/platform/x86/sepdk/sep/apic.c
++++ b/drivers/platform/x86/sepdk/sep/apic.c
+@@ -65,7 +65,7 @@ static VOID apic_Get_APIC_ID(S32 cpu)
+ 	U32 apic_id = 0;
+ 	CPU_STATE pcpu;
+ #if defined(DRV_SEP_ACRN_ON)
+-	U32 i;
++	U16 i;
+ #endif
+ 
+ 	SEP_DRV_LOG_TRACE_IN("CPU: %d.", cpu);
+@@ -108,7 +108,7 @@ static VOID apic_Get_APIC_ID(S32 cpu)
+ 			"apic_Get_APIC_ID: Error in reading APIC ID on ACRN\n");
+ 	} else {
+ 		for (i = 0; i < vm_info_list->num_vms; i++) {
+-			if (vm_info_list->vm_list[i].vm_id == 0xFFFFFFFF) {
++			if (vm_info_list->vm_list[i].vm_id == 0xFFFF) {
+ 				CPU_STATE_apic_id(pcpu) =
+ 					vm_info_list->vm_list[i]
+ 						.cpu_map[cpu]
+diff --git a/drivers/platform/x86/socwatchhv/inc/swhv_structs.h b/drivers/platform/x86/socwatchhv/inc/swhv_structs.h
+index d5fd717..0393a95 100644
+--- a/drivers/platform/x86/socwatchhv/inc/swhv_structs.h
++++ b/drivers/platform/x86/socwatchhv/inc/swhv_structs.h
+@@ -199,30 +199,31 @@ struct vm_switch_trace {
+ 	uint64_t vm_enter_tsc;
+ 	uint64_t vm_exit_tsc;
+ 	uint64_t vm_exit_reason;
+-	int32_t os_id;
++	uint16_t os_id;
++	uint16_t reserved;
+ } __attribute__((aligned(32)));
+ #define VM_SWITCH_TRACE_SIZE ((uint64_t)sizeof(struct vm_switch_trace))
+ 
+-#define MAX_NR_VCPUS 8
+-#define MAX_NR_VMS 6
++#define CONFIG_MAX_VCPUS_PER_VM 8
++#define CONFIG_MAX_VM_NUM       6
+ 
+ struct profiling_vcpu_pcpu_map {
+-	int32_t vcpu_id;
+-	int32_t pcpu_id;
+-	int32_t apic_id;
++	int16_t vcpu_id;
++	int16_t pcpu_id;
++	uint32_t apic_id;
+ } __attribute__((aligned(8)));
+ 
+ struct profiling_vm_info {
+-	int32_t vm_id_num;
+-	unsigned char guid[16];
++	uint16_t vm_id_num;
++	uint8_t guid[16];
+ 	char vm_name[16];
+-	int32_t num_vcpus;
+-	struct profiling_vcpu_pcpu_map cpu_map[MAX_NR_VCPUS];
++	uint16_t num_vcpus;
++	struct profiling_vcpu_pcpu_map cpu_map[CONFIG_MAX_VCPUS_PER_VM];
+ } __attribute__((aligned(8)));
+ 
+ struct profiling_vm_info_list {
+-	int32_t num_vms;
+-	struct profiling_vm_info vm_list[MAX_NR_VMS];
++	uint16_t num_vms;
++	struct profiling_vm_info vm_list[CONFIG_MAX_VM_NUM];
+ } __attribute__((aligned(8)));
+ 
+ /*
+-- 
+2.7.4
+

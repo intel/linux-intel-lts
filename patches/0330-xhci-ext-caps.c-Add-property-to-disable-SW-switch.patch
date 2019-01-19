@@ -1,0 +1,70 @@
+From 1679688a0a23ca75056b89289d39ad53302781f5 Mon Sep 17 00:00:00 2001
+From: Saranya Gopal <saranya.gopal@intel.com>
+Date: Fri, 5 Oct 2018 15:19:47 +0530
+Subject: [PATCH 0330/1132] xhci-ext-caps.c: Add property to disable SW switch
+
+In platforms like Cherrytrail, 'SW switch enable' bit
+should not be enabled for role switch. This patch
+adds a property to Intel USB Role Switch platform driver
+to denote that SW switch should be disabled in
+Cherrytrail devices.
+
+Signed-off-by: Saranya Gopal <saranya.gopal@intel.com>
+Signed-off-by: M, Balaji <m.balaji@intel.com>
+[ heikki: fixed compile warnings ]
+Signed-off-by: Heikki Krogerus <heikki.krogerus@linux.intel.com>
+---
+ drivers/usb/host/xhci-ext-caps.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/drivers/usb/host/xhci-ext-caps.c b/drivers/usb/host/xhci-ext-caps.c
+index 399113f..b4129dd 100644
+--- a/drivers/usb/host/xhci-ext-caps.c
++++ b/drivers/usb/host/xhci-ext-caps.c
+@@ -6,11 +6,20 @@
+  */
+ 
+ #include <linux/platform_device.h>
++#include <linux/property.h>
++#include <linux/pci.h>
+ #include "xhci.h"
+ 
+ #define USB_SW_DRV_NAME		"intel_xhci_usb_sw"
+ #define USB_SW_RESOURCE_SIZE	0x400
+ 
++#define PCI_DEVICE_ID_INTEL_CHERRYVIEW_XHCI	0x22b5
++
++static const struct property_entry role_switch_props[] = {
++	PROPERTY_ENTRY_BOOL("drd,sw_switch_disable"),
++	{},
++};
++
+ static void xhci_intel_unregister_pdev(void *arg)
+ {
+ 	platform_device_unregister(arg);
+@@ -21,6 +30,7 @@ static int xhci_create_intel_xhci_sw_pdev(struct xhci_hcd *xhci, u32 cap_offset)
+ 	struct usb_hcd *hcd = xhci_to_hcd(xhci);
+ 	struct device *dev = hcd->self.controller;
+ 	struct platform_device *pdev;
++	struct pci_dev *pci = to_pci_dev(dev);
+ 	struct resource	res = { 0, };
+ 	int ret;
+ 
+@@ -43,6 +53,14 @@ static int xhci_create_intel_xhci_sw_pdev(struct xhci_hcd *xhci, u32 cap_offset)
+ 		return ret;
+ 	}
+ 
++	if (pci->device == PCI_DEVICE_ID_INTEL_CHERRYVIEW_XHCI) {
++		ret = platform_device_add_properties(pdev, role_switch_props);
++		if (ret) {
++			dev_err(dev, "failed to register device properties\n");
++			return ret;
++		}
++	}
++
+ 	pdev->dev.parent = dev;
+ 
+ 	ret = platform_device_add(pdev);
+-- 
+2.7.4
+

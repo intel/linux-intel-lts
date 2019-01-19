@@ -1,0 +1,50 @@
+From fce6f4be8bd6245c99665e159a7b81a49c828dfe Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Tue, 12 Jul 2016 10:57:10 +0530
+Subject: [PATCH 0512/1132] ASoC: Intel: Skylake: Probe-Increase Injector DMA
+ buffer size
+
+    DMA buffer size needed for 48KHz, 4 channel, 32 bit data scheduled
+    at 4ms for 2 probe packets is = 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
+    This is the worst case buffer for current set of usecases.
+    Increase the DMA buffer size to this value for now until an optimal
+    buffer size value is arrived at.
+
+Change-Id: Iaf7c3229c6217c10c0c6871c358e9df74b552414
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-on:
+Reviewed-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+Tested-by: Jayanti, Satya Charitardha <satya.charitardha.jayanti@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 49f8404f..a27112b 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -37,6 +37,12 @@
+ #define SKL_FMT_FIXUP_MASK		(1 << 2)
+ #define SKL_IN_DIR_BIT_MASK		BIT(0)
+ #define SKL_PIN_COUNT_MASK		GENMASK(7, 4)
++/*
++ * DMA buffer size needed for 48KHz, 4 channel, 32 bit data
++ * scheduled at 4ms  for 2 probe packets is
++ * 2* [ 24 + (48*4*4*32/8) + 8]  = 6208.
++ */
++#define SKL_INJECT_PROBE_DMA_BUFF_SIZE 6208
+ 
+ static const int mic_mono_list[] = {
+ 0, 1, 2, 3,
+@@ -505,7 +511,7 @@ int skl_tplg_attach_probe_dma(struct snd_soc_dapm_widget *w,
+ 		ad.node_id.node.vindex = pconfig->iprobe[i].dma_id;
+ 		ad.node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
+ 		ad.node_id.node.rsvd = 0;
+-		ad.dma_buff_size = 1536;/* TODO:Configure based on calculation*/
++		ad.dma_buff_size = SKL_INJECT_PROBE_DMA_BUFF_SIZE;
+ 	}
+ 
+ 	ret = skl_set_module_params(ctx, (u32 *)&ad,
+-- 
+2.7.4
+

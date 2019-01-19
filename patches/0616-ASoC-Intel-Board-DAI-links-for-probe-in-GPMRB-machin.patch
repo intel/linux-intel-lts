@@ -1,0 +1,49 @@
+From a4a8477c6badaade7c9b0e9bb08d65f546d9692a Mon Sep 17 00:00:00 2001
+From: "Sinha, Mohit" <mohit.sinha@intel.com>
+Date: Thu, 6 Jul 2017 16:10:32 +0530
+Subject: [PATCH 0616/1132] ASoC: Intel: Board: DAI links for probe in GPMRB
+ machine driver
+
+Added two DAI links for probe playback and capture
+
+Change-Id: I0bf364eba3b6a2b779625a6fd1b664c2530a1ab2
+Signed-off-by: Sinha, Mohit <mohit.sinha@intel.com>
+---
+ sound/soc/intel/boards/bxt_tdf8532.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/sound/soc/intel/boards/bxt_tdf8532.c b/sound/soc/intel/boards/bxt_tdf8532.c
+index 027060b..1e2b8be 100644
+--- a/sound/soc/intel/boards/bxt_tdf8532.c
++++ b/sound/soc/intel/boards/bxt_tdf8532.c
+@@ -78,6 +78,27 @@ static const struct snd_soc_dapm_route broxton_tdf8532_map[] = {
+ 
+ /* broxton digital audio interface glue - connects codec <--> CPU */
+ static struct snd_soc_dai_link broxton_tdf8532_dais[] = {
++	/* Probe DAI links*/
++	{
++		.name = "Bxt Compress Probe playback",
++		.stream_name = "Probe Playback",
++		.cpu_dai_name = "Compress Probe0 Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.nonatomic = 1,
++	},
++	{
++		.name = "Bxt Compress Probe capture",
++		.stream_name = "Probe Capture",
++		.cpu_dai_name = "Compress Probe1 Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.init = NULL,
++		.nonatomic = 1,
++	},
+ 	/* Back End DAI links */
+ 	{
+ 		/* SSP0 - BT */
+-- 
+2.7.4
+

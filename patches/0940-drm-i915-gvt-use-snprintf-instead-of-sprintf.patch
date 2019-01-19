@@ -1,0 +1,36 @@
+From 653b64d32a62143dbec3a3ef7484503ca97e4734 Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Tue, 23 Oct 2018 11:31:17 +0800
+Subject: [PATCH 0940/1132] drm/i915/gvt: use snprintf instead of sprintf
+
+To use snprintf to avoid potential overflow, although vgpu->id is
+guaranteed in the range of [0, GVT_MAX_VGPU] and should have no real
+issue.
+
+Tracked-On: projectacrn/acrn-hypervisor#1581
+
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/debugfs.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/debugfs.c b/drivers/gpu/drm/i915/gvt/debugfs.c
+index 2ec89bc..c41e1e2 100644
+--- a/drivers/gpu/drm/i915/gvt/debugfs.c
++++ b/drivers/gpu/drm/i915/gvt/debugfs.c
+@@ -196,9 +196,9 @@ DEFINE_SIMPLE_ATTRIBUTE(vgpu_scan_nonprivbb_fops,
+ int intel_gvt_debugfs_add_vgpu(struct intel_vgpu *vgpu)
+ {
+ 	struct dentry *ent;
+-	char name[10] = "";
++	char name[10];
+ 
+-	sprintf(name, "vgpu%d", vgpu->id);
++	snprintf(name, sizeof(name), "vgpu%d", vgpu->id);
+ 	vgpu->debugfs = debugfs_create_dir(name, vgpu->gvt->debugfs_root);
+ 	if (!vgpu->debugfs)
+ 		return -ENOMEM;
+-- 
+2.7.4
+

@@ -1,0 +1,40 @@
+From 5d8cdb305f71f32f17f0f4a1f1dd355d57168b66 Mon Sep 17 00:00:00 2001
+From: "Gross, Mark" <mark.gross@intel.com>
+Date: Fri, 14 Sep 2018 13:16:02 -0700
+Subject: [PATCH 0300/1132] the igb_avb direver cannot coexist with e1000 or
+ e1000e drivers.
+
+So I'm making the config protest from enabling igb_avb and e1000 or
+e1000e at the same time.
+
+I hope this constraint is not a deal breaker.
+
+Signed-off-by: mark gross<mark.gross@intel.com>
+---
+ drivers/staging/igb_avb/Kconfig | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/staging/igb_avb/Kconfig b/drivers/staging/igb_avb/Kconfig
+index e3da46a..2d3780b 100644
+--- a/drivers/staging/igb_avb/Kconfig
++++ b/drivers/staging/igb_avb/Kconfig
+@@ -1,6 +1,6 @@
+ config IGB_AVB
+ 	tristate "Avnu IGB AVB driver"
+-	depends on IGB=n
++	depends on IGB=n && E1000=n && E1000E=n
+ 	select DCA
+ 	default n
+ 	---help---
+@@ -13,6 +13,5 @@ config IGB_AVB
+ 		frame transmission, or test harnesses for measuring system
+ 		latencies and sampling events. It is exclusive with the
+ 		in-tree IGB driver, so only one of them can be enabled
+-		at any point in time.
+-
+-		To build this as a module, say M, if not sure say N.
++		at any point in time.  There are also coexistance issues with
++		the e1000 and e1000e.
+-- 
+2.7.4
+

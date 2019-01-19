@@ -1,0 +1,74 @@
+From 48952fd2489ed1cffb9510aa281ff3edb07ae2a1 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Mon, 22 Aug 2016 12:13:36 +0530
+Subject: [PATCH 0444/1132] ASoC: Intel: CNL: Add library loading support
+
+Cannonlake's library loading is similar to broxton's. So reuse it.
+
+Change-Id: I3a0d64da0eaef395cd5e6a95252e4025ce7921b2
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/bxt-sst.c     |  2 +-
+ sound/soc/intel/skylake/cnl-sst.c     | 10 ++++++++++
+ sound/soc/intel/skylake/skl-sst-dsp.h |  1 +
+ 3 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/bxt-sst.c b/sound/soc/intel/skylake/bxt-sst.c
+index 440bca7..924c0df 100644
+--- a/sound/soc/intel/skylake/bxt-sst.c
++++ b/sound/soc/intel/skylake/bxt-sst.c
+@@ -53,7 +53,7 @@ static unsigned int bxt_get_errorcode(struct sst_dsp *ctx)
+ 	 return sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE);
+ }
+ 
+-static int
++int
+ bxt_load_library(struct sst_dsp *ctx, struct skl_lib_info *linfo, int lib_count)
+ {
+ 	struct snd_dma_buffer dmab;
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 2969e57..a66ed94 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -357,6 +357,7 @@ static const struct skl_dsp_fw_ops cnl_fw_ops = {
+ 	.set_state_D3 = cnl_set_dsp_D3,
+ 	.load_fw = cnl_load_base_firmware,
+ 	.get_fw_errcode = cnl_get_errno,
++	.load_library = bxt_load_library,
+ };
+ 
+ static struct sst_ops cnl_ops = {
+@@ -550,9 +551,18 @@ EXPORT_SYMBOL_GPL(cnl_sst_dsp_init);
+ int cnl_sst_init_fw(struct device *dev, struct skl_sst *ctx)
+ {
+ 	struct sst_dsp *sst = ctx->dsp;
++	int ret;
+ 
+ 	skl_dsp_init_core_state(sst);
+ 
++	if (ctx->lib_count > 1) {
++		ret = sst->fw_ops.load_library(sst, ctx->lib_info,
++						ctx->lib_count);
++		if (ret) {
++			dev_err(dev, "Load Library failed: %#x", ret);
++			return ret;
++		}
++	}
+ 	ctx->is_first_boot = false;
+ 
+ 	return 0;
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.h b/sound/soc/intel/skylake/skl-sst-dsp.h
+index e1d6f67..33de8c9 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.h
++++ b/sound/soc/intel/skylake/skl-sst-dsp.h
+@@ -238,6 +238,7 @@ int skl_sst_init_fw(struct device *dev, struct skl_sst *ctx);
+ int bxt_sst_init_fw(struct device *dev, struct skl_sst *ctx);
+ void skl_sst_dsp_cleanup(struct device *dev, struct skl_sst *ctx);
+ void bxt_sst_dsp_cleanup(struct device *dev, struct skl_sst *ctx);
++int bxt_load_library(struct sst_dsp *ctx, struct skl_lib_info *linfo, int lib_count);
+ 
+ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
+ 				unsigned int offset, int index);
+-- 
+2.7.4
+

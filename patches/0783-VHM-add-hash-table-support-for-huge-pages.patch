@@ -1,0 +1,518 @@
+From dc9859c5fef623585102236dddc96425993f4da2 Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:59:00 +0800
+Subject: [PATCH 0783/1132] VHM: add hash table support for huge pages
+
+use HUGEPAGE_2M_HLIST_ARRAY_SIZE(16) for 2M hash table size,
+HUGEPAGE_1G_HLIST_ARRAY_SIZE(1) for 1G hash table size.
+
+The assumption is that we only support 2M & 1G huge pages.
+
+Change-Id: I08d331d7b7ff7e6a96f36e8c496db3644628aa9e
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-on:
+---
+ drivers/char/vhm/vhm_dev.c      |   5 +
+ drivers/vhm/Makefile            |   2 +-
+ drivers/vhm/vhm_hugetlb.c       | 273 ++++++++++++++++++++++++++++++++++++++++
+ drivers/vhm/vhm_mm.c            |  83 +++---------
+ include/linux/vhm/acrn_vhm_mm.h |   8 ++
+ include/linux/vhm/vhm_vm_mngt.h |   8 ++
+ 6 files changed, 313 insertions(+), 66 deletions(-)
+ create mode 100644 drivers/vhm/vhm_hugetlb.c
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 8d083a0..f4d2ec2 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -112,6 +112,7 @@ static DEFINE_MUTEX(table_iomems_lock);
+ static int vhm_dev_open(struct inode *inodep, struct file *filep)
+ {
+ 	struct vhm_vm *vm;
++	int i;
+ 
+ 	vm = kzalloc(sizeof(struct vhm_vm), GFP_KERNEL);
+ 	pr_info("vhm_dev_open: opening device node\n");
+@@ -124,6 +125,10 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
+ 	INIT_LIST_HEAD(&vm->memseg_list);
+ 	mutex_init(&vm->seg_lock);
+ 
++	for (i = 0; i < HUGEPAGE_HLIST_ARRAY_SIZE; i++)
++		INIT_HLIST_HEAD(&vm->hugepage_hlist[i]);
++	mutex_init(&vm->hugepage_lock);
++
+ 	INIT_LIST_HEAD(&vm->ioreq_client_list);
+ 	spin_lock_init(&vm->ioreq_client_lock);
+ 
+diff --git a/drivers/vhm/Makefile b/drivers/vhm/Makefile
+index b4d58a9..23f17ae 100644
+--- a/drivers/vhm/Makefile
++++ b/drivers/vhm/Makefile
+@@ -1 +1 @@
+-obj-y += vhm_mm.o vhm_ioreq.o vhm_vm_mngt.o vhm_msi.o vhm_hypercall.o
++obj-y += vhm_mm.o vhm_hugetlb.o vhm_ioreq.o vhm_vm_mngt.o vhm_msi.o vhm_hypercall.o
+diff --git a/drivers/vhm/vhm_hugetlb.c b/drivers/vhm/vhm_hugetlb.c
+new file mode 100644
+index 0000000..afab8ab
+--- /dev/null
++++ b/drivers/vhm/vhm_hugetlb.c
+@@ -0,0 +1,273 @@
++/*
++ * virtio and hyperviosr service module (VHM): hugetlb
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * BSD LICENSE
++ *
++ * Copyright (C) 2018 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ *
++ * Jason Chen CJ <jason.cj.chen@intel.com>
++ *
++ */
++
++#include <linux/kernel.h>
++#include <linux/gfp.h>
++#include <linux/mm.h>
++#include <linux/list.h>
++#include <linux/slab.h>
++
++#include <linux/vhm/acrn_hv_defs.h>
++#include <linux/vhm/acrn_vhm_mm.h>
++#include <linux/vhm/vhm_vm_mngt.h>
++
++#define HUGEPAGE_2M_SHIFT	21
++#define HUGEPAGE_1G_SHIFT	30
++
++#define HUGEPAGE_1G_HLIST_IDX	(HUGEPAGE_HLIST_ARRAY_SIZE - 1)
++
++struct hugepage_map {
++	struct hlist_node hlist;
++	u64 vm0_gpa;
++	size_t size;
++	u64 guest_gpa;
++};
++
++static inline struct hlist_head *hlist_2m_hash(struct vhm_vm *vm,
++	unsigned long guest_gpa)
++{
++	return &vm->hugepage_hlist[guest_gpa >> HUGEPAGE_2M_SHIFT &
++			(HUGEPAGE_2M_HLIST_ARRAY_SIZE - 1)];
++}
++
++static int add_guest_map(struct vhm_vm *vm, unsigned long vm0_gpa,
++	unsigned long guest_gpa, unsigned long size)
++{
++	struct hugepage_map *map;
++	int max_gfn;
++
++	map = kzalloc(sizeof(struct hugepage_map), GFP_KERNEL);
++	if (map == NULL)
++		return -ENOMEM;
++
++	map->vm0_gpa = vm0_gpa;
++	map->guest_gpa = guest_gpa;
++	map->size = size;
++
++	INIT_HLIST_NODE(&map->hlist);
++
++	max_gfn = (map->guest_gpa + map->size) >> PAGE_SHIFT;
++	if (vm->max_gfn < max_gfn)
++		vm->max_gfn = max_gfn;
++
++	pr_info("VHM: add hugepage with size=0x%lx, vm0_gpa=0x%llx,"
++		" and its guest gpa = 0x%llx, vm max_gfn 0x%x\n",
++		map->size, map->vm0_gpa, map->guest_gpa, vm->max_gfn);
++
++	mutex_lock(&vm->hugepage_lock);
++	/* 1G hugepage? */
++	if (map->size == (1UL << HUGEPAGE_1G_SHIFT))
++		hlist_add_head(&map->hlist,
++			&vm->hugepage_hlist[HUGEPAGE_1G_HLIST_IDX]);
++	else
++		hlist_add_head(&map->hlist,
++			hlist_2m_hash(vm, map->guest_gpa));
++	mutex_unlock(&vm->hugepage_lock);
++
++	return 0;
++}
++
++int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
++{
++	struct page *page;
++	unsigned long len, guest_gpa, vma;
++	unsigned int type;
++	unsigned int mem_type, mem_access_right;
++	int ret;
++
++	if (vm == NULL || memmap == NULL)
++		return -EINVAL;
++
++	len = memmap->len;
++	vma = memmap->vma_base;
++	guest_gpa = memmap->gpa;
++
++	while (len > 0) {
++		unsigned long vm0_gpa, pagesize;
++
++		ret = get_user_pages_fast(vma, 1, 1, &page);
++		if (unlikely(ret != 1) || (page == NULL)) {
++			pr_err("failed to pin huge page!\n");
++			return -ENOMEM;
++		}
++
++		vm0_gpa = page_to_phys(page);
++		pagesize = PAGE_SIZE << compound_order(page);
++
++		ret = add_guest_map(vm, vm0_gpa, guest_gpa, pagesize);
++		if (ret < 0) {
++			pr_err("failed to add memseg for huge page!\n");
++			put_page(page);
++			return ret;
++		}
++
++		/* TODO: do batch hypercall for multi ept mapping */
++		mem_type = MEM_TYPE_WB;
++		mem_access_right = (memmap->prot & MEM_ACCESS_RIGHT_MASK);
++		type = MAP_MEM;
++		if (_mem_set_memmap(vm->vmid, guest_gpa, vm0_gpa, pagesize,
++				mem_type, mem_access_right, type) < 0) {
++			pr_err("vhm: failed to set memmap %ld!\n", vm->vmid);
++			put_page(page);
++			return -EFAULT;
++		}
++
++		len -= pagesize;
++		vma += pagesize;
++		guest_gpa += pagesize;
++	}
++
++	vm->hugetlb_enabled = 1;
++
++	return 0;
++}
++
++void hugepage_free_guest(struct vhm_vm *vm)
++{
++	struct hlist_node *htmp;
++	struct hugepage_map *map;
++	int i;
++
++	mutex_lock(&vm->hugepage_lock);
++	for (i = 0; i < HUGEPAGE_HLIST_ARRAY_SIZE; i++) {
++		if (!hlist_empty(&vm->hugepage_hlist[i])) {
++			hlist_for_each_entry_safe(map, htmp,
++					&vm->hugepage_hlist[i], hlist) {
++				hlist_del(&map->hlist);
++				/* put_page to unpin huge page */
++				put_page(pfn_to_page(
++					map->vm0_gpa >> PAGE_SHIFT));
++				kfree(map);
++			}
++		}
++	}
++	mutex_unlock(&vm->hugepage_lock);
++}
++
++void *hugepage_map_guest_phys(struct vhm_vm *vm, u64 guest_phys, size_t size)
++{
++	struct hlist_node *htmp;
++	struct hugepage_map *map;
++
++	mutex_lock(&vm->hugepage_lock);
++	/* check 1G hlist first */
++	if (!hlist_empty(&vm->hugepage_hlist[HUGEPAGE_1G_HLIST_IDX])) {
++		hlist_for_each_entry_safe(map, htmp,
++			&vm->hugepage_hlist[HUGEPAGE_1G_HLIST_IDX], hlist) {
++			if (map->guest_gpa >= guest_phys + size ||
++				guest_phys >= map->guest_gpa + map->size)
++				continue;
++
++			if (guest_phys + size > map->guest_gpa + map->size ||
++					guest_phys < map->guest_gpa)
++				goto err;
++
++			mutex_unlock(&vm->hugepage_lock);
++			return phys_to_virt(map->vm0_gpa +
++					guest_phys - map->guest_gpa);
++		}
++	}
++
++	/* check 2m hlist */
++	hlist_for_each_entry_safe(map, htmp,
++			hlist_2m_hash(vm, guest_phys), hlist) {
++		if (map->guest_gpa >= guest_phys + size ||
++				guest_phys >= map->guest_gpa + map->size)
++			continue;
++
++		if (guest_phys + size > map->guest_gpa + map->size ||
++				guest_phys < map->guest_gpa)
++			goto err;
++
++		mutex_unlock(&vm->hugepage_lock);
++		return phys_to_virt(map->vm0_gpa +
++				guest_phys - map->guest_gpa);
++	}
++
++err:
++	mutex_unlock(&vm->hugepage_lock);
++	printk(KERN_WARNING "cannot find correct mem map, please check the "
++		"input's range or alignment");
++	return NULL;
++}
++
++int hugepage_unmap_guest_phys(struct vhm_vm *vm, u64 guest_phys)
++{
++	struct hlist_node *htmp;
++	struct hugepage_map *map;
++
++	mutex_lock(&vm->hugepage_lock);
++	/* check 1G hlist first */
++	if (!hlist_empty(&vm->hugepage_hlist[HUGEPAGE_1G_HLIST_IDX])) {
++		hlist_for_each_entry_safe(map, htmp,
++			&vm->hugepage_hlist[HUGEPAGE_1G_HLIST_IDX], hlist) {
++			if (map->guest_gpa <= guest_phys &&
++				guest_phys < map->guest_gpa + map->size) {
++				mutex_unlock(&vm->hugepage_lock);
++				return 0;
++			}
++		}
++	}
++	/* check 2m hlist */
++	hlist_for_each_entry_safe(map, htmp,
++			hlist_2m_hash(vm, guest_phys), hlist) {
++			if (map->guest_gpa <= guest_phys &&
++				guest_phys < map->guest_gpa + map->size) {
++				mutex_unlock(&vm->hugepage_lock);
++				return 0;
++			}
++	}
++	mutex_unlock(&vm->hugepage_lock);
++	return -ESRCH;
++}
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index 728998d..070327e 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -156,7 +156,7 @@ int alloc_guest_memseg(struct vhm_vm *vm, struct vm_memseg *memseg)
+ 	return ret;
+ }
+ 
+-static int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
++int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len,
+ 	unsigned int mem_type, unsigned int mem_access_right,
+ 	unsigned int type)
+@@ -207,61 +207,6 @@ int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+ 		mem_type, mem_access_right, MAP_MEM);
+ }
+ 
+-static int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
+-{
+-	struct page *page;
+-	unsigned long len, guest_gpa, vma;
+-	unsigned int type;
+-	unsigned int mem_type, mem_access_right;
+-	int ret;
+-
+-	if (vm == NULL || memmap == NULL)
+-		return -EINVAL;
+-
+-	len = memmap->len;
+-	vma = memmap->vma_base;
+-	guest_gpa = memmap->gpa;
+-
+-	while (len > 0) {
+-		unsigned long vm0_gpa, pagesize;
+-
+-		ret = get_user_pages_fast(vma, 1, 1, &page);
+-		if (unlikely(ret != 1) || (page == NULL)) {
+-			pr_err("failed to pin huge page!\n");
+-			return -ENOMEM;
+-		}
+-
+-		vm0_gpa = page_to_phys(page);
+-		pagesize = PAGE_SIZE << compound_order(page);
+-
+-		ret = add_guest_memseg(vm, vm0_gpa, guest_gpa, pagesize);
+-		if (ret < 0) {
+-			pr_err("failed to add memseg for huge page!\n");
+-			put_page(page);
+-			return ret;
+-		}
+-
+-		/* TODO: do batch hypercall for multi ept mapping */
+-		mem_type = MEM_TYPE_WB;
+-		mem_access_right = (memmap->prot & MEM_ACCESS_RIGHT_MASK);
+-		type = MAP_MEM;
+-		if (_mem_set_memmap(vm->vmid, guest_gpa, vm0_gpa, pagesize,
+-				mem_type, mem_access_right, type) < 0) {
+-			pr_err("vhm: failed to set memmap %ld!\n", vm->vmid);
+-			put_page(page);
+-			return -EFAULT;
+-		}
+-
+-		len -= pagesize;
+-		vma += pagesize;
+-		guest_gpa += pagesize;
+-	}
+-
+-	vm->hugetlb_enabled = 1;
+-
+-	return 0;
+-}
+-
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ {
+ 	struct guest_memseg *seg = NULL;
+@@ -315,17 +260,15 @@ void free_guest_mem(struct vhm_vm *vm)
+ {
+ 	struct guest_memseg *seg;
+ 
++	if (vm->hugetlb_enabled)
++		return hugepage_free_guest(vm);
++
+ 	mutex_lock(&vm->seg_lock);
+ 	while (!list_empty(&vm->memseg_list)) {
+ 		seg = list_first_entry(&vm->memseg_list,
+ 				struct guest_memseg, list);
+-		if (vm->hugetlb_enabled) {
+-			/* just put_page to unpin huge page */
+-			put_page(pfn_to_page(seg->vm0_gpa >> PAGE_SHIFT));
+-		} else {
+-			if (!_free_memblk(vm->dev, seg->vm0_gpa, seg->len))
+-				pr_warn("failed to free memblk\n");
+-		}
++		if (!_free_memblk(vm->dev, seg->vm0_gpa, seg->len))
++			pr_warn("failed to free memblk\n");
+ 		list_del(&seg->list);
+ 		kfree(seg);
+ 	}
+@@ -412,6 +355,9 @@ int vhm_dev_mmap(struct file *file, struct vm_area_struct *vma)
+ 	size_t len = vma->vm_end - vma->vm_start;
+ 	int ret;
+ 
++	if (vm->hugetlb_enabled)
++		return -EINVAL;
++
+ 	mutex_lock(&vm->seg_lock);
+ 	list_for_each_entry(seg, &vm->memseg_list, list) {
+ 		if (seg->gpa != offset || seg->len != len)
+@@ -456,7 +402,10 @@ void *map_guest_phys(unsigned long vmid, u64 guest_phys, size_t size)
+ 	if (vm == NULL)
+ 		return NULL;
+ 
+-	ret = do_map_guest_phys(vm, guest_phys, size);
++	if (vm->hugetlb_enabled)
++		ret = hugepage_map_guest_phys(vm, guest_phys, size);
++	else
++		ret = do_map_guest_phys(vm, guest_phys, size);
+ 
+ 	put_vm(vm);
+ 
+@@ -492,7 +441,11 @@ int unmap_guest_phys(unsigned long vmid, u64 guest_phys)
+ 		return -ESRCH;
+ 	}
+ 
+-	ret = do_unmap_guest_phys(vm, guest_phys);
++	if (vm->hugetlb_enabled)
++		ret = hugepage_unmap_guest_phys(vm, guest_phys);
++	else
++		ret = do_unmap_guest_phys(vm, guest_phys);
++
+ 	put_vm(vm);
+ 	return ret;
+ }
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index ba383b3..9be6749 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -199,4 +199,12 @@ int alloc_guest_memseg(struct vhm_vm *vm, struct vm_memseg *memseg);
+  */
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap);
+ 
++int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
++	unsigned long host_gpa, unsigned long len,
++	unsigned int mem_type, unsigned int mem_access_right,
++	unsigned int type);
++int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap);
++void hugepage_free_guest(struct vhm_vm *vm);
++void *hugepage_map_guest_phys(struct vhm_vm *vm, u64 guest_phys, size_t size);
++int hugepage_unmap_guest_phys(struct vhm_vm *vm, u64 guest_phys);
+ #endif
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index 306bd54..f0a7e1c 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -67,6 +67,10 @@
+ extern struct list_head vhm_vm_list;
+ extern struct mutex vhm_vm_list_lock;
+ 
++#define HUGEPAGE_2M_HLIST_ARRAY_SIZE	16
++#define HUGEPAGE_1G_HLIST_ARRAY_SIZE	1
++#define HUGEPAGE_HLIST_ARRAY_SIZE	(HUGEPAGE_2M_HLIST_ARRAY_SIZE + \
++						HUGEPAGE_1G_HLIST_ARRAY_SIZE)
+ /**
+  * struct vhm_vm - data structure to track guest
+  *
+@@ -77,6 +81,8 @@ extern struct mutex vhm_vm_list_lock;
+  * @refcnt: reference count of guest
+  * @seg_lock:  mutex to protect memseg_list
+  * @memseg_list: list of memseg
++ * @hugepage_lock:  mutex to protect hugepage_hlist
++ * @hugepage_hlist: hash list of hugepage
+  * @max_gfn: maximum guest page frame number
+  * @ioreq_client_lock: spinlock to protect ioreq_client_list
+  * @ioreq_client_list: list of ioreq clients
+@@ -91,6 +97,8 @@ struct vhm_vm {
+ 	long refcnt;
+ 	struct mutex seg_lock;
+ 	struct list_head memseg_list;
++	struct mutex hugepage_lock;
++	struct hlist_head hugepage_hlist[HUGEPAGE_HLIST_ARRAY_SIZE];
+ 	int max_gfn;
+ 	spinlock_t ioreq_client_lock;
+ 	struct list_head ioreq_client_list;
+-- 
+2.7.4
+

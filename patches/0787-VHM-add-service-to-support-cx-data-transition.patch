@@ -1,0 +1,120 @@
+From b599b353b7d39bd3a38e4c7c72d1f927e7b8cc05 Mon Sep 17 00:00:00 2001
+From: Victor Sun <victor.sun@intel.com>
+Date: Thu, 19 Apr 2018 00:15:43 +0800
+Subject: [PATCH 0787/1132] VHM: add service to support cx data transition
+
+Like Acrn px enabling, the cx data is also hard coded within HV, DM will
+get hard coded cx data to build DSDT for UOS. With this DSDT, UOS would
+have capability on Cx control if acpi-idle driver is enabled in kernel.
+
+Change-Id: I34cf5d99a7458ced51a52789027b0451e40a20bb
+Signed-off-by: Victor Sun <victor.sun@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c      | 21 +++++++++++++++++----
+ include/linux/vhm/acrn_common.h | 32 ++++++++++++++++++++++++++++++--
+ 2 files changed, 47 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 29b9624..fe8d16d 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -549,15 +549,16 @@ static long vhm_dev_ioctl(struct file *filep,
+ 			return -EFAULT;
+ 
+ 		switch (cmd & PMCMD_TYPE_MASK) {
+-		case PMCMD_GET_PX_CNT: {
+-			uint8_t px_cnt;
++		case PMCMD_GET_PX_CNT:
++		case PMCMD_GET_CX_CNT: {
++			uint64_t pm_info;
+ 
+-			ret = hcall_get_cpu_state(cmd, virt_to_phys(&px_cnt));
++			ret = hcall_get_cpu_state(cmd, virt_to_phys(&pm_info));
+ 			if (ret < 0)
+ 				return -EFAULT;
+ 
+ 			if (copy_to_user((void *)ioctl_param,
+-					&px_cnt, sizeof(px_cnt)))
++					&pm_info, sizeof(pm_info)))
+ 					ret = -EFAULT;
+ 
+ 			break;
+@@ -574,6 +575,18 @@ static long vhm_dev_ioctl(struct file *filep,
+ 					ret = -EFAULT;
+ 			break;
+ 		}
++		case PMCMD_GET_CX_DATA: {
++			struct cpu_cx_data cx_data;
++
++			ret = hcall_get_cpu_state(cmd, virt_to_phys(&cx_data));
++			if (ret < 0)
++				return -EFAULT;
++
++			if (copy_to_user((void *)ioctl_param,
++					&cx_data, sizeof(cx_data)))
++					ret = -EFAULT;
++			break;
++		}
+ 		default:
+ 			ret = -EFAULT;
+ 			break;
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 40f3444..00088dc 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -303,6 +303,30 @@ struct acrn_vm_pci_msix_remap {
+  * @brief Info The power state data of a VCPU.
+  *
+  */
++
++#define SPACE_SYSTEM_MEMORY     0
++#define SPACE_SYSTEM_IO         1
++#define SPACE_PCI_CONFIG        2
++#define SPACE_Embedded_Control  3
++#define SPACE_SMBUS             4
++#define SPACE_PLATFORM_COMM     10
++#define SPACE_FFixedHW          0x7F
++
++struct acpi_generic_address {
++	uint8_t 	space_id;
++	uint8_t 	bit_width;
++	uint8_t 	bit_offset;
++	uint8_t 	access_size;
++	uint64_t	address;
++} __attribute__((aligned(8)));
++
++struct cpu_cx_data {
++	struct acpi_generic_address cx_reg;
++	uint8_t 	type;
++	uint32_t	latency;
++	uint64_t	power;
++} __attribute__((aligned(8)));
++
+ struct cpu_px_data {
+ 	uint64_t core_frequency;	/* megahertz */
+ 	uint64_t power;			/* milliWatts */
+@@ -315,8 +339,10 @@ struct cpu_px_data {
+ /**
+  * @brief Info PM command from DM/VHM.
+  *
+- * The command would specify request type(i.e. get px count or data) for
+- * specific VM and specific VCPU with specific state number.like P(n).
++ * The command would specify request type(e.g. get px count or data) for
++ * specific VM and specific VCPU with specific state number.
++ * For Px, PMCMD_STATE_NUM means Px number from 0 to (MAX_PSTATE - 1),
++ * For Cx, PMCMD_STATE_NUM means Cx entry index from 1 to MAX_CX_ENTRY.
+  */
+ #define PMCMD_VMID_MASK		0xff000000
+ #define PMCMD_VCPUID_MASK	0x00ff0000
+@@ -330,6 +356,8 @@ struct cpu_px_data {
+ enum pm_cmd_type {
+ 	PMCMD_GET_PX_CNT,
+ 	PMCMD_GET_PX_DATA,
++	PMCMD_GET_CX_CNT,
++	PMCMD_GET_CX_DATA,
+ };
+ 
+ /**
+-- 
+2.7.4
+

@@ -1,0 +1,70 @@
+From 2a17a44c7d3d2a5005317ad19c6944e850e8112b Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Fri, 26 Oct 2018 09:52:28 +0800
+Subject: [PATCH 0311/1132] media:entity: graph walk starting from pad
+
+This function initializes the graph traversal structure to walk
+the entities graph starting at the given entity and pad.
+As some entity may be on the cross node on pipeline, so add one
+parameter to start the graph traverse.
+
+Signed-off-by: Chang Ying <ying.chang@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/media-entity.c      | 4 +++-
+ drivers/media/v4l2-core/v4l2-mc.c | 4 ++++
+ include/media/media-entity.h      | 1 +
+ 3 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/media-entity.c b/drivers/media/media-entity.c
+index 0ad5845..a0aeee6 100644
+--- a/drivers/media/media-entity.c
++++ b/drivers/media/media-entity.c
+@@ -332,7 +332,9 @@ void media_graph_walk_start(struct media_graph *graph,
+ 
+ 	graph->top = 0;
+ 	graph->stack[graph->top].entity = NULL;
+-	stack_push(graph, entity, 0, -1);
++	stack_push(graph, entity,
++			entity->start ? entity->start->index : 0, -1);
++	entity->start = NULL;
+ 	dev_dbg(entity->graph_obj.mdev->dev,
+ 		"begin graph walk at '%s'\n", entity->name);
+ }
+diff --git a/drivers/media/v4l2-core/v4l2-mc.c b/drivers/media/v4l2-core/v4l2-mc.c
+index 0fc185a..031418b 100644
+--- a/drivers/media/v4l2-core/v4l2-mc.c
++++ b/drivers/media/v4l2-core/v4l2-mc.c
+@@ -375,6 +375,8 @@ int v4l2_pipeline_link_notify(struct media_link *link, u32 flags,
+ 	int sink_use;
+ 	int ret = 0;
+ 
++	source->start = link->source;
++	sink->start = link->sink;
+ 	source_use = pipeline_pm_use_count(source, graph);
+ 	sink_use = pipeline_pm_use_count(sink, graph);
+ 
+@@ -383,6 +385,8 @@ int v4l2_pipeline_link_notify(struct media_link *link, u32 flags,
+ 		/* Powering off entities is assumed to never fail. */
+ 		pipeline_pm_power(source, -sink_use, graph);
+ 		pipeline_pm_power(sink, -source_use, graph);
++		source->use_count = 0;
++		sink->use_count = 0;
+ 		return 0;
+ 	}
+ 
+diff --git a/include/media/media-entity.h b/include/media/media-entity.h
+index 0faaf93..95c27c3 100644
+--- a/include/media/media-entity.h
++++ b/include/media/media-entity.h
+@@ -284,6 +284,7 @@ struct media_entity {
+ 	int internal_idx;
+ 
+ 	struct media_pad *pads;
++	struct media_pad *start;
+ 	struct list_head links;
+ 
+ 	const struct media_entity_operations *ops;
+-- 
+2.7.4
+

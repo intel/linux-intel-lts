@@ -1,0 +1,66 @@
+From bfe384630425902e9e488af03d7a752f6489f60a Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Mon, 17 Sep 2018 16:18:07 +0300
+Subject: [PATCH 0399/1132] mei: flush queues by the host client only
+
+During queues flush, the me client in most cases is already
+unlinked hence the me client id is unavailable. The host client
+structure pointer is enough for identification.
+The function mei_cl_cmp_id() is dropped as it has no more usage.
+
+Change-Id: Ie43aed9f807fd15568114587b06455d511725be5
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/client.c | 21 ++-------------------
+ 1 file changed, 2 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/misc/mei/client.c b/drivers/misc/mei/client.c
+index ebdcf0b..ee58561 100644
+--- a/drivers/misc/mei/client.c
++++ b/drivers/misc/mei/client.c
+@@ -318,23 +318,6 @@ void mei_me_cl_rm_all(struct mei_device *dev)
+ }
+ 
+ /**
+- * mei_cl_cmp_id - tells if the clients are the same
+- *
+- * @cl1: host client 1
+- * @cl2: host client 2
+- *
+- * Return: true  - if the clients has same host and me ids
+- *         false - otherwise
+- */
+-static inline bool mei_cl_cmp_id(const struct mei_cl *cl1,
+-				const struct mei_cl *cl2)
+-{
+-	return cl1 && cl2 &&
+-		(cl1->host_client_id == cl2->host_client_id) &&
+-		(mei_cl_me_id(cl1) == mei_cl_me_id(cl2));
+-}
+-
+-/**
+  * mei_io_cb_free - free mei_cb_private related memory
+  *
+  * @cb: mei callback struct
+@@ -418,7 +401,7 @@ static void mei_io_list_flush_cl(struct list_head *head,
+ 	struct mei_cl_cb *cb, *next;
+ 
+ 	list_for_each_entry_safe(cb, next, head, list) {
+-		if (mei_cl_cmp_id(cl, cb->cl))
++		if (cl == cb->cl)
+ 			list_del_init(&cb->list);
+ 	}
+ }
+@@ -435,7 +418,7 @@ static void mei_io_tx_list_free_cl(struct list_head *head,
+ 	struct mei_cl_cb *cb, *next;
+ 
+ 	list_for_each_entry_safe(cb, next, head, list) {
+-		if (mei_cl_cmp_id(cl, cb->cl))
++		if (cl == cb->cl)
+ 			mei_tx_cb_dequeue(cb);
+ 	}
+ }
+-- 
+2.7.4
+

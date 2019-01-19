@@ -1,0 +1,37 @@
+From bd1ff0c91a0bd56608253cab936f88a72218cb80 Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Tue, 17 Oct 2017 23:01:00 +0530
+Subject: [PATCH 0661/1132] ALSA: hda: check if stream is stopped in
+ snd_hdac_stream_clear
+
+Check if the DMA Channel is already stopped. There is no need
+to stop it again if stopped.
+
+Change-Id: Ia4632675638726b65dc3b9e2aca4f6c36773f757
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Reviewed-on:
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/hda/hdac_stream.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/sound/hda/hdac_stream.c b/sound/hda/hdac_stream.c
+index 0fdb6dd..67d6721 100644
+--- a/sound/hda/hdac_stream.c
++++ b/sound/hda/hdac_stream.c
+@@ -91,6 +91,11 @@ void snd_hdac_stream_clear(struct hdac_stream *azx_dev)
+ 	int timeout;
+ 	unsigned char val;
+ 
++	/* check if the DMA is already stopped */
++	val = snd_hdac_stream_readb(azx_dev, SD_CTL) & SD_CTL_DMA_START;
++	if (!val)
++		return;
++
+ 	snd_hdac_stream_updateb(azx_dev, SD_CTL,
+ 				SD_CTL_DMA_START | SD_INT_MASK, 0);
+ 
+-- 
+2.7.4
+

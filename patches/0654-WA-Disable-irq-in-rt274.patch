@@ -1,0 +1,33 @@
+From fccea660b06b6976b49dc8e307b5efacdcd89541 Mon Sep 17 00:00:00 2001
+From: "Subhransu S. Prusty" <subhransu.s.prusty@intel.com>
+Date: Thu, 30 Nov 2017 20:11:42 +0530
+Subject: [PATCH 0654/1132] WA: Disable irq in rt274
+
+Signed-off-by: Subhransu S. Prusty <subhransu.s.prusty@intel.com>
+---
+ sound/soc/codecs/rt274.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sound/soc/codecs/rt274.c b/sound/soc/codecs/rt274.c
+index c5c3ee4..6b03996 100644
+--- a/sound/soc/codecs/rt274.c
++++ b/sound/soc/codecs/rt274.c
+@@ -1179,6 +1179,7 @@ static int rt274_i2c_probe(struct i2c_client *i2c,
+ 	regmap_write(rt274->regmap, RT274_UNSOLICITED_HP_OUT, 0x81);
+ 	regmap_write(rt274->regmap, RT274_UNSOLICITED_MIC, 0x82);
+ 
++#if 0
+ 	if (rt274->i2c->irq) {
+ 		ret = request_threaded_irq(rt274->i2c->irq, NULL, rt274_irq,
+ 			IRQF_TRIGGER_HIGH | IRQF_ONESHOT, "rt274", rt274);
+@@ -1188,6 +1189,7 @@ static int rt274_i2c_probe(struct i2c_client *i2c,
+ 			return ret;
+ 		}
+ 	}
++#endif
+ 
+ 	ret = devm_snd_soc_register_component(&i2c->dev,
+ 				     &soc_component_dev_rt274,
+-- 
+2.7.4
+

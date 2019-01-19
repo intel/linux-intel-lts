@@ -1,0 +1,185 @@
+From 7014ddfb76a08e9e7cd6c84faf53e1aa454fd511 Mon Sep 17 00:00:00 2001
+From: Anamika Lal <anamikax.lal@intel.com>
+Date: Wed, 3 May 2017 01:20:41 +0530
+Subject: [PATCH 0594/1132] ASoC: Intel: Skylake: Add user notification event
+ for pipe creation/deletion
+
+This patch provides kernel event generation on pipeline creation/deletion
+and also update the debugfs file with event timestamp.
+Userspace gets the event for each pipe creation and deletion and can read
+the event timestamp from the debugfs.
+
+Change-Id: I6e015e5f3e5285ecad215a37dfe286a4e3dc3435
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Signed-off-by: Anamika Lal <anamikax.lal@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-debug.c    | 80 ++++++++++++++++++++++++++++++++++
+ sound/soc/intel/skylake/skl-messages.c |  2 +
+ sound/soc/intel/skylake/skl.h          |  4 ++
+ 3 files changed, 86 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index 07b3309..f3c5e29 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -56,6 +56,11 @@ struct nhlt_blob {
+ 	struct nhlt_specific_cfg *cfg;
+ };
+ 
++struct skl_pipe_event_data {
++	long event_time;
++	int event_type;
++};
++
+ struct skl_debug {
+ 	struct skl *skl;
+ 	struct device *dev;
+@@ -68,6 +73,7 @@ struct skl_debug {
+ 	struct nhlt_blob dmic_blob;
+ 	u32 ipc_data[MAX_SZ];
+ 	struct fw_ipc_data fw_ipc_data;
++	struct skl_pipe_event_data data;
+ };
+ 
+ struct nhlt_specific_cfg
+@@ -815,9 +821,76 @@ static const struct file_operations core_power_fops = {
+ 	.llseek = default_llseek,
+ };
+ 
++void skl_dbg_event(struct skl_sst *ctx, int type)
++{
++	int retval;
++	struct timeval pipe_event_tv;
++	struct skl *skl = get_skl_ctx(ctx->dev);
++	struct kobject *kobj;
++
++	kobj = &skl->component->dev->kobj;
++
++	if (type == SKL_PIPE_CREATED)
++		/* pipe creation event */
++		retval = kobject_uevent(kobj, KOBJ_ADD);
++	else if (type == SKL_PIPE_INVALID)
++		/* pipe deletion event */
++		retval = kobject_uevent(kobj, KOBJ_REMOVE);
++	else
++		return;
++
++	if (retval < 0) {
++		dev_err(ctx->dev,
++			"pipeline uevent failed, ret = %d\n", retval);
++		return;
++	}
++
++	do_gettimeofday(&pipe_event_tv);
++
++	skl->debugfs->data.event_time = pipe_event_tv.tv_usec;
++	skl->debugfs->data.event_type = type;
++}
++
++static ssize_t skl_dbg_event_read(struct file *file,
++		char __user *user_buf, size_t count, loff_t *ppos)
++{
++	struct skl_debug *d = file->private_data;
++	char buf[32];
++	char pipe_state[24];
++	int retval;
++
++	if (d->data.event_type)
++		strcpy(pipe_state, "SKL_PIPE_CREATED");
++	else
++		strcpy(pipe_state, "SKL_PIPE_INVALID");
++
++	retval = snprintf(buf, sizeof(buf), "%s - %ld\n",
++			pipe_state, d->data.event_time);
++
++	return simple_read_from_buffer(user_buf, count, ppos, buf, retval);
++}
++
++static const struct file_operations skl_dbg_event_fops = {
++	.open = simple_open,
++	.read = skl_dbg_event_read,
++	.llseek = default_llseek,
++};
++
++static int skl_init_dbg_event(struct skl_debug *d)
++{
++	if (!debugfs_create_file("dbg_event", 0644, d->fs, d,
++				&skl_dbg_event_fops)) {
++		dev_err(d->dev, "dbg_event debugfs file creation failed\n");
++		return -EIO;
++	}
++
++	return 0;
++}
++
+ struct skl_debug *skl_debugfs_init(struct skl *skl)
+ {
+ 	struct skl_debug *d;
++	int ret;
+ 
+ 	d = devm_kzalloc(&skl->pci->dev, sizeof(*d), GFP_KERNEL);
+ 	if (!d)
+@@ -865,6 +938,13 @@ struct skl_debug *skl_debugfs_init(struct skl *skl)
+ 	skl_init_adsp(d);
+ 	skl_init_mod_set_get(d);
+ 
++	ret = skl_init_dbg_event(d);
++	if (ret < 0) {
++		dev_err(&skl->pci->dev,
++			"dbg_event debugfs init failed, ret = %d\n", ret);
++		goto err;
++	}
++
+ 	return d;
+ 
+ err:
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 2c0cf7a..31384af 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -2265,6 +2265,7 @@ int skl_create_pipeline(struct skl_sst *ctx, struct skl_pipe *pipe)
+ 	}
+ 
+ 	pipe->state = SKL_PIPE_CREATED;
++	skl_dbg_event(ctx, pipe->state);
+ 
+ 	return 0;
+ }
+@@ -2303,6 +2304,7 @@ int skl_delete_pipe(struct skl_sst *ctx, struct skl_pipe *pipe)
+ 	}
+ 
+ 	pipe->state = SKL_PIPE_INVALID;
++	skl_dbg_event(ctx, pipe->state);
+ 
+ 	return ret;
+ }
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 10a414d..66f34ce 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -170,6 +170,7 @@ void skl_debug_init_module(struct skl_debug *d,
+ struct nhlt_specific_cfg
+ *skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance,
+ 			u8 stream);
++void skl_dbg_event(struct skl_sst *ctx, int type);
+ #else
+ static inline struct skl_debug *skl_debugfs_init(struct skl *skl)
+ {
+@@ -185,6 +186,9 @@ static inline struct nhlt_specific_cfg
+ {
+ 	return NULL;
+ }
++void skl_dbg_event(struct skl_sst *ctx, int type)
++{
++}
+ #endif
+ 
+ #endif /* __SOUND_SOC_SKL_H */
+-- 
+2.7.4
+

@@ -1,0 +1,264 @@
+From 83c3a2bac4022663af2a80e5b451efeae1642a89 Mon Sep 17 00:00:00 2001
+From: Junjie Mao <junjie.mao@intel.com>
+Date: Fri, 31 Aug 2018 10:59:03 +0800
+Subject: [PATCH 0809/1132] vhm: adapt to the new state transition of VHM
+ requests
+
+This is the counter-part of VHM request state transition update.
+
+Instead of using two members (namely ''valid'' and ''processed''), the new state
+transition uses a single member (i.e. ''processed) following the transition
+pattern below.
+
+       FREE -> PENDING -> PROCESSING -> COMPLETE -> FREE -> ...
+
+The ownership of a VHM request shifts according to its state. Namely:
+
+1) When a request is in COMPLETE or FREE state, the request is owned by the
+   hypervisor. SOS (VHM or DM) shall not read or write the internals of the
+   request except the state.
+
+2) When a request is in PENDING or PROCESSING state, the request is owned by
+   SOS. The hypervisor shall not read or write the request other than the state.
+
+Atomic operations should be used to access the state. For this the ''processed''
+member in vhm_request is typed 'atomic_t' which is essentially the same 32-bit
+signed integer. This allows us to use atomic operations on the state directly,
+instead of casting it everywhere.
+
+It is also worth noting that atomic_set() in Linux does not imply a memory
+fence; it only includes a barrier to prevent compiler reordering. Thus smp_mb()
+are added before changing the state to COMPLETE so that the hypervisor always
+has the right results after it sees the state change.
+
+v1 -> v2:
+
+    * Keep the original flow (i.e. update state after a client is found) instead
+      of atomic_cmpxchg, given that acrn_ioreq_distribute_request() is called
+      in tasklet and only on cpu 0.
+    * Add documentation on struct vhm_request, following the kernel-doc style.
+
+Signed-off-by: Junjie Mao <junjie.mao@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/vbs/vbs.c               |   5 +-
+ drivers/vhm/vhm_ioreq.c         |  11 ++--
+ include/linux/vhm/acrn_common.h | 113 ++++++++++++++++++++++++++++++++++------
+ 3 files changed, 108 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/vbs/vbs.c b/drivers/vbs/vbs.c
+index 1d2e1b4..9b7a279 100644
+--- a/drivers/vbs/vbs.c
++++ b/drivers/vbs/vbs.c
+@@ -161,7 +161,7 @@ int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map)
+ 		if (vcpu == dev->_ctx.max_vcpu)
+ 			break;
+ 		req = &dev->_ctx.req_buf[vcpu];
+-		if (req->valid && req->processed == REQ_STATE_PROCESSING &&
++		if (atomic_read(&req->processed) == REQ_STATE_PROCESSING &&
+ 		    req->client == dev->_ctx.vhm_client_id) {
+ 			if (req->reqs.pio_request.direction == REQUEST_READ) {
+ 				/* currently we handle kick only,
+@@ -180,7 +180,8 @@ int virtio_vq_index_get(struct virtio_dev_info *dev, unsigned long *ioreqs_map)
+ 				else
+ 					val = req->reqs.mmio_request.value;
+ 			}
+-			req->processed = REQ_STATE_SUCCESS;
++			smp_mb();
++			atomic_set(&req->processed, REQ_STATE_COMPLETE);
+ 			acrn_ioreq_complete_request(req->client, vcpu);
+ 		}
+ 	}
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index 5cb15b5..5716bc5 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -707,7 +707,8 @@ static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
+ 	}
+ 
+ 	if (req_handled) {
+-		req->processed = REQ_STATE_SUCCESS;
++		smp_mb();
++		atomic_set(&req->processed, REQ_STATE_COMPLETE);
+ 		if (hcall_notify_req_finish(vm->vmid, vcpu) < 0) {
+ 			pr_err("vhm-ioreq: failed to "
+ 				"notify request finished !\n");
+@@ -788,7 +789,11 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
+ 	vcpu_num = atomic_read(&vm->vcpu_num);
+ 	for (i = 0; i < vcpu_num; i++) {
+ 		req = vm->req_buf->req_queue + i;
+-		if (req->valid && (req->processed == REQ_STATE_PENDING)) {
++
++		/* This function is called in tasklet only on SOS CPU0. Thus it
++		 * is safe to read the state first and update it later as long
++		 * as the update is atomic. */
++		if (atomic_read(&req->processed) == REQ_STATE_PENDING) {
+ 			if (handle_cf8cfc(vm, req, i))
+ 				continue;
+ 			client = acrn_ioreq_find_client_by_request(vm, req);
+@@ -798,8 +803,8 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
+ 						"BUG\n");
+ 				BUG();
+ 			} else {
+-				req->processed = REQ_STATE_PROCESSING;
+ 				req->client = client->id;
++				atomic_set(&req->processed, REQ_STATE_PROCESSING);
+ 				set_bit(i, client->ioreqs_map);
+ 			}
+ 		}
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 91951b7..6269b07 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -52,6 +52,8 @@
+ #ifndef ACRN_COMMON_H
+ #define ACRN_COMMON_H
+ 
++#include <linux/atomic.h>
++
+ /*
+  * Common structures for ACRN/VHM/DM
+  */
+@@ -62,9 +64,9 @@
+ #define VHM_REQUEST_MAX 16
+ 
+ #define REQ_STATE_PENDING	0
+-#define REQ_STATE_SUCCESS	1
++#define REQ_STATE_COMPLETE	1
+ #define REQ_STATE_PROCESSING	2
+-#define REQ_STATE_FAILED	-1
++#define REQ_STATE_FREE		3
+ 
+ #define REQ_PORTIO	0
+ #define REQ_MMIO	1
+@@ -111,13 +113,88 @@ struct pci_request {
+ 	int32_t reg;
+ } __attribute__((aligned(8)));
+ 
+-/* vhm_request are 256Bytes aligned */
++/**
++ * struct vhm_request - 256-byte VHM request
++ *
++ * The state transitions of a VHM request are:
++ *
++ *    FREE -> PENDING -> PROCESSING -> COMPLETE -> FREE -> ...
++ *                                \              /
++ *                                 +--> FAILED -+
++ *
++ * When a request is in COMPLETE or FREE state, the request is owned by the
++ * hypervisor. SOS (VHM or DM) shall not read or write the internals of the
++ * request except the state.
++ *
++ * When a request is in PENDING or PROCESSING state, the request is owned by
++ * SOS. The hypervisor shall not read or write the request other than the state.
++ *
++ * Based on the rules above, a typical VHM request lifecycle should looks like
++ * the following.
++ *
++ *                     (assume the initial state is FREE)
++ *
++ *       SOS vCPU 0                SOS vCPU x                    UOS vCPU y
++ *
++ *                                                 hypervisor:
++ *                                                     fill in type, addr, etc.
++ *                                                     pause UOS vcpu y
++ *                                                     set state to PENDING (a)
++ *                                                     fire upcall to SOS vCPU 0
++ *
++ *  VHM:
++ *      scan for pending requests
++ *      set state to PROCESSING (b)
++ *      assign requests to clients (c)
++ *
++ *                            client:
++ *                                scan for assigned requests
++ *                                handle the requests (d)
++ *                                set state to COMPLETE
++ *                                notify the hypervisor
++ *
++ *                            hypervisor:
++ *                                resume UOS vcpu y (e)
++ *
++ *                                                 hypervisor:
++ *                                                     post-work (f)
++ *                                                     set state to FREE
++ *
++ * Note that the following shall hold.
++ *
++ *   1. (a) happens before (b)
++ *   2. (c) happens before (d)
++ *   3. (e) happens before (f)
++ *   4. One vCPU cannot trigger another I/O request before the previous one has
++ *      completed (i.e. the state switched to FREE)
++ *
++ * Accesses to the state of a vhm_request shall be atomic and proper barriers
++ * are needed to ensure that:
++ *
++ *   1. Setting state to PENDING is the last operation when issuing a request in
++ *      the hypervisor, as the hypervisor shall not access the request any more.
++ *
++ *   2. Due to similar reasons, setting state to COMPLETE is the last operation
++ *      of request handling in VHM or clients in SOS.
++ */
+ struct vhm_request {
+-	/* offset: 0bytes - 63bytes */
++	/**
++	 * @type: Type of this request. Byte offset: 0.
++	 */
+ 	uint32_t type;
++
++	/**
++	 * @reserved0: Reserved fields. Byte offset: 4.
++	 */
+ 	uint32_t reserved0[15];
+ 
+-	/* offset: 64bytes-127bytes */
++	/**
++	 * @reqs: Details about this request.
++	 *
++	 * For REQ_PORTIO, this has type pio_request. For REQ_MMIO and REQ_WP,
++	 * this has type mmio_request. For REQ_PCICFG, this has type
++	 * pci_request. Byte offset: 64.
++	 */
+ 	union {
+ 		struct pio_request pio_request;
+ 		struct pci_request pci_request;
+@@ -125,20 +202,24 @@ struct vhm_request {
+ 		uint64_t reserved1[8];
+ 	} reqs;
+ 
+-	/* True: valid req which need VHM to process.
+-	 * ACRN write, VHM read only
+-	 **/
+-	int32_t valid;
++	/**
++	 * @reserved1: Reserved fields. Byte offset: 128.
++	 */
++	uint32_t reserved1;
+ 
+-	/* the client which is distributed to handle this request */
++	/**
++	 * @client: The client which is distributed to handle this request.
++	 *
++	 * Accessed by VHM only. Byte offset: 132.
++	 */
+ 	int32_t client;
+ 
+-	/* 1: VHM had processed and success
+-	 *  0: VHM had not yet processed
+-	 * -1: VHM failed to process. Invalid request
+-	 * VHM write, ACRN read only
+-	 **/
+-	int32_t processed;
++	/**
++	 * @processed: The status of this request.
++	 *
++	 * Take REQ_STATE_xxx as values. Byte offset: 136.
++	 */
++	atomic_t processed;
+ } __attribute__((aligned(256)));
+ 
+ struct vhm_request_buffer {
+-- 
+2.7.4
+

@@ -1,0 +1,42 @@
+From 2532074039d1b0147839151c654754eaa0949d15 Mon Sep 17 00:00:00 2001
+From: Hardik Shah <hardik.t.shah@intel.com>
+Date: Fri, 29 Apr 2016 12:14:37 +0530
+Subject: [PATCH 0462/1132] REVERTME:SDW: Increment the dev_id for every slave
+ register to bus.
+
+Ideally every slave getting registered to bus should have separate
+dev_id if they are of same type but instances are different.But
+for maxim all the slaves have same_id, so increment the dev_id
+by one to register all slaves with different names.
+
+Change-Id: Iec8d21ae73bb1631803ba6faceef140d9cd41417
+Signed-off-by: Hardik Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+---
+ drivers/sdw/sdw.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/sdw/sdw.c b/drivers/sdw/sdw.c
+index 6a1ff5e..71f1532 100644
+--- a/drivers/sdw/sdw.c
++++ b/drivers/sdw/sdw.c
+@@ -524,6 +524,8 @@ static void sdw_free_slv_number(struct sdw_master *mstr,
+ 	sdw_unlock_mstr(mstr);
+ }
+ 
++
++int count;
+ static int sdw_register_slave(struct sdw_master *mstr)
+ {
+ 	int ret = 0, i, ports;
+@@ -635,6 +637,7 @@ static int sdw_register_slave(struct sdw_master *mstr)
+ 		sdw_unlock_mstr(mstr);
+ 
+ 	}
++	count++;
+ 	return 0;
+ program_slv_failed:
+ 	device_unregister(&sdw_slv->dev);
+-- 
+2.7.4
+

@@ -1,0 +1,90 @@
+From 44fb9aa00d22d436b4e1a99d9ce1c1c61dffcacd Mon Sep 17 00:00:00 2001
+From: Pierre-Louis Bossart <pierre-louis.bossart@linux.intel.com>
+Date: Thu, 16 Jun 2016 16:01:00 +0530
+Subject: [PATCH 0516/1132] ALSA: pcm: conditionally avoid mmap of control
+ data.
+
+In case of mmap, by default alsa-lib mmaps both control and status data.
+
+If driver subscribes for application pointer update, driver needs to get
+notification whenever appl ptr changes. With the above case driver won't
+get appl ptr notifications.
+
+This patch check on a hw info flag and returns error when user land asks
+for mmaping control & status data, thus forcing user to issue
+IOCTL_SYNC_PTR.
+
+Change-Id: I05b83f630812face322c474d9bbb6d56cbdc08fb
+Suggested-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Pierre-Louis Bossart <pierre-louis.bossart@linux.intel.com>
+Signed-off-by: Ramesh Babu <ramesh.babu@intel.com>
+Signed-off-by: Jaikrishna Nemallapudi <jaikrishnax.nemallapudi@intel.com>
+Signed-off-by: Subhransu S. Prusty <subhransu.s.prusty@intel.com>
+Signed-off-by: Mallikarjun, chippalkatti <mallikarjunx.chippalkatti@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ include/uapi/sound/asound.h |  1 +
+ sound/core/pcm_native.c     | 17 +++++++++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/include/uapi/sound/asound.h b/include/uapi/sound/asound.h
+index ff57e4c..9120cce 100644
+--- a/include/uapi/sound/asound.h
++++ b/include/uapi/sound/asound.h
+@@ -296,6 +296,7 @@ typedef int __bitwise snd_pcm_subformat_t;
+ #define SNDRV_PCM_INFO_HAS_LINK_ABSOLUTE_ATIME     0x02000000  /* report absolute hardware link audio time, not reset on startup */
+ #define SNDRV_PCM_INFO_HAS_LINK_ESTIMATED_ATIME    0x04000000  /* report estimated link audio time */
+ #define SNDRV_PCM_INFO_HAS_LINK_SYNCHRONIZED_ATIME 0x08000000  /* report synchronized audio/system time */
++#define SNDRV_PCM_INFO_NO_STATUS_MMAP	0x10000000	/* status and control mmap not supported */
+ 
+ #define SNDRV_PCM_INFO_DRAIN_TRIGGER	0x40000000		/* internal kernel flag - trigger in drain */
+ #define SNDRV_PCM_INFO_FIFO_IN_FRAMES	0x80000000	/* internal kernel flag - FIFO size is in frames */
+diff --git a/sound/core/pcm_native.c b/sound/core/pcm_native.c
+index 0d65533..94c77a5 100644
+--- a/sound/core/pcm_native.c
++++ b/sound/core/pcm_native.c
+@@ -3462,21 +3462,38 @@ static int snd_pcm_mmap(struct file *file, struct vm_area_struct *area)
+ 	struct snd_pcm_file * pcm_file;
+ 	struct snd_pcm_substream *substream;	
+ 	unsigned long offset;
++	unsigned int info;
+ 	
+ 	pcm_file = file->private_data;
+ 	substream = pcm_file->substream;
+ 	if (PCM_RUNTIME_CHECK(substream))
+ 		return -ENXIO;
++	info = substream->runtime->hw.info;
+ 
+ 	offset = area->vm_pgoff << PAGE_SHIFT;
+ 	switch (offset) {
+ 	case SNDRV_PCM_MMAP_OFFSET_STATUS:
+ 		if (!pcm_status_mmap_allowed(pcm_file))
+ 			return -ENXIO;
++		/*
++		 * force fallback to ioctl if driver doesn't support status
++		 * and control mmap.
++		 */
++		if (info & SNDRV_PCM_INFO_NO_STATUS_MMAP)
++			return -ENXIO;
++
+ 		return snd_pcm_mmap_status(substream, file, area);
+ 	case SNDRV_PCM_MMAP_OFFSET_CONTROL:
+ 		if (!pcm_control_mmap_allowed(pcm_file))
+ 			return -ENXIO;
++
++		/*
++		 * force fallback to ioctl if driver doesn't support status
++		 * and control mmap.
++		 */
++		if (info & SNDRV_PCM_INFO_NO_STATUS_MMAP)
++			return -ENXIO;
++
+ 		return snd_pcm_mmap_control(substream, file, area);
+ 	default:
+ 		return snd_pcm_mmap_data(substream, file, area);
+-- 
+2.7.4
+

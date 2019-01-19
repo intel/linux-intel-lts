@@ -1,0 +1,375 @@
+From 4f440cc07500d0bac2bd3f041f8495877fcb2cc7 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Thu, 24 May 2018 14:57:02 +0300
+Subject: [PATCH 0290/1132] rpmb: VRPMB-FE create virtio rpmb frontend driver
+
+This patch implements virtio rpmb frontend driver.
+The driver will work with RPMB VBS-U together to
+provide one communication channel between UOS and SOS.
+
+V2: 1. Change license to dual BSD/GPL
+    2. Fix coding style.
+    3. Use pr_fmt macro instead of ERR, DBG, ...
+V3: 1. Replace - with _ in file name.
+    2. Plug to rpmb framework instead of using own misc device
+    3. Use arrays of scatter lists instead of linearizing the data.
+V4: 1. Allocate memory for control structures, it's not possible to DMA
+       from the stack.
+V5: 1. Add mutex and use wait queue instead of completion.
+    2. WIP code for getting capabilities
+V6: 1. Fix calculation of the allocation size for seq cmd
+    2. WIP code for getting capabilities
+    3. Drop unused constant RPMB_MAX_FRAMES
+
+Change-Id: I88a42f2e8f2ea1573aad9b5cafeae812c669a73e
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/char/rpmb/Kconfig       |  10 ++
+ drivers/char/rpmb/Makefile      |   1 +
+ drivers/char/rpmb/virtio_rpmb.c | 305 ++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 316 insertions(+)
+ create mode 100644 drivers/char/rpmb/virtio_rpmb.c
+
+diff --git a/drivers/char/rpmb/Kconfig b/drivers/char/rpmb/Kconfig
+index c069664..48f11c1 100644
+--- a/drivers/char/rpmb/Kconfig
++++ b/drivers/char/rpmb/Kconfig
+@@ -30,3 +30,13 @@ config RPMB_SIM
+ 	  suitable only for testing of the RPMB subsystem or RPMB applications
+ 	  prior to RPMB key provisioning.
+           Most people should say N here.
++
++config VIRTIO_RPMB
++	tristate "Virtio RPMB character device interface /dev/vrpmb"
++	default n
++	depends on VIRTIO
++	select RPMB
++	help
++	  Say yes here if you want to access virtio RPMB from user space
++	  via character device interface /dev/vrpmb.
++	  This device interface is only for guest/frontend virtio driver.
+diff --git a/drivers/char/rpmb/Makefile b/drivers/char/rpmb/Makefile
+index 8bd1186..281c012 100644
+--- a/drivers/char/rpmb/Makefile
++++ b/drivers/char/rpmb/Makefile
+@@ -3,5 +3,6 @@ obj-$(CONFIG_RPMB) += rpmb.o
+ rpmb-objs += core.o
+ rpmb-$(CONFIG_RPMB_INTF_DEV) += cdev.o
+ obj-$(CONFIG_RPMB_SIM) += rpmb_sim.o
++obj-$(CONFIG_VIRTIO_RPMB) += virtio_rpmb.o
+ 
+ ccflags-y += -D__CHECK_ENDIAN__
+diff --git a/drivers/char/rpmb/virtio_rpmb.c b/drivers/char/rpmb/virtio_rpmb.c
+new file mode 100644
+index 0000000..ef3487c
+--- /dev/null
++++ b/drivers/char/rpmb/virtio_rpmb.c
+@@ -0,0 +1,305 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Virtio RPMB Front End Driver
++ *
++ * Copyright (c) 2018 Intel Corporation. All rights reserved.
++ */
++#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
++#include <linux/err.h>
++#include <linux/scatterlist.h>
++#include <linux/spinlock.h>
++#include <linux/virtio.h>
++#include <linux/module.h>
++#include <linux/virtio_ids.h>
++#include <linux/fs.h>
++#include <linux/virtio_config.h>
++#include <linux/uaccess.h>
++#include <linux/rpmb.h>
++
++static const char id[] = "RPMB:VIRTIO";
++#ifndef VIRTIO_ID_RPMB
++#define	VIRTIO_ID_RPMB		0xFFFF
++#endif
++
++#define RPMB_SEQ_CMD_MAX 3  /* support up to 3 cmds */
++
++struct virtio_rpmb_info {
++	struct virtqueue *vq;
++	struct mutex lock; /* info lock */
++	wait_queue_head_t have_data;
++	struct rpmb_dev *rdev;
++};
++
++struct virtio_rpmb_ioc {
++	unsigned int ioc_cmd;
++	int result;
++	u8 target;
++	u8 reserved[3];
++};
++
++static void virtio_rpmb_recv_done(struct virtqueue *vq)
++{
++	struct virtio_rpmb_info *vi;
++	struct virtio_device *vdev = vq->vdev;
++
++	vi = vq->vdev->priv;
++	if (!vi) {
++		dev_err(&vdev->dev, "Error: no found vi data.\n");
++		return;
++	}
++
++	wake_up(&vi->have_data);
++}
++
++static int rpmb_virtio_cmd_seq(struct device *dev, u8 target,
++			       struct rpmb_cmd *cmds, u32 ncmds)
++{
++	struct virtio_device *vdev = dev_to_virtio(dev);
++	struct virtio_rpmb_info *vi = vdev->priv;
++	unsigned int i;
++	struct virtio_rpmb_ioc *vio_cmd;
++	struct rpmb_ioc_seq_cmd *seq_cmd;
++	size_t seq_cmd_sz;
++	struct scatterlist vio_ioc, vio_seq, frame[3];
++	struct scatterlist *sgs[5];
++	unsigned int num_out = 0, num_in = 0;
++	size_t sz;
++	int ret;
++	unsigned int len;
++
++	if (ncmds > RPMB_SEQ_CMD_MAX)
++		return -EINVAL;
++
++	mutex_lock(&vi->lock);
++
++	vio_cmd = kzalloc(sizeof(*vio_cmd), GFP_KERNEL);
++	seq_cmd_sz = sizeof(*seq_cmd) + sizeof(struct rpmb_ioc_cmd) * ncmds;
++	seq_cmd = kzalloc(seq_cmd_sz, GFP_KERNEL);
++	if (!vio_cmd || !seq_cmd) {
++		ret = -ENOMEM;
++		goto out;
++	}
++
++	vio_cmd->ioc_cmd = RPMB_IOC_SEQ_CMD;
++	vio_cmd->result = 0;
++	vio_cmd->target = target;
++	sg_init_one(&vio_ioc, vio_cmd, sizeof(*vio_cmd));
++	sgs[num_out + num_in++] = &vio_ioc;
++
++	seq_cmd->num_of_cmds = ncmds;
++	for (i = 0; i < ncmds; i++) {
++		seq_cmd->cmds[i].flags   = cmds[i].flags;
++		seq_cmd->cmds[i].nframes = cmds[i].nframes;
++		seq_cmd->cmds[i].frames_ptr = i;
++	}
++	sg_init_one(&vio_seq, seq_cmd, seq_cmd_sz);
++	sgs[num_out + num_in++] = &vio_seq;
++
++	for (i = 0; i < ncmds; i++) {
++		sz = sizeof(struct rpmb_frame_jdec) * (cmds[i].nframes ?: 1);
++		sg_init_one(&frame[i], cmds[i].frames, sz);
++		sgs[num_out + num_in++] = &frame[i];
++	}
++
++	virtqueue_add_sgs(vi->vq, sgs, num_out, num_in, vi, GFP_KERNEL);
++	virtqueue_kick(vi->vq);
++
++	wait_event(vi->have_data, virtqueue_get_buf(vi->vq, &len));
++
++	ret = 0;
++
++	if (vio_cmd->result != 0) {
++		dev_err(dev, "Error: command error = %d.\n", vio_cmd->result);
++		ret = -EIO;
++	}
++
++out:
++	kfree(vio_cmd);
++	kfree(seq_cmd);
++	mutex_unlock(&vi->lock);
++	return ret;
++}
++
++static int rpmb_virtio_cmd_cap(struct device *dev, u8 target)
++{
++	struct virtio_device *vdev = dev_to_virtio(dev);
++	struct virtio_rpmb_info *vi = vdev->priv;
++	struct virtio_rpmb_ioc *vio_cmd;
++	struct rpmb_ioc_cap_cmd *cap_cmd;
++	struct scatterlist vio_ioc, cap_ioc;
++	struct scatterlist *sgs[2];
++	unsigned int num_out = 0, num_in = 0;
++	unsigned int len;
++	int ret;
++
++	mutex_lock(&vi->lock);
++
++	vio_cmd = kzalloc(sizeof(*vio_cmd), GFP_KERNEL);
++	cap_cmd = kzalloc(sizeof(*cap_cmd), GFP_KERNEL);
++	if (!vio_cmd || !cap_cmd) {
++		ret = -ENOMEM;
++		goto out;
++	}
++
++	vio_cmd->ioc_cmd = RPMB_IOC_CAP_CMD;
++	vio_cmd->result = 0;
++	vio_cmd->target = target;
++	sg_init_one(&vio_ioc, vio_cmd, sizeof(*vio_cmd));
++	sgs[num_out + num_in++] = &vio_ioc;
++
++	sg_init_one(&cap_ioc, cap_cmd, sizeof(*cap_cmd));
++	sgs[num_out + num_in++] = &cap_ioc;
++
++	virtqueue_add_sgs(vi->vq, sgs, num_out, num_in, vi, GFP_KERNEL);
++	virtqueue_kick(vi->vq);
++
++	wait_event(vi->have_data, virtqueue_get_buf(vi->vq, &len));
++
++	ret = 0;
++
++	if (vio_cmd->result != 0) {
++		dev_err(dev, "Error: command error = %d.\n", vio_cmd->result);
++		ret = -EIO;
++	}
++
++out:
++	kfree(vio_cmd);
++	kfree(cap_cmd);
++
++	mutex_unlock(&vi->lock);
++	return ret;
++}
++
++static int rpmb_virtio_get_capacity(struct device *dev, u8 target)
++{
++	return 0;
++}
++
++static struct rpmb_ops rpmb_virtio_ops = {
++	.cmd_seq = rpmb_virtio_cmd_seq,
++	.get_capacity = rpmb_virtio_get_capacity,
++	.type = RPMB_TYPE_EMMC,
++};
++
++static int rpmb_virtio_dev_init(struct virtio_rpmb_info *vi)
++{
++	int ret = 0;
++	struct device *dev = &vi->vq->vdev->dev;
++
++	rpmb_virtio_ops.dev_id_len = strlen(id);
++	rpmb_virtio_ops.dev_id = id;
++	rpmb_virtio_ops.wr_cnt_max = 1;
++	rpmb_virtio_ops.rd_cnt_max = 1;
++	rpmb_virtio_ops.block_size = 1;
++
++	vi->rdev = rpmb_dev_register(dev, 0, &rpmb_virtio_ops);
++	if (IS_ERR(vi->rdev)) {
++		ret = PTR_ERR(vi->rdev);
++		goto err;
++	}
++
++	dev_set_drvdata(dev, vi);
++err:
++	return ret;
++}
++
++static int virtio_rpmb_init(struct virtio_device *vdev)
++{
++	int ret;
++	struct virtio_rpmb_info *vi;
++
++	vi = kzalloc(sizeof(*vi), GFP_KERNEL);
++	if (!vi)
++		return -ENOMEM;
++
++	init_waitqueue_head(&vi->have_data);
++	mutex_init(&vi->lock);
++	vdev->priv = vi;
++
++	/* We expect a single virtqueue. */
++	vi->vq = virtio_find_single_vq(vdev, virtio_rpmb_recv_done, "request");
++	if (IS_ERR(vi->vq)) {
++		dev_err(&vdev->dev, "get single vq failed!\n");
++		ret = PTR_ERR(vi->vq);
++		goto err;
++	}
++
++	/* create vrpmb device. */
++	ret = rpmb_virtio_dev_init(vi);
++	if (ret) {
++		dev_err(&vdev->dev, "create vrpmb device failed.\n");
++		goto err;
++	}
++
++	dev_info(&vdev->dev, "init done!\n");
++
++	return 0;
++
++err:
++	kfree(vi);
++	return ret;
++}
++
++static void virtio_rpmb_remove(struct virtio_device *vdev)
++{
++	struct virtio_rpmb_info *vi;
++
++	vi = vdev->priv;
++	if (!vi)
++		return;
++
++	if (wq_has_sleeper(&vi->have_data))
++		wake_up(&vi->have_data);
++
++	rpmb_dev_unregister(vi->rdev);
++
++	if (vdev->config->reset)
++		vdev->config->reset(vdev);
++
++	if (vdev->config->del_vqs)
++		vdev->config->del_vqs(vdev);
++
++	kfree(vi);
++}
++
++static int virtio_rpmb_probe(struct virtio_device *vdev)
++{
++	return virtio_rpmb_init(vdev);
++}
++
++#ifdef CONFIG_PM_SLEEP
++static int virtio_rpmb_freeze(struct virtio_device *vdev)
++{
++	virtio_rpmb_remove(vdev);
++	return 0;
++}
++
++static int virtio_rpmb_restore(struct virtio_device *vdev)
++{
++	return virtio_rpmb_init(vdev);
++}
++#endif
++
++static struct virtio_device_id id_table[] = {
++	{ VIRTIO_ID_RPMB, VIRTIO_DEV_ANY_ID },
++	{ 0 },
++};
++
++static struct virtio_driver virtio_rpmb_driver = {
++	.driver.name =	KBUILD_MODNAME,
++	.driver.owner =	THIS_MODULE,
++	.id_table =	id_table,
++	.probe =	virtio_rpmb_probe,
++	.remove =	virtio_rpmb_remove,
++#ifdef CONFIG_PM_SLEEP
++	.freeze =	virtio_rpmb_freeze,
++	.restore =	virtio_rpmb_restore,
++#endif
++};
++
++module_virtio_driver(virtio_rpmb_driver);
++MODULE_DEVICE_TABLE(virtio, id_table);
++
++MODULE_DESCRIPTION("Virtio rpmb frontend driver");
++MODULE_AUTHOR("Intel Corporation");
++MODULE_LICENSE("Dual BSD/GPL");
+-- 
+2.7.4
+

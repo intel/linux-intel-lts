@@ -1,0 +1,160 @@
+From e147908718df0bd9c0ffd08e7bad8ad911f132e5 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Tue, 16 Oct 2018 13:38:18 +0800
+Subject: [PATCH 0833/1132] Kernel/Acrn: Use HYPERVISOR_CALLBACK_VECTOR for
+ Acrn upcall vector
+
+Linux kernel uses the HYPERVISOR_CALLBACK_VECTOR for hypervisor upcall vector.
+And it is already used for Xen and HyperV.
+After Acrn hypervisor is detected, it will also use this defined vector as notify
+vector to kernel.
+
+Tracked-on: https://github.com/projectacrn/acrn-hypervisor/issues/1325
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ arch/x86/acrn/acrn.c             | 40 ++++++++++++++++++++++++++++++++++++++++
+ arch/x86/entry/entry_64.S        |  5 +++++
+ arch/x86/include/asm/acrnhyper.h | 18 ++++++++++++++++++
+ arch/x86/include/asm/hardirq.h   |  2 +-
+ arch/x86/kernel/irq.c            |  2 +-
+ 5 files changed, 65 insertions(+), 2 deletions(-)
+ create mode 100644 arch/x86/include/asm/acrnhyper.h
+
+diff --git a/arch/x86/acrn/acrn.c b/arch/x86/acrn/acrn.c
+index eea9db8..12ebc4f 100644
+--- a/arch/x86/acrn/acrn.c
++++ b/arch/x86/acrn/acrn.c
+@@ -34,6 +34,10 @@
+  */
+ #include <asm/hypervisor.h>
+ #include <linux/vhm/vhm_msi.h>
++#include <asm/acrnhyper.h>
++#include <asm/irq_vectors.h>
++#include <asm/irq_regs.h>
++#include <asm/desc.h>
+ 
+ static uint32_t __init acrn_detect(void)
+ {
+@@ -45,6 +49,9 @@ static void __init acrn_init_platform(void)
+ #if  defined(CONFIG_PCI_MSI) && defined(CONFIG_ACRN_VHM)
+ 	pv_irq_ops.write_msi = acrn_write_msi_msg;
+ #endif
++
++	alloc_intr_gate(HYPERVISOR_CALLBACK_VECTOR,
++                                acrn_hv_callback_vector);
+ }
+ 
+ static void acrn_pin_vcpu(int cpu)
+@@ -63,6 +70,37 @@ static void __init acrn_init_mem_mapping(void)
+ 	/* do nothing here now */
+ }
+ 
++
++static void (*acrn_intr_handler)(void);
++/*
++ * Handler for ACRN_HV_CALLBACK.
++ */
++__visible void acrn_hv_vector_handler(struct pt_regs *regs)
++{
++	struct pt_regs *old_regs = set_irq_regs(regs);
++
++	entering_ack_irq();
++#ifdef CONFIG_X86
++	inc_irq_stat(irq_hv_callback_count);
++#endif
++
++	if (acrn_intr_handler)
++		acrn_intr_handler();
++
++	exiting_irq();
++	set_irq_regs(old_regs);
++}
++
++void acrn_setup_intr_irq(void (*handler)(void))
++{
++	acrn_intr_handler = handler;
++}
++
++void acrn_remove_intr_irq(void)
++{
++	acrn_intr_handler = NULL;
++}
++
+ const struct hypervisor_x86 x86_hyper_acrn = {
+ 	.name                   = "ACRN",
+ 	.detect                 = acrn_detect,
+@@ -73,3 +111,5 @@ const struct hypervisor_x86 x86_hyper_acrn = {
+ 	.init.init_mem_mapping	= acrn_init_mem_mapping,
+ };
+ EXPORT_SYMBOL(x86_hyper_acrn);
++EXPORT_SYMBOL(acrn_setup_intr_irq);
++EXPORT_SYMBOL(acrn_remove_intr_irq);
+diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
+index 826262a..6e9154b 100644
+--- a/arch/x86/entry/entry_64.S
++++ b/arch/x86/entry/entry_64.S
+@@ -1165,6 +1165,11 @@ apicinterrupt3 HYPERV_STIMER0_VECTOR \
+ 	hv_stimer0_callback_vector hv_stimer0_vector_handler
+ #endif /* CONFIG_HYPERV */
+ 
++#if IS_ENABLED(CONFIG_ACRN)
++apicinterrupt3 HYPERVISOR_CALLBACK_VECTOR \
++	acrn_hv_callback_vector acrn_hv_vector_handler
++#endif
++
+ idtentry debug			do_debug		has_error_code=0	paranoid=1 shift_ist=DEBUG_STACK
+ idtentry int3			do_int3			has_error_code=0
+ idtentry stack_segment		do_stack_segment	has_error_code=1
+diff --git a/arch/x86/include/asm/acrnhyper.h b/arch/x86/include/asm/acrnhyper.h
+new file mode 100644
+index 0000000..1cfdb24
+--- /dev/null
++++ b/arch/x86/include/asm/acrnhyper.h
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef _ASM_X86_ACRNHYPER_H
++#define _ASM_X86_ACRNHYPER_H
++
++#include <linux/types.h>
++#include <linux/atomic.h>
++#include <linux/nmi.h>
++#include <asm/io.h>
++
++#ifdef CONFIG_ACRN
++/* ACRN Hypervisor callback */
++void acrn_hv_callback_vector(void);
++
++void acrn_setup_intr_irq(void (*handler)(void));
++void acrn_remove_intr_irq(void);
++#endif
++
++#endif
+diff --git a/arch/x86/include/asm/hardirq.h b/arch/x86/include/asm/hardirq.h
+index d9069bb..5aa52d2 100644
+--- a/arch/x86/include/asm/hardirq.h
++++ b/arch/x86/include/asm/hardirq.h
+@@ -37,7 +37,7 @@ typedef struct {
+ #ifdef CONFIG_X86_MCE_AMD
+ 	unsigned int irq_deferred_error_count;
+ #endif
+-#if IS_ENABLED(CONFIG_HYPERV) || defined(CONFIG_XEN)
++#if IS_ENABLED(CONFIG_HYPERV) || defined(CONFIG_XEN) || defined(CONFIG_ACRN)
+ 	unsigned int irq_hv_callback_count;
+ #endif
+ #if IS_ENABLED(CONFIG_HYPERV)
+diff --git a/arch/x86/kernel/irq.c b/arch/x86/kernel/irq.c
+index 59b5f2e..6b3eaab 100644
+--- a/arch/x86/kernel/irq.c
++++ b/arch/x86/kernel/irq.c
+@@ -134,7 +134,7 @@ int arch_show_interrupts(struct seq_file *p, int prec)
+ 		seq_printf(p, "%10u ", per_cpu(mce_poll_count, j));
+ 	seq_puts(p, "  Machine check polls\n");
+ #endif
+-#if IS_ENABLED(CONFIG_HYPERV) || defined(CONFIG_XEN)
++#if IS_ENABLED(CONFIG_HYPERV) || defined(CONFIG_XEN) || defined(CONFIG_ACRN)
+ 	if (test_bit(HYPERVISOR_CALLBACK_VECTOR, system_vectors)) {
+ 		seq_printf(p, "%*s: ", prec, "HYP");
+ 		for_each_online_cpu(j)
+-- 
+2.7.4
+

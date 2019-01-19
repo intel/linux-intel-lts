@@ -1,0 +1,202 @@
+From f796fa023d1ab41d70abcbb6b357e1d912d52e4a Mon Sep 17 00:00:00 2001
+From: Manisha Chinthapally <manisha.chinthapally@intel.com>
+Date: Tue, 13 Nov 2018 12:27:51 -0800
+Subject: [PATCH 0981/1132] SEP: some cleanup
+
+Cleaned up some unused variables
+imporved readablility by removing double casting.
+removed unecsisary casting.
+
+Change-Id: I02e9efc8f7cd2abe9574b6c168418d89f5d72271
+Tracked-On: PKT-1523
+Signed-off-by: Manisha Chinthapally <manisha.chinthapally@intel.com>
+---
+ drivers/platform/x86/sepdk/inc/utility.h    |  2 +-
+ drivers/platform/x86/sepdk/sep/linuxos.c    |  3 ++-
+ drivers/platform/x86/sepdk/sep/pebs.c       |  3 ---
+ drivers/platform/x86/sepdk/sep/sys_info.c   |  3 ---
+ drivers/platform/x86/sepdk/sep/unc_common.c |  3 ---
+ drivers/platform/x86/sepdk/sep/unc_gt.c     |  2 --
+ drivers/platform/x86/sepdk/sep/unc_mmio.c   | 12 +-----------
+ 7 files changed, 4 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/platform/x86/sepdk/inc/utility.h b/drivers/platform/x86/sepdk/inc/utility.h
+index c5eca96..d470a65 100644
+--- a/drivers/platform/x86/sepdk/inc/utility.h
++++ b/drivers/platform/x86/sepdk/inc/utility.h
+@@ -53,7 +53,7 @@ extern DISPATCH_NODE unc_power_dispatch;
+ #include <asm/msr.h>
+ 
+ #define SYS_MMIO_Read32(base, offset)                                       \
+-	((base) ? readl((void __iomem *)((UIOP)(base) + (offset))) : 0)
++	((base) ? readl((void __iomem *)(base) + (offset)) : 0)
+ extern U64 SYS_MMIO_Read64(U64 baseAddress, U64 offset);
+ 
+ extern U64 SYS_Read_MSR(U32 msr);
+diff --git a/drivers/platform/x86/sepdk/sep/linuxos.c b/drivers/platform/x86/sepdk/sep/linuxos.c
+index 08da10e..fa29d7f 100755
+--- a/drivers/platform/x86/sepdk/sep/linuxos.c
++++ b/drivers/platform/x86/sepdk/sep/linuxos.c
+@@ -263,6 +263,7 @@ static DRV_BOOL linuxos_Equal_VM_Exe_File(struct vm_area_struct *vma)
+  */
+ static S32 linuxos_Map_Kernel_Modules(void)
+ {
++#if defined(CONFIG_MODULES)
+ 	struct module *current_module;
+ 	struct list_head *modules;
+ 	U16 exec_mode;
+@@ -274,7 +275,7 @@ static S32 linuxos_Map_Kernel_Modules(void)
+ 
+ 	SEP_DRV_LOG_TRACE_IN("");
+ 
+-#if defined(CONFIG_MODULES)
++
+ 	mutex_lock(&module_mutex);
+ 
+ #if defined(DRV_EM64T)
+diff --git a/drivers/platform/x86/sepdk/sep/pebs.c b/drivers/platform/x86/sepdk/sep/pebs.c
+index 7537c11..0a428dc 100755
+--- a/drivers/platform/x86/sepdk/sep/pebs.c
++++ b/drivers/platform/x86/sepdk/sep/pebs.c
+@@ -961,7 +961,6 @@ VOID PEBS_Flush_Buffer(VOID *param)
+ 	U64 pebs_overflow_status = 0;
+ 	U64 lbr_tos_from_ip = 0ULL;
+ 	DRV_BOOL counter_overflowed = FALSE;
+-	// ECB pecb;
+ 	CPU_STATE pcpu;
+ 	EVENT_DESC evt_desc;
+ 	BUFFER_DESC bd;
+@@ -1003,8 +1002,6 @@ VOID PEBS_Flush_Buffer(VOID *param)
+ 		SEP_DRV_LOG_TRACE("Pebs_overflow_status = 0x%llx, i=%d.",
+ 				  pebs_overflow_status, i);
+ 
+-		// pecb = LWPMU_DEVICE_PMU_register_data(
+-		// 	&devices[dev_idx])[cur_grp];
+ 		FOR_EACH_DATA_REG(pecb, j)
+ 		{
+ 			if ((!DEV_CONFIG_enable_adaptive_pebs(pcfg) &&
+diff --git a/drivers/platform/x86/sepdk/sep/sys_info.c b/drivers/platform/x86/sepdk/sep/sys_info.c
+index b72ce28..cf5a90c 100755
+--- a/drivers/platform/x86/sepdk/sep/sys_info.c
++++ b/drivers/platform/x86/sepdk/sep/sys_info.c
+@@ -317,7 +317,6 @@ static void sys_info_Fill_CPUID(U32 num_cpuids, U32 basic_funcs,
+ 	VTSA_CPUID *cpuid_el;
+ 	U32 shift_nbits_core = 0;
+ 	U32 shift_nbits_pkg = 0;
+-	// U32 family = 0;
+ 	U32 model = 0;
+ 	DRV_BOOL ht_supported = FALSE;
+ 	U32 apic_id = 0;
+@@ -490,11 +489,9 @@ static void sys_info_Fill_CPUID(U32 num_cpuids, U32 basic_funcs,
+ 							MSR_FB_PCARD_ID_FUSE);
+ 				}
+ 			} else if (cpuid_function == 1) {
+-				// family = (U32)(rax >> 8 & 0x0f);
+ 				/* extended model bits */
+ 				model = (U32)(rax >> 12 & 0xf0) |
+ 					(U32)(rax >> 4 & 0x0f);
+-				// model |= (U32)(rax >> 4 & 0x0f);
+ 				ht_supported = (rdx >> 28) & 1 ? TRUE : FALSE;
+ 				num_logical_per_physical =
+ 					(U32)((rbx & 0xff0000) >> 16);
+diff --git a/drivers/platform/x86/sepdk/sep/unc_common.c b/drivers/platform/x86/sepdk/sep/unc_common.c
+index 5442734..9ad1632 100755
+--- a/drivers/platform/x86/sepdk/sep/unc_common.c
++++ b/drivers/platform/x86/sepdk/sep/unc_common.c
+@@ -266,7 +266,6 @@ VOID UNC_COMMON_PCI_Scan_For_Uncore(PVOID param, U32 dev_node,
+ VOID UNC_COMMON_Get_Platform_Topology(U32 dev_node)
+ {
+ 	U32 num_registers = 0;
+-	// U32 device_index = 0;
+ 	U32 bus_num = 0;
+ 	U32 i = 0;
+ 	U32 func_num = 0;
+@@ -298,8 +297,6 @@ VOID UNC_COMMON_Get_Platform_Topology(U32 dev_node)
+ 		&platform_topology_prog_node, dev_node);
+ 	topology_regs = PLATFORM_TOPOLOGY_PROG_topology_topology_regs(
+ 		&platform_topology_prog_node, dev_node);
+-	// device_index = PLATFORM_TOPOLOGY_PROG_topology_device_device_index(
+-		// &platform_topology_prog_node, dev_node);
+ 
+ 	for (i = 0; i < num_pkgs; i++) {
+ 		for (len = 0; len < num_registers; len++) {
+diff --git a/drivers/platform/x86/sepdk/sep/unc_gt.c b/drivers/platform/x86/sepdk/sep/unc_gt.c
+index 34e7650..3d07888 100755
+--- a/drivers/platform/x86/sepdk/sep/unc_gt.c
++++ b/drivers/platform/x86/sepdk/sep/unc_gt.c
+@@ -399,7 +399,6 @@ static VOID unc_gt_Read_PMU_Data(PVOID param)
+ 	U32 dev_idx;
+ 	U32 this_cpu;
+ 	CPU_STATE pcpu;
+-	// U32 cur_grp;
+ 	U32 offset_delta;
+ 	U32 tmp_value_lo = 0;
+ 	U32 tmp_value_hi = 0;
+@@ -418,7 +417,6 @@ static VOID unc_gt_Read_PMU_Data(PVOID param)
+ 	}
+ 
+ 	package_num = core_to_package_map[this_cpu];
+-	// cur_grp = LWPMU_DEVICE_cur_group(&devices[(dev_idx)])[package_num];
+ 
+ 	FOR_EACH_PCI_DATA_REG_RAW(pecb, i, dev_idx)
+ 	{
+diff --git a/drivers/platform/x86/sepdk/sep/unc_mmio.c b/drivers/platform/x86/sepdk/sep/unc_mmio.c
+index b1d997d..148925d 100755
+--- a/drivers/platform/x86/sepdk/sep/unc_mmio.c
++++ b/drivers/platform/x86/sepdk/sep/unc_mmio.c
+@@ -251,9 +251,7 @@ static void unc_mmio_Enable_PMU(PVOID param)
+ 	U32 idx_w = 0;
+ 	U32 event_code = 0;
+ 	U32 counter = 0;
+-	// U32 num_events = 0;
+ 	U32 entry = 0;
+-	// U32 num_pkgs = num_packages;
+ 	U32 dev_node = 0;
+ 
+ 	SEP_DRV_LOG_TRACE_IN("Param: %p.", param);
+@@ -282,16 +280,11 @@ static void unc_mmio_Enable_PMU(PVOID param)
+ 		return;
+ 	}
+ 
+-	// if (DEV_UNC_CONFIG_device_type(pcfg_unc) == DRV_SINGLE_INSTANCE) {
+-	// 	num_pkgs = 1;
+-	// }
+-
+ 	virtual_addr = virtual_address_table(dev_node, entry);
+ 
+ 	// NOTE THAT the enable function currently captures previous values
+ 	// for EMON collection to avoid unnecessary memory copy.
+ 	if (DRV_CONFIG_emon_mode(drv_cfg)) {
+-		// num_events = ECB_num_events(pecb);
+ 		idx_w = ECB_operations_register_start(pecb,
+ 						      PMU_OPERATION_WRITE);
+ 		FOR_EACH_REG_UNC_OPERATION(pecb, dev_idx, idx,
+@@ -577,7 +570,7 @@ static VOID unc_mmio_Trigger_Read(PVOID param, U32 id)
+ 			}
+ 			value = SYS_MMIO_Read64(virtual_addr, offset_delta);
+ 		} else {
+-			value = SYS_MMIO_Read32((volatile unsigned int *)virtual_addr, offset_delta);
++			value = SYS_MMIO_Read32(virtual_addr, offset_delta);
+ 		}
+ 		value &= (U64)ECB_entries_max_bits(pecb, idx);
+ 
+@@ -640,7 +633,6 @@ static VOID unc_mmio_Read_PMU_Data(PVOID param)
+ 	U32 idx_w = 0;
+ 	U32 event_code = 0;
+ 	U32 counter = 0;
+-	// U32 num_events = 0;
+ 	U32 package_num;
+ 	U32 entry = 0;
+ 	U32 dev_node = 0;
+@@ -673,8 +665,6 @@ static VOID unc_mmio_Read_PMU_Data(PVOID param)
+ 
+ 	virtual_addr = virtual_address_table(dev_node, entry);
+ 
+-	// num_events = ECB_num_events(pecb);
+-
+ 	idx_w = ECB_operations_register_start(pecb, PMU_OPERATION_WRITE);
+ 
+ 	FOR_EACH_REG_UNC_OPERATION(pecb, dev_idx, idx, PMU_OPERATION_READ)
+-- 
+2.7.4
+

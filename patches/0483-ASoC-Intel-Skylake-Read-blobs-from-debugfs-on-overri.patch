@@ -1,0 +1,106 @@
+From 25ab3f366488ca4e743150dc0d5d5a9c4539275d Mon Sep 17 00:00:00 2001
+From: Vinod Koul <vinod.koul@intel.com>
+Date: Wed, 26 Aug 2015 13:13:56 +0530
+Subject: [PATCH 0483/1132] ASoC: Intel: Skylake: Read blobs from debugfs on
+ override
+
+Add API to read blobs from debugfs when override is enabled and
+use that API when sending IPCs to DSP
+
+Signed-off-by: Vinod Koul <vinod.koul@intel.com>
+Signed-off-by: Jeeja KP <jeeja.kp@intel.com>
+---
+ sound/soc/intel/skylake/skl-debug.c    | 21 +++++++++++++++++++++
+ sound/soc/intel/skylake/skl-topology.c | 14 +++++++++++++-
+ sound/soc/intel/skylake/skl.h          |  8 ++++++++
+ 3 files changed, 42 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index 9266e47..9ae0128 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -46,6 +46,27 @@ struct skl_debug {
+ 	struct nhlt_blob dmic_blob;
+ };
+ 
++struct nhlt_specific_cfg
++*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance)
++{
++	switch (link_type) {
++	case NHLT_LINK_DMIC:
++		return d->dmic_blob.cfg;
++
++	case NHLT_LINK_SSP:
++		if (instance >= MAX_SSP)
++			return NULL;
++
++		return d->ssp_blob[instance].cfg;
++
++	default:
++		break;
++	}
++
++	dev_err(d->dev, "NHLT debugfs query failed\n");
++	return NULL;
++}
++
+ static ssize_t nhlt_read(struct file *file, char __user *user_buf,
+ 					   size_t count, loff_t *ppos)
+ {
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 96cb7e1..bece499 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -1888,10 +1888,22 @@ static int skl_tplg_be_fill_pipe_params(struct snd_soc_dai *dai,
+ 		return 0;
+ 
+ 	/* update the blob based on virtual bus_id*/
+-	cfg = skl_get_ep_blob(skl, mconfig->vbus_id, link_type,
++	if (!skl->nhlt_override) {
++		cfg = skl_get_ep_blob(skl, mconfig->vbus_id, link_type,
+ 					params->s_fmt, params->ch,
+ 					params->s_freq, params->stream,
+ 					dev_type);
++	} else {
++		dev_warn(dai->dev, "Querying NHLT blob from Debugfs!!!!\n");
++		cfg = skl_nhlt_get_debugfs_blob(skl->debugfs,
++					link_type, mconfig->vbus_id);
++		if (cfg->size > HDA_SST_CFG_MAX) {
++			dev_err(dai->dev, "NHLT debugfs blob is vv large\n");
++			dev_err(dai->dev, "First word is size in blob!!!\n");
++			dev_err(dai->dev, "Recieved size %d\n", cfg->size);
++			return -EIO;
++		}
++	}
+ 	if (cfg) {
+ 		mconfig->formats_config.caps_size = cfg->size;
+ 		mconfig->formats_config.caps = (u32 *) &cfg->caps;
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index 28c62dd..05561be 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -165,6 +165,9 @@ struct skl_debug *skl_debugfs_init(struct skl *skl);
+ void skl_debug_init_module(struct skl_debug *d,
+ 			struct snd_soc_dapm_widget *w,
+ 			struct skl_module_cfg *mconfig);
++struct nhlt_specific_cfg
++*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance);
++
+ #else
+ static inline struct skl_debug *skl_debugfs_init(struct skl *skl)
+ {
+@@ -174,6 +177,11 @@ static inline void skl_debug_init_module(struct skl_debug *d,
+ 					 struct snd_soc_dapm_widget *w,
+ 					 struct skl_module_cfg *mconfig)
+ {}
++static inline struct nhlt_specific_cfg
++*skl_nhlt_get_debugfs_blob(struct skl_debug *d, u8 link_type, u32 instance)
++{
++	return NULL;
++}
+ #endif
+ 
+ #endif /* __SOUND_SOC_SKL_H */
+-- 
+2.7.4
+

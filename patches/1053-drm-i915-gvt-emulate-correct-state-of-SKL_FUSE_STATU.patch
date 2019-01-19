@@ -1,0 +1,39 @@
+From 78cf45ecbef89285911ab26d8ca1901f276f01d9 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 14 Dec 2018 04:16:29 +0000
+Subject: [PATCH 1053/1132] drm/i915/gvt: emulate correct state of
+ SKL_FUSE_STATUS on BXT
+
+When gvt-g guest boots up on BXT with virtual display monitors, it will
+report some WARN_ON messages in gen9_wait_for_power_well_fuses().
+It's because GVT-g doesn't emulate correct status of SKL_FUSE_STATUS on
+BXT platform. This patch is to fix the issue mentioned above.
+
+Tracked-On: projectacrn/acrn-hypervisor/issues/2090
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Tracked-On: PKT-1617
+---
+ drivers/gpu/drm/i915/gvt/display.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gvt/display.c b/drivers/gpu/drm/i915/gvt/display.c
+index b013d1b..700bf9f 100644
+--- a/drivers/gpu/drm/i915/gvt/display.c
++++ b/drivers/gpu/drm/i915/gvt/display.c
+@@ -191,6 +191,12 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
+ 				BXT_DE_PORT_HP_DDIC;
+ 		}
+ 
++		vgpu_vreg_t(vgpu, SKL_FUSE_STATUS) |=
++				SKL_FUSE_DOWNLOAD_STATUS |
++				SKL_FUSE_PG_DIST_STATUS(SKL_PG0) |
++				SKL_FUSE_PG_DIST_STATUS(SKL_PG1) |
++				SKL_FUSE_PG_DIST_STATUS(SKL_PG2);
++
+ 		return;
+ 	}
+ 
+-- 
+2.7.4
+

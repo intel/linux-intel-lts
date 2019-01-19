@@ -1,0 +1,67 @@
+From deee72979b7cba6fcd100f05656d644c9204704d Mon Sep 17 00:00:00 2001
+From: "Panwar, Ashish" <ashish.panwar@intel.com>
+Date: Sat, 19 Mar 2016 08:44:11 +0530
+Subject: [PATCH 0498/1132] REVERTME-1: Revert when logging is updated in
+ driver/firmware.
+
+Core 0 is currently using entire 8KB window for logging.
+Revert this patch when it is shared by all 4 cores or logging
+infrastructure is updated in driver.
+
+Change-Id: I4798c501030ce9216918d629f6c5f898e1e16aa6
+Signed-off-by: Panwar, Ashish <ashish.panwar@intel.com>
+Reviewed-on:
+Reviewed-by: Shah, Hardik T <hardik.t.shah@intel.com>
+Tested-by: Shah, Hardik T <hardik.t.shah@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c | 4 ++++
+ sound/soc/intel/skylake/skl-sst-ipc.c  | 8 ++++++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index d012198..3336a23 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -67,7 +67,11 @@ void skl_dsp_set_astate_cfg(struct skl_sst *ctx, u32 cnt, void *data)
+ }
+ 
+ #define ENABLE_LOGS		6
++#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
++#define DEFAULT_LOG_PRIORITY	6
++#else
+ #define DEFAULT_LOG_PRIORITY	5
++#endif
+ 
+ /* set firmware logging state via IPC */
+ int skl_dsp_enable_logging(struct sst_generic_ipc *ipc, int core, int enable)
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index 36c22c5..d34ff3f 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -358,7 +358,11 @@ skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+ 	u32 *ptr, avail;
+ 	u8 *base;
+ 
++#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
++	core = 0;
++#else
+ 	core = IPC_GLB_NOTIFY_CORE_ID(header.primary);
++#endif
+ 	if (!(BIT(core) & sst->trace_wind.flags)) {
+ 		dev_err(sst->dev, "Logging is disabled on dsp %d\n", core);
+ 		return;
+@@ -370,7 +374,11 @@ skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+ 		return;
+ 	}
+ 	skl_dsp_get_log_buff(sst, core);
++#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
++	size = sst->trace_wind.size;
++#else
+ 	size = sst->trace_wind.size/sst->trace_wind.nr_dsp;
++#endif
+ 	base = (u8 *)sst->trace_wind.addr;
+ 	/* move to the source dsp tracing window */
+ 	base += (core * size);
+-- 
+2.7.4
+

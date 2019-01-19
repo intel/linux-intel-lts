@@ -1,0 +1,42 @@
+From c3a8b02bf86cbc4cae5ceeff94808a57b3214b67 Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Fri, 10 Feb 2017 20:22:42 +0530
+Subject: [PATCH 0549/1132] ASoC: Intel: Skylake: Add platform DAI for
+ deepbuffer capture
+
+This patch adds platform DAI for deepbuffer capture
+
+Change-Id: I2278766ac028e4801ec96a26c28b40c6e5c0e477
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-on:
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 4701d9e..1da4850 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1073,6 +1073,13 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
+ 		.sig_bits = 32,
+ 	},
++	.capture = {
++		.stream_name = "Deepbuffer Capture",
++		.channels_min = HDA_STEREO,
++		.channels_max = HDA_STEREO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
++	},
+ },
+ {
+ 	.name = "Compress Probe0 Pin",
+-- 
+2.7.4
+

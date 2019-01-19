@@ -1,0 +1,80 @@
+From beda3976b488605c6437e3be17e2d8a8f1f001fc Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Mon, 12 Nov 2018 13:04:51 +0800
+Subject: [PATCH 0990/1132] drm/i915/gvt: fix array index mismatch issue
+
+GPU engines changed with more rings added for Gen>10, and it's reflected
+with kernel rebased to 4.19. VCES2 is changed to index 6 from index 5,
+but array defined in GVT not updated, thus caused the kernel panic.
+
+So use designated initializers to avoid this kind of issue.
+
+[ 5295.579551] [IGT] drv_hangman: starting subtest error-state-capture-vebox
+[ 7263.271218] BUG: unable to handle kernel paging request at ffff9665484bc7f0
+[ 7263.271524] PGD 36c00067 P4D 36c00067 PUD 0
+[ 7263.271713] Oops: 0000 1 PREEMPT SMP
+[ 7263.271883] CPU: 0 PID: 130 Comm: gvt workload 6 Tainted: G U W 4.19.0-sos+ #1
+[ 7263.272239] RIP: 0010:intel_vgpu_trigger_virtual_event+0x1c/0x70
+[ 7263.272493] Code: ff ff 66 90 66 2e 0f 1f 84 00 00 00 00 00 0f 1f 44 00 00 41 56 89 f2 41 55 41 54 49 89 d4 55 48 8d 14 52 53 48 8b 07 48 89 fb <48> 8b ac d0 f0 41 00 00 4c 8d b0 50 41 0
+[ 7263.273265] RSP: 0018:ffff96542cfebdc8 EFLAGS: 00010297
+[ 7263.273492] RAX: ffff9654310a8000 RBX: ffffb9a281876000 RCX: 0000000000000000
+[ 7263.273792] RDX: 0000000222e820c0 RSI: 00000000b64d6040 RDI: ffffb9a281876000
+[ 7263.274092] RBP: ffff9654310a8030 R08: 0000000000000001 R09: 0000000000000001
+[ 7263.274392] R10: 00000c6e46246e0c R11: 0000000000000000 R12: 00000000b64d6040
+[ 7263.274692] R13: 7fffffffffffffff R14: ffff9654310a8000 R15: 0000000000000006
+[ 7263.274993] FS: 0000000000000000(0000) GS:ffff96543fc00000(0000) knlGS:0000000000000000
+[ 7263.275332] CS: 0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[ 7263.275575] CR2: ffff9665484bc7f0 CR3: 0000000267bc4000 CR4: 00000000003406f0
+[ 7263.275875] Call Trace:
+[ 7263.275992] workload_thread+0xafb/0x1080
+[ 7263.276172] ? do_wait_intr_irq+0xb0/0xb0
+[ 7263.276347] ? finish_wait+0x80/0x80
+[ 7263.276505] ? intel_vgpu_reset_submission+0x20/0x20
+[ 7263.276720] kthread+0x11e/0x140
+[ 7263.276865] ? kthread_create_worker_on_cpu+0x70/0x70
+[ 7263.277084] ret_from_fork+0x3a/0x50
+[ 7263.277242] Modules linked in:
+[ 7263.277383] Dumping ftrace buffer:
+[ 7263.277535] (ftrace buffer empty)
+[ 7263.277691] CR2: ffff9665484bc7f0
+[ 7263.277838] --[ end trace 3e6438884c16e9c7 ]--
+
+Tracked-On: projectacrn/acrn-hypervisor#1792
+
+V2: bypass events whose type is 0 (He Min)
+
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/scheduler.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/scheduler.c b/drivers/gpu/drm/i915/gvt/scheduler.c
+index c1e6cd6..31ebb62 100644
+--- a/drivers/gpu/drm/i915/gvt/scheduler.c
++++ b/drivers/gpu/drm/i915/gvt/scheduler.c
+@@ -993,12 +993,16 @@ static void complete_current_workload(struct intel_gvt *gvt, int ring_id)
+ static void inject_error_cs_irq(struct intel_vgpu *vgpu, int ring_id)
+ {
+ 	enum intel_gvt_event_type events[] = {
+-		RCS_CMD_STREAMER_ERR,
+-		BCS_CMD_STREAMER_ERR,
+-		VCS_CMD_STREAMER_ERR,
+-		VCS2_CMD_STREAMER_ERR,
+-		VECS_CMD_STREAMER_ERR,
++		[RCS] = RCS_CMD_STREAMER_ERR,
++		[BCS] = BCS_CMD_STREAMER_ERR,
++		[VCS] = VCS_CMD_STREAMER_ERR,
++		[VCS2] = VCS2_CMD_STREAMER_ERR,
++		[VECS] = VECS_CMD_STREAMER_ERR,
+ 	};
++
++	if (unlikely(events[ring_id] == 0))
++		return;
++
+ 	intel_vgpu_trigger_virtual_event(vgpu, events[ring_id]);
+ }
+ 
+-- 
+2.7.4
+

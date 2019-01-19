@@ -1,0 +1,31 @@
+From edf4ead9f3c37cdc97d6650031bef5255c676027 Mon Sep 17 00:00:00 2001
+From: Hardik T Shah <hardik.t.shah@intel.com>
+Date: Thu, 17 Mar 2016 10:17:13 +0530
+Subject: [PATCH 0453/1132] SoundWire:Intel: Register 4 master controller to
+ the bus.
+
+This patch registers the 4 master controller to the bus.
+Actually this number should come from ACPI BIOS.
+
+Change-Id: Id96731765271b72e7f0f5908e17f76996be3b886
+Signed-off-by: Hardik T Shah <hardik.t.shah@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 335ec68..c90870e 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -509,7 +509,7 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 	struct cnl_sdw_data *p_data;
+ 	int ret = 0, i, j;
+ 	/* TODO: This number 4 should come from ACPI */
+-	dsp->num_sdw_controllers = 1;
++	dsp->num_sdw_controllers = 4;
+ 	master = devm_kzalloc(dev,
+ 			(sizeof(*master) * dsp->num_sdw_controllers),
+ 			GFP_KERNEL);
+-- 
+2.7.4
+

@@ -1,0 +1,156 @@
+From 5d9d3fc3ba6246623a7288a1448854d585ddb970 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Tue, 17 Jul 2018 17:06:34 +0200
+Subject: [PATCH 0710/1132] ASoC: Intel: Allow for firmware load retry.
+
+Due to unconditional initial timeouts, firmware may fail to load
+during its initialization. This issue cannot be resolved on driver
+side but has to be accounted for nonetheless.
+
+Default firmware load retry count is set to 3.
+
+Change-Id: Idd12483e07633d1f809cdc4363fb51f5217233ad
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+Reviewed-on:
+Reviewed-by: Slawinski, AmadeuszX <amadeuszx.slawinski@intel.com>
+Reviewed-by: Lewandowski, Gustaw <gustaw.lewandowski@intel.com>
+Tested-by: Lewandowski, Gustaw <gustaw.lewandowski@intel.com>
+---
+ sound/soc/intel/common/sst-dsp.h  |  7 ++++++
+ sound/soc/intel/skylake/cnl-sst.c | 48 +++++++++++++++++++++++----------------
+ 2 files changed, 35 insertions(+), 20 deletions(-)
+
+diff --git a/sound/soc/intel/common/sst-dsp.h b/sound/soc/intel/common/sst-dsp.h
+index 859f0de..9215032 100644
+--- a/sound/soc/intel/common/sst-dsp.h
++++ b/sound/soc/intel/common/sst-dsp.h
+@@ -174,6 +174,13 @@
+ #define SST_PMCS		0x84
+ #define SST_PMCS_PS_MASK	0x3
+ 
++/*
++ * Number of times to retry firmware load before driver commits failure.
++ * This is to account for initial timeouts, e.g., from ROM init during
++ * FW load procedure when the former fails to receive imr from CSE.
++ */
++#define SST_FW_INIT_RETRY 3
++
+ struct sst_dsp;
+ 
+ /*
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index df42b21..19398e2 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -212,49 +212,56 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
+ 	struct firmware stripped_fw;
+ 	struct skl_sst *cnl = ctx->thread_context;
+ 	struct skl_fw_property_info fw_property;
+-	int ret;
++	int ret, i;
+ 
+ 	fw_property.memory_reclaimed = -1;
+ 	if (!ctx->fw) {
+ 		ret = request_firmware(&ctx->fw, ctx->fw_name, ctx->dev);
+ 		if (ret < 0) {
+ 			dev_err(ctx->dev, "request firmware failed: %d\n", ret);
+-			goto cnl_load_base_firmware_failed;
++			return ret;
+ 		}
+ 	}
+ 
+ 	/* parse uuids if first boot */
+ 	if (cnl->is_first_boot) {
+-		ret = snd_skl_parse_uuids(ctx, ctx->fw,
+-					  CNL_ADSP_FW_HDR_OFFSET, 0);
++		ret = snd_skl_parse_uuids(ctx, ctx->fw, CNL_ADSP_FW_HDR_OFFSET, 0);
+ 		if (ret < 0)
+-			goto cnl_load_base_firmware_failed;
++			goto load_base_firmware_failed;
+ 	}
+ 
+ 	stripped_fw.data = ctx->fw->data;
+ 	stripped_fw.size = ctx->fw->size;
+ 	skl_dsp_strip_extended_manifest(&stripped_fw);
+ 
+-	ret = cnl_prepare_fw(ctx, stripped_fw.data, stripped_fw.size);
+-	if (ret < 0) {
+-		dev_err(ctx->dev, "prepare firmware failed: %d\n", ret);
+-		goto cnl_load_base_firmware_failed;
+-	}
++	ret = -ENOEXEC;
++	for (i = 0; i < SST_FW_INIT_RETRY && ret < 0; i++) {
++		ret = cnl_prepare_fw(ctx, stripped_fw.data, stripped_fw.size);
++		if (ret < 0) {
++			dev_dbg(ctx->dev, "prepare firmware failed: %d\n", ret);
++			continue;
++		}
+ 
+-	ret = sst_transfer_fw_host_dma(ctx);
+-	if (ret < 0) {
+-		dev_err(ctx->dev, "transfer firmware failed: %d\n", ret);
+-		cnl_dsp_disable_core(ctx, SKL_DSP_CORE0_MASK);
+-		goto cnl_load_base_firmware_failed;
++		dev_dbg(ctx->dev, "ROM loaded successfully on iteration %d.\n", i);
++
++		ret = sst_transfer_fw_host_dma(ctx);
++		if (ret < 0) {
++			dev_dbg(ctx->dev, "transfer firmware failed: %d\n", ret);
++			cnl_dsp_disable_core(ctx, SKL_DSP_CORE0_MASK);
++		}
+ 	}
+ 
++	if (ret < 0)
++		goto load_base_firmware_failed;
++	dev_dbg(ctx->dev, "Firmware download successful.\n");
++
+ 	ret = wait_event_timeout(cnl->boot_wait, cnl->boot_complete,
+ 				 msecs_to_jiffies(SKL_IPC_BOOT_MSECS));
+ 	if (ret == 0) {
+ 		dev_err(ctx->dev, "FW ready timed-out\n");
+ 		cnl_dsp_disable_core(ctx, SKL_DSP_CORE0_MASK);
+ 		ret = -EIO;
+-		goto cnl_load_base_firmware_failed;
++		goto load_base_firmware_failed;
+ 	}
+ 
+ 	cnl->fw_loaded = true;
+@@ -263,7 +270,7 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
+ 	if (ret < 0) {
+ 		dev_err(ctx->dev, "fwconfig ipc failed !\n");
+ 		ret = -EIO;
+-		goto cnl_load_base_firmware_failed;
++		goto load_base_firmware_failed;
+ 	}
+ 
+ 	fw_property = cnl->fw_property;
+@@ -271,14 +278,14 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
+ 		dev_err(ctx->dev, "Memory reclaim not enabled:%d\n",
+ 			fw_property.memory_reclaimed);
+ 		ret = -EIO;
+-		goto cnl_load_base_firmware_failed;
++		goto load_base_firmware_failed;
+ 	}
+ 
+ 	ret = skl_get_hardware_configuration(ctx);
+ 	if (ret < 0) {
+ 		dev_err(ctx->dev, "hwconfig ipc failed !\n");
+ 		ret = -EIO;
+-		goto cnl_load_base_firmware_failed;
++		goto load_base_firmware_failed;
+ 	}
+ 
+ 	/* Update dsp core count retrieved from hw config IPC */
+@@ -286,7 +293,8 @@ static int cnl_load_base_firmware(struct sst_dsp *ctx)
+ 
+ 	return 0;
+ 
+-cnl_load_base_firmware_failed:
++load_base_firmware_failed:
++	dev_err(ctx->dev, "Firmware load failed: %d.\n", ret);
+ 	release_firmware(ctx->fw);
+ 	ctx->fw = NULL;
+ 
+-- 
+2.7.4
+

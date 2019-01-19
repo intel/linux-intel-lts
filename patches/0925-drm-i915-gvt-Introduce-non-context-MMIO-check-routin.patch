@@ -1,0 +1,173 @@
+From 718ec57037858def2220cb6b6a1a2efdd8a7d9e8 Mon Sep 17 00:00:00 2001
+From: Ping Gao <ping.a.gao@intel.com>
+Date: Thu, 31 Aug 2017 10:45:05 +0800
+Subject: [PATCH 0925/1132] drm/i915/gvt: Introduce non-context MMIO check
+ routines
+
+Guest conformance check can be implemented by verifying whether the
+non-context MMIOs have the same values with host snapshot.
+
+This patch introduced some routines, snapshot the host registers values
+and compare when with corresponding vregs by walking the non-context
+MMIO list.
+
+Signed-off-by: Ping Gao <ping.a.gao@intel.com>
+Reviewed-by: Kevin Tian
+Reviewed-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+
+v2: rebase 4.19:
+  1. reuse engine_mmio_list->mmio in commit cd7e61b93d06 drm/i915/gvt:
+    init mmio by lri command in vgpu inhibit context
+  2. split part of code to 2b5955ee506d - drm/i915/gvt: Forbid command to
+    access non-context registers
+
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/gvt.h          |  6 +++
+ drivers/gpu/drm/i915/gvt/handlers.c     |  9 ++++
+ drivers/gpu/drm/i915/gvt/mmio_context.c | 76 +++++++++++++++++++++++++++++++++
+ 3 files changed, 91 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.h b/drivers/gpu/drm/i915/gvt/gvt.h
+index 68cc50f..708d690 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.h
++++ b/drivers/gpu/drm/i915/gvt/gvt.h
+@@ -289,10 +289,16 @@ struct intel_gvt_mmio {
+ 	struct gvt_mmio_block *mmio_block;
+ 	unsigned int num_mmio_block;
+ 
++	void *mmio_host_cache;
++	bool host_cache_initialized;
+ 	DECLARE_HASHTABLE(mmio_info_table, INTEL_GVT_MMIO_HASH_BITS);
+ 	unsigned long num_tracked_mmio;
+ };
+ 
++/* Macro for easily access host engine mmio cached register */
++#define gvt_host_reg(gvt, reg)				\
++	(*(u32 *)(gvt->mmio.mmio_host_cache + reg))	\
++
+ struct intel_gvt_firmware {
+ 	void *cfg_space;
+ 	void *mmio;
+diff --git a/drivers/gpu/drm/i915/gvt/handlers.c b/drivers/gpu/drm/i915/gvt/handlers.c
+index ce25433..f923ca7 100644
+--- a/drivers/gpu/drm/i915/gvt/handlers.c
++++ b/drivers/gpu/drm/i915/gvt/handlers.c
+@@ -3435,6 +3435,9 @@ void intel_gvt_clean_mmio_info(struct intel_gvt *gvt)
+ 
+ 	vfree(gvt->mmio.mmio_attribute);
+ 	gvt->mmio.mmio_attribute = NULL;
++
++	vfree(gvt->mmio.mmio_host_cache);
++	gvt->mmio.mmio_host_cache = NULL;
+ }
+ 
+ /* Special MMIO blocks. */
+@@ -3469,6 +3472,12 @@ int intel_gvt_setup_mmio_info(struct intel_gvt *gvt)
+ 	if (!gvt->mmio.mmio_attribute)
+ 		return -ENOMEM;
+ 
++	gvt->mmio.mmio_host_cache = vzalloc(info->mmio_size);
++	if (!gvt->mmio.mmio_host_cache) {
++		vfree(gvt->mmio.mmio_attribute);
++		return -ENOMEM;
++	}
++
+ 	ret = init_generic_mmio_info(gvt);
+ 	if (ret)
+ 		goto err;
+diff --git a/drivers/gpu/drm/i915/gvt/mmio_context.c b/drivers/gpu/drm/i915/gvt/mmio_context.c
+index 0221e87..99b01ab 100644
+--- a/drivers/gpu/drm/i915/gvt/mmio_context.c
++++ b/drivers/gpu/drm/i915/gvt/mmio_context.c
+@@ -567,6 +567,82 @@ void intel_gvt_switch_mmio(struct intel_vgpu *pre,
+ 	intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
+ }
+ 
++#define MMIO_COMPARE(vgpu, reg, mask) ({			\
++	int ret;						\
++	u32 value = vgpu_vreg(vgpu, reg);			\
++	u32 host_value = gvt_host_reg(vgpu->gvt, reg);		\
++								\
++	if (mask) {						\
++		value &= mask;					\
++		host_value &= mask;				\
++	}							\
++	if (host_value == value) {				\
++		ret = 0;					\
++	} else {						\
++		gvt_err("vgpu%d unconformance mmio 0x%x:0x%x,0x%x\n",	\
++			vgpu->id, reg,				\
++			vgpu_vreg(vgpu, reg),			\
++			gvt_host_reg(vgpu->gvt, reg));		\
++		ret = -EINVAL;					\
++	}							\
++	ret;							\
++	})
++
++static int noncontext_mmio_compare(struct intel_vgpu *vgpu, int ring_id)
++{
++	struct engine_mmio *mmio, *mmio_list;
++
++	mmio_list = vgpu->gvt->engine_mmio_list.mmio;
++
++	for (mmio = mmio_list; i915_mmio_reg_valid(mmio->reg); mmio++) {
++		if (mmio->ring_id != ring_id || mmio->in_context)
++			continue;
++
++		if (MMIO_COMPARE(vgpu, mmio->reg.reg, mmio->mask))
++			return -EINVAL;
++	}
++
++	return 0;
++}
++
++static void get_host_mmio_snapshot(struct intel_gvt *gvt)
++{
++	struct drm_i915_private *dev_priv = gvt->dev_priv;
++	struct engine_mmio *mmio, *mmio_list;
++
++	mmio_list = gvt->engine_mmio_list.mmio;
++
++	if (!gvt->mmio.host_cache_initialized) {
++		/* Snapshot all the non-context MMIOs */
++		for (mmio = mmio_list; i915_mmio_reg_valid(mmio->reg); mmio++) {
++			if (mmio->in_context)
++				continue;
++
++			gvt_host_reg(gvt, mmio->reg.reg) =
++				I915_READ_FW(mmio->reg);
++			if (mmio->mask)
++				gvt_host_reg(gvt, mmio->reg.reg) &= mmio->mask;
++		}
++		gvt->mmio.host_cache_initialized = true;
++	}
++}
++
++int intel_gvt_vgpu_conformance_check(struct intel_vgpu *vgpu, int ring_id)
++{
++	int ret;
++
++	get_host_mmio_snapshot(vgpu->gvt);
++
++	ret = noncontext_mmio_compare(vgpu, ring_id);
++	if (ret)
++		goto err;
++
++	return 0;
++err:
++	return ret;
++}
++
++
+ /**
+  * intel_gvt_init_engine_mmio_context - Initiate the engine mmio list
+  * @gvt: GVT device
+-- 
+2.7.4
+

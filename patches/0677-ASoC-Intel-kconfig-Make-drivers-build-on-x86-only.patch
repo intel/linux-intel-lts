@@ -1,0 +1,55 @@
+From 53280d6431fb86dfa7c163e93e5ffe295a762b9f Mon Sep 17 00:00:00 2001
+From: Vinod Koul <vinod.koul@intel.com>
+Date: Wed, 17 Jan 2018 09:56:04 +0530
+Subject: [PATCH 0677/1132] ASoC: Intel: kconfig: Make drivers build on x86
+ only
+
+The drivers are designed to build and run for X86 arch only. The current
+depends on ACPI was okay earlier but now we have ACPI on non X86 systems too
+so add explicit X86 dependency.
+
+Change-Id: I3ef91b9799b7593c2c75d07e7f63bf0bf7d9113d
+Signed-off-by: Vinod Koul <vinod.koul@intel.com>
+Reviewed-on:
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/Kconfig | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/intel/Kconfig b/sound/soc/intel/Kconfig
+index c08d878..e6334dd 100644
+--- a/sound/soc/intel/Kconfig
++++ b/sound/soc/intel/Kconfig
+@@ -49,7 +49,7 @@ config SND_SOC_INTEL_SST_FIRMWARE
+ config SND_SOC_INTEL_HASWELL
+ 	tristate "Haswell/Broadwell Platforms"
+ 	depends on SND_DMA_SGBUF
+-	depends on DMADEVICES && ACPI
++	depends on DMADEVICES && ACPI && X86
+ 	select SND_SOC_INTEL_SST
+ 	select SND_SOC_INTEL_SST_ACPI
+ 	select SND_SOC_INTEL_SST_FIRMWARE
+@@ -61,7 +61,7 @@ config SND_SOC_INTEL_HASWELL
+ 
+ config SND_SOC_INTEL_BAYTRAIL
+ 	tristate "Baytrail (legacy) Platforms"
+-	depends on DMADEVICES && ACPI && SND_SST_ATOM_HIFI2_PLATFORM=n
++	depends on DMADEVICES && ACPI && X86 && SND_SST_ATOM_HIFI2_PLATFORM=n
+ 	select SND_SOC_INTEL_SST
+ 	select SND_SOC_INTEL_SST_ACPI
+ 	select SND_SOC_INTEL_SST_FIRMWARE
+@@ -106,7 +106,7 @@ config SND_SOC_INTEL_SKYLAKE_SSP_CLK
+ 
+ config SND_SOC_INTEL_SKYLAKE
+ 	tristate "SKL/BXT/KBL/GLK/CNL... Platforms"
+-	depends on PCI && ACPI
++	depends on PCI && ACPI && X86
+ 	select SND_HDA_EXT_CORE
+ 	select SND_HDA_DSP_LOADER
+ 	select SND_SOC_TOPOLOGY
+-- 
+2.7.4
+

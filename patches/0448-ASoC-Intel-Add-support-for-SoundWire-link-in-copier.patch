@@ -1,0 +1,83 @@
+From 5829bd88aa5c2a03d7fa1aa74a6d4d8d852b51d4 Mon Sep 17 00:00:00 2001
+From: Hardik T Shah <hardik.t.shah@intel.com>
+Date: Thu, 10 Mar 2016 11:25:19 +0530
+Subject: [PATCH 0448/1132] ASoC: Intel: Add support for SoundWire link in
+ copier.
+
+This patch adds the support for the SoundWire link
+in copier. Copier needs to be programmed differently
+for different link.
+
+Change-Id: I16d811b61ac253a893c2a9afebb6d418327e4387
+Signed-off-by: Hardik T Shah <hardik.t.shah@intel.com>
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ include/uapi/sound/skl-tplg-interface.h | 7 +++++++
+ sound/soc/intel/skylake/skl-messages.c  | 7 +++++++
+ sound/soc/intel/skylake/skl-topology.h  | 4 ++++
+ 3 files changed, 18 insertions(+)
+
+diff --git a/include/uapi/sound/skl-tplg-interface.h b/include/uapi/sound/skl-tplg-interface.h
+index f39352c..68eda1a 100644
+--- a/include/uapi/sound/skl-tplg-interface.h
++++ b/include/uapi/sound/skl-tplg-interface.h
+@@ -104,9 +104,16 @@ enum skl_dev_type {
+ 	SKL_DEVICE_SLIMBUS = 0x3,
+ 	SKL_DEVICE_HDALINK = 0x4,
+ 	SKL_DEVICE_HDAHOST = 0x5,
++	SKL_DEVICE_SDW = 0x6,
+ 	SKL_DEVICE_NONE
+ };
+ 
++enum skl_pdi_type {
++	SKL_PDI_PCM = 0,
++	SKL_PDI_PDM = 1,
++	SKL_PDI_INVALID = 2
++};
++
+ /**
+  * enum skl_interleaving - interleaving style
+  *
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 8bfb8b0..f63b50e 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -561,6 +561,13 @@ static u32 skl_get_node_id(struct skl_sst *ctx,
+ 			SKL_DMA_HDA_HOST_INPUT_CLASS;
+ 		node_id.node.vindex = params->host_dma_id;
+ 		break;
++	case SKL_DEVICE_SDW:
++		node_id.node.dma_type =
++			(SKL_CONN_SOURCE == mconfig->hw_conn_type) ?
++			SKL_DMA_SDW_LINK_OUTPUT_CLASS :
++			SKL_DMA_SDW_LINK_INPUT_CLASS;
++		node_id.node.vindex = mconfig->sdw_stream_num;
++		break;
+ 
+ 	default:
+ 		node_id.val = 0xFFFFFFFF;
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 82282ca..d94709f 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -184,6 +184,8 @@ enum skl_dma_type {
+ 	SKL_DMA_DMIC_LINK_INPUT_CLASS = 0xB,
+ 	SKL_DMA_I2S_LINK_OUTPUT_CLASS = 0xC,
+ 	SKL_DMA_I2S_LINK_INPUT_CLASS = 0xD,
++	SKL_DMA_SDW_LINK_OUTPUT_CLASS = 0x10,
++	SKL_DMA_SDW_LINK_INPUT_CLASS = 0x11,
+ };
+ 
+ union skl_ssp_dma_node {
+@@ -414,6 +416,8 @@ struct skl_module_cfg {
+ 	u32 mem_pages;
+ 	enum d0i3_capability d0i3_caps;
+ 	u32 dma_buffer_size; /* in milli seconds */
++	u8 pdi_type;
++	u32 sdw_stream_num;
+ 	struct skl_module_pin *m_in_pin;
+ 	struct skl_module_pin *m_out_pin;
+ 	enum skl_module_type m_type;
+-- 
+2.7.4
+

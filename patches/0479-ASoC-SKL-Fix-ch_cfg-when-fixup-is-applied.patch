@@ -1,0 +1,30 @@
+From 5ca9f189a5688f5b0e37e40bf77f6bc7183ea8e7 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Wed, 17 Aug 2016 13:17:48 +0530
+Subject: [PATCH 0479/1132] ASoC: SKL: Fix ch_cfg when fixup is applied
+
+Change-Id: I3d1198ea3ff0120f28736a7e7a81029887164634
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 67e8a1f..96cb7e1 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -256,6 +256,11 @@ static void skl_tplg_update_params(struct skl_module_fmt *fmt,
+ 	if (fixup & SKL_CH_FIXUP_MASK) {
+ 		fmt->channels = params->ch;
+ 		skl_tplg_update_chmap(fmt, fmt->channels);
++		if (fmt->channels == 1)
++			fmt->ch_cfg = SKL_CH_CFG_MONO;
++		else if (fmt->channels == 2)
++			fmt->ch_cfg = SKL_CH_CFG_STEREO;
++
+ 	}
+ 	if (fixup & SKL_FMT_FIXUP_MASK) {
+ 		fmt->valid_bit_depth = skl_get_bit_depth(params->s_fmt);
+-- 
+2.7.4
+

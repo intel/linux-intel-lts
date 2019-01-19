@@ -1,0 +1,45 @@
+From a9cf8dfb1f720f177f62c302536154e3c23f06ad Mon Sep 17 00:00:00 2001
+From: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Date: Thu, 19 Jul 2018 11:59:01 +0530
+Subject: [PATCH 0711/1132] Revert "ASoC: core: Do not return for dummy codec
+ in soc_probe_component"
+
+This reverts commit 88088a3e6a6c379b069241176f5c4f1c8573f85c.
+
+As an impact of above commit, dummy widget gets added to the widget
+list which leads to creation of DAI link between dummy widget and the
+FE DAI widget. As a result, skl_tplg_fe_get_cpr_module() returns an
+invalid module config pointer which leads to crash.
+Reverting the above commit will avoid adding a dummy widget to the
+widget list.
+
+Change-Id: I3d41fc776806185d9040dae695dbc258989be863
+Signed-off-by: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Reviewed-on:
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/soc-core.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/soc-core.c b/sound/soc/soc-core.c
+index d0a5af6..18a7c5e 100644
+--- a/sound/soc/soc-core.c
++++ b/sound/soc/soc-core.c
+@@ -1242,10 +1242,10 @@ static int soc_probe_component(struct snd_soc_card *card,
+ 	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(component);
+ 	struct snd_soc_dai *dai;
+ 	int ret;
+-#if 0
++
+ 	if (!strcmp(component->name, "snd-soc-dummy"))
+ 		return 0;
+-#endif
++
+ 	if (component->card) {
+ 		if (component->card != card) {
+ 			dev_err(component->dev,
+-- 
+2.7.4
+

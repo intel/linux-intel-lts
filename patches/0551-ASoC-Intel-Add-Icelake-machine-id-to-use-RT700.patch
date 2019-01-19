@@ -1,0 +1,51 @@
+From ffa2fb7fddddc6632827e8e734cf1347246bbe79 Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Fri, 13 Jan 2017 10:49:09 +0530
+Subject: [PATCH 0551/1132] ASoC: Intel: Add Icelake machine id to use RT700
+
+Icelake supports RT700 SoundWire codec as well, hence updating
+the machine id list.
+
+Change-Id: I2ff08cac04d4affcdae92a36fc4b74f352cb624c
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-on:
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Prodduvaka, Leoni
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index b6bc57e..42b23c3 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1216,12 +1216,22 @@ static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
+ };
+ 
+ static struct snd_soc_acpi_mach sst_icl_devdata[] = {
++#if IS_ENABLED(CONFIG_SND_SOC_RT700)
++	{
++		.id = "dummy",
++		.drv_name = "icl_rt700",
++		.fw_filename = "intel/dsp_fw_icl.bin",
++		.pdata = &cnl_pdata,
++	},
++#else
+ 	{
+ 		.id = "dummy",
+ 		.drv_name = "icl_rt274",
+ 		.fw_filename = "intel/dsp_fw_icl.bin",
+ 		.pdata = &cnl_pdata,
+ 	},
++
++#endif
+ 	{}
+ };
+ 
+-- 
+2.7.4
+

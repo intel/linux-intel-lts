@@ -1,0 +1,320 @@
+From 0450591de641bf46bd78b6fe76e9fe5cfd4b0c80 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Wed, 25 Apr 2018 19:07:06 +0300
+Subject: [PATCH 0289/1132] nvme: connect to rpmb layer
+
+This patch covers rpmb storage operation
+as defined in NVMe spec 1.3a in section 8.10.
+It only covers standard RPMB storage API, the device
+configuration is not covered.
+
+Change-Id: I35c9cc7aeec5a08041b9986d60fc9ee55c66dda7
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/nvme/host/Kconfig  |   1 +
+ drivers/nvme/host/Makefile |   1 +
+ drivers/nvme/host/core.c   |  54 ++++++++++++++++----
+ drivers/nvme/host/nvme.h   |   9 ++++
+ drivers/nvme/host/pci.c    |   4 ++
+ drivers/nvme/host/rpmb.c   | 119 +++++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 178 insertions(+), 10 deletions(-)
+ create mode 100644 drivers/nvme/host/rpmb.c
+
+diff --git a/drivers/nvme/host/Kconfig b/drivers/nvme/host/Kconfig
+index 88a8b59..a0027ce 100644
+--- a/drivers/nvme/host/Kconfig
++++ b/drivers/nvme/host/Kconfig
+@@ -5,6 +5,7 @@ config BLK_DEV_NVME
+ 	tristate "NVM Express block device"
+ 	depends on PCI && BLOCK
+ 	select NVME_CORE
++	select RPMB
+ 	---help---
+ 	  The NVM Express driver is for solid state drives directly
+ 	  connected to the PCI or PCI Express bus.  If you know you
+diff --git a/drivers/nvme/host/Makefile b/drivers/nvme/host/Makefile
+index aea459c..99f99e8 100644
+--- a/drivers/nvme/host/Makefile
++++ b/drivers/nvme/host/Makefile
+@@ -15,6 +15,7 @@ nvme-core-$(CONFIG_NVM)			+= lightnvm.o
+ nvme-core-$(CONFIG_FAULT_INJECTION_DEBUG_FS)	+= fault_inject.o
+ 
+ nvme-y					+= pci.o
++nvme-y					+= rpmb.o
+ 
+ nvme-fabrics-y				+= fabrics.o
+ 
+diff --git a/drivers/nvme/host/core.c b/drivers/nvme/host/core.c
+index e5bddae..d068d13 100644
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -11,7 +11,6 @@
+  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  * more details.
+  */
+-
+ #include <linux/blkdev.h>
+ #include <linux/blk-mq.h>
+ #include <linux/delay.h>
+@@ -1669,25 +1668,57 @@ static const struct pr_ops nvme_pr_ops = {
+ 	.pr_clear	= nvme_pr_clear,
+ };
+ 
+-#ifdef CONFIG_BLK_SED_OPAL
+-int nvme_sec_submit(void *data, u16 spsp, u8 secp, void *buffer, size_t len,
+-		bool send)
++int nvme_sec_send(struct nvme_ctrl *ctrl, u8 nssf, u16 spsp, u8 secp,
++		  void *buffer, size_t len)
+ {
+-	struct nvme_ctrl *ctrl = data;
+ 	struct nvme_command cmd;
+ 
++	dev_dbg(ctrl->device, "%s target = %hhu SPSP = %hu SECP = %hhX len=%zd\n",
++		__func__, nssf, spsp, secp, len);
++
+ 	memset(&cmd, 0, sizeof(cmd));
+-	if (send)
+-		cmd.common.opcode = nvme_admin_security_send;
+-	else
+-		cmd.common.opcode = nvme_admin_security_recv;
++	cmd.common.opcode = nvme_admin_security_send;
++	cmd.common.nsid = 0;
++	cmd.common.cdw10[0] =
++		cpu_to_le32(((u32)secp) << 24 | ((u32)spsp) << 8 | nssf);
++	cmd.common.cdw10[1] = cpu_to_le32(len);
++
++	return __nvme_submit_sync_cmd(ctrl->admin_q, &cmd, NULL, buffer, len,
++				      ADMIN_TIMEOUT, NVME_QID_ANY, 1, 0);
++}
++EXPORT_SYMBOL_GPL(nvme_sec_send);
++
++int nvme_sec_recv(struct nvme_ctrl *ctrl, u8 nssf, u16 spsp, u8 secp,
++		  void *buffer, size_t len)
++{
++	struct nvme_command cmd;
++
++	dev_dbg(ctrl->device, "%s target = %hhu SPSP = %hu SECP = %hhX len=%zd\n",
++		__func__, nssf, spsp, secp, len);
++
++	memset(&cmd, 0, sizeof(cmd));
++	cmd.common.opcode = nvme_admin_security_recv;
+ 	cmd.common.nsid = 0;
+-	cmd.common.cdw10[0] = cpu_to_le32(((u32)secp) << 24 | ((u32)spsp) << 8);
++	cmd.common.cdw10[0] =
++		cpu_to_le32(((u32)secp) << 24 | ((u32)spsp) << 8 | nssf);
+ 	cmd.common.cdw10[1] = cpu_to_le32(len);
+ 
+ 	return __nvme_submit_sync_cmd(ctrl->admin_q, &cmd, NULL, buffer, len,
+ 				      ADMIN_TIMEOUT, NVME_QID_ANY, 1, 0);
+ }
++EXPORT_SYMBOL_GPL(nvme_sec_recv);
++
++#ifdef CONFIG_BLK_SED_OPAL
++int nvme_sec_submit(void *data, u16 spsp, u8 secp, void *buffer, size_t len,
++		    bool send)
++{
++	struct nvme_ctrl *ctrl = data;
++
++	if (send)
++		return nvme_sec_send(ctrl, 0, spsp, secp, buffer, len);
++	else
++		return nvme_sec_recv(ctrl, 0, spsp, secp, buffer, len);
++}
+ EXPORT_SYMBOL_GPL(nvme_sec_submit);
+ #endif /* CONFIG_BLK_SED_OPAL */
+ 
+@@ -2478,7 +2509,10 @@ int nvme_init_identify(struct nvme_ctrl *ctrl)
+ 		ctrl->hmmaxd = le16_to_cpu(id->hmmaxd);
+ 	}
+ 
++	ctrl->rpmbs = le32_to_cpu(id->rpmbs);
++
+ 	ret = nvme_mpath_init(ctrl, id);
++
+ 	kfree(id);
+ 
+ 	if (ret < 0)
+diff --git a/drivers/nvme/host/nvme.h b/drivers/nvme/host/nvme.h
+index 60220de..92d9f81 100644
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -21,6 +21,7 @@
+ #include <linux/blk-mq.h>
+ #include <linux/lightnvm.h>
+ #include <linux/sed-opal.h>
++#include <linux/rpmb.h>
+ #include <linux/fault-inject.h>
+ #include <linux/rcupdate.h>
+ 
+@@ -167,6 +168,7 @@ struct nvme_ctrl {
+ 	struct list_head subsys_entry;
+ 
+ 	struct opal_dev *opal_dev;
++	struct rpmb_dev *rdev;
+ 
+ 	char name[12];
+ 	u16 cntlid;
+@@ -193,6 +195,7 @@ struct nvme_ctrl {
+ 	u8 apsta;
+ 	u32 oaes;
+ 	u32 aen_result;
++	u32 rpmbs;
+ 	unsigned int shutdown_timeout;
+ 	unsigned int kato;
+ 	bool subsystem;
+@@ -420,6 +423,12 @@ void nvme_start_ctrl(struct nvme_ctrl *ctrl);
+ void nvme_stop_ctrl(struct nvme_ctrl *ctrl);
+ void nvme_put_ctrl(struct nvme_ctrl *ctrl);
+ int nvme_init_identify(struct nvme_ctrl *ctrl);
++int nvme_sec_send(struct nvme_ctrl *ctrl, u8 nssf, u16 spsp, u8 secp,
++		  void *buffer, size_t len);
++int nvme_sec_recv(struct nvme_ctrl *ctrl, u8 nssf, u16 spsp, u8 secp,
++		  void *buffer, size_t len);
++int nvme_init_rpmb(struct nvme_ctrl *ctrl);
++void nvme_exit_rpmb(struct nvme_ctrl *ctrl);
+ 
+ void nvme_remove_namespaces(struct nvme_ctrl *ctrl);
+ 
+diff --git a/drivers/nvme/host/pci.c b/drivers/nvme/host/pci.c
+index d668682..6c19fa7 100644
+--- a/drivers/nvme/host/pci.c
++++ b/drivers/nvme/host/pci.c
+@@ -2289,6 +2289,10 @@ static void nvme_reset_work(struct work_struct *work)
+ 	if (result)
+ 		goto out;
+ 
++	result = nvme_init_rpmb(&dev->ctrl);
++	if (result < 0)
++		goto out;
++
+ 	if (dev->ctrl.oacs & NVME_CTRL_OACS_SEC_SUPP) {
+ 		if (!dev->ctrl.opal_dev)
+ 			dev->ctrl.opal_dev =
+diff --git a/drivers/nvme/host/rpmb.c b/drivers/nvme/host/rpmb.c
+new file mode 100644
+index 0000000..34e807b
+--- /dev/null
++++ b/drivers/nvme/host/rpmb.c
+@@ -0,0 +1,119 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Copyright(c) 2018 Intel Corporation. All rights reserved.
++ */
++#include <linux/rpmb.h>
++#include "nvme.h"
++#define NVME_SECP_RPMB   0xEA /* Security Protocol EAh is assigned
++			       * for NVMe use (refer to ACS-4)
++			       */
++#define NVME_SPSP_RPMB 0x0001 /* RPMB Target */
++static int nvme_rpmb_cmd_seq(struct device *dev, u8 target,
++			     struct rpmb_cmd *cmds, u32 ncmds)
++{
++	struct nvme_ctrl *ctrl;
++	struct rpmb_cmd *cmd;
++	u32 size;
++	int ret;
++	int i;
++
++	ctrl = dev_get_drvdata(dev);
++
++	for (ret = 0, i = 0; i < ncmds && !ret; i++) {
++		cmd = &cmds[i];
++		size = rpmb_ioc_frames_len_nvme(cmd->nframes);
++		if (cmd->flags & RPMB_F_WRITE)
++			ret = nvme_sec_send(ctrl, target,
++					    NVME_SPSP_RPMB, NVME_SECP_RPMB,
++					    cmd->frames, size);
++		else
++			ret = nvme_sec_recv(ctrl, target,
++					    NVME_SPSP_RPMB, NVME_SECP_RPMB,
++					    cmd->frames, size);
++	}
++
++	return ret;
++}
++
++static int nvme_rpmb_get_capacity(struct device *dev, u8 target)
++{
++	struct nvme_ctrl *ctrl;
++
++	ctrl = dev_get_drvdata(dev);
++
++	return ((ctrl->rpmbs >> 16) & 0xFF) + 1;
++}
++
++static struct rpmb_ops nvme_rpmb_dev_ops = {
++	.cmd_seq = nvme_rpmb_cmd_seq,
++	.get_capacity = nvme_rpmb_get_capacity,
++	.type = RPMB_TYPE_NVME,
++};
++
++static void nvme_rpmb_set_cap(struct nvme_ctrl *ctrl,
++			      struct rpmb_ops *ops)
++{
++	ops->wr_cnt_max = ((ctrl->rpmbs >> 24) & 0xFF) + 1;
++	ops->rd_cnt_max = ops->wr_cnt_max;
++	ops->block_size = 2; /* 1 sector == 2 half sectors */
++	ops->auth_method = (ctrl->rpmbs >> 3) & 0x3;
++}
++
++static void nvme_rpmb_add(struct nvme_ctrl *ctrl)
++{
++	struct rpmb_dev *rdev;
++	int ndevs = ctrl->rpmbs & 0x7;
++	int i;
++
++	nvme_rpmb_set_cap(ctrl, &nvme_rpmb_dev_ops);
++
++	/* Add RPMB partitions */
++	for (i = 0; i < ndevs; i++) {
++		rdev = rpmb_dev_register(ctrl->device, i, &nvme_rpmb_dev_ops);
++		if (IS_ERR(rdev)) {
++			dev_warn(ctrl->device, "%s: cannot register to rpmb %ld\n",
++				 dev_name(ctrl->device), PTR_ERR(rdev));
++		}
++		dev_set_drvdata(&rdev->dev, ctrl);
++	}
++}
++
++static void nvme_rpmb_remove(struct nvme_ctrl *ctrl)
++{
++	int ndevs = ctrl->rpmbs & 0x7;
++	int i;
++
++	/* FIXME: target */
++	for (i = 0; i < ndevs; i++)
++		rpmb_dev_unregister_by_device(ctrl->device, i);
++}
++
++int nvme_init_rpmb(struct nvme_ctrl *ctrl)
++{
++	dev_err(ctrl->device, "RPMBS %X\n", ctrl->rpmbs);
++
++	if ((ctrl->rpmbs & 0x7) == 0x0) {
++		dev_err(ctrl->device, "RPMBS No partitions\n");
++		return 0;
++	}
++
++	dev_err(ctrl->device, "RPMBS Number of partitions %d\n",
++		ctrl->rpmbs & 0x7);
++	dev_err(ctrl->device, "RPMBS Authentication Method: %d\n",
++		(ctrl->rpmbs >> 3) & 0x3);
++	dev_err(ctrl->device, "RPMBS Total Size: %d %dK",
++		(ctrl->rpmbs >> 16) & 0xFF,
++		(((ctrl->rpmbs >> 16) & 0xFF) + 1) *  128);
++	dev_err(ctrl->device, "RPMBS Access Size: %d %dB",
++		(ctrl->rpmbs >> 24) & 0xFF,
++		(((ctrl->rpmbs >> 24) & 0xFF) + 1) * 512);
++
++	nvme_rpmb_add(ctrl);
++
++	return 0;
++}
++
++void nvme_exit_rpmb(struct nvme_ctrl *ctrl)
++{
++	nvme_rpmb_remove(ctrl);
++}
+-- 
+2.7.4
+

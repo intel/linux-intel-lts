@@ -1,0 +1,44 @@
+From 7a5939f3e59cede0e2098653554ad813c501d481 Mon Sep 17 00:00:00 2001
+From: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Date: Fri, 14 Sep 2018 16:10:17 +0800
+Subject: [PATCH 0852/1132] drm/i915/gvt: Don't load CSR for Dom U
+
+This change prevents the CSR firmware to be loaded for Dom U as
+we don't allow Dom U to control display power management settings
+and it can save time for Dom U bootup by skipping this firmware
+loading. Tests have shown this can be anywhere between 80 to 500 ms.
+
+Change-Id: Ic8119d69eaf01fda3082f055e306a2d6263411ed
+Signed-off-by: Satyeshwar Singh <satyeshwar.singh@intel.com>
+Reviewed-by: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/intel_csr.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_csr.c b/drivers/gpu/drm/i915/intel_csr.c
+index cf9b600..addb223 100644
+--- a/drivers/gpu/drm/i915/intel_csr.c
++++ b/drivers/gpu/drm/i915/intel_csr.c
+@@ -453,7 +453,13 @@ void intel_csr_ucode_init(struct drm_i915_private *dev_priv)
+ 
+ 	INIT_WORK(&dev_priv->csr.work, csr_load_work_fn);
+ 
+-	if (!HAS_CSR(dev_priv))
++	/*
++	 * In a GVTg enabled environment, loading the CSR firmware for DomU doesn't
++	 * make much sense since we don't allow it to control display power
++	 * management settings. Furthermore, we can save some time for DomU bootup
++	 * by skipping CSR loading.
++	 */
++	if (!HAS_CSR(dev_priv) || intel_vgpu_active(dev_priv))
+ 		return;
+ 
+ 	if (i915_modparams.dmc_firmware_path)
+-- 
+2.7.4
+

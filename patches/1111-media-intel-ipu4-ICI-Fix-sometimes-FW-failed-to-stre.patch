@@ -1,0 +1,33 @@
+From a4b0b6651173a53b4baf0655d5622171cae2fef3 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Wed, 2 Jan 2019 18:53:59 +0000
+Subject: [PATCH 1111/1132] media: intel-ipu4: [ICI] Fix sometimes FW failed to
+ stream on.
+
+There are 4% of chances stream on failed. After
+match up the FW API call with V4L2, the issue
+seem went away.
+
+Change-Id: I3d5816cbc4d39303e4199c4913a70c1afa2fe379
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+Tracked-On: HSDES-1507003653
+---
+ drivers/media/pci/intel/ici/ici-isys-stream.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/pci/intel/ici/ici-isys-stream.c b/drivers/media/pci/intel/ici/ici-isys-stream.c
+index 65f2c54..f764b2a 100644
+--- a/drivers/media/pci/intel/ici/ici-isys-stream.c
++++ b/drivers/media/pci/intel/ici/ici-isys-stream.c
+@@ -534,7 +534,7 @@ static int start_stream_firmware(struct ici_isys_stream *as)
+ 
+ 	reinit_completion(&ip->stream_start_completion);
+ 	rval = ipu_lib_call(stream_start, as->isys, ip->stream_handle,
+-				   &css_buf);
++				   NULL);
+ 	if (rval < 0) {
+ 		dev_err(dev, "can't start streaming (%d)\n", rval);
+ 		goto out_stream_close;
+-- 
+2.7.4
+

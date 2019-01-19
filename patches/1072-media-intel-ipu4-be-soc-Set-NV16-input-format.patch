@@ -1,0 +1,31 @@
+From 680d0d08a676c68fa051dbe2be9ceb32be0bcd19 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Tue, 27 Nov 2018 19:32:17 +0800
+Subject: [PATCH 1072/1132] media: intel-ipu4: be-soc: Set NV16 input format
+
+Correctly set BE SOC input format for NV16
+
+Change-Id: I5a0b33efac696038ef4318bb6f7ac546366b1b44
+Tracked-On: PKT-1624
+Signed-off-by: yzha108 <yanli.l.zhang@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/pci/intel/ipu-isys-video.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/pci/intel/ipu-isys-video.c b/drivers/media/pci/intel/ipu-isys-video.c
+index 38fffcf..57d96a2 100644
+--- a/drivers/media/pci/intel/ipu-isys-video.c
++++ b/drivers/media/pci/intel/ipu-isys-video.c
+@@ -50,7 +50,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
+ 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
+ 	{V4L2_PIX_FMT_YUYV, 16, 16, 0, MEDIA_BUS_FMT_YUYV8_1X16,
+ 	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
+-	{V4L2_PIX_FMT_NV16, 16, 16, 8, MEDIA_BUS_FMT_YUYV8_1X16,
++	{V4L2_PIX_FMT_NV16, 16, 16, 8, MEDIA_BUS_FMT_UYVY8_1X16,
+ 	 IPU_FW_ISYS_FRAME_FORMAT_NV16},
+ 	{V4L2_PIX_FMT_YUV420, 12, 0, 8, MEDIA_BUS_FMT_UYVY8_2X8,
+ 	 IPU_FW_ISYS_FRAME_FORMAT_YUV420},
+-- 
+2.7.4
+

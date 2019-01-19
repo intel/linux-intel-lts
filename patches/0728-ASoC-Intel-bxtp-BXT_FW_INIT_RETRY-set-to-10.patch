@@ -1,0 +1,27 @@
+From a88a0af2d92e272d9a4dd3de4fd5f15f1c499252 Mon Sep 17 00:00:00 2001
+From: Gustaw Lewandowski <gustaw.lewandowski@intel.com>
+Date: Sat, 13 Oct 2018 13:49:20 +0200
+Subject: [PATCH 0728/1132] ASoC: Intel: bxtp: BXT_FW_INIT_RETRY set to 10
+
+Change-Id: Ife347075f7708f7213451b7a21b19f6720630a12
+Signed-off-by: Gustaw Lewandowski <gustaw.lewandowski@intel.com>
+---
+ sound/soc/intel/skylake/bxt-sst.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/bxt-sst.c b/sound/soc/intel/skylake/bxt-sst.c
+index cd7fbab..cde519d 100644
+--- a/sound/soc/intel/skylake/bxt-sst.c
++++ b/sound/soc/intel/skylake/bxt-sst.c
+@@ -59,7 +59,7 @@
+ /* Delay before scheduling D0i3 entry */
+ #define BXT_D0I3_DELAY 5000
+ 
+-#define BXT_FW_INIT_RETRY 100
++#define BXT_FW_INIT_RETRY 10
+ 
+ #define GET_SSP_BASE(N)	(N > 4 ? 0x2000 : 0x4000)
+ 
+-- 
+2.7.4
+

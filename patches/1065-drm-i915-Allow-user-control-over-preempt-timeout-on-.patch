@@ -1,0 +1,266 @@
+From 0c7fe8555dd1c09cead42b210be60de4168124b6 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Mon, 10 Dec 2018 04:34:57 -0500
+Subject: [PATCH 1065/1132] drm/i915: Allow user control over preempt timeout
+ on their important context
+
+One usecase would be to couple in via EGL_NV_context_priority_realtime
+in userspace to provide some QoS guarantees in conjunction with setting
+the highest priority.
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+
+backporting from: https://patchwork.freedesktop.org/series/43299/
+Tracked-On: OLINUX-5626
+
+Signed-off-by: kimsehun <se.hun.kim@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem_context.c    | 22 ++++++++
+ drivers/gpu/drm/i915/i915_gem_context.h    | 13 +++++
+ drivers/gpu/drm/i915/i915_request.c        |  7 ++-
+ drivers/gpu/drm/i915/intel_lrc.c           | 10 ++--
+ drivers/gpu/drm/i915/selftests/intel_lrc.c | 85 ++++++++++++++++++++++++++++++
+ include/uapi/drm/i915_drm.h                | 12 +++++
+ 6 files changed, 142 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem_context.c b/drivers/gpu/drm/i915/i915_gem_context.c
+index 585ebf2..08c6146 100644
+--- a/drivers/gpu/drm/i915/i915_gem_context.c
++++ b/drivers/gpu/drm/i915/i915_gem_context.c
+@@ -869,6 +869,15 @@ int i915_gem_context_getparam_ioctl(struct drm_device *dev, void *data,
+ 	case I915_CONTEXT_PARAM_PRIORITY:
+ 		args->value = ctx->sched.priority;
+ 		break;
++	case I915_CONTEXT_PARAM_PREEMPT_TIMEOUT:
++		if (!(to_i915(dev)->caps.scheduler & I915_SCHEDULER_CAP_PREEMPTION))
++			ret = -ENODEV;
++		else if (args->size)
++			ret = -EINVAL;
++		else
++			args->value = ctx->preempt_timeout;
++		break;
++
+ 	default:
+ 		ret = -EINVAL;
+ 		break;
+@@ -944,6 +953,19 @@ int i915_gem_context_setparam_ioctl(struct drm_device *dev, void *data,
+ 		}
+ 		break;
+ 
++	case I915_CONTEXT_PARAM_PREEMPT_TIMEOUT:
++		if (args->size)
++			ret = -EINVAL;
++		else if (args->value > U32_MAX)
++			ret = -EINVAL;
++		else if (!(to_i915(dev)->caps.scheduler & I915_SCHEDULER_CAP_PREEMPTION))
++			ret = -ENODEV;
++		else if (args->value && !capable(CAP_SYS_ADMIN))
++			ret = -EPERM;
++		else
++			ctx->preempt_timeout = args->value;
++		break;
++
+ 	default:
+ 		ret = -EINVAL;
+ 		break;
+diff --git a/drivers/gpu/drm/i915/i915_gem_context.h b/drivers/gpu/drm/i915/i915_gem_context.h
+index b116e49..ded8144 100644
+--- a/drivers/gpu/drm/i915/i915_gem_context.h
++++ b/drivers/gpu/drm/i915/i915_gem_context.h
+@@ -147,6 +147,19 @@ struct i915_gem_context {
+ 
+ 	struct i915_sched_attr sched;
+ 
++	/**
++	 * @preempt_timeout: QoS guarantee for the high priority context
++	 *
++	 * Some clients need a guarantee that they will start executing
++	 * within a certain window, even at the expense of others. This entails
++	 * that if a preemption request is not honoured by the active context
++	 * within the timeout, we will reset the GPU to evict the hog and
++	 * run the high priority context instead.
++	 *
++	 * Timeout is stored in nanoseconds.
++	 */
++	u32 preempt_timeout;
++
+ 	/** ggtt_offset_bias: placement restriction for context objects */
+ 	u32 ggtt_offset_bias;
+ 
+diff --git a/drivers/gpu/drm/i915/i915_request.c b/drivers/gpu/drm/i915/i915_request.c
+index b8b922f..811595d 100644
+--- a/drivers/gpu/drm/i915/i915_request.c
++++ b/drivers/gpu/drm/i915/i915_request.c
+@@ -1127,8 +1127,11 @@ void i915_request_add(struct i915_request *request)
+ 	 */
+ 	local_bh_disable();
+ 	rcu_read_lock(); /* RCU serialisation for set-wedged protection */
+-	if (engine->schedule)
+-		engine->schedule(request, &request->gem_context->sched, 0);
++	if (engine->schedule) {
++		engine->schedule(request,
++				 &request->gem_context->sched,
++				 request->gem_context->preempt_timeout);
++	}
+ 	rcu_read_unlock();
+ 	i915_sw_fence_commit(&request->submit);
+ 	local_bh_enable(); /* Kick the execlists tasklet if just scheduled */
+diff --git a/drivers/gpu/drm/i915/intel_lrc.c b/drivers/gpu/drm/i915/intel_lrc.c
+index 29d2321..2a6b9fb 100644
+--- a/drivers/gpu/drm/i915/intel_lrc.c
++++ b/drivers/gpu/drm/i915/intel_lrc.c
+@@ -1266,20 +1266,20 @@ static void submit_queue(struct intel_engine_cs *engine,
+ 	}
+ }
+ 
+-static void execlists_submit_request(struct i915_request *request)
++static void execlists_submit_request(struct i915_request *rq)
+ {
+-	struct intel_engine_cs *engine = request->engine;
++	struct intel_engine_cs *engine = rq->engine;
+ 	unsigned long flags;
+ 
+ 	/* Will be called from irq-context when using foreign fences. */
+ 	spin_lock_irqsave(&engine->timeline.lock, flags);
+ 
+-	queue_request(engine, &request->sched, rq_prio(request));
++	queue_request(engine, &rq->sched, rq_prio(rq));
+ 
+ 	GEM_BUG_ON(RB_EMPTY_ROOT(&engine->execlists.queue.rb_root));
+-	GEM_BUG_ON(list_empty(&request->sched.link));
++	GEM_BUG_ON(list_empty(&rq->sched.link));
+ 
+-	submit_queue(engine, rq_prio(request), 0);
++	submit_queue(engine, rq_prio(rq), rq->gem_context->preempt_timeout);
+ 
+ 	spin_unlock_irqrestore(&engine->timeline.lock, flags);
+ }
+diff --git a/drivers/gpu/drm/i915/selftests/intel_lrc.c b/drivers/gpu/drm/i915/selftests/intel_lrc.c
+index 4a89662..12a33a8 100644
+--- a/drivers/gpu/drm/i915/selftests/intel_lrc.c
++++ b/drivers/gpu/drm/i915/selftests/intel_lrc.c
+@@ -846,6 +846,90 @@ static int live_late_preempt_timeout(void *arg)
+ 	goto err_ctx_lo;
+ }
+ 
++static int live_context_preempt_timeout(void *arg)
++{
++	struct drm_i915_private *i915 = arg;
++	struct i915_gem_context *ctx_hi, *ctx_lo;
++	struct spinner spin_hi, spin_lo;
++	struct intel_engine_cs *engine;
++	enum intel_engine_id id;
++	int err = -ENOMEM;
++
++	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
++		return 0;
++
++	mutex_lock(&i915->drm.struct_mutex);
++
++	if (spinner_init(&spin_hi, i915))
++		goto err_unlock;
++
++	if (spinner_init(&spin_lo, i915))
++		goto err_spin_hi;
++
++	ctx_hi = kernel_context(i915);
++	if (!ctx_hi)
++		goto err_spin_lo;
++	ctx_hi->sched.priority = I915_CONTEXT_MAX_USER_PRIORITY;
++	ctx_hi->preempt_timeout = 50 * 1000; /* 50us */
++
++	ctx_lo = kernel_context(i915);
++	if (!ctx_lo)
++		goto err_ctx_hi;
++	ctx_lo->sched.priority = I915_CONTEXT_MIN_USER_PRIORITY;
++
++	for_each_engine(engine, i915, id) {
++		struct i915_request *rq;
++
++		rq = spinner_create_request(&spin_lo, ctx_lo, engine, MI_NOOP);
++		if (IS_ERR(rq)) {
++			err = PTR_ERR(rq);
++			goto err_ctx_lo;
++		}
++
++		i915_request_add(rq);
++		if (!wait_for_spinner(&spin_lo, rq)) {
++			i915_gem_set_wedged(i915);
++			err = -EIO;
++			goto err_ctx_lo;
++		}
++
++		rq = spinner_create_request(&spin_hi, ctx_hi, engine, MI_NOOP);
++		if (IS_ERR(rq)) {
++			spinner_end(&spin_lo);
++			err = PTR_ERR(rq);
++			goto err_ctx_lo;
++		}
++
++		i915_request_add(rq);
++		if (!wait_for_spinner(&spin_hi, rq)) {
++			i915_gem_set_wedged(i915);
++			err = -EIO;
++			goto err_ctx_lo;
++		}
++
++		spinner_end(&spin_hi);
++		spinner_end(&spin_lo);
++		if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
++			err = -EIO;
++			goto err_ctx_lo;
++		}
++	}
++
++	err = 0;
++err_ctx_lo:
++	kernel_context_close(ctx_lo);
++err_ctx_hi:
++	kernel_context_close(ctx_hi);
++err_spin_lo:
++	spinner_fini(&spin_lo);
++err_spin_hi:
++	spinner_fini(&spin_hi);
++err_unlock:
++	igt_flush_test(i915, I915_WAIT_LOCKED);
++	mutex_unlock(&i915->drm.struct_mutex);
++	return err;
++}
++
+ int intel_execlists_live_selftests(struct drm_i915_private *i915)
+ {
+ 	static const struct i915_subtest tests[] = {
+@@ -856,6 +940,7 @@ int intel_execlists_live_selftests(struct drm_i915_private *i915)
+ 		SUBTEST(live_preempt_timeout),
+ 		SUBTEST(live_preempt_reset),
+ 		SUBTEST(live_late_preempt_timeout),
++		SUBTEST(live_context_preempt_timeout),
+ 	};
+ 
+ 	if (!HAS_EXECLISTS(i915))
+diff --git a/include/uapi/drm/i915_drm.h b/include/uapi/drm/i915_drm.h
+index fc70f54..83b1a16 100644
+--- a/include/uapi/drm/i915_drm.h
++++ b/include/uapi/drm/i915_drm.h
+@@ -1459,6 +1459,18 @@ struct drm_i915_gem_context_param {
+ #define   I915_CONTEXT_MAX_USER_PRIORITY	1023 /* inclusive */
+ #define   I915_CONTEXT_DEFAULT_PRIORITY		0
+ #define   I915_CONTEXT_MIN_USER_PRIORITY	-1023 /* inclusive */
++
++/*
++ * I915_CONTEXT_PARAM_PREEMPT_TIMEOUT:
++ *
++ * Preemption timeout give in nanoseconds.
++ *
++ * Only allowed for privileged clients (CAP_SYS_ADMIN), this property allows
++ * the preempting context to kick out a GPU hog using a GPU reset if they do
++ * not honour our preemption request in time.
++ */
++#define I915_CONTEXT_PARAM_PREEMPT_TIMEOUT	0x7
++
+ 	__u64 value;
+ };
+ 
+-- 
+2.7.4
+

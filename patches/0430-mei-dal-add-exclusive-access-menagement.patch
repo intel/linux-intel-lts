@@ -1,0 +1,466 @@
+From d262af61a6d2d315978d0b5404bcfdd825834e92 Mon Sep 17 00:00:00 2001
+From: Yael Samet <yael.samet@intel.com>
+Date: Mon, 11 Sep 2017 09:24:28 +0300
+Subject: [PATCH 0430/1132] mei: dal: add exclusive access menagement
+
+The exclusive access option  allows a kernel space client to restrict
+access to specified trusted application.
+When some applet was marked as exclusive by a kernel space client,
+no user space client will be allowd to create a session with this applet.
+
+Change-Id: Ib9397bf9c5a0cd911cf9ca577302c99384782629
+Signed-off-by: Yael Samet <yael.samet@intel.com>
+---
+ drivers/misc/mei/dal/Makefile        |   1 +
+ drivers/misc/mei/dal/dal_class.c     |  39 ++++++
+ drivers/misc/mei/dal/dal_dev.h       |   9 ++
+ drivers/misc/mei/dal/dal_kdi.c       |  79 ++++++++++++
+ drivers/misc/mei/dal/dal_ta_access.c | 234 +++++++++++++++++++++++++++++++++++
+ include/linux/dal.h                  |   2 +
+ 6 files changed, 364 insertions(+)
+ create mode 100644 drivers/misc/mei/dal/dal_ta_access.c
+
+diff --git a/drivers/misc/mei/dal/Makefile b/drivers/misc/mei/dal/Makefile
+index c0d8b3d..b8d5456 100644
+--- a/drivers/misc/mei/dal/Makefile
++++ b/drivers/misc/mei/dal/Makefile
+@@ -9,3 +9,4 @@ mei_dal-objs += bh_external.o
+ mei_dal-objs += bh_internal.o
+ mei_dal-objs += dal_cdev.o
+ mei_dal-objs += dal_kdi.o
++mei_dal-objs += dal_ta_access.o
+diff --git a/drivers/misc/mei/dal/dal_class.c b/drivers/misc/mei/dal/dal_class.c
+index c5ce81b..9fa4287 100644
+--- a/drivers/misc/mei/dal/dal_class.c
++++ b/drivers/misc/mei/dal/dal_class.c
+@@ -299,6 +299,39 @@ static int dal_send_error_access_denied(struct dal_client *dc, const void *cmd)
+ }
+ 
+ /**
++ * dal_validate_access - validate that the access is permitted.
++ *
++ * in case of open session command, validate that the client has the permissions
++ * to open session to the requested ta
++ *
++ * @hdr: command header
++ * @count: message size
++ * @ctx: context (not used)
++ *
++ * Return: 0 when command is permitted
++ *         -EINVAL when message is invalid
++ *         -EPERM when access is not permitted
++ *
++ * Locking: called under "ddev->write_lock" lock
++ */
++static int dal_validate_access(const struct bh_command_header *hdr,
++			       size_t count, void *ctx)
++{
++	struct dal_client *dc = ctx;
++	struct dal_device *ddev = dc->ddev;
++	const uuid_t *ta_id;
++
++	if (!bh_msg_is_cmd_open_session(hdr))
++		return 0;
++
++	ta_id = bh_open_session_ta_id(hdr, count);
++	if (!ta_id)
++		return -EINVAL;
++
++	return dal_access_policy_allowed(ddev, ta_id, dc);
++}
++
++/**
+  * dal_is_kdi_msg - check if sequence is in kernel space sequence range
+  *
+  * Each interface (kernel space and user space) has different range of
+@@ -345,6 +378,7 @@ static int dal_validate_seq(const struct bh_command_header *hdr,
+  *     has the permissions to send it
+  */
+ static const bh_filter_func dal_write_filter_tbl[] = {
++	dal_validate_access,
+ 	dal_validate_seq,
+ 	NULL,
+ };
+@@ -640,6 +674,7 @@ static void dal_device_release(struct device *dev)
+ {
+ 	struct dal_device *ddev = to_dal_device(dev);
+ 
++	dal_access_list_free(ddev);
+ 	kfree(ddev->bh_fw_msg.msg);
+ 	kfree(ddev);
+ }
+@@ -691,6 +726,10 @@ static int dal_probe(struct mei_cl_device *cldev,
+ 		goto err_unregister;
+ 	}
+ 
++	ret = dal_access_list_init(ddev);
++	if (ret)
++		goto err_unregister;
++
+ 	ret = dal_mei_enable(ddev);
+ 	if (ret < 0)
+ 		goto err_unregister;
+diff --git a/drivers/misc/mei/dal/dal_dev.h b/drivers/misc/mei/dal/dal_dev.h
+index 3c3c696..e103271 100644
+--- a/drivers/misc/mei/dal/dal_dev.h
++++ b/drivers/misc/mei/dal/dal_dev.h
+@@ -152,4 +152,13 @@ int dal_kdi_recv(unsigned int handle, unsigned char *buf, size_t *count);
+ int dal_kdi_init(void);
+ void dal_kdi_exit(void);
+ 
++int dal_access_policy_add(struct dal_device *ddev,
++			  const uuid_t *ta_id, void *owner);
++int dal_access_policy_remove(struct dal_device *ddev,
++			     const uuid_t *ta_id, void *owner);
++int dal_access_policy_allowed(struct dal_device *ddev,
++			      const uuid_t *ta_id, void *owner);
++void dal_access_list_free(struct dal_device *ddev);
++int dal_access_list_init(struct dal_device *ddev);
++
+ #endif /* _DAL_KDI_H_ */
+diff --git a/drivers/misc/mei/dal/dal_kdi.c b/drivers/misc/mei/dal/dal_kdi.c
+index f39fb00..c557853 100644
+--- a/drivers/misc/mei/dal/dal_kdi.c
++++ b/drivers/misc/mei/dal/dal_kdi.c
+@@ -359,6 +359,85 @@ int dal_close_session(u64 session_handle)
+ }
+ EXPORT_SYMBOL(dal_close_session);
+ 
++/**
++ * dal_set_ta_exclusive_access - set client to be owner of the ta,
++ *                               so no one else (especially user space client)
++ *                               will be able to open session to it
++ *
++ * @ta_id: trusted application (ta) id
++ *
++ * Return: 0 on success
++ *         -ENODEV when the device can't be found
++ *         -ENOMEM on memory allocation failure
++ *         -EPERM when ta is owned by another client
++ *         -EEXIST when ta is already owned by current client
++ */
++int dal_set_ta_exclusive_access(const uuid_t *ta_id)
++{
++	struct dal_device *ddev;
++	struct device *dev;
++	struct dal_client *dc;
++	int ret;
++
++	mutex_lock(&dal_kdi_lock);
++
++	dev = dal_find_dev(DAL_MEI_DEVICE_IVM);
++	if (!dev) {
++		dev_dbg(dev, "can't find device\n");
++		ret = -ENODEV;
++		goto unlock;
++	}
++
++	ddev = to_dal_device(dev);
++	dc = ddev->clients[DAL_INTF_KDI];
++
++	ret = dal_access_policy_add(ddev, ta_id, dc);
++
++	put_device(dev);
++unlock:
++	mutex_unlock(&dal_kdi_lock);
++	return ret;
++}
++EXPORT_SYMBOL(dal_set_ta_exclusive_access);
++
++/**
++ * dal_unset_ta_exclusive_access - unset client from owning ta
++ *
++ * @ta_id: trusted application (ta) id
++ *
++ * Return: 0 on success
++ *         -ENODEV when the device can't be found
++ *         -ENOENT when ta isn't found in exclusiveness ta list
++ *         -EPERM when ta is owned by another client
++ */
++int dal_unset_ta_exclusive_access(const uuid_t *ta_id)
++{
++	struct dal_device *ddev;
++	struct device *dev;
++	struct dal_client *dc;
++	int ret;
++
++	mutex_lock(&dal_kdi_lock);
++
++	dev = dal_find_dev(DAL_MEI_DEVICE_IVM);
++	if (!dev) {
++		dev_dbg(dev, "can't find device\n");
++		ret = -ENODEV;
++		goto unlock;
++	}
++
++	ddev = to_dal_device(dev);
++	dc = ddev->clients[DAL_INTF_KDI];
++
++	ret = dal_access_policy_remove(ddev, ta_id, dc);
++
++	put_device(dev);
++unlock:
++	mutex_unlock(&dal_kdi_lock);
++	return ret;
++}
++EXPORT_SYMBOL(dal_unset_ta_exclusive_access);
++
+ #define KDI_MAJOR_VER         "1"
+ #define KDI_MINOR_VER         "0"
+ #define KDI_HOTFIX_VER        "0"
+diff --git a/drivers/misc/mei/dal/dal_ta_access.c b/drivers/misc/mei/dal/dal_ta_access.c
+new file mode 100644
+index 0000000..c31c3f5
+--- /dev/null
++++ b/drivers/misc/mei/dal/dal_ta_access.c
+@@ -0,0 +1,234 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#include <linux/kernel.h>
++#include <linux/slab.h>
++#include <linux/uuid.h>
++
++#include <linux/mei_cl_bus.h>
++#include "dal_dev.h"
++
++/* Spooler UUID */
++static const uuid_t spooler_ta_id = UUID_INIT(0xba8d1643, 0x50b6, 0x49cc,
++					      0x86, 0x1d, 0x2c, 0x01,
++					      0xbe, 0xd1, 0x4b, 0xe8);
++
++/**
++ * struct dal_access_policy - ta access information node
++ *
++ * @list: link in access list
++ * @ta_id: trusted application id
++ * @owner: owner of ta
++ */
++struct dal_access_policy {
++	struct list_head list;
++	uuid_t ta_id;
++	void *owner;
++};
++
++/**
++ * dal_dev_get_access_list - get access list of dal device
++ *
++ * @ddev: dal device
++ *
++ * Return: pointer to access list
++ */
++static struct list_head *dal_dev_get_access_list(struct dal_device *ddev)
++{
++	return dev_get_drvdata(&ddev->dev);
++}
++
++/**
++ * dal_access_policy_alloc - allocate memory and initialize access list node
++ *
++ * @ta_id: trusted application id
++ * @owner: owner of ta
++ *
++ * Return: pointer to the new initialized access list node
++ *
++ * Locking: called under "kdi_lock" lock
++ */
++static struct dal_access_policy *
++dal_access_policy_alloc(const uuid_t *ta_id, void *owner)
++{
++	struct dal_access_policy *e;
++
++	e = kzalloc(sizeof(*e), GFP_KERNEL);
++	if (!e)
++		return NULL;
++
++	INIT_LIST_HEAD(&e->list);
++	e->ta_id = *ta_id;
++	e->owner = owner;
++
++	return e;
++}
++
++/**
++ * dal_access_policy_find - find ta id in access list
++ *
++ * @access_list: access list
++ * @ta_id: trusted application id
++ *
++ * Return: pointer to access list node of ta
++ *         NULL if ta is not found in access list
++ */
++static struct dal_access_policy *
++dal_access_policy_find(struct list_head *access_list, const uuid_t *ta_id)
++{
++	struct dal_access_policy *e;
++
++	list_for_each_entry(e, access_list, list) {
++		if (uuid_equal(&e->ta_id, ta_id))
++			return e;
++	}
++	return NULL;
++}
++
++/**
++ * dal_access_policy_add - add access information of ta and its owner
++ *
++ * @ddev: dal device
++ * @ta_id: trusted application id
++ * @owner: owner of ta
++ *
++ * Return: 0 on success
++ *         -ENOMEM on memory allocation failure
++ *         -EPERM when ta already has another owner
++ *         -EEXIST when access information already exists (same ta and owner)
++ *
++ * Locking: called under "kdi_lock" lock
++ */
++int dal_access_policy_add(struct dal_device *ddev,
++			  const uuid_t *ta_id, void *owner)
++{
++	struct list_head *access_list = dal_dev_get_access_list(ddev);
++	struct dal_access_policy *e;
++
++	e = dal_access_policy_find(access_list, ta_id);
++	if (e) {
++		if (!e->owner)
++			return -EPERM;
++
++		return -EEXIST;
++	}
++
++	e = dal_access_policy_alloc(ta_id, owner);
++	if (!e)
++		return -ENOMEM;
++
++	list_add_tail(&e->list, access_list);
++	return 0;
++}
++
++/**
++ * dal_access_policy_remove - remove access information of ta and its owner
++ *
++ * @ddev: dal device
++ * @ta_id: trusted application id
++ * @owner: owner of ta
++ *
++ * Return: 0 on success
++ *         -ENOENT when ta isn't found in access list
++ *         -EPERM when ta has another owner
++ *
++ * Locking: called under "kdi_lock" lock
++ */
++int dal_access_policy_remove(struct dal_device *ddev,
++			     const uuid_t *ta_id, void *owner)
++{
++	struct list_head *access_list = dal_dev_get_access_list(ddev);
++	struct dal_access_policy *e;
++
++	e = dal_access_policy_find(access_list, ta_id);
++	if (!e)
++		return -ENOENT;
++
++	if (!e->owner || e->owner != owner)
++		return -EPERM;
++
++	list_del(&e->list);
++	kfree(e);
++	return 0;
++}
++
++/**
++ * dal_access_policy_allowed - check if owner is allowed to use ta
++ *
++ * @ddev: dal device
++ * @ta_id: trusted application id
++ * @owner: owner
++ *
++ * Return: 0 on success
++ *         -EPERM when owner is not allowed to use ta
++ *
++ * Locking: called under "ddev->write_lock" lock
++ */
++int dal_access_policy_allowed(struct dal_device *ddev,
++			      const uuid_t *ta_id, void *owner)
++{
++	struct list_head *access_list = dal_dev_get_access_list(ddev);
++	struct dal_access_policy *e;
++
++	e = dal_access_policy_find(access_list, ta_id);
++	if (!e)
++		return 0;
++
++	if (e->owner && e->owner != owner)
++		return -EPERM;
++
++	return 0;
++}
++
++/**
++ * dal_access_list_free - free memory of access list
++ *
++ * @ddev: dal device
++ */
++void dal_access_list_free(struct dal_device *ddev)
++{
++	struct list_head *access_list = dal_dev_get_access_list(ddev);
++	struct dal_access_policy *e, *n;
++
++	if  (!access_list)
++		return;
++
++	list_for_each_entry_safe(e, n, access_list, list) {
++		list_del(&e->list);
++		kfree(e);
++	}
++
++	kfree(access_list);
++	dev_set_drvdata(&ddev->dev, NULL);
++}
++
++/**
++ * dal_access_list_init - initialize an empty access list
++ *
++ * @ddev: dal device
++ *
++ * Note: Add spooler ta id with blank owner to the list.
++ * This will prevent any user from setting itself owner of the spooler,
++ * which will block others from openning session to it.
++ *
++ * Return: 0 on success
++ *         -ENOMEM on memory allocation failure
++ */
++int dal_access_list_init(struct dal_device *ddev)
++{
++	struct list_head *access_list;
++
++	access_list = kzalloc(sizeof(*access_list), GFP_KERNEL);
++	if (!access_list)
++		return -ENOMEM;
++
++	INIT_LIST_HEAD(access_list);
++	dev_set_drvdata(&ddev->dev, access_list);
++
++	/* Nobody can own SPOOLER TA */
++	dal_access_policy_add(ddev, &spooler_ta_id, NULL);
++
++	return 0;
++}
+diff --git a/include/linux/dal.h b/include/linux/dal.h
+index 19a016b..f046df7 100644
+--- a/include/linux/dal.h
++++ b/include/linux/dal.h
+@@ -54,6 +54,8 @@ int dal_send_and_receive(u64 session_handle, int command_id, const u8 *input,
+ 
+ int dal_close_session(u64 session_handle);
+ 
++int dal_set_ta_exclusive_access(const uuid_t *ta_id);
++int dal_unset_ta_exclusive_access(const uuid_t *ta_id);
+ int dal_uuid_parse(const char *uuid_str, uuid_t *uuid);
+ 
+ #endif /* _DAL_H_ */
+-- 
+2.7.4
+

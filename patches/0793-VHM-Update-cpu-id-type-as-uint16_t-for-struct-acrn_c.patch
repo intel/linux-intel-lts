@@ -1,0 +1,37 @@
+From b8cb96879f1f7c6df9a2256c9eb36ae3a8fec7bf Mon Sep 17 00:00:00 2001
+From: Xiangyang Wu <xiangyang.wu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:01 +0800
+Subject: [PATCH 0793/1132] VHM:Update cpu id type as uint16_t for struct
+ acrn_create_vcpu
+
+Update the cpu id type as uint16_t for struct acrn_create_vcpu in
+the VHM driver, this structure is for data transfering between
+the hypervisor and device modle in SOS.
+
+Change-Id: I6bfb67cc25d12f24dbc423ea1a0b91d876c9812e
+Tracked-On:
+Signed-off-by: Xiangyang Wu <xiangyang.wu@intel.com>
+---
+ include/linux/vhm/acrn_common.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index d45b27f..7482320 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -178,10 +178,10 @@ struct acrn_create_vm {
+  */
+ struct acrn_create_vcpu {
+ 	/** the virtual CPU ID for the VCPU created */
+-	uint32_t vcpu_id;
++	uint16_t vcpu_id;
+ 
+ 	/** the physical CPU ID for the VCPU created */
+-	uint32_t pcpu_id;
++	uint16_t pcpu_id;
+ } __attribute__((aligned(8)));
+ 
+ /**
+-- 
+2.7.4
+

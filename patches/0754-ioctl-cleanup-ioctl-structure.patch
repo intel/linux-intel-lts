@@ -1,0 +1,82 @@
+From 75decefb1fe3e4acf13edc63717fadc24dc3016e Mon Sep 17 00:00:00 2001
+From: Edwin Zhai <edwin.zhai@intel.com>
+Date: Fri, 31 Aug 2018 10:58:57 +0800
+Subject: [PATCH 0754/1132] ioctl: cleanup ioctl structure
+
+vm_memseg/vm_memmap: remove unused fileds and define field size
+
+Change-Id: I9cb01cc6ea8eb97989e0b4b4ff6c55fa9b9822c8
+Tracked-On: 218445
+Signed-off-by: Edwin Zhai <edwin.zhai@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ include/linux/vhm/vhm_ioctl_defs.h | 30 +++++++++++++-----------------
+ 1 file changed, 13 insertions(+), 17 deletions(-)
+
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index e157d6a..60bfb29 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -60,7 +60,7 @@
+ #define IC_GET_API_VERSION             _IC_ID(IC_ID, IC_ID_VM_BASE + 0x00)
+ #define IC_CREATE_VM                   _IC_ID(IC_ID, IC_ID_VM_BASE + 0x01)
+ #define IC_DESTROY_VM                  _IC_ID(IC_ID, IC_ID_VM_BASE + 0x02)
+-#define IC_START_VM                   _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
++#define IC_START_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
+ #define IC_PAUSE_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x04)
+ #define	IC_CREATE_VCPU                 _IC_ID(IC_ID, IC_ID_VM_BASE + 0x05)
+ 
+@@ -95,35 +95,31 @@
+ 
+ #define SPECNAMELEN 63
+ 
+-enum {
+-	VM_SYSMEM,
+-	VM_BOOTROM,
+-	VM_FRAMEBUFFER,
+-	VM_MMIO,
+-};
++#define VM_SYSMEM       0
++#define VM_MMIO         1
+ 
+ struct vm_memseg {
+-	int segid;
+-	size_t len;
++	uint32_t segid;
++	uint32_t reserved;
++	uint64_t len;
++	uint64_t gpa;
+ 	char name[SPECNAMELEN + 1];
+-	unsigned long gpa;
+ };
+ 
+ struct vm_memmap {
+-	int segid;		/* memory segment */
++	uint32_t segid;		/* memory segment */
++	uint32_t reserved;
+ 	union {
+ 		struct {
+ 			uint64_t gpa;
+-			uint64_t segoff;	/* offset into memory segment */
+-			size_t len;		/* mmap length */
+-			int prot;		/* RWX */
+-			int flags;
++			uint64_t len;		/* mmap length */
++			uint32_t prot;		/* RWX */
+ 		} mem;
+ 		struct {
+ 			uint64_t gpa;
+ 			uint64_t hpa;
+-			size_t len;
+-			int prot;
++			uint64_t len;
++			uint32_t prot;
+ 		} mmio;
+ 	};
+ };
+-- 
+2.7.4
+

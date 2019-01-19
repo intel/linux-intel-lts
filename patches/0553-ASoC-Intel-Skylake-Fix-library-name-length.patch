@@ -1,0 +1,36 @@
+From e0969a4892c9e5ea4081d305a74f9b18b8157495 Mon Sep 17 00:00:00 2001
+From: Shreyas NC <shreyas.nc@intel.com>
+Date: Wed, 15 Feb 2017 06:04:04 +0530
+Subject: [PATCH 0553/1132] ASoC: Intel: Skylake: Fix library name length
+
+Topology framework allows a maximum string length of 44 bytes.
+
+So, fix the library name length to 44 bytes as well.
+
+Change-Id: I3df2bb5d6130bc96200565aa59757b9c8eb0119e
+Signed-off-by: Shreyas NC <shreyas.nc@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 0cde541f..6c037d2 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -72,7 +72,7 @@ struct skl_d0i3_data {
+ 	struct delayed_work work;
+ };
+ 
+-#define SKL_LIB_NAME_LENGTH 128
++#define SKL_LIB_NAME_LENGTH 44
+ #define SKL_MAX_LIB 16
+ 
+ struct skl_lib_info {
+-- 
+2.7.4
+

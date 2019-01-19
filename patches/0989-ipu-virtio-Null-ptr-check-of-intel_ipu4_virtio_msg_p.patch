@@ -1,0 +1,43 @@
+From c4214cc5ca143263ebb13786a2e1569e82afab9f Mon Sep 17 00:00:00 2001
+From: "Yew, Chang Ching" <chang.ching.yew@intel.com>
+Date: Fri, 16 Nov 2018 09:39:50 +0800
+Subject: [PATCH 0989/1132] ipu: virtio: Null ptr check of
+ intel_ipu4_virtio_msg_parse() parameter
+
+Change-Id: Id732e7736bdc901502c8604b7c73f452e02a6e5e
+Signed-off-by: Yew, Chang Ching <chang.ching.yew@intel.com>
+---
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c
+index 3b5eae6..aff563be 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-bridge.c
+@@ -20,7 +20,12 @@
+ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
+ {
+ 	int ret = 0;
+-	struct ipu4_virtio_req *req = req_info->request;
++	struct ipu4_virtio_req *req;
++
++	if (!req_info)
++		return -1;
++
++	req = req_info->request;
+ 
+ 	if (!req) {
+ 		pr_err("IPU mediator: request is NULL\n");
+@@ -32,9 +37,6 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
+ 			return -EINVAL;
+ 	}
+ 
+-	if (!req_info)
+-		return -1;
+-
+ 	switch (req->cmd) {
+ 	case IPU4_CMD_POLL:
+ 			/*
+-- 
+2.7.4
+

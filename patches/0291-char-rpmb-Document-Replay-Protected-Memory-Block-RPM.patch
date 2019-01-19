@@ -1,0 +1,265 @@
+From 2e20b3c010a6236ff4bfc6548663d1239a17fe09 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Tue, 19 Jul 2016 00:08:05 +0300
+Subject: [PATCH 0291/1132] char: rpmb: Document Replay Protected Memory Block
+ (RPMB) subsystem
+
+Add rpmb documentatin in sphinx format.
+
+V7: new in the series
+V8: Rebase for v4.10 fix conf.py
+V9: 1. Rebase for v4.17
+    2. Add SPDX intentifiers.
+    3. Move under driver-api
+    4. Drop req_cmd()
+
+Change-Id: I4ec3481a8cf443ea6f5fb88a11b616d815163e8c
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ Documentation/conf.py                              |  2 +
+ Documentation/driver-api/index.rst                 |  1 +
+ Documentation/driver-api/rpmb/conf.py              |  5 ++
+ Documentation/driver-api/rpmb/index.rst            | 18 ++++
+ Documentation/driver-api/rpmb/introduction.rst     | 98 ++++++++++++++++++++++
+ Documentation/driver-api/rpmb/rpmb-tool.rst        | 19 +++++
+ .../driver-api/rpmb/simulation-device.rst          | 21 +++++
+ MAINTAINERS                                        |  1 +
+ 8 files changed, 165 insertions(+)
+ create mode 100644 Documentation/driver-api/rpmb/conf.py
+ create mode 100644 Documentation/driver-api/rpmb/index.rst
+ create mode 100644 Documentation/driver-api/rpmb/introduction.rst
+ create mode 100644 Documentation/driver-api/rpmb/rpmb-tool.rst
+ create mode 100644 Documentation/driver-api/rpmb/simulation-device.rst
+
+diff --git a/Documentation/conf.py b/Documentation/conf.py
+index b691af4..a57272e 100644
+--- a/Documentation/conf.py
++++ b/Documentation/conf.py
+@@ -403,6 +403,8 @@ latex_documents = [
+      'The kernel development community', 'manual'),
+     ('userspace-api/index', 'userspace-api.tex', 'The Linux kernel user-space API guide',
+      'The kernel development community', 'manual'),
++    ('rpmb/index', 'rpmb.tex', 'Linux RPMB Subsystem Documentation',
++     'The kernel development community', 'manual'),
+ ]
+ 
+ # The name of an image file (relative to this directory) to place at the top of
+diff --git a/Documentation/driver-api/index.rst b/Documentation/driver-api/index.rst
+index 6d9f2f9..d602f6c 100644
+--- a/Documentation/driver-api/index.rst
++++ b/Documentation/driver-api/index.rst
+@@ -53,6 +53,7 @@ available subsections can be seen below.
+    slimbus
+    soundwire/index
+    fpga/index
++   rpmb/index
+ 
+ .. only::  subproject and html
+ 
+diff --git a/Documentation/driver-api/rpmb/conf.py b/Documentation/driver-api/rpmb/conf.py
+new file mode 100644
+index 0000000..15430a0
+--- /dev/null
++++ b/Documentation/driver-api/rpmb/conf.py
+@@ -0,0 +1,5 @@
++# -*- coding: utf-8; mode: python -*-
++
++project = "Linux RPMB Subsystem"
++
++tags.add("subproject")
+diff --git a/Documentation/driver-api/rpmb/index.rst b/Documentation/driver-api/rpmb/index.rst
+new file mode 100644
+index 0000000..3813a44
+--- /dev/null
++++ b/Documentation/driver-api/rpmb/index.rst
+@@ -0,0 +1,18 @@
++.. SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
++
++==============================================
++Replay Protected Memory Block (RPMB) subsystem
++==============================================
++
++.. toctree::
++
++   introduction
++   simulation-device.rst
++   rpmb-tool.rst
++
++.. only::  subproject
++
++   Indices
++   =======
++
++   * :ref:`genindex`
+diff --git a/Documentation/driver-api/rpmb/introduction.rst b/Documentation/driver-api/rpmb/introduction.rst
+new file mode 100644
+index 0000000..403cbcf
+--- /dev/null
++++ b/Documentation/driver-api/rpmb/introduction.rst
+@@ -0,0 +1,98 @@
++.. SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
++
++=============
++Introduction:
++=============
++
++Few storage technologies such is EMMC, UFS, and NVMe support RPMB
++hardware partition with common protocol and frame layout.
++The RPMB partition `cannot` be accessed via standard block layer,
++but by a set of specific commands:
++
++WRITE, READ, GET_WRITE_COUNTER, and PROGRAM_KEY.
++
++The commands and the data are embedded within :c:type:`rpmb_frame <rpmb_frame>`.
++
++An RPMB partition provides authenticated and replay protected access,
++hence it is suitable as a secure storage.
++
++In-kernel API
++-------------
++The RPMB layer aims to provide in-kernel API for Trusted Execution
++Environment (TEE) devices that are capable to securely compute the block
++frame signature. In case a TEE device wish to store a replay protected
++data, it creates an RPMB frame with requested data and computes HMAC of
++the frame, then it requests the storage device via RPMB layer to store
++the data.
++
++The layer provides APIs, for :c:func:`rpmb_seq_cmd()` for issuing sequence 
++of raw RPMB protocol frames, which is close to the functionality provided
++by emmc multi ioctl interface.
++
++.. c:function:: int rpmb_cmd_seq(struct rpmb_dev *rdev, u8 target, struct rpmb_cmd *cmds, u32 ncmds);
++
++
++A TEE driver can claim the RPMB interface, for example, via
++:c:func:`class_interface_register`:
++
++.. code-block:: c
++
++        struct class_interface tee_rpmb_intf = {
++                .class      = &rpmb_class;
++                .add_dev    = rpmb_add_device;
++                .remove_dev = rpmb_remove_device;
++        }
++        class_interface_register(&tee_rpmb_intf);
++
++
++RPMB device registeration
++----------------------------
++
++A storage device registers its RPMB hardware (eMMC) partition or RPMB
++W-LUN (UFS) with the RPMB layer :c:func:`rpmb_dev_register` providing
++an implementation for :c:func:`rpmb_seq_cmd()` handler. The interface
++enables sending sequence of RPMB standard frames.
++
++.. code-block:: c
++
++        struct rpmb_ops mmc_rpmb_dev_ops = {
++                .cmd_seq = mmc_blk_rpmb_cmd_seq,
++                .type = RPMB_TYPE_EMMC,
++                ...
++        }
++        rpmb_dev_register(disk_to_dev(part_md->disk), &mmc_rpmb_dev_ops);
++
++
++User space API
++--------------
++
++A parallel user space API is provided via /dev/rpmbX character
++device with two IOCTL commands.
++- First ``RPMB_IOC_VER_CMD``, return driver protocol version,
++- second ``RPMB_IOC_CAP_CMD`` return capability structure,
++- last ``RPMB_IOC_SEQ_CMD`` where the whole RPMB sequence, and
++  including ``RESULT_READ`` is supplied by the caller.
++https://android.googlesource.com/trusty/app/storage/
++
++.. code-block:: c
++
++        struct rpmb_ioc_req_cmd ireq;
++        int ret;
++
++        ireq.req_type = RPMB_WRITE_DATA;
++        rpmb_ioc_cmd_set(ireq.icmd, RPMB_F_WRITE, frames_in, cnt_in);
++        rpmb_ioc_cmd_set(ireq.ocmd, 0, frames_out, cnt_out);
++
++        ret = ioctl(fd, RPMB_IOC_REQ_CMD, &ireq);
++
++
++API
++---
++.. kernel-doc:: include/linux/rpmb.h
++
++.. kernel-doc:: drivers/char/rpmb/core.c
++
++.. kernel-doc:: include/uapi/linux/rpmb.h
++
++.. kernel-doc:: drivers/char/rpmb/cdev.c
++
+diff --git a/Documentation/driver-api/rpmb/rpmb-tool.rst b/Documentation/driver-api/rpmb/rpmb-tool.rst
+new file mode 100644
+index 0000000..3f4eed8
+--- /dev/null
++++ b/Documentation/driver-api/rpmb/rpmb-tool.rst
+@@ -0,0 +1,19 @@
++.. SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
++==========
++RPMB Tool
++==========
++
++There is a sample rpmb tool under tools/rpmb/ directory that exercises
++the RPMB devices via RPMB character devices interface (/dev/rpmbX)
++
++.. code-block:: none
++
++        rpmb [-v] [-r|-s] <command> <args>
++
++        rpmb get-info <RPMB_DEVICE>
++        rpmb program-key <RPMB_DEVICE> <KEY_FILE>
++        rpmb write-counter <RPMB_DEVICE> [KEY_FILE]
++        rpmb write-blocks <RPMB_DEVICE> <address> <block_count> <DATA_FILE> <KEY_FILE>
++        rpmb read-blocks <RPMB_DEVICE> <address> <blocks count> <OUTPUT_FILE> [KEY_FILE]
++
++        rpmb -v/--verbose:  runs in verbose mode
+diff --git a/Documentation/driver-api/rpmb/simulation-device.rst b/Documentation/driver-api/rpmb/simulation-device.rst
+new file mode 100644
+index 0000000..21b7bc8b
+--- /dev/null
++++ b/Documentation/driver-api/rpmb/simulation-device.rst
+@@ -0,0 +1,21 @@
++.. SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
++
++======================
++RPMB Simulation Device
++======================
++
++RPMB partition simulation device is a virtual device that
++provides simulation of the RPMB protocol and uses kernel memory
++as storage.
++
++This driver cannot promise any real security, it is suitable for testing
++of the RPMB subsystem it self and mostly it was found useful for testing of
++RPMB applications prior to RPMB key provisioning/programming as
++The RPMB key programming can be performed only once in the life time
++of the storage device.
++
++Implementation:
++---------------
++
++.. kernel-doc:: drivers/char/rpmb/rpmb_sim.c
++
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 5cb69d7..a387103 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -12535,6 +12535,7 @@ F:	drivers/char/rpmb/*
+ F:	include/uapi/linux/rpmb.h
+ F:	include/linux/rpmb.h
+ F:	Documentation/ABI/testing/sysfs-class-rpmb
++F:	Documentation/driver-api/rpmb.rst
+ F:	tools/rpmb/
+ 
+ RTL2830 MEDIA DRIVER
+-- 
+2.7.4
+

@@ -1,0 +1,38 @@
+From 7a9bf01a106816b5f3f4cd95fd1bdd805ba40fe2 Mon Sep 17 00:00:00 2001
+From: Mateusz Polrola <mateuszx.potrola@intel.com>
+Date: Thu, 20 Sep 2018 14:09:37 +0200
+Subject: [PATCH 0910/1132] hyper_dmabuf/virtio: Fixed compilation warnings
+
+Added missing return in vbs_k_reset.
+Initialized return value in vbs_k_ioctl.
+
+Signed-off-by: Mateusz Polrola <mateuszx.potrola@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+index 67c7968..b308d7e 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+@@ -365,6 +365,8 @@ static int vbs_k_reset(struct virtio_be_priv *priv)
+ 	virtio_comm_ring_init(&priv->tx_ring,
+ 			      sizeof(struct virtio_be_tx_data),
+ 			      REQ_RING_SIZE);
++
++	return 0;
+ }
+ 
+ static long vbs_k_ioctl(struct file *f, unsigned int ioctl,
+@@ -373,7 +375,7 @@ static long vbs_k_ioctl(struct file *f, unsigned int ioctl,
+ 	struct virtio_be_priv *priv =
+ 		(struct virtio_be_priv *) f->private_data;
+ 	void __user *argp = (void __user *)arg;
+-	int r;
++	int r = 0;
+ 
+ 	if (priv == NULL) {
+ 		dev_err(hy_drv_priv->dev,
+-- 
+2.7.4
+

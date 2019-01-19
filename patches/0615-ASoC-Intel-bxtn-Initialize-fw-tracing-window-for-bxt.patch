@@ -1,0 +1,68 @@
+From d0ca35eb88859c9134c6befa0a4a4c58b4dafe01 Mon Sep 17 00:00:00 2001
+From: "Panwar, Ashish" <ashish.panwar@intel.com>
+Date: Wed, 20 Jan 2016 19:13:49 +0530
+Subject: [PATCH 0615/1132] ASoC: Intel: bxtn: Initialize fw tracing window for
+ bxt
+
+Initializing the tracing window for the platform along
+with the firmware write pointers
+
+Change-Id: Ibb735215c6bd0af8abc0e1146b28b4961277665b
+Signed-off-by: Panwar, Ashish <ashish.panwar@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+---
+ sound/soc/intel/skylake/bxt-sst.c | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/bxt-sst.c b/sound/soc/intel/skylake/bxt-sst.c
+index c1f6d8b..9c8d923f 100644
+--- a/sound/soc/intel/skylake/bxt-sst.c
++++ b/sound/soc/intel/skylake/bxt-sst.c
+@@ -21,7 +21,7 @@
+ #include <linux/device.h>
+ 
+ #include "../common/sst-dsp.h"
+-#include "../common/sst-dsp-priv.h"
++#include "skl-fwlog.h"
+ #include "skl-sst-ipc.h"
+ 
+ #define BXT_BASEFW_TIMEOUT	3000
+@@ -32,6 +32,13 @@
+ #define BXT_ROM_INIT		0x5
+ #define BXT_ADSP_SRAM0_BASE	0x80000
+ 
++/* Trace Buffer Window */
++#define BXT_ADSP_SRAM2_BASE	0x0C0000
++#define BXT_ADSP_W2_SIZE	0x2000
++#define BXT_ADSP_WP_DSP0	(BXT_ADSP_SRAM0_BASE+0x30)
++#define BXT_ADSP_WP_DSP1	(BXT_ADSP_SRAM0_BASE+0x34)
++#define BXT_ADSP_NR_DSP		2
++
+ /* Firmware status window */
+ #define BXT_ADSP_FW_STATUS	BXT_ADSP_SRAM0_BASE
+ #define BXT_ADSP_ERROR_CODE     (BXT_ADSP_FW_STATUS + 0x4)
+@@ -570,6 +577,7 @@ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ {
+ 	struct skl_sst *skl;
+ 	struct sst_dsp *sst;
++	u32 dsp_wp[] = {BXT_ADSP_WP_DSP0, BXT_ADSP_WP_DSP1};
+ 	int ret;
+ 
+ 	ret = skl_sst_ctx_init(dev, irq, fw_name, dsp_ops, dsp, &skl_dev);
+@@ -590,6 +598,12 @@ int bxt_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 
+ 	sst_dsp_mailbox_init(sst, (BXT_ADSP_SRAM0_BASE + SKL_ADSP_W0_STAT_SZ),
+ 			SKL_ADSP_W0_UP_SZ, BXT_ADSP_SRAM1_BASE, SKL_ADSP_W1_SZ);
++	ret = skl_dsp_init_trace_window(sst, dsp_wp, BXT_ADSP_SRAM2_BASE,
++					BXT_ADSP_W2_SIZE, BXT_ADSP_NR_DSP);
++	if (ret) {
++		dev_err(dev, "FW tracing init failed : %x", ret);
++		return ret;
++	}
+ 
+ 	ret = skl_ipc_init(dev, skl);
+ 	if (ret) {
+-- 
+2.7.4
+

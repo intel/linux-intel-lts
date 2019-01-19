@@ -1,0 +1,35 @@
+From 2cc7800d052db47c7801034edb721614c566383c Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Wed, 2 Jan 2019 20:04:23 +0000
+Subject: [PATCH 1112/1132] media: intel-ipu4: [VIRT] Fix ipu_psys_getbuf func
+ error return value propagation.
+
+The psys_get_userpages function error return
+value does not get propagated to user space.
+
+Change-Id: I5538e8795d97044081a1f05ce88cdb46e819812c
+Tracked-On: PKT-1644
+Tracked-On: OAM-74863
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+index d3a2801..7774b5f 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+@@ -415,7 +415,9 @@ int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
+ 
+ 	attach->psys_buf = virt_to_phys(buf);
+ 
+-	if (psys_get_userpages(buf, &attach->map)) {
++	rval = psys_get_userpages(buf, &attach->map);
++	if (rval) {
++		req->func_ret = rval;
+ 		goto error_exit;
+ 	}
+ 
+-- 
+2.7.4
+

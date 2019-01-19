@@ -1,0 +1,67 @@
+From 70aedf5a68959f9634b4a5355517406f90b1ea06 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Tue, 14 Aug 2018 12:25:29 +0200
+Subject: [PATCH 0715/1132] ASoC: Intel: Move skl machine drv tables to common
+ directory.
+
+Align with machine drv tables declaration model present on upstream.
+Tables are moved from skl.c into separate file within common directory
+dedicated to skl-specific data only.
+
+Change-Id: Ia7c823611f6e0f14a94447399cdcafe9aeb5e51e
+Depends-On: I25846b83d6c791c7c7dae25766a06beddd686277
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+Reviewed-on:
+Reviewed-by: Uzieblo, Olgierd <olgierd.uzieblo@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 30 ------------------------------
+ 1 file changed, 30 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index e9f172d..fba0fae 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1154,40 +1154,10 @@ static void skl_remove(struct pci_dev *pci)
+ 	dev_set_drvdata(&pci->dev, NULL);
+ }
+ 
+-static struct snd_soc_acpi_codecs skl_codecs = {
+-	.num_codecs = 1,
+-	.codecs = {"10508825"}
+-};
+-
+ static struct skl_machine_pdata cnl_pdata = {
+ 	.use_tplg_pcm = true,
+ };
+ 
+-static struct snd_soc_acpi_mach sst_skl_devdata[] = {
+-	{
+-		.id = "INT343A",
+-		.drv_name = "skl_alc286s_i2s",
+-		.fw_filename = "intel/dsp_fw_release.bin",
+-	},
+-	{
+-		.id = "INT343B",
+-		.drv_name = "skl_n88l25_s4567",
+-		.fw_filename = "intel/dsp_fw_release.bin",
+-		.machine_quirk = snd_soc_acpi_codec_list,
+-		.quirk_data = &skl_codecs,
+-		.pdata = &skl_dmic_data
+-	},
+-	{
+-		.id = "MX98357A",
+-		.drv_name = "skl_n88l25_m98357a",
+-		.fw_filename = "intel/dsp_fw_release.bin",
+-		.machine_quirk = snd_soc_acpi_codec_list,
+-		.quirk_data = &skl_codecs,
+-		.pdata = &skl_dmic_data
+-	},
+-	{}
+-};
+-
+ static struct snd_soc_acpi_mach sst_glk_devdata[] = {
+ 	{
+ 		.id = "INT343A",
+-- 
+2.7.4
+

@@ -1,0 +1,408 @@
+From fe3c619a073757f29ff85d53677cb66bc4f9f8ca Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:55 +0800
+Subject: [PATCH 0741/1132] x86:acrn: add write_msi pv ops to intercept pci msi
+ write with pv method
+
+added pv ops write_msi into pv_irq_ops, the function write_msi_msg_paravirt
+is to write msi msg through paravirt way.
+for acrn, it calls acrn_write_msi_msg which includes acrn_notify_msix_remap for
+passthrough device msi/msix remapping.
+
+Change-Id: Ib5c0687c6227b527ff629c7884246417686b5896
+Tracked-On: 218445
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Signed-off-by: Zheng Xiao <xiao.zheng@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ arch/x86/acrn/Kconfig                 |   1 +
+ arch/x86/acrn/acrn.c                  |   4 +
+ arch/x86/include/asm/paravirt.h       |  10 +++
+ arch/x86/include/asm/paravirt_types.h |   4 +
+ arch/x86/kernel/paravirt.c            |   4 +
+ drivers/pci/msi.c                     |   4 +-
+ drivers/pci/pci.h                     |   2 +
+ drivers/vhm/Makefile                  |   2 +-
+ drivers/vhm/vhm_msi.c                 | 135 ++++++++++++++++++++++++++++++++++
+ include/linux/msi.h                   |  10 ++-
+ include/linux/vhm/vhm_msi.h           |  61 +++++++++++++++
+ 11 files changed, 233 insertions(+), 4 deletions(-)
+ create mode 100644 drivers/vhm/vhm_msi.c
+ create mode 100644 include/linux/vhm/vhm_msi.h
+
+diff --git a/arch/x86/acrn/Kconfig b/arch/x86/acrn/Kconfig
+index 0ba9e36..7788cb8 100644
+--- a/arch/x86/acrn/Kconfig
++++ b/arch/x86/acrn/Kconfig
+@@ -8,6 +8,7 @@ config ACRN
+ 	depends on X86_64
+ 	depends on PARAVIRT
+ 	depends on DMA_CMA
++	depends on PCI_MSI
+ 	depends on !INTEL_IOMMU
+ 	depends on !VMAP_STACK
+ 	help
+diff --git a/arch/x86/acrn/acrn.c b/arch/x86/acrn/acrn.c
+index a042b54..3987e22 100644
+--- a/arch/x86/acrn/acrn.c
++++ b/arch/x86/acrn/acrn.c
+@@ -33,6 +33,7 @@
+  *
+  */
+ #include <asm/hypervisor.h>
++#include <linux/vhm/vhm_msi.h>
+ 
+ static uint32_t __init acrn_detect(void)
+ {
+@@ -41,6 +42,9 @@ static uint32_t __init acrn_detect(void)
+ 
+ static void __init acrn_init_platform(void)
+ {
++#ifdef CONFIG_PCI_MSI
++	pv_irq_ops.write_msi = acrn_write_msi_msg;
++#endif
+ }
+ 
+ static void acrn_pin_vcpu(int cpu)
+diff --git a/arch/x86/include/asm/paravirt.h b/arch/x86/include/asm/paravirt.h
+index e375d4266..f5af75b 100644
+--- a/arch/x86/include/asm/paravirt.h
++++ b/arch/x86/include/asm/paravirt.h
+@@ -807,6 +807,16 @@ static inline notrace unsigned long arch_local_irq_save(void)
+ 	return f;
+ }
+ 
++static inline void write_msi_msg_paravirt(struct msi_desc *entry,
++					struct msi_msg *msg)
++{
++	if ((pv_irq_ops.write_msi == NULL) ||
++		(pv_irq_ops.write_msi == paravirt_nop))
++		return;
++
++	return PVOP_VCALL2(pv_irq_ops.write_msi, entry, msg);
++}
++
+ 
+ /* Make sure as little as possible of this mess escapes. */
+ #undef PARAVIRT_CALL
+diff --git a/arch/x86/include/asm/paravirt_types.h b/arch/x86/include/asm/paravirt_types.h
+index 4b75acc..06e01d8 100644
+--- a/arch/x86/include/asm/paravirt_types.h
++++ b/arch/x86/include/asm/paravirt_types.h
+@@ -56,6 +56,9 @@ struct cpumask;
+ struct flush_tlb_info;
+ struct mmu_gather;
+ 
++struct msi_desc;
++struct msi_msg;
++ 
+ /*
+  * Wrapper type for pointers to code which uses the non-standard
+  * calling convention.  See PV_CALL_SAVE_REGS_THUNK below.
+@@ -196,6 +199,7 @@ struct pv_irq_ops {
+ 	void (*safe_halt)(void);
+ 	void (*halt)(void);
+ 
++	void (*write_msi)(struct msi_desc *entry, struct msi_msg *msg);
+ } __no_randomize_layout;
+ 
+ struct pv_mmu_ops {
+diff --git a/arch/x86/kernel/paravirt.c b/arch/x86/kernel/paravirt.c
+index 8dc69d8..eaa8917 100644
+--- a/arch/x86/kernel/paravirt.c
++++ b/arch/x86/kernel/paravirt.c
+@@ -25,6 +25,7 @@
+ #include <linux/bcd.h>
+ #include <linux/highmem.h>
+ #include <linux/kprobes.h>
++#include <linux/msi.h>
+ 
+ #include <asm/bug.h>
+ #include <asm/paravirt.h>
+@@ -336,6 +337,9 @@ __visible struct pv_irq_ops pv_irq_ops = {
+ 	.irq_enable = __PV_IS_CALLEE_SAVE(native_irq_enable),
+ 	.safe_halt = native_safe_halt,
+ 	.halt = native_halt,
++#ifdef CONFIG_PCI_MSI
++	.write_msi = native_write_msi_msg,
++#endif
+ };
+ 
+ __visible struct pv_cpu_ops pv_cpu_ops = {
+diff --git a/drivers/pci/msi.c b/drivers/pci/msi.c
+index af24ed5..7819037 100644
+--- a/drivers/pci/msi.c
++++ b/drivers/pci/msi.c
+@@ -190,7 +190,7 @@ static void msi_mask_irq(struct msi_desc *desc, u32 mask, u32 flag)
+ 	desc->masked = __pci_msi_desc_mask_irq(desc, mask, flag);
+ }
+ 
+-static void __iomem *pci_msix_desc_addr(struct msi_desc *desc)
++void __iomem *pci_msix_desc_addr(struct msi_desc *desc)
+ {
+ 	return desc->mask_base +
+ 		desc->msi_attrib.entry_nr * PCI_MSIX_ENTRY_SIZE;
+@@ -294,7 +294,7 @@ void __pci_read_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
+ 	}
+ }
+ 
+-void __pci_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
++void native_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
+ {
+ 	struct pci_dev *dev = msi_desc_to_pci_dev(entry);
+ 
+diff --git a/drivers/pci/pci.h b/drivers/pci/pci.h
+index 6e0d152..d3fe892 100644
+--- a/drivers/pci/pci.h
++++ b/drivers/pci/pci.h
+@@ -168,6 +168,8 @@ static inline void pci_msix_clear_and_set_ctrl(struct pci_dev *dev, u16 clear, u
+ 	pci_write_config_word(dev, dev->msix_cap + PCI_MSIX_FLAGS, ctrl);
+ }
+ 
++void __iomem *pci_msix_desc_addr(struct msi_desc *desc);
++
+ void pci_realloc_get_opt(char *);
+ 
+ static inline int pci_no_d1d2(struct pci_dev *dev)
+diff --git a/drivers/vhm/Makefile b/drivers/vhm/Makefile
+index 4bd960d..b4d58a9 100644
+--- a/drivers/vhm/Makefile
++++ b/drivers/vhm/Makefile
+@@ -1 +1 @@
+-obj-y += vhm_mm.o vhm_ioreq.o vhm_vm_mngt.o vhm_hypercall.o
++obj-y += vhm_mm.o vhm_ioreq.o vhm_vm_mngt.o vhm_msi.o vhm_hypercall.o
+diff --git a/drivers/vhm/vhm_msi.c b/drivers/vhm/vhm_msi.c
+new file mode 100644
+index 0000000..73affd6
+--- /dev/null
++++ b/drivers/vhm/vhm_msi.c
+@@ -0,0 +1,135 @@
++/*
++ * virtio and hyperviosr service module (VHM): msi paravirt
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * BSD LICENSE
++ *
++ * Copyright (C) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Jason Chen CJ <jason.cj.chen@intel.com>
++ *
++ */
++
++#include <linux/msi.h>
++#include <linux/pci.h>
++#include <linux/vhm/acrn_hv_defs.h>
++#include <linux/vhm/vhm_hypercall.h>
++
++#include "../pci/pci.h"
++
++static struct msi_msg acrn_notify_msix_remap(struct msi_desc *entry,
++				struct msi_msg *msg)
++{
++	volatile struct acrn_vm_pci_msix_remap notify;
++	struct pci_dev *dev = msi_desc_to_pci_dev(entry);
++	struct msi_msg remapped_msg = *msg;
++	u16 msgctl;
++	int ret;
++
++	pci_read_config_word(dev, dev->msi_cap + PCI_MSI_FLAGS, &msgctl);
++
++	notify.msi_ctl = msgctl;
++	notify.virt_bdf = (dev->bus->number << 8) | dev->devfn;
++	notify.msi_addr = msg->address_hi;
++	notify.msi_addr <<= 32;
++	notify.msi_addr |= msg->address_lo;
++	notify.msi_data = msg->data;
++	notify.msix = !!entry->msi_attrib.is_msix;
++
++	if (notify.msix)
++		notify.msix_entry_index = entry->msi_attrib.entry_nr;
++	else
++		notify.msix_entry_index = 0;
++
++	ret = hcall_remap_pci_msix(0, virt_to_phys(&notify));
++	if (ret < 0)
++		dev_err(&dev->dev, "Failed to notify MSI/x change to HV\n");
++	else {
++		remapped_msg.address_hi = (unsigned int)(notify.msi_addr >> 32);
++		remapped_msg.address_lo = (unsigned int)notify.msi_addr;
++		remapped_msg.data = notify.msi_data;
++	}
++	return remapped_msg;
++}
++
++void acrn_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
++{
++	struct pci_dev *dev = msi_desc_to_pci_dev(entry);
++	struct msi_msg fmsg;
++
++	if (dev->current_state != PCI_D0 || pci_dev_is_disconnected(dev)) {
++		/* Don't touch the hardware now */
++	} else if (entry->msi_attrib.is_msix) {
++		void __iomem *base = pci_msix_desc_addr(entry);
++
++		fmsg = acrn_notify_msix_remap(entry, msg);
++
++		writel(fmsg.address_lo, base + PCI_MSIX_ENTRY_LOWER_ADDR);
++		writel(fmsg.address_hi, base + PCI_MSIX_ENTRY_UPPER_ADDR);
++		writel(fmsg.data, base + PCI_MSIX_ENTRY_DATA);
++	} else {
++		int pos = dev->msi_cap;
++		u16 msgctl;
++
++		fmsg = acrn_notify_msix_remap(entry, msg);
++
++		pci_read_config_word(dev, pos + PCI_MSI_FLAGS, &msgctl);
++		msgctl &= ~PCI_MSI_FLAGS_QSIZE;
++		msgctl |= entry->msi_attrib.multiple << 4;
++		pci_write_config_word(dev, pos + PCI_MSI_FLAGS, msgctl);
++
++		pci_write_config_dword(dev, pos + PCI_MSI_ADDRESS_LO,
++				       fmsg.address_lo);
++		if (entry->msi_attrib.is_64) {
++			pci_write_config_dword(dev, pos + PCI_MSI_ADDRESS_HI,
++					       fmsg.address_hi);
++			pci_write_config_word(dev, pos + PCI_MSI_DATA_64,
++					      fmsg.data);
++		} else {
++			pci_write_config_word(dev, pos + PCI_MSI_DATA_32,
++					      fmsg.data);
++		}
++	}
++	entry->msg = *msg;
++}
+diff --git a/include/linux/msi.h b/include/linux/msi.h
+index 5839d80..2c1e1d0c 100644
+--- a/include/linux/msi.h
++++ b/include/linux/msi.h
+@@ -139,7 +139,15 @@ struct msi_desc *alloc_msi_entry(struct device *dev, int nvec,
+ 				 const struct cpumask *affinity);
+ void free_msi_entry(struct msi_desc *entry);
+ void __pci_read_msi_msg(struct msi_desc *entry, struct msi_msg *msg);
+-void __pci_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg);
++
++void native_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg);
++
++#if defined(CONFIG_PARAVIRT) && defined(CONFIG_X86)
++#include <asm/paravirt.h>
++#define __pci_write_msi_msg write_msi_msg_paravirt
++#else
++#define __pci_write_msi_msg native_write_msi_msg
++#endif
+ 
+ u32 __pci_msix_desc_mask_irq(struct msi_desc *desc, u32 flag);
+ u32 __pci_msi_desc_mask_irq(struct msi_desc *desc, u32 mask, u32 flag);
+diff --git a/include/linux/vhm/vhm_msi.h b/include/linux/vhm/vhm_msi.h
+new file mode 100644
+index 0000000..059e97a
+--- /dev/null
++++ b/include/linux/vhm/vhm_msi.h
+@@ -0,0 +1,61 @@
++/*
++ * virtio and hyperviosr service module (VHM): msi paravirt
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * BSD LICENSE
++ *
++ * Copyright (C) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Jason Chen CJ <jason.cj.chen@intel.com>
++ *
++ */
++
++#ifndef __ACRN_VHM_MSI_H__
++#define __ACRN_VHM_MSI_H__
++
++struct msi_desc;
++struct msi_msg;
++void acrn_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg);
++
++#endif
+-- 
+2.7.4
+

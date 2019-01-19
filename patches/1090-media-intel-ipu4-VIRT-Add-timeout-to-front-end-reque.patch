@@ -1,0 +1,118 @@
+From d9eb6f42bda2f46ab306a9f2afa91604bd2f03ea Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Fri, 23 Nov 2018 10:36:59 +0800
+Subject: [PATCH 1090/1132] media: intel-ipu4: [VIRT] Add timeout to front end
+ request to avoid hang task.
+
+Under abnormal condition, SOS might failed to
+service front end request and caused apps to
+hang. Added timeout to avoid SOS issue caused
+hang issue.
+
+Change-Id: I68d5dc32e2920bfd33a0a27d94f9c9c7e7e598ed
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ .../media/pci/intel/virtio/intel-ipu4-virtio-common.h |  3 ++-
+ .../intel/virtio/intel-ipu4-virtio-fe-request-queue.c |  6 ++----
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c | 19 +++++++++++++++----
+ 3 files changed, 19 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+index 52a80cc..1909e02 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+@@ -34,7 +34,8 @@ struct ipu4_virtio_req {
+ 	unsigned int cmd;
+ 	unsigned int func_ret;
+ 	unsigned int op[MAX_NUMBER_OF_OPERANDS];
+-	struct completion *wait;
++	wait_queue_head_t *wait;
++	bool completed;
+ 	u64 payload;
+ };
+ struct test_payload {
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
+index b419fd6..b03438c 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
+@@ -25,8 +25,8 @@ int ipu4_virtio_fe_req_queue_init(void)
+ 														__func__);
+ 			return -1;
+ 		}
+-		req->wait = kzalloc(sizeof(struct completion), GFP_KERNEL);
+-		init_completion(req->wait);
++		req->wait = kzalloc(sizeof(wait_queue_head_t), GFP_KERNEL);
++		init_waitqueue_head(req->wait);
+ 		ipu4_virtio_ring_push(&ipu4_virtio_fe_req_queue, req);
+ 	}
+ 	return 0;
+@@ -57,8 +57,6 @@ struct ipu4_virtio_req *ipu4_virtio_fe_req_queue_get(void)
+ 	spin_lock_irqsave(&ipu4_virtio_fe_req_queue.lock, flags);
+ 	req = ipu4_virtio_ring_pop(&ipu4_virtio_fe_req_queue);
+ 	spin_unlock_irqrestore(&ipu4_virtio_fe_req_queue.lock, flags);
+-	if (req)
+-		reinit_completion(req->wait);
+ 	return req;
+ }
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
+index a21d447..39e2e55 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
+@@ -15,6 +15,8 @@
+ 
+ static DEFINE_IDA(index_ida);
+ 
++#define REQ_TIMEOUT 3000 //3s
++
+ struct ipu4_virtio_uos {
+ 	struct virtqueue *vq[IPU_VIRTIO_QUEUE_MAX];
+ 	char name[25];
+@@ -41,7 +43,8 @@ static void ipu_virtio_fe_tx_done_vq_0(struct virtqueue *vq)
+ 		spin_unlock_irqrestore(&priv->lock, flags);
+ 		if (req != NULL &&
+ 			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
+-			complete(req->wait);
++			req->completed = true;
++			wake_up(req->wait);
+ 		}
+ 	} while (req != NULL);
+ 
+@@ -61,7 +64,8 @@ static void ipu_virtio_fe_tx_done_vq_1(struct virtqueue *vq)
+ 		spin_unlock_irqrestore(&priv->lock, flags);
+ 		if (req != NULL &&
+ 			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
+-			complete(req->wait);
++			req->completed = true;
++			wake_up(req->wait);
+ 		}
+ 	} while (req != NULL);
+ 
+@@ -154,10 +158,17 @@ static int ipu_virtio_fe_send_req(int vmid, struct ipu4_virtio_req *req,
+ 		pr_err("IPU Backend not connected\n");
+ 		return -ENOENT;
+ 	}
++	req->completed = false;
+ 	ipu_virtio_fe_register_buffer(ipu4_virtio_fe, req, sizeof(*req), idx);
+-	wait_for_completion(req->wait);
++	ret = wait_event_timeout(*req->wait,
++						req->completed,REQ_TIMEOUT);
+ 
+-	return req->stat;
++	if(ret)
++		return req->stat;
++	else {
++		pr_err("%s: send request timeout!!!", __func__);
++		return -1;
++	}
+ }
+ static int ipu_virtio_fe_get_vmid(void)
+ {
+-- 
+2.7.4
+

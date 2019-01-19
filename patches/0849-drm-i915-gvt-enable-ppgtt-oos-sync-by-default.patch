@@ -1,0 +1,34 @@
+From 5cccb38e9c6100f7652c386bc069581c212a6fce Mon Sep 17 00:00:00 2001
+From: Pei Zhang <pei.zhang@intel.com>
+Date: Thu, 22 Jun 2017 18:45:21 +0800
+Subject: [PATCH 0849/1132] drm/i915/gvt: enable ppgtt oos sync by default
+
+After enabling oos page sync, the loading time of GVT-g guest workload
+will be reduced.
+
+Signed-off-by: Pei Zhang <pei.zhang@intel.com>
+Reviewed-by: Vivek Kasireddy <vivek.kasireddy@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/gtt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/gtt.c b/drivers/gpu/drm/i915/gvt/gtt.c
+index 6262308..af3b1de 100644
+--- a/drivers/gpu/drm/i915/gvt/gtt.c
++++ b/drivers/gpu/drm/i915/gvt/gtt.c
+@@ -44,7 +44,7 @@
+ #define gvt_vdbg_mm(fmt, args...)
+ #endif
+ 
+-static bool enable_out_of_sync = false;
++static bool enable_out_of_sync = true;
+ static int preallocated_oos_pages = 8192;
+ 
+ /*
+-- 
+2.7.4
+

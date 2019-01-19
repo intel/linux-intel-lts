@@ -1,0 +1,240 @@
+From 83e6e4bfa9f86338f6d724eb9aab673a05e36305 Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Thu, 20 Apr 2017 10:02:34 +0300
+Subject: [PATCH 0421/1132] mei: expose device state in sysfs
+
+Expose mei device state to user-space through sysfs.
+This gave indication to applications that driver is in transition,
+e.g. in link reset state.
+
+Change-Id: Id908459d6b9e22ea3a668fda6accd0534cf5278a
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ Documentation/ABI/testing/sysfs-class-mei | 15 +++++++++++++++
+ drivers/misc/mei/client.c                 |  2 +-
+ drivers/misc/mei/init.c                   | 22 ++++++++++++----------
+ drivers/misc/mei/main.c                   | 26 ++++++++++++++++++++++++++
+ drivers/misc/mei/mei_dev.h                | 11 +++++++++++
+ 5 files changed, 65 insertions(+), 11 deletions(-)
+
+diff --git a/Documentation/ABI/testing/sysfs-class-mei b/Documentation/ABI/testing/sysfs-class-mei
+index 17d7444..cb13582 100644
+--- a/Documentation/ABI/testing/sysfs-class-mei
++++ b/Documentation/ABI/testing/sysfs-class-mei
+@@ -65,3 +65,18 @@ Description:	Display the ME firmware version.
+ 		<platform>:<major>.<minor>.<milestone>.<build_no>.
+ 		There can be up to three such blocks for different
+ 		FW components.
++
++What:		/sys/class/mei/meiN/dev_state
++Date:		Sep 2019
++KernelVersion:	4.19
++Contact:	Tomas Winkler <tomas.winkler@intel.com>
++Description:	Display the ME device state.
++
++		The device state can have following values:
++		INITIALIZING
++		INIT_CLIENTS
++		ENABLED
++		RESETTING
++		DISABLED
++		POWER_DOWN
++		POWER_UP
+diff --git a/drivers/misc/mei/client.c b/drivers/misc/mei/client.c
+index 657973b..d46960f 100644
+--- a/drivers/misc/mei/client.c
++++ b/drivers/misc/mei/client.c
+@@ -720,7 +720,7 @@ int mei_cl_unlink(struct mei_cl *cl)
+ 
+ void mei_host_client_init(struct mei_device *dev)
+ {
+-	dev->dev_state = MEI_DEV_ENABLED;
++	mei_set_devstate(dev, MEI_DEV_ENABLED);
+ 	dev->reset_count = 0;
+ 
+ 	schedule_work(&dev->bus_rescan_work);
+diff --git a/drivers/misc/mei/init.c b/drivers/misc/mei/init.c
+index eb026e2..d75173d 100644
+--- a/drivers/misc/mei/init.c
++++ b/drivers/misc/mei/init.c
+@@ -133,12 +133,12 @@ int mei_reset(struct mei_device *dev)
+ 
+ 	/* enter reset flow */
+ 	interrupts_enabled = state != MEI_DEV_POWER_DOWN;
+-	dev->dev_state = MEI_DEV_RESETTING;
++	mei_set_devstate(dev, MEI_DEV_RESETTING);
+ 
+ 	dev->reset_count++;
+ 	if (dev->reset_count > MEI_MAX_CONSEC_RESET) {
+ 		dev_err(dev->dev, "reset: reached maximal consecutive resets: disabling the device\n");
+-		dev->dev_state = MEI_DEV_DISABLED;
++		mei_set_devstate(dev, MEI_DEV_DISABLED);
+ 		return -ENODEV;
+ 	}
+ 
+@@ -160,7 +160,7 @@ int mei_reset(struct mei_device *dev)
+ 
+ 	if (state == MEI_DEV_POWER_DOWN) {
+ 		dev_dbg(dev->dev, "powering down: end of reset\n");
+-		dev->dev_state = MEI_DEV_DISABLED;
++		mei_set_devstate(dev, MEI_DEV_DISABLED);
+ 		return 0;
+ 	}
+ 
+@@ -172,11 +172,11 @@ int mei_reset(struct mei_device *dev)
+ 
+ 	dev_dbg(dev->dev, "link is established start sending messages.\n");
+ 
+-	dev->dev_state = MEI_DEV_INIT_CLIENTS;
++	mei_set_devstate(dev, MEI_DEV_INIT_CLIENTS);
+ 	ret = mei_hbm_start_req(dev);
+ 	if (ret) {
+ 		dev_err(dev->dev, "hbm_start failed ret = %d\n", ret);
+-		dev->dev_state = MEI_DEV_RESETTING;
++		mei_set_devstate(dev, MEI_DEV_RESETTING);
+ 		return ret;
+ 	}
+ 
+@@ -206,7 +206,7 @@ int mei_start(struct mei_device *dev)
+ 
+ 	dev->reset_count = 0;
+ 	do {
+-		dev->dev_state = MEI_DEV_INITIALIZING;
++		mei_set_devstate(dev, MEI_DEV_INITIALIZING);
+ 		ret = mei_reset(dev);
+ 
+ 		if (ret == -ENODEV || dev->dev_state == MEI_DEV_DISABLED) {
+@@ -241,7 +241,7 @@ int mei_start(struct mei_device *dev)
+ 	return 0;
+ err:
+ 	dev_err(dev->dev, "link layer initialization failed.\n");
+-	dev->dev_state = MEI_DEV_DISABLED;
++	mei_set_devstate(dev, MEI_DEV_DISABLED);
+ 	mutex_unlock(&dev->device_lock);
+ 	return -ENODEV;
+ }
+@@ -260,7 +260,7 @@ int mei_restart(struct mei_device *dev)
+ 
+ 	mutex_lock(&dev->device_lock);
+ 
+-	dev->dev_state = MEI_DEV_POWER_UP;
++	mei_set_devstate(dev, MEI_DEV_POWER_UP);
+ 	dev->reset_count = 0;
+ 
+ 	err = mei_reset(dev);
+@@ -311,7 +311,7 @@ void mei_stop(struct mei_device *dev)
+ 	dev_dbg(dev->dev, "stopping the device.\n");
+ 
+ 	mutex_lock(&dev->device_lock);
+-	dev->dev_state = MEI_DEV_POWER_DOWN;
++	mei_set_devstate(dev, MEI_DEV_POWER_DOWN);
+ 	mutex_unlock(&dev->device_lock);
+ 	mei_cl_bus_remove_devices(dev);
+ 
+@@ -324,7 +324,7 @@ void mei_stop(struct mei_device *dev)
+ 
+ 	mei_reset(dev);
+ 	/* move device to disabled state unconditionally */
+-	dev->dev_state = MEI_DEV_DISABLED;
++	mei_set_devstate(dev, MEI_DEV_DISABLED);
+ 
+ 	mutex_unlock(&dev->device_lock);
+ }
+@@ -389,6 +389,8 @@ void mei_device_init(struct mei_device *dev,
+ 	INIT_WORK(&dev->reset_work, mei_reset_work);
+ 	INIT_WORK(&dev->bus_rescan_work, mei_cl_bus_rescan_work);
+ 
++	dev->sysfs_state = NULL;
++
+ 	bitmap_zero(dev->host_clients_map, MEI_CLIENTS_MAX);
+ 	dev->open_handle_count = 0;
+ 
+diff --git a/drivers/misc/mei/main.c b/drivers/misc/mei/main.c
+index 59a6a7a..86d81cb 100644
+--- a/drivers/misc/mei/main.c
++++ b/drivers/misc/mei/main.c
+@@ -1014,12 +1014,36 @@ static ssize_t fw_ver_show(struct device *device,
+ }
+ static DEVICE_ATTR_RO(fw_ver);
+ 
++/**
++ * dev_state_show - display device state
++ *
++ * @device: device pointer
++ * @attr: attribute pointer
++ * @buf:  char out buffer
++ *
++ * Return: number of the bytes printed into buf or error
++ */
++static ssize_t dev_state_show(struct device *device,
++			      struct device_attribute *attr, char *buf)
++{
++	struct mei_device *dev = dev_get_drvdata(device);
++	enum mei_dev_state dev_state;
++
++	mutex_lock(&dev->device_lock);
++	dev_state = dev->dev_state;
++	mutex_unlock(&dev->device_lock);
++
++	return sprintf(buf, "%s", mei_dev_state_str(dev_state));
++}
++static DEVICE_ATTR_RO(dev_state);
++
+ static struct attribute *mei_attrs[] = {
+ 	&dev_attr_fw_status.attr,
+ 	&dev_attr_hbm_ver.attr,
+ 	&dev_attr_hbm_ver_drv.attr,
+ 	&dev_attr_tx_queue_limit.attr,
+ 	&dev_attr_fw_ver.attr,
++	&dev_attr_dev_state.attr,
+ 	NULL
+ };
+ ATTRIBUTE_GROUPS(mei);
+@@ -1116,6 +1140,8 @@ int mei_register(struct mei_device *dev, struct device *parent)
+ 		goto err_dev_create;
+ 	}
+ 
++	dev->sysfs_state = sysfs_get_dirent(clsdev->kobj.sd, "dev_state");
++
+ 	ret = mei_dbgfs_register(dev, dev_name(clsdev));
+ 	if (ret) {
+ 		dev_err(clsdev, "cannot register debugfs ret = %d\n", ret);
+diff --git a/drivers/misc/mei/mei_dev.h b/drivers/misc/mei/mei_dev.h
+index 384f1b6..96232c43 100644
+--- a/drivers/misc/mei/mei_dev.h
++++ b/drivers/misc/mei/mei_dev.h
+@@ -467,6 +467,8 @@ struct mei_fw_version {
+  *
+  * @dbgfs_dir   : debugfs mei root directory
+  *
++ * @sysfs_state : sysfs state object
++ *
+  * @ops:        : hw specific operations
+  * @hw          : hw specific data
+  */
+@@ -552,6 +554,7 @@ struct mei_device {
+ 	struct dentry *dbgfs_dir;
+ #endif /* CONFIG_DEBUG_FS */
+ 
++	struct kernfs_node *sysfs_state;
+ 
+ 	const struct mei_hw_ops *ops;
+ 	char hw[0] __aligned(sizeof(void *));
+@@ -611,6 +614,14 @@ int mei_restart(struct mei_device *dev);
+ void mei_stop(struct mei_device *dev);
+ void mei_cancel_work(struct mei_device *dev);
+ 
++static inline void mei_set_devstate(struct mei_device *dev,
++				    enum mei_dev_state state)
++{
++	dev->dev_state = state;
++	if (dev->sysfs_state)
++		sysfs_notify_dirent(dev->sysfs_state);
++}
++
+ int mei_dmam_ring_alloc(struct mei_device *dev);
+ void mei_dmam_ring_free(struct mei_device *dev);
+ bool mei_dma_ring_is_allocated(struct mei_device *dev);
+-- 
+2.7.4
+

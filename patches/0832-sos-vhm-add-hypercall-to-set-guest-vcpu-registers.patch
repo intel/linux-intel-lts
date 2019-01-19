@@ -1,0 +1,155 @@
+From d8b6a1f0a186e1f35d4c66f98dea9994b4316c53 Mon Sep 17 00:00:00 2001
+From: Yin Fengwei <fengwei.yin@intel.com>
+Date: Thu, 23 Aug 2018 07:29:24 +0000
+Subject: [PATCH 0832/1132] sos: vhm: add hypercall to set guest vcpu registers
+
+DM will use this hypercall to set the BSP registers of UOS.
+To avoid the hypervisor involving for UOS boot.
+
+Tracked-On: #1231
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+Acked-by: Eddie Dong <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 17 +++++++++
+ include/linux/vhm/acrn_common.h    | 71 ++++++++++++++++++++++++++++++++++++++
+ include/linux/vhm/acrn_hv_defs.h   |  1 +
+ include/linux/vhm/vhm_ioctl_defs.h |  1 +
+ 4 files changed, 90 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 0eb31d8..c6a97e8 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -311,6 +311,23 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		return ret;
+ 	}
+ 
++	case IC_SET_VCPU_REGS: {
++		struct acrn_set_vcpu_regs asvr;
++
++		if (copy_from_user(&asvr, (void *)ioctl_param, sizeof(asvr)))
++			return -EFAULT;
++
++		ret = acrn_hypercall2(HC_SET_VCPU_REGS, vm->vmid,
++				virt_to_phys(&asvr));
++		if (ret < 0) {
++			pr_err("vhm: failed to set bsp state of vm %ld!\n",
++					vm->vmid);
++			return -EFAULT;
++		}
++
++		return ret;
++	}
++
+ 	case IC_SET_MEMSEG: {
+ 		struct vm_memmap memmap;
+ 
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index dfe8930..6949924 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -273,6 +273,77 @@ struct acrn_create_vcpu {
+ 	uint16_t pcpu_id;
+ } __attribute__((aligned(8)));
+ 
++struct acrn_gp_regs {
++	uint64_t rax;
++	uint64_t rcx;
++	uint64_t rdx;
++	uint64_t rbx;
++	uint64_t rsp;
++	uint64_t rbp;
++	uint64_t rsi;
++	uint64_t rdi;
++	uint64_t r8;
++	uint64_t r9;
++	uint64_t r10;
++	uint64_t r11;
++	uint64_t r12;
++	uint64_t r13;
++	uint64_t r14;
++	uint64_t r15;
++};
++
++struct acrn_descriptor_ptr {
++	uint16_t limit;
++	uint64_t base;
++	uint16_t reserved[3];
++} __attribute__((packed));
++
++struct acrn_vcpu_regs {
++	struct acrn_gp_regs gprs;
++	struct acrn_descriptor_ptr gdt;
++	struct acrn_descriptor_ptr idt;
++
++	uint64_t        rip;
++	uint64_t        cs_base;
++	uint64_t        cr0;
++	uint64_t        cr4;
++	uint64_t        cr3;
++	uint64_t        ia32_efer;
++	uint64_t        rflags;
++	uint64_t        reserved_64[4];
++
++	uint32_t        cs_ar;
++	uint32_t        reserved_32[4];
++
++	/* don't change the order of following sel */
++	uint16_t        cs_sel;
++	uint16_t        ss_sel;
++	uint16_t        ds_sel;
++	uint16_t        es_sel;
++	uint16_t        fs_sel;
++	uint16_t        gs_sel;
++	uint16_t        ldt_sel;
++	uint16_t        tr_sel;
++
++	uint16_t        reserved_16[4];
++};
++
++/**
++ * @brief Info to set vcpu state
++ *
++ * the pamameter for HC_SET_VCPU_REGS
++ */
++struct acrn_set_vcpu_regs {
++	/** the virtual CPU ID for the VCPU */
++	uint16_t vcpu_id;
++
++	/** reserved space to make cpu_state aligned to 8 bytes */
++	uint16_t reserved0[3];
++
++	/** the structure to hold vcpu state */
++	struct acrn_vcpu_regs vcpu_regs;
++} __attribute__((aligned(8)));
++
+ /**
+  * @brief Info to set ioreq buffer for a created VM
+  *
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 6b7bfb4..c74f05f 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -78,6 +78,7 @@
+ #define HC_PAUSE_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x03)
+ #define HC_CREATE_VCPU              _HC_ID(HC_ID, HC_ID_VM_BASE + 0x04)
+ #define HC_RESET_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x05)
++#define HC_SET_VCPU_REGS            _HC_ID(HC_ID, HC_ID_VM_BASE + 0x06)
+ 
+ /* IRQ and Interrupts */
+ #define HC_ID_IRQ_BASE              0x20UL
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index fb7b154..73be2dd 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -73,6 +73,7 @@
+ #define IC_PAUSE_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
+ #define	IC_CREATE_VCPU                 _IC_ID(IC_ID, IC_ID_VM_BASE + 0x04)
+ #define IC_RESET_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x05)
++#define IC_SET_VCPU_REGS               _IC_ID(IC_ID, IC_ID_VM_BASE + 0x06)
+ 
+ /* IRQ and Interrupts */
+ #define IC_ID_IRQ_BASE                 0x20UL
+-- 
+2.7.4
+

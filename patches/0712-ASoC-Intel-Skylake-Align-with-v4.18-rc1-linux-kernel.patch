@@ -1,0 +1,44 @@
+From fdc1ac04582cff721ea905f975308cd71c6afb03 Mon Sep 17 00:00:00 2001
+From: Cezary Rojewski <cezary.rojewski@intel.com>
+Date: Mon, 13 Aug 2018 15:29:19 +0200
+Subject: [PATCH 0712/1132] ASoC: Intel: Skylake: Align with v4.18-rc1 linux
+ kernel base.
+
+File skl-tplg-interface.h no longer present, relocated to uapi.
+Removal of duplicate declaration for skl_dai_load within skl-topology.h.
+
+Signed-off-by: Cezary Rojewski <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-ipc.h  | 2 +-
+ sound/soc/intel/skylake/skl-topology.h | 2 --
+ 2 files changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 436e036..ee32aaa 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -20,7 +20,7 @@
+ #include <sound/memalloc.h>
+ #include "../common/sst-ipc.h"
+ #include "skl-sst-dsp.h"
+-#include "skl-tplg-interface.h"
++#include <uapi/sound/skl-tplg-interface.h>
+ 
+ struct sst_dsp;
+ struct skl_sst;
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index e86b84e..c0ef5e7 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -629,8 +629,6 @@ int skl_tplg_dsp_log_get(struct snd_kcontrol *kcontrol,
+ int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
+ 			 struct snd_ctl_elem_value *ucontrol);
+ 
+-int skl_dai_load(struct snd_soc_component *cmp,
+-		 struct snd_soc_dai_driver *pcm_dai);
+ int skl_tplg_change_notification_get(struct snd_kcontrol *kcontrol,
+ 			unsigned int __user *data, unsigned int size);
+ struct snd_kcontrol *skl_search_notify_kctl(struct skl_sst *skl,
+-- 
+2.7.4
+

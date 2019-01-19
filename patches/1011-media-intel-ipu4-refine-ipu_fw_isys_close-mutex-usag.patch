@@ -1,0 +1,56 @@
+From 63b5a0a4474f90ec0eae7f7d1db1416c6e0a52d8 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Mon, 3 Dec 2018 16:53:48 +0800
+Subject: [PATCH 1011/1132] media: intel-ipu4: refine ipu_fw_isys_close mutex
+ usage
+
+in ipu_fw_isys_close, mutex lock it then only call
+ipu_lib_call_notrace_unlocked instead of ipu_lib_call
+
+Change-Id: I959b54287c57c9e436168a45b0ad9f35f3da8093
+Tracked-On: OAM-72256
+Signed-off-by: Teng, Jin Chung <jin.chung.teng@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+Signed-off-by: Hui Xia <hui.xia@intel.com>
+---
+ drivers/media/pci/intel/ipu4/ipu4-css/libintel-ipu4.c   | 4 +++-
+ drivers/media/pci/intel/ipu4/ipu4p-css/libintel-ipu4p.c | 4 +++-
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu4/ipu4-css/libintel-ipu4.c b/drivers/media/pci/intel/ipu4/ipu4-css/libintel-ipu4.c
+index a7128898..59c9b5b 100644
+--- a/drivers/media/pci/intel/ipu4/ipu4-css/libintel-ipu4.c
++++ b/drivers/media/pci/intel/ipu4/ipu4-css/libintel-ipu4.c
+@@ -56,9 +56,11 @@ int ipu_fw_isys_close(struct ipu_isys *isys)
+ 	 * some time as the FW must stop its actions including code fetch
+ 	 * to SP icache.
+ 	 */
++	mutex_lock(&isys->lib_mutex);
+ 	spin_lock_irqsave(&isys->power_lock, flags);
+-	rval = ipu_lib_call(device_close, isys);
++	rval = ipu_lib_call_notrace_unlocked(device_close, isys);
+ 	spin_unlock_irqrestore(&isys->power_lock, flags);
++	mutex_unlock(&isys->lib_mutex);
+ 	if (rval)
+ 		dev_err(dev, "Device close failure: %d\n", rval);
+ 
+diff --git a/drivers/media/pci/intel/ipu4/ipu4p-css/libintel-ipu4p.c b/drivers/media/pci/intel/ipu4/ipu4p-css/libintel-ipu4p.c
+index cb6fd04..3704754 100644
+--- a/drivers/media/pci/intel/ipu4/ipu4p-css/libintel-ipu4p.c
++++ b/drivers/media/pci/intel/ipu4/ipu4p-css/libintel-ipu4p.c
+@@ -56,9 +56,11 @@ int ipu_fw_isys_close(struct ipu_isys *isys)
+ 	 * some time as the FW must stop its actions including code fetch
+ 	 * to SP icache.
+ 	 */
++	mutex_lock(&isys->lib_mutex);
+ 	spin_lock_irqsave(&isys->power_lock, flags);
+-	rval = ipu_lib_call(device_close, isys);
++	rval = ipu_lib_call_notrace_unlocked(device_close, isys);
+ 	spin_unlock_irqrestore(&isys->power_lock, flags);
++	mutex_unlock(&isys->lib_mutex);
+ 	if (rval)
+ 		dev_err(dev, "Device close failure: %d\n", rval);
+ 
+-- 
+2.7.4
+

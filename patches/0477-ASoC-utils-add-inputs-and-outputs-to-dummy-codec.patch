@@ -1,0 +1,80 @@
+From 4394fdb656d51a5b2a1502a455992ff5d7c01ef4 Mon Sep 17 00:00:00 2001
+From: Omair Mohammed Abdullah <omair.m.abdullah@intel.com>
+Date: Mon, 10 Nov 2014 21:52:55 +0530
+Subject: [PATCH 0477/1132] ASoC: utils: add inputs and outputs to dummy codec
+
+Add a dummy input and a dummy output to the codec, so that the platform side
+widgets can be triggered if a backend uses a dummy codec.
+
+Make the dummy codec stream names explicit to avoid confusion.
+
+Change-Id: I3891e7b670a413c74d71aae1feed9f04e00041e3
+Tracked-On:
+Signed-off-by: Omair Mohammed Abdullah <omair.m.abdullah@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Koul, Vinod <vinod.koul@intel.com>
+Signed-off-by: Dharageswari.R <dharageswari.r@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/soc/soc-utils.c | 26 ++++++++++++++++++++++++--
+ 1 file changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/soc-utils.c b/sound/soc/soc-utils.c
+index e0c9349..8503a36 100644
+--- a/sound/soc/soc-utils.c
++++ b/sound/soc/soc-utils.c
+@@ -282,7 +282,28 @@ static const struct snd_soc_component_driver dummy_platform = {
+ 	.ops = &dummy_dma_ops,
+ };
+ 
++static struct snd_soc_dapm_widget dapm_widgets[] = {
++	SND_SOC_DAPM_INPUT("Dummy Input"),
++	SND_SOC_DAPM_OUTPUT("Dummy Output"),
++};
++
++static struct snd_soc_dapm_route intercon[] = {
++	{ "Dummy Output", NULL, "Dummy Playback"},
++	{ "Dummy Capture", NULL, "Dummy Input"},
++};
++
++static int dummy_codec_probe(struct snd_soc_component  *codec)
++{
++	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(codec);
++
++	snd_soc_dapm_new_controls(dapm, dapm_widgets,
++			ARRAY_SIZE(dapm_widgets));
++	snd_soc_dapm_add_routes(dapm, intercon, ARRAY_SIZE(intercon));
++	return 0;
++}
++
+ static const struct snd_soc_component_driver dummy_codec = {
++	.probe = dummy_codec_probe,
+ 	.idle_bias_on		= 1,
+ 	.use_pmdown_time	= 1,
+ 	.endianness		= 1,
+@@ -308,17 +329,18 @@ static const struct snd_soc_component_driver dummy_codec = {
+  * which should be modelled. And the data flow graph also should be modelled
+  * using DAPM.
+  */
++
+ static struct snd_soc_dai_driver dummy_dai = {
+ 	.name = "snd-soc-dummy-dai",
+ 	.playback = {
+-		.stream_name	= "Playback",
++		.stream_name	= "Dummy Playback",
+ 		.channels_min	= 1,
+ 		.channels_max	= 384,
+ 		.rates		= STUB_RATES,
+ 		.formats	= STUB_FORMATS,
+ 	},
+ 	.capture = {
+-		.stream_name	= "Capture",
++		.stream_name	= "Dummy Capture",
+ 		.channels_min	= 1,
+ 		.channels_max	= 384,
+ 		.rates = STUB_RATES,
+-- 
+2.7.4
+

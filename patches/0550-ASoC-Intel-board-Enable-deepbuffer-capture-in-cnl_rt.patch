@@ -1,0 +1,34 @@
+From e0d330b45f4301e3be0d498162c8985a76c423f2 Mon Sep 17 00:00:00 2001
+From: Dharageswari R <dharageswari.r@intel.com>
+Date: Sun, 13 Mar 2016 22:22:47 +0530
+Subject: [PATCH 0550/1132] ASoC: Intel: board: Enable deepbuffer capture in
+ cnl_rt274
+
+Change-Id: I42a782d7689a90b814214420bc3a3ea8e2ad224e
+Signed-off-by: Dharageswari R <dharageswari.r@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/boards/cnl_rt274.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/soc/intel/boards/cnl_rt274.c b/sound/soc/intel/boards/cnl_rt274.c
+index 20058f9c..eebde84 100644
+--- a/sound/soc/intel/boards/cnl_rt274.c
++++ b/sound/soc/intel/boards/cnl_rt274.c
+@@ -226,6 +226,7 @@ static struct snd_soc_dai_link cnl_rt274_msic_dailink[] = {
+ 		.codec_dai_name = "snd-soc-dummy-dai",
+ 		.platform_name = pname,
+ 		.dpcm_playback = 1,
++		.dpcm_capture = 1,
+ 		.ignore_suspend = 1,
+ 		.nonatomic = 1,
+ 		.dynamic = 1,
+-- 
+2.7.4
+

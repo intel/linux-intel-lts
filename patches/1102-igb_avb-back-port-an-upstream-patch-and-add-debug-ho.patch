@@ -1,0 +1,84 @@
+From 9d3903832ca845355270b4ee9999db397548b4b5 Mon Sep 17 00:00:00 2001
+From: Feng Tang <feng.tang@intel.com>
+Date: Mon, 7 Jan 2019 15:12:21 +0800
+Subject: [PATCH 1102/1132] igb_avb: back port an upstream patch and add debug
+ hook.
+
+This is a back ported version of the following upstream commit
+to fix a panic issue:
+
+	commit 629823b872402451b42462414da08dddd0e2c93d
+	Author: Cao jin <caoj.fnst@cn.fujitsu.com>
+	Date:   Tue Nov 8 15:06:20 2016 +0800
+
+Also it adds a debug hook, as the panic issue is very hard
+to reproduce, and this will provide more info.
+
+The error log is:
+
+[ 5271.634522] PM: Restoring platform NVS memory
+[ 5271.646807] ACPI: Waking up from system sleep state S3
+[ 5271.892182] intel-ipu4 0000:00:03.0: IPU in secure mode
+[ 5271.893875] igb_avb 0000:02:00.0 ens4: PCIe link lost, device now detached
+[ 5271.894735] [drm] HuC: Loaded firmware i915/bxt_huc_ver01_07_1398.bin (version 1.7)
+[ 5271.900810] [drm] GuC: Loaded firmware i915/bxt_guc_ver9_29.bin (version 9.29)
+[ 5271.906584] i915 0000:00:02.0: GuC firmware version 9.29
+[ 5271.906908] i915 0000:00:02.0: GuC submission disabled
+[ 5271.907204] i915 0000:00:02.0: HuC enabled
+[ 5273.028933] BUG: unable to handle kernel paging request at 0000000000003818
+[ 5273.032434] PGD 0 P4D 0
+[ 5273.035664] Oops: 0002 [#1] PREEMPT SMP
+[ 5273.038954] CPU: 0 PID: 938 Comm: kworker/u8:29 Tainted: G     U  WC        4.19.8-1812241100.iot-lts2018-sos #1
+[ 5273.042592] Workqueue: events_unbound async_run_entry_fn
+[ 5273.045932] RIP: 0010:igb_configure_tx_ring+0x13f/0x230 [igb_avb]
+[ 5273.049309] Code: c2 10 38 00 00 48 98 48 01 c1 48 63 c2 49 89 4e 30 49 8b b5 58 04 00 00 48 85 f6 74 0b 48 01 f0 31 d2 89 10 49 8b 4e 30 31 c0 <89> 01 41 8b 85 6c 05 00 00 b9 14 01 04 02 83 f8 05 74 0e 83 f8 02
+[ 5273.056633] RSP: 0018:ffff9d380f917cc0 EFLAGS: 00010246
+[ 5273.060068] RAX: 0000000000000000 RBX: 0000000000000000 RCX: 0000000000003818
+[ 5273.063613] RDX: 0000000000003810 RSI: 0000000000000000 RDI: 00000000ffffffff
+[ 5273.067080] RBP: ffff9d380f917ce8 R08: 000000000000007f R09: 000000000000007f
+[ 5273.162184] R10: 0000000000005c80 R11: 0000000000000000 R12: 0000000000000000
+[ 5273.165614] R13: ffff9d3a637b4940 R14: ffff9d3a5c459a40 R15: 000000027c01c000
+[ 5273.169050] FS:  0000000000000000(0000) GS:ffff9d3a73a00000(0000) knlGS:0000000000000000
+[ 5273.172554] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[ 5273.175906] CR2: 0000000000003818 CR3: 0000000003f04000 CR4: 00000000003406f0
+[ 5273.179338] Call Trace:
+[ 5273.182445]  igb_configure+0x1ae/0x460 [igb_avb]
+[ 5273.185648]  __igb_open+0x7e/0x560 [igb_avb]
+[ 5273.245233]  igb_resume+0x10b/0x140 [igb_avb]
+[ 5273.248388]  pci_pm_resume+0x71/0xd0
+[ 5273.254596]  dpm_run_callback+0x66/0x190
+[ 5273.257614]  device_resume+0xc8/0x2a0
+[ 5273.260570]  async_resume+0x1d/0x30
+[ 5273.263509]  async_run_entry_fn+0x3e/0x170
+
+Tracked-On: PKT-1646
+Signed-off-by: Feng Tang <feng.tang@intel.com>
+---
+ drivers/staging/igb_avb/igb_main.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/staging/igb_avb/igb_main.c b/drivers/staging/igb_avb/igb_main.c
+index 8d772cfb..5c4e0e0 100644
+--- a/drivers/staging/igb_avb/igb_main.c
++++ b/drivers/staging/igb_avb/igb_main.c
+@@ -484,6 +484,8 @@ u32 e1000_read_reg(struct e1000_hw *hw, u32 reg)
+ 		hw->hw_addr = NULL;
+ 		netif_device_detach(netdev);
+ 		netdev_err(netdev, "PCIe link lost, device now detached\n");
++
++		WARN_ON(1, "Error reading reg 0x%x", reg);
+ 	}
+ 
+ 	return value;
+@@ -3620,7 +3622,7 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
+ 			tdba & 0x00000000ffffffffULL);
+ 	E1000_WRITE_REG(hw, E1000_TDBAH(reg_idx), tdba >> 32);
+ 
+-	ring->tail = hw->hw_addr + E1000_TDT(reg_idx);
++	ring->tail = hw->io_addr + E1000_TDT(reg_idx);
+ 	E1000_WRITE_REG(hw, E1000_TDH(reg_idx), 0);
+ 	writel(0, ring->tail);
+ 
+-- 
+2.7.4
+

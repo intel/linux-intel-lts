@@ -1,0 +1,30 @@
+From ddae2ea0a4bd460083debf472e488282a89fa12a Mon Sep 17 00:00:00 2001
+From: "Yew, Chang Ching" <chang.ching.yew@intel.com>
+Date: Wed, 2 Jan 2019 10:20:24 +0800
+Subject: [PATCH 1107/1132] media: i2c: crlmodule-lite: Remove unused variable
+
+Removed unused crlmodule_lite_platform_data variable
+
+Change-Id: I3fbc557ce76263a7fc18a1be9e2de5c863784095
+Tracked-On: PKT-1644
+Tracked-On: OAM-74863
+Signed-off-by: Yew, Chang Ching <chang.ching.yew@intel.com>
+---
+ drivers/media/i2c/crlmodule-lite/crlmodule-core.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/media/i2c/crlmodule-lite/crlmodule-core.c b/drivers/media/i2c/crlmodule-lite/crlmodule-core.c
+index efc0015..bd04ae9 100644
+--- a/drivers/media/i2c/crlmodule-lite/crlmodule-core.c
++++ b/drivers/media/i2c/crlmodule-lite/crlmodule-core.c
+@@ -2246,7 +2246,6 @@ static int crlmodule_init_subdevs(
+ 	struct ici_ext_subdev *subdev)
+ {
+ 	struct crl_sensor *sensor = to_crlmodule_sensor(subdev);
+-	struct crlmodule_lite_platform_data *platform_data = sensor->platform_data;
+ 	struct i2c_client *client = sensor->src->sd.client;
+ 	struct crl_subdev *prev_sd = NULL;
+ 	int i = 0;
+-- 
+2.7.4
+

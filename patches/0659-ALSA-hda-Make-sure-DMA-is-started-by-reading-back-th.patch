@@ -1,0 +1,58 @@
+From 29de1d579140bb808d3c2c86e8d3bc549cf5ed43 Mon Sep 17 00:00:00 2001
+From: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Date: Fri, 21 Jul 2017 02:08:12 +0530
+Subject: [PATCH 0659/1132] ALSA: hda: Make sure DMA is started by reading back
+ the RUN bit
+
+As per HW recommendation, after setting the RUN bit,
+software must read a 1 from the RUN bit, before modifying
+related control registers/re-starting the DMA engine.
+
+Change-Id: I5e81791a3d210a579f61d2345c4d3a29cd4c7b08
+Signed-off-by: Pardha Saradhi K <pardha.saradhi.kesapragada@intel.com>
+Reviewed-on:
+Reviewed-by: Prakash, Divya1
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/hda/hdac_stream.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/sound/hda/hdac_stream.c b/sound/hda/hdac_stream.c
+index 2ddda76..00954ef 100644
+--- a/sound/hda/hdac_stream.c
++++ b/sound/hda/hdac_stream.c
+@@ -49,6 +49,8 @@ EXPORT_SYMBOL_GPL(snd_hdac_stream_init);
+ void snd_hdac_stream_start(struct hdac_stream *azx_dev, bool fresh_start)
+ {
+ 	struct hdac_bus *bus = azx_dev->bus;
++	int timeout;
++	unsigned char val;
+ 
+ 	trace_snd_hdac_stream_start(bus, azx_dev);
+ 
+@@ -61,6 +63,21 @@ void snd_hdac_stream_start(struct hdac_stream *azx_dev, bool fresh_start)
+ 	/* set DMA start and interrupt mask */
+ 	snd_hdac_stream_updateb(azx_dev, SD_CTL,
+ 				0, SD_CTL_DMA_START | SD_INT_MASK);
++
++	timeout = 300;
++	do {
++		udelay(3);
++		val = snd_hdac_stream_readb(azx_dev, SD_CTL) & SD_CTL_DMA_START;
++		if (val)
++			break;
++	} while(--timeout);
++
++	if (!timeout) {
++		dev_err(azx_dev->bus->dev, "unable to start the stream\n");
++		azx_dev->running = false;
++		return;
++	}
++
+ 	azx_dev->running = true;
+ }
+ EXPORT_SYMBOL_GPL(snd_hdac_stream_start);
+-- 
+2.7.4
+

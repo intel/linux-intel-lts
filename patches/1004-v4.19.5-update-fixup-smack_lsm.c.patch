@@ -1,0 +1,25 @@
+From 216d40db78d86de3846c5c6d93b751c35b1b7d56 Mon Sep 17 00:00:00 2001
+From: mark gross <mark.gross@intel.com>
+Date: Fri, 30 Nov 2018 15:41:46 -0800
+Subject: [PATCH 1004/1132] v4.19.5 update fixup smack_lsm.c
+
+---
+ security/smack/smack_lsm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/security/smack/smack_lsm.c b/security/smack/smack_lsm.c
+index 0107146..fd419cb 100644
+--- a/security/smack/smack_lsm.c
++++ b/security/smack/smack_lsm.c
+@@ -422,7 +422,7 @@ static int smk_ptrace_rule_check(struct task_struct *tracer,
+ 
+ 	rcu_read_lock();
+ 	tracercred = __task_cred(tracer);
+-	tsp = smack_cred(__task_cred(tracer));
++	tsp = smack_cred(tracercred);
+ 	tracer_known = smk_of_task(tsp);
+ 
+ 	if ((mode & PTRACE_MODE_ATTACH) &&
+-- 
+2.7.4
+

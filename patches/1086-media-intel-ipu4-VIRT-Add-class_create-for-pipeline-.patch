@@ -1,0 +1,109 @@
+From 2b490c6d213dc58e75b956d3f4124f6c56f469fc Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Wed, 17 Oct 2018 21:27:36 +0000
+Subject: [PATCH 1086/1132] media: intel-ipu4: [VIRT] Add class_create for
+ pipeline and psys device node.
+
+In Android, udev rely on device class node to create the
+device node in /dev/
+
+Change-Id: Iafc7d39ae7ab5dc214efe0360e6b0078721269aa
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c  | 10 ++++++++++
+ drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c | 11 +++++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+index b1ff094..b96e55a 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+@@ -29,6 +29,7 @@ static struct ici_isys_pipeline_device *pipeline_dev;
+ 
+ static dev_t virt_stream_dev_t;
+ static struct class *virt_stream_class;
++static struct class *virt_pipeline_class;
+ static int virt_stream_devs_registered;
+ static int stream_dev_init;
+ 
+@@ -1219,6 +1220,13 @@ static int virt_ici_pipeline_init(void)
+ 		return rval;
+ 	}
+ 
++	virt_pipeline_class = class_create(THIS_MODULE, ICI_PIPELINE_DEVICE_NAME);
++	if (IS_ERR(virt_pipeline_class)) {
++		unregister_chrdev_region(virt_pipeline_dev_t, MAX_PIPELINE_DEVICES);
++		pr_err("Failed to register device class %s\n",	ICI_PIPELINE_DEVICE_NAME);
++		return PTR_ERR(virt_pipeline_class);
++	}
++
+ 	pipeline_dev = kzalloc(sizeof(*pipeline_dev), GFP_KERNEL);
+ 	if (!pipeline_dev)
+ 		return -ENOMEM;
+@@ -1232,6 +1240,7 @@ static int virt_ici_pipeline_init(void)
+ 			return rval;
+ 	}
+ 
++	pipeline_dev->dev.class = virt_pipeline_class;
+ 	pipeline_dev->dev.devt = MKDEV(MAJOR_PIPELINE, MINOR_PIPELINE);
+ 	dev_set_name(&pipeline_dev->dev, "%s", ICI_PIPELINE_DEVICE_NAME);
+ 
+@@ -1312,6 +1321,7 @@ static int virt_fe_remove(void)
+ }
+ static void virt_ici_pipeline_exit(void)
+ {
++	class_unregister(virt_pipeline_class);
+ 	unregister_chrdev_region(virt_pipeline_dev_t, MAX_PIPELINE_DEVICES);
+ 	if (pipeline_dev)
+ 		kfree((void *)pipeline_dev);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+index f2f57b0..d641e40 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+@@ -45,6 +45,7 @@ extern long virt_psys_compat_ioctl32(struct file *file, unsigned int cmd,
+ 
+ static dev_t virt_psys_dev_t;
+ static struct virt_ipu_psys *g_psys;
++static struct class *virt_psys_class;
+ 
+ static DECLARE_BITMAP(virt_psys_devices, IPU_PSYS_NUM_DEVICES);
+ static DEFINE_MUTEX(psys_mutex);
+@@ -646,6 +647,7 @@ static void virt_psys_dev_release(struct device *dev)
+ }
+ void virt_psys_exit(void)
+ {
++	class_unregister(virt_psys_class);
+ 	unregister_chrdev_region(virt_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+ 	if (g_psys)
+ 		kfree(g_psys);
+@@ -679,6 +681,13 @@ int virt_psys_init(struct ipu4_virtio_ctx *fe_ctx)
+ 	}
+ 	mutex_lock(&psys_mutex);
+ 
++	virt_psys_class = class_create(THIS_MODULE, IPU_PSYS_NAME);
++	if (IS_ERR(virt_psys_class)) {
++		unregister_chrdev_region(virt_psys_dev_t, IPU_PSYS_NUM_DEVICES);
++		pr_err("Failed to register device class %s\n",	IPU_PSYS_NAME);
++		return PTR_ERR(virt_psys_class);
++	}
++
+ 	minor = find_next_zero_bit(virt_psys_devices, IPU_PSYS_NUM_DEVICES, 0);
+ 	if (minor == IPU_PSYS_NUM_DEVICES) {
+ 		pr_err("too many devices\n");
+@@ -703,6 +712,8 @@ int virt_psys_init(struct ipu4_virtio_ctx *fe_ctx)
+ 	set_bit(minor, virt_psys_devices);
+ 
+ 	mutex_init(&g_psys->mutex);
++
++	g_psys->dev.class = virt_psys_class;
+ 	g_psys->dev.devt = MKDEV(MAJOR(virt_psys_dev_t), minor);
+ 	g_psys->dev.release = virt_psys_dev_release;
+ 	dev_set_name(&g_psys->dev, "ipu-psys%d", minor);
+-- 
+2.7.4
+

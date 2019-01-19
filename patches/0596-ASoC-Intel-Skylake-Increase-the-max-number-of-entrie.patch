@@ -1,0 +1,48 @@
+From 0b53f4a0489acbe9b02098f9a863f2bfe026eb14 Mon Sep 17 00:00:00 2001
+From: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Date: Wed, 17 May 2017 12:05:30 +0530
+Subject: [PATCH 0596/1132] ASoC: Intel: Skylake: Increase the max number of
+ entries for resources, path configs and formats
+
+To support multi-format playback/capture, 0.7 xml has more
+number of entries for module resources, path configs and formats.
+
+This patch increases the max limit for module resources to 32,
+path config entries to 32 and module formats to 64. Although
+this is not a permanent solution. Right solution is to dynamically
+calculate the entries instead of hard coding.
+
+Change-Id: If052e6b95a69b9ed47f08ebe284383c4d2e8e81f
+Signed-off-by: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 676a769..adf35fa 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -47,9 +47,9 @@
+ 
+ #define SKL_OUTPUT_PIN		0
+ #define SKL_INPUT_PIN		1
+-#define SKL_MAX_PATH_CONFIGS	8
++#define SKL_MAX_PATH_CONFIGS	32
+ #define SKL_MAX_MODULES_IN_PIPE	8
+-#define SKL_MAX_MODULE_FORMATS		32
++#define SKL_MAX_MODULE_FORMATS		64
+ #define SKL_MAX_MODULE_RESOURCES	32
+ 
+ enum skl_channel_index {
+-- 
+2.7.4
+

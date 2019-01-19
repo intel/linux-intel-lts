@@ -1,0 +1,56 @@
+From 21ea1ba084fa6522f889c011a7f2cf2594431ea2 Mon Sep 17 00:00:00 2001
+From: Mohit Sinha <mohit.sinha@intel.com>
+Date: Thu, 16 Nov 2017 23:01:21 +0530
+Subject: [PATCH 0657/1132] ASoC: Intel: Skylake: Add delay during DSP core
+ start
+
+1msec delay is required in power-up sequence of DSP core.
+
+Power-up sequence for DSP core is as follows:
+1) power up core
+2) unreset core
+3) unstall core
+4) send IPC
+~1msec wait is required between unstall core and before sending IPC
+to ensure proper propagation of signals.
+
+Change-Id: Ie7c4b47d4b4ce6f869178a5fd9940f6af84b13d2
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: B, Jayachandran <jayachandran.b@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: Tewani, Pradeep D <pradeep.d.tewani@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-dsp.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.c b/sound/soc/intel/skylake/skl-sst-dsp.c
+index 4b16e00..b34f7b7 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.c
++++ b/sound/soc/intel/skylake/skl-sst-dsp.c
+@@ -17,6 +17,7 @@
+  */
+ #include <sound/pcm.h>
+ 
++#include <linux/delay.h>
+ #include "../common/sst-dsp.h"
+ #include "../common/sst-ipc.h"
+ #include "../common/sst-dsp-priv.h"
+@@ -206,6 +207,9 @@ int skl_dsp_start_core(struct sst_dsp *ctx, unsigned int core_mask)
+ 	if (ret < 0)
+ 		return ret;
+ 
++	/* delay to ensure proper signal propagation after unreset/unstall */
++	usleep_range(1000, 1500);
++
+ 	if (!is_skl_dsp_core_enable(ctx, core_mask)) {
+ 		skl_dsp_reset_core(ctx, core_mask);
+ 		dev_err(ctx->dev, "DSP start core failed: core_mask %x\n",
+-- 
+2.7.4
+

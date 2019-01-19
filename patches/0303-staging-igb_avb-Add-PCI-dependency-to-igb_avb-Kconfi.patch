@@ -1,0 +1,30 @@
+From 7adcb45af201e1b76206ddb57ffd44b0b3eb0588 Mon Sep 17 00:00:00 2001
+From: "Vyas, Tarun" <tarun.vyas@intel.com>
+Date: Mon, 17 Sep 2018 01:16:08 +0000
+Subject: [PATCH 0303/1132] staging: igb_avb: Add PCI dependency to igb_avb
+ Kconfig
+
+Not depending on PCI breaks igb_avb build when building with PCI=n.
+Follow what other network drivers do in driver/net/ethernet/ for
+igb_avb too and add "depends on PCI" to the Kconfig.
+
+Signed-off-by: Tarun Vyas <tarun.vyas@intel.com>
+---
+ drivers/staging/igb_avb/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/staging/igb_avb/Kconfig b/drivers/staging/igb_avb/Kconfig
+index 2d3780b..5f4b325 100644
+--- a/drivers/staging/igb_avb/Kconfig
++++ b/drivers/staging/igb_avb/Kconfig
+@@ -1,6 +1,6 @@
+ config IGB_AVB
+ 	tristate "Avnu IGB AVB driver"
+-	depends on IGB=n && E1000=n && E1000E=n
++	depends on IGB=n && E1000=n && E1000E=n && PCI
+ 	select DCA
+ 	default n
+ 	---help---
+-- 
+2.7.4
+

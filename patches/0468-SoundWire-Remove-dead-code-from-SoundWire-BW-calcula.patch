@@ -1,0 +1,68 @@
+From 02639e595f83e0db73eb69ea01f59e03626c9dc3 Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Sun, 20 Nov 2016 20:18:36 +0530
+Subject: [PATCH 0468/1132] SoundWire: Remove dead code from SoundWire BW
+ calculation
+
+Remove some of the dead code from SoundWire BW calculation
+file.
+
+Change-Id: I8306e3d253c290741bbf8e1408551176bd986a80
+Signed-off-by: Hardik Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+---
+ drivers/sdw/sdw_bwcalc.c | 23 -----------------------
+ 1 file changed, 23 deletions(-)
+
+diff --git a/drivers/sdw/sdw_bwcalc.c b/drivers/sdw/sdw_bwcalc.c
+index b76ace3..ea080f1 100644
+--- a/drivers/sdw/sdw_bwcalc.c
++++ b/drivers/sdw/sdw_bwcalc.c
+@@ -117,12 +117,6 @@ int sdw_mstr_bw_init(struct sdw_bus *sdw_bs)
+ 	sdw_bs->frame_freq = 0;
+ 	sdw_bs->clk_state = SDW_CLK_STATE_ON;
+ 
+-	/* TBD: to be removed later */
+-	/* Assumption is these should be already filled */
+-	sdw_mstr_cap = &sdw_bs->mstr->mstr_capabilities;
+-	sdw_mstr_cap->monitor_handover_supported = false;
+-	sdw_mstr_cap->highphy_capable = false;
+-
+ #ifdef CONFIG_SND_SOC_SVFPGA
+ 	/* TBD: For PDM capture to be removed later */
+ 	sdw_bs->clk_freq = 9.6 * 1000 * 1000 * 2;
+@@ -718,15 +712,6 @@ int sdw_cfg_mstr_activate_disable(struct sdw_bus *mstr_bs,
+ 	if ((chn_en->is_activate) || (chn_en->is_bank_sw))
+ 		banktouse = !banktouse;
+ 
+-
+-	/* 1. Master port enable_ch_pre */
+-	if (ops->mstr_port_ops->dpn_port_activate_ch_pre) {
+-		ret = ops->mstr_port_ops->dpn_port_activate_ch_pre
+-			(mstr_bs->mstr, &activate_ch, banktouse);
+-		if (ret < 0)
+-			return ret;
+-	}
+-
+ 	/* 2. Master port enable */
+ 	if (ops->mstr_port_ops->dpn_port_activate_ch) {
+ 		ret = ops->mstr_port_ops->dpn_port_activate_ch(mstr_bs->mstr,
+@@ -735,14 +720,6 @@ int sdw_cfg_mstr_activate_disable(struct sdw_bus *mstr_bs,
+ 			return ret;
+ 	}
+ 
+-	/* 3. Master port enable_ch_post */
+-	if (ops->mstr_port_ops->dpn_port_activate_ch_post) {
+-		ret = ops->mstr_port_ops->dpn_port_activate_ch_post
+-			(mstr_bs->mstr, &activate_ch, banktouse);
+-		if (ret < 0)
+-			return ret;
+-	}
+-
+ 	if (chn_en->is_activate)
+ 		mstr_rt_strm->rt_state = SDW_STATE_ENABLE_RT;
+ 	else if (!chn_en->is_bank_sw)
+-- 
+2.7.4
+

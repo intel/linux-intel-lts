@@ -1,0 +1,338 @@
+From 3f4df556823e9ed4934002715ad3afd5313dff8b Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Tue, 27 Nov 2018 22:48:32 +0000
+Subject: [PATCH 1094/1132] media: intel-ipu4: [VIRT] Fix PSYS 2 PG operation
+ issue.
+
+The psys file node is open multiple times per
+operation with multiple instances of file handler
+was returned. Previous implementation only
+keep one instance of psys node file handler.
+This patch address the issue by supporting
+multiple instances of file handler.
+
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Change-Id: I7e528681ff2a8fcc8328c036d356984bfb2fb399
+---
+ drivers/media/pci/intel/ipu-psys-virt.c            | 39 ++++++++++++++++++++--
+ drivers/media/pci/intel/ipu-psys-virt.h            |  1 +
+ .../pci/intel/virtio/intel-ipu4-para-virt-psys.c   | 21 +++++++++++-
+ .../pci/intel/virtio/intel-ipu4-para-virt-psys.h   |  1 +
+ .../pci/intel/virtio/intel-ipu4-virtio-be-psys.c   | 32 ++++++++++--------
+ .../pci/intel/virtio/intel-ipu4-virtio-common.h    |  1 +
+ 6 files changed, 79 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu-psys-virt.c b/drivers/media/pci/intel/ipu-psys-virt.c
+index 877f57e..76b616b 100644
+--- a/drivers/media/pci/intel/ipu-psys-virt.c
++++ b/drivers/media/pci/intel/ipu-psys-virt.c
+@@ -499,7 +499,11 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
+ 			unsigned int f_flags)
+ {
+ 	struct ipu_psys_event *event;
+-	int status = 0;
++	struct ipu_psys_kcmd *kcmd = NULL;
++	int status = 0, time_remain = -1;
++	DEFINE_WAIT_FUNC(wait, woken_wake_function);
++
++	pr_debug("%s: IOC_DQEVENT", __func__);
+ 
+ 	event = map_guest_phys(req_info->domid,
+ 				req_info->request->payload,
+@@ -509,8 +513,39 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
+ 		return -EFAULT;
+ 	}
+ 
+-	status = ipu_ioctl_dqevent(event, fh, f_flags);
++	add_wait_queue(&fh->wait, &wait);
++	while (1) {
++		if (ipu_get_completed_kcmd(fh) ||
++			time_remain == 0)
++			break;
++		time_remain =
++			wait_woken(&wait, TASK_INTERRUPTIBLE, POLL_WAIT);
++	}
++	remove_wait_queue(&fh->wait, &wait);
++
++	if ((time_remain == 0) || (time_remain == -ERESTARTSYS)) {
++		pr_err("%s: poll timeout or unexpected wake up %d",
++								__func__, time_remain);
++		req_info->request->func_ret = 0;
++		goto error_exit;
++	}
++
++	mutex_lock(&fh->mutex);
++	if (!kcmd) {
++		kcmd = __ipu_get_completed_kcmd(fh);
++		if (!kcmd) {
++			mutex_unlock(&fh->mutex);
++			return -ENODATA;
++		}
++	}
++
++	*event = kcmd->ev;
++	ipu_psys_kcmd_free(kcmd);
++	mutex_unlock(&fh->mutex);
++
++	req_info->request->func_ret = POLLIN;
+ 
++error_exit:
+ 	unmap_guest_phys(req_info->domid,
+ 				req_info->request->payload);
+ 
+diff --git a/drivers/media/pci/intel/ipu-psys-virt.h b/drivers/media/pci/intel/ipu-psys-virt.h
+index 91a7bd3..6289207 100644
+--- a/drivers/media/pci/intel/ipu-psys-virt.h
++++ b/drivers/media/pci/intel/ipu-psys-virt.h
+@@ -31,6 +31,7 @@ struct psys_fops_virt {
+ long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh);
+ //Function define in ipu4-psys.c
+ void ipu_psys_kcmd_free(struct ipu_psys_kcmd *kcmd);
++struct ipu_psys_kcmd *__ipu_get_completed_kcmd(struct ipu_psys_fh *fh);
+ 
+ extern struct psys_fops_virt psys_vfops;
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+index f85f22c..d3a2801 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.c
+@@ -86,6 +86,8 @@ int ipu_get_manifest(struct ipu_psys_manifest *m,
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_GET_MANIFEST, NULL);
+ 
++	req->be_fh = fh->be_fh;
++
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 									IPU_VIRTIO_QUEUE_1);
+ 	if (rval) {
+@@ -133,6 +135,8 @@ int ipu_query_caps(struct ipu_psys_capability *caps,
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_QUERYCAP, NULL);
+ 
++	req->be_fh = fh->be_fh;
++
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 									IPU_VIRTIO_QUEUE_1);
+ 	if (rval) {
+@@ -209,6 +213,8 @@ int ipu_psys_kcmd_new(struct ipu_psys_command *cmd,
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_QCMD, NULL);
+ 
++	req->be_fh = fh->be_fh;
++
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 									IPU_VIRTIO_QUEUE_1);
+ 
+@@ -417,6 +423,8 @@ int ipu_psys_getbuf(struct ipu_psys_buffer *buf,
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_GETBUF, NULL);
+ 
++	req->be_fh = fh->be_fh;
++
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 									IPU_VIRTIO_QUEUE_1);
+ 	if (rval) {
+@@ -466,6 +474,8 @@ int ipu_psys_unmapbuf(int fd, struct virt_ipu_psys_fh *fh)
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_UNMAPBUF, &op[0]);
+ 
++	req->be_fh = fh->be_fh;
++
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 									IPU_VIRTIO_QUEUE_1);
+ 	if (rval) {
+@@ -510,6 +520,8 @@ unsigned int virt_psys_poll(struct file *file,
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_POLL, NULL);
+ 
++	req->be_fh = fh->be_fh;
++
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 									IPU_VIRTIO_QUEUE_1);
+ 	if (rval) {
+@@ -545,6 +557,8 @@ long ipu_ioctl_dqevent(struct ipu_psys_event *event,
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_DQEVENT, NULL);
+ 
++	req->be_fh = fh->be_fh;
++
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 									IPU_VIRTIO_QUEUE_1);
+ 	if (rval) {
+@@ -670,7 +684,6 @@ static int virt_psys_open(struct inode *inode, struct file *file)
+ 	hash_init(FD_BUF_HASH);
+ 
+ 	fh->psys = psys;
+-	file->private_data = fh;
+ 
+ 	req = ipu4_virtio_fe_req_queue_get();
+ 	if (!req) {
+@@ -689,6 +702,10 @@ static int virt_psys_open(struct inode *inode, struct file *file)
+ 	   ipu4_virtio_fe_req_queue_put(req);
+ 	   return rval;
+ 	}
++
++	fh->be_fh = req->be_fh;
++	file->private_data = fh;
++
+ 	ipu4_virtio_fe_req_queue_put(req);
+ 
+ 	return rval;
+@@ -713,6 +730,8 @@ static int virt_psys_release(struct inode *inode, struct file *file)
+ 
+ 	intel_ipu4_virtio_create_req(req, IPU4_CMD_PSYS_CLOSE, NULL);
+ 
++	req->be_fh = fh->be_fh;
++
+ 	rval = fe_ctx->bknd_ops->send_req(fe_ctx->domid, req, true,
+ 					  IPU_VIRTIO_QUEUE_1);
+ 	if (rval) {
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.h b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.h
+index 8de72c1..8df029a 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-psys.h
+@@ -29,6 +29,7 @@ struct virt_ipu_psys_fh {
+ 	wait_queue_head_t wait;
+ 	struct mutex bs_mutex;	/* Protects buf_set field */
+ 	struct list_head buf_sets;
++	struct file *be_fh;
+ };
+ int virt_psys_init(struct ipu4_virtio_ctx *fe_ctx);
+ void virt_psys_exit(void);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+index c69e48c..957d51b 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+@@ -12,8 +12,6 @@
+ #include "intel-ipu4-virtio-be-request-queue.h"
+ #include "intel-ipu4-virtio-be.h"
+ 
+-struct file *psys_file;
+-
+ int process_psys_mapbuf(struct ipu4_virtio_req_info *req_info)
+ {
+ 	return IPU4_REQ_ERROR;
+@@ -21,9 +19,14 @@ int process_psys_mapbuf(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
+ {
+-	struct ipu_psys_fh *fh = psys_file->private_data;
+ 	int status = 0;
+ 
++	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
++	if(!fh) {
++		pr_err("%s NULL file handler", __func__);
++		return IPU4_REQ_ERROR;
++	}
++
+ 	status = fh->vfops->unmap_buf(fh, req_info);
+ 
+ 	/*Only doing this in mediated mode because 
+@@ -40,7 +43,7 @@ int process_psys_unmapbuf(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
+ {
+-	struct ipu_psys_fh *fh = psys_file->private_data;
++	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
+ 	int status = 0;
+ 
+ 	struct ipu_psys_capability *psys_caps;
+@@ -73,7 +76,7 @@ int process_psys_putbuf(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
+ {
+-	struct ipu_psys_fh *fh = psys_file->private_data;
++	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
+ 	int status = 0;
+ 
+ 	status = fh->vfops->qcmd(fh, req_info);
+@@ -88,10 +91,10 @@ int process_psys_qcmd(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
+ {
+-	struct ipu_psys_fh *fh = psys_file->private_data;
++	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
+ 	int status = 0;
+ 
+-	status = fh->vfops->dqevent(fh, req_info, psys_file->f_flags);
++	status = fh->vfops->dqevent(fh, req_info, req_info->request->be_fh->f_flags);
+ 
+ 	req_info->request->func_ret = status;
+ 
+@@ -103,7 +106,7 @@ int process_psys_dqevent(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
+ {
+-	struct ipu_psys_fh *fh = psys_file->private_data;
++	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
+ 	int status = 0;
+ 
+ 	status = fh->vfops->get_buf(fh, req_info);
+@@ -118,7 +121,7 @@ int process_psys_getbuf(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_get_manifest(struct ipu4_virtio_req_info *req_info)
+ {
+-	struct ipu_psys_fh *fh = psys_file->private_data;
++	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
+ 	int status = 0;
+ 
+ 	status = fh->vfops->get_manifest(fh, req_info);
+@@ -133,16 +136,19 @@ int process_psys_get_manifest(struct ipu4_virtio_req_info *req_info)
+ 
+ int process_psys_open(struct ipu4_virtio_req_info *req_info)
+ {
++	struct file *fh;
+ 	pr_info("%s: /dev/ipu-psys0", __func__);
+ 
+-	psys_file = filp_open("/dev/ipu-psys0", req_info->request->op[0], 0);
++	fh = filp_open("/dev/ipu-psys0", req_info->request->op[0], 0);
+ 
+-	if (psys_file == NULL) {
++	if (fh == NULL) {
+ 		pr_err("%s: Native IPU psys device not found",
+ 										__func__);
+ 		return IPU4_REQ_ERROR;
+ 	}
+ 
++	req_info->request->be_fh = fh;
++
+ 	return IPU4_REQ_PROCESSED;
+ }
+ 
+@@ -150,14 +156,14 @@ int process_psys_close(struct ipu4_virtio_req_info *req_info)
+ {
+ 	pr_info("%s: /dev/ipu-psys0", __func__);
+ 
+-	filp_close(psys_file, 0);
++	filp_close(req_info->request->be_fh, 0);
+ 
+ 	return IPU4_REQ_PROCESSED;
+ }
+ 
+ int process_psys_poll(struct ipu4_virtio_req_info *req_info)
+ {
+-	struct ipu_psys_fh *fh = psys_file->private_data;
++	struct ipu_psys_fh *fh = req_info->request->be_fh->private_data;
+ 	int status = 0;
+ 
+ 	status = fh->vfops->poll(fh, req_info);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+index 1909e02..3edab42 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+@@ -37,6 +37,7 @@ struct ipu4_virtio_req {
+ 	wait_queue_head_t *wait;
+ 	bool completed;
+ 	u64 payload;
++	struct file *be_fh;
+ };
+ struct test_payload {
+ 	unsigned int data1;
+-- 
+2.7.4
+

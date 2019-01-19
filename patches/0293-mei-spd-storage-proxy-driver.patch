@@ -1,0 +1,1435 @@
+From bd9f74ec31b4366f260ed3e8db1fcddfac49148f Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Tue, 23 Dec 2014 17:18:37 +0200
+Subject: [PATCH 0293/1132] mei: spd: storage proxy driver
+
+Host storage proxy driver enables ME FW to store its data on a storage
+devices such as eMMC or UFS via host interface on a dedicated partition.
+This patch implements storage over an eMMC GPP partition and UFS LUN.
+A GPP partition is required for pre manufacturing operation since RPMB
+partition key can be written only once.
+
+V9: 1. Add SPXD Identifiers
+
+Change-Id: I524c237d240d93accc9ce071e92744191f23ce87
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/Kconfig       |   2 +
+ drivers/misc/mei/Makefile      |   2 +
+ drivers/misc/mei/spd/Kconfig   |  12 +
+ drivers/misc/mei/spd/Makefile  |  11 +
+ drivers/misc/mei/spd/cmd.c     | 485 +++++++++++++++++++++++++++++++++++++++++
+ drivers/misc/mei/spd/cmd.h     | 230 +++++++++++++++++++
+ drivers/misc/mei/spd/debugfs.c |  79 +++++++
+ drivers/misc/mei/spd/gpp.c     | 299 +++++++++++++++++++++++++
+ drivers/misc/mei/spd/main.c    | 118 ++++++++++
+ drivers/misc/mei/spd/spd.h     |  93 ++++++++
+ 10 files changed, 1331 insertions(+)
+ create mode 100644 drivers/misc/mei/spd/Kconfig
+ create mode 100644 drivers/misc/mei/spd/Makefile
+ create mode 100644 drivers/misc/mei/spd/cmd.c
+ create mode 100644 drivers/misc/mei/spd/cmd.h
+ create mode 100644 drivers/misc/mei/spd/debugfs.c
+ create mode 100644 drivers/misc/mei/spd/gpp.c
+ create mode 100644 drivers/misc/mei/spd/main.c
+ create mode 100644 drivers/misc/mei/spd/spd.h
+
+diff --git a/drivers/misc/mei/Kconfig b/drivers/misc/mei/Kconfig
+index c49e1d2..2a82520 100644
+--- a/drivers/misc/mei/Kconfig
++++ b/drivers/misc/mei/Kconfig
+@@ -43,3 +43,5 @@ config INTEL_MEI_TXE
+ 
+ 	  Supported SoCs:
+ 	  Intel Bay Trail
++
++source "drivers/misc/mei/spd/Kconfig"
+diff --git a/drivers/misc/mei/Makefile b/drivers/misc/mei/Makefile
+index cd6825af..f83e2fd 100644
+--- a/drivers/misc/mei/Makefile
++++ b/drivers/misc/mei/Makefile
+@@ -23,3 +23,5 @@ mei-txe-objs += hw-txe.o
+ 
+ mei-$(CONFIG_EVENT_TRACING) += mei-trace.o
+ CFLAGS_mei-trace.o = -I$(src)
++
++obj-$(CONFIG_INTEL_MEI_SPD) += spd/
+diff --git a/drivers/misc/mei/spd/Kconfig b/drivers/misc/mei/spd/Kconfig
+new file mode 100644
+index 0000000..8347fbc
+--- /dev/null
++++ b/drivers/misc/mei/spd/Kconfig
+@@ -0,0 +1,12 @@
++#
++# Storage proxy device configuration
++#
++config INTEL_MEI_SPD
++	tristate "Intel MEI Host Storage Proxy Driver"
++	depends on INTEL_MEI && BLOCK
++	help
++	  A driver for the host storage proxy ME client
++	  The driver enables ME FW to store data on a storage devices
++	  that are accessible only from the host.
++
++	  To compile this driver as a module, choose M here.
+diff --git a/drivers/misc/mei/spd/Makefile b/drivers/misc/mei/spd/Makefile
+new file mode 100644
+index 0000000..8e8aba9
+--- /dev/null
++++ b/drivers/misc/mei/spd/Makefile
+@@ -0,0 +1,11 @@
++#
++# Makefile for the Storage Proxy device driver.
++#
++
++obj-$(CONFIG_INTEL_MEI_SPD) += mei_spd.o
++mei_spd-objs := main.o
++mei_spd-objs += cmd.o
++mei_spd-objs += gpp.o
++mei_spd-$(CONFIG_DEBUG_FS) += debugfs.o
++
++ccflags-y += -D__CHECK_ENDIAN__
+diff --git a/drivers/misc/mei/spd/cmd.c b/drivers/misc/mei/spd/cmd.c
+new file mode 100644
+index 0000000..25d682d
+--- /dev/null
++++ b/drivers/misc/mei/spd/cmd.c
+@@ -0,0 +1,485 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Copyright(c) 2015 - 2018 Intel Corporation. All rights reserved.
++ */
++#include <linux/slab.h>
++#include <linux/sched.h>
++#include <linux/workqueue.h>
++
++#include "cmd.h"
++#include "spd.h"
++
++#define spd_cmd_size(_cmd) \
++	(sizeof(struct spd_cmd_hdr) + \
++	 sizeof(struct spd_cmd_##_cmd))
++#define to_spd_hdr(_buf) (struct spd_cmd_hdr *)(_buf)
++#define to_spd_cmd(_cmd, _buf) \
++	(struct spd_cmd_##_cmd *)((_buf) + sizeof(struct spd_cmd_hdr))
++
++const char *spd_cmd_str(enum spd_cmd_type cmd)
++{
++#define __SPD_CMD(_cmd) SPD_##_cmd##_CMD
++#define SPD_CMD(cmd) case __SPD_CMD(cmd): return #cmd
++	switch (cmd) {
++	SPD_CMD(NONE);
++	SPD_CMD(START_STOP);
++	SPD_CMD(RPMB_WRITE);
++	SPD_CMD(RPMB_READ);
++	SPD_CMD(RPMB_GET_COUNTER);
++	SPD_CMD(GPP_WRITE);
++	SPD_CMD(GPP_READ);
++	SPD_CMD(TRIM);
++	SPD_CMD(INIT);
++	SPD_CMD(STORAGE_STATUS);
++	SPD_CMD(MAX);
++	default:
++		return "unknown";
++	}
++#undef SPD_CMD
++#undef __SPD_CMD
++}
++
++const char *mei_spd_dev_str(enum spd_storage_type type)
++{
++#define SPD_TYPE(type) case SPD_TYPE_##type: return #type
++	switch (type) {
++	SPD_TYPE(UNDEF);
++	SPD_TYPE(EMMC);
++	SPD_TYPE(UFS);
++	default:
++		return "unknown";
++	}
++#undef SPD_TYPE
++}
++
++const char *mei_spd_state_str(enum mei_spd_state state)
++{
++#define SPD_STATE(state) case MEI_SPD_STATE_##state: return #state
++	switch (state) {
++	SPD_STATE(INIT);
++	SPD_STATE(INIT_WAIT);
++	SPD_STATE(INIT_DONE);
++	SPD_STATE(RUNNING);
++	SPD_STATE(STOPPING);
++	default:
++		return "unknown";
++	}
++#undef SPD_STATE
++}
++
++/**
++ * mei_spd_init_req - send init request
++ *
++ * @spd: spd device
++ *
++ * Return: 0 on success
++ *         -EPROTO if called in wrong state
++ *         < 0 on write error
++ */
++int mei_spd_cmd_init_req(struct mei_spd *spd)
++{
++	const int req_len = sizeof(struct spd_cmd_hdr);
++	struct spd_cmd_hdr *hdr;
++	u32 cmd_type = SPD_INIT_CMD;
++	ssize_t ret;
++
++	spd_dbg(spd, "cmd [%d] %s : state [%d] %s\n",
++		cmd_type, spd_cmd_str(cmd_type),
++		spd->state, mei_spd_state_str(spd->state));
++
++	if (spd->state != MEI_SPD_STATE_INIT)
++		return -EPROTO;
++
++	memset(spd->buf, 0, req_len);
++	hdr = to_spd_hdr(spd->buf);
++
++	hdr->command_type = cmd_type;
++	hdr->is_response = 0;
++	hdr->len = req_len;
++
++	spd->state = MEI_SPD_STATE_INIT_WAIT;
++	ret = mei_cldev_send(spd->cldev, spd->buf, req_len);
++	if (ret != req_len) {
++		spd_err(spd, "start send failed ret = %zd\n", ret);
++		return ret;
++	}
++
++	return 0;
++}
++
++/**
++ * mei_spd_cmd_init_rsp -  handle init response message
++ *
++ * @spd: spd device
++ * @cmd: received spd command
++ * @cmd_sz: received command size
++ *
++ * Return: 0 on success; < 0 otherwise
++ */
++static int mei_spd_cmd_init_rsp(struct mei_spd *spd, struct spd_cmd *cmd,
++				ssize_t cmd_sz)
++{
++	int type;
++	int gpp_id;
++	int i;
++
++	if (cmd_sz < spd_cmd_size(init_resp)) {
++		spd_err(spd, "Wrong init response size\n");
++		return -EINVAL;
++	}
++
++	if (spd->state != MEI_SPD_STATE_INIT_WAIT)
++		return -EPROTO;
++
++	type = cmd->init_rsp.type;
++	gpp_id = cmd->init_rsp.gpp_partition_id;
++
++	switch (type) {
++	case SPD_TYPE_EMMC:
++		if (gpp_id < 1 || gpp_id > 4) {
++			spd_err(spd, "%s unsupported gpp id %d\n",
++				mei_spd_dev_str(type), gpp_id);
++			return -EINVAL;
++		}
++		break;
++
++	case SPD_TYPE_UFS:
++		if (gpp_id < 1 || gpp_id > 6) {
++			spd_err(spd, "%s unsupported gpp id %d\n",
++				mei_spd_dev_str(type), gpp_id);
++			return -EINVAL;
++		}
++		break;
++
++	default:
++		spd_err(spd, "unsupported storage type %d\n",
++			cmd->init_rsp.type);
++		return -EINVAL;
++	}
++
++	spd->dev_type = type;
++	spd->gpp_partition_id = gpp_id;
++
++	if (cmd->init_rsp.serial_no_sz != 0) {
++		if (cmd->init_rsp.serial_no_sz !=
++		    cmd_sz - spd_cmd_size(init_resp)) {
++			spd_err(spd, "wrong serial no size %u?=%zu\n",
++				cmd->init_rsp.serial_no_sz,
++				cmd_sz - spd_cmd_size(init_resp));
++			return -EMSGSIZE;
++		}
++
++		if (cmd->init_rsp.serial_no_sz > 256) {
++			spd_err(spd, "serial no is too large %u\n",
++				cmd->init_rsp.serial_no_sz);
++			return -EMSGSIZE;
++		}
++
++		spd->dev_id = kzalloc(cmd->init_rsp.serial_no_sz, GFP_KERNEL);
++		if (!spd->dev_id)
++			return -ENOMEM;
++
++		spd->dev_id_sz = cmd->init_rsp.serial_no_sz;
++		if (type == SPD_TYPE_EMMC) {
++			/* FW have this in be32 format */
++			__be32 *sno = (__be32 *)cmd->init_rsp.serial_no;
++			u32 *dev_id = (u32 *)spd->dev_id;
++
++			for (i = 0; i < spd->dev_id_sz / sizeof(u32); i++)
++				dev_id[i] = be32_to_cpu(sno[i]);
++		} else {
++			memcpy(spd->dev_id, &cmd->init_rsp.serial_no,
++			       cmd->init_rsp.serial_no_sz);
++		}
++	}
++
++	spd->state = MEI_SPD_STATE_INIT_DONE;
++
++	return 0;
++}
++
++/**
++ * mei_spd_cmd_storage_status_req - send storage status message
++ *
++ * @spd: spd device
++ *
++ * Return: 0 on success
++ *         -EPROTO if called in wrong state
++ *         < 0 on write error
++ */
++int mei_spd_cmd_storage_status_req(struct mei_spd *spd)
++{
++	struct spd_cmd_hdr *hdr;
++	struct spd_cmd_storage_status_req *req;
++	const int req_len = spd_cmd_size(storage_status_req);
++	u32 cmd_type = SPD_STORAGE_STATUS_CMD;
++	ssize_t ret;
++
++	spd_dbg(spd, "cmd [%d] %s : state [%d] %s\n",
++		cmd_type, spd_cmd_str(cmd_type),
++		spd->state, mei_spd_state_str(spd->state));
++
++	if (spd->state < MEI_SPD_STATE_INIT_DONE)
++		return -EPROTO;
++
++	memset(spd->buf, 0, req_len);
++	hdr = to_spd_hdr(spd->buf);
++
++	hdr->command_type = cmd_type;
++	hdr->is_response = 0;
++	hdr->len = req_len;
++
++	req = to_spd_cmd(storage_status_req, spd->buf);
++	req->gpp_on = mei_spd_gpp_is_open(spd);
++	req->rpmb_on = 0;
++
++	ret = mei_cldev_send(spd->cldev, spd->buf, req_len);
++	if (ret != req_len) {
++		spd_err(spd, "send storage status failed ret = %zd\n", ret);
++		return ret;
++	}
++
++	if (req->gpp_on || req->rpmb_on)
++		spd->state = MEI_SPD_STATE_RUNNING;
++	else
++		spd->state = MEI_SPD_STATE_INIT_DONE;
++
++	spd_dbg(spd, "cmd [%d] %s : state [%d] %s\n",
++		cmd_type, spd_cmd_str(cmd_type),
++		spd->state, mei_spd_state_str(spd->state));
++
++	return 0;
++}
++
++static int mei_spd_cmd_gpp_write(struct mei_spd *spd, struct spd_cmd *cmd,
++				 ssize_t out_buf_sz)
++{
++	size_t len = SPD_GPP_WRITE_DATA_LEN(*cmd);
++	int ret;
++
++	if (out_buf_sz < spd_cmd_size(gpp_write_req)) {
++		spd_err(spd, "Wrong request size\n");
++		return SPD_STATUS_INVALID_COMMAND;
++	}
++
++	ret = mei_spd_gpp_write(spd, cmd->gpp_write_req.offset,
++				cmd->gpp_write_req.data, len);
++	if (ret) {
++		spd_err(spd, "Failed to write to gpp ret = %d\n", ret);
++		return SPD_STATUS_GENERAL_FAILURE;
++	}
++
++	spd_dbg(spd, "wrote %zd bytes of data\n", len);
++
++	cmd->header.len = spd_cmd_size(gpp_write_rsp);
++
++	return SPD_STATUS_SUCCESS;
++}
++
++static int mei_spd_cmd_gpp_read(struct mei_spd *spd, struct spd_cmd *cmd,
++				ssize_t out_buf_sz)
++{
++	size_t len;
++	int ret;
++
++	if (out_buf_sz < spd_cmd_size(gpp_read_req)) {
++		spd_err(spd, "Wrong request size\n");
++		return SPD_STATUS_INVALID_COMMAND;
++	}
++
++	len = cmd->gpp_read_req.size_to_read;
++	if (len > SPD_CLIENT_GPP_DATA_MAX_SIZE) {
++		spd_err(spd, "Block is to large to read\n");
++		return SPD_STATUS_INVALID_COMMAND;
++	}
++
++	ret = mei_spd_gpp_read(spd, cmd->gpp_read_req.offset,
++			       cmd->gpp_read_resp.data, len);
++
++	if (ret) {
++		spd_err(spd, "Failed to read from gpp ret = %d\n", ret);
++		return SPD_STATUS_GENERAL_FAILURE;
++	}
++
++	spd_dbg(spd, "read %zd bytes of data\n", len);
++
++	cmd->header.len = spd_cmd_size(gpp_read_rsp) + len;
++
++	return SPD_STATUS_SUCCESS;
++}
++
++static int mei_spd_cmd_response(struct mei_spd *spd, ssize_t out_buf_sz)
++{
++	struct spd_cmd *cmd = (struct spd_cmd *)spd->buf;
++	u32 spd_cmd;
++	int ret;
++
++	spd_cmd = cmd->header.command_type;
++
++	spd_dbg(spd, "rsp [%d] %s : state [%d] %s\n",
++		spd_cmd, spd_cmd_str(spd_cmd),
++		spd->state, mei_spd_state_str(spd->state));
++
++	switch (spd_cmd) {
++	case SPD_INIT_CMD:
++		ret = mei_spd_cmd_init_rsp(spd, cmd, out_buf_sz);
++		if (ret)
++			break;
++		mutex_unlock(&spd->lock);
++		mei_spd_gpp_init(spd);
++		mutex_lock(&spd->lock);
++		break;
++	default:
++		ret = -EINVAL;
++		spd_err(spd, "Wrong response command %d\n", spd_cmd);
++		break;
++	}
++
++	return ret;
++}
++
++/**
++ * mei_spd_cmd_request - dispatch command requests from the SPD device
++ *
++ * @spd: spd device
++ * @out_buf_sz: buffer size
++ *
++ * Return: (TBD)
++ */
++static int mei_spd_cmd_request(struct mei_spd *spd, ssize_t out_buf_sz)
++{
++	struct spd_cmd *cmd = (struct spd_cmd *)spd->buf;
++	ssize_t written;
++	u32 spd_cmd;
++	int ret;
++
++	spd_cmd = cmd->header.command_type;
++
++	spd_dbg(spd, "req [%d] %s : state [%d] %s\n",
++		spd_cmd, spd_cmd_str(spd_cmd),
++		spd->state, mei_spd_state_str(spd->state));
++
++	if (spd->state < MEI_SPD_STATE_RUNNING) {
++		spd_err(spd, "Wrong state %d\n", spd->state);
++		ret = SPD_STATUS_INVALID_COMMAND;
++		goto reply;
++	}
++
++	switch (spd_cmd) {
++	case SPD_RPMB_WRITE_CMD:
++	case SPD_RPMB_READ_CMD:
++	case SPD_RPMB_GET_COUNTER_CMD:
++		spd_err(spd, "Command %d is not supported\n", spd_cmd);
++		ret = SPD_STATUS_NOT_SUPPORTED;
++		break;
++	case SPD_GPP_WRITE_CMD:
++		ret = mei_spd_cmd_gpp_write(spd, cmd, out_buf_sz);
++		break;
++	case SPD_GPP_READ_CMD:
++		ret = mei_spd_cmd_gpp_read(spd, cmd, out_buf_sz);
++		break;
++	case SPD_TRIM_CMD:
++		spd_err(spd, "Command %d is not supported\n", spd_cmd);
++		ret = SPD_STATUS_NOT_SUPPORTED;
++		break;
++	default:
++		spd_err(spd, "Wrong request command %d\n", spd_cmd);
++		ret = SPD_STATUS_INVALID_COMMAND;
++		break;
++	}
++reply:
++	cmd->header.is_response = 1;
++	cmd->header.status = ret;
++	if (ret != SPD_STATUS_SUCCESS)
++		cmd->header.len = sizeof(struct spd_cmd_hdr);
++
++	written = mei_cldev_send(spd->cldev, spd->buf, cmd->header.len);
++	if (written != cmd->header.len) {
++		ret = SPD_STATUS_GENERAL_FAILURE;
++		spd_err(spd, "Failed to send reply written = %zd\n", written);
++	}
++
++	/* FIXME: translate ret to errno */
++	if (ret)
++		return -EINVAL;
++
++	return 0;
++}
++
++ssize_t mei_spd_cmd(struct mei_spd *spd)
++{
++	struct spd_cmd *cmd = (struct spd_cmd *)spd->buf;
++	ssize_t out_buf_sz;
++	int ret;
++
++	out_buf_sz = mei_cldev_recv(spd->cldev, spd->buf, spd->buf_sz);
++	if (out_buf_sz < 0) {
++		spd_err(spd, "failure in receive ret = %zd\n", out_buf_sz);
++		return out_buf_sz;
++	}
++
++	if (out_buf_sz == 0) {
++		spd_err(spd, "received empty msg\n");
++		return 0;
++	}
++
++	/* check that we've received at least sizeof(header) */
++	if (out_buf_sz < sizeof(struct spd_cmd_hdr)) {
++		spd_err(spd, "Request is too short\n");
++		return -EFAULT;
++	}
++
++	if (cmd->header.is_response)
++		ret = mei_spd_cmd_response(spd, out_buf_sz);
++	else
++		ret = mei_spd_cmd_request(spd, out_buf_sz);
++
++	return ret;
++}
++
++static void mei_spd_status_send_work(struct work_struct *work)
++{
++	struct mei_spd *spd =
++		container_of(work, struct mei_spd, status_send_w);
++
++	mutex_lock(&spd->lock);
++	mei_spd_cmd_storage_status_req(spd);
++	mutex_unlock(&spd->lock);
++}
++
++void mei_spd_free(struct mei_spd *spd)
++{
++	if (!spd)
++		return;
++
++	cancel_work_sync(&spd->status_send_w);
++
++	kfree(spd->buf);
++	kfree(spd);
++}
++
++struct mei_spd *mei_spd_alloc(struct mei_cl_device *cldev)
++{
++	struct mei_spd *spd;
++	u8 *buf;
++
++	spd = kzalloc(sizeof(*spd), GFP_KERNEL);
++	if (!spd)
++		return NULL;
++
++	spd->buf_sz = sizeof(struct spd_cmd) + SPD_CLIENT_GPP_DATA_MAX_SIZE;
++	buf = kmalloc(spd->buf_sz, GFP_KERNEL);
++	if (!buf)
++		goto free;
++
++	spd->cldev = cldev;
++	spd->buf = buf;
++	spd->state = MEI_SPD_STATE_INIT;
++	mutex_init(&spd->lock);
++	INIT_WORK(&spd->status_send_w, mei_spd_status_send_work);
++
++	return spd;
++free:
++	kfree(spd);
++	return NULL;
++}
+diff --git a/drivers/misc/mei/spd/cmd.h b/drivers/misc/mei/spd/cmd.h
+new file mode 100644
+index 0000000..3f77550
+--- /dev/null
++++ b/drivers/misc/mei/spd/cmd.h
+@@ -0,0 +1,230 @@
++/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
++/*
++ * Copyright (C) 2015-2018 Intel Corp. All rights reserved
++ */
++#ifndef _SPD_CMD_H
++#define _SPD_CMD_H
++
++#include <linux/types.h>
++
++/**
++ * enum spd_cmd_type - available commands
++ *
++ * @SPD_NONE_CMD       : Lower command sentinel.
++ * @SPD_START_STOP_CMD : start stop command (deprecated). [Host -> TEE]
++ * @SPD_RPMB_WRITE_CMD : RPMB write request.              [TEE -> Host]
++ * @SPD_RPMB_READ_CMD  : RPMB read  request.              [TEE -> Host]
++ * @SPD_RPMB_GET_COUNTER_CMD: get counter request         [TEE -> Host]
++ * @SPD_GPP_WRITE_CMD  : GPP write request.               [TEE -> Host]
++ * @SPD_GPP_READ_CMD   : GPP read request.                [TEE -> Host]
++ * @SPD_TRIM_CMD       : TRIM command                     [TEE -> Host]
++ * @SPD_INIT_CMD : initial handshake between host and fw. [Host -> TEE]
++ * @SPD_STORAGE_STATUS_CMD : the backing storage status.  [Host -> TEE]
++ * @SPD_MAX_CMD: Upper command sentinel.
++ */
++enum spd_cmd_type {
++	SPD_NONE_CMD = 0,
++	SPD_START_STOP_CMD,
++	SPD_RPMB_WRITE_CMD,
++	SPD_RPMB_READ_CMD,
++	SPD_RPMB_GET_COUNTER_CMD,
++	SPD_GPP_WRITE_CMD,
++	SPD_GPP_READ_CMD,
++	SPD_TRIM_CMD,
++	SPD_INIT_CMD,
++	SPD_STORAGE_STATUS_CMD,
++	SPD_MAX_CMD,
++};
++
++enum spd_status {
++	SPD_STATUS_SUCCESS             = 0,
++	SPD_STATUS_GENERAL_FAILURE     = 1,
++	SPD_STATUS_NOT_READY           = 2,
++	SPD_STATUS_NOT_SUPPORTED       = 3,
++	SPD_STATUS_INVALID_COMMAND     = 4,
++};
++
++/**
++ * enum spd_storage_type - storage device type
++ *
++ * @SPD_TYPE_UNDEF: lower enum sentinel
++ * @SPD_TYPE_EMMC:  emmc device
++ * @SPD_TYPE_UFS:   ufs device
++ * @SPD_TYPE_MAX:   upper enum sentinel
++ */
++enum spd_storage_type {
++	SPD_TYPE_UNDEF = 0,
++	SPD_TYPE_EMMC  = 1,
++	SPD_TYPE_UFS   = 2,
++	SPD_TYPE_MAX
++};
++
++/**
++ * struct spd_cmd_hdr - Host storage Command Header
++ *
++ * @command_type: SPD_TYPES
++ * @is_response: 1 == Response, 0 == Request
++ * @len: command length
++ * @status: command status
++ * @reserved: reserved
++ */
++struct spd_cmd_hdr {
++	u32    command_type :  7;
++	u32    is_response  :  1;
++	u32    len          : 13;
++	u32    status       :  8;
++	u32    reserved     :  3;
++} __packed;
++
++/**
++ * RPMB Frame Size as defined by the JDEC spec
++ */
++#define SPD_CLIENT_RPMB_DATA_MAX_SIZE  (512)
++
++/**
++ * struct spd_cmd_init_resp
++ *    commandType == HOST_STORAGE_INIT_CMD
++ *
++ * @gpp_partition_id: gpp_partition:
++ *     UFS:  LUN Number (0-7)
++ *     EMMC: 1-4.
++ *     0xff: GPP not supported
++ * @type: storage hw type
++ *    SPD_TYPE_EMMC
++ *    SPD_TYPE_UFS
++ * @serial_no_sz: serial_no size
++ * @serial_no: device serial number
++ */
++struct spd_cmd_init_resp {
++	u32 gpp_partition_id;
++	u32 type;
++	u32 serial_no_sz;
++	u8  serial_no[0];
++};
++
++/**
++ * struct spd_cmd_storage_status_req
++ *    commandType == SPD_STORAGE_STATUS_CMD
++ *
++ * @gpp_on: availability of the gpp backing storage
++ *      0 - GP partition is accessible
++ *      1 - GP partition is not accessible
++ * @rpmb_on: availability of the backing storage
++ *      0 - RPMB partition is accessible
++ *      1 - RPBM partition is not accessible
++ */
++struct spd_cmd_storage_status_req {
++	u32 gpp_on;
++	u32 rpmb_on;
++} __packed;
++
++/**
++ * struct spd_cmd_rpmb_write
++ *    command_type == SPD_RPMB_WRITE_CMD
++ *
++ * @rpmb_frame: RPMB frame are constant size (512)
++ */
++struct spd_cmd_rpmb_write {
++	u8    rpmb_frame[0];
++} __packed;
++
++/**
++ * struct spd_cmd_rpmb_read
++ *    command_type == SPD_RPMB_READ_CMD
++ *
++ * @rpmb_frame: RPMB frame are constant size (512)
++ */
++struct spd_cmd_rpmb_read {
++	u8    rpmb_frame[0];
++} __packed;
++
++/**
++ * struct spd_cmd_rpmb_get_counter
++ *    command_type == SPD_RPMB_GET_COUNTER_CMD
++ *
++ * @rpmb_frame: frame containing frame counter
++ */
++struct spd_cmd_rpmb_get_counter {
++	u8    rpmb_frame[0];
++} __packed;
++
++/**
++ * struct spd_cmd_gpp_write_req
++ *    command_type == SPD_GPP_WRITE_CMD
++ *
++ * @offset: frame offset in partition
++ * @data: 4K page
++ */
++struct spd_cmd_gpp_write_req {
++	u32    offset;
++	u8     data[0];
++} __packed;
++
++/**
++ * struct spd_cmd_gpp_write_rsp
++ *    command_type == SPD_GPP_WRITE_CMD
++ *
++ * @reserved: reserved
++ */
++struct spd_cmd_gpp_write_rsp {
++	u32    reserved[2];
++} __packed;
++
++/**
++ * struct spd_cmd_gpp_read_req
++ *    command_type == SPD_GPP_READ_CMD
++ *
++ * @offset: offset of a frame on GPP partition
++ * @size_to_read: data length to read (must be )
++ */
++struct spd_cmd_gpp_read_req {
++	u32    offset;
++	u32    size_to_read;
++} __packed;
++
++/**
++ * struct spd_cmd_gpp_read_rsp
++ *    command_type == SPD_GPP_READ_CMD
++ *
++ * @reserved: reserved
++ * @data: data
++ */
++struct spd_cmd_gpp_read_rsp {
++	u32    reserved;
++	u8     data[0];
++} __packed;
++
++#define SPD_GPP_READ_DATA_LEN(cmd)  ((cmd).header.len - \
++			(sizeof(struct spd_cmd_hdr) + \
++			 sizeof(struct spd_cmd_gpp_read_rsp)))
++
++#define SPD_GPP_WRITE_DATA_LEN(cmd) ((cmd).header.len - \
++			(sizeof(struct spd_cmd_hdr) + \
++			 sizeof(struct spd_cmd_gpp_write_req)))
++
++struct spd_cmd {
++	struct spd_cmd_hdr    header;
++
++	union {
++		struct spd_cmd_rpmb_write         rpmb_write;
++		struct spd_cmd_rpmb_read          rpmb_read;
++		struct spd_cmd_rpmb_get_counter   rpmb_get_counter;
++
++		struct spd_cmd_gpp_write_req      gpp_write_req;
++		struct spd_cmd_gpp_write_rsp      gpp_write_rsp;
++
++		struct spd_cmd_gpp_read_req       gpp_read_req;
++		struct spd_cmd_gpp_read_rsp       gpp_read_resp;
++
++		struct spd_cmd_init_resp          init_rsp;
++		struct spd_cmd_storage_status_req status_req;
++	};
++} __packed;
++
++/* GPP Max data 4K */
++#define SPD_CLIENT_GPP_DATA_MAX_SIZE  (4096)
++
++const char *spd_cmd_str(enum spd_cmd_type cmd);
++const char *mei_spd_dev_str(enum spd_storage_type type);
++
++#endif /* _SPD_CMD_H */
+diff --git a/drivers/misc/mei/spd/debugfs.c b/drivers/misc/mei/spd/debugfs.c
+new file mode 100644
+index 0000000..dfbb62a
+--- /dev/null
++++ b/drivers/misc/mei/spd/debugfs.c
+@@ -0,0 +1,79 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Copyright(c) 2015 - 2018 Intel Corporation. All rights reserved.
++ */
++#include <linux/slab.h>
++#include <linux/kernel.h>
++#include <linux/device.h>
++#include <linux/debugfs.h>
++
++#include "cmd.h"
++#include "spd.h"
++
++static ssize_t mei_spd_dbgfs_read_info(struct file *fp, char __user *ubuf,
++				       size_t cnt, loff_t *ppos)
++{
++	struct mei_spd *spd = fp->private_data;
++	size_t bufsz = 4095;
++	char *buf;
++	int pos = 0;
++	int ret;
++
++	buf = kzalloc(bufsz, GFP_KERNEL);
++	if (!buf)
++		return -ENOMEM;
++
++	pos += scnprintf(buf + pos, bufsz - pos, "DEV STATE: [%d] %s\n",
++			spd->state, mei_spd_state_str(spd->state));
++	pos += scnprintf(buf + pos, bufsz - pos, "DEV TYPE    : [%d] %s\n",
++			spd->dev_type, mei_spd_dev_str(spd->dev_type));
++	pos += scnprintf(buf + pos, bufsz - pos, "    ID SIZE : %d\n",
++			spd->dev_id_sz);
++	pos += scnprintf(buf + pos, bufsz - pos, "    ID      : '%s'\n", "N/A");
++	pos += scnprintf(buf + pos, bufsz - pos, "GPP\n");
++	pos += scnprintf(buf + pos, bufsz - pos, "  id     : %d\n",
++			spd->gpp_partition_id);
++	pos += scnprintf(buf + pos, bufsz - pos, "  opened : %1d\n",
++			mei_spd_gpp_is_open(spd));
++
++	ret = simple_read_from_buffer(ubuf, cnt, ppos, buf, pos);
++	kfree(buf);
++	return ret;
++}
++
++static const struct file_operations mei_spd_dbgfs_fops_info = {
++	.open   = simple_open,
++	.read   = mei_spd_dbgfs_read_info,
++	.llseek = generic_file_llseek,
++};
++
++void mei_spd_dbgfs_deregister(struct mei_spd *spd)
++{
++	if (!spd->dbgfs_dir)
++		return;
++	debugfs_remove_recursive(spd->dbgfs_dir);
++	spd->dbgfs_dir = NULL;
++}
++
++int mei_spd_dbgfs_register(struct mei_spd *spd, const char *name)
++{
++	struct dentry *dir, *f;
++
++	dir = debugfs_create_dir(name, NULL);
++	if (!dir)
++		return -ENOMEM;
++
++	spd->dbgfs_dir = dir;
++
++	f = debugfs_create_file("info", 0400, dir,
++				spd, &mei_spd_dbgfs_fops_info);
++	if (!f) {
++		spd_err(spd, "info: registration failed\n");
++		goto err;
++	}
++
++	return 0;
++err:
++	mei_spd_dbgfs_deregister(spd);
++	return -ENODEV;
++}
+diff --git a/drivers/misc/mei/spd/gpp.c b/drivers/misc/mei/spd/gpp.c
+new file mode 100644
+index 0000000..b5d1a27
+--- /dev/null
++++ b/drivers/misc/mei/spd/gpp.c
+@@ -0,0 +1,299 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Copyright(c) 2015 - 2018 Intel Corporation. All rights reserved.
++ */
++#include <linux/pagemap.h>
++#include <linux/writeback.h>
++#include <linux/slab.h>
++#include <linux/blkdev.h>
++#include <scsi/scsi_device.h>
++#include <scsi/scsi_host.h>
++
++#include "cmd.h"
++#include "spd.h"
++
++static struct page *page_read(struct address_space *mapping, int index)
++{
++	return read_mapping_page(mapping, index, NULL);
++}
++
++static int mei_spd_bd_read(struct mei_spd *spd, loff_t from, size_t len,
++			   size_t *retlen, u_char *buf)
++{
++	struct page *page;
++	int index = from >> PAGE_SHIFT;
++	int offset = from & (PAGE_SIZE - 1);
++	int cpylen;
++
++	while (len) {
++		if ((offset + len) > PAGE_SIZE)
++			cpylen = PAGE_SIZE - offset;
++		else
++			cpylen = len;
++		len = len - cpylen;
++
++		page = page_read(spd->gpp->bd_inode->i_mapping, index);
++		if (IS_ERR(page))
++			return PTR_ERR(page);
++
++		memcpy(buf, page_address(page) + offset, cpylen);
++		put_page(page);
++
++		if (retlen)
++			*retlen += cpylen;
++		buf += cpylen;
++		offset = 0;
++		index++;
++	}
++	return 0;
++}
++
++static int _mei_spd_bd_write(struct block_device *dev, const u_char *buf,
++			     loff_t to, size_t len, size_t *retlen)
++{
++	struct page *page;
++	struct address_space *mapping = dev->bd_inode->i_mapping;
++	int index = to >> PAGE_SHIFT;   /* page index */
++	int offset = to & ~PAGE_MASK;   /* page offset */
++	int cpylen;
++
++	while (len) {
++		if ((offset + len) > PAGE_SIZE)
++			cpylen = PAGE_SIZE - offset;
++		else
++			cpylen = len;
++		len = len - cpylen;
++
++		page = page_read(mapping, index);
++		if (IS_ERR(page))
++			return PTR_ERR(page);
++
++		if (memcmp(page_address(page) + offset, buf, cpylen)) {
++			lock_page(page);
++			memcpy(page_address(page) + offset, buf, cpylen);
++			set_page_dirty(page);
++			unlock_page(page);
++			balance_dirty_pages_ratelimited(mapping);
++		}
++		put_page(page);
++
++		if (retlen)
++			*retlen += cpylen;
++
++		buf += cpylen;
++		offset = 0;
++		index++;
++	}
++	return 0;
++}
++
++static int mei_spd_bd_write(struct mei_spd *spd, loff_t to, size_t len,
++			    size_t *retlen, const u_char *buf)
++{
++	int ret;
++
++	ret = _mei_spd_bd_write(spd->gpp, buf, to, len, retlen);
++	if (ret > 0)
++		ret = 0;
++
++	sync_blockdev(spd->gpp);
++
++	return ret;
++}
++
++static void mei_spd_bd_sync(struct mei_spd *spd)
++{
++	sync_blockdev(spd->gpp);
++}
++
++#define GPP_FMODE (FMODE_WRITE | FMODE_READ | FMODE_EXCL)
++
++bool mei_spd_gpp_is_open(struct mei_spd *spd)
++{
++	struct request_queue *q;
++
++	if (!spd->gpp)
++		return false;
++
++	q = spd->gpp->bd_queue;
++	if (q && !blk_queue_stopped(q))
++		return true;
++
++	return false;
++}
++
++static int mei_spd_gpp_open(struct mei_spd *spd, struct device *dev)
++{
++	int ret;
++
++	if (spd->gpp)
++		return 0;
++
++	spd->gpp = blkdev_get_by_dev(dev->devt, GPP_FMODE, spd);
++	if (IS_ERR(spd->gpp)) {
++		ret = PTR_ERR(spd->gpp);
++		spd->gpp = NULL;
++		spd_dbg(spd, "Can't get GPP block device %s ret = %d\n",
++			dev_name(dev), ret);
++		return ret;
++	}
++
++	spd_dbg(spd, "gpp partition created\n");
++	return 0;
++}
++
++static int mei_spd_gpp_close(struct mei_spd *spd)
++{
++	if (!spd->gpp)
++		return 0;
++
++	mei_spd_bd_sync(spd);
++	blkdev_put(spd->gpp, GPP_FMODE);
++	spd->gpp = NULL;
++
++	spd_dbg(spd, "gpp partition removed\n");
++	return 0;
++}
++
++#define UFSHCD "ufshcd"
++static bool mei_spd_lun_ufs_match(struct mei_spd *spd, struct device *dev)
++{
++	struct gendisk *disk = dev_to_disk(dev);
++	struct scsi_device *sdev;
++
++	switch (disk->major) {
++	case SCSI_DISK0_MAJOR:
++	case SCSI_DISK1_MAJOR ... SCSI_DISK7_MAJOR:
++	case SCSI_DISK8_MAJOR ... SCSI_DISK15_MAJOR:
++		break;
++	default:
++		return false;
++	}
++
++	sdev = to_scsi_device(dev->parent);
++
++	if (!sdev->host ||
++	    strncmp(sdev->host->hostt->name, UFSHCD, strlen(UFSHCD)))
++		return false;
++
++	return sdev->lun == spd->gpp_partition_id;
++}
++
++static bool mei_spd_gpp_mmc_match(struct mei_spd *spd, struct device *dev)
++{
++	struct gendisk *disk  = dev_to_disk(dev);
++	int idx, part_id;
++
++	if (disk->major != MMC_BLOCK_MAJOR)
++		return false;
++
++	if (sscanf(disk->disk_name, "mmcblk%dgp%d", &idx, &part_id) != 2)
++		return false;
++
++	return part_id == spd->gpp_partition_id - 1;
++}
++
++static bool mei_spd_gpp_match(struct mei_spd *spd, struct device *dev)
++{
++	/* we are only interested in physical partitions */
++	if (strncmp(dev->type->name, "disk", sizeof("disk")))
++		return false;
++
++	if (spd->dev_type == SPD_TYPE_EMMC)
++		return mei_spd_gpp_mmc_match(spd, dev);
++	else if (spd->dev_type == SPD_TYPE_UFS)
++		return mei_spd_lun_ufs_match(spd, dev);
++	else
++		return false;
++}
++
++static int gpp_add_device(struct device *dev, struct class_interface *intf)
++{
++	struct mei_spd *spd = container_of(intf, struct mei_spd, gpp_interface);
++
++	if (!mei_spd_gpp_match(spd, dev))
++		return 0;
++
++	mutex_lock(&spd->lock);
++	if (mei_spd_gpp_open(spd, dev)) {
++		mutex_unlock(&spd->lock);
++		return 0;
++	}
++
++	schedule_work(&spd->status_send_w);
++	mutex_unlock(&spd->lock);
++
++	return 0;
++}
++
++static void gpp_remove_device(struct device *dev, struct class_interface *intf)
++{
++	struct mei_spd *spd = container_of(intf, struct mei_spd, gpp_interface);
++
++	if (!mei_spd_gpp_match(spd, dev))
++		return;
++
++	mutex_lock(&spd->lock);
++	if (mei_spd_gpp_close(spd)) {
++		mutex_unlock(&spd->lock);
++		return;
++	}
++
++	if (spd->state != MEI_SPD_STATE_STOPPING)
++		schedule_work(&spd->status_send_w);
++	mutex_unlock(&spd->lock);
++}
++
++int mei_spd_gpp_read(struct mei_spd *spd, size_t off, u8 *data, size_t size)
++{
++	int ret;
++
++	spd_dbg(spd, "GPP read offset = %zx, size = %zx\n", off, size);
++
++	if (!mei_spd_gpp_is_open(spd))
++		return -ENODEV;
++
++	ret = mei_spd_bd_read(spd, off, size, NULL, data);
++	if (ret)
++		spd_err(spd, "GPP read failed ret = %d\n", ret);
++
++	return ret;
++}
++
++int mei_spd_gpp_write(struct mei_spd *spd, size_t off, u8 *data, size_t size)
++{
++	int ret;
++
++	spd_dbg(spd, "GPP write offset = %zx, size = %zx\n", off, size);
++
++	if (!mei_spd_gpp_is_open(spd))
++		return -ENODEV;
++
++	ret = mei_spd_bd_write(spd, off, size, NULL, data);
++	if (ret)
++		spd_err(spd, "GPP write failed ret = %d\n", ret);
++
++	return ret;
++}
++
++void mei_spd_gpp_prepare(struct mei_spd *spd)
++{
++	spd->gpp_interface.add_dev    = gpp_add_device;
++	spd->gpp_interface.remove_dev = gpp_remove_device;
++	spd->gpp_interface.class      = &block_class;
++}
++
++int mei_spd_gpp_init(struct mei_spd *spd)
++{
++	int ret;
++
++	ret = class_interface_register(&spd->gpp_interface);
++	if (ret)
++		spd_err(spd, "Can't register interface\n");
++	return ret;
++}
++
++void mei_spd_gpp_exit(struct mei_spd *spd)
++{
++	class_interface_unregister(&spd->gpp_interface);
++}
+diff --git a/drivers/misc/mei/spd/main.c b/drivers/misc/mei/spd/main.c
+new file mode 100644
+index 0000000..2adccce
+--- /dev/null
++++ b/drivers/misc/mei/spd/main.c
+@@ -0,0 +1,118 @@
++// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
++/*
++ * Copyright(c) 2015 - 2018 Intel Corporation. All rights reserved.
++ */
++#include <linux/module.h>
++
++#include "spd.h"
++
++static void mei_spd_rx_cb(struct mei_cl_device *cldev)
++{
++	struct mei_spd *spd = mei_cldev_get_drvdata(cldev);
++
++	mutex_lock(&spd->lock);
++	mei_spd_cmd(spd);
++	mutex_unlock(&spd->lock);
++}
++
++static int mei_spd_probe(struct mei_cl_device *cldev,
++			 const struct mei_cl_device_id *id)
++{
++	struct mei_spd *spd;
++	u8 ver = mei_cldev_ver(cldev);
++	int ret;
++
++	dev_dbg(&cldev->dev, "probing mei spd ver = %d\n", ver);
++
++	if (ver < 2) {
++		dev_warn(&cldev->dev, "unuspported protocol version %d\n", ver);
++		return -ENODEV;
++	}
++
++	spd = mei_spd_alloc(cldev);
++	if (!spd)
++		return -ENOMEM;
++
++	mei_cldev_set_drvdata(cldev, spd);
++
++	ret = mei_spd_dbgfs_register(spd, "spd");
++	if (ret)
++		goto free;
++
++	ret = mei_cldev_enable(cldev);
++	if (ret < 0) {
++		dev_err(&cldev->dev, "Could not enable device ret = %d\n", ret);
++		goto free;
++	}
++
++	ret = mei_cldev_register_rx_cb(cldev, mei_spd_rx_cb);
++	if (ret) {
++		dev_err(&cldev->dev, "Error register event %d\n", ret);
++		goto disable;
++	}
++
++	spd_dbg(spd, "protocol version %d\n", ver);
++	mei_spd_gpp_prepare(spd);
++	mutex_lock(&spd->lock);
++	ret = mei_spd_cmd_init_req(spd);
++	mutex_unlock(&spd->lock);
++	if (ret) {
++		dev_err(&cldev->dev, "Could not start ret = %d\n", ret);
++		goto disable;
++	}
++
++	return 0;
++
++disable:
++	mei_cldev_disable(cldev);
++
++free:
++	mei_spd_dbgfs_deregister(spd);
++	mei_cldev_set_drvdata(cldev, NULL);
++	mei_spd_free(spd);
++	return ret;
++}
++
++static int mei_spd_remove(struct mei_cl_device *cldev)
++{
++	struct mei_spd *spd = mei_cldev_get_drvdata(cldev);
++
++	if (spd->state == MEI_SPD_STATE_RUNNING) {
++		spd->state = MEI_SPD_STATE_STOPPING;
++		mei_spd_gpp_exit(spd);
++		mutex_lock(&spd->lock);
++		mei_spd_cmd_storage_status_req(spd);
++		mutex_unlock(&spd->lock);
++	}
++
++	mei_cldev_disable(cldev);
++	mei_spd_dbgfs_deregister(spd);
++	mei_cldev_set_drvdata(cldev, NULL);
++	mei_spd_free(spd);
++
++	return 0;
++}
++
++#define MEI_SPD_UUID UUID_LE(0x2a39291f, 0x5551, 0x482f, \
++			     0x99, 0xcb, 0x9e, 0x22, 0x74, 0x97, 0x8c, 0xa8)
++
++static struct mei_cl_device_id mei_spd_tbl[] = {
++	{ .uuid = MEI_SPD_UUID,  .version = MEI_CL_VERSION_ANY},
++	/* required last entry */
++	{ }
++};
++MODULE_DEVICE_TABLE(mei, mei_spd_tbl);
++
++static struct mei_cl_driver mei_spd_driver = {
++	.id_table = mei_spd_tbl,
++	.name = "mei_spd",
++
++	.probe = mei_spd_probe,
++	.remove = mei_spd_remove,
++};
++
++module_mei_cl_driver(mei_spd_driver);
++
++MODULE_AUTHOR("Intel Corporation");
++MODULE_LICENSE("Dual BSD/GPL");
++MODULE_DESCRIPTION("Storage Proxy driver based on mei bus");
+diff --git a/drivers/misc/mei/spd/spd.h b/drivers/misc/mei/spd/spd.h
+new file mode 100644
+index 0000000..cd30d0e
+--- /dev/null
++++ b/drivers/misc/mei/spd/spd.h
+@@ -0,0 +1,93 @@
++/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
++/*
++ * Copyright (C) 2015-2018 Intel Corp. All rights reserved
++ */
++#ifndef _MEI_SPD_H
++#define _MEI_SPD_H
++
++#include <linux/fs.h>
++#include <linux/mei_cl_bus.h>
++
++enum mei_spd_state {
++	MEI_SPD_STATE_INIT,
++	MEI_SPD_STATE_INIT_WAIT,
++	MEI_SPD_STATE_INIT_DONE,
++	MEI_SPD_STATE_RUNNING,
++	MEI_SPD_STATE_STOPPING,
++};
++
++/**
++ * struct mei_spd - spd device struct
++ *
++ * @cldev:     client bus device
++ * @gpp:       GPP partition block device
++ * @gpp_partition_id: GPP partition id (1-6)
++ * @gpp_interface: gpp class interface for discovery
++ * @dev_type:  storage device type
++ * @dev_id_sz: device id size
++ * @dev_id:    device id string
++ * @lock:      mutex to sync request processing
++ * @state:     driver state
++ * @status_send_w: workitem for sending status to the FW
++ * @buf_sz:    receive/transmit buffer allocated size
++ * @buf:       receive/transmit buffer
++ * @dbgfs_dir: debugfs directory entry
++ */
++struct mei_spd {
++	struct mei_cl_device *cldev;
++	struct block_device *gpp;
++	u32    gpp_partition_id;
++	struct class_interface gpp_interface;
++	u32    dev_type;
++	u32    dev_id_sz;
++	u8     *dev_id;
++	struct mutex lock; /* mutex to sync request processing */
++	enum mei_spd_state state;
++	struct work_struct status_send_w;
++	size_t buf_sz;
++	u8 *buf;
++
++#if IS_ENABLED(CONFIG_DEBUG_FS)
++	struct dentry *dbgfs_dir;
++#endif /* CONFIG_DEBUG_FS */
++};
++
++struct mei_spd *mei_spd_alloc(struct mei_cl_device *cldev);
++void mei_spd_free(struct mei_spd *spd);
++
++int mei_spd_cmd_init_req(struct mei_spd *spd);
++int mei_spd_cmd_storage_status_req(struct mei_spd *spd);
++ssize_t mei_spd_cmd(struct mei_spd *spd);
++
++void mei_spd_gpp_prepare(struct mei_spd *spd);
++bool mei_spd_gpp_is_open(struct mei_spd *spd);
++int mei_spd_gpp_init(struct mei_spd *spd);
++void mei_spd_gpp_exit(struct mei_spd *spd);
++int mei_spd_gpp_read(struct mei_spd *spd, size_t off, u8 *data, size_t size);
++int mei_spd_gpp_write(struct mei_spd *spd, size_t off, u8 *data, size_t size);
++
++#if IS_ENABLED(CONFIG_DEBUG_FS)
++int mei_spd_dbgfs_register(struct mei_spd *spd, const char *name);
++void mei_spd_dbgfs_deregister(struct mei_spd *spd);
++#else
++static inline int mei_spd_dbgfs_register(struct mei_spd *spd, const char *name)
++{
++	return 0;
++}
++
++static inline void mei_spd_dbgfs_deregister(struct mei_spd *spd)
++{
++}
++
++#endif /* CONFIG_DEBUG_FS */
++
++const char *mei_spd_state_str(enum mei_spd_state state);
++
++#define spd_err(spd, fmt, ...) \
++	dev_err(&(spd)->cldev->dev, fmt, ##__VA_ARGS__)
++#define spd_warn(spd, fmt, ...) \
++	dev_warn(&(spd)->cldev->dev, fmt, ##__VA_ARGS__)
++#define spd_dbg(spd, fmt, ...) \
++	dev_dbg(&(spd)->cldev->dev, fmt, ##__VA_ARGS__)
++
++#endif /* _MEI_SPD_H */
+-- 
+2.7.4
+

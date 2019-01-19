@@ -1,0 +1,58 @@
+From 61a0df179fc04f8b387e1b0438d6a237503cad04 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Tue, 2 Aug 2016 15:37:20 +0530
+Subject: [PATCH 0443/1132] REVERTME: ASoC: Intel: CNL: Load firmware in
+ dsp_init.
+
+This patch loads the DSP firmware as a part of dsp_init
+instead of dsp_fw init.  SoundWire master controller
+doesnt get register if the DSP firmware is loaded
+as part of fw_init, since for master controller registration
+DSP power up is must, which is part of fw_load function.
+
+Change-Id: I37edac4043abca18c189b035cb1e60194e33d79d
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index f7c832b..2969e57 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -533,21 +533,24 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 	cnl->boot_complete = false;
+ 	init_waitqueue_head(&cnl->boot_wait);
+ 
+-	return skl_dsp_acquire_irq(sst);
++	ret = skl_dsp_acquire_irq(sst);
++	if (ret < 0)
++		return ret;
++
++	ret = cnl_load_base_firmware(sst);
++	if (ret < 0) {
++		dev_err(dev, "Load base fw failed: %d", ret);
++		return ret;
++	}
++
++	return 0;
+ }
+ EXPORT_SYMBOL_GPL(cnl_sst_dsp_init);
+ 
+ int cnl_sst_init_fw(struct device *dev, struct skl_sst *ctx)
+ {
+-	int ret;
+ 	struct sst_dsp *sst = ctx->dsp;
+ 
+-	ret = ctx->dsp->fw_ops.load_fw(sst);
+-	if (ret < 0) {
+-		dev_err(dev, "load base fw failed: %d", ret);
+-		return ret;
+-	}
+-
+ 	skl_dsp_init_core_state(sst);
+ 
+ 	ctx->is_first_boot = false;
+-- 
+2.7.4
+

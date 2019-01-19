@@ -1,0 +1,194 @@
+From 813d126126dd284db6e9be5e2d47466ea7edcac0 Mon Sep 17 00:00:00 2001
+From: Pei Zhang <pei.zhang@intel.com>
+Date: Fri, 14 Sep 2018 16:10:19 +0800
+Subject: [PATCH 0871/1132] drm/i915: implement pvmmio in guest i915
+
+If pvmmio is enabled in i915 host driver, guest i915 will read most MMIO
+register directly, which won't be trapped to host GVT. A small range
+MMIOs still need trap. They are filtered in a static function. This patch
+is to implement the pvmmio in guest i915 driver.
+Also, for the elsp port writting, we will optimize it to leverage pvmmio.
+
+Notice: this patch is required in GVTg guest.
+
+Change-Id: I8d51430015822976450c14085979460b9cc021d7
+Signed-off-by: Pei Zhang <pei.zhang@intel.com>
+Acknowledged-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/i915_drv.c    |  1 +
+ drivers/gpu/drm/i915/i915_drv.h    | 10 ++++++++--
+ drivers/gpu/drm/i915/i915_pvinfo.h | 12 ++++++++++++
+ drivers/gpu/drm/i915/i915_reg.h    | 27 +++++++++++++++++++++++++++
+ drivers/gpu/drm/i915/intel_lrc.c   | 21 ++++++++++++++++++++-
+ 5 files changed, 68 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.c b/drivers/gpu/drm/i915/i915_drv.c
+index acc3be5..06b7861 100644
+--- a/drivers/gpu/drm/i915/i915_drv.c
++++ b/drivers/gpu/drm/i915/i915_drv.c
+@@ -896,6 +896,7 @@ static int i915_driver_init_early(struct drm_i915_private *dev_priv,
+ 		     sizeof(device_info->platform_mask) * BITS_PER_BYTE);
+ 	BUG_ON(device_info->gen > sizeof(device_info->gen_mask) * BITS_PER_BYTE);
+ 	spin_lock_init(&dev_priv->irq_lock);
++	spin_lock_init(&dev_priv->shared_page_lock);
+ 	spin_lock_init(&dev_priv->gpu_error.lock);
+ 	mutex_init(&dev_priv->backlight_lock);
+ 	spin_lock_init(&dev_priv->uncore.lock);
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index 02b4471..7ac61af 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -55,6 +55,7 @@
+ 
+ #include "i915_params.h"
+ #include "i915_reg.h"
++#include "i915_pvinfo.h"
+ #include "i915_utils.h"
+ 
+ #include "intel_bios.h"
+@@ -1591,6 +1592,7 @@ struct drm_i915_private {
+ 
+ 	void __iomem *regs;
+ 	struct gvt_shared_page *shared_page;
++	spinlock_t shared_page_lock;
+ 
+ 	struct intel_uncore uncore;
+ 
+@@ -2786,7 +2788,7 @@ static inline bool intel_gvt_active(struct drm_i915_private *dev_priv)
+ 	return dev_priv->gvt;
+ }
+ 
+-static inline bool intel_vgpu_active(struct drm_i915_private *dev_priv)
++static inline bool intel_vgpu_active(const struct drm_i915_private *dev_priv)
+ {
+ 	return dev_priv->vgpu.active;
+ }
+@@ -3586,7 +3588,11 @@ static inline u64 intel_rc6_residency_us(struct drm_i915_private *dev_priv,
+ static inline uint##x##_t __raw_i915_read##x(const struct drm_i915_private *dev_priv, \
+ 					     i915_reg_t reg) \
+ { \
+-	return read##s(dev_priv->regs + i915_mmio_reg_offset(reg)); \
++	if (!intel_vgpu_active(dev_priv) || !i915_modparams.enable_pvmmio || \
++		likely(!in_mmio_read_trap_list((reg).reg))) \
++		return read##s(dev_priv->regs + i915_mmio_reg_offset(reg)); \
++	dev_priv->shared_page->reg_addr = i915_mmio_reg_offset(reg); \
++	return read##s(dev_priv->regs + i915_mmio_reg_offset(vgtif_reg(pv_mmio))); \
+ }
+ 
+ #define __raw_write(x, s) \
+diff --git a/drivers/gpu/drm/i915/i915_pvinfo.h b/drivers/gpu/drm/i915/i915_pvinfo.h
+index d1a3e3e..c1089bde 100644
+--- a/drivers/gpu/drm/i915/i915_pvinfo.h
++++ b/drivers/gpu/drm/i915/i915_pvinfo.h
+@@ -49,6 +49,15 @@ enum vgt_g2v_type {
+ 	VGT_G2V_MAX,
+ };
+ 
++/* shared page(4KB) between gvt and VM, located at the first page next
++ * to MMIO region(2MB size normally).
++ */
++struct gvt_shared_page {
++	u32 elsp_data[4];
++	u32 reg_addr;
++	u32 rsvd2[0x400 - 5];
++};
++
+ #define VGPU_PVMMIO(vgpu) vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio))
+ 
+ /*
+@@ -65,6 +74,9 @@ enum pvmmio_levels {
+ #define VGT_CAPS_HWSP_EMULATION		BIT(3)
+ #define VGT_CAPS_HUGE_GTT		BIT(4)
+ 
++#define PVMMIO_LEVEL(dev_priv, level) \
++	(intel_vgpu_active(dev_priv) && (i915_modparams.enable_pvmmio & level))
++
+ struct vgt_if {
+ 	u64 magic;		/* VGT_MAGIC */
+ 	u16 version_major;
+diff --git a/drivers/gpu/drm/i915/i915_reg.h b/drivers/gpu/drm/i915/i915_reg.h
+index 5b544cb..00b5e45 100644
+--- a/drivers/gpu/drm/i915/i915_reg.h
++++ b/drivers/gpu/drm/i915/i915_reg.h
+@@ -10656,4 +10656,31 @@ enum skl_power_gate {
+ 						_ICL_DSC1_RC_BUF_THRESH_1_UDW_PB, \
+ 						_ICL_DSC1_RC_BUF_THRESH_1_UDW_PC)
+ 
++/* GVT has special read process from some MMIO register,
++ * which so that should be trapped to GVT to make a
++ * complete emulation. Such MMIO is not too much, now using
++ * a static list to cover them.
++ */
++static inline bool in_mmio_read_trap_list(u32 reg)
++{
++	if (unlikely(reg >= PCH_GMBUS0.reg && reg <= PCH_GMBUS5.reg))
++		return true;
++
++	if (unlikely(reg == RING_TIMESTAMP(RENDER_RING_BASE).reg ||
++		reg == RING_TIMESTAMP(BLT_RING_BASE).reg ||
++		reg == RING_TIMESTAMP(GEN6_BSD_RING_BASE).reg ||
++		reg == RING_TIMESTAMP(VEBOX_RING_BASE).reg ||
++		reg == RING_TIMESTAMP(GEN8_BSD2_RING_BASE).reg ||
++		reg == RING_TIMESTAMP_UDW(RENDER_RING_BASE).reg ||
++		reg == RING_TIMESTAMP_UDW(BLT_RING_BASE).reg ||
++		reg == RING_TIMESTAMP_UDW(GEN6_BSD_RING_BASE).reg ||
++		reg == RING_TIMESTAMP_UDW(VEBOX_RING_BASE).reg))
++		return true;
++
++	if (unlikely(reg == SBI_DATA.reg || reg == 0x6c060 || reg == 0x206c))
++		return true;
++
++	return false;
++}
++
+ #endif /* _I915_REG_H_ */
+diff --git a/drivers/gpu/drm/i915/intel_lrc.c b/drivers/gpu/drm/i915/intel_lrc.c
+index c858627..929714a 100644
+--- a/drivers/gpu/drm/i915/intel_lrc.c
++++ b/drivers/gpu/drm/i915/intel_lrc.c
+@@ -468,6 +468,8 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
+ 	struct intel_engine_execlists *execlists = &engine->execlists;
+ 	struct execlist_port *port = execlists->port;
+ 	unsigned int n;
++	u32 descs[4];
++	int i = 0;
+ 
+ 	/*
+ 	 * We can skip acquiring intel_runtime_pm_get() here as it was taken
+@@ -510,10 +512,27 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
+ 			GEM_BUG_ON(!n);
+ 			desc = 0;
+ 		}
++		if (intel_vgpu_active(engine->i915) &&
++				PVMMIO_LEVEL(engine->i915, PVMMIO_ELSP_SUBMIT)) {
++			BUG_ON(i >= 4);
++			descs[i] = upper_32_bits(desc);
++			descs[i + 1] = lower_32_bits(desc);
++			i += 2;
++			continue;
++		}
+ 
+ 		write_desc(execlists, desc, n);
+ 	}
+-
++	if (intel_vgpu_active(engine->i915) &&
++			PVMMIO_LEVEL(engine->i915, PVMMIO_ELSP_SUBMIT)) {
++		u32 __iomem *elsp_data = engine->i915->shared_page->elsp_data;
++		spin_lock(&engine->i915->shared_page_lock);
++		writel(descs[0], elsp_data);
++		writel(descs[1], elsp_data + 1);
++		writel(descs[2], elsp_data + 2);
++		writel(descs[3], execlists->submit_reg);
++		spin_unlock(&engine->i915->shared_page_lock);
++	}
+ 	/* we need to manually load the submit queue */
+ 	if (execlists->ctrl_reg)
+ 		writel(EL_CTRL_LOAD, execlists->ctrl_reg);
+-- 
+2.7.4
+

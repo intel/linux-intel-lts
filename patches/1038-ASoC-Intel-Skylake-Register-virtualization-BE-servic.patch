@@ -1,0 +1,42 @@
+From 13b8ea3803ec0200c731490519da9208132763a9 Mon Sep 17 00:00:00 2001
+From: Pawel Furtak <pawel.furtak@intel.com>
+Date: Sun, 25 Nov 2018 17:40:30 +0100
+Subject: [PATCH 1038/1132] ASoC: Intel: Skylake: Register virtualization BE
+ service
+
+This patch registers virtualization backend service for
+Skylake driver. If virtualization is not enabled,
+registration function will do nothing.
+
+Change-Id: Id4e97ef7c53fcd487fca3188162c58adaae399e2
+Signed-off-by: Pawel Furtak <pawel.furtak@intel.com>
+Tracked-On: OAM-72189
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 7979367..e192fb7 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -42,6 +42,7 @@
+ #if !IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+ static struct skl_machine_pdata skl_dmic_data;
+ #endif
++#include "virtio/skl-virtio.h"
+ 
+ /*
+  * initialize the PCI registers
+@@ -1055,6 +1056,7 @@ static int skl_probe(struct pci_dev *pci,
+ 	if (err < 0)
+ 		goto out_dsp_free;
+ 
++	snd_soc_skl_virtio_miscdev_register(skl);
+ 	schedule_work(&skl->probe_work);
+ 
+ 	return 0;
+-- 
+2.7.4
+

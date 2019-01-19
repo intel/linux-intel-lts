@@ -1,0 +1,37 @@
+From e20e19e4deb00233de8db7161bc2d8483aa25706 Mon Sep 17 00:00:00 2001
+From: Maciej Meijer <maciejx.meijer@intel.com>
+Date: Tue, 4 Dec 2018 12:02:04 +0100
+Subject: [PATCH 1046/1132] Asoc: Intel: Skylake: display firmware name and
+ version
+
+Change-Id: Icb4739ae2fdd5f7e78e82c08f1d71f30f2ff18aa
+Signed-off-by: Maciej Meijer <maciejx.meijer@intel.com>
+Tracked-On: OAM-72309
+Reviewed-by: Mielczarek, SzymonX <szymonx.mielczarek@intel.com>
+Reviewed-by: Bozek, DominikX <dominikx.bozek@intel.com>
+Reviewed-by: Lewandowski, Gustaw <gustaw.lewandowski@intel.com>
+Tested-by: Slawinski, AmadeuszX <amadeuszx.slawinski@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-utils.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-utils.c b/sound/soc/intel/skylake/skl-sst-utils.c
+index daa3b37..8f897fd 100644
+--- a/sound/soc/intel/skylake/skl-sst-utils.c
++++ b/sound/soc/intel/skylake/skl-sst-utils.c
+@@ -526,9 +526,9 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
+ 
+ 	adsp_hdr = (struct adsp_fw_hdr *)(buf + offset);
+ 
+-	dev_info(ctx->dev, "ADSP FW Version: %d.%d.%d.%d\n",
+-		 adsp_hdr->major, adsp_hdr->minor,
+-		 adsp_hdr->hotfix, adsp_hdr->build);
++	dev_info(ctx->dev, "ADSP FW Name: %.*s, Version: %d.%d.%d.%d\n",
++		 (int) sizeof(adsp_hdr->name), adsp_hdr->name, adsp_hdr->major,
++		 adsp_hdr->minor, adsp_hdr->hotfix, adsp_hdr->build);
+ 
+ 	/* check 1st module entry is in file */
+ 	safe_file += adsp_hdr->len + sizeof(*mod_entry);
+-- 
+2.7.4
+

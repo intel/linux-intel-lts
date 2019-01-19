@@ -1,0 +1,81 @@
+From 981446db533fa3f033768264cdbf540942726f28 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Mon, 17 Sep 2018 16:29:07 +0200
+Subject: [PATCH 0262/1132] x86/mm/init32: Mark text and rodata RO in one go
+
+The sequence of marking text and rodata read-only in 32bit init is:
+
+  set_ro(text);
+  kernel_set_to_readonly = 1;
+  set_ro(rodata);
+
+When kernel_set_to_readonly is 1 it enables the protection mechanism in CPA
+for the read only regions. With the upcoming checks for existing mappings
+this consequently triggers the warning about an existing mapping being
+incorrect vs. static protections because rodata has not been converted yet.
+
+There is no technical reason to split the two, so just combine the RO
+protection to convert text and rodata in one go.
+
+Convert the printks to pr_info while at it.
+
+Reported-by: kernel test robot <rong.a.chen@intel.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Reviewed-by: Dave Hansen <dave.hansen@intel.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Bin Yang <bin.yang@intel.com>
+Cc: Mark Gross <mark.gross@intel.com>
+Link: https://lkml.kernel.org/r/20180917143545.731701535@linutronix.de
+
+Cc: Zhang Ning <ning.a.zhang@intel.com>
+Signed-off-by: Lili Li <lili.li@intel.com>
+---
+ arch/x86/mm/init_32.c | 23 ++++-------------------
+ 1 file changed, 4 insertions(+), 19 deletions(-)
+
+diff --git a/arch/x86/mm/init_32.c b/arch/x86/mm/init_32.c
+index 979e0a0..142c7d9 100644
+--- a/arch/x86/mm/init_32.c
++++ b/arch/x86/mm/init_32.c
+@@ -923,34 +923,19 @@ static void mark_nxdata_nx(void)
+ void mark_rodata_ro(void)
+ {
+ 	unsigned long start = PFN_ALIGN(_text);
+-	unsigned long size = PFN_ALIGN(_etext) - start;
++	unsigned long size = (unsigned long)__end_rodata - start;
+ 
+ 	set_pages_ro(virt_to_page(start), size >> PAGE_SHIFT);
+-	printk(KERN_INFO "Write protecting the kernel text: %luk\n",
++	pr_info("Write protecting kernel text and read-only data: %luk\n",
+ 		size >> 10);
+ 
+ 	kernel_set_to_readonly = 1;
+ 
+ #ifdef CONFIG_CPA_DEBUG
+-	printk(KERN_INFO "Testing CPA: Reverting %lx-%lx\n",
+-		start, start+size);
+-	set_pages_rw(virt_to_page(start), size>>PAGE_SHIFT);
+-
+-	printk(KERN_INFO "Testing CPA: write protecting again\n");
+-	set_pages_ro(virt_to_page(start), size>>PAGE_SHIFT);
+-#endif
+-
+-	start += size;
+-	size = (unsigned long)__end_rodata - start;
+-	set_pages_ro(virt_to_page(start), size >> PAGE_SHIFT);
+-	printk(KERN_INFO "Write protecting the kernel read-only data: %luk\n",
+-		size >> 10);
+-
+-#ifdef CONFIG_CPA_DEBUG
+-	printk(KERN_INFO "Testing CPA: undo %lx-%lx\n", start, start + size);
++	pr_info("Testing CPA: Reverting %lx-%lx\n", start, start + size);
+ 	set_pages_rw(virt_to_page(start), size >> PAGE_SHIFT);
+ 
+-	printk(KERN_INFO "Testing CPA: write protecting again\n");
++	pr_info("Testing CPA: write protecting again\n");
+ 	set_pages_ro(virt_to_page(start), size >> PAGE_SHIFT);
+ #endif
+ 	mark_nxdata_nx();
+-- 
+2.7.4
+

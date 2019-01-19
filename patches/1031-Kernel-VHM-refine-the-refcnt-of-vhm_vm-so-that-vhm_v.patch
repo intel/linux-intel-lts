@@ -1,0 +1,248 @@
+From 4941a7d88e2c66e797d3f39d454d38b1f261e192 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Thu, 6 Dec 2018 08:51:06 +0800
+Subject: [PATCH 1031/1132] Kernel/VHM: refine the refcnt of vhm_vm so that
+ vhm_vm exists before ioreq_client is released
+
+The emulated ioreq is handled by the corresponding client and resides in the shared
+buffer page of vhm_vm(vhm_vm->req_buffer). But as the ioreq_client doesn't add the
+refcnt of vhm_vm, it is possible that the vhm_vm->req_buffer is released while the
+ioreq_client is handling the emulated ioreq. Then the kernel panic is triggered.
+So the refcnt of vhm_vm needs to reflect the usage of ioreq_client.
+And the notification of releasing ioreq_client is moved out of put_vm so that it won't
+block the flowchart of ioreq_client and vhm_vm.
+
+At the same time the atomic type/op is used for the refcnt of vhm_vm.
+
+Tracked-On: PKT-1592
+Tracked-On: https://github.com/projectacrn/acrn-hypervisor/issues/1957
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Signed-off-by: Yin, FengWei <fengwei.yin@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c      |  4 +++-
+ drivers/vhm/vhm_ioreq.c         | 30 +++++++++++++++++++-----------
+ drivers/vhm/vhm_vm_mngt.c       | 24 ++++++++++++++++++------
+ include/linux/vhm/vhm_vm_mngt.h | 17 ++++++++++++++++-
+ 4 files changed, 56 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index e6aa6f5..30cafcc 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -131,7 +131,7 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
+ 	spin_lock_init(&vm->ioreq_client_lock);
+ 
+ 	vm_mutex_lock(&vhm_vm_list_lock);
+-	vm->refcnt = 1;
++	atomic_set(&vm->refcnt, 1);
+ 	vm_list_add(&vm->list);
+ 	vm_mutex_unlock(&vhm_vm_list_lock);
+ 	filep->private_data = vm;
+@@ -273,6 +273,7 @@ static long vhm_dev_ioctl(struct file *filep,
+ 	case IC_DESTROY_VM: {
+ 		acrn_ioeventfd_deinit(vm->vmid);
+ 		acrn_irqfd_deinit(vm->vmid);
++		acrn_ioreq_free(vm);
+ 		ret = hcall_destroy_vm(vm->vmid);
+ 		if (ret < 0) {
+ 			pr_err("failed to destroy VM %ld\n", vm->vmid);
+@@ -692,6 +693,7 @@ static int vhm_dev_release(struct inode *inodep, struct file *filep)
+ 		pr_err("vhm: invalid VM !\n");
+ 		return -EFAULT;
+ 	}
++	acrn_ioreq_free(vm);
+ 	put_vm(vm);
+ 	filep->private_data = NULL;
+ 	return 0;
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index 9d77bc3..ac95061 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -253,8 +253,6 @@ int acrn_ioreq_create_client(unsigned long vmid, ioreq_handler_t handler,
+ 	list_add(&client->list, &vm->ioreq_client_list);
+ 	spin_unlock_irqrestore(&vm->ioreq_client_lock, flags);
+ 
+-	put_vm(vm);
+-
+ 	pr_info("vhm-ioreq: created ioreq client %d\n", client_id);
+ 
+ 	return client_id;
+@@ -381,6 +379,7 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
+ 		vm->ioreq_fallback_client = -1;
+ 
+ 	acrn_ioreq_put_client(client);
++	put_vm(vm);
+ }
+ 
+ void acrn_ioreq_destroy_client(int client_id)
+@@ -574,12 +573,21 @@ static int ioreq_client_thread(void *data)
+ {
+ 	struct ioreq_client *client;
+ 	int ret, client_id = (unsigned long)data;
++	struct vhm_vm *vm;
+ 
+ 	client = acrn_ioreq_get_client(client_id);
+ 
+ 	if (!client)
+ 		return 0;
+ 
++	vm = find_get_vm(client->vmid);
++	if (unlikely(vm == NULL)) {
++		pr_err("vhm-ioreq: failed to find vm from vmid %ld\n",
++			client->vmid);
++		acrn_ioreq_put_client(client);
++		return -EINVAL;
++	}
++
+ 	while (1) {
+ 		if (is_destroying(client)) {
+ 			pr_info("vhm-ioreq: client destroying->stop thread\n");
+@@ -605,6 +613,7 @@ static int ioreq_client_thread(void *data)
+ 
+ 	set_bit(IOREQ_CLIENT_EXIT, &client->flags);
+ 	acrn_ioreq_put_client(client);
++	put_vm(vm);
+ 	return 0;
+ }
+ 
+@@ -1053,17 +1062,16 @@ void acrn_ioreq_free(struct vhm_vm *vm)
+ 	 * The below is used to assure that the client is still released even when
+ 	 * it is not called.
+ 	 */
+-	list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
+-		struct ioreq_client *client =
+-			container_of(pos, struct ioreq_client, list);
+-		acrn_ioreq_destroy_client(client->id);
++	if (!test_and_set_bit(VHM_VM_IOREQ, &vm->flags)) {
++		get_vm(vm);
++		list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
++			struct ioreq_client *client =
++				container_of(pos, struct ioreq_client, list);
++			acrn_ioreq_destroy_client(client->id);
++		}
++		put_vm(vm);
+ 	}
+ 
+-	if (vm->req_buf && vm->pg) {
+-		put_page(vm->pg);
+-		vm->pg = NULL;
+-		vm->req_buf = NULL;
+-	}
+ }
+ 
+ void acrn_ioreq_driver_init()
+diff --git a/drivers/vhm/vhm_vm_mngt.c b/drivers/vhm/vhm_vm_mngt.c
+index c186b97..6bbcb1dd 100644
+--- a/drivers/vhm/vhm_vm_mngt.c
++++ b/drivers/vhm/vhm_vm_mngt.c
+@@ -55,6 +55,7 @@
+ #include <linux/list.h>
+ #include <linux/slab.h>
+ #include <linux/init.h>
++#include <linux/mm.h>
+ #include <asm/processor.h>
+ #include <linux/vhm/acrn_hv_defs.h>
+ #include <linux/vhm/vhm_ioctl_defs.h>
+@@ -72,7 +73,7 @@ struct vhm_vm *find_get_vm(unsigned long vmid)
+ 	mutex_lock(&vhm_vm_list_lock);
+ 	list_for_each_entry(vm, &vhm_vm_list, list) {
+ 		if (vm->vmid == vmid) {
+-			vm->refcnt++;
++			atomic_inc(&vm->refcnt);
+ 			mutex_unlock(&vhm_vm_list_lock);
+ 			return vm;
+ 		}
+@@ -84,19 +85,30 @@ EXPORT_SYMBOL_GPL(find_get_vm);
+ 
+ void put_vm(struct vhm_vm *vm)
+ {
+-	mutex_lock(&vhm_vm_list_lock);
+-	vm->refcnt--;
+-	if (vm->refcnt == 0) {
++	if (atomic_dec_and_test(&vm->refcnt)) {
++		mutex_lock(&vhm_vm_list_lock);
+ 		list_del(&vm->list);
++		mutex_unlock(&vhm_vm_list_lock);
+ 		free_guest_mem(vm);
+-		acrn_ioreq_free(vm);
++
++		if (vm->req_buf && vm->pg) {
++			put_page(vm->pg);
++			vm->pg = NULL;
++			vm->req_buf = NULL;
++		}
++
+ 		kfree(vm);
+ 		pr_info("vhm: freed vm\n");
+ 	}
+-	mutex_unlock(&vhm_vm_list_lock);
+ }
+ EXPORT_SYMBOL_GPL(put_vm);
+ 
++void get_vm(struct vhm_vm *vm)
++{
++	atomic_inc(&vm->refcnt);
++}
++EXPORT_SYMBOL_GPL(get_vm);
++
+ int vhm_get_vm_info(unsigned long vmid, struct vm_info *info)
+ {
+ 	struct vhm_vm *vm;
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index c307536..cf61ed0 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -69,6 +69,11 @@ extern struct mutex vhm_vm_list_lock;
+ #define HUGEPAGE_1G_HLIST_ARRAY_SIZE	1
+ #define HUGEPAGE_HLIST_ARRAY_SIZE	(HUGEPAGE_2M_HLIST_ARRAY_SIZE + \
+ 						HUGEPAGE_1G_HLIST_ARRAY_SIZE)
++
++enum VM_FREE_BITS {
++	VHM_VM_IOREQ = 0,
++};
++
+ /**
+  * struct vhm_vm - data structure to track guest
+  *
+@@ -86,13 +91,14 @@ extern struct mutex vhm_vm_list_lock;
+  * @req_buf: request buffer shared between HV, SOS and UOS
+  * @pg: pointer to linux page which holds req_buf
+  * @pci_conf_addr: the access-trapped pci_conf_addr
++ * @flags: the flags of vhm_vm for some resources
+  */
+ struct vhm_vm {
+ 	struct device *dev;
+ 	struct list_head list;
+ 	unsigned long vmid;
+ 	int ioreq_fallback_client;
+-	long refcnt;
++	atomic_t refcnt;
+ 	struct mutex hugepage_lock;
+ 	struct hlist_head hugepage_hlist[HUGEPAGE_HLIST_ARRAY_SIZE];
+ 	atomic_t vcpu_num;
+@@ -102,6 +108,7 @@ struct vhm_vm {
+ 	struct vhm_request_buffer *req_buf;
+ 	struct page *pg;
+ 	uint32_t pci_conf_addr;
++	unsigned long flags;
+ };
+ 
+ /**
+@@ -134,6 +141,14 @@ struct vhm_vm *find_get_vm(unsigned long vmid);
+ void put_vm(struct vhm_vm *vm);
+ 
+ /**
++ * get_vm() - increase the refcnt of vhm_vm
++ * @vm: pointer to vhm_vm which identify specific guest
++ *
++ * Return:
++ */
++void get_vm(struct vhm_vm *vm);
++
++/**
+  * vhm_get_vm_info() - get vm_info of specific guest
+  *
+  * @vmid: guest vmid
+-- 
+2.7.4
+

@@ -1,0 +1,460 @@
+From 8cc72a86fc4b0145693bb7a44e340ce560238146 Mon Sep 17 00:00:00 2001
+From: Hardik T Shah <hardik.t.shah@intel.com>
+Date: Thu, 10 Mar 2016 13:00:27 +0530
+Subject: [PATCH 0451/1132] ASoC: Intel: Skylake: Add support for the SDW dai
+ ops.
+
+Add support for the SoundWire dai link operation. DAI
+ops needs to be different for different link based on
+Link requirement. Add support for the DAI ops link.
+
+Change-Id: I2c3d24c3d982f339f8b7ca180079b547227c6e70
+Signed-off-by: Hardik T Shah <hardik.t.shah@intel.com>
+---
+ sound/soc/intel/skylake/Makefile      |   2 +-
+ sound/soc/intel/skylake/skl-pcm.c     |  94 +++++++++++++
+ sound/soc/intel/skylake/skl-sdw-pcm.c | 246 ++++++++++++++++++++++++++++++++++
+ sound/soc/intel/skylake/skl-sdw-pcm.h |  41 ++++++
+ 4 files changed, 382 insertions(+), 1 deletion(-)
+ create mode 100644 sound/soc/intel/skylake/skl-sdw-pcm.c
+ create mode 100644 sound/soc/intel/skylake/skl-sdw-pcm.h
+
+diff --git a/sound/soc/intel/skylake/Makefile b/sound/soc/intel/skylake/Makefile
+index 86f6e1d..c5ee108 100644
+--- a/sound/soc/intel/skylake/Makefile
++++ b/sound/soc/intel/skylake/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
+-snd-soc-skl-objs := skl.o skl-pcm.o skl-nhlt.o skl-messages.o \
++snd-soc-skl-objs := skl.o skl-sdw-pcm.o skl-pcm.o skl-nhlt.o skl-messages.o \
+ skl-topology.o
+ 
+ ifdef CONFIG_DEBUG_FS
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index ab31d6a..d411cf2 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -28,6 +28,7 @@
+ #include "skl-topology.h"
+ #include "skl-sst-dsp.h"
+ #include "skl-sst-ipc.h"
++#include "skl-sdw-pcm.h"
+ 
+ #define HDA_MONO 1
+ #define HDA_STEREO 2
+@@ -662,6 +663,67 @@ static int skl_link_hw_free(struct snd_pcm_substream *substream,
+ 	return 0;
+ }
+ 
++static int skl_sdw_startup(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai)
++{
++	/* Find the type of DAI, Its decided based on which copier
++	 * is connected to the DAI. All the soundwire DAIs are identical
++	 * but some registers needs to be programmed based on its a
++	 * PDM or PCM. Copier tells DAI is to be used as PDM  or PCM
++	 * This makes sure no change is required in code, only change
++	 * required is in the topology to change DAI from PDM to PCM or
++	 * vice versa.
++	 */
++	return cnl_sdw_startup(substream, dai);
++
++}
++
++static int skl_sdw_hw_params(struct snd_pcm_substream *substream,
++				struct snd_pcm_hw_params *params,
++				struct snd_soc_dai *dai)
++{
++	int ret = 0;
++
++	ret = pm_runtime_get_sync(dai->dev);
++	if (!ret)
++		return ret;
++	/* Allocate the port based on hw_params.
++	 * Allocate PDI stream based on hw_params
++	 * Program stream params to the sdw bus driver
++	 * program Port params to sdw bus driver
++	 */
++	return cnl_sdw_hw_params(substream, params, dai);
++}
++
++static int skl_sdw_hw_free(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai)
++{
++	/* De-allocate the port from master controller
++	 * De allocate stream from bus driver
++	 */
++	return cnl_sdw_hw_free(substream, dai);
++}
++
++static int skl_sdw_pcm_prepare(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai)
++{
++	return cnl_sdw_pcm_prepare(substream, dai);
++}
++
++static int skl_sdw_pcm_trigger(struct snd_pcm_substream *substream,
++	int cmd, struct snd_soc_dai *dai)
++{
++		return cnl_sdw_pcm_trigger(substream, cmd, dai);
++}
++
++static void skl_sdw_shutdown(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai)
++{
++	cnl_sdw_shutdown(substream, dai);
++	pm_runtime_mark_last_busy(dai->dev);
++	pm_runtime_put_autosuspend(dai->dev);
++}
++
+ static const struct snd_soc_dai_ops skl_pcm_dai_ops = {
+ 	.startup = skl_pcm_open,
+ 	.shutdown = skl_pcm_close,
+@@ -686,6 +748,15 @@ static const struct snd_soc_dai_ops skl_link_dai_ops = {
+ 	.trigger = skl_link_pcm_trigger,
+ };
+ 
++static struct snd_soc_dai_ops skl_sdw_dai_ops = {
++	.startup = skl_sdw_startup,
++	.prepare = skl_sdw_pcm_prepare,
++	.hw_params = skl_sdw_hw_params,
++	.hw_free = skl_sdw_hw_free,
++	.trigger = skl_sdw_pcm_trigger,
++	.shutdown = skl_sdw_shutdown,
++};
++
+ static struct snd_soc_dai_driver skl_fe_dai[] = {
+ {
+ 	.name = "System Pin",
+@@ -1020,6 +1091,29 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+ 	},
+ },
++{
++	/* Currently adding 1 playback and 1 capture pin, ideally it
++	 * should be coming from CLT based on endpoints to be supported
++	 */
++	.name = "SDW Pin",
++	.ops = &skl_sdw_dai_ops,
++	.playback = {
++		.stream_name = "SDW Tx",
++		.channels_min = HDA_STEREO,
++		.channels_max = HDA_STEREO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE,
++	},
++	.capture = {
++		.stream_name = "SDW Rx",
++		.channels_min = HDA_STEREO,
++		.channels_max = HDA_STEREO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.formats = SNDRV_PCM_FMTBIT_S16_LE,
++	},
++
++
++},
+ };
+ 
+ int skl_dai_load(struct snd_soc_component *cmp, int index,
+diff --git a/sound/soc/intel/skylake/skl-sdw-pcm.c b/sound/soc/intel/skylake/skl-sdw-pcm.c
+new file mode 100644
+index 0000000..90a11f4
+--- /dev/null
++++ b/sound/soc/intel/skylake/skl-sdw-pcm.c
+@@ -0,0 +1,246 @@
++/*
++ *  skl-sdw-pcm.c - Handle PCM ops for soundwire DAIs.
++ *
++ *  Copyright (C) 2014 Intel Corp
++ *  Author: Hardik Shah <hardik.t.shah@intel.com>
++ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; version 2 of the License.
++ *
++ *  This program is distributed in the hope that it will be useful, but
++ *  WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  General Public License for more details.
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ */
++#include <linux/pci.h>
++#include <linux/pm_runtime.h>
++#include <linux/sdw_bus.h>
++#include <linux/sdw/sdw_cnl.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include "skl.h"
++#include "skl-topology.h"
++
++#define STREAM_STATE_ALLOC_STREAM_TAG		0x1
++#define STREAM_STATE_ALLOC_STREAM		0x2
++#define STREAM_STATE_CONFIG_STREAM		0x3
++#define STREAM_STATE_PREPARE_STREAM		0x4
++#define STREAM_STATE_ENABLE_STREAM		0x5
++#define STREAM_STATE_DISABLE_STREAM		0x6
++#define STREAM_STATE_UNPREPARE_STREAM		0x7
++#define STREAM_STATE_RELEASE_STREAM		0x8
++#define STREAM_STATE_FREE_STREAM		0x9
++#define STREAM_STATE_FREE_STREAM_TAG		0xa
++
++struct sdw_dma_data {
++	int stream_tag;
++	struct cnl_sdw_port *port;
++	struct sdw_master *mstr;
++	enum cnl_sdw_pdi_stream_type stream_type;
++	int stream_state;
++};
++
++
++
++int cnl_sdw_startup(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai)
++{
++	struct skl_module_cfg *m_cfg;
++	int sdw_ctrl_nr;
++	struct sdw_master *mstr;
++	struct sdw_dma_data *dma;
++	int ret = 0;
++
++
++	m_cfg = skl_tplg_be_get_cpr_module(dai, substream->stream);
++	if (!m_cfg) {
++		dev_err(dai->dev, "BE Copier not found\n");
++		return -EINVAL;
++	}
++	sdw_ctrl_nr = m_cfg->vbus_id;
++	mstr = sdw_get_master(sdw_ctrl_nr);
++	if (!mstr) {
++		dev_err(dai->dev, "Master controller not found\n");
++		return -EINVAL;
++	}
++	dma = kzalloc(sizeof(*dma), GFP_KERNEL);
++	if (!dma) {
++		ret = -ENOMEM;
++		goto alloc_failed;
++	}
++	if (m_cfg->pdi_type == SKL_PDI_PCM)
++		dma->stream_type = CNL_SDW_PDI_TYPE_PCM;
++	else if (m_cfg->pdi_type == SKL_PDI_PDM)
++		dma->stream_type = CNL_SDW_PDI_TYPE_PDM;
++	else {
++		dev_err(dai->dev, "Stream type not known\n");
++		return -EINVAL;
++	}
++	dma->mstr = mstr;
++	snd_soc_dai_set_dma_data(dai, substream, dma);
++
++	ret = sdw_alloc_stream_tag(NULL, &dma->stream_tag);
++	if (ret) {
++		dev_err(dai->dev, "Unable to allocate stream tag");
++		ret =  -EINVAL;
++		goto alloc_stream_tag_failed;
++	}
++	ret = snd_soc_dai_program_stream_tag(substream, dai, dma->stream_tag);
++
++	dma->stream_state = STREAM_STATE_ALLOC_STREAM_TAG;
++	return 0;
++alloc_stream_tag_failed:
++	kfree(dma);
++alloc_failed:
++	sdw_put_master(mstr);
++	return ret;
++}
++
++int cnl_sdw_hw_params(struct snd_pcm_substream *substream,
++				struct snd_pcm_hw_params *params,
++				struct snd_soc_dai *dai)
++{
++	struct sdw_dma_data *dma;
++	int channels;
++	enum sdw_data_direction direction;
++	struct sdw_stream_config stream_config;
++	struct sdw_port_config port_config;
++	struct sdw_port_cfg port_cfg;
++	int ret = 0;
++	struct skl_pipe_params p_params = {0};
++	struct skl_module_cfg *m_cfg;
++
++	p_params.s_fmt = snd_pcm_format_width(params_format(params));
++	p_params.ch = params_channels(params);
++	p_params.s_freq = params_rate(params);
++	p_params.stream = substream->stream;
++
++	ret = skl_tplg_be_update_params(dai, &p_params);
++	if (ret)
++		return ret;
++
++
++	dma = snd_soc_dai_get_dma_data(dai, substream);
++	channels = params_channels(params);
++	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
++		direction = SDW_DATA_DIR_IN;
++	else
++		direction = SDW_DATA_DIR_OUT;
++	/* Dynamically alloc port and PDI streams for this DAI */
++	dma->port = cnl_sdw_alloc_port(dma->mstr, channels,
++					direction, dma->stream_type);
++	if (!dma->port) {
++		dev_err(dai->dev, "Unable to allocate port\n");
++		return -EINVAL;
++	}
++	dma->stream_state = STREAM_STATE_ALLOC_STREAM;
++	m_cfg = skl_tplg_be_get_cpr_module(dai, substream->stream);
++	if (!m_cfg) {
++		dev_err(dai->dev, "BE Copier not found\n");
++		return -EINVAL;
++	}
++	m_cfg->sdw_stream_num = dma->port->pdi_stream->sdw_pdi_num;
++	stream_config.frame_rate =  params_rate(params);
++	stream_config.channel_count = channels;
++	stream_config.bps =
++			snd_pcm_format_width(params_format(params));
++	stream_config.direction = direction;
++	ret = sdw_config_stream(dma->mstr, NULL, &stream_config,
++							dma->stream_tag);
++	if (ret) {
++		dev_err(dai->dev, "Unable to configure the stream\n");
++		return ret;
++	}
++	port_config.num_ports = 1;
++	port_config.port_cfg = &port_cfg;
++	port_cfg.port_num = dma->port->port_num;
++	port_cfg.ch_mask = ((1 << channels) - 1);
++	ret = sdw_config_port(dma->mstr, NULL, &port_config, dma->stream_tag);
++	if (ret) {
++		dev_err(dai->dev, "Unable to configure port\n");
++		return ret;
++	}
++	dma->stream_state = STREAM_STATE_CONFIG_STREAM;
++	return 0;
++}
++
++int cnl_sdw_hw_free(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai)
++{
++	struct sdw_dma_data *dma;
++	int ret = 0;
++
++	dma = snd_soc_dai_get_dma_data(dai, substream);
++
++	if (dma->stream_state == STREAM_STATE_UNPREPARE_STREAM) {
++		ret = sdw_release_stream(dma->mstr, NULL, dma->stream_tag);
++		if (ret)
++			dev_err(dai->dev, "Unable to release stream\n");
++		dma->stream_state = STREAM_STATE_RELEASE_STREAM;
++		if (dma->port && dma->stream_state ==
++					STREAM_STATE_RELEASE_STREAM) {
++			/* Even if release fails, we continue,
++			 * while winding up we have
++			 * to continue till last one gets winded up
++			 */
++			cnl_sdw_free_port(dma->mstr, dma->port->port_num);
++			dma->stream_state = STREAM_STATE_FREE_STREAM;
++			dma->port = NULL;
++		}
++	}
++	return 0;
++}
++
++int cnl_sdw_pcm_prepare(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai)
++{
++	int ret = 0;
++	return ret;
++}
++
++int cnl_sdw_pcm_trigger(struct snd_pcm_substream *substream,
++	int cmd, struct snd_soc_dai *dai)
++{
++	struct sdw_dma_data *dma;
++	int ret = 0;
++
++	dma = snd_soc_dai_get_dma_data(dai, substream);
++	switch (cmd) {
++	case SNDRV_PCM_TRIGGER_START:
++	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
++	case SNDRV_PCM_TRIGGER_RESUME:
++		ret = sdw_prepare_and_enable(dma->stream_tag, true);
++		dma->stream_state = STREAM_STATE_ENABLE_STREAM;
++		break;
++
++	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
++	case SNDRV_PCM_TRIGGER_SUSPEND:
++	case SNDRV_PCM_TRIGGER_STOP:
++		ret = sdw_disable_and_unprepare(dma->stream_tag, true);
++		dma->stream_state = STREAM_STATE_UNPREPARE_STREAM;
++		break;
++
++	default:
++		return -EINVAL;
++	}
++	if (ret)
++		dev_err(dai->dev, "SoundWire commit changes failed\n");
++	return ret;
++
++}
++
++void cnl_sdw_shutdown(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai)
++{
++	struct sdw_dma_data *dma;
++
++	dma = snd_soc_dai_get_dma_data(dai, substream);
++	snd_soc_dai_remove_stream_tag(substream, dai);
++	sdw_release_stream_tag(dma->stream_tag);
++	dma->stream_state = STREAM_STATE_FREE_STREAM_TAG;
++	kfree(dma);
++}
+diff --git a/sound/soc/intel/skylake/skl-sdw-pcm.h b/sound/soc/intel/skylake/skl-sdw-pcm.h
+new file mode 100644
+index 0000000..ab1314a
+--- /dev/null
++++ b/sound/soc/intel/skylake/skl-sdw-pcm.h
+@@ -0,0 +1,41 @@
++/*
++ *  skl-sdw-pcm.h - Shared header file skylake PCM operations on soundwire
++ *
++ *  Copyright (C) 2014-2015 Intel Corp
++ *  Author:  Hardik Shah  <hardik.t.shah@intel.com>
++ *
++ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; version 2 of the License.
++ *
++ *  This program is distributed in the hope that it will be useful, but
++ *  WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  General Public License for more details.
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ */
++#ifndef _SKL_SDW_PCM_H
++#define  _SKL_SDW_PCM_H
++#include <linux/sdw_bus.h>
++#include <sound/soc.h>
++#include <sound/pcm_params.h>
++
++int cnl_sdw_startup(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai);
++int cnl_sdw_hw_params(struct snd_pcm_substream *substream,
++				struct snd_pcm_hw_params *params,
++				struct snd_soc_dai *dai);
++int cnl_sdw_hw_free(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai);
++int cnl_sdw_pcm_prepare(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai);
++int cnl_sdw_pcm_trigger(struct snd_pcm_substream *substream,
++	int cmd, struct snd_soc_dai *dai);
++void cnl_sdw_shutdown(struct snd_pcm_substream *substream,
++		struct snd_soc_dai *dai);
++
++#endif /* _SKL_SDW_PCM_H */
+-- 
+2.7.4
+

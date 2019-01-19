@@ -1,0 +1,73 @@
+From bd54afbbc19f690901bf0082885424da42f0569a Mon Sep 17 00:00:00 2001
+From: Jian Jun Chen <jian.jun.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:59:03 +0800
+Subject: [PATCH 0814/1132] VBS-K: add reset support for vbs_rng
+
+Add reset support for vbs_rng, it acts as an example about how to
+support D3.
+
+Signed-off-by: Jian Jun Chen <jian.jun.chen@intel.com>
+Reviewed-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Yu Wang <yu1.wang@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/vbs/vbs_rng.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/vbs/vbs_rng.c b/drivers/vbs/vbs_rng.c
+index 569d1d5..45e17b0 100644
+--- a/drivers/vbs/vbs_rng.c
++++ b/drivers/vbs/vbs_rng.c
+@@ -123,7 +123,7 @@ static int vbs_rng_connection_cnt = 0;
+ 
+ /* function declarations */
+ static int handle_kick(int client_id, unsigned long *ioreqs_map);
+-static void vbs_rng_reset(struct vbs_rng *rng);
++static long vbs_rng_reset(struct vbs_rng *rng);
+ static void vbs_rng_stop(struct vbs_rng *rng);
+ static void vbs_rng_flush(struct vbs_rng *rng);
+ #ifdef RUNTIME_CTRL
+@@ -319,7 +319,6 @@ static int vbs_rng_open(struct inode *inode, struct file *f)
+ static int vbs_rng_release(struct inode *inode, struct file *f)
+ {
+ 	struct vbs_rng *rng = f->private_data;
+-	int i;
+ 
+ 	if (!rng)
+ 		pr_err("%s: UNLIKELY rng NULL!\n",
+@@ -327,8 +326,6 @@ static int vbs_rng_release(struct inode *inode, struct file *f)
+ 
+ 	vbs_rng_stop(rng);
+ 	vbs_rng_flush(rng);
+-	for (i = 0; i < VBS_K_RNG_VQ_MAX; i++)
+-		virtio_vq_reset(&(rng->vqs[i]));
+ 
+ 	/* device specific release */
+ 	vbs_rng_reset(rng);
+@@ -396,6 +393,12 @@ static long vbs_rng_ioctl(struct file *f, unsigned int ioctl,
+ 		/* Increment counter */
+ 		vbs_rng_connection_cnt++;
+ 		return r;
++	case VBS_RESET_DEV:
++		pr_debug("VBS_RESET_DEV ioctl:\n");
++		vbs_rng_stop(rng);
++		vbs_rng_flush(rng);
++		r = vbs_rng_reset(rng);
++		return r;
+ 	default:
+ 		/*mutex_lock(&n->dev.mutex);*/
+ 		pr_debug("VBS_K generic ioctls!\n");
+@@ -410,8 +413,9 @@ static long vbs_rng_ioctl(struct file *f, unsigned int ioctl,
+ }
+ 
+ /* device specific function to cleanup itself */
+-static void vbs_rng_reset(struct vbs_rng *rng)
++static long vbs_rng_reset(struct vbs_rng *rng)
+ {
++	return virtio_dev_reset(&rng->dev);
+ }
+ 
+ /* device specific function */
+-- 
+2.7.4
+

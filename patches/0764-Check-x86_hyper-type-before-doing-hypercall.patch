@@ -1,0 +1,68 @@
+From 0b1a935b105d6dbc93ef12aa771ae936695286c6 Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:58 +0800
+Subject: [PATCH 0764/1132] Check x86_hyper type before doing hypercall
+
+this is to fix native boot failure issue with CONFIG_ACRN
+
+Change-Id: I735283cbf462c8b79d9742d64950685d6ae552c1
+Tracked-On:
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/acrn/acrn_trace.c  | 7 +++++++
+ drivers/char/vhm/vhm_dev.c | 7 +++++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/drivers/acrn/acrn_trace.c b/drivers/acrn/acrn_trace.c
+index 31470a3..856ab65 100644
+--- a/drivers/acrn/acrn_trace.c
++++ b/drivers/acrn/acrn_trace.c
+@@ -63,6 +63,8 @@
+ #include <linux/fs.h>
+ #include <linux/mm.h>
+ 
++#include <asm/hypervisor.h>
++
+ #include "sbuf.h"
+ 
+ 
+@@ -211,6 +213,11 @@ static int __init acrn_trace_init(void)
+ 	int ret = 0;
+ 	int i, cpu;
+ 
++	if (x86_hyper_type != X86_HYPER_ACRN) {
++		pr_err("acrn_trace: not support acrn hypervisor!\n");
++		return -EINVAL;
++	}
++
+ 	/* TBD: we could get the native cpu number by hypercall later */
+ 	pr_info("%s, cpu_num %d\n", __func__, nr_cpus);
+ 	if (nr_cpus > MAX_NR_CPUS) {
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 27844c8..b724c9e 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -84,6 +84,8 @@
+ #include <linux/vhm/vhm_vm_mngt.h>
+ #include <linux/vhm/vhm_hypercall.h>
+ 
++#include <asm/hypervisor.h>
++
+ #define  DEVICE_NAME "acrn_vhm"
+ #define  CLASS_NAME  "vhm"
+ 
+@@ -590,6 +592,11 @@ static int __init vhm_init(void)
+ 
+ 	pr_info("vhm: initializing\n");
+ 
++	if (x86_hyper_type != X86_HYPER_ACRN) {
++		pr_err("vhm: not support acrn hypervisor!\n");
++		return -EINVAL;
++	}
++
+ 	if (hcall_get_api_version(virt_to_phys(&api_version)) < 0) {
+ 		pr_err("vhm: failed to get api version from Hypervisor !\n");
+ 		return -EINVAL;
+-- 
+2.7.4
+

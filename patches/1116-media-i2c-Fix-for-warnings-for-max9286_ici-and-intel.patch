@@ -1,0 +1,96 @@
+From cebe4cdb9982316a1c59ceedcdaf46c640f65e30 Mon Sep 17 00:00:00 2001
+From: kgopala2 <karthik.l.gopalakrishnan@intel.com>
+Date: Sat, 5 Jan 2019 01:05:37 +0800
+Subject: [PATCH 1116/1132] media: i2c: Fix for warnings for max9286_ici and
+ intel platform
+
+Fixed -Wdeclaration-after-statement warnings in max9286_ici and
+-Wunused-variaable warnings in intel platform
+
+Change-Id: Ieadb4f3d3c2649d0f54db7f00e7f1203d2781088
+Tracked-On: PKT-1644
+Tracked-On: OAM-74863
+Signed-off-by: kgopala2 <karthik.l.gopalakrishnan@intel.com>
+---
+ drivers/media/i2c/ici/max9286_ici.c                 | 14 ++++++++------
+ drivers/media/i2c/ici/ti964_ici.c                   |  2 ++
+ drivers/media/platform/intel/ipu4-ici-bxt-p-pdata.c |  2 +-
+ 3 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/media/i2c/ici/max9286_ici.c b/drivers/media/i2c/ici/max9286_ici.c
+index 8fc998b..3400cc1 100644
+--- a/drivers/media/i2c/ici/max9286_ici.c
++++ b/drivers/media/i2c/ici/max9286_ici.c
+@@ -486,10 +486,13 @@ static int max9286_get_selection(struct ici_isys_node *node, struct ici_pad_sele
+ 
+ static int init_ext_sd(struct i2c_client *client, struct max9286_subdev *max_sd, int idx)
+ {
++	struct max9286 *max;
+ 	int rval;
+-	struct ici_ext_subdev *subdev = i2c_get_clientdata(client);;
+-	struct max9286 *max = to_max_9286(subdev);
+ 	char name[ICI_MAX_NODE_NAME];
++	struct ici_ext_subdev *subdev;
++
++	max = to_max_9286(subdev);
++	subdev = i2c_get_clientdata(client);
+ 
+ 	snprintf(name, sizeof(name), "MAX9286 %d", idx);
+ 
+@@ -592,6 +595,9 @@ static int max9286_registered(struct ici_ext_subdev_register *reg)
+ 	subdev->get_menu_item = max9286_get_menu_item;
+ 
+ 	for (i = 0, k = 0; (i < num) && (k < nsinks); i++, k++) {
++		struct i2c_client *client2;
++		struct ici_ext_subdev *sensor_sd;
++		struct ici_ext_subdev_register sd_register = {0};
+ 		struct max9286_subdev_i2c_info *info =
+ 			&max->pdata->subdev_info[i];
+ 		struct crlmodule_lite_platform_data *pdata =
+@@ -609,10 +615,6 @@ static int max9286_registered(struct ici_ext_subdev_register *reg)
+ 		max->subdev_pdata[i].suffix = info->suffix;
+ 		info->board_info.platform_data = &max->subdev_pdata[i];
+ 
+-		struct i2c_client *client2;
+-		struct ici_ext_subdev *sensor_sd;
+-		struct ici_ext_subdev_register sd_register = {0};
+-
+ 		request_module(I2C_MODULE_PREFIX "%s", info->board_info.type);
+ 
+ 		client2 = i2c_new_device(client->adapter, &info->board_info);
+diff --git a/drivers/media/i2c/ici/ti964_ici.c b/drivers/media/i2c/ici/ti964_ici.c
+index 0892007..ec91295 100644
+--- a/drivers/media/i2c/ici/ti964_ici.c
++++ b/drivers/media/i2c/ici/ti964_ici.c
+@@ -565,6 +565,7 @@ static int ti964_set_power(struct ici_isys_node *node, int on)
+ 	return regmap_write(va->regmap8, TI964_CSI_CTL, val);
+ }
+ 
++#ifdef TEST_PATTERN
+ static int ti964_tp_set_stream(struct ici_ext_subdev *subdev, int enable)
+ {
+ 	struct ti964 *va = to_ti964(subdev);
+@@ -588,6 +589,7 @@ static int ti964_tp_set_stream(struct ici_ext_subdev *subdev, int enable)
+ 
+ 	return 0;
+ }
++#endif
+ 
+ static int ti964_rx_port_config(struct ti964 *va, int sink, int rx_port)
+ {
+diff --git a/drivers/media/platform/intel/ipu4-ici-bxt-p-pdata.c b/drivers/media/platform/intel/ipu4-ici-bxt-p-pdata.c
+index df0c961..19aef79 100644
+--- a/drivers/media/platform/intel/ipu4-ici-bxt-p-pdata.c
++++ b/drivers/media/platform/intel/ipu4-ici-bxt-p-pdata.c
+@@ -187,7 +187,7 @@ static struct crlmodule_lite_platform_data ov10635_pdata = {
+ };
+ #endif
+ 
+-#if IS_ENABLED(CONFIG_VIDEO_TI964_ICI)
++#ifdef CONFIG_VIDEO_TI964_ICI
+ #define TI964_I2C_ADAPTER	2
+ #define TI964_I2C_ADAPTER_2	4
+ #define TI964_I2C_ADDRESS	0x3d
+-- 
+2.7.4
+

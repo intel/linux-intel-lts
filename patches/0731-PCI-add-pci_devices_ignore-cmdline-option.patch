@@ -1,0 +1,112 @@
+From a3e53097a0b0533ba3e71da13fb849f1ae21bcd6 Mon Sep 17 00:00:00 2001
+From: Yonghua Huang <yonghua.huang@intel.com>
+Date: Fri, 31 Aug 2018 10:58:54 +0800
+Subject: [PATCH 0731/1132] PCI: add pci_devices_ignore cmdline option
+
+some PCI devices may be occupied by hypervisor and do not want to
+enable in linux guest.
+add cmdline option "pci_devices_ignore=(B1:D1:F1),(B2:D2:F2, ...)"
+to ignore PCI devices when system doing pci scan.
+
+Change-Id: I506efef0a9d3a20b207770c744c70a013b10de13
+Tracked-On:218445
+Signed-off-by: Yonghua Huang <yonghua.huang@intel.com>
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/pci/probe.c | 69 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 69 insertions(+)
+
+diff --git a/drivers/pci/probe.c b/drivers/pci/probe.c
+index 201f9e5..b9dda36 100644
+--- a/drivers/pci/probe.c
++++ b/drivers/pci/probe.c
+@@ -42,6 +42,70 @@ struct pci_domain_busn_res {
+ 	int domain_nr;
+ };
+ 
++#define PCI_IGNORE_MAX 8
++
++static u16 devices_ignore_table[PCI_IGNORE_MAX];
++static int devices_ignore_cnt;
++
++static void parse_ignore_device(char *bdf_str)
++{
++	int fields;
++	unsigned int bus;
++	unsigned int dev;
++	unsigned int func;
++
++	if (devices_ignore_cnt >= PCI_IGNORE_MAX - 1)
++		return;
++
++	fields = sscanf(bdf_str, "%x:%x:%x", &bus, &dev, &func);
++	if (fields != 3)
++		return;
++
++	devices_ignore_table[devices_ignore_cnt++] =
++			PCI_DEVID(bus, PCI_DEVFN(dev, func));
++}
++
++static int __init pci_deivces_ignore(char *str)
++{
++	int len;
++	char *start, *end;
++	char bdf[16];
++
++	devices_ignore_cnt = 0;
++
++	while ((start = strchr(str, '('))) {
++
++		end = strchr(start, ')');
++		if (end == NULL)
++			break;
++
++		len = end - start - 1;
++		if (len >= 16) /*invalid string*/
++			break;
++
++		memcpy((void *)bdf, (void *)(start+1), len);
++		bdf[len] = '\0';
++		parse_ignore_device(bdf);
++		str = end + 1;
++	}
++
++	return 1;
++}
++__setup("pci_devices_ignore=", pci_deivces_ignore);
++
++static bool device_on_ignore_list(int bus, int dev, int func)
++{
++	int i;
++
++	for (i = 0; i < devices_ignore_cnt; i++)
++		if ((PCI_BUS_NUM(devices_ignore_table[i]) == bus) &&
++			(PCI_SLOT(devices_ignore_table[i]) == dev) &&
++			(PCI_FUNC(devices_ignore_table[i]) == func))
++			return true;
++
++	return false;
++}
++
+ static struct resource *get_pci_domain_busn_res(int domain_nr)
+ {
+ 	struct pci_domain_busn_res *r;
+@@ -2442,6 +2506,11 @@ struct pci_dev *pci_scan_single_device(struct pci_bus *bus, int devfn)
+ 		return dev;
+ 	}
+ 
++	if (device_on_ignore_list(bus->number,
++				PCI_SLOT(devfn),
++				PCI_FUNC(devfn)))
++		return NULL;
++
+ 	dev = pci_scan_device(bus, devfn);
+ 	if (!dev)
+ 		return NULL;
+-- 
+2.7.4
+

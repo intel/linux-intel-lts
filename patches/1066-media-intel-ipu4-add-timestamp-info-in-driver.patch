@@ -1,0 +1,52 @@
+From fc68c898e0e28f2b44df0909a6fcc45634c62087 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Tue, 27 Nov 2018 19:31:45 +0800
+Subject: [PATCH 1066/1132] media: intel-ipu4: add timestamp info in driver
+
+Add timestamp information as a basis for judging
+whether or not synchronization is performed during
+4-channel frame transmission. And a python script
+is also needed to process the log information.
+
+Change-Id: Ia273afa2c2e439d3e2e30e45c41f2b92210c4c84
+Tracked-On: PKT-1624
+Signed-off-by: libo7x <box.o.li@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/pci/intel/ipu-isys-csi2.c  | 4 ++--
+ drivers/media/pci/intel/ipu-isys-queue.c | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu-isys-csi2.c b/drivers/media/pci/intel/ipu-isys-csi2.c
+index 87ecce7..2473f92 100644
+--- a/drivers/media/pci/intel/ipu-isys-csi2.c
++++ b/drivers/media/pci/intel/ipu-isys-csi2.c
+@@ -850,8 +850,8 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
+ 	trace_ipu_sof_seqid(ev.u.frame_sync.frame_sequence, csi2->index, vc);
+ 	v4l2_event_queue(vdev, &ev);
+ 	dev_dbg(&csi2->isys->adev->dev,
+-		"sof_event::csi2-%i sequence: %i, vc: %d, stream_id: %d\n",
+-		csi2->index, ev.u.frame_sync.frame_sequence, vc, ip->stream_id);
++		"sof_event::csi2-%i CPU-timestamp:%lld, sequence:%i, vc:%d, stream_id:%d\n",
++		csi2->index, ktime_get_ns(), ev.u.frame_sync.frame_sequence, vc, ip->stream_id);
+ }
+ 
+ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
+diff --git a/drivers/media/pci/intel/ipu-isys-queue.c b/drivers/media/pci/intel/ipu-isys-queue.c
+index 11f7da5..2f0db1a 100644
+--- a/drivers/media/pci/intel/ipu-isys-queue.c
++++ b/drivers/media/pci/intel/ipu-isys-queue.c
+@@ -1143,8 +1143,8 @@ ipu_isys_buf_calc_sequence_time(struct ipu_isys_buffer *ib,
+ 	vbuf->vb2_buf.timestamp = ns;
+ 	vbuf->sequence = sequence;
+ 
+-	dev_dbg(&av->isys->adev->dev, "buffer: %s: buffer done %u\n",
+-		av->vdev.name, vb->index);
++	dev_dbg(&av->isys->adev->dev, "buffer: %s: buffer done, CPU-timestamp:%lld, sequence:%d, vc:%d, index:%d, vbuf timestamp:%lld, endl\n",
++		av->vdev.name, ktime_get_ns(), sequence, ip->vc, vb->index, vbuf->vb2_buf.timestamp);
+ #endif
+ }
+ 
+-- 
+2.7.4
+

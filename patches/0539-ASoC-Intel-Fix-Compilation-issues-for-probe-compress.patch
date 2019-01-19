@@ -1,0 +1,60 @@
+From 46bb4ee9405f1138859fcc27bb4be3a5500c2ae2 Mon Sep 17 00:00:00 2001
+From: Jaikrishna Nemallapudi <jaikrishnax.nemallapudi@intel.com>
+Date: Wed, 22 Mar 2017 19:16:23 +0530
+Subject: [PATCH 0539/1132] ASoC: Intel: Fix Compilation issues for probe
+ compress APIs
+
+Move the inline to header file.
+
+Fixes: 202dcc0("ASoC: Intel: Add Probe compress APIs")
+Signed-off-by: Jaikrishna Nemallapudi <jaikrishnax.nemallapudi@intel.com>
+Cc: Divya Prakash
+Cc: Babu, Ramesh <ramesh.babu@intel.com>
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/skl-compress.c | 5 -----
+ sound/soc/intel/skylake/skl-compress.h | 7 +++++--
+ 2 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-compress.c b/sound/soc/intel/skylake/skl-compress.c
+index a0b33e1..67f2b78 100644
+--- a/sound/soc/intel/skylake/skl-compress.c
++++ b/sound/soc/intel/skylake/skl-compress.c
+@@ -26,11 +26,6 @@
+ #include <sound/soc.h>
+ #include "skl.h"
+ #include "skl-compress.h"
+-inline
+-struct hdac_ext_stream *get_hdac_ext_compr_stream(struct snd_compr_stream *stream)
+-{
+-	return stream->runtime->private_data;
+-}
+ 
+ struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream)
+ {
+diff --git a/sound/soc/intel/skylake/skl-compress.h b/sound/soc/intel/skylake/skl-compress.h
+index 2db3473..abfff2d 100644
+--- a/sound/soc/intel/skylake/skl-compress.h
++++ b/sound/soc/intel/skylake/skl-compress.h
+@@ -20,8 +20,6 @@
+  */
+ #ifndef __SKL_COMPRESS_H__
+ #define __SKL_COMPRESS_H__
+-inline
+-struct hdac_ext_stream *get_hdac_ext_compr_stream(struct snd_compr_stream *stream);
+ struct hdac_ext_bus *get_bus_compr_ctx(struct snd_compr_stream *substream);
+ void skl_set_compr_runtime_buffer(struct snd_compr_stream *substream,
+ 				struct snd_dma_buffer *bufp, size_t size);
+@@ -33,4 +31,9 @@ int skl_substream_alloc_compr_pages(struct hdac_ext_bus *ebus,
+ int skl_compr_free_pages(struct snd_compr_stream *substream);
+ int skl_substream_free_compr_pages(struct hdac_bus *bus,
+ 				struct snd_compr_stream *substream);
++static inline struct hdac_ext_stream
++*get_hdac_ext_compr_stream(struct snd_compr_stream *stream)
++{
++	return stream->runtime->private_data;
++}
+ #endif /* __SKL_COMPRESS_H__*/
+-- 
+2.7.4
+

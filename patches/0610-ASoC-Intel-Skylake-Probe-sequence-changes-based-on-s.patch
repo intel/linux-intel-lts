@@ -1,0 +1,1023 @@
+From ad34ae4c939ae73922dfcdcaf6adc956d7b56d1d Mon Sep 17 00:00:00 2001
+From: "Pawse, GuruprasadX" <guruprasadx.pawse@intel.com>
+Date: Mon, 11 Jul 2016 18:29:27 +0530
+Subject: [PATCH 0610/1132] ASoC: Intel: Skylake: Probe sequence changes based
+ on state transition
+
+PROBE STATE TRANSITIONS:
+This patch implements below state sequence in setting-up and tearing down
+the extractor/injector probe point.
+
+EXTRACTOR:
+Default state: SKL_PROBE_STATE_EXT_NONE
+1. Probe module instantiation and probe point connections
+	State: SKL_PROBE_STATE_EXT_CONNECTED
+2. Probe point disconnection
+	State: SKL_PROBE_STATE_EXT_NONE
+Note: Extractor does not have separate attach/detach DMA step
+
+INJECTOR:
+Default state: SKL_PROBE_STATE_INJ_NONE
+1. Probe module instantiation & Injection DMA attachment
+	State: SKL_PROBE_STATE_INJ_DMA_ATTACHED
+2. Probe point connection
+	State: SKL_PROBE_STATE_INJ_CONNECTED
+3. Probe point disconnection
+	State: SKL_PROBE_STATE_INJ_DISCONNECTED
+4. Injection DMA detachment
+	State: SKL_PROBE_STATE_INJ_NONE
+
+Change-Id: I4ceb720d9dfae82c8877db1c971715956382852d
+Signed-off-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ include/uapi/sound/skl-tplg-interface.h |  22 +-
+ sound/soc/intel/skylake/skl-messages.c  |  66 +++++-
+ sound/soc/intel/skylake/skl-pcm.c       |  14 +-
+ sound/soc/intel/skylake/skl-probe.c     | 104 ++++++--
+ sound/soc/intel/skylake/skl-sst-ipc.h   |  26 +-
+ sound/soc/intel/skylake/skl-topology.c  | 408 ++++++++++++++++++++++----------
+ sound/soc/intel/skylake/skl-topology.h  |  24 +-
+ 7 files changed, 495 insertions(+), 169 deletions(-)
+
+diff --git a/include/uapi/sound/skl-tplg-interface.h b/include/uapi/sound/skl-tplg-interface.h
+index e5656fc..2dceadf 100644
+--- a/include/uapi/sound/skl-tplg-interface.h
++++ b/include/uapi/sound/skl-tplg-interface.h
+@@ -151,17 +151,33 @@ enum skl_module_param_type {
+ 	SKL_PARAM_BIND
+ };
+ 
+-enum skl_probe_connect_type {
+-	SKL_PROBE_CONNECT = 3,
++enum skl_probe_param_id_type {
++	SKL_PROBE_INJECT_DMA_ATTACH = 1,
++	SKL_PROBE_INJECT_DMA_DETACH,
++	SKL_PROBE_CONNECT,
+ 	SKL_PROBE_DISCONNECT
+ };
+ 
+-enum skl_probe_direction {
++enum skl_probe_purpose {
+ 	SKL_PROBE_EXTRACT = 0,
+ 	SKL_PROBE_INJECT,
+ 	SKL_PROBE_INJECT_REEXTRACT
+ };
+ 
++/* Injector probe states */
++enum skl_probe_state_inj {
++	SKL_PROBE_STATE_INJ_NONE = 1,
++	SKL_PROBE_STATE_INJ_DMA_ATTACHED,
++	SKL_PROBE_STATE_INJ_CONNECTED,
++	SKL_PROBE_STATE_INJ_DISCONNECTED
++};
++
++/* Extractor probe states */
++enum skl_probe_state_ext {
++	SKL_PROBE_STATE_EXT_NONE = 1,
++	SKL_PROBE_STATE_EXT_CONNECTED
++};
++
+ struct skl_dfw_sdw_aggdata {
+ 	u32 alh_stream_num;
+ 	u32 channel_mask;
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index dc648b7..b52f1c0 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -2008,33 +2008,83 @@ static void skl_dump_bind_info(struct skl_sst *ctx, struct skl_module_cfg
+ 		src_module->m_state, dst_module->m_state);
+ }
+ 
+-int skl_disconnect_probe_point(struct skl_sst *ctx,
++int skl_probe_point_disconnect_ext(struct skl_sst *ctx,
+ 				struct snd_soc_dapm_widget *w)
+ {
+ 	struct skl_ipc_large_config_msg msg;
+ 	struct skl_probe_config *pconfig = &ctx->probe_config;
+ 	struct skl_module_cfg *mcfg;
+-	int probe_point[8] = {0};
++	u32 probe_point[NO_OF_EXTRACTOR] = {0};
++	int store_prb_pt_index[NO_OF_EXTRACTOR] = {0};
+ 	int n = 0, i;
++	int ret = 0;
+ 	int no_of_extractor = pconfig->no_extractor;
+ 
+-	dev_dbg(ctx->dev, "Disconnecting probe\n");
++	dev_dbg(ctx->dev, "Disconnecting extractor probe points\n");
+ 	mcfg = w->priv;
+ 	msg.module_id = mcfg->id.module_id;
+ 	msg.instance_id = mcfg->id.instance_id;
+ 	msg.large_param_id = SKL_PROBE_DISCONNECT;
+ 
+ 	for (i = 0; i < no_of_extractor; i++) {
+-		if (pconfig->eprobe[i].set) {
+-			probe_point[n] = pconfig->eprobe[i].id;
+-			pconfig->eprobe[i].set = -1;
++		if (pconfig->eprobe[i].state == SKL_PROBE_STATE_EXT_CONNECTED) {
++			probe_point[n] = pconfig->eprobe[i].probe_point_id;
++			store_prb_pt_index[i] = 1;
+ 			n++;
+ 		}
+ 	}
++	if (n == 0)
++		return ret;
+ 
+ 	msg.param_data_size = n * sizeof(u32);
+-	return skl_ipc_set_large_config(&ctx->ipc, &msg,
+-						probe_point);
++	dev_dbg(ctx->dev, "setting module params size=%d\n",
++					msg.param_data_size);
++	ret = skl_ipc_set_large_config(&ctx->ipc, &msg, probe_point);
++	if (ret < 0)
++		return -EINVAL;
++
++	for (i = 0; i < pconfig->no_extractor; i++) {
++		if (store_prb_pt_index[i]) {
++			pconfig->eprobe[i].state = SKL_PROBE_STATE_EXT_NONE;
++			dev_dbg(ctx->dev, "eprobe[%d].state %d\n",
++					i, pconfig->eprobe[i].state);
++		}
++	}
++
++	return ret;
++}
++
++int skl_probe_point_disconnect_inj(struct skl_sst *ctx,
++				struct snd_soc_dapm_widget *w, int index)
++{
++	struct skl_ipc_large_config_msg msg;
++	struct skl_probe_config *pconfig = &ctx->probe_config;
++	struct skl_module_cfg *mcfg;
++	u32 probe_point = 0;
++	int ret = 0;
++
++	if (pconfig->iprobe[index].state == SKL_PROBE_STATE_INJ_CONNECTED) {
++		dev_dbg(ctx->dev, "Disconnecting injector probe point\n");
++		mcfg = w->priv;
++		msg.module_id = mcfg->id.module_id;
++		msg.instance_id = mcfg->id.instance_id;
++		msg.large_param_id = SKL_PROBE_DISCONNECT;
++		probe_point = pconfig->iprobe[index].probe_point_id;
++		msg.param_data_size = sizeof(u32);
++
++		dev_dbg(ctx->dev, "setting module params size=%d\n",
++						msg.param_data_size);
++		ret = skl_ipc_set_large_config(&ctx->ipc, &msg, &probe_point);
++		if (ret < 0)
++			return -EINVAL;
++
++		pconfig->iprobe[index].state = SKL_PROBE_STATE_INJ_DISCONNECTED;
++		dev_dbg(ctx->dev, "iprobe[%d].state %d\n",
++				index, pconfig->iprobe[index].state);
++	}
++
++	return ret;
++
+ }
+ /*
+  * On module freeup, we need to unbind the module with modules
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index ac9f67c..1a722d2 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1774,6 +1774,7 @@ static int skl_get_probe_widget(struct snd_soc_component *component,
+ {
+ 	struct skl_probe_config *pconfig = &skl->skl_sst->probe_config;
+ 	struct snd_soc_dapm_widget *w;
++	int i;
+ 
+ 	list_for_each_entry(w, &component->card->widgets, list) {
+ 		if (is_skl_dsp_widget_type(w, skl->skl_sst->dev) &&
+@@ -1786,9 +1787,16 @@ static int skl_get_probe_widget(struct snd_soc_component *component,
+ 		}
+ 	}
+ 
+-	pconfig->probe_count = 0;
+-	pconfig->no_injector = 6;
+-	pconfig->no_extractor = 8;
++	pconfig->i_refc = 0;
++	pconfig->e_refc = 0;
++	pconfig->no_injector = NO_OF_INJECTOR;
++	pconfig->no_extractor = NO_OF_EXTRACTOR;
++
++	for (i = 0; i < pconfig->no_injector; i++)
++		pconfig->iprobe[i].state = SKL_PROBE_STATE_INJ_NONE;
++
++	for (i = 0; i < pconfig->no_extractor; i++)
++		pconfig->eprobe[i].state = SKL_PROBE_STATE_EXT_NONE;
+ 
+ 	return 0;
+ }
+diff --git a/sound/soc/intel/skylake/skl-probe.c b/sound/soc/intel/skylake/skl-probe.c
+index b4f5fe4..9ccd19d 100644
+--- a/sound/soc/intel/skylake/skl-probe.c
++++ b/sound/soc/intel/skylake/skl-probe.c
+@@ -40,6 +40,37 @@
+  */
+ #define SKL_EXTRACT_PROBE_DMA_BUFF_SIZE 6208
+ 
++/*
++ * ========================
++ * PROBE STATE TRANSITIONS:
++ * ========================
++ * Below gives the steps involved in setting-up and tearing down the
++ * extractor/injector probe point and the corresponding state to which
++ * it transition after each step.
++ *
++ * EXTRACTOR:
++ * Default state: SKL_PROBE_STATE_EXT_NONE
++ * 1. Probe module instantiation and probe point connections
++ *    (can connect multiple probe points)
++ *		State: SKL_PROBE_STATE_EXT_CONNECTED
++ *			--> State where the stream is running.
++ * 2. Probe point disconnection
++ *		State: SKL_PROBE_STATE_EXT_NONE
++ * Note: Extractor does not have separate attach/detach DMA step
++ *
++ * INJECTOR:
++ * Default state: SKL_PROBE_STATE_INJ_NONE
++ * 1. Probe module instantiation & Injection DMA attachment
++ *		State: SKL_PROBE_STATE_INJ_DMA_ATTACHED
++ * 2. Probe point connection
++ *		State: SKL_PROBE_STATE_INJ_CONNECTED
++ *			--> State where the stream is running.
++ * 3. Probe point disconnection
++ *		State: SKL_PROBE_STATE_INJ_DISCONNECTED
++ * 4. Injection DMA detachment
++ *		State: SKL_PROBE_STATE_INJ_NONE
++ */
++
+ static int set_injector_stream(struct hdac_ext_stream *stream,
+ 						struct snd_soc_dai *dai)
+ {
+@@ -50,9 +81,9 @@ static int set_injector_stream(struct hdac_ext_stream *stream,
+ 	 */
+ 	struct skl *skl = get_skl_ctx(dai->dev);
+ 	struct skl_probe_config *pconfig =  &skl->skl_sst->probe_config;
+-	int i;
++	int i = skl_probe_get_index(dai, pconfig);
+ 
+-	if ((i = skl_get_probe_index(dai, pconfig)) != -1) {
++	if (i != -1) {
+ 		pconfig->iprobe[i].stream = stream;
+ 		pconfig->iprobe[i].dma_id =
+ 				hdac_stream(stream)->stream_tag - 1;
+@@ -71,7 +102,7 @@ int skl_probe_compr_open(struct snd_compr_stream *substream,
+ 
+ 	dev_dbg(dai->dev, "%s dev is  %s\n",  __func__, dev_name(dai->dev));
+ 
+-	if (!pconfig->probe_count) {
++	if ((pconfig->i_refc + pconfig->e_refc) == 0) {
+ 		pconfig->edma_buffsize = SKL_EXTRACT_PROBE_DMA_BUFF_SIZE;
+ 		pconfig->edma_type = SKL_DMA_HDA_HOST_INPUT_CLASS;
+ 		pconfig->estream = hdac_ext_host_stream_compr_assign(ebus,
+@@ -118,8 +149,15 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
+ 	int ret, dma_id;
+ 	unsigned int format_val = 0;
+ 	int err;
++	int index;
+ 
+ 	dev_dbg(dai->dev, "%s: %s\n", __func__, dai->name);
++
++	if (hdac_stream(stream)->prepared) {
++		dev_dbg(dai->dev, "already stream is prepared - returning\n");
++		return 0;
++	}
++
+ 	ret = skl_substream_alloc_compr_pages(ebus, substream,
+ 				runtime->fragments*runtime->fragment_size);
+ 	if (ret < 0)
+@@ -128,11 +166,6 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
+ 	dma_id = hdac_stream(stream)->stream_tag - 1;
+ 	dev_dbg(dai->dev, "dma_id=%d\n", dma_id);
+ 
+-	if (hdac_stream(stream)->prepared) {
+-		dev_dbg(dai->dev, "already stream is prepared - returning\n");
+-		return 0;
+-	}
+-
+ 	snd_hdac_stream_reset(hdac_stream(stream));
+ 
+ 	err = snd_hdac_stream_set_params(hdac_stream(stream), format_val);
+@@ -148,17 +181,25 @@ int skl_probe_compr_set_params(struct snd_compr_stream *substream,
+ 	hdac_stream(stream)->prepared = 1;
+ 
+ 	/* Initialize probe module only the first time */
+-	if (!pconfig->probe_count) {
+-
++	if ((pconfig->i_refc + pconfig->e_refc) == 0) {
+ 		ret = skl_init_probe_module(skl->skl_sst, mconfig);
+ 		if (ret < 0)
+ 			return ret;
+ 	}
+ 
+-	if (substream->direction == SND_COMPRESS_PLAYBACK)
+-		skl_tplg_attach_probe_dma(pconfig->w, skl->skl_sst, dai);
++	if (substream->direction == SND_COMPRESS_PLAYBACK) {
++		index = skl_probe_get_index(dai, pconfig);
++		if (index < 0)
++			return -EINVAL;
++
++		ret = skl_probe_attach_inj_dma(pconfig->w, skl->skl_sst, index);
++		if (ret < 0)
++			return -EINVAL;
+ 
+-	pconfig->probe_count++;
++		pconfig->i_refc++;
++	} else {
++		pconfig->e_refc++;
++	}
+ 
+ #if USE_SPIB
+ 	snd_hdac_ext_stream_spbcap_enable(ebus, 1, hdac_stream(stream)->index);
+@@ -173,15 +214,43 @@ int skl_probe_compr_close(struct snd_compr_stream *substream,
+ 	struct hdac_ext_bus *ebus = dev_get_drvdata(dai->dev);
+ 	struct skl *skl = get_skl_ctx(dai->dev);
+ 	struct skl_probe_config *pconfig =  &skl->skl_sst->probe_config;
+-	int ret;
++	struct skl_module_cfg *mconfig = pconfig->w->priv;
++	int ret = 0;
++	int index;
+ 
+ 	dev_dbg(dai->dev, "%s: %s\n", __func__, dai->name);
+ #if USE_SPIB
+ 	snd_hdac_ext_stream_spbcap_enable(ebus, 0, hdac_stream(stream)->index);
+ #endif
++	if ((pconfig->i_refc + pconfig->e_refc) == 0)
++		goto probe_uninit;
++
++	if (substream->direction == SND_COMPRESS_PLAYBACK) {
++		index = skl_probe_get_index(dai, pconfig);
++		if (index < 0)
++			return -EINVAL;
++
++		ret = skl_probe_point_disconnect_inj(skl->skl_sst,
++						pconfig->w, index);
++		if (ret < 0)
++			return -EINVAL;
++
++		ret = skl_probe_detach_inj_dma(skl->skl_sst, pconfig->w, index);
++		if (ret < 0)
++			return -EINVAL;
++
++		pconfig->i_refc--;
++	} else if (substream->direction == SND_COMPRESS_CAPTURE) {
++		ret = skl_probe_point_disconnect_ext(skl->skl_sst, pconfig->w);
++		if (ret < 0)
++			return -EINVAL;
++
++		pconfig->e_refc--;
++	}
+ 
+-	if (!--pconfig->probe_count) {
+-		skl_disconnect_probe_point(skl->skl_sst, pconfig->w);
++probe_uninit:
++	if (((pconfig->i_refc + pconfig->e_refc) == 0)
++			&& mconfig->m_state == SKL_MODULE_INIT_DONE) {
+ 		ret = skl_uninit_probe_module(skl->skl_sst, pconfig->w->priv);
+ 		if (ret < 0)
+ 			return ret;
+@@ -344,7 +413,8 @@ int skl_probe_compr_trigger(struct snd_compr_stream *substream, int cmd,
+ 		/* FW starts probe module soon after its params are set.
+ 		 * So to avoid xruns, start DMA first and then set probe params.
+ 		 */
+-		ret = skl_tplg_set_probe_params(pconfig->w, skl->skl_sst, substream->direction, dai);
++		ret = skl_probe_point_set_config(pconfig->w, skl->skl_sst,
++						substream->direction, dai);
+ 		if (ret < 0)
+ 			return -EINVAL;
+ 	}
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index bc9b278..d6866bc 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -20,6 +20,7 @@
+ #include <sound/memalloc.h>
+ #include "../common/sst-ipc.h"
+ #include "skl-sst-dsp.h"
++#include "skl-tplg-interface.h"
+ 
+ struct sst_dsp;
+ struct skl_sst;
+@@ -100,21 +101,36 @@ struct skl_lib_info {
+ };
+ 
+ struct injector_data {
+-	int set;
+-	int id;
++	/* connect or disconnect */
++	u8 operation;
++	/* Specifies EXTRACTOR or INJECTOR or INJECT_REEXTRACT */
++	u32 purpose;
++	/* Injector probe param */
++	u32 probe_point_id;
+ 	struct hdac_ext_stream *stream;
+ 	int dma_id;
+ 	int dma_buf_size;
++	enum skl_probe_state_inj state;
+ };
+ 
+ struct extractor_data {
+-	int set;
+-	int id;
++	/* Probe connect or disconnect */
++	u8 operation;
++	/* Specifies EXTRACTOR or INJECTOR or INJECT_REEXTRACT */
++	u32 purpose;
++	/* Extractor probe param */
++	u32 probe_point_id;
++	enum skl_probe_state_ext state;
+ };
+ 
+ struct skl_probe_config {
+ 	struct snd_soc_dapm_widget *w;
+-	int probe_count;
++	/* Number of extractor DMA's used */
++	int e_refc;
++
++	/* Number of injector DMA's used */
++	int i_refc;
++
+ 	int edma_id;
+ 	int edma_type;
+ 	int edma_buffsize;
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 3eb388c..4343f996 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -495,7 +495,7 @@ static void skl_tplg_update_module_params(struct snd_soc_dapm_widget *w,
+ 	skl_dump_mconfig(ctx, m_cfg);
+ }
+ 
+-int skl_get_probe_index(struct snd_soc_dai *dai,
++int skl_probe_get_index(struct snd_soc_dai *dai,
+ 				struct skl_probe_config *pconfig)
+ {
+ 	int i, ret = -1;
+@@ -509,62 +509,124 @@ int skl_get_probe_index(struct snd_soc_dai *dai,
+ 	return ret;
+ }
+ 
+-int skl_tplg_attach_probe_dma(struct snd_soc_dapm_widget *w,
+-					struct skl_sst *ctx, struct snd_soc_dai *dai)
++int skl_probe_attach_inj_dma(struct snd_soc_dapm_widget *w,
++					struct skl_sst *ctx, int index)
+ {
+-	int i, ret;
++	int ret = -EINVAL;
++
+ 	struct skl_module_cfg *mconfig = w->priv;
+-	struct skl_attach_probe_dma ad;
++	struct skl_probe_attach_inj_dma ad;
+ 	struct skl_probe_config *pconfig = &ctx->probe_config;
+ 
+-	if ((i = skl_get_probe_index(dai, pconfig)) != -1) {
+-		ad.node_id.node.vindex = pconfig->iprobe[i].dma_id;
++	if (pconfig->iprobe[index].state == SKL_PROBE_STATE_INJ_NONE) {
++		dev_dbg(ctx->dev, "Attaching injector DMA\n");
++		ad.node_id.node.vindex = pconfig->iprobe[index].dma_id;
+ 		ad.node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
+ 		ad.node_id.node.rsvd = 0;
+ 		ad.dma_buff_size = SKL_INJECT_PROBE_DMA_BUFF_SIZE;
++
++		ret = skl_set_module_params(ctx, (void *)&ad,
++					sizeof(struct skl_probe_attach_inj_dma),
++					SKL_PROBE_INJECT_DMA_ATTACH, mconfig);
++		if (ret < 0)
++			return -EINVAL;
++
++		pconfig->iprobe[index].state = SKL_PROBE_STATE_INJ_DMA_ATTACHED;
++		dev_dbg(ctx->dev, "iprobe[%d].state %d\n", index,
++					pconfig->iprobe[index].state);
+ 	}
+ 
+ 	ret = skl_set_module_params(ctx, (u32 *)&ad,
+-			sizeof(struct skl_attach_probe_dma), 1, mconfig);
++			sizeof(struct skl_probe_attach_inj_dma),
++							1, mconfig);
+ 	return ret;
+ 
+ }
+ 
+-int skl_tplg_set_probe_params(struct snd_soc_dapm_widget *w,
++int skl_probe_detach_inj_dma(struct skl_sst *ctx, struct snd_soc_dapm_widget *w,
++								int index)
++{
++	struct skl_module_cfg *mconfig = w->priv;
++	struct skl_probe_config *pconfig = &ctx->probe_config;
++	struct skl_ipc_large_config_msg msg;
++	union skl_connector_node_id node_id;
++	int ret = -EINVAL;
++
++	if (pconfig->iprobe[index].state == SKL_PROBE_STATE_INJ_DISCONNECTED) {
++		dev_dbg(ctx->dev, "Detaching injector DMA\n");
++		node_id.node.vindex = pconfig->iprobe[index].dma_id;
++		node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
++		node_id.node.rsvd = 0;
++
++		msg.module_id = mconfig->id.module_id;
++		msg.instance_id = mconfig->id.instance_id;
++		msg.large_param_id = SKL_PROBE_INJECT_DMA_DETACH;
++		msg.param_data_size = sizeof(union skl_connector_node_id);
++
++		dev_dbg(ctx->dev, "setting module params size=%d\n",
++						msg.param_data_size);
++		ret = skl_ipc_set_large_config(&ctx->ipc, &msg,
++						(u32 *)&node_id);
++		if (ret < 0)
++			return -EINVAL;
++
++		pconfig->iprobe[index].state = SKL_PROBE_STATE_INJ_NONE;
++		dev_dbg(ctx->dev, "iprobe[%d].state %d\n", index,
++					pconfig->iprobe[index].state);
++	}
++	return ret;
++}
++
++
++int skl_probe_point_set_config(struct snd_soc_dapm_widget *w,
+ 					struct skl_sst *ctx, int direction,
+ 					struct snd_soc_dai *dai)
+ {
+-	int i, ret = 0, n = 0;
++	int i, ret = -EIO, n = 0;
+ 	struct skl_module_cfg *mconfig = w->priv;
+ 	const struct snd_kcontrol_new *k;
+-	struct soc_bytes_ext *sb;
+-	struct skl_probe_data *bc;
+ 	struct skl_probe_config *pconfig = &ctx->probe_config;
+ 	struct probe_pt_param prb_pt_param[8] = {{0}};
++	int store_prb_pt_index[8] = {0};
+ 
+ 	if (direction == SND_COMPRESS_PLAYBACK) {
+ 
+ 		/* only one injector point can be set at a time*/
+-		n = skl_get_probe_index(dai, pconfig);
++		n = skl_probe_get_index(dai, pconfig);
+ 		if (n < 0)
+ 			return -EINVAL;
+ 
+ 		k = &w->kcontrol_news[pconfig->no_extractor + n];
+-
+-		if (k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK) {
+-			sb = (void *) k->private_value;
+-			bc = (struct skl_probe_data *)sb->dobj.private;
+-			pr_debug("bc->is_ext_inj = %d, bc->params = %d, bc->is_connect = %d \n",
+-						bc->is_ext_inj, bc->params, bc->is_connect);
+-			if (!(bc->is_ext_inj == SKL_PROBE_INJECT ||
+-					bc->is_ext_inj == SKL_PROBE_INJECT_REEXTRACT))
++		dev_dbg(dai->dev, "operation = %d, purpose = %d, probe_point_id = %d\n",
++		pconfig->iprobe[n].operation, pconfig->iprobe[n].purpose,
++					pconfig->iprobe[n].probe_point_id);
++
++		if ((k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK)
++			&& (pconfig->iprobe[n].state ==
++				SKL_PROBE_STATE_INJ_DMA_ATTACHED)
++			&& (pconfig->iprobe[n].operation ==
++						SKL_PROBE_CONNECT)
++			&& (pconfig->iprobe[n].purpose ==
++						SKL_PROBE_INJECT ||
++			pconfig->iprobe[n].purpose ==
++					SKL_PROBE_INJECT_REEXTRACT)) {
++
++			prb_pt_param[0].params =
++					pconfig->iprobe[n].probe_point_id;
++			prb_pt_param[0].connection = pconfig->iprobe[n].purpose;
++			prb_pt_param[0].node_id =  pconfig->iprobe[n].dma_id;
++			ret = skl_set_module_params(ctx, (void *)prb_pt_param,
++				sizeof(struct probe_pt_param),
++				SKL_PROBE_CONNECT, mconfig);
++			if (ret < 0) {
++				dev_dbg(dai->dev, "failed to set injector probe point\n");
+ 				return -EINVAL;
++			}
+ 
+-			prb_pt_param[0].params = (int)bc->params;
+-			prb_pt_param[0].connection = bc->is_ext_inj;
+-			prb_pt_param[0].node_id =  pconfig->iprobe[n].dma_id;
+-			ret = skl_set_module_params(ctx, (void *)prb_pt_param, sizeof(struct probe_pt_param),
+-							bc->is_connect, mconfig);
++			pconfig->iprobe[n].state =
++					SKL_PROBE_STATE_INJ_CONNECTED;
++			dev_dbg(dai->dev, "iprobe[%d].state %d\n", n,
++						pconfig->iprobe[n].state);
+ 		}
+ 
+ 	} else if (direction == SND_COMPRESS_CAPTURE) {
+@@ -572,27 +634,50 @@ int skl_tplg_set_probe_params(struct snd_soc_dapm_widget *w,
+ 		/*multiple extractor points can be set simultaneously*/
+ 		for (i = 0; i < pconfig->no_extractor; i++) {
+ 			k = &w->kcontrol_news[i];
+-			if (k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK) {
+-				sb = (void *) k->private_value;
+-				bc = (struct skl_probe_data *)sb->dobj.private;
+-
+-				pr_debug("bc->is_ext_inj = %d, bc->params = %d, bc->is_connect = %d \n",
+-							bc->is_ext_inj, bc->params, bc->is_connect);
+-				if (bc->is_ext_inj == SKL_PROBE_EXTRACT &&
+-						pconfig->eprobe[i].set == 1) {
+-					pr_debug("Retrieving the exractor params \n");
+-					prb_pt_param[n].params = (int)bc->params;
+-					prb_pt_param[n].connection = bc->is_ext_inj;
+-					prb_pt_param[n].node_id = -1;
+-					n++;
+-				}
++			dev_dbg(dai->dev, "operation = %d, purpose = %d, probe_point_id = %d\n",
++					pconfig->eprobe[i].operation,
++					pconfig->eprobe[i].purpose,
++					pconfig->eprobe[i].probe_point_id);
++			if ((k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK)
++				&& (pconfig->eprobe[i].state ==
++						SKL_PROBE_STATE_EXT_NONE)
++				&& (pconfig->eprobe[i].operation ==
++						SKL_PROBE_CONNECT)
++				&& (pconfig->eprobe[i].purpose ==
++						SKL_PROBE_EXTRACT ||
++				pconfig->eprobe[i].purpose ==
++						SKL_PROBE_INJECT_REEXTRACT)) {
++
++				dev_dbg(dai->dev, "Retrieving the exractor params\n");
++				prb_pt_param[n].params =
++					pconfig->eprobe[i].probe_point_id;
++				prb_pt_param[n].connection =
++					pconfig->eprobe[i].purpose;
++				prb_pt_param[n].node_id = -1;
++				store_prb_pt_index[i] = 1;
++				n++;
+ 			}
+ 		}
+ 
+-		if (n > 0)
++		if (n > 0) {
+ 			ret = skl_set_module_params(ctx, (void *)prb_pt_param, n * sizeof(struct probe_pt_param),
+ 						SKL_PROBE_CONNECT, mconfig);
+ 
++			if (ret < 0) {
++				dev_dbg(dai->dev, "failed to set extractor probe point\n");
++				return -EINVAL;
++			}
++		}
++
++		for (i = 0; i < pconfig->no_extractor; i++) {
++			if (store_prb_pt_index[i]) {
++				pconfig->eprobe[i].state =
++					SKL_PROBE_STATE_EXT_CONNECTED;
++				dev_dbg(dai->dev, "eprobe[%d].state %d\n",
++						n, pconfig->eprobe[i].state);
++			}
++		}
++
+ 	}
+ 	return ret;
+ }
+@@ -1906,64 +1991,85 @@ static void skl_tplg_fill_dma_id(struct skl_module_cfg *mcfg,
+ 		memcpy(pipe->p_params, params, sizeof(*params));
+ 	}
+ }
+-static int skl_cache_probe_param(struct snd_kcontrol *kctl,
+-			struct skl_probe_data *ap, struct skl_sst *ctx)
++
++static int skl_probe_set_tlv_ext(struct snd_kcontrol *kcontrol)
+ {
+-	struct skl_probe_config *pconfig = &ctx->probe_config;
+-	union skl_connector_node_id node_id = {-1};
++	struct snd_soc_dapm_context *dapm =
++			snd_soc_dapm_kcontrol_dapm(kcontrol);
++	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_widget(kcontrol);
++	struct skl_module_cfg *mconfig = w->priv;
++	struct soc_bytes_ext *sb = (void *) kcontrol->private_value;
++	struct skl_probe_data *ap = (struct skl_probe_data *)sb->dobj.private;
++	struct skl *skl = get_skl_ctx(dapm->dev);
++	struct skl_probe_config *pconfig = &skl->skl_sst->probe_config;
++	struct probe_pt_param connect_point;
++	int disconnect_point;
++	int ret = 0;
+ 	int index = -1, i;
+ 	char buf[20], pos[10];
+ 
+-	if (ap->is_ext_inj == SKL_PROBE_EXTRACT) {
+-		/* From the control ID get the extractor index */
+-		for (i = 0; i < pconfig->no_extractor; i++) {
+-			strcpy(buf, "Extractor");
+-			snprintf(pos, 4, "%d", i);
+-			if (strstr(kctl->id.name, strcat(buf, pos))) {
+-				index = i;
+-				break;
+-			}
+-		}
+ 
+-		if (index < 0)
+-			return -EINVAL;
++	for (i = 0; i < pconfig->no_extractor; i++) {
++		strcpy(buf, "Extractor");
++		snprintf(pos, 4, "%d", i);
++		if (strstr(kcontrol->id.name, strcat(buf, pos))) {
++			index = i;
++			break;
++		}
++	}
++	if (index < 0)
++		return -EINVAL;
+ 
+-		pr_debug("Setting extractor probe index %d\n", index);
+-		memcpy(&ap->node_id, &node_id, sizeof(u32));
+-		pconfig->eprobe[index].id = ap->params;
+-		if (ap->is_connect == SKL_PROBE_CONNECT)
+-			pconfig->eprobe[index].set = 1;
+-		else if (ap->is_connect == SKL_PROBE_DISCONNECT)
+-			pconfig->eprobe[index].set = -1;
++	if ((ap->operation == SKL_PROBE_CONNECT) &&
++		(pconfig->eprobe[index].state == SKL_PROBE_STATE_EXT_NONE)) {
++		/* cache extractor params */
++		pconfig->eprobe[index].operation = ap->operation;
++		pconfig->eprobe[index].purpose = ap->purpose;
++		pconfig->eprobe[index].probe_point_id = ap->probe_point_id;
+ 
+-	} else {
+-		/* From the control ID get the injector index */
+-		for (i = 0; i < pconfig->no_injector; i++) {
+-			strcpy(buf, "Injector");
+-			snprintf(pos, 4, "%d", i);
+-			if (strstr(kctl->id.name, strcat(buf, pos))) {
+-				index = i;
+-				break;
++		/* Below check ensures that atleast one extractor stream is in
++		 * progress in which case the driver can send the CONNECT IPC
++		 */
++		if (pconfig->e_refc > 0) {
++			memcpy(&connect_point.params, &ap->probe_point_id,
++								sizeof(u32));
++			connect_point.connection = ap->purpose;
++			connect_point.node_id = -1;
++			ret = skl_set_module_params(skl->skl_sst,
++					(void *)&connect_point,
++					sizeof(struct probe_pt_param),
++					SKL_PROBE_CONNECT, mconfig);
++			if (ret < 0) {
++				dev_err(dapm->dev, "failed to connect extractor probe point\n");
++				return -EINVAL;
+ 			}
++			pconfig->eprobe[index].state =
++						SKL_PROBE_STATE_EXT_CONNECTED;
++			dev_dbg(dapm->dev, "eprobe[%d].state %d\n", index,
++						pconfig->eprobe[index].state);
+ 		}
+-
+-		if (index < 0)
++	} else if ((ap->operation == SKL_PROBE_DISCONNECT) &&
++				(pconfig->eprobe[index].state ==
++				SKL_PROBE_STATE_EXT_CONNECTED) &&
++				(pconfig->e_refc > 0)) {
++		disconnect_point = (int)ap->probe_point_id;
++		ret = skl_set_module_params(skl->skl_sst,
++			(void *)&disconnect_point, sizeof(disconnect_point),
++						SKL_PROBE_DISCONNECT, mconfig);
++		if (ret < 0) {
++			dev_err(dapm->dev, "failed to disconnect extractor probe point\n");
+ 			return -EINVAL;
++		}
++		pconfig->eprobe[index].state = SKL_PROBE_STATE_EXT_NONE;
++		dev_dbg(dapm->dev, "eprobe[%d].state %d\n", index,
++					pconfig->eprobe[index].state);
++		} else
++			ret = -EINVAL;
+ 
+-		pconfig->iprobe[index].id = ap->params;
+-		node_id.node.dma_type = SKL_DMA_HDA_HOST_OUTPUT_CLASS;
+-		node_id.node.vindex = pconfig->iprobe[index].dma_id;
+-		memcpy(&ap->node_id, &node_id, sizeof(u32));
+-		if (ap->is_connect == SKL_PROBE_CONNECT)
+-			pconfig->iprobe[index].set = 1;
+-		else if (ap->is_connect == SKL_PROBE_DISCONNECT)
+-			pconfig->iprobe[index].set = -1;
+-	}
+-	return 0;
++	return ret;
+ }
+ 
+-static int skl_tplg_tlv_probe_set(struct snd_kcontrol *kcontrol,
+-			const unsigned int __user *data, unsigned int size)
++static int skl_probe_set_tlv_inj(struct snd_kcontrol *kcontrol)
+ {
+ 	struct snd_soc_dapm_context *dapm =
+ 				snd_soc_dapm_kcontrol_dapm(kcontrol);
+@@ -1973,64 +2079,118 @@ static int skl_tplg_tlv_probe_set(struct snd_kcontrol *kcontrol,
+ 	struct skl_probe_data *ap = (struct skl_probe_data *)sb->dobj.private;
+ 	struct skl *skl = get_skl_ctx(dapm->dev);
+ 	struct skl_probe_config *pconfig = &skl->skl_sst->probe_config;
+-	struct probe_pt_param connect_point;
+ 	int disconnect_point;
++	int ret = 0;
++	int index = -1, i;
++	char buf[20], pos[10];
++
++	for (i = 0; i < pconfig->no_injector; i++) {
++		strcpy(buf, "Injector");
++		snprintf(pos, 4, "%d", i);
++		if (strstr(kcontrol->id.name, strcat(buf, pos))) {
++			index = i;
++			break;
++		}
++	}
++	if (index < 0)
++		return -EINVAL;
++
++	if ((ap->operation == SKL_PROBE_CONNECT) &&
++		(pconfig->iprobe[index].state == SKL_PROBE_STATE_INJ_NONE)) {
++		/* cache injector params */
++		pconfig->iprobe[index].operation = ap->operation;
++		pconfig->iprobe[index].purpose = ap->purpose;
++		pconfig->iprobe[index].probe_point_id = ap->probe_point_id;
++	} else if ((ap->operation == SKL_PROBE_DISCONNECT) &&
++
++		(pconfig->iprobe[index].state ==
++				SKL_PROBE_STATE_INJ_CONNECTED) &&
++		(pconfig->i_refc > 0)) {
++		disconnect_point = (int)ap->probe_point_id;
++		ret = skl_set_module_params(skl->skl_sst,
++				(void *)&disconnect_point,
++				sizeof(disconnect_point),
++				SKL_PROBE_DISCONNECT, mconfig);
++		if (ret < 0) {
++			dev_err(dapm->dev, "failed to disconnect injector probe point\n");
++			return -EINVAL;
++		}
++		pconfig->iprobe[index].state = SKL_PROBE_STATE_INJ_DISCONNECTED;
++		dev_dbg(dapm->dev, "iprobe[%d].state %d\n", index,
++					pconfig->iprobe[index].state);
++	} else
++		ret = -EINVAL;
++
++	return ret;
++}
++
++static int skl_tplg_tlv_probe_set(struct snd_kcontrol *kcontrol,
++			const unsigned int __user *data, unsigned int size)
++{
++	struct snd_soc_dapm_context *dapm =
++				snd_soc_dapm_kcontrol_dapm(kcontrol);
++	struct soc_bytes_ext *sb = (void *) kcontrol->private_value;
++	struct skl_probe_data *ap = (struct skl_probe_data *)sb->dobj.private;
+ 	void *offset;
+-	int ret;
++	int ret = -EIO, ret1;
+ 
+-	dev_dbg(dapm->dev, "in %s control=%s\n", __func__, kcontrol->id.name);
++	dev_dbg(dapm->dev, "In %s control=%s\n", __func__, kcontrol->id.name);
+ 	dev_dbg(dapm->dev, "size = %u, %#x\n", size, size);
+ 
+ 	if (data) {
+ 		offset = (unsigned char *)data;
+ 		offset += 2 * sizeof(u32); /* To skip TLV heeader */
+-		if (copy_from_user(&ap->is_connect,
+-					offset, sizeof(ap->is_connect)))
++		if (copy_from_user(&ap->operation,
++					offset, sizeof(ap->operation)))
+ 			return -EIO;
+ 
+-		offset += sizeof(ap->is_connect);
+-		if (copy_from_user(&ap->is_ext_inj,
+-					offset, sizeof(ap->is_ext_inj)))
++		offset += sizeof(ap->operation);
++		if (copy_from_user(&ap->purpose,
++					offset, sizeof(ap->purpose)))
+ 			return -EIO;
+ 
+-		offset += sizeof(ap->is_ext_inj);
+-		if (copy_from_user(&ap->params,
+-					offset, sizeof(ap->params)))
++		offset += sizeof(ap->purpose);
++		if (copy_from_user(&ap->probe_point_id,
++					offset, sizeof(ap->probe_point_id)))
+ 			return -EIO;
+ 
+-		dev_dbg(dapm->dev, "connect state = %d, extract_inject = %d, params = %d \n",
+-						ap->is_connect, ap->is_ext_inj, ap->params);
++		dev_dbg(dapm->dev, "operation = %d, purpose = %d, probe_point_id = %d\n",
++					ap->operation, ap->purpose, ap->probe_point_id);
+ 
+-		ret = skl_cache_probe_param(kcontrol, ap, skl->skl_sst);
+-		if (ret < 0)
+-			return -EINVAL;
+-
+-		if (pconfig->probe_count) {
+-			/* In the case of extraction, additional probe points can be set when
+-			 * the stream is in progress and the driver can immediately send the
+-			 * connect IPC. But in the case of injector, for each probe point
+-			 * connection a new stream with the DAI number corresponding to that
+-			 * control has to be opened. Hence below check ensures that the
+-			 * connect IPC is sent only in case of extractor.
+-			 */
+-			if ((ap->is_connect == SKL_PROBE_CONNECT)
+-				&& (ap->is_ext_inj == SKL_PROBE_EXTRACT)) {
++		/* In the case of extraction, additional probe points can
++		 * be set when the stream is in progress and the driver can
++		 * immediately send the connect IPC. But in the case of
++		 * injector, for each probe point connection a new stream with
++		 * the DAI number corresponding to that control has to be
++		 * opened. Hence below implementation ensures that the connect
++		 * IPC is sent only in case of extractor.
++		 */
++		switch (ap->purpose) {
++		case SKL_PROBE_EXTRACT:
++			ret = skl_probe_set_tlv_ext(kcontrol);
++			break;
+ 
+-				memcpy(&connect_point.params, &ap->params, sizeof(u32));
+-				connect_point.connection = ap->is_ext_inj;
+-				memcpy(&connect_point.node_id, (&ap->node_id), sizeof(u32));
+-				return skl_set_module_params(skl->skl_sst, (void *)&connect_point,
+-						sizeof(struct probe_pt_param), ap->is_connect, mconfig);
++		case SKL_PROBE_INJECT:
++			ret = skl_probe_set_tlv_inj(kcontrol);
++			break;
+ 
+-			} else if (ap->is_connect == SKL_PROBE_DISCONNECT) {
++		case SKL_PROBE_INJECT_REEXTRACT:
++		/* Injector and extractor control will be set one by one
++		 * for Inject_Reextract
++		 */
++			ret = skl_probe_set_tlv_ext(kcontrol);
++			ret1 = skl_probe_set_tlv_inj(kcontrol);
++			if (ret == 0 || ret1 == 0)
++				ret = 0;
++			else
++				ret = -EINVAL;
++			break;
+ 
+-				disconnect_point = (int)ap->params;
+-				return skl_set_module_params(skl->skl_sst, (void *)&disconnect_point,
+-						sizeof(disconnect_point), ap->is_connect, mconfig);
+-			}
++		default:
++			ret = -EINVAL;
+ 		}
+ 	}
+-	return 0;
++	return ret;
+ }
+ 
+ /*
+diff --git a/sound/soc/intel/skylake/skl-topology.h b/sound/soc/intel/skylake/skl-topology.h
+index 0c6b5c6..02256d7 100644
+--- a/sound/soc/intel/skylake/skl-topology.h
++++ b/sound/soc/intel/skylake/skl-topology.h
+@@ -468,13 +468,15 @@ struct skl_algo_data {
+ };
+ 
+ struct skl_probe_data {
+-	u8 is_connect;
+-	u32 is_ext_inj;
+-	u32 params;
++	/* connect or disconnect */
++	u8 operation;
++	/* extractor or injector or inject-reextract */
++	u32 purpose;
++	u32 probe_point_id;
+ 	u32 node_id;
+ } __packed;
+ 
+-struct skl_attach_probe_dma {
++struct skl_probe_attach_inj_dma {
+ 	union skl_connector_node_id node_id;
+ 	u32 dma_buff_size;
+ } __packed;
+@@ -559,12 +561,14 @@ int skl_init_probe_module(struct skl_sst *ctx, struct skl_module_cfg *module_con
+ 
+ int skl_uninit_probe_module(struct skl_sst *ctx, struct skl_module_cfg *module_config);
+ 
+-int skl_get_probe_index(struct snd_soc_dai *dai,
++int skl_probe_get_index(struct snd_soc_dai *dai,
+ 				struct skl_probe_config *pconfig);
+ 
+-int skl_tplg_attach_probe_dma(struct snd_soc_dapm_widget *w,
+-					struct skl_sst *ctx, struct snd_soc_dai *dai);
+-int skl_tplg_set_probe_params(struct snd_soc_dapm_widget *w,
++int skl_probe_attach_inj_dma(struct snd_soc_dapm_widget *w,
++					struct skl_sst *ctx, int index);
++int skl_probe_detach_inj_dma(struct skl_sst *ctx,
++		struct snd_soc_dapm_widget *w, int index);
++int skl_probe_point_set_config(struct snd_soc_dapm_widget *w,
+ 						struct skl_sst *ctx, int direction,
+ 						struct snd_soc_dai *dai);
+ int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
+@@ -575,8 +579,10 @@ int skl_bind_modules(struct skl_sst *ctx, struct skl_module_cfg
+ 
+ int skl_unbind_modules(struct skl_sst *ctx, struct skl_module_cfg
+ 	*src_module, struct skl_module_cfg *dst_module);
+-int skl_disconnect_probe_point(struct skl_sst *ctx,
++int skl_probe_point_disconnect_ext(struct skl_sst *ctx,
+ 					struct snd_soc_dapm_widget *w);
++int skl_probe_point_disconnect_inj(struct skl_sst *ctx,
++			struct snd_soc_dapm_widget *w, int index);
+ int skl_set_module_params(struct skl_sst *ctx, u32 *params, int size,
+ 			u32 param_id, struct skl_module_cfg *mcfg);
+ int skl_get_module_params(struct skl_sst *ctx, u32 *params, int size,
+-- 
+2.7.4
+

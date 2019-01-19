@@ -1,0 +1,76 @@
+From 2be70bfd1064d1f433ffd8ba3bd3539dcee74509 Mon Sep 17 00:00:00 2001
+From: Hardik Shah <hardik.t.shah@intel.com>
+Date: Fri, 29 Apr 2016 16:39:23 +0530
+Subject: [PATCH 0467/1132] SDW:CNL: Fix the syncgo functionality.
+
+Sync go is used to synchronously send the commands on
+more than 1 master to support aggregation. Fix the
+implementation of sync go.
+
+Change-Id: I2d62b9d11a0319a3eda3d6e5cf9a3800d31d2463
+Signed-off-by: Hardik Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+---
+ drivers/sdw/sdw_cnl.c      | 23 ++++++++++++++++++++++-
+ drivers/sdw/sdw_cnl_priv.h |  3 ++-
+ 2 files changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/sdw/sdw_cnl.c b/drivers/sdw/sdw_cnl.c
+index a5fc6db..2749665 100644
+--- a/drivers/sdw/sdw_cnl.c
++++ b/drivers/sdw/sdw_cnl.c
+@@ -1365,11 +1365,32 @@ static int cnl_sdw_port_activate_ch_post(struct sdw_master *mstr,
+ 	int sync_reg;
+ 	struct cnl_sdw *sdw = sdw_master_get_drvdata(mstr);
+ 	struct cnl_sdw_data *data = &sdw->data;
++	volatile int sync_update = 0;
++	int timeout = 10;
++
+ 
+ 	sync_reg = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
+-	sync_reg |= CNL_SYNC_SYNCGO_MASK << CNL_SYNC_SYNCGO_SHIFT;
++	/* If waiting for synchronization set the go bit, else return */
++	if (!(sync_reg & SDW_CMDSYNC_SET_MASK))
++		return 0;
++	sync_reg |= (CNL_SYNC_SYNCGO_MASK << CNL_SYNC_SYNCGO_SHIFT);
+ 	cnl_sdw_reg_writel(data->sdw_shim, SDW_CNL_SYNC, sync_reg);
+ 
++	do {
++		sync_update = cnl_sdw_reg_readl(data->sdw_shim,  SDW_CNL_SYNC);
++		if ((sync_update &
++			(CNL_SYNC_SYNCGO_MASK << CNL_SYNC_SYNCGO_SHIFT)) == 0)
++			break;
++		msleep(20);
++		timeout--;
++
++	}  while (timeout);
++
++	if ((sync_update &
++		(CNL_SYNC_SYNCGO_MASK << CNL_SYNC_SYNCGO_SHIFT)) != 0) {
++		dev_err(&mstr->dev, "Failed to set sync go\n");
++		return -EIO;
++	}
+ 	return 0;
+ }
+ 
+diff --git a/drivers/sdw/sdw_cnl_priv.h b/drivers/sdw/sdw_cnl_priv.h
+index c994338..8e9d68c 100644
+--- a/drivers/sdw/sdw_cnl_priv.h
++++ b/drivers/sdw/sdw_cnl_priv.h
+@@ -255,11 +255,12 @@
+ #define CNL_LCTL_CPA_MASK			0x1
+ #define CNL_LCTL_SPA_MASK			0x1
+ 
++#define SDW_CMDSYNC_SET_MASK			0xF0000
+ #define SDW_CNL_IPPTR				0x8
+ #define SDW_CNL_SYNC				0xC
+ #define CNL_SYNC_CMDSYNC_MASK			0x1
+ #define CNL_SYNC_CMDSYNC_SHIFT			16
+-#define CNL_SYNC_SYNCGO_MASK			0x1000000
++#define CNL_SYNC_SYNCGO_MASK			0x1
+ #define CNL_SYNC_SYNCGO_SHIFT			0x18
+ #define CNL_SYNC_SYNCPRD_MASK			0x7FFF
+ #define CNL_SYNC_SYNCPRD_SHIFT			0x0
+-- 
+2.7.4
+

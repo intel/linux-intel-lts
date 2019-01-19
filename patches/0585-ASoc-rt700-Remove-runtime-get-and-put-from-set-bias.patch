@@ -1,0 +1,45 @@
+From 6aa4131aac8c4237ac7c0469e7ffd87031a40876 Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Fri, 24 Mar 2017 03:40:36 +0530
+Subject: [PATCH 0585/1132] ASoc: rt700: Remove runtime get and put from set
+ bias
+
+Earlier runtime get and put was added while setting bias level to make
+sure the clock to the codec is ON. Since clock will be ON while setting
+bias level, get and put can be removed from set bias level API.
+
+Change-Id: Ic8fe49a5dfda5a2f1d5bf49db8a669e0297d10b1
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+Reviewed-on:
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/codecs/rt700.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/sound/soc/codecs/rt700.c b/sound/soc/codecs/rt700.c
+index 8fc9c00..c88aa16 100644
+--- a/sound/soc/codecs/rt700.c
++++ b/sound/soc/codecs/rt700.c
+@@ -1115,7 +1115,6 @@ static int rt700_set_bias_level(struct snd_soc_component *component,
+ 	switch (level) {
+ 	case SND_SOC_BIAS_PREPARE:
+ 		if (SND_SOC_BIAS_STANDBY == dapm->bias_level) {
+-			pm_runtime_get_sync(&rt700->sdw->mstr->dev);
+ 			snd_soc_component_write(component,
+ 				RT700_SET_AUDIO_POWER_STATE, AC_PWRST_D0);
+ 		}
+@@ -1124,7 +1123,6 @@ static int rt700_set_bias_level(struct snd_soc_component *component,
+ 	case SND_SOC_BIAS_STANDBY:
+ 		snd_soc_component_write(component,
+ 				RT700_SET_AUDIO_POWER_STATE, AC_PWRST_D3);
+-		pm_runtime_put_sync_autosuspend(&rt700->sdw->mstr->dev);
+ 		break;
+ 
+ 	default:
+-- 
+2.7.4
+

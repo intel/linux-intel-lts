@@ -1,0 +1,68 @@
+From d86a25020c6578b6eac0c3887cb683afa6ff12de Mon Sep 17 00:00:00 2001
+From: "R, Dharageswari" <dharageswari.r@intel.com>
+Date: Mon, 25 Dec 2017 07:17:03 +0530
+Subject: [PATCH 0670/1132] ASoC: Intel: Skylake: Avoid sending IPCs during the
+ crash recovery
+
+Stream is put to suspend as a part of firmware crash recovery. This in
+turn invokes the PCM trigger suspend as well as DAPM pre/post PMD
+events, where driver sends IPCs to DSP. However, DSP can't respond to
+IPCs during recovery. This patch ensures no IPCs are sent during the
+recovery process.
+
+Change-Id: If06d57563d3e24898ce86e33b3427ca24aa12804
+Signed-off-by: R, Dharageswari <dharageswari.r@intel.com>
+Signed-off-by: Pradeep Tewani <pradeep.d.tewani@intel.com>
+Reviewed-on:
+Reviewed-by: Prusty, Subhransu S <subhransu.s.prusty@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/common/sst-ipc.c       | 4 ++++
+ sound/soc/intel/skylake/skl-topology.c | 6 ++++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/sound/soc/intel/common/sst-ipc.c b/sound/soc/intel/common/sst-ipc.c
+index f4b0950..03896bd 100644
+--- a/sound/soc/intel/common/sst-ipc.c
++++ b/sound/soc/intel/common/sst-ipc.c
+@@ -98,6 +98,10 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
+ 	struct ipc_message *msg;
+ 	unsigned long flags;
+ 
++	if (ipc->dsp->is_recovery) {
++		dev_dbg(ipc->dev, "Recovery in progress..\n");
++		return 0;
++	}
+ 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+ 
+ 	msg = msg_get_empty(ipc);
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index c0eb735..e7c86d4 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -1972,9 +1972,13 @@ static int skl_tplg_mixer_event(struct snd_soc_dapm_widget *w,
+ 		return skl_tplg_mixer_dapm_post_pmu_event(w, skl);
+ 
+ 	case SND_SOC_DAPM_PRE_PMD:
++		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
++			return 0;
+ 		return skl_tplg_mixer_dapm_pre_pmd_event(w, skl);
+ 
+ 	case SND_SOC_DAPM_POST_PMD:
++		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
++			return 0;
+ 		return skl_tplg_mixer_dapm_post_pmd_event(w, skl);
+ 	}
+ 
+@@ -1999,6 +2003,8 @@ static int skl_tplg_pga_event(struct snd_soc_dapm_widget *w,
+ 		return skl_tplg_pga_dapm_pre_pmu_event(w, skl);
+ 
+ 	case SND_SOC_DAPM_POST_PMD:
++		if (!(is_skl_dsp_running(skl->skl_sst->dsp)))
++			return 0;
+ 		return skl_tplg_pga_dapm_post_pmd_event(w, skl);
+ 	}
+ 
+-- 
+2.7.4
+

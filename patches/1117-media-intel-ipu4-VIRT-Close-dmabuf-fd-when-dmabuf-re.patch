@@ -1,0 +1,45 @@
+From 3d0a9400218cedf10118aa04eb7927d33543738a Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Wed, 26 Dec 2018 03:12:07 +0000
+Subject: [PATCH 1117/1132] media: intel-ipu4: [VIRT] Close dmabuf fd when
+ dmabuf released.
+
+For the case of virtualization, dmabuf is
+created at service OS, therefore FD is only
+known and can only be closed at service OS.
+
+Change-Id: Ia74af82bd326b743efee4142ebdb2a5d2f4b14f9
+Tracked-On: #JOLINUX-2973
+Tracked-On: PKT-1664
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/ipu-psys.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu-psys.c b/drivers/media/pci/intel/ipu-psys.c
+index 5cc60bf..f342951 100644
+--- a/drivers/media/pci/intel/ipu-psys.c
++++ b/drivers/media/pci/intel/ipu-psys.c
+@@ -13,6 +13,9 @@
+ #include <linux/mm.h>
+ #include <linux/module.h>
+ #include <linux/pm_runtime.h>
++#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
++#include <linux/syscalls.h>
++#endif
+ #include <linux/version.h>
+ #include <linux/poll.h>
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+@@ -532,6 +535,9 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
+ 				kbuf->dbuf = NULL;
+ 				kbuf->db_attach = NULL;
+ 				dma_buf_put(dbuf);
++#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
++				ksys_close(kbuf->fd);
++#endif
+ 			} else {
+ 				if (kbuf->db_attach)
+ 					ipu_psys_put_userpages(
+-- 
+2.7.4
+

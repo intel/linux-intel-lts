@@ -1,0 +1,59 @@
+From e4b54b28f11353198bdda14c97730993fdcfba5e Mon Sep 17 00:00:00 2001
+From: Felipe Balbi <felipe.balbi@linux.intel.com>
+Date: Wed, 1 Aug 2018 13:54:25 +0300
+Subject: [PATCH 0338/1132] usb: dwc3: gadget: move requests to cancelled_list
+
+Whenever we have a request in flight, we can move it to the cancelled
+list and later simply iterate over that list and skip over any TRBs we
+find.
+
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+---
+ drivers/usb/dwc3/gadget.c | 17 ++++++++++++++---
+ 1 file changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/dwc3/gadget.c b/drivers/usb/dwc3/gadget.c
+index 19df912..3ebb229 100644
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -1361,6 +1361,17 @@ static void dwc3_gadget_ep_skip_trbs(struct dwc3_ep *dep, struct dwc3_request *r
+ 	}
+ }
+ 
++static void dwc3_gadget_ep_cleanup_cancelled_requests(struct dwc3_ep *dep)
++{
++	struct dwc3_request		*req;
++	struct dwc3_request		*tmp;
++
++	list_for_each_entry_safe(req, tmp, &dep->cancelled_list, list) {
++		dwc3_gadget_ep_skip_trbs(dep, req);
++		dwc3_gadget_giveback(dep, req, -ECONNRESET);
++	}
++}
++
+ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 		struct usb_request *request)
+ {
+@@ -1397,8 +1408,9 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 			if (!r->trb)
+ 				goto out0;
+ 
+-			dwc3_gadget_ep_skip_trbs(dep, r);
+-			goto out1;
++			dwc3_gadget_move_cancelled_request(req);
++			dwc3_gadget_ep_cleanup_cancelled_requests(dep);
++			goto out0;
+ 		}
+ 		dev_err(dwc->dev, "request %pK was not queued to %s\n",
+ 				request, ep->name);
+@@ -1406,7 +1418,6 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
+ 		goto out0;
+ 	}
+ 
+-out1:
+ 	dwc3_gadget_giveback(dep, req, -ECONNRESET);
+ 
+ out0:
+-- 
+2.7.4
+

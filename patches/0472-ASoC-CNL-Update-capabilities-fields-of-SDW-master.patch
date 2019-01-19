@@ -1,0 +1,32 @@
+From fe23205b8a9e1da986dc96eab22f9f750e2b88db Mon Sep 17 00:00:00 2001
+From: Hardik Shah <hardik.t.shah@intel.com>
+Date: Mon, 2 May 2016 00:14:23 +0530
+Subject: [PATCH 0472/1132] ASoC:CNL: Update capabilities fields of SDW master
+
+Capabilities fields are missing while updating master controller
+update the fields based on hardware/topology capability
+
+Change-Id: I65b9b6ee77a61accc21fb34fa7db8b6b15e5e431
+Signed-off-by: Hardik Shah <hardik.t.shah@intel.com>
+Reviewed-on:
+---
+ sound/soc/intel/skylake/cnl-sst.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 0caf9bf..f70d70d 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -538,7 +538,8 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 		master[i].retries = CNL_SDW_MAX_CMD_RETRIES;
+ 		m_cap->base_clk_freq = 9.6 * 1000 * 1000;
+ 		strcpy(master[i].name, "cnl_sdw_mstr");
+-		m_cap->highphy_capable = 0;
++		m_cap->highphy_capable = false;
++		m_cap->monitor_handover_supported = false;
+ 		m_cap->sdw_dp0_supported = 1;
+ 		m_cap->num_data_ports = CNL_SDW_MAX_PORTS;
+ 		dp0_cap->max_word_length = 32;
+-- 
+2.7.4
+

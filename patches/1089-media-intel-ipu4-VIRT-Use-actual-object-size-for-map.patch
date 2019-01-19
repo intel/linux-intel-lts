@@ -1,0 +1,356 @@
+From 83cc5ba1e873e658e16b103456707aabd389e3ef Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Fri, 23 Nov 2018 23:05:09 +0000
+Subject: [PATCH 1089/1132] media: intel-ipu4: [VIRT] Use actual object size
+ for map_guest_phys call rather than using hard coded page size.
+
+There are random failure om map_guest_phys call due
+to the object size does not stay within the expected
+memory region due to hard coded object size.
+
+Change-Id: I6cc8d7d135d2883ca1d77c18d45700d3360213ad
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/ipu-psys-virt.c            | 79 +++++++++-------------
+ .../intel/virtio/intel-ipu4-virtio-be-pipeline.c   | 48 +++++--------
+ .../pci/intel/virtio/intel-ipu4-virtio-be-psys.c   |  8 +--
+ .../pci/intel/virtio/intel-ipu4-virtio-be-stream.c | 12 ++--
+ 4 files changed, 58 insertions(+), 89 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu-psys-virt.c b/drivers/media/pci/intel/ipu-psys-virt.c
+index cbbd8ed9..877f57e 100644
+--- a/drivers/media/pci/intel/ipu-psys-virt.c
++++ b/drivers/media/pci/intel/ipu-psys-virt.c
+@@ -67,28 +67,24 @@ int virt_ipu_psys_get_manifest(struct ipu_psys_fh *fh,
+ 	void *manifest_data;
+ 	int status = 0;
+ 
+-	manifest_wrap = (struct ipu_psys_manifest_wrap *)map_guest_phys(
+-										req_info->domid,
+-										req_info->request->payload,
+-										PAGE_SIZE
+-										);
++	manifest_wrap = map_guest_phys(req_info->domid,
++					req_info->request->payload,
++					sizeof(struct ipu_psys_manifest_wrap));
+ 	if (manifest_wrap == NULL) {
+ 		pr_err("%s: failed to get payload", __func__);
+ 		return -EFAULT;
+ 	}
+ 
+-	manifest = (struct ipu_psys_manifest *)map_guest_phys(
+-										req_info->domid,
+-										manifest_wrap->psys_manifest,
+-										PAGE_SIZE
+-										);
++	manifest = map_guest_phys(req_info->domid,
++				manifest_wrap->psys_manifest,
++				sizeof(struct ipu_psys_manifest));
+ 	if (manifest == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_manifest", __func__);
+ 		status = -EFAULT;
+ 		goto exit_payload;
+ 	}
+ 
+-	manifest_data = (void *)map_guest_phys(
++	manifest_data = map_guest_phys(
+ 							req_info->domid,
+ 							manifest_wrap->manifest_data,
+ 							PAGE_SIZE
+@@ -439,22 +435,18 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
+ 	if (psys->adev->isp->flr_done)
+ 		return -EIO;
+ 
+-	cmd_wrap = (struct ipu_psys_command_wrap *)map_guest_phys(
+-										req_info->domid,
+-										req_info->request->payload,
+-										PAGE_SIZE
+-										);
++	cmd_wrap = map_guest_phys(req_info->domid,
++				req_info->request->payload,
++				sizeof(struct ipu_psys_command_wrap));
+ 
+ 	if (cmd_wrap == NULL) {
+ 		pr_err("%s: failed to get payload", __func__);
+ 		return -EFAULT;
+ 	}
+ 
+-	cmd = (struct ipu_psys_command *)map_guest_phys(
+-										req_info->domid,
+-										cmd_wrap->psys_command,
+-										PAGE_SIZE
+-										);
++	cmd = map_guest_phys(req_info->domid,
++			cmd_wrap->psys_command,
++			sizeof(struct ipu_psys_command));
+ 
+ 	if (cmd == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_command", __func__);
+@@ -462,11 +454,9 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
+ 		goto exit_payload;
+ 	}
+ 
+-	pg_manifest = (void *)map_guest_phys(
+-										req_info->domid,
+-										cmd_wrap->psys_manifest,
+-										PAGE_SIZE
+-										);
++	pg_manifest = map_guest_phys(req_info->domid,
++							cmd_wrap->psys_manifest,
++							cmd->pg_manifest_size);
+ 
+ 	if (pg_manifest == NULL) {
+ 		pr_err("%s: failed to get pg_manifest", __func__);
+@@ -474,11 +464,9 @@ int virt_ipu_psys_qcmd(struct ipu_psys_fh *fh,
+ 		goto exit_psys_command;
+ 	}
+ 
+-	buffers = (struct ipu_psys_buffer *)map_guest_phys(
+-										req_info->domid,
+-										cmd_wrap->psys_buffer,
+-										PAGE_SIZE
+-										);
++	buffers = map_guest_phys(req_info->domid,
++				cmd_wrap->psys_buffer,
++				sizeof(struct ipu_psys_buffer));
+ 
+ 	if (buffers == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_buffers", __func__);
+@@ -513,11 +501,9 @@ int virt_ipu_psys_dqevent(struct ipu_psys_fh *fh,
+ 	struct ipu_psys_event *event;
+ 	int status = 0;
+ 
+-	event = (struct ipu_psys_event *)map_guest_phys(
+-									req_info->domid,
+-									req_info->request->payload,
+-									PAGE_SIZE
+-									);
++	event = map_guest_phys(req_info->domid,
++				req_info->request->payload,
++				sizeof(struct ipu_psys_event));
+ 	if (event == NULL) {
+ 		pr_err("%s: failed to get payload", __func__);
+ 		return -EFAULT;
+@@ -604,8 +590,9 @@ int __map_buf(struct ipu_psys_fh *fh,
+ 	pr_debug("%s: Total number of pages:%lu",
+ 		__func__, buf_wrap->map.npages);
+ 
+-	page_table = (u64 *)map_guest_phys(domid,
+-		buf_wrap->map.page_table_ref, PAGE_SIZE);
++	page_table = map_guest_phys(domid,
++		buf_wrap->map.page_table_ref,
++		sizeof(u64) * buf_wrap->map.npages);
+ 
+ 	if (page_table == NULL) {
+ 		pr_err("%s: Failed to map page table", __func__);
+@@ -691,21 +678,17 @@ int virt_ipu_psys_get_buf(struct ipu_psys_fh *fh,
+ 	struct ipu_psys_kbuffer *kbuf;
+ 	struct ipu_psys *psys = fh->psys;
+ 
+-	buf_wrap = (struct ipu_psys_buffer_wrap *)map_guest_phys(
+-										req_info->domid,
+-										req_info->request->payload,
+-										PAGE_SIZE
+-										);
++	buf_wrap = map_guest_phys(req_info->domid,
++				req_info->request->payload,
++				sizeof(struct ipu_psys_buffer_wrap));
+ 	if (buf_wrap == NULL) {
+ 		pr_err("%s: failed to get payload", __func__);
+ 		return -EFAULT;
+ 	}
+ 
+-	buf = (struct ipu_psys_buffer *)map_guest_phys(
+-										req_info->domid,
+-										buf_wrap->psys_buf,
+-										PAGE_SIZE
+-										);
++	buf = map_guest_phys(req_info->domid,
++				buf_wrap->psys_buf,
++				sizeof(struct ipu_psys_buffer));
+ 	if (buf == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_buffer", __func__);
+ 		ret = -EFAULT;
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+index 5a90092..ddbb8a3 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-pipeline.c
+@@ -60,7 +60,8 @@ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	host_virt = (struct ici_node_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_node_desc));
+ 	if (host_virt == NULL) {
+ 		pr_err("process_enum_nodes: NULL host_virt");
+ 		return IPU4_REQ_ERROR;
+@@ -85,7 +86,8 @@ int process_enum_links(struct ipu4_virtio_req_info *req_info)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	host_virt = (struct ici_links_query *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_links_query));
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+ 		return IPU4_REQ_ERROR;
+@@ -108,7 +110,8 @@ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	host_virt = (struct ici_pad_supported_format_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++				sizeof(struct ici_pad_supported_format_desc));
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+ 		return IPU4_REQ_ERROR;
+@@ -132,7 +135,8 @@ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	host_virt = (struct ici_pad_framefmt *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_pad_framefmt));
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+ 		return IPU4_REQ_ERROR;
+@@ -156,7 +160,8 @@ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	host_virt = (struct ici_pad_framefmt *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_pad_framefmt));
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+ 		return IPU4_REQ_ERROR;
+@@ -180,7 +185,8 @@ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	host_virt = (struct ici_link_desc *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_link_desc));
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+ 		return IPU4_REQ_ERROR;
+@@ -204,7 +210,8 @@ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	host_virt = (struct ici_pad_selection *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_pad_selection));
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+ 		return IPU4_REQ_ERROR;
+@@ -228,7 +235,8 @@ int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	host_virt = (struct ici_pad_selection *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_pad_selection));
+ 	if (host_virt == NULL) {
+ 		pr_err("%s: NULL host_virt\n", __func__);
+ 		return IPU4_REQ_ERROR;
+@@ -341,27 +349,3 @@ int process_setup_pipe_thread(void *data)
+ 	do_exit(0);
+ 	return 0;
+ }
+-
+-/*
+-	union isys_ioctl_cmd_args {
+-		struct ici_node_desc node_desc;
+-		struct ici_link_desc link;
+-		struct ici_pad_framefmt pad_prop;
+-		struct ici_pad_supported_format_desc
+-			format_desc;
+-		struct ici_links_query links_query;
+-		struct ici_pad_selection pad_sel;
+-	};
+-
+-	.pipeline_setup_pipe = ici_setup_link,
+-	.pipeline_enum_nodes = pipeline_enum_nodes,
+-	.pipeline_enum_links = pipeline_enum_links,
+-	.pad_set_ffmt = ici_pipeline_set_ffmt,
+-	.pad_get_ffmt = ici_pipeline_get_ffmt,
+-	.pad_get_supported_format =
+-		ici_pipeline_get_supported_format,
+-	.pad_set_sel = ici_pipeline_set_sel,
+-	.pad_get_sel = ici_pipeline_get_sel,
+-
+-*/
+-
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+index 31b7d14..1c71fd3 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-psys.c
+@@ -42,11 +42,9 @@ int process_psys_querycap(struct ipu4_virtio_req_info *req_info)
+ 	int status = 0;
+ 
+ 	struct ipu_psys_capability *psys_caps;
+-	psys_caps = (struct ipu_psys_capability *)map_guest_phys(
+-										req_info->domid,
+-										req_info->request->payload,
+-										PAGE_SIZE
+-										);
++	psys_caps = map_guest_phys(req_info->domid,
++						req_info->request->payload,
++						sizeof(struct ipu_psys_capability));
+ 	if (psys_caps == NULL) {
+ 		pr_err("%s: failed to get ipu_psys_capability %u %llu",
+ 			__func__, req_info->domid, req_info->request->payload);
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+index 5da50e8..841abc9 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-be-stream.c
+@@ -130,7 +130,8 @@ int process_set_format(struct ipu4_virtio_req_info *req_info)
+ 		return IPU4_REQ_ERROR;
+ 	}
+ 
+-	host_virt = (struct ici_stream_format *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_stream_format));
+ 	if (host_virt == NULL) {
+ 		pr_err("process_set_format: NULL host_virt");
+ 		return IPU4_REQ_ERROR;
+@@ -229,7 +230,8 @@ int process_put_buf(struct ipu4_virtio_req_info *req_info)
+ 		return IPU4_REQ_ERROR;
+ 	}
+ 
+-	host_virt = (struct ici_frame_info *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	host_virt = map_guest_phys(domid, req->payload,
++						sizeof(struct ici_frame_info));
+ 	if (host_virt == NULL) {
+ 		pr_err("process_put_buf: NULL host_virt");
+ 		return IPU4_REQ_ERROR;
+@@ -276,7 +278,8 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 
+ 	pr_debug("GET_BUF: Mapping buffer\n");
+-	shared_buf = (struct ici_frame_buf_wrapper *)map_guest_phys(domid, req->payload, PAGE_SIZE);
++	shared_buf = map_guest_phys(domid, req->payload,
++					sizeof(struct ici_frame_buf_wrapper));
+ 	if (!shared_buf) {
+ 		pr_err("SOS Failed to map Buffer from UserOS\n");
+ 		status = IPU4_REQ_ERROR;
+@@ -290,7 +293,8 @@ int process_get_buf(struct ipu4_virtio_req_info *req_info)
+ 	}
+ 	pr_debug("Total number of pages:%d\n", shared_buf->kframe_info.planes[0].npages);
+ 
+-	page_table = (u64 *)map_guest_phys(domid, shared_buf->kframe_info.planes[0].page_table_ref, PAGE_SIZE);
++	page_table = map_guest_phys(domid, shared_buf->kframe_info.planes[0].page_table_ref,
++								shared_buf->kframe_info.planes[0].npages * sizeof(u64));
+ 
+ 	if (page_table == NULL) {
+ 		pr_err("SOS Failed to map page table\n");
+-- 
+2.7.4
+

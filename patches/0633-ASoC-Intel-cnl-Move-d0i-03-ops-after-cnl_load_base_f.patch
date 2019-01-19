@@ -1,0 +1,50 @@
+From a6405b5524db3ce17739e9859420af625a5b7579 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Mon, 18 Sep 2017 11:03:25 +0530
+Subject: [PATCH 0633/1132] ASoC: Intel: cnl: Move d0i[03] ops after
+ cnl_load_base_firmware
+
+Since ipc's are sent during cnl_load_base_firmware and there's no need to
+check d0i0 state at the time of firmware load, move the ops assignments
+after loading firmware.
+
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index 9441a72..c99b2c9 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -755,14 +755,9 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 		return ret;
+ 	}
+ 
+-	/* set the D0i3 check */
+-	cnl->ipc.ops.check_dsp_lp_on = skl_ipc_check_D0i0;
+ 	cnl->boot_complete = false;
+ 	init_waitqueue_head(&cnl->boot_wait);
+ 
+-	INIT_DELAYED_WORK(&cnl->d0i3.work, bxt_set_dsp_D0i3);
+-	cnl->d0i3.state = SKL_DSP_D0I3_NONE;
+-
+ 	ret = skl_dsp_acquire_irq(sst);
+ 	if (ret < 0)
+ 		return ret;
+@@ -773,6 +768,12 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 		return ret;
+ 	}
+ 
++	/* set the D0i3 check */
++	cnl->ipc.ops.check_dsp_lp_on = skl_ipc_check_D0i0;
++
++	INIT_DELAYED_WORK(&cnl->d0i3.work, bxt_set_dsp_D0i3);
++	cnl->d0i3.state = SKL_DSP_D0I3_NONE;
++
+ #if IS_ENABLED(CONFIG_SND_SOC_RT700)
+ 	ret = skl_register_sdw_masters(dev, cnl, mmio_base, irq, ptr);
+ 	if (ret) {
+-- 
+2.7.4
+

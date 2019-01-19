@@ -1,0 +1,64 @@
+From 8a632f7171a8647969ce8c9d06beb4ed435fd402 Mon Sep 17 00:00:00 2001
+From: Zhang Yanmin <yanmin.zhang@intel.com>
+Date: Thu, 12 Apr 2018 16:42:28 +0530
+Subject: [PATCH 0686/1132] ASoC: Intel: Skylake: Set dsp cores off during
+ shutdown
+
+When the cores.usage_count is equal to 0, driver puts dsp cores to
+sleep.
+The issue happens when cores.usage_count is not equal to 0
+and dsp core remains ON even when the system goes to shutdown.
+
+Removing the dependency of usage_count by forcing to disable
+the dsp core.
+
+Change-Id: I4d1c925dd9521c9eda2188e20eb262abf81e7b49
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Signed-off-by: Zhang Yanmin <yanmin.zhang@intel.com>
+Reviewed-on:
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Periyasamy, SriramX <sriramx.periyasamy@intel.com>
+Reviewed-by: Kesapragada, Pardha Saradhi <pardha.saradhi.kesapragada@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/intel/skylake/skl-sst-dsp.c | 1 +
+ sound/soc/intel/skylake/skl.c         | 9 +++++++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.c b/sound/soc/intel/skylake/skl-sst-dsp.c
+index 485c8b8..0f5e497 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.c
++++ b/sound/soc/intel/skylake/skl-sst-dsp.c
+@@ -310,6 +310,7 @@ int skl_dsp_disable_core(struct sst_dsp *ctx, unsigned int core_mask)
+ 
+ 	return ret;
+ }
++EXPORT_SYMBOL(skl_dsp_disable_core);
+ 
+ int skl_dsp_boot(struct sst_dsp *ctx)
+ {
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index 44718e8..cd24989 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1110,6 +1110,15 @@ static void skl_shutdown(struct pci_dev *pci)
+ 		return;
+ 
+ 	snd_hdac_ext_stop_streams(bus);
++	/* While doing the warm reboot testing, some times dsp core is on
++	 * when system goes to shutdown. When cores.usage_count is
++	 * equal to zero then driver puts the dsp core to zero. On few
++	 * warm reboots cores.usage_count is not equal to zero and dsp
++	 * core is ON even system goes to shutdown. Force the dsp cores
++	 * off without checking the usage_count.
++	 */
++	skl_dsp_disable_core(skl->skl_sst->dsp, SKL_DSP_CORE0_ID);
++
+ 	list_for_each_entry(s, &bus->stream_list, list) {
+ 		stream = stream_to_hdac_ext_stream(s);
+ 		snd_hdac_ext_stream_decouple(bus, stream, false);
+-- 
+2.7.4
+

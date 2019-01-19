@@ -1,0 +1,239 @@
+From 2d8746883efeb263d345ad3afc3ce1eacb38ce2a Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Tue, 8 May 2018 11:08:19 +0300
+Subject: [PATCH 0411/1132] mei: hbm: add capabilities message
+
+The HBM capabilities command allows performing
+capabilities handshake between FW and a host driver.
+The capabilities command is supported on the firmwares with
+HBM version 2.2 and bigger.
+
+Change-Id: Ie4a85a52c51b722d18d3e94455086d80148c6719
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/debugfs.c |  2 ++
+ drivers/misc/mei/hbm.c     | 79 ++++++++++++++++++++++++++++++++++++++++++++++
+ drivers/misc/mei/hbm.h     |  2 ++
+ drivers/misc/mei/hw.h      | 21 ++++++++++++
+ drivers/misc/mei/mei_dev.h |  2 ++
+ 5 files changed, 106 insertions(+)
+
+diff --git a/drivers/misc/mei/debugfs.c b/drivers/misc/mei/debugfs.c
+index e3beb2a..67689cf 100644
+--- a/drivers/misc/mei/debugfs.c
++++ b/drivers/misc/mei/debugfs.c
+@@ -187,6 +187,8 @@ static ssize_t mei_dbgfs_read_devstate(struct file *fp, char __user *ubuf,
+ 				 dev->hbm_f_dr_supported);
+ 		pos += scnprintf(buf + pos, bufsz - pos, "\tVM: %01d\n",
+ 				 dev->hbm_f_vm_supported);
++		pos += scnprintf(buf + pos, bufsz - pos, "\tCAP: %01d\n",
++				 dev->hbm_f_cap_supported);
+ 	}
+ 
+ 	pos += scnprintf(buf + pos, bufsz - pos, "pg:  %s, %s\n",
+diff --git a/drivers/misc/mei/hbm.c b/drivers/misc/mei/hbm.c
+index c251261..9bc211c 100644
+--- a/drivers/misc/mei/hbm.c
++++ b/drivers/misc/mei/hbm.c
+@@ -340,6 +340,39 @@ static int mei_hbm_dma_setup_req(struct mei_device *dev)
+ }
+ 
+ /**
++ * mei_hbm_capabilities_req - request capabilities
++ *
++ * @dev: the device structure
++ *
++ * Return: 0 on success and < 0 on failure
++ */
++static int mei_hbm_capabilities_req(struct mei_device *dev)
++{
++	struct mei_msg_hdr mei_hdr;
++	struct hbm_capability_request req;
++	int ret;
++
++	mei_hbm_hdr(&mei_hdr, sizeof(req));
++
++	memset(&req, 0, sizeof(req));
++	req.hbm_cmd = MEI_HBM_CAPABILITIES_REQ_CMD;
++	if (dev->hbm_f_vm_supported)
++		req.capability_requested[0] = HBM_CAP_VM;
++
++	ret = mei_hbm_write_message(dev, &mei_hdr, &req);
++	if (ret) {
++		dev_err(dev->dev,
++			"capabilities request write failed: ret = %d.\n", ret);
++		return ret;
++	}
++
++	dev->hbm_state = MEI_HBM_CAP_SETUP;
++	dev->init_clients_timer = MEI_CLIENTS_INIT_TIMEOUT;
++	mei_schedule_stall_timer(dev);
++	return 0;
++}
++
++/**
+  * mei_hbm_enum_clients_req - sends enumeration client request message.
+  *
+  * @dev: the device structure
+@@ -1063,6 +1096,12 @@ static void mei_hbm_config_features(struct mei_device *dev)
+ 	    (dev->version.major_version == HBM_MAJOR_VERSION_VM &&
+ 	     dev->version.minor_version >= HBM_MINOR_VERSION_VM))
+ 		dev->hbm_f_vm_supported = 1;
++
++	/* Capability message Support */
++	if (dev->version.major_version > HBM_MAJOR_VERSION_CAP ||
++	    (dev->version.major_version == HBM_MAJOR_VERSION_CAP &&
++	     dev->version.minor_version >= HBM_MINOR_VERSION_CAP))
++		dev->hbm_f_cap_supported = 1;
+ }
+ 
+ /**
+@@ -1096,6 +1135,7 @@ int mei_hbm_dispatch(struct mei_device *dev, struct mei_msg_hdr *hdr)
+ 	struct hbm_host_enum_response *enum_res;
+ 	struct hbm_dma_setup_response *dma_setup_res;
+ 	struct hbm_add_client_request *add_cl_req;
++	struct hbm_capability_response *capability_res;
+ 	int ret;
+ 
+ 	struct mei_hbm_cl_cmd *cl_cmd;
+@@ -1159,6 +1199,13 @@ int mei_hbm_dispatch(struct mei_device *dev, struct mei_msg_hdr *hdr)
+ 			return -EPROTO;
+ 		}
+ 
++		if (dev->hbm_f_cap_supported) {
++			if (mei_hbm_capabilities_req(dev))
++				return -EIO;
++			wake_up(&dev->wait_hbm_start);
++			break;
++		}
++
+ 		if (dev->hbm_f_dr_supported) {
+ 			if (mei_dmam_ring_alloc(dev))
+ 				dev_info(dev->dev, "running w/o dma ring\n");
+@@ -1180,6 +1227,38 @@ int mei_hbm_dispatch(struct mei_device *dev, struct mei_msg_hdr *hdr)
+ 		wake_up(&dev->wait_hbm_start);
+ 		break;
+ 
++	case MEI_HBM_CAPABILITIES_RES_CMD:
++		dev_dbg(dev->dev, "hbm: capabilities response: message received.\n");
++
++		dev->init_clients_timer = 0;
++
++		if (dev->hbm_state != MEI_HBM_CAP_SETUP) {
++			dev_err(dev->dev, "hbm: capabilities response: state mismatch, [%d, %d]\n",
++				dev->dev_state, dev->hbm_state);
++			return -EPROTO;
++		}
++
++		capability_res = (struct hbm_capability_response *)mei_msg;
++		if (!(capability_res->capability_granted[0] & HBM_CAP_VM))
++			dev->hbm_f_vm_supported = 0;
++
++		if (dev->hbm_f_dr_supported) {
++			if (mei_dmam_ring_alloc(dev))
++				dev_info(dev->dev, "running w/o dma ring\n");
++			if (mei_dma_ring_is_allocated(dev)) {
++				if (mei_hbm_dma_setup_req(dev))
++					return -EIO;
++				break;
++			}
++		}
++
++		dev->hbm_f_dr_supported = 0;
++		mei_dmam_ring_free(dev);
++
++		if (mei_hbm_enum_clients_req(dev))
++			return -EIO;
++		break;
++
+ 	case MEI_HBM_DMA_SETUP_RES_CMD:
+ 		dev_dbg(dev->dev, "hbm: dma setup response: message received.\n");
+ 
+diff --git a/drivers/misc/mei/hbm.h b/drivers/misc/mei/hbm.h
+index 0171a7e..df1515f 100644
+--- a/drivers/misc/mei/hbm.h
++++ b/drivers/misc/mei/hbm.h
+@@ -26,6 +26,7 @@ struct mei_cl;
+  *
+  * @MEI_HBM_IDLE : protocol not started
+  * @MEI_HBM_STARTING : start request message was sent
++ * @MEI_HBM_CAP_SETUP : capabilities request message was sent
+  * @MEI_HBM_DR_SETUP : dma ring setup request message was sent
+  * @MEI_HBM_ENUM_CLIENTS : enumeration request was sent
+  * @MEI_HBM_CLIENT_PROPERTIES : acquiring clients properties
+@@ -35,6 +36,7 @@ struct mei_cl;
+ enum mei_hbm_state {
+ 	MEI_HBM_IDLE = 0,
+ 	MEI_HBM_STARTING,
++	MEI_HBM_CAP_SETUP,
+ 	MEI_HBM_DR_SETUP,
+ 	MEI_HBM_ENUM_CLIENTS,
+ 	MEI_HBM_CLIENT_PROPERTIES,
+diff --git a/drivers/misc/mei/hw.h b/drivers/misc/mei/hw.h
+index 69a59e3..46843bc 100644
+--- a/drivers/misc/mei/hw.h
++++ b/drivers/misc/mei/hw.h
+@@ -92,6 +92,12 @@
+ #define HBM_MINOR_VERSION_VM               2
+ #define HBM_MAJOR_VERSION_VM               2
+ 
++/*
++ * MEI version with capabilities message support
++ */
++#define HBM_MINOR_VERSION_CAP              2
++#define HBM_MAJOR_VERSION_CAP              2
++
+ /* Host bus message command opcode */
+ #define MEI_HBM_CMD_OP_MSK                  0x7f
+ /* Host bus message command RESPONSE */
+@@ -137,6 +143,9 @@
+ #define MEI_HBM_DMA_SETUP_REQ_CMD           0x12
+ #define MEI_HBM_DMA_SETUP_RES_CMD           0x92
+ 
++#define MEI_HBM_CAPABILITIES_REQ_CMD        0x13
++#define MEI_HBM_CAPABILITIES_RES_CMD        0x93
++
+ /*
+  * MEI Stop Reason
+  * used by hbm_host_stop_request.reason
+@@ -546,4 +555,16 @@ struct hbm_dma_ring_ctrl {
+ 	u32 reserved4;
+ } __packed;
+ 
++#define HBM_CAP_VM BIT(0)
++
++struct hbm_capability_request {
++	u8 hbm_cmd;
++	u8 capability_requested[3];
++} __packed;
++
++struct hbm_capability_response {
++	u8 hbm_cmd;
++	u8 capability_granted[3];
++} __packed;
++
+ #endif
+diff --git a/drivers/misc/mei/mei_dev.h b/drivers/misc/mei/mei_dev.h
+index 1187522..6a815a1 100644
+--- a/drivers/misc/mei/mei_dev.h
++++ b/drivers/misc/mei/mei_dev.h
+@@ -434,6 +434,7 @@ struct mei_fw_version {
+  * @hbm_f_os_supported  : hbm feature support OS ver message
+  * @hbm_f_dr_supported  : hbm feature dma ring supported
+  * @hbm_f_vm_supported  : hbm feature vm tag supported
++ * @hbm_f_cap_supported : hbm feature capabilities message supported
+  *
+  * @fw_ver : FW versions
+  *
+@@ -515,6 +516,7 @@ struct mei_device {
+ 	unsigned int hbm_f_os_supported:1;
+ 	unsigned int hbm_f_dr_supported:1;
+ 	unsigned int hbm_f_vm_supported:1;
++	unsigned int hbm_f_cap_supported:1;
+ 
+ 	struct mei_fw_version fw_ver[MEI_MAX_FW_VER_BLOCKS];
+ 
+-- 
+2.7.4
+

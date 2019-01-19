@@ -1,0 +1,37 @@
+From 180408aa9dfc4a96682bd2fb9a353aff986a4203 Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Fri, 29 Dec 2017 19:14:16 +0800
+Subject: [PATCH 0854/1132] drm/i915/gvt: hard code Pipe B plane owner to UOS
+
+It is a work around patch due to plane restriction patches are not porting
+
+Change-Id: If09ff8c40254ec275dc2d9b9674d7267d306a7e7
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+Reviewed-on:
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/acrngt.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gvt/acrngt.c b/drivers/gpu/drm/i915/gvt/acrngt.c
+index fec5751..346a676 100644
+--- a/drivers/gpu/drm/i915/gvt/acrngt.c
++++ b/drivers/gpu/drm/i915/gvt/acrngt.c
+@@ -431,6 +431,13 @@ static int acrngt_sysfs_add_instance(struct acrngt_hvm_params *vp)
+ 	struct acrngt_hvm_dev *info;
+ 
+ 	struct intel_vgpu_type type = acrngt_priv.gvt->types[0];
++
++	/* todo: wa patch due to plane restriction patches are not porting */
++	acrngt_priv.gvt->pipe_info[1].plane_owner[0] = 1;
++	acrngt_priv.gvt->pipe_info[1].plane_owner[1] = 1;
++	acrngt_priv.gvt->pipe_info[1].plane_owner[2] = 1;
++	acrngt_priv.gvt->pipe_info[1].plane_owner[3] = 1;
++
+ 	type.low_gm_size = vp->aperture_sz * VMEM_1MB;
+ 	type.high_gm_size = (vp->gm_sz - vp->aperture_sz) * VMEM_1MB;
+ 	type.fence = vp->fence_sz;
+-- 
+2.7.4
+

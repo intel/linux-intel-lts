@@ -1,0 +1,28 @@
+From dde97ad08702daf7bc0867c29150be2521aaf224 Mon Sep 17 00:00:00 2001
+From: Manisha Chinthapally <manisha.chinthapally@intel.com>
+Date: Thu, 10 Jan 2019 17:22:38 -0800
+Subject: [PATCH 1128/1132] Bug Fix to fix incorrect osid value
+
+Change-Id: I39d002b72dcd6b7405f35c97dd97f9d1585de999
+Tracked-On: PKT-1662
+Signed-off-by: Manisha Chinthapally <manisha.chinthapally@intel.com>
+---
+ drivers/platform/x86/sepdk/include/lwpmudrv_defines.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/platform/x86/sepdk/include/lwpmudrv_defines.h b/drivers/platform/x86/sepdk/include/lwpmudrv_defines.h
+index aeee951..8346ea7 100644
+--- a/drivers/platform/x86/sepdk/include/lwpmudrv_defines.h
++++ b/drivers/platform/x86/sepdk/include/lwpmudrv_defines.h
+@@ -511,7 +511,7 @@ extern "C" {
+ #define OS_ID_MODEM 1
+ #define OS_ID_ANDROID 2
+ #define OS_ID_SECVM 3
+-#define OS_ID_ACORN (U32)(-1)
++#define OS_ID_ACORN 0xFFFF
+ 
+ #define PERF_HW_VER4 (5)
+ #if defined(__cplusplus)
+-- 
+2.7.4
+

@@ -1,0 +1,37 @@
+From 2b3e750c89a14c7780aa4dcc57ec51f507ee3a93 Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Mon, 22 Oct 2018 09:56:38 +0300
+Subject: [PATCH 0419/1132] mei: free read cb on ctrl_wr list flush
+
+There is a little window during disconnection flow
+when read cb is moved between lists and may be not freed.
+Remove moving read cbs explicitly during flash fixes this memory
+leak.
+
+Change-Id: Ib8a08cfed2c1826d0a6290bea96b9fc71578bb7d
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/client.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mei/client.c b/drivers/misc/mei/client.c
+index b598561..ef26233 100644
+--- a/drivers/misc/mei/client.c
++++ b/drivers/misc/mei/client.c
+@@ -416,8 +416,11 @@ static void mei_io_list_flush_cl(struct list_head *head,
+ 	struct mei_cl_cb *cb, *next;
+ 
+ 	list_for_each_entry_safe(cb, next, head, list) {
+-		if (cl == cb->cl)
++		if (cl == cb->cl) {
+ 			list_del_init(&cb->list);
++			if (cb->fop_type == MEI_FOP_READ)
++				mei_io_cb_free(cb);
++		}
+ 	}
+ }
+ 
+-- 
+2.7.4
+

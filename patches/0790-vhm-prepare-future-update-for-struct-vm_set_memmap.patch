@@ -1,0 +1,60 @@
+From 9c8941b8bf61c16b2922bdf8199f3ece977ecb2a Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:59:01 +0800
+Subject: [PATCH 0790/1132] vhm: prepare future update for struct vm_set_memmap
+
+for back compatible, there is a uint32_t reserved field in struct
+vm_set_memmap, which will be removed in the future - finally change
+to struct set_memmap.
+
+this patch is preparing such change by change reserved field to prot
+, prot field to prot_2, and updating both prot & prot_2 during
+vm_set_memmap setting.
+
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ drivers/vhm/vhm_mm.c             | 2 +-
+ include/linux/vhm/acrn_hv_defs.h | 7 ++++---
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index 75ccd3f..fb09ed2 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -167,7 +167,7 @@ int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
+ 	set_memmap.remote_gpa = guest_gpa;
+ 	set_memmap.vm0_gpa = host_gpa;
+ 	set_memmap.length = len;
+-	set_memmap.prot = ((mem_type & MEM_TYPE_MASK) |
++	set_memmap.prot = set_memmap.prot_2 = ((mem_type & MEM_TYPE_MASK) |
+ 			(mem_access_right & MEM_ACCESS_RIGHT_MASK));
+ 
+ 	/* hypercall to notify hv the guest EPT setting*/
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index cd0147f..d3af097 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -135,7 +135,9 @@ struct vm_set_memmap {
+ #define MAP_MMIO	1
+ #define MAP_UNMAP	2
+ 	uint32_t type;
+-	uint32_t reserved;
++
++	/* IN: mem attr */
++	uint32_t prot;
+ 
+ 	/* IN: beginning guest GPA to map */
+ 	uint64_t remote_gpa;
+@@ -146,8 +148,7 @@ struct vm_set_memmap {
+ 	/* IN: length of the range */
+ 	uint64_t length;
+ 
+-	/* IN: mem attr */
+-	uint32_t prot;
++	uint32_t prot_2;
+ } __attribute__((aligned(8)));
+ 
+ struct memory_map {
+-- 
+2.7.4
+

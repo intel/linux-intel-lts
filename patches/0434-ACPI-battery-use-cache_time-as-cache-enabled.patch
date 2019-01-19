@@ -1,0 +1,40 @@
+From 556b6359faf1e30a2685463f5a5cc852095ab490 Mon Sep 17 00:00:00 2001
+From: Lucas Rangit Magasweran <lucas.magasweran@ieee.org>
+Date: Sat, 14 Jul 2018 15:38:29 -0700
+Subject: [PATCH 0434/1132] ACPI: battery: use cache_time as cache "enabled"
+
+When battery state is not cached the module parameter cache_time is 0
+and battery->update_time starts at 0. However, it set to jiffies in
+each call to acpi_battery_get_state() and should not be used to
+determine if a cache time is used.
+
+Using battery->update_time causes the evaluation of time_before()
+even though cache_time is 0.
+
+This is a minor issue as the behavior is still as expected.
+Even if kernel HZ was very slow and jiffies remained equal, the
+expected branch (false) would be taken because time_before() is
+used instead of time_before_eq().
+
+Signed-off-by: Lucas Rangit Magasweran <lucas.magasweran@ieee.org>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+---
+ drivers/acpi/battery.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/acpi/battery.c b/drivers/acpi/battery.c
+index cb97b61..1cb33c9 100644
+--- a/drivers/acpi/battery.c
++++ b/drivers/acpi/battery.c
+@@ -563,7 +563,7 @@ static int acpi_battery_get_state(struct acpi_battery *battery)
+ 	if (!acpi_battery_present(battery))
+ 		return 0;
+ 
+-	if (battery->update_time &&
++	if (cache_time &&
+ 	    time_before(jiffies, battery->update_time +
+ 			msecs_to_jiffies(cache_time)))
+ 		return 0;
+-- 
+2.7.4
+

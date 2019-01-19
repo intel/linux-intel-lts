@@ -1,0 +1,66 @@
+From d4cbbd622548f3749c8f86812e1a2ccdc9206bb0 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 9 Nov 2018 08:49:22 +0000
+Subject: [PATCH 0945/1132] drm/i915/gvt: fixed a memory leak issue in gtt.c
+
+This patch fixed a memory leak issue in GVT-g, which leads to memory
+corruption during guest create/destroy cycles.
+Also removed some unnecessary warnings in this patch.
+
+Signed-off-by: Min He <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/cfg_space.c | 2 --
+ drivers/gpu/drm/i915/gvt/gtt.c       | 9 ++++++---
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/cfg_space.c b/drivers/gpu/drm/i915/gvt/cfg_space.c
+index 4cf3f1c..71a815d 100644
+--- a/drivers/gpu/drm/i915/gvt/cfg_space.c
++++ b/drivers/gpu/drm/i915/gvt/cfg_space.c
+@@ -173,8 +173,6 @@ int map_gttmmio(struct intel_vgpu *vgpu, bool map)
+ 	end = start +
+ 		(vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_GTTMMIO].size >> 1);
+ 
+-	WARN_ON((end - start) != gvt_ggtt_sz(vgpu->gvt));
+-
+ 	gvt_dbg_mmio("%s start=%llx end=%llx map=%d\n",
+ 				__func__, start, end, map);
+ 
+diff --git a/drivers/gpu/drm/i915/gvt/gtt.c b/drivers/gpu/drm/i915/gvt/gtt.c
+index 22c79df..5d46957 100644
+--- a/drivers/gpu/drm/i915/gvt/gtt.c
++++ b/drivers/gpu/drm/i915/gvt/gtt.c
+@@ -1594,7 +1594,7 @@ static void free_ggtt_virtual_page_table(struct intel_vgpu_mm *mm)
+ static void *alloc_ggtt_virtual_page_table(struct intel_vgpu_mm *mm)
+ {
+ 	struct intel_vgpu *vgpu = mm->vgpu;
+-	unsigned int page_count = gvt_ggtt_sz(vgpu->gvt) >> PAGE_SHIFT;
++	unsigned int page_count;
+ 	struct intel_vgpu_gm *gm = &vgpu->gm;
+ 	struct page **pages = NULL;
+ 	struct page *p;
+@@ -1604,8 +1604,11 @@ static void *alloc_ggtt_virtual_page_table(struct intel_vgpu_mm *mm)
+ 	struct sg_table *st;
+ 	struct scatterlist *sg;
+ 	struct sgt_iter sgt_iter;
+-	unsigned int npages = page_count;
++	int npages;
+ 
++	page_count = ALIGN(gvt_ggtt_sz(vgpu->gvt), 1 << PMD_SHIFT)
++		>> PAGE_SHIFT;
++	npages = page_count;
+ 	/*
+ 	 * page_table_entry_size is bigger than the size alloc_pages can
+ 	 * allocate, We have to split it according to the PMD size (2M).
+@@ -1633,7 +1636,7 @@ static void *alloc_ggtt_virtual_page_table(struct intel_vgpu_mm *mm)
+ 		sg_set_page(sg, p, PAGE_SIZE << order, 0);
+ 		st->nents++;
+ 		npages -= 1 << order;
+-		if (!npages) {
++		if (npages <= 0) {
+ 			sg_mark_end(sg);
+ 			break;
+ 		}
+-- 
+2.7.4
+

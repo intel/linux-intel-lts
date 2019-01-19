@@ -1,0 +1,38 @@
+From c7e5bd3b87181e416a0a366d7e213180b9020a84 Mon Sep 17 00:00:00 2001
+From: "Pan, Kris" <kris.pan@intel.com>
+Date: Tue, 8 Jan 2019 20:28:45 -0700
+Subject: [PATCH 1119/1132] Revert "igb_avb: back port an upstream patch and
+ add debug hook."
+
+This reverts commit a6f07e044413a7ae1f47a55f4c30cadf3228adc4.
+
+Change-Id: Ia12d43a9f589f136823e7377bf18cb58b81c2d44
+---
+ drivers/staging/igb_avb/igb_main.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/drivers/staging/igb_avb/igb_main.c b/drivers/staging/igb_avb/igb_main.c
+index 5c4e0e0..8d772cfb 100644
+--- a/drivers/staging/igb_avb/igb_main.c
++++ b/drivers/staging/igb_avb/igb_main.c
+@@ -484,8 +484,6 @@ u32 e1000_read_reg(struct e1000_hw *hw, u32 reg)
+ 		hw->hw_addr = NULL;
+ 		netif_device_detach(netdev);
+ 		netdev_err(netdev, "PCIe link lost, device now detached\n");
+-
+-		WARN_ON(1, "Error reading reg 0x%x", reg);
+ 	}
+ 
+ 	return value;
+@@ -3622,7 +3620,7 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
+ 			tdba & 0x00000000ffffffffULL);
+ 	E1000_WRITE_REG(hw, E1000_TDBAH(reg_idx), tdba >> 32);
+ 
+-	ring->tail = hw->io_addr + E1000_TDT(reg_idx);
++	ring->tail = hw->hw_addr + E1000_TDT(reg_idx);
+ 	E1000_WRITE_REG(hw, E1000_TDH(reg_idx), 0);
+ 	writel(0, ring->tail);
+ 
+-- 
+2.7.4
+

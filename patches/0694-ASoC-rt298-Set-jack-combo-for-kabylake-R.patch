@@ -1,0 +1,41 @@
+From e15e79925750daff2159782a513ac04e154a4531 Mon Sep 17 00:00:00 2001
+From: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Date: Fri, 12 Jan 2018 15:50:50 +0530
+Subject: [PATCH 0694/1132] ASoC: rt298: Set jack combo for kabylake R
+
+This patch adds DMI information of Kabylake R to
+force_combo_jack_table[].
+
+Change-Id: Ibf29d8eb5d3ded179aa76a31da5fbf8ad5d99d36
+Signed-off-by: Puneeth Prabhu <puneethx.prabhu@intel.com>
+Reviewed-on:
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: Periyasamy, SriramX <sriramx.periyasamy@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Madiwalar, MadiwalappaX <madiwalappax.madiwalar@intel.com>
+---
+ sound/soc/codecs/rt298.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/sound/soc/codecs/rt298.c b/sound/soc/codecs/rt298.c
+index 06cdba4..47f7d14 100644
+--- a/sound/soc/codecs/rt298.c
++++ b/sound/soc/codecs/rt298.c
+@@ -1169,6 +1169,13 @@ static const struct dmi_system_id force_combo_jack_table[] = {
+ 			DMI_MATCH(DMI_PRODUCT_NAME, "Geminilake")
+ 		}
+ 	},
++	{
++		.ident = "Intel Kabylake R RVP",
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "Intel Corp"),
++			DMI_MATCH(DMI_PRODUCT_NAME, "Kabylake Client platform")
++		}
++	},
+ 	{ }
+ };
+ 
+-- 
+2.7.4
+

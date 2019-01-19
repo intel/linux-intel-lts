@@ -1,0 +1,41 @@
+From 2ad83d5e08560c45975c0dc7461a70e0d22b4e21 Mon Sep 17 00:00:00 2001
+From: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Date: Tue, 31 Jul 2018 14:39:39 -0700
+Subject: [PATCH 0899/1132] hyper_dmabuf: Check for NULL value before access
+ work pointer.
+
+In delayed_unexport() check for work pointer NULL value before accessing
+it.
+
+Signed-off-by: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
+index e9f1d64..66cdcf6 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
+@@ -574,14 +574,15 @@ static void delayed_unexport(struct work_struct *work)
+ {
+ 	struct hyper_dmabuf_req *req;
+ 	struct hyper_dmabuf_bknd_ops *bknd_ops = hy_drv_priv->bknd_ops;
+-	struct exported_sgt_info *exported =
+-		container_of(work, struct exported_sgt_info, unexport.work);
++	struct exported_sgt_info *exported;
+ 	int op[4];
+ 	int i, ret;
+ 
+-	if (!exported)
++	if (!work)
+ 		return;
+ 
++	exported = container_of(work, struct exported_sgt_info, unexport.work);
++
+ 	dev_dbg(hy_drv_priv->dev,
+ 		"Marking buffer {id:%d key:%d %d %d} as invalid\n",
+ 		exported->hid.id, exported->hid.rng_key[0],
+-- 
+2.7.4
+

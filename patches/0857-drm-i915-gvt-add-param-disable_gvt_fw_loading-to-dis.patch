@@ -1,0 +1,69 @@
+From 1e66f04f5b0850d14f3bff08b3ed4722893a11fc Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Fri, 29 Dec 2017 18:48:22 +0800
+Subject: [PATCH 0857/1132] drm/i915/gvt: add param disable_gvt_fw_loading to
+ disable gvt fw loading
+
+when gvt fw doesn't exist, try to load fw from initrd will cost about 1 minute,
+add disable_gvt_fw_loading to speed up sos boot up time.
+
+Change-Id: I07aca795057fec09ff9ee729a65a5f96006c5ef8
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+Reviewed-on:
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/firmware.c | 17 +++++++++--------
+ 1 file changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/firmware.c b/drivers/gpu/drm/i915/gvt/firmware.c
+index 4ac18b4..f0d3023 100644
+--- a/drivers/gpu/drm/i915/gvt/firmware.c
++++ b/drivers/gpu/drm/i915/gvt/firmware.c
+@@ -199,6 +199,7 @@ static int verify_firmware(struct intel_gvt *gvt,
+ 
+ #define GVT_FIRMWARE_PATH "i915/gvt"
+ 
++bool disable_gvt_fw_loading=true;
+ /**
+  * intel_gvt_load_firmware - load GVT firmware
+  * @gvt: intel gvt device
+@@ -216,27 +217,27 @@ int intel_gvt_load_firmware(struct intel_gvt *gvt)
+ 	void *mem;
+ 	int ret;
+ 
+-	path = kmalloc(PATH_MAX, GFP_KERNEL);
+-	if (!path)
+-		return -ENOMEM;
+-
+ 	mem = kmalloc(info->cfg_space_size, GFP_KERNEL);
+-	if (!mem) {
+-		kfree(path);
++	if (!mem)
+ 		return -ENOMEM;
+-	}
+ 
+ 	firmware->cfg_space = mem;
+ 
+ 	mem = kmalloc(info->mmio_size, GFP_KERNEL);
+ 	if (!mem) {
+-		kfree(path);
+ 		kfree(firmware->cfg_space);
+ 		return -ENOMEM;
+ 	}
+ 
+ 	firmware->mmio = mem;
+ 
++	if (disable_gvt_fw_loading)
++		goto expose_firmware;
++
++	path = kmalloc(PATH_MAX, GFP_KERNEL);
++	if (!path)
++		return -ENOMEM;
++
+ 	sprintf(path, "%s/vid_0x%04x_did_0x%04x_rid_0x%02x.golden_hw_state",
+ 		 GVT_FIRMWARE_PATH, pdev->vendor, pdev->device,
+ 		 pdev->revision);
+-- 
+2.7.4
+

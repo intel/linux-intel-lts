@@ -1,0 +1,31 @@
+From 7364090b61373c5fb1cce5e830a73fd7c9fbe6b1 Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Mon, 29 Oct 2018 10:02:48 +0800
+Subject: [PATCH 0939/1132] drm/i915/gvt: not to touch undefined MOCS registers
+
+Some engines are not available for all Gens, so need to add check before
+access them.
+
+Tracked-On: projectacrn/acrn-hypervisor#1581
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Signed-off-by: Yakui Zhao <Yakui.Zhao@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/mmio_context.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gvt/mmio_context.c b/drivers/gpu/drm/i915/gvt/mmio_context.c
+index dc0a147..4e99cd0 100644
+--- a/drivers/gpu/drm/i915/gvt/mmio_context.c
++++ b/drivers/gpu/drm/i915/gvt/mmio_context.c
+@@ -171,6 +171,8 @@ static void load_render_mocs(struct drm_i915_private *dev_priv)
+ 	int ring_id, i;
+ 
+ 	for (ring_id = 0; ring_id < ARRAY_SIZE(regs); ring_id++) {
++		if (!HAS_ENGINE(dev_priv, ring_id))
++			continue;
+ 		offset.reg = regs[ring_id];
+ 		for (i = 0; i < GEN9_MOCS_SIZE; i++) {
+ 			gen9_render_mocs.control_table[ring_id][i] =
+-- 
+2.7.4
+

@@ -1,0 +1,48 @@
+From 79ec13338cbaf32eee7a1241e756ca00cbdaa262 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Tue, 27 Nov 2018 19:32:08 +0800
+Subject: [PATCH 1070/1132] media: intel-ipu4: magna: Modify for dual magna.
+
+Modify for dual magna.
+
+Change-Id: I97f9fe3b93f4d5555ffd25c8dae26150c2d61c51
+Tracked-On: PKT-1624
+Signed-off-by: yunbinzx <yunbin.zhao@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/platform/intel/ipu4-bxt-p-pdata.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/drivers/media/platform/intel/ipu4-bxt-p-pdata.c b/drivers/media/platform/intel/ipu4-bxt-p-pdata.c
+index ba5707a..e7e6677 100644
+--- a/drivers/media/platform/intel/ipu4-bxt-p-pdata.c
++++ b/drivers/media/platform/intel/ipu4-bxt-p-pdata.c
+@@ -528,6 +528,7 @@ static struct ipu_isys_subdev_info video_aggre_b_stub_sd = {
+ #define MAGNA_LANES		4
+ #define MAGNA_PHY_ADDR	0x60 /* 0x30 for 7bit addr */
+ #define MAGNA_ADDRESS_A	0x61
++#define MAGNA_ADDRESS_B 0x62
+ 
+ static struct crlmodule_platform_data magna_pdata = {
+ 	.lanes = MAGNA_LANES,
+@@ -720,6 +721,17 @@ static struct ti964_subdev_info ti964_subdevs[] = {
+ 		.phy_i2c_addr = MAGNA_PHY_ADDR,
+ 		.suffix = 'a',
+ 	},
++	{
++		.board_info = {
++			  .type = CRLMODULE_NAME,
++			  .addr = MAGNA_ADDRESS_B,
++			  .platform_data = &magna_pdata,
++		},
++		.i2c_adapter_id = TI964_I2C_ADAPTER,
++		.rx_port = 1,
++		.phy_i2c_addr = MAGNA_PHY_ADDR,
++		.suffix = 'b',
++	},
+ #endif
+ };
+ 
+-- 
+2.7.4
+

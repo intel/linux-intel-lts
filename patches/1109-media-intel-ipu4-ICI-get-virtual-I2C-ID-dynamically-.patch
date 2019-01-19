@@ -1,0 +1,78 @@
+From 2d7f1165cbd601a0c0cd25413d07f1a288515ee1 Mon Sep 17 00:00:00 2001
+From: kgopala2 <karthik.l.gopalakrishnan@intel.com>
+Date: Sat, 29 Dec 2018 01:07:06 +0800
+Subject: [PATCH 1109/1132] media: intel-ipu4: [ICI]: get virtual I2C ID
+ dynamically if different from physical
+
+Acquire bus i2c adapter id in run time to adapt to changes in i2c enumeration
+order
+
+Change-Id: If7b97800f58f6df7b0c8eca5370424b0566bcf3d
+Tracked-On: PKT-1644
+Tracked-On: OAM-74863
+Signed-off-by: kgopala2 <karthik.l.gopalakrishnan@intel.com>
+---
+ drivers/media/pci/intel/ici/Makefile   |  2 +-
+ drivers/media/pci/intel/ici/ici-isys.c | 24 ++++++++++++++++++------
+ 2 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ici/Makefile b/drivers/media/pci/intel/ici/Makefile
+index 415df76..fb23912 100644
+--- a/drivers/media/pci/intel/ici/Makefile
++++ b/drivers/media/pci/intel/ici/Makefile
+@@ -6,7 +6,7 @@ srcpath := $(srctree)
+ endif
+ 
+ ifdef CONFIG_VIDEO_INTEL_ICI
+-ccflags-y += -DHAS_DUAL_CMD_CTX_SUPPORT=0 -DIPU_VC_SUPPORT -DIPU_HAS_ISA -DIPU_PSYS_LEGACY -Wframe-larger-than=4096
++ccflags-y += -DHAS_DUAL_CMD_CTX_SUPPORT=0 -DIPU_VC_SUPPORT -DIPU_HAS_ISA -DIPU_PSYS_LEGACY -DI2C_WA -Wframe-larger-than=4096
+ 
+ 
+ # work-around to re-use ipu4-css and libintel-ipu4_ici.c together when
+diff --git a/drivers/media/pci/intel/ici/ici-isys.c b/drivers/media/pci/intel/ici/ici-isys.c
+index 848fac9..500491ee 100644
+--- a/drivers/media/pci/intel/ici/ici-isys.c
++++ b/drivers/media/pci/intel/ici/ici-isys.c
+@@ -306,21 +306,33 @@ static int isys_register_ext_subdev(struct ici_isys *isys,
+ 					struct ipu_isys_subdev_info *sd_info,
+ 					bool acpi_only)
+ {
+-	struct i2c_adapter *adapter =
+-		i2c_get_adapter(sd_info->i2c.i2c_adapter_id);
++	struct i2c_adapter *adapter;
+ 	struct ici_ext_subdev *sd;
+ 	struct i2c_client *client;
+ 	int rval;
++	int bus;
+ 
+-	dev_info(&isys->adev->dev,
+-		 "creating new i2c subdev for %s (address %2.2x, bus %d)",
+-		 sd_info->i2c.board_info.type, sd_info->i2c.board_info.addr,
+-		 sd_info->i2c.i2c_adapter_id);
++#ifdef I2C_WA
++	bus = ipu_get_i2c_bus_id(sd_info->i2c.i2c_adapter_id);
++	if (bus < 0) {
++		dev_err(&isys->adev->dev, "Failed to find adapter!");
++		return -ENOENT;
++	}
++#else
++	bus = sd_info->i2c.i2c_adapter_id;
++#endif
+ 
++	adapter = i2c_get_adapter(bus);
+ 	if (!adapter) {
+ 		dev_warn(&isys->adev->dev, "can't find adapter\n");
+ 		return -ENOENT;
+ 	}
++
++	dev_info(&isys->adev->dev,
++		 "creating new i2c subdev for %s (address %2.2x, bus %d)",
++		 sd_info->i2c.board_info.type, sd_info->i2c.board_info.addr,
++		 bus);
++
+ 	if (sd_info->csi2) {
+ 		dev_info(&isys->adev->dev, "sensor device on CSI port: %d\n",
+ 			sd_info->csi2->port);
+-- 
+2.7.4
+

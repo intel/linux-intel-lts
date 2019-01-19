@@ -1,0 +1,39 @@
+From 6af863ed2ebf94a7ea817a0efdd746f3b6ffbfe4 Mon Sep 17 00:00:00 2001
+From: "Gogineni, GiribabuX" <giribabux.gogineni@intel.com>
+Date: Tue, 2 Jan 2018 23:53:39 +0530
+Subject: [PATCH 0665/1132] ASoC: tdf8532: Add delay while reading a packet
+ from I2C
+
+While doing the continuous play and stop, the codec
+may not be ready for I2C reading after successive writes.
+This triggers BE failure, because I2C reading value is incorrect.
+Fix this by adding 10ms delay to ensure the smooth I2C read and write.
+
+Change-Id: If918e263bc799fecc2c807229f5b4b165e011fa6
+Signed-off-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-on:
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Sinha, Mohit <mohit.sinha@intel.com>
+Reviewed-by: Nc, Shreyas <shreyas.nc@intel.com>
+Reviewed-by: Periyasamy, SriramX <sriramx.periyasamy@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/codecs/tdf8532.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/soc/codecs/tdf8532.c b/sound/soc/codecs/tdf8532.c
+index e723ffe..a5e2a02 100644
+--- a/sound/soc/codecs/tdf8532.c
++++ b/sound/soc/codecs/tdf8532.c
+@@ -90,6 +90,7 @@ static uint8_t tdf8532_read_wait_ack(struct tdf8532_priv *dev_data,
+ 	unsigned long timeout_point = jiffies + timeout;
+ 	int ret;
+ 
++	usleep_range(10000,20000);
+ 	do {
+ 		ret = i2c_master_recv(dev_data->i2c, ack_repl, HEADER_SIZE);
+ 		if (ret < 0)
+-- 
+2.7.4
+

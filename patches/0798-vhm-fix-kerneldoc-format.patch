@@ -1,0 +1,72 @@
+From 4ddcde8093b84d0eb4a014d944574aaf5e9ad03d Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Fri, 31 Aug 2018 10:59:01 +0800
+Subject: [PATCH 0798/1132] vhm: fix kerneldoc format
+
+remove doxygen commands and add missing description
+
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: Mingqiang Chi <mingqiang.chi@intel.com>
+Acked-by: Yakui Zhao <yakui.zhao@intel.com>
+---
+ include/linux/vhm/acrn_vhm_ioreq.h | 4 +---
+ include/linux/vhm/acrn_vhm_mm.h    | 4 +---
+ include/linux/vhm/vhm_vm_mngt.h    | 5 ++---
+ 3 files changed, 4 insertions(+), 9 deletions(-)
+
+diff --git a/include/linux/vhm/acrn_vhm_ioreq.h b/include/linux/vhm/acrn_vhm_ioreq.h
+index de3a8aa..fbf69b3 100644
+--- a/include/linux/vhm/acrn_vhm_ioreq.h
++++ b/include/linux/vhm/acrn_vhm_ioreq.h
+@@ -52,9 +52,7 @@
+  */
+ 
+ /**
+- * @file acrn_vhm_ioreq.h
+- *
+- * @brief Virtio and Hypervisor Module(VHM) ioreq APIs
++ * DOC: Virtio and Hypervisor Module(VHM) ioreq APIs
+  */
+ 
+ #ifndef __ACRN_VHM_IOREQ_H__
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 5ff9af9..21269e4 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -52,9 +52,7 @@
+  */
+ 
+ /**
+- * @file acrn_vhm_mm.h
+- *
+- * @brief Virtio and Hypervisor Module memory manager APIs
++ * DOC: Virtio and Hypervisor Module memory manager APIs
+  */
+ 
+ #ifndef __ACRN_VHM_MM_H__
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index b5f6ca1..e89b78c 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -55,9 +55,7 @@
+  */
+ 
+ /**
+- * @file vhm_vm_mngt.h
+- *
+- * @brief Virtio and Hypervisor Module(VHM) management APIs
++ * DOC: brief Virtio and Hypervisor Module(VHM) management APIs
+  */
+ #ifndef VHM_VM_MNGT_H
+ #define VHM_VM_MNGT_H
+@@ -77,6 +75,7 @@ extern struct mutex vhm_vm_list_lock;
+  * @dev: pointer to dev of linux device mode
+  * @list: list of vhm_vm
+  * @vmid: guest vmid
++ * @trusty_host_gpa: host physical address of continuous memory for Trusty
+  * @ioreq_fallback_client: default ioreq client
+  * @refcnt: reference count of guest
+  * @seg_lock:  mutex to protect memseg_list
+-- 
+2.7.4
+

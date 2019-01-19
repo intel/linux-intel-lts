@@ -1,0 +1,79 @@
+From 41e720c398c04f79d68f3c40a8ad07f3d6b2e24a Mon Sep 17 00:00:00 2001
+From: Imed BEN ROMDHANE <imedx.ben.romdhane@intel.com>
+Date: Tue, 12 Sep 2017 20:44:07 +0530
+Subject: [PATCH 0638/1132] ASoC: Intel: Skylake: Return default sampling rate
+ for Trace compress devices.
+
+Defining sampling rate for getting FW logs from FwLogging/Trace compress
+devices. As user space expects a valid sample rate but existing API
+compress_get_hpointer returns an error if sampling rate is 0.
+
+Change-Id: Ie4eea4850c6cfca9e24bdf3af881b9afd96d2a50
+Signed-off-by: Sameer Sharma <sameerx.sharma@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Sinha, Mohit <mohit.sinha@intel.com>
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-pcm.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 889fd86..4679bf9 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -877,6 +877,8 @@ static int skl_trace_compr_tstamp(struct snd_compr_stream *stream,
+ 		return -EINVAL;
+ 
+ 	tstamp->copied_total = skl_dsp_log_avail(sst, core);
++	tstamp->sampling_rate = snd_pcm_rate_bit_to_rate(cpu_dai->driver->capture.rates);
++
+ 	return 0;
+ }
+ 
+@@ -1359,6 +1361,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 		.stream_name = "TraceBuffer0 Capture",
+ 		.channels_min = HDA_MONO,
+ 		.channels_max = HDA_MONO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.rate_min = 48000,
++		.rate_max = 48000,
+ 	},
+ },
+ {
+@@ -1369,6 +1374,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 		.stream_name = "TraceBuffer1 Capture",
+ 		.channels_min = HDA_MONO,
+ 		.channels_max = HDA_MONO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.rate_min = 48000,
++		.rate_max = 48000,
+ 	},
+ },
+ {
+@@ -1379,6 +1387,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 		.stream_name = "TraceBuffer2 Capture",
+ 		.channels_min = HDA_MONO,
+ 		.channels_max = HDA_MONO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.rate_min = 48000,
++		.rate_max = 48000,
+ 	},
+ },
+ {
+@@ -1389,6 +1400,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
+ 		.stream_name = "TraceBuffer3 Capture",
+ 		.channels_min = HDA_MONO,
+ 		.channels_max = HDA_MONO,
++		.rates = SNDRV_PCM_RATE_48000,
++		.rate_min = 48000,
++		.rate_max = 48000,
+ 	},
+ },
+ {
+-- 
+2.7.4
+

@@ -1,0 +1,95 @@
+From 570cab2fd0e525daa632355ac9a49aeb73231a95 Mon Sep 17 00:00:00 2001
+From: Michael Byrne <michaelx.byrne@intel.com>
+Date: Wed, 25 Oct 2017 13:12:34 +0200
+Subject: [PATCH 0844/1132] drm/i915: i915 changes to allow DomU to support 3
+ HDMI displays.
+
+If vgpu is active;
+a) and we are requesting port A, and a monitor is present on port A,
+force HDMI initialization (Port A is normally reserved for DP/eDP).
+b) ignore check for lspcon as this disables HDMI initialiisation if
+lspcon is supported.
+c) ignore check for intel_encoder->type != INTEL_OUTPUT_EDP so we can
+initialise HDMI (HDMI initialization will change the encode type anyway).
+d) allow HDMI to specify pins for port A to allow initialisation.
+
+Change-Id: I99f9636dc6403d67a0de0422eff9b504190fc5f1
+Reviewed-by: Min He <min.he@intel.com>
+Signed-off-by: Michael Byrne <michaelx.byrne@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/intel_ddi.c  | 14 +++++++++++---
+ drivers/gpu/drm/i915/intel_hdmi.c | 11 ++++++++++-
+ 2 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_ddi.c b/drivers/gpu/drm/i915/intel_ddi.c
+index 588b033..1ca5187 100644
+--- a/drivers/gpu/drm/i915/intel_ddi.c
++++ b/drivers/gpu/drm/i915/intel_ddi.c
+@@ -3548,11 +3548,18 @@ void intel_ddi_init(struct drm_i915_private *dev_priv, enum port port)
+ 	bool init_hdmi, init_dp, init_lspcon = false;
+ 
+ 
+-	init_hdmi = (dev_priv->vbt.ddi_port_info[port].supports_dvi ||
++	/*
++	 * For port A check whether vgpu is active and we have a monitor
++	 * attached to port A.
++	 * */
++	init_hdmi = (intel_vgpu_active(dev_priv) && port == PORT_A &&
++			(I915_READ(GEN8_DE_PORT_ISR) & BXT_DE_PORT_HP_DDIA)) ||
++			(dev_priv->vbt.ddi_port_info[port].supports_dvi ||
+ 		     dev_priv->vbt.ddi_port_info[port].supports_hdmi);
+ 	init_dp = dev_priv->vbt.ddi_port_info[port].supports_dp;
+ 
+-	if (intel_bios_is_lspcon_present(dev_priv, port)) {
++	if (!intel_vgpu_active(dev_priv) &&
++			intel_bios_is_lspcon_present(dev_priv, port)) {
+ 		/*
+ 		 * Lspcon device needs to be driven with DP connector
+ 		 * with special detection sequence. So make sure DP
+@@ -3648,7 +3655,8 @@ void intel_ddi_init(struct drm_i915_private *dev_priv, enum port port)
+ 
+ 	/* In theory we don't need the encoder->type check, but leave it just in
+ 	 * case we have some really bad VBTs... */
+-	if (intel_encoder->type != INTEL_OUTPUT_EDP && init_hdmi) {
++	if ((intel_vgpu_active(dev_priv) && IS_BROXTON(dev_priv)) ||
++		(intel_encoder->type != INTEL_OUTPUT_EDP && init_hdmi)) {
+ 		if (!intel_ddi_init_hdmi_connector(intel_dig_port))
+ 			goto err;
+ 	}
+diff --git a/drivers/gpu/drm/i915/intel_hdmi.c b/drivers/gpu/drm/i915/intel_hdmi.c
+index 192972a..a3b6d07 100644
+--- a/drivers/gpu/drm/i915/intel_hdmi.c
++++ b/drivers/gpu/drm/i915/intel_hdmi.c
+@@ -2182,6 +2182,14 @@ static u8 bxt_port_to_ddc_pin(struct drm_i915_private *dev_priv, enum port port)
+ 	u8 ddc_pin;
+ 
+ 	switch (port) {
++	case PORT_A:
++		if ((IS_GEN9_LP(dev_priv)) && (intel_vgpu_active(dev_priv)))
++			ddc_pin = GMBUS_PIN_3_BXT;
++		else {
++			MISSING_CASE(port);
++			ddc_pin = GMBUS_PIN_DPB;
++		}
++		break;
+ 	case PORT_B:
+ 		ddc_pin = GMBUS_PIN_1_BXT;
+ 		break;
+@@ -2365,7 +2373,8 @@ void intel_hdmi_init_connector(struct intel_digital_port *intel_dig_port,
+ 
+ 	intel_hdmi->ddc_bus = intel_hdmi_ddc_pin(dev_priv, port);
+ 
+-	if (WARN_ON(port == PORT_A))
++	if (!intel_vgpu_active(dev_priv) &&
++		WARN_ON(port == PORT_A))
+ 		return;
+ 	intel_encoder->hpd_pin = intel_hpd_pin_default(dev_priv, port);
+ 
+-- 
+2.7.4
+

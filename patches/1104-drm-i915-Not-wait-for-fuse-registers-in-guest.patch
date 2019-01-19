@@ -1,0 +1,35 @@
+From 573cda4595b7217b1a2e2dbdd4f4a5a89fe2dc56 Mon Sep 17 00:00:00 2001
+From: Min He <min.he@intel.com>
+Date: Fri, 4 Jan 2019 05:05:39 +0000
+Subject: [PATCH 1104/1132] drm/i915: Not wait for fuse registers in guest
+
+This patch will avoid waiting for fuse registers in GVT-g guest, to
+reduce the booting time.
+
+Tracked-On: projectacrn/acrn-hypervisor/issues/2251
+Signed-off-by: Min He <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Tracked-On: PKT-1648
+
+Change-Id: I80f871678f7697e7eae8bf730ed8dedc76b57e83
+---
+ drivers/gpu/drm/i915/intel_runtime_pm.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_runtime_pm.c b/drivers/gpu/drm/i915/intel_runtime_pm.c
+index 6b5aa3b..c7cea89 100644
+--- a/drivers/gpu/drm/i915/intel_runtime_pm.c
++++ b/drivers/gpu/drm/i915/intel_runtime_pm.c
+@@ -387,7 +387,8 @@ static void hsw_power_well_enable(struct drm_i915_private *dev_priv,
+ 				  struct i915_power_well *power_well)
+ {
+ 	enum i915_power_well_id id = power_well->id;
+-	bool wait_fuses = power_well->hsw.has_fuses;
++	bool wait_fuses = power_well->hsw.has_fuses &&
++		!intel_vgpu_active(dev_priv);
+ 	enum skl_power_gate uninitialized_var(pg);
+ 	u32 val;
+ 
+-- 
+2.7.4
+

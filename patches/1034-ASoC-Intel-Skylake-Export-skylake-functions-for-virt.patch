@@ -1,0 +1,155 @@
+From 6354aa7dea278b781b12217bd1a11eaf3950dd00 Mon Sep 17 00:00:00 2001
+From: Pawel Furtak <pawel.furtak@intel.com>
+Date: Sun, 25 Nov 2018 16:58:08 +0100
+Subject: [PATCH 1034/1132] ASoC: Intel: Skylake: Export skylake functions for
+ virtio.
+
+In order to reuse existing implementation in virtualized
+system, additional functions have to be exported.
+
+Change-Id: I3c6af0e9a51894073f8dcef3ba4a4aed8fa56386
+Tracked-On: OAM-72189
+Signed-off-by: Pawel Furtak <pawel.furtak@intel.com>
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c  |  1 +
+ sound/soc/intel/skylake/skl-pcm.c       | 15 ++++++++++-----
+ sound/soc/intel/skylake/skl-sst-utils.c |  2 ++
+ sound/soc/intel/skylake/skl.h           |  7 +++++++
+ 4 files changed, 20 insertions(+), 5 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 96b0bc3..814b6a5 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -1176,6 +1176,7 @@ const struct skl_dsp_ops *skl_get_dsp_ops(int pci_id)
+ 
+ 	return NULL;
+ }
++EXPORT_SYMBOL(skl_get_dsp_ops);
+ 
+ int skl_init_dsp(struct skl *skl)
+ {
+diff --git a/sound/soc/intel/skylake/skl-pcm.c b/sound/soc/intel/skylake/skl-pcm.c
+index 453aa7b..7bc37e2 100644
+--- a/sound/soc/intel/skylake/skl-pcm.c
++++ b/sound/soc/intel/skylake/skl-pcm.c
+@@ -1624,7 +1624,7 @@ int skl_dai_load(struct snd_soc_component *cmp, int index,
+ 	return 0;
+ }
+ 
+-static int skl_platform_open(struct snd_pcm_substream *substream)
++int skl_platform_open(struct snd_pcm_substream *substream)
+ {
+ 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+ 	struct snd_soc_dai_link *dai_link = rtd->dai_link;
+@@ -1636,6 +1636,7 @@ static int skl_platform_open(struct snd_pcm_substream *substream)
+ 
+ 	return 0;
+ }
++EXPORT_SYMBOL(skl_platform_open);
+ 
+ static int skl_coupled_trigger(struct snd_pcm_substream *substream,
+ 					int cmd)
+@@ -1710,7 +1711,7 @@ static int skl_coupled_trigger(struct snd_pcm_substream *substream,
+ 	return 0;
+ }
+ 
+-static int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
++int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
+ 					int cmd)
+ {
+ 	struct hdac_bus *bus = get_bus_ctx(substream);
+@@ -1720,6 +1721,7 @@ static int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
+ 
+ 	return 0;
+ }
++EXPORT_SYMBOL(skl_platform_pcm_trigger);
+ 
+ /* update SPIB register with appl position */
+ static int skl_platform_ack(struct snd_pcm_substream *substream)
+@@ -1856,14 +1858,15 @@ static const struct snd_pcm_ops skl_platform_ops = {
+ 	.ack = skl_platform_ack,
+ };
+ 
+-static void skl_pcm_free(struct snd_pcm *pcm)
++void skl_pcm_free(struct snd_pcm *pcm)
+ {
+ 	snd_pcm_lib_preallocate_free_for_all(pcm);
+ }
++EXPORT_SYMBOL(skl_pcm_free);
+ 
+ #define MAX_PREALLOC_SIZE	(32 * 1024 * 1024)
+ 
+-static int skl_pcm_new(struct snd_soc_pcm_runtime *rtd)
++int skl_pcm_new(struct snd_soc_pcm_runtime *rtd)
+ {
+ 	struct snd_soc_dai *dai = rtd->cpu_dai;
+ 	struct hdac_bus *bus = dev_get_drvdata(dai->dev);
+@@ -1890,6 +1893,7 @@ static int skl_pcm_new(struct snd_soc_pcm_runtime *rtd)
+ 
+ 	return retval;
+ }
++EXPORT_SYMBOL(skl_pcm_new);
+ 
+ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
+ {
+@@ -2009,7 +2013,7 @@ static int skl_get_probe_widget(struct snd_soc_component *component,
+ 	return 0;
+ }
+ 
+-static int skl_platform_soc_probe(struct snd_soc_component *component)
++int skl_platform_soc_probe(struct snd_soc_component *component)
+ {
+ 	struct hdac_bus *bus = dev_get_drvdata(component->dev);
+ 	struct skl *skl = bus_to_skl(bus);
+@@ -2086,6 +2090,7 @@ static int skl_platform_soc_probe(struct snd_soc_component *component)
+ 
+ 	return 0;
+ }
++EXPORT_SYMBOL(skl_platform_soc_probe);
+ 
+ static const char* const dsp_log_text[] =
+ 	{"QUIET", "CRITICAL", "HIGH", "MEDIUM", "LOW", "VERBOSE"};
+diff --git a/sound/soc/intel/skylake/skl-sst-utils.c b/sound/soc/intel/skylake/skl-sst-utils.c
+index 02583e4..daa3b37 100644
+--- a/sound/soc/intel/skylake/skl-sst-utils.c
++++ b/sound/soc/intel/skylake/skl-sst-utils.c
+@@ -592,6 +592,7 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
+ 	skl_freeup_uuid_list(skl);
+ 	return ret;
+ }
++EXPORT_SYMBOL(snd_skl_parse_uuids);
+ 
+ static int skl_parse_hw_config_info(struct sst_dsp *ctx, u8 *src, int limit)
+ {
+@@ -803,6 +804,7 @@ int skl_prepare_lib_load(struct skl_sst *skl, struct skl_lib_info *linfo,
+ 
+ 	return 0;
+ }
++EXPORT_SYMBOL(skl_prepare_lib_load);
+ 
+ void skl_release_library(struct skl_lib_info *linfo, int lib_count)
+ {
+diff --git a/sound/soc/intel/skylake/skl.h b/sound/soc/intel/skylake/skl.h
+index b75dc47..a1536d32 100644
+--- a/sound/soc/intel/skylake/skl.h
++++ b/sound/soc/intel/skylake/skl.h
+@@ -220,6 +220,13 @@ int skl_dsp_set_dma_control(struct skl_sst *ctx, u32 *caps,
+ 
+ struct skl_module_cfg;
+ 
++int skl_pcm_new(struct snd_soc_pcm_runtime *rtd);
++void skl_pcm_free(struct snd_pcm *pcm);
++int skl_platform_soc_probe(struct snd_soc_component *component);
++int skl_platform_open(struct snd_pcm_substream *substream);
++int skl_platform_pcm_trigger(struct snd_pcm_substream *substream,
++	int cmd);
++
+ #ifdef CONFIG_DEBUG_FS
+ struct skl_debug *skl_debugfs_init(struct skl *skl);
+ void skl_debug_init_module(struct skl_debug *d,
+-- 
+2.7.4
+

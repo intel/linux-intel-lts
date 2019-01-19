@@ -1,0 +1,91 @@
+From bb74f336ebe33ebc71177dcc299e4ce8cdab3f87 Mon Sep 17 00:00:00 2001
+From: Manisha Chinthapally <manisha.chinthapally@intel.com>
+Date: Tue, 23 Oct 2018 13:46:26 -0700
+Subject: [PATCH 0836/1132] Add support for hypercalls for sep and socwatch
+ tool support
+
+This patch has following changes New sbuf type for each tool is added
+New hypercall for profiling operations [HC_PROFILING_OPS] added
+List of profiling commands supported is added
+
+Tracked-On: projectacrn#1409
+Acked-by: Eddie Dong <eddie.dong@intel.com>
+Signed-off-by: Manisha Chinthapally <manisha.chinthapally@intel.com>
+---
+ drivers/acrn/sbuf.h               |  2 ++
+ drivers/vhm/vhm_hypercall.c       |  5 +++++
+ include/linux/vhm/acrn_hv_defs.h  | 12 ++++++++++++
+ include/linux/vhm/vhm_hypercall.h |  1 +
+ 4 files changed, 20 insertions(+)
+
+diff --git a/drivers/acrn/sbuf.h b/drivers/acrn/sbuf.h
+index 4fae7a2..d08bf9f 100644
+--- a/drivers/acrn/sbuf.h
++++ b/drivers/acrn/sbuf.h
+@@ -70,6 +70,8 @@
+ enum sbuf_type {
+ 	ACRN_TRACE,
+ 	ACRN_HVLOG,
++	ACRN_SEP,
++	ACRN_SOCWATCH,
+ 	ACRN_SBUF_TYPE_MAX,
+ };
+ /**
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index f3348f7..6c67d04 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -183,6 +183,11 @@ inline long hcall_vm_gpa2hpa(unsigned long vmid, unsigned long addr)
+ 	return  acrn_hypercall2(HC_VM_GPA2HPA, vmid, addr);
+ }
+ 
++inline long hcall_profiling_ops(unsigned long cmd, unsigned long msr_nodes)
++{
++	return acrn_hypercall2(HC_PROFILING_OPS, cmd, msr_nodes);
++}
++
+ inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr)
+ {
+ 	return  acrn_hypercall2(HC_VM_INTR_MONITOR, vmid, addr);
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index c13257f..d916022 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -117,6 +117,7 @@
+ #define HC_ID_DBG_BASE              0x60UL
+ #define HC_SETUP_SBUF               _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x00)
+ #define HC_SETUP_HV_NPK_LOG         _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x01)
++#define HC_PROFILING_OPS            _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x02)
+ 
+ /* Power management */
+ #define HC_ID_PM_BASE               0x80UL
+@@ -247,4 +248,15 @@ struct hc_api_version {
+ 	uint32_t minor_version;
+ } __attribute__((aligned(8)));
+ 
++
++enum profiling_cmd_type {
++       PROFILING_MSR_OPS = 0,
++       PROFILING_GET_VMINFO,
++       PROFILING_GET_VERSION,
++       PROFILING_GET_CONTROL_SWITCH,
++       PROFILING_SET_CONTROL_SWITCH,
++       PROFILING_CONFIG_PMI,
++       PROFILING_CONFIG_VMSWITCH,
++       PROFILING_GET_PCPUID,
++};
+ #endif /* ACRN_HV_DEFS_H */
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index 1300699..2c79bf3 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -170,5 +170,6 @@ inline long hcall_reset_ptdev_intr_info(unsigned long vmid,
+ inline long hcall_remap_pci_msix(unsigned long vmid, unsigned long msi);
+ inline long hcall_vm_gpa2hpa(unsigned long vmid, unsigned long addr);
+ inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr);
++inline long hcall_profiling_ops(unsigned long cmd, unsigned long msr_nodes);
+ 
+ #endif /* VHM_HYPERCALL_H */
+-- 
+2.7.4
+

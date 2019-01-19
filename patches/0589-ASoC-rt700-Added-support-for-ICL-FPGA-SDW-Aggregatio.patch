@@ -1,0 +1,46 @@
+From 1390dd6b6a640dfee937454ffb90a02d5b886e37 Mon Sep 17 00:00:00 2001
+From: Leoni Prodduvaka <leoni.prodduvaka@intel.com>
+Date: Tue, 18 Apr 2017 23:02:20 +0530
+Subject: [PATCH 0589/1132] ASoC: rt700: Added support for ICL FPGA SDW
+ Aggregation
+
+Adding RT700 codec slave id connected to Master 1 used for aggregation
+and the master and slave id combination more general
+across different platforms
+
+Change-Id: If2552c5b56a7508179263791ccd996703ccf64c7
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/codecs/rt700-sdw.c | 7 +------
+ 1 file changed, 1 insertion(+), 6 deletions(-)
+
+diff --git a/sound/soc/codecs/rt700-sdw.c b/sound/soc/codecs/rt700-sdw.c
+index 1c935e3..8a7fbc5 100644
+--- a/sound/soc/codecs/rt700-sdw.c
++++ b/sound/soc/codecs/rt700-sdw.c
+@@ -348,15 +348,10 @@ static const struct sdw_slv_id rt700_id[] = {
+ 	{"15:02:5d:07:01:00", 0},
+ 	{"16:02:5d:07:01:00", 0},
+ 	{"17:02:5d:07:01:00", 0},
+-#ifndef CONFIG_SND_SOC_INTEL_CNL_FPGA
+-#ifndef CONFIG_SND_SOC_SDW_AGGM1M2
+-	{"10:02:5d:07:00:01", 0},
+-#else
+ 	{"10:02:5d:07:00:01", 1},
++	{"10:02:5d:07:01:01", 1},
+ 	{"10:02:5d:07:01:02", 2},
+ 	{"10:02:5d:07:01:03", 3},
+-#endif
+-#endif
+ 	{}
+ };
+ 
+-- 
+2.7.4
+

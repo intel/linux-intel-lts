@@ -1,0 +1,108 @@
+From b23fc3f8c3aa9513fb4e50177d2136e21b839d0c Mon Sep 17 00:00:00 2001
+From: Mousumi Jana <mousumix.jana@intel.com>
+Date: Sun, 8 Nov 2015 19:12:28 +0530
+Subject: [PATCH 0527/1132] ASoC: Intel: Skylake:fix for large get config api
+
+This patch adds support for get large config API
+when need to send the tx parameter to retrieve one or
+more configuration parameters from specified module instance.
+
+Change-Id: I3db4398e52e63176cb25ec37ff06db2b8f73f72b
+Signed-off-by: Mousumi Jana <mousumix.jana@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/soc/intel/skylake/skl-messages.c |  2 +-
+ sound/soc/intel/skylake/skl-sst-ipc.c  | 26 ++++++++++++++++++--------
+ sound/soc/intel/skylake/skl-sst-ipc.h  |  3 ++-
+ 3 files changed, 21 insertions(+), 10 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index fa8ef71..13d1898 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -1538,5 +1538,5 @@ int skl_get_module_params(struct skl_sst *ctx, u32 *params, int size,
+ 	msg.param_data_size = size;
+ 	msg.large_param_id = param_id;
+ 
+-	return skl_ipc_get_large_config(&ctx->ipc, &msg, params);
++	return skl_ipc_get_large_config(&ctx->ipc, &msg, params, NULL, 0);
+ }
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.c b/sound/soc/intel/skylake/skl-sst-ipc.c
+index b83a307..7b6ce92 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.c
++++ b/sound/soc/intel/skylake/skl-sst-ipc.c
+@@ -1002,12 +1002,13 @@ int skl_ipc_set_large_config(struct sst_generic_ipc *ipc,
+ EXPORT_SYMBOL_GPL(skl_ipc_set_large_config);
+ 
+ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+-		struct skl_ipc_large_config_msg *msg, u32 *param)
++		struct skl_ipc_large_config_msg *msg, u32 *param,
++		u32 *txparam, u32 size)
+ {
+ 	struct skl_ipc_header header = {0};
+ 	u64 *ipc_header = (u64 *)(&header);
+ 	int ret = 0;
+-	size_t sz_remaining, rx_size, data_offset;
++	size_t sz_remaining, rx_size, data_offset, inbox_sz;
+ 
+ 	header.primary = IPC_MSG_TARGET(IPC_MOD_MSG);
+ 	header.primary |= IPC_MSG_DIR(IPC_MSG_REQUEST);
+@@ -1022,16 +1023,25 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+ 
+ 	sz_remaining = msg->param_data_size;
+ 	data_offset = 0;
++	inbox_sz = ipc->dsp->mailbox.in_size;
++
++	if (msg->param_data_size >= inbox_sz)
++		header.extension |= IPC_FINAL_BLOCK(0);
+ 
+ 	while (sz_remaining != 0) {
+-		rx_size = sz_remaining > SKL_ADSP_W1_SZ
+-				? SKL_ADSP_W1_SZ : sz_remaining;
++		rx_size = sz_remaining > inbox_sz
++				? inbox_sz : sz_remaining;
+ 		if (rx_size == sz_remaining)
+ 			header.extension |= IPC_FINAL_BLOCK(1);
+ 
+-		ret = sst_ipc_tx_message_wait(ipc, *ipc_header, NULL, 0,
+-					      ((char *)param) + data_offset,
+-					      msg->param_data_size);
++		dev_dbg(ipc->dev, "In %s primary=%#x ext=%#x\n", __func__,
++			header.primary, header.extension);
++		dev_dbg(ipc->dev, "receiving offset: %#x, size: %#x\n",
++			(unsigned)data_offset, (unsigned)rx_size);
++
++		ret = sst_ipc_tx_message_wait(ipc, *ipc_header,
++			((char *)txparam), size, ((char *)param) + data_offset,
++					      rx_size);
+ 		if (ret < 0) {
+ 			dev_err(ipc->dev,
+ 				"ipc: get large config fail, err: %d\n", ret);
+@@ -1044,7 +1054,7 @@ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+ 		header.extension &= IPC_INITIAL_BLOCK_CLEAR;
+ 		header.extension &= IPC_DATA_OFFSET_SZ_CLEAR;
+ 		/* fill the fields */
+-		header.extension |= IPC_INITIAL_BLOCK(1);
++		header.extension |= IPC_INITIAL_BLOCK(0);
+ 		header.extension |= IPC_DATA_OFFSET_SZ(data_offset);
+ 	}
+ 
+diff --git a/sound/soc/intel/skylake/skl-sst-ipc.h b/sound/soc/intel/skylake/skl-sst-ipc.h
+index 0437e4c..e969ac9 100644
+--- a/sound/soc/intel/skylake/skl-sst-ipc.h
++++ b/sound/soc/intel/skylake/skl-sst-ipc.h
+@@ -244,7 +244,8 @@ int skl_ipc_set_large_config(struct sst_generic_ipc *ipc,
+ 		struct skl_ipc_large_config_msg *msg, u32 *param);
+ 
+ int skl_ipc_get_large_config(struct sst_generic_ipc *ipc,
+-		struct skl_ipc_large_config_msg *msg, u32 *param);
++		struct skl_ipc_large_config_msg *msg, u32 *param,
++		u32 *txparam, u32 size);
+ 
+ int skl_sst_ipc_load_library(struct sst_generic_ipc *ipc,
+ 			u8 dma_id, u8 table_id, bool wait);
+-- 
+2.7.4
+

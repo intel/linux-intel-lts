@@ -1,0 +1,171 @@
+From ebd3b4bfbc63895e4b21b10d2ca2bc6eb5c8ac71 Mon Sep 17 00:00:00 2001
+From: Alexander Usyskin <alexander.usyskin@intel.com>
+Date: Mon, 3 Sep 2018 14:37:27 +0300
+Subject: [PATCH 0422/1132] mei: bus: add more client attributes to sysfs
+
+Change-Id: Icfb5dfec59927718373432c8f5a1cf455bccf064
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ Documentation/ABI/testing/sysfs-bus-mei | 28 +++++++++++++++++++
+ drivers/misc/mei/bus.c                  | 44 ++++++++++++++++++++++++++++++
+ drivers/misc/mei/client.h               | 48 +++++++++++++++++++++++++++++++++
+ 3 files changed, 120 insertions(+)
+
+diff --git a/Documentation/ABI/testing/sysfs-bus-mei b/Documentation/ABI/testing/sysfs-bus-mei
+index 6bd4534..6b11be3 100644
+--- a/Documentation/ABI/testing/sysfs-bus-mei
++++ b/Documentation/ABI/testing/sysfs-bus-mei
+@@ -26,3 +26,31 @@ KernelVersion:	4.3
+ Contact:	Tomas Winkler <tomas.winkler@intel.com>
+ Description:	Stores mei client protocol version
+ 		Format: %d
++
++What:		/sys/bus/mei/devices/.../max_conn
++Date:		Sep 2018
++KernelVersion:	4.19
++Contact:	Tomas Winkler <tomas.winkler@intel.com>
++Description:	Stores mei client maximum number of connections
++		Format: %d
++
++What:		/sys/bus/mei/devices/.../fixed
++Date:		Sep 2018
++KernelVersion:	4.19
++Contact:	Tomas Winkler <tomas.winkler@intel.com>
++Description:	Stores mei client fixed address, if any
++		Format: %d
++
++What:		/sys/bus/mei/devices/.../vtag
++Date:		Sep 2018
++KernelVersion:	4.19
++Contact:	Tomas Winkler <tomas.winkler@intel.com>
++Description:	Stores mei client vm tag support status
++		Format: %d
++
++What:		/sys/bus/mei/devices/.../max_len
++Date:		Sep 2018
++KernelVersion:	4.19
++Contact:	Tomas Winkler <tomas.winkler@intel.com>
++Description:	Stores mei client maximum message length
++		Format: %d
+diff --git a/drivers/misc/mei/bus.c b/drivers/misc/mei/bus.c
+index 2c4a1c3..d9d21bb 100644
+--- a/drivers/misc/mei/bus.c
++++ b/drivers/misc/mei/bus.c
+@@ -830,11 +830,55 @@ static ssize_t modalias_show(struct device *dev, struct device_attribute *a,
+ }
+ static DEVICE_ATTR_RO(modalias);
+ 
++static ssize_t max_conn_show(struct device *dev, struct device_attribute *a,
++			     char *buf)
++{
++	struct mei_cl_device *cldev = to_mei_cl_device(dev);
++	u8 maxconn = mei_me_cl_max_conn(cldev->me_cl);
++
++	return scnprintf(buf, PAGE_SIZE, "%d", maxconn);
++}
++static DEVICE_ATTR_RO(max_conn);
++
++static ssize_t fixed_show(struct device *dev, struct device_attribute *a,
++			  char *buf)
++{
++	struct mei_cl_device *cldev = to_mei_cl_device(dev);
++	u8 fixed = mei_me_cl_fixed(cldev->me_cl);
++
++	return scnprintf(buf, PAGE_SIZE, "%d", fixed);
++}
++static DEVICE_ATTR_RO(fixed);
++
++static ssize_t vtag_show(struct device *dev, struct device_attribute *a,
++			 char *buf)
++{
++	struct mei_cl_device *cldev = to_mei_cl_device(dev);
++	bool vm = mei_me_cl_vm(cldev->me_cl);
++
++	return scnprintf(buf, PAGE_SIZE, "%d", vm);
++}
++static DEVICE_ATTR_RO(vtag);
++
++static ssize_t max_len_show(struct device *dev, struct device_attribute *a,
++			    char *buf)
++{
++	struct mei_cl_device *cldev = to_mei_cl_device(dev);
++	u32 maxlen = mei_me_cl_max_len(cldev->me_cl);
++
++	return scnprintf(buf, PAGE_SIZE, "%u", maxlen);
++}
++static DEVICE_ATTR_RO(max_len);
++
+ static struct attribute *mei_cldev_attrs[] = {
+ 	&dev_attr_name.attr,
+ 	&dev_attr_uuid.attr,
+ 	&dev_attr_version.attr,
+ 	&dev_attr_modalias.attr,
++	&dev_attr_max_conn.attr,
++	&dev_attr_fixed.attr,
++	&dev_attr_vtag.attr,
++	&dev_attr_max_len.attr,
+ 	NULL,
+ };
+ ATTRIBUTE_GROUPS(mei_cldev);
+diff --git a/drivers/misc/mei/client.h b/drivers/misc/mei/client.h
+index eb14709..6c9986d 100644
+--- a/drivers/misc/mei/client.h
++++ b/drivers/misc/mei/client.h
+@@ -79,6 +79,54 @@ static inline u8 mei_me_cl_ver(const struct mei_me_client *me_cl)
+ 	return me_cl->props.protocol_version;
+ }
+ 
++/**
++ * mei_me_cl_max_conn - return me client max number of connections
++ *
++ * @me_cl: me client
++ *
++ * Return: me client max number of connections
++ */
++static inline u8 mei_me_cl_max_conn(const struct mei_me_client *me_cl)
++{
++	return me_cl->props.max_number_of_connections;
++}
++
++/**
++ * mei_me_cl_fixed - return me client fixed address, if any
++ *
++ * @me_cl: me client
++ *
++ * Return: me client fixed address
++ */
++static inline u8 mei_me_cl_fixed(const struct mei_me_client *me_cl)
++{
++	return me_cl->props.fixed_address;
++}
++
++/**
++ * mei_me_cl_vm - return me client vm supported status
++ *
++ * @me_cl: me client
++ *
++ * Return: true if me client supports vm tagging
++ */
++static inline bool mei_me_cl_vm(const struct mei_me_client *me_cl)
++{
++	return me_cl->props.vm_supported == 1;
++}
++
++/**
++ * mei_me_cl_max_len - return me client max msg length
++ *
++ * @me_cl: me client
++ *
++ * Return: me client max msg length
++ */
++static inline u32 mei_me_cl_max_len(const struct mei_me_client *me_cl)
++{
++	return me_cl->props.max_msg_length;
++}
++
+ /*
+  * MEI IO Functions
+  */
+-- 
+2.7.4
+

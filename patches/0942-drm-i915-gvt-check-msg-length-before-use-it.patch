@@ -1,0 +1,43 @@
+From c8126e3b926d67b66f829504411f0b447fa15d2e Mon Sep 17 00:00:00 2001
+From: Xinyun Liu <xinyun.liu@intel.com>
+Date: Thu, 24 May 2018 11:52:44 +0800
+Subject: [PATCH 0942/1132] drm/i915/gvt: check msg length before use it
+
+Spec said `Message Size` should be (0, 20]. Add check code and make
+static analysis happy also.
+
+Cherry-pick f977f43dbda and fda72d479ac from v4.14 branch
+
+Tracked-On: projectacrn/acrn-hypervisor#1581
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/edid.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/edid.c b/drivers/gpu/drm/i915/gvt/edid.c
+index fb690a4..c4bf480 100644
+--- a/drivers/gpu/drm/i915/gvt/edid.c
++++ b/drivers/gpu/drm/i915/gvt/edid.c
+@@ -448,7 +448,7 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
+ 	u32 value = *(u32 *)p_data;
+ 	int aux_data_for_write = 0;
+ 	int reg = get_aux_ch_reg(offset);
+-	uint8_t rxbuf[20];
++	uint8_t rxbuf[20] = {0};
+ 	size_t rxsize;
+ 
+ 	if (reg != AUX_CH_CTL) {
+@@ -457,6 +457,9 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
+ 	}
+ 
+ 	msg_length = AUX_CTL_MSG_LENGTH(value);
++	if (WARN_ON(msg_length <= 0 || msg_length > 20))
++		return;
++
+ 	for (rxsize = 0; rxsize < msg_length; rxsize += 4)
+ 		intel_dp_unpack_aux(vgpu_vreg(vgpu, offset + 4 + rxsize),
+ 				rxbuf + rxsize, msg_length - rxsize);
+-- 
+2.7.4
+

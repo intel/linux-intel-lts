@@ -1,0 +1,194 @@
+From 4503e9846283c54ec722cffb77da6a59fe5a4921 Mon Sep 17 00:00:00 2001
+From: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Date: Tue, 31 Jul 2018 14:39:40 -0700
+Subject: [PATCH 0900/1132] hyper_dmabuf: Remove unused variable warnings
+
+Remove unused variable warnings in hyper_dmabuf_list.c,
+hyper_dmabuf_msg.c and hyper_dmabuf_ops.c
+
+Signed-off-by: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c |  1 -
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c  |  2 --
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c  | 27 ++++++++----------------
+ 3 files changed, 9 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c
+index bba6d1d..84cfb06 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_list.c
+@@ -34,7 +34,6 @@
+ #include "hyper_dmabuf_drv.h"
+ #include "hyper_dmabuf_list.h"
+ #include "hyper_dmabuf_id.h"
+-#include "hyper_dmabuf_event.h"
+ 
+ DECLARE_HASHTABLE(hyper_dmabuf_hash_imported, MAX_ENTRY_IMPORTED);
+ DECLARE_HASHTABLE(hyper_dmabuf_hash_exported, MAX_ENTRY_EXPORTED);
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
+index 37ee894..c5d99d2f 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_msg.c
+@@ -124,11 +124,9 @@ static void cmd_process_work(struct work_struct *work)
+ 						struct cmd_process, work);
+ 	struct hyper_dmabuf_req *req;
+ 	hyper_dmabuf_id_t hid;
+-	int domid;
+ 	int i;
+ 
+ 	req = proc->rq;
+-	domid = proc->domid;
+ 
+ 	switch (req->cmd) {
+ 	case HYPER_DMABUF_EXPORT:
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
+index a8207b4..10b5510 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ops.c
+@@ -106,14 +106,13 @@ static void hyper_dmabuf_ops_detach(struct dma_buf *dmabuf,
+ 				    struct dma_buf_attachment *attach)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!attach->dmabuf->priv)
+ 		return;
+ 
+ 	imported = (struct imported_sgt_info *)attach->dmabuf->priv;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_DETACH);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_DETACH);
+ }
+ 
+ static struct sg_table *hyper_dmabuf_ops_map(
+@@ -169,7 +168,6 @@ static void hyper_dmabuf_ops_unmap(struct dma_buf_attachment *attachment,
+ 				   enum dma_data_direction dir)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!attachment->dmabuf->priv)
+ 		return;
+@@ -181,14 +179,13 @@ static void hyper_dmabuf_ops_unmap(struct dma_buf_attachment *attachment,
+ 	sg_free_table(sg);
+ 	kfree(sg);
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_UNMAP);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_UNMAP);
+ }
+ 
+ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
+ {
+ 	struct imported_sgt_info *imported;
+ 	struct hyper_dmabuf_bknd_ops *bknd_ops = hy_drv_priv->bknd_ops;
+-	int ret;
+ 	int finish;
+ 
+ 	if (!dma_buf->priv)
+@@ -215,7 +212,7 @@ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
+ 	finish = imported && !imported->valid &&
+ 		 !imported->importers;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_RELEASE);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_RELEASE);
+ 
+ 	/*
+ 	 * Check if buffer is still valid and if not remove it
+@@ -262,14 +259,13 @@ static void *hyper_dmabuf_ops_kmap_atomic(struct dma_buf *dmabuf,
+ 					  unsigned long pgnum)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!dmabuf->priv)
+ 		return NULL;
+ 
+ 	imported = (struct imported_sgt_info *)dmabuf->priv;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_KMAP_ATOMIC);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_KMAP_ATOMIC);
+ 
+ 	/* TODO: NULL for now. Need to return the addr of mapped region */
+ 	return NULL;
+@@ -279,27 +275,25 @@ static void hyper_dmabuf_ops_kunmap_atomic(struct dma_buf *dmabuf,
+ 					   unsigned long pgnum, void *vaddr)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!dmabuf->priv)
+ 		return;
+ 
+ 	imported = (struct imported_sgt_info *)dmabuf->priv;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_KUNMAP_ATOMIC);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_KUNMAP_ATOMIC);
+ }
+ 
+ static void *hyper_dmabuf_ops_kmap(struct dma_buf *dmabuf, unsigned long pgnum)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!dmabuf->priv)
+ 		return NULL;
+ 
+ 	imported = (struct imported_sgt_info *)dmabuf->priv;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_KMAP);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_KMAP);
+ 
+ 	/* for now NULL.. need to return the address of mapped region */
+ 	return NULL;
+@@ -309,14 +303,13 @@ static void hyper_dmabuf_ops_kunmap(struct dma_buf *dmabuf, unsigned long pgnum,
+ 				    void *vaddr)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!dmabuf->priv)
+ 		return;
+ 
+ 	imported = (struct imported_sgt_info *)dmabuf->priv;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_KUNMAP);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_KUNMAP);
+ }
+ 
+ static int hyper_dmabuf_ops_mmap(struct dma_buf *dmabuf,
+@@ -338,14 +331,13 @@ static int hyper_dmabuf_ops_mmap(struct dma_buf *dmabuf,
+ static void *hyper_dmabuf_ops_vmap(struct dma_buf *dmabuf)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!dmabuf->priv)
+ 		return NULL;
+ 
+ 	imported = (struct imported_sgt_info *)dmabuf->priv;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_VMAP);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_VMAP);
+ 
+ 	return NULL;
+ }
+@@ -353,14 +345,13 @@ static void *hyper_dmabuf_ops_vmap(struct dma_buf *dmabuf)
+ static void hyper_dmabuf_ops_vunmap(struct dma_buf *dmabuf, void *vaddr)
+ {
+ 	struct imported_sgt_info *imported;
+-	int ret;
+ 
+ 	if (!dmabuf->priv)
+ 		return;
+ 
+ 	imported = (struct imported_sgt_info *)dmabuf->priv;
+ 
+-	ret = sync_request(imported->hid, HYPER_DMABUF_OPS_VUNMAP);
++	sync_request(imported->hid, HYPER_DMABUF_OPS_VUNMAP);
+ }
+ 
+ static const struct dma_buf_ops hyper_dmabuf_ops = {
+-- 
+2.7.4
+

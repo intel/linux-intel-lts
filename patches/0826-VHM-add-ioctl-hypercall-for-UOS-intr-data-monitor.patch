@@ -1,0 +1,106 @@
+From 0d32d6c6ae1a6c756dd48fdf9a67e400ef47a378 Mon Sep 17 00:00:00 2001
+From: Minggui Cao <minggui.cao@intel.com>
+Date: Wed, 8 Aug 2018 15:42:00 +0800
+Subject: [PATCH 0826/1132] VHM: add ioctl/hypercall for UOS intr data monitor
+
+DM can use this ioctl/hypercall to get the UOS pass-through devices'
+interrupt count data, to monitor its status.
+
+It is used to enhance the feature "interrupt storm mitigation"; DM can
+monitor UOS pass-thru devices' interrupt data and give a response if one
+"interrupt storm" happens.
+
+V2:
+   Fix the building warning.
+
+Tracked-on: https://github.com/projectacrn/acrn-hypervisor/issues/866
+Signed-off-by: Minggui Cao <minggui.cao@intel.com>
+Signed-off-by: Wei Liu <weix.w.liu@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 17 +++++++++++++++++
+ drivers/vhm/vhm_hypercall.c        |  5 +++++
+ include/linux/vhm/acrn_hv_defs.h   |  1 +
+ include/linux/vhm/vhm_hypercall.h  |  1 +
+ include/linux/vhm/vhm_ioctl_defs.h |  1 +
+ 5 files changed, 25 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index d57dc39..0d25f73 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -630,6 +630,23 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
++	case IC_VM_INTR_MONITOR: {
++		struct page *page;
++
++		ret = get_user_pages_fast(ioctl_param, 1, 1, &page);
++		if (unlikely(ret != 1) || (page == NULL)) {
++			pr_err("vhm-dev: failed to pin intr hdr buffer!\n");
++			return -ENOMEM;
++		}
++
++		ret = hcall_vm_intr_monitor(vm->vmid, page_to_phys(page));
++		if (ret < 0) {
++			pr_err("vhm-dev: monitor intr data err=%ld\n", ret);
++			return -EFAULT;
++		}
++		break;
++	}
++
+ 	default:
+ 		pr_warn("Unknown IOCTL 0x%x\n", ioctl_num);
+ 		ret = 0;
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index d994835..666f9ae 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -177,3 +177,8 @@ inline long hcall_vm_gpa2hpa(unsigned long vmid, unsigned long addr)
+ {
+ 	return  acrn_hypercall2(HC_VM_GPA2HPA, vmid, addr);
+ }
++
++inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr)
++{
++	return  acrn_hypercall2(HC_VM_INTR_MONITOR, vmid, addr);
++}
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 24ca7be..2cd6172 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -85,6 +85,7 @@
+ #define HC_DEASSERT_IRQLINE         _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x01)
+ #define HC_PULSE_IRQLINE            _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x02)
+ #define HC_INJECT_MSI               _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x03)
++#define HC_VM_INTR_MONITOR          _HC_ID(HC_ID, HC_ID_IRQ_BASE + 0x04)
+ 
+ /* DM ioreq management */
+ #define HC_ID_IOREQ_BASE            0x30UL
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index 703b35b..062196a 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -167,5 +167,6 @@ inline long hcall_reset_ptdev_intr_info(unsigned long vmid,
+ 		unsigned long pt_irq);
+ inline long hcall_remap_pci_msix(unsigned long vmid, unsigned long msi);
+ inline long hcall_vm_gpa2hpa(unsigned long vmid, unsigned long addr);
++inline long hcall_vm_intr_monitor(unsigned long vmid, unsigned long addr);
+ 
+ #endif /* VHM_HYPERCALL_H */
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 6c09157..063ebd5 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -80,6 +80,7 @@
+ #define IC_DEASSERT_IRQLINE            _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x01)
+ #define IC_PULSE_IRQLINE               _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x02)
+ #define IC_INJECT_MSI                  _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x03)
++#define IC_VM_INTR_MONITOR             _IC_ID(IC_ID, IC_ID_IRQ_BASE + 0x04)
+ 
+ /* DM ioreq management */
+ #define IC_ID_IOREQ_BASE                0x30UL
+-- 
+2.7.4
+

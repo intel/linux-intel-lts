@@ -1,0 +1,148 @@
+From 4740375e9debe6659713bb789427c99c355d25a9 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Tue, 18 Dec 2018 09:37:08 +0800
+Subject: [PATCH 1051/1132] Kernel/VHM: VM_list changes the lock from mutex to
+ rw_lock to avoid sleeping
+
+VM_list records all the added vm for each DM. And it is accessed by using
+mutex lock. As it is accessed in created/removed and softireq tasklet, the
+spinlock should be used instead. And as the read is used frequently, the
+rwlock is used(similar to spinlock except it allows multiple readers).
+And when the vhm_dev_release is closed, the vhm_vm will be removed from
+the list and its memory is released only when its refcnt is decreased to
+zero.
+
+Tracked-On: projectacrn/acrn-hypervisor#2085
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Reviewed-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Yin FengWei <fengwei.yin@intel.com>
+Tracked-On: PKT-1617
+---
+ drivers/char/vhm/vhm_dev.c      |  9 +++++++--
+ drivers/vhm/vhm_vm_mngt.c       | 21 ++++-----------------
+ include/linux/vhm/vhm_vm_mngt.h |  5 ++---
+ 3 files changed, 13 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 30cafcc..2a51fad 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -130,10 +130,10 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
+ 	INIT_LIST_HEAD(&vm->ioreq_client_list);
+ 	spin_lock_init(&vm->ioreq_client_lock);
+ 
+-	vm_mutex_lock(&vhm_vm_list_lock);
+ 	atomic_set(&vm->refcnt, 1);
++	write_lock_bh(&vhm_vm_list_lock);
+ 	vm_list_add(&vm->list);
+-	vm_mutex_unlock(&vhm_vm_list_lock);
++	write_unlock_bh(&vhm_vm_list_lock);
+ 	filep->private_data = vm;
+ 	return 0;
+ }
+@@ -672,12 +672,14 @@ static void io_req_tasklet(unsigned long data)
+ {
+ 	struct vhm_vm *vm;
+ 
++	read_lock(&vhm_vm_list_lock);
+ 	list_for_each_entry(vm, &vhm_vm_list, list) {
+ 		if (!vm || !vm->req_buf)
+ 			break;
+ 
+ 		acrn_ioreq_distribute_request(vm);
+ 	}
++	read_unlock(&vhm_vm_list_lock);
+ }
+ 
+ static void vhm_intr_handler(void)
+@@ -694,6 +696,9 @@ static int vhm_dev_release(struct inode *inodep, struct file *filep)
+ 		return -EFAULT;
+ 	}
+ 	acrn_ioreq_free(vm);
++	write_lock_bh(&vhm_vm_list_lock);
++	list_del_init(&vm->list);
++	write_unlock_bh(&vhm_vm_list_lock);
+ 	put_vm(vm);
+ 	filep->private_data = NULL;
+ 	return 0;
+diff --git a/drivers/vhm/vhm_vm_mngt.c b/drivers/vhm/vhm_vm_mngt.c
+index 6bbcb1dd..6120710 100644
+--- a/drivers/vhm/vhm_vm_mngt.c
++++ b/drivers/vhm/vhm_vm_mngt.c
+@@ -64,21 +64,21 @@
+ #include <linux/vhm/vhm_hypercall.h>
+ 
+ LIST_HEAD(vhm_vm_list);
+-DEFINE_MUTEX(vhm_vm_list_lock);
++DEFINE_RWLOCK(vhm_vm_list_lock);
+ 
+ struct vhm_vm *find_get_vm(unsigned long vmid)
+ {
+ 	struct vhm_vm *vm;
+ 
+-	mutex_lock(&vhm_vm_list_lock);
++	read_lock_bh(&vhm_vm_list_lock);
+ 	list_for_each_entry(vm, &vhm_vm_list, list) {
+ 		if (vm->vmid == vmid) {
+ 			atomic_inc(&vm->refcnt);
+-			mutex_unlock(&vhm_vm_list_lock);
++			read_unlock_bh(&vhm_vm_list_lock);
+ 			return vm;
+ 		}
+ 	}
+-	mutex_unlock(&vhm_vm_list_lock);
++	read_unlock_bh(&vhm_vm_list_lock);
+ 	return NULL;
+ }
+ EXPORT_SYMBOL_GPL(find_get_vm);
+@@ -86,9 +86,6 @@ EXPORT_SYMBOL_GPL(find_get_vm);
+ void put_vm(struct vhm_vm *vm)
+ {
+ 	if (atomic_dec_and_test(&vm->refcnt)) {
+-		mutex_lock(&vhm_vm_list_lock);
+-		list_del(&vm->list);
+-		mutex_unlock(&vhm_vm_list_lock);
+ 		free_guest_mem(vm);
+ 
+ 		if (vm->req_buf && vm->pg) {
+@@ -167,13 +164,3 @@ void vm_list_add(struct list_head *list)
+ {
+ 	list_add(list, &vhm_vm_list);
+ }
+-
+-void vm_mutex_lock(struct mutex *mlock)
+-{
+-	mutex_lock(mlock);
+-}
+-
+-void vm_mutex_unlock(struct mutex *mlock)
+-{
+-	mutex_unlock(mlock);
+-}
+diff --git a/include/linux/vhm/vhm_vm_mngt.h b/include/linux/vhm/vhm_vm_mngt.h
+index cf61ed0..6e61d4f 100644
+--- a/include/linux/vhm/vhm_vm_mngt.h
++++ b/include/linux/vhm/vhm_vm_mngt.h
+@@ -61,9 +61,10 @@
+ #define VHM_VM_MNGT_H
+ 
+ #include <linux/list.h>
++#include <linux/rwlock_types.h>
+ 
+ extern struct list_head vhm_vm_list;
+-extern struct mutex vhm_vm_list_lock;
++extern rwlock_t vhm_vm_list_lock;
+ 
+ #define HUGEPAGE_2M_HLIST_ARRAY_SIZE	16
+ #define HUGEPAGE_1G_HLIST_ARRAY_SIZE	1
+@@ -182,7 +183,5 @@ int vhm_inject_msi(unsigned long vmid, unsigned long msi_addr,
+ unsigned long vhm_vm_gpa2hpa(unsigned long vmid, unsigned long gpa);
+ 
+ void vm_list_add(struct list_head *list);
+-void vm_mutex_lock(struct mutex *mlock);
+-void vm_mutex_unlock(struct mutex *mlock);
+ 
+ #endif
+-- 
+2.7.4
+

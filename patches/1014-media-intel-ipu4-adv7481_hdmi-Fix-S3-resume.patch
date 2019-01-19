@@ -1,0 +1,31 @@
+From a8d5d2ba26d1fd35efbc4ebc65f357c436a39643 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Mon, 10 Dec 2018 11:09:27 +0800
+Subject: [PATCH 1014/1132] media: intel-ipu4: adv7481_hdmi: Fix S3 resume
+
+S3 could not resume when IRQ pin is true in ADV7481.
+
+Change-Id: I009c343422f6f6df103f0241e6e09cd3288657e9
+Tracked-On: OAM-72431
+Signed-off-by: Khai Wen Ng <khai.wen.ng@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/i2c/crlmodule/crl_adv7481_hdmi_configuration.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/crlmodule/crl_adv7481_hdmi_configuration.h b/drivers/media/i2c/crlmodule/crl_adv7481_hdmi_configuration.h
+index 1926bf4..0a33945 100644
+--- a/drivers/media/i2c/crlmodule/crl_adv7481_hdmi_configuration.h
++++ b/drivers/media/i2c/crlmodule/crl_adv7481_hdmi_configuration.h
+@@ -1014,7 +1014,7 @@ static struct crl_sensor_configuration adv7481_hdmi_crl_configuration = {
+ 	.csi_fmts_items = ARRAY_SIZE(adv7481_hdmi_crl_csi_data_fmt),
+ 	.csi_fmts = adv7481_hdmi_crl_csi_data_fmt,
+ 
+-	.irq_in_use = true,
++	.irq_in_use = false,
+ 	.crl_irq_fn = NULL,
+ 	.crl_threaded_irq_fn = crl_adv7481_threaded_irq_fn,
+ 
+-- 
+2.7.4
+

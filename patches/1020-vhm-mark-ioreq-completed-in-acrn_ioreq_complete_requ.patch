@@ -1,0 +1,160 @@
+From 2b615d886db2a190afcee5b5a17a45aace1fc427 Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Mon, 24 Sep 2018 21:58:10 +0800
+Subject: [PATCH 1020/1132] vhm: mark ioreq completed in
+ acrn_ioreq_complete_request
+
+Now, we mark ioreq completed scattered in each handler. There is one
+ioctl in VHM named acrn_ioreq_complete_request which do post complete
+processing. It's better we move the ioreq status changing into it.
+
+Tracked-On: PKT-1592
+Tracked-On: projectacrn/acrn-hypervisor#1821
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Reviewed-by: Zhao, Yakui <yakui.zhao@intel.com>
+Acked-by: Anthony Xu <anthony.xu@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c                                  |  3 ++-
+ .../hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c        |  5 ++---
+ drivers/gpu/drm/i915/gvt/acrngt.c                           |  4 +---
+ drivers/vbs/vbs.c                                           |  4 +---
+ drivers/vhm/vhm_ioeventfd.c                                 |  3 +--
+ drivers/vhm/vhm_ioreq.c                                     | 13 +++++++++++--
+ include/linux/vhm/acrn_vhm_ioreq.h                          |  4 +++-
+ 7 files changed, 21 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 6970def..33df39be 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -389,7 +389,8 @@ static long vhm_dev_ioctl(struct file *filep,
+ 					sizeof(notify)))
+ 			return -EFAULT;
+ 
+-		ret = acrn_ioreq_complete_request(notify.client_id, notify.vcpu);
++		ret = acrn_ioreq_complete_request(notify.client_id,
++				notify.vcpu, NULL);
+ 		if (ret < 0)
+ 			return -EFAULT;
+ 		break;
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+index b308d7e..1be0218 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+@@ -186,9 +186,8 @@ static int virtio_be_handle_kick(int client_id, unsigned long *ioreqs_map)
+ 			else
+ 				val = req->reqs.pio_request.value;
+ 
+-			smp_mb();
+-			atomic_set(&req->processed, REQ_STATE_COMPLETE);
+-			acrn_ioreq_complete_request(fe_info->client_id, vcpu);
++			acrn_ioreq_complete_request(
++					fe_info->client_id, vcpu, req);
+ 		}
+ 	}
+ 
+diff --git a/drivers/gpu/drm/i915/gvt/acrngt.c b/drivers/gpu/drm/i915/gvt/acrngt.c
+index 20e3e67..7a0d138 100644
+--- a/drivers/gpu/drm/i915/gvt/acrngt.c
++++ b/drivers/gpu/drm/i915/gvt/acrngt.c
+@@ -267,11 +267,9 @@ static int acrngt_emulation_thread(void *priv)
+ 				if (ret)
+ 					handle_request_error(vgpu);
+ 
+-				smp_mb();
+-				atomic_set(&req->processed, REQ_STATE_COMPLETE);
+ 				/* complete request */
+ 				if (acrn_ioreq_complete_request(info->client,
+-						vcpu))
++						vcpu, req))
+ 					gvt_err("failed complete request\n");
+ 			}
+ 		}
+diff --git a/drivers/vbs/vbs.c b/drivers/vbs/vbs.c
+index 0e0516a..aaec862 100644
+--- a/drivers/vbs/vbs.c
++++ b/drivers/vbs/vbs.c
+@@ -200,9 +200,7 @@ int virtio_vqs_index_get(struct virtio_dev_info *dev,
+ 					vqs_index[idx++] =
+ 						req->reqs.mmio_request.value;
+ 			}
+-			smp_mb();
+-			atomic_set(&req->processed, REQ_STATE_COMPLETE);
+-			acrn_ioreq_complete_request(req->client, vcpu);
++			acrn_ioreq_complete_request(req->client, vcpu, req);
+ 		}
+ 	}
+ 
+diff --git a/drivers/vhm/vhm_ioeventfd.c b/drivers/vhm/vhm_ioeventfd.c
+index d5efb1a..845747b 100644
+--- a/drivers/vhm/vhm_ioeventfd.c
++++ b/drivers/vhm/vhm_ioeventfd.c
+@@ -386,8 +386,7 @@ static int acrn_ioeventfd_dispatch_ioreq(int client_id,
+ 			mutex_unlock(&info->ioeventfds_lock);
+ 
+ next_ioreq:
+-			atomic_set(&req->processed, REQ_STATE_COMPLETE);
+-			acrn_ioreq_complete_request(client_id, vcpu);
++			acrn_ioreq_complete_request(client_id, vcpu, req);
+ 		}
+ 	}
+ 
+diff --git a/drivers/vhm/vhm_ioreq.c b/drivers/vhm/vhm_ioreq.c
+index 1759fd4..9c50d94 100644
+--- a/drivers/vhm/vhm_ioreq.c
++++ b/drivers/vhm/vhm_ioreq.c
+@@ -269,7 +269,7 @@ void acrn_ioreq_clear_request(struct vhm_vm *vm)
+ 		client = clients[vm->ioreq_fallback_client];
+ 		while ((bit = find_next_bit(client->ioreqs_map,
+ 				0, VHM_REQUEST_MAX)) ==	VHM_REQUEST_MAX)
+-			acrn_ioreq_complete_request(client->id, bit);
++			acrn_ioreq_complete_request(client->id, bit, NULL);
+ 	}
+ }
+ 
+@@ -876,7 +876,8 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
+ 	return 0;
+ }
+ 
+-int acrn_ioreq_complete_request(int client_id, uint64_t vcpu)
++int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
++		struct vhm_request *vhm_req)
+ {
+ 	struct ioreq_client *client;
+ 	int ret;
+@@ -892,6 +893,14 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu)
+ 	}
+ 
+ 	clear_bit(vcpu, client->ioreqs_map);
++	if (!vhm_req) {
++		vhm_req = acrn_ioreq_get_reqbuf(client_id);
++		vhm_req += vcpu;
++	}
++
++	smp_mb();
++	atomic_set(&vhm_req->processed, REQ_STATE_COMPLETE);
++
+ 	ret = hcall_notify_req_finish(client->vmid, vcpu);
+ 	if (ret < 0) {
+ 		pr_err("vhm-ioreq: failed to notify request finished !\n");
+diff --git a/include/linux/vhm/acrn_vhm_ioreq.h b/include/linux/vhm/acrn_vhm_ioreq.h
+index 5b32f15..7034922 100644
+--- a/include/linux/vhm/acrn_vhm_ioreq.h
++++ b/include/linux/vhm/acrn_vhm_ioreq.h
+@@ -155,10 +155,12 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm);
+  *
+  * @client_id: client id to identify ioreq client
+  * @vcpu: identify request submitter
++ * @vhm_req: the request for fast grab
+  *
+  * Return: 0 on success, <0 on error
+  */
+-int acrn_ioreq_complete_request(int client_id, uint64_t vcpu);
++int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
++		struct vhm_request *vhm_req);
+ 
+ /**
+  * acrn_ioreq_clear_request - clear all guest requests
+-- 
+2.7.4
+

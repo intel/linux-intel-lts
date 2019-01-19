@@ -1,0 +1,112 @@
+From 985fbcd32c0ef1d90245dfba217318ecd04f6534 Mon Sep 17 00:00:00 2001
+From: Feng Tang <feng.tang@intel.com>
+Date: Fri, 30 Nov 2018 08:57:09 +1100
+Subject: [PATCH 1013/1132] panic: add options to print system info when panic
+ happens
+
+Kernel panic issues are always painful to debug, partially because it's
+not easy to get enough information of the context when panic happens.
+
+And we have ramoops and kdump for that, while this commit tries to provide
+a easier way to show the system info by adding a cmdline parameter,
+referring some idea from sysrq handler.
+
+Change-Id: Id01edc15523eaefcc5f45d8b114766f29178c616
+Tracked-On: PKT-1591
+Signed-off-by: Feng Tang <feng.tang@intel.com>
+Reviewed-by: Kees Cook <keescook@chromium.org>
+Acked-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: John Stultz <john.stultz@linaro.org>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Steven Rostedt <rostedt@goodmis.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Stephen Rothwell <sfr@canb.auug.org.au>
+---
+ Documentation/admin-guide/kernel-parameters.txt |  8 +++++++
+ kernel/panic.c                                  | 28 +++++++++++++++++++++++++
+ 2 files changed, 36 insertions(+)
+
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index c5b59d6..b26908d 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -3061,6 +3061,14 @@
+ 			timeout < 0: reboot immediately
+ 			Format: <timeout>
+ 
++	panic_print=	Bitmask for printing system info when panic happens.
++			User can chose combination of the following bits:
++			bit 0: print all tasks info
++			bit 1: print system memory info
++			bit 2: print timer info
++			bit 3: print locks info if CONFIG_LOCKDEP is on
++			bit 4: print ftrace buffer
++
+ 	panic_on_warn	panic() instead of WARN().  Useful to cause kdump
+ 			on a WARN().
+ 
+diff --git a/kernel/panic.c b/kernel/panic.c
+index 8f0a896..c93180a 100644
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -46,6 +46,13 @@ int panic_on_warn __read_mostly;
+ int panic_timeout = CONFIG_PANIC_TIMEOUT;
+ EXPORT_SYMBOL_GPL(panic_timeout);
+ 
++#define PANIC_PRINT_TASK_INFO		0x00000001
++#define PANIC_PRINT_MEM_INFO		0x00000002
++#define PANIC_PRINT_TIMER_INFO		0x00000004
++#define PANIC_PRINT_LOCK_INFO		0x00000008
++#define PANIC_PRINT_FTRACE_INFO		0x00000010
++static unsigned long panic_print;
++
+ ATOMIC_NOTIFIER_HEAD(panic_notifier_list);
+ 
+ EXPORT_SYMBOL(panic_notifier_list);
+@@ -125,6 +132,24 @@ void nmi_panic(struct pt_regs *regs, const char *msg)
+ }
+ EXPORT_SYMBOL(nmi_panic);
+ 
++static void panic_print_sys_info(void)
++{
++	if (panic_print & PANIC_PRINT_TASK_INFO)
++		show_state();
++
++	if (panic_print & PANIC_PRINT_MEM_INFO)
++		show_mem(0, NULL);
++
++	if (panic_print & PANIC_PRINT_TIMER_INFO)
++		sysrq_timer_list_show();
++
++	if (panic_print & PANIC_PRINT_LOCK_INFO)
++		debug_show_all_locks();
++
++	if (panic_print & PANIC_PRINT_FTRACE_INFO)
++		ftrace_dump(DUMP_ALL);
++}
++
+ /**
+  *	panic - halt the system
+  *	@fmt: The text string to print
+@@ -250,6 +275,8 @@ void panic(const char *fmt, ...)
+ 	debug_locks_off();
+ 	console_flush_on_panic();
+ 
++	panic_print_sys_info();
++
+ 	if (!panic_blink)
+ 		panic_blink = no_blink;
+ 
+@@ -656,6 +683,7 @@ void refcount_error_report(struct pt_regs *regs, const char *err)
+ #endif
+ 
+ core_param(panic, panic_timeout, int, 0644);
++core_param(panic_print, panic_print, ulong, 0644);
+ core_param(pause_on_oops, pause_on_oops, int, 0644);
+ core_param(panic_on_warn, panic_on_warn, int, 0644);
+ core_param(crash_kexec_post_notifiers, crash_kexec_post_notifiers, bool, 0644);
+-- 
+2.7.4
+

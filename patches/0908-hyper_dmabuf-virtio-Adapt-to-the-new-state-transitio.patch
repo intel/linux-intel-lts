@@ -1,0 +1,45 @@
+From d9b180c20f885c6d63caec752b87ace3749bdabe Mon Sep 17 00:00:00 2001
+From: Mateusz Polrola <mateuszx.potrola@intel.com>
+Date: Thu, 20 Sep 2018 12:12:52 +0200
+Subject: [PATCH 0908/1132] hyper_dmabuf/virtio: Adapt to the new state
+ transition of VHM requests
+
+Instead of using two members (namely ''valid'' and ''processed''), the
+new state transition uses a single member (i.e. ''processed) following the
+transition pattern below.
+
+    FREE -> PENDING -> PROCESSING -> COMPLETE -> FREE -> ...
+
+Additionally atomic operations should be used to access the state.
+
+Signed-off-by: Mateusz Polrola <mateuszx.potrola@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+index 51dd8ed..400c6e7 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+@@ -179,15 +179,15 @@ static int virtio_be_handle_kick(int client_id, int req_cnt)
+ 
+ 	for (i = 0; i < fe_info->max_vcpu; ++i) {
+ 		req = &fe_info->req_buf[i];
+-		if (req->valid &&
+-		    req->processed == REQ_STATE_PROCESSING &&
++		if (atomic_read(&req->processed) == REQ_STATE_PROCESSING &&
+ 		    req->client == fe_info->client_id) {
+ 			if (req->reqs.pio_request.direction == REQUEST_READ)
+ 				req->reqs.pio_request.value = 0;
+ 			else
+ 				val = req->reqs.pio_request.value;
+ 
+-			req->processed = REQ_STATE_SUCCESS;
++			smp_mb();
++			atomic_set(&req->processed, REQ_STATE_COMPLETE);
+ 			acrn_ioreq_complete_request(fe_info->client_id, i);
+ 		}
+ 	}
+-- 
+2.7.4
+

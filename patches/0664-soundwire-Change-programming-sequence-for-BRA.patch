@@ -1,0 +1,54 @@
+From f3ec4a7d0ebe50467eb664832c8f41d840c15f18 Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Mon, 4 Dec 2017 15:05:59 +0530
+Subject: [PATCH 0664/1132] soundwire: Change programming sequence for BRA
+
+Currently, the register programming (PDI, ALH, DP_CTRL) is performed
+before FW pipeline creation.
+
+The ALH ownership is set to host as part of first SoundWire gateway
+configuration. Due to this changes in FW, the first instance of BRA
+fails.
+
+This patch changes the sequence and performs register programming after
+FW pipeline creation.
+
+Change-Id: Ifbff05f9033e88541406b42d7d5a5370e1bccdcb
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+Reviewed-on:
+Reviewed-by: Prabhu, PuneethX <puneethx.prabhu@intel.com>
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ drivers/sdw/sdw_cnl.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/sdw/sdw_cnl.c b/drivers/sdw/sdw_cnl.c
+index 9f8e77c..95eb7a8 100644
+--- a/drivers/sdw/sdw_cnl.c
++++ b/drivers/sdw/sdw_cnl.c
+@@ -1900,9 +1900,6 @@ static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
+ 	/* Fill master number in bra info data structure */
+ 	info.mstr_num = mstr->nr;
+ 
+-	/* PDI Configuration (ON) */
+-	cnl_sdw_bra_pdi_config(mstr, true);
+-
+ 	/* Prepare TX buffer */
+ 	ret = cnl_sdw_bra_data_ops(mstr, block, &info);
+ 	if (ret < 0) {
+@@ -1917,6 +1914,9 @@ static int cnl_sdw_xfer_bulk(struct sdw_master *mstr,
+ 		goto out;
+ 	}
+ 
++	/* PDI Configuration (ON) */
++	cnl_sdw_bra_pdi_config(mstr, true);
++
+ 	/* Trigger START host DMA and pipeline */
+ 	ret = ops->bra_platform_xfer(data->bra_data->drv_data, true, &info);
+ 	if (ret < 0) {
+-- 
+2.7.4
+

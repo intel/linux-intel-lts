@@ -1,0 +1,154 @@
+From ef55174c43aafc3ec1b8d2e8b7fe8e7a6b79e1b8 Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Thu, 14 May 2015 00:00:59 +0300
+Subject: [PATCH 0286/1132] scsi: ufs: store device serial number.
+
+Retrieve device serial number and store it for RPMB subsystem use.
+
+V9: rebase
+v10: Fix Kdoc
+
+Change-Id: Ieee7f85696f6614cd2f3c81403124159ea85b77e
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Signed-off-by: Alexander Usyskin <alexander.usyskin@intel.com>
+---
+ drivers/scsi/ufs/ufs.h    |  4 ++++
+ drivers/scsi/ufs/ufshcd.c | 35 +++++++++++++++++++++++++++++------
+ 2 files changed, 33 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/scsi/ufs/ufs.h b/drivers/scsi/ufs/ufs.h
+index c9774b5..b60dfcb 100644
+--- a/drivers/scsi/ufs/ufs.h
++++ b/drivers/scsi/ufs/ufs.h
+@@ -614,10 +614,14 @@ struct ufs_dev_info {
+  *
+  * @wmanufacturerid: card details
+  * @model: card model
++ * @serial_no: serial number
++ * @serial_no_len: serial number string length
+  */
+ struct ufs_dev_desc {
+ 	u16 wmanufacturerid;
+ 	char *model;
++	char *serial_no;
++	size_t serial_no_len;
+ };
+ 
+ /**
+diff --git a/drivers/scsi/ufs/ufshcd.c b/drivers/scsi/ufs/ufshcd.c
+index c527d55..13847e2 100644
+--- a/drivers/scsi/ufs/ufshcd.c
++++ b/drivers/scsi/ufs/ufshcd.c
+@@ -43,6 +43,7 @@
+ #include <linux/nls.h>
+ #include <linux/of.h>
+ #include <linux/bitfield.h>
++#include <linux/string.h>
+ #include <linux/rpmb.h>
+ 
+ #include "ufshcd.h"
+@@ -6369,12 +6370,19 @@ static struct rpmb_ops ufshcd_rpmb_dev_ops = {
+ 
+ };
+ 
+-static inline void ufshcd_rpmb_add(struct ufs_hba *hba)
++static inline void ufshcd_rpmb_add(struct ufs_hba *hba,
++				   struct ufs_dev_desc *dev_desc)
+ {
+ 	struct rpmb_dev *rdev;
+ 	u8 rpmb_rw_size = 1;
+ 	int ret;
+ 
++	ufshcd_rpmb_dev_ops.dev_id = kmemdup(dev_desc->serial_no,
++					     dev_desc->serial_no_len,
++					     GFP_KERNEL);
++	if (ufshcd_rpmb_dev_ops.dev_id)
++		ufshcd_rpmb_dev_ops.dev_id_len = dev_desc->serial_no_len;
++
+ 	ret = scsi_device_get(hba->sdev_ufs_rpmb);
+ 	if (ret)
+ 		goto out_put_dev;
+@@ -6418,6 +6426,9 @@ static inline void ufshcd_rpmb_remove(struct ufs_hba *hba)
+ 	scsi_device_put(hba->sdev_ufs_rpmb);
+ 	hba->sdev_ufs_rpmb = NULL;
+ 
++	kfree(ufshcd_rpmb_dev_ops.dev_id);
++	ufshcd_rpmb_dev_ops.dev_id = NULL;
++
+ 	spin_unlock_irqrestore(hba->host->host_lock, flags);
+ }
+ 
+@@ -6491,7 +6502,7 @@ static int ufs_get_device_desc(struct ufs_hba *hba,
+ {
+ 	int err;
+ 	size_t buff_len;
+-	u8 model_index;
++	u8 index;
+ 	u8 *desc_buf;
+ 
+ 	if (!dev_desc)
+@@ -6519,8 +6530,8 @@ static int ufs_get_device_desc(struct ufs_hba *hba,
+ 	dev_desc->wmanufacturerid = desc_buf[DEVICE_DESC_PARAM_MANF_ID] << 8 |
+ 				     desc_buf[DEVICE_DESC_PARAM_MANF_ID + 1];
+ 
+-	model_index = desc_buf[DEVICE_DESC_PARAM_PRDCT_NAME];
+-	err = ufshcd_read_string_desc(hba, model_index,
++	index = desc_buf[DEVICE_DESC_PARAM_PRDCT_NAME];
++	err = ufshcd_read_string_desc(hba, index,
+ 				      &dev_desc->model, SD_ASCII_STD);
+ 	if (err < 0) {
+ 		dev_err(hba->dev, "%s: Failed reading Product Name. err = %d\n",
+@@ -6528,6 +6539,14 @@ static int ufs_get_device_desc(struct ufs_hba *hba,
+ 		goto out;
+ 	}
+ 
++	index = desc_buf[DEVICE_DESC_PARAM_SN];
++	err = ufshcd_read_string_desc(hba, index, &dev_desc->serial_no, SD_RAW);
++	if (err < 0) {
++		dev_err(hba->dev, "%s: Failed reading Serial No. err = %d\n",
++			__func__, err);
++		goto out;
++	}
++
+ 	/*
+ 	 * ufshcd_read_string_desc returns size of the string
+ 	 * reset the error value
+@@ -6543,6 +6562,9 @@ static void ufs_put_device_desc(struct ufs_dev_desc *dev_desc)
+ {
+ 	kfree(dev_desc->model);
+ 	dev_desc->model = NULL;
++
++	kfree(dev_desc->serial_no);
++	dev_desc->serial_no = NULL;
+ }
+ 
+ static void ufs_fixup_device_setup(struct ufs_hba *hba,
+@@ -6838,7 +6860,6 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
+ 	}
+ 
+ 	ufs_fixup_device_setup(hba, &card);
+-	ufs_put_device_desc(&card);
+ 
+ 	ufshcd_tune_unipro_params(hba);
+ 
+@@ -6888,7 +6909,7 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
+ 		if (ufshcd_scsi_add_wlus(hba))
+ 			goto out;
+ 
+-		ufshcd_rpmb_add(hba);
++		ufshcd_rpmb_add(hba, &card);
+ 
+ 		/* Initialize devfreq after UFS device is detected */
+ 		if (ufshcd_is_clkscaling_supported(hba)) {
+@@ -6912,6 +6933,8 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
+ 		hba->is_init_prefetch = true;
+ 
+ out:
++
++	ufs_put_device_desc(&card);
+ 	/*
+ 	 * If we failed to initialize the device or the device is not
+ 	 * present, turn off the power/clocks etc.
+-- 
+2.7.4
+

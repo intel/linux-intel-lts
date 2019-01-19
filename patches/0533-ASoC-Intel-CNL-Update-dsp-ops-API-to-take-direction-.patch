@@ -1,0 +1,233 @@
+From 028d7b97f0a4c71f1476ccea8163b6d2c9907bc8 Mon Sep 17 00:00:00 2001
+From: Sanyog Kale <sanyog.r.kale@intel.com>
+Date: Sun, 2 Jul 2017 11:30:20 +0530
+Subject: [PATCH 0533/1132] ASoC: Intel: CNL: Update dsp ops API to take
+ direction as input parameter
+
+This patch removes hardcoding of audio stream direction inside dsp ops.
+Instead it is passed as input parameter of dsp ops.
+
+Signed-off-by: Sanyog Kale <sanyog.r.kale@intel.com>
+---
+ sound/soc/intel/skylake/bxt-sst.c      | 28 +++++++++++++++++++---------
+ sound/soc/intel/skylake/cnl-sst.c      | 15 ++++++++++-----
+ sound/soc/intel/skylake/skl-messages.c | 20 +++++++++++---------
+ sound/soc/intel/skylake/skl-sst-dsp.h  |  9 ++++-----
+ 4 files changed, 44 insertions(+), 28 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/bxt-sst.c b/sound/soc/intel/skylake/bxt-sst.c
+index 924c0df..2b169b4 100644
+--- a/sound/soc/intel/skylake/bxt-sst.c
++++ b/sound/soc/intel/skylake/bxt-sst.c
+@@ -69,7 +69,8 @@ bxt_load_library(struct sst_dsp *ctx, struct skl_lib_info *linfo, int lib_count)
+ 			goto load_library_failed;
+ 
+ 		stream_tag = ctx->dsp_ops.prepare(ctx->dev, 0x40,
+-					stripped_fw.size, &dmab);
++					stripped_fw.size, &dmab,
++					SNDRV_PCM_STREAM_PLAYBACK);
+ 		if (stream_tag <= 0) {
+ 			dev_err(ctx->dev, "Lib prepare DMA err: %x\n",
+ 					stream_tag);
+@@ -80,14 +81,17 @@ bxt_load_library(struct sst_dsp *ctx, struct skl_lib_info *linfo, int lib_count)
+ 		dma_id = stream_tag - 1;
+ 		memcpy(dmab.area, stripped_fw.data, stripped_fw.size);
+ 
+-		ctx->dsp_ops.trigger(ctx->dev, true, stream_tag);
++		ctx->dsp_ops.trigger(ctx->dev, true, stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 		ret = skl_sst_ipc_load_library(&skl->ipc, dma_id, i, true);
+ 		if (ret < 0)
+ 			dev_err(ctx->dev, "IPC Load Lib for %s fail: %d\n",
+ 					linfo[i].name, ret);
+ 
+-		ctx->dsp_ops.trigger(ctx->dev, false, stream_tag);
+-		ctx->dsp_ops.cleanup(ctx->dev, &dmab, stream_tag);
++		ctx->dsp_ops.trigger(ctx->dev, false, stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
++		ctx->dsp_ops.cleanup(ctx->dev, &dmab, stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 	}
+ 
+ 	return ret;
+@@ -107,7 +111,8 @@ static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
+ {
+ 	int stream_tag, ret;
+ 
+-	stream_tag = ctx->dsp_ops.prepare(ctx->dev, 0x40, fwsize, &ctx->dmab);
++	stream_tag = ctx->dsp_ops.prepare(ctx->dev, 0x40, fwsize, &ctx->dmab,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 	if (stream_tag <= 0) {
+ 		dev_err(ctx->dev, "Failed to prepare DMA FW loading err: %x\n",
+ 				stream_tag);
+@@ -169,7 +174,9 @@ static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
+ 	return ret;
+ 
+ base_fw_load_failed:
+-	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, stream_tag);
++	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
++
+ 	skl_dsp_core_power_down(ctx, SKL_DSP_CORE_MASK(1));
+ 	skl_dsp_disable_core(ctx, SKL_DSP_CORE0_MASK);
+ 	return ret;
+@@ -179,12 +186,15 @@ static int sst_transfer_fw_host_dma(struct sst_dsp *ctx)
+ {
+ 	int ret;
+ 
+-	ctx->dsp_ops.trigger(ctx->dev, true, ctx->dsp_ops.stream_tag);
++	ctx->dsp_ops.trigger(ctx->dev, true, ctx->dsp_ops.stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 	ret = sst_dsp_register_poll(ctx, BXT_ADSP_FW_STATUS, SKL_FW_STS_MASK,
+ 			BXT_ROM_INIT, BXT_BASEFW_TIMEOUT, "Firmware boot");
+ 
+-	ctx->dsp_ops.trigger(ctx->dev, false, ctx->dsp_ops.stream_tag);
+-	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, ctx->dsp_ops.stream_tag);
++	ctx->dsp_ops.trigger(ctx->dev, false, ctx->dsp_ops.stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
++	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, ctx->dsp_ops.stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 
+ 	return ret;
+ }
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index a81e1b0..784d92d 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -127,7 +127,8 @@ static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata, u32 fwsize)
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	stream_tag = ctx->dsp_ops.prepare(ctx->dev, 0x40, fwsize, &ctx->dmab);
++	stream_tag = ctx->dsp_ops.prepare(ctx->dev, 0x40, fwsize, &ctx->dmab,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 	if (stream_tag <= 0) {
+ 		dev_err(ctx->dev, "dma prepare failed: 0%#x\n", stream_tag);
+ 		return stream_tag;
+@@ -178,7 +179,8 @@ static int cnl_prepare_fw(struct sst_dsp *ctx, const void *fwdata, u32 fwsize)
+ 	return 0;
+ 
+ base_fw_load_failed:
+-	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, stream_tag);
++	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 	cnl_dsp_disable_core(ctx, SKL_DSP_CORE0_MASK);
+ 	cnl_fpga_free_imr(ctx);
+ 
+@@ -189,13 +191,16 @@ static int sst_transfer_fw_host_dma(struct sst_dsp *ctx)
+ {
+ 	int ret;
+ 
+-	ctx->dsp_ops.trigger(ctx->dev, true, ctx->dsp_ops.stream_tag);
++	ctx->dsp_ops.trigger(ctx->dev, true, ctx->dsp_ops.stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 	ret = sst_dsp_register_poll(ctx, CNL_ADSP_FW_STATUS, CNL_FW_STS_MASK,
+ 				    CNL_FW_INIT, CNL_BASEFW_TIMEOUT,
+ 				    "firmware boot");
+ 
+-	ctx->dsp_ops.trigger(ctx->dev, false, ctx->dsp_ops.stream_tag);
+-	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, ctx->dsp_ops.stream_tag);
++	ctx->dsp_ops.trigger(ctx->dev, false, ctx->dsp_ops.stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
++	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, ctx->dsp_ops.stream_tag,
++						SNDRV_PCM_STREAM_PLAYBACK);
+ 
+ 	return ret;
+ }
+diff --git a/sound/soc/intel/skylake/skl-messages.c b/sound/soc/intel/skylake/skl-messages.c
+index 13d1898..6fcd68c7 100644
+--- a/sound/soc/intel/skylake/skl-messages.c
++++ b/sound/soc/intel/skylake/skl-messages.c
+@@ -127,7 +127,9 @@ static int skl_dsp_setup_spib(struct device *dev, unsigned int size,
+ }
+ 
+ static int skl_dsp_prepare(struct device *dev, unsigned int format,
+-			unsigned int size, struct snd_dma_buffer *dmab)
++						unsigned int size,
++						struct snd_dma_buffer *dmab,
++						int direction)
+ {
+ 	struct hdac_bus *bus = dev_get_drvdata(dev);
+ 	struct hdac_ext_stream *estream;
+@@ -139,7 +141,8 @@ static int skl_dsp_prepare(struct device *dev, unsigned int format,
+ 		return -ENODEV;
+ 
+ 	memset(&substream, 0, sizeof(substream));
+-	substream.stream = SNDRV_PCM_STREAM_PLAYBACK;
++
++	substream.stream = direction;
+ 
+ 	estream = snd_hdac_ext_stream_assign(bus, &substream,
+ 					HDAC_EXT_STREAM_TYPE_HOST);
+@@ -158,7 +161,8 @@ static int skl_dsp_prepare(struct device *dev, unsigned int format,
+ 	return stream->stream_tag;
+ }
+ 
+-static int skl_dsp_trigger(struct device *dev, bool start, int stream_tag)
++static int skl_dsp_trigger(struct device *dev, bool start, int stream_tag,
++							int direction)
+ {
+ 	struct hdac_bus *bus = dev_get_drvdata(dev);
+ 	struct hdac_stream *stream;
+@@ -166,8 +170,7 @@ static int skl_dsp_trigger(struct device *dev, bool start, int stream_tag)
+ 	if (!bus)
+ 		return -ENODEV;
+ 
+-	stream = snd_hdac_get_stream(bus,
+-		SNDRV_PCM_STREAM_PLAYBACK, stream_tag);
++	stream = snd_hdac_get_stream(bus, direction, stream_tag);
+ 	if (!stream)
+ 		return -EINVAL;
+ 
+@@ -176,8 +179,8 @@ static int skl_dsp_trigger(struct device *dev, bool start, int stream_tag)
+ 	return 0;
+ }
+ 
+-static int skl_dsp_cleanup(struct device *dev,
+-		struct snd_dma_buffer *dmab, int stream_tag)
++static int skl_dsp_cleanup(struct device *dev, struct snd_dma_buffer *dmab,
++				int stream_tag, int direction)
+ {
+ 	struct hdac_bus *bus = dev_get_drvdata(dev);
+ 	struct hdac_stream *stream;
+@@ -186,8 +189,7 @@ static int skl_dsp_cleanup(struct device *dev,
+ 	if (!bus)
+ 		return -ENODEV;
+ 
+-	stream = snd_hdac_get_stream(bus,
+-		SNDRV_PCM_STREAM_PLAYBACK, stream_tag);
++	stream = snd_hdac_get_stream(bus, direction, stream_tag);
+ 	if (!stream)
+ 		return -EINVAL;
+ 
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.h b/sound/soc/intel/skylake/skl-sst-dsp.h
+index 767c6ed..2a3ad2d 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.h
++++ b/sound/soc/intel/skylake/skl-sst-dsp.h
+@@ -157,7 +157,6 @@ struct skl_dsp_fw_ops {
+ 	unsigned int (*get_fw_errcode)(struct sst_dsp *ctx);
+ 	int (*load_mod)(struct sst_dsp *ctx, u16 mod_id, u8 *mod_name);
+ 	int (*unload_mod)(struct sst_dsp *ctx, u16 mod_id);
+-
+ };
+ 
+ struct skl_dsp_loader_ops {
+@@ -169,11 +168,11 @@ struct skl_dsp_loader_ops {
+ 		struct snd_dma_buffer *dmab);
+ 	int (*prepare)(struct device *dev, unsigned int format,
+ 				unsigned int byte_size,
+-				struct snd_dma_buffer *bufp);
+-	int (*trigger)(struct device *dev, bool start, int stream_tag);
+-
++				struct snd_dma_buffer *bufp, int direction);
++	int (*trigger)(struct device *dev, bool start, int stream_tag,
++					int direction);
+ 	int (*cleanup)(struct device *dev, struct snd_dma_buffer *dmab,
+-				 int stream_tag);
++				 int stream_tag, int direction);
+ };
+ 
+ #define MAX_INSTANCE_BUFF 2
+-- 
+2.7.4
+

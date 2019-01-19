@@ -1,0 +1,64 @@
+From dd35464808aa9b59e3f861a24dd538f8f6a82268 Mon Sep 17 00:00:00 2001
+From: Zhao Yan <yan.y.zhao@intel.com>
+Date: Fri, 14 Sep 2018 16:10:20 +0800
+Subject: [PATCH 0881/1132] drm/i915/gvt: add a fastpath for cmd parsing on
+ MI_NOOP
+
+MI_NOOP is a common command appearing in almost all command buffers, put it
+into a fastpath can improve perfomance, especially in command buffers
+contains lots of MI_NOOPs (0s).
+
+Take glmark2 as an example, 3% performance increase is observed after
+introduced this patch. Meanwhile, in case where abundant in MI_NOOPs,
+up to 12% performance increase is measured.
+
+v2: use lowercase for index of MI_NOOP in cmd_info (zhenyu wang)
+
+Signed-off-by: Li Weinan <weinan.z.li@intel.com>
+Signed-off-by: Zhao Yan <yan.y.zhao@intel.com>
+Signed-off-by: Zhenyu Wang <zhenyuw@linux.intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Reviewed-by: He, Min <min.he@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/cmd_parser.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/cmd_parser.c b/drivers/gpu/drm/i915/gvt/cmd_parser.c
+index 95244b2..8d130d4 100644
+--- a/drivers/gpu/drm/i915/gvt/cmd_parser.c
++++ b/drivers/gpu/drm/i915/gvt/cmd_parser.c
+@@ -1840,6 +1840,8 @@ static int cmd_handler_mi_batch_buffer_start(struct parser_exec_state *s)
+ 	return ret;
+ }
+ 
++static int mi_noop_index;
++
+ static struct cmd_info cmd_info[] = {
+ 	{"MI_NOOP", OP_MI_NOOP, F_LEN_CONST, R_ALL, D_ALL, 0, 1, NULL},
+ 
+@@ -2525,7 +2527,12 @@ static int cmd_parser_exec(struct parser_exec_state *s)
+ 
+ 	cmd = cmd_val(s, 0);
+ 
+-	info = get_cmd_info(s->vgpu->gvt, cmd, s->ring_id);
++	/* fastpath for MI_NOOP */
++	if (cmd == MI_NOOP)
++		info = &cmd_info[mi_noop_index];
++	else
++		info = get_cmd_info(s->vgpu->gvt, cmd, s->ring_id);
++
+ 	if (info == NULL) {
+ 		gvt_vgpu_err("unknown cmd 0x%x, opcode=0x%x, addr_type=%s, ring %d, workload=%p\n",
+ 				cmd, get_opcode(cmd, s->ring_id),
+@@ -2955,6 +2962,8 @@ static int init_cmd_table(struct intel_gvt *gvt)
+ 			kfree(e);
+ 			return -EEXIST;
+ 		}
++		if (cmd_info[i].opcode == OP_MI_NOOP)
++			mi_noop_index = i;
+ 
+ 		INIT_HLIST_NODE(&e->hlist);
+ 		add_cmd_entry(gvt, e);
+-- 
+2.7.4
+

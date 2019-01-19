@@ -1,0 +1,54 @@
+From aa416e92d82f59a84e3dc801d08dbab4b034ef4c Mon Sep 17 00:00:00 2001
+From: Shreyas NC <shreyas.nc@intel.com>
+Date: Tue, 30 May 2017 19:37:19 +0530
+Subject: [PATCH 0598/1132] ASoC: Intel: Skylake: Fix incorrect parsing of pipe
+ tokens
+
+To avoid parsing of pipe related tokens multiple times for a case where
+the pipe has more than one module, a logic was added to parse these
+tokens only once. But, the existing logic would parse these
+tokens only if there are more than one module in the pipe. So, for a
+pipe with single module, the logic is insufficient.
+
+So, fix it by updating the flag accordingly.
+
+Change-Id: Ie183f14eaf98f21cf87691e0e681b77342706b37
+Signed-off-by: Shreyas NC <shreyas.nc@intel.com>
+Signed-off-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-on:
+Reviewed-by: audio_build
+Reviewed-by: Prodduvaka, Leoni
+Reviewed-by: S, Pavan K <pavan.k.s@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 9b7b6f5..3eb388c 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -2936,6 +2936,7 @@ static int skl_tplg_get_token(struct device *dev,
+ 			}
+ 			return is_pipe_exists;
+ 		}
++		is_pipe_exists = 0;
+ 
+ 		break;
+ 
+@@ -2949,7 +2950,7 @@ static int skl_tplg_get_token(struct device *dev,
+ 	case SKL_TKN_U32_PMODE:
+ 	case SKL_TKN_U32_PIPE_DIRECTION:
+ 	case SKL_TKN_U32_NUM_CONFIGS:
+-		if (is_pipe_exists) {
++		if (!is_pipe_exists) {
+ 			ret = skl_tplg_fill_pipe_tkn(dev, mconfig->pipe,
+ 					tkn_elem->token, tkn_elem->value);
+ 			if (ret < 0)
+-- 
+2.7.4
+

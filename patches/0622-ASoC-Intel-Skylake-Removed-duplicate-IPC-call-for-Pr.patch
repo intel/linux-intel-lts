@@ -1,0 +1,37 @@
+From 9e0ad0480e6ca172ac5e81c8b0e52bf80eb79a58 Mon Sep 17 00:00:00 2001
+From: "Sinha, Mohit" <mohit.sinha@intel.com>
+Date: Fri, 4 Aug 2017 16:06:57 +0530
+Subject: [PATCH 0622/1132] ASoC: Intel: Skylake: Removed duplicate IPC call
+ for Probe Injector DMA
+
+Removed duplicate IPC call for attaching DMA for Probe Injector.
+
+Change-Id: I12d8bd73ba5203a697cdbe1caee0747eb16344b1
+Signed-off-by: Mohit Sinha <mohit.sinha@intel.com>
+Reviewed-on:
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Shaik, Kareem M <kareem.m.shaik@intel.com>
+Reviewed-by: Gogineni, GiribabuX <giribabux.gogineni@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/skl-topology.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index 351897b..fb9fc5a 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -544,9 +544,6 @@ int skl_probe_attach_inj_dma(struct snd_soc_dapm_widget *w,
+ 					pconfig->iprobe[index].state);
+ 	}
+ 
+-	ret = skl_set_module_params(ctx, (u32 *)&ad,
+-			sizeof(struct skl_probe_attach_inj_dma),
+-							1, mconfig);
+ 	return ret;
+ 
+ }
+-- 
+2.7.4
+

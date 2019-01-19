@@ -1,0 +1,35 @@
+From ae332bb150df5ba7b2721ebfe62152601e2a8ff3 Mon Sep 17 00:00:00 2001
+From: Wei Liu <weix.w.liu@intel.com>
+Date: Thu, 26 Jul 2018 11:24:55 +0800
+Subject: [PATCH 0895/1132] hyper_dmabuf: Fix array length check issue in
+ hyper_dmabuf_ioctl()
+
+Current boundry check for hyper_dmabuf_ioctls array only verifies whether
+index value is not greater than total number of elements. But the
+correct check should be to verify whether index is always less than
+number of array elements.
+
+Change-Id: I711979c270545e02fb878da0eec39b71b451574a
+Signed-off-by: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+Reviewed-by: Wei Liu <weix.w.liu@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
+index 20274e1..e9f1d64 100644
+--- a/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
++++ b/drivers/dma-buf/hyper_dmabuf/hyper_dmabuf_ioctl.c
+@@ -746,7 +746,7 @@ long hyper_dmabuf_ioctl(struct file *filp,
+ 	hyper_dmabuf_ioctl_t func;
+ 	char *kdata;
+ 
+-	if (nr > ARRAY_SIZE(hyper_dmabuf_ioctls)) {
++	if (nr >= ARRAY_SIZE(hyper_dmabuf_ioctls)) {
+ 		dev_err(hy_drv_priv->dev, "invalid ioctl\n");
+ 		return -EINVAL;
+ 	}
+-- 
+2.7.4
+

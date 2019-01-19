@@ -1,0 +1,55 @@
+From ad09c295a4587fd139ed67c367414455e463d03f Mon Sep 17 00:00:00 2001
+From: Wei Liu <weix.w.liu@intel.com>
+Date: Thu, 20 Sep 2018 10:16:56 +0800
+Subject: [PATCH 0827/1132] vhm: enable -Werror while compiling
+ vhm/vbs/hyper-dmabuf
+
+Sometimes warnings are caused by the potential errors,
+in order to add the strict check, the warnings will be
+treated as error and should be fixed.
+
+Tracked-On: https://github.com/projectacrn/acrn-hypervisor/issues/1300
+Signed-off-by: Wei Liu <weix.w.liu@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/acrn/Makefile     | 1 +
+ drivers/char/vhm/Makefile | 1 +
+ drivers/vbs/Makefile      | 1 +
+ drivers/vhm/Makefile      | 1 +
+ 4 files changed, 4 insertions(+)
+
+diff --git a/drivers/acrn/Makefile b/drivers/acrn/Makefile
+index d0e14f4..dad6a9e 100644
+--- a/drivers/acrn/Makefile
++++ b/drivers/acrn/Makefile
+@@ -1,3 +1,4 @@
++subdir-ccflags-$(CONFIG_ACRN) := -Werror
+ obj-$(CONFIG_ACRN_SHARED_BUFFER) += sbuf.o
+ obj-$(CONFIG_ACRN_TRACE) += acrn_trace.o
+ obj-$(CONFIG_ACRN_HVLOG) += acrn_hvlog.o
+diff --git a/drivers/char/vhm/Makefile b/drivers/char/vhm/Makefile
+index cb801c7..5ee68c5 100644
+--- a/drivers/char/vhm/Makefile
++++ b/drivers/char/vhm/Makefile
+@@ -1 +1,2 @@
++subdir-ccflags-$(CONFIG_ACRN_VHM) := -Werror
+ obj-y += vhm_dev.o
+diff --git a/drivers/vbs/Makefile b/drivers/vbs/Makefile
+index 85e1cc2..a6734db 100644
+--- a/drivers/vbs/Makefile
++++ b/drivers/vbs/Makefile
+@@ -1,3 +1,4 @@
++subdir-ccflags-$(CONFIG_VBS) := -Werror
+ ccflags-$(CONFIG_VBS_DEBUG)	:= -DDEBUG
+ 
+ obj-$(CONFIG_VBS)		+= vbs.o
+diff --git a/drivers/vhm/Makefile b/drivers/vhm/Makefile
+index 23f17ae..c3bce34 100644
+--- a/drivers/vhm/Makefile
++++ b/drivers/vhm/Makefile
+@@ -1 +1,2 @@
++subdir-ccflags-$(CONFIG_ACRN_VHM) := -Werror
+ obj-y += vhm_mm.o vhm_hugetlb.o vhm_ioreq.o vhm_vm_mngt.o vhm_msi.o vhm_hypercall.o
+-- 
+2.7.4
+

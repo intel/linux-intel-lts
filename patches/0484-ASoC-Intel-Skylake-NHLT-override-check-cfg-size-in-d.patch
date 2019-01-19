@@ -1,0 +1,51 @@
+From 43e270e5c31242c7c1cb42d0b9236cdca98aa1f8 Mon Sep 17 00:00:00 2001
+From: Jeeja KP <jeeja.kp@intel.com>
+Date: Tue, 8 Sep 2015 22:16:08 +0530
+Subject: [PATCH 0484/1132] ASoC: Intel: Skylake: NHLT override, check cfg size
+ in debugfs blob write
+
+When blob is updated, check the cfg size. If cfg size exceeds maximum,
+return error from debugfs in write.
+Removed check in update_params(), we will pass the pointer to cfg
+param instead of memcpy.
+
+Signed-off-by: Jeeja KP <jeeja.kp@intel.com>
+---
+ sound/soc/intel/skylake/skl-debug.c    | 3 +++
+ sound/soc/intel/skylake/skl-topology.c | 6 ------
+ 2 files changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index 9ae0128..85850b4 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -87,6 +87,9 @@ static ssize_t nhlt_write(struct file *file,
+ 	ssize_t written;
+ 	size_t size = blob->size;
+ 
++	if (count > 2 * HDA_SST_CFG_MAX)
++		return -EIO;
++
+ 	if (!blob->cfg) {
+ 		/* allocate mem for blob */
+ 		blob->cfg = kzalloc(count, GFP_KERNEL);
+diff --git a/sound/soc/intel/skylake/skl-topology.c b/sound/soc/intel/skylake/skl-topology.c
+index bece499..8da8ead 100644
+--- a/sound/soc/intel/skylake/skl-topology.c
++++ b/sound/soc/intel/skylake/skl-topology.c
+@@ -1897,12 +1897,6 @@ static int skl_tplg_be_fill_pipe_params(struct snd_soc_dai *dai,
+ 		dev_warn(dai->dev, "Querying NHLT blob from Debugfs!!!!\n");
+ 		cfg = skl_nhlt_get_debugfs_blob(skl->debugfs,
+ 					link_type, mconfig->vbus_id);
+-		if (cfg->size > HDA_SST_CFG_MAX) {
+-			dev_err(dai->dev, "NHLT debugfs blob is vv large\n");
+-			dev_err(dai->dev, "First word is size in blob!!!\n");
+-			dev_err(dai->dev, "Recieved size %d\n", cfg->size);
+-			return -EIO;
+-		}
+ 	}
+ 	if (cfg) {
+ 		mconfig->formats_config.caps_size = cfg->size;
+-- 
+2.7.4
+

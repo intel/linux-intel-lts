@@ -1,0 +1,168 @@
+From 6e257817aefe895501a6fd4695d18fd300337634 Mon Sep 17 00:00:00 2001
+From: Dongwon Kim <dongwon.kim@intel.com>
+Date: Thu, 18 Oct 2018 11:43:57 -0700
+Subject: [PATCH 0934/1132] hyper_dmabuf: refine Kconfig and Makefile
+
+Make sure CONFIG_VIRTIO is selected if hyper_dmabuf is built
+for ACRN. Also all unused portion is removed from Makefile.
+
+Signed-off-by: Dongwon Kim <dongwon.kim@intel.com>
+---
+ drivers/dma-buf/hyper_dmabuf/Kconfig  | 27 +++++++-------
+ drivers/dma-buf/hyper_dmabuf/Makefile | 67 +++++++++++------------------------
+ 2 files changed, 35 insertions(+), 59 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/Kconfig b/drivers/dma-buf/hyper_dmabuf/Kconfig
+index 1d91a11..f15a8cd 100644
+--- a/drivers/dma-buf/hyper_dmabuf/Kconfig
++++ b/drivers/dma-buf/hyper_dmabuf/Kconfig
+@@ -1,44 +1,47 @@
+-menu "hyper_dmabuf options"
+-
+-config HYPER_DMABUF
+-	bool "Enables hyper dmabuf driver"
++menuconfig HYPER_DMABUF
++	bool "configure HyperDMABUF driver"
+ 	default y
+ 	depends on (X86=y || X86_64=y)
+ 
++if HYPER_DMABUF
++
+ choice
+ 	prompt "Hypervisor"
+ 	depends on HYPER_DMABUF
+ 	default HYPER_DMABUF_XEN
+ 
+ config HYPER_DMABUF_XEN
+-	bool "Configure hyper_dmabuf for XEN hypervisor"
+-	depends on HYPER_DMABUF && XEN
++	bool "XEN"
++	depends on XEN
+ 	help
+ 	  Configuring hyper_dmabuf driver for XEN hypervisor
+ 
+ config HYPER_DMABUF_ACRN
+-	bool "Configure hyper_dmabuf for ACRN hypervisor"
+-	depends on HYPER_DMABUF && ACRN_VIRTIO_DEVICES
++	bool "ACRN"
++	depends on ACRN_VIRTIO_DEVICES
++	select VIRTIO
+ 	help
+ 	  Configuring hyper_dmabuf driver for ACRN hypervisor
+ endchoice
+ 
+ choice
+         prompt "Virtio driver type"
+-        depends on HYPER_DMABUF && HYPER_DMABUF_ACRN
++        depends on HYPER_DMABUF_ACRN
+         default HYPER_DMABUF_VIRTIO_BE
+ 
+ config HYPER_DMABUF_VIRTIO_BE
+ 	depends on VBS && DRM_I915_GVT
+-	bool "Configure hyper_dmabuf as virtio backend"
++	bool "virtio backend (SOS)"
+ 	help
+ 	  Configuring hyper_dmabuf driver as virtio backend
++	  running from service OS
+ 
+ config HYPER_DMABUF_VIRTIO_FE
+ 	depends on ACRN_VIRTIO_DEVICES
+-	bool "Configure hyper_dmabuf as virtio frontend"
++	bool "virtio frontend (UOS)"
+ 	help
+ 	  Configuring hyper_dmabuf driver as virtio frontend
++	  running from guest OS
+ endchoice
+ 
+ config HYPER_DMABUF_SYSFS
+@@ -69,4 +72,4 @@ config HYPER_DMABUF_XEN_AUTO_RX_CH_ADD
+ 	  domain then initialize matched rx comm ch automatically for any
+ 	  existing tx comm chs.
+ 
+-endmenu
++endif
+diff --git a/drivers/dma-buf/hyper_dmabuf/Makefile b/drivers/dma-buf/hyper_dmabuf/Makefile
+index f63967cc..4ad8dc7 100644
+--- a/drivers/dma-buf/hyper_dmabuf/Makefile
++++ b/drivers/dma-buf/hyper_dmabuf/Makefile
+@@ -1,57 +1,30 @@
+-TARGET_MODULE:=hyper_dmabuf
+-
+-# If we running by kernel building system
+-ifneq ($(KERNELRELEASE),)
+-	$(TARGET_MODULE)-objs := hyper_dmabuf_drv.o \
+-                                 hyper_dmabuf_ioctl.o \
+-                                 hyper_dmabuf_list.o \
+-				 hyper_dmabuf_sgl_proc.o \
+-				 hyper_dmabuf_ops.o \
+-				 hyper_dmabuf_msg.o \
+-				 hyper_dmabuf_id.o \
+-				 hyper_dmabuf_remote_sync.o \
+-				 hyper_dmabuf_query.o \
++obj-y := hyper_dmabuf_drv.o \
++	 hyper_dmabuf_ioctl.o \
++	 hyper_dmabuf_list.o \
++	 hyper_dmabuf_sgl_proc.o \
++	 hyper_dmabuf_ops.o \
++	 hyper_dmabuf_msg.o \
++	 hyper_dmabuf_id.o \
++	 hyper_dmabuf_remote_sync.o \
++	 hyper_dmabuf_query.o \
+ 
+ ifeq ($(CONFIG_HYPER_DMABUF_EVENT_GEN), y)
+-	$(TARGET_MODULE)-objs += hyper_dmabuf_event.o
++	obj-y += hyper_dmabuf_event.o
+ endif
+ 
+ ifeq ($(CONFIG_HYPER_DMABUF_XEN), y)
+-	$(TARGET_MODULE)-objs += xen/hyper_dmabuf_xen_comm.o \
+-				 xen/hyper_dmabuf_xen_comm_list.o \
+-				 xen/hyper_dmabuf_xen_shm.o \
+-				 xen/hyper_dmabuf_xen_drv.o
++	obj-y += xen/hyper_dmabuf_xen_comm.o \
++		 xen/hyper_dmabuf_xen_comm_list.o \
++		 xen/hyper_dmabuf_xen_shm.o \
++		 xen/hyper_dmabuf_xen_drv.o
+ else ifeq ($(CONFIG_HYPER_DMABUF_ACRN), y)
+ 	ifeq ($(CONFIG_HYPER_DMABUF_VIRTIO_BE), y)
+-		$(TARGET_MODULE)-objs += virtio/hyper_dmabuf_virtio_be_drv.o \
+-					 virtio/hyper_dmabuf_virtio_fe_list.o
++		obj-y += virtio/hyper_dmabuf_virtio_be_drv.o \
++			 virtio/hyper_dmabuf_virtio_fe_list.o
+ 	else
+-		$(TARGET_MODULE)-objs += virtio/hyper_dmabuf_virtio_fe_drv.o
++		obj-y += virtio/hyper_dmabuf_virtio_fe_drv.o
+ 	endif
+-	$(TARGET_MODULE)-objs += virtio/hyper_dmabuf_virtio_common.o \
+-				 virtio/hyper_dmabuf_virtio_shm.o \
+-				 virtio/hyper_dmabuf_virtio_comm_ring.o
+-endif
+-
+-obj-$(CONFIG_HYPER_DMABUF) := $(TARGET_MODULE).o
+-
+-# If we are running without kernel build system
+-else
+-BUILDSYSTEM_DIR?=../../../
+-PWD:=$(shell pwd)
+-
+-all :
+-# run kernel build system to make module
+-	$(MAKE) -C $(BUILDSYSTEM_DIR) M=$(PWD) modules
+-
+-clean:
+-# run kernel build system to cleanup in current directory
+-	$(MAKE) -C $(BUILDSYSTEM_DIR) M=$(PWD) clean
+-
+-load:
+-	insmod ./$(TARGET_MODULE).ko
+-
+-unload:
+-	rmmod ./$(TARGET_MODULE).ko
+-
++		obj-y += virtio/hyper_dmabuf_virtio_common.o \
++			 virtio/hyper_dmabuf_virtio_shm.o \
++			 virtio/hyper_dmabuf_virtio_comm_ring.o
+ endif
+-- 
+2.7.4
+

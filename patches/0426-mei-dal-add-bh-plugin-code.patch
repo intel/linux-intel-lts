@@ -1,0 +1,1902 @@
+From ce2bf8fc1b2d70105ea6612648d901aa949df4be Mon Sep 17 00:00:00 2001
+From: Yael Samet <yael.samet@intel.com>
+Date: Mon, 14 Aug 2017 11:27:26 +0300
+Subject: [PATCH 0426/1132] mei: dal: add bh plugin code
+
+bh plugin defines and implements the protocol of managing applets in DAL.
+(view to bh_command_id enum for all options)
+This patch adds the code of the bh plugin
+
+Change-Id: Ia09cbb903d65e8c1f58becb7ed00238f6f226f12
+Signed-off-by: Yael Samet <yael.samet@intel.com>
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+---
+ drivers/misc/mei/dal/bh_cmd_defs.h | 238 +++++++++++
+ drivers/misc/mei/dal/bh_errcode.h  | 153 +++++++
+ drivers/misc/mei/dal/bh_external.c | 475 +++++++++++++++++++++
+ drivers/misc/mei/dal/bh_external.h |  46 ++
+ drivers/misc/mei/dal/bh_internal.c | 846 +++++++++++++++++++++++++++++++++++++
+ drivers/misc/mei/dal/bh_internal.h |  78 ++++
+ 6 files changed, 1836 insertions(+)
+ create mode 100644 drivers/misc/mei/dal/bh_cmd_defs.h
+ create mode 100644 drivers/misc/mei/dal/bh_errcode.h
+ create mode 100644 drivers/misc/mei/dal/bh_external.c
+ create mode 100644 drivers/misc/mei/dal/bh_external.h
+ create mode 100644 drivers/misc/mei/dal/bh_internal.c
+ create mode 100644 drivers/misc/mei/dal/bh_internal.h
+
+diff --git a/drivers/misc/mei/dal/bh_cmd_defs.h b/drivers/misc/mei/dal/bh_cmd_defs.h
+new file mode 100644
+index 0000000..7ced1a2
+--- /dev/null
++++ b/drivers/misc/mei/dal/bh_cmd_defs.h
+@@ -0,0 +1,238 @@
++/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#ifndef __BH_DAL_H_
++#define __BH_DAL_H_
++
++#include <linux/types.h>
++#include <linux/uuid.h>
++
++/**
++ * enum bh_command_id - bh command ids
++ *
++ * @BHP_CMD_INIT: init command
++ * @BHP_CMD_DEINIT: deinit command
++ * @BHP_CMD_VERIFY_JAVATA: verify ta
++ * @BHP_CMD_DOWNLOAD_JAVATA: download ta to DAL
++ * @BHP_CMD_OPEN_JTASESSION: open session to ta
++ * @BHP_CMD_CLOSE_JTASESSION: close session with ta
++ * @BHP_CMD_FORCECLOSE_JTASESSION: force close session
++ * @BHP_CMD_SENDANDRECV: send and receive massages to ta
++ * @BHP_CMD_SENDANDRECV_INTERNAL: internal send and receive
++ * @BHP_CMD_RUN_NATIVETA: run native trusted application
++ *                        (currently NOT SUPPORTED)
++ * @BHP_CMD_STOP_NATIVETA: stop running native ta (currently NOT SUPPORTED)
++ * @BHP_CMD_OPEN_SDSESSION: open security domain session
++ * @BHP_CMD_CLOSE_SDSESSION: close security domain session
++ * @BHP_CMD_INSTALL_SD: install new sub security domain
++ * @BHP_CMD_UNINSTALL_SD: uninstall sub security domain
++ * @BHP_CMD_INSTALL_JAVATA: install java ta
++ * @BHP_CMD_UNINSTALL_JAVATA: uninstall java ta
++ * @BHP_CMD_INSTALL_NATIVETA: install native ta (currently NOT SUPPORTED)
++ * @BHP_CMD_UNINSTALL_NATIVETA: uninstall native ta (currently NOT SUPPORTED)
++ * @BHP_CMD_LIST_SD: get list of all security domains
++ * @BHP_CMD_LIST_TA: get list of all installed trusted applications
++ * @BHP_CMD_RESET: reset command
++ * @BHP_CMD_LIST_TA_PROPERTIES: get list of all ta properties (ta manifest)
++ * @BHP_CMD_QUERY_TA_PROPERTY: query specified ta property
++ * @BHP_CMD_LIST_JTA_SESSIONS: get list of all opened ta sessions
++ * @BHP_CMD_LIST_TA_PACKAGES: get list of all ta packages in DAL
++ * @BHP_CMD_GET_ISD: get Intel security domain uuid
++ * @BHP_CMD_GET_SD_BY_TA: get security domain id of ta
++ * @BHP_CMD_LAUNCH_VM: lunch IVM
++ * @BHP_CMD_CLOSE_VM: close IVM
++ * @BHP_CMD_QUERY_NATIVETA_STATUS: query specified native ta status
++ *                                 (currently NOT SUPPORTED)
++ * @BHP_CMD_QUERY_SD_STATUS: query specified security domain status
++ * @BHP_CMD_LIST_DOWNLOADED_NTA: get list of all native trusted applications
++ *                               (currently NOT SUPPORTED)
++ * @BHP_CMD_UPDATE_SVL: update security version list
++ * @BHP_CMD_CHECK_SVL_TA_BLOCKED_STATE: check if ta security version is blocked
++ * @BHP_CMD_QUERY_TEE_METADATA: get DAL metadata (including api_level,
++ *                              library_version, dal_key_hash and more)
++ *
++ * @BHP_CMD_MAX: max command id
++ */
++
++enum bh_command_id {
++	BHP_CMD_INIT = 0,
++	BHP_CMD_DEINIT,
++	BHP_CMD_VERIFY_JAVATA,
++	BHP_CMD_DOWNLOAD_JAVATA,
++	BHP_CMD_OPEN_JTASESSION,
++	BHP_CMD_CLOSE_JTASESSION,
++	BHP_CMD_FORCECLOSE_JTASESSION,
++	BHP_CMD_SENDANDRECV,
++	BHP_CMD_SENDANDRECV_INTERNAL,
++	BHP_CMD_RUN_NATIVETA,
++	BHP_CMD_STOP_NATIVETA,
++	BHP_CMD_OPEN_SDSESSION,
++	BHP_CMD_CLOSE_SDSESSION,
++	BHP_CMD_INSTALL_SD,
++	BHP_CMD_UNINSTALL_SD,
++	BHP_CMD_INSTALL_JAVATA,
++	BHP_CMD_UNINSTALL_JAVATA,
++	BHP_CMD_INSTALL_NATIVETA,
++	BHP_CMD_UNINSTALL_NATIVETA,
++	BHP_CMD_LIST_SD,
++	BHP_CMD_LIST_TA,
++	BHP_CMD_RESET,
++	BHP_CMD_LIST_TA_PROPERTIES,
++	BHP_CMD_QUERY_TA_PROPERTY,
++	BHP_CMD_LIST_JTA_SESSIONS,
++	BHP_CMD_LIST_TA_PACKAGES,
++	BHP_CMD_GET_ISD,
++	BHP_CMD_GET_SD_BY_TA,
++	BHP_CMD_LAUNCH_VM,
++	BHP_CMD_CLOSE_VM,
++	BHP_CMD_QUERY_NATIVETA_STATUS,
++	BHP_CMD_QUERY_SD_STATUS,
++	BHP_CMD_LIST_DOWNLOADED_NTA,
++	BHP_CMD_UPDATE_SVL,
++	BHP_CMD_CHECK_SVL_TA_BLOCKED_STATE,
++	BHP_CMD_QUERY_TEE_METADATA,
++	BHP_CMD_MAX
++};
++
++#define BH_MSG_RESP_MAGIC  0x55aaa5ff
++#define BH_MSG_CMD_MAGIC   0x55aaa3ff
++
++/**
++ * struct bh_msg_header - transport header
++ *
++ * @magic: BH_MSG_RESP/CMD_MAGIC
++ * @length: overall message length
++ */
++struct bh_msg_header {
++	u32 magic;
++	u32 length;
++};
++
++/**
++ * struct bh_command_header - bh command header
++ *
++ * @h: transport header
++ * @seq: message sequence number
++ * @id: the command id (enum bh_command_id)
++ * @pad: padded for 64 bit
++ * @cmd: command buffer
++ */
++struct  bh_command_header {
++	struct bh_msg_header h;
++	u64 seq;
++	u32 id;
++	u8 pad[4];
++	s8 cmd[0];
++} __packed;
++
++/**
++ * struct bh_response_header - response header (from the DAL)
++ *
++ * @h: transport header
++ * @seq: message sequence number
++ * @ta_session_id: session id (DAL firmware address)
++ * @code: response code
++ * @pad: padded for 64 bit
++ * @data: response buffer
++ */
++struct bh_response_header {
++	struct bh_msg_header h;
++	u64 seq;
++	u64 ta_session_id;
++	s32 code;
++	u8 pad[4];
++	s8 data[0];
++} __packed;
++
++/**
++ * struct bh_download_jta_cmd - download java trusted application.
++ *
++ * @ta_id: trusted application (ta) id
++ * @ta_blob: trusted application blob
++ */
++struct bh_download_jta_cmd {
++	uuid_t ta_id;
++	s8 ta_blob[0];
++} __packed;
++
++/**
++ * struct bh_open_jta_session_cmd - open session to TA command
++ *
++ * @ta_id: trusted application (ta) id
++ * @buffer: session initial parameters (optional)
++ */
++struct bh_open_jta_session_cmd {
++	uuid_t ta_id;
++	s8 buffer[0];
++} __packed;
++
++/**
++ * struct bh_close_jta_session_cmd - close session to TA command
++ *
++ * @ta_session_id: session id
++ */
++struct bh_close_jta_session_cmd {
++	u64 ta_session_id;
++} __packed;
++
++/**
++ * struct bh_cmd - bh command
++ *
++ * @ta_session_id: session id
++ * @command: command id to ta
++ * @outlen: length of output buffer
++ * @buffer: data to send
++ */
++struct bh_cmd {
++	u64 ta_session_id;
++	s32 command;
++	u32 outlen;
++	s8 buffer[0];
++} __packed;
++
++/**
++ * struct bh_check_svl_ta_blocked_state_cmd - command to check if
++ *     the trusted application security version is blocked
++ *
++ * @ta_id: trusted application id
++ */
++struct bh_check_svl_jta_blocked_state_cmd {
++	uuid_t ta_id;
++} __packed;
++
++/**
++ * struct bh_resp - bh response
++ *
++ * @response: response code. Originated from java in big endian format
++ * @buffer: response buffer
++ */
++struct bh_resp {
++	__be32 response;
++	s8 buffer[0];
++} __packed;
++
++/**
++ * struct bh_resp_bof - response when output buffer is too small
++ *
++ * @response: response code. Originated from java in big endian format
++ * @request_length: the needed output buffer length
++ */
++struct bh_resp_bof {
++	__be32 response;
++	__be32 request_length;
++} __packed;
++
++/**
++ * struct bh_resp_list_ta_packages - list of ta packages from DAL
++ *
++ * @count: count of ta packages
++ * @ta_ids: ta packages ids
++ */
++struct bh_resp_list_ta_packages {
++	u32 count;
++	uuid_t ta_ids[0];
++} __packed;
++
++#endif /* __BH_DAL_H_*/
+diff --git a/drivers/misc/mei/dal/bh_errcode.h b/drivers/misc/mei/dal/bh_errcode.h
+new file mode 100644
+index 0000000..145dbc3
+--- /dev/null
++++ b/drivers/misc/mei/dal/bh_errcode.h
+@@ -0,0 +1,153 @@
++/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#ifndef __BH_ERRCODE_H
++#define __BH_ERRCODE_H
++
++/*
++ * BH Error codes numbers across Beihai Host and Firmware.
++ */
++
++#define BH_SUCCESS                              0x000
++
++/* BHP specific error code section */
++
++#define BPE_NOT_INIT                            0x001
++#define BPE_SERVICE_UNAVAILABLE                 0x002
++#define BPE_INTERNAL_ERROR                      0x003
++#define BPE_COMMS_ERROR                         0x004
++#define BPE_OUT_OF_MEMORY                       0x005
++#define BPE_INVALID_PARAMS                      0x006
++#define BPE_MESSAGE_TOO_SHORT                   0x007
++#define BPE_MESSAGE_ILLEGAL                     0x008
++#define BPE_NO_CONNECTION_TO_FIRMWARE           0x009
++#define BPE_NOT_IMPLEMENT                       0x00A
++#define BPE_OUT_OF_RESOURCE                     0x00B
++#define BPE_INITIALIZED_ALREADY                 0x00C
++#define BPE_CONNECT_FAILED                      0x00D
++
++/* General error code section for Beihai on FW: 0x100 */
++
++#define BHE_OUT_OF_MEMORY                       0x101
++#define BHE_BAD_PARAMETER                       0x102
++#define BHE_INSUFFICIENT_BUFFER                 0x103
++#define BHE_MUTEX_INIT_FAIL                     0x104
++#define BHE_COND_INIT_FAIL                      0x105
++#define BHE_WD_TIMEOUT                          0x106
++#define BHE_FAILED                              0x107
++#define BHE_INVALID_HANDLE                      0x108
++#define BHE_IPC_ERR_DEFAULT                     0x109
++#define BHE_IPC_ERR_PLATFORM                    0x10A
++#define BHE_IPC_SRV_INIT_FAIL                   0x10B
++
++/* VM communication error code section:         0x200 */
++
++#define BHE_MAILBOX_NOT_FOUND                   0x201
++#define BHE_APPLET_CRASHED                      BHE_MAILBOX_NOT_FOUND
++#define BHE_MSG_QUEUE_IS_FULL                   0x202
++#define BHE_MAILBOX_DENIED                      0x203
++
++/* VM InternalAppletCommunication error         0x240 */
++
++#define BHE_IAC_INTERNAL_SESSION_NUM_EXCEED     0x241
++#define BHE_IAC_CLIENT_SLOT_FULL                0x242
++#define BHE_IAC_SERVICETA_EXITED                0x243
++#define BHE_IAC_EXIST_INTERNAL_SESSION          0x244
++#define BHE_IAC_SERVICETA_UNCAUGHT_EXCEPTION    0x245
++#define BHE_IAC_SERVICE_SESSION_NOT_FOUND       0x246
++#define BHE_IAC_SERVICE_HOST_SESSION_NUM_EXCEED 0x247
++
++/* Firmware thread/mutex error code section:     0x280 */
++#define BHE_THREAD_ERROR                        0x281
++#define BHE_THREAD_TIMED_OUT                    0x282
++
++/* Applet manager error code section:            0x300 */
++
++#define BHE_LOAD_JEFF_FAIL                      0x303
++#define BHE_PACKAGE_NOT_FOUND                   0x304
++#define BHE_EXIST_LIVE_SESSION                  0x305
++#define BHE_VM_INSTANCE_INIT_FAIL               0x306
++#define BHE_QUERY_PROP_NOT_SUPPORT              0x307
++#define BHE_INVALID_BPK_FILE                    0x308
++#define BHE_PACKAGE_EXIST                       0x309
++#define BHE_VM_INSTNACE_NOT_FOUND               0x312
++#define BHE_STARTING_JDWP_FAIL                  0x313
++#define BHE_GROUP_CHECK_FAIL                    0x314
++#define BHE_SDID_UNMATCH                        0x315
++#define BHE_APPPACK_UNINITED                    0x316
++#define BHE_SESSION_NUM_EXCEED                  0x317
++#define BHE_TA_PACKAGE_HASH_VERIFY_FAIL         0x318
++#define BHE_SWITCH_ISD                          0x319
++#define BHE_OPERATION_NOT_PERMITTED             0x31A
++
++/* VM Applet instance error code section:        0x400 */
++#define BHE_APPLET_GENERIC                      0x400
++#define BHE_UNCAUGHT_EXCEPTION                  0x401
++/* Bad parameters to applet */
++#define BHE_APPLET_BAD_PARAMETER                0x402
++/* Small response buffer */
++#define BHE_APPLET_SMALL_BUFFER                 0x403
++/* Bad state */
++#define BHE_BAD_STATE                           0x404
++
++/*TODO: Should be removed these UI error code when integrate with ME 9 */
++#define BHE_UI_EXCEPTION                        0x501
++#define BHE_UI_ILLEGAL_USE                      0x502
++#define BHE_UI_ILLEGAL_PARAMETER                0x503
++#define BHE_UI_NOT_INITIALIZED                  0x504
++#define BHE_UI_NOT_SUPPORTED                    0x505
++#define BHE_UI_OUT_OF_RESOURCES                 0x506
++
++/* BeiHai VMInternalError code section:          0x600 */
++#define BHE_UNKNOWN                             0x602
++#define BHE_MAGIC_UNMATCH                       0x603
++#define BHE_UNIMPLEMENTED                       0x604
++#define BHE_INTR                                0x605
++#define BHE_CLOSED                              0x606
++/* TODO: no used error, should remove*/
++#define BHE_BUFFER_OVERFLOW                     0x607
++#define BHE_NOT_SUPPORTED                       0x608
++#define BHE_WEAR_OUT_VIOLATION                  0x609
++#define BHE_NOT_FOUND                           0x610
++#define BHE_INVALID_PARAMS                      0x611
++#define BHE_ACCESS_DENIED                       0x612
++#define BHE_INVALID                             0x614
++#define BHE_TIMEOUT                             0x615
++
++/* SDM specific error code section:              0x800 */
++#define BHE_SDM_FAILED                          0x800
++#define BHE_SDM_NOT_FOUND                       0x801
++#define BHE_SDM_ALREADY_EXIST                   0x803
++#define BHE_SDM_TATYPE_MISMATCH                 0x804
++#define BHE_SDM_TA_NUMBER_LIMIT                 0x805
++#define BHE_SDM_SIGNAGURE_VERIFY_FAIL           0x806
++#define BHE_SDM_PERMGROUP_CHECK_FAIL            0x807
++#define BHE_SDM_INSTALL_CONDITION_FAIL          0x808
++#define BHE_SDM_SVN_CHECK_FAIL                  0x809
++#define BHE_SDM_TA_DB_NO_FREE_SLOT              0x80A
++#define BHE_SDM_SD_DB_NO_FREE_SLOT              0x80B
++#define BHE_SDM_SVL_DB_NO_FREE_SLOT             0x80C
++#define BHE_SDM_SVL_CHECK_FAIL                  0x80D
++#define BHE_SDM_DB_READ_FAIL                    0x80E
++#define BHE_SDM_DB_WRITE_FAIL                   0x80F
++
++/* Launcher specific error code section:         0x900 */
++#define BHE_LAUNCHER_INIT_FAILED                0x901
++#define BHE_SD_NOT_INSTALLED                    0x902
++#define BHE_NTA_NOT_INSTALLED                   0x903
++#define BHE_PROCESS_SPAWN_FAILED                0x904
++#define BHE_PROCESS_KILL_FAILED                 0x905
++#define BHE_PROCESS_ALREADY_RUNNING             0x906
++#define BHE_PROCESS_IN_TERMINATING              0x907
++#define BHE_PROCESS_NOT_EXIST                   0x908
++#define BHE_PLATFORM_API_ERR                    0x909
++#define BHE_PROCESS_NUM_EXCEED                  0x09A
++
++/*
++ * BeihaiHAL Layer error code section:
++ * 0x1000,0x2000 reserved here, defined in CSG BeihaiStatusHAL.h
++ */
++
++#endif /* __BH_ERRCODE_H */
+diff --git a/drivers/misc/mei/dal/bh_external.c b/drivers/misc/mei/dal/bh_external.c
+new file mode 100644
+index 0000000..0cbb17e
+--- /dev/null
++++ b/drivers/misc/mei/dal/bh_external.c
+@@ -0,0 +1,475 @@
++// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#include <linux/string.h>
++#include <linux/uuid.h>
++#include <linux/ctype.h>
++
++#include "bh_errcode.h"
++#include "bh_external.h"
++#include "bh_internal.h"
++
++/**
++ * uuid_is_valid_hyphenless - check if uuid is valid in hyphenless format
++ *
++ * @uuid_str: uuid string
++ *
++ * Return: true when uuid is valid in hyphenless format
++ *         false when uuid is invalid
++ */
++static bool uuid_is_valid_hyphenless(const char *uuid_str)
++{
++	unsigned int i;
++
++	/* exclude (i == 8 || i == 13 || i == 18 || i == 23) */
++	for (i = 0; i < UUID_STRING_LEN - 4; i++)
++		if (!isxdigit(uuid_str[i]))
++			return false;
++
++	return true;
++}
++
++/**
++ * uuid_normalize_hyphenless - convert uuid from hyphenless format
++ *                             to standard format
++ *
++ * @uuid_hl: uuid string in hyphenless format
++ * @uuid_str: output param to hold uuid string in standard format
++ */
++static void uuid_normalize_hyphenless(const char *uuid_hl, char *uuid_str)
++{
++	unsigned int i;
++
++	for (i = 0; i < UUID_STRING_LEN; i++) {
++		if (i == 8 || i == 13 || i == 18 || i == 23)
++			uuid_str[i] = '-';
++		else
++			uuid_str[i] = *uuid_hl++;
++	}
++	uuid_str[i] = '\0';
++}
++
++/**
++ * dal_uuid_parse  - convert uuid string to binary form
++ *
++ * Input uuid is in either hyphenless or standard format
++ *
++ * @uuid_str: uuid string
++ * @uuid: output param to hold uuid bin
++ *
++ * Return: 0 on success
++ *         <0 on failure
++ */
++static int dal_uuid_parse(const char *uuid_str, uuid_t *uuid)
++{
++	char __uuid_str[UUID_STRING_LEN + 1];
++
++	if (!uuid_str || !uuid)
++		return -EINVAL;
++
++	if (uuid_is_valid_hyphenless(uuid_str)) {
++		uuid_normalize_hyphenless(uuid_str, __uuid_str);
++		uuid_str = __uuid_str;
++	}
++
++	return uuid_parse(uuid_str, uuid);
++}
++
++/**
++ * bh_msg_is_response - check if message is response
++ *
++ * @msg: message
++ * @len: message length
++ *
++ * Return: true when message is response
++ *         false otherwise
++ */
++bool bh_msg_is_response(const void *msg, size_t len)
++{
++	const struct bh_response_header *r =  msg;
++
++	return (len >= sizeof(*r) && r->h.magic == BH_MSG_RESP_MAGIC);
++}
++
++/**
++ * bh_msg_is_cmd - check if message is command
++ *
++ * @msg: message
++ * @len: message length
++ *
++ * Return: true when message is command
++ *         false otherwise
++ */
++bool bh_msg_is_cmd(const void *msg, size_t len)
++{
++	const struct bh_command_header *c = msg;
++
++	return (len >= sizeof(*c) && c->h.magic == BH_MSG_CMD_MAGIC);
++}
++
++/**
++ * bh_msg_cmd_hdr - get the command header if message is command
++ *
++ * @msg: message
++ * @len: message length
++ *
++ * Return: pointer to the command header when message is command
++ *         NULL otherwise
++ */
++const struct bh_command_header *bh_msg_cmd_hdr(const void *msg, size_t len)
++{
++	if (!bh_msg_is_cmd(msg, len))
++		return NULL;
++
++	return msg;
++}
++
++/**
++ * bh_msg_is_cmd_open_session - check if command is open session command
++ *
++ * @hdr: message header
++ *
++ * Return: true when command is open session command
++ *         false otherwise
++ */
++bool bh_msg_is_cmd_open_session(const struct bh_command_header *hdr)
++{
++	return hdr->id == BHP_CMD_OPEN_JTASESSION;
++}
++
++/**
++ * bh_open_session_ta_id - get ta id from open session command
++ *
++ * @hdr: message header
++ * @count: message size
++ *
++ * Return: pointer to ta id when command is valid
++ *         NULL otherwise
++ */
++const uuid_t *bh_open_session_ta_id(const struct bh_command_header *hdr,
++				    size_t count)
++{
++	struct bh_open_jta_session_cmd *open_cmd;
++
++	if (count < sizeof(*hdr) + sizeof(*open_cmd))
++		return NULL;
++
++	open_cmd = (struct bh_open_jta_session_cmd *)hdr->cmd;
++
++	return &open_cmd->ta_id;
++}
++
++/**
++ * bh_session_is_killed - check if session is killed
++ *
++ * @code: the session return code
++ *
++ * Return: true when the session is killed
++ *         false otherwise
++ */
++static bool bh_session_is_killed(int code)
++{
++	return (code == BHE_WD_TIMEOUT ||
++		code == BHE_UNCAUGHT_EXCEPTION ||
++		code == BHE_APPLET_CRASHED);
++}
++
++/**
++ * bh_ta_session_open - open session to ta
++ *
++ * This function will block until VM replied the response
++ *
++ * @host_id: out param to hold the session host_id
++ * @ta_id: trusted application (ta) id
++ * @ta_pkg: ta binary package
++ * @pkg_len: ta binary package length
++ * @init_param: init parameters to the session (optional)
++ * @init_len: length of the init parameters
++ *
++ * Return: 0 on success
++ *         <0 on system failure
++ *         >0 on DAL FW failure
++ */
++int bh_ta_session_open(u64 *host_id, const char *ta_id,
++		       const u8 *ta_pkg, size_t pkg_len,
++		       const u8 *init_param, size_t init_len)
++{
++	int ret;
++	uuid_t bin_ta_id;
++	unsigned int conn_idx;
++	unsigned int count;
++	bool found;
++	uuid_t *ta_ids = NULL;
++	unsigned int i;
++
++	if (!ta_id || !host_id)
++		return -EINVAL;
++
++	if (!ta_pkg || !pkg_len)
++		return -EINVAL;
++
++	if (!init_param && init_len != 0)
++		return -EINVAL;
++
++	if (dal_uuid_parse(ta_id, &bin_ta_id))
++		return -EINVAL;
++
++	*host_id = 0;
++
++	ret = bh_proxy_check_svl_jta_blocked_state(&bin_ta_id);
++	if (ret)
++		return ret;
++
++	/* 1: vm conn_idx is IVM dal FW client */
++	conn_idx = CONN_IDX_IVM;
++
++	/* 2.1: check whether the ta pkg existed in VM or not */
++	count = 0;
++	ret = bh_proxy_list_jta_packages(conn_idx, &count, &ta_ids);
++	if (ret)
++		return ret;
++
++	found = false;
++	for (i = 0; i < count; i++) {
++		if (uuid_equal(&bin_ta_id, &ta_ids[i])) {
++			found = true;
++			break;
++		}
++	}
++	kfree(ta_ids);
++
++	/* 2.2: download ta pkg if not already present. */
++	if (!found) {
++		ret = bh_proxy_dnload_jta(conn_idx, &bin_ta_id,
++					  ta_pkg, pkg_len);
++		if (ret && ret != BHE_PACKAGE_EXIST)
++			return ret;
++	}
++
++	/* 3: send open session command to VM */
++	ret = bh_proxy_open_jta_session(conn_idx, &bin_ta_id,
++					init_param, init_len,
++					host_id, ta_pkg, pkg_len);
++	return ret;
++}
++
++/**
++ * bh_ta_session_command - send and receive data to/from ta
++ *
++ * This function will block until VM replied the response
++ *
++ * @host_id: session host id
++ * @command_id: command id
++ * @input: message to be sent
++ * @length: sent message size
++ * @output: output param to hold pointer to the buffer which
++ *          will contain received message.
++ *          This buffer is allocated by Beihai and freed by the user.
++ * @output_length: input and output param -
++ *                 - input: the expected maximum length of the received message
++ *                 - output: size of the received message
++ * @response_code: An optional output param to hold the return value
++ *                 from the applet. Can be NULL.
++ *
++ * Return: 0 on success
++ *         < 0 on system failure
++ *         > 0 on DAL FW failure
++ */
++int bh_ta_session_command(u64 host_id, int command_id,
++			  const void *input, size_t length,
++			  void **output, size_t *output_length,
++			  int *response_code)
++{
++	int ret;
++	struct bh_command_header *h;
++	struct bh_cmd *cmd;
++	char cmdbuf[CMD_BUF_SIZE(*cmd)];
++	struct bh_response_header *resp_hdr;
++	unsigned int resp_len;
++	struct bh_session_record *session;
++	struct bh_resp *resp;
++	unsigned int conn_idx = CONN_IDX_IVM;
++	unsigned int len;
++
++	memset(cmdbuf, 0, sizeof(cmdbuf));
++	resp_hdr = NULL;
++
++	if (!bh_is_initialized())
++		return -EFAULT;
++
++	if (!input && length != 0)
++		return -EINVAL;
++
++	if (!output_length)
++		return -EINVAL;
++
++	if (output)
++		*output = NULL;
++
++	session = bh_session_find(conn_idx, host_id);
++	if (!session)
++		return -EINVAL;
++
++	h = (struct bh_command_header *)cmdbuf;
++	cmd = (struct bh_cmd *)h->cmd;
++	h->id = BHP_CMD_SENDANDRECV;
++	cmd->ta_session_id = session->ta_session_id;
++	cmd->command = command_id;
++	cmd->outlen = *output_length;
++
++	ret = bh_request(conn_idx, h, CMD_BUF_SIZE(*cmd), input, length,
++			 host_id, (void **)&resp_hdr);
++	if (!resp_hdr)
++		return ret ? ret : -EFAULT;
++
++	if (!ret)
++		ret = resp_hdr->code;
++
++	session->ta_session_id = resp_hdr->ta_session_id;
++	resp_len = resp_hdr->h.length - sizeof(*resp_hdr);
++
++	if (ret == BHE_APPLET_SMALL_BUFFER &&
++	    resp_len == sizeof(struct bh_resp_bof)) {
++		struct bh_resp_bof *bof =
++			(struct bh_resp_bof *)resp_hdr->data;
++
++		if (response_code)
++			*response_code = be32_to_cpu(bof->response);
++
++		*output_length = be32_to_cpu(bof->request_length);
++	}
++
++	if (ret)
++		goto out;
++
++	if (resp_len < sizeof(struct bh_resp)) {
++		ret = -EBADMSG;
++		goto out;
++	}
++
++	resp = (struct bh_resp *)resp_hdr->data;
++
++	if (response_code)
++		*response_code = be32_to_cpu(resp->response);
++
++	len = resp_len - sizeof(*resp);
++
++	if (*output_length < len) {
++		ret = -EMSGSIZE;
++		goto out;
++	}
++
++	if (len && output) {
++		*output = kmemdup(resp->buffer, len, GFP_KERNEL);
++		if (!*output) {
++			ret = -ENOMEM;
++			goto out;
++		}
++	}
++
++	*output_length = len;
++
++out:
++	if (bh_session_is_killed(resp_hdr->code))
++		bh_session_remove(conn_idx, session->host_id);
++
++	kfree(resp_hdr);
++
++	return ret;
++}
++
++/**
++ * bh_ta_session_close - close ta session
++ *
++ * This function will block until VM replied the response
++ *
++ * @host_id: session host id
++ *
++ * Return: 0 on success
++ *         <0 on system failure
++ *         >0 on DAL FW failure
++ */
++int bh_ta_session_close(u64 host_id)
++{
++	int ret;
++	char cmdbuf[CMD_BUF_SIZE(struct bh_close_jta_session_cmd)];
++	struct bh_response_header *resp_hdr;
++	struct bh_session_record *session;
++	unsigned int conn_idx = CONN_IDX_IVM;
++
++	memset(cmdbuf, 0, sizeof(cmdbuf));
++	resp_hdr = NULL;
++
++	session = bh_session_find(conn_idx, host_id);
++	if (!session)
++		return -EINVAL;
++
++	bh_prep_session_close_cmd(cmdbuf, session->ta_session_id);
++
++	ret = bh_request(conn_idx, cmdbuf, sizeof(cmdbuf), NULL, 0, host_id,
++			 (void **)&resp_hdr);
++
++	if (!ret)
++		ret = resp_hdr->code;
++
++	kfree(resp_hdr);
++	/*
++	 * An internal session exists, so we should not close the session.
++	 * It means that host app should call this API at appropriate time.
++	 */
++	if (ret != BHE_IAC_EXIST_INTERNAL_SESSION)
++		bh_session_remove(conn_idx, host_id);
++
++	return ret;
++}
++
++/**
++ * bh_filter_hdr - filter the sent message
++ *
++ * Allow to send valid messages only.
++ * The filtering is done using given filter functions table
++ *
++ * @hdr: message header
++ * @count: message size
++ * @ctx: context to send to the filter functions
++ * @tbl: filter functions table
++ *
++ * Return: 0 when message is valid
++ *         <0 on otherwise
++ */
++int bh_filter_hdr(const struct bh_command_header *hdr, size_t count, void *ctx,
++		  const bh_filter_func tbl[])
++{
++	int i;
++	int ret;
++
++	for (i = 0; tbl[i]; i++) {
++		ret = tbl[i](hdr, count, ctx);
++		if (ret < 0)
++			return ret;
++	}
++	return 0;
++}
++
++/**
++ * bh_prep_access_denied_response - prepare package with 'access denied'
++ *                                  response code.
++ *
++ * This function is used to send in band error to user who trying to send
++ * message when he lacks the needed permissions
++ *
++ * @cmd: the invalid command message
++ * @res: out param to hold the response header
++ */
++void bh_prep_access_denied_response(const char *cmd,
++				    struct bh_response_header *res)
++{
++	struct bh_command_header *cmd_hdr = (struct bh_command_header *)cmd;
++
++	res->h.magic = BH_MSG_RESP_MAGIC;
++	res->h.length = sizeof(*res);
++	res->code = BHE_OPERATION_NOT_PERMITTED;
++	res->seq = cmd_hdr->seq;
++}
+diff --git a/drivers/misc/mei/dal/bh_external.h b/drivers/misc/mei/dal/bh_external.h
+new file mode 100644
+index 0000000..68b3387
+--- /dev/null
++++ b/drivers/misc/mei/dal/bh_external.h
+@@ -0,0 +1,46 @@
++/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#ifndef __BH_EXTERNAL_H
++#define __BH_EXTERNAL_H
++
++#include <linux/kernel.h>
++#include "bh_cmd_defs.h"
++
++# define MSG_SEQ_START_NUMBER BIT_ULL(32)
++
++bool bh_is_initialized(void);
++void bh_init_internal(void);
++void bh_deinit_internal(void);
++
++int bh_ta_session_open(u64 *host_id, const char *ta_id, const u8 *ta_pkg,
++		       size_t pkg_len, const u8 *init_param, size_t init_len);
++
++int bh_ta_session_close(u64 host_id);
++
++int bh_ta_session_command(u64 host_id, int command_id, const void *input,
++			  size_t length, void **output, size_t *output_length,
++			  int *response_code);
++
++const struct bh_command_header *bh_msg_cmd_hdr(const void *msg, size_t len);
++
++typedef int (*bh_filter_func)(const struct bh_command_header *hdr,
++			      size_t count, void *ctx);
++
++int bh_filter_hdr(const struct bh_command_header *hdr, size_t count, void *ctx,
++		  const bh_filter_func tbl[]);
++
++bool bh_msg_is_cmd_open_session(const struct bh_command_header *hdr);
++
++const uuid_t *bh_open_session_ta_id(const struct bh_command_header *hdr,
++				    size_t count);
++
++void bh_prep_access_denied_response(const char *cmd,
++				    struct bh_response_header *res);
++
++bool bh_msg_is_cmd(const void *msg, size_t len);
++bool bh_msg_is_response(const void *msg, size_t len);
++
++#endif /* __BH_EXTERNAL_H */
+diff --git a/drivers/misc/mei/dal/bh_internal.c b/drivers/misc/mei/dal/bh_internal.c
+new file mode 100644
+index 0000000..6aa24d4
+--- /dev/null
++++ b/drivers/misc/mei/dal/bh_internal.c
+@@ -0,0 +1,846 @@
++// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
++
++#include <linux/types.h>
++#include <linux/mei_cl_bus.h>
++#include <linux/completion.h>
++#include "bh_errcode.h"
++#include "bh_external.h"
++#include "bh_internal.h"
++#include "dal_dev.h"
++
++/* BH initialization state */
++static atomic_t bh_state = ATOMIC_INIT(0);
++static u64 bh_host_id_number = MSG_SEQ_START_NUMBER;
++
++/**
++ * struct bh_request_cmd - bh request command
++ *
++ * @link: link in the request list of bh service
++ * @cmd: command header and data
++ * @cmd_len: command buffer length
++ * @conn_idx: connection index
++ * @host_id: session host id
++ * @response: response buffer
++ * @complete: request completion
++ * @ret: return value of the request
++ */
++struct bh_request_cmd {
++	struct list_head link;
++	u8 *cmd;
++	unsigned int cmd_len;
++	unsigned int conn_idx;
++	u64 host_id;
++	void *response;
++	struct completion complete;
++	int ret;
++};
++
++struct bh_service {
++	struct work_struct work;
++	struct mutex request_lock; /* request lock */
++	struct list_head request_list;
++};
++
++static struct bh_service bh_srvc;
++
++/*
++ * dal device session records list (array of list per dal device)
++ * represents opened sessions to dal fw client
++ */
++static struct list_head dal_dev_session_list[MAX_CONNECTIONS];
++
++/**
++ * bh_get_msg_host_id - increase the shared variable bh_host_id_number by 1
++ *                      and wrap around if needed
++ *
++ * Return: the updated host id number
++ */
++u64 bh_get_msg_host_id(void)
++{
++	bh_host_id_number++;
++	/* wrap around. sequence_number must
++	 * not be 0, as required by Firmware VM
++	 */
++	if (bh_host_id_number == 0)
++		bh_host_id_number = MSG_SEQ_START_NUMBER;
++
++	return bh_host_id_number;
++}
++
++/**
++ * bh_session_find - find session record by handle
++ *
++ * @conn_idx: DAL client connection idx
++ * @host_id: session host id
++ *
++ * Return: pointer to bh_session_record if found
++ *         NULL if the session wasn't found
++ */
++struct bh_session_record *bh_session_find(unsigned int conn_idx, u64 host_id)
++{
++	struct bh_session_record *pos;
++	struct list_head *session_list = &dal_dev_session_list[conn_idx];
++
++	list_for_each_entry(pos, session_list, link) {
++		if (pos->host_id == host_id)
++			return pos;
++	}
++
++	return NULL;
++}
++
++/**
++ * bh_session_add - add session record to list
++ *
++ * @conn_idx: fw client connection idx
++ * @session: session record
++ */
++void bh_session_add(unsigned int conn_idx, struct bh_session_record *session)
++{
++	list_add_tail(&session->link, &dal_dev_session_list[conn_idx]);
++}
++
++/**
++ * bh_session_remove - remove session record from list, ad release its memory
++ *
++ * @conn_idx: fw client connection idx
++ * @host_id: session host id
++ */
++void bh_session_remove(unsigned int conn_idx, u64 host_id)
++{
++	struct bh_session_record *session;
++
++	session = bh_session_find(conn_idx, host_id);
++
++	if (session) {
++		list_del(&session->link);
++		kfree(session);
++	}
++}
++
++static void bh_request_free(struct bh_request_cmd *request)
++{
++	if (!request)
++		return;
++	kfree(request->cmd);
++	kfree(request->response);
++	kfree(request);
++	request = NULL;
++}
++
++static struct bh_request_cmd *bh_request_alloc(const void *hdr,
++					       size_t hdr_len,
++					       const void *data,
++					       size_t data_len,
++					       unsigned int conn_idx,
++					       u64 host_id)
++{
++	struct bh_request_cmd *request;
++	size_t buf_len;
++
++	if (!hdr || hdr_len < sizeof(struct bh_command_header))
++		return ERR_PTR(-EINVAL);
++
++	if (!data && data_len)
++		return ERR_PTR(-EINVAL);
++
++	if (check_add_overflow(hdr_len, data_len, &buf_len))
++		return ERR_PTR(-EOVERFLOW);
++
++	request = kzalloc(sizeof(*request), GFP_KERNEL);
++	if (!request)
++		return ERR_PTR(-ENOMEM);
++
++	request->cmd = kmalloc(buf_len, GFP_KERNEL);
++	if (!request->cmd) {
++		kfree(request);
++		return ERR_PTR(-ENOMEM);
++	}
++
++	memcpy(request->cmd, hdr, hdr_len);
++	request->cmd_len = hdr_len;
++
++	if (data_len) {
++		memcpy(request->cmd + hdr_len, data, data_len);
++		request->cmd_len += data_len;
++	}
++
++	request->conn_idx = conn_idx;
++	request->host_id = host_id;
++
++	init_completion(&request->complete);
++
++	return request;
++}
++
++/**
++ * bh_transport_recv - receive message from DAL FW.
++ *
++ * @conn_idx: fw client connection idx
++ * @buffer: output buffer to hold the received message
++ * @size: output buffer size
++ *
++ * Return: 0 on success
++ *         < 0 on failure
++ */
++static int bh_transport_recv(unsigned int conn_idx, void *buffer, size_t size)
++{
++	return 0;
++}
++
++/**
++ * bh_recv_message_try - try to receive and prosses message from DAL
++ *
++ * @conn_idx: fw client connection idx
++ * @response: output param to hold the response
++ * @out_host_id: output param to hold the received message host id
++ *               it should be identical to the sent message host id
++ *
++ * Return: 0 on success
++ *         <0 on failure
++ */
++static int bh_recv_message_try(unsigned int conn_idx, void **response,
++			       u64 *out_host_id)
++{
++	int ret;
++	char *data;
++	struct bh_response_header hdr;
++
++	if (!response)
++		return -EINVAL;
++
++	*response = NULL;
++
++	memset(&hdr, 0, sizeof(hdr));
++	ret = bh_transport_recv(conn_idx, &hdr, sizeof(hdr));
++	if (ret)
++		return ret;
++
++	if (hdr.h.length < sizeof(hdr))
++		return -EBADMSG;
++
++	/* check magic */
++	if (hdr.h.magic != BH_MSG_RESP_MAGIC)
++		return -EBADMSG;
++
++	data = kzalloc(hdr.h.length, GFP_KERNEL);
++	if (!data)
++		return -ENOMEM;
++
++	memcpy(data, &hdr, sizeof(hdr));
++
++	/* message contains hdr only */
++	if (hdr.h.length == sizeof(hdr))
++		goto out;
++
++	ret = bh_transport_recv(conn_idx, data + sizeof(hdr),
++				hdr.h.length - sizeof(hdr));
++out:
++	if (out_host_id)
++		*out_host_id = hdr.seq;
++
++	*response = data;
++
++	return ret;
++}
++
++#define MAX_RETRY_COUNT 3
++static int bh_recv_message(struct bh_request_cmd *request)
++{
++	u32 retry;
++	u64 res_host_id;
++	void *resp;
++	int ret;
++
++	for (resp = NULL, retry = 0; retry < MAX_RETRY_COUNT; retry++) {
++		kfree(resp);
++		resp = NULL;
++
++		res_host_id = 0;
++		ret = bh_recv_message_try(request->conn_idx,
++					  &resp, &res_host_id);
++		if (ret) {
++			pr_debug("failed to recv msg = %d\n", ret);
++			continue;
++		}
++
++		if (res_host_id != request->host_id) {
++			pr_debug("recv message with host_id=%llu != sent host_id=%llu\n",
++				 res_host_id, request->host_id);
++			continue;
++		}
++
++		pr_debug("recv message with try=%d host_id=%llu\n",
++			 retry, request->host_id);
++		break;
++	}
++
++	if (retry == MAX_RETRY_COUNT) {
++		pr_err("out of retry attempts\n");
++		ret = -EFAULT;
++	}
++
++	if (ret) {
++		kfree(resp);
++		resp = NULL;
++	}
++
++	request->response = resp;
++	return ret;
++}
++
++/**
++ * bh_transport_send - send message to the DAL FW.
++ *
++ * @conn_idx: fw client connection idx
++ * @buffer: message to send
++ * @size: message size
++ * @host_id: message host id
++ *
++ * Return: 0 on success
++ *         <0 on failure
++ */
++static int bh_transport_send(unsigned int conn_idx, const void *buffer,
++			     unsigned int size, u64 host_id)
++{
++	return 0;
++}
++
++/**
++ * bh_send_message - build and send command message to DAL FW.
++ *
++ * @request: all request details
++ *
++ * Return: 0 on success
++ *         < 0 on failure
++ */
++static int bh_send_message(const struct bh_request_cmd *request)
++{
++	struct bh_command_header *h;
++
++	if (!request)
++		return -EINVAL;
++
++	if (request->cmd_len < sizeof(*h) || !request->cmd)
++		return -EINVAL;
++
++	if (request->conn_idx > DAL_MEI_DEVICE_MAX)
++		return -ENODEV;
++
++	h = (struct bh_command_header *)request->cmd;
++	h->h.magic = BH_MSG_CMD_MAGIC;
++	h->h.length = request->cmd_len;
++	h->seq = request->host_id;
++
++	return bh_transport_send(request->conn_idx,
++				 request->cmd, request->cmd_len,
++				 request->host_id);
++}
++
++void bh_prep_session_close_cmd(void *cmdbuf, u64 ta_session_id)
++{
++	struct bh_command_header *h = cmdbuf;
++	struct bh_close_jta_session_cmd *cmd;
++
++	cmd = (struct bh_close_jta_session_cmd *)h->cmd;
++	h->id = BHP_CMD_CLOSE_JTASESSION;
++	cmd->ta_session_id = ta_session_id;
++}
++
++static int bh_send_recv_message(struct bh_request_cmd *request)
++{
++	int ret;
++
++	ret = bh_send_message(request);
++	if (ret)
++		return ret;
++
++	return bh_recv_message(request);
++}
++
++static void bh_request_work(struct work_struct *work)
++{
++	struct bh_service *bh_srv;
++	struct bh_request_cmd *request;
++	struct bh_command_header *h;
++	struct bh_response_header *resp_hdr;
++	int ret;
++
++	bh_srv = container_of(work, struct bh_service, work);
++
++	mutex_lock(&bh_srv->request_lock);
++	request = list_first_entry_or_null(&bh_srv->request_list,
++					   struct bh_request_cmd, link);
++	if (!request) {
++		ret = -EINVAL;
++		goto out_free;
++	}
++
++	list_del_init(&request->link);
++
++	if (!request->cmd_len || !request->cmd) {
++		ret = -EINVAL;
++		goto out_free;
++	}
++
++	ret = bh_send_recv_message(request);
++	request->ret = ret;
++
++	if (wq_has_sleeper(&request->complete.wait)) {
++		mutex_unlock(&bh_srv->request_lock);
++		complete(&request->complete);
++		return;
++	}
++
++	/* no one waits for the response - clean up is needed */
++	pr_debug("no waiter - clean up is needed\n");
++	resp_hdr = (struct bh_response_header *)request->response;
++	/*
++	 * if the command was open_session and
++	 * it was succeeded then close the session
++	 */
++	if (ret || resp_hdr->code)
++		goto out_free;
++
++	h = (struct bh_command_header *)request->cmd;
++	if (bh_msg_is_cmd_open_session(h)) {
++		char cmdbuf[CMD_BUF_SIZE(struct bh_close_jta_session_cmd)];
++		u64 host_id = request->host_id;
++
++		bh_request_free(request);
++
++		bh_prep_session_close_cmd(cmdbuf, resp_hdr->ta_session_id);
++		request = bh_request_alloc(cmdbuf, sizeof(cmdbuf), NULL, 0,
++					   CONN_IDX_IVM, host_id);
++		if (!IS_ERR(request))
++			bh_send_recv_message(request);
++	}
++
++out_free:
++	bh_request_free(request);
++	mutex_unlock(&bh_srv->request_lock);
++}
++
++/**
++ * bh_request - send request to DAL FW and receive response back
++ *
++ * @conn_idx: fw client connection idx
++ * @cmd_hdr: command header
++ * @cmd_hdr_len: command header length
++ * @cmd_data: command data (message content)
++ * @cmd_data_len: data length
++ * @host_id: message host id
++ * @response: output param to hold the response
++ *
++ * Return: 0 on success
++ *         <0 on failure
++ */
++int bh_request(unsigned int conn_idx, void *cmd_hdr, unsigned int cmd_hdr_len,
++	       const void *cmd_data, unsigned int cmd_data_len,
++	       u64 host_id, void **response)
++{
++	int ret;
++	struct bh_request_cmd *request;
++
++	mutex_lock(&bh_srvc.request_lock);
++	request = bh_request_alloc(cmd_hdr, cmd_hdr_len, cmd_data, cmd_data_len,
++				   conn_idx, host_id);
++	if (IS_ERR(request)) {
++		mutex_unlock(&bh_srvc.request_lock);
++		return PTR_ERR(request);
++	}
++
++	list_add_tail(&request->link, &bh_srvc.request_list);
++	mutex_unlock(&bh_srvc.request_lock);
++
++	schedule_work(&bh_srvc.work);
++	ret = wait_for_completion_interruptible(&request->complete);
++	/*
++	 * if wait was interrupted than do not free allocated memory.
++	 * it is used by the worker
++	 */
++	if (ret)
++		return ret;
++
++	mutex_lock(&bh_srvc.request_lock);
++
++	/* detach response buffer */
++	*response = request->response;
++	request->response = NULL;
++
++	ret = request->ret;
++
++	bh_request_free(request);
++
++	mutex_unlock(&bh_srvc.request_lock);
++
++	return ret;
++}
++
++/**
++ * bh_ession_list_free - free session list of given dal fw client
++ *
++ * @conn_idx: fw client connection idx
++ */
++static void bh_session_list_free(unsigned int conn_idx)
++{
++	struct bh_session_record *pos, *next;
++	struct list_head *session_list =  &dal_dev_session_list[conn_idx];
++
++	list_for_each_entry_safe(pos, next, session_list, link) {
++		list_del(&pos->link);
++		kfree(pos);
++	}
++
++	INIT_LIST_HEAD(session_list);
++}
++
++/**
++ * bh_session_list_init - initialize session list of given dal fw client
++ *
++ * @conn_idx: fw client connection idx
++ */
++static void bh_session_list_init(unsigned int conn_idx)
++{
++	INIT_LIST_HEAD(&dal_dev_session_list[conn_idx]);
++}
++
++/**
++ * bh_proxy_check_svl_jta_blocked_state - check if ta security version
++ *    is blocked
++ *
++ * When installing a ta, a minimum security version is given,
++ * so DAL will block installation of this ta from lower version.
++ * (even after the ta will be uninstalled)
++ *
++ * @ta_id: trusted application (ta) id
++ *
++ * Return: 0 when ta security version isn't blocked
++ *         <0 on system failure
++ *         >0 on DAL FW failure
++ */
++int bh_proxy_check_svl_jta_blocked_state(uuid_t *ta_id)
++{
++	int ret;
++	struct bh_command_header *h;
++	struct bh_check_svl_jta_blocked_state_cmd *cmd;
++	char cmdbuf[CMD_BUF_SIZE(*cmd)];
++	struct bh_response_header *resp_hdr;
++	u64 host_id;
++
++	if (!ta_id)
++		return -EINVAL;
++
++	memset(cmdbuf, 0, sizeof(cmdbuf));
++	resp_hdr = NULL;
++
++	h = (struct bh_command_header *)cmdbuf;
++	cmd = (struct bh_check_svl_jta_blocked_state_cmd *)h->cmd;
++	h->id = BHP_CMD_CHECK_SVL_TA_BLOCKED_STATE;
++	cmd->ta_id = *ta_id;
++
++	host_id = bh_get_msg_host_id();
++	ret = bh_request(CONN_IDX_SDM, h, CMD_BUF_SIZE(*cmd), NULL, 0,
++			 host_id, (void **)&resp_hdr);
++
++	if (!ret)
++		ret = resp_hdr->code;
++
++	kfree(resp_hdr);
++
++	return ret;
++}
++
++/**
++ * bh_proxy_list_jta_packages - get list of ta packages in DAL
++ *
++ * @conn_idx: fw client connection idx
++ * @count: out param to hold the count of ta packages in DAL
++ * @ta_ids: out param to hold pointer to the ids of ta packages in DAL
++ *           The buffer which holds the ids is allocated in this function
++ *           and freed by the caller
++ *
++ * Return: 0 when ta security version isn't blocked
++ *         <0 on system failure
++ *         >0 on DAL FW failure
++ */
++int bh_proxy_list_jta_packages(unsigned int conn_idx, unsigned int *count,
++			       uuid_t **ta_ids)
++{
++	int ret;
++	struct bh_command_header h;
++	struct bh_response_header *resp_hdr;
++	unsigned int resp_len;
++	struct bh_resp_list_ta_packages *resp;
++	uuid_t *outbuf;
++	unsigned int i;
++	u64 host_id;
++
++	memset(&h, 0, sizeof(h));
++	resp_hdr = NULL;
++
++	if (!bh_is_initialized())
++		return -EFAULT;
++
++	if (!count || !ta_ids)
++		return -EINVAL;
++
++	*ta_ids = NULL;
++	*count = 0;
++
++	h.id = BHP_CMD_LIST_TA_PACKAGES;
++
++	host_id = bh_get_msg_host_id();
++	ret = bh_request(conn_idx, &h, sizeof(h), NULL, 0, host_id,
++			 (void **)&resp_hdr);
++
++	if (!ret)
++		ret = resp_hdr->code;
++	if (ret)
++		goto out;
++
++	resp_len = resp_hdr->h.length - sizeof(*resp_hdr);
++	if (resp_len < sizeof(*resp)) {
++		ret = -EBADMSG;
++		goto out;
++	}
++
++	resp = (struct bh_resp_list_ta_packages *)resp_hdr->data;
++	if (!resp->count) {
++		/* return success, there are no ta packages loaded in DAL FW */
++		ret = 0;
++		goto out;
++	}
++
++	if (resp_len != sizeof(uuid_t) * resp->count + sizeof(*resp)) {
++		ret = -EBADMSG;
++		goto out;
++	}
++
++	outbuf = kcalloc(resp->count, sizeof(uuid_t), GFP_KERNEL);
++
++	if (!outbuf) {
++		ret = -ENOMEM;
++		goto out;
++	}
++
++	for (i = 0; i < resp->count; i++)
++		outbuf[i] = resp->ta_ids[i];
++
++	*ta_ids = outbuf;
++	*count = resp->count;
++
++out:
++	kfree(resp_hdr);
++	return ret;
++}
++
++/**
++ * bh_proxy_dnload_jta - download ta package to DAL
++ *
++ * @conn_idx: fw client connection idx
++ * @ta_id: trusted application (ta) id
++ * @ta_pkg: ta binary package
++ * @pkg_len: ta binary package length
++ *
++ * Return: 0 on success
++ *         <0 on system failure
++ *         >0 on DAL FW failure
++ */
++int bh_proxy_dnload_jta(unsigned int conn_idx, uuid_t *ta_id,
++			const char *ta_pkg, unsigned int pkg_len)
++{
++	struct bh_command_header *h;
++	struct bh_download_jta_cmd *cmd;
++	char cmdbuf[CMD_BUF_SIZE(*cmd)];
++	struct bh_response_header *resp_hdr;
++	u64 host_id;
++	int ret;
++
++	if (!ta_pkg || !pkg_len || !ta_id)
++		return -EINVAL;
++
++	memset(cmdbuf, 0, sizeof(cmdbuf));
++	resp_hdr = NULL;
++
++	h = (struct bh_command_header *)cmdbuf;
++	cmd = (struct bh_download_jta_cmd *)h->cmd;
++	h->id = BHP_CMD_DOWNLOAD_JAVATA;
++	cmd->ta_id = *ta_id;
++
++	host_id = bh_get_msg_host_id();
++	ret = bh_request(conn_idx, h, CMD_BUF_SIZE(*cmd), ta_pkg, pkg_len,
++			 host_id, (void **)&resp_hdr);
++
++	if (!ret)
++		ret = resp_hdr->code;
++
++	kfree(resp_hdr);
++
++	return ret;
++}
++
++/**
++ * bh_proxy_open_jta_session - send open session command
++ *
++ * @conn_idx: fw client connection idx
++ * @ta_id: trusted application (ta) id
++ * @init_buffer: init parameters to the session (optional)
++ * @init_len: length of the init parameters
++ * @host_id: out param to hold the session host id
++ * @ta_pkg: ta binary package
++ * @pkg_len: ta binary package length
++ *
++ * Return: 0 on success
++ *         <0 on system failure
++ *         >0 on DAL FW failure
++ */
++int bh_proxy_open_jta_session(unsigned int conn_idx,
++			      uuid_t *ta_id,
++			      const char *init_buffer,
++			      unsigned int init_len,
++			      u64 *host_id,
++			      const char *ta_pkg,
++			      unsigned int pkg_len)
++{
++	int ret;
++	struct bh_command_header *h;
++	struct bh_open_jta_session_cmd *cmd;
++	char cmdbuf[CMD_BUF_SIZE(*cmd)];
++	struct bh_response_header *resp_hdr;
++	struct bh_session_record *session;
++
++	if (!host_id || !ta_id)
++		return -EINVAL;
++
++	if (!init_buffer && init_len > 0)
++		return -EINVAL;
++
++	memset(cmdbuf, 0, sizeof(cmdbuf));
++	resp_hdr = NULL;
++
++	h = (struct bh_command_header *)cmdbuf;
++	cmd = (struct bh_open_jta_session_cmd *)h->cmd;
++
++	session = kzalloc(sizeof(*session), GFP_KERNEL);
++	if (!session)
++		return -ENOMEM;
++
++	session->host_id = bh_get_msg_host_id();
++	bh_session_add(conn_idx, session);
++
++	h->id = BHP_CMD_OPEN_JTASESSION;
++	cmd->ta_id = *ta_id;
++
++	ret = bh_request(conn_idx, h, CMD_BUF_SIZE(*cmd), init_buffer,
++			 init_len, session->host_id, (void **)&resp_hdr);
++
++	if (!ret && resp_hdr)
++		ret = resp_hdr->code;
++
++	if (ret == BHE_PACKAGE_NOT_FOUND) {
++		/*
++		 * VM might delete the TA pkg when no live session.
++		 * Download the TA pkg and open session again
++		 */
++		ret = bh_proxy_dnload_jta(conn_idx, ta_id, ta_pkg, pkg_len);
++		if (ret)
++			goto out;
++
++		kfree(resp_hdr);
++		resp_hdr = NULL;
++		ret = bh_request(conn_idx, h, CMD_BUF_SIZE(*cmd), init_buffer,
++				 init_len, session->host_id,
++				 (void **)&resp_hdr);
++
++		if (!ret && resp_hdr)
++			ret = resp_hdr->code;
++	}
++
++	if (resp_hdr)
++		session->ta_session_id = resp_hdr->ta_session_id;
++	*host_id = session->host_id;
++
++out:
++	if (ret)
++		bh_session_remove(conn_idx, session->host_id);
++
++	kfree(resp_hdr);
++
++	return ret;
++}
++
++/**
++ * bh_request_list_free - free request list of bh_service
++ *
++ * @request_list: request list
++ */
++static void bh_request_list_free(struct list_head *request_list)
++{
++	struct bh_request_cmd *pos, *next;
++
++	list_for_each_entry_safe(pos, next, request_list, link) {
++		list_del(&pos->link);
++		bh_request_free(pos);
++	}
++
++	INIT_LIST_HEAD(request_list);
++}
++
++/**
++ * bh_is_initialized - check if bh is initialized
++ *
++ * Return: true when bh is initialized and false otherwise
++ */
++bool bh_is_initialized(void)
++{
++	return atomic_read(&bh_state) == 1;
++}
++
++/**
++ * bh_init_internal - BH initialization function
++ *
++ * The BH initialization creates the session lists for all
++ * dal devices (dal fw clients)
++ *
++ * Return: 0
++ */
++void bh_init_internal(void)
++{
++	unsigned int i;
++
++	if (!atomic_add_unless(&bh_state, 1, 1))
++		return;
++
++	for (i = CONN_IDX_START; i < MAX_CONNECTIONS; i++)
++		bh_session_list_init(i);
++
++	INIT_LIST_HEAD(&bh_srvc.request_list);
++	mutex_init(&bh_srvc.request_lock);
++	INIT_WORK(&bh_srvc.work, bh_request_work);
++}
++
++/**
++ * bh_deinit_internal - BH  deinit function
++ *
++ * The deinitialization frees the session lists of all
++ * dal devices (dal fw clients)
++ */
++void bh_deinit_internal(void)
++{
++	unsigned int i;
++
++	if (!atomic_add_unless(&bh_state, -1, 0))
++		return;
++
++	for (i = CONN_IDX_START; i < MAX_CONNECTIONS; i++)
++		bh_session_list_free(i);
++
++	cancel_work_sync(&bh_srvc.work);
++	bh_request_list_free(&bh_srvc.request_list);
++}
+diff --git a/drivers/misc/mei/dal/bh_internal.h b/drivers/misc/mei/dal/bh_internal.h
+new file mode 100644
+index 0000000..e50065b
+--- /dev/null
++++ b/drivers/misc/mei/dal/bh_internal.h
+@@ -0,0 +1,78 @@
++/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
++/*
++ * Copyright(c) 2016 - 2018 Intel Corporation. All rights reserved.
++ */
++
++#ifndef __BH_INTERNAL_H
++#define __BH_INTERNAL_H
++
++#include <linux/list.h>
++#include <linux/slab.h>
++#include <linux/bitops.h>
++#include <linux/uuid.h>
++
++#include "bh_cmd_defs.h"
++
++/**
++ * struct bh_session_record - session record
++ *
++ * @link: link in dal_dev_session_list of dal fw client
++ * @host_id: message/session host id
++ * @ta_session_id: session id
++ */
++struct bh_session_record {
++	struct list_head link;
++	u64 host_id;
++	u64 ta_session_id;
++};
++
++/* command buffer size */
++#define CMD_BUF_SIZE(cmd) (sizeof(struct bh_command_header) + sizeof(cmd))
++
++/**
++ * enum bh_connection_index - connection index to dal fw clients
++ *
++ * @CONN_IDX_START: start idx
++ *
++ * @CONN_IDX_IVM: Intel/Issuer Virtual Machine
++ * @CONN_IDX_SDM: Security Domain Manager
++ * @CONN_IDX_LAUNCHER: Run Time Manager (Launcher)
++ *
++ * @MAX_CONNECTIONS: max connection idx
++ */
++enum bh_connection_index {
++	CONN_IDX_START = 0,
++
++	CONN_IDX_IVM = 0,
++	CONN_IDX_SDM = 1,
++	CONN_IDX_LAUNCHER = 2,
++
++	MAX_CONNECTIONS
++};
++
++u64 bh_get_msg_host_id(void);
++
++struct bh_session_record *bh_session_find(unsigned int conn_idx, u64 host_id);
++void bh_session_add(unsigned int conn_idx, struct bh_session_record *session);
++void bh_session_remove(unsigned int conn_idx, u64 host_id);
++
++int bh_request(unsigned int conn_idx,
++	       void *hdr, unsigned int hdr_len,
++	       const void *data, unsigned int data_len,
++	       u64 host_id, void **response);
++
++int bh_proxy_check_svl_jta_blocked_state(uuid_t *ta_id);
++
++int bh_proxy_list_jta_packages(unsigned int conn_idx,
++			       unsigned int *count, uuid_t **ta_ids);
++
++int bh_proxy_dnload_jta(unsigned int conn_idx, uuid_t *ta_id,
++			const char *ta_pkg, unsigned int pkg_len);
++
++int bh_proxy_open_jta_session(unsigned int conn_idx, uuid_t *ta_id,
++			      const char *init_buffer, unsigned int init_len,
++			      u64 *host_id, const char *ta_pkg,
++			      unsigned int pkg_len);
++
++void bh_prep_session_close_cmd(void *cmdbuf, u64 ta_session_id);
++#endif /* __BH_INTERNAL_H */
+-- 
+2.7.4
+

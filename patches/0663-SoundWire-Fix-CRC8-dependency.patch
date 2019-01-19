@@ -1,0 +1,36 @@
+From 4dfe5611c0fa6790ce238e26dafbbc133afe7065 Mon Sep 17 00:00:00 2001
+From: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Date: Wed, 20 Sep 2017 14:26:09 +0530
+Subject: [PATCH 0663/1132] SoundWire: Fix CRC8 dependency
+
+CRC8 should be selected when SDW is selected. So use 'select' instead of
+'depends' in Kconfig.
+
+Change-Id: Ia5f7c07750574cee1f6308bf884bd3b5441aedb3
+Signed-off-by: Guneshwor Singh <guneshwor.o.singh@intel.com>
+Signed-off-by: Dronamraju, Santosh Pavan KumarX <santosh.pavan.kumarx.dronamraju@intel.com>
+Reviewed-on:
+Reviewed-by: Prabhu, PuneethX <puneethx.prabhu@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Pawse, GuruprasadX <guruprasadx.pawse@intel.com>
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ drivers/sdw/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/sdw/Kconfig b/drivers/sdw/Kconfig
+index 660188b..7e5a57f 100644
+--- a/drivers/sdw/Kconfig
++++ b/drivers/sdw/Kconfig
+@@ -1,6 +1,6 @@
+ menuconfig SDW
+ 	tristate "SoundWire bus support"
+-	depends on CRC8
++	select CRC8
+ 	depends on X86
+ 	help
+ 	  SoundWire interface is typically used for transporting data
+-- 
+2.7.4
+

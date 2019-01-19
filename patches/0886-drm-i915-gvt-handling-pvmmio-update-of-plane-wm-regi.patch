@@ -1,0 +1,65 @@
+From 1b18c069cdb29a7a2c103effd054f7408141c87c Mon Sep 17 00:00:00 2001
+From: Fei Jiang <fei.jiang@intel.com>
+Date: Fri, 14 Sep 2018 16:10:21 +0800
+Subject: [PATCH 0886/1132] drm/i915/gvt: handling pvmmio update of plane wm
+ registers in GVT-g
+
+When pvmmio level PVMMIO_PLANE_WM_UPDATE is enabled, need handle multiple
+plane wm related registers updating when PLANE_NV12_BUF_CFG writing is
+traped.
+sos only patch.
+
+Signed-off-by: Fei Jiang <fei.jiang@intel.com>
+Reviewed-by: Min He <min.he@intel.com>
+Reviewed-by: Zhao Yakui <yakui.zhao@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/handlers.c | 26 +++++++++++++++++++++++++-
+ 1 file changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/handlers.c b/drivers/gpu/drm/i915/gvt/handlers.c
+index d1870e0..16e2d41 100644
+--- a/drivers/gpu/drm/i915/gvt/handlers.c
++++ b/drivers/gpu/drm/i915/gvt/handlers.c
+@@ -2947,6 +2947,29 @@ static int skl_plane_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
+ 	return 0;
+ }
+ 
++static int pv_plane_wm_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
++		void *p_data, unsigned int bytes)
++{
++	unsigned int pipe = SKL_PLANE_REG_TO_PIPE(offset);
++	unsigned int plane = SKL_PLANE_REG_TO_PLANE(offset);
++	struct pv_plane_wm_update *pv_plane_wm =
++		&vgpu->mmio.shared_page->pv_plane_wm;
++	int level;
++
++	if (VGPU_PVMMIO(vgpu) & PVMMIO_PLANE_WM_UPDATE) {
++		for (level = 0; level <= pv_plane_wm->max_wm_level; level++)
++			skl_plane_mmio_write(vgpu,
++				i915_mmio_reg_offset(
++					PLANE_WM(pipe, plane, level)),
++				&pv_plane_wm->plane_wm_level[level], 4);
++		skl_plane_mmio_write(vgpu,
++			i915_mmio_reg_offset(PLANE_WM_TRANS(pipe, plane)),
++			&pv_plane_wm->plane_trans_wm_level, 4);
++		/* null function for PLANE_BUF_CFG and PLANE_NV12_BUF_CFG */
++	}
++	return 0;
++}
++
+ #define MMIO_PIPES_SDH(prefix, plane, s, d, r, w) do { \
+ 	int pipe; \
+ 	for_each_pipe(dev_priv, pipe) \
+@@ -3091,7 +3114,8 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
+ 
+ 	MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, skl_plane_mmio_write);
+ 	MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, skl_plane_mmio_write);
+-	MMIO_PLANES_DH(PLANE_NV12_BUF_CFG, D_SKL_PLUS, NULL, NULL);
++	MMIO_PLANES_DH(PLANE_NV12_BUF_CFG, D_SKL_PLUS, NULL,
++		       pv_plane_wm_mmio_write);
+ 	MMIO_PLANES_DH(PLANE_BUF_CFG, D_SKL_PLUS, NULL, NULL);
+ 
+ 	MMIO_DH(CUR_BUF_CFG(PIPE_A), D_SKL_PLUS, NULL, NULL);
+-- 
+2.7.4
+

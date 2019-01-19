@@ -1,0 +1,31 @@
+From 8c8797ae55e7dce094b37142d166a30d1e60b0a6 Mon Sep 17 00:00:00 2001
+From: Chang Ying <ying.chang@intel.com>
+Date: Thu, 25 Oct 2018 16:20:44 +0800
+Subject: [PATCH 0304/1132] mm: export some vm_area APIs
+
+These APIs are needed in DMA mapping API implementation
+as a module. Device specific IOMMUs with associated DMA
+mapping implementations should be buildable as modules.
+
+Change-Id: I46bf3823345ae0bd9cd437ea25b6b29a4b727126
+Signed-off-by: Chang Ying <ying.chang@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ mm/vmalloc.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/mm/vmalloc.c b/mm/vmalloc.c
+index 4952457..ccc42f1 100644
+--- a/mm/vmalloc.c
++++ b/mm/vmalloc.c
+@@ -1464,6 +1464,7 @@ struct vm_struct *find_vm_area(const void *addr)
+ 
+ 	return NULL;
+ }
++EXPORT_SYMBOL_GPL(find_vm_area);
+ 
+ /**
+  *	remove_vm_area  -  find and remove a continuous kernel virtual area
+-- 
+2.7.4
+

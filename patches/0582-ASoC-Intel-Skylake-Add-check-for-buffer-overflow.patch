@@ -1,0 +1,38 @@
+From e896fd9e829939a1ab5dd6cee50f98662059cfa9 Mon Sep 17 00:00:00 2001
+From: Senthilnathan Veppur <senthilnathanx.veppur@intel.com>
+Date: Wed, 23 Mar 2016 16:46:08 +0530
+Subject: [PATCH 0582/1132] ASoC: Intel: Skylake: Add check for buffer overflow
+
+Return error if source buffer would overflow in strncpy.
+
+Change-Id: I8637aa3fed40dd5f042cb041cc5a447506bc15d2
+Signed-off-by: Senthilnathan Veppur <senthilnathanx.veppur@intel.com>
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+Reviewed-on:
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl-debug.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/sound/soc/intel/skylake/skl-debug.c b/sound/soc/intel/skylake/skl-debug.c
+index 8f6d11d4..6dc4ef3 100644
+--- a/sound/soc/intel/skylake/skl-debug.c
++++ b/sound/soc/intel/skylake/skl-debug.c
+@@ -603,6 +603,10 @@ static ssize_t adsp_control_write(struct file *file,
+ 
+ 	while (buf[j] != '\0') {
+ 		if (buf[j] == ',') {
++			if ((bufsize-j) > sizeof(id)) {
++				dev_err(d->dev, "ID buffer overflow\n");
++				return -EINVAL;
++			}
+ 			strncpy(id, &buf[j+1], (bufsize-j));
+ 			buf[j] = '\0';
+ 			tx_param = 1;
+-- 
+2.7.4
+

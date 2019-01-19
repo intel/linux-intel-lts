@@ -1,0 +1,168 @@
+From dd48917a08c2ecd4cb1b0ad370703617e48614fe Mon Sep 17 00:00:00 2001
+From: Yin Fengwei <fengwei.yin@intel.com>
+Date: Fri, 31 Aug 2018 10:58:57 +0800
+Subject: [PATCH 0752/1132] vhm: refine vm related hypercall/ioctrl
+
+Change-Id: I028f59998733f3d066e2ead7768297570d97bf22
+Tracked-On:218445
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+Reviewed-on:
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 17 ++++-------------
+ drivers/vhm/vhm_hypercall.c        |  9 ++-------
+ include/linux/vhm/acrn_common.h    | 11 +++++++----
+ include/linux/vhm/acrn_hv_defs.h   |  5 ++---
+ include/linux/vhm/vhm_hypercall.h  |  2 +-
+ include/linux/vhm/vhm_ioctl_defs.h |  5 ++---
+ 6 files changed, 18 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index e36a5e2..d3fd572 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -189,12 +189,12 @@ static long vhm_dev_ioctl(struct file *filep,
+ 
+ 		vm->vmid = created_vm.vmid;
+ 
+-		pr_info("vhm: VM %ld created\n", created_vm.vmid);
++		pr_info("vhm: VM %d created\n", created_vm.vmid);
+ 		break;
+ 	}
+ 
+-	case IC_RESUME_VM: {
+-		ret = hcall_resume_vm(vm->vmid);
++	case IC_START_VM: {
++		ret = hcall_start_vm(vm->vmid);
+ 		if (ret < 0) {
+ 			pr_err("vhm: failed to start VM %ld!\n", vm->vmid);
+ 			return -EFAULT;
+@@ -221,15 +221,6 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		break;
+ 	}
+ 
+-	case IC_QUERY_VMSTATE: {
+-		ret = hcall_query_vm_state(vm->vmid);
+-		if (ret < 0) {
+-			pr_err("vhm: failed to query VM State%ld!\n", vm->vmid);
+-			return -EFAULT;
+-		}
+-		return ret;
+-	}
+-
+ 	case IC_CREATE_VCPU: {
+ 		struct acrn_create_vcpu cv;
+ 
+@@ -240,7 +231,7 @@ static long vhm_dev_ioctl(struct file *filep,
+ 		ret = acrn_hypercall2(HC_CREATE_VCPU, vm->vmid,
+ 				virt_to_phys(&cv));
+ 		if (ret < 0) {
+-			pr_err("vhm: failed to create vcpu %ld!\n", cv.vcpuid);
++			pr_err("vhm: failed to create vcpu %d!\n", cv.vcpu_id);
+ 			return -EFAULT;
+ 		}
+ 
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index 94a9593..b273847 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -57,9 +57,9 @@ inline long hcall_create_vm(unsigned long vminfo)
+ 	return acrn_hypercall2(HC_CREATE_VM, 0, vminfo);
+ }
+ 
+-inline long hcall_resume_vm(unsigned long vmid)
++inline long hcall_start_vm(unsigned long vmid)
+ {
+-	return  acrn_hypercall1(HC_RESUME_VM, vmid);
++	return  acrn_hypercall1(HC_START_VM, vmid);
+ }
+ 
+ inline long hcall_pause_vm(unsigned long vmid)
+@@ -72,11 +72,6 @@ inline long hcall_destroy_vm(unsigned long vmid)
+ 	return  acrn_hypercall1(HC_DESTROY_VM, vmid);
+ }
+ 
+-inline long hcall_query_vm_state(unsigned long vmid)
+-{
+-	return acrn_hypercall1(HC_QUERY_VMSTATE, vmid);
+-}
+-
+ inline long hcall_set_memmap(unsigned long vmid, unsigned long memmap)
+ {
+ 	return acrn_hypercall2(HC_VM_SET_MEMMAP, vmid, memmap);
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index aa61fbe..23f80ac 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -141,13 +141,16 @@ struct vhm_request_buffer {
+ 
+ /* Common API params */
+ struct acrn_create_vm {
+-	unsigned long vmid;		/* OUT: HV return vmid to VHM */
+-	unsigned long vcpu_num;		/* IN: VM vcpu number */
++	int32_t vmid;   /* OUT: return vmid to VHM. Keep it first field */
++	uint32_t vcpu_num;      /* IN: VM vcpu number */
++	uint8_t  GUID[16];      /* IN: GUID of this vm */
++	uint8_t  trusty_enabled;/* IN: whether trusty is enabled */
++	uint8_t  reserved[31];   /* Reserved for future use */
+ } __attribute__((aligned(8)));
+ 
+ struct acrn_create_vcpu {
+-	int vcpuid;                     /* IN: vcpu id */
+-	int pcpuid;			/* IN: pcpu id */
++	uint32_t vcpu_id;	/* IN: vcpu id */
++	uint32_t pcpu_id;	/* IN: pcpu id */
+ } __attribute__((aligned(8)));
+ 
+ struct acrn_set_ioreq_buffer {
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index fa32243..eb1d4c9 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -70,10 +70,9 @@
+ #define HC_GET_API_VERSION          _HC_ID(HC_ID, HC_ID_VM_BASE + 0x00)
+ #define HC_CREATE_VM                _HC_ID(HC_ID, HC_ID_VM_BASE + 0x01)
+ #define HC_DESTROY_VM               _HC_ID(HC_ID, HC_ID_VM_BASE + 0x02)
+-#define HC_RESUME_VM                _HC_ID(HC_ID, HC_ID_VM_BASE + 0x03)
++#define HC_START_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x03)
+ #define HC_PAUSE_VM                 _HC_ID(HC_ID, HC_ID_VM_BASE + 0x04)
+-#define HC_QUERY_VMSTATE            _HC_ID(HC_ID, HC_ID_VM_BASE + 0x05)
+-#define HC_CREATE_VCPU              _HC_ID(HC_ID, HC_ID_VM_BASE + 0x06)
++#define HC_CREATE_VCPU              _HC_ID(HC_ID, HC_ID_VM_BASE + 0x05)
+ 
+ /* IRQ and Interrupts */
+ #define HC_ID_IRQ_BASE              0x100UL
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index 5447e951b..b40f8f8 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -138,7 +138,7 @@ static inline long acrn_hypercall4(unsigned long hcall_id, unsigned long param1,
+ }
+ 
+ inline long hcall_create_vm(unsigned long vminfo);
+-inline long hcall_resume_vm(unsigned long vmid);
++inline long hcall_start_vm(unsigned long vmid);
+ inline long hcall_pause_vm(unsigned long vmid);
+ inline long hcall_destroy_vm(unsigned long vmid);
+ inline long hcall_query_vm_state(unsigned long vmid);
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 79d91a8..e157d6a 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -60,10 +60,9 @@
+ #define IC_GET_API_VERSION             _IC_ID(IC_ID, IC_ID_VM_BASE + 0x00)
+ #define IC_CREATE_VM                   _IC_ID(IC_ID, IC_ID_VM_BASE + 0x01)
+ #define IC_DESTROY_VM                  _IC_ID(IC_ID, IC_ID_VM_BASE + 0x02)
+-#define IC_RESUME_VM                   _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
++#define IC_START_VM                   _IC_ID(IC_ID, IC_ID_VM_BASE + 0x03)
+ #define IC_PAUSE_VM                    _IC_ID(IC_ID, IC_ID_VM_BASE + 0x04)
+-#define IC_QUERY_VMSTATE               _IC_ID(IC_ID, IC_ID_VM_BASE + 0x05)
+-#define	IC_CREATE_VCPU                 _IC_ID(IC_ID, IC_ID_VM_BASE + 0x06)
++#define	IC_CREATE_VCPU                 _IC_ID(IC_ID, IC_ID_VM_BASE + 0x05)
+ 
+ /* IRQ and Interrupts */
+ #define IC_ID_IRQ_BASE                 0x100UL
+-- 
+2.7.4
+

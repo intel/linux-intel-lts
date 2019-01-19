@@ -1,0 +1,242 @@
+From ddb90018eeed39f3d46262b5093d9f6c436c4caf Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Mon, 10 Dec 2018 04:33:36 -0500
+Subject: [PATCH 1063/1132] drm/i915/preemption: Select timeout when scheduling
+
+The choice of preemption timeout is determined by the context from which
+we trigger the preemption, as such allow the caller to specify the
+desired timeout.
+
+Effectively the other choice would be to use the shortest timeout along
+the dependency chain. However, given that we would have already
+triggered preemption for the dependency chain, we can assume that no
+preemption along that chain is more important than the current request,
+ergo we need only consider the current timeout. Realising this, we can
+then pass control of the preemption timeout to the caller for greater
+flexibility.
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+
+backporting from: https://patchwork.freedesktop.org/series/43299/
+Fix code conflicts
+Tracked-On: OLINUX-5626
+
+Signed-off-by: kimsehun <se.hun.kim@intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem.c            |   2 +-
+ drivers/gpu/drm/i915/i915_request.c        |   2 +-
+ drivers/gpu/drm/i915/intel_lrc.c           |   5 +-
+ drivers/gpu/drm/i915/intel_ringbuffer.h    |   6 +-
+ drivers/gpu/drm/i915/selftests/intel_lrc.c | 110 ++++++++++++++++++++++++++++-
+ 5 files changed, 118 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem.c b/drivers/gpu/drm/i915/i915_gem.c
+index dd51902..29fba96 100644
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -1431,7 +1431,7 @@ static void __fence_set_priority(struct dma_fence *fence,
+ 	local_bh_disable();
+ 	rcu_read_lock(); /* RCU serialisation for set-wedged protection */
+ 	if (engine->schedule)
+-		engine->schedule(rq, attr);
++		engine->schedule(rq, attr, 0);
+ 	rcu_read_unlock();
+ 	local_bh_enable(); /* kick the tasklets if queues were reprioritised */
+ }
+diff --git a/drivers/gpu/drm/i915/i915_request.c b/drivers/gpu/drm/i915/i915_request.c
+index 1bd2a7e..b8b922f 100644
+--- a/drivers/gpu/drm/i915/i915_request.c
++++ b/drivers/gpu/drm/i915/i915_request.c
+@@ -1128,7 +1128,7 @@ void i915_request_add(struct i915_request *request)
+ 	local_bh_disable();
+ 	rcu_read_lock(); /* RCU serialisation for set-wedged protection */
+ 	if (engine->schedule)
+-		engine->schedule(request, &request->gem_context->sched);
++		engine->schedule(request, &request->gem_context->sched, 0);
+ 	rcu_read_unlock();
+ 	i915_sw_fence_commit(&request->submit);
+ 	local_bh_enable(); /* Kick the execlists tasklet if just scheduled */
+diff --git a/drivers/gpu/drm/i915/intel_lrc.c b/drivers/gpu/drm/i915/intel_lrc.c
+index 874c6fb..29d2321 100644
+--- a/drivers/gpu/drm/i915/intel_lrc.c
++++ b/drivers/gpu/drm/i915/intel_lrc.c
+@@ -1305,7 +1305,8 @@ sched_lock_engine(struct i915_sched_node *node, struct intel_engine_cs *locked)
+ }
+ 
+ static void execlists_schedule(struct i915_request *request,
+-			       const struct i915_sched_attr *attr)
++			       const struct i915_sched_attr *attr,
++			       unsigned int timeout)
+ {
+ 	struct i915_priolist *uninitialized_var(pl);
+ 	struct intel_engine_cs *engine, *last;
+@@ -1409,7 +1410,7 @@ static void execlists_schedule(struct i915_request *request,
+ 		if (prio > engine->execlists.queue_priority &&
+ 		    i915_sw_fence_done(&sched_to_request(node)->submit)) {
+ 			/* defer submission until after all of our updates */
+-			__update_queue(engine, prio, 0);
++			__update_queue(engine, prio, timeout);
+ 			tasklet_hi_schedule(&engine->execlists.tasklet);
+ 		}
+ 	}
+diff --git a/drivers/gpu/drm/i915/intel_ringbuffer.h b/drivers/gpu/drm/i915/intel_ringbuffer.h
+index a0118fb..5ef96c6 100644
+--- a/drivers/gpu/drm/i915/intel_ringbuffer.h
++++ b/drivers/gpu/drm/i915/intel_ringbuffer.h
+@@ -490,14 +490,16 @@ struct intel_engine_cs {
+ 	 */
+ 	void		(*submit_request)(struct i915_request *rq);
+ 
+-	/* Call when the priority on a request has changed and it and its
++	/*
++	 * Call when the priority on a request has changed and it and its
+ 	 * dependencies may need rescheduling. Note the request itself may
+ 	 * not be ready to run!
+ 	 *
+ 	 * Called under the struct_mutex.
+ 	 */
+ 	void		(*schedule)(struct i915_request *request,
+-				    const struct i915_sched_attr *attr);
++				    const struct i915_sched_attr *attr,
++				    unsigned int timeout);
+ 
+ 	/*
+ 	 * Cancel all requests on the hardware, or queued for execution.
+diff --git a/drivers/gpu/drm/i915/selftests/intel_lrc.c b/drivers/gpu/drm/i915/selftests/intel_lrc.c
+index 9d5672b..4a89662 100644
+--- a/drivers/gpu/drm/i915/selftests/intel_lrc.c
++++ b/drivers/gpu/drm/i915/selftests/intel_lrc.c
+@@ -413,7 +413,7 @@ static int live_late_preempt(void *arg)
+ 		}
+ 
+ 		attr.priority = I915_PRIORITY_MAX;
+-		engine->schedule(rq, &attr);
++		engine->schedule(rq, &attr, 0);
+ 
+ 		if (!wait_for_spinner(&spin_hi, rq)) {
+ 			pr_err("High priority context failed to preempt the low priority context\n");
+@@ -739,6 +739,113 @@ static int live_preempt_reset(void *arg)
+ 	return err;
+ }
+ 
++static int live_late_preempt_timeout(void *arg)
++{
++	struct drm_i915_private *i915 = arg;
++	struct i915_gem_context *ctx_hi, *ctx_lo;
++	struct spinner spin_hi, spin_lo;
++	struct intel_engine_cs *engine;
++	enum intel_engine_id id;
++	int err = -ENOMEM;
++
++	if (!HAS_LOGICAL_RING_PREEMPTION(i915))
++		return 0;
++
++	mutex_lock(&i915->drm.struct_mutex);
++
++	if (spinner_init(&spin_hi, i915))
++		goto err_unlock;
++
++	if (spinner_init(&spin_lo, i915))
++		goto err_spin_hi;
++
++	ctx_hi = kernel_context(i915);
++	if (!ctx_hi)
++		goto err_spin_lo;
++
++	ctx_lo = kernel_context(i915);
++	if (!ctx_lo)
++		goto err_ctx_hi;
++
++	for_each_engine(engine, i915, id) {
++		struct i915_request *rq;
++
++		rq = spinner_create_request(&spin_lo, ctx_lo, engine, MI_NOOP);
++		if (IS_ERR(rq)) {
++			err = PTR_ERR(rq);
++			goto err_ctx_lo;
++		}
++
++		i915_request_add(rq);
++		if (!wait_for_spinner(&spin_lo, rq)) {
++			pr_err("First context failed to start\n");
++			goto err_wedged;
++		}
++
++		rq = spinner_create_request(&spin_hi, ctx_hi, engine, MI_NOOP);
++		if (IS_ERR(rq)) {
++			spinner_end(&spin_lo);
++			err = PTR_ERR(rq);
++			goto err_ctx_lo;
++		}
++
++		i915_request_add(rq);
++		if (wait_for_spinner(&spin_hi, rq)) {
++			pr_err("Second context overtook first?\n");
++			goto err_wedged;
++		}
++
++		GEM_TRACE("%s rescheduling (no timeout)\n", engine->name);
++		engine->schedule(rq, &(struct i915_sched_attr){
++				 .priority = 1,
++				 }, 0);
++
++		if (wait_for_spinner(&spin_hi, rq)) {
++			pr_err("High priority context overtook first without an arbitration point?\n");
++			goto err_wedged;
++		}
++
++		GEM_TRACE("%s rescheduling (with timeout)\n", engine->name);
++		engine->schedule(rq, &(struct i915_sched_attr){
++				 .priority = 2,
++				 }, 10 * 1000 /* 10us */);
++
++		if (!wait_for_spinner(&spin_hi, rq)) {
++			pr_err("High priority context failed to force itself in front of the low priority context\n");
++			GEM_TRACE_DUMP();
++			goto err_wedged;
++		}
++
++		spinner_end(&spin_hi);
++		spinner_end(&spin_lo);
++		if (igt_flush_test(i915, I915_WAIT_LOCKED)) {
++			err = -EIO;
++			goto err_ctx_lo;
++		}
++	}
++
++	err = 0;
++err_ctx_lo:
++	kernel_context_close(ctx_lo);
++err_ctx_hi:
++	kernel_context_close(ctx_hi);
++err_spin_lo:
++	spinner_fini(&spin_lo);
++err_spin_hi:
++	spinner_fini(&spin_hi);
++err_unlock:
++	igt_flush_test(i915, I915_WAIT_LOCKED);
++	mutex_unlock(&i915->drm.struct_mutex);
++	return err;
++
++err_wedged:
++	spinner_end(&spin_hi);
++	spinner_end(&spin_lo);
++	i915_gem_set_wedged(i915);
++	err = -EIO;
++	goto err_ctx_lo;
++}
++
+ int intel_execlists_live_selftests(struct drm_i915_private *i915)
+ {
+ 	static const struct i915_subtest tests[] = {
+@@ -748,6 +855,7 @@ int intel_execlists_live_selftests(struct drm_i915_private *i915)
+ 		SUBTEST(live_preempt_hang),
+ 		SUBTEST(live_preempt_timeout),
+ 		SUBTEST(live_preempt_reset),
++		SUBTEST(live_late_preempt_timeout),
+ 	};
+ 
+ 	if (!HAS_EXECLISTS(i915))
+-- 
+2.7.4
+

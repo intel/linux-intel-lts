@@ -1,0 +1,68 @@
+From 39a689c0a895ec76050afb36fd3b1f369cf29832 Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Wed, 2 Jan 2019 09:56:50 +0800
+Subject: [PATCH 1100/1132] vhm: fix audio backend module handle ioreq
+ incorrectly
+
+While we get all ioreq from vhm module, we need only handle those
+belongs us. Without this patch, audio backend take all ioreqs and mark
+them as completed which is not correct.
+Also, REQ_STATE_COMPLETE should be marked in acrn_ioreq_complete_request,
+so we needn't do that before it.
+
+Change-Id: Ib0404f418b126e6608d80dc59fac455897d61c94
+Signed-off-by: Shuo A Liu <shuo.a.liu@intel.com>
+Tracked-On: PKT-1635
+---
+ sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c | 19 ++++++++++---------
+ 1 file changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c b/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
+index 225b2ab..647fbc0 100644
+--- a/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
++++ b/sound/soc/intel/skylake/virtio/skl-virtio-miscdev.c
+@@ -66,7 +66,7 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
+ 	struct snd_skl_vbe_client *client;
+ 	struct snd_skl_vbe *vbe;
+ 	struct skl *sdev = snd_skl_get_virtio_audio();
+-	int i, handle;
++	int vcpu, handle;
+ 
+ 	if (!sdev) {
+ 		pr_err("error: no BE registered for SOF!\n");
+@@ -85,14 +85,16 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
+ 	vbe = client->vbe;
+ 
+ 	/* go through all vcpu for the valid request buffer */
+-	for (i = 0; i < client->max_vcpu; i++) {
+-		req = &client->req_buf[i];
+-		handle = 0;
+-
+-		/* ignore if not processing state */
+-		if (atomic_read(&req->processed) != REQ_STATE_PROCESSING)
++	while (1) {
++		vcpu = find_first_bit(ioreqs_map, client->max_vcpu);
++		if (vcpu == client->max_vcpu)
++			break;
++		req = &client->req_buf[vcpu];
++		if (atomic_read(&req->processed) != REQ_STATE_PROCESSING ||
++				req->client != client->vhm_client_id)
+ 			continue;
+ 
++		handle = 0;
+ 		dev_dbg(sdev->skl_sst->dev,
+ 			"ioreq type %d, direction %d, addr 0x%llx, size 0x%llx, value 0x%x\n",
+ 			 req->type,
+@@ -112,8 +114,7 @@ static int handle_kick(int client_id, unsigned long *ioreqs_map)
+ 				(handle = 1) : (handle = 0);
+ 		}
+ 
+-		atomic_set(&req->processed, REQ_STATE_COMPLETE);
+-		acrn_ioreq_complete_request(client->vhm_client_id, i, req);
++		acrn_ioreq_complete_request(client->vhm_client_id, vcpu, req);
+ 
+ 		/* handle VQ kick if needed */
+ 		if (handle)
+-- 
+2.7.4
+

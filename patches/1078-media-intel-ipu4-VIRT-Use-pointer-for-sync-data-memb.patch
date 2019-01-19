@@ -1,0 +1,107 @@
+From 3a417697361cc0f126e87703fe90fedceda27e70 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Fri, 23 Nov 2018 03:56:55 +0000
+Subject: [PATCH 1078/1132] media: intel-ipu4: [VIRT] Use pointer for sync data
+ member in request struct to avoid size mismatch.
+
+As kernel data struct size can be affected
+by kernel config and also kernel version. A
+declaration by value of it in a struct can caused
+the object size vary for SOS and UOS.
+
+Change-Id: I1b5bad54e5660061eafc6e453823f348fbaaf872
+Tracked-On: OAM-64123
+Tracked-On: OAM-64294
+Tracked-On: OAM-64937
+Tracked-On: OLINUX-2973
+Tracked-On: OLINUX-3042
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h        | 3 +--
+ .../media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c  | 9 ++++++---
+ drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c            | 6 +++---
+ 3 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+index 78f40c3..43caddb 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-common.h
+@@ -32,8 +32,7 @@ struct ipu4_virtio_req {
+ 	unsigned int cmd;
+ 	unsigned int func_ret;
+ 	unsigned int op[MAX_NUMBER_OF_OPERANDS];
+-	struct completion wait;
+-	struct list_head node;
++	struct completion *wait;
+ 	u64 payload;
+ };
+ struct test_payload {
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
+index 09294da..b419fd6 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe-request-queue.c
+@@ -25,7 +25,8 @@ int ipu4_virtio_fe_req_queue_init(void)
+ 														__func__);
+ 			return -1;
+ 		}
+-		init_completion(&req->wait);
++		req->wait = kzalloc(sizeof(struct completion), GFP_KERNEL);
++		init_completion(req->wait);
+ 		ipu4_virtio_ring_push(&ipu4_virtio_fe_req_queue, req);
+ 	}
+ 	return 0;
+@@ -38,8 +39,10 @@ void ipu4_virtio_fe_req_queue_free(void)
+ 
+ 	for (i = 0; i < REQ_RING_SIZE; i++) {
+ 		req = ipu4_virtio_ring_pop(&ipu4_virtio_fe_req_queue);
+-		if (req)
++		if (req) {
++			kfree(req->wait);
+ 			kfree(req);
++		}
+ 		else
+ 			break;
+ 	}
+@@ -55,7 +58,7 @@ struct ipu4_virtio_req *ipu4_virtio_fe_req_queue_get(void)
+ 	req = ipu4_virtio_ring_pop(&ipu4_virtio_fe_req_queue);
+ 	spin_unlock_irqrestore(&ipu4_virtio_fe_req_queue.lock, flags);
+ 	if (req)
+-		reinit_completion(&req->wait);
++		reinit_completion(req->wait);
+ 	return req;
+ }
+ 
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
+index 29b8b47..db7c8df 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-virtio-fe.c
+@@ -41,7 +41,7 @@ static void ipu_virtio_fe_tx_done_vq_0(struct virtqueue *vq)
+ 		spin_unlock_irqrestore(&priv->lock, flags);
+ 		if (req != NULL &&
+ 			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
+-			complete(&req->wait);
++			complete(req->wait);
+ 		}
+ 	} while (req != NULL);
+ 
+@@ -61,7 +61,7 @@ static void ipu_virtio_fe_tx_done_vq_1(struct virtqueue *vq)
+ 		spin_unlock_irqrestore(&priv->lock, flags);
+ 		if (req != NULL &&
+ 			priv->data_avail == sizeof(struct ipu4_virtio_req)) {
+-			complete(&req->wait);
++			complete(req->wait);
+ 		}
+ 	} while (req != NULL);
+ 
+@@ -155,7 +155,7 @@ static int ipu_virtio_fe_send_req(int vmid, struct ipu4_virtio_req *req,
+ 		return -ENOENT;
+ 	}
+ 	ipu_virtio_fe_register_buffer(ipu4_virtio_fe, req, sizeof(*req), idx);
+-	wait_for_completion(&req->wait);
++	wait_for_completion(req->wait);
+ 
+ 	return ret;
+ }
+-- 
+2.7.4
+

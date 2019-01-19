@@ -1,0 +1,41 @@
+From 586f8be4be3e554c2ff4189d89bcb23c2e9bcc19 Mon Sep 17 00:00:00 2001
+From: Dharageswari R <dharageswari.r@intel.com>
+Date: Fri, 15 Dec 2006 12:19:15 +0530
+Subject: [PATCH 0542/1132] ASoC: Intel: Modify Icelake machine id to use RT274
+
+Icelake features rt274 codec. Hence updating to use the
+right machine driver
+
+Change-Id: Ia60530a67b17b682e9a265150b53e1f2fa7095e2
+Signed-off-by: Dharageswari R <dharageswari.r@intel.com>
+Reviewed-on:
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Singh, Guneshwor O <guneshwor.o.singh@intel.com>
+Reviewed-by: Kale, Sanyog R <sanyog.r.kale@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Tested-by: Avati, Santosh Kumar <santosh.kumar.avati@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index aec5d10..b6bc57e 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -1216,7 +1216,12 @@ static const struct snd_soc_acpi_mach sst_cnl_devdata[] = {
+ };
+ 
+ static struct snd_soc_acpi_mach sst_icl_devdata[] = {
+-	{ "dummy", "icl_wm8281", "intel/dsp_fw_icl.bin", NULL, NULL, NULL },
++	{
++		.id = "dummy",
++		.drv_name = "icl_rt274",
++		.fw_filename = "intel/dsp_fw_icl.bin",
++		.pdata = &cnl_pdata,
++	},
+ 	{}
+ };
+ 
+-- 
+2.7.4
+

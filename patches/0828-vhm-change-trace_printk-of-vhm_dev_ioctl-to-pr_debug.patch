@@ -1,0 +1,33 @@
+From ebb2e5d796fce505fc37447aafb90866d27cdd14 Mon Sep 17 00:00:00 2001
+From: Shuo Liu <shuo.a.liu@intel.com>
+Date: Sat, 29 Sep 2018 11:00:46 +0800
+Subject: [PATCH 0828/1132] vhm: change trace_printk of vhm_dev_ioctl to
+ pr_debug
+
+trace_printk will write into the ring buffer by default. Actually, we
+don't need this trace entry as there are many vhm ioctls happen at
+runtime which will flood the ring buffer. So change it to dynamic printk.
+
+Tracked-On: projectacrn/acrn-hypervisor#1328
+Signed-off-by: Shuo Liu <shuo.a.liu@intel.com>
+Acked-by: Anthony Xu <anthony.xu@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 0d25f73..987c7ce 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -160,7 +160,7 @@ static long vhm_dev_ioctl(struct file *filep,
+ 	struct ic_ptdev_irq ic_pt_irq;
+ 	struct hc_ptdev_irq hc_pt_irq;
+ 
+-	trace_printk("[%s] ioctl_num=0x%x\n", __func__, ioctl_num);
++	pr_debug("[%s] ioctl_num=0x%x\n", __func__, ioctl_num);
+ 
+ 	if (ioctl_num == IC_GET_API_VERSION) {
+ 		struct api_version api_version;
+-- 
+2.7.4
+

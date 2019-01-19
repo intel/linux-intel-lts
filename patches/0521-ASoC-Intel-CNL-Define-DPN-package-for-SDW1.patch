@@ -1,0 +1,42 @@
+From 43f228e8c08db56c7dd20ab6de2d50e8c0b7e520 Mon Sep 17 00:00:00 2001
+From: Anil Bhawangirkar <anil.k.bhawangirkar@intel.com>
+Date: Wed, 17 Aug 2016 12:23:35 +0530
+Subject: [PATCH 0521/1132] ASoC: Intel: CNL: Define DPN package for SDW1.
+
+As DPN package entries are not defined in the BIOS for SoundWire
+device 1(SDW1), the capability data-port-type can not be mapped
+for SDW1.
+
+As a workaround, hard code data-port-type for SDW1.
+Workaround is not required for other devices, since
+BIOS has entry for them.
+
+This patch can be reverted once BIOS has entry for SDW1.
+
+Change-Id: I15b0ec44731feb1f1f45466a0f9a9426d31a8dee
+Signed-off-by: Anil Bhawangirkar <anil.k.bhawangirkar@intel.com>
+---
+ sound/soc/intel/skylake/cnl-sst.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index c5ad9fd..18be70b 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -583,7 +583,12 @@ static int skl_register_sdw_masters(struct device *dev, struct skl_sst *dsp,
+ 			 */
+ 			cnl_sdw_get_master_dev_caps(dev, map_data, j);
+ 			/* Both Tx and Rx */
+-			dpn_cap->dpn_type = map_data->sdw_dpn_cap->dpn_type;
++			/* WORKAROUND: hard code for SDW1 */
++			if (j == 1)
++				dpn_cap->dpn_type = SDW_FULL_DP;
++			else
++				dpn_cap->dpn_type =
++					map_data->sdw_dpn_cap->dpn_type;
+ 			dpn_cap->port_direction = 0x3;
+ 			dpn_cap->port_number = j;
+ 			dpn_cap->max_word_length = 32;
+-- 
+2.7.4
+

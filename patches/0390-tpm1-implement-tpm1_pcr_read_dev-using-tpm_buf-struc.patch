@@ -1,0 +1,117 @@
+From e06f22ad82146c44a4a3c79595528139bbda951b Mon Sep 17 00:00:00 2001
+From: Tomas Winkler <tomas.winkler@intel.com>
+Date: Sun, 16 Sep 2018 09:41:30 +0300
+Subject: [PATCH 0390/1132] tpm1: implement tpm1_pcr_read_dev() using tpm_buf
+ structure
+
+Implement tpm1_pcr_read_dev() using tpm_buf and remove
+now unneeded structures from tpm.h
+
+V3: New in the series.
+V4-V5: Resend.
+
+Change-Id: Iead7d84ab5934402dbe1634ece548e7eb5b35a23
+Signed-off-by: Tomas Winkler <tomas.winkler@intel.com>
+Reviewed-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+Tested-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+---
+ drivers/char/tpm/tpm.h      | 18 ++----------------
+ drivers/char/tpm/tpm1-cmd.c | 38 +++++++++++++++++++++-----------------
+ 2 files changed, 23 insertions(+), 33 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm.h b/drivers/char/tpm/tpm.h
+index 6895f18..51d1476 100644
+--- a/drivers/char/tpm/tpm.h
++++ b/drivers/char/tpm/tpm.h
+@@ -382,13 +382,10 @@ typedef union {
+ 	struct	tpm_output_header out;
+ } tpm_cmd_header;
+ 
+-struct tpm_pcrread_out {
+-	u8	pcr_result[TPM_DIGEST_SIZE];
++struct tpm_cmd_t {
++	tpm_cmd_header	header;
+ } __packed;
+ 
+-struct tpm_pcrread_in {
+-	__be32	pcr_idx;
+-} __packed;
+ 
+ /* 128 bytes is an arbitrary cap. This could be as large as TPM_BUFSIZE - 18
+  * bytes, but 128 is still a relatively large number of random bytes and
+@@ -396,17 +393,6 @@ struct tpm_pcrread_in {
+  * compiler warnings about stack frame size. */
+ #define TPM_MAX_RNG_DATA	128
+ 
+-typedef union {
+-	struct	tpm_pcrread_in	pcrread_in;
+-	struct	tpm_pcrread_out	pcrread_out;
+-} tpm_cmd_params;
+-
+-struct tpm_cmd_t {
+-	tpm_cmd_header	header;
+-	tpm_cmd_params	params;
+-} __packed;
+-
+-
+ /* A string buffer type for constructing TPM commands. This is based on the
+  * ideas of string buffer code in security/keys/trusted.h but is heap based
+  * in order to keep the stack usage minimal.
+diff --git a/drivers/char/tpm/tpm1-cmd.c b/drivers/char/tpm/tpm1-cmd.c
+index b5c4fa1..d30f336 100644
+--- a/drivers/char/tpm/tpm1-cmd.c
++++ b/drivers/char/tpm/tpm1-cmd.c
+@@ -571,29 +571,33 @@ int tpm1_get_random(struct tpm_chip *chip, u8 *dest, size_t max)
+ 	return rc;
+ }
+ 
+-#define TPM_ORDINAL_PCRREAD 21
+-#define READ_PCR_RESULT_SIZE 30
+-#define READ_PCR_RESULT_BODY_SIZE 20
+-static const struct tpm_input_header pcrread_header = {
+-	.tag = cpu_to_be16(TPM_TAG_RQU_COMMAND),
+-	.length = cpu_to_be32(14),
+-	.ordinal = cpu_to_be32(TPM_ORDINAL_PCRREAD)
+-};
+-
++#define TPM_ORD_PCRREAD 21
+ int tpm1_pcr_read_dev(struct tpm_chip *chip, int pcr_idx, u8 *res_buf)
+ {
++	struct tpm_buf buf;
+ 	int rc;
+-	struct tpm_cmd_t cmd;
+ 
+-	cmd.header.in = pcrread_header;
+-	cmd.params.pcrread_in.pcr_idx = cpu_to_be32(pcr_idx);
+-	rc = tpm_transmit_cmd(chip, NULL, &cmd, READ_PCR_RESULT_SIZE,
+-			      READ_PCR_RESULT_BODY_SIZE, 0,
++	rc = tpm_buf_init(&buf, TPM_TAG_RQU_COMMAND, TPM_ORD_PCRREAD);
++	if (rc)
++		return rc;
++
++	tpm_buf_append_u32(&buf, pcr_idx);
++
++	rc = tpm_transmit_cmd(chip, NULL, buf.data, PAGE_SIZE,
++			      TPM_DIGEST_SIZE, 0,
+ 			      "attempting to read a pcr value");
++	if (rc)
++		goto out;
+ 
+-	if (rc == 0)
+-		memcpy(res_buf, cmd.params.pcrread_out.pcr_result,
+-		       TPM_DIGEST_SIZE);
++	if (tpm_buf_length(&buf) < TPM_DIGEST_SIZE) {
++		rc = -EFAULT;
++		goto out;
++	}
++
++	memcpy(res_buf, &buf.data[TPM_HEADER_SIZE], TPM_DIGEST_SIZE);
++
++out:
++	tpm_buf_destroy(&buf);
+ 	return rc;
+ }
+ 
+-- 
+2.7.4
+

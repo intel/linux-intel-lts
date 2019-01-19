@@ -1,0 +1,55 @@
+From f3ab8be97bebced42bf0fc0fab3e43f084f01aff Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Sat, 8 Sep 2018 15:37:38 +0800
+Subject: [PATCH 0825/1132] vhm: deinit trusty after hcall_destroy_vm
+
+after deinit_trusty, the released cma memory could be used by other drivers.
+while EPT of this memory area need be remap back to SOS by hcall_destroy_vm.
+with current sequence, an access to EPT unmapped area will cause MMIO access
+error.
+
+for trusty creation, the sequence is like:
+hcall_create_vm
+->
+init_trusty (allocate CMA for trusty memory)
+....>
+UOS hypercall to create trusty world (EPT remapping etc)
+
+for trusty destroy, the sequence changed like below:
+hcall_destroy_vm (include trusty destroy - EPT remapping back etc)
+->
+deinit_trusty (free CMA for trusty memory)
+
+this sequence looks a little confuse, but as hcall_destroy_vm combined trusty
+world destroy operation, we need this operation be done before deinit_trusty.
+
+Tracked-On: https://github.com/projectacrn/acrn-hypervisor/issues/1200
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+Acked-by: Anthony Xu <anthony.xu@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index 6e351c3..d57dc39 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -276,13 +276,13 @@ static long vhm_dev_ioctl(struct file *filep,
+ 	}
+ 
+ 	case IC_DESTROY_VM: {
+-		if (vm->trusty_host_gpa)
+-			deinit_trusty(vm);
+ 		ret = hcall_destroy_vm(vm->vmid);
+ 		if (ret < 0) {
+ 			pr_err("failed to destroy VM %ld\n", vm->vmid);
+ 			return -EFAULT;
+ 		}
++		if (vm->trusty_host_gpa)
++			deinit_trusty(vm);
+ 		vm->vmid = ACRN_INVALID_VMID;
+ 		break;
+ 	}
+-- 
+2.7.4
+

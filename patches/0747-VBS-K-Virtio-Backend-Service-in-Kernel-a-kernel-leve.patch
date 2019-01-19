@@ -1,0 +1,414 @@
+From dacb7051e71b098aab10506eb2adeac61f458abc Mon Sep 17 00:00:00 2001
+From: Hao Li <hao.l.li@intel.com>
+Date: Fri, 31 Aug 2018 10:58:56 +0800
+Subject: [PATCH 0747/1132] VBS-K (Virtio Backend Service in Kernel): a
+ kernel-level virtio framework for ACRN hypervisor.
+
+This patch added the basic VBS-K framework including the following:
+ - Definitions of the data structures shared between VBS-K and its
+   counterpart in userspace, which is VBS-U;
+ - VBS-K device common data structures;
+ - Core runtime control logic of the VBS-K framework;
+
+Change-Id: I8d9e86de701c1aef965a2490f398a2360cb5bd92
+Tracked-On:218445
+Signed-off-by: Hao Li <hao.l.li@intel.com>
+Reviewed-on:
+Reviewed-by: Chi, Mingqiang <mingqiang.chi@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/Kconfig                   |   2 +
+ drivers/Makefile                  |   1 +
+ drivers/vbs/Kconfig               |  20 ++++++
+ drivers/vbs/Makefile              |   3 +
+ drivers/vbs/vbs.c                 | 125 ++++++++++++++++++++++++++++++++++++++
+ include/linux/vbs/vbs.h           |  98 ++++++++++++++++++++++++++++++
+ include/linux/vbs/vbs_common_if.h |  78 ++++++++++++++++++++++++
+ 7 files changed, 327 insertions(+)
+ create mode 100644 drivers/vbs/Kconfig
+ create mode 100644 drivers/vbs/Makefile
+ create mode 100644 drivers/vbs/vbs.c
+ create mode 100644 include/linux/vbs/vbs.h
+ create mode 100644 include/linux/vbs/vbs_common_if.h
+
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index 5af1a08..97c8a6f 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -220,4 +220,6 @@ source "drivers/siox/Kconfig"
+ 
+ source "drivers/slimbus/Kconfig"
+ 
++source "drivers/vbs/Kconfig"
++
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index b260b5a..6095e80 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -146,6 +146,7 @@ obj-$(CONFIG_OF)		+= of/
+ obj-$(CONFIG_SSB)		+= ssb/
+ obj-$(CONFIG_BCMA)		+= bcma/
+ obj-$(CONFIG_VHOST_RING)	+= vhost/
++obj-$(CONFIG_VBS)		+= vbs/
+ obj-$(CONFIG_VHOST)		+= vhost/
+ obj-$(CONFIG_VLYNQ)		+= vlynq/
+ obj-$(CONFIG_STAGING)		+= staging/
+diff --git a/drivers/vbs/Kconfig b/drivers/vbs/Kconfig
+new file mode 100644
+index 0000000..156c316
+--- /dev/null
++++ b/drivers/vbs/Kconfig
+@@ -0,0 +1,20 @@
++#
++# This Kconfig describes VBS for ACRN hypervisor
++#
++config VBS
++	tristate "Enable VBS framework for ACRN hypervisor"
++	depends on ACRN
++	depends on ACRN_VHM
++	default n
++	---help---
++	  This option is selected by any driver which needs to use
++	  the Virtio Backend Service (VBS) framework on ACRN
++	  hypervisor.
++
++config VBS_DEBUG
++	bool "ACRN VBS debugging"
++	depends on VBS != n
++	default n
++	---help---
++	  This is an option for use by developers; most people should
++	  say N here.  This enables ACRN VBS debugging.
+diff --git a/drivers/vbs/Makefile b/drivers/vbs/Makefile
+new file mode 100644
+index 0000000..b52b65b
+--- /dev/null
++++ b/drivers/vbs/Makefile
+@@ -0,0 +1,3 @@
++ccflags-$(CONFIG_VBS_DEBUG)	:= -DDEBUG
++
++obj-$(CONFIG_VBS)		+= vbs.o
+diff --git a/drivers/vbs/vbs.c b/drivers/vbs/vbs.c
+new file mode 100644
+index 0000000..591d43d
+--- /dev/null
++++ b/drivers/vbs/vbs.c
+@@ -0,0 +1,125 @@
++/*
++ * ACRN Project
++ * Virtio Backend Service (VBS) for ACRN hypervisor
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * Contact Information: Hao Li <hao.l.li@intel.com>
++ *
++ * BSD LICENSE
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ *
++ * Hao Li <hao.l.li@intel.com>
++ *  Created Virtio Backend Service (VBS) framework:
++ *  - VBS-K is a kernel-level virtio framework that can be used for
++ *    virtio backend driver development for ACRN hypervisor.
++ *  - VBS-K should be working with VBS-U (Virtio Backend Service in
++ *    User) together, in order to connect with virtio frontend driver.
++ *  - VBS-K mainly handles data plane part of a virtio backend driver,
++ *    such as virtqueue parsing and processing, while VBS-U mainly
++ *    hanldes control plane part.
++ */
++
++#include <linux/module.h>
++#include <linux/uaccess.h>
++#include <linux/vbs/vbs.h>
++
++static long virtio_dev_info_set(struct virtio_dev_info *dev,
++				struct vbs_dev_info __user *i)
++{
++	struct vbs_dev_info info;
++
++	if (copy_from_user(&info, i, sizeof(struct vbs_dev_info)))
++		return -EFAULT;
++
++	/* setup struct virtio_dev_info based on info in vbs_dev_info */
++	strncpy(dev->name, info.name, VBS_NAME_LEN);
++	dev->_ctx.vmid = info.vmid;
++	dev->negotiated_features = info.negotiated_features;
++	dev->io_range_start = info.pio_range_start;
++	dev->io_range_len = info.pio_range_len;
++	dev->io_range_type = PIO_RANGE;
++
++	return 0;
++}
++
++long virtio_dev_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
++		      void __user *argp)
++{
++	long ret;
++
++	/*
++	 * Currently we don't conduct ownership checking,
++	 * but assuming caller would have device mutex.
++	 */
++
++	switch (ioctl) {
++	case VBS_SET_DEV:
++		ret = virtio_dev_info_set(dev, argp);
++		break;
++	default:
++		ret = -ENOIOCTLCMD;
++		break;
++	}
++	return ret;
++}
++EXPORT_SYMBOL_GPL(virtio_dev_ioctl);
++
++static int __init vbs_init(void)
++{
++	return 0;
++}
++
++static void __exit vbs_exit(void)
++{
++}
++
++module_init(vbs_init);
++module_exit(vbs_exit);
++
++MODULE_VERSION("0.1");
++MODULE_AUTHOR("Intel Corporation");
++MODULE_LICENSE("GPL and additional rights");
++MODULE_DESCRIPTION("Virtio Backend Service framework for ACRN hypervisor");
+diff --git a/include/linux/vbs/vbs.h b/include/linux/vbs/vbs.h
+new file mode 100644
+index 0000000..7b87678
+--- /dev/null
++++ b/include/linux/vbs/vbs.h
+@@ -0,0 +1,98 @@
++/*
++ * ACRN Project
++ * Virtio Backend Service (VBS) for ACRN hypervisor
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * Contact Information: Hao Li <hao.l.li@intel.com>
++ *
++ * BSD LICENSE
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ *
++ * Hao Li <hao.l.li@intel.com>
++ *  Define data structures and runtime control APIs for VBS framework.
++ *  - VBS-K is a kernel-level virtio framework that can be used for
++ *    virtio backend driver development for ACRN hypervisor.
++ *  - VBS-K should be working with VBS-U (Virtio Backend Service in
++ *    User) together, in order to connect with virtio frontend driver.
++ */
++
++#ifndef _VBS_H_
++#define _VBS_H_
++
++#include <linux/vbs/vbs_common_if.h>
++
++/*
++ * VBS-K device needs to handle frontend driver's kick in kernel.
++ * For virtio 0.9.5, the kick register is a PIO register,
++ * for virtio 1.0+, the kick register could be a MMIO register.
++ */
++enum IORangeType {
++	PIO_RANGE = 0x0,		/* default */
++	MMIO_RANGE = 0x1,
++};
++
++/* device context */
++struct ctx {
++	/* VHM required info */
++	int vmid;
++};
++
++/* struct used to maintain virtio device info from userspace VBS */
++struct virtio_dev_info {
++	/* dev info from VBS */
++	char name[VBS_NAME_LEN];	/* VBS device name */
++	struct ctx _ctx;		/* device context */
++	uint32_t negotiated_features;	/* features after guest loads driver */
++	uint64_t io_range_start;	/* IO range start of VBS device */
++	uint64_t io_range_len;		/* IO range len of VBS device */
++	enum IORangeType io_range_type;	/* IO range type, PIO or MMIO */
++};
++
++/* VBS Runtime Control APIs */
++long virtio_dev_ioctl(struct virtio_dev_info *dev, unsigned int ioctl,
++		      void __user *argp);
++
++#endif
+diff --git a/include/linux/vbs/vbs_common_if.h b/include/linux/vbs/vbs_common_if.h
+new file mode 100644
+index 0000000..78b36a6
+--- /dev/null
++++ b/include/linux/vbs/vbs_common_if.h
+@@ -0,0 +1,78 @@
++/*
++ * ACRN Project
++ * Virtio Backend Service (VBS) for ACRN hypervisor
++ *
++ * This file is provided under a dual BSD/GPLv2 license.  When using or
++ * redistributing this file, you may do so under either license.
++ *
++ * GPL LICENSE SUMMARY
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * Contact Information: Hao Li <hao.l.li@intel.com>
++ *
++ * BSD LICENSE
++ *
++ * Copyright (c) 2017 Intel Corporation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Intel Corporation nor the names of its
++ *     contributors may be used to endorse or promote products derived
++ *     from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ *
++ * Hao Li <hao.l.li@intel.com>
++ *  - Define data structures shared between VBS userspace and VBS kernel
++ *    space.
++ */
++
++#ifndef _VBS_COMMON_IF_H_
++#define _VBS_COMMON_IF_H_
++
++#define VBS_NAME_LEN		32
++
++struct vbs_dev_info {
++	char name[VBS_NAME_LEN];/* VBS name */
++	int vmid;		/* id of VM this device belongs to */
++	uint32_t negotiated_features;
++				/* features after VIRTIO_CONFIG_S_DRIVER_OK */
++	uint64_t pio_range_start;
++				/* start of PIO range initialized by guest OS */
++	uint64_t pio_range_len;	/* len of PIO range initialized by guest OS */
++};
++
++#define VBS_IOCTL	0xAF
++
++#define VBS_SET_DEV _IOW(VBS_IOCTL, 0x00, struct vbs_dev_info)
++
++#endif
+-- 
+2.7.4
+

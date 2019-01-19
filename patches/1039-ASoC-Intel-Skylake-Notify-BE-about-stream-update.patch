@@ -1,0 +1,40 @@
+From 5e837b7e36ee2d00afad1e6bb460817ae3f70dc3 Mon Sep 17 00:00:00 2001
+From: Pawel Furtak <pawel.furtak@intel.com>
+Date: Sun, 25 Nov 2018 17:46:17 +0100
+Subject: [PATCH 1039/1132] ASoC: Intel: Skylake: Notify BE about stream update
+
+In order to implement virtualization, FE driver should receive
+notifications about stream state changes. This patch notifies
+BE service, which should forward this information to FE driver.
+
+If virtualization is not enabled, notification function will be
+removed during compilation.
+
+Change-Id: I387d42044964dfd72091cd845eb0c11e8fc2393d
+Signed-off-by: Pawel Furtak <pawel.furtak@intel.com>
+Tracked-On: OAM-72189
+Reviewed-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+Tested-by: Rojewski, Cezary <cezary.rojewski@intel.com>
+---
+ sound/soc/intel/skylake/skl.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/intel/skylake/skl.c b/sound/soc/intel/skylake/skl.c
+index e192fb7..deac8de 100644
+--- a/sound/soc/intel/skylake/skl.c
++++ b/sound/soc/intel/skylake/skl.c
+@@ -238,8 +238,10 @@ static void skl_dum_set(struct hdac_bus *bus)
+ /* called from IRQ */
+ static void skl_stream_update(struct hdac_bus *bus, struct hdac_stream *hstr)
+ {
+-	if (hstr->substream)
++	if (hstr->substream) {
++		skl_notify_stream_update(bus, hstr->substream);
+ 		snd_pcm_period_elapsed(hstr->substream);
++	}
+ 	else if (hstr->stream) {
+ 		skl_get_total_bytes_transferred(hstr);
+ 		snd_compr_fragment_elapsed(hstr->stream);
+-- 
+2.7.4
+

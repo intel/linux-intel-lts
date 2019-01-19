@@ -1,0 +1,177 @@
+From e19810d360bf6111b29a2542f2d2d9f5e4329f8d Mon Sep 17 00:00:00 2001
+From: Mingqiang Chi <mingqiang.chi@intel.com>
+Date: Fri, 31 Aug 2018 10:58:59 +0800
+Subject: [PATCH 0772/1132] vhm: modify mmio/memory map/unmap api
+
+Split the parameter(prot) to two parameters(mem_type and
+mem_access_right)
+Remove the parameter(prot) in unset_mmio_map
+
+Change-Id: I9d8bf3401898d53ec2b765135601d1e4bed1e09d
+Tracked-On: 222796
+Signed-off-by: Mingqiang Chi <mingqiang.chi@intel.com>
+Reviewed-on:
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/vhm/vhm_mm.c             | 33 ++++++++++++++++++++-------------
+ include/linux/vhm/acrn_hv_defs.h | 26 ++++++++++++--------------
+ include/linux/vhm/acrn_vhm_mm.h  |  8 +++++---
+ 3 files changed, 37 insertions(+), 30 deletions(-)
+
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index a9ba810..be6a47a 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -148,7 +148,8 @@ int alloc_guest_memseg(struct vhm_vm *vm, struct vm_memseg *memseg)
+ 
+ static int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len,
+-	unsigned int prot, unsigned int type)
++	unsigned int mem_type, unsigned int mem_access_right,
++	unsigned int type)
+ {
+ 	struct vm_set_memmap set_memmap;
+ 
+@@ -156,7 +157,8 @@ static int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
+ 	set_memmap.remote_gpa = guest_gpa;
+ 	set_memmap.vm0_gpa = host_gpa;
+ 	set_memmap.length = len;
+-	set_memmap.prot = prot;
++	set_memmap.prot = ((mem_type & MEM_TYPE_MASK) |
++			(mem_access_right & MEM_ACCESS_RIGHT_MASK));
+ 
+ 	/* hypercall to notify hv the guest EPT setting*/
+ 	if (hcall_set_memmap(vmid,
+@@ -167,36 +169,39 @@ static int _mem_set_memmap(unsigned long vmid, unsigned long guest_gpa,
+ 
+ 	pr_debug("VHM: set ept for mem map[type=0x%x, host_gpa=0x%lx,"
+ 		"guest_gpa=0x%lx,len=0x%lx, prot=0x%x]\n",
+-		type, host_gpa, guest_gpa, len, prot);
++		type, host_gpa, guest_gpa, len, set_memmap.prot);
+ 
+ 	return 0;
+ }
+ 
+ int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len, unsigned int prot)
++	unsigned long host_gpa, unsigned long len,
++	unsigned int mem_type, unsigned mem_access_right)
+ {
+ 	return _mem_set_memmap(vmid, guest_gpa, host_gpa, len,
+-		prot, MAP_MMIO);
++		mem_type, mem_access_right, MAP_MMIO);
+ }
+ 
+ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len, unsigned int prot)
++	unsigned long host_gpa, unsigned long len)
+ {
+ 	return _mem_set_memmap(vmid, guest_gpa, host_gpa, len,
+-		prot, MAP_UNMAP);
++		0, 0,  MAP_UNMAP);
+ }
+ 
+ int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len, unsigned int prot)
++	unsigned long host_gpa, unsigned long len,
++	unsigned int mem_type, unsigned int mem_access_right)
+ {
+ 	return _mem_set_memmap(vmid, guest_gpa, host_gpa, len,
+-		prot, MAP_MEM);
++		mem_type, mem_access_right, MAP_MEM);
+ }
+ 
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ {
+ 	struct guest_memseg *seg = NULL;
+-	unsigned int type, prot;
++	unsigned int type;
++	unsigned int mem_type, mem_access_right;
+ 	unsigned long guest_gpa, host_gpa;
+ 
+ 	mutex_lock(&vm->seg_lock);
+@@ -213,17 +218,19 @@ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+ 		}
+ 		guest_gpa = seg->gpa;
+ 		host_gpa = seg->vm0_gpa;
+-		prot = memmap->prot | MEM_ATTR_WB_CACHE;
++		mem_type = MEM_TYPE_WB;
++		mem_access_right = (memmap->prot & MEM_ACCESS_RIGHT_MASK);
+ 		type = MAP_MEM;
+ 	} else {
+ 		guest_gpa = memmap->gpa;
+ 		host_gpa = acrn_hpa2gpa(memmap->hpa);
+-		prot = memmap->prot | MEM_ATTR_UNCACHED;
++		mem_type = MEM_TYPE_UC;
++		mem_access_right = (memmap->prot & MEM_ACCESS_RIGHT_MASK);
+ 		type = MAP_MMIO;
+ 	}
+ 
+ 	if (_mem_set_memmap(vm->vmid, guest_gpa, host_gpa, memmap->len,
+-		prot, type) < 0) {
++		mem_type, mem_access_right, type) < 0) {
+ 		pr_err("vhm: failed to set memmap %ld!\n", vm->vmid);
+ 		mutex_unlock(&vm->seg_lock);
+ 		return -EFAULT;
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 12dc3c9..411f197 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -111,20 +111,18 @@
+ #define ACRN_INVALID_HPA (-1UL)
+ 
+ /* Generic memory attributes */
+-#define	MEM_ATTR_READ                   0x00000001
+-#define	MEM_ATTR_WRITE                  0x00000002
+-#define	MEM_ATTR_EXECUTE                0x00000004
+-#define	MEM_ATTR_USER                   0x00000008
+-#define	MEM_ATTR_WB_CACHE               0x00000040
+-#define	MEM_ATTR_WT_CACHE               0x00000080
+-#define	MEM_ATTR_UNCACHED               0x00000100
+-#define	MEM_ATTR_WC                     0x00000200
+-#define	MEM_ATTR_WP                     0x00000400
+-
+-#define	MEM_ATTR_ALL			0x00000007
+-#define	MEM_ATTR_WRITE_PROT		0x00000045
+-#define MEM_ATTR_ALL_WB			0x00000047
+-#define MEM_ATTR_ALL_WC			0x00000207
++#define	MEM_ACCESS_READ                 0x00000001
++#define	MEM_ACCESS_WRITE                0x00000002
++#define	MEM_ACCESS_EXEC	                0x00000004
++#define	MEM_ACCESS_RWX			(MEM_ACCESS_READ | MEM_ACCESS_WRITE | \
++						MEM_ACCESS_EXEC)
++#define MEM_ACCESS_RIGHT_MASK           0x00000007
++#define	MEM_TYPE_WB                     0x00000040
++#define	MEM_TYPE_WT                     0x00000080
++#define	MEM_TYPE_UC                     0x00000100
++#define	MEM_TYPE_WC                     0x00000200
++#define	MEM_TYPE_WP                     0x00000400
++#define MEM_TYPE_MASK                   0x000007C0
+ 
+ struct vm_set_memmap {
+ #define MAP_MEM		0
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 2ff1e25..ba85589 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -66,11 +66,13 @@ static inline unsigned long  acrn_hpa2gpa(unsigned long hpa)
+ void *map_guest_phys(unsigned long vmid, u64 uos_phys, size_t size);
+ int unmap_guest_phys(unsigned long vmid, u64 uos_phys);
+ int set_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len, unsigned int prot);
++	unsigned long host_gpa, unsigned long len,
++	unsigned int mem_type, unsigned int mem_access_right);
+ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len, unsigned int prot);
++	unsigned long host_gpa, unsigned long len);
+ int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len, unsigned int prot);
++	unsigned long host_gpa, unsigned long len,
++	unsigned int mem_type, unsigned int mem_access_right);
+ 
+ int vhm_dev_mmap(struct file *file, struct vm_area_struct *vma);
+ 
+-- 
+2.7.4
+

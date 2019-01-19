@@ -1,0 +1,27 @@
+From 10c4fb45e53e15ee64acb2eab10f9259315cfac2 Mon Sep 17 00:00:00 2001
+From: Ong Hock Yu <ong.hock.yu@intel.com>
+Date: Sun, 4 Nov 2018 02:30:44 +0000
+Subject: [PATCH 0327/1132] media: intel-ipu4: [VIRT] fixed pipeline mutex
+ object used but not being initialized issue.
+
+Change-Id: Iebf6a37042fd585d631d064843ad20cce1c0b57c
+Signed-off-by: Ong Hock Yu <ong.hock.yu@intel.com>
+---
+ drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+index 2327584..b6278f7 100644
+--- a/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
++++ b/drivers/media/pci/intel/virtio/intel-ipu4-para-virt-drv.c
+@@ -1158,6 +1158,7 @@ static int virt_ici_pipeline_init(void)
+ 	pipeline_dev->dev.release = base_device_release;
+ 	strlcpy(pipeline_dev->name, pipeline_dev->dev.kobj.name, sizeof(pipeline_dev->name));
+ 	pipeline_dev->minor = MINOR_PIPELINE;
++	mutex_init(&pipeline_dev->mutex);
+ 
+ 	return 0;
+ }
+-- 
+2.7.4
+

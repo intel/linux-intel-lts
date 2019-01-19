@@ -1,0 +1,142 @@
+From d8a8ebdc04638d38d635abc9ae2c23b98f73f8ed Mon Sep 17 00:00:00 2001
+From: Michael Byrne <michaelx.byrne@intel.com>
+Date: Fri, 14 Sep 2018 16:10:16 +0800
+Subject: [PATCH 0843/1132] drm/i915/gvt: Change DomU to support 3 HDMI
+ displays.
+
+Request DomU supports 3 virtual HDMI displays.
+
+This requires eDP-1, DP-1 and DP-2 to be disabled on DomU command line.
+DomU's ias.conf must also be updated to support HDMI and not DP displays.
+If a panel is not present on port A, DDI B and DDI C will be made active
+(as in Dom0).
+
+Reviewed by: Min He <min.he@intel.com>
+Signed-off-by: Michael Byrne <michaelx.byrne@intel.com>
+
+Change-Id: Ib944de7bf9be5c19db28d35edd77a9f89148f27a
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/display.c | 40 ++++++++++++++++++++++++++------------
+ drivers/gpu/drm/i915/gvt/display.h |  1 +
+ drivers/gpu/drm/i915/gvt/edid.c    |  2 +-
+ 3 files changed, 30 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/display.c b/drivers/gpu/drm/i915/gvt/display.c
+index 2e01c38..40ecca2 100644
+--- a/drivers/gpu/drm/i915/gvt/display.c
++++ b/drivers/gpu/drm/i915/gvt/display.c
+@@ -314,8 +314,8 @@ static void clean_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num)
+ 	port->dpcd = NULL;
+ }
+ 
+-static int setup_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num,
+-				    int type, unsigned int resolution, void *edid)
++static int setup_virtual_monitor(struct intel_vgpu *vgpu, int port_num,
++		int type, unsigned int resolution, void *edid, bool is_dp)
+ {
+ 	struct intel_vgpu_port *port = intel_vgpu_port(vgpu, port_num);
+ 	int valid_extensions = 1;
+@@ -356,9 +356,11 @@ static int setup_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num,
+ 
+ 	port->edid->data_valid = true;
+ 
+-	memcpy(port->dpcd->data, dpcd_fix_data, DPCD_HEADER_SIZE);
+-	port->dpcd->data_valid = true;
+-	port->dpcd->data[DPCD_SINK_COUNT] = 0x1;
++	if (is_dp) {
++		memcpy(port->dpcd->data, dpcd_fix_data, DPCD_HEADER_SIZE);
++		port->dpcd->data_valid = true;
++		port->dpcd->data[DPCD_SINK_COUNT] = 0x1;
++	}
+ 	port->type = type;
+ 
+ 	emulate_monitor_status_change(vgpu);
+@@ -488,22 +490,36 @@ void intel_gvt_init_pipe_info(struct intel_gvt *gvt)
+ 	}
+ }
+ 
++bool gvt_emulate_hdmi = true;
++
+ int setup_virtual_monitors(struct intel_vgpu *vgpu)
+ {
+ 	struct intel_connector *connector = NULL;
+ 	struct drm_connector_list_iter conn_iter;
++	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+ 	int pipe = 0;
+ 	int ret = 0;
++	int type = gvt_emulate_hdmi ? GVT_HDMI_A : GVT_DP_A;
++	int port = PORT_B;
++
++	/* BXT have to use port A for HDMI to support 3 HDMI monitors */
++	if (IS_BROXTON(dev_priv))
++		port = PORT_A;
+ 
+ 	drm_connector_list_iter_begin(&vgpu->gvt->dev_priv->drm, &conn_iter);
+ 	for_each_intel_connector_iter(connector, &conn_iter) {
+ 		if (connector->encoder->get_hw_state(connector->encoder, &pipe)
+ 				&& connector->detect_edid) {
+-			ret = setup_virtual_dp_monitor(vgpu, pipe,
+-					GVT_DP_A + pipe, 0,
+-					connector->detect_edid);
++			/* Get (Dom0) port associated with current pipe. */
++			port = enc_to_dig_port(
++					&(connector->encoder->base))->base.port;
++			ret = setup_virtual_monitor(vgpu, port,
++				type, 0, connector->detect_edid,
++				!gvt_emulate_hdmi);
+ 			if (ret)
+ 				return ret;
++			type++;
++			port++;
+ 		}
+ 	}
+ 	drm_connector_list_iter_end(&conn_iter);
+@@ -560,11 +576,11 @@ int intel_vgpu_init_display(struct intel_vgpu *vgpu, u64 resolution)
+ 	if (IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv))
+ 		return setup_virtual_monitors(vgpu);
+ 	else if (IS_SKYLAKE(dev_priv))
+-		return setup_virtual_dp_monitor(vgpu, PORT_D, GVT_DP_D,
+-						resolution, NULL);
++		return setup_virtual_monitor(vgpu, PORT_D, GVT_DP_D,
++						resolution, NULL, true);
+ 	else
+-		return setup_virtual_dp_monitor(vgpu, PORT_B, GVT_DP_B,
+-						resolution, NULL);
++		return setup_virtual_monitor(vgpu, PORT_B, GVT_DP_B,
++						resolution, NULL, true);
+ }
+ 
+ /**
+diff --git a/drivers/gpu/drm/i915/gvt/display.h b/drivers/gpu/drm/i915/gvt/display.h
+index ea7c1c5..e6d3912 100644
+--- a/drivers/gpu/drm/i915/gvt/display.h
++++ b/drivers/gpu/drm/i915/gvt/display.h
+@@ -140,6 +140,7 @@ enum intel_vgpu_port_type {
+ 	GVT_DP_B,
+ 	GVT_DP_C,
+ 	GVT_DP_D,
++	GVT_HDMI_A,
+ 	GVT_HDMI_B,
+ 	GVT_HDMI_C,
+ 	GVT_HDMI_D,
+diff --git a/drivers/gpu/drm/i915/gvt/edid.c b/drivers/gpu/drm/i915/gvt/edid.c
+index 4785b8a..fb690a4 100644
+--- a/drivers/gpu/drm/i915/gvt/edid.c
++++ b/drivers/gpu/drm/i915/gvt/edid.c
+@@ -83,7 +83,7 @@ static inline int bxt_get_port_from_gmbus0(u32 gmbus0)
+ 	else if (port_select == 2)
+ 		port = PORT_C;
+ 	else if (port_select == 3)
+-		port = PORT_D;
++		port = PORT_A;
+ 	return port;
+ }
+ 
+-- 
+2.7.4
+

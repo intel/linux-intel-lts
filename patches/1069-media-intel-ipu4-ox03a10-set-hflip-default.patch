@@ -1,0 +1,31 @@
+From 8f0066567a12d06637fe22cc556578b3ea8c7c33 Mon Sep 17 00:00:00 2001
+From: Meng Wei <wei.meng@intel.com>
+Date: Tue, 27 Nov 2018 19:32:03 +0800
+Subject: [PATCH 1069/1132] media: intel-ipu4: ox03a10: set hflip default
+
+set hflip default.
+
+Change-Id: I52668ab8f990f104c40c29b9a162607f436479e3
+Tracked-On: PKT-1624
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+---
+ drivers/media/i2c/crlmodule/crl_ox03a10_configuration.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/crlmodule/crl_ox03a10_configuration.h b/drivers/media/i2c/crlmodule/crl_ox03a10_configuration.h
+index 6b39815..2a28c07 100644
+--- a/drivers/media/i2c/crlmodule/crl_ox03a10_configuration.h
++++ b/drivers/media/i2c/crlmodule/crl_ox03a10_configuration.h
+@@ -1542,7 +1542,7 @@ struct crl_v4l2_ctrl ox03a10_v4l2_ctrls[] = {
+ 		.data.std_data.min = 0,
+ 		.data.std_data.max = 1,
+ 		.data.std_data.step = 1,
+-		.data.std_data.def = 0,
++		.data.std_data.def = 1,
+ 		.flags = 0,
+ 		.impact = CRL_IMPACTS_NO_IMPACT,
+ 		.ctrl = 0,
+-- 
+2.7.4
+

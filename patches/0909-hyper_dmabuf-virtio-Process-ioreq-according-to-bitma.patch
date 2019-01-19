@@ -1,0 +1,63 @@
+From b6333f391e74801814de4445600deefbaadfaeb2 Mon Sep 17 00:00:00 2001
+From: Mateusz Polrola <mateuszx.potrola@intel.com>
+Date: Thu, 20 Sep 2018 14:09:19 +0200
+Subject: [PATCH 0909/1132] hyper_dmabuf/virtio: Process ioreq according to
+ bitmap
+
+Vhm will record pending ioreqs of the vhm client into a bitmap,
+then vhm client (like hyper_dmabuf) can process the ioreq directly
+according to the bitmap.
+
+Signed-off-by: Mateusz Polrola <mateuszx.potrola@intel.com>
+---
+ .../hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c     | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+index 400c6e7..67c7968 100644
+--- a/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
++++ b/drivers/dma-buf/hyper_dmabuf/virtio/hyper_dmabuf_virtio_be_drv.c
+@@ -161,15 +161,12 @@ static void virtio_be_handle_vq_kick(
+ /*
+  *  Received new buffer in virtqueue
+  */
+-static int virtio_be_handle_kick(int client_id, int req_cnt)
++static int virtio_be_handle_kick(int client_id, unsigned long *ioreqs_map)
+ {
+ 	int val = -1;
+ 	struct vhm_request *req;
+ 	struct virtio_fe_info *fe_info;
+-	int i;
+-
+-	if (unlikely(req_cnt <= 0))
+-		return -EINVAL;
++	int vcpu;
+ 
+ 	fe_info = virtio_fe_find(client_id);
+ 	if (fe_info == NULL) {
+@@ -177,8 +174,11 @@ static int virtio_be_handle_kick(int client_id, int req_cnt)
+ 		return -EINVAL;
+ 	}
+ 
+-	for (i = 0; i < fe_info->max_vcpu; ++i) {
+-		req = &fe_info->req_buf[i];
++	while (1) {
++		vcpu = find_first_bit(ioreqs_map, fe_info->max_vcpu);
++		if (vcpu == fe_info->max_vcpu)
++			break;
++		req = &fe_info->req_buf[vcpu];
+ 		if (atomic_read(&req->processed) == REQ_STATE_PROCESSING &&
+ 		    req->client == fe_info->client_id) {
+ 			if (req->reqs.pio_request.direction == REQUEST_READ)
+@@ -188,7 +188,7 @@ static int virtio_be_handle_kick(int client_id, int req_cnt)
+ 
+ 			smp_mb();
+ 			atomic_set(&req->processed, REQ_STATE_COMPLETE);
+-			acrn_ioreq_complete_request(fe_info->client_id, i);
++			acrn_ioreq_complete_request(fe_info->client_id, vcpu);
+ 		}
+ 	}
+ 
+-- 
+2.7.4
+

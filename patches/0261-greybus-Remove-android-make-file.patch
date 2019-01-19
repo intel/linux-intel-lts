@@ -1,0 +1,33 @@
+From 0a56d2fd61a0abd7cc4b7236b50ed1eed883c9a0 Mon Sep 17 00:00:00 2001
+From: "Pottratz, Dwane" <dwane.pottratz@intel.com>
+Date: Fri, 27 Jan 2017 10:18:38 -0800
+Subject: [PATCH 0261/1132] greybus: Remove android make file
+
+Remove the andorid make file.  With multiple kernel repos in the android
+build system the make file will cause a redefine and fail
+
+Signed-off-by: Pottratz, Dwane <dwane.pottratz@intel.com>
+---
+ drivers/staging/greybus/tools/Android.mk | 10 ----------
+ 1 file changed, 10 deletions(-)
+ delete mode 100644 drivers/staging/greybus/tools/Android.mk
+
+diff --git a/drivers/staging/greybus/tools/Android.mk b/drivers/staging/greybus/tools/Android.mk
+deleted file mode 100644
+index fdadbf6..0000000
+--- a/drivers/staging/greybus/tools/Android.mk
++++ /dev/null
+@@ -1,10 +0,0 @@
+-LOCAL_PATH:= $(call my-dir)
+-
+-include $(CLEAR_VARS)
+-
+-LOCAL_SRC_FILES:= loopback_test.c
+-LOCAL_MODULE_TAGS := optional
+-LOCAL_MODULE := gb_loopback_test
+-
+-include $(BUILD_EXECUTABLE)
+-
+-- 
+2.7.4
+

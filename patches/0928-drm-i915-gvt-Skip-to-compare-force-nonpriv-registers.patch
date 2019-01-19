@@ -1,0 +1,80 @@
+From b10553b7fba40f7c696ba328b0fea7037c1ba098 Mon Sep 17 00:00:00 2001
+From: Ping Gao <ping.a.gao@intel.com>
+Date: Wed, 6 Sep 2017 15:42:48 +0800
+Subject: [PATCH 0928/1132] drm/i915/gvt: Skip to compare force-nonpriv
+ registers
+
+As force-nonpriv registers are updated by command, skip to compare
+them with host cache during the first entire non-context MMIOs
+check to avoid failure.
+Also, when dom0 in guc submission mode, the RING_MODE_GEN7 register could
+be different in guest, so ignore it too.
+
+Signed-off-by: Ping Gao <ping.a.gao@intel.com>
+Reviewed-by: Kevin Tian
+Reviewed-by: Singh, Satyeshwar <satyeshwar.singh@intel.com>
+Reviewed-on:
+Reviewed-by: He, Min <min.he@intel.com>
+Reviewed-by: Jiang, Fei <fei.jiang@intel.com>
+Reviewed-by: Dong, Eddie <eddie.dong@intel.com>
+Tested-by: Dong, Eddie <eddie.dong@intel.com>
+
+v2: rebase 4.19
+Signed-off-by: Xinyun Liu <xinyun.liu@intel.com>
+---
+ drivers/gpu/drm/i915/gvt/cmd_parser.c   | 2 +-
+ drivers/gpu/drm/i915/gvt/gvt.h          | 2 ++
+ drivers/gpu/drm/i915/gvt/mmio_context.c | 6 +++++-
+ 3 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/cmd_parser.c b/drivers/gpu/drm/i915/gvt/cmd_parser.c
+index 729eb0f..9115c3d 100644
+--- a/drivers/gpu/drm/i915/gvt/cmd_parser.c
++++ b/drivers/gpu/drm/i915/gvt/cmd_parser.c
+@@ -808,7 +808,7 @@ static bool is_shadowed_mmio(unsigned int offset)
+ 	return ret;
+ }
+ 
+-static inline bool is_force_nonpriv_mmio(unsigned int offset)
++bool is_force_nonpriv_mmio(unsigned int offset)
+ {
+ 	return (offset >= 0x24d0 && offset < 0x2500);
+ }
+diff --git a/drivers/gpu/drm/i915/gvt/gvt.h b/drivers/gpu/drm/i915/gvt/gvt.h
+index 708d690..882859c 100644
+--- a/drivers/gpu/drm/i915/gvt/gvt.h
++++ b/drivers/gpu/drm/i915/gvt/gvt.h
+@@ -758,6 +758,8 @@ int intel_gvt_debugfs_init(struct intel_gvt *gvt);
+ void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
+ 
+ 
++bool is_force_nonpriv_mmio(unsigned int offset);
++
+ #include "trace.h"
+ #include "mpt.h"
+ 
+diff --git a/drivers/gpu/drm/i915/gvt/mmio_context.c b/drivers/gpu/drm/i915/gvt/mmio_context.c
+index 99b01ab..e6c592f 100644
+--- a/drivers/gpu/drm/i915/gvt/mmio_context.c
++++ b/drivers/gpu/drm/i915/gvt/mmio_context.c
+@@ -590,12 +590,16 @@ void intel_gvt_switch_mmio(struct intel_vgpu *pre,
+ 
+ static int noncontext_mmio_compare(struct intel_vgpu *vgpu, int ring_id)
+ {
++	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+ 	struct engine_mmio *mmio, *mmio_list;
++	struct intel_engine_cs *engine = dev_priv->engine[ring_id];
+ 
+ 	mmio_list = vgpu->gvt->engine_mmio_list.mmio;
+ 
+ 	for (mmio = mmio_list; i915_mmio_reg_valid(mmio->reg); mmio++) {
+-		if (mmio->ring_id != ring_id || mmio->in_context)
++		if (mmio->ring_id != ring_id || mmio->in_context
++			|| is_force_nonpriv_mmio(mmio->reg.reg)
++			|| mmio->reg.reg == RING_MODE_GEN7(engine).reg)
+ 			continue;
+ 
+ 		if (MMIO_COMPARE(vgpu, mmio->reg.reg, mmio->mask))
+-- 
+2.7.4
+

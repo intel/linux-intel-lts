@@ -1,0 +1,38 @@
+From 835295fff3a64f3367232de806d756bbb6032fba Mon Sep 17 00:00:00 2001
+From: Divya Prakash <divya1.prakash@intel.com>
+Date: Wed, 20 Apr 2016 10:04:07 +0530
+Subject: [PATCH 0505/1132] ALSA: hda: Service buffer completed interrupts for
+ compress streams
+
+In case of the IOC bit being enabled, receive and
+service the buffer completed interrupts for compress
+streams.
+
+Change-Id: Ic391b6757c374379637f1889dbd519b4b757f708
+Signed-off-by: Divya Prakash
+Reviewed-on:
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Tested-by: Babu, Ramesh <ramesh.babu@intel.com>
+---
+ sound/hda/hdac_controller.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/sound/hda/hdac_controller.c b/sound/hda/hdac_controller.c
+index 74244d8..ff841cd 100644
+--- a/sound/hda/hdac_controller.c
++++ b/sound/hda/hdac_controller.c
+@@ -549,8 +549,9 @@ int snd_hdac_bus_handle_stream_irq(struct hdac_bus *bus, unsigned int status,
+ 			sd_status = snd_hdac_stream_readb(azx_dev, SD_STS);
+ 			snd_hdac_stream_writeb(azx_dev, SD_STS, SD_INT_MASK);
+ 			handled |= 1 << azx_dev->index;
+-			if (!azx_dev->substream || !azx_dev->running ||
+-			    !(sd_status & SD_INT_COMPLETE))
++			if ((!azx_dev->substream && !azx_dev->stream)||
++				!azx_dev->running ||
++				!(sd_status & SD_INT_COMPLETE))
+ 				continue;
+ 			if (ack)
+ 				ack(bus, azx_dev);
+-- 
+2.7.4
+

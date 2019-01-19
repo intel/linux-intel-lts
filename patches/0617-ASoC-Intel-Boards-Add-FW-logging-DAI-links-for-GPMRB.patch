@@ -1,0 +1,49 @@
+From 3bdb54ea25de74ad0f31fe74bc47492475239f7f Mon Sep 17 00:00:00 2001
+From: "Sinha, Mohit" <mohit.sinha@intel.com>
+Date: Thu, 6 Jul 2017 16:21:19 +0530
+Subject: [PATCH 0617/1132] ASoC: Intel: Boards: Add FW logging DAI-links for
+ GPMRB
+
+Add two FW logging DAI for each DSP core
+
+Change-Id: Ic825ecb4afbbcacabda6b74e2e5f2969fc722a1f
+Signed-off-by: Sinha, Mohit <mohit.sinha@intel.com>
+---
+ sound/soc/intel/boards/bxt_tdf8532.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/sound/soc/intel/boards/bxt_tdf8532.c b/sound/soc/intel/boards/bxt_tdf8532.c
+index 1e2b8be..325b59a 100644
+--- a/sound/soc/intel/boards/bxt_tdf8532.c
++++ b/sound/soc/intel/boards/bxt_tdf8532.c
+@@ -99,6 +99,27 @@ static struct snd_soc_dai_link broxton_tdf8532_dais[] = {
+ 		.init = NULL,
+ 		.nonatomic = 1,
+ 	},
++	/* Trace Buffer DAI links */
++	{
++		.name = "Bxt Trace Buffer0",
++		.stream_name = "Core 0 Trace Buffer",
++		.cpu_dai_name = "TraceBuffer0 Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.capture_only = true,
++		.ignore_suspend = 1,
++	},
++	{
++		.name = "Bxt Trace Buffer1",
++		.stream_name = "Core 1 Trace Buffer",
++		.cpu_dai_name = "TraceBuffer1 Pin",
++		.codec_name = "snd-soc-dummy",
++		.codec_dai_name = "snd-soc-dummy-dai",
++		.platform_name = "0000:00:0e.0",
++		.capture_only = true,
++		.ignore_suspend = 1,
++	},
+ 	/* Back End DAI links */
+ 	{
+ 		/* SSP0 - BT */
+-- 
+2.7.4
+

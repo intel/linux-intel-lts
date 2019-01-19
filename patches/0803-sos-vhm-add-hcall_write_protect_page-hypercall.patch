@@ -1,0 +1,159 @@
+From 49bdd3ca2aaa16076c750bd1e06322609f3797cf Mon Sep 17 00:00:00 2001
+From: "Li, Fei1" <fei1.li@intel.com>
+Date: Fri, 31 Aug 2018 10:59:02 +0800
+Subject: [PATCH 0803/1132] sos: vhm: add hcall_write_protect_page hypercall
+
+1. add write_protect_page to set or unset one page write protect
+2. replace update_memmap_attr with write_protect_page to set or
+unset one page write protect
+3. replace update_memmap_attr with set_mmio_map to add guest memory region
+
+Signed-off-by: Li, Fei1 <fei1.li@intel.com>
+---
+ drivers/vhm/vhm_hypercall.c       |  5 +++++
+ drivers/vhm/vhm_mm.c              | 25 ++++++++++++++++++++-----
+ include/linux/vhm/acrn_hv_defs.h  | 14 ++++++++++++++
+ include/linux/vhm/acrn_vhm_mm.h   | 23 +++++------------------
+ include/linux/vhm/vhm_hypercall.h |  2 ++
+ 5 files changed, 46 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index 2c51c36..8611bb1 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -112,6 +112,11 @@ inline long hcall_set_memmaps(unsigned long pa_memmaps)
+ 	return acrn_hypercall1(HC_VM_SET_MEMMAPS, pa_memmaps);
+ }
+ 
++inline long hcall_write_protect_page(unsigned long vmid, unsigned long wp)
++{
++	return acrn_hypercall2(HC_VM_WRITE_PROTECT_PAGE, vmid, wp);
++}
++
+ inline long hcall_set_ioreq_buffer(unsigned long vmid, unsigned long buffer)
+ {
+ 	return acrn_hypercall2(HC_SET_IOREQ_BUFFER, vmid, buffer);
+diff --git a/drivers/vhm/vhm_mm.c b/drivers/vhm/vhm_mm.c
+index f663558..c7ca8e99 100644
+--- a/drivers/vhm/vhm_mm.c
++++ b/drivers/vhm/vhm_mm.c
+@@ -159,12 +159,27 @@ int set_memmaps(struct set_memmaps *memmaps)
+ 	return 0;
+ }
+ 
+-int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len,
+-	unsigned int mem_type, unsigned int mem_access_right)
++/*
++ * when set is true, set page write protection,
++ * else clear page write protection.
++ */
++int write_protect_page(unsigned long vmid,
++	unsigned long gpa, unsigned char set)
+ {
+-	return _mem_set_memmap(vmid, guest_gpa, host_gpa, len,
+-		mem_type, mem_access_right, MAP_MEM);
++	struct wp_data wp;
++
++	wp.set = set;
++	wp.gpa = gpa;
++
++	if (hcall_write_protect_page(vmid,
++			virt_to_phys(&wp)) < 0) {
++		pr_err("vhm: vm[%ld] %s failed !\n", vmid, __func__);
++		return -EFAULT;
++	}
++
++	pr_debug("VHM: %s, gpa: 0x%lx, set: %d\n", __func__, gpa, set);
++
++	return 0;
+ }
+ 
+ int map_guest_memseg(struct vhm_vm *vm, struct vm_memmap *memmap)
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 67316fb..74f8a13 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -96,6 +96,7 @@
+ #define HC_VM_SET_MEMMAP            _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x00)
+ #define HC_VM_GPA2HPA               _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x01)
+ #define HC_VM_SET_MEMMAPS           _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x02)
++#define HC_VM_WRITE_PROTECT_PAGE    _HC_ID(HC_ID, HC_ID_MEM_BASE + 0x03)
+ 
+ /* PCI assignment*/
+ #define HC_ID_PCI_BASE              0x50UL
+@@ -186,6 +187,19 @@ struct set_memmaps {
+ 	uint64_t memmaps_gpa;
+ } __attribute__((aligned(8)));
+ 
++struct wp_data {
++	/** set page write protect permission.
++	 *  ture: set the wp; flase: clear the wp
++	 */
++	uint8_t set;
++
++	/** Reserved */
++	uint64_t pad:56;
++
++	/** the guest physical address of the page to change */
++	uint64_t gpa;
++} __aligned(8);
++
+ struct sbuf_setup_param {
+ 	uint16_t pcpu_id;
+ 	uint16_t reserved;
+diff --git a/include/linux/vhm/acrn_vhm_mm.h b/include/linux/vhm/acrn_vhm_mm.h
+index 645a8a5..0769200 100644
+--- a/include/linux/vhm/acrn_vhm_mm.h
++++ b/include/linux/vhm/acrn_vhm_mm.h
+@@ -137,29 +137,16 @@ int unset_mmio_map(unsigned long vmid, unsigned long guest_gpa,
+ 	unsigned long host_gpa, unsigned long len);
+ 
+ /**
+- * update_memmap_attr - update mmio EPT mapping between UOS gpa and SOS gpa
++ * write_protect_page - change one page write protection
+  *
+  * @vmid: guest vmid
+- * @guest_gpa: gpa of UOS
+- * @host_gpa: gpa of SOS
+- * @len: memory mapped length
+- * @mem_type: memory mapping type. Possible value could be:
+- *                    MEM_TYPE_WB
+- *                    MEM_TYPE_WT
+- *                    MEM_TYPE_UC
+- *                    MEM_TYPE_WC
+- *                    MEM_TYPE_WP
+- * @mem_access_right: memory mapping access. Possible value could be:
+- *                    MEM_ACCESS_READ
+- *                    MEM_ACCESS_WRITE
+- *                    MEM_ACCESS_EXEC
+- *                    MEM_ACCESS_RWX
++ * @gpa: gpa in guest vmid
++ * @set: set or clear page write protection
+  *
+  * Return: 0 on success, <0 for error.
+  */
+-int update_memmap_attr(unsigned long vmid, unsigned long guest_gpa,
+-	unsigned long host_gpa, unsigned long len,
+-	unsigned int mem_type, unsigned int mem_access_right);
++int write_protect_page(unsigned long vmid,
++	unsigned long gpa, unsigned char set);
+ 
+ int vhm_dev_mmap(struct file *file, struct vm_area_struct *vma);
+ 
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index 4de5e46..87a34fe 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -151,6 +151,8 @@ inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa);
+ inline long hcall_set_memmap(unsigned long vmid,
+ 		unsigned long memmap);
+ inline long hcall_set_memmaps(unsigned long pa_memmaps);
++inline long hcall_write_protect_page(unsigned long vmid,
++		unsigned long wp);
+ inline long hcall_set_ioreq_buffer(unsigned long vmid,
+ 		unsigned long buffer);
+ inline long hcall_notify_req_finish(unsigned long vmid, unsigned long vcpu);
+-- 
+2.7.4
+

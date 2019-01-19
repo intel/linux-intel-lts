@@ -1,0 +1,28 @@
+From 491af820b362a168d7fa87f2bf1e2dd08979e51b Mon Sep 17 00:00:00 2001
+From: Jason Chen CJ <jason.cj.chen@intel.com>
+Date: Fri, 31 Aug 2018 10:58:59 +0800
+Subject: [PATCH 0771/1132] update MEM_ATTR_WRITE_PROT with WB policy
+
+Change-Id: Icfc16c58148f8329528e27346dc2db047b7f37e2
+Tracked-On:
+Signed-off-by: Jason Chen CJ <jason.cj.chen@intel.com>
+---
+ include/linux/vhm/acrn_hv_defs.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index 688d69b..12dc3c9 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -122,7 +122,7 @@
+ #define	MEM_ATTR_WP                     0x00000400
+ 
+ #define	MEM_ATTR_ALL			0x00000007
+-#define	MEM_ATTR_WRITE_PROT		0x00000005
++#define	MEM_ATTR_WRITE_PROT		0x00000045
+ #define MEM_ATTR_ALL_WB			0x00000047
+ #define MEM_ATTR_ALL_WC			0x00000207
+ 
+-- 
+2.7.4
+

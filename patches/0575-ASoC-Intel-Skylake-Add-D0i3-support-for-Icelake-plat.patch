@@ -1,0 +1,103 @@
+From 2de6f7936d9dbb5f3bf1de184411ab3cb837b5c6 Mon Sep 17 00:00:00 2001
+From: Leoni Prodduvaka <leoni.prodduvaka@intel.com>
+Date: Wed, 15 Feb 2017 17:04:40 +0530
+Subject: [PATCH 0575/1132] ASoC: Intel: Skylake: Add D0i3 support for Icelake
+ platform
+
+The driver needs two DSP callback, one to set D0i0 (active) and D0i3
+(low-power) states.
+
+Add these callbacks in icelake dsp ops.
+
+Change-Id: Ibd077dd4bef1a617a9d86f2c2e639f47ce6b5f25
+Signed-off-by: Leoni Prodduvaka
+Reviewed-on:
+Reviewed-by: Koul, Vinod <vinod.koul@intel.com>
+Reviewed-by: Babu, Ramesh <ramesh.babu@intel.com>
+Reviewed-by: R, Dharageswari <dharageswari.r@intel.com>
+Reviewed-by: Diwakar, Praveen <praveen.diwakar@intel.com>
+Reviewed-by: Kp, Jeeja <jeeja.kp@intel.com>
+Tested-by: Sm, Bhadur A <bhadur.a.sm@intel.com>
+---
+ sound/soc/intel/skylake/bxt-sst.c     | 6 +++---
+ sound/soc/intel/skylake/cnl-sst.c     | 7 +++++++
+ sound/soc/intel/skylake/skl-sst-dsp.h | 6 ++++++
+ 3 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/intel/skylake/bxt-sst.c b/sound/soc/intel/skylake/bxt-sst.c
+index 6f9b24c..c1f6d8b 100644
+--- a/sound/soc/intel/skylake/bxt-sst.c
++++ b/sound/soc/intel/skylake/bxt-sst.c
+@@ -302,7 +302,7 @@ static int bxt_d0i3_target_state(struct sst_dsp *ctx)
+ 		return SKL_DSP_D0I3_NONE;
+ }
+ 
+-static void bxt_set_dsp_D0i3(struct work_struct *work)
++void bxt_set_dsp_D0i3(struct work_struct *work)
+ {
+ 	int ret;
+ 	struct skl_ipc_d0ix_msg msg;
+@@ -347,7 +347,7 @@ static void bxt_set_dsp_D0i3(struct work_struct *work)
+ 	skl->cores.state[SKL_DSP_CORE0_ID] = SKL_DSP_RUNNING_D0I3;
+ }
+ 
+-static int bxt_schedule_dsp_D0i3(struct sst_dsp *ctx)
++int bxt_schedule_dsp_D0i3(struct sst_dsp *ctx)
+ {
+ 	struct skl_sst *skl = ctx->thread_context;
+ 	struct skl_d0i3_data *d0i3 = &skl->d0i3;
+@@ -364,7 +364,7 @@ static int bxt_schedule_dsp_D0i3(struct sst_dsp *ctx)
+ 	return 0;
+ }
+ 
+-static int bxt_set_dsp_D0i0(struct sst_dsp *ctx)
++int bxt_set_dsp_D0i0(struct sst_dsp *ctx)
+ {
+ 	int ret;
+ 	struct skl_ipc_d0ix_msg msg;
+diff --git a/sound/soc/intel/skylake/cnl-sst.c b/sound/soc/intel/skylake/cnl-sst.c
+index d5e2c32..5ee7b35 100644
+--- a/sound/soc/intel/skylake/cnl-sst.c
++++ b/sound/soc/intel/skylake/cnl-sst.c
+@@ -389,6 +389,8 @@ static unsigned int cnl_get_errno(struct sst_dsp *ctx)
+ static const struct skl_dsp_fw_ops cnl_fw_ops = {
+ 	.set_state_D0 = cnl_set_dsp_D0,
+ 	.set_state_D3 = cnl_set_dsp_D3,
++	.set_state_D0i3 = bxt_schedule_dsp_D0i3,
++	.set_state_D0i0 = bxt_set_dsp_D0i0,
+ 	.load_fw = cnl_load_base_firmware,
+ 	.get_fw_errcode = cnl_get_errno,
+ 	.load_library = bxt_load_library,
+@@ -743,9 +745,14 @@ int cnl_sst_dsp_init(struct device *dev, void __iomem *mmio_base, int irq,
+ 		return ret;
+ 	}
+ 
++	/* set the D0i3 check */
++	cnl->ipc.ops.check_dsp_lp_on = skl_ipc_check_D0i0;
+ 	cnl->boot_complete = false;
+ 	init_waitqueue_head(&cnl->boot_wait);
+ 
++	INIT_DELAYED_WORK(&cnl->d0i3.work, bxt_set_dsp_D0i3);
++	cnl->d0i3.state = SKL_DSP_D0I3_NONE;
++
+ 	ret = skl_dsp_acquire_irq(sst);
+ 	if (ret < 0)
+ 		return ret;
+diff --git a/sound/soc/intel/skylake/skl-sst-dsp.h b/sound/soc/intel/skylake/skl-sst-dsp.h
+index df37765..58c0c13 100644
+--- a/sound/soc/intel/skylake/skl-sst-dsp.h
++++ b/sound/soc/intel/skylake/skl-sst-dsp.h
+@@ -295,4 +295,10 @@ int skl_prepare_lib_load(struct skl_sst *skl, struct skl_lib_info *linfo,
+ void skl_release_library(struct skl_lib_info *linfo, int lib_count);
+ 
+ int skl_get_firmware_configuration(struct sst_dsp *ctx);
++
++int bxt_set_dsp_D0i0(struct sst_dsp *ctx);
++
++int bxt_schedule_dsp_D0i3(struct sst_dsp *ctx);
++
++void bxt_set_dsp_D0i3(struct work_struct *work);
+ #endif /*__SKL_SST_DSP_H__*/
+-- 
+2.7.4
+

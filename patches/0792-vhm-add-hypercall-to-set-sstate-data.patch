@@ -1,0 +1,128 @@
+From 7f581c47f830ae331a5dd9fd2138c8613489a489 Mon Sep 17 00:00:00 2001
+From: Victor Sun <victor.sun@intel.com>
+Date: Fri, 31 Aug 2018 10:59:01 +0800
+Subject: [PATCH 0792/1132] vhm: add hypercall to set sstate data
+
+The host ACPI State data which needed by S3/S5 implementation will
+be parsed in userspace, add one hypercall api to pass these information
+to Hypervisor.
+
+Signed-off-by: Victor Sun <victor.sun@intel.com>
+Reviewed-by: Tian, Kevin
+Reviewed-by: Zhao, Yakui <yakui.zhao@intel.com>
+---
+ drivers/char/vhm/vhm_dev.c         | 13 +++++++++++++
+ drivers/vhm/vhm_hypercall.c        |  5 +++++
+ include/linux/vhm/acrn_common.h    | 17 +++++++++++++++++
+ include/linux/vhm/acrn_hv_defs.h   |  1 +
+ include/linux/vhm/vhm_hypercall.h  |  1 +
+ include/linux/vhm/vhm_ioctl_defs.h |  1 +
+ 6 files changed, 38 insertions(+)
+
+diff --git a/drivers/char/vhm/vhm_dev.c b/drivers/char/vhm/vhm_dev.c
+index fe8d16d..92075de 100644
+--- a/drivers/char/vhm/vhm_dev.c
++++ b/drivers/char/vhm/vhm_dev.c
+@@ -178,6 +178,19 @@ static long vhm_dev_ioctl(struct file *filep,
+ 			return -EFAULT;
+ 
+ 		return 0;
++	} else if (ioctl_num == IC_PM_SET_SSTATE_DATA) {
++		struct acpi_sstate_data host_sstate_data;
++
++		if (copy_from_user(&host_sstate_data,
++			(void *)ioctl_param, sizeof(host_sstate_data)))
++			return -EFAULT;
++
++		ret = hcall_set_sstate_data(virt_to_phys(&host_sstate_data));
++		if (ret < 0) {
++			pr_err("vhm: failed to set host Sstate data!");
++			return -EFAULT;
++		}
++		return 0;
+ 	}
+ 
+ 	memset(&hc_pt_irq, 0, sizeof(hc_pt_irq));
+diff --git a/drivers/vhm/vhm_hypercall.c b/drivers/vhm/vhm_hypercall.c
+index bbdbea8..93dfb66 100644
+--- a/drivers/vhm/vhm_hypercall.c
++++ b/drivers/vhm/vhm_hypercall.c
+@@ -87,6 +87,11 @@ inline long hcall_setup_sbuf(unsigned long sbuf_head)
+ 	return acrn_hypercall1(HC_SETUP_SBUF, sbuf_head);
+ }
+ 
++inline long hcall_set_sstate_data(unsigned long sx_data_addr)
++{
++	return acrn_hypercall1(HC_PM_SET_SSTATE_DATA, sx_data_addr);
++}
++
+ inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa)
+ {
+ 	return acrn_hypercall2(HC_PM_GET_CPU_STATE, cmd, state_pa);
+diff --git a/include/linux/vhm/acrn_common.h b/include/linux/vhm/acrn_common.h
+index 00088dc..d45b27f 100644
+--- a/include/linux/vhm/acrn_common.h
++++ b/include/linux/vhm/acrn_common.h
+@@ -336,6 +336,23 @@ struct cpu_px_data {
+ 	uint64_t status;		/* success indicator */
+ } __attribute__((aligned(8)));
+ 
++struct acpi_sstate_pkg {
++	uint8_t		val_pm1a;
++	uint8_t		val_pm1b;
++	uint16_t	reserved;
++} __attribute__((aligned(8)));
++
++struct acpi_sstate_data {
++	struct acpi_generic_address pm1a_evt;
++	struct acpi_generic_address pm1b_evt;
++	struct acpi_generic_address pm1a_cnt;
++	struct acpi_generic_address pm1b_cnt;
++	struct acpi_sstate_pkg s3_pkg;
++	struct acpi_sstate_pkg s5_pkg;
++	uint32_t *wake_vector_32;
++	uint64_t *wake_vector_64;
++}__attribute__((aligned(8)));
++
+ /**
+  * @brief Info PM command from DM/VHM.
+  *
+diff --git a/include/linux/vhm/acrn_hv_defs.h b/include/linux/vhm/acrn_hv_defs.h
+index d3af097..7cfcf7a 100644
+--- a/include/linux/vhm/acrn_hv_defs.h
++++ b/include/linux/vhm/acrn_hv_defs.h
+@@ -111,6 +111,7 @@
+ /* Power management */
+ #define HC_ID_PM_BASE               0x80UL
+ #define HC_PM_GET_CPU_STATE         _HC_ID(HC_ID, HC_ID_PM_BASE + 0x00)
++#define HC_PM_SET_SSTATE_DATA       _HC_ID(HC_ID, HC_ID_PM_BASE + 0x01)
+ 
+ #define ACRN_DOM0_VMID (0UL)
+ #define ACRN_INVALID_VMID (-1)
+diff --git a/include/linux/vhm/vhm_hypercall.h b/include/linux/vhm/vhm_hypercall.h
+index ea4c3c2..49e94ec 100644
+--- a/include/linux/vhm/vhm_hypercall.h
++++ b/include/linux/vhm/vhm_hypercall.h
+@@ -145,6 +145,7 @@ inline long hcall_destroy_vm(unsigned long vmid);
+ inline long hcall_restart_vm(unsigned long vmid);
+ inline long hcall_query_vm_state(unsigned long vmid);
+ inline long hcall_setup_sbuf(unsigned long sbuf_head);
++inline long hcall_set_sstate_data(unsigned long sx_data_addr);
+ inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa);
+ inline long hcall_set_memmap(unsigned long vmid,
+ 		unsigned long memmap);
+diff --git a/include/linux/vhm/vhm_ioctl_defs.h b/include/linux/vhm/vhm_ioctl_defs.h
+index 028096b..a9e7161 100644
+--- a/include/linux/vhm/vhm_ioctl_defs.h
++++ b/include/linux/vhm/vhm_ioctl_defs.h
+@@ -105,6 +105,7 @@
+ /* Power management */
+ #define IC_ID_PM_BASE                   0x60UL
+ #define IC_PM_GET_CPU_STATE            _IC_ID(IC_ID, IC_ID_PM_BASE + 0x00)
++#define IC_PM_SET_SSTATE_DATA          _IC_ID(IC_ID, IC_ID_PM_BASE + 0x01)
+ 
+ /**
+  * struct vm_memseg - memory segment info for guest
+-- 
+2.7.4
+
