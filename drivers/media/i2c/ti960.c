@@ -1232,6 +1232,79 @@ failed_out:
 	return rval;
 }
 
+struct slave_register_devid {
+	u16 reg;
+	u8 val_expected;
+};
+
+#define OV495_I2C_PHY_ADDR	0x48
+#define OV495_I2C_ALIAS_ADDR	0x30
+
+static const struct slave_register_devid ov495_devid[] = {
+	{0x3000, 0x51},
+	{0x3001, 0x49},
+	{0x3002, 0x56},
+	{0x3003, 0x4f},
+};
+
+/*
+ * read sensor id reg of 16 bit addr, and 8 bit val
+ */
+static int slave_id_read(struct i2c_client *client, u8 i2c_addr,
+				u16 reg, u8 *val)
+{
+	struct i2c_msg msg[2];
+	unsigned char data[2];
+	int rval;
+
+	/* override i2c_addr */
+	msg[0].addr = i2c_addr;
+	msg[0].flags = 0;
+	data[0] = (u8) (reg >> 8);
+	data[1] = (u8) (reg & 0xff);
+	msg[0].buf = data;
+	msg[0].len = 2;
+
+	msg[1].addr = i2c_addr;
+	msg[1].flags = I2C_M_RD;
+	msg[1].buf = data;
+	msg[1].len = 1;
+
+	rval = i2c_transfer(client->adapter, msg, 2);
+
+	if (rval < 0)
+		return rval;
+
+	*val = data[0];
+
+	return 0;
+}
+
+static bool slave_detect(struct ti960 *va, u8 i2c_addr,
+		const struct slave_register_devid *slave_devid, u8 len)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
+	int i;
+	int rval;
+	unsigned char val;
+
+	for (i = 0; i < len; i++) {
+		rval = slave_id_read(client, i2c_addr,
+			slave_devid[i].reg, &val);
+		if (rval) {
+			dev_err(va->sd.dev, "slave id read fail %d\n", rval);
+			break;
+		}
+		if (val != slave_devid[i].val_expected)
+			break;
+	}
+
+	if (i == len)
+		return true;
+
+	return false;
+}
+
 static int ti960_init(struct ti960 *va)
 {
 	unsigned int reset_gpio = va->pdata->reset_gpio;
@@ -1240,6 +1313,7 @@ static int ti960_init(struct ti960 *va)
 	int m;
 	int rx_port = 0;
 	int ser_alias = 0;
+	bool ov495_detected;
 
 	gpio_set_value(reset_gpio, 1);
 	usleep_range(2000, 3000);
@@ -1284,7 +1358,44 @@ static int ti960_init(struct ti960 *va)
 
 	/* wait for ti953 ready */
 	msleep(200);
+
+	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
+		unsigned short rx_port, phy_i2c_addr, alias_i2c_addr;
+
+		rx_port = i;
+		phy_i2c_addr = OV495_I2C_PHY_ADDR;
+		alias_i2c_addr = OV495_I2C_ALIAS_ADDR;
+
+		rval = ti960_map_phy_i2c_addr(va, rx_port, phy_i2c_addr);
+		if (rval)
+			return rval;
+
+		rval = ti960_map_alias_i2c_addr(va, rx_port,
+						alias_i2c_addr << 1);
+		if (rval)
+			return rval;
+
+		ov495_detected = slave_detect(va, alias_i2c_addr,
+					ov495_devid, ARRAY_SIZE(ov495_devid));
+
+		/* unmap to clear i2c addr space */
+		rval = ti960_map_phy_i2c_addr(va, rx_port, 0);
+		if (rval)
+			return rval;
+
+		rval = ti960_map_alias_i2c_addr(va, rx_port, 0);
+		if (rval)
+			return rval;
+
+		if (ov495_detected) {
+			dev_info(va->sd.dev, "ov495 detected on port %d\n", rx_port);
+			break;
+		}
+	}
+
 	for (i = 0; i < ARRAY_SIZE(ti953_init_settings); i++) {
+		if (ov495_detected)
+			break;
 		rval = ti953_reg_write(va, rx_port, ser_alias,
 			ti953_init_settings[i].reg,
 			ti953_init_settings[i].val);
@@ -1323,6 +1434,8 @@ static int ti960_init(struct ti960 *va)
 	}
 
 	for (i = 0; i < ARRAY_SIZE(ti953_init_settings_2); i++) {
+		if (ov495_detected)
+			break;
 		rval = ti953_reg_write(va, rx_port, ser_alias,
 			ti953_init_settings_2[i].reg,
 			ti953_init_settings_2[i].val);
@@ -1333,9 +1446,11 @@ static int ti960_init(struct ti960 *va)
 	}
 
 	/* reset and power for ti953 */
-	ti953_reg_write(va, 0, ser_alias, 0x0d, 00);
-	msleep(50);
-	ti953_reg_write(va, 0, ser_alias, 0x0d, 0x3);
+	if (!ov495_detected) {
+		ti953_reg_write(va, 0, ser_alias, 0x0d, 00);
+		msleep(50);
+		ti953_reg_write(va, 0, ser_alias, 0x0d, 0x3);
+	}
 
 	rval = ti960_map_subdevs_addr(va);
 	if (rval)
