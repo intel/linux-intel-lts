@@ -1236,6 +1236,79 @@ failed_out:
 	return rval;
 }
 
+struct slave_register_devid {
+	u16 reg;
+	u8 val_expected;
+};
+
+#define OV495_I2C_PHY_ADDR	0x48
+#define OV495_I2C_ALIAS_ADDR	0x30
+
+static const struct slave_register_devid ov495_devid[] = {
+	{0x3000, 0x51},
+	{0x3001, 0x49},
+	{0x3002, 0x56},
+	{0x3003, 0x4f},
+};
+
+/*
+ * read sensor id reg of 16 bit addr, and 8 bit val
+ */
+static int slave_id_read(struct i2c_client *client, u8 i2c_addr,
+				u16 reg, u8 *val)
+{
+	struct i2c_msg msg[2];
+	unsigned char data[2];
+	int rval;
+
+	/* override i2c_addr */
+	msg[0].addr = i2c_addr;
+	msg[0].flags = 0;
+	data[0] = (u8) (reg >> 8);
+	data[1] = (u8) (reg & 0xff);
+	msg[0].buf = data;
+	msg[0].len = 2;
+
+	msg[1].addr = i2c_addr;
+	msg[1].flags = I2C_M_RD;
+	msg[1].buf = data;
+	msg[1].len = 1;
+
+	rval = i2c_transfer(client->adapter, msg, 2);
+
+	if (rval < 0)
+		return rval;
+
+	*val = data[0];
+
+	return 0;
+}
+
+static bool slave_detect(struct ti960 *va, u8 i2c_addr,
+		const struct slave_register_devid *slave_devid, u8 len)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
+	int i;
+	int rval;
+	unsigned char val;
+
+	for (i = 0; i < len; i++) {
+		rval = slave_id_read(client, i2c_addr,
+			slave_devid[i].reg, &val);
+		if (rval) {
+			dev_err(va->sd.dev, "slave id read fail %d\n", rval);
+			break;
+		}
+		if (val != slave_devid[i].val_expected)
+			break;
+	}
+
+	if (i == len)
+		return true;
+
+	return false;
+}
+
 static int ti960_init(struct ti960 *va)
 {
 	unsigned int reset_gpio = va->pdata->reset_gpio;
