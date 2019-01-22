@@ -15,7 +15,7 @@
 
 static DEFINE_IDA(index_ida);
 
-#define REQ_TIMEOUT 6000 //6s
+#define REQ_TIMEOUT 22000 //22s
 
 struct ipu4_virtio_uos {
 	struct virtqueue *vq[IPU_VIRTIO_QUEUE_MAX];

@@ -20,7 +20,7 @@
 #include "intel-ipu4-virtio-be.h"
 
 #define MAX_SIZE 6 // max 2^6
-#define POLL_WAIT 5000 //5s
+#define POLL_WAIT 20000 //20s
 
 #define dev_to_stream(dev) \
 	container_of(dev, struct ici_isys_stream, strm_dev)
