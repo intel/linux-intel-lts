@@ -40,6 +40,7 @@ struct snd_skl_vfe {
 	/* position update work */
 	struct work_struct posn_update_work;
 
+	spinlock_t ipc_vq_lock;
 	/* IPC cmd from frontend to backend */
 	struct virtqueue           *ipc_cmd_tx_vq;
 	/* IPC cmd reply from backend to frontend */
@@ -50,6 +51,8 @@ struct snd_skl_vfe {
 	struct virtqueue           *ipc_not_tx_vq;
 
 	struct list_head kcontrols_list;
+
+	spinlock_t substream_info_lock;
 	struct list_head substr_info_list;
 
 	int (*send_dsp_ipc_msg)(struct snd_skl_vfe *vfe,
@@ -57,5 +60,8 @@ struct snd_skl_vfe {
 	int (*notify_machine_probe)(struct snd_skl_vfe *vfe,
 		struct platform_device *pdev, struct snd_soc_card *card);
 };
+
+void vfe_handle_timedout_not_tx_msg(struct snd_skl_vfe *vfe,
+	struct vfe_ipc_msg *msg);
 
 #endif

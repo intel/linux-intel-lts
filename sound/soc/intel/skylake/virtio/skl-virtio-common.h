@@ -52,6 +52,12 @@ struct vfe_msg_header {
 	} desc;
 };
 
+enum vfe_ipc_msg_status {
+	VFE_MSG_PENDING = 0,
+	VFE_MSG_TIMED_OUT,
+	VFE_MSG_COMPLETED,
+};
+
 struct vfe_ipc_msg {
 	struct vfe_msg_header header;
 
@@ -60,6 +66,7 @@ struct vfe_ipc_msg {
 	int rx_size;
 	void *rx_data;
 
+	atomic_t status;
 	wait_queue_head_t *waitq;
 	bool *completed;
 
