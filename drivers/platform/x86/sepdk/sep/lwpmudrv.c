@@ -1675,7 +1675,7 @@ static OS_STATUS lwpmudrv_Pause(void)
 #if !defined(DRV_SEP_ACRN_ON)
 		CONTROL_Invoke_Parallel(lwpmudrv_Pause_Op, NULL);
 #endif
-		/*
+	/*
 	 * This means that the PAUSE state has been reached.
 	 */
 		CHANGE_DRIVER_STATE(STATE_BIT_PAUSING, DRV_STATE_PAUSED);
@@ -6246,6 +6246,154 @@ static OS_STATUS lwpmudrv_Get_Agent_Mode(IOCTL_ARGS args)
 	return status;
 }
 
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn  static OS_STATUS lwpmudrv_Get_Num_Of_Vms(IOCTL_ARGS arg)
+ *
+ * @param arg - pointer to the IOCTL_ARGS structure
+ *
+ * @return OS_STATUS
+ *
+ * @brief  Local function to get number of VMS available
+ * @brief  Returns status.
+ *
+ * <I>Special Notes</I>
+ */
+static OS_STATUS lwpmudrv_Get_Num_Of_Vms(IOCTL_ARGS args)
+
+{
+	VM_OSID_MAP_NODE vm_map;
+#if defined(DRV_SEP_ACRN_ON)
+	U32 i;
+#endif
+	if (args->buf_drv_to_usr == NULL) {
+		SEP_PRINT_ERROR("Invalid arguments (buf_drv_to_usr is NULL)!");
+		return OS_INVALID;
+	}
+
+	if (args->len_drv_to_usr != sizeof(VM_OSID_MAP_NODE)) {
+		SEP_PRINT_ERROR(
+			"Invalid arguments (unexpected len_drv_to_usr value)!");
+		return OS_INVALID;
+	}
+
+	memset(&vm_map, 0, sizeof(VM_OSID_MAP_NODE));
+
+#if defined(DRV_SEP_ACRN_ON)
+	if (vm_info_list == NULL) {
+		vm_info_list =
+		CONTROL_Allocate_Memory(sizeof(struct profiling_vm_info_list));
+	}
+	memset(vm_info_list, 0, sizeof(struct profiling_vm_info_list));
+
+	BUG_ON(!virt_addr_valid(vm_info_list));
+
+	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_VMINFO,
+			virt_to_phys(vm_info_list));
+
+	vm_map.num_vms = 0;
+	for (i = 0; i < vm_info_list->num_vms; i++) {
+		if (vm_info_list->vm_list[i].num_vcpus != 0) {
+			vm_map.osid[i] = (U32)vm_info_list->vm_list[i].vm_id;
+			vm_map.num_vms++;
+		}
+	}
+
+#endif
+	if (copy_to_user((void __user *)args->buf_drv_to_usr,
+		&vm_map, args->len_drv_to_usr)) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT("Memory copy failure!");
+		return OS_FAULT;
+	}
+
+	return OS_SUCCESS;
+
+}
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn  static OS_STATUS lwpmudrv_Get_Cpu_Map_Info(IOCTL_ARGS arg)
+ *
+ * @param arg - pointer to the IOCTL_ARGS structure
+ *
+ * @return OS_STATUS
+ *
+ * @brief  Local function to get pcpu-vcpu mapping info
+ * @brief  Returns status.
+ *
+ * <I>Special Notes</I>
+ */
+static OS_STATUS lwpmudrv_Get_Cpu_Map_Info(IOCTL_ARGS args)
+{
+	CPU_MAP_TRACE_LIST cpumap;
+	DRV_STATUS status = OS_SUCCESS;
+#if defined(DRV_SEP_ACRN_ON)
+	U32 i, j;
+#endif
+
+	if ((args->buf_drv_to_usr == NULL) ||
+		(args->len_drv_to_usr != sizeof(CPU_MAP_TRACE_LIST_NODE))) {
+		SEP_PRINT_ERROR("Invalid drv_to_usr arguments!");
+		return OS_INVALID;
+	}
+
+	if ((args->buf_usr_to_drv == NULL) ||
+		(args->len_usr_to_drv != sizeof(CPU_MAP_TRACE_LIST_NODE))) {
+		SEP_PRINT_ERROR("Invalid usr_to_drv arguments!");
+		return OS_INVALID;
+	}
+
+	cpumap = (CPU_MAP_TRACE_LIST)
+		CONTROL_Allocate_Memory(sizeof(CPU_MAP_TRACE_LIST_NODE));
+	if (cpumap == NULL) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT("Memory allocation failure");
+		return OS_NO_MEM;
+	}
+
+	if (copy_from_user(cpumap, (void __user *)args->buf_usr_to_drv,
+			sizeof(CPU_MAP_TRACE_LIST_NODE))) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT("Memory copy failure");
+		status = OS_FAULT;
+		goto cleanup;
+	}
+
+#if defined(DRV_SEP_ACRN_ON)
+	if (vm_info_list == NULL) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT("vm_info_list is NULL!");
+		status = OS_INVALID;
+		goto cleanup;
+	}
+
+	SEP_DRV_LOG_TRACE("CPU mapping for osid %d ", cpumap->osid);
+	for (i = 0; i < vm_info_list->num_vms; i++) {
+		if (vm_info_list->vm_list[i].vm_id == cpumap->osid) {
+			for (j = 0;
+			     j < vm_info_list->vm_list[i].num_vcpus; j++) {
+				UTILITY_Read_TSC(&(cpumap->entries[j].tsc));
+				cpumap->entries[j].is_static = 1;
+				cpumap->entries[j].vcpu_id =
+				vm_info_list->vm_list[i].cpu_map[j].vcpu_id;
+				cpumap->entries[j].pcpu_id =
+				vm_info_list->vm_list[i].cpu_map[j].pcpu_id;
+				cpumap->entries[j].os_id =
+				vm_info_list->vm_list[i].vm_id;
+				cpumap->num_entries++;
+			}
+		}
+	}
+#endif
+	if (copy_to_user((void __user *)args->buf_drv_to_usr,
+		cpumap, args->len_drv_to_usr)) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT("Memory copy failure!");
+		status = OS_FAULT;
+		goto cleanup;
+	}
+
+cleanup:
+	cpumap = CONTROL_Free_Memory(cpumap);
+	return status;
+}
+
+
 /*******************************************************************************
  *  External Driver functions - Open
  *      This function is common to all drivers
@@ -6367,7 +6515,7 @@ static IOCTL_OP_TYPE lwpmu_Service_IOCTL(IOCTL_USE_INODE struct file *filp,
 	UTILITY_Driver_Set_Active_Ioctl(cmd);
 
 	switch (cmd) {
-		/*
+	/*
 	* Common IOCTL commands
 	*/
 
@@ -6536,6 +6684,16 @@ static IOCTL_OP_TYPE lwpmu_Service_IOCTL(IOCTL_USE_INODE struct file *filp,
 	case DRV_OPERATION_GET_AGENT_MODE:
 		SEP_DRV_LOG_TRACE("DRV_OPERATION_GET_AGENT_MODE\n");
 		status = lwpmudrv_Get_Agent_Mode(&local_args);
+		break;
+
+	case DRV_OPERATION_GET_VCPU_MAP:
+		SEP_DRV_LOG_TRACE("DRV_OPERATION_GET_CPU_MAP\n");
+		status = lwpmudrv_Get_Cpu_Map_Info(&local_args);
+		break;
+
+	case DRV_OPERATION_GET_NUM_VM:
+		SEP_DRV_LOG_TRACE("DRV_OPERATION_GET_NUM_VM\n");
+		status = lwpmudrv_Get_Num_Of_Vms(&local_args);
 		break;
 
 		/*
