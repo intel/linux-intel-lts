@@ -1028,3 +1028,22 @@ static const struct cpu_dev intel_cpu_dev = {
 };
 
 cpu_dev_register(intel_cpu_dev);
+
+static void __init split_lock_setup(void)
+{
+	setup_force_cpu_cap(X86_FEATURE_SPLIT_LOCK_DETECT);
+}
+
+void __init cpu_set_core_cap_bits(struct cpuinfo_x86 *c)
+{
+	u64 ia32_core_caps = 0;
+
+	if (!cpu_has(c, X86_FEATURE_CORE_CAPABILITIES))
+		return;
+
+	/* Enumerate features reported in IA32_CORE_CAPABILITIES MSR. */
+	rdmsrl(MSR_IA32_CORE_CAPABILITIES, ia32_core_caps);
+
+	if (ia32_core_caps & MSR_IA32_CORE_CAPABILITIES_SPLIT_LOCK_DETECT)
+		split_lock_setup();
+}
