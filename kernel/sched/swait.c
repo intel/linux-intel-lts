@@ -53,9 +53,6 @@ void swake_up(struct swait_queue_head *q)
 {
 	unsigned long flags;
 
-	if (!swait_active(q))
-		return;
-
 	raw_spin_lock_irqsave(&q->lock, flags);
 	swake_up_locked(q);
 	raw_spin_unlock_irqrestore(&q->lock, flags);
@@ -70,9 +67,6 @@ void swake_up_all(struct swait_queue_head *q)
 {
 	struct swait_queue *curr;
 	LIST_HEAD(tmp);
-
-	if (!swait_active(q))
-		return;
 
 	WARN_ON(irqs_disabled());
 	raw_spin_lock_irq(&q->lock);

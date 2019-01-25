@@ -854,6 +854,8 @@ static int nfp_net_tx(struct sk_buff *skb, struct net_device *netdev)
 
 	netdev_tx_sent_queue(nd_q, txbuf->real_len);
 
+	skb_tx_timestamp(skb);
+
 	tx_ring->wr_p += nr_frags + 1;
 	if (nfp_net_tx_ring_should_stop(tx_ring))
 		nfp_net_tx_ring_stop(nd_q, tx_ring);
@@ -865,8 +867,6 @@ static int nfp_net_tx(struct sk_buff *skb, struct net_device *netdev)
 		nfp_qcp_wr_ptr_add(tx_ring->qcp_q, tx_ring->wr_ptr_add);
 		tx_ring->wr_ptr_add = 0;
 	}
-
-	skb_tx_timestamp(skb);
 
 	return NETDEV_TX_OK;
 
@@ -990,7 +990,7 @@ static void nfp_net_tx_complete(struct nfp_net_tx_ring *tx_ring)
  * @nn:		NFP Net device
  * @tx_ring:	TX ring structure
  *
- * Assumes that the device is stopped
+ * Assumes that the device is stopped, must be idempotent.
  */
 static void
 nfp_net_tx_ring_reset(struct nfp_net *nn, struct nfp_net_tx_ring *tx_ring)
@@ -1144,12 +1144,17 @@ static void nfp_net_rx_give_one(struct nfp_net_rx_ring *rx_ring,
  * nfp_net_rx_ring_reset() - Reflect in SW state of freelist after disable
  * @rx_ring:	RX ring structure
  *
- * Warning: Do *not* call if ring buffers were never put on the FW freelist
- *	    (i.e. device was not enabled)!
+ * Assumes that the device is stopped, must be idempotent.
  */
 static void nfp_net_rx_ring_reset(struct nfp_net_rx_ring *rx_ring)
 {
 	unsigned int wr_idx, last_idx;
+
+	/* wr_p == rd_p means ring was never fed FL bufs.  RX rings are always
+	 * kept at cnt - 1 FL bufs.
+	 */
+	if (rx_ring->wr_p == 0 && rx_ring->rd_p == 0)
+		return;
 
 	/* Move the empty entry to the end of the list */
 	wr_idx = rx_ring->wr_p % rx_ring->cnt;
@@ -1919,6 +1924,8 @@ static void nfp_net_vec_clear_ring_data(struct nfp_net *nn, unsigned int idx)
 /**
  * nfp_net_clear_config_and_disable() - Clear control BAR and disable NFP
  * @nn:      NFP Net device to reconfigure
+ *
+ * Warning: must be fully idempotent.
  */
 static void nfp_net_clear_config_and_disable(struct nfp_net *nn)
 {

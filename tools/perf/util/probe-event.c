@@ -615,7 +615,7 @@ static int post_process_probe_trace_point(struct probe_trace_point *tp,
 					   struct map *map, unsigned long offs)
 {
 	struct symbol *sym;
-	u64 addr = tp->address + tp->offset - offs;
+	u64 addr = tp->address - offs;
 
 	sym = map__find_symbol(map, addr);
 	if (!sym)
@@ -2609,6 +2609,14 @@ static int get_new_event_name(char *buf, size_t len, const char *base,
 
 out:
 	free(nbase);
+
+	/* Final validation */
+	if (ret >= 0 && !is_c_func_name(buf)) {
+		pr_warning("Internal error: \"%s\" is an invalid event name.\n",
+			   buf);
+		ret = -EINVAL;
+	}
+
 	return ret;
 }
 
@@ -3060,7 +3068,7 @@ concat_probe_trace_events(struct probe_trace_event **tevs, int *ntevs,
 	struct probe_trace_event *new_tevs;
 	int ret = 0;
 
-	if (ntevs == 0) {
+	if (*ntevs == 0) {
 		*tevs = *tevs2;
 		*ntevs = ntevs2;
 		*tevs2 = NULL;

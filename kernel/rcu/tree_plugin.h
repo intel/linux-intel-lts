@@ -37,6 +37,7 @@
  * This probably needs to be excluded from -rt builds.
  */
 #define rt_mutex_owner(a) ({ WARN_ON_ONCE(1); NULL; })
+#define rt_mutex_futex_unlock(x) WARN_ON_ONCE(1)
 
 #endif /* #else #ifdef CONFIG_RCU_BOOST */
 
@@ -485,7 +486,7 @@ void rcu_read_unlock_special(struct task_struct *t)
 
 		/* Unboost if we were boosted. */
 		if (IS_ENABLED(CONFIG_RCU_BOOST) && drop_boost_mutex)
-			rt_mutex_unlock(&rnp->boost_mtx);
+			rt_mutex_futex_unlock(&rnp->boost_mtx);
 
 		/*
 		 * If this was the last task on the expedited lists,
@@ -514,8 +515,14 @@ static void rcu_print_detail_task_stall_rnp(struct rcu_node *rnp)
 	}
 	t = list_entry(rnp->gp_tasks->prev,
 		       struct task_struct, rcu_node_entry);
-	list_for_each_entry_continue(t, &rnp->blkd_tasks, rcu_node_entry)
+	list_for_each_entry_continue(t, &rnp->blkd_tasks, rcu_node_entry) {
+		/*
+		 * We could be printing a lot while holding a spinlock.
+		 * Avoid triggering hard lockup.
+		 */
+		touch_nmi_watchdog();
 		sched_show_task(t);
+	}
 	raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
 }
 
@@ -827,8 +834,6 @@ static void rcu_cpu_kthread_setup(unsigned int cpu)
 }
 
 #ifdef CONFIG_RCU_BOOST
-
-#include "../locking/rtmutex_common.h"
 
 #ifdef CONFIG_RCU_TRACE
 
@@ -1523,6 +1528,12 @@ static void print_cpu_stall_info(struct rcu_state *rsp, int cpu)
 	struct rcu_dynticks *rdtp = rdp->dynticks;
 	char *ticks_title;
 	unsigned long ticks_value;
+
+	/*
+	 * We could be printing a lot while holding a spinlock.  Avoid
+	 * triggering hard lockup.
+	 */
+	touch_nmi_watchdog();
 
 	if (rsp->gpnum == rdp->gpnum) {
 		ticks_title = "ticks this GP";

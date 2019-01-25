@@ -640,6 +640,11 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi)
 					    fi->fib_nh, cfg))
 			    return 1;
 		}
+#ifdef CONFIG_IP_ROUTE_CLASSID
+		if (cfg->fc_flow &&
+		    cfg->fc_flow != fi->fib_nh->nh_tclassid)
+			return 1;
+#endif
 		if ((!cfg->fc_oif || cfg->fc_oif == fi->fib_nh->nh_oif) &&
 		    (!cfg->fc_gw  || cfg->fc_gw == fi->fib_nh->nh_gw))
 			return 0;
@@ -974,6 +979,8 @@ fib_convert_metrics(struct fib_info *fi, const struct fib_config *cfg)
 			if (val == TCP_CA_UNSPEC)
 				return -EINVAL;
 		} else {
+			if (nla_len(nla) != sizeof(u32))
+				return -EINVAL;
 			val = nla_get_u32(nla);
 		}
 		if (type == RTAX_ADVMSS && val > 65535 - 40)
@@ -1370,6 +1377,56 @@ int fib_sync_down_addr(struct net_device *dev, __be32 local)
 	return ret;
 }
 
+/* Update the PMTU of exceptions when:
+ * - the new MTU of the first hop becomes smaller than the PMTU
+ * - the old MTU was the same as the PMTU, and it limited discovery of
+ *   larger MTUs on the path. With that limit raised, we can now
+ *   discover larger MTUs
+ * A special case is locked exceptions, for which the PMTU is smaller
+ * than the minimal accepted PMTU:
+ * - if the new MTU is greater than the PMTU, don't make any change
+ * - otherwise, unlock and set PMTU
+ */
+static void nh_update_mtu(struct fib_nh *nh, u32 new, u32 orig)
+{
+	struct fnhe_hash_bucket *bucket;
+	int i;
+
+	bucket = rcu_dereference_protected(nh->nh_exceptions, 1);
+	if (!bucket)
+		return;
+
+	for (i = 0; i < FNHE_HASH_SIZE; i++) {
+		struct fib_nh_exception *fnhe;
+
+		for (fnhe = rcu_dereference_protected(bucket[i].chain, 1);
+		     fnhe;
+		     fnhe = rcu_dereference_protected(fnhe->fnhe_next, 1)) {
+			if (fnhe->fnhe_mtu_locked) {
+				if (new <= fnhe->fnhe_pmtu) {
+					fnhe->fnhe_pmtu = new;
+					fnhe->fnhe_mtu_locked = false;
+				}
+			} else if (new < fnhe->fnhe_pmtu ||
+				   orig == fnhe->fnhe_pmtu) {
+				fnhe->fnhe_pmtu = new;
+			}
+		}
+	}
+}
+
+void fib_sync_mtu(struct net_device *dev, u32 orig_mtu)
+{
+	unsigned int hash = fib_devindex_hashfn(dev->ifindex);
+	struct hlist_head *head = &fib_info_devhash[hash];
+	struct fib_nh *nh;
+
+	hlist_for_each_entry(nh, head, nh_hash) {
+		if (nh->nh_dev == dev)
+			nh_update_mtu(nh, dev->mtu, orig_mtu);
+	}
+}
+
 /* Event              force Flags           Description
  * NETDEV_CHANGE      0     LINKDOWN        Carrier OFF, not for scope host
  * NETDEV_DOWN        0     LINKDOWN|DEAD   Link down, not for scope host
@@ -1606,18 +1663,20 @@ void fib_select_multipath(struct fib_result *res, int hash)
 	bool first = false;
 
 	for_nexthops(fi) {
+		if (net->ipv4.sysctl_fib_multipath_use_neigh) {
+			if (!fib_good_nh(nh))
+				continue;
+			if (!first) {
+				res->nh_sel = nhsel;
+				first = true;
+			}
+		}
+
 		if (hash > atomic_read(&nh->nh_upper_bound))
 			continue;
 
-		if (!net->ipv4.sysctl_fib_multipath_use_neigh ||
-		    fib_good_nh(nh)) {
-			res->nh_sel = nhsel;
-			return;
-		}
-		if (!first) {
-			res->nh_sel = nhsel;
-			first = true;
-		}
+		res->nh_sel = nhsel;
+		return;
 	} endfor_nexthops(fi);
 }
 #endif

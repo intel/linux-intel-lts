@@ -1701,8 +1701,7 @@ static bool srpt_close_ch(struct srpt_rdma_ch *ch)
 	int ret;
 
 	if (!srpt_set_ch_state(ch, CH_DRAINING)) {
-		pr_debug("%s-%d: already closed\n", ch->sess_name,
-			 ch->qp->qp_num);
+		pr_debug("%s: already closed\n", ch->sess_name);
 		return false;
 	}
 
@@ -2292,12 +2291,8 @@ static void srpt_queue_response(struct se_cmd *cmd)
 	}
 	spin_unlock_irqrestore(&ioctx->spinlock, flags);
 
-	if (unlikely(transport_check_aborted_status(&ioctx->cmd, false)
-		     || WARN_ON_ONCE(state == SRPT_STATE_CMD_RSP_SENT))) {
-		atomic_inc(&ch->req_lim_delta);
-		srpt_abort_cmd(ioctx);
+	if (unlikely(WARN_ON_ONCE(state == SRPT_STATE_CMD_RSP_SENT)))
 		return;
-	}
 
 	/* For read commands, transfer the data to the initiator. */
 	if (ioctx->cmd.data_direction == DMA_FROM_DEVICE &&
@@ -2670,7 +2665,8 @@ static void srpt_release_cmd(struct se_cmd *se_cmd)
 	struct srpt_rdma_ch *ch = ioctx->ch;
 	unsigned long flags;
 
-	WARN_ON(ioctx->state != SRPT_STATE_DONE);
+	WARN_ON_ONCE(ioctx->state != SRPT_STATE_DONE &&
+		     !(ioctx->cmd.transport_state & CMD_T_ABORTED));
 
 	if (ioctx->n_rw_ctx) {
 		srpt_free_rw_ctxs(ch, ioctx);

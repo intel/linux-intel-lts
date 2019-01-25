@@ -18,18 +18,6 @@
 #include "msm_drv.h"
 #include "msm_gem.h"
 
-#ifdef CONFIG_PREEMPT_RT_FULL
-static bool msm_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
-{
-	if (!mutex_trylock(&dev->struct_mutex)) {
-		*unlock = false;
-		return false;
-	} else {
-		*unlock = true;
-		return true;
-	}
-}
-#else
 static bool msm_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 {
 	switch (mutex_trylock_recursive(&dev->struct_mutex)) {
@@ -47,7 +35,6 @@ static bool msm_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 
 	BUG();
 }
-#endif
 
 static unsigned long
 msm_gem_shrinker_count(struct shrinker *shrinker, struct shrink_control *sc)

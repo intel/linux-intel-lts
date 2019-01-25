@@ -148,6 +148,12 @@ static inline int phy_aneg_done(struct phy_device *phydev)
 	if (phydev->drv->aneg_done)
 		return phydev->drv->aneg_done(phydev);
 
+	/* Avoid genphy_aneg_done() if the Clause 45 PHY does not
+	 * implement Clause 22 registers
+	 */
+	if (phydev->is_c45 && !(phydev->c45_ids.devices_in_package & BIT(0)))
+		return -EINVAL;
+
 	return genphy_aneg_done(phydev);
 }
 
@@ -592,7 +598,7 @@ static int phy_start_aneg_priv(struct phy_device *phydev, bool sync)
 	 * negotiation may already be done and aneg interrupt may not be
 	 * generated.
 	 */
-	if (phy_interrupt_is_valid(phydev) && (phydev->state == PHY_AN)) {
+	if (phydev->irq != PHY_POLL && phydev->state == PHY_AN) {
 		err = phy_aneg_done(phydev);
 		if (err > 0) {
 			trigger = true;
@@ -925,7 +931,7 @@ void phy_start(struct phy_device *phydev)
 		break;
 	case PHY_HALTED:
 		/* make sure interrupts are re-enabled for the PHY */
-		if (phydev->irq != PHY_POLL) {
+		if (phy_interrupt_is_valid(phydev)) {
 			err = phy_enable_interrupts(phydev);
 			if (err < 0)
 				break;

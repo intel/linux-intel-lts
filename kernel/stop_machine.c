@@ -84,8 +84,8 @@ static bool cpu_stop_queue_work(unsigned int cpu, struct cpu_stop_work *work)
 		__cpu_stop_queue_work(stopper, work);
 	else if (work->done)
 		cpu_stop_signal_done(work->done);
-
 	raw_spin_unlock_irqrestore(&stopper->lock, flags);
+
 	return enabled;
 }
 
