@@ -262,6 +262,10 @@ static void dwc3_ep0_stall_and_restart(struct dwc3 *dwc)
 {
 	struct dwc3_ep		*dep;
 
+	/* ep0 got disabled in the meantime */
+	if (!dwc->eps[0]->endpoint.desc || !dwc->eps[1]->endpoint.desc)
+		return;
+
 	/* reinitialize physical ep1 */
 	dep = dwc->eps[1];
 	dep->flags = DWC3_EP_ENABLED;

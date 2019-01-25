@@ -54,6 +54,8 @@ static const struct mmc_fixup mmc_ext_csd_fixups[] = {
 	 */
 	MMC_FIXUP_EXT_CSD_REV(CID_NAME_ANY, CID_MANFID_HYNIX,
 			      0x014a, add_quirk, MMC_QUIRK_BROKEN_HPI, 5),
+	MMC_FIXUP_EXT_CSD_REV(CID_NAME_SP, CID_MANFID_MICRON,
+			      0x014e, add_quirk, MMC_QUIRK_BROKEN_HPI, 7),
 
 	END_FIXUP
 };

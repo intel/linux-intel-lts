@@ -55,21 +55,6 @@ static void skl_update_pci_byte(struct pci_dev *pci, unsigned int reg,
 	pci_write_config_byte(pci, reg, data);
 }
 
-static void skl_init_pci(struct skl *skl)
-{
-	struct hdac_ext_bus *ebus = &skl->ebus;
-
-	/*
-	 * Clear bits 0-2 of PCI register TCSEL (at offset 0x44)
-	 * TCSEL == Traffic Class Select Register, which sets PCI express QOS
-	 * Ensuring these bits are 0 clears playback static on some HD Audio
-	 * codecs.
-	 * The PCI register TCSEL is defined in the Intel manuals.
-	 */
-	dev_dbg(ebus_to_hbus(ebus)->dev, "Clearing TCSEL\n");
-	skl_update_pci_byte(skl->pci, AZX_PCIREG_TCSEL, 0x07, 0);
-}
-
 static void update_pci_dword(struct pci_dev *pci,
 			unsigned int reg, u32 mask, u32 val)
 {
@@ -201,6 +186,23 @@ static void skl_dum_set(struct hdac_ext_bus *ebus)
 	 */
 	reg  = snd_hdac_chip_readl(bus, VS_EM2);
 	snd_hdac_chip_writel(bus, VS_EM2, (reg | AZX_EM2_DUM_MASK));
+}
+
+static void skl_init_pci(struct skl *skl)
+{
+	struct hdac_ext_bus *ebus = &skl->ebus;
+
+	/*
+	 * Clear bits 0-2 of PCI register TCSEL (at offset 0x44)
+	 * TCSEL == Traffic Class Select Register, which sets PCI express QOS
+	 * Ensuring these bits are 0 clears playback static on some HD Audio
+	 * codecs.
+	 * The PCI register TCSEL is defined in the Intel manuals.
+	 */
+	dev_dbg(ebus_to_hbus(ebus)->dev, "Clearing TCSEL\n");
+	skl_update_pci_byte(skl->pci, AZX_PCIREG_TCSEL, 0x07, 0);
+
+	skl_dum_set(ebus);
 }
 
 /* called from IRQ */
@@ -541,12 +543,10 @@ static struct sst_acpi_mach sst_glv_devdata[] = {
 	{ "dummy", "glv_wm8281", "intel/dsp_fw_glv.bin", NULL, NULL, NULL },
 };
 
-static int skl_machine_device_register(struct skl *skl, void *driver_data)
+static int skl_find_mchine(struct skl *skl, void *driver_data)
 {
-	struct hdac_bus *bus = ebus_to_hbus(&skl->ebus);
-	struct platform_device *pdev;
 	struct sst_acpi_mach *mach = driver_data;
-	int ret;
+	struct hdac_bus *bus = ebus_to_hbus(&skl->ebus);
 
 	if ((skl->pci->device == 0x9df0) || (skl->pci->device == 0x9dc8)
 	    || (skl->pci->device == 0x34c8) || (skl->pci->device == 0x24f0))
@@ -557,8 +557,24 @@ static int skl_machine_device_register(struct skl *skl, void *driver_data)
 		dev_err(bus->dev, "No matching machine driver found\n");
 		return -ENODEV;
 	}
+
 out:
+	skl->mach = mach;
 	skl->fw_name = mach->fw_filename;
+	if (mach->pdata) {
+		skl->use_tplg_pcm =
+			((struct skl_machine_pdata *)mach->pdata)->use_tplg_pcm;
+	}
+
+	return 0;
+}
+
+static int skl_machine_device_register(struct skl *skl)
+{
+	struct hdac_bus *bus = ebus_to_hbus(&skl->ebus);
+	struct sst_acpi_mach *mach = skl->mach;
+	struct platform_device *pdev;
+	int ret;
 
 	pdev = platform_device_alloc(mach->drv_name, -1);
 	if (pdev == NULL) {
@@ -724,26 +740,35 @@ static void skl_probe_work(struct work_struct *work)
 			goto out_err;
 	}
 
-	if (IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)) {
-		err = snd_hdac_display_power(bus, false);
-		if (err < 0) {
-			dev_err(bus->dev, "Cannot turn off display power on i915\n");
-			return;
-		}
-	}
-
 	/* register platform dai and controls */
 	err = skl_platform_register(bus->dev);
 	if (err < 0)
 		return;
+
+	if (bus->ppcap) {
+		err = skl_machine_device_register(skl);
+		if (err < 0) {
+			dev_err(bus->dev,
+				"machine device register failed with err: %d\n",
+				err);
+			goto out_err;
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)) {
+		err = snd_hdac_display_power(bus, false);
+		if (err < 0) {
+			dev_err(bus->dev, "Cannot turn off display power on i915\n");
+			skl_machine_device_unregister(skl);
+			return;
+		}
+	}
+
 	/*
 	 * we are done probing so decrement link counts
 	 */
 	list_for_each_entry(hlink, &ebus->hlink_list, list)
 		snd_hdac_ext_bus_link_put(ebus, hlink);
-
-	/* init debugfs */
-	skl->debugfs = skl_debugfs_init(skl);
 
 	/* configure PM */
 	pm_runtime_put_noidle(bus->dev);
@@ -869,8 +894,6 @@ static int skl_first_init(struct hdac_ext_bus *ebus)
 	/* initialize chip */
 	skl_init_pci(skl);
 
-	skl_dum_set(ebus);
-
 	return skl_init_chip(bus, true);
 }
 
@@ -942,15 +965,14 @@ nhlt_continue:
 	WARN_ON(!bus->ppcap);
 
 	if (bus->ppcap) {
-		err = skl_machine_device_register(skl,
-				  (void *)pci_id->driver_data);
+		err = skl_find_mchine(skl, (void *)pci_id->driver_data);
 		if (err < 0)
 			goto out_nhlt_free;
 
 		err = skl_init_dsp(skl);
 		if (err < 0) {
 			dev_dbg(bus->dev, "error failed to register dsp\n");
-			goto out_mach_free;
+			goto out_nhlt_free;
 		}
 		skl->skl_sst->enable_miscbdcge = skl_enable_miscbdcge;
 
@@ -971,8 +993,6 @@ nhlt_continue:
 
 out_dsp_free:
 	skl_free_dsp(skl);
-out_mach_free:
-	skl_machine_device_unregister(skl);
 out_nhlt_free:
 	skl_nhlt_free(skl->nhlt);
 out_free:
@@ -998,6 +1018,9 @@ static void skl_shutdown(struct pci_dev *pci)
 		return;
 
 	snd_hdac_ext_stop_streams(ebus);
+	snd_hdac_ext_bus_link_power_down_all(ebus);
+	skl_dsp_sleep(skl->skl_sst->dsp);
+	skl_dsp_disable_core(skl->skl_sst->dsp, SKL_DSP_CORE0_ID);
 	list_for_each_entry(s, &bus->stream_list, list) {
 		stream = stream_to_hdac_ext_stream(s);
 		snd_hdac_ext_stream_decouple(ebus, stream, false);

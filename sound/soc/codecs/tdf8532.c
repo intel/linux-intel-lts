@@ -107,11 +107,11 @@ out:
 	return ret;
 }
 
-static uint8_t tdf8532_single_read(struct tdf8532_priv *dev_data,
+static int tdf8532_single_read(struct tdf8532_priv *dev_data,
 						char **repl_buff)
 {
 	int ret;
-	uint8_t len;
+	int len;
 
 	struct device *dev = &(dev_data->i2c->dev);
 
@@ -126,6 +126,10 @@ static uint8_t tdf8532_single_read(struct tdf8532_priv *dev_data,
 	len = ret + HEADER_SIZE;
 
 	*repl_buff = kzalloc(len, GFP_KERNEL);
+	if (*repl_buff == NULL) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
 	ret = i2c_master_recv(dev_data->i2c, *repl_buff, len);
 
@@ -136,6 +140,7 @@ static uint8_t tdf8532_single_read(struct tdf8532_priv *dev_data,
 		dev_err(dev,
 				"i2c recv packet returned: %d (expected: %d)\n",
 				ret, len);
+		ret = -EINVAL;
 		goto out_free;
 	}
 
@@ -143,7 +148,7 @@ static uint8_t tdf8532_single_read(struct tdf8532_priv *dev_data,
 
 out_free:
 	kfree(*repl_buff);
-	repl_buff = NULL;
+	*repl_buff = NULL;
 out:
 	return ret;
 }
@@ -174,29 +179,31 @@ static int tdf8532_wait_state(struct tdf8532_priv *dev_data, u8 req_state,
 	unsigned long timeout_point = jiffies + msecs_to_jiffies(timeout);
 	int ret;
 	struct get_dev_status_repl *status_repl = NULL;
+	u8 cur_state = STATE_NONE;
 	struct device *dev = &(dev_data->i2c->dev);
 
 	do {
 		ret = tdf8532_get_state(dev_data, &status_repl);
 		if (ret < 0)
 			goto out;
-
+		cur_state = status_repl->state;
 		print_hex_dump_debug("tdf8532-codec: wait_state: ",
 				DUMP_PREFIX_NONE, 32, 1, status_repl,
 				6, false);
-	} while (time_before(jiffies, timeout_point)
-			&& status_repl->state != req_state);
 
-	if (status_repl->state == req_state)
+		kfree(status_repl);
+		status_repl = NULL;
+	} while (time_before(jiffies, timeout_point)
+			&& cur_state != req_state);
+
+	if (cur_state == req_state)
 		return 0;
 
+out:
 	ret = -ETIME;
 
 	dev_err(dev, "tdf8532-codec: state: %u, req_state: %u, ret: %d\n",
-			status_repl->state, req_state, ret);
-
-out:
-	kfree(status_repl);
+			cur_state, req_state, ret);
 	return ret;
 }
 
