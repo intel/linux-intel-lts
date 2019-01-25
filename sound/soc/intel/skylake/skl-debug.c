@@ -400,8 +400,8 @@ static ssize_t module_read(struct file *file, char __user *user_buf,
 			mconfig->id.module_id, mconfig->id.instance_id);
 
 	ret += snprintf(buf + ret, MOD_BUF - ret,
-			"Resources\n\tMCPS %x\n\tIBS %x\n\tOBS %x\t\n",
-			res->cps, res->ibs, res->obs);
+			"Resources\n\tCPC %x\n\tIBS %x\n\tOBS %x\t\n",
+			res->cpc, res->ibs, res->obs);
 
 	ret += snprintf(buf + ret, MOD_BUF - ret,
 			"Module data:\n\tCore %d\n\tIN queue %d\n\tOut queue %d\n\t%s\n",
