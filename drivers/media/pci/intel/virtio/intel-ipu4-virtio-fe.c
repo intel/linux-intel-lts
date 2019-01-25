@@ -5,6 +5,7 @@
 
 #include <linux/err.h>
 #include <linux/delay.h>
+#include <linux/module.h>
 #include <linux/scatterlist.h>
 #include <linux/spinlock.h>
 #include <linux/virtio.h>
@@ -15,7 +16,13 @@
 
 static DEFINE_IDA(index_ida);
 
-#define REQ_TIMEOUT 22000 //22s
+#define WAIT_TIMEOUT 6000 //6s
+
+static int wait_timeout = WAIT_TIMEOUT;
+module_param(wait_timeout, int, 0644);
+MODULE_PARM_DESC(wait_timeout,
+		 "ipu mediator wait timeout in milliseconds "
+		 "(default 6000 - 6.0 seconds)");
 
 struct ipu4_virtio_uos {
 	struct virtqueue *vq[IPU_VIRTIO_QUEUE_MAX];
@@ -161,7 +168,7 @@ static int ipu_virtio_fe_send_req(int vmid, struct ipu4_virtio_req *req,
 	req->completed = false;
 	ipu_virtio_fe_register_buffer(ipu4_virtio_fe, req, sizeof(*req), idx);
 	ret = wait_event_timeout(*req->wait,
-						req->completed,REQ_TIMEOUT);
+						req->completed, wait_timeout);
 
 	if(ret)
 		return req->stat;
