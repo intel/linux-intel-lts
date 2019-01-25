@@ -1646,14 +1646,14 @@ typedef CPU_MAP_TRACE_NODE * CPU_MAP_TRACE;
 struct CPU_MAP_TRACE_NODE_S {
 	U64 tsc;
 	U32 os_id;
-	U16 vcpu_id;
-	U16 pcpu_id;
+	U32 vcpu_id;
+	U32 pcpu_id;
 	U8 is_static : 1;
 	U8 initial : 1;
 	U8 reserved1 : 6;
 	U8 reserved2;
 	U16 reserved3;
-	U32 reserved4;
+	U64 tsc_offset;
 };
 
 #define CPU_MAP_TRACE_tsc(x) ((x)->tsc)
@@ -1662,6 +1662,28 @@ struct CPU_MAP_TRACE_NODE_S {
 #define CPU_MAP_TRACE_pcpu_id(x) ((x)->pcpu_id)
 #define CPU_MAP_TRACE_is_static(x) ((x)->is_static)
 #define CPU_MAP_TRACE_initial(x) ((x)->initial)
+
+#define MAX_NUM_VCPU 64
+#define MAX_NUM_VM 16
+
+typedef struct CPU_MAP_TRACE_LIST_NODE_S   CPU_MAP_TRACE_LIST_NODE;
+typedef        CPU_MAP_TRACE_LIST_NODE   * CPU_MAP_TRACE_LIST;
+
+struct CPU_MAP_TRACE_LIST_NODE_S {
+	U32 osid;
+	U8  num_entries;
+	U8  reserved1;
+	U16 reserved2;
+	CPU_MAP_TRACE_NODE  entries[MAX_NUM_VCPU];
+};
+
+typedef struct VM_OSID_MAP_NODE_S   VM_OSID_MAP_NODE;
+typedef        VM_OSID_MAP_NODE   * VM_OSID_MAP;
+struct VM_OSID_MAP_NODE_S {
+	U32 num_vms;
+	U32 reserved1;
+	U32 osid[MAX_NUM_VM];
+};
 
 typedef struct VM_SWITCH_TRACE_NODE_S VM_SWITCH_TRACE_NODE;
 typedef VM_SWITCH_TRACE_NODE * VM_SWITCH_TRACE;
@@ -1675,10 +1697,10 @@ struct VM_SWITCH_TRACE_NODE_S {
 	U64 reserved2;
 };
 
-#define VM_SWITCH_TRACE_tsc(x) 			((x)->tsc)
-#define VM_SWITCH_TRACE_from_os_id(x) 	((x)->from_os_id)
-#define VM_SWITCH_TRACE_to_os_id(x) 	((x)->to_os_id)
-#define VM_SWITCH_TRACE_reason(x) 		((x)->reason)
+#define VM_SWITCH_TRACE_tsc(x)          ((x)->tsc)
+#define VM_SWITCH_TRACE_from_os_id(x)   ((x)->from_os_id)
+#define VM_SWITCH_TRACE_to_os_id(x)     ((x)->to_os_id)
+#define VM_SWITCH_TRACE_reason(x)       ((x)->reason)
 
 typedef struct EMON_BUFFER_DRIVER_HELPER_NODE_S EMON_BUFFER_DRIVER_HELPER_NODE;
 typedef EMON_BUFFER_DRIVER_HELPER_NODE * EMON_BUFFER_DRIVER_HELPER;
