@@ -10,6 +10,7 @@
 #include <linux/poll.h>
 #include <linux/hashtable.h>
 #include <linux/pagemap.h>
+#include <linux/module.h>
 
 #include <media/ici.h>
 #include <linux/vhm/acrn_vhm_mm.h>
@@ -20,10 +21,16 @@
 #include "intel-ipu4-virtio-be.h"
 
 #define MAX_SIZE 6 // max 2^6
-#define POLL_WAIT 20000 //20s
+#define POLL_WAIT 5000 //5s
 
 #define dev_to_stream(dev) \
 	container_of(dev, struct ici_isys_stream, strm_dev)
+
+static int wait_timeout = POLL_WAIT;
+module_param(wait_timeout, int, 0644);
+MODULE_PARM_DESC(wait_timeout,
+		 "ipu mediator wait timeout in milliseconds "
+		 "(default 5000 - 5.0 seconds)");
 
 DECLARE_HASHTABLE(STREAM_NODE_HASH, MAX_SIZE);
 static bool hash_initialised;
@@ -233,7 +240,7 @@ int process_poll(struct ipu4_virtio_req_info *req_info)
 			as->buf_list.wait,
 			!list_empty(&as->buf_list.putbuf_list) ||
 			!as->ip.streaming,
-			POLL_WAIT);
+			wait_timeout);
 		if((time_remain == -ERESTARTSYS) ||
 			time_remain == 0 ||
 			!as->ip.streaming) {

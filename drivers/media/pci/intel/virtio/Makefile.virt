@@ -2,7 +2,7 @@ ifndef IPU_STEP
   $(error No IPU_STEP was defined. Stopping.)
 endif
 
-TARGET_MODULE:=intel-ipu-virt-$(IPU_STEP)
+TARGET_MODULE:=intel-ipu-virt
 
 $(TARGET_MODULE)-objs += ../virtio/intel-ipu4-virtio-common.o
 
