@@ -286,11 +286,8 @@ static inline void local_irq_lock_init(int lvar) { }
 
 #define get_locked_var(lvar, var)		get_cpu_var(var)
 #define put_locked_var(lvar, var)		put_cpu_var(var)
-<<<<<<< HEAD
-=======
 #define get_locked_ptr(lvar, var)		get_cpu_ptr(var)
 #define put_locked_ptr(lvar, var)		put_cpu_ptr(var)
->>>>>>> tracker/4.9/RT-4.9.146
 
 #define local_lock_cpu(lvar)			get_cpu()
 #define local_unlock_cpu(lvar)			put_cpu()

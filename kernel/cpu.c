@@ -1195,9 +1195,6 @@ static int takedown_cpu(unsigned int cpu)
 	/* Notifiers are done. Don't let any more tasks pin this CPU. */
 	cpu_unplug_sync(cpu);
 
-	/* Notifiers are done. Don't let any more tasks pin this CPU. */
-	cpu_unplug_sync(cpu);
-
 	/*
 	 * Prevent irq alloc/free while the dying cpu reorganizes the
 	 * interrupt affinities.
