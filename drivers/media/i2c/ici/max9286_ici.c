@@ -486,17 +486,20 @@ static int max9286_get_selection(struct ici_isys_node *node, struct ici_pad_sele
 
 static int init_ext_sd(struct i2c_client *client, struct max9286_subdev *max_sd, int idx)
 {
-	struct max9286 *max;
+	struct max9286 *maxim;
 	int rval;
 	char name[ICI_MAX_NODE_NAME];
 	struct ici_ext_subdev *subdev;
 
-	max = to_max_9286(subdev);
 	subdev = i2c_get_clientdata(client);
+	if (!subdev) {
+	    return -EINVAL;
+	}
+	maxim = to_max_9286(subdev);
 
 	snprintf(name, sizeof(name), "MAX9286 %d", idx);
 
-	strncpy(max->sub_devs[idx].sd_name, name, sizeof(name));
+	strncpy(maxim->sub_devs[idx].sd_name, name, sizeof(name));
 
 	max_sd->sd->client = client;
 	max_sd->sd->num_pads = 2;
@@ -510,11 +513,11 @@ static int init_ext_sd(struct i2c_client *client, struct max9286_subdev *max_sd,
 	max_sd->sd->set_param = max9286_set_param; // meant to execute CTRL-IDs/CIDs
 	max_sd->sd->get_param = max9286_get_param; // meant to execute CTRLIDs/CIDs
 	max_sd->sd->get_menu_item = max9286_get_menu_item; // get LINK FREQ
-	if (max->reg.setup_node) {
-			rval = max->reg.setup_node(max->reg.ipu_data,
-					max_sd->sd, name);
-			if (rval)
-					return rval;
+	if (maxim->reg.setup_node) {
+		rval = maxim->reg.setup_node(maxim->reg.ipu_data,
+				max_sd->sd, name);
+	if (rval)
+		return rval;
 	} else {
 		pr_err("node not registered\n");
 	}
@@ -653,7 +656,7 @@ static int max9286_registered(struct ici_ext_subdev_register *reg)
 		sd = &max->sub_devs[k];
 		rval = init_ext_sd(max->ici_sd.client, sd, k);
 		if (rval)
-				return rval;
+			return rval;
 
 		rval = sd_register.create_link(&sensor_sd->node,
 			sensor_sd->src_pad,
@@ -987,7 +990,7 @@ static int max9286_probe(struct i2c_client *client,
 	if (client->dev.platform_data == NULL)
 		return -ENODEV;
 
-	dev_err(&client->dev, "MAX9286 probe!\n");
+	dev_info(&client->dev, "MAX9286 probe!\n");
 	max = devm_kzalloc(&client->dev, sizeof(*max), GFP_KERNEL);
 	if (!max)
 		return -ENOMEM;
