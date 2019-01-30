@@ -7,12 +7,14 @@
  * Author: Lu Baolu <baolu.lu@linux.intel.com>
  */
 
+#include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
-
 #include "xhci.h"
 #include "xhci-dbgcap.h"
+
+#define DBC_STR_FUNC_TTY    "TTY"
 
 static unsigned int
 dbc_send_packet(struct dbc_port *port, char *packet, unsigned int size)
@@ -279,12 +281,11 @@ static const struct tty_operations dbc_tty_ops = {
 	.unthrottle		= dbc_tty_unthrottle,
 };
 
-static struct tty_driver *dbc_tty_driver;
-
-int xhci_dbc_tty_register_driver(struct xhci_hcd *xhci)
+static int xhci_dbc_tty_register_driver(struct xhci_hcd *xhci)
 {
 	int			status;
 	struct xhci_dbc		*dbc = xhci->dbc;
+	struct tty_driver	*dbc_tty_driver;
 
 	dbc_tty_driver = tty_alloc_driver(1, TTY_DRIVER_REAL_RAW |
 					  TTY_DRIVER_DYNAMIC_DEV);
@@ -296,7 +297,6 @@ int xhci_dbc_tty_register_driver(struct xhci_hcd *xhci)
 
 	dbc_tty_driver->driver_name = "dbc_serial";
 	dbc_tty_driver->name = "ttyDBC";
-
 	dbc_tty_driver->type = TTY_DRIVER_TYPE_SERIAL;
 	dbc_tty_driver->subtype = SERIAL_TYPE_NORMAL;
 	dbc_tty_driver->init_termios = tty_std_termios;
@@ -315,16 +315,19 @@ int xhci_dbc_tty_register_driver(struct xhci_hcd *xhci)
 		put_tty_driver(dbc_tty_driver);
 		dbc_tty_driver = NULL;
 	}
+	dbc->func_priv = dbc_tty_driver;
 
 	return status;
 }
 
-void xhci_dbc_tty_unregister_driver(void)
+static void xhci_dbc_tty_unregister_driver(struct xhci_dbc *dbc)
 {
+	struct tty_driver	*dbc_tty_driver =
+					(struct tty_driver *) dbc->func_priv;
 	if (dbc_tty_driver) {
 		tty_unregister_driver(dbc_tty_driver);
 		put_tty_driver(dbc_tty_driver);
-		dbc_tty_driver = NULL;
+		dbc->func_priv = NULL;
 	}
 }
 
@@ -440,12 +443,14 @@ xhci_dbc_tty_exit_port(struct dbc_port *port)
 	tty_port_destroy(&port->port);
 }
 
-int xhci_dbc_tty_register_device(struct xhci_hcd *xhci)
+static int xhci_dbc_tty_register_device(struct xhci_hcd *xhci)
 {
 	int			ret;
 	struct device		*tty_dev;
 	struct xhci_dbc		*dbc = xhci->dbc;
 	struct dbc_port		*port = &dbc->port;
+	struct tty_driver	*dbc_tty_driver =
+					(struct tty_driver *) dbc->func_priv;
 
 	xhci_dbc_tty_init_port(xhci, port);
 	tty_dev = tty_port_register_device(&port->port,
@@ -493,6 +498,8 @@ void xhci_dbc_tty_unregister_device(struct xhci_hcd *xhci)
 {
 	struct xhci_dbc		*dbc = xhci->dbc;
 	struct dbc_port		*port = &dbc->port;
+	struct tty_driver	*dbc_tty_driver =
+					(struct tty_driver *) dbc->func_priv;
 
 	tty_unregister_device(dbc_tty_driver, 0);
 	xhci_dbc_tty_exit_port(port);
@@ -503,3 +510,61 @@ void xhci_dbc_tty_unregister_device(struct xhci_hcd *xhci)
 	xhci_dbc_free_requests(get_out_ep(xhci), &port->read_queue);
 	xhci_dbc_free_requests(get_in_ep(xhci), &port->write_pool);
 }
+
+static int dbc_tty_post_config(struct xhci_dbc *dbc)
+{
+	return xhci_dbc_tty_register_device(dbc->xhci);
+}
+
+static int dbc_tty_post_disconnect(struct xhci_dbc *dbc)
+{
+	xhci_dbc_tty_unregister_device(dbc->xhci);
+	return 0;
+}
+
+static int dbc_tty_run(struct xhci_dbc *dbc)
+{
+	return  xhci_dbc_tty_register_driver(dbc->xhci);
+}
+
+static int dbc_tty_stop(struct xhci_dbc *dbc)
+{
+	xhci_dbc_tty_unregister_driver(dbc);
+	return 0;
+}
+
+static struct dbc_function tty_func = {
+	.owner = THIS_MODULE,
+	.string = {
+		.manufacturer = DBC_STR_MANUFACTURER,
+		.product = DBC_STR_PRODUCT,
+		.serial = DBC_STR_SERIAL,
+	},
+	.protocol = DBC_PROTOCOL,
+	.vid =     DBC_VENDOR_ID,
+	.pid =     DBC_PRODUCT_ID,
+	.device_rev = DBC_DEVICE_REV,
+	.func_name = DBC_STR_FUNC_TTY,
+
+	.post_config = dbc_tty_post_config,
+	.post_disconnect = dbc_tty_post_disconnect,
+	.run = dbc_tty_run,
+	.stop = dbc_tty_stop,
+};
+
+static int __init xhci_dbc_tty_init(void)
+{
+	return xhci_dbc_register_function(&tty_func);
+}
+
+static void __exit xhci_dbc_tty_fini(void)
+{
+	xhci_dbc_unregister_function();
+}
+
+late_initcall(xhci_dbc_tty_init);
+module_exit(xhci_dbc_tty_fini);
+
+MODULE_DESCRIPTION("xHCI DbC tty driver");
+MODULE_AUTHOR("Baoulu Lu");
+MODULE_LICENSE("GPL");

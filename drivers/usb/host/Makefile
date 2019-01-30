@@ -16,8 +16,10 @@ xhci-hcd-y += xhci-ring.o xhci-hub.o xhci-dbg.o
 xhci-hcd-y += xhci-trace.o
 
 ifneq ($(CONFIG_USB_XHCI_DBGCAP), )
-	xhci-hcd-y += xhci-dbgcap.o xhci-dbgtty.o
+	xhci-hcd-y += xhci-dbgcap.o
 endif
+
+obj-$(CONFIG_USB_XHCI_DBGCAP_TTY) += xhci-dbgtty.o
 
 ifneq ($(CONFIG_USB_XHCI_MTK), )
 	xhci-hcd-y += xhci-mtk-sch.o
