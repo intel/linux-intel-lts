@@ -301,8 +301,6 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 
 	switch_kmaps(prev_p, next_p);
 
-	switch_kmaps(prev_p, next_p);
-
 	/*
 	 * Leave lazy mode, flushing any hypercalls made here.
 	 * This must be done before restoring TLS segments so
