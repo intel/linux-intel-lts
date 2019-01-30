@@ -908,6 +908,7 @@ static int ipxip6_rcv(struct sk_buff *skb, u8 ipproto,
 			goto drop;
 		if (!xfrm6_policy_check(NULL, XFRM_POLICY_IN, skb))
 			goto drop;
+		ipv6h = ipv6_hdr(skb);
 		if (!ip6_tnl_rcv_ctl(t, &ipv6h->daddr, &ipv6h->saddr))
 			goto drop;
 		if (iptunnel_pull_header(skb, 0, tpi->proto, false))
@@ -1185,10 +1186,6 @@ route_lookup:
 	}
 	skb_dst_set(skb, dst);
 
-	if (encap_limit >= 0) {
-		init_tel_txopt(&opt, encap_limit);
-		ipv6_push_frag_opts(skb, &opt.ops, &proto);
-	}
 	hop_limit = hop_limit ? : ip6_dst_hoplimit(dst);
 
 	/* Calculate max headroom for all the headers and adjust
@@ -1202,6 +1199,11 @@ route_lookup:
 	err = ip6_tnl_encap(skb, t, &proto, fl6);
 	if (err)
 		return err;
+
+	if (encap_limit >= 0) {
+		init_tel_txopt(&opt, encap_limit);
+		ipv6_push_frag_opts(skb, &opt.ops, &proto);
+	}
 
 	skb_push(skb, sizeof(struct ipv6hdr));
 	skb_reset_network_header(skb);

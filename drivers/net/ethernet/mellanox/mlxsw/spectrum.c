@@ -333,8 +333,13 @@ static int mlxsw_sp_firmware_flash(struct mlxsw_sp *mlxsw_sp,
 		},
 		.mlxsw_sp = mlxsw_sp
 	};
+	int err;
 
-	return mlxfw_firmware_flash(&mlxsw_sp_mlxfw_dev.mlxfw_dev, firmware);
+	mlxsw_core_fw_flash_start(mlxsw_sp->core);
+	err = mlxfw_firmware_flash(&mlxsw_sp_mlxfw_dev.mlxfw_dev, firmware);
+	mlxsw_core_fw_flash_end(mlxsw_sp->core);
+
+	return err;
 }
 
 static bool mlxsw_sp_fw_rev_ge(const struct mlxsw_fw_rev *a,
@@ -3471,7 +3476,6 @@ static int mlxsw_sp_cpu_policers_set(struct mlxsw_core *mlxsw_core)
 			burst_size = 7;
 			break;
 		case MLXSW_REG_HTGT_TRAP_GROUP_SP_IP2ME:
-			is_bytes = true;
 			rate = 4 * 1024;
 			burst_size = 4;
 			break;
