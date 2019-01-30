@@ -45,7 +45,7 @@
 #endif
 
 static bool enable_out_of_sync = true;
-static int preallocated_oos_pages = 8192;
+static int preallocated_oos_pages = 2048;
 
 /*
  * validate a gm address and related range size,
@@ -2703,7 +2703,7 @@ static int setup_spt_oos(struct intel_gvt *gvt)
 	INIT_LIST_HEAD(&gtt->oos_page_use_list_head);
 
 	for (i = 0; i < preallocated_oos_pages; i++) {
-		oos_page = kzalloc(sizeof(*oos_page), GFP_KERNEL);
+		oos_page = kmalloc(sizeof(*oos_page), GFP_KERNEL);
 		if (!oos_page) {
 			ret = -ENOMEM;
 			goto fail;
