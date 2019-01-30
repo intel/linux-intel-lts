@@ -4235,6 +4235,7 @@ static OS_STATUS lwpmudrv_Prepare_Stop(void)
 #if !defined(DRV_SEP_ACRN_ON)
 	CONTROL_Invoke_Parallel(lwpmudrv_Pause_Op, NULL);
 #else
+
 	control = (struct profiling_control *)CONTROL_Allocate_Memory(
 		sizeof(struct profiling_control));
 	if (control == NULL) {
@@ -5955,6 +5956,77 @@ static OS_STATUS lwpmudrv_Control_Driver_Log(IOCTL_ARGS args)
 
 /* ------------------------------------------------------------------------- */
 /*!
+ * @fn          U64 lwpmudrv_Get_Sample_Drop_Info
+ *
+ * @brief       Get the information of dropped samples
+ *
+ * @param arg   Pointer to the IOCTL structure
+ *
+ * @return      status
+ *
+ * <I>Special Notes:</I>
+ *              <NONE>
+ */
+static OS_STATUS lwpmudrv_Get_Sample_Drop_Info(IOCTL_ARGS args)
+{
+	U32 size;
+	static SAMPLE_DROP_INFO_NODE req_sample_drop_info;
+#if defined(DRV_SEP_ACRN_ON)
+	U32 i;
+	struct profiling_status *stats = NULL;
+#endif
+	size = 0;
+	if (args->buf_drv_to_usr == NULL) {
+		return OS_INVALID;
+	}
+	if (args->len_drv_to_usr != sizeof(SAMPLE_DROP_INFO_NODE)) {
+		return OS_INVALID;
+	}
+
+	memset((char *)&req_sample_drop_info, 0, sizeof(SAMPLE_DROP_INFO_NODE));
+#if defined(DRV_SEP_ACRN_ON)
+	stats = (struct profiling_status *)CONTROL_Allocate_Memory(
+		GLOBAL_STATE_num_cpus(driver_state)*sizeof(struct profiling_status));
+
+	if (stats == NULL) {
+		SEP_PRINT_ERROR("lwpmudrv_Start: Unable to allocate memory\n");
+		return OS_NO_MEM;
+	}
+	memset(stats, 0, GLOBAL_STATE_num_cpus(driver_state)*
+		sizeof(struct profiling_status));
+
+	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_STATUS,
+		virt_to_phys(stats));
+
+	for (i = 0; i < GLOBAL_STATE_num_cpus(driver_state)
+		&& size < MAX_SAMPLE_DROP_NODES; i++) {
+		if (stats[i].samples_logged || stats[i].samples_dropped) {
+			SAMPLE_DROP_INFO_drop_info(
+				&req_sample_drop_info, size).os_id = OS_ID_ACORN;
+			SAMPLE_DROP_INFO_drop_info(
+				&req_sample_drop_info, size).cpu_id = i;
+			SAMPLE_DROP_INFO_drop_info(
+				&req_sample_drop_info, size).sampled = stats[i].samples_logged;
+			SAMPLE_DROP_INFO_drop_info(
+				&req_sample_drop_info, size).dropped = stats[i].samples_dropped;
+			size++;
+		}
+	}
+
+	stats = CONTROL_Free_Memory(stats);
+#endif
+	SAMPLE_DROP_INFO_size(&req_sample_drop_info) = size;
+
+	if (copy_to_user((void __user *)args->buf_drv_to_usr,
+		&req_sample_drop_info, args->len_drv_to_usr)) {
+		return OS_FAULT;
+	}
+
+	return OS_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/*!
  * @fn          U64 lwpmudrv_Get_Drv_Setup_Info
  *
  * @brief       Get numerous information of driver
@@ -6684,7 +6756,7 @@ static IOCTL_OP_TYPE lwpmu_Service_IOCTL(IOCTL_USE_INODE struct file *filp,
 		break;
 
 	case DRV_OPERATION_SET_OSID:
-		SEP_DRV_LOG_TRACE("LWPMUDRV_IOCTL_SET_OSID\n");
+		SEP_DRV_LOG_TRACE("DRV_OPERATION_IOCTL_SET_OSID\n");
 		status = lwpmudrv_Set_OSID(&local_args);
 		break;
 
@@ -6795,6 +6867,11 @@ static IOCTL_OP_TYPE lwpmu_Service_IOCTL(IOCTL_USE_INODE struct file *filp,
 	case DRV_OPERATION_FLUSH:
 		SEP_DRV_LOG_TRACE("DRV_OPERATION_FLUSH.");
 		status = lwpmudrv_Flush();
+		break;
+
+	case DRV_OPERATION_GET_SAMPLE_DROP_INFO:
+		SEP_PRINT_DEBUG("DRV_OPERATION_IOCTL_GET_SAMPLE_DROP_INFO\n");
+		status = lwpmudrv_Get_Sample_Drop_Info(&local_args);
 		break;
 
 	case DRV_OPERATION_SET_EMON_BUFFER_DRIVER_HELPER:
