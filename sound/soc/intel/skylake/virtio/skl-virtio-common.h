@@ -72,6 +72,8 @@ struct vfe_ipc_msg {
 
 	void *tx_buf;
 	void *rx_buf;
+
+	struct list_head list;
 };
 
 struct vbe_ipc_msg {
