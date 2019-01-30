@@ -545,6 +545,12 @@ struct profiling_pcpuid {
 	uint32_t ecx;
 	uint32_t edx;
 };
+
+struct profiling_status {
+	uint32_t samples_logged;
+	uint32_t samples_dropped;
+};
+
 #endif
 
 #endif
