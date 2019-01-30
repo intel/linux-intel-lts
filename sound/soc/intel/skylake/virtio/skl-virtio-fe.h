@@ -39,6 +39,7 @@ struct snd_skl_vfe {
 
 	/* position update work */
 	struct work_struct posn_update_work;
+	struct work_struct msg_timeout_work;
 
 	spinlock_t ipc_vq_lock;
 	/* IPC cmd from frontend to backend */
@@ -54,6 +55,8 @@ struct snd_skl_vfe {
 
 	spinlock_t substream_info_lock;
 	struct list_head substr_info_list;
+
+	struct list_head expired_msg_list;
 
 	int (*send_dsp_ipc_msg)(struct snd_skl_vfe *vfe,
 		struct ipc_message *msg);

@@ -316,6 +316,26 @@ static void vfe_cmd_handle_rx(struct virtqueue *vq)
 {
 }
 
+static void vfe_not_tx_timeout_handler(struct work_struct *work)
+{
+	struct vfe_ipc_msg *msg;
+	struct snd_skl_vfe *vfe =
+		container_of(work, struct snd_skl_vfe,
+		msg_timeout_work);
+
+	while (!list_empty(&vfe->expired_msg_list)) {
+		msg = list_first_entry(&vfe->expired_msg_list,
+			struct vfe_ipc_msg, list);
+
+		vfe_handle_timedout_not_tx_msg(vfe, msg);
+
+		list_del(&msg->list);
+		kfree(msg->tx_buf);
+		kfree(msg->rx_buf);
+		kfree(msg);
+	}
+}
+
 static void vfe_not_tx_done(struct virtqueue *vq)
 {
 	struct snd_skl_vfe *vfe = vq->vdev->priv;
@@ -335,8 +355,9 @@ static void vfe_not_tx_done(struct virtqueue *vq)
 
 		msg_status = atomic_read(&msg->status);
 		if (msg_status == VFE_MSG_TIMED_OUT) {
-			vfe_handle_timedout_not_tx_msg(vfe, msg);
-			goto free_msg;
+			list_add_tail(&msg->list, &vfe->expired_msg_list);
+			schedule_work(&vfe->msg_timeout_work);
+			continue;
 		}
 
 		if (msg->rx_buf) {
@@ -990,6 +1011,8 @@ static int vfe_init(struct virtio_device *vdev)
 	INIT_LIST_HEAD(&vfe->substr_info_list);
 	spin_lock_init(&vfe->ipc_vq_lock);
 	INIT_WORK(&vfe->posn_update_work, vfe_posn_update);
+	INIT_LIST_HEAD(&vfe->expired_msg_list);
+	INIT_WORK(&vfe->msg_timeout_work, vfe_not_tx_timeout_handler);
 
 	vfe->send_dsp_ipc_msg = vfe_send_dsp_ipc_msg;
 	vfe->notify_machine_probe = vfe_wrap_native_driver;
