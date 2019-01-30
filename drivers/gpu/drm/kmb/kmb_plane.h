@@ -28,25 +28,31 @@
 
 #include "kmb_drv.h"
 
-#define KMB_MAX_PLANES	4
+enum layer_id {
+	LAYER_0,
+	LAYER_1,
+	LAYER_2,
+	LAYER_3,
+	KMB_MAX_PLANES,
+};
 
-/* this struct may be needed in the future
- *struct kmb_plane {
- *	struct drm_plane base_plane;
- *	struct kmb_drm_private kmb_dev;
- *};
- */
+struct kmb_plane {
+	struct drm_plane base_plane;
+	struct kmb_drm_private kmb_dev;
+	unsigned char id;
+};
+
 struct kmb_plane_state {
 	struct drm_plane_state base_plane_state;
 	unsigned char no_planes;
 };
 
-/* may be needed in the future
- *#define to_kmb_plane(x) container_of(x, struct kmb_plane, base_plane)
- */
+#define POSSIBLE_CRTCS 1
+#define to_kmb_plane(x) container_of(x, struct kmb_plane, base_plane)
+
 #define to_kmb_plane_state(x) \
 		container_of(x, struct kmb_plane_state, base_plane_state)
 
-struct drm_plane *kmb_plane_init(struct drm_device *drm);
+struct kmb_plane *kmb_plane_init(struct drm_device *drm);
 void kmb_plane_destroy(struct drm_plane *plane);
 #endif /* __KMB_PLANE_H__ */

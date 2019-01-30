@@ -127,9 +127,8 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 		kmb_write(lcd, LCD_VSYNC_START_EVEN, vsync_start_offset);
 		kmb_write(lcd, LCD_VSYNC_END_EVEN, vsync_end_offset);
 	}
-	/* enable all 4 layers */
-	ctrl = LCD_CTRL_ENABLE | LCD_CTRL_VL1_ENABLE
-	    | LCD_CTRL_VL2_ENABLE | LCD_CTRL_GL1_ENABLE | LCD_CTRL_GL2_ENABLE;
+	/* enable VL1 layer as default */
+	ctrl = LCD_CTRL_ENABLE | LCD_CTRL_VL1_ENABLE;
 	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
 	    | LCD_CTRL_OUTPUT_ENABLED;
 	kmb_write(lcd, LCD_CONTROL, ctrl);
@@ -197,17 +196,17 @@ static const struct drm_crtc_helper_funcs kmb_crtc_helper_funcs = {
 int kmb_setup_crtc(struct drm_device *drm)
 {
 	struct kmb_drm_private *lcd = drm->dev_private;
-	struct drm_plane *primary;
+	struct kmb_plane *primary;
 	int ret;
 
 	primary = kmb_plane_init(drm);
 	if (IS_ERR(primary))
 		return PTR_ERR(primary);
 
-	ret = drm_crtc_init_with_planes(drm, &lcd->crtc, primary, NULL,
-					&kmb_crtc_funcs, NULL);
+	ret = drm_crtc_init_with_planes(drm, &lcd->crtc, &primary->base_plane,
+					NULL, &kmb_crtc_funcs, NULL);
 	if (ret) {
-		kmb_plane_destroy(primary);
+		kmb_plane_destroy(&primary->base_plane);
 		return ret;
 	}
 

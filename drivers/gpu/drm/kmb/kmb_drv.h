@@ -36,7 +36,7 @@ struct kmb_drm_private {
 	struct clk *clk;
 	struct drm_fbdev_cma *fbdev;
 	struct drm_crtc crtc;
-	struct drm_plane *plane;
+	struct kmb_plane *plane;
 	struct drm_atomic_state *state;
 };
 

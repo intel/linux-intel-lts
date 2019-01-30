@@ -62,15 +62,36 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	dma_addr_t addr;
 	unsigned int width;
 	unsigned int height;
-	unsigned int i;
 	unsigned int dma_len;
-	struct kmb_plane_state *kmb_state = to_kmb_plane_state(plane->state);
+	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
 	unsigned int dma_cfg;
+	unsigned int ctrl = 0;
+	unsigned char plane_id = kmb_plane->id;
 
 	if (!fb)
 		return;
 
 	lcd = plane->dev->dev_private;
+
+	switch (plane_id) {
+	case LAYER_0:
+		ctrl = LCD_CTRL_VL1_ENABLE;
+		break;
+	case LAYER_1:
+		ctrl = LCD_CTRL_VL2_ENABLE;
+		break;
+	case LAYER_2:
+		ctrl = LCD_CTRL_GL1_ENABLE;
+		break;
+	case LAYER_3:
+		ctrl = LCD_CTRL_GL2_ENABLE;
+		break;
+	}
+
+	ctrl |= LCD_CTRL_ENABLE;
+	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
+	    | LCD_CTRL_OUTPUT_ENABLED;
+	kmb_write(lcd, LCD_CONTROL, ctrl);
 
 	/* TBD */
 	/*set LCD_LAYERn_WIDTH, LCD_LAYERn_HEIGHT, LCD_LAYERn_COL_START,
@@ -78,30 +99,32 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	 * CFG should set the pixel format, FIFO level and BPP
 	 */
 
+	/*TBD check visible? */
+
 	/* we may have to set LCD_DMA_VSTRIDE_ENABLE in the future */
 	dma_cfg = LCD_DMA_LAYER_ENABLE | LCD_DMA_LAYER_AUTO_UPDATE
 	    | LCD_DMA_LAYER_CONT_UPDATE | LCD_DMA_LAYER_AXI_BURST_1;
 
-	for (i = 0; i < kmb_state->no_planes; i++) {
-		/* disable DMA first */
-		kmb_write(lcd, LCD_LAYERn_DMA_CFG(i), ~LCD_DMA_LAYER_ENABLE);
+	/* disable DMA first */
+	kmb_write(lcd, LCD_LAYERn_DMA_CFG(plane_id), ~LCD_DMA_LAYER_ENABLE);
 
-		addr = drm_fb_cma_get_gem_addr(fb, plane->state, i);
-		kmb_write(lcd, LCD_LAYERn_DMA_START_ADDR(i), addr);
-		kmb_write(lcd, LCD_LAYERn_DMA_START_SHADOW(i), addr);
+	addr = drm_fb_cma_get_gem_addr(fb, plane->state, plane_id);
+	kmb_write(lcd, LCD_LAYERn_DMA_START_ADDR(plane_id), addr);
+	kmb_write(lcd, LCD_LAYERn_DMA_START_SHADOW(plane_id), addr);
 
-		width = fb->width;
-		height = fb->height;
-		dma_len = width * height * fb->format->cpp[i];
-		kmb_write(lcd, LCD_LAYERn_DMA_LEN(i), dma_len);
+	width = fb->width;
+	height = fb->height;
+	dma_len = width * height * fb->format->cpp[plane_id];
+	kmb_write(lcd, LCD_LAYERn_DMA_LEN(plane_id), dma_len);
 
-		kmb_write(lcd, LCD_LAYERn_DMA_LINE_VSTRIDE(i), fb->pitches[0]);
-		kmb_write(lcd, LCD_LAYERn_DMA_LINE_WIDTH(i),
-			  (width * fb->format->cpp[i]));
+	kmb_write(lcd, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id),
+		  fb->pitches[plane_id]);
+	kmb_write(lcd, LCD_LAYERn_DMA_LINE_WIDTH(plane_id),
+		  (width * fb->format->cpp[plane_id]));
 
-		/* enable DMA */
-		kmb_write(lcd, LCD_LAYERn_DMA_CFG(i), dma_cfg);
-	}
+	/* enable DMA */
+	kmb_write(lcd, LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
+
 }
 
 static const struct drm_plane_helper_funcs kmb_plane_helper_funcs = {
@@ -111,7 +134,9 @@ static const struct drm_plane_helper_funcs kmb_plane_helper_funcs = {
 
 void kmb_plane_destroy(struct drm_plane *plane)
 {
+	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
 	drm_plane_cleanup(plane);
+	kfree(kmb_plane);
 }
 
 static void kmb_destroy_plane_state(struct drm_plane *plane,
@@ -206,11 +231,11 @@ static const u32 kmb_formats_v[] = {
 	DRM_FORMAT_NV12, DRM_FORMAT_NV21,
 };
 
-struct drm_plane *kmb_plane_init(struct drm_device *drm)
+struct kmb_plane *kmb_plane_init(struct drm_device *drm)
 {
 	struct kmb_drm_private *lcd = drm->dev_private;
-	struct drm_plane *plane = NULL;
-	struct drm_plane *primary = NULL;
+	struct kmb_plane *plane = NULL;
+	struct kmb_plane *primary = NULL;
 	int i = 0;
 	int ret;
 	enum drm_plane_type plane_type;
@@ -234,18 +259,21 @@ struct drm_plane *kmb_plane_init(struct drm_device *drm)
 			num_plane_formats = ARRAY_SIZE(kmb_formats_g);
 		}
 
-		ret = drm_universal_plane_init(drm, plane, 0xFF,
-				       &kmb_plane_funcs, plane_formats,
-				       num_plane_formats,
-				       NULL, plane_type, "plane %d", i);
+		ret =
+		    drm_universal_plane_init(drm, &plane->base_plane,
+					     POSSIBLE_CRTCS, &kmb_plane_funcs,
+					     plane_formats, num_plane_formats,
+					     NULL, plane_type, "plane %d", i);
 		if (ret < 0)
 			goto cleanup;
 
-		drm_plane_helper_add(plane, &kmb_plane_helper_funcs);
+		drm_plane_helper_add(&plane->base_plane,
+				     &kmb_plane_helper_funcs);
 		if (plane_type == DRM_PLANE_TYPE_PRIMARY) {
 			primary = plane;
 			lcd->plane = plane;
 		}
+		plane->id = i;
 	}
 
 cleanup:
