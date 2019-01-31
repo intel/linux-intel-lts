@@ -442,10 +442,21 @@ VOID PMI_Buffer_Handler(PVOID data)
 	U64 overflow_status = 0;
 
 	if (!pcb || !cpu_buf || !devices) {
+		SEP_DRV_LOG_ERROR(
+			"Invalid data pointers in PMI_Buffer_Handler!\n");
 		return;
 	}
 
-	cpu_id = (S32)CONTROL_THIS_CPU();
+	if (data) {
+		cpu_id = *(S32 *)data;
+		if (cpu_id >= GLOBAL_STATE_num_cpus(driver_state)) {
+			SEP_DRV_LOG_ERROR(
+				"Invalid cpu_id: %d\n", cpu_id);
+			return;
+		}
+	} else {
+		cpu_id = (S32)CONTROL_THIS_CPU();
+	}
 	pcpu = &pcb[cpu_id];
 	bd = &cpu_buf[cpu_id];
 	dev_idx = core_to_dev_map[cpu_id];
@@ -493,14 +504,14 @@ VOID PMI_Buffer_Handler(PVOID data)
 			SEP_DRV_LOG_TRACE("payload_size = %x\n", payload_size);
 			if (header.payload_size > payload_size) {
 				// Mismatch in payload size in header info
-				SEP_PRINT_ERROR(
+				SEP_DRV_LOG_ERROR(
 					"Mismatch in data size: header=%llu, payload_size=%d\n",
 					header.payload_size, payload_size);
 				goto handler_cleanup;
 			}
 			if (header.cpu_id != cpu_id) {
 				// Mismatch in cpu index in header info
-				SEP_PRINT_ERROR(
+				SEP_DRV_LOG_ERROR(
 					"Mismatch in cpu idx: header=%u, buffer=%d\n",
 					header.cpu_id, cpu_id);
 				goto handler_cleanup;
