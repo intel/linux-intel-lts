@@ -2241,6 +2241,8 @@ static VOID lwpmudrv_ACRN_Buffer_Read(
 #endif
 )
 {
+	S32 i;
+
 	SEP_DRV_LOG_TRACE_IN("");
 
 	if (GET_DRIVER_STATE() != DRV_STATE_RUNNING) {
@@ -2248,7 +2250,9 @@ static VOID lwpmudrv_ACRN_Buffer_Read(
 		return;
 	}
 
-	CONTROL_Invoke_Parallel(PMI_Buffer_Handler, NULL);
+	for (i = 0; i < GLOBAL_STATE_num_cpus(driver_state); i++) {
+		PMI_Buffer_Handler(&i);
+	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
 	mod_timer(buffer_read_timer, jiffies + buffer_timer_interval);
@@ -4261,7 +4265,10 @@ static OS_STATUS lwpmudrv_Prepare_Stop(void)
 
 	lwpmudrv_ACRN_Flush_Stop_Timer();
         SEP_DRV_LOG_TRACE("Calling final PMI_Buffer_Handler\n");
-	CONTROL_Invoke_Parallel(PMI_Buffer_Handler, NULL);
+
+	for (i = 0; i < GLOBAL_STATE_num_cpus(driver_state); i++) {
+		PMI_Buffer_Handler(&i);
+	}
 #endif
 
 	SEP_DRV_LOG_TRACE("Outside of all interrupts.");
