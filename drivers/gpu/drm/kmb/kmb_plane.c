@@ -54,6 +54,119 @@ static int kmb_plane_atomic_check(struct drm_plane *plane,
 	return 0;
 }
 
+unsigned int set_pixel_format(u32 format)
+{
+	unsigned int val = 0;
+
+	switch (format) {
+	/*planar formats */
+	case DRM_FORMAT_YUV444:
+		val = LCD_LAYER_FORMAT_YCBCR444PLAN | LCD_LAYER_PLANAR_STORAGE;
+		break;
+	case DRM_FORMAT_YVU444:
+		val = LCD_LAYER_FORMAT_YCBCR444PLAN | LCD_LAYER_PLANAR_STORAGE
+			| LCD_LAYER_CRCB_ORDER;
+		break;
+	case DRM_FORMAT_YUV422:
+		val = LCD_LAYER_FORMAT_YCBCR422PLAN | LCD_LAYER_PLANAR_STORAGE;
+		break;
+	case DRM_FORMAT_YVU422:
+		val = LCD_LAYER_FORMAT_YCBCR422PLAN | LCD_LAYER_PLANAR_STORAGE
+		       | LCD_LAYER_CRCB_ORDER;
+		break;
+	case DRM_FORMAT_YUV420:
+		val = LCD_LAYER_FORMAT_YCBCR420PLAN | LCD_LAYER_PLANAR_STORAGE;
+		break;
+	case DRM_FORMAT_YVU420:
+		val = LCD_LAYER_FORMAT_YCBCR420PLAN | LCD_LAYER_PLANAR_STORAGE
+		       | LCD_LAYER_CRCB_ORDER;
+		break;
+	case DRM_FORMAT_NV12:
+		val = LCD_LAYER_FORMAT_NV12 | LCD_LAYER_PLANAR_STORAGE;
+		break;
+	case DRM_FORMAT_NV21:
+		val = LCD_LAYER_FORMAT_NV12 | LCD_LAYER_PLANAR_STORAGE
+		       | LCD_LAYER_CRCB_ORDER;
+		break;
+	/* packed formats */
+	case DRM_FORMAT_RGB332:
+		val = LCD_LAYER_FORMAT_RGB332;
+		break;
+	case DRM_FORMAT_XBGR4444:
+		val = LCD_LAYER_FORMAT_RGBX4444 | LCD_LAYER_BGR_ORDER;
+		break;
+	case DRM_FORMAT_ARGB4444:
+		val = LCD_LAYER_FORMAT_RGBA4444;
+		break;
+	case DRM_FORMAT_ABGR4444:
+		val = LCD_LAYER_FORMAT_RGBA4444 | LCD_LAYER_BGR_ORDER;
+		break;
+	case DRM_FORMAT_XRGB1555:
+		val = LCD_LAYER_FORMAT_XRGB1555;
+		break;
+	case DRM_FORMAT_XBGR1555:
+		val = LCD_LAYER_FORMAT_XRGB1555 | LCD_LAYER_BGR_ORDER;
+		break;
+	case DRM_FORMAT_ARGB1555:
+		val = LCD_LAYER_FORMAT_RGBA1555;
+		break;
+	case DRM_FORMAT_ABGR1555:
+		val = LCD_LAYER_FORMAT_RGBA1555 | LCD_LAYER_BGR_ORDER;
+		break;
+	case DRM_FORMAT_RGB565:
+		val = LCD_LAYER_FORMAT_RGB565;
+		break;
+	case DRM_FORMAT_BGR565:
+		val = LCD_LAYER_FORMAT_RGB565 | LCD_LAYER_BGR_ORDER;
+		break;
+	case DRM_FORMAT_RGB888:
+		val = LCD_LAYER_FORMAT_RGB888;
+		break;
+	case DRM_FORMAT_BGR888:
+		val = LCD_LAYER_FORMAT_RGB888 | LCD_LAYER_BGR_ORDER;
+		break;
+	case DRM_FORMAT_XRGB8888:
+		val = LCD_LAYER_FORMAT_RGBX8888;
+		break;
+	case DRM_FORMAT_XBGR8888:
+		val = LCD_LAYER_FORMAT_RGBX8888 | LCD_LAYER_BGR_ORDER;
+		break;
+	case DRM_FORMAT_ARGB8888:
+		val = LCD_LAYER_FORMAT_RGBA8888;
+		break;
+	case DRM_FORMAT_ABGR8888:
+		val = LCD_LAYER_FORMAT_RGBA8888 | LCD_LAYER_BGR_ORDER;
+		break;
+	}
+	return val;
+}
+
+unsigned int set_bits_per_pixel(const struct drm_format_info *format)
+{
+	int i;
+	u32 bpp = 0;
+	unsigned int val = 0;
+
+	for (i = 0; i < format->num_planes; i++)
+		bpp += 8*format->cpp[i];
+
+	switch (bpp) {
+	case 8:
+		val = LCD_LAYER_8BPP;
+		break;
+	case 16:
+		val = LCD_LAYER_16BPP;
+		break;
+	case 24:
+		val = LCD_LAYER_24BPP;
+		break;
+	case 32:
+		val = LCD_LAYER_32BPP;
+		break;
+	}
+	return val;
+}
+
 static void kmb_plane_atomic_update(struct drm_plane *plane,
 				    struct drm_plane_state *state)
 {
@@ -65,13 +178,30 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	unsigned int dma_len;
 	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
 	unsigned int dma_cfg;
-	unsigned int ctrl = 0;
+	unsigned int ctrl = 0, val = 0;
+	unsigned int src_w, src_h, crtc_x, crtc_y;
 	unsigned char plane_id = kmb_plane->id;
 
 	if (!fb)
 		return;
 
 	lcd = plane->dev->dev_private;
+
+	src_w = plane->state->src_w >> 16;
+	src_h = plane->state->src_h >> 16;
+	crtc_x = plane->state->crtc_x;
+	crtc_y = plane->state->crtc_y;
+
+	kmb_write(lcd, LCD_LAYERn_WIDTH(plane_id), src_w-1);
+	kmb_write(lcd, LCD_LAYERn_HEIGHT(plane_id), src_h-1);
+	kmb_write(lcd, LCD_LAYERn_COL_START(plane_id), crtc_x);
+	kmb_write(lcd, LCD_LAYERn_ROW_START(plane_id), crtc_y);
+
+	val = set_pixel_format(fb->format->format);
+	val |= set_bits_per_pixel(fb->format);
+	/*CHECKME Leon drvr sets it to 50 try this for now */
+	val |= LCD_LAYER_FIFO_50;
+	kmb_write(lcd, LCD_LAYERn_CFG(plane_id), val);
 
 	switch (plane_id) {
 	case LAYER_0:
@@ -92,12 +222,6 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
 	    | LCD_CTRL_OUTPUT_ENABLED;
 	kmb_write(lcd, LCD_CONTROL, ctrl);
-
-	/* TBD */
-	/*set LCD_LAYERn_WIDTH, LCD_LAYERn_HEIGHT, LCD_LAYERn_COL_START,
-	 * LCD_LAYERn_ROW_START, LCD_LAYERn_CFG
-	 * CFG should set the pixel format, FIFO level and BPP
-	 */
 
 	/*TBD check visible? */
 
@@ -203,9 +327,6 @@ static const u32 kmb_formats_g[] = {
 	DRM_FORMAT_RGB888, DRM_FORMAT_BGR888,
 	DRM_FORMAT_XRGB8888, DRM_FORMAT_XBGR8888,
 	DRM_FORMAT_ARGB8888, DRM_FORMAT_ABGR8888,
-	DRM_FORMAT_XRGB2101010, DRM_FORMAT_XBGR2101010,
-	DRM_FORMAT_YUYV, DRM_FORMAT_YVYU,
-	DRM_FORMAT_UYVY, DRM_FORMAT_VYUY,
 };
 
 /* video layer (0 & 1) formats, packed and planar formats are supported */
@@ -220,11 +341,7 @@ static const u32 kmb_formats_v[] = {
 	DRM_FORMAT_RGB888, DRM_FORMAT_BGR888,
 	DRM_FORMAT_XRGB8888, DRM_FORMAT_XBGR8888,
 	DRM_FORMAT_ARGB8888, DRM_FORMAT_ABGR8888,
-	DRM_FORMAT_XRGB2101010, DRM_FORMAT_XBGR2101010,
-	DRM_FORMAT_YUYV, DRM_FORMAT_YVYU,
-	DRM_FORMAT_UYVY, DRM_FORMAT_VYUY,
 	/*planar formats */
-	DRM_FORMAT_YUV411, DRM_FORMAT_YVU411,
 	DRM_FORMAT_YUV420, DRM_FORMAT_YVU420,
 	DRM_FORMAT_YUV422, DRM_FORMAT_YVU422,
 	DRM_FORMAT_YUV444, DRM_FORMAT_YVU444,

@@ -381,6 +381,173 @@
 /* bit 10 */
 #define LCD_DMA_LAYER_V_STRIDE_EN		(0x400)
 
+/******************************************************************************
+ *		   LCD controller Layer config register
+ ******************************************************************************/
+/* ---bit 1:2 */
+/* enable horizontal scaling,default is
+ * no scaling
+ */
+#define LCD_LAYER_SCALE_H			(0x0002)
+/* enable vertical scaling*/
+#define LCD_LAYER_SCALE_V			(0x0004)
+/* enable vertical and horizontal
+ * scaling
+ */
+#define LCD_LAYER_SCALE_H_V			(0x0006)
+/* --- bit 3*/
+/* enable CSC, default is bypassed*/
+#define LCD_LAYER_CSC_EN			(0x0008)
+/* --- bit 4:5*/
+/* use static alpha value for layer,
+ * default is disabled
+ */
+#define LCD_LAYER_ALPHA_STATIC			(0x10)
+/* use embedded value for alpha blending*/
+#define LCD_LAYER_ALPHA_EMBED			(0x20)
+/* use static alpha and embedded value,
+ * by multiplication
+ */
+#define LCD_LAYER_ALPHA_COMBI			(0x30)
+/* --- bit 6*/
+/* indicates that the RGB values have
+ * been multiplied with alpha
+ */
+#define LCD_LAYER_ALPHA_PREMULT			(0x40)
+/* --- bit 7*/
+#define LCD_LAYER_INVERT_COL			(0x80)
+/* enable color inversion,
+ * default is not inverted
+ */
+/* --- bit 8*/
+/* enable transparency */
+#define LCD_LAYER_TRANSPARENT_EN		(0x100)
+/* --- bit 9:13*/
+/* default Layer config */
+#define LCD_LAYER_FORMAT_YCBCR444PLAN		(0x0000)
+#define LCD_LAYER_FORMAT_YCBCR422PLAN		(0x0200)
+#define LCD_LAYER_FORMAT_YCBCR420PLAN		(0x0400)
+#define LCD_LAYER_FORMAT_RGB888PLAN		(0x0600)
+#define LCD_LAYER_FORMAT_YCBCR444LIN		(0x0800)
+#define LCD_LAYER_FORMAT_YCBCR422LIN		(0x0A00)
+#define LCD_LAYER_FORMAT_RGB888			(0x0C00)
+#define LCD_LAYER_FORMAT_RGBA8888		(0x0E00)
+#define LCD_LAYER_FORMAT_RGBX8888		(0x1000)
+#define LCD_LAYER_FORMAT_RGB565			(0x1200)
+#define LCD_LAYER_FORMAT_RGBA1555		(0x1400)
+#define LCD_LAYER_FORMAT_XRGB1555		(0x1600)
+#define LCD_LAYER_FORMAT_RGB444			(0x1800)
+#define LCD_LAYER_FORMAT_RGBA4444		(0x1A00)
+#define LCD_LAYER_FORMAT_RGBX4444		(0x1C00)
+#define LCD_LAYER_FORMAT_RGB332			(0x1E00)
+#define LCD_LAYER_FORMAT_RGBA3328		(0x2000)
+#define LCD_LAYER_FORMAT_RGBX3328		(0x2200)
+#define LCD_LAYER_FORMAT_CLUT			(0x2400)
+#define LCD_LAYER_FORMAT_NV12			(0x3800)
+/* --- bit 14*/
+/* planar storege format */
+#define LCD_LAYER_PLANAR_STORAGE		(0x4000)
+/* --- bit 15:16*/
+#define LCD_LAYER_8BPP				(0x00000)
+#define LCD_LAYER_16BPP				(0x08000)
+#define LCD_LAYER_24BPP				(0x10000)
+#define LCD_LAYER_32BPP				(0x18000)
+/* --- bit 17*/
+/* Y after CRCb,
+ * default is Y before crcb
+ */
+#define LCD_LAYER_Y_ORDER			(0x020000)
+/* --- bit 18*/
+/* CR before Cb,
+ * default is CB before Cr
+ */
+#define LCD_LAYER_CRCB_ORDER			(0x040000)
+/*--- but 19*/
+/* BGR order, default is RGB */
+#define LCD_LAYER_BGR_ORDER			(0x080000)
+/* ---bit 20:21*/
+/* 2 entry clut, 1bpp */
+#define LCD_LAYER_LUT_2ENT			(0x000000)
+/* 4 entry clut, 2bpp */
+#define LCD_LAYER_LUT_4ENT			(0x100000)
+/* 18 entry clut, 4bpp */
+#define LCD_LAYER_LUT_16ENT			(0x200000)
+/*--- bit 22:24*/
+/* no flip or rotaton */
+#define LCD_LAYER_NO_FLIP			(0x000000)
+/* flip vertical */
+#define LCD_LAYER_FLIP_V			(0x400000)
+/* flip horizontal */
+#define LCD_LAYER_FLIP_H			(0x800000)
+/* rotate right 90 */
+#define LCD_LAYER_ROT_R90			(0xC00000)
+/* rotate left 90 */
+#define LCD_LAYER_ROT_L90			(0x1000000)
+/* rotate 180 (flip H & V ) */
+#define LCD_LAYER_ROT_180			(0x1400000)
+/* --- bit 25:26*/
+/* fifo empty */
+#define LCD_LAYER_FIFO_00			(0x0000000)
+/* fifo 25% */
+#define LCD_LAYER_FIFO_25			(0x2000000)
+/* fifo 50% */
+#define LCD_LAYER_FIFO_50			(0x4000000)
+/* fifo 100% , full */
+#define LCD_LAYER_FIFO_100			(0x6000000)
+
+/* --- bit 27:29*/
+#define LCD_LAYER_INTERLEAVE_DIS		(0x00000000)
+#define LCD_LAYER_INTERLEAVE_V			(0x08000000)
+#define LCD_LAYER_INTERLEAVE_H			(0x10000000)
+#define LCD_LAYER_INTERLEAVE_CH			(0x18000000)
+#define LCD_LAYER_INTERLEAVE_V_SUB		(0x20000000)
+#define LCD_LAYER_INTERLEAVE_H_SUB		(0x28000000)
+#define LCD_LAYER_INTERLEAVE_CH_SUB		(0x30000000)
+/*bit 30*/
+#define LCD_LAYER_INTER_POS_EVEN		(0x00000000)
+#define LCD_LAYER_INTER_POS_ODD			(0x40000000)
+
+/****************************************************************************
+ *		   LCD controller output format register defines
+ ****************************************************************************/
+/* --- bits 0:4*/
+#define D_LCD_OUTF_FORMAT_RGB121212             (0x00 << 0)
+#define D_LCD_OUTF_FORMAT_RGB101010             (0x01 << 0)
+#define D_LCD_OUTF_FORMAT_RGB888                (0x02 << 0)
+#define D_LCD_OUTF_FORMAT_RGB666                (0x03 << 0)
+#define D_LCD_OUTF_FORMAT_RGB565                (0x04 << 0)
+#define D_LCD_OUTF_FORMAT_RGB444                (0x05 << 0)
+#define D_LCD_OUTF_FORMAT_MRGB121212            (0x10 << 0)
+#define D_LCD_OUTF_FORMAT_MRGB101010            (0x11 << 0)
+#define D_LCD_OUTF_FORMAT_MRGB888               (0x12 << 0)
+#define D_LCD_OUTF_FORMAT_MRGB666               (0x13 << 0)
+#define D_LCD_OUTF_FORMAT_MRGB565               (0x14 << 0)
+#define D_LCD_OUTF_FORMAT_YCBCR420_8B_LEGACY    (0x08 << 0)
+#define D_LCD_OUTF_FORMAT_YCBCR420_8B_DCI       (0x09 << 0)
+#define D_LCD_OUTF_FORMAT_YCBCR420_8B           (0x0A << 0)
+#define D_LCD_OUTF_FORMAT_YCBCR420_10B          (0x0B << 0)
+#define D_LCD_OUTF_FORMAT_YCBCR420_12B          (0x0C << 0)
+#define D_LCD_OUTF_FORMAT_YCBCR422_8B           (0x0D << 0)
+#define D_LCD_OUTF_FORMAT_YCBCR422_10B          (0x0E << 0)
+#define D_LCD_OUTF_FORMAT_YCBCR444              (0x0F << 0)
+#define D_LCD_OUTF_FORMAT_MYCBCR420_8B_LEGACY   (0x18 << 0)
+#define D_LCD_OUTF_FORMAT_MYCBCR420_8B_DCI      (0x19 << 0)
+#define D_LCD_OUTF_FORMAT_MYCBCR420_8B          (0x1A << 0)
+#define D_LCD_OUTF_FORMAT_MYCBCR420_10B         (0x1B << 0)
+#define D_LCD_OUTF_FORMAT_MYCBCR420_12B         (0x1C << 0)
+#define D_LCD_OUTF_FORMAT_MYCBCR422_8B          (0x1D << 0)
+#define D_LCD_OUTF_FORMAT_MYCBCR422_10B         (0x1E << 0)
+#define D_LCD_OUTF_FORMAT_MYCBCR444             (0x1F << 0)
+/* --- bit 5*/
+/* default is 0, RGB order */
+#define D_LCD_OUTF_BGR_ORDER			(1 << 5)
+/* --- bit 6*/
+/* Y after CB/Cr, default is Y before CB/CR */
+#define D_LCD_OUTF_Y_ORDER			(1 << 6)
+/* --- bit 7*/
+/* Cr before  Cb, default is Cb before Cr */
+#define D_LCD_OUTF_CRCB_ORDER			(1 << 7)
+
 /* **************************************************************************
  *			LCD controller control register defines
  ****************************************************************************
