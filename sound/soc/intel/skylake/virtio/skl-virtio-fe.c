@@ -316,6 +316,26 @@ static void vfe_cmd_handle_rx(struct virtqueue *vq)
 {
 }
 
+static void vfe_not_tx_timeout_handler(struct work_struct *work)
+{
+	struct vfe_ipc_msg *msg;
+	struct snd_skl_vfe *vfe =
+		container_of(work, struct snd_skl_vfe,
+		msg_timeout_work);
+
+	while (!list_empty(&vfe->expired_msg_list)) {
+		msg = list_first_entry(&vfe->expired_msg_list,
+			struct vfe_ipc_msg, list);
+
+		vfe_handle_timedout_not_tx_msg(vfe, msg);
+
+		list_del(&msg->list);
+		kfree(msg->tx_buf);
+		kfree(msg->rx_buf);
+		kfree(msg);
+	}
+}
+
 static void vfe_not_tx_done(struct virtqueue *vq)
 {
 	struct snd_skl_vfe *vfe = vq->vdev->priv;
@@ -335,8 +355,9 @@ static void vfe_not_tx_done(struct virtqueue *vq)
 
 		msg_status = atomic_read(&msg->status);
 		if (msg_status == VFE_MSG_TIMED_OUT) {
-			vfe_handle_timedout_not_tx_msg(vfe, msg);
-			goto free_msg;
+			list_add_tail(&msg->list, &vfe->expired_msg_list);
+			schedule_work(&vfe->msg_timeout_work);
+			continue;
 		}
 
 		if (msg->rx_buf) {
@@ -881,6 +902,11 @@ static struct nhlt_acpi_table *vfe_skl_nhlt_init(struct device *dev)
 	return nhlt;
 }
 
+
+void vfe_skl_pci_dev_release(struct device *dev)
+{
+}
+
 static int vfe_skl_init(struct virtio_device *vdev)
 {
 	int err;
@@ -892,7 +918,19 @@ static int vfe_skl_init(struct virtio_device *vdev)
 		return -ENOMEM;
 
 	skl->pci->device = vfe_pci_device_id.device;
-	skl->pci->dev = vdev->dev;
+	device_initialize(&skl->pci->dev);
+	skl->pci->dev.parent = &vfe->vdev->dev;
+	skl->pci->dev.release = vfe_skl_pci_dev_release;
+	skl->pci->dev.bus = vfe->vdev->dev.bus;
+	skl->pci->dev.coherent_dma_mask = vfe->vdev->dev.coherent_dma_mask;
+	skl->pci->dev.dma_mask = &skl->pci->dev.coherent_dma_mask;
+
+	dev_set_name(&skl->pci->dev, "%s", "audio-virtio");
+	err = device_add(&skl->pci->dev);
+	if (err < 0)
+		goto error;
+
+	dev_set_drvdata(&skl->pci->dev, vfe);
 
 	skl->mach = &vfe_acpi_mach;
 	skl->mach->pdata = &vfe;
@@ -902,49 +940,40 @@ static int vfe_skl_init(struct virtio_device *vdev)
 
 	err = vfe_skl_init_hbus(vfe, skl);
 	if (err < 0)
-		return err;
+		goto error;
 
 	strcpy(skl->tplg_name, "5a98-INTEL-NHLT-GPA-11-tplg.bin");
 
 	err = vfe_skl_init_dsp(skl);
 	if (err < 0)
-		return err;
+		goto error;
 
 	err = vfe_platform_register(vfe, &vdev->dev);
 	if (err < 0)
-		return err;
+		goto error;
 
 	err = vfe_machine_device_register(vfe, skl);
 	if (err < 0)
-		return err;
+		goto error;
 
 	return 0;
+
+error:
+	device_unregister(&skl->pci->dev);
+	return err;
 }
 
-static int vfe_init(struct virtio_device *vdev)
+static int vfe_init_vqs(struct snd_skl_vfe *vfe)
 {
-	struct snd_skl_vfe *vfe;
-	int ret;
 	struct virtqueue *vqs[SKL_VIRTIO_NUM_OF_VQS];
-		vq_callback_t *cbs[SKL_VIRTIO_NUM_OF_VQS] =	{
-				vfe_cmd_tx_done,
-				vfe_cmd_handle_rx,
-				vfe_not_tx_done,
-				vfe_not_handle_rx
-		};
-
-	vfe = devm_kzalloc(&vdev->dev, sizeof(*vfe), GFP_KERNEL);
-	if (!vfe)
-		return -ENOMEM;
-
-	skl_vfe = vfe;
-	vfe->vdev = vdev;
-	vdev->priv = vfe;
-
-	INIT_LIST_HEAD(&vfe->kcontrols_list);
-
-	spin_lock_init(&vfe->substream_info_lock);
-	INIT_LIST_HEAD(&vfe->substr_info_list);
+	int ret;
+	struct virtio_device *vdev = vfe->vdev;
+	vq_callback_t *cbs[SKL_VIRTIO_NUM_OF_VQS] =	{
+			vfe_cmd_tx_done,
+			vfe_cmd_handle_rx,
+			vfe_not_tx_done,
+			vfe_not_handle_rx
+	};
 
 	/* find virt queue for vfe to send/receive IPC message. */
 	ret = virtio_find_vqs(vfe->vdev, SKL_VIRTIO_NUM_OF_VQS,
@@ -953,32 +982,63 @@ static int vfe_init(struct virtio_device *vdev)
 		dev_err(&vdev->dev, "error: find vqs fail with %d\n", ret);
 		return ret;
 	}
-
-	spin_lock_init(&vfe->ipc_vq_lock);
 	/* virtques */
 	vfe->ipc_cmd_tx_vq = vqs[SKL_VIRTIO_IPC_CMD_TX_VQ];
 	vfe->ipc_cmd_rx_vq = vqs[SKL_VIRTIO_IPC_CMD_RX_VQ];
 	vfe->ipc_not_tx_vq = vqs[SKL_VIRTIO_IPC_NOT_TX_VQ];
 	vfe->ipc_not_rx_vq = vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
 
-	INIT_WORK(&vfe->posn_update_work, vfe_posn_update);
-
 	virtio_device_ready(vdev);
+
+	return 0;
+}
+
+static int vfe_init(struct virtio_device *vdev)
+{
+	struct snd_skl_vfe *vfe;
+	int ret;
+
+	vfe = devm_kzalloc(&vdev->dev, sizeof(*vfe), GFP_KERNEL);
+	if (!vfe)
+		goto no_mem;
+
+	skl_vfe = vfe;
+	vfe->vdev = vdev;
+	vdev->priv = vfe;
+
+	INIT_LIST_HEAD(&vfe->kcontrols_list);
+	spin_lock_init(&vfe->substream_info_lock);
+	INIT_LIST_HEAD(&vfe->substr_info_list);
+	spin_lock_init(&vfe->ipc_vq_lock);
+	INIT_WORK(&vfe->posn_update_work, vfe_posn_update);
+	INIT_LIST_HEAD(&vfe->expired_msg_list);
+	INIT_WORK(&vfe->msg_timeout_work, vfe_not_tx_timeout_handler);
 
 	vfe->send_dsp_ipc_msg = vfe_send_dsp_ipc_msg;
 	vfe->notify_machine_probe = vfe_wrap_native_driver;
-	ret = vfe_skl_init(vdev);
+
+	ret = vfe_init_vqs(vfe);
 	if (ret < 0)
-		return ret;
+		goto err;
 
 	vfe->pos_not = devm_kmalloc(&vdev->dev,
 			sizeof(*vfe->pos_not), GFP_KERNEL);
 	if (!vfe->pos_not)
-		return -ENOMEM;
+		goto no_mem;
 
 	vfe_send_pos_request(vfe, vfe->pos_not);
 
+	ret = vfe_skl_init(vdev);
+	if (ret < 0)
+		goto err;
+
 	return 0;
+
+no_mem:
+	ret = -ENOMEM;
+err:
+	vdev->priv = NULL;
+	return ret;
 }
 
 /*
@@ -1006,6 +1066,8 @@ static int vfe_probe(struct virtio_device *vdev)
 static void vfe_remove(struct virtio_device *vdev)
 {
 	struct snd_skl_vfe *vfe = vdev->priv;
+	if (!vfe)
+		return;
 
 	cancel_work_sync(&vfe->posn_update_work);
 	vfe_machine_device_unregister(&vfe->sdev);
@@ -1015,6 +1077,30 @@ static void vfe_remove(struct virtio_device *vdev)
 static void virtaudio_config_changed(struct virtio_device *vdev)
 {
 }
+
+#ifdef CONFIG_PM_SLEEP
+static int vfe_freeze(struct virtio_device *vdev)
+{
+	vdev->config->reset(vdev);
+	vdev->config->del_vqs(vdev);
+
+	return 0;
+}
+
+static int vfe_restore(struct virtio_device *vdev)
+{
+	int ret;
+	struct snd_skl_vfe *vfe = vdev->priv;
+
+	ret = vfe_init_vqs(vfe);
+	if (ret < 0)
+		return ret;
+
+	vfe_send_pos_request(vfe, vfe->pos_not);
+
+	return 0;
+}
+#endif
 
 const struct virtio_device_id id_table[] = {
 	{VIRTIO_ID_AUDIO, VIRTIO_DEV_ANY_ID},
@@ -1030,6 +1116,10 @@ static struct virtio_driver vfe_audio_driver = {
 	.probe	= vfe_probe,
 	.remove	= vfe_remove,
 	.config_changed	= virtaudio_config_changed,
+#ifdef CONFIG_PM_SLEEP
+	.freeze	= vfe_freeze,
+	.restore	= vfe_restore,
+#endif
 };
 
 module_virtio_driver(vfe_audio_driver);
