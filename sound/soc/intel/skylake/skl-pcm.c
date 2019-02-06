@@ -37,6 +37,8 @@
 #define HDA_QUAD 4
 #define HDA_8_CH 8
 
+#define IS_BXT(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0x5a98)
+
 static const struct snd_pcm_hardware azx_pcm_hw = {
 	.info =			(SNDRV_PCM_INFO_MMAP |
 				 SNDRV_PCM_INFO_INTERLEAVED |
@@ -183,6 +185,7 @@ int skl_pcm_host_dma_prepare(struct device *dev, struct skl_pipe_params *params)
 	struct hdac_ext_stream *stream;
 	struct snd_pcm_runtime *runtime;
 	int err;
+	struct skl *skl = bus_to_skl(bus);
 
 	hstream = snd_hdac_get_stream(bus, params->stream,
 					params->host_dma_id + 1);
@@ -203,7 +206,14 @@ int skl_pcm_host_dma_prepare(struct device *dev, struct skl_pipe_params *params)
 	if (err < 0)
 		return err;
 
+	if (IS_BXT(skl->pci))	/* workaround for BXT HW bug */
+		snd_hdac_ext_stream_decouple(bus, stream, false);
+
 	err = snd_hdac_stream_setup(hdac_stream(stream));
+
+	if (IS_BXT(skl->pci))	/* workaround for BXT HW bug */
+		snd_hdac_ext_stream_decouple(bus, stream, true);
+
 	if (err < 0)
 		return err;
 
