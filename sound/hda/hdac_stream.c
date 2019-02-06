@@ -179,6 +179,33 @@ void snd_hdac_stream_reset(struct hdac_stream *azx_dev)
 EXPORT_SYMBOL_GPL(snd_hdac_stream_reset);
 
 /**
+ * snd_hdac_stream_decouple - decouple the hdac stream
+ * @bus: HD-audio core bus
+ * @stream: HD-audio core stream object to initialize
+ * @decouple: flag to decouple
+ */
+void snd_hdac_stream_decouple(struct hdac_bus *bus,
+				struct hdac_stream *hstream, bool decouple)
+{
+	u32 val;
+	int mask = AZX_PPCTL_PROCEN(hstream->index);
+
+	if (bus->ppcap) {
+		spin_lock_irq(&bus->reg_lock);
+		val = readw(bus->ppcap + AZX_REG_PP_PPCTL) & mask;
+
+		if (decouple && !val)
+			snd_hdac_updatel(bus->ppcap, AZX_REG_PP_PPCTL,
+					mask, mask);
+		else if (!decouple && val)
+			snd_hdac_updatel(bus->ppcap, AZX_REG_PP_PPCTL, mask, 0);
+
+		spin_unlock_irq(&bus->reg_lock);
+	}
+}
+EXPORT_SYMBOL_GPL(snd_hdac_stream_decouple);
+
+/**
  * snd_hdac_stream_setup -  set up the SD for streaming
  * @azx_dev: HD-audio core stream to set up
  */
@@ -205,9 +232,15 @@ int snd_hdac_stream_setup(struct hdac_stream *azx_dev)
 	/* program the length of samples in cyclic buffer */
 	snd_hdac_stream_writel(azx_dev, SD_CBL, azx_dev->bufsize);
 
+	/* workaround for BXT HW bug */
+	snd_hdac_stream_decouple(bus, azx_dev, false);
+
 	/* program the stream format */
 	/* this value needs to be the same as the one programmed */
 	snd_hdac_stream_writew(azx_dev, SD_FORMAT, azx_dev->format_val);
+
+	/* workaround for BXT HW bug */
+	snd_hdac_stream_decouple(bus, azx_dev, true);
 
 	/* program the stream LVI (last valid index) of the BDL */
 	snd_hdac_stream_writew(azx_dev, SD_LVI, azx_dev->frags - 1);
