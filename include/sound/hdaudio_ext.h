@@ -137,16 +137,6 @@ void snd_hdac_ext_link_clear_stream_id(struct hdac_ext_link *link,
 int snd_hdac_ext_bus_link_get(struct hdac_bus *bus, struct hdac_ext_link *link);
 int snd_hdac_ext_bus_link_put(struct hdac_bus *bus, struct hdac_ext_link *link);
 
-/* update register macro */
-#define snd_hdac_updatel(addr, reg, mask, val)		\
-	writel(((readl(addr + reg) & ~(mask)) | (val)), \
-		addr + reg)
-
-#define snd_hdac_updatew(addr, reg, mask, val)		\
-	writew(((readw(addr + reg) & ~(mask)) | (val)), \
-		addr + reg)
-
-
 struct hdac_ext_device;
 
 /* ops common to all codec drivers */
