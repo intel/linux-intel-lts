@@ -31,6 +31,12 @@
 #define SKL_VIRTIO_DOMAIN_TPLG_LEN 40
 #define SKL_VIRTIO_TPLG_CHUNK_SIZE 2048
 
+struct vfe_stream_pos_desc {
+	u64 hw_ptr;
+	u64 be_irq_cnt;
+	u64 fe_irq_cnt;
+};
+
 struct vfe_dsp_ipc_msg {
 	u64 header;
 	struct ipc_message *ipc;
@@ -102,6 +108,9 @@ struct vfe_pcm_dma_conf {
 	uint32_t pages;
 	uint32_t size;
 	uint32_t offset;
+
+	uint64_t stream_pos_addr;
+	uint32_t stream_pos_size;
 };
 
 

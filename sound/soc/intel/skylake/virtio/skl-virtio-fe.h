@@ -21,7 +21,7 @@ struct vfe_substream_info {
 	struct snd_pcm_substream *substream;
 	int direction;
 
-	u64 hw_ptr;
+	struct vfe_stream_pos_desc *pos_desc;
 	struct list_head list;
 };
 
@@ -50,6 +50,8 @@ struct snd_skl_vfe {
 	struct work_struct posn_update_work;
 	struct work_struct msg_timeout_work;
 	struct work_struct message_loop_work;
+
+	struct workqueue_struct *posn_update_queue;
 
 	spinlock_t ipc_vq_lock;
 	/* IPC cmd from frontend to backend */

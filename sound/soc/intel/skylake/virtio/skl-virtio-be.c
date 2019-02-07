@@ -246,31 +246,27 @@ int vbe_send_kctl_msg(struct snd_kcontrol *kcontrol,
 void skl_notify_stream_update(struct hdac_bus *bus,
 		struct snd_pcm_substream *substream)
 {
-	const struct skl *skl = bus_to_skl(bus);
-	const struct vbe_substream_info *substr_info;
-	const struct snd_soc_pcm_runtime *rtd;
-	struct vfe_pending_msg pos_req;
-	const struct snd_skl_vbe *vbe;
-	const struct virtio_vq_info *vq;
+	struct skl *skl = bus_to_skl(bus);
+	struct vbe_substream_info *substr_info;
+	struct snd_soc_pcm_runtime *rtd;
+	struct snd_skl_vbe *vbe;
+
 
 	substr_info = vbe_skl_find_substream_info(skl, substream);
-	if (!substr_info)
+	if (!substr_info || !substr_info->pos_desc)
 		return;
 
-	rtd = substream->private_data;
-
-	pos_req.msg.posn.msg_type = VFE_MSG_POS_NOTI;
-	pos_req.msg.posn.stream_dir = substr_info->direction;
-	pos_req.msg.posn.stream_pos = rtd->ops.pointer(substream);
-	strncpy(pos_req.msg.posn.pcm_id, substream->pcm->id,
-		ARRAY_SIZE(substream->pcm->id));
-
-	pos_req.sizeof_msg = sizeof(struct vfe_hw_pos_request);
-
 	vbe = substr_info->vbe;
-	vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
 
-	vbe_skl_send_or_enqueue(vbe, vq, &pos_req);
+	rtd = substream->private_data;
+	substr_info->pos_desc->hw_ptr = rtd->ops.pointer(substream);
+	substr_info->pos_desc->be_irq_cnt++;
+
+	/*sync pos_desc*/
+	wmb();
+
+	virtio_vq_interrupt(&vbe->dev_info,
+		&vbe->vqs[SKL_VIRTIO_IPC_CMD_RX_VQ]);
 }
 
 int vbe_skl_allocate_runtime(const struct snd_soc_card *card,
@@ -369,6 +365,7 @@ static int vbe_skl_prepare_dma(struct vbe_substream_info *substr_info,
 	int cnt;
 	u64 pcm_buffer_gpa = dma_conf->addr;
 	u64 pcm_buffer_hpa = vhm_vm_gpa2hpa(vm_id, pcm_buffer_gpa);
+	struct snd_pcm_substream *substream = substr_info->substream;
 
 	if (!pcm_buffer_hpa)
 		return -EINVAL;
@@ -383,6 +380,17 @@ static int vbe_skl_prepare_dma(struct vbe_substream_info *substr_info,
 	for (cnt = 1; cnt < sg_buf->pages; cnt++) {
 		pcm_buffer_hpa += PAGE_SIZE;
 		sg_buf->table[cnt].addr = pcm_buffer_hpa;
+	}
+
+	substr_info->pos_desc = map_guest_phys(vm_id,
+		dma_conf->stream_pos_addr,
+		dma_conf->stream_pos_size);
+
+	if (!substr_info->pos_desc) {
+		pr_err("Failed to map guest stream description %p",
+			dma_conf->stream_pos_addr);
+
+		return -EINVAL;
 	}
 
 	return 0;
@@ -540,8 +548,8 @@ ret_err:
 }
 
 static int vbe_skl_pcm_close(const struct skl *sdev, int vm_id,
-		const struct vbe_substream_info *substr_info,
-		const struct vbe_ipc_msg *msg)
+		struct vbe_substream_info *substr_info,
+		struct vbe_ipc_msg *msg)
 {
 	struct snd_soc_pcm_runtime *rtd;
 	int ret, cnt;
@@ -558,6 +566,11 @@ static int vbe_skl_pcm_close(const struct skl *sdev, int vm_id,
 	for (cnt = 1; cnt < sg_buf->pages; cnt++) {
 		native_addr += PAGE_SIZE;
 		sg_buf->table[cnt].addr = native_addr;
+	}
+
+	if (substr_info->pos_desc) {
+		unmap_guest_phys(vm_id, substr_info->pos_desc);
+		substr_info->pos_desc = NULL;
 	}
 
 	list_del(&substr_info->list);
@@ -579,9 +592,9 @@ static int vbe_skl_pcm_prepare(const struct skl *sdev, int vm_id,
 {
 	const struct snd_soc_pcm_runtime *rtd;
 	int ret;
-	const struct snd_pcm_substream *substream = substr_info->substream;
-	const struct vfe_pcm_dma_conf *dma_params = msg->tx_data;
+	struct vfe_pcm_dma_conf *dma_params = msg->tx_data;
 	struct vfe_pcm_result *vbe_result = msg->rx_data;
+	struct snd_pcm_substream *substream = substr_info->substream;
 
 	ret = vbe_skl_prepare_dma(substr_info, vm_id, dma_params);
 	if (ret < 0)
@@ -997,6 +1010,20 @@ static int vbe_skl_virtio_vq_handle(const struct snd_skl_vbe *vbe,
 	return 0;
 }
 
+static void vbe_handle_irq_queue(const struct snd_skl_vbe *vbe, int vq_idx)
+{
+	u16 idx;
+	const struct iovec iov;
+	const struct virtio_vq_info *vq = &vbe->vqs[vq_idx];
+
+	if (virtio_vq_has_descs(vq) &&
+		(virtio_vq_getchain(vq, &idx, &iov, 1, NULL) > 0)) {
+
+		virtio_vq_relchain(vq, idx, iov.iov_len);
+		virtio_vq_endchains(vq, true);
+	}
+}
+
 static void vbe_skl_ipc_fe_not_get(const struct snd_skl_vbe *vbe, int vq_idx)
 {
 	int ret;
@@ -1104,6 +1131,7 @@ void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx)
 		break;
 	case SKL_VIRTIO_IPC_CMD_RX_VQ:
 		/* IPC command reply from DSP to FE - NOT kick */
+		vbe_handle_irq_queue(vbe, vq_idx);
 		break;
 	case SKL_VIRTIO_IPC_NOT_TX_VQ:
 		/* IPC notification reply from FE to DSP */

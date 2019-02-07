@@ -54,6 +54,7 @@ struct vbe_substream_info {
 	struct snd_pcm_substream *substream;
 	dma_addr_t native_dma_addr;
 	int direction;
+	struct vfe_stream_pos_desc *pos_desc;
 
 	struct snd_skl_vbe *vbe;
 	struct list_head list;
