@@ -133,8 +133,7 @@ static irqreturn_t kmb_irq(int irq, void *arg)
 	if (status & LCD_INT_VERT_COMP) {
 		/* read VSTATUS */
 		val = kmb_read(lcd, LCD_VSTATUS);
-		/* BITS 13 and 14 */
-		val = (val & LCD_VSTATUS_VERTICAL_STATUS_MASK) >> 12;
+		val = (val & LCD_VSTATUS_VERTICAL_STATUS_MASK);
 		switch (val) {
 		case LCD_VSTATUS_COMPARE_VSYNC:
 		case LCD_VSTATUS_COMPARE_BACKPORCH:
