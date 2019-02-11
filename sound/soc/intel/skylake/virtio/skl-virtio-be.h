@@ -34,6 +34,8 @@ struct snd_skl_vbe;
 #define skl_get_vbe(skl) (&(skl_to_vskl(skl))->vbe)
 #define vskl_get_vbe(vskl) (&vskl->vbe)
 
+#define KCTL_DOMAIN_ITEM(STR, DOMAIN_FLAG) {STR, sizeof(STR)-1, DOMAIN_FLAG}
+
 extern int snd_skl_vbe_register(struct skl *sdev, struct snd_skl_vbe **svbe);
 extern int snd_skl_vbe_register_client(struct snd_skl_vbe *vbe);
 extern void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx);
@@ -93,6 +95,12 @@ struct vskl {
 	struct snd_skl_vbe vbe;
 
 	struct skl *skl;
+};
+
+struct vbe_static_kctl_domain {
+	const char *name;
+	u32 str_size;
+	u32 domain_flag;
 };
 
 void skl_notify_stream_update(struct hdac_bus *bus,
