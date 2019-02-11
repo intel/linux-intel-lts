@@ -35,6 +35,12 @@
 #include "../skl-topology.h"
 #include "skl-virtio.h"
 
+static struct vbe_static_kctl_domain kctl_domain_map[] = {
+		KCTL_DOMAIN_ITEM("BtHfp_ssp0_in pcm cfg", 0x1),
+		KCTL_DOMAIN_ITEM("BtHfp_ssp0_out pcm cfg", 0x1),
+		KCTL_DOMAIN_ITEM("Speaker Switch", 0x1),
+};
+
 static struct snd_skl_vbe *get_virtio_audio_be(void)
 {
 	return &get_virtio_audio()->vbe;
@@ -200,10 +206,6 @@ static void vbe_skl_send_or_enqueue(const struct snd_skl_vbe *vbe,
 	if (vbe_skl_try_send(vbe, vq,
 		(void *)&pen_msg->msg, pen_msg->sizeof_msg) == false) {
 		save_msg = kzalloc(sizeof(*save_msg), GFP_KERNEL);
-		if (!save_msg) {
-			dev_err(vbe->dev, "Failed to allocate kctl_req memory");
-			return;
-		}
 		*save_msg = *pen_msg;
 		list_add_tail(&save_msg->list, &vbe->pending_msg_list);
 	}
@@ -751,6 +753,20 @@ static u32 vbe_skl_kcontrol_find_domain_id(const struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+static u32 vbe_skl_get_static_domain_id(struct snd_ctl_elem_id *ctl_id)
+{
+	u32 idx, num = ARRAY_SIZE(kctl_domain_map);
+	u32 size = strnlen(ctl_id->name, sizeof(ctl_id->name));
+
+	for (idx = 0; idx < num; ++idx) {
+		if ((kctl_domain_map[idx].str_size == size) &&
+			(strncmp(ctl_id->name,
+				kctl_domain_map[idx].name, size) == 0))
+			return kctl_domain_map[idx].domain_flag;
+	}
+	return 0;
+}
+
 static int vbe_skl_kcontrol_get_domain_id(const struct snd_kcontrol *kcontrol,
 		u32 *domain_id)
 {
@@ -769,9 +785,11 @@ static int vbe_skl_kcontrol_get_domain_id(const struct snd_kcontrol *kcontrol,
 	*domain_id = 0;
 
 	if (priv == sdev->component ||
-		priv == sdev->component->card)
+		priv == sdev->component->card) {
+		/* temporary solution for controls without widget */
+		*domain_id = vbe_skl_get_static_domain_id(&kcontrol->id);
 		return 0;
-
+	}
 
 	w = vbe_skl_find_kcontrol_widget(sdev, kcontrol);
 	if (w) {

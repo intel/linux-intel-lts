@@ -252,6 +252,8 @@ struct skl_notify_kctrl_info {
 };
 
 struct skl;
+struct hdac_stream;
+struct hdac_bus;
 
 struct skl_sst {
 	struct device *dev;

@@ -1402,7 +1402,7 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
 /* BE cpu dais and compress dais*/
 static struct snd_soc_dai_driver skl_platform_dai[] = {
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_SOS_TDF8532_MACH) || \
-    IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_TDF8532_MACH) || \
+	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_TDF8532_MACH) || \
 	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
 {
 	.name = "SSP5 Pin",
