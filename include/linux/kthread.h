@@ -199,4 +199,12 @@ bool kthread_cancel_delayed_work_sync(struct kthread_delayed_work *work);
 
 void kthread_destroy_worker(struct kthread_worker *worker);
 
+extern struct kthread_worker kthread_global_worker;
+void kthread_init_global_worker(void);
+
+static inline bool kthread_schedule_work(struct kthread_work *work)
+{
+	return kthread_queue_work(&kthread_global_worker, work);
+}
+
 #endif /* _LINUX_KTHREAD_H */
