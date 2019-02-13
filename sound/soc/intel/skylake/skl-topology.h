@@ -129,7 +129,7 @@ struct skl_audio_data_format {
 } __packed;
 
 struct skl_base_cfg {
-	u32 cps;
+	u32 cpc;
 	u32 ibs;
 	u32 obs;
 	u32 is_pages;
@@ -408,7 +408,7 @@ struct skl_module_pin_resources {
 struct skl_module_res {
 	u8 res_idx;
 	u32 is_pages;
-	u32 cps;
+//	u32 cps;
 	u32 ibs;
 	u32 obs;
 	u32 dma_buffer_size;
