@@ -435,7 +435,7 @@ static bool skl_is_pipe_mcps_avail(struct skl *skl,
 
 	res = &mconfig->module->resources[res_idx];
 
-	if (skl->resource.mcps + res->cps > skl->resource.max_mcps) {
+	if (skl->resource.mcps + res->cpc > skl->resource.max_mcps) {
 		dev_err(ctx->dev,
 			"%s: module_id %d instance %d\n", __func__,
 			mconfig->id.module_id, mconfig->id.instance_id);
@@ -461,7 +461,7 @@ static void skl_tplg_alloc_pipe_mcps(struct skl *skl,
 
 	res = &mconfig->module->resources[res_idx];
 
-	skl->resource.mcps += res->cps;
+	skl->resource.mcps += res->cpc;
 
 }
 
@@ -480,7 +480,7 @@ skl_tplg_free_pipe_mcps(struct skl *skl, struct skl_module_cfg *mconfig)
 		res_idx = mconfig->res_idx;
 
 	res = &mconfig->module->resources[res_idx];
-	skl->resource.mcps -= res->cps;
+	skl->resource.mcps -= res->cpc;
 }
 
 /*
@@ -3729,7 +3729,10 @@ static int skl_tplg_fill_res_tkn(struct device *dev,
 
 	switch (tkn_elem->token) {
 	case SKL_TKN_MM_U32_CPS:
-		res->cps = tkn_elem->value;
+		/* If res->cpc not yet set, calculate it as cps/1000.
+		   Otherwise ignore cps value. */
+		if (res->cpc == 0)
+			res->cpc = tkn_elem->value/1000;
 		break;
 
 	case SKL_TKN_MM_U32_DMA_SIZE:
@@ -3753,7 +3756,8 @@ static int skl_tplg_fill_res_tkn(struct device *dev,
 		break;
 
 	case SKL_TKN_U32_MAX_MCPS:
-		res->cps = tkn_elem->value;
+		/* kept for backwards compatibility */
+		res->cpc = tkn_elem->value;
 		break;
 
 	case SKL_TKN_MM_U32_RES_PIN_ID:
