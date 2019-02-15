@@ -6182,6 +6182,9 @@ static OS_STATUS lwpmudrv_Get_Drv_Setup_Info(IOCTL_ARGS args)
 			DRV_SETUP_INFO_PTI_KPTI;
 	}
 #endif
+#if defined(DRV_SEP_ACRN_ON)
+	DRV_SETUP_INFO_core_event_mux_unavailable(&req_drv_setup_info) = 1;
+#endif
 
 	SEP_DRV_LOG_TRACE("DRV_SETUP_INFO nmi_mode %d.",
 			  DRV_SETUP_INFO_nmi_mode(&req_drv_setup_info));
