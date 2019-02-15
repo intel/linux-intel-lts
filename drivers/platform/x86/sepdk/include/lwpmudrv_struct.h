@@ -1475,7 +1475,8 @@ struct DRV_SETUP_INFO_NODE_S {
 			U64 matrix_inaccessible : 1;
 			U64 page_table_isolation : 2;
 			U64 pebs_ignored_by_pti : 1;
-			U64 reserved1 : 47;
+			U64 core_event_mux_unavailable : 1;
+			U64 reserved1 : 46;
 		} s1;
 	} u1;
 	U64 reserved2;
@@ -1495,6 +1496,8 @@ struct DRV_SETUP_INFO_NODE_S {
 	((info)->u1.s1.page_table_isolation)
 #define DRV_SETUP_INFO_pebs_ignored_by_pti(info)                               \
 	((info)->u1.s1.pebs_ignored_by_pti)
+#define DRV_SETUP_INFO_core_event_mux_unavailable(info)                        \
+	((info)->u1.s1.core_event_mux_unavailable)
 
 #define DRV_SETUP_INFO_PTI_DISABLED 0
 #define DRV_SETUP_INFO_PTI_KPTI 1
