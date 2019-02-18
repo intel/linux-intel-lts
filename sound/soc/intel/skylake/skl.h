@@ -67,11 +67,6 @@ static inline void skl_virt_device_unregister(struct skl *skl)
 }
 #endif
 
-struct skl_dsp_resource {
-	u32 max_mem;
-	u32 mem;
-};
-
 struct skl_debug;
 
 struct skl_astate_param {
@@ -151,7 +146,6 @@ struct skl {
 	struct nhlt_acpi_table *nhlt; /* nhlt ptr */
 	struct skl_sst *skl_sst; /* sst skl ctx */
 
-	struct skl_dsp_resource resource;
 	struct list_head ppl_list;
 	struct list_head bind_list;
 
