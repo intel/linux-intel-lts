@@ -78,7 +78,7 @@ static int tx_wait_done(struct sst_generic_ipc *ipc,
 			goto err;
 		}
 
-		if (msg->rx_size) {
+		if (rx_data) {
 			if (rx_bytes != NULL)
 				*rx_bytes = msg->rx_size;
 			memcpy(rx_data, msg->rx_data, msg->rx_size);
