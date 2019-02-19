@@ -2677,8 +2677,13 @@ static VOID lwpmudrv_Read_MSR(PVOID param)
 
 	BUG_ON(!virt_addr_valid(msr_list));
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
-			virt_to_phys(msr_list));
+	if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
+			virt_to_phys(msr_list)) != OS_SUCCESS) {
+		SEP_DRV_LOG_ERROR(
+			"[ACRN][HC:MSR_OPS][%s]: returned with error",
+			__func__);
+		goto cleanup;
+	}
 
 	for (cpu_idx = 0; cpu_idx < GLOBAL_STATE_num_cpus(driver_state);
 	     cpu_idx++) {
@@ -2686,6 +2691,7 @@ static VOID lwpmudrv_Read_MSR(PVOID param)
 		MSR_DATA_value(this_node) = msr_list[cpu_idx].entries[0].value;
 	}
 
+cleanup:
 	msr_list = CONTROL_Free_Memory(msr_list);
 #endif
 
@@ -2845,9 +2851,12 @@ static VOID lwpmudrv_Write_MSR(PVOID param)
 
 	BUG_ON(!virt_addr_valid(msr_list));
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
-			virt_to_phys(msr_list));
-
+	if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
+			virt_to_phys(msr_list)) != OS_SUCCESS) {
+		SEP_DRV_LOG_ERROR(
+			"[ACRN][HC:MSR_OPS][%s]: returned with error",
+			__func__);
+	}
 	msr_list = CONTROL_Free_Memory(msr_list);
 #endif
 
@@ -4100,9 +4109,16 @@ static OS_STATUS lwpmudrv_Start(void)
 		BUG_ON(!virt_addr_valid(control));
 		control->collector_id = COLLECTOR_SEP;
 
-		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_CONTROL_SWITCH,
+		status = acrn_hypercall2(HC_PROFILING_OPS,
+				PROFILING_GET_CONTROL_SWITCH,
 				virt_to_phys(control));
-
+		if (status != OS_SUCCESS) {
+			SEP_DRV_LOG_ERROR_FLOW_OUT(
+			"[ACRN][HC:GET_CONTROL_SWITCH][%s]: Failed to get control switch info",
+			__func__);
+			control = CONTROL_Free_Memory(control);
+			return status;
+		}
 		SEP_DRV_LOG_TRACE("ACRN profiling collection running 0x%llx\n",
 				control->switches);
 
@@ -4115,9 +4131,18 @@ static OS_STATUS lwpmudrv_Start(void)
 			control->switches |= (1 << CORE_PMU_COUNTING);
 		}
 
-		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_SET_CONTROL_SWITCH,
+		status = acrn_hypercall2(HC_PROFILING_OPS,
+				PROFILING_SET_CONTROL_SWITCH,
 				virt_to_phys(control));
+
 		control = CONTROL_Free_Memory(control);
+
+		if (status != OS_SUCCESS) {
+			SEP_DRV_LOG_ERROR_FLOW_OUT(
+			"[ACRN][HC:SET_CONTROL_SWITCH][%s]: Failed to set control switch info",
+			__func__);
+			return status;
+		}
 
 		lwpmudrv_ACRN_Flush_Start_Timer();
 #endif
@@ -4145,6 +4170,7 @@ static OS_STATUS lwpmudrv_Start(void)
 	}
 
 	SEP_DRV_LOG_FLOW_OUT("Return value: %d", status);
+
 	return status;
 }
 
@@ -4247,8 +4273,12 @@ static OS_STATUS lwpmudrv_Prepare_Stop(void)
 	BUG_ON(!virt_addr_valid(control));
 	control->collector_id = COLLECTOR_SEP;
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_CONTROL_SWITCH,
-			virt_to_phys(control));
+	if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_CONTROL_SWITCH,
+			virt_to_phys(control)) != OS_SUCCESS) {
+		SEP_DRV_LOG_ERROR(
+		"[ACRN][HC:GET_CONTROL_SWITCH][%s]: Failed to get control info",
+		__func__);
+	}
 
 	SEP_DRV_LOG_TRACE("ACRN profiling collection running 0x%llx\n",
 			control->switches);
@@ -4260,10 +4290,13 @@ static OS_STATUS lwpmudrv_Prepare_Stop(void)
 		control->switches &= ~(1 << CORE_PMU_COUNTING);
 	}
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_SET_CONTROL_SWITCH,
-			virt_to_phys(control));
+	if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_SET_CONTROL_SWITCH,
+			virt_to_phys(control)) != OS_SUCCESS) {
+		SEP_DRV_LOG_ERROR(
+		"[ACRN][HC:SET_CONTROL_SWITCH][%s]: Failed to set control info",
+		__func__);
+	}
 	control = CONTROL_Free_Memory(control);
-
 	lwpmudrv_ACRN_Flush_Stop_Timer();
         SEP_DRV_LOG_TRACE("Calling final PMI_Buffer_Handler\n");
 
@@ -5995,8 +6028,14 @@ static OS_STATUS lwpmudrv_Get_Sample_Drop_Info(IOCTL_ARGS args)
 	memset(stats, 0, GLOBAL_STATE_num_cpus(driver_state)*
 		sizeof(struct profiling_status));
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_STATUS,
-		virt_to_phys(stats));
+	if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_STATUS,
+		virt_to_phys(stats)) != OS_SUCCESS) {
+		stats = CONTROL_Free_Memory(stats);
+		SEP_DRV_LOG_ERROR_FLOW_OUT(
+		"[ACRN][HC:GET_STATUS][%s]: Failed to get sample drop info",
+		__func__);
+		return OS_INVALID;
+	}
 
 	for (i = 0; i < GLOBAL_STATE_num_cpus(driver_state)
 		&& size < MAX_SAMPLE_DROP_NODES; i++) {
@@ -6370,9 +6409,13 @@ static OS_STATUS lwpmudrv_Get_Num_Of_Vms(IOCTL_ARGS args)
 
 	BUG_ON(!virt_addr_valid(vm_info_list));
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_VMINFO,
-			virt_to_phys(vm_info_list));
-
+	if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_VMINFO,
+			virt_to_phys(vm_info_list)) != OS_SUCCESS) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT(
+		"[ACRN][HC:GET_VMINFO][%s]: Failed to get VM info",
+		__func__);
+		return OS_INVALID;
+	}
 	vm_map.num_vms = 0;
 	for (i = 0; i < vm_info_list->num_vms; i++) {
 		if (vm_info_list->vm_list[i].num_vcpus != 0) {
@@ -7296,8 +7339,14 @@ static int lwpmu_Load(void)
 
 	BUG_ON(!virt_addr_valid(vm_info_list));
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_VMINFO,
+	status = acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_VMINFO,
 			virt_to_phys(vm_info_list));
+	if (status != OS_SUCCESS) {
+		SEP_DRV_LOG_ERROR_FLOW_OUT(
+		"[ACRN][HC:GET_VMINFO][%s]: Failed to get VM information",
+		__func__);
+		return OS_INVALID;
+	}
 #endif
 
 #if !defined(CONFIG_XEN_HAVE_VPMU)
