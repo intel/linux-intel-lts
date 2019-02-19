@@ -154,6 +154,14 @@ config DRM_I915_LOAD_ASYNC_SUPPORT
        help
          Choose this option to support async i915_driver_load for boot-up time saving
 
+config DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+       bool "no check audio and infoframe during init"
+       default n
+       depends on DRM_I915
+       help
+         Choose this option to by pass audio and infoframe check during bootup
+         invoid trigger modeset, and these config will set separately.
+
 menu "drm/i915 Debugging"
 depends on DRM_I915
 depends on EXPERT
