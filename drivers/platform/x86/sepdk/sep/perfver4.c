@@ -409,9 +409,12 @@ static VOID perfver4_Write_PMU(VOID *param)
 
 	BUG_ON(!virt_addr_valid(pmi_config));
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_CONFIG_PMI,
-			virt_to_phys(pmi_config));
-
+	if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_CONFIG_PMI,
+			virt_to_phys(pmi_config)) != OS_SUCCESS) {
+		SEP_DRV_LOG_ERROR(
+			"[ACRN][HC:CONFIG_PMI][%s]: Failed to write PMI config info",
+			__func__);
+	}
 	pmi_config = CONTROL_Free_Memory(pmi_config);
 #endif
 
@@ -767,9 +770,14 @@ static void perfver4_Read_PMU_Data(PVOID param)
 
 		BUG_ON(!virt_addr_valid(msr_list));
 
-		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
-				virt_to_phys(msr_list));
-
+		if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
+				virt_to_phys(msr_list)) != OS_SUCCESS) {
+			msr_list = CONTROL_Free_Memory(msr_list);
+			SEP_DRV_LOG_ERROR_FLOW_OUT(
+			"[ACRN][HC:MSR_OPS][%s]: MSR operation failed",
+			__func__);
+			return;
+		}
 		for (cpu_idx = 0; cpu_idx < GLOBAL_STATE_num_cpus(driver_state);
 		     cpu_idx++) {
 			pcpu = &pcb[cpu_idx];
