@@ -20,6 +20,7 @@
 #include <asm/hwcap2.h>
 #include <asm/elf.h>
 #include <asm/cpu_device_id.h>
+#include <asm/cmdline.h>
 
 #ifdef CONFIG_X86_64
 #include <linux/topology.h>
@@ -655,6 +656,26 @@ static void init_intel_misc_features(struct cpuinfo_x86 *c)
 	wrmsrl(MSR_MISC_FEATURES_ENABLES, msr);
 }
 
+static void split_lock_init(void)
+{
+	if (split_lock_detect_enabled) {
+		u64 test_ctrl_val;
+
+		/*
+		 * The TEST_CTRL MSR is per core. So multiple threads can
+		 * read/write the MSR in parallel. But it's possible to
+		 * simplify the read/write without locking and without
+		 * worry about overwriting the MSR because only bit 29
+		 * is implemented in the MSR and the bit is set as 1 by all
+		 * threads. Locking may be needed in the future if situation
+		 * is changed e.g. other bits are implemented.
+		 */
+		rdmsrl(MSR_TEST_CTRL, test_ctrl_val);
+		test_ctrl_val |= MSR_TEST_CTRL_SPLIT_LOCK_DETECT;
+		wrmsrl(MSR_TEST_CTRL, test_ctrl_val);
+	}
+}
+
 static void init_intel(struct cpuinfo_x86 *c)
 {
 	early_init_intel(c);
@@ -770,6 +791,8 @@ static void init_intel(struct cpuinfo_x86 *c)
 		tsx_enable();
 	if (tsx_ctrl_state == TSX_CTRL_DISABLE)
 		tsx_disable();
+
+	split_lock_init();
 }
 
 #ifdef CONFIG_X86_32
@@ -1032,9 +1055,20 @@ static const struct cpu_dev intel_cpu_dev = {
 
 cpu_dev_register(intel_cpu_dev);
 
+#undef pr_fmt
+#define pr_fmt(fmt) "x86/split lock detection: " fmt
+
 static void __init split_lock_setup(void)
 {
 	setup_force_cpu_cap(X86_FEATURE_SPLIT_LOCK_DETECT);
+
+	if (cmdline_find_option_bool(boot_command_line,
+				     "split_lock_detect")) {
+		split_lock_detect_enabled = true;
+		pr_info("enabled\n");
+	} else {
+		pr_info("disabled\n");
+	}
 }
 
 #define SPLIT_LOCK_CPU(model) {X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY}

@@ -3176,6 +3176,16 @@
 
 	nosoftlockup	[KNL] Disable the soft-lockup detector.
 
+	split_lock_detect
+			[X86] Enable split lock detection
+			This is a real time or debugging feature. When enabled
+			(and if hardware support is present), atomic
+			instructions that access data across cache line
+			boundaries will result in an alignment check exception.
+			When triggered in applications the kernel will send
+			SIGBUS. The kernel will panic for a split lock in
+			OS code.
+
 	nosync		[HW,M68K] Disables sync negotiation for all devices.
 
 	nowatchdog	[KNL] Disable both lockup detectors, i.e.
