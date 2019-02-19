@@ -6002,7 +6002,7 @@ static OS_STATUS lwpmudrv_Get_Sample_Drop_Info(IOCTL_ARGS args)
 		&& size < MAX_SAMPLE_DROP_NODES; i++) {
 		if (stats[i].samples_logged || stats[i].samples_dropped) {
 			SAMPLE_DROP_INFO_drop_info(
-				&req_sample_drop_info, size).os_id = OS_ID_ACORN;
+				&req_sample_drop_info, size).os_id = OS_ID_ACRN;
 			SAMPLE_DROP_INFO_drop_info(
 				&req_sample_drop_info, size).cpu_id = i;
 			SAMPLE_DROP_INFO_drop_info(

@@ -161,7 +161,9 @@ static S32 linuxos_Load_Image_Notify_Routine(char *name, U64 base, U32 size,
 	MODULE_RECORD_parent_pid(mra) = parent_pid;
 	MODULE_RECORD_osid(mra) = osid;
 	MODULE_RECORD_pid_rec_index(mra) = pid;
-
+	if (osid == OS_ID_ACRN) {
+		MODULE_RECORD_unknown_load_address(mra) = 1;
+	}
 	if (kernel_modules) {
 		MODULE_RECORD_tsc(mra) = 0;
 		MR_unloadTscSet(mra, (U64)(0xffffffffffffffffLL));
@@ -328,7 +330,7 @@ static S32 linuxos_Map_Kernel_Modules(void)
 	linuxos_Load_Image_Notify_Routine(
 		"VMM", 0x0, (U32)0xffffffffffffffffLL, 0, 0, 0,
 		LOPTS_1ST_MODREC | LOPTS_GLOBAL_MODULE | LOPTS_EXE, exec_mode,
-		-1, MR_SEG_NUM, 1, OS_ID_ACORN);
+		-1, MR_SEG_NUM, 1, OS_ID_ACRN);
 #endif
 
 	for (modules = (struct list_head *)(THIS_MODULE->list.prev);
