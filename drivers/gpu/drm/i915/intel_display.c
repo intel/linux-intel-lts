@@ -11355,6 +11355,70 @@ pipe_config_err(bool adjust, const char *name, const char *format, ...)
 	va_end(args);
 }
 
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+#define PIPE_CONF_CHECK_BOOL(name) do { \
+	if (current_config->name != pipe_config->name) { \
+		pipe_config_err(adjust, __stringify(name), \
+			  "(expected %s, found %s)\n", \
+			  yesno(current_config->name), \
+			  yesno(pipe_config->name)); \
+		ret = false; \
+	} \
+} while (0)
+
+
+/*
+ * Checks state where we only read out the enabling, but not the entire
+ * state itself (like full infoframes or ELD for audio). These states
+ * require a full modeset on bootup to fix up.
+ */
+#define PIPE_CONF_CHECK_BOOL_INCOMPLETE(name) do { \
+	if (!fixup_inherited || (!current_config->name && !pipe_config->name)) { \
+		PIPE_CONF_CHECK_BOOL(name); \
+	} else { \
+		pipe_config_err(adjust, __stringify(name), \
+			  "unable to verify whether state matches exactly, forcing modeset (expected %s, found %s)\n", \
+			  yesno(current_config->name), \
+			  yesno(pipe_config->name)); \
+		ret = false; \
+	} \
+} while (0)
+
+static bool
+intel_pipe_config_compare_audio(struct drm_i915_private *dev_priv,
+			  struct intel_crtc_state *current_config,
+			  struct intel_crtc_state *pipe_config,
+			  bool adjust)
+{
+	bool ret = true;
+	bool fixup_inherited = adjust &&
+		(current_config->base.mode.private_flags & I915_MODE_FLAG_INHERITED) &&
+		!(pipe_config->base.mode.private_flags & I915_MODE_FLAG_INHERITED);
+
+	PIPE_CONF_CHECK_BOOL_INCOMPLETE(has_audio);
+
+	return ret;
+}
+
+static bool
+intel_pipe_config_compare_infoframe(struct drm_i915_private *dev_priv,
+			  struct intel_crtc_state *current_config,
+			  struct intel_crtc_state *pipe_config,
+			  bool adjust)
+{
+	bool ret = true;
+	bool fixup_inherited = adjust &&
+		(current_config->base.mode.private_flags & I915_MODE_FLAG_INHERITED) &&
+		!(pipe_config->base.mode.private_flags & I915_MODE_FLAG_INHERITED);
+
+	PIPE_CONF_CHECK_BOOL_INCOMPLETE(has_infoframe);
+
+	return ret;
+}
+#undef PIPE_CONF_CHECK_BOOL
+#undef PIPE_CONF_CHECK_BOOL_INCOMPLETE
+#endif
+
 static bool
 intel_pipe_config_compare(struct drm_i915_private *dev_priv,
 			  struct intel_crtc_state *current_config,
@@ -11542,11 +11606,22 @@ intel_pipe_config_compare(struct drm_i915_private *dev_priv,
 
 	PIPE_CONF_CHECK_BOOL(hdmi_scrambling);
 	PIPE_CONF_CHECK_BOOL(hdmi_high_tmds_clock_ratio);
-	PIPE_CONF_CHECK_BOOL_INCOMPLETE(has_infoframe);
 	PIPE_CONF_CHECK_BOOL(ycbcr420);
-
-	PIPE_CONF_CHECK_BOOL_INCOMPLETE(has_audio);
-
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+	if (pipe_config->need_update_infoframe_audio == INFOFRAME_AUDIO_INIT) {
+		if (!intel_pipe_config_compare_audio(dev_priv, current_config, pipe_config, adjust)
+			||!intel_pipe_config_compare_infoframe(dev_priv, current_config, pipe_config, adjust))
+			pipe_config->need_update_infoframe_audio = INFOFRAME_AUDIO_UPDATE;
+		else
+			pipe_config->need_update_infoframe_audio = INFOFRAME_AUDIO_UPDATE_DONE;
+		}
+	else {
+#endif
+		PIPE_CONF_CHECK_BOOL_INCOMPLETE(has_infoframe);
+		PIPE_CONF_CHECK_BOOL_INCOMPLETE(has_audio);
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+	}
+#endif
 	PIPE_CONF_CHECK_FLAGS(base.adjusted_mode.flags,
 			      DRM_MODE_FLAG_INTERLACE);
 
@@ -12468,8 +12543,16 @@ static void intel_update_crtc(struct drm_crtc *crtc,
 	} else {
 		intel_pre_plane_update(to_intel_crtc_state(old_crtc_state),
 				       pipe_config);
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+		if (pipe_config->need_update_infoframe_audio == INFOFRAME_AUDIO_UPDATE) {
+			intel_encoders_pre_enable(crtc, pipe_config, state);
+		}
+#endif
 	}
 
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+	pipe_config->need_update_infoframe_audio = INFOFRAME_AUDIO_UPDATE_DONE;
+#endif
 	if (new_plane_state)
 		intel_fbc_enable(intel_crtc, pipe_config, new_plane_state);
 

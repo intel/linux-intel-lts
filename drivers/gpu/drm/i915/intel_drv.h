@@ -729,6 +729,15 @@ struct intel_crtc_wm_state {
 	bool need_postvbl_update;
 };
 
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+enum update_infoframe_audio_once {
+	INFOFRAME_AUDIO_INIT = 0,
+	INFOFRAME_AUDIO_UPDATE,
+	INFOFRAME_AUDIO_UPDATE_DONE,
+	INFOFRAME_AUDIO_MAX
+};
+#endif
+
 struct intel_crtc_state {
 	struct drm_crtc_state base;
 
@@ -767,6 +776,9 @@ struct intel_crtc_state {
 
 	/* Are we sending infoframes on the attached port */
 	bool has_infoframe;
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+	enum update_infoframe_audio_once need_update_infoframe_audio;
+#endif
 
 	/* CPU Transcoder for the pipe. Currently this can only differ from the
 	 * pipe on Haswell and later (where we have a special eDP transcoder)

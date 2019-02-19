@@ -2745,6 +2745,11 @@ static void intel_ddi_pre_enable_hdmi(struct intel_encoder *encoder,
 	intel_dig_port->set_infoframes(&encoder->base,
 				       crtc_state->has_infoframe,
 				       crtc_state, conn_state);
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+	if (crtc_state->need_update_infoframe_audio == INFOFRAME_AUDIO_UPDATE)
+		if (crtc_state->has_audio)
+			intel_audio_codec_enable(encoder, crtc_state, conn_state);
+#endif
 }
 
 static void intel_ddi_pre_enable(struct intel_encoder *encoder,
@@ -3155,6 +3160,9 @@ void intel_ddi_get_config(struct intel_encoder *encoder,
 		flags |= DRM_MODE_FLAG_NVSYNC;
 
 	pipe_config->base.adjusted_mode.flags |= flags;
+#ifdef CONFIG_DRM_I915_NO_AUDIO_INFOFRAME_CHECK
+	pipe_config->need_update_infoframe_audio = INFOFRAME_AUDIO_INIT;
+#endif
 
 	switch (temp & TRANS_DDI_BPC_MASK) {
 	case TRANS_DDI_BPC_6:
