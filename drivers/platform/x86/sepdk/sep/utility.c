@@ -126,8 +126,13 @@ VOID UTILITY_Read_Cpuid(U64 cpuid_function, U64 *rax_value,
 
 		BUG_ON(!virt_addr_valid(&pcpuid));
 
-		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_PCPUID,
-				virt_to_phys(&pcpuid));
+		if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_PCPUID,
+				virt_to_phys(&pcpuid)) != OS_SUCCESS) {
+			SEP_DRV_LOG_ERROR_FLOW_OUT(
+				"[ACRN][HC:GET_PCPUID][%s]: Failed to get CPUID info",
+				__func__);
+			return;
+		}
 
 		if (rax_value != NULL) {
 			*rax_value = pcpuid.eax;
