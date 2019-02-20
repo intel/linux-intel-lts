@@ -42,15 +42,66 @@
 #include "kmb_regs.h"
 #include "kmb_drv.h"
 
+/* graphics layer ( layers 2 & 3) formats, only packed formats  are supported*/
+static const u32 kmb_formats_g[] = {
+	DRM_FORMAT_RGB332,
+	DRM_FORMAT_XRGB4444, DRM_FORMAT_XBGR4444,
+	DRM_FORMAT_ARGB4444, DRM_FORMAT_ABGR4444,
+	DRM_FORMAT_XRGB1555, DRM_FORMAT_XBGR1555,
+	DRM_FORMAT_ARGB1555, DRM_FORMAT_ABGR1555,
+	DRM_FORMAT_RGB565, DRM_FORMAT_BGR565,
+	DRM_FORMAT_RGB888, DRM_FORMAT_BGR888,
+	DRM_FORMAT_XRGB8888, DRM_FORMAT_XBGR8888,
+	DRM_FORMAT_ARGB8888, DRM_FORMAT_ABGR8888,
+};
+
+#define MAX_FORMAT_G	(ARRAY_SIZE(kmb_formats_g))
+#define MAX_FORMAT_V	(ARRAY_SIZE(kmb_formats_v))
+
+/* video layer ( 0 & 1) formats, packed and planar formats are supported */
+static const u32 kmb_formats_v[] = {
+	/* packed formats */
+	DRM_FORMAT_RGB332,
+	DRM_FORMAT_XRGB4444, DRM_FORMAT_XBGR4444,
+	DRM_FORMAT_ARGB4444, DRM_FORMAT_ABGR4444,
+	DRM_FORMAT_XRGB1555, DRM_FORMAT_XBGR1555,
+	DRM_FORMAT_ARGB1555, DRM_FORMAT_ABGR1555,
+	DRM_FORMAT_RGB565, DRM_FORMAT_BGR565,
+	DRM_FORMAT_RGB888, DRM_FORMAT_BGR888,
+	DRM_FORMAT_XRGB8888, DRM_FORMAT_XBGR8888,
+	DRM_FORMAT_ARGB8888, DRM_FORMAT_ABGR8888,
+	/*planar formats */
+	DRM_FORMAT_YUV420, DRM_FORMAT_YVU420,
+	DRM_FORMAT_YUV422, DRM_FORMAT_YVU422,
+	DRM_FORMAT_YUV444, DRM_FORMAT_YVU444,
+	DRM_FORMAT_NV12, DRM_FORMAT_NV21,
+};
+
+static unsigned int check_pixel_format(struct drm_plane *plane, u32 format)
+{
+	int i;
+
+	for (i = 0; i < plane->format_count; i++) {
+		if (plane->format_types[i] == format)
+			return 0;
+	}
+	return -EINVAL;
+}
+
 static int kmb_plane_atomic_check(struct drm_plane *plane,
 				  struct drm_plane_state *state)
 {
-/* TBD below structure will be used for implementation later
- *	struct drm_crtc_state *crtc_state;
- */
-	/* TBD */
-	/* Plane based checking */
+	struct drm_framebuffer *fb;
+	int ret;
 
+	fb = state->fb;
+
+	ret = check_pixel_format(plane, fb->format->format);
+	if (ret)
+		return ret;
+
+	if (state->crtc_w > KMB_MAX_WIDTH || state->crtc_h > KMB_MAX_HEIGHT)
+		return -EINVAL;
 	return 0;
 }
 
@@ -59,36 +110,36 @@ unsigned int set_pixel_format(u32 format)
 	unsigned int val = 0;
 
 	switch (format) {
-	/*planar formats */
+		/*planar formats */
 	case DRM_FORMAT_YUV444:
 		val = LCD_LAYER_FORMAT_YCBCR444PLAN | LCD_LAYER_PLANAR_STORAGE;
 		break;
 	case DRM_FORMAT_YVU444:
 		val = LCD_LAYER_FORMAT_YCBCR444PLAN | LCD_LAYER_PLANAR_STORAGE
-			| LCD_LAYER_CRCB_ORDER;
+		    | LCD_LAYER_CRCB_ORDER;
 		break;
 	case DRM_FORMAT_YUV422:
 		val = LCD_LAYER_FORMAT_YCBCR422PLAN | LCD_LAYER_PLANAR_STORAGE;
 		break;
 	case DRM_FORMAT_YVU422:
 		val = LCD_LAYER_FORMAT_YCBCR422PLAN | LCD_LAYER_PLANAR_STORAGE
-		       | LCD_LAYER_CRCB_ORDER;
+		    | LCD_LAYER_CRCB_ORDER;
 		break;
 	case DRM_FORMAT_YUV420:
 		val = LCD_LAYER_FORMAT_YCBCR420PLAN | LCD_LAYER_PLANAR_STORAGE;
 		break;
 	case DRM_FORMAT_YVU420:
 		val = LCD_LAYER_FORMAT_YCBCR420PLAN | LCD_LAYER_PLANAR_STORAGE
-		       | LCD_LAYER_CRCB_ORDER;
+		    | LCD_LAYER_CRCB_ORDER;
 		break;
 	case DRM_FORMAT_NV12:
 		val = LCD_LAYER_FORMAT_NV12 | LCD_LAYER_PLANAR_STORAGE;
 		break;
 	case DRM_FORMAT_NV21:
 		val = LCD_LAYER_FORMAT_NV12 | LCD_LAYER_PLANAR_STORAGE
-		       | LCD_LAYER_CRCB_ORDER;
+		    | LCD_LAYER_CRCB_ORDER;
 		break;
-	/* packed formats */
+		/* packed formats */
 	case DRM_FORMAT_RGB332:
 		val = LCD_LAYER_FORMAT_RGB332;
 		break;
@@ -148,7 +199,7 @@ unsigned int set_bits_per_pixel(const struct drm_format_info *format)
 	unsigned int val = 0;
 
 	for (i = 0; i < format->num_planes; i++)
-		bpp += 8*format->cpp[i];
+		bpp += 8 * format->cpp[i];
 
 	switch (bpp) {
 	case 8:
@@ -192,8 +243,8 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	crtc_x = plane->state->crtc_x;
 	crtc_y = plane->state->crtc_y;
 
-	kmb_write(lcd, LCD_LAYERn_WIDTH(plane_id), src_w-1);
-	kmb_write(lcd, LCD_LAYERn_HEIGHT(plane_id), src_h-1);
+	kmb_write(lcd, LCD_LAYERn_WIDTH(plane_id), src_w - 1);
+	kmb_write(lcd, LCD_LAYERn_HEIGHT(plane_id), src_h - 1);
 	kmb_write(lcd, LCD_LAYERn_COL_START(plane_id), crtc_x);
 	kmb_write(lcd, LCD_LAYERn_ROW_START(plane_id), crtc_y);
 
@@ -314,38 +365,6 @@ static const struct drm_plane_funcs kmb_plane_funcs = {
 	.reset = kmb_plane_reset,
 	.atomic_duplicate_state = kmb_plane_duplicate_state,
 	.atomic_destroy_state = kmb_destroy_plane_state,
-};
-
-/* graphics layer ( layers 2 & 3) formats, only packed formats  are supported*/
-static const u32 kmb_formats_g[] = {
-	DRM_FORMAT_RGB332,
-	DRM_FORMAT_XRGB4444, DRM_FORMAT_XBGR4444,
-	DRM_FORMAT_ARGB4444, DRM_FORMAT_ABGR4444,
-	DRM_FORMAT_XRGB1555, DRM_FORMAT_XBGR1555,
-	DRM_FORMAT_ARGB1555, DRM_FORMAT_ABGR1555,
-	DRM_FORMAT_RGB565, DRM_FORMAT_BGR565,
-	DRM_FORMAT_RGB888, DRM_FORMAT_BGR888,
-	DRM_FORMAT_XRGB8888, DRM_FORMAT_XBGR8888,
-	DRM_FORMAT_ARGB8888, DRM_FORMAT_ABGR8888,
-};
-
-/* video layer (0 & 1) formats, packed and planar formats are supported */
-static const u32 kmb_formats_v[] = {
-	/* packed formats */
-	DRM_FORMAT_RGB332,
-	DRM_FORMAT_XRGB4444, DRM_FORMAT_XBGR4444,
-	DRM_FORMAT_ARGB4444, DRM_FORMAT_ABGR4444,
-	DRM_FORMAT_XRGB1555, DRM_FORMAT_XBGR1555,
-	DRM_FORMAT_ARGB1555, DRM_FORMAT_ABGR1555,
-	DRM_FORMAT_RGB565, DRM_FORMAT_BGR565,
-	DRM_FORMAT_RGB888, DRM_FORMAT_BGR888,
-	DRM_FORMAT_XRGB8888, DRM_FORMAT_XBGR8888,
-	DRM_FORMAT_ARGB8888, DRM_FORMAT_ABGR8888,
-	/*planar formats */
-	DRM_FORMAT_YUV420, DRM_FORMAT_YVU420,
-	DRM_FORMAT_YUV422, DRM_FORMAT_YVU422,
-	DRM_FORMAT_YUV444, DRM_FORMAT_YVU444,
-	DRM_FORMAT_NV12, DRM_FORMAT_NV21,
 };
 
 struct kmb_plane *kmb_plane_init(struct drm_device *drm)
