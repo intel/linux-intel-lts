@@ -523,8 +523,7 @@ struct hdac_stream *snd_hdac_stream_assign(struct hdac_bus *bus,
 void snd_hdac_stream_release(struct hdac_stream *azx_dev);
 struct hdac_stream *snd_hdac_get_stream(struct hdac_bus *bus,
 					int dir, int stream_tag);
-void snd_hdac_stream_decouple(struct hdac_bus *bus,
-				struct hdac_stream *hstream, bool decouple);
+
 int snd_hdac_stream_setup(struct hdac_stream *azx_dev);
 void snd_hdac_stream_cleanup(struct hdac_stream *azx_dev);
 int snd_hdac_stream_setup_periods(struct hdac_stream *azx_dev);
@@ -575,15 +574,6 @@ void snd_hdac_stream_timecounter_init(struct hdac_stream *azx_dev,
 	snd_hdac_stream_writeb(dev, reg, \
 			       (snd_hdac_stream_readb(dev, reg) & \
 				~(mask)) | (val))
-
-/* update register macro */
-#define snd_hdac_updatel(addr, reg, mask, val)		\
-	writel(((readl(addr + reg) & ~(mask)) | (val)), \
-		addr + reg)
-
-#define snd_hdac_updatew(addr, reg, mask, val)		\
-	writew(((readw(addr + reg) & ~(mask)) | (val)), \
-		addr + reg)
 
 #ifdef CONFIG_SND_HDA_DSP_LOADER
 /* DSP lock helpers */
