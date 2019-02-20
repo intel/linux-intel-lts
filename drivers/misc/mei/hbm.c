@@ -1095,12 +1095,16 @@ static void mei_hbm_config_features(struct mei_device *dev)
 		dev->hbm_f_dr_supported = 1;
 
 	/* VM Tag Support */
+
+	dev->hbm_f_vm_supported = 0;
 	if (dev->version.major_version > HBM_MAJOR_VERSION_VM ||
 	    (dev->version.major_version == HBM_MAJOR_VERSION_VM &&
 	     dev->version.minor_version >= HBM_MINOR_VERSION_VM))
 		dev->hbm_f_vm_supported = 1;
 
 	/* Capability message Support */
+
+	dev->hbm_f_cap_supported = 0;
 	if (dev->version.major_version > HBM_MAJOR_VERSION_CAP ||
 	    (dev->version.major_version == HBM_MAJOR_VERSION_CAP &&
 	     dev->version.minor_version >= HBM_MINOR_VERSION_CAP))
