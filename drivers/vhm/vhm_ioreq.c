@@ -839,13 +839,14 @@ static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
 	return err ? err: req_handled;
 }
 
-static bool bdf_match(struct vhm_vm *vm, struct ioreq_client *client)
+static bool bdf_match(struct vhm_request *req, struct ioreq_client *client)
 {
 	int cached_bus, cached_dev, cached_func;
 
-	cached_bus = (vm->pci_conf_addr >> 16) & PCI_BUSMAX;
-	cached_dev = (vm->pci_conf_addr >> 11) & PCI_SLOTMAX;
-	cached_func = (vm->pci_conf_addr >> 8) & PCI_FUNCMAX;
+	cached_bus = req->reqs.pci_request.bus;
+	cached_dev = req->reqs.pci_request.dev;
+	cached_func = req->reqs.pci_request.func;
+
 	return (client->trap_bdf &&
 		client->pci_bus == cached_bus &&
 		client->pci_dev == cached_dev &&
@@ -873,7 +874,7 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 		}
 
 		if (req->type == REQ_PCICFG) {
-			if (bdf_match(vm, client)) { /* bdf match client */
+			if (bdf_match(req, client)) { /* bdf match client */
 				target_client = client->id;
 				break;
 			} else /* other or fallback client */
