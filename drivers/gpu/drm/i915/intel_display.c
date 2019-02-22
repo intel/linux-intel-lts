@@ -12941,7 +12941,7 @@ static int intel_atomic_commit(struct drm_device *dev,
 	if (nonblock && intel_state->modeset) {
 		queue_work(dev_priv->modeset_wq, &state->commit_work);
 	} else if (nonblock) {
-		queue_work(system_unbound_wq, &state->commit_work);
+		queue_work(system_highpri_wq, &state->commit_work);
 	} else {
 		if (intel_state->modeset)
 			flush_workqueue(dev_priv->modeset_wq);
