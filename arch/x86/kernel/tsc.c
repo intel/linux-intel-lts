@@ -1407,9 +1407,10 @@ static bool __init determine_cpu_tsc_frequencies(bool early)
 		(unsigned long)cpu_khz % KHZ);
 
 	if (cpu_khz != tsc_khz) {
-		pr_info("Detected %lu.%03lu MHz TSC",
+		pr_info("Detected %lu.%03lu MHz TSC, current tsc:%llu",
 			(unsigned long)tsc_khz / KHZ,
-			(unsigned long)tsc_khz % KHZ);
+			(unsigned long)tsc_khz % KHZ,
+			rdtsc());
 	}
 	return true;
 }
