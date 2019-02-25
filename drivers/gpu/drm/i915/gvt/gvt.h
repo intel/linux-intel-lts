@@ -170,7 +170,7 @@ struct intel_vgpu {
 	struct mutex vgpu_lock;
 	int id;
 	unsigned long handle; /* vGPU handle used by hypervisor MPT modules */
-	bool active;
+	atomic_t active;
 	bool pv_notified;
 	bool failsafe;
 	unsigned int resetting_eng;
@@ -454,7 +454,7 @@ void intel_vgpu_write_fence(struct intel_vgpu *vgpu,
 
 #define for_each_active_vgpu(gvt, vgpu, id) \
 	idr_for_each_entry((&(gvt)->vgpu_idr), (vgpu), (id)) \
-		for_each_if(vgpu->active)
+		for_each_if(atomic_read(&vgpu->active))
 
 static inline void intel_vgpu_write_pci_bar(struct intel_vgpu *vgpu,
 					    u32 offset, u32 val, bool low)
