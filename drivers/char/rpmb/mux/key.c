@@ -32,13 +32,22 @@ __setup("ImageBootParamsAddr=", get_sbl_params_addr);
 static int __init get_abl_params_addr(char *str)
 {
 	if (kstrtoul(str, 16, &abl_params_addr)) {
-		pr_err("Failed to parse dev_sec_info.param\n");
+		pr_err("Failed to parse seed address from ABL\n");
 		return -EINVAL;
 	}
 
 	return 0;
 }
-__setup("dev_sec_info.param_addr=", get_abl_params_addr);
+__setup_param("ABL.svnseed=", get_abl_params_addr,
+	      get_abl_params_addr, 0);
+/*
+ * The "dev_sec_info.param_addr=" will be reworded to "ABL.svnseed="
+ * for new version of ABL.
+ * "dev_sec_info.param_addr" is still kept here in order to be compatible
+ * with old version of ABL.
+ */
+__setup_param("dev_sec_info.param_addr=", get_abl_params_addr_compat,
+	      get_abl_params_addr, 0);
 
 int rpmb_key_get(const u8 *dev_id, size_t dev_id_len,
 		 size_t max_partition_num, u8 rpmb_key[][RPMB_KEY_LENGTH])
