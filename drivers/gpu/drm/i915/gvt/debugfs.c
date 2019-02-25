@@ -197,7 +197,7 @@ void intel_gvt_debugfs_add_vgpu(struct intel_vgpu *vgpu)
 	snprintf(name, 16, "vgpu%d", vgpu->id);
 	vgpu->debugfs = debugfs_create_dir(name, vgpu->gvt->debugfs_root);
 
-	debugfs_create_bool("active", 0444, vgpu->debugfs, &vgpu->active);
+	debugfs_create_atomic_t("active", 0444, vgpu->debugfs, &vgpu->active);
 	debugfs_create_file("mmio_diff", 0444, vgpu->debugfs, vgpu,
 			    &vgpu_mmio_diff_fops);
 	debugfs_create_file("scan_nonprivbb", 0644, vgpu->debugfs, vgpu,

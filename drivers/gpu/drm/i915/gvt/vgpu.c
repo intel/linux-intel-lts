@@ -213,7 +213,9 @@ static void intel_gvt_update_vgpu_types(struct intel_gvt *gvt)
 void intel_gvt_activate_vgpu(struct intel_vgpu *vgpu)
 {
 	mutex_lock(&vgpu->gvt->lock);
-	vgpu->active = true;
+
+	atomic_set(&vgpu->active, true);
+
 	mutex_unlock(&vgpu->gvt->lock);
 }
 
@@ -228,8 +230,7 @@ void intel_gvt_activate_vgpu(struct intel_vgpu *vgpu)
 void intel_gvt_deactivate_vgpu(struct intel_vgpu *vgpu)
 {
 	mutex_lock(&vgpu->vgpu_lock);
-
-	vgpu->active = false;
+	atomic_set(&vgpu->active, false);
 
 	if (atomic_read(&vgpu->submission.running_workload_num)) {
 		mutex_unlock(&vgpu->vgpu_lock);
@@ -278,7 +279,7 @@ void intel_gvt_destroy_vgpu(struct intel_vgpu *vgpu)
 {
 	struct intel_gvt *gvt = vgpu->gvt;
 
-	WARN(vgpu->active, "vGPU is still active!\n");
+	WARN(atomic_read(&vgpu->active), "vGPU is still active!\n");
 
 	/*
 	 * remove idr first so later clean can judge if need to stop
@@ -343,7 +344,7 @@ struct intel_vgpu *intel_gvt_create_idle_vgpu(struct intel_gvt *gvt)
 	if (ret)
 		goto out_free_vgpu;
 
-	vgpu->active = false;
+	atomic_set(&vgpu->active, false);
 
 	return vgpu;
 
