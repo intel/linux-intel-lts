@@ -497,7 +497,7 @@ static int init_ext_sd(struct i2c_client *client, struct max9286_subdev *max_sd,
 	}
 	maxim = to_max_9286(subdev);
 
-	snprintf(name, sizeof(name), "MAX9286 %d", idx);
+	snprintf(name, sizeof(name), "MAX9286 %c", maxim->pdata->suffix);
 
 	strncpy(maxim->sub_devs[idx].sd_name, name, sizeof(name));
 
@@ -699,7 +699,7 @@ static int max9286_register_subdev(struct max9286 *max, struct i2c_client *clien
 		max->ffmts[i]->pixelformat = ICI_FORMAT_SGRBG10;
 		max->ffmts[i]->field = ICI_FIELD_NONE;
 		snprintf(max->sub_devs[i].sd_name, sizeof(max->sub_devs[i].sd_name),
-			"MAX9286 %d", i);
+			"MAX9286 %c", max->pdata->suffix);
 	}
 	return 0;
 }
