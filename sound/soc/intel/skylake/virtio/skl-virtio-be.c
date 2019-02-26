@@ -41,10 +41,10 @@ static struct vbe_static_kctl_domain kctl_domain_map[] = {
 		KCTL_DOMAIN_ITEM("Speaker Switch", 0x1),
 };
 
-const struct vbe_substream_info *vbe_find_substream_info_by_pcm(
+struct vbe_substream_info *vbe_find_substream_info_by_pcm(
 	const struct snd_skl_vbe_client *client, char *pcm_id, int direction)
 {
-	const struct vbe_substream_info *info;
+	struct vbe_substream_info *info;
 
 	list_for_each_entry(info, &client->substr_info_list, list) {
 		if (info->direction == direction &&
@@ -55,11 +55,11 @@ const struct vbe_substream_info *vbe_find_substream_info_by_pcm(
 	return NULL;
 }
 
-const struct vbe_substream_info *vbe_find_substream_info(
-	const struct snd_skl_vbe *vbe, const struct snd_pcm_substream *substr)
+struct vbe_substream_info *vbe_find_substream_info(
+	struct snd_skl_vbe *vbe, struct snd_pcm_substream *substr)
 {
 	struct snd_skl_vbe_client *client;
-	const struct vbe_substream_info *info;
+	struct vbe_substream_info *info;
 
 	list_for_each_entry(client, &vbe->client_list, list) {
 		info = vbe_find_substream_info_by_pcm(client,
@@ -70,10 +70,10 @@ const struct vbe_substream_info *vbe_find_substream_info(
 	return NULL;
 }
 
-static const struct vbe_substream_info *vbe_skl_find_substream_info(
-	const struct skl *sdev, const struct snd_pcm_substream *substr)
+static struct vbe_substream_info *vbe_skl_find_substream_info(
+	const struct skl *sdev, struct snd_pcm_substream *substr)
 {
-	const struct snd_skl_vbe *vbe = skl_get_vbe(sdev);
+	struct snd_skl_vbe *vbe = skl_get_vbe(sdev);
 
 	return vbe_find_substream_info(vbe, substr);
 }
@@ -95,7 +95,7 @@ struct snd_soc_dapm_widget *vbe_skl_find_kcontrol_widget(
 }
 
 struct skl_tplg_domain *vbe_skl_find_tplg_domain_by_name(
-	const struct skl *skl, char *domain_name)
+	struct skl *skl, char *domain_name)
 {
 	struct skl_tplg_domain *tplg_domain;
 
@@ -121,7 +121,7 @@ struct skl_tplg_domain *vbe_skl_find_tplg_domain_by_id(
 	return NULL;
 }
 
-inline int vbe_skl_is_valid_pcm_id(char *pcm_id)
+inline int vbe_skl_is_valid_pcm_id(const char *pcm_id)
 {
 	if (pcm_id == NULL || strlen(pcm_id) == 0 ||
 		strcmp(pcm_id, "((null))") == 0)
@@ -130,11 +130,10 @@ inline int vbe_skl_is_valid_pcm_id(char *pcm_id)
 	return 0;
 }
 
-static const struct snd_soc_pcm_runtime *
-vbe_skl_find_rtd_by_pcm_id(
-	const struct skl *skl, char *pcm_name)
+static struct snd_soc_pcm_runtime *vbe_skl_find_rtd_by_pcm_id(
+	struct skl *skl, const char *pcm_name)
 {
-	const struct snd_soc_pcm_runtime *rtd;
+	struct snd_soc_pcm_runtime *rtd;
 	int ret = vbe_skl_is_valid_pcm_id(pcm_name);
 
 	if (ret < 0)
@@ -151,7 +150,7 @@ vbe_skl_find_rtd_by_pcm_id(
 	return NULL;
 }
 
-const struct snd_pcm *vbe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
+struct snd_pcm *vbe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
 {
 	const struct snd_soc_pcm_runtime *rtd;
 
@@ -163,18 +162,17 @@ const struct snd_pcm *vbe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
 	return rtd ? rtd->pcm : NULL;
 }
 
-static bool vbe_skl_try_send(const struct snd_skl_vbe *vbe,
-		const struct virtio_vq_info *vq, void *buff,
+static bool vbe_skl_try_send(struct snd_skl_vbe *vbe,
+		struct virtio_vq_info *vq, void *buff,
 		unsigned int size)
 {
-	const struct iovec iov;
-	struct vfe_inbox_buff *save_buff;
+	struct iovec iov;
 	u16 idx;
 
 	if (virtio_vq_has_descs(vq) &&
 		(virtio_vq_getchain(vq, &idx, &iov, 1, NULL) > 0)) {
 		if (iov.iov_len < size) {
-			dev_err(vbe->dev, "iov len %lu, expecting len %lu\n",
+			dev_err(vbe->dev, "iov len %lu, expecting len %u\n",
 				iov.iov_len, size);
 			virtio_vq_relchain(vq, idx, iov.iov_len);
 		}
@@ -187,8 +185,8 @@ static bool vbe_skl_try_send(const struct snd_skl_vbe *vbe,
 }
 
 
-static void vbe_skl_send_or_enqueue(const struct snd_skl_vbe *vbe,
-		const struct virtio_vq_info *vq,
+static void vbe_skl_send_or_enqueue(struct snd_skl_vbe *vbe,
+		struct virtio_vq_info *vq,
 		struct vfe_pending_msg *pen_msg)
 {
 	struct vfe_pending_msg *save_msg;
@@ -217,9 +215,8 @@ int vbe_send_kctl_msg(struct snd_kcontrol *kcontrol,
 		struct vfe_kctl_result *result)
 {
 	struct vfe_pending_msg kctl_msg;
-	const struct snd_skl_vbe *vbe = &get_virtio_audio()->vbe;
-	const struct virtio_vq_info *vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
-	bool endchain;
+	struct snd_skl_vbe *vbe = &get_virtio_audio()->vbe;
+	struct virtio_vq_info *vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
 
 	kctl_msg.msg.posn.msg_type = VFE_MSG_KCTL_SET;
 	strncpy(kctl_msg.msg.kctln.kcontrol.kcontrol_id, kcontrol->id.name,
@@ -261,10 +258,10 @@ void skl_notify_stream_update(struct hdac_bus *bus,
 		&vbe->vqs[SKL_VIRTIO_IPC_CMD_RX_VQ]);
 }
 
-int vbe_skl_allocate_runtime(const struct snd_soc_card *card,
+int vbe_skl_allocate_runtime(struct snd_soc_card *card,
 		struct snd_pcm_substream *substream)
 {
-	const struct snd_soc_pcm_runtime *rtd;
+	struct snd_soc_pcm_runtime *rtd;
 	struct snd_pcm_runtime *runtime;
 	int size;
 
@@ -357,7 +354,6 @@ static int vbe_skl_prepare_dma(struct vbe_substream_info *substr_info,
 	int cnt;
 	u64 pcm_buffer_gpa = dma_conf->addr;
 	u64 pcm_buffer_hpa = vhm_vm_gpa2hpa(vm_id, pcm_buffer_gpa);
-	struct snd_pcm_substream *substream = substr_info->substream;
 
 	if (!pcm_buffer_hpa)
 		return -EINVAL;
@@ -380,7 +376,7 @@ static int vbe_skl_prepare_dma(struct vbe_substream_info *substr_info,
 
 	if (!substr_info->pos_desc) {
 		pr_err("Failed to map guest stream description %p",
-			dma_conf->stream_pos_addr);
+			(void *)dma_conf->stream_pos_addr);
 
 		return -EINVAL;
 	}
@@ -389,7 +385,7 @@ static int vbe_skl_prepare_dma(struct vbe_substream_info *substr_info,
 }
 
 static int vbe_skl_assemble_params(struct vfe_pcm_hw_params *vfe_params,
-		const struct snd_pcm_hw_params *params)
+		struct snd_pcm_hw_params *params)
 {
 	hw_param_interval(params, SNDRV_PCM_HW_PARAM_ACCESS)->min =
 		vfe_params->access;
@@ -421,7 +417,7 @@ static int vbe_skl_assemble_params(struct vfe_pcm_hw_params *vfe_params,
 }
 
 static int vbe_skl_add_substream_info(struct snd_skl_vbe *vbe, int vm_id,
-		const struct snd_pcm_substream *substream)
+		struct snd_pcm_substream *substream)
 {
 	struct vbe_substream_info *substr_info =
 		kzalloc(sizeof(*substr_info), GFP_KERNEL);
@@ -447,10 +443,10 @@ static int vbe_skl_add_substream_info(struct snd_skl_vbe *vbe, int vm_id,
 	return 0;
 }
 
-static int vbe_skl_pcm_get_domain_id(const struct skl *sdev,
+static int vbe_skl_pcm_get_domain_id(struct skl *sdev,
 	const char *pcm_id, int direction, int *domain_id)
 {
-	const struct snd_soc_pcm_runtime *rtd;
+	struct snd_soc_pcm_runtime *rtd;
 	struct skl_module_cfg *mconfig = NULL;
 
 	if (unlikely(!domain_id))
@@ -471,7 +467,7 @@ static int vbe_skl_pcm_get_domain_id(const struct skl *sdev,
 	return -EINVAL;
 }
 
-static int vbe_skl_pcm_check_permission(const struct skl *sdev,
+static int vbe_skl_pcm_check_permission(struct skl *sdev,
 	int domain_id, const char *pcm_id, int direction)
 {
 	int pcm_domain_id;
@@ -488,17 +484,16 @@ static int vbe_skl_pcm_check_permission(const struct skl *sdev,
 	return ret;
 }
 
-static int vbe_skl_pcm_open(const struct snd_skl_vbe *vbe,
-		const struct skl *sdev,
-		int vm_id, const struct vbe_ipc_msg *msg)
+static int vbe_skl_pcm_open(struct snd_skl_vbe *vbe, struct skl *sdev,
+		int vm_id, struct vbe_ipc_msg *msg)
 {
-	const struct snd_soc_pcm_runtime *rtd;
+	struct snd_soc_pcm_runtime *rtd;
 	struct snd_pcm_substream *substream;
-	const struct snd_pcm_runtime *runtime;
+	struct snd_pcm_runtime *runtime;
 	int ret;
 	struct vfe_pcm_result *vbe_result = msg->rx_data;
-	const struct vfe_pcm_info *pcm_desc = &msg->header->desc.pcm;
-	const struct snd_pcm *pcm =
+	struct vfe_pcm_info *pcm_desc = &msg->header->desc.pcm;
+	struct snd_pcm *pcm =
 		vbe_skl_find_pcm_by_name(vbe->sdev, pcm_desc->pcm_id);
 	int direction = pcm_desc->direction;
 
@@ -561,7 +556,7 @@ static int vbe_skl_pcm_close(const struct skl *sdev, int vm_id,
 	}
 
 	if (substr_info->pos_desc) {
-		unmap_guest_phys(vm_id, substr_info->pos_desc);
+		unmap_guest_phys(vm_id, (u64)substr_info->pos_desc);
 		substr_info->pos_desc = NULL;
 	}
 
@@ -578,9 +573,9 @@ static int vbe_skl_pcm_close(const struct skl *sdev, int vm_id,
 	return ret;
 }
 
-static int vbe_skl_pcm_prepare(const struct skl *sdev, int vm_id,
-		const struct vbe_substream_info *substr_info,
-		const struct vbe_ipc_msg *msg)
+static int vbe_skl_pcm_prepare(struct skl *sdev, int vm_id,
+		struct vbe_substream_info *substr_info,
+		struct vbe_ipc_msg *msg)
 {
 	const struct snd_soc_pcm_runtime *rtd;
 	int ret;
@@ -604,7 +599,7 @@ static int vbe_skl_pcm_prepare(const struct skl *sdev, int vm_id,
 void vbe_skl_pcm_close_all(struct snd_skl_vbe *vbe,
 		struct snd_skl_vbe_client *client)
 {
-	const struct vbe_substream_info *info;
+	struct vbe_substream_info *info;
 	struct vbe_ipc_msg msg;
 	int ret;
 
@@ -620,14 +615,14 @@ void vbe_skl_pcm_close_all(struct snd_skl_vbe *vbe,
 struct snd_pcm_hw_params hw_params;
 
 static int vbe_skl_pcm_hw_params(const struct skl *sdev, int vm_id,
-		const struct vbe_substream_info *substr_info,
-		const struct vbe_ipc_msg *msg)
+		struct vbe_substream_info *substr_info,
+		struct vbe_ipc_msg *msg)
 {
-	const struct snd_soc_pcm_runtime *rtd;
+	struct snd_soc_pcm_runtime *rtd;
 	int ret;
-	const struct snd_pcm_substream *substream = substr_info->substream;
+	struct snd_pcm_substream *substream = substr_info->substream;
 	//TODO: check if tx and rx data have expected size
-	const struct vfe_pcm_hw_params *hw_params_ipc = msg->tx_data;
+	struct vfe_pcm_hw_params *hw_params_ipc = msg->tx_data;
 	struct vfe_pcm_result *vbe_result = msg->rx_data;
 
 	vbe_skl_assemble_params(hw_params_ipc, &hw_params);
@@ -649,14 +644,11 @@ static int vbe_skl_send_tplg_data(struct snd_skl_vbe *vbe,
 	struct vfe_pending_msg tplg_msg;
 	struct vfe_tplg_data *tplg_data = &tplg_msg.msg.tplg_data;
 	int rem_data = tplg->size, offset;
-	u8 *data_ptr = tplg->data;
-	const struct virtio_vq_info *vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
+	u8 *data_ptr = (u8 *)tplg->data;
+	struct virtio_vq_info *vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
 
 	tplg_msg.sizeof_msg = sizeof(struct vfe_tplg_data);
 	tplg_data->msg_type = VFE_MSG_TPLG_DATA;
-
-	u32 chunk_length;
-	u8 data[SKL_VIRTIO_TPLG_CHUNK_SIZE];
 
 	for (offset = 0; offset < tplg->size;
 		offset += SKL_VIRTIO_TPLG_CHUNK_SIZE,
@@ -674,13 +666,13 @@ static int vbe_skl_send_tplg_data(struct snd_skl_vbe *vbe,
 	return 0;
 }
 
-static int vbe_skl_tplg_info(struct snd_skl_vbe *vbe, const struct skl *skl,
+static int vbe_skl_tplg_info(struct snd_skl_vbe *vbe, struct skl *skl,
 	int vm_id, const struct vbe_ipc_msg *msg)
 {
 	struct skl_tplg_domain *tplg_domain;
 	const struct firmware *tplg;
 	char *tplg_name;
-	int chunks, data, ret;
+	int ret;
 	struct vfe_tplg_info *tplg_info = msg->rx_data;
 
 	if (!tplg_info)
@@ -716,11 +708,11 @@ static int vbe_skl_tplg_info(struct snd_skl_vbe *vbe, const struct skl *skl,
 }
 
 static int vbe_skl_pcm_trigger(struct skl *sdev, int vm_id,
-		const struct vbe_substream_info *substr_info,
-		const struct vbe_ipc_msg *msg)
+		struct vbe_substream_info *substr_info,
+		struct vbe_ipc_msg *msg)
 {
-	const struct snd_soc_pcm_runtime *rtd;
-	const struct snd_pcm_substream *substream = substr_info->substream;
+	struct snd_soc_pcm_runtime *rtd;
+	struct snd_pcm_substream *substream = substr_info->substream;
 	int cmd = *(int *)msg->tx_data;
 
 	rtd = substream->private_data;
@@ -763,7 +755,6 @@ static int vbe_skl_kcontrol_get_domain_id(const struct snd_kcontrol *kcontrol,
 	struct skl_module_cfg *mconfig;
 	struct snd_soc_dapm_widget *w;
 	void *priv = kcontrol->private_data;
-	int ret = 0;
 	struct skl *sdev = get_virtio_audio()->skl;
 
 	if (sdev == NULL)
@@ -795,10 +786,10 @@ static struct kctl_ops vbe_kctl_ops = {
 		.send_noti = vbe_send_kctl_msg,
 };
 
-static int vbe_skl_cfg_hda(const struct skl *sdev, int vm_id,
+static int vbe_skl_cfg_hda(struct skl *sdev, int vm_id,
 		const struct vbe_ipc_msg *msg)
 {
-	const struct hdac_bus *bus = &sdev->hbus;
+	struct hdac_bus *bus = &sdev->hbus;
 	struct vfe_hda_cfg *hda_cfg = msg->rx_data;
 	unsigned short gcap;
 
@@ -821,11 +812,8 @@ static int vbe_skl_cfg_hda(const struct skl *sdev, int vm_id,
 }
 
 static int vbe_skl_msg_cfg_handle(struct snd_skl_vbe *vbe,
-		const struct skl *sdev,
-		int vm_id, struct vbe_ipc_msg *msg)
+		struct skl *sdev, int vm_id, struct vbe_ipc_msg *msg)
 {
-	struct kctl_ops kt_ops;
-
 	switch (msg->header->cmd) {
 	case VFE_MSG_CFG_HDA:
 		return vbe_skl_cfg_hda(sdev, vm_id, msg);
@@ -838,16 +826,14 @@ static int vbe_skl_msg_cfg_handle(struct snd_skl_vbe *vbe,
 	return 0;
 }
 
-int vbe_skl_msg_tplg_handle(const struct snd_skl_vbe *vbe,
-		const struct skl *sdev, int vm_id, struct vbe_ipc_msg *msg)
+int vbe_skl_msg_tplg_handle(struct snd_skl_vbe *vbe,
+		struct skl *sdev, int vm_id, struct vbe_ipc_msg *msg)
 {
-	u32 domain_id = msg->header->domain_id;
-
 	switch (msg->header->cmd) {
 	case VFE_MSG_TPLG_INFO:
 		return vbe_skl_tplg_info(vbe, sdev, vm_id, msg);
 	default:
-		dev_err(vbe->dev, "Unknown command %d for tplg [%s].\n",
+		dev_err(vbe->dev, "Unknown command %d for tplg.\n",
 			msg->header->cmd);
 	break;
 	}
@@ -855,10 +841,10 @@ int vbe_skl_msg_tplg_handle(const struct snd_skl_vbe *vbe,
 	return 0;
 }
 
-static int vbe_skl_msg_pcm_handle(const struct snd_skl_vbe *vbe,
-		const struct skl *sdev, int vm_id, struct vbe_ipc_msg *msg)
+static int vbe_skl_msg_pcm_handle(struct snd_skl_vbe *vbe,
+		struct skl *sdev, int vm_id, struct vbe_ipc_msg *msg)
 {
-	const struct vbe_substream_info *substream_info;
+	struct vbe_substream_info *substream_info;
 	char *pcm_id;
 	int direction;
 	/* TODO: call vbe_client_find with proper client_id */
@@ -903,7 +889,7 @@ static int vbe_skl_msg_pcm_handle(const struct snd_skl_vbe *vbe,
 	return 0;
 }
 
-int vbe_skl_msg_kcontrol_handle(const struct snd_skl_vbe *vbe,
+int vbe_skl_msg_kcontrol_handle(struct snd_skl_vbe *vbe,
 		int vm_id, const struct vbe_ipc_msg *msg)
 {
 	const struct vfe_kctl_info *kctl_desc = &msg->header->desc.kcontrol;
@@ -922,8 +908,8 @@ int vbe_skl_msg_kcontrol_handle(const struct snd_skl_vbe *vbe,
 	return 0;
 }
 
-static int vbe_skl_not_fwd(const struct snd_skl_vbe *vbe,
-	const struct skl *sdev, int vm_id, void *ipc_bufs[SKL_VIRTIO_NOT_VQ_SZ],
+static int vbe_skl_not_fwd(struct snd_skl_vbe *vbe,
+	struct skl *sdev, int vm_id, void *ipc_bufs[SKL_VIRTIO_NOT_VQ_SZ],
 	size_t ipc_lens[SKL_VIRTIO_NOT_VQ_SZ])
 {
 	struct vbe_ipc_msg msg;
@@ -990,8 +976,8 @@ static int vbe_skl_ipc_fwd(const struct snd_skl_vbe *vbe,
 	return 0;
 }
 
-static int vbe_skl_virtio_vq_handle(const struct snd_skl_vbe *vbe,
-	const struct virtio_vq_info *vq, u16 *idx, const struct iovec *iov,
+static int vbe_skl_virtio_vq_handle(struct snd_skl_vbe *vbe,
+	struct virtio_vq_info *vq, u16 *idx, struct iovec *iov,
 	void *reply_buf[], size_t *reply_len, int vq_id, int vq_size)
 {
 	int i;
@@ -1018,11 +1004,11 @@ static int vbe_skl_virtio_vq_handle(const struct snd_skl_vbe *vbe,
 	return 0;
 }
 
-static void vbe_handle_irq_queue(const struct snd_skl_vbe *vbe, int vq_idx)
+static void vbe_handle_irq_queue(struct snd_skl_vbe *vbe, int vq_idx)
 {
 	u16 idx;
-	const struct iovec iov;
-	const struct virtio_vq_info *vq = &vbe->vqs[vq_idx];
+	struct iovec iov;
+	struct virtio_vq_info *vq = &vbe->vqs[vq_idx];
 
 	if (virtio_vq_has_descs(vq) &&
 		(virtio_vq_getchain(vq, &idx, &iov, 1, NULL) > 0)) {
@@ -1032,15 +1018,15 @@ static void vbe_handle_irq_queue(const struct snd_skl_vbe *vbe, int vq_idx)
 	}
 }
 
-static void vbe_skl_ipc_fe_not_get(const struct snd_skl_vbe *vbe, int vq_idx)
+static void vbe_skl_ipc_fe_not_get(struct snd_skl_vbe *vbe, int vq_idx)
 {
 	int ret;
 	u16 idx;
-	const struct iovec iov[SKL_VIRTIO_NOT_VQ_SZ];
+	struct iovec iov[SKL_VIRTIO_NOT_VQ_SZ];
 	void *reply_buf[SKL_VIRTIO_NOT_VQ_SZ];
 	size_t reply_len[SKL_VIRTIO_NOT_VQ_SZ];
-	const struct virtio_vq_info *vq = &vbe->vqs[vq_idx];
-	const struct device *dev = vbe->sdev->skl_sst->dev;
+	struct virtio_vq_info *vq = &vbe->vqs[vq_idx];
+	struct device *dev = vbe->sdev->skl_sst->dev;
 	int vm_id = vbe->vmid;
 
 	memset(iov, 0, sizeof(iov));
@@ -1066,15 +1052,15 @@ static void vbe_skl_ipc_fe_not_get(const struct snd_skl_vbe *vbe, int vq_idx)
 	virtio_vq_endchains(vq, true);
 }
 
-static void vbe_skl_ipc_fe_cmd_get(const struct snd_skl_vbe *vbe, int vq_idx)
+static void vbe_skl_ipc_fe_cmd_get(struct snd_skl_vbe *vbe, int vq_idx)
 {
 	u16 idx;
 	int ret;
-	const struct iovec iov[SKL_VIRTIO_IPC_VQ_SZ];
+	struct iovec iov[SKL_VIRTIO_IPC_VQ_SZ];
 	void *reply_buf[SKL_VIRTIO_IPC_VQ_SZ];
 	size_t reply_len[SKL_VIRTIO_IPC_VQ_SZ];
-	const struct virtio_vq_info *vq = &vbe->vqs[vq_idx];
-	const struct device *dev = vbe->sdev->skl_sst->dev;
+	struct virtio_vq_info *vq = &vbe->vqs[vq_idx];
+	struct device *dev = vbe->sdev->skl_sst->dev;
 	int vm_id = vbe->vmid;
 
 	memset(iov, 0, sizeof(iov));
@@ -1105,9 +1091,8 @@ static void vbe_skl_ipc_fe_cmd_get(const struct snd_skl_vbe *vbe, int vq_idx)
 /* IPC notification reply from FE to DSP */
 static void vbe_skl_ipc_fe_not_reply_get(struct snd_skl_vbe *vbe, int vq_idx)
 {
-	const struct virtio_vq_info *vq;
-	const struct vfe_pending_msg *entry;
-	unsigned long flags;
+	struct virtio_vq_info *vq;
+	struct vfe_pending_msg *entry;
 	bool sent;
 
 	while (!list_empty(&vbe->pending_msg_list)) {
@@ -1128,7 +1113,7 @@ static void vbe_skl_ipc_fe_not_reply_get(struct snd_skl_vbe *vbe, int vq_idx)
 	}
 }
 
-void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx)
+void vbe_skl_handle_kick(struct snd_skl_vbe *vbe, int vq_idx)
 {
 	dev_dbg(vbe->dev, "vq_idx %d\n", vq_idx);
 

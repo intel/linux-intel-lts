@@ -85,7 +85,7 @@ inline int vfe_is_valid_fe_substream(struct snd_pcm_substream *substream)
 	return vfe_is_valid_pcm_id(substream->pcm->id);
 }
 
-static inline vfe_vq_kick(struct snd_skl_vfe *vfe, struct virtqueue *vq)
+static void vfe_vq_kick(struct snd_skl_vfe *vfe, struct virtqueue *vq)
 {
 	unsigned long irq_flags;
 
@@ -382,7 +382,6 @@ static void vfe_not_tx_done(struct virtqueue *vq)
 			wake_up(msg->waitq);
 		}
 
-free_msg:
 		kfree(msg->tx_buf);
 		kfree(msg->rx_buf);
 		kfree(msg);
@@ -403,12 +402,13 @@ static void vfe_not_handle_rx(struct virtqueue *vq)
 
 static void vfe_handle_posn(struct work_struct *work)
 {
-	/*stnc pos_desc*/
-	rmb();
 	struct vfe_substream_info *substr_info;
 	struct vfe_stream_pos_desc *pos_desc;
 	struct snd_skl_vfe *vfe =
 		container_of(work, struct snd_skl_vfe, posn_update_work);
+
+	/*stnc pos_desc*/
+	rmb();
 
 	list_for_each_entry(substr_info, &vfe->substr_info_list, list) {
 		pos_desc = substr_info->pos_desc;
@@ -693,7 +693,8 @@ static void vfe_handle_timedout_pcm_msg(struct snd_skl_vfe *vfe,
 	struct snd_pcm_substream *substream;
 	const struct vfe_pcm_info *pcm_desc = &msg->header.desc.pcm;
 	const struct snd_pcm *pcm =
-		vfe_skl_find_pcm_by_name(&vfe->sdev, pcm_desc->pcm_id);
+		vfe_skl_find_pcm_by_name(&vfe->sdev,
+				(char *)pcm_desc->pcm_id);
 	int direction = pcm_desc->direction;
 
 	if (!pcm)
@@ -1090,7 +1091,7 @@ static void vfe_send_queues(struct virtio_device *vdev)
 		vfe->in_buff[idx] = devm_kmalloc(&vdev->dev,
 				sizeof(union inbox_msg), GFP_KERNEL);
 		if (!vfe->in_buff[idx])
-			return -ENOMEM;
+			return;
 
 		vfe_put_inbox_buffer(vfe, vfe->in_buff[idx]);
 	}
