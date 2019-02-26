@@ -29,7 +29,7 @@
 
 #define SKL_VIRTIO_DOMAIN_NAME_LEN 20
 #define SKL_VIRTIO_DOMAIN_TPLG_LEN 40
-#define SKL_VIRTIO_TPLG_CHUNK_SIZE 2048
+#define SKL_VIRTIO_TPLG_CHUNK_SIZE 1536
 
 struct vfe_stream_pos_desc {
 	u64 hw_ptr;
