@@ -38,7 +38,7 @@ struct snd_skl_vbe;
 
 extern int snd_skl_vbe_register(struct skl *sdev, struct snd_skl_vbe **svbe);
 extern int snd_skl_vbe_register_client(struct snd_skl_vbe *vbe);
-extern void vbe_skl_handle_kick(const struct snd_skl_vbe *vbe, int vq_idx);
+extern void vbe_skl_handle_kick(struct snd_skl_vbe *vbe, int vq_idx);
 
 int vbe_skl_attach(struct snd_skl_vbe *vbe, struct skl *skl);
 int vbe_skl_detach(struct snd_skl_vbe *vbe, struct skl *skl);

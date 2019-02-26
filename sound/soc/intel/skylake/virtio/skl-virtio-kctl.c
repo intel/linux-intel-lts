@@ -210,7 +210,7 @@ int kctl_ipc_handle(u32 domain_id, const struct vfe_kctl_info *kctl_info,
 	struct kctl_proxy *proxy = get_kctl_proxy();
 	struct kctl_wrapper *kcontrol =
 		kctl_find_by_name(proxy, domain_id, kctl_info->kcontrol_id);
-	int ret;
+	int ret = 0;
 
 	if (!kcontrol) {
 		dev_err(proxy->alloc_dev,
