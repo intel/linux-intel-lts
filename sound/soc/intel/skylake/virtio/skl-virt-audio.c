@@ -98,7 +98,7 @@ static int vskl_vbs_handle_kick(int client_id, unsigned long *ioreqs_map)
 				(handle = 1) : (handle = 0);
 		}
 
-		acrn_ioreq_complete_request(client->vhm_client_id, vcpu, req);
+		acrn_ioreq_complete_request(client->vhm_client_id, vcpu);
 
 		/* handle VQ kick if needed */
 		if (handle)
