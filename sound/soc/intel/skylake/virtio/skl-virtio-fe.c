@@ -49,11 +49,6 @@ static struct snd_skl_vfe *get_virtio_audio_fe(void)
 	return skl_vfe;
 }
 
-struct kctl_proxy *get_kctl_proxy(void)
-{
-	return &get_virtio_audio_fe()->kcon_proxy;
-}
-
 struct vfe_substream_info *vfe_find_substream_info_by_pcm(
 	struct snd_skl_vfe *vfe, char *pcm_id, int direction)
 {
