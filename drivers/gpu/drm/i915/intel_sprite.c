@@ -319,6 +319,7 @@ skl_update_plane(struct intel_plane *plane,
 	uint32_t src_h = drm_rect_height(&plane_state->base.src) >> 16;
 	uint32_t val;
 	unsigned long irqflags;
+	u32 keymsk = 0, keymax = 0;
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 	if (dev_priv->gvt &&
@@ -345,9 +346,18 @@ skl_update_plane(struct intel_plane *plane,
 
 	if (key->flags) {
 		I915_WRITE_FW(PLANE_KEYVAL(pipe, plane_id), key->min_value);
-		I915_WRITE_FW(PLANE_KEYMAX(pipe, plane_id), key->max_value);
-		I915_WRITE_FW(PLANE_KEYMSK(pipe, plane_id), key->channel_mask);
+
+		keymax |= key->max_value & 0xffffff;
+		keymsk |= key->channel_mask & 0x3ffffff;
 	}
+
+	keymax |= (plane_state->base.alpha >> 8) << PLANE_KEYMAX_ALPHA_SHIFT;
+
+	if (plane_state->base.alpha < 0xff00)
+		keymsk |= PLANE_KEYMSK_ALPHA_ENABLE;
+
+	I915_WRITE_FW(PLANE_KEYMAX(pipe, plane_id), keymax);
+	I915_WRITE_FW(PLANE_KEYMSK(pipe, plane_id), keymsk);
 
 	I915_WRITE_FW(PLANE_OFFSET(pipe, plane_id), (y << 16) | x);
 	I915_WRITE_FW(PLANE_STRIDE(pipe, plane_id), stride);
