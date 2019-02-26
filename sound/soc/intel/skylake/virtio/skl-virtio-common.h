@@ -251,7 +251,6 @@ struct kctl_proxy {
 	struct list_head domain_list;
 };
 
-struct kctl_proxy *get_kctl_proxy(void);
 int kctl_ipc_handle(u32 domain_id, const struct vfe_kctl_info *kctl_info,
 	struct vfe_kctl_value *kcontrol_val, struct vfe_kctl_result *result);
 void kctl_init_proxy(struct device *dev, struct kctl_ops *kt_ops);

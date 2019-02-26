@@ -41,16 +41,6 @@ static struct vbe_static_kctl_domain kctl_domain_map[] = {
 		KCTL_DOMAIN_ITEM("Speaker Switch", 0x1),
 };
 
-static struct snd_skl_vbe *get_virtio_audio_be(void)
-{
-	return &get_virtio_audio()->vbe;
-}
-
-struct kctl_proxy *get_kctl_proxy(void)
-{
-	return &get_virtio_audio_be()->kcon_proxy;
-}
-
 const struct vbe_substream_info *vbe_find_substream_info_by_pcm(
 	const struct snd_skl_vbe_client *client, char *pcm_id, int direction)
 {

@@ -67,7 +67,6 @@ struct snd_skl_vbe {
 	struct device *dev;
 	struct virtio_dev_info dev_info;
 	struct virtio_vq_info vqs[SKL_VIRTIO_NUM_OF_VQS];
-	struct kctl_proxy kcon_proxy;
 
 	spinlock_t posn_lock;
 

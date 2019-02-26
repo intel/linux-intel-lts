@@ -15,6 +15,13 @@
 #include <linux/device.h>
 #include "skl-virtio-common.h"
 
+static struct kctl_proxy ctl_proxy;
+
+static struct kctl_proxy *get_kctl_proxy(void)
+{
+	return &ctl_proxy;
+}
+
 static struct kctl_domain *find_domain(struct kctl_proxy *proxy,
 		u32 domain_id)
 {

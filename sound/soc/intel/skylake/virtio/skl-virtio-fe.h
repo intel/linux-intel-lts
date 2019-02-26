@@ -41,7 +41,6 @@ struct snd_skl_vfe {
 	struct ipc_message *msg;
 	void *in_buff[VFE_MSG_BUFF_NUM];
 
-	struct kctl_proxy kcon_proxy;
 	struct vskl_vfe_tplg tplg;
 
 	struct work_struct init_work;
