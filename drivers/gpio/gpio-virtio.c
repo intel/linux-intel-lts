@@ -33,6 +33,17 @@ enum gpio_virtio_request_command {
 	GPIO_REQ_MAX
 };
 
+enum gpio_virtio_irq_action {
+	GPIO_IRQ_ACTION_ENABLE	= 0,
+	GPIO_IRQ_ACTION_DISABLE,
+	GPIO_IRQ_ACTION_ACK,
+	GPIO_IRQ_ACTION_MASK,
+	GPIO_IRQ_ACTION_UNMASK,
+
+	GPIO_IRQ_MAX
+};
+
+
 struct gpio_virtio_request {
 	uint8_t		cmd;
 	uint8_t		offset;
@@ -58,14 +69,26 @@ struct gpio_virtio_data {
 	char	name[32];
 } __packed;
 
+struct gpio_virtio_irq_request {
+	uint8_t action;
+	uint8_t pin;
+	uint8_t mode;
+} __packed;
+
+
 struct gpio_virtio {
 	struct device *dev;
 	struct virtio_device *vdev;
 	struct virtqueue *gpio_vq;
+	struct virtqueue *irq_vq;
+	struct virtqueue *evt_vq;
 	struct gpio_chip chip;
 	struct gpio_virtio_data *data;
 	const char **names;
+	uint64_t *evts;
 	struct mutex gpio_lock;
+	spinlock_t irq_lock;
+	spinlock_t evt_lock;
 };
 
 static unsigned int features[] = {GPIO_VIRTIO_F_CHIP};
@@ -285,20 +308,178 @@ out:
 	return err;
 }
 
+static void gpio_virtio_irq_handler(struct virtqueue *vq)
+{
+	struct gpio_virtio *vgpio = vq->vdev->priv;
+	struct gpio_virtio_irq_request *req;
+	unsigned int len;
+
+	spin_lock(&vgpio->irq_lock);
+	while ((req = virtqueue_get_buf(vgpio->irq_vq, &len)) != NULL)
+		kfree(req);
+	spin_unlock(&vgpio->irq_lock);
+}
+
+static void gpio_virtio_event_handler(struct virtqueue *vq)
+{
+	struct gpio_virtio *vgpio = vq->vdev->priv;
+	struct scatterlist sg;
+	uint64_t *evt;
+	int len, bit, irq;
+
+	spin_lock(&vgpio->evt_lock);
+	while ((evt = virtqueue_get_buf(vgpio->evt_vq, &len)) != NULL) {
+		spin_unlock(&vgpio->evt_lock);
+		for_each_set_bit(bit, (unsigned long *)evt, 64) {
+			irq = irq_find_mapping(vgpio->chip.irq.domain, bit);
+			generic_handle_irq(irq);
+		}
+		spin_lock(&vgpio->evt_lock);
+		sg_init_one(&sg, evt, sizeof(*evt));
+		virtqueue_add_inbuf(vgpio->evt_vq, &sg, 1, evt, GFP_ATOMIC);
+	}
+	spin_unlock(&vgpio->evt_lock);
+}
+
 static int init_vqs(struct gpio_virtio *vgpio)
 {
-	struct virtqueue *vqs[1];
-	vq_callback_t *callbacks[1] = {NULL};
-	const char * const names[1] = {"gpio"};
+	struct virtqueue *vqs[3];
+	vq_callback_t *callbacks[3] = {NULL, gpio_virtio_irq_handler,
+		gpio_virtio_event_handler};
+	const char * const names[3] = {"gpio", "gpio-irq", "gpio-irq-evt"};
 	int err;
 
-	err = virtio_find_vqs(vgpio->vdev, 1, vqs, callbacks, names, NULL);
+	err = virtio_find_vqs(vgpio->vdev, 3, vqs, callbacks, names, NULL);
 	if (err)
 		return err;
 
 	vgpio->gpio_vq = vqs[0];
+	vgpio->irq_vq = vqs[1];
+	vgpio->evt_vq = vqs[2];
+
 	return 0;
 }
+
+static int gpio_virtio_alloc_event_buffer(struct gpio_virtio *vgpio)
+{
+	struct scatterlist sg;
+	uint64_t *evt;
+	int i, n, err;
+
+	n = virtqueue_get_vring_size(vgpio->evt_vq);
+	if (n <= 0) {
+		dev_err(&vgpio->vdev->dev, "failed to get irq vring size\n");
+		return -EINVAL;
+	}
+	evt = kcalloc(n, sizeof(*evt), GFP_KERNEL);
+	if (!evt)
+		return -ENOMEM;
+
+	/* Pre-allocating the buffer for interrupt events */
+	for (i = 0; i < n; i++) {
+		sg_init_one(&sg, evt + i, sizeof(*evt));
+		err = virtqueue_add_inbuf(vgpio->evt_vq, &sg, 1, evt + i,
+				GFP_ATOMIC);
+		if (err) {
+			dev_err(&vgpio->vdev->dev,
+				"failed to add inbuf for irq events buffer\n");
+			kfree(evt);
+			return err;
+		}
+	}
+	vgpio->evts = evt;
+	return 0;
+}
+
+static void gpio_virtio_irq_update(struct irq_data *d, unsigned int action)
+{
+	struct gpio_virtio *vgpio;
+	struct gpio_chip *chip;
+	struct gpio_virtio_irq_request *req;
+	struct scatterlist sg;
+	int err;
+
+	chip = irq_data_get_irq_chip_data(d);
+	vgpio = gpiochip_get_data(chip);
+	req = kzalloc(sizeof(*req), GFP_ATOMIC);
+	if (!req) {
+		dev_err(&vgpio->vdev->dev,
+		"failed to alloc buffer for irq, ignore pin %ld, action %u\n",
+		d->hwirq, action);
+		return;
+	}
+
+	req->action = action;
+	req->pin = d->hwirq;
+	if (action == GPIO_IRQ_ACTION_ENABLE)
+		req->mode = irq_get_trigger_type(d->irq);
+
+	sg_init_one(&sg, req, sizeof(*req));
+	spin_lock(&vgpio->irq_lock);
+	err = virtqueue_add_outbuf(vgpio->irq_vq, &sg, 1, req, GFP_ATOMIC);
+	if (err) {
+		dev_err(&vgpio->vdev->dev,
+		"failed to add outbuf for irq, ignore pin %ld, action %u\n",
+		d->hwirq, action);
+		spin_unlock(&vgpio->irq_lock);
+		goto out;
+	}
+	virtqueue_kick(vgpio->irq_vq);
+	spin_unlock(&vgpio->irq_lock);
+
+	return;
+out:
+	kfree(req);
+}
+
+static void gpio_virtio_irq_mask(struct irq_data *d)
+{
+	gpio_virtio_irq_update(d, GPIO_IRQ_ACTION_MASK);
+}
+
+static void gpio_virtio_irq_unmask(struct irq_data *d)
+{
+	gpio_virtio_irq_update(d, GPIO_IRQ_ACTION_UNMASK);
+}
+
+static void gpio_virtio_irq_ack(struct irq_data *d)
+{
+	gpio_virtio_irq_update(d, GPIO_IRQ_ACTION_ACK);
+}
+
+static void gpio_virtio_irq_enable(struct irq_data *d)
+{
+	/* TODO: need to handle the failure of GPIO_IRQ_ACTION_ENABLE */
+	gpio_virtio_irq_update(d, GPIO_IRQ_ACTION_ENABLE);
+}
+
+static void gpio_virtio_irq_disable(struct irq_data *d)
+{
+	gpio_virtio_irq_update(d, GPIO_IRQ_ACTION_DISABLE);
+}
+
+static int gpio_virtio_irq_type(struct irq_data *d, unsigned int type)
+{
+	if (type & ~IRQ_TYPE_SENSE_MASK)
+		return -EINVAL;
+
+	if (type & IRQ_TYPE_EDGE_BOTH)
+		irq_set_handler_locked(d, handle_edge_irq);
+	else if (type & IRQ_TYPE_LEVEL_MASK)
+		irq_set_handler_locked(d, handle_level_irq);
+
+	return 0;
+}
+
+static struct irq_chip gpio_virtio_irqchip = {
+	.name = "virtio-gpio-irq",
+	.irq_mask = gpio_virtio_irq_mask,
+	.irq_unmask = gpio_virtio_irq_unmask,
+	.irq_set_type = gpio_virtio_irq_type,
+	.irq_ack = gpio_virtio_irq_ack,
+	.irq_enable = gpio_virtio_irq_enable,
+	.irq_disable = gpio_virtio_irq_disable,
+};
 
 static int gpio_virtio_probe(struct virtio_device *vdev)
 {
@@ -314,17 +495,32 @@ static int gpio_virtio_probe(struct virtio_device *vdev)
 	vdev->priv = vgpio;
 	vgpio->vdev = vdev;
 	mutex_init(&vgpio->gpio_lock);
+	spin_lock_init(&vgpio->irq_lock);
+	spin_lock_init(&vgpio->evt_lock);
 	err = init_vqs(vgpio);
 	if (err)
-		goto out;
+		goto init_err;
 
 	err = gpio_virtio_register_chip(vgpio, pdev);
 	if (err)
-		goto out;
+		goto init_err;
+
+	err = gpiochip_irqchip_add(&vgpio->chip, &gpio_virtio_irqchip, 0,
+			handle_bad_irq, IRQ_TYPE_NONE);
+	if (err)
+		goto irq_err;
+
+	err = gpio_virtio_alloc_event_buffer(vgpio);
+	if (err)
+		goto irq_err;
 
 	return 0;
-out:
-	dev_err(&vgpio->vdev->dev, "failed to initialize gpio virtio\n");
+
+irq_err:
+	gpiochip_remove(&vgpio->chip);
+	kfree(vgpio->data);
+	kfree(vgpio->names);
+init_err:
 	kfree(vgpio);
 	return err;
 }
@@ -343,6 +539,7 @@ static void gpio_virtio_remove(struct virtio_device *vdev)
 
 	kfree(gpio->data);
 	kfree(gpio->names);
+	kfree(gpio->evts);
 	kfree(gpio);
 }
 
