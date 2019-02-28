@@ -426,6 +426,8 @@ static int ti964_registered(struct ici_ext_subdev_register *reg)
 		/* Initialize sensor connected to TI964 */
 		rval  = ti964_init_ext_subdev(info, reg, client,
 						  &sd_register);
+		msleep(10);
+
 		if (rval) {
 			pr_err("%s, Failed to register external subdev\n", __func__);
 			continue;
