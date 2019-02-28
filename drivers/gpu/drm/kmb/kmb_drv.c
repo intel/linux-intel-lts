@@ -47,6 +47,7 @@
 #include "kmb_regs.h"
 #include "kmb_crtc.h"
 #include "kmb_plane.h"
+#include "kmb_dsi.h"
 
 static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
@@ -83,6 +84,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 
+	kmb_dsi_init(drm);
 	ret = drm_irq_install(drm, platform_get_irq(pdev, 0));
 	if (ret < 0) {
 		DRM_ERROR("failed to install IRQ handler\n");
