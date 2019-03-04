@@ -324,8 +324,42 @@ static void vfe_cmd_tx_done(struct virtqueue *vq)
 static void vfe_cmd_handle_rx(struct virtqueue *vq)
 {
 	struct snd_skl_vfe *vfe;
+	unsigned long irq_flags;
+	struct vfe_substream_info *substr_info, *tmp;
+	struct vfe_updated_substream *updated_stream;
+	struct vfe_stream_pos_desc *pos_desc;
 
 	vfe = vq->vdev->priv;
+
+
+	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
+	list_for_each_entry_safe(substr_info, tmp,
+			&vfe->substr_info_list, list) {
+		pos_desc = substr_info->pos_desc;
+		if (!pos_desc ||
+				pos_desc->be_irq_cnt == pos_desc->fe_irq_cnt)
+			continue;
+		if (pos_desc->be_irq_cnt - pos_desc->fe_irq_cnt > 1)
+			dev_warn(&vfe->vdev->dev, "Missed interrupts on fe side\n");
+		pos_desc->fe_irq_cnt = pos_desc->be_irq_cnt;
+
+		updated_stream =
+			kzalloc(sizeof(*updated_stream), GFP_ATOMIC);
+
+		if (!updated_stream) {
+			dev_err(&vfe->vdev->dev,
+				"Failed to allocate stream update descriptor\n");
+			goto release_lock;
+		}
+
+		updated_stream->substream = substr_info->substream;
+		spin_lock(&vfe->updated_streams_lock);
+		list_add_tail(&updated_stream->list, &vfe->updated_streams);
+		spin_unlock(&vfe->updated_streams_lock);
+	}
+release_lock:
+	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
+
 	queue_work(vfe->posn_update_queue,
 		&vfe->posn_update_work);
 }
@@ -402,24 +436,20 @@ static void vfe_not_handle_rx(struct virtqueue *vq)
 
 static void vfe_handle_posn(struct work_struct *work)
 {
-	struct vfe_substream_info *substr_info;
-	struct vfe_stream_pos_desc *pos_desc;
+	struct vfe_updated_substream *updated_stream_desc;
+	unsigned long irq_flags;
 	struct snd_skl_vfe *vfe =
 		container_of(work, struct snd_skl_vfe, posn_update_work);
 
-	/*stnc pos_desc*/
-	rmb();
+	while (!list_empty(&vfe->updated_streams)) {
+		spin_lock_irqsave(&vfe->updated_streams_lock, irq_flags);
+		updated_stream_desc = list_first_entry(&vfe->updated_streams,
+				struct vfe_updated_substream, list);
+		list_del(&updated_stream_desc->list);
+		spin_unlock_irqrestore(&vfe->updated_streams_lock, irq_flags);
 
-	list_for_each_entry(substr_info, &vfe->substr_info_list, list) {
-		pos_desc = substr_info->pos_desc;
-		if (!pos_desc ||
-				pos_desc->be_irq_cnt == pos_desc->fe_irq_cnt)
-			continue;
-		if (pos_desc->be_irq_cnt - pos_desc->fe_irq_cnt > 1)
-			dev_warn(&vfe->vdev->dev, "Missed interrupts on fe side\n");
-
-		snd_pcm_period_elapsed(substr_info->substream);
-		pos_desc->fe_irq_cnt = pos_desc->be_irq_cnt;
+		snd_pcm_period_elapsed(updated_stream_desc->substream);
+		kfree(updated_stream_desc);
 	}
 }
 
@@ -570,6 +600,8 @@ int vfe_pcm_close(struct snd_pcm_substream *substream)
 	sstream_info = vfe_find_substream_info(vfe, substream);
 
 	if (sstream_info) {
+		kfree(sstream_info->pos_desc);
+
 		list_del(&sstream_info->list);
 		kfree(sstream_info);
 	}
@@ -1116,6 +1148,8 @@ static int vfe_init(struct virtio_device *vdev)
 	INIT_LIST_HEAD(&vfe->substr_info_list);
 	spin_lock_init(&vfe->ipc_vq_lock);
 	INIT_LIST_HEAD(&vfe->expired_msg_list);
+	spin_lock_init(&vfe->updated_streams_lock);
+	INIT_LIST_HEAD(&vfe->updated_streams);
 
 	INIT_WORK(&vfe->posn_update_work, vfe_handle_posn);
 	INIT_WORK(&vfe->msg_timeout_work, vfe_not_tx_timeout_handler);
