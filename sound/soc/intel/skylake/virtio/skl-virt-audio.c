@@ -144,14 +144,22 @@ int vskl_vbs_register_client(struct snd_skl_vbe *vbe)
 	unsigned int vmid;
 	int ret;
 
+	client = list_first_entry_or_null(&vbe->client_list,
+		struct snd_skl_vbe_client, list);
+	if (client != NULL) {
+		dev_info(vbe->dev, "Assign VBE Audio client id:%d\n",
+			client->vhm_client_id);
+		return 0;
+	}
+
 	/*
 	 * vbs core has mechanism to manage the client
 	 * there is no need to handle this in the special BE driver
 	 * let's use the vbs core client management later
 	 */
-	client = devm_kzalloc(vbe->dev, sizeof(*client), GFP_KERNEL);
+	client = kzalloc(sizeof(*client), GFP_KERNEL);
 	if (!client)
-		return -EINVAL;
+		return -ENOMEM;
 	client->vbe = vbe;
 
 	vmid = dev_info->_ctx.vmid;
@@ -160,7 +168,7 @@ int vskl_vbs_register_client(struct snd_skl_vbe *vbe)
 		"snd_skl_vbe kick init\n");
 	if (client->vhm_client_id < 0) {
 		dev_err(vbe->dev, "failed to create client of acrn ioreq!\n");
-		return client->vhm_client_id;
+		goto err;
 	}
 
 	ret = acrn_ioreq_add_iorange(client->vhm_client_id, REQ_PORTIO,
@@ -197,9 +205,17 @@ int vskl_vbs_register_client(struct snd_skl_vbe *vbe)
 	/* complete client init and add to list */
 	list_add(&client->list, &vbe->client_list);
 
+	dev_info(vbe->dev, "VBS Audio client:%d had been created\n",
+		client->vhm_client_id);
 	return 0;
 err:
-	acrn_ioreq_destroy_client(client->vhm_client_id);
+	if (client != NULL && client->vhm_client_id >= 0)
+		acrn_ioreq_destroy_client(client->vhm_client_id);
+
+	if (client != NULL) {
+		kfree(client);
+		client = NULL;
+	}
 	return -EINVAL;
 }
 
@@ -213,6 +229,13 @@ static void vskl_vbs_close_client(struct snd_skl_vbe *vbe)
 		vbe_skl_pcm_close_all(vbe, client);
 		acrn_ioreq_destroy_client(client->vhm_client_id);
 		list_del(&client->list);
+
+		if (client != NULL) {
+			dev_info(vbe->dev, "Delete VBS Audio client. id:%d\n",
+				client->vhm_client_id);
+			kfree(client);
+			client = NULL;
+		}
 
 	} else {
 		pr_err("%s: vbs client not present!\n", __func__);
