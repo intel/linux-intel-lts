@@ -260,65 +260,16 @@ static int vfe_put_inbox_buffer(struct snd_skl_vfe *vfe,
 static int vfe_send_dsp_ipc_msg(struct snd_skl_vfe *vfe,
 	struct ipc_message *msg)
 {
-	struct scatterlist sgs[2];
-	struct vfe_dsp_ipc_msg *ipc_msg;
-	int data_size = sizeof(ipc_msg->header) + sizeof(ipc_msg->data_size);
+	msg->complete = true;
+	list_del(&msg->list);
+	sst_ipc_tx_msg_reply_complete(&vfe->sdev.skl_sst->ipc,
+		msg);
 
-	if (msg->tx_data != NULL && msg->tx_size > 0) {
-		data_size += msg->tx_size;
-	} else {
-		msg->complete = true;
-		list_del(&msg->list);
-		sst_ipc_tx_msg_reply_complete(&vfe->sdev.skl_sst->ipc, msg);
-
-		return 0;
-	}
-
-	ipc_msg = kzalloc(data_size, GFP_ATOMIC);
-	if (!ipc_msg)
-		return -ENOMEM;
-
-	ipc_msg->header = msg->header;
-	ipc_msg->ipc = msg;
-	ipc_msg->data_size = msg->tx_size;
-
-	if (msg->tx_data != NULL && msg->tx_size > 0)
-		memcpy(&ipc_msg->data, msg->tx_data, msg->tx_size);
-
-	sg_init_table(sgs, 2);
-	sg_set_buf(&sgs[SKL_VIRTIO_IPC_MSG],
-			 ipc_msg, data_size);
-	sg_set_buf(&sgs[SKL_VIRTIO_IPC_REPLY],
-			 msg->rx_data, msg->rx_size);
-
-	vfe->msg = msg;
-
-	return vfe_send_virtio_msg(vfe, vfe->ipc_cmd_tx_vq,
-			sgs, 2, ipc_msg, true);
+	return 0;
 }
 
-/* send the IPC message completed, this means the BE has received the cmd */
 static void vfe_cmd_tx_done(struct virtqueue *vq)
 {
-	struct snd_skl_vfe *vfe = vq->vdev->priv;
-	struct vfe_dsp_ipc_msg *msg;
-	unsigned long irq_flags;
-	unsigned int buflen = 0;
-
-	while (true) {
-		spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
-		msg = virtqueue_get_buf(vfe->ipc_cmd_tx_vq, &buflen);
-		spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
-
-		if (msg == NULL)
-			break;
-
-		msg->ipc->complete = true;
-		list_del(&msg->ipc->list);
-		sst_ipc_tx_msg_reply_complete(&vfe->sdev.skl_sst->ipc,
-				msg->ipc);
-		kfree(msg);
-	}
 }
 
 static void vfe_cmd_handle_rx(struct virtqueue *vq)
