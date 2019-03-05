@@ -282,7 +282,6 @@ static void vfe_cmd_handle_rx(struct virtqueue *vq)
 
 	vfe = vq->vdev->priv;
 
-
 	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
 	list_for_each_entry_safe(substr_info, tmp,
 			&vfe->substr_info_list, list) {
@@ -414,7 +413,11 @@ static void vfe_handle_tplg(struct snd_skl_vfe *vfe,
 		tplg_data->offset, tplg_data->chunk_size);
 
 	mutex_lock(&vfe->tplg.tplg_lock);
-	data_ptr = vfe->tplg.tplg_data.data + tplg_data->offset;
+
+	if (!vfe->tplg.tplg_data.data)
+		goto err_handler;
+
+	data_ptr = (u8 *)vfe->tplg.tplg_data.data + tplg_data->offset;
 	memcpy(data_ptr, tplg_data->data, tplg_data->chunk_size);
 	vfe->tplg.data_ready += tplg_data->chunk_size;
 
@@ -423,6 +426,7 @@ static void vfe_handle_tplg(struct snd_skl_vfe *vfe,
 		wake_up(&vfe->tplg.waitq);
 	}
 
+err_handler:
 	mutex_unlock(&vfe->tplg.tplg_lock);
 }
 
@@ -1018,7 +1022,7 @@ static int vfe_skl_init(struct virtio_device *vdev)
 
 	err = vfe_init_tplg(vfe, skl);
 	if (err < 0)
-		return err;
+		goto error;
 
 	err = vfe_platform_register(vfe, &vdev->dev);
 	if (err < 0)
@@ -1087,8 +1091,10 @@ static int vfe_init(struct virtio_device *vdev)
 	int ret;
 
 	vfe = devm_kzalloc(&vdev->dev, sizeof(*vfe), GFP_KERNEL);
-	if (!vfe)
-		goto no_mem;
+	if (!vfe) {
+		ret = -ENOMEM;
+		goto err;
+	}
 
 	skl_vfe = vfe;
 	vfe->vdev = vdev;
@@ -1123,12 +1129,17 @@ static int vfe_init(struct virtio_device *vdev)
 
 	ret = vfe_skl_init(vdev);
 	if (ret < 0)
-		goto err;
+		goto skl_err;
 
 	return 0;
 
-no_mem:
-	ret = -ENOMEM;
+skl_err:
+	virtqueue_disable_cb(vfe->ipc_not_tx_vq);
+	virtqueue_disable_cb(vfe->ipc_not_rx_vq);
+	cancel_work_sync(&vfe->msg_timeout_work);
+	cancel_work_sync(&vfe->message_loop_work);
+	vdev->config->reset(vdev);
+	vdev->config->del_vqs(vdev);
 err:
 	vdev->priv = NULL;
 	return ret;
