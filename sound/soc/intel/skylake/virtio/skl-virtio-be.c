@@ -542,17 +542,19 @@ static int vbe_skl_pcm_close(const struct skl *sdev, int vm_id,
 	int ret, cnt;
 	struct snd_pcm_substream *substream = substr_info->substream;
 	struct vfe_pcm_result *vbe_result = msg->rx_data;
-
-	const struct snd_sg_buf *sg_buf =
-			snd_pcm_substream_sgbuf(substr_info->substream);
+	struct snd_sg_buf *sg_buf;
 	u64 native_addr = substr_info->native_dma_addr;
 
-	/* restore original dma pages */
-	sg_buf->table[0].addr = native_addr;
-	native_addr &= ~(u64)0xfff;
-	for (cnt = 1; cnt < sg_buf->pages; cnt++) {
-		native_addr += PAGE_SIZE;
-		sg_buf->table[cnt].addr = native_addr;
+	if (snd_pcm_get_dma_buf(substream)) {
+		sg_buf = snd_pcm_substream_sgbuf(substream);
+
+		/* restore original dma pages */
+		sg_buf->table[0].addr = native_addr;
+		native_addr &= ~(u64)0xfff;
+		for (cnt = 1; cnt < sg_buf->pages; cnt++) {
+			native_addr += PAGE_SIZE;
+			sg_buf->table[cnt].addr = native_addr;
+		}
 	}
 
 	if (substr_info->pos_desc) {
@@ -735,7 +737,7 @@ static u32 vbe_skl_kcontrol_find_domain_id(const struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static u32 vbe_skl_get_static_domain_id(struct snd_ctl_elem_id *ctl_id)
+static u32 vbe_skl_get_static_domain_id(const struct snd_ctl_elem_id *ctl_id)
 {
 	u32 idx, num = ARRAY_SIZE(kctl_domain_map);
 	u32 size = strnlen(ctl_id->name, sizeof(ctl_id->name));
