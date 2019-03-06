@@ -340,6 +340,7 @@
 #define LCD_OUTF_BGR_ORDER			  (1 << 5)
 #define LCD_OUTF_Y_ORDER			  (1 << 6)
 #define LCD_OUTF_CRCB_ORDER			  (1 << 7)
+#define LCD_OUTF_MIPI_RGB_MODE			  (1 << 18)
 
 #define LCD_HSYNC_WIDTH				(0x4 * 0x801)
 #define LCD_H_BACKPORCH				(0x4 * 0x802)

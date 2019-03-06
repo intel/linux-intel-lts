@@ -229,7 +229,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	unsigned int dma_len;
 	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
 	unsigned int dma_cfg;
-	unsigned int ctrl = 0, val = 0;
+	unsigned int ctrl = 0, val = 0, out_format = 0;
 	unsigned int src_w, src_h, crtc_x, crtc_y;
 	unsigned char plane_id = kmb_plane->id;
 
@@ -300,6 +300,18 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	/* enable DMA */
 	kmb_write(lcd, LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
 
+	/* FIXME no doc on how to set output format - may need to change
+	 * this later
+	 */
+	if (val & LCD_LAYER_BGR_ORDER)
+		out_format |= LCD_OUTF_BGR_ORDER;
+	else if (val & LCD_LAYER_CRCB_ORDER)
+		out_format |= LCD_OUTF_CRCB_ORDER;
+	/* do not interleave RGB channels for mipi Tx compatibility */
+	out_format |= LCD_OUTF_MIPI_RGB_MODE;
+	/* pixel format from LCD_LAYER_CFG */
+	out_format |= ((val >> 9) & 0x1F);
+	kmb_write(lcd, LCD_OUT_FORMAT_CFG, out_format);
 }
 
 static const struct drm_plane_helper_funcs kmb_plane_helper_funcs = {
