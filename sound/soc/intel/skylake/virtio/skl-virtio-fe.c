@@ -157,7 +157,8 @@ static int vfe_send_msg(struct snd_skl_vfe *vfe,
 		return -ENOMEM;
 
 	strncpy(msg_header->domain_name, domain_name,
-		ARRAY_SIZE(msg_header->domain_name));
+		ARRAY_SIZE(msg_header->domain_name)-1);
+	msg_header->domain_name[SKL_VIRTIO_DOMAIN_NAME_LEN-1] = '\0';
 	msg_header->domain_id = domain_id;
 	memcpy(&msg->header, msg_header, sizeof(msg->header));
 	msg->tx_data = tx_data;
@@ -474,19 +475,15 @@ static struct kctl_ops vfe_kctl_ops = {
 		.send_noti = vfe_send_kctl_msg,
 };
 
-static struct vfe_msg_header
-vfe_get_pcm_msg_header(enum vfe_ipc_msg_type msg_type,
-	struct snd_pcm_substream *substream)
+static void vfe_fill_pcm_msg_header(struct vfe_msg_header *msg_header,
+	enum vfe_ipc_msg_type msg_type, struct snd_pcm_substream *substream)
 {
-		struct vfe_msg_header msg_header;
-		struct vfe_pcm_info *pcm_desc = &msg_header.desc.pcm;
+		struct vfe_pcm_info *pcm_desc = &msg_header->desc.pcm;
 
-		msg_header.cmd = msg_type;
+		msg_header->cmd = msg_type;
 		strncpy(pcm_desc->pcm_id, substream->pcm->id,
 				ARRAY_SIZE(pcm_desc->pcm_id));
 		pcm_desc->direction = substream->stream;
-
-		return msg_header;
 }
 
 int vfe_pcm_open(struct snd_pcm_substream *substream)
@@ -507,7 +504,7 @@ int vfe_pcm_open(struct snd_pcm_substream *substream)
 	if (ret)
 		return 0;
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_OPEN, substream);
+	 vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_OPEN, substream);
 
 	ret = vfe_send_msg(vfe, &msg_header, NULL, 0,
 		&vbe_result, sizeof(vbe_result));
@@ -562,7 +559,7 @@ int vfe_pcm_close(struct snd_pcm_substream *substream)
 	}
 	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_CLOSE, substream);
+	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_CLOSE, substream);
 
 	ret = vfe_send_msg(vfe, &msg_header, NULL, 0,
 		&vbe_result, sizeof(vbe_result));
@@ -600,7 +597,7 @@ int vfe_pcm_hw_params(struct snd_pcm_substream *substream,
 	vfe_params.period_size = params_period_size(params);
 	vfe_params.periods = params_periods(params);
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_HW_PARAMS, substream);
+	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_HW_PARAMS, substream);
 
 	ret = vfe_send_msg(vfe, &msg_header, &vfe_params, sizeof(vfe_params),
 					&vbe_result, sizeof(vbe_result));
@@ -624,7 +621,7 @@ int vfe_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	if (ret)
 		return 0;
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_TRIGGER, substream);
+	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_TRIGGER, substream);
 
 	return vfe_send_msg(vfe, &msg_header, &cmd, sizeof(cmd), NULL, 0);
 }
@@ -644,6 +641,9 @@ int vfe_pcm_prepare(struct snd_pcm_substream *substream)
 	if (ret)
 		return 0;
 
+	if (!substr_info)
+		return -EINVAL;
+
 	sg_buf = snd_pcm_substream_sgbuf(substream);
 
 	dma_conf.addr = (u64)sg_buf->table[0].addr;
@@ -654,7 +654,7 @@ int vfe_pcm_prepare(struct snd_pcm_substream *substream)
 	dma_conf.stream_pos_addr = virt_to_phys(substr_info->pos_desc);
 	dma_conf.stream_pos_size = sizeof(struct vfe_stream_pos_desc);
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_PREPARE, substream);
+	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_PREPARE, substream);
 
 	ret = vfe_send_msg(vfe, &msg_header, &dma_conf, sizeof(dma_conf),
 		&vbe_result, sizeof(vbe_result));

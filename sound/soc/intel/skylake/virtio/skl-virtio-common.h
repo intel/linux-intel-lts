@@ -7,6 +7,7 @@
  * common header for both virtio FE driver and BE service
  */
 
+#include <sound/asound.h>
 #include "../skl.h"
 
 #ifndef __SOUND_SOC_SKL_VIRTIO_COMMON_H
@@ -28,7 +29,6 @@
 #define SKL_VIRTIO_IPC_REPLY 1
 
 #define SKL_VIRTIO_DOMAIN_NAME_LEN 20
-#define SKL_VIRTIO_DOMAIN_TPLG_LEN 40
 #define SKL_VIRTIO_TPLG_CHUNK_SIZE 1536
 
 struct vfe_stream_pos_desc {
@@ -163,7 +163,7 @@ struct vfe_hw_pos_request {
 };
 
 struct vfe_tplg_info {
-	char tplg_name[SKL_VIRTIO_DOMAIN_TPLG_LEN];
+	char tplg_name[SNDRV_CTL_ELEM_ID_NAME_MAXLEN];
 	u32 domain_id;
 	u32 chunk_size;
 	u32 chunks;

@@ -387,9 +387,6 @@ static int vbe_skl_prepare_dma(struct vbe_substream_info *substr_info,
 static int vbe_skl_assemble_params(struct vfe_pcm_hw_params *vfe_params,
 		struct snd_pcm_hw_params *params)
 {
-	hw_param_interval(params, SNDRV_PCM_HW_PARAM_ACCESS)->min =
-		vfe_params->access;
-
 	hw_param_interval(params, SNDRV_PCM_HW_PARAM_CHANNELS)->min =
 		vfe_params->channels;
 
@@ -419,20 +416,21 @@ static int vbe_skl_assemble_params(struct vfe_pcm_hw_params *vfe_params,
 static int vbe_skl_add_substream_info(struct snd_skl_vbe *vbe, int vm_id,
 		struct snd_pcm_substream *substream)
 {
-	struct vbe_substream_info *substr_info =
-		kzalloc(sizeof(*substr_info), GFP_KERNEL);
+	struct vbe_substream_info *substr_info;
 	/*TODO: call vbe_client_find with proper client_id*/
 	struct snd_skl_vbe_client *client = list_first_entry_or_null(
 			&vbe->client_list, struct snd_skl_vbe_client, list);
-
-	if (!substr_info)
-		return -ENOMEM;
 
 	if (!client) {
 		dev_err(vbe->dev,
 			"Can not find active client [%d].\n", vm_id);
 		return -EINVAL;
 	}
+
+	substr_info = kzalloc(sizeof(*substr_info), GFP_KERNEL);
+
+	if (!substr_info)
+		return -ENOMEM;
 
 	substr_info->pcm = substream->pcm;
 	substr_info->substream = substream;
@@ -610,7 +608,7 @@ void vbe_skl_pcm_close_all(struct snd_skl_vbe *vbe,
 		ret = vbe_skl_pcm_close(vbe->sdev, 0, info, &msg);
 		if (ret < 0)
 			dev_err(vbe->dev,
-				"Could not close PCM %.64s\n", info->pcm->id);
+				"Could not close PCM\n");
 	}
 }
 
