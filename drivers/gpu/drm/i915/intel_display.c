@@ -13884,7 +13884,7 @@ intel_primary_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe)
 			DRM_ERROR("Failed to create decryption property\n");
 	}
 
-	if (INTEL_GEN(dev_priv) >= 9)
+	if (INTEL_GEN(dev_priv) >= 9) {
 		drm_plane_create_color_properties(&primary->base,
 						  BIT(DRM_COLOR_YCBCR_BT601) |
 						  BIT(DRM_COLOR_YCBCR_BT709),
@@ -13892,6 +13892,13 @@ intel_primary_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe)
 						  BIT(DRM_COLOR_YCBCR_FULL_RANGE),
 						  DRM_COLOR_YCBCR_BT709,
 						  DRM_COLOR_YCBCR_LIMITED_RANGE);
+
+		drm_plane_create_alpha_property(&primary->base);
+		drm_plane_create_blend_mode_property(&primary->base,
+						     BIT(DRM_MODE_BLEND_PIXEL_NONE) |
+						     BIT(DRM_MODE_BLEND_PREMULTI) |
+						     BIT(DRM_MODE_BLEND_COVERAGE));
+	}
 
 	drm_plane_helper_add(&primary->base, &intel_plane_helper_funcs);
 

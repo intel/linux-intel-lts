@@ -1755,6 +1755,14 @@ intel_sprite_plane_create(struct drm_i915_private *dev_priv,
 					  DRM_COLOR_YCBCR_BT709,
 					  DRM_COLOR_YCBCR_LIMITED_RANGE);
 
+	if (INTEL_GEN(dev_priv) >= 9) {
+		drm_plane_create_alpha_property(&intel_plane->base);
+		drm_plane_create_blend_mode_property(&intel_plane->base,
+						     BIT(DRM_MODE_BLEND_PIXEL_NONE) |
+						     BIT(DRM_MODE_BLEND_PREMULTI) |
+						     BIT(DRM_MODE_BLEND_COVERAGE));
+	}
+
 	drm_plane_helper_add(&intel_plane->base, &intel_plane_helper_funcs);
 
 	return intel_plane;
