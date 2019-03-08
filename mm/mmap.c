@@ -2319,12 +2319,11 @@ int expand_downwards(struct vm_area_struct *vma,
 				   unsigned long address)
 {
 	struct mm_struct *mm = vma->vm_mm;
-	int error;
+	int error = 0;
 
 	address &= PAGE_MASK;
-	error = security_mmap_addr(address);
-	if (error)
-		return error;
+	if (address < mmap_min_addr)
+		return -EPERM;
 
 	/* We must make sure the anon_vma is allocated. */
 	if (unlikely(anon_vma_prepare(vma)))
