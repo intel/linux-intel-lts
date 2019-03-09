@@ -43,9 +43,13 @@ ici-isys-mod-objs += \
 obj-$(CONFIG_VIDEO_INTEL_IPU)          += ici-isys-mod.o
 
 intel-ipu4-psys-objs	+= ../ipu-psys.o \
-			   ../ipu-psys-virt.o \
 			   ../ipu4/ipu4-resources.o \
 			   ../ipu4/ipu4-psys.o \
+
+
+ifdef CONFIG_VIDEO_INTEL_IPU_ACRN
+intel-ipu4-psys-objs	+= ../ipu-psys-virt.o
+endif
 
 ifndef CONFIG_VIDEO_INTEL_IPU_FW_LIB
 intel-ipu4-psys-objs	+= ipu4-fw-resources.o \
