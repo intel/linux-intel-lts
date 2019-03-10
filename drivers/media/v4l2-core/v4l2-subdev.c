@@ -163,6 +163,9 @@ static inline int check_format(struct v4l2_subdev *sd,
 	if (!format)
 		return -EINVAL;
 
+	if (!(sd->flags & V4L2_SUBDEV_FL_HAS_SUBSTREAMS) && format->stream)
+		return -EINVAL;
+
 	return check_which(format->which) ? : check_pad(sd, format->pad) ? :
 	       check_state_pads(format->which, state);
 }
