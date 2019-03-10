@@ -88,12 +88,16 @@ struct v4l2_ctrl_handler;
  *	set by the core when the sub-devices device nodes are registered with
  *	v4l2_device_register_ro_subdev_nodes() and used by the sub-device ioctl
  *	handler to restrict access to some ioctl calls.
+ * @V4L2_FL_HAS_SUB_STREAMS:
+ *     Does the device support sub-streams?
+ *
  */
 enum v4l2_video_device_flags {
 	V4L2_FL_REGISTERED		= 0,
 	V4L2_FL_USES_V4L2_FH		= 1,
 	V4L2_FL_QUIRK_INVERTED_CROP	= 2,
 	V4L2_FL_SUBDEV_RO_DEVNODE	= 3,
+	V4L2_FL_HAS_SUB_STREAMS		= 4,
 };
 
 /* Priority helper functions */
