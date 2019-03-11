@@ -601,12 +601,12 @@ static int vbe_skl_pcm_prepare(struct skl *sdev, int vm_id,
 void vbe_skl_pcm_close_all(struct snd_skl_vbe *vbe,
 		struct snd_skl_vbe_client *client)
 {
-	struct vbe_substream_info *info;
+	struct vbe_substream_info *info, *tmp;
 	struct vbe_ipc_msg msg;
 	int ret;
 
 	msg.rx_data = NULL;
-	list_for_each_entry(info, &client->substr_info_list, list) {
+	list_for_each_entry_safe(info, tmp, &client->substr_info_list, list) {
 		ret = vbe_skl_pcm_close(vbe->sdev, 0, info, &msg);
 		if (ret < 0)
 			dev_err(vbe->dev,
