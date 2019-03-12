@@ -237,7 +237,14 @@ static int acrngt_emulation_thread(void *priv)
 
 	set_freezable();
 	while (1) {
-		acrn_ioreq_attach_client(info->client, 1);
+		ret = acrn_ioreq_attach_client(info->client, 1);
+
+		if (ret) {
+			gvt_err("error while attach ioreq client %d\n", ret);
+			info->client = 0;
+			info->emulation_thread = NULL;
+			return 0;
+		}
 
 		if (kthread_should_stop())
 			return 0;
