@@ -798,14 +798,11 @@ int dal_keystore_encrypt(const uint8_t *client_ticket, int slot_id,
 		": keystore_encrypt slot_id=%d algo_spec=%d iv_size=%u isize=%u\n",
 		slot_id, (int)algo_spec, iv_size, input_size);
 
-	if (!iv || iv_size < DAL_KEYSTORE_GCM_IV_SIZE ||
-		iv_size > KEYSTORE_MAX_IV_SIZE) {
-			ks_err(KBUILD_MODNAME ": Incorrect input values to %s\n",
+	if (!iv || iv_size != DAL_KEYSTORE_GCM_IV_SIZE) {
+		ks_err(KBUILD_MODNAME ": Incorrect input values to %s\n",
 				       __func__);
 		return -EINVAL;
 	}
-
-	iv_size = DAL_KEYSTORE_GCM_IV_SIZE;
 
 	res = dal_calc_clientid(client_id, sizeof(client_id));
 
@@ -952,13 +949,11 @@ int dal_keystore_decrypt(const uint8_t *client_ticket, int slot_id,
 		": keystore_decrypt slot_id=%d algo_spec=%d iv_size=%u isize=%u\n",
 		slot_id, (int)algo_spec, iv_size, input_size);
 
-	if (!iv || iv_size < DAL_KEYSTORE_GCM_IV_SIZE || iv_size > KEYSTORE_MAX_IV_SIZE) {
+	if (!iv || iv_size != DAL_KEYSTORE_GCM_IV_SIZE) {
 		ks_err(KBUILD_MODNAME ": Incorrect input values to %s\n",
 				       __func__);
 		return -EINVAL;
 	}
-
-	iv_size = DAL_KEYSTORE_GCM_IV_SIZE;
 
 	res = dal_calc_clientid(client_id, sizeof(client_id));
 
