@@ -50,6 +50,12 @@ static void trigger_error(struct ipu_isys_csi2 *csi2)
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 }
 
+void ipu_isys_csi2_trigger_error(struct ipu_isys_csi2 *csi2)
+{
+	csi2->isys->reset_needed = true;
+	trigger_error(csi2);
+}
+
 void ipu_isys_csi2_trigger_error_all(struct ipu_isys *isys)
 {
 	int i;
@@ -335,7 +341,7 @@ void ipu_isys_csi2_error(struct ipu_isys_csi2 *csi2)
 		dev_err_ratelimited(&csi2->isys->adev->dev,
 				"csi2-%i received fatal error\n",
 				csi2->index);
-		trigger_error(csi2);
+		ipu_isys_csi2_trigger_error(csi2);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(errors); i++) {
