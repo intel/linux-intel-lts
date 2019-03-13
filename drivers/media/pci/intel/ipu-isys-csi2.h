@@ -6,6 +6,10 @@
 
 #include <media/media-entity.h>
 #include <media/v4l2-device.h>
+#include <linux/workqueue.h>
+#include <linux/mutex.h>
+#include <linux/timer.h>
+
 
 #include "ipu-isys-queue.h"
 #include "ipu-isys-subdev.h"

@@ -403,8 +403,13 @@ void shared_memory_store(unsigned int mmid, u64 addr, const void *data,
 		(unsigned long)addr, bytes);
 
 	if (!data) {
-		dev_err(get_mem_sub_system(mmid)->dev,
-			"%s: data ptr is null\n", __func__);
+		if (get_mem_sub_system(mmid))
+			dev_err(get_mem_sub_system(mmid)->dev,
+				"%s: data ptr is null\n", __func__);
+		else
+			pr_err("data ptr is null. mmid=%d\n", mmid);
+
+		return;
 	} else {
 		const u8 *pdata = data;
 		u8 *paddr = (u8 *)(unsigned long)addr;
