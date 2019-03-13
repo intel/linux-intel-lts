@@ -50,6 +50,15 @@ static void trigger_error(struct ipu_isys_csi2 *csi2)
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 }
 
+void ipu_isys_csi2_trigger_error_all(struct ipu_isys *isys)
+{
+	int i;
+
+	isys->reset_needed = true;
+	for (i = 0; i < isys->pdata->ipdata->csi2.nports; i++) {
+		trigger_error(&isys->csi2[i]);
+	}
+}
 
 static u32
 build_cse_ipc_commands(struct ipu_ipc_buttress_bulk_msg *target,
@@ -326,7 +335,7 @@ void ipu_isys_csi2_error(struct ipu_isys_csi2 *csi2)
 		dev_err_ratelimited(&csi2->isys->adev->dev,
 				"csi2-%i received fatal error\n",
 				csi2->index);
-		trigger_error(csi2);
+		ipu_isys_csi2_trigger_error_all(csi2->isys);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(errors); i++) {
