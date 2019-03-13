@@ -122,6 +122,13 @@ int intel_vgpu_emulate_cfg_read(struct intel_vgpu *vgpu, unsigned int offset,
 	if (WARN_ON(offset + bytes > vgpu->gvt->device_info.cfg_space_size))
 		return -EINVAL;
 
+	if (rounddown(offset, 4) == INTEL_GVT_PCI_OPREGION) {
+		if (!vgpu_opregion(vgpu)->mapped) {
+			gvt_dbg_dpy("set up virtual opregion mapping\n");
+			map_vgpu_opregion(vgpu, true);
+		}
+	}
+
 	memcpy(p_data, vgpu_cfg_space(vgpu) + offset, bytes);
 	return 0;
 }
