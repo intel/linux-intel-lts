@@ -985,6 +985,33 @@ static void acrngt_dma_unmap_guest_page(unsigned long handle,
 {
 }
 
+static int acrngt_set_opregion(void *p_vgpu)
+{
+	struct intel_vgpu *vgpu = (struct intel_vgpu *)p_vgpu;
+	void *base;
+	u32 asls;
+	int i;
+
+	gvt_dbg_dpy("acrngt set opregion\n");
+
+	base = vgpu_opregion(vgpu)->va;
+	if (!base)
+		return -ENOMEM;
+
+	/* hard code opregion to [0xDFFFD000, 0xE0000000]
+	 * ToDo:
+	 * 1. reserve the region in dm then use it in OVMF and kernel
+	 * 2. pass the offset to acrngt through kernel parameter
+	 */
+	asls = 0xDFFFD000;
+	*(u32 *)(vgpu_cfg_space(vgpu) + INTEL_GVT_PCI_OPREGION) = asls;
+
+	for (i = 0; i < INTEL_GVT_OPREGION_PAGES; i++)
+		vgpu_opregion(vgpu)->gfn[i] = (asls >> PAGE_SHIFT) + i;
+
+	return 0;
+}
+
 struct intel_gvt_mpt acrn_gvt_mpt = {
 	//.detect_host = acrngt_detect_host,
 	.host_init = acrngt_host_init,
@@ -1004,6 +1031,7 @@ struct intel_gvt_mpt acrn_gvt_mpt = {
 	.set_trap_area = acrngt_set_trap_area,
 	.set_pvmmio = acrngt_set_pvmmio,
 	.dom0_ready = acrngt_dom0_ready,
+	.set_opregion = acrngt_set_opregion,
 };
 EXPORT_SYMBOL_GPL(acrn_gvt_mpt);
 
