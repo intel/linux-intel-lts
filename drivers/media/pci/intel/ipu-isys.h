@@ -109,6 +109,7 @@ struct ipu_isys {
 	bool csi2_cse_ipc_not_supported;
 	unsigned int video_opened;
 	unsigned int stream_opened;
+	unsigned int csi2_in_error_state;
 #if !defined(CONFIG_VIDEO_INTEL_IPU4) && !defined(CONFIG_VIDEO_INTEL_IPU4P)
 	unsigned int sensor_types[N_IPU_FW_ISYS_SENSOR_TYPE];
 #endif
