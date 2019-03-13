@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (C) 2013 - 2018 Intel Corporation
 
+#include <linux/sched/signal.h>
 #include "ipu.h"
 #include "ipu-buttress.h"
 #include "ipu-isys.h"
@@ -40,6 +41,9 @@ static int ipu_isys_csi2_is_fatal_error(unsigned int error)
 static void trigger_error(struct ipu_isys_csi2 *csi2)
 {
 	unsigned long flags;
+
+	if (!csi2->isys)
+		return;
 
 	if (!csi2->isys)
 		return;
