@@ -307,6 +307,11 @@ u32 shared_memory_map(unsigned int ssid, unsigned int mmid, u64 addr)
 	struct my_css_memory_buffer_item *buf = NULL;
 	unsigned long flags;
 
+	if (!mine) {
+		pr_err("Invalid mem subsystem, return NULL");
+		return NULL;
+	}
+
 	if ((void *)(unsigned long)addr == &alloc_cookie)
 		return 0;
 
