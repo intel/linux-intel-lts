@@ -540,8 +540,10 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 	link_cpr_cfg->id.instance_id = 2;
 	link_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
 		(uuid_le *)link_cpr_cfg->guid, link_cpr_cfg->id.instance_id);
-	if (link_cpr_cfg->id.pvt_id < 0)
-		return -EINVAL;
+	if (link_cpr_cfg->id.pvt_id < 0) {
+		ret = -EINVAL;
+		goto error;
+	}
 
 	link_cpr_cfg->dev_type = SKL_DEVICE_SDW_PCM;
 #if IS_ENABLED(CONFIG_SND_SOC_INTEL_CNL_FPGA)
@@ -820,8 +822,10 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 	host_cpr_cfg->id.instance_id = 4;
 	host_cpr_cfg->id.pvt_id = skl_get_pvt_id(ctx,
 		(uuid_le *)host_cpr_cfg->guid, host_cpr_cfg->id.instance_id);
-	if (host_cpr_cfg->id.pvt_id < 0)
-		return -EINVAL;
+	if (host_cpr_cfg->id.pvt_id < 0) {
+		ret = -EINVAL;
+		goto error;
+	}
 
 	host_cpr_cfg->dev_type = SKL_DEVICE_HDAHOST;
 	host_cpr_cfg->hw_conn_type = SKL_CONN_SINK;
