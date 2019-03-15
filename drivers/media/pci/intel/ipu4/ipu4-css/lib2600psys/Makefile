@@ -46,4 +46,4 @@ intel-ipu4-psys-csslib-objs := ../../../ipu-wrapper.o \
 			$(IPU_PSYSLIB_SRC)
 
 obj-$(CONFIG_VIDEO_INTEL_IPU)	+= intel-ipu4-psys-csslib.o
-ccflags-y += $(IPU_PSYSLIB_INC) $(HOST_DEFINES) -fno-common -v
+ccflags-y += $(IPU_PSYSLIB_INC) $(HOST_DEFINES) -fno-common
