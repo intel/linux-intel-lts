@@ -420,7 +420,7 @@ static int ipu_dma_get_sgtable(struct device *dev, struct sg_table *sgt,
 	int n_pages;
 	int ret = 0;
 
-	if (WARN_ON(!area->pages))
+	if (WARN_ON(!area || !area->pages))
 		return -ENOMEM;
 
 	n_pages = PAGE_ALIGN(size) >> PAGE_SHIFT;
