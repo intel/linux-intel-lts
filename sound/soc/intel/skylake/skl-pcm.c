@@ -2146,6 +2146,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 	if (!found)
 		return -EIO;
 
+	found = false;
 	uuid_bin_fw = &module->uuid;
 	for (i = 0; i < skl->nr_modules; i++) {
 		skl_module = skl->modules[i];
