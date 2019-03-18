@@ -1145,8 +1145,12 @@ int vbe_skl_attach(struct snd_skl_vbe *vbe, struct skl *skl)
 	static bool kctl_init;
 
 	if (!kctl_init) {
+
+		if (unlikely(!skl || !skl->component || !skl->component->card))
+			return -EINVAL;
+
 		kctl_init_proxy(vbe->dev, &vbe_kctl_ops);
-		kctl_notify_machine_ready(vbe->sdev->component->card);
+		kctl_notify_machine_ready(skl->component->card);
 		kctl_init = true;
 	}
 
