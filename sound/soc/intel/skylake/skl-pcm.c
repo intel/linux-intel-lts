@@ -2319,8 +2319,6 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 	dbg_info->out_base = skl->skl_sst->dsp->mailbox.out_base;
 	dbg_info->out_size = skl->skl_sst->dsp->mailbox.out_size;
 
-	if (!skl->debugfs)
-		return -ENOMEM;
 	skl_update_dsp_debug_info(skl->debugfs, dbg_info);
 	kfree(dbg_info);
 
