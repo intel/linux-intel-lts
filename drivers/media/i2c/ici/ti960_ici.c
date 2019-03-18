@@ -1299,7 +1299,7 @@ static int ti960_suspend(struct device *dev)
 
 static int ti960_resume(struct device *dev)
 {
-	struct ti960 *va;
+	struct ti960 *va = NULL;
 	struct i2c_client *client = to_i2c_client(dev);
 	struct ici_ext_subdev *subdev = i2c_get_clientdata(client);
 

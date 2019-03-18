@@ -163,8 +163,8 @@ static struct ipu_isys_subdev_info magna_ti964_crl_sd = {
 
 #endif
 
-#if IS_ENABLED(CONFIG_INTEL_IPU4_OV10635)
-#define OV10635_LANES			4
+#ifdef CONFIG_INTEL_IPU4_OV10635
+#define OV10635_LANES		4
 #define OV10635_I2C_PHY_ADDR	0x60 /* 0x30 for 7bit addr */
 #define OV10635A_I2C_ADDRESS	0x61
 #define OV10635B_I2C_ADDRESS	0x62
