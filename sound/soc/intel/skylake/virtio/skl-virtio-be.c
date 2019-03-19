@@ -637,76 +637,6 @@ static int vbe_skl_pcm_hw_params(const struct skl *sdev, int vm_id,
 	return ret;
 }
 
-static int vbe_skl_send_tplg_data(struct snd_skl_vbe *vbe,
-	const struct skl *sdev, const struct firmware *tplg,
-	int vm_id)
-{
-	struct vfe_pending_msg tplg_msg;
-	struct vfe_tplg_data *tplg_data = &tplg_msg.msg.tplg_data;
-	int rem_data = tplg->size, offset;
-	u8 *data_ptr = (u8 *)tplg->data;
-	struct virtio_vq_info *vq = &vbe->vqs[SKL_VIRTIO_IPC_NOT_RX_VQ];
-
-	tplg_msg.sizeof_msg = sizeof(struct vfe_tplg_data);
-	tplg_data->msg_type = VFE_MSG_TPLG_DATA;
-
-	for (offset = 0; offset < tplg->size;
-		offset += SKL_VIRTIO_TPLG_CHUNK_SIZE,
-		rem_data -= SKL_VIRTIO_TPLG_CHUNK_SIZE) {
-
-		tplg_data->offset = offset;
-		tplg_data->chunk_size = rem_data > SKL_VIRTIO_TPLG_CHUNK_SIZE ?
-			SKL_VIRTIO_TPLG_CHUNK_SIZE : rem_data;
-		memcpy(tplg_data->data, data_ptr, tplg_data->chunk_size);
-		data_ptr += tplg_data->chunk_size;
-
-		vbe_skl_send_or_enqueue(vbe, vq, &tplg_msg);
-	}
-
-	return 0;
-}
-
-static int vbe_skl_tplg_info(struct snd_skl_vbe *vbe, struct skl *skl,
-	int vm_id, const struct vbe_ipc_msg *msg)
-{
-	struct skl_tplg_domain *tplg_domain;
-	const struct firmware *tplg;
-	char *tplg_name;
-	int ret;
-	struct vfe_tplg_info *tplg_info = msg->rx_data;
-
-	if (!tplg_info)
-		return -EINVAL;
-
-	tplg_domain = vbe_skl_find_tplg_domain_by_name(skl,
-		msg->header->domain_name);
-	if (!tplg_domain) {
-		dev_err(vbe->dev,
-			"Could not find topology definition for Guest %s",
-			msg->header->domain_name);
-		return -EINVAL;
-	}
-
-	tplg_name = tplg_domain->tplg_name;
-	ret = request_firmware(&tplg, tplg_name, vbe->dev);
-	if (ret < 0)
-		return ret;
-
-	strncpy(tplg_info->tplg_name, tplg_domain->tplg_name,
-		ARRAY_SIZE(tplg_info->tplg_name));
-	tplg_info->domain_id = tplg_domain->domain_id;
-	tplg_info->chunk_size = SKL_VIRTIO_TPLG_CHUNK_SIZE;
-	tplg_info->size = tplg->size;
-	tplg_info->chunks = tplg_info->size / SKL_VIRTIO_TPLG_CHUNK_SIZE +
-		tplg_info->size % SKL_VIRTIO_TPLG_CHUNK_SIZE ? 1 : 0;
-
-	vbe_skl_send_tplg_data(vbe, skl, tplg, vm_id);
-
-	release_firmware(tplg);
-
-	return 0;
-}
-
 static int vbe_skl_pcm_trigger(struct skl *sdev, int vm_id,
 		struct vbe_substream_info *substr_info,
 		struct vbe_ipc_msg *msg)
@@ -811,31 +741,133 @@ static int vbe_skl_cfg_hda(struct skl *sdev, int vm_id,
 	return 0;
 }
 
+static const struct firmware *vbe_find_res_hndl(struct snd_skl_vbe *vbe,
+		int type, const char *name)
+{
+	struct snd_skl_vbe_client *client;
+	const struct firmware *fw;
+
+	switch (type) {
+	case VFE_TOPOLOGY_RES:
+		client = list_first_entry_or_null(&vbe->client_list,
+				struct snd_skl_vbe_client, list);
+		fw = client->tplg;
+		break;
+	default:
+		fw = NULL;
+	}
+
+	if (fw)
+		return fw;
+
+	dev_err(vbe->dev, "Unable to find resource [%d](%.*s)\n",
+			type, SKL_LIB_NAME_LENGTH, name);
+	return NULL;
+}
+
+static int vbe_skl_cfg_resource_info(struct snd_skl_vbe *vbe, int vm_id,
+		const struct vbe_ipc_msg *msg)
+{
+	struct vfe_resource_info *res_info = msg->rx_data;
+	const struct firmware *fw;
+
+	if (!res_info || msg->rx_size != sizeof(*res_info))
+		return -EINVAL;
+
+	res_info->size = 0;
+
+	fw = vbe_find_res_hndl(vbe, res_info->type, res_info->name);
+
+	if (!fw)
+		return -EBADF;
+
+	res_info->size = fw->size;
+
+	return 0;
+}
+
+static int vbe_skl_cfg_resource_desc(struct snd_skl_vbe *vbe, int vm_id,
+		const struct vbe_ipc_msg *msg)
+{
+	u8 *fw_data;
+	int ret = 0;
+	const struct firmware *fw;
+	struct vfe_resource_desc *res_desc = msg->rx_data;
+
+	if (!res_desc || msg->rx_size != sizeof(*res_desc))
+		return -EINVAL;
+
+	fw = vbe_find_res_hndl(vbe, res_desc->type, res_desc->name);
+
+	if (!fw) {
+		ret = -EBADF;
+		goto ret_val;
+	}
+
+	if (fw->size != res_desc->size) {
+		ret = -EINVAL;
+		goto ret_val;
+	}
+
+	fw_data = map_guest_phys(vm_id, res_desc->phys_addr,
+			res_desc->size);
+	memcpy(fw_data, fw->data, res_desc->size);
+	unmap_guest_phys(vm_id, res_desc->phys_addr);
+
+ret_val:
+	res_desc->ret = ret;
+	return ret;
+}
+
+static int vbe_skl_cfg_domain(struct snd_skl_vbe *vbe, int vm_id,
+		const struct vbe_ipc_msg *msg)
+{
+	struct skl_tplg_domain *tplg_domain;
+	struct vfe_domain_info *domain_info = msg->rx_data;
+	int ret;
+	struct snd_skl_vbe_client *client = list_first_entry_or_null(
+			&vbe->client_list, struct snd_skl_vbe_client, list);
+
+	if (!domain_info || msg->rx_size != sizeof(*domain_info))
+		return -EINVAL;
+
+	if (!client) {
+		ret = -EINVAL;
+		goto ret_val;
+	}
+
+	tplg_domain = vbe_skl_find_tplg_domain_by_name(vbe->sdev,
+		msg->header->domain_name);
+	if (!tplg_domain) {
+		ret = -EACCES;
+		goto ret_val;
+	}
+
+	domain_info->domain_id = tplg_domain->domain_id;
+	ret = request_firmware(&client->tplg,
+		tplg_domain->tplg_name, vbe->dev);
+
+ret_val:
+	domain_info->ret = ret;
+	return domain_info->ret;
+}
+
 static int vbe_skl_msg_cfg_handle(struct snd_skl_vbe *vbe,
 		struct skl *sdev, int vm_id, struct vbe_ipc_msg *msg)
 {
 	switch (msg->header->cmd) {
 	case VFE_MSG_CFG_HDA:
 		return vbe_skl_cfg_hda(sdev, vm_id, msg);
+	case VFE_MSG_CFG_RES_INFO:
+		return vbe_skl_cfg_resource_info(vbe, vm_id, msg);
+	case VFE_MSG_CFG_RES_DESC:
+		return vbe_skl_cfg_resource_desc(vbe, vm_id, msg);
+	case VFE_MSG_CFG_DOMAIN:
+		return vbe_skl_cfg_domain(vbe, vm_id, msg);
 	default:
 		dev_err(vbe->dev, "Unknown command %d for config get message.\n",
 				msg->header->cmd);
 		break;
-	}
-
-	return 0;
-}
-
-int vbe_skl_msg_tplg_handle(struct snd_skl_vbe *vbe,
-		struct skl *sdev, int vm_id, struct vbe_ipc_msg *msg)
-{
-	switch (msg->header->cmd) {
-	case VFE_MSG_TPLG_INFO:
-		return vbe_skl_tplg_info(vbe, sdev, vm_id, msg);
-	default:
-		dev_err(vbe->dev, "Unknown command %d for tplg.\n",
-			msg->header->cmd);
-	break;
 	}
 
 	return 0;
@@ -931,8 +963,6 @@ static int vbe_skl_not_fwd(struct snd_skl_vbe *vbe,
 		return vbe_skl_msg_pcm_handle(vbe, sdev, vm_id, &msg);
 	case VFE_MSG_KCTL:
 		return vbe_skl_msg_kcontrol_handle(vbe, vm_id, &msg);
-	case VFE_MSG_TPLG:
-		return vbe_skl_msg_tplg_handle(vbe, sdev, vm_id, &msg);
 	case VFE_MSG_CFG:
 		return vbe_skl_msg_cfg_handle(vbe, sdev, vm_id, &msg);
 	}

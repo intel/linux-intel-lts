@@ -556,6 +556,23 @@ int vfe_send_msg(struct snd_skl_vfe *vfe,
 		tx_size, rx_data, rx_size, VFE_MSG_MSEC_TIMEOUT);
 }
 
+static int vfe_send_msg_retry(struct snd_skl_vfe *vfe,
+	struct vfe_msg_header *msg_header, void *tx_data, int tx_size,
+	void *rx_data, int rx_size)
+{
+	int idx, ret;
+
+	for (idx = 0; idx <= VFE_MSG_MAX_RETRY_NUM; ++idx) {
+		ret = vfe_send_msg(vfe, msg_header, tx_data, tx_size,
+				rx_data, rx_size);
+		if (ret != -ETIMEDOUT)
+			break;
+		dev_err(&vfe->vdev->dev, "Timeout, try once again\n");
+	}
+
+	return ret;
+}
+
 static int vfe_send_kctl_msg(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol, struct vfe_kctl_result *result)
 {
@@ -698,33 +715,6 @@ static void vfe_handle_posn(struct work_struct *work)
 	vfe_pcm_recover(substream_desc->substream);
 }
 
-static void vfe_handle_tplg(struct snd_skl_vfe *vfe,
-	struct vfe_tplg_data *tplg_data)
-{
-	u8 *data_ptr;
-
-	dev_dbg(&vfe->vdev->dev,
-		"Tplg chunk received offset %d chunk size %d\n",
-		tplg_data->offset, tplg_data->chunk_size);
-
-	mutex_lock(&vfe->tplg.tplg_lock);
-
-	if (!vfe->tplg.tplg_data.data)
-		goto err_handler;
-
-	data_ptr = (u8 *)vfe->tplg.tplg_data.data + tplg_data->offset;
-	memcpy(data_ptr, tplg_data->data, tplg_data->chunk_size);
-	vfe->tplg.data_ready += tplg_data->chunk_size;
-
-	if (vfe->tplg.data_ready >= vfe->tplg.tplg_data.size) {
-		vfe->tplg.load_completed = true;
-		wake_up(&vfe->tplg.waitq);
-	}
-
-err_handler:
-	mutex_unlock(&vfe->tplg.tplg_lock);
-}
-
 static void vfe_tx_message_loop(struct work_struct *work)
 {
 	enum vfe_ipc_msg_status msg_status;
@@ -781,10 +771,6 @@ static void vfe_rx_message_loop(struct work_struct *work)
 			kctln = (struct vfe_kctl_noti *)header;
 			kctl_ipc_handle(domain_id, &kctln->kcontrol,
 				&kctln->kcontrol_value, &result);
-			break;
-		case VFE_MSG_TPLG_DATA:
-			vfe_handle_tplg(vfe,
-				(struct vfe_tplg_data *)header);
 			break;
 		default:
 			dev_err(&vfe->vdev->dev,
@@ -1260,7 +1246,7 @@ static int vfe_skl_init_hbus(struct snd_skl_vfe *vfe, struct skl *skl)
 
 	msg_header.cmd = VFE_MSG_CFG_HDA;
 
-	ret = vfe_send_msg(vfe, &msg_header, NULL, 0,
+	ret = vfe_send_msg_retry(vfe, &msg_header, NULL, 0,
 		&hda_cfg, sizeof(hda_cfg));
 	if (ret < 0)
 		return ret;
@@ -1336,66 +1322,95 @@ void vfe_skl_pci_dev_release(struct device *dev)
 {
 }
 
-static int vfe_request_topology(struct skl *skl, const struct firmware **fw)
-{
-	int ret;
-	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
-
-	ret = wait_event_timeout(vfe->tplg.waitq,
-		vfe->tplg.load_completed,
-		msecs_to_jiffies(VFE_TPLG_LOAD_TIMEOUT));
-
-	if (ret == 0) {
-		dev_err(&vfe->vdev->dev,
-			"Failed to receive topology from BE service");
-		return -ETIMEDOUT;
-	}
-
-	*fw = &vfe->tplg.tplg_data;
-
-	return 0;
-}
-
-static int vfe_init_tplg(struct snd_skl_vfe *vfe, struct skl *skl)
+int vfe_request_ext_resource(const struct firmware **fw,
+		const char *name, u32 type)
 {
 	struct vfe_msg_header msg_header;
-	struct vfe_tplg_info tplg_info;
+	struct vfe_resource_info res_info;
+	struct vfe_resource_desc res_desc;
 	int ret;
-	u8 *tplg_data;
+	u8 *data_ptr;
+	struct firmware *new_fw;
+	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 
+	msg_header.cmd = VFE_MSG_CFG_RES_INFO;
+	res_info.type = type;
+	strncpy(res_info.name, name, ARRAY_SIZE(res_info.name));
+	ret = vfe_send_msg_retry(vfe, &msg_header,
+		NULL, 0, &res_info, sizeof(res_info));
 
-	mutex_init(&vfe->tplg.tplg_lock);
-	init_waitqueue_head(&vfe->tplg.waitq);
-	vfe->tplg.load_completed = false;
-
-	skl->skl_sst->request_tplg = vfe_request_topology;
-
-	mutex_lock(&vfe->tplg.tplg_lock);
-	msg_header.cmd = VFE_MSG_TPLG_INFO;
-	ret = vfe_send_msg(vfe, &msg_header,
-		NULL, 0, &tplg_info, sizeof(tplg_info));
 	if (ret < 0)
-		goto error_handl;
+		return ret;
 
-	//TODO: get result from vBE
+	if (res_info.size == 0)
+		return -EINVAL;
 
-	tplg_data = devm_kzalloc(&vfe->vdev->dev,
-		tplg_info.size, GFP_KERNEL);
-	if (!tplg_data) {
-		ret = -ENOMEM;
-		goto error_handl;
+	new_fw = kzalloc(sizeof(struct firmware) + res_info.size, GFP_KERNEL);
+	if (!new_fw)
+		return -ENOMEM;
+
+	data_ptr = (u8 *)new_fw + sizeof(struct firmware);
+
+	msg_header.cmd = VFE_MSG_CFG_RES_DESC;
+	res_desc.phys_addr = virt_to_phys((void *)data_ptr);
+	res_desc.size = res_info.size;
+	res_desc.type = type;
+	strncpy(res_desc.name, name, ARRAY_SIZE(res_desc.name));
+	ret = vfe_send_msg_retry(vfe, &msg_header,
+		NULL, 0, &res_desc, sizeof(res_desc));
+
+	if (ret < 0)
+		goto ret_err;
+
+	ret = res_desc.ret;
+
+	if (ret >= 0) {
+		new_fw->data = data_ptr;
+		new_fw->size = res_info.size;
+		*fw = new_fw;
+		return ret;
 	}
 
-	domain_id = tplg_info.domain_id;
-	vfe->tplg.tplg_data.data = tplg_data;
-	vfe->tplg.tplg_data.size = tplg_info.size;
-	strncpy(skl->tplg_name, tplg_info.tplg_name,
-		ARRAY_SIZE(skl->tplg_name));
+ret_err:
+	kfree(new_fw);
+	return ret;
+}
 
-error_handl:
-	mutex_unlock(&vfe->tplg.tplg_lock);
+static int vfe_register_domain(struct snd_skl_vfe *vfe)
+{
+	struct vfe_domain_info domain_info;
+	struct vfe_msg_header msg_header;
+	int ret;
+
+	msg_header.cmd = VFE_MSG_CFG_DOMAIN;
+	ret = vfe_send_msg_retry(vfe, &msg_header,
+		NULL, 0, &domain_info, sizeof(domain_info));
+
+	if (ret < 0)
+		return ret;
+
+	domain_id = domain_info.domain_id;
+	return domain_info.ret;
+}
+
+static int vfe_request_topology(struct skl *skl, const struct firmware **fw)
+{
+	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
+	int ret;
+
+	ret = vfe_request_ext_resource(&vfe->tplg,
+			skl->tplg_name, VFE_TOPOLOGY_RES);
+	*fw = vfe->tplg;
 
 	return ret;
+}
+
+static void vfe_init_tplg(struct skl *skl)
+{
+	const char *tplg_name = "virt_tplg";
+
+	skl->skl_sst->request_tplg = vfe_request_topology;
+	strncpy(skl->tplg_name, tplg_name, ARRAY_SIZE(skl->tplg_name));
 }
 
 static int vfe_skl_init(struct virtio_device *vdev)
@@ -1437,9 +1452,7 @@ static int vfe_skl_init(struct virtio_device *vdev)
 	if (err < 0)
 		goto error;
 
-	err = vfe_init_tplg(vfe, skl);
-	if (err < 0)
-		goto error;
+	vfe_init_tplg(skl);
 
 	err = vfe_platform_register(vfe, &vdev->dev);
 	if (err < 0)
@@ -1537,6 +1550,10 @@ static int vfe_init(struct virtio_device *vdev)
 	kctl_init_proxy(&vdev->dev, &vfe_kctl_ops);
 
 	vfe->send_dsp_ipc_msg = vfe_send_dsp_ipc_msg;
+
+	ret = vfe_register_domain(vfe);
+	if (ret < 0)
+		goto skl_err;
 
 	vfe_send_queues(vdev);
 

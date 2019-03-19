@@ -9,6 +9,7 @@
 
 #include <sound/asound.h>
 #include "../skl.h"
+#include "../skl-sst-ipc.h"
 
 #ifndef __SOUND_SOC_SKL_VIRTIO_COMMON_H
 #define __SOUND_SOC_SKL_VIRTIO_COMMON_H
@@ -29,7 +30,6 @@
 #define SKL_VIRTIO_IPC_REPLY 1
 
 #define SKL_VIRTIO_DOMAIN_NAME_LEN 20
-#define SKL_VIRTIO_TPLG_CHUNK_SIZE 1536
 
 struct vfe_stream_pos_desc {
 	u64 hw_ptr;
@@ -166,19 +166,23 @@ struct vfe_hw_pos_request {
 	u64 stream_pos;
 };
 
-struct vfe_tplg_info {
-	char tplg_name[SNDRV_CTL_ELEM_ID_NAME_MAXLEN];
+struct vfe_domain_info {
+	s32 ret;
 	u32 domain_id;
-	u32 chunk_size;
-	u32 chunks;
+};
+
+struct vfe_resource_info {
+	char name[SKL_LIB_NAME_LENGTH];
+	u32 type;
 	u64 size;
 };
 
-struct vfe_tplg_data {
-	int msg_type;
-	u32 offset;
-	u32 chunk_size;
-	u8 data[SKL_VIRTIO_TPLG_CHUNK_SIZE];
+struct vfe_resource_desc {
+	char name[SKL_LIB_NAME_LENGTH];
+	u64 phys_addr;
+	u32 size;
+	u32 type;
+	s32 ret;
 };
 
 struct vfe_kctl_noti {
@@ -190,7 +194,6 @@ struct vfe_kctl_noti {
 union inbox_msg {
 	struct vfe_hw_pos_request posn;
 	struct vfe_kctl_noti kctln;
-	struct vfe_tplg_data tplg_data;
 };
 
 struct vfe_pending_msg {
@@ -202,12 +205,16 @@ struct vfe_pending_msg {
 #define VFE_MSG_TYPE_OFFSET 8
 #define VFE_MSG_TYPE_MASK (0xFF << VFE_MSG_TYPE_OFFSET)
 
+enum vfe_resource_type {
+	VFE_TOPOLOGY_RES = 1,
+	VFE_FIRMWARE_RES = 2,
+	VFE_LIBRARY_RES = 3,
+};
+
 enum vfe_ipc_msg_type {
 	VFE_MSG_PCM = 1 << VFE_MSG_TYPE_OFFSET,
 	VFE_MSG_KCTL = 2 << VFE_MSG_TYPE_OFFSET,
-	VFE_MSG_TPLG = 3 << VFE_MSG_TYPE_OFFSET,
-	VFE_MSG_CFG = 4 << VFE_MSG_TYPE_OFFSET,
-	VFE_MSG_POS = 5 << VFE_MSG_TYPE_OFFSET,
+	VFE_MSG_CFG = 3 << VFE_MSG_TYPE_OFFSET,
 
 	VFE_MSG_PCM_OPEN = VFE_MSG_PCM | 0x01,
 	VFE_MSG_PCM_CLOSE = VFE_MSG_PCM | 0x02,
@@ -217,12 +224,10 @@ enum vfe_ipc_msg_type {
 
 	VFE_MSG_KCTL_SET = VFE_MSG_KCTL | 0x01,
 
-	VFE_MSG_TPLG_INFO = VFE_MSG_TPLG | 0x01,
-	VFE_MSG_TPLG_DATA = VFE_MSG_TPLG | 0x02,
-
 	VFE_MSG_CFG_HDA = VFE_MSG_CFG | 0x01,
-
-	VFE_MSG_POS_NOTI = VFE_MSG_POS | 0x01,
+	VFE_MSG_CFG_RES_INFO = VFE_MSG_CFG | 0x02,
+	VFE_MSG_CFG_RES_DESC = VFE_MSG_CFG | 0x03,
+	VFE_MSG_CFG_DOMAIN = VFE_MSG_CFG | 0x04,
 };
 
 struct kctl_wrapper {
