@@ -89,6 +89,7 @@ struct snd_skl_vbe_client {
 	struct list_head substr_info_list;
 	struct list_head list;
 	struct vhm_request *req_buf;
+	const struct firmware *tplg;
 };
 
 struct vskl {

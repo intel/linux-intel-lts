@@ -15,7 +15,7 @@
 #define VFE_MSG_MSEC_TIMEOUT 100
 #define VFE_MSG_TRIGGER_TIMEOUT 500
 #define VFE_MSG_NO_TIMEOUT 0
-#define VFE_TPLG_LOAD_TIMEOUT 1000
+#define VFE_MSG_MAX_RETRY_NUM 3
 #define VFE_MSG_BUFF_NUM 3
 
 struct vfe_substream_info {
@@ -30,14 +30,6 @@ struct vfe_substream_info {
 	struct list_head list;
 };
 
-struct vskl_vfe_tplg {
-	struct firmware tplg_data;
-	u64 data_ready;
-
-	struct mutex tplg_lock;
-	wait_queue_head_t waitq;
-	bool load_completed;
-};
 
 struct snd_skl_vfe {
 	struct skl sdev;
@@ -46,7 +38,7 @@ struct snd_skl_vfe {
 	struct ipc_message *msg;
 	void *in_buff[VFE_MSG_BUFF_NUM];
 
-	struct vskl_vfe_tplg tplg;
+	const struct firmware *tplg;
 
 	struct work_struct init_work;
 
@@ -79,5 +71,6 @@ struct snd_skl_vfe {
 
 void vfe_handle_timedout_not_tx_msg(struct snd_skl_vfe *vfe,
 	struct vfe_ipc_msg *msg);
-
+int vfe_request_ext_resource(const struct firmware **fw,
+		const char *name, u32 type);
 #endif
