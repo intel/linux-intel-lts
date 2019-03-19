@@ -401,14 +401,18 @@ void shared_memory_store_32(unsigned int mmid, u64 addr, u32 data)
 void shared_memory_store(unsigned int mmid, u64 addr, const void *data,
 			 size_t bytes)
 {
-	if (get_mem_sub_system(mmid))
-		dev_dbg(get_mem_sub_system(mmid)->dev,
-			"access: %s: Enter addr = 0x%lx bytes = 0x%zx\n", __func__,
-			(unsigned long)addr, bytes);
+	dev_dbg(get_mem_sub_system(mmid)->dev,
+		"access: %s: Enter addr = 0x%lx bytes = 0x%zx\n", __func__,
+		(unsigned long)addr, bytes);
 
-	if (!data && get_mem_sub_system(mmid)) {
-		dev_err(get_mem_sub_system(mmid)->dev,
-			"%s: data ptr is null\n", __func__);
+	if (!data) {
+		if (get_mem_sub_system(mmid))
+			dev_err(get_mem_sub_system(mmid)->dev,
+				"%s: data ptr is null\n", __func__);
+		else
+			pr_err("data ptr is null. mmid=%d\n", mmid);
+
+		return;
 	} else {
 		const u8 *pdata = data;
 		u8 *paddr = (u8 *)(unsigned long)addr;
@@ -532,6 +536,10 @@ void ipu_wrapper_init(int mmid, struct device *dev, void __iomem *base)
 {
 	struct wrapper_base *sys = get_mem_sub_system(mmid);
 
+	if (!sys) {
+	pr_err("Invalid mem subsystem, return. mmid=%d", mmid);
+	return;
+    }
 	init_wrapper(sys);
 	sys->dev = dev;
 	sys->sys_base = base;
