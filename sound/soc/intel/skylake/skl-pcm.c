@@ -2157,6 +2157,7 @@ static int skl_get_module_info(struct skl *skl, struct skl_module_cfg *mconfig)
 	if (!found)
 		return -EIO;
 
+	found = false;
 	uuid_bin_fw = &module->uuid;
 	for (i = 0; i < skl->nr_modules; i++) {
 		skl_module = skl->modules[i];
@@ -2329,8 +2330,6 @@ static int skl_platform_soc_probe(struct snd_soc_platform *platform)
 	dbg_info->out_base = skl->skl_sst->dsp->mailbox.out_base;
 	dbg_info->out_size = skl->skl_sst->dsp->mailbox.out_size;
 
-	if (!skl->debugfs)
-		return -ENOMEM;
 	skl_update_dsp_debug_info(skl->debugfs, dbg_info);
 	kfree(dbg_info);
 
