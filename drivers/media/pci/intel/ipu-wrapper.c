@@ -508,10 +508,6 @@ void shared_memory_load(unsigned int mmid, u64 addr, void *data, size_t bytes)
 			"access: %s: Enter addr = 0x%lx bytes = 0x%zx\n", __func__,
 			(unsigned long)addr, bytes);
 
-	if (!data && get_mem_sub_system(mmid)) {
-		dev_err(get_mem_sub_system(mmid)->dev,
-			"%s: data ptr is null\n", __func__);
-
 	if (!data) {
 		if (get_mem_sub_system(mmid))
 			dev_err(get_mem_sub_system(mmid)->dev,
