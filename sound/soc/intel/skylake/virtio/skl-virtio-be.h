@@ -75,6 +75,8 @@ struct snd_skl_vbe {
 	struct list_head list;
 	struct list_head pending_msg_list;
 
+	struct work_struct not_tx_handler_work;
+
 	struct vskl_native_ops nops;
 
 	int vmid;  /* vm id number */
