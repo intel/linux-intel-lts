@@ -223,6 +223,11 @@ u64 shared_memory_alloc(unsigned int mmid, size_t bytes)
 	struct my_css_memory_buffer_item *buf;
 	unsigned long flags;
 
+	if (!mine) {
+		pr_err("Invalid mem subsystem, return. mmid=%d", mmid);
+		return 0;
+	}
+
 	dev_dbg(mine->dev, "%s: in, size: %zu\n", __func__, bytes);
 
 	if (!bytes)
@@ -266,6 +271,11 @@ void shared_memory_free(unsigned int mmid, u64 addr)
 	struct my_css_memory_buffer_item *buf = NULL;
 	unsigned long flags;
 
+	if (!mine) {
+		pr_err("Invalid mem subsystem, return. mmid=%d", mmid);
+		return;
+	}
+
 	if ((void *)(unsigned long)addr == &alloc_cookie)
 		return;
 
@@ -305,6 +315,11 @@ u32 shared_memory_map(unsigned int ssid, unsigned int mmid, u64 addr)
 	struct wrapper_base *mine = get_mem_sub_system(mmid);
 	struct my_css_memory_buffer_item *buf = NULL;
 	unsigned long flags;
+
+	if (!mine) {
+		pr_err("Invalid mem subsystem, return. mmid=%d", mmid);
+		return 0;
+	}
 
 	if ((void *)(unsigned long)addr == &alloc_cookie)
 		return 0;
@@ -479,9 +494,13 @@ void shared_memory_load(unsigned int mmid, u64 addr, void *data, size_t bytes)
 		(unsigned long)addr, bytes);
 
 	if (!data) {
-		dev_err(get_mem_sub_system(mmid)->dev,
-			"%s: data ptr is null\n", __func__);
+		if (get_mem_sub_system(mmid))
+			dev_err(get_mem_sub_system(mmid)->dev,
+				"%s: data ptr is null\n", __func__);
+		else
+			pr_err("data ptr is null. mmid=%d\n", mmid);
 
+		return;
 	} else {
 		u8 *pdata = data;
 		u8 *paddr = (u8 *)(unsigned long)addr;
@@ -508,6 +527,10 @@ void ipu_wrapper_init(int mmid, struct device *dev, void __iomem *base)
 {
 	struct wrapper_base *sys = get_mem_sub_system(mmid);
 
+	if (!sys) {
+		pr_err("Invalid mem subsystem, return. mmid=%d", mmid);
+		return;
+	}
 	init_wrapper(sys);
 	sys->dev = dev;
 	sys->sys_base = base;
