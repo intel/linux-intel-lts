@@ -1127,8 +1127,7 @@ void vbe_skl_handle_kick(struct snd_skl_vbe *vbe, int vq_idx)
 		vbe_handle_irq_queue(vbe, vq_idx);
 		break;
 	case SKL_VIRTIO_IPC_NOT_TX_VQ:
-		/* IPC notification reply from FE to DSP */
-		vbe_skl_ipc_fe_not_get(vbe, vq_idx);
+		schedule_work(&vbe->not_tx_handler_work);
 		break;
 	case SKL_VIRTIO_IPC_NOT_RX_VQ:
 		/* IPC notification from DSP to FE - NOT kick */
@@ -1138,6 +1137,14 @@ void vbe_skl_handle_kick(struct snd_skl_vbe *vbe, int vq_idx)
 		dev_err(vbe->dev, "idx %d is invalid\n", vq_idx);
 		break;
 	}
+}
+
+static void not_tx_handler(struct work_struct *work)
+{
+	struct snd_skl_vbe *vbe =
+		container_of(work, struct snd_skl_vbe, not_tx_handler_work);
+
+	vbe_skl_ipc_fe_not_get(vbe, SKL_VIRTIO_IPC_NOT_TX_VQ);
 }
 
 int vbe_skl_attach(struct snd_skl_vbe *vbe, struct skl *skl)
@@ -1151,6 +1158,8 @@ int vbe_skl_attach(struct snd_skl_vbe *vbe, struct skl *skl)
 
 		kctl_init_proxy(vbe->dev, &vbe_kctl_ops);
 		kctl_notify_machine_ready(skl->component->card);
+
+		INIT_WORK(&vbe->not_tx_handler_work, not_tx_handler);
 		kctl_init = true;
 	}
 
@@ -1162,6 +1171,8 @@ int vbe_skl_detach(struct snd_skl_vbe *vbe, struct skl *skl)
 	/* TODO: Notify FE, close all streams opened by FE and delete all
 	 * pending messages
 	 */
+
+	cancel_work_sync(&vbe->not_tx_handler_work);
 
 	return 0;
 }
