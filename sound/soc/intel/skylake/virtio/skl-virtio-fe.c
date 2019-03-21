@@ -426,6 +426,7 @@ static void vfe_not_handle_rx(struct virtqueue *vq)
 static void vfe_handle_posn(struct work_struct *work)
 {
 	struct vfe_updated_substream *updated_stream_desc;
+	struct snd_pcm_substream *substream;
 	unsigned long irq_flags;
 	struct snd_skl_vfe *vfe =
 		container_of(work, struct snd_skl_vfe, posn_update_work);
@@ -436,8 +437,9 @@ static void vfe_handle_posn(struct work_struct *work)
 				struct vfe_updated_substream, list);
 		list_del(&updated_stream_desc->list);
 		spin_unlock_irqrestore(&vfe->updated_streams_lock, irq_flags);
-
-		snd_pcm_period_elapsed(updated_stream_desc->substream);
+		substream = updated_stream_desc->substream;
+		if (!mutex_is_locked(&substream->self_group.mutex))
+			snd_pcm_period_elapsed(updated_stream_desc->substream);
 		kfree(updated_stream_desc);
 	}
 }
