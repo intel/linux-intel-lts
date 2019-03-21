@@ -139,9 +139,34 @@ const struct snd_pcm *vfe_skl_find_pcm_by_name(struct skl *skl, char *pcm_name)
 	return NULL;
 }
 
-static int vfe_send_msg(struct snd_skl_vfe *vfe,
+static int vfe_wait_for_msg_response(struct snd_skl_vfe *vfe,
+	struct vfe_ipc_msg *msg,
+	wait_queue_head_t *waitq,
+	bool *completed,
+	int timeout)
+{
+	int ret = 0;
+
+	if (!timeout) {
+		wait_event(*waitq, *completed);
+		return 0;
+	}
+
+	ret =  wait_event_timeout(*waitq, *completed,
+				msecs_to_jiffies(timeout));
+
+	if (ret == 0) {
+		atomic_set(&msg->status, VFE_MSG_TIMED_OUT);
+		dev_err(&vfe->vdev->dev, "Response from backend timed out\n");
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+int vfe_send_msg_with_timeout(struct snd_skl_vfe *vfe,
 	struct vfe_msg_header *msg_header, void *tx_data, int tx_size,
-	void *rx_data, int rx_size)
+	void *rx_data, int rx_size, int timeout)
 {
 	wait_queue_head_t waitq;
 	struct scatterlist sgs[3];
@@ -199,13 +224,10 @@ static int vfe_send_msg(struct snd_skl_vfe *vfe,
 
 	// If response is expected, wait for it
 	if (rx_data) {
-		ret = wait_event_timeout(waitq, completed,
-				msecs_to_jiffies(VFE_MSG_MSEC_TIMEOUT));
-		if (ret == 0) {
-			atomic_set(&msg->status, VFE_MSG_TIMED_OUT);
-			dev_err(&vfe->vdev->dev, "Response from backend timed out\n");
-			return -ETIMEDOUT;
-		}
+		ret = vfe_wait_for_msg_response(vfe, msg, &waitq,
+			&completed, timeout);
+		if (ret < 0)
+			return ret;
 	}
 
 	return 0;
@@ -216,6 +238,22 @@ out_no_mem:
 	kfree(msg);
 
 	return -ENOMEM;
+}
+
+int vfe_send_blocking_msg(struct snd_skl_vfe *vfe,
+	struct vfe_msg_header *msg_header, void *tx_data, int tx_size,
+	void *rx_data, int rx_size)
+{
+	return vfe_send_msg_with_timeout(vfe, msg_header, tx_data,
+		tx_size, rx_data, rx_size, VFE_MSG_NO_TIMEOUT);
+}
+
+int vfe_send_msg(struct snd_skl_vfe *vfe,
+	struct vfe_msg_header *msg_header, void *tx_data, int tx_size,
+	void *rx_data, int rx_size)
+{
+	return vfe_send_msg_with_timeout(vfe, msg_header, tx_data,
+		tx_size, rx_data, rx_size, VFE_MSG_MSEC_TIMEOUT);
 }
 
 static int vfe_send_kctl_msg(struct snd_kcontrol *kcontrol,
@@ -611,6 +649,7 @@ int vfe_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 {
 	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 	struct vfe_msg_header msg_header;
+	struct vfe_pcm_result vbe_result;
 	int ret;
 
 	ret = skl_platform_pcm_trigger(substream, cmd);
@@ -623,7 +662,10 @@ int vfe_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 
 	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_TRIGGER, substream);
 
-	return vfe_send_msg(vfe, &msg_header, &cmd, sizeof(cmd), NULL, 0);
+	ret = vfe_send_msg_with_timeout(vfe, &msg_header, &cmd, sizeof(cmd),
+		&vbe_result, sizeof(vbe_result), VFE_MSG_TRIGGER_TIMEOUT);
+
+	return ret;
 }
 
 int vfe_pcm_prepare(struct snd_pcm_substream *substream)
