@@ -241,7 +241,6 @@ static int update_atomic_state(struct drm_device *dev,
 			       struct drm_connector *connector,
 			       struct drm_display_mode *mode)
 {
-	struct drm_framebuffer *fb = NULL;
 	struct drm_crtc *crtc;
 	int ret;
 
@@ -258,13 +257,6 @@ static int update_atomic_state(struct drm_device *dev,
 	ret = update_connector_state(state, connector, crtc);
 	if (ret)
 		return ret;
-
-	/* Set up primary plane if a framebuffer is allocated */
-	if (fb) {
-		ret = update_primary_plane_state(state, crtc, mode, fb);
-		if (ret)
-			return ret;
-	}
 
 	return 0;
 }
