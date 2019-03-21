@@ -341,7 +341,7 @@ static int skl_virtio_card_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	kctl_notify_machine_ready(card);
+	vfe_notify_machine_ready(card);
 	return ret;
 }
 

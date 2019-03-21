@@ -806,6 +806,12 @@ static int vfe_platform_register(struct snd_skl_vfe *vfe, struct device *dev)
 	return result;
 }
 
+void vfe_notify_machine_ready(struct snd_soc_card *card)
+{
+	kctl_notify_machine_ready(card);
+}
+EXPORT_SYMBOL(vfe_notify_machine_ready);
+
 static int vfe_machine_device_register(struct snd_skl_vfe *vfe, struct skl *skl)
 {
 	struct snd_soc_acpi_mach *mach = skl->mach;
