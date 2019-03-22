@@ -33,6 +33,7 @@
 #include "../skl.h"
 #include "../skl-sst-ipc.h"
 #include "../skl-topology.h"
+#include "../../common/sst-dsp-priv.h"
 #include "skl-virtio.h"
 
 static struct vbe_static_kctl_domain kctl_domain_map[] = {
@@ -741,17 +742,41 @@ static int vbe_skl_cfg_hda(struct skl *sdev, int vm_id,
 	return 0;
 }
 
+static const struct firmware *vbe_find_lib_fw(struct skl_sst *skl_sst,
+		const char *name)
+{
+	int idx, ret;
+	struct skl_lib_info *lib_info = skl_sst->lib_info;
+
+	/* library indices start from 1 to N. 0 represents base FW */
+	for (idx = 1; idx < skl_sst->lib_count; ++idx) {
+		ret = strncmp(lib_info[idx].name, name,
+				ARRAY_SIZE(lib_info[idx].name));
+		if (ret == 0)
+			return lib_info[idx].fw;
+	}
+
+	return NULL;
+}
+
 static const struct firmware *vbe_find_res_hndl(struct snd_skl_vbe *vbe,
 		int type, const char *name)
 {
 	struct snd_skl_vbe_client *client;
 	const struct firmware *fw;
+	struct skl_sst *skl_sst = vbe->sdev->skl_sst;
 
 	switch (type) {
 	case VFE_TOPOLOGY_RES:
 		client = list_first_entry_or_null(&vbe->client_list,
 				struct snd_skl_vbe_client, list);
 		fw = client->tplg;
+		break;
+	case VFE_FIRMWARE_RES:
+		fw = skl_sst->dsp->fw;
+		break;
+	case VFE_LIBRARY_RES:
+		fw = vbe_find_lib_fw(skl_sst, name);
 		break;
 	default:
 		fw = NULL;

@@ -1550,6 +1550,7 @@ static int vfe_init(struct virtio_device *vdev)
 	kctl_init_proxy(&vdev->dev, &vfe_kctl_ops);
 
 	vfe->send_dsp_ipc_msg = vfe_send_dsp_ipc_msg;
+	vfe->request_ext_resource = vfe_request_ext_resource;
 
 	ret = vfe_register_domain(vfe);
 	if (ret < 0)

@@ -65,6 +65,8 @@ struct snd_skl_vfe {
 
 	int (*send_dsp_ipc_msg)(struct snd_skl_vfe *vfe,
 		struct ipc_message *msg);
+	int (*request_ext_resource)(const struct firmware **fw,
+			const char *name, u32 type);
 	int (*notify_machine_probe)(struct snd_skl_vfe *vfe,
 		struct platform_device *pdev, struct snd_soc_card *card);
 };
