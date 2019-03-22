@@ -656,6 +656,7 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 			dev_err(ipc->dev, "Exception Stack size is %d\n", (header.extension >> DSP_EXCEP_STACK_SIZE_SHIFT));
 			/* hexdump of the fw core exception record reg */
 			ret = skl_dsp_crash_dump_read(skl,
+						(header.extension & DSP_EXCEP_CORE_MASK),
 						(header.extension >> DSP_EXCEP_STACK_SIZE_SHIFT));
 			if (ret < 0) {
 				dev_err(ipc->dev,
