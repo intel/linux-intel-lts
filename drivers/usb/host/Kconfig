@@ -47,6 +47,15 @@ config USB_XHCI_DBGCAP_TTY
 	  debug capability. This will expose a /dev/ttyDBC* device node on device
 	  which may be used by the usb-debug driver on the debug host.
 	  If unsure, say 'N'.
+
+config USB_XHCI_DBGCAP_RAW
+       tristate "xHCI DbC raw driver support"
+       depends on USB_XHCI_HCD && USB_XHCI_DBGCAP
+       help
+         Say 'Y' to enable the support for the raw driver interface to xHCI
+         debug capability. This will expose a device node corresponding to
+         1 bulk IN and 1 bulk OUT endpoints to be presented to debug host.
+         If unsure, say 'N'.
 endchoice
 
 config USB_XHCI_PCI
