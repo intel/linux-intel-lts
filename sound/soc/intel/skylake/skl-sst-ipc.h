@@ -481,7 +481,7 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 void skl_ipc_tx_data_copy(struct ipc_message *msg, char *tx_data,
 		size_t tx_size);
 int skl_notify_tplg_change(struct skl_sst *ctx, int type);
-int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size);
+int skl_dsp_crash_dump_read(struct skl_sst *ctx, int idx, int stack_size);
 
 void skl_ipc_set_fw_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
 			u16 module_id, u32 *data);
