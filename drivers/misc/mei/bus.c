@@ -551,12 +551,6 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 		goto out;
 	}
 
-	if (!mei_cl_bus_module_get(cldev)) {
-		dev_err(&cldev->dev, "get hw module failed");
-		ret = -ENODEV;
-		goto out;
-	}
-
 	if (!mei_cldev_vm_support_check(cldev)) {
 		cl_vtag = mei_cl_vtag_alloc(NULL, 0);
 		if (IS_ERR(cl_vtag)) {
@@ -568,10 +562,8 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 	}
 
 	ret = mei_cl_connect(cl, cldev->me_cl, NULL);
-	if (ret < 0) {
+	if (ret < 0)
 		dev_err(&cldev->dev, "cannot connect\n");
-		mei_cl_bus_module_put(cldev);
-	}
 
 out:
 	mutex_unlock(&bus->device_lock);
@@ -642,7 +634,6 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 	if (err < 0)
 		dev_err(bus->dev, "Could not disconnect from the ME client\n");
 
-	mei_cl_bus_module_put(cldev);
 out:
 	/* Flush queues and remove any pending read */
 	mei_cl_flush_queues(cl, NULL);
@@ -753,9 +744,16 @@ static int mei_cl_device_probe(struct device *dev)
 	if (!id)
 		return -ENODEV;
 
+	if (!mei_cl_bus_module_get(cldev)) {
+		dev_err(&cldev->dev, "get hw module failed");
+		return -ENODEV;
+	}
+
 	ret = cldrv->probe(cldev, id);
-	if (ret)
+	if (ret) {
+		mei_cl_bus_module_put(cldev);
 		return ret;
+	}
 
 	__module_get(THIS_MODULE);
 	return 0;
@@ -783,6 +781,7 @@ static int mei_cl_device_remove(struct device *dev)
 
 	mei_cldev_unregister_callbacks(cldev);
 
+	mei_cl_bus_module_put(cldev);
 	module_put(THIS_MODULE);
 	dev->driver = NULL;
 	return ret;
