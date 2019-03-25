@@ -87,29 +87,26 @@ inline int vfe_is_valid_fe_substream(struct snd_pcm_substream *substream)
 
 static void vfe_vq_kick(struct snd_skl_vfe *vfe, struct virtqueue *vq)
 {
-	unsigned long irq_flags;
-
-	spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
+	mutex_lock(&vfe->vq_lock);
 	virtqueue_kick(vq);
-	spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
+	mutex_unlock(&vfe->vq_lock);
 }
 
 static int vfe_send_virtio_msg(struct snd_skl_vfe *vfe,
 	struct virtqueue *vq, struct scatterlist *sgs, int sg_count,
 	void *data, bool out)
 {
-	unsigned long irq_flags;
 	int ret;
 
 	if (!vq)
 		return -EINVAL;
 
-	spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
+	mutex_lock(&vfe->vq_lock);
 	if (out)
 		ret = virtqueue_add_outbuf(vq, sgs, sg_count, data, GFP_KERNEL);
 	else
 		ret = virtqueue_add_inbuf(vq, sgs, sg_count, data, GFP_KERNEL);
-	spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
+	mutex_unlock(&vfe->vq_lock);
 
 	if (ret < 0) {
 		dev_err(&vfe->vdev->dev,
@@ -361,40 +358,10 @@ static void vfe_not_tx_timeout_handler(struct work_struct *work)
 
 static void vfe_not_tx_done(struct virtqueue *vq)
 {
-	struct snd_skl_vfe *vfe = vq->vdev->priv;
-	enum vfe_ipc_msg_status msg_status;
-	unsigned long irq_flags;
-	struct vfe_ipc_msg *msg;
-	unsigned int buflen = 0;
+	struct snd_skl_vfe *vfe;
 
-
-	while (true) {
-		spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
-		msg = virtqueue_get_buf(vfe->ipc_not_tx_vq, &buflen);
-		spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
-
-		if (msg == NULL)
-			break;
-
-		msg_status = atomic_read(&msg->status);
-		if (msg_status == VFE_MSG_TIMED_OUT) {
-			list_add_tail(&msg->list, &vfe->expired_msg_list);
-			schedule_work(&vfe->msg_timeout_work);
-			continue;
-		}
-
-		if (msg->rx_buf)
-			memcpy(msg->rx_data, msg->rx_buf, msg->rx_size);
-
-		if (msg->waitq && msg->completed) {
-			*msg->completed = true;
-			wake_up(msg->waitq);
-		}
-
-		kfree(msg->tx_buf);
-		kfree(msg->rx_buf);
-		kfree(msg);
-	}
+	vfe = vq->vdev->priv;
+	schedule_work(&vfe->tx_message_loop_work);
 }
 
 /*
@@ -406,7 +373,7 @@ static void vfe_not_handle_rx(struct virtqueue *vq)
 	struct snd_skl_vfe *vfe;
 
 	vfe = vq->vdev->priv;
-	schedule_work(&vfe->message_loop_work);
+	schedule_work(&vfe->rx_message_loop_work);
 }
 
 static void vfe_handle_posn(struct work_struct *work)
@@ -451,7 +418,45 @@ err_handler:
 	mutex_unlock(&vfe->tplg.tplg_lock);
 }
 
-static void vfe_message_loop(struct work_struct *work)
+static void vfe_tx_message_loop(struct work_struct *work)
+{
+	enum vfe_ipc_msg_status msg_status;
+	unsigned long irq_flags;
+	struct vfe_ipc_msg *msg;
+	struct snd_skl_vfe *vfe =
+		container_of(work, struct snd_skl_vfe, tx_message_loop_work);
+	unsigned int buflen = 0;
+
+	while (true) {
+		mutex_lock(&vfe->vq_lock);
+		msg = virtqueue_get_buf(vfe->ipc_not_tx_vq, &buflen);
+		mutex_unlock(&vfe->vq_lock);
+
+		if (msg == NULL)
+			break;
+
+		msg_status = atomic_read(&msg->status);
+		if (msg_status == VFE_MSG_TIMED_OUT) {
+			list_add_tail(&msg->list, &vfe->expired_msg_list);
+			schedule_work(&vfe->msg_timeout_work);
+			continue;
+		}
+
+		if (msg->rx_buf)
+			memcpy(msg->rx_data, msg->rx_buf, msg->rx_size);
+
+		if (msg->waitq && msg->completed) {
+			*msg->completed = true;
+			wake_up(msg->waitq);
+		}
+
+		kfree(msg->tx_buf);
+		kfree(msg->rx_buf);
+		kfree(msg);
+	}
+}
+
+static void vfe_rx_message_loop(struct work_struct *work)
 {
 	struct vfe_inbox_header *header;
 	struct vfe_kctl_noti *kctln;
@@ -460,7 +465,7 @@ static void vfe_message_loop(struct work_struct *work)
 	struct vfe_kctl_result result;
 
 	struct snd_skl_vfe *vfe =
-		container_of(work, struct snd_skl_vfe, message_loop_work);
+		container_of(work, struct snd_skl_vfe, rx_message_loop_work);
 
 	vq = vfe->ipc_not_rx_vq;
 
@@ -1209,11 +1214,13 @@ static int vfe_init(struct virtio_device *vdev)
 
 	INIT_LIST_HEAD(&vfe->kcontrols_list);
 	INIT_LIST_HEAD(&vfe->substr_info_list);
-	spin_lock_init(&vfe->ipc_vq_lock);
 	INIT_LIST_HEAD(&vfe->expired_msg_list);
 
+	mutex_init(&vfe->vq_lock);
+
 	INIT_WORK(&vfe->msg_timeout_work, vfe_not_tx_timeout_handler);
-	INIT_WORK(&vfe->message_loop_work, vfe_message_loop);
+	INIT_WORK(&vfe->rx_message_loop_work, vfe_rx_message_loop);
+	INIT_WORK(&vfe->tx_message_loop_work, vfe_tx_message_loop);
 
 	vfe->posn_update_queue =  alloc_workqueue("%s",
 		WQ_HIGHPRI | WQ_UNBOUND, 0, "posn_update_queue");
@@ -1240,7 +1247,8 @@ skl_err:
 	virtqueue_disable_cb(vfe->ipc_not_tx_vq);
 	virtqueue_disable_cb(vfe->ipc_not_rx_vq);
 	cancel_work_sync(&vfe->msg_timeout_work);
-	cancel_work_sync(&vfe->message_loop_work);
+	cancel_work_sync(&vfe->rx_message_loop_work);
+	cancel_work_sync(&vfe->tx_message_loop_work);
 	vdev->config->reset(vdev);
 	vdev->config->del_vqs(vdev);
 err:
@@ -1277,7 +1285,8 @@ static void vfe_remove(struct virtio_device *vdev)
 	if (!vfe)
 		return;
 
-	cancel_work_sync(&vfe->message_loop_work);
+	cancel_work_sync(&vfe->rx_message_loop_work);
+	cancel_work_sync(&vfe->tx_message_loop_work);
 	vfe_machine_device_unregister(&vfe->sdev);
 }
 

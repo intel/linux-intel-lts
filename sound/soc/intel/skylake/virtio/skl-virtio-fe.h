@@ -51,11 +51,13 @@ struct snd_skl_vfe {
 	struct work_struct init_work;
 
 	struct work_struct msg_timeout_work;
-	struct work_struct message_loop_work;
+	struct work_struct rx_message_loop_work;
+	struct work_struct tx_message_loop_work;
 
 	struct workqueue_struct *posn_update_queue;
 
-	spinlock_t ipc_vq_lock;
+	struct mutex vq_lock;
+
 	/* IPC cmd from frontend to backend */
 	struct virtqueue           *ipc_cmd_tx_vq;
 	/* IPC cmd reply from backend to frontend */
