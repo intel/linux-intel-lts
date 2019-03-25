@@ -190,4 +190,7 @@ endif
 # LPE Audio for VLV and CHT
 i915-y += intel_lpe_audio.o
 
+# initial modeset
+i915-y += intel_initial_modeset.o
+
 obj-$(CONFIG_DRM_I915) += i915.o

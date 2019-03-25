@@ -115,6 +115,7 @@
 #define HC_SETUP_SBUF               _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x00)
 #define HC_SETUP_HV_NPK_LOG         _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x01)
 #define HC_PROFILING_OPS            _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x02)
+#define HC_GET_HW_INFO              _HC_ID(HC_ID, HC_ID_DBG_BASE + 0x03)
 
 /* Power management */
 #define HC_ID_PM_BASE               0x80UL
@@ -173,7 +174,7 @@ struct set_regions {
 	 * the max buffer size is one page.
 	 */
 	uint64_t regions_gpa;
-} __attribute__((aligned(8)));
+} __aligned(8);
 
 struct wp_data {
 	/** set page write protect permission.
@@ -193,7 +194,7 @@ struct sbuf_setup_param {
 	uint16_t reserved;
 	uint32_t sbuf_id;
 	uint64_t gpa;
-} __attribute__((aligned(8)));
+} __aligned(8);
 
 struct hv_npk_log_param {
 	/* the setup command for the hypervisor NPK log */
@@ -210,12 +211,17 @@ struct hv_npk_log_param {
 
 	/* the MMIO address for the hypervisor NPK log */
 	uint64_t mmio_addr;
-} __attribute__((aligned(8)));
+} __aligned(8);
+
+struct acrn_hw_info {
+	uint16_t cpu_num; /* Physical CPU number */
+	uint16_t reserved[3];
+} __aligned(8);
 
 struct vm_gpa2hpa {
 	uint64_t gpa;		/* IN: gpa to translation */
 	uint64_t hpa;		/* OUT: -1 means invalid gpa */
-} __attribute__((aligned(8)));
+} __aligned(8);
 
 struct hc_ptdev_irq {
 #define IRQ_INTX 0
@@ -226,34 +232,33 @@ struct hc_ptdev_irq {
 	uint16_t phys_bdf;	/* IN: Device physical BDF# */
 	union {
 		struct {
-			uint8_t virt_pin;	/* IN: virtual IOAPIC pin */
-			uint8_t reserved0[3];	/* Reserved */
-			uint8_t phys_pin;	/* IN: physical IOAPIC pin */
-			uint8_t reserved1[3];	/* Reserved */
+			uint32_t virt_pin;	/* IN: virtual IOAPIC pin */
+			uint32_t phys_pin;	/* IN: physical IOAPIC pin */
 			bool pic_pin;		/* IN: pin from PIC? */
-			uint8_t reserved2[3];	/* Reserved */
+			uint8_t reserved[3];	/* Reserved */
 		} intx;
 		struct {
 			/* IN: vector count of MSI/MSIX */
 			uint32_t vector_cnt;
 		} msix;
 	};
-} __attribute__((aligned(8)));
+} __aligned(8);
 
 struct hc_api_version {
 	uint32_t major_version;
 	uint32_t minor_version;
-} __attribute__((aligned(8)));
+} __aligned(8);
 
 
 enum profiling_cmd_type {
-       PROFILING_MSR_OPS = 0,
-       PROFILING_GET_VMINFO,
-       PROFILING_GET_VERSION,
-       PROFILING_GET_CONTROL_SWITCH,
-       PROFILING_SET_CONTROL_SWITCH,
-       PROFILING_CONFIG_PMI,
-       PROFILING_CONFIG_VMSWITCH,
-       PROFILING_GET_PCPUID,
+	PROFILING_MSR_OPS = 0,
+	PROFILING_GET_VMINFO,
+	PROFILING_GET_VERSION,
+	PROFILING_GET_CONTROL_SWITCH,
+	PROFILING_SET_CONTROL_SWITCH,
+	PROFILING_CONFIG_PMI,
+	PROFILING_CONFIG_VMSWITCH,
+	PROFILING_GET_PCPUID,
+	PROFILING_GET_STATUS,
 };
 #endif /* ACRN_HV_DEFS_H */

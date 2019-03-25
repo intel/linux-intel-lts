@@ -1774,6 +1774,8 @@ struct drm_i915_private {
 	struct intel_pipe_crc pipe_crc[I915_MAX_PIPES];
 #endif
 
+	struct work_struct initial_modeset_work;
+
 	/* dpll and cdclk state is protected by connection_mutex */
 	int num_shared_dpll;
 	struct intel_shared_dpll shared_dplls[I915_NUM_PLLS];
@@ -2762,6 +2764,11 @@ extern unsigned long i915_chipset_val(struct drm_i915_private *dev_priv);
 extern unsigned long i915_mch_val(struct drm_i915_private *dev_priv);
 extern unsigned long i915_gfx_val(struct drm_i915_private *dev_priv);
 extern void i915_update_gfx_val(struct drm_i915_private *dev_priv);
+
+/* initial modesetting support */
+extern void intel_initial_mode_config_init(struct drm_device *dev);
+extern void intel_initial_mode_config_fini(struct drm_device *dev);
+
 int vlv_force_gfx_clock(struct drm_i915_private *dev_priv, bool on);
 
 int intel_engines_init_mmio(struct drm_i915_private *dev_priv);

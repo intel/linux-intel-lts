@@ -5642,6 +5642,9 @@ enum {
 #define PIPE_B_OFFSET		0x71000
 #define PIPE_C_OFFSET		0x72000
 #define CHV_PIPE_C_OFFSET	0x74000
+
+#define __PIPEBDSL		0x71000
+#define __PIPECDSL		0x72000
 /*
  * There's actually no pipe EDP. Some pipe registers have
  * simply shifted from the pipe to the transcoder, while
@@ -10681,6 +10684,10 @@ static inline bool in_mmio_read_trap_list(u32 reg)
 	if (unlikely(reg == SBI_DATA.reg || reg == 0x6c060 || reg == 0x206c))
 		return true;
 
+	if (unlikely(reg == _PIPEADSL ||
+				reg == __PIPEBDSL ||
+				reg == __PIPECDSL))
+		return true;
 	return false;
 }
 

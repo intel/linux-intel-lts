@@ -334,6 +334,10 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 			return -ENOMEM;
 		tmp->size = fw->size;
 		tmp->data = vmalloc(fw->size);
+		if (!tmp->data) {
+			kfree(tmp);
+			return -ENOMEM;
+		}
 		memcpy((void *)tmp->data, fw->data, fw->size);
 		*firmware_p = tmp;
 		release_firmware(fw);
@@ -360,6 +364,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!isp)
 		return -ENOMEM;
 
+	dev_set_name(&pdev->dev, "intel-ipu");
 	isp->pdev = pdev;
 	INIT_LIST_HEAD(&isp->devices);
 

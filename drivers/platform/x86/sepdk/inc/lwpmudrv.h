@@ -454,8 +454,8 @@ int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf);
 
 extern shared_buf_t **samp_buf_per_cpu;
 
-#define MAX_NR_VCPUS 8
-#define MAX_NR_VMS 4
+#define MAX_NR_VCPUS 4
+#define MAX_NR_VMS  4
 #define MAX_MSR_LIST_NUM 15
 #define MAX_GROUP_NUM 1
 
@@ -504,7 +504,7 @@ struct profiling_vm_info {
 
 struct profiling_vm_info_list {
 	uint16_t num_vms;
-	struct profiling_vm_info vm_list[MAX_NR_VMS];
+	struct profiling_vm_info vm_list[MAX_NR_VMS+1];
 };
 
 struct profiling_version_info {
@@ -545,6 +545,12 @@ struct profiling_pcpuid {
 	uint32_t ecx;
 	uint32_t edx;
 };
+
+struct profiling_status {
+	uint32_t samples_logged;
+	uint32_t samples_dropped;
+};
+
 #endif
 
 #endif

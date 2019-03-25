@@ -21,7 +21,7 @@
 #include <sound/soc.h>
 #include <sound/jack.h>
 
-#include "skl-virtio-fe.h"
+#include "skl-virtio.h"
 
 struct snd_kcontrol_new skl_virtio_controls[] = {
 	SOC_DAPM_PIN_SWITCH("Speaker"),
@@ -333,18 +333,15 @@ static struct snd_soc_card skl_virtio_card = {
 
 static int skl_virtio_card_probe(struct platform_device *pdev)
 {
-	struct snd_skl_vfe *vfe;
 	int ret;
 	struct snd_soc_card *card = &skl_virtio_card;
 
 	card->dev = &pdev->dev;
-	vfe = dev_get_drvdata(&pdev->dev);
 	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	if (ret < 0)
 		return ret;
 
-	vfe->notify_machine_probe(vfe, pdev, card);
-
+	kctl_notify_machine_ready(card);
 	return ret;
 }
 

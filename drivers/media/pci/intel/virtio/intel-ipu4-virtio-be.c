@@ -51,9 +51,9 @@ static int ipu_vbk_hash_initialized;
 static int ipu_vbk_connection_cnt;
 /* function declarations */
 static int handle_kick(int client_id, long unsigned int *req_cnt);
-static void ipu_vbk_reset(struct ipu4_virtio_be_priv *rng);
-static void ipu_vbk_stop(struct ipu4_virtio_be_priv *rng);
-static void ipu_vbk_flush(struct ipu4_virtio_be_priv *rng);
+static int ipu_vbk_reset(struct ipu4_virtio_be_priv *priv);
+static void ipu_vbk_stop(struct ipu4_virtio_be_priv *priv);
+static void ipu_vbk_flush(struct ipu4_virtio_be_priv *priv);
 
 #ifdef RUNTIME_CTRL
 static int ipu_vbk_enable_vq(struct ipu4_virtio_be_priv *rng,
@@ -64,6 +64,8 @@ static void ipu_vbk_stop_vq(struct ipu4_virtio_be_priv *rng,
 			      struct virtio_vq_info *vq);
 static void ipu_vbk_flush_vq(struct ipu4_virtio_be_priv *rng, int index);
 #endif
+
+extern void cleanup_stream(void);
 
 /* hash table related functions */
 static void ipu_vbk_hash_init(void)
@@ -107,6 +109,7 @@ static struct ipu4_virtio_be_priv *ipu_vbk_hash_find(int client_id)
 static int ipu_vbk_hash_del(int client_id)
 {
 	struct ipu4_virtio_be_priv *entry;
+	struct hlist_node *tmp;
 	int bkt;
 
 	if (!ipu_vbk_hash_initialized) {
@@ -114,7 +117,7 @@ static int ipu_vbk_hash_del(int client_id)
 		return -1;
 	}
 
-	hash_for_each(HASH_NAME, bkt, entry, node)
+	hash_for_each_safe(HASH_NAME, bkt, tmp, entry, node)
 		if (virtio_dev_client_id(&entry->dev) == client_id) {
 			hash_del(&entry->node);
 			return 0;
@@ -128,6 +131,7 @@ static int ipu_vbk_hash_del(int client_id)
 static int ipu_vbk_hash_del_all(void)
 {
 	struct ipu4_virtio_be_priv *entry;
+	struct hlist_node *tmp;
 	int bkt;
 
 	if (!ipu_vbk_hash_initialized) {
@@ -135,7 +139,7 @@ static int ipu_vbk_hash_del_all(void)
 		return -1;
 	}
 
-	hash_for_each(HASH_NAME, bkt, entry, node)
+	hash_for_each_safe(HASH_NAME, bkt, tmp, entry, node)
 		hash_del(&entry->node);
 
 	return 0;
@@ -306,6 +310,8 @@ static int ipu_vbk_release(struct inode *inode, struct file *f)
 		pr_err("%s: UNLIKELY rng NULL!\n",
 		       __func__);
 
+	cleanup_stream();
+
 	ipu_vbk_stop(priv);
 	ipu_vbk_flush(priv);
 	for (i = 0; i < IPU_VIRTIO_QUEUE_MAX; i++)
@@ -382,6 +388,13 @@ static long ipu_vbk_ioctl(struct file *f, unsigned int ioctl,
 		/* Increment counter */
 		ipu_vbk_connection_cnt++;
 		return r;
+	case VBS_RESET_DEV:
+		r = ipu_vbk_reset(priv);
+		if (r < 0) {
+			pr_err("VBS_RESET_DEV: virtio_vqs_ioctl failed!\n");
+			return -EFAULT;
+		}
+		return r;
 	default:
 		/*mutex_lock(&n->dev.mutex);*/
 		r = virtio_dev_ioctl(&priv->dev, ioctl, argp);
@@ -428,8 +441,14 @@ int notify_fe(int status, struct ipu4_virtio_req_info *req_info)
 }
 
 /* device specific function to cleanup itself */
-static void ipu_vbk_reset(struct ipu4_virtio_be_priv *rng)
+static int ipu_vbk_reset(struct ipu4_virtio_be_priv *priv)
 {
+	int r = 0;
+
+	r = virtio_dev_deregister(&priv->dev);
+	virtio_dev_reset(&priv->dev);
+
+	return r;
 }
 
 /* device specific function */

@@ -270,13 +270,14 @@ static void active_hp_work(struct work_struct *work)
 	struct intel_gvt *gvt =
 		container_of(work, struct intel_gvt, active_hp_work);
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
+	u8 freq = dev_priv->gt_pm.rps.rp0_freq;
 
-	gen6_disable_rps_interrupts(dev_priv);
+	if (IS_BROXTON(dev_priv))
+		freq = intel_freq_opcode(dev_priv, 600);
 
-	if (READ_ONCE(dev_priv->gt_pm.rps.cur_freq) <
-	    READ_ONCE(dev_priv->gt_pm.rps.rp0_freq)) {
+	if (READ_ONCE(dev_priv->gt_pm.rps.cur_freq) < freq) {
 		mutex_lock(&dev_priv->pcu_lock);
-		intel_set_rps(dev_priv, dev_priv->gt_pm.rps.rp0_freq);
+		intel_set_rps(dev_priv, freq);
 		mutex_unlock(&dev_priv->pcu_lock);
 	}
 }

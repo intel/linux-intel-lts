@@ -12,6 +12,7 @@
 #include <media/ipu-isys.h>
 #include <media/crlmodule-lite.h>
 #include <media/ti964.h>
+#include <media/ti960.h>
 #include <media/max9286.h>
 #include "ipu.h"
 
@@ -424,6 +425,195 @@ static struct ipu_isys_subdev_info max9286_sd = {
 };
 #endif
 
+#ifdef CONFIG_INTEL_IPU4_OV495
+#define OV495_LANES	4
+#define OV495_I2C_PHY_ADDR	0x48
+#define OV495A_I2C_ADDRESS	0x30
+#define OV495B_I2C_ADDRESS	0x31
+#define OV495C_I2C_ADDRESS	0x32
+#define OV495D_I2C_ADDRESS	0x33
+
+#define OV495A_SER_ADDRESS	0x58
+#define OV495B_SER_ADDRESS	0x59
+#define OV495C_SER_ADDRESS	0x5a
+#define OV495D_SER_ADDRESS	0x5b
+
+static struct crlmodule_lite_platform_data ov495_pdata = {
+	.lanes = OV495_LANES,
+	.ext_clk = 27000000,
+	.op_sys_clock = (uint64_t[]){ 87750000 },
+	.module_name = "OV495",
+	.id_string = "0x51 0x49 0x56 0x4f",
+	/*
+	 * TI960 has 4 gpio pins, for PWDN, FSIN, and etc.
+	 * it depends connection between serializer and sensor,
+	 * please specify xshutdown, fsin as needed.
+	 */
+	.fsin = 2, /* gpio 2 used for FSIN */
+};
+#endif
+
+#if IS_ENABLED(CONFIG_VIDEO_TI960_ICI)
+#define TI960_I2C_ADAPTER	2
+#define TI960_I2C_ADAPTER_2	4
+#define	TI960_LANES	4
+
+static struct ipu_isys_csi2_config ti960_csi2_cfg = {
+	.nlanes = TI960_LANES,
+	.port = 0,
+};
+
+static struct ipu_isys_csi2_config ti960_csi2_cfg_2 = {
+	.nlanes = TI960_LANES,
+	.port = 4,
+};
+
+static struct ti960_subdev_info ti960_subdevs[] = {
+#ifdef CONFIG_INTEL_IPU4_OV495
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV495A_I2C_ADDRESS,
+			.platform_data = &ov495_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER,
+		.rx_port = 0,
+		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
+		.ser_alias = OV495A_SER_ADDRESS,
+		.suffix = 'a',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV495B_I2C_ADDRESS,
+			.platform_data = &ov495_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER,
+		.rx_port = 1,
+		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
+		.ser_alias = OV495B_SER_ADDRESS,
+		.suffix = 'b',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV495C_I2C_ADDRESS,
+			.platform_data = &ov495_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER,
+		.rx_port = 2,
+		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
+		.ser_alias = OV495C_SER_ADDRESS,
+		.suffix = 'c',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV495D_I2C_ADDRESS,
+			.platform_data = &ov495_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER,
+		.rx_port = 3,
+		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
+		.ser_alias = OV495D_SER_ADDRESS,
+		.suffix = 'd',
+	},
+
+#endif
+};
+
+static struct ti960_subdev_info ti960_subdevs_2[] = {
+#ifdef CONFIG_INTEL_IPU4_OV495
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV495A_I2C_ADDRESS,
+			.platform_data = &ov495_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
+		.rx_port = 0,
+		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
+		.ser_alias = OV495A_SER_ADDRESS,
+		.suffix = 'e',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV495B_I2C_ADDRESS,
+			.platform_data = &ov495_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
+		.rx_port = 1,
+		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
+		.ser_alias = OV495B_SER_ADDRESS,
+		.suffix = 'f',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV495C_I2C_ADDRESS,
+			.platform_data = &ov495_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
+		.rx_port = 2,
+		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
+		.ser_alias = OV495C_SER_ADDRESS,
+		.suffix = 'g',
+	},
+	{
+		.board_info = {
+			.type = CRLMODULE_LITE_NAME,
+			.addr = OV495D_I2C_ADDRESS,
+			.platform_data = &ov495_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
+		.rx_port = 3,
+		.phy_i2c_addr = OV495_I2C_PHY_ADDR,
+		.ser_alias = OV495D_SER_ADDRESS,
+		.suffix = 'h',
+	},
+#endif
+};
+
+static struct ti960_pdata ti960_pdata = {
+	.subdev_info = ti960_subdevs,
+	.subdev_num = ARRAY_SIZE(ti960_subdevs),
+	.reset_gpio = GPIO_BASE + 62,
+	.suffix = 'a',
+};
+
+static struct ipu_isys_subdev_info ti960_sd = {
+	.csi2 = &ti960_csi2_cfg,
+	.i2c = {
+		.board_info = {
+			 .type = "ti960",
+			 .addr = TI960_I2C_ADDRESS,
+			 .platform_data = &ti960_pdata,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER,
+	}
+};
+
+static struct ti960_pdata ti960_pdata_2 = {
+	.subdev_info = ti960_subdevs_2,
+	.subdev_num = ARRAY_SIZE(ti960_subdevs_2),
+	.reset_gpio = GPIO_BASE + 66,
+	.suffix = 'b',
+};
+
+static struct ipu_isys_subdev_info ti960_sd_2 = {
+	.csi2 = &ti960_csi2_cfg_2,
+	.i2c = {
+		.board_info = {
+			 .type = "ti960",
+			 .addr = TI960_I2C_ADDRESS,
+			 .platform_data = &ti960_pdata_2,
+		},
+		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
+	}
+};
+#endif
+
 /*
  * Map buttress output sensor clocks to sensors -
  * this should be coming from ACPI
@@ -456,6 +646,10 @@ static struct ipu_isys_subdev_pdata pdata = {
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_MAX9286_ICI)
 		&max9286_sd,
+#endif
+#if IS_ENABLED(CONFIG_VIDEO_TI960_ICI)
+		&ti960_sd,
+		&ti960_sd_2,
 #endif
 		NULL,
 	},

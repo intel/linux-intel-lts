@@ -47,6 +47,8 @@
 #define PCH_PP_OFF_DELAYS _MMIO(0xc720c)
 #define PCH_PP_DIVISOR _MMIO(0xc7210)
 
+#define MCHBAR_MEM_BASE		_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x4000)
+
 unsigned long intel_gvt_get_device_type(struct intel_gvt *gvt)
 {
 	if (IS_BROADWELL(gvt->dev_priv))
@@ -3443,7 +3445,7 @@ void intel_gvt_clean_mmio_info(struct intel_gvt *gvt)
 /* Special MMIO blocks. */
 static struct gvt_mmio_block mmio_blocks[] = {
 	{D_SKL_PLUS, _MMIO(CSR_MMIO_START_RANGE), 0x3000, NULL, NULL},
-	{D_ALL, _MMIO(MCHBAR_MIRROR_BASE_SNB), 0x40000, NULL, NULL},
+	{D_ALL, MCHBAR_MEM_BASE, 0x4000, NULL, NULL},
 	{D_ALL, _MMIO(VGT_PVINFO_PAGE), VGT_PVINFO_SIZE,
 		pvinfo_mmio_read, pvinfo_mmio_write},
 	{D_ALL, LGC_PALETTE(PIPE_A, 0), 1024, NULL, NULL},

@@ -251,6 +251,10 @@ struct skl_notify_kctrl_info {
 	struct snd_kcontrol *notify_kctl;
 };
 
+struct skl;
+struct hdac_stream;
+struct hdac_bus;
+
 struct skl_sst {
 	struct device *dev;
 	struct sst_dsp *dsp;
@@ -304,6 +308,9 @@ struct skl_sst {
 	int num_sdw_controllers;
 	/* Array of sdw masters */
 	struct sdw_master *mstr;
+	void (*hda_irq_ack)(struct hdac_bus *bus, struct hdac_stream *hstr);
+
+	int (*request_tplg)(struct skl *skl, const struct firmware **fw);
 
 	struct skl_probe_config probe_config;
 
@@ -320,6 +327,8 @@ struct skl_sst {
 	struct skl_sysfs_tree *sysfs_tree;
 
 	struct list_head notify_kctls;
+
+	struct list_head tplg_domains;
 };
 
 struct skl_ipc_init_instance_msg {
@@ -404,6 +413,8 @@ struct skl_module_notify {
 
 irqreturn_t skl_dsp_irq_thread_handler(int irq, void *context);
 
+int skl_ipc_tx_message_wait(struct sst_generic_ipc *ipc, u64 header,
+	void *tx_data, size_t tx_bytes, void *rx_data, size_t *rx_bytes);
 int skl_ipc_create_pipeline(struct sst_generic_ipc *sst_ipc,
 		u16 ppl_mem_size, u8 ppl_type, u8 instance_id, u8 lp_mode);
 

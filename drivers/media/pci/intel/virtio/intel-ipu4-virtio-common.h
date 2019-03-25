@@ -18,7 +18,7 @@
 #define MAX_ENTRY_FE 7
 #define MAX_STREAM_DEVICES 64
 #define MAX_PIPELINE_DEVICES 1
-#define MAX_ISYS_VIRT_STREAM 34
+#define MAX_ISYS_VIRT_STREAM 35
 
 #define phys_to_page(x) pfn_to_page((x) >> PAGE_SHIFT)
 

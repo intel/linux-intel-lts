@@ -511,7 +511,7 @@ extern "C" {
 #define OS_ID_MODEM 1
 #define OS_ID_ANDROID 2
 #define OS_ID_SECVM 3
-#define OS_ID_ACORN 0xFFFF
+#define OS_ID_ACRN 0xFFFF
 
 #define PERF_HW_VER4 (5)
 #if defined(__cplusplus)

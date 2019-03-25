@@ -16,6 +16,7 @@
 
 #include <linux/dal.h>
 #include <linux/printk.h>
+#include <linux/slab.h>
 #include "dal_client.h"
 
 #include "keystore_debug.h"
@@ -56,8 +57,10 @@ int install_applet(void)
 	dal_hdr.state = DAL_KSM_INIT;
 	ret = read_keystore_applet(CONFIG_DAL_KEYSTORE_APPLET_PATH, &acp_pkg,
 		&acp_pkg_len);
-	if (ret != 0)
+	if (ret != 0) {
+		kzfree(&acp_pkg);
 		return ret;
+	}
 
 	if (acp_pkg == NULL) {
 		ks_err(KBUILD_MODNAME ": %s acp_pkg is NULL\n", __func__);

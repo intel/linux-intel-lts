@@ -29,8 +29,14 @@ int process_pipeline_open(struct ipu4_virtio_req_info *req_info)
 	}
 
 	pr_info("process_device_open: /dev/intel_pipeline");
-	if (!pipeline)
+	if (!pipeline) {
 		pipeline = filp_open("/dev/intel_pipeline", O_RDWR | O_NONBLOCK, 0);
+		if (!pipeline) {
+			pr_err("%s: no pipeline device exists on host OS",
+					__func__);
+			return IPU4_REQ_ERROR;
+		}
+	}
 	guestID = domid;
 
 	return IPU4_REQ_PROCESSED;

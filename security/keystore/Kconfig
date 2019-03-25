@@ -26,6 +26,27 @@ config KEYSTORE_DEBUG
 
 		If unsure, select "N".
 
+config APPLICATION_AUTH
+	bool "Application Auth using signed manifest"
+	depends on KEYSTORE && MANIFEST
+        default n
+	help
+		Enables authentication of keystore clients and other
+		applications using a signed manifest. In keystore
+		the manifest is verified during client registration.
+
+		If unsure, select "N".
+
+config APPLICATION_AUTH_MANIFEST_ROOT
+	string "Application Auth Manifest Root Directory"
+	depends on APPLICATION_AUTH
+	default "/opt/ias/etc/manifest"
+	help
+		The root directory for signed manifests of application
+		auth clients.
+
+source security/keystore/oemkey/Kconfig
+
 config DAL_KEYSTORE_APPLET_PATH
 	string "DAL Keystore Applet path"
 	depends on KEYSTORE

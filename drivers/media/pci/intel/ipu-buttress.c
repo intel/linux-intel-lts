@@ -368,11 +368,14 @@ EXPORT_SYMBOL_GPL(ipu_buttress_ipc_send_bulk);
 static int
 ipu_buttress_ipc_send(struct ipu_device *isp,
 		      enum ipu_buttress_ipc_domain ipc_domain,
-		      u32 ipc_msg, u32 size)
+		      u32 ipc_msg, u32 size, bool require_resp,
+		      u32 expected_resp)
 {
 	struct ipu_ipc_buttress_bulk_msg msg = {
 		.cmd = ipc_msg,
 		.cmd_size = size,
+		.require_resp = require_resp,
+		.expected_resp = expected_resp,
 	};
 
 	return ipu_buttress_ipc_send_bulk(isp, ipc_domain, &msg, 1);
@@ -404,10 +407,10 @@ irqreturn_t ipu_buttress_isr(int irq, void *isp_ptr)
 	irqreturn_t ret = IRQ_NONE;
 	u32 disable_irqs = 0;
 	u32 irq_status;
-#ifdef CONFIG_VIDEO_INTEL_IPU4P
-	u32 reg_irq_sts = BUTTRESS_REG_ISR_STATUS;
-#else
+#ifdef CONFIG_VIDEO_INTEL_IPU4
 	u32 reg_irq_sts = BUTTRESS_REG_ISR_ENABLED_STATUS;
+#else
+	u32 reg_irq_sts = BUTTRESS_REG_ISR_STATUS;
 #endif
 	unsigned int i;
 
@@ -875,7 +878,9 @@ int ipu_buttress_authenticate(struct ipu_device *isp)
 	 */
 	dev_info(&isp->pdev->dev, "Sending BOOT_LOAD to CSE\n");
 	rval = ipu_buttress_ipc_send(isp, IPU_BUTTRESS_IPC_CSE,
-				     BUTTRESS_IU2CSEDATA0_IPC_BOOT_LOAD, 1);
+				     BUTTRESS_IU2CSEDATA0_IPC_BOOT_LOAD,
+				     1, 1,
+				     BUTTRESS_CSE2IUDATA0_IPC_BOOT_LOAD_DONE);
 	if (rval) {
 		dev_err(&isp->pdev->dev, "CSE boot_load failed\n");
 		goto iunit_power_off;
@@ -930,8 +935,9 @@ int ipu_buttress_authenticate(struct ipu_device *isp)
 	 */
 	dev_info(&isp->pdev->dev, "Sending AUTHENTICATE_RUN to CSE\n");
 	rval = ipu_buttress_ipc_send(isp, IPU_BUTTRESS_IPC_CSE,
-				     BUTTRESS_IU2CSEDATA0_IPC_AUTHENTICATE_RUN,
-				     1);
+				     BUTTRESS_IU2CSEDATA0_IPC_AUTH_RUN,
+				     1, 1,
+				     BUTTRESS_CSE2IUDATA0_IPC_AUTH_RUN_DONE);
 	if (rval) {
 		dev_err(&isp->pdev->dev, "CSE authenticate_run failed\n");
 		goto iunit_power_off;

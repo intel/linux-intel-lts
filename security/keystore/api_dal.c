@@ -22,7 +22,9 @@
 #include "dal_context_safe.h"
 #include "keystore_client.h"
 #include "keystore_rand.h"
-
+#ifdef CONFIG_APPLICATION_AUTH
+#include "appauth/manifest_verify.h"
+#endif
 #include "dal_client.h"
 
 #define KEYSPEC_DAL_WRAPPED_KEY (165)
@@ -70,7 +72,14 @@ static int dal_keystore_close(void)
 static int dal_calc_clientid(u8 *client_id, const unsigned int client_id_size)
 {
 	/* Calculate the Client ID */
-	return keystore_calc_clientid(client_id, client_id_size);
+#ifdef CONFIG_APPLICATION_AUTH
+		return keystore_calc_clientid(client_id, client_id_size,
+						MANIFEST_CACHE_TTL,
+						MANIFEST_DEFAULT_CAPS);
+#else
+		return keystore_calc_clientid(client_id, client_id_size);
+#endif
+
 }
 
 static int dal_keystore_install_and_init(void)
@@ -803,6 +812,7 @@ int dal_keystore_encrypt(const uint8_t *client_ticket, int slot_id,
 	if (res) {
 		ks_err(KBUILD_MODNAME ": %s Error calculating client ID: %d\n",
 			__func__, res);
+		kzfree(in);
 		goto exit;
 	}
 
@@ -955,6 +965,7 @@ int dal_keystore_decrypt(const uint8_t *client_ticket, int slot_id,
 	if (res) {
 		ks_err(KBUILD_MODNAME ": %s Error calculating client ID: %d\n",
 			__func__, res);
+		kzfree(in);
 		goto exit;
 	}
 

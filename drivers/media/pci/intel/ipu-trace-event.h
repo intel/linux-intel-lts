@@ -62,8 +62,8 @@ TRACE_EVENT(ipu_pg_kcmd,
 		     unsigned int pg_id, unsigned int load_cycles,
 		     unsigned int init_cycles,
 		     unsigned int processing_cycles),
-	    TP_ARGS(func, id, issue_id, pri, pg_id, load_cycles,
-		    init_cycles, processing_cycles),
+	    TP_ARGS(func, id, issue_id, pri, pg_id, load_cycles, init_cycles,
+		    processing_cycles),
 	    TP_STRUCT__entry(__field(const char *, func)
 			     __field(unsigned int, id)
 			     __field(unsigned long long, issue_id)
@@ -83,7 +83,8 @@ TRACE_EVENT(ipu_pg_kcmd,
 			   __entry->processing_cycles = processing_cycles;),
 	    TP_printk
 	    ("pg-kcmd: func=%s,id=%u,issue_id=0x%llx,pri=%u,pg_id=%d,"
-	     "load_cycles=%u,init_cycles=%u,processing_cycles=%u",
+	     "load_cycles=%u,init_cycles=%u,"
+	     "processing_cycles=%u",
 	     __entry->func, __entry->id, __entry->issue_id, __entry->pri,
 	     __entry->pg_id, __entry->load_cycles, __entry->init_cycles,
 	     __entry->processing_cycles)

@@ -5,6 +5,8 @@
 # Keystore module
 obj-$(CONFIG_KEYSTORE) := keystore.o
 
+obj-$(CONFIG_MANIFEST) += oemkey/
+
 # Otherwise, select the full file list
 keystore-$(CONFIG_KEYSTORE) +=\
 	keystore_kmod.o\
@@ -20,3 +22,13 @@ keystore-$(CONFIG_KEYSTORE) +=\
 
 keystore-$(CONFIG_KEYSTORE_DEBUG) +=\
 	debug.o
+
+keystore-$(CONFIG_APPLICATION_AUTH) +=\
+	appauth/file_hash_verify.o\
+	appauth/key_setup.o\
+	appauth/manifest_cache.o\
+	appauth/manifest_parser.o\
+	appauth/manifest_read.o\
+	appauth/manifest_verify.o\
+	appauth/manifest_sanity_check.o\
+	appauth/sign_verify.o

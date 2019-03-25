@@ -67,8 +67,10 @@ static int read_applet_file(struct file *file, u8 **out)
 		return -ENOMEM;
 
 	temp = kzalloc(i_size, GFP_KERNEL);
-	if (!temp)
+	if (!temp) {
+		kzfree(file_buf);
 		return -ENOMEM;
+	}
 
 	if (!(file->f_mode & FMODE_READ)) {
 		file->f_mode |= FMODE_READ;
