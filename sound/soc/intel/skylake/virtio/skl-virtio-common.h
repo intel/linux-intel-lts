@@ -35,6 +35,7 @@ struct vfe_stream_pos_desc {
 	u64 hw_ptr;
 	u64 be_irq_cnt;
 	u64 fe_irq_cnt;
+	u64 work_cnt;
 };
 
 struct vfe_dsp_ipc_msg {
@@ -100,6 +101,10 @@ struct vbe_ipc_msg {
 
 struct vfe_kctl_value {
 	struct snd_ctl_elem_value value;
+};
+
+struct vfe_pcm_params {
+	uint64_t cmd;
 };
 
 /* stream ring info */
