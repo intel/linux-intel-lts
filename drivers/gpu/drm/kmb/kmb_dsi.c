@@ -86,12 +86,59 @@ static const struct drm_connector_funcs kmb_dsi_connector_funcs = {
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 };
 
+static ssize_t kmb_dsi_host_transfer(struct mipi_dsi_host *host,
+				     const struct mipi_dsi_msg *msg)
+{
+	return 0;
+}
+
+static int kmb_dsi_host_attach(struct mipi_dsi_host *host,
+			       struct mipi_dsi_device *dev)
+{
+	return 0;
+}
+
+static int kmb_dsi_host_detach(struct mipi_dsi_host *host,
+			       struct mipi_dsi_device *dev)
+{
+	return 0;
+}
+
+static const struct mipi_dsi_host_ops kmb_dsi_host_ops = {
+	.attach = kmb_dsi_host_attach,
+	.detach = kmb_dsi_host_detach,
+	.transfer = kmb_dsi_host_transfer,
+};
+
+static struct kmb_dsi_host *kmb_dsi_host_init(struct kmb_dsi *kmb_dsi)
+{
+	struct kmb_dsi_host *host;
+	struct mipi_dsi_device *device;
+
+	host = kzalloc(sizeof(*host), GFP_KERNEL);
+	if (!host)
+		return NULL;
+
+	host->base.ops = &kmb_dsi_host_ops;
+	host->kmb_dsi = kmb_dsi;
+
+	device = kzalloc(sizeof(*device), GFP_KERNEL);
+	if (!device) {
+		kfree(host);
+		return NULL;
+	}
+	device->host = &host->base;
+	host->device = device;
+	return host;
+}
+
 void kmb_dsi_init(struct drm_device *dev)
 {
 	struct kmb_dsi *kmb_dsi;
 	struct drm_encoder *encoder;
 	struct kmb_connector *kmb_connector;
 	struct drm_connector *connector;
+	struct kmb_dsi_host *host;
 
 	kmb_dsi = kzalloc(sizeof(*kmb_dsi), GFP_KERNEL);
 	if (!kmb_dsi)
@@ -109,7 +156,19 @@ void kmb_dsi_init(struct drm_device *dev)
 	encoder = &kmb_dsi->base;
 	drm_encoder_init(dev, encoder, &kmb_dsi_funcs, DRM_MODE_ENCODER_DSI,
 			 "MIPI-DSI");
+
+	host = kmb_dsi_host_init(kmb_dsi);
+	if (!host) {
+		drm_encoder_cleanup(encoder);
+		kfree(kmb_dsi);
+		kfree(kmb_connector);
+	}
+
 	drm_connector_init(dev, connector, &kmb_dsi_connector_funcs,
 			   DRM_MODE_CONNECTOR_DSI);
 	drm_connector_helper_add(connector, &kmb_dsi_connector_helper_funcs);
+
+	connector->encoder = encoder;
+	drm_connector_attach_encoder(connector, encoder);
+
 }

@@ -33,19 +33,23 @@
 #include "kmb_drv.h"
 
 struct kmb_connector;
+struct kmb_dsi_host;
 
 struct kmb_dsi {
 	struct drm_encoder base;
 	struct kmb_connector *attached_connector;
+	struct kmb_dsi_host *dsi_host;
 };
 
 struct kmb_dsi_host {
 	struct mipi_dsi_host base;
 	struct kmb_dsi *kmb_dsi;
+	struct mipi_dsi_device *device;
 };
 
 struct kmb_connector {
 	struct drm_connector base;
+	struct drm_encoder *encoder;
 	struct drm_display_mode *fixed_mode;
 };
 
