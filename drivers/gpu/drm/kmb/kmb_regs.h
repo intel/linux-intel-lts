@@ -385,4 +385,29 @@
 #define LCD_GRAPHIC1_DMA_BYTES			(0x4 * 0xb0e)
 #define LCD_GRAPHIC1_DMA_STATE			(0x4 * 0xb0f)
 
+/***************************************************************************
+ *		   MIPI controller control register defines
+ ***********************************************i****************************/
+#define MIPI_BASE_ADDR				(0x20900000)
+#define MIPI0_HS_BASE_ADDR			(MIPI_BASE_ADDR + 0x400)
+#define MIPI_CTRL_HS_BASE_ADDR			(0x400)
+#define MIPI_TX0_HS_FG0_SECT0_PH		(0x40)
+#define MIPI_TXm_HS_FGn_SECTo_PH(M, N, O)	(MIPI_TX0_HS_FG0_SECT0_PH + \
+						(0x400*M) + (0x2C*N) + (8*O))
+#define MIPI_TX_SECT_WC_MASK			  (0xffff)
+#define	MIPI_TX_SECT_VC_MASK			  (3)
+#define MIPI_TX_SECT_VC_SHIFT			  (22)
+#define MIPI_TX_SECT_DT_MASK			  (0x3f)
+#define MIPI_TX_SECT_DT_SHIFT			  (16)
+#define MIPI_TX_SECT_DM_MASK			  (3)
+#define MIPI_TX_SECT_DM_SHIFT			  (24)
+#define MIPI_TX_SECT_DMA_PACKED			  (1<<26)
+#define MIPI_TX_HS_FG0_SECT_UNPACKED_BYTES0	(0x60)
+#define MIPI_TX_HS_FG0_SECT_UNPACKED_BYTES1	(0x64)
+#define MIPI_TXm_HS_FGn_SECT_UNPACKED_BYTES0(M, N) \
+		(MIPI_TX_HS_FG0_SECT_UNPACKED_BYTES0 + (0x400*M) + (0x2C*N))
+#define MIPI_TXm_HS_FGn_SECTo_LINE_CFG(M, N, O)	(MIPI_TX_HS_FG0_SECT0_LINE_CFG \
+				+ (0x400*M) + (0x2C*N) + (8*O))
+#define MIPI_TX_HS_FG0_SECT0_LINE_CFG		(0x44)
+
 #endif /* __KMB_REGS_H__ */

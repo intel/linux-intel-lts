@@ -53,6 +53,238 @@ struct kmb_connector {
 	struct drm_display_mode *fixed_mode;
 };
 
+#define MIPI_TX_FRAME_GEN	4
+#define MIPI_TX_FRAME_GEN_SECTIONS 4
+#define MIPI_CTRL_VIRTUAL_CHANNELS 4
+
+enum mipi_ctrl_num {
+	MIPI_CTRL0 = 0,
+	MIPI_CTRL1,
+	MIPI_CTRL2,
+	MIPI_CTRL3,
+	MIPI_CTRL4,
+	MIPI_CTRL5,
+	MIPI_CTRL6,
+	MIPI_CTRL7,
+	MIPI_CTRL8,
+	MIPI_CTRL9,
+	MIPI_CTRL_NA
+};
+
+enum mipi_dphy_num {
+	MIPI_DPHY0 = 0,
+	MIPI_DPHY1,
+	MIPI_DPHY2,
+	MIPI_DPHY3,
+	MIPI_DPHY4,
+	MIPI_DPHY5,
+	MIPI_DPHY6,
+	MIPI_DPHY7,
+	MIPI_DPHY8,
+	MIPI_DPHY9,
+	MIPI_DPHY_NA
+};
+
+enum mipi_dir {
+	MIPI_RX,
+	MIPI_TX
+};
+
+enum mipi_ctrl_type {
+	MIPI_DSI,
+	MIPI_CSI
+};
+
+enum mipi_data_if {
+	MIPI_IF_DMA,
+	MIPI_IF_PARALLEL
+};
+
+enum mipi_data_mode {
+	MIPI_DATA_MODE0,
+	MIPI_DATA_MODE1,
+	MIPI_DATA_MODE2,
+	MIPI_DATA_MODE3
+};
+
+enum mipi_dsi_video_mode {
+	DSI_VIDEO_MODE_NO_BURST_PULSE,
+	DSI_VIDEO_MODE_NO_BURST_EVENT,
+	DSI_VIDEO_MODE_BURST
+};
+
+enum mipi_dsi_blanking_mode {
+	TRANSITION_TO_LOW_POWER,
+	SEND_BLANK_PACKET
+};
+
+enum mipi_dsi_eotp {
+	DSI_EOTP_DISABLED,
+	DSI_EOTP_ENABLES
+};
+
+enum mipi_dsi_data_type {
+	DSI_SP_DT_RESERVED_00 = 0x00,
+	DSI_SP_DT_VSYNC_START = 0x01,
+	DSI_SP_DT_COLOR_MODE_OFF = 0x02,
+	DSI_SP_DT_GENERIC_SHORT_WR = 0x03,
+	DSI_SP_DT_GENERIC_RD = 0x04,
+	DSI_SP_DT_DCS_SHORT_WR = 0x05,
+	DSI_SP_DT_DCS_RD = 0x06,
+	DSI_SP_DT_EOTP = 0x08,
+	DSI_LP_DT_NULL = 0x09,
+	DSI_LP_DT_RESERVED_0A = 0x0a,
+	DSI_LP_DT_RESERVED_0B = 0x0b,
+	DSI_LP_DT_LPPS_YCBCR422_20B = 0x0c,
+	DSI_LP_DT_PPS_RGB101010_30B = 0x0d,
+	DSI_LP_DT_PPS_RGB565_16B = 0x0e,
+	DSI_LP_DT_RESERVED_0F = 0x0f,
+
+	DSI_SP_DT_RESERVED_10 = 0x10,
+	DSI_SP_DT_VSYNC_END = 0x11,
+	DSI_SP_DT_COLOR_MODE_ON = 0x12,
+	DSI_SP_DT_GENERIC_SHORT_WR_1PAR = 0x13,
+	DSI_SP_DT_GENERIC_RD_1PAR = 0x14,
+	DSI_SP_DT_DCS_SHORT_WR_1PAR = 0x15,
+	DSI_SP_DT_RESERVED_16 = 0x16,
+	DSI_SP_DT_RESERVED_17 = 0x17,
+	DSI_SP_DT_RESERVED_18 = 0x18,
+	DSI_LP_DT_BLANK = 0x19,
+	DSI_LP_DT_RESERVED_1A = 0x1a,
+	DSI_LP_DT_RESERVED_1B = 0x1b,
+	DSI_LP_DT_PPS_YCBCR422_24B = 0x1c,
+	DSI_LP_DT_PPS_RGB121212_36B = 0x1d,
+	DSI_LP_DT_PPS_RGB666_18B = 0x1e,
+	DSI_LP_DT_RESERVED_1F = 0x1f,
+
+	DSI_SP_DT_RESERVED_20 = 0x20,
+	DSI_SP_DT_HSYNC_START = 0x21,
+	DSI_SP_DT_SHUT_DOWN_PERIPH_CMD = 0x22,
+	DSI_SP_DT_GENERIC_SHORT_WR_2PAR = 0x23,
+	DSI_SP_DT_GENERIC_RD_2PAR = 0x24,
+	DSI_SP_DT_RESERVED_25 = 0x25,
+	DSI_SP_DT_RESERVED_26 = 0x26,
+	DSI_SP_DT_RESERVED_27 = 0x27,
+	DSI_SP_DT_RESERVED_28 = 0x28,
+	DSI_LP_DT_GENERIC_LONG_WR = 0x29,
+	DSI_LP_DT_RESERVED_2A = 0x2a,
+	DSI_LP_DT_RESERVED_2B = 0x2b,
+	DSI_LP_DT_PPS_YCBCR422_16B = 0x2c,
+	DSI_LP_DT_RESERVED_2D = 0x2d,
+	DSI_LP_DT_LPPS_RGB666_18B = 0x2e,
+	DSI_LP_DT_RESERVED_2F = 0x2f,
+
+	DSI_SP_DT_RESERVED_30 = 0x30,
+	DSI_SP_DT_HSYNC_END = 0x31,
+	DSI_SP_DT_TURN_ON_PERIPH_CMD = 0x32,
+	DSI_SP_DT_RESERVED_33 = 0x33,
+	DSI_SP_DT_RESERVED_34 = 0x34,
+	DSI_SP_DT_RESERVED_35 = 0x35,
+	DSI_SP_DT_RESERVED_36 = 0x36,
+	DSI_SP_DT_SET_MAX_RETURN_PKT_SIZE = 0x37,
+	DSI_SP_DT_RESERVED_38 = 0x38,
+	DSI_LP_DT_DSC_LONG_WR = 0x39,
+	DSI_LP_DT_RESERVED_3A = 0x3a,
+	DSI_LP_DT_RESERVED_3B = 0x3b,
+	DSI_LP_DT_RESERVED_3C = 0x3c,
+	DSI_LP_DT_PPS_YCBCR420_12B = 0x3d,
+	DSI_LP_DT_PPS_RGB888_24B = 0x3e,
+	DSI_LP_DT_RESERVED_3F = 0x3f
+};
+
+struct mipi_data_type_params {
+	uint8_t size_constraint_pixels;
+	uint8_t size_constraint_bytes;
+	uint8_t pixels_per_pclk;
+	uint8_t bits_per_pclk;
+};
+struct mipi_tx_dsi_cfg {
+	uint8_t hfp_blank_en;	/*horizontal front porch blanking enable */
+	uint8_t eotp_en;	/*End of transmission packet enable */
+	/*last vertical front porch blanking mode */
+	uint8_t lpm_last_vfp_line;
+	/*first vertical sync active blanking mode */
+	uint8_t lpm_first_vsa_line;
+	uint8_t sync_pulse_eventn;	/*sync type */
+	uint8_t hfp_blanking;	/*horizontal front porch blanking mode */
+	uint8_t hbp_blanking;	/*horizontal back porch blanking mode */
+	uint8_t hsa_blanking;	/*horizontal sync active blanking mode */
+	uint8_t v_blanking;	/*vertical timing blanking mode */
+};
+
+struct mipi_tx_frame_section_cfg {
+	uint32_t dma_v_stride;
+	uint16_t dma_v_scale_cfg;
+	uint16_t width_pixels;	/*  Frame width */
+	uint16_t height_lines;
+	uint8_t dma_packed;
+	uint8_t bpp;
+	uint8_t bpp_unpacked;
+	uint8_t dma_h_stride;
+	uint8_t data_type;
+	uint8_t data_mode;
+	uint8_t dma_flip_rotate_sel;
+};
+
+struct mipi_tx_frame_timing_cfg {
+	uint32_t bpp;
+	uint32_t lane_rate_mbps;
+	uint32_t hsync_width;
+	uint32_t h_backporch;
+	uint32_t h_frontporch;
+	uint32_t h_active;
+	uint16_t vsync_width;
+	uint16_t v_backporch;
+	uint16_t v_frontporch;
+	uint16_t v_active;
+	uint8_t active_lanes;
+};
+
+struct mipi_tx_frame_sect_phcfg {
+	uint32_t wc;
+	enum mipi_data_mode data_mode;
+	enum mipi_dsi_data_type data_type;
+	uint8_t vchannel;
+};
+
+struct mipi_tx_frame_cfg {
+	struct mipi_tx_frame_section_cfg *sections[MIPI_TX_FRAME_GEN_SECTIONS];
+	uint32_t hsync_width;	/*in pixels */
+	uint32_t h_backporch;	/*in pixels */
+	uint32_t h_frontporch;	/*in pixels */
+	uint16_t vsync_width;	/*in lines */
+	uint16_t v_backporch;	/*in lines */
+	uint16_t v_frontporch;	/*in lines */
+};
+
+struct mipi_tx_ctrl_cfg {
+	struct mipi_tx_frame_cfg *frames[MIPI_TX_FRAME_GEN];
+	struct mipi_tx_dsi_cfg *tx_dsi_cfg;
+	uint8_t line_sync_pkt_en;
+	uint8_t line_counter_active;
+	uint8_t frame_counter_active;
+	uint8_t tx_hsclkkidle_cnt;
+	uint8_t tx_hsexit_cnt;
+	uint8_t tx_crc_en;
+	uint8_t tx_hact_wait_stop;
+	uint8_t tx_always_use_hact;
+	uint8_t tx_wait_trig;
+	uint8_t tx_wait_all_sect;
+};
+
+/*configuration structure for MIPI control */
+struct mipi_ctrl_cfg {
+	/* controller index : CTRL6 for connecting to LCD */
+	uint8_t index;
+	uint8_t type;		/* controller type : MIPI_DSI */
+	uint8_t dir;		/* controller direction : MIPI_TX */
+	uint8_t active_lanes;	/* # active lanes per controller 2/4 */
+	uint32_t lane_rate_mbps;	/*MBPS */
+	uint32_t ref_clk_khz;
+	uint32_t cfg_clk_khz;
+	uint32_t data_if;	/*MIPI_IF_DMA or MIPI_IF_PARALLEL */
+	struct mipi_tx_ctrl_cfg tx_ctrl_cfg;
+};
 void kmb_dsi_init(struct drm_device *dev);
 void kmb_plane_destroy(struct drm_plane *plane);
 

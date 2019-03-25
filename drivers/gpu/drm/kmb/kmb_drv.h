@@ -62,6 +62,20 @@ static inline u32 kmb_read(struct kmb_drm_private *lcd, unsigned int reg)
 	return readl(lcd->mmio + reg);
 }
 
+static inline void kmb_write_bits(struct kmb_drm_private *lcd,
+				  unsigned int reg, u32 offset, u32 num_bits,
+				  u32 value)
+{
+	u32 reg_val = kmb_read(lcd, reg);
+	u32 mask = (1 << num_bits) - 1;
+
+	value &= mask;
+	mask <<= offset;
+	reg_val &= (~mask);
+	reg_val |= (value << offset);
+	writel(reg_val, lcd->mmio + reg);
+}
+
 int kmb_setup_crtc(struct drm_device *dev);
 void kmb_set_scanout(struct kmb_drm_private *lcd);
 #endif /* __KMB_DRV_H__ */

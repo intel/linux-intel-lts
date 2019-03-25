@@ -34,7 +34,78 @@
 #include <linux/slab.h>
 #include <linux/gpio/consumer.h>
 #include "kmb_drv.h"
+#include "kmb_regs.h"
 #include "kmb_dsi.h"
+
+#define IMG_WIDTH_PX      1920
+#define IMG_HEIGHT_LINES  1080
+#define LCD_BYTESPP       1
+
+/*MIPI TX CFG*/
+#define MIPI_TX_ACTIVE_LANES        4
+#define MIPI_TX_LANE_DATA_RATE_MBPS 888
+#define MIPI_TX_REF_CLK_KHZ         24000
+#define MIPI_TX_CFG_CLK_KHZ         24000
+
+/*
+ * These are added here only temporarily for testing,
+ * these will eventually go to the device tree sections,
+ * and can be used as a refernce later for device tree additions
+ */
+struct mipi_tx_frame_section_cfg mipi_tx_frame0_sect_cfg = {
+	.width_pixels = IMG_WIDTH_PX,
+	.height_lines = IMG_HEIGHT_LINES,
+	.data_type = DSI_LP_DT_PPS_RGB888_24B,
+	.data_mode = MIPI_DATA_MODE1,
+	.dma_packed = 0
+};
+
+struct mipi_tx_frame_cfg mipitx_frame0_cfg = {
+	.sections[0] = &mipi_tx_frame0_sect_cfg,
+	.sections[1] = NULL,
+	.sections[2] = NULL,
+	.sections[3] = NULL,
+	.vsync_width = 5,
+	.v_backporch = 36,
+	.v_frontporch = 4,
+	.hsync_width = 44,
+	.h_backporch = 148,
+	.h_frontporch = 88
+};
+
+struct mipi_tx_dsi_cfg mipitx_dsi_cfg = {
+	.hfp_blank_en = 0,
+	.eotp_en = 0,
+	.lpm_last_vfp_line = 0,
+	.lpm_first_vsa_line = 0,
+	.sync_pulse_eventn = DSI_VIDEO_MODE_NO_BURST_EVENT,
+	.hfp_blanking = SEND_BLANK_PACKET,
+	.hbp_blanking = SEND_BLANK_PACKET,
+	.hsa_blanking = SEND_BLANK_PACKET,
+	.v_blanking = SEND_BLANK_PACKET,
+};
+
+struct mipi_ctrl_cfg mipi_tx_init_cfg = {
+	.index = MIPI_CTRL6,
+	.type = MIPI_DSI,
+	.dir = MIPI_TX,
+	.active_lanes = MIPI_TX_ACTIVE_LANES,
+	.lane_rate_mbps = MIPI_TX_LANE_DATA_RATE_MBPS,
+	.ref_clk_khz = MIPI_TX_REF_CLK_KHZ,
+	.cfg_clk_khz = MIPI_TX_CFG_CLK_KHZ,
+	.data_if = MIPI_IF_PARALLEL,
+	.tx_ctrl_cfg = {
+			.frames[0] = &mipitx_frame0_cfg,
+			.frames[1] = NULL,
+			.frames[2] = NULL,
+			.frames[3] = NULL,
+			.tx_dsi_cfg = &mipitx_dsi_cfg,
+			.line_sync_pkt_en = 0,
+			.line_counter_active = 0,
+			.frame_counter_active = 0,
+			}
+
+};
 
 static enum drm_mode_status
 kmb_dsi_mode_valid(struct drm_connector *connector,
@@ -132,6 +203,261 @@ static struct kmb_dsi_host *kmb_dsi_host_init(struct kmb_dsi *kmb_dsi)
 	return host;
 }
 
+u32 mipi_get_datatype_params(u32 data_type, u32 data_mode,
+			     struct mipi_data_type_params *params)
+{
+	struct mipi_data_type_params data_type_parameters;
+
+	switch (data_type) {
+	case DSI_LP_DT_PPS_YCBCR420_12B:
+		data_type_parameters.size_constraint_pixels = 2;
+		data_type_parameters.size_constraint_bytes = 3;
+		switch (data_mode) {
+			/* case 0 not supported according to MDK */
+		case 1:
+		case 2:
+		case 3:
+			data_type_parameters.pixels_per_pclk = 2;
+			data_type_parameters.bits_per_pclk = 24;
+			break;
+		default:
+			DRM_ERROR("DSI: Invalid data_mode %d\n", data_mode);
+			return -EINVAL;
+		};
+		break;
+	case DSI_LP_DT_PPS_YCBCR422_16B:
+		data_type_parameters.size_constraint_pixels = 2;
+		data_type_parameters.size_constraint_bytes = 4;
+		switch (data_mode) {
+			/* case 0 and 1 not supported according to MDK */
+		case 2:
+			data_type_parameters.pixels_per_pclk = 1;
+			data_type_parameters.bits_per_pclk = 16;
+			break;
+		case 3:
+			data_type_parameters.pixels_per_pclk = 2;
+			data_type_parameters.bits_per_pclk = 32;
+			break;
+		default:
+			DRM_ERROR("DSI: Invalid data_mode %d\n", data_mode);
+			return -EINVAL;
+		};
+		break;
+	case DSI_LP_DT_LPPS_YCBCR422_20B:
+	case DSI_LP_DT_PPS_YCBCR422_24B:
+		data_type_parameters.size_constraint_pixels = 2;
+		data_type_parameters.size_constraint_bytes = 6;
+		switch (data_mode) {
+			/* case 0 not supported according to MDK */
+		case 1:
+		case 2:
+		case 3:
+			data_type_parameters.pixels_per_pclk = 1;
+			data_type_parameters.bits_per_pclk = 24;
+			break;
+		default:
+			DRM_ERROR("DSI: Invalid data_mode %d\n", data_mode);
+			return -EINVAL;
+		};
+		break;
+	case DSI_LP_DT_PPS_RGB565_16B:
+		data_type_parameters.size_constraint_pixels = 1;
+		data_type_parameters.size_constraint_bytes = 2;
+		switch (data_mode) {
+		case 0:
+		case 1:
+			data_type_parameters.pixels_per_pclk = 1;
+			data_type_parameters.bits_per_pclk = 16;
+			break;
+		case 2:
+		case 3:
+			data_type_parameters.pixels_per_pclk = 2;
+			data_type_parameters.bits_per_pclk = 32;
+			break;
+		default:
+			DRM_ERROR("DSI: Invalid data_mode %d\n", data_mode);
+			return -EINVAL;
+		};
+		break;
+	case DSI_LP_DT_PPS_RGB666_18B:
+		data_type_parameters.size_constraint_pixels = 4;
+		data_type_parameters.size_constraint_bytes = 9;
+		data_type_parameters.bits_per_pclk = 18;
+		data_type_parameters.pixels_per_pclk = 1;
+		break;
+	case DSI_LP_DT_LPPS_RGB666_18B:
+	case DSI_LP_DT_PPS_RGB888_24B:
+		data_type_parameters.size_constraint_pixels = 1;
+		data_type_parameters.size_constraint_bytes = 3;
+		data_type_parameters.bits_per_pclk = 24;
+		data_type_parameters.pixels_per_pclk = 1;
+		break;
+	case DSI_LP_DT_PPS_RGB101010_30B:
+		data_type_parameters.size_constraint_pixels = 4;
+		data_type_parameters.size_constraint_bytes = 15;
+		data_type_parameters.bits_per_pclk = 30;
+		data_type_parameters.pixels_per_pclk = 1;
+		break;
+
+	default:
+		DRM_ERROR("DSI: Invalid data_type %d\n", data_type);
+		return -EINVAL;
+	}
+
+	*params = data_type_parameters;
+	return 0;
+}
+
+static u32 compute_wc(u32 width_px, u8 size_constr_p, u8 size_constr_b)
+{
+	/* calculate the word count for each long packet */
+	return (((width_px / size_constr_p) * size_constr_b) & 0xffff);
+}
+
+static u32 compute_unpacked_bytes(u32 wc, u8 bits_per_pclk)
+{
+	/*number of PCLK cycles needed to transfer a line */
+	/* with each PCLK cycle, 4 Bytes are sent through the PPL module */
+	return ((wc * 8) / bits_per_pclk) * 4;
+}
+
+static u32 mipi_tx_fg_section_cfg_regs(struct kmb_drm_private *dev_priv,
+				       u8 frame_id, u8 section,
+				       u32 height_lines, u32 unpacked_bytes,
+				       struct mipi_tx_frame_sect_phcfg *ph_cfg)
+{
+	u32 cfg = 0;
+	u32 ctrl_no = MIPI_CTRL6;
+	u32 reg_adr;
+
+	/*frame section packet header */
+	/*word count */
+	cfg = (ph_cfg->wc & MIPI_TX_SECT_WC_MASK) << 0;	/* bits [15:0] */
+	/*data type */
+	cfg |= ((ph_cfg->data_type & MIPI_TX_SECT_DT_MASK)
+		<< MIPI_TX_SECT_DT_SHIFT);	/* bits [21:16] */
+	/* virtual channel */
+	cfg |= ((ph_cfg->vchannel & MIPI_TX_SECT_VC_MASK)
+		<< MIPI_TX_SECT_VC_SHIFT);	/* bits [23:22] */
+	/* data mode */
+	cfg |= ((ph_cfg->data_mode & MIPI_TX_SECT_DM_MASK)
+		<< MIPI_TX_SECT_DM_SHIFT);	/* bits [24:25] */
+	cfg |= MIPI_TX_SECT_DMA_PACKED;
+	kmb_write(dev_priv,
+		  (MIPI_TXm_HS_FGn_SECTo_PH(ctrl_no, frame_id, section)), cfg);
+
+	/*unpacked bytes */
+	/*there are 4 frame generators and each fg has 4 sections
+	 *there are 2 registers for unpacked bytes -
+	 *# bytes each section occupies in memory
+	 *REG_UNPACKED_BYTES0: [15:0]-BYTES0, [31:16]-BYTES1
+	 *REG_UNPACKED_BYTES1: [15:0]-BYTES2, [31:16]-BYTES3
+	 */
+	reg_adr =
+	    MIPI_TXm_HS_FGn_SECT_UNPACKED_BYTES0(ctrl_no,
+						 frame_id) + (section / 2) * 4;
+	kmb_write_bits(dev_priv, reg_adr, (section % 2) * 16, 16,
+		       unpacked_bytes);
+
+	/* line config */
+	reg_adr = MIPI_TXm_HS_FGn_SECTo_LINE_CFG(ctrl_no, frame_id, section);
+	kmb_write(dev_priv, reg_adr, height_lines);
+	return 0;
+}
+
+static u32 mipi_tx_fg_section_cfg(struct kmb_drm_private *dev_priv,
+				  u8 frame_id,
+				  u8 section,
+				  struct mipi_tx_frame_section_cfg *frame_scfg,
+				  u32 *bits_per_pclk, u32 *wc)
+{
+	u32 ret = 0;
+	u32 unpacked_bytes;
+	struct mipi_data_type_params data_type_parameters;
+	struct mipi_tx_frame_sect_phcfg ph_cfg;
+
+	ret =
+	    mipi_get_datatype_params(frame_scfg->data_type,
+				     frame_scfg->data_mode,
+				     &data_type_parameters);
+	if (ret)
+		return ret;
+	/*
+	 * packet width has to be a multiple of the minimum packet width
+	 * (in pixels) set for each data type
+	 */
+	if (frame_scfg->width_pixels %
+	    data_type_parameters.size_constraint_pixels != 0)
+		return -EINVAL;
+
+	*wc = compute_wc(frame_scfg->width_pixels,
+			 data_type_parameters.size_constraint_pixels,
+			 data_type_parameters.size_constraint_bytes);
+
+	unpacked_bytes =
+	    compute_unpacked_bytes(*wc, data_type_parameters.bits_per_pclk);
+
+	ph_cfg.wc = *wc;
+	ph_cfg.data_mode = frame_scfg->data_mode;
+	ph_cfg.data_type = frame_scfg->data_type;
+	ph_cfg.vchannel = frame_id;
+
+	mipi_tx_fg_section_cfg_regs(dev_priv, frame_id, section,
+				    frame_scfg->height_lines, unpacked_bytes,
+				    &ph_cfg);
+
+	/*caller needs bits_per_clk for additional caluclations */
+	*bits_per_pclk = data_type_parameters.bits_per_pclk;
+	return 0;
+}
+
+static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
+			      struct mipi_ctrl_cfg *ctrl_cfg)
+{
+	u32 ret;
+	u8 frame_id, sect;
+	u32 bits_per_pclk = 0;
+	u32 word_count = 0;
+
+	/*This is the order in which mipi tx needs to be initialized
+	 * set frame section parameters
+	 * set frame specific parameters
+	 * connect lcd to mipi
+	 * multi channel fifo cfg
+	 * set mipitxcctrlcfg
+	 */
+
+	for (frame_id = 0; frame_id < 4; frame_id++) {
+		/* find valid frame, assume only one valid frame */
+		if (ctrl_cfg->tx_ctrl_cfg.frames[frame_id] == NULL)
+			continue;
+
+		/*TODO - assume there is only one valid section in a frame, so
+		 * bits_per_pclk and word_count are only set once
+		 */
+		for (sect = 0; sect < MIPI_CTRL_VIRTUAL_CHANNELS; sect++) {
+			if (ctrl_cfg->tx_ctrl_cfg.frames[frame_id]->sections[sect]
+					== NULL)
+				continue;
+
+			ret = mipi_tx_fg_section_cfg(dev_priv, frame_id, sect,
+						     ctrl_cfg->tx_ctrl_cfg.frames[frame_id]->sections[sect],
+						     &bits_per_pclk,
+						     &word_count);
+			if (ret)
+				return ret;
+
+		}
+
+		/*function for setting frame sepecific parameters will be
+		 * called here bits_per_pclk and word_count will be passed
+		 * in to this function
+		 */
+
+	}
+	return ret;
+}
+
 void kmb_dsi_init(struct drm_device *dev)
 {
 	struct kmb_dsi *kmb_dsi;
@@ -139,6 +465,7 @@ void kmb_dsi_init(struct drm_device *dev)
 	struct kmb_connector *kmb_connector;
 	struct drm_connector *connector;
 	struct kmb_dsi_host *host;
+	struct kmb_drm_private *dev_priv = dev->dev_private;
 
 	kmb_dsi = kzalloc(sizeof(*kmb_dsi), GFP_KERNEL);
 	if (!kmb_dsi)
@@ -171,4 +498,6 @@ void kmb_dsi_init(struct drm_device *dev)
 	connector->encoder = encoder;
 	drm_connector_attach_encoder(connector, encoder);
 
+	/* initialize mipi controller */
+	mipi_tx_init_cntrl(dev_priv, &mipi_tx_init_cfg);
 }
