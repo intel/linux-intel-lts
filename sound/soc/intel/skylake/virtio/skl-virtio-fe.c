@@ -314,43 +314,29 @@ static void vfe_cmd_tx_done(struct virtqueue *vq)
 static void vfe_cmd_handle_rx(struct virtqueue *vq)
 {
 	struct snd_skl_vfe *vfe;
-	unsigned long irq_flags;
-	struct vfe_substream_info *substr_info, *tmp;
-	struct vfe_updated_substream *updated_stream;
+	struct vfe_substream_info *substr_info;
 	struct vfe_stream_pos_desc *pos_desc;
 
 	vfe = vq->vdev->priv;
 
-	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
-	list_for_each_entry_safe(substr_info, tmp,
-			&vfe->substr_info_list, list) {
+	/* Make sure to read data updated by BE */
+	rmb();
+
+	list_for_each_entry(substr_info, &vfe->substr_info_list, list) {
 		pos_desc = substr_info->pos_desc;
-		if (!pos_desc ||
-				pos_desc->be_irq_cnt == pos_desc->fe_irq_cnt)
+		if (!substr_info->open || !substr_info->running || !pos_desc ||
+			pos_desc->be_irq_cnt == pos_desc->fe_irq_cnt)
 			continue;
+
 		if (pos_desc->be_irq_cnt - pos_desc->fe_irq_cnt > 1)
-			dev_warn(&vfe->vdev->dev, "Missed interrupts on fe side\n");
+			dev_warn(&vfe->vdev->dev,
+				"Missed interrupts on fe side for stream %s\n",
+				substr_info->pcm->id);
 		pos_desc->fe_irq_cnt = pos_desc->be_irq_cnt;
 
-		updated_stream =
-			kzalloc(sizeof(*updated_stream), GFP_ATOMIC);
-
-		if (!updated_stream) {
-			dev_err(&vfe->vdev->dev,
-				"Failed to allocate stream update descriptor\n");
-			goto release_lock;
-		}
-
-		updated_stream->substream = substr_info->substream;
-		spin_lock(&vfe->updated_streams_lock);
-		list_add_tail(&updated_stream->list, &vfe->updated_streams);
-		spin_unlock(&vfe->updated_streams_lock);
+		queue_work(vfe->posn_update_queue,
+			&substr_info->update_work);
 	}
-release_lock:
-	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
-
-	queue_work(vfe->posn_update_queue,
-		&vfe->posn_update_work);
 }
 
 static void vfe_not_tx_timeout_handler(struct work_struct *work)
@@ -425,23 +411,17 @@ static void vfe_not_handle_rx(struct virtqueue *vq)
 
 static void vfe_handle_posn(struct work_struct *work)
 {
-	struct vfe_updated_substream *updated_stream_desc;
-	struct snd_pcm_substream *substream;
-	unsigned long irq_flags;
-	struct snd_skl_vfe *vfe =
-		container_of(work, struct snd_skl_vfe, posn_update_work);
+	struct vfe_substream_info *substream_desc =
+		container_of(work, struct vfe_substream_info, update_work);
 
-	while (!list_empty(&vfe->updated_streams)) {
-		spin_lock_irqsave(&vfe->updated_streams_lock, irq_flags);
-		updated_stream_desc = list_first_entry(&vfe->updated_streams,
-				struct vfe_updated_substream, list);
-		list_del(&updated_stream_desc->list);
-		spin_unlock_irqrestore(&vfe->updated_streams_lock, irq_flags);
-		substream = updated_stream_desc->substream;
-		if (!mutex_is_locked(&substream->self_group.mutex))
-			snd_pcm_period_elapsed(updated_stream_desc->substream);
-		kfree(updated_stream_desc);
-	}
+	if (substream_desc->pos_desc->fe_irq_cnt -
+			substream_desc->pos_desc->work_cnt > 1)
+		pr_warn("Missed update work on fe side for stream %s\n",
+			substream_desc->pcm->id);
+	substream_desc->pos_desc->work_cnt =
+		substream_desc->pos_desc->fe_irq_cnt;
+
+	snd_pcm_period_elapsed(substream_desc->substream);
 }
 
 static void vfe_handle_tplg(struct snd_skl_vfe *vfe,
@@ -530,8 +510,8 @@ int vfe_pcm_open(struct snd_pcm_substream *substream)
 {
 	struct vfe_substream_info *substr_info;
 	struct vfe_msg_header msg_header;
+	struct vfe_pcm_params pcm_params;
 	struct vfe_pcm_result vbe_result = { .ret = -EIO };
-	unsigned long irq_flags;
 	int ret;
 	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 
@@ -546,7 +526,8 @@ int vfe_pcm_open(struct snd_pcm_substream *substream)
 
 	 vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_OPEN, substream);
 
-	ret = vfe_send_msg(vfe, &msg_header, NULL, 0,
+	ret = vfe_send_msg(vfe, &msg_header,
+		&pcm_params, sizeof(pcm_params),
 		&vbe_result, sizeof(vbe_result));
 	if (ret < 0)
 		return ret;
@@ -554,33 +535,20 @@ int vfe_pcm_open(struct snd_pcm_substream *substream)
 	if (vbe_result.ret < 0)
 		return vbe_result.ret;
 
-	substr_info = kzalloc(sizeof(*substr_info), GFP_KERNEL);
-	if (!substr_info)
-		return -ENOMEM;
+	substr_info = vfe_find_substream_info(vfe, substream);
 
-	substr_info->pcm = substream->pcm;
-	substr_info->substream = substream;
-	substr_info->direction = substream->stream;
-	substr_info->pos_desc =
-		kzalloc(sizeof(*substr_info->pos_desc), GFP_KERNEL);
-	if (!substr_info->pos_desc) {
-		kfree(substr_info);
-		return -ENOMEM;
-	}
-
-	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
-	list_add(&substr_info->list, &vfe->substr_info_list);
-	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
+	if (substr_info)
+		substr_info->open = true;
 
 	return vbe_result.ret;
 }
 
 int vfe_pcm_close(struct snd_pcm_substream *substream)
 {
-	struct vfe_substream_info *sstream_info;
+	struct vfe_substream_info *substr_info;
 	struct vfe_msg_header msg_header;
+	struct vfe_pcm_params pcm_params;
 	struct vfe_pcm_result vbe_result;
-	unsigned long irq_flags;
 	int ret;
 	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 
@@ -588,20 +556,15 @@ int vfe_pcm_close(struct snd_pcm_substream *substream)
 	if (ret)
 		return 0;
 
-	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
-	sstream_info = vfe_find_substream_info(vfe, substream);
+	substr_info = vfe_find_substream_info(vfe, substream);
 
-	if (sstream_info) {
-		kfree(sstream_info->pos_desc);
-
-		list_del(&sstream_info->list);
-		kfree(sstream_info);
-	}
-	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
+	if (substr_info)
+		substr_info->open = false;
 
 	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_CLOSE, substream);
 
-	ret = vfe_send_msg(vfe, &msg_header, NULL, 0,
+	ret = vfe_send_msg(vfe, &msg_header,
+		&pcm_params, sizeof(pcm_params),
 		&vbe_result, sizeof(vbe_result));
 	if (ret < 0)
 		return ret;
@@ -647,11 +610,30 @@ int vfe_pcm_hw_params(struct snd_pcm_substream *substream,
 	return vbe_result.ret;
 }
 
+static int vfe_is_stream_running(int cmd)
+{
+	switch (cmd) {
+	case SNDRV_PCM_TRIGGER_START:
+	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
+	case SNDRV_PCM_TRIGGER_RESUME:
+		return true;
+
+	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+	case SNDRV_PCM_TRIGGER_SUSPEND:
+	case SNDRV_PCM_TRIGGER_STOP:
+	default:
+		return false;
+	}
+
+	return false;
+}
+
 int vfe_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 {
-	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
+	struct vfe_substream_info *substr_info;
 	struct vfe_msg_header msg_header;
 	struct vfe_pcm_result vbe_result;
+	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
 	int ret;
 
 	ret = skl_platform_pcm_trigger(substream, cmd);
@@ -661,6 +643,11 @@ int vfe_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	ret = vfe_is_valid_fe_substream(substream);
 	if (ret)
 		return 0;
+
+	substr_info = vfe_find_substream_info(vfe, substream);
+
+	if (substr_info)
+		substr_info->running = vfe_is_stream_running(cmd);
 
 	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_TRIGGER, substream);
 
@@ -694,6 +681,11 @@ int vfe_pcm_prepare(struct snd_pcm_substream *substream)
 	dma_conf.size = (u64)substream->runtime->dma_bytes;
 	dma_conf.pages = sg_buf->pages;
 	dma_conf.offset = (u64)0;
+
+	substr_info->pos_desc->hw_ptr = 0;
+	substr_info->pos_desc->be_irq_cnt = 0;
+	substr_info->pos_desc->fe_irq_cnt = 0;
+	substr_info->pos_desc->work_cnt = 0;
 
 	dma_conf.stream_pos_addr = virt_to_phys(substr_info->pos_desc);
 	dma_conf.stream_pos_size = sizeof(struct vfe_stream_pos_desc);
@@ -767,6 +759,70 @@ static const char *const vfe_skl_vq_names[SKL_VIRTIO_NUM_OF_VQS] = {
 	SKL_VIRTIO_IPC_NOT_RX_VQ_NAME,
 };
 
+static int vfe_initialize_stream_list_from_pcm_str(struct snd_skl_vfe *vfe,
+	struct snd_pcm_str *pcm_str)
+{
+	struct vfe_substream_info *substr_info;
+	struct snd_pcm_substream *substream;
+
+	if (!pcm_str || !pcm_str->substream)
+		return 0;
+
+	substream = pcm_str->substream;
+	substr_info = kzalloc(sizeof(*substr_info), GFP_KERNEL);
+	if (!substr_info)
+		return -ENOMEM;
+
+	substr_info->pcm = substream->pcm;
+	substr_info->substream = substream;
+	substr_info->direction = substream->stream;
+	substr_info->pos_desc =
+		kzalloc(sizeof(*substr_info->pos_desc), GFP_KERNEL);
+	if (!substr_info->pos_desc) {
+		kfree(substr_info);
+		return -ENOMEM;
+	}
+
+	INIT_WORK(&substr_info->update_work, vfe_handle_posn);
+	list_add(&substr_info->list, &vfe->substr_info_list);
+
+	return 0;
+}
+
+static int vfe_initialize_stream_list_from_pcm(struct snd_skl_vfe *vfe,
+	struct snd_pcm *pcm)
+{
+	int direction, ret;
+
+	for (direction = SNDRV_PCM_STREAM_PLAYBACK;
+			direction <= SNDRV_PCM_STREAM_CAPTURE; direction++) {
+		ret = vfe_initialize_stream_list_from_pcm_str(
+				vfe, &pcm->streams[direction]);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int vfe_initialize_stream_list(struct snd_soc_card *card)
+{
+	const struct snd_soc_pcm_runtime *rtd;
+	int ret;
+	struct snd_skl_vfe *vfe = get_virtio_audio_fe();
+
+	list_for_each_entry(rtd, &card->rtd_list, list) {
+		if (vfe_is_valid_pcm_id(rtd->pcm->id) < 0)
+			continue;
+
+		ret = vfe_initialize_stream_list_from_pcm(vfe, rtd->pcm);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
 static struct snd_soc_acpi_mach vfe_acpi_mach = {
 	.drv_name = "skl_virtio_card",
 	.fw_filename = "intel/dsp_fw_bxtn.bin",
@@ -808,6 +864,7 @@ static int vfe_platform_register(struct snd_skl_vfe *vfe, struct device *dev)
 
 void vfe_notify_machine_ready(struct snd_soc_card *card)
 {
+	vfe_initialize_stream_list(card);
 	kctl_notify_machine_ready(card);
 }
 EXPORT_SYMBOL(vfe_notify_machine_ready);
@@ -1151,19 +1208,15 @@ static int vfe_init(struct virtio_device *vdev)
 	vdev->priv = vfe;
 
 	INIT_LIST_HEAD(&vfe->kcontrols_list);
-	spin_lock_init(&vfe->substream_info_lock);
 	INIT_LIST_HEAD(&vfe->substr_info_list);
 	spin_lock_init(&vfe->ipc_vq_lock);
 	INIT_LIST_HEAD(&vfe->expired_msg_list);
-	spin_lock_init(&vfe->updated_streams_lock);
-	INIT_LIST_HEAD(&vfe->updated_streams);
 
-	INIT_WORK(&vfe->posn_update_work, vfe_handle_posn);
 	INIT_WORK(&vfe->msg_timeout_work, vfe_not_tx_timeout_handler);
 	INIT_WORK(&vfe->message_loop_work, vfe_message_loop);
 
 	vfe->posn_update_queue =  alloc_workqueue("%s",
-		WQ_HIGHPRI | WQ_UNBOUND, 1, "posn_update_queue");
+		WQ_HIGHPRI | WQ_UNBOUND, 0, "posn_update_queue");
 
 	ret = vfe_init_vqs(vfe);
 	if (ret < 0)
