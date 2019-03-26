@@ -174,7 +174,7 @@ static struct crl_register_write_rep ox03a10_1920_1088_12DCG[] = {
 	{ 0x3101, CRL_REG_LEN_08BIT, 0x32 },
 	{ 0x3192, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x3193, CRL_REG_LEN_08BIT, 0x00 },
-	{ 0x3206, CRL_REG_LEN_08BIT, 0x08 },
+	{ 0x3206, CRL_REG_LEN_08BIT, 0xc8 },
 	{ 0x3216, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x3304, CRL_REG_LEN_08BIT, 0x04 },
 	{ 0x3400, CRL_REG_LEN_08BIT, 0x08 },
@@ -1442,6 +1442,10 @@ struct crl_ctrl_data_pair ox03a10_ctrl_data_modes[] = {
 	{
 		.ctrl_id = CRL_CID_EXPOSURE_MODE,
 		.data = 1,
+	},
+	{
+		.ctrl_id = CRL_CID_EXPOSURE_MODE,
+		.data = 2,
 	}
 };
 
