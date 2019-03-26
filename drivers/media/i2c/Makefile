@@ -114,6 +114,7 @@ obj-$(CONFIG_SDR_MAX2175) += max2175.o
 obj-$(CONFIG_VIDEO_CRLMODULE) += crlmodule/
 obj-$(CONFIG_VIDEO_TI964) += ti964.o
 obj-$(CONFIG_VIDEO_MAX9286) += max9286.o
+ti960-objs := ti953-ser.o ti960-des.o
 obj-$(CONFIG_VIDEO_TI960) += ti960.o
 obj-$(CONFIG_VIDEO_CRLMODULE_LITE) += crlmodule-lite/
 obj-$(CONFIG_VIDEO_INTEL_ICI) += ici/
