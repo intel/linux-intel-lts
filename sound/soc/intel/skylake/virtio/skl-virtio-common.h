@@ -35,7 +35,6 @@ struct vfe_stream_pos_desc {
 	u64 hw_ptr;
 	u64 be_irq_cnt;
 	u64 fe_irq_cnt;
-	u64 work_cnt;
 };
 
 struct vfe_dsp_ipc_msg {
