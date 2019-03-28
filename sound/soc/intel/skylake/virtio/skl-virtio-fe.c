@@ -49,6 +49,309 @@ static struct snd_skl_vfe *get_virtio_audio_fe(void)
 	return skl_vfe;
 }
 
+static inline snd_pcm_uframes_t
+snd_pcm_avail(struct snd_pcm_substream *substream)
+{
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		return snd_pcm_playback_avail(substream->runtime);
+	else
+		return snd_pcm_capture_avail(substream->runtime);
+}
+
+static inline snd_pcm_uframes_t
+snd_pcm_hw_avail(struct snd_pcm_substream *substream)
+{
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		return snd_pcm_playback_hw_avail(substream->runtime);
+	else
+		return snd_pcm_capture_hw_avail(substream->runtime);
+}
+
+void vfe_pcm_recover(struct snd_pcm_substream *substream)
+{
+	struct snd_pcm_runtime *runtime;
+	snd_pcm_uframes_t avail;
+	snd_pcm_uframes_t pos;
+
+	if (PCM_RUNTIME_CHECK(substream))
+		return;
+	runtime = substream->runtime;
+	avail = snd_pcm_avail(substream);
+
+	pos = substream->ops->pointer(substream);
+	if (pos == SNDRV_PCM_POS_XRUN ||
+		(runtime->status->state == SNDRV_PCM_STATE_DRAINING
+		&& avail >= runtime->buffer_size) ||
+		avail >= runtime->stop_threshold) {
+		snd_pcm_stop_xrun(substream);
+	}
+}
+
+int vfe_pcm_update_state(struct snd_pcm_substream *substream,
+			 struct snd_pcm_runtime *runtime)
+{
+	snd_pcm_uframes_t avail;
+
+	avail = snd_pcm_avail(substream);
+	if (avail > runtime->avail_max)
+		runtime->avail_max = avail;
+	if (runtime->status->state == SNDRV_PCM_STATE_DRAINING) {
+		if (avail >= runtime->buffer_size)
+			return -EPIPE;
+	} else {
+		if (avail >= runtime->stop_threshold)
+			return -EPIPE;
+	}
+	if (runtime->twake) {
+		if (avail >= runtime->twake)
+			wake_up(&runtime->tsleep);
+	} else if (avail >= runtime->control->avail_min)
+		wake_up(&runtime->sleep);
+	return 0;
+}
+
+
+static void update_audio_tstamp(struct snd_pcm_substream *substream,
+				struct timespec *curr_tstamp,
+				struct timespec *audio_tstamp)
+{
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	u64 audio_frames, audio_nsecs;
+	struct timespec driver_tstamp;
+
+	if (runtime->tstamp_mode != SNDRV_PCM_TSTAMP_ENABLE)
+		return;
+
+	if (!(substream->ops->get_time_info) ||
+		(runtime->audio_tstamp_report.actual_type ==
+			SNDRV_PCM_AUDIO_TSTAMP_TYPE_DEFAULT)) {
+
+		/*
+		 * provide audio timestamp derived from pointer position
+		 * add delay only if requested
+		 */
+
+		audio_frames = runtime->hw_ptr_wrap + runtime->status->hw_ptr;
+
+		if (runtime->audio_tstamp_config.report_delay) {
+			if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+				audio_frames -=  runtime->delay;
+			else
+				audio_frames +=  runtime->delay;
+		}
+		audio_nsecs = div_u64(audio_frames * 1000000000LL,
+				runtime->rate);
+		*audio_tstamp = ns_to_timespec(audio_nsecs);
+	}
+	if (!timespec_equal(&runtime->status->audio_tstamp, audio_tstamp)) {
+		runtime->status->audio_tstamp = *audio_tstamp;
+		runtime->status->tstamp = *curr_tstamp;
+	}
+
+	/*
+	 * re-take a driver timestamp to let apps detect if the reference tstamp
+	 * read by low-level hardware was provided with a delay
+	 */
+	snd_pcm_gettime(substream->runtime, (struct timespec *)&driver_tstamp);
+	runtime->driver_tstamp = driver_tstamp;
+}
+
+static int vfe_pcm_update_hw_ptr(struct snd_pcm_substream *substream,
+				  unsigned int in_interrupt)
+{
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	snd_pcm_uframes_t pos;
+	snd_pcm_uframes_t old_hw_ptr, new_hw_ptr, hw_base;
+	snd_pcm_sframes_t hdelta, delta;
+	unsigned long jdelta;
+	unsigned long curr_jiffies;
+	struct timespec curr_tstamp;
+	struct timespec audio_tstamp;
+	int crossed_boundary = 0;
+
+	old_hw_ptr = runtime->status->hw_ptr;
+
+	/*
+	 * group pointer, time and jiffies reads to allow for more
+	 * accurate correlations/corrections.
+	 * The values are stored at the end of this routine after
+	 * corrections for hw_ptr position
+	 */
+	pos = substream->ops->pointer(substream);
+	curr_jiffies = jiffies;
+	if (runtime->tstamp_mode == SNDRV_PCM_TSTAMP_ENABLE) {
+		if ((substream->ops->get_time_info) &&
+			(runtime->audio_tstamp_config.type_requested
+				!= SNDRV_PCM_AUDIO_TSTAMP_TYPE_DEFAULT)) {
+			substream->ops->get_time_info(substream, &curr_tstamp,
+						&audio_tstamp,
+						&runtime->audio_tstamp_config,
+						&runtime->audio_tstamp_report);
+
+			if (runtime->audio_tstamp_report.actual_type
+					== SNDRV_PCM_AUDIO_TSTAMP_TYPE_DEFAULT)
+				snd_pcm_gettime(runtime,
+					(struct timespec *)&curr_tstamp);
+		} else
+			snd_pcm_gettime(runtime,
+				(struct timespec *)&curr_tstamp);
+	}
+
+	if (pos == SNDRV_PCM_POS_XRUN)
+		return -EPIPE;
+
+	if (pos >= runtime->buffer_size)
+		pos = 0;
+
+	pos -= pos % runtime->min_align;
+	hw_base = runtime->hw_ptr_base;
+	new_hw_ptr = hw_base + pos;
+	if (in_interrupt) {
+		/* we know that one period was processed */
+		/* delta = "expected next hw_ptr" for in_interrupt != 0 */
+		delta = runtime->hw_ptr_interrupt + runtime->period_size;
+		if (delta > new_hw_ptr) {
+			/* check for double acknowledged interrupts */
+			hdelta = curr_jiffies - runtime->hw_ptr_jiffies;
+			if (hdelta > runtime->hw_ptr_buffer_jiffies/2 + 1) {
+				hw_base += runtime->buffer_size;
+				if (hw_base >= runtime->boundary) {
+					hw_base = 0;
+					crossed_boundary++;
+				}
+				new_hw_ptr = hw_base + pos;
+				goto __delta;
+			}
+		}
+	}
+	/* new_hw_ptr might be lower than old_hw_ptr in case when */
+	/* pointer crosses the end of the ring buffer */
+	if (new_hw_ptr < old_hw_ptr) {
+		hw_base += runtime->buffer_size;
+		if (hw_base >= runtime->boundary) {
+			hw_base = 0;
+			crossed_boundary++;
+		}
+		new_hw_ptr = hw_base + pos;
+	}
+__delta:
+	delta = new_hw_ptr - old_hw_ptr;
+	if (delta < 0)
+		delta += runtime->boundary;
+
+	if (runtime->no_period_wakeup) {
+		snd_pcm_sframes_t xrun_threshold;
+		/*
+		 * Without regular period interrupts, we have to check
+		 * the elapsed time to detect xruns.
+		 */
+		jdelta = curr_jiffies - runtime->hw_ptr_jiffies;
+		if (jdelta < runtime->hw_ptr_buffer_jiffies / 2)
+			goto no_delta_check;
+		hdelta = jdelta - delta * HZ / runtime->rate;
+		xrun_threshold = runtime->hw_ptr_buffer_jiffies / 2 + 1;
+		while (hdelta > xrun_threshold) {
+			delta += runtime->buffer_size;
+			hw_base += runtime->buffer_size;
+			if (hw_base >= runtime->boundary) {
+				hw_base = 0;
+				crossed_boundary++;
+			}
+			new_hw_ptr = hw_base + pos;
+			hdelta -= runtime->hw_ptr_buffer_jiffies;
+		}
+		goto no_delta_check;
+	}
+
+	/* something must be really wrong */
+	if (delta >= runtime->buffer_size + runtime->period_size)
+		return 0;
+
+	/* Skip the jiffies check for hardwares with BATCH flag.
+	 * Such hardware usually just increases the position at each IRQ,
+	 * thus it can't give any strange position.
+	 */
+	if (runtime->hw.info & SNDRV_PCM_INFO_BATCH)
+		goto no_jiffies_check;
+	hdelta = delta;
+	if (hdelta < runtime->delay)
+		goto no_jiffies_check;
+	hdelta -= runtime->delay;
+	jdelta = curr_jiffies - runtime->hw_ptr_jiffies;
+	if (((hdelta * HZ) / runtime->rate) > jdelta + HZ/100) {
+		delta = jdelta /
+			(((runtime->period_size * HZ) / runtime->rate)
+								+ HZ/100);
+		/* move new_hw_ptr according jiffies not pos variable */
+		new_hw_ptr = old_hw_ptr;
+		hw_base = delta;
+		/* use loop to avoid checks for delta overflows */
+		/* the delta value is small or zero in most cases */
+		while (delta > 0) {
+			new_hw_ptr += runtime->period_size;
+			if (new_hw_ptr >= runtime->boundary) {
+				new_hw_ptr -= runtime->boundary;
+				crossed_boundary--;
+			}
+			delta--;
+		}
+
+		/* reset values to proper state */
+		delta = 0;
+		hw_base = new_hw_ptr - (new_hw_ptr % runtime->buffer_size);
+	}
+ no_jiffies_check:
+ no_delta_check:
+	if (runtime->status->hw_ptr == new_hw_ptr) {
+		update_audio_tstamp(substream, &curr_tstamp, &audio_tstamp);
+		return 0;
+	}
+
+	//Not supported in atomic context
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
+	    runtime->silence_size > 0)
+		return -EINVAL;
+
+	if (in_interrupt) {
+		delta = new_hw_ptr - runtime->hw_ptr_interrupt;
+		if (delta < 0)
+			delta += runtime->boundary;
+		delta -= (snd_pcm_uframes_t)delta % runtime->period_size;
+		runtime->hw_ptr_interrupt += delta;
+		if (runtime->hw_ptr_interrupt >= runtime->boundary)
+			runtime->hw_ptr_interrupt -= runtime->boundary;
+	}
+	runtime->hw_ptr_base = hw_base;
+	runtime->status->hw_ptr = new_hw_ptr;
+	runtime->hw_ptr_jiffies = curr_jiffies;
+	if (crossed_boundary) {
+		snd_BUG_ON(crossed_boundary != 1);
+		runtime->hw_ptr_wrap += runtime->boundary;
+	}
+
+	update_audio_tstamp(substream, &curr_tstamp, &audio_tstamp);
+
+	return vfe_pcm_update_state(substream, runtime);
+}
+
+int vfe_pcm_period_elapsed(struct vfe_substream_info *substream_info)
+{
+	struct snd_pcm_runtime *runtime;
+	struct snd_pcm_substream *substream = substream_info->substream;
+	int ret = 0;
+
+	if (PCM_RUNTIME_CHECK(substream))
+		return ret;
+	runtime = substream->runtime;
+	if (!snd_pcm_running(substream))
+		return ret;
+
+	ret = vfe_pcm_update_hw_ptr(substream, 1);
+	kill_fasync(&runtime->fasync, SIGIO, POLL_IN);
+
+	return ret;
+}
+
 struct vfe_substream_info *vfe_find_substream_info_by_pcm(
 	struct snd_skl_vfe *vfe, char *pcm_id, int direction)
 {
@@ -313,6 +616,7 @@ static void vfe_cmd_handle_rx(struct virtqueue *vq)
 	struct snd_skl_vfe *vfe;
 	struct vfe_substream_info *substr_info;
 	struct vfe_stream_pos_desc *pos_desc;
+	int irq_diff;
 
 	vfe = vq->vdev->priv;
 
@@ -322,17 +626,27 @@ static void vfe_cmd_handle_rx(struct virtqueue *vq)
 	list_for_each_entry(substr_info, &vfe->substr_info_list, list) {
 		pos_desc = substr_info->pos_desc;
 		if (!substr_info->open || !substr_info->running || !pos_desc ||
-			pos_desc->be_irq_cnt == pos_desc->fe_irq_cnt)
+			pos_desc->be_irq_cnt == pos_desc->fe_irq_cnt ||
+			mutex_is_locked(
+				&substr_info->substream->self_group.mutex))
 			continue;
 
-		if (pos_desc->be_irq_cnt - pos_desc->fe_irq_cnt > 1)
+		irq_diff = pos_desc->be_irq_cnt - pos_desc->fe_irq_cnt;
+		if (irq_diff > 1)
 			dev_warn(&vfe->vdev->dev,
-				"Missed interrupts on fe side for stream %s\n",
-				substr_info->pcm->id);
+				"Missed interrupts [%d] on fe side for stream %s\n",
+				irq_diff, substr_info->pcm->id);
 		pos_desc->fe_irq_cnt = pos_desc->be_irq_cnt;
 
-		queue_work(vfe->posn_update_queue,
-			&substr_info->update_work);
+		if (vfe_pcm_period_elapsed(substr_info) < 0) {
+			dev_warn(&vfe->vdev->dev,
+				"Period elapsed notification failed, try to recover\n");
+			if (!queue_work(vfe->posn_update_queue,
+					&substr_info->update_work))
+				dev_warn(&vfe->vdev->dev,
+					"Update work still in progress for stream %s\n",
+					substr_info->pcm->id);
+		}
 	}
 }
 
@@ -381,14 +695,7 @@ static void vfe_handle_posn(struct work_struct *work)
 	struct vfe_substream_info *substream_desc =
 		container_of(work, struct vfe_substream_info, update_work);
 
-	if (substream_desc->pos_desc->fe_irq_cnt -
-			substream_desc->pos_desc->work_cnt > 1)
-		pr_warn("Missed update work on fe side for stream %s\n",
-			substream_desc->pcm->id);
-	substream_desc->pos_desc->work_cnt =
-		substream_desc->pos_desc->fe_irq_cnt;
-
-	snd_pcm_period_elapsed(substream_desc->substream);
+	vfe_pcm_recover(substream_desc->substream);
 }
 
 static void vfe_handle_tplg(struct snd_skl_vfe *vfe,
@@ -421,7 +728,6 @@ err_handler:
 static void vfe_tx_message_loop(struct work_struct *work)
 {
 	enum vfe_ipc_msg_status msg_status;
-	unsigned long irq_flags;
 	struct vfe_ipc_msg *msg;
 	struct snd_skl_vfe *vfe =
 		container_of(work, struct snd_skl_vfe, tx_message_loop_work);
@@ -690,7 +996,6 @@ int vfe_pcm_prepare(struct snd_pcm_substream *substream)
 	substr_info->pos_desc->hw_ptr = 0;
 	substr_info->pos_desc->be_irq_cnt = 0;
 	substr_info->pos_desc->fe_irq_cnt = 0;
-	substr_info->pos_desc->work_cnt = 0;
 
 	dma_conf.stream_pos_addr = virt_to_phys(substr_info->pos_desc);
 	dma_conf.stream_pos_size = sizeof(struct vfe_stream_pos_desc);
