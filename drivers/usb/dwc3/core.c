@@ -1212,6 +1212,7 @@ static int dwc3_suspend_common(struct dwc3 *dwc)
 		spin_lock_irqsave(&dwc->lock, flags);
 		dwc3_gadget_suspend(dwc);
 		spin_unlock_irqrestore(&dwc->lock, flags);
+		synchronize_irq(dwc->irq_gadget);
 		break;
 	case USB_DR_MODE_HOST:
 	default:
