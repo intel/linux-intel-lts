@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/x86_64 4.19.0-rc8 Kernel Configuration
+# Linux/x86_64 4.19.28 Kernel Configuration
 #
 
 #
@@ -35,7 +35,8 @@ CONFIG_HAVE_KERNEL_LZ4=y
 CONFIG_KERNEL_LZ4=y
 CONFIG_DEFAULT_HOSTNAME="localhost"
 CONFIG_SWAP=y
-# CONFIG_SYSVIPC is not set
+CONFIG_SYSVIPC=y
+CONFIG_SYSVIPC_SYSCTL=y
 CONFIG_POSIX_MQUEUE=y
 CONFIG_POSIX_MQUEUE_SYSCTL=y
 # CONFIG_CROSS_MEMORY_ATTACH is not set
