@@ -1,5 +1,5 @@
 menuconfig INTEL_SOCWATCH
-	depends on X86
+	depends on X86 || X86_64
 	tristate "SocWatch Driver Support"
 	default m
 	help
