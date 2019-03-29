@@ -7,6 +7,7 @@ config INTEL_SEP
 	  SEP is a command line tool for doing hardware-based sampling using
 	  event-based sampling (EBS).
 	depends on X86 || X86_64
+	default y
 
 config SEP
 	tristate "SEP kernel driver"
