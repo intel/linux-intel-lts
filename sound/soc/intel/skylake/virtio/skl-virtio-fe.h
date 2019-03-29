@@ -25,6 +25,11 @@ struct vfe_substream_info {
 	struct list_head list;
 };
 
+struct vfe_updated_substream {
+	struct snd_pcm_substream *substream;
+	struct list_head list;
+};
+
 struct vskl_vfe_tplg {
 	struct firmware tplg_data;
 	u64 data_ready;
@@ -68,6 +73,9 @@ struct snd_skl_vfe {
 	struct list_head substr_info_list;
 
 	struct list_head expired_msg_list;
+
+	spinlock_t updated_streams_lock;
+	struct list_head updated_streams;
 
 	int (*send_dsp_ipc_msg)(struct snd_skl_vfe *vfe,
 		struct ipc_message *msg);

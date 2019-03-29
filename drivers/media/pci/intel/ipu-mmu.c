@@ -341,16 +341,19 @@ static void ipu_mmu_domain_destroy(struct iommu_domain *domain)
 	if (adom->iova_addr_trash) {
 		iova = find_iova(&adom->dmap->iovad, adom->iova_addr_trash >>
 				 PAGE_SHIFT);
-		/* unmap and free the corresponding trash buffer iova */
-		iommu_unmap(domain, iova->pfn_lo << PAGE_SHIFT,
-			    (iova->pfn_hi - iova->pfn_lo + 1) << PAGE_SHIFT);
-		__free_iova(&adom->dmap->iovad, iova);
 
-		/*
-		 * Set iova_addr_trash in mmu to 0, so that on next HW init
-		 * this will be mapped again.
-		 */
-		adom->iova_addr_trash = 0;
+		if (iova) {
+			/* unmap and free the corresponding trash buffer iova */
+			iommu_unmap(domain, iova->pfn_lo << PAGE_SHIFT,
+				   (iova->pfn_hi - iova->pfn_lo + 1) << PAGE_SHIFT);
+			__free_iova(&adom->dmap->iovad, iova);
+
+			/*
+			* Set iova_addr_trash in mmu to 0, so that on next HW init
+			* this will be mapped again.
+			*/
+			adom->iova_addr_trash = 0;
+		}
 	}
 
 	for (l1_idx = 0; l1_idx < ISP_L1PT_PTES; l1_idx++)

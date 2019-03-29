@@ -558,6 +558,8 @@ struct intel_fbc {
 			int adjusted_y;
 
 			int y;
+
+			uint16_t pixel_blend_mode;
 		} plane;
 
 		struct {
@@ -1609,6 +1611,8 @@ struct drm_i915_private {
 	void __iomem *regs;
 	struct gvt_shared_page *shared_page;
 	spinlock_t shared_page_lock;
+	spinlock_t pvmmio_gtt_lock;
+	spinlock_t pvmmio_ppgtt_lock;
 
 	struct intel_uncore uncore;
 

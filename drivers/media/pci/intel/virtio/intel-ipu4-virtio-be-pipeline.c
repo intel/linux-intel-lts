@@ -31,9 +31,10 @@ int process_pipeline_open(struct ipu4_virtio_req_info *req_info)
 	pr_info("process_device_open: /dev/intel_pipeline");
 	if (!pipeline) {
 		pipeline = filp_open("/dev/intel_pipeline", O_RDWR | O_NONBLOCK, 0);
-		if (!pipeline) {
+		if (IS_ERR(pipeline) || !pipeline) {
 			pr_err("%s: no pipeline device exists on host OS",
 					__func__);
+			pipeline = NULL;
 			return IPU4_REQ_ERROR;
 		}
 	}
@@ -62,7 +63,7 @@ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
 	struct ici_isys_pipeline_device *dev;
 	struct ici_node_desc *host_virt;
 	struct ipu4_virtio_req *req;
-	int domid = req_info->domid;
+	int domid;
 
 	pr_debug("%s\n", __func__);
 
@@ -76,6 +77,7 @@ int process_enum_nodes(struct ipu4_virtio_req_info *req_info)
 		pr_err("%s: NULL req_info", __func__);
 		return IPU4_REQ_ERROR;
 	}
+	domid = req_info->domid;
 	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
@@ -100,7 +102,7 @@ int process_enum_links(struct ipu4_virtio_req_info *req_info)
 	struct ici_isys_pipeline_device *dev;
 	struct ici_links_query *host_virt;
 	struct ipu4_virtio_req *req;
-	int domid = req_info->domid;
+	int domid;
 
 	pr_debug("%s\n", __func__);
 
@@ -114,6 +116,7 @@ int process_enum_links(struct ipu4_virtio_req_info *req_info)
 		pr_err("%s: NULL req_info", __func__);
 		return IPU4_REQ_ERROR;
 	}
+	domid = req_info->domid;
 	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
@@ -136,7 +139,7 @@ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
 	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_supported_format_desc *host_virt;
 	struct ipu4_virtio_req *req;
-	int domid = req_info->domid;
+	int domid;
 
 	pr_debug("%s\n", __func__);
 
@@ -150,6 +153,7 @@ int process_get_supported_framefmt(struct ipu4_virtio_req_info *req_info)
 		pr_err("%s: NULL req_info", __func__);
 		return IPU4_REQ_ERROR;
 	}
+	domid = req_info->domid;
 	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
@@ -173,7 +177,7 @@ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
 	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_framefmt *host_virt;
 	struct ipu4_virtio_req *req;
-	int domid = req_info->domid;
+	int domid;
 
 	pr_debug("%s\n", __func__);
 
@@ -187,6 +191,7 @@ int process_set_framefmt(struct ipu4_virtio_req_info *req_info)
 		pr_err("%s: NULL req_info", __func__);
 		return IPU4_REQ_ERROR;
 	}
+	domid = req_info->domid;
 	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
@@ -210,7 +215,7 @@ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
 	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_framefmt *host_virt;
 	struct ipu4_virtio_req *req;
-	int domid = req_info->domid;
+	int domid;
 
 	pr_debug("%s\n", __func__);
 
@@ -224,6 +229,7 @@ int process_get_framefmt(struct ipu4_virtio_req_info *req_info)
 		pr_err("%s: NULL req_info", __func__);
 		return IPU4_REQ_ERROR;
 	}
+	domid = req_info->domid;
 	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
@@ -247,7 +253,7 @@ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
 	struct ici_isys_pipeline_device *dev;
 	struct ici_link_desc *host_virt;
 	struct ipu4_virtio_req *req;
-	int domid = req_info->domid;
+	int domid;
 
 	pr_debug("%s\n", __func__);
 
@@ -261,6 +267,7 @@ int process_setup_pipe(struct ipu4_virtio_req_info *req_info)
 		pr_err("%s: NULL req_info", __func__);
 		return IPU4_REQ_ERROR;
 	}
+	domid = req_info->domid;
 	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
@@ -284,7 +291,7 @@ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
 	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_selection *host_virt;
 	struct ipu4_virtio_req *req;
-	int domid = req_info->domid;
+	int domid;
 
 	pr_debug("%s\n", __func__);
 
@@ -298,6 +305,7 @@ int process_pad_set_sel(struct ipu4_virtio_req_info *req_info)
 		pr_err("%s: NULL req_info", __func__);
 		return IPU4_REQ_ERROR;
 	}
+	domid = req_info->domid;
 	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,
@@ -321,7 +329,7 @@ int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
 	struct ici_isys_pipeline_device *dev;
 	struct ici_pad_selection *host_virt;
 	struct ipu4_virtio_req *req;
-	int domid = req_info->domid;
+	int domid;
 
 	pr_debug("%s\n", __func__);
 
@@ -335,6 +343,7 @@ int process_pad_get_sel(struct ipu4_virtio_req_info *req_info)
 		pr_err("%s: NULL req_info", __func__);
 		return IPU4_REQ_ERROR;
 	}
+	domid = req_info->domid;
 	req = req_info->request;
 
 	host_virt = map_guest_phys(domid, req->payload,

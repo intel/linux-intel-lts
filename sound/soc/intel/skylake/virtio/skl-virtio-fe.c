@@ -157,7 +157,8 @@ static int vfe_send_msg(struct snd_skl_vfe *vfe,
 		return -ENOMEM;
 
 	strncpy(msg_header->domain_name, domain_name,
-		ARRAY_SIZE(msg_header->domain_name));
+		ARRAY_SIZE(msg_header->domain_name)-1);
+	msg_header->domain_name[SKL_VIRTIO_DOMAIN_NAME_LEN-1] = '\0';
 	msg_header->domain_id = domain_id;
 	memcpy(&msg->header, msg_header, sizeof(msg->header));
 	msg->tx_data = tx_data;
@@ -260,72 +261,56 @@ static int vfe_put_inbox_buffer(struct snd_skl_vfe *vfe,
 static int vfe_send_dsp_ipc_msg(struct snd_skl_vfe *vfe,
 	struct ipc_message *msg)
 {
-	struct scatterlist sgs[2];
-	struct vfe_dsp_ipc_msg *ipc_msg;
-	int data_size = sizeof(ipc_msg->header) + sizeof(ipc_msg->data_size);
+	msg->complete = true;
+	list_del(&msg->list);
+	sst_ipc_tx_msg_reply_complete(&vfe->sdev.skl_sst->ipc,
+		msg);
 
-	if (msg->tx_data != NULL && msg->tx_size > 0) {
-		data_size += msg->tx_size;
-	} else {
-		msg->complete = true;
-		list_del(&msg->list);
-		sst_ipc_tx_msg_reply_complete(&vfe->sdev.skl_sst->ipc, msg);
-
-		return 0;
-	}
-
-	ipc_msg = kzalloc(data_size, GFP_ATOMIC);
-	if (!ipc_msg)
-		return -ENOMEM;
-
-	ipc_msg->header = msg->header;
-	ipc_msg->ipc = msg;
-	ipc_msg->data_size = msg->tx_size;
-
-	if (msg->tx_data != NULL && msg->tx_size > 0)
-		memcpy(&ipc_msg->data, msg->tx_data, msg->tx_size);
-
-	sg_init_table(sgs, 2);
-	sg_set_buf(&sgs[SKL_VIRTIO_IPC_MSG],
-			 ipc_msg, data_size);
-	sg_set_buf(&sgs[SKL_VIRTIO_IPC_REPLY],
-			 msg->rx_data, msg->rx_size);
-
-	vfe->msg = msg;
-
-	return vfe_send_virtio_msg(vfe, vfe->ipc_cmd_tx_vq,
-			sgs, 2, ipc_msg, true);
+	return 0;
 }
 
-/* send the IPC message completed, this means the BE has received the cmd */
 static void vfe_cmd_tx_done(struct virtqueue *vq)
 {
-	struct snd_skl_vfe *vfe = vq->vdev->priv;
-	struct vfe_dsp_ipc_msg *msg;
-	unsigned long irq_flags;
-	unsigned int buflen = 0;
-
-	while (true) {
-		spin_lock_irqsave(&vfe->ipc_vq_lock, irq_flags);
-		msg = virtqueue_get_buf(vfe->ipc_cmd_tx_vq, &buflen);
-		spin_unlock_irqrestore(&vfe->ipc_vq_lock, irq_flags);
-
-		if (msg == NULL)
-			break;
-
-		msg->ipc->complete = true;
-		list_del(&msg->ipc->list);
-		sst_ipc_tx_msg_reply_complete(&vfe->sdev.skl_sst->ipc,
-				msg->ipc);
-		kfree(msg);
-	}
 }
 
 static void vfe_cmd_handle_rx(struct virtqueue *vq)
 {
 	struct snd_skl_vfe *vfe;
+	unsigned long irq_flags;
+	struct vfe_substream_info *substr_info, *tmp;
+	struct vfe_updated_substream *updated_stream;
+	struct vfe_stream_pos_desc *pos_desc;
 
 	vfe = vq->vdev->priv;
+
+	spin_lock_irqsave(&vfe->substream_info_lock, irq_flags);
+	list_for_each_entry_safe(substr_info, tmp,
+			&vfe->substr_info_list, list) {
+		pos_desc = substr_info->pos_desc;
+		if (!pos_desc ||
+				pos_desc->be_irq_cnt == pos_desc->fe_irq_cnt)
+			continue;
+		if (pos_desc->be_irq_cnt - pos_desc->fe_irq_cnt > 1)
+			dev_warn(&vfe->vdev->dev, "Missed interrupts on fe side\n");
+		pos_desc->fe_irq_cnt = pos_desc->be_irq_cnt;
+
+		updated_stream =
+			kzalloc(sizeof(*updated_stream), GFP_ATOMIC);
+
+		if (!updated_stream) {
+			dev_err(&vfe->vdev->dev,
+				"Failed to allocate stream update descriptor\n");
+			goto release_lock;
+		}
+
+		updated_stream->substream = substr_info->substream;
+		spin_lock(&vfe->updated_streams_lock);
+		list_add_tail(&updated_stream->list, &vfe->updated_streams);
+		spin_unlock(&vfe->updated_streams_lock);
+	}
+release_lock:
+	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
+
 	queue_work(vfe->posn_update_queue,
 		&vfe->posn_update_work);
 }
@@ -402,24 +387,20 @@ static void vfe_not_handle_rx(struct virtqueue *vq)
 
 static void vfe_handle_posn(struct work_struct *work)
 {
-	struct vfe_substream_info *substr_info;
-	struct vfe_stream_pos_desc *pos_desc;
+	struct vfe_updated_substream *updated_stream_desc;
+	unsigned long irq_flags;
 	struct snd_skl_vfe *vfe =
 		container_of(work, struct snd_skl_vfe, posn_update_work);
 
-	/*stnc pos_desc*/
-	rmb();
+	while (!list_empty(&vfe->updated_streams)) {
+		spin_lock_irqsave(&vfe->updated_streams_lock, irq_flags);
+		updated_stream_desc = list_first_entry(&vfe->updated_streams,
+				struct vfe_updated_substream, list);
+		list_del(&updated_stream_desc->list);
+		spin_unlock_irqrestore(&vfe->updated_streams_lock, irq_flags);
 
-	list_for_each_entry(substr_info, &vfe->substr_info_list, list) {
-		pos_desc = substr_info->pos_desc;
-		if (!pos_desc ||
-				pos_desc->be_irq_cnt == pos_desc->fe_irq_cnt)
-			continue;
-		if (pos_desc->be_irq_cnt - pos_desc->fe_irq_cnt > 1)
-			dev_warn(&vfe->vdev->dev, "Missed interrupts on fe side\n");
-
-		snd_pcm_period_elapsed(substr_info->substream);
-		pos_desc->fe_irq_cnt = pos_desc->be_irq_cnt;
+		snd_pcm_period_elapsed(updated_stream_desc->substream);
+		kfree(updated_stream_desc);
 	}
 }
 
@@ -433,7 +414,11 @@ static void vfe_handle_tplg(struct snd_skl_vfe *vfe,
 		tplg_data->offset, tplg_data->chunk_size);
 
 	mutex_lock(&vfe->tplg.tplg_lock);
-	data_ptr = vfe->tplg.tplg_data.data + tplg_data->offset;
+
+	if (!vfe->tplg.tplg_data.data)
+		goto err_handler;
+
+	data_ptr = (u8 *)vfe->tplg.tplg_data.data + tplg_data->offset;
 	memcpy(data_ptr, tplg_data->data, tplg_data->chunk_size);
 	vfe->tplg.data_ready += tplg_data->chunk_size;
 
@@ -442,6 +427,7 @@ static void vfe_handle_tplg(struct snd_skl_vfe *vfe,
 		wake_up(&vfe->tplg.waitq);
 	}
 
+err_handler:
 	mutex_unlock(&vfe->tplg.tplg_lock);
 }
 
@@ -489,19 +475,15 @@ static struct kctl_ops vfe_kctl_ops = {
 		.send_noti = vfe_send_kctl_msg,
 };
 
-static struct vfe_msg_header
-vfe_get_pcm_msg_header(enum vfe_ipc_msg_type msg_type,
-	struct snd_pcm_substream *substream)
+static void vfe_fill_pcm_msg_header(struct vfe_msg_header *msg_header,
+	enum vfe_ipc_msg_type msg_type, struct snd_pcm_substream *substream)
 {
-		struct vfe_msg_header msg_header;
-		struct vfe_pcm_info *pcm_desc = &msg_header.desc.pcm;
+		struct vfe_pcm_info *pcm_desc = &msg_header->desc.pcm;
 
-		msg_header.cmd = msg_type;
+		msg_header->cmd = msg_type;
 		strncpy(pcm_desc->pcm_id, substream->pcm->id,
 				ARRAY_SIZE(pcm_desc->pcm_id));
 		pcm_desc->direction = substream->stream;
-
-		return msg_header;
 }
 
 int vfe_pcm_open(struct snd_pcm_substream *substream)
@@ -522,7 +504,7 @@ int vfe_pcm_open(struct snd_pcm_substream *substream)
 	if (ret)
 		return 0;
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_OPEN, substream);
+	 vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_OPEN, substream);
 
 	ret = vfe_send_msg(vfe, &msg_header, NULL, 0,
 		&vbe_result, sizeof(vbe_result));
@@ -570,12 +552,14 @@ int vfe_pcm_close(struct snd_pcm_substream *substream)
 	sstream_info = vfe_find_substream_info(vfe, substream);
 
 	if (sstream_info) {
+		kfree(sstream_info->pos_desc);
+
 		list_del(&sstream_info->list);
 		kfree(sstream_info);
 	}
 	spin_unlock_irqrestore(&vfe->substream_info_lock, irq_flags);
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_CLOSE, substream);
+	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_CLOSE, substream);
 
 	ret = vfe_send_msg(vfe, &msg_header, NULL, 0,
 		&vbe_result, sizeof(vbe_result));
@@ -613,7 +597,7 @@ int vfe_pcm_hw_params(struct snd_pcm_substream *substream,
 	vfe_params.period_size = params_period_size(params);
 	vfe_params.periods = params_periods(params);
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_HW_PARAMS, substream);
+	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_HW_PARAMS, substream);
 
 	ret = vfe_send_msg(vfe, &msg_header, &vfe_params, sizeof(vfe_params),
 					&vbe_result, sizeof(vbe_result));
@@ -637,7 +621,7 @@ int vfe_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	if (ret)
 		return 0;
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_TRIGGER, substream);
+	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_TRIGGER, substream);
 
 	return vfe_send_msg(vfe, &msg_header, &cmd, sizeof(cmd), NULL, 0);
 }
@@ -657,6 +641,9 @@ int vfe_pcm_prepare(struct snd_pcm_substream *substream)
 	if (ret)
 		return 0;
 
+	if (!substr_info)
+		return -EINVAL;
+
 	sg_buf = snd_pcm_substream_sgbuf(substream);
 
 	dma_conf.addr = (u64)sg_buf->table[0].addr;
@@ -667,7 +654,7 @@ int vfe_pcm_prepare(struct snd_pcm_substream *substream)
 	dma_conf.stream_pos_addr = virt_to_phys(substr_info->pos_desc);
 	dma_conf.stream_pos_size = sizeof(struct vfe_stream_pos_desc);
 
-	msg_header = vfe_get_pcm_msg_header(VFE_MSG_PCM_PREPARE, substream);
+	vfe_fill_pcm_msg_header(&msg_header, VFE_MSG_PCM_PREPARE, substream);
 
 	ret = vfe_send_msg(vfe, &msg_header, &dma_conf, sizeof(dma_conf),
 		&vbe_result, sizeof(vbe_result));
@@ -1035,7 +1022,7 @@ static int vfe_skl_init(struct virtio_device *vdev)
 
 	err = vfe_init_tplg(vfe, skl);
 	if (err < 0)
-		return err;
+		goto error;
 
 	err = vfe_platform_register(vfe, &vdev->dev);
 	if (err < 0)
@@ -1104,8 +1091,10 @@ static int vfe_init(struct virtio_device *vdev)
 	int ret;
 
 	vfe = devm_kzalloc(&vdev->dev, sizeof(*vfe), GFP_KERNEL);
-	if (!vfe)
-		goto no_mem;
+	if (!vfe) {
+		ret = -ENOMEM;
+		goto err;
+	}
 
 	skl_vfe = vfe;
 	vfe->vdev = vdev;
@@ -1116,6 +1105,8 @@ static int vfe_init(struct virtio_device *vdev)
 	INIT_LIST_HEAD(&vfe->substr_info_list);
 	spin_lock_init(&vfe->ipc_vq_lock);
 	INIT_LIST_HEAD(&vfe->expired_msg_list);
+	spin_lock_init(&vfe->updated_streams_lock);
+	INIT_LIST_HEAD(&vfe->updated_streams);
 
 	INIT_WORK(&vfe->posn_update_work, vfe_handle_posn);
 	INIT_WORK(&vfe->msg_timeout_work, vfe_not_tx_timeout_handler);
@@ -1138,12 +1129,17 @@ static int vfe_init(struct virtio_device *vdev)
 
 	ret = vfe_skl_init(vdev);
 	if (ret < 0)
-		goto err;
+		goto skl_err;
 
 	return 0;
 
-no_mem:
-	ret = -ENOMEM;
+skl_err:
+	virtqueue_disable_cb(vfe->ipc_not_tx_vq);
+	virtqueue_disable_cb(vfe->ipc_not_rx_vq);
+	cancel_work_sync(&vfe->msg_timeout_work);
+	cancel_work_sync(&vfe->message_loop_work);
+	vdev->config->reset(vdev);
+	vdev->config->del_vqs(vdev);
 err:
 	vdev->priv = NULL;
 	return ret;

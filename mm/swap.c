@@ -690,16 +690,6 @@ static inline void remote_lru_add_drain(int cpu, struct cpumask *has_work)
 }
 #endif
 
-static inline void remote_lru_add_drain(int cpu, struct cpumask *has_work)
-{
-	struct work_struct *work = &per_cpu(lru_add_drain_work, cpu);
-
-	INIT_WORK(work, lru_add_drain_per_cpu);
-	queue_work_on(cpu, mm_percpu_wq, work);
-	cpumask_set_cpu(cpu, has_work);
-}
-#endif
-
 /*
  * Doesn't need any cpu hotplug locking because we do rely on per-cpu
  * kworkers being shut down before our page_alloc_cpu_dead callback is

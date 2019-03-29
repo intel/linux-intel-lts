@@ -22,6 +22,12 @@
 #include <linux/errno.h>
 #include <security/keystore_api_common.h>
 
+/**
+ * DAL_KEYSTORE_GCM_IV_SIZE - size of the Initialization Vector
+ *
+ * Dal-keystore supports only 12-byte IV for AES-GCM algorithms
+ * to promote interoperability, efficiency, and simplicity of design.
+ */
 #define DAL_KEYSTORE_GCM_IV_SIZE 12
 #define DAL_KEYSTORE_GCM_AUTH_SIZE 16
 #define DAL_KEYSTORE_MAX_WRAP_KEY_LEN 49

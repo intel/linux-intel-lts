@@ -387,9 +387,6 @@ static int vbe_skl_prepare_dma(struct vbe_substream_info *substr_info,
 static int vbe_skl_assemble_params(struct vfe_pcm_hw_params *vfe_params,
 		struct snd_pcm_hw_params *params)
 {
-	hw_param_interval(params, SNDRV_PCM_HW_PARAM_ACCESS)->min =
-		vfe_params->access;
-
 	hw_param_interval(params, SNDRV_PCM_HW_PARAM_CHANNELS)->min =
 		vfe_params->channels;
 
@@ -419,20 +416,21 @@ static int vbe_skl_assemble_params(struct vfe_pcm_hw_params *vfe_params,
 static int vbe_skl_add_substream_info(struct snd_skl_vbe *vbe, int vm_id,
 		struct snd_pcm_substream *substream)
 {
-	struct vbe_substream_info *substr_info =
-		kzalloc(sizeof(*substr_info), GFP_KERNEL);
+	struct vbe_substream_info *substr_info;
 	/*TODO: call vbe_client_find with proper client_id*/
 	struct snd_skl_vbe_client *client = list_first_entry_or_null(
 			&vbe->client_list, struct snd_skl_vbe_client, list);
-
-	if (!substr_info)
-		return -ENOMEM;
 
 	if (!client) {
 		dev_err(vbe->dev,
 			"Can not find active client [%d].\n", vm_id);
 		return -EINVAL;
 	}
+
+	substr_info = kzalloc(sizeof(*substr_info), GFP_KERNEL);
+
+	if (!substr_info)
+		return -ENOMEM;
 
 	substr_info->pcm = substream->pcm;
 	substr_info->substream = substream;
@@ -542,17 +540,19 @@ static int vbe_skl_pcm_close(const struct skl *sdev, int vm_id,
 	int ret, cnt;
 	struct snd_pcm_substream *substream = substr_info->substream;
 	struct vfe_pcm_result *vbe_result = msg->rx_data;
-
-	const struct snd_sg_buf *sg_buf =
-			snd_pcm_substream_sgbuf(substr_info->substream);
+	struct snd_sg_buf *sg_buf;
 	u64 native_addr = substr_info->native_dma_addr;
 
-	/* restore original dma pages */
-	sg_buf->table[0].addr = native_addr;
-	native_addr &= ~(u64)0xfff;
-	for (cnt = 1; cnt < sg_buf->pages; cnt++) {
-		native_addr += PAGE_SIZE;
-		sg_buf->table[cnt].addr = native_addr;
+	if (snd_pcm_get_dma_buf(substream)) {
+		sg_buf = snd_pcm_substream_sgbuf(substream);
+
+		/* restore original dma pages */
+		sg_buf->table[0].addr = native_addr;
+		native_addr &= ~(u64)0xfff;
+		for (cnt = 1; cnt < sg_buf->pages; cnt++) {
+			native_addr += PAGE_SIZE;
+			sg_buf->table[cnt].addr = native_addr;
+		}
 	}
 
 	if (substr_info->pos_desc) {
@@ -599,16 +599,16 @@ static int vbe_skl_pcm_prepare(struct skl *sdev, int vm_id,
 void vbe_skl_pcm_close_all(struct snd_skl_vbe *vbe,
 		struct snd_skl_vbe_client *client)
 {
-	struct vbe_substream_info *info;
+	struct vbe_substream_info *info, *tmp;
 	struct vbe_ipc_msg msg;
 	int ret;
 
 	msg.rx_data = NULL;
-	list_for_each_entry(info, &client->substr_info_list, list) {
+	list_for_each_entry_safe(info, tmp, &client->substr_info_list, list) {
 		ret = vbe_skl_pcm_close(vbe->sdev, 0, info, &msg);
 		if (ret < 0)
 			dev_err(vbe->dev,
-				"Could not close PCM %.64s\n", info->pcm->id);
+				"Could not close PCM\n");
 	}
 }
 
@@ -735,7 +735,7 @@ static u32 vbe_skl_kcontrol_find_domain_id(const struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static u32 vbe_skl_get_static_domain_id(struct snd_ctl_elem_id *ctl_id)
+static u32 vbe_skl_get_static_domain_id(const struct snd_ctl_elem_id *ctl_id)
 {
 	u32 idx, num = ARRAY_SIZE(kctl_domain_map);
 	u32 size = strnlen(ctl_id->name, sizeof(ctl_id->name));

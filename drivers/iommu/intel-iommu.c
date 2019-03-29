@@ -428,7 +428,6 @@ int intel_iommu_enabled = 0;
 EXPORT_SYMBOL_GPL(intel_iommu_enabled);
 
 static int dmar_map_gfx = 1;
-static int dmar_map_ipu = 1;
 static int dmar_forcedac;
 static int intel_iommu_strict;
 static int intel_iommu_superpage = 1;
@@ -535,10 +534,6 @@ static int __init intel_iommu_setup(char *str)
 		} else if (!strncmp(str, "igfx_off", 8)) {
 			dmar_map_gfx = 0;
 			pr_info("Disable GFX device mapping\n");
-		} else if (!strncmp(str, "ipu_off", 7)) {
-			dmar_map_ipu = 0;
-			printk(KERN_INFO
-				"Intel-IOMMU: disable IPU device mapping\n");
 		} else if (!strncmp(str, "forcedac", 8)) {
 			pr_info("Forcing DAC for PCI devices\n");
 			dmar_forcedac = 1;
@@ -5447,9 +5442,7 @@ DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x006a, quirk_calpella_no_shadow_g
 
 static void quirk_broxton_ipu(struct pci_dev *dev)
 {
-	if (!dmar_map_ipu) {
-		iommu_identity_mapping |= IDENTMAP_IPU;
-	}
+	iommu_identity_mapping |= IDENTMAP_IPU;
 }
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x5a88, quirk_broxton_ipu);
 
