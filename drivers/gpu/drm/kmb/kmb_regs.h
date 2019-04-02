@@ -410,4 +410,41 @@
 				+ (0x400*M) + (0x2C*N) + (8*O))
 #define MIPI_TX_HS_FG0_SECT0_LINE_CFG		(0x44)
 
+#define MIPI_TX_HS_FG0_NUM_LINES		(0x68)
+#define MIPI_TXm_HS_FGn_NUM_LINES(M, N)		(MIPI_TX_HS_FG0_NUM_LINES + \
+						(0x400*M) + (0x2C*N))
+#define MIPI_TX_HS_VSYNC_WIDTHS0		(0x104)
+#define MIPI_TXm_HS_VSYNC_WIDTHn(M, N)		(MIPI_TX_HS_VSYNC_WIDTHS0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_V_BACKPORCHES0		(0x16c)
+#define MIPI_TXm_HS_V_BACKPORCHESn(M, N)	(MIPI_TX_HS_V_BACKPORCHES0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_V_FRONTPORCHES0		(0x174)
+#define MIPI_TXm_HS_V_FRONTPORCHESn(M, N)	(MIPI_TX_HS_V_FRONTPORCHES0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_V_ACTIVE0			(0x17c)
+#define MIPI_TXm_HS_V_ACTIVEn(M, N)		(MIPI_TX_HS_V_ACTIVE0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_HSYNC_WIDTH0			(0x10c)
+#define MIPI_TXm_HS_HSYNC_WIDTHn(M, N)		(MIPI_TX_HS_HSYNC_WIDTH0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_H_BACKPORCH0			(0x11c)
+#define MIPI_TXm_HS_H_BACKPORCHn(M, N)		(MIPI_TX_HS_H_BACKPORCH0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_H_FRONTPORCH0		(0x12c)
+#define MIPI_TXm_HS_H_FRONTPORCHn(M, N)		(MIPI_TX_HS_H_FRONTPORCH0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_H_ACTIVE0			(0x184)
+#define MIPI_TXm_HS_H_ACTIVEn(M, N)		(MIPI_TX_HS_H_ACTIVE0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_LLP_HSYNC_WIDTH0		(0x13c)
+#define MIPI_TXm_HS_LLP_HSYNC_WIDTHn(M, N)	(MIPI_TX_HS_LLP_HSYNC_WIDTH0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_LLP_H_BACKPORCH0		(0x14c)
+#define MIPI_TXm_HS_LLP_H_BACKPORCHn(M, N)	(MIPI_TX_HS_LLP_H_BACKPORCH0 + \
+						(0x400*M) + (0x4*N))
+#define MIPI_TX_HS_LLP_H_FRONTPORCH0		(0x15c)
+#define MIPI_TXm_HS_LLP_H_FRONTPORCHn(M, N)	(MIPI_TX_HS_LLP_H_FRONTPORCH0 \
+						+ (0x400*M) + (0x4*N))
+
 #endif /* __KMB_REGS_H__ */

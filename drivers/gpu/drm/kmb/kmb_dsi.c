@@ -411,6 +411,123 @@ static u32 mipi_tx_fg_section_cfg(struct kmb_drm_private *dev_priv,
 	return 0;
 }
 
+static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_priv,
+				u8 frame_gen,
+				struct mipi_tx_frame_timing_cfg *fg_cfg)
+{
+	u32 sysclk;
+	/*float ppl_llp_ratio; */
+	u32 ppl_llp_ratio;
+	u32 ctrl_no = MIPI_CTRL6, reg_adr, val, offset;
+
+	/*Get system clock for blanking period cnfigurations */
+	/*TODO need to get system clock from clock driver */
+	/* Assume 700 Mhz system clock for now */
+	sysclk = 700;
+
+	/*ppl-pixel packing layer, llp-low level protocol
+	 * frame genartor timing parameters are clocked on the system clock
+	 * whereas as the equivalent parameters in the LLP blocks are clocked
+	 * on LLP Tx clock from the D-PHY - BYTE clock
+	 */
+
+	/*multiply by 1000 to keep the precision */
+	ppl_llp_ratio = ((fg_cfg->bpp / 8) * sysclk * 1000) /
+	    ((fg_cfg->lane_rate_mbps / 8) * fg_cfg->active_lanes);
+
+	/*frame generator number of lines */
+	reg_adr = MIPI_TXm_HS_FGn_NUM_LINES(ctrl_no, frame_gen);
+	kmb_write(dev_priv, reg_adr, fg_cfg->v_active);
+
+	/*vsync width */
+	/*
+	 *there are 2 registers for vsync width -VSA in lines for channels 0-3
+	 *REG_VSYNC_WIDTH0: [15:0]-VSA for channel0, [31:16]-VSA for channel1
+	 *REG_VSYNC_WIDTH1: [15:0]-VSA for channel2, [31:16]-VSA for channel3
+	 */
+	offset = (frame_gen % 2) * 16;
+	reg_adr = MIPI_TXm_HS_VSYNC_WIDTHn(ctrl_no, frame_gen);
+	kmb_write_bits(dev_priv, reg_adr, offset, 16, fg_cfg->vsync_width);
+
+	/*v backporch - same register config like vsync width */
+	reg_adr = MIPI_TXm_HS_V_BACKPORCHESn(ctrl_no, frame_gen);
+	kmb_write_bits(dev_priv, reg_adr, offset, 16, fg_cfg->v_backporch);
+
+	/*v frontporch - same register config like vsync width */
+	reg_adr = MIPI_TXm_HS_V_FRONTPORCHESn(ctrl_no, frame_gen);
+	kmb_write_bits(dev_priv, reg_adr, offset, 16, fg_cfg->v_frontporch);
+
+	/*v active - same register config like vsync width */
+	reg_adr = MIPI_TXm_HS_V_ACTIVEn(ctrl_no, frame_gen);
+	kmb_write_bits(dev_priv, reg_adr, offset, 16, fg_cfg->v_active);
+
+	/*hsyc width */
+	reg_adr = MIPI_TXm_HS_HSYNC_WIDTHn(ctrl_no, frame_gen);
+	kmb_write(dev_priv, reg_adr,
+		  (fg_cfg->hsync_width * ppl_llp_ratio) / 1000);
+
+	/*h backporch */
+	reg_adr = MIPI_TXm_HS_H_BACKPORCHn(ctrl_no, frame_gen);
+	kmb_write(dev_priv, reg_adr,
+		  (fg_cfg->h_backporch * ppl_llp_ratio) / 1000);
+
+	/*h frontporch */
+	reg_adr = MIPI_TXm_HS_H_FRONTPORCHn(ctrl_no, frame_gen);
+	kmb_write(dev_priv, reg_adr,
+		  (fg_cfg->h_frontporch * ppl_llp_ratio) / 1000);
+
+	/*h active */
+	reg_adr = MIPI_TXm_HS_H_ACTIVEn(ctrl_no, frame_gen);
+	/*convert h_active which is wc in bytes to cycles */
+	val = (fg_cfg->h_active * sysclk * 1000) /
+	    ((fg_cfg->lane_rate_mbps / 8) * fg_cfg->active_lanes);
+	val /= 1000;
+	kmb_write(dev_priv, reg_adr, val);
+
+	/* llp hsync width */
+	reg_adr = MIPI_TXm_HS_LLP_HSYNC_WIDTHn(ctrl_no, frame_gen);
+	kmb_write(dev_priv, reg_adr, fg_cfg->hsync_width * (fg_cfg->bpp / 8));
+
+	/* llp h backporch */
+	reg_adr = MIPI_TXm_HS_LLP_H_BACKPORCHn(ctrl_no, frame_gen);
+	kmb_write(dev_priv, reg_adr, fg_cfg->h_backporch * (fg_cfg->bpp / 8));
+
+	/* llp h frontporch */
+	reg_adr = MIPI_TXm_HS_LLP_H_FRONTPORCHn(ctrl_no, frame_gen);
+	kmb_write(dev_priv, reg_adr, fg_cfg->h_frontporch * (fg_cfg->bpp / 8));
+}
+
+static void mipi_tx_fg_cfg(struct kmb_drm_private *dev_priv, u8 frame_gen,
+			   u8 active_lanes, u32 bpp, u32 wc,
+			   u32 lane_rate_mbps, struct mipi_tx_frame_cfg *fg_cfg)
+{
+	u32 i, fg_num_lines = 0;
+	struct mipi_tx_frame_timing_cfg fg_t_cfg;
+
+	/*calculate the total frame generator number of lines based on it's
+	 * active sections
+	 */
+	for (i = 0; i < MIPI_TX_FRAME_GEN_SECTIONS; i++) {
+		if (fg_cfg->sections[i] != NULL)
+			fg_num_lines += fg_cfg->sections[i]->height_lines;
+	}
+
+	fg_t_cfg.bpp = bpp;
+	fg_t_cfg.lane_rate_mbps = lane_rate_mbps;
+	fg_t_cfg.hsync_width = fg_cfg->hsync_width;
+	fg_t_cfg.h_backporch = fg_cfg->h_backporch;
+	fg_t_cfg.h_frontporch = fg_cfg->h_frontporch;
+	fg_t_cfg.h_active = wc;
+	fg_t_cfg.vsync_width = fg_cfg->vsync_width;
+	fg_t_cfg.v_backporch = fg_cfg->v_backporch;
+	fg_t_cfg.v_frontporch = fg_cfg->v_frontporch;
+	fg_t_cfg.v_active = fg_num_lines;
+	fg_t_cfg.active_lanes = active_lanes;
+
+	/*apply frame generator timing setting */
+	mipi_tx_fg_cfg_regs(dev_priv, frame_gen, &fg_t_cfg);
+}
+
 static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
 			      struct mipi_ctrl_cfg *ctrl_cfg)
 {
@@ -432,12 +549,13 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
 		if (ctrl_cfg->tx_ctrl_cfg.frames[frame_id] == NULL)
 			continue;
 
+		/* Frame Section configuration */
 		/*TODO - assume there is only one valid section in a frame, so
 		 * bits_per_pclk and word_count are only set once
 		 */
 		for (sect = 0; sect < MIPI_CTRL_VIRTUAL_CHANNELS; sect++) {
 			if (ctrl_cfg->tx_ctrl_cfg.frames[frame_id]->sections[sect]
-					== NULL)
+			    == NULL)
 				continue;
 
 			ret = mipi_tx_fg_section_cfg(dev_priv, frame_id, sect,
@@ -449,9 +567,17 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
 
 		}
 
+		/* set frame specific parameters */
+		mipi_tx_fg_cfg(dev_priv, frame_id, ctrl_cfg->active_lanes,
+			       bits_per_pclk,
+			       word_count,
+			       ctrl_cfg->lane_rate_mbps,
+			       ctrl_cfg->tx_ctrl_cfg.frames[frame_id]);
 		/*function for setting frame sepecific parameters will be
-		 * called here bits_per_pclk and word_count will be passed
-		 * in to this function
+		 * called here
+		 */
+		/*bits_per_pclk and word_count will be passed in to this
+		 * function
 		 */
 
 	}
