@@ -1,0 +1,4 @@
+# CVE-2019-10125
+0001-aio-clear-IOCB_HIPRI-CVE-2019-10125.patch
+0002-aio-simplify-and-fix-fget-fput-for-io_submit-CVE-2019-10125.patch
+
