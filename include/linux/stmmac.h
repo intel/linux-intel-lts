@@ -224,5 +224,6 @@ struct plat_stmmacenet_data {
 	int ext_snapshot_num;
 	int ext_snapshot_en;
 	bool has_safety_feat;
+	bool is_hfpga;
 };
 #endif

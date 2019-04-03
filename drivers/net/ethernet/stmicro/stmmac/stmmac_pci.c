@@ -291,7 +291,10 @@ static int ehl_common_data(struct pci_dev *pdev,
 
 	plat->rx_queues_to_use = 8;
 	plat->tx_queues_to_use = 8;
-	plat->clk_ptp_rate = 200000000;
+	if (plat->is_hfpga)
+		plat->clk_ptp_rate = 20000000;
+	else
+		plat->clk_ptp_rate = 200000000;
 	ret = intel_mgbe_common_data(pdev, plat);
 	if (ret)
 		return ret;
@@ -330,7 +333,8 @@ static struct stmmac_pci_info ehl_rgmii1g_pci_info = {
 #define EHL_PSE_ETH_DMA_MISC_OFFSET	0x10000
 #define EHL_PSE_ETH_DMA_MISC_DTM_DRAM	3
 #define EHL_PSE_ETH_DMA_TOTAL_CH	16
-static void ehl_pse_work_around(struct pci_dev *pdev)
+static void ehl_pse_work_around(struct pci_dev *pdev,
+				struct plat_stmmacenet_data *plat)
 {
 	void __iomem *tempaddr = pcim_iomap_table(pdev)[0];
 	int i;
@@ -343,6 +347,7 @@ static void ehl_pse_work_around(struct pci_dev *pdev)
 		writel(val, tempaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
 		       + i * sizeof(u32));
 	}
+	plat->is_hfpga = 1;
 }
 
 static int ehl_pse0_common_data(struct pci_dev *pdev,
@@ -350,7 +355,7 @@ static int ehl_pse0_common_data(struct pci_dev *pdev,
 {
 	plat->bus_id = 2;
 	plat->phy_addr = 1;
-	ehl_pse_work_around(pdev);
+	ehl_pse_work_around(pdev, plat);
 	return ehl_common_data(pdev, plat);
 }
 
@@ -381,7 +386,7 @@ static int ehl_pse1_common_data(struct pci_dev *pdev,
 {
 	plat->bus_id = 3;
 	plat->phy_addr = 1;
-	ehl_pse_work_around(pdev);
+	ehl_pse_work_around(pdev, plat);
 	return ehl_common_data(pdev, plat);
 }
 
