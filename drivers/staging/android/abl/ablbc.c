@@ -302,7 +302,7 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 
 	if (what != SYS_RESTART)
 		return NOTIFY_DONE;
-	if (target[0] != '\0') {
+	if ((target != NULL) && (target[0] != '\0')) {
 		ret = set_reboot_target(target);
 		if (ret)
 			pr_err("%s: Failed to set reboot target, ret=%d\n",
