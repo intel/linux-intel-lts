@@ -208,33 +208,6 @@ static int update_connector_state(struct drm_atomic_state *state,
 	return 0;
 }
 
-static int update_primary_plane_state(struct drm_atomic_state *state,
-				      struct drm_crtc *crtc,
-				      struct drm_display_mode *mode,
-				      struct drm_framebuffer *fb)
-{
-	int hdisplay, vdisplay;
-	struct drm_plane_state *primary_state;
-	int ret;
-
-	primary_state = drm_atomic_get_plane_state(state, crtc->primary);
-	ret = drm_atomic_set_crtc_for_plane(primary_state, crtc);
-	if (ret)
-		return ret;
-	drm_mode_get_hv_timing(mode, &hdisplay, &vdisplay);
-	drm_atomic_set_fb_for_plane(primary_state, fb);
-	primary_state->crtc_x = 0;
-	primary_state->crtc_y = 0;
-	primary_state->crtc_w = hdisplay;
-	primary_state->crtc_h = vdisplay;
-	primary_state->src_x = 0 << 16;
-	primary_state->src_y = 0 << 16;
-	primary_state->src_w = hdisplay << 16;
-	primary_state->src_h = vdisplay << 16;
-	primary_state->rotation = DRM_MODE_ROTATE_0;
-
-	return 0;
-}
 
 static int update_atomic_state(struct drm_device *dev,
 			       struct drm_atomic_state *state,
