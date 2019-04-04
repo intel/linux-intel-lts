@@ -55,7 +55,7 @@ struct gpio_bank {
 	u32 saved_datain;
 	u32 level_mask;
 	u32 toggle_mask;
-	raw_spinlock_t lock;
+	hard_spinlock_t lock;
 	raw_spinlock_t wa_lock;
 	struct gpio_chip chip;
 	struct clk *dbck;
@@ -1406,7 +1406,7 @@ static int omap_gpio_probe(struct platform_device *pdev)
 	irqc->irq_bus_lock = omap_gpio_irq_bus_lock,
 	irqc->irq_bus_sync_unlock = gpio_irq_bus_sync_unlock,
 	irqc->name = dev_name(&pdev->dev);
-	irqc->flags = IRQCHIP_MASK_ON_SUSPEND;
+	irqc->flags = IRQCHIP_MASK_ON_SUSPEND | IRQCHIP_PIPELINE_SAFE;
 	irqc->parent_device = dev;
 
 	bank->irq = platform_get_irq(pdev, 0);
