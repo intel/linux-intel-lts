@@ -26,8 +26,10 @@
 #ifndef __KMB_DRV_H__
 #define __KMB_DRV_H__
 
-#define KMB_MAX_WIDTH			16384	/*max width in pixels */
-#define KMB_MAX_HEIGHT			16384	/*max height in pixels */
+#include "kmb_regs.h"
+
+#define KMB_MAX_WIDTH			16384 /*max width in pixels */
+#define KMB_MAX_HEIGHT			16384 /*max height in pixels */
 
 struct kmb_drm_private {
 	struct drm_device drm;
@@ -50,7 +52,12 @@ static inline struct kmb_drm_private *to_kmb(const struct drm_device *dev)
 struct blt_layer_config {
 	unsigned char layer_format;
 };
-
+/*
+ * commenting this out to use hardcoded address for registers
+ * TODO we may need this later if we decide to get the address from
+ * the device tree
+ */
+#ifdef KMB_WRITE
 static inline void kmb_write(struct kmb_drm_private *lcd,
 			     unsigned int reg, u32 value)
 {
@@ -74,6 +81,40 @@ static inline void kmb_write_bits(struct kmb_drm_private *lcd,
 	reg_val &= (~mask);
 	reg_val |= (value << offset);
 	writel(reg_val, lcd->mmio + reg);
+}
+#endif
+
+static inline void kmb_write_lcd(unsigned int reg, u32 value)
+{
+	writel(value, (LCD_BASE_ADDR + reg));
+}
+
+static inline void kmb_write_mipi(unsigned int reg, u32 value)
+{
+	writel(value, (MIPI_BASE_ADDR + reg));
+}
+
+static inline u32 kmb_read_lcd(unsigned int reg)
+{
+	return readl(LCD_BASE_ADDR + reg);
+}
+
+static inline u32 kmb_read_mipi(unsigned int reg)
+{
+	return readl(MIPI_BASE_ADDR + reg);
+}
+
+static inline void kmb_write_bits_mipi(unsigned int reg, u32 offset,
+		u32 num_bits, u32 value)
+{
+	u32 reg_val = kmb_read_mipi(reg);
+	u32 mask = (1 << num_bits) - 1;
+
+	value &= mask;
+	mask <<= offset;
+	reg_val &= (~mask);
+	reg_val |= (value << offset);
+	kmb_write_mipi(reg, reg_val);
 }
 
 int kmb_setup_crtc(struct drm_device *dev);

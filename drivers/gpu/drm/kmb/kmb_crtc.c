@@ -53,25 +53,21 @@ static void kmb_crtc_cleanup(struct drm_crtc *crtc)
 
 static int kmb_crtc_enable_vblank(struct drm_crtc *crtc)
 {
-	struct kmb_drm_private *lcd = crtc_to_kmb_priv(crtc);
-
 	/*clear interrupt */
-	kmb_write(lcd, LCD_INT_CLEAR, LCD_INT_VERT_COMP);
+	kmb_write_lcd(LCD_INT_CLEAR, LCD_INT_VERT_COMP);
 	/*set which interval to generate vertical interrupt */
-	kmb_write(lcd, LCD_VSTATUS_COMPARE, LCD_VSTATUS_COMPARE_VSYNC);
+	kmb_write_lcd(LCD_VSTATUS_COMPARE, LCD_VSTATUS_COMPARE_VSYNC);
 	/* enable vertical interrupt */
-	kmb_write(lcd, LCD_INT_ENABLE, LCD_INT_VERT_COMP);
+	kmb_write_lcd(LCD_INT_ENABLE, LCD_INT_VERT_COMP);
 	return 0;
 }
 
 static void kmb_crtc_disable_vblank(struct drm_crtc *crtc)
 {
-	struct kmb_drm_private *lcd = crtc_to_kmb_priv(crtc);
-
 	/*clear interrupt */
-	kmb_write(lcd, LCD_INT_CLEAR, LCD_INT_VERT_COMP);
+	kmb_write_lcd(LCD_INT_CLEAR, LCD_INT_VERT_COMP);
 	/* disable vertical interrupt */
-	kmb_write(lcd, LCD_INT_ENABLE, 0);
+	kmb_write_lcd(LCD_INT_ENABLE, 0);
 
 /* TBD
  *  set the BIT2 (VERTICAL_COMPARE_INTERRUPT) of the LCD_INT_ENABLE register
@@ -93,7 +89,6 @@ static const struct drm_crtc_funcs kmb_crtc_funcs = {
 
 static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 {
-	struct kmb_drm_private *lcd = crtc_to_kmb_priv(crtc);
 	struct drm_display_mode *m = &crtc->state->adjusted_mode;
 	struct videomode vm;
 	int vsync_start_offset;
@@ -110,30 +105,30 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	vsync_start_offset = m->crtc_vsync_start - m->crtc_hsync_start;
 	vsync_end_offset = m->crtc_vsync_end - m->crtc_hsync_end;
 
-	kmb_write(lcd, LCD_V_ACTIVEHEIGHT, m->crtc_vdisplay - 1);
-	kmb_write(lcd, LCD_V_BACKPORCH, vm.vback_porch - 1);
-	kmb_write(lcd, LCD_V_FRONTPORCH, vm.vfront_porch - 1);
-	kmb_write(lcd, LCD_VSYNC_WIDTH, vm.vsync_len - 1);
-	kmb_write(lcd, LCD_H_ACTIVEWIDTH, m->crtc_hdisplay - 1);
-	kmb_write(lcd, LCD_H_BACKPORCH, vm.hback_porch - 1);
-	kmb_write(lcd, LCD_H_FRONTPORCH, vm.hfront_porch - 1);
-	kmb_write(lcd, LCD_HSYNC_WIDTH, vm.hsync_len - 1);
+	kmb_write_lcd(LCD_V_ACTIVEHEIGHT, m->crtc_vdisplay - 1);
+	kmb_write_lcd(LCD_V_BACKPORCH, vm.vback_porch - 1);
+	kmb_write_lcd(LCD_V_FRONTPORCH, vm.vfront_porch - 1);
+	kmb_write_lcd(LCD_VSYNC_WIDTH, vm.vsync_len - 1);
+	kmb_write_lcd(LCD_H_ACTIVEWIDTH, m->crtc_hdisplay - 1);
+	kmb_write_lcd(LCD_H_BACKPORCH, vm.hback_porch - 1);
+	kmb_write_lcd(LCD_H_FRONTPORCH, vm.hfront_porch - 1);
+	kmb_write_lcd(LCD_HSYNC_WIDTH, vm.hsync_len - 1);
 
 	if (m->flags == DRM_MODE_FLAG_INTERLACE) {
-		kmb_write(lcd, LCD_VSYNC_WIDTH_EVEN, vm.vsync_len - 1);
-		kmb_write(lcd, LCD_V_BACKPORCH_EVEN, vm.vback_porch - 1);
-		kmb_write(lcd, LCD_V_FRONTPORCH_EVEN, vm.vfront_porch - 1);
-		kmb_write(lcd, LCD_V_ACTIVEHEIGHT_EVEN, m->crtc_vdisplay - 1);
-		kmb_write(lcd, LCD_VSYNC_START_EVEN, vsync_start_offset);
-		kmb_write(lcd, LCD_VSYNC_END_EVEN, vsync_end_offset);
+		kmb_write_lcd(LCD_VSYNC_WIDTH_EVEN, vm.vsync_len - 1);
+		kmb_write_lcd(LCD_V_BACKPORCH_EVEN, vm.vback_porch - 1);
+		kmb_write_lcd(LCD_V_FRONTPORCH_EVEN, vm.vfront_porch - 1);
+		kmb_write_lcd(LCD_V_ACTIVEHEIGHT_EVEN,	m->crtc_vdisplay - 1);
+		kmb_write_lcd(LCD_VSYNC_START_EVEN, vsync_start_offset);
+		kmb_write_lcd(LCD_VSYNC_END_EVEN, vsync_end_offset);
 	}
 	/* enable VL1 layer as default */
 	ctrl = LCD_CTRL_ENABLE | LCD_CTRL_VL1_ENABLE;
 	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
-	    | LCD_CTRL_OUTPUT_ENABLED;
-	kmb_write(lcd, LCD_CONTROL, ctrl);
+		| LCD_CTRL_OUTPUT_ENABLED;
+	kmb_write_lcd(LCD_CONTROL, ctrl);
 
-	kmb_write(lcd, LCD_TIMING_GEN_TRIG, ENABLE);
+	kmb_write_lcd(LCD_TIMING_GEN_TRIG, ENABLE);
 
 	/* TBD */
 	/* set clocks here */

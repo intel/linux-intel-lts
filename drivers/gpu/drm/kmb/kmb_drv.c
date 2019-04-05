@@ -44,7 +44,6 @@
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_of.h>
 #include "kmb_drv.h"
-#include "kmb_regs.h"
 #include "kmb_crtc.h"
 #include "kmb_plane.h"
 #include "kmb_dsi.h"
@@ -120,21 +119,20 @@ static void kmb_setup_mode_config(struct drm_device *drm)
 static irqreturn_t kmb_irq(int irq, void *arg)
 {
 	struct drm_device *dev = (struct drm_device *)arg;
-	struct kmb_drm_private *lcd = dev->dev_private;
 	unsigned long status, val;
 
-	status = kmb_read(lcd, LCD_INT_STATUS);
+	status = kmb_read_lcd(LCD_INT_STATUS);
 	if (status & LCD_INT_EOF) {
 		/*To DO - handle EOF interrupt? */
-		kmb_write(lcd, LCD_INT_CLEAR, LCD_INT_EOF);
+		kmb_write_lcd(LCD_INT_CLEAR, LCD_INT_EOF);
 	}
 	if (status & LCD_INT_LINE_CMP) {
 		/* clear line compare interrupt */
-		kmb_write(lcd, LCD_INT_CLEAR, LCD_INT_LINE_CMP);
+		kmb_write_lcd(LCD_INT_CLEAR, LCD_INT_LINE_CMP);
 	}
 	if (status & LCD_INT_VERT_COMP) {
 		/* read VSTATUS */
-		val = kmb_read(lcd, LCD_VSTATUS);
+		val = kmb_read_lcd(LCD_VSTATUS);
 		val = (val & LCD_VSTATUS_VERTICAL_STATUS_MASK);
 		switch (val) {
 		case LCD_VSTATUS_COMPARE_VSYNC:
@@ -142,7 +140,7 @@ static irqreturn_t kmb_irq(int irq, void *arg)
 		case LCD_VSTATUS_COMPARE_ACTIVE:
 		case LCD_VSTATUS_COMPARE_FRONT_PORCH:
 			/* clear vertical compare interrupt */
-			kmb_write(lcd, LCD_INT_CLEAR, LCD_INT_VERT_COMP);
+			kmb_write_lcd(LCD_INT_CLEAR, LCD_INT_VERT_COMP);
 			drm_handle_vblank(dev, 0);
 			break;
 		}
@@ -153,10 +151,8 @@ static irqreturn_t kmb_irq(int irq, void *arg)
 
 static void kmb_irq_reset(struct drm_device *drm)
 {
-	struct kmb_drm_private *lcd = drm->dev_private;
-
-	kmb_write(lcd, LCD_INT_CLEAR, 0xFFFF);
-	kmb_write(lcd, LCD_INT_ENABLE, 0);
+	kmb_write_lcd(LCD_INT_CLEAR, 0xFFFF);
+	kmb_write_lcd(LCD_INT_ENABLE, 0);
 }
 
 DEFINE_DRM_GEM_CMA_FOPS(fops);

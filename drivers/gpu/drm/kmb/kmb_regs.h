@@ -27,6 +27,11 @@
 #define __KMB_REGS_H__
 
 #define ENABLE					 1
+/*from Data Book section 12.5.8.1 page 4322 */
+#define MIPI_BASE_ADDR                          (void *)(0x20900000)
+/*from Data Book section 12.11.6.1 page 4972 */
+#define LCD_BASE_ADDR                           (void *)(0x20930000)
+
 /***************************************************************************
  *		   LCD controller control register defines
  ***************************************************************************/
@@ -388,7 +393,6 @@
 /***************************************************************************
  *		   MIPI controller control register defines
  ***********************************************i****************************/
-#define MIPI_BASE_ADDR				(0x20900000)
 #define MIPI0_HS_BASE_ADDR			(MIPI_BASE_ADDR + 0x400)
 #define MIPI_CTRL_HS_BASE_ADDR			(0x400)
 #define MIPI_TX0_HS_FG0_SECT0_PH		(0x40)

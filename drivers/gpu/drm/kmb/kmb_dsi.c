@@ -343,8 +343,8 @@ static u32 mipi_tx_fg_section_cfg_regs(struct kmb_drm_private *dev_priv,
 	cfg |= ((ph_cfg->data_mode & MIPI_TX_SECT_DM_MASK)
 		<< MIPI_TX_SECT_DM_SHIFT);	/* bits [24:25] */
 	cfg |= MIPI_TX_SECT_DMA_PACKED;
-	kmb_write(dev_priv,
-		  (MIPI_TXm_HS_FGn_SECTo_PH(ctrl_no, frame_id, section)), cfg);
+	kmb_write_mipi((MIPI_TXm_HS_FGn_SECTo_PH(ctrl_no, frame_id,
+					section)), cfg);
 
 	/*unpacked bytes */
 	/*there are 4 frame generators and each fg has 4 sections
@@ -353,15 +353,13 @@ static u32 mipi_tx_fg_section_cfg_regs(struct kmb_drm_private *dev_priv,
 	 *REG_UNPACKED_BYTES0: [15:0]-BYTES0, [31:16]-BYTES1
 	 *REG_UNPACKED_BYTES1: [15:0]-BYTES2, [31:16]-BYTES3
 	 */
-	reg_adr =
-	    MIPI_TXm_HS_FGn_SECT_UNPACKED_BYTES0(ctrl_no,
-						 frame_id) + (section / 2) * 4;
-	kmb_write_bits(dev_priv, reg_adr, (section % 2) * 16, 16,
-		       unpacked_bytes);
+	reg_adr = MIPI_TXm_HS_FGn_SECT_UNPACKED_BYTES0(ctrl_no, frame_id)
+	+ (section/2)*4;
+	kmb_write_bits_mipi(reg_adr, (section % 2)*16, 16, unpacked_bytes);
 
 	/* line config */
 	reg_adr = MIPI_TXm_HS_FGn_SECTo_LINE_CFG(ctrl_no, frame_id, section);
-	kmb_write(dev_priv, reg_adr, height_lines);
+	kmb_write_mipi(reg_adr, height_lines);
 	return 0;
 }
 
@@ -437,7 +435,7 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_priv,
 
 	/*frame generator number of lines */
 	reg_adr = MIPI_TXm_HS_FGn_NUM_LINES(ctrl_no, frame_gen);
-	kmb_write(dev_priv, reg_adr, fg_cfg->v_active);
+	kmb_write_mipi(reg_adr, fg_cfg->v_active);
 
 	/*vsync width */
 	/*
@@ -447,34 +445,31 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_priv,
 	 */
 	offset = (frame_gen % 2) * 16;
 	reg_adr = MIPI_TXm_HS_VSYNC_WIDTHn(ctrl_no, frame_gen);
-	kmb_write_bits(dev_priv, reg_adr, offset, 16, fg_cfg->vsync_width);
+	kmb_write_bits_mipi(reg_adr, offset, 16, fg_cfg->vsync_width);
 
 	/*v backporch - same register config like vsync width */
 	reg_adr = MIPI_TXm_HS_V_BACKPORCHESn(ctrl_no, frame_gen);
-	kmb_write_bits(dev_priv, reg_adr, offset, 16, fg_cfg->v_backporch);
+	kmb_write_bits_mipi(reg_adr, offset, 16, fg_cfg->v_backporch);
 
 	/*v frontporch - same register config like vsync width */
 	reg_adr = MIPI_TXm_HS_V_FRONTPORCHESn(ctrl_no, frame_gen);
-	kmb_write_bits(dev_priv, reg_adr, offset, 16, fg_cfg->v_frontporch);
+	kmb_write_bits_mipi(reg_adr, offset, 16, fg_cfg->v_frontporch);
 
 	/*v active - same register config like vsync width */
 	reg_adr = MIPI_TXm_HS_V_ACTIVEn(ctrl_no, frame_gen);
-	kmb_write_bits(dev_priv, reg_adr, offset, 16, fg_cfg->v_active);
+	kmb_write_bits_mipi(reg_adr, offset, 16, fg_cfg->v_active);
 
 	/*hsyc width */
 	reg_adr = MIPI_TXm_HS_HSYNC_WIDTHn(ctrl_no, frame_gen);
-	kmb_write(dev_priv, reg_adr,
-		  (fg_cfg->hsync_width * ppl_llp_ratio) / 1000);
+	kmb_write_mipi(reg_adr, (fg_cfg->hsync_width * ppl_llp_ratio) / 1000);
 
 	/*h backporch */
 	reg_adr = MIPI_TXm_HS_H_BACKPORCHn(ctrl_no, frame_gen);
-	kmb_write(dev_priv, reg_adr,
-		  (fg_cfg->h_backporch * ppl_llp_ratio) / 1000);
+	kmb_write_mipi(reg_adr, (fg_cfg->h_backporch * ppl_llp_ratio) / 1000);
 
 	/*h frontporch */
 	reg_adr = MIPI_TXm_HS_H_FRONTPORCHn(ctrl_no, frame_gen);
-	kmb_write(dev_priv, reg_adr,
-		  (fg_cfg->h_frontporch * ppl_llp_ratio) / 1000);
+	kmb_write_mipi(reg_adr, (fg_cfg->h_frontporch * ppl_llp_ratio) / 1000);
 
 	/*h active */
 	reg_adr = MIPI_TXm_HS_H_ACTIVEn(ctrl_no, frame_gen);
@@ -482,19 +477,19 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_priv,
 	val = (fg_cfg->h_active * sysclk * 1000) /
 	    ((fg_cfg->lane_rate_mbps / 8) * fg_cfg->active_lanes);
 	val /= 1000;
-	kmb_write(dev_priv, reg_adr, val);
+	kmb_write_mipi(reg_adr, val);
 
 	/* llp hsync width */
 	reg_adr = MIPI_TXm_HS_LLP_HSYNC_WIDTHn(ctrl_no, frame_gen);
-	kmb_write(dev_priv, reg_adr, fg_cfg->hsync_width * (fg_cfg->bpp / 8));
+	kmb_write_mipi(reg_adr, fg_cfg->hsync_width * (fg_cfg->bpp / 8));
 
 	/* llp h backporch */
 	reg_adr = MIPI_TXm_HS_LLP_H_BACKPORCHn(ctrl_no, frame_gen);
-	kmb_write(dev_priv, reg_adr, fg_cfg->h_backporch * (fg_cfg->bpp / 8));
+	kmb_write_mipi(reg_adr, fg_cfg->h_backporch * (fg_cfg->bpp / 8));
 
 	/* llp h frontporch */
 	reg_adr = MIPI_TXm_HS_LLP_H_FRONTPORCHn(ctrl_no, frame_gen);
-	kmb_write(dev_priv, reg_adr, fg_cfg->h_frontporch * (fg_cfg->bpp / 8));
+	kmb_write_mipi(reg_adr, fg_cfg->h_frontporch * (fg_cfg->bpp / 8));
 }
 
 static void mipi_tx_fg_cfg(struct kmb_drm_private *dev_priv, u8 frame_gen,

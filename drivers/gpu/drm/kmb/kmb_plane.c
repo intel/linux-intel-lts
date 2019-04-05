@@ -243,16 +243,16 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	crtc_x = plane->state->crtc_x;
 	crtc_y = plane->state->crtc_y;
 
-	kmb_write(lcd, LCD_LAYERn_WIDTH(plane_id), src_w - 1);
-	kmb_write(lcd, LCD_LAYERn_HEIGHT(plane_id), src_h - 1);
-	kmb_write(lcd, LCD_LAYERn_COL_START(plane_id), crtc_x);
-	kmb_write(lcd, LCD_LAYERn_ROW_START(plane_id), crtc_y);
+	kmb_write_lcd(LCD_LAYERn_WIDTH(plane_id), src_w-1);
+	kmb_write_lcd(LCD_LAYERn_HEIGHT(plane_id), src_h-1);
+	kmb_write_lcd(LCD_LAYERn_COL_START(plane_id), crtc_x);
+	kmb_write_lcd(LCD_LAYERn_ROW_START(plane_id), crtc_y);
 
 	val = set_pixel_format(fb->format->format);
 	val |= set_bits_per_pixel(fb->format);
 	/*CHECKME Leon drvr sets it to 50 try this for now */
 	val |= LCD_LAYER_FIFO_50;
-	kmb_write(lcd, LCD_LAYERn_CFG(plane_id), val);
+	kmb_write_lcd(LCD_LAYERn_CFG(plane_id), val);
 
 	switch (plane_id) {
 	case LAYER_0:
@@ -271,8 +271,8 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 
 	ctrl |= LCD_CTRL_ENABLE;
 	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
-	    | LCD_CTRL_OUTPUT_ENABLED;
-	kmb_write(lcd, LCD_CONTROL, ctrl);
+		| LCD_CTRL_OUTPUT_ENABLED;
+	kmb_write_lcd(LCD_CONTROL, ctrl);
 
 	/*TBD check visible? */
 
@@ -281,24 +281,24 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	    | LCD_DMA_LAYER_CONT_UPDATE | LCD_DMA_LAYER_AXI_BURST_1;
 
 	/* disable DMA first */
-	kmb_write(lcd, LCD_LAYERn_DMA_CFG(plane_id), ~LCD_DMA_LAYER_ENABLE);
+	kmb_write_lcd(LCD_LAYERn_DMA_CFG(plane_id), ~LCD_DMA_LAYER_ENABLE);
 
 	addr = drm_fb_cma_get_gem_addr(fb, plane->state, plane_id);
-	kmb_write(lcd, LCD_LAYERn_DMA_START_ADDR(plane_id), addr);
-	kmb_write(lcd, LCD_LAYERn_DMA_START_SHADOW(plane_id), addr);
+	kmb_write_lcd(LCD_LAYERn_DMA_START_ADDR(plane_id), addr);
+	kmb_write_lcd(LCD_LAYERn_DMA_START_SHADOW(plane_id), addr);
 
 	width = fb->width;
 	height = fb->height;
 	dma_len = width * height * fb->format->cpp[plane_id];
-	kmb_write(lcd, LCD_LAYERn_DMA_LEN(plane_id), dma_len);
+	kmb_write_lcd(LCD_LAYERn_DMA_LEN(plane_id), dma_len);
 
-	kmb_write(lcd, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id),
-		  fb->pitches[plane_id]);
-	kmb_write(lcd, LCD_LAYERn_DMA_LINE_WIDTH(plane_id),
-		  (width * fb->format->cpp[plane_id]));
+	kmb_write_lcd(LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id),
+			fb->pitches[plane_id]);
+	kmb_write_lcd(LCD_LAYERn_DMA_LINE_WIDTH(plane_id),
+			(width*fb->format->cpp[plane_id]));
 
 	/* enable DMA */
-	kmb_write(lcd, LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
+	kmb_write_lcd(LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
 
 	/* FIXME no doc on how to set output format - may need to change
 	 * this later
@@ -311,7 +311,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	out_format |= LCD_OUTF_MIPI_RGB_MODE;
 	/* pixel format from LCD_LAYER_CFG */
 	out_format |= ((val >> 9) & 0x1F);
-	kmb_write(lcd, LCD_OUT_FORMAT_CFG, out_format);
+	kmb_write_lcd(LCD_OUT_FORMAT_CFG, out_format);
 }
 
 static const struct drm_plane_helper_funcs kmb_plane_helper_funcs = {
