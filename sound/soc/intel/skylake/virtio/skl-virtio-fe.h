@@ -13,6 +13,8 @@
 #include "skl-virtio-common.h"
 
 #define VFE_MSG_MSEC_TIMEOUT 100
+#define VFE_MSG_TRIGGER_TIMEOUT 500
+#define VFE_MSG_NO_TIMEOUT 0
 #define VFE_TPLG_LOAD_TIMEOUT 1000
 #define VFE_MSG_BUFF_NUM 3
 
