@@ -3,5 +3,5 @@
 0002-aio-simplify-and-fix-fget-fput-for-io_submit-CVE-2019-10125.patch
 
 # CVE-2020-9857
-0000-inotify-Fix-fsnotify_mark-refcount-leak-in-inotify_u-CVE-2019-9857.patch
+0001-inotify-Fix-fsnotify_mark-refcount-leak-in-inotify_u-CVE-2019-9857.patch
 
