@@ -29,23 +29,36 @@ static void xdp_dump_prog_id(struct nlattr **tb, int attr,
 static int do_xdp_dump_one(struct nlattr *attr, unsigned int ifindex,
 			   const char *name)
 {
+	unsigned char mode = XDP_ATTACHED_NONE;
 	struct nlattr *tb[IFLA_XDP_MAX + 1];
-	unsigned char mode;
+	unsigned char md_btf_enabled = 0;
+	unsigned int md_btf_id = 0;
+	bool attached;
 
 	if (libbpf_nla_parse_nested(tb, IFLA_XDP_MAX, attr, NULL) < 0)
 		return -1;
 
-	if (!tb[IFLA_XDP_ATTACHED])
+	if (!tb[IFLA_XDP_ATTACHED] && !tb[IFLA_XDP_MD_BTF_ID])
 		return 0;
 
-	mode = libbpf_nla_getattr_u8(tb[IFLA_XDP_ATTACHED]);
-	if (mode == XDP_ATTACHED_NONE)
+	if (tb[IFLA_XDP_ATTACHED])
+		mode = libbpf_nla_getattr_u8(tb[IFLA_XDP_ATTACHED]);
+
+	if (tb[IFLA_XDP_MD_BTF_ID]) {
+		md_btf_id = libbpf_nla_getattr_u32(tb[IFLA_XDP_MD_BTF_ID]);
+		md_btf_enabled = libbpf_nla_getattr_u8(tb[IFLA_XDP_MD_BTF_STATE]);
+	}
+
+	attached = (mode != XDP_ATTACHED_NONE);
+	if (!attached && !md_btf_id)
 		return 0;
 
 	NET_START_OBJECT;
 	if (name)
 		NET_DUMP_STR("devname", "%s", name);
 	NET_DUMP_UINT("ifindex", "(%d)", ifindex);
+	NET_DUMP_UINT("md_btf_id", " md_btf_id(%d)", md_btf_id);
+	NET_DUMP_UINT("md_btf_enabled", " md_btf_enabled(%d)", md_btf_enabled);
 
 	if (mode == XDP_ATTACHED_MULTI) {
 		if (json_output) {
