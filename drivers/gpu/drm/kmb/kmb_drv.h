@@ -28,8 +28,8 @@
 
 #include "kmb_regs.h"
 
-#define KMB_MAX_WIDTH			16384 /*max width in pixels */
-#define KMB_MAX_HEIGHT			16384 /*max height in pixels */
+#define KMB_MAX_WIDTH			16384	/*max width in pixels */
+#define KMB_MAX_HEIGHT			16384	/*max height in pixels */
 
 struct kmb_drm_private {
 	struct drm_device drm;
@@ -84,6 +84,11 @@ static inline void kmb_write_bits(struct kmb_drm_private *lcd,
 }
 #endif
 
+static inline void kmb_write(void *reg, u32 value)
+{
+	writel(value, reg);
+}
+
 static inline void kmb_write_lcd(unsigned int reg, u32 value)
 {
 	writel(value, (LCD_BASE_ADDR + reg));
@@ -105,7 +110,7 @@ static inline u32 kmb_read_mipi(unsigned int reg)
 }
 
 static inline void kmb_write_bits_mipi(unsigned int reg, u32 offset,
-		u32 num_bits, u32 value)
+				       u32 num_bits, u32 value)
 {
 	u32 reg_val = kmb_read_mipi(reg);
 	u32 mask = (1 << num_bits) - 1;
@@ -115,6 +120,20 @@ static inline void kmb_write_bits_mipi(unsigned int reg, u32 offset,
 	reg_val &= (~mask);
 	reg_val |= (value << offset);
 	kmb_write_mipi(reg, reg_val);
+}
+
+static inline void kmb_set_bit_mipi(unsigned int reg, u32 offset)
+{
+	u32 reg_val = kmb_read_mipi(reg);
+
+	kmb_write_mipi(reg, reg_val | (1 << offset));
+}
+
+static inline void kmb_clr_bit_mipi(unsigned int reg, u32 offset)
+{
+	u32 reg_val = kmb_read_mipi(reg);
+
+	kmb_write_mipi(reg, reg_val & (~(1 << offset)));
 }
 
 int kmb_setup_crtc(struct drm_device *dev);

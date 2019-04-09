@@ -523,10 +523,41 @@ static void mipi_tx_fg_cfg(struct kmb_drm_private *dev_priv, u8 frame_gen,
 	mipi_tx_fg_cfg_regs(dev_priv, frame_gen, &fg_t_cfg);
 }
 
+static void mipi_tx_multichannel_fifo_cfg(u8 active_lanes, u8 vchannel_id)
+{
+	u32 fifo_size, fifo_rthreshold;
+	u32 ctrl_no = MIPI_CTRL6;
+
+	/*clear all mc fifo channel sizes and thresholds*/
+	kmb_write_mipi(MIPI_TX_HS_MC_FIFO_CTRL_EN, 0);
+	kmb_write_mipi(MIPI_TX_HS_MC_FIFO_CHAN_ALLOC0, 0);
+	kmb_write_mipi(MIPI_TX_HS_MC_FIFO_CHAN_ALLOC1, 0);
+	kmb_write_mipi(MIPI_TX_HS_MC_FIFO_RTHRESHOLD0, 0);
+	kmb_write_mipi(MIPI_TX_HS_MC_FIFO_RTHRESHOLD1, 0);
+
+	fifo_size = (active_lanes > MIPI_D_LANES_PER_DPHY) ?
+		MIPI_CTRL_4LANE_MAX_MC_FIFO_LOC :
+		MIPI_CTRL_2LANE_MAX_MC_FIFO_LOC;
+	/*MC fifo size for virtual channels 0-3 */
+	/*
+	 *REG_MC_FIFO_CHAN_ALLOC0: [8:0]-channel0, [24:16]-channel1
+	 *REG_MC_FIFO_CHAN_ALLOC1: [8:0]-2, [24:16]-channel3
+	 */
+	SET_MC_FIFO_CHAN_ALLOC(ctrl_no, vchannel_id, fifo_size);
+
+	/*set threshold to half the fifo size, actual size=size*16*/
+	fifo_rthreshold = ((fifo_size + 1) * 8) & BIT_MASK_16;
+	SET_MC_FIFO_RTHRESHOLD(ctrl_no, vchannel_id, fifo_rthreshold);
+
+	/*enable the MC FIFO channel corresponding to the Virtual Channel */
+	kmb_set_bit_mipi(MIPI_TXm_HS_MC_FIFO_CTRL_EN(ctrl_no), vchannel_id);
+}
+
 static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
-			      struct mipi_ctrl_cfg *ctrl_cfg)
+		struct mipi_ctrl_cfg *ctrl_cfg)
 {
 	u32 ret;
+	u8 active_vchannels = 0;
 	u8 frame_id, sect;
 	u32 bits_per_pclk = 0;
 	u32 word_count = 0;
@@ -564,18 +595,23 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
 
 		/* set frame specific parameters */
 		mipi_tx_fg_cfg(dev_priv, frame_id, ctrl_cfg->active_lanes,
-			       bits_per_pclk,
-			       word_count,
-			       ctrl_cfg->lane_rate_mbps,
-			       ctrl_cfg->tx_ctrl_cfg.frames[frame_id]);
-		/*function for setting frame sepecific parameters will be
-		 * called here
-		 */
-		/*bits_per_pclk and word_count will be passed in to this
-		 * function
-		 */
+				bits_per_pclk,
+				word_count,
+				ctrl_cfg->lane_rate_mbps,
+				ctrl_cfg->tx_ctrl_cfg.frames[frame_id]);
 
+		active_vchannels++;
+
+		/*connect lcd to mipi */
+		kmb_write(MSS_CAM_BASE_ADDR + MIPI_TX_MSS_LCD_MIPI_CFG, 1);
+
+		break;
 	}
+
+	if (active_vchannels == 0)
+		return -EINVAL;
+	/*Multi-Channel FIFO Configuration*/
+	mipi_tx_multichannel_fifo_cfg(ctrl_cfg->active_lanes, frame_id);
 	return ret;
 }
 

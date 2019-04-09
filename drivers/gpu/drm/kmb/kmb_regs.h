@@ -31,6 +31,7 @@
 #define MIPI_BASE_ADDR                          (void *)(0x20900000)
 /*from Data Book section 12.11.6.1 page 4972 */
 #define LCD_BASE_ADDR                           (void *)(0x20930000)
+#define MSS_CAM_BASE_ADDR			(MIPI_BASE_ADDR + 0x10000)
 
 /***************************************************************************
  *		   LCD controller control register defines
@@ -395,6 +396,9 @@
  ***********************************************i****************************/
 #define MIPI0_HS_BASE_ADDR			(MIPI_BASE_ADDR + 0x400)
 #define MIPI_CTRL_HS_BASE_ADDR			(0x400)
+
+#define MIPI_TX_HS_CTRL				(0x0)
+#define MIPI_TX_HS_SYNC_CFG			(0x8)
 #define MIPI_TX0_HS_FG0_SECT0_PH		(0x40)
 #define MIPI_TXm_HS_FGn_SECTo_PH(M, N, O)	(MIPI_TX0_HS_FG0_SECT0_PH + \
 						(0x400*M) + (0x2C*N) + (8*O))
@@ -409,10 +413,10 @@
 #define MIPI_TX_HS_FG0_SECT_UNPACKED_BYTES0	(0x60)
 #define MIPI_TX_HS_FG0_SECT_UNPACKED_BYTES1	(0x64)
 #define MIPI_TXm_HS_FGn_SECT_UNPACKED_BYTES0(M, N) \
-		(MIPI_TX_HS_FG0_SECT_UNPACKED_BYTES0 + (0x400*M) + (0x2C*N))
-#define MIPI_TXm_HS_FGn_SECTo_LINE_CFG(M, N, O)	(MIPI_TX_HS_FG0_SECT0_LINE_CFG \
-				+ (0x400*M) + (0x2C*N) + (8*O))
+	(MIPI_TX_HS_FG0_SECT_UNPACKED_BYTES0 + (0x400*M) + (0x2C*N))
 #define MIPI_TX_HS_FG0_SECT0_LINE_CFG		(0x44)
+#define MIPI_TXm_HS_FGn_SECTo_LINE_CFG(M, N, O) \
+	(MIPI_TX_HS_FG0_SECT0_LINE_CFG + (0x400*M) + (0x2C*N) + (8*O))
 
 #define MIPI_TX_HS_FG0_NUM_LINES		(0x68)
 #define MIPI_TXm_HS_FGn_NUM_LINES(M, N)		(MIPI_TX_HS_FG0_NUM_LINES + \
@@ -451,4 +455,24 @@
 #define MIPI_TXm_HS_LLP_H_FRONTPORCHn(M, N)	(MIPI_TX_HS_LLP_H_FRONTPORCH0 \
 						+ (0x400*M) + (0x4*N))
 
+#define MIPI_TX_HS_MC_FIFO_CTRL_EN		(0x194)
+#define MIPI_TXm_HS_MC_FIFO_CTRL_EN(M)		(MIPI_TX_HS_MC_FIFO_CTRL_EN \
+						+ (0x400*M))
+#define MIPI_TX_HS_MC_FIFO_CHAN_ALLOC0		(0x198)
+#define MIPI_TX_HS_MC_FIFO_CHAN_ALLOC1		(0x19c)
+#define   MIPI_TXm_HS_MC_FIFO_CHAN_ALLOCn(M, N)	\
+			(MIPI_TX_HS_MC_FIFO_CHAN_ALLOC0 + (0x400*M) + (0x4*N))
+#define   SET_MC_FIFO_CHAN_ALLOC(ctrl, vc, sz)	\
+	kmb_write_bits_mipi(MIPI_TXm_HS_MC_FIFO_CHAN_ALLOCn(ctrl, vc/2), \
+			(vc % 2)*16, 16, sz)
+#define MIPI_TX_HS_MC_FIFO_RTHRESHOLD0		(0x1a0)
+#define MIPI_TX_HS_MC_FIFO_RTHRESHOLD1		(0x1a4)
+#define MIPI_TXm_HS_MC_FIFO_RTHRESHOLDn(M, N)	\
+		(MIPI_TX_HS_MC_FIFO_RTHRESHOLD0 + (0x400*M) + (0x4*N))
+#define SET_MC_FIFO_RTHRESHOLD(ctrl, vc, th)	\
+	kmb_write_bits_mipi(MIPI_TXm_HS_MC_FIFO_RTHRESHOLDn(ctrl, vc/2), \
+			(vc % 2)*16, 16, th)
+
+#define MIPI_TX_MSS_LCD_MIPI_CFG		(0x04)
+#define BIT_MASK_16			  (0xffff)
 #endif /* __KMB_REGS_H__ */

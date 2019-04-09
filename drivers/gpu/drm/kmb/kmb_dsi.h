@@ -56,6 +56,9 @@ struct kmb_connector {
 #define MIPI_TX_FRAME_GEN	4
 #define MIPI_TX_FRAME_GEN_SECTIONS 4
 #define MIPI_CTRL_VIRTUAL_CHANNELS 4
+#define MIPI_D_LANES_PER_DPHY	2
+#define MIPI_CTRL_2LANE_MAX_MC_FIFO_LOC	255
+#define MIPI_CTRL_4LANE_MAX_MC_FIFO_LOC	511
 
 enum mipi_ctrl_num {
 	MIPI_CTRL0 = 0,
