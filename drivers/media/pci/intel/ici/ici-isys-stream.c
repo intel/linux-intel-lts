@@ -960,18 +960,11 @@ static int ici_isys_stream_off(struct file *file, void *fh)
 	if (ip->streaming)
 		ici_isys_set_streaming(as, 0);
 
-	ici_isys_frame_buf_short_packet_destroy(as);
-	mutex_unlock(&as->isys->stream_mutex);
-
-	ici_isys_frame_buf_stream_cancel(as);
-
-	mutex_lock(&as->isys->stream_mutex);
-	//streaming always should be turned off last.
-	//This variable prevents other streams from
-	//starting before we are done with cleanup.
 	ip->streaming = 0;
 	mutex_unlock(&as->isys->stream_mutex);
 
+	ici_isys_frame_buf_short_packet_destroy(as);
+	ici_isys_frame_buf_stream_cancel(as);
 	pipeline_set_power(as, 0);
 	return 0;
 }
