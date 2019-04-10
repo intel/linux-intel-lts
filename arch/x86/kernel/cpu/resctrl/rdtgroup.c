@@ -35,8 +35,8 @@
 
 #include <uapi/linux/magic.h>
 
-#include <asm/intel_rdt_sched.h>
-#include "intel_rdt.h"
+#include <asm/resctrl_sched.h>
+#include "internal.h"
 
 DEFINE_STATIC_KEY_FALSE(rdt_enable_key);
 DEFINE_STATIC_KEY_FALSE(rdt_mon_enable_key);
@@ -268,17 +268,27 @@ static int rdtgroup_cpus_show(struct kernfs_open_file *of,
 			      struct seq_file *s, void *v)
 {
 	struct rdtgroup *rdtgrp;
+	struct cpumask *mask;
 	int ret = 0;
 
 	rdtgrp = rdtgroup_kn_lock_live(of->kn);
 
 	if (rdtgrp) {
-		if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKED)
-			seq_printf(s, is_cpu_list(of) ? "%*pbl\n" : "%*pb\n",
-				   cpumask_pr_args(&rdtgrp->plr->d->cpu_mask));
-		else
+		if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKED) {
+			if (!rdtgrp->plr->d) {
+				rdt_last_cmd_clear();
+				rdt_last_cmd_puts("Cache domain offline\n");
+				ret = -ENODEV;
+			} else {
+				mask = &rdtgrp->plr->d->cpu_mask;
+				seq_printf(s, is_cpu_list(of) ?
+					   "%*pbl\n" : "%*pb\n",
+					   cpumask_pr_args(mask));
+			}
+		} else {
 			seq_printf(s, is_cpu_list(of) ? "%*pbl\n" : "%*pb\n",
 				   cpumask_pr_args(&rdtgrp->cpu_mask));
+		}
 	} else {
 		ret = -ENOENT;
 	}
@@ -288,7 +298,7 @@ static int rdtgroup_cpus_show(struct kernfs_open_file *of,
 }
 
 /*
- * This is safe against intel_rdt_sched_in() called from __switch_to()
+ * This is safe against resctrl_sched_in() called from __switch_to()
  * because __switch_to() is executed with interrupts disabled. A local call
  * from update_closid_rmid() is proteced against __switch_to() because
  * preemption is disabled.
@@ -307,7 +317,7 @@ static void update_cpu_closid_rmid(void *info)
 	 * executing task might have its own closid selected. Just reuse
 	 * the context switch code.
 	 */
-	intel_rdt_sched_in();
+	resctrl_sched_in();
 }
 
 /*
@@ -335,7 +345,7 @@ static int cpus_mon_write(struct rdtgroup *rdtgrp, cpumask_var_t newmask,
 	/* Check whether cpus belong to parent ctrl group */
 	cpumask_andnot(tmpmask, newmask, &prgrp->cpu_mask);
 	if (cpumask_weight(tmpmask)) {
-		rdt_last_cmd_puts("can only add CPUs to mongroup that belong to parent\n");
+		rdt_last_cmd_puts("Can only add CPUs to mongroup that belong to parent\n");
 		return -EINVAL;
 	}
 
@@ -460,14 +470,14 @@ static ssize_t rdtgroup_cpus_write(struct kernfs_open_file *of,
 	rdt_last_cmd_clear();
 	if (!rdtgrp) {
 		ret = -ENOENT;
-		rdt_last_cmd_puts("directory was removed\n");
+		rdt_last_cmd_puts("Directory was removed\n");
 		goto unlock;
 	}
 
 	if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKED ||
 	    rdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP) {
 		ret = -EINVAL;
-		rdt_last_cmd_puts("pseudo-locking in progress\n");
+		rdt_last_cmd_puts("Pseudo-locking in progress\n");
 		goto unlock;
 	}
 
@@ -477,7 +487,7 @@ static ssize_t rdtgroup_cpus_write(struct kernfs_open_file *of,
 		ret = cpumask_parse(buf, newmask);
 
 	if (ret) {
-		rdt_last_cmd_puts("bad cpu list/mask\n");
+		rdt_last_cmd_puts("Bad CPU list/mask\n");
 		goto unlock;
 	}
 
@@ -485,7 +495,7 @@ static ssize_t rdtgroup_cpus_write(struct kernfs_open_file *of,
 	cpumask_andnot(tmpmask, newmask, cpu_online_mask);
 	if (cpumask_weight(tmpmask)) {
 		ret = -EINVAL;
-		rdt_last_cmd_puts("can only assign online cpus\n");
+		rdt_last_cmd_puts("Can only assign online CPUs\n");
 		goto unlock;
 	}
 
@@ -532,7 +542,7 @@ static void move_myself(struct callback_head *head)
 
 	preempt_disable();
 	/* update PQR_ASSOC MSR to make resource group go into effect */
-	intel_rdt_sched_in();
+	resctrl_sched_in();
 	preempt_enable();
 
 	kfree(callback);
@@ -564,7 +574,7 @@ static int __rdtgroup_move_task(struct task_struct *tsk,
 		 */
 		atomic_dec(&rdtgrp->waitcount);
 		kfree(callback);
-		rdt_last_cmd_puts("task exited\n");
+		rdt_last_cmd_puts("Task exited\n");
 	} else {
 		/*
 		 * For ctrl_mon groups move both closid and rmid.
@@ -682,7 +692,7 @@ static ssize_t rdtgroup_tasks_write(struct kernfs_open_file *of,
 	if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKED ||
 	    rdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP) {
 		ret = -EINVAL;
-		rdt_last_cmd_puts("pseudo-locking in progress\n");
+		rdt_last_cmd_puts("Pseudo-locking in progress\n");
 		goto unlock;
 	}
 
@@ -916,7 +926,7 @@ static int max_threshold_occ_show(struct kernfs_open_file *of,
 {
 	struct rdt_resource *r = of->kn->parent->priv;
 
-	seq_printf(seq, "%u\n", intel_cqm_threshold * r->mon_scale);
+	seq_printf(seq, "%u\n", resctrl_cqm_threshold * r->mon_scale);
 
 	return 0;
 }
@@ -935,7 +945,7 @@ static ssize_t max_threshold_occ_write(struct kernfs_open_file *of,
 	if (bytes > (boot_cpu_data.x86_cache_size * 1024))
 		return -EINVAL;
 
-	intel_cqm_threshold = bytes / r->mon_scale;
+	resctrl_cqm_threshold = bytes / r->mon_scale;
 
 	return nbytes;
 }
@@ -961,7 +971,78 @@ static int rdtgroup_mode_show(struct kernfs_open_file *of,
 }
 
 /**
- * rdtgroup_cbm_overlaps - Does CBM for intended closid overlap with other
+ * rdt_cdp_peer_get - Retrieve CDP peer if it exists
+ * @r: RDT resource to which RDT domain @d belongs
+ * @d: Cache instance for which a CDP peer is requested
+ * @r_cdp: RDT resource that shares hardware with @r (RDT resource peer)
+ *         Used to return the result.
+ * @d_cdp: RDT domain that shares hardware with @d (RDT domain peer)
+ *         Used to return the result.
+ *
+ * RDT resources are managed independently and by extension the RDT domains
+ * (RDT resource instances) are managed independently also. The Code and
+ * Data Prioritization (CDP) RDT resources, while managed independently,
+ * could refer to the same underlying hardware. For example,
+ * RDT_RESOURCE_L2CODE and RDT_RESOURCE_L2DATA both refer to the L2 cache.
+ *
+ * When provided with an RDT resource @r and an instance of that RDT
+ * resource @d rdt_cdp_peer_get() will return if there is a peer RDT
+ * resource and the exact instance that shares the same hardware.
+ *
+ * Return: 0 if a CDP peer was found, <0 on error or if no CDP peer exists.
+ *         If a CDP peer was found, @r_cdp will point to the peer RDT resource
+ *         and @d_cdp will point to the peer RDT domain.
+ */
+static int rdt_cdp_peer_get(struct rdt_resource *r, struct rdt_domain *d,
+			    struct rdt_resource **r_cdp,
+			    struct rdt_domain **d_cdp)
+{
+	struct rdt_resource *_r_cdp = NULL;
+	struct rdt_domain *_d_cdp = NULL;
+	int ret = 0;
+
+	switch (r->rid) {
+	case RDT_RESOURCE_L3DATA:
+		_r_cdp = &rdt_resources_all[RDT_RESOURCE_L3CODE];
+		break;
+	case RDT_RESOURCE_L3CODE:
+		_r_cdp =  &rdt_resources_all[RDT_RESOURCE_L3DATA];
+		break;
+	case RDT_RESOURCE_L2DATA:
+		_r_cdp =  &rdt_resources_all[RDT_RESOURCE_L2CODE];
+		break;
+	case RDT_RESOURCE_L2CODE:
+		_r_cdp =  &rdt_resources_all[RDT_RESOURCE_L2DATA];
+		break;
+	default:
+		ret = -ENOENT;
+		goto out;
+	}
+
+	/*
+	 * When a new CPU comes online and CDP is enabled then the new
+	 * RDT domains (if any) associated with both CDP RDT resources
+	 * are added in the same CPU online routine while the
+	 * rdtgroup_mutex is held. It should thus not happen for one
+	 * RDT domain to exist and be associated with its RDT CDP
+	 * resource but there is no RDT domain associated with the
+	 * peer RDT CDP resource. Hence the WARN.
+	 */
+	_d_cdp = rdt_find_domain(_r_cdp, d->id, NULL);
+	if (WARN_ON(IS_ERR_OR_NULL(_d_cdp))) {
+		_r_cdp = NULL;
+		ret = -EINVAL;
+	}
+
+out:
+	*r_cdp = _r_cdp;
+	*d_cdp = _d_cdp;
+
+	return ret;
+}
+
+/**
+ * __rdtgroup_cbm_overlaps - Does CBM for intended closid overlap with other
  * @r: Resource to which domain instance @d belongs.
  * @d: The domain instance for which @closid is being tested.
  * @cbm: Capacity bitmask being tested.
@@ -980,8 +1061,8 @@ static int rdtgroup_mode_show(struct kernfs_open_file *of,
  *
  * Return: false if CBM does not overlap, true if it does.
  */
-bool rdtgroup_cbm_overlaps(struct rdt_resource *r, struct rdt_domain *d,
-			   unsigned long cbm, int closid, bool exclusive)
+static bool __rdtgroup_cbm_overlaps(struct rdt_resource *r, struct rdt_domain *d,
+				    unsigned long cbm, int closid, bool exclusive)
 {
 	enum rdtgrp_mode mode;
 	unsigned long ctrl_b;
@@ -1017,6 +1098,41 @@ bool rdtgroup_cbm_overlaps(struct rdt_resource *r, struct rdt_domain *d,
 }
 
 /**
+ * rdtgroup_cbm_overlaps - Does CBM overlap with other use of hardware
+ * @r: Resource to which domain instance @d belongs.
+ * @d: The domain instance for which @closid is being tested.
+ * @cbm: Capacity bitmask being tested.
+ * @closid: Intended closid for @cbm.
+ * @exclusive: Only check if overlaps with exclusive resource groups
+ *
+ * Resources that can be allocated using a CBM can use the CBM to control
+ * the overlap of these allocations. rdtgroup_cmb_overlaps() is the test
+ * for overlap. Overlap test is not limited to the specific resource for
+ * which the CBM is intended though - when dealing with CDP resources that
+ * share the underlying hardware the overlap check should be performed on
+ * the CDP resource sharing the hardware also.
+ *
+ * Refer to description of __rdtgroup_cbm_overlaps() for the details of the
+ * overlap test.
+ *
+ * Return: true if CBM overlap detected, false if there is no overlap
+ */
+bool rdtgroup_cbm_overlaps(struct rdt_resource *r, struct rdt_domain *d,
+			   unsigned long cbm, int closid, bool exclusive)
+{
+	struct rdt_resource *r_cdp;
+	struct rdt_domain *d_cdp;
+
+	if (__rdtgroup_cbm_overlaps(r, d, cbm, closid, exclusive))
+		return true;
+
+	if (rdt_cdp_peer_get(r, d, &r_cdp, &d_cdp) < 0)
+		return false;
+
+	return  __rdtgroup_cbm_overlaps(r_cdp, d_cdp, cbm, closid, exclusive);
+}
+
+/**
  * rdtgroup_mode_test_exclusive - Test if this resource group can be exclusive
  *
  * An exclusive resource group implies that there should be no sharing of
@@ -1042,14 +1158,14 @@ static bool rdtgroup_mode_test_exclusive(struct rdtgroup *rdtgrp)
 		list_for_each_entry(d, &r->domains, list) {
 			if (rdtgroup_cbm_overlaps(r, d, d->ctrl_val[closid],
 						  rdtgrp->closid, false)) {
-				rdt_last_cmd_puts("schemata overlaps\n");
+				rdt_last_cmd_puts("Schemata overlaps\n");
 				return false;
 			}
 		}
 	}
 
 	if (!has_cache) {
-		rdt_last_cmd_puts("cannot be exclusive without CAT/CDP\n");
+		rdt_last_cmd_puts("Cannot be exclusive without CAT/CDP\n");
 		return false;
 	}
 
@@ -1090,7 +1206,7 @@ static ssize_t rdtgroup_mode_write(struct kernfs_open_file *of,
 		goto out;
 
 	if (mode == RDT_MODE_PSEUDO_LOCKED) {
-		rdt_last_cmd_printf("cannot change pseudo-locked group\n");
+		rdt_last_cmd_puts("Cannot change pseudo-locked group\n");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1119,7 +1235,7 @@ static ssize_t rdtgroup_mode_write(struct kernfs_open_file *of,
 			goto out;
 		rdtgrp->mode = RDT_MODE_PSEUDO_LOCKSETUP;
 	} else {
-		rdt_last_cmd_printf("unknown/unsupported mode\n");
+		rdt_last_cmd_puts("Unknown or unsupported mode\n");
 		ret = -EINVAL;
 	}
 
@@ -1176,6 +1292,7 @@ static int rdtgroup_size_show(struct kernfs_open_file *of,
 	struct rdt_resource *r;
 	struct rdt_domain *d;
 	unsigned int size;
+	int ret = 0;
 	bool sep;
 	u32 ctrl;
 
@@ -1186,11 +1303,18 @@ static int rdtgroup_size_show(struct kernfs_open_file *of,
 	}
 
 	if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKED) {
-		seq_printf(s, "%*s:", max_name_width, rdtgrp->plr->r->name);
-		size = rdtgroup_cbm_to_size(rdtgrp->plr->r,
-					    rdtgrp->plr->d,
-					    rdtgrp->plr->cbm);
-		seq_printf(s, "%d=%u\n", rdtgrp->plr->d->id, size);
+		if (!rdtgrp->plr->d) {
+			rdt_last_cmd_clear();
+			rdt_last_cmd_puts("Cache domain offline\n");
+			ret = -ENODEV;
+		} else {
+			seq_printf(s, "%*s:", max_name_width,
+				   rdtgrp->plr->r->name);
+			size = rdtgroup_cbm_to_size(rdtgrp->plr->r,
+						    rdtgrp->plr->d,
+						    rdtgrp->plr->cbm);
+			seq_printf(s, "%d=%u\n", rdtgrp->plr->d->id, size);
+		}
 		goto out;
 	}
 
@@ -1220,7 +1344,7 @@ static int rdtgroup_size_show(struct kernfs_open_file *of,
 out:
 	rdtgroup_kn_unlock(of->kn);
 
-	return 0;
+	return ret;
 }
 
 /* rdtgroup information files for one cache resource. */
@@ -1598,14 +1722,14 @@ static void l3_qos_cfg_update(void *arg)
 {
 	bool *enable = arg;
 
-	wrmsrl(IA32_L3_QOS_CFG, *enable ? L3_QOS_CDP_ENABLE : 0ULL);
+	wrmsrl(MSR_IA32_L3_QOS_CFG, *enable ? L3_QOS_CDP_ENABLE : 0ULL);
 }
 
 static void l2_qos_cfg_update(void *arg)
 {
 	bool *enable = arg;
 
-	wrmsrl(IA32_L2_QOS_CFG, *enable ? L2_QOS_CDP_ENABLE : 0ULL);
+	wrmsrl(MSR_IA32_L2_QOS_CFG, *enable ? L2_QOS_CDP_ENABLE : 0ULL);
 }
 
 static inline bool is_mba_linear(void)
@@ -1754,7 +1878,10 @@ static int parse_rdtgroupfs_options(char *data)
 			if (ret)
 				goto out;
 		} else if (!strcmp(token, "mba_MBps")) {
-			ret = set_mba_sc(true);
+			if (boot_cpu_data.x86_vendor == X86_VENDOR_INTEL)
+				ret = set_mba_sc(true);
+			else
+				ret = -EINVAL;
 			if (ret)
 				goto out;
 		} else {
@@ -2354,14 +2481,16 @@ static void cbm_ensure_valid(u32 *_val, struct rdt_resource *r)
  */
 static int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 {
+	struct rdt_resource *r_cdp = NULL;
+	struct rdt_domain *d_cdp = NULL;
 	u32 used_b = 0, unused_b = 0;
 	u32 closid = rdtgrp->closid;
 	struct rdt_resource *r;
 	unsigned long tmp_cbm;
 	enum rdtgrp_mode mode;
 	struct rdt_domain *d;
+	u32 peer_ctl, *ctrl;
 	int i, ret;
-	u32 *ctrl;
 
 	for_each_alloc_enabled_rdt_resource(r) {
 		/*
@@ -2371,6 +2500,7 @@ static int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 		if (r->rid == RDT_RESOURCE_MBA)
 			continue;
 		list_for_each_entry(d, &r->domains, list) {
+			rdt_cdp_peer_get(r, d, &r_cdp, &d_cdp);
 			d->have_new_ctrl = false;
 			d->new_ctrl = r->cache.shareable_bits;
 			used_b = r->cache.shareable_bits;
@@ -2380,9 +2510,19 @@ static int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 					mode = rdtgroup_mode_by_closid(i);
 					if (mode == RDT_MODE_PSEUDO_LOCKSETUP)
 						break;
-					used_b |= *ctrl;
+					/*
+					 * If CDP is active include peer
+					 * domain's usage to ensure there
+					 * is no overlap with an exclusive
+					 * group.
+					 */
+					if (d_cdp)
+						peer_ctl = d_cdp->ctrl_val[i];
+					else
+						peer_ctl = 0;
+					used_b |= *ctrl | peer_ctl;
 					if (mode == RDT_MODE_SHAREABLE)
-						d->new_ctrl |= *ctrl;
+						d->new_ctrl |= *ctrl | peer_ctl;
 				}
 			}
 			if (d->plr && d->plr->cbm > 0)
@@ -2403,7 +2543,7 @@ static int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 			tmp_cbm = d->new_ctrl;
 			if (bitmap_weight(&tmp_cbm, r->cache.cbm_len) <
 			    r->cache.min_cbm_bits) {
-				rdt_last_cmd_printf("no space on %s:%d\n",
+				rdt_last_cmd_printf("No space on %s:%d\n",
 						    r->name, d->id);
 				return -ENOSPC;
 			}
@@ -2420,7 +2560,7 @@ static int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 			continue;
 		ret = update_domains(r, rdtgrp->closid);
 		if (ret < 0) {
-			rdt_last_cmd_puts("failed to initialize allocations\n");
+			rdt_last_cmd_puts("Failed to initialize allocations\n");
 			return ret;
 		}
 		rdtgrp->mode = RDT_MODE_SHAREABLE;
@@ -2443,7 +2583,7 @@ static int mkdir_rdt_prepare(struct kernfs_node *parent_kn,
 	rdt_last_cmd_clear();
 	if (!prdtgrp) {
 		ret = -ENODEV;
-		rdt_last_cmd_puts("directory was removed\n");
+		rdt_last_cmd_puts("Directory was removed\n");
 		goto out_unlock;
 	}
 
@@ -2451,7 +2591,7 @@ static int mkdir_rdt_prepare(struct kernfs_node *parent_kn,
 	    (prdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP ||
 	     prdtgrp->mode == RDT_MODE_PSEUDO_LOCKED)) {
 		ret = -EINVAL;
-		rdt_last_cmd_puts("pseudo-locking in progress\n");
+		rdt_last_cmd_puts("Pseudo-locking in progress\n");
 		goto out_unlock;
 	}
 
@@ -2459,7 +2599,7 @@ static int mkdir_rdt_prepare(struct kernfs_node *parent_kn,
 	rdtgrp = kzalloc(sizeof(*rdtgrp), GFP_KERNEL);
 	if (!rdtgrp) {
 		ret = -ENOSPC;
-		rdt_last_cmd_puts("kernel out of memory\n");
+		rdt_last_cmd_puts("Kernel out of memory\n");
 		goto out_unlock;
 	}
 	*r = rdtgrp;
@@ -2500,7 +2640,7 @@ static int mkdir_rdt_prepare(struct kernfs_node *parent_kn,
 	if (rdt_mon_capable) {
 		ret = alloc_rmid();
 		if (ret < 0) {
-			rdt_last_cmd_puts("out of RMIDs\n");
+			rdt_last_cmd_puts("Out of RMIDs\n");
 			goto out_destroy;
 		}
 		rdtgrp->mon.rmid = ret;
@@ -2588,7 +2728,7 @@ static int rdtgroup_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 	kn = rdtgrp->kn;
 	ret = closid_alloc();
 	if (ret < 0) {
-		rdt_last_cmd_puts("out of CLOSIDs\n");
+		rdt_last_cmd_puts("Out of CLOSIDs\n");
 		goto out_common_fail;
 	}
 	closid = ret;
