@@ -341,6 +341,55 @@ int bpf_xdp_detach(int ifindex, __u32 flags, const struct bpf_xdp_attach_opts *o
 	return bpf_xdp_attach(ifindex, -1, flags, opts);
 }
 
+int bpf_set_link_xdp_md_btf(int ifindex, __u8  enable)
+{
+	struct nlattr *nla, *nla_xdp;
+	int sock, seq = 0, ret;
+	__u32 nl_pid;
+	struct {
+		struct nlmsghdr  nh;
+		struct ifinfomsg ifinfo;
+		char             attrbuf[64];
+	} req;
+
+	sock = libbpf_netlink_open(&nl_pid, NETLINK_ROUTE);
+	if (sock < 0)
+		return sock;
+
+	memset(&req, 0, sizeof(req));
+	req.nh.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+	req.nh.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	req.nh.nlmsg_type = RTM_SETLINK;
+	req.nh.nlmsg_pid = 0;
+	req.nh.nlmsg_seq = ++seq;
+	req.ifinfo.ifi_family = AF_UNSPEC;
+	req.ifinfo.ifi_index = ifindex;
+
+	/* started nested attribute for XDP */
+	nla = (struct nlattr *)(((char *)&req)
+				+ NLMSG_ALIGN(req.nh.nlmsg_len));
+	nla->nla_type = NLA_F_NESTED | IFLA_XDP;
+	nla->nla_len = NLA_HDRLEN;
+	/* add XDP MD setup */
+	nla_xdp = (struct nlattr *)((char *)nla + nla->nla_len);
+	nla_xdp->nla_type = IFLA_XDP_MD_BTF_STATE;
+	nla_xdp->nla_len = NLA_HDRLEN + sizeof(__u8);
+	memcpy((char *)nla_xdp + NLA_HDRLEN, &enable, sizeof(__u8));
+	nla->nla_len += nla_xdp->nla_len;
+
+	req.nh.nlmsg_len += NLA_ALIGN(nla->nla_len);
+
+	if (send(sock, &req, req.nh.nlmsg_len, 0) < 0) {
+		ret = -errno;
+		goto cleanup;
+	}
+	ret = libbpf_netlink_recv(sock, nl_pid, seq, NULL, NULL, NULL);
+
+cleanup:
+	close(sock);
+	return ret;
+}
+
 static int __dump_link_nlmsg(struct nlmsghdr *nlh,
 			     libbpf_dump_nlmsg_t dump_link_nlmsg, void *cookie)
 {
