@@ -409,10 +409,20 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int idx, int stack_size)
 		stackdump_complete = readl(fw_reg_addr +
 				EXCEPTION_RECORD_OFFSET(ctx->cores.count, idx));
 		if (skl_read_ext_exception_data(ctx, idx, ext_core_dump,
-					ext_core_dump_sz, &sz_ext_dump) < 0)
+					ext_core_dump_sz, &sz_ext_dump) < 0) {
+			dev_err(ctx->dsp->dev, "Stack Dump read error\n");
 			break;
-		if (time_after(jiffies, timeout))
+		}
+		if (stackdump_complete) {
+			/* Try reading the remainder */
+			skl_read_ext_exception_data(ctx, idx, ext_core_dump,
+					ext_core_dump_sz, &sz_ext_dump);
 			break;
+		}
+		if (time_after(jiffies, timeout)) {
+			dev_err(ctx->dsp->dev, "Stack Dump reading timed out\n");
+			break;
+		}
 	}
 
 	/* Length representing in DWORD */
