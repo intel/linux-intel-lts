@@ -681,6 +681,7 @@ struct perf_buffer_opts {
 LIBBPF_API struct perf_buffer *
 perf_buffer__new(int map_fd, size_t page_cnt,
 		 const struct perf_buffer_opts *opts);
+LIBBPF_API int bpf_set_link_xdp_md_btf(int ifindex, __u8 enable);
 
 enum bpf_perf_event_ret {
 	LIBBPF_PERF_EVENT_DONE	= 0,
