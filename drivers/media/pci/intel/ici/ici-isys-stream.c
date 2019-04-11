@@ -882,6 +882,9 @@ static int ici_isys_stream_on(struct file *file, void *fh)
 		return 0;
 	}
 
+	ip->seq_index = 0;
+	memset(ip->seq, 0, sizeof(ip->seq));
+	atomic_set(&ip->sequence, 0);
 	ip->csi2 = NULL;
 	ip->csi2_be = NULL;
 	ip->asd_source = NULL;

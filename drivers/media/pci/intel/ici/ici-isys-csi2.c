@@ -248,9 +248,27 @@ static void ici_isys_csi2_sof_event(struct ici_isys_csi2
 						*csi2, unsigned int vc)
 {
 	unsigned long flags;
+	struct ici_isys_pipeline *ip;
+	unsigned int i;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
 	csi2->in_frame = true;
+
+	for(i = 0; i < INTEL_IPU4_ISYS_MAX_STREAMS; i++) {
+		if (csi2->isys->ici_pipes[i] &&
+		    csi2->isys->ici_pipes[i]->vc == vc &&
+		    &csi2->isys->ici_pipes[i]->csi2->asd[vc] == &csi2->asd[vc]) {
+			ip = csi2->isys->ici_pipes[i];
+			break;
+		}
+	}
+
+	if (!ip) {
+		spin_unlock_irqrestore(&csi2->isys->lock, flags);
+		return;
+	}
+
+	atomic_inc(&ip->sequence);
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 }
 
