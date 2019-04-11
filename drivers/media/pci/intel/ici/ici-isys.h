@@ -107,7 +107,6 @@ struct ici_isys {
 	spinlock_t power_lock;
 	u32 isr_csi2_bits;
 	spinlock_t lock;
-	struct ipu_isys_pipeline *pipes[IPU_ISYS_MAX_STREAMS];
 	void *fwcom;
 	unsigned int line_align;
 	u32 legacy_port_cfg;
