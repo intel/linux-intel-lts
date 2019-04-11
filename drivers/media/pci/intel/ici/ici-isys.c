@@ -1254,6 +1254,16 @@ static int isys_isr_one_ici(struct ipu_bus_device *adev)
 				pipe->capture_done[i](pipe, &resp);
 		break;
 	case IA_CSS_ISYS_RESP_TYPE_FRAME_SOF:
+		pipe->seq[pipe->seq_index].sequence =
+			atomic_read(&pipe->sequence) -1;
+		pipe->seq[pipe->seq_index].timestamp = ts;
+		dev_dbg(&adev->dev,
+			"sof: handle %d: (index %u), timestamp 0x%16.16llx\n",
+			resp.stream_handle,
+			pipe->seq[pipe->seq_index].sequence,
+			ts);
+		pipe->seq_index = (pipe->seq_index + 1)
+			% ICI_ISYS_MAX_PARALLEL_SOF;
 		break;
 	case IA_CSS_ISYS_RESP_TYPE_FRAME_EOF:
 		break;
