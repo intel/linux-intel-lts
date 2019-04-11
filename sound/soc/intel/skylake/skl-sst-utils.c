@@ -372,7 +372,6 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int idx, int stack_size)
 	struct adsp_type0_crash_data *type0_data;
 	struct adsp_type1_crash_data *type1_data;
 	struct adsp_type2_crash_data *type2_data;
-	struct sst_dsp *sst = ctx->dsp;
 	unsigned long timeout;
 
 	if (idx < 0 || idx >= ctx->cores.count)
