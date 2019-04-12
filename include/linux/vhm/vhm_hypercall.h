@@ -150,7 +150,6 @@ inline long hcall_query_vm_state(unsigned long vmid);
 inline long hcall_setup_sbuf(unsigned long sbuf_head);
 inline long hcall_setup_hv_npk_log(unsigned long hv_npk_log);
 inline long hcall_get_hw_info(unsigned long hw_info);
-inline long hcall_set_sstate_data(unsigned long sx_data_addr);
 inline long hcall_get_cpu_state(unsigned long cmd, unsigned long state_pa);
 inline long hcall_set_memory_regions(unsigned long pa_regions);
 inline long hcall_write_protect_page(unsigned long vmid,

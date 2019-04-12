@@ -511,17 +511,6 @@ struct acpi_sstate_pkg {
 	uint16_t	reserved;
 } __attribute__((aligned(8)));
 
-struct acpi_sstate_data {
-	struct acrn_generic_address pm1a_evt;
-	struct acrn_generic_address pm1b_evt;
-	struct acrn_generic_address pm1a_cnt;
-	struct acrn_generic_address pm1b_cnt;
-	struct acpi_sstate_pkg s3_pkg;
-	struct acpi_sstate_pkg s5_pkg;
-	uint32_t *wake_vector_32;
-	uint64_t *wake_vector_64;
-}__attribute__((aligned(8)));
-
 /**
  * @brief Info PM command from DM/VHM.
  *
