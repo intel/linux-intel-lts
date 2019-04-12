@@ -65,6 +65,7 @@
 #include <linux/vhm/acrn_vhm_ioreq.h>
 #include <linux/vhm/vhm_vm_mngt.h>
 #include <linux/vhm/vhm_hypercall.h>
+#include <linux/vhm/acrn_vhm_mm.h>
 #include <linux/idr.h>
 
 static DEFINE_SPINLOCK(client_lock);
@@ -1012,7 +1013,7 @@ unsigned int vhm_dev_poll(struct file *filep, poll_table *wait)
 
 int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma)
 {
-	struct acrn_set_ioreq_buffer set_buffer;
+	struct acrn_set_ioreq_buffer *set_buffer;
 	struct page *page;
 	int ret;
 
@@ -1025,12 +1026,14 @@ int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma)
 		return -ENOMEM;
 	}
 
+	set_buffer = acrn_mempool_alloc(GFP_KERNEL);
 	vm->req_buf = page_address(page);
 	vm->pg = page;
 
-	set_buffer.req_buf = page_to_phys(page);
+	set_buffer->req_buf = page_to_phys(page);
 
-	ret = hcall_set_ioreq_buffer(vm->vmid, virt_to_phys(&set_buffer));
+	ret = hcall_set_ioreq_buffer(vm->vmid, virt_to_phys(set_buffer));
+	acrn_mempool_free(set_buffer);
 	if (ret < 0) {
 		pr_err("vhm-ioreq: failed to set request buffer !\n");
 		return -EFAULT;

@@ -123,13 +123,14 @@ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
 	struct page *page = NULL, *regions_buf_pg = NULL;
 	unsigned long len, guest_gpa, vma;
 	struct vm_memory_region *region_array;
-	struct set_regions regions;
+	struct set_regions *regions = NULL;
 	int max_size = PAGE_SIZE/sizeof(struct vm_memory_region);
 	int ret;
 
 	if (vm == NULL || memmap == NULL)
 		return -EINVAL;
 
+	regions = acrn_mempool_alloc(GFP_KERNEL);
 	len = memmap->len;
 	vma = memmap->vma_base;
 	guest_gpa = memmap->gpa;
@@ -138,9 +139,9 @@ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
 	regions_buf_pg = alloc_page(GFP_KERNEL);
 	if (regions_buf_pg == NULL)
 		return -ENOMEM;
-	regions.mr_num = 0;
-	regions.vmid = vm->vmid;
-	regions.regions_gpa = page_to_phys(regions_buf_pg);
+	regions->mr_num = 0;
+	regions->vmid = vm->vmid;
+	regions->regions_gpa = page_to_phys(regions_buf_pg);
 	region_array = page_to_virt(regions_buf_pg);
 
 	while (len > 0) {
@@ -163,22 +164,22 @@ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
 		}
 
 		/* fill each memory region into region_array */
-		region_array[regions.mr_num].type = MR_ADD;
-		region_array[regions.mr_num].gpa = guest_gpa;
-		region_array[regions.mr_num].vm0_gpa = vm0_gpa;
-		region_array[regions.mr_num].size = pagesize;
-		region_array[regions.mr_num].prot =
+		region_array[regions->mr_num].type = MR_ADD;
+		region_array[regions->mr_num].gpa = guest_gpa;
+		region_array[regions->mr_num].vm0_gpa = vm0_gpa;
+		region_array[regions->mr_num].size = pagesize;
+		region_array[regions->mr_num].prot =
 				(MEM_TYPE_WB & MEM_TYPE_MASK) |
 				(memmap->prot & MEM_ACCESS_RIGHT_MASK);
-		regions.mr_num++;
-		if (regions.mr_num == max_size) {
+		regions->mr_num++;
+		if (regions->mr_num == max_size) {
 			pr_info("region buffer full, set & renew regions!\n");
-			ret = set_memory_regions(&regions);
+			ret = set_memory_regions(regions);
 			if (ret < 0) {
 				pr_err("failed to set regions,ret=%d!\n", ret);
 				goto err;
 			}
-			regions.mr_num = 0;
+			regions->mr_num = 0;
 		}
 
 		len -= pagesize;
@@ -186,20 +187,22 @@ int hugepage_map_guest(struct vhm_vm *vm, struct vm_memmap *memmap)
 		guest_gpa += pagesize;
 	}
 
-	ret = set_memory_regions(&regions);
+	ret = set_memory_regions(regions);
 	if (ret < 0) {
 		pr_err("failed to set regions, ret=%d!\n", ret);
 		goto err;
 	}
 
 	__free_page(regions_buf_pg);
-
+	acrn_mempool_free(regions);
 	return 0;
 err:
 	if (regions_buf_pg)
 		__free_page(regions_buf_pg);
 	if (page)
 		put_page(page);
+	acrn_mempool_free(regions);
+
 	return ret;
 }
 

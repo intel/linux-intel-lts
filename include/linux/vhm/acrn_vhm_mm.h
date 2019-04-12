@@ -193,4 +193,9 @@ int hugepage_unmap_guest_phys(struct vhm_vm *vm, u64 guest_phys);
  * Return: 0 on success, <0 for error.
  */
 int set_memory_regions(struct set_regions *regions);
+
+int acrn_mempool_init(int pool_size, int buf_size);
+void acrn_mempool_deinit(void);
+void *acrn_mempool_alloc(gfp_t gfp_flag);
+void acrn_mempool_free(void *buf);
 #endif
