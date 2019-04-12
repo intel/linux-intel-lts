@@ -3,7 +3,6 @@ config ACRN_VHM
 	depends on ACRN_GUEST
 	depends on PCI_MSI
 	depends on HUGETLBFS
-	depends on !VMAP_STACK
 	default n
 	---help---
 		This is the Virtio and Hypervisor service Module (VHM) for
