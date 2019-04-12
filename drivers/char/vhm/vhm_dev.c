@@ -837,7 +837,7 @@ static struct attribute_group vhm_attr_group = {
 static int __init vhm_init(void)
 {
 	unsigned long flag;
-	struct hc_api_version api_version = {0, 0};
+	static struct hc_api_version api_version;
 
 	if (x86_hyper_type != X86_HYPER_ACRN)
 		return -ENODEV;

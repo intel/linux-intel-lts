@@ -178,15 +178,14 @@ static int __init acrn_trace_init(void)
 	int i, cpu;
 	shared_buf_t *sbuf;
 	struct miscdevice *miscdev;
-	struct acrn_hw_info hw_info;
+	static struct acrn_hw_info hw_info;
 
 	if (x86_hyper_type != X86_HYPER_ACRN) {
 		pr_err("acrn_trace: not support acrn hypervisor!\n");
 		return -EINVAL;
 	}
 
-	memset(&hw_info, 0, sizeof(struct acrn_hw_info));
-	ret = hcall_get_hw_info(virt_to_phys(&hw_info));
+	ret = hcall_get_hw_info(slow_virt_to_phys(&hw_info));
 	if (!ret)
 		pcpu_num = hw_info.cpu_num;
 
