@@ -731,7 +731,7 @@ static struct attribute_group vhm_attr_group = {
 #define SUPPORT_HV_API_VERSION_MINOR	0
 static int __init vhm_init(void)
 {
-	struct hc_api_version api_version = {0, 0};
+	static struct hc_api_version api_version;
 
 	if (x86_hyper_type != X86_HYPER_ACRN)
 		return -ENODEV;

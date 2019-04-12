@@ -186,7 +186,7 @@ static int __init acrn_trace_init(void)
 	}
 
 	memset(&hw_info, 0, sizeof(struct acrn_hw_info));
-	ret = hcall_get_hw_info(virt_to_phys(&hw_info));
+	ret = hcall_get_hw_info(slow_virt_to_phys(&hw_info));
 	if (!ret)
 		pcpu_num = hw_info.cpu_num;
 
