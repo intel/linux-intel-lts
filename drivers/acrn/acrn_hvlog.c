@@ -65,6 +65,8 @@
 #include <linux/vhm/vhm_hypercall.h>
 #include <linux/vhm/acrn_hv_defs.h>
 
+#include <asm/hypervisor.h>
+
 #include "sbuf.h"
 
 #define LOG_ENTRY_SIZE		80
@@ -347,6 +349,11 @@ static int __init acrn_hvlog_init(void)
 	int idx, ret = 0;
 	struct acrn_hw_info hw_info;
 	uint64_t cur_logbuf, last_logbuf;
+
+	if (x86_hyper_type != X86_HYPER_ACRN) {
+		pr_err("acrn_hvlog: not running under acrn hypervisor!\n");
+		return -EINVAL;
+	}
 
 	if (!hvlog_buf_base || !hvlog_buf_size) {
 		pr_warn("no fixed memory reserve for hvlog.\n");
