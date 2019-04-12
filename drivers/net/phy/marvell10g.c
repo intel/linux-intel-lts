@@ -26,6 +26,7 @@
 #include <linux/hwmon.h>
 #include <linux/marvell_phy.h>
 #include <linux/phy.h>
+#include <linux/delay.h>
 
 #define MV_PHY_ALASKA_NBT_QUIRK_MASK	0xfffffffe
 #define MV_PHY_ALASKA_NBT_QUIRK_REV	(MARVELL_PHY_ID_88X3310 | 0xa)
@@ -59,6 +60,10 @@ enum {
 	MV_V2_TEMP_CTRL_DISABLE	= 0xc000,
 	MV_V2_TEMP		= 0xf08c,
 	MV_V2_TEMP_UNKNOWN	= 0x9600, /* unknown function */
+
+	/* 88E2110 specific */
+	M88E2110_PORTCONTROL	= 0xc04a,
+	M88E2110_BOOT		= 0xc050,
 };
 
 struct mv3310_priv {
@@ -412,12 +417,15 @@ static int mv3310_read_status(struct phy_device *phydev)
 	phydev->asym_pause = 0;
 	phydev->mdix = 0;
 
-	val = phy_read_mmd(phydev, MDIO_MMD_PCS, MV_PCS_BASE_R + MDIO_STAT1);
-	if (val < 0)
-		return val;
+	if (phydev->drv->phy_id == MARVELL_PHY_ID_88X3310) {
+		val = phy_read_mmd(phydev, MDIO_MMD_PCS,
+				   MV_PCS_BASE_R + MDIO_STAT1);
+		if (val < 0)
+			return val;
 
-	if (val & MDIO_STAT1_LSTATUS)
-		return mv3310_read_10gbr_status(phydev);
+		if (val & MDIO_STAT1_LSTATUS)
+			return mv3310_read_10gbr_status(phydev);
+	}
 
 	val = genphy_c45_read_link(phydev);
 	if (val < 0)
@@ -476,6 +484,52 @@ static int mv3310_read_status(struct phy_device *phydev)
 	return 0;
 }
 
+static int m88e2110_wait_reset(struct phy_device *phydev)
+{
+	int status;
+	u16 tries = 1000;
+
+	dev_dbg(&phydev->mdio.dev, "%s: Waiting for boot completion\n",
+		__func__);
+
+	do {
+		status = phy_read_mmd(phydev, MDIO_MMD_PMAPMD,
+				      M88E2110_BOOT);
+		if (status < 0)
+			goto out;
+		/* Boot completed */
+		if (status & BIT(3)) {
+			status = 0;
+			goto out;
+		}
+		usleep_range(800, 1200);
+	} while (tries--);
+
+	dev_err(&phydev->mdio.dev, "Timeout waiting for boot\n");
+
+out:
+	return status;
+}
+
+#define M88E2110_PORTCONTROL_PORTRESET BIT(15)
+static int m88e2110_soft_reset(struct phy_device *phydev)
+{
+	int status;
+	u16 reset = M88E2110_PORTCONTROL_PORTRESET;
+
+	dev_dbg(&phydev->mdio.dev, "%s called\n", __func__);
+
+	status = phy_modify_mmd_changed(phydev, MDIO_MMD_PMAPMD,
+					M88E2110_PORTCONTROL, reset, reset);
+
+	if (status < 0)
+		goto out;
+
+	m88e2110_wait_reset(phydev);
+out:
+	return status;
+}
+
 static struct phy_driver mv3310_drivers[] = {
 	{
 		.phy_id		= MARVELL_PHY_ID_88X3310,
@@ -498,10 +552,10 @@ static struct phy_driver mv3310_drivers[] = {
 		.probe		= mv3310_probe,
 		.suspend	= mv3310_suspend,
 		.resume		= mv3310_resume,
-		.soft_reset	= genphy_no_soft_reset,
+		.soft_reset	= m88e2110_soft_reset,
 		.config_init	= mv3310_config_init,
 		.config_aneg	= mv3310_config_aneg,
-		.aneg_done	= mv3310_aneg_done,
+		.aneg_done	= genphy_c45_aneg_done,
 		.read_status	= mv3310_read_status,
 	},
 };
