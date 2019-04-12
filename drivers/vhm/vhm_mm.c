@@ -65,17 +65,19 @@
 static int set_memory_region(unsigned long vmid,
 		struct vm_memory_region *region)
 {
-	struct set_regions regions;
+	struct set_regions *regions;
 
-	regions.vmid = vmid;
-	regions.mr_num = 1;
-	regions.regions_gpa = virt_to_phys(region);
+	regions = acrn_mempool_alloc(GFP_KERNEL);
+	regions->vmid = vmid;
+	regions->mr_num = 1;
+	regions->regions_gpa = virt_to_phys(region);
 
-	if (set_memory_regions(&regions) < 0) {
+	if (set_memory_regions(regions) < 0) {
+		acrn_mempool_free(regions);
 		pr_err("vhm: failed to set memory region for vm[%ld]!\n", vmid);
 		return -EFAULT;
 	}
-
+	acrn_mempool_free(regions);
 	return 0;
 }
 
@@ -83,30 +85,38 @@ int add_memory_region(unsigned long vmid, unsigned long gpa,
 	unsigned long host_gpa, unsigned long size,
 	unsigned int mem_type, unsigned mem_access_right)
 {
-	struct vm_memory_region region;
+	struct vm_memory_region *region;
+	int ret;
 
-	region.type = MR_ADD;
-	region.gpa = gpa;
-	region.vm0_gpa = host_gpa;
-	region.size = size;
-	region.prot = ((mem_type & MEM_TYPE_MASK) |
+	region = acrn_mempool_alloc(GFP_KERNEL);
+	region->type = MR_ADD;
+	region->gpa = gpa;
+	region->vm0_gpa = host_gpa;
+	region->size = size;
+	region->prot = ((mem_type & MEM_TYPE_MASK) |
 			(mem_access_right & MEM_ACCESS_RIGHT_MASK));
-	return set_memory_region(vmid, &region);
+	ret = set_memory_region(vmid, region);
+	acrn_mempool_free(region);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(add_memory_region);
 
 int del_memory_region(unsigned long vmid, unsigned long gpa,
 	unsigned long size)
 {
-	struct vm_memory_region region;
+	struct vm_memory_region *region;
+	int ret;
 
-	region.type = MR_DEL;
-	region.gpa = gpa;
-	region.vm0_gpa = 0;
-	region.size = size;
-	region.prot = 0;
+	region = acrn_mempool_alloc(GFP_KERNEL);
+	region->type = MR_DEL;
+	region->gpa = gpa;
+	region->vm0_gpa = 0;
+	region->size = size;
+	region->prot = 0;
 
-	return set_memory_region(vmid, &region);
+	ret = set_memory_region(vmid, region);
+	acrn_mempool_free(region);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(del_memory_region);
 
@@ -131,18 +141,21 @@ int set_memory_regions(struct set_regions *regions)
 int write_protect_page(unsigned long vmid,
 	unsigned long gpa, unsigned char set)
 {
-	struct wp_data wp;
+	struct wp_data *wp;
 
-	wp.set = set;
-	wp.gpa = gpa;
+	wp = acrn_mempool_alloc(GFP_KERNEL);
+	wp->set = set;
+	wp->gpa = gpa;
 
 	if (hcall_write_protect_page(vmid,
-			virt_to_phys(&wp)) < 0) {
+			virt_to_phys(wp)) < 0) {
+		acrn_mempool_free(wp);
 		pr_err("vhm: vm[%ld] %s failed !\n", vmid, __func__);
 		return -EFAULT;
 	}
 
 	pr_debug("VHM: %s, gpa: 0x%lx, set: %d\n", __func__, gpa, set);
+	acrn_mempool_free(wp);
 
 	return 0;
 }

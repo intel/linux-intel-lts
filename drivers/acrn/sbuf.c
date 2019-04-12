@@ -60,6 +60,7 @@
 #include <asm/hypervisor.h>
 #include <linux/vhm/acrn_hv_defs.h>
 #include <linux/vhm/vhm_hypercall.h>
+#include <linux/vhm/acrn_vhm_mm.h>
 #include "sbuf.h"
 
 static inline bool sbuf_is_empty(shared_buf_t *sbuf)
@@ -169,18 +170,22 @@ EXPORT_SYMBOL(sbuf_get);
 
 int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, uint64_t gpa)
 {
-	struct sbuf_setup_param ssp;
+	struct sbuf_setup_param *ssp;
+	int ret;
 
 	if (x86_hyper_type != X86_HYPER_ACRN)
 		return -ENODEV;
 
-	ssp.pcpu_id = pcpu_id;
-	ssp.sbuf_id = sbuf_id;
+	ssp = acrn_mempool_alloc(GFP_KERNEL);
+	ssp->pcpu_id = pcpu_id;
+	ssp->sbuf_id = sbuf_id;
 
-	ssp.gpa = gpa;
-	pr_info("setup phys add = 0x%llx\n", ssp.gpa);
+	ssp->gpa = gpa;
+	pr_info("setup phys add = 0x%llx\n", gpa);
 
-	return hcall_setup_sbuf(virt_to_phys(&ssp));
+	ret = hcall_setup_sbuf(virt_to_phys(ssp));
+	acrn_mempool_free(ssp);
+	return ret;
 }
 EXPORT_SYMBOL(sbuf_share_setup);
 
