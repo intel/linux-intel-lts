@@ -553,6 +553,55 @@ static void mipi_tx_multichannel_fifo_cfg(u8 active_lanes, u8 vchannel_id)
 	kmb_set_bit_mipi(MIPI_TXm_HS_MC_FIFO_CTRL_EN(ctrl_no), vchannel_id);
 }
 
+static void mipi_tx_ctrl_cfg(u8 fg_id, struct mipi_ctrl_cfg *ctrl_cfg)
+{
+	u32 sync_cfg = 0, ctrl = 0, fg_en;
+	u32 ctrl_no = MIPI_CTRL6;
+
+	/*MIPI_TX_HS_SYNC_CFG*/
+	if (ctrl_cfg->tx_ctrl_cfg.line_sync_pkt_en)
+		sync_cfg |= LINE_SYNC_PKT_ENABLE;
+	if (ctrl_cfg->tx_ctrl_cfg.frame_counter_active)
+		sync_cfg |= FRAME_COUNTER_ACTIVE;
+	if (ctrl_cfg->tx_ctrl_cfg.line_counter_active)
+		sync_cfg |= LINE_COUNTER_ACTIVE;
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->v_blanking)
+		sync_cfg |= DSI_V_BLANKING;
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->hsa_blanking)
+		sync_cfg |= DSI_HSA_BLANKING;
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->hbp_blanking)
+		sync_cfg |= DSI_HBP_BLANKING;
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->hfp_blanking)
+		sync_cfg |= DSI_HFP_BLANKING;
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->sync_pulse_eventn)
+		sync_cfg |= DSI_SYNC_PULSE_EVENTN;
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->lpm_first_vsa_line)
+		sync_cfg |= DSI_LPM_FIRST_VSA_LINE;
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->lpm_last_vfp_line)
+		sync_cfg |= DSI_LPM_LAST_VFP_LINE;
+	/* enable frame generator */
+	fg_en = 1 << fg_id;
+	sync_cfg |= FRAME_GEN_EN(fg_en);
+	if (ctrl_cfg->tx_ctrl_cfg.tx_always_use_hact)
+		sync_cfg |= ALWAYS_USE_HACT(fg_en);
+	if (ctrl_cfg->tx_ctrl_cfg.tx_hact_wait_stop)
+		sync_cfg |= HACT_WAIT_STOP(fg_en);
+
+	/* MIPI_TX_HS_CTRL*/
+	ctrl = HS_CTRL_EN | TX_SOURCE; /* type:DSI,source:LCD */
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->eotp_en)
+		ctrl |= DSI_EOTP_EN;
+	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->hfp_blank_en)
+		ctrl |= DSI_CMD_HFP_EN;
+	ctrl |= LCD_VC(fg_id);
+	ctrl |= ACTIVE_LANES(ctrl_cfg->active_lanes - 1);
+	/*67 ns stop time*/
+	ctrl |= HSEXIT_CNT(0x43);
+
+	kmb_write_mipi(MIPI_TXm_HS_SYNC_CFG(ctrl_no), sync_cfg);
+	kmb_write_mipi(MIPI_TXm_HS_CTRL(ctrl_no), ctrl);
+}
+
 static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
 		struct mipi_ctrl_cfg *ctrl_cfg)
 {
@@ -596,8 +645,7 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
 		/* set frame specific parameters */
 		mipi_tx_fg_cfg(dev_priv, frame_id, ctrl_cfg->active_lanes,
 				bits_per_pclk,
-				word_count,
-				ctrl_cfg->lane_rate_mbps,
+				word_count, ctrl_cfg->lane_rate_mbps,
 				ctrl_cfg->tx_ctrl_cfg.frames[frame_id]);
 
 		active_vchannels++;
@@ -612,6 +660,9 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_priv,
 		return -EINVAL;
 	/*Multi-Channel FIFO Configuration*/
 	mipi_tx_multichannel_fifo_cfg(ctrl_cfg->active_lanes, frame_id);
+
+	/*Frame Generator Enable */
+	mipi_tx_ctrl_cfg(frame_id, ctrl_cfg);
 	return ret;
 }
 

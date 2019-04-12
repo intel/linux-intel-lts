@@ -398,7 +398,35 @@
 #define MIPI_CTRL_HS_BASE_ADDR			(0x400)
 
 #define MIPI_TX_HS_CTRL				(0x0)
+#define   MIPI_TXm_HS_CTRL(M)			(MIPI_TX_HS_CTRL + (0x400*M))
+#define   HS_CTRL_EN				(1 << 0)
+#define   HS_CTRL_CSIDSIN			(1 << 2) /*1:CSI 0:DSI*/
+#define   TX_SOURCE				(1 << 3) /*1:LCD, 0:DMA*/
+#define   ACTIVE_LANES(n)			((n) << 4)
+#define   LCD_VC(ch)				((ch) << 8)
+#define   DSI_EOTP_EN				(1 << 11)
+#define   DSI_CMD_HFP_EN			(1 << 12)
+#define   CRC_EN				(1 << 14)
+#define   HSEXIT_CNT(n)				((n) << 16)
+#define   HSCLKIDLE_CNT				(1 << 24)
 #define MIPI_TX_HS_SYNC_CFG			(0x8)
+#define   MIPI_TXm_HS_SYNC_CFG(M)		(MIPI_TX_HS_SYNC_CFG \
+						+ (0x400*M))
+#define   LINE_SYNC_PKT_ENABLE			(1 << 0)
+#define   FRAME_COUNTER_ACTIVE			(1 << 1)
+#define   LINE_COUNTER_ACTIVE			(1 << 2)
+#define   DSI_V_BLANKING			(1 << 4)
+#define   DSI_HSA_BLANKING			(1 << 5)
+#define   DSI_HBP_BLANKING			(1 << 6)
+#define   DSI_HFP_BLANKING			(1 << 7)
+#define   DSI_SYNC_PULSE_EVENTN			(1 << 8)
+#define   DSI_LPM_FIRST_VSA_LINE		(1 << 9)
+#define   DSI_LPM_LAST_VFP_LINE			(1 << 10)
+#define   WAIT_ALL_SECT				(1 << 11)
+#define   WAIT_TRIG_POS				(1 << 15)
+#define   ALWAYS_USE_HACT(f)			((f) << 19)
+#define   FRAME_GEN_EN(f)			((f) << 23)
+#define   HACT_WAIT_STOP(f)			((f) << 28)
 #define MIPI_TX0_HS_FG0_SECT0_PH		(0x40)
 #define MIPI_TXm_HS_FGn_SECTo_PH(M, N, O)	(MIPI_TX0_HS_FG0_SECT0_PH + \
 						(0x400*M) + (0x2C*N) + (8*O))
@@ -454,7 +482,6 @@
 #define MIPI_TX_HS_LLP_H_FRONTPORCH0		(0x15c)
 #define MIPI_TXm_HS_LLP_H_FRONTPORCHn(M, N)	(MIPI_TX_HS_LLP_H_FRONTPORCH0 \
 						+ (0x400*M) + (0x4*N))
-
 #define MIPI_TX_HS_MC_FIFO_CTRL_EN		(0x194)
 #define MIPI_TXm_HS_MC_FIFO_CTRL_EN(M)		(MIPI_TX_HS_MC_FIFO_CTRL_EN \
 						+ (0x400*M))
