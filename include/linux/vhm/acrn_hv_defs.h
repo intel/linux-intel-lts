@@ -74,6 +74,7 @@
  * this will be removed.
  */
 #define HC_SET_CALLBACK_VECTOR		_HC_ID(HC_ID, HC_ID_GEN_BASE + 0x02)
+#define HC_GET_PLATFORM_INFO        _HC_ID(HC_ID, HC_ID_GEN_BASE + 0x03)
 
 /* VM management */
 #define HC_ID_VM_BASE               0x10UL
@@ -251,6 +252,21 @@ struct hc_api_version {
 	uint32_t minor_version;
 } __aligned(8);
 
+struct hc_platform_info {
+	/** Hardware Information */
+	/** Physical CPU number */
+	uint16_t cpu_num;
+
+	/** Align the size of version & hardware info to 128Bytes. */
+	uint8_t reserved0[126];
+
+	/** Configuration Information */
+	/** Maximum vCPU number for one VM. */
+	uint16_t max_vcpus_per_vm;
+
+	/** Align the size of Configuration info to 128Bytes. */
+	uint8_t reserved1[126];
+} __aligned(8);
 
 enum profiling_cmd_type {
        PROFILING_MSR_OPS = 0,

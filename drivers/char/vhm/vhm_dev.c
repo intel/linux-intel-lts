@@ -162,6 +162,24 @@ static long vhm_dev_ioctl(struct file *filep,
 			return -EFAULT;
 
 		return 0;
+	} else if (ioctl_num == IC_GET_PLATFORM_INFO) {
+		struct hc_platform_info *platform_info;
+
+		platform_info = acrn_mempool_alloc(GFP_KERNEL);
+		ret = hcall_get_platform_info(virt_to_phys(platform_info));
+		if (ret < 0) {
+			acrn_mempool_free(platform_info);
+			return -EFAULT;
+		}
+
+		if (copy_to_user((void *)ioctl_param,
+			platform_info, sizeof(*platform_info))) {
+			acrn_mempool_free(platform_info);
+			return -EFAULT;
+		}
+
+		acrn_mempool_free(platform_info);
+		return 0;
 	}
 
 	memset(&ic_pt_irq, 0, sizeof(ic_pt_irq));
@@ -755,8 +773,8 @@ static int __init vhm_init(void)
 		return -EINVAL;
 	}
 
-	if (api_version.major_version == SUPPORT_HV_API_VERSION_MAJOR &&
-		api_version.minor_version == SUPPORT_HV_API_VERSION_MINOR) {
+	if (api_version.major_version >= SUPPORT_HV_API_VERSION_MAJOR &&
+		api_version.minor_version >= SUPPORT_HV_API_VERSION_MINOR) {
 		pr_info("vhm: hv api version %d.%d\n",
 			api_version.major_version, api_version.minor_version);
 	} else {

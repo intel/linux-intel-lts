@@ -64,6 +64,7 @@
 /* General */
 #define IC_ID_GEN_BASE                  0x0UL
 #define IC_GET_API_VERSION             _IC_ID(IC_ID, IC_ID_GEN_BASE + 0x00)
+#define IC_GET_PLATFORM_INFO           _IC_ID(IC_ID, IC_ID_GEN_BASE + 0x03)
 
 /* VM management */
 #define IC_ID_VM_BASE                  0x10UL
