@@ -405,7 +405,7 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 		ext_core_dump = vzalloc(MAX_DSP_EXCEPTION_STACK_SIZE + EXTRA_BYTES);
         if (!ext_core_dump) {
                 dev_err(ctx->dsp->dev, "failed to allocate memory for FW Stack\n");
-                return;
+                return -ENOMEM;
         }
 	for (idx = 0; idx < sst->trace_wind.nr_dsp; idx++) {
 		if(skl_check_ext_excep_data_avail(ctx, idx) != 0) {
