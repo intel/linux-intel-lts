@@ -481,6 +481,7 @@ static irqreturn_t cnl_dsp_irq_thread_handler(int irq, void *context)
 
 	hipcida = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCIDA);
 	hipctdr = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCTDR);
+	hipctdd = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCTDD);
 
 	/* reply message from DSP */
 	if (hipcida & CNL_ADSP_REG_HIPCIDA_DONE) {
@@ -500,7 +501,6 @@ static irqreturn_t cnl_dsp_irq_thread_handler(int irq, void *context)
 
 	/* New message from DSP */
 	if (hipctdr & CNL_ADSP_REG_HIPCTDR_BUSY) {
-		hipctdd = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCTDD);
 		header.primary = hipctdr;
 		header.extension = hipctdd;
 		dev_dbg(dsp->dev, "IPC irq: Firmware respond primary:%#x ext:%#x",
