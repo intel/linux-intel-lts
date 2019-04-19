@@ -7,7 +7,7 @@ menu "Trusty driver"
 
 config TRUSTY
 	tristate "Trusty core driver"
-	depends on ARM || ARM64
+	depends on ARM || ARM64 || X86
 	help
 	  Trusty is a secure OS that provides a Trusted Execution Environment
 	  (TEE) for Android.  Trusty runs on the same processor as Linux but is
@@ -75,6 +75,14 @@ config TRUSTY_VIRTIO_IPC
 	  Enable support for communicating with Trusty services.
 
 	  If you build this as a module, it will be called trusty-ipc.
+
+config TRUSTY_X86_64
+	tristate "Trusty x86_64 driver"
+	select OF
+	select OF_EARLY_FLATTREE
+	help
+	Enable Trusty Intel architecture implementation.
+	default n
 
 endif # TRUSTY
 

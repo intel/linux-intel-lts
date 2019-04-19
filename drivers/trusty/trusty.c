@@ -265,8 +265,13 @@ int trusty_share_memory(struct device *dev, u64 *id,
 	}
 
 	sg = sglist;
+#if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
 	ret = trusty_encode_page_info(&pg_inf, phys_to_page(sg_dma_address(sg)),
 				      pgprot);
+#elif defined(CONFIG_X86_64)
+	ret = trusty_encode_page_info(&pg_inf, virt_to_page(phys_to_virt(sg_dma_address(sg))),
+				      pgprot);
+#endif
 	if (ret) {
 		dev_err(s->dev, "%s: trusty_encode_page_info failed\n",
 			__func__);
