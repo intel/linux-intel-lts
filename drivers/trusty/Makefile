@@ -12,3 +12,4 @@ obj-$(CONFIG_TRUSTY_LOG)	+= trusty-log.o
 obj-$(CONFIG_TRUSTY_TEST)	+= trusty-test.o
 obj-$(CONFIG_TRUSTY_VIRTIO)	+= trusty-virtio.o
 obj-$(CONFIG_TRUSTY_VIRTIO_IPC)	+= trusty-ipc.o
+obj-$(CONFIG_TRUSTY_X86_64)	+= trusty-x86_64.o
