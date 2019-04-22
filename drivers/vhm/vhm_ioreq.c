@@ -548,6 +548,7 @@ struct vhm_request *acrn_ioreq_get_reqbuf(int client_id)
 	if (unlikely(vm == NULL || vm->req_buf == NULL)) {
 		pr_warn("vhm-ioreq: the req buf page not ready yet "
 			"for vmid %ld\n", client->vmid);
+		return NULL;
 	}
 	acrn_ioreq_put_client(client);
 	return (struct vhm_request *)vm->req_buf;
