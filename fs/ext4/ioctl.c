@@ -751,6 +751,13 @@ resizefs_out:
 		if (!blk_queue_discard(q))
 			return -EOPNOTSUPP;
 
+		/*
+		 * We haven't replayed the journal, so we cannot use our
+		 * block-bitmap-guided storage zapping commands.
+		 */
+		if (test_opt(sb, NOLOAD) && ext4_has_feature_journal(sb))
+			return -EROFS;
+
 		if ((flags & BLKDEV_DISCARD_SECURE) && !blk_queue_secure_erase(q))
 			return -EOPNOTSUPP;
 
