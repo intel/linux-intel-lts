@@ -1,58 +1,58 @@
-/*
+/* SPDX-License-Identifier: GPL-2.0 AND BSD-3-Clause
+ *
+ * This file is provided under a dual BSD/GPLv2 license.  When using or
+ * redistributing this file, you may do so under either license.
+ *
+ * GPL LICENSE SUMMARY
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * Contact Information:
+ * SoC Watch Developer Team <socwatchdevelopers@intel.com>
+ * Intel Corporation,
+ * 1300 S Mopac Expwy,
+ * Austin, TX 78746
+ *
+ * BSD LICENSE
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above copyright
+ *     notice, this list of conditions and the following disclaimer in
+ *     the documentation and/or other materials provided with the
+ *     distribution.
+ *   * Neither the name of Intel Corporation nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
-  This file is provided under a dual BSD/GPLv2 license.  When using or
-  redistributing this file, you may do so under either license.
-
-  GPL LICENSE SUMMARY
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
-
-  This program is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  General Public License for more details.
-
-  Contact Information:
-  SoC Watch Developer Team <socwatchdevelopers@intel.com>
-  Intel Corporation,
-  1300 S Mopac Expwy,
-  Austin, TX 78746
-
-  BSD LICENSE
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in
-      the documentation and/or other materials provided with the
-      distribution.
-    * Neither the name of Intel Corporation nor the names of its
-      contributors may be used to endorse or promote products derived
-      from this software without specific prior written permission.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-*/
 #ifndef __SW_STRUCTS_H__
 #define __SW_STRUCTS_H__ 1
 
@@ -82,7 +82,7 @@ typedef struct sw_string_type {
 	char data[1];
 } sw_string_type_t;
 #pragma pack(pop)
-#define SW_STRING_TYPE_HEADER_SIZE()                                           \
+#define SW_STRING_TYPE_HEADER_SIZE()			\
 	(sizeof(struct sw_string_type) - sizeof(char[1]))
 
 #pragma pack(push, 1)
@@ -91,19 +91,22 @@ struct sw_key_value_payload {
 	char data[1];
 };
 #pragma pack(pop)
-#define SW_KEY_VALUE_PAYLOAD_HEADER_SIZE()                                     \
+#define SW_KEY_VALUE_PAYLOAD_HEADER_SIZE()		\
 	(sizeof(struct sw_key_value_payload) - sizeof(char[1]))
 
 typedef enum sw_kernel_wakelock_type {
-	SW_WAKE_LOCK = 0, /* A kernel wakelock was acquired */
-	SW_WAKE_UNLOCK = 1, /* A kernel wakelock was released */
-	SW_WAKE_LOCK_TIMEOUT =
-		2, /* A kernel wakelock was acquired with a timeout */
-	SW_WAKE_LOCK_INITIAL = 3, /* A kernel wakelock was acquired
-				   * before the collection started
-				   */
-	SW_WAKE_UNLOCK_ALL = 4, /* All previously held kernel wakelocks were */
-	/*   released -- used in ACPI S3 notifications */
+	/* A kernel wakelock was acquired */
+	SW_WAKE_LOCK = 0,
+	/* A kernel wakelock was released */
+	SW_WAKE_UNLOCK = 1,
+	/* A kernel wakelock was acquired with a timeout */
+	SW_WAKE_LOCK_TIMEOUT = 2,
+	/* A kernel wakelock was acquired before the collection started*/
+	SW_WAKE_LOCK_INITIAL = 3,
+	/* All previously held kernel wakelocks were
+	 * released -- used in ACPI S3 notifications
+	 */
+	SW_WAKE_UNLOCK_ALL = 4,
 } sw_kernel_wakelock_type_t;
 
 typedef enum sw_when_type {
@@ -116,18 +119,23 @@ typedef enum sw_when_type {
 } sw_when_type_t;
 
 /**
- * trigger_bits is defined to use type pw_u8_t that makes only up
- * to 8 types possible
+ * trigger_bits is defined to use type pw_u8_t that makes only
+ * upto 8 types possible
  */
-#define SW_TRIGGER_BEGIN_MASK() (1U << SW_WHEN_TYPE_BEGIN)
-#define SW_TRIGGER_END_MASK() (1U << SW_WHEN_TYPE_END)
-#define SW_TRIGGER_POLL_MASK() (1U << SW_WHEN_TYPE_POLL)
-#define SW_TRIGGER_TRACEPOINT_MASK() (1U << SW_WHEN_TYPE_TRACEPOINT)
-#define SW_TRIGGER_NOTIFIER_MASK() (1U << SW_WHEN_TYPE_NOTIFIER)
-#define SW_GET_TRIGGER_MASK_VALUE(m) (1U << (m))
-#define SW_TRIGGER_MASK_ALL() (0xFF)
+#define SW_TRIGGER_BEGIN_MASK()		(1U << SW_WHEN_TYPE_BEGIN)
+#define SW_TRIGGER_END_MASK()		(1U << SW_WHEN_TYPE_END)
+#define SW_TRIGGER_POLL_MASK()		(1U << SW_WHEN_TYPE_POLL)
+#define SW_TRIGGER_TRACEPOINT_MASK()	(1U << SW_WHEN_TYPE_TRACEPOINT)
+#define SW_TRIGGER_NOTIFIER_MASK()	(1U << SW_WHEN_TYPE_NOTIFIER)
+#define SW_GET_TRIGGER_MASK_VALUE(m)	(1U << (m))
+#define SW_TRIGGER_MASK_ALL()		(0xFF)
 
-enum sw_io_cmd { SW_IO_CMD_READ = 0, SW_IO_CMD_WRITE, SW_IO_CMD_MAX };
+enum sw_io_cmd {
+	SW_IO_CMD_READ = 0,
+	SW_IO_CMD_WRITE,
+	SW_IO_CMD_MAX
+};
+
 
 #pragma pack(push, 1)
 struct sw_driver_msr_io_descriptor {
@@ -141,10 +149,8 @@ struct sw_driver_ipc_mmio_io_descriptor {
 	union {
 #ifdef SWW_MERGE
 #pragma warning(push)
-#pragma warning(                                                               \
-	disable : 4201) /* disable C4201: nonstandard extension used:
-			 * nameless struct/union
-			 */
+/* disable C4201: nonstandard extension used: nameless struct/union */
+#pragma warning(disable:4201)
 #endif
 		struct {
 			pw_u16_t command;
@@ -154,13 +160,14 @@ struct sw_driver_ipc_mmio_io_descriptor {
 #pragma warning(pop) /* enable C4201 */
 #endif
 		union {
-			pw_u32_t ipc_command; /* (sub_command << 12)
-					       * | (command)
-					       */
+			/* (sub_command << 12) | (command) */
+			pw_u32_t ipc_command;
 			pw_u8_t is_gbe; /* Used only for GBE MMIO */
 		};
 	};
-	/* TODO: add a section for 'ctrl_address' and 'ctrl_remapped_address' */
+	/* TODO: add a section for 'ctrl_address' and
+	 * 'ctrl_remapped_address'
+	 */
 	union {
 		pw_u64_t data_address; /* Will be "io_remapped" */
 		pw_u64_t data_remapped_address;
@@ -194,10 +201,12 @@ struct sw_driver_configdb_io_descriptor {
 
 #pragma pack(push, 1)
 struct sw_driver_trace_args_io_descriptor {
-	pw_u8_t num_args; /* Number of valid entries in the 'args' array,
-			   * below; 1 <= num_args <= 7
-			   */
-	pw_u8_t args[7]; /* Max of 7 args can be recorded */
+	/* Number of valid entries in the 'args' array, below;
+	 * 1 <= num_args <= 7
+	 */
+	pw_u8_t num_args;
+	/* Max of 7 args can be recorded */
+	pw_u8_t args[7];
 };
 #pragma pack(pop)
 
@@ -205,14 +214,14 @@ struct sw_driver_trace_args_io_descriptor {
 /**
  * struct - sw_driver_telem_io_descriptor - Telemetry Metric descriptor
  *
- * @id:    (Client & Driver) Telemetry ID of the counter to read.
+ * @id:	(Client & Driver) Telemetry ID of the counter to read.
  * @idx:   (Driver only) index into telem array to read, or the row
- *            of the telem_indirect table to lookup the telem array index.
+ *		of the telem_indirect table to lookup the telem array index.
  * @unit:  Unit from which to collect:  0 = PMC, 1 = PUNIT
- *              Values come from the telemetry_unit enum.
+ *		Values come from the telemetry_unit enum.
  * @scale_op:  When there are multiple instances of a telem value (e.g.
- *              module C-states) the operation to use when scaling the CPU ID
- *              and adding it to the telemetry data ID.
+ *		module C-states) the operation to use when scaling the CPU ID
+ *		and adding it to the telemetry data ID.
  * @scale_val: Amount to scale an ID (when scaling one.)
  *
  * Like all hardware mechanism descriptors, the client uses this to pass
@@ -223,13 +232,13 @@ struct sw_driver_trace_args_io_descriptor {
  * the equation: ID = ID_value + (cpuid <scaling_op> <scaling_val>)
  * where <scaling_op> is one of +, *, /, or %, and scaling_val is an integer
  * value.  This gives you:
- *            Operation             scale_op     scale_val
- *       Single instance of an ID       *            0
- *       Sequentially increasing
- *          CPU-specific values         *            1
- *       Per module cpu-specific
- *          values (2 cores/module)     /            2
- *       Round Robin assignment         %         cpu_count
+ *	Operation			scale_op	 	scale_val
+ *	Single instance of an ID	*			0
+ *	sequentially increasing
+ *	CPU-specific values		*			1
+ *	Per module cpu-specific
+ *	values (2 cores/module)		/			2
+ *	Round Robin assignment		%			cpu_count
  *
  * Note that scaling_value of 0 implies that no scaling should be
  * applied.  While (*, 1) is equivalent to (+, 0), the scaling value of 0
@@ -241,21 +250,21 @@ struct sw_driver_trace_args_io_descriptor {
 struct sw_driver_telem_io_descriptor {
 	union {
 		pw_u16_t id;
-		pw_u8_t idx;
+		pw_u8_t  idx;
 	};
-	pw_u8_t unit;
-	pw_u8_t scale_op;
-	pw_u16_t scale_val;
+	pw_u8_t   unit;
+	pw_u8_t   scale_op;
+	pw_u16_t  scale_val;
 };
 #pragma pack(pop)
 enum telemetry_unit { TELEM_PUNIT = 0, TELEM_PMC, TELEM_UNIT_NONE };
-#define TELEM_MAX_ID 0xFFFF /* Maximum value of a Telemtry event ID. */
-#define TELEM_MAX_SCALE 0xFFFF /* Maximum ID scaling value. */
-#define TELEM_OP_ADD '+' /* Addition operator */
-#define TELEM_OP_MULT '*' /* Multiplication operator */
-#define TELEM_OP_DIV '/' /* Division operator */
-#define TELEM_OP_MOD '%' /* Modulus operator */
-#define TELEM_OP_NONE 'X' /* No operator--Not a scaled ID */
+#define TELEM_MAX_ID	0xFFFF  /* Maximum value of a Telemtry event ID. */
+#define TELEM_MAX_SCALE 0xFFFF  /* Maximum ID scaling value. */
+#define TELEM_OP_ADD	'+'	 /* Addition operator */
+#define TELEM_OP_MULT	'*'	 /* Multiplication operator */
+#define TELEM_OP_DIV	'/'	 /* Division operator */
+#define TELEM_OP_MOD	'%'	 /* Modulus operator */
+#define TELEM_OP_NONE	'X'	 /* No operator--Not a scaled ID */
 
 #pragma pack(push, 1)
 struct sw_driver_mailbox_io_descriptor {
@@ -291,8 +300,8 @@ struct sw_driver_pch_mailbox_io_descriptor {
 	};
 	union {
 		/*
-		 * Will be "io_remapped"
-		 */
+	 	* Will be "io_remapped"
+		*/
 		pw_u64_t msg_full_sts_address;
 		pw_u64_t msg_full_sts_remapped_address;
 	};
@@ -312,20 +321,17 @@ typedef struct sw_driver_io_descriptor {
 	pw_u16_t collection_type;
 	/* TODO: specify READ/WRITE */
 	pw_s16_t collection_command; /* One of 'enum sw_io_cmd' */
-	pw_u16_t counter_size_in_bytes; /* The number of bytes to
-					 * READ or WRITE
-					 */
+	pw_u16_t counter_size_in_bytes; /* The number of bytes to READ or WRITE */
 	union {
-		struct sw_driver_msr_io_descriptor msr_descriptor;
-		struct sw_driver_ipc_mmio_io_descriptor ipc_descriptor;
-		struct sw_driver_ipc_mmio_io_descriptor mmio_descriptor;
-		struct sw_driver_pci_io_descriptor pci_descriptor;
-		struct sw_driver_configdb_io_descriptor configdb_descriptor;
-		struct sw_driver_trace_args_io_descriptor trace_args_descriptor;
-		struct sw_driver_telem_io_descriptor telem_descriptor;
-		struct sw_driver_pch_mailbox_io_descriptor
-			pch_mailbox_descriptor;
-		struct sw_driver_mailbox_io_descriptor mailbox_descriptor;
+		struct sw_driver_msr_io_descriptor 		msr_descriptor;
+		struct sw_driver_ipc_mmio_io_descriptor 	ipc_descriptor;
+		struct sw_driver_ipc_mmio_io_descriptor 	mmio_descriptor;
+		struct sw_driver_pci_io_descriptor		pci_descriptor;
+		struct sw_driver_configdb_io_descriptor		configdb_descriptor;
+		struct sw_driver_trace_args_io_descriptor 	trace_args_descriptor;
+		struct sw_driver_telem_io_descriptor		telem_descriptor;
+		struct sw_driver_pch_mailbox_io_descriptor 	pch_mailbox_descriptor;
+		struct sw_driver_mailbox_io_descriptor		mailbox_descriptor;
 	};
 	pw_u64_t write_value; /* The value to WRITE */
 } sw_driver_io_descriptor_t;
@@ -343,49 +349,38 @@ typedef struct sw_driver_io_descriptor {
 struct sw_driver_interface_info {
 	pw_u64_t tracepoint_id_mask;
 	pw_u64_t notifier_id_mask;
-	pw_s16_t cpu_mask; /* On which CPU(s) should the driver
-			    * read the data?
-			    * Currently:  -2 ==> read on ALL CPUs,
-			    *             -1 ==> read on ANY CPU,
-			    *           >= 0 ==> the specific CPU to read on
-			    */
+	pw_s16_t cpu_mask;  /* On which CPU(s) should the driver read the data? */
+			/* Currently:  -2 ==> read on ALL CPUs, */
+			/* -1 ==> read on ANY CPU, */
+			/* >= 0 ==> the specific CPU to read on */
 	pw_s16_t plugin_id; /* Metric Plugin SID */
-	pw_s16_t metric_id; /* Domain-specific ID assigned by each
-			     * Metric Plugin
-			     */
+	pw_s16_t metric_id; /* Domain-specific ID assigned by each Metric Plugin */
 	pw_s16_t msg_id; /* Msg ID retrieved from the SoC Watch config file */
-	pw_u16_t num_io_descriptors; /* Number of descriptors in the array,
-				      * below.
-				      */
-	pw_u8_t trigger_bits; /* Mask of 'when bits' to fire this collector. */
+	pw_u16_t num_io_descriptors; /* Number of descriptors in the array, below. */
+	pw_u8_t  trigger_bits;  /* Mask of 'when bits' to fire this collector. */
 	pw_u16_t sampling_interval_msec; /* Sampling interval, in msecs */
-	pw_u8_t descriptors[1]; /* Array of sw_driver_io_descriptor structs. */
+	pw_u8_t  descriptors[1];	 /* Array of sw_driver_io_descriptor structs. */
 };
 #pragma pack(pop)
 
-#define SW_DRIVER_INTERFACE_INFO_HEADER_SIZE()                                 \
+#define SW_DRIVER_INTERFACE_INFO_HEADER_SIZE()	\
 	(sizeof(struct sw_driver_interface_info) - sizeof(pw_u8_t[1]))
 
 #pragma pack(push, 1)
 struct sw_driver_interface_msg {
-	pw_u16_t num_infos; /* Number of 'sw_driver_interface_info'
-			     * structs contained within the 'infos' variable,
-			     * below
-			     */
-	pw_u16_t min_polling_interval_msecs; /* Min time to wait before
-					      * polling; used exclusively
-					      * with the low overhead,
-					      * context-switch based
-					      * polling mode
-					      */
-					      /* pw_u16_t infos_size_bytes;
-					       * Size of data inlined within the
-					       * 'infos' variable, below
-					       */
+	/* Number of 'sw_driver_interface_info' structs contained within
+	 * the 'infos' variable, below
+	 */
+	pw_u16_t num_infos;
+	/* Min time to wait before polling; used exclusively
+	 * with the low overhead, context-switch based
+	 * polling mode
+	 */
+	pw_u16_t min_polling_interval_msecs;
 	pw_u8_t infos[1];
 };
 #pragma pack(pop)
-#define SW_DRIVER_INTERFACE_MSG_HEADER_SIZE()                                  \
+#define SW_DRIVER_INTERFACE_MSG_HEADER_SIZE()	\
 	(sizeof(struct sw_driver_interface_msg) - sizeof(pw_u8_t[1]))
 
 typedef enum sw_name_id_type {
@@ -402,7 +397,7 @@ struct sw_name_id_pair {
 	struct sw_string_type name;
 };
 #pragma pack(pop)
-#define SW_NAME_ID_HEADER_SIZE()                                               \
+#define SW_NAME_ID_HEADER_SIZE() 		\
 	(sizeof(struct sw_name_id_pair) - sizeof(struct sw_string_type))
 
 #pragma pack(push, 1)
@@ -423,20 +418,23 @@ struct sw_name_info_msg {
 typedef struct sw_driver_msg {
 	pw_u64_t tsc;
 	pw_u16_t cpuidx;
-	pw_u8_t plugin_id; /* Cannot have more than 256 plugins */
-	pw_u8_t metric_id; /* Each plugin cannot handle more than 256 metrics */
-	pw_u8_t msg_id; /* Each metric cannot have more than 256 components */
+	/* Cannot have more than 256 plugins */
+	pw_u8_t  plugin_id;
+	/* Each plugin cannot handle more than 256 metrics */
+	pw_u8_t  metric_id;
+	/* Each metric cannot have more than 256 components */
+	pw_u8_t  msg_id;
 	pw_u16_t payload_len;
-	/* pw_u64_t p_payload;  Ptr to payload */
+	/* pw_u64_t p_payload;  // Ptr to payload */
 	union {
-		pw_u64_t __dummy; /* Ensure size of struct is
-				   * consistent on x86, x64
-				   */
-		char *p_payload; /* Ptr to payload (collected data values). */
+		/* Ensure size of struct is consistent on x86, x64 */
+		pw_u64_t __dummy;
+		/* Ptr to payload (collected data values). */
+		char	*p_payload;
 	};
 } sw_driver_msg_t;
 #pragma pack(pop)
-#define SW_DRIVER_MSG_HEADER_SIZE()                                            \
+#define SW_DRIVER_MSG_HEADER_SIZE() 		\
 	(sizeof(struct sw_driver_msg) - sizeof(pw_u64_t))
 
 typedef enum sw_driver_collection_cmd {
@@ -500,6 +498,21 @@ enum sw_pm_mode {
 
 #define SW_PM_VALUE(mode, action) ((mode) << 16 | (action))
 
+#pragma pack(push, 1)
+/*
+ * Structure for continuous collection
+ */
+struct sw_driver_continuous_collect {
+	/* Size of data that needs to be collected every second */
+	pw_u32_t collection_size;
+	/* struct sw_driver_interface_msg for this collection */
+	pw_u8_t payload[1];
+};
+#define SW_DRIVER_CONTINUOUS_COLLECT_HEADER_SIZE() 		\
+		(sizeof(struct sw_driver_continuous_collect) -	\
+			sizeof(pw_u8_t[1]))
+#pragma pack(pop)
+
 /*
  * Wrapper for ioctl arguments.
  * EVERY ioctl MUST use this struct!
@@ -508,8 +521,8 @@ enum sw_pm_mode {
 struct sw_driver_ioctl_arg {
 	pw_s32_t in_len;
 	pw_s32_t out_len;
-	/* pw_u64_t p_in_arg; Pointer to input arg */
-	/* pw_u64_t p_out_arg; Pointer to output arg */
+	/* pw_u64_t p_in_arg; // Pointer to input arg */
+	/* pw_u64_t p_out_arg; // Pointer to output arg */
 	char *in_arg;
 	char *out_arg;
 };
@@ -517,10 +530,14 @@ struct sw_driver_ioctl_arg {
 
 #pragma pack(push, 1)
 typedef struct sw_driver_msg_interval {
-	pw_u8_t plugin_id; /* Cannot have more than 256 plugins */
-	pw_u8_t metric_id; /* Each plugin cannot handle more than 256 metrics */
-	pw_u8_t msg_id; /* Each metric cannot have more than 256 components */
-	pw_u16_t interval; /* collection interval */
+	/* Cannot have more than 256 plugins */
+	pw_u8_t  plugin_id;
+	/* Each plugin cannot handle more than 256 metrics */
+	pw_u8_t  metric_id;
+	/* Each metric cannot have more than 256 components */
+	pw_u8_t  msg_id;
+	/* collection interval */
+	pw_u16_t interval;
 } sw_driver_msg_interval_t;
 #pragma pack(pop)
 
