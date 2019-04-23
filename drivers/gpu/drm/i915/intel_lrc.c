@@ -1231,6 +1231,7 @@ static void __update_queue(struct intel_engine_cs *engine,
 
 	/* Set a timer to force preemption vs hostile userspace */
 	if (timeout &&
+	    !intel_vgpu_active(engine->i915) &&
 	    __execlists_need_preempt(prio, execlists->queue_priority)) {
 		GEM_TRACE("%s preempt timeout=%uns\n", engine->name, timeout);
 
