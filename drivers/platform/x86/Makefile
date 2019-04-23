@@ -96,3 +96,4 @@ obj-$(CONFIG_INTEL_PSTORE_PRAM)	+= intel_pstore_pram.o
 obj-$(CONFIG_INTEL_SOCWATCH) += socwatch/
 obj-$(CONFIG_INTEL_SOCWATCH_HV) += socwatchhv/
 obj-$(CONFIG_INTEL_SEP) += sepdk/
+obj-$(CONFIG_INTEL_ATOMISP2_PM)	+= intel_atomisp2_pm.o
