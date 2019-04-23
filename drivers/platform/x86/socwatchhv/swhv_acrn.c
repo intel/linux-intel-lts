@@ -1,3 +1,58 @@
+/* SPDX-License-Identifier: GPL-2.0 AND BSD-3-Clause
+ *
+ * This file is provided under a dual BSD/GPLv2 license.  When using or
+ * redistributing this file, you may do so under either license.
+ *
+ * GPL LICENSE SUMMARY
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * Contact Information:
+ * SoC Watch Developer Team <socwatchdevelopers@intel.com>
+ * Intel Corporation,
+ * 1300 S Mopac Expwy,
+ * Austin, TX 78746
+ *
+ * BSD LICENSE
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above copyright
+ *     notice, this list of conditions and the following disclaimer in
+ *     the documentation and/or other materials provided with the
+ *     distribution.
+ *   * Neither the name of Intel Corporation nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/timer.h>
@@ -34,9 +89,8 @@
 static int pcpu_num;
 bool flush_mode;
 
-/* TODO is this needed?
- * module_param(nr_cpus, int, S_IRUSR | S_IWUSR);
- */
+/* TODO is this needed? */
+/* module_param(nr_cpus, int, S_IRUSR | S_IWUSR); */
 
 static struct shared_buf **sbuf_per_cpu;
 
@@ -51,31 +105,32 @@ bool buffer_not_ready(int *cpu);
 struct swhv_acrn_msr_collector_data *swhv_alloc_msr_collector_node(void)
 {
 	struct swhv_acrn_msr_collector_data *node =
-		(struct swhv_acrn_msr_collector_data *)kmalloc(
-			sizeof(struct swhv_acrn_msr_collector_data),
-			GFP_KERNEL);
+		(struct swhv_acrn_msr_collector_data *)
+		kmalloc(sizeof(struct swhv_acrn_msr_collector_data),
+				GFP_KERNEL);
+
 	if (node) {
 		node->per_msg_payload_size = 0x0;
 		node->sample_id = 0x0;
-		node->msr_ops_list = kmalloc(
-			pcpu_num * sizeof(struct profiling_msr_ops_list),
-			GFP_KERNEL);
-		memset(node->msr_ops_list, 0,
-		       pcpu_num * sizeof(struct profiling_msr_ops_list));
+		node->msr_ops_list =
+			kmalloc_array(pcpu_num,
+				sizeof(struct profiling_msr_ops_list),
+				GFP_KERNEL);
+		memset(node->msr_ops_list, 0, pcpu_num *
+			sizeof(struct profiling_msr_ops_list));
 		SW_LIST_ENTRY_INIT(node, list);
 	}
 	return node;
 }
-struct swhv_acrn_msr_collector_data *
-swhv_add_driver_msr_info(void *list_head,
-			 const struct swhv_driver_interface_info *info)
+struct swhv_acrn_msr_collector_data *swhv_add_driver_msr_info(void *list_head,
+			   const struct swhv_driver_interface_info *info)
 {
 	int cpu;
 
 	SW_LIST_HEAD_VAR(swhv_acrn_msr_collector_data) * head = list_head;
 
-	struct swhv_acrn_msr_collector_data *node =
-		swhv_alloc_msr_collector_node();
+	struct swhv_acrn_msr_collector_data *node = swhv_alloc_msr_collector_node();
+
 	if (!node) {
 		pw_pr_error("ERROR allocating MSR collector node!\n");
 		return NULL;
@@ -83,8 +138,7 @@ swhv_add_driver_msr_info(void *list_head,
 
 	node->sample_id = info->sample_id;
 	node->cpu_mask = info->cpu_mask;
-	foreach_cpu(cpu, pcpu_num)
-	{
+	foreach_cpu(cpu, pcpu_num) {
 		node->msr_ops_list[cpu].collector_id = COLLECTOR_SOCWATCH;
 		node->msr_ops_list[cpu].msr_op_state = MSR_OP_REQUESTED;
 	}
@@ -92,6 +146,7 @@ swhv_add_driver_msr_info(void *list_head,
 	SW_LIST_ADD(head, node, list);
 	return node;
 }
+
 
 int swhv_add_driver_msr_io_desc(struct swhv_acrn_msr_collector_data *node,
 				struct swhv_driver_io_descriptor *info)
@@ -102,17 +157,14 @@ int swhv_add_driver_msr_io_desc(struct swhv_acrn_msr_collector_data *node,
 
 	/* Confirm this is an MSR IO descriptor */
 	if (info->collection_type != SWHV_COLLECTOR_TYPE_MSR) {
-		pw_pr_error(
-			"ERROR trying to configure MSR collector with other data!\n");
+		pw_pr_error("ERROR trying to configure MSR collector with other data!\n");
 		return -EINVAL;
 	}
 
-	foreach_cpu(cpu, pcpu_num)
-	{
+	foreach_cpu(cpu, pcpu_num) {
 		num_entries = node->msr_ops_list[cpu].num_entries;
 		if (num_entries >= MAX_MSR_LIST_NUM) {
-			pw_pr_error(
-				"ERROR trying to add too many MSRs to collect!\n");
+			pw_pr_error("ERROR trying to add too many MSRs to collect!\n");
 			return -PW_ERROR;
 		}
 
@@ -121,25 +173,23 @@ int swhv_add_driver_msr_io_desc(struct swhv_acrn_msr_collector_data *node,
 		msr_op = &(node->msr_ops_list[cpu].entries[idx]);
 
 		msr_op->msr_id = info->msr_descriptor.address;
-		if (info->collection_command == SWHV_IO_CMD_READ) {
+		if (info->collection_command == SWHV_IO_CMD_READ)
 			msr_op->msr_op_type = MSR_OP_READ;
-		} else if (info->collection_command == SWHV_IO_CMD_WRITE) {
+		else if (info->collection_command == SWHV_IO_CMD_WRITE)
 			msr_op->msr_op_type = MSR_OP_WRITE;
-		}
+
 
 		/*
 		 * Use the param field to set sample id.
-		 * This'll be used in the hypervisor to
-		 * set the id in the samples
+		 * This'll be used in the hypervisor to set the id in the samples
 		 */
 		msr_op->param = (uint16_t)node->sample_id;
 
 		num_entries++;
 
-		if (num_entries < MAX_MSR_LIST_NUM) {
-			node->msr_ops_list[cpu].entries[num_entries].msr_id =
-				-1;
-		}
+		if (num_entries < MAX_MSR_LIST_NUM)
+			node->msr_ops_list[cpu].entries[num_entries].msr_id = -1;
+
 		node->msr_ops_list[cpu].num_entries = num_entries;
 	}
 	return PW_SUCCESS;
@@ -151,22 +201,19 @@ int swhv_init_per_cpu_buffers(void)
 
 	sbuf_per_cpu = vmalloc(pcpu_num * sizeof(struct shared_buf *));
 
-	foreach_cpu(cpu, pcpu_num)
-	{
+	foreach_cpu(cpu, pcpu_num) {
 		/* allocate shared_buf */
 		sbuf_per_cpu[cpu] = sbuf_allocate(ACRN_BUF_ELEMENT_NUM,
-						  ACRN_BUF_ELEMENT_SIZE);
+					ACRN_BUF_ELEMENT_SIZE);
 		if (!sbuf_per_cpu[cpu]) {
-			pw_pr_error("Failed  to allocate buffer for cpu %d\n",
-				    cpu);
+			pw_pr_error("Failed  to allocate buffer for cpu %d\n", cpu);
 			ret = -ENOMEM;
 			goto out_free;
 		}
 	}
 
 	/* TODO understand the use of this API */
-	foreach_cpu(cpu, pcpu_num)
-	{
+	foreach_cpu(cpu, pcpu_num) {
 		ret = sbuf_share_setup(cpu, ACRN_SOCWATCH, sbuf_per_cpu[cpu]);
 		if (ret < 0) {
 			pw_pr_error("Failed to setup buffer for cpu %d\n", cpu);
@@ -176,15 +223,15 @@ int swhv_init_per_cpu_buffers(void)
 
 	return PW_SUCCESS;
 out_sbuf:
-	for (i = --cpu; i >= 0; i--) {
+	for (i = --cpu; i >= 0; i--)
 		sbuf_share_setup(i, ACRN_SOCWATCH, NULL);
-	}
+
 	cpu = pcpu_num;
 
 out_free:
-	for (i = --cpu; i >= 0; i--) {
+	for (i = --cpu; i >= 0; i--)
 		sbuf_free(sbuf_per_cpu[i]);
-	}
+
 
 	vfree(sbuf_per_cpu);
 	return ret;
@@ -196,11 +243,9 @@ void swhv_destroy_per_cpu_buffers(void)
 
 	pw_pr_debug("%s, pcpu_num: %d\n", __func__, pcpu_num);
 
-	foreach_cpu(cpu, pcpu_num)
-	{
-		/* TODO anything else to de-register?
-		 * deregister devices
-		 */
+	foreach_cpu(cpu, pcpu_num) {
+		/* TODO anything else to de-register? */
+		/* deregister devices */
 
 		/* set sbuf pointer to NULL in HV */
 		sbuf_share_setup(cpu, ACRN_SOCWATCH, NULL);
@@ -213,13 +258,10 @@ void swhv_destroy_per_cpu_buffers(void)
 
 void swhv_free_msr_collector_node(struct swhv_acrn_msr_collector_data *node)
 {
-	if (!node) {
-		return;
+	if (node) {
+		kfree(node->msr_ops_list);
+		kfree(node);
 	}
-
-	kfree(node->msr_ops_list);
-	kfree(node);
-	return;
 }
 
 void swhv_init_msr_collector_list(void)
@@ -237,8 +279,9 @@ void swhv_destroy_msr_collector_list(void)
 	SW_LIST_HEAD_VAR(swhv_acrn_msr_collector_data) * head = list_head;
 	while (!SW_LIST_EMPTY(head)) {
 		struct swhv_acrn_msr_collector_data *curr =
-			SW_LIST_GET_HEAD_ENTRY(
-				head, swhv_acrn_msr_collector_data, list);
+			SW_LIST_GET_HEAD_ENTRY(head,
+				swhv_acrn_msr_collector_data, list);
+
 		SW_LIST_UNLINK(curr, list);
 		swhv_free_msr_collector_node(curr);
 	}
@@ -254,15 +297,13 @@ void swhv_handle_hypervisor_collector(uint32_t control_cmd)
 
 	acrn_profiling_control->collector_id = COLLECTOR_SOCWATCH;
 
-	if (control_cmd == 1) { /* start collection + send switch bitmask */
+	if (control_cmd == 1) {
+		/* start collection + send switch bitmask */
 		pw_pr_debug("STARTING ACRN PROFILING SERVICE\n");
-		global_collection_switch |=
-			control_cmd;	/* first bit controls start/stop
-					 * of collection
-					 */
-	} else if (control_cmd == 0) { /* stop collection
-					* + reset switch bitmask
-					*/
+		/* first bit controls start/stop of collection */
+		global_collection_switch |= control_cmd;
+	} else if (control_cmd == 0) {
+		/* stop collection + reset switch bitmask */
 		pw_pr_debug("STOPPING ACRN PROFILING SERVICE\n");
 		global_collection_switch = control_cmd;
 	}
@@ -270,7 +311,7 @@ void swhv_handle_hypervisor_collector(uint32_t control_cmd)
 
 	/* send collection command + switch bitmask */
 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_SET_CONTROL_SWITCH,
-			virt_to_phys(acrn_profiling_control));
+		virt_to_phys(acrn_profiling_control));
 	kfree(acrn_profiling_control);
 }
 
@@ -287,22 +328,20 @@ int swhv_handle_msr_collector_list(void)
 		return retVal;
 	}
 
-	if (!head) {
+	if (!head)
 		return -PW_ERROR;
-	}
-	SW_LIST_FOR_EACH_ENTRY(curr, head, list)
-	{
+
+	SW_LIST_FOR_EACH_ENTRY(curr, head, list) {
 		pw_pr_debug("HANDLING MSR NODE\n");
 
-		/*hypervisor call to do immediate MSR read */
+		/* hypervisor call to do immediate MSR read */
 		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
 				virt_to_phys(curr->msr_ops_list));
 	}
 	return retVal;
 }
 
-long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
-		    int local_len)
+long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg, int local_len)
 {
 	struct swhv_driver_interface_info *local_info = NULL;
 	struct swhv_driver_io_descriptor *local_io_desc = NULL;
@@ -341,33 +380,33 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
 	num_infos = local_msg->num_infos;
 	pw_pr_debug("LOCAL NUM INFOS = %u\n", num_infos);
 	for (; num_infos > 0 && !done; --num_infos) {
-		local_info =
-			(struct swhv_driver_interface_info *)&__data[dst_idx];
+		local_info = (struct swhv_driver_interface_info *)&__data[dst_idx];
 		desc_idx = dst_idx + SWHV_DRIVER_INTERFACE_INFO_HEADER_SIZE();
 		dst_idx += (SWHV_DRIVER_INTERFACE_INFO_HEADER_SIZE() +
-			    local_info->num_io_descriptors *
-				    sizeof(struct swhv_driver_io_descriptor));
+				local_info->num_io_descriptors *
+				sizeof(struct swhv_driver_io_descriptor));
 		pw_pr_debug("# msrs = %u\n",
-			    (unsigned int)local_info->num_io_descriptors);
+			(unsigned)local_info->num_io_descriptors);
 
 		num_io_desc = local_info->num_io_descriptors;
 		pw_pr_debug("LOCAL NUM IO DESC = %u\n", num_io_desc);
 
 		driver_info_added = false;
 		for (; num_io_desc > 0; --num_io_desc) {
-			local_io_desc = (struct swhv_driver_io_descriptor
-						 *)&__data[desc_idx];
+			local_io_desc = (struct swhv_driver_io_descriptor *)
+					&__data[desc_idx];
 			desc_idx += sizeof(struct swhv_driver_io_descriptor);
 			if (local_io_desc->collection_type ==
-			    SWHV_COLLECTOR_TYPE_MSR) {
+					SWHV_COLLECTOR_TYPE_MSR) {
+
 				if (!driver_info_added) {
 					msr_collector_node =
 						swhv_add_driver_msr_info(
 							&swhv_msr_collector,
 							local_info);
-					if (msr_collector_node == NULL) {
+					if (msr_collector_node == NULL)
 						return -PW_ERROR;
-					}
+
 					driver_info_added = true;
 				}
 
@@ -376,15 +415,12 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
 					local_io_desc->msr_descriptor.address,
 					local_io_desc->msr_descriptor.type,
 					local_io_desc->collection_command);
-				swhv_add_driver_msr_io_desc(msr_collector_node,
-							    local_io_desc);
+				swhv_add_driver_msr_io_desc(msr_collector_node, local_io_desc);
 			} else if (local_io_desc->collection_type ==
-				   SWHV_COLLECTOR_TYPE_SWITCH) {
-				local_config_bitmap =
-					local_io_desc->switch_descriptor
-						.switch_bitmask;
-				pw_pr_debug("local bitmask = %u\n",
-					    local_config_bitmap);
+					SWHV_COLLECTOR_TYPE_SWITCH) {
+
+				local_config_bitmap = local_io_desc->switch_descriptor.switch_bitmask;
+				pw_pr_debug("local bitmask = %u\n", local_config_bitmap);
 
 				global_collection_switch = local_config_bitmap;
 
@@ -393,11 +429,11 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
 				 */
 				done = 1;
 				break;
-			} else {
+			} else
 				pw_pr_error(
 					"WARNING: unknown collector configuration requested, collector id: %u!\n",
 					local_io_desc->collection_type);
-			}
+
 		}
 		driver_info_added = false;
 	}
@@ -411,7 +447,7 @@ long swhv_stop(void)
 
 	pw_pr_debug("socwatch: stop called\n");
 
-	/*If MSR ops are present, perform them to get begin snapshot data. */
+	/* If MSR ops are present, perform them to get begin snapshot data. */
 	swhv_handle_msr_collector_list();
 
 	/* stop collection + reset switch bitmask */
@@ -446,15 +482,12 @@ long swhv_start(void)
 	swhv_handle_msr_collector_list();
 
 #if 0
-	/* Expand this eventually to retrieve VM-related info
-	 * from the hypervisor. Leaving it here for now.
-	 */
-	vm_info_list = kmalloc(sizeof(struct profiling_vm_info_list),
-			       GFP_KERNEL);
+	/* Expand this eventually to retrive VM-realted info from the hypervisor */
+	/* Leaving it here for now. */
+	vm_info_list = kmalloc(sizeof(struct profiling_vm_info_list), GFP_KERNEL);
 	memset(vm_info_list, 0, sizeof(struct profiling_vm_info_list));
 
-	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_VMINFO,
-			virt_to_phys(vm_info_list));
+	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_VMINFO, virt_to_phys(vm_info_list));
 
 	pw_pr_debug("Number of VMs: %d\n", vm_info_list->num_vms);
 	for (i = 0; i < vm_info_list->num_vms; ++i) {
@@ -493,7 +526,7 @@ long swhv_get_hypervisor_type(u32 __user *remote_args)
 	uint32_t hypervisor_type = swhv_hypervisor_acrn;
 
 	return copy_to_user(remote_args, &hypervisor_type,
-			    sizeof(hypervisor_type));
+			sizeof(hypervisor_type));
 }
 
 long swhv_msr_read(u32 __user *remote_in_args, u64 __user *remote_args)
@@ -503,44 +536,39 @@ long swhv_msr_read(u32 __user *remote_in_args, u64 __user *remote_args)
 	int ret = PW_SUCCESS;
 
 	if (get_user(msr_addr, remote_in_args)) {
-		pw_pr_error(
-			"ERROR: couldn't copy remote args for read MSR IOCTL!\n");
-		return -1;
+	pw_pr_error("ERROR: couldn't copy remote args for read MSR IOCTL!\n");
+	return -1;
 	}
 
 	if (!msr_read_ops_list) {
-		msr_read_ops_list = kmalloc(
-			pcpu_num * sizeof(struct profiling_msr_ops_list),
-			GFP_KERNEL);
-		if (!msr_read_ops_list) {
-			pw_pr_error(
-				"couldn't allocate memory for doing an MSR read!\n");
-			return -1;
-		}
-		memset(msr_read_ops_list, 0,
-		       pcpu_num * sizeof(struct profiling_msr_ops_list));
+	msr_read_ops_list = kmalloc_array(pcpu_num,
+			sizeof(struct profiling_msr_ops_list), GFP_KERNEL);
+	if (!msr_read_ops_list) {
+		pw_pr_error("couldn't allocate memory for doing an MSR read!\n");
+		return -1;
+	}
+	memset(msr_read_ops_list, 0, pcpu_num * sizeof(struct profiling_msr_ops_list));
 	}
 
 	/*
 	 * The hypercall is set in such a way that the MSR read will occur on
 	 * all CPUs and as a result we have to set up structures for each CPU.
 	 */
-	foreach_cpu(cpu, pcpu_num)
-	{
+	foreach_cpu(cpu, pcpu_num) {
 		msr_read_ops_list[cpu].collector_id = COLLECTOR_SOCWATCH;
 		msr_read_ops_list[cpu].msr_op_state = MSR_OP_REQUESTED;
 		msr_read_ops_list[cpu].num_entries = 1;
 		msr_read_ops_list[cpu].entries[0].msr_id = msr_addr;
 		msr_read_ops_list[cpu].entries[0].msr_op_type = MSR_OP_READ;
-		msr_read_ops_list[cpu].entries[1].msr_id =
-			-1; /* the next entry is expected to be set to -1 */
-		msr_read_ops_list[cpu].entries[1].param =
-			0; /* set to 0 to not generate sample in hypervisor */
+		/* the next entry is expected to be set to -1 */
+		msr_read_ops_list[cpu].entries[1].msr_id = -1;
+		/* set to 0 to not generate sample in hypervisor */
+		msr_read_ops_list[cpu].entries[1].param = 0;
 	}
 
 	/* hypervisor call to do immediate MSR read */
 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
-			virt_to_phys(msr_read_ops_list));
+		virt_to_phys(msr_read_ops_list));
 
 	/* copy value to remote args, pick from any CPU */
 	value = msr_read_ops_list[0].entries[0].value;
@@ -559,9 +587,9 @@ long swhv_collection_poll(void)
 	/*
 	 * Handle 'POLL' timer expirations.
 	 */
-	if (SW_LIST_EMPTY(&swhv_msr_collector)) {
+	if (SW_LIST_EMPTY(&swhv_msr_collector))
 		pw_pr_debug("DEBUG: EMPTY MSR COLLECTOR POLL LIST\n");
-	}
+
 
 	if (swhv_handle_msr_collector_list()) {
 		pw_pr_error("ERROR: unable to copy MSR value to userspace!\n");
@@ -570,8 +598,7 @@ long swhv_collection_poll(void)
 	return ret;
 }
 
-ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
-			   size_t bytes_to_read)
+ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy, size_t bytes_to_read)
 {
 	unsigned long bytes_not_copied;
 	ssize_t bytes_read;
@@ -579,29 +606,26 @@ ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
 	void *data_read = NULL;
 
 	if (bytes_to_read == 0) {
-		pw_pr_debug(
-			"%s - 0 bytes requested to transfer! Returning...\n",
-			__func__);
-
+		pw_pr_debug("%s - 0 bytes requested to transfer! Returning...\n", __func__);
 		return bytes_to_read;
 	}
 
 	data_read = vmalloc(bytes_to_read);
 	if (!data_read) {
-		pw_pr_error(
-			"couldn't allocate memory when trying to transfer data to userspace!\n");
+		pw_pr_error("couldn't allocate memory when trying to transfer data to userspace!\n");
 		return 0;
 	}
 
 	pw_pr_debug("%s - bytes to transfer %zu\n", __func__, bytes_to_read);
 
 	if (sbuf_to_copy) {
-		bytes_read = sbuf_get_variable(sbuf_to_copy, &data_read,
-					       bytes_to_read);
+		bytes_read = sbuf_get_variable(sbuf_to_copy, &data_read, bytes_to_read);
 
-		if (bytes_read != bytes_to_read) {
-			pw_pr_warn("%s - bytes read (%zu bytes) are not equal to expected bytes (%zu bytes) to be read!", __func__, bytes_read, bytes_to_read);
-		}
+		if (bytes_read != bytes_to_read)
+			pw_pr_warn(
+				"%s - bytes read (%zu bytes) are not equal to expected bytes (%zu bytes) to be read!",
+				__func__, bytes_read, bytes_to_read);
+
 
 		if (bytes_read < 0) {
 			pw_pr_error("Error reading this buffer\n");
@@ -616,8 +640,8 @@ ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
 				goto ret_free;
 			}
 
-			bytes_not_copied = copy_to_user(user_buffer, data_read,
-							bytes_read);
+			bytes_not_copied =
+				copy_to_user(user_buffer, data_read, bytes_read);
 			/* TODO check if this is meaningful enough to have */
 			/* *offset += bytes_read - bytes_not_copied; */
 
@@ -631,10 +655,10 @@ ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
 			}
 			ret = bytes_read;
 			goto ret_free;
-		} else {
+		} else
 			pw_pr_debug(
 				"Buffer empty! nothing more to read from this buffer\n");
-		}
+
 	}
 
 ret_free:
@@ -644,8 +668,8 @@ ret_free:
 
 bool buffer_not_ready(int *cpu)
 {
-	/* cycle through and confirm buffers on all CPUs
-	 * are less than ACRN_BUF_TRANSFER_SIZE
+	/* cycle through and confirm buffers on all CPUs are less than
+	 * ACRN_BUF_TRANSFER_SIZE
 	 * as well as flush mode has not been requested
 	 */
 	int i = 0;
@@ -654,15 +678,14 @@ bool buffer_not_ready(int *cpu)
 	pw_pr_debug(
 		"checking if a buffer is ready to be copied to the device file\n");
 	/*
-	 * It's possible that the buffer from cpu0 may always have
-	 * data to transfer and can potentially prevent buffers from
-	 * other cpus from ever being serviced.
+	 * It's possible that the buffer from cpu0 may always have data to
+	 * transfer and can potentially prevent buffers from other cpus from
+	 * ever being serviced.
 	 * TODO Consider adding an optimization to check for last cpu read.
 	 */
 	for (i = 0; i < pcpu_num; ++i) {
-		if (ACRN_BUF_FILLED_SIZE(sbuf_per_cpu[i]) >=
-		    ACRN_BUF_TRANSFER_SIZE ||
-		    (flush_mode && ACRN_BUF_FILLED_SIZE(sbuf_per_cpu[i]))) {
+		if (ACRN_BUF_FILLED_SIZE(sbuf_per_cpu[i]) >= ACRN_BUF_TRANSFER_SIZE ||
+				(flush_mode && ACRN_BUF_FILLED_SIZE(sbuf_per_cpu[i]))) {
 			not_enough_data = false;
 			*cpu = i;
 			pw_pr_debug(
@@ -675,20 +698,21 @@ bool buffer_not_ready(int *cpu)
 }
 
 ssize_t device_read_i(struct file *file, char __user *user_buffer,
-		      size_t length, loff_t *offset)
+		size_t length, loff_t *offset)
 {
 	ssize_t bytes_read = 0;
 	int cpu = 0;
 
 	pw_pr_debug("%s - usermode attempting to read device file\n", __func__);
+
 	if (buffer_not_ready(&cpu)) {
 		pw_pr_debug("%s - no buffer ready to be read\n", __func__);
 		return bytes_read;
 	}
 
-	if (flush_mode) {
+	if (flush_mode)
 		pw_pr_debug("flush mode on, ready to flush a buffer\n");
-	}
+
 	length = ACRN_BUF_FILLED_SIZE(sbuf_per_cpu[cpu]);
 	pw_pr_debug("on cpu %d, buffer size is %zu bytes\n", cpu, length);
 
@@ -716,9 +740,9 @@ int swhv_load_driver_i(void)
 	pw_pr_debug("%s, pcpu_num: %d\n", __func__, pcpu_num);
 
 	ret = swhv_init_per_cpu_buffers();
-	if (ret < 0) {
+	if (ret < 0)
 		return ret;
-	}
+
 
 	swhv_init_msr_collector_list();
 

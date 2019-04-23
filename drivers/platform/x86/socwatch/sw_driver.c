@@ -1,58 +1,58 @@
-/*
+/* SPDX-License-Identifier: GPL-2.0 AND BSD-3-Clause
+ *
+ * This file is provided under a dual BSD/GPLv2 license.  When using or
+ * redistributing this file, you may do so under either license.
+ *
+ * GPL LICENSE SUMMARY
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * Contact Information:
+ * SoC Watch Developer Team <socwatchdevelopers@intel.com>
+ * Intel Corporation,
+ * 1300 S Mopac Expwy,
+ * Austin, TX 78746
+ *
+ * BSD LICENSE
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above copyright
+ *     notice, this list of conditions and the following disclaimer in
+ *     the documentation and/or other materials provided with the
+ *     distribution.
+ *   * Neither the name of Intel Corporation nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
-  This file is provided under a dual BSD/GPLv2 license.  When using or
-  redistributing this file, you may do so under either license.
-
-  GPL LICENSE SUMMARY
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
-
-  This program is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  General Public License for more details.
-
-  Contact Information:
-  SoC Watch Developer Team <socwatchdevelopers@intel.com>
-  Intel Corporation,
-  1300 S Mopac Expwy,
-  Austin, TX 78746
-
-  BSD LICENSE
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in
-      the documentation and/or other materials provided with the
-      distribution.
-    * Neither the name of Intel Corporation nor the names of its
-      contributors may be used to endorse or promote products derived
-      from this software without specific prior written permission.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-*/
 #define MOD_AUTHOR "Gautam Upadhyaya <gautam.upadhyaya@intel.com>"
 #define MOD_DESC "SoC Watch kernel module"
 
@@ -103,21 +103,20 @@ int sw_collection_start_i(void);
 int sw_collection_stop_i(void);
 int sw_collection_poll_i(void);
 size_t sw_get_payload_size_i(const struct sw_driver_interface_info *info);
-sw_driver_msg_t *
-sw_alloc_collector_msg_i(const struct sw_driver_interface_info *info,
-			 size_t per_msg_payload_size);
+sw_driver_msg_t *sw_alloc_collector_msg_i(
+	const struct sw_driver_interface_info *info,
+	size_t per_msg_payload_size);
 static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
-				       void *p_local_args);
-static long
-sw_set_driver_infos_i(struct sw_driver_interface_msg __user *remote_msg,
-		      int local_len);
-static long sw_handle_cmd_i(sw_driver_collection_cmd_t cmd,
-			    u64 __user *remote_out_args);
+                                       void *p_local_args);
+static long sw_set_driver_infos_i(
+	struct sw_driver_interface_msg __user *remote_msg, int local_len);
+static long sw_handle_cmd_i(
+	sw_driver_collection_cmd_t cmd, u64 __user* remote_out_args);
 static void sw_do_extract_scu_fw_version(void);
-static long
-sw_get_available_name_id_mappings_i(enum sw_name_id_type type,
-				    struct sw_name_info_msg __user *remote_info,
-				    size_t local_len);
+static long sw_get_available_name_id_mappings_i(
+	enum sw_name_id_type type,
+	struct sw_name_info_msg __user* remote_info,
+	size_t local_len);
 static enum sw_driver_collection_cmd sw_get_collection_cmd_i(void);
 static bool sw_should_flush_buffer_i(void);
 
@@ -132,9 +131,11 @@ static bool sw_should_flush_buffer_i(void);
  * and is NOT exported.
  */
 struct swa_internal_state {
-	sw_driver_collection_cmd_t
-		cmd; /* indicates which command was specified */
-		     /* last e.g. START, STOP etc. */
+	/*
+	 * Indicates which command was specified
+	 * last e.g. START, STOP etc.
+	 */
+	sw_driver_collection_cmd_t cmd;
 	/*
 	 * Should we write to our per-cpu output buffers?
 	 * YES if we're actively collecting.
@@ -154,13 +155,13 @@ struct swa_internal_state {
  * -------------------------------------------------
  */
 static bool do_force_module_scope_for_cpu_frequencies;
-module_param(do_force_module_scope_for_cpu_frequencies, bool, S_IRUSR);
+module_param(do_force_module_scope_for_cpu_frequencies, bool, 0400);
 MODULE_PARM_DESC(
 	do_force_module_scope_for_cpu_frequencies,
 	"Toggle module scope for cpu frequencies. Sets \"affected_cpus\" and \"related_cpus\" of cpufreq_policy.");
 
 static unsigned short sw_buffer_num_pages = 16;
-module_param(sw_buffer_num_pages, ushort, S_IRUSR);
+module_param(sw_buffer_num_pages, ushort, 0400);
 MODULE_PARM_DESC(
 	sw_buffer_num_pages,
 	"Specify number of 4kB pages to use for each per-cpu buffer. MUST be a power of 2! Default value = 16 (64 kB)");
@@ -204,7 +205,7 @@ DECLARE_OVERHEAD_VARS(sw_any_seg_full);
  * Debugging ONLY!
  */
 #if DO_DEBUG_OUTPUT
-static const char *s_when_type_names[] = { "BEGIN", "POLL", "NOTIFIER",
+static const char * const s_when_type_names[] = { "BEGIN", "POLL", "NOTIFIER",
 					   "TRACEPOINT", "END" };
 #endif /* DO_DEBUG_OUTPUT */
 
@@ -256,9 +257,9 @@ int sw_print_collector_node_i(struct sw_collector_data *curr)
 	struct sw_driver_io_descriptor *descriptor = NULL;
 	struct sw_driver_interface_info *info = NULL;
 
-	if (!curr) {
+	if (!curr)
 		return -PW_ERROR;
-	}
+
 	info = curr->info;
 	descriptor = (struct sw_driver_io_descriptor *)info->descriptors;
 	pw_pr_debug(
@@ -268,13 +269,13 @@ int sw_print_collector_node_i(struct sw_collector_data *curr)
 	     --num_descriptors, ++descriptor) {
 		const struct sw_hw_ops *ops =
 			sw_get_hw_ops_for(descriptor->collection_type);
-		if (ops == NULL) {
+		if (ops == NULL)
 			return -PW_ERROR;
-		}
+
 		print_func = ops->print;
-		if (print_func && (*print_func)(descriptor)) {
+		if (print_func && (*print_func)(descriptor))
 			return -PW_ERROR;
-		}
+
 	}
 	return PW_SUCCESS;
 }
@@ -297,9 +298,9 @@ static int sw_reset_collector_node_i(struct sw_collector_data *coll)
 	int num_descriptors;
 	int retcode = PW_SUCCESS;
 
-	if (!coll) {
+	if (!coll)
 		return -PW_ERROR;
-	}
+
 	info = coll->info;
 
 	descriptor = (struct sw_driver_io_descriptor *)info->descriptors;
@@ -310,9 +311,9 @@ static int sw_reset_collector_node_i(struct sw_collector_data *coll)
 	     --num_descriptors, ++descriptor) {
 		const struct sw_hw_ops *ops =
 			sw_get_hw_ops_for(descriptor->collection_type);
-		if (ops && ops->reset && (*ops->reset)(descriptor)) {
+		if (ops && ops->reset && (*ops->reset)(descriptor))
 			retcode = -PW_ERROR;
-		}
+
 	}
 	return retcode;
 }
@@ -330,25 +331,25 @@ void sw_iterate_driver_info_lists_i(void)
 
 	for (which = SW_WHEN_TYPE_BEGIN; which <= SW_WHEN_TYPE_END; ++which) {
 		pw_pr_debug("ITERATING list %s\n", s_when_type_names[which]);
+		/* Should NEVER happen! */
 		if (sw_handle_collector_list(
 			    &sw_collector_lists[which],
-			    &sw_print_collector_node_i)) {
-			/* Should NEVER happen! */
+			    &sw_print_collector_node_i))
 			pw_pr_error(
 				"WARNING: error occurred while printing values!\n");
-		}
+
 	}
 
 	if (sw_for_each_tracepoint_node(&sw_iterate_trace_notifier_list_i, NULL,
-					false /*return-on-error*/)) {
+					false /*return-on-error*/))
 		pw_pr_error(
 			"WARNING: error occurred while printing tracepoint values!\n");
-	}
+
 	if (sw_for_each_notifier_node(&sw_iterate_trace_notifier_list_i, NULL,
-				      false /*return-on-error*/)) {
+				      false /*return-on-error*/))
 		pw_pr_error(
 			"WARNING: error occurred while printing notifier values!\n");
-	}
+
 }
 
 static void sw_reset_collectors_i(void)
@@ -358,10 +359,10 @@ static void sw_reset_collectors_i(void)
 	for (which = SW_WHEN_TYPE_BEGIN; which <= SW_WHEN_TYPE_END; ++which) {
 		pw_pr_debug("ITERATING list %s\n", s_when_type_names[which]);
 		if (sw_handle_collector_list(&sw_collector_lists[which],
-					     &sw_reset_collector_node_i)) {
+					     &sw_reset_collector_node_i))
 			pw_pr_error(
 				"WARNING: error occurred while resetting a collector!\n");
-		}
+
 	}
 }
 
@@ -403,6 +404,9 @@ void sw_destroy_data_structures_i(void)
 	sw_destroy_per_cpu_buffers();
 	sw_destroy_collector_lists_i();
 	sw_remove_trace_notify();
+
+	/* Should already have been called from 'collection_stop' */
+	sw_destroy_telem();
 }
 
 int sw_get_arch_details_i(void)
@@ -421,11 +425,11 @@ static int
 sw_init_destroy_trace_notifier_lists_i(struct sw_trace_notifier_data *node,
 				       void *is_init)
 {
-	if (is_init == INIT_FLAG) {
+	if (is_init == INIT_FLAG)
 		sw_init_collector_list(&node->list);
-	} else {
+	else
 		sw_destroy_collector_list(&node->list);
-	}
+
 	node->was_registered = false;
 
 	return PW_SUCCESS;
@@ -435,9 +439,9 @@ int sw_init_collector_lists_i(void)
 {
 	int i = 0;
 
-	for (i = 0; i < NUM_COLLECTOR_MODES; ++i) {
+	for (i = 0; i < NUM_COLLECTOR_MODES; ++i)
 		sw_init_collector_list(&sw_collector_lists[i]);
-	}
+
 	sw_for_each_tracepoint_node(&sw_init_destroy_trace_notifier_lists_i,
 				    INIT_FLAG, false /*return-on-error*/);
 	sw_for_each_notifier_node(&sw_init_destroy_trace_notifier_lists_i,
@@ -450,9 +454,9 @@ void sw_destroy_collector_lists_i(void)
 {
 	int i = 0;
 
-	for (i = 0; i < NUM_COLLECTOR_MODES; ++i) {
+	for (i = 0; i < NUM_COLLECTOR_MODES; ++i)
 		sw_destroy_collector_list(&sw_collector_lists[i]);
-	}
+
 	sw_for_each_tracepoint_node(&sw_init_destroy_trace_notifier_lists_i,
 				    DESTROY_FLAG, false /*return-on-error*/);
 	sw_for_each_notifier_node(&sw_init_destroy_trace_notifier_lists_i,
@@ -462,7 +466,6 @@ void sw_destroy_collector_lists_i(void)
 /*
  * Used for {READ,WRITE}_IMMEDIATE requests.
  */
-typedef struct sw_immediate_request_info sw_immediate_request_info_t;
 struct sw_immediate_request_info {
 	struct sw_driver_io_descriptor *local_descriptor;
 	char *dst_vals;
@@ -476,15 +479,13 @@ void sw_handle_immediate_request_i(void *request)
 	char *dst_vals = info->dst_vals;
 	const struct sw_hw_ops *ops =
 		sw_get_hw_ops_for(descriptor->collection_type);
-	if (likely(ops != NULL)) {
+	if (likely(ops != NULL))
 		*(info->retVal) = sw_handle_driver_io_descriptor(
 			dst_vals, RAW_CPU(), descriptor, ops);
-	} else {
+	else
 		pw_pr_error(
 			"No operations found to satisfy collection type %u!\n",
 			descriptor->collection_type);
-	}
-	return;
 }
 
 static int num_times_polled;
@@ -542,10 +543,10 @@ int sw_collection_stop_i(void)
 	/*
 	 * Unregister any registered tracepoints and notifiers.
 	 */
-	if (sw_unregister_trace_notifiers()) {
+	if (sw_unregister_trace_notifiers())
 		pw_pr_warn(
 			"Warning: some trace_notifier probe functions could NOT be unregistered!\n");
-	}
+
 	/*
 	 * Handle 'STOP' snapshots, if any.
 	 */
@@ -564,7 +565,7 @@ int sw_collection_stop_i(void)
 	 * close to the 'wake_up_interruptible', below.
 	 */
 	s_internal_state.drain_buffers = true;
-	smp_mb();
+	smp_mb(); /* order memory access */
 	/*
 	 * Wakeup any sleeping readers, and cleanup any
 	 * timers in the reader subsys.
@@ -576,10 +577,10 @@ int sw_collection_stop_i(void)
 	 */
 	sw_count_samples_produced_dropped();
 #if DO_OVERHEAD_MEASUREMENTS
-	pw_pr_force(
-		"DEBUG: there were %llu samples produced and %llu samples dropped in buffer v5!\n",
-		sw_num_samples_produced, sw_num_samples_dropped);
-#endif /* DO_OVERHEAD_MEASUREMENTS */
+	pw_pr_force("DEBUG: there were %llu samples produced and %llu samples \
+		dropped in buffer v5!\n", sw_num_samples_produced,
+		sw_num_samples_dropped);
+#endif // DO_OVERHEAD_MEASUREMENTS
 	/*
 	 * DEBUG: iterate over collection lists.
 	 */
@@ -592,6 +593,14 @@ int sw_collection_stop_i(void)
 	 * Clear out the collector lists.
 	 */
 	sw_destroy_collector_lists_i();
+	/*
+	 * Free up circular buffer
+	 */
+	destroy_circular_buffer();
+	/*
+	 * Remove telemetry mappings
+	 */
+	sw_destroy_telem();
 	pw_pr_debug("OK, STOPPED collection!\n");
 #if DO_OVERHEAD_MEASUREMENTS
 	pw_pr_force("There were %d poll ticks!\n", num_times_polled);
@@ -604,9 +613,9 @@ int sw_collection_poll_i(void)
 	/*
 	 * Handle 'POLL' timer expirations.
 	 */
-	if (SW_LIST_EMPTY(&sw_collector_lists[SW_WHEN_TYPE_POLL])) {
+	if (SW_LIST_EMPTY(&sw_collector_lists[SW_WHEN_TYPE_POLL]))
 		pw_pr_debug("DEBUG: EMPTY POLL LIST\n");
-	}
+
 	++num_times_polled;
 	return sw_handle_collector_list(&sw_collector_lists[SW_WHEN_TYPE_POLL],
 					&sw_handle_collector_node);
@@ -642,13 +651,13 @@ sw_add_trace_notifier_driver_info_i(struct sw_trace_notifier_data *node,
 
 static int sw_post_config_i(const struct sw_hw_ops *op, void *priv)
 {
-	if (!op->available || !(*op->available)()) {
-		/* op not available */
+	/* op not available */
+	if (!op->available || !(*op->available)())
 		return 0;
-	}
-	if (!op->post_config || (*op->post_config)()) {
+
+	if (!op->post_config || (*op->post_config)())
 		return 0;
-	}
+
 	return -EIO;
 }
 
@@ -753,19 +762,18 @@ sw_set_driver_infos_i(struct sw_driver_interface_msg __user *remote_msg,
 				} else {
 					if (sw_add_driver_info(
 						    &sw_collector_lists[i],
-						    local_info)) {
+						    local_info))
 						pw_pr_error(
 							"WARNING: could NOT add driver info to list for 'when type' %d!\n",
 							i);
-					}
 				}
 			}
 		}
 	}
 	if (sw_for_each_hw_op(&sw_post_config_i, NULL,
-			      false /*return-on-error*/)) {
+			      false /*return-on-error*/))
 		pw_pr_error("POST-CONFIG error!\n");
-	}
+
 	vfree(local_msg);
 	memset(&s_internal_state, 0, sizeof(s_internal_state));
 	/*
@@ -788,14 +796,14 @@ static long sw_handle_cmd_i(sw_driver_collection_cmd_t cmd,
 	}
 	switch (cmd) {
 	case SW_DRIVER_START_COLLECTION:
-		if (sw_collection_start_i()) {
+		if (sw_collection_start_i())
 			return -PW_ERROR;
-		}
+
 		break;
 	case SW_DRIVER_STOP_COLLECTION:
-		if (sw_collection_stop_i()) {
+		if (sw_collection_stop_i())
 			return -PW_ERROR;
-		}
+
 		break;
 	default:
 		pw_pr_error("WARNING: unsupported command %d\n", cmd);
@@ -844,9 +852,9 @@ static void sw_do_extract_scu_fw_version(void)
 	sw_scu_fw_major_minor = 0x0;
 #ifdef SFI_SIG_OEMB
 	if (sfi_table_parse(SFI_SIG_OEMB, NULL, NULL,
-			    &sw_do_parse_sfi_oemb_table)) {
+			    &sw_do_parse_sfi_oemb_table))
 		pw_pr_force("WARNING: NO SFI information!\n");
-	}
+
 #endif /* SFI_SIG_OEMB */
 }
 
@@ -899,18 +907,19 @@ sw_get_available_trace_notifiers_i(enum sw_name_id_type type,
 {
 	long retVal = PW_SUCCESS;
 
-	if (type == SW_NAME_TYPE_TRACEPOINT) {
+	if (type == SW_NAME_TYPE_TRACEPOINT)
 		retVal = sw_for_each_tracepoint_node(&sw_gather_tracepoint_i,
 						     local_info,
 						     false /*return-on-error*/);
-	} else {
+	else
 		retVal = sw_for_each_notifier_node(&sw_gather_notifier_i,
 						   local_info,
 						   false /*return-on-error*/);
-	}
+
 	pw_pr_debug(
 		"There are %u extracted traces/notifiers for a total of %u bytes!\n",
 		local_info->num_name_id_pairs, local_info->payload_len);
+
 	return retVal;
 }
 
@@ -972,17 +981,17 @@ sw_get_available_name_id_mappings_i(enum sw_name_id_type type,
 	memset(buffer, 0, local_len);
 	local_info = (struct sw_name_info_msg *)buffer;
 
-	if (type == SW_NAME_TYPE_COLLECTOR) {
+	if (type == SW_NAME_TYPE_COLLECTOR)
 		retVal = sw_get_available_collectors_i(local_info);
-	} else {
+	else
 		retVal = sw_get_available_trace_notifiers_i(type, local_info);
-	}
+
 	if (retVal == PW_SUCCESS) {
 		retVal = copy_to_user(remote_info, local_info, local_len);
-		if (retVal) {
+		if (retVal)
 			pw_pr_error(
 				"ERROR: couldn't copy tracepoint info to user space!\n");
-		}
+
 	}
 	vfree(buffer);
 	return retVal;
@@ -1001,7 +1010,7 @@ sw_get_topology_changes_i(struct sw_driver_topology_msg __user *remote_msg,
 	struct sw_driver_topology_change *dst = NULL;
 	size_t dst_idx = 0;
 
-	SW_LIST_HEAD_VAR(sw_topology_node) *head = (void *)&sw_topology_list;
+	SW_LIST_HEAD_VAR(sw_topology_node) * head = (void *)&sw_topology_list;
 	struct sw_topology_node *tnode = NULL;
 
 	if (local_len < buffer_len) {
@@ -1030,12 +1039,72 @@ sw_get_topology_changes_i(struct sw_driver_topology_msg __user *remote_msg,
 		memcpy(&dst[dst_idx++], change, sizeof(*change));
 	}
 	retVal = copy_to_user(remote_msg, local_msg, buffer_len);
-	if (retVal) {
+	if (retVal)
 		pw_pr_error(
 			"ERROR: couldn't copy topology changes to user space!\n");
-	}
+
 	vfree(buffer);
 	return retVal;
+}
+
+static long sw_read_continuous_i(char *remote_buffer, size_t local_len)
+{
+	/* TODO: call 'consume_buffer' directly? */
+	ssize_t val = sw_consume_data(0 /*mask, dummy*/, remote_buffer,
+					local_len);
+	if (val <= 0)
+		return val;
+
+	return 0;
+}
+
+static long sw_set_telem_cfgs_i(char *remote_cfg, size_t local_len)
+{
+	u64 *local_cfg = vmalloc(local_len);
+	int retval = 0;
+
+	if (!local_cfg) {
+		pw_pr_error("ERROR allocating space for local telem cfgs!\n");
+		return -EFAULT;
+	}
+	if (copy_from_user(local_cfg, remote_cfg, local_len)) {
+		pw_pr_error("ERROR copying message from user space!\n");
+		retval = -EFAULT;
+		goto done_set_telem_cfgs;
+	}
+	if (sw_setup_telem(local_cfg)) {
+		pw_pr_error("Couldn't setup telemetry\n");
+		retval = -1;
+	}
+done_set_telem_cfgs:
+	vfree(local_cfg);
+	return retval;
+}
+
+static long sw_set_continuous_i(
+	struct sw_driver_continuous_collect __user *remote_msg,
+	int local_len)
+{
+    pw_u32_t buffer_size = 0;
+	long ret = get_user(buffer_size, &remote_msg->collection_size);
+	if (ret)
+		return ret;
+
+	if (buffer_size == 0) {
+		pw_pr_error("Cannot allocate a zero length buffer!\n");
+		return -EINVAL;
+	}
+	ret = initialize_circular_buffer(buffer_size);
+	if (ret)
+		return ret;
+
+	ret = sw_set_driver_infos_i((struct sw_driver_interface_msg __user *)
+		remote_msg->payload, local_len);
+	if (ret) {
+		destroy_circular_buffer();
+		return ret;
+	}
+	return 0;
 }
 
 #if defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
@@ -1045,7 +1114,7 @@ sw_get_topology_changes_i(struct sw_driver_topology_msg __user *remote_msg,
 #endif
 
 static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
-				       void *p_local_args)
+					   void *p_local_args)
 {
 	struct sw_driver_ioctl_arg local_args;
 	int local_in_len, local_out_len;
@@ -1063,7 +1132,8 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
 	 */
 	if (_IOC_TYPE(ioctl_num) != APWR_IOCTL_MAGIC_NUM) {
 		pw_pr_error(
-			"ERROR: requested IOCTL TYPE (%d) != APWR_IOCTL_MAGIC_NUM (%d)\n",
+			"ERROR: requested IOCTL TYPE (%d) != \
+				APWR_IOCTL_MAGIC_NUM (%d)\n",
 			_IOC_TYPE(ioctl_num), APWR_IOCTL_MAGIC_NUM);
 		return -PW_ERROR;
 	}
@@ -1075,7 +1145,7 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
 	local_in_len = local_args.in_len;
 	local_out_len = local_args.out_len;
 	pw_pr_debug("GU: local_in_len = %d, local_out_len = %d\n", local_in_len,
-		    local_out_len);
+		local_out_len);
 	/*
 	 * (3) Service individual IOCTL requests.
 	 */
@@ -1085,17 +1155,22 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
 			(struct sw_driver_interface_msg __user *)
 				local_args.in_arg,
 			local_in_len);
+	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_CONFIG_CONTINUOUS)) {
+		pw_pr_debug("DEBUG: PW_IOCTL_CONFIG_CONTINUOUS\n");
+		return sw_set_continuous_i(
+			(struct sw_driver_continuous_collect __user *)
+				local_args.in_arg,
+			local_in_len);
 	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_CMD)) {
 		sw_driver_collection_cmd_t local_cmd;
 
 		pw_pr_debug("PW_IOCTL_CMD\n");
-		if (get_user(local_cmd, (sw_driver_collection_cmd_t __user *)
-						local_args.in_arg)) {
-			pw_pr_error("ERROR: could NOT extract cmd value!\n");
-			return -PW_ERROR;
-		}
-		return sw_handle_cmd_i(local_cmd,
-				       (u64 __user *)local_args.out_arg);
+	if (get_user(local_cmd,
+		(sw_driver_collection_cmd_t __user *)local_args.in_arg)) {
+		pw_pr_error("ERROR: could NOT extract cmd value!\n");
+		return -PW_ERROR;
+	}
+	return sw_handle_cmd_i(local_cmd, (u64 __user *)local_args.out_arg);
 	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_POLL)) {
 		pw_pr_debug("PW_IOCTL_POLL\n");
 		return DO_PER_CPU_OVERHEAD_FUNC_RET(int, sw_collection_poll_i);
@@ -1146,15 +1221,15 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
 			goto ret_immediate_io;
 		}
 		local_descriptor = ((struct sw_driver_io_descriptor *)
-					    local_info->descriptors);
+						local_info->descriptors);
 		pw_pr_debug("Collection type after %d\n",
-			    local_descriptor->collection_type);
+				local_descriptor->collection_type);
 		/*
 		 * Check cpu mask for correctness here. For now, we do NOT allow
 		 * reading on ALL cpus.
 		 */
 		if ((int)local_info->cpu_mask < -1 ||
-		    (int)local_info->cpu_mask >= (int)sw_max_num_cpus) {
+			(int)local_info->cpu_mask >= (int)sw_max_num_cpus) {
 			pw_pr_error(
 				"ERROR: invalid cpu mask %d specified in immediate IO; valid values are: -1, [0 -- %d]!\n",
 				local_info->cpu_mask, sw_max_num_cpus - 1);
@@ -1169,7 +1244,7 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
 			local_descriptor->collection_type,
 			local_info->cpu_mask);
 		if (sw_is_valid_hw_op_id(local_descriptor->collection_type) ==
-		    false) {
+			false) {
 			pw_pr_error(
 				"ERROR: invalid collection type %d specified for immediate IO\n",
 				(int)local_descriptor->collection_type);
@@ -1180,7 +1255,7 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
 		 * Check collection cmd for correctness here
 		 */
 		if (local_descriptor->collection_command < SW_IO_CMD_READ ||
-		    local_descriptor->collection_command > SW_IO_CMD_WRITE) {
+			local_descriptor->collection_command > SW_IO_CMD_WRITE) {
 			pw_pr_error(
 				"ERROR: invalid collection command %d specified for immediate IO\n",
 				local_descriptor->collection_command);
@@ -1215,7 +1290,7 @@ static long sw_unlocked_handle_ioctl_i(unsigned int ioctl_num,
 			default: /* IO on a particular CPU */
 				cpumask_set_cpu(local_info->cpu_mask, &cpumask);
 				pw_pr_debug("[%d] setting for %d\n", RAW_CPU(),
-					    local_info->cpu_mask);
+						local_info->cpu_mask);
 				break;
 			}
 			sw_schedule_work(&cpumask,
@@ -1257,16 +1332,17 @@ ret_immediate_io_reset:
 		}
 ret_immediate_io:
 		vfree(src_vals);
-		if (dst_vals) {
+		if (dst_vals)
 			vfree(dst_vals);
-		}
+
 		return retVal;
 	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_GET_SCU_FW_VERSION)) {
 		u32 local_data = (u32)sw_scu_fw_major_minor;
 
 		if (put_user(local_data, (u32 __user *)local_args.out_arg)) {
 			pw_pr_error(
-				"ERROR copying scu fw version to userspace!\n");
+				"ERROR copying scu fw version to userspace!\n"
+				);
 			return -PW_ERROR;
 		}
 		return PW_SUCCESS;
@@ -1275,44 +1351,51 @@ ret_immediate_io:
 			(pw_u64_t)SW_DRIVER_VERSION_MAJOR << 32 |
 			(pw_u64_t)SW_DRIVER_VERSION_MINOR << 16 |
 			(pw_u64_t)SW_DRIVER_VERSION_OTHER;
-		if (put_user(local_version, (u64 __user *)local_args.out_arg)) {
+		if (put_user(local_version,
+			(u64 __user *)local_args.out_arg)) {
 			pw_pr_error(
-				"ERROR copying driver version to userspace!\n");
+				"ERROR copying driver version to userspace!\n"
+				);
 			return -PW_ERROR;
 		}
 		return PW_SUCCESS;
-	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_GET_AVAILABLE_TRACEPOINTS)) {
+	} else if (MATCH_IOCTL(ioctl_num,
+			PW_IOCTL_GET_AVAILABLE_TRACEPOINTS)) {
 		pw_pr_debug("DEBUG: AVAIL tracepoints! local_out_len = %u\n",
-			    local_out_len);
+			local_out_len);
 		return sw_get_available_name_id_mappings_i(
 			SW_NAME_TYPE_TRACEPOINT,
 			(struct sw_name_info_msg __user *)local_args.out_arg,
 			local_out_len);
 	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_GET_AVAILABLE_NOTIFIERS)) {
-		pw_pr_debug("DEBUG: AVAIL tracepoints! local_out_len = %u\n",
-			    local_out_len);
+		pw_pr_debug("DEBUG: AVAIL notifiers! local_out_len = %u\n",
+			local_out_len);
 		return sw_get_available_name_id_mappings_i(
 			SW_NAME_TYPE_NOTIFIER,
 			(struct sw_name_info_msg __user *)local_args.out_arg,
 			local_out_len);
 	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_GET_AVAILABLE_COLLECTORS)) {
-		pw_pr_debug("DEBUG: AVAIL tracepoints! local_out_len = %u\n",
-			    local_out_len);
+		pw_pr_debug("DEBUG: AVAIL collectors! local_out_len = %u\n",
+			local_out_len);
 		return sw_get_available_name_id_mappings_i(
 			SW_NAME_TYPE_COLLECTOR,
 			(struct sw_name_info_msg __user *)local_args.out_arg,
 			local_out_len);
 	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_GET_TOPOLOGY_CHANGES)) {
 		pw_pr_debug("DEBUG: TOPOLOGY changes! local_out_len = %u\n",
-			    local_out_len);
+			local_out_len);
 		return sw_get_topology_changes_i(
 			(struct sw_driver_topology_msg __user *)
-				local_args.out_arg,
-			local_out_len);
-	} else {
-		pw_pr_error("ERROR: invalid ioctl num: %u\n",
-			    _IOC_NR(ioctl_num));
+				local_args.out_arg, local_out_len);
+	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_READ_CONTINUOUS)) {
+		pw_pr_debug("DEBUG: READ_CONTINUOUS!\n");
+		return sw_read_continuous_i(local_args.out_arg, local_out_len);
+	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_SET_TELEM_BAR)) {
+		pw_pr_debug("DEBUG: got a request to set telem bar!\n");
+		return sw_set_telem_cfgs_i(local_args.in_arg, local_in_len);
 	}
+
+	pw_pr_error("ERROR: invalid ioctl num: %u\n", _IOC_NR(ioctl_num));
 	return -PW_ERROR;
 }
 
@@ -1373,17 +1456,15 @@ int sw_load_driver_i(void)
 		if (sw_set_module_scope_for_cpus()) {
 			pw_pr_force("ERROR setting affected cpus\n");
 			return -PW_ERROR;
-		} else {
-			pw_pr_debug("OK, setting worked\n");
 		}
+		pw_pr_debug("OK, setting worked\n");
 	}
 	if (sw_init_data_structures_i()) {
 		pw_pr_error("ERROR initializing data structures!\n");
 		goto err_ret_init_data;
 	}
-	if (sw_register_dev(&s_ops)) {
+	if (sw_register_dev(&s_ops))
 		goto err_ret_register_dev;
-	}
 	/*
 	 * Retrieve a list of tracepoint structs to use when
 	 * registering probe functions.
@@ -1399,7 +1480,7 @@ int sw_load_driver_i(void)
 	pw_pr_force("OK: LOADED SoC Watch Driver\n");
 #ifdef CONFIG_X86_WANT_INTEL_MID
 	pw_pr_force("SOC Identifier = %u, Stepping = %u\n",
-		    intel_mid_identify_cpu(), intel_mid_soc_stepping());
+			intel_mid_identify_cpu(), intel_mid_soc_stepping());
 #endif /* CONFIG_X86_WANT_INTEL_MID */
 	pw_pr_force("-----------------------------------------\n");
 	return PW_SUCCESS;
@@ -1410,11 +1491,10 @@ err_ret_register_dev:
 	sw_destroy_data_structures_i();
 err_ret_init_data:
 	if (do_force_module_scope_for_cpu_frequencies) {
-		if (sw_reset_module_scope_for_cpus()) {
+		if (sw_reset_module_scope_for_cpus())
 			pw_pr_force("ERROR resetting affected cpus\n");
-		} else {
+		else
 			pw_pr_debug("OK, resetting worked\n");
-		}
 	}
 	return -PW_ERROR;
 }
@@ -1428,11 +1508,10 @@ void sw_unload_driver_i(void)
 	sw_destroy_data_structures_i();
 
 	if (do_force_module_scope_for_cpu_frequencies) {
-		if (sw_reset_module_scope_for_cpus()) {
+		if (sw_reset_module_scope_for_cpus())
 			pw_pr_force("ERROR resetting affected cpus\n");
-		} else {
+		else
 			pw_pr_debug("OK, resetting worked\n");
-		}
 	}
 
 	pw_pr_force("-----------------------------------------\n");
@@ -1443,24 +1522,22 @@ void sw_unload_driver_i(void)
 	PRINT_CUMULATIVE_OVERHEAD_PARAMS(sw_collection_poll_i, "POLL");
 	PRINT_CUMULATIVE_OVERHEAD_PARAMS(sw_any_seg_full, "ANY_SEG_FULL");
 #if DO_TRACK_MEMORY_USAGE
-	{
-		/*
-		 * Dump memory stats.
-		 */
+	/*
+	 * Dump memory stats.
+	 */
+	pw_pr_force(
+		"TOTAL # BYTES ALLOCED = %llu, CURR # BYTES ALLOCED = %llu, MAX # BYTES ALLOCED = %llu\n",
+		sw_get_total_bytes_alloced(),
+		sw_get_curr_bytes_alloced(),
+		sw_get_max_bytes_alloced());
+	if (unlikely(sw_get_curr_bytes_alloced())) {
 		pw_pr_force(
-			"TOTAL # BYTES ALLOCED = %llu, CURR # BYTES ALLOCED = %llu, MAX # BYTES ALLOCED = %llu\n",
-			sw_get_total_bytes_alloced(),
-			sw_get_curr_bytes_alloced(),
-			sw_get_max_bytes_alloced());
-		if (unlikely(sw_get_curr_bytes_alloced())) {
-			pw_pr_force(
-				"***********************************************************************\n");
-			pw_pr_force(
-				"WARNING: possible memory leak: there are %llu bytes still allocated!\n",
-				sw_get_curr_bytes_alloced());
-			pw_pr_force(
-				"***********************************************************************\n");
-		}
+			"***********************************************************************\n");
+		pw_pr_force(
+			"WARNING: possible memory leak: there are %llu bytes still allocated!\n",
+			sw_get_curr_bytes_alloced());
+		pw_pr_force(
+			"***********************************************************************\n");
 	}
 #endif /* DO_TRACK_MEMORY_USAGE */
 	pw_pr_force("-----------------------------------------\n");

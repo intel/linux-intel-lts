@@ -1,58 +1,57 @@
-/*
-
-  This file is provided under a dual BSD/GPLv2 license.  When using or
-  redistributing this file, you may do so under either license.
-
-  GPL LICENSE SUMMARY
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
-
-  This program is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  General Public License for more details.
-
-  Contact Information:
-  SoC Watch Developer Team <socwatchdevelopers@intel.com>
-  Intel Corporation,
-  1300 S Mopac Expwy,
-  Austin, TX 78746
-
-  BSD LICENSE
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in
-      the documentation and/or other materials provided with the
-      distribution.
-    * Neither the name of Intel Corporation nor the names of its
-      contributors may be used to endorse or promote products derived
-      from this software without specific prior written permission.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-*/
+/* SPDX-License-Identifier: GPL-2.0 AND BSD-3-Clause
+ *
+ * This file is provided under a dual BSD/GPLv2 license.  When using or
+ * redistributing this file, you may do so under either license.
+ *
+ * GPL LICENSE SUMMARY
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * Contact Information:
+ * SoC Watch Developer Team <socwatchdevelopers@intel.com>
+ * Intel Corporation,
+ * 1300 S Mopac Expwy,
+ * Austin, TX 78746
+ *
+ * BSD LICENSE
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above copyright
+ *     notice, this list of conditions and the following disclaimer in
+ *     the documentation and/or other materials provided with the
+ *     distribution.
+ *   * Neither the name of Intel Corporation nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 #define MOD_AUTHOR "SoCWatch Team"
 #define MOD_DESC "SoCWatch kernel module to communicate with hypervisors"
 
@@ -85,7 +84,6 @@
  * Compile-time constants
  * *******************************************
  */
-
 /* *******************************************
  * Local data structures.
  * *******************************************
@@ -97,10 +95,10 @@
  * from 32b user programs in 64b kernels.
  */
 struct spdrv_ioctl_arg32 {
-	pw_s32_t in_len;
-	pw_s32_t out_len;
-	compat_caddr_t in_arg;
-	compat_caddr_t out_arg;
+    pw_s32_t in_len;
+    pw_s32_t out_len;
+    compat_caddr_t in_arg;
+    compat_caddr_t out_arg;
 };
 #endif /* COMPAT && x64 */
 
@@ -115,7 +113,7 @@ static struct class *sp_class;
  */
 
 /* Per-CPU variable containing the currently running vcpu. */
-/*static DEFINE_PER_CPU(int, curr_vcpu) = 0; */
+/* static DEFINE_PER_CPU(int, curr_vcpu) = 0; */
 
 /* *******************************************
  * Function definitions.
@@ -153,24 +151,22 @@ static long swhv_handle_cmd(u32 __user *remote_cmd)
 long swhv_get_version(u64 __user *remote_args)
 {
 	u64 local_version = (u64)SWHVDRV_VERSION_MAJOR << 32 |
-			    (u64)SWHVDRV_VERSION_MINOR << 16 |
-			    (u64)SWHVDRV_VERSION_OTHER;
+			(u64)SWHVDRV_VERSION_MINOR << 16 |
+			(u64)SWHVDRV_VERSION_OTHER;
 
 	return put_user(local_version, remote_args);
 };
 
 #if defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
-#define MATCH_IOCTL(num, pred) ((num) == (pred) || (num) == (pred##32))
+	#define MATCH_IOCTL(num, pred) ((num) == (pred) || (num) == (pred##32))
 #else
-#define MATCH_IOCTL(num, pred) ((num) == (pred))
+	#define MATCH_IOCTL(num, pred) ((num) == (pred))
 #endif
 
-static long handle_ioctl(unsigned int ioctl_num,
-			 struct spdrv_ioctl_arg __user *remote_args)
+static long handle_ioctl(unsigned int ioctl_num, struct spdrv_ioctl_arg __user *remote_args)
 {
 	long status = 0;
 	struct spdrv_ioctl_arg local_args;
-
 	int local_in_len, local_out_len;
 
 	if (copy_from_user(&local_args, remote_args, sizeof(local_args))) {
@@ -189,10 +185,8 @@ static long handle_ioctl(unsigned int ioctl_num,
 
 	case SWHVDRV_OPERATION_CONFIGURE:
 		pw_pr_debug("Trying to configure driver!\n");
-		status = swhv_configure(
-			(struct swhv_driver_interface_msg __user *)
-				local_args.in_arg,
-			local_in_len);
+		status = swhv_configure((struct swhv_driver_interface_msg __user *)
+					local_args.in_arg, local_in_len);
 		break;
 
 	case SWHVDRV_OPERATION_VERSION:
@@ -202,7 +196,8 @@ static long handle_ioctl(unsigned int ioctl_num,
 
 	case SWHVDRV_OPERATION_CLOCK:
 		pw_pr_debug("Trying to get hypervisor type!\n");
-		status = swhv_get_clock((u32 __user *)local_args.in_arg,
+		status = swhv_get_clock((u32 __user *)
+					local_args.in_arg,
 					(u64 __user *)local_args.out_arg);
 		break;
 
@@ -218,14 +213,14 @@ static long handle_ioctl(unsigned int ioctl_num,
 
 	case SWHVDRV_OPERATION_HYPERVISOR_TYPE:
 		pw_pr_debug("Trying to get hypervisor type!\n");
-		status = swhv_get_hypervisor_type(
-			(u32 __user *)local_args.out_arg);
+		status = swhv_get_hypervisor_type((u32 __user *)
+					local_args.out_arg);
 		break;
 
 	case SWHVDRV_OPERATION_MSR_READ:
 		pw_pr_debug("Trying to do MSR read!\n");
 		status = swhv_msr_read((u32 __user *)local_args.in_arg,
-				       (u64 __user *)local_args.out_arg);
+					(u64 __user *)local_args.out_arg);
 		break;
 	case SWHVDRV_OPERATION_POLL:
 		pw_pr_debug("Polling tick!\n");
@@ -236,42 +231,43 @@ static long handle_ioctl(unsigned int ioctl_num,
 }
 
 static long device_unlocked_ioctl(struct file *filep, unsigned int ioctl_num,
-				  unsigned long ioctl_param)
+		unsigned long ioctl_param)
 {
 	return handle_ioctl(_IOC_NR(ioctl_num),
-			    (struct spdrv_ioctl_arg __user *)ioctl_param);
+				(struct spdrv_ioctl_arg __user *)ioctl_param);
 };
 
+
 #if defined(HAVE_COMPAT_IOCTL) && defined(CONFIG_X86_64)
-static long device_compat_ioctl(struct file *file, unsigned int ioctl_num,
-				unsigned long ioctl_param)
+static long device_compat_ioctl(struct file *file,
+		unsigned int ioctl_num, unsigned long ioctl_param)
 {
 	struct spdrv_ioctl_arg32 __user *remote_args32 =
-		compat_ptr(ioctl_param);
+			compat_ptr(ioctl_param);
 	struct spdrv_ioctl_arg __user *remote_args =
-		compat_alloc_user_space(sizeof(*remote_args));
+			compat_alloc_user_space(sizeof(*remote_args));
 	int tmp;
 	u32 data;
 
-	if (!remote_args) {
+	if (!remote_args)
 		return -1;
-	}
+
 	if (get_user(tmp, &remote_args32->in_len) ||
-	    put_user(tmp, &remote_args->in_len)) {
+			put_user(tmp, &remote_args->in_len))
 		return -1;
-	}
+
 	if (get_user(tmp, &remote_args32->out_len) ||
-	    put_user(tmp, &remote_args->out_len)) {
+			put_user(tmp, &remote_args->out_len))
 		return -1;
-	}
+
 	if (get_user(data, &remote_args32->in_arg) ||
-	    put_user(compat_ptr(data), &remote_args->in_arg)) {
+			put_user(compat_ptr(data), &remote_args->in_arg))
 		return -1;
-	}
+
 	if (get_user(data, &remote_args32->out_arg) ||
-	    put_user(compat_ptr(data), &remote_args->out_arg)) {
+			put_user(compat_ptr(data), &remote_args->out_arg))
 		return -1;
-	}
+
 	return handle_ioctl(_IOC_NR(ioctl_num), remote_args);
 };
 #endif /* COMPAT && x64 */
@@ -281,11 +277,11 @@ static int device_open(struct inode *inode, struct file *file)
 	return device_open_i(inode, file);
 }
 
-static ssize_t
-device_read(struct file *file, /* see include/linux/fs.h */
-	    char __user *buffer, /* buffer to be filled with data */
-	    size_t length, /* length of the buffer */
-	    loff_t *offset)
+static ssize_t device_read(struct file *file, /* see include/linux/fs.h */
+	char __user *buffer, /* buffer to be filled with data */
+	size_t length, /* length of the buffer */
+
+	loff_t *offset)
 {
 	return device_read_i(file, buffer, length, offset);
 }
@@ -338,7 +334,7 @@ int __init swhv_load_driver(void)
 	}
 	sp_cdev->owner = THIS_MODULE;
 	sp_cdev->ops = &s_fops;
-	if (cdev_add(sp_cdev, sp_dev, 1) < 0) {
+	if (cdev_add(sp_cdev, sp_dev, 1) < 0)  {
 		error = -1;
 		pw_pr_error("Error registering device driver\n");
 		goto cleanup_return_error;

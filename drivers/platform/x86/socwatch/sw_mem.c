@@ -1,58 +1,57 @@
-/*
-
-  This file is provided under a dual BSD/GPLv2 license.  When using or
-  redistributing this file, you may do so under either license.
-
-  GPL LICENSE SUMMARY
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
-
-  This program is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  General Public License for more details.
-
-  Contact Information:
-  SoC Watch Developer Team <socwatchdevelopers@intel.com>
-  Intel Corporation,
-  1300 S Mopac Expwy,
-  Austin, TX 78746
-
-  BSD LICENSE
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in
-      the documentation and/or other materials provided with the
-      distribution.
-    * Neither the name of Intel Corporation nor the names of its
-      contributors may be used to endorse or promote products derived
-      from this software without specific prior written permission.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-*/
+/* SPDX-License-Identifier: GPL-2.0 AND BSD-3-Clause
+ *
+ * This file is provided under a dual BSD/GPLv2 license.  When using or
+ * redistributing this file, you may do so under either license.
+ *
+ * GPL LICENSE SUMMARY
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * Contact Information:
+ * SoC Watch Developer Team <socwatchdevelopers@intel.com>
+ * Intel Corporation,
+ * 1300 S Mopac Expwy,
+ * Austin, TX 78746
+ *
+ * BSD LICENSE
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above copyright
+ *     notice, this list of conditions and the following disclaimer in
+ *     the documentation and/or other materials provided with the
+ *     distribution.
+ *   * Neither the name of Intel Corporation nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 #include <linux/slab.h>
 
 #include "sw_kernel_defines.h"
@@ -79,18 +78,16 @@ static atomic_t pw_mem_should_panic = ATOMIC_INIT(0);
 /*
  * Macro to check if PANIC is on.
  */
-#define MEM_PANIC()                                                            \
-	do {                                                                   \
-		atomic_set(&pw_mem_should_panic, 1);                           \
-		smp_mb();                                                      \
+#define MEM_PANIC() do {						\
+		atomic_set(&pw_mem_should_panic, 1);			\
+		smp_mb(); /* memory access ordering */			\
 	} while (0)
-#define SHOULD_TRACE()                                                         \
-	({                                                                     \
-		bool __tmp = false;                                            \
-		smp_mb();                                                      \
-		__tmp = (atomic_read(&pw_mem_should_panic) == 0);              \
-		__tmp;                                                         \
-	})
+
+#define SHOULD_TRACE() ({						\
+	bool __tmp = false;						\
+	smp_mb(); /* memory access ordering */				\
+	__tmp = (atomic_read(&pw_mem_should_panic) == 0);		\
+	__tmp; })
 
 #else /* if !DO_MEM_PANIC_ON_ALLOC_ERROR */
 
@@ -137,16 +134,18 @@ u64 sw_get_curr_bytes_alloced(void)
  * Allocate free pages.
  * TODO: add memory tracker?
  */
-unsigned long sw_allocate_pages(gfp_t flags,
-				unsigned int alloc_size_in_bytes)
+unsigned long sw_allocate_pages(
+	unsigned int flags, unsigned int alloc_size_in_bytes)
 {
-	return __get_free_pages(flags, get_order(alloc_size_in_bytes));
+	return __get_free_pages(
+		(gfp_t)flags, get_order(alloc_size_in_bytes));
 }
 /*
  * Free up previously allocated pages.
  * TODO: add memory tracker?
  */
-void sw_release_pages(unsigned long addr, unsigned int alloc_size_in_bytes)
+void sw_release_pages(
+	unsigned long addr, unsigned int alloc_size_in_bytes)
 {
 	free_pages(addr, get_order(alloc_size_in_bytes));
 }
@@ -195,36 +194,28 @@ static SW_DEFINE_SPINLOCK(sw_kmalloc_lock);
  */
 #define PW_MEM_MAGIC 0xdeadbeef
 
-#define PW_ADD_MAGIC(x)                                                        \
-	({                                                                     \
-		char *__tmp1 = (char *)(x);                                    \
-		*((int *)__tmp1) = PW_MEM_MAGIC;                               \
-		__tmp1 += sizeof(int);                                         \
-		__tmp1;                                                        \
-	})
-#define PW_ADD_SIZE(x, s)                                                      \
-	({                                                                     \
-		char *__tmp1 = (char *)(x);                                    \
-		*((int *)__tmp1) = (s);                                        \
-		__tmp1 += sizeof(int);                                         \
-		__tmp1;                                                        \
-	})
+#define PW_ADD_MAGIC(x) ({					\
+	char *__tmp1 = (char *)(x);				\
+	*((int *)__tmp1) = PW_MEM_MAGIC;			\
+	__tmp1 += sizeof(int); __tmp1; })
+
+#define PW_ADD_SIZE(x, s) ({					\
+	char *__tmp1 = (char *)(x);				\
+	*((int *)__tmp1) = (s);					\
+	__tmp1 += sizeof(int); __tmp1; })
+
 #define PW_ADD_STAMP(x, s) PW_ADD_MAGIC(PW_ADD_SIZE((x), (s)))
 
-#define PW_IS_MAGIC(x)                                                         \
-	({                                                                     \
-		int *__tmp1 = (int *)((char *)(x) - sizeof(int));              \
-		*__tmp1 == PW_MEM_MAGIC;                                       \
-	})
-#define PW_REMOVE_STAMP(x)                                                     \
-	({                                                                     \
-		char *__tmp1 = (char *)(x);                                    \
-		__tmp1 -= sizeof(int) * 2;                                     \
-		__tmp1;                                                        \
-	})
+#define PW_IS_MAGIC(x) ({					\
+	int *__tmp1 = (int *)((char *)(x) - sizeof(int));	\
+	*__tmp1 == PW_MEM_MAGIC; })
+#define PW_REMOVE_STAMP(x) ({					\
+	char *__tmp1 = (char *)(x);				\
+	__tmp1 -= sizeof(int) * 2; __tmp1; })
+
 #define PW_GET_SIZE(x) (*((int *)(x)))
 
-void *sw_kmalloc(size_t size, gfp_t flags)
+void *sw_kmalloc(size_t size, unsigned int flags)
 {
 	size_t act_size = 0;
 	void *retVal = NULL;
@@ -234,21 +225,20 @@ void *sw_kmalloc(size_t size, gfp_t flags)
 	 * previously!
 	 */
 	{
-		if (!SHOULD_TRACE()) {
+		if (!SHOULD_TRACE())
 			return NULL;
-		}
 	}
 	/*
 	 * (1) Allocate requested block.
 	 */
 	act_size = size + sizeof(int) * 2;
-	retVal = kmalloc(act_size, flags);
+	retVal = kmalloc(act_size, (gfp_t)flags);
 	if (!retVal) {
 		/*
 		 * Panic if we couldn't allocate
 		 * requested memory.
 		 */
-		printk(KERN_INFO "ERROR: could NOT allocate memory!\n");
+		pw_pr_debug("ERROR: could NOT allocate memory!\n");
 		MEM_PANIC();
 		return NULL;
 	}
@@ -280,7 +270,7 @@ void sw_kfree(const void *obj)
 	 * by us.
 	 */
 	if (!PW_IS_MAGIC(obj)) {
-		printk(KERN_INFO "ERROR: %p is NOT a PW_MAGIC ptr!\n", obj);
+		pw_pr_debug("ERROR: %p is NOT a PW_MAGIC ptr!\n", obj);
 		return;
 	}
 	/*
@@ -307,12 +297,13 @@ void sw_kfree(const void *obj)
 
 #else /* !DO_TRACK_MEMORY_USAGE */
 
-void *sw_kmalloc(size_t size, gfp_t flags)
+void *sw_kmalloc(size_t size, unsigned int flags)
 {
 	void *ret = NULL;
 
 	if (SHOULD_TRACE()) {
-		if (!(ret = kmalloc(size, flags))) {
+		ret = kmalloc(size, (gfp_t)flags);
+		if (!ret) {
 			/*
 			 * Panic if we couldn't allocate
 			 * requested memory.

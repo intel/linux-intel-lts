@@ -1,64 +1,64 @@
-/*
+/* SPDX-License-Identifier: GPL-2.0 AND BSD-3-Clause
+ *
+ * This file is provided under a dual BSD/GPLv2 license.  When using or
+ * redistributing this file, you may do so under either license.
+ *
+ * GPL LICENSE SUMMARY
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * Contact Information:
+ * SoC Watch Developer Team <socwatchdevelopers@intel.com>
+ * Intel Corporation,
+ * 1300 S Mopac Expwy,
+ * Austin, TX 78746
+ *
+ * BSD LICENSE
+ *
+ * Copyright(c) 2014 - 2019 Intel Corporation.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *   * Redistributions of source code must retain the above copyright
+ *     notice, this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above copyright
+ *     notice, this list of conditions and the following disclaimer in
+ *     the documentation and/or other materials provided with the
+ *     distribution.
+ *   * Neither the name of Intel Corporation nor the names of its
+ *     contributors may be used to endorse or promote products derived
+ *     from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
-  This file is provided under a dual BSD/GPLv2 license.  When using or
-  redistributing this file, you may do so under either license.
-
-  GPL LICENSE SUMMARY
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
-
-  This program is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  General Public License for more details.
-
-  Contact Information:
-  SoC Watch Developer Team <socwatchdevelopers@intel.com>
-  Intel Corporation,
-  1300 S Mopac Expwy,
-  Austin, TX 78746
-
-  BSD LICENSE
-
-  Copyright(c) 2014 - 2018 Intel Corporation.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in
-      the documentation and/or other materials provided with the
-      distribution.
-    * Neither the name of Intel Corporation nor the names of its
-      contributors may be used to endorse or promote products derived
-      from this software without specific prior written permission.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-*/
 #include <linux/version.h> /* "LINUX_VERSION_CODE" */
 #include <linux/hrtimer.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)
-#include <asm/cputime.h>
+#if KERNEL_VERSION(4, 11, 0) > LINUX_VERSION_CODE
+	#include <asm/cputime.h>
 #else
-#include <linux/sched/cputime.h>
+	#include <linux/sched/cputime.h>
 #endif
 #include <asm/hardirq.h>
 #include <asm/local.h>
@@ -68,12 +68,12 @@
 #include <trace/events/timer.h>
 #include <trace/events/power.h>
 #include <trace/events/sched.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+#if KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE
 #include <asm/trace/irq_vectors.h> /* for the various APIC vector tracepoints
 				    *  (e.g. "thermal_apic",
 				    *  "local_timer" etc.)
 				    */
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+#endif /* KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE */
 struct pool_workqueue;
 struct cpu_workqueue_struct;
 #include <trace/events/workqueue.h>
@@ -129,12 +129,12 @@ struct cpu_workqueue_struct;
  * helper macros.
  */
 #if IS_ENABLED(CONFIG_TRACEPOINTS)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
+#if KERNEL_VERSION(2, 6, 35) > LINUX_VERSION_CODE
 #define DO_REGISTER_SW_TRACEPOINT_PROBE(node, name, probe)                     \
 	WARN_ON(register_trace_##name(probe))
 #define DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, name, probe)                   \
 	unregister_trace_##name(probe)
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 15, 0)
+#elif KERNEL_VERSION(3, 15, 0) > LINUX_VERSION_CODE
 #define DO_REGISTER_SW_TRACEPOINT_PROBE(node, name, probe)                     \
 	WARN_ON(register_trace_##name(probe, NULL))
 #define DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, name, probe)                   \
@@ -149,7 +149,7 @@ struct cpu_workqueue_struct;
 #define DO_REGISTER_SW_TRACEPOINT_PROBE(...) /* NOP */
 #define DO_UNREGISTER_SW_TRACEPOINT_PROBE(...) /* NOP */
 #endif /* CONFIG_TRACEPOINTS */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
+#if KERNEL_VERSION(2, 6, 35) > LINUX_VERSION_CODE
 #define _DEFINE_PROBE_FUNCTION(name, ...) static void name(__VA_ARGS__)
 #else
 #define _DEFINE_PROBE_FUNCTION(name, ...)                                      \
@@ -161,10 +161,10 @@ struct cpu_workqueue_struct;
  * Tracepoint probe function parameters.
  * These tracepoint signatures depend on kernel version.
  */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+#if KERNEL_VERSION(2, 6, 36) > LINUX_VERSION_CODE
 #define PROBE_TPS_PARAMS                                                       \
 	sw_probe_power_start_i, unsigned int type, unsigned int state
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
+#elif KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE
 #define PROBE_TPS_PARAMS                                                       \
 	sw_probe_power_start_i, unsigned int type, unsigned int state,         \
 		unsigned int cpu_id
@@ -173,7 +173,7 @@ struct cpu_workqueue_struct;
 	sw_probe_cpu_idle_i, unsigned int state, unsigned int cpu_id
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
+#if KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE
 #define PROBE_TPF_PARAMS                                                       \
 	sw_probe_power_frequency_i, unsigned int type, unsigned int state
 #else
@@ -181,7 +181,7 @@ struct cpu_workqueue_struct;
 	sw_probe_cpu_frequency_i, unsigned int new_freq, unsigned int cpu
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
+#if KERNEL_VERSION(2, 6, 35) > LINUX_VERSION_CODE
 #define PROBE_SCHED_WAKEUP_PARAMS                                              \
 	sw_probe_sched_wakeup_i, struct rq *rq, struct task_struct *task,      \
 		int success
@@ -191,7 +191,7 @@ struct cpu_workqueue_struct;
 #endif
 
 #if IS_ENABLED(CONFIG_ANDROID)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
+#if KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE
 #define PROBE_WAKE_LOCK_PARAMS sw_probe_wake_lock_i, struct wake_lock *lock
 #define PROBE_WAKE_UNLOCK_PARAMS                                               \
 	sw_probe_wake_unlock_i, struct wake_unlock *unlock
@@ -204,7 +204,7 @@ struct cpu_workqueue_struct;
 #endif /* version */
 #endif /* CONFIG_ANDROID */
 
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35)
+#if KERNEL_VERSION(2, 6, 35) >= LINUX_VERSION_CODE
 #define PROBE_WORKQUEUE_PARAMS                                                 \
 	sw_probe_workqueue_execution_i, struct task_struct *wq_thread,         \
 		struct work_struct *work
@@ -260,13 +260,13 @@ struct cpu_workqueue_struct;
  * Use these macros if all tracepoint ID numbers
  * ARE contiguous from 0 -- max tracepoint ID #
  */
-#if 0
+/* #if 0
 #define IS_VALID_TRACE_NOTIFIER_ID(id)                                         \
 	((id) >= 0 && (id) < SW_ARRAY_SIZE(s_trace_collector_lists))
 #define GET_COLLECTOR_TRACE_NODE(id) (&s_trace_collector_lists[id])
 #define FOR_EACH_trace_notifier_id(idx)                                        \
 	for (idx = 0; idx < SW_ARRAY_SIZE(s_trace_collector_lists); ++idx)
-#endif /* if 0 */
+#endif */
 /*
  * Use these macros if all tracepoint ID numbers
  * are NOT contiguous from 0 -- max tracepoint ID #
@@ -315,52 +315,38 @@ int sw_unregister_trace_cpu_idle_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_cpu_frequency_i(struct sw_trace_notifier_data *node);
 int sw_unregister_trace_cpu_frequency_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_irq_handler_entry_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_irq_handler_entry_i(struct sw_trace_notifier_data
-					    *node);
+int sw_unregister_trace_irq_handler_entry_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_timer_expire_entry_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_timer_expire_entry_i(
-	struct sw_trace_notifier_data *node);
-int sw_register_trace_hrtimer_expire_entry_i(
-	struct sw_trace_notifier_data *node);
-int sw_unregister_trace_hrtimer_expire_entry_i(
-	struct sw_trace_notifier_data *node);
+int sw_unregister_trace_timer_expire_entry_i(struct sw_trace_notifier_data *node);
+int sw_register_trace_hrtimer_expire_entry_i(struct sw_trace_notifier_data *node);
+int sw_unregister_trace_hrtimer_expire_entry_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_sched_wakeup_i(struct sw_trace_notifier_data *node);
 int sw_unregister_trace_sched_wakeup_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_sched_process_fork_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_sched_process_fork_i(
-	struct sw_trace_notifier_data *node);
+int sw_unregister_trace_sched_process_fork_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_sched_process_exit_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_sched_process_exit_i(
-	struct sw_trace_notifier_data *node);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
-int sw_register_trace_thermal_apic_entry_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_thermal_apic_entry_i(
-	struct sw_trace_notifier_data *node);
-int sw_register_trace_thermal_apic_exit_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_thermal_apic_exit_i(struct sw_trace_notifier_data
-					    *node);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+int sw_unregister_trace_sched_process_exit_i(struct sw_trace_notifier_data *node);
+#if KERNEL_VERSION(3,14,0) <= LINUX_VERSION_CODE
+    int sw_register_trace_thermal_apic_entry_i(struct sw_trace_notifier_data *node);
+    int sw_unregister_trace_thermal_apic_entry_i(struct sw_trace_notifier_data *node);
+    int sw_register_trace_thermal_apic_exit_i(struct sw_trace_notifier_data *node);
+    int sw_unregister_trace_thermal_apic_exit_i(struct sw_trace_notifier_data *node);
+#endif // KERNEL_VERSION(3,14,0) <= LINUX_VERSION_CODE
 #if IS_ENABLED(CONFIG_ANDROID)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
-int sw_register_trace_wake_lock_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_wake_lock_i(struct sw_trace_notifier_data *node);
-int sw_register_trace_wake_unlock_i(struct sw_trace_notifier_data *node);
-int sw_unregister_trace_wake_unlock_i(struct sw_trace_notifier_data *node);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
-int sw_register_trace_wakeup_source_activate_i(
-	struct sw_trace_notifier_data *node);
-int sw_unregister_trace_wakeup_source_activate_i(
-	struct sw_trace_notifier_data *node);
-int sw_register_trace_wakeup_source_deactivate_i(
-	struct sw_trace_notifier_data *node);
-int sw_unregister_trace_wakeup_source_deactivate_i(
-	struct sw_trace_notifier_data *node);
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0) */
-#endif /* CONFIG_ANDROID */
-int sw_register_trace_workqueue_execution_i(struct sw_trace_notifier_data
-					    *node);
-int sw_unregister_trace_workqueue_execution_i(
-	struct sw_trace_notifier_data *node);
+    #if KERNEL_VERSION(3,4,0) > LINUX_VERSION_CODE
+        int sw_register_trace_wake_lock_i(struct sw_trace_notifier_data *node);
+        int sw_unregister_trace_wake_lock_i(struct sw_trace_notifier_data *node);
+        int sw_register_trace_wake_unlock_i(struct sw_trace_notifier_data *node);
+        int sw_unregister_trace_wake_unlock_i(struct sw_trace_notifier_data *node);
+    #else // KERNEL_VERSION(3,4,0) > LINUX_VERSION_CODE
+        int sw_register_trace_wakeup_source_activate_i(struct sw_trace_notifier_data *node);
+        int sw_unregister_trace_wakeup_source_activate_i(struct sw_trace_notifier_data *node);
+        int sw_register_trace_wakeup_source_deactivate_i(struct sw_trace_notifier_data *node);
+        int sw_unregister_trace_wakeup_source_deactivate_i(struct sw_trace_notifier_data *node);
+    #endif // KERNEL_VERSION(3,4,0) > LINUX_VERSION_CODE
+#endif // IS_ENABLED(CONFIG_ANDROID)
+int sw_register_trace_workqueue_execution_i(struct sw_trace_notifier_data *node);
+int sw_unregister_trace_workqueue_execution_i(struct sw_trace_notifier_data *node);
 int sw_register_trace_sched_switch_i(struct sw_trace_notifier_data *node);
 int sw_unregister_trace_sched_switch_i(struct sw_trace_notifier_data *node);
 int sw_register_pm_notifier_i(struct sw_trace_notifier_data *node);
@@ -369,25 +355,20 @@ int sw_register_cpufreq_notifier_i(struct sw_trace_notifier_data *node);
 int sw_unregister_cpufreq_notifier_i(struct sw_trace_notifier_data *node);
 int sw_register_hotcpu_notifier_i(struct sw_trace_notifier_data *node);
 int sw_unregister_hotcpu_notifier_i(struct sw_trace_notifier_data *node);
-void sw_handle_sched_wakeup_i(struct sw_collector_data *node, int source_cpu,
-			      int target_cpu);
-void sw_handle_timer_wakeup_helper_i(struct sw_collector_data *curr,
-				     struct sw_trace_notifier_data *node,
-				     pid_t tid);
+void sw_handle_sched_wakeup_i(struct sw_collector_data *node, int source_cpu, int target_cpu);
+void sw_handle_timer_wakeup_helper_i(struct sw_collector_data *curr, struct sw_trace_notifier_data *node,
+                                     pid_t tid);
 void sw_handle_apic_timer_wakeup_i(struct sw_collector_data *node);
-void sw_handle_workqueue_wakeup_helper_i(int cpu,
-					 struct sw_collector_data *node);
+void sw_handle_workqueue_wakeup_helper_i(int cpu, struct sw_collector_data *node);
 void sw_handle_sched_switch_helper_i(void);
 void sw_tps_apic_i(int cpu);
 void sw_tps_tps_i(int cpu);
 void sw_tps_wakeup_i(int cpu);
 void sw_tps_i(void);
 void sw_tpf_i(int cpu, struct sw_trace_notifier_data *node);
-void sw_process_fork_exit_helper_i(struct sw_collector_data *node,
-				   struct task_struct *task, bool is_fork);
-void sw_produce_wakelock_msg_i(int cpu, struct sw_collector_data *node,
-			       const char *name, int type, u64 timeout, int pid,
-			       int tid, const char *proc_name);
+void sw_process_fork_exit_helper_i(struct sw_collector_data *node, struct task_struct *task, bool is_fork);
+void sw_produce_wakelock_msg_i(int cpu, struct sw_collector_data *node, const char *name,
+                               int type, u64 timeout, int pid, int tid, const char *proc_name);
 u64 sw_my_local_arch_irq_stats_cpu_i(void);
 
 /*
@@ -397,8 +378,7 @@ u64 sw_my_local_arch_irq_stats_cpu_i(void);
  * The tracepoint handlers.
  */
 void sw_handle_trace_notifier_i(struct sw_trace_notifier_data *node);
-void sw_handle_trace_notifier_on_cpu_i(int cpu,
-				       struct sw_trace_notifier_data *node);
+void sw_handle_trace_notifier_on_cpu_i(int cpu, struct sw_trace_notifier_data *node);
 void sw_handle_reset_messages_i(struct sw_trace_notifier_data *node);
 
 /* -------------------------------------------------
@@ -507,17 +487,17 @@ static const struct sw_trace_notifier_name s_trace_names[] = {
 					     "PROCESS-FORK" },
 	[SW_TRACE_ID_SCHED_PROCESS_EXIT] = { "sched_process_exit",
 					     "PROCESS-EXIT" },
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+#if KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE
 	[SW_TRACE_ID_THERMAL_APIC_ENTRY] = { "thermal_apic_entry",
 					     "THERMAL-THROTTLE-ENTRY" },
 	[SW_TRACE_ID_THERMAL_APIC_EXIT] = { "thermal_apic_exit",
 					    "THERMAL-THROTTLE-EXIT" },
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+#endif /* KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE  */
 #if IS_ENABLED(CONFIG_ANDROID)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
+#if KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE
 	[SW_TRACE_ID_WAKE_LOCK] = { "wake_lock", "WAKE-LOCK" },
 	[SW_TRACE_ID_WAKE_UNLOCK] = { "wake_unlock", "WAKE-UNLOCK" },
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
+#else /* KERNEL_VERSION(3, 4, 0) <= LINUX_VERSION_CODE */
 	[SW_TRACE_ID_WAKE_LOCK] = { "wakeup_source_activate", "WAKE-LOCK" },
 	[SW_TRACE_ID_WAKE_UNLOCK] = { "wakeup_source_deactivate",
 				      "WAKE-UNLOCK" },
@@ -589,7 +569,7 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 	  &s_trace_names[SW_TRACE_ID_SCHED_PROCESS_EXIT],
 	  &sw_register_trace_sched_process_exit_i,
 	  &sw_unregister_trace_sched_process_exit_i, NULL },
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+#if KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE
 	/*
 	 * For thermal throttling.
 	 * We probably only need one of either 'entry' or 'exit'. Use
@@ -606,10 +586,10 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 	  &s_trace_names[SW_TRACE_ID_THERMAL_APIC_EXIT],
 	  &sw_register_trace_thermal_apic_exit_i,
 	  &sw_unregister_trace_thermal_apic_exit_i, NULL },
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+#endif /* KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE */
 /* Wakelocks have multiple tracepoints, depending on kernel version */
 #if IS_ENABLED(CONFIG_ANDROID)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
+#if KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE
 	{ SW_TRACE_COLLECTOR_TRACEPOINT, &s_trace_names[SW_TRACE_ID_WAKE_LOCK],
 	  &sw_register_trace_wake_lock_i, &sw_unregister_trace_wake_lock_i,
 	  NULL },
@@ -617,7 +597,7 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 	  &s_trace_names[SW_TRACE_ID_WAKE_UNLOCK],
 	  &sw_register_trace_wake_unlock_i, &sw_unregister_trace_wake_unlock_i,
 	  NULL },
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
+#else /* KERNEL_VERSION(3, 4, 0) <= LINUX_VERSION_CODE  */
 	{ SW_TRACE_COLLECTOR_TRACEPOINT, &s_trace_names[SW_TRACE_ID_WAKE_LOCK],
 	  &sw_register_trace_wakeup_source_activate_i,
 	  &sw_unregister_trace_wakeup_source_activate_i, NULL },
@@ -625,7 +605,7 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 	  &s_trace_names[SW_TRACE_ID_WAKE_UNLOCK],
 	  &sw_register_trace_wakeup_source_deactivate_i,
 	  &sw_unregister_trace_wakeup_source_deactivate_i, NULL },
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0) */
+#endif /* KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE */
 #endif /* CONFIG_ANDROID */
 	{ SW_TRACE_COLLECTOR_TRACEPOINT,
 	  &s_trace_names[SW_TRACE_ID_WORKQUEUE_EXECUTE_START],
@@ -746,11 +726,11 @@ u64 sw_my_local_arch_irq_stats_cpu_i(void)
 		sum += stats->apic_timer_irqs;
 		sum += stats->irq_spurious_count;
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
+#if KERNEL_VERSION(2, 6, 34) <= LINUX_VERSION_CODE
 		sum += stats->x86_platform_ipis;
 #endif /* 2,6,34 */
 		sum += stats->apic_perf_irqs;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
+#if KERNEL_VERSION(3, 5, 0) <= LINUX_VERSION_CODE
 		sum += stats->apic_irq_work_irqs;
 #endif /* 3,5,0 */
 #ifdef CONFIG_SMP
@@ -765,9 +745,9 @@ u64 sw_my_local_arch_irq_stats_cpu_i(void)
 #else
 		sum += stats->__softirq_pending;
 #ifdef CONFIG_SMP
-		for (i = 0; i < NR_IPI; ++i) {
+		for (i = 0; i < NR_IPI; ++i)
 			sum += stats->ipi_irqs[i];
-		}
+
 #endif
 #ifdef CONFIG_X86_MCE
 		sum += stats->mce_exception_count;
@@ -786,9 +766,9 @@ void sw_handle_trace_notifier_i(struct sw_trace_notifier_data *node)
 {
 	struct sw_collector_data *curr = NULL;
 
-	if (!node) {
+	if (!node)
 		return;
-	}
+
 	list_for_each_entry(curr, &node->list, list) {
 		pw_pr_debug("DEBUG: handling message\n");
 		sw_handle_per_cpu_msg(curr);
@@ -803,21 +783,21 @@ void sw_handle_trace_notifier_on_cpu_i(int cpu,
 {
 	struct sw_collector_data *curr = NULL;
 
-	if (!node) {
+	if (!node)
 		return;
-	}
-	list_for_each_entry(curr, &node->list, list) {
+
+	list_for_each_entry(curr, &node->list, list)
 		sw_handle_per_cpu_msg_on_cpu(cpu, curr);
-	}
+
 };
 
 void sw_handle_reset_messages_i(struct sw_trace_notifier_data *node)
 {
 	struct sw_collector_data *curr = NULL;
 
-	if (!node) {
+	if (!node)
 		return;
-	}
+
 	list_for_each_entry(curr, &node->list, list) {
 		pw_pr_debug("Handling message of unknown cpumask on cpu %d\n",
 			    RAW_CPU());
@@ -852,9 +832,9 @@ static void sw_handle_timer_wakeup_i(struct sw_collector_data *node, pid_t pid,
 	dst_vals += sizeof(pid);
 	*((int *)dst_vals) = tid;
 
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT))
 		pw_pr_warn("WARNING: could NOT produce message!\n");
-	}
+
 	pw_pr_debug("HANDLED timer expire for %d, %d\n", pid, tid);
 };
 
@@ -867,18 +847,16 @@ void sw_handle_timer_wakeup_helper_i(struct sw_collector_data *curr,
 {
 	pid_t pid = -1;
 
-	if (tid == 0) {
+	if (tid == 0)
 		pid = 0;
-	} else {
+	else {
 		struct task_struct *task =
 			pid_task(find_pid_ns(tid, &init_pid_ns), PIDTYPE_PID);
-		if (likely(task)) {
+		if (likely(task))
 			pid = task->tgid;
-		}
 	}
-	list_for_each_entry(curr, &node->list, list) {
+	list_for_each_entry(curr, &node->list, list)
 		sw_handle_timer_wakeup_i(curr, pid, tid);
-	}
 };
 
 /*
@@ -904,9 +882,9 @@ void sw_handle_sched_wakeup_i(struct sw_collector_data *node, int source_cpu,
 	dst_vals += sizeof(source_cpu);
 	*((int *)dst_vals) = target_cpu;
 
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_NONE)) {
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_NONE))
 		pw_pr_warn("WARNING: could NOT produce message!\n");
-	}
+
 };
 
 /*
@@ -926,9 +904,9 @@ void sw_handle_apic_timer_wakeup_i(struct sw_collector_data *node)
 	/* msg TSC assigned when msg is written to buffer */
 	msg->cpuidx = cpu;
 
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT))
 		pw_pr_warn("WARNING: could NOT produce message!\n");
-	}
+
 	pw_pr_debug("HANDLED APIC timer wakeup for cpu = %d\n", cpu);
 };
 
@@ -948,9 +926,8 @@ void sw_handle_workqueue_wakeup_helper_i(int cpu,
 	/*
 	 * Workqueue wakeup ==> empty message.
 	 */
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT))
 		pw_pr_error("WARNING: could NOT produce message!\n");
-	}
 };
 
 /*
@@ -964,9 +941,9 @@ void sw_handle_sched_switch_helper_i(void)
 		node = GET_COLLECTOR_TRACE_NODE(SW_TRACE_ID_SCHED_SWITCH);
 		pw_pr_debug("SCHED SWITCH NODE = %p\n", node);
 	}
-	if (!node) {
+	if (!node)
 		return;
-	}
+
 	preempt_disable();
 	{
 		struct sw_collector_data *curr;
@@ -980,15 +957,15 @@ void sw_handle_sched_switch_helper_i(void)
 			struct cpumask *mask = &curr->cpumask;
 			u16 timeout = curr->info->sampling_interval_msec;
 
-			if (!timeout) {
+			if (!timeout)
 				timeout = sw_min_polling_interval_msecs;
-			}
+
 			/* Has there been enough time since the last
 			 * collection point?
 			 */
-			if (delta_msecs < timeout) {
+			if (delta_msecs < timeout)
 				continue;
-			}
+
 			/* Update timestamp and handle message */
 			if (cpumask_test_cpu(
 				    RAW_CPU(),
@@ -1052,6 +1029,7 @@ void sw_tps_apic_i(int cpu)
 		if (local_apic_timer_fired &&
 		    SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu)) {
 			struct sw_collector_data *curr = NULL;
+
 			list_for_each_entry(curr, &apic_timer_node->list,
 					     list) {
 				sw_handle_apic_timer_wakeup_i(curr);
@@ -1118,17 +1096,16 @@ void sw_tpf_i(int cpu, struct sw_trace_notifier_data *node)
 #if IS_ENABLED(CONFIG_TRACEPOINTS)
 DEFINE_PROBE_FUNCTION(PROBE_TPS_PARAMS)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 38)
-	if (state == PWR_EVENT_EXIT) {
+#if KERNEL_VERSION(2, 6, 38) <= LINUX_VERSION_CODE
+	if (state == PWR_EVENT_EXIT)
 		return;
-	}
 #endif
 	DO_PER_CPU_OVERHEAD_FUNC(sw_tps_i);
 };
 
 DEFINE_PROBE_FUNCTION(PROBE_TPF_PARAMS)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
+#if KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE
 	int cpu = RAW_CPU();
 #endif /* version < 2.6.38 */
 	static struct sw_trace_notifier_data *node;
@@ -1160,9 +1137,9 @@ static void sw_handle_irq_wakeup_i(struct sw_collector_data *node, int irq)
 	 */
 	*((int *)dst_vals) = irq;
 
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT))
 		pw_pr_warn("WARNING: could NOT produce message!\n");
-	}
+
 };
 
 /*
@@ -1179,12 +1156,12 @@ DEFINE_PROBE_FUNCTION(PROBE_IRQ_PARAMS)
 		node = GET_COLLECTOR_TRACE_NODE(SW_TRACE_ID_IRQ_HANDLER_ENTRY);
 		pw_pr_debug("NODE = %p\n", node);
 	}
-	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu)) {
+	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu))
 		return;
-	}
-	list_for_each_entry(curr, &node->list, list) {
+
+	list_for_each_entry(curr, &node->list, list)
 		DO_PER_CPU_OVERHEAD_FUNC(sw_handle_irq_wakeup_i, curr, irq);
-	}
+
 };
 
 /*
@@ -1203,9 +1180,9 @@ DEFINE_PROBE_FUNCTION(PROBE_TIMER_ARGS)
 		pw_pr_debug("NODE = %p\n", node);
 	}
 
-	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu)) {
+	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu))
 		return;
-	}
+
 	DO_PER_CPU_OVERHEAD_FUNC(sw_handle_timer_wakeup_helper_i, curr, node,
 				 tid);
 };
@@ -1226,9 +1203,9 @@ DEFINE_PROBE_FUNCTION(PROBE_HRTIMER_PARAMS)
 		pw_pr_debug("NODE = %p\n", node);
 	}
 
-	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu)) {
+	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu))
 		return;
-	}
+
 	DO_PER_CPU_OVERHEAD_FUNC(sw_handle_timer_wakeup_helper_i, curr, node,
 				 tid);
 };
@@ -1244,9 +1221,9 @@ DEFINE_PROBE_FUNCTION(PROBE_SCHED_WAKEUP_PARAMS)
 	/*
 	 * "Self-sched" samples are "don't care".
 	 */
-	if (target_cpu == source_cpu) {
+	if (target_cpu == source_cpu)
 		return;
-	}
+
 	if (unlikely(node == NULL)) {
 		node = GET_COLLECTOR_TRACE_NODE(SW_TRACE_ID_SCHED_WAKEUP);
 		pw_pr_debug("NODE = %p\n", node);
@@ -1255,9 +1232,9 @@ DEFINE_PROBE_FUNCTION(PROBE_SCHED_WAKEUP_PARAMS)
 	 * Unlike other wakeup sources, we check the per-cpu flag
 	 * of the TARGET cpu to decide if we should produce a sample.
 	 */
-	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(target_cpu)) {
+	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(target_cpu))
 		return;
-	}
+
 	list_for_each_entry(curr, &node->list, list) {
 		/* sw_handle_sched_wakeup_i(curr, source_cpu, target_cpu); */
 		DO_PER_CPU_OVERHEAD_FUNC(sw_handle_sched_wakeup_i, curr,
@@ -1292,13 +1269,13 @@ void sw_process_fork_exit_helper_i(struct sw_collector_data *node,
 	dst_vals += sizeof(pid);
 	*((int *)dst_vals) = tid;
 	dst_vals += sizeof(tid);
-	if (is_fork) {
+	if (is_fork)
 		memcpy(dst_vals, name, SW_MAX_PROC_NAME_SIZE);
-	}
 
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
+
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT))
 		pw_pr_warn("WARNING: could NOT produce message!\n");
-	}
+
 	pw_pr_debug(
 		"HANDLED process %s event for task: pid = %d, tid = %d, name = %s\n",
 		is_fork ? "FORK" : "EXIT", pid, tid, name);
@@ -1313,9 +1290,9 @@ DEFINE_PROBE_FUNCTION(PROBE_PROCESS_FORK_PARAMS)
 		node = GET_COLLECTOR_TRACE_NODE(SW_TRACE_ID_SCHED_PROCESS_FORK);
 		pw_pr_debug("NODE = %p\n", node);
 	}
-	if (!node) {
+	if (!node)
 		return;
-	}
+
 	list_for_each_entry(curr, &node->list, list) {
 		DO_PER_CPU_OVERHEAD_FUNC(sw_process_fork_exit_helper_i, curr,
 					 child, true /* true ==> fork */);
@@ -1334,16 +1311,16 @@ DEFINE_PROBE_FUNCTION(PROBE_SCHED_PROCESS_EXIT_PARAMS)
 		node = GET_COLLECTOR_TRACE_NODE(SW_TRACE_ID_SCHED_PROCESS_EXIT);
 		pw_pr_debug("NODE = %p\n", node);
 	}
-	if (!node) {
+	if (!node)
 		return;
-	}
+
 	list_for_each_entry(curr, &node->list, list) {
 		DO_PER_CPU_OVERHEAD_FUNC(sw_process_fork_exit_helper_i, curr,
 					 task, false /* false ==> exit */);
 	}
 };
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+#if KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE
 /*
  * 10. THERMAL_APIC entry
  */
@@ -1373,7 +1350,7 @@ DEFINE_PROBE_FUNCTION(PROBE_THERMAL_APIC_EXIT_PARAMS)
 	}
 	DO_PER_CPU_OVERHEAD_FUNC(sw_tpf_i, (int)cpu, node);
 };
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+#endif /* KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE */
 
 #if IS_ENABLED(CONFIG_ANDROID)
 /*
@@ -1412,9 +1389,9 @@ void sw_produce_wakelock_msg_i(int cpu, struct sw_collector_data *node,
 	strncpy(dst_vals, proc_name, SW_MAX_PROC_NAME_SIZE);
 	dst_vals += SW_MAX_PROC_NAME_SIZE;
 
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT))
 		pw_pr_warn("WARNING: could NOT produce message!\n");
-	}
+
 };
 
 /*
@@ -1427,9 +1404,9 @@ void sw_handle_wakelock_i(int cpu, struct sw_trace_notifier_data *node,
 	const char *proc_name = NAME();
 	struct sw_collector_data *curr = NULL;
 
-	if (!node) {
+	if (!node)
 		return;
-	}
+
 
 	list_for_each_entry(curr, &node->list, list) {
 		sw_produce_wakelock_msg_i(cpu, curr, name, type, timeout, pid,
@@ -1443,7 +1420,7 @@ DEFINE_PROBE_FUNCTION(PROBE_WAKE_LOCK_PARAMS)
 	static struct sw_trace_notifier_data *node;
 	enum sw_kernel_wakelock_type type = SW_WAKE_LOCK;
 	u64 timeout = 0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
+#if KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE
 	const char *name = lock->name;
 #endif
 
@@ -1451,7 +1428,7 @@ DEFINE_PROBE_FUNCTION(PROBE_WAKE_LOCK_PARAMS)
 		node = GET_COLLECTOR_TRACE_NODE(SW_TRACE_ID_WAKE_LOCK);
 		pw_pr_debug("NODE = %p\n", node);
 	}
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
+#if KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE
 	/*
 	 * Was this wakelock acquired with a timeout i.e.
 	 * is this an auto expire wakelock?
@@ -1460,7 +1437,7 @@ DEFINE_PROBE_FUNCTION(PROBE_WAKE_LOCK_PARAMS)
 		type = SW_WAKE_LOCK_TIMEOUT;
 		timeout = jiffies_to_msecs(lock->expires - jiffies);
 	}
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0) */
+#endif /* KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE */
 	DO_PER_CPU_OVERHEAD_FUNC(sw_handle_wakelock_i, cpu, node, name,
 				 (int)type, timeout);
 };
@@ -1473,7 +1450,7 @@ DEFINE_PROBE_FUNCTION(PROBE_WAKE_UNLOCK_PARAMS)
 	int cpu = RAW_CPU();
 	static struct sw_trace_notifier_data *node;
 	enum sw_kernel_wakelock_type type = SW_WAKE_UNLOCK;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
+#if KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE
 	const char *name = lock->name;
 #endif
 
@@ -1501,13 +1478,13 @@ DEFINE_PROBE_FUNCTION(PROBE_WORKQUEUE_PARAMS)
 		pw_pr_debug("NODE = %p\n", node);
 	}
 
-	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu)) {
+	if (!node || !SHOULD_PRODUCE_WAKEUP_SAMPLE(cpu))
 		return;
-	}
-	list_for_each_entry(curr, &node->list, list) {
+
+	list_for_each_entry(curr, &node->list, list)
 		DO_PER_CPU_OVERHEAD_FUNC(sw_handle_workqueue_wakeup_helper_i,
 					 cpu, curr);
-	}
+
 };
 
 /*
@@ -1542,9 +1519,9 @@ static void sw_send_pm_notification_i(int value)
 	msg->payload_len = sizeof(value);
 	msg->p_payload = buffer + sizeof(*msg);
 	*((int *)msg->p_payload) = value;
-	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT)) {
+	if (sw_produce_generic_msg(msg, SW_WAKEUP_ACTION_DIRECT))
 		pw_pr_error("couldn't produce generic message!\n");
-	}
+
 	vfree(buffer);
 }
 
@@ -1580,23 +1557,23 @@ static void sw_probe_pm_helper_i(int id, int both_id, bool is_enter,
 		/*
 		 * Exitting HIBERNATION/SUSPEND
 		 */
-		if (sw_is_reset_i() && reset_node) {
+		if (sw_is_reset_i() && reset_node)
 			sw_handle_reset_messages_i(reset_node);
-		}
+
 	}
-	if (node) {
+	if (node)
 		sw_handle_trace_notifier_i(node);
-	}
-	if (both_node) {
+
+	if (both_node)
 		sw_handle_trace_notifier_i(both_node);
-	}
+
 	/* Send the suspend-resume notification */
 	sw_send_pm_notification_i(SW_PM_VALUE(mode, action));
 }
 
 static bool sw_is_suspend_via_firmware(void)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+#if KERNEL_VERSION(4, 4, 0) <= LINUX_VERSION_CODE
 	/* 'pm_suspend_via_firmware' only available in kernel >= 4.4 */
 	return pm_suspend_via_firmware();
 #endif
@@ -1666,7 +1643,7 @@ static void sw_store_topology_change_i(enum cpu_action type,
 	++sw_num_topology_entries;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
 int sw_probe_hotplug_notifier_i(struct notifier_block *block,
 				unsigned long action, void *pcpu)
 {
@@ -1750,7 +1727,7 @@ static void sw_probe_cpuhp_helper_i(unsigned int cpu, enum cpu_action action)
 
 static int sw_probe_cpu_offline_i(unsigned int cpu)
 {
-	printk(KERN_INFO "DEBUG: offline notification for cpu %u at %llu\n",
+	pw_pr_debug("DEBUG: offline notification for cpu %u at %llu\n",
 	       cpu, sw_tscval());
 	sw_probe_cpuhp_helper_i(cpu, SW_CPU_ACTION_OFFLINE);
 	return 0;
@@ -1758,13 +1735,13 @@ static int sw_probe_cpu_offline_i(unsigned int cpu)
 
 static int sw_probe_cpu_online_i(unsigned int cpu)
 {
-	printk(KERN_INFO "DEBUG: online notification for cpu %u at %llu\n", cpu,
+	pw_pr_debug("DEBUG: online notification for cpu %u at %llu\n", cpu,
 	       sw_tscval());
 	sw_probe_cpuhp_helper_i(cpu, SW_CPU_ACTION_ONLINE_PREPARE);
 	sw_probe_cpuhp_helper_i(cpu, SW_CPU_ACTION_ONLINE);
 	return 0;
 }
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
+#endif /* KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE  */
 
 /*
  * 2. CPUFREQ notifier
@@ -1798,23 +1775,23 @@ static int sw_probe_cpufreq_notifier_i(struct notifier_block *block,
  */
 int sw_register_trace_cpu_idle_i(struct sw_trace_notifier_data *node)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
+#if KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, power_start,
 					sw_probe_power_start_i);
 #else /* kernel version >= 2.6.38 */
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, cpu_idle, sw_probe_cpu_idle_i);
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38) */
+#endif /* KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE */
 	return PW_SUCCESS;
 };
 
 int sw_unregister_trace_cpu_idle_i(struct sw_trace_notifier_data *node)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
+#if KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, power_start,
 					  sw_probe_power_start_i);
 #else /* kernel version >= 2.6.38 */
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, cpu_idle, sw_probe_cpu_idle_i);
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38) */
+#endif /* KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE */
 	return PW_SUCCESS;
 };
 
@@ -1823,25 +1800,25 @@ int sw_unregister_trace_cpu_idle_i(struct sw_trace_notifier_data *node)
  */
 int sw_register_trace_cpu_frequency_i(struct sw_trace_notifier_data *node)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
+#if KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, power_frequency,
 					sw_probe_power_frequency_i);
 #else /* kernel version >= 2.6.38 */
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, cpu_frequency,
 					sw_probe_cpu_frequency_i);
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38) */
+#endif /* KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE */
 	return PW_SUCCESS;
 };
 
 int sw_unregister_trace_cpu_frequency_i(struct sw_trace_notifier_data *node)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 38)
+#if KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, power_frequency,
 					  sw_probe_power_frequency_i);
 #else /* kernel version >= 2.6.38 */
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, cpu_frequency,
 					  sw_probe_cpu_frequency_i);
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38) */
+#endif /* KERNEL_VERSION(2, 6, 38) > LINUX_VERSION_CODE */
 	return PW_SUCCESS;
 };
 
@@ -1955,7 +1932,7 @@ int sw_unregister_trace_sched_process_exit_i(struct sw_trace_notifier_data
 /*
  * 10. THERMAL_APIC entry
  */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+#if KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE
 int sw_register_trace_thermal_apic_entry_i(struct sw_trace_notifier_data *node)
 {
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, thermal_apic_entry,
@@ -1987,13 +1964,13 @@ int sw_unregister_trace_thermal_apic_exit_i(struct sw_trace_notifier_data *node)
 					  sw_probe_thermal_apic_exit_i);
 	return PW_SUCCESS;
 };
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+#endif /* KERNEL_VERSION(3, 14, 0) <= LINUX_VERSION_CODE */
 
 /*
  * 11. WAKE lock / WAKEUP source activate.
  */
 #if IS_ENABLED(CONFIG_ANDROID)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
+#if KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE
 int sw_register_trace_wake_lock_i(struct sw_trace_notifier_data *node)
 {
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, wake_lock, sw_probe_wake_lock_i);
@@ -2006,7 +1983,7 @@ int sw_unregister_trace_wake_lock_i(struct sw_trace_notifier_data *node)
 					  sw_probe_wake_lock_i);
 	return PW_SUCCESS;
 };
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
+#else /* KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE */
 int sw_register_trace_wakeup_source_activate_i(
 	struct sw_trace_notifier_data *node)
 {
@@ -2022,12 +1999,12 @@ int sw_unregister_trace_wakeup_source_activate_i(
 					  sw_probe_wakeup_source_activate_i);
 	return PW_SUCCESS;
 };
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0) */
+#endif /* KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE */
 
 /*
  * 11. WAKE unlock / WAKEUP source deactivate.
  */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
+#if KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE
 int sw_register_trace_wake_unlock_i(struct sw_trace_notifier_data *node)
 {
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, wake_unlock,
@@ -2042,7 +2019,7 @@ int sw_unregister_trace_wake_unlock_i(struct sw_trace_notifier_data *node)
 	return PW_SUCCESS;
 };
 
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0) */
+#else /* KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE */
 int sw_register_trace_wakeup_source_deactivate_i(
 	struct sw_trace_notifier_data *node)
 {
@@ -2058,7 +2035,7 @@ int sw_unregister_trace_wakeup_source_deactivate_i(
 					  sw_probe_wakeup_source_deactivate_i);
 	return PW_SUCCESS;
 };
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0) */
+#endif /*  KERNEL_VERSION(3, 4, 0) > LINUX_VERSION_CODE */
 #endif /* CONFIG_ANDROID */
 
 /*
@@ -2066,7 +2043,7 @@ int sw_unregister_trace_wakeup_source_deactivate_i(
  */
 int sw_register_trace_workqueue_execution_i(struct sw_trace_notifier_data *node)
 {
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35)
+#if KERNEL_VERSION(2, 6, 35) >= LINUX_VERSION_CODE
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, workqueue_execution,
 					sw_probe_workqueue_execution_i);
 #else
@@ -2079,7 +2056,7 @@ int sw_register_trace_workqueue_execution_i(struct sw_trace_notifier_data *node)
 int sw_unregister_trace_workqueue_execution_i(
 	struct sw_trace_notifier_data *node)
 {
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35)
+#if KERNEL_VERSION(2, 6, 35) >= LINUX_VERSION_CODE
 	DO_UNREGISTER_SW_TRACEPOINT_PROBE(node, workqueue_execution,
 					  sw_probe_workqueue_execution_i);
 #else
@@ -2102,9 +2079,10 @@ int sw_register_trace_sched_switch_i(struct sw_trace_notifier_data *node)
 	 */
 	{
 		int cpu = 0;
-		for_each_present_cpu(cpu) {
+
+		for_each_present_cpu(cpu)
 			*(&per_cpu(sw_pcpu_polling_jiff, cpu)) = jiffies;
-		}
+
 	}
 	DO_REGISTER_SW_TRACEPOINT_PROBE(node, sched_switch,
 					sw_probe_sched_switch_i);
@@ -2162,7 +2140,7 @@ int sw_unregister_cpufreq_notifier_i(struct sw_trace_notifier_data *node)
 	return PW_SUCCESS;
 };
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
 /*
  * 3. CPU hot plug notifier.
  */
@@ -2182,7 +2160,7 @@ int sw_unregister_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 	return PW_SUCCESS;
 };
 
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) */
+#else /* KERNEL_VERSION(4, 10, 0) <= LINUX_VERSION_CODE */
 static int sw_cpuhp_state = -1;
 int sw_register_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 {
@@ -2199,18 +2177,18 @@ int sw_register_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 
 int sw_unregister_hotcpu_notifier_i(struct sw_trace_notifier_data *node)
 {
-	if (sw_cpuhp_state >= 0) {
+	if (sw_cpuhp_state >= 0)
 		cpuhp_remove_state_nocalls((enum cpuhp_state)sw_cpuhp_state);
-	}
+
 	return 0;
 };
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
+#endif /* KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE */
 
 /*
  * Tracepoint extraction routines.
  * Required for newer kernels (>=3.15)
  */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
+#if KERNEL_VERSION(3, 15, 0) <= LINUX_VERSION_CODE
 static void sw_extract_tracepoint_callback(struct tracepoint *tp, void *priv)
 {
 	struct sw_trace_notifier_data *node = NULL;
@@ -2239,7 +2217,7 @@ static void sw_extract_tracepoint_callback(struct tracepoint *tp, void *priv)
 		}
 	}
 };
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0) */
+#endif /* KERNEL_VERSION(3, 15, 0) <= LINUX_VERSION_CODE */
 #endif /* CONFIG_TRACEPOINTS */
 
 /*
@@ -2248,7 +2226,7 @@ static void sw_extract_tracepoint_callback(struct tracepoint *tp, void *priv)
  */
 int sw_extract_trace_notifier_providers(void)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0) &&                          \
+#if KERNEL_VERSION(3, 15, 0) <= LINUX_VERSION_CODE  &&			\
 	IS_ENABLED(CONFIG_TRACEPOINTS)
 	int numCallbacks = 0;
 
@@ -2257,11 +2235,10 @@ int sw_extract_trace_notifier_providers(void)
 	/*
 	 * Did we get the complete list?
 	 */
-	if (numCallbacks != NUM_VALID_TRACEPOINTS) {
-		printk(KERN_WARNING
-		       "WARNING: Could NOT find tracepoint structs for some tracepoints!\n");
-	}
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0) */
+	if (numCallbacks != NUM_VALID_TRACEPOINTS)
+		pw_pr_warn(
+		       "WARNING : Could NOT find tracepoint structs for some tracepoints !\n");
+#endif /* KERNEL_VERSION(3, 15, 0) <= LINUX_VERSION_CODE */
 	return PW_SUCCESS;
 };
 
@@ -2274,9 +2251,8 @@ void sw_reset_trace_notifier_providers(void)
 	{
 		int cpu = 0;
 
-		for_each_online_cpu(cpu) {
+		for_each_online_cpu(cpu)
 			RESET_VALID_WAKEUP_EVENT_COUNTER(cpu);
-		}
 	}
 	/*
 	 * Reset the wakeup event flag. Not strictly required if we
@@ -2319,7 +2295,7 @@ int sw_add_trace_notifier_providers(void)
 	FOR_EACH_TRACEPOINT_NODE(i, node)
 	{
 		if (sw_register_trace_notify_provider(node)) {
-			pw_pr_error("ERROR: couldn't add a trace provider!\n");
+			pw_pr_error("ERROR : couldn't add a trace provider!\n");
 			return -EIO;
 		}
 	}
@@ -2327,11 +2303,10 @@ int sw_add_trace_notifier_providers(void)
 	{
 		if (sw_register_trace_notify_provider(node)) {
 			pw_pr_error(
-				"ERROR: couldn't add a notifier provider!\n");
+				"ERROR: couldn't add a notifier provider !\n");
 			return -EIO;
 		}
 	}
-#if IS_ENABLED(CONFIG_TRACEPOINTS)
 	/*
 	 * Add the cpu hot plug notifier.
 	 */
@@ -2339,11 +2314,10 @@ int sw_add_trace_notifier_providers(void)
 		if (sw_register_trace_notify_provider(
 			    &s_hotplug_notifier_data)) {
 			pw_pr_error(
-				"ERROR: couldn't add cpu notifier provider!\n");
+				"ERROR : couldn't add cpu notifier provider!\n");
 			return -EIO;
 		}
 	}
-#endif /* CONFIG_TRACEPOINTS */
 	return PW_SUCCESS;
 }
 
