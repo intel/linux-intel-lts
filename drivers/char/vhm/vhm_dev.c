@@ -449,7 +449,7 @@ create_vm_fail:
 				(void *)ioctl_param, sizeof(uint16_t)))
 			return -EFAULT;
 
-		ret = hcall_assign_ptdev(vm->vmid, virt_to_phys(&bdf));
+		ret = hcall_assign_ptdev(vm->vmid, bdf);
 		if (ret < 0) {
 			pr_err("vhm: failed to assign ptdev!\n");
 			return -EFAULT;
@@ -463,7 +463,7 @@ create_vm_fail:
 				(void *)ioctl_param, sizeof(uint16_t)))
 			return -EFAULT;
 
-		ret = hcall_deassign_ptdev(vm->vmid, virt_to_phys(&bdf));
+		ret = hcall_deassign_ptdev(vm->vmid, bdf);
 		if (ret < 0) {
 			pr_err("vhm: failed to deassign ptdev!\n");
 			return -EFAULT;
