@@ -291,15 +291,15 @@ void intel_gvt_allocate_ddb(struct intel_gvt *gvt, unsigned int active_crtcs)
 		pipe_info[pipe].pipe_ddb.start = start;
 		pipe_info[pipe].pipe_ddb.end = end;
 
-		pipe_info[pipe].plane_ddb_y[PLANE_CURSOR].start = end - 8;
+		pipe_info[pipe].plane_ddb_y[PLANE_CURSOR].start = end - GVT_CURSOR_BLOCKS;
 		pipe_info[pipe].plane_ddb_y[PLANE_CURSOR].end = end;
 
 		plane_cnt = (info->num_sprites[pipe] + 1);
-		plane_size = (pipe_size - 8) / plane_cnt;
+		plane_size = (pipe_size - GVT_CURSOR_BLOCKS) / plane_cnt;
 
 		for_each_universal_plane(dev_priv, pipe, plane) {
 			pipe_info[pipe].plane_ddb_y[plane].start = start +
-				(plane * (pipe_size - 8) / plane_cnt);
+				(plane * (pipe_size - GVT_CURSOR_BLOCKS) / plane_cnt);
 			pipe_info[pipe].plane_ddb_y[plane].end =
 				pipe_info[pipe].plane_ddb_y[plane].start + plane_size;
 		}
