@@ -272,9 +272,9 @@ void current_save_fsgs(void)
 	unsigned long flags;
 
 	/* Interrupts need to be off for FSGSBASE */
-	local_irq_save(flags);
+	local_irq_save_full(flags);
 	save_fsgs(current);
-	local_irq_restore(flags);
+	local_irq_restore_full(flags);
 }
 #if IS_ENABLED(CONFIG_KVM)
 EXPORT_SYMBOL_GPL(current_save_fsgs);
@@ -410,9 +410,9 @@ unsigned long x86_gsbase_read_cpu_inactive(void)
 	if (boot_cpu_has(X86_FEATURE_FSGSBASE)) {
 		unsigned long flags;
 
-		local_irq_save(flags);
+		local_irq_save_full(flags);
 		gsbase = __rdgsbase_inactive();
-		local_irq_restore(flags);
+		local_irq_restore_full(flags);
 	} else {
 		rdmsrl(MSR_KERNEL_GS_BASE, gsbase);
 	}
@@ -425,9 +425,9 @@ void x86_gsbase_write_cpu_inactive(unsigned long gsbase)
 	if (boot_cpu_has(X86_FEATURE_FSGSBASE)) {
 		unsigned long flags;
 
-		local_irq_save(flags);
+		local_irq_save_full(flags);
 		__wrgsbase_inactive(gsbase);
-		local_irq_restore(flags);
+		local_irq_restore_full(flags);
 	} else {
 		wrmsrl(MSR_KERNEL_GS_BASE, gsbase);
 	}

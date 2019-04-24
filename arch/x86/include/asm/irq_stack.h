@@ -18,6 +18,13 @@ void asm_call_sysvec_on_stack(void *sp, void (*func)(struct pt_regs *regs),
 void asm_call_irq_on_stack(void *sp, void (*func)(struct irq_desc *desc),
 			   struct irq_desc *desc);
 
+/*
+ * IRQ pipeline: only in-band (soft-)irq handlers have to run on the
+ * irqstack, oob irq handlers must be lean by design therefore can run
+ * directly over the preempted context. Therefore, the guarantee that
+ * the in-band stage is currently stalled on the current CPU is enough
+ * to update irq_count atomically.
+ */
 static __always_inline void __run_on_irqstack(void (*func)(void))
 {
 	void *tos = __this_cpu_read(hardirq_stack_ptr);
