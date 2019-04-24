@@ -32,7 +32,7 @@ static struct irq_chip sipic_chip = {
 	.flags		= IRQCHIP_PIPELINE_SAFE | IRQCHIP_SKIP_SET_WAKE,
 };
 
-void handle_apic_irq(struct irq_desc *desc)
+static void handle_apic_irq(struct irq_desc *desc)
 {
 	if (WARN_ON_ONCE(irq_pipeline_debug() && !on_pipeline_entry()))
 		return;
@@ -52,13 +52,6 @@ void handle_apic_irq(struct irq_desc *desc)
 
 	handle_oob_irq(desc);
 }
-
-void irq_send_oob_ipi(unsigned int ipi,
-		const struct cpumask *cpumask)
-{
-	apic->send_IPI_mask_allbutself(cpumask,	apicm_irq_vector(ipi));
-}
-EXPORT_SYMBOL_GPL(irq_send_oob_ipi);
 
 static irqentry_state_t pipeline_enter_rcu(void)
 {
@@ -208,7 +201,7 @@ void arch_do_IRQ_pipelined(struct irq_desc *desc)
 	pipeline_exit_rcu(state);
 }
 
-void arch_handle_irq(struct pt_regs *regs, u8 vector, bool irq_movable)
+static void arch_handle_irq(struct pt_regs *regs, u8 vector, bool irq_movable)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 	struct irq_desc *desc;

@@ -788,8 +788,10 @@ void switch_fpu_return(void)
 }
 EXPORT_SYMBOL_GPL(switch_fpu_return);
 
-void fpregs_lock_and_load(void)
+unsigned long fpregs_lock_and_load(void)
 {
+	unsigned long flags;
+
 	/*
 	 * fpregs_lock() only disables preemption (mostly). So modifying state
 	 * in an interrupt could screw up some in progress fpregs operation.
@@ -798,12 +800,14 @@ void fpregs_lock_and_load(void)
 	WARN_ON_ONCE(!irq_fpu_usable());
 	WARN_ON_ONCE(current->flags & PF_KTHREAD);
 
-	fpregs_lock();
+	flags = fpregs_lock();
 
 	fpregs_assert_state_consistent();
 
 	if (test_thread_flag(TIF_NEED_FPU_LOAD))
 		fpregs_restore_userregs();
+
+	return flags;
 }
 
 #ifdef CONFIG_X86_DEBUG_FPU

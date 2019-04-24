@@ -27,7 +27,7 @@ DEFINE_IDTENTRY_SYSVEC(sysvec_threshold)
 	inc_irq_stat(irq_threshold_count);
 	mce_threshold_vector();
 	trace_threshold_apic_exit(THRESHOLD_APIC_VECTOR);
-	apic_eoi();
+	__apic_eoi();
 }
 
 DEFINE_PER_CPU(struct mca_storm_desc, storm_desc);

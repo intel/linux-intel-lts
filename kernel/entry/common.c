@@ -75,7 +75,7 @@ noinstr void syscall_enter_from_user_mode_prepare(struct pt_regs *regs)
 {
 	enter_from_user_mode(regs);
 	instrumentation_begin();
-	local_irq_enable();
+	syscall_enter_from_user_enable_irqs();
 	instrumentation_end();
 }
 
@@ -97,6 +97,12 @@ __always_inline unsigned long exit_to_user_mode_loop(struct pt_regs *regs,
 	while (ti_work & EXIT_TO_USER_MODE_WORK) {
 
 		local_irq_enable_exit_to_user(ti_work);
+
+		/*
+		 * Check that local_irq_enable_exit_to_user() does the
+		 * right thing when pipelining.
+		 */
+		WARN_ON_ONCE(irq_pipeline_debug() && hard_irqs_disabled());
 
 		if (ti_work & _TIF_NEED_RESCHED)
 			schedule();
@@ -126,6 +132,7 @@ __always_inline unsigned long exit_to_user_mode_loop(struct pt_regs *regs,
 		/* Check if any of the above work has queued a deferred wakeup */
 		tick_nohz_user_enter_prepare();
 
+		WARN_ON_ONCE(irq_pipeline_debug() && !hard_irqs_disabled());
 		ti_work = read_thread_flags();
 	}
 
@@ -173,6 +180,24 @@ static void syscall_exit_work(struct pt_regs *regs, unsigned long work)
 		ptrace_report_syscall_exit(regs, step);
 }
 
+static inline bool syscall_has_exit_work(struct pt_regs *regs,
+					unsigned long work)
+{
+	/*
+	 * Dovetail: if this does not look like an in-band syscall, it
+	 * has to belong to the companion core. Typically,
+	 * __OOB_SYSCALL_BIT would be set in this value. Skip the
+	 * work for those syscalls.
+	 */
+	if (unlikely(work & SYSCALL_WORK_EXIT)) {
+		if (!irqs_pipelined())
+			return true;
+		return syscall_get_nr(current, regs) < NR_syscalls;
+	}
+
+	return false;
+}
+
 /*
  * Syscall specific exit to user mode preparation. Runs with interrupts
  * enabled.
@@ -186,7 +211,7 @@ static void syscall_exit_to_user_mode_prepare(struct pt_regs *regs)
 
 	if (IS_ENABLED(CONFIG_PROVE_LOCKING)) {
 		if (WARN(irqs_disabled(), "syscall %lu left IRQs disabled", nr))
-			local_irq_enable();
+			local_irq_enable_full();
 	}
 
 	rseq_syscall(regs);
@@ -196,7 +221,7 @@ static void syscall_exit_to_user_mode_prepare(struct pt_regs *regs)
 	 * enabled, we want to run them exactly once per syscall exit with
 	 * interrupts enabled.
 	 */
-	if (unlikely(work & SYSCALL_WORK_EXIT))
+	if (syscall_has_exit_work(regs, work))
 		syscall_exit_work(regs, work);
 }
 
@@ -222,6 +247,8 @@ __visible noinstr void syscall_exit_to_user_mode(struct pt_regs *regs)
 
 noinstr void irqentry_enter_from_user_mode(struct pt_regs *regs)
 {
+	WARN_ON_ONCE(irq_pipeline_debug() && irqs_disabled());
+	stall_inband_nocheck();
 	enter_from_user_mode(regs);
 }
 
@@ -237,12 +264,36 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 {
 	irqentry_state_t ret = {
 		.exit_rcu = false,
+#ifdef CONFIG_IRQ_PIPELINE
+		.stage_info = IRQENTRY_INBAND_STALLED,
+#endif
 	};
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (running_oob()) {
+		WARN_ON_ONCE(irq_pipeline_debug() && oob_irqs_disabled());
+		ret.stage_info = IRQENTRY_OOB;
+		return ret;
+	}
+#endif
+
 	if (user_mode(regs)) {
+#ifdef CONFIG_IRQ_PIPELINE
+		ret.stage_info = IRQENTRY_INBAND_UNSTALLED;
+#endif
 		irqentry_enter_from_user_mode(regs);
 		return ret;
 	}
+
+#ifdef CONFIG_IRQ_PIPELINE
+	/*
+	 * IRQ pipeline: If we trapped from kernel space, the virtual
+	 * state may or may not match the hardware state. Since hard
+	 * irqs are off on entry, we have to stall the in-band stage.
+	 */
+	if (!test_and_stall_inband_nocheck())
+		ret.stage_info = IRQENTRY_INBAND_UNSTALLED;
+#endif
 
 	/*
 	 * If this entry hit the idle task invoke ct_irq_enter() whether
@@ -325,14 +376,91 @@ void dynamic_irqentry_exit_cond_resched(void)
 #endif
 #endif
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+static inline
+bool irqexit_may_preempt_schedule(irqentry_state_t state,
+				struct pt_regs *regs)
+{
+	return state.stage_info == IRQENTRY_INBAND_UNSTALLED;
+}
+
+#else
+
+static inline
+bool irqexit_may_preempt_schedule(irqentry_state_t state,
+				struct pt_regs *regs)
+{
+	return !regs_irqs_disabled(regs);
+}
+
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+static bool irqentry_syncstage(irqentry_state_t state) /* hard irqs off */
+{
+	/*
+	 * If pipelining interrupts, enable in-band IRQs then
+	 * synchronize the interrupt log on exit if:
+	 *
+	 * - irqentry_enter() stalled the stage in order to mirror the
+	 * hardware state.
+	 *
+	 * - we where coming from oob, thus went through a stage migration
+	 * that was caused by taking a CPU exception, e.g., a fault.
+	 *
+	 * We run before preempt_schedule_irq() may be called later on
+	 * by preemptible kernels, so that any rescheduling request
+	 * triggered by in-band IRQ handlers is considered.
+	 */
+	if (state.stage_info == IRQENTRY_INBAND_UNSTALLED ||
+		state.stage_info == IRQENTRY_OOB) {
+		unstall_inband_nocheck();
+		synchronize_pipeline_on_irq();
+		stall_inband_nocheck();
+		return true;
+	}
+
+	return false;
+}
+
+static void irqentry_unstall(void)
+{
+	unstall_inband_nocheck();
+}
+
+#else
+
+static bool irqentry_syncstage(irqentry_state_t state)
+{
+	return false;
+}
+
+static void irqentry_unstall(void)
+{
+}
+
+#endif
+
 noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
 {
+	bool synchronized = false;
+
+	if (running_oob())
+		return;
+
 	lockdep_assert_irqs_disabled();
 
 	/* Check whether this returns to user mode */
 	if (user_mode(regs)) {
 		irqentry_exit_to_user_mode(regs);
-	} else if (!regs_irqs_disabled(regs)) {
+		return;
+	}
+
+	synchronized = irqentry_syncstage(state);
+
+	if (irqexit_may_preempt_schedule(state, regs)) {
 		/*
 		 * If RCU was not watching on entry this needs to be done
 		 * carefully and needs the same ordering of lockdep/tracing
@@ -346,7 +474,7 @@ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
 			instrumentation_end();
 			ct_irq_exit();
 			lockdep_hardirqs_on(CALLER_ADDR0);
-			return;
+			goto out;
 		}
 
 		instrumentation_begin();
@@ -364,6 +492,9 @@ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
 		if (state.exit_rcu)
 			ct_irq_exit();
 	}
+out:
+	if (synchronized)
+		irqentry_unstall();
 }
 
 irqentry_state_t noinstr irqentry_nmi_enter(struct pt_regs *regs)

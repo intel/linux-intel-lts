@@ -797,7 +797,7 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 	 * User mode accesses just cause a SIGSEGV.
 	 * It's possible to have interrupts off here:
 	 */
-	local_irq_enable();
+	local_irq_enable_full();
 
 	/*
 	 * Valid to do another page fault here because this one came
@@ -824,7 +824,7 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 	else
 		force_sig_fault(SIGSEGV, si_code, (void __user *)address);
 
-	local_irq_disable();
+	local_irq_disable_full();
 }
 
 static noinline void
@@ -1486,7 +1486,7 @@ handle_page_fault(struct pt_regs *regs, unsigned long error_code,
 		 * doable w/o creating an unholy mess or turning the code
 		 * upside down.
 		 */
-		local_irq_disable();
+		local_irq_disable_full();
 	}
 }
 
