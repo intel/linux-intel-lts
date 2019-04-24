@@ -30,6 +30,7 @@ config X86_64
 	select ARCH_SUPPORTS_PER_VMA_LOCK
 	select ARCH_SUPPORTS_HUGE_PFNMAP if TRANSPARENT_HUGEPAGE
 	select HAVE_ARCH_SOFT_DIRTY
+	select HAVE_IRQ_PIPELINE
 	select MODULES_USE_ELF_RELA
 	select NEED_DMA_MAP_STATE
 	select SWIOTLB
@@ -515,7 +516,7 @@ config X86_CPU_RESCTRL
 
 config X86_FRED
 	bool "Flexible Return and Event Delivery"
-	depends on X86_64
+	depends on X86_64 && !IRQ_PIPELINE
 	help
 	  When enabled, try to use Flexible Return and Event Delivery
 	  instead of the legacy SYSCALL/SYSENTER/IDT architecture for

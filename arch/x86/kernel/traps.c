@@ -280,7 +280,7 @@ static noinstr bool handle_bug(struct pt_regs *regs)
 	 * state to what it was at the exception site.
 	 */
 	if (regs->flags & X86_EFLAGS_IF)
-		raw_local_irq_enable();
+		hard_local_irq_enable();
 	if (ud_type == BUG_UD2) {
 		if (report_bug(regs->ip, regs) == BUG_TRAP_TYPE_WARN ||
 		    handle_cfi_failure(regs) == BUG_TRAP_TYPE_WARN) {
@@ -291,7 +291,7 @@ static noinstr bool handle_bug(struct pt_regs *regs)
 		pr_crit("%s at %pS\n", report_ubsan_failure(regs, imm), (void *)regs->ip);
 	}
 	if (regs->flags & X86_EFLAGS_IF)
-		raw_local_irq_disable();
+		hard_local_irq_disable();
 	instrumentation_end();
 
 	return handled;

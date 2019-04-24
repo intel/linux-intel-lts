@@ -89,7 +89,7 @@ static inline void fpregs_unlock(void)
  * being automatically saved/restored. Then FPU state can be modified safely in the
  * registers, before unlocking with fpregs_unlock().
  */
-void fpregs_lock_and_load(void);
+unsigned long fpregs_lock_and_load(void);
 
 #ifdef CONFIG_X86_DEBUG_FPU
 extern void fpregs_assert_state_consistent(void);
