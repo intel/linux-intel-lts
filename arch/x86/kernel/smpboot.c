@@ -262,7 +262,7 @@ static void notrace start_secondary(void *unused)
 	x86_platform.nmi_init();
 
 	/* enable local interrupts */
-	local_irq_enable();
+	local_irq_enable_full();
 
 	x86_cpuinit.setup_percpu_clockev();
 
@@ -1138,7 +1138,6 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 {
 	int apicid = apic->cpu_present_to_apicid(cpu);
 	int cpu0_nmi_registered = 0;
-	unsigned long flags;
 	int err, ret = 0;
 
 	lockdep_assert_irqs_enabled();
@@ -1189,9 +1188,9 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 	 * Check TSC synchronization with the AP (keep irqs disabled
 	 * while doing so):
 	 */
-	local_irq_save(flags);
+	local_irq_disable_full();
 	check_tsc_sync_source(cpu);
-	local_irq_restore(flags);
+	local_irq_enable_full();
 
 	while (!cpu_online(cpu)) {
 		cpu_relax();
@@ -1664,7 +1663,7 @@ void play_dead_common(void)
 	/*
 	 * With physical CPU hotplug, we should halt the cpu
 	 */
-	local_irq_disable();
+	local_irq_disable_full();
 }
 
 /**
