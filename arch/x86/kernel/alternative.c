@@ -8,6 +8,7 @@
 #include <linux/list.h>
 #include <linux/stringify.h>
 #include <linux/highmem.h>
+#include <linux/irq_pipeline.h>
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
 #include <linux/memory.h>
@@ -366,9 +367,9 @@ static __always_inline int optimize_nops_range(u8 *instr, u8 instrlen, int off)
 	if (nnops <= 1)
 		return nnops;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	add_nops(instr + off, nnops);
-	local_irq_restore(flags);
+	hard_local_irq_restore();
 
 	DUMP_BYTES(instr, instrlen, "%px: [%d:%d) optimized NOPs: ", instr, off, i);
 
@@ -1078,9 +1079,9 @@ void __init_or_module text_poke_early(void *addr, const void *opcode,
 		 */
 		memcpy(addr, opcode, len);
 	} else {
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		memcpy(addr, opcode, len);
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 		sync_core();
 
 		/*
@@ -1110,6 +1111,7 @@ typedef struct {
 static inline temp_mm_state_t use_temporary_mm(struct mm_struct *mm)
 {
 	temp_mm_state_t temp_state;
+	unsigned long flags;
 
 	lockdep_assert_irqs_disabled();
 
@@ -1122,7 +1124,9 @@ static inline temp_mm_state_t use_temporary_mm(struct mm_struct *mm)
 		leave_mm(smp_processor_id());
 
 	temp_state.mm = this_cpu_read(cpu_tlbstate.loaded_mm);
+	protect_inband_mm(flags);
 	switch_mm_irqs_off(NULL, mm, current);
+	unprotect_inband_mm(flags);
 
 	/*
 	 * If breakpoints are enabled, disable them while the temporary mm is
@@ -1143,8 +1147,12 @@ static inline temp_mm_state_t use_temporary_mm(struct mm_struct *mm)
 
 static inline void unuse_temporary_mm(temp_mm_state_t prev_state)
 {
+	unsigned long flags;
+
 	lockdep_assert_irqs_disabled();
+	protect_inband_mm(flags);
 	switch_mm_irqs_off(NULL, prev_state.mm, current);
+	unprotect_inband_mm(flags);
 
 	/*
 	 * Restore the breakpoints if they were disabled before the temporary mm
@@ -1205,7 +1213,7 @@ static void *__text_poke(void *addr, const void *opcode, size_t len)
 	 */
 	VM_BUG_ON(!ptep);
 
-	local_irq_save(flags);
+	local_irq_save_full(flags);
 
 	pte = mk_pte(pages[0], pgprot);
 	set_pte_at(poking_mm, poking_addr, ptep, pte);
@@ -1256,7 +1264,7 @@ static void *__text_poke(void *addr, const void *opcode, size_t len)
 	 */
 	BUG_ON(memcmp(addr, opcode, len));
 
-	local_irq_restore(flags);
+	local_irq_restore_full(flags);
 	pte_unmap_unlock(ptep, ptl);
 	return addr;
 }
