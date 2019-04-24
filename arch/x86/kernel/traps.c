@@ -74,14 +74,22 @@ DECLARE_BITMAP(system_vectors, NR_VECTORS);
 
 static inline void cond_local_irq_enable(struct pt_regs *regs)
 {
-	if (regs->flags & X86_EFLAGS_IF)
-		local_irq_enable();
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (running_inband())
+			local_irq_enable_full();
+		else
+			hard_local_irq_enable();
+	}
 }
 
 static inline void cond_local_irq_disable(struct pt_regs *regs)
 {
-	if (regs->flags & X86_EFLAGS_IF)
-		local_irq_disable();
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (running_inband())
+			local_irq_disable_full();
+		else
+			hard_local_irq_disable();
+	}
 }
 
 __always_inline int is_valid_bugaddr(unsigned long addr)
@@ -231,13 +239,13 @@ static noinstr bool handle_bug(struct pt_regs *regs)
 	 * state to what it was at the exception site.
 	 */
 	if (regs->flags & X86_EFLAGS_IF)
-		raw_local_irq_enable();
+		hard_local_irq_enable();
 	if (report_bug(regs->ip, regs) == BUG_TRAP_TYPE_WARN) {
 		regs->ip += LEN_UD2;
 		handled = true;
 	}
 	if (regs->flags & X86_EFLAGS_IF)
-		raw_local_irq_disable();
+		hard_local_irq_disable();
 	instrumentation_end();
 
 	return handled;

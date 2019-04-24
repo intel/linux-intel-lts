@@ -5,6 +5,7 @@
 #include <linux/spinlock.h>
 #include <linux/smp.h>
 #include <linux/interrupt.h>
+#include <linux/irq_pipeline.h>
 #include <linux/export.h>
 #include <linux/cpu.h>
 #include <linux/debugfs.h>
@@ -309,10 +310,12 @@ EXPORT_SYMBOL_GPL(leave_mm);
 void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	       struct task_struct *tsk)
 {
-	unsigned long flags;
+	unsigned long flags, _flags;
 
 	local_irq_save(flags);
+	protect_inband_mm(_flags);
 	switch_mm_irqs_off(prev, next, tsk);
+	unprotect_inband_mm(_flags);
 	local_irq_restore(flags);
 }
 
@@ -669,6 +672,7 @@ static void flush_tlb_func_common(const struct flush_tlb_info *f,
 	u32 loaded_mm_asid = this_cpu_read(cpu_tlbstate.loaded_mm_asid);
 	u64 mm_tlb_gen = atomic64_read(&loaded_mm->context.tlb_gen);
 	u64 local_tlb_gen = this_cpu_read(cpu_tlbstate.ctxs[loaded_mm_asid].tlb_gen);
+	unsigned long flags;
 
 	/* This code cannot presently handle being reentered. */
 	VM_WARN_ON(!irqs_disabled());
@@ -689,7 +693,9 @@ static void flush_tlb_func_common(const struct flush_tlb_info *f,
 		 * This should be rare, with native_flush_tlb_others skipping
 		 * IPIs to lazy TLB mode CPUs.
 		 */
+		protect_inband_mm(flags);
 		switch_mm_irqs_off(NULL, &init_mm, NULL);
+		unprotect_inband_mm(flags);
 		return;
 	}
 
@@ -1163,6 +1169,16 @@ bool nmi_uaccess_okay(void)
 	struct mm_struct *current_mm = current->mm;
 
 	VM_WARN_ON_ONCE(!loaded_mm);
+
+	/*
+	 * There would be no way for the companion core to switch an
+	 * out-of-band task back in-band in order to handle an access
+	 * fault over NMI safely. Tell the caller that uaccess from
+	 * NMI is NOT ok if the preempted task was running
+	 * out-of-band.
+	 */
+	if (running_oob())
+		return false;
 
 	/*
 	 * The condition we want to check is

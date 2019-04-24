@@ -614,13 +614,17 @@ static void unexpected_thermal_interrupt(void)
 
 static void (*smp_thermal_vector)(void) = unexpected_thermal_interrupt;
 
+/*
+ * irq_pipeline: MCE have NMI semantics wrt to pipelining, they can
+ * and should be handled immediately out of the IDT.
+ */
 DEFINE_IDTENTRY_SYSVEC(sysvec_thermal)
 {
 	trace_thermal_apic_entry(THERMAL_APIC_VECTOR);
 	inc_irq_stat(irq_thermal_count);
 	smp_thermal_vector();
 	trace_thermal_apic_exit(THERMAL_APIC_VECTOR);
-	ack_APIC_irq();
+	__ack_APIC_irq();
 }
 
 /* Thermal monitoring depends on APIC, ACPI and clock modulation */
