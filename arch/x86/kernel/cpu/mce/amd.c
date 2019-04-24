@@ -757,13 +757,18 @@ static void __log_error(unsigned int bank, u64 status, u64 addr, u64 misc)
 	mce_log(&m);
 }
 
+/*
+ * irq_pipeline: Deferred error events have NMI semantics wrt to
+ * pipelining, they can and should be handled immediately out of the
+ * IDT.
+ */
 DEFINE_IDTENTRY_SYSVEC(sysvec_deferred_error)
 {
 	trace_deferred_error_apic_entry(DEFERRED_ERROR_VECTOR);
 	inc_irq_stat(irq_deferred_error_count);
 	deferred_error_int_vector();
 	trace_deferred_error_apic_exit(DEFERRED_ERROR_VECTOR);
-	ack_APIC_irq();
+	__ack_APIC_irq();
 }
 
 /*

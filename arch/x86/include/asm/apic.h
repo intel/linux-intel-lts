@@ -435,7 +435,7 @@ static inline void apic_set_eoi_write(void (*eoi_write)(u32 reg, u32 v)) {}
 
 extern void apic_ack_irq(struct irq_data *data);
 
-static inline void ack_APIC_irq(void)
+static inline void __ack_APIC_irq(void)
 {
 	/*
 	 * ack_APIC_irq() actually gets compiled as a single instruction
@@ -444,6 +444,11 @@ static inline void ack_APIC_irq(void)
 	apic_eoi();
 }
 
+static inline void ack_APIC_irq(void)
+{
+	if (!irqs_pipelined())
+		__ack_APIC_irq();
+}
 
 static inline bool lapic_vector_set_in_irr(unsigned int vector)
 {
