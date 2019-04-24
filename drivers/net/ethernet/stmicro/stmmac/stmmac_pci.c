@@ -239,6 +239,9 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	if (plat->phy_interface == PHY_INTERFACE_MODE_SGMII) {
 		plat->setup_phy_conv = setup_intel_mgbe_phy_conv;
 		plat->remove_phy_conv = remove_intel_mgbe_phy_conv;
+		plat->has_serdes = 1;
+		/* intel specific adhoc (mdio) address for serdes & etc */
+		plat->intel_adhoc_addr = 0x15;
 	}
 
 	return 0;

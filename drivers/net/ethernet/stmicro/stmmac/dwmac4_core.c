@@ -17,6 +17,7 @@
 #include <net/dsa.h>
 #include "stmmac.h"
 #include "stmmac_pcs.h"
+#include "intel_serdes.h"
 #include "dwmac4.h"
 #include "dwmac5.h"
 

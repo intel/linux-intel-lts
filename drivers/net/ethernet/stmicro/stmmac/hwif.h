@@ -458,6 +458,17 @@ struct stmmac_ops {
 #define stmmac_set_arp_offload(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, set_arp_offload, __args)
 
+/* Helpers for serdes */
+struct stmmac_serdes_ops {
+	int (*serdes_powerup)(struct net_device *ndev);
+	int (*serdes_powerdown)(struct net_device *ndev);
+};
+
+#define stmmac_serdes_powerup(__priv, __args...) \
+	stmmac_do_callback(__priv, serdes, serdes_powerup, __args)
+#define stmmac_serdes_powerdown(__priv, __args...) \
+	stmmac_do_callback(__priv, serdes, serdes_powerdown, __args)
+
 /* PTP and HW Timer helpers */
 struct stmmac_hwtimestamp {
 	void (*config_hw_tstamping) (void __iomem *ioaddr, u32 data);
@@ -555,6 +566,7 @@ struct stmmac_regs_off {
 };
 
 extern const struct stmmac_ops dwmac100_ops;
+extern const struct stmmac_serdes_ops intel_serdes_ops;
 extern const struct stmmac_dma_ops dwmac100_dma_ops;
 extern const struct stmmac_ops dwmac1000_ops;
 extern const struct stmmac_dma_ops dwmac1000_dma_ops;
