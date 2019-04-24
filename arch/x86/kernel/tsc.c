@@ -132,7 +132,10 @@ static void __set_cyc2ns_scale(unsigned long khz, int cpu, unsigned long long ts
 {
 	unsigned long long ns_now;
 	struct cyc2ns_data data;
+	unsigned long flags;
 	struct cyc2ns *c2n;
+
+	flags = hard_cond_local_irq_save();
 
 	ns_now = cycles_2_ns(tsc_now);
 
@@ -164,6 +167,8 @@ static void __set_cyc2ns_scale(unsigned long khz, int cpu, unsigned long long ts
 	c2n->data[0] = data;
 	raw_write_seqcount_latch(&c2n->seq);
 	c2n->data[1] = data;
+
+	hard_cond_local_irq_restore(flags);
 }
 
 static void set_cyc2ns_scale(unsigned long khz, int cpu, unsigned long long tsc_now)
@@ -760,11 +765,11 @@ static unsigned long pit_hpet_ptimer_calibrate_cpu(void)
 		 * calibration, which will take at least 50ms, and
 		 * read the end value.
 		 */
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		tsc1 = tsc_read_refs(&ref1, hpet);
 		tsc_pit_khz = pit_calibrate_tsc(latch, ms, loopmin);
 		tsc2 = tsc_read_refs(&ref2, hpet);
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 
 		/* Pick the lowest PIT TSC calibration so far */
 		tsc_pit_min = min(tsc_pit_min, tsc_pit_khz);
@@ -873,9 +878,9 @@ unsigned long native_calibrate_cpu_early(void)
 	if (!fast_calibrate)
 		fast_calibrate = cpu_khz_from_msr();
 	if (!fast_calibrate) {
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		fast_calibrate = quick_pit_calibrate();
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 	}
 	return fast_calibrate;
 }
@@ -943,7 +948,7 @@ void tsc_restore_sched_clock_state(void)
 	if (!sched_clock_stable())
 		return;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 
 	/*
 	 * We're coming out of suspend, there's no concurrency yet; don't
@@ -961,7 +966,7 @@ void tsc_restore_sched_clock_state(void)
 		per_cpu(cyc2ns.data[1].cyc2ns_offset, cpu) = offset;
 	}
 
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 #ifdef CONFIG_CPU_FREQ

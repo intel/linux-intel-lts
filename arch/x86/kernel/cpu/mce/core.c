@@ -1459,7 +1459,9 @@ noinstr void do_machine_check(struct pt_regs *regs)
 		/* If this triggers there is no way to recover. Die hard. */
 		BUG_ON(!on_thread_stack() || !user_mode(regs));
 
+		hard_local_irq_enable();
 		queue_task_work(&m, msg, kill_current_task);
+		hard_local_irq_disable();
 
 	} else {
 		/*
