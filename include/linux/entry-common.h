@@ -181,7 +181,7 @@ static inline void local_irq_enable_exit_to_user(unsigned long ti_work);
 #ifndef local_irq_enable_exit_to_user
 static inline void local_irq_enable_exit_to_user(unsigned long ti_work)
 {
-	local_irq_enable();
+	local_irq_enable_full();
 }
 #endif
 
@@ -196,7 +196,7 @@ static inline void local_irq_disable_exit_to_user(void);
 #ifndef local_irq_disable_exit_to_user
 static inline void local_irq_disable_exit_to_user(void)
 {
-	local_irq_disable();
+	local_irq_disable_full();
 }
 #endif
 
@@ -361,6 +361,11 @@ typedef struct irqentry_state {
 		bool	exit_rcu;
 		bool	lockdep;
 	};
+#ifdef CONFIG_IRQ_PIPELINE
+#define IRQENTRY_INBAND_STALLED	BIT(0)
+#define IRQENTRY_OOB_ENTRY	BIT(1)
+	int	stage_info;
+#endif
 } irqentry_state_t;
 #endif
 
