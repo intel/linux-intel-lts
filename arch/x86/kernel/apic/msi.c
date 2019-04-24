@@ -181,7 +181,8 @@ static struct irq_chip pci_msi_controller = {
 	.irq_retrigger		= irq_chip_retrigger_hierarchy,
 	.irq_set_affinity	= msi_set_affinity,
 	.flags			= IRQCHIP_SKIP_SET_WAKE |
-				  IRQCHIP_AFFINITY_PRE_STARTUP,
+				  IRQCHIP_AFFINITY_PRE_STARTUP |
+				  IRQCHIP_PIPELINE_SAFE,
 };
 
 int pci_msi_prepare(struct irq_domain *domain, struct device *dev, int nvec,
@@ -251,7 +252,8 @@ static struct irq_chip pci_msi_ir_controller = {
 	.irq_ack		= irq_chip_ack_parent,
 	.irq_retrigger		= irq_chip_retrigger_hierarchy,
 	.flags			= IRQCHIP_SKIP_SET_WAKE |
-				  IRQCHIP_AFFINITY_PRE_STARTUP,
+				  IRQCHIP_AFFINITY_PRE_STARTUP |
+				  IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct msi_domain_info pci_msi_ir_domain_info = {
@@ -294,7 +296,8 @@ static struct irq_chip dmar_msi_controller = {
 	.irq_retrigger		= irq_chip_retrigger_hierarchy,
 	.irq_write_msi_msg	= dmar_msi_write_msg,
 	.flags			= IRQCHIP_SKIP_SET_WAKE |
-				  IRQCHIP_AFFINITY_PRE_STARTUP,
+				  IRQCHIP_AFFINITY_PRE_STARTUP |
+				  IRQCHIP_PIPELINE_SAFE,
 };
 
 static int dmar_msi_init(struct irq_domain *domain,
@@ -386,7 +389,8 @@ static struct irq_chip hpet_msi_controller __ro_after_init = {
 	.irq_set_affinity = msi_domain_set_affinity,
 	.irq_retrigger = irq_chip_retrigger_hierarchy,
 	.irq_write_msi_msg = hpet_msi_write_msg,
-	.flags = IRQCHIP_SKIP_SET_WAKE | IRQCHIP_AFFINITY_PRE_STARTUP,
+	.flags = IRQCHIP_SKIP_SET_WAKE | IRQCHIP_AFFINITY_PRE_STARTUP |
+		 IRQCHIP_PIPELINE_SAFE,
 };
 
 static int hpet_msi_init(struct irq_domain *domain,
