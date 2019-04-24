@@ -34,7 +34,7 @@ static void init_8259A(int auto_eoi);
 
 static bool pcat_compat __ro_after_init;
 static int i8259A_auto_eoi;
-DEFINE_RAW_SPINLOCK(i8259A_lock);
+DEFINE_HARD_SPINLOCK(i8259A_lock);
 
 /*
  * 8259A PIC functions to handle ISA devices:
@@ -229,6 +229,7 @@ struct irq_chip i8259A_chip = {
 	.irq_disable	= disable_8259A_irq,
 	.irq_unmask	= enable_8259A_irq,
 	.irq_mask_ack	= mask_and_ack_8259A,
+	.flags		= IRQCHIP_PIPELINE_SAFE,
 };
 
 static char irq_trigger[2];
