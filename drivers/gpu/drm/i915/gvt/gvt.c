@@ -351,6 +351,8 @@ void intel_gvt_allocate_ddb(struct intel_gvt *gvt,
 			ddb->plane[pipe][plane].end =
 				ddb->plane[pipe][plane].start + plane_size;
 		}
+
+		memcpy(&gvt->ddb, ddb, sizeof(*ddb));
 	}
 }
 
