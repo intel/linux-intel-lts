@@ -72,7 +72,7 @@ struct mv3310_priv {
 	char *hwmon_name;
 };
 
-#ifdef CONFIG_HWMON
+#if 0
 static umode_t mv3310_hwmon_is_visible(const void *data,
 				       enum hwmon_sensor_types type,
 				       u32 attr, int channel)
