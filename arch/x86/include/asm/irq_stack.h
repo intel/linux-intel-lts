@@ -133,8 +133,13 @@
 	/*								\
 	 * User mode entry and interrupt on the irq stack do not	\
 	 * switch stacks. If from user mode the task stack is empty.	\
+	 *								\
+	 * irq_pipeline: we always start from a kernel context when	\
+	 * replaying interrupts, so the user check is not relevant	\
+	 * in this case.						\
 	 */								\
-	if (user_mode(regs) || __this_cpu_read(hardirq_stack_inuse)) {	\
+	if ((!irqs_pipelined() && user_mode(regs)) ||			\
+		__this_cpu_read(hardirq_stack_inuse)) {			\
 		irq_enter_rcu();					\
 		func(c_args);						\
 		irq_exit_rcu();						\
@@ -144,6 +149,11 @@
 		 * switching stacks. Interrupts are disabled in both	\
 		 * places. Invoke the stack switch macro with the call	\
 		 * sequence which matches the above direct invocation.	\
+		 *							\
+		 * IRQ pipeline: only in-band (soft-)irq handlers have	\
+		 * to run on the irqstack. Out-of-band irq handlers     \
+		 * run directly over the preempted context, therefore   \
+		 * they never land there.				\
 		 */							\
 		__this_cpu_write(hardirq_stack_inuse, true);		\
 		call_on_irqstack(func, asm_call, constr);		\
