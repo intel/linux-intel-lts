@@ -671,6 +671,11 @@ static struct sw_trace_notifier_data s_trace_collector_lists[] = {
 static struct sw_trace_notifier_data s_notifier_collector_lists[] = {
 	/* EMPTY */ };
 
+static struct sw_trace_notifier_data s_hotplug_notifier_data = {
+	/* EMPTY */
+};
+
+
 #endif /* CONFIG_TRACEPOINTS */
 
 /*
