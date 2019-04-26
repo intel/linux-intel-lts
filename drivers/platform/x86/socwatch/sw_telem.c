@@ -703,25 +703,25 @@ static int builtin_telemetry_available(void)
 	 * weak definition exists. This test will suffice to detect if
 	 * the telemetry driver is loaded.
 	 */
-	if (telemetry_get_eventconfig == 0)
-		return 0;
+	if (telemetry_get_eventconfig) {
+		/* OK, the telemetry driver is loaded. But it's possible it
+		 * hasn't been configured properly. To check that, retrieve
+		 * the number of events currently configured. This should never
+		 * be zero since the telemetry driver reserves some SSRAM slots
+		 * for its own use
+		 */
+		memset(&punit_evtconfig, 0, sizeof(punit_evtconfig));
+		memset(&pmc_evtconfig, 0, sizeof(pmc_evtconfig));
 
-	/* OK, the telemetry driver is loaded. But it's possible it
-	 * hasn't been configured properly. To check that, retrieve
-	 * the number of events currently configured. This should never
-	 * be zero since the telemetry driver reserves some SSRAM slots
-	 * for its own use
-	 */
-	memset(&punit_evtconfig, 0, sizeof(punit_evtconfig));
-	memset(&pmc_evtconfig, 0, sizeof(pmc_evtconfig));
+		punit_evtconfig.evtmap = (u32 *) &punit_event_map;
+		pmc_evtconfig.evtmap = (u32 *) &pmc_event_map;
 
-	punit_evtconfig.evtmap = (u32 *) &punit_event_map;
-	pmc_evtconfig.evtmap = (u32 *) &pmc_event_map;
-
-	retval = telemetry_get_eventconfig(&punit_evtconfig, &pmc_evtconfig,
-					MAX_TELEM_EVENTS, MAX_TELEM_EVENTS);
-	return (retval == 0 && punit_evtconfig.num_evts > 0 &&
-		pmc_evtconfig.num_evts > 0);
+		retval = telemetry_get_eventconfig(&punit_evtconfig, &pmc_evtconfig,
+						MAX_TELEM_EVENTS, MAX_TELEM_EVENTS);
+		return (retval == 0 && punit_evtconfig.num_evts > 0 &&
+			pmc_evtconfig.num_evts > 0);
+	}
+	return 0;
 }
 
 /**

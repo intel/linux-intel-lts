@@ -250,7 +250,7 @@ struct sw_driver_trace_args_io_descriptor {
 struct sw_driver_telem_io_descriptor {
 	union {
 		pw_u16_t id;
-		pw_u8_t  idx;
+		pw_s8_t  idx;
 	};
 	pw_u8_t   unit;
 	pw_u8_t   scale_op;
