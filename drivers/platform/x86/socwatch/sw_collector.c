@@ -528,23 +528,22 @@ struct sw_collector_data *sw_alloc_collector_node(void)
 
 void sw_free_collector_node(struct sw_collector_data *node)
 {
-	if (node)
-		return;
-
-	if (node->info) {
-		sw_reset_driver_interface_info_i(node->info);
-		sw_free_driver_interface_info_i(node->info);
-		node->info = NULL;
+	if (node) {
+		if (node->info) {
+			sw_reset_driver_interface_info_i(node->info);
+			sw_free_driver_interface_info_i(node->info);
+			node->info = NULL;
+		}
+		if (node->ops) {
+			sw_free_ops_i(node->ops);
+			node->ops = NULL;
+		}
+		if (node->msg) {
+			sw_free_collector_msg_i(node->msg);
+			node->msg = NULL;
+		}
+		sw_kfree(node);
 	}
-	if (node->ops) {
-		sw_free_ops_i(node->ops);
-		node->ops = NULL;
-	}
-	if (node->msg) {
-		sw_free_collector_msg_i(node->msg);
-		node->msg = NULL;
-	}
-	sw_kfree(node);
 }
 
 int sw_handle_collector_node(struct sw_collector_data *node)

@@ -810,7 +810,7 @@ bool sw_socperf_available_i(void)
 	 * weak definition exists. This test will suffice to detect if
 	 * the socperf driver is loaded.
 	 */
-	if (SOCPERF_Read_Data3 != 0) {
+	if (SOCPERF_Read_Data3) {
 		pw_pr_debug("INFO: SoCPerf support in ON!\n");
 		retVal = true;
 	} else
