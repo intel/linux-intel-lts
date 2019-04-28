@@ -32,6 +32,7 @@
 #include <linux/i8253.h>
 #include <linux/dmar.h>
 #include <linux/init.h>
+#include <linux/irq.h>
 #include <linux/cpu.h>
 #include <linux/dmi.h>
 #include <linux/smp.h>
@@ -500,6 +501,32 @@ static void lapic_timer_broadcast(const struct cpumask *mask)
 #endif
 }
 
+static DEFINE_PER_CPU(struct clock_event_device, lapic_events);
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+#define LAPIC_TIMER_IRQ  apicm_vector_irq(LOCAL_TIMER_VECTOR)
+
+static irqreturn_t lapic_oob_handler(int irq, void *dev_id)
+{
+	struct clock_event_device *evt = this_cpu_ptr(&lapic_events);
+
+	trace_local_timer_entry(LOCAL_TIMER_VECTOR);
+	clockevents_handle_event(evt);
+	trace_local_timer_exit(LOCAL_TIMER_VECTOR);
+
+	return IRQ_HANDLED;
+}
+
+static struct irqaction lapic_oob_action = {
+	.handler = lapic_oob_handler,
+	.name = "Out-of-band LAPIC timer interrupt",
+	.flags = IRQF_TIMER | IRQF_PERCPU,
+};
+
+#else
+#define LAPIC_TIMER_IRQ  -1
+#endif
 
 /*
  * The local apic timer can be used for any function which is CPU local.
@@ -507,8 +534,8 @@ static void lapic_timer_broadcast(const struct cpumask *mask)
 static struct clock_event_device lapic_clockevent = {
 	.name				= "lapic",
 	.features			= CLOCK_EVT_FEAT_PERIODIC |
-					  CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_C3STOP
-					  | CLOCK_EVT_FEAT_DUMMY,
+					  CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_C3STOP  |
+					  CLOCK_EVT_FEAT_PIPELINE | CLOCK_EVT_FEAT_DUMMY,
 	.shift				= 32,
 	.set_state_shutdown		= lapic_timer_shutdown,
 	.set_state_periodic		= lapic_timer_set_periodic,
@@ -517,9 +544,8 @@ static struct clock_event_device lapic_clockevent = {
 	.set_next_event			= lapic_next_event,
 	.broadcast			= lapic_timer_broadcast,
 	.rating				= 100,
-	.irq				= -1,
+	.irq				= LAPIC_TIMER_IRQ,
 };
-static DEFINE_PER_CPU(struct clock_event_device, lapic_events);
 
 static const struct x86_cpu_id deadline_match[] __initconst = {
 	X86_MATCH_VFM_STEPPINGS(INTEL_HASWELL_X, X86_STEPPINGS(0x2, 0x2), 0x3a), /* EP */
@@ -1009,6 +1035,9 @@ void __init setup_boot_APIC_clock(void)
 	/* Setup the lapic or request the broadcast */
 	setup_APIC_timer();
 	amd_e400_c1e_apic_setup();
+#ifdef CONFIG_IRQ_PIPELINE
+	setup_percpu_irq(LAPIC_TIMER_IRQ, &lapic_oob_action);
+#endif
 }
 
 void setup_secondary_APIC_clock(void)
