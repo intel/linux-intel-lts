@@ -123,7 +123,7 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
 		ipc->ops.tx_data_copy(msg, tx_data, tx_bytes);
 
 	list_add_tail(&msg->list, &ipc->tx_list);
-	schedule_work(&ipc->kwork);
+	queue_work(system_highpri_wq, &ipc->kwork);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 
 	if (wait)
