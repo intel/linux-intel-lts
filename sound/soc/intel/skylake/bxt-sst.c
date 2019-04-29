@@ -572,7 +572,13 @@ static int bxt_set_dsp_D3(struct sst_dsp *ctx, unsigned int core_id)
 	int ret;
 	struct skl_ipc_dxstate_info dx;
 	struct skl_sst *skl = ctx->thread_context;
-	unsigned int core_mask = SKL_DSP_CORE_MASK(core_id);
+	unsigned int core_mask = SKL_DSP_CORES_MASK(skl->cores.count);
+
+	if (core_id != SKL_DSP_CORE0_ID)
+	{
+		dev_dbg(ctx->dev, "ignore D3 for core_id:%d\n", core_id);
+		return 0;
+	}
 
 	dx.core_mask = core_mask;
 	dx.dx_mask = SKL_IPC_D3_MASK;
@@ -604,6 +610,7 @@ static int bxt_set_dsp_D3(struct sst_dsp *ctx, unsigned int core_id)
 		return ret;
 	}
 	skl->cores.state[core_id] = SKL_DSP_RESET;
+	skl->cores.state[1] = SKL_DSP_RESET;
 	ret = skl_notify_tplg_change(skl, SKL_TPLG_CHG_NOTIFY_DSP_D3);
 	if (ret < 0)
 		dev_warn(ctx->dev,
