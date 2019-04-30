@@ -21,7 +21,7 @@
 #endif
 
 #ifdef CONFIG_PREEMPT_RT_FULL
-#include <linux/rwsem_rt.h>
+#include <linux/rwsem-rt.h>
 #else /* PREEMPT_RT_FULL */
 
 struct rw_semaphore;
