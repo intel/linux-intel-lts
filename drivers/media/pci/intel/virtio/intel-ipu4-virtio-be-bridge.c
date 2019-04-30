@@ -49,7 +49,6 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 						__func__, req->op[0]);
 			kthread_run(process_poll_thread, req_info,
 								"process_poll");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_DEVICE_OPEN:
 			/*
@@ -60,7 +59,6 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 			pr_debug("DEVICE_OPEN: virtual_dev_id:%d actual_fd:%d\n", req->op[0], req->op[1]);
 			kthread_run(process_device_open_thread, req_info,
 								"process_device_open");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_DEVICE_CLOSE:
 			/*
@@ -71,7 +69,6 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 			pr_debug("DEVICE_CLOSE: virtual_dev_id:%d actual_fd:%d\n", req->op[0], req->op[1]);
 			kthread_run(process_device_close_thread, req_info,
 								"process_device_close");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_STREAM_ON:
 			/* Start Stream
@@ -81,7 +78,6 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 			pr_debug("STREAM ON: virtual_dev_id:%d actual_fd:%d\n", req->op[0], req->op[1]);
 			kthread_run(process_stream_on_thread, req_info,
 								"process_stream_on");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_STREAM_OFF:
 			/* Stop Stream
@@ -91,7 +87,6 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 			pr_debug("STREAM OFF: virtual_dev_id:%d actual_fd:%d\n", req->op[0], req->op[1]);
 			kthread_run(process_stream_off_thread, req_info,
 								"process_stream_off");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_GET_BUF:
 			/* Set Format of a given video node
@@ -107,7 +102,6 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 						__func__, req->op[0]);
 			kthread_run(process_get_buf_thread, req_info,
 								"process_get_buf");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PUT_BUF:
 			/* Set Format of a given video node
@@ -119,165 +113,143 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 						__func__, req->op[0]);
 			kthread_run(process_put_buf_thread, req_info,
 								"process_put_buf");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_SET_FORMAT:
 			pr_debug("%s process_set_format %d",
 						__func__, req->op[0]);
 			kthread_run(process_set_format_thread, req_info,
 								"process_set_format");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PIPELINE_OPEN:
 			pr_debug("%s process_pipeline_open %d",
 						__func__, req->op[0]);
 			kthread_run(process_pipeline_open_thread, req_info,
 								"process_pipeline_open");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PIPELINE_CLOSE:
 			pr_debug("%s process_pipeline_close %d",
 						__func__, req->op[0]);
 			kthread_run(process_pipeline_close_thread, req_info,
 								"process_pipeline_close");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_ENUM_NODES:
 			pr_debug("%s process_enum_nodes %d",
 						__func__, req->op[0]);
 			kthread_run(process_enum_nodes_thread, req_info,
 								"process_enum_nodes");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_ENUM_LINKS:
 			pr_debug("%s process_enum_links %d",
 						__func__, req->op[0]);
 			kthread_run(process_enum_links_thread, req_info,
 								"process_enum_links");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_SETUP_PIPE:
 			pr_debug("%s process_setup_pipe %d",
 						__func__, req->op[0]);
 			kthread_run(process_setup_pipe_thread, req_info,
 								"process_setup_pipe");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_SET_FRAMEFMT:
 			pr_debug("%s process_set_framefmt %d",
 						__func__, req->op[0]);
 			kthread_run(process_set_framefmt_thread, req_info,
 								"process_set_framefmt");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_GET_FRAMEFMT:
 			pr_debug("%s process_get_framefmt %d",
 						__func__, req->op[0]);
 			kthread_run(process_get_framefmt_thread, req_info,
 								"process_get_framefmt");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_GET_SUPPORTED_FRAMEFMT:
 			pr_debug("%s process_get_supported_framefmt %d",
 						__func__, req->op[0]);
 			kthread_run(process_get_supported_framefmt_thread,
 				req_info, "process_get_supported_framefmt");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_SET_SELECTION:
 			pr_debug("%s process_pad_set_sel %d",
 						__func__, req->op[0]);
 			kthread_run(process_pad_set_sel_thread, req_info,
 								"process_pad_set_sel");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_GET_SELECTION:
 			pr_debug("%s process_pad_get_sel %d",
 						__func__, req->op[0]);
 			kthread_run(process_pad_get_sel_thread, req_info,
 								"process_pad_get_sel");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_MAPBUF:
 			pr_debug("%s process_psys_mapbuf_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_mapbuf_thread, req_info,
 								"process_psys_mapbuf_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_UNMAPBUF:
 			pr_debug("%s process_psys_unmapbuf_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_unmapbuf_thread, req_info,
 								"process_psys_unmapbuf_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_QUERYCAP:
 			pr_debug("%s process_psys_querycap_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_querycap_thread, req_info,
 								"process_psys_querycap_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_GETBUF:
 			pr_debug("%s process_psys_getbuf_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_getbuf_thread, req_info,
 								"process_psys_getbuf_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_PUTBUF:
 			pr_debug("%s process_psys_putbuf_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_putbuf_thread, req_info,
 								"process_psys_putbuf_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_QCMD:
 			pr_debug("%s process_psys_qcmd_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_qcmd_thread, req_info,
 								"process_psys_qcmd_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_DQEVENT:
 			pr_debug("%s process_psys_dqevent_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_dqevent_thread, req_info,
 								"process_psys_dqevent_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_GET_MANIFEST:
 			pr_debug("%s process_psys_get_manifest_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_get_manifest_thread, req_info,
 								"process_psys_get_manifest_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_OPEN:
 			pr_debug("%s process_psys_open_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_open_thread, req_info,
 								"process_psys_open_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_CLOSE:
 			pr_debug("%s process_psys_close_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_close_thread, req_info,
 								"process_psys_close_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	case IPU4_CMD_PSYS_POLL:
 			pr_debug("%s process_psys_poll_thread %d",
 						__func__, req->op[0]);
 			kthread_run(process_psys_poll_thread, req_info,
 								"process_psys_poll_thread");
-			req->stat = IPU4_REQ_PENDING;
 			break;
 	default:
 			return -EINVAL;
 		}
 
+	req->stat = IPU4_REQ_PENDING;
 	return ret;
 }
