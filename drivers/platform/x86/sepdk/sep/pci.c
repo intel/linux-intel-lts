@@ -173,7 +173,7 @@ U32 PCI_Read_U32_Valid(U32 bus, U32 device, U32 function, U32 offset,
  */
 U64 PCI_Read_U64(U32 bus, U32 device, U32 function, U32 offset)
 {
-	U64 res = 0;
+	U32 res = 0;
 	U32 devfn = (device << 3) | (function & 0x7);
 
 	SEP_DRV_LOG_REGISTER_IN("Will read BDF(%x:%x:%x)[0x%x](8B)...", bus,
@@ -181,9 +181,9 @@ U64 PCI_Read_U64(U32 bus, U32 device, U32 function, U32 offset)
 
 	if (bus < MAX_BUSNO && pci_buses[bus]) {
 		pci_buses[bus]->ops->read(pci_buses[bus], devfn, offset, 4,
-					  (U32 *)&res);
+					  &res);
 		pci_buses[bus]->ops->read(pci_buses[bus], devfn, offset + 4, 4,
-					  ((U32 *)&res) + 1);
+					  &res + 1);
 	} else {
 		SEP_DRV_LOG_ERROR(
 			"Could not read BDF(%x:%x:%x)[0x%x]: bus not found!",
@@ -192,7 +192,7 @@ U64 PCI_Read_U64(U32 bus, U32 device, U32 function, U32 offset)
 
 	SEP_DRV_LOG_REGISTER_OUT("Has read BDF(%x:%x:%x)[0x%x](8B): 0x%llx.",
 				 bus, device, function, offset, res);
-	return res;
+	return (U64)res;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -213,7 +213,7 @@ U64 PCI_Read_U64(U32 bus, U32 device, U32 function, U32 offset)
 U64 PCI_Read_U64_Valid(U32 bus, U32 device, U32 function, U32 offset,
 			      U64 invalid_value)
 {
-	U64 res = 0;
+	U32 res = 0;
 	U32 devfn = (device << 3) | (function & 0x7);
 
 	SEP_DRV_LOG_REGISTER_IN("Will read BDF(%x:%x:%x)[0x%x](8B)...", bus,
@@ -221,11 +221,11 @@ U64 PCI_Read_U64_Valid(U32 bus, U32 device, U32 function, U32 offset,
 
 	if (bus < MAX_BUSNO && pci_buses[bus]) {
 		pci_buses[bus]->ops->read(pci_buses[bus], devfn, offset, 4,
-					  (U32 *)&res);
+					  &res);
 		pci_buses[bus]->ops->read(pci_buses[bus], devfn, offset + 4, 4,
-					  ((U32 *)&res) + 1);
+					  &res + 1);
 
-		if (res == invalid_value) {
+		if ((U64)res == invalid_value) {
 			res = 0;
 			SEP_DRV_LOG_REGISTER_OUT(
 				"Has read BDF(%x:%x:%x)[0x%x](8B): 0x%llx(invalid val)",
@@ -241,7 +241,7 @@ U64 PCI_Read_U64_Valid(U32 bus, U32 device, U32 function, U32 offset,
 			bus, device, function, offset);
 	}
 
-	return res;
+	return (U64)res;
 }
 
 /* ------------------------------------------------------------------------- */
