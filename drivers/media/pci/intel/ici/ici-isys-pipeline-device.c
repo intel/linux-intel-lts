@@ -191,6 +191,8 @@ static int ici_setup_link(struct file *file, void *fh,
 			file->private_data;
 	struct ici_isys_node *src_node, *sink_node;
 	struct node_pipe *np;
+	struct ici_isys_pipeline *ip;
+	bool flags_reset;
 
 	src_node = find_node(pipe_dev, link->source.node_id);
 	if (!src_node)
@@ -201,18 +203,24 @@ static int ici_setup_link(struct file *file, void *fh,
 		return -ENODEV;
 
 	np = find_pipe(src_node, link);
+	ip = ici_nodepipe_to_pipeline(src_node->pipe);
+	flags_reset = ip && ip->streaming && !link->flags;
 
 	if (np) {
-		np->flags = link->flags;
+		if (!flags_reset)
+			np->flags = link->flags;
 	} else {
 		dev_warn(&pipe_dev->dev, "Link not found\n");
 		return -ENODEV;
 	}
 
 	np = find_pipe(sink_node, link);
-	if (np)
-		np->flags = link->flags | ICI_LINK_FLAG_BACKLINK;
-	else
+	ip = ici_nodepipe_to_pipeline(sink_node->pipe);
+	flags_reset = ip && ip->streaming && !link->flags;
+	if (np) {
+		if (!flags_reset)
+			np->flags = link->flags | ICI_LINK_FLAG_BACKLINK;
+	} else
 		dev_warn(&pipe_dev->dev, "Backlink not found\n");
 
 	return rval;
