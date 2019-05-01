@@ -27,6 +27,7 @@
 #define __KMB_REGS_H__
 
 #define ENABLE					 1
+#define DISABLE					 0
 /*from Data Book section 12.5.8.1 page 4322 */
 #define MIPI_BASE_ADDR                          (void *)(0x20900000)
 /*from Data Book section 12.11.6.1 page 4972 */
@@ -400,8 +401,10 @@
 #define MIPI_TX_HS_CTRL				(0x0)
 #define   MIPI_TXm_HS_CTRL(M)			(MIPI_TX_HS_CTRL + HS_OFFSET(M))
 #define   HS_CTRL_EN				(1 << 0)
-#define   HS_CTRL_CSIDSIN			(1 << 2) /*1:CSI 0:DSI*/
-#define   TX_SOURCE				(1 << 3) /*1:LCD, 0:DMA*/
+/*1:CSI 0:DSI */
+#define   HS_CTRL_CSIDSIN			(1 << 2)
+/*1:LCD, 0:DMA */
+#define   TX_SOURCE				(1 << 3)
 #define   ACTIVE_LANES(n)			((n) << 4)
 #define   LCD_VC(ch)				((ch) << 8)
 #define   DSI_EOTP_EN				(1 << 11)
@@ -518,6 +521,45 @@
 	kmb_write_bits_mipi(MIPI_TXm_HS_MC_FIFO_RTHRESHOLDn(ctrl, vc/2), \
 			(vc % 2)*16, 16, th)
 
+/* D-PHY regs */
+#define DPHY_ENABLE				(0x100)
+#define DPHY_INIT_CTRL0				(0x104)
+#define   SHUTDOWNZ				0
+#define   RESETZ				12
+#define DPHY_INIT_CTRL2				(0x10c)
+#define   SET_DPHY_INIT_CTRL0(dphy, offset)	\
+					kmb_set_bit_mipi(DPHY_INIT_CTRL0, \
+					(dphy+offset))
+#define   CLR_DPHY_INIT_CTRL0(dphy, offset)	\
+					kmb_clr_bit_mipi(DPHY_INIT_CTRL0, \
+					(dphy+offset))
+#define DPHY_FREQ_CTRL0_3			(0x11c)
+#define   SET_DPHY_FREQ_CTRL0_3(dphy, val)	\
+					kmb_write_bits_mipi(DPHY_FREQ_CTRL0_3 \
+					+ ((dphy/4)*4), (dphy % 4) * 8, \
+					6, val)
+#define DPHY_TEST_CTRL0				(0x154)
+#define   SET_DPHY_TEST_CTRL0(dphy)	kmb_set_bit_mipi(DPHY_TEST_CTRL0, \
+					(dphy))
+#define   CLR_DPHY_TEST_CTRL0(dphy)	kmb_clr_bit_mipi(DPHY_TEST_CTRL0, \
+					(dphy))
+#define DPHY_TEST_CTRL1				(0x158)
+#define   SET_DPHY_TEST_CTRL1_CLK(dphy)	kmb_set_bit_mipi(DPHY_TEST_CTRL1, \
+					(dphy))
+#define   CLR_DPHY_TEST_CTRL1_CLK(dphy)	kmb_clr_bit_mipi(DPHY_TEST_CTRL1, \
+					(dphy))
+#define   SET_DPHY_TEST_CTRL1_EN(dphy)	kmb_set_bit_mipi(DPHY_TEST_CTRL1, \
+					(dphy+12))
+#define   CLR_DPHY_TEST_CTRL1_EN(dphy)	kmb_clr_bit_mipi(DPHY_TEST_CTRL1, \
+					(dphy+12))
+#define DPHY_TEST_DIN0_3			(0x15c)
+#define   SET_TEST_DIN0_3(dphy, val)	kmb_write_mipi(DPHY_TEST_DIN0_3 + \
+					4, ((val) << (((dphy)%4)*8)))
+#define DPHY_TEST_DOUT0_3			(0x168)
+#define   GET_TEST_DOUT0_3(dphy)	(readl(DPHY_TEST_DOUT0_3 + 4) \
+					>> (((dphy)%4)*8) & 0xff)
+#define DPHY_CFG_CLK_EN				(0x18c)
+
 #define MIPI_TX_MSS_LCD_MIPI_CFG		(0x04)
-#define BIT_MASK_16			  (0xffff)
+#define BIT_MASK_16				(0xffff)
 #endif /* __KMB_REGS_H__ */

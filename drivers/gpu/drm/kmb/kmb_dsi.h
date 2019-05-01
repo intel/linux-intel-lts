@@ -59,6 +59,11 @@ struct kmb_connector {
 #define MIPI_D_LANES_PER_DPHY	2
 #define MIPI_CTRL_2LANE_MAX_MC_FIFO_LOC	255
 #define MIPI_CTRL_4LANE_MAX_MC_FIFO_LOC	511
+#define MIPI_DPHY_D_LANES		2  /* 2 Data Lanes per D-PHY*/
+#define MIPI_DPHY_DEFAULT_BIT_RATES 63
+
+/*DPHY Tx test codes */
+#define TEST_CODE_MULTIPLE_PHY_CTRL	0x03
 
 enum mipi_ctrl_num {
 	MIPI_CTRL0 = 0,
@@ -193,6 +198,11 @@ enum mipi_dsi_data_type {
 	DSI_LP_DT_PPS_YCBCR420_12B = 0x3d,
 	DSI_LP_DT_PPS_RGB888_24B = 0x3e,
 	DSI_LP_DT_RESERVED_3F = 0x3f
+};
+
+enum dphy_mode {
+	MIPI_DPHY_SLAVE = 0,
+	MIPI_DPHY_MASTER
 };
 
 struct mipi_data_type_params {

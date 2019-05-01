@@ -84,11 +84,6 @@ static inline void kmb_write_bits(struct kmb_drm_private *lcd,
 }
 #endif
 
-static inline void kmb_write(void *reg, u32 value)
-{
-	writel(value, reg);
-}
-
 static inline void kmb_write_lcd(unsigned int reg, u32 value)
 {
 	writel(value, (LCD_BASE_ADDR + reg));
