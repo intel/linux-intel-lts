@@ -100,7 +100,10 @@ obj-$(CONFIG_I2C_MULTI_INSTANTIATE)	+= i2c-multi-instantiate.o
 obj-$(CONFIG_INTEL_ATOMISP2_PM)	+= intel_atomisp2_pm.o
 obj-$(CONFIG_PCENGINES_APU2)	+= pcengines-apuv2.o
 obj-$(CONFIG_INTEL_SPEED_SELECT_INTERFACE) += intel_speed_select_if/
-obj-$(CONFIG_INTEL_SOCWATCH) += socwatch/
+
+# sep and socwatch drivers
+obj-$(CONFIG_INTEL_SOCPERF)     += socperf/
+obj-$(CONFIG_INTEL_SOCWATCH)    += socwatch/ socperf/
 obj-$(CONFIG_INTEL_SOCWATCH_HV) += socwatchhv/
-obj-$(CONFIG_INTEL_SEP) += sepdk/
+obj-$(CONFIG_INTEL_SEP)         += sepdk/ socperf/
 

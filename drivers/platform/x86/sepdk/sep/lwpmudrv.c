@@ -223,7 +223,7 @@ static U8 *prev_set_CR4;
 
 wait_queue_head_t wait_exit;
 
-// extern OS_STATUS SOCPERF_Switch_Group3 (void);
+extern OS_STATUS SOCPERF_Switch_Group3(void);
 
 #if !defined(DRV_USE_UNLOCKED_IOCTL)
 #define MUTEX_INIT(lock)
@@ -1509,7 +1509,7 @@ static VOID lwpmudrv_Switch_To_Next_Group(void)
 					if (pecb_unc &&
 					    ECB_device_type(pecb_unc) ==
 						    DEVICE_UNC_SOCPERF) {
-						// SOCPERF_Switch_Group3();
+						SOCPERF_Switch_Group3();
 					}
 				}
 			}
@@ -2134,7 +2134,7 @@ static OS_STATUS lwpmudrv_Uncore_Switch_Group(void)
 					    (ECB_device_type(ecb_unc) ==
 					     DEVICE_UNC_SOCPERF) &&
 					    (j == 0)) {
-						// SOCPERF_Switch_Group3();
+						SOCPERF_Switch_Group3();
 					}
 					// Post group switch
 					cur_grp = LWPMU_DEVICE_cur_group(
