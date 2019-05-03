@@ -1015,10 +1015,10 @@ const struct ici_isys_pixelformat
 			 mpix->ffmt.width * DIV_ROUND_UP(pfmt->bpp,
 			 BITS_PER_BYTE);
 	else
-		mpix->pfmt.plane_fmt[0].bytesperline = DIV_ROUND_UP(
-			as->line_header_length + as->line_footer_length
-			+ (unsigned int)mpix->ffmt.width * pfmt->bpp,
-			BITS_PER_BYTE);
+		mpix->pfmt.plane_fmt[0].bytesperline =
+			DIV_ROUND_UP((unsigned int)mpix->ffmt.width *
+				pfmt->bpp,
+				BITS_PER_BYTE);
 
 	mpix->pfmt.plane_fmt[0].bytesperline =
 		ALIGN(mpix->pfmt.plane_fmt[0].bytesperline,
