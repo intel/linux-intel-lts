@@ -52,6 +52,12 @@ typedef enum frame_buf_state_ {
 	ICI_BUF_DONE,
 } frame_buf_state;
 
+typedef enum ici_frame_buf_list_type_ {
+	ICI_ISYS_GETBUF_LIST,
+	ICI_ISYS_PUTBUF_LIST,
+	ICI_ISYS_NONE,
+} ici_frame_buf_list_type;
+
 struct ici_frame_buf_wrapper {
 	struct ici_kframe_info kframe_info;
 	struct ici_frame_info frame_info;
