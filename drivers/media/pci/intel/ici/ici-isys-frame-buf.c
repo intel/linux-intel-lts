@@ -69,7 +69,8 @@ static struct ici_frame_buf_wrapper
 *ici_frame_buf_lookup(struct ici_isys_frame_buf_list
 					*buf_list,
 					struct ici_frame_info
-					*user_frame_info)
+					*user_frame_info,
+					ici_frame_buf_list_type *buf_list_type)
 {
 	struct ici_frame_buf_wrapper *buf;
 	int i;
@@ -93,6 +94,7 @@ static struct ici_frame_buf_wrapper
 				if (new_plane->mem.userptr ==
 					cur_plane->mem.userptr) {
 					spin_unlock_irqrestore(&buf_list->lock, flags);
+					*buf_list_type=ICI_ISYS_GETBUF_LIST;
 					return buf;
 				}
 				break;
@@ -100,6 +102,7 @@ static struct ici_frame_buf_wrapper
 				if (new_plane->mem.dmafd ==
 					cur_plane->mem.dmafd) {
 					spin_unlock_irqrestore(&buf_list->lock, flags);
+					*buf_list_type=ICI_ISYS_GETBUF_LIST;
 					return buf;
 				}
 				break;
@@ -108,7 +111,36 @@ static struct ici_frame_buf_wrapper
 		}
 
 	}
+
+	list_for_each_entry(buf, &buf_list->putbuf_list, node) {
+		for (i = 0; i < user_frame_info->num_planes; i++) {
+			struct ici_frame_plane *new_plane =
+				&user_frame_info->frame_planes[i];
+			struct ici_frame_plane *cur_plane =
+				&buf->frame_info.frame_planes[i];
+
+			switch (mem_type) {
+			case ICI_MEM_USERPTR:
+				if (new_plane->mem.userptr ==
+					cur_plane->mem.userptr) {
+					spin_unlock_irqrestore(&buf_list->lock, flags);
+					*buf_list_type=ICI_ISYS_PUTBUF_LIST;
+					return buf;
+				}
+				break;
+			case ICI_MEM_DMABUF:
+				if (new_plane->mem.dmafd ==
+					cur_plane->mem.dmafd) {
+					spin_unlock_irqrestore(&buf_list->lock, flags);
+					*buf_list_type=ICI_ISYS_PUTBUF_LIST;
+					return buf;
+				}
+				break;
+			}
+		}
+	}
 	spin_unlock_irqrestore(&buf_list->lock, flags);
+	*buf_list_type=ICI_ISYS_NONE;
 	return NULL;
 }
 
@@ -472,6 +504,7 @@ int ici_isys_get_buf(struct ici_isys_stream *as,
 	unsigned i;
 	struct ici_frame_buf_wrapper *buf;
 	unsigned long flags = 0;
+	ici_frame_buf_list_type buf_list_type;
 
 	struct ici_kframe_plane *kframe_plane;
 	struct ici_isys_frame_buf_list *buf_list = &as->buf_list;
@@ -487,12 +520,15 @@ int ici_isys_get_buf(struct ici_isys_stream *as,
 		dev_err(&as->isys->adev->dev, "User length not set\n");
 		return -EINVAL;
 	}
-	buf = ici_frame_buf_lookup(buf_list, frame_info);
+	buf = ici_frame_buf_lookup(buf_list, frame_info, &buf_list_type);
 
-	if (buf) {
+	if (buf && buf_list_type == ICI_ISYS_GETBUF_LIST ) {
 		buf->state = ICI_BUF_PREPARED;
 		return 0;
+	} else 	if (buf && buf_list_type == ICI_ISYS_PUTBUF_LIST ) {
+		return 0;
 	}
+
 
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf)
@@ -559,6 +595,7 @@ int ici_isys_get_buf_virt(struct ici_isys_stream *as,
 	unsigned i;
 	unsigned long flags = 0;
 	struct ici_frame_buf_wrapper *buf;
+	ici_frame_buf_list_type buf_list_type;
 
 	struct ici_kframe_plane *kframe_plane;
 	struct ici_isys_frame_buf_list *buf_list = &as->buf_list;
@@ -574,10 +611,12 @@ int ici_isys_get_buf_virt(struct ici_isys_stream *as,
 		dev_err(&as->isys->adev->dev, "User length not set\n");
 		return -EINVAL;
 	}
-	buf = ici_frame_buf_lookup(buf_list, &frame_buf->frame_info);
+	buf = ici_frame_buf_lookup(buf_list, &frame_buf->frame_info, &buf_list_type);
 
-	if (buf) {
+	if (buf && (buf_list_type == ICI_ISYS_GETBUF_LIST) ) {
 		buf->state = ICI_BUF_PREPARED;
+		return 0;
+	} else 	if (buf && buf_list_type == ICI_ISYS_PUTBUF_LIST ) {
 		return 0;
 	}
 
