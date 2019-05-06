@@ -62,6 +62,14 @@
 	 _TIF_NEED_RESCHED | _TIF_PATCH_PENDING | _TIF_NOTIFY_SIGNAL |	\
 	 ARCH_EXIT_TO_USER_MODE_WORK)
 
+/*
+ * Status codes of syscall entry when Dovetail is enabled. Must not
+ * conflict with valid syscall numbers. And with -1 which seccomp uses
+ * to skip an syscall.
+ */
+#define EXIT_SYSCALL_OOB	(-2)
+#define EXIT_SYSCALL_TAIL	(-3)
+
 /**
  * arch_enter_from_user_mode - Architecture specific sanity check for user mode regs
  * @regs:	Pointer to currents pt_regs
