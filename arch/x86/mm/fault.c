@@ -1494,3 +1494,41 @@ DEFINE_IDTENTRY_RAW_ERRORCODE(exc_page_fault)
 
 	irqentry_exit(regs, state);
 }
+
+#ifdef CONFIG_DOVETAIL
+
+void arch_advertise_page_mapping(unsigned long start, unsigned long end)
+{
+	unsigned long next, addr = start;
+	pgd_t *pgd, *pgd_ref;
+	struct page *page;
+
+	/*
+	 * APEI may create temporary mappings in interrupt context -
+	 * nothing we can and need to propagate globally.
+	 */
+	if (in_interrupt())
+		return;
+
+	if (!(start >= VMALLOC_START && start < VMALLOC_END))
+		return;
+
+	do {
+		next = pgd_addr_end(addr, end);
+		pgd_ref = pgd_offset_k(addr);
+		if (pgd_none(*pgd_ref))
+			continue;
+		spin_lock(&pgd_lock);
+		list_for_each_entry(page, &pgd_list, lru) {
+			pgd = page_address(page) + pgd_index(addr);
+			if (pgd_none(*pgd))
+				set_pgd(pgd, *pgd_ref);
+		}
+		spin_unlock(&pgd_lock);
+		addr = next;
+	} while (addr != end);
+
+	arch_flush_lazy_mmu_mode();
+}
+
+#endif
