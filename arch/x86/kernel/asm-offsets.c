@@ -38,6 +38,9 @@ static void __used common(void)
 #endif
 
 	BLANK();
+#ifdef CONFIG_IRQ_PIPELINE
+	DEFINE(OOB_stage_mask, STAGE_MASK);
+#endif
 	OFFSET(crypto_tfm_ctx_offset, crypto_tfm, __crt_ctx);
 
 	BLANK();
