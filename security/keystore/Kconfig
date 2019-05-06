@@ -50,7 +50,7 @@ source security/keystore/oemkey/Kconfig
 config DAL_KEYSTORE_APPLET_PATH
 	string "DAL Keystore Applet path"
 	depends on KEYSTORE
-	default "/var/lib/intel/dal/applets/Keystore.pack"
+	default "/usr/lib/dal/applets/Keystore.pack"
 	help
 		The path for DAL Keystore applet file.
 
