@@ -233,10 +233,12 @@ static inline int arch_within_stack_frames(const void * const stack,
 #define TS_OOB			0x0010	/* Thread is running out-of-band */
 #define TS_DOVETAIL		0x0020  /* Dovetail notifier enabled */
 #define TS_OFFSTAGE		0x0040	/* Thread is in-flight to OOB context */
+#define TS_OOBTRAP		0x0080	/* Handling a trap from OOB context */
 
 #define _TLF_OOB		TS_OOB
 #define _TLF_DOVETAIL		TS_DOVETAIL
 #define _TLF_OFFSTAGE		TS_OFFSTAGE
+#define _TLF_OOBTRAP		TS_OOBTRAP
 
 #ifndef __ASSEMBLY__
 #ifdef CONFIG_COMPAT
