@@ -100,6 +100,7 @@ struct thread_info {
 #define TIF_MEMDIE		20	/* is terminating due to OOM killer */
 #define TIF_POLLING_NRFLAG	21	/* idle is polling for TIF_NEED_RESCHED */
 #define TIF_IO_BITMAP		22	/* uses I/O bitmap */
+#define TIF_RETUSER		23	/* INBAND_TASK_RETUSER is pending */
 #define TIF_FORCED_TF		24	/* true if TF in eflags artificially */
 #define TIF_BLOCKSTEP		25	/* set when we want DEBUGCTLMSR_BTF */
 #define TIF_MAYDAY		26	/* emergency trap pending */
@@ -129,6 +130,7 @@ struct thread_info {
 #define _TIF_SLD		(1 << TIF_SLD)
 #define _TIF_POLLING_NRFLAG	(1 << TIF_POLLING_NRFLAG)
 #define _TIF_IO_BITMAP		(1 << TIF_IO_BITMAP)
+#define _TIF_RETUSER		(1 << TIF_RETUSER)
 #define _TIF_FORCED_TF		(1 << TIF_FORCED_TF)
 #define _TIF_MAYDAY		(1 << TIF_MAYDAY)
 #define _TIF_BLOCKSTEP		(1 << TIF_BLOCKSTEP)
