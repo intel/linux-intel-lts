@@ -443,7 +443,9 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 	 */
 
 	/* We don't want flush_tlb_func_* to run concurrently with us. */
-	if (IS_ENABLED(CONFIG_PROVE_LOCKING))
+	if (IS_ENABLED(CONFIG_DOVETAIL))
+		WARN_ON_ONCE(!hard_irqs_disabled());
+	else if (IS_ENABLED(CONFIG_PROVE_LOCKING))
 		WARN_ON_ONCE(!irqs_disabled());
 
 	/*
@@ -669,16 +671,24 @@ static void flush_tlb_func_common(const struct flush_tlb_info *f,
 	 *                   wants us to catch up to.
 	 */
 	struct mm_struct *loaded_mm = this_cpu_read(cpu_tlbstate.loaded_mm);
-	u32 loaded_mm_asid = this_cpu_read(cpu_tlbstate.loaded_mm_asid);
-	u64 mm_tlb_gen = atomic64_read(&loaded_mm->context.tlb_gen);
-	u64 local_tlb_gen = this_cpu_read(cpu_tlbstate.ctxs[loaded_mm_asid].tlb_gen);
+	u32 loaded_mm_asid;
+	u64 mm_tlb_gen;
+	u64 local_tlb_gen;
 	unsigned long flags;
 
 	/* This code cannot presently handle being reentered. */
 	VM_WARN_ON(!irqs_disabled());
 
-	if (unlikely(loaded_mm == &init_mm))
+	protect_inband_mm(flags);
+
+	loaded_mm_asid = this_cpu_read(cpu_tlbstate.loaded_mm_asid);
+	mm_tlb_gen = atomic64_read(&loaded_mm->context.tlb_gen);
+	local_tlb_gen = this_cpu_read(cpu_tlbstate.ctxs[loaded_mm_asid].tlb_gen);
+
+	if (unlikely(loaded_mm == &init_mm)) {
+		unprotect_inband_mm(flags);
 		return;
+	}
 
 	VM_WARN_ON(this_cpu_read(cpu_tlbstate.ctxs[loaded_mm_asid].ctx_id) !=
 		   loaded_mm->context.ctx_id);
@@ -693,7 +703,6 @@ static void flush_tlb_func_common(const struct flush_tlb_info *f,
 		 * This should be rare, with native_flush_tlb_others skipping
 		 * IPIs to lazy TLB mode CPUs.
 		 */
-		protect_inband_mm(flags);
 		switch_mm_irqs_off(NULL, &init_mm, NULL);
 		unprotect_inband_mm(flags);
 		return;
@@ -706,12 +715,15 @@ static void flush_tlb_func_common(const struct flush_tlb_info *f,
 		 * be handled can catch us all the way up, leaving no work for
 		 * the second flush.
 		 */
+		unprotect_inband_mm(flags);
 		trace_tlb_flush(reason, 0);
 		return;
 	}
 
 	WARN_ON_ONCE(local_tlb_gen > mm_tlb_gen);
 	WARN_ON_ONCE(f->new_tlb_gen > mm_tlb_gen);
+
+	unprotect_inband_mm(flags);
 
 	/*
 	 * If we get to this point, we know that our TLB is out of date.
@@ -1069,7 +1081,7 @@ STATIC_NOPV void native_flush_tlb_global(void)
 	 * from interrupts. (Use the raw variant because this code can
 	 * be called from deep inside debugging code.)
 	 */
-	raw_local_irq_save(flags);
+	flags = hard_local_irq_save();
 
 	cr4 = this_cpu_read(cpu_tlbstate.cr4);
 	/* toggle PGE */
@@ -1077,7 +1089,7 @@ STATIC_NOPV void native_flush_tlb_global(void)
 	/* write old PGE again and flush TLBs */
 	native_write_cr4(cr4);
 
-	raw_local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 /*
@@ -1085,6 +1097,8 @@ STATIC_NOPV void native_flush_tlb_global(void)
  */
 STATIC_NOPV void native_flush_tlb_local(void)
 {
+	unsigned long flags;
+
 	/*
 	 * Preemption or interrupts must be disabled to protect the access
 	 * to the per CPU variable and to prevent being preempted between
@@ -1092,10 +1106,14 @@ STATIC_NOPV void native_flush_tlb_local(void)
 	 */
 	WARN_ON_ONCE(preemptible());
 
+	flags = hard_cond_local_irq_save();
+
 	invalidate_user_asid(this_cpu_read(cpu_tlbstate.loaded_mm_asid));
 
 	/* If current->mm == NULL then the read_cr3() "borrows" an mm */
 	native_write_cr3(__native_read_cr3());
+
+	hard_cond_local_irq_restore(flags);
 }
 
 void flush_tlb_local(void)
