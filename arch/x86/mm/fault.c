@@ -646,6 +646,12 @@ page_fault_oops(struct pt_regs *regs, unsigned long error_code,
 		goto oops;
 	}
 
+	/*
+	 * Do not bother unwinding the notification context on
+	 * CPU/firmware/kernel bug.
+	 */
+	oob_trap_notify(X86_TRAP_PF, regs);
+
 #ifdef CONFIG_VMAP_STACK
 	/*
 	 * Stack overflow?  During boot, we can fault near the initial
@@ -722,7 +728,7 @@ kernelmode_fixup_or_oops(struct pt_regs *regs, unsigned long error_code,
 		 * the below recursive fault logic only apply to a faults from
 		 * task context.
 		 */
-		if (in_interrupt())
+		if (running_oob() || in_interrupt())
 			return;
 
 		/*
@@ -734,6 +740,7 @@ kernelmode_fixup_or_oops(struct pt_regs *regs, unsigned long error_code,
 		if (current->thread.sig_on_uaccess_err && signal) {
 			sanitize_error_code(address, &error_code);
 
+			oob_trap_notify(X86_TRAP_PF, regs);
 			set_signal_archinfo(address, error_code);
 
 			if (si_code == SEGV_PKUERR) {
@@ -742,6 +749,7 @@ kernelmode_fixup_or_oops(struct pt_regs *regs, unsigned long error_code,
 				/* XXX: hwpoison faults will set the wrong code. */
 				force_sig_fault(signal, si_code, (void __user *)address);
 			}
+			oob_trap_unwind(X86_TRAP_PF, regs);
 		}
 
 		/*
@@ -796,6 +804,55 @@ static bool is_vsyscall_vaddr(unsigned long vaddr)
 	return unlikely((vaddr & PAGE_MASK) == VSYSCALL_ADDR);
 }
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+static inline void cond_reenable_irqs_user(void)
+{
+	hard_local_irq_enable();
+
+	if (running_inband())
+		local_irq_enable();
+}
+
+static inline void cond_reenable_irqs_kernel(irqentry_state_t state,
+					struct pt_regs *regs)
+{
+	if (regs->flags & X86_EFLAGS_IF) {
+		hard_local_irq_enable();
+		if (state.stage_info == IRQENTRY_INBAND_UNSTALLED)
+			local_irq_enable();
+	}
+}
+
+static inline void cond_disable_irqs(void)
+{
+	hard_local_irq_disable();
+
+	if (running_inband())
+		local_irq_disable();
+}
+
+#else  /* !CONFIG_IRQ_PIPELINE */
+
+static inline void cond_reenable_irqs_user(void)
+{
+	local_irq_enable();
+}
+
+static inline void cond_reenable_irqs_kernel(irqentry_state_t state,
+					struct pt_regs *regs)
+{
+	if (regs->flags & X86_EFLAGS_IF)
+		local_irq_enable();
+}
+
+static inline void cond_disable_irqs(void)
+{
+	local_irq_disable();
+}
+
+#endif  /* !CONFIG_IRQ_PIPELINE */
+
 static void
 __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		       unsigned long address, u32 pkey, int si_code)
@@ -818,7 +875,7 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 	 * User mode accesses just cause a SIGSEGV.
 	 * It's possible to have interrupts off here:
 	 */
-	local_irq_enable_full();
+	cond_reenable_irqs_user();
 
 	/*
 	 * Valid to do another page fault here because this one came
@@ -835,6 +892,8 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 	if (fixup_vdso_exception(regs, X86_TRAP_PF, error_code, address))
 		return;
 
+	oob_trap_notify(X86_TRAP_PF, regs);
+
 	if (likely(show_unhandled_signals))
 		show_signal_msg(regs, error_code, address, tsk);
 
@@ -846,6 +905,7 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		force_sig_fault(SIGSEGV, si_code, (void __user *)address);
 
 	local_irq_disable_full();
+	oob_trap_unwind(X86_TRAP_PF, regs);
 }
 
 static noinline void
@@ -1219,7 +1279,8 @@ NOKPROBE_SYMBOL(do_kern_addr_fault);
 static inline
 void do_user_addr_fault(struct pt_regs *regs,
 			unsigned long error_code,
-			unsigned long address)
+			unsigned long address,
+			irqentry_state_t state)
 {
 	struct vm_area_struct *vma;
 	struct task_struct *tsk;
@@ -1278,7 +1339,7 @@ void do_user_addr_fault(struct pt_regs *regs,
 	 * If we're in an interrupt, have no user context or are running
 	 * in a region with pagefaults disabled then we must not take the fault
 	 */
-	if (unlikely(faulthandler_disabled() || !mm)) {
+	if (unlikely(running_inband() && (faulthandler_disabled() || !mm))) {
 		bad_area_nosemaphore(regs, error_code, address);
 		return;
 	}
@@ -1291,12 +1352,20 @@ void do_user_addr_fault(struct pt_regs *regs,
 	 * potential system fault or CPU buglet:
 	 */
 	if (user_mode(regs)) {
-		local_irq_enable_full();
+		cond_reenable_irqs_user();
 		flags |= FAULT_FLAG_USER;
 	} else {
 		if (regs->flags & X86_EFLAGS_IF)
-			local_irq_enable_full();
+			cond_reenable_irqs_kernel(state, regs);
 	}
+
+	/*
+	 * At this point, we would have to stop running
+	 * out-of-band. Tell the companion core about the page fault
+	 * event, so that it might switch current to in-band mode if
+	 * need be.
+	 */
+	oob_trap_notify(X86_TRAP_PF, regs);
 
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, address);
 
@@ -1319,7 +1388,7 @@ void do_user_addr_fault(struct pt_regs *regs,
 	 */
 	if (is_vsyscall_vaddr(address)) {
 		if (emulate_vsyscall(error_code, regs, address))
-			return;
+			goto out;
 	}
 #endif
 
@@ -1342,7 +1411,7 @@ void do_user_addr_fault(struct pt_regs *regs,
 			 * which we do not expect faults.
 			 */
 			bad_area_nosemaphore(regs, error_code, address);
-			return;
+			goto out;
 		}
 retry:
 		mmap_read_lock(mm);
@@ -1358,17 +1427,17 @@ retry:
 	vma = find_vma(mm, address);
 	if (unlikely(!vma)) {
 		bad_area(regs, error_code, address);
-		return;
+		goto out;
 	}
 	if (likely(vma->vm_start <= address))
 		goto good_area;
 	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
 		bad_area(regs, error_code, address);
-		return;
+		goto out;
 	}
 	if (unlikely(expand_stack(vma, address))) {
 		bad_area(regs, error_code, address);
-		return;
+		goto out;
 	}
 
 	/*
@@ -1378,7 +1447,7 @@ retry:
 good_area:
 	if (unlikely(access_error(error_code, vma))) {
 		bad_area_access_error(regs, error_code, address, vma);
-		return;
+		goto out;
 	}
 
 	/*
@@ -1405,7 +1474,7 @@ good_area:
 			kernelmode_fixup_or_oops(regs, error_code, address,
 						 SIGBUS, BUS_ADRERR,
 						 ARCH_DEFAULT_PKEY);
-		return;
+		goto out;
 	}
 
 	/*
@@ -1421,12 +1490,12 @@ good_area:
 
 	mmap_read_unlock(mm);
 	if (likely(!(fault & VM_FAULT_ERROR)))
-		return;
+		goto out;
 
 	if (fatal_signal_pending(current) && !user_mode(regs)) {
 		kernelmode_fixup_or_oops(regs, error_code, address,
 					 0, 0, ARCH_DEFAULT_PKEY);
-		return;
+		goto out;
 	}
 
 	if (fault & VM_FAULT_OOM) {
@@ -1435,7 +1504,7 @@ good_area:
 			kernelmode_fixup_or_oops(regs, error_code, address,
 						 SIGSEGV, SEGV_MAPERR,
 						 ARCH_DEFAULT_PKEY);
-			return;
+			goto out;
 		}
 
 		/*
@@ -1453,6 +1522,8 @@ good_area:
 		else
 			BUG();
 	}
+out:
+	oob_trap_unwind(X86_TRAP_PF, regs);
 }
 NOKPROBE_SYMBOL(do_user_addr_fault);
 
@@ -1471,7 +1542,8 @@ trace_page_fault_entries(struct pt_regs *regs, unsigned long error_code,
 
 static __always_inline void
 handle_page_fault(struct pt_regs *regs, unsigned long error_code,
-			      unsigned long address)
+		unsigned long address,
+		irqentry_state_t state)
 {
 	trace_page_fault_entries(regs, error_code, address);
 
@@ -1482,7 +1554,7 @@ handle_page_fault(struct pt_regs *regs, unsigned long error_code,
 	if (unlikely(fault_in_kernel_space(address))) {
 		do_kern_addr_fault(regs, error_code, address);
 	} else {
-		do_user_addr_fault(regs, error_code, address);
+		do_user_addr_fault(regs, error_code, address, state);
 		/*
 		 * User address page fault handling might have reenabled
 		 * interrupts. Fixing up all potential exit points of
@@ -1490,7 +1562,7 @@ handle_page_fault(struct pt_regs *regs, unsigned long error_code,
 		 * doable w/o creating an unholy mess or turning the code
 		 * upside down.
 		 */
-		local_irq_disable_full();
+		cond_disable_irqs();
 	}
 }
 
@@ -1538,7 +1610,7 @@ DEFINE_IDTENTRY_RAW_ERRORCODE(exc_page_fault)
 	state = irqentry_enter(regs);
 
 	instrumentation_begin();
-	handle_page_fault(regs, error_code, address);
+	handle_page_fault(regs, error_code, address, state);
 	instrumentation_end();
 
 	irqentry_exit(regs, state);
