@@ -470,15 +470,23 @@ void __init efi_dump_pagetable(void)
  */
 void efi_enter_mm(void)
 {
+	unsigned long flags;
+
+	protect_inband_mm(flags);
 	efi_prev_mm = current->active_mm;
 	current->active_mm = &efi_mm;
 	switch_mm(efi_prev_mm, &efi_mm, NULL);
+	unprotect_inband_mm(flags);
 }
 
 void efi_leave_mm(void)
 {
+	unsigned long flags;
+
+	protect_inband_mm(flags);
 	current->active_mm = efi_prev_mm;
 	switch_mm(&efi_mm, efi_prev_mm, NULL);
+	unprotect_inband_mm(flags);
 }
 
 static DEFINE_SPINLOCK(efi_runtime_lock);

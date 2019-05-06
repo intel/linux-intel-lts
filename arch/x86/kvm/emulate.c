@@ -4094,6 +4094,7 @@ static inline size_t fxstate_size(struct x86_emulate_ctxt *ctxt)
 static int em_fxsave(struct x86_emulate_ctxt *ctxt)
 {
 	struct fxregs_state fx_state;
+	unsigned long flags;
 	int rc;
 
 	rc = check_fxsr(ctxt);
