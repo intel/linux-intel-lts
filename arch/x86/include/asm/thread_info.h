@@ -58,6 +58,7 @@
 struct task_struct;
 #include <asm/cpufeature.h>
 #include <linux/atomic.h>
+#include <dovetail/thread_info.h>
 
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
@@ -66,12 +67,15 @@ struct thread_info {
 #ifdef CONFIG_SMP
 	u32			cpu;		/* current CPU */
 #endif
+	struct oob_thread_state	oob_state;	/* co-kernel thread state */
 };
 
 #define INIT_THREAD_INFO(tsk)			\
 {						\
 	.flags		= 0,			\
 }
+
+#define ti_local_flags(__ti)	((__ti)->status)
 
 #else /* !__ASSEMBLY__ */
 
@@ -104,6 +108,7 @@ struct thread_info {
 #define TIF_SPEC_FORCE_UPDATE	23	/* Force speculation MSR update in context switch */
 #define TIF_FORCED_TF		24	/* true if TF in eflags artificially */
 #define TIF_BLOCKSTEP		25	/* set when we want DEBUGCTLMSR_BTF */
+#define TIF_MAYDAY		26	/* emergency trap pending */
 #define TIF_LAZY_MMU_UPDATES	27	/* task is updating the mmu lazily */
 #define TIF_ADDR32		29	/* 32-bit address space on 64 bits */
 
@@ -125,6 +130,7 @@ struct thread_info {
 #define _TIF_IO_BITMAP		(1 << TIF_IO_BITMAP)
 #define _TIF_SPEC_FORCE_UPDATE	(1 << TIF_SPEC_FORCE_UPDATE)
 #define _TIF_FORCED_TF		(1 << TIF_FORCED_TF)
+#define _TIF_MAYDAY		(1 << TIF_MAYDAY)
 #define _TIF_BLOCKSTEP		(1 << TIF_BLOCKSTEP)
 #define _TIF_LAZY_MMU_UPDATES	(1 << TIF_LAZY_MMU_UPDATES)
 #define _TIF_ADDR32		(1 << TIF_ADDR32)
@@ -221,9 +227,14 @@ static inline int arch_within_stack_frames(const void * const stack,
  * have to worry about atomic accesses.
  */
 #define TS_COMPAT		0x0002	/* 32bit syscall active (64BIT)*/
-#define TS_OOB			0x0004	/* Thread is running out-of-band */
+/* bits 2 and 3 reserved for compat */
+#define TS_OOB			0x0010	/* Thread is running out-of-band */
+#define TS_DOVETAIL		0x0020  /* Dovetail notifier enabled */
+#define TS_OFFSTAGE		0x0040	/* Thread is in-flight to OOB context */
 
 #define _TLF_OOB		TS_OOB
+#define _TLF_DOVETAIL		TS_DOVETAIL
+#define _TLF_OFFSTAGE		TS_OFFSTAGE
 
 #ifndef __ASSEMBLY__
 #ifdef CONFIG_COMPAT
