@@ -486,10 +486,10 @@ static void do_bad_area(unsigned long far, unsigned long esr,
 	if (user_mode(regs)) {
 		const struct fault_info *inf = esr_to_fault_info(esr);
 
-		oob_trap_notify(ARM64_TRAP_ACCESS, regs);
+		mark_trap_entry(ARM64_TRAP_ACCESS, regs);
 		set_thread_esr(addr, esr);
 		arm64_force_sig_fault(inf->sig, inf->code, far, inf->name);
-		oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
+		mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 	} else {
 		__do_kernel_fault(addr, esr, regs);
 	}
@@ -542,7 +542,7 @@ static int __kprobes do_page_fault(unsigned long far, unsigned long esr,
 	if (kprobe_page_fault(regs, esr))
 		return 0;
 
-	oob_trap_notify(ARM64_TRAP_ACCESS, regs);
+	mark_trap_entry(ARM64_TRAP_ACCESS, regs);
 
 	/*
 	 * If we're in an interrupt or have no user context, we must not take
@@ -741,7 +741,7 @@ bad_area:
 no_context:
 	__do_kernel_fault(addr, esr, regs);
 out:
-	oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
+	mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 	return 0;
 }
 
@@ -778,7 +778,7 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	const struct fault_info *inf;
 	unsigned long siaddr;
 
-	oob_trap_notify(ARM64_TRAP_SEA, regs);
+	mark_trap_entry(ARM64_TRAP_SEA, regs);
 
 	inf = esr_to_fault_info(esr);
 
@@ -802,7 +802,7 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	}
 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
 out:
-	oob_trap_unwind(ARM64_TRAP_SEA, regs);
+	mark_trap_exit(ARM64_TRAP_SEA, regs);
 
 	return 0;
 }
@@ -895,7 +895,7 @@ void do_mem_abort(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	if (!inf->fn(far, esr, regs))
 		return;
 
-	oob_trap_notify(ARM64_TRAP_ACCESS, regs);
+	mark_trap_entry(ARM64_TRAP_ACCESS, regs);
 
 	if (!user_mode(regs))
 		die_kernel_fault(inf->name, addr, esr, regs);
@@ -906,18 +906,19 @@ void do_mem_abort(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	 * address to the signal handler.
 	 */
 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, addr, esr);
-	oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
+
+	mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 }
 NOKPROBE_SYMBOL(do_mem_abort);
 
 void do_sp_pc_abort(unsigned long addr, unsigned long esr, struct pt_regs *regs)
 {
-	oob_trap_notify(ARM64_TRAP_ALIGN, regs);
+	mark_trap_entry(ARM64_TRAP_ALIGN, regs);
 
 	arm64_notify_die("SP/PC alignment exception", regs, SIGBUS, BUS_ADRALN,
 			 addr, esr);
 
-	oob_trap_unwind(ARM64_TRAP_ALIGN, regs);
+	mark_trap_exit(ARM64_TRAP_ALIGN, regs);
 }
 NOKPROBE_SYMBOL(do_sp_pc_abort);
 
@@ -977,7 +978,7 @@ void do_debug_exception(unsigned long addr_if_watchpoint, unsigned long esr,
 	const struct fault_info *inf = esr_to_debug_fault_info(esr);
 	unsigned long pc = instruction_pointer(regs);
 
-	oob_trap_notify(ARM64_TRAP_DEBUG, regs);
+	mark_trap_entry(ARM64_TRAP_DEBUG, regs);
 
 	debug_exception_enter(regs);
 
@@ -990,7 +991,7 @@ void do_debug_exception(unsigned long addr_if_watchpoint, unsigned long esr,
 
 	debug_exception_exit(regs);
 
-	oob_trap_unwind(ARM64_TRAP_DEBUG, regs);
+	mark_trap_exit(ARM64_TRAP_DEBUG, regs);
 }
 NOKPROBE_SYMBOL(do_debug_exception);
 
