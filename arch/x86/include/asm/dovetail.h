@@ -9,6 +9,7 @@
 #if !defined(__ASSEMBLY__) && defined(CONFIG_DOVETAIL)
 
 #include <asm/io_bitmap.h>
+#include <linux/compat.h>
 
 static inline void arch_dovetail_exec_prepare(void)
 { }
@@ -25,6 +26,14 @@ void arch_dovetail_switch_finish(bool enter_inband)
 	if (unlikely(ti_work & _TIF_IO_BITMAP))
 		tss_update_io_bitmap();
 }
+
+/*
+ * 172 is __NR_prctl from unistd in compat mode, without #inclusion
+ * hell. At the end of the day, this number is written in stone to
+ * honor the ABI stability promise anyway.
+ */
+#define arch_dovetail_is_syscall(__nr)	\
+	(in_compat_syscall() ? (__nr) == 172 : (__nr) == __NR_prctl)
 
 #endif
 
