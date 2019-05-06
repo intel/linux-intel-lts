@@ -12,6 +12,7 @@ config INTEL_SEP
 config SEP
 	tristate "SEP kernel driver"
 	depends on INTEL_SEP
+	depends on ACPI && PCI
 	default m
 
 config SEP_ACRN
