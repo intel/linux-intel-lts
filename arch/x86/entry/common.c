@@ -40,6 +40,15 @@ __visible noinstr void do_syscall_64(unsigned long nr, struct pt_regs *regs)
 {
 	nr = syscall_enter_from_user_mode(regs, nr);
 
+	if (dovetailing()) {
+		if (nr == EXIT_SYSCALL_OOB) {
+			hard_local_irq_disable();
+			return;
+		}
+		if (nr == EXIT_SYSCALL_TAIL)
+			goto done;
+	}
+
 	instrumentation_begin();
 	if (likely(nr < NR_syscalls)) {
 		nr = array_index_nospec(nr, NR_syscalls);
@@ -53,6 +62,7 @@ __visible noinstr void do_syscall_64(unsigned long nr, struct pt_regs *regs)
 #endif
 	}
 	instrumentation_end();
+done:
 	syscall_exit_to_user_mode(regs);
 }
 #endif
