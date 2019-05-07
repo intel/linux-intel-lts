@@ -524,6 +524,7 @@
 /* D-PHY regs */
 #define DPHY_ENABLE				(0x100)
 #define DPHY_INIT_CTRL0				(0x104)
+#define DPHY_INIT_CTRL1				(0x108)
 #define   SHUTDOWNZ				0
 #define   RESETZ				12
 #define DPHY_INIT_CTRL2				(0x10c)
@@ -533,6 +534,7 @@
 #define   CLR_DPHY_INIT_CTRL0(dphy, offset)	\
 					kmb_clr_bit_mipi(DPHY_INIT_CTRL0, \
 					(dphy+offset))
+#define DPHY_INIT_CTRL2				(0x10c)
 #define DPHY_FREQ_CTRL0_3			(0x11c)
 #define   SET_DPHY_FREQ_CTRL0_3(dphy, val)	\
 					kmb_write_bits_mipi(DPHY_FREQ_CTRL0_3 \

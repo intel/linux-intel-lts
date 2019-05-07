@@ -48,11 +48,33 @@
 #define MIPI_TX_CFG_CLK_KHZ         24000
 
 /*DPHY Tx test codes*/
-#define TEST_CODE_HS_FREQ_RANGE_CFG		0x44
-#define TEST_CODE_PLL_ANALOG_PROG		0x1F
-#define TEST_CODE_SLEW_RATE_OVERRIDE_CTRL	0xA0
-#define TEST_CODE_SLEW_RATE_DDL_LOOP_CTRL	0xA3
-#define TEST_CODE_SLEW_RATE_DDL_CYCLES		0xA4
+#define TEST_CODE_PLL_PROPORTIONAL_CHARGE_PUMP_CTRL	0x0E
+#define TEST_CODE_PLL_INTEGRAL_CHARGE_PUMP_CTRL		0x0F
+#define TEST_CODE_PLL_VCO_CTRL				0x12
+#define TEST_CODE_PLL_GMP_CTRL				0x13
+#define TEST_CODE_PLL_PHASE_ERR_CTRL			0x14
+#define TEST_CODE_PLL_LOCK_FILTER			0x15
+#define TEST_CODE_PLL_UNLOCK_FILTER			0x16
+#define TEST_CODE_PLL_INPUT_DIVIDER			0x17
+#define TEST_CODE_PLL_FEEDBACK_DIVIDER			0x18
+#define   PLL_FEEDBACK_DIVIDER_HIGH			(1 << 7)
+#define TEST_CODE_PLL_OUTPUT_CLK_SEL			0x19
+#define   PLL_N_OVR_EN					(1 << 4)
+#define   PLL_M_OVR_EN					(1 << 5)
+#define TEST_CODE_PLL_CHARGE_PUMP_BIAS			0x1C
+#define TEST_CODE_PLL_LOCK_DETECTOR			0x1D
+#define TEST_CODE_HS_FREQ_RANGE_CFG			0x44
+#define TEST_CODE_PLL_ANALOG_PROG			0x1F
+#define TEST_CODE_SLEW_RATE_OVERRIDE_CTRL		0xA0
+#define TEST_CODE_SLEW_RATE_DDL_LOOP_CTRL		0xA3
+#define TEST_CODE_SLEW_RATE_DDL_CYCLES			0xA4
+
+/* D-Phy params  */
+#define PLL_N_MIN	0
+#define PLL_N_MAX	15
+#define PLL_M_MIN	62
+#define PLL_M_MAX	623
+#define PLL_FVCO_MAX	1250
 
 /*
  * These are added here only temporarily for testing,
@@ -800,8 +822,158 @@ static inline void set_test_mode_src_osc_freq_target_hi_bits(u32 dphy_no,
 	test_mode_send(dphy_no, TEST_CODE_SLEW_RATE_DDL_CYCLES, data);
 }
 
+struct vco_params {
+	u32 freq;
+	u32 range;
+	u32 divider;
+};
+
+static struct vco_params vco_table[] = {
+	{52, 0x3f, 8},
+	{80, 0x39, 8},
+	{105, 0x2f, 4},
+	{160, 0x29, 4},
+	{210, 0x1f, 2},
+	{320, 0x19, 2},
+	{420, 0x0f, 1},
+	{630, 0x09, 1},
+	{1100, 0x03, 1},
+	{0xffff, 0x01, 1},
+};
+
+static void mipi_tx_get_vco_params(struct vco_params *vco)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(vco_table); i++) {
+		if (vco->freq < vco_table[i].freq) {
+			*vco = vco_table[i];
+			return;
+		}
+	}
+	WARN_ONCE(1, "Invalid vco freq = %u for PLL setup\n", vco->freq);
+}
+
+static void mipi_tx_pll_setup(u32 dphy_no, u32 ref_clk_mhz, u32 target_freq_mhz)
+{
+	/* pll_ref_clk: - valid range: 2~64 MHz; Typically 24 MHz
+	 * Fvco: - valid range: 320~1250 MHz (Gen3 D-PHY)
+	 * Fout: - valid range: 40~1250 MHz (Gen3 D-PHY)
+	 * n: - valid range [0 15]
+	 * N: - N = n + 1
+	 *	-valid range: [1 16]
+	 *	-conditions: - (pll_ref_clk / N) >= 2 MHz
+	 *		-(pll_ref_clk / N) <= 8 MHz
+	 * m: valid range [62 623]
+	 * M: - M = m + 2
+	 *	-valid range [64 625]
+	 *	-Fvco = (M/N) * pll_ref_clk
+	 */
+	struct vco_params vco_p = {
+		.range = 0,
+		.divider = 1,
+	};
+	u32 best_n = 0, best_m = 0;
+	u32 n = 0, m = 0, div = 0, delta, freq = 0, t_freq;
+	u32 best_freq_delta = 3000;
+
+	vco_p.freq = target_freq_mhz;
+	mipi_tx_get_vco_params(&vco_p);
+	/*search pll n parameter */
+	for (n = PLL_N_MIN; n <= PLL_N_MAX; n++) {
+		/*calculate the pll input frequency division ratio
+		 * multiply by 1000 for precision -
+		 * no floating point, add n for rounding
+		 */
+		div = ((ref_clk_mhz * 1000) + n)/(n+1);
+		/*found a valid n parameter */
+		if ((div < 2000 || div > 8000))
+			continue;
+		/*search pll m parameter */
+		for (m = PLL_M_MIN; m <= PLL_M_MAX; m++) {
+			/*calculate the Fvco(DPHY PLL output frequency)
+			 * using the current n,m params
+			 */
+			freq = div * (m + 2);
+			freq /= 1000;
+			/* trim the potential pll freq to max supported*/
+			if (freq > PLL_FVCO_MAX)
+				continue;
+
+			delta = abs(freq - target_freq_mhz);
+			/*select the best (closest to target pll freq)
+			 * n,m parameters so far
+			 */
+			if (delta < best_freq_delta) {
+				best_n = n;
+				best_m = m;
+				best_freq_delta = delta;
+			}
+		}
+	}
+
+	/*Program vco_cntrl parameter
+	 *PLL_VCO_Control[5:0] = pll_vco_cntrl_ovr,
+	 * PLL_VCO_Control[6]   = pll_vco_cntrl_ovr_en
+	 */
+	test_mode_send(dphy_no, TEST_CODE_PLL_VCO_CTRL, (vco_p.range
+			| (1 << 6)));
+
+	/*Program m, n pll parameters */
+
+	/*PLL_Input_Divider_Ratio[3:0] = pll_n_ovr */
+	test_mode_send(dphy_no, TEST_CODE_PLL_INPUT_DIVIDER, (best_n & 0x0f));
+
+	/* m - low nibble PLL_Loop_Divider_Ratio[4:0] = pll_m_ovr[4:0] */
+	test_mode_send(dphy_no, TEST_CODE_PLL_FEEDBACK_DIVIDER,
+			(best_m & 0x1f));
+
+	/*m -high nibble PLL_Loop_Divider_Ratio[4:0] = pll_m_ovr[9:5] */
+	test_mode_send(dphy_no, TEST_CODE_PLL_FEEDBACK_DIVIDER,
+			((best_m >> 5) & 0x1f) | PLL_FEEDBACK_DIVIDER_HIGH);
+
+	/*enable overwrite of n,m parameters :pll_n_ovr_en, pll_m_ovr_en*/
+	test_mode_send(dphy_no, TEST_CODE_PLL_OUTPUT_CLK_SEL,
+			(PLL_N_OVR_EN | PLL_M_OVR_EN));
+
+	/*Program Charge-Pump parameters */
+
+	/*pll_prop_cntrl-fixed values for prop_cntrl from DPHY doc */
+	t_freq = target_freq_mhz * vco_p.divider;
+	test_mode_send(dphy_no, TEST_CODE_PLL_PROPORTIONAL_CHARGE_PUMP_CTRL,
+			((t_freq > 1150) ? 0x0C : 0x0B));
+
+	/*pll_int_cntrl-fixed value for int_cntrl from DPHY doc */
+	test_mode_send(dphy_no, TEST_CODE_PLL_INTEGRAL_CHARGE_PUMP_CTRL,
+			0x00);
+
+	/*pll_gmp_cntrl-fixed value for gmp_cntrl from DPHY doci */
+	test_mode_send(dphy_no, TEST_CODE_PLL_GMP_CTRL, 0x10);
+
+	/*pll_cpbias_cntrl-fixed value for cpbias_cntrl from DPHY doc */
+	test_mode_send(dphy_no, TEST_CODE_PLL_CHARGE_PUMP_BIAS, 0x10);
+
+	/*PLL Lock Configuration */
+
+	/*pll_th1 -Lock Detector Phase error threshold,
+	 * document gives fixed value
+	 */
+	test_mode_send(dphy_no, TEST_CODE_PLL_PHASE_ERR_CTRL, 0x02);
+
+	/*pll_th2 - Lock Filter length, document gives fixed value */
+	test_mode_send(dphy_no, TEST_CODE_PLL_LOCK_FILTER, 0x60);
+
+	/*pll_th3- PLL Unlocking filter, document gives fixed value */
+	test_mode_send(dphy_no, TEST_CODE_PLL_UNLOCK_FILTER, 0x03);
+
+	/*pll_lock_sel-PLL Lock Detector Selection, document gives
+	 * fixed value
+	 */
+	test_mode_send(dphy_no, TEST_CODE_PLL_LOCK_DETECTOR, 0x02);
+}
+
 static void dphy_init_sequence(struct mipi_ctrl_cfg *cfg, u32 dphy_no,
-			       enum dphy_mode mode)
+		enum dphy_mode mode)
 {
 	u32 test_code = 0;
 	u32 test_data = 0, val;
@@ -904,7 +1076,15 @@ static void dphy_init_sequence(struct mipi_ctrl_cfg *cfg, u32 dphy_no,
 		/*Set PLL regulator in bypass */
 		test_mode_send(dphy_no, TEST_CODE_PLL_ANALOG_PROG, 0x01);
 
-		/*TODO - PLL Parameters Setup */
+		/* PLL Parameters Setup */
+		mipi_tx_pll_setup(dphy_no, cfg->ref_clk_khz/1000,
+				cfg->lane_rate_mbps/2);
+
+		/*Set clksel */
+		kmb_write_bits_mipi(DPHY_INIT_CTRL1, 18, 2, 0x01);
+
+		/*Set pll_shadow_control */
+		kmb_write_bits_mipi(DPHY_INIT_CTRL1, 16, 1, 0x01);
 	}
 
 	/*Send NORMAL OPERATION test code */
