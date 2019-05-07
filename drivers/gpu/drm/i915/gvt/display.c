@@ -530,7 +530,7 @@ void intel_gvt_init_pipe_info(struct intel_gvt *gvt)
 	}
 }
 
-bool gvt_emulate_hdmi = true;
+bool gvt_emulate_hdmi;
 
 int setup_virtual_monitors(struct intel_vgpu *vgpu)
 {

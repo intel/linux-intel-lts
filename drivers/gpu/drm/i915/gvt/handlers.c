@@ -3129,13 +3129,9 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 	MMIO_PLANES_DH(PLANE_AUX_DIST, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 	MMIO_PLANES_DH(PLANE_AUX_OFFSET, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 
-	if (i915_modparams.avail_planes_per_pipe) {
-		MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, NULL);
-		MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, NULL);
-	} else {
-		MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, skl_plane_mmio_write);
-		MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, skl_plane_mmio_write);
-	}
+	MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL,
+			skl_plane_mmio_write);
+	MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 
 	MMIO_PLANES_DH(PLANE_NV12_BUF_CFG, D_SKL_PLUS, NULL,
 		       pv_plane_wm_mmio_write);
