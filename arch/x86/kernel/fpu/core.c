@@ -15,6 +15,7 @@
 
 #include <linux/hardirq.h>
 #include <linux/pkeys.h>
+#include <linux/cpuhotplug.h>
 
 #define CREATE_TRACE_POINTS
 #include <asm/trace/fpu.h>
@@ -39,6 +40,9 @@ DEFINE_PER_CPU(struct fpu *, fpu_fpregs_owner_ctx);
  */
 bool irq_fpu_usable(void)
 {
+	if (running_oob())
+		return false;
+
 	if (WARN_ON_ONCE(in_nmi()))
 		return false;
 
@@ -138,10 +142,14 @@ EXPORT_SYMBOL_GPL(__restore_fpregs_from_fpstate);
 
 void kernel_fpu_begin_mask(unsigned int kfpu_mask)
 {
+	unsigned long flags;
+
 	preempt_disable();
 
 	WARN_ON_FPU(!irq_fpu_usable());
 	WARN_ON_FPU(this_cpu_read(in_kernel_fpu));
+
+	flags = hard_cond_local_irq_save();
 
 	this_cpu_write(in_kernel_fpu, true);
 
@@ -158,6 +166,8 @@ void kernel_fpu_begin_mask(unsigned int kfpu_mask)
 
 	if (unlikely(kfpu_mask & KFPU_387) && boot_cpu_has(X86_FEATURE_FPU))
 		asm volatile ("fninit");
+
+	hard_cond_local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(kernel_fpu_begin_mask);
 
@@ -176,16 +186,18 @@ EXPORT_SYMBOL_GPL(kernel_fpu_end);
  */
 void fpu_sync_fpstate(struct fpu *fpu)
 {
+	unsigned long flags;
+
 	WARN_ON_FPU(fpu != &current->thread.fpu);
 
-	fpregs_lock();
+	flags = fpregs_lock();
 	trace_x86_fpu_before_save(fpu);
 
 	if (!test_thread_flag(TIF_NEED_FPU_LOAD))
 		save_fpregs_to_fpstate(fpu);
 
 	trace_x86_fpu_after_save(fpu);
-	fpregs_unlock();
+	fpregs_unlock(flags);
 }
 
 static inline void fpstate_init_xstate(struct xregs_state *xsave)
@@ -237,6 +249,7 @@ int fpu_clone(struct task_struct *dst)
 {
 	struct fpu *src_fpu = &current->thread.fpu;
 	struct fpu *dst_fpu = &dst->thread.fpu;
+	unsigned long flags;
 
 	/* The new task's FPU state cannot be valid in the hardware. */
 	dst_fpu->last_cpu = -1;
@@ -255,13 +268,13 @@ int fpu_clone(struct task_struct *dst)
 	 * state.  Otherwise save the FPU registers directly into the
 	 * child's FPU context, without any memory-to-memory copying.
 	 */
-	fpregs_lock();
+	flags = fpregs_lock();
 	if (test_thread_flag(TIF_NEED_FPU_LOAD))
 		memcpy(&dst_fpu->state, &src_fpu->state, fpu_kernel_xstate_size);
 
 	else
 		save_fpregs_to_fpstate(dst_fpu);
-	fpregs_unlock();
+	fpregs_unlock(flags);
 
 	set_tsk_thread_flag(dst, TIF_NEED_FPU_LOAD);
 
@@ -282,7 +295,9 @@ int fpu_clone(struct task_struct *dst)
  */
 void fpu__drop(struct fpu *fpu)
 {
-	preempt_disable();
+	unsigned long flags;
+
+	flags = hard_preempt_disable();
 
 	if (fpu == &current->thread.fpu) {
 		/* Ignore delayed exceptions from user space */
@@ -294,7 +309,7 @@ void fpu__drop(struct fpu *fpu)
 
 	trace_x86_fpu_dropped(fpu);
 
-	preempt_enable();
+	hard_preempt_enable(flags);
 }
 
 /*
@@ -328,8 +343,9 @@ static inline unsigned int init_fpstate_copy_size(void)
 static void fpu_reset_fpstate(void)
 {
 	struct fpu *fpu = &current->thread.fpu;
+	unsigned long flags;
 
-	fpregs_lock();
+	flags = fpregs_lock();
 	fpu__drop(fpu);
 	/*
 	 * This does not change the actual hardware registers. It just
@@ -346,7 +362,7 @@ static void fpu_reset_fpstate(void)
 	 */
 	memcpy(&fpu->state, &init_fpstate, init_fpstate_copy_size());
 	set_thread_flag(TIF_NEED_FPU_LOAD);
-	fpregs_unlock();
+	fpregs_unlock(flags);
 }
 
 /*
@@ -356,12 +372,14 @@ static void fpu_reset_fpstate(void)
  */
 void fpu__clear_user_states(struct fpu *fpu)
 {
+	unsigned long flags;
+
 	WARN_ON_FPU(fpu != &current->thread.fpu);
 
-	fpregs_lock();
+	flags = fpregs_lock();
 	if (!cpu_feature_enabled(X86_FEATURE_FPU)) {
 		fpu_reset_fpstate();
-		fpregs_unlock();
+		fpregs_unlock(flags);
 		return;
 	}
 
@@ -385,7 +403,7 @@ void fpu__clear_user_states(struct fpu *fpu)
 	 * current's FPU is marked active.
 	 */
 	fpregs_mark_activate();
-	fpregs_unlock();
+	fpregs_unlock(flags);
 }
 
 void fpu_flush_thread(void)
@@ -397,10 +415,14 @@ void fpu_flush_thread(void)
  */
 void switch_fpu_return(void)
 {
+	unsigned long flags;
+
 	if (!static_cpu_has(X86_FEATURE_FPU))
 		return;
 
+	flags = hard_cond_local_irq_save();
 	fpregs_restore_userregs();
+	hard_cond_local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(switch_fpu_return);
 
@@ -500,3 +522,71 @@ int fpu__exception_code(struct fpu *fpu, int trap_nr)
 	 */
 	return 0;
 }
+
+#ifdef CONFIG_DOVETAIL
+
+/*
+ * Holds the in-kernel fpu state when preempted by a task running on
+ * the out-of-band stage.
+ */
+static DEFINE_PER_CPU(struct fpu *, in_kernel_fpstate);
+
+static int fpu__init_kernel_fpstate(unsigned int cpu)
+{
+	struct fpu *fpu;
+
+	fpu = kzalloc(sizeof(*fpu) + fpu_kernel_xstate_size, GFP_KERNEL);
+	if (fpu == NULL)
+		return -ENOMEM;
+
+	this_cpu_write(in_kernel_fpstate, fpu);
+	fpstate_init(&fpu->state);
+
+	return 0;
+}
+
+static int fpu__drop_kernel_fpstate(unsigned int cpu)
+{
+	struct fpu *fpu = this_cpu_read(in_kernel_fpstate);
+
+	kfree(fpu);
+
+	return 0;
+}
+
+void fpu__suspend_inband(void)
+{
+	struct fpu *kfpu = this_cpu_read(in_kernel_fpstate);
+	struct task_struct *tsk = current;
+
+	if (kernel_fpu_disabled()) {
+		save_fpregs_to_fpstate(kfpu);
+		__cpu_invalidate_fpregs_state();
+		oob_fpu_set_preempt(&tsk->thread.fpu);
+	}
+}
+
+void fpu__resume_inband(void)
+{
+	struct fpu *kfpu = this_cpu_read(in_kernel_fpstate);
+	struct task_struct *tsk = current;
+
+	if (oob_fpu_preempted(&tsk->thread.fpu)) {
+		restore_fpregs_from_fpstate(&kfpu->state);
+		__cpu_invalidate_fpregs_state();
+		oob_fpu_clear_preempt(&tsk->thread.fpu);
+	} else if (!(tsk->flags & PF_KTHREAD) &&
+		test_thread_flag(TIF_NEED_FPU_LOAD))
+		switch_fpu_return();
+}
+
+static int __init fpu__init_dovetail(void)
+{
+	cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
+			"platform/x86/dovetail:online",
+			fpu__init_kernel_fpstate, fpu__drop_kernel_fpstate);
+	return 0;
+}
+core_initcall(fpu__init_dovetail);
+
+#endif

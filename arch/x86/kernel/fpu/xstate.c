@@ -916,6 +916,7 @@ int arch_set_user_pkey_access(struct task_struct *tsk, int pkey,
 			      unsigned long init_val)
 {
 	u32 old_pkru, new_pkru_bits = 0;
+	unsigned long flags;
 	int pkey_shift;
 
 	/*
@@ -943,12 +944,16 @@ int arch_set_user_pkey_access(struct task_struct *tsk, int pkey,
 	pkey_shift = pkey * PKRU_BITS_PER_PKEY;
 	new_pkru_bits <<= pkey_shift;
 
+	flags = hard_cond_local_irq_save();
+
 	/* Get old PKRU and mask off any old bits in place: */
 	old_pkru = read_pkru();
 	old_pkru &= ~((PKRU_AD_BIT|PKRU_WD_BIT) << pkey_shift);
 
 	/* Write old part along with new part: */
 	write_pkru(old_pkru | new_pkru_bits);
+
+	hard_cond_local_irq_restore(flags);
 
 	return 0;
 }
