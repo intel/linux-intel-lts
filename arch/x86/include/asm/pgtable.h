@@ -137,6 +137,7 @@ static inline u32 read_pkru(void)
 static inline void write_pkru(u32 pkru)
 {
 	struct pkru_state *pk;
+	unsigned long flags;
 
 	if (!boot_cpu_has(X86_FEATURE_OSPKE))
 		return;
@@ -148,11 +149,11 @@ static inline void write_pkru(u32 pkru)
 	 * written to the CPU. The FPU restore on return to userland would
 	 * otherwise load the previous value again.
 	 */
-	fpregs_lock();
+	flags = fpregs_lock();
 	if (pk)
 		pk->pkru = pkru;
 	__write_pkru(pkru);
-	fpregs_unlock();
+	fpregs_unlock(flags);
 }
 
 static inline int pte_young(pte_t pte)
