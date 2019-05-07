@@ -881,8 +881,14 @@ int smb3_validate_negotiate(const unsigned int xid, struct cifs_tcon *tcon)
 	rc = SMB2_ioctl(xid, tcon, NO_FILE_ID, NO_FILE_ID,
 		FSCTL_VALIDATE_NEGOTIATE_INFO, true /* is_fsctl */,
 		(char *)pneg_inbuf, inbuflen, (char **)&pneg_rsp, &rsplen);
-
-	if (rc != 0) {
+	if (rc == -EOPNOTSUPP) {
+		/*
+		 * Old Windows versions or Netapp SMB server can return
+		 * not supported error. Client should accept it.
+		 */
+		cifs_dbg(VFS, "Server does not support validate negotiate\n");
+		return 0;
+	} else if (rc != 0) {
 		cifs_dbg(VFS, "validate protocol negotiate failed: %d\n", rc);
 		rc = -EIO;
 		goto out_free_inbuf;
@@ -1500,9 +1506,16 @@ SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
 	iov[1].iov_base = unc_path;
 	iov[1].iov_len = unc_path_len;
 
-	/* 3.11 tcon req must be signed if not encrypted. See MS-SMB2 3.2.4.1.1 */
+	/*
+	 * 3.11 tcon req must be signed if not encrypted. See MS-SMB2 3.2.4.1.1
+	 * unless it is guest or anonymous user. See MS-SMB2 3.2.5.3.1
+	 * (Samba servers don't always set the flag so also check if null user)
+	 */
 	if ((ses->server->dialect == SMB311_PROT_ID) &&
-	    !smb3_encryption_required(tcon))
+	    !smb3_encryption_required(tcon) &&
+	    !(ses->session_flags &
+		    (SMB2_SESSION_FLAG_IS_GUEST|SMB2_SESSION_FLAG_IS_NULL)) &&
+	    ((ses->user_name != NULL) || (ses->sectype == Kerberos)))
 		req->sync_hdr.Flags |= SMB2_FLAGS_SIGNED;
 
 	memset(&rqst, 0, sizeof(struct smb_rqst));
