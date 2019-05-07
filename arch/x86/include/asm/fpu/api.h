@@ -41,16 +41,25 @@ static inline void kernel_fpu_begin(void)
  * fpu->state and set TIF_NEED_FPU_LOAD leaving CPU's FPU registers in
  * a random state.
  */
-static inline void fpregs_lock(void)
+static inline unsigned long fpregs_lock(void)
 {
-	preempt_disable();
-	local_bh_disable();
+	if (IS_ENABLED(CONFIG_IRQ_PIPELINE)) {
+		return hard_preempt_disable();
+	} else {
+		preempt_disable();
+		local_bh_disable();
+		return 0;
+	}
 }
 
-static inline void fpregs_unlock(void)
+static inline void fpregs_unlock(unsigned long flags)
 {
-	local_bh_enable();
-	preempt_enable();
+	if (IS_ENABLED(CONFIG_IRQ_PIPELINE)) {
+		hard_preempt_enable(flags);
+	} else {
+		local_bh_enable();
+		preempt_enable();
+	}
 }
 
 #ifdef CONFIG_X86_DEBUG_FPU
@@ -63,6 +72,10 @@ static inline void fpregs_assert_state_consistent(void) { }
  * Load the task FPU state before returning to userspace.
  */
 extern void switch_fpu_return(void);
+
+/* For Dovetail context switching. */
+void fpu__suspend_inband(void);
+void fpu__resume_inband(void);
 
 /*
  * Query the presence of one or more xfeatures. Works on any legacy CPU as well.
