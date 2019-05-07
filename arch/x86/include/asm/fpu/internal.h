@@ -15,6 +15,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
+#include <linux/dovetail.h>
 
 #include <asm/user.h>
 #include <asm/fpu/api.h>
@@ -518,6 +519,32 @@ static inline void __fpregs_load_activate(void)
 	clear_thread_flag(TIF_NEED_FPU_LOAD);
 }
 
+#ifdef CONFIG_DOVETAIL
+
+static inline void oob_fpu_set_preempt(struct fpu *fpu)
+{
+	fpu->preempted = 1;
+}
+
+static inline void oob_fpu_clear_preempt(struct fpu *fpu)
+{
+	fpu->preempted = 0;
+}
+
+static inline bool oob_fpu_preempted(struct fpu *old_fpu)
+{
+	return old_fpu->preempted;
+}
+
+#else
+
+static inline bool oob_fpu_preempted(struct fpu *old_fpu)
+{
+	return false;
+}
+
+#endif	/* !CONFIG_DOVETAIL */
+
 /*
  * FPU state switching for scheduling.
  *
@@ -542,7 +569,9 @@ static inline void __fpregs_load_activate(void)
  */
 static inline void switch_fpu_prepare(struct fpu *old_fpu, int cpu)
 {
-	if (static_cpu_has(X86_FEATURE_FPU) && !(current->flags & PF_KTHREAD)) {
+	if (static_cpu_has(X86_FEATURE_FPU) &&
+		!(current->flags & PF_KTHREAD) &&
+		!oob_fpu_preempted(old_fpu)) {
 		if (!copy_fpregs_to_fpstate(old_fpu))
 			old_fpu->last_cpu = -1;
 		else
