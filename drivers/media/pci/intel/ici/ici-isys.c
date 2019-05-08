@@ -1266,6 +1266,10 @@ static int isys_isr_one_ici(struct ipu_bus_device *adev)
 			% ICI_ISYS_MAX_PARALLEL_SOF;
 		break;
 	case IA_CSS_ISYS_RESP_TYPE_FRAME_EOF:
+		dev_dbg(&adev->dev,
+			"eof: handle %d: (index %u), timestamp 0x%16.16llx\n",
+			 resp.stream_handle,
+			 pipe->seq[pipe->seq_index].sequence, ts);
 		break;
 	default:
 		dev_err(&adev->dev, "%d:unknown response type %u\n",
