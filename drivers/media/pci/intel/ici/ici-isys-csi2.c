@@ -11,7 +11,6 @@
 #include "./ici/ici-isys-csi2.h"
 #include "isysapi/interface/ia_css_isysapi_fw_types.h"
 #include "ipu-platform-isys-csi2-reg.h"
-//#include "intel-ipu-isys-csi2-common.h"
 
 #define CSI2_ACCINV 8
 
