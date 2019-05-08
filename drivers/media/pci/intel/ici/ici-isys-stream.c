@@ -426,7 +426,6 @@ static int start_stream_firmware(struct ici_isys_stream *as)
 	stream_cfg.input_pins[0].input_res.height = source_fmt.ffmt.height;
 	stream_cfg.input_pins[0].dt =
 		ici_isys_format_code_to_mipi(source_fmt.ffmt.pixelformat);
-
 	/*
 	 * Only CSI2-BE has the capability to do crop,
 	 * so get the crop info from csi2-be.
@@ -452,7 +451,9 @@ static int start_stream_firmware(struct ici_isys_stream *as)
 			stream_cfg.crop[0].bottom_offset = ps.rect.top +
 				ps.rect.height;
 		}
-	}
+	} else
+		stream_cfg.input_pins[0].mipi_store_mode =
+			IPU_FW_ISYS_MIPI_STORE_MODE_DISCARD_LONG_HEADER;
 
 	as->prepare_firmware_stream_cfg(as, &stream_cfg);
 
