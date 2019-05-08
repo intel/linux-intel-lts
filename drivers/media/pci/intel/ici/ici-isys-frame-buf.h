@@ -75,7 +75,6 @@ struct ici_frame_short_buf {
 
 struct ici_isys_frame_buf_list {
 	void *drv_priv;
-	struct mutex mutex;
 	struct list_head getbuf_list;
 	struct list_head putbuf_list;
 

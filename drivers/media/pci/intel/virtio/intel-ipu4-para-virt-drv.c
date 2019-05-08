@@ -290,6 +290,7 @@ struct ici_frame_buf_wrapper *get_buf(struct virtual_stream *vstream, struct ici
 	int res;
 	unsigned i;
 	struct ici_frame_buf_wrapper *buf;
+	unsigned long flags = 0;
 
 	struct ici_kframe_plane *kframe_plane;
 	struct ici_isys_frame_buf_list *buf_list = &vstream->buf_list;
@@ -347,10 +348,10 @@ struct ici_frame_buf_wrapper *get_buf(struct virtual_stream *vstream, struct ici
 
 		break;
 	}
-	mutex_lock(&buf_list->mutex);
+	spin_lock_irqsave(&buf_list->lock, flags);
 	buf->state = ICI_BUF_PREPARED;
 	list_add_tail(&buf->uos_node, &buf_list->getbuf_list);
-	mutex_unlock(&buf_list->mutex);
+	spin_unlock_irqrestore(&buf_list->lock, flags);
 	return buf;
 }
 
@@ -620,6 +621,8 @@ static unsigned int stream_fop_poll(struct file *file, struct ici_stream_device 
 		return rval;
 	}
 
+	//For error cases we set the return value in backend to 0.
+	//0 on the CameraHAL side causes the timeout error.
 	rval = req->func_ret;
 
 	ipu4_virtio_fe_req_queue_put(req);
@@ -875,7 +878,6 @@ static void base_device_release(struct device *sd)
 int virt_frame_buf_init(struct ici_isys_frame_buf_list *buf_list)
 {
 	buf_list->drv_priv = NULL;
-	mutex_init(&buf_list->mutex);
 	spin_lock_init(&buf_list->lock);
 	spin_lock_init(&buf_list->short_packet_queue_lock);
 	INIT_LIST_HEAD(&buf_list->getbuf_list);
