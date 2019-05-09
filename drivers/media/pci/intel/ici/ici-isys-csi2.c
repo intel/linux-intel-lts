@@ -523,8 +523,12 @@ EXPORT_SYMBOL(ici_isys_csi2_init);
 
 void ici_isys_csi2_cleanup(struct ici_isys_csi2 *csi2)
 {
-    ici_isys_subdev_cleanup(&csi2->asd[0]);
-	ici_isys_stream_cleanup(&csi2->as[0]);
+	unsigned int i;
+
+	for (i = 0; i < NR_OF_CSI2_ICI_VC; i++) {
+		ici_isys_subdev_cleanup(&csi2->asd[i]);
+		ici_isys_stream_cleanup(&csi2->as[i]);
+	}
 }
 EXPORT_SYMBOL(ici_isys_csi2_cleanup);
 

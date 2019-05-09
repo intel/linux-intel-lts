@@ -905,21 +905,21 @@ static int ici_isys_stream_on(struct file *file, void *fh)
 
 	if (ip->interlaced) {
 		pr_err("** SKTODO: INTERLACE ENABLED **\n");
-	    if (ip->short_packet_source ==
-            IPU_ISYS_SHORT_PACKET_FROM_RECEIVER) {
-		    rval = ici_isys_frame_buf_short_packet_setup(
-			    as, &as->strm_format);
-		    if (rval)
-			    goto out_requeue;
+		if (ip->short_packet_source ==
+				IPU_ISYS_SHORT_PACKET_FROM_RECEIVER) {
+			rval = ici_isys_frame_buf_short_packet_setup(
+					as, &as->strm_format);
+			if (rval)
+				goto out_requeue;
 	    } else {
 		    memset(ip->isys->short_packet_trace_buffer, 0,
 			    IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE);
-            dma_sync_single_for_device(&as->isys->adev->dev,
-                as->isys->short_packet_trace_buffer_dma_addr,
-                IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE,
-                DMA_BIDIRECTIONAL);
-            ip->short_packet_trace_index = 0;
-        }
+		    dma_sync_single_for_device(&as->isys->adev->dev,
+				    as->isys->short_packet_trace_buffer_dma_addr,
+				    IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE,
+				    DMA_BIDIRECTIONAL);
+		    ip->short_packet_trace_index = 0;
+	    }
 	}
 
 	rval = ici_isys_set_streaming(as, 1);
@@ -1074,7 +1074,6 @@ static int ici_s_fmt_vid_cap_mplane(
 static int ici_poll_for_events(
 	struct ici_isys_stream *as)
 {
-//	return is_intel_ipu_hw_fpga();
 	return 0;
 }
 
