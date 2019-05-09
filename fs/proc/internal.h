@@ -213,7 +213,7 @@ extern const struct inode_operations proc_pid_link_inode_operations;
 void proc_init_kmemcache(void);
 void set_proc_pid_nlink(void);
 extern struct inode *proc_get_inode(struct super_block *, struct proc_dir_entry *);
-extern int proc_fill_super(struct super_block *, void *data, int flags);
+extern int proc_fill_super(struct super_block *);
 extern void proc_entry_rundown(struct proc_dir_entry *);
 
 /*
@@ -259,6 +259,15 @@ static inline void proc_sys_evict_inode(struct  inode *inode,
 #endif
 
 /*
+ * uid.c
+ */
+#ifdef CONFIG_PROC_UID
+extern int proc_uid_init(void);
+#else
+static inline void proc_uid_init(void) { }
+#endif
+
+/*
  * proc_tty.c
  */
 #ifdef CONFIG_TTY
@@ -271,7 +280,6 @@ static inline void proc_tty_init(void) {}
  * root.c
  */
 extern struct proc_dir_entry proc_root;
-extern int proc_parse_options(char *options, struct pid_namespace *pid);
 
 extern void proc_self_init(void);
 extern int proc_remount(struct super_block *, int *, char *);

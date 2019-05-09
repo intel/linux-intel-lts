@@ -55,8 +55,6 @@ extern void __init chrdev_init(void);
  * namei.c
  */
 extern int user_path_mountpoint_at(int, const char __user *, unsigned int, struct path *);
-extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
-			   const char *, unsigned int, struct path *);
 long do_mknodat(int dfd, const char __user *filename, umode_t mode,
 		unsigned int dev);
 long do_mkdirat(int dfd, const char __user *pathname, umode_t mode);
@@ -100,9 +98,11 @@ extern struct file *alloc_empty_file_noaccount(int, const struct cred *);
  * super.c
  */
 extern int do_remount_sb(struct super_block *, int, void *, int);
+extern int do_remount_sb2(struct vfsmount *, struct super_block *, int,
+								void *, int);
 extern bool trylock_super(struct super_block *sb);
 extern struct dentry *mount_fs(struct file_system_type *,
-			       int, const char *, void *);
+			       int, const char *, struct vfsmount *, void *);
 extern struct super_block *user_get_super(dev_t);
 
 /*

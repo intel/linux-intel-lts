@@ -223,5 +223,7 @@ struct prctl_mm_map {
 /* Control the LSM specific peer information */
 #define	PR_GET_DISPLAY_LSM	52
 #define	PR_SET_DISPLAY_LSM	53
+#define PR_SET_VMA		0x53564d41
+# define PR_SET_VMA_ANON_NAME		0
 
 #endif /* _LINUX_PRCTL_H */

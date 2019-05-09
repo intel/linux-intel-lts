@@ -303,12 +303,6 @@ PHONY += vdso_install
 vdso_install:
 	$(Q)$(MAKE) $(build)=arch/x86/entry/vdso $@
 
-archprepare: checkbin
-checkbin:
-ifndef CC_HAVE_ASM_GOTO
-	@echo Compiler lacks asm-goto support.
-	@exit 1
-endif
 ifdef CONFIG_RETPOLINE
 ifeq ($(RETPOLINE_CFLAGS),)
 	@echo "You are building kernel with non-retpoline compiler." >&2
