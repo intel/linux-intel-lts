@@ -52,12 +52,14 @@ enum {
  * struct pwm_state - state of a PWM channel
  * @period: PWM period (in nanoseconds)
  * @duty_cycle: PWM duty cycle (in nanoseconds)
+ * @count: Repeat count of PWM waveforms.
  * @polarity: PWM polarity
  * @enabled: PWM enabled status
  */
 struct pwm_state {
 	unsigned int period;
 	unsigned int duty_cycle;
+	unsigned int count;
 	enum pwm_polarity polarity;
 	bool enabled;
 };

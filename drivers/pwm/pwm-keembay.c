@@ -29,7 +29,7 @@
 /* Mask */
 #define KMB_PWM_HIGH_MASK		GENMASK(31, 16)
 #define KMB_PWM_LOW_MASK		GENMASK(15, 0)
-#define KMB_PWM_COUNT_MASK		GENMASK(31, 0)
+#define KMB_PWM_REPEAT_COUNT_MASK	GENMASK(15, 0)
 
 /* PWM Register offset */
 #define KMB_PWM_LEADIN_OFFSET(ch)	(0x00 + 4 * (ch))
@@ -91,6 +91,10 @@ static void keembay_pwm_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
 	pwm_h_count = FIELD_GET(KMB_PWM_HIGH_MASK, buff) * NSEC_PER_SEC;
 	state->duty_cycle = DIV_ROUND_UP_ULL(pwm_h_count, clk_rate);
 	state->period = DIV_ROUND_UP_ULL(pwm_h_count + pwm_l_count, clk_rate);
+
+	/* Read repetition count */
+	buff = readl(priv->base + KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
+	state->count = buff & KMB_PWM_REPEAT_COUNT_MASK;
 }
 
 static int keembay_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
@@ -111,6 +115,15 @@ static int keembay_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	if (!state->enabled && current_state.enabled) {
 		keembay_pwm_disable(priv, pwm->hwpwm);
 		return 0;
+	}
+
+	if (state->count != current_state.count) {
+		if (state->count > KMB_PWM_COUNT_MAX)
+			return -EINVAL;
+
+		keembay_pwm_update_bits(priv, KMB_PWM_REPEAT_COUNT_MASK,
+					state->count,
+					KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
 	}
 
 	/*
