@@ -26,6 +26,7 @@
 
 #include "edac_mc.h"
 #include "edac_module.h"
+#include "igen6_edac.h"
 
 #define IGEN6_REVISION	"v2.5"
 
@@ -428,6 +429,20 @@ static const struct pci_device_id igen6_pci_tbl[] = {
 };
 MODULE_DEVICE_TABLE(pci, igen6_pci_tbl);
 
+static BLOCKING_NOTIFIER_HEAD(ibecc_err_handler_chain);
+
+int ibecc_err_register_notifer(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&ibecc_err_handler_chain, nb);
+}
+EXPORT_SYMBOL_GPL(ibecc_err_register_notifer);
+
+int ibecc_err_unregister_notifer(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&ibecc_err_handler_chain, nb);
+}
+EXPORT_SYMBOL_GPL(ibecc_err_unregister_notifer);
+
 static enum dev_type get_width(int dimm_l, u32 mad_dimm)
 {
 	u32 w = dimm_l ? MAD_DIMM_CH_DLW(mad_dimm) :
@@ -545,6 +560,7 @@ static void igen6_output_error(struct decoded_addr *res,
 	enum hw_event_mc_err_type type = ecclog & ECC_ERROR_LOG_UE ?
 					 HW_EVENT_ERR_UNCORRECTED :
 					 HW_EVENT_ERR_CORRECTED;
+	struct ibecc_err_info e;
 
 	edac_mc_handle_error(type, mci, 1,
 			     res->sys_addr >> PAGE_SHIFT,
@@ -552,6 +568,13 @@ static void igen6_output_error(struct decoded_addr *res,
 			     ECC_ERROR_LOG_SYND(ecclog),
 			     res->channel_idx, res->sub_channel_idx,
 			     -1, "", "");
+
+	/* Notify other handlers for further IBECC error handling */
+	memset(&e, 0, sizeof(e));
+	e.type	   = type;
+	e.sys_addr = res->sys_addr;
+	e.ecc_log  = ecclog;
+	blocking_notifier_call_chain(&ibecc_err_handler_chain, 0, &e);
 }
 
 static struct gen_pool *ecclog_gen_pool_create(void)
