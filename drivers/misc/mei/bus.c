@@ -505,6 +505,38 @@ static int mei_cldev_vt_support_check(struct mei_cl_device *cldev)
 	return cldev->me_cl->props.vt_supported ? 0 : -EOPNOTSUPP;
 }
 
+static inline int mei_cldev_vtag_alloc(struct mei_cl_device *cldev)
+{
+	struct mei_cl *cl = cldev->cl;
+	struct mei_cl_vtag *cl_vtag;
+
+	/* client supports virtualization and have not already allocated one */
+	if (mei_cldev_vt_support_check(cldev) ||
+	    list_first_entry_or_null(&cl->vtag_map, struct mei_cl_vtag, list))
+		return 0;
+
+	cl_vtag = mei_cl_vtag_alloc(NULL, 0);
+	if (IS_ERR(cl_vtag))
+		return -ENOMEM;
+
+	list_add_tail(&cl_vtag->list, &cl->vtag_map);
+	return 0;
+}
+
+static inline void mei_cldev_vtag_free(struct mei_cl_device *cldev)
+{
+	struct mei_cl *cl = cldev->cl;
+	struct mei_cl_vtag *cl_vtag;
+
+	cl_vtag = list_first_entry_or_null(&cl->vtag_map,
+					   struct mei_cl_vtag, list);
+	if (!cl_vtag)
+		return;
+
+	list_del(&cl_vtag->list);
+	kfree(cl_vtag);
+}
+
 /**
  * mei_cldev_enable - enable me client device
  *     create connection with me client
@@ -517,7 +549,6 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 {
 	struct mei_device *bus = cldev->bus;
 	struct mei_cl *cl;
-	struct mei_cl_vtag *cl_vtag;
 	int ret;
 
 	cl = cldev->cl;
@@ -542,22 +573,15 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 		goto out;
 	}
 
-	if (!mei_cldev_vt_support_check(cldev)) {
-		if (!list_first_entry_or_null(&cl->vtag_map,
-					      struct mei_cl_vtag, list)) {
-			cl_vtag = mei_cl_vtag_alloc(NULL, 0);
-			if (IS_ERR(cl_vtag)) {
-				ret = -ENOMEM;
-				goto out;
-			}
-
-			list_add_tail(&cl_vtag->list, &cl->vtag_map);
-		}
-	}
+	ret = mei_cldev_vtag_alloc(cldev);
+	if (ret)
+		goto out;
 
 	ret = mei_cl_connect(cl, cldev->me_cl, NULL);
-	if (ret < 0)
+	if (ret < 0) {
 		dev_err(&cldev->dev, "cannot connect\n");
+		mei_cldev_vtag_free(cldev);
+	}
 
 out:
 	mutex_unlock(&bus->device_lock);
@@ -597,7 +621,6 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 {
 	struct mei_device *bus;
 	struct mei_cl *cl;
-	struct mei_cl_vtag *cl_vtag;
 	int err;
 
 	if (!cldev)
@@ -611,12 +634,7 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 
 	mutex_lock(&bus->device_lock);
 
-	cl_vtag = list_first_entry_or_null(&cl->vtag_map,
-					   struct mei_cl_vtag, list);
-	if (cl_vtag) {
-		list_del(&cl_vtag->list);
-		kfree(cl_vtag);
-	}
+	mei_cldev_vtag_free(cldev);
 
 	if (!mei_cl_is_connected(cl)) {
 		dev_dbg(bus->dev, "Already disconnected\n");
