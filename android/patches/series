@@ -1,2 +1,6 @@
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
+
+# CVE-2019-5489
+0001-Change-mincore-to-count-mapped-pages-rather-than-cac-CVE-2019-5489.patch
+
