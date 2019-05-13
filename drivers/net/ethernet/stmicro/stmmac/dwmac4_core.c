@@ -64,6 +64,42 @@ static void dwmac4_core_init(struct mac_device_info *hw,
 	writel(value, ioaddr + GMAC_INT_EN);
 }
 
+void dwmac4_mac_start_tx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + GMAC_CONFIG);
+	value |= GMAC_CONFIG_TE;
+	writel(value, ioaddr + GMAC_CONFIG);
+}
+
+void dwmac4_mac_stop_tx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + GMAC_CONFIG);
+	value &= ~GMAC_CONFIG_TE;
+	writel(value, ioaddr + GMAC_CONFIG);
+}
+
+void dwmac4_mac_start_rx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + GMAC_CONFIG);
+	value |= GMAC_CONFIG_RE;
+	writel(value, ioaddr + GMAC_CONFIG);
+}
+
+void dwmac4_mac_stop_rx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + GMAC_CONFIG);
+	value &= ~GMAC_CONFIG_RE;
+	writel(value, ioaddr + GMAC_CONFIG);
+}
+
 static void dwmac4_rx_queue_enable(struct mac_device_info *hw,
 				   u8 mode, u32 queue)
 {
@@ -1077,6 +1113,10 @@ static void dwmac4_set_hw_vlan_mode(void __iomem *ioaddr,
 const struct stmmac_ops dwmac4_ops = {
 	.core_init = dwmac4_core_init,
 	.set_mac = stmmac_set_mac,
+	.start_tx = dwmac4_mac_start_tx,
+	.stop_tx = dwmac4_mac_stop_tx,
+	.start_rx = dwmac4_mac_start_rx,
+	.stop_rx = dwmac4_mac_stop_rx,
 	.rx_ipc = dwmac4_rx_ipc_enable,
 	.rx_queue_enable = dwmac4_rx_queue_enable,
 	.rx_queue_prio = dwmac4_rx_queue_priority,
@@ -1118,6 +1158,10 @@ const struct stmmac_ops dwmac4_ops = {
 const struct stmmac_ops dwmac410_ops = {
 	.core_init = dwmac4_core_init,
 	.set_mac = stmmac_dwmac4_set_mac,
+	.start_tx = dwmac4_mac_start_tx,
+	.stop_tx = dwmac4_mac_stop_tx,
+	.start_rx = dwmac4_mac_start_rx,
+	.stop_rx = dwmac4_mac_stop_rx,
 	.rx_ipc = dwmac4_rx_ipc_enable,
 	.rx_queue_enable = dwmac4_rx_queue_enable,
 	.rx_queue_prio = dwmac4_rx_queue_priority,
@@ -1159,6 +1203,10 @@ const struct stmmac_ops dwmac410_ops = {
 const struct stmmac_ops dwmac510_ops = {
 	.core_init = dwmac4_core_init,
 	.set_mac = stmmac_dwmac4_set_mac,
+	.start_tx = dwmac4_mac_start_tx,
+	.stop_tx = dwmac4_mac_stop_tx,
+	.start_rx = dwmac4_mac_start_rx,
+	.stop_rx = dwmac4_mac_stop_rx,
 	.rx_ipc = dwmac4_rx_ipc_enable,
 	.rx_queue_enable = dwmac4_rx_queue_enable,
 	.rx_queue_prio = dwmac4_rx_queue_priority,
