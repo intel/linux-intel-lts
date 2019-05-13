@@ -48,6 +48,7 @@
 #define MIPI_TX_CFG_CLK_KHZ         24000
 
 /*DPHY Tx test codes*/
+#define TEST_CODE_FSM_CONTROL				0x03
 #define TEST_CODE_PLL_PROPORTIONAL_CHARGE_PUMP_CTRL	0x0E
 #define TEST_CODE_PLL_INTEGRAL_CHARGE_PUMP_CTRL		0x0F
 #define TEST_CODE_PLL_VCO_CTRL				0x12
@@ -1081,10 +1082,10 @@ static void dphy_init_sequence(struct mipi_ctrl_cfg *cfg, u32 dphy_no,
 				cfg->lane_rate_mbps/2);
 
 		/*Set clksel */
-		kmb_write_bits_mipi(DPHY_INIT_CTRL1, 18, 2, 0x01);
+		kmb_write_bits_mipi(DPHY_INIT_CTRL1, PLL_CLKSEL_0, 2, 0x01);
 
 		/*Set pll_shadow_control */
-		kmb_write_bits_mipi(DPHY_INIT_CTRL1, 16, 1, 0x01);
+		kmb_set_bit_mipi(DPHY_INIT_CTRL1, PLL_SHADOW_CTRL);
 	}
 
 	/*Send NORMAL OPERATION test code */
@@ -1107,7 +1108,48 @@ static void dphy_init_sequence(struct mipi_ctrl_cfg *cfg, u32 dphy_no,
 
 	/* enable DATA LANES */
 	kmb_write_bits_mipi(DPHY_ENABLE, dphy_no * 2, 2,
-			    ((1 << cfg->active_lanes) - 1));
+			((1 << cfg->active_lanes) - 1));
+
+	/*Take D-PHY out of shutdown mode */
+	/* deassert SHUTDOWNZ signal*/
+	SET_DPHY_INIT_CTRL0(dphy_no, SHUTDOWNZ);
+	/*deassert RSTZ signal */
+	SET_DPHY_INIT_CTRL0(dphy_no, RESETZ);
+}
+
+static void dphy_wait_fsm(u32 dphy_no, enum dphy_tx_fsm fsm_state)
+{
+	enum dphy_tx_fsm val = DPHY_TX_POWERDWN;
+
+	do {
+		test_mode_send(dphy_no, TEST_CODE_FSM_CONTROL, 0x80);
+		/*TODO-need to add a time out and return failure */
+		val = GET_TEST_DOUT0_3(dphy_no);
+	} while (val != fsm_state);
+
+}
+
+static u32 wait_init_done(u32 dphy_no, u32 active_lanes)
+{
+	u32 stopstatedata = 0;
+	u32 data_lanes = (1 << active_lanes) - 1;
+
+	do {
+		stopstatedata = GET_STOPSTATE_DATA(dphy_no);
+		/*TODO-need to add a time out and return failure */
+	} while (stopstatedata != data_lanes);
+
+	return 0;
+}
+
+static u32 wait_pll_lock(u32 dphy_no)
+{
+	do {
+		;
+		/*TODO-need to add a time out and return failure */
+	} while (!GET_PLL_LOCK(dphy_no));
+
+	return 0;
 }
 
 static u32 mipi_tx_init_dphy(struct mipi_ctrl_cfg *cfg)
@@ -1133,9 +1175,22 @@ static u32 mipi_tx_init_dphy(struct mipi_ctrl_cfg *cfg)
 		 */
 		/*PHY #N+1 ('slave') */
 		dphy_init_sequence(cfg, dphy_no + 1, MIPI_DPHY_SLAVE);
-		/*TODO PHY #N master */
+
+		dphy_wait_fsm(dphy_no + 1, DPHY_TX_LOCK);
+
+		/*PHY #N master*/
+		dphy_init_sequence(cfg, dphy_no, MIPI_DPHY_MASTER);
+		/* wait for DPHY init to complete */
+		wait_init_done(dphy_no, MIPI_DPHY_D_LANES);
+		wait_init_done(dphy_no + 1,
+				cfg->active_lanes - MIPI_DPHY_D_LANES);
+		wait_pll_lock(dphy_no);
+		wait_pll_lock(dphy_no + 1);
+	} else {	/* Single DPHY */
+		dphy_init_sequence(cfg, dphy_no, MIPI_DPHY_MASTER);
+		wait_init_done(dphy_no, cfg->active_lanes);
+		wait_pll_lock(dphy_no);
 	}
-	/*TODO- Single DPHY */
 	return 0;
 }
 

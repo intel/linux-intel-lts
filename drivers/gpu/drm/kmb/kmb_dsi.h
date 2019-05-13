@@ -205,12 +205,30 @@ enum dphy_mode {
 	MIPI_DPHY_MASTER
 };
 
+enum dphy_tx_fsm {
+	DPHY_TX_POWERDWN = 0,
+	DPHY_TX_BGPON,
+	DPHY_TX_TERMCAL,
+	DPHY_TX_TERMCALUP,
+	DPHY_TX_OFFSETCAL,
+	DPHY_TX_LOCK,
+	DPHY_TX_SRCAL,
+	DPHY_TX_IDLE,
+	DPHY_TX_ULP,
+	DPHY_TX_LANESTART,
+	DPHY_TX_CLKALIGN,
+	DPHY_TX_DDLTUNNING,
+	DPHY_TX_ULP_FORCE_PLL,
+	DPHY_TX_LOCK_LOSS
+};
+
 struct mipi_data_type_params {
 	uint8_t size_constraint_pixels;
 	uint8_t size_constraint_bytes;
 	uint8_t pixels_per_pclk;
 	uint8_t bits_per_pclk;
 };
+
 struct mipi_tx_dsi_cfg {
 	uint8_t hfp_blank_en;	/*horizontal front porch blanking enable */
 	uint8_t eotp_en;	/*End of transmission packet enable */

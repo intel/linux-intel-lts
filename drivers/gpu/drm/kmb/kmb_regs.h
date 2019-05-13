@@ -524,9 +524,11 @@
 /* D-PHY regs */
 #define DPHY_ENABLE				(0x100)
 #define DPHY_INIT_CTRL0				(0x104)
-#define DPHY_INIT_CTRL1				(0x108)
 #define   SHUTDOWNZ				0
 #define   RESETZ				12
+#define DPHY_INIT_CTRL1				(0x108)
+#define   PLL_CLKSEL_0				18
+#define   PLL_SHADOW_CTRL			16
 #define DPHY_INIT_CTRL2				(0x10c)
 #define   SET_DPHY_INIT_CTRL0(dphy, offset)	\
 					kmb_set_bit_mipi(DPHY_INIT_CTRL0, \
@@ -540,6 +542,12 @@
 					kmb_write_bits_mipi(DPHY_FREQ_CTRL0_3 \
 					+ ((dphy/4)*4), (dphy % 4) * 8, \
 					6, val)
+
+#define MIPI_DPHY_STAT0_3			(0x134)
+#define	  GET_STOPSTATE_DATA(dphy)	\
+					(((kmb_read_mipi(MIPI_DPHY_STAT0_3 + \
+					(dphy/4)*4)) \
+					>> (((dphy % 4)*8)+4)) & 0x03)
 #define DPHY_TEST_CTRL0				(0x154)
 #define   SET_DPHY_TEST_CTRL0(dphy)	kmb_set_bit_mipi(DPHY_TEST_CTRL0, \
 					(dphy))
@@ -558,8 +566,11 @@
 #define   SET_TEST_DIN0_3(dphy, val)	kmb_write_mipi(DPHY_TEST_DIN0_3 + \
 					4, ((val) << (((dphy)%4)*8)))
 #define DPHY_TEST_DOUT0_3			(0x168)
-#define   GET_TEST_DOUT0_3(dphy)	(readl(DPHY_TEST_DOUT0_3 + 4) \
+#define   GET_TEST_DOUT0_3(dphy)	(kmb_read_mipi(DPHY_TEST_DOUT0_3 + 4) \
 					>> (((dphy)%4)*8) & 0xff)
+#define DPHY_PLL_LOCK				(0x188)
+#define   GET_PLL_LOCK(dphy)		(kmb_read_mipi(DPHY_PLL_LOCK) \
+					& (1 << (dphy - MIPI_DPHY6)))
 #define DPHY_CFG_CLK_EN				(0x18c)
 
 #define MIPI_TX_MSS_LCD_MIPI_CFG		(0x04)
