@@ -207,7 +207,8 @@ static int __init acrn_trace_init(void)
 
 	foreach_cpu(cpu, pcpu_num) {
 		sbuf = acrn_trace_devs[cpu].sbuf;
-		ret = sbuf_share_setup(cpu, ACRN_TRACE, sbuf);
+		BUG_ON(!virt_addr_valid(sbuf));
+		ret = sbuf_share_setup(cpu, ACRN_TRACE, virt_to_phys(sbuf));
 		if (ret < 0) {
 			pr_err("Failed to setup SBuf, cpuid %d\n", cpu);
 			goto out_sbuf;
@@ -243,7 +244,7 @@ out_dereg:
 
 out_sbuf:
 	for (i = --cpu; i >= 0; i--)
-		sbuf_share_setup(i, ACRN_TRACE, NULL);
+		sbuf_share_setup(i, ACRN_TRACE, 0);
 	cpu = pcpu_num;
 
 out_free:
@@ -268,7 +269,7 @@ static void __exit acrn_trace_exit(void)
 		misc_deregister(&acrn_trace_devs[cpu].miscdev);
 
 		/* set sbuf pointer to NULL in HV */
-		sbuf_share_setup(cpu, ACRN_TRACE, NULL);
+		sbuf_share_setup(cpu, ACRN_TRACE, 0);
 
 		/* free sbuf, per-cpu sbuf should be set NULL */
 		sbuf_free(acrn_trace_devs[cpu].sbuf);

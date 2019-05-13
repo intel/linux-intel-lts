@@ -95,7 +95,8 @@ struct acrn_hvlog {
 static struct acrn_hvlog *acrn_hvlog_devs[SBUF_HVLOG_TYPES];
 static uint16_t pcpu_nr = DEFAULT_PCPU_NR;
 static unsigned long long hvlog_buf_size;
-static unsigned long long hvlog_buf_base;
+static unsigned long long hvlog_buf_phyaddr_base;
+static void *hvlog_buf_virtaddr_base;
 
 static int __init early_hvlog(char *p)
 {
@@ -105,14 +106,14 @@ static int __init early_hvlog(char *p)
 	hvlog_buf_size = memparse(p, &p);
 	if (*p != '@')
 		return 0;
-	hvlog_buf_base = memparse(p + 1, &p);
+	hvlog_buf_phyaddr_base = memparse(p + 1, &p);
 
-	if (!!hvlog_buf_base && !!hvlog_buf_size) {
-		ret = memblock_reserve(hvlog_buf_base, hvlog_buf_size);
+	if (!!hvlog_buf_phyaddr_base && !!hvlog_buf_size) {
+		ret = memblock_reserve(hvlog_buf_phyaddr_base, hvlog_buf_size);
 		if (ret) {
 			pr_err("%s: Error reserving hvlog memblock\n",
 				__func__);
-			hvlog_buf_base = 0;
+			hvlog_buf_phyaddr_base = 0;
 			hvlog_buf_size = 0;
 			return ret;
 		}
@@ -219,8 +220,8 @@ static const struct file_operations acrn_hvlog_fops = {
 };
 
 /**
- * base0 = hvlog_buf_base;
- * base1 = hvlog_buf_base + (hvlog_buf_size >> 1)
+ * base0 = hvlog_buf_phyaddr_base;
+ * base1 = hvlog_buf_phyaddr_base + (hvlog_buf_size >> 1)
  * if there is valid data in base0, cur_logbuf = base1, last_logbuf = base0.
  * if there is valid data in base1, cur_logbuf = base0, last_logbuf = base1.
  * if there is no valid data both in base0 and base1, cur_logbuf = base0,
@@ -228,18 +229,20 @@ static const struct file_operations acrn_hvlog_fops = {
  */
 static void assign_hvlog_buf_base(uint64_t *cur_logbuf, uint64_t *last_logbuf)
 {
-	uint64_t base0, base1;
+	uint64_t base0, base1, offset;
 	uint32_t ele_num, size;
 	uint16_t pcpu_id;
+	void *sbuf;
 
-	base0 = hvlog_buf_base;
-	base1 = hvlog_buf_base + (hvlog_buf_size >> 1);
+	base0 = hvlog_buf_phyaddr_base;
+	base1 = hvlog_buf_phyaddr_base + (hvlog_buf_size >> 1);
 	size = (hvlog_buf_size >> 1) / pcpu_nr;
 	ele_num = (size - SBUF_HEAD_SIZE) / LOG_ENTRY_SIZE;
 
 	foreach_cpu(pcpu_id, pcpu_nr) {
-		if (sbuf_check_valid(ele_num, LOG_ENTRY_SIZE,
-					base0 + (size * pcpu_id))) {
+		offset = (base0 + (size * pcpu_id)) - hvlog_buf_phyaddr_base;
+		sbuf = hvlog_buf_virtaddr_base + offset;
+		if (sbuf_check_valid(ele_num, LOG_ENTRY_SIZE, sbuf)) {
 			*last_logbuf = base0;
 			*cur_logbuf = base1;
 			return;
@@ -247,8 +250,9 @@ static void assign_hvlog_buf_base(uint64_t *cur_logbuf, uint64_t *last_logbuf)
 	}
 
 	foreach_cpu(pcpu_id, pcpu_nr) {
-		if (sbuf_check_valid(ele_num, LOG_ENTRY_SIZE,
-					base1 + (size * pcpu_id))) {
+		offset = (base1 + (size * pcpu_id)) - hvlog_buf_phyaddr_base;
+		sbuf = hvlog_buf_virtaddr_base + offset;
+		if (sbuf_check_valid(ele_num, LOG_ENTRY_SIZE, sbuf)) {
 			*last_logbuf = base1;
 			*cur_logbuf = base0;
 			return;
@@ -267,6 +271,7 @@ static int init_hvlog_dev(uint64_t base, uint32_t hvlog_type)
 	shared_buf_t *sbuf;
 	struct acrn_hvlog *hvlog;
 	uint32_t ele_size, ele_num, size;
+	uint64_t offset;
 
 	if (!base)
 		return -ENODEV;
@@ -282,15 +287,17 @@ static int init_hvlog_dev(uint64_t base, uint32_t hvlog_type)
 		case SBUF_CUR_HVLOG:
 			snprintf(hvlog->name, sizeof(hvlog->name),
 						"acrn_hvlog_cur_%hu", idx);
-			sbuf = sbuf_construct(ele_num, ele_size,
-						base + (size * idx));
-			sbuf_share_setup(idx, ACRN_HVLOG, sbuf);
+			offset = (base + (size * idx)) - hvlog_buf_phyaddr_base;
+			sbuf = hvlog_buf_virtaddr_base + offset;
+			sbuf = sbuf_construct(ele_num, ele_size, sbuf);
+			sbuf_share_setup(idx, ACRN_HVLOG, base + (size * idx));
 			break;
 		case SBUF_LAST_HVLOG:
 			snprintf(hvlog->name, sizeof(hvlog->name),
 						"acrn_hvlog_last_%hu", idx);
-			sbuf = sbuf_check_valid(ele_num, ele_size,
-						base + (size * idx));
+			offset = (base + (size * idx)) - hvlog_buf_phyaddr_base;
+			sbuf = hvlog_buf_virtaddr_base + offset;
+			sbuf = sbuf_check_valid(ele_num, ele_size, sbuf);
 			hvlog_mark_unread(sbuf);
 			break;
 		default:
@@ -355,8 +362,14 @@ static int __init acrn_hvlog_init(void)
 		return -EINVAL;
 	}
 
-	if (!hvlog_buf_base || !hvlog_buf_size) {
+	if (!hvlog_buf_phyaddr_base || !hvlog_buf_size) {
 		pr_warn("no fixed memory reserve for hvlog.\n");
+		return 0;
+	}
+
+	hvlog_buf_virtaddr_base = ioremap(hvlog_buf_phyaddr_base, hvlog_buf_size);
+	if(!hvlog_buf_virtaddr_base) {
+		pr_info("%s: Error ioremap hvlog memblock.\n", __func__);
 		return 0;
 	}
 

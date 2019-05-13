@@ -168,7 +168,7 @@ int sbuf_get(shared_buf_t *sbuf, uint8_t *data)
 }
 EXPORT_SYMBOL(sbuf_get);
 
-int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf)
+int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, uint64_t gpa)
 {
 	struct sbuf_setup_param *ssp;
 	int ret;
@@ -179,13 +179,7 @@ int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf)
 	ssp = acrn_mempool_alloc(GFP_KERNEL);
 	ssp->pcpu_id = pcpu_id;
 	ssp->sbuf_id = sbuf_id;
-
-	if (!sbuf) {
-		ssp->gpa = 0;
-	} else {
-		BUG_ON(!virt_addr_valid(sbuf));
-		ssp->gpa = virt_to_phys(sbuf);
-	}
+	ssp->gpa = gpa;
 	pr_info("setup phys add = 0x%llx\n", ssp->gpa);
 
 	ret = hcall_setup_sbuf(virt_to_phys(ssp));
@@ -195,15 +189,14 @@ int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf)
 EXPORT_SYMBOL(sbuf_share_setup);
 
 shared_buf_t *sbuf_check_valid(uint32_t ele_num, uint32_t ele_size,
-				uint64_t paddr)
+				void *vaddr)
 {
 	shared_buf_t *sbuf;
 
-	if (!ele_num || !ele_size || !paddr)
+	if (!ele_num || !ele_size || !vaddr)
 		return NULL;
 
-	sbuf = (shared_buf_t *)phys_to_virt(paddr);
-	BUG_ON(!virt_addr_valid(sbuf));
+	sbuf = (shared_buf_t *)vaddr;
 
 	if ((sbuf->magic == SBUF_MAGIC) &&
 		(sbuf->ele_num == ele_num) &&
@@ -216,22 +209,21 @@ shared_buf_t *sbuf_check_valid(uint32_t ele_num, uint32_t ele_size,
 EXPORT_SYMBOL(sbuf_check_valid);
 
 shared_buf_t *sbuf_construct(uint32_t ele_num, uint32_t ele_size,
-				uint64_t paddr)
+				void *vaddr)
 {
 	shared_buf_t *sbuf;
 
-	if (!ele_num || !ele_size || !paddr)
+	if (!ele_num || !ele_size || !vaddr)
 		return NULL;
 
-	sbuf = (shared_buf_t *)phys_to_virt(paddr);
-	BUG_ON(!virt_addr_valid(sbuf));
+	sbuf = (shared_buf_t *)vaddr;
 
 	memset(sbuf, 0, SBUF_HEAD_SIZE);
 	sbuf->magic = SBUF_MAGIC;
 	sbuf->ele_num = ele_num;
 	sbuf->ele_size = ele_size;
 	sbuf->size = ele_num * ele_size;
-	pr_info("construct sbuf at 0x%llx.\n", paddr);
+	pr_info("construct sbuf at 0x%llx.\n", (unsigned long long)sbuf);
 	return sbuf;
 }
 EXPORT_SYMBOL(sbuf_construct);
