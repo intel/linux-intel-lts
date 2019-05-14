@@ -117,17 +117,17 @@ VOID UTILITY_Read_Cpuid(U64 cpuid_function, U64 *rax_value,
 
 #if defined(DRV_SEP_ACRN_ON)
 	if (cpuid_function != 0x40000000) {
-		struct profiling_pcpuid pcpuid;
+		static struct profiling_pcpuid pcpuid;
 		memset(&pcpuid, 0, sizeof(struct profiling_pcpuid));
 		pcpuid.leaf = (U32)cpuid_function;
 		if (rcx_value != NULL) {
 			pcpuid.subleaf = (U32)*rcx_value;
 		}
 
-		BUG_ON(!virt_addr_valid(&pcpuid));
+		//BUG_ON(!virt_addr_valid(&pcpuid));
 
 		if (acrn_hypercall2(HC_PROFILING_OPS, PROFILING_GET_PCPUID,
-				virt_to_phys(&pcpuid)) != OS_SUCCESS) {
+				slow_virt_to_phys(&pcpuid)) != OS_SUCCESS) {
 			SEP_DRV_LOG_ERROR_FLOW_OUT(
 				"[ACRN][HC:GET_PCPUID][%s]: Failed to get CPUID info",
 				__func__);
