@@ -316,6 +316,39 @@ void skl_reset_instance_id(struct skl_sst *ctx)
 }
 EXPORT_SYMBOL_GPL(skl_reset_instance_id);
 
+#define LOGE_TAG_FILE_ID 0x7FFF
+#define LOGE_TAG_BOCD 0x5DB00000
+
+struct bxt_excstack_hdr {
+	u32 file_id;
+	u32 bocd;
+};
+
+static int bxt_find_stackdump(struct skl_sst *ctx, int idx)
+{
+	struct bxt_excstack_hdr hdr;
+	u32 size = ctx->dsp->trace_wind.size / ctx->dsp->trace_wind.nr_dsp;
+	void __iomem *base = ctx->dsp->trace_wind.addr;
+	u32 offset = 0;
+
+	base += (idx * size);
+
+	while (offset < (size - 8 - sizeof(hdr))) {
+		memcpy_fromio(&hdr, base + 8 + offset,
+				sizeof(hdr));
+		if (hdr.file_id == LOGE_TAG_FILE_ID
+				&& hdr.bocd == LOGE_TAG_BOCD) {
+			dev_info(ctx->dev, "Stack header found at %d\n",
+					offset);
+			/* Just pretend we consumed the log data */
+			writel(offset, (u32 *) base);
+			return 0;
+		}
+		offset += sizeof(u32);
+	}
+	return -ENXIO;
+}
+
 /* Function to read the extended DSP crash information from the
  * log buffer memory window, on per core basis.
  * Data is read into the buffer passed as *ext_core_dump.
@@ -380,6 +413,7 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int idx, int stack_size)
 	struct adsp_type2_crash_data *type2_data;
 	struct sst_dsp *sst = ctx->dsp;
 	unsigned long timeout;
+	int ret;
 
 	if (idx < 0 || idx >= ctx->cores.count)
 		return -EINVAL;
@@ -403,6 +437,12 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int idx, int stack_size)
 
 	fw_reg_addr = (void __force *)(ctx->dsp->mailbox.in_base -
 			ctx->dsp->addr.w0_stat_sz);
+
+	ret = bxt_find_stackdump(ctx, idx);
+	if (ret < 0) {
+		stackdump_complete = 1;
+		dev_err(ctx->dsp->dev, "Stack Dump not found, skipping\n");
+	}
 
 	timeout = jiffies + msecs_to_jiffies(100);
 	while (!stackdump_complete) {
