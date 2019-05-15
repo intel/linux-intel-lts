@@ -1,8 +1,6 @@
-# CVE-2019-10125
-0001-aio-clear-IOCB_HIPRI-CVE-2019-10125.patch
-0002-aio-simplify-and-fix-fget-fput-for-io_submit-CVE-2019-10125.patch
-
-# CVE-2020-9857
-0001-inotify-Fix-fsnotify_mark-refcount-leak-in-inotify_u-CVE-2019-9857.patch
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
+
+# CVE-2019-5489
+0001-Change-mincore-to-count-mapped-pages-rather-than-cac-CVE-2019-5489.patch
+
