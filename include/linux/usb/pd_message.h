@@ -273,7 +273,7 @@ struct pd_pdo_variable {
 	u32 type:2;
 	u32 voltage_max:10;
 	u32 voltage_min:10;
-	u32 current_max:10;
+	u32 current_mo:10;
 #else
 	#error "Please fix <asm/byteorder.h>"
 #endif
@@ -294,7 +294,7 @@ struct pd_pdo_battery {
 	u32 type:2;
 	u32 voltage_max:10;
 	u32 voltage_min:10;
-	u32 power_max:10;
+	u32 power:10;
 #else
 	#error "Please fix <asm/byteorder.h>"
 #endif
