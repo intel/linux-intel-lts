@@ -38,6 +38,8 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 			return -EINVAL;
 	}
 
+	req->stat = IPU4_REQ_PENDING;
+
 	switch (req->cmd) {
 	case IPU4_CMD_POLL:
 			/*
@@ -250,6 +252,5 @@ int intel_ipu4_virtio_msg_parse(struct ipu4_virtio_req_info *req_info)
 			return -EINVAL;
 		}
 
-	req->stat = IPU4_REQ_PENDING;
 	return ret;
 }
