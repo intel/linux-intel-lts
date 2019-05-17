@@ -213,7 +213,7 @@ int sst_fw_status_poll(struct sst_dsp *ctx, u32 module, u32 state,
  * reset/stall and then turn it off
  */
 static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
-			const void *fwdata, u32 fwsize)
+			const void *fwdata, u32 fwsize, u32 *fwerr, u32 *fwsts)
 {
 	int stream_tag, ret;
 
@@ -283,6 +283,11 @@ static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
 	return ret;
 
 base_fw_load_failed:
+	if (fwerr)
+		*fwerr = sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE);
+	if (fwsts)
+		*fwsts = sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS);
+
 	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, stream_tag,
 						SNDRV_PCM_STREAM_PLAYBACK);
 
@@ -313,6 +318,7 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
 	struct firmware stripped_fw;
 	struct skl_sst *skl = ctx->thread_context;
 	int ret, i;
+	u32 fwerr = 0, fwsts = 0;
 
 	if (ctx->fw == NULL) {
 		ret = request_firmware(&ctx->fw, ctx->fw_name, ctx->dev);
@@ -334,12 +340,10 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
 	skl_dsp_strip_extended_manifest(&stripped_fw);
 
 	for (i = 0; i < BXT_FW_INIT_RETRY; i++) {
-		ret = sst_bxt_prepare_fw(ctx, stripped_fw.data, stripped_fw.size);
+		ret = sst_bxt_prepare_fw(ctx, stripped_fw.data,
+					stripped_fw.size, &fwerr, &fwsts);
 		if (ret < 0) {
-			dev_err(ctx->dev, "Error code=0x%x: FW status=0x%x\n",
-				sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE),
-				sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS));
-
+			dev_err(ctx->dev, "Error code=0x%x: FW status=0x%x\n", fwerr, fwsts);
 			dev_err(ctx->dev, "Iteration %d Core En/ROM load fail:%d\n", i, ret);
 			continue;
 		}
