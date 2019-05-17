@@ -147,4 +147,6 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
 		unsigned int offset,
 		void *p_data);
 
+struct edid *intel_gvt_create_edid_from_mode(struct drm_display_mode *mode);
+
 #endif /*_GVT_EDID_H_*/

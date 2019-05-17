@@ -556,20 +556,27 @@ int setup_virtual_monitors(struct intel_vgpu *vgpu)
 	struct drm_connector_list_iter conn_iter;
 	int pipe = 0;
 	int ret = 0;
+	struct edid *edid;
 	int type = gvt_emulate_hdmi ? GVT_HDMI_B : GVT_DP_B;
 	int port = PORT_B;
 
 
 	drm_connector_list_iter_begin(&vgpu->gvt->dev_priv->drm, &conn_iter);
 	for_each_intel_connector_iter(connector, &conn_iter) {
-		if (connector->encoder->get_hw_state(connector->encoder, &pipe)
-				&& connector->detect_edid) {
+		if (connector->encoder->get_hw_state(connector->encoder, &pipe)) {
+			if (connector->panel.fixed_mode) {
+				edid = intel_gvt_create_edid_from_mode(
+						connector->panel.fixed_mode);
+			} else if (connector->detect_edid) {
+				edid = connector->detect_edid;
+			} else {
+				continue;
+			}
 			/* Get (Dom0) port associated with current pipe. */
 			port = enc_to_dig_port(
 					&(connector->encoder->base))->base.port;
 			ret = setup_virtual_monitor(vgpu, port,
-				type, 0, connector->detect_edid,
-				!gvt_emulate_hdmi);
+				type, 0, edid, !gvt_emulate_hdmi);
 			if (ret)
 				return ret;
 			type++;
