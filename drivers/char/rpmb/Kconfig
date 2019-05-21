@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (c) 2015-2019, Intel Corporation.
 
+# RPMB_SUPPORT always gets to for built-in components
+config RPMB_SUPPORT
+	bool
+
 config RPMB
 	tristate "RPMB partition interface"
+	select RPMB_SUPPORT
 	help
 	  Unified RPMB partition interface for eMMC and UFS.
 	  Provides interface for in kernel security controllers to

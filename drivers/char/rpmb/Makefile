@@ -9,4 +9,4 @@ obj-$(CONFIG_VIRTIO_RPMB) += virtio_rpmb.o
 
 ccflags-y += -D__CHECK_ENDIAN__
 
-obj-$(CONFIG_RPMB_MUX) += mux/
+obj-$(CONFIG_RPMB_SUPPORT) += mux/
