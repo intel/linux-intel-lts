@@ -39,14 +39,6 @@ static unsigned int num_stream_support = IPU_ISYS_NUM_STREAMS;
 module_param(num_stream_support, uint, 0660);
 MODULE_PARM_DESC(num_stream_support, "IPU project support number of stream");
 
-static bool csi_watchdog_enable = 1;
-module_param(csi_watchdog_enable, bool, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARM_DESC(csi_watchdog_enable, "IPU4 CSI watchdog enable");
-
-static unsigned int csi_watchdog_timeout = 500;
-module_param(csi_watchdog_timeout, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARM_DESC(csi_watchdog_timeout, "IPU4 CSI watchdog timeout");
-
 static bool use_stream_stop;
 module_param(use_stream_stop, bool, 0660);
 MODULE_PARM_DESC(use_stream_stop, "Use STOP command if running in CSI capture mode");
@@ -212,7 +204,6 @@ static int video_open(struct file *file)
 
 	mutex_lock(&isys->mutex);
 
-	isys->csi2_in_error_state = 0;
 	if (isys->video_opened++) {
 		/* Already open */
 		mutex_unlock(&isys->mutex);
@@ -1342,7 +1333,7 @@ out_stream_close:
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
-		av->isys->csi2_in_error_state ? 0 : IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
 		dev_err(dev, "stream close time out\n");
 	else if (ip->error)
@@ -1382,7 +1373,7 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_stop_completion,
-		av->isys->csi2_in_error_state ? 0 : IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
 		dev_err(dev, "stream stop time out\n");
 	else if (ip->error)
@@ -1408,7 +1399,7 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
-		av->isys->csi2_in_error_state ? 0 : IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
 		dev_err(dev, "stream close time out\n");
 	else if (ip->error)
@@ -1616,9 +1607,6 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 	}
 
 	if (!state) {
-		if (csi_watchdog_enable)
-			ipu_isys_csi2_stop_wdt(ip->csi2);
-
 		stop_streaming_firmware(av);
 
 		/* stop external sub-device now. */
@@ -1702,11 +1690,6 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 			rval = v4l2_subdev_call(esd, video, s_stream, state);
 		if (rval)
 			goto out_media_entity_stop_streaming_firmware;
-
-		if (csi_watchdog_enable)
-			ipu_isys_csi2_start_wdt(ip->csi2,
-			csi_watchdog_timeout);
-
 	} else {
 		close_streaming_firmware(av);
 		av->ip.stream_id = 0;
