@@ -875,6 +875,315 @@ static int xhci_do_dbc_init(struct xhci_hcd *xhci)
 	return 0;
 }
 
+static ssize_t dbc_function_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	int    count = 0;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (!dbc)
+		return -ENODEV;
+	if (!dbc_registered_func)
+		count += sprintf(buf, "%s\n", "none");
+	else
+		count += sprintf(buf, "%s\n", dbc_registered_func->func_name);
+
+	return count;
+}
+
+static ssize_t dbc_manufacturer_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	struct usb_string_descriptor    *s_desc;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (!dbc || !dbc->string)
+		return -ENODEV;
+	s_desc = (struct usb_string_descriptor *) dbc->string->manufacturer;
+	return utf16s_to_utf8s((wchar_t *) s_desc->wData, s_desc->bLength / 2,
+			UTF16_LITTLE_ENDIAN, buf, DBC_MAX_STRING_LENGTH);
+}
+
+static ssize_t dbc_manufacturer_store(struct device *dev,
+			 struct device_attribute *attr,
+			 const char *buf, size_t size)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	struct usb_string_descriptor    *s_desc;
+	int ret;
+	struct dbc_info_context	*info;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (dbc->state != DS_DISABLED)
+		return -EBUSY;
+	s_desc = (struct usb_string_descriptor *) dbc->string->manufacturer;
+	ret =  utf8s_to_utf16s(buf, strlen(buf),
+				UTF16_LITTLE_ENDIAN, (wchar_t *)s_desc->wData,
+				DBC_MAX_STRING_LENGTH);
+	if (ret < 0)
+		return ret;
+	s_desc->bLength         = (strlen(buf) + 1) * 2;
+	info			= (struct dbc_info_context *)dbc->ctx->bytes;
+	info->length		= (info->length & ~(0xffu << 8))
+					|  (s_desc->bLength) << 8;
+	return size;
+}
+
+static ssize_t dbc_product_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	struct usb_string_descriptor    *s_desc;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (!dbc || !dbc->string)
+		return -ENODEV;
+	s_desc = (struct usb_string_descriptor *) dbc->string->product;
+	return utf16s_to_utf8s((wchar_t *) s_desc->wData, s_desc->bLength / 2,
+			UTF16_LITTLE_ENDIAN, buf, DBC_MAX_STRING_LENGTH);
+}
+
+static ssize_t dbc_product_store(struct device *dev,
+			 struct device_attribute *attr,
+			 const char *buf, size_t size)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	struct usb_string_descriptor    *s_desc;
+	int ret;
+	struct dbc_info_context	*info;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (dbc->state != DS_DISABLED)
+		return -EBUSY;
+	s_desc = (struct usb_string_descriptor *) dbc->string->serial;
+	ret = utf8s_to_utf16s(buf, strlen(buf),
+				UTF16_LITTLE_ENDIAN, (wchar_t *)s_desc->wData,
+				DBC_MAX_STRING_LENGTH);
+	if (ret < 0)
+		return ret;
+	s_desc->bLength         = (strlen(buf) + 1) * 2;
+	info			= (struct dbc_info_context *)dbc->ctx->bytes;
+	info->length		= (info->length & ~(0xffu << 16))
+					 |  (s_desc->bLength) << 16;
+	return size;
+}
+
+static ssize_t dbc_serial_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	struct usb_string_descriptor    *s_desc;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (!dbc || !dbc->string)
+		return -ENODEV;
+	s_desc = (struct usb_string_descriptor *) dbc->string->serial;
+	return utf16s_to_utf8s((wchar_t *) s_desc->wData, s_desc->bLength / 2,
+			UTF16_LITTLE_ENDIAN, buf, DBC_MAX_STRING_LENGTH);
+}
+
+static ssize_t dbc_serial_store(struct device *dev,
+			 struct device_attribute *attr,
+			 const char *buf, size_t size)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	struct usb_string_descriptor    *s_desc;
+	int ret;
+	struct dbc_info_context	*info;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (dbc->state != DS_DISABLED)
+		return -EBUSY;
+	s_desc = (struct usb_string_descriptor *) dbc->string->serial;
+	ret = utf8s_to_utf16s(buf, strlen(buf),
+				UTF16_LITTLE_ENDIAN, (wchar_t *)s_desc->wData,
+				DBC_MAX_STRING_LENGTH);
+	if (ret < 0)
+		return ret;
+	s_desc->bLength         = (strlen(buf) + 1) * 2;
+	info			= (struct dbc_info_context *)dbc->ctx->bytes;
+	info->length		= (info->length & ~(0xffu << 24))
+					 |  (s_desc->bLength) << 24;
+	return size;
+}
+
+static ssize_t dbc_protocol_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	void __iomem *ptr;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	ptr = &dbc->regs->devinfo1;
+	return sprintf(buf, "%02x\n", le32_to_cpu(readl(ptr)) & 0xff);
+}
+
+static ssize_t dbc_protocol_store(struct device *dev,
+			 struct device_attribute *attr,
+			 const char *buf, size_t size)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	int value;
+	int ret;
+	void __iomem *ptr;
+	u32 dev_info;
+
+	ret = kstrtoint(buf, 0, &value);
+	if (ret || value < 0 || value > 0xff)
+		return -EINVAL;
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (dbc->state != DS_DISABLED)
+		return -EBUSY;
+	ptr = &dbc->regs->devinfo1;
+	dev_info = le32_to_cpu(readl(ptr));
+	dev_info = cpu_to_le32((dev_info & ~(0xffu)) | value);
+	writel(dev_info, ptr);
+	return size;
+}
+
+static ssize_t dbc_vid_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	void __iomem *ptr;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	ptr = &dbc->regs->devinfo1;
+	return sprintf(buf, "%04x\n", ((u32)le32_to_cpu(readl(ptr))) >> 16);
+}
+
+static ssize_t dbc_vid_store(struct device *dev,
+			 struct device_attribute *attr,
+			 const char *buf, size_t size)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	int value;
+	int ret;
+	void __iomem *ptr;
+	u32 dev_info;
+
+	ret = kstrtoint(buf, 0, &value);
+	if (ret || value < 0 || value > 0xffff)
+		return -EINVAL;
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (dbc->state != DS_DISABLED)
+		return -EBUSY;
+	ptr = &dbc->regs->devinfo1;
+	dev_info = le32_to_cpu(readl(ptr));
+	dev_info = cpu_to_le32((dev_info & ~(0xffffu << 16)) | (value << 16));
+	writel(dev_info, ptr);
+	return size;
+}
+
+
+static ssize_t dbc_pid_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	void __iomem *ptr;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	ptr = &dbc->regs->devinfo2;
+	return sprintf(buf, "%04x\n", le32_to_cpu(readl(ptr)) & 0xffff);
+}
+
+static ssize_t dbc_pid_store(struct device *dev,
+			 struct device_attribute *attr,
+			 const char *buf, size_t size)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	int value;
+	int ret;
+	void __iomem *ptr;
+	u32 dev_info;
+
+	ret = kstrtoint(buf, 0, &value);
+	if (ret || value < 0 || value > 0xffff)
+		return -EINVAL;
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (dbc->state != DS_DISABLED)
+		return -EBUSY;
+	ptr = &dbc->regs->devinfo2;
+	dev_info = le32_to_cpu(readl(ptr));
+	dev_info = cpu_to_le32((dev_info & ~(0xffffu)) | value);
+	writel(dev_info, ptr);
+	return size;
+}
+
+static ssize_t dbc_device_rev_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	void __iomem *ptr;
+
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	ptr = &dbc->regs->devinfo2;
+	return sprintf(buf, "%04x\n",  ((u32)le32_to_cpu(readl(ptr))) >> 16);
+}
+
+static ssize_t dbc_device_rev_store(struct device *dev,
+			 struct device_attribute *attr,
+			 const char *buf, size_t size)
+{
+	struct xhci_dbc         *dbc;
+	struct xhci_hcd         *xhci;
+	int value;
+	int ret;
+	void __iomem *ptr;
+	u32 dev_info;
+
+	ret = kstrtoint(buf, 0, &value);
+	if (ret || value < 0 || value > 0xffff)
+		return -EINVAL;
+	xhci = hcd_to_xhci(dev_get_drvdata(dev));
+	dbc = xhci->dbc;
+	if (dbc->state != DS_DISABLED)
+		return -EBUSY;
+	ptr = &dbc->regs->devinfo2;
+	dev_info = le32_to_cpu(readl(ptr));
+	dev_info = cpu_to_le32((dev_info & ~(0xffffu << 16)) | (value << 16));
+	writel(dev_info, ptr);
+	return size;
+}
+
 static ssize_t dbc_show(struct device *dev,
 			struct device_attribute *attr,
 			char *buf)
@@ -912,6 +1221,29 @@ static ssize_t dbc_show(struct device *dev,
 	return sprintf(buf, "%s\n", p);
 }
 
+static DEVICE_ATTR_RW(dbc_manufacturer);
+static DEVICE_ATTR_RW(dbc_product);
+static DEVICE_ATTR_RW(dbc_serial);
+static DEVICE_ATTR_RW(dbc_protocol);
+static DEVICE_ATTR_RW(dbc_vid);
+static DEVICE_ATTR_RW(dbc_pid);
+static DEVICE_ATTR_RW(dbc_device_rev);
+
+static struct attribute *dbc_descriptor_attributes[] = {
+	&dev_attr_dbc_manufacturer.attr,
+	&dev_attr_dbc_product.attr,
+	&dev_attr_dbc_serial.attr,
+	&dev_attr_dbc_protocol.attr,
+	&dev_attr_dbc_vid.attr,
+	&dev_attr_dbc_pid.attr,
+	&dev_attr_dbc_device_rev.attr,
+	NULL
+};
+
+static const struct attribute_group dbc_descriptor_attrib_grp = {
+	.attrs = dbc_descriptor_attributes,
+};
+
 static ssize_t dbc_store(struct device *dev,
 			 struct device_attribute *attr,
 			 const char *buf, size_t count)
@@ -940,6 +1272,10 @@ static ssize_t dbc_store(struct device *dev,
 			goto err;
 		}
 		xhci_dbc_start(xhci);
+		ret = sysfs_create_group(&dev->kobj,
+					 &dbc_descriptor_attrib_grp);
+		if (ret)
+			goto err;
 	} else if (!strncmp(buf, "disable", 7) && dbc->state != DS_DISABLED) {
 		if (!dbc_registered_func)
 			return -EINVAL;
@@ -947,6 +1283,7 @@ static ssize_t dbc_store(struct device *dev,
 		if (dbc_registered_func->stop)
 			dbc_registered_func->stop(dbc);
 		module_put(dbc_registered_func->owner);
+		sysfs_remove_group(&dev->kobj, &dbc_descriptor_attrib_grp);
 	} else
 		return -EINVAL;
 
@@ -957,9 +1294,11 @@ err:
 }
 
 static DEVICE_ATTR_RW(dbc);
+static DEVICE_ATTR_RO(dbc_function);
 
 static struct attribute *dbc_dev_attributes[] = {
 	&dev_attr_dbc.attr,
+	&dev_attr_dbc_function.attr,
 	NULL
 };
 

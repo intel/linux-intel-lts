@@ -23,3 +23,115 @@ Description:
 		Reading this attribute gives the state of the DbC. It
 		can be one of the following states: disabled, enabled,
 		initialized, connected, configured and stalled.
+
+What:		/sys/bus/pci/drivers/xhci_hcd/.../dbc_function
+Date:		June 2018
+Contact:	Rajaram Regupathy <rajaram.regupathy@intel.com>
+Description:
+		xHCI USB host controllers provide Debug Capability (Dbc)
+		as an extended feature. When configured Dbc presents a
+		debug device which is fully compliant with the USB
+		framework.
+
+		This framework can be utilized to provide various interfaces.
+		By Default, it is configured to provide a serial Interface.
+
+		This attribute lets us configure the interface provided
+		by Dbc functionality. By Default, this attribute value
+		is "TTY" corresponding to the the serial interface. Other
+		values can be supported in future to provide a varied
+		interface to use DbC.
+
+		Reading this attribute gives the interface which is
+		currently configured with DbC. If it is "TTY" then serial
+		interface is configured.
+
+What:		/sys/bus/pci/drivers/xhci_hcd/.../dbc_manufacturer
+Date:		June 2018
+Contact:	Rajaram Regupathy <rajaram.regupathy@intel.com>
+Description:
+		xHCI USB host controllers provide Debug Capability (Dbc)
+		as an extended feature. When configured Dbc presents a
+		debug device which is fully compliant with the USB
+		framework.
+		This attribute lets us change the manufacturer name as
+		presented by the debug device in the USB Manufacturer String
+		descriptor. The default value is "Linux Foundation".
+
+What:		/sys/bus/pci/drivers/xhci_hcd/.../dbc_product
+Date:		June 2018
+Contact:	Rajaram Regupathy <rajaram.regupathy@intel.com>
+Description:
+		xHCI USB host controllers provide Debug Capability (Dbc)
+		as an extended feature. When configured Dbc presents a
+		debug device which is fully compliant with the USB
+		framework.
+		This attribute lets us change the product name as
+		presented by the debug device in the USB Product String
+		descriptor. The default value is "Linux USB Debug Target".
+
+What:		/sys/bus/pci/drivers/xhci_hcd/.../dbc_serial
+Date:		June 2018
+Contact:	Rajaram Regupathy <rajaram.regupathy@intel.com>
+Description:
+		xHCI USB host controllers provide Debug Capability (Dbc)
+		as an extended feature. When configured Dbc presents a
+		debug device which is fully compliant with the USB
+		framework.
+		This attribute lets us change the serial number as
+		presented by the debug device in the USB Serial Number String
+		descriptor. The default value is "0001".
+
+What:		/sys/bus/pci/drivers/xhci_hcd/.../dbc_protocol
+Date:		June 2018
+Contact:	Rajaram Regupathy <rajaram.regupathy@intel.com>
+Description:
+		xHCI USB host controllers provide Debug Capability (Dbc)
+		as an extended feature. When configured Dbc presents a
+		debug device which is fully compliant with the USB
+		framework.
+		This attribute lets us change the bInterfaceProtocol field as
+		presented by the debug device in the USB Interface descriptor.
+
+		The default value is  1  (GNU Remote Debug command).
+		Other permissible value is 0 which is for vendor defined debug
+		target.
+
+What:		/sys/bus/pci/drivers/xhci_hcd/.../dbc_vid
+Date:		June 2018
+Contact:	Rajaram Regupathy <rajaram.regupathy@intel.com>
+Description:
+		xHCI USB host controllers provide Debug Capability (Dbc)
+		as an extended feature. When configured Dbc presents a
+		debug device which is fully compliant with the USB
+		framework.
+		This attribute lets us change the idVendor field as
+		presented by the debug device in the USB Device descriptor.
+		The default value is 0x1d6b (Linux Foundation).
+		It can be any 16-bit integer.
+
+
+What:		/sys/bus/pci/drivers/xhci_hcd/.../dbc_pid
+Date:		June 2018
+Contact:	Rajaram Regupathy <rajaram.regupathy@intel.com>
+Description:
+		xHCI USB host controllers provide Debug Capability (Dbc)
+		as an extended feature. When configured Dbc presents a
+		debug device which is fully compliant with the USB
+		framework.
+		This attribute lets us change the idProduct field as
+		presented by the debug device in the USB Device descriptor.
+		The default value is 0x0010. It can be any 16-bit integer.
+
+What:		/sys/bus/pci/drivers/xhci_hcd/.../dbc_device_rev
+Date:		June 2018
+Contact:	Rajaram Regupathy <rajaram.regupathy@intel.com>
+Description:
+		xHCI USB host controllers provide Debug Capability (Dbc)
+		as an extended feature. When configured Dbc presents a
+		debug device which is fully compliant with the USB
+		framework.
+		This attribute lets us change the bcdDevice field as
+		presented by the debug device in the USB Device descriptor.
+		The default value is 0x0010 (device rev 0.10).
+		It can be any 16-bit integer.
