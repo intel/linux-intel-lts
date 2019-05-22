@@ -11,6 +11,7 @@
 
 #include <linux/tty.h>
 #include <linux/kfifo.h>
+#include <linux/kernel.h>
 
 struct dbc_regs {
 	__le32	capability;
@@ -48,9 +49,9 @@ struct dbc_info_context {
 
 #define DBC_MAX_PACKET			1024
 #define DBC_MAX_STRING_LENGTH		64
-#define DBC_STRING_MANUFACTURER		"Linux Foundation"
-#define DBC_STRING_PRODUCT		"Linux USB Debug Target"
-#define DBC_STRING_SERIAL		"0001"
+#define DBC_STR_MANUFACTURER		"Linux Foundation"
+#define DBC_STR_PRODUCT		"Linux USB Debug Target"
+#define DBC_STR_SERIAL			"0001"
 #define	DBC_CONTEXT_SIZE		64
 
 /*
@@ -74,6 +75,7 @@ struct dbc_str_descs {
 #define DBC_VENDOR_ID			0x1d6b	/* Linux Foundation 0x1d6b */
 #define DBC_PRODUCT_ID			0x0010	/* device 0010 */
 #define DBC_DEVICE_REV			0x0010	/* 0.10 */
+
 
 enum dbc_state {
 	DS_DISABLED = 0,
@@ -108,6 +110,25 @@ struct dbc_ep {
 	unsigned			direction:1;
 };
 
+struct dbc_function {
+	char				func_name[32];
+	/* string descriptors */
+	struct dbc_str_descs            string;
+	/* other device or interface descriptors */
+	u16				protocol;
+	u16				vid;
+	u16				pid;
+	u16				device_rev;
+
+	/* callbacks */
+	int (*run)(struct xhci_dbc *dbc);
+	int (*post_config)(struct xhci_dbc *dbc);
+	int (*post_disconnect)(struct xhci_dbc *dbc);
+	int (*stop)(struct xhci_dbc *dbc);
+
+	/* module owner */
+	struct module			*owner;
+};
 #define DBC_QUEUE_SIZE			16
 #define DBC_WRITE_BUF_SIZE		8192
 
@@ -151,6 +172,8 @@ struct xhci_dbc {
 	struct dbc_ep			eps[2];
 
 	struct dbc_port			port;
+	/* priv pointer for a function */
+	void                            *func_priv;
 };
 
 #define dbc_bulkout_ctx(d)		\
@@ -200,8 +223,11 @@ void xhci_dbc_tty_unregister_driver(void);
 int xhci_dbc_tty_register_device(struct xhci_hcd *xhci);
 void xhci_dbc_tty_unregister_device(struct xhci_hcd *xhci);
 struct dbc_request *dbc_alloc_request(struct dbc_ep *dep, gfp_t gfp_flags);
+void xhci_dbc_flush_reqests(struct xhci_dbc *dbc);
 void dbc_free_request(struct dbc_ep *dep, struct dbc_request *req);
 int dbc_ep_queue(struct dbc_ep *dep, struct dbc_request *req, gfp_t gfp_flags);
+int xhci_dbc_register_function(struct dbc_function *func);
+void xhci_dbc_unregister_function(void);
 #ifdef CONFIG_PM
 int xhci_dbc_suspend(struct xhci_hcd *xhci);
 int xhci_dbc_resume(struct xhci_hcd *xhci);
