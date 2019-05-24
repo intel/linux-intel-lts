@@ -74,7 +74,6 @@ const struct ici_isys_pixelformat ici_isys_pfmts_be_soc[] = {
 };
 
 const struct ici_isys_pixelformat ici_isys_pfmts_packed[] = {
-
 	{ ICI_FORMAT_UYVY, 16, 16, ICI_FORMAT_UYVY, IA_CSS_ISYS_FRAME_FORMAT_UYVY },
 	{ ICI_FORMAT_YUYV, 16, 16, ICI_FORMAT_YUYV, IA_CSS_ISYS_FRAME_FORMAT_YUYV },
 	{ ICI_FORMAT_RGB565, 16, 16, ICI_FORMAT_RGB565, IA_CSS_ISYS_FRAME_FORMAT_RGB565 },
