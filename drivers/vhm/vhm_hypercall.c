@@ -63,6 +63,11 @@ inline long hcall_get_api_version(unsigned long api_version)
 	return acrn_hypercall1(HC_GET_API_VERSION, api_version);
 }
 
+inline long hcall_get_platform_info(unsigned long platform_info)
+{
+	return acrn_hypercall1(HC_GET_PLATFORM_INFO, platform_info);
+}
+
 inline long hcall_create_vm(unsigned long vminfo)
 {
 	return acrn_hypercall1(HC_CREATE_VM, vminfo);
