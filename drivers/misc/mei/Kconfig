@@ -58,3 +58,5 @@ config INTEL_MEI_VIRTIO
 
 source "drivers/misc/mei/hdcp/Kconfig"
 source "drivers/misc/mei/spd/Kconfig"
+source "drivers/misc/mei/dal/Kconfig"
+
