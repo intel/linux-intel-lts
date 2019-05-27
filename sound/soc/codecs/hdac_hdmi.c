@@ -33,7 +33,7 @@
 
 #define HDA_MAX_CONNECTIONS     32
 
-#define HDA_MAX_CVTS		3
+#define HDA_MAX_CVTS		4
 #define HDA_MAX_PORTS		3
 
 #define ELD_MAX_SIZE    256
@@ -119,7 +119,8 @@ struct hdac_hdmi_dai_port_map {
  * pin to port mapping table where the value indicate the pin number and
  * the index indicate the port number with 1 base.
  */
-static const int icl_pin2port_map[] = {0x4, 0x6, 0x8, 0xa, 0xb};
+static const int icl_pin2port_map[] = {0x0, 0x4, 0x6, 0x8, 0xa, 0xb};
+static const int tgl_pin2port_map[] = {0x4, 0x6, 0x8, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf};
 
 struct hdac_hdmi_drv_data {
 	unsigned int vendor_nid;
@@ -1580,7 +1581,7 @@ static int hdac_hdmi_pin2port(void *aptr, int pin)
 	 */
 	for (i = 0; i < hdmi->drv_data->port_num; i++) {
 		if (pin == map[i])
-			return i + 1;
+			return i;
 	}
 
 	/* return -1 if pin number exceeds our expectation */
@@ -1603,7 +1604,7 @@ static void hdac_hdmi_eld_notify_cb(void *aptr, int port, int pipe)
 		pin_nid = port + 0x04;
 	} else if (port < hdmi->drv_data->port_num) {
 		/* get pin number from the pin2port mapping table */
-		pin_nid = hdmi->drv_data->port_map[port - 1];
+		pin_nid = hdmi->drv_data->port_map[port];
 	} else {
 		dev_err(&hdev->dev, "Can't find the pin for port %d\n", port);
 		return;
@@ -2031,6 +2032,12 @@ static struct hdac_hdmi_drv_data intel_icl_drv_data  = {
 	.port_num = ARRAY_SIZE(icl_pin2port_map),
 };
 
+static struct hdac_hdmi_drv_data intel_tgl_drv_data  = {
+	.vendor_nid = INTEL_VENDOR_NID_0x2,
+	.port_map = tgl_pin2port_map,
+	.port_num = ARRAY_SIZE(tgl_pin2port_map),
+};
+
 static struct hdac_hdmi_drv_data intel_glk_drv_data  = {
 	.vendor_nid = INTEL_VENDOR_NID_0xb,
 };
@@ -2218,6 +2225,8 @@ static const struct hda_device_id hdmi_list[] = {
 						   &intel_glk_drv_data),
 	HDA_CODEC_EXT_ENTRY(0x8086280f, 0x100000, "Icelake HDMI",
 						   &intel_icl_drv_data),
+	HDA_CODEC_EXT_ENTRY(0x80862812, 0x100000, "Tigerlake HDMI",
+						   &intel_tgl_drv_data),
 	{}
 };
 
