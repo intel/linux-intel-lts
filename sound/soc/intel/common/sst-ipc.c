@@ -126,7 +126,7 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
 
 	if ((ipc->ops.is_dsp_busy && ipc->ops.is_dsp_busy(ipc->dsp)) ||
                         (ipc->ops.direct_tx_msg == NULL)) {
-                schedule_work(&ipc->kwork);
+		queue_work(system_highpri_wq, &ipc->kwork);
                 spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
         } else {
                 spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
