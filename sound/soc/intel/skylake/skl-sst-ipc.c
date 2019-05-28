@@ -822,7 +822,8 @@ irqreturn_t skl_dsp_irq_thread_handler(int irq, void *context)
 	skl_ipc_int_enable(dsp);
 
 	/* continue to send any remaining messages... */
-	schedule_work(&ipc->kwork);
+	if (!list_empty(&ipc->tx_list))
+		queue_work(system_highpri_wq, &ipc->kwork);
 
 	return IRQ_HANDLED;
 }
