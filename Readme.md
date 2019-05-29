@@ -5,9 +5,9 @@ Branch information
 
 [1]  Master ==> follows kernel.org master. updated periodically
 
-[2]  4.x/base ==> upstream 4.x LTS kernel + Intels patches (bug fixes/ optimizations)
+[2]  4.x/base ==> upstream 4.x LTS kernel + Intel patches (bug fixes/ optimizations)
 
-[3]  4.x/android ==> upstream 4.x LTS kernel + Intels patches + Android specific patches
+[3]  4.x/android ==> upstream 4.x LTS kernel + Intel patches + Android specific patches
 
 [4]  4.x/yocto ==> upstream 4.x LTS kernel with yocto specific patches
 
