@@ -32,6 +32,7 @@
 #include <drm/drm_edid.h>
 #include <drm/drm_mipi_dsi.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 #include <linux/gpio/consumer.h>
 #include "kmb_drv.h"
 #include "kmb_regs.h"
@@ -206,6 +207,11 @@ static mipi_hs_freq_range_cfg
 	{.default_bit_rate_mbps = 2400, .hsfreqrange_code = 0x47},
 	{.default_bit_rate_mbps = 2450, .hsfreqrange_code = 0x48},
 	{.default_bit_rate_mbps = 2500, .hsfreqrange_code = 0x49}
+};
+
+union mipi_irq_cfg int_cfg = {
+	.irq_cfg.frame_done = 1,
+	.irq_cfg.ctrl_error = 1,
 };
 
 static enum drm_mode_status
@@ -1194,6 +1200,43 @@ static u32 mipi_tx_init_dphy(struct mipi_ctrl_cfg *cfg)
 	return 0;
 }
 
+static void mipi_tx_init_irqs(union mipi_irq_cfg *cfg,
+	struct kmb_drm_private *dev_priv,
+	struct	mipi_tx_ctrl_cfg *tx_ctrl_cfg)
+{
+	unsigned long irqflags;
+	uint8_t vc;
+
+	/* clear all interrupts first */
+	/*local interrupts */
+	SET_MIPI_TX_HS_IRQ_CLEAR(MIPI_CTRL6, MIPI_TX_HS_IRQ_ALL);
+	/*global interrupts */
+	SET_MIPI_CTRL_IRQ_CLEAR0(MIPI_CTRL6, MIPI_HS_IRQ);
+	SET_MIPI_CTRL_IRQ_CLEAR0(MIPI_CTRL6, MIPI_DHY_ERR_IRQ);
+	SET_MIPI_CTRL_IRQ_CLEAR1(MIPI_CTRL6, MIPI_HS_RX_EVENT_IRQ);
+
+	/*enable interrupts */
+	spin_lock_irqsave(&dev_priv->irq_lock, irqflags);
+	for (vc = 0; vc < MIPI_CTRL_VIRTUAL_CHANNELS; vc++) {
+		if (tx_ctrl_cfg->frames[vc] == NULL)
+			continue;
+		/*enable FRAME_DONE interrupt if VC is configured */
+		SET_HS_IRQ_ENABLE(MIPI_CTRL6,
+				MIPI_TX_HS_IRQ_FRAME_DONE_0 << vc);
+		break; /*only one vc for LCD interface */
+	}
+
+	/*enable user enabled interrupts */
+	if (cfg->irq_cfg.dphy_error)
+		SET_MIPI_CTRL_IRQ_ENABLE0(MIPI_CTRL6, MIPI_DHY_ERR_IRQ);
+	if (cfg->irq_cfg.line_compare)
+		SET_HS_IRQ_ENABLE(MIPI_CTRL6, MIPI_TX_HS_IRQ_LINE_COMPARE);
+	if (cfg->irq_cfg.ctrl_error)
+		SET_HS_IRQ_ENABLE(MIPI_CTRL6, MIPI_TX_HS_IRQ_ERROR);
+
+	spin_unlock_irqrestore(&dev_priv->irq_lock, irqflags);
+}
+
 void kmb_dsi_init(struct drm_device *dev)
 {
 	struct kmb_dsi *kmb_dsi;
@@ -1239,4 +1282,7 @@ void kmb_dsi_init(struct drm_device *dev)
 
 	/*d-phy initialization */
 	mipi_tx_init_dphy(&mipi_tx_init_cfg);
+
+	/* irq initialization */
+	mipi_tx_init_irqs(&int_cfg, dev_priv, &mipi_tx_init_cfg.tx_ctrl_cfg);
 }

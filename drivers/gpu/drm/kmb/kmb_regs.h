@@ -521,6 +521,87 @@
 	kmb_write_bits_mipi(MIPI_TXm_HS_MC_FIFO_RTHRESHOLDn(ctrl, vc/2), \
 			(vc % 2)*16, 16, th)
 
+/* MIPI IRQ */
+#define MIPI_CTRL_IRQ_STATUS0				(0x00)
+#define   MIPI_DHY_ERR_IRQ				1
+#define   MIPI_HS_IRQ					13
+#define   MIPI_LP_EVENT_IRQ				25
+#define MIPI_CTRL_IRQ_STATUS1				(0x04)
+#define   MIPI_HS_RX_EVENT_IRQ				0
+#define MIPI_CTRL_IRQ_ENABLE0				(0x08)
+#define   SET_MIPI_CTRL_IRQ_ENABLE0(M, N)		\
+			kmb_set_bit_mipi(MIPI_CTRL_IRQ_ENABLE0,	M+N)
+#define MIPI_CTRL_IRQ_ENABLE1				(0x0c)
+#define MIPI_CTRL_IRQ_CLEAR0				(0x010)
+#define   SET_MIPI_CTRL_IRQ_CLEAR0(M, N)		\
+			kmb_set_bit_mipi(MIPI_CTRL_IRQ_CLEAR0, M+N)
+#define MIPI_CTRL_IRQ_CLEAR1				(0x014)
+#define   SET_MIPI_CTRL_IRQ_CLEAR1(M, N)		\
+			kmb_set_bit_mipi(MIPI_CTRL_IRQ_CLEAR1, M+N)
+#define MIPI_TX_HS_IRQ_STATUS				(0x01c)
+#define   MIPI_TX_HS_IRQ_STATUSm(M)			\
+			(MIPI_TX_HS_IRQ_STATUS + HS_OFFSET(M))
+#define   MIPI_TX_HS_IRQ_LINE_COMPARE			(1<<1)
+#define   MIPI_TX_HS_IRQ_FRAME_DONE_0			(1<<2)
+#define   MIPI_TX_HS_IRQ_FRAME_DONE_1			(1<<3)
+#define   MIPI_TX_HS_IRQ_FRAME_DONE_2			(1<<4)
+#define   MIPI_TX_HS_IRQ_FRAME_DONE_3			(1<<5)
+#define   MIPI_TX_HS_IRQ_DMA_DONE_0			(1<<6)
+#define   MIPI_TX_HS_IRQ_DMA_IDLE_0			(1<<7)
+#define   MIPI_TX_HS_IRQ_DMA_DONE_1			(1<<8)
+#define   MIPI_TX_HS_IRQ_DMA_IDLE_1			(1<<9)
+#define   MIPI_TX_HS_IRQ_DMA_DONE_2			(1<<10)
+#define   MIPI_TX_HS_IRQ_DMA_IDLE_2			(1<<11)
+#define   MIPI_TX_HS_IRQ_DMA_DONE_3			(1<<12)
+#define   MIPI_TX_HS_IRQ_DMA_IDLE_3			(1<<13)
+#define   MIPI_TX_HS_IRQ_MC_FIFO_UNDERFLOW		(1<<14)
+#define   MIPI_TX_HS_IRQ_MC_FIFO_OVERFLOW		(1<<15)
+#define   MIPI_TX_HS_IRQ_LLP_FIFO_EMPTY			(1<<16)
+#define   MIPI_TX_HS_IRQ_LLP_REQUEST_QUEUE_FULL		(1<<17)
+#define   MIPI_TX_HS_IRQ_LLP_REQUEST_QUEUE_ERROR	(1<<18)
+#define   MIPI_TX_HS_IRQ_LLP_WORD_COUNT_ERROR		(1<<20)
+#define   MIPI_TX_HS_IRQ_FRAME_DONE			\
+				(MIPI_TX_HS_IRQ_FRAME_DONE_0 | \
+				MIPI_TX_HS_IRQ_FRAME_DONE_1 | \
+				MIPI_TX_HS_IRQ_FRAME_DONE_2 | \
+				MIPI_TX_HS_IRQ_FRAME_DONE_3)
+
+#define MIPI_TX_HS_IRQ_DMA_DONE				\
+				(MIPI_TX_HS_IRQ_DMA_DONE_0 | \
+				MIPI_TX_HS_IRQ_DMA_DONE_1 | \
+				MIPI_TX_HS_IRQ_DMA_DONE_2 | \
+				MIPI_TX_HS_IRQ_DMA_DONE_3)
+
+#define MIPI_TX_HS_IRQ_DMA_IDLE				\
+				(MIPI_TX_HS_IRQ_DMA_IDLE_0 | \
+				MIPI_TX_HS_IRQ_DMA_IDLE_1 | \
+				MIPI_TX_HS_IRQ_DMA_IDLE_2 | \
+				MIPI_TX_HS_IRQ_DMA_IDLE_3)
+
+#define MIPI_TX_HS_IRQ_ERROR				\
+				(MIPI_TX_HS_IRQ_MC_FIFO_UNDERFLOW | \
+				MIPI_TX_HS_IRQ_MC_FIFO_OVERFLOW | \
+				MIPI_TX_HS_IRQ_LLP_FIFO_EMPTY | \
+				MIPI_TX_HS_IRQ_LLP_REQUEST_QUEUE_FULL | \
+				MIPI_TX_HS_IRQ_LLP_REQUEST_QUEUE_ERROR | \
+				MIPI_TX_HS_IRQ_LLP_WORD_COUNT_ERROR)
+
+#define MIPI_TX_HS_IRQ_ALL				\
+				(MIPI_TX_HS_IRQ_FRAME_DONE | \
+				MIPI_TX_HS_IRQ_DMA_DONE | \
+				MIPI_TX_HS_IRQ_DMA_IDLE | \
+				MIPI_TX_HS_IRQ_LINE_COMPARE | \
+				MIPI_TX_HS_IRQ_ERROR)
+
+#define MIPI_TX_HS_IRQ_ENABLE				(0x020)
+#define   SET_HS_IRQ_ENABLE(M, val)			\
+			kmb_set_bitmask_mipi(MIPI_TX_HS_IRQ_ENABLE \
+			+ HS_OFFSET(M), val)
+#define MIPI_TX_HS_IRQ_CLEAR				(0x024)
+#define   SET_MIPI_TX_HS_IRQ_CLEAR(M, val)		\
+			kmb_set_bitmask_mipi(MIPI_TX_HS_IRQ_CLEAR \
+			+ HS_OFFSET(M), val)
+
 /* D-PHY regs */
 #define DPHY_ENABLE				(0x100)
 #define DPHY_INIT_CTRL0				(0x104)

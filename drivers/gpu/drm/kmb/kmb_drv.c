@@ -77,6 +77,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	if (ret && ret != -ENODEV)
 		return ret;
 
+	spin_lock_init(&lcd->irq_lock);
 	ret = kmb_setup_crtc(drm);
 	if (ret < 0) {
 		DRM_ERROR("failed to create crtc\n");

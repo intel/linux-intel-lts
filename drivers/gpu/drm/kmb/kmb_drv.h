@@ -32,14 +32,15 @@
 #define KMB_MAX_HEIGHT			16384	/*max height in pixels */
 
 struct kmb_drm_private {
-	struct drm_device drm;
-	void __iomem *mmio;
-	unsigned char n_layers;
-	struct clk *clk;
-	struct drm_fbdev_cma *fbdev;
-	struct drm_crtc crtc;
-	struct kmb_plane *plane;
-	struct drm_atomic_state *state;
+	struct drm_device		drm;
+	void __iomem			*mmio;
+	unsigned char			n_layers;
+	struct clk			*clk;
+	struct drm_fbdev_cma		*fbdev;
+	struct drm_crtc			crtc;
+	struct kmb_plane		*plane;
+	struct drm_atomic_state		*state;
+	spinlock_t			irq_lock;
 };
 
 static inline struct kmb_drm_private *to_kmb(const struct drm_device *dev)
@@ -131,6 +132,19 @@ static inline void kmb_clr_bit_mipi(unsigned int reg, u32 offset)
 	kmb_write_mipi(reg, reg_val & (~(1 << offset)));
 }
 
+static inline void kmb_set_bitmask_mipi(unsigned int reg, u32 mask)
+{
+	u32 reg_val = kmb_read_mipi(reg);
+
+	kmb_write_mipi(reg, (reg_val | mask));
+}
+
+static inline void kmb_clr_bitmask_mipi(unsigned int reg, u32 mask)
+{
+	u32 reg_val = kmb_read_mipi(reg);
+
+	kmb_write_mipi(reg, (reg_val & (~mask)));
+}
 int kmb_setup_crtc(struct drm_device *dev);
 void kmb_set_scanout(struct kmb_drm_private *lcd);
 #endif /* __KMB_DRV_H__ */

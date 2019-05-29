@@ -316,6 +316,19 @@ struct mipi_ctrl_cfg {
 	uint32_t data_if;	/*MIPI_IF_DMA or MIPI_IF_PARALLEL */
 	struct mipi_tx_ctrl_cfg tx_ctrl_cfg;
 };
+
+/*structure for storing user specified interrupts that are enabled */
+union mipi_irq_cfg {
+	uint8_t value;
+	struct {
+		uint8_t line_compare : 1;
+		uint8_t dma_event : 1;
+		uint8_t frame_done : 1;
+		uint8_t ctrl_error : 1;
+		uint8_t dphy_error : 1;
+	} irq_cfg;
+};
+
 void kmb_dsi_init(struct drm_device *dev);
 void kmb_plane_destroy(struct drm_plane *plane);
 
