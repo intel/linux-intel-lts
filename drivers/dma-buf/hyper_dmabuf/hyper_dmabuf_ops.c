@@ -132,6 +132,11 @@ static struct sg_table *hyper_dmabuf_ops_map(
 
 	imported = (struct imported_sgt_info *)attachment->dmabuf->priv;
 
+	if (!imported) {
+		dev_err(hy_drv_priv->dev, "%s: imported is NULL\n", __func__);
+		return NULL;
+	}
+
 	/* extract pages from sgt */
 	pg_info = hyper_dmabuf_ext_pgs(imported->sgt);
 
@@ -388,8 +393,13 @@ int hyper_dmabuf_export_fd(struct imported_sgt_info *imported, int flags)
 	 */
 	hyper_dmabuf_export_dma_buf(imported);
 
-	if (imported->dma_buf)
+	if (!IS_ERR_OR_NULL(imported->dma_buf)) {
 		fd = dma_buf_fd(imported->dma_buf, flags);
+	} else {
+		imported->dma_buf = NULL;
+		dev_err(hy_drv_priv->dev,
+				"failed to get dma_buf,return -1\n");
+	}
 
 	return fd;
 }
