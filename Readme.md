@@ -13,7 +13,7 @@ Branch information
 
 [5]  4.x/preempt-rt ==> upstream 4.x preempt rt kernel + Intel patches
 
-[6]  4.x/base-cve ==> fixes for CVEs detected on 4.x stable. The patches are released in quilt form. 
+[6]  4.x/base-cve, 4.x/android-cve ==> fixes for CVEs detected on 4.x stable. The patches are released in quilt form. 
      Use "git quiltimport" to apply the patches. The CVE patches are matched to kernel source using tags
      for ex. CVE patches tagged with lts-v4.19.44-base-cve-190524T175309Z apply on kernel source tagged with
      lts-v4.19.44-base-190524T175309Z 
