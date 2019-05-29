@@ -1,10 +1,10 @@
-ccflags-y := -I$(src)/../include -I$(src)/../inc -I$(src)/..
+ccflags-y := -I$(srctree)/drivers/platform/x86/sepdk/include -I$(srctree)/drivers/platform/x86/sepdk/inc -I$(srctree)/drivers/platform/x86/sepdk
 ccflags-y += -DSEP_CONFIG_MODULE_LAYOUT
 # TODO: verify kaiser.h
 #ccflags-y += -DKAISER_HEADER_PRESENT
 ccflags-y += -DDRV_CPU_HOTPLUG -DDRV_USE_TASKLET_WORKAROUND -DENABLE_CPUS -DBUILD_CHIPSET -DBUILD_GFX
 
-asflags-y := -I$(src)/..
+asflags-y := -I$(srctree)/drivers/platform/x86/sepdk
 
 ifdef CONFIG_SEP_PER_USER_MODE
 	ccflags-y += -DSECURE_SEP

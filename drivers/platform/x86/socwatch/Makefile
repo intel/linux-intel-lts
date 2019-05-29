@@ -10,8 +10,8 @@ DRIVER_NAME=${DRIVER_BASE}${DRIVER_MAJOR}_${DRIVER_MINOR}
 
 DO_DRIVER_PROFILING=0
 
-ccflags-y +=	-Idrivers/platform/x86/socwatch/inc/ \
-		-DDO_DRIVER_PROFILING=$(DO_DRIVER_PROFILING)
+ccflags-y :=	-I$(srctree)/drivers/platform/x86/socwatch/inc
+ccflags-y +=	-DDO_DRIVER_PROFILING=$(DO_DRIVER_PROFILING)
 
 obj-$(CONFIG_INTEL_SOCWATCH)    += $(DRIVER_NAME).o
 
