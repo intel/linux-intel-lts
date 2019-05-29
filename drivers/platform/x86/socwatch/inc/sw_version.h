@@ -61,7 +61,7 @@
  */
 #define SW_DRIVER_VERSION_MAJOR 2
 #define SW_DRIVER_VERSION_MINOR 10
-#define SW_DRIVER_VERSION_OTHER 0
+#define SW_DRIVER_VERSION_OTHER 1
 
 /*
  * Every SOC Watch userspace component shares the same version number.

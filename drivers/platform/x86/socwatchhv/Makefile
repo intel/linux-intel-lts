@@ -1,4 +1,4 @@
-#
+
 # Makefile for the socwatch hv driver.
 #
 
@@ -10,8 +10,8 @@ DRIVER_NAME=${DRIVER_BASE}${DRIVER_MAJOR}_${DRIVER_MINOR}
 
 HYPERVISOR=2 # ACRN
 
-ccflags-y +=	-Idrivers/ \
-		-Idrivers/platform/x86/socwatchhv/inc/ \
+EXTRA_CFLAGS +=	-Idrivers/ \
+		-I$(src)/inc/ \
 		-DHYPERVISOR=$(HYPERVISOR)
 
 obj-$(CONFIG_INTEL_SOCWATCH_HV)    += $(DRIVER_NAME).o
