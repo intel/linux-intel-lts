@@ -836,6 +836,14 @@ static struct crl_csi_data_fmt adv7481_hdmi_crl_csi_data_fmt[] = {
 		.regs_items = ARRAY_SIZE(adv7481_hdmi_mode_rgb888),
 		.regs = adv7481_hdmi_mode_rgb888,
 	},
+	{
+		.code = ICI_FORMAT_RGB24,
+		.pixel_order = CRL_PIXEL_ORDER_GRBG,
+		.bits_per_pixel = 24,
+		.regs_items = ARRAY_SIZE(adv7481_hdmi_mode_rgb888),
+		.regs = adv7481_hdmi_mode_rgb888,
+	},
+
 };
 
 static struct crl_ctrl_data adv7481_hdmi_ctrls[] = {
