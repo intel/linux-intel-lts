@@ -29,4 +29,6 @@ int hyper_dmabuf_export_fd(struct imported_sgt_info *imported, int flags);
 
 void hyper_dmabuf_export_dma_buf(struct imported_sgt_info *imported);
 
+int dmabuf_refcount(struct dma_buf *dma_buf);
+
 #endif /* __HYPER_DMABUF_IMP_H__ */

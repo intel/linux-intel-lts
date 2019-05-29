@@ -42,11 +42,11 @@
 #define WAIT_AFTER_SYNC_REQ 0
 #define REFS_PER_PAGE (PAGE_SIZE/sizeof(grant_ref_t))
 
-static int dmabuf_refcount(struct dma_buf *dma_buf)
+int dmabuf_refcount(struct dma_buf *dma_buf)
 {
-	if ((dma_buf != NULL) && (dma_buf->file != NULL))
+	if (dma_buf->file != NULL)
 		return file_count(dma_buf->file);
-
+	pr_err("dma_buf->file is NULL\n");
 	return -EINVAL;
 }
 
@@ -140,8 +140,11 @@ static struct sg_table *hyper_dmabuf_ops_map(
 	/* extract pages from sgt */
 	pg_info = hyper_dmabuf_ext_pgs(imported->sgt);
 
-	if (!pg_info)
+	if (!pg_info) {
+		dev_err(hy_drv_priv->dev,
+			"%s: failed to extract pages\n", __func__);
 		return NULL;
+	}
 
 	/* create a new sg_table with extracted pages */
 	st = hyper_dmabuf_create_sgt(pg_info->pgs, pg_info->frst_ofst,
@@ -167,6 +170,9 @@ err_free_sg:
 
 	kfree(pg_info->pgs);
 	kfree(pg_info);
+
+	dev_err(hy_drv_priv->dev,
+		"%s: failed to create dma_buf with sgt\n", __func__);
 
 	return NULL;
 }
@@ -199,10 +205,22 @@ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
 	if (!dma_buf->priv)
 		return;
 
+	mutex_lock(&hy_drv_priv->lock);
+
 	imported = (struct imported_sgt_info *)dma_buf->priv;
 
-	if (!dmabuf_refcount(imported->dma_buf))
-		imported->dma_buf = NULL;
+	dev_dbg(hy_drv_priv->dev, "%s: {%x,%x} dmabuf:%p ref_c:%d\n", __func__,
+			imported->hid.id, imported->hid.rng_key[0],
+			imported->dma_buf, imported->importers);
+
+	if (dma_buf != imported->dma_buf) {
+		dev_dbg(hy_drv_priv->dev, "%s: dma_buf changed!\n", __func__);
+		mutex_unlock(&hy_drv_priv->lock);
+		return;
+	}
+
+	dev_dbg(hy_drv_priv->dev, "%s: clear imported->dma_buf\n", __func__);
+	imported->dma_buf = NULL;
 
 	imported->importers--;
 
@@ -220,6 +238,12 @@ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
 	finish = imported && !imported->valid &&
 		 !imported->importers;
 
+
+	dev_dbg(hy_drv_priv->dev, "%s   finished:%d ref_c:%d valid:%c\n",
+			__func__, finish, imported->importers,
+			imported->valid ? 'Y':'N');
+
+
 	sync_request(imported->hid, HYPER_DMABUF_OPS_RELEASE);
 
 	/*
@@ -232,6 +256,8 @@ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
 		kfree(imported->priv);
 		kfree(imported);
 	}
+
+	mutex_unlock(&hy_drv_priv->lock);
 }
 
 static int hyper_dmabuf_ops_begin_cpu_access(struct dma_buf *dmabuf,

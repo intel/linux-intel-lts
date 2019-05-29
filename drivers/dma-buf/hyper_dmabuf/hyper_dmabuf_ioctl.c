@@ -439,24 +439,32 @@ static int hyper_dmabuf_export_fd_ioctl(struct file *filp, void *data)
 
 	dev_dbg(hy_drv_priv->dev, "%s entry\n", __func__);
 
+	mutex_lock(&hy_drv_priv->lock);
+
 	/* look for dmabuf for the id */
 	imported = hyper_dmabuf_find_imported(export_fd_attr->hid);
 
 	/* can't find sgt from the table */
 	if (!imported) {
+		mutex_unlock(&hy_drv_priv->lock);
 		dev_err(hy_drv_priv->dev, "can't find the entry\n");
 		return -ENOENT;
 	}
 
-	mutex_lock(&hy_drv_priv->lock);
+	if (IS_ERR(imported->dma_buf)) {
+		mutex_unlock(&hy_drv_priv->lock);
+		dev_err(hy_drv_priv->dev,
+			"Buffer is invalid {id:%d key:%d}, cannot import\n",
+			imported->hid.id, imported->hid.rng_key[0]);
+		return -EINVAL;
+	}
 
-	if (imported->dma_buf) {
+	if (imported->dma_buf && dmabuf_refcount(imported->dma_buf) > 0) {
 		if (imported->valid == false) {
 			mutex_unlock(&hy_drv_priv->lock);
 			dev_err(hy_drv_priv->dev,
-				"Buffer is released {id:%d key:%d %d %d}, cannot import\n",
-				imported->hid.id, imported->hid.rng_key[0],
-				imported->hid.rng_key[1], imported->hid.rng_key[2]);
+				"Buffer is released {id:%d key:%d}, cannot import\n",
+				imported->hid.id, imported->hid.rng_key[0]);
 			return -EINVAL;
 		}
 		get_dma_buf(imported->dma_buf);
