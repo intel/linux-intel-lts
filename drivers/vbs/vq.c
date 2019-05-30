@@ -145,6 +145,7 @@ int virtio_vq_getchain(struct virtio_vq_info *vq, uint16_t *pidx,
 	dev = vq->dev;
 	name = dev->name;
 
+	rmb();
 	/*
 	 * Note: it's the responsibility of the guest not to
 	 * update vq->vq_avail->va_idx until all of the descriptors
@@ -290,6 +291,8 @@ void virtio_vq_relchain(struct virtio_vq_info *vq, uint16_t idx,
 	vue = &vuh->ring[uidx++ & mask];
 	vue->id = idx;
 	vue->len = iolen;
+	/* Make sure buffer is written before we update index. */
+	wmb();
 	vuh->idx = uidx;
 }
 
@@ -325,6 +328,7 @@ void virtio_vq_endchains(struct virtio_vq_info *vq, int used_all_avail)
 	 * In any case, though, if NOTIFY_ON_EMPTY is set and the
 	 * entire avail was processed, we need to interrupt always.
 	 */
+	mb();
 	dev = vq->dev;
 	old_idx = vq->save_used;
 	vq->save_used = new_idx = vq->used->idx;
