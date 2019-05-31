@@ -1040,8 +1040,7 @@ static int workload_thread(void *priv)
 	int ret;
 	long lret;
 	bool need_force_wake = IS_SKYLAKE(gvt->dev_priv)
-			|| IS_KABYLAKE(gvt->dev_priv)
-			|| IS_BROXTON(gvt->dev_priv);
+			|| IS_KABYLAKE(gvt->dev_priv);
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 
 	kfree(p);
