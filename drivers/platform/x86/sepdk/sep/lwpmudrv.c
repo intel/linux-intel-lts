@@ -3228,7 +3228,7 @@ static OS_STATUS lwpmudrv_Read_Counters_And_Switch_Group(IOCTL_ARGS arg)
 		// step 2
 		// if per_cpu_tsc is not defined, read cpu0's tsc and save in var cpu_tsc[0]
 		// if per_cpu_tsc is defined, read all cpu's tsc and save in var cpu_tsc by lwpmudrv_Fill_TSC_Info
-#if !defined(CONFIG_PREEMPT_COUNT)
+#if !defined(CONFIG_PREEMPT_COUNT) && !defined(DRV_SEP_ACRN_ON)
 	if (DRV_CONFIG_per_cpu_tsc(drv_cfg)) {
 		atomic_set(&read_now, GLOBAL_STATE_num_cpus(driver_state));
 		init_waitqueue_head(&read_tsc_now);
@@ -3297,7 +3297,7 @@ static OS_STATUS lwpmudrv_Read_Counters_And_Switch_Group(IOCTL_ARGS arg)
 
 	// step 9
 	// if per_cpu_tsc is defined, read all cpu's tsc and save in cpu_tsc for next run
-#if !defined(CONFIG_PREEMPT_COUNT)
+#if !defined(CONFIG_PREEMPT_COUNT) && !defined(DRV_SEP_ACRN_ON)
 	if (DRV_CONFIG_per_cpu_tsc(drv_cfg)) {
 		atomic_set(&read_now, GLOBAL_STATE_num_cpus(driver_state));
 		init_waitqueue_head(&read_tsc_now);
@@ -3384,7 +3384,7 @@ static OS_STATUS lwpmudrv_Read_And_Reset_Counters(IOCTL_ARGS arg)
 		// step 2
 		// if per_cpu_tsc is not defined, read cpu0's tsc into var cpu_tsc[0]
 		// if per_cpu_tsc is defined, read all cpu's tsc into var cpu_tsc by lwpmudrv_Fill_TSC_Info
-#if !defined(CONFIG_PREEMPT_COUNT)
+#if !defined(CONFIG_PREEMPT_COUNT) && !defined(DRV_SEP_ACRN_ON)
 	if (DRV_CONFIG_per_cpu_tsc(drv_cfg)) {
 		atomic_set(&read_now, GLOBAL_STATE_num_cpus(driver_state));
 		init_waitqueue_head(&read_tsc_now);
@@ -3450,7 +3450,7 @@ static OS_STATUS lwpmudrv_Read_And_Reset_Counters(IOCTL_ARGS arg)
 
 	// step 8
 	// if per_cpu_tsc is defined, read all cpu's tsc and save in cpu_tsc for next run
-#if !defined(CONFIG_PREEMPT_COUNT)
+#if !defined(CONFIG_PREEMPT_COUNT) && !defined(DRV_SEP_ACRN_ON)
 	if (DRV_CONFIG_per_cpu_tsc(drv_cfg)) {
 		atomic_set(&read_now, GLOBAL_STATE_num_cpus(driver_state));
 		init_waitqueue_head(&read_tsc_now);
