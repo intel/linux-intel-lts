@@ -53,13 +53,11 @@ static int bcm2835_time_set_next_event(unsigned long event,
 static irqreturn_t bcm2835_time_interrupt(int irq, void *dev_id)
 {
 	struct bcm2835_timer *timer = dev_id;
-	void (*event_handler)(struct clock_event_device *);
+
 	if (readl_relaxed(timer->control) & timer->match_mask) {
 		writel_relaxed(timer->match_mask, timer->control);
 
-		event_handler = READ_ONCE(timer->evt.event_handler);
-		if (event_handler)
-			event_handler(&timer->evt);
+		clockevents_handle_event(&timer->evt);
 		return IRQ_HANDLED;
 	} else {
 		return IRQ_NONE;
@@ -124,7 +122,7 @@ static int __init bcm2835_timer_init(struct device_node *node)
 	timer->match_mask = BIT(DEFAULT_TIMER);
 	timer->evt.name = node->name;
 	timer->evt.rating = 300;
-	timer->evt.features = CLOCK_EVT_FEAT_ONESHOT;
+	timer->evt.features = CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PIPELINE;
 	timer->evt.set_next_event = bcm2835_time_set_next_event;
 	timer->evt.cpumask = cpumask_of(0);
 
