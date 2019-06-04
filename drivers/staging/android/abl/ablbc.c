@@ -100,6 +100,7 @@ static const struct name2id NAME2ID[] = {
 	{ "fastboot",	0x01 },
 	{ "elk",	0x02 },
 	{ "recovery",	0x03 },
+	{ "dm-verity device corrupted",	0x03 },
 	{ "crashmode",	0x04 },
 	{ "dnx",	0x05 },
 	{ "cli",	0x10 },
@@ -302,7 +303,7 @@ static int ablbc_reboot_notifier_call(struct notifier_block *notifier,
 
 	if (what != SYS_RESTART)
 		return NOTIFY_DONE;
-	if (target[0] != '\0') {
+	if ((target != NULL) && (target[0] != '\0')) {
 		ret = set_reboot_target(target);
 		if (ret)
 			pr_err("%s: Failed to set reboot target, ret=%d\n",
