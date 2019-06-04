@@ -10,8 +10,8 @@ DRIVER_NAME=${DRIVER_BASE}${DRIVER_MAJOR}_${DRIVER_MINOR}
 
 HYPERVISOR=2 # ACRN
 
-EXTRA_CFLAGS +=	-Idrivers/ \
-		-I$(src)/inc/ \
+EXTRA_CFLAGS +=	-I$(srctree)/drivers/ \
+		-I$(srctree)/drivers/platform/x86/socwatchhv/inc/ \
 		-DHYPERVISOR=$(HYPERVISOR)
 
 obj-$(CONFIG_INTEL_SOCWATCH_HV)    += $(DRIVER_NAME).o
