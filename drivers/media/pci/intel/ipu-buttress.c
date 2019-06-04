@@ -1266,7 +1266,7 @@ static void ipu_buttress_read_psys_fused_freqs(struct ipu_device *isp)
 	fused_freq->efficient_freq = efficient_ratio * BUTTRESS_PS_FREQ_STEP;
 }
 
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
 
 static struct ipu_isys_clk_mapping *clkmap_dynamic;
 
@@ -1397,7 +1397,7 @@ static int ipu_buttress_clk_init(struct ipu_device *isp)
 	if (!clkmap)
 		return 0;
 
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
 	clkmap_dynamic = devm_kzalloc(&isp->pdev->dev,
 		ipu_clk_mapping_num(clkmap) * sizeof(*clkmap_dynamic),
 		GFP_KERNEL);
@@ -1412,7 +1412,7 @@ static int ipu_buttress_clk_init(struct ipu_device *isp)
 #endif
 
 	while (clkmap->clkdev_data.dev_id) {
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
 		char *dev_id = kstrdup(clkmap->clkdev_data.dev_id, GFP_KERNEL);
 		int adapter_id = clkmap->clkdev_data.dev_id[0] - '0';
 		char *addr = strpbrk(clkmap->clkdev_data.dev_id, "-");
@@ -1429,7 +1429,7 @@ static int ipu_buttress_clk_init(struct ipu_device *isp)
 			if (!strcmp(clkmap->platform_clock_name,
 				    clk_data[i].name)) {
 				clkmap->clkdev_data.clk = b->clk_sensor[i];
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
 				clkmap->clkdev_data.dev_id = dev_id;
 #endif
 				clkdev_add(&clkmap->clkdev_data);
@@ -1456,7 +1456,7 @@ static void ipu_buttress_clk_exit(struct ipu_device *isp)
 {
 	struct ipu_buttress *b = &isp->buttress;
 	int i;
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
 	struct ipu_isys_clk_mapping *clkmap;
 #endif
 
@@ -1467,7 +1467,7 @@ static void ipu_buttress_clk_exit(struct ipu_device *isp)
 	for (i = 0; i < ARRAY_SIZE(ipu_buttress_sensor_pll_data); i++)
 		clk_unregister(b->pll_sensor[i]);
 
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
 	if (!clkmap_dynamic)
 		return;
 

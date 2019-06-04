@@ -312,7 +312,7 @@ static int isys_register_ext_subdev(struct ici_isys *isys,
 	int rval;
 	int bus;
 
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
 	bus = ipu_get_i2c_bus_id(sd_info->i2c.i2c_adapter_id);
 	if (bus < 0) {
 		dev_err(&isys->adev->dev, "Failed to find adapter!");
