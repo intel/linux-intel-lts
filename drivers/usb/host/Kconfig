@@ -29,12 +29,25 @@ config USB_XHCI_HCD
 if USB_XHCI_HCD
 config USB_XHCI_DBGCAP
 	bool "xHCI support for debug capability"
-	depends on TTY
 	---help---
 	  Say 'Y' to enable the support for the xHCI debug capability. Make
 	  sure that your xHCI host supports the extended debug capability and
 	  you want a TTY serial device based on the xHCI debug capability
 	  before enabling this option. If unsure, say 'N'.
+
+choice
+	prompt "Select function for debug capability"
+	depends on USB_XHCI_DBGCAP
+
+config USB_XHCI_DBGCAP_TTY
+	tristate "xHCI DbC tty driver support"
+	depends on USB_XHCI_HCD && USB_XHCI_DBGCAP && TTY
+	help
+	  Say 'Y' to enable the support for the tty driver interface to xHCI
+	  debug capability. This will expose a /dev/ttyDBC* device node on device
+	  which may be used by the usb-debug driver on the debug host.
+	  If unsure, say 'N'.
+endchoice
 
 config USB_XHCI_PCI
        tristate
