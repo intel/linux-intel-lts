@@ -20,6 +20,7 @@ ifneq ($(CONFIG_USB_XHCI_DBGCAP), )
 endif
 
 obj-$(CONFIG_USB_XHCI_DBGCAP_TTY) += xhci-dbgtty.o
+obj-$(CONFIG_USB_XHCI_DBGCAP_RAW) += xhci-dbgraw.o
 
 ifneq ($(CONFIG_USB_XHCI_MTK), )
 	xhci-hcd-y += xhci-mtk-sch.o
