@@ -229,6 +229,8 @@ static int hyper_dmabuf_export_remote_ioctl(struct file *filp, void *data)
 		return PTR_ERR(dma_buf);
 	}
 
+	mutex_lock(&hy_drv_priv->lock);
+
 	/* we check if this specific attachment was already exported
 	 * to the same domain and if yes and it's valid sgt_info,
 	 * it returns hyper_dmabuf_id of pre-exported sgt_info
@@ -246,6 +248,7 @@ static int hyper_dmabuf_export_remote_ioctl(struct file *filp, void *data)
 		if (ret <= 0) {
 			dma_buf_put(dma_buf);
 			export_remote_attr->hid = hid;
+			mutex_unlock(&hy_drv_priv->lock);
 			return ret;
 		}
 	}
@@ -384,6 +387,7 @@ static int hyper_dmabuf_export_remote_ioctl(struct file *filp, void *data)
 
 	exported->filp = filp;
 
+	mutex_unlock(&hy_drv_priv->lock);
 	return ret;
 
 /* Clean-up if error occurs */
@@ -422,6 +426,7 @@ fail_map_attachment:
 fail_attach:
 	dma_buf_put(dma_buf);
 
+	mutex_unlock(&hy_drv_priv->lock);
 	return ret;
 }
 
