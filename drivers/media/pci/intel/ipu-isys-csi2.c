@@ -905,7 +905,7 @@ void ipu_isys_csi2_wait_last_eof(struct ipu_isys_csi2 *csi2)
 		csi2->wait_for_sync[i] = true;
 		spin_unlock_irqrestore(&csi2->isys->lock, flags);
 		tout = wait_for_completion_timeout(&csi2->eof_completion,
-						   IPU_EOF_TIMEOUT_JIFFIES);
+			csi2->isys->csi2_in_error_state ? 0 : IPU_EOF_TIMEOUT_JIFFIES);
 		if (!tout)
 			dev_err(&csi2->isys->adev->dev,
 				"csi2-%d: timeout at sync to eof of vc %d\n",

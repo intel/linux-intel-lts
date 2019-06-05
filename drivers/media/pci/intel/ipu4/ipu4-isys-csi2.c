@@ -20,6 +20,37 @@
 #define CSI2_UPDATE_TIME_TRY_NUM   3
 #define CSI2_UPDATE_TIME_MAX_DIFF  20
 
+
+static unsigned int ipu_isys_csi2_fatal_errors[] = {
+	CSI2_CSIRX_FIFO_OVERFLOW,
+	CSI2_CSIRX_FRAME_SYNC_ERROR,
+	CSI2_CSIRX_DPHY_NONRECOVERABLE_SYNC_ERROR
+};
+
+static int ipu_isys_csi2_is_fatal_error(unsigned int error)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(ipu_isys_csi2_fatal_errors); ++i)
+		if (error & ipu_isys_csi2_fatal_errors[i])
+			return 1;
+	return 0;
+}
+
+static void trigger_error(struct ipu_isys_csi2 *csi2)
+{
+	unsigned long flags;
+
+	if (!csi2->isys)
+		return;
+
+	spin_lock_irqsave(&csi2->isys->lock, flags);
+	if (csi2->wdt_enable)
+		queue_work(csi2->wdt_wq, &csi2->wdt_work);
+	spin_unlock_irqrestore(&csi2->isys->lock, flags);
+}
+
+
 static u32
 build_cse_ipc_commands(struct ipu_ipc_buttress_bulk_msg *target,
 		       u32 nbr_msgs, u32 opcodel, u32 reg, u32 data)
@@ -290,6 +321,13 @@ void ipu_isys_csi2_error(struct ipu_isys_csi2 *csi2)
 	ipu_isys_register_errors(csi2);
 	status = csi2->receiver_errors;
 	csi2->receiver_errors = 0;
+
+	if (ipu_isys_csi2_is_fatal_error(status)) {
+		dev_err_ratelimited(&csi2->isys->adev->dev,
+				"csi2-%i received fatal error\n",
+				csi2->index);
+		trigger_error(csi2);
+	}
 
 	for (i = 0; i < ARRAY_SIZE(errors); i++) {
 		if (!(status & BIT(i)))

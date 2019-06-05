@@ -173,5 +173,8 @@ void ipu_isys_csi2_isr(struct ipu_isys_csi2 *csi2);
 void ipu_isys_csi2_error(struct ipu_isys_csi2 *csi2);
 bool ipu_isys_csi2_skew_cal_required(struct ipu_isys_csi2 *csi2);
 int ipu_isys_csi2_set_skew_cal(struct ipu_isys_csi2 *csi2, int enable);
+void ipu_isys_csi2_start_wdt(struct ipu_isys_csi2 *csi2,
+			unsigned int timeout);
+void ipu_isys_csi2_stop_wdt(struct ipu_isys_csi2 *csi2);
 
 #endif /* IPU_ISYS_CSI2_H */
