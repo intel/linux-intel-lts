@@ -2237,6 +2237,9 @@ static struct virtio_driver virtio_console = {
 	.driver.name =	KBUILD_MODNAME,
 	.driver.owner =	THIS_MODULE,
 	.id_table =	id_table,
+#ifdef CONFIG_VIRTIO_PMD
+	.polling_mode =	true,
+#endif
 	.probe =	virtcons_probe,
 	.remove =	virtcons_remove,
 	.config_changed = config_intr,
