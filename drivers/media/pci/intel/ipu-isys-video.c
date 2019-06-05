@@ -169,8 +169,6 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	{}
 };
 
-void ipu_isys_csi2_trigger_error_all(struct ipu_isys *isys);
-
 static int video_open(struct file *file)
 {
 	struct ipu_isys_video *av = video_drvdata(file);
@@ -182,7 +180,6 @@ static int video_open(struct file *file)
 	mutex_lock(&isys->mutex);
 
 	if (isys->reset_needed || isp->flr_done) {
-		ipu_isys_csi2_trigger_error_all(av->isys);
 		mutex_unlock(&isys->mutex);
 		dev_warn(&isys->adev->dev, "isys power cycle required\n");
 		return -EIO;
@@ -1376,7 +1373,6 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	if (use_stream_stop)
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_STOP;
 
-	mutex_lock(&av->isys->mutex);
 	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
 				      send_type);
 
@@ -1386,15 +1382,13 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_stop_completion,
-					IPU_LIB_CALL_TIMEOUT_JIFFIES);
+		av->isys->csi2_in_error_state ? 0 : IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
 		dev_err(dev, "stream stop time out\n");
 	else if (ip->error)
 		dev_err(dev, "stream stop error: %d\n", ip->error);
 	else
 		dev_dbg(dev, "stop stream: complete\n");
-
-	mutex_unlock(&av->isys->mutex);
 }
 
 static void close_streaming_firmware(struct ipu_isys_video *av)
@@ -1406,8 +1400,6 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 
 	reinit_completion(&ip->stream_close_completion);
 
-	mutex_lock(&av->isys->mutex);
-
 	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
 				      IPU_FW_ISYS_SEND_TYPE_STREAM_CLOSE);
 	if (rval < 0) {
@@ -1416,7 +1408,7 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
-				IPU_LIB_CALL_TIMEOUT_JIFFIES);
+		av->isys->csi2_in_error_state ? 0 : IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
 		dev_err(dev, "stream close time out\n");
 	else if (ip->error)
@@ -1426,7 +1418,6 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 
 	put_stream_opened(av);
 	put_stream_handle(av);
-	mutex_unlock(&av->isys->mutex);
 }
 
 void
