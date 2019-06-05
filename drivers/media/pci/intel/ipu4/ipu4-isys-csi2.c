@@ -50,6 +50,15 @@ static void trigger_error(struct ipu_isys_csi2 *csi2)
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 }
 
+void ipu_isys_csi2_trigger_error_all(struct ipu_isys *isys)
+{
+	int i;
+
+	isys->reset_needed = true;
+	for (i = 0; i < isys->pdata->ipdata->csi2.nports; i++) {
+		trigger_error(&isys->csi2[i]);
+	}
+}
 
 static u32
 build_cse_ipc_commands(struct ipu_ipc_buttress_bulk_msg *target,
@@ -749,3 +758,79 @@ int ipu_isys_csi2_set_skew_cal(struct ipu_isys_csi2 *csi2, int enable)
 
 	return 0;
 }
+
+static void eof_wdt_handler(struct work_struct *w)
+{
+	unsigned long flags;
+	struct ipu_isys_csi2 *csi2;
+	struct ipu_isys_pipeline *ip;
+	struct ipu_isys_queue *aq;
+
+	if (!w)
+		return;
+
+	csi2 = container_of(w, struct ipu_isys_csi2, wdt_work);
+
+	if (!(csi2 && csi2->isys))
+		return;
+
+	spin_lock_irqsave(&csi2->isys->lock, flags);
+	if (csi2->wdt_enable) {
+		dev_err_ratelimited(&csi2->isys->adev->dev,
+			"csi2-%i non recoverable error\n",
+			csi2->index);
+		ip = to_ipu_isys_pipeline(csi2->asd.sd.entity.pipe);
+		list_for_each_entry(aq, &ip->queues, node) {
+			vb2_queue_error(&aq->vbq);
+			wake_up_interruptible(&aq->vbq.done_wq);
+		}
+		csi2->isys->csi2_in_error_state = 1;
+	}
+	spin_unlock_irqrestore(&csi2->isys->lock, flags);
+}
+
+static void eof_timer_handler(struct timer_list *data)
+{
+	struct ipu_isys_csi2 *csi2 = container_of(data, struct ipu_isys_csi2, eof_timer);
+
+	trigger_error(csi2);
+}
+
+void ipu_isys_csi2_start_wdt(
+	struct ipu_isys_csi2 *csi2,
+	unsigned int timeout)
+{
+	unsigned long flags;
+
+	if (!csi2->wdt_wq)
+		csi2->wdt_wq = create_singlethread_workqueue("eof_wdt");
+
+	if (!csi2->wdt_wq)
+		return;
+
+	INIT_WORK(&csi2->wdt_work, eof_wdt_handler);
+	spin_lock_irqsave(&csi2->isys->lock, flags);
+	csi2->eof_wdt_timeout = msecs_to_jiffies(timeout);
+	timer_setup(&csi2->eof_timer, eof_timer_handler, 0);
+	mod_timer(&csi2->eof_timer, jiffies + csi2->eof_wdt_timeout);
+	csi2->wdt_enable = true;
+	spin_unlock_irqrestore(&csi2->isys->lock, flags);
+}
+
+void ipu_isys_csi2_stop_wdt(
+	struct ipu_isys_csi2 *csi2)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&csi2->isys->lock, flags);
+	csi2->wdt_enable = false;
+	spin_unlock_irqrestore(&csi2->isys->lock, flags);
+
+	del_timer_sync(&csi2->eof_timer);
+	if (csi2->wdt_wq) {
+		flush_workqueue(csi2->wdt_wq);
+		destroy_workqueue(csi2->wdt_wq);
+		csi2->wdt_wq = NULL;
+	}
+}
+

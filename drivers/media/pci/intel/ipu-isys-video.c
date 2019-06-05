@@ -39,6 +39,14 @@ static unsigned int num_stream_support = IPU_ISYS_NUM_STREAMS;
 module_param(num_stream_support, uint, 0660);
 MODULE_PARM_DESC(num_stream_support, "IPU project support number of stream");
 
+static bool csi_watchdog_enable = 1;
+module_param(csi_watchdog_enable, bool, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+MODULE_PARM_DESC(csi_watchdog_enable, "IPU4 CSI watchdog enable");
+
+static unsigned int csi_watchdog_timeout = 500;
+module_param(csi_watchdog_timeout, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+MODULE_PARM_DESC(csi_watchdog_timeout, "IPU4 CSI watchdog timeout");
+
 static bool use_stream_stop;
 module_param(use_stream_stop, bool, 0660);
 MODULE_PARM_DESC(use_stream_stop, "Use STOP command if running in CSI capture mode");
@@ -161,6 +169,8 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	{}
 };
 
+void ipu_isys_csi2_trigger_error_all(struct ipu_isys *isys);
+
 static int video_open(struct file *file)
 {
 	struct ipu_isys_video *av = video_drvdata(file);
@@ -172,6 +182,7 @@ static int video_open(struct file *file)
 	mutex_lock(&isys->mutex);
 
 	if (isys->reset_needed || isp->flr_done) {
+		ipu_isys_csi2_trigger_error_all(av->isys);
 		mutex_unlock(&isys->mutex);
 		dev_warn(&isys->adev->dev, "isys power cycle required\n");
 		return -EIO;
@@ -206,6 +217,7 @@ static int video_open(struct file *file)
 
 	mutex_lock(&isys->mutex);
 
+	isys->csi2_in_error_state = 0;
 	if (isys->video_opened++) {
 		/* Already open */
 		mutex_unlock(&isys->mutex);
@@ -967,6 +979,10 @@ static void csi_short_packet_prepare_firmware_stream_cfg(
 	output_info->pt = IPU_ISYS_SHORT_PACKET_PT;
 	output_info->ft = IPU_ISYS_SHORT_PACKET_FT;
 	output_info->send_irq = 1;
+#if !defined(CONFIG_VIDEO_INTEL_IPU4) && !defined(CONFIG_VIDEO_INTEL_IPU4P)
+	output_info->snoopable = true;
+	output_info->sensor_type = IPU_FW_ISYS_SENSOR_METADATA;
+#endif
 }
 
 void ipu_isys_prepare_firmware_stream_cfg_default(
@@ -978,6 +994,10 @@ void ipu_isys_prepare_firmware_stream_cfg_default(
 
 	struct ipu_isys_queue *aq = &av->aq;
 	struct ipu_fw_isys_output_pin_info_abi *pin_info;
+#if !defined(CONFIG_VIDEO_INTEL_IPU4) && !defined(CONFIG_VIDEO_INTEL_IPU4P)
+	struct ipu_isys *isys = av->isys;
+	unsigned int type_index;
+#endif
 	int pin = cfg->nof_output_pins++;
 
 	aq->fw_output = pin;
@@ -1001,6 +1021,65 @@ void ipu_isys_prepare_firmware_stream_cfg_default(
 	pin_info->ft = av->pfmt->css_pixelformat;
 	pin_info->send_irq = 1;
 	cfg->vc = ip->vc;
+
+#if !defined(CONFIG_VIDEO_INTEL_IPU4) && !defined(CONFIG_VIDEO_INTEL_IPU4P)
+	switch (pin_info->pt) {
+	/* non-snoopable sensor data to PSYS */
+	case IPU_FW_ISYS_PIN_TYPE_RAW_DUAL_SOC:
+	case IPU_FW_ISYS_PIN_TYPE_RAW_NS:
+	case IPU_FW_ISYS_PIN_TYPE_RAW_S:
+		type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
+		pin_info->sensor_type = isys->sensor_types[type_index]++;
+		pin_info->snoopable = false;
+
+		if (isys->sensor_types[type_index] >
+				IPU_FW_ISYS_VC1_SENSOR_DATA_END)
+			isys->sensor_types[type_index] =
+				IPU_FW_ISYS_VC1_SENSOR_DATA_START;
+
+		break;
+	/* non-snoopable PDAF data */
+	case IPU_FW_ISYS_PIN_TYPE_PAF_FF:
+		type_index = IPU_FW_ISYS_VC1_SENSOR_PDAF;
+		pin_info->sensor_type = isys->sensor_types[type_index]++;
+		pin_info->snoopable = false;
+
+		if (isys->sensor_types[type_index] >
+				IPU_FW_ISYS_VC1_SENSOR_PDAF_END)
+			isys->sensor_types[type_index] =
+				IPU_FW_ISYS_VC1_SENSOR_PDAF_START;
+
+		break;
+	/* snoopable META/Stats data to CPU */
+	case IPU_FW_ISYS_PIN_TYPE_METADATA_0:
+	case IPU_FW_ISYS_PIN_TYPE_METADATA_1:
+	case IPU_FW_ISYS_PIN_TYPE_AWB_STATS:
+	case IPU_FW_ISYS_PIN_TYPE_AF_STATS:
+	case IPU_FW_ISYS_PIN_TYPE_HIST_STATS:
+		pin_info->sensor_type = IPU_FW_ISYS_SENSOR_METADATA;
+		pin_info->snoopable = true;
+		break;
+	/* snoopable sensor data to CPU */
+	case IPU_FW_ISYS_PIN_TYPE_MIPI:
+	case IPU_FW_ISYS_PIN_TYPE_RAW_SOC:
+		type_index = IPU_FW_ISYS_VC0_SENSOR_DATA;
+		pin_info->sensor_type = isys->sensor_types[type_index]++;
+		pin_info->snoopable = true;
+
+		if (isys->sensor_types[type_index] >
+				IPU_FW_ISYS_VC0_SENSOR_DATA_END)
+			isys->sensor_types[type_index] =
+				IPU_FW_ISYS_VC0_SENSOR_DATA_START;
+
+		break;
+	default:
+		dev_err(&av->isys->adev->dev,
+			"Unknown pin type, use metadata type as default\n");
+
+		pin_info->sensor_type = IPU_FW_ISYS_SENSOR_METADATA;
+		pin_info->snoopable = true;
+	}
+#endif
 }
 
 static unsigned int ipu_isys_get_compression_scheme(u32 code)
@@ -1304,6 +1383,7 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	if (use_stream_stop)
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_STOP;
 
+	mutex_lock(&av->isys->mutex);
 	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
 				      send_type);
 
@@ -1313,13 +1393,15 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_stop_completion,
-		av->isys->csi2_in_error_state ? 0 : IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
 		dev_err(dev, "stream stop time out\n");
 	else if (ip->error)
 		dev_err(dev, "stream stop error: %d\n", ip->error);
 	else
 		dev_dbg(dev, "stop stream: complete\n");
+
+	mutex_unlock(&av->isys->mutex);
 }
 
 static void close_streaming_firmware(struct ipu_isys_video *av)
@@ -1331,6 +1413,8 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 
 	reinit_completion(&ip->stream_close_completion);
 
+	mutex_lock(&av->isys->mutex);
+
 	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
 				      IPU_FW_ISYS_SEND_TYPE_STREAM_CLOSE);
 	if (rval < 0) {
@@ -1339,7 +1423,7 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
-		av->isys->csi2_in_error_state ? 0 : IPU_LIB_CALL_TIMEOUT_JIFFIES);
+				IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
 		dev_err(dev, "stream close time out\n");
 	else if (ip->error)
@@ -1349,6 +1433,7 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 
 	put_stream_opened(av);
 	put_stream_handle(av);
+	mutex_unlock(&av->isys->mutex);
 }
 
 void
@@ -1547,6 +1632,9 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 	}
 
 	if (!state) {
+		if (csi_watchdog_enable)
+			ipu_isys_csi2_stop_wdt(ip->csi2);
+
 		stop_streaming_firmware(av);
 
 		/* stop external sub-device now. */
@@ -1555,7 +1643,9 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 		if (ip->csi2) {
 			if (ip->csi2->stream_count == 1) {
 				v4l2_subdev_call(esd, video, s_stream, state);
+#if defined(CONFIG_VIDEO_INTEL_IPU4) || defined(CONFIG_VIDEO_INTEL_IPU4P)
 				ipu_isys_csi2_wait_last_eof(ip->csi2);
+#endif
 			}
 		} else {
 			v4l2_subdev_call(esd, video, s_stream, state);
@@ -1628,6 +1718,11 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 			rval = v4l2_subdev_call(esd, video, s_stream, state);
 		if (rval)
 			goto out_media_entity_stop_streaming_firmware;
+
+		if (csi_watchdog_enable)
+			ipu_isys_csi2_start_wdt(ip->csi2,
+			csi_watchdog_timeout);
+
 	} else {
 		close_streaming_firmware(av);
 		av->ip.stream_id = 0;

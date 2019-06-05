@@ -105,6 +105,12 @@ struct ipu_isys_csi2 {
 	unsigned int stream_count;
 
 	struct v4l2_ctrl *store_csi2_header;
+	struct timer_list eof_timer;
+	struct work_struct wdt_work;
+	struct workqueue_struct *wdt_wq;
+	unsigned long eof_wdt_timeout;
+	int wdt_enable;
+
 };
 
 struct ipu_isys_csi2_timing {
@@ -176,5 +182,6 @@ int ipu_isys_csi2_set_skew_cal(struct ipu_isys_csi2 *csi2, int enable);
 void ipu_isys_csi2_start_wdt(struct ipu_isys_csi2 *csi2,
 			unsigned int timeout);
 void ipu_isys_csi2_stop_wdt(struct ipu_isys_csi2 *csi2);
+void ipu_isys_csi2_trigger_error_all(struct ipu_isys *isys);
 
 #endif /* IPU_ISYS_CSI2_H */
