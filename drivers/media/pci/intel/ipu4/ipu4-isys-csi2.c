@@ -765,6 +765,7 @@ static void eof_wdt_handler(struct work_struct *w)
 	struct ipu_isys_csi2 *csi2;
 	struct ipu_isys_pipeline *ip;
 	struct ipu_isys_queue *aq;
+	struct siginfo info;
 
 	if (!w)
 		return;
@@ -785,6 +786,15 @@ static void eof_wdt_handler(struct work_struct *w)
 			wake_up_interruptible(&aq->vbq.done_wq);
 		}
 		csi2->isys->csi2_in_error_state = 1;
+		if (csi2->current_owner && !csi2->error_signal_send) {
+			memset(&info, 0, sizeof(struct siginfo));
+			info.si_signo = SIGUSR1;
+			info.si_code = 0;
+			info.si_int = 0;
+			send_sig_info(SIGUSR1, &info, csi2->current_owner);
+			csi2->error_signal_send = true;
+		}
+
 	}
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 }
