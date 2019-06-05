@@ -37,10 +37,8 @@ static U64 *uncore_current_data;
 static U64 *uncore_to_read_data;
 extern DRV_CONFIG drv_cfg;
 
-#if 0
 extern U64 *read_counter_info;
 extern VOID SOCPERF_Read_Data3(PVOID data_buffer);
-#endif
 
 /*!
  * @fn         static VOID valleyview_VISA_Initialize(PVOID)
@@ -187,7 +185,6 @@ static VOID valleyview_VISA_Clean_Up(VOID *param)
  */
 static VOID valleyview_VISA_Read_PMU_Data(PVOID param)
 {
-#if 0
 	U32 j;
 	U64 *buffer = read_counter_info;
 	U32 dev_idx;
@@ -236,7 +233,6 @@ static VOID valleyview_VISA_Read_PMU_Data(PVOID param)
 	END_FOR_EACH_REG_UNC_OPERATION;
 
 	SEP_DRV_LOG_TRACE_OUT("");
-#endif
 }
 
 /* ------------------------------------------------------------------------- */
@@ -252,7 +248,6 @@ static VOID valleyview_VISA_Read_PMU_Data(PVOID param)
  */
 static VOID valleyview_Trigger_Read(PVOID param, U32 id)
 {
-#if 0
 	U64 *data = (U64 *)param;
 	U32 cur_grp;
 	ECB pecb;
@@ -271,7 +266,6 @@ static VOID valleyview_Trigger_Read(PVOID param, U32 id)
 	SOCPERF_Read_Data3((void*)data);
 
 	SEP_DRV_LOG_TRACE_OUT("");
-#endif
 }
 
 /*

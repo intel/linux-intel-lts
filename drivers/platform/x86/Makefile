@@ -93,7 +93,11 @@ obj-$(CONFIG_INTEL_TURBO_MAX_3) += intel_turbo_max_3.o
 obj-$(CONFIG_INTEL_CHTDC_TI_PWRBTN)	+= intel_chtdc_ti_pwrbtn.o
 obj-$(CONFIG_I2C_MULTI_INSTANTIATE)	+= i2c-multi-instantiate.o
 obj-$(CONFIG_INTEL_PSTORE_PRAM)	+= intel_pstore_pram.o
-obj-$(CONFIG_INTEL_SOCWATCH) += socwatch/
+obj-$(CONFIG_PCENGINES_APU2)	+= pcengines-apuv2.o
+
+# sep and socwatch drivers
+obj-$(CONFIG_INTEL_SOCPERF)     += socperf/
++obj-$(CONFIG_INTEL_SOCWATCH)    += socwatch/ socperf/
 obj-$(CONFIG_INTEL_SOCWATCH_HV) += socwatchhv/
-obj-$(CONFIG_INTEL_SEP) += sepdk/
+obj-$(CONFIG_INTEL_SEP)         += sepdk/ socperf/
 obj-$(CONFIG_INTEL_ATOMISP2_PM)	+= intel_atomisp2_pm.o
