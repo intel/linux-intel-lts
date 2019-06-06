@@ -297,6 +297,17 @@ void virtio_device_ready(struct virtio_device *dev)
 	 * we won't lose any notification.
 	 */
 	dev->config->set_status(dev, status | VIRTIO_CONFIG_S_DRIVER_OK);
+
+#ifdef CONFIG_VIRTIO_PMD
+	/*
+	 * In polling mode, virtqueue interrupts are disabled from the
+	 * beginning. we must make sure the polling timer is started
+	 * just after the virtqueue is ready. When vring_create_virtqueue
+	 * is called the virtqueues are not ready. Start polling timer
+	 * when status is changed to DRIVER_OK is a good chance then.
+	 */
+	virtio_start_polling_timer(dev);
+#endif
 }
 
 static inline

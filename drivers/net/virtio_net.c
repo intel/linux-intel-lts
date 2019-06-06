@@ -6853,6 +6853,9 @@ static struct virtio_driver virtio_net_driver = {
 	.driver.name =	KBUILD_MODNAME,
 	.id_table =	id_table,
 	.validate =	virtnet_validate,
+#ifdef CONFIG_VIRTIO_PMD
+	.polling_mode =	true,
+#endif
 	.probe =	virtnet_probe,
 	.remove =	virtnet_remove,
 	.config_changed = virtnet_config_changed,
