@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <linux/virtio.h>
 #include <linux/spinlock.h>
+#include <linux/virtio_ring.h>
 #include <linux/virtio_config.h>
 #include <linux/virtio_anchor.h>
 #include <linux/module.h>
@@ -70,6 +71,13 @@ static struct attribute *virtio_dev_attrs[] = {
 	NULL,
 };
 ATTRIBUTE_GROUPS(virtio_dev);
+
+#ifdef CONFIG_VIRTIO_PMD
+static unsigned long virtio_polling_interval = 10000000UL;
+module_param(virtio_polling_interval, ulong, 0644);
+MODULE_PARM_DESC(virtio_polling_interval,
+	"virtio polling interval in ns. (default: 10000000)");
+#endif
 
 static inline int virtio_id_match(const struct virtio_device *dev,
 				  const struct virtio_device_id *id)
@@ -267,6 +275,48 @@ void virtio_reset_device(struct virtio_device *dev)
 }
 EXPORT_SYMBOL_GPL(virtio_reset_device);
 
+#ifdef CONFIG_VIRTIO_PMD
+static enum hrtimer_restart virtio_handle_polling_timer(struct hrtimer *t)
+{
+	struct virtio_device *dev = container_of(t, struct virtio_device,
+						 hr_timer);
+
+	virtio_poll_virtqueues(dev);
+	/* virtio_config_changed(dev); */
+	hrtimer_start(&dev->hr_timer, ns_to_ktime(virtio_polling_interval),
+		      HRTIMER_MODE_REL);
+	return HRTIMER_NORESTART;
+}
+
+static inline void virtio_init_polling_timer(struct virtio_device *dev)
+{
+	if (virtio_polling_mode_enabled(dev)) {
+		hrtimer_init(&dev->hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+		(dev->hr_timer).function = virtio_handle_polling_timer;
+	}
+}
+
+void virtio_start_polling_timer(struct virtio_device *dev)
+{
+	if (virtio_polling_mode_enabled(dev)) {
+		hrtimer_start(&dev->hr_timer,
+			ns_to_ktime(virtio_polling_interval), HRTIMER_MODE_REL);
+		dev_notice(&dev->dev, "start polling timer: %lu\n",
+			virtio_polling_interval);
+	}
+}
+EXPORT_SYMBOL_GPL(virtio_start_polling_timer);
+
+void virtio_stop_polling_timer(struct virtio_device *dev)
+{
+	if (virtio_polling_mode_enabled(dev)) {
+		hrtimer_cancel(&dev->hr_timer);
+		dev_notice(&dev->dev, "stop polling timer\n");
+	}
+}
+EXPORT_SYMBOL_GPL(virtio_stop_polling_timer);
+#endif
+
 static int virtio_dev_probe(struct device *_d)
 {
 	int err, i;
@@ -281,6 +331,13 @@ static int virtio_dev_probe(struct device *_d)
 
 	/* Figure out what features the device supports. */
 	device_features = dev->config->get_features(dev);
+
+#ifdef CONFIG_VIRTIO_PMD
+	if (virtio_polling_mode_enabled(dev)) {
+		device_features &= ~VIRTIO_F_NOTIFY_ON_EMPTY;
+		device_features &= ~VIRTIO_RING_F_EVENT_IDX;
+	}
+#endif
 
 	/* Figure out what features the driver supports. */
 	driver_features = 0;
@@ -338,6 +395,10 @@ static int virtio_dev_probe(struct device *_d)
 	if (err)
 		goto err;
 
+#ifdef CONFIG_VIRTIO_PMD
+	virtio_init_polling_timer(dev);
+#endif
+
 	err = drv->probe(dev);
 	if (err)
 		goto err;
@@ -354,6 +415,9 @@ static int virtio_dev_probe(struct device *_d)
 	return 0;
 
 err:
+#ifdef CONFIG_VIRTIO_PMD
+	virtio_stop_polling_timer(dev);
+#endif
 	virtio_add_status(dev, VIRTIO_CONFIG_S_FAILED);
 	return err;
 
@@ -366,6 +430,9 @@ static void virtio_dev_remove(struct device *_d)
 
 	virtio_config_core_disable(dev);
 
+#ifdef CONFIG_VIRTIO_PMD
+	virtio_stop_polling_timer(dev);
+#endif
 	drv->remove(dev);
 
 	/* Driver should have reset device. */
@@ -482,6 +549,10 @@ int register_virtio_device(struct virtio_device *dev)
 	INIT_LIST_HEAD(&dev->vqs);
 	spin_lock_init(&dev->vqs_list_lock);
 
+#ifdef CONFIG_VIRTIO_PMD
+	spin_lock_init(&dev->vq_lock);
+#endif
+
 	/* We always start by resetting the device, in case a previous
 	 * driver messed it up.  This also tests that code path a little. */
 	virtio_reset_device(dev);
@@ -534,6 +605,10 @@ int virtio_device_freeze(struct virtio_device *dev)
 	int ret;
 
 	virtio_config_core_disable(dev);
+
+#ifdef CONFIG_VIRTIO_PMD
+	virtio_stop_polling_timer(dev);
+#endif
 
 	dev->failed = dev->config->get_status(dev) & VIRTIO_CONFIG_S_FAILED;
 
@@ -589,6 +664,10 @@ int virtio_device_restore(struct virtio_device *dev)
 	/* If restore didn't do it, mark device DRIVER_OK ourselves. */
 	if (!(dev->config->get_status(dev) & VIRTIO_CONFIG_S_DRIVER_OK))
 		virtio_device_ready(dev);
+
+#ifdef CONFIG_VIRTIO_PMD
+	virtio_start_polling_timer(dev);
+#endif
 
 	virtio_config_core_enable(dev);
 

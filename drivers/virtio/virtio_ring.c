@@ -914,13 +914,20 @@ static unsigned int virtqueue_enable_cb_prepare_split(struct virtqueue *_vq)
 	/* Depending on the VIRTIO_RING_F_EVENT_IDX feature, we need to
 	 * either clear the flags bit or point the event index at the next
 	 * entry. Always do both to keep code simple. */
-	if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
-		vq->split.avail_flags_shadow &= ~VRING_AVAIL_F_NO_INTERRUPT;
-		if (!vq->event)
-			vq->split.vring.avail->flags =
-				cpu_to_virtio16(_vq->vdev,
+#ifdef CONFIG_VIRTIO_PMD
+	if (!virtio_polling_mode_enabled(_vq->vdev)) {
+#endif
+		if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
+			vq->split.avail_flags_shadow &=
+				~VRING_AVAIL_F_NO_INTERRUPT;
+			if (!vq->event)
+				vq->split.vring.avail->flags =
+					cpu_to_virtio16(_vq->vdev,
 						vq->split.avail_flags_shadow);
+		}
+#ifdef CONFIG_VIRTIO_PMD
 	}
+#endif
 	vring_used_event(&vq->split.vring) = cpu_to_virtio16(_vq->vdev,
 			last_used_idx = vq->last_used_idx);
 	END_USE(vq);
@@ -947,13 +954,20 @@ static bool virtqueue_enable_cb_delayed_split(struct virtqueue *_vq)
 	/* Depending on the VIRTIO_RING_F_USED_EVENT_IDX feature, we need to
 	 * either clear the flags bit or point the event index at the next
 	 * entry. Always update the event index to keep code simple. */
-	if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
-		vq->split.avail_flags_shadow &= ~VRING_AVAIL_F_NO_INTERRUPT;
-		if (!vq->event)
-			vq->split.vring.avail->flags =
-				cpu_to_virtio16(_vq->vdev,
+#ifdef CONFIG_VIRTIO_PMD
+	if (!virtio_polling_mode_enabled(_vq->vdev)) {
+#endif
+		if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
+			vq->split.avail_flags_shadow &=
+				~VRING_AVAIL_F_NO_INTERRUPT;
+			if (!vq->event)
+				vq->split.vring.avail->flags =
+					cpu_to_virtio16(_vq->vdev,
 						vq->split.avail_flags_shadow);
+		}
+#ifdef CONFIG_VIRTIO_PMD
 	}
+#endif
 	/* TODO: tune this threshold */
 	bufs = (u16)(vq->split.avail_idx_shadow - vq->last_used_idx) * 3 / 4;
 
@@ -1009,7 +1023,11 @@ static void virtqueue_vring_init_split(struct vring_virtqueue_split *vring_split
 	vring_split->avail_idx_shadow = 0;
 
 	/* No callback?  Tell other side not to bother us. */
+#ifdef CONFIG_VIRTIO_PMD
+	if (!vq->vq.callback && virtio_polling_mode_enabled(vdev)) {
+#else
 	if (!vq->vq.callback) {
+#endif
 		vring_split->avail_flags_shadow |= VRING_AVAIL_F_NO_INTERRUPT;
 		if (!vq->event)
 			vring_split->vring.avail->flags = cpu_to_virtio16(vdev,
@@ -2611,6 +2629,7 @@ static struct virtqueue *__vring_new_virtqueue(unsigned int index,
 {
 	struct vring_virtqueue *vq;
 	int err;
+	bool disable_cb = (callback == NULL);
 
 	if (virtio_has_feature(vdev, VIRTIO_F_RING_PACKED))
 		return NULL;
@@ -2641,6 +2660,11 @@ static struct virtqueue *__vring_new_virtqueue(unsigned int index,
 	vq->indirect = virtio_has_feature(vdev, VIRTIO_RING_F_INDIRECT_DESC) &&
 		!context;
 	vq->event = virtio_has_feature(vdev, VIRTIO_RING_F_EVENT_IDX);
+
+#ifdef CONFIG_VIRTIO_PMD
+	if (!disable_cb && virtio_polling_mode_enabled(vdev))
+		disable_cb = true;
+#endif
 
 	if (virtio_has_feature(vdev, VIRTIO_F_ORDER_PLATFORM))
 		vq->weak_barriers = false;
@@ -3249,6 +3273,20 @@ void virtqueue_dma_sync_single_range_for_device(struct virtqueue *_vq,
 	dma_sync_single_range_for_device(dev, addr, offset, size, dir);
 }
 EXPORT_SYMBOL_GPL(virtqueue_dma_sync_single_range_for_device);
+
+#ifdef CONFIG_VIRTIO_PMD
+void virtio_poll_virtqueues(struct virtio_device *dev)
+{
+	struct virtqueue *_vq;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dev->vq_lock, flags);
+	list_for_each_entry(_vq, &dev->vqs, list)
+		vring_interrupt(0, _vq);  /* parameter irq is not used */
+	spin_unlock_irqrestore(&dev->vq_lock, flags);
+}
+EXPORT_SYMBOL_GPL(virtio_poll_virtqueues);
+#endif
 
 MODULE_DESCRIPTION("Virtio ring implementation");
 MODULE_LICENSE("GPL");
