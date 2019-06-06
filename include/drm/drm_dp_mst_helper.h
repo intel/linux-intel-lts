@@ -128,6 +128,8 @@ struct drm_dp_mst_port {
 	 * audio-capable.
 	 */
 	bool has_audio;
+
+	bool fec_capable;
 };
 
 /**
@@ -347,6 +349,7 @@ struct drm_dp_port_number_req {
 
 struct drm_dp_enum_path_resources_ack_reply {
 	u8 port_number;
+	bool fec_capable;
 	u16 full_payload_bw_number;
 	u16 avail_payload_bw_number;
 };
