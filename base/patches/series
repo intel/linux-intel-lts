@@ -9,3 +9,12 @@
 
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
+
+# CVE-2019-12378
+0001-ipv6_sockglue-Fix-a-missing-check-bug-in-ip6_ra_cont-CVE-2019-12378.patch
+
+# CVE-2019-12380
+0001-efi-x86-Add-missing-error-handling-to-old_memmap-1-1-CVE-2019-12380.patch
+
+# CVE-2019-12381
+0001-ip_sockglue-Fix-missing-check-bug-in-ip_ra_control-CVE-2019-12381.patch
