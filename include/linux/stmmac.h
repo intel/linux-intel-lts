@@ -223,5 +223,6 @@ struct plat_stmmacenet_data {
 	int int_snapshot_num;
 	int ext_snapshot_num;
 	int ext_snapshot_en;
+	bool has_safety_feat;
 };
 #endif

@@ -2681,7 +2681,8 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 	stmmac_mtl_configuration(priv);
 
 	/* Initialize Safety Features */
-	stmmac_safety_feat_configuration(priv);
+	if (priv->plat->has_safety_feat)
+		stmmac_safety_feat_configuration(priv);
 
 	ret = stmmac_rx_ipc(priv, priv->hw);
 	if (!ret) {
