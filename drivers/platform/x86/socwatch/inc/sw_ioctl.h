@@ -62,11 +62,11 @@
 #if defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
 #include <asm/compat.h>
 #include <linux/compat.h>
-#endif // COMPAT && x64
-#else // !__KERNEL__
+#endif /* COMPAT && x64 */
+#else /* !__KERNEL__ */
 #include <sys/ioctl.h>
-#endif // __KERNEL__
-#endif // __linux__
+#endif /* __KERNEL__ */
+#endif /* __linux__ */
 /*
  * Ensure we pull in definition of 'DO_COUNT_DROPPED_SAMPLES'!
  */
@@ -75,8 +75,8 @@
 #ifdef ONECORE
 #ifndef __KERNEL__
 #include <winioctl.h>
-#endif //__KERNEL__
-#endif // ONECORE
+#endif /* __KERNEL__ */
+#endif /* ONECORE */
 
 /*
  * The APWR-specific IOCTL magic
@@ -84,13 +84,13 @@
  * are delivered to the correct
  * driver.
  */
-// #define APWR_IOCTL_MAGIC_NUM 0xdead
+/* #define APWR_IOCTL_MAGIC_NUM 0xdead */
 #define APWR_IOCTL_MAGIC_NUM 100
 
 /*
  * The name of the device file
  */
-// #define DEVICE_FILE_NAME "/dev/pw_driver_char_dev"
+/* #define DEVICE_FILE_NAME "/dev/pw_driver_char_dev" */
 #define PW_DEVICE_FILE_NAME "/dev/apwr_driver_char_dev"
 #define PW_DEVICE_NAME "apwr_driver_char_dev"
 
@@ -119,13 +119,13 @@ enum sw_ioctl_cmd {
  * Where "Read" and "Write" are from the user's perspective
  * (similar to the file "read" and "write" calls).
  */
-#ifdef SWW_MERGE // Windows
-//
-// Device type           -- in the "User Defined" range."
-//
+#ifdef SWW_MERGE /* Windows */
+/*
+ * Device type           -- in the "User Defined" range."
+ */
 #define POWER_I_CONF_TYPE 40000
 
-// List assigned tracepoint id
+/* List assigned tracepoint id */
 #define CSIR_TRACEPOINT_ID_MASK 1
 #define DEVICE_STATE_TRACEPOINT_ID_MASK 2
 #define CSIR_SEPARATE_TRACEPOINT_ID_MASK 3
@@ -133,18 +133,18 @@ enum sw_ioctl_cmd {
 #define DISPLAY_ON_TRACEPOINT_ID_MASK 5
 
 #ifdef SWW_MERGE
-//
-// TELEM BAR CONFIG
-//
+/*
+ * TELEM BAR CONFIG
+ */
 #define MAX_TELEM_BAR_CFG 3
 #define TELEM_MCHBAR_CFG 0
 #define TELEM_IPC1BAR_CFG 1
 #define TELEM_SSRAMBAR_CFG 2
 #endif
 
-//
-// The IOCTL function codes from 0x800 to 0xFFF are for customer use.
-//
+/*
+ * The IOCTL function codes from 0x800 to 0xFFF are for customer use.
+ */
 #define PW_IOCTL_CONFIG                                                        \
 	CTL_CODE(POWER_I_CONF_TYPE, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define PW_IOCTL_START_COLLECTION                                              \
@@ -152,7 +152,7 @@ enum sw_ioctl_cmd {
 #define PW_IOCTL_STOP_COLLECTION                                               \
 	CTL_CODE(POWER_I_CONF_TYPE, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-// TODO: pause, resume, cancel not supported yet
+/* TODO: pause, resume, cancel not supported yet */
 #define PW_IOCTL_PAUSE_COLLECTION                                              \
 	CTL_CODE(POWER_I_CONF_TYPE, 0x903, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define PW_IOCTL_RESUME_COLLECTION                                             \
@@ -201,7 +201,7 @@ enum sw_ioctl_cmd {
 #define PW_IOCTL_CMD                                                           \
 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd,                           \
 	     struct sw_driver_ioctl_arg *)
-#endif // DO_COUNT_DROPPED_SAMPLES
+#endif /* DO_COUNT_DROPPED_SAMPLES */
 #define PW_IOCTL_POLL _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
 #define PW_IOCTL_IMMEDIATE_IO                                                  \
 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io,                 \
@@ -227,7 +227,7 @@ enum sw_ioctl_cmd {
 #define PW_IOCTL_GET_TOPOLOGY_CHANGES                                          \
 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes,              \
 	     struct sw_driver_ioctl_arg *)
-#else // __APPLE__
+#else /* __APPLE__ */
 #define PW_IOCTL_CONFIG                                                        \
 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_config,                        \
 	     struct sw_driver_ioctl_arg)
@@ -238,7 +238,7 @@ enum sw_ioctl_cmd {
 #else
 #define PW_IOCTL_CMD                                                           \
 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd, struct sw_driver_ioctl_arg)
-#endif // DO_COUNT_DROPPED_SAMPLES
+#endif /* DO_COUNT_DROPPED_SAMPLES */
 #define PW_IOCTL_POLL _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
 #define PW_IOCTL_IMMEDIATE_IO                                                  \
 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io,                 \
@@ -264,7 +264,7 @@ enum sw_ioctl_cmd {
 #define PW_IOCTL_GET_TOPOLOGY_CHANGES                                          \
 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes,             \
 	      struct sw_driver_ioctl_arg)
-#endif // __APPLE__
+#endif /* __APPLE__ */
 
 /*
  * 32b-compatible version of the above
@@ -281,7 +281,7 @@ enum sw_ioctl_cmd {
 #else
 #define PW_IOCTL_CMD32                                                         \
 	_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_cmd, compat_uptr_t)
-#endif // DO_COUNT_DROPPED_SAMPLES
+#endif /* DO_COUNT_DROPPED_SAMPLES */
 #define PW_IOCTL_POLL32 _IO(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_poll)
 #define PW_IOCTL_IMMEDIATE_IO32                                                \
 	_IOWR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_immediate_io, compat_uptr_t)
@@ -299,5 +299,5 @@ enum sw_ioctl_cmd {
 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_avail_collect, compat_uptr_t)
 #define PW_IOCTL_GET_TOPOLOGY_CHANGES32                                        \
 	_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_topology_changes, compat_uptr_t)
-#endif // defined(CONFIG_COMPAT) && defined(CONFIG_X86_64)
-#endif // __SW_IOCTL_H__
+#endif /* defined(CONFIG_COMPAT) && defined(CONFIG_X86_64) */
+#endif /* __SW_IOCTL_H__ */

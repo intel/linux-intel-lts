@@ -57,7 +57,7 @@
 asmlinkage VOID PMI_Interrupt_Handler(struct pt_regs *regs);
 
 #if defined(DRV_SEP_ACRN_ON)
-S32 PMI_Buffer_Handler(PVOID data);
+extern VOID PMI_Buffer_Handler(PVOID);
 #endif
 
 extern U32 pmi_Get_CSD(U32, U32 *, U32 *);

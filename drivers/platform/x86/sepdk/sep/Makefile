@@ -2,7 +2,7 @@ ccflags-y := -I$(src)/../include -I$(src)/../inc -I$(src)/..
 ccflags-y += -DSEP_CONFIG_MODULE_LAYOUT
 # TODO: verify kaiser.h
 #ccflags-y += -DKAISER_HEADER_PRESENT
-ccflags-y += -DDRV_CPU_HOTPLUG -DDRV_USE_TASKLET_WORKAROUND
+ccflags-y += -DDRV_CPU_HOTPLUG -DDRV_USE_TASKLET_WORKAROUND -DENABLE_CPUS -DBUILD_CHIPSET -DBUILD_GFX
 
 asflags-y := -I$(src)/..
 
@@ -16,10 +16,6 @@ endif
 
 ifdef CONFIG_SEP_MAXLOG_MODE
 	ccflags-y += -DDRV_MAXIMAL_LOGGING
-endif
-
-ifdef CONFIG_SEP_PRIVATE_BUILD
-	ccflags-y += -DENABLE_CPUS -DBUILD_CHIPSET -DBUILD_GFX
 endif
 
 ifdef CONFIG_SEP_ACRN
@@ -50,7 +46,11 @@ sep5-y	:=	lwpmudrv.o        \
 		unc_msr.o         \
 		unc_common.o      \
 		unc_pci.o         \
-		sepdrv_p_state.o
+		sepdrv_p_state.o  \
+		chap.o            \
+		gmch.o            \
+		gfx.o             \
+		unc_sa.o
 
 
 ifdef CONFIG_X86_64
@@ -60,8 +60,3 @@ endif
 ifdef CONFIG_X86_32
 	sep5-y	+=	sys32.o
 endif
-
-sep5-$(CONFIG_SEP_PRIVATE_BUILD)	+=	chap.o    \
-						gmch.o    \
-						gfx.o     \
-						unc_sa.o

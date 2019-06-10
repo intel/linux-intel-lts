@@ -123,7 +123,7 @@ void sw_wakeup_reader(enum sw_wakeup_action action)
 		if (!hrtimer_active(&s_reader_wakeup_timer)) {
 			ktime_t ktime =
 				ns_to_ktime(SW_BUFFER_CLEANUP_TIMER_DELAY_NSEC);
-			// TODO: possible race here -- introduce locks?
+			/* TODO: possible race here -- introduce locks? */
 			hrtimer_start(&s_reader_wakeup_timer, ktime,
 				      HRTIMER_MODE_REL);
 		}
@@ -159,5 +159,5 @@ void sw_print_reader_stats(void)
 #if DO_OVERHEAD_MEASUREMENTS
 	printk(KERN_INFO "# reader queue timer fires = %d\n",
 	       s_num_timer_fires);
-#endif // OVERHEAD
+#endif /* OVERHEAD */
 }

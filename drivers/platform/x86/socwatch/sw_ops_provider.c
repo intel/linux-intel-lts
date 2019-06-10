@@ -55,12 +55,12 @@
 */
 #include <linux/kernel.h>
 #include <linux/errno.h>
-#include <linux/pci.h> // "pci_get_domain_bus_and_slot"
-#include <linux/delay.h> // "udelay"
+#include <linux/pci.h> /* "pci_get_domain_bus_and_slot" */
+#include <linux/delay.h> /* "udelay" */
 #include <asm/msr.h>
 #ifdef CONFIG_RPMSG_IPC
 #include <asm/intel_mid_rpmsg.h>
-#endif // CONFIG_RPMSG_IPC
+#endif /* CONFIG_RPMSG_IPC */
 
 #include "sw_types.h"
 #include "sw_kernel_defines.h"
@@ -74,7 +74,8 @@
 /*
  * Should we be doing 'direct' PCI reads and writes?
  * '1' ==> YES, call "pci_{read,write}_config_dword()" directly
- * '0' ==> NO, Use the "intel_mid_msgbus_{read32,write32}_raw()" API (defined in 'intel_mid_pcihelpers.c')
+ * '0' ==> NO, Use the "intel_mid_msgbus_{read32,write32}_raw()"
+ *         API (defined in 'intel_mid_pcihelpers.c')
  */
 #define DO_DIRECT_PCI_READ_WRITE 0
 #if !IS_ENABLED(CONFIG_ANDROID) || !defined(CONFIG_X86_WANT_INTEL_MID)
@@ -99,9 +100,9 @@
 #define NUM_RETRY 100
 #define USEC_DELAY 100
 
-#define EXTCNF_CTRL 0xF00 // offset for hw semaphore.
-#define FWSM_CTRL 0x5B54 // offset for fw semaphore
-#define GBE_CTRL_OFFSET 0x34 // GBE LPM offset
+#define EXTCNF_CTRL 0xF00 /* offset for hw semaphore. */
+#define FWSM_CTRL 0x5B54 /* offset for fw semaphore */
+#define GBE_CTRL_OFFSET 0x34 /* GBE LPM offset */
 
 #define IS_HW_SEMAPHORE_SET(data) (data & (pw_u64_t)(0x1 << 6))
 #define IS_FW_SEMAPHORE_SET(data) (data & (pw_u64_t)0x1)
@@ -346,11 +347,11 @@ static const struct sw_hw_ops s_hw_ops[] = {
 int sw_ipc_mmio_descriptor_init_func_i(
 	struct sw_driver_io_descriptor *descriptor)
 {
-	// Perform any required 'io_remap' calls here
+	/* Perform any required 'io_remap' calls here */
 	struct sw_driver_ipc_mmio_io_descriptor *__ipc_mmio = NULL;
 	u64 data_address = 0;
 
-	if (!descriptor) { // Should NEVER happen
+	if (!descriptor) { /* Should NEVER happen */
 		return -PW_ERROR;
 	}
 	if (descriptor->collection_type == SW_IO_IPC) {
@@ -363,12 +364,12 @@ int sw_ipc_mmio_descriptor_init_func_i(
 		    __ipc_mmio->data_address);
 	data_address = __ipc_mmio->data_address;
 	/*
-	  if (__ipc_mmio->command || __ipc_mmio->sub_command) {
-	  __ipc_mmio->ipc_command =
-	  ((pw_u32_t)__ipc_mmio->sub_command << 12)
-	  | (pw_u32_t)__ipc_mmio->command;
-	  }
-	*/
+	 * if (__ipc_mmio->command || __ipc_mmio->sub_command) {
+	 * __ipc_mmio->ipc_command =
+	 * ((pw_u32_t)__ipc_mmio->sub_command << 12)
+	 * | (pw_u32_t)__ipc_mmio->command;
+	 * }
+	 */
 	if (data_address) {
 		__ipc_mmio->data_remapped_address =
 			(pw_u64_t)(unsigned long)ioremap_nocache(
@@ -393,14 +394,14 @@ int sw_ipc_mmio_descriptor_init_func_i(
 						      FWSM_CTRL;
 					s_gbe_semaphore.hw_semaphore =
 						ioremap_nocache(
-							(unsigned long)hw_addr,
-							descriptor
-								->counter_size_in_bytes);
+						       (unsigned long)hw_addr,
+						       descriptor
+						       ->counter_size_in_bytes);
 					s_gbe_semaphore.fw_semaphore =
 						ioremap_nocache(
-							(unsigned long)fw_addr,
-							descriptor
-								->counter_size_in_bytes);
+						       (unsigned long)fw_addr,
+						       descriptor
+						       ->counter_size_in_bytes);
 					if (s_gbe_semaphore.hw_semaphore ==
 						    NULL ||
 					    s_gbe_semaphore.fw_semaphore ==
@@ -418,7 +419,7 @@ int sw_ipc_mmio_descriptor_init_func_i(
 							s_gbe_semaphore
 								.fw_semaphore,
 						descriptor
-							->counter_size_in_bytes);
+						->counter_size_in_bytes);
 				}
 			}
 		}
@@ -429,10 +430,10 @@ int sw_ipc_mmio_descriptor_init_func_i(
 int sw_pch_mailbox_descriptor_init_func_i(
 	struct sw_driver_io_descriptor *descriptor)
 {
-	// Perform any required 'io_remap' calls here
+	/* Perform any required 'io_remap' calls here */
 	struct sw_driver_pch_mailbox_io_descriptor *__pch_mailbox = NULL;
 
-	if (!descriptor) { // Should NEVER happen
+	if (!descriptor) { /* Should NEVER happen */
 		return -PW_ERROR;
 	}
 	__pch_mailbox = &descriptor->pch_mailbox_descriptor;
@@ -478,12 +479,13 @@ int sw_pch_mailbox_descriptor_init_func_i(
 	return PW_SUCCESS;
 }
 
-int sw_mailbox_descriptor_init_func_i(struct sw_driver_io_descriptor *descriptor)
+int sw_mailbox_descriptor_init_func_i(struct sw_driver_io_descriptor
+				      *descriptor)
 {
-	// Perform any required 'io_remap' calls here
+	/* Perform any required 'io_remap' calls here */
 	struct sw_driver_mailbox_io_descriptor *__mailbox = NULL;
 
-	if (!descriptor) { // Should NEVER happen
+	if (!descriptor) { /* Should NEVER happen */
 		return -PW_ERROR;
 	}
 	__mailbox = &descriptor->mailbox_descriptor;
@@ -561,7 +563,7 @@ void sw_read_msr_info_i(char *dst_vals, int cpu,
 #define SW_DO_IPC(cmd, sub_cmd) rpmsg_send_generic_simple_command(cmd, sub_cmd)
 #else
 #define SW_DO_IPC(cmd, sub_cmd) (-ENODEV)
-#endif // CONFIG_RPMSG_IPC
+#endif /* CONFIG_RPMSG_IPC */
 
 void sw_read_ipc_info_i(char *dst_vals, int cpu,
 			const struct sw_driver_io_descriptor *descriptors,
@@ -581,7 +583,7 @@ void sw_read_ipc_info_i(char *dst_vals, int cpu,
 	}
 
 	if (remapped_address) {
-		// memcpy(&value, (void *)remapped_address, counter_size_in_bytes);
+		/* memcpy(&value, (void *)remapped_address, counter_size_in_bytes); */
 		pw_pr_debug("COPYING MMIO size %u\n", counter_size_in_bytes);
 		memcpy(dst_vals, (void *)remapped_address,
 		       counter_size_in_bytes);
@@ -648,8 +650,8 @@ void sw_read_mmio_info_i(char *dst_vals, int cpu,
 }
 
 void sw_read_pch_mailbox_info_i(char *dst_vals, int cpu,
-				const struct sw_driver_io_descriptor *descriptor,
-				u16 counter_size_in_bytes)
+				const struct sw_driver_io_descriptor
+				*descriptor, u16 counter_size_in_bytes)
 {
 	/*
 	 * TODO: spinlock?
@@ -870,7 +872,7 @@ void sw_read_socperf_info_i(char *dst_vals, int cpu,
 
 	memset(socperf_buffer, 0, counter_size_in_bytes);
 	SOCPERF_Read_Data2(socperf_buffer);
-#endif // IS_ENABLED(CONFIG_INTEL_SOCPERF)
+#endif /* IS_ENABLED(CONFIG_INTEL_SOCPERF) */
 	return;
 }
 
@@ -883,7 +885,7 @@ bool sw_socperf_available_i(void)
 	bool retVal = false;
 #if IS_ENABLED(CONFIG_INTEL_SOCPERF)
 	retVal = true;
-#endif // IS_ENABLED(CONFIG_INTEL_SOCPERF)
+#endif /* IS_ENABLED(CONFIG_INTEL_SOCPERF) */
 	return retVal;
 }
 
@@ -905,9 +907,9 @@ u32 sw_platform_configdb_read32(u32 address)
 				       SW_PCI_MSG_CTRL_REG /*ctrl-offset*/,
 				       address /*ctrl-value*/,
 				       SW_PCI_MSG_DATA_REG /*data-offset*/);
-#else // !DO_DIRECT_PCI_READ_WRITE
+#else /* !DO_DIRECT_PCI_READ_WRITE */
 	read_value = intel_mid_msgbus_read32_raw(address);
-#endif // if DO_DIRECT_PCI_READ_WRITE
+#endif /* if DO_DIRECT_PCI_READ_WRITE */
 	pw_pr_debug("address = %u, value = %u\n", address, read_value);
 	return read_value;
 }
@@ -917,18 +919,18 @@ u32 sw_platform_pci_read32(u32 bus, u32 device, u32 function, u32 write_offset,
 {
 	u32 read_value = 0;
 	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(
-		0, bus, PCI_DEVFN(device, function)); // 0, PCI_DEVFN(0, 0));
+		0, bus, PCI_DEVFN(device, function)); /* 0, PCI_DEVFN(0, 0)); */
 	if (!pci_root) {
 		return 0; /* Application will verify the data */
 	}
 	if (write_offset) {
 		pci_write_config_dword(
 			pci_root, write_offset,
-			write_value); // SW_PCI_MSG_CTRL_REG, address);
+			write_value); /* SW_PCI_MSG_CTRL_REG, address); */
 	}
 	pci_read_config_dword(
 		pci_root, read_offset,
-		&read_value); // SW_PCI_MSG_DATA_REG, &read_value);
+		&read_value); /* SW_PCI_MSG_DATA_REG, &read_value); */
 	return read_value;
 }
 
@@ -1074,7 +1076,7 @@ bool sw_platform_pci_write32(u32 bus, u32 device, u32 function,
 			     u32 write_offset, u32 data_value)
 {
 	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(
-		0, bus, PCI_DEVFN(device, function)); // 0, PCI_DEVFN(0, 0));
+		0, bus, PCI_DEVFN(device, function)); /* 0, PCI_DEVFN(0, 0)); */
 	if (!pci_root) {
 		return false;
 	}
@@ -1100,7 +1102,7 @@ int sw_ipc_mmio_descriptor_reset_func_i(
 	/* Unmap previously mapped memory here */
 	struct sw_driver_ipc_mmio_io_descriptor *__ipc_mmio = NULL;
 
-	if (!descriptor) { // Should NEVER happen
+	if (!descriptor) { /* Should NEVER happen */
 		return -PW_ERROR;
 	}
 	if (descriptor->collection_type == SW_IO_IPC) {
@@ -1139,7 +1141,7 @@ int sw_pch_mailbox_descriptor_reset_func_i(
 	/* Unmap previously mapped memory here */
 	struct sw_driver_pch_mailbox_io_descriptor *__pch_mailbox = NULL;
 
-	if (!descriptor) { // Should NEVER happen
+	if (!descriptor) { /* Should NEVER happen */
 		return -PW_ERROR;
 	}
 	__pch_mailbox =
@@ -1175,7 +1177,7 @@ int sw_mailbox_descriptor_reset_func_i(
 	/* Unmap previously mapped memory here */
 	struct sw_driver_mailbox_io_descriptor *__mailbox = NULL;
 
-	if (!descriptor) { // Should NEVER happen
+	if (!descriptor) { /* Should NEVER happen */
 		return -PW_ERROR;
 	}
 	__mailbox = (struct sw_driver_mailbox_io_descriptor *)&descriptor
@@ -1221,5 +1223,5 @@ int sw_register_ops_providers(void)
 
 void sw_free_ops_providers(void)
 {
-	// NOP
+	/* NOP */
 }

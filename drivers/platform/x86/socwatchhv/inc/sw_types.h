@@ -63,8 +63,8 @@
 /*
  * Called from Ring-3.
  */
-#include <stdint.h> // Grab 'uint64_t' etc.
-#include <unistd.h> // Grab 'pid_t'
+#include <stdint.h> /* Grab 'uint64_t' etc. */
+#include <unistd.h> /* Grab 'pid_t' */
 /*
  * UNSIGNED types...
  */
@@ -80,26 +80,26 @@ typedef int16_t s16;
 typedef int32_t s32;
 typedef int64_t s64;
 
-#else // __KERNEL__
+#else /* __KERNEL__ */
 #if !defined(__APPLE__)
 #include <linux/types.h>
-#else // __APPLE__
+#else /* __APPLE__ */
 #include <sys/types.h>
-#include <stdint.h> // Grab 'uint64_t' etc.
+#include <stdint.h> /* Grab 'uint64_t' etc. */
 
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 /*
-* SIGNED types...
-*/
+ * SIGNED types...
+ */
 typedef int8_t s8;
 typedef int16_t s16;
 typedef int32_t s32;
 typedef int64_t s64;
-#endif // __APPLE__
-#endif // __KERNEL__
+#endif /* __APPLE__ */
+#endif /* __KERNEL__ */
 
 #elif defined(_WIN32)
 typedef __int32 int32_t;
@@ -125,7 +125,7 @@ typedef signed long long s64;
 typedef s32 pid_t;
 typedef s32 ssize_t;
 
-#endif // _WIN32
+#endif /* _WIN32 */
 
 /* ************************************
  * Common to both operating systems.
@@ -149,4 +149,4 @@ typedef s64 pw_s64_t;
 
 typedef pid_t pw_pid_t;
 
-#endif // _PW_TYPES_H_
+#endif /* _PW_TYPES_H_ */

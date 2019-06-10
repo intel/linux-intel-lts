@@ -67,4 +67,4 @@ struct sw_file_ops {
 int sw_register_dev(struct sw_file_ops *ops);
 void sw_unregister_dev(void);
 
-#endif // __SW_FILE_OPS_H__
+#endif /* __SW_FILE_OPS_H__ */

@@ -71,7 +71,8 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
 #include <asm/trace/irq_vectors.h> /* for the various APIC vector tracepoints
 				    *  (e.g. "thermal_apic",
-				    *  "local_timer" etc.) */
+				    *  "local_timer" etc.)
+				    */
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
 struct pool_workqueue;
 struct cpu_workqueue_struct;
@@ -118,7 +119,8 @@ struct cpu_workqueue_struct;
 #ifdef CONFIG_TIMER_STATS
 #define GET_TIMER_THREAD_ID(t)                                                 \
 	((t)->start_pid) /* 'start_pid' is actually the thread ID
-			  * of the thread that initialized the timer */
+			  * of the thread that initialized the timer
+			  */
 #else
 #define GET_TIMER_THREAD_ID(t) (-1)
 #endif /* CONFIG_TIMER_STATS */
@@ -408,7 +410,8 @@ void sw_handle_reset_messages_i(struct sw_trace_notifier_data *node);
  */
 DECLARE_OVERHEAD_VARS(
 	sw_handle_timer_wakeup_helper_i); /* for the "timer_expire"
-					     family of probes */
+					   *   family of probes
+					   */
 DECLARE_OVERHEAD_VARS(sw_handle_irq_wakeup_i); /* for IRQ wakeups */
 DECLARE_OVERHEAD_VARS(sw_handle_sched_wakeup_i); /* for SCHED */
 DECLARE_OVERHEAD_VARS(sw_tps_i); /* for TPS */
@@ -642,13 +645,15 @@ static struct sw_trace_notifier_data s_notifier_collector_lists[] = {
 	  &s_notifier_names[SW_NOTIFIER_ID_SUSPEND], &sw_register_pm_notifier_i,
 	  &sw_unregister_pm_notifier_i, NULL, true /* always register */ },
 	/* Placeholder for suspend enter/exit -- these will be called
-	   from within the pm notifier */
+	 * from within the pm notifier
+	 */
 	{ SW_TRACE_COLLECTOR_NOTIFIER,
 	  &s_notifier_names[SW_NOTIFIER_ID_SUSPEND_ENTER], NULL, NULL, NULL },
 	{ SW_TRACE_COLLECTOR_NOTIFIER,
 	  &s_notifier_names[SW_NOTIFIER_ID_SUSPEND_EXIT], NULL, NULL, NULL },
 	/* Placeholder for hibernate enter/exit -- these will be called
-	   from within the pm notifier */
+	 * from within the pm notifier
+	 */
 	{ SW_TRACE_COLLECTOR_NOTIFIER,
 	  &s_notifier_names[SW_NOTIFIER_ID_HIBERNATE], NULL, NULL, NULL },
 	{ SW_TRACE_COLLECTOR_NOTIFIER,
@@ -979,7 +984,8 @@ void sw_handle_sched_switch_helper_i(void)
 				timeout = sw_min_polling_interval_msecs;
 			}
 			/* Has there been enough time since the last
-			   collection point? */
+			 * collection point?
+			 */
 			if (delta_msecs < timeout) {
 				continue;
 			}
@@ -987,11 +993,13 @@ void sw_handle_sched_switch_helper_i(void)
 			if (cpumask_test_cpu(
 				    RAW_CPU(),
 				    mask) /* This msg must be handled on
-					     the current CPU */
+					   * the current CPU
+					   */
 			    ||
 			    cpumask_empty(
 				    mask) /* This msg may be handled by
-					     any CPU */) {
+					   * any CPU
+					   */) {
 				if (!CAS64(&curr->last_update_jiffies,
 					   prev_jiff, curr_jiff)) {
 					/*
@@ -1679,7 +1687,8 @@ int sw_probe_hotplug_notifier_i(struct notifier_block *block,
 	case CPU_ONLINE:
 	case CPU_ONLINE_FROZEN:
 		/* CPU is online -- first store top change
-		   then take BEGIN snapshot */
+		 * then take BEGIN snapshot
+		 */
 		sw_store_topology_change_i(SW_CPU_ACTION_ONLINE, cpu, core_id,
 					   pkg_id);
 		sw_process_snapshot_on_cpu(SW_WHEN_TYPE_BEGIN, cpu);
@@ -1722,13 +1731,15 @@ static void sw_probe_cpuhp_helper_i(unsigned int cpu, enum cpu_action action)
 		break;
 	case SW_CPU_ACTION_ONLINE:
 		/* CPU is online -- first store top change
-		   then take BEGIN snapshot */
+		 * then take BEGIN snapshot
+		 */
 		sw_store_topology_change_i(action, cpu, core_id, pkg_id);
 		sw_process_snapshot_on_cpu(SW_WHEN_TYPE_BEGIN, cpu);
 		break;
 	case SW_CPU_ACTION_OFFLINE:
 		/* CPU is preparing to go offline -- take
-		   END snapshot then store top change */
+		 * END snapshot then store top change
+		 */
 		sw_process_snapshot_on_cpu(SW_WHEN_TYPE_END, cpu);
 		sw_store_topology_change_i(action, cpu, core_id, pkg_id);
 		break;

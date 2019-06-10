@@ -34,10 +34,9 @@
 static int pcpu_num;
 bool flush_mode;
 
-wait_queue_head_t read_queue;
-
-//TODO is this needed?
-//module_param(nr_cpus, int, S_IRUSR | S_IWUSR);
+/* TODO is this needed?
+ * module_param(nr_cpus, int, S_IRUSR | S_IWUSR);
+ */
 
 static struct shared_buf **sbuf_per_cpu;
 
@@ -101,7 +100,7 @@ int swhv_add_driver_msr_io_desc(struct swhv_acrn_msr_collector_data *node,
 	pw_u16_t num_entries;
 	struct profiling_msr_op *msr_op = NULL;
 
-	// Confirm this is an MSR IO descriptor
+	/* Confirm this is an MSR IO descriptor */
 	if (info->collection_type != SWHV_COLLECTOR_TYPE_MSR) {
 		pw_pr_error(
 			"ERROR trying to configure MSR collector with other data!\n");
@@ -165,7 +164,7 @@ int swhv_init_per_cpu_buffers(void)
 		}
 	}
 
-	//TODO understand the use of this API
+	/* TODO understand the use of this API */
 	foreach_cpu(cpu, pcpu_num)
 	{
 		ret = sbuf_share_setup(cpu, ACRN_SOCWATCH, sbuf_per_cpu[cpu]);
@@ -199,8 +198,9 @@ void swhv_destroy_per_cpu_buffers(void)
 
 	foreach_cpu(cpu, pcpu_num)
 	{
-		//TODO anything else to de-register?
-		/* deregister devices */
+		/* TODO anything else to de-register?
+		 * deregister devices
+		 */
 
 		/* set sbuf pointer to NULL in HV */
 		sbuf_share_setup(cpu, ACRN_SOCWATCH, NULL);
@@ -254,18 +254,21 @@ void swhv_handle_hypervisor_collector(uint32_t control_cmd)
 
 	acrn_profiling_control->collector_id = COLLECTOR_SOCWATCH;
 
-	if (control_cmd == 1) { // start collection + send switch bitmask
+	if (control_cmd == 1) { /* start collection + send switch bitmask */
 		pw_pr_debug("STARTING ACRN PROFILING SERVICE\n");
 		global_collection_switch |=
-			control_cmd;	// first bit controls start/stop
-					// of collection
-	} else if (control_cmd == 0) { // stop collection + reset switch bitmask
+			control_cmd;	/* first bit controls start/stop
+					 * of collection
+					 */
+	} else if (control_cmd == 0) { /* stop collection
+					* + reset switch bitmask
+					*/
 		pw_pr_debug("STOPPING ACRN PROFILING SERVICE\n");
 		global_collection_switch = control_cmd;
 	}
 	acrn_profiling_control->switches = global_collection_switch;
 
-	// send collection command + switch bitmask
+	/* send collection command + switch bitmask */
 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_SET_CONTROL_SWITCH,
 			virt_to_phys(acrn_profiling_control));
 	kfree(acrn_profiling_control);
@@ -277,7 +280,6 @@ int swhv_handle_msr_collector_list(void)
 
 	SW_LIST_HEAD_VAR(swhv_acrn_msr_collector_data) * head = list_head;
 	int retVal = PW_SUCCESS;
-	int dummy_cpu = 0;
 	struct swhv_acrn_msr_collector_data *curr = NULL;
 
 	if (SW_LIST_EMPTY(&swhv_msr_collector)) {
@@ -292,17 +294,9 @@ int swhv_handle_msr_collector_list(void)
 	{
 		pw_pr_debug("HANDLING MSR NODE\n");
 
-		//hypervisor call to do immediate MSR read
+		/*hypervisor call to do immediate MSR read */
 		acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
 				virt_to_phys(curr->msr_ops_list));
-	}
-	if (buffer_not_ready(&dummy_cpu) == false) {
-		/*
-		 * force the device_read function to check if any buffers are
-		 * filled with data above 'ACRN_BUF_TRANSFER_SIZE' size and
-		 * if yes, copy to userspace
-		 */
-		wake_up_interruptible(&read_queue);
 	}
 	return retVal;
 }
@@ -341,7 +335,7 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
 	 */
 	swhv_destroy_msr_collector_list();
 
-	// clear the collection bitmask
+	/* clear the collection bitmask */
 	global_collection_switch = 0;
 
 	num_infos = local_msg->num_infos;
@@ -394,8 +388,9 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
 
 				global_collection_switch = local_config_bitmap;
 
-				// only one set of collection switches are
-				// expected, we are done configuring
+				/* only one set of collection switches are
+				 * expected, we are done configuring
+				 */
 				done = 1;
 				break;
 			} else {
@@ -412,22 +407,18 @@ long swhv_configure(struct swhv_driver_interface_msg __user *remote_msg,
 
 long swhv_stop(void)
 {
-	uint32_t control = 0; // stop collection command
+	uint32_t control = 0; /* stop collection command */
 
 	pw_pr_debug("socwatch: stop called\n");
 
-	//If MSR ops are present, perform them to get begin snapshot data.
+	/*If MSR ops are present, perform them to get begin snapshot data. */
 	swhv_handle_msr_collector_list();
 
-	// stop collection + reset switch bitmask
+	/* stop collection + reset switch bitmask */
 	swhv_handle_hypervisor_collector(control);
 
-	// flush partially filled hypervisor buffers
+	/* flush partially filled hypervisor buffers */
 	flush_mode = true;
-
-	// force the device_read function to check if any
-	// buffers are partially filled with data
-	wake_up_interruptible(&read_queue);
 
 	/*
 	 * Clear out the MSR collector list.
@@ -439,7 +430,7 @@ long swhv_stop(void)
 
 long swhv_start(void)
 {
-	uint32_t control = 1; // start collection command
+	uint32_t control = 1; /* start collection command */
 #if 0
 	struct profiling_vm_info_list *vm_info_list = NULL;
 	int i;
@@ -448,15 +439,16 @@ long swhv_start(void)
 
 	flush_mode = false;
 
-	// start collection + send switch bitmask
+	/* start collection + send switch bitmask */
 	swhv_handle_hypervisor_collector(control);
 
-	//If MSR ops are present, perform them to get begin snapshot data.
+	/* If MSR ops are present, perform them to get begin snapshot data. */
 	swhv_handle_msr_collector_list();
 
 #if 0
-	// Expand this eventually to retrieve VM-realted info from the hypervisor
-	// Leaving it here for now.
+	/* Expand this eventually to retrieve VM-related info
+	 * from the hypervisor. Leaving it here for now.
+	 */
 	vm_info_list = kmalloc(sizeof(struct profiling_vm_info_list),
 			       GFP_KERNEL);
 	memset(vm_info_list, 0, sizeof(struct profiling_vm_info_list));
@@ -541,16 +533,16 @@ long swhv_msr_read(u32 __user *remote_in_args, u64 __user *remote_args)
 		msr_read_ops_list[cpu].entries[0].msr_id = msr_addr;
 		msr_read_ops_list[cpu].entries[0].msr_op_type = MSR_OP_READ;
 		msr_read_ops_list[cpu].entries[1].msr_id =
-			-1; // the next entry is expected to be set to -1
+			-1; /* the next entry is expected to be set to -1 */
 		msr_read_ops_list[cpu].entries[1].param =
-			0; // set to 0 to not generate sample in hypervisor
+			0; /* set to 0 to not generate sample in hypervisor */
 	}
 
-	//hypervisor call to do immediate MSR read
+	/* hypervisor call to do immediate MSR read */
 	acrn_hypercall2(HC_PROFILING_OPS, PROFILING_MSR_OPS,
 			virt_to_phys(msr_read_ops_list));
 
-	// copy value to remote args, pick from any CPU
+	/* copy value to remote args, pick from any CPU */
 	value = msr_read_ops_list[0].entries[0].value;
 
 	if (copy_to_user(remote_args, &value, sizeof(value))) {
@@ -617,7 +609,7 @@ ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
 			goto ret_free;
 		}
 		if (bytes_read) {
-			// copy data to device file
+			/* copy data to device file */
 			if (bytes_read > bytes_to_read) {
 				pw_pr_error("user buffer is too small\n");
 				ret = -PW_ERROR;
@@ -626,14 +618,14 @@ ssize_t swhv_transfer_data(void *user_buffer, struct shared_buf *sbuf_to_copy,
 
 			bytes_not_copied = copy_to_user(user_buffer, data_read,
 							bytes_read);
-			//TODO check if this is meaningful enough to have
-			//*offset += bytes_read - bytes_not_copied;
+			/* TODO check if this is meaningful enough to have */
+			/* *offset += bytes_read - bytes_not_copied; */
 
 			if (bytes_not_copied) {
 				pw_pr_error(
 					"transferring data to user mode failed, bytes %ld\n",
 					bytes_not_copied);
-				// copy_to_user returns an unsigned
+				/* copy_to_user returns an unsigned */
 				ret = -EIO;
 				goto ret_free;
 			}
@@ -652,9 +644,10 @@ ret_free:
 
 bool buffer_not_ready(int *cpu)
 {
-	// cycle through and confirm buffers on all CPUs
-	// are less than ACRN_BUF_TRANSFER_SIZE
-	// as well as flush mode has not been requested
+	/* cycle through and confirm buffers on all CPUs
+	 * are less than ACRN_BUF_TRANSFER_SIZE
+	 * as well as flush mode has not been requested
+	 */
 	int i = 0;
 	bool not_enough_data = true;
 
@@ -688,12 +681,10 @@ ssize_t device_read_i(struct file *file, char __user *user_buffer,
 	int cpu = 0;
 
 	pw_pr_debug("%s - usermode attempting to read device file\n", __func__);
-
-	if (wait_event_interruptible(read_queue, !buffer_not_ready(&cpu))) {
-		pw_pr_error("%s - wait_event_interruptible failed\n", __func__);
-		return -ERESTARTSYS;
+	if (buffer_not_ready(&cpu)) {
+		pw_pr_debug("%s - no buffer ready to be read\n", __func__);
+		return bytes_read;
 	}
-	pw_pr_debug("%s - wait_event cleared\n", __func__);
 
 	if (flush_mode) {
 		pw_pr_debug("flush mode on, ready to flush a buffer\n");
@@ -708,7 +699,7 @@ ssize_t device_read_i(struct file *file, char __user *user_buffer,
 
 void cleanup_error_i(void)
 {
-	// NOP for acrn
+	/* NOP for acrn */
 }
 
 int swhv_load_driver_i(void)
@@ -728,10 +719,6 @@ int swhv_load_driver_i(void)
 	if (ret < 0) {
 		return ret;
 	}
-
-	// initialize a work queue to be used for signalling when
-	// data is ready to copy to usermode
-	init_waitqueue_head(&read_queue);
 
 	swhv_init_msr_collector_list();
 

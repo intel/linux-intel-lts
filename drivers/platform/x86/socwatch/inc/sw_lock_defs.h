@@ -95,4 +95,4 @@
 	write_unlock_irqrestore(&(l), _tmp_l_flags);                           \
 	}
 
-#endif // __SW_LOCK_DEFS_H__
+#endif /* __SW_LOCK_DEFS_H__ */
