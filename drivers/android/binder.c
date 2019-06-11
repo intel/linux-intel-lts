@@ -956,8 +956,10 @@ static int task_get_unused_fd_flags(struct binder_proc *proc, int flags)
 
 	mutex_lock(&proc->files_lock);
 	files = binder_get_files_struct(proc);
-	if (files == NULL)
+	if (files == NULL) {
+		mutex_unlock(&proc->files_lock);
 		return -ESRCH;
+	}
 
 	if (!lock_task_sighand(proc->tsk, &irqs)) {
 		ret = -EMFILE;
