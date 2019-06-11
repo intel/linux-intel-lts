@@ -240,6 +240,7 @@ struct intel_vgpu {
 	unsigned long long *cached_guest_entry;
 	bool ge_cache_enable;
 	bool entire_nonctxmmio_checked;
+	ktime_t vgpu_msi_time;
 };
 
 /* validating GM healthy status*/
