@@ -256,6 +256,11 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->msi_rx_base_vec = 0;
 	plat->msi_tx_base_vec = 1;
 
+	/* TSN HW tunable data */
+	plat->ctov = 0;
+	plat->ptov = 0;
+	plat->tils = 0;
+
 	return 0;
 }
 

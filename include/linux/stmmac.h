@@ -200,5 +200,8 @@ struct plat_stmmacenet_data {
 	bool vlan_fail_q_en;
 	u8 vlan_fail_q;
 	bool speed_2500_en;
+	u32 ptov;
+	u32 ctov;
+	u32 tils;
 };
 #endif
