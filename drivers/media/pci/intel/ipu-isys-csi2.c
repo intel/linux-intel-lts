@@ -871,9 +871,6 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 	csi2->in_frame[vc] = false;
 	if (csi2->wait_for_sync[vc])
 		complete(&csi2->eof_completion);
-	if (csi2->wdt_enable)
-		mod_timer(&csi2->eof_timer, jiffies + csi2->eof_wdt_timeout);
-
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 
 	for (i = 0; i < IPU_ISYS_MAX_STREAMS; i++) {
@@ -913,7 +910,8 @@ void ipu_isys_csi2_wait_last_eof(struct ipu_isys_csi2 *csi2)
 		reinit_completion(&csi2->eof_completion);
 		csi2->wait_for_sync[i] = true;
 		spin_unlock_irqrestore(&csi2->isys->lock, flags);
-		tout = wait_for_completion_timeout(&csi2->eof_completion, IPU_EOF_TIMEOUT_JIFFIES);
+		tout = wait_for_completion_timeout(&csi2->eof_completion,
+						   IPU_EOF_TIMEOUT_JIFFIES);
 		if (!tout)
 			dev_err(&csi2->isys->adev->dev,
 				"csi2-%d: timeout at sync to eof of vc %d\n",
