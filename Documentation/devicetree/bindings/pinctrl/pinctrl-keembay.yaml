@@ -1,0 +1,148 @@
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2019, Intel Corporation
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/pinctrl/pinctrl-keembay.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Intel Keem Bay pin controller Device Tree Bindings
+
+maintainers:
+  - Vineetha G. Jaya Kumaran <vineetha.g.jaya.kumaran@intel.com>
+
+description: |
+  Intel Keem Bay SoC integrates a pin controller which enables control
+  of pin directions, input/output values, configurations
+  as well as multiplexing for a total of 80 pins.
+
+properties:
+  compatible:
+    const: intel,keembay-pinctrl
+
+  reg:
+    minItems: 2
+    maxItems: 2
+
+  gpio-controller: true
+
+  '#gpio-cells':
+      const: 2
+
+  interrupts:
+    description:
+      Specifies the interrupt lines to be used by the controller.
+    maxItems: 8
+
+  interrupt-controller: true
+
+  '#interrupt-cells':
+      const: 2
+
+required:
+  - compatible
+  - reg
+  - gpio-controller
+  - '#gpio-cells'
+  - interrupts
+  - interrupt-controller
+  - '#interrupt-cells'
+
+patternProperties:
+  '^.*$':
+
+    type: object
+
+    allOf:
+      - $ref: pincfg-node.yaml#
+      - $ref: pinmux-node.yaml#
+
+    description:
+      Child nodes can be specified to contain pin muxing or pin configuration information,
+      which is then utilized by pinctrl client devices. The following properties are supported.
+
+    function:
+      description:
+        The name of the function that a pin is to be muxed to.
+
+    groups:
+      description:
+        The name(s) of the pin group to be enabled in a function.
+        Each pin is classified as an individual group, hence supported group names are "GPIO0" to "GPIO79".
+
+    pins:
+      description:
+        The name(s) of the pins to be configured in the child node.
+        Supported pin names are "GPIO0" to "GPIO79".
+
+    bias-disable:
+      type: boolean
+
+    bias-pull-down:
+      type: boolean
+
+    bias-pull-up:
+      type: boolean
+
+    bias-bus-hold:
+      type: boolean
+
+    input-schmitt-enable:
+      type: boolean
+
+    drive-strength:
+      enum: [2, 4, 8, 12]
+
+    slew-rate:
+      enum: [0, 1]
+
+examples:
+  - |
+    # Example 1
+    pinctrl@600B0000 {
+        compatible = "intel,keembay-pinctrl";
+        reg = <0x0 0x600b0000 0x0 0x88>,
+              <0x0 0x600b0190 0x0 0x1ac>;
+        gpio-controller;
+        #gpio-cells = <0x2>;
+        interrupts = <GIC_SPI 94 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 95 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 96 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 97 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 98 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 99 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 100 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 101 IRQ_TYPE_LEVEL_HIGH>;
+        interrupt-controller;
+        #interrupt-cells = <2>;
+    };
+
+    # Example 2
+    pinctrl@600B0000 {
+        compatible = "intel,keembay-pinctrl";
+        reg = <0x0 0x600b0000 0x0 0x88>,
+              <0x0 0x600b0190 0x0 0x1ac>;
+        gpio-controller;
+        #gpio-cells = <0x2>;
+        interrupts = <GIC_SPI 94 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 95 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 96 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 97 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 98 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 99 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 100 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 101 IRQ_TYPE_LEVEL_HIGH>;
+        interrupt-controller;
+        #interrupt-cells = <2>;
+
+        i2s_pinmux {
+            function = "I2S0_M0";
+            groups = "GPIO0", "GPIO1";
+        };
+
+        spi_pinconf {
+            pins = "GPIO10", "GPIO11";
+            drive-strength = <4>;
+            bias-pull-down;
+        };
+    };
+
