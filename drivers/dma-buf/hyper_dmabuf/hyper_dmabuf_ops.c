@@ -223,19 +223,7 @@ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
 		return;
 	}
 
-	dev_dbg(hy_drv_priv->dev, "%s: {%x,%x} dmabuf:%p ref_c:%d\n", __func__,
-			imported->hid.id, imported->hid.rng_key[0],
-			imported->dma_buf, imported->importers);
-
-	if (dma_buf != imported->dma_buf) {
-		dev_dbg(hy_drv_priv->dev, "%s: dma_buf changed!\n", __func__);
-		mutex_unlock(&hy_drv_priv->lock);
-		return;
-	}
-
-	dev_dbg(hy_drv_priv->dev, "%s: clear imported->dma_buf\n", __func__);
 	imported->dma_buf = NULL;
-
 	imported->importers--;
 
 	if (imported->importers == 0) {
@@ -256,7 +244,6 @@ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
 	dev_dbg(hy_drv_priv->dev, "%s   finished:%d ref_c:%d valid:%c\n",
 			__func__, finish, imported->importers,
 			imported->valid ? 'Y':'N');
-
 
 	/* release operation should be synchronized with exporter. */
 	sync_request(imported->hid, HYPER_DMABUF_OPS_RELEASE, true);
