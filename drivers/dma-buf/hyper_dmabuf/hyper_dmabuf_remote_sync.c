@@ -158,12 +158,14 @@ int hyper_dmabuf_remote_sync(hyper_dmabuf_id_t hid, int ops)
 		break;
 
 	case HYPER_DMABUF_OPS_RELEASE:
-		dev_dbg(hy_drv_priv->dev,
-			"id:%d key:%d %d %d} released, ref left: %d\n",
-			 exported->hid.id, exported->hid.rng_key[0],
-			 exported->hid.rng_key[1], exported->hid.rng_key[2],
-			 exported->active - 1);
 		mutex_lock(&hy_drv_priv->lock);
+
+		/* find a coresponding SGT for the id */
+		exported = hyper_dmabuf_find_exported(hid);
+		if (!exported) {
+			mutex_unlock(&hy_drv_priv->lock);
+			break;
+		}
 
 		exported->active--;
 
