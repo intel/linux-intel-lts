@@ -52,6 +52,8 @@ int hyper_dmabuf_register_exported(struct exported_sgt_info *info);
 hyper_dmabuf_id_t hyper_dmabuf_find_hid_exported(struct dma_buf *dmabuf,
 						 int domid);
 
+hyper_dmabuf_id_t hyper_dmabuf_find_hid_imported(struct imported_sgt_info *imported);
+
 int hyper_dmabuf_register_imported(struct imported_sgt_info *info);
 
 struct exported_sgt_info *hyper_dmabuf_find_exported(hyper_dmabuf_id_t hid);

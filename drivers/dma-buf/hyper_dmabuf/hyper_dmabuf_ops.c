@@ -200,6 +200,7 @@ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
 {
 	struct imported_sgt_info *imported;
 	struct hyper_dmabuf_bknd_ops *bknd_ops = hy_drv_priv->bknd_ops;
+	hyper_dmabuf_id_t hid;
 	int finish;
 
 	if (!dma_buf->priv)
@@ -208,6 +209,13 @@ static void hyper_dmabuf_ops_release(struct dma_buf *dma_buf)
 	mutex_lock(&hy_drv_priv->lock);
 
 	imported = (struct imported_sgt_info *)dma_buf->priv;
+
+	/* check if imported still exists */
+	hid = hyper_dmabuf_find_hid_imported(imported);
+	if (hid.id == -1) {
+		mutex_unlock(&hy_drv_priv->lock);
+		return;
+	}
 
 	dev_dbg(hy_drv_priv->dev, "%s: {%x,%x} dmabuf:%p ref_c:%d\n", __func__,
 			imported->hid.id, imported->hid.rng_key[0],
