@@ -6,6 +6,7 @@
 #include "./ici/ici-isys.h"
 #ifdef ICI_ENABLED
 
+#include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/pm_runtime.h>
 #include <linux/kthread.h>
@@ -593,14 +594,26 @@ out_put_stream_handle:
 	return rval;
 }
 
+static bool use_stream_stop;
+module_param(use_stream_stop, bool, 0660);
+MODULE_PARM_DESC(use_stream_stop, "Use STOP command if running in CSI capture mode");
+
 static void stop_streaming_firmware(struct ici_isys_stream *as)
 {
 	struct ici_isys_pipeline *ip = &as->ip;
 	struct device *dev = &as->isys->adev->dev;
 	int rval, tout;
+	enum ipu_fw_isys_send_type send_type =
+		IPU_FW_ISYS_SEND_TYPE_STREAM_FLUSH;
 
 	reinit_completion(&ip->stream_stop_completion);
-	rval = ipu_lib_call(stream_flush, as->isys, ip->stream_handle);
+
+	/* Use STOP command if running in CSI FE capture */
+	if (use_stream_stop)
+		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_STOP;
+
+	rval = ici_fw_isys_simple_cmd(as->isys, ip->stream_handle, send_type);
+
 	if (rval < 0) {
 		dev_err(dev, "can't stop stream (%d)\n", rval);
 	} else {

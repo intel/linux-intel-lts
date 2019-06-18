@@ -1372,9 +1372,11 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 
 	reinit_completion(&ip->stream_stop_completion);
 
+#ifdef ICI_ENABLED
 	/* Use STOP command if running in CSI capture mode */
 	if (use_stream_stop)
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_STOP;
+#endif
 
 	mutex_lock(&av->isys->mutex);
 	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
