@@ -212,6 +212,20 @@ hyper_dmabuf_id_t hyper_dmabuf_find_hid_exported(struct dma_buf *dmabuf,
 	return hid;
 }
 
+/* search for pre-imported sgt and return id of it if it exist */
+hyper_dmabuf_id_t hyper_dmabuf_find_hid_imported(struct imported_sgt_info *imported)
+{
+	struct list_entry_imported *info_entry;
+	hyper_dmabuf_id_t hid = {-1, {0, 0, 0} };
+	int bkt;
+
+	hash_for_each(hyper_dmabuf_hash_imported, bkt, info_entry, node)
+		if (info_entry->imported == imported)
+			return info_entry->imported->hid;
+
+	return hid;
+}
+
 struct imported_sgt_info *hyper_dmabuf_find_imported(hyper_dmabuf_id_t hid)
 {
 	struct list_entry_imported *info_entry;
