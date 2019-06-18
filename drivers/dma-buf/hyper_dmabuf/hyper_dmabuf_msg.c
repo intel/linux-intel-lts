@@ -324,7 +324,6 @@ int hyper_dmabuf_msg_parse(int domid, struct hyper_dmabuf_req *req)
 				 * anymore.
 				 */
 				imported->valid = false;
-				hyper_dmabuf_remove_imported(hid);
 			} else {
 				/* No one is using buffer, remove it from
 				 * imported list
