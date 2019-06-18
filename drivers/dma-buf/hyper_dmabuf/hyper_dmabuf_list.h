@@ -49,10 +49,13 @@ int hyper_dmabuf_table_destroy(void);
 int hyper_dmabuf_register_exported(struct exported_sgt_info *info);
 
 /* search for pre-exported sgt and return id of it if it exist */
-hyper_dmabuf_id_t hyper_dmabuf_find_hid_exported(struct dma_buf *dmabuf,
-						 int domid);
+hyper_dmabuf_id_t hyper_dmabuf_find_hid_dmabuf(struct dma_buf *dmabuf,
+					       int domid);
 
-hyper_dmabuf_id_t hyper_dmabuf_find_hid_imported(struct imported_sgt_info *imported);
+hyper_dmabuf_id_t hyper_dmabuf_find_hid_exported(
+					struct exported_sgt_info *exported);
+hyper_dmabuf_id_t hyper_dmabuf_find_hid_imported(
+					struct imported_sgt_info *imported);
 
 int hyper_dmabuf_register_imported(struct imported_sgt_info *info);
 

@@ -235,8 +235,8 @@ static int hyper_dmabuf_export_remote_ioctl(struct file *filp, void *data)
 	 * to the same domain and if yes and it's valid sgt_info,
 	 * it returns hyper_dmabuf_id of pre-exported sgt_info
 	 */
-	hid = hyper_dmabuf_find_hid_exported(dma_buf,
-					     export_remote_attr->remote_domain);
+	hid = hyper_dmabuf_find_hid_dmabuf(dma_buf,
+					   export_remote_attr->remote_domain);
 
 	if (hid.id != -1) {
 		ret = fastpath_export(hid, export_remote_attr->sz_priv,
@@ -608,6 +608,7 @@ static void delayed_unexport(struct work_struct *work)
 	struct hyper_dmabuf_req *req;
 	struct hyper_dmabuf_bknd_ops *bknd_ops = hy_drv_priv->bknd_ops;
 	struct exported_sgt_info *exported;
+	hyper_dmabuf_id_t hid;
 	int op[4];
 	int i, ret;
 
@@ -621,13 +622,24 @@ static void delayed_unexport(struct work_struct *work)
 		exported->hid.id, exported->hid.rng_key[0],
 		exported->hid.rng_key[1], exported->hid.rng_key[2]);
 
+	mutex_lock(&hy_drv_priv->lock);
+
+	/* make sure if exported hasn't already been removed */
+	hid = hyper_dmabuf_find_hid_exported(exported);
+	if (hid.id == -1) {
+		mutex_unlock(&hy_drv_priv->lock);
+		return;
+	}
+
 	/* no longer valid */
 	exported->valid = false;
 
 	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
 
-	if (!req)
+	if (!req) {
+		mutex_unlock(&hy_drv_priv->lock);
 		return;
+	}
 
 	op[0] = exported->hid.id;
 
@@ -673,6 +685,8 @@ static void delayed_unexport(struct work_struct *work)
 
 		kfree(exported);
 	}
+
+	mutex_unlock(&hy_drv_priv->lock);
 }
 
 /* Schedule unexport of dmabuf.
