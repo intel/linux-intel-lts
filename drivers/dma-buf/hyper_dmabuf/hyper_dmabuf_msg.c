@@ -314,6 +314,7 @@ int hyper_dmabuf_msg_parse(int domid, struct hyper_dmabuf_req *req)
 		dev_dbg(hy_drv_priv->dev,
 			"processing HYPER_DMABUF_NOTIFY_UNEXPORT\n");
 
+		mutex_lock(&hy_drv_priv->lock);
 		imported = hyper_dmabuf_find_imported(hid);
 
 		if (imported) {
@@ -335,6 +336,8 @@ int hyper_dmabuf_msg_parse(int domid, struct hyper_dmabuf_req *req)
 		} else {
 			req->stat = HYPER_DMABUF_REQ_ERROR;
 		}
+
+		mutex_unlock(&hy_drv_priv->lock);
 
 		return req->cmd;
 	}
