@@ -699,6 +699,8 @@ int hyper_dmabuf_unexport_ioctl(struct file *filp, void *data)
 
 	dev_dbg(hy_drv_priv->dev, "%s entry\n", __func__);
 
+	mutex_lock(&hy_drv_priv->lock);
+
 	/* find dmabuf in export list */
 	exported = hyper_dmabuf_find_exported(unexport_attr->hid);
 
@@ -708,19 +710,23 @@ int hyper_dmabuf_unexport_ioctl(struct file *filp, void *data)
 		unexport_attr->hid.rng_key[1], unexport_attr->hid.rng_key[2]);
 
 	/* failed to find corresponding entry in export list */
-	if (exported == NULL) {
+	if (!exported) {
 		unexport_attr->status = -ENOENT;
+		mutex_unlock(&hy_drv_priv->lock);
 		return -ENOENT;
 	}
 
-	if (exported->unexport_sched)
+	if (exported->unexport_sched) {
+		mutex_unlock(&hy_drv_priv->lock);
 		return 0;
+	}
 
 	exported->unexport_sched = true;
 	INIT_DELAYED_WORK(&exported->unexport, delayed_unexport);
 	schedule_delayed_work(&exported->unexport,
 			      msecs_to_jiffies(unexport_attr->delay_ms));
 
+	mutex_unlock(&hy_drv_priv->lock);
 	dev_dbg(hy_drv_priv->dev, "%s exit\n", __func__);
 	return 0;
 }
