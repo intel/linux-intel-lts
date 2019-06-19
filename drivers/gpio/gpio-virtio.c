@@ -397,15 +397,14 @@ static void gpio_virtio_irq_update(struct irq_data *d, unsigned int action)
 	struct gpio_chip *chip;
 	struct gpio_virtio_irq_request *req;
 	struct scatterlist sg;
-	unsigned long timeout;
-	int err, len;
+	int err;
 
 	chip = irq_data_get_irq_chip_data(d);
 	vgpio = gpiochip_get_data(chip);
 	req = kzalloc(sizeof(*req), GFP_ATOMIC);
 	if (!req) {
 		dev_err(&vgpio->vdev->dev,
-		"failed to alloc buffer for irq, ignore pin %d, action %u\n",
+		"failed to alloc buffer for irq, ignore pin %ld, action %u\n",
 		d->hwirq, action);
 		return;
 	}
@@ -420,7 +419,7 @@ static void gpio_virtio_irq_update(struct irq_data *d, unsigned int action)
 	err = virtqueue_add_outbuf(vgpio->irq_vq, &sg, 1, req, GFP_ATOMIC);
 	if (err) {
 		dev_err(&vgpio->vdev->dev,
-		"failed to add outbuf for irq, ignore pin %d, action %u\n",
+		"failed to add outbuf for irq, ignore pin %ld, action %u\n",
 		d->hwirq, action);
 		spin_unlock(&vgpio->irq_lock);
 		goto out;
