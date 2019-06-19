@@ -118,7 +118,7 @@ extern "C" {
 		if ((pecb)) {                                                  \
 			for ((idx) = ECB_escr_start(pecb);                     \
 			     (idx) <                                           \
-			     (ECB_cccr_start(pecb) + ECB_cccr_pop(pecb));      \
+			     (ECB_escr_start(pecb) + ECB_escr_pop(pecb));      \
 			     (idx)++) {                                        \
 				if (ECB_entries_reg_id((pecb), (idx)) == 0) {  \
 					continue;                              \
@@ -141,7 +141,7 @@ extern "C" {
 		if ((pecb)) {                                                  \
 			for ((idx) = ECB_escr_start(pecb);                     \
 			     (idx) <                                           \
-			     (ECB_cccr_start(pecb) + ECB_cccr_pop(pecb));      \
+			     (ECB_escr_start(pecb) + ECB_escr_pop(pecb));      \
 			     (idx)++) {                                        \
 				if (ECB_entries_reg_id((pecb), (idx)) == 0) {  \
 					continue;                              \
@@ -165,7 +165,7 @@ extern "C" {
 		if ((pecb)) {                                                  \
 			for ((idx) = ECB_data_start(pecb);                     \
 			     (idx) <                                           \
-			     (ECB_cccr_start(pecb) + ECB_cccr_pop(pecb));      \
+			     (ECB_data_start(pecb) + ECB_data_pop(pecb));      \
 			     (idx)++) {                                        \
 				if (ECB_entries_reg_id((pecb), (idx)) == 0) {  \
 					continue;                              \
@@ -211,7 +211,7 @@ extern "C" {
 		if ((pecb)) {                                                  \
 			for ((idx) = ECB_data_start(pecb);                     \
 			     (idx) <                                           \
-			     (ECB_cccr_start(pecb) + ECB_cccr_pop(pecb));      \
+			     (ECB_data_start(pecb) + ECB_data_pop(pecb));      \
 			     (idx)++) {                                        \
 				if (ECB_entries_reg_id((pecb), (idx)) == 0) {  \
 					continue;                              \
