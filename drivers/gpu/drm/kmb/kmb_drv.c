@@ -48,12 +48,16 @@
 #include "kmb_plane.h"
 #include "kmb_dsi.h"
 
+/*IRQ handler*/
+static irqreturn_t kmb_isr(int irq, void *arg);
+
 static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
 	struct kmb_drm_private *dev_p = drm->dev_private;
 	struct platform_device *pdev = to_platform_device(drm->dev);
 	/*struct resource *res;*/
 	/*u32 version;*/
+	/*int irq_lcd, irq_mipi; */
 	int ret;
 
 	/* TBD - not sure if clock_get needs to be called here */
@@ -104,6 +108,12 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	dev_p->msscam_mmio = ioremap_nocache(MSS_CAM_BASE_ADDR,
 			MSS_CAM_MMIO_SIZE);
 
+	/*TODO - register irqs here - section 17.3 in databook
+	 * lists LCD at 79 under MSS CPU - firmware has to redirect it to A53
+	 * May be 33 for LCD and 34 for MIPI? Will wait till firmware
+	 * finalizes the IRQ numbers for redirection
+	 */
+
 /*TBD read and check for correct product version here */
 
 	/* Get the optional framebuffer memory resource */
@@ -151,7 +161,7 @@ static void kmb_setup_mode_config(struct drm_device *drm)
 	drm->mode_config.funcs = &kmb_mode_config_funcs;
 }
 
-static irqreturn_t kmb_irq(int irq, void *arg)
+static irqreturn_t kmb_isr(int irq, void *arg)
 {
 	struct drm_device *dev = (struct drm_device *)arg;
 	unsigned long status, val;
@@ -196,8 +206,9 @@ DEFINE_DRM_GEM_CMA_FOPS(fops);
 
 static struct drm_driver kmb_driver = {
 	.driver_features = DRIVER_HAVE_IRQ | DRIVER_GEM |
-	    DRIVER_MODESET | DRIVER_ATOMIC,
-	.irq_handler = kmb_irq,
+			DRIVER_MODESET |
+			DRIVER_ATOMIC,
+	.irq_handler = kmb_isr,
 	.irq_preinstall = kmb_irq_reset,
 	.irq_uninstall = kmb_irq_reset,
 	.gem_free_object_unlocked = drm_gem_cma_free_object,
