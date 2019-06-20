@@ -33,7 +33,9 @@
 
 struct kmb_drm_private {
 	struct drm_device		drm;
-	void __iomem			*mmio;
+	void __iomem			*lcd_mmio;
+	void __iomem			*mipi_mmio;
+	void __iomem			*msscam_mmio;
 	unsigned char			n_layers;
 	struct clk			*clk;
 	struct drm_fbdev_cma		*fbdev;
@@ -85,65 +87,77 @@ static inline void kmb_write_bits(struct kmb_drm_private *lcd,
 }
 #endif
 
-static inline void kmb_write_lcd(unsigned int reg, u32 value)
+static inline void kmb_write_lcd(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 value)
 {
-	writel(value, (LCD_BASE_ADDR + reg));
+	writel(value, (dev_p->lcd_mmio + reg));
 }
 
-static inline void kmb_write_mipi(unsigned int reg, u32 value)
+static inline void kmb_write_mipi(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 value)
 {
-	writel(value, (MIPI_BASE_ADDR + reg));
+	writel(value, (dev_p->mipi_mmio + reg));
 }
 
-static inline u32 kmb_read_lcd(unsigned int reg)
+static inline void kmb_write_msscam(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 value)
 {
-	return readl(LCD_BASE_ADDR + reg);
+	writel(value, (dev_p->msscam_mmio + reg));
 }
 
-static inline u32 kmb_read_mipi(unsigned int reg)
+static inline u32 kmb_read_lcd(struct kmb_drm_private *dev_p, unsigned int reg)
 {
-	return readl(MIPI_BASE_ADDR + reg);
+	return readl(dev_p->lcd_mmio + reg);
 }
 
-static inline void kmb_write_bits_mipi(unsigned int reg, u32 offset,
-				       u32 num_bits, u32 value)
+static inline u32 kmb_read_mipi(struct kmb_drm_private *dev_p, unsigned int reg)
 {
-	u32 reg_val = kmb_read_mipi(reg);
+	return readl(dev_p->mipi_mmio + reg);
+}
+
+static inline void kmb_write_bits_mipi(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 offset, u32 num_bits, u32 value)
+{
+	u32 reg_val = kmb_read_mipi(dev_p->mipi_mmio, reg);
 	u32 mask = (1 << num_bits) - 1;
 
 	value &= mask;
 	mask <<= offset;
 	reg_val &= (~mask);
 	reg_val |= (value << offset);
-	kmb_write_mipi(reg, reg_val);
+	kmb_write_mipi(dev_p->mipi_mmio, reg, reg_val);
 }
 
-static inline void kmb_set_bit_mipi(unsigned int reg, u32 offset)
+static inline void kmb_set_bit_mipi(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 offset)
 {
-	u32 reg_val = kmb_read_mipi(reg);
+	u32 reg_val = kmb_read_mipi(dev_p->mipi_mmio, reg);
 
-	kmb_write_mipi(reg, reg_val | (1 << offset));
+	kmb_write_mipi(dev_p->mipi_mmio, reg, reg_val | (1 << offset));
 }
 
-static inline void kmb_clr_bit_mipi(unsigned int reg, u32 offset)
+static inline void kmb_clr_bit_mipi(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 offset)
 {
-	u32 reg_val = kmb_read_mipi(reg);
+	u32 reg_val = kmb_read_mipi(dev_p->mipi_mmio, reg);
 
-	kmb_write_mipi(reg, reg_val & (~(1 << offset)));
+	kmb_write_mipi(dev_p->mipi_mmio, reg, reg_val & (~(1 << offset)));
 }
 
-static inline void kmb_set_bitmask_mipi(unsigned int reg, u32 mask)
+static inline void kmb_set_bitmask_mipi(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 mask)
 {
-	u32 reg_val = kmb_read_mipi(reg);
+	u32 reg_val = kmb_read_mipi(dev_p->mipi_mmio, reg);
 
-	kmb_write_mipi(reg, (reg_val | mask));
+	kmb_write_mipi(dev_p->mipi_mmio, reg, (reg_val | mask));
 }
 
-static inline void kmb_clr_bitmask_mipi(unsigned int reg, u32 mask)
+static inline void kmb_clr_bitmask_mipi(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 mask)
 {
-	u32 reg_val = kmb_read_mipi(reg);
+	u32 reg_val = kmb_read_mipi(dev_p->mipi_mmio, reg);
 
-	kmb_write_mipi(reg, (reg_val & (~mask)));
+	kmb_write_mipi(dev_p->mipi_mmio, reg, (reg_val & (~mask)));
 }
 int kmb_setup_crtc(struct drm_device *dev);
 void kmb_set_scanout(struct kmb_drm_private *lcd);

@@ -29,10 +29,13 @@
 #define ENABLE					 1
 #define DISABLE					 0
 /*from Data Book section 12.5.8.1 page 4322 */
-#define MIPI_BASE_ADDR                          (void *)(0x20900000)
+#define MIPI_BASE_ADDR                          (0x20900000)
 /*from Data Book section 12.11.6.1 page 4972 */
-#define LCD_BASE_ADDR                           (void *)(0x20930000)
+#define LCD_BASE_ADDR                           (0x20930000)
 #define MSS_CAM_BASE_ADDR			(MIPI_BASE_ADDR + 0x10000)
+#define LCD_MMIO_SIZE				(0x10000)
+#define MIPI_MMIO_SIZE				(0x10000)
+#define MSS_CAM_MMIO_SIZE			(0x10000)
 
 /***************************************************************************
  *		   LCD controller control register defines
@@ -507,18 +510,19 @@
 #define MIPI_TX_HS_MC_FIFO_CHAN_ALLOC0		(0x198)
 #define MIPI_TX_HS_MC_FIFO_CHAN_ALLOC1		(0x19c)
 #define   MIPI_TXm_HS_MC_FIFO_CHAN_ALLOCn(M, N)	\
-				(MIPI_TX_HS_MC_FIFO_CHAN_ALLOC0 + HS_OFFSET(M) \
-				+ (0x4*N))
-#define   SET_MC_FIFO_CHAN_ALLOC(ctrl, vc, sz)	\
-		kmb_write_bits_mipi(MIPI_TXm_HS_MC_FIFO_CHAN_ALLOCn(ctrl, \
-					vc/2), (vc % 2)*16, 16, sz)
+			(MIPI_TX_HS_MC_FIFO_CHAN_ALLOC0 + HS_OFFSET(M) \
+			+ (0x4*N))
+#define   SET_MC_FIFO_CHAN_ALLOC(dev, ctrl, vc, sz)	\
+		kmb_write_bits_mipi(dev, \
+				MIPI_TXm_HS_MC_FIFO_CHAN_ALLOCn(ctrl, \
+				vc/2), (vc % 2)*16, 16, sz)
 #define MIPI_TX_HS_MC_FIFO_RTHRESHOLD0		(0x1a0)
 #define MIPI_TX_HS_MC_FIFO_RTHRESHOLD1		(0x1a4)
 #define   MIPI_TXm_HS_MC_FIFO_RTHRESHOLDn(M, N)	\
 				(MIPI_TX_HS_MC_FIFO_RTHRESHOLD0 + HS_OFFSET(M) \
 				+ (0x4*N))
-#define   SET_MC_FIFO_RTHRESHOLD(ctrl, vc, th)	\
-	kmb_write_bits_mipi(MIPI_TXm_HS_MC_FIFO_RTHRESHOLDn(ctrl, vc/2), \
+#define   SET_MC_FIFO_RTHRESHOLD(dev, ctrl, vc, th)	\
+	kmb_write_bits_mipi(dev, MIPI_TXm_HS_MC_FIFO_RTHRESHOLDn(ctrl, vc/2), \
 			(vc % 2)*16, 16, th)
 
 /* MIPI IRQ */
@@ -529,15 +533,15 @@
 #define MIPI_CTRL_IRQ_STATUS1				(0x04)
 #define   MIPI_HS_RX_EVENT_IRQ				0
 #define MIPI_CTRL_IRQ_ENABLE0				(0x08)
-#define   SET_MIPI_CTRL_IRQ_ENABLE0(M, N)		\
-			kmb_set_bit_mipi(MIPI_CTRL_IRQ_ENABLE0,	M+N)
+#define   SET_MIPI_CTRL_IRQ_ENABLE0(dev, M, N)		\
+		kmb_set_bit_mipi(dev, MIPI_CTRL_IRQ_ENABLE0, M+N)
 #define MIPI_CTRL_IRQ_ENABLE1				(0x0c)
 #define MIPI_CTRL_IRQ_CLEAR0				(0x010)
-#define   SET_MIPI_CTRL_IRQ_CLEAR0(M, N)		\
-			kmb_set_bit_mipi(MIPI_CTRL_IRQ_CLEAR0, M+N)
+#define   SET_MIPI_CTRL_IRQ_CLEAR0(dev, M, N)		\
+		kmb_set_bit_mipi(dev, MIPI_CTRL_IRQ_CLEAR0, M+N)
 #define MIPI_CTRL_IRQ_CLEAR1				(0x014)
-#define   SET_MIPI_CTRL_IRQ_CLEAR1(M, N)		\
-			kmb_set_bit_mipi(MIPI_CTRL_IRQ_CLEAR1, M+N)
+#define   SET_MIPI_CTRL_IRQ_CLEAR1(dev, M, N)		\
+		kmb_set_bit_mipi(dev, MIPI_CTRL_IRQ_CLEAR1, M+N)
 #define MIPI_TX_HS_IRQ_STATUS				(0x01c)
 #define   MIPI_TX_HS_IRQ_STATUSm(M)			\
 			(MIPI_TX_HS_IRQ_STATUS + HS_OFFSET(M))
@@ -594,12 +598,14 @@
 				MIPI_TX_HS_IRQ_ERROR)
 
 #define MIPI_TX_HS_IRQ_ENABLE				(0x020)
-#define   SET_HS_IRQ_ENABLE(M, val)			\
-			kmb_set_bitmask_mipi(MIPI_TX_HS_IRQ_ENABLE \
+#define   SET_HS_IRQ_ENABLE(dev, M, val)			\
+			kmb_set_bitmask_mipi(dev, \
+			MIPI_TX_HS_IRQ_ENABLE \
 			+ HS_OFFSET(M), val)
 #define MIPI_TX_HS_IRQ_CLEAR				(0x024)
-#define   SET_MIPI_TX_HS_IRQ_CLEAR(M, val)		\
-			kmb_set_bitmask_mipi(MIPI_TX_HS_IRQ_CLEAR \
+#define   SET_MIPI_TX_HS_IRQ_CLEAR(dev, M, val)		\
+			kmb_set_bitmask_mipi(dev, \
+			MIPI_TX_HS_IRQ_CLEAR \
 			+ HS_OFFSET(M), val)
 
 /* D-PHY regs */
@@ -611,47 +617,47 @@
 #define   PLL_CLKSEL_0				18
 #define   PLL_SHADOW_CTRL			16
 #define DPHY_INIT_CTRL2				(0x10c)
-#define   SET_DPHY_INIT_CTRL0(dphy, offset)	\
-					kmb_set_bit_mipi(DPHY_INIT_CTRL0, \
-					(dphy+offset))
-#define   CLR_DPHY_INIT_CTRL0(dphy, offset)	\
-					kmb_clr_bit_mipi(DPHY_INIT_CTRL0, \
-					(dphy+offset))
+#define   SET_DPHY_INIT_CTRL0(dev, dphy, offset)	\
+			kmb_set_bit_mipi(dev, DPHY_INIT_CTRL0, (dphy+offset))
+#define   CLR_DPHY_INIT_CTRL0(dev, dphy, offset)	\
+			kmb_clr_bit_mipi(dev, DPHY_INIT_CTRL0, (dphy+offset))
 #define DPHY_INIT_CTRL2				(0x10c)
 #define DPHY_FREQ_CTRL0_3			(0x11c)
-#define   SET_DPHY_FREQ_CTRL0_3(dphy, val)	\
-					kmb_write_bits_mipi(DPHY_FREQ_CTRL0_3 \
-					+ ((dphy/4)*4), (dphy % 4) * 8, \
-					6, val)
+#define   SET_DPHY_FREQ_CTRL0_3(dev, dphy, val)	\
+			kmb_write_bits_mipi(dev, DPHY_FREQ_CTRL0_3 \
+			+ ((dphy/4)*4), (dphy % 4) * 8, 6, val)
 
 #define MIPI_DPHY_STAT0_3			(0x134)
-#define	  GET_STOPSTATE_DATA(dphy)	\
-					(((kmb_read_mipi(MIPI_DPHY_STAT0_3 + \
-					(dphy/4)*4)) \
+#define	  GET_STOPSTATE_DATA(dev, dphy)		\
+			(((kmb_read_mipi(dev, MIPI_DPHY_STAT0_3 + (dphy/4)*4)) \
 					>> (((dphy % 4)*8)+4)) & 0x03)
 #define DPHY_TEST_CTRL0				(0x154)
-#define   SET_DPHY_TEST_CTRL0(dphy)	kmb_set_bit_mipi(DPHY_TEST_CTRL0, \
-					(dphy))
-#define   CLR_DPHY_TEST_CTRL0(dphy)	kmb_clr_bit_mipi(DPHY_TEST_CTRL0, \
-					(dphy))
+#define   SET_DPHY_TEST_CTRL0(dev, dphy)		\
+			kmb_set_bit_mipi(dev, DPHY_TEST_CTRL0, (dphy))
+#define   CLR_DPHY_TEST_CTRL0(dev, dphy)		\
+			kmb_clr_bit_mipi(dev, DPHY_TEST_CTRL0, \
+						(dphy))
 #define DPHY_TEST_CTRL1				(0x158)
-#define   SET_DPHY_TEST_CTRL1_CLK(dphy)	kmb_set_bit_mipi(DPHY_TEST_CTRL1, \
-					(dphy))
-#define   CLR_DPHY_TEST_CTRL1_CLK(dphy)	kmb_clr_bit_mipi(DPHY_TEST_CTRL1, \
-					(dphy))
-#define   SET_DPHY_TEST_CTRL1_EN(dphy)	kmb_set_bit_mipi(DPHY_TEST_CTRL1, \
-					(dphy+12))
-#define   CLR_DPHY_TEST_CTRL1_EN(dphy)	kmb_clr_bit_mipi(DPHY_TEST_CTRL1, \
-					(dphy+12))
+#define   SET_DPHY_TEST_CTRL1_CLK(dev, dphy)	\
+			kmb_set_bit_mipi(dev, DPHY_TEST_CTRL1, (dphy))
+#define   CLR_DPHY_TEST_CTRL1_CLK(dev, dphy)	\
+			kmb_clr_bit_mipi(dev, DPHY_TEST_CTRL1, (dphy))
+#define   SET_DPHY_TEST_CTRL1_EN(dev, dphy)	\
+			kmb_set_bit_mipi(dev, DPHY_TEST_CTRL1, (dphy+12))
+#define   CLR_DPHY_TEST_CTRL1_EN(dev, dphy)	\
+			kmb_clr_bit_mipi(dev, DPHY_TEST_CTRL1, (dphy+12))
 #define DPHY_TEST_DIN0_3			(0x15c)
-#define   SET_TEST_DIN0_3(dphy, val)	kmb_write_mipi(DPHY_TEST_DIN0_3 + \
-					4, ((val) << (((dphy)%4)*8)))
+#define   SET_TEST_DIN0_3(dev, dphy, val)		\
+			kmb_write_mipi(dev, DPHY_TEST_DIN0_3 + \
+			4, ((val) << (((dphy)%4)*8)))
 #define DPHY_TEST_DOUT0_3			(0x168)
-#define   GET_TEST_DOUT0_3(dphy)	(kmb_read_mipi(DPHY_TEST_DOUT0_3 + 4) \
-					>> (((dphy)%4)*8) & 0xff)
+#define   GET_TEST_DOUT0_3(dev, dphy)		\
+			(kmb_read_mipi(dev, DPHY_TEST_DOUT0_3 + 4) \
+			>> (((dphy)%4)*8) & 0xff)
 #define DPHY_PLL_LOCK				(0x188)
-#define   GET_PLL_LOCK(dphy)		(kmb_read_mipi(DPHY_PLL_LOCK) \
-					& (1 << (dphy - MIPI_DPHY6)))
+#define   GET_PLL_LOCK(dev, dphy)		\
+			(kmb_read_mipi(dev, DPHY_PLL_LOCK) \
+			& (1 << (dphy - MIPI_DPHY6)))
 #define DPHY_CFG_CLK_EN				(0x18c)
 
 #define MIPI_TX_MSS_LCD_MIPI_CFG		(0x04)

@@ -50,34 +50,68 @@
 
 static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
-	struct kmb_drm_private *lcd = drm->dev_private;
+	struct kmb_drm_private *dev_p = drm->dev_private;
 	struct platform_device *pdev = to_platform_device(drm->dev);
-	struct resource *res;
-	/*u32 version; */
+	/*struct resource *res;*/
+	/*u32 version;*/
 	int ret;
 
 	/* TBD - not sure if clock_get needs to be called here */
 	/*
-	 *  lcd->clk = devm_clk_get(drm->dev, "pxlclk");
-	 * if (IS_ERR(lcd->clk))
-	 *  return PTR_ERR(lcd->clk);
+	 *dev_p->clk = devm_clk_get(drm->dev, "pxlclk");
+	 *if (IS_ERR(dev_p->clk))
+	 *	return PTR_ERR(dev_p->clk);
 	 */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	lcd->mmio = devm_ioremap_resource(drm->dev, res);
-	if (IS_ERR(lcd->mmio)) {
-		DRM_ERROR("failed to map control registers area\n");
-		ret = PTR_ERR(lcd->mmio);
-		lcd->mmio = NULL;
-		return ret;
+	/*
+	 * TBD call this in the future when device tree is ready,
+	 * use hardcoded value for now
+	 */
+	/*res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	 *dev_p->lcd_mmio = devm_ioremap_resource(drm->dev, res);
+	 *
+	 *if (IS_ERR(dev_p->lcd_mmio)) {
+	 *	DRM_ERROR("failed to map control registers area\n");
+	 *	ret = PTR_ERR(dev_p->lcd_mmio);
+	 *	dev_p->lcd_mmio = NULL;
+	 *	return ret;
+	 *}
+	 */
+	 /* LCD mmio */
+	if (!request_mem_region(LCD_BASE_ADDR, LCD_MMIO_SIZE, "kmb-lcd")) {
+		DRM_ERROR("failed to reserve LCD registers\n");
+		return -ENOMEM;
 	}
-	/*TBD read and check for correct product version here */
+	dev_p->lcd_mmio = ioremap_nocache(LCD_BASE_ADDR, LCD_MMIO_SIZE);
+	if (!dev_p->lcd_mmio) {
+		DRM_ERROR("failed to map LCD registers\n");
+		return -ENOMEM;
+	}
+
+	/* Mipi mmio */
+	if (!request_mem_region(MIPI_BASE_ADDR, MIPI_MMIO_SIZE, "kmb-mipi")) {
+		DRM_ERROR("failed to reserve MIPI registers\n");
+		iounmap(dev_p->lcd_mmio);
+		return -ENOMEM;
+	}
+	dev_p->mipi_mmio = ioremap_nocache(MIPI_BASE_ADDR, MIPI_MMIO_SIZE);
+	if (!dev_p->mipi_mmio) {
+		DRM_ERROR("failed to map MIPI registers\n");
+		iounmap(dev_p->lcd_mmio);
+		return -ENOMEM;
+	}
+
+	/*this is only for MIPI_TX_MSS_LCD_MIPI_CFG register */
+	dev_p->msscam_mmio = ioremap_nocache(MSS_CAM_BASE_ADDR,
+			MSS_CAM_MMIO_SIZE);
+
+/*TBD read and check for correct product version here */
 
 	/* Get the optional framebuffer memory resource */
 	ret = of_reserved_mem_device_init(drm->dev);
 	if (ret && ret != -ENODEV)
 		return ret;
 
-	spin_lock_init(&lcd->irq_lock);
+	spin_lock_init(&dev_p->irq_lock);
 	ret = kmb_setup_crtc(drm);
 	if (ret < 0) {
 		DRM_ERROR("failed to create crtc\n");
@@ -94,7 +128,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	return 0;
 
 irq_fail:
-	drm_crtc_cleanup(&lcd->crtc);
+	drm_crtc_cleanup(&dev_p->crtc);
 setup_fail:
 	of_reserved_mem_device_release(drm->dev);
 
@@ -122,18 +156,19 @@ static irqreturn_t kmb_irq(int irq, void *arg)
 	struct drm_device *dev = (struct drm_device *)arg;
 	unsigned long status, val;
 
-	status = kmb_read_lcd(LCD_INT_STATUS);
+	status = kmb_read_lcd(dev->dev_private, LCD_INT_STATUS);
 	if (status & LCD_INT_EOF) {
 		/*To DO - handle EOF interrupt? */
-		kmb_write_lcd(LCD_INT_CLEAR, LCD_INT_EOF);
+		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_EOF);
 	}
 	if (status & LCD_INT_LINE_CMP) {
 		/* clear line compare interrupt */
-		kmb_write_lcd(LCD_INT_CLEAR, LCD_INT_LINE_CMP);
+		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR,
+				LCD_INT_LINE_CMP);
 	}
 	if (status & LCD_INT_VERT_COMP) {
 		/* read VSTATUS */
-		val = kmb_read_lcd(LCD_VSTATUS);
+		val = kmb_read_lcd(dev->dev_private, LCD_VSTATUS);
 		val = (val & LCD_VSTATUS_VERTICAL_STATUS_MASK);
 		switch (val) {
 		case LCD_VSTATUS_COMPARE_VSYNC:
@@ -141,7 +176,8 @@ static irqreturn_t kmb_irq(int irq, void *arg)
 		case LCD_VSTATUS_COMPARE_ACTIVE:
 		case LCD_VSTATUS_COMPARE_FRONT_PORCH:
 			/* clear vertical compare interrupt */
-			kmb_write_lcd(LCD_INT_CLEAR, LCD_INT_VERT_COMP);
+			kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR,
+					LCD_INT_VERT_COMP);
 			drm_handle_vblank(dev, 0);
 			break;
 		}
@@ -152,8 +188,8 @@ static irqreturn_t kmb_irq(int irq, void *arg)
 
 static void kmb_irq_reset(struct drm_device *drm)
 {
-	kmb_write_lcd(LCD_INT_CLEAR, 0xFFFF);
-	kmb_write_lcd(LCD_INT_ENABLE, 0);
+	kmb_write_lcd(drm->dev_private, LCD_INT_CLEAR, 0xFFFF);
+	kmb_write_lcd(drm->dev_private, LCD_INT_ENABLE, 0);
 }
 
 DEFINE_DRM_GEM_CMA_FOPS(fops);
@@ -261,19 +297,34 @@ err_free:
 static void kmb_drm_unbind(struct device *dev)
 {
 	struct drm_device *drm = dev_get_drvdata(dev);
-	struct kmb_drm_private *lcd = drm->dev_private;
+	struct kmb_drm_private *dev_p = drm->dev_private;
 
 	drm_dev_unregister(drm);
 	drm_kms_helper_poll_fini(drm);
 	component_unbind_all(dev, drm);
-	of_node_put(lcd->crtc.port);
-	lcd->crtc.port = NULL;
+	of_node_put(dev_p->crtc.port);
+	dev_p->crtc.port = NULL;
 	pm_runtime_get_sync(drm->dev);
 	drm_irq_uninstall(drm);
 	pm_runtime_put_sync(drm->dev);
 	pm_runtime_disable(drm->dev);
+
+	if (dev_p->lcd_mmio) {
+		iounmap(dev_p->lcd_mmio);
+		release_mem_region(LCD_BASE_ADDR, LCD_MMIO_SIZE);
+	}
+
+	if (dev_p->mipi_mmio) {
+		iounmap(dev_p->mipi_mmio);
+		release_mem_region(MIPI_BASE_ADDR, MIPI_MMIO_SIZE);
+	}
+
+	if (dev_p->msscam_mmio)
+		iounmap(dev_p->msscam_mmio);
+
 	of_reserved_mem_device_release(drm->dev);
 	drm_mode_config_cleanup(drm);
+
 	drm_dev_put(drm);
 	drm->dev_private = NULL;
 	dev_set_drvdata(dev, NULL);
