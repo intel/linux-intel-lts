@@ -1014,7 +1014,8 @@ static long task_close_fd(struct binder_proc *proc, unsigned int fd)
 		retval = -EINTR;
 err:
 	mutex_unlock(&proc->files_lock);
-	put_files_struct(files);
+	if (files)
+		put_files_struct(files);
 
 	return retval;
 }
