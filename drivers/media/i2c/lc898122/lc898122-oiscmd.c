@@ -951,7 +951,7 @@ void lc898122_StbOnnN(struct lc898122_device *lc898122_dev, u8 UcStbY,
 {
 	struct i2c_client *client = lc898122_dev->client;
 
-	u8	UcRegIni;
+	u8	UcRegIni = 0;
 	u8	UcSttMsk = 0;
 	u8	UcCnt;
 

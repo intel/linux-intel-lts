@@ -80,7 +80,7 @@ static void lc898122_gyoutsignal(struct lc898122_device *lc898122_dev)
 void lc898122_accwait(struct lc898122_device *lc898122_dev, u8 UcTrgDat)
 {
 	struct i2c_client *client = lc898122_dev->client;
-	u8 UcFlgVal;
+	u8 UcFlgVal = 0;
 	int UcCnt;
 
 	for (UcCnt = 0; UcCnt < 60; UcCnt++) {
@@ -193,7 +193,7 @@ void lc898122_cleargyro(struct lc898122_device *lc898122_dev,
 			u16 UsClrFil, u8 UcClrMod)
 {
 	struct i2c_client *client = lc898122_dev->client;
-	u8 UcRamClr;
+	u8 UcRamClr = 0;
 	int UcCnt;
 
 	/* Select Filter to clear */
@@ -251,7 +251,7 @@ void lc898122_BsyWit(struct lc898122_device *lc898122_dev,
 	u8 UcTrgDat)
 {
 	struct i2c_client *client = lc898122_dev->client;
-	u8 UcFlgVal;
+	u8 UcFlgVal = 0;
 	u8 UcCnt;
 
 	RegWriteA(client, UsTrgAdr, UcTrgDat);
