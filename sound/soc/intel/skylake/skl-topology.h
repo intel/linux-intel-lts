@@ -129,6 +129,21 @@ struct skl_base_cfg {
 	struct skl_audio_data_format audio_fmt;
 };
 
+struct skl_pin_format {
+	u32 pin_idx;
+	u32 buf_size;
+	struct skl_audio_data_format audio_fmt;
+};
+
+struct skl_base_cfg_ext {
+	u16 nr_input_pins;
+	u16 nr_output_pins;
+	u8 reserved[8];
+	u32 priv_param_length;
+	/* input pin formats followed by output ones */
+	struct skl_pin_format pins_fmt[0];
+} __packed;
+
 struct skl_probe_gtw_cfg {
 	u32 node_id;
 	u32 dma_buffer_size;

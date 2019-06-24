@@ -1443,6 +1443,63 @@ static void skl_set_base_module_format(struct skl_sst *ctx,
 	base_cfg->is_pages = res->is_pages;
 }
 
+static void fill_pin_params(struct skl_audio_data_format *pin_fmt,
+				struct skl_module_fmt *format)
+{
+	pin_fmt->number_of_channels = format->channels;
+	pin_fmt->s_freq = format->s_freq;
+	pin_fmt->bit_depth = format->bit_depth;
+	pin_fmt->valid_bit_depth = format->valid_bit_depth;
+	pin_fmt->ch_cfg = format->ch_cfg;
+	pin_fmt->sample_type = format->sample_type;
+	pin_fmt->channel_map = format->ch_map;
+	pin_fmt->interleaving = format->interleaving_style;
+}
+
+/*
+ * Any module configuration begins with a base module configuration but
+ * can be followed by a generic extension containing audio format for all
+ * modules's pins that are in use.
+ */
+static void skl_set_base_ext_module_format(struct skl_sst *ctx,
+			struct skl_module_cfg *mconfig,
+			struct skl_base_cfg_ext *base_cfg_ext)
+{
+	int i;
+	struct skl_module_pin_resources *pin_res;
+	struct skl_pin_format *pin_fmt;
+	struct skl_module *module = mconfig->module;
+	struct skl_module_res *res = &module->resources[mconfig->res_idx];
+	struct skl_module_iface *fmt = &module->formats[mconfig->fmt_idx];
+	struct skl_module_fmt *format;
+
+	base_cfg_ext->nr_input_pins = res->nr_input_pins;
+	base_cfg_ext->nr_output_pins = res->nr_output_pins;
+	base_cfg_ext->priv_param_length = 0;
+
+	for (i = 0; i < res->nr_input_pins; i++) {
+		pin_res = &res->input[i];
+		pin_fmt = &base_cfg_ext->pins_fmt[i];
+
+		pin_fmt->pin_idx = pin_res->pin_index;
+		pin_fmt->buf_size = pin_res->buf_size;
+
+		format = &fmt->inputs[pin_res->pin_index].fmt;
+		fill_pin_params(&pin_fmt->audio_fmt, format);
+	}
+
+	for (i = 0; i < res->nr_output_pins; i++) {
+		pin_res = &res->output[i];
+		pin_fmt = &base_cfg_ext->pins_fmt[res->nr_input_pins + i];
+
+		pin_fmt->pin_idx = pin_res->pin_index;
+		pin_fmt->buf_size = pin_res->buf_size;
+
+		format = &fmt->outputs[pin_res->pin_index].fmt;
+		fill_pin_params(&pin_fmt->audio_fmt, format);
+	}
+}
+
 /*
  * Copies copier capabilities into copier module and updates copier module
  * config size.
@@ -1903,7 +1960,9 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig)
 {
 	u16 param_size;
-	struct skl_module_iface *m_intf;
+	struct skl_module *module = mconfig->module;
+	struct skl_module_iface *m_intf = &module->formats[mconfig->fmt_idx];
+	struct skl_module_res *m_res = &module->resources[mconfig->res_idx];
 
 	switch (mconfig->m_type) {
 	case SKL_MODULE_TYPE_COPIER:
@@ -1932,10 +1991,16 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 		return sizeof(struct skl_base_outfmt_cfg);
 
 	case SKL_MODULE_TYPE_GAIN:
-		m_intf = &mconfig->module->formats[mconfig->fmt_idx];
 		param_size = sizeof(struct skl_base_cfg);
 		param_size += sizeof(struct skl_gain_config)
 			* m_intf->outputs[0].fmt.channels;
+		return param_size;
+
+	case SKL_MODULE_TYPE_BASE_GENEXT:
+		param_size = sizeof(struct skl_base_cfg);
+		param_size += sizeof(struct skl_base_cfg_ext) +
+			(m_res->nr_input_pins + m_res->nr_output_pins)
+			* sizeof(struct skl_pin_format);
 		return param_size;
 
 	default:
@@ -2003,6 +2068,11 @@ static int skl_set_module_format(struct skl_sst *ctx,
 		skl_set_gain_format(ctx, module_config, *param_data);
 		break;
 
+	case SKL_MODULE_TYPE_BASE_GENEXT:
+		skl_set_base_module_format(ctx, module_config, *param_data);
+		skl_set_base_ext_module_format(ctx, module_config,
+			*param_data + sizeof(struct skl_base_cfg));
+		break;
 	default:
 		skl_set_base_module_format(ctx, module_config, *param_data);
 		break;
@@ -2367,19 +2437,6 @@ int skl_unbind_modules(struct skl_sst *ctx,
 	}
 
 	return ret;
-}
-
-static void fill_pin_params(struct skl_audio_data_format *pin_fmt,
-				struct skl_module_fmt *format)
-{
-	pin_fmt->number_of_channels = format->channels;
-	pin_fmt->s_freq = format->s_freq;
-	pin_fmt->bit_depth = format->bit_depth;
-	pin_fmt->valid_bit_depth = format->valid_bit_depth;
-	pin_fmt->ch_cfg = format->ch_cfg;
-	pin_fmt->sample_type = format->sample_type;
-	pin_fmt->channel_map = format->ch_map;
-	pin_fmt->interleaving = format->interleaving_style;
 }
 
 #define CPR_SINK_FMT_PARAM_ID 2
