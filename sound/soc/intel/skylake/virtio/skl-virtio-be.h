@@ -26,7 +26,7 @@ struct vskl;
 struct snd_skl_vbe;
 
 #define skl_get_vrtdata(skl) \
-	(dev_get_drvdata(&skl->virt_dev->dev))
+	(dev_get_platdata(&skl->virt_dev->dev))
 #define skl_get_vrtpdata(skl) \
 	((struct skl_virt_pdata *)(skl_get_vrtdata(skl)))
 #define skl_to_vskl(skl) \

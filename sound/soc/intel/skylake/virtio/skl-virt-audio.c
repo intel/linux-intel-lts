@@ -356,7 +356,7 @@ static int vskl_probe(struct platform_device *pdev)
 {
 	struct vskl *vskl;
 	int ret;
-	struct skl_virt_pdata *pdata = dev_get_drvdata(&pdev->dev);
+	struct skl_virt_pdata *pdata = dev_get_platdata(&pdev->dev);
 
 	if (!pdata || !pdata->skl) {
 		dev_err(&pdev->dev, "Failed to find native Skylake audio driver");
@@ -380,7 +380,7 @@ static int vskl_remove(struct platform_device *pdev)
 {
 	int ret;
 	struct vskl *vskl;
-	struct skl_virt_pdata *pdata = dev_get_drvdata(&pdev->dev);
+	struct skl_virt_pdata *pdata = dev_get_platdata(&pdev->dev);
 
 	vskl = pdata->private_data;
 	if (!vskl)
