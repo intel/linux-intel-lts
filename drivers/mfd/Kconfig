@@ -1645,21 +1645,17 @@ config MFD_VEXPRESS_SYSREG
 
 config MFD_TPS68470
 	bool "TI TPS68470 Power Management / LED chips"
-	depends on ACPI && I2C=y
+	depends on I2C
 	select MFD_CORE
 	select REGMAP_I2C
-	select I2C_DESIGNWARE_PLATFORM
 	help
 	  If you say yes here you get support for the TPS68470 series of
 	  Power Management / LED chips.
-
-	  These include voltage regulators, LEDs and other features
+	  These include voltage regulators, led and other features
 	  that are often used in portable devices.
 
-	  This option is a bool as it provides an ACPI operation
-	  region, which must be available before any of the devices
-	  using this are probed. This option also configures the
-	  designware-i2c driver to be built-in, for the same reason.
+	  This driver can also be built as a module.  If so, the module
+	  will be called tps68470.
 
 endmenu
 endif

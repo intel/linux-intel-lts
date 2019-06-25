@@ -1,26 +1,26 @@
+choice
+        prompt "intel-ipu4 platform data"
+        default INTEL_IPU4_BXT_RVP_PDATA
+
 config INTEL_IPU4_BXT_RVP_PDATA
 	bool "Enable built in platform data for Broxton RVP"
-	depends on VIDEO_INTEL_IPU4
 	---help---
 	Pre-ACPI system platform data is compiled inside kernel
 
 config INTEL_IPU4_BXT_P_PDATA
 	bool "Enable built in platform data for Broxton-P"
-	depends on VIDEO_INTEL_IPU4
 	---help---
 	Pre-ACPI system platform data is compiled inside kernel
 config INTEL_IPU4_BXT_GP_PDATA
-	depends on VIDEO_INTEL_IPU4
 	bool "Enable built in platform data for Gordon Peak"
 	---help---
 	Pre-ACPI system platform data is compiled inside kernel
 
 config INTEL_IPU4_BXT_GT_PDATA
-	depends on VIDEO_INTEL_IPU4
 	bool "Enable built in platform data for Broxton-GT"
 	---help---
 	Pre-ACPI system platform data is compiled inside kernel
-
+endchoice
 
 config INTEL_IPU4_OV13858
 	bool "Compile platform data for OV13858"

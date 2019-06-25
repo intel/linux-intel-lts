@@ -129,7 +129,7 @@ static void get_full_task_comm(struct task_entry *task_entry,
 	struct mm_struct *mm = task->mm;
 
 	/* fill the first TASK_COMM_LEN bytes with thread name */
-	__get_task_comm(task_entry->comm, TASK_COMM_LEN, task);
+	get_task_comm(task_entry->comm, task);
 	i = strlen(task_entry->comm);
 	while (i < TASK_COMM_LEN)
 		task_entry->comm[i++] = ' ';

@@ -99,7 +99,7 @@ static struct intel_ipu4_isys_subdev_info adv7481_hdmi_crl_sd = {
  * ADV7481 have its own oscillator, no buttres clock
  * needed.
  */
-struct intel_ipu4_isys_clk_mapping gp_mapping[] = {
+struct intel_ipu4_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
 };
 
@@ -109,7 +109,7 @@ static struct intel_ipu4_isys_subdev_pdata pdata = {
 		&adv7481_cvbs_crl_sd,
 		NULL,
 	},
-	.clk_map = gp_mapping,
+	.clk_map = clk_mapping,
 };
 
 static void ipu4_quirk(struct pci_dev *pci_dev)

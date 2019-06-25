@@ -1,6 +1,5 @@
 config ABL_BOOTLOADER_CONTROL
         tristate "ABL Bootloader Control module"
-        depends on X86
         default n
         help
           This driver installs a reboot hook, such that if reboot() is

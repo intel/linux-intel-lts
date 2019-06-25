@@ -196,6 +196,18 @@ static struct pci_driver intel_lpss_pci_driver = {
 	},
 };
 
+static int __init intel_lpss_pci_driver_init(void)
+{
+	return pci_register_driver(&intel_lpss_pci_driver);
+}
+fs_initcall_sync(intel_lpss_pci_driver_init);
+
+static void __exit intel_lpss_pci_driver_exit(void)
+{
+	pci_unregister_driver(&intel_lpss_pci_driver);
+}
+module_exit(intel_lpss_pci_driver_exit);
+
 static const struct pci_device_id intel_lpss_pci_ids_uart[] = {
 	/* BXT A-Step */
 	{ PCI_VDEVICE(INTEL, 0x0abc), (kernel_ulong_t)&bxt_uart_info },
