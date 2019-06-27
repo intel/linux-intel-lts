@@ -47,11 +47,23 @@ void ipu4_virtio_be_req_queue_free(void)
 
 struct ipu4_virtio_req_info *ipu4_virtio_be_req_queue_get(void)
 {
-	return ipu4_virtio_ring_pop(&ipu4_virtio_be_req_queue);
+	struct ipu4_virtio_req_info *req;
+	unsigned long flags = 0;
+
+	spin_lock_irqsave(&ipu4_virtio_be_req_queue.lock, flags);
+	req = ipu4_virtio_ring_pop(&ipu4_virtio_be_req_queue);
+	spin_unlock_irqrestore(&ipu4_virtio_be_req_queue.lock, flags);
+	return req;
 }
 
 int ipu4_virtio_be_req_queue_put(
 			struct ipu4_virtio_req_info *req)
 {
-	return ipu4_virtio_ring_push(&ipu4_virtio_be_req_queue, req);
+	unsigned long flags = 0;
+	int status;
+
+	spin_lock_irqsave(&ipu4_virtio_be_req_queue.lock, flags);
+	status = ipu4_virtio_ring_push(&ipu4_virtio_be_req_queue, req);
+	spin_unlock_irqrestore(&ipu4_virtio_be_req_queue.lock, flags);
+	return status;
 }

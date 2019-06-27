@@ -11,7 +11,6 @@
 #include "./ici/ici-isys-csi2.h"
 #include "isysapi/interface/ia_css_isysapi_fw_types.h"
 #include "ipu-platform-isys-csi2-reg.h"
-//#include "intel-ipu-isys-csi2-common.h"
 
 #define CSI2_ACCINV 8
 
@@ -249,9 +248,27 @@ static void ici_isys_csi2_sof_event(struct ici_isys_csi2
 						*csi2, unsigned int vc)
 {
 	unsigned long flags;
+	struct ici_isys_pipeline *ip;
+	unsigned int i;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
 	csi2->in_frame = true;
+
+	for(i = 0; i < INTEL_IPU4_ISYS_MAX_STREAMS; i++) {
+		if (csi2->isys->ici_pipes[i] &&
+		    csi2->isys->ici_pipes[i]->vc == vc &&
+		    &csi2->isys->ici_pipes[i]->csi2->asd[vc] == &csi2->asd[vc]) {
+			ip = csi2->isys->ici_pipes[i];
+			break;
+		}
+	}
+
+	if (!ip) {
+		spin_unlock_irqrestore(&csi2->isys->lock, flags);
+		return;
+	}
+
+	atomic_inc(&ip->sequence);
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 }
 
@@ -524,8 +541,12 @@ EXPORT_SYMBOL(ici_isys_csi2_init);
 
 void ici_isys_csi2_cleanup(struct ici_isys_csi2 *csi2)
 {
-    ici_isys_subdev_cleanup(&csi2->asd[0]);
-	ici_isys_stream_cleanup(&csi2->as[0]);
+	unsigned int i;
+
+	for (i = 0; i < NR_OF_CSI2_ICI_VC; i++) {
+		ici_isys_subdev_cleanup(&csi2->asd[i]);
+		ici_isys_stream_cleanup(&csi2->as[i]);
+	}
 }
 EXPORT_SYMBOL(ici_isys_csi2_cleanup);
 

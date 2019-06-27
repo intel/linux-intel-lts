@@ -319,6 +319,7 @@ int stream_device_register(struct ici_stream_device *strm_dev)
 		return -EINVAL;
 	}
 	strm_dev->minor = -1;
+	strm_dev->virt_dev_id = -1;
 
 	cdev_init(&strm_dev->cdev, &ici_stream_fops);
 	strm_dev->cdev.owner = ici_stream_fops.owner;

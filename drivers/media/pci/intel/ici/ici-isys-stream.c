@@ -426,7 +426,6 @@ static int start_stream_firmware(struct ici_isys_stream *as)
 	stream_cfg.input_pins[0].input_res.height = source_fmt.ffmt.height;
 	stream_cfg.input_pins[0].dt =
 		ici_isys_format_code_to_mipi(source_fmt.ffmt.pixelformat);
-
 	/*
 	 * Only CSI2-BE has the capability to do crop,
 	 * so get the crop info from csi2-be.
@@ -452,7 +451,9 @@ static int start_stream_firmware(struct ici_isys_stream *as)
 			stream_cfg.crop[0].bottom_offset = ps.rect.top +
 				ps.rect.height;
 		}
-	}
+	} else
+		stream_cfg.input_pins[0].mipi_store_mode =
+			IPU_FW_ISYS_MIPI_STORE_MODE_DISCARD_LONG_HEADER;
 
 	as->prepare_firmware_stream_cfg(as, &stream_cfg);
 
@@ -882,6 +883,9 @@ static int ici_isys_stream_on(struct file *file, void *fh)
 		return 0;
 	}
 
+	ip->seq_index = 0;
+	memset(ip->seq, 0, sizeof(ip->seq));
+	atomic_set(&ip->sequence, 0);
 	ip->csi2 = NULL;
 	ip->csi2_be = NULL;
 	ip->asd_source = NULL;
@@ -895,8 +899,6 @@ static int ici_isys_stream_on(struct file *file, void *fh)
 		return -ENODEV;
 	}
 
-	pipeline_set_power(as, 1);
-
 	mutex_lock(&as->isys->stream_mutex);
 	ip->source = ip->asd_source->source;
 
@@ -905,21 +907,21 @@ static int ici_isys_stream_on(struct file *file, void *fh)
 
 	if (ip->interlaced) {
 		pr_err("** SKTODO: INTERLACE ENABLED **\n");
-	    if (ip->short_packet_source ==
-            IPU_ISYS_SHORT_PACKET_FROM_RECEIVER) {
-		    rval = ici_isys_frame_buf_short_packet_setup(
-			    as, &as->strm_format);
-		    if (rval)
-			    goto out_requeue;
+		if (ip->short_packet_source ==
+				IPU_ISYS_SHORT_PACKET_FROM_RECEIVER) {
+			rval = ici_isys_frame_buf_short_packet_setup(
+					as, &as->strm_format);
+			if (rval)
+				goto out_requeue;
 	    } else {
 		    memset(ip->isys->short_packet_trace_buffer, 0,
 			    IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE);
-            dma_sync_single_for_device(&as->isys->adev->dev,
-                as->isys->short_packet_trace_buffer_dma_addr,
-                IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE,
-                DMA_BIDIRECTIONAL);
-            ip->short_packet_trace_index = 0;
-        }
+		    dma_sync_single_for_device(&as->isys->adev->dev,
+				    as->isys->short_packet_trace_buffer_dma_addr,
+				    IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE,
+				    DMA_BIDIRECTIONAL);
+		    ip->short_packet_trace_index = 0;
+	    }
 	}
 
 	rval = ici_isys_set_streaming(as, 1);
@@ -943,7 +945,7 @@ out_cleanup_short_packet:
 out_requeue:
 	mutex_unlock(&as->isys->stream_mutex);
 	ici_isys_frame_buf_stream_cancel(as);
-	pipeline_set_power(as, 0);
+
 	return rval;
 }
 
@@ -957,19 +959,12 @@ static int ici_isys_stream_off(struct file *file, void *fh)
 	if (ip->streaming)
 		ici_isys_set_streaming(as, 0);
 
-	ici_isys_frame_buf_short_packet_destroy(as);
-	mutex_unlock(&as->isys->stream_mutex);
-
-	ici_isys_frame_buf_stream_cancel(as);
-
-	mutex_lock(&as->isys->stream_mutex);
-	//streaming always should be turned off last.
-	//This variable prevents other streams from
-	//starting before we are done with cleanup.
 	ip->streaming = 0;
 	mutex_unlock(&as->isys->stream_mutex);
 
-	pipeline_set_power(as, 0);
+	ici_isys_frame_buf_short_packet_destroy(as);
+	ici_isys_frame_buf_stream_cancel(as);
+
 	return 0;
 }
 
@@ -1021,10 +1016,10 @@ const struct ici_isys_pixelformat
 			 mpix->ffmt.width * DIV_ROUND_UP(pfmt->bpp,
 			 BITS_PER_BYTE);
 	else
-		mpix->pfmt.plane_fmt[0].bytesperline = DIV_ROUND_UP(
-			as->line_header_length + as->line_footer_length
-			+ (unsigned int)mpix->ffmt.width * pfmt->bpp,
-			BITS_PER_BYTE);
+		mpix->pfmt.plane_fmt[0].bytesperline =
+			DIV_ROUND_UP((unsigned int)mpix->ffmt.width *
+				pfmt->bpp,
+				BITS_PER_BYTE);
 
 	mpix->pfmt.plane_fmt[0].bytesperline =
 		ALIGN(mpix->pfmt.plane_fmt[0].bytesperline,
@@ -1074,7 +1069,6 @@ static int ici_s_fmt_vid_cap_mplane(
 static int ici_poll_for_events(
 	struct ici_isys_stream *as)
 {
-//	return is_intel_ipu_hw_fpga();
 	return 0;
 }
 
@@ -1121,6 +1115,7 @@ static int stream_fop_open(struct inode *inode, struct file *file)
 		return rval;
 	}
 
+	pipeline_set_power(as, 1);
 	mutex_lock(&isys->mutex);
 
 	ipu_configure_spc(adev->isp,
@@ -1170,8 +1165,6 @@ static int stream_fop_open(struct inode *inode, struct file *file)
 
 	mutex_unlock(&isys->mutex);
 
-	strm_dev->virt_dev_id = -1;
-
 	return 0;
 
 out_lib_init:
@@ -1213,8 +1206,9 @@ static int stream_fop_release(struct inode *inode, struct file *file)
 	}
 
 	mutex_unlock(&as->isys->mutex);
-
+	pipeline_set_power(as, 0);
 	pm_runtime_put(&as->isys->adev->dev);
+
 	return ret;
 }
 

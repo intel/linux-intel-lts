@@ -1193,13 +1193,6 @@ static int __set_cpus_allowed_ptr(struct task_struct *p,
 	}
 #endif
 
-#if defined(CONFIG_SMP) && defined(CONFIG_PREEMPT_RT_BASE)
-	if (__migrate_disabled(p)) {
-		p->migrate_disable_update = 1;
-		goto out;
-	}
-#endif
-
 	dest_cpu = cpumask_any_and(cpu_valid_mask, new_mask);
 	if (task_running(rq, p) || p->state == TASK_WAKING) {
 		struct migration_arg arg = { p, dest_cpu };
@@ -3578,22 +3571,6 @@ static inline void sched_submit_work(struct task_struct *tsk)
 {
 	if (!tsk->state)
 		return;
-	/*
-	 * If a worker went to sleep, notify and ask workqueue whether
-	 * it wants to wake up a task to maintain concurrency.
-	 * As this function is called inside the schedule() context,
-	 * we disable preemption to avoid it calling schedule() again
-	 * in the possible wakeup of a kworker.
-	 */
-	if (tsk->flags & PF_WQ_WORKER) {
-		preempt_disable();
-		wq_worker_sleeping(tsk);
-		preempt_enable_no_resched();
-	}
-
-	if (tsk_is_pi_blocked(tsk))
-		return;
-
 	/*
 	 * If a worker went to sleep, notify and ask workqueue whether
 	 * it wants to wake up a task to maintain concurrency.

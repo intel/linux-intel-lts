@@ -164,7 +164,7 @@ static void virtio_be_handle_vq_kick(
  */
 static int virtio_be_handle_kick(int client_id, unsigned long *ioreqs_map)
 {
-	int val = -1;
+	int *val, i, count = 0;
 	struct vhm_request *req;
 	struct virtio_fe_info *fe_info;
 	int vcpu;
@@ -174,6 +174,10 @@ static int virtio_be_handle_kick(int client_id, unsigned long *ioreqs_map)
 		dev_warn(hy_drv_priv->dev, "Client %d not found\n", client_id);
 		return -EINVAL;
 	}
+
+	val = kzalloc(fe_info->max_vcpu * sizeof(int), GFP_KERNEL);
+	if (val == NULL)
+		return -ENOMEM;
 
 	while (1) {
 		vcpu = find_first_bit(ioreqs_map, fe_info->max_vcpu);
@@ -185,16 +189,21 @@ static int virtio_be_handle_kick(int client_id, unsigned long *ioreqs_map)
 			if (req->reqs.pio_request.direction == REQUEST_READ)
 				req->reqs.pio_request.value = 0;
 			else
-				val = req->reqs.pio_request.value;
+				val[count] = req->reqs.pio_request.value;
 
 			acrn_ioreq_complete_request(
 					fe_info->client_id, vcpu, req);
+			count++;
 		}
 	}
 
-	if (val >= 0)
-		virtio_be_handle_vq_kick(val, fe_info);
 
+	for (i = 0; i < count; i++) {
+		if (val[i] >= 0)
+			virtio_be_handle_vq_kick(val[i], fe_info);
+	}
+
+	kfree(val);
 	return 0;
 }
 

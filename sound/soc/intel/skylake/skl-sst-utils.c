@@ -28,11 +28,15 @@
 #define TYPE0_EXCEPTION 0
 #define TYPE1_EXCEPTION 1
 #define TYPE2_EXCEPTION 2
-#define MAX_CRASH_DATA_TYPES 3
+#define TYPE3_EXCEPTION 3
+#define MAX_CRASH_DATA_TYPES 4
 #define CRASH_DUMP_VERSION 0x1
 /* FW Extended Manifest Header id = $AE1 */
 #define SKL_EXT_MANIFEST_HEADER_MAGIC   0x31454124
 #define MAX_DSP_EXCEPTION_STACK_SIZE (64*1024)
+
+#define EXCEPTION_RECORD_OFFSET(core_count, core_idx) \
+	(0x1000 - ((core_count - core_idx) * 0x158) + 4)
 
 /* FW adds headers and trailing patters to extended crash data */
 #define EXTRA_BYTES	256
@@ -312,28 +316,37 @@ void skl_reset_instance_id(struct skl_sst *ctx)
 }
 EXPORT_SYMBOL_GPL(skl_reset_instance_id);
 
-/* This function checks tha available data on the core id
- * passed as an argument and returns the bytes available
- */
-static int skl_check_ext_excep_data_avail(struct skl_sst *ctx, int idx)
+#define LOGE_TAG_FILE_ID 0x7FFF
+#define LOGE_TAG_BOCD 0x5DB00000
+
+struct bxt_excstack_hdr {
+	u32 file_id;
+	u32 bocd;
+};
+
+static int bxt_find_stackdump(struct skl_sst *ctx, int idx)
 {
-	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
-	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
-	u32 read, write;
-	u32 *ptr;
+	struct bxt_excstack_hdr hdr;
+	u32 size = ctx->dsp->trace_wind.size / ctx->dsp->trace_wind.nr_dsp;
+	void __iomem *base = ctx->dsp->trace_wind.addr;
+	u32 offset = 0;
 
-	/* move to the source dsp tracing window */
-        base += (idx * size);
-        ptr = (u32 *) base;
-        read = ptr[0];
-        write = ptr[1];
+	base += (idx * size);
 
-	if (write == read)
-		return 0;
-        else if (write > read)
-		return (write - read);
-	else
-		return (size - 8 - read + write);
+	while (offset < (size - 8 - sizeof(hdr))) {
+		memcpy_fromio(&hdr, base + 8 + offset,
+				sizeof(hdr));
+		if (hdr.file_id == LOGE_TAG_FILE_ID
+				&& hdr.bocd == LOGE_TAG_BOCD) {
+			dev_info(ctx->dev, "Stack header found at %d\n",
+					offset);
+			/* Just pretend we consumed the log data */
+			writel(offset, (u32 *) base);
+			return 0;
+		}
+		offset += sizeof(u32);
+	}
+	return -ENXIO;
 }
 
 /* Function to read the extended DSP crash information from the
@@ -341,62 +354,69 @@ static int skl_check_ext_excep_data_avail(struct skl_sst *ctx, int idx)
  * Data is read into the buffer passed as *ext_core_dump.
  * number of bytes read is updated in the sz_ext_dump
  */
-static void skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
-			void *ext_core_dump, int *sz_ext_dump)
+static int skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
+		void *ext_core_dump, int ext_core_dump_sz, int *sz_ext_dump)
+
 {
 	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
 	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
 	u32 read, write;
 	int offset = *sz_ext_dump;
+	int count;
 	u32 *ptr;
 
 	/* move to the current core's tracing window */
 	base += (idx * size);
 	ptr = (u32 *) base;
-	read = ptr[0];
-	write = ptr[1];
+	read = readl(ptr);
+	write = readl(ptr+1);
 
 	/* in case of read = write, just return */
 	if (read == write)
-		return;
+		return 0;
+	/* check r/w pointers sanity  */
+	if ((read + 8) >= size || (write + 8) >= size)
+		return -EINVAL;
 
-	if (write > read) {
-		memcpy_fromio((ext_core_dump + offset),
-			(const void __iomem *)(base + 8 + read),
-				(write - read));
-		*sz_ext_dump = offset + write - read;
-		/* advance read pointer */
-		ptr[0] += write - read;
-	} else {
-		/* wrap around condition - copy till the end */
-		memcpy_fromio((ext_core_dump + offset),
-			(const void __iomem *)(base + 8 + read),
-				(size - 8 - read));
-		*sz_ext_dump = offset + size - 8 - read;
-		offset = *sz_ext_dump;
+	if (write > read)
+		count = write - read;
+	else
+		count = size - 8 - read;
 
-		/* copy from the beginnning */
-		memcpy_fromio((ext_core_dump + offset),
-			(const void __iomem *) (base + 8), write);
-		*sz_ext_dump = offset + write;
-		/* update the read pointer */
-		ptr[0] = write;
-	}
+	if (offset + count > ext_core_dump_sz)
+		return -EINVAL;
+
+	memcpy_fromio((ext_core_dump + offset),
+		(const void __iomem *) (base + 8 + read), count);
+
+	*sz_ext_dump = offset + count;
+	read += count;
+	if (read >= size - 8)
+		read = 0;
+	writel(read, ptr);
+	return 0;
 }
 
-int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
+int skl_dsp_crash_dump_read(struct skl_sst *ctx, int idx, int stack_size)
 {
-	int num_mod = 0, size_core_dump, sz_ext_dump = 0, idx = 0;
+	int num_mod = 0, size_core_dump, sz_ext_dump = 0;
 	struct uuid_module *module, *module1;
 	void *coredump, *ext_core_dump;
+	unsigned long ext_core_dump_sz;
 	void *fw_reg_addr, *offset;
 	struct pci_dev *pci = to_pci_dev(ctx->dsp->dev);
-	u16 length0, length1, length2;
+	u32 stackdump_complete = 0;
+	u16 length0, length1, length2, length3;
 	struct adsp_crash_hdr *crash_data_hdr;
 	struct adsp_type0_crash_data *type0_data;
 	struct adsp_type1_crash_data *type1_data;
 	struct adsp_type2_crash_data *type2_data;
 	struct sst_dsp *sst = ctx->dsp;
+	unsigned long timeout;
+	int ret;
+
+	if (idx < 0 || idx >= ctx->cores.count)
+		return -EINVAL;
 
 	if (list_empty(&ctx->uuid_list))
 		dev_info(ctx->dev, "Module list is empty\n");
@@ -406,19 +426,42 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	}
 
 	if(stack_size)
-		ext_core_dump = vzalloc(stack_size + EXTRA_BYTES);
+		ext_core_dump_sz = stack_size + EXTRA_BYTES;
 	else
-		ext_core_dump = vzalloc(MAX_DSP_EXCEPTION_STACK_SIZE + EXTRA_BYTES);
-        if (!ext_core_dump) {
-                dev_err(ctx->dsp->dev, "failed to allocate memory for FW Stack\n");
-                return -ENOMEM;
-        }
-	for (idx = 0; idx < sst->trace_wind.nr_dsp; idx++) {
-		if(skl_check_ext_excep_data_avail(ctx, idx) != 0) {
-			while(sz_ext_dump < stack_size) {
-				skl_read_ext_exception_data(ctx, idx,
-						ext_core_dump, &sz_ext_dump);
-			}
+		ext_core_dump_sz = MAX_DSP_EXCEPTION_STACK_SIZE + EXTRA_BYTES;
+	ext_core_dump = vzalloc(ext_core_dump_sz);
+	if (!ext_core_dump) {
+		dev_err(ctx->dsp->dev, "failed to allocate memory for FW Stack\n");
+		return -ENOMEM;
+	}
+
+	fw_reg_addr = (void __force *)(ctx->dsp->mailbox.in_base -
+			ctx->dsp->addr.w0_stat_sz);
+
+	ret = bxt_find_stackdump(ctx, idx);
+	if (ret < 0) {
+		stackdump_complete = 1;
+		dev_err(ctx->dsp->dev, "Stack Dump not found, skipping\n");
+	}
+
+	timeout = jiffies + msecs_to_jiffies(100);
+	while (!stackdump_complete) {
+		stackdump_complete = readl(fw_reg_addr +
+				EXCEPTION_RECORD_OFFSET(ctx->cores.count, idx));
+		if (skl_read_ext_exception_data(ctx, idx, ext_core_dump,
+					ext_core_dump_sz, &sz_ext_dump) < 0) {
+			dev_err(ctx->dsp->dev, "Stack Dump read error\n");
+			break;
+		}
+		if (stackdump_complete) {
+			/* Try reading the remainder */
+			skl_read_ext_exception_data(ctx, idx, ext_core_dump,
+					ext_core_dump_sz, &sz_ext_dump);
+			break;
+		}
+		if (time_after(jiffies, timeout)) {
+			dev_err(ctx->dsp->dev, "Stack Dump reading timed out\n");
+			break;
 		}
 	}
 
@@ -426,11 +469,12 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	length0 = sizeof(*type0_data) / sizeof(u32);
 	length1 = (num_mod * sizeof(*type1_data)) / sizeof(u32);
 	length2 = sizeof(*type2_data) / sizeof(u32);
+	length3 = sz_ext_dump / sizeof(u32);
 
 	/* type1 data size is calculated based on number of modules */
 	size_core_dump = (MAX_CRASH_DATA_TYPES * sizeof(*crash_data_hdr)) +
 			sizeof(*type0_data) + (num_mod * sizeof(*type1_data)) +
-			sizeof(*type2_data) + sz_ext_dump;
+			sizeof(*type2_data);
 
 	coredump = vzalloc(size_core_dump + sz_ext_dump);
 	if (!coredump){
@@ -474,14 +518,18 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int stack_size)
 	crash_data_hdr->length = length2;
 	offset += sizeof(*crash_data_hdr);
 	type2_data = (struct adsp_type2_crash_data *) offset;
-	fw_reg_addr = (void __force*)(ctx->dsp->mailbox.in_base -
-			ctx->dsp->addr.w0_stat_sz);
 	memcpy_fromio(type2_data->fwreg, (const void __iomem *)fw_reg_addr,
 						sizeof(*type2_data));
+	offset += sizeof(*type2_data);
 
 	if (sz_ext_dump) {
-		offset = coredump + size_core_dump;
+		/* Fill type3 header and data */
+		crash_data_hdr = (struct adsp_crash_hdr *) offset;
+		crash_data_hdr->type = TYPE3_EXCEPTION;
+		crash_data_hdr->length = length3;
+		offset += sizeof(*crash_data_hdr);
 		memcpy(offset, ext_core_dump, sz_ext_dump);
+		offset += sz_ext_dump;
 	}
 
 	vfree(ext_core_dump);

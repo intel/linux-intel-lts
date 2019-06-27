@@ -289,7 +289,6 @@ int selinux_netlbl_sctp_assoc_request(struct sctp_endpoint *ep,
 	int rc;
 	struct netlbl_lsm_secattr secattr;
 	struct sk_security_struct *sksec = selinux_sock(ep->base.sk);
-	struct sockaddr *addr;
 	struct sockaddr_in addr4;
 	struct sockaddr_in6 addr6;
 

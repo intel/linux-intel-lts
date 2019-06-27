@@ -40,6 +40,9 @@ struct ici_output_pin_data {
 struct ici_isys_pipeline {
 	struct node_pipeline pipe;
 	struct ici_isys_pipeline_device *pipeline_dev;
+	atomic_t sequence;
+	unsigned int seq_index;
+	struct ici_sequence_info seq[ICI_ISYS_MAX_PARALLEL_SOF];
 	int source;		/* SSI stream source */
 	int stream_handle;	/* stream handle for CSS API */
 	unsigned int nr_output_pins;	/* How many firmware pins? */

@@ -144,13 +144,76 @@ load_library_failed:
 	return ret;
 }
 
+int sst_fw_status_poll(struct sst_dsp *ctx, u32 module, u32 state,
+			 u32 time, char *operation)
+{
+	union {
+		struct {
+			u32 state:24;
+			u32 waits:4;
+			u32 module:3;
+			u32 halted:1;
+		};
+		u32 raw;
+	} fwsts;
+	unsigned long timeout;
+	int k = 0, s;
+	int ret;
+	char *state_desc;
+
+	/*
+	 * split the loop into sleeps of varying resolution.
+	 * By observation, FW responds in 10 to 20ms.
+	 */
+
+	timeout = jiffies + msecs_to_jiffies(time);
+
+	fwsts.raw = sst_dsp_shim_read_unlocked(ctx, BXT_ADSP_FW_STATUS);
+	while (!fwsts.halted
+			&& (fwsts.module == module)
+			&& (fwsts.state != state)
+			&& time_before(jiffies, timeout)) {
+
+		k++;
+		switch (k) {
+		case 1:
+		case 12:
+				s = 10000;
+				break;
+		case 2:
+				s = 1000;
+				break;
+		}
+
+		usleep_range(s, s+100);
+
+		fwsts.raw = sst_dsp_shim_read_unlocked(ctx, BXT_ADSP_FW_STATUS);
+	}
+
+	if (!fwsts.halted && (fwsts.module == module)
+			&& (fwsts.state == state)) {
+		state_desc = "success";
+		ret = 0;
+	} else if (fwsts.halted || fwsts.module != module) {
+		state_desc = "unexpected state";
+		ret = -EPROTO;
+	} else {
+		state_desc = "timeout";
+		ret = -ETIME;
+	}
+	dev_dbg(ctx->dev, "FW Status=%08x %s %s\n", fwsts.raw,
+			operation, state_desc);
+
+	return ret;
+}
+
 /*
  * First boot sequence has some extra steps. Core 0 waits for power
  * status on core 1, so power up core 1 also momentarily, keep it in
  * reset/stall and then turn it off
  */
 static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
-			const void *fwdata, u32 fwsize)
+			const void *fwdata, u32 fwsize, u32 *fwerr, u32 *fwsts)
 {
 	int stream_tag, ret;
 
@@ -210,7 +273,7 @@ static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
 	skl_ipc_op_int_enable(ctx);
 
 	/* Step 7: Wait for ROM init */
-	ret = sst_dsp_register_poll(ctx, BXT_ADSP_FW_STATUS, SKL_FW_STS_MASK,
+	ret = sst_fw_status_poll(ctx, 0,
 			SKL_FW_INIT, BXT_ROM_INIT_TIMEOUT, "ROM Load");
 	if (ret < 0) {
 		dev_err(ctx->dev, "Timeout for ROM init, ret:%d\n", ret);
@@ -220,6 +283,11 @@ static int sst_bxt_prepare_fw(struct sst_dsp *ctx,
 	return ret;
 
 base_fw_load_failed:
+	if (fwerr)
+		*fwerr = sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE);
+	if (fwsts)
+		*fwsts = sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS);
+
 	ctx->dsp_ops.cleanup(ctx->dev, &ctx->dmab, stream_tag,
 						SNDRV_PCM_STREAM_PLAYBACK);
 
@@ -234,7 +302,7 @@ static int sst_transfer_fw_host_dma(struct sst_dsp *ctx)
 
 	ctx->dsp_ops.trigger(ctx->dev, true, ctx->dsp_ops.stream_tag,
 						SNDRV_PCM_STREAM_PLAYBACK);
-	ret = sst_dsp_register_poll(ctx, BXT_ADSP_FW_STATUS, SKL_FW_STS_MASK,
+	ret = sst_fw_status_poll(ctx, 0,
 			BXT_ROM_INIT, BXT_BASEFW_TIMEOUT, "Firmware boot");
 
 	ctx->dsp_ops.trigger(ctx->dev, false, ctx->dsp_ops.stream_tag,
@@ -250,6 +318,7 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
 	struct firmware stripped_fw;
 	struct skl_sst *skl = ctx->thread_context;
 	int ret, i;
+	u32 fwerr = 0, fwsts = 0;
 
 	if (ctx->fw == NULL) {
 		ret = request_firmware(&ctx->fw, ctx->fw_name, ctx->dev);
@@ -271,12 +340,10 @@ static int bxt_load_base_firmware(struct sst_dsp *ctx)
 	skl_dsp_strip_extended_manifest(&stripped_fw);
 
 	for (i = 0; i < BXT_FW_INIT_RETRY; i++) {
-		ret = sst_bxt_prepare_fw(ctx, stripped_fw.data, stripped_fw.size);
+		ret = sst_bxt_prepare_fw(ctx, stripped_fw.data,
+					stripped_fw.size, &fwerr, &fwsts);
 		if (ret < 0) {
-			dev_err(ctx->dev, "Error code=0x%x: FW status=0x%x\n",
-				sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE),
-				sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS));
-
+			dev_err(ctx->dev, "Error code=0x%x: FW status=0x%x\n", fwerr, fwsts);
 			dev_err(ctx->dev, "Iteration %d Core En/ROM load fail:%d\n", i, ret);
 			continue;
 		}

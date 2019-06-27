@@ -209,17 +209,11 @@ static void handle_vq_kick(int client_id, int vq_idx)
 			virtio_vq_relchain(vq, idx, iov.iov_len);
 			continue;
 		}
-
-		if (req->stat != IPU4_REQ_PENDING) {
-			virtio_vq_relchain(vq, idx, iov.iov_len);
-			ipu4_virtio_be_req_queue_put(req_info);
-		}
 		pr_debug("%s ending request for stream %d",
 			__func__, req->op[0]);
 	}
 	pr_debug("IPU VBK data process on VQ Done\n");
-	if ((req == NULL) || (req && req->stat !=
-						IPU4_REQ_PENDING))
+	if (req == NULL)
 		virtio_vq_endchains(vq, 1);
 }
 

@@ -31,16 +31,42 @@ static unsigned int vfe_get_errorcode(struct sst_dsp *ctx)
 	return 0;
 }
 
+static int vfe_prepare_lib_load(struct skl_sst *skl,
+	struct skl_lib_info *linfo, unsigned int hdr_offset, int index)
+{
+	int ret;
+	struct sst_dsp *dsp = skl->dsp;
+	struct snd_skl_vfe *vfe = dev_get_drvdata(skl->dev);
+
+	if (linfo->fw == NULL) {
+		ret = vfe->request_ext_resource(&linfo->fw, linfo->name,
+				VFE_LIBRARY_RES);
+		if (ret < 0) {
+			dev_err(skl->dev, "Request lib %s failed:%d\n",
+				linfo->name, ret);
+			return ret;
+		}
+	}
+
+	if (skl->is_first_boot) {
+		ret = snd_skl_parse_uuids(dsp, linfo->fw, hdr_offset, index);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
 int
 vfe_load_library(struct sst_dsp *ctx, struct skl_lib_info *linfo, int lib_count)
 {
-	struct firmware stripped_fw;
 	struct skl_sst *skl = ctx->thread_context;
 	int ret = 0, i;
+	struct snd_skl_vfe *vfe = dev_get_drvdata(skl->dev);
 
 	/* library indices start from 1 to N. 0 represents base FW */
 	for (i = 1; i < lib_count; i++) {
-		ret = skl_prepare_lib_load(skl, &skl->lib_info[i], &stripped_fw,
+		ret = vfe_prepare_lib_load(skl, &skl->lib_info[i],
 					BXT_ADSP_FW_BIN_HDR_OFFSET, i);
 		if (ret < 0)
 			break;
@@ -53,10 +79,13 @@ static int vfe_load_base_firmware(struct sst_dsp *ctx)
 {
 	struct skl_sst *skl = ctx->thread_context;
 	int ret;
+	struct snd_skl_vfe *vfe = dev_get_drvdata(skl->dev);
+	struct firmware *fw;
 
 	dev_dbg(ctx->dev, "Request FW name:%s\n", ctx->fw_name);
 	if (ctx->fw == NULL) {
-		ret = request_firmware(&ctx->fw, ctx->fw_name, ctx->dev);
+		ret = vfe->request_ext_resource(&ctx->fw,
+				ctx->fw_name, VFE_FIRMWARE_RES);
 		if (ret < 0) {
 			dev_err(ctx->dev, "Request firmware failed %d\n", ret);
 			return ret;
@@ -73,8 +102,6 @@ static int vfe_load_base_firmware(struct sst_dsp *ctx)
 
 	return 0;
 }
-
-
 
 int vfe_schedule_dsp_D0i3(struct sst_dsp *ctx)
 {

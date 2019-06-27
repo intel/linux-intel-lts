@@ -22,11 +22,55 @@
 	container_of(put_entry, struct ici_frame_buf_wrapper,\
 		put_frame_entry)
 
+static u64 get_sof_ns_delta(struct ici_isys_pipeline *ip,
+	struct ia_css_isys_resp_info *info)
+{
+	struct ipu_bus_device *adev = ip->isys->adev;
+	struct ipu_device *isp = adev->isp;
+	u64 delta, tsc_now;
+
+	if(!ipu_buttress_tsc_read(isp, &tsc_now))
+		delta = tsc_now -
+			((u64) info->timestamp[1] << 32 | info->timestamp[0]);
+	else
+		delta = 0;
+
+	return ipu_buttress_tsc_ticks_to_ns(delta);
+}
+
+static unsigned int
+get_sof_sequence_by_timestamp(struct ici_isys_pipeline *ip,
+	struct ia_css_isys_resp_info *info)
+{
+	struct ici_isys *isys = ip->isys;
+	u64 time = (u64) info->timestamp[1] << 32 | info->timestamp[0];
+	unsigned int i;
+
+	for (i = 0; i < ICI_ISYS_MAX_PARALLEL_SOF; i++)
+		if (time == ip->seq[i].timestamp) {
+			dev_dbg(&isys->adev->dev,
+				"sof: using sequence number %u for timestamp 0 x%16.16llx\n",
+				ip->seq[i].sequence, time);
+			return ip->seq[i].sequence;
+		}
+
+	dev_dbg(&isys->adev->dev, "SOF: looking for 0x%16.16llx\n", time);
+
+	for (i = 0; i < ICI_ISYS_MAX_PARALLEL_SOF; i++)
+		dev_dbg(&isys->adev->dev,
+			"SOF: sequence %u, timestamp value 0x%16.16llx\n",
+			ip->seq[i].sequence, ip->seq[i].timestamp);
+
+	dev_dbg(&isys->adev->dev, "SOF sequence number not found\n");
+	return 0;
+}
+
 static struct ici_frame_buf_wrapper
 *ici_frame_buf_lookup(struct ici_isys_frame_buf_list
 					*buf_list,
 					struct ici_frame_info
-					*user_frame_info)
+					*user_frame_info,
+					ici_frame_buf_list_type *buf_list_type)
 {
 	struct ici_frame_buf_wrapper *buf;
 	int i;
@@ -50,6 +94,7 @@ static struct ici_frame_buf_wrapper
 				if (new_plane->mem.userptr ==
 					cur_plane->mem.userptr) {
 					spin_unlock_irqrestore(&buf_list->lock, flags);
+					*buf_list_type=ICI_ISYS_GETBUF_LIST;
 					return buf;
 				}
 				break;
@@ -57,6 +102,7 @@ static struct ici_frame_buf_wrapper
 				if (new_plane->mem.dmafd ==
 					cur_plane->mem.dmafd) {
 					spin_unlock_irqrestore(&buf_list->lock, flags);
+					*buf_list_type=ICI_ISYS_GETBUF_LIST;
 					return buf;
 				}
 				break;
@@ -65,7 +111,36 @@ static struct ici_frame_buf_wrapper
 		}
 
 	}
+
+	list_for_each_entry(buf, &buf_list->putbuf_list, node) {
+		for (i = 0; i < user_frame_info->num_planes; i++) {
+			struct ici_frame_plane *new_plane =
+				&user_frame_info->frame_planes[i];
+			struct ici_frame_plane *cur_plane =
+				&buf->frame_info.frame_planes[i];
+
+			switch (mem_type) {
+			case ICI_MEM_USERPTR:
+				if (new_plane->mem.userptr ==
+					cur_plane->mem.userptr) {
+					spin_unlock_irqrestore(&buf_list->lock, flags);
+					*buf_list_type=ICI_ISYS_PUTBUF_LIST;
+					return buf;
+				}
+				break;
+			case ICI_MEM_DMABUF:
+				if (new_plane->mem.dmafd ==
+					cur_plane->mem.dmafd) {
+					spin_unlock_irqrestore(&buf_list->lock, flags);
+					*buf_list_type=ICI_ISYS_PUTBUF_LIST;
+					return buf;
+				}
+				break;
+			}
+		}
+	}
 	spin_unlock_irqrestore(&buf_list->lock, flags);
+	*buf_list_type=ICI_ISYS_NONE;
 	return NULL;
 }
 
@@ -429,6 +504,7 @@ int ici_isys_get_buf(struct ici_isys_stream *as,
 	unsigned i;
 	struct ici_frame_buf_wrapper *buf;
 	unsigned long flags = 0;
+	ici_frame_buf_list_type buf_list_type;
 
 	struct ici_kframe_plane *kframe_plane;
 	struct ici_isys_frame_buf_list *buf_list = &as->buf_list;
@@ -444,12 +520,15 @@ int ici_isys_get_buf(struct ici_isys_stream *as,
 		dev_err(&as->isys->adev->dev, "User length not set\n");
 		return -EINVAL;
 	}
-	buf = ici_frame_buf_lookup(buf_list, frame_info);
+	buf = ici_frame_buf_lookup(buf_list, frame_info, &buf_list_type);
 
-	if (buf) {
+	if (buf && buf_list_type == ICI_ISYS_GETBUF_LIST ) {
 		buf->state = ICI_BUF_PREPARED;
 		return 0;
+	} else 	if (buf && buf_list_type == ICI_ISYS_PUTBUF_LIST ) {
+		return 0;
 	}
+
 
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf)
@@ -516,6 +595,7 @@ int ici_isys_get_buf_virt(struct ici_isys_stream *as,
 	unsigned i;
 	unsigned long flags = 0;
 	struct ici_frame_buf_wrapper *buf;
+	ici_frame_buf_list_type buf_list_type;
 
 	struct ici_kframe_plane *kframe_plane;
 	struct ici_isys_frame_buf_list *buf_list = &as->buf_list;
@@ -531,10 +611,12 @@ int ici_isys_get_buf_virt(struct ici_isys_stream *as,
 		dev_err(&as->isys->adev->dev, "User length not set\n");
 		return -EINVAL;
 	}
-	buf = ici_frame_buf_lookup(buf_list, &frame_buf->frame_info);
+	buf = ici_frame_buf_lookup(buf_list, &frame_buf->frame_info, &buf_list_type);
 
-	if (buf) {
+	if (buf && (buf_list_type == ICI_ISYS_GETBUF_LIST) ) {
 		buf->state = ICI_BUF_PREPARED;
+		return 0;
+	} else 	if (buf && buf_list_type == ICI_ISYS_PUTBUF_LIST ) {
 		return 0;
 	}
 
@@ -639,6 +721,25 @@ static void frame_buf_done(
 		buf->frame_info.frame_planes[0].mem.userptr);
 }
 
+void ici_isys_buf_calc_sequence_time(struct ici_frame_buf_wrapper *buf,
+	struct ici_isys_pipeline *ip,
+	struct ia_css_isys_resp_info *info)
+{
+	u64 ns;
+	u32 sequence;
+	struct timespec ts_now;
+
+	ns = ktime_get_ns();
+	ns -= get_sof_ns_delta(ip, info);
+	sequence = get_sof_sequence_by_timestamp(ip,info);
+
+	ts_now = ns_to_timespec(ns);
+
+	buf->frame_info.frame_timestamp.tv_sec = ts_now.tv_sec;
+	buf->frame_info.frame_timestamp.tv_usec = ts_now.tv_nsec / NSEC_PER_USEC;
+	buf->frame_info.frame_sequence_id = sequence;
+}
+
 void ici_isys_frame_buf_ready(struct ici_isys_pipeline
 					*ip,
 					struct ia_css_isys_resp_info *info)
@@ -677,6 +778,8 @@ void ici_isys_frame_buf_ready(struct ici_isys_pipeline
 
 	list_del(&buf->node);
 	spin_unlock_irqrestore(&buf_list->lock, flags);
+
+	ici_isys_buf_calc_sequence_time(buf, ip, info);
 
 	/*
 	 * For interlaced buffers, the notification to user space
@@ -1042,7 +1145,6 @@ int ici_isys_frame_buf_init(
 	struct ici_isys_frame_buf_list* buf_list)
 {
 	buf_list->drv_priv = NULL;
-	mutex_init(&buf_list->mutex);
 	spin_lock_init(&buf_list->lock);
 	spin_lock_init(&buf_list->short_packet_queue_lock);
 	INIT_LIST_HEAD(&buf_list->getbuf_list);
