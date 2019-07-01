@@ -21,3 +21,9 @@
 
 # CVE-2019-10126
 0001-mwifiex-Fix-heap-overflow-in-mwifiex_uap_parse_tail-CVE-2019-10126.patch
+
+# CVE-2019-3846
+0001-mwifiex-Fix-possible-buffer-overflows-at-parsing-bss-CVE-2019-3846.patch
+0002-mwifiex-Abort-at-too-short-BSS-descriptor-element-CVE-2019-3846.patch
+0003-mwifiex-Don-t-abort-on-small-spec-compliant-vendor-I-CVE-2019-3846.patch
+0004-mwifiex-use-total_ie_len-in-mwifiex_update_bss_desc-CVE-2019-3846.patch
