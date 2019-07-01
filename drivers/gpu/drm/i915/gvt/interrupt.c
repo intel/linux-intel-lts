@@ -654,8 +654,6 @@ void intel_vgpu_trigger_virtual_event(struct intel_vgpu *vgpu,
 			hrtimer_cancel(&vhm_dev->thread_timer);
 
 		preempt_disable();
-		trace_printk("ACRN thread timer is started. Policy is %d\n",
-			vhm_dev->emulation_thread->policy);
 		/* 750*1000 ns */
 		hrtimer_set_expires(&vhm_dev->thread_timer, 750000);
 		hrtimer_start_expires(&vhm_dev->thread_timer, HRTIMER_MODE_REL);
