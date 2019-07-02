@@ -206,7 +206,7 @@ DRV_BOOL CPUMON_is_Offline_Allowed(void)
  * @fn       VOID CPUMON_Online_Cpu(
  *               PVOID param)
  *
- * @param    PVOID parm
+ * @param    PVOID param
  *
  * @return   None
  *
@@ -219,7 +219,7 @@ VOID CPUMON_Online_Cpu(PVOID param)
 	S32 this_cpu;
 	CPU_STATE pcpu;
 
-	SEP_DRV_LOG_TRACE_IN("Dummy parm: %p.", parm);
+	SEP_DRV_LOG_TRACE_IN("Dummy param: %p.", param);
 
 	if (param == NULL) {
 		preempt_disable();
