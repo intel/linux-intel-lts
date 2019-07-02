@@ -384,15 +384,24 @@ int skl_dsp_get_core(struct sst_dsp *ctx, unsigned int core_id)
 		return -EINVAL;
 	}
 
-	skl->cores.usage_count[core_id]++;
+	if (core_id != SKL_DSP_CORE0_ID) {
+		ret = skl_dsp_get_core(ctx, SKL_DSP_CORE0_ID);
+		if (ret < 0) {
+			dev_err(ctx->dev, "unable to get core0 before core%d\n",
+					core_id);
+			goto out;
+		}
+	}
 
 	if (skl->cores.state[core_id] == SKL_DSP_RESET) {
 		ret = ctx->fw_ops.set_state_D0(ctx, core_id);
 		if (ret < 0) {
 			dev_err(ctx->dev, "unable to get core%d\n", core_id);
+			skl_dsp_put_core(ctx, SKL_DSP_CORE0_ID);
 			goto out;
 		}
 	}
+	skl->cores.usage_count[core_id]++;
 
 out:
 	dev_dbg(ctx->dev, "core id %d state %d usage_count %d\n",
@@ -412,20 +421,34 @@ int skl_dsp_put_core(struct sst_dsp *ctx, unsigned int core_id)
 		dev_err(ctx->dev, "invalid core id: %d\n", core_id);
 		return -EINVAL;
 	}
+	if (skl->cores.usage_count[core_id] == 0) {
+		dev_info(ctx->dev,  "core id %d state %d already unused!\n",
+			core_id, skl->cores.state[core_id]);
+		return 0;
+	}
 
-	if ((--skl->cores.usage_count[core_id] == 0) &&
-		(skl->cores.state[core_id] != SKL_DSP_RESET)) {
+	if ((skl->cores.state[core_id] != SKL_DSP_RESET) &&
+		(--skl->cores.usage_count[core_id] == 0)) {
 		ret = ctx->fw_ops.set_state_D3(ctx, core_id);
 		if (ret < 0) {
 			dev_err(ctx->dev, "unable to put core %d: %d\n",
 					core_id, ret);
 			skl->cores.usage_count[core_id]++;
+			return ret;
 		}
 	}
 
 	dev_dbg(ctx->dev, "core id %d state %d usage_count %d\n",
 			core_id, skl->cores.state[core_id],
 			skl->cores.usage_count[core_id]);
+
+	if (core_id != SKL_DSP_CORE0_ID) {
+		ret = skl_dsp_put_core(ctx, SKL_DSP_CORE0_ID);
+		if (ret < 0) {
+			dev_err(ctx->dev, "unable to put core0 after core%d\n",
+					core_id);
+		}
+	}
 
 	return ret;
 }
