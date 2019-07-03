@@ -2620,6 +2620,7 @@ CONFIG_I2C_DESIGNWARE_BAYTRAIL=y
 # CONFIG_I2C_SIMTEC is not set
 # CONFIG_I2C_XILINX is not set
 
+CONFIG_I2C_VIRTIO=y
 #
 # External I2C/SMBus adapter drivers
 #
