@@ -18,6 +18,7 @@
 #include <linux/uuid.h>
 #include <linux/devcoredump.h>
 #include <linux/pci.h>
+#include <linux/delay.h>
 #include "skl-sst-dsp.h"
 #include "../common/sst-dsp.h"
 #include "../common/sst-dsp-priv.h"
@@ -25,21 +26,8 @@
 
 
 #define UUID_STR_SIZE 37
-#define TYPE0_EXCEPTION 0
-#define TYPE1_EXCEPTION 1
-#define TYPE2_EXCEPTION 2
-#define TYPE3_EXCEPTION 3
-#define MAX_CRASH_DATA_TYPES 4
-#define CRASH_DUMP_VERSION 0x1
 /* FW Extended Manifest Header id = $AE1 */
 #define SKL_EXT_MANIFEST_HEADER_MAGIC   0x31454124
-#define MAX_DSP_EXCEPTION_STACK_SIZE (64*1024)
-
-#define EXCEPTION_RECORD_OFFSET(core_count, core_idx) \
-	(0x1000 - ((core_count - core_idx) * 0x158) + 4)
-
-/* FW adds headers and trailing patters to extended crash data */
-#define EXTRA_BYTES	256
 
 #define UUID_ATTR_RO(_name) \
 	struct uuid_attribute uuid_attr_##_name = __ATTR_RO(_name)
@@ -139,31 +127,6 @@ struct skl_ext_manifest_hdr {
 	u16 version_minor;
 	u32 entries;
 };
-
-struct adsp_crash_hdr {
-	u16 type;
-	u16 length;
-	char data[0];
-} __packed;
-
-struct adsp_type0_crash_data {
-	u32 crash_dump_ver;
-	u16 bus_dev_id;
-	u16 cavs_hw_version;
-	struct fw_version fw_ver;
-	struct sw_version sw_ver;
-} __packed;
-
-struct adsp_type1_crash_data {
-	u32 mod_uuid[4];
-	u32 hash[2];
-	u16 mod_id;
-	u16 rsvd;
-} __packed;
-
-struct adsp_type2_crash_data {
-	u32 fwreg[FW_REG_SZ];
-} __packed;
 
 static int skl_get_pvtid_map(struct uuid_module *module, int instance_id)
 {
@@ -316,186 +279,98 @@ void skl_reset_instance_id(struct skl_sst *ctx)
 }
 EXPORT_SYMBOL_GPL(skl_reset_instance_id);
 
-/* Function to read the extended DSP crash information from the
- * log buffer memory window, on per core basis.
- * Data is read into the buffer passed as *ext_core_dump.
- * number of bytes read is updated in the sz_ext_dump
- */
-static int skl_read_ext_exception_data(struct skl_sst *ctx, int idx,
-		void *ext_core_dump, int ext_core_dump_sz, int *sz_ext_dump)
-
+static int bxt_wait_log_entry(struct sst_dsp *dsp,
+		u32 core, u32 *read, u32 *write)
 {
-	u32 size = ctx->dsp->trace_wind.size/ctx->dsp->trace_wind.nr_dsp;
-	u8 *base = (u8 __force*)ctx->dsp->trace_wind.addr;
-	u32 read, write;
-	int offset = *sz_ext_dump;
-	int count;
-	u32 *ptr;
+	int size;
+	void __iomem *base;
+	unsigned long timeout;
 
-	/* move to the current core's tracing window */
-	base += (idx * size);
-	ptr = (u32 *) base;
-	read = readl(ptr);
-	write = readl(ptr+1);
+#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+	size = dsp->trace_wind.size;
+#else
+	size = dsp->trace_wind.size/dsp->trace_wind.nr_dsp;
+#endif
 
-	/* in case of read = write, just return */
-	if (read == write)
-		return 0;
-	/* check r/w pointers sanity  */
-	if ((read + 8) >= size || (write + 8) >= size)
-		return -EINVAL;
+	base = (u8 *)dsp->trace_wind.addr;
+	/* move to the source dsp tracing window */
+	base += (core * size);
+	timeout = jiffies + msecs_to_jiffies(10);
 
-	if (write > read)
-		count = write - read;
-	else
-		count = size - 8 - read;
+	do {
+		*read = readl(base);
+		*write = readl(base + sizeof(u32));
+		if (*read != *write)
+			return 0;
+		usleep_range(500, 1000);
+	} while (!time_after(jiffies, timeout));
 
-	if (offset + count > ext_core_dump_sz)
-		return -EINVAL;
-
-	memcpy_fromio((ext_core_dump + offset),
-		(const void __iomem *) (base + 8 + read), count);
-
-	*sz_ext_dump = offset + count;
-	read += count;
-	if (read >= size - 8)
-		read = 0;
-	writel(read, ptr);
-	return 0;
+	return -ETIMEDOUT;
 }
 
 int skl_dsp_crash_dump_read(struct skl_sst *ctx, int idx, int stack_size)
 {
-	int num_mod = 0, size_core_dump, sz_ext_dump = 0;
-	struct uuid_module *module, *module1;
-	void *coredump, *ext_core_dump;
-	unsigned long ext_core_dump_sz;
-	void *fw_reg_addr, *offset;
-	struct pci_dev *pci = to_pci_dev(ctx->dsp->dev);
-	u32 stackdump_complete = 0;
-	u16 length0, length1, length2, length3;
-	struct adsp_crash_hdr *crash_data_hdr;
-	struct adsp_type0_crash_data *type0_data;
-	struct adsp_type1_crash_data *type1_data;
-	struct adsp_type2_crash_data *type2_data;
-	struct sst_dsp *sst = ctx->dsp;
-	unsigned long timeout;
+	void *core_dump, *offset;
+	int sz_stack_dump = 0;
 
 	if (idx < 0 || idx >= ctx->cores.count)
 		return -EINVAL;
 
-	if (list_empty(&ctx->uuid_list))
-		dev_info(ctx->dev, "Module list is empty\n");
-
-	list_for_each_entry(module1, &ctx->uuid_list, list) {
-		num_mod++;
-	}
-
-	if(stack_size)
-		ext_core_dump_sz = stack_size + EXTRA_BYTES;
-	else
-		ext_core_dump_sz = MAX_DSP_EXCEPTION_STACK_SIZE + EXTRA_BYTES;
-	ext_core_dump = vzalloc(ext_core_dump_sz);
-	if (!ext_core_dump) {
-		dev_err(ctx->dsp->dev, "failed to allocate memory for FW Stack\n");
-		return -ENOMEM;
-	}
-
-	fw_reg_addr = (void __force *)(ctx->dsp->mailbox.in_base -
-			ctx->dsp->addr.w0_stat_sz);
-
-	timeout = jiffies + msecs_to_jiffies(100);
-	while (!stackdump_complete) {
-		stackdump_complete = readl(fw_reg_addr +
-				EXCEPTION_RECORD_OFFSET(ctx->cores.count, idx));
-		if (skl_read_ext_exception_data(ctx, idx, ext_core_dump,
-					ext_core_dump_sz, &sz_ext_dump) < 0) {
-			dev_err(ctx->dsp->dev, "Stack Dump read error\n");
-			break;
-		}
-		if (stackdump_complete) {
-			/* Try reading the remainder */
-			skl_read_ext_exception_data(ctx, idx, ext_core_dump,
-					ext_core_dump_sz, &sz_ext_dump);
-			break;
-		}
-		if (time_after(jiffies, timeout)) {
-			dev_err(ctx->dsp->dev, "Stack Dump reading timed out\n");
-			break;
-		}
-	}
-
-	/* Length representing in DWORD */
-	length0 = sizeof(*type0_data) / sizeof(u32);
-	length1 = (num_mod * sizeof(*type1_data)) / sizeof(u32);
-	length2 = sizeof(*type2_data) / sizeof(u32);
-	length3 = sz_ext_dump / sizeof(u32);
-
-	/* type1 data size is calculated based on number of modules */
-	size_core_dump = (MAX_CRASH_DATA_TYPES * sizeof(*crash_data_hdr)) +
-			sizeof(*type0_data) + (num_mod * sizeof(*type1_data)) +
-			sizeof(*type2_data);
-
-	coredump = vzalloc(size_core_dump + sz_ext_dump);
-	if (!coredump){
+	core_dump = vzalloc(FW_REG_SZ + stack_size);
+	if (!core_dump) {
 		dev_err(ctx->dsp->dev, "failed to allocate memory \n");
-		vfree(ext_core_dump);
 		return -ENOMEM;
 	}
 
-	offset = coredump;
+	offset = core_dump;
+	memcpy_fromio(offset,
+			(const void __iomem *) (ctx->dsp->mailbox.in_base -
+			ctx->dsp->addr.w0_stat_sz),
+			FW_REG_SZ);
 
-	/* Fill type0 header and data */
-	crash_data_hdr = (struct adsp_crash_hdr *) offset;
-	crash_data_hdr->type = TYPE0_EXCEPTION;
-	crash_data_hdr->length = length0;
-	offset += sizeof(*crash_data_hdr);
-	type0_data = (struct adsp_type0_crash_data *) offset;
-	type0_data->crash_dump_ver = CRASH_DUMP_VERSION;
-	type0_data->bus_dev_id = pci->device;
-	offset += sizeof(*type0_data);
+	if (stack_size) {
+		offset += FW_REG_SZ;
+		/* finish reading logs, before gathering stackdump */
+		skl_process_log_buffer(ctx->dsp, idx);
+		/* gather the stack */
+		do {
+			u8 *base = (u8 __force *)ctx->dsp->trace_wind.addr;
+			u32 read = 0;
+			u32 write = 0;
+			u32 count;
+			int size;
 
-	/* Fill type1 header and data */
-	crash_data_hdr = (struct adsp_crash_hdr *) offset;
-	crash_data_hdr->type = TYPE1_EXCEPTION;
-	crash_data_hdr->length = length1;
-	offset += sizeof(*crash_data_hdr);
-	type1_data = (struct adsp_type1_crash_data *) offset;
-	list_for_each_entry(module, &ctx->uuid_list, list) {
-		memcpy(type1_data->mod_uuid, &(module->uuid),
-					(sizeof(type1_data->mod_uuid)));
-		memcpy(type1_data->hash, &(module->hash),
-					(sizeof(type1_data->hash)));
-		memcpy(&type1_data->mod_id, &(module->id),
-					(sizeof(type1_data->mod_id)));
-		type1_data++;
-	}
-	offset += (num_mod * sizeof(*type1_data));
+#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+			size = ctx->dsp->trace_wind.size;
+#else
+			size = ctx->dsp->trace_wind.size /
+					ctx->dsp->trace_wind.nr_dsp;
+#endif
+			base += (idx * size);
 
-	/* Fill type2 header and data */
-	crash_data_hdr = (struct adsp_crash_hdr *) offset;
-	crash_data_hdr->type = TYPE2_EXCEPTION;
-	crash_data_hdr->length = length2;
-	offset += sizeof(*crash_data_hdr);
-	type2_data = (struct adsp_type2_crash_data *) offset;
-	memcpy_fromio(type2_data->fwreg, (const void __iomem *)fw_reg_addr,
-						sizeof(*type2_data));
-	offset += sizeof(*type2_data);
+			if (bxt_wait_log_entry(ctx->dsp, idx, &read, &write))
+				break;
 
-	if (sz_ext_dump) {
-		/* Fill type3 header and data */
-		crash_data_hdr = (struct adsp_crash_hdr *) offset;
-		crash_data_hdr->type = TYPE3_EXCEPTION;
-		crash_data_hdr->length = length3;
-		offset += sizeof(*crash_data_hdr);
-		memcpy(offset, ext_core_dump, sz_ext_dump);
-		offset += sz_ext_dump;
+			if (read > write) {
+				count = size - 8 - read;
+				memcpy_fromio((offset + sz_stack_dump),
+					(const void __iomem *)(base + 8 + read),
+					count);
+				read = 0;
+				sz_stack_dump += count;
+			}
+			count = write - read;
+			memcpy_fromio((offset + sz_stack_dump),
+					(const void __iomem *)(base + 8 + read),
+					count);
+			sz_stack_dump += count;
+
+			writel(write, base);
+		} while (sz_stack_dump < stack_size);
 	}
 
-	vfree(ext_core_dump);
-
-	dev_coredumpv(ctx->dsp->dev, coredump,
-			size_core_dump + sz_ext_dump, GFP_KERNEL);
+	dev_coredumpv(ctx->dsp->dev, core_dump,
+			FW_REG_SZ + stack_size, GFP_KERNEL);
 	return 0;
 }
 
