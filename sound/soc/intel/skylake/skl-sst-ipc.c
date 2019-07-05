@@ -471,19 +471,16 @@ static int skl_process_module_notification(struct skl_sst *skl)
 	return 0;
 }
 
-static void
-skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
+#define STACK_DUMP_TYPE_DWORD 0x40000000
+
+void
+skl_process_log_buffer(struct sst_dsp *sst, int core)
 {
-	int core, size;
+	int size;
 	u32 *ptr;
 	u8 *base;
 	u32 write, read;
 
-#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
-	core = 0;
-#else
-	core = IPC_GLB_NOTIFY_CORE_ID(header.primary);
-#endif
 	if (!(BIT(core) & sst->trace_wind.flags)) {
 		dev_err(sst->dev, "Logging is disabled on dsp %d\n", core);
 		return;
@@ -506,6 +503,8 @@ skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
 	ptr = (u32 *) base;
 	read = ptr[0];
 	write = ptr[1];
+	if (readl(base + 8 + read % (size - 8)) == STACK_DUMP_TYPE_DWORD)
+		goto exit;
 	if (write > read) {
 		skl_dsp_write_log(sst, (void __iomem *)(base + 8 + read),
 					core, (write - read));
@@ -518,6 +517,7 @@ skl_process_log_buffer(struct sst_dsp *sst, struct skl_ipc_header header)
 					core, write);
 		ptr[0] = write;
 	}
+exit:
 	skl_dsp_put_log_buff(sst, core);
 }
 
@@ -636,7 +636,15 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 			break;
 
 		case IPC_GLB_NOTIFY_LOG_BUFFER_STATUS:
-			skl_process_log_buffer(skl->dsp, header);
+			{
+				int core;
+#if defined(CONFIG_SND_SOC_INTEL_CNL_FPGA)
+				core = 0;
+#else
+				core = IPC_GLB_NOTIFY_CORE_ID(header.primary);
+#endif
+				skl_process_log_buffer(skl->dsp, core);
+			}
 			break;
 
 		case IPC_GLB_NOTIFY_PHRASE_DETECTED:
