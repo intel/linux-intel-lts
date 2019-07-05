@@ -38,7 +38,7 @@ struct l2c_init_data {
 
 static void __iomem *l2x0_base;
 static const struct l2c_init_data *l2x0_data;
-static DEFINE_RAW_SPINLOCK(l2x0_lock);
+static DEFINE_HARD_SPINLOCK(l2x0_lock);
 static u32 l2x0_way_mask;	/* Bitmask of active ways */
 static u32 l2x0_size;
 static unsigned long sync_reg_offset = L2X0_CACHE_SYNC;
@@ -49,6 +49,7 @@ static bool l2x0_bresp_disable;
 static bool l2x0_flz_disable;
 
 #ifdef CONFIG_IRQ_PIPELINE
+#define CACHE_RANGE_ATOMIC_MAX	512UL
 static int l2x0_wa = -1;
 static int __init l2x0_setup_wa(char *str)
 {
@@ -56,6 +57,8 @@ static int __init l2x0_setup_wa(char *str)
 	return 0;
 }
 early_param("l2x0_write_allocate", l2x0_setup_wa);
+#else
+#define CACHE_RANGE_ATOMIC_MAX	4096UL
 #endif
 
 /*
@@ -130,11 +133,11 @@ static void l2c_enable(void __iomem *base, unsigned num_lock)
 
 	l2x0_data->unlock(base, num_lock);
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	__l2c_op_way(base + L2X0_INV_WAY);
 	writel_relaxed(0, base + sync_reg_offset);
 	l2c_wait_mask(base + sync_reg_offset, 1);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 
 	l2c_write_sec(L2X0_CTRL_EN, base, L2X0_CTRL);
 }
@@ -235,7 +238,7 @@ static void l2c210_flush_all(void)
 {
 	void __iomem *base = l2x0_base;
 
-	BUG_ON(!irqs_disabled());
+	BUG_ON(!hard_irqs_disabled());
 
 	__l2c_op_way(base + L2X0_CLEAN_INV_WAY);
 	__l2c210_cache_sync(base);
@@ -294,10 +297,10 @@ static void l2c220_op_way(void __iomem *base, unsigned reg)
 static unsigned long l2c220_op_pa_range(void __iomem *reg, unsigned long start,
 	unsigned long end, unsigned long flags)
 {
-	raw_spinlock_t *lock = &l2x0_lock;
+	typeof(l2x0_lock) *lock = &l2x0_lock;
 
 	while (start < end) {
-		unsigned long blk_end = start + min(end - start, 4096UL);
+		unsigned long blk_end = start + min(end - start, CACHE_RANGE_ATOMIC_MAX);
 
 		while (start < blk_end) {
 			l2c_wait_mask(reg, 1);
@@ -508,13 +511,13 @@ static void l2c310_inv_range_erratum(unsigned long start, unsigned long end)
 
 static void l2c310_flush_range_erratum(unsigned long start, unsigned long end)
 {
-	raw_spinlock_t *lock = &l2x0_lock;
+	typeof(l2x0_lock) *lock = &l2x0_lock;
 	unsigned long flags;
 	void __iomem *base = l2x0_base;
 
 	raw_spin_lock_irqsave(lock, flags);
 	while (start < end) {
-		unsigned long blk_end = start + min(end - start, 4096UL);
+		unsigned long blk_end = start + min(end - start, CACHE_RANGE_ATOMIC_MAX);
 
 		l2c_set_debug(base, 0x03);
 		while (start < blk_end) {
