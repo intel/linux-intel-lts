@@ -29,6 +29,7 @@ struct stmmac_resources {
 	int wol_irq;
 	int lpi_irq;
 	int irq;
+	int phy_conv_irq;
 };
 
 struct stmmac_tx_info {
@@ -213,6 +214,7 @@ struct stmmac_priv {
 	void __iomem *mmcaddr;
 	void __iomem *ptpaddr;
 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
+	int phy_conv_irq;
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *dbgfs_dir;

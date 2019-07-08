@@ -10,9 +10,10 @@
 *******************************************************************************/
 
 #include <linux/clk-provider.h>
+#include <linux/phy.h>
 #include <linux/pci.h>
 #include <linux/dmi.h>
-
+#include <linux/dwxpcs.h>
 #include "stmmac.h"
 
 /*
@@ -109,6 +110,43 @@ static const struct stmmac_pci_info stmmac_pci_info = {
 	.setup = stmmac_default_data,
 };
 
+static struct dwxpcs_platform_data intel_mgbe_pdata = {
+	.mode = DWXPCS_MODE_SGMII_AN,
+};
+
+static struct mdio_board_info intel_mgbe_bdinfo = {
+	.bus_id = "stmmac-1",
+	.modalias = "dwxpcs",
+	.mdio_addr = 0x16,
+	.platform_data = &intel_mgbe_pdata,
+};
+
+static int setup_intel_mgbe_phy_conv(struct mii_bus *bus, int irq,
+				     int phy_addr)
+{
+	struct dwxpcs_platform_data *pdata = &intel_mgbe_pdata;
+
+	pdata->irq = irq;
+	pdata->ext_phy_addr = phy_addr;
+
+	return mdiobus_create_device(bus, &intel_mgbe_bdinfo);
+}
+
+static int remove_intel_mgbe_phy_conv(struct mii_bus *bus)
+{
+	struct mdio_board_info *bdinfo = &intel_mgbe_bdinfo;
+	struct mdio_device *mdiodev;
+
+	mdiodev = mdiobus_get_mdio_device(bus, bdinfo->mdio_addr);
+
+	if (!mdiodev)
+		return -1;
+
+	mdio_device_remove(mdiodev);
+
+	return 0;
+}
+
 static int intel_mgbe_common_data(struct pci_dev *pdev,
 				  struct plat_stmmacenet_data *plat)
 {
@@ -197,6 +235,11 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 
 	/* Set the maxmtu to a default of JUMBO_LEN */
 	plat->maxmtu = JUMBO_LEN;
+
+	if (plat->phy_interface == PHY_INTERFACE_MODE_SGMII) {
+		plat->setup_phy_conv = setup_intel_mgbe_phy_conv;
+		plat->remove_phy_conv = remove_intel_mgbe_phy_conv;
+	}
 
 	return 0;
 }
@@ -573,6 +616,7 @@ static int stmmac_pci_probe(struct pci_dev *pdev,
 	res.addr = pcim_iomap_table(pdev)[i];
 	res.wol_irq = pdev->irq;
 	res.irq = pdev->irq;
+	res.phy_conv_irq = res.irq;
 
 	return stmmac_dvr_probe(&pdev->dev, plat, &res);
 }

@@ -12,6 +12,7 @@
 #ifndef __STMMAC_PLATFORM_DATA
 #define __STMMAC_PLATFORM_DATA
 
+#include <linux/phy.h>
 #include <linux/platform_device.h>
 
 #define MTL_MAX_RX_QUEUES	8
@@ -164,6 +165,9 @@ struct plat_stmmacenet_data {
 	int (*init)(struct platform_device *pdev, void *priv);
 	void (*exit)(struct platform_device *pdev, void *priv);
 	struct mac_device_info *(*setup)(void *priv);
+	int (*setup_phy_conv)(struct mii_bus *bus, int irq,
+	     int phy_addr);
+	int (*remove_phy_conv)(struct mii_bus *bus);
 	void *bsp_priv;
 	struct clk *stmmac_clk;
 	struct clk *pclk;
