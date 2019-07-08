@@ -22,12 +22,15 @@
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
 
-# CVE-2019-12615
-0001-mdesc-fix-a-missing-check-bug-in-get_vdev_port_node-CVE-2019-12615.patch
-
 # CVE-2019-12614
 0001-powerpc-pseries-dlpar-Fix-a-missing-check-in-dlpar_p-CVE-2019-12614.patch
 
 # CVE-2019-10126
 0001-mwifiex-Fix-skipped-vendor-specific-IEs-CVE-2019-10126.patch
 0002-mwifiex-Fix-heap-overflow-in-mwifiex_uap_parse_tail-CVE-2019-10126.patch
+
+# CVE-2019-3846
+0001-mwifiex-Don-t-abort-on-small-spec-compliant-vendor-I-CVE-2019-3846.patch
+0002-mwifiex-Abort-at-too-short-BSS-descriptor-element-CVE-2019-3846.patch
+0003-mwifiex-Fix-possible-buffer-overflows-at-parsing-bss-CVE-2019-3846.patch
+0004-mwifiex-use-total_ie_len-in-mwifiex_update_bss_desc-CVE-2019-3846.patch
