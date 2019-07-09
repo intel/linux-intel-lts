@@ -3051,8 +3051,6 @@ static int skl_ps_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 
 	if (pipe >=  I915_MAX_PIPES || scaler >= SKL_NUM_SCALERS ||
 	    vgpu->gvt->pipe_info[pipe].scaler_owner[scaler] != vgpu->id) {
-		gvt_vgpu_err("Unsupport pipe %d, scaler %d scaling\n",
-			pipe, scaler);
 		return 0;
 	}
 
