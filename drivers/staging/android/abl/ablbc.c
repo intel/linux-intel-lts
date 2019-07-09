@@ -239,7 +239,7 @@ static struct kobj_attribute capsule_name_attribute =
 		__ATTR(capsule_name, 0600, NULL, capsule_store);
 
 static struct kobj_attribute capsule_requested_attribute =
-		__ATTR(capsule_requested, 0400, is_capsule_requested, NULL);
+		__ATTR(capsule_requested, 0444, is_capsule_requested, NULL);
 
 static int reboot_target_name2id(const char *name)
 {
@@ -270,6 +270,8 @@ static int set_reboot_target(const char *name)
 		       __func__, name);
 		return -EINVAL;
 	}
+	if ((id == 0) && capsule_request)
+		return 0;
 
 	cdh.data = 0;
 	cdh.length = 2; /* 2*32 bits, from header to padding */
