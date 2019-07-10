@@ -4263,7 +4263,8 @@ i915_cache_sharing_get(void *data, u64 *val)
 	struct drm_i915_private *dev_priv = data;
 	u32 snpcr;
 
-	if (!(IS_GEN6(dev_priv) || IS_GEN7(dev_priv)))
+	if (!(IS_GEN6(dev_priv) || IS_GEN7(dev_priv)
+				|| IS_GEN9(dev_priv)))
 		return -ENODEV;
 
 	intel_runtime_pm_get(dev_priv);
@@ -4281,9 +4282,10 @@ static int
 i915_cache_sharing_set(void *data, u64 val)
 {
 	struct drm_i915_private *dev_priv = data;
-	u32 snpcr;
+	u32 snpcr, idicr;
 
-	if (!(IS_GEN6(dev_priv) || IS_GEN7(dev_priv)))
+	if (!(IS_GEN6(dev_priv) || IS_GEN7(dev_priv)
+				|| IS_GEN9(dev_priv)))
 		return -ENODEV;
 
 	if (val > 3)
@@ -4297,6 +4299,14 @@ i915_cache_sharing_set(void *data, u64 val)
 	snpcr &= ~GEN6_MBC_SNPCR_MASK;
 	snpcr |= (val << GEN6_MBC_SNPCR_SHIFT);
 	I915_WRITE(GEN6_MBCUNIT_SNPCR, snpcr);
+
+
+	if (IS_GEN9(dev_priv)) {
+		idicr = I915_READ(HSW_IDICR);
+		idicr &= ~IDI_QOS_MASK;
+		idicr |= (val << IDI_QOS_SHIFT);
+		I915_WRITE(HSW_IDICR, idicr);
+	}
 
 	intel_runtime_pm_put(dev_priv);
 	return 0;

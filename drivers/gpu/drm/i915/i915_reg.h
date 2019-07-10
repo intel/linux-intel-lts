@@ -8367,6 +8367,9 @@ enum {
 
 #define  HSW_IDICR				_MMIO(0x9008)
 #define    IDIHASHMSK(x)			(((x) & 0x3f) << 16)
+#define    IDI_QOS_MASK                         (3 << 22)
+#define    IDI_QOS_SHIFT			22
+
 #define  HSW_EDRAM_CAP				_MMIO(0x120010)
 #define    EDRAM_ENABLED			0x1
 #define    EDRAM_NUM_BANKS(cap)			(((cap) >> 1) & 0xf)
