@@ -328,8 +328,8 @@ static inline void of_mdiobus_link_mdiodev(struct mii_bus *mdio,
  *
  * Returns 0 on success or < 0 on error.
  */
-static int mdiobus_create_device(struct mii_bus *bus,
-				 struct mdio_board_info *bi)
+int mdiobus_create_device(struct mii_bus *bus,
+			  struct mdio_board_info *bi)
 {
 	struct mdio_device *mdiodev;
 	int ret = 0;
@@ -349,6 +349,7 @@ static int mdiobus_create_device(struct mii_bus *bus,
 
 	return ret;
 }
+EXPORT_SYMBOL(mdiobus_create_device);
 
 /**
  * __mdiobus_register - bring up all the PHYs on a given bus and attach them to bus
