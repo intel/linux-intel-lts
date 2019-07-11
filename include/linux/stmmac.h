@@ -220,5 +220,7 @@ struct plat_stmmacenet_data {
 	u32 fgos;
 	bool has_art;
 	int int_snapshot_num;
+	int ext_snapshot_num;
+	int ext_snapshot_en;
 };
 #endif

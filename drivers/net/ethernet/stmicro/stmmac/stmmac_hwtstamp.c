@@ -188,6 +188,35 @@ static void get_ptptime(void __iomem *ptpaddr, u64 *ptp_time)
 	*ptp_time = ns;
 }
 
+static void tstamp_interrupt(struct stmmac_priv *priv)
+{
+	struct ptp_clock_event event;
+	u32 num_snapshot;
+	u32 tsync_int;
+	u64 ptp_time;
+	int i;
+
+	tsync_int = readl(priv->ioaddr + GMAC_INT_STATUS) &
+			  GMAC_INT_TSIE;
+
+	if (!tsync_int)
+		return;
+
+	if (priv->plat->ext_snapshot_en) {
+		num_snapshot = (readl(priv->ioaddr + GMAC_TIMESTAMP_STATUS) &
+				GMAC_TIMESTAMP_ATSNS_MASK) >>
+				GMAC_TIMESTAMP_ATSNS_SHIFT;
+
+		for (i = 0; i < num_snapshot; i++) {
+			get_ptptime(priv->ptpaddr, &ptp_time);
+			event.type = PTP_CLOCK_EXTTS;
+			event.index = 0;
+			event.timestamp = ptp_time;
+			ptp_clock_event(priv->ptp_clock, &event);
+		}
+	}
+}
+
 const struct stmmac_hwtimestamp stmmac_ptp = {
 	.config_hw_tstamping = config_hw_tstamping,
 	.init_systime = init_systime,
@@ -197,4 +226,5 @@ const struct stmmac_hwtimestamp stmmac_ptp = {
 	.get_systime = get_systime,
 	.get_arttime = get_arttime,
 	.get_ptptime = get_ptptime,
+	.tstamp_interrupt = tstamp_interrupt,
 };

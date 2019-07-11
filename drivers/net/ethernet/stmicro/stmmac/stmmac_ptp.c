@@ -136,9 +136,11 @@ static int stmmac_enable(struct ptp_clock_info *ptp,
 {
 	struct stmmac_priv *priv =
 	    container_of(ptp, struct stmmac_priv, ptp_clock_ops);
+	void __iomem *ptpaddr = priv->ptpaddr;
 	struct stmmac_pps_cfg *cfg;
 	int ret = -EOPNOTSUPP;
 	unsigned long flags;
+	u32 acr_value;
 
 	switch (rq->type) {
 	case PTP_CLK_REQ_PEROUT:
@@ -159,6 +161,23 @@ static int stmmac_enable(struct ptp_clock_info *ptp,
 					     priv->sub_second_inc,
 					     priv->systime_flags);
 		spin_unlock_irqrestore(&priv->ptp_lock, flags);
+		break;
+	case PTP_CLK_REQ_EXTTS:
+		priv->plat->ext_snapshot_en = on;
+		acr_value = readl(ptpaddr + PTP_ACR);
+		acr_value &= ~PTP_ACR_MASK;
+		if (on) {
+			/* Enable External snapshot trigger */
+			acr_value |= priv->plat->ext_snapshot_num;
+			acr_value |= PTP_ACR_ATSFC;
+			pr_info("Auxiliary Snapshot %d enable\n",
+				priv->plat->ext_snapshot_num >> 5);
+		} else {
+			pr_info("Auxiliary Snapshot %d disable\n",
+				priv->plat->ext_snapshot_num >> 5);
+		}
+		writel(acr_value, ptpaddr + PTP_ACR);
+		ret = 0;
 		break;
 	default:
 		break;
@@ -327,6 +346,7 @@ void stmmac_ptp_register(struct stmmac_priv *priv)
 		stmmac_ptp_clock_ops.max_adj = priv->plat->ptp_max_adj;
 
 	stmmac_ptp_clock_ops.n_per_out = priv->dma_cap.pps_out_num;
+	stmmac_ptp_clock_ops.n_ext_ts = priv->dma_cap.aux_snapshot_n;
 
 	spin_lock_init(&priv->ptp_lock);
 	priv->ptp_clock_ops = stmmac_ptp_clock_ops;

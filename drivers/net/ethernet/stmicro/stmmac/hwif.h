@@ -624,6 +624,7 @@ struct stmmac_serdes_ops {
 	stmmac_do_callback(__priv, serdes, speed_mode_2500, __args)
 
 struct mii_bus;
+struct stmmac_priv;
 
 /* PTP and HW Timer helpers */
 struct stmmac_hwtimestamp {
@@ -638,6 +639,7 @@ struct stmmac_hwtimestamp {
 	void (*get_arttime)(struct mii_bus *mii, int intel_adhoc_addr,
 			    u64 *art_time);
 	void (*get_ptptime)(void __iomem *ioaddr, u64 *ptp_time);
+	void (*tstamp_interrupt)(struct stmmac_priv *priv);
 };
 
 #define stmmac_config_hw_tstamping(__priv, __args...) \
@@ -656,6 +658,8 @@ struct stmmac_hwtimestamp {
 	stmmac_do_void_callback(__priv, ptp, get_arttime, __args)
 #define stmmac_get_ptptime(__priv, __args...) \
 	stmmac_do_void_callback(__priv, ptp, get_ptptime, __args)
+#define stmmac_tstamp_interrupt(__priv, __args...) \
+	stmmac_do_void_callback(__priv, ptp, tstamp_interrupt, __args)
 
 /* Helpers to manage the descriptors for chain and ring modes */
 struct stmmac_mode_ops {
@@ -684,7 +688,6 @@ struct stmmac_mode_ops {
 #define stmmac_clean_desc3(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mode, clean_desc3, __args)
 
-struct stmmac_priv;
 struct tc_cls_u32_offload;
 struct tc_cbs_qopt_offload;
 struct flow_cls_offload;
