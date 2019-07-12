@@ -121,6 +121,9 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	kmb_write_lcd(dev->dev_private, LCD_H_BACKPORCH, vm.hback_porch - 1);
 	kmb_write_lcd(dev->dev_private, LCD_H_FRONTPORCH, vm.hfront_porch - 1);
 	kmb_write_lcd(dev->dev_private, LCD_HSYNC_WIDTH, vm.hsync_len - 1);
+	/*this is hardcoded as 0 in the Myriadx code */
+	kmb_write_lcd(dev->dev_private, LCD_VSYNC_START, 0);
+	kmb_write_lcd(dev->dev_private, LCD_VSYNC_END, 0);
 
 	if (m->flags == DRM_MODE_FLAG_INTERLACE) {
 		kmb_write_lcd(dev->dev_private,
@@ -129,12 +132,11 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 				LCD_V_BACKPORCH_EVEN, vm.vback_porch - 1);
 		kmb_write_lcd(dev->dev_private,
 				LCD_V_FRONTPORCH_EVEN, vm.vfront_porch - 1);
-		kmb_write_lcd(dev->dev_private,
-				LCD_V_ACTIVEHEIGHT_EVEN, m->crtc_vdisplay - 1);
-		kmb_write_lcd(dev->dev_private, LCD_VSYNC_START_EVEN,
-				vsync_start_offset);
-		kmb_write_lcd(dev->dev_private, LCD_VSYNC_END_EVEN,
-				vsync_end_offset);
+		kmb_write_lcd(dev->dev_private, LCD_V_ACTIVEHEIGHT_EVEN,
+			m->crtc_vdisplay - 1);
+		/*this is hardcoded as 10 in the Myriadx code*/
+		kmb_write_lcd(dev->dev_private, LCD_VSYNC_START_EVEN, 10);
+		kmb_write_lcd(dev->dev_private, LCD_VSYNC_END_EVEN, 10);
 	}
 	/* enable VL1 layer as default */
 	ctrl = LCD_CTRL_ENABLE | LCD_CTRL_VL1_ENABLE;
