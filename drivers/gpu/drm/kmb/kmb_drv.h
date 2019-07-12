@@ -112,6 +112,22 @@ static inline u32 kmb_read_lcd(struct kmb_drm_private *dev_p, unsigned int reg)
 	return readl(dev_p->lcd_mmio + reg);
 }
 
+static inline void kmb_set_bitmask_lcd(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 mask)
+{
+	u32 reg_val = kmb_read_lcd(dev_p->lcd_mmio, reg);
+
+	kmb_write_lcd(dev_p->lcd_mmio, reg, (reg_val | mask));
+}
+
+static inline void kmb_clr_bitmask_lcd(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 mask)
+{
+	u32 reg_val = kmb_read_lcd(dev_p->lcd_mmio, reg);
+
+	kmb_write_lcd(dev_p->lcd_mmio, reg, (reg_val & (~mask)));
+}
+
 static inline u32 kmb_read_mipi(struct kmb_drm_private *dev_p, unsigned int reg)
 {
 	return readl(dev_p->mipi_mmio + reg);
