@@ -1,9 +1,6 @@
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
 
-# CVE-2019-12615
-0001-mdesc-fix-a-missing-check-bug-in-get_vdev_port_node-CVE-2019-12615.patch
-
 # CVE-2019-12614
 0001-powerpc-pseries-dlpar-Fix-a-missing-check-in-dlpar_p-CVE-2019-12614.patch
 
