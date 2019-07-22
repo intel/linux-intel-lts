@@ -27,6 +27,8 @@ extern struct class *dal_class;
 enum dal_intf {
 	DAL_INTF_KDI,
 	DAL_INTF_CDEV,
+
+	DAL_INTF_MAX
 };
 
 /**
@@ -152,13 +154,10 @@ int dal_kdi_recv(unsigned int handle, unsigned char *buf, size_t *count);
 int dal_kdi_init(void);
 void dal_kdi_exit(void);
 
-int dal_access_policy_add(struct dal_device *ddev,
-			  const uuid_t *ta_id, void *owner);
-int dal_access_policy_remove(struct dal_device *ddev,
-			     const uuid_t *ta_id, void *owner);
-int dal_access_policy_allowed(struct dal_device *ddev,
-			      const uuid_t *ta_id, void *owner);
-void dal_access_list_free(struct dal_device *ddev);
-int dal_access_list_init(struct dal_device *ddev);
+int dal_access_policy_add(const uuid_t *ta_id, enum dal_intf owner);
+int dal_access_policy_remove(const uuid_t *ta_id, enum dal_intf owner);
+int dal_access_policy_allowed(const uuid_t *ta_id, enum dal_intf owner);
+void dal_access_list_free(void);
+int dal_access_list_init(void);
 
 #endif /* _DAL_KDI_H_ */

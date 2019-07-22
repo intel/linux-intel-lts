@@ -319,7 +319,6 @@ static int dal_validate_access(const struct bh_command_header *hdr,
 			       size_t count, void *ctx)
 {
 	struct dal_client *dc = ctx;
-	struct dal_device *ddev = dc->ddev;
 	const uuid_t *ta_id;
 
 	if (!bh_msg_is_cmd_open_session(hdr))
@@ -329,7 +328,7 @@ static int dal_validate_access(const struct bh_command_header *hdr,
 	if (!ta_id)
 		return -EINVAL;
 
-	return dal_access_policy_allowed(ddev, ta_id, dc);
+	return dal_access_policy_allowed(ta_id, dc->intf);
 }
 
 /**
@@ -675,7 +674,6 @@ static void dal_device_release(struct device *dev)
 {
 	struct dal_device *ddev = to_dal_device(dev);
 
-	dal_access_list_free(ddev);
 	kfree(ddev->bh_fw_msg.msg);
 	kfree(ddev);
 }
@@ -726,10 +724,6 @@ static int dal_probe(struct mei_cl_device *cldev,
 		ret = -ENOMEM;
 		goto err_unregister;
 	}
-
-	ret = dal_access_list_init(ddev);
-	if (ret)
-		goto err_unregister;
 
 	ret = dal_mei_enable(ddev);
 	if (ret < 0)

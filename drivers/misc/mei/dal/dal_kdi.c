@@ -374,27 +374,12 @@ EXPORT_SYMBOL(dal_close_session);
  */
 int dal_set_ta_exclusive_access(const uuid_t *ta_id)
 {
-	struct dal_device *ddev;
-	struct device *dev;
-	struct dal_client *dc;
 	int ret;
 
 	mutex_lock(&dal_kdi_lock);
 
-	dev = dal_find_dev(DAL_MEI_DEVICE_IVM);
-	if (!dev) {
-		dev_dbg(dev, "can't find device\n");
-		ret = -ENODEV;
-		goto unlock;
-	}
+	ret = dal_access_policy_add(ta_id, DAL_INTF_KDI);
 
-	ddev = to_dal_device(dev);
-	dc = ddev->clients[DAL_INTF_KDI];
-
-	ret = dal_access_policy_add(ddev, ta_id, dc);
-
-	put_device(dev);
-unlock:
 	mutex_unlock(&dal_kdi_lock);
 	return ret;
 }
@@ -412,27 +397,12 @@ EXPORT_SYMBOL(dal_set_ta_exclusive_access);
  */
 int dal_unset_ta_exclusive_access(const uuid_t *ta_id)
 {
-	struct dal_device *ddev;
-	struct device *dev;
-	struct dal_client *dc;
 	int ret;
 
 	mutex_lock(&dal_kdi_lock);
 
-	dev = dal_find_dev(DAL_MEI_DEVICE_IVM);
-	if (!dev) {
-		dev_dbg(dev, "can't find device\n");
-		ret = -ENODEV;
-		goto unlock;
-	}
+	ret = dal_access_policy_remove(ta_id, DAL_INTF_KDI);
 
-	ddev = to_dal_device(dev);
-	dc = ddev->clients[DAL_INTF_KDI];
-
-	ret = dal_access_policy_remove(ddev, ta_id, dc);
-
-	put_device(dev);
-unlock:
 	mutex_unlock(&dal_kdi_lock);
 	return ret;
 }
@@ -532,6 +502,7 @@ int dal_kdi_init(void)
 	int ret;
 
 	bh_init_internal();
+	dal_access_list_init();
 
 	dal_kdi_interface.class = dal_class;
 	ret = class_interface_register(&dal_kdi_interface);
@@ -553,5 +524,6 @@ err:
 void dal_kdi_exit(void)
 {
 	bh_deinit_internal();
+	dal_access_list_free();
 	class_interface_unregister(&dal_kdi_interface);
 }
