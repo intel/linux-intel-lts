@@ -23,6 +23,8 @@
 #ifndef __LINUX_TRUSTY_SMWALL_H
 #define __LINUX_TRUSTY_SMWALL_H
 
+#include <linux/kernel.h>
+
 /**
  * DOC: Introduction
  *

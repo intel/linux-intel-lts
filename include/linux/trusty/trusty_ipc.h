@@ -14,6 +14,9 @@
 #ifndef __LINUX_TRUSTY_TRUSTY_IPC_H
 #define __LINUX_TRUSTY_TRUSTY_IPC_H
 
+#include <linux/kernel.h>
+#include <linux/bug.h>
+
 struct tipc_chan;
 
 struct tipc_msg_buf {
