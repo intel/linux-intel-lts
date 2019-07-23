@@ -2476,6 +2476,8 @@ intel_info(const struct drm_i915_private *dev_priv)
 #define BXT_REVID_B0		0x3
 #define BXT_REVID_B_LAST	0x8
 #define BXT_REVID_C0		0x9
+#define BXT_REVID_D0		0xC
+#define BXT_REVID_E0		0xD
 
 #define IS_BXT_REVID(dev_priv, since, until) \
 	(IS_BROXTON(dev_priv) && IS_REVID(dev_priv, since, until))
@@ -2724,7 +2726,7 @@ static inline bool intel_scanout_needs_vtd_wa(struct drm_i915_private *dev_priv)
 static inline bool
 intel_ggtt_update_needs_vtd_wa(struct drm_i915_private *dev_priv)
 {
-	return IS_BROXTON(dev_priv) && intel_vtd_active();
+	return IS_BXT_REVID(dev_priv, 0, BXT_REVID_D0) && intel_vtd_active();
 }
 
 int intel_sanitize_enable_ppgtt(struct drm_i915_private *dev_priv,
