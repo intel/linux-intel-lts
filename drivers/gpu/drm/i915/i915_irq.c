@@ -4214,7 +4214,7 @@ static void gen8_de_irq_postinstall(struct drm_i915_private *dev_priv)
 		de_misc_masked |= GEN8_DE_MISC_GSE;
 
 	if (INTEL_GEN(dev_priv) >= 9) {
-		de_pipe_masked |= GEN9_DE_PIPE_IRQ_FAULT_ERRORS;
+		//de_pipe_masked |= GEN9_DE_PIPE_IRQ_FAULT_ERRORS;
 		de_port_masked |= GEN9_AUX_CHANNEL_B | GEN9_AUX_CHANNEL_C |
 				  GEN9_AUX_CHANNEL_D;
 		if (IS_GEN9_LP(dev_priv))
