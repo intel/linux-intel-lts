@@ -556,6 +556,10 @@ static int __init intel_iommu_setup(char *str)
 			printk(KERN_INFO
 				"Intel-IOMMU: not forcing on after tboot. This could expose security risk for tboot\n");
 			intel_iommu_tboot_noforce = 1;
+		} else if (!strncmp(str, "evmm", 4)) {
+			printk(KERN_INFO
+				"Intel-IOMMU: enabled by evmm\n");
+			intel_iommu_gfx_mapped = 1;
 		}
 
 		str += strcspn(str, ",");
