@@ -6,6 +6,7 @@
  *
  */
 
+#include <linux/version.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/i2c.h>
