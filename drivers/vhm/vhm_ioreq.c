@@ -81,6 +81,7 @@ struct ioreq_range {
 enum IOREQ_CLIENT_BITS {
         IOREQ_CLIENT_DESTROYING = 0,
         IOREQ_CLIENT_EXIT,
+	IOREQ_THREAD_START,
 };
 
 struct ioreq_client {
@@ -356,8 +357,7 @@ int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name)
 	return client_id;
 }
 
-/* When one client is removed from VM, the refcnt is decreased */
-static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
+static void acrn_ioreq_remove_client_pervm(struct ioreq_client *client,
 		struct vhm_vm *vm)
 {
 	struct list_head *pos, *tmp;
@@ -365,7 +365,8 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 	set_bit(IOREQ_CLIENT_DESTROYING, &client->flags);
 	acrn_ioreq_notify_client(client);
 
-	while (client->vhm_create_kthread && !test_bit(IOREQ_CLIENT_EXIT, &client->flags))
+	while (client->vhm_create_kthread && !test_bit(IOREQ_CLIENT_EXIT, &client->flags)
+			&& test_bit(IOREQ_THREAD_START, &client->flags))
 		msleep(10);
 
 	spin_lock_bh(&client->range_lock);
@@ -384,6 +385,9 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 	if (client->id == vm->ioreq_fallback_client)
 		vm->ioreq_fallback_client = -1;
 
+	/* When one client is removed from VM, the refcnt is decreased
+	 * it is pair with acrn_ioreq_get_client in acrn_ioreq_create_client
+	 */
 	acrn_ioreq_put_client(client);
 }
 
@@ -396,6 +400,9 @@ void acrn_ioreq_destroy_client(int client_id)
 		return;
 	}
 
+	/* Remove client id from IDR to avoid some invalid ioreq
+	 * during destroying client
+	 */
 	spin_lock_bh(&client_lock);
 	client = idr_remove(&idr_client, client_id);
 	spin_unlock_bh(&client_lock);
@@ -409,7 +416,10 @@ void acrn_ioreq_destroy_client(int client_id)
 
 	might_sleep();
 
-	acrn_ioreq_destroy_client_pervm(client, client->ref_vm);
+	acrn_ioreq_remove_client_pervm(client, client->ref_vm);
+	/* it will free client, it is pair with alloc_client
+	 * in acrn_ioreq_destroy_client
+	 */
 	acrn_ioreq_put_client(client);
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_destroy_client);
@@ -575,6 +585,7 @@ static int ioreq_client_thread(void *data)
 		return -EINVAL;
 	}
 
+	set_bit(IOREQ_THREAD_START, &client->flags);
 	while (1) {
 		if (is_destroying(client)) {
 			pr_info("vhm-ioreq: client destroying->stop thread\n");
@@ -599,6 +610,7 @@ static int ioreq_client_thread(void *data)
 	}
 
 	set_bit(IOREQ_CLIENT_EXIT, &client->flags);
+	clear_bit(IOREQ_THREAD_START, &client->flags);
 	acrn_ioreq_put_client(client);
 	return 0;
 }
