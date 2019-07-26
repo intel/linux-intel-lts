@@ -295,6 +295,18 @@ enum dma_irq_dir {
 	DMA_DIR_RXTX = 0x3,
 };
 
+enum request_irq_err {
+	REQ_IRQ_ERR_ALL,
+	REQ_IRQ_ERR_TX,
+	REQ_IRQ_ERR_RX,
+	REQ_IRQ_ERR_SFTY_UE,
+	REQ_IRQ_ERR_SFTY_CE,
+	REQ_IRQ_ERR_LPI,
+	REQ_IRQ_ERR_WOL,
+	REQ_IRQ_ERR_MAC,
+	REQ_IRQ_ERR_NO,
+};
+
 /* EEE and LPI defines */
 #define	CORE_IRQ_TX_PATH_IN_LPI_MODE	(1 << 0)
 #define	CORE_IRQ_TX_PATH_EXIT_LPI_MODE	(1 << 1)
