@@ -318,9 +318,6 @@ static int ipu_vbk_release(struct inode *inode, struct file *f)
 	for (i = 0; i < IPU_VIRTIO_QUEUE_MAX; i++)
 		virtio_vq_reset(&(priv->vqs[i]));
 
-	/* device specific release */
-	ipu_vbk_reset(priv);
-
 	pr_debug("ipu_vbk_connection cnt is %d\n",
 			ipu_vbk_connection_cnt);
 
@@ -330,6 +327,9 @@ static int ipu_vbk_release(struct inode *inode, struct file *f)
 		pr_debug("ipu4_virtio_be_priv remove all hash entries\n");
 		ipu_vbk_hash_del_all();
 	}
+
+	/* device specific release */
+	ipu_vbk_reset(priv);
 
 	kfree(priv);
 
@@ -390,11 +390,6 @@ static long ipu_vbk_ioctl(struct file *f, unsigned int ioctl,
 		ipu_vbk_connection_cnt++;
 		return r;
 	case VBS_RESET_DEV:
-		r = ipu_vbk_reset(priv);
-		if (r < 0) {
-			pr_err("VBS_RESET_DEV: virtio_vqs_ioctl failed!\n");
-			return -EFAULT;
-		}
 		pr_debug("ipu_vbk_connection cnt is %d\n",
 				ipu_vbk_connection_cnt);
 
@@ -403,6 +398,12 @@ static long ipu_vbk_ioctl(struct file *f, unsigned int ioctl,
 		if (!ipu_vbk_connection_cnt) {
 			pr_debug("ipu4_virtio_be_priv remove all hash entries\n");
 			ipu_vbk_hash_del_all();
+		}
+
+		r = ipu_vbk_reset(priv);
+		if (r < 0) {
+			pr_err("VBS_RESET_DEV: virtio_vqs_ioctl failed!\n");
+			return -EFAULT;
 		}
 
 		return r;
