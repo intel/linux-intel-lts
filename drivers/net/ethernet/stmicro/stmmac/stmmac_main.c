@@ -3821,6 +3821,8 @@ static int stmmac_set_features(struct net_device *netdev,
 	for (chan = 0; chan < priv->plat->rx_queues_to_use; chan++)
 		stmmac_enable_sph(priv, priv->ioaddr, sph_en, chan);
 
+	netdev->features = features;
+
 	return 0;
 }
 
