@@ -414,6 +414,44 @@ static struct stmmac_pci_info tgl_sgmii1g_pci_info = {
 	.setup = tgl_sgmii_data,
 };
 
+static int synp_haps_sgmii_data(struct pci_dev *pdev,
+				struct plat_stmmacenet_data *plat)
+{
+	int ret;
+
+	plat->bus_id = 1;
+	plat->phy_addr = 0;
+	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+
+	plat->rx_queues_to_use = 6;
+	plat->tx_queues_to_use = 4;
+	/* Set PTP clock rate for HAPS as 62.5MHz */
+	plat->clk_ptp_rate = 62500000;
+	ret = intel_mgbe_common_data(pdev, plat);
+	if (ret)
+		return ret;
+
+	/* Override: HAPS does not have xPCS   */
+	plat->setup_phy_conv = NULL;
+	plat->has_serdes = 0;
+	plat->intel_adhoc_addr = 0;
+
+	/* Override: HAPS does not support MSI */
+	plat->msi_phy_conv_vec = STMMAC_MSI_VEC_MAX;
+	plat->msi_mac_vec = STMMAC_MSI_VEC_MAX;
+	plat->msi_lpi_vec = STMMAC_MSI_VEC_MAX;
+	plat->msi_sfty_ce_vec = STMMAC_MSI_VEC_MAX;
+	plat->msi_sfty_ue_vec = STMMAC_MSI_VEC_MAX;
+	plat->msi_rx_base_vec = STMMAC_MSI_VEC_MAX;
+	plat->msi_tx_base_vec = STMMAC_MSI_VEC_MAX;
+
+	return 0;
+}
+
+static struct stmmac_pci_info synp_haps_pci_info = {
+	.setup = synp_haps_sgmii_data,
+};
+
 static const struct stmmac_pci_func_data galileo_stmmac_func_data[] = {
 	{
 		.func = 6,
@@ -848,6 +886,7 @@ static SIMPLE_DEV_PM_OPS(stmmac_pm_ops, stmmac_pci_suspend, stmmac_pci_resume);
 #define STMMAC_EHL_PSE1_SGMII2G5_ID	0x4bb2
 #define STMMAC_TGL_SGMII1G_ID	0xa0ac
 #define STMMAC_GMAC5_ID		0x7102
+#define DEVICE_ID_HAPS_6X	0x7101
 
 #define STMMAC_DEVICE(vendor_id, dev_id, info)	{	\
 	PCI_VDEVICE(vendor_id, dev_id),			\
@@ -875,6 +914,7 @@ static const struct pci_device_id stmmac_id_table[] = {
 		      ehl_pse1_sgmii1g_pci_info),
 	STMMAC_DEVICE(INTEL, STMMAC_TGL_SGMII1G_ID, tgl_sgmii1g_pci_info),
 	STMMAC_DEVICE(SYNOPSYS, STMMAC_GMAC5_ID, snps_gmac5_pci_info),
+	STMMAC_DEVICE(SYNOPSYS, DEVICE_ID_HAPS_6X, synp_haps_pci_info),
 	{}
 };
 
