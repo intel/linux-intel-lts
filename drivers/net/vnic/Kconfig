@@ -1,0 +1,7 @@
+config INTEL_ISHTP_VNIC
+	tristate "Intel ISHTP VNIC controller"
+	depends on INTEL_ISH_HID
+	depends on NET
+	help
+	  If you say Y here, you get support for a virtual newtwork device
+	  on a dedicated low power chip over ISH Transport Protocol (ISHTP).
