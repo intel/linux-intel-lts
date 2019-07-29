@@ -148,6 +148,7 @@ static void cmd_process_work(struct work_struct *work)
 		 * priv synchronization. for existing imported_sgt_info
 		 * so not creating a new one
 		 */
+		mutex_lock(&hy_drv_priv->lock);
 		if (req->op[4] == 0) {
 			hyper_dmabuf_id_t exist = {req->op[0],
 						   {req->op[1], req->op[2],
@@ -158,6 +159,7 @@ static void cmd_process_work(struct work_struct *work)
 			if (!imported) {
 				dev_err(hy_drv_priv->dev,
 					"Can't find imported sgt_info\n");
+				mutex_unlock(&hy_drv_priv->lock);
 				break;
 			}
 
@@ -172,6 +174,7 @@ static void cmd_process_work(struct work_struct *work)
 				if (!imported->priv) {
 					/* set it invalid */
 					imported->valid = 0;
+					mutex_unlock(&hy_drv_priv->lock);
 					break;
 				}
 			}
@@ -184,19 +187,23 @@ static void cmd_process_work(struct work_struct *work)
 			hyper_dmabuf_import_event(imported->hid);
 #endif
 
+			mutex_unlock(&hy_drv_priv->lock);
 			break;
 		}
 
 		imported = kcalloc(1, sizeof(*imported), GFP_KERNEL);
 
-		if (!imported)
+		if (!imported) {
+			mutex_unlock(&hy_drv_priv->lock);
 			break;
+		}
 
 		imported->sz_priv = req->op[9];
 		imported->priv = kcalloc(1, req->op[9], GFP_KERNEL);
 
 		if (!imported->priv) {
 			kfree(imported);
+			mutex_unlock(&hy_drv_priv->lock);
 			break;
 		}
 
@@ -230,6 +237,7 @@ static void cmd_process_work(struct work_struct *work)
 		hyper_dmabuf_import_event(imported->hid);
 #endif
 
+		mutex_unlock(&hy_drv_priv->lock);
 		break;
 
 	case HYPER_DMABUF_OPS_TO_SOURCE:
@@ -306,6 +314,7 @@ int hyper_dmabuf_msg_parse(int domid, struct hyper_dmabuf_req *req)
 		dev_dbg(hy_drv_priv->dev,
 			"processing HYPER_DMABUF_NOTIFY_UNEXPORT\n");
 
+		mutex_lock(&hy_drv_priv->lock);
 		imported = hyper_dmabuf_find_imported(hid);
 
 		if (imported) {
@@ -316,7 +325,6 @@ int hyper_dmabuf_msg_parse(int domid, struct hyper_dmabuf_req *req)
 				 * anymore.
 				 */
 				imported->valid = false;
-				hyper_dmabuf_remove_imported(hid);
 			} else {
 				/* No one is using buffer, remove it from
 				 * imported list
@@ -328,6 +336,8 @@ int hyper_dmabuf_msg_parse(int domid, struct hyper_dmabuf_req *req)
 		} else {
 			req->stat = HYPER_DMABUF_REQ_ERROR;
 		}
+
+		mutex_unlock(&hy_drv_priv->lock);
 
 		return req->cmd;
 	}

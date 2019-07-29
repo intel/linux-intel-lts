@@ -5591,6 +5591,28 @@ skl_compute_wm(struct drm_atomic_state *state)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+/*
+ * when SOS updates plane wm registers, we need to refresh the planes owned by
+ * GVT-g guests, to avoid some garbage display on the screen
+ */
+static void update_gvt_guest_plane(struct drm_i915_private *dev_priv,
+				   int pipe,
+				   int plane_id)
+{
+	unsigned long value, irqflags;
+
+	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
+
+	value = I915_READ_FW(PLANE_CTL(pipe, plane_id));
+	I915_WRITE_FW(PLANE_CTL(pipe, plane_id), value);
+	value = I915_READ_FW(PLANE_SURF(pipe, plane_id));
+	I915_WRITE_FW(PLANE_SURF(pipe, plane_id), value);
+
+	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
+}
+#endif
+
 static void skl_atomic_update_crtc_wm(struct intel_atomic_state *state,
 				      struct intel_crtc_state *cstate)
 {
@@ -5613,6 +5635,11 @@ static void skl_atomic_update_crtc_wm(struct intel_atomic_state *state,
 		for_each_universal_plane(dev_priv, pipe, plane_id) {
 			skl_write_plane_wm(crtc, &pipe_wm->planes[plane_id],
 					ddb, plane_id);
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+			if (dev_priv->gvt &&
+				dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
+				update_gvt_guest_plane(dev_priv, pipe, plane_id);
+#endif
 		}
 
 		return;

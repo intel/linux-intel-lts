@@ -72,6 +72,11 @@ struct pages_info *hyper_dmabuf_ext_pgs(struct sg_table *sgt)
 	int length;
 	struct scatterlist *sgl;
 
+	if (!sgt) {
+		dev_err(hy_drv_priv->dev, "%s: sgt is null\n", __func__);
+		return NULL;
+	}
+
 	pg_info = kmalloc(sizeof(*pg_info), GFP_KERNEL);
 	if (!pg_info)
 		return NULL;

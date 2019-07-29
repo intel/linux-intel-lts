@@ -229,12 +229,14 @@ static int hyper_dmabuf_export_remote_ioctl(struct file *filp, void *data)
 		return PTR_ERR(dma_buf);
 	}
 
+	mutex_lock(&hy_drv_priv->lock);
+
 	/* we check if this specific attachment was already exported
 	 * to the same domain and if yes and it's valid sgt_info,
 	 * it returns hyper_dmabuf_id of pre-exported sgt_info
 	 */
-	hid = hyper_dmabuf_find_hid_exported(dma_buf,
-					     export_remote_attr->remote_domain);
+	hid = hyper_dmabuf_find_hid_dmabuf(dma_buf,
+					   export_remote_attr->remote_domain);
 
 	if (hid.id != -1) {
 		ret = fastpath_export(hid, export_remote_attr->sz_priv,
@@ -246,6 +248,7 @@ static int hyper_dmabuf_export_remote_ioctl(struct file *filp, void *data)
 		if (ret <= 0) {
 			dma_buf_put(dma_buf);
 			export_remote_attr->hid = hid;
+			mutex_unlock(&hy_drv_priv->lock);
 			return ret;
 		}
 	}
@@ -384,6 +387,7 @@ static int hyper_dmabuf_export_remote_ioctl(struct file *filp, void *data)
 
 	exported->filp = filp;
 
+	mutex_unlock(&hy_drv_priv->lock);
 	return ret;
 
 /* Clean-up if error occurs */
@@ -422,6 +426,7 @@ fail_map_attachment:
 fail_attach:
 	dma_buf_put(dma_buf);
 
+	mutex_unlock(&hy_drv_priv->lock);
 	return ret;
 }
 
@@ -439,24 +444,32 @@ static int hyper_dmabuf_export_fd_ioctl(struct file *filp, void *data)
 
 	dev_dbg(hy_drv_priv->dev, "%s entry\n", __func__);
 
+	mutex_lock(&hy_drv_priv->lock);
+
 	/* look for dmabuf for the id */
 	imported = hyper_dmabuf_find_imported(export_fd_attr->hid);
 
 	/* can't find sgt from the table */
 	if (!imported) {
+		mutex_unlock(&hy_drv_priv->lock);
 		dev_err(hy_drv_priv->dev, "can't find the entry\n");
 		return -ENOENT;
 	}
 
-	mutex_lock(&hy_drv_priv->lock);
+	if (IS_ERR(imported->dma_buf)) {
+		mutex_unlock(&hy_drv_priv->lock);
+		dev_err(hy_drv_priv->dev,
+			"Buffer is invalid {id:%d key:%d}, cannot import\n",
+			imported->hid.id, imported->hid.rng_key[0]);
+		return -EINVAL;
+	}
 
-	if (imported->dma_buf) {
+	if (imported->dma_buf && dmabuf_refcount(imported->dma_buf) > 0) {
 		if (imported->valid == false) {
 			mutex_unlock(&hy_drv_priv->lock);
 			dev_err(hy_drv_priv->dev,
-				"Buffer is released {id:%d key:%d %d %d}, cannot import\n",
-				imported->hid.id, imported->hid.rng_key[0],
-				imported->hid.rng_key[1], imported->hid.rng_key[2]);
+				"Buffer is released {id:%d key:%d}, cannot import\n",
+				imported->hid.id, imported->hid.rng_key[0]);
 			return -EINVAL;
 		}
 		get_dma_buf(imported->dma_buf);
@@ -595,6 +608,7 @@ static void delayed_unexport(struct work_struct *work)
 	struct hyper_dmabuf_req *req;
 	struct hyper_dmabuf_bknd_ops *bknd_ops = hy_drv_priv->bknd_ops;
 	struct exported_sgt_info *exported;
+	hyper_dmabuf_id_t hid;
 	int op[4];
 	int i, ret;
 
@@ -608,13 +622,24 @@ static void delayed_unexport(struct work_struct *work)
 		exported->hid.id, exported->hid.rng_key[0],
 		exported->hid.rng_key[1], exported->hid.rng_key[2]);
 
+	mutex_lock(&hy_drv_priv->lock);
+
+	/* make sure if exported hasn't already been removed */
+	hid = hyper_dmabuf_find_hid_exported(exported);
+	if (hid.id == -1) {
+		mutex_unlock(&hy_drv_priv->lock);
+		return;
+	}
+
 	/* no longer valid */
 	exported->valid = false;
 
 	req = kcalloc(1, sizeof(*req), GFP_KERNEL);
 
-	if (!req)
+	if (!req) {
+		mutex_unlock(&hy_drv_priv->lock);
 		return;
+	}
 
 	op[0] = exported->hid.id;
 
@@ -660,6 +685,8 @@ static void delayed_unexport(struct work_struct *work)
 
 		kfree(exported);
 	}
+
+	mutex_unlock(&hy_drv_priv->lock);
 }
 
 /* Schedule unexport of dmabuf.
@@ -672,6 +699,8 @@ int hyper_dmabuf_unexport_ioctl(struct file *filp, void *data)
 
 	dev_dbg(hy_drv_priv->dev, "%s entry\n", __func__);
 
+	mutex_lock(&hy_drv_priv->lock);
+
 	/* find dmabuf in export list */
 	exported = hyper_dmabuf_find_exported(unexport_attr->hid);
 
@@ -681,19 +710,23 @@ int hyper_dmabuf_unexport_ioctl(struct file *filp, void *data)
 		unexport_attr->hid.rng_key[1], unexport_attr->hid.rng_key[2]);
 
 	/* failed to find corresponding entry in export list */
-	if (exported == NULL) {
+	if (!exported) {
 		unexport_attr->status = -ENOENT;
+		mutex_unlock(&hy_drv_priv->lock);
 		return -ENOENT;
 	}
 
-	if (exported->unexport_sched)
+	if (exported->unexport_sched) {
+		mutex_unlock(&hy_drv_priv->lock);
 		return 0;
+	}
 
 	exported->unexport_sched = true;
 	INIT_DELAYED_WORK(&exported->unexport, delayed_unexport);
 	schedule_delayed_work(&exported->unexport,
 			      msecs_to_jiffies(unexport_attr->delay_ms));
 
+	mutex_unlock(&hy_drv_priv->lock);
 	dev_dbg(hy_drv_priv->dev, "%s exit\n", __func__);
 	return 0;
 }
