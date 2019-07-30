@@ -152,7 +152,7 @@ void acrngt_instance_destroy(struct intel_vgpu *vgpu)
                         }
                 }
 
-		intel_gvt_ops->vgpu_deactivate(vgpu);
+		intel_gvt_ops->vgpu_release(vgpu);
 		intel_gvt_ops->vgpu_destroy(vgpu);
 	}
 
