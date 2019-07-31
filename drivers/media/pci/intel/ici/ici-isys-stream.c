@@ -1377,6 +1377,7 @@ int ici_isys_stream_init(
 	char name[ICI_MAX_NODE_NAME];
 
 	mutex_init(&as->mutex);
+	mutex_init(&as->stream_cancel_mutex);
 	init_completion(&as->ip.stream_open_completion);
 	init_completion(&as->ip.stream_close_completion);
 	init_completion(&as->ip.stream_start_completion);
@@ -1444,16 +1445,20 @@ out_mutex_unlock:
 	//intel_ipu4_isys_framebuf_cleanup(&as->buf_list);
 out_init_fail:
 	mutex_destroy(&as->mutex);
+	mutex_destroy(&as->stream_cancel_mutex);
 
 	return rval;
 }
 
 void ici_isys_stream_cleanup(struct ici_isys_stream *as)
 {
-	list_del(&as->node.node_entry);
-	stream_device_unregister(&as->strm_dev);
-	node_pads_cleanup(&as->asd->node);
-	mutex_destroy(&as->mutex);
+	if (as != NULL) {
+		list_del(&as->node.node_entry);
+		stream_device_unregister(&as->strm_dev);
+		node_pads_cleanup(&as->asd->node);
+		mutex_destroy(&as->mutex);
+		mutex_destroy(&as->stream_cancel_mutex);
+	}
 }
 
 #endif //ICI_ENABLED
