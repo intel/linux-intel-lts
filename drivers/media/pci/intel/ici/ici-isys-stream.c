@@ -899,6 +899,8 @@ static int ici_isys_stream_on(struct file *file, void *fh)
 		return -ENODEV;
 	}
 
+	pipeline_set_power(as, 1);
+
 	mutex_lock(&as->isys->stream_mutex);
 	ip->source = ip->asd_source->source;
 
@@ -945,7 +947,7 @@ out_cleanup_short_packet:
 out_requeue:
 	mutex_unlock(&as->isys->stream_mutex);
 	ici_isys_frame_buf_stream_cancel(as);
-
+	pipeline_set_power(as, 0);
 	return rval;
 }
 
@@ -964,7 +966,7 @@ static int ici_isys_stream_off(struct file *file, void *fh)
 
 	ici_isys_frame_buf_short_packet_destroy(as);
 	ici_isys_frame_buf_stream_cancel(as);
-
+	pipeline_set_power(as, 0);
 	return 0;
 }
 
@@ -1115,7 +1117,6 @@ static int stream_fop_open(struct inode *inode, struct file *file)
 		return rval;
 	}
 
-	pipeline_set_power(as, 1);
 	mutex_lock(&isys->mutex);
 
 	ipu_configure_spc(adev->isp,
