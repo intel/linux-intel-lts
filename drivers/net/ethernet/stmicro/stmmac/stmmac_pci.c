@@ -757,6 +757,7 @@ static void stmmac_pci_remove(struct pci_dev *pdev)
 		break;
 	}
 
+	pci_free_irq_vectors(pdev);
 	pci_disable_device(pdev);
 }
 
