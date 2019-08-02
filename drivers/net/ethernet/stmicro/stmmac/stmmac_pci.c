@@ -452,6 +452,33 @@ static struct stmmac_pci_info synp_haps_pci_info = {
 	.setup = synp_haps_sgmii_data,
 };
 
+static int icl_sgmii_data(struct pci_dev *pdev,
+			  struct plat_stmmacenet_data *plat)
+{
+	int ret;
+
+	plat->bus_id = 1;
+	plat->phy_addr = 1;
+	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+
+	plat->rx_queues_to_use = 4;
+	plat->tx_queues_to_use = 4;
+	/* Set PTP clock rate for ICL as 200MHz */
+	plat->clk_ptp_rate = 200000000;
+	ret = intel_mgbe_common_data(pdev, plat);
+	if (ret)
+		return ret;
+
+	/* Override: ICL B0 SoC does not have TBS */
+	plat->has_tbs = 0;
+
+	return 0;
+}
+
+static struct stmmac_pci_info icl_pci_info = {
+	.setup = icl_sgmii_data,
+};
+
 static const struct stmmac_pci_func_data galileo_stmmac_func_data[] = {
 	{
 		.func = 6,
@@ -887,6 +914,7 @@ static SIMPLE_DEV_PM_OPS(stmmac_pm_ops, stmmac_pci_suspend, stmmac_pci_resume);
 #define STMMAC_TGL_SGMII1G_ID	0xa0ac
 #define STMMAC_GMAC5_ID		0x7102
 #define DEVICE_ID_HAPS_6X	0x7101
+#define STMMAC_ICP_LP_ID	0x34ac
 
 #define STMMAC_DEVICE(vendor_id, dev_id, info)	{	\
 	PCI_VDEVICE(vendor_id, dev_id),			\
@@ -915,6 +943,7 @@ static const struct pci_device_id stmmac_id_table[] = {
 	STMMAC_DEVICE(INTEL, STMMAC_TGL_SGMII1G_ID, tgl_sgmii1g_pci_info),
 	STMMAC_DEVICE(SYNOPSYS, STMMAC_GMAC5_ID, snps_gmac5_pci_info),
 	STMMAC_DEVICE(SYNOPSYS, DEVICE_ID_HAPS_6X, synp_haps_pci_info),
+	STMMAC_DEVICE(INTEL, STMMAC_ICP_LP_ID, icl_pci_info),
 	{}
 };
 
