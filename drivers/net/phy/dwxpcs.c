@@ -16,6 +16,7 @@
 #define XPCS_MDIO_MII_MMD	MDIO_MMD_VEND2
 
 /* MII MMD registers offsets */
+#define MDIO_MII_MMD_CTRL		0x0000	/* SR Control */
 #define MDIO_MII_MMD_DIGITAL_CTRL_1	0x8000	/* Digital Control 1 */
 #define MDIO_MII_MMD_AN_CTRL		0x8001	/* AN Control */
 #define MDIO_MII_MMD_AN_STAT		0x8002	/* AN Status */
@@ -31,6 +32,9 @@
 #define MDIO_MII_MMD_PSE_ASYM		0x1
 #define MDIO_MII_MMD_PSE_SYM		0x2
 #define MDIO_MII_MMD_PSE_BOTH		0x3
+
+/* Enable 2.5G Mode */
+#define MDIO_MII_MMD_DIGI_CTRL_1_EN_2_5G_MODE	BIT(2)
 
 /* Automatic Speed Mode Change for MAC side SGMII AN */
 #define MDIO_MII_MMD_DIGI_CTRL_1_MAC_AUTO_SW	BIT(9)
@@ -54,6 +58,11 @@
 #define AN_STAT_SGMII_AN_100MBPS	0x1	/* 100 Mbps */
 #define AN_STAT_SGMII_AN_1000MBPS	0x2	/* 1000 Mbps */
 #define AN_STAT_SGMII_AN_LNKSTS		BIT(4)	/* Link Status */
+
+/* SR MII MMD Control defines */
+#define AN_CL37_EN		BIT(12)	/* Enable Clause 37 auto-nego */
+#define SGMII_SPEED_SS13	BIT(13)	/* SGMII speed along with SS6 */
+#define SGMII_SPEED_SS6		BIT(6)	/* SGMII speed along with SS13 */
 
 enum dwxpcs_state_t {
 	__DWXPCS_REMOVING,
@@ -95,7 +104,25 @@ static void dwxpcs_init(struct dwxpcs_priv *priv)
 	struct mii_bus *bus = priv->mdiodev->bus;
 	int xpcs_addr = priv->mdiodev->addr;
 	int pcs_mode = priv->pdata->mode;
+	bool speed_2500_en = priv->pdata->speed_2500_en;
 	int phydata;
+
+	if (speed_2500_en) {
+		phydata = xpcs_read(XPCS_MDIO_MII_MMD,
+				    MDIO_MII_MMD_DIGITAL_CTRL_1);
+		phydata |= MDIO_MII_MMD_DIGI_CTRL_1_EN_2_5G_MODE;
+		phydata &= ~MDIO_MII_MMD_DIGI_CTRL_1_MAC_AUTO_SW;
+		xpcs_write(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_DIGITAL_CTRL_1,
+			   phydata);
+
+		phydata = xpcs_read(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_CTRL);
+		phydata &= ~AN_CL37_EN;
+		phydata |= SGMII_SPEED_SS6;
+		phydata &= ~SGMII_SPEED_SS13;
+		xpcs_write(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_CTRL, phydata);
+
+		return;
+	}
 
 	if (pcs_mode == DWXPCS_MODE_SGMII_AN) {
 		/* For AN for SGMII mode, the settings are :-
