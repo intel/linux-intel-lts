@@ -492,12 +492,15 @@ struct stmmac_ops {
 struct stmmac_serdes_ops {
 	int (*serdes_powerup)(struct net_device *ndev);
 	int (*serdes_powerdown)(struct net_device *ndev);
+	int (*speed_mode_2500)(struct net_device *ndev);
 };
 
 #define stmmac_serdes_powerup(__priv, __args...) \
 	stmmac_do_callback(__priv, serdes, serdes_powerup, __args)
 #define stmmac_serdes_powerdown(__priv, __args...) \
 	stmmac_do_callback(__priv, serdes, serdes_powerdown, __args)
+#define stmmac_speed_mode_2500(__priv, __args...) \
+	stmmac_do_callback(__priv, serdes, speed_mode_2500, __args)
 
 /* PTP and HW Timer helpers */
 struct stmmac_hwtimestamp {

@@ -833,6 +833,25 @@ static void stmmac_validate(struct phylink_config *config,
 	phylink_set(mac_supported, Asym_Pause);
 	phylink_set_port_modes(mac_supported);
 
+	if (priv->plat->has_gmac ||
+	    priv->plat->has_gmac4 ||
+	    priv->plat->has_xgmac) {
+		phylink_set(mac_supported, 1000baseT_Half);
+		phylink_set(mac_supported, 1000baseT_Full);
+		phylink_set(mac_supported, 1000baseKX_Full);
+	}
+
+	/* 2.5G mode only support 2500baseT full duplex only */
+	if (priv->plat->has_gmac4 && priv->plat->speed_2500_en) {
+		phylink_set(mac_supported, 2500baseT_Full);
+		phylink_set(mask, 10baseT_Half);
+		phylink_set(mask, 10baseT_Full);
+		phylink_set(mask, 100baseT_Half);
+		phylink_set(mask, 100baseT_Full);
+		phylink_set(mask, 1000baseT_Half);
+		phylink_set(mask, 1000baseT_Full);
+	}
+
 	/* Cut down 1G if asked to */
 	if ((max_speed > 0) && (max_speed < 1000)) {
 		phylink_set(mask, 1000baseT_Full);
@@ -2959,7 +2978,8 @@ static int stmmac_open(struct net_device *dev)
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->setup_phy_conv) {
 		ret = priv->plat->setup_phy_conv(priv->mii, priv->phy_conv_irq,
-						 priv->plat->phy_addr);
+						 priv->plat->phy_addr,
+						 priv->plat->speed_2500_en);
 
 		if (ret < 0) {
 			netdev_err(priv->dev,
@@ -5030,6 +5050,9 @@ int stmmac_dvr_probe(struct device *device,
 			goto error_mdio_register;
 		}
 	}
+
+	if (priv->plat->has_serdes)
+		priv->plat->speed_2500_en = stmmac_speed_mode_2500(priv, ndev);
 
 	ret = stmmac_phy_setup(priv);
 	if (ret) {

@@ -167,7 +167,7 @@ struct plat_stmmacenet_data {
 	void (*exit)(struct platform_device *pdev, void *priv);
 	struct mac_device_info *(*setup)(void *priv);
 	int (*setup_phy_conv)(struct mii_bus *bus, int irq,
-	     int phy_addr);
+	     int phy_addr, bool speed_2500_en);
 	int (*remove_phy_conv)(struct mii_bus *bus);
 	void *bsp_priv;
 	struct clk *stmmac_clk;
@@ -197,5 +197,6 @@ struct plat_stmmacenet_data {
 	int msi_tx_base_vec;
 	bool vlan_fail_q_en;
 	u8 vlan_fail_q;
+	bool speed_2500_en;
 };
 #endif
