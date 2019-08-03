@@ -4030,6 +4030,13 @@ read_again:
 				priv->xstats.rx_split_hdr_pkt_n++;
 			}
 
+			if (netif_msg_rx_status(priv)) {
+				netdev_dbg(priv->dev, "\tdesc: %p [entry %d] buff=0x%llx\n",
+					   p, entry, buf->addr);
+				netdev_dbg(priv->dev, "frame size %d, COE: %d\n",
+					   len, status);
+			}
+
 			skb = napi_alloc_skb(&ch->rx_napi, len);
 			if (!skb) {
 				priv->dev->stats.rx_dropped++;

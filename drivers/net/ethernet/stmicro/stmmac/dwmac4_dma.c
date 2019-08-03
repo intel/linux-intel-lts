@@ -80,6 +80,10 @@ static void dwmac4_dma_init_rx_chan(void __iomem *ioaddr,
 	value = value | (rxpbl << DMA_BUS_MODE_RPBL_SHIFT);
 	writel(value, ioaddr + DMA_CHAN_RX_CONTROL(chan));
 
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	writel(upper_32_bits(dma_rx_phy),
+	       ioaddr + DMA_CHAN_RX_BASE_HI_ADDR(chan));
+#endif
 	writel(lower_32_bits(dma_rx_phy), ioaddr + DMA_CHAN_RX_BASE_ADDR(chan));
 }
 
@@ -98,6 +102,10 @@ static void dwmac4_dma_init_tx_chan(void __iomem *ioaddr,
 
 	writel(value, ioaddr + DMA_CHAN_TX_CONTROL(chan));
 
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	writel(upper_32_bits(dma_tx_phy),
+	       ioaddr + DMA_CHAN_TX_BASE_HI_ADDR(chan));
+#endif
 	writel(lower_32_bits(dma_tx_phy), ioaddr + DMA_CHAN_TX_BASE_ADDR(chan));
 }
 
@@ -133,6 +141,10 @@ static void dwmac4_dma_init(void __iomem *ioaddr,
 	if (dma_cfg->aal)
 		value |= DMA_SYS_BUS_AAL;
 
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	value |= DMA_SYS_BUS_EAME;
+#endif
+
 	writel(value, ioaddr + DMA_SYS_BUS_MODE);
 }
 
@@ -167,8 +179,12 @@ static void _dwmac4_dump_dma_regs(void __iomem *ioaddr, u32 channel,
 		readl(ioaddr + DMA_CHAN_CUR_TX_DESC(channel));
 	reg_space[DMA_CHAN_CUR_RX_DESC(channel) / 4] =
 		readl(ioaddr + DMA_CHAN_CUR_RX_DESC(channel));
+	reg_space[DMA_CHAN_CUR_TX_BUF_HI_ADDR(channel) / 4] =
+		readl(ioaddr + DMA_CHAN_CUR_TX_BUF_HI_ADDR(channel));
 	reg_space[DMA_CHAN_CUR_TX_BUF_ADDR(channel) / 4] =
 		readl(ioaddr + DMA_CHAN_CUR_TX_BUF_ADDR(channel));
+	reg_space[DMA_CHAN_CUR_RX_BUF_HI_ADDR(channel) / 4] =
+		readl(ioaddr + DMA_CHAN_CUR_RX_BUF_HI_ADDR(channel));
 	reg_space[DMA_CHAN_CUR_RX_BUF_ADDR(channel) / 4] =
 		readl(ioaddr + DMA_CHAN_CUR_RX_BUF_ADDR(channel));
 	reg_space[DMA_CHAN_STATUS(channel) / 4] =
@@ -357,6 +373,23 @@ static void dwmac4_get_hw_feature(void __iomem *ioaddr,
 	dma_cap->hash_tb_sz = (hw_cap & GMAC_HW_HASH_TB_SZ) >> 24;
 	dma_cap->av = (hw_cap & GMAC_HW_FEAT_AVSEL) >> 20;
 	dma_cap->tsoen = (hw_cap & GMAC_HW_TSOEN) >> 18;
+
+	dma_cap->addr64 = (hw_cap & GMAC_HW_FEAT_ADDR64) >> 14;
+	switch (dma_cap->addr64) {
+	case 0:
+		dma_cap->addr64 = 32;
+		break;
+	case 1:
+		dma_cap->addr64 = 40;
+		break;
+	case 2:
+		dma_cap->addr64 = 48;
+		break;
+	default:
+		dma_cap->addr64 = 32;
+		break;
+	}
+
 	/* RX and TX FIFO sizes are encoded as log2(n / 128). Undo that by
 	 * shifting and store the sizes in bytes.
 	 */

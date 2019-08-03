@@ -435,15 +435,26 @@ static void dwmac4_set_mss_ctxt(struct dma_desc *p, unsigned int mss)
 	p->des3 = cpu_to_le32(TDES3_CONTEXT_TYPE | TDES3_CTXT_TCMSSV);
 }
 
-static void dwmac4_get_addr(struct dma_desc *p, unsigned int *addr)
+static void dwmac4_get_addr(struct dma_desc *p, dma_addr_t *addr)
 {
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	*addr = le32_to_cpu(p->des1);
+	*addr <<= 32;
+	*addr |= le32_to_cpu(p->des0);
+#else
 	*addr = le32_to_cpu(p->des0);
+#endif
 }
 
 static void dwmac4_set_addr(struct dma_desc *p, dma_addr_t addr)
 {
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	p->des0 = cpu_to_le32(lower_32_bits(addr));
+	p->des1 = cpu_to_le32(upper_32_bits(addr));
+#else
 	p->des0 = cpu_to_le32(addr);
 	p->des1 = 0;
+#endif
 }
 
 static void dwmac4_clear(struct dma_desc *p)
