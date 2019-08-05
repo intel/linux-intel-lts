@@ -1199,6 +1199,7 @@ const struct stmmac_ops dwmac510_ops = {
 	.restore_hw_vlan_rx_fltr = dwmac4_restore_hw_vlan_rx_fltr,
 	.tsnif_setup = dwmac510_tsnif_setup,
 	.init_tsn = tsn_init,
+	.setup_tsn_hw = tsn_hw_setup,
 	.set_tsn_feat = tsn_feat_set,
 	.has_tsn_feat = tsn_has_feat,
 	.set_tsn_hwtunable = tsn_hwtunable_set,
@@ -1210,6 +1211,8 @@ const struct stmmac_ops dwmac510_ops = {
 	.set_est_gcl_len = tsn_est_gcl_len_set,
 	.set_est_gcrr_times = tsn_est_gcrr_times_set,
 	.get_est_gcc = tsn_est_gcc_get,
+	.est_irq_status = tsn_est_irq_status,
+	.dump_tsn_mmc = tsn_mmc_dump,
 };
 
 static u32 dwmac4_get_num_vlan(void __iomem *ioaddr)

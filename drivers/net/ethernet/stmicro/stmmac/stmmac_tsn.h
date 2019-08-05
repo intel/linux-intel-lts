@@ -9,6 +9,7 @@
 #define MIN_TSN_CORE_VER	0x50
 #define EST_GCL_BANK_MAX		(2)
 #define EST_TIWID_TO_EXTMAX(ti_wid)	((1 << ((ti_wid) + 7)) - 1)
+#define STMMAC_TSN_STAT_SIZE		(16)
 
 /* Hardware Tunable Enum */
 enum tsn_hwtunable_id {
@@ -82,11 +83,23 @@ struct est_gc_config {
 	bool enable;			/* 1: enabled */
 };
 
+/* TSN MMC Statistics */
+struct tsn_mmc_desc {
+	bool valid;
+	const char *desc;
+};
+
+struct tsn_mmc_stat {
+	unsigned long count[STMMAC_TSN_STAT_SIZE];
+};
+
 struct tsnif_info {
 	struct tsn_hw_cap cap;
 	bool feat_en[TSN_FEAT_ID_MAX];
 	u32 hwtunable[TSN_HWTUNA_MAX];
 	struct est_gc_config est_gcc;
+	struct tsn_mmc_stat mmc_stat;
+	const struct tsn_mmc_desc *mmc_desc;
 };
 
 struct mac_device_info;
@@ -97,6 +110,7 @@ int tsn_feat_set(struct mac_device_info *hw, struct net_device *dev,
 		 enum tsn_feat_id featid, bool enable);
 bool tsn_has_feat(struct mac_device_info *hw, struct net_device *dev,
 		  enum tsn_feat_id featid);
+void tsn_hw_setup(struct mac_device_info *hw, struct net_device *dev);
 int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
 		      enum tsn_hwtunable_id id, const u32 data);
 int tsn_hwtunable_get(struct mac_device_info *hw, struct net_device *dev,
@@ -118,5 +132,8 @@ int tsn_est_gcrr_times_set(struct mac_device_info *hw,
 			   u32 dbgb, bool is_dbgm);
 int tsn_est_gcc_get(struct mac_device_info *hw, struct net_device *dev,
 		    struct est_gc_config **gcc);
+void tsn_est_irq_status(struct mac_device_info *hw, struct net_device *dev);
+int tsn_mmc_dump(struct mac_device_info *hw,
+		 int index, unsigned long *count, const char **desc);
 
 #endif /* __STMMAC_TSN_H__ */

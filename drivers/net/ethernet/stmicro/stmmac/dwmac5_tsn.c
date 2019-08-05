@@ -8,6 +8,33 @@
 #include "hwif.h"
 #include "stmmac_tsn.h"
 
+enum tsn_mmc_idx {
+	EST_MMC_BTRE = 0,
+	EST_MMC_BTRLM = 1,
+	EST_MMC_HLBF = 2,
+	EST_MMC_HLBS = 3,
+	EST_MMC_CGCE = 4,
+};
+
+const struct tsn_mmc_desc dwmac5_tsn_mmc_desc[STMMAC_TSN_STAT_SIZE] = {
+	{ true, "BTRE" },  /* BTR Error */
+	{ true, "BTRLM" }, /* BTR Maximum Loop Count Error */
+	{ true, "HLBF" },  /* Head-of-Line Blocking due to Frame Size */
+	{ true, "HLBS" },  /* Head-of-Line Blocking due to Scheduling */
+	{ true, "CGCE" },  /* Constant Gate Control Error */
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+	{ false, "RESV" },
+};
+
 static int est_set_gcl_addr(void __iomem *ioaddr, u32 addr,
 			    bool is_gcrr, u32 rwops, u32 dep,
 			    u32 dbgb, bool is_dbgm)
@@ -53,6 +80,23 @@ static bool dwmac5_has_tsn_cap(void __iomem *ioaddr, enum tsn_feat_id featid)
 		return (hw_cap3 & GMAC_HW_FEAT_ESTSEL);
 	default:
 		return false;
+	};
+}
+
+static void dwmac5_hw_setup(void __iomem *ioaddr, enum tsn_feat_id featid)
+{
+	u32 value;
+
+	switch (featid) {
+	case TSN_FEAT_ID_EST:
+		/* Enable EST interrupts */
+		value = (MTL_EST_INT_EN_CGCE | MTL_EST_INT_EN_IEHS |
+			 MTL_EST_INT_EN_IEHF | MTL_EST_INT_EN_IEBE |
+			 MTL_EST_INT_EN_IECC);
+		writel(value, ioaddr + MTL_EST_INT_EN);
+		break;
+	default:
+		return;
 	};
 }
 
@@ -264,9 +308,101 @@ static void dwmac5_est_switch_swol(void __iomem *ioaddr)
 	writel(value, ioaddr + MTL_EST_CTRL);
 }
 
+int dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
+			  struct tsn_mmc_stat *mmc_stat,
+			  u32 txqcnt)
+{
+	u32 txqcnt_mask;
+	u32 status;
+	u32 value;
+	u32 feqn;
+	u32 hbfq;
+	u32 hbfs;
+	u32 btrl;
+
+	txqcnt_mask = (1 << txqcnt) - 1;
+	status = readl(ioaddr + MTL_EST_STATUS);
+
+	value = (MTL_EST_STATUS_CGCE | MTL_EST_STATUS_HLBS |
+		 MTL_EST_STATUS_HLBF | MTL_EST_STATUS_BTRE |
+		 MTL_EST_STATUS_SWLC);
+
+	/* Return if there is no error */
+	if (!(status & value))
+		return 0;
+
+	if (status & MTL_EST_STATUS_CGCE) {
+		/* Clear Interrupt */
+		writel(MTL_EST_STATUS_CGCE, ioaddr + MTL_EST_STATUS);
+
+		mmc_stat->count[EST_MMC_CGCE]++;
+	}
+
+	if (status & MTL_EST_STATUS_HLBS) {
+		value = readl(ioaddr + MTL_EST_SCH_ERR);
+		value &= txqcnt_mask;
+
+		mmc_stat->count[EST_MMC_HLBS]++;
+
+		/* Clear Interrupt */
+		writel(value, ioaddr + MTL_EST_SCH_ERR);
+
+		/* Collecting info to shows all the queues that has HLBS
+		 * issue. The only way to clear this is to clear the
+		 * statistic
+		 */
+		if (net_ratelimit())
+			netdev_err(dev, "EST: HLB(sched) Queue %u\n", value);
+	}
+
+	if (status & MTL_EST_STATUS_HLBF) {
+		value = readl(ioaddr + MTL_EST_FRM_SZ_ERR);
+		feqn = value & txqcnt_mask;
+
+		value = readl(ioaddr + MTL_EST_FRM_SZ_CAP);
+		hbfq = (value & MTL_EST_FRM_SZ_CAP_HBFQ_MASK(txqcnt)) >>
+		       MTL_EST_FRM_SZ_CAP_HBFQ_SHIFT;
+		hbfs = value & MTL_EST_FRM_SZ_CAP_HBFS_MASK;
+
+		mmc_stat->count[EST_MMC_HLBF]++;
+
+		/* Clear Interrupt */
+		writel(feqn, ioaddr + MTL_EST_FRM_SZ_ERR);
+
+		if (net_ratelimit())
+			netdev_err(dev, "EST: HLB(size) Queue %u Size %u\n",
+				   hbfq, hbfs);
+	}
+
+	if (status & MTL_EST_STATUS_BTRE) {
+		if ((status & MTL_EST_STATUS_BTRL) ==
+		    MTL_EST_STATUS_BTRL_MAX)
+			mmc_stat->count[EST_MMC_BTRLM]++;
+		else
+			mmc_stat->count[EST_MMC_BTRE]++;
+
+		btrl = (status & MTL_EST_STATUS_BTRL) >>
+			MTL_EST_STATUS_BTRL_SHIFT;
+
+		if (net_ratelimit())
+			netdev_info(dev, "EST: BTR Error Loop Count %u\n",
+				    btrl);
+
+		writel(MTL_EST_STATUS_BTRE, ioaddr + MTL_EST_STATUS);
+	}
+
+	if (status & MTL_EST_STATUS_SWLC) {
+		writel(MTL_EST_STATUS_SWLC, ioaddr + MTL_EST_STATUS);
+		netdev_info(dev, "SWOL has been switched\n");
+	}
+
+	return status;
+}
+
 const struct tsnif_ops dwmac510_tsnif_ops = {
 	.read_hwid = dwmac5_read_hwid,
 	.has_tsn_cap = dwmac5_has_tsn_cap,
+	.hw_setup = dwmac5_hw_setup,
 	.est_get_gcl_depth = dwmac5_est_get_gcl_depth,
 	.est_get_ti_width = dwmac5_est_get_ti_width,
 	.est_get_txqcnt = dwmac5_est_get_txqcnt,
@@ -281,9 +417,11 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.est_get_enable = dwmac5_est_get_enable,
 	.est_get_bank = dwmac5_est_get_bank,
 	.est_switch_swol = dwmac5_est_switch_swol,
+	.est_irq_status = dwmac5_est_irq_status,
 };
 
 void dwmac510_tsnif_setup(struct mac_device_info *mac)
 {
 	mac->tsnif = &dwmac510_tsnif_ops;
+	mac->tsn_info.mmc_desc = &dwmac5_tsn_mmc_desc[0];
 }

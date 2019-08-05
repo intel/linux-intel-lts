@@ -7,6 +7,7 @@
 #include <linux/time64.h>
 #include "stmmac_ptp.h"
 #include "common.h"
+#include "stmmac.h"
 
 static u32 est_get_gcl_total_intervals_nsec(struct est_gc_config *gcc,
 					    u32 bank, u32 gcl_len)
@@ -125,6 +126,18 @@ bool tsn_has_feat(struct mac_device_info *hw, struct net_device *dev,
 	}
 
 	return hw->tsn_info.feat_en[featid];
+}
+
+/* tsn_hw_setup is called within stmmac_hw_setup() after
+ * stmmac_init_dma_engine() which resets MAC controller.
+ * This is so-that MAC registers are not cleared.
+ */
+void tsn_hw_setup(struct mac_device_info *hw, struct net_device *dev)
+{
+	void __iomem *ioaddr = hw->pcsr;
+
+	if (tsn_has_feat(hw, dev, TSN_FEAT_ID_EST))
+		tsnif_hw_setup(hw, ioaddr, TSN_FEAT_ID_EST);
 }
 
 int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
@@ -672,5 +685,34 @@ int tsn_est_gcc_get(struct mac_device_info *hw, struct net_device *dev,
 	*gcc = pgcc;
 	netdev_info(dev, "EST: read GCL from HW done.\n");
 
+	return 0;
+}
+
+void tsn_est_irq_status(struct mac_device_info *hw, struct net_device *dev)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	void __iomem *ioaddr = hw->pcsr;
+	unsigned int status;
+
+	status = tsnif_est_irq_status(hw, ioaddr, dev, &info->mmc_stat,
+				      info->cap.txqcnt);
+}
+
+int tsn_mmc_dump(struct mac_device_info *hw,
+		 int index, unsigned long *count, const char **desc)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	const struct tsn_mmc_desc *mmc_desc;
+	unsigned long *ptr;
+
+	ptr = (unsigned long *)&info->mmc_stat;
+	mmc_desc = info->mmc_desc;
+
+	if (!(mmc_desc + index)->valid)
+		return -EINVAL;
+	if (count)
+		*count = *(ptr + index);
+	if (desc)
+		*desc = (mmc_desc + index)->desc;
 	return 0;
 }

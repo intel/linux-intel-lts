@@ -404,6 +404,8 @@ struct stmmac_ops {
 			    enum tsn_feat_id featid, bool enable);
 	bool (*has_tsn_feat)(struct mac_device_info *hw, struct net_device *dev,
 			     enum tsn_feat_id featid);
+	void (*setup_tsn_hw)(struct mac_device_info *hw,
+			     struct net_device *dev);
 	int (*set_tsn_hwtunable)(struct mac_device_info *hw,
 				 struct net_device *dev,
 				 enum tsn_hwtunable_id id,
@@ -430,6 +432,10 @@ struct stmmac_ops {
 				  u32 dbgb, bool is_dbgm);
 	int (*get_est_gcc)(struct mac_device_info *hw, struct net_device *dev,
 			   struct est_gc_config **gcc);
+	void (*est_irq_status)(struct mac_device_info *hw,
+			       struct net_device *dev);
+	int (*dump_tsn_mmc)(struct mac_device_info *hw, int index,
+			    unsigned long *count, const char **desc);
 };
 
 #define stmmac_core_init(__priv, __args...) \
@@ -534,6 +540,8 @@ struct stmmac_ops {
 	stmmac_do_void_callback(__priv, mac, set_tsn_feat, __args)
 #define stmmac_has_tsn_feat(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, has_tsn_feat, __args)
+#define stmmac_tsn_hw_setup(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, setup_tsn_hw, __args)
 #define stmmac_set_tsn_hwtunable(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, set_tsn_hwtunable, __args)
 #define stmmac_get_tsn_hwtunable(__priv, __args...) \
@@ -552,6 +560,10 @@ struct stmmac_ops {
 	stmmac_do_callback(__priv, mac, set_est_gcrr_times, __args)
 #define stmmac_get_est_gcc(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, get_est_gcc, __args)
+#define stmmac_est_irq_status(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, est_irq_status, __args)
+#define stmmac_dump_tsn_mmc(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, dump_tsn_mmc, __args)
 
 /* Helpers for serdes */
 struct stmmac_serdes_ops {
@@ -713,9 +725,12 @@ int stmmac_hwif_init(struct stmmac_priv *priv);
 	__result; \
 })
 
+struct tsn_mmc_stat;
+
 struct tsnif_ops {
 	u32 (*read_hwid)(void __iomem *ioaddr);
 	bool (*has_tsn_cap)(void __iomem *ioaddr, enum tsn_feat_id featid);
+	void (*hw_setup)(void __iomem *ioaddr, enum tsn_feat_id featid);
 	/* IEEE 802.1Qbv Enhanced Scheduled Traffics (EST) */
 	u32 (*est_get_gcl_depth)(void __iomem *ioaddr);
 	u32 (*est_get_ti_width)(void __iomem *ioaddr);
@@ -738,12 +753,17 @@ struct tsnif_ops {
 	bool (*est_get_enable)(void __iomem *ioaddr);
 	u32 (*est_get_bank)(void __iomem *ioaddr, bool is_own);
 	void (*est_switch_swol)(void __iomem *ioaddr);
+	int (*est_irq_status)(void *ioaddr, struct net_device *dev,
+			      struct tsn_mmc_stat *mmc_stat,
+			      unsigned int txqcnt);
 };
 
 #define tsnif_read_hwid(__hw, __args...) \
 	tsnif_do_callback(__hw, read_hwid, __args)
 #define tsnif_has_tsn_cap(__hw, __args...) \
 	tsnif_do_callback(__hw, has_tsn_cap, __args)
+#define tsnif_hw_setup(__hw, __args...) \
+	tsnif_do_void_callback(__hw, hw_setup, __args)
 #define tsnif_est_get_gcl_depth(__hw, __args...) \
 	tsnif_do_callback(__hw, est_get_gcl_depth, __args)
 #define tsnif_est_get_ti_width(__hw, __args...) \
@@ -772,5 +792,7 @@ struct tsnif_ops {
 	tsnif_do_callback(__hw, est_get_bank, __args)
 #define tsnif_est_switch_swol(__hw, __args...) \
 	tsnif_do_void_callback(__hw, est_switch_swol, __args)
+#define tsnif_est_irq_status(__hw, __args...) \
+	tsnif_do_callback(__hw, est_irq_status, __args)
 
 #endif /* __STMMAC_HWIF_H__ */

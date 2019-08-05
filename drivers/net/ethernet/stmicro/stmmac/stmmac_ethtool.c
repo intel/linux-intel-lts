@@ -489,7 +489,14 @@ static void stmmac_get_ethtool_stats(struct net_device *dev,
 				data[j++] = count;
 		}
 	}
-
+	if (priv->hw->tsn_info.cap.est_support) {
+		for (i = 0; i < STMMAC_TSN_STAT_SIZE; i++) {
+			if (!stmmac_dump_tsn_mmc(priv,
+						 priv->hw, i,
+						 &count, NULL))
+				data[j++] = count;
+		}
+	}
 	/* Update the DMA HW counters for dwmac10/100 */
 	ret = stmmac_dma_diagnostic_fr(priv, &dev->stats, (void *) &priv->xstats,
 			priv->ioaddr);
@@ -528,7 +535,7 @@ static void stmmac_get_ethtool_stats(struct net_device *dev,
 static int stmmac_get_sset_count(struct net_device *netdev, int sset)
 {
 	struct stmmac_priv *priv = netdev_priv(netdev);
-	int i, len, safety_len = 0;
+	int i, len, safety_len = 0, tsn_len = 0;
 
 	switch (sset) {
 	case ETH_SS_STATS:
@@ -545,6 +552,16 @@ static int stmmac_get_sset_count(struct net_device *netdev, int sset)
 			}
 
 			len += safety_len;
+		}
+		if (priv->hw->tsn_info.cap.est_support) {
+			for (i = 0; i < STMMAC_TSN_STAT_SIZE; i++) {
+				if (!stmmac_dump_tsn_mmc(priv,
+							 priv->hw, i,
+							 NULL, NULL))
+					tsn_len++;
+			}
+
+			len += tsn_len;
 		}
 
 		return len;
@@ -569,6 +586,18 @@ static void stmmac_get_strings(struct net_device *dev, u32 stringset, u8 *data)
 				if (!stmmac_safety_feat_dump(priv,
 							&priv->sstats, i,
 							NULL, &desc)) {
+					memcpy(p, desc, ETH_GSTRING_LEN);
+					p += ETH_GSTRING_LEN;
+				}
+			}
+		}
+		if (priv->hw->tsn_info.cap.est_support) {
+			for (i = 0; i < STMMAC_TSN_STAT_SIZE; i++) {
+				const char *desc;
+
+				if (!stmmac_dump_tsn_mmc(priv,
+							 priv->hw, i,
+							 NULL, &desc)) {
 					memcpy(p, desc, ETH_GSTRING_LEN);
 					p += ETH_GSTRING_LEN;
 				}
