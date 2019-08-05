@@ -46,6 +46,9 @@ WA_HSD1209062354		 = 1
 # WA to disable clock gating for the devices in the CSI receivers needed for using the mipi_pkt_gen device
 WA_HSD1805168877		 = 0
 
+# WA to match the NofSOF & NofEOF when resuming a stream to prevent fps drop
+WA_HSD1507026600         = 1
+
 # Support IBUF soft-reset at stream start
 SOFT_RESET_IBUF_STREAM_START_SUPPORT = 1
 
