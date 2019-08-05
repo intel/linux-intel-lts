@@ -710,4 +710,12 @@ config CHARGER_WILCO
 	  information can be found in
 	  Documentation/ABI/testing/sysfs-class-power-wilco
 
+config CHARGER_WCOVE
+	tristate "Intel WhiskeyCove PMIC charger driver"
+	depends on INTEL_SOC_PMIC
+	depends on INTEL_PMC_IPC
+	help
+	  Say Y to enable support for Intel WhiskeyCove PMIC on Intel Broxton
+	  platforms.
+
 endif # POWER_SUPPLY
