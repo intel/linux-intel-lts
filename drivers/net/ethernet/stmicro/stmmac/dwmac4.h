@@ -91,12 +91,14 @@
 #define GMAC_RX_FLOW_CTRL_RFE		BIT(0)
 
 /* RX Queues Priorities */
-#define GMAC_RXQCTRL_PSRQX_MASK(x)	GENMASK(7 + ((x) * 8), 0 + ((x) * 8))
-#define GMAC_RXQCTRL_PSRQX_SHIFT(x)	((x) * 8)
+#define GMAC_RXQCTRL_PSRQX_MASK(x)	GENMASK(7 + (((x) % 4) * 8), \
+						0 + (((x) % 4) * 8))
+#define GMAC_RXQCTRL_PSRQX_SHIFT(x)	(((x) % 4) * 8)
 
 /* TX Queues Priorities */
-#define GMAC_TXQCTRL_PSTQX_MASK(x)	GENMASK(7 + ((x) * 8), 0 + ((x) * 8))
-#define GMAC_TXQCTRL_PSTQX_SHIFT(x)	((x) * 8)
+#define GMAC_TXQCTRL_PSTQX_MASK(x)	GENMASK(7 + (((x) % 4) * 8), \
+						0 + (((x) % 4) * 8))
+#define GMAC_TXQCTRL_PSTQX_SHIFT(x)	(((x) % 4) * 8)
 
 /* MAC Flow Control TX */
 #define GMAC_TX_FLOW_CTRL_TFE		BIT(1)
