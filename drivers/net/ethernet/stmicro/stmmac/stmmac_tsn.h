@@ -51,6 +51,7 @@ struct tsn_hw_cap {
 	u32 tils_max;		/* Max time interval left shift */
 	u32 ptov_max;		/* Max PTP Offset */
 	u32 ctov_max;		/* Max Current Time Offset */
+	u32 idleslope_max;	/* Max idle slope */
 };
 
 /* EST Gate Control Entry */
@@ -135,5 +136,7 @@ int tsn_est_gcc_get(struct mac_device_info *hw, struct net_device *dev,
 void tsn_est_irq_status(struct mac_device_info *hw, struct net_device *dev);
 int tsn_mmc_dump(struct mac_device_info *hw,
 		 int index, unsigned long *count, const char **desc);
+int tsn_cbs_recal_idleslope(struct mac_device_info *hw, struct net_device *dev,
+			    u32 queue, u32 *idle_slope);
 
 #endif /* __STMMAC_TSN_H__ */

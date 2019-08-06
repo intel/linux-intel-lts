@@ -161,6 +161,9 @@
 #define EST_PTOV_MAX			0xff	/* Max PTP time offset */
 #define EST_CTOV_MAX			0xfff	/* Max Current time offset */
 
+/* CBS Global defines */
+#define CBS_IDLESLOPE_MAX		0x1fffff
+
 /* MAC Core Version */
 #define TSN_VER_MASK		0xFF
 

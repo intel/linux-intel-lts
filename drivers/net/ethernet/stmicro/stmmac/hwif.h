@@ -436,6 +436,10 @@ struct stmmac_ops {
 			       struct net_device *dev);
 	int (*dump_tsn_mmc)(struct mac_device_info *hw, int index,
 			    unsigned long *count, const char **desc);
+	int (*cbs_recal_idleslope)(struct mac_device_info *hw,
+				   struct net_device *dev,
+				   u32 queue,
+				   u32 *idle_slope);
 };
 
 #define stmmac_core_init(__priv, __args...) \
@@ -564,6 +568,8 @@ struct stmmac_ops {
 	stmmac_do_void_callback(__priv, mac, est_irq_status, __args)
 #define stmmac_dump_tsn_mmc(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, dump_tsn_mmc, __args)
+#define stmmac_cbs_recal_idleslope(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, cbs_recal_idleslope, __args)
 
 /* Helpers for serdes */
 struct stmmac_serdes_ops {
@@ -735,7 +741,8 @@ struct tsnif_ops {
 	u32 (*est_get_gcl_depth)(void __iomem *ioaddr);
 	u32 (*est_get_ti_width)(void __iomem *ioaddr);
 	u32 (*est_get_txqcnt)(void __iomem *ioaddr);
-	void (*est_get_max)(u32 *ptov_max, u32 *ctov_max, u32 *ct_max);
+	void (*est_get_max)(u32 *ptov_max, u32 *ctov_max, u32 *ct_max,
+			    u32 *idleslope_max);
 	int (*est_write_gcl_config)(void __iomem *ioaddr, u32 data, u32 addr,
 				    bool is_gcrr,
 				    u32 dbgb, bool is_dbgm);

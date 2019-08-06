@@ -167,11 +167,13 @@ static u32 dwmac5_est_get_txqcnt(void __iomem *ioaddr)
 
 static void dwmac5_est_get_max(u32 *ptov_max,
 			       u32 *ctov_max,
-			       u32 *cycle_max)
+			       u32 *cycle_max,
+			       u32 *idleslope_max)
 {
 	*ptov_max = EST_PTOV_MAX;
 	*ctov_max = EST_CTOV_MAX;
 	*cycle_max = EST_CTR_HI_MAX;
+	*idleslope_max = CBS_IDLESLOPE_MAX;
 }
 
 static int dwmac5_est_write_gcl_config(void __iomem *ioaddr, u32 data, u32 addr,

@@ -1213,6 +1213,7 @@ const struct stmmac_ops dwmac510_ops = {
 	.get_est_gcc = tsn_est_gcc_get,
 	.est_irq_status = tsn_est_irq_status,
 	.dump_tsn_mmc = tsn_mmc_dump,
+	.cbs_recal_idleslope = tsn_cbs_recal_idleslope,
 };
 
 static u32 dwmac4_get_num_vlan(void __iomem *ioaddr)

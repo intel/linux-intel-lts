@@ -24,6 +24,48 @@ static u32 est_get_gcl_total_intervals_nsec(struct est_gc_config *gcc,
 	return nsec;
 }
 
+static u64 est_get_all_open_time(struct est_gc_config *est_gcc,
+				 u32 bank,
+				 u64 cycle_ns,
+				 u32 queue)
+{
+	u32 gate = 0x1 << queue;
+	u64 tti_ns = 0;
+	u64 total = 0;
+	struct est_gc_entry *gcl;
+	u32 gcl_len;
+	int row;
+
+	gcl_len = est_gcc->gcb[bank].gcrr.llr;
+	gcl = est_gcc->gcb[bank].gcl;
+
+	/* GCL which exceeds the cycle time will be truncated.
+	 * So, time interval that exceeds the cycle time will not be
+	 * included.
+	 */
+	for (row = 0; row < gcl_len; row++) {
+		tti_ns += gcl->ti_nsec;
+
+		if (gcl->gates & gate) {
+			if (tti_ns <= cycle_ns)
+				total += gcl->ti_nsec;
+			else
+				total += gcl->ti_nsec -
+					 (tti_ns - cycle_ns);
+		}
+
+		gcl++;
+	}
+
+	/* The gates wihtout any setting of open/close within
+	 * the cycle time are considered as open.
+	 */
+	if (tti_ns < cycle_ns)
+		total += cycle_ns - tti_ns;
+
+	return total;
+}
+
 int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 {
 	struct tsnif_info *info = &hw->tsn_info;
@@ -95,7 +137,8 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 	tils_max = (tsnif_has_tsn_cap(hw, ioaddr, TSN_FEAT_ID_EST) ? 3 : 0);
 	tils_max = (1 << tils_max) - 1;
 	cap->tils_max = tils_max;
-	tsnif_est_get_max(hw, &cap->ptov_max, &cap->ctov_max, &cap->cycle_max);
+	tsnif_est_get_max(hw, &cap->ptov_max, &cap->ctov_max,
+			  &cap->cycle_max, &cap->idleslope_max);
 	cap->est_support = 1;
 
 	dev_info(pdev, "EST: depth=%u, ti_wid=%u, ter_max=%uns, tils_max=%u, tqcnt=%u\n",
@@ -714,5 +757,55 @@ int tsn_mmc_dump(struct mac_device_info *hw,
 		*count = *(ptr + index);
 	if (desc)
 		*desc = (mmc_desc + index)->desc;
+	return 0;
+}
+
+int tsn_cbs_recal_idleslope(struct mac_device_info *hw, struct net_device *dev,
+			    u32 queue, u32 *idle_slope)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	void __iomem *ioaddr = hw->pcsr;
+	u64 scaling = 0;
+	struct est_gc_config *est_gcc;
+	struct tsn_hw_cap *cap;
+	u64 new_idle_slope;
+	u64 cycle_time_ns;
+	u32 open_time;
+	u32 hw_bank;
+
+	cap = &info->cap;
+	est_gcc = &info->est_gcc;
+	hw_bank = tsnif_est_get_bank(hw, ioaddr, 1);
+
+	cycle_time_ns = (est_gcc->gcb[hw_bank].gcrr.cycle_sec *
+			 NSEC_PER_SEC) +
+			 est_gcc->gcb[hw_bank].gcrr.cycle_nsec;
+
+	if (!cycle_time_ns) {
+		netdev_warn(dev, "EST: Cycle time is 0.\n");
+		netdev_warn(dev, "CBS idle slope will not be reconfigured.\n");
+
+		return -EINVAL;
+	}
+
+	open_time = est_get_all_open_time(est_gcc, hw_bank,
+					  cycle_time_ns, queue);
+
+	if (!open_time) {
+		netdev_warn(dev, "EST: Total gate open time for queue %d is 0\n",
+			    queue);
+
+		return -EINVAL;
+	}
+
+	scaling = cycle_time_ns;
+	do_div(scaling, open_time);
+
+	new_idle_slope = *idle_slope * scaling;
+	if (new_idle_slope > cap->idleslope_max)
+		new_idle_slope = cap->idleslope_max;
+
+	*idle_slope = new_idle_slope;
+
 	return 0;
 }
