@@ -173,6 +173,7 @@ struct plat_stmmacenet_data {
 	struct clk *stmmac_clk;
 	struct clk *pclk;
 	struct clk *clk_ptp_ref;
+	unsigned int eee_usecs_rate;
 	unsigned int clk_ptp_rate;
 	unsigned int clk_ref_rate;
 	s32 ptp_max_adj;

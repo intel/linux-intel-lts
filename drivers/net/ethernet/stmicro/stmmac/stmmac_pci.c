@@ -15,6 +15,7 @@
 #include <linux/dmi.h>
 #include <linux/dwxpcs.h>
 #include "stmmac.h"
+#include "dwmac4.h"
 
 /*
  * This struct is used to associate PCI Function of MAC controller on a board,
@@ -216,7 +217,7 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->axi->axi_blen[2] = 16;
 
 	plat->ptp_max_adj = plat->clk_ptp_rate;
-
+	plat->eee_usecs_rate = plat->clk_ptp_rate;
 	/* Set system clock */
 	plat->stmmac_clk = clk_register_fixed_rate(&pdev->dev,
 						   "stmmac-clk", NULL, 0,
@@ -717,6 +718,13 @@ static int stmmac_pci_probe(struct pci_dev *pdev,
 
 	memset(&res, 0, sizeof(res));
 	res.addr = pcim_iomap_table(pdev)[i];
+
+	if (plat->eee_usecs_rate > 0) {
+		u32 tx_lpi_usec;
+
+		tx_lpi_usec = (plat->eee_usecs_rate / 1000000) - 1;
+		writel(tx_lpi_usec, res.addr + GMAC_1US_TIC_COUNTER);
+	}
 
 	ret = stmmac_config_multi_msi(pdev, plat, &res);
 	if (!ret)
