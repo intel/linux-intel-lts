@@ -164,6 +164,9 @@
 /* CBS Global defines */
 #define CBS_IDLESLOPE_MAX		0x1fffff
 
+/* DMA Tx Channel X Control register TBS bits defines */
+#define DMA_CONTROL_EDSE		BIT(28)
+
 /* MAC Core Version */
 #define TSN_VER_MASK		0xFF
 
@@ -179,4 +182,5 @@ int dwmac5_flex_pps_config(void __iomem *ioaddr, int index,
 			   struct stmmac_pps_cfg *cfg, bool enable,
 			   u32 sub_second_inc, u32 systime_flags);
 void dwmac510_tsnif_setup(struct mac_device_info *mac);
+
 #endif /* __DWMAC5_H__ */
