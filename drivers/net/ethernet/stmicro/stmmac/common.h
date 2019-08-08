@@ -408,6 +408,7 @@ struct dma_features {
 
 #define STMMAC_CHAIN_MODE	0x1
 #define STMMAC_RING_MODE	0x2
+#define STMMAC_ENHANCED_TX_MODE	0x3
 
 #define JUMBO_LEN		9000
 
@@ -511,5 +512,6 @@ void dwmac_dma_flush_tx_fifo(void __iomem *ioaddr);
 extern const struct stmmac_mode_ops ring_mode_ops;
 extern const struct stmmac_mode_ops chain_mode_ops;
 extern const struct stmmac_desc_ops dwmac4_desc_ops;
+extern const struct stmmac_desc_ops dwmac5_desc_ops;
 
 #endif /* __COMMON_H__ */
