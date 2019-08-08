@@ -268,4 +268,28 @@ config PCIE_AL
 	  required only for DT-based platforms. ACPI platforms with the
 	  Annapurna Labs PCIe controller don't need to enable this.
 
+config PCIE_KEEMBAY
+	bool
+
+config PCIE_KEEMBAY_HOST
+	bool "Intel Keem Bay PCIe controller - Host mode"
+	depends on OF && (ARM64 || COMPILE_TEST)
+	depends on PCI && PCI_MSI_IRQ_DOMAIN
+	select PCIE_DW_HOST
+	select PCIE_KEEMBAY
+	help
+	  Say Y here to enable support for the PCIe controller in Keem Bay
+	  to work in host mode. This uses the DesignWare core.
+
+config PCIE_KEEMBAY_EP
+	bool "Intel Keem Bay PCIe controller - Endpoint mode"
+	depends on OF && (ARM64 || COMPILE_TEST)
+	depends on PCI && PCI_MSI_IRQ_DOMAIN
+	depends on PCI_ENDPOINT
+	select PCIE_DW_EP
+	select PCIE_KEEMBAY
+	help
+	  Say Y here to enable support for the PCIe controller in Keem Bay
+	  to work in endpoint mode. This uses the DesignWare core.
+
 endmenu
