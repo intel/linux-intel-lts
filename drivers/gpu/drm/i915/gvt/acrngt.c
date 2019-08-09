@@ -98,9 +98,6 @@ static int acrngt_emulation_timer_thread(void *data)
 						SCHED_NORMAL, &param);
 		}
 		clear_bit(ACRNGT_TIMER_ISR, &info->thread_flags);
-		trace_printk("ACRN thread work is fired. Policy %d, Prio is %d\n",
-			info->emulation_thread->policy,
-			task_nice(info->emulation_thread));
 	}
 
 	return 0;
@@ -136,6 +133,9 @@ void acrngt_instance_destroy(struct intel_vgpu *vgpu)
 	if (vgpu) {
 		info = (struct acrngt_hvm_dev *)vgpu->handle;
 
+		mutex_lock(&gvt->lock);
+		vgpu->vgpu_priv = NULL;
+		mutex_unlock(&gvt->lock);
 		if (info && info->emulation_thread != NULL) {
 			kthread_stop(info->emulation_thread);
 			info->emulation_thread = NULL;
