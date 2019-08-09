@@ -2743,6 +2743,29 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 					 TSN_HWTUNA_TX_EST_TILS,
 					 priv->plat->tils);
 
+	if (priv->plat->estm)
+		stmmac_set_tsn_hwtunable(priv, priv->hw, priv->dev,
+					 TSN_HWTUNA_TX_TBS_ESTM,
+					 priv->plat->estm);
+
+	if (priv->plat->leos)
+		stmmac_set_tsn_hwtunable(priv, priv->hw, priv->dev,
+					 TSN_HWTUNA_TX_TBS_LEOS,
+					 priv->plat->leos);
+	if (priv->plat->legos)
+		stmmac_set_tsn_hwtunable(priv, priv->hw, priv->dev,
+					 TSN_HWTUNA_TX_TBS_LEGOS,
+					 priv->plat->legos);
+
+	if (priv->plat->ftos)
+		stmmac_set_tsn_hwtunable(priv, priv->hw, priv->dev,
+					 TSN_HWTUNA_TX_TBS_FTOS,
+					 priv->plat->ftos);
+	if (priv->plat->fgos)
+		stmmac_set_tsn_hwtunable(priv, priv->hw, priv->dev,
+					 TSN_HWTUNA_TX_TBS_FGOS,
+					 priv->plat->fgos);
+
 	return 0;
 }
 

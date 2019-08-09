@@ -206,5 +206,11 @@ struct plat_stmmacenet_data {
 	u32 ptov;
 	u32 ctov;
 	u32 tils;
+	/* TBS */
+	u32 estm;
+	u32 leos;
+	u32 legos;
+	u32 ftos;
+	u32 fgos;
 };
 #endif
