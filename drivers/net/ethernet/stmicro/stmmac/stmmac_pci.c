@@ -162,7 +162,10 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->force_sf_dma_mode = 0;
 	plat->tso_en = 1;
 	plat->tsn_est_en = 1;
+	plat->tsn_fpe_en = 1;
 	plat->tsn_tbs_en = 1;
+	/* FPE HW Tunable */
+	plat->fprq = 1;
 	/* TBS HW Tunable */
 	plat->estm = 0;  /* Absolute Mode */
 	plat->leos = 0;  /* Launch Expiry Offset */

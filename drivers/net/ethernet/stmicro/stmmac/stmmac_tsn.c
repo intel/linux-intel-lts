@@ -94,15 +94,7 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 	if (!tsnif_has_tsn_cap(hw, ioaddr, TSN_FEAT_ID_EST)) {
 		dev_info(pdev, "EST NOT supported\n");
 		cap->est_support = 0;
-		return 0;
-	}
-
-	if (!tsnif_has_tsn_cap(hw, ioaddr, TSN_FEAT_ID_TBS)) {
-		dev_info(pdev, "TBS NOT supported\n");
-		cap->tbs_support = 0;
-	} else {
-		dev_info(pdev, "TBS capable\n");
-		cap->tbs_support = 1;
+		goto check_fpe;
 	}
 
 	gcl_depth = tsnif_est_get_gcl_depth(hw, ioaddr);
@@ -150,18 +142,41 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 
 	cap->est_support = 1;
 
-	tsnif_tbs_get_max(hw, &cap->leos_max, &cap->legos_max,
-			  &cap->ftos_max, &cap->fgos_max);
-
 	dev_info(pdev, "EST: depth=%u, ti_wid=%u, ter_max=%uns, tils_max=%u, tqcnt=%u\n",
 		 gcl_depth, ti_wid, cap->ext_max, tils_max, cap->txqcnt);
 
-	if (cap->tbs_support) {
-		dev_info(pdev, "TBS: leos_max=%u, legos_max=%u\n",
-			 cap->leos_max, cap->legos_max);
-		dev_info(pdev, "TBS: ftos_max=%u, fgos_max=%u\n",
-			 cap->ftos_max, cap->fgos_max);
+check_fpe:
+	if (!tsnif_has_tsn_cap(hw, ioaddr, TSN_FEAT_ID_FPE)) {
+		dev_info(pdev, "FPE NOT supported\n");
+		cap->fpe_support = 0;
+		goto check_tbs;
 	}
+
+	tsnif_fpe_get_info(hw, &cap->pmac_bit);
+	cap->rxqcnt = tsnif_est_get_rxqcnt(hw, ioaddr);
+	cap->fpe_support = 1;
+
+	dev_info(pdev, "FPE: pMAC Bit=0x%x\n", cap->pmac_bit);
+
+check_tbs:
+	if (!tsnif_has_tsn_cap(hw, ioaddr, TSN_FEAT_ID_TBS)) {
+		dev_info(pdev, "TBS NOT supported\n");
+		cap->tbs_support = 0;
+		goto scan_done;
+	} else {
+		dev_info(pdev, "TBS capable\n");
+		cap->tbs_support = 1;
+	}
+
+	tsnif_tbs_get_max(hw, &cap->leos_max, &cap->legos_max,
+			  &cap->ftos_max, &cap->fgos_max);
+
+	dev_info(pdev, "TBS: leos_max=%u, legos_max=%u\n",
+		 cap->leos_max, cap->legos_max);
+	dev_info(pdev, "TBS: ftos_max=%u, fgos_max=%u\n",
+		 cap->ftos_max, cap->fgos_max);
+
+scan_done:
 
 	return 0;
 }
@@ -194,12 +209,25 @@ bool tsn_has_feat(struct mac_device_info *hw, struct net_device *dev,
  * stmmac_init_dma_engine() which resets MAC controller.
  * This is so-that MAC registers are not cleared.
  */
-void tsn_hw_setup(struct mac_device_info *hw, struct net_device *dev)
+void tsn_hw_setup(struct mac_device_info *hw, struct net_device *dev,
+		  u32 fprq)
 {
+	struct tsnif_info *info = &hw->tsn_info;
+	struct tsn_hw_cap *cap = &info->cap;
 	void __iomem *ioaddr = hw->pcsr;
 
 	if (tsn_has_feat(hw, dev, TSN_FEAT_ID_EST))
-		tsnif_hw_setup(hw, ioaddr, TSN_FEAT_ID_EST);
+		tsnif_hw_setup(hw, ioaddr, TSN_FEAT_ID_EST, 0);
+
+	if (tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+		/* RxQ0 default to Express Frame, FPRQ != RxQ0 */
+		if (fprq > 0 && fprq < cap->rxqcnt) {
+			netdev_info(dev, "FPE: Set FPRQ = %d\n", fprq);
+			tsnif_hw_setup(hw, ioaddr, TSN_FEAT_ID_FPE, fprq);
+		} else {
+			netdev_warn(dev, "FPE: FPRQ is out-of-bound.\n");
+		}
+	}
 }
 
 int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
@@ -985,6 +1013,98 @@ int tsn_cbs_recal_idleslope(struct mac_device_info *hw, struct net_device *dev,
 		new_idle_slope = cap->idleslope_max;
 
 	*idle_slope = new_idle_slope;
+
+	return 0;
+}
+
+int tsn_fpe_set_txqpec(struct mac_device_info *hw, struct net_device *dev,
+		       u32 txqpec)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	struct tsn_hw_cap *cap = &info->cap;
+	void __iomem *ioaddr = hw->pcsr;
+	u32 txqmask;
+
+	if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+		netdev_info(dev, "FPE: feature unsupported\n");
+		return -ENOTSUPP;
+	}
+
+	/* Check PEC is within TxQ range */
+	txqmask = (1 << cap->txqcnt) - 1;
+	if (txqpec & ~txqmask) {
+		netdev_warn(dev, "FPE: Tx PEC is out-of-bound.\n");
+
+		return -EINVAL;
+	}
+
+	/* When EST and FPE are both enabled, TxQ0 is always preemptible
+	 * queue. If FPE is enabled, we expect at least lsb is set.
+	 * If FPE is not enabled, we should allow PEC = 0.
+	 */
+	if (txqpec && !(txqpec & cap->pmac_bit) && info->est_gcc.enable) {
+		netdev_warn(dev, "FPE: TxQ0 must not be express queue.\n");
+
+		return -EINVAL;
+	}
+
+	tsnif_fpe_set_txqpec(hw, ioaddr, txqpec, txqmask);
+	info->fpe_cfg.txqpec = txqpec;
+	netdev_info(dev, "FPE: TxQ PEC = 0x%x\n", txqpec);
+
+	return 0;
+}
+
+int tsn_fpe_set_enable(struct mac_device_info *hw, struct net_device *dev,
+		       bool enable)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	void __iomem *ioaddr = hw->pcsr;
+
+	if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+		netdev_info(dev, "FPE: feature unsupported\n");
+		return -ENOTSUPP;
+	}
+
+	if (info->fpe_cfg.enable != enable) {
+		tsnif_fpe_set_enable(hw, ioaddr, enable);
+		info->fpe_cfg.enable = enable;
+	}
+
+	return 0;
+}
+
+int tsn_fpe_get_config(struct mac_device_info *hw, struct net_device *dev,
+		       u32 *txqpec, bool *enable)
+{
+	void __iomem *ioaddr = hw->pcsr;
+
+	if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+		netdev_info(dev, "FPE: feature unsupported\n");
+		return -ENOTSUPP;
+	}
+
+	tsnif_fpe_get_config(hw, ioaddr, txqpec, enable);
+
+	return 0;
+}
+
+int tsn_fpe_show_pmac_sts(struct mac_device_info *hw, struct net_device *dev)
+{
+	void __iomem *ioaddr = hw->pcsr;
+	u32 hrs;
+
+	if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+		netdev_info(dev, "FPE: feature unsupported\n");
+		return -ENOTSUPP;
+	}
+
+	tsnif_fpe_get_pmac_sts(hw, ioaddr, &hrs);
+
+	if (hrs)
+		netdev_info(dev, "FPE: pMAC is in Hold state.\n");
+	else
+		netdev_info(dev, "FPE: pMAC is in Release state.\n");
 
 	return 0;
 }

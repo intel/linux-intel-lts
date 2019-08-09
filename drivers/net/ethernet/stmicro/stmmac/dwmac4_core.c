@@ -1214,6 +1214,10 @@ const struct stmmac_ops dwmac510_ops = {
 	.est_irq_status = tsn_est_irq_status,
 	.dump_tsn_mmc = tsn_mmc_dump,
 	.cbs_recal_idleslope = tsn_cbs_recal_idleslope,
+	.fpe_set_txqpec = tsn_fpe_set_txqpec,
+	.fpe_set_enable = tsn_fpe_set_enable,
+	.fpe_get_config = tsn_fpe_get_config,
+	.fpe_show_pmac_sts = tsn_fpe_show_pmac_sts,
 };
 
 static u32 dwmac4_get_num_vlan(void __iomem *ioaddr)

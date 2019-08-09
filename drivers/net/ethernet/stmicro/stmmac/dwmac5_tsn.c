@@ -78,6 +78,8 @@ static bool dwmac5_has_tsn_cap(void __iomem *ioaddr, enum tsn_feat_id featid)
 	switch (featid) {
 	case TSN_FEAT_ID_EST:
 		return (hw_cap3 & GMAC_HW_FEAT_ESTSEL);
+	case TSN_FEAT_ID_FPE:
+		return (hw_cap3 & GMAC_HW_FEAT_FPESEL);
 	case TSN_FEAT_ID_TBS:
 		return (hw_cap3 & GMAC_HW_FEAT_TBSSEL);
 	default:
@@ -85,7 +87,8 @@ static bool dwmac5_has_tsn_cap(void __iomem *ioaddr, enum tsn_feat_id featid)
 	};
 }
 
-static void dwmac5_hw_setup(void __iomem *ioaddr, enum tsn_feat_id featid)
+static void dwmac5_hw_setup(void __iomem *ioaddr, enum tsn_feat_id featid,
+			    u32 fprq)
 {
 	u32 value;
 
@@ -97,6 +100,12 @@ static void dwmac5_hw_setup(void __iomem *ioaddr, enum tsn_feat_id featid)
 			 MTL_EST_INT_EN_IECC);
 		writel(value, ioaddr + MTL_EST_INT_EN);
 		break;
+	case TSN_FEAT_ID_FPE:
+		/* Update FPRQ */
+		value = readl(ioaddr + GMAC_RXQ_CTRL1);
+		value &= ~GMAC_RXQCTRL_FPRQ_MASK;
+		value |= fprq << GMAC_RXQCTRL_FPRQ_SHIFT;
+		writel(value, ioaddr + GMAC_RXQ_CTRL1);
 	default:
 		return;
 	};
@@ -165,6 +174,13 @@ static u32 dwmac5_est_get_txqcnt(void __iomem *ioaddr)
 	u32 hw_cap2 = readl(ioaddr + GMAC_HW_FEATURE2);
 
 	return ((hw_cap2 & GMAC_HW_FEAT_TXQCNT) >> 6) + 1;
+}
+
+static u32 dwmac5_est_get_rxqcnt(void __iomem *ioaddr)
+{
+	u32 hw_cap2 = readl(ioaddr + GMAC_HW_FEATURE2);
+
+	return (hw_cap2 & GMAC_HW_FEAT_RXQCNT) + 1;
 }
 
 static void dwmac5_est_get_max(u32 *ptov_max,
@@ -403,6 +419,55 @@ int dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
 	return status;
 }
 
+static void dwmac5_fpe_get_info(u32 *pmac_bit)
+{
+	*pmac_bit = FPE_PMAC_BIT;
+}
+
+static void dwmac5_fpe_set_txqpec(void *ioaddr, u32 txqpec, u32 txqmask)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_FPE_CTRL_STS);
+	value &= ~(txqmask << MTL_FPE_CTRL_STS_PEC_SHIFT);
+	value |= (txqpec << MTL_FPE_CTRL_STS_PEC_SHIFT);
+
+	writel(value, ioaddr + MTL_FPE_CTRL_STS);
+}
+
+static void dwmac5_fpe_set_enable(void *ioaddr, bool enable)
+{
+	u32 value;
+
+	value = readl(ioaddr + MAC_FPE_CTRL_STS);
+	if (enable)
+		value |= MAC_FPE_CTRL_STS_EFPE;
+	else
+		value &= ~MAC_FPE_CTRL_STS_EFPE;
+
+	writel(value, ioaddr + MAC_FPE_CTRL_STS);
+}
+
+void dwmac5_fpe_get_config(void *ioaddr, u32 *txqpec, bool *enable)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_FPE_CTRL_STS);
+	*txqpec = (value & MTL_FPE_CTRL_STS_PEC) >>
+		  MTL_FPE_CTRL_STS_PEC_SHIFT;
+
+	value = readl(ioaddr + MAC_FPE_CTRL_STS);
+	*enable = (bool)(value & MAC_FPE_CTRL_STS_EFPE);
+}
+
+void dwmac5_fpe_get_pmac_sts(void *ioaddr, u32 *hrs)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_FPE_CTRL_STS);
+	*hrs = (value & MTL_FPE_CTRL_STS_HRS) >> MTL_FPE_CTRL_STS_HRS_SHIFT;
+}
+
 static void dwmac5_tbs_get_max(u32 *leos_max,
 			       u32 *legos_max,
 			       u32 *ftos_max,
@@ -521,6 +586,7 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.est_get_gcl_depth = dwmac5_est_get_gcl_depth,
 	.est_get_ti_width = dwmac5_est_get_ti_width,
 	.est_get_txqcnt = dwmac5_est_get_txqcnt,
+	.est_get_rxqcnt = dwmac5_est_get_rxqcnt,
 	.est_get_max = dwmac5_est_get_max,
 	.est_write_gcl_config = dwmac5_est_write_gcl_config,
 	.est_read_gcl_config = dwmac5_est_read_gcl_config,
@@ -533,6 +599,11 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.est_get_bank = dwmac5_est_get_bank,
 	.est_switch_swol = dwmac5_est_switch_swol,
 	.est_irq_status = dwmac5_est_irq_status,
+	.fpe_get_info = dwmac5_fpe_get_info,
+	.fpe_set_txqpec = dwmac5_fpe_set_txqpec,
+	.fpe_set_enable = dwmac5_fpe_set_enable,
+	.fpe_get_config = dwmac5_fpe_get_config,
+	.fpe_get_pmac_sts = dwmac5_fpe_get_pmac_sts,
 	.tbs_get_max = dwmac5_tbs_get_max,
 	.tbs_set_estm = dwmac5_tbs_set_estm,
 	.tbs_set_leos = dwmac5_tbs_set_leos,

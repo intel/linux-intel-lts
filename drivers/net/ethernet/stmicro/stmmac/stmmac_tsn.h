@@ -27,6 +27,7 @@ enum tsn_hwtunable_id {
 /* TSN Feature Enabled List */
 enum tsn_feat_id {
 	TSN_FEAT_ID_EST = 0,
+	TSN_FEAT_ID_FPE = 1,
 	TSN_FEAT_ID_TBS = 2,
 	TSN_FEAT_ID_MAX,
 };
@@ -49,8 +50,10 @@ enum tsn_gcl_param_idx {
 /* TSN HW Capabilities */
 struct tsn_hw_cap {
 	bool est_support;	/* 1: supported */
+	bool fpe_support;	/* 1: supported */
 	bool tbs_support;	/* 1: supported */
 	u32 txqcnt;		/* Number of TxQ (control gate) */
+	u32 rxqcnt;		/* Number of RxQ (for FPRQ) */
 	u32 gcl_depth;		/* GCL depth. */
 	u32 ti_wid;		/* time interval width */
 	u32 ext_max;		/* Max time extension */
@@ -59,6 +62,8 @@ struct tsn_hw_cap {
 	u32 ptov_max;		/* Max PTP Offset */
 	u32 ctov_max;		/* Max Current Time Offset */
 	u32 idleslope_max;	/* Max idle slope */
+	/* FPE */
+	u32 pmac_bit;		/* Preemptible MAC bit */
 	u32 leos_max;		/* Launch Expiry Offset */
 	u32 legos_max;		/* Launch Expiry GSN Offset */
 	u32 ftos_max;		/* Max Fetch Time Offset */
@@ -95,6 +100,12 @@ struct est_gc_config {
 	bool enable;			/* 1: enabled */
 };
 
+/* FPE Configuration */
+struct fpe_config {
+	u32 txqpec;		/* TxQ Preemption Classification */
+	bool enable;		/* 1: enabled */
+};
+
 /* TSN MMC Statistics */
 struct tsn_mmc_desc {
 	bool valid;
@@ -110,6 +121,7 @@ struct tsnif_info {
 	bool feat_en[TSN_FEAT_ID_MAX];
 	u32 hwtunable[TSN_HWTUNA_MAX];
 	struct est_gc_config est_gcc;
+	struct fpe_config fpe_cfg;
 	struct tsn_mmc_stat mmc_stat;
 	const struct tsn_mmc_desc *mmc_desc;
 };
@@ -122,7 +134,8 @@ int tsn_feat_set(struct mac_device_info *hw, struct net_device *dev,
 		 enum tsn_feat_id featid, bool enable);
 bool tsn_has_feat(struct mac_device_info *hw, struct net_device *dev,
 		  enum tsn_feat_id featid);
-void tsn_hw_setup(struct mac_device_info *hw, struct net_device *dev);
+void tsn_hw_setup(struct mac_device_info *hw, struct net_device *dev,
+		  u32 fprq);
 int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
 		      enum tsn_hwtunable_id id, const u32 data);
 int tsn_hwtunable_get(struct mac_device_info *hw, struct net_device *dev,
@@ -149,5 +162,12 @@ int tsn_mmc_dump(struct mac_device_info *hw,
 		 int index, unsigned long *count, const char **desc);
 int tsn_cbs_recal_idleslope(struct mac_device_info *hw, struct net_device *dev,
 			    u32 queue, u32 *idle_slope);
+int tsn_fpe_set_txqpec(struct mac_device_info *hw, struct net_device *dev,
+		       u32 txqpec);
+int tsn_fpe_set_enable(struct mac_device_info *hw, struct net_device *dev,
+		       bool enable);
+int tsn_fpe_get_config(struct mac_device_info *hw, struct net_device *dev,
+		       u32 *txqpec, bool *enable);
+int tsn_fpe_show_pmac_sts(struct mac_device_info *hw, struct net_device *dev);
 
 #endif /* __STMMAC_TSN_H__ */

@@ -2725,7 +2725,7 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 	/* Set HW VLAN stripping mode */
 	stmmac_set_hw_vlan_mode(priv, priv->ioaddr, dev->features);
 
-	stmmac_tsn_hw_setup(priv, priv->hw, priv->dev);
+	stmmac_tsn_hw_setup(priv, priv->hw, priv->dev, priv->plat->fprq);
 
 	/* Set TSN HW tunable */
 	if (priv->plat->ptov)
@@ -5154,6 +5154,11 @@ int stmmac_dvr_probe(struct device *device,
 		stmmac_set_tsn_feat(priv, priv->hw, ndev, TSN_FEAT_ID_EST,
 				    true);
 		dev_info(priv->device, "EST feature enabled\n");
+	}
+	if (priv->hw->tsn_info.cap.fpe_support && priv->plat->tsn_fpe_en) {
+		stmmac_set_tsn_feat(priv, priv->hw, ndev, TSN_FEAT_ID_FPE,
+				    true);
+		dev_info(priv->device, "FPE feature enabled\n");
 	}
 	if (priv->hw->tsn_info.cap.tbs_support && priv->plat->tsn_tbs_en) {
 		stmmac_set_tsn_feat(priv, priv->hw, ndev, TSN_FEAT_ID_TBS,

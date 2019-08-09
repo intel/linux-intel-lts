@@ -88,6 +88,7 @@
 
 /* MAC HW features3 bitmap */
 #define GMAC_HW_FEAT_TBSSEL		BIT(27)
+#define GMAC_HW_FEAT_FPESEL		BIT(26)
 #define GMAC_HW_FEAT_ESTWID		GENMASK(21, 20)
 #define GMAC_HW_FEAT_ESTWID_SHIFT	20
 #define GMAC_HW_FEAT_ESTDEP		GENMASK(19, 17)
@@ -164,6 +165,24 @@
 
 /* CBS Global defines */
 #define CBS_IDLESLOPE_MAX		0x1fffff
+
+/* FPRQ only available in EQoS ver5.00 MAC_RxQ_Ctrl1 */
+#define GMAC_RXQCTRL_FPRQ_MASK		GENMASK(26, 24) /* FPE Residue Queue */
+#define GMAC_RXQCTRL_FPRQ_SHIFT		24
+
+/* MAC FPE control status */
+#define MAC_FPE_CTRL_STS		0x00000234
+#define MAC_FPE_CTRL_STS_EFPE		BIT(0)
+
+/* MTL FPE control status */
+#define MTL_FPE_CTRL_STS		0x00000c90
+#define MTL_FPE_CTRL_STS_HRS		BIT(28)	/* Hold/Release Status */
+#define MTL_FPE_CTRL_STS_HRS_SHIFT	28
+#define MTL_FPE_CTRL_STS_PEC		GENMASK(15, 8)	/* FPE Classification */
+#define MTL_FPE_CTRL_STS_PEC_SHIFT	8
+
+/* FPE Global defines */
+#define FPE_PMAC_BIT			BIT(0)	/* TxQ0 is always preemptible */
 
 /* DMA Tx Channel X Control register TBS bits defines */
 #define DMA_CONTROL_EDSE		BIT(28)
