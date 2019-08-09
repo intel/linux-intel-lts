@@ -472,6 +472,7 @@ static int virtio_be_send_req(int vmid, struct hyper_dmabuf_req *req,
 	}
 
 	if (timeout <= 0) {
+		mutex_unlock(&priv->lock);
 		dev_warn(hy_drv_priv->dev, "Requests ring full\n");
 		return -EBUSY;
 	}
