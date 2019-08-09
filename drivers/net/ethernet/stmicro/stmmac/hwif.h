@@ -769,6 +769,13 @@ struct tsnif_ops {
 	int (*est_irq_status)(void *ioaddr, struct net_device *dev,
 			      struct tsn_mmc_stat *mmc_stat,
 			      unsigned int txqcnt);
+	/* Time-Based Scheduling (TBS) */
+	void (*tbs_get_max)(u32 *leos_max, u32 *legos_max);
+	void (*tbs_set_estm)(void __iomem *ioaddr, const u32 estm);
+	void (*tbs_set_leos)(void __iomem *ioaddr, const u32 leos,
+			     const u32 estm);
+	void (*tbs_set_legos)(void __iomem *ioaddr, const u32 legos,
+			      const u32 leos);
 };
 
 #define tsnif_read_hwid(__hw, __args...) \
@@ -807,5 +814,13 @@ struct tsnif_ops {
 	tsnif_do_void_callback(__hw, est_switch_swol, __args)
 #define tsnif_est_irq_status(__hw, __args...) \
 	tsnif_do_callback(__hw, est_irq_status, __args)
+#define tsnif_tbs_get_max(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_get_max, __args)
+#define tsnif_tbs_set_estm(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_set_estm, __args)
+#define tsnif_tbs_set_leos(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_set_leos, __args)
+#define tsnif_tbs_set_legos(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_set_legos, __args)
 
 #endif /* __STMMAC_HWIF_H__ */

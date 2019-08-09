@@ -403,6 +403,69 @@ int dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
 	return status;
 }
 
+static void dwmac5_tbs_get_max(u32 *leos_max,
+			       u32 *legos_max)
+{
+	*leos_max =  TBS_LEOS_MAX;
+	*legos_max = TBS_LEGOS_MAX;
+}
+
+static void dwmac5_tbs_set_estm(void __iomem *ioaddr, const u32 estm)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_TBS_CTRL);
+	if (estm)
+		value |= MTL_TBS_CTRL_ESTM;
+	else
+		value &= MTL_TBS_CTRL_ESTM;
+
+	writel(value, ioaddr + MTL_TBS_CTRL);
+}
+
+static void dwmac5_tbs_set_leos(void __iomem *ioaddr, const u32 leos,
+				const u32 estm)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_TBS_CTRL);
+
+	/* Launch expiry offset not valid when launch
+	 * expiry offset value is 0 and vice versa
+	 */
+	if (leos || (estm && leos))
+		value |= MTL_TBS_CTRL_LEOV;
+	else
+		value &= ~MTL_TBS_CTRL_LEOV;
+
+	/* Launch expiry offset is in unit of 256ns
+	 * Get the actual leos ns value
+	 */
+	value &= ~MTL_TBS_CTRL_LEOS;
+	value |= (leos & MTL_TBS_CTRL_LEOS);
+
+	writel(value, ioaddr + MTL_TBS_CTRL);
+}
+
+static void dwmac5_tbs_set_legos(void __iomem *ioaddr, const u32 legos,
+				 const u32 leos)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_TBS_CTRL);
+
+	if (leos || legos)
+		value |= MTL_TBS_CTRL_LEOV;
+	else
+		value &= ~MTL_TBS_CTRL_LEOV;
+
+	value &= ~MTL_TBS_CTRL_LEGOS;
+	value |= MTL_TBS_CTRL_LEGOS &
+		(legos << MTL_TBS_CTRL_LEGOS_SHIFT);
+
+	writel(value, ioaddr + MTL_TBS_CTRL);
+}
+
 const struct tsnif_ops dwmac510_tsnif_ops = {
 	.read_hwid = dwmac5_read_hwid,
 	.has_tsn_cap = dwmac5_has_tsn_cap,
@@ -422,6 +485,10 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.est_get_bank = dwmac5_est_get_bank,
 	.est_switch_swol = dwmac5_est_switch_swol,
 	.est_irq_status = dwmac5_est_irq_status,
+	.tbs_get_max = dwmac5_tbs_get_max,
+	.tbs_set_estm = dwmac5_tbs_set_estm,
+	.tbs_set_leos = dwmac5_tbs_set_leos,
+	.tbs_set_legos = dwmac5_tbs_set_legos,
 };
 
 void dwmac510_tsnif_setup(struct mac_device_info *mac)

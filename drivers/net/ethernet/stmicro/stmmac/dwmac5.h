@@ -168,6 +168,19 @@
 /* DMA Tx Channel X Control register TBS bits defines */
 #define DMA_CONTROL_EDSE		BIT(28)
 
+/* MTL TBS Control register */
+#define MTL_TBS_CTRL			0x00000c40
+#define MTL_TBS_CTRL_LEOS		GENMASK(31, 8)
+#define MTL_TBS_CTRL_LEOS_SHIFT		8
+#define MTL_TBS_CTRL_LEGOS		GENMASK(6, 4)
+#define MTL_TBS_CTRL_LEGOS_SHIFT	4
+#define MTL_TBS_CTRL_LEOV		BIT(1)
+#define MTL_TBS_CTRL_ESTM		BIT(0)
+
+/* TBS Global defines */
+#define TBS_LEOS_MAX			999999999	/* Max LEOS (ns) */
+#define TBS_LEGOS_MAX			7		/* Max LE GSN Slot */
+
 /* MAC Core Version */
 #define TSN_VER_MASK		0xFF
 
