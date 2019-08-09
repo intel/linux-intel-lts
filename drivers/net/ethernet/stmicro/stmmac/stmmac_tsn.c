@@ -147,16 +147,21 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 	cap->tils_max = tils_max;
 	tsnif_est_get_max(hw, &cap->ptov_max, &cap->ctov_max,
 			  &cap->cycle_max, &cap->idleslope_max);
+
 	cap->est_support = 1;
 
-	tsnif_tbs_get_max(hw, &cap->leos_max, &cap->legos_max);
+	tsnif_tbs_get_max(hw, &cap->leos_max, &cap->legos_max,
+			  &cap->ftos_max, &cap->fgos_max);
 
 	dev_info(pdev, "EST: depth=%u, ti_wid=%u, ter_max=%uns, tils_max=%u, tqcnt=%u\n",
 		 gcl_depth, ti_wid, cap->ext_max, tils_max, cap->txqcnt);
 
-	if (cap->tbs_support)
+	if (cap->tbs_support) {
 		dev_info(pdev, "TBS: leos_max=%u, legos_max=%u\n",
 			 cap->leos_max, cap->legos_max);
+		dev_info(pdev, "TBS: ftos_max=%u, fgos_max=%u\n",
+			 cap->ftos_max, cap->fgos_max);
+	}
 
 	return 0;
 }
@@ -209,7 +214,8 @@ int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
 	u32 hw_bank;
 	u32 estm;
 	u32 leos;
-
+	u32 ftos;
+	u32 fgos;
 
 	switch (id) {
 	case TSN_HWTUNA_TX_EST_TILS:
@@ -223,6 +229,8 @@ int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
 	case TSN_HWTUNA_TX_TBS_ESTM:
 	case TSN_HWTUNA_TX_TBS_LEOS:
 	case TSN_HWTUNA_TX_TBS_LEGOS:
+	case TSN_HWTUNA_TX_TBS_FTOS:
+	case TSN_HWTUNA_TX_TBS_FGOS:
 		if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_TBS)) {
 			netdev_info(dev, "TBS: feature unsupported\n");
 			return -ENOTSUPP;
@@ -353,6 +361,62 @@ int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
 			netdev_info(dev, "TBS: Set LEGOS = %u\n", data);
 		}
 		break;
+	case TSN_HWTUNA_TX_TBS_FTOS:
+		estm = info->hwtunable[TSN_HWTUNA_TX_TBS_ESTM];
+		fgos = info->hwtunable[TSN_HWTUNA_TX_TBS_FGOS];
+
+		if (data > cap->ftos_max) {
+			netdev_warn(dev,
+				    "TBS: invalid FTOS(%u), max=%u\n",
+				    data, cap->ftos_max);
+
+			return -EINVAL;
+		}
+
+		/* For EST mode, make sure leos does not exceed cycle time */
+		if (estm) {
+			hw_bank = tsnif_est_get_bank(hw, ioaddr, 0);
+			gcbc = &info->est_gcc.gcb[hw_bank];
+
+			if (data > (gcbc->gcrr.cycle_nsec - 1)) {
+				netdev_warn(dev,
+					    "TBS: FTOS > (cycle time - 1ns)\n");
+
+				return -EINVAL;
+			}
+		}
+
+		if (data != info->hwtunable[TSN_HWTUNA_TX_TBS_FTOS]) {
+			tsnif_tbs_set_ftos(hw, ioaddr, data, estm, fgos);
+			info->hwtunable[TSN_HWTUNA_TX_TBS_FTOS] = data;
+			netdev_info(dev, "TBS: Set FTOS = %u\n", data);
+		}
+		break;
+	case TSN_HWTUNA_TX_TBS_FGOS:
+		estm = info->hwtunable[TSN_HWTUNA_TX_TBS_ESTM];
+		ftos = info->hwtunable[TSN_HWTUNA_TX_TBS_FTOS];
+
+		/* if EST not turn on, ret fail */
+		if (!(tsn_has_feat(hw, dev, TSN_FEAT_ID_EST) && estm)) {
+			netdev_warn(dev, "TBS EST mode is not enabled\n");
+
+			return -EINVAL;
+		}
+
+		if (data > cap->fgos_max) {
+			netdev_warn(dev,
+				    "TBS: invalid FGOS(%u), max=%u\n",
+				    data, cap->fgos_max);
+
+			return -EINVAL;
+		}
+
+		if (data != info->hwtunable[TSN_HWTUNA_TX_TBS_FGOS]) {
+			tsnif_tbs_set_fgos(hw, ioaddr, data, ftos);
+			info->hwtunable[TSN_HWTUNA_TX_TBS_FGOS] = data;
+			netdev_info(dev, "TBS: Set FGOS = %u\n", data);
+		}
+		break;
 	default:
 		netdev_warn(dev, "TSN: invalid tunable id(%u)\n", id);
 		ret = -EINVAL;
@@ -378,6 +442,8 @@ int tsn_hwtunable_get(struct mac_device_info *hw, struct net_device *dev,
 	case TSN_HWTUNA_TX_TBS_ESTM:
 	case TSN_HWTUNA_TX_TBS_LEOS:
 	case TSN_HWTUNA_TX_TBS_LEGOS:
+	case TSN_HWTUNA_TX_TBS_FTOS:
+	case TSN_HWTUNA_TX_TBS_FGOS:
 		if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_TBS)) {
 			netdev_info(dev, "TBS: feature unsupported\n");
 			return -ENOTSUPP;

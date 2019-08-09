@@ -19,6 +19,8 @@ enum tsn_hwtunable_id {
 	TSN_HWTUNA_TX_TBS_ESTM,	 /* TBS Absolute or EST mode */
 	TSN_HWTUNA_TX_TBS_LEOS,
 	TSN_HWTUNA_TX_TBS_LEGOS,
+	TSN_HWTUNA_TX_TBS_FTOS,	/* Fetch time offset (nsec) */
+	TSN_HWTUNA_TX_TBS_FGOS,	/* Fetch GSN offset (slot number) */
 	TSN_HWTUNA_MAX,
 };
 
@@ -59,6 +61,8 @@ struct tsn_hw_cap {
 	u32 idleslope_max;	/* Max idle slope */
 	u32 leos_max;		/* Launch Expiry Offset */
 	u32 legos_max;		/* Launch Expiry GSN Offset */
+	u32 ftos_max;		/* Max Fetch Time Offset */
+	u32 fgos_max;		/* Max Fetch GSN Offset */
 };
 
 /* EST Gate Control Entry */

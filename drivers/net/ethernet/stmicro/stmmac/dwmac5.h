@@ -177,9 +177,19 @@
 #define MTL_TBS_CTRL_LEOV		BIT(1)
 #define MTL_TBS_CTRL_ESTM		BIT(0)
 
+/* DMA TBS control register */
+#define DMA_TBS_CTRL			0x00001050
+#define DMA_TBS_CTRL_FTOS		GENMASK(31, 8)  /* Fetch time offset */
+#define DMA_TBS_CTRL_FTOS_SHIFT		8
+#define DMA_TBS_CTRL_FGOS		GENMASK(6, 4)   /* Fetch GSN offset */
+#define DMA_TBS_CTRL_FGOS_SHIFT		4
+#define DMA_TBS_CTRL_FTOV		BIT(0)  /* Valid bit */
+
 /* TBS Global defines */
 #define TBS_LEOS_MAX			999999999	/* Max LEOS (ns) */
 #define TBS_LEGOS_MAX			7		/* Max LE GSN Slot */
+#define TBS_FTOS_MAX			999999999	/* Max FTOS (ns) */
+#define TBS_FGOS_MAX			7		/* Max FT GSN Slot */
 
 /* MAC Core Version */
 #define TSN_VER_MASK		0xFF

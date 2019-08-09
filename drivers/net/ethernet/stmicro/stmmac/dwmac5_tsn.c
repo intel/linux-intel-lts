@@ -404,10 +404,14 @@ int dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
 }
 
 static void dwmac5_tbs_get_max(u32 *leos_max,
-			       u32 *legos_max)
+			       u32 *legos_max,
+			       u32 *ftos_max,
+			       u32 *fgos_max)
 {
 	*leos_max =  TBS_LEOS_MAX;
 	*legos_max = TBS_LEGOS_MAX;
+	*ftos_max =  TBS_FTOS_MAX;
+	*fgos_max = TBS_FGOS_MAX;
 }
 
 static void dwmac5_tbs_set_estm(void __iomem *ioaddr, const u32 estm)
@@ -466,6 +470,50 @@ static void dwmac5_tbs_set_legos(void __iomem *ioaddr, const u32 legos,
 	writel(value, ioaddr + MTL_TBS_CTRL);
 }
 
+static void dwmac5_tbs_set_ftos(void __iomem *ioaddr, const u32 ftos,
+				const u32 estm, const u32 fgos)
+{
+	u32 value;
+
+	value = readl(ioaddr + DMA_TBS_CTRL);
+
+	/* unset the valid bit for updating new fetch time ftos */
+	value &= ~DMA_TBS_CTRL_FTOV;
+	writel(value, ioaddr + DMA_TBS_CTRL);
+
+	value &= ~DMA_TBS_CTRL_FTOS;
+	value |= DMA_TBS_CTRL_FTOS &
+		 (ftos << DMA_TBS_CTRL_FTOS_SHIFT);
+
+	/* disable fetch time while it is zero */
+	if (ftos || (estm && fgos))
+		value |= DMA_TBS_CTRL_FTOV;
+
+	writel(value, ioaddr + DMA_TBS_CTRL);
+}
+
+static void dwmac5_tbs_set_fgos(void __iomem *ioaddr, const u32 fgos,
+				const u32 ftos)
+{
+	u32 value;
+
+	value = readl(ioaddr + DMA_TBS_CTRL);
+
+	/* Unset the valid bit for updating new fetch GSN slot */
+	value &= ~DMA_TBS_CTRL_FTOV;
+	writel(value, ioaddr + DMA_TBS_CTRL);
+
+	value &= ~DMA_TBS_CTRL_FGOS;
+	value |= DMA_TBS_CTRL_FGOS &
+		 (fgos << DMA_TBS_CTRL_FGOS_SHIFT);
+
+	/* Disable fetch time while it is zero */
+	if (ftos || fgos)
+		value |= DMA_TBS_CTRL_FTOV;
+
+	writel(value, ioaddr + DMA_TBS_CTRL);
+}
+
 const struct tsnif_ops dwmac510_tsnif_ops = {
 	.read_hwid = dwmac5_read_hwid,
 	.has_tsn_cap = dwmac5_has_tsn_cap,
@@ -489,6 +537,8 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.tbs_set_estm = dwmac5_tbs_set_estm,
 	.tbs_set_leos = dwmac5_tbs_set_leos,
 	.tbs_set_legos = dwmac5_tbs_set_legos,
+	.tbs_set_ftos = dwmac5_tbs_set_ftos,
+	.tbs_set_fgos = dwmac5_tbs_set_fgos,
 };
 
 void dwmac510_tsnif_setup(struct mac_device_info *mac)
