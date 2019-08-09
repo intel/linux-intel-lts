@@ -2766,6 +2766,26 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 					 TSN_HWTUNA_TX_TBS_FGOS,
 					 priv->plat->fgos);
 
+	if (priv->plat->afsz)
+		stmmac_set_tsn_hwtunable(priv, priv->hw, priv->dev,
+					 TSN_HWTUNA_TX_FPE_AFSZ,
+					 priv->plat->afsz);
+
+	if (priv->plat->hadv)
+		stmmac_set_tsn_hwtunable(priv, priv->hw, priv->dev,
+					 TSN_HWTUNA_TX_FPE_HADV,
+					 priv->plat->hadv);
+
+	if (priv->plat->radv)
+		stmmac_set_tsn_hwtunable(priv, priv->hw, priv->dev,
+					 TSN_HWTUNA_TX_FPE_RADV,
+					 priv->plat->radv);
+
+	if (stmmac_has_tsn_feat(priv, priv->hw, dev, TSN_FEAT_ID_FPE)) {
+		if (priv->hw->cached_fpe_en)
+			stmmac_fpe_set_enable(priv, priv->hw, dev, true);
+	}
+
 	return 0;
 }
 

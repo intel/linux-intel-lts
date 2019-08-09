@@ -419,9 +419,13 @@ int dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
 	return status;
 }
 
-static void dwmac5_fpe_get_info(u32 *pmac_bit)
+static void dwmac5_fpe_get_info(u32 *pmac_bit, u32 *afsz_max,
+				u32 *hadv_max, u32 *radv_max)
 {
 	*pmac_bit = FPE_PMAC_BIT;
+	*afsz_max = FPE_AFSZ_MAX;
+	*hadv_max = FPE_HADV_MAX;
+	*radv_max = FPE_RADV_MAX;
 }
 
 static void dwmac5_fpe_set_txqpec(void *ioaddr, u32 txqpec, u32 txqmask)
@@ -466,6 +470,38 @@ void dwmac5_fpe_get_pmac_sts(void *ioaddr, u32 *hrs)
 
 	value = readl(ioaddr + MTL_FPE_CTRL_STS);
 	*hrs = (value & MTL_FPE_CTRL_STS_HRS) >> MTL_FPE_CTRL_STS_HRS_SHIFT;
+}
+
+static void dwmac5_fpe_set_afsz(void *ioaddr, const u32 afsz)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_FPE_CTRL_STS);
+	value &= ~MTL_FPE_CTRL_STS_AFSZ;
+	value |= afsz;
+	writel(value, ioaddr + MTL_FPE_CTRL_STS);
+}
+
+static void dwmac5_fpe_set_hadv(void *ioaddr, const u32 hadv)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_FPE_ADVANCE);
+	value &= ~MTL_FPE_ADVANCE_HADV;
+	value |= hadv;
+	writel(value, ioaddr + MTL_FPE_ADVANCE);
+}
+
+static void dwmac5_fpe_set_radv(void *ioaddr, const u32 radv)
+{
+	u32 value;
+
+	value = readl(ioaddr + MTL_FPE_ADVANCE);
+	value &= ~MTL_FPE_ADVANCE_RADV;
+	value |= MTL_FPE_ADVANCE_RADV &
+		 (radv << MTL_FPE_ADVANCE_RADV_SHIFT);
+	value |= radv;
+	writel(value, ioaddr + MTL_FPE_ADVANCE);
 }
 
 static void dwmac5_tbs_get_max(u32 *leos_max,
@@ -604,6 +640,9 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.fpe_set_enable = dwmac5_fpe_set_enable,
 	.fpe_get_config = dwmac5_fpe_get_config,
 	.fpe_get_pmac_sts = dwmac5_fpe_get_pmac_sts,
+	.fpe_set_afsz = dwmac5_fpe_set_afsz,
+	.fpe_set_hadv = dwmac5_fpe_set_hadv,
+	.fpe_set_radv = dwmac5_fpe_set_radv,
 	.tbs_get_max = dwmac5_tbs_get_max,
 	.tbs_set_estm = dwmac5_tbs_set_estm,
 	.tbs_set_leos = dwmac5_tbs_set_leos,

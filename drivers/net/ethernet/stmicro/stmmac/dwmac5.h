@@ -180,9 +180,19 @@
 #define MTL_FPE_CTRL_STS_HRS_SHIFT	28
 #define MTL_FPE_CTRL_STS_PEC		GENMASK(15, 8)	/* FPE Classification */
 #define MTL_FPE_CTRL_STS_PEC_SHIFT	8
+#define MTL_FPE_CTRL_STS_AFSZ		GENMASK(1, 0)	/* Extra Frag Size */
+
+/* MTL FPE Advance */
+#define MTL_FPE_ADVANCE			0x00000c94
+#define MTL_FPE_ADVANCE_RADV		GENMASK(31, 16)	/* Release Advance */
+#define MTL_FPE_ADVANCE_RADV_SHIFT	16
+#define MTL_FPE_ADVANCE_HADV		GENMASK(15, 0)	/* Hold Advance */
 
 /* FPE Global defines */
 #define FPE_PMAC_BIT			BIT(0)	/* TxQ0 is always preemptible */
+#define FPE_AFSZ_MAX			0x3	/* Max AFSZ */
+#define FPE_RADV_MAX			0xFFFF	/* Max Release advance */
+#define FPE_HADV_MAX			0xFFFF	/* Max Hold advance */
 
 /* DMA Tx Channel X Control register TBS bits defines */
 #define DMA_CONTROL_EDSE		BIT(28)

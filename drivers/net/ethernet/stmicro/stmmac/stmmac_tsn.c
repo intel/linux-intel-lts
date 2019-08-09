@@ -152,11 +152,15 @@ check_fpe:
 		goto check_tbs;
 	}
 
-	tsnif_fpe_get_info(hw, &cap->pmac_bit);
+	tsnif_fpe_get_info(hw, &cap->pmac_bit, &cap->afsz_max,
+			   &cap->hadv_max, &cap->radv_max);
 	cap->rxqcnt = tsnif_est_get_rxqcnt(hw, ioaddr);
 	cap->fpe_support = 1;
 
-	dev_info(pdev, "FPE: pMAC Bit=0x%x\n", cap->pmac_bit);
+	dev_info(pdev, "FPE: pMAC Bit=0x%x\n afsz_max=%d", cap->pmac_bit,
+		 cap->afsz_max);
+	dev_info(pdev, "FPE: hadv_max=%d radv_max=%d", cap->hadv_max,
+		 cap->radv_max);
 
 check_tbs:
 	if (!tsnif_has_tsn_cap(hw, ioaddr, TSN_FEAT_ID_TBS)) {
@@ -254,6 +258,14 @@ int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
 			return -ENOTSUPP;
 		}
 		break;
+	case TSN_HWTUNA_TX_FPE_AFSZ:
+	case TSN_HWTUNA_TX_FPE_HADV:
+	case TSN_HWTUNA_TX_FPE_RADV:
+		if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+			netdev_info(dev, "FPE: feature unsupported\n");
+			return -ENOTSUPP;
+		}
+		break;
 	case TSN_HWTUNA_TX_TBS_ESTM:
 	case TSN_HWTUNA_TX_TBS_LEOS:
 	case TSN_HWTUNA_TX_TBS_LEGOS:
@@ -309,6 +321,48 @@ int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
 			tsnif_est_set_ctov(hw, ioaddr, data);
 			info->hwtunable[TSN_HWTUNA_TX_EST_CTOV] = data;
 			netdev_info(dev, "EST: Set CTOV = %u\n", data);
+		}
+		break;
+	case TSN_HWTUNA_TX_FPE_AFSZ:
+		if (data > cap->afsz_max) {
+			netdev_warn(dev,
+				    "EST: invalid AFSZ(%u), max=%u\n",
+				    data, cap->afsz_max);
+
+			return -EINVAL;
+		}
+		if (data != info->hwtunable[TSN_HWTUNA_TX_FPE_AFSZ]) {
+			tsnif_fpe_set_afsz(hw, ioaddr, data);
+			info->hwtunable[TSN_HWTUNA_TX_FPE_AFSZ] = data;
+			netdev_info(dev, "FPE: Set AFSZ = %u\n", data);
+		}
+		break;
+	case TSN_HWTUNA_TX_FPE_HADV:
+		if (data > cap->hadv_max) {
+			netdev_warn(dev,
+				    "EST: invalid HADV(%u), max=%u\n",
+				    data, cap->hadv_max);
+
+			return -EINVAL;
+		}
+		if (data != info->hwtunable[TSN_HWTUNA_TX_FPE_HADV]) {
+			tsnif_fpe_set_hadv(hw, ioaddr, data);
+			info->hwtunable[TSN_HWTUNA_TX_FPE_HADV] = data;
+			netdev_info(dev, "FPE: Set HADV = %u\n", data);
+		}
+		break;
+	case TSN_HWTUNA_TX_FPE_RADV:
+		if (data > cap->radv_max) {
+			netdev_warn(dev,
+				    "EST: invalid RADV(%u), max=%u\n",
+				    data, cap->radv_max);
+
+			return -EINVAL;
+		}
+		if (data != info->hwtunable[TSN_HWTUNA_TX_FPE_RADV]) {
+			tsnif_fpe_set_radv(hw, ioaddr, data);
+			info->hwtunable[TSN_HWTUNA_TX_FPE_RADV] = data;
+			netdev_info(dev, "FPE: Set RADV = %u\n", data);
 		}
 		break;
 	case TSN_HWTUNA_TX_TBS_ESTM:
@@ -464,6 +518,14 @@ int tsn_hwtunable_get(struct mac_device_info *hw, struct net_device *dev,
 	case TSN_HWTUNA_TX_EST_CTOV:
 		if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_EST)) {
 			netdev_info(dev, "EST: feature unsupported\n");
+			return -ENOTSUPP;
+		}
+		break;
+	case TSN_HWTUNA_TX_FPE_AFSZ:
+	case TSN_HWTUNA_TX_FPE_HADV:
+	case TSN_HWTUNA_TX_FPE_RADV:
+		if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+			netdev_info(dev, "FPE: feature unsupported\n");
 			return -ENOTSUPP;
 		}
 		break;

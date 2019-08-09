@@ -789,11 +789,15 @@ struct tsnif_ops {
 			      struct tsn_mmc_stat *mmc_stat,
 			      unsigned int txqcnt);
 	/* Frame Preemption (FPE) */
-	void (*fpe_get_info)(u32 *pmac_bit);
+	void (*fpe_get_info)(u32 *pmac_bit, u32 *afsz_max,
+			     u32 *hadv_max, u32 *radv_max);
 	void (*fpe_set_txqpec)(void *ioaddr, u32 txqpec, u32 txqmask);
 	void (*fpe_set_enable)(void *ioaddr, bool enable);
 	void (*fpe_get_config)(void *ioaddr, u32 *txqpec, bool *enable);
 	void (*fpe_get_pmac_sts)(void *ioaddr, u32 *hrs);
+	void (*fpe_set_afsz)(void *ioaddr, const u32 afsz);
+	void (*fpe_set_hadv)(void *ioaddr, const u32 hadv);
+	void (*fpe_set_radv)(void *ioaddr, const u32 radv);
 	/* Time-Based Scheduling (TBS) */
 	void (*tbs_get_max)(u32 *leos_max, u32 *legos_max,
 			    u32 *ftos_max, u32 *fgos_max);
@@ -856,6 +860,12 @@ struct tsnif_ops {
 	tsnif_do_void_callback(__hw, fpe_get_config, __args)
 #define tsnif_fpe_get_pmac_sts(__hw, __args...) \
 	tsnif_do_void_callback(__hw, fpe_get_pmac_sts, __args)
+#define tsnif_fpe_set_afsz(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_afsz, __args)
+#define tsnif_fpe_set_hadv(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_hadv, __args)
+#define tsnif_fpe_set_radv(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_radv, __args)
 #define tsnif_tbs_get_max(__hw, __args...) \
 	tsnif_do_void_callback(__hw, tbs_get_max, __args)
 #define tsnif_tbs_set_estm(__hw, __args...) \

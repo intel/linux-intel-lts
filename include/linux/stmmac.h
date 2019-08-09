@@ -209,6 +209,9 @@ struct plat_stmmacenet_data {
 	u32 tils;
 	/*FPE */
 	u32 fprq;
+	u32 afsz;
+	u32 hadv;
+	u32 radv;
 	/* TBS */
 	u32 estm;
 	u32 leos;

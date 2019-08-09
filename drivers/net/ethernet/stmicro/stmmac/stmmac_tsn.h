@@ -16,6 +16,9 @@ enum tsn_hwtunable_id {
 	TSN_HWTUNA_TX_EST_TILS = 0,
 	TSN_HWTUNA_TX_EST_PTOV,
 	TSN_HWTUNA_TX_EST_CTOV,
+	TSN_HWTUNA_TX_FPE_AFSZ,
+	TSN_HWTUNA_TX_FPE_HADV,
+	TSN_HWTUNA_TX_FPE_RADV,
 	TSN_HWTUNA_TX_TBS_ESTM,	 /* TBS Absolute or EST mode */
 	TSN_HWTUNA_TX_TBS_LEOS,
 	TSN_HWTUNA_TX_TBS_LEGOS,
@@ -64,6 +67,9 @@ struct tsn_hw_cap {
 	u32 idleslope_max;	/* Max idle slope */
 	/* FPE */
 	u32 pmac_bit;		/* Preemptible MAC bit */
+	u32 afsz_max;		/* Adj Frag Size */
+	u32 hadv_max;		/* Max Hold Advance */
+	u32 radv_max;		/* Max Release Advance */
 	u32 leos_max;		/* Launch Expiry Offset */
 	u32 legos_max;		/* Launch Expiry GSN Offset */
 	u32 ftos_max;		/* Max Fetch Time Offset */
