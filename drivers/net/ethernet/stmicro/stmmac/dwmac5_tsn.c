@@ -78,6 +78,8 @@ static bool dwmac5_has_tsn_cap(void __iomem *ioaddr, enum tsn_feat_id featid)
 	switch (featid) {
 	case TSN_FEAT_ID_EST:
 		return (hw_cap3 & GMAC_HW_FEAT_ESTSEL);
+	case TSN_FEAT_ID_TBS:
+		return (hw_cap3 & GMAC_HW_FEAT_TBSSEL);
 	default:
 		return false;
 	};

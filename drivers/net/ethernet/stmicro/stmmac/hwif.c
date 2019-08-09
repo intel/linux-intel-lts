@@ -75,6 +75,7 @@ static const struct stmmac_hwif_entry {
 	bool xgmac;
 	bool mdio_intr_en;
 	bool has_serdes;
+	bool tbs;
 	u32 min_id;
 	const struct stmmac_regs_off regs;
 	const void *desc;
@@ -95,6 +96,7 @@ static const struct stmmac_hwif_entry {
 		.xgmac = false,
 		.mdio_intr_en = false,
 		.has_serdes = false,
+		.tbs = false,
 		.min_id = 0,
 		.regs = {
 			.ptp_off = PTP_GMAC3_X_OFFSET,
@@ -116,6 +118,7 @@ static const struct stmmac_hwif_entry {
 		.xgmac = false,
 		.mdio_intr_en = false,
 		.has_serdes = false,
+		.tbs = false,
 		.min_id = 0,
 		.regs = {
 			.ptp_off = PTP_GMAC3_X_OFFSET,
@@ -137,6 +140,7 @@ static const struct stmmac_hwif_entry {
 		.xgmac = false,
 		.mdio_intr_en = false,
 		.has_serdes = false,
+		.tbs = false,
 		.min_id = 0,
 		.regs = {
 			.ptp_off = PTP_GMAC4_OFFSET,
@@ -158,6 +162,7 @@ static const struct stmmac_hwif_entry {
 		.xgmac = false,
 		.mdio_intr_en = false,
 		.has_serdes = false,
+		.tbs = false,
 		.min_id = DWMAC_CORE_4_00,
 		.regs = {
 			.ptp_off = PTP_GMAC4_OFFSET,
@@ -179,6 +184,7 @@ static const struct stmmac_hwif_entry {
 		.xgmac = false,
 		.mdio_intr_en = false,
 		.has_serdes = false,
+		.tbs = false,
 		.min_id = DWMAC_CORE_4_10,
 		.regs = {
 			.ptp_off = PTP_GMAC4_OFFSET,
@@ -200,6 +206,7 @@ static const struct stmmac_hwif_entry {
 		.xgmac = false,
 		.mdio_intr_en = true,
 		.has_serdes = false,
+		.tbs = true,
 		.min_id = DWMAC_CORE_5_10,
 		.regs = {
 			.ptp_off = PTP_GMAC4_OFFSET,
@@ -221,6 +228,7 @@ static const struct stmmac_hwif_entry {
 		.xgmac = true,
 		.mdio_intr_en = false,
 		.has_serdes = false,
+		.tbs = false,
 		.min_id = DWXGMAC_CORE_2_10,
 		.regs = {
 			.ptp_off = PTP_XGMAC_OFFSET,
@@ -241,14 +249,37 @@ static const struct stmmac_hwif_entry {
 		.gmac4 = true,
 		.xgmac = false,
 		.mdio_intr_en = true,
-		.has_serdes = true,
+		.has_serdes = false,
+		.tbs = true,
 		.min_id = DWMAC_CORE_5_10,
 		.regs = {
 			.ptp_off = PTP_GMAC4_OFFSET,
 			.mmc_off = MMC_GMAC4_OFFSET,
 		},
-		.desc = &dwmac4_desc_ops,
-		.dma = &dwmac410_dma_ops,
+		.desc = &dwmac5_desc_ops,
+		.dma = &dwmac5_dma_ops,
+		.mac = &dwmac510_ops,
+		.serdes = NULL,
+		.hwtimestamp = &stmmac_ptp,
+		.mode = &dwmac4_ring_mode_ops,
+		.tc = &dwmac510_tc_ops,
+		.mmc = &dwmac_mmc_ops,
+		.setup = dwmac4_setup,
+		.quirks = NULL,
+	}, {
+		.gmac = false,
+		.gmac4 = true,
+		.xgmac = false,
+		.mdio_intr_en = true,
+		.has_serdes = true,
+		.tbs = true,
+		.min_id = DWMAC_CORE_5_10,
+		.regs = {
+			.ptp_off = PTP_GMAC4_OFFSET,
+			.mmc_off = MMC_GMAC4_OFFSET,
+		},
+		.desc = &dwmac5_desc_ops,
+		.dma = &dwmac5_dma_ops,
 		.mac = &dwmac510_ops,
 		.serdes = &intel_serdes_ops,
 		.hwtimestamp = &stmmac_ptp,
@@ -266,6 +297,7 @@ int stmmac_hwif_init(struct stmmac_priv *priv)
 	bool needs_gmac4 = priv->plat->has_gmac4;
 	bool needs_gmac = priv->plat->has_gmac;
 	bool needs_serdes = priv->plat->has_serdes;
+	bool needs_tbs = priv->plat->has_tbs;
 	const struct stmmac_hwif_entry *entry;
 	struct mac_device_info *mac;
 	bool needs_setup = true;
@@ -311,6 +343,8 @@ int stmmac_hwif_init(struct stmmac_priv *priv)
 		if (needs_xgmac ^ entry->xgmac)
 			continue;
 		if (needs_serdes ^ entry->has_serdes)
+			continue;
+		if (needs_tbs ^ entry->tbs)
 			continue;
 		/* Use synopsys_id var because some setups can override this */
 		if (priv->synopsys_id < entry->min_id)

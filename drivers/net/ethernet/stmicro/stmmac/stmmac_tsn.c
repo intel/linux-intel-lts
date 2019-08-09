@@ -97,6 +97,14 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 		return 0;
 	}
 
+	if (!tsnif_has_tsn_cap(hw, ioaddr, TSN_FEAT_ID_TBS)) {
+		dev_info(pdev, "TBS NOT supported\n");
+		cap->tbs_support = 0;
+	} else {
+		dev_info(pdev, "TBS capable\n");
+		cap->tbs_support = 1;
+	}
+
 	gcl_depth = tsnif_est_get_gcl_depth(hw, ioaddr);
 	if (gcl_depth < 0) {
 		dev_err(pdev, "EST GCL depth(%d) < 0\n", gcl_depth);

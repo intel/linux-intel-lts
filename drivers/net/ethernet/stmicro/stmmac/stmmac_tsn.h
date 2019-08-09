@@ -22,6 +22,7 @@ enum tsn_hwtunable_id {
 /* TSN Feature Enabled List */
 enum tsn_feat_id {
 	TSN_FEAT_ID_EST = 0,
+	TSN_FEAT_ID_TBS = 2,
 	TSN_FEAT_ID_MAX,
 };
 
@@ -43,6 +44,7 @@ enum tsn_gcl_param_idx {
 /* TSN HW Capabilities */
 struct tsn_hw_cap {
 	bool est_support;	/* 1: supported */
+	bool tbs_support;	/* 1: supported */
 	u32 txqcnt;		/* Number of TxQ (control gate) */
 	u32 gcl_depth;		/* GCL depth. */
 	u32 ti_wid;		/* time interval width */

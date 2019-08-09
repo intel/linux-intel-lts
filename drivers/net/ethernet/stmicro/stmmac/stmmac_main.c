@@ -5092,6 +5092,13 @@ int stmmac_dvr_probe(struct device *device,
 				    true);
 		dev_info(priv->device, "EST feature enabled\n");
 	}
+	if (priv->hw->tsn_info.cap.tbs_support && priv->plat->tsn_tbs_en) {
+		stmmac_set_tsn_feat(priv, priv->hw, ndev, TSN_FEAT_ID_TBS,
+				    true);
+		priv->enhanced_tx_desc = 1;
+		priv->mode = STMMAC_ENHANCED_TX_MODE;
+		dev_info(priv->device, "TBS feature enabled\n");
+	}
 
 #ifdef STMMAC_VLAN_TAG_USED
 	/* Both mac100 and gmac support receive VLAN tag detection */
