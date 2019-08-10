@@ -3,6 +3,7 @@
  * TSN General APIs
  */
 #include <linux/iopoll.h>
+#include <linux/delay.h>
 #include <linux/string.h>
 #include <linux/time64.h>
 #include "stmmac_ptp.h"
@@ -66,6 +67,83 @@ static u64 est_get_all_open_time(struct est_gc_config *est_gcc,
 	return total;
 }
 
+static void fpe_lp_task(struct work_struct *work)
+{
+	struct mac_device_info *hw;
+	enum fpe_state *lo_state;
+	enum fpe_state *lp_state;
+	struct tsnif_info *info;
+	void __iomem *ioaddr;
+	bool *enable;
+	int retries;
+
+	info = container_of(work, struct tsnif_info, fpe_task);
+	lo_state = &info->fpe_cfg.lo_fpe_state;
+	lp_state = &info->fpe_cfg.lp_fpe_state;
+	enable = &info->fpe_cfg.enable;
+
+	hw = container_of(info, struct mac_device_info, tsn_info);
+	ioaddr = hw->pcsr;
+
+	retries = 20;
+
+	while (retries-- > 0) {
+		/* Bail out immediately if FPE is OFF */
+		if (*lo_state == FPE_STATE_OFF || !*enable)
+			break;
+
+		if (*lo_state == FPE_STATE_ENTERING_ON &&
+		    *lp_state == FPE_STATE_ENTERING_ON) {
+			tsnif_fpe_set_enable(hw, ioaddr, true);
+			*lo_state = FPE_STATE_ON;
+			*lp_state = FPE_STATE_ON;
+			break;
+		}
+
+		if ((*lo_state == FPE_STATE_CAPABLE ||
+		     *lo_state == FPE_STATE_ENTERING_ON) &&
+		    *lp_state != FPE_STATE_ON)
+			tsnif_fpe_send_mpacket(hw, ioaddr, MPACKET_VERIFY);
+
+		/* Sleep then retry */
+		msleep(500);
+	}
+
+	clear_bit(__FPE_TASK_SCHED, &info->task_state);
+}
+
+static int fpe_start_wq(struct mac_device_info *hw, struct net_device *dev)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	char *name;
+
+	clear_bit(__FPE_TASK_SCHED, &info->task_state);
+
+	name = info->wq_name;
+	sprintf(name, "%s-fpe", dev->name);
+
+	info->fpe_wq = create_singlethread_workqueue(name);
+	if (!info->fpe_wq) {
+		netdev_err(dev, "%s: Failed to create workqueue\n", name);
+
+		return -ENOMEM;
+	}
+	netdev_info(dev, "FPE workqueue start");
+
+	return 0;
+}
+
+static void fpe_stop_wq(struct mac_device_info *hw, struct net_device *dev)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+
+	set_bit(__FPE_REMOVING, &info->task_state);
+
+	if (info->fpe_wq)
+		destroy_workqueue(info->fpe_wq);
+
+	netdev_info(dev, "FPE workqueue stop");
+}
 int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 {
 	struct tsnif_info *info = &hw->tsn_info;
@@ -152,6 +230,7 @@ check_fpe:
 		goto check_tbs;
 	}
 
+	INIT_WORK(&info->fpe_task, fpe_lp_task);
 	tsnif_fpe_get_info(hw, &cap->pmac_bit, &cap->afsz_max,
 			   &cap->hadv_max, &cap->radv_max);
 	cap->rxqcnt = tsnif_est_get_rxqcnt(hw, ioaddr);
@@ -231,7 +310,15 @@ void tsn_hw_setup(struct mac_device_info *hw, struct net_device *dev,
 		} else {
 			netdev_warn(dev, "FPE: FPRQ is out-of-bound.\n");
 		}
+
+		fpe_start_wq(hw, dev);
 	}
+}
+
+void tsn_hw_unsetup(struct mac_device_info *hw, struct net_device *dev)
+{
+	if (tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE))
+		fpe_stop_wq(hw, dev);
 }
 
 int tsn_hwtunable_set(struct mac_device_info *hw, struct net_device *dev,
@@ -1129,7 +1216,11 @@ int tsn_fpe_set_enable(struct mac_device_info *hw, struct net_device *dev,
 	}
 
 	if (info->fpe_cfg.enable != enable) {
-		tsnif_fpe_set_enable(hw, ioaddr, enable);
+		if (enable)
+			tsnif_fpe_send_mpacket(hw, ioaddr, MPACKET_VERIFY);
+		else
+			info->fpe_cfg.lo_fpe_state = FPE_STATE_OFF;
+
 		info->fpe_cfg.enable = enable;
 	}
 
@@ -1169,4 +1260,89 @@ int tsn_fpe_show_pmac_sts(struct mac_device_info *hw, struct net_device *dev)
 		netdev_info(dev, "FPE: pMAC is in Release state.\n");
 
 	return 0;
+}
+
+int tsn_fpe_send_mpacket(struct mac_device_info *hw, struct net_device *dev,
+			 enum mpacket_type type)
+{
+	void __iomem *ioaddr = hw->pcsr;
+
+	if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+		netdev_info(dev, "FPE: feature unsupported\n");
+		return -ENOTSUPP;
+	}
+
+	tsnif_fpe_send_mpacket(hw, ioaddr, type);
+
+	return 0;
+}
+
+void tsn_fpe_link_state_handle(struct mac_device_info *hw,
+			       struct net_device *dev, bool is_up)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	void __iomem *ioaddr = hw->pcsr;
+	enum fpe_state *lo_state;
+	enum fpe_state *lp_state;
+	bool *enable;
+
+	lo_state = &info->fpe_cfg.lo_fpe_state;
+	lp_state = &info->fpe_cfg.lp_fpe_state;
+	enable = &info->fpe_cfg.enable;
+
+	if (is_up && *enable) {
+		tsnif_fpe_send_mpacket(hw, ioaddr, MPACKET_VERIFY);
+	} else {
+		*lo_state = FPE_EVENT_UNKNOWN;
+		*lp_state = FPE_EVENT_UNKNOWN;
+	}
+}
+
+void tsn_fpe_irq_status(struct mac_device_info *hw, struct net_device *dev)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	void __iomem *ioaddr = hw->pcsr;
+	enum fpe_event *event;
+	enum fpe_state *lo_state;
+	enum fpe_state *lp_state;
+	bool *enable;
+
+	event = &info->fpe_cfg.fpe_event;
+	lo_state = &info->fpe_cfg.lo_fpe_state;
+	lp_state = &info->fpe_cfg.lp_fpe_state;
+	enable = &info->fpe_cfg.enable;
+
+	tsnif_fpe_irq_status(hw, ioaddr, dev, event);
+
+	if (*event == FPE_EVENT_UNKNOWN || !*enable)
+		return;
+
+	/* If LP has sent verify mPacket, LP is FPE capable */
+	if ((*event & FPE_EVENT_RVER) == FPE_EVENT_RVER) {
+		if (*lp_state < FPE_STATE_CAPABLE)
+			*lp_state = FPE_STATE_CAPABLE;
+
+		/* If user has requested FPE enable, quickly response */
+		if (*enable)
+			tsnif_fpe_send_mpacket(hw, ioaddr, MPACKET_RESPONSE);
+	}
+
+	/* If Local has sent verify mPacket, Local is FPE capable */
+	if ((*event & FPE_EVENT_TVER) == FPE_EVENT_TVER) {
+		if (*lo_state < FPE_STATE_CAPABLE)
+			*lo_state = FPE_STATE_CAPABLE;
+	}
+
+	/* If LP has sent response mPacket, LP is entering FPE ON */
+	if ((*event & FPE_EVENT_RRSP) == FPE_EVENT_RRSP)
+		*lp_state = FPE_STATE_ENTERING_ON;
+
+	/* If Local has sent response mPacket, Local is entering FPE ON */
+	if ((*event & FPE_EVENT_TRSP) == FPE_EVENT_TRSP)
+		*lo_state = FPE_STATE_ENTERING_ON;
+
+	if (!test_bit(__FPE_REMOVING, &info->task_state) &&
+	    !test_and_set_bit(__FPE_TASK_SCHED, &info->task_state) &&
+	    info->fpe_wq)
+		queue_work(info->fpe_wq, &info->fpe_task);
 }

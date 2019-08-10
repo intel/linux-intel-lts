@@ -483,6 +483,7 @@ struct mac_device_info {
 	u8 vlan_fail_q;
 	const struct tsnif_ops *tsnif;
 	struct tsnif_info tsn_info;
+	bool cached_fpe_en;
 };
 
 struct stmmac_rx_routing {

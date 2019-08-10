@@ -75,6 +75,8 @@
 
 /* MDIO interrupt enable in MAC_Interrupt_Enable register */
 #define GMAC_INT_MDIO_EN		BIT(18)
+/* FPE enable in MAC_Interrupt_Enable register */
+#define GMAC_INT_FPE_EN			BIT(17)
 
 /* EQoS version 5.xx VLAN Tag Filter Fail Packets Queuing */
 #define GMAC_RXQ_CTRL4			0x00000094
@@ -172,6 +174,12 @@
 
 /* MAC FPE control status */
 #define MAC_FPE_CTRL_STS		0x00000234
+#define MAC_FPE_CTRL_STS_TRSP		BIT(19)	/* Tx'ed Response mPacket */
+#define MAC_FPE_CTRL_STS_TVER		BIT(18)	/* Tx'ed Verify mPacket */
+#define MAC_FPE_CTRL_STS_RRSP		BIT(17)	/* Rcvd Response mPacket */
+#define MAC_FPE_CTRL_STS_RVER		BIT(16)	/* Rcvd Verify mPacket */
+#define MAC_FPE_CTRL_STS_SRSP		BIT(2)	/* Send Response mPacket */
+#define MAC_FPE_CTRL_STS_SVER		BIT(1)	/* Send Verify mPacket */
 #define MAC_FPE_CTRL_STS_EFPE		BIT(0)
 
 /* MTL FPE control status */

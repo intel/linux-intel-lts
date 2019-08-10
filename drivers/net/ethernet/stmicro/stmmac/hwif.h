@@ -287,6 +287,7 @@ enum tsn_hwtunable_id;
 struct est_gc_entry;
 struct est_gcrr;
 struct est_gc_config;
+enum mpacket_type;
 
 /* Helpers to program the MAC core */
 struct stmmac_ops {
@@ -406,6 +407,8 @@ struct stmmac_ops {
 			     enum tsn_feat_id featid);
 	void (*setup_tsn_hw)(struct mac_device_info *hw,
 			     struct net_device *dev, u32 fprq);
+	void (*unsetup_tsn_hw)(struct mac_device_info *hw,
+			       struct net_device *dev);
 	int (*set_tsn_hwtunable)(struct mac_device_info *hw,
 				 struct net_device *dev,
 				 enum tsn_hwtunable_id id,
@@ -449,6 +452,12 @@ struct stmmac_ops {
 			      bool *enable);
 	int (*fpe_show_pmac_sts)(struct mac_device_info *hw,
 				 struct net_device *dev);
+	int (*fpe_send_mpacket)(struct mac_device_info *hw,
+				struct net_device *dev, enum mpacket_type type);
+	void (*fpe_link_state_handle)(struct mac_device_info *hw,
+				      struct net_device *dev, bool is_up);
+	void (*fpe_irq_status)(struct mac_device_info *hw,
+			       struct net_device *dev);
 };
 
 #define stmmac_core_init(__priv, __args...) \
@@ -555,6 +564,8 @@ struct stmmac_ops {
 	stmmac_do_callback(__priv, mac, has_tsn_feat, __args)
 #define stmmac_tsn_hw_setup(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, setup_tsn_hw, __args)
+#define stmmac_tsn_hw_unsetup(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, unsetup_tsn_hw, __args)
 #define stmmac_set_tsn_hwtunable(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, set_tsn_hwtunable, __args)
 #define stmmac_get_tsn_hwtunable(__priv, __args...) \
@@ -587,6 +598,12 @@ struct stmmac_ops {
 	stmmac_do_callback(__priv, mac, fpe_get_config, __args)
 #define stmmac_fpe_show_pmac_sts(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, fpe_show_pmac_sts, __args)
+#define stmmac_fpe_send_mpacket(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, fpe_send_mpacket, __args)
+#define stmmac_fpe_link_state_handle(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, fpe_link_state_handle, __args)
+#define stmmac_fpe_irq_status(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, fpe_irq_status, __args)
 
 /* Helpers for serdes */
 struct stmmac_serdes_ops {
@@ -755,6 +772,7 @@ int stmmac_hwif_init(struct stmmac_priv *priv);
 })
 
 struct tsn_mmc_stat;
+enum fpe_event;
 
 struct tsnif_ops {
 	u32 (*read_hwid)(void __iomem *ioaddr);
@@ -798,6 +816,9 @@ struct tsnif_ops {
 	void (*fpe_set_afsz)(void *ioaddr, const u32 afsz);
 	void (*fpe_set_hadv)(void *ioaddr, const u32 hadv);
 	void (*fpe_set_radv)(void *ioaddr, const u32 radv);
+	void (*fpe_send_mpacket)(void *ioaddr, enum mpacket_type type);
+	void (*fpe_irq_status)(void *ioaddr, struct net_device *dev,
+			       enum fpe_event *fpe_event);
 	/* Time-Based Scheduling (TBS) */
 	void (*tbs_get_max)(u32 *leos_max, u32 *legos_max,
 			    u32 *ftos_max, u32 *fgos_max);
@@ -866,6 +887,12 @@ struct tsnif_ops {
 	tsnif_do_void_callback(__hw, fpe_set_hadv, __args)
 #define tsnif_fpe_set_radv(__hw, __args...) \
 	tsnif_do_void_callback(__hw, fpe_set_radv, __args)
+#define tsnif_fpe_set_radv(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_radv, __args)
+#define tsnif_fpe_send_mpacket(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_send_mpacket, __args)
+#define tsnif_fpe_irq_status(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_irq_status, __args)
 #define tsnif_tbs_get_max(__hw, __args...) \
 	tsnif_do_void_callback(__hw, tbs_get_max, __args)
 #define tsnif_tbs_set_estm(__hw, __args...) \

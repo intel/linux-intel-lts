@@ -504,6 +504,53 @@ static void dwmac5_fpe_set_radv(void *ioaddr, const u32 radv)
 	writel(value, ioaddr + MTL_FPE_ADVANCE);
 }
 
+void dwmac5_fpe_irq_status(void *ioaddr, struct net_device *dev,
+			   enum fpe_event *event)
+{
+	u32 value;
+
+	*event = FPE_EVENT_UNKNOWN;
+
+	value = readl(ioaddr + MAC_FPE_CTRL_STS);
+
+	if (value & MAC_FPE_CTRL_STS_TRSP) {
+		*event |= FPE_EVENT_TRSP;
+		netdev_info(dev, "FPE: Respond mPacket is transmitted\n");
+	}
+
+	if (value & MAC_FPE_CTRL_STS_TVER) {
+		*event |= FPE_EVENT_TVER;
+		netdev_info(dev, "FPE: Verify mPacket is transmitted\n");
+	}
+
+	if (value & MAC_FPE_CTRL_STS_RRSP) {
+		*event |= FPE_EVENT_RRSP;
+		netdev_info(dev, "FPE: Respond mPacket is received\n");
+	}
+
+	if (value & MAC_FPE_CTRL_STS_RVER) {
+		*event |= FPE_EVENT_RVER;
+		netdev_info(dev, "FPE: Verify mPacket is received\n");
+	}
+}
+
+void dwmac5_fpe_send_mpacket(void *ioaddr, enum mpacket_type type)
+{
+	u32 value;
+
+	value = readl(ioaddr + MAC_FPE_CTRL_STS);
+
+	if (type == MPACKET_VERIFY) {
+		value &= ~MAC_FPE_CTRL_STS_SRSP;
+		value |= MAC_FPE_CTRL_STS_SVER;
+	} else {
+		value &= ~MAC_FPE_CTRL_STS_SVER;
+		value |= MAC_FPE_CTRL_STS_SRSP;
+	}
+
+	writel(value, ioaddr + MAC_FPE_CTRL_STS);
+}
+
 static void dwmac5_tbs_get_max(u32 *leos_max,
 			       u32 *legos_max,
 			       u32 *ftos_max,
@@ -643,6 +690,8 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.fpe_set_afsz = dwmac5_fpe_set_afsz,
 	.fpe_set_hadv = dwmac5_fpe_set_hadv,
 	.fpe_set_radv = dwmac5_fpe_set_radv,
+	.fpe_irq_status = dwmac5_fpe_irq_status,
+	.fpe_send_mpacket = dwmac5_fpe_send_mpacket,
 	.tbs_get_max = dwmac5_tbs_get_max,
 	.tbs_set_estm = dwmac5_tbs_set_estm,
 	.tbs_set_leos = dwmac5_tbs_set_leos,

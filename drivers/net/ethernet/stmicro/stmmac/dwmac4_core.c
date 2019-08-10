@@ -58,6 +58,9 @@ static void dwmac4_core_init(struct mac_device_info *hw,
 	if (hw->mdio_intr_en)
 		value |= GMAC_INT_MDIO_EN;
 
+	if (hw->tsn_info.feat_en[TSN_FEAT_ID_FPE])
+		value |= GMAC_INT_FPE_EN;
+
 	writel(value, ioaddr + GMAC_INT_EN);
 }
 
@@ -1200,6 +1203,7 @@ const struct stmmac_ops dwmac510_ops = {
 	.tsnif_setup = dwmac510_tsnif_setup,
 	.init_tsn = tsn_init,
 	.setup_tsn_hw = tsn_hw_setup,
+	.unsetup_tsn_hw = tsn_hw_unsetup,
 	.set_tsn_feat = tsn_feat_set,
 	.has_tsn_feat = tsn_has_feat,
 	.set_tsn_hwtunable = tsn_hwtunable_set,
@@ -1218,6 +1222,9 @@ const struct stmmac_ops dwmac510_ops = {
 	.fpe_set_enable = tsn_fpe_set_enable,
 	.fpe_get_config = tsn_fpe_get_config,
 	.fpe_show_pmac_sts = tsn_fpe_show_pmac_sts,
+	.fpe_send_mpacket = tsn_fpe_send_mpacket,
+	.fpe_link_state_handle = tsn_fpe_link_state_handle,
+	.fpe_irq_status = tsn_fpe_irq_status,
 };
 
 static u32 dwmac4_get_num_vlan(void __iomem *ioaddr)
