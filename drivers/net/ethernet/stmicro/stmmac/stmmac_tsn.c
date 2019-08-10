@@ -97,14 +97,16 @@ static void fpe_lp_task(struct work_struct *work)
 			tsnif_fpe_set_enable(hw, ioaddr, true);
 			*lo_state = FPE_STATE_ON;
 			*lp_state = FPE_STATE_ON;
+			printk("!!! BOTH FPE stations ON\n");
 			break;
 		}
 
 		if ((*lo_state == FPE_STATE_CAPABLE ||
 		     *lo_state == FPE_STATE_ENTERING_ON) &&
-		    *lp_state != FPE_STATE_ON)
+		    *lp_state != FPE_STATE_ON) {
+			printk("Send Verify mPacket lo_state=%d lp_state=%d\n", *lo_state, *lp_state);
 			tsnif_fpe_send_mpacket(hw, ioaddr, MPACKET_VERIFY);
-
+		}
 		/* Sleep then retry */
 		msleep(500);
 	}
