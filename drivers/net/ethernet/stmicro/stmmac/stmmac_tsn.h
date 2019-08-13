@@ -78,6 +78,7 @@ struct tsn_hw_cap {
 
 /* EST Gate Control Entry */
 struct est_gc_entry {
+	u8 command;		/* Gate command */
 	u32 gates;		/* gate control: 0: closed,
 				 *               1: open.
 				 */

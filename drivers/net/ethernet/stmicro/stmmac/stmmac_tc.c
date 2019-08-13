@@ -600,6 +600,7 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 	u64 time_extension = qopt->cycle_time_extension;
 	u64 base_time = ktime_to_ns(qopt->base_time);
 	u64 cycle_time = qopt->cycle_time;
+	struct tsn_hw_cap *cap;
 	struct est_gcrr egcrr;
 	u32 extension_ns;
 	u32 extension_s;
@@ -641,9 +642,12 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 		qopt->base_time, qopt->cycle_time,
 		qopt->cycle_time_extension);
 
+	cap = &priv->hw->tsn_info.cap;
+
 	for (i = 0; i < qopt->num_entries; i++) {
 		struct est_gc_entry sgce;
 
+		sgce.command = qopt->entries[i].command;
 		sgce.gates = qopt->entries[i].gate_mask;
 		sgce.ti_nsec = qopt->entries[i].interval;
 
@@ -657,6 +661,27 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 		dev_dbg(priv->device,
 			"EST: gates 0x%x, ti_ns %u, cycle_ns %llu\n",
 			sgce.gates, sgce.ti_nsec, cycle_time);
+
+		if ((sgce.command == TC_TAPRIO_CMD_SET_AND_HOLD ||
+		     sgce.command == TC_TAPRIO_CMD_SET_AND_RELEASE) &&
+		     !fpe_q_mask) {
+			dev_err(priv->device,
+				"FPE: FPE QMask must not be all 0s!\n");
+				return -EINVAL;
+		}
+
+		/* If FPE is enabled together with EST, the GCL bit for TxQ0
+		 * marks if Set-And-Hold-MAC(1) or Set-And-Release-MAC(0)
+		 * operation. Under such condition, any TxQ that is marked as
+		 * preemptible in txqpec, the GCL bit is ignored. As this is
+		 * DWMAC specific definition, we clear 'gates' bit corresponds
+		 * to TxQ0 up-front to prevent incorrectly hold pMAC.
+		 */
+		if (fpe_q_mask) {
+			sgce.gates &= ~cap->pmac_bit;
+			if (sgce.command == TC_TAPRIO_CMD_SET_AND_HOLD)
+				sgce.gates |= cap->pmac_bit;
+		}
 
 		ret = stmmac_set_est_gce(priv, priv->hw, priv->dev,
 					 &sgce, i, 0, 0);
