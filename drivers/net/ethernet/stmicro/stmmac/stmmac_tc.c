@@ -596,6 +596,7 @@ static int tc_setup_cls(struct stmmac_priv *priv,
 static int tc_setup_taprio(struct stmmac_priv *priv,
 			   struct tc_taprio_qopt_offload *qopt)
 {
+	u32 fpe_q_mask = qopt->frame_preemption_queue_mask;
 	u64 time_extension = qopt->cycle_time_extension;
 	u64 base_time = ktime_to_ns(qopt->base_time);
 	u64 cycle_time = qopt->cycle_time;
@@ -615,7 +616,24 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 	} else {
 		stmmac_set_est_enable(priv, priv->hw, priv->dev, false);
 		dev_info(priv->device, "taprio: EST disabled\n");
+		stmmac_fpe_set_enable(priv, priv->hw, priv->dev, false);
+		dev_info(priv->device, "taprio: FPE disabled\n");
 		return 0;
+	}
+
+	if (stmmac_has_tsn_feat(priv, priv->hw, priv->dev, TSN_FEAT_ID_FPE) &&
+	    fpe_q_mask) {
+		ret = stmmac_fpe_set_txqpec(priv, priv->hw, priv->dev,
+					    fpe_q_mask);
+		if (ret)
+			return ret;
+
+		ret = stmmac_fpe_set_enable(priv, priv->hw, priv->dev, true);
+		if (ret)
+			return ret;
+
+		dev_info(priv->device, "taprio: FPE enabled (qmask=0x%x)\n",
+			 fpe_q_mask);
 	}
 
 	dev_dbg(priv->device,
