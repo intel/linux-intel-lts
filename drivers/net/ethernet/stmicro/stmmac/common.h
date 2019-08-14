@@ -91,6 +91,14 @@ struct stmmac_extra_stats {
 	unsigned long rx_early_irq;
 	unsigned long threshold;
 	unsigned long tx_pkt_n;
+	unsigned long q0_tx_pkt_n;
+	unsigned long q1_tx_pkt_n;
+	unsigned long q2_tx_pkt_n;
+	unsigned long q3_tx_pkt_n;
+	unsigned long q4_tx_pkt_n;
+	unsigned long q5_tx_pkt_n;
+	unsigned long q6_tx_pkt_n;
+	unsigned long q7_tx_pkt_n;
 	unsigned long rx_pkt_n;
 	unsigned long q0_rx_pkt_n;
 	unsigned long q1_rx_pkt_n;
