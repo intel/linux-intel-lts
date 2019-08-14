@@ -2206,7 +2206,7 @@ static int crlmodule_set_power(
 	dev_err(&client->dev, "crlmodule_set_power %d\n", on);
 	if (on) {
 		ret = pm_runtime_get_sync(&client->dev);
-		dev_err(&client->dev, "crlmodule_set_power val %d\n", ret);
+		dev_err(&client->dev, "%s@%d ret %d\n", __func__, __LINE__, ret);
 		if (ret < 0) {
 			pm_runtime_put(&client->dev);
 			return ret;

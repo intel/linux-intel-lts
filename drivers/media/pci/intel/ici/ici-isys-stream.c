@@ -1220,7 +1220,6 @@ static int stream_fop_release(struct inode *inode, struct file *file)
 	}
 
 	mutex_unlock(&as->isys->mutex);
-	pipeline_set_power(as, 0);
 	pm_runtime_put(&as->isys->adev->dev);
 
 	return ret;
