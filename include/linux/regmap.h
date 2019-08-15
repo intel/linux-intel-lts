@@ -421,6 +421,7 @@ struct regmap_config {
 
 	bool fast_io;
 	bool io_port;
+	bool oob_io;
 
 	bool disable_locking;
 	regmap_lock lock;
