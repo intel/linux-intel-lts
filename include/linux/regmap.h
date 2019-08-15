@@ -368,6 +368,7 @@ struct regmap_config {
 	int (*reg_write)(void *context, unsigned int reg, unsigned int val);
 
 	bool fast_io;
+	bool oob_io;
 
 	unsigned int max_register;
 	const struct regmap_access_table *wr_table;
