@@ -6,6 +6,7 @@
 #include "./ici/ici-isys.h"
 #ifdef ICI_ENABLED
 
+#include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/pm_runtime.h>
 #include <linux/kthread.h>
@@ -74,23 +75,23 @@ const struct ici_isys_pixelformat ici_isys_pfmts_be_soc[] = {
 };
 
 const struct ici_isys_pixelformat ici_isys_pfmts_packed[] = {
-        { ICI_FORMAT_UYVY, 16, 16, ICI_FORMAT_UYVY, IA_CSS_ISYS_FRAME_FORMAT_UYVY },
-        { ICI_FORMAT_YUYV, 16, 16, ICI_FORMAT_YUYV, IA_CSS_ISYS_FRAME_FORMAT_YUYV },
-        { ICI_FORMAT_RGB565, 16, 16, ICI_FORMAT_RGB565, IA_CSS_ISYS_FRAME_FORMAT_RGB565 },
-        { ICI_FORMAT_RGB888, 24, 24, ICI_FORMAT_RGB888, IA_CSS_ISYS_FRAME_FORMAT_RGBA888 },
-        { ICI_FORMAT_SBGGR12, 12, 12, ICI_FORMAT_SBGGR12, IA_CSS_ISYS_FRAME_FORMAT_RAW12 },
-        { ICI_FORMAT_SGBRG12, 12, 12, ICI_FORMAT_SGBRG12, IA_CSS_ISYS_FRAME_FORMAT_RAW12 },
-        { ICI_FORMAT_SGRBG12, 12, 12, ICI_FORMAT_SGRBG12, IA_CSS_ISYS_FRAME_FORMAT_RAW12 },
-        { ICI_FORMAT_SRGGB12, 12, 12, ICI_FORMAT_SRGGB12, IA_CSS_ISYS_FRAME_FORMAT_RAW12 },
-        { ICI_FORMAT_SBGGR10, 10, 10, ICI_FORMAT_SBGGR10, IA_CSS_ISYS_FRAME_FORMAT_RAW10 },
-        { ICI_FORMAT_SGBRG10, 10, 10, ICI_FORMAT_SGBRG10, IA_CSS_ISYS_FRAME_FORMAT_RAW10 },
-        { ICI_FORMAT_SGRBG10, 10, 10, ICI_FORMAT_SGRBG10, IA_CSS_ISYS_FRAME_FORMAT_RAW10 },
-        { ICI_FORMAT_SRGGB10, 10, 10, ICI_FORMAT_SRGGB10, IA_CSS_ISYS_FRAME_FORMAT_RAW10 },
-        { ICI_FORMAT_SBGGR8, 8, 8, ICI_FORMAT_SBGGR8, IA_CSS_ISYS_FRAME_FORMAT_RAW8 },
-        { ICI_FORMAT_SGBRG8, 8, 8, ICI_FORMAT_SGBRG8, IA_CSS_ISYS_FRAME_FORMAT_RAW8 },
-        { ICI_FORMAT_SGRBG8, 8, 8, ICI_FORMAT_SGRBG8, IA_CSS_ISYS_FRAME_FORMAT_RAW8 },
-        { ICI_FORMAT_SRGGB8, 8, 8, ICI_FORMAT_SRGGB8, IA_CSS_ISYS_FRAME_FORMAT_RAW8 },
-        { }
+	{ ICI_FORMAT_UYVY, 16, 16, ICI_FORMAT_UYVY, IA_CSS_ISYS_FRAME_FORMAT_UYVY },
+	{ ICI_FORMAT_YUYV, 16, 16, ICI_FORMAT_YUYV, IA_CSS_ISYS_FRAME_FORMAT_YUYV },
+	{ ICI_FORMAT_RGB565, 16, 16, ICI_FORMAT_RGB565, IA_CSS_ISYS_FRAME_FORMAT_RGB565 },
+	{ ICI_FORMAT_RGB24, 24, 24, ICI_FORMAT_RGB888, IA_CSS_ISYS_FRAME_FORMAT_RGBA888 },
+	{ ICI_FORMAT_SBGGR12, 12, 12, ICI_FORMAT_SBGGR12, IA_CSS_ISYS_FRAME_FORMAT_RAW12 },
+	{ ICI_FORMAT_SGBRG12, 12, 12, ICI_FORMAT_SGBRG12, IA_CSS_ISYS_FRAME_FORMAT_RAW12 },
+	{ ICI_FORMAT_SGRBG12, 12, 12, ICI_FORMAT_SGRBG12, IA_CSS_ISYS_FRAME_FORMAT_RAW12 },
+	{ ICI_FORMAT_SRGGB12, 12, 12, ICI_FORMAT_SRGGB12, IA_CSS_ISYS_FRAME_FORMAT_RAW12 },
+	{ ICI_FORMAT_SBGGR10, 10, 10, ICI_FORMAT_SBGGR10, IA_CSS_ISYS_FRAME_FORMAT_RAW10 },
+	{ ICI_FORMAT_SGBRG10, 10, 10, ICI_FORMAT_SGBRG10, IA_CSS_ISYS_FRAME_FORMAT_RAW10 },
+	{ ICI_FORMAT_SGRBG10, 10, 10, ICI_FORMAT_SGRBG10, IA_CSS_ISYS_FRAME_FORMAT_RAW10 },
+	{ ICI_FORMAT_SRGGB10, 10, 10, ICI_FORMAT_SRGGB10, IA_CSS_ISYS_FRAME_FORMAT_RAW10 },
+	{ ICI_FORMAT_SBGGR8, 8, 8, ICI_FORMAT_SBGGR8, IA_CSS_ISYS_FRAME_FORMAT_RAW8 },
+	{ ICI_FORMAT_SGBRG8, 8, 8, ICI_FORMAT_SGBRG8, IA_CSS_ISYS_FRAME_FORMAT_RAW8 },
+	{ ICI_FORMAT_SGRBG8, 8, 8, ICI_FORMAT_SGRBG8, IA_CSS_ISYS_FRAME_FORMAT_RAW8 },
+	{ ICI_FORMAT_SRGGB8, 8, 8, ICI_FORMAT_SRGGB8, IA_CSS_ISYS_FRAME_FORMAT_RAW8 },
+	{ }
 };
 
 struct pipeline_format_data {
@@ -593,14 +594,26 @@ out_put_stream_handle:
 	return rval;
 }
 
+static bool use_stream_stop;
+module_param(use_stream_stop, bool, 0660);
+MODULE_PARM_DESC(use_stream_stop, "Use STOP command if running in CSI capture mode");
+
 static void stop_streaming_firmware(struct ici_isys_stream *as)
 {
 	struct ici_isys_pipeline *ip = &as->ip;
 	struct device *dev = &as->isys->adev->dev;
 	int rval, tout;
+	enum ipu_fw_isys_send_type send_type =
+		IPU_FW_ISYS_SEND_TYPE_STREAM_FLUSH;
 
 	reinit_completion(&ip->stream_stop_completion);
-	rval = ipu_lib_call(stream_flush, as->isys, ip->stream_handle);
+
+	/* Use STOP command if running in CSI FE capture */
+	if (use_stream_stop)
+		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_STOP;
+
+	rval = ici_fw_isys_simple_cmd(as->isys, ip->stream_handle, send_type);
+
 	if (rval < 0) {
 		dev_err(dev, "can't stop stream (%d)\n", rval);
 	} else {
@@ -899,6 +912,8 @@ static int ici_isys_stream_on(struct file *file, void *fh)
 		return -ENODEV;
 	}
 
+	pipeline_set_power(as, 1);
+
 	mutex_lock(&as->isys->stream_mutex);
 	ip->source = ip->asd_source->source;
 
@@ -945,7 +960,7 @@ out_cleanup_short_packet:
 out_requeue:
 	mutex_unlock(&as->isys->stream_mutex);
 	ici_isys_frame_buf_stream_cancel(as);
-
+	pipeline_set_power(as, 0);
 	return rval;
 }
 
@@ -964,7 +979,7 @@ static int ici_isys_stream_off(struct file *file, void *fh)
 
 	ici_isys_frame_buf_short_packet_destroy(as);
 	ici_isys_frame_buf_stream_cancel(as);
-
+	pipeline_set_power(as, 0);
 	return 0;
 }
 
@@ -1115,7 +1130,6 @@ static int stream_fop_open(struct inode *inode, struct file *file)
 		return rval;
 	}
 
-	pipeline_set_power(as, 1);
 	mutex_lock(&isys->mutex);
 
 	ipu_configure_spc(adev->isp,
@@ -1206,7 +1220,6 @@ static int stream_fop_release(struct inode *inode, struct file *file)
 	}
 
 	mutex_unlock(&as->isys->mutex);
-	pipeline_set_power(as, 0);
 	pm_runtime_put(&as->isys->adev->dev);
 
 	return ret;
@@ -1377,6 +1390,7 @@ int ici_isys_stream_init(
 	char name[ICI_MAX_NODE_NAME];
 
 	mutex_init(&as->mutex);
+	mutex_init(&as->stream_cancel_mutex);
 	init_completion(&as->ip.stream_open_completion);
 	init_completion(&as->ip.stream_close_completion);
 	init_completion(&as->ip.stream_start_completion);
@@ -1444,16 +1458,20 @@ out_mutex_unlock:
 	//intel_ipu4_isys_framebuf_cleanup(&as->buf_list);
 out_init_fail:
 	mutex_destroy(&as->mutex);
+	mutex_destroy(&as->stream_cancel_mutex);
 
 	return rval;
 }
 
 void ici_isys_stream_cleanup(struct ici_isys_stream *as)
 {
-	list_del(&as->node.node_entry);
-	stream_device_unregister(&as->strm_dev);
-	node_pads_cleanup(&as->asd->node);
-	mutex_destroy(&as->mutex);
+	if (as != NULL) {
+		list_del(&as->node.node_entry);
+		stream_device_unregister(&as->strm_dev);
+		node_pads_cleanup(&as->asd->node);
+		mutex_destroy(&as->mutex);
+		mutex_destroy(&as->stream_cancel_mutex);
+	}
 }
 
 #endif //ICI_ENABLED

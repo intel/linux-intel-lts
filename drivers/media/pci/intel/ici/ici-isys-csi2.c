@@ -19,6 +19,7 @@
 
 static const uint32_t ici_csi2_supported_codes_pad_sink[] = {
 	ICI_FORMAT_RGB888,
+	ICI_FORMAT_RGB24,
 	ICI_FORMAT_RGB565,
 	ICI_FORMAT_UYVY,
 	ICI_FORMAT_YUYV,
@@ -43,6 +44,7 @@ static const uint32_t ici_csi2_supported_codes_pad_sink[] = {
 
 static const uint32_t ici_csi2_supported_codes_pad_source[] = {
 	ICI_FORMAT_RGB888,
+	ICI_FORMAT_RGB24,
 	ICI_FORMAT_RGB565,
 	ICI_FORMAT_UYVY,
 	ICI_FORMAT_YUYV,

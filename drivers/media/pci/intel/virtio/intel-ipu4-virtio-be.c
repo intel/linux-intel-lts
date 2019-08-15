@@ -77,17 +77,6 @@ static void ipu_vbk_hash_init(void)
 	ipu_vbk_hash_initialized = 1;
 }
 
-static int ipu_vbk_hash_add(struct ipu4_virtio_be_priv *entry)
-{
-	if (!ipu_vbk_hash_initialized) {
-		pr_err("RNG hash table not initialized!\n");
-		return -1;
-	}
-
-	hash_add(HASH_NAME, &entry->node, virtio_dev_client_id(&entry->dev));
-	return 0;
-}
-
 static struct ipu4_virtio_be_priv *ipu_vbk_hash_find(int client_id)
 {
 	struct ipu4_virtio_be_priv *entry;
@@ -104,6 +93,24 @@ static struct ipu4_virtio_be_priv *ipu_vbk_hash_find(int client_id)
 
 	pr_err("Not found item matching client_id!\n");
 	return NULL;
+}
+
+static int ipu_vbk_hash_add(struct ipu4_virtio_be_priv *entry)
+{
+	struct ipu4_virtio_be_priv *priv;
+	int client_id;
+
+	if (!ipu_vbk_hash_initialized) {
+		pr_err("RNG hash table not initialized!\n");
+		return -1;
+	}
+
+	client_id = virtio_dev_client_id(&entry->dev);
+	priv = ipu_vbk_hash_find(client_id);
+	if (priv == NULL)
+		hash_add(HASH_NAME, &entry->node, client_id);
+
+	return 0;
 }
 
 static int ipu_vbk_hash_del(int client_id)
@@ -311,9 +318,6 @@ static int ipu_vbk_release(struct inode *inode, struct file *f)
 	for (i = 0; i < IPU_VIRTIO_QUEUE_MAX; i++)
 		virtio_vq_reset(&(priv->vqs[i]));
 
-	/* device specific release */
-	ipu_vbk_reset(priv);
-
 	pr_debug("ipu_vbk_connection cnt is %d\n",
 			ipu_vbk_connection_cnt);
 
@@ -323,6 +327,9 @@ static int ipu_vbk_release(struct inode *inode, struct file *f)
 		pr_debug("ipu4_virtio_be_priv remove all hash entries\n");
 		ipu_vbk_hash_del_all();
 	}
+
+	/* device specific release */
+	ipu_vbk_reset(priv);
 
 	kfree(priv);
 
@@ -383,11 +390,22 @@ static long ipu_vbk_ioctl(struct file *f, unsigned int ioctl,
 		ipu_vbk_connection_cnt++;
 		return r;
 	case VBS_RESET_DEV:
+		pr_debug("ipu_vbk_connection cnt is %d\n",
+				ipu_vbk_connection_cnt);
+
+		if (priv && ipu_vbk_connection_cnt--)
+			ipu_vbk_hash_del(virtio_dev_client_id(&priv->dev));
+		if (!ipu_vbk_connection_cnt) {
+			pr_debug("ipu4_virtio_be_priv remove all hash entries\n");
+			ipu_vbk_hash_del_all();
+		}
+
 		r = ipu_vbk_reset(priv);
 		if (r < 0) {
 			pr_err("VBS_RESET_DEV: virtio_vqs_ioctl failed!\n");
 			return -EFAULT;
 		}
+
 		return r;
 	default:
 		/*mutex_lock(&n->dev.mutex);*/
