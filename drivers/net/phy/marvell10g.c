@@ -64,6 +64,7 @@ enum {
 	/* 88E2110 specific */
 	M88E2110_PORTCONTROL	= 0xc04a,
 	M88E2110_BOOT		= 0xc050,
+	M88E2110_LOOPBACK	= BIT(14),
 };
 
 struct mv3310_priv {
@@ -530,6 +531,12 @@ out:
 	return status;
 }
 
+static int m88e2110_loopback(struct phy_device *phydev, bool enable)
+{
+	return phy_write_mmd(phydev, MDIO_MMD_PCS, MV_PCS_BASE_T,
+			     M88E2110_LOOPBACK);
+}
+
 static struct phy_driver mv3310_drivers[] = {
 	{
 		.phy_id		= MARVELL_PHY_ID_88X3310,
@@ -557,6 +564,7 @@ static struct phy_driver mv3310_drivers[] = {
 		.config_aneg	= mv3310_config_aneg,
 		.aneg_done	= genphy_c45_aneg_done,
 		.read_status	= mv3310_read_status,
+		.set_loopback	= m88e2110_loopback,
 	},
 };
 
