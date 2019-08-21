@@ -55,10 +55,12 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
 	struct kmb_drm_private *dev_p = drm->dev_private;
 	struct platform_device *pdev = to_platform_device(drm->dev);
+	struct drm_bridge *bridge;
 	/*struct resource *res;*/
 	/*u32 version;*/
 	int irq_lcd, irq_mipi;
 	int ret;
+	struct device_node *encoder_node;
 
 	/* TBD - not sure if clock_get needs to be called here */
 	/*
@@ -146,7 +148,30 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 
-	kmb_dsi_init(drm);
+	/* find ADV7535 node and initialize it */
+	encoder_node = of_parse_phandle(drm->dev->of_node, "encoder-slave", 0);
+	if (!encoder_node) {
+		DRM_ERROR("failed to get bridge info from DT\n");
+		ret = -EPROBE_DEFER;
+		goto setup_fail;
+	}
+
+	/* Locate drm bridge from the hdmi encoder DT node */
+	bridge = of_drm_find_bridge(encoder_node);
+	if (!bridge) {
+		DRM_ERROR("failed to get bridge driver from DT\n");
+		ret = -EPROBE_DEFER;
+		goto setup_fail;
+	}
+
+	of_node_put(encoder_node);
+
+	ret = kmb_dsi_init(drm, bridge);
+	if (ret) {
+		DRM_ERROR("failed to initialize DSI\n");
+		goto setup_fail;
+	}
+
 	ret = drm_irq_install(drm, platform_get_irq(pdev, 0));
 	if (ret < 0) {
 		DRM_ERROR("failed to install IRQ handler\n");

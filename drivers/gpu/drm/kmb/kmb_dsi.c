@@ -31,6 +31,7 @@
 #include <drm/drm_connector.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_mipi_dsi.h>
+#include <drm/drm_bridge.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/gpio/consumer.h>
@@ -1260,7 +1261,6 @@ static void mipi_tx_init_irqs(struct kmb_drm_private *dev_p,
 	spin_unlock_irqrestore(&dev_p->irq_lock, irqflags);
 }
 
-
 void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p)
 {
 	uint32_t irq_ctrl_stat_0, hs_stat, hs_enable;
@@ -1301,21 +1301,27 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 	struct drm_connector *connector;
 	struct kmb_dsi_host *host;
 	struct kmb_drm_private *dev_p = dev->dev_private;
+	int ret = 0;
 
 	kmb_dsi = kzalloc(sizeof(*kmb_dsi), GFP_KERNEL);
-	if (!kmb_dsi)
-		return;
+	if (!kmb_dsi) {
+		DRM_ERROR("failed to allocate kmb_dsi\n");
+		return -ENOMEM;
+	}
 
 	kmb_connector = kzalloc(sizeof(*kmb_connector), GFP_KERNEL);
 	if (!kmb_connector) {
 		kfree(kmb_dsi);
-		return;
+		DRM_ERROR("failed to allocate kmb_connector\n");
+		return -ENOMEM;
 	}
 
 	kmb_dsi->attached_connector = kmb_connector;
 
 	connector = &kmb_connector->base;
 	encoder = &kmb_dsi->base;
+	encoder->possible_crtcs = 1;
+	encoder->possible_clones = 0;
 	drm_encoder_init(dev, encoder, &kmb_dsi_funcs, DRM_MODE_ENCODER_DSI,
 			 "MIPI-DSI");
 
@@ -1333,6 +1339,14 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 	connector->encoder = encoder;
 	drm_connector_attach_encoder(connector, encoder);
 
+	/* Link drm_bridge to encoder */
+	ret = drm_bridge_attach(encoder, bridge, NULL);
+	if (ret) {
+		DRM_ERROR("failed to attach bridge to MIPI\n");
+		drm_encoder_cleanup(encoder);
+		return ret;
+	}
+
 	/* initialize mipi controller */
 	mipi_tx_init_cntrl(dev_p, &mipi_tx_init_cfg);
 
@@ -1341,4 +1355,6 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 
 	/* irq initialization */
 	mipi_tx_init_irqs(dev_p, &int_cfg, &mipi_tx_init_cfg.tx_ctrl_cfg);
+
+	return 0;
 }

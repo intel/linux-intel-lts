@@ -39,6 +39,7 @@ struct kmb_dsi {
 	struct drm_encoder base;
 	struct kmb_connector *attached_connector;
 	struct kmb_dsi_host *dsi_host;
+	struct drm_bridge *bridge;
 };
 
 struct kmb_dsi_host {
@@ -329,7 +330,7 @@ union mipi_irq_cfg {
 	} irq_cfg;
 };
 
-void kmb_dsi_init(struct drm_device *dev);
+int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge);
 void kmb_plane_destroy(struct drm_plane *plane);
 void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p);
 
