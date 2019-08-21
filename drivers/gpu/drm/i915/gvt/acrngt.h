@@ -50,11 +50,6 @@ struct acrngt_hvm_dev {
 	int client;
 	struct vhm_request *req_buf;
 	struct vhm_vm *vm;
-	struct hrtimer thread_timer;
-	struct work_struct thread_work;
-	long thread_flags;
-	struct task_struct *timer_thread;
-	wait_queue_head_t timer_thread_wq;
 };
 
 struct acrngt_hvm_params {
@@ -73,6 +68,11 @@ struct gvt_acrngt {
 	struct intel_gvt *gvt;
 	struct intel_vgpu *vgpus[GVT_MAX_VGPU_INSTANCE];
 };
+
+static ssize_t acrngt_sysfs_instance_manage(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count);
+static ssize_t acrngt_sysfs_vgpu_id(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
 
 struct intel_vgpu *acrngt_instance_create(domid_t vm_id,
 		struct intel_vgpu_type *type);

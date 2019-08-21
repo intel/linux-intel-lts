@@ -241,7 +241,6 @@ struct intel_vgpu {
 	bool ge_cache_enable;
 	bool entire_nonctxmmio_checked;
 	ktime_t vgpu_msi_time;
-	void *vgpu_priv;
 };
 
 /* validating GM healthy status*/
