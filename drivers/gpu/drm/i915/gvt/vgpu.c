@@ -505,7 +505,6 @@ struct intel_vgpu *intel_gvt_create_vgpu(struct intel_gvt *gvt,
 		/* calculate left instance change for types */
 		intel_gvt_update_vgpu_types(gvt);
 	mutex_unlock(&gvt->lock);
-	vgpu->vgpu_msi_time = ktime_get_raw();
 
 	return vgpu;
 }
