@@ -202,6 +202,7 @@ int tsn_est_gcrr_times_set(struct mac_device_info *hw,
 int tsn_est_gcc_get(struct mac_device_info *hw, struct net_device *dev,
 		    struct est_gc_config **gcc);
 void tsn_est_irq_status(struct mac_device_info *hw, struct net_device *dev);
+void tsn_mmc_stat_update(struct mac_device_info *hw, struct net_device *dev);
 int tsn_mmc_dump(struct mac_device_info *hw,
 		 int index, unsigned long *count, const char **desc);
 int tsn_cbs_recal_idleslope(struct mac_device_info *hw, struct net_device *dev,

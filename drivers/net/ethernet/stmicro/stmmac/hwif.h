@@ -437,6 +437,8 @@ struct stmmac_ops {
 			   struct est_gc_config **gcc);
 	void (*est_irq_status)(struct mac_device_info *hw,
 			       struct net_device *dev);
+	void (*update_tsn_mmc_stat)(struct mac_device_info *hw,
+				    struct net_device *dev);
 	int (*dump_tsn_mmc)(struct mac_device_info *hw, int index,
 			    unsigned long *count, const char **desc);
 	int (*cbs_recal_idleslope)(struct mac_device_info *hw,
@@ -586,6 +588,8 @@ struct stmmac_ops {
 	stmmac_do_callback(__priv, mac, get_est_gcc, __args)
 #define stmmac_est_irq_status(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, est_irq_status, __args)
+#define stmmac_update_tsn_mmc_stat(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, update_tsn_mmc_stat, __args)
 #define stmmac_dump_tsn_mmc(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, dump_tsn_mmc, __args)
 #define stmmac_cbs_recal_idleslope(__priv, __args...) \
@@ -819,6 +823,10 @@ struct tsnif_ops {
 	void (*fpe_send_mpacket)(void *ioaddr, enum mpacket_type type);
 	void (*fpe_irq_status)(void *ioaddr, struct net_device *dev,
 			       enum fpe_event *fpe_event);
+	void (*fpe_mmc_irq_status)(void __iomem *ioaddr,
+				   struct net_device *dev);
+	void (*fpe_update_mmc_stat)(void __iomem *ioaddr,
+				    struct tsn_mmc_stat *mmc_stat);
 	/* Time-Based Scheduling (TBS) */
 	void (*tbs_get_max)(u32 *leos_max, u32 *legos_max,
 			    u32 *ftos_max, u32 *fgos_max);
@@ -893,6 +901,10 @@ struct tsnif_ops {
 	tsnif_do_void_callback(__hw, fpe_send_mpacket, __args)
 #define tsnif_fpe_irq_status(__hw, __args...) \
 	tsnif_do_void_callback(__hw, fpe_irq_status, __args)
+#define tsnif_fpe_mmc_irq_status(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_mmc_irq_status, __args)
+#define tsnif_fpe_update_mmc_stat(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_update_mmc_stat, __args)
 #define tsnif_tbs_get_max(__hw, __args...) \
 	tsnif_do_void_callback(__hw, tbs_get_max, __args)
 #define tsnif_tbs_set_estm(__hw, __args...) \

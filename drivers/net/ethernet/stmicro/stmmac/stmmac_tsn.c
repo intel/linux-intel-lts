@@ -1097,6 +1097,16 @@ void tsn_est_irq_status(struct mac_device_info *hw, struct net_device *dev)
 				      info->cap.txqcnt);
 }
 
+void tsn_mmc_stat_update(struct mac_device_info *hw, struct net_device *dev)
+{
+	struct tsnif_info *info = &hw->tsn_info;
+	void __iomem *ioaddr = hw->pcsr;
+
+	if (tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
+		tsnif_fpe_update_mmc_stat(hw, ioaddr, &info->mmc_stat);
+	}
+}
+
 int tsn_mmc_dump(struct mac_device_info *hw,
 		 int index, unsigned long *count, const char **desc)
 {
@@ -1312,6 +1322,7 @@ void tsn_fpe_irq_status(struct mac_device_info *hw, struct net_device *dev)
 	lp_state = &info->fpe_cfg.lp_fpe_state;
 	enable = &info->fpe_cfg.enable;
 
+	tsnif_fpe_mmc_irq_status(hw, ioaddr, dev);
 	tsnif_fpe_irq_status(hw, ioaddr, dev, event);
 
 	if (*event == FPE_EVENT_UNKNOWN || !*enable)

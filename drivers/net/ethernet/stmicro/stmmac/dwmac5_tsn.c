@@ -14,6 +14,12 @@ enum tsn_mmc_idx {
 	EST_MMC_HLBF = 2,
 	EST_MMC_HLBS = 3,
 	EST_MMC_CGCE = 4,
+	FPE_MMC_TXFFC = 5,
+	FPE_MMC_TXHRC = 6,
+	FPE_MMC_PAEC = 7,
+	FPE_MMC_PSEC = 8,
+	FPE_MMC_PAOC = 9,
+	FPE_MMC_FFC = 10,
 };
 
 const struct tsn_mmc_desc dwmac5_tsn_mmc_desc[STMMAC_TSN_STAT_SIZE] = {
@@ -22,12 +28,12 @@ const struct tsn_mmc_desc dwmac5_tsn_mmc_desc[STMMAC_TSN_STAT_SIZE] = {
 	{ true, "HLBF" },  /* Head-of-Line Blocking due to Frame Size */
 	{ true, "HLBS" },  /* Head-of-Line Blocking due to Scheduling */
 	{ true, "CGCE" },  /* Constant Gate Control Error */
-	{ false, "RESV" },
-	{ false, "RESV" },
-	{ false, "RESV" },
-	{ false, "RESV" },
-	{ false, "RESV" },
-	{ false, "RESV" },
+	{ true, "TXFFC" }, /* Tx FPE Fragment Counter */
+	{ true, "TXHRC" }, /* Tx Hold Request Counter */
+	{ true, "PAEC" },  /* Rx Packet Assembly Error Counter */
+	{ true, "PSEC" },  /* Rx Packet SMD Error Counter */
+	{ true, "PAOC" },  /* Rx Packet Assembly OK Counter */
+	{ true, "FFC" },   /* Rx FPE Fragment Counter */
 	{ false, "RESV" },
 	{ false, "RESV" },
 	{ false, "RESV" },
@@ -106,6 +112,13 @@ static void dwmac5_hw_setup(void __iomem *ioaddr, enum tsn_feat_id featid,
 		value &= ~GMAC_RXQCTRL_FPRQ_MASK;
 		value |= fprq << GMAC_RXQCTRL_FPRQ_SHIFT;
 		writel(value, ioaddr + GMAC_RXQ_CTRL1);
+
+		/* Unmask all FPE Tx & Rx MMC interrupts */
+		value = (u32)~MMC_FPE_TX_INTR_MASK_DEFAULT;
+		writel(value, ioaddr + MMC_FPE_TX_INTR_MASK);
+		value = (u32)~MMC_FPE_RX_INTR_MASK_DEFAULT;
+		writel(value, ioaddr + MMC_FPE_RX_INTR_MASK);
+		break;
 	default:
 		return;
 	};
@@ -551,6 +564,76 @@ void dwmac5_fpe_send_mpacket(void *ioaddr, enum mpacket_type type)
 	writel(value, ioaddr + MAC_FPE_CTRL_STS);
 }
 
+static void dwmac5_fpe_mmc_irq_status(void __iomem *ioaddr,
+				      struct net_device *dev)
+{
+	u32 tx_stat;
+	u32 rx_stat;
+	u32 value;
+
+	tx_stat = readl(ioaddr + MMC_FPE_TX_INTR);
+	rx_stat = readl(ioaddr + MMC_FPE_RX_INTR);
+
+	if (tx_stat & MMC_FPE_TX_INTR_MASK_DEFAULT) {
+		/* Read TXHRC to clear HRCIS bit */
+		if ((tx_stat & MMC_FPE_TX_INTR_MASK_HRCIM) ==
+		    MMC_FPE_TX_INTR_MASK_HRCIM) {
+			value = readl(ioaddr + MMC_TX_HOLD_REQ);
+			netdev_info(dev, "FPE IRQ: TXHRC = %d\n", value);
+		}
+
+		/* Read TXFFC to clear FCIS bit */
+		if ((tx_stat & MMC_FPE_TX_INTR_MASK_FCIM) ==
+		    MMC_FPE_TX_INTR_MASK_FCIM) {
+			value = readl(ioaddr + MMC_TX_FPE_FRAGMENT);
+			netdev_info(dev, "FPE IRQ: TXFFC = %d\n", value);
+		}
+	}
+
+	if (rx_stat & MMC_FPE_RX_INTR_MASK_DEFAULT) {
+		/* Read PAEC to clear PAECIS bit */
+		if ((rx_stat & MMC_FPE_RX_INTR_MASK_PAECIM) ==
+		    MMC_FPE_RX_INTR_MASK_PAECIM) {
+			value = readl(ioaddr + MMC_RX_PACKET_ASSEMBLY_ERR);
+			netdev_info(dev, "FPE IRQ: PAEC = %d\n", value);
+		}
+
+		/* Read PSEC to clear PSECIS bit */
+		if ((rx_stat & MMC_FPE_RX_INTR_MASK_PSECIM) ==
+		    MMC_FPE_RX_INTR_MASK_PSECIM) {
+			value = readl(ioaddr + MMC_RX_PACKET_SMD_ERR);
+			netdev_info(dev, "FPE IRQ: PSEC = %d\n", value);
+		}
+
+		/* Read PAOC to clear PAOCIS bit */
+		if ((rx_stat & MMC_FPE_RX_INTR_MASK_PAOCIM) ==
+		    MMC_FPE_RX_INTR_MASK_PAOCIM) {
+			value = readl(ioaddr + MMC_RX_PACKET_ASSEMBLY_OK);
+			netdev_info(dev, "FPE IRQ: PAOC = %d\n", value);
+		}
+
+		/* Read FFC to clear FCIS bit */
+		if ((rx_stat & MMC_FPE_RX_INTR_MASK_FCIM) ==
+		    MMC_FPE_RX_INTR_MASK_FCIM) {
+			value = readl(ioaddr + MMC_RX_FPE_FRAGMENT);
+			netdev_info(dev, "FPE IRQ: RXFFC = %d\n", value);
+		}
+	}
+}
+
+static void dwmac5_fpe_update_mmc_stat(void __iomem *ioaddr,
+				       struct tsn_mmc_stat *mmc_stat)
+{
+	mmc_stat->count[FPE_MMC_TXHRC] = readl(ioaddr + MMC_TX_HOLD_REQ);
+	mmc_stat->count[FPE_MMC_TXFFC] = readl(ioaddr + MMC_TX_FPE_FRAGMENT);
+	mmc_stat->count[FPE_MMC_PAEC] = readl(ioaddr +
+					      MMC_RX_PACKET_ASSEMBLY_ERR);
+	mmc_stat->count[FPE_MMC_PSEC] = readl(ioaddr + MMC_RX_PACKET_SMD_ERR);
+	mmc_stat->count[FPE_MMC_PAOC] = readl(ioaddr +
+					      MMC_RX_PACKET_ASSEMBLY_OK);
+	mmc_stat->count[FPE_MMC_FFC] = readl(ioaddr + MMC_RX_FPE_FRAGMENT);
+}
+
 static void dwmac5_tbs_get_max(u32 *leos_max,
 			       u32 *legos_max,
 			       u32 *ftos_max,
@@ -692,6 +775,8 @@ const struct tsnif_ops dwmac510_tsnif_ops = {
 	.fpe_set_radv = dwmac5_fpe_set_radv,
 	.fpe_irq_status = dwmac5_fpe_irq_status,
 	.fpe_send_mpacket = dwmac5_fpe_send_mpacket,
+	.fpe_update_mmc_stat = dwmac5_fpe_update_mmc_stat,
+	.fpe_mmc_irq_status = dwmac5_fpe_mmc_irq_status,
 	.tbs_get_max = dwmac5_tbs_get_max,
 	.tbs_set_estm = dwmac5_tbs_set_estm,
 	.tbs_set_leos = dwmac5_tbs_set_leos,

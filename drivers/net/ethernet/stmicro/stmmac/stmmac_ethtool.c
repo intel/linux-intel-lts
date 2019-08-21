@@ -489,7 +489,11 @@ static void stmmac_get_ethtool_stats(struct net_device *dev,
 				data[j++] = count;
 		}
 	}
-	if (priv->hw->tsn_info.cap.est_support) {
+	if (priv->hw->tsn_info.cap.est_support ||
+	    priv->hw->tsn_info.cap.fpe_support) {
+		/* Update TSN MMC stats that are not refreshed in interrupt */
+		stmmac_update_tsn_mmc_stat(priv, priv->hw, dev);
+
 		for (i = 0; i < STMMAC_TSN_STAT_SIZE; i++) {
 			if (!stmmac_dump_tsn_mmc(priv,
 						 priv->hw, i,
@@ -553,7 +557,8 @@ static int stmmac_get_sset_count(struct net_device *netdev, int sset)
 
 			len += safety_len;
 		}
-		if (priv->hw->tsn_info.cap.est_support) {
+		if (priv->hw->tsn_info.cap.est_support ||
+		    priv->hw->tsn_info.cap.fpe_support) {
 			for (i = 0; i < STMMAC_TSN_STAT_SIZE; i++) {
 				if (!stmmac_dump_tsn_mmc(priv,
 							 priv->hw, i,
@@ -591,7 +596,8 @@ static void stmmac_get_strings(struct net_device *dev, u32 stringset, u8 *data)
 				}
 			}
 		}
-		if (priv->hw->tsn_info.cap.est_support) {
+		if (priv->hw->tsn_info.cap.est_support ||
+		    priv->hw->tsn_info.cap.fpe_support) {
 			for (i = 0; i < STMMAC_TSN_STAT_SIZE; i++) {
 				const char *desc;
 

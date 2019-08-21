@@ -196,6 +196,31 @@
 #define MTL_FPE_ADVANCE_RADV_SHIFT	16
 #define MTL_FPE_ADVANCE_HADV		GENMASK(15, 0)	/* Hold Advance */
 
+/* MMC related registers for FPE */
+#define MMC_FPE_TX_INTR			0x8a0	/* MMC FPE Tx Int */
+#define MMC_FPE_TX_INTR_MASK		0x8a4	/* MMC FPE Tx Int Mask */
+#define MMC_FPE_TX_INTR_MASK_HRCIM	BIT(1)	/* Hold Request cnt Int En */
+#define MMC_FPE_TX_INTR_MASK_FCIM	BIT(0)	/* Tx Fragments cnt Int En */
+#define MMC_FPE_TX_INTR_MASK_DEFAULT	(MMC_FPE_TX_INTR_MASK_HRCIM |\
+					 MMC_FPE_TX_INTR_MASK_FCIM)
+#define MMC_TX_FPE_FRAGMENT		0x8a8	/* Tx FPE Fragment cnt Int En */
+#define MMC_TX_HOLD_REQ			0x8ac	/* Tx Hold Request cnt Int En */
+
+#define MMC_FPE_RX_INTR			0x8c0	/* MMC FPE Rx Int */
+#define MMC_FPE_RX_INTR_MASK		0x8c4	/* MMC FPE Rx Int Mask */
+#define MMC_FPE_RX_INTR_MASK_FCIM	BIT(3)	/* Rx Fragments cnt Int En */
+#define MMC_FPE_RX_INTR_MASK_PAOCIM	BIT(2)	/* Rx Assembly OK Int En */
+#define MMC_FPE_RX_INTR_MASK_PSECIM	BIT(1)	/* Rx SMD Error cnt Int En */
+#define MMC_FPE_RX_INTR_MASK_PAECIM	BIT(0)	/* Rx Assembly Err cnt Int En */
+#define MMC_FPE_RX_INTR_MASK_DEFAULT	(MMC_FPE_RX_INTR_MASK_FCIM |\
+					 MMC_FPE_RX_INTR_MASK_PAOCIM |\
+					 MMC_FPE_RX_INTR_MASK_PSECIM |\
+					 MMC_FPE_RX_INTR_MASK_PAECIM)
+#define MMC_RX_PACKET_ASSEMBLY_ERR	0x8c8	/* Rx Pkt Assembly Error */
+#define MMC_RX_PACKET_SMD_ERR		0x8cc	/* Rx frame with SMD errors */
+#define MMC_RX_PACKET_ASSEMBLY_OK	0x8d0	/* Rx Pkt Assembly OK */
+#define MMC_RX_FPE_FRAGMENT		0x8d4	/* Rx Fragments count in FPE */
+
 /* FPE Global defines */
 #define FPE_PMAC_BIT			BIT(0)	/* TxQ0 is always preemptible */
 #define FPE_AFSZ_MAX			0x3	/* Max AFSZ */

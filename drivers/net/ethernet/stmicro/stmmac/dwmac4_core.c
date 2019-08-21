@@ -1216,6 +1216,7 @@ const struct stmmac_ops dwmac510_ops = {
 	.set_est_gcrr_times = tsn_est_gcrr_times_set,
 	.get_est_gcc = tsn_est_gcc_get,
 	.est_irq_status = tsn_est_irq_status,
+	.update_tsn_mmc_stat = tsn_mmc_stat_update,
 	.dump_tsn_mmc = tsn_mmc_dump,
 	.cbs_recal_idleslope = tsn_cbs_recal_idleslope,
 	.fpe_set_txqpec = tsn_fpe_set_txqpec,
