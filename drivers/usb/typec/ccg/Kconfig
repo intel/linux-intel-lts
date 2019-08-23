@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config TYPEC_CCG_HPI
+	tristate "Cypress CCG Host Processor Interface"
+	depends on I2C
+	select REGMAP_I2C
+	help
+	  This driver adds support for Cypress CCG1, CCG2, CCG3, CCG4, CCG5 and
+	  CCG6 USB Power Delivery controllers. The primary interface with
+	  Cypress CCGx USB PD controllers is called HPI (Host Processor
+	  Interface). Later generations (CCG4, CCG5 and CCG6) also support UCSI,
+	  but Cypress CCGx UCSI support is handled in its own driver ucsi_ccg.c.
+
