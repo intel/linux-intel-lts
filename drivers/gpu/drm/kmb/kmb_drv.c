@@ -32,6 +32,7 @@
 #include <linux/of_graph.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/pm_runtime.h>
+#include <linux/clk.h>
 #include <drm/drm.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
@@ -50,6 +51,25 @@
 
 /*IRQ handler*/
 static irqreturn_t kmb_isr(int irq, void *arg);
+
+static struct clk *clk_lcd;
+static struct clk *clk_mipi;
+
+static int kmb_display_clk_enable(void)
+{
+	clk_prepare_enable(clk_lcd);
+	clk_prepare_enable(clk_mipi);
+	return 0;
+}
+
+static int kmb_display_clk_disable(void)
+{
+	if (clk_lcd)
+		clk_disable_unprepare(clk_lcd);
+	if (clk_mipi)
+		clk_disable_unprepare(clk_mipi);
+	return 0;
+}
 
 static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
@@ -171,6 +191,19 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_ERROR("failed to initialize DSI\n");
 		goto setup_fail;
 	}
+
+	/* enable display clocks*/
+	clk_lcd = clk_get(&pdev->dev, "clk_lcd");
+	if (!clk_lcd) {
+		DRM_ERROR("clk_get() failed clk_lcd\n");
+		goto setup_fail;
+	}
+	clk_mipi = clk_get(&pdev->dev, "clk_mipi");
+	if (!clk_mipi) {
+		DRM_ERROR("clk_get() failed clk_mipi\n");
+		goto setup_fail;
+	}
+	kmb_display_clk_enable();
 
 	ret = drm_irq_install(drm, platform_get_irq(pdev, 0));
 	if (ret < 0) {
@@ -398,6 +431,11 @@ static void kmb_drm_unbind(struct device *dev)
 	of_reserved_mem_device_release(drm->dev);
 	drm_mode_config_cleanup(drm);
 
+	/*release clks */
+	kmb_display_clk_disable();
+	clk_put(clk_lcd);
+	clk_put(clk_mipi);
+
 	drm_dev_put(drm);
 	drm->dev_private = NULL;
 	dev_set_drvdata(dev, NULL);
@@ -436,8 +474,8 @@ static int kmb_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id kmb_of_match[] = {
-	{.compatible = "lcd"},
+static const struct of_device_id  kmb_of_match[] = {
+	{.compatible = "kmb,display"},
 	{},
 };
 
