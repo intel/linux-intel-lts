@@ -125,12 +125,12 @@ void bh_session_remove(unsigned int conn_idx, u64 host_id)
 
 static void bh_request_free(struct bh_request_cmd *request)
 {
-	if (!request)
+	if (IS_ERR_OR_NULL(request))
 		return;
+
 	kfree(request->cmd);
 	kfree(request->response);
 	kfree(request);
-	request = NULL;
 }
 
 static struct bh_request_cmd *bh_request_alloc(const void *hdr,
@@ -358,7 +358,7 @@ static int bh_send_message(const struct bh_request_cmd *request)
 {
 	struct bh_command_header *h;
 
-	if (!request)
+	if (IS_ERR_OR_NULL(request))
 		return -EINVAL;
 
 	if (request->cmd_len < sizeof(*h) || !request->cmd)
