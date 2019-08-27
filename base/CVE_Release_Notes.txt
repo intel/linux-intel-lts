@@ -126,6 +126,9 @@ CVEs fixed in 4.19.44:
 CVEs fixed in 4.19.45:
   CVE-2019-11833: 25d010f4e0ece1ddf0d8d57942c0b0f1568fe498 ext4: zero out the unused memory region in the extent tree block
 
+CVEs fixed in 4.19.46:
+  CVE-2019-15666: c9516503fe53c8960f180c1cc1cdf2341bed843d xfrm: policy: Fix out-of-bound array accesses in __xfrm_policy_unlink
+
 CVEs fixed in 4.19.47:
   CVE-2019-9500: cc240e057c1d48665dde8036144114854bae058c brcmfmac: assure SSID length from firmware is limited
   CVE-2019-9503: 8783c4128c371668e401eee2f2ba3918c6211b81 brcmfmac: add subtype check for event handling in data path
@@ -189,7 +192,7 @@ CVEs fixed in 4.19.68:
   CVE-2019-15118: 46f9a1bc60a4c15a14a6504168cee1c2e0bf3ab4 ALSA: usb-audio: Fix a stack buffer overflow bug in check_input_term
 
  
-CVEs Fixed in this 4.19.66 LTS 4.19 release 
+CVEs Fixed in this 4.19.68 LTS 4.19 release 
 ====================================================
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
