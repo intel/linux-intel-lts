@@ -301,8 +301,7 @@ DEFINE_DRM_GEM_CMA_FOPS(fops);
 
 static struct drm_driver kmb_driver = {
 	.driver_features = DRIVER_HAVE_IRQ | DRIVER_GEM |
-			DRIVER_MODESET |
-			DRIVER_ATOMIC,
+			DRIVER_MODESET | DRIVER_ATOMIC,
 	.irq_handler = kmb_isr,
 	.irq_preinstall = kmb_irq_reset,
 	.irq_uninstall = kmb_irq_reset,
@@ -378,6 +377,8 @@ static int kmb_drm_bind(struct device *dev)
 	lcd->n_layers = KMB_MAX_PLANES;
 	if (ret)
 		goto err_register;
+
+	drm_fbdev_generic_setup(drm, 32);
 
 	return 0;
 

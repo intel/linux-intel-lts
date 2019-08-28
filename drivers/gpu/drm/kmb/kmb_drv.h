@@ -38,7 +38,6 @@ struct kmb_drm_private {
 	void __iomem			*msscam_mmio;
 	unsigned char			n_layers;
 	struct clk			*clk;
-	struct drm_fbdev_cma		*fbdev;
 	struct drm_crtc			crtc;
 	struct kmb_plane		*plane;
 	struct drm_atomic_state		*state;
