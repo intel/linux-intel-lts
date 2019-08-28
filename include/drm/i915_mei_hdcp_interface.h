@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (GPL-2.0+) */
 /*
- * Copyright © 2017-2018 Intel Corporation
+ * Copyright © 2017-2019 Intel Corporation
  *
  * Authors:
  * Ramalingam C <ramalingam.c@intel.com>
@@ -42,6 +42,18 @@ enum hdcp_wired_protocol {
 	HDCP_PROTOCOL_DP
 };
 
+enum mei_fw_ddi {
+	MEI_DDI_INVALID_PORT = 0x0,
+
+	MEI_DDI_B = 1,
+	MEI_DDI_C,
+	MEI_DDI_D,
+	MEI_DDI_E,
+	MEI_DDI_F,
+	MEI_DDI_A = 7,
+	MEI_DDI_RANGE_END = MEI_DDI_A,
+};
+
 /**
  * enum mei_fw_tc - ME Firmware defined index for transcoders
  * @MEI_INVALID_TRANSCODER: Index for Invalid transcoder
@@ -66,7 +78,7 @@ enum mei_fw_tc {
 
 /**
  * struct hdcp_port_data - intel specific HDCP port data
- * @port: port index as per I915
+ * @fw_ddi: ddi index as per ME FW
  * @fw_tc: transcoder index as per ME FW
  * @port_type: HDCP port type as per ME FW classification
  * @protocol: HDCP adaptation as per ME FW
@@ -79,7 +91,7 @@ enum mei_fw_tc {
  *	     streams
  */
 struct hdcp_port_data {
-	enum port port;
+	enum mei_fw_ddi fw_ddi;
 	enum mei_fw_tc fw_tc;
 	u8 port_type;
 	u8 protocol;
