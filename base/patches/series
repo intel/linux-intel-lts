@@ -1,9 +1,6 @@
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
 
-# CVE-2018-6555
-0002-staging-irda-remove-remaining-remants-of-irda-code-r-CVE-2018-6555.patch
-
 # CVE-2018-8043
 0001-net-phy-mdio-bcm-unimac-fix-potential-NULL-dereferen-CVE-2018-8043.patch
 
@@ -25,8 +22,8 @@
 # CVE-2019-12614
 0001-powerpc-pseries-dlpar-Fix-a-missing-check-in-dlpar_p-CVE-2019-12614.patch
 
-# CVE-2019-10126
-0001-mwifiex-Fix-skipped-vendor-specific-IEs-CVE-2019-10126.patch
-
 # CVE-2019-3846
 0004-mwifiex-use-total_ie_len-in-mwifiex_update_bss_desc-CVE-2019-3846.patch
+
+# CVE-2018-20976
+0001-xfs-clear-sb-s_fs_info-on-mount-failure-CVE-2018-20976.patch
