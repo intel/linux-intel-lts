@@ -133,7 +133,7 @@ struct ioreq_client {
 	int pci_bus;
 	int pci_dev;
 	int pci_func;
-	atomic_t refcnt;
+	refcount_t refcnt;
 	/* Add the vhm_vm that contains the ioreq_client */
 	struct vhm_vm *ref_vm;
 };
@@ -162,7 +162,7 @@ static int alloc_client(void)
 	client = kzalloc(sizeof(struct ioreq_client), GFP_KERNEL);
 	if (!client)
 		return -ENOMEM;
-	atomic_set(&client->refcnt, 1);
+	refcount_set(&client->refcnt, 1);
 
 	spin_lock_bh(&client_lock);
 	ret = idr_alloc_cyclic(&idr_client, client, 1, MAX_CLIENT, GFP_NOWAIT);
@@ -186,7 +186,7 @@ static struct ioreq_client *acrn_ioreq_get_client(int client_id)
 	spin_lock_bh(&client_lock);
 	obj = idr_find(&idr_client, client_id);
 	if (obj)
-		atomic_inc(&obj->refcnt);
+		refcount_inc(&obj->refcnt);
 	spin_unlock_bh(&client_lock);
 
 	return obj;
@@ -195,7 +195,7 @@ static struct ioreq_client *acrn_ioreq_get_client(int client_id)
 
 static void acrn_ioreq_put_client(struct ioreq_client *client)
 {
-	if (atomic_dec_and_test(&client->refcnt)) {
+	if (refcount_dec_and_test(&client->refcnt)) {
 		struct vhm_vm *ref_vm = client->ref_vm;
 		/* The client should be released when refcnt = 0 */
 		/* TBD: Do we need to free the other resources? */
@@ -951,7 +951,7 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
 	struct ioreq_client *client;
 	int i, vcpu_num;
 
-	vcpu_num = atomic_read(&vm->vcpu_num);
+	vcpu_num = refcount_read(&vm->vcpu_num);
 	for (i = 0; i < vcpu_num; i++) {
 		req = vm->req_buf->req_queue + i;
 

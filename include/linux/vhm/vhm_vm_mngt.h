@@ -64,6 +64,7 @@
 #include <linux/mutex.h>
 #include <linux/spinlock_types.h>
 #include <linux/rwlock_types.h>
+#include <linux/refcount.h>
 
 extern struct list_head vhm_vm_list;
 extern rwlock_t vhm_vm_list_lock;
@@ -104,10 +105,10 @@ struct vhm_vm {
 	struct list_head list;
 	unsigned long vmid;
 	int ioreq_fallback_client;
-	atomic_t refcnt;
+	refcount_t refcnt;
 	struct mutex hugepage_lock;
 	struct hlist_head hugepage_hlist[HUGEPAGE_HLIST_ARRAY_SIZE];
-	atomic_t vcpu_num;
+	refcount_t vcpu_num;
 	int max_gfn;
 	spinlock_t ioreq_client_lock;
 	struct list_head ioreq_client_list;

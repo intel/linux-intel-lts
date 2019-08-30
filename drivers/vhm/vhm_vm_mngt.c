@@ -73,7 +73,7 @@ struct vhm_vm *find_get_vm(unsigned long vmid)
 	read_lock_bh(&vhm_vm_list_lock);
 	list_for_each_entry(vm, &vhm_vm_list, list) {
 		if (vm->vmid == vmid) {
-			atomic_inc(&vm->refcnt);
+			refcount_inc(&vm->refcnt);
 			read_unlock_bh(&vhm_vm_list_lock);
 			return vm;
 		}
@@ -85,7 +85,7 @@ EXPORT_SYMBOL_GPL(find_get_vm);
 
 void put_vm(struct vhm_vm *vm)
 {
-	if (atomic_dec_and_test(&vm->refcnt)) {
+	if (refcount_dec_and_test(&vm->refcnt)) {
 		free_guest_mem(vm);
 
 		if (vm->req_buf && vm->pg) {
@@ -102,7 +102,7 @@ EXPORT_SYMBOL_GPL(put_vm);
 
 void get_vm(struct vhm_vm *vm)
 {
-	atomic_inc(&vm->refcnt);
+	refcount_inc(&vm->refcnt);
 }
 EXPORT_SYMBOL_GPL(get_vm);
 

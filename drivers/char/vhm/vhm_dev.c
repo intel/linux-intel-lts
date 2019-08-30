@@ -118,7 +118,7 @@ static int vhm_dev_open(struct inode *inodep, struct file *filep)
 	INIT_LIST_HEAD(&vm->ioreq_client_list);
 	spin_lock_init(&vm->ioreq_client_lock);
 
-	atomic_set(&vm->refcnt, 1);
+	refcount_set(&vm->refcnt, 1);
 	write_lock_bh(&vhm_vm_list_lock);
 	vm_list_add(&vm->list);
 	write_unlock_bh(&vhm_vm_list_lock);
@@ -291,7 +291,7 @@ create_vm_fail:
 			acrn_mempool_free(cv);
 			return -EFAULT;
 		}
-		atomic_inc(&vm->vcpu_num);
+		refcount_inc(&vm->vcpu_num);
 		acrn_mempool_free(cv);
 
 		return ret;
