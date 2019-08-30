@@ -603,6 +603,9 @@ int drm_mode_setcrtc(struct drm_device *dev, void *data,
 	}
 	DRM_DEBUG_KMS("[CRTC:%d:%s]\n", crtc->base.id, crtc->name);
 
+	if (!crtc->primary)
+		return -EINVAL;
+
 	plane = crtc->primary;
 
 	mutex_lock(&crtc->dev->mode_config.mutex);
@@ -615,9 +618,6 @@ retry:
 	ret = drm_modeset_lock_all_ctx(crtc->dev, &ctx);
 	if (ret)
 		goto out;
-
-	if (!crtc->primary)
-		return -EINVAL;
 
 	if (crtc_req->mode_valid) {
 		/* If we have a mode we need a framebuffer. */

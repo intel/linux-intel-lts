@@ -571,8 +571,10 @@ static bool drm_fb_helper_is_bound(struct drm_fb_helper *fb_helper)
 
 	drm_for_each_crtc(crtc, dev) {
 		drm_modeset_lock(&crtc->mutex, NULL);
-		if (!crtc->primary)
+		if (!crtc->primary) {
+			drm_modeset_unlock(&crtc->mutex);
 			continue;
+		}
 		if (crtc->primary->fb)
 			crtcs_bound++;
 		if (crtc->primary->fb == fb_helper->fb)
