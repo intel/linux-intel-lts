@@ -1678,11 +1678,7 @@ static struct crl_arithmetic_ops ox03a10_mirror_ops[] = {
 	{
 		.op = CRL_BITWISE_LSHIFT,
 		.operand.entity_val = 2,
-	},
-	{
-		.op = CRL_BITWISE_OR,
-		.operand.entity_val = 0x20,
-	},
+	}
 };
 
 static struct crl_dynamic_register_access ox03a10_h_flip_regs[] = {
@@ -1691,7 +1687,7 @@ static struct crl_dynamic_register_access ox03a10_h_flip_regs[] = {
 		.len = CRL_REG_LEN_08BIT | CRL_REG_READ_AND_UPDATE,
 		.ops_items = ARRAY_SIZE(ox03a10_mirror_ops),
 		.ops = ox03a10_mirror_ops,
-		.mask = 0x24,
+		.mask = 0x4,
 	},
 	{
 		.address = 0x3811,
