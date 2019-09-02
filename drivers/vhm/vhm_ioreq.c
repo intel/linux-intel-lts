@@ -61,6 +61,7 @@
 #include <linux/mm.h>
 #include <linux/poll.h>
 #include <linux/delay.h>
+#include <linux/debugfs.h>
 #include <linux/vhm/acrn_common.h>
 #include <linux/vhm/acrn_vhm_ioreq.h>
 #include <linux/vhm/vhm_vm_mngt.h>
@@ -1103,7 +1104,59 @@ void acrn_ioreq_free(struct vhm_vm *vm)
 
 }
 
+static struct dentry *vhm_debugfs_dir;
+
+static void vhm_ioclient_range_show_one(struct seq_file *s,
+	struct ioreq_client *client)
+{
+	struct list_head *pos;
+
+	seq_printf(s, "  client: %s, id: %d\n",
+			client->name, client->id);
+
+	spin_lock_bh(&client->range_lock);
+	list_for_each(pos, &client->range_list) {
+		struct ioreq_range *range =
+			container_of(pos, struct ioreq_range, list);
+		seq_printf(s, "    io range: type %d, start 0x%lx, end 0x%lx\n",
+			range->type, range->start, range->end);
+	}
+	spin_unlock_bh(&client->range_lock);
+}
+
+static int vhm_ioclient_range_show(struct seq_file *s, void *data)
+{
+	struct vhm_vm *vm;
+
+	read_lock_bh(&vhm_vm_list_lock);
+	list_for_each_entry(vm, &vhm_vm_list, list) {
+		struct list_head *pos, *tmp;
+
+		get_vm(vm);
+		seq_printf(s, "vm%ld:\n", vm->vmid);
+		list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
+			struct ioreq_client *client =
+				container_of(pos, struct ioreq_client, list);
+
+			vhm_ioclient_range_show_one(s, client);
+		}
+		put_vm(vm);
+	}
+	read_unlock_bh(&vhm_vm_list_lock);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(vhm_ioclient_range);
+
 void acrn_ioreq_driver_init()
 {
 	idr_init(&idr_client);
+	vhm_debugfs_dir = debugfs_create_dir("vhm", NULL);
+	debugfs_create_file("ioclient_range", 0444, vhm_debugfs_dir, NULL,
+		&vhm_ioclient_range_fops);
+}
+
+void acrn_ioreq_driver_deinit(void)
+{
+	debugfs_remove_recursive(vhm_debugfs_dir);
 }
