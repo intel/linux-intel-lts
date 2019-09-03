@@ -69,6 +69,8 @@
 #include <linux/vhm/acrn_vhm_mm.h>
 #include <linux/idr.h>
 
+#define IOREQ_RANGE_ENTRIES	8
+
 static DEFINE_SPINLOCK(client_lock);
 static struct idr	idr_client;
 
@@ -77,6 +79,11 @@ struct ioreq_range {
 	uint32_t type;
 	long start;
 	long end;
+
+#ifdef CONFIG_STACKTRACE
+	unsigned int st_len;
+	unsigned long st_entries[IOREQ_RANGE_ENTRIES];
+#endif
 };
 
 enum IOREQ_CLIENT_BITS {
@@ -475,6 +482,11 @@ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
 	range->type = type;
 	range->start = start;
 	range->end = end;
+
+#ifdef CONFIG_STACKTRACE
+	range->st_len = stack_trace_save(range->st_entries,
+					ARRAY_SIZE(range->st_entries), 1);
+#endif
 
 	spin_lock_bh(&client->range_lock);
 	list_add(&range->list, &client->range_list);
@@ -1109,6 +1121,7 @@ static struct dentry *vhm_debugfs_dir;
 static void vhm_ioclient_range_show_one(struct seq_file *s,
 	struct ioreq_client *client)
 {
+	int i;
 	struct list_head *pos;
 
 	seq_printf(s, "  client: %s, id: %d\n",
@@ -1120,6 +1133,13 @@ static void vhm_ioclient_range_show_one(struct seq_file *s,
 			container_of(pos, struct ioreq_range, list);
 		seq_printf(s, "    io range: type %d, start 0x%lx, end 0x%lx\n",
 			range->type, range->start, range->end);
+#ifdef CONFIG_STACKTRACE
+		seq_puts(s, "      allocation stack:\n");
+		for (i = 0; i < range->st_len; i++) {
+			seq_printf(s, "        %pB\n",
+				(void *)range->st_entries[i]);
+		}
+#endif
 	}
 	spin_unlock_bh(&client->range_lock);
 }
