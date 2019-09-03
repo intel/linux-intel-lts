@@ -128,6 +128,7 @@ static void bh_request_free(struct bh_request_cmd *request)
 	if (IS_ERR_OR_NULL(request))
 		return;
 
+	list_del(&request->link);
 	kfree(request->cmd);
 	kfree(request->response);
 	kfree(request);
@@ -161,6 +162,8 @@ static struct bh_request_cmd *bh_request_alloc(const void *hdr,
 		kfree(request);
 		return ERR_PTR(-ENOMEM);
 	}
+
+	INIT_LIST_HEAD(&request->link);
 
 	memcpy(request->cmd, hdr, hdr_len);
 	request->cmd_len = hdr_len;
@@ -819,10 +822,8 @@ static void bh_request_list_free(struct list_head *request_list)
 {
 	struct bh_request_cmd *pos, *next;
 
-	list_for_each_entry_safe(pos, next, request_list, link) {
-		list_del(&pos->link);
+	list_for_each_entry_safe(pos, next, request_list, link)
 		bh_request_free(pos);
-	}
 
 	INIT_LIST_HEAD(request_list);
 }
