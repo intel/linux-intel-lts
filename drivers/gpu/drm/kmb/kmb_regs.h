@@ -527,15 +527,25 @@
 
 /* MIPI IRQ */
 #define MIPI_CTRL_IRQ_STATUS0				(0x00)
-#define   MIPI_DHY_ERR_IRQ				1
+#define   MIPI_DPHY_ERR_IRQ				1
+#define   MIPI_DPHY_ERR_MASK				0x7FE /*bits 1-10 */
 #define   MIPI_HS_IRQ					13
+#define   MIPI_HS_IRQ_MASK				0x7FE000 /*bits 13-22 */
 #define   MIPI_LP_EVENT_IRQ				25
+#define   MIPI_GET_IRQ_STAT0(dev)		kmb_read_mipi(dev, \
+						MIPI_CTRL_IRQ_STATUS0)
 #define MIPI_CTRL_IRQ_STATUS1				(0x04)
 #define   MIPI_HS_RX_EVENT_IRQ				0
+#define   MIPI_GET_IRQ_STAT1(dev)		kmb_read_mipi(dev, \
+						MIPI_CTRL_IRQ_STATUS1)
 #define MIPI_CTRL_IRQ_ENABLE0				(0x08)
-#define   SET_MIPI_CTRL_IRQ_ENABLE0(dev, M, N)		\
-		kmb_set_bit_mipi(dev, MIPI_CTRL_IRQ_ENABLE0, M+N)
+#define   SET_MIPI_CTRL_IRQ_ENABLE0(dev, M, N)	kmb_set_bit_mipi(dev, \
+						MIPI_CTRL_IRQ_ENABLE0, M+N)
+#define   MIPI_GET_IRQ_ENABLED0(dev)		kmb_read_mipi(dev, \
+						MIPI_CTRL_IRQ_ENABLE0)
 #define MIPI_CTRL_IRQ_ENABLE1				(0x0c)
+#define   MIPI_GET_IRQ_ENABLED1(dev)		kmb_read_mipi(dev, \
+						MIPI_CTRL_IRQ_ENABLE1)
 #define MIPI_CTRL_IRQ_CLEAR0				(0x010)
 #define   SET_MIPI_CTRL_IRQ_CLEAR0(dev, M, N)		\
 		kmb_set_bit_mipi(dev, MIPI_CTRL_IRQ_CLEAR0, M+N)
@@ -543,8 +553,10 @@
 #define   SET_MIPI_CTRL_IRQ_CLEAR1(dev, M, N)		\
 		kmb_set_bit_mipi(dev, MIPI_CTRL_IRQ_CLEAR1, M+N)
 #define MIPI_TX_HS_IRQ_STATUS				(0x01c)
-#define   MIPI_TX_HS_IRQ_STATUSm(M)			\
-			(MIPI_TX_HS_IRQ_STATUS + HS_OFFSET(M))
+#define   MIPI_TX_HS_IRQ_STATUSm(M)		(MIPI_TX_HS_IRQ_STATUS + \
+						HS_OFFSET(M))
+#define   GET_MIPI_TX_HS_IRQ_STATUS(dev, M)	kmb_read_mipi(dev, \
+						MIPI_TX_HS_IRQ_STATUSm(M))
 #define   MIPI_TX_HS_IRQ_LINE_COMPARE			(1<<1)
 #define   MIPI_TX_HS_IRQ_FRAME_DONE_0			(1<<2)
 #define   MIPI_TX_HS_IRQ_FRAME_DONE_1			(1<<3)
@@ -598,10 +610,15 @@
 				MIPI_TX_HS_IRQ_ERROR)
 
 #define MIPI_TX_HS_IRQ_ENABLE				(0x020)
-#define   SET_HS_IRQ_ENABLE(dev, M, val)			\
-			kmb_set_bitmask_mipi(dev, \
-			MIPI_TX_HS_IRQ_ENABLE \
-			+ HS_OFFSET(M), val)
+#define   SET_HS_IRQ_ENABLE(dev, M, val)	kmb_set_bitmask_mipi(dev, \
+						MIPI_TX_HS_IRQ_ENABLE \
+						+ HS_OFFSET(M), val)
+#define   CLR_HS_IRQ_ENABLE(dev, M, val)	kmb_clr_bitmask_mipi(dev, \
+						MIPI_TX_HS_IRQ_ENABLE \
+						+ HS_OFFSET(M), val)
+#define	  GET_HS_IRQ_ENABLE(dev, M)		kmb_read_mipi(dev, \
+						MIPI_TX_HS_IRQ_ENABLE \
+						+ HS_OFFSET(M))
 #define MIPI_TX_HS_IRQ_CLEAR				(0x024)
 #define   SET_MIPI_TX_HS_IRQ_CLEAR(dev, M, val)		\
 			kmb_set_bitmask_mipi(dev, \

@@ -57,7 +57,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	struct platform_device *pdev = to_platform_device(drm->dev);
 	/*struct resource *res;*/
 	/*u32 version;*/
-	/*int irq_lcd, irq_mipi; */
+	int irq_lcd, irq_mipi;
 	int ret;
 
 	/* TBD - not sure if clock_get needs to be called here */
@@ -108,11 +108,29 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	dev_p->msscam_mmio = ioremap_nocache(MSS_CAM_BASE_ADDR,
 			MSS_CAM_MMIO_SIZE);
 
-	/*TODO - register irqs here - section 17.3 in databook
-	 * lists LCD at 79 under MSS CPU - firmware has to redirect it to A53
-	 * May be 33 for LCD and 34 for MIPI? Will wait till firmware
-	 * finalizes the IRQ numbers for redirection
+	/* register irqs here - section 17.3 in databook
+	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
+	 * firmware has to redirect it to A53
 	 */
+	irq_lcd = platform_get_irq_byname(pdev, "irq_lcd");
+	if (irq_lcd < 0) {
+		DRM_ERROR("irq_lcd not found");
+		return irq_lcd;
+	}
+	pr_info("irq_lcd platform_get_irq = %d\n", irq_lcd);
+	ret = request_irq(irq_lcd, kmb_isr, IRQF_SHARED, "irq_lcd", dev_p);
+	dev_p->irq_lcd = irq_lcd;
+
+	irq_mipi = platform_get_irq_byname(pdev, "irq_mipi");
+	if (irq_mipi < 0) {
+		DRM_ERROR("irq_mipi not found");
+		return irq_mipi;
+	}
+	pr_info("irq_mipi platform_get_irq = %d\n", irq_mipi);
+	ret = request_irq(irq_mipi, kmb_isr, IRQF_SHARED, "irq_mipi", dev_p);
+	dev_p->irq_mipi = irq_mipi;
+
+
 
 /*TBD read and check for correct product version here */
 
@@ -161,9 +179,9 @@ static void kmb_setup_mode_config(struct drm_device *drm)
 	drm->mode_config.funcs = &kmb_mode_config_funcs;
 }
 
-static irqreturn_t kmb_isr(int irq, void *arg)
+
+static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 {
-	struct drm_device *dev = (struct drm_device *)arg;
 	unsigned long status, val;
 
 	status = kmb_read_lcd(dev->dev_private, LCD_INT_STATUS);
@@ -192,8 +210,27 @@ static irqreturn_t kmb_isr(int irq, void *arg)
 			break;
 		}
 	}
-
 	return IRQ_HANDLED;
+}
+
+static irqreturn_t  handle_mipi_irq(struct drm_device *dev)
+{
+	mipi_tx_handle_irqs(dev->dev_private);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t kmb_isr(int irq, void *arg)
+{
+	struct drm_device *dev = (struct drm_device *)arg;
+	struct kmb_drm_private *dev_p = dev->dev_private;
+	irqreturn_t ret = IRQ_NONE;
+
+	if (irq == dev_p->irq_lcd)
+		ret = handle_lcd_irq(dev);
+	else if (irq == dev_p->irq_mipi)
+		ret = handle_mipi_irq(dev);
+
+	return ret;
 }
 
 static void kmb_irq_reset(struct drm_device *drm)

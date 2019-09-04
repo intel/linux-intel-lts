@@ -1234,7 +1234,7 @@ static void mipi_tx_init_irqs(struct kmb_drm_private *dev_p,
 	SET_MIPI_TX_HS_IRQ_CLEAR(dev_p, MIPI_CTRL6, MIPI_TX_HS_IRQ_ALL);
 	/*global interrupts */
 	SET_MIPI_CTRL_IRQ_CLEAR0(dev_p, MIPI_CTRL6, MIPI_HS_IRQ);
-	SET_MIPI_CTRL_IRQ_CLEAR0(dev_p, MIPI_CTRL6, MIPI_DHY_ERR_IRQ);
+	SET_MIPI_CTRL_IRQ_CLEAR0(dev_p, MIPI_CTRL6, MIPI_DPHY_ERR_IRQ);
 	SET_MIPI_CTRL_IRQ_CLEAR1(dev_p, MIPI_CTRL6, MIPI_HS_RX_EVENT_IRQ);
 
 	/*enable interrupts */
@@ -1250,7 +1250,7 @@ static void mipi_tx_init_irqs(struct kmb_drm_private *dev_p,
 
 	/*enable user enabled interrupts */
 	if (cfg->irq_cfg.dphy_error)
-		SET_MIPI_CTRL_IRQ_ENABLE0(dev_p, MIPI_CTRL6, MIPI_DHY_ERR_IRQ);
+		SET_MIPI_CTRL_IRQ_ENABLE0(dev_p, MIPI_CTRL6, MIPI_DPHY_ERR_IRQ);
 	if (cfg->irq_cfg.line_compare)
 		SET_HS_IRQ_ENABLE(dev_p, MIPI_CTRL6,
 				MIPI_TX_HS_IRQ_LINE_COMPARE);
@@ -1260,7 +1260,40 @@ static void mipi_tx_init_irqs(struct kmb_drm_private *dev_p,
 	spin_unlock_irqrestore(&dev_p->irq_lock, irqflags);
 }
 
-void kmb_dsi_init(struct drm_device *dev)
+
+void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p)
+{
+	uint32_t irq_ctrl_stat_0, hs_stat, hs_enable;
+	uint32_t irq_ctrl_enabled_0;
+
+	irq_ctrl_stat_0 = MIPI_GET_IRQ_STAT0(dev_p);
+	irq_ctrl_enabled_0 = MIPI_GET_IRQ_ENABLED0(dev_p);
+	/*only service enabled interrupts */
+	irq_ctrl_stat_0 &= irq_ctrl_enabled_0;
+
+	if (irq_ctrl_stat_0 & MIPI_DPHY_ERR_MASK) {
+		if (irq_ctrl_stat_0 & ((1 << (MIPI_DPHY6 + 1))))
+			SET_MIPI_CTRL_IRQ_CLEAR0(dev_p, MIPI_CTRL6,
+					MIPI_DPHY_ERR_IRQ);
+	} else if (irq_ctrl_stat_0 & MIPI_HS_IRQ_MASK) {
+		hs_stat = GET_MIPI_TX_HS_IRQ_STATUS(dev_p, MIPI_CTRL6);
+		hs_enable = GET_HS_IRQ_ENABLE(dev_p, MIPI_CTRL6);
+		hs_stat &= hs_enable;
+		/*look for errors */
+		if (hs_stat & MIPI_TX_HS_IRQ_ERROR) {
+			CLR_HS_IRQ_ENABLE(dev_p, MIPI_CTRL6,
+				(hs_stat & MIPI_TX_HS_IRQ_ERROR) |
+				MIPI_TX_HS_IRQ_DMA_DONE |
+				MIPI_TX_HS_IRQ_DMA_IDLE);
+		}
+		/* clear local, then global */
+		SET_MIPI_TX_HS_IRQ_CLEAR(dev_p, MIPI_CTRL6, hs_stat);
+		SET_MIPI_CTRL_IRQ_CLEAR0(dev_p, MIPI_CTRL6, MIPI_HS_IRQ);
+	}
+
+}
+
+int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 {
 	struct kmb_dsi *kmb_dsi;
 	struct drm_encoder *encoder;

@@ -43,6 +43,8 @@ struct kmb_drm_private {
 	struct kmb_plane		*plane;
 	struct drm_atomic_state		*state;
 	spinlock_t			irq_lock;
+	int				irq_lcd;
+	int				irq_mipi;
 };
 
 static inline struct kmb_drm_private *to_kmb(const struct drm_device *dev)

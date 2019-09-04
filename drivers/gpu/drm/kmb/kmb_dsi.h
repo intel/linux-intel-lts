@@ -331,6 +331,7 @@ union mipi_irq_cfg {
 
 void kmb_dsi_init(struct drm_device *dev);
 void kmb_plane_destroy(struct drm_plane *plane);
+void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p);
 
 #define to_kmb_connector(x) container_of(x, struct kmb_connector, base)
 #define to_kmb_host(x) container_of(x, struct kmb_dsi_host, base)
