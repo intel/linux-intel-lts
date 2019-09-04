@@ -743,8 +743,8 @@ static int ioreq_complete_request(unsigned long vmid, int vcpu,
 	bool polling_mode;
 
 	polling_mode = vhm_req->completion_polling;
-	smp_mb();
-	atomic_set(&vhm_req->processed, REQ_STATE_COMPLETE);
+	vhm_req->client = -1;
+	atomic_set_release(&vhm_req->processed, REQ_STATE_COMPLETE);
 	/*
 	 * In polling mode, HV will poll ioreqs' completion.
 	 * Once marked the ioreq as REQ_STATE_COMPLETE, hypervisor side
@@ -982,7 +982,8 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
 				return -EINVAL;
 			} else {
 				req->client = client->id;
-				atomic_set(&req->processed, REQ_STATE_PROCESSING);
+				atomic_set_release(&req->processed,
+						REQ_STATE_PROCESSING);
 				set_bit(i, client->ioreqs_map);
 				acrn_ioreq_put_client(client);
 			}
