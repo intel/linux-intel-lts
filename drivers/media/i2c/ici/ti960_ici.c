@@ -14,7 +14,7 @@
 #include <media/crlmodule-lite.h>
 #include <media/ici.h>
 
-#include "../ti960-reg.h"
+#include "ti960-reg-ici.h"
 
 struct ti960_subdev {
 	struct ici_ext_subdev *sd;
