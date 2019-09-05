@@ -60,6 +60,7 @@
 
 #include <linux/poll.h>
 #include <linux/vhm/vhm_vm_mngt.h>
+#include <linux/vhm/acrn_common.h>
 
 typedef	int (*ioreq_handler_t)(int client_id, unsigned long *ioreqs_map);
 
@@ -199,4 +200,11 @@ int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name);
 unsigned int vhm_dev_poll(struct file *filep, poll_table *wait);
 
 void acrn_ioreq_driver_init(void);
+
+static __always_inline bool is_ioreq_ready_for_process(struct vhm_request *req,
+	int client_id)
+{
+	return (atomic_read_acquire(&req->processed) == REQ_STATE_PROCESSING &&
+			req->client == client_id);
+}
 #endif

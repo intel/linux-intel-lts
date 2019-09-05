@@ -167,8 +167,7 @@ int virtio_vqs_index_get(struct virtio_dev_info *dev,
 		if (vcpu == dev->_ctx.max_vcpu)
 			break;
 		req = &dev->_ctx.req_buf[vcpu];
-		if (atomic_read(&req->processed) == REQ_STATE_PROCESSING &&
-		    req->client == dev->_ctx.vhm_client_id) {
+		if (is_ioreq_ready_for_process(req, dev->_ctx.vhm_client_id)) {
 			if (req->reqs.pio_request.direction == REQUEST_READ) {
 				/* currently we handle kick only,
 				 * so read will return 0

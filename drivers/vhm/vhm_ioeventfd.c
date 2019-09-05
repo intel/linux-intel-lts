@@ -354,8 +354,7 @@ static int acrn_ioeventfd_dispatch_ioreq(int client_id,
 		if (vcpu == info->vcpu_num)
 			break;
 		req = &info->req_buf[vcpu];
-		if (atomic_read(&req->processed) == REQ_STATE_PROCESSING &&
-			req->client == client_id) {
+		if (is_ioreq_ready_for_process(req, client_id)) {
 			if (req->type == REQ_MMIO) {
 				if (req->reqs.mmio_request.direction ==
 						REQUEST_READ) {
