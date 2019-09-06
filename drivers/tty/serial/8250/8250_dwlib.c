@@ -5,15 +5,25 @@
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
+#include <linux/property.h>
 #include <linux/serial_8250.h>
 #include <linux/serial_core.h>
 
 #include "8250_dwlib.h"
 
 /* Offsets for the DesignWare specific registers */
+#define DW_UART_TCR	0xac /* Transceiver Control Register (RS485) */
+#define DW_UART_DE_EN	0xb0 /* Driver Output Enable Register */
+#define DW_UART_RE_EN	0xb4 /* Receiver Output Enable Register */
 #define DW_UART_DLF	0xc0 /* Divisor Latch Fraction Register */
 #define DW_UART_CPR	0xf4 /* Component Parameter Register */
 #define DW_UART_UCV	0xf8 /* UART Component Version */
+
+/* Trasceiver Control Register bits */
+#define DW_UART_TCR_RS485_EN		BIT(0)
+#define DW_UART_TCR_RE_POL		BIT(1)
+#define DW_UART_TCR_DE_POL		BIT(2)
+#define DW_UART_TCR_XFER_MODE(_mode_)	((_mode_) << 3)
 
 /* Component Parameter Register bits */
 #define DW_UART_CPR_ABP_DATA_WIDTH	(3 << 0)
@@ -77,10 +87,54 @@ static void dw8250_set_divisor(struct uart_port *p, unsigned int baud,
 	serial8250_do_set_divisor(p, baud, quot, quot_frac);
 }
 
+static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
+{
+	u32 tcr;
+
+	/* Clearing unsupported flags. */
+	rs485->flags &= SER_RS485_ENABLED;
+
+	tcr = dw8250_readl_ext(p, DW_UART_TCR);
+
+	/* REVISIT: Only supporting Hardware Controlled Half Duplex mode. */
+	if (rs485->flags & SER_RS485_ENABLED) {
+		tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(2);
+		dw8250_writel_ext(p, DW_UART_DE_EN, 1);
+		dw8250_writel_ext(p, DW_UART_RE_EN, 1);
+	} else {
+		tcr &= ~(DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(3));
+		dw8250_writel_ext(p, DW_UART_DE_EN, 0);
+		dw8250_writel_ext(p, DW_UART_RE_EN, 0);
+	}
+
+	if (device_property_read_bool(p->dev, "snps,de-active-high"))
+		tcr |= DW_UART_TCR_DE_POL;
+	if (device_property_read_bool(p->dev, "snps,re-active-high"))
+		tcr |= DW_UART_TCR_RE_POL;
+
+	dw8250_writel_ext(p, DW_UART_TCR, tcr);
+
+	/*
+	 * XXX: Though we could interpret the "RTS" timings as Driver Enable
+	 * (DE) assertion/de-assertion timings, initially not supporting that.
+	 * Ideally we should have timing values for the Driver instead of the
+	 * RTS signal.
+	 */
+	rs485->delay_rts_before_send = 0;
+	rs485->delay_rts_after_send = 0;
+
+	p->rs485 = *rs485;
+
+	return 0;
+}
+
 void dw8250_setup_port(struct uart_port *p)
 {
 	struct uart_8250_port *up = up_to_u8250p(p);
 	u32 reg;
+
+	if (device_property_read_bool(p->dev, "snps,rs485-interface-en"))
+		p->rs485_config = dw8250_rs485_config;
 
 	/*
 	 * If the Component Version Register returns zero, we know that
