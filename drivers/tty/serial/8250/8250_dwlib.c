@@ -16,6 +16,9 @@
 #define DW_UART_DE_EN	0xb0 /* Driver Output Enable Register */
 #define DW_UART_RE_EN	0xb4 /* Receiver Output Enable Register */
 #define DW_UART_DLF	0xc0 /* Divisor Latch Fraction Register */
+#define DW_UART_RAR	0xc4 /* Receive Address Register */
+#define DW_UART_TAR	0xc8 /* Transmit Address Register */
+#define DW_UART_LCR_EXT	0xcc /* Line Extended Control Register */
 #define DW_UART_CPR	0xf4 /* Component Parameter Register */
 #define DW_UART_UCV	0xf8 /* UART Component Version */
 
@@ -24,6 +27,12 @@
 #define DW_UART_TCR_RE_POL		BIT(1)
 #define DW_UART_TCR_DE_POL		BIT(2)
 #define DW_UART_TCR_XFER_MODE(_mode_)	((_mode_) << 3)
+
+/* Line Extended Control Register bits */
+#define DW_UART_LCR_EXT_DLS_E		BIT(0)
+#define DW_UART_LCR_EXT_ADDR_MATCH	BIT(1)
+#define DW_UART_LCR_EXT_SEND_ADDR	BIT(2)
+#define DW_UART_LCR_EXT_TRANSMIT_MODE	BIT(3)
 
 /* Component Parameter Register bits */
 #define DW_UART_CPR_ABP_DATA_WIDTH	(3 << 0)
@@ -89,10 +98,12 @@ static void dw8250_set_divisor(struct uart_port *p, unsigned int baud,
 
 static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
 {
+	u32 lcr = 0;
 	u32 tcr;
 
 	/* Clearing unsupported flags. */
-	rs485->flags &= SER_RS485_ENABLED;
+	rs485->flags &= SER_RS485_ENABLED | SER_RS485_9BIT_ENABLED |
+			SER_RS485_9BIT_TX_ADDR | SER_RS485_9BIT_RX_ADDR;
 
 	tcr = dw8250_readl_ext(p, DW_UART_TCR);
 
@@ -122,6 +133,20 @@ static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
 	 */
 	rs485->delay_rts_before_send = 0;
 	rs485->delay_rts_after_send = 0;
+
+	/* XXX: Proof of concept for 9-bit transfer mode. */
+	if (rs485->flags & SER_RS485_9BIT_ENABLED) {
+		lcr = DW_UART_LCR_EXT_DLS_E;
+		if (SER_RS485_9BIT_TX_ADDR) {
+			dw8250_writel_ext(p, DW_UART_TAR, rs485->padding[0]);
+			lcr |= DW_UART_LCR_EXT_SEND_ADDR;
+		} else if (SER_RS485_9BIT_RX_ADDR) {
+			dw8250_writel_ext(p, DW_UART_RAR, rs485->padding[0]);
+			lcr |= DW_UART_LCR_EXT_ADDR_MATCH;
+		}
+	}
+
+	dw8250_writel_ext(p, DW_UART_LCR_EXT, lcr);
 
 	p->rs485 = *rs485;
 
