@@ -126,6 +126,12 @@ struct serial_rs485 {
 #define SER_RS485_TERMINATE_BUS		(1 << 5)	/* Enable bus
 							   termination
 							   (if supported) */
+#define SER_RS485_9BIT_ENABLED		(1 << 6)	/* Enable 9-Bit transfer
+							   mode */
+#define SER_RS485_9BIT_TX_ADDR		(1 << 7)	/* TX address available
+							   in padding */
+#define SER_RS485_9BIT_RX_ADDR		(1 << 8)	/* RX address available
+							   in padding */
 	__u32	delay_rts_before_send;	/* Delay before send (milliseconds) */
 	__u32	delay_rts_after_send;	/* Delay after send (milliseconds) */
 	__u32	padding[5];		/* Memory is cheap, new structs
