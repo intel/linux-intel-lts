@@ -476,7 +476,7 @@ static int kmb_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id  kmb_of_match[] = {
-	{.compatible = "kmb,display"},
+	{.compatible = "intel,kmb_display"},
 	{},
 };
 
