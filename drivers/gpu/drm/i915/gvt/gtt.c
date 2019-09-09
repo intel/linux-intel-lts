@@ -2660,6 +2660,18 @@ static void intel_vgpu_destroy_ggtt_mm(struct intel_vgpu *vgpu)
 	vgpu->gtt.ggtt_mm = NULL;
 }
 
+static void clean_gvt_gop(struct intel_vgpu *vgpu)
+{
+	int i;
+
+	for (i = 0; i < vgpu->gm.gop_fb_size; i++)
+		intel_gvt_hypervisor_map_gfn_to_mfn(vgpu,
+			(GOP_FB_BASE >> PAGE_SHIFT) + i,
+			page_to_pfn(vgpu->gm.gop_fb_pages[i]), 1, false);
+
+	release_pages(vgpu->gm.gop_fb_pages, vgpu->gm.gop_fb_size);
+	kfree(vgpu->gm.gop_fb_pages);
+}
 /**
  * intel_vgpu_clean_gtt - clean up per-vGPU graphics memory virulization
  * @vgpu: a vGPU
@@ -2675,6 +2687,8 @@ void intel_vgpu_clean_gtt(struct intel_vgpu *vgpu)
 	intel_vgpu_destroy_all_ppgtt_mm(vgpu);
 	intel_vgpu_destroy_ggtt_mm(vgpu);
 	kfree(vgpu->cached_guest_entry);
+	if (vgpu->gm.gop_fb_pages)
+		clean_gvt_gop(vgpu);
 	release_scratch_page_tree(vgpu);
 }
 

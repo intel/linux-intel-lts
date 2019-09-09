@@ -89,6 +89,8 @@ struct intel_vgpu_gm {
 	struct sg_table *st;
 	struct drm_mm_node low_gm_node;
 	struct drm_mm_node high_gm_node;
+	struct page **gop_fb_pages;
+	u32 gop_fb_size;
 };
 
 #define INTEL_GVT_MAX_NUM_FENCES 32
@@ -127,6 +129,8 @@ struct intel_vgpu_irq {
 	DECLARE_BITMAP(flip_done_event[INTEL_GVT_MAX_PIPE],
 		       INTEL_GVT_EVENT_MAX);
 };
+
+#define GOP_FB_BASE	0xDF000000
 
 struct intel_vgpu_opregion {
 	bool mapped;
