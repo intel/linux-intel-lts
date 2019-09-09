@@ -1141,7 +1141,7 @@ int tsn_cbs_recal_idleslope(struct mac_device_info *hw, struct net_device *dev,
 
 	cap = &info->cap;
 	est_gcc = &info->est_gcc;
-	hw_bank = tsnif_est_get_bank(hw, ioaddr, 1);
+	hw_bank = tsnif_est_get_bank(hw, ioaddr, 0);
 
 	cycle_time_ns = (est_gcc->gcb[hw_bank].gcrr.cycle_sec *
 			 NSEC_PER_SEC) +

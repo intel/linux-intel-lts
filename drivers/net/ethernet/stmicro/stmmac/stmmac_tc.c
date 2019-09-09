@@ -352,6 +352,10 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 	value = qopt->locredit * 1024ll * 8;
 	priv->plat->tx_queues_cfg[queue].low_credit = value & GENMASK(31, 0);
 
+	ret = stmmac_cbs_recal_idleslope(priv, priv->hw,
+					 priv->dev, queue,
+					 &priv->plat->tx_queues_cfg[queue].idle_slope);
+
 	ret = stmmac_config_cbs(priv, priv->hw,
 				priv->plat->tx_queues_cfg[queue].send_slope,
 				priv->plat->tx_queues_cfg[queue].idle_slope,
@@ -737,38 +741,6 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 		dev_err(priv->device,
 			"EST: fail to program GCRR times into HW\n");
 		return ret;
-	}
-
-	if (priv->plat->tx_queues_to_use > 1) {
-		u32 queue;
-
-		for (queue = 1; queue < priv->plat->tx_queues_to_use; queue++) {
-			u32 new_idle_slope;
-
-			struct stmmac_txq_cfg *txqcfg =
-				&priv->plat->tx_queues_cfg[queue];
-
-			if (txqcfg->mode_to_use == MTL_QUEUE_DCB)
-				continue;
-
-			new_idle_slope = txqcfg->idle_slope;
-			ret = stmmac_cbs_recal_idleslope(priv, priv->hw,
-							 priv->dev, queue,
-							 &new_idle_slope);
-
-			if (ret) {
-				dev_err(priv->device,
-					"Recal idleslope failed.\n");
-				break;
-			}
-
-			stmmac_config_cbs(priv, priv->hw,
-					  txqcfg->send_slope,
-					  new_idle_slope,
-					  txqcfg->high_credit,
-					  txqcfg->low_credit,
-					  queue);
-		}
 	}
 
 	return ret;
