@@ -1798,6 +1798,10 @@ static int handle_g2v_notification(struct intel_vgpu *vgpu, int notification)
 	case VGT_G2V_EXECLIST_CONTEXT_DESTROY:
 	case 1:	/* Remove this in guest driver. */
 		break;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+	case VGT_G2V_GOP_SETUP:
+		return intel_vgpu_g2v_setup_gop(vgpu);
+#endif
 	default:
 		gvt_vgpu_err("Invalid PV notification %d\n", notification);
 	}

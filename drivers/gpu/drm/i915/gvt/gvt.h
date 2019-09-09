@@ -81,6 +81,10 @@ struct intel_vgpu_gm {
 	u64 hidden_sz;
 	struct drm_mm_node low_gm_node;
 	struct drm_mm_node high_gm_node;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+	struct page **gop_fb_pages;
+	u32 gop_fb_size;
+#endif
 };
 
 #define INTEL_GVT_MAX_NUM_FENCES 32
@@ -116,6 +120,10 @@ struct intel_vgpu_irq {
 	DECLARE_BITMAP(flip_done_event[I915_MAX_PIPES],
 		       INTEL_GVT_EVENT_MAX);
 };
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+#define GOP_FB_BASE	0xDF000000
+#endif
 
 struct intel_vgpu_opregion {
 	bool mapped;
