@@ -143,7 +143,7 @@ static struct crl_arithmetic_ops ov495_frame_desc_height_ops[] = {
 	{
 		.op = CRL_ASSIGNMENT,
 		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST,
-		.operand.entity_val = 1,
+		.operand.entity_val = 4,
 	},
 };
 
