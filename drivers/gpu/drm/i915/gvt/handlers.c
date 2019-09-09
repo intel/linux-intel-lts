@@ -1741,9 +1741,6 @@ static int sbi_ctl_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	return 0;
 }
 
-#define _vgtif_reg(x) \
-	(VGT_PVINFO_PAGE + offsetof(struct vgt_if, x))
-
 static int pvinfo_mmio_read(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes)
 {
@@ -1765,6 +1762,14 @@ static int pvinfo_mmio_read(struct intel_vgpu *vgpu, unsigned int offset,
 	case 0x78010:	/* vgt_caps */
 	case 0x7881c:
 		break;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+	case _vgtif_reg(gop.fb_base) ... _vgtif_reg(gop.size):
+		gvt_vgpu_err("pvinfo read gop: [%x:%x] = %x\n",
+				offset, bytes, *(u32 *)p_data);
+		if (offset + bytes > _vgtif_reg(gop.size) + 4)
+			invalid_read = true;
+		break;
+#endif
 	default:
 		invalid_read = true;
 		break;

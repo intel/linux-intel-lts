@@ -75,6 +75,17 @@ struct intel_gvt_device_info {
 	u32 max_surface_size;
 };
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+struct gvt_gop_info {
+	unsigned int fb_base;
+	unsigned int width;
+	unsigned int height;
+	unsigned int pitch;
+	unsigned int Bpp;
+	unsigned int size;
+};
+#endif
+
 /* GM resources owned by a vGPU */
 struct intel_vgpu_gm {
 	u64 aperture_sz;
@@ -83,6 +94,7 @@ struct intel_vgpu_gm {
 	struct drm_mm_node high_gm_node;
 #if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 	struct page **gop_fb_pages;
+	struct gvt_gop_info gop;
 	u32 gop_fb_size;
 #endif
 };
@@ -122,6 +134,7 @@ struct intel_vgpu_irq {
 };
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+/* ToDo: GOP_FB_BASE from kernel parameter */
 #define GOP_FB_BASE	0xDF000000
 #endif
 

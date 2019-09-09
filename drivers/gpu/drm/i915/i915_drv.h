@@ -61,6 +61,9 @@
 #include "i915_fixed.h"
 #include "i915_params.h"
 #include "i915_reg.h"
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+#include "i915_pvinfo.h"
+#endif
 #include "i915_utils.h"
 
 #include "display/intel_bios.h"
