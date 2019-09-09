@@ -16,3 +16,10 @@
 # CVE-2019-12381
 0001-ip_sockglue-Fix-missing-check-bug-in-ip_ra_control-CVE-2019-12381.patch
 
+# CVE-2019-15217
+0001-media-usb-zr364xx-Fix-KASAN-null-ptr-deref-Read-in-z-CVE-2019-15217.patch
+
+# CVE-2019-3874
+0001-sctp-implement-memory-accounting-on-rx-path-CVE-2019-3874.patch
+0002-sctp-implement-memory-accounting-on-tx-path-CVE-2019-3874.patch
+
