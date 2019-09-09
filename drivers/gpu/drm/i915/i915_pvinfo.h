@@ -177,8 +177,19 @@ struct vgt_if {
 	u32 pv_mmio;
 	u32 scaler_owned;
 
-	u32  rsv7[0x200 - 27];    /* pad to one page */
+	struct {
+		u32 fb_base;
+		u32 width;
+		u32 height;
+		u32 pitch;
+		u32 Bpp;
+		u32 size;
+	} gop;
+	u32  rsv8[0x200 - 33];    /* pad to one page */
 } __packed;
+
+#define _vgtif_reg(x) \
+	(VGT_PVINFO_PAGE + offsetof(struct vgt_if, x))
 
 #define vgtif_offset(x) (offsetof(struct vgt_if, x))
 

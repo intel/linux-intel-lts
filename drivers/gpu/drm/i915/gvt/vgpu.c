@@ -78,6 +78,13 @@ void populate_pvinfo_page(struct intel_vgpu *vgpu)
 
 	vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio)) = 0;
 
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.fb_base)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.width)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.height)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.pitch)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.Bpp)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.size)) = 0;
+
 	gvt_dbg_core("Populate PVINFO PAGE for vGPU %d\n", vgpu->id);
 	gvt_dbg_core("aperture base [GMADR] 0x%llx size 0x%llx\n",
 		vgpu_aperture_gmadr_base(vgpu), vgpu_aperture_sz(vgpu));
