@@ -49,6 +49,7 @@
 #include "kmb_plane.h"
 #include "kmb_dsi.h"
 
+#define DEBUG
 /*IRQ handler*/
 static irqreturn_t kmb_isr(int irq, void *arg);
 
@@ -332,18 +333,22 @@ static int kmb_drm_bind(struct device *dev)
 	struct kmb_drm_private *lcd;
 	int ret;
 
+	DRM_DEBUG("kmb_bind : ENTER\n");
 	drm = drm_dev_alloc(&kmb_driver, dev);
 	if (IS_ERR(drm))
 		return PTR_ERR(drm);
 
+	DRM_DEBUG("kmb_bind : after alloc drm\n");
 	lcd = devm_kzalloc(dev, sizeof(*lcd), GFP_KERNEL);
 	if (!lcd)
 		return -ENOMEM;
 
+	DRM_DEBUG("kmb_bind : after alloc lcd\n");
 	drm->dev_private = lcd;
 	dev_set_drvdata(dev, drm);
 
 	kmb_setup_mode_config(drm);
+	DRM_DEBUG("kmb_bind : after kmb_setup_mode_config\n");
 	ret = kmb_load(drm, 0);
 	if (ret)
 		goto err_free;
@@ -456,17 +461,27 @@ static int kmb_probe(struct platform_device *pdev)
 {
 	struct device_node *port;
 	struct component_match *match = NULL;
+	int ret;
 
 	/* there is only one output port inside each device, find it */
+	DRM_DEBUG("%s : ENTER", __func__);
+
 	port = of_graph_get_remote_node(pdev->dev.of_node, 0, 0);
+	DRM_DEBUG("%s : port = 0x%pOF\n", __func__, port);
 	if (!port)
 		return -ENODEV;
 
+	DRM_DEBUG("%s : after get_remote", __func__);
+	DRM_DEBUG("Adding component %pOF\n", port);
 	drm_of_component_match_add(&pdev->dev, &match, compare_dev, port);
+	DRM_DEBUG("%s : after get_match", __func__);
 	of_node_put(port);
 
-	return component_master_add_with_match(&pdev->dev, &kmb_master_ops,
-					       match);
+	 ret = component_master_add_with_match(&pdev->dev, &kmb_master_ops,
+					match);
+
+	DRM_DEBUG("%s : EXIT ret=%d\n", __func__, ret);
+	return ret;
 }
 
 static int kmb_remove(struct platform_device *pdev)
