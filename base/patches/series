@@ -26,4 +26,10 @@
 0004-mwifiex-use-total_ie_len-in-mwifiex_update_bss_desc-CVE-2019-3846.patch
 
 # CVE-2018-20976
-0001-xfs-clear-sb-s_fs_info-on-mount-failure-CVE-2018-20976.patch
+0001-xfs-clear-sb-s_fs_info-on-mount-failure.patch-CVE-2018-20976.patch
+
+# CVE-2019-15918
+0001-cifs-Fix-lease-buffer-length-error-CVE-2019-15918.patch
+
+# CVE-2019-15217
+0001-media-usb-zr364xx-Fix-KASAN-null-ptr-deref-Read-in-z-CVE-2019-15217.patch
