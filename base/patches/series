@@ -1,6 +1,3 @@
-# CVE-2018-6555
-0002-staging-irda-remove-remaining-remants-of-irda-code-r-CVE-2018-6555.patch
-
 # CVE-2017-9986
 0003-sound-Disable-the-build-of-OSS-drivers-CVE-2017-9986.patch
 
@@ -31,6 +28,11 @@
 # CVE-2019-12381
 0001-ip_sockglue-Fix-missing-check-bug-in-ip_ra_control-CVE-2019-12381.patch
 
-# CVE-2019-10126
-0001-mwifiex-Fix-skipped-vendor-specific-IEs-CVE-2019-10126.patch
+# CVE-2018-20976
+0001-xfs-clear-sb-s_fs_info-on-mount-failure-CVE-2018-20976.patch
 
+# CVE-2019-15217
+0001-media-usb-zr364xx-Fix-KASAN-null-ptr-deref-Read-in-z-CVE-2019-15217.patch
+
+# CVE-2019-15917
+0001-Bluetooth-hci_ldisc-Postpone-HCI_UART_PROTO_READY-bi-CVE-2019-15917.patch
