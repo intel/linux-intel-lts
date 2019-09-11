@@ -51,6 +51,10 @@ static void netprox_resume_task(struct work_struct *work)
 	netif_device_attach(ndev);
 }
 
+#define EHL_PSE_ETH_DMA_MISC_OFFSET		0x10000
+#define EHL_PSE_ETH_DMA_MISC_DTM_DRAM		3
+#define EHL_PSE_ETH_DMA_TOTAL_CH		16
+
 /*  netproxy_irq - Network Proxy interrupt handling
  *  @irq: interrupt number.
  *  @dev_id: to pass the net device pointer.
@@ -125,6 +129,15 @@ irqreturn_t netproxy_irq(int irq, void *dev_id)
 	}
 
 err_skb:
+	/* [REVERTME] DMA_CTL_CH(i) Workaround */
+	for (i = 0; i < EHL_PSE_ETH_DMA_TOTAL_CH; i++) {
+		value = readl(priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
+			      + i * sizeof(u32));
+		value |= EHL_PSE_ETH_DMA_MISC_DTM_DRAM;
+		writel(value, priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
+		       + i * sizeof(u32));
+	}
+
 	queue_work(priv->netprox_wq, &priv->netprox_task);
 
 	return IRQ_HANDLED;
