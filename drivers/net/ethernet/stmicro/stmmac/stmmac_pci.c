@@ -347,7 +347,8 @@ static void ehl_pse_work_around(struct pci_dev *pdev,
 		writel(val, tempaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
 		       + i * sizeof(u32));
 	}
-	plat->is_hfpga = 1;
+	plat->is_hfpga = 0;
+	plat->ehl_ao_wa = 1;
 }
 
 static int ehl_pse0_common_data(struct pci_dev *pdev,
