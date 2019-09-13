@@ -652,6 +652,7 @@ static int stmmac_ethtool_op_get_eee(struct net_device *dev,
 	edata->eee_enabled = priv->eee_enabled;
 	edata->eee_active = priv->eee_active;
 	edata->tx_lpi_timer = priv->tx_lpi_timer;
+	edata->tx_lpi_enabled = priv->tx_lpi_enabled;
 
 	return phylink_ethtool_get_eee(priv->phylink, edata);
 }
@@ -676,6 +677,7 @@ static int stmmac_ethtool_op_set_eee(struct net_device *dev,
 		return ret;
 
 	priv->tx_lpi_timer = edata->tx_lpi_timer;
+	priv->tx_lpi_enabled = edata->tx_lpi_enabled;
 	return 0;
 }
 
