@@ -257,6 +257,9 @@ struct stmmac_priv {
 
 	/* Receive Side Scaling */
 	struct stmmac_rss rss;
+
+	/* WA for EST */
+	int est_hw_del;
 };
 
 enum stmmac_state {

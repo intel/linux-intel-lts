@@ -619,10 +619,13 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 		stmmac_set_est_enable(priv, priv->hw, priv->dev, true);
 		dev_info(priv->device, "taprio: EST enabled\n");
 	} else {
-		stmmac_set_est_enable(priv, priv->hw, priv->dev, false);
-		dev_info(priv->device, "taprio: EST disabled\n");
-		stmmac_fpe_set_enable(priv, priv->hw, priv->dev, false);
-		dev_info(priv->device, "taprio: FPE disabled\n");
+		if (priv->est_hw_del) {
+			stmmac_set_est_enable(priv, priv->hw, priv->dev, false);
+			dev_info(priv->device, "taprio: EST disabled\n");
+			stmmac_fpe_set_enable(priv, priv->hw, priv->dev, false);
+			dev_info(priv->device, "taprio: FPE disabled\n");
+		}
+
 		return 0;
 	}
 
