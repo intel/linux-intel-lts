@@ -289,10 +289,12 @@ static const struct mipi_dsi_host_ops kmb_dsi_host_ops = {
 	.transfer = kmb_dsi_host_transfer,
 };
 
-static struct kmb_dsi_host *kmb_dsi_host_init(struct kmb_dsi *kmb_dsi)
+static struct kmb_dsi_host *kmb_dsi_host_init(struct drm_device *drm,
+		struct kmb_dsi *kmb_dsi)
 {
 	struct kmb_dsi_host *host;
 	struct mipi_dsi_device *device;
+	int err;
 
 	host = kzalloc(sizeof(*host), GFP_KERNEL);
 	if (!host)
@@ -306,6 +308,15 @@ static struct kmb_dsi_host *kmb_dsi_host_init(struct kmb_dsi *kmb_dsi)
 		kfree(host);
 		return NULL;
 	}
+
+	host->base.dev = drm->dev;
+	err = mipi_dsi_host_register(&host->base);
+	if (err < 0) {
+		DRM_ERROR("failed to register DSI host: %d\n", err);
+		kfree(host);
+		kfree(device);
+	}
+
 	device->host = &host->base;
 	host->device = device;
 	return host;
@@ -1293,7 +1304,8 @@ void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p)
 
 }
 
-int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
+//int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
+int kmb_dsi_init(struct drm_device *dev)
 {
 	struct kmb_dsi *kmb_dsi;
 	struct drm_encoder *encoder;
@@ -1301,6 +1313,8 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 	struct drm_connector *connector;
 	struct kmb_dsi_host *host;
 	struct kmb_drm_private *dev_p = dev->dev_private;
+	struct device_node *encoder_node;
+	struct drm_bridge *bridge;
 	int ret = 0;
 
 	kmb_dsi = kzalloc(sizeof(*kmb_dsi), GFP_KERNEL);
@@ -1325,7 +1339,7 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 	drm_encoder_init(dev, encoder, &kmb_dsi_funcs, DRM_MODE_ENCODER_DSI,
 			 "MIPI-DSI");
 
-	host = kmb_dsi_host_init(kmb_dsi);
+	host = kmb_dsi_host_init(dev, kmb_dsi);
 	if (!host) {
 		drm_encoder_cleanup(encoder);
 		kfree(kmb_dsi);
@@ -1336,8 +1350,30 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 			   DRM_MODE_CONNECTOR_DSI);
 	drm_connector_helper_add(connector, &kmb_dsi_connector_helper_funcs);
 
-	connector->encoder = encoder;
-	drm_connector_attach_encoder(connector, encoder);
+//	connector->encoder = encoder;
+	DRM_INFO("%s : %d connector = %s encoder = %s\n", __func__, __LINE__,
+			connector->name, encoder->name);
+	DRM_INFO("%s : %d connector->encoder = 0x%p\n", __func__, __LINE__,
+			connector->encoder);
+
+	ret = drm_connector_attach_encoder(connector, encoder);
+	DRM_INFO("%s : %d ret = %d\n", __func__, __LINE__, ret);
+
+	/* find ADV7535 node and initialize it */
+	DRM_DEBUG("trying to get bridge info %pOF\n", dev->dev->of_node);
+	encoder_node = of_parse_phandle(dev->dev->of_node, "encoder-slave", 0);
+	DRM_DEBUG("encoder node =  %pOF\n", encoder_node);
+	if (!encoder_node) {
+		DRM_ERROR("failed to get bridge info from DT\n");
+		ret = -EINVAL;
+	}
+	/* Locate drm bridge from the hdmi encoder DT node */
+	bridge = of_drm_find_bridge(encoder_node);
+	of_node_put(encoder_node);
+	if (!bridge) {
+		DRM_INFO("wait for external bridge driver DT\n");
+		return -EPROBE_DEFER;
+	}
 
 	/* Link drm_bridge to encoder */
 	ret = drm_bridge_attach(encoder, bridge, NULL);

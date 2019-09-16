@@ -330,7 +330,8 @@ union mipi_irq_cfg {
 	} irq_cfg;
 };
 
-int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge);
+//int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge);
+int kmb_dsi_init(struct drm_device *dev);
 void kmb_plane_destroy(struct drm_plane *plane);
 void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p);
 

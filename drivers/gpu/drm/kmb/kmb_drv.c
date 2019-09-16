@@ -56,6 +56,8 @@ static irqreturn_t kmb_isr(int irq, void *arg);
 static struct clk *clk_lcd;
 static struct clk *clk_mipi;
 
+static int probe_deferred;
+
 static int kmb_display_clk_enable(void)
 {
 	clk_prepare_enable(clk_lcd);
@@ -76,12 +78,11 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
 	struct kmb_drm_private *dev_p = drm->dev_private;
 	struct platform_device *pdev = to_platform_device(drm->dev);
-	struct drm_bridge *bridge;
+/*	struct drm_bridge *bridge;*/
 	/*struct resource *res;*/
 	/*u32 version;*/
-	int irq_lcd, irq_mipi;
 	int ret;
-	struct device_node *encoder_node;
+/*	struct device_node *encoder_node;*/
 
 	/* TBD - not sure if clock_get needs to be called here */
 	/*
@@ -93,9 +94,10 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	 * TBD call this in the future when device tree is ready,
 	 * use hardcoded value for now
 	 */
-	/*res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	 *dev_p->lcd_mmio = devm_ioremap_resource(drm->dev, res);
-	 *
+	/*
+	 * res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	 * dev_p->lcd_mmio = devm_ioremap_resource(drm->dev, res);
+
 	 *if (IS_ERR(dev_p->lcd_mmio)) {
 	 *	DRM_ERROR("failed to map control registers area\n");
 	 *	ret = PTR_ERR(dev_p->lcd_mmio);
@@ -103,7 +105,10 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	 *	return ret;
 	 *}
 	 */
-	 /* LCD mmio */
+	/* LCD mmio */
+	if (!probe_deferred) {
+		probe_deferred = 1;
+
 	if (!request_mem_region(LCD_BASE_ADDR, LCD_MMIO_SIZE, "kmb-lcd")) {
 		DRM_ERROR("failed to reserve LCD registers\n");
 		return -ENOMEM;
@@ -113,7 +118,6 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_ERROR("failed to map LCD registers\n");
 		return -ENOMEM;
 	}
-
 	/* Mipi mmio */
 	if (!request_mem_region(MIPI_BASE_ADDR, MIPI_MMIO_SIZE, "kmb-mipi")) {
 		DRM_ERROR("failed to reserve MIPI registers\n");
@@ -126,35 +130,16 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		iounmap(dev_p->lcd_mmio);
 		return -ENOMEM;
 	}
-
 	/*this is only for MIPI_TX_MSS_LCD_MIPI_CFG register */
-	dev_p->msscam_mmio = ioremap_nocache(MSS_CAM_BASE_ADDR,
+	if (!dev_p->msscam_mmio) {
+		dev_p->msscam_mmio = ioremap_nocache(MSS_CAM_BASE_ADDR,
 			MSS_CAM_MMIO_SIZE);
+	}
 
 	/* register irqs here - section 17.3 in databook
 	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
 	 * firmware has to redirect it to A53
 	 */
-	irq_lcd = platform_get_irq_byname(pdev, "irq_lcd");
-	if (irq_lcd < 0) {
-		DRM_ERROR("irq_lcd not found");
-		return irq_lcd;
-	}
-	pr_info("irq_lcd platform_get_irq = %d\n", irq_lcd);
-	ret = request_irq(irq_lcd, kmb_isr, IRQF_SHARED, "irq_lcd", dev_p);
-	dev_p->irq_lcd = irq_lcd;
-
-	irq_mipi = platform_get_irq_byname(pdev, "irq_mipi");
-	if (irq_mipi < 0) {
-		DRM_ERROR("irq_mipi not found");
-		return irq_mipi;
-	}
-	pr_info("irq_mipi platform_get_irq = %d\n", irq_mipi);
-	ret = request_irq(irq_mipi, kmb_isr, IRQF_SHARED, "irq_mipi", dev_p);
-	dev_p->irq_mipi = irq_mipi;
-
-
-
 /*TBD read and check for correct product version here */
 
 	/* Get the optional framebuffer memory resource */
@@ -169,52 +154,35 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 
-	/* find ADV7535 node and initialize it */
-	encoder_node = of_parse_phandle(drm->dev->of_node, "encoder-slave", 0);
-	if (!encoder_node) {
-		DRM_ERROR("failed to get bridge info from DT\n");
-		ret = -EPROBE_DEFER;
-		goto setup_fail;
-	}
-
-	/* Locate drm bridge from the hdmi encoder DT node */
-	bridge = of_drm_find_bridge(encoder_node);
-	if (!bridge) {
-		DRM_ERROR("failed to get bridge driver from DT\n");
-		ret = -EPROBE_DEFER;
-		goto setup_fail;
-	}
-
-	of_node_put(encoder_node);
-
-	ret = kmb_dsi_init(drm, bridge);
-	if (ret) {
+/*	ret = kmb_dsi_init(drm, bridge);*/
+	ret = kmb_dsi_init(drm);
+	if (ret == -EPROBE_DEFER) {
+		DRM_INFO("%s: wait for external bridge driver DT", __func__);
+		return -EPROBE_DEFER;
+	} else if (ret) {
 		DRM_ERROR("failed to initialize DSI\n");
 		goto setup_fail;
 	}
-
+}
 	/* enable display clocks*/
 	clk_lcd = clk_get(&pdev->dev, "clk_lcd");
 	if (!clk_lcd) {
 		DRM_ERROR("clk_get() failed clk_lcd\n");
 		goto setup_fail;
 	}
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	clk_mipi = clk_get(&pdev->dev, "clk_mipi");
 	if (!clk_mipi) {
 		DRM_ERROR("clk_get() failed clk_mipi\n");
 		goto setup_fail;
 	}
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	kmb_display_clk_enable();
 
-	ret = drm_irq_install(drm, platform_get_irq(pdev, 0));
-	if (ret < 0) {
-		DRM_ERROR("failed to install IRQ handler\n");
-		goto irq_fail;
-	}
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 
 	return 0;
 
-irq_fail:
 	drm_crtc_cleanup(&dev_p->crtc);
 setup_fail:
 	of_reserved_mem_device_release(drm->dev);
@@ -350,40 +318,38 @@ static int kmb_drm_bind(struct device *dev)
 	kmb_setup_mode_config(drm);
 	DRM_DEBUG("kmb_bind : after kmb_setup_mode_config\n");
 	ret = kmb_load(drm, 0);
-	if (ret)
+	DRM_INFO("%s : %d ret = %d\n", __func__, __LINE__, ret);
+	if (ret == -EPROBE_DEFER) {
+		DRM_INFO("kmb_bind: wait for external bridge driver DT\n");
+		return -EPROBE_DEFER;
+	} else if (ret)
 		goto err_free;
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	/* Set the CRTC's port so that the encoder component can find it */
 	lcd->crtc.port = of_graph_get_port_by_id(dev->of_node, 0);
-
-	ret = component_bind_all(dev, drm);
-	if (ret) {
-		DRM_ERROR("Failed to bind all components\n");
-		goto err_unload;
-	}
-
-	ret = pm_runtime_set_active(dev);
-	if (ret)
-		goto err_pm_active;
-
-	pm_runtime_enable(dev);
-
+	DRM_INFO("crtc port = %pOF\n", lcd->crtc.port);
 	ret = drm_vblank_init(drm, drm->mode_config.num_crtc);
 	if (ret < 0) {
 		DRM_ERROR("failed to initialise vblank\n");
 		goto err_vblank;
 	}
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	drm_mode_config_reset(drm);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	drm_kms_helper_poll_init(drm);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 
 	ret = drm_dev_register(drm, 0);
+	DRM_INFO("%s : %d ret = %d\n", __func__, __LINE__, ret);
 
 	lcd->n_layers = KMB_MAX_PLANES;
 	if (ret)
 		goto err_register;
 
 	drm_fbdev_generic_setup(drm, 32);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 
 	return 0;
 
@@ -391,9 +357,7 @@ err_register:
 	drm_kms_helper_poll_fini(drm);
 err_vblank:
 	pm_runtime_disable(drm->dev);
-err_pm_active:
 	component_unbind_all(dev, drm);
-err_unload:
 	of_node_put(lcd->crtc.port);
 	lcd->crtc.port = NULL;
 	drm_irq_uninstall(drm);
@@ -452,16 +416,10 @@ static const struct component_master_ops kmb_master_ops = {
 	.unbind = kmb_drm_unbind,
 };
 
-static int compare_dev(struct device *dev, void *data)
-{
-	return dev->of_node == data;
-}
-
 static int kmb_probe(struct platform_device *pdev)
 {
 	struct device_node *port;
-	struct component_match *match = NULL;
-	int ret;
+	int ret = 0;
 
 	/* there is only one output port inside each device, find it */
 	DRM_DEBUG("%s : ENTER", __func__);
@@ -470,18 +428,8 @@ static int kmb_probe(struct platform_device *pdev)
 	DRM_DEBUG("%s : port = 0x%pOF\n", __func__, port);
 	if (!port)
 		return -ENODEV;
-
-	DRM_DEBUG("%s : after get_remote", __func__);
-	DRM_DEBUG("Adding component %pOF\n", port);
-	drm_of_component_match_add(&pdev->dev, &match, compare_dev, port);
-	DRM_DEBUG("%s : after get_match", __func__);
-	of_node_put(port);
-
-	 ret = component_master_add_with_match(&pdev->dev, &kmb_master_ops,
-					match);
-
 	DRM_DEBUG("%s : EXIT ret=%d\n", __func__, ret);
-	return ret;
+	return kmb_drm_bind(&pdev->dev);
 }
 
 static int kmb_remove(struct platform_device *pdev)
@@ -533,13 +481,13 @@ static int __maybe_unused kmb_pm_resume(struct device *dev)
 static SIMPLE_DEV_PM_OPS(kmb_pm_ops, kmb_pm_suspend, kmb_pm_resume);
 
 static struct platform_driver kmb_platform_driver = {
-	.probe = kmb_probe,
-	.remove = kmb_remove,
-	.driver = {
-		   .name = "Keembay_Display",
-		   .pm = &kmb_pm_ops,
-		   .of_match_table = kmb_of_match,
-		   },
+	.probe		= kmb_probe,
+	.remove		= kmb_remove,
+	.driver	= {
+		.name = "kmb_display",
+		.pm = &kmb_pm_ops,
+		.of_match_table	= kmb_of_match,
+	},
 };
 
 module_platform_driver(kmb_platform_driver);
