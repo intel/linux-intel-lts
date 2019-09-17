@@ -54,5 +54,4 @@ bool is_inhibit_context(struct intel_context *ce);
 int intel_vgpu_restore_inhibit_context(struct intel_vgpu *vgpu,
 				       struct i915_request *req);
 
-int intel_gvt_vgpu_conformance_check(struct intel_vgpu *vgpu, int ring_id);
 #endif
