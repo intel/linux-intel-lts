@@ -3530,9 +3530,6 @@ void intel_gvt_clean_mmio_info(struct intel_gvt *gvt)
 
 	vfree(gvt->mmio.mmio_attribute);
 	gvt->mmio.mmio_attribute = NULL;
-
-	vfree(gvt->mmio.mmio_host_cache);
-	gvt->mmio.mmio_host_cache = NULL;
 }
 
 /* Special MMIO blocks. */
@@ -3566,12 +3563,6 @@ int intel_gvt_setup_mmio_info(struct intel_gvt *gvt)
 	gvt->mmio.mmio_attribute = vzalloc(size);
 	if (!gvt->mmio.mmio_attribute)
 		return -ENOMEM;
-
-	gvt->mmio.mmio_host_cache = vzalloc(info->mmio_size);
-	if (!gvt->mmio.mmio_host_cache) {
-		vfree(gvt->mmio.mmio_attribute);
-		return -ENOMEM;
-	}
 
 	ret = init_generic_mmio_info(gvt);
 	if (ret)
