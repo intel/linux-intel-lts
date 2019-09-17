@@ -592,16 +592,12 @@ void intel_gvt_switch_mmio(struct intel_vgpu *pre,
 
 static int noncontext_mmio_compare(struct intel_vgpu *vgpu, int ring_id)
 {
-	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 	struct engine_mmio *mmio, *mmio_list;
-	struct intel_engine_cs *engine = dev_priv->engine[ring_id];
 
 	mmio_list = vgpu->gvt->engine_mmio_list.mmio;
 
 	for (mmio = mmio_list; i915_mmio_reg_valid(mmio->reg); mmio++) {
-		if (mmio->ring_id != ring_id || mmio->in_context
-			|| is_force_nonpriv_mmio(mmio->reg.reg)
-			|| mmio->reg.reg == RING_MODE_GEN7(engine).reg)
+		if (mmio->ring_id != ring_id || mmio->in_context)
 			continue;
 
 		if (MMIO_COMPARE(vgpu, mmio->reg.reg, mmio->mask))

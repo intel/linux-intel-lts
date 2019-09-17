@@ -781,8 +781,6 @@ void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
 void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu);
 void intel_gvt_free_vreg(struct intel_vgpu *vgpu);
 
-bool is_force_nonpriv_mmio(unsigned int offset);
-
 #include "trace.h"
 #include "mpt.h"
 
