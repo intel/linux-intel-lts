@@ -1493,6 +1493,10 @@ int usb4_usb3_port_max_link_rate(struct tb_port *port)
 	if (!tb_port_is_usb3_down(port) && !tb_port_is_usb3_up(port))
 		return -EINVAL;
 
+	/* TGL A step does not have this register implemented so hard-code 10G */
+	if (tb_switch_is_tiger_lake_astep(port->sw))
+		return 10000;
+
 	ret = tb_port_read(port, &val, TB_CFG_PORT,
 			   port->cap_adap + ADP_USB3_CS_4, 1);
 	if (ret)
@@ -1516,6 +1520,10 @@ int usb4_usb3_port_actual_link_rate(struct tb_port *port)
 
 	if (!tb_port_is_usb3_down(port) && !tb_port_is_usb3_up(port))
 		return -EINVAL;
+
+	/* TGL A step does not have this register implemented so hard-code 10G */
+	if (tb_switch_is_tiger_lake_astep(port->sw))
+		return 10000;
 
 	ret = tb_port_read(port, &val, TB_CFG_PORT,
 			   port->cap_adap + ADP_USB3_CS_4, 1);
@@ -1664,10 +1672,20 @@ static int usb4_usb3_port_read_consumed_bandwidth(struct tb_port *port,
 	scale &= ADP_USB3_CS_3_SCALE_MASK;
 
 	bw = val & ADP_USB3_CS_1_CUBW_MASK;
-	*upstream_bw = usb3_bw_to_mbps(bw, scale);
+	/*
+	 * TGL A step has a bug that prevents reporting consumed
+	 * bandwidth so hardcode 1 Gb/s here.
+	 */
+	if (!bw && tb_switch_is_tiger_lake_astep(port->sw))
+		*upstream_bw = 1000;
+	else
+		*upstream_bw = usb3_bw_to_mbps(bw, scale);
 
 	bw = (val & ADP_USB3_CS_1_CDBW_MASK) >> ADP_USB3_CS_1_CDBW_SHIFT;
-	*downstream_bw = usb3_bw_to_mbps(bw, scale);
+	if (!bw && tb_switch_is_tiger_lake_astep(port->sw))
+		*downstream_bw = 1000;
+	else
+		*downstream_bw = usb3_bw_to_mbps(bw, scale);
 
 	return 0;
 }

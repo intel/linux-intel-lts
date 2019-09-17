@@ -809,6 +809,13 @@ static inline bool tb_switch_is_tiger_lake(const struct tb_switch *sw)
 	return false;
 }
 
+/* This is hack for TGL A step and should be removed */
+static bool tb_switch_is_tiger_lake_astep(const struct tb_switch *sw)
+{
+	return sw->config.thunderbolt_version != USB4_VERSION_1_0 &&
+		tb_switch_is_tiger_lake(sw);
+}
+
 /**
  * tb_switch_is_usb4() - Is the switch USB4 compliant
  * @sw: Switch to check
@@ -817,7 +824,8 @@ static inline bool tb_switch_is_tiger_lake(const struct tb_switch *sw)
  */
 static inline bool tb_switch_is_usb4(const struct tb_switch *sw)
 {
-	return sw->config.thunderbolt_version == USB4_VERSION_1_0;
+	return sw->config.thunderbolt_version == USB4_VERSION_1_0 ||
+	       tb_switch_is_tiger_lake_astep(sw);
 }
 
 /**

@@ -127,7 +127,9 @@ static int icl_nhi_suspend(struct tb_nhi *nhi)
 	if (icl_nhi_is_device_connected(nhi))
 		return 0;
 
-	if (tb_switch_is_icm(tb->root_switch)) {
+	/* TGL A step does not have PREPARE_FOR_RESET implemented */
+	if (tb_switch_is_icm(tb->root_switch) &&
+	    !tb_switch_is_tiger_lake_astep(tb->root_switch)) {
 		/*
 		 * If there is no device connected we need to perform
 		 * both: a handshake through LC mailbox and force power
