@@ -255,7 +255,6 @@ struct intel_vgpu {
 
 	unsigned long long *cached_guest_entry;
 	bool ge_cache_enable;
-	bool entire_nonctxmmio_checked;
 };
 
 /* validating GM healthy status*/

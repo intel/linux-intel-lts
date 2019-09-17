@@ -966,32 +966,6 @@ static int cmd_handler_lri(struct parser_exec_state *s)
 		ret |= cmd_reg_handler(s, cmd_reg(s, i), i, "lri");
 		if (ret)
 			break;
-
-		if (s->vgpu->entire_nonctxmmio_checked
-				&& intel_gvt_mmio_is_non_context(gvt,
-				cmd_reg(s, i))) {
-			int offset = cmd_reg(s, i);
-			int value = cmd_val(s, i + 1);
-
-			if (intel_gvt_mmio_has_mode_mask(gvt, offset)) {
-				u32 mask = value >> 16;
-
-				vgpu_vreg(s->vgpu, offset) =
-					(vgpu_vreg(s->vgpu, offset) & ~mask)
-					| (value & mask);
-			} else {
-				vgpu_vreg(s->vgpu, offset) = value;
-			}
-
-			if (gvt_host_reg(gvt, offset) !=
-					vgpu_vreg(s->vgpu, offset)) {
-
-				gvt_err("vgpu%d unexpected non-context MMIO "
-					"access by cmd 0x%x:0x%x,0x%x\n",
-					s->vgpu->id, offset, value,
-					gvt_host_reg(gvt, offset));
-			}
-		}
 	}
 	return ret;
 }
