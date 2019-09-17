@@ -258,9 +258,6 @@ i915_param_named_unsafe(domain_plane_owners, ullong, 0400,
 	planes owner: 3C:2 2C:2 1C:1 4B:1 3B:1 2B:1 1B:0 4A:0 3A:0 2A:1 1A:0 \
 	(0x0 - default value)");
 
-i915_param_named(enable_conformance_check, bool, 0400,
-	"To toggle the GVT guest conformance feature(default:true)");
-
 static __always_inline void _print_param(struct drm_printer *p,
 					 const char *name,
 					 const char *type,

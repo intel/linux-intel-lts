@@ -77,8 +77,7 @@ struct drm_printer;
 			| PVMMIO_GGTT_UPDATE ) \
 	param(int, gvt_workload_priority, 0) \
 	param(bool, enable_initial_modeset, false) \
-	param(bool, enable_gvt, false) \
-	param(bool, enable_conformance_check, true)
+	param(bool, enable_gvt, false)
 
 #define MEMBER(T, member, ...) T member;
 struct i915_params {
