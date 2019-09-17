@@ -143,7 +143,7 @@ static struct crl_arithmetic_ops ov495_frame_desc_height_ops[] = {
 	{
 		.op = CRL_ASSIGNMENT,
 		.operand.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_CONST,
-		.operand.entity_val = 4,
+		.operand.entity_val = 1,
 	},
 };
 
@@ -165,6 +165,63 @@ static struct crl_frame_desc ov495_frame_desc[] = {
 			.ops = ov495_frame_desc_height_ops,
 		},
 		.csi2_channel.entity_val = 0,
+		.csi2_data_type.entity_val = 0x12,
+	},
+	{
+		.flags.entity_val = 0,
+		.bpp.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_VAR_REF,
+		.bpp.entity_val = CRL_VAR_REF_BITSPERPIXEL,
+		.pixelcode.entity_val = MEDIA_BUS_FMT_FIXED,
+		.length.entity_val = 0,
+		.start_line.entity_val = 0,
+		.start_pixel.entity_val = 0,
+		.width = {
+			.ops_items = ARRAY_SIZE(ov495_frame_desc_width_ops),
+			.ops = ov495_frame_desc_width_ops,
+		},
+		.height = {
+			.ops_items = ARRAY_SIZE(ov495_frame_desc_height_ops),
+			.ops = ov495_frame_desc_height_ops,
+		},
+		.csi2_channel.entity_val = 1,
+		.csi2_data_type.entity_val = 0x12,
+	},
+	{
+		.flags.entity_val = 0,
+		.bpp.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_VAR_REF,
+		.bpp.entity_val = CRL_VAR_REF_BITSPERPIXEL,
+		.pixelcode.entity_val = MEDIA_BUS_FMT_FIXED,
+		.length.entity_val = 0,
+		.start_line.entity_val = 0,
+		.start_pixel.entity_val = 0,
+		.width = {
+			.ops_items = ARRAY_SIZE(ov495_frame_desc_width_ops),
+			.ops = ov495_frame_desc_width_ops,
+		},
+		.height = {
+			.ops_items = ARRAY_SIZE(ov495_frame_desc_height_ops),
+			.ops = ov495_frame_desc_height_ops,
+		},
+		.csi2_channel.entity_val = 2,
+		.csi2_data_type.entity_val = 0x12,
+	},
+	{
+		.flags.entity_val = 0,
+		.bpp.entity_type = CRL_DYNAMIC_VAL_OPERAND_TYPE_VAR_REF,
+		.bpp.entity_val = CRL_VAR_REF_BITSPERPIXEL,
+		.pixelcode.entity_val = MEDIA_BUS_FMT_FIXED,
+		.length.entity_val = 0,
+		.start_line.entity_val = 0,
+		.start_pixel.entity_val = 0,
+		.width = {
+			.ops_items = ARRAY_SIZE(ov495_frame_desc_width_ops),
+			.ops = ov495_frame_desc_width_ops,
+		},
+		.height = {
+			.ops_items = ARRAY_SIZE(ov495_frame_desc_height_ops),
+			.ops = ov495_frame_desc_height_ops,
+		},
+		.csi2_channel.entity_val = 3,
 		.csi2_data_type.entity_val = 0x12,
 	},
 };
