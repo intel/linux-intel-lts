@@ -557,8 +557,6 @@ void intel_gvt_reset_vgpu_locked(struct intel_vgpu *vgpu, bool dmlr,
 	struct intel_gvt *gvt = vgpu->gvt;
 	struct intel_gvt_workload_scheduler *scheduler = &gvt->scheduler;
 	unsigned int resetting_eng = dmlr ? ALL_ENGINES : engine_mask;
-	enum intel_engine_id i;
-	struct intel_engine_cs *engine;
 	bool enable_pvmmio = vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio));
 
 	gvt_dbg_core("------------------------------------------\n");
@@ -572,10 +570,7 @@ void intel_gvt_reset_vgpu_locked(struct intel_vgpu *vgpu, bool dmlr,
 	 * The current_vgpu will set to NULL after stopping the
 	 * scheduler when the reset is triggered by current vgpu.
 	 */
-	for_each_engine_masked(engine, gvt->dev_priv, resetting_eng, i) {
-		if (scheduler->current_vgpu[i] != NULL)
-			continue;
-
+	if (scheduler->current_vgpu == NULL) {
 		mutex_unlock(&vgpu->vgpu_lock);
 		intel_gvt_wait_vgpu_idle(vgpu);
 		mutex_lock(&vgpu->vgpu_lock);

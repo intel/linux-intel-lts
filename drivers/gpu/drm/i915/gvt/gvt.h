@@ -202,7 +202,7 @@ struct intel_vgpu {
 	 * scheduler structure. So below 2 vgpu data are protected
 	 * by sched_lock, not vgpu_lock.
 	 */
-	void *sched_data[I915_NUM_ENGINES];
+	void *sched_data;
 	struct vgpu_sched_ctl sched_ctl;
 
 	struct intel_vgpu_fence fence;

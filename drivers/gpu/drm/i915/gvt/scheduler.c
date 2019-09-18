@@ -775,23 +775,17 @@ static struct intel_vgpu_workload *pick_next_workload(
 	 * no current vgpu / will be scheduled out / no workload
 	 * bail out
 	 */
-	if (!scheduler->current_vgpu[ring_id]) {
+	if (!scheduler->current_vgpu) {
 		gvt_dbg_sched("ring id %d stop - no current vgpu\n", ring_id);
 		goto out;
 	}
 
-	if (!scheduler->current_vgpu[ring_id]->active) {
-		gvt_dbg_sched("ring id %d stop - vgpu not active\n", ring_id);
-		goto out;
-	}
-
-	if (scheduler->need_reschedule[ring_id]) {
+	if (scheduler->need_reschedule) {
 		gvt_dbg_sched("ring id %d stop - will reschedule\n", ring_id);
 		goto out;
 	}
 
-	if (list_empty(workload_q_head(scheduler->current_vgpu[ring_id],
-					ring_id)))
+	if (list_empty(workload_q_head(scheduler->current_vgpu, ring_id)))
 		goto out;
 
 	/*
@@ -812,8 +806,7 @@ static struct intel_vgpu_workload *pick_next_workload(
 	 * schedule out a vgpu.
 	 */
 	scheduler->current_workload[ring_id] = container_of(
-			workload_q_head(scheduler->current_vgpu[ring_id],
-				ring_id)->next,
+			workload_q_head(scheduler->current_vgpu, ring_id)->next,
 			struct intel_vgpu_workload, list);
 
 	workload = scheduler->current_workload[ring_id];
@@ -1001,7 +994,7 @@ static void complete_current_workload(struct intel_gvt *gvt, int ring_id)
 	atomic_dec(&s->running_workload_num);
 	wake_up(&scheduler->workload_complete_wq);
 
-	if (gvt->scheduler.need_reschedule[ring_id])
+	if (gvt->scheduler.need_reschedule)
 		intel_gvt_request_service(gvt, INTEL_GVT_REQUEST_EVENT_SCHED);
 
 	mutex_unlock(&gvt->sched_lock);
