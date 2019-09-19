@@ -1329,6 +1329,57 @@ static void stmmac_free_tx_buffer(struct stmmac_priv *priv, u32 queue, int i)
 	}
 }
 
+static int init_dma_rx_desc_ring(struct stmmac_priv *priv, u32 queue,
+				 gfp_t flags)
+{
+	struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
+	int ret;
+	int i;
+
+	netif_dbg(priv, probe, priv->dev,
+		  "(%s) dma_rx_phy=0x%08x\n", __func__,
+		  (u32)rx_q->dma_rx_phy);
+
+	stmmac_clear_rx_descriptors(priv, queue);
+
+	for (i = 0; i < priv->dma_rx_size; i++) {
+		struct dma_desc *p;
+
+		if (priv->extend_desc)
+			p = &((rx_q->dma_erx + i)->basic);
+		else
+			p = rx_q->dma_rx + i;
+
+		ret = stmmac_init_rx_buffers(priv, p, i, flags,
+					     queue);
+		if (ret)
+			goto err_init_rx_buffers;
+	}
+
+	rx_q->cur_rx = 0;
+	rx_q->dirty_rx = (unsigned int)(i - priv->dma_rx_size);
+
+	/* Setup the chained descriptor addresses */
+	if (priv->mode == STMMAC_CHAIN_MODE) {
+		if (priv->extend_desc)
+			stmmac_mode_init(priv, rx_q->dma_erx,
+					 rx_q->dma_rx_phy,
+					 priv->dma_rx_size, 1);
+		else
+			stmmac_mode_init(priv, rx_q->dma_rx,
+					 rx_q->dma_rx_phy,
+					 priv->dma_rx_size, 0);
+	}
+
+	return 0;
+
+err_init_rx_buffers:
+	while (--i >= 0)
+		stmmac_free_rx_buffer(priv, queue, i);
+
+	return ret;
+}
+
 /**
  * init_dma_rx_desc_rings - init the RX descriptor rings
  * @dev: net device structure
@@ -1343,7 +1394,7 @@ static int init_dma_rx_desc_rings(struct net_device *dev, gfp_t flags)
 	u32 rx_count = priv->plat->rx_queues_to_use;
 	int ret = -ENOMEM;
 	int bfsize = 0;
-	int queue;
+	u32 queue;
 	int i;
 
 	bfsize = stmmac_set_16kib_bfsize(priv, dev->mtu);
@@ -1360,61 +1411,81 @@ static int init_dma_rx_desc_rings(struct net_device *dev, gfp_t flags)
 		  "SKB addresses:\nskb\t\tskb data\tdma data\n");
 
 	for (queue = 0; queue < rx_count; queue++) {
-		struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
-
-		netif_dbg(priv, probe, priv->dev,
-			  "(%s) dma_rx_phy=0x%08x\n", __func__,
-			  (u32)rx_q->dma_rx_phy);
-
-		stmmac_clear_rx_descriptors(priv, queue);
-
-		for (i = 0; i < priv->dma_rx_size; i++) {
-			struct dma_desc *p;
-
-			if (priv->extend_desc)
-				p = &((rx_q->dma_erx + i)->basic);
-			else
-				p = rx_q->dma_rx + i;
-
-			ret = stmmac_init_rx_buffers(priv, p, i, flags,
-						     queue);
-			if (ret)
-				goto err_init_rx_buffers;
-		}
-
-		rx_q->cur_rx = 0;
-		rx_q->dirty_rx = (unsigned int)(i - priv->dma_rx_size);
-
-		/* Setup the chained descriptor addresses */
-		if (priv->mode == STMMAC_CHAIN_MODE) {
-			if (priv->extend_desc)
-				stmmac_mode_init(priv, rx_q->dma_erx,
-						 rx_q->dma_rx_phy,
-						 priv->dma_rx_size, 1);
-			else
-				stmmac_mode_init(priv, rx_q->dma_rx,
-						 rx_q->dma_rx_phy,
-						 priv->dma_rx_size, 0);
-		}
+		ret = init_dma_rx_desc_ring(priv, queue, flags);
+		if (ret)
+			goto err_init_rx_q;
 	}
 
 	buf_sz = bfsize;
 
 	return 0;
 
-err_init_rx_buffers:
+err_init_rx_q:
+	queue--;
 	while (queue >= 0) {
+		i = priv->dma_rx_size;
+
 		while (--i >= 0)
 			stmmac_free_rx_buffer(priv, queue, i);
 
 		if (queue == 0)
 			break;
 
-		i = priv->dma_rx_size;
 		queue--;
 	}
 
 	return ret;
+}
+
+static void init_dma_tx_desc_ring(struct stmmac_priv *priv, u32 queue)
+{
+	struct stmmac_tx_queue *tx_q = &priv->tx_queue[queue];
+	int i;
+
+	netif_dbg(priv, probe, priv->dev,
+		  "(%s) dma_tx_phy=0x%08x\n", __func__,
+		  (u32)tx_q->dma_tx_phy);
+
+	/* Setup the chained descriptor addresses */
+	if (priv->mode == STMMAC_CHAIN_MODE) {
+		if (priv->extend_desc)
+			stmmac_mode_init(priv, tx_q->dma_etx,
+					 tx_q->dma_tx_phy,
+					 priv->dma_tx_size, 1);
+		else if (priv->enhanced_tx_desc)
+			stmmac_mode_init(priv, tx_q->dma_enhtx,
+					 tx_q->dma_tx_phy,
+					 priv->dma_tx_size, 1);
+		else
+			stmmac_mode_init(priv, tx_q->dma_tx,
+					 tx_q->dma_tx_phy,
+					 priv->dma_tx_size, 0);
+	}
+
+	for (i = 0; i < priv->dma_tx_size; i++) {
+		struct dma_desc *p;
+
+		if (priv->extend_desc)
+			p = &((tx_q->dma_etx + i)->basic);
+		else if (priv->enhanced_tx_desc)
+			p = &((tx_q->dma_enhtx + i)->basic);
+		else
+			p = tx_q->dma_tx + i;
+
+		stmmac_clear_desc(priv, p);
+
+		tx_q->tx_skbuff_dma[i].buf = 0;
+		tx_q->tx_skbuff_dma[i].map_as_page = false;
+		tx_q->tx_skbuff_dma[i].len = 0;
+		tx_q->tx_skbuff_dma[i].last_segment = false;
+		tx_q->tx_skbuff[i] = NULL;
+	}
+
+	tx_q->dirty_tx = 0;
+	tx_q->cur_tx = 0;
+	tx_q->mss = 0;
+
+	netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, queue));
 }
 
 /**
@@ -1429,55 +1500,9 @@ static int init_dma_tx_desc_rings(struct net_device *dev)
 	struct stmmac_priv *priv = netdev_priv(dev);
 	u32 tx_queue_cnt = priv->plat->tx_queues_to_use;
 	u32 queue;
-	int i;
 
-	for (queue = 0; queue < tx_queue_cnt; queue++) {
-		struct stmmac_tx_queue *tx_q = &priv->tx_queue[queue];
-
-		netif_dbg(priv, probe, priv->dev,
-			  "(%s) dma_tx_phy=0x%08x\n", __func__,
-			 (u32)tx_q->dma_tx_phy);
-
-		/* Setup the chained descriptor addresses */
-		if (priv->mode == STMMAC_CHAIN_MODE) {
-			if (priv->extend_desc)
-				stmmac_mode_init(priv, tx_q->dma_etx,
-						 tx_q->dma_tx_phy,
-						 priv->dma_tx_size, 1);
-			else if (priv->enhanced_tx_desc)
-				stmmac_mode_init(priv, tx_q->dma_enhtx,
-						 tx_q->dma_tx_phy,
-						 priv->dma_tx_size, 1);
-			else
-				stmmac_mode_init(priv, tx_q->dma_tx,
-						 tx_q->dma_tx_phy,
-						 priv->dma_tx_size, 0);
-		}
-
-		for (i = 0; i < priv->dma_tx_size; i++) {
-			struct dma_desc *p;
-			if (priv->extend_desc)
-				p = &((tx_q->dma_etx + i)->basic);
-			else if (priv->enhanced_tx_desc)
-				p = &((tx_q->dma_enhtx + i)->basic);
-			else
-				p = tx_q->dma_tx + i;
-
-			stmmac_clear_desc(priv, p);
-
-			tx_q->tx_skbuff_dma[i].buf = 0;
-			tx_q->tx_skbuff_dma[i].map_as_page = false;
-			tx_q->tx_skbuff_dma[i].len = 0;
-			tx_q->tx_skbuff_dma[i].last_segment = false;
-			tx_q->tx_skbuff[i] = NULL;
-		}
-
-		tx_q->dirty_tx = 0;
-		tx_q->cur_tx = 0;
-		tx_q->mss = 0;
-
-		netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, queue));
-	}
+	for (queue = 0; queue < tx_queue_cnt; queue++)
+		init_dma_tx_desc_ring(priv, queue);
 
 	return 0;
 }
