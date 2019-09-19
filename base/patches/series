@@ -33,3 +33,12 @@
 
 # CVE-2019-15217
 0001-media-usb-zr364xx-Fix-KASAN-null-ptr-deref-Read-in-z-CVE-2019-15217.patch
+
+# CVE-2018-21008
+0001-rsi-add-fix-for-crash-during-assertions-CVE-2018-21008.patch
+
+# CVE-2019-12455
+0001-clk-sunxi-fix-a-missing-check-bug-in-sunxi_divs_clk_CVE-2019-12455.patch
+
+# CVE-2019-12378
+0002-ipv6_sockglue-Fix-a-missing-check-bug-in-ip6_ra_cont-CVE-2019-12378.patch
