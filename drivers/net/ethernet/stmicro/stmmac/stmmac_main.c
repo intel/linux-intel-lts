@@ -1560,6 +1560,30 @@ static void dma_free_tx_skbufs(struct stmmac_priv *priv, u32 queue)
 		stmmac_free_tx_buffer(priv, queue, i);
 }
 
+static void free_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
+{
+	struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
+
+	/* Release the DMA RX socket buffers */
+	dma_free_rx_skbufs(priv, queue);
+
+	/* Free DMA regions of consistent memory previously allocated */
+	if (!priv->extend_desc)
+		dma_free_coherent(priv->device, priv->dma_rx_size *
+					sizeof(struct dma_desc),
+					rx_q->dma_rx, rx_q->dma_rx_phy);
+	else
+		dma_free_coherent(priv->device, priv->dma_rx_size *
+					sizeof(struct dma_extended_desc),
+					rx_q->dma_erx, rx_q->dma_rx_phy);
+
+	kfree(rx_q->buf_pool);
+	if (rx_q->page_pool) {
+		page_pool_request_shutdown(rx_q->page_pool);
+		page_pool_destroy(rx_q->page_pool);
+	}
+}
+
 /**
  * free_dma_rx_desc_resources - free RX dma desc resources
  * @priv: private structure
@@ -1570,28 +1594,33 @@ static void free_dma_rx_desc_resources(struct stmmac_priv *priv)
 	u32 queue;
 
 	/* Free RX queue resources */
-	for (queue = 0; queue < rx_count; queue++) {
-		struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
+	for (queue = 0; queue < rx_count; queue++)
+		free_dma_rx_desc_resources_q(priv, queue);
+}
 
-		/* Release the DMA RX socket buffers */
-		dma_free_rx_skbufs(priv, queue);
+static void free_dma_tx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
+{
+	struct stmmac_tx_queue *tx_q = &priv->tx_queue[queue];
 
-		/* Free DMA regions of consistent memory previously allocated */
-		if (!priv->extend_desc)
-			dma_free_coherent(priv->device, priv->dma_rx_size *
-					  sizeof(struct dma_desc),
-					  rx_q->dma_rx, rx_q->dma_rx_phy);
-		else
-			dma_free_coherent(priv->device, priv->dma_rx_size *
-					  sizeof(struct dma_extended_desc),
-					  rx_q->dma_erx, rx_q->dma_rx_phy);
+	/* Release the DMA TX socket buffers */
+	dma_free_tx_skbufs(priv, queue);
 
-		kfree(rx_q->buf_pool);
-		if (rx_q->page_pool) {
-			page_pool_request_shutdown(rx_q->page_pool);
-			page_pool_destroy(rx_q->page_pool);
-		}
-	}
+	/* Free DMA regions of consistent memory previously allocated */
+	if (priv->extend_desc)
+		dma_free_coherent(priv->device, priv->dma_tx_size *
+					sizeof(struct dma_extended_desc),
+					tx_q->dma_etx, tx_q->dma_tx_phy);
+	else if (priv->enhanced_tx_desc)
+		dma_free_coherent(priv->device, priv->dma_tx_size *
+					sizeof(struct dma_enhanced_tx_desc),
+					tx_q->dma_enhtx, tx_q->dma_tx_phy);
+	else
+		dma_free_coherent(priv->device, priv->dma_tx_size *
+					sizeof(struct dma_desc),
+					tx_q->dma_tx, tx_q->dma_tx_phy);
+
+	kfree(tx_q->tx_skbuff_dma);
+	kfree(tx_q->tx_skbuff);
 }
 
 /**
@@ -1604,29 +1633,8 @@ static void free_dma_tx_desc_resources(struct stmmac_priv *priv)
 	u32 queue;
 
 	/* Free TX queue resources */
-	for (queue = 0; queue < tx_count; queue++) {
-		struct stmmac_tx_queue *tx_q = &priv->tx_queue[queue];
-
-		/* Release the DMA TX socket buffers */
-		dma_free_tx_skbufs(priv, queue);
-
-		/* Free DMA regions of consistent memory previously allocated */
-		if (priv->extend_desc)
-			dma_free_coherent(priv->device, priv->dma_tx_size *
-					  sizeof(struct dma_extended_desc),
-					  tx_q->dma_etx, tx_q->dma_tx_phy);
-		else if (priv->enhanced_tx_desc)
-			dma_free_coherent(priv->device, priv->dma_tx_size *
-					  sizeof(struct dma_enhanced_tx_desc),
-					  tx_q->dma_enhtx, tx_q->dma_tx_phy);
-		else
-			dma_free_coherent(priv->device, priv->dma_tx_size *
-					  sizeof(struct dma_desc),
-					  tx_q->dma_tx, tx_q->dma_tx_phy);
-
-		kfree(tx_q->tx_skbuff_dma);
-		kfree(tx_q->tx_skbuff);
-	}
+	for (queue = 0; queue < tx_count; queue++)
+		free_dma_tx_desc_resources_q(priv, queue);
 }
 
 /**
