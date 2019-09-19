@@ -79,6 +79,9 @@
 #define PLL_M_MAX	623
 #define PLL_FVCO_MAX	1250
 
+static struct mipi_dsi_host *dsi_host;
+static struct mipi_dsi_device *dsi_device;
+
 /*
  * These are added here only temporarily for testing,
  * these will eventually go to the device tree sections,
@@ -293,33 +296,68 @@ static struct kmb_dsi_host *kmb_dsi_host_init(struct drm_device *drm,
 		struct kmb_dsi *kmb_dsi)
 {
 	struct kmb_dsi_host *host;
-	struct mipi_dsi_device *device;
-	int err;
 
 	host = kzalloc(sizeof(*host), GFP_KERNEL);
 	if (!host)
 		return NULL;
 
-	host->base.ops = &kmb_dsi_host_ops;
+	host->base = dsi_host;
+	host->base->ops = &kmb_dsi_host_ops;
 	host->kmb_dsi = kmb_dsi;
 
-	device = kzalloc(sizeof(*device), GFP_KERNEL);
-	if (!device) {
-		kfree(host);
-		return NULL;
-	}
+	host->base->dev = drm->dev;
 
-	host->base.dev = drm->dev;
-	err = mipi_dsi_host_register(&host->base);
-	if (err < 0) {
-		DRM_ERROR("failed to register DSI host: %d\n", err);
-		kfree(host);
-		kfree(device);
-	}
-
-	device->host = &host->base;
-	host->device = device;
+	dsi_device->host = host->base;
+	host->device = dsi_device;
 	return host;
+}
+
+struct drm_bridge *kmb_dsi_host_bridge_init(struct device *dev)
+{
+	int ret;
+	struct device_node *encoder_node;
+	struct drm_bridge *bridge;
+
+	if (!dsi_host) {
+		dsi_host = kzalloc(sizeof(*dsi_host), GFP_KERNEL);
+		if (!dsi_host)
+			return ERR_PTR(-ENOMEM);
+
+		dsi_host->ops = &kmb_dsi_host_ops;
+
+		if (!dsi_device)
+			dsi_device = kzalloc(sizeof(*dsi_device), GFP_KERNEL);
+		if (!dsi_device) {
+			kfree(dsi_host);
+			return ERR_PTR(-ENOMEM);
+		}
+
+		dsi_host->dev = dev;
+		ret = mipi_dsi_host_register(dsi_host);
+		if (ret < 0) {
+			DRM_ERROR("failed to register DSI host: %d\n", ret);
+			kfree(dsi_host);
+			kfree(dsi_device);
+			return ERR_PTR(ret);
+		}
+	}
+
+	/* find ADV7535 node and initialize it */
+	DRM_DEBUG("trying to get bridge info %pOF\n", dev->of_node);
+	encoder_node = of_parse_phandle(dev->of_node, "encoder-slave", 0);
+	DRM_DEBUG("encoder node =  %pOF\n", encoder_node);
+	if (!encoder_node) {
+		DRM_ERROR("failed to get bridge info from DT\n");
+		ret = -EINVAL;
+	}
+	/* Locate drm bridge from the hdmi encoder DT node */
+	bridge = of_drm_find_bridge(encoder_node);
+	of_node_put(encoder_node);
+	if (!bridge) {
+		DRM_INFO("wait for external bridge driver DT\n");
+		return ERR_PTR(-EPROBE_DEFER);
+	}
+	return bridge;
 }
 
 u32 mipi_get_datatype_params(u32 data_type, u32 data_mode,
@@ -682,7 +720,8 @@ static void mipi_tx_ctrl_cfg(struct kmb_drm_private *dev_p, u8 fg_id,
 	u32 sync_cfg = 0, ctrl = 0, fg_en;
 	u32 ctrl_no = MIPI_CTRL6;
 
-	/*MIPI_TX_HS_SYNC_CFG */
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
+	/*MIPI_TX_HS_SYNC_CFG*/
 	if (ctrl_cfg->tx_ctrl_cfg.line_sync_pkt_en)
 		sync_cfg |= LINE_SYNC_PKT_ENABLE;
 	if (ctrl_cfg->tx_ctrl_cfg.frame_counter_active)
@@ -693,6 +732,7 @@ static void mipi_tx_ctrl_cfg(struct kmb_drm_private *dev_p, u8 fg_id,
 		sync_cfg |= DSI_V_BLANKING;
 	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->hsa_blanking)
 		sync_cfg |= DSI_HSA_BLANKING;
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->hbp_blanking)
 		sync_cfg |= DSI_HBP_BLANKING;
 	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->hfp_blanking)
@@ -704,6 +744,7 @@ static void mipi_tx_ctrl_cfg(struct kmb_drm_private *dev_p, u8 fg_id,
 	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->lpm_last_vfp_line)
 		sync_cfg |= DSI_LPM_LAST_VFP_LINE;
 	/* enable frame generator */
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	fg_en = 1 << fg_id;
 	sync_cfg |= FRAME_GEN_EN(fg_en);
 	if (ctrl_cfg->tx_ctrl_cfg.tx_always_use_hact)
@@ -722,7 +763,9 @@ static void mipi_tx_ctrl_cfg(struct kmb_drm_private *dev_p, u8 fg_id,
 	/*67 ns stop time */
 	ctrl |= HSEXIT_CNT(0x43);
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	kmb_write_mipi(dev_p, MIPI_TXm_HS_SYNC_CFG(ctrl_no), sync_cfg);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	kmb_write_mipi(dev_p, MIPI_TXm_HS_CTRL(ctrl_no), ctrl);
 }
 
@@ -1304,8 +1347,8 @@ void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p)
 
 }
 
-//int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
-int kmb_dsi_init(struct drm_device *dev)
+int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
+//int kmb_dsi_init(struct drm_device *dev)
 {
 	struct kmb_dsi *kmb_dsi;
 	struct drm_encoder *encoder;
@@ -1313,10 +1356,9 @@ int kmb_dsi_init(struct drm_device *dev)
 	struct drm_connector *connector;
 	struct kmb_dsi_host *host;
 	struct kmb_drm_private *dev_p = dev->dev_private;
-	struct device_node *encoder_node;
-	struct drm_bridge *bridge;
 	int ret = 0;
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	kmb_dsi = kzalloc(sizeof(*kmb_dsi), GFP_KERNEL);
 	if (!kmb_dsi) {
 		DRM_ERROR("failed to allocate kmb_dsi\n");
@@ -1330,52 +1372,44 @@ int kmb_dsi_init(struct drm_device *dev)
 		return -ENOMEM;
 	}
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	kmb_dsi->attached_connector = kmb_connector;
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
+	host = kmb_dsi_host_init(dev, kmb_dsi);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
+	if (!host) {
+		DRM_ERROR("Faile to allocate host\n");
+//		drm_encoder_cleanup(encoder);
+		kfree(kmb_dsi);
+		kfree(kmb_connector);
+		return -ENOMEM;
+	}
+
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	connector = &kmb_connector->base;
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	encoder = &kmb_dsi->base;
 	encoder->possible_crtcs = 1;
 	encoder->possible_clones = 0;
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	drm_encoder_init(dev, encoder, &kmb_dsi_funcs, DRM_MODE_ENCODER_DSI,
-			 "MIPI-DSI");
-
-	host = kmb_dsi_host_init(dev, kmb_dsi);
-	if (!host) {
-		drm_encoder_cleanup(encoder);
-		kfree(kmb_dsi);
-		kfree(kmb_connector);
-	}
+			"MIPI-DSI");
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 
 	drm_connector_init(dev, connector, &kmb_dsi_connector_funcs,
-			   DRM_MODE_CONNECTOR_DSI);
+						   DRM_MODE_CONNECTOR_DSI);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	drm_connector_helper_add(connector, &kmb_dsi_connector_helper_funcs);
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 //	connector->encoder = encoder;
-	DRM_INFO("%s : %d connector = %s encoder = %s\n", __func__, __LINE__,
-			connector->name, encoder->name);
-	DRM_INFO("%s : %d connector->encoder = 0x%p\n", __func__, __LINE__,
-			connector->encoder);
+	DRM_INFO("%s : %d connector = %s encoder = %s\n", __func__,
+			__LINE__, connector->name, encoder->name);
 
 	ret = drm_connector_attach_encoder(connector, encoder);
-	DRM_INFO("%s : %d ret = %d\n", __func__, __LINE__, ret);
-
-	/* find ADV7535 node and initialize it */
-	DRM_DEBUG("trying to get bridge info %pOF\n", dev->dev->of_node);
-	encoder_node = of_parse_phandle(dev->dev->of_node, "encoder-slave", 0);
-	DRM_DEBUG("encoder node =  %pOF\n", encoder_node);
-	if (!encoder_node) {
-		DRM_ERROR("failed to get bridge info from DT\n");
-		ret = -EINVAL;
-	}
-	/* Locate drm bridge from the hdmi encoder DT node */
-	bridge = of_drm_find_bridge(encoder_node);
-	of_node_put(encoder_node);
-	if (!bridge) {
-		DRM_INFO("wait for external bridge driver DT\n");
-		return -EPROBE_DEFER;
-	}
-
 	/* Link drm_bridge to encoder */
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	ret = drm_bridge_attach(encoder, bridge, NULL);
 	if (ret) {
 		DRM_ERROR("failed to attach bridge to MIPI\n");
@@ -1383,14 +1417,18 @@ int kmb_dsi_init(struct drm_device *dev)
 		return ret;
 	}
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	/* initialize mipi controller */
 	mipi_tx_init_cntrl(dev_p, &mipi_tx_init_cfg);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 
 	/*d-phy initialization */
 	mipi_tx_init_dphy(dev_p, &mipi_tx_init_cfg);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 
 	/* irq initialization */
 	mipi_tx_init_irqs(dev_p, &int_cfg, &mipi_tx_init_cfg.tx_ctrl_cfg);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 
 	return 0;
 }

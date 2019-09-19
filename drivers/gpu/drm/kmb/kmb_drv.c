@@ -57,11 +57,24 @@ static struct clk *clk_lcd;
 static struct clk *clk_mipi;
 
 static int probe_deferred;
+struct drm_bridge *adv_bridge;
 
 static int kmb_display_clk_enable(void)
 {
-	clk_prepare_enable(clk_lcd);
-	clk_prepare_enable(clk_mipi);
+	int ret;
+
+	ret = clk_prepare_enable(clk_lcd);
+	if (ret) {
+		DRM_ERROR("Failed to enable LCD clock: %d\n", ret);
+		return ret;
+	}
+
+	ret = clk_prepare_enable(clk_mipi);
+	if (ret) {
+		DRM_ERROR("Failed to enable MIPI clock: %d\n", ret);
+		return ret;
+	}
+	DRM_INFO("SUCCESS : enabled LCD MIPI clocks\n");
 	return 0;
 }
 
@@ -106,8 +119,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	 *}
 	 */
 	/* LCD mmio */
-	if (!probe_deferred) {
-		probe_deferred = 1;
+	probe_deferred = 1;
 
 	if (!request_mem_region(LCD_BASE_ADDR, LCD_MMIO_SIZE, "kmb-lcd")) {
 		DRM_ERROR("failed to reserve LCD registers\n");
@@ -140,9 +152,10 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
 	 * firmware has to redirect it to A53
 	 */
-/*TBD read and check for correct product version here */
 
-	/* Get the optional framebuffer memory resource */
+		/*TBD read and check for correct product version here */
+
+		/* Get the optional framebuffer memory resource */
 	ret = of_reserved_mem_device_init(drm->dev);
 	if (ret && ret != -ENODEV)
 		return ret;
@@ -154,8 +167,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 
-/*	ret = kmb_dsi_init(drm, bridge);*/
-	ret = kmb_dsi_init(drm);
+	ret = kmb_dsi_init(drm, adv_bridge);
 	if (ret == -EPROBE_DEFER) {
 		DRM_INFO("%s: wait for external bridge driver DT", __func__);
 		return -EPROBE_DEFER;
@@ -163,7 +175,6 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_ERROR("failed to initialize DSI\n");
 		goto setup_fail;
 	}
-}
 	/* enable display clocks*/
 	clk_lcd = clk_get(&pdev->dev, "clk_lcd");
 	if (!clk_lcd) {
@@ -177,10 +188,9 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 	DRM_INFO("%s : %d\n", __func__, __LINE__);
-	kmb_display_clk_enable();
+	ret = kmb_display_clk_enable();
 
-	DRM_INFO("%s : %d\n", __func__, __LINE__);
-
+	DRM_INFO("%s : %d clk enabling ret=%d\n", __func__, __LINE__, ret);
 	return 0;
 
 	drm_crtc_cleanup(&dev_p->crtc);
@@ -288,7 +298,7 @@ static struct drm_driver kmb_driver = {
 	.gem_prime_vunmap = drm_gem_cma_prime_vunmap,
 	.gem_prime_mmap = drm_gem_cma_prime_mmap,
 	.fops = &fops,
-	.name = "kmb",
+	.name = "kmb_display",
 	.desc = "KEEMBAY DISPLAY DRIVER ",
 	.date = "20190122",
 	.major = 1,
@@ -297,26 +307,27 @@ static struct drm_driver kmb_driver = {
 
 static int kmb_drm_bind(struct device *dev)
 {
-	struct drm_device *drm;
+	struct drm_device *drm = NULL;
 	struct kmb_drm_private *lcd;
 	int ret;
 
-	DRM_DEBUG("kmb_bind : ENTER\n");
+	DRM_DEBUG("%s : ENTER", __func__);
 	drm = drm_dev_alloc(&kmb_driver, dev);
 	if (IS_ERR(drm))
 		return PTR_ERR(drm);
 
-	DRM_DEBUG("kmb_bind : after alloc drm\n");
+	DRM_DEBUG("%s : after alloc drm", __func__);
 	lcd = devm_kzalloc(dev, sizeof(*lcd), GFP_KERNEL);
 	if (!lcd)
 		return -ENOMEM;
 
-	DRM_DEBUG("kmb_bind : after alloc lcd\n");
+	DRM_DEBUG("%s : after alloc lcd", __func__);
 	drm->dev_private = lcd;
-	dev_set_drvdata(dev, drm);
 
 	kmb_setup_mode_config(drm);
-	DRM_DEBUG("kmb_bind : after kmb_setup_mode_config\n");
+	dev_set_drvdata(dev, drm);
+
+	/* load the driver */
 	ret = kmb_load(drm, 0);
 	DRM_INFO("%s : %d ret = %d\n", __func__, __LINE__, ret);
 	if (ret == -EPROBE_DEFER) {
@@ -357,7 +368,6 @@ err_register:
 	drm_kms_helper_poll_fini(drm);
 err_vblank:
 	pm_runtime_disable(drm->dev);
-	component_unbind_all(dev, drm);
 	of_node_put(lcd->crtc.port);
 	lcd->crtc.port = NULL;
 	drm_irq_uninstall(drm);
@@ -375,9 +385,9 @@ static void kmb_drm_unbind(struct device *dev)
 	struct drm_device *drm = dev_get_drvdata(dev);
 	struct kmb_drm_private *dev_p = drm->dev_private;
 
+	dump_stack();
 	drm_dev_unregister(drm);
 	drm_kms_helper_poll_fini(drm);
-	component_unbind_all(dev, drm);
 	of_node_put(dev_p->crtc.port);
 	dev_p->crtc.port = NULL;
 	pm_runtime_get_sync(drm->dev);
@@ -385,12 +395,15 @@ static void kmb_drm_unbind(struct device *dev)
 	pm_runtime_put_sync(drm->dev);
 	pm_runtime_disable(drm->dev);
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	if (dev_p->lcd_mmio) {
+		DRM_INFO("%s : %d\n", __func__, __LINE__);
 		iounmap(dev_p->lcd_mmio);
 		release_mem_region(LCD_BASE_ADDR, LCD_MMIO_SIZE);
 	}
 
 	if (dev_p->mipi_mmio) {
+		DRM_INFO("%s : %d\n", __func__, __LINE__);
 		iounmap(dev_p->mipi_mmio);
 		release_mem_region(MIPI_BASE_ADDR, MIPI_MMIO_SIZE);
 	}
@@ -398,6 +411,7 @@ static void kmb_drm_unbind(struct device *dev)
 	if (dev_p->msscam_mmio)
 		iounmap(dev_p->msscam_mmio);
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	of_reserved_mem_device_release(drm->dev);
 	drm_mode_config_cleanup(drm);
 
@@ -409,32 +423,31 @@ static void kmb_drm_unbind(struct device *dev)
 	drm_dev_put(drm);
 	drm->dev_private = NULL;
 	dev_set_drvdata(dev, NULL);
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 }
-
-static const struct component_master_ops kmb_master_ops = {
-	.bind = kmb_drm_bind,
-	.unbind = kmb_drm_unbind,
-};
 
 static int kmb_probe(struct platform_device *pdev)
 {
-	struct device_node *port;
-	int ret = 0;
+	struct device *device = get_device(&pdev->dev);
 
 	/* there is only one output port inside each device, find it */
 	DRM_DEBUG("%s : ENTER", __func__);
 
-	port = of_graph_get_remote_node(pdev->dev.of_node, 0, 0);
-	DRM_DEBUG("%s : port = 0x%pOF\n", __func__, port);
-	if (!port)
-		return -ENODEV;
-	DRM_DEBUG("%s : EXIT ret=%d\n", __func__, ret);
+	adv_bridge =  kmb_dsi_host_bridge_init(device);
+	if (adv_bridge == ERR_PTR(-EPROBE_DEFER))
+		return -EPROBE_DEFER;
+	else if (adv_bridge < 0) {
+		DRM_ERROR(" PROBE failed\n");
+		return -EINVAL;
+	}
+
 	return kmb_drm_bind(&pdev->dev);
 }
 
 static int kmb_remove(struct platform_device *pdev)
 {
-	component_master_del(&pdev->dev, &kmb_master_ops);
+//	component_master_del(&pdev->dev, &kmb_master_ops);
+	kmb_drm_unbind(&pdev->dev);
 	return 0;
 }
 
