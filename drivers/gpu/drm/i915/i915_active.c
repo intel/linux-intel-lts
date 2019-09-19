@@ -384,7 +384,7 @@ void i915_active_set_exclusive(struct i915_active *ref, struct dma_fence *f)
 	mutex_acquire(&ref->mutex.dep_map, 0, 0, _THIS_IP_);
 	if (!__i915_active_fence_set(&ref->excl, f))
 		atomic_inc(&ref->count);
-	mutex_release(&ref->mutex.dep_map, 0, _THIS_IP_);
+	mutex_release(&ref->mutex.dep_map, _THIS_IP_);
 }
 
 bool i915_active_acquire_if_busy(struct i915_active *ref)
