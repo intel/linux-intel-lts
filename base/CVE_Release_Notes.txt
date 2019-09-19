@@ -220,7 +220,7 @@ CVEs fixed in 4.19.73:
   CVE-2019-15918: 4061e662c8e9f5fb796b05fd2ab58fed8cd16d59 cifs: Fix lease buffer length error
 
  
-CVEs Fixed in this 4.19.71 LTS 4.19 release 
+CVEs Fixed in this 4.19.73 LTS 4.19 release 
 ====================================================
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
@@ -247,7 +247,5 @@ CVEs Fixed in this 4.19.71 LTS 4.19 release
 0001-sctp-implement-memory-accounting-on-rx-path-CVE-2019-3874.patch
 0002-sctp-implement-memory-accounting-on-tx-path-CVE-2019-3874.patch
 
-# CVE-2019-15918
-0001-cifs-Fix-lease-buffer-length-error-CVE-2019-15918.patch
  
 ================
