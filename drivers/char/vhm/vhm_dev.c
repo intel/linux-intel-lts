@@ -687,7 +687,7 @@ static void io_req_tasklet(unsigned long data)
 	read_lock(&vhm_vm_list_lock);
 	list_for_each_entry(vm, &vhm_vm_list, list) {
 		if (!vm || !vm->req_buf)
-			break;
+			continue;
 
 		acrn_ioreq_distribute_request(vm);
 	}
