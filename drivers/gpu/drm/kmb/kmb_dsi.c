@@ -79,7 +79,7 @@
 #define PLL_M_MAX	623
 #define PLL_FVCO_MAX	1250
 
-struct mipi_dsi_host *dsi_host;
+static struct mipi_dsi_host *dsi_host;
 static struct mipi_dsi_device *dsi_device;
 
 /*
@@ -357,8 +357,13 @@ struct drm_bridge *kmb_dsi_host_bridge_init(struct device *dev)
 	return bridge;
 }
 
+void dsi_host_unregister(void)
+{
+	mipi_dsi_host_unregister(dsi_host);
+}
+
 u32 mipi_get_datatype_params(u32 data_type, u32 data_mode,
-			     struct mipi_data_type_params *params)
+		struct mipi_data_type_params *params)
 {
 	struct mipi_data_type_params data_type_parameters;
 

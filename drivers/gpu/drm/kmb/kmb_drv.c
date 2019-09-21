@@ -399,7 +399,7 @@ static void kmb_drm_unload(struct device *dev)
 	dev_set_drvdata(dev, NULL);
 
 	/* Unregister DSI host */
-	mipi_dsi_host_unregister(dsi_host);
+	dsi_host_unregister();
 }
 
 static int kmb_probe(struct platform_device *pdev)
@@ -435,7 +435,7 @@ static int kmb_probe(struct platform_device *pdev)
 
 	drm->dev_private = lcd;
 	kmb_setup_mode_config(drm);
-	dev_set_drvdata(dev, drm);
+		dev_set_drvdata(dev, drm);
 
 	/* Load driver */
 	ret = kmb_load(drm, 0);
@@ -476,7 +476,7 @@ err_free:
 	drm_mode_config_cleanup(drm);
 	dev_set_drvdata(dev, NULL);
 	drm_dev_put(drm);
-	mipi_dsi_host_unregister(dsi_host);
+	dsi_host_unregister();
 
 	return ret;
 }
