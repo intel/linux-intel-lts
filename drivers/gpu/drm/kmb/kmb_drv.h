@@ -31,6 +31,7 @@
 #define KMB_MAX_WIDTH			16384	/*max width in pixels */
 #define KMB_MAX_HEIGHT			16384	/*max height in pixels */
 
+extern struct mipi_dsi_host *dsi_host;
 struct kmb_drm_private {
 	struct drm_device		drm;
 	void __iomem			*lcd_mmio;
