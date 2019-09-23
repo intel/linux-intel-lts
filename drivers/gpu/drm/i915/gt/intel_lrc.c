@@ -2358,7 +2358,7 @@ static struct i915_request *active_request(struct i915_request *rq)
 	if (!i915_request_is_active(rq)) /* unwound, but incomplete! */
 		return rq;
 
-	list = &rq->timeline->requests;
+	list = &i915_request_active_timeline(rq)->requests;
 	list_for_each_entry_from_reverse(rq, list, link) {
 		if (i915_request_completed(rq))
 			break;
