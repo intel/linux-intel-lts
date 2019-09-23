@@ -14,6 +14,7 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <asm/set_memory.h>
 #include "ion.h"
 
 #define NUM_ORDERS ARRAY_SIZE(orders)
@@ -338,6 +339,11 @@ static int ion_system_contig_heap_allocate(struct ion_heap *heap,
 
 	buffer->sg_table = table;
 
+#ifdef CONFIG_X86
+	if (!(buffer->flags & ION_FLAG_CACHED))
+		set_memory_wc((unsigned long)page_address(page), PAGE_ALIGN(len) >> PAGE_SHIFT);
+#endif
+
 	return 0;
 
 free_table:
@@ -355,6 +361,11 @@ static void ion_system_contig_heap_free(struct ion_buffer *buffer)
 	struct page *page = sg_page(table->sgl);
 	unsigned long pages = PAGE_ALIGN(buffer->size) >> PAGE_SHIFT;
 	unsigned long i;
+
+#ifdef CONFIG_X86
+	if (!(buffer->flags & ION_FLAG_CACHED))
+		set_memory_wb((unsigned long)page_address(page), pages);
+#endif
 
 	for (i = 0; i < pages; i++)
 		__free_page(page + i);
