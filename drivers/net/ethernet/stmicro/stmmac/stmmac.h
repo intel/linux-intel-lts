@@ -58,6 +58,7 @@ struct stmmac_tx_queue {
 	struct dma_desc *dma_tx;
 	struct sk_buff **tx_skbuff;
 	struct stmmac_tx_info *tx_skbuff_dma;
+	struct xdp_frame **xdpf;
 	unsigned int cur_tx;
 	unsigned int dirty_tx;
 	dma_addr_t dma_tx_phy;
@@ -179,6 +180,10 @@ struct stmmac_priv {
 
 	/* TX Queue */
 	struct stmmac_tx_queue tx_queue[MTL_MAX_TX_QUEUES];
+	/* TX XDP Queue */
+	struct stmmac_tx_queue xdp_queue[MTL_MAX_TX_QUEUES];
+	/* TxQ(stmmac_tx_queue's queue_index) is XDP */
+	bool tx_queue_is_xdp[MTL_MAX_TX_QUEUES];
 	unsigned int dma_tx_size;
 
 	/* Generic channel for NAPI */
@@ -315,11 +320,43 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
 
 #define STMMAC_XDP_PASS		0
 #define STMMAC_XDP_CONSUMED	BIT(0)
+#define STMMAC_XDP_TX		BIT(1)
 
 static inline bool stmmac_enabled_xdp(struct stmmac_priv *priv)
 {
 	return !!priv->xdp_prog;
 }
+
+static inline bool queue_is_xdp(struct stmmac_priv *priv, u32 queue_index)
+{
+	return (priv->tx_queue_is_xdp[queue_index] == true);
+}
+
+static inline void set_queue_xdp(struct stmmac_priv *priv, u32 queue_index)
+{
+	priv->tx_queue_is_xdp[queue_index] = true;
+}
+
+static inline void clear_queue_xdp(struct stmmac_priv *priv, u32 queue_index)
+{
+	priv->tx_queue_is_xdp[queue_index] = false;
+}
+
+static inline struct stmmac_tx_queue *get_tx_queue(struct stmmac_priv *priv,
+						   u32 queue_index)
+{
+	return queue_is_xdp(priv, queue_index) ?
+	       &priv->xdp_queue[queue_index - priv->plat->num_queue_pairs] :
+	       &priv->tx_queue[queue_index];
+}
+
+#define STMMAC_TX_DESC_UNUSED(x)	\
+	((((x)->dirty_tx > (x)->cur_tx) ? 0 : priv->dma_tx_size) + \
+	(x)->dirty_tx - (x)->cur_tx - 1)
+
+int stmmac_xmit_xdp_tx_queue(struct xdp_buff *xdp,
+			     struct stmmac_tx_queue *xdp_q);
+void stmmac_xdp_queue_update_tail(struct stmmac_tx_queue *xdp_q);
 
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,

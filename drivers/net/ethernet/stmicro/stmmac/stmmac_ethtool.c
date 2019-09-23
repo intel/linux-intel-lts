@@ -940,18 +940,25 @@ static void stmmac_get_channels(struct net_device *dev,
 
 	chan->rx_count = priv->plat->rx_queues_to_use;
 	chan->tx_count = priv->plat->tx_queues_to_use;
+	chan->combined_count = priv->plat->num_queue_pairs;
 	chan->max_rx = priv->dma_cap.number_rx_queues;
 	chan->max_tx = priv->dma_cap.number_tx_queues;
+	chan->max_combined = priv->plat->max_combined;
 }
 
 static int stmmac_set_channels(struct net_device *dev,
 			       struct ethtool_channels *chan)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
+	bool is_xdp = stmmac_enabled_xdp(priv);
 
 	if (chan->rx_count > priv->dma_cap.number_rx_queues ||
 	    chan->tx_count > priv->dma_cap.number_tx_queues ||
 	    !chan->rx_count || !chan->tx_count)
+		return -EINVAL;
+
+	if (is_xdp && (chan->tx_count < 2 ||
+		       chan->rx_count < chan->tx_count / 2))
 		return -EINVAL;
 
 	return stmmac_reinit_queues(dev, chan->rx_count, chan->tx_count);
