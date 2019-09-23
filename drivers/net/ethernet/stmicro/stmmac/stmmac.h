@@ -91,6 +91,7 @@ struct stmmac_rx_queue {
 		unsigned int len;
 		unsigned int error;
 	} state;
+	struct bpf_prog *xdp_prog;
 };
 
 struct stmmac_channel {
@@ -275,6 +276,9 @@ struct stmmac_priv {
 
 	/* WA for EST */
 	int est_hw_del;
+
+	/* XDP BPF Program */
+	struct bpf_prog *xdp_prog;
 };
 
 enum stmmac_state {
@@ -308,6 +312,14 @@ int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev);
 int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev);
 int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
 #endif
+
+#define STMMAC_XDP_PASS		0
+#define STMMAC_XDP_CONSUMED	BIT(0)
+
+static inline bool stmmac_enabled_xdp(struct stmmac_priv *priv)
+{
+	return !!priv->xdp_prog;
+}
 
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,

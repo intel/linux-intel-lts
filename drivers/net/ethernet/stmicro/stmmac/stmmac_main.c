@@ -42,6 +42,8 @@
 #include "stmmac.h"
 #include <linux/reset.h>
 #include <linux/of_mdio.h>
+#include <linux/bpf.h>
+#include <linux/bpf_trace.h>
 #include "dwmac1000.h"
 #include "dwxgmac2.h"
 #include "hwif.h"
@@ -1570,6 +1572,8 @@ static void free_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 		page_pool_request_shutdown(rx_q->page_pool);
 		page_pool_destroy(rx_q->page_pool);
 	}
+
+	rx_q->xdp_prog = NULL;
 }
 
 /**
@@ -1674,6 +1678,8 @@ static int alloc_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 		if (!rx_q->dma_rx)
 			goto err_dma;
 	}
+
+	rx_q->xdp_prog = priv->xdp_prog;
 
 	return 0;
 
@@ -4062,6 +4068,45 @@ static inline void stmmac_rx_refill(struct stmmac_priv *priv, u32 queue)
 }
 
 /**
+ * stmmac_run_xdp - run an XDP program
+ * @rx_q: Rx queue structure
+ * @xdp: XDP buffer containing the frame
+ **/
+static struct sk_buff *stmmac_run_xdp(struct stmmac_rx_queue *rx_q,
+				      struct xdp_buff *xdp)
+{
+	int result = STMMAC_XDP_PASS;
+	struct bpf_prog *xdp_prog;
+	u32 act;
+
+	rcu_read_lock();
+	xdp_prog = READ_ONCE(rx_q->xdp_prog);
+
+	if (!xdp_prog)
+		goto xdp_out;
+
+	act = bpf_prog_run_xdp(xdp_prog, xdp);
+	switch (act) {
+	case XDP_PASS:
+		break;
+	default:
+		bpf_warn_invalid_xdp_action(act);
+		/* fall through -- handle default by dropping packet */
+	case XDP_TX:
+		/* fall through -- handle TX by dropping packet */
+	case XDP_ABORTED:
+		trace_xdp_exception(rx_q->priv_data->dev, xdp_prog, act);
+		/* fall through -- handle aborts by dropping packet */
+	case XDP_DROP:
+		result = STMMAC_XDP_CONSUMED;
+		break;
+	}
+xdp_out:
+	rcu_read_unlock();
+	return ERR_PTR(-result);
+}
+
+/**
  * stmmac_rx - manage the receive process
  * @priv: driver private structure
  * @limit: napi bugget
@@ -4077,6 +4122,7 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit, u32 queue)
 	int status = 0, coe = priv->hw->rx_csum;
 	unsigned int next_entry = rx_q->cur_rx;
 	struct sk_buff *skb = NULL;
+	struct xdp_buff xdp;
 
 	if (netif_msg_rx_status(priv)) {
 		void *rx_head;
@@ -4202,15 +4248,38 @@ read_again:
 					   len, status);
 			}
 
-			skb = napi_alloc_skb(&ch->rx_napi, len);
-			if (!skb) {
+			prefetchw(buf->page);
+			dma_sync_single_for_cpu(priv->device, buf->addr,
+						len, DMA_FROM_DEVICE);
+
+			xdp.data = page_address(buf->page);
+			xdp.data_meta = xdp.data;
+			xdp.data_hard_start = xdp.data;
+			xdp.data_end = xdp.data + len;
+
+			skb = stmmac_run_xdp(rx_q, &xdp);
+
+			if (IS_ERR(skb)) {
+				/* Not XDP-PASS, recycle page */
+				page_pool_recycle_direct(rx_q->page_pool,
+							 buf->page);
+				buf->page = NULL;
+				priv->dev->stats.rx_packets++;
+				priv->dev->stats.rx_bytes += len;
+				/* Proceed to next Rx buffer */
+				continue;
+			} else {
+				skb = netdev_alloc_skb_ip_align(priv->dev,
+								len);
+			}
+
+			if (unlikely(!skb)) {
 				priv->dev->stats.rx_dropped++;
 				count++;
 				continue;
 			}
 
-			dma_sync_single_for_cpu(priv->device, buf->addr, len,
-						DMA_FROM_DEVICE);
+			prefetch(xdp.data);
 			skb_copy_to_linear_data(skb, page_address(buf->page),
 						len);
 			skb_put(skb, len);
@@ -4399,6 +4468,15 @@ static void stmmac_set_rx_mode(struct net_device *dev)
 }
 
 /**
+ * stmmac_max_xdp_frame_size - returns the maximum allowed frame size for XDP
+ * @priv: driver private structure
+ **/
+static int stmmac_max_xdp_frame_size(struct stmmac_priv *priv)
+{
+	return BUF_SIZE_2KiB;
+}
+
+/**
  *  stmmac_change_mtu - entry point to change MTU size for the device.
  *  @dev : device pointer.
  *  @new_mtu : the new MTU size for the device.
@@ -4416,6 +4494,13 @@ static int stmmac_change_mtu(struct net_device *dev, int new_mtu)
 	if (netif_running(dev)) {
 		netdev_err(priv->dev, "must be stopped to change its MTU\n");
 		return -EBUSY;
+	}
+
+	if (stmmac_enabled_xdp(priv)) {
+		int frame_size = new_mtu + ETH_HLEN + ETH_FCS_LEN + VLAN_HLEN;
+
+		if (frame_size > stmmac_max_xdp_frame_size(priv))
+			return -EINVAL;
 	}
 
 	dev->mtu = new_mtu;
@@ -4836,6 +4921,67 @@ static int stmmac_set_mac_address(struct net_device *ndev, void *addr)
 	return ret;
 }
 
+/**
+ * stmmac_xdp_setup - add/remove an XDP program
+ * @vsi: VSI to changed
+ * @prog: XDP program
+ **/
+static int stmmac_xdp_setup(struct stmmac_priv *priv,
+			  struct bpf_prog *prog)
+{
+	int frame_size = priv->dev->mtu + ETH_HLEN + ETH_FCS_LEN + VLAN_HLEN;
+	struct bpf_prog *old_prog;
+	bool need_reset;
+	int i;
+
+	/* Don't allow frames that span over multiple buffers */
+	if (frame_size > priv->dma_buf_sz)
+		return -EINVAL;
+
+	if (!stmmac_enabled_xdp(priv) && !prog)
+		return 0;
+
+	/* When turning XDP on->off/off->on we reset and rebuild the rings. */
+	need_reset = (stmmac_enabled_xdp(priv) != !!prog);
+
+	if (need_reset && netif_running(priv->dev))
+		stmmac_release(priv->dev);
+
+	old_prog = xchg(&priv->xdp_prog, prog);
+
+	if (need_reset && netif_running(priv->dev))
+		stmmac_open(priv->dev);
+
+	for (i = 0; i < priv->plat->rx_queues_to_use; i++)
+		WRITE_ONCE(priv->rx_queue[i].xdp_prog, priv->xdp_prog);
+
+	if (old_prog)
+		bpf_prog_put(old_prog);
+
+	return 0;
+}
+
+/**
+ * stmmac_xdp - implements ndo_xdp for stmmac
+ * @dev: netdevice
+ * @xdp: XDP command
+ **/
+static int stmmac_xdp(struct net_device *dev,
+		      struct netdev_bpf *xdp)
+{
+	struct stmmac_priv *priv = netdev_priv(dev);
+
+	switch (xdp->command) {
+	case XDP_SETUP_PROG:
+		return stmmac_xdp_setup(priv, xdp->prog);
+	case XDP_QUERY_PROG:
+		xdp->prog_id = priv->xdp_prog ? priv->xdp_prog->aux->id : 0;
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
 #ifdef CONFIG_DEBUG_FS
 static struct dentry *stmmac_fs_dir;
 
@@ -5114,6 +5260,7 @@ static const struct net_device_ops stmmac_netdev_ops = {
 	.ndo_set_mac_address = stmmac_set_mac_address,
 	.ndo_vlan_rx_add_vid = stmmac_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = stmmac_vlan_rx_kill_vid,
+	.ndo_bpf = stmmac_xdp,
 };
 
 static void stmmac_reset_subtask(struct stmmac_priv *priv)
