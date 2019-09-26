@@ -188,6 +188,18 @@ static long vhm_dev_ioctl(struct file *filep,
 			return -EFAULT;
 		}
 		return 0;
+	} else if (ioctl_num == IC_GET_PLATFORM_INFO) {
+		struct hc_platform_info platform_info;
+
+		ret = hcall_get_platform_info(virt_to_phys(&platform_info));
+		if (ret < 0)
+			return -EFAULT;
+
+		if (copy_to_user((void *)ioctl_param,
+			&platform_info, sizeof(platform_info)))
+			return -EFAULT;
+
+		return 0;
 	}
 
 	memset(&hc_pt_irq, 0, sizeof(hc_pt_irq));
@@ -661,7 +673,7 @@ create_vm_fail:
 
 	default:
 		pr_warn("Unknown IOCTL 0x%x\n", ioctl_num);
-		ret = 0;
+		ret = -EINVAL;
 		break;
 	}
 
@@ -765,8 +777,8 @@ static int __init vhm_init(void)
 		return -EINVAL;
 	}
 
-	if (api_version.major_version == SUPPORT_HV_API_VERSION_MAJOR &&
-		api_version.minor_version == SUPPORT_HV_API_VERSION_MINOR) {
+	if (api_version.major_version >= SUPPORT_HV_API_VERSION_MAJOR &&
+		api_version.minor_version >= SUPPORT_HV_API_VERSION_MINOR) {
 		pr_info("vhm: hv api version %d.%d\n",
 			api_version.major_version, api_version.minor_version);
 	} else {

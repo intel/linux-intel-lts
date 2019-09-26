@@ -197,6 +197,7 @@ static struct crl_register_write_rep adv7481_hdmi_mode_uyvy[] = {
 	{0x04, CRL_REG_LEN_08BIT, 0x00, 0xE0}, /* YCrCb output */
 	{0x12, CRL_REG_LEN_08BIT, 0xF2, 0xE0}, /* CSC Depends on ip Packets - SDR422 set */
 	{0x17, CRL_REG_LEN_08BIT, 0x80, 0xE0}, /* Luma & Chroma Values Can Reach 254d */
+	{0x3E, CRL_REG_LEN_08BIT, 0x00, 0x44}, /* Invert order of Cb and Cr*/
 	{0x7C, CRL_REG_LEN_08BIT, 0x00, 0x44}, /* ADI Required Write */
 	{0x0C, CRL_REG_LEN_08BIT, 0xE0, 0xE0}, /* Enable LLC_DLL & Double LLC Timing */
 	{0x0E, CRL_REG_LEN_08BIT, 0xDD, 0xE0}, /* LLC/PIX/SPI PINS TRISTATED AUD Outputs Enabled */

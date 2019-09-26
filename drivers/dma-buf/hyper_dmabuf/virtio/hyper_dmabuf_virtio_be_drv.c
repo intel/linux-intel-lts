@@ -194,6 +194,12 @@ static int virtio_be_handle_kick(int client_id, unsigned long *ioreqs_map)
 			acrn_ioreq_complete_request(
 					fe_info->client_id, vcpu, req);
 			count++;
+			if (count >= fe_info->max_vcpu) {
+				dev_warn(hy_drv_priv->dev,
+					"client %d ignore req on high vCPUs\n",
+					 client_id);
+				break;
+			}
 		}
 	}
 
@@ -480,6 +486,7 @@ static int virtio_be_send_req(int vmid, struct hyper_dmabuf_req *req,
 	}
 
 	if (timeout <= 0) {
+		mutex_unlock(&priv->lock);
 		dev_warn(hy_drv_priv->dev, "Requests ring full\n");
 		return -EBUSY;
 	}

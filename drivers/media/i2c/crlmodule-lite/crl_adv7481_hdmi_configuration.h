@@ -180,10 +180,11 @@ static struct crl_register_write_rep adv7481_hdmi_mode_rgb888[] = {
 };
 
 static struct crl_register_write_rep adv7481_hdmi_mode_uyvy[] = {
-	{0x04, CRL_REG_LEN_08BIT, 0x00, 0xE0}, //YCrCb output
+	{0x1C, CRL_REG_LEN_08BIT, 0x00, 0xE0}, /* ADI Require Write*/
+	{0x04, CRL_REG_LEN_08BIT, 0x00, 0xE0}, /* YCrCb output */
 	{0x12, CRL_REG_LEN_08BIT, 0xF2, 0xE0}, //CSC Depends on ip Packets - SDR422 set
 	{0x17, CRL_REG_LEN_08BIT, 0x80, 0xE0}, //Luma & Chroma Values Can Reach 254d
-	{0x03, CRL_REG_LEN_08BIT, 0x86, 0xE0}, //CP-Insert_AV_Code
+	{0x3E, CRL_REG_LEN_08BIT, 0x00, 0x44}, /* Invert order of Cb and Cr*/
 	{0x7C, CRL_REG_LEN_08BIT, 0x00, 0x44}, //ADI Required Write
 	{0x0C, CRL_REG_LEN_08BIT, 0xE0, 0xE0}, //Enable LLC_DLL & Double LLC Timing
 	{0x0E, CRL_REG_LEN_08BIT, 0xDD, 0xE0}, //LLC/PIX/SPI PINS TRISTATED AUD Outputs Enabled
@@ -836,6 +837,14 @@ static struct crl_csi_data_fmt adv7481_hdmi_crl_csi_data_fmt[] = {
 		.regs_items = ARRAY_SIZE(adv7481_hdmi_mode_rgb888),
 		.regs = adv7481_hdmi_mode_rgb888,
 	},
+	{
+		.code = ICI_FORMAT_RGB24,
+		.pixel_order = CRL_PIXEL_ORDER_GRBG,
+		.bits_per_pixel = 24,
+		.regs_items = ARRAY_SIZE(adv7481_hdmi_mode_rgb888),
+		.regs = adv7481_hdmi_mode_rgb888,
+	},
+
 };
 
 static struct crl_ctrl_data adv7481_hdmi_ctrls[] = {

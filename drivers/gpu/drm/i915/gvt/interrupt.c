@@ -28,13 +28,10 @@
  *    Min he <min.he@intel.com>
  *
  */
-#include <linux/hrtimer.h>
-#include <linux/sched.h>
-#include <uapi/linux/sched/types.h>
+
 #include "i915_drv.h"
 #include "gvt.h"
 #include "trace.h"
-#include "acrngt.h"
 
 /* common offset among interrupt control registers */
 #define regbase_to_isr(base)	(base)
@@ -645,24 +642,6 @@ void intel_vgpu_trigger_virtual_event(struct intel_vgpu *vgpu,
 	handler(irq, event, vgpu);
 
 	ops->check_pending_irq(vgpu);
-	if (((event == PIPE_B_VBLANK) ||
-		(event == PIPE_C_VBLANK)) && (vgpu->vgpu_priv)) {
-		struct acrngt_hvm_dev *vhm_dev = vgpu->vgpu_priv;
-		struct sched_param param = { .sched_priority = 1 };
-
-		if (hrtimer_active(&vhm_dev->thread_timer))
-			hrtimer_cancel(&vhm_dev->thread_timer);
-
-		preempt_disable();
-		trace_printk("ACRN thread timer is started. Policy is %d\n",
-			vhm_dev->emulation_thread->policy);
-		/* 750*1000 ns */
-		hrtimer_set_expires(&vhm_dev->thread_timer, 750000);
-		hrtimer_start_expires(&vhm_dev->thread_timer, HRTIMER_MODE_REL);
-		sched_setscheduler_nocheck(vhm_dev->emulation_thread,
-					SCHED_FIFO, &param);
-		preempt_enable();
-	}
 }
 
 static void init_events(

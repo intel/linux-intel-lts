@@ -12,6 +12,7 @@
 unsigned int ici_isys_format_code_to_bpp(u32 code)
 {
 	switch (code) {
+	case ICI_FORMAT_RGB24:
 	case ICI_FORMAT_RGB888:
 		return 24;
 	case ICI_FORMAT_RGB565:
@@ -47,6 +48,7 @@ unsigned int ici_isys_format_code_to_mipi(u32 code)
 	switch (code) {
 	case ICI_FORMAT_RGB565:
 		return ICI_ISYS_MIPI_CSI2_TYPE_RGB565;
+	case ICI_FORMAT_RGB24:
 	case ICI_FORMAT_RGB888:
 		return ICI_ISYS_MIPI_CSI2_TYPE_RGB888;
 	case ICI_FORMAT_UYVY:

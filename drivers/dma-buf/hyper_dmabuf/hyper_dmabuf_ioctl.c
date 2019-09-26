@@ -155,9 +155,12 @@ static int fastpath_export(hyper_dmabuf_id_t hid, int sz_priv, char *priv)
 	 * to be reexport once again.
 	 */
 	if (exported->unexport_sched) {
+		mutex_unlock(&hy_drv_priv->lock);
+
 		if (!cancel_delayed_work_sync(&exported->unexport))
 			return reexport;
 
+		mutex_lock(&hy_drv_priv->lock);
 		exported->unexport_sched = false;
 	}
 

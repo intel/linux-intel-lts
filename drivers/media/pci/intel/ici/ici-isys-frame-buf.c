@@ -854,6 +854,7 @@ void ici_isys_frame_buf_stream_cancel(struct
 	struct ici_frame_buf_wrapper *bufsafe;
 	unsigned long flags = 0;
 
+	mutex_lock(&as->stream_cancel_mutex);
 	spin_lock_irqsave(&buf_list->lock, flags);
 	list_for_each_entry_safe(buf, bufsafe,
 				&buf_list->getbuf_list, node) {
@@ -892,6 +893,7 @@ void ici_isys_frame_buf_stream_cancel(struct
 		spin_lock_irqsave(&buf_list->short_packet_queue_lock, flags);
 	}
 	spin_unlock_irqrestore(&buf_list->short_packet_queue_lock, flags);
+	mutex_unlock(&as->stream_cancel_mutex);
 }
 
 int ici_isys_frame_buf_add_next(

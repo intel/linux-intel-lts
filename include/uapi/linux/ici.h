@@ -26,6 +26,7 @@
 enum ici_format
 {
 	ICI_FORMAT_RGB888 		 = ici_fourcc_code('X', 'R', '2', '4'),
+	ICI_FORMAT_RGB24		 = ici_fourcc_code('B', 'G', 'R', '3'),
 	ICI_FORMAT_RGB565 		 = ici_fourcc_code('R', 'G', 'B', 'P'),
 	ICI_FORMAT_UYVY			 = ici_fourcc_code('U', 'Y', 'V', 'Y'),
 	ICI_FORMAT_YUYV			 = ici_fourcc_code('Y', 'U', 'Y', 'V'),
@@ -46,7 +47,7 @@ enum ici_format
 	ICI_FORMAT_SGRBG10_DPCM8 = ici_fourcc_code('B', 'D', '1', '0'),
 	ICI_FORMAT_SRGGB10_DPCM8 = ici_fourcc_code('b', 'R', 'A', '8'),
 	ICI_FORMAT_NV12 		 = ici_fourcc_code('N', 'V', '1', '2'),
-	ICI_FORMAT_COUNT = 22,
+	ICI_FORMAT_COUNT = 23,
 };
 
 #define ICI_PAD_FLAGS_SINK		(1 << 0)

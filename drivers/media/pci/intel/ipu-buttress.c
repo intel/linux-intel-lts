@@ -708,7 +708,7 @@ ipu_buttress_add_psys_constraint(struct ipu_device *isp,
 						  b->psys_fused_freqs.max_freq);
 		ipu_buttress_set_psys_freq(isp, b->psys_min_freq);
 	}
-	mutex_unlock(&isp->buttress.cons_mutex);
+	mutex_unlock(&b->cons_mutex);
 }
 EXPORT_SYMBOL_GPL(ipu_buttress_add_psys_constraint);
 
@@ -1266,7 +1266,14 @@ static void ipu_buttress_read_psys_fused_freqs(struct ipu_device *isp)
 	fused_freq->efficient_freq = efficient_ratio * BUTTRESS_PS_FREQ_STEP;
 }
 
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
+static LIST_HEAD(clkmap_dynamic);
+
+struct clk_dynamic {
+	struct list_head node;
+	struct clk_lookup *clk_data;
+};
+
 /*
  * The dev_id was hard code in platform data, as i2c bus number
  * may change dynamiclly, we need to update this bus id
@@ -1379,7 +1386,7 @@ static int ipu_buttress_clk_init(struct ipu_device *isp)
 		return 0;
 
 	while (clkmap->clkdev_data.dev_id) {
-#ifdef I2C_WA
+#ifdef I2C_DYNAMIC
 		char *dev_id = kstrdup(clkmap->clkdev_data.dev_id, GFP_KERNEL);
 		int adapter_id = clkmap->clkdev_data.dev_id[0] - '0';
 		char *addr = strpbrk(clkmap->clkdev_data.dev_id, "-");
@@ -1395,11 +1402,32 @@ static int ipu_buttress_clk_init(struct ipu_device *isp)
 		for (i = 0; i < IPU_BUTTRESS_NUM_OF_SENS_CKS; i++) {
 			if (!strcmp(clkmap->platform_clock_name,
 				    clk_data[i].name)) {
+#ifdef I2C_DYNAMIC
+				struct clk_dynamic *clk = NULL;
+				struct clk_lookup *clk_data = NULL;
+
+				clk = kzalloc(sizeof(*clk), GFP_KERNEL);
+				if (!clk) {
+					rval = -ENOMEM;
+					goto err;
+				}
+				clk_data = kzalloc(sizeof(*clk_data), GFP_KERNEL);
+				if (!clk_data) {
+					kfree(clk);
+					rval = -ENOMEM;
+					goto err;
+				}
+
+				clk_data->dev_id = dev_id;
+				clk_data->clk = b->clk_sensor[i];
+				clk->clk_data = clk_data;
+				clkdev_add(clk_data);
+
+				list_add_tail(&clk->node, &clkmap_dynamic);
+#else
 				clkmap->clkdev_data.clk = b->clk_sensor[i];
-#ifdef I2C_WA
-				clkmap->clkdev_data.dev_id = dev_id;
-#endif
 				clkdev_add(&clkmap->clkdev_data);
+#endif
 				break;
 			}
 		}
@@ -1423,6 +1451,21 @@ static void ipu_buttress_clk_exit(struct ipu_device *isp)
 {
 	struct ipu_buttress *b = &isp->buttress;
 	int i;
+#ifdef I2C_DYNAMIC
+	struct clk_dynamic *clk = NULL;
+	const char *dev_id = NULL;
+#endif
+
+#ifdef I2C_DYNAMIC
+	while (!list_empty(&clkmap_dynamic)) {
+		clk = list_last_entry(&clkmap_dynamic, struct clk_dynamic, node);
+		dev_id = clk->clk_data->dev_id;
+		clkdev_drop(clk->clk_data);
+		kfree(dev_id);
+		list_del(&clk->node);
+		kfree(clk);
+	}
+#endif
 
 	/* It is safe to call clk_unregister with null pointer */
 	for (i = 0; i < IPU_BUTTRESS_NUM_OF_SENS_CKS; i++)
@@ -1430,6 +1473,7 @@ static void ipu_buttress_clk_exit(struct ipu_device *isp)
 
 	for (i = 0; i < ARRAY_SIZE(ipu_buttress_sensor_pll_data); i++)
 		clk_unregister(b->pll_sensor[i]);
+
 }
 
 int ipu_buttress_tsc_read(struct ipu_device *isp, u64 *val)
@@ -1546,22 +1590,6 @@ static int ipu_buttress_start_tsc_sync_set(void *data, u64 val)
 DEFINE_SIMPLE_ATTRIBUTE(ipu_buttress_start_tsc_sync_fops, NULL,
 			ipu_buttress_start_tsc_sync_set, "%llu\n");
 
-u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks)
-{
-	u64 ns = ticks * 10000;
-	/*
-	 * TSC clock frequency is 19.2MHz,
-	 * converting TSC tick count to ns is calculated by:
-	 * ns = ticks * 1000 000 000 / 19.2Mhz
-	 *    = ticks * 1000 000 000 / 19200000Hz
-	 *    = ticks * 10000 / 192 ns
-	 */
-	do_div(ns, 192);
-
-	return ns;
-}
-EXPORT_SYMBOL_GPL(ipu_buttress_tsc_ticks_to_ns);
-
 static int ipu_buttress_tsc_get(void *data, u64 *val)
 {
 	return ipu_buttress_tsc_read(data, val);
@@ -1664,6 +1692,22 @@ err:
 }
 
 #endif /* CONFIG_DEBUG_FS */
+
+u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks)
+{
+	u64 ns = ticks * 10000;
+	/*
+	 * TSC clock frequency is 19.2MHz,
+	 * converting TSC tick count to ns is calculated by:
+	 * ns = ticks * 1000 000 000 / 19.2Mhz
+	 *    = ticks * 1000 000 000 / 19200000Hz
+	 *    = ticks * 10000 / 192 ns
+	 */
+	do_div(ns, 192);
+
+	return ns;
+}
+EXPORT_SYMBOL_GPL(ipu_buttress_tsc_ticks_to_ns);
 
 static ssize_t
 ipu_buttress_psys_fused_min_freq_get(struct device *dev,

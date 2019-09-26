@@ -30,6 +30,7 @@ struct ici_isys_pixelformat {
 struct ici_isys_stream {
 	/* Serialise access to other fields in the struct. */
 	struct mutex mutex;
+	struct mutex stream_cancel_mutex;
 	struct node_pad pad;
 	struct ici_isys_node node;
 	struct ici_stream_device strm_dev;

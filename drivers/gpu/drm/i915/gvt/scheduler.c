@@ -785,6 +785,11 @@ static struct intel_vgpu_workload *pick_next_workload(
 		goto out;
 	}
 
+	if (!scheduler->current_vgpu[ring_id]->active) {
+		gvt_dbg_sched("ring id %d stop - vgpu not active\n", ring_id);
+		goto out;
+	}
+
 	if (scheduler->need_reschedule[ring_id]) {
 		gvt_dbg_sched("ring id %d stop - will reschedule\n", ring_id);
 		goto out;

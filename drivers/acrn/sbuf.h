@@ -121,11 +121,11 @@ static inline void sbuf_add_flags(shared_buf_t *sbuf, uint64_t flags)
 shared_buf_t *sbuf_allocate(uint32_t ele_num, uint32_t ele_size);
 void sbuf_free(shared_buf_t *sbuf);
 int sbuf_get(shared_buf_t *sbuf, uint8_t *data);
-int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, shared_buf_t *sbuf);
+int sbuf_share_setup(uint32_t pcpu_id, uint32_t sbuf_id, uint64_t gpa);
 shared_buf_t *sbuf_check_valid(uint32_t ele_num, uint32_t ele_size,
-				uint64_t gpa);
+				void *vaddr);
 shared_buf_t *sbuf_construct(uint32_t ele_num, uint32_t ele_size,
-				uint64_t gpa);
+				void *vaddr);
 void sbuf_deconstruct(shared_buf_t *sbuf);
 
 #endif /* SHARED_BUF_H */

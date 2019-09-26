@@ -129,21 +129,7 @@ static inline int intel_gvt_hypervisor_inject_msi(struct intel_vgpu *vgpu)
 	u16 control, data;
 	u32 addr;
 	int ret;
-	ktime_t time_current;
 
-	time_current = ktime_get_raw();
-
-	if (ktime_before(time_current,
-			 ktime_add_ns(vgpu->vgpu_msi_time, 10000))) {
-		/*
-		 * vgpu->vpgu_msi_time records the time of last interrupt
-		 * injection. when the time interval is too small,
-		 * the interrupt injection will be skipped.
-		 */
-		return 0;
-	}
-
-	vgpu->vgpu_msi_time = time_current;
 	control = *(u16 *)(vgpu_cfg_space(vgpu) + MSI_CAP_CONTROL(offset));
 	addr = *(u32 *)(vgpu_cfg_space(vgpu) + MSI_CAP_ADDRESS(offset));
 	data = *(u16 *)(vgpu_cfg_space(vgpu) + MSI_CAP_DATA(offset));
