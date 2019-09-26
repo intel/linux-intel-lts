@@ -56,6 +56,9 @@ static irqreturn_t kmb_isr(int irq, void *arg);
 
 static struct clk *clk_lcd;
 static struct clk *clk_mipi;
+static struct clk *clk_msscam;
+static struct clk *clk_mipi_ecfg;
+static struct clk *clk_mipi_cfg;
 
 struct drm_bridge *adv_bridge;
 
@@ -74,6 +77,24 @@ static int kmb_display_clk_enable(void)
 		DRM_ERROR("Failed to enable MIPI clock: %d\n", ret);
 		return ret;
 	}
+
+	ret = clk_prepare_enable(clk_msscam);
+	if (ret) {
+		DRM_ERROR("Failed to enable MSSCAM clock: %d\n", ret);
+		return ret;
+	}
+
+	ret = clk_prepare_enable(clk_mipi_ecfg);
+	if (ret) {
+		DRM_ERROR("Failed to enable MIPI_ECFG clock: %d\n", ret);
+		return ret;
+	}
+
+	ret = clk_prepare_enable(clk_mipi_cfg);
+	if (ret) {
+		DRM_ERROR("Failed to enable MIPI_CFG clock: %d\n", ret);
+		return ret;
+	}
 	DRM_INFO("SUCCESS : enabled LCD MIPI clocks\n");
 	return 0;
 }
@@ -84,6 +105,12 @@ static int kmb_display_clk_disable(void)
 		clk_disable_unprepare(clk_lcd);
 	if (clk_mipi)
 		clk_disable_unprepare(clk_mipi);
+	if (clk_msscam)
+		clk_disable_unprepare(clk_msscam);
+	if (clk_mipi_ecfg)
+		clk_disable_unprepare(clk_mipi_ecfg);
+	if (clk_mipi_cfg)
+		clk_disable_unprepare(clk_mipi_cfg);
 	return 0;
 }
 
@@ -118,6 +145,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	struct platform_device *pdev = to_platform_device(drm->dev);
 	/*u32 version;*/
 	int ret = 0;
+	unsigned long clk;
 
 	/* Map LCD MMIO registers */
 	dev_p->lcd_mmio = kmb_map_mmio(pdev, "lcd_regs");
@@ -128,7 +156,6 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 
 	/* Map MIPI MMIO registers */
 	dev_p->mipi_mmio = kmb_map_mmio(pdev, "mipi_regs");
-
 	if (IS_ERR(dev_p->mipi_mmio)) {
 		DRM_ERROR("failed to map MIPI registers\n");
 		iounmap(dev_p->lcd_mmio);
@@ -146,32 +173,93 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		return -ENOMEM;
 	}
 
-	/* enable display clocks*/
+	/* Enable display clocks*/
 	clk_lcd = clk_get(&pdev->dev, "clk_lcd");
-	if (!clk_lcd) {
+	if (IS_ERR(clk_lcd)) {
 		DRM_ERROR("clk_get() failed clk_lcd\n");
 		goto setup_fail;
 	}
-	DRM_INFO("%s : %d\n", __func__, __LINE__);
 
 	clk_mipi = clk_get(&pdev->dev, "clk_mipi");
-	if (!clk_mipi) {
+	if (IS_ERR(clk_mipi)) {
 		DRM_ERROR("clk_get() failed clk_mipi\n");
 		goto setup_fail;
 	}
-	DRM_INFO("%s : %d\n", __func__, __LINE__);
+
+	clk_msscam = clk_get(&pdev->dev, "clk_msscam");
+	if (IS_ERR(clk_msscam)) {
+		DRM_ERROR("clk_get() failed clk_msscam\n");
+		goto setup_fail;
+	}
+
+	clk_mipi_ecfg = clk_get(&pdev->dev, "clk_mipi_ecfg");
+	if (IS_ERR(clk_mipi_ecfg)) {
+		DRM_ERROR("clk_get() failed clk_mipi_ecfg\n");
+		goto setup_fail;
+	}
+
+	clk_mipi_cfg = clk_get(&pdev->dev, "clk_mipi_cfg");
+	if (IS_ERR(clk_mipi_cfg)) {
+		DRM_ERROR("clk_get() failed clk_mipi_cfg\n");
+		goto setup_fail;
+	}
+
 	ret = kmb_display_clk_enable();
 
-	/* set LCD clock to 200 Mhz*/
+	/* Set LCD clock to 200 Mhz*/
 	DRM_INFO("Get clk_lcd before set = %ld\n", clk_get_rate(clk_lcd));
-	ret = clk_set_rate(clk_lcd, 200000000);
-	DRM_INFO("Setting LCD clock tp 200Mhz ret = %d\n", ret);
+	ret = clk_set_rate(clk_lcd, KMB_LCD_DEFAULT_CLK);
+	if (clk_get_rate(clk_lcd) != KMB_LCD_DEFAULT_CLK) {
+		DRM_ERROR("failed to set to clk_lcd to %d\n",
+				KMB_LCD_DEFAULT_CLK);
+		goto setup_fail;
+	}
+	DRM_INFO("Setting LCD clock to %d Mhz ret = %d\n",
+			KMB_LCD_DEFAULT_CLK/1000000, ret);
 	DRM_INFO("Get clk_lcd after set = %ld\n", clk_get_rate(clk_lcd));
-	/* set MIPI clock to 24 Mhz*/
+
+	/* Set MIPI clock to 24 Mhz*/
 	DRM_INFO("Get clk_mipi before set = %ld\n", clk_get_rate(clk_mipi));
-	ret = clk_set_rate(clk_mipi, 24000000);
-	DRM_INFO("Setting MIPI clock tp 24Mhz ret = %d\n", ret);
+	ret = clk_set_rate(clk_mipi, KMB_MIPI_DEFAULT_CLK);
+	if (clk_get_rate(clk_mipi) != KMB_MIPI_DEFAULT_CLK) {
+		DRM_ERROR("failed to set to clk_mipi to %d\n",
+				KMB_MIPI_DEFAULT_CLK);
+		goto setup_fail;
+	}
+	DRM_INFO("Setting MIPI clock to %d Mhz ret = %d\n",
+			KMB_MIPI_DEFAULT_CLK/1000000, ret);
 	DRM_INFO("Get clk_mipi after set = %ld\n", clk_get_rate(clk_mipi));
+
+	clk = clk_get_rate(clk_mipi_ecfg);
+	if (clk != KMB_MIPI_DEFAULT_CLK) {
+		/* Set MIPI_ECFG clock to 24 Mhz*/
+		DRM_INFO("Get clk_mipi_ecfg before set = %ld\n", clk);
+		ret = clk_set_rate(clk_mipi_ecfg, KMB_MIPI_DEFAULT_CLK);
+		clk = clk_get_rate(clk_mipi_ecfg);
+		if (clk != KMB_MIPI_DEFAULT_CLK) {
+			DRM_ERROR("failed to set to clk_mipi_ecfg to %d\n",
+					KMB_MIPI_DEFAULT_CLK);
+			goto setup_fail;
+		}
+		DRM_INFO("Setting MIPI_ECFG clock tp %d Mhz ret = %d\n",
+				KMB_MIPI_DEFAULT_CLK/1000000, ret);
+		DRM_INFO("Get clk_mipi_ecfg after set = %ld\n", clk);
+	}
+
+	clk = clk_get_rate(clk_mipi_cfg);
+	if (clk != KMB_MIPI_DEFAULT_CLK) {
+		/* Set MIPI_CFG clock to 24 Mhz*/
+		DRM_INFO("Get clk_mipi_cfg before set = %ld\n", clk);
+		ret = clk_set_rate(clk_mipi_cfg, 24000000);
+		clk = clk_get_rate(clk_mipi_cfg);
+		if (clk != KMB_MIPI_DEFAULT_CLK) {
+			DRM_ERROR("failed to set to clk_mipi_cfg to %d\n",
+					KMB_MIPI_DEFAULT_CLK);
+			goto setup_fail;
+		}
+		DRM_INFO("Setting MIPI_CFG clock tp 24Mhz ret = %d\n", ret);
+		DRM_INFO("Get clk_mipi_cfg after set = %ld\n", clk);
+	}
 
 #ifdef WIP
 	/* Register irqs here - section 17.3 in databook

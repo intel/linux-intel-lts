@@ -30,6 +30,8 @@
 
 #define KMB_MAX_WIDTH			16384	/*max width in pixels */
 #define KMB_MAX_HEIGHT			16384	/*max height in pixels */
+#define KMB_LCD_DEFAULT_CLK		200000000
+#define KMB_MIPI_DEFAULT_CLK		24000000
 
 struct kmb_drm_private {
 	struct drm_device		drm;
