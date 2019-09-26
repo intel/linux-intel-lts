@@ -48,8 +48,10 @@ struct ucsi_dp {
 static int ucsi_displayport_enter(struct typec_altmode *alt)
 {
 	struct ucsi_dp *dp = typec_altmode_get_drvdata(alt);
+	struct ucsi *ucsi = dp->con->ucsi;
 	struct ucsi_control ctrl;
 	u8 cur = 0;
+	u16 ver;
 	int ret;
 
 	mutex_lock(&dp->con->lock);
@@ -66,7 +68,11 @@ static int ucsi_displayport_enter(struct typec_altmode *alt)
 	UCSI_CMD_GET_CURRENT_CAM(ctrl, dp->con->num);
 	ret = ucsi_send_command(dp->con->ucsi, &ctrl, &cur, sizeof(cur));
 	if (ret < 0) {
-		if (dp->con->ucsi->ppm->data->version > 0x0100) {
+		ret = ucsi->ops->read(ucsi, UCSI_VERSION, &ver, sizeof(ver));
+		if (ret)
+			return ret;
+
+		if (ver > 0x0100) {
 			mutex_unlock(&dp->con->lock);
 			return ret;
 		}
