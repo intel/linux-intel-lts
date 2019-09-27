@@ -2714,13 +2714,13 @@ static inline bool intel_vtd_active(void)
 
 static inline bool intel_scanout_needs_vtd_wa(struct drm_i915_private *dev_priv)
 {
-	return INTEL_GEN(dev_priv) >= 6 && intel_vtd_active();
+	return false;
 }
 
 static inline bool
 intel_ggtt_update_needs_vtd_wa(struct drm_i915_private *dev_priv)
 {
-	return IS_BXT_REVID(dev_priv, 0, BXT_REVID_D0) && intel_vtd_active();
+	return IS_BXT_REVID(dev_priv, 0, BXT_REVID_D0);
 }
 
 int intel_sanitize_enable_ppgtt(struct drm_i915_private *dev_priv,
