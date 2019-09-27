@@ -261,6 +261,9 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_INFO("Get clk_mipi_cfg after set = %ld\n", clk);
 	}
 
+	/* enable MSS_CAM_CLK_CTRL for MIPI TX and LCD */
+	kmb_set_bitmask_msscam(dev_p, MSS_CAM_CLK_CTRL, LCD | MIPI_COMMON |
+			MIPI_TX0);
 #ifdef WIP
 	/* Register irqs here - section 17.3 in databook
 	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
@@ -312,10 +315,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 
 	/* Initialize MIPI DSI */
 	ret = kmb_dsi_init(drm, adv_bridge);
-	if (ret == -EPROBE_DEFER) {
-		DRM_INFO("%s: wait for external bridge driver DT", __func__);
-		return -EPROBE_DEFER;
-	} else if (ret) {
+	if (ret) {
 		DRM_ERROR("failed to initialize DSI\n");
 		goto setup_fail;
 	}

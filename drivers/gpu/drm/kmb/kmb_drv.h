@@ -108,6 +108,20 @@ static inline void kmb_write_msscam(struct kmb_drm_private *dev_p,
 	writel(value, (dev_p->msscam_mmio + reg));
 }
 
+static inline u32 kmb_read_msscam(struct kmb_drm_private *dev_p,
+		unsigned int reg)
+{
+	return readl(dev_p->msscam_mmio + reg);
+}
+
+static inline void kmb_set_bitmask_msscam(struct kmb_drm_private *dev_p,
+		unsigned int reg, u32 mask)
+{
+	u32 reg_val = kmb_read_msscam(dev_p, reg);
+
+	kmb_write_msscam(dev_p, reg, (reg_val | mask));
+}
+
 static inline u32 kmb_read_lcd(struct kmb_drm_private *dev_p, unsigned int reg)
 {
 	return readl(dev_p->lcd_mmio + reg);

@@ -814,9 +814,11 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_p,
 		active_vchannels++;
 
 		/*connect lcd to mipi */
-		kmb_write_msscam(dev_p, MSS_CAM_BASE_ADDR +
-				MIPI_TX_MSS_LCD_MIPI_CFG, 1);
+		kmb_write_msscam(dev_p, MSS_LCD_MIPI_CFG, 1);
 
+		/*stop iterating as only one virtual channel shall be used for
+		 * LCD connection
+		 */
 		break;
 	}
 

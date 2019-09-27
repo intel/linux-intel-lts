@@ -697,6 +697,11 @@
 			& (1 << (dphy - MIPI_DPHY6)))
 #define DPHY_CFG_CLK_EN				(0x18c)
 
-#define MIPI_TX_MSS_LCD_MIPI_CFG		(0x04)
+#define MSS_LCD_MIPI_CFG		(0x04)
+#define MSS_CAM_CLK_CTRL		(0x10)
+#define   LCD				(1<<1)
+#define   MIPI_COMMON			(1<<2)
+#define   MIPI_TX0			(1<<9)
+
 #define BIT_MASK_16				(0xffff)
 #endif /* __KMB_REGS_H__ */
