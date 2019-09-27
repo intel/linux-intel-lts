@@ -143,7 +143,10 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
 	struct kmb_drm_private *dev_p = drm->dev_private;
 	struct platform_device *pdev = to_platform_device(drm->dev);
+#ifdef WIP
 	/*u32 version;*/
+	int irq_lcd, irq_mipi;
+#endif
 	int ret = 0;
 	unsigned long clk;
 
@@ -297,9 +300,9 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	pr_info("irq_mipi platform_get_irq = %d\n", irq_mipi);
 	ret = request_irq(irq_mipi, kmb_isr, IRQF_SHARED, "irq_mipi", dev_p);
 	dev_p->irq_mipi = irq_mipi;
-#endif
-	/* TBD read and check for correct product version here */
 
+	/* TBD read and check for correct product version here */
+#endif
 	/* Get the optional framebuffer memory resource */
 	ret = of_reserved_mem_device_init(drm->dev);
 	if (ret && ret != -ENODEV)
