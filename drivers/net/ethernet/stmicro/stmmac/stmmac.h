@@ -22,6 +22,7 @@
 #include <linux/net_tstamp.h>
 #include <linux/reset.h>
 #include <net/page_pool.h>
+#include <net/xdp.h>
 
 struct stmmac_resources {
 	void __iomem *addr;
@@ -93,6 +94,7 @@ struct stmmac_rx_queue {
 		unsigned int error;
 	} state;
 	struct bpf_prog *xdp_prog;
+	struct xdp_rxq_info xdp_rxq;
 };
 
 struct stmmac_channel {

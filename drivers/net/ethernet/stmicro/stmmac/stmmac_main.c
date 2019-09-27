@@ -44,6 +44,7 @@
 #include <linux/of_mdio.h>
 #include <linux/bpf.h>
 #include <linux/bpf_trace.h>
+#include <net/xdp.h>
 #include "dwmac1000.h"
 #include "dwxgmac2.h"
 #include "hwif.h"
@@ -1353,6 +1354,17 @@ static int init_dma_rx_desc_ring(struct stmmac_priv *priv, u32 queue,
 
 	stmmac_clear_rx_descriptors(priv, queue);
 
+	xdp_rxq_info_unreg_mem_model(&rx_q->xdp_rxq);
+
+	ret = xdp_rxq_info_reg_mem_model(&rx_q->xdp_rxq,
+					 MEM_TYPE_PAGE_POOL,
+					 rx_q->page_pool);
+	if (ret)
+		return ret;
+
+	netdev_info(priv->dev, "Register XDP MEM_TYPE_PAGE_SHARED RxQ-%d\n",
+		    rx_q->queue_index);
+
 	for (i = 0; i < priv->dma_rx_size; i++) {
 		struct dma_desc *p;
 
@@ -1580,7 +1592,11 @@ static void free_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 
 	kfree(rx_q->buf_pool);
 	if (rx_q->page_pool) {
-		page_pool_request_shutdown(rx_q->page_pool);
+		if (xdp_rxq_info_is_reg(&rx_q->xdp_rxq))
+			xdp_rxq_info_unreg(&rx_q->xdp_rxq);
+		else
+			page_pool_request_shutdown(rx_q->page_pool);
+
 		page_pool_destroy(rx_q->page_pool);
 	}
 
@@ -1695,6 +1711,9 @@ static int alloc_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 	}
 
 	rx_q->xdp_prog = priv->xdp_prog;
+	ret = xdp_rxq_info_reg(&rx_q->xdp_rxq, priv->dev, rx_q->queue_index);
+	if (ret)
+		goto err_dma;
 
 	return 0;
 
@@ -4323,6 +4342,8 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit, u32 queue)
 	struct sk_buff *skb = NULL;
 	unsigned int xdp_xmit = 0;
 	struct xdp_buff xdp;
+
+	xdp.rxq = &rx_q->xdp_rxq;
 
 	if (netif_msg_rx_status(priv)) {
 		void *rx_head;
