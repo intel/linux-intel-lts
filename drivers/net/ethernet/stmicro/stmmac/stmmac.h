@@ -65,13 +65,23 @@ struct stmmac_tx_queue {
 	dma_addr_t dma_tx_phy;
 	u32 tx_tail_addr;
 	u32 mss;
+	struct xdp_umem *xsk_umem;
+	struct zero_copy_allocator zca; /* ZC allocator */
 };
 
 struct stmmac_rx_buffer {
-	struct page *page;
-	struct page *sec_page;
 	dma_addr_t addr;
 	dma_addr_t sec_addr;
+	union {
+		struct {
+			struct page *page;
+			struct page *sec_page;
+		};
+		struct {
+			void *umem_addr;
+			u64 umem_handle;
+		};
+	};
 };
 
 struct stmmac_rx_queue {
@@ -84,6 +94,7 @@ struct stmmac_rx_queue {
 	struct dma_desc *dma_rx ____cacheline_aligned_in_smp;
 	unsigned int cur_rx;
 	unsigned int dirty_rx;
+	unsigned int next_to_alloc;
 	u32 rx_zeroc_thresh;
 	dma_addr_t dma_rx_phy;
 	u32 rx_tail_addr;
@@ -96,6 +107,8 @@ struct stmmac_rx_queue {
 	struct bpf_prog *xdp_prog;
 	struct xdp_rxq_info xdp_rxq;
 	unsigned int dma_buf_sz;
+	struct xdp_umem *xsk_umem;
+	struct zero_copy_allocator zca; /* ZC allocator */
 };
 
 struct stmmac_channel {
@@ -287,6 +300,10 @@ struct stmmac_priv {
 
 	/* XDP BPF Program */
 	struct bpf_prog *xdp_prog;
+
+	/* AF_XDP zero-copy */
+	unsigned long af_xdp_zc_qps; /* tracks AF_XDP ZC enabled qps */
+	struct xdp_umem **xsk_umems;
 };
 
 enum stmmac_state {
@@ -326,6 +343,11 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
 #define STMMAC_XDP_TX		BIT(1)
 #define STMMAC_XDP_REDIR	BIT(2)
 
+#define STMMAC_RX_BUFFER_WRITE	32	/* Must be power of 2 */
+
+#define STMMAC_RX_DMA_ATTR \
+	(DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
+
 static inline bool stmmac_enabled_xdp(struct stmmac_priv *priv)
 {
 	return !!priv->xdp_prog;
@@ -358,9 +380,20 @@ static inline struct stmmac_tx_queue *get_tx_queue(struct stmmac_priv *priv,
 	((((x)->dirty_tx > (x)->cur_tx) ? 0 : priv->dma_tx_size) + \
 	(x)->dirty_tx - (x)->cur_tx - 1)
 
+#define STMMAC_RX_DESC_UNUSED(x)	\
+	((((x)->cur_rx > (x)->dirty_rx) ? 0 : priv->dma_rx_size) + \
+	(x)->cur_rx - (x)->dirty_rx - 1)
+
 int stmmac_xmit_xdp_tx_queue(struct xdp_buff *xdp,
 			     struct stmmac_tx_queue *xdp_q);
 void stmmac_xdp_queue_update_tail(struct stmmac_tx_queue *xdp_q);
+
+void stmmac_finalize_xdp_rx(struct stmmac_rx_queue *rx_q, unsigned int xdp_res);
+int stmmac_queue_pair_enable(struct stmmac_priv *priv, u16 qid);
+int stmmac_queue_pair_disable(struct stmmac_priv *priv, u16 qid);
+void stmmac_rx_vlan(struct net_device *dev, struct sk_buff *skb);
+void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
+			    struct dma_desc *np, struct sk_buff *skb);
 
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,
