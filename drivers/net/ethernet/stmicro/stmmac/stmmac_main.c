@@ -1662,6 +1662,7 @@ static void free_dma_tx_desc_resources(struct stmmac_priv *priv)
 
 static int alloc_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 {
+	bool is_xdp = stmmac_enabled_xdp(priv);
 	struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
 	struct page_pool_params pp_params = { 0 };
 	int ret = -ENOMEM;
@@ -1674,7 +1675,7 @@ static int alloc_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 	pp_params.order = DIV_ROUND_UP(priv->dma_buf_sz, PAGE_SIZE);
 	pp_params.nid = dev_to_node(priv->device);
 	pp_params.dev = priv->device;
-	pp_params.dma_dir = DMA_FROM_DEVICE;
+	pp_params.dma_dir = is_xdp ? DMA_BIDIRECTIONAL : DMA_FROM_DEVICE;
 
 	rx_q->page_pool = page_pool_create(&pp_params);
 	if (IS_ERR(rx_q->page_pool)) {
@@ -4101,7 +4102,9 @@ static inline void stmmac_rx_refill(struct stmmac_priv *priv, u32 queue)
 	int len, dirty = stmmac_rx_dirty(priv, queue);
 	unsigned int entry = rx_q->dirty_rx;
 	unsigned int last_refill = entry;
+	enum dma_data_direction dma_dir;
 
+	dma_dir = page_pool_get_dma_dir(rx_q->page_pool);
 	len = DIV_ROUND_UP(priv->dma_buf_sz, PAGE_SIZE) * PAGE_SIZE;
 
 	while (dirty-- > 0) {
@@ -4137,7 +4140,7 @@ static inline void stmmac_rx_refill(struct stmmac_priv *priv, u32 queue)
 		 * data.
 		 */
 		dma_sync_single_for_device(priv->device, buf->addr, len,
-					   DMA_FROM_DEVICE);
+					   dma_dir);
 
 		stmmac_set_desc_addr(priv, p, buf->addr);
 		stmmac_set_desc_sec_addr(priv, p, buf->sec_addr);
@@ -4243,6 +4246,7 @@ static struct sk_buff *stmmac_run_xdp(struct stmmac_rx_queue *rx_q,
 	struct stmmac_tx_queue *xdp_q;
 	struct bpf_prog *xdp_prog;
 	u32 act;
+	int err;
 
 	rcu_read_lock();
 	xdp_prog = READ_ONCE(rx_q->xdp_prog);
@@ -4260,6 +4264,10 @@ static struct sk_buff *stmmac_run_xdp(struct stmmac_rx_queue *rx_q,
 		xdp_q = &priv->xdp_queue[rx_q->queue_index];
 		result = stmmac_xmit_xdp_tx_queue(xdp, xdp_q);
 		break;
+	case XDP_REDIRECT:
+		err = xdp_do_redirect(priv->dev, xdp, xdp_prog);
+		result = !err ? STMMAC_XDP_REDIR : STMMAC_XDP_CONSUMED;
+		break;
 	default:
 		bpf_warn_invalid_xdp_action(act);
 		/* fall through -- handle default by dropping packet */
@@ -4276,7 +4284,7 @@ xdp_out:
 }
 
 /**
- * stmmac_xdp_ring_update_tail - Updates the XDP Tx queue tail register
+ * stmmac_xdp_queue_update_tail - Updates the XDP Tx queue tail register
  * @xdp_q: XDP Tx queue
  *
  * This function updates the XDP Tx queue tail register.
@@ -4316,6 +4324,9 @@ void stmmac_finalize_xdp_rx(struct stmmac_rx_queue *rx_q, unsigned int xdp_res)
 {
 	struct stmmac_priv *priv = rx_q->priv_data;
 
+	if (xdp_res & STMMAC_XDP_REDIR)
+		xdp_do_flush_map();
+
 	if (xdp_res & STMMAC_XDP_TX) {
 		struct stmmac_tx_queue *xdp_q =
 			&priv->xdp_queue[rx_q->queue_index];
@@ -4339,10 +4350,12 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit, u32 queue)
 	unsigned int count = 0, error = 0, len = 0;
 	int status = 0, coe = priv->hw->rx_csum;
 	unsigned int next_entry = rx_q->cur_rx;
+	enum dma_data_direction dma_dir;
 	struct sk_buff *skb = NULL;
 	unsigned int xdp_xmit = 0;
 	struct xdp_buff xdp;
 
+	dma_dir = page_pool_get_dma_dir(rx_q->page_pool);
 	xdp.rxq = &rx_q->xdp_rxq;
 
 	if (netif_msg_rx_status(priv)) {
@@ -4471,7 +4484,7 @@ read_again:
 
 			prefetchw(buf->page);
 			dma_sync_single_for_cpu(priv->device, buf->addr,
-						len, DMA_FROM_DEVICE);
+						len, dma_dir);
 
 			xdp.data = page_address(buf->page);
 			xdp.data_meta = xdp.data;
@@ -4483,7 +4496,8 @@ read_again:
 			if (IS_ERR(skb)) {
 				unsigned int xdp_res = -PTR_ERR(skb);
 
-				if (xdp_res & STMMAC_XDP_TX) {
+				if (xdp_res & (STMMAC_XDP_TX |
+					       STMMAC_XDP_REDIR)) {
 					/* XDP-TX, update tail pointer later */
 					xdp_xmit |= xdp_res;
 				} else {
@@ -5153,6 +5167,53 @@ static int stmmac_set_mac_address(struct net_device *ndev, void *addr)
 }
 
 /**
+ * stmmac_xdp_xmit - Implements ndo_xdp_xmit
+ * @dev: netdev
+ * @xdp: XDP buffer
+ **/
+int stmmac_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
+		    u32 flags)
+{
+	struct stmmac_priv *priv = netdev_priv(dev);
+	unsigned int queue_index = smp_processor_id();
+	struct stmmac_tx_queue *xdp_q;
+	int drops = 0;
+	int i;
+
+	queue_index %= priv->plat->num_queue_pairs;
+
+	if (test_bit(STMMAC_DOWN, &priv->state))
+		return -ENETDOWN;
+
+	if (!stmmac_enabled_xdp(priv))
+		return -ENXIO;
+
+	if (unlikely(flags & ~XDP_XMIT_FLAGS_MASK))
+		return -EINVAL;
+
+	if (!queue_is_xdp(priv, queue_index))
+		return -ENXIO;
+
+	xdp_q = &priv->xdp_queue[queue_index];
+
+	for (i = 0; i < n; i++) {
+		struct xdp_frame *xdpf = frames[i];
+		int err;
+
+		err = stmmac_xmit_xdp_queue(xdpf, xdp_q);
+		if (err != STMMAC_XDP_TX) {
+			xdp_return_frame_rx_napi(xdpf);
+			drops++;
+		}
+	}
+
+	if (unlikely(flags & XDP_XMIT_FLUSH))
+		stmmac_xdp_queue_update_tail(xdp_q);
+
+	return n - drops;
+}
+
+/**
  * stmmac_xdp_setup - add/remove an XDP program
  * @vsi: VSI to changed
  * @prog: XDP program
@@ -5499,6 +5560,7 @@ static const struct net_device_ops stmmac_netdev_ops = {
 	.ndo_vlan_rx_add_vid = stmmac_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = stmmac_vlan_rx_kill_vid,
 	.ndo_bpf = stmmac_xdp,
+	.ndo_xdp_xmit = stmmac_xdp_xmit,
 };
 
 static void stmmac_reset_subtask(struct stmmac_priv *priv)

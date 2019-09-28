@@ -323,6 +323,7 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
 #define STMMAC_XDP_PASS		0
 #define STMMAC_XDP_CONSUMED	BIT(0)
 #define STMMAC_XDP_TX		BIT(1)
+#define STMMAC_XDP_REDIR	BIT(2)
 
 static inline bool stmmac_enabled_xdp(struct stmmac_priv *priv)
 {
