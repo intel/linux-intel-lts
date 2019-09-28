@@ -233,7 +233,7 @@ static int acpi_opregion_init(struct ishtp_opregion_dev *opr_dev)
 	struct acpi_device *adev;
 
 	/* find ECLite device and install opregion handlers */
-	adev = acpi_dev_get_first_match_dev("INT3538", NULL, -1);
+	adev = acpi_dev_get_first_match_dev("INTC1035", NULL, -1);
 	if (!adev) {
 		dev_err(cl_data_to_dev(opr_dev), "eclite ACPI device not found\n");
 		return -ENODEV;
