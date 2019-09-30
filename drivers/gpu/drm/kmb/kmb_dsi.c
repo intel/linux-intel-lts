@@ -764,6 +764,32 @@ static void mipi_tx_ctrl_cfg(struct kmb_drm_private *dev_p, u8 fg_id,
 	kmb_write_mipi(dev_p, MIPI_TXm_HS_CTRL(ctrl_no), ctrl);
 }
 
+#ifdef MIPI_TX_TEST_PATTERN_GENERATION
+static void mipi_tx_hs_tp_gen(struct kmb_drm_private *dev_p, int vc,
+		int tp_sel, u32 stripe_width, u32 color0, u32 color1)
+{
+	u32 ctrl_no = MIPI_CTRL6;
+
+	/* Select test pattern mode on the virtual channel */
+	kmb_write_mipi(dev_p, MIPI_TXm_HS_TEST_PAT_CTRL(ctrl_no),
+			TP_SEL_VCm(vc, tp_sel));
+
+	if (tp_sel == MIPI_TX_HS_TP_V_STRIPES ||
+			tp_sel == MIPI_TX_HS_TP_H_STRIPES) {
+		kmb_write_mipi(dev_p, MIPI_TXm_HS_TEST_PAT_CTRL(ctrl_no),
+				TP_STRIPE_WIDTH(stripe_width));
+	}
+
+	/* Configure test pattern colors */
+	kmb_write_mipi(dev_p, MIPI_TX_HS_TEST_PAT_COLOR0, color0);
+	kmb_write_mipi(dev_p, MIPI_TX_HS_TEST_PAT_COLOR1, color1);
+
+	/* Enable test pattern generation on the virtual channel */
+	kmb_write_mipi(dev_p, MIPI_TXm_HS_TEST_PAT_CTRL(ctrl_no),
+			TP_EN_VCm(vc));
+}
+#endif
+
 static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_p,
 		struct mipi_ctrl_cfg *ctrl_cfg)
 {
@@ -826,6 +852,11 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_p,
 		return -EINVAL;
 	/*Multi-Channel FIFO Configuration*/
 	mipi_tx_multichannel_fifo_cfg(dev_p, ctrl_cfg->active_lanes, frame_id);
+
+#ifdef MIPI_TX_TEST_PATTERN_GENERATION
+	mipi_tx_hs_tp_gen(dev_p, 0, MIPI_TX_HS_TP_WHOLE_FRAME_COLOR0, 0,
+			0xffffffff, 0);
+#endif
 
 	/*Frame Generator Enable */
 	mipi_tx_ctrl_cfg(dev_p, frame_id, ctrl_cfg);

@@ -645,6 +645,17 @@
 			MIPI_TX_HS_IRQ_CLEAR \
 			+ HS_OFFSET(M), val)
 
+/* MIPI Test Pattern Generation */
+#define MIPI_TX_HS_TEST_PAT_CTRL			(0x230)
+#define   MIPI_TXm_HS_TEST_PAT_CTRL(M)			\
+				(MIPI_TX_HS_TEST_PAT_CTRL + HS_OFFSET(M))
+#define   TP_EN_VCm(M)					((M) * 0x04)
+#define   TP_SEL_VCm(M, N)				\
+				(N << (((M) * 0x04) + 1))
+#define   TP_STRIPE_WIDTH(M)				((M) << 16)
+#define MIPI_TX_HS_TEST_PAT_COLOR0			(0x234)
+#define MIPI_TX_HS_TEST_PAT_COLOR1			(0x238)
+
 /* D-PHY regs */
 #define DPHY_ENABLE				(0x100)
 #define DPHY_INIT_CTRL0				(0x104)

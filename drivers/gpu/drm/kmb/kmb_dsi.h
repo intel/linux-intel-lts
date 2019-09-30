@@ -201,6 +201,13 @@ enum mipi_dsi_data_type {
 	DSI_LP_DT_RESERVED_3F = 0x3f
 };
 
+enum mipi_tx_hs_tp_sel {
+	MIPI_TX_HS_TP_WHOLE_FRAME_COLOR0 = 0,
+	MIPI_TX_HS_TP_WHOLE_FRAME_COLOR1,
+	MIPI_TX_HS_TP_V_STRIPES,
+	MIPI_TX_HS_TP_H_STRIPES,
+};
+
 enum dphy_mode {
 	MIPI_DPHY_SLAVE = 0,
 	MIPI_DPHY_MASTER
