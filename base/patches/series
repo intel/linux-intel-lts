@@ -23,3 +23,5 @@
 0001-sctp-implement-memory-accounting-on-rx-path-CVE-2019-3874.patch
 0002-sctp-implement-memory-accounting-on-tx-path-CVE-2019-3874.patch
 
+# CVE-2019-15098
+0001-Fix-a-NULL-ptr-deref-bug-in-ath6kl_usb_alloc_urb_fro-CVE-2019-15098.patch
