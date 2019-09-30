@@ -45,3 +45,6 @@
 
 # CVE-2019-12455
 0002-clk-sunxi-fix-a-missing-check-bug-in-sunxi_divs_clk_CVE-2019-12455.patch
+
+# CVE-2019-15098
+0001-Fix-a-NULL-ptr-deref-bug-in-ath6kl_usb_alloc_urb_fro.patch-CVE-2019-15098.patch
