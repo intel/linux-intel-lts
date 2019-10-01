@@ -58,13 +58,18 @@ static int spi_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* Get basic io resource and map it */
 	dws->paddr = pci_resource_start(pdev, pci_bar);
+	pci_set_master(pdev);
 
 	ret = pcim_iomap_regions(pdev, 1 << pci_bar, pci_name(pdev));
 	if (ret)
 		return ret;
 
+	ret = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_ALL_TYPES);
+	if (ret < 0)
+		return ret;
+
 	dws->regs = pcim_iomap_table(pdev)[pci_bar];
-	dws->irq = pdev->irq;
+	dws->irq = pci_irq_vector(pdev, 0);
 
 	/*
 	 * Specific handling for platforms, like dma setup,
@@ -81,12 +86,15 @@ static int spi_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 				return ret;
 		}
 	} else {
+		pci_free_irq_vectors(pdev);
 		return -ENODEV;
 	}
 
 	ret = dw_spi_add_host(&pdev->dev, dws);
-	if (ret)
+	if (ret) {
+		pci_free_irq_vectors(pdev);
 		return ret;
+	}
 
 	/* PCI hook and SPI hook use the same drv data */
 	pci_set_drvdata(pdev, dws);
@@ -110,6 +118,7 @@ static void spi_pci_remove(struct pci_dev *pdev)
 	pm_runtime_get_noresume(&pdev->dev);
 
 	dw_spi_remove_host(dws);
+	pci_free_irq_vectors(pdev);
 }
 
 #ifdef CONFIG_PM_SLEEP
