@@ -59,6 +59,7 @@ struct typec_port {
 	struct typec_mux		*mux;
 
 	const struct typec_capability	*cap;
+	const struct typec_operations	*ops;
 };
 
 #define to_typec_port(_dev_) container_of(_dev_, struct typec_port, dev)
@@ -961,11 +962,6 @@ preferred_role_store(struct device *dev, struct device_attribute *attr,
 		return -EOPNOTSUPP;
 	}
 
-	if (!port->cap->try_role) {
-		dev_dbg(dev, "Setting preferred role not supported\n");
-		return -EOPNOTSUPP;
-	}
-
 	role = sysfs_match_string(typec_roles, buf);
 	if (role < 0) {
 		if (sysfs_streq(buf, "none"))
@@ -974,9 +970,18 @@ preferred_role_store(struct device *dev, struct device_attribute *attr,
 			return -EINVAL;
 	}
 
-	ret = port->cap->try_role(port->cap, role);
-	if (ret)
-		return ret;
+	if (port->ops && port->ops->try_role) {
+		ret = port->ops->try_role(port, role);
+		if (ret)
+			return ret;
+	} else if (port->cap && port->cap->try_role) {
+		ret = port->cap->try_role(port->cap, role);
+		if (ret)
+			return ret;
+	} else {
+		dev_dbg(dev, "Setting preferred role not supported\n");
+		return -EOPNOTSUPP;
+	}
 
 	port->prefer_role = role;
 	return size;
@@ -1005,11 +1010,6 @@ static ssize_t data_role_store(struct device *dev,
 	struct typec_port *port = to_typec_port(dev);
 	int ret;
 
-	if (!port->cap->dr_set) {
-		dev_dbg(dev, "data role swapping not supported\n");
-		return -EOPNOTSUPP;
-	}
-
 	ret = sysfs_match_string(typec_data_roles, buf);
 	if (ret < 0)
 		return ret;
@@ -1020,9 +1020,19 @@ static ssize_t data_role_store(struct device *dev,
 		goto unlock_and_ret;
 	}
 
-	ret = port->cap->dr_set(port->cap, ret);
-	if (ret)
+	if (port->ops && port->ops->dr_set) {
+		ret = port->ops->dr_set(port, ret);
+		if (ret)
+			goto unlock_and_ret;
+	} else if (port->cap && port->cap->dr_set) {
+		ret = port->cap->dr_set(port->cap, ret);
+		if (ret)
+			goto unlock_and_ret;
+	} else {
+		dev_dbg(dev, "data role swapping not supported\n");
+		ret = -EOPNOTSUPP;
 		goto unlock_and_ret;
+	}
 
 	ret = size;
 unlock_and_ret:
@@ -1055,11 +1065,6 @@ static ssize_t power_role_store(struct device *dev,
 		return -EOPNOTSUPP;
 	}
 
-	if (!port->cap->pr_set) {
-		dev_dbg(dev, "power role swapping not supported\n");
-		return -EOPNOTSUPP;
-	}
-
 	if (port->pwr_opmode != TYPEC_PWR_MODE_PD) {
 		dev_dbg(dev, "partner unable to swap power role\n");
 		return -EIO;
@@ -1077,11 +1082,21 @@ static ssize_t power_role_store(struct device *dev,
 		goto unlock_and_ret;
 	}
 
-	ret = port->cap->pr_set(port->cap, ret);
-	if (ret)
+	if (port->ops && port->ops->pr_set) {
+		ret = port->ops->pr_set(port, ret);
+		if (ret)
+			goto unlock_and_ret;
+	} else if (port->cap && port->cap->pr_set) {
+		ret = port->cap->pr_set(port->cap, ret);
+		if (ret)
+			goto unlock_and_ret;
+	} else {
+		dev_dbg(dev, "power role swapping not supported\n");
+		ret = -EOPNOTSUPP;
 		goto unlock_and_ret;
-
+	}
 	ret = size;
+
 unlock_and_ret:
 	mutex_unlock(&port->port_type_lock);
 	return ret;
@@ -1108,7 +1123,8 @@ port_type_store(struct device *dev, struct device_attribute *attr,
 	int ret;
 	enum typec_port_type type;
 
-	if (!port->cap->port_type_set || port->fixed_role != TYPEC_PORT_DRP) {
+	if ((!port->ops || !port->ops->port_type_set) ||
+	    !port->cap->port_type_set || port->fixed_role != TYPEC_PORT_DRP) {
 		dev_dbg(dev, "changing port type not supported\n");
 		return -EOPNOTSUPP;
 	}
@@ -1125,7 +1141,10 @@ port_type_store(struct device *dev, struct device_attribute *attr,
 		goto unlock_and_ret;
 	}
 
-	ret = port->cap->port_type_set(port->cap, type);
+	if (port->ops && port->ops->port_type_set)
+		ret = port->ops->port_type_set(port, type);
+	else
+		ret = port->cap->port_type_set(port->cap, type);
 	if (ret)
 		goto unlock_and_ret;
 
@@ -1181,18 +1200,22 @@ static ssize_t vconn_source_store(struct device *dev,
 		return -EOPNOTSUPP;
 	}
 
-	if (!port->cap->vconn_set) {
-		dev_dbg(dev, "VCONN swapping not supported\n");
-		return -EOPNOTSUPP;
-	}
-
 	ret = kstrtobool(buf, &source);
 	if (ret)
 		return ret;
 
-	ret = port->cap->vconn_set(port->cap, (enum typec_role)source);
-	if (ret)
-		return ret;
+	if (port->ops && port->ops->vconn_set) {
+		ret = port->ops->vconn_set(port, source);
+		if (ret)
+			return ret;
+	} else if (port->cap && port->cap->vconn_set) {
+		ret = port->cap->vconn_set(port->cap, (enum typec_role)source);
+		if (ret)
+			return ret;
+	} else {
+		dev_dbg(dev, "VCONN swapping not supported\n");
+		return -EOPNOTSUPP;
+	}
 
 	return size;
 }
@@ -1597,6 +1620,7 @@ struct typec_port *typec_register_port(struct device *parent,
 
 	port->id = id;
 	port->cap = cap;
+	port->ops = cap->ops;
 	port->port_type = cap->type;
 	port->fixed_role = cap->type;
 	port->port_roles = cap->data;
