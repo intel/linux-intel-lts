@@ -1188,12 +1188,12 @@ static void stmmac_clear_rx_descriptors(struct stmmac_priv *priv, u32 queue)
 			stmmac_init_rx_desc(priv, &rx_q->dma_erx[i].basic,
 					priv->use_riwt, priv->mode,
 					(i == priv->dma_rx_size - 1),
-					priv->dma_buf_sz);
+					rx_q->dma_buf_sz);
 		else
 			stmmac_init_rx_desc(priv, &rx_q->dma_rx[i],
 					priv->use_riwt, priv->mode,
 					(i == priv->dma_rx_size - 1),
-					priv->dma_buf_sz);
+					rx_q->dma_buf_sz);
 }
 
 /**
@@ -1278,7 +1278,7 @@ static int stmmac_init_rx_buffers(struct stmmac_priv *priv, struct dma_desc *p,
 
 	buf->addr = page_pool_get_dma_addr(buf->page);
 	stmmac_set_desc_addr(priv, p, buf->addr);
-	if (priv->dma_buf_sz == BUF_SIZE_16KiB)
+	if (rx_q->dma_buf_sz == BUF_SIZE_16KiB)
 		stmmac_init_desc3(priv, p);
 
 	return 0;
@@ -1355,6 +1355,8 @@ static int init_dma_rx_desc_ring(struct stmmac_priv *priv, u32 queue,
 	stmmac_clear_rx_descriptors(priv, queue);
 
 	xdp_rxq_info_unreg_mem_model(&rx_q->xdp_rxq);
+
+	rx_q->dma_buf_sz = priv->dma_buf_sz;
 
 	ret = xdp_rxq_info_reg_mem_model(&rx_q->xdp_rxq,
 					 MEM_TYPE_PAGE_POOL,
@@ -1669,10 +1671,11 @@ static int alloc_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 
 	rx_q->queue_index = queue;
 	rx_q->priv_data = priv;
+	rx_q->dma_buf_sz = priv->dma_buf_sz;
 
 	pp_params.flags = PP_FLAG_DMA_MAP;
 	pp_params.pool_size = priv->dma_rx_size;
-	pp_params.order = DIV_ROUND_UP(priv->dma_buf_sz, PAGE_SIZE);
+	pp_params.order = DIV_ROUND_UP(rx_q->dma_buf_sz, PAGE_SIZE);
 	pp_params.nid = dev_to_node(priv->device);
 	pp_params.dev = priv->device;
 	pp_params.dma_dir = is_xdp ? DMA_BIDIRECTIONAL : DMA_FROM_DEVICE;
@@ -2058,11 +2061,13 @@ static void stmmac_dma_operation_mode(struct stmmac_priv *priv)
 
 	/* configure all channels */
 	for (chan = 0; chan < rx_channels_count; chan++) {
+		struct stmmac_rx_queue *rx_q = &priv->rx_queue[chan];
+
 		qmode = priv->plat->rx_queues_cfg[chan].mode_to_use;
 
 		stmmac_dma_rx_mode(priv, priv->ioaddr, rxmode, chan,
 				rxfifosz, qmode);
-		stmmac_set_dma_bfsize(priv, priv->ioaddr, priv->dma_buf_sz,
+		stmmac_set_dma_bfsize(priv, priv->ioaddr, rx_q->dma_buf_sz,
 				chan);
 	}
 
@@ -4105,7 +4110,7 @@ static inline void stmmac_rx_refill(struct stmmac_priv *priv, u32 queue)
 	enum dma_data_direction dma_dir;
 
 	dma_dir = page_pool_get_dma_dir(rx_q->page_pool);
-	len = DIV_ROUND_UP(priv->dma_buf_sz, PAGE_SIZE) * PAGE_SIZE;
+	len = DIV_ROUND_UP(rx_q->dma_buf_sz, PAGE_SIZE) * PAGE_SIZE;
 
 	while (dirty-- > 0) {
 		struct stmmac_rx_buffer *buf = &rx_q->buf_pool[entry];
@@ -4449,6 +4454,19 @@ read_again:
 		} else {
 			prev_len = len;
 			len = stmmac_get_rx_frame_len(priv, p, coe);
+
+			/*  If frame length is greater than skb buffer size
+			 *  (preallocated during init) then the packet is
+			 *  ignored
+			 */
+			if (len > rx_q->dma_buf_sz) {
+				if (net_ratelimit())
+					netdev_err(priv->dev,
+						   "len %d larger than size (%d)\n",
+						   len, rx_q->dma_buf_sz);
+				priv->dev->stats.rx_length_errors++;
+				continue;
+			}
 
 			/* ACS is set; GMAC core strips PAD/FCS for IEEE 802.3
 			 * Type frames (LLC/LLC-SNAP)

@@ -95,6 +95,7 @@ struct stmmac_rx_queue {
 	} state;
 	struct bpf_prog *xdp_prog;
 	struct xdp_rxq_info xdp_rxq;
+	unsigned int dma_buf_sz;
 };
 
 struct stmmac_channel {
