@@ -107,6 +107,14 @@ config PTP_1588_CLOCK_PCH
 	  To compile this driver as a module, choose M here: the module
 	  will be called ptp_pch.
 
+config PTP_INTEL_TGPIO
+	tristate "Intel Timed GPIO"
+	depends on X86
+	depends on PCI
+	imply PTP_1588_CLOCK
+	help
+	  This driver asdds support for Intel Timed GPIO
+
 config PTP_INTEL_PMC_TGPIO
 	tristate "Intel PMC Timed GPIO"
 	depends on X86
