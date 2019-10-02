@@ -878,7 +878,8 @@ static const struct device_type mei_cl_device_type = {
  */
 static inline void mei_cl_bus_set_name(struct mei_cl_device *cldev)
 {
-	dev_set_name(&cldev->dev, "mei:%s:%pUl:%02X",
+	dev_set_name(&cldev->dev, "%s-mei:%s:%pUl:%02X",
+		     dev_name(cldev->bus->dev),
 		     cldev->name,
 		     mei_me_cl_uuid(cldev->me_cl),
 		     mei_me_cl_ver(cldev->me_cl));
