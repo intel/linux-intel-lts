@@ -1886,6 +1886,20 @@ config X86_INTEL_MEMORY_PROTECTION_KEYS
 
 	  If unsure, say y.
 
+config X86_KL
+	prompt "Key Locker" if EXPERT
+	def_bool y
+	depends on CPU_SUP_INTEL
+	help
+	  Key Locker is a new security feature to protect a data-encryption
+	  key for the Advanced Encryption Standard (AES) algorithm.
+
+	  When enabled, every CPU has a unique internal key to wrap the AES
+	  key into an encoded format.  The internal key is not accessible
+	  to software once loaded.
+
+	  If unsure, say y.
+
 choice
 	prompt "TSX enable mode"
 	depends on CPU_SUP_INTEL

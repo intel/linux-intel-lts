@@ -44,7 +44,11 @@
 # define DISABLE_OSPKE		(1<<(X86_FEATURE_OSPKE & 31))
 #endif /* CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS */
 
-#define DISABLE_KL		(1<<(X86_FEATURE_KL & 31))
+#ifdef CONFIG_X86_KL
+# define DISABLE_KL		0
+#else
+# define DISABLE_KL		(1<<(X86_FEATURE_KL & 31))
+#endif
 
 #ifdef CONFIG_X86_5LEVEL
 # define DISABLE_LA57	0
