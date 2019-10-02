@@ -1,0 +1,7 @@
+TGPIO drivers enable:
+	time aware GPIO hardware in the PMC on TGL and EHL
+	time aware GPIO hardware in the OSE on EHL
+
+TGL and EHL
+
+The TGPIO have no known bugs
