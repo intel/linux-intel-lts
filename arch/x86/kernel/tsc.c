@@ -1369,9 +1369,6 @@ static int __init init_tsc_clocksource(void)
 	if (tsc_unstable)
 		goto unreg;
 
-	if (tsc_clocksource_reliable || no_tsc_watchdog)
-		clocksource_tsc.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
-
 	if (boot_cpu_has(X86_FEATURE_NONSTOP_TSC_S3))
 		clocksource_tsc.flags |= CLOCK_SOURCE_SUSPEND_NONSTOP;
 
@@ -1478,6 +1475,11 @@ void __init tsc_init(void)
 	if (!boot_cpu_has(X86_FEATURE_TSC)) {
 		setup_clear_cpu_cap(X86_FEATURE_TSC_DEADLINE_TIMER);
 		return;
+	}
+
+	if (tsc_clocksource_reliable || no_tsc_watchdog) {
+		clocksource_tsc.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
+		clocksource_tsc_early.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
 	}
 
 	if (!tsc_khz) {
