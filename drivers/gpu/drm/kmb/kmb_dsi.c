@@ -227,12 +227,12 @@ kmb_dsi_mode_valid(struct drm_connector *connector,
 
 static int kmb_dsi_get_modes(struct drm_connector *connector)
 {
-	struct drm_display_mode *mode;
-	struct kmb_connector *kmb_connector = to_kmb_connector(connector);
+	int num_modes = 0;
 
-	mode = drm_mode_duplicate(connector->dev, kmb_connector->fixed_mode);
-	drm_mode_probed_add(connector, mode);
-	return 1;
+	num_modes = drm_add_modes_noedid(connector,
+			connector->dev->mode_config.max_width,
+			connector->dev->mode_config.max_height);
+	return num_modes;
 }
 
 static void kmb_dsi_connector_destroy(struct drm_connector *connector)
@@ -502,6 +502,8 @@ static u32 mipi_tx_fg_section_cfg_regs(struct kmb_drm_private *dev_p,
 	cfg |= ((ph_cfg->data_mode & MIPI_TX_SECT_DM_MASK)
 		<< MIPI_TX_SECT_DM_SHIFT);	/* bits [24:25] */
 	cfg |= MIPI_TX_SECT_DMA_PACKED;
+	DRM_INFO("%s : %d ctrl=%d frame_id=%d section=%d cfg=%x\n",
+			__func__, __LINE__, ctrl_no, frame_id, section, cfg);
 	kmb_write_mipi(dev_p, (MIPI_TXm_HS_FGn_SECTo_PH(ctrl_no, frame_id,
 					section)), cfg);
 	/*unpacked bytes */
@@ -574,7 +576,7 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_p,
 	u32 ppl_llp_ratio;
 	u32 ctrl_no = MIPI_CTRL6, reg_adr, val, offset;
 
-	/*Get system clock for blanking period cnfigurations */
+	/*Get system clock for blanking period cnfigurations*/
 	/*TODO need to get system clock from clock driver */
 	/* Assume 700 Mhz system clock for now */
 	sysclk = 700;
@@ -593,6 +595,7 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_p,
 	reg_adr = MIPI_TXm_HS_FGn_NUM_LINES(ctrl_no, frame_gen);
 	kmb_write_mipi(dev_p, reg_adr, fg_cfg->v_active);
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	/*vsync width */
 	/*
 	 *there are 2 registers for vsync width -VSA in lines for channels 0-3
@@ -646,6 +649,7 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_p,
 	reg_adr = MIPI_TXm_HS_LLP_H_BACKPORCHn(ctrl_no, frame_gen);
 	kmb_write_mipi(dev_p, reg_adr, fg_cfg->h_backporch * (fg_cfg->bpp / 8));
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	/* llp h frontporch */
 	reg_adr = MIPI_TXm_HS_LLP_H_FRONTPORCHn(ctrl_no, frame_gen);
 	kmb_write_mipi(dev_p, reg_adr,
@@ -807,13 +811,11 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_p,
 	 * set mipitxcctrlcfg
 	 */
 
-	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	for (frame_id = 0; frame_id < 4; frame_id++) {
 		/* find valid frame, assume only one valid frame */
 		if (ctrl_cfg->tx_ctrl_cfg.frames[frame_id] == NULL)
 			continue;
 
-		DRM_INFO("%s : %d\n", __func__, __LINE__);
 		/* Frame Section configuration */
 		/*TODO - assume there is only one valid section in a frame, so
 		 * bits_per_pclk and word_count are only set once
@@ -1231,13 +1233,18 @@ static void dphy_wait_fsm(struct kmb_drm_private *dev_p, u32 dphy_no,
 		enum dphy_tx_fsm fsm_state)
 {
 	enum dphy_tx_fsm val = DPHY_TX_POWERDWN;
+	int i = 0;
 
 	do {
 		test_mode_send(dev_p, dphy_no, TEST_CODE_FSM_CONTROL, 0x80);
 		/*TODO-need to add a time out and return failure */
 		val = GET_TEST_DOUT0_3(dev_p, dphy_no);
+		i++;
+		if (i > 50000) {
+			DRM_INFO("%s: timing out\n", __func__);
+			break;
+		}
 	} while (val != fsm_state);
-
 }
 
 static u32 wait_init_done(struct kmb_drm_private *dev_p, u32 dphy_no,
@@ -1245,10 +1252,16 @@ static u32 wait_init_done(struct kmb_drm_private *dev_p, u32 dphy_no,
 {
 	u32 stopstatedata = 0;
 	u32 data_lanes = (1 << active_lanes) - 1;
+	int i = 0;
 
 	do {
 		stopstatedata = GET_STOPSTATE_DATA(dev_p, dphy_no);
 		/*TODO-need to add a time out and return failure */
+		i++;
+		if (i > 50000) {
+			DRM_INFO("%s: timing out", __func__);
+			break;
+		}
 	} while (stopstatedata != data_lanes);
 
 	return 0;
@@ -1256,9 +1269,15 @@ static u32 wait_init_done(struct kmb_drm_private *dev_p, u32 dphy_no,
 
 static u32 wait_pll_lock(struct kmb_drm_private *dev_p, u32 dphy_no)
 {
+	int i = 0;
 	do {
 		;
 		/*TODO-need to add a time out and return failure */
+		i++;
+		if (i > 50000) {
+			DRM_INFO("wait_pll_lock: timing out\n");
+			break;
+		}
 	} while (!GET_PLL_LOCK(dev_p, dphy_no));
 
 	return 0;

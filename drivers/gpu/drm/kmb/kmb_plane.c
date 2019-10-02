@@ -499,7 +499,7 @@ struct kmb_plane *kmb_plane_init(struct drm_device *drm)
 	struct kmb_plane *plane = NULL;
 	struct kmb_plane *primary = NULL;
 	int i = 0;
-	int ret;
+	int ret = 0;
 	enum drm_plane_type plane_type;
 	const uint32_t *plane_formats;
 	int num_plane_formats;
@@ -508,11 +508,13 @@ struct kmb_plane *kmb_plane_init(struct drm_device *drm)
 
 		plane = devm_kzalloc(drm->dev, sizeof(*plane), GFP_KERNEL);
 
-		if (!plane)
+		if (!plane) {
+			DRM_ERROR("Failed to allocate plane\n");
 			return ERR_PTR(-ENOMEM);
+		}
 
 		plane_type = (i == 0) ? DRM_PLANE_TYPE_PRIMARY :
-		    DRM_PLANE_TYPE_OVERLAY;
+			DRM_PLANE_TYPE_OVERLAY;
 		if (i < 2) {
 			plane_formats = kmb_formats_v;
 			num_plane_formats = ARRAY_SIZE(kmb_formats_v);
@@ -521,13 +523,16 @@ struct kmb_plane *kmb_plane_init(struct drm_device *drm)
 			num_plane_formats = ARRAY_SIZE(kmb_formats_g);
 		}
 
-		ret =
-		    drm_universal_plane_init(drm, &plane->base_plane,
-					     POSSIBLE_CRTCS, &kmb_plane_funcs,
-					     plane_formats, num_plane_formats,
-					     NULL, plane_type, "plane %d", i);
-		if (ret < 0)
+		ret = drm_universal_plane_init(drm, &plane->base_plane,
+				POSSIBLE_CRTCS,
+				&kmb_plane_funcs, plane_formats,
+					num_plane_formats,
+					NULL, plane_type, "plane %d", i);
+		if (ret < 0) {
+			DRM_ERROR("drm_universal_plane_init -failed with ret=%d"
+					, ret);
 			goto cleanup;
+		}
 
 		drm_plane_helper_add(&plane->base_plane,
 				     &kmb_plane_helper_funcs);
@@ -538,6 +543,8 @@ struct kmb_plane *kmb_plane_init(struct drm_device *drm)
 		plane->id = i;
 	}
 
-cleanup:
 	return primary;
+cleanup:
+	kfree(plane);
+	return ERR_PTR(ret);
 }

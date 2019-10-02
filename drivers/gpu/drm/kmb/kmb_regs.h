@@ -713,6 +713,7 @@
 #define   LCD				(1<<1)
 #define   MIPI_COMMON			(1<<2)
 #define   MIPI_TX0			(1<<9)
+#define MSS_CAM_RSTN_CTRL		(0x14)
 
 #define BIT_MASK_16				(0xffff)
 #endif /* __KMB_REGS_H__ */

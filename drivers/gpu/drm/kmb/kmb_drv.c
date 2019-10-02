@@ -78,11 +78,12 @@ static int kmb_display_clk_enable(void)
 		return ret;
 	}
 
-	ret = clk_prepare_enable(clk_msscam);
+/*	ret = clk_prepare_enable(clk_msscam);
 	if (ret) {
 		DRM_ERROR("Failed to enable MSSCAM clock: %d\n", ret);
 		return ret;
 	}
+	*/
 
 	ret = clk_prepare_enable(clk_mipi_ecfg);
 	if (ret) {
@@ -136,6 +137,8 @@ static void __iomem *kmb_map_mmio(struct platform_device *pdev, char *name)
 		release_mem_region(res->start, size);
 		return ERR_PTR(-ENOMEM);
 	}
+	DRM_INFO("%s : %d mapped %s mmio size = %d\n", __func__, __LINE__,
+			name, size);
 	return mem;
 }
 
@@ -150,18 +153,18 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	int ret = 0;
 	unsigned long clk;
 
-	/* Map LCD MMIO registers */
-	dev_p->lcd_mmio = kmb_map_mmio(pdev, "lcd_regs");
-	if (IS_ERR(dev_p->lcd_mmio)) {
-		DRM_ERROR("failed to map LCD registers\n");
-		return -ENOMEM;
-	}
-
 	/* Map MIPI MMIO registers */
 	dev_p->mipi_mmio = kmb_map_mmio(pdev, "mipi_regs");
 	if (IS_ERR(dev_p->mipi_mmio)) {
 		DRM_ERROR("failed to map MIPI registers\n");
 		iounmap(dev_p->lcd_mmio);
+		return -ENOMEM;
+	}
+
+	/* Map LCD MMIO registers */
+	dev_p->lcd_mmio = kmb_map_mmio(pdev, "lcd_regs");
+	if (IS_ERR(dev_p->lcd_mmio)) {
+		DRM_ERROR("failed to map LCD registers\n");
 		return -ENOMEM;
 	}
 
@@ -189,12 +192,6 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 
-	clk_msscam = clk_get(&pdev->dev, "clk_msscam");
-	if (IS_ERR(clk_msscam)) {
-		DRM_ERROR("clk_get() failed clk_msscam\n");
-		goto setup_fail;
-	}
-
 	clk_mipi_ecfg = clk_get(&pdev->dev, "clk_mipi_ecfg");
 	if (IS_ERR(clk_mipi_ecfg)) {
 		DRM_ERROR("clk_get() failed clk_mipi_ecfg\n");
@@ -215,7 +212,6 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	if (clk_get_rate(clk_lcd) != KMB_LCD_DEFAULT_CLK) {
 		DRM_ERROR("failed to set to clk_lcd to %d\n",
 				KMB_LCD_DEFAULT_CLK);
-		goto setup_fail;
 	}
 	DRM_INFO("Setting LCD clock to %d Mhz ret = %d\n",
 			KMB_LCD_DEFAULT_CLK/1000000, ret);
@@ -265,8 +261,8 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	}
 
 	/* enable MSS_CAM_CLK_CTRL for MIPI TX and LCD */
-	kmb_set_bitmask_msscam(dev_p, MSS_CAM_CLK_CTRL, LCD | MIPI_COMMON |
-			MIPI_TX0);
+	kmb_set_bitmask_msscam(dev_p, MSS_CAM_CLK_CTRL, 0xfff);
+	kmb_set_bitmask_msscam(dev_p, MSS_CAM_RSTN_CTRL, 0xfff);
 #ifdef WIP
 	/* Register irqs here - section 17.3 in databook
 	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
@@ -529,6 +525,7 @@ static int kmb_probe(struct platform_device *pdev)
 		dev_set_drvdata(dev, drm);
 
 	/* Load driver */
+	lcd->n_layers = KMB_MAX_PLANES;
 	ret = kmb_load(drm, 0);
 	if (ret == -EPROBE_DEFER) {
 		DRM_INFO("wait for external bridge driver DT\n");
@@ -551,7 +548,6 @@ static int kmb_probe(struct platform_device *pdev)
 	/* Register graphics device with the kernel */
 	ret = drm_dev_register(drm, 0);
 
-	lcd->n_layers = KMB_MAX_PLANES;
 	if (ret)
 		goto err_register;
 
