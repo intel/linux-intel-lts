@@ -1633,6 +1633,11 @@ void __init tsc_init(void)
 		return;
 	}
 
+	if (tsc_clocksource_reliable || no_tsc_watchdog) {
+		clocksource_tsc.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
+		clocksource_tsc_early.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
+	}
+
 	if (!tsc_khz) {
 		/* We failed to determine frequencies earlier, try again */
 		if (!determine_cpu_tsc_frequencies(false)) {
