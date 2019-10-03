@@ -9141,6 +9141,8 @@ enum {
 #define   SKL_AUD_CODEC_WAKE_SIGNAL		(1 << 15)
 
 #define AUD_FREQ_CNTRL			_MMIO(0x65900)
+#define AUD_PIN_BUF_CTL		_MMIO(0x48414)
+#define   AUD_PIN_BUF_ENABLE		REG_BIT(31)
 
 /*
  * HSW - ICL power wells
