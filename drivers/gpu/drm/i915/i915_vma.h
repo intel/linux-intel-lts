@@ -390,7 +390,7 @@ static inline bool i915_vma_is_bound(const struct i915_vma *vma,
 static inline bool i915_node_color_differs(const struct drm_mm_node *node,
 					   unsigned long color)
 {
-	return node->allocated && node->color != color;
+	return drm_mm_node_allocated(node) && node->color != color;
 }
 
 /**
