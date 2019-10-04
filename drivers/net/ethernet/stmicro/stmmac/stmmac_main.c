@@ -1250,13 +1250,12 @@ static void stmmac_clear_descriptors(struct stmmac_priv *priv)
  * @priv: driver private structure
  * @p: descriptor pointer
  * @i: descriptor index
- * @flags: gfp flag
  * @queue: RX queue index
  * Description: this function is called to allocate a receive buffer, perform
  * the DMA mapping and init the descriptor.
  */
 static int stmmac_init_rx_buffers(struct stmmac_priv *priv, struct dma_desc *p,
-				  int i, gfp_t flags, u32 queue)
+				  int i, u32 queue)
 {
 	struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
 	struct stmmac_rx_buffer *buf = &rx_q->buf_pool[i];
@@ -1341,12 +1340,44 @@ static void stmmac_free_tx_buffer(struct stmmac_priv *priv, u32 queue, int i)
 	tx_q->tx_skbuff_dma[i].map_as_page = false;
 }
 
+bool stmmac_alloc_rx_buffers(struct stmmac_rx_queue *rx_q, u32 count)
+{
+	struct stmmac_priv *priv = rx_q->priv_data;
+	u32 queue = rx_q->queue_index;
+	int ret;
+	u32 i;
+
+	for (i = 0; i < count; i++) {
+		struct dma_desc *p;
+
+		if (priv->extend_desc)
+			p = &((rx_q->dma_erx + i)->basic);
+		else
+			p = rx_q->dma_rx + i;
+
+		ret = stmmac_init_rx_buffers(priv, p, i, queue);
+		if (ret)
+			goto err_init_rx_buffers;
+	}
+
+	rx_q->cur_rx = 0;
+	rx_q->dirty_rx = (unsigned int)(i - count);
+
+	return true;
+
+err_init_rx_buffers:
+	while (--i >= 0)
+		stmmac_free_rx_buffer(priv, queue, i);
+
+	return false;
+}
+
 static int init_dma_rx_desc_ring(struct stmmac_priv *priv, u32 queue,
 				 gfp_t flags)
 {
 	struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
+	bool ok;
 	int ret;
-	int i;
 
 	netif_dbg(priv, probe, priv->dev,
 		  "(%s) dma_rx_phy=0x%08x\n", __func__,
@@ -1367,22 +1398,9 @@ static int init_dma_rx_desc_ring(struct stmmac_priv *priv, u32 queue,
 	netdev_info(priv->dev, "Register XDP MEM_TYPE_PAGE_SHARED RxQ-%d\n",
 		    rx_q->queue_index);
 
-	for (i = 0; i < priv->dma_rx_size; i++) {
-		struct dma_desc *p;
-
-		if (priv->extend_desc)
-			p = &((rx_q->dma_erx + i)->basic);
-		else
-			p = rx_q->dma_rx + i;
-
-		ret = stmmac_init_rx_buffers(priv, p, i, flags,
-					     queue);
-		if (ret)
-			goto err_init_rx_buffers;
-	}
-
-	rx_q->cur_rx = 0;
-	rx_q->dirty_rx = (unsigned int)(i - priv->dma_rx_size);
+	ok = stmmac_alloc_rx_buffers(rx_q, priv->dma_rx_size);
+	if (!ok)
+		return -ENOMEM;
 
 	/* Setup the chained descriptor addresses */
 	if (priv->mode == STMMAC_CHAIN_MODE) {
@@ -1397,12 +1415,6 @@ static int init_dma_rx_desc_ring(struct stmmac_priv *priv, u32 queue,
 	}
 
 	return 0;
-
-err_init_rx_buffers:
-	while (--i >= 0)
-		stmmac_free_rx_buffer(priv, queue, i);
-
-	return ret;
 }
 
 /**
