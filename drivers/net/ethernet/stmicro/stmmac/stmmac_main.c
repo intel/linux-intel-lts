@@ -1393,18 +1393,8 @@ static int init_dma_rx_desc_rings(struct net_device *dev, gfp_t flags)
 	struct stmmac_priv *priv = netdev_priv(dev);
 	u32 rx_count = priv->plat->rx_queues_to_use;
 	int ret = -ENOMEM;
-	int bfsize = 0;
 	u32 queue;
 	int i;
-
-	bfsize = stmmac_set_16kib_bfsize(priv, dev->mtu);
-	if (bfsize < 0)
-		bfsize = 0;
-
-	if (bfsize < BUF_SIZE_16KiB)
-		bfsize = stmmac_set_bfsize(dev->mtu, priv->dma_buf_sz);
-
-	priv->dma_buf_sz = bfsize;
 
 	/* RX INITIALIZATION */
 	netif_dbg(priv, probe, priv->dev,
@@ -1415,8 +1405,6 @@ static int init_dma_rx_desc_rings(struct net_device *dev, gfp_t flags)
 		if (ret)
 			goto err_init_rx_q;
 	}
-
-	buf_sz = bfsize;
 
 	return 0;
 
@@ -1705,8 +1693,18 @@ err_dma:
 static int alloc_dma_rx_desc_resources(struct stmmac_priv *priv)
 {
 	u32 rx_count = priv->plat->rx_queues_to_use;
+	int bfsize = 0;
 	u32 queue;
 	int ret;
+
+	bfsize = stmmac_set_16kib_bfsize(priv, priv->dev->mtu);
+	if (bfsize < 0)
+		bfsize = 0;
+
+	if (bfsize < BUF_SIZE_16KiB)
+		bfsize = stmmac_set_bfsize(priv->dev->mtu, priv->dma_buf_sz);
+
+	priv->dma_buf_sz = bfsize;
 
 	/* RX queues buffers and DMA */
 	for (queue = 0; queue < rx_count; queue++) {
@@ -1714,6 +1712,7 @@ static int alloc_dma_rx_desc_resources(struct stmmac_priv *priv)
 		if (ret)
 			return ret;
 	}
+	buf_sz = bfsize;
 
 	return 0;
 }
