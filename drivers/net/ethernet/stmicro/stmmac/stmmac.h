@@ -67,6 +67,7 @@ struct stmmac_tx_queue {
 	u32 mss;
 	struct xdp_umem *xsk_umem;
 	struct zero_copy_allocator zca; /* ZC allocator */
+	spinlock_t xdp_xmit_lock;
 };
 
 struct stmmac_rx_buffer {
@@ -344,6 +345,7 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
 #define STMMAC_XDP_REDIR	BIT(2)
 
 #define STMMAC_RX_BUFFER_WRITE	32	/* Must be power of 2 */
+#define STMMAC_TX_BUFFER_BUDGET	32
 
 #define STMMAC_RX_DMA_ATTR \
 	(DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
@@ -383,6 +385,10 @@ static inline struct stmmac_tx_queue *get_tx_queue(struct stmmac_priv *priv,
 #define STMMAC_RX_DESC_UNUSED(x)	\
 	((((x)->cur_rx > (x)->dirty_rx) ? 0 : priv->dma_rx_size) + \
 	(x)->cur_rx - (x)->dirty_rx - 1)
+
+#define STMMAC_TX_DESC_TO_CLEAN(x)	\
+	(((x)->dirty_tx <= (x)->cur_tx) ? (x)->cur_tx - (x)->dirty_tx : \
+	priv->dma_tx_size - (x)->dirty_tx + (x)->cur_tx)
 
 int stmmac_xmit_xdp_tx_queue(struct xdp_buff *xdp,
 			     struct stmmac_tx_queue *xdp_q);

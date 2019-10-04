@@ -19,6 +19,7 @@
 #include "stmmac.h"
 #include "dwmac_dma.h"
 #include "dwxgmac2.h"
+#include "stmmac_xsk.h"
 
 #define REG_SPACE_SIZE	0x1060
 #define MAC100_ETHTOOL_NAME	"st_mac100"
@@ -494,6 +495,13 @@ static int stmmac_set_ringparam(struct net_device *netdev,
 	    ring->tx_pending > DMA_MAX_TX_SIZE ||
 	    !is_power_of_2(ring->tx_pending))
 		return -EINVAL;
+
+	/* If there is a AF_XDP UMEM attached to any of Rx queues,
+	 * disallow changing the number of descriptors -- regardless
+	 * if the netdev is running or not.
+	 */
+	if (stmmac_xsk_any_rx_ring_enabled(netdev))
+		return -EBUSY;
 
 	return stmmac_reinit_ringparam(netdev, ring->rx_pending,
 				       ring->tx_pending);

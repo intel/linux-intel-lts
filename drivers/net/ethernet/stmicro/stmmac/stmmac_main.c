@@ -1358,6 +1358,25 @@ static struct xdp_umem *stmmac_xsk_rx_umem(struct stmmac_priv *priv, u32 queue)
 	return xdp_get_umem_from_qid(priv->dev, queue);
 }
 
+/**
+ * stmmac_xsk_tx_umem - Retrieve the AF_XDP ZC if XDP and ZC is enabled
+ * @priv: private structure
+ * @queue: TX or TX XDP queue index
+ * Returns the UMEM or NULL.
+ **/
+static struct xdp_umem *stmmac_xsk_tx_umem(struct stmmac_priv *priv, u32 queue)
+{
+	bool xdp_on = stmmac_enabled_xdp(priv);
+
+	if (queue_is_xdp(priv, queue))
+		queue -= priv->plat->num_queue_pairs;
+
+	if (!xdp_on || !test_bit(queue, &priv->af_xdp_zc_qps))
+		return NULL;
+
+	return xdp_get_umem_from_qid(priv->dev, queue);
+}
+
 bool stmmac_alloc_rx_buffers(struct stmmac_rx_queue *rx_q, u32 count)
 {
 	struct stmmac_priv *priv = rx_q->priv_data;
@@ -1516,6 +1535,11 @@ static void init_dma_tx_desc_ring(struct stmmac_priv *priv, u32 queue)
 		  "(%s) dma_tx_phy=0x%08x\n", __func__,
 		  (u32)tx_q->dma_tx_phy);
 
+	if (queue_is_xdp(priv, queue)) {
+		spin_lock_init(&tx_q->xdp_xmit_lock);
+		tx_q->xsk_umem = stmmac_xsk_tx_umem(priv, queue);
+	}
+
 	/* Setup the chained descriptor addresses */
 	if (priv->mode == STMMAC_CHAIN_MODE) {
 		if (priv->extend_desc)
@@ -1613,10 +1637,15 @@ static int init_dma_desc_rings(struct net_device *dev, gfp_t flags)
  */
 static void dma_free_rx_skbufs(struct stmmac_priv *priv, u32 queue)
 {
+	struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
 	int i;
 
-	for (i = 0; i < priv->dma_rx_size; i++)
-		stmmac_free_rx_buffer(priv, queue, i);
+	if (rx_q->xsk_umem) {
+		stmmac_xsk_clean_rx_queue(rx_q);
+	} else {
+		for (i = 0; i < priv->dma_rx_size; i++)
+			stmmac_free_rx_buffer(priv, queue, i);
+	}
 }
 
 /**
@@ -1626,10 +1655,15 @@ static void dma_free_rx_skbufs(struct stmmac_priv *priv, u32 queue)
  */
 static void dma_free_tx_skbufs(struct stmmac_priv *priv, u32 queue)
 {
+	struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
 	int i;
 
-	for (i = 0; i < priv->dma_tx_size; i++)
-		stmmac_free_tx_buffer(priv, queue, i);
+	if (queue_is_xdp(priv, queue) && tx_q->xsk_umem) {
+		stmmac_xsk_clean_tx_queue(tx_q);
+	} else {
+		for (i = 0; i < priv->dma_tx_size; i++)
+			stmmac_free_tx_buffer(priv, queue, i);
+	}
 }
 
 static void free_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
@@ -1703,6 +1737,7 @@ static void free_dma_tx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 	kfree(tx_q->tx_skbuff_dma);
 	kfree(tx_q->tx_skbuff);
 	kfree(tx_q->xdpf);
+	tx_q->xsk_umem = NULL;
 }
 
 /**
@@ -4375,6 +4410,7 @@ void stmmac_xdp_queue_update_tail(struct stmmac_tx_queue *xdp_q)
 }
 
 /**
+
  * stmmac_finalize_xdp_rx - Bump XDP Tx tail
  * @rx_q: Rx queue
  * @xdp_res: Result of the receive batch
@@ -4742,15 +4778,18 @@ static int stmmac_napi_poll_tx(struct napi_struct *napi, int budget)
 
 	priv->xstats.napi_poll++;
 
-	work_done = stmmac_tx_clean(priv, priv->dma_tx_size, chan);
+	tx_q = get_tx_queue(priv, chan);
+
+	work_done = tx_q->xsk_umem ?
+		    stmmac_xdp_tx_clean(priv, budget, chan) :
+		    stmmac_tx_clean(priv, priv->dma_tx_size, chan);
+
 	work_done = min(work_done, budget);
 
 	if (work_done < budget)
 		napi_complete_done(napi, work_done);
 
 	/* Force transmission restart */
-	tx_q = get_tx_queue(priv, chan);
-
 	if (tx_q->cur_tx != tx_q->dirty_tx) {
 		stmmac_enable_dma_transmission(priv, priv->ioaddr);
 		stmmac_set_tx_tail_ptr(priv, priv->ioaddr, tx_q->tx_tail_addr,
@@ -5581,6 +5620,15 @@ static int stmmac_xdp_setup(struct stmmac_priv *priv,
 	if (old_prog)
 		bpf_prog_put(old_prog);
 
+	/* Kick start the NAPI context if there is an AF_XDP socket open
+	 * on that queue id. This so that receiving will start.
+	 */
+	if (need_reset && prog)
+		for (i = 0; i < priv->plat->num_queue_pairs; i++)
+			if (priv->xdp_queue[i].xsk_umem)
+				(void)stmmac_xsk_wakeup(priv->dev, i,
+							XDP_WAKEUP_TX);
+
 	return 0;
 }
 
@@ -5891,6 +5939,7 @@ static const struct net_device_ops stmmac_netdev_ops = {
 	.ndo_vlan_rx_kill_vid = stmmac_vlan_rx_kill_vid,
 	.ndo_bpf = stmmac_xdp,
 	.ndo_xdp_xmit = stmmac_xdp_xmit,
+	.ndo_xsk_wakeup = stmmac_xsk_wakeup,
 };
 
 static void stmmac_reset_subtask(struct stmmac_priv *priv)

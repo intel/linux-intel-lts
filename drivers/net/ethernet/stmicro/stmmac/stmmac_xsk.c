@@ -6,6 +6,7 @@
 #include <net/xdp.h>
 
 #include "stmmac.h"
+#include "stmmac_xsk.h"
 
 /**
  * stmmac_xsk_umem_dma_map - DMA maps all UMEM memory for the netdev
@@ -108,6 +109,11 @@ static int stmmac_xsk_umem_enable(struct stmmac_priv *priv,
 			return err;
 
 		err = stmmac_queue_pair_enable(priv, qid);
+		if (err)
+			return err;
+
+		/* Kick start the NAPI context so that receiving will start */
+		err = stmmac_xsk_wakeup(priv->dev, qid, XDP_WAKEUP_RX);
 		if (err)
 			return err;
 	}
@@ -676,4 +682,246 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 	priv->dev->stats.rx_bytes += total_rx_bytes;
 
 	return failure ? budget : (int)total_rx_packets;
+}
+
+/**
+ * stmmac_xmit_zc - Performs zero-copy TX AF_XDP
+ * @xdp_q: XDP Tx queue
+ * @budget: NAPI budget
+ *
+ * Returns true if the work is finished.
+ **/
+static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
+{
+	struct stmmac_priv *priv = xdp_q->priv_data;
+	struct dma_desc *tx_desc = NULL;
+	bool work_done = true;
+	struct xdp_desc desc;
+	dma_addr_t dma;
+	int entry = xdp_q->cur_tx;
+	int first_entry = xdp_q->cur_tx;
+
+	while (budget-- > 0) {
+		if (!unlikely(STMMAC_TX_DESC_UNUSED(xdp_q))) {
+			work_done = false;
+			break;
+		}
+
+		if (!xsk_umem_consume_tx(xdp_q->xsk_umem, &desc))
+			break;
+
+		dma = xdp_umem_get_dma(xdp_q->xsk_umem, desc.addr);
+
+		dma_sync_single_for_device(priv->device, dma, desc.len,
+					   DMA_BIDIRECTIONAL);
+
+		if (likely(priv->extend_desc))
+			tx_desc = (struct dma_desc *)(xdp_q->dma_etx + entry);
+		else if (priv->enhanced_tx_desc)
+			tx_desc = &xdp_q->dma_enhtx[entry].basic;
+		else
+			tx_desc = xdp_q->dma_tx + entry;
+
+		xdp_q->tx_skbuff_dma[entry].buf = dma;
+		xdp_q->tx_skbuff_dma[entry].len = desc.len;
+		xdp_q->tx_skbuff_dma[entry].map_as_page = false;
+		xdp_q->tx_skbuff_dma[entry].last_segment = 1;
+		xdp_q->tx_skbuff_dma[entry].is_jumbo = 0;
+
+		stmmac_set_desc_addr(priv, tx_desc, dma);
+
+		stmmac_prepare_tx_desc(priv, tx_desc, /* Tx descriptor */
+				       1, /* is first descriptor */
+				       desc.len,
+				       1, /* checksum offload enabled */
+				       priv->mode,
+				       1, /* Tx OWN bit */
+				       1, /* is last segment */
+				       desc.len); /* Total packet length */
+
+		wmb();
+
+		entry = STMMAC_GET_ENTRY(entry, priv->dma_tx_size);
+		xdp_q->cur_tx = entry;
+	}
+
+	if (first_entry != entry) {
+		stmmac_xdp_queue_update_tail(xdp_q);
+		xsk_umem_consume_tx_done(xdp_q->xsk_umem);
+	}
+
+	return !!budget && work_done;
+}
+
+/**
+ * stmac_clean_xdp_tx_buffer - Frees and unmaps an XDP Tx entry
+ * @priv: driver private structure
+ * @queue: TX XDP queue
+ * @entry: entry to be cleared
+ **/
+static void stmac_clean_xdp_tx_buffer(struct stmmac_priv *priv, u32 queue,
+				      u32 entry)
+{
+	struct stmmac_tx_queue *xdp_q = get_tx_queue(priv, queue);
+
+	xdp_return_frame(xdp_q->xdpf[entry]);
+	dma_unmap_single(priv->device,
+			 xdp_q->tx_skbuff_dma[entry].buf,
+			 xdp_q->tx_skbuff_dma[entry].len,
+			 DMA_TO_DEVICE);
+	xdp_q->tx_skbuff_dma[entry].len = 0;
+	xdp_q->tx_skbuff_dma[entry].buf = 0;
+}
+
+/**
+ * stmmac_xdp_tx_clean - Completes AF_XDP entries, and cleans XDP entries
+ * @tx_q: XDP Tx queue
+ * @tx_bi: Tx buffer info to clean
+ **/
+int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
+{
+	struct stmmac_tx_queue *xdp_q = get_tx_queue(priv, queue);
+	u32 i, frames_ready, xsk_frames = 0, completed_frames = 0;
+	struct xdp_umem *umem = xdp_q->xsk_umem;
+	u32 entry, total_bytes = 0;
+
+	frames_ready = STMMAC_TX_DESC_TO_CLEAN(xdp_q);
+
+	if (frames_ready == 0)
+		goto out_xmit;
+	else if (frames_ready > budget)
+		completed_frames = budget;
+	else
+		completed_frames = frames_ready;
+
+	entry = xdp_q->dirty_tx;
+
+	for (i = 0; i < completed_frames; i++) {
+		if (xdp_q->xdpf[entry])
+			stmac_clean_xdp_tx_buffer(priv, queue, entry);
+		else
+			xsk_frames++;
+
+		xdp_q->xdpf[entry] =  NULL;
+		total_bytes += xdp_q->tx_skbuff_dma[entry].len;
+
+		entry = STMMAC_GET_ENTRY(entry, priv->dma_tx_size);
+	}
+
+	if (entry != xdp_q->dirty_tx)
+		xdp_q->dirty_tx = entry;
+
+	if (xsk_frames)
+		xsk_umem_complete_tx(umem, xsk_frames);
+
+	priv->dev->stats.tx_bytes += total_bytes;
+	priv->dev->stats.tx_packets += completed_frames;
+
+out_xmit:
+	if (spin_trylock(&xdp_q->xdp_xmit_lock)) {
+		stmmac_xmit_zc(xdp_q, budget);
+		spin_unlock(&xdp_q->xdp_xmit_lock);
+	}
+
+	return completed_frames;
+}
+
+/**
+ * stmmac_xsk_wakeup - Implements the ndo_xsk_wakeup
+ * @dev: the netdevice
+ * @queue_id: queue id to wake up
+ *
+ * Returns <0 for errors, 0 otherwise.
+ **/
+int stmmac_xsk_wakeup(struct net_device *dev, u32 queue, u32 flags)
+{
+	struct stmmac_priv *priv = netdev_priv(dev);
+	u16 qp_num = priv->plat->num_queue_pairs;
+	struct stmmac_tx_queue *xdp_q;
+	struct stmmac_channel *ch;
+
+	xdp_q = &priv->xdp_queue[queue];
+	ch = &priv->channel[queue + qp_num];
+
+	if (test_bit(STMMAC_DOWN, &priv->state))
+		return -ENETDOWN;
+
+	if (!stmmac_enabled_xdp(priv))
+		return -ENXIO;
+
+	if (queue >= priv->plat->num_queue_pairs)
+		return -ENXIO;
+
+	if (!xdp_q->xsk_umem)
+		return -ENXIO;
+
+	spin_lock(&xdp_q->xdp_xmit_lock);
+	stmmac_xmit_zc(xdp_q, priv->dma_tx_size);
+	spin_unlock(&xdp_q->xdp_xmit_lock);
+
+	/* The idea here is that if NAPI is running, mark a miss, so
+	 * it will run again. Since we do not have interrupt here,
+	 * we directly call the stmmac_xmit_zc() instead
+	 */
+	if (!napi_if_scheduled_mark_missed(&ch->tx_napi)) {
+		if (likely(napi_schedule_prep(&ch->tx_napi)))
+			__napi_schedule(&ch->tx_napi);
+	}
+
+	return 0;
+}
+
+void stmmac_xsk_clean_rx_queue(struct stmmac_rx_queue *rx_q)
+{
+	struct stmmac_priv *priv = rx_q->priv_data;
+	u16 i;
+
+	for (i = 0; i < priv->dma_rx_size; i++) {
+		struct stmmac_rx_buffer *buf = &rx_q->buf_pool[i];
+
+		if (!buf->umem_addr)
+			continue;
+
+		xsk_umem_fq_reuse(rx_q->xsk_umem, buf->umem_handle);
+		buf->umem_addr = NULL;
+	}
+}
+
+void stmmac_xsk_clean_tx_queue(struct stmmac_tx_queue *tx_q)
+{
+	u16 ntc = tx_q->dirty_tx, ntu = tx_q->cur_tx;
+	struct stmmac_priv *priv = tx_q->priv_data;
+	struct xdp_umem *umem = tx_q->xsk_umem;
+	u32 queue = tx_q->queue_index;
+	u32 xsk_frames = 0;
+
+	while (ntc != ntu) {
+		if (tx_q->xdpf[ntc])
+			stmac_clean_xdp_tx_buffer(priv, queue, ntc);
+		else
+			xsk_frames++;
+
+		ntc = STMMAC_GET_ENTRY(ntc, priv->dma_tx_size);
+	}
+
+	if (xsk_frames)
+		xsk_umem_complete_tx(umem, xsk_frames);
+}
+
+/**
+ * stmmac_xsk_any_rx_ring_enabled - Checks if Rx rings have AF_XDP UMEM attached
+ *
+ * Returns true if any of the Rx rings has an AF_XDP UMEM attached
+ **/
+bool stmmac_xsk_any_rx_ring_enabled(struct net_device *dev)
+{
+	struct stmmac_priv *priv = netdev_priv(dev);
+	int i;
+
+	for (i = 0; i < priv->plat->num_queue_pairs; i++) {
+		if (xdp_get_umem_from_qid(dev, i))
+			return true;
+	}
+
+	return false;
 }
