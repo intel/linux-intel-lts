@@ -349,14 +349,14 @@ int tpm1_get_timeouts(struct tpm_chip *chip)
 	ssize_t rc;
 
 	rc = tpm1_getcap(chip, TPM_CAP_PROP_TIS_TIMEOUT, &cap, NULL,
-			 sizeof(cap.timeout));
+			sizeof(cap.timeout));
 	if (rc == TPM_ERR_INVALID_POSTINIT) {
 		if (tpm1_startup(chip))
 			return rc;
 
 		rc = tpm1_getcap(chip, TPM_CAP_PROP_TIS_TIMEOUT, &cap,
-				 "attempting to determine the timeouts",
-				 sizeof(cap.timeout));
+				"attempting to determine the timeouts",
+				sizeof(cap.timeout));
 	}
 
 	if (rc) {
@@ -418,8 +418,8 @@ int tpm1_get_timeouts(struct tpm_chip *chip)
 	chip->timeout_d = usecs_to_jiffies(timeout_eff[3]);
 
 	rc = tpm1_getcap(chip, TPM_CAP_PROP_TIS_DURATION, &cap,
-			 "attempting to determine the durations",
-			  sizeof(cap.duration));
+			"attempting to determine the durations",
+			sizeof(cap.duration));
 	if (rc)
 		return rc;
 
