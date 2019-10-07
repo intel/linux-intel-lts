@@ -66,11 +66,12 @@ void dal_dc_print(struct device *dev, struct dal_client *dc)
 static void dal_dc_update_read_state(struct dal_client *dc, ssize_t len)
 {
 	struct dal_device *ddev = dc->ddev;
+	struct dal_bh_msg *bh_msg = ddev->bh_fw_msg;
 
 	/* check BH msg magic, if it exists this is the header */
-	if (bh_msg_is_response(ddev->bh_fw_msg.msg, len)) {
+	if (bh_msg_is_response(bh_msg->msg, len)) {
 		struct bh_response_header *hdr =
-			(struct bh_response_header *)dc->ddev->bh_fw_msg.msg;
+			(struct bh_response_header *)bh_msg->msg;
 
 		dc->expected_msg_size_from_fw = hdr->h.length;
 		dev_dbg(&ddev->dev, "expected_msg_size_from_fw = %d bytes read = %zd\n",
@@ -99,7 +100,7 @@ static enum dal_intf dal_get_client_by_squence_number(struct dal_device *ddev)
 	if (!ddev->clients[DAL_INTF_KDI])
 		return DAL_INTF_CDEV;
 
-	head = (struct bh_response_header *)ddev->bh_fw_msg.msg;
+	head = (struct bh_response_header *)ddev->bh_fw_msg->msg;
 
 	dev_dbg(&ddev->dev, "msg seq = %llu\n", head->seq);
 
@@ -128,7 +129,7 @@ static void dal_recv_cb(struct mei_cl_device *cldev)
 	/*
 	 * read the msg from MEI
 	 */
-	len = mei_cldev_recv(cldev, ddev->bh_fw_msg.msg, DAL_MAX_BUFFER_SIZE);
+	len = mei_cldev_recv(cldev, ddev->bh_fw_msg->msg, DAL_MAX_BUFFER_SIZE);
 	if (len < 0) {
 		dev_err(&cldev->dev, "recv failed %zd\n", len);
 		return;
@@ -141,10 +142,10 @@ static void dal_recv_cb(struct mei_cl_device *cldev)
 	mutex_lock(&ddev->context_lock);
 
 	/* save msg len */
-	ddev->bh_fw_msg.len = len;
+	ddev->bh_fw_msg->len = len;
 
 	/* set to which interface the msg should be sent */
-	if (bh_msg_is_response(ddev->bh_fw_msg.msg, len)) {
+	if (bh_msg_is_response(ddev->bh_fw_msg->msg, len)) {
 		intf = dal_get_client_by_squence_number(ddev);
 		dev_dbg(&ddev->dev, "recv_cb(): Client set by sequence number\n");
 		dc = ddev->clients[intf];
@@ -171,10 +172,11 @@ static void dal_recv_cb(struct mei_cl_device *cldev)
 	 * save new msg in queue,
 	 * if the queue is full all new messages will be thrown
 	 */
-	ret = kfifo_in(&dc->read_queue, &ddev->bh_fw_msg.len, sizeof(len));
-	ret += kfifo_in(&dc->read_queue, ddev->bh_fw_msg.msg, len);
-	if (ret < len + sizeof(len))
+	ret = kfifo_in(&dc->read_queue, ddev->bh_fw_msg, sizeof(len) + len);
+	if (ret < len + sizeof(len)) {
+		/* FIXME: need to take care of partial message */
 		dev_dbg(&ddev->dev, "queue is full - MSG THROWN\n");
+	}
 
 	dal_dc_update_read_state(dc, len);
 
@@ -274,21 +276,20 @@ static int dal_wait_for_write(struct dal_device *ddev, struct dal_client *dc)
 static int dal_send_error_access_denied(struct dal_client *dc, const void *cmd)
 {
 	struct dal_device *ddev = dc->ddev;
-	struct bh_response_header res;
-	size_t len;
+	struct {
+		struct dal_bh_msg hdr;
+		struct bh_response_header res;
+	} __packed msg;
 	int ret;
+
+	memset(&msg, 0, sizeof(msg));
 
 	mutex_lock(&ddev->context_lock);
 
-	bh_prep_access_denied_response(cmd, &res);
-	len = sizeof(res);
+	msg.hdr.len = sizeof(msg.res);
+	bh_prep_access_denied_response(cmd, &msg.res);
 
-	if (kfifo_in(&dc->read_queue, &len, sizeof(len)) != sizeof(len)) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	if (kfifo_in(&dc->read_queue, &res, len) != len) {
+	if (kfifo_in(&dc->read_queue, &msg, sizeof(msg)) != sizeof(msg)) {
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -583,7 +584,7 @@ int dal_dc_setup(struct dal_device *ddev, enum dal_intf intf)
 		return  -ENOMEM;
 
 	/* each buffer contains data and length */
-	readq_sz = (DAL_MAX_BUFFER_SIZE + sizeof(ddev->bh_fw_msg.len)) *
+	readq_sz = (DAL_MAX_BUFFER_SIZE + sizeof(ddev->bh_fw_msg)) *
 		   DAL_BUFFERS_PER_CLIENT;
 	ret = kfifo_alloc(&dc->read_queue, readq_sz, GFP_KERNEL);
 	if (ret) {
@@ -674,7 +675,7 @@ static void dal_device_release(struct device *dev)
 {
 	struct dal_device *ddev = to_dal_device(dev);
 
-	kfree(ddev->bh_fw_msg.msg);
+	kfree(ddev->bh_fw_msg);
 	kfree(ddev);
 }
 
@@ -719,8 +720,10 @@ static int dal_probe(struct mei_cl_device *cldev,
 		goto err_unregister;
 	}
 
-	ddev->bh_fw_msg.msg = kzalloc(DAL_MAX_BUFFER_SIZE, GFP_KERNEL);
-	if (!ddev->bh_fw_msg.msg) {
+	ddev->bh_fw_msg = kzalloc(DAL_MAX_BUFFER_SIZE +
+				  sizeof(*ddev->bh_fw_msg),
+				  GFP_KERNEL);
+	if (!ddev->bh_fw_msg) {
 		ret = -ENOMEM;
 		goto err_unregister;
 	}

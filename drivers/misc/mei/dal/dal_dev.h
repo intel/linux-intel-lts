@@ -88,7 +88,7 @@ struct dal_client {
  */
 struct dal_bh_msg {
 	size_t len;
-	char *msg;
+	char msg[];
 };
 
 /**
@@ -126,7 +126,7 @@ struct dal_device {
 	wait_queue_head_t wq;
 	struct list_head writers;
 	struct dal_client *clients[DAL_CLIENTS_PER_DEVICE];
-	struct dal_bh_msg bh_fw_msg;
+	struct dal_bh_msg *bh_fw_msg;
 	struct dal_client *current_read_client;
 
 	struct mei_cl_device *cldev;
