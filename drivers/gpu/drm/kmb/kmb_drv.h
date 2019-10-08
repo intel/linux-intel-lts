@@ -28,16 +28,19 @@
 
 #include "kmb_regs.h"
 
+/*#define FCCTEST*/
 #define KMB_MAX_WIDTH			1920 /*max width in pixels */
 #define KMB_MAX_HEIGHT			1080 /*max height in pixels */
-#define KMB_LCD_DEFAULT_CLK		24000000
+#define KMB_LCD_DEFAULT_CLK		250000000
 #define KMB_MIPI_DEFAULT_CLK		24000000
+#define KMB_MIPI_DEFAULT_CFG_CLK	24000000
 
 struct kmb_drm_private {
 	struct drm_device		drm;
 	void __iomem			*lcd_mmio;
 	void __iomem			*mipi_mmio;
 	void __iomem			*msscam_mmio;
+	void __iomem			*cpr_mmio;
 	unsigned char			n_layers;
 	struct clk			*clk;
 	struct drm_crtc			crtc;
@@ -88,12 +91,23 @@ static inline void kmb_write_bits(struct kmb_drm_private *lcd,
 	reg_val |= (value << offset);
 	writel(reg_val, lcd->mmio + reg);
 }
+static inline void kmb_write(unsigned int reg, u32 value)
+{
+	writel(value, reg);
+}
+
+static inline u32 kmb_read(unsigned int reg)
+{
+	return readl(reg);
+}
 #endif
 
 static inline void kmb_write_lcd(struct kmb_drm_private *dev_p,
 		unsigned int reg, u32 value)
 {
+#ifdef LCD_TEST
 	writel(value, (dev_p->lcd_mmio + reg));
+#endif
 }
 
 static inline void kmb_write_mipi(struct kmb_drm_private *dev_p,
@@ -124,23 +138,30 @@ static inline void kmb_set_bitmask_msscam(struct kmb_drm_private *dev_p,
 
 static inline u32 kmb_read_lcd(struct kmb_drm_private *dev_p, unsigned int reg)
 {
+#ifdef LCD_TEST
 	return readl(dev_p->lcd_mmio + reg);
+#endif
+	return 0;
 }
 
 static inline void kmb_set_bitmask_lcd(struct kmb_drm_private *dev_p,
 		unsigned int reg, u32 mask)
 {
+#ifdef LCD_TEST
 	u32 reg_val = kmb_read_lcd(dev_p, reg);
 
 	kmb_write_lcd(dev_p, reg, (reg_val | mask));
+#endif
 }
 
 static inline void kmb_clr_bitmask_lcd(struct kmb_drm_private *dev_p,
 		unsigned int reg, u32 mask)
 {
+#ifdef LCD_TEST
 	u32 reg_val = kmb_read_lcd(dev_p, reg);
 
 	kmb_write_lcd(dev_p, reg, (reg_val & (~mask)));
+#endif
 }
 
 static inline u32 kmb_read_mipi(struct kmb_drm_private *dev_p, unsigned int reg)

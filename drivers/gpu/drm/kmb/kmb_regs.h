@@ -29,6 +29,7 @@
 #define ENABLE					 1
 #define DISABLE					 0
 /*from Data Book section 12.5.8.1 page 4322 */
+#define CPR_BASE_ADDR                           (0x20810000)
 #define MIPI_BASE_ADDR                          (0x20900000)
 /*from Data Book section 12.11.6.1 page 4972 */
 #define LCD_BASE_ADDR                           (0x20930000)
@@ -544,6 +545,9 @@
 #define   SET_MC_FIFO_RTHRESHOLD(dev, ctrl, vc, th)	\
 	kmb_write_bits_mipi(dev, MIPI_TXm_HS_MC_FIFO_RTHRESHOLDn(ctrl, vc/2), \
 			(vc % 2)*16, 16, th)
+#define MIPI_TX_HS_DMA_CFG			(0x1a8)
+#define MIPI_TX_HS_DMA_START_ADR_CHAN0		(0x1ac)
+#define MIPI_TX_HS_DMA_LEN_CHAN0		(0x1b4)
 
 /* MIPI IRQ */
 #define MIPI_CTRL_IRQ_STATUS0				(0x00)
@@ -572,6 +576,7 @@
 #define MIPI_CTRL_IRQ_CLEAR1				(0x014)
 #define   SET_MIPI_CTRL_IRQ_CLEAR1(dev, M, N)		\
 		kmb_set_bit_mipi(dev, MIPI_CTRL_IRQ_CLEAR1, M+N)
+#define MIPI_CTRL_DIG_LOOPBACK				(0x018)
 #define MIPI_TX_HS_IRQ_STATUS				(0x01c)
 #define   MIPI_TX_HS_IRQ_STATUSm(M)		(MIPI_TX_HS_IRQ_STATUS + \
 						HS_OFFSET(M))
@@ -649,12 +654,16 @@
 #define MIPI_TX_HS_TEST_PAT_CTRL			(0x230)
 #define   MIPI_TXm_HS_TEST_PAT_CTRL(M)			\
 				(MIPI_TX_HS_TEST_PAT_CTRL + HS_OFFSET(M))
-#define   TP_EN_VCm(M)					((M) * 0x04)
+#define   TP_EN_VCm(M)					(1 << ((M) * 0x04))
 #define   TP_SEL_VCm(M, N)				\
 				(N << (((M) * 0x04) + 1))
 #define   TP_STRIPE_WIDTH(M)				((M) << 16)
 #define MIPI_TX_HS_TEST_PAT_COLOR0			(0x234)
+#define   MIPI_TXm_HS_TEST_PAT_COLOR0(M)		\
+				(MIPI_TX_HS_TEST_PAT_COLOR0 + HS_OFFSET(M))
 #define MIPI_TX_HS_TEST_PAT_COLOR1			(0x238)
+#define   MIPI_TXm_HS_TEST_PAT_COLOR1(M)		\
+				(MIPI_TX_HS_TEST_PAT_COLOR1 + HS_OFFSET(M))
 
 /* D-PHY regs */
 #define DPHY_ENABLE				(0x100)
@@ -670,15 +679,25 @@
 #define   CLR_DPHY_INIT_CTRL0(dev, dphy, offset)	\
 			kmb_clr_bit_mipi(dev, DPHY_INIT_CTRL0, (dphy+offset))
 #define DPHY_INIT_CTRL2				(0x10c)
+#define DPHY_PLL_OBS0				(0x110)
+#define DPHY_PLL_OBS1				(0x114)
+#define DPHY_PLL_OBS2				(0x118)
 #define DPHY_FREQ_CTRL0_3			(0x11c)
+#define DPHY_FREQ_CTRL4_7			(0x120)
 #define   SET_DPHY_FREQ_CTRL0_3(dev, dphy, val)	\
 			kmb_write_bits_mipi(dev, DPHY_FREQ_CTRL0_3 \
 			+ ((dphy/4)*4), (dphy % 4) * 8, 6, val)
 
+#define DPHY_FORCE_CTRL0			(0x128)
+#define DPHY_FORCE_CTRL1			(0x12C)
 #define MIPI_DPHY_STAT0_3			(0x134)
+#define MIPI_DPHY_STAT4_7			(0x138)
 #define	  GET_STOPSTATE_DATA(dev, dphy)		\
 			(((kmb_read_mipi(dev, MIPI_DPHY_STAT0_3 + (dphy/4)*4)) \
 					>> (((dphy % 4)*8)+4)) & 0x03)
+
+#define MIPI_DPHY_ERR_STAT6_7			(0x14C)
+
 #define DPHY_TEST_CTRL0				(0x154)
 #define   SET_DPHY_TEST_CTRL0(dev, dphy)		\
 			kmb_set_bit_mipi(dev, DPHY_TEST_CTRL0, (dphy))
@@ -700,8 +719,15 @@
 			4, ((val) << (((dphy)%4)*8)))
 #define DPHY_TEST_DOUT0_3			(0x168)
 #define   GET_TEST_DOUT0_3(dev, dphy)		\
-			(kmb_read_mipi(dev, DPHY_TEST_DOUT0_3 + 4) \
+			(kmb_read_mipi(dev, DPHY_TEST_DOUT0_3) \
 			>> (((dphy)%4)*8) & 0xff)
+#define DPHY_TEST_DOUT4_7			(0x16C)
+#define   GET_TEST_DOUT4_7(dev, dphy)		\
+			(kmb_read_mipi(dev, DPHY_TEST_DOUT4_7) \
+			>> (((dphy)%4)*8) & 0xff)
+#define DPHY_TEST_DOUT8_9			(0x170)
+#define DPHY_TEST_DIN4_7			(0x160)
+#define DPHY_TEST_DIN8_9			(0x164)
 #define DPHY_PLL_LOCK				(0x188)
 #define   GET_PLL_LOCK(dev, dphy)		\
 			(kmb_read_mipi(dev, DPHY_PLL_LOCK) \
@@ -714,6 +740,10 @@
 #define   MIPI_COMMON			(1<<2)
 #define   MIPI_TX0			(1<<9)
 #define MSS_CAM_RSTN_CTRL		(0x14)
+#define MSS_CAM_RSTN_SET		(0x20)
+#define MSS_CAM_RSTN_CLR		(0x24)
 
+#define MSSCPU_CPR_CLK_EN		(0x0)
+#define MSSCPU_CPR_RST_EN		(0x10)
 #define BIT_MASK_16				(0xffff)
 #endif /* __KMB_REGS_H__ */

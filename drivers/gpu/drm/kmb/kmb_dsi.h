@@ -64,7 +64,6 @@ struct kmb_connector {
 #define MIPI_DPHY_DEFAULT_BIT_RATES 63
 
 /*DPHY Tx test codes */
-#define TEST_CODE_MULTIPLE_PHY_CTRL	0x03
 
 enum mipi_ctrl_num {
 	MIPI_CTRL0 = 0,
@@ -342,6 +341,7 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge);
 void kmb_plane_destroy(struct drm_plane *plane);
 void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p);
 void dsi_host_unregister(void);
+int kmb_dsi_hw_init(struct drm_device *dev);
 
 #define to_kmb_connector(x) container_of(x, struct kmb_connector, base)
 #define to_kmb_host(x) container_of(x, struct kmb_dsi_host, base)

@@ -42,6 +42,7 @@
 #include "kmb_drv.h"
 #include "kmb_plane.h"
 #include "kmb_regs.h"
+#include "kmb_dsi.h"
 
 static void kmb_crtc_cleanup(struct drm_crtc *crtc)
 {
@@ -94,23 +95,33 @@ static const struct drm_crtc_funcs kmb_crtc_funcs = {
 
 static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 {
-	struct drm_display_mode *m = &crtc->state->adjusted_mode;
 	struct drm_device *dev = crtc->dev;
+#ifdef LCD_TEST
+	struct drm_display_mode *m = &crtc->state->adjusted_mode;
 	struct videomode vm;
 	int vsync_start_offset;
 	int vsync_end_offset;
 	unsigned int ctrl = 0;
-
+#endif
+	/* initialize mipi */
+	kmb_dsi_hw_init(dev);
+#ifdef LCD_TEST
 	vm.vfront_porch = m->crtc_vsync_start - m->crtc_vdisplay;
 	vm.vback_porch = m->crtc_vtotal - m->crtc_vsync_end;
 	vm.vsync_len = m->crtc_vsync_end - m->crtc_vsync_start;
-	vm.hfront_porch = m->crtc_hsync_start - m->crtc_hdisplay;
+	//vm.hfront_porch = m->crtc_hsync_start - m->crtc_hdisplay;
+	vm.hfront_porch = 0;
 	vm.hback_porch = m->crtc_htotal - m->crtc_hsync_end;
 	vm.hsync_len = m->crtc_hsync_end - m->crtc_hsync_start;
 
 	vsync_start_offset = m->crtc_vsync_start - m->crtc_hsync_start;
 	vsync_end_offset = m->crtc_vsync_end - m->crtc_hsync_end;
 
+	DRM_INFO("%s : %dactive height= %d vbp=%d vfp=%d vsync-w=%d h-active=%d h-bp=%d h-fp=%d hysnc-l=%d\n",
+			__func__, __LINE__, m->crtc_vdisplay,
+			vm.vback_porch, vm.vfront_porch,
+			vm.vsync_len, m->crtc_hdisplay,
+			vm.hback_porch, vm.hfront_porch, vm.hsync_len);
 	kmb_write_lcd(dev->dev_private, LCD_V_ACTIVEHEIGHT,
 			m->crtc_vdisplay - 1);
 	kmb_write_lcd(dev->dev_private, LCD_V_BACKPORCH, vm.vback_porch - 1);
@@ -145,7 +156,7 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	kmb_write_lcd(dev->dev_private, LCD_CONTROL, ctrl);
 
 	kmb_write_lcd(dev->dev_private, LCD_TIMING_GEN_TRIG, ENABLE);
-
+#endif
 	/* TBD */
 	/* set clocks here */
 }
@@ -157,7 +168,7 @@ static void kmb_crtc_atomic_enable(struct drm_crtc *crtc,
 
 	clk_prepare_enable(lcd->clk);
 	kmb_crtc_mode_set_nofb(crtc);
-	drm_crtc_vblank_on(crtc);
+//	drm_crtc_vblank_on(crtc);
 }
 
 static void kmb_crtc_atomic_disable(struct drm_crtc *crtc,
@@ -168,7 +179,7 @@ static void kmb_crtc_atomic_disable(struct drm_crtc *crtc,
 	/* always disable planes on the CRTC that is being turned off */
 	drm_atomic_helper_disable_planes_on_crtc(old_state, false);
 
-	drm_crtc_vblank_off(crtc);
+//	drm_crtc_vblank_off(crtc);
 	clk_disable_unprepare(lcd->clk);
 }
 

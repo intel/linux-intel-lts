@@ -34,6 +34,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/clk.h>
 #include <drm/drm.h>
+#include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_probe_helper.h>
@@ -57,27 +58,27 @@ static irqreturn_t kmb_isr(int irq, void *arg);
 static struct clk *clk_lcd;
 static struct clk *clk_mipi;
 static struct clk *clk_msscam;
+static struct clk *clk_pll0out0;
 static struct clk *clk_mipi_ecfg;
 static struct clk *clk_mipi_cfg;
 
 struct drm_bridge *adv_bridge;
 
-static int kmb_display_clk_enable(void)
+int kmb_display_clk_enable(void)
 {
 	int ret = 0;
-
+#ifdef LCD_TEST
 	ret = clk_prepare_enable(clk_lcd);
 	if (ret) {
 		DRM_ERROR("Failed to enable LCD clock: %d\n", ret);
 		return ret;
 	}
-
+#endif
 	ret = clk_prepare_enable(clk_mipi);
 	if (ret) {
 		DRM_ERROR("Failed to enable MIPI clock: %d\n", ret);
 		return ret;
 	}
-
 /*	ret = clk_prepare_enable(clk_msscam);
 	if (ret) {
 		DRM_ERROR("Failed to enable MSSCAM clock: %d\n", ret);
@@ -178,19 +179,47 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		iounmap(dev_p->mipi_mmio);
 		return -ENOMEM;
 	}
+/*testing*/
+	if (!request_mem_region(CPR_BASE_ADDR, 100, "cpr")) {
+		DRM_ERROR("failed to reserve %s registers\n", "cpr");
+		return -ENOMEM;
+	}
+	dev_p->cpr_mmio = ioremap_nocache(CPR_BASE_ADDR, 0x100);
+	if (!dev_p->cpr_mmio) {
+		DRM_ERROR("failed to ioremap %s registers\n", "CPR");
+		release_mem_region(CPR_BASE_ADDR, 100);
+		return -ENOMEM;
+	}
 
+	if (IS_ERR(dev_p->msscam_mmio)) {
+		DRM_ERROR("failed to map MSSCAM registers\n");
+		iounmap(dev_p->lcd_mmio);
+		iounmap(dev_p->mipi_mmio);
+		return -ENOMEM;
+	}
+
+
+
+#define KMB_CLOCKS
+#ifdef KMB_CLOCKS
 	/* Enable display clocks*/
 	clk_lcd = clk_get(&pdev->dev, "clk_lcd");
 	if (IS_ERR(clk_lcd)) {
 		DRM_ERROR("clk_get() failed clk_lcd\n");
 		goto setup_fail;
 	}
-
 	clk_mipi = clk_get(&pdev->dev, "clk_mipi");
 	if (IS_ERR(clk_mipi)) {
 		DRM_ERROR("clk_get() failed clk_mipi\n");
 		goto setup_fail;
 	}
+	clk_pll0out0 = clk_get(&pdev->dev, "clk_pll0_out0");
+	if (IS_ERR(clk_pll0out0))
+		DRM_ERROR("clk_get() failed clk_pll0_out0\n");
+
+	if (clk_pll0out0)
+		DRM_INFO("Get clk_pll0out0 = %ld\n",
+				clk_get_rate(clk_pll0out0));
 
 	clk_mipi_ecfg = clk_get(&pdev->dev, "clk_mipi_ecfg");
 	if (IS_ERR(clk_mipi_ecfg)) {
@@ -204,8 +233,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 
-	ret = kmb_display_clk_enable();
-
+#ifdef LCD_TEST
 	/* Set LCD clock to 200 Mhz*/
 	DRM_INFO("Get clk_lcd before set = %ld\n", clk_get_rate(clk_lcd));
 	ret = clk_set_rate(clk_lcd, KMB_LCD_DEFAULT_CLK);
@@ -216,10 +244,11 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	DRM_INFO("Setting LCD clock to %d Mhz ret = %d\n",
 			KMB_LCD_DEFAULT_CLK/1000000, ret);
 	DRM_INFO("Get clk_lcd after set = %ld\n", clk_get_rate(clk_lcd));
-
+#endif
 	/* Set MIPI clock to 24 Mhz*/
 	DRM_INFO("Get clk_mipi before set = %ld\n", clk_get_rate(clk_mipi));
 	ret = clk_set_rate(clk_mipi, KMB_MIPI_DEFAULT_CLK);
+	DRM_INFO("Get clk_mipi after set = %ld\n", clk_get_rate(clk_mipi));
 	if (clk_get_rate(clk_mipi) != KMB_MIPI_DEFAULT_CLK) {
 		DRM_ERROR("failed to set to clk_mipi to %d\n",
 				KMB_MIPI_DEFAULT_CLK);
@@ -230,10 +259,10 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	DRM_INFO("Get clk_mipi after set = %ld\n", clk_get_rate(clk_mipi));
 
 	clk = clk_get_rate(clk_mipi_ecfg);
-	if (clk != KMB_MIPI_DEFAULT_CLK) {
+	if (clk != KMB_MIPI_DEFAULT_CFG_CLK) {
 		/* Set MIPI_ECFG clock to 24 Mhz*/
 		DRM_INFO("Get clk_mipi_ecfg before set = %ld\n", clk);
-		ret = clk_set_rate(clk_mipi_ecfg, KMB_MIPI_DEFAULT_CLK);
+		ret = clk_set_rate(clk_mipi_ecfg, KMB_MIPI_DEFAULT_CFG_CLK);
 		clk = clk_get_rate(clk_mipi_ecfg);
 		if (clk != KMB_MIPI_DEFAULT_CLK) {
 			DRM_ERROR("failed to set to clk_mipi_ecfg to %d\n",
@@ -242,27 +271,29 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		}
 		DRM_INFO("Setting MIPI_ECFG clock tp %d Mhz ret = %d\n",
 				KMB_MIPI_DEFAULT_CLK/1000000, ret);
-		DRM_INFO("Get clk_mipi_ecfg after set = %ld\n", clk);
 	}
 
 	clk = clk_get_rate(clk_mipi_cfg);
-	if (clk != KMB_MIPI_DEFAULT_CLK) {
+	if (clk != KMB_MIPI_DEFAULT_CFG_CLK) {
 		/* Set MIPI_CFG clock to 24 Mhz*/
 		DRM_INFO("Get clk_mipi_cfg before set = %ld\n", clk);
 		ret = clk_set_rate(clk_mipi_cfg, 24000000);
 		clk = clk_get_rate(clk_mipi_cfg);
-		if (clk != KMB_MIPI_DEFAULT_CLK) {
+		if (clk != KMB_MIPI_DEFAULT_CFG_CLK) {
 			DRM_ERROR("failed to set to clk_mipi_cfg to %d\n",
-					KMB_MIPI_DEFAULT_CLK);
+					KMB_MIPI_DEFAULT_CFG_CLK);
 			goto setup_fail;
 		}
 		DRM_INFO("Setting MIPI_CFG clock tp 24Mhz ret = %d\n", ret);
 		DRM_INFO("Get clk_mipi_cfg after set = %ld\n", clk);
 	}
 
+	ret = kmb_display_clk_enable();
+
 	/* enable MSS_CAM_CLK_CTRL for MIPI TX and LCD */
-	kmb_set_bitmask_msscam(dev_p, MSS_CAM_CLK_CTRL, 0xfff);
-	kmb_set_bitmask_msscam(dev_p, MSS_CAM_RSTN_CTRL, 0xfff);
+	kmb_set_bitmask_msscam(dev_p, MSS_CAM_CLK_CTRL, 0x1fff);
+	kmb_set_bitmask_msscam(dev_p, MSS_CAM_RSTN_CTRL, 0xffffffff);
+#endif //KMB_CLOCKS
 #ifdef WIP
 	/* Register irqs here - section 17.3 in databook
 	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
@@ -312,6 +343,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 
+
 	/* Initialize MIPI DSI */
 	ret = kmb_dsi_init(drm, adv_bridge);
 	if (ret) {
@@ -340,9 +372,17 @@ setup_fail:
 	return ret;
 }
 
+int kmb_atomic_helper_check(struct drm_device *dev,
+		struct drm_atomic_state *state)
+{
+	if (!state)
+		return 0;
+	return drm_atomic_helper_check(dev, state);
+}
+
 static const struct drm_mode_config_funcs kmb_mode_config_funcs = {
 	.fb_create = drm_gem_fb_create,
-	.atomic_check = drm_atomic_helper_check,
+	.atomic_check = kmb_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
@@ -504,13 +544,14 @@ static int kmb_probe(struct platform_device *pdev)
 	 *  afterwards and the bridge can be successfully attached.
 	 */
 	adv_bridge =  kmb_dsi_host_bridge_init(dev);
+#ifndef FCCTEST
 	if (adv_bridge == ERR_PTR(-EPROBE_DEFER))
 		return -EPROBE_DEFER;
 	else if (IS_ERR(adv_bridge)) {
 		DRM_ERROR("probe failed to initialize DSI host bridge\n");
 		return PTR_ERR(adv_bridge);
 	}
-
+#endif
 	/* Create DRM device */
 	drm = drm_dev_alloc(&kmb_driver, dev);
 	if (IS_ERR(drm))
@@ -535,13 +576,6 @@ static int kmb_probe(struct platform_device *pdev)
 
 	/* Set the CRTC's port so that the encoder component can find it */
 	lcd->crtc.port = of_graph_get_port_by_id(dev->of_node, 0);
-
-	ret = drm_vblank_init(drm, drm->mode_config.num_crtc);
-	if (ret < 0) {
-		DRM_ERROR("failed to initialize vblank\n");
-		goto err_vblank;
-	}
-
 	drm_mode_config_reset(drm);
 	drm_kms_helper_poll_init(drm);
 
@@ -551,13 +585,13 @@ static int kmb_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_register;
 
-	drm_fbdev_generic_setup(drm, 32);
-
+#ifndef FCCTEST
+//	drm_fbdev_generic_setup(drm, 32);
+#endif
 	return 0;
 
 err_register:
 	drm_kms_helper_poll_fini(drm);
-err_vblank:
 	pm_runtime_disable(drm->dev);
 err_free:
 	drm_mode_config_cleanup(drm);

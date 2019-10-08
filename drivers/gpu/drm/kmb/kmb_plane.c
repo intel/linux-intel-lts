@@ -134,7 +134,11 @@ static int kmb_plane_atomic_check(struct drm_plane *plane,
 	struct drm_framebuffer *fb;
 	int ret;
 
+
 	fb = state->fb;
+
+	if (!fb || !state->crtc)
+		return 0;
 
 	ret = check_pixel_format(plane, fb->format->format);
 	if (ret)
@@ -144,6 +148,38 @@ static int kmb_plane_atomic_check(struct drm_plane *plane,
 		return -EINVAL;
 	return 0;
 }
+
+static void kmb_plane_atomic_disable(struct drm_plane *plane,
+				struct drm_plane_state *state)
+{
+	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
+	int ctrl = 0;
+	struct kmb_drm_private *dev_p;
+	int plane_id;
+
+	dev_p = plane->dev->dev_private;
+	plane_id = kmb_plane->id;
+
+	switch (plane_id) {
+	case LAYER_0:
+		ctrl = LCD_CTRL_VL1_ENABLE;
+		break;
+	case LAYER_1:
+		ctrl = LCD_CTRL_VL2_ENABLE;
+		break;
+	case LAYER_2:
+		ctrl = LCD_CTRL_GL1_ENABLE;
+		break;
+	case LAYER_3:
+		ctrl = LCD_CTRL_GL2_ENABLE;
+		break;
+	}
+
+	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
+			~LCD_DMA_LAYER_ENABLE);
+	kmb_write_lcd(dev_p, LCD_CONTROL, ~ctrl);
+}
+
 
 unsigned int set_pixel_format(u32 format)
 {
@@ -258,6 +294,7 @@ unsigned int set_bits_per_pixel(const struct drm_format_info *format)
 	return val;
 }
 
+#ifdef LCD_TEST
 static void config_csc(struct kmb_drm_private *dev_p, int plane_id)
 {
 	/*YUV to RGB conversion using the fixed matrix csc_coef_lcd */
@@ -275,25 +312,37 @@ static void config_csc(struct kmb_drm_private *dev_p, int plane_id)
 	kmb_write_lcd(dev_p, LCD_LAYERn_CSC_OFF3(plane_id), csc_coef_lcd[11]);
 	kmb_set_bitmask_lcd(dev_p, LCD_LAYERn_CFG(plane_id), LCD_LAYER_CSC_EN);
 }
+#endif
 
 static void kmb_plane_atomic_update(struct drm_plane *plane,
 				    struct drm_plane_state *state)
 {
-	struct drm_framebuffer *fb = plane->state->fb;
+#ifdef LCD_TEST
+	struct drm_framebuffer *fb;
 	struct kmb_drm_private *dev_p;
 	dma_addr_t addr;
 	unsigned int width;
 	unsigned int height;
 	unsigned int dma_len;
-	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
+	struct kmb_plane *kmb_plane;
 	unsigned int dma_cfg;
 	unsigned int ctrl = 0, val = 0, out_format = 0;
 	unsigned int src_w, src_h, crtc_x, crtc_y;
-	unsigned char plane_id = kmb_plane->id;
-	int num_planes = fb->format->num_planes;
+	unsigned char plane_id;
+	int num_planes;
 
+	if (!plane || !plane->state || !state)
+		return;
+
+	fb = plane->state->fb;
 	if (!fb)
 		return;
+
+	num_planes = fb->format->num_planes;
+	kmb_plane = to_kmb_plane(plane);
+	plane_id = kmb_plane->id;
+
+
 
 	dev_p = plane->dev->dev_private;
 
@@ -426,11 +475,13 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	/* do not interleave RGB channels for mipi Tx compatibility */
 	out_format |= LCD_OUTF_MIPI_RGB_MODE;
 	kmb_write_lcd(dev_p, LCD_OUT_FORMAT_CFG, out_format);
+#endif
 }
 
 static const struct drm_plane_helper_funcs kmb_plane_helper_funcs = {
 	.atomic_check = kmb_plane_atomic_check,
 	.atomic_update = kmb_plane_atomic_update,
+	.atomic_disable = kmb_plane_atomic_disable
 };
 
 void kmb_plane_destroy(struct drm_plane *plane)
