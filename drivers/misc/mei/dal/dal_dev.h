@@ -55,6 +55,7 @@ enum dal_dev_type {
  * @wrlink: link in the writers list
  * @read_queue: queue of received messages from DAL FW
  * @intf: client interface - user space or kernel space
+ * @read_wq: reading wait queue.
  *
  * @seq: the sequence number of the last message sent (in kernel space API only)
  *       When a message is received from DAL FW, we use this sequence number
@@ -72,6 +73,7 @@ struct dal_client {
 	struct list_head wrlink;
 	struct kfifo read_queue;
 	enum dal_intf intf;
+	wait_queue_head_t read_wq;
 
 	u64 seq;
 	u32 expected_msg_size_from_fw;
