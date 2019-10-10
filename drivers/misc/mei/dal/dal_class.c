@@ -189,11 +189,11 @@ static void dal_recv_cb(struct mei_cl_device *cldev)
 		dev_dbg(&ddev->dev, "recv_cb(): setting CURRENT_READER to NULL\n");
 		ddev->current_read_client = NULL;
 	}
-out:
-	/* wake up all clients waiting for read or write */
-	if (wq_has_sleeper(&ddev->wq))
-		wake_up_interruptible(&ddev->wq);
 
+	/* wake up reader */
+	if (wq_has_sleeper(&dc->read_wq))
+		wake_up_interruptible(&dc->read_wq);
+out:
 	mutex_unlock(&ddev->context_lock);
 }
 
@@ -297,8 +297,11 @@ static int dal_send_error_access_denied(struct dal_client *dc, const void *cmd)
 		ret = -ENOMEM;
 		goto out;
 	}
-	ret = 0;
 
+	if (wq_has_sleeper(&dc->read_wq))
+		wake_up_interruptible(&dc->read_wq);
+
+	ret = 0;
 out:
 	mutex_unlock(&ddev->context_lock);
 	return ret;
@@ -524,7 +527,7 @@ int dal_wait_for_read(struct dal_client *dc)
 		dc->intf, kfifo_is_empty(&dc->read_queue));
 
 	/* wait until there is data in the read_queue */
-	ret = wait_event_interruptible(ddev->wq,
+	ret = wait_event_interruptible(dc->read_wq,
 				       !kfifo_is_empty(&dc->read_queue) ||
 					ddev->is_device_removed);
 
@@ -598,7 +601,9 @@ int dal_dc_setup(struct dal_device *ddev, enum dal_intf intf)
 	dc->intf = intf;
 	dc->ddev = ddev;
 	INIT_LIST_HEAD(&dc->wrlink);
+	init_waitqueue_head(&dc->read_wq);
 	ddev->clients[intf] = dc;
+
 	return 0;
 }
 
@@ -647,6 +652,9 @@ struct device *dal_find_dev(enum dal_dev_type device_id)
 static int dal_remove(struct mei_cl_device *cldev)
 {
 	struct dal_device *ddev = mei_cldev_get_drvdata(cldev);
+	struct dal_client *dc;
+
+	unsigned int i;
 
 	if (!ddev)
 		return 0;
@@ -655,10 +663,16 @@ static int dal_remove(struct mei_cl_device *cldev)
 
 	ddev->is_device_removed = 1;
 	/* make sure the above is set */
-	smp_mb();
+
 	/* wakeup write waiters so we can unload */
-	if (waitqueue_active(&ddev->wq))
+	if (wq_has_sleeper(&ddev->wq))
 		wake_up_interruptible(&ddev->wq);
+
+	for (i = 0; i < ARRAY_SIZE(ddev->clients); i++) {
+		dc = ddev->clients[i];
+		if (dc && wq_has_sleeper(&dc->read_wq))
+			wake_up_interruptible(&dc->read_wq);
+	}
 
 	mei_cldev_set_drvdata(cldev, NULL);
 
