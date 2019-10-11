@@ -292,6 +292,9 @@ static int shadow_context_status_change(struct notifier_block *nb,
 	unsigned long flags;
 
 	if (!is_gvt_request(req)) {
+		if (!i915_modparams.enable_context_restore)
+			return NOTIFY_OK;
+
 		spin_lock_irqsave(&scheduler->mmio_context_lock, flags);
 		if (action == INTEL_CONTEXT_SCHEDULE_IN &&
 		    scheduler->engine_owner[ring_id]) {
@@ -311,6 +314,12 @@ static int shadow_context_status_change(struct notifier_block *nb,
 
 	switch (action) {
 	case INTEL_CONTEXT_SCHEDULE_IN:
+		if (!i915_modparams.enable_context_restore) {
+			schedule_work(&gvt->active_hp_work);
+			atomic_set(&workload->shadow_ctx_active, 1);
+			break;
+		}
+
 		spin_lock_irqsave(&scheduler->mmio_context_lock, flags);
 		if (workload->vgpu != scheduler->engine_owner[ring_id]) {
 			/* Switch ring from host to vGPU or vGPU to vGPU. */
@@ -326,11 +335,13 @@ static int shadow_context_status_change(struct notifier_block *nb,
 		atomic_set(&workload->shadow_ctx_active, 1);
 		break;
 	case INTEL_CONTEXT_SCHEDULE_OUT:
-		save_ring_hw_state(workload->vgpu, ring_id);
+		if (i915_modparams.enable_context_restore)
+			save_ring_hw_state(workload->vgpu, ring_id);
 		atomic_set(&workload->shadow_ctx_active, 0);
 		break;
 	case INTEL_CONTEXT_SCHEDULE_PREEMPTED:
-		save_ring_hw_state(workload->vgpu, ring_id);
+		if (i915_modparams.enable_context_restore)
+			save_ring_hw_state(workload->vgpu, ring_id);
 		break;
 	default:
 		WARN_ON(1);

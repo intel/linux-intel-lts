@@ -465,6 +465,11 @@ void intel_vgpu_stop_schedule(struct intel_vgpu *vgpu)
 		scheduler->current_vgpu = NULL;
 	}
 
+	if (!i915_modparams.enable_context_restore) {
+		mutex_unlock(&vgpu->gvt->sched_lock);
+		return;
+	}
+
 	intel_runtime_pm_get(dev_priv);
 	spin_lock_bh(&scheduler->mmio_context_lock);
 	for (ring_id = 0; ring_id < I915_NUM_ENGINES; ring_id++) {
@@ -475,5 +480,6 @@ void intel_vgpu_stop_schedule(struct intel_vgpu *vgpu)
 	}
 	spin_unlock_bh(&scheduler->mmio_context_lock);
 	intel_runtime_pm_put(dev_priv);
+
 	mutex_unlock(&vgpu->gvt->sched_lock);
 }
