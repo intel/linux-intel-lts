@@ -84,7 +84,8 @@ struct drm_printer;
 	param(bool, enable_gvt, false) \
 	param(int, gvt_workload_priority, 0) \
 	param(unsigned long, avail_planes_per_pipe, 0) \
-	param(unsigned long, domain_plane_owners, 0)
+	param(unsigned long, domain_plane_owners, 0) \
+	param(bool, enable_context_restore, false)
 
 
 #define MEMBER(T, member, ...) T member;
