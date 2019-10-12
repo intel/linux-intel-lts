@@ -291,10 +291,7 @@ static int ehl_common_data(struct pci_dev *pdev,
 
 	plat->rx_queues_to_use = 8;
 	plat->tx_queues_to_use = 8;
-	if (plat->is_hfpga)
-		plat->clk_ptp_rate = 20000000;
-	else
-		plat->clk_ptp_rate = 200000000;
+
 	ret = intel_mgbe_common_data(pdev, plat);
 	if (ret)
 		return ret;
@@ -309,6 +306,9 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	plat->phy_addr = 0;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 
+	/* Set PTP clock rate for EHL as 200MHz */
+	plat->clk_ptp_rate = 200000000;
+
 	return ehl_common_data(pdev, plat);
 }
 
@@ -322,6 +322,9 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 	plat->bus_id = 1;
 	plat->phy_addr = 0;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII;
+
+	/* Set PTP clock rate for EHL as 200MHz */
+	plat->clk_ptp_rate = 200000000;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -357,6 +360,12 @@ static int ehl_pse0_common_data(struct pci_dev *pdev,
 	plat->bus_id = 2;
 	plat->phy_addr = 1;
 	ehl_pse_work_around(pdev, plat);
+
+	if (plat->is_hfpga)
+		plat->clk_ptp_rate = 20000000;
+	else
+		plat->clk_ptp_rate = 256000000;
+
 	return ehl_common_data(pdev, plat);
 }
 
@@ -388,6 +397,12 @@ static int ehl_pse1_common_data(struct pci_dev *pdev,
 	plat->bus_id = 3;
 	plat->phy_addr = 1;
 	ehl_pse_work_around(pdev, plat);
+
+	if (plat->is_hfpga)
+		plat->clk_ptp_rate = 20000000;
+	else
+		plat->clk_ptp_rate = 256000000;
+
 	return ehl_common_data(pdev, plat);
 }
 
