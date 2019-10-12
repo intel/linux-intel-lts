@@ -1096,8 +1096,15 @@ static int workload_thread(void *priv)
 
 		gvt_dbg_sched("ring id %d wait workload %p\n",
 				workload->ring_id, workload);
-		i915_request_wait(workload->req, 0, MAX_SCHEDULE_TIMEOUT);
 
+		ret = i915_request_wait(workload->req, 0,
+				MAX_SCHEDULE_TIMEOUT);
+
+		gvt_dbg_sched("i915_wait_request %p returns %d\n",
+				workload, ret);
+
+		if (ret >= 0 && workload->status == -EINPROGRESS)
+			workload->status = 0;
 		/*
 		 * increased guilty_count means that this request triggerred
 		 * a GPU reset, so we need to notify the guest about the
