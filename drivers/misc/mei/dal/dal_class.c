@@ -233,6 +233,12 @@ err:
 	return ret;
 }
 
+static inline struct dal_client *dal_current_writer(struct dal_device *ddev)
+{
+	return list_first_entry_or_null(&ddev->writers,
+					struct dal_client, wrlink);
+}
+
 /**
  * dal_wait_for_write - wait until the dal client is the first writer
  *			in writers queue
@@ -247,9 +253,7 @@ err:
 static int dal_wait_for_write(struct dal_device *ddev, struct dal_client *dc)
 {
 	if (wait_event_interruptible(ddev->wq,
-				     list_first_entry(&ddev->writers,
-						      struct dal_client,
-						      wrlink) == dc ||
+				     dal_current_writer(ddev) == dc ||
 				     ddev->is_device_removed)) {
 		return -ERESTARTSYS;
 	}
@@ -415,8 +419,7 @@ ssize_t dal_write(struct dal_client *dc, const void *buf, size_t count, u64 seq)
 	dev_dbg(dev, "current_write_client seq = %llu\n", dc->seq);
 
 	/* put dc in the writers queue if not already set */
-	if (list_first_entry_or_null(&ddev->writers,
-				     struct dal_client, wrlink) != dc) {
+	if (dal_current_writer(ddev) != dc) {
 		/* adding client to write queue - this is the first fragment */
 		const struct bh_command_header *hdr;
 
@@ -491,7 +494,7 @@ ssize_t dal_write(struct dal_client *dc, const void *buf, size_t count, u64 seq)
 out:
 	/* remove current dc from the queue */
 	list_del_init(&dc->wrlink);
-	if (list_empty(&ddev->writers))
+	if (!list_empty(&ddev->writers))
 		wake_up_interruptible(&ddev->wq);
 
 write_more:
