@@ -260,6 +260,83 @@ static int dw8250_handle_irq(struct uart_port *p)
 	return 0;
 }
 
+static void dw8250_set_termios_keembay(struct uart_port *p,
+				       struct ktermios *termios,
+				       struct ktermios *old)
+{
+	unsigned int baud = tty_termios_baud_rate(termios);
+	struct dw8250_data *d = p->private_data;
+	long rate, new_rate;
+	int ret;
+
+	if (IS_ERR(d->clk))
+		goto out;
+
+	if (baud == 0)
+		goto out;
+
+	/*
+	 * Intel Keem Bay SoC ARM Trusted Firmware provides a limited
+	 * number of discrete clock rates. The clock rate is selected based
+	 * on equations given in DW_apb_uart_db_v4.01a_Oct2016.pdf page 55.
+	 *
+	 * (1) baud_rate = (baudclk) / (16 * DIVISOR)
+	 * (2) DIVISOR   = (baudclk) / (16 * baud_rate)
+	 * (3) baudclk   = baud_rate * 16 * DIVISOR
+	 *
+	 * where DIVISOR is number in hexadecimal to program DLL and DLH
+	 *
+	 * Percentage ERROR = |baud_rate - baud_rate_selected| * 100 / baud_rate
+	 */
+	rate = clk_get_rate(d->clk);
+
+	switch (baud) {
+	/* This is the best clock rate available for 2M, 3M and 4M, 4% error. */
+	case 4000000:
+	case 3000000:
+	case 2000000:
+	case 460800:
+	case 230400:
+		new_rate = 200000000;
+		break;
+	case 3500000:
+	case 2500000:
+		new_rate = 280000000;
+		break;
+	case 1152000:
+	case 576000:
+		new_rate = 500000000;
+		break;
+	case 1000000:
+	case 921600:
+		new_rate = 400000000;
+		break;
+	case 1500000:
+	case 500000:
+	case 50 ... 115200:
+		new_rate = 24000000;
+		break;
+	default:
+		goto out;
+	}
+
+	if (rate != new_rate) {
+		clk_disable_unprepare(d->clk);
+		ret = clk_set_rate(d->clk, new_rate);
+		clk_prepare_enable(d->clk);
+
+		if (!ret)
+			p->uartclk = new_rate;
+	}
+
+out:
+	p->status &= ~UPSTAT_AUTOCTS;
+	if (termios->c_cflag & CRTSCTS)
+		p->status |= UPSTAT_AUTOCTS;
+
+	serial8250_do_set_termios(p, termios, old);
+}
+
 static void dw8250_set_termios(struct uart_port *p, struct ktermios *termios,
 			       struct ktermios *old)
 {
@@ -351,8 +428,12 @@ static void dw8250_quirks(struct uart_port *p, struct dw8250_data *data)
 			p->serial_in = dw8250_serial_in32be;
 			p->serial_out = dw8250_serial_out32be;
 		}
+
 		if (of_device_is_compatible(np, "marvell,armada-38x-uart"))
 			p->serial_out = dw8250_serial_out38x;
+
+		if (of_device_is_compatible(np, "intel,keembay-uart"))
+			p->set_termios = dw8250_set_termios_keembay;
 
 	} else if (acpi_dev_present("APMC0D08", NULL, -1)) {
 		p->iotype = UPIO_MEM32;
@@ -625,6 +706,7 @@ static const struct of_device_id dw8250_of_match[] = {
 	{ .compatible = "cavium,octeon-3860-uart" },
 	{ .compatible = "marvell,armada-38x-uart" },
 	{ .compatible = "renesas,rzn1-uart" },
+	{ .compatible = "intel,keembay-uart" },
 	{ /* Sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, dw8250_of_match);
