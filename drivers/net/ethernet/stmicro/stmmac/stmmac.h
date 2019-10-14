@@ -400,7 +400,8 @@ int stmmac_queue_pair_disable(struct stmmac_priv *priv, u16 qid);
 void stmmac_rx_vlan(struct net_device *dev, struct sk_buff *skb);
 void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			    struct dma_desc *np, struct sk_buff *skb);
-
+int stmmac_set_tbs_launchtime(struct stmmac_priv *priv, struct dma_desc *desc,
+			      u64 tx_time);
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,
 			 struct ethtool_test *etest, u64 *buf);

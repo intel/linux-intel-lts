@@ -2725,7 +2725,7 @@ static void stmmac_configure_cbs(struct stmmac_priv *priv)
 	}
 }
 
-static int stmmac_set_tbs_launchtime(struct stmmac_priv *priv,
+int stmmac_set_tbs_launchtime(struct stmmac_priv *priv,
 				     struct dma_desc *desc,
 				     u64 tx_time)
 {
