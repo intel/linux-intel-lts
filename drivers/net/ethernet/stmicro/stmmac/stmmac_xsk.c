@@ -730,6 +730,14 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 
 		stmmac_set_desc_addr(priv, tx_desc, dma);
 
+		if (stmmac_enabled_xdp(priv) && desc.txtime > 0) {
+			if (stmmac_set_tbs_launchtime(priv, tx_desc,
+						      desc.txtime)) {
+				netdev_warn(priv->dev, "Launch time setting"
+						       "failed\n");
+			}
+		}
+
 		stmmac_prepare_tx_desc(priv, tx_desc, /* Tx descriptor */
 				       1, /* is first descriptor */
 				       desc.len,
