@@ -957,17 +957,16 @@ static int dapm_new_mixer(struct snd_soc_dapm_widget *w)
 
 	/* add kcontrol */
 	for (i = 0; i < w->num_kcontrols; i++) {
+		if (!w->kcontrols[i]) {
+			ret = dapm_create_or_share_kcontrol(w, i);
+			if (ret < 0)
+				return ret;
+		}
 		/* match name */
 		snd_soc_dapm_widget_for_each_source_path(w, path) {
 			/* mixer/mux paths name must match control name */
 			if (path->name != (char *)w->kcontrol_news[i].name)
 				continue;
-
-			if (!w->kcontrols[i]) {
-				ret = dapm_create_or_share_kcontrol(w, i);
-				if (ret < 0)
-					return ret;
-			}
 
 			dapm_kcontrol_add_path(w->kcontrols[i], path);
 
