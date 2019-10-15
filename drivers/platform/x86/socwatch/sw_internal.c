@@ -57,6 +57,7 @@
 #include "sw_mem.h"
 #include "sw_kernel_defines.h"
 #include "sw_telem.h"
+#include "sw_cta.h"
 #include "sw_internal.h"
 
 bool sw_check_output_buffer_params(
@@ -244,4 +245,9 @@ int sw_setup_telem(u64 addrs[3])
 void sw_destroy_telem(void)
 {
 	destroy_telem();
+}
+
+struct _sw_aggregator_msg const *sw_get_cta_aggregators(void)
+{
+	return sw_cta_aggregators();
 }

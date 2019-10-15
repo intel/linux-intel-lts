@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2014 - 2019 Intel Corporation.
+ * Copyright(c) 2019 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -24,7 +24,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2014 - 2019 Intel Corporation.
+ * Copyright(c) 2019 Intel Corporation.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -52,30 +52,18 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef __SW_CTA_H__
+#define __SW_CTA_H__
 
-/*
- * Description: file containing memory management routines
- * used by the power driver.
- */
 
-#ifndef _SW_MEM_H_
-#define _SW_MEM_H_ 1
+bool sw_cta_register(void);
+bool sw_cta_unregister(void);
 
-#include "sw_types.h"
+void sw_read_cta_info(char *dst_vals, int cpu,
+			const struct sw_driver_io_descriptor *descriptor,
+			u16 counter_size_in_bytes);
+bool sw_cta_available(void);
 
-void *sw_kmalloc(size_t size, unsigned int flags);
-void sw_kfree(const void *obj);
-/*
- * Allocate free pages.
- */
-unsigned long sw_allocate_pages(unsigned int flags,
-	unsigned int alloc_size_in_bytes);
-/*
- * Free up previously allocated pages.
- */
-void sw_release_pages(unsigned long addr, unsigned int alloc_size_in_bytes);
+struct _sw_aggregator_msg *sw_cta_aggregators(void);
 
-u64 sw_get_total_bytes_alloced(void);
-u64 sw_get_max_bytes_alloced(void);
-u64 sw_get_curr_bytes_alloced(void);
-#endif /* _SW_MEM_H_ */
+#endif // __SW_CTA_H__

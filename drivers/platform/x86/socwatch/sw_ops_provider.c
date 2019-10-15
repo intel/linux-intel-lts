@@ -66,6 +66,7 @@
 #include "sw_kernel_defines.h"
 #include "sw_hardware_io.h"
 #include "sw_telem.h"
+#include "sw_cta.h"
 #include "sw_ops_provider.h"
 
 /*
@@ -132,7 +133,8 @@ enum sw_io_type {
 	SW_IO_TELEM		= 11,
 	SW_IO_PCH_MAILBOX	= 12,
 	SW_IO_MAILBOX		= 13,
-	SW_IO_MAX		= 14,
+	SW_IO_CTA		= 14,
+	SW_IO_MAX		= 15,
 };
 
 /*
@@ -293,6 +295,14 @@ static const struct sw_hw_ops s_hw_ops[] = {
 		.reset = &sw_mailbox_descriptor_reset_func_i,
 		/* Other fields are don't care (will be set to NULL) */
 	},
+        [SW_IO_CTA] = {
+		.name = "CTA",
+		.reg = &sw_cta_register,
+		.read = &sw_read_cta_info,
+		.available = &sw_cta_available,
+		.unreg = &sw_cta_unregister,
+		/* Other fields are don't care (will be set to NULL) */
+        },
 	[SW_IO_MAX] = {
 		.name = NULL,
 		/* Other fields are don't care (will be set to NULL) */
@@ -1141,5 +1151,12 @@ int sw_register_ops_providers(void)
 
 void sw_free_ops_providers(void)
 {
-	/* NOP */
+	size_t idx = 0;
+	const struct sw_hw_ops *op = NULL;
+
+	FOR_EACH_HW_OP(idx, op) {
+		if (op->unreg) {
+			(*op->unreg)(); /* Return value is don't care */
+		}
+	}
 }

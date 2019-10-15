@@ -110,6 +110,7 @@ enum sw_ioctl_cmd {
 	sw_ioctl_cmd_config_continuous,
 	sw_ioctl_cmd_read_continuous,
 	sw_ioctl_cmd_telem_bar,
+	sw_ioctl_cmd_avail_cta_aggregators,
 };
 /*
  * The actual IOCTL commands.
@@ -185,6 +186,14 @@ enum sw_ioctl_cmd {
 		CTL_CODE(POWER_I_CONF_TYPE, 0x914, METHOD_BUFFERED, FILE_ANY_ACCESS)
 	#define PW_IOCTL_READ_CONTINUOUS \
 		CTL_CODE(POWER_I_CONF_TYPE, 0x915, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define PW_IOCTL_GET_AGGREGATOR_BAR \
+		CTL_CODE(POWER_I_CONF_TYPE, 0x916, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define PW_IOCTL_SET_DPST_INTERVAL \
+		CTL_CODE(POWER_I_CONF_TYPE, 0x917, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define PW_IOCTL_GET_AGGREGATOR_INFO \
+		CTL_CODE(POWER_I_CONF_TYPE, 0x918, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define PW_IOCTL_GET_AGGREGATOR_SIZE \
+		CTL_CODE(POWER_I_CONF_TYPE, 0x919, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #elif !defined(__APPLE__)
 	#define PW_IOCTL_CONFIG	\
@@ -219,6 +228,9 @@ enum sw_ioctl_cmd {
 		_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_read_continuous, struct sw_driver_ioctl_arg *)
 	#define PW_IOCTL_SET_TELEM_BAR \
 		_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_telem_bar, struct sw_driver_ioctl_arg *)
+	#define PW_IOCTL_AVAIL_CTA_AGGREGATORS \
+		_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_avail_cta_aggregators, struct sw_driver_ioctl_arg *)
+
 #else /* __APPLE__ */
 	#define PW_IOCTL_CONFIG \
 		_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_config, struct sw_driver_ioctl_arg)
@@ -252,7 +264,9 @@ enum sw_ioctl_cmd {
 	#define PW_IOCTL_READ_CONTINUOUS \
 		_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_read_continuous, struct sw_driver_ioctl_arg)
 	#define PW_IOCTL_SET_TELEM_BAR \
-		_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_telem_bar, struct sw_driver_ioctl_arg *)
+		_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_telem_bar, struct sw_driver_ioctl_arg)
+	#define PW_IOCTL_AVAIL_CTA_AGGREGATORS \
+		_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_avail_cta_aggregators, struct sw_driver_ioctl_arg)
 #endif /* __APPLE__ */
 
 /*
@@ -295,5 +309,7 @@ enum sw_ioctl_cmd {
 		_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_read_continuous, compat_uptr_t)
 	#define PW_IOCTL_SET_TELEM_BAR32 \
 		_IOW(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_telem_bar, compat_uptr_t)
+	#define PW_IOCTL_AVAIL_CTA_AGGREGATORS32 \
+		_IOR(APWR_IOCTL_MAGIC_NUM, sw_ioctl_cmd_avail_cta_aggregators, compat_uptr_t)
 #endif /* defined(CONFIG_COMPAT) && defined(CONFIG_X86_64) */
 #endif /* __SW_IOCTL_H__ */

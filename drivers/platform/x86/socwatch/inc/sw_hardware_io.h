@@ -69,12 +69,14 @@ typedef int (*sw_io_desc_reset_func_t)
 	(const struct sw_driver_io_descriptor *descriptor);
 typedef bool (*sw_io_desc_available_func_t)(void);
 typedef bool (*sw_hw_op_post_config_func_t)(void);
+typedef bool (*sw_hw_op_reg_unreg_func_t)(void);
 
 /**
  * struct sw_hw_ops - Operations for each of the HW collection mechanisms
  *                    in swkernelcollector.
  * @name:           A descriptive name used to identify this particular
  *                  operation.
+ * @register:       Called when the hardware ops is being registered
  * @init:           Initialize a metric's collection.
  * @read:           Read a metric's data.
  * @write:          Write to the HW for the metric(?).
@@ -83,16 +85,19 @@ typedef bool (*sw_hw_op_post_config_func_t)(void);
  * @available:      Decide whether this H/W op is available on the current
  *                  platform.
  * @post_config:    Perform any post-configuration steps.
+ * @unregister:     Called when the hardware op is being unregistered
  */
 struct sw_hw_ops {
 	const char *name;
-	sw_io_desc_init_func_t       init;
-	sw_hardware_op_func_t        read;
-	sw_hardware_op_func_t        write;
-	sw_io_desc_print_func_t      print;
-	sw_io_desc_reset_func_t      reset;
-	sw_io_desc_available_func_t  available;
-	sw_hw_op_post_config_func_t  post_config;
+	sw_hw_op_reg_unreg_func_t	reg;
+	sw_io_desc_init_func_t       	init;
+	sw_hardware_op_func_t        	read;
+	sw_hardware_op_func_t        	write;
+	sw_io_desc_print_func_t      	print;
+	sw_io_desc_reset_func_t      	reset;
+	sw_io_desc_available_func_t  	available;
+	sw_hw_op_post_config_func_t  	post_config;
+	sw_hw_op_reg_unreg_func_t	unreg;
 };
 
 bool sw_is_valid_hw_op_id(int id);

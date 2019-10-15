@@ -155,6 +155,10 @@ int sw_register_hw_op(const struct sw_hw_ops *op)
 	node->id = ++s_op_idx;
 	SW_LIST_ENTRY_INIT(node, list);
 	SW_LIST_ADD(&s_ops, node, list);
+	/* Call this op's 'register' function */
+	if (op->reg) {
+		(*op->reg)(); /* return value is don't care */
+	}
 	return PW_SUCCESS;
 }
 

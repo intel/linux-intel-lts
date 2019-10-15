@@ -58,6 +58,7 @@
 
 #include "sw_types.h"
 
+
 /*
  * An enumeration of MSR types.
  * Required if we want to differentiate
@@ -129,6 +130,12 @@ typedef enum sw_when_type {
 #define SW_TRIGGER_NOTIFIER_MASK()	(1U << SW_WHEN_TYPE_NOTIFIER)
 #define SW_GET_TRIGGER_MASK_VALUE(m)	(1U << (m))
 #define SW_TRIGGER_MASK_ALL()		(0xFF)
+
+/*
+ * AGGREGATOR TELEMETRY
+ */
+#define MAX_TELEM_AGGR_DEVICES 10
+
 
 enum sw_io_cmd {
 	SW_IO_CMD_READ = 0,
@@ -257,6 +264,23 @@ struct sw_driver_telem_io_descriptor {
 	pw_u16_t  scale_val;
 };
 #pragma pack(pop)
+
+#pragma pack(push, 1)
+/**
+ * struct - sw_driver_aggr_telem_io_descriptor - Aggregate Telemetry Metric descriptor
+ * This descriptor is used to interact with TA and CTA driver to get aggregate telemetry data
+ * @num_entries: number of entries we want to read from aggregate telemetry SRAM.
+ * Note: These entries should be contigous then only TA and CTA driver can read them together
+ * @offset First offset which we want to read from aggregate telemetry data
+ * All the offsets are specified in the XML file
+ */
+struct sw_driver_aggr_telem_io_descriptor {
+    pw_u64_t  offset;
+    pw_u64_t  data_remapped_address;
+    pw_u32_t  num_entries;
+};
+#pragma pack(pop)
+
 enum telemetry_unit { TELEM_PUNIT = 0, TELEM_PMC, TELEM_UNIT_NONE };
 #define TELEM_MAX_ID	0xFFFF  /* Maximum value of a Telemtry event ID. */
 #define TELEM_MAX_SCALE 0xFFFF  /* Maximum ID scaling value. */
@@ -323,15 +347,16 @@ typedef struct sw_driver_io_descriptor {
 	pw_s16_t collection_command; /* One of 'enum sw_io_cmd' */
 	pw_u16_t counter_size_in_bytes; /* The number of bytes to READ or WRITE */
 	union {
-		struct sw_driver_msr_io_descriptor 		msr_descriptor;
-		struct sw_driver_ipc_mmio_io_descriptor 	ipc_descriptor;
-		struct sw_driver_ipc_mmio_io_descriptor 	mmio_descriptor;
-		struct sw_driver_pci_io_descriptor		pci_descriptor;
-		struct sw_driver_configdb_io_descriptor		configdb_descriptor;
-		struct sw_driver_trace_args_io_descriptor 	trace_args_descriptor;
-		struct sw_driver_telem_io_descriptor		telem_descriptor;
-		struct sw_driver_pch_mailbox_io_descriptor 	pch_mailbox_descriptor;
-		struct sw_driver_mailbox_io_descriptor		mailbox_descriptor;
+			struct sw_driver_msr_io_descriptor          msr_descriptor;
+			struct sw_driver_ipc_mmio_io_descriptor     ipc_descriptor;
+			struct sw_driver_ipc_mmio_io_descriptor     mmio_descriptor;
+			struct sw_driver_pci_io_descriptor          pci_descriptor;
+			struct sw_driver_configdb_io_descriptor     configdb_descriptor;
+			struct sw_driver_trace_args_io_descriptor   trace_args_descriptor;
+			struct sw_driver_telem_io_descriptor        telem_descriptor;
+			struct sw_driver_pch_mailbox_io_descriptor  pch_mailbox_descriptor;
+			struct sw_driver_mailbox_io_descriptor      mailbox_descriptor;
+			struct sw_driver_aggr_telem_io_descriptor   aggr_telem_descriptor;
 	};
 	pw_u64_t write_value; /* The value to WRITE */
 } sw_driver_io_descriptor_t;
@@ -539,6 +564,22 @@ typedef struct sw_driver_msg_interval {
 	/* collection interval */
 	pw_u16_t interval;
 } sw_driver_msg_interval_t;
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+typedef struct _sw_aggregator_info {
+	pw_u64_t startAddress;
+	pw_u32_t globalUniqueID;
+	pw_u32_t size;
+} sw_aggregator_info;
+
+typedef struct _sw_aggregator_msg {
+	pw_u32_t num_entries;
+	sw_aggregator_info info[MAX_TELEM_AGGR_DEVICES]; /* Array of sw_aggregator_info structs. */
+} sw_aggregator_msg;
+
+#define AGGREGATOR_BUFFER_SIZE(entries) (sizeof(sw_aggregator_info) * entries + sizeof(pw_u32_t))
+
 #pragma pack(pop)
 
 #endif /* __SW_STRUCTS_H__ */

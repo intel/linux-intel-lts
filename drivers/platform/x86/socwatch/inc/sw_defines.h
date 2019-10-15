@@ -56,8 +56,6 @@
 #ifndef _PW_DEFINES_H_
 #define _PW_DEFINES_H_ 1
 
-#include "sw_version.h"
-
 /* ***************************************************
  * Common to kernel and userspace.
  * ***************************************************

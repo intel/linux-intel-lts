@@ -1758,7 +1758,7 @@ static int sw_probe_cpufreq_notifier_i(struct notifier_block *block,
 	static struct sw_trace_notifier_data *node;
 #if KERNEL_VERSION(5, 2, 0) > LINUX_VERSION_CODE
 	int cpu = freqs->cpu;
-#else
+#else  /* KERNEL_VERSION(5, 2, 0) <= LINUX_VERSION_CODE */
 	int cpu = freqs->policy->cpu;
 #endif /* KERNEL_VERSION(5, 2, 0) > LINUX_VERSION_CODE */
 

@@ -68,6 +68,7 @@
 #include "sw_tracepoint_handlers.h"
 #include "sw_collector.h"
 #include "sw_file_ops.h"
+#include "sw_version.h"
 
 /* -------------------------------------------------
  * Compile time constants.
@@ -1047,6 +1048,16 @@ sw_get_topology_changes_i(struct sw_driver_topology_msg __user *remote_msg,
 	return retVal;
 }
 
+static long
+sw_get_cta_aggregators_i(struct _sw_aggregator_msg __user *remote_msg,
+			  size_t local_len)
+{
+	const struct _sw_aggregator_msg *_msg = sw_get_cta_aggregators();
+	long retval = copy_to_user(remote_msg, _msg, sizeof(*_msg));
+
+	return retval;
+}
+
 static long sw_read_continuous_i(char *remote_buffer, size_t local_len)
 {
 	/* TODO: call 'consume_buffer' directly? */
@@ -1393,6 +1404,11 @@ ret_immediate_io:
 	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_SET_TELEM_BAR)) {
 		pw_pr_debug("DEBUG: got a request to set telem bar!\n");
 		return sw_set_telem_cfgs_i(local_args.in_arg, local_in_len);
+	} else if (MATCH_IOCTL(ioctl_num, PW_IOCTL_AVAIL_CTA_AGGREGATORS)) {
+		pw_pr_debug("DEBUG: retrieve CTA aggregator list\n");
+		return sw_get_cta_aggregators_i(
+				(struct _sw_aggregator_msg __user *)local_args.out_arg,
+				local_out_len);
 	}
 
 	pw_pr_error("ERROR: invalid ioctl num: %u\n", _IOC_NR(ioctl_num));

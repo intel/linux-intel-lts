@@ -142,5 +142,9 @@ int sw_setup_telem(u64 addrs[3]);
  * Tear down p-unit/pmc telemetry
  */
 void sw_destroy_telem(void);
+/*
+ * Retrieve CTA endpoint descriptors
+ */
+struct _sw_aggregator_msg const *sw_get_cta_aggregators(void);
 
 #endif /* __SW_DATA_STRUCTS_H__ */
