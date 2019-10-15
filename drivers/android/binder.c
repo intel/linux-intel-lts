@@ -573,6 +573,7 @@ enum {
 	BINDER_LOOPER_STATE_EXITED      = 0x04,
 	BINDER_LOOPER_STATE_INVALID     = 0x08,
 	BINDER_LOOPER_STATE_WAITING     = 0x10,
+	BINDER_LOOPER_STATE_NEED_RETURN = 0x20,
 	BINDER_LOOPER_STATE_POLL        = 0x20,
 };
 
@@ -4566,6 +4567,17 @@ static int binder_thread_release(struct binder_proc *proc,
 	}
 
 	binder_inner_proc_unlock(thread->proc);
+
+	/*
+	 * If this thread used poll, make sure we remove the waitqueue
+	 * from any epoll data structures holding it with POLLFREE.
+	 * waitqueue_active() is safe to use here because we're holding
+	 * the global lock.
+	 */
+	if ((thread->looper & BINDER_LOOPER_STATE_POLL) &&
+	    waitqueue_active(&thread->wait)) {
+		wake_up_poll(&thread->wait, POLLHUP | POLLFREE);
+	}
 
 	/*
 	 * This is needed to avoid races between wake_up_poll() above and
