@@ -46,6 +46,9 @@ static void netprox_resume_task(struct work_struct *work)
 	stmmac_resume_common(priv, ndev);
 	priv->networkproxy_exit = 0;
 
+	if (ndev->phydev)
+		phy_start_machine(ndev->phydev);
+
 	rtnl_unlock();
 
 	netif_device_attach(ndev);
@@ -177,6 +180,9 @@ static int stmmac_netprox_suspend(struct stmmac_priv *priv,
 
 	/* Message Network Proxy Agent to enter proxy mode */
 	netprox_host_proxy_enter();
+
+	if (ndev->phydev)
+		phy_stop_machine(ndev->phydev);
 
 	stmmac_suspend_common(priv, ndev);
 
