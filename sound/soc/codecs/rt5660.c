@@ -1374,6 +1374,8 @@ MODULE_DEVICE_TABLE(of, rt5660_of_match);
 static const struct acpi_device_id rt5660_acpi_match[] = {
 	{ "10EC5660", 0 },
 	{ "10EC3277", 0 },
+	{ "INTC1027", 0 },
+	{ "INT34C2", 0 },
 	{ },
 };
 MODULE_DEVICE_TABLE(acpi, rt5660_acpi_match);
