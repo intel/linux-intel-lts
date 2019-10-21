@@ -193,8 +193,7 @@ static void kick_submission(struct intel_engine_cs *engine,
 			    const struct i915_request *rq,
 			    int prio)
 {
-	const struct i915_request *inflight =
-		execlists_active(&engine->execlists);
+	const struct i915_request *inflight;
 
 	/*
 	 * We only need to kick the tasklet once for the high priority
@@ -212,16 +211,10 @@ static void kick_submission(struct intel_engine_cs *engine,
 
 	/*
 	 * If we are already the currently executing context, don't
-	 * bother evaluating if we should preempt ourselves, or if
-	 * we expect nothing to change as a result of running the
-	 * tasklet, i.e. we have not change the priority queue
-	 * sufficiently to oust the running context.
+	 * bother evaluating if we should preempt ourselves.
 	 */
 	if (inflight->hw_context == rq->hw_context)
 		goto unlock;
-
-	if (!inflight || !need_preempt(prio, rq_prio(inflight)))
-		return;
 
 	engine->execlists.queue_priority_hint = prio;
 	if (need_preempt(prio, rq_prio(inflight)))
