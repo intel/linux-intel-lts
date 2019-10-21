@@ -174,6 +174,7 @@ struct plat_stmmacenet_data {
 	struct clk *stmmac_clk;
 	struct clk *pclk;
 	struct clk *clk_ptp_ref;
+	struct clk *tx_clk;
 	unsigned int eee_usecs_rate;
 	unsigned int clk_ptp_rate;
 	unsigned int clk_ref_rate;
