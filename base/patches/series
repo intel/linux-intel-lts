@@ -25,9 +25,6 @@
 # CVE-2019-3846
 0004-mwifiex-use-total_ie_len-in-mwifiex_update_bss_desc-CVE-2019-3846.patch
 
-# CVE-2018-20976
-0001-xfs-clear-sb-s_fs_info-on-mount-failure.patch-CVE-2018-20976.patch
-
 # CVE-2019-15918
 0001-cifs-Fix-lease-buffer-length-error-CVE-2019-15918.patch
 
@@ -45,3 +42,6 @@
 
 # CVE-2019-15098
 0001-Fix-a-NULL-ptr-deref-bug-in-ath6kl_usb_alloc_urb_fro-CVE-2019-15098.patch
+
+#CVE-2019-15099
+0001-ath10k-Fix-a-NULL-ptr-deref-bug-in-ath10k_usb_alloc_CVE-2019-15099.patch
