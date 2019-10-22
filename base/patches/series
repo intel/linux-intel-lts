@@ -25,3 +25,6 @@
 
 # CVE-2019-15098
 0001-Fix-a-NULL-ptr-deref-bug-in-ath6kl_usb_alloc_urb_fro-CVE-2019-15098.patch
+
+# CVE-2019-15099
+0001-ath10k-Fix-a-NULL-ptr-deref-bug-in-ath10k_usb_alloc-CVE-2019-15099.patch
