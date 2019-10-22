@@ -803,6 +803,10 @@ struct v4l2_subdev_pad_ops {
 			      struct v4l2_mbus_frame_desc *fd);
 	int (*set_frame_desc)(struct v4l2_subdev *sd, unsigned int pad,
 			      struct v4l2_mbus_frame_desc *fd);
+	int (*get_routing)(struct v4l2_subdev *sd,
+			   struct v4l2_subdev_routing *route);
+	int (*set_routing)(struct v4l2_subdev *sd,
+			   struct v4l2_subdev_routing *route);
 	int (*get_mbus_config)(struct v4l2_subdev *sd, unsigned int pad,
 			       struct v4l2_mbus_config *config);
 	int (*set_mbus_config)(struct v4l2_subdev *sd, unsigned int pad,
