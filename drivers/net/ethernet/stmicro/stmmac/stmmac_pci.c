@@ -303,7 +303,7 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 			  struct plat_stmmacenet_data *plat)
 {
 	plat->bus_id = 1;
-	plat->phy_addr = 0;
+	plat->phy_addr = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 
 	/* Set PTP clock rate for EHL as 200MHz */
