@@ -6,6 +6,7 @@
 #ifndef __ASSEMBLY__
 
 #include <linux/bits.h>
+
 #include <asm/msr.h>
 
 #define KL_CPUID                0x019
@@ -17,7 +18,17 @@
 
 bool check_keylocker_readiness(void);
 
+static inline u64 read_iwkeybackup_status(void)
+{
+	u64 status;
+
+	rdmsrl(MSR_IA32_IWKEYBACKUP_STATUS, status);
+	return status;
+}
+
+void backup_iwkey(void);
 bool load_iwkey(void);
+bool copy_iwkey(void);
 
 void make_iwkeydata(void);
 #ifdef CONFIG_X86_KL

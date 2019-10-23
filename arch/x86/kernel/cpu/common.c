@@ -464,30 +464,40 @@ __setup("nofsgsbase", x86_nofsgsbase_setup);
 
 static __always_inline void setup_keylocker(struct cpuinfo_x86 *c)
 {
-	bool iwkeyloaded;
-
 	if (!cpu_feature_enabled(X86_FEATURE_KL) ||
 	    !cpu_has(c, X86_FEATURE_KL))
 		goto out;
 
 	if (c == &boot_cpu_data) {
+		bool iwkeyloaded;
+
 		cr4_set_bits(X86_CR4_KL);
 
 		if (!check_keylocker_readiness())
 			goto disable_keylocker;
 
 		make_iwkeydata();
+
+		iwkeyloaded = load_iwkey();
+		if (!iwkeyloaded) {
+			pr_err("x86/keylocker: Fail to load internal key\n");
+			goto disable_keylocker;
+		}
+		backup_iwkey();
 	} else {
+		bool iwkeycopied;
+
 		if (!boot_cpu_has(X86_FEATURE_KL))
 			goto disable_keylocker;
 
 		cr4_set_bits(X86_CR4_KL);
-	}
 
-	iwkeyloaded = load_iwkey();
-	if (!iwkeyloaded) {
-		pr_err_once("x86/keylocker: Fail to load internal key\n");
-		goto disable_keylocker;
+		/* NB: When system wakes up, this path recovers the internal key. */
+		iwkeycopied = copy_iwkey();
+		if (!iwkeycopied) {
+			pr_err_once("x86/keylocker: Fail to copy internal key\n");
+			goto disable_keylocker;
+		}
 	}
 
 	pr_info_once("x86/keylocker: Activated\n");

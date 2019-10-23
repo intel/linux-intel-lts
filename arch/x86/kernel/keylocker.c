@@ -6,9 +6,13 @@
 
 #include <linux/random.h>
 #include <linux/bits.h>
+#include <linux/acpi.h>
+#include <linux/delay.h>
 
 #include <asm/keylocker.h>
 #include <asm/fpu/types.h>
+
+static bool iwkeybackup_available;
 
 bool check_keylocker_readiness(void)
 {
@@ -21,6 +25,14 @@ bool check_keylocker_readiness(void)
 		return false;
 	}
 
+	iwkeybackup_available = (ebx & KL_CPUID_EBX_BACKUP);
+	/* IWKey backup is essential with S3/4 states */
+	if (!iwkeybackup_available &&
+	    (acpi_sleep_state_supported(ACPI_STATE_S3) ||
+	     acpi_sleep_state_supported(ACPI_STATE_S4))) {
+		pr_debug("x86/keylocker: no key backup support with possible S3/4\n");
+		return false;
+	}
 	return true;
 }
 
@@ -72,4 +84,38 @@ bool load_iwkey(void)
 	     :: "m"(zeros));
 
 	return err ? false : true;
+}
+
+void backup_iwkey(void)
+{
+	if (iwkeybackup_available)
+		wrmsrl(MSR_IA32_COPY_LOCAL_TO_PLATFORM, 1);
+}
+
+#define IWKEY_RESTORE_RETRY	1
+
+bool copy_iwkey(void)
+{
+	bool copied = false;
+	int i;
+
+	/* Use valid key data when available */
+	if (iwkeydata.valid)
+		return load_iwkey();
+
+	if (!iwkeybackup_available)
+		return copied;
+
+	wrmsrl(MSR_IA32_COPY_PLATFORM_TO_LOCAL, 1);
+
+	for (i = 0; (i <= IWKEY_RESTORE_RETRY) && !copied; i++) {
+		u64 status;
+
+		if (i)
+			udelay(1);
+		rdmsrl(MSR_IA32_COPY_STATUS, status);
+		copied = status & BIT(0) ? true : false;
+	}
+
+	return copied;
 }
