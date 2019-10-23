@@ -609,6 +609,8 @@ struct drm_driver {
 };
 
 extern unsigned int drm_debug;
+extern int vtd_wa;
+
 
 int drm_dev_init(struct drm_device *dev,
 		 struct drm_driver *driver,
