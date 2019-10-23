@@ -14,5 +14,16 @@
 #define KL_CPUID_EBX_BACKUP     BIT(4)
 #define KL_CPUID_ECX_RAND       BIT(1)
 
+bool check_keylocker_readiness(void);
+
+bool load_iwkey(void);
+
+void make_iwkeydata(void);
+#ifdef CONFIG_X86_KL
+void invalidate_iwkeydata(void);
+#else
+#define invalidate_iwkeydata() do { } while (0)
+#endif
+
 #endif /*__ASSEMBLY__ */
 #endif /* _ASM_KEYLOCKER_H */

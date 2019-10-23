@@ -57,6 +57,8 @@
 #include <asm/microcode_intel.h>
 #include <asm/intel-family.h>
 #include <asm/cpu_device_id.h>
+#include <asm/keylocker.h>
+
 #include <asm/uv/uv.h>
 
 #include "cpu.h"
@@ -459,6 +461,45 @@ static __init int x86_nofsgsbase_setup(char *arg)
 	return 1;
 }
 __setup("nofsgsbase", x86_nofsgsbase_setup);
+
+static __always_inline void setup_keylocker(struct cpuinfo_x86 *c)
+{
+	bool iwkeyloaded;
+
+	if (!cpu_feature_enabled(X86_FEATURE_KL) ||
+	    !cpu_has(c, X86_FEATURE_KL))
+		goto out;
+
+	if (c == &boot_cpu_data) {
+		cr4_set_bits(X86_CR4_KL);
+
+		if (!check_keylocker_readiness())
+			goto disable_keylocker;
+
+		make_iwkeydata();
+	} else {
+		if (!boot_cpu_has(X86_FEATURE_KL))
+			goto disable_keylocker;
+
+		cr4_set_bits(X86_CR4_KL);
+	}
+
+	iwkeyloaded = load_iwkey();
+	if (!iwkeyloaded) {
+		pr_err_once("x86/keylocker: Fail to load internal key\n");
+		goto disable_keylocker;
+	}
+
+	pr_info_once("x86/keylocker: Activated\n");
+	return;
+
+disable_keylocker:
+	clear_cpu_cap(c, X86_FEATURE_KL);
+	pr_info_once("x86/keylocker: Disabled\n");
+out:
+	/* Make sure the feature disabled for kexec-reboot. */
+	cr4_clear_bits(X86_CR4_KL);
+}
 
 /*
  * Protection Keys are not available in 32-bit mode.
@@ -1572,6 +1613,8 @@ static void identify_cpu(struct cpuinfo_x86 *c)
 	setup_smep(c);
 	setup_smap(c);
 	setup_umip(c);
+	/* Setup various Intel-specific CPU security features */
+	setup_keylocker(c);
 
 	/* Enable FSGSBASE instructions if available. */
 	if (cpu_has(c, X86_FEATURE_FSGSBASE)) {
