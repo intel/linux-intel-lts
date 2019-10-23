@@ -424,4 +424,24 @@ config SND_SOC_INTEL_CML_LP_DA7219_MAX98357A_MACH
 
 endif ## SND_SOC_SOF_COMETLAKE_LP && SND_SOC_SOF_HDA_LINK
 
+config SND_SOC_INTEL_EHL_RT5660_MACH
+	tristate "EHL with RT5660 in I2S mode"
+	depends on I2C && ACPI
+	depends on MFD_INTEL_LPSS || COMPILE_TEST
+	select SND_SOC_RT5660
+	help
+	  This adds support for ASoC machine driver for Elkhart Lake platform
+	  with RT5660 I2S audio codec.
+	  Say Y or m if you have such a device. This is a recommended option.
+	  If unsure select "N".
+
+config SND_SOC_INTEL_EHL_RT5660_FPGA
+	tristate "RT5660 on IP FPGA"
+	depends on SND_SOC_INTEL_EHL_RT5660_MACH
+	help
+	 This option will be reverded after power on.
+	 It's only for testing purposes.
+	 Select this option if testing RT5660 on IP FPGA
+	 If unsure select "N".
+
 endif ## SND_SOC_INTEL_MACH
