@@ -18,7 +18,7 @@
 #include "../vsec.h"
 #include "class.h"
 
-#define PMT_XA_START		0
+#define PMT_XA_START		1
 #define PMT_XA_MAX		INT_MAX
 #define PMT_XA_LIMIT		XA_LIMIT(PMT_XA_START, PMT_XA_MAX)
 #define GUID_SPR_PUNIT		0x9956f43f
@@ -283,6 +283,7 @@ static int intel_pmt_dev_register(struct intel_pmt_entry *entry,
 	res.start = entry->base_addr;
 	res.end = res.start + entry->size - 1;
 	res.flags = IORESOURCE_MEM;
+	res.name = NULL;
 
 	entry->base = devm_ioremap_resource(dev, &res);
 	if (IS_ERR(entry->base)) {
