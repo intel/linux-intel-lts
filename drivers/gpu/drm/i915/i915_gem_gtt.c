@@ -2712,7 +2712,10 @@ static void bxt_vtd_ggtt_insert_page__BKL(struct i915_address_space *vm,
 {
 	struct insert_page arg = { vm, addr, offset, level };
 
-	stop_machine(bxt_vtd_ggtt_insert_page__cb, &arg, NULL);
+	if (vtd_wa)
+		stop_machine(bxt_vtd_ggtt_insert_page__cb, &arg, NULL);
+	else
+		gen8_ggtt_insert_page( vm, addr, offset, level, unused );
 }
 
 struct insert_entries {
@@ -2739,7 +2742,10 @@ static void bxt_vtd_ggtt_insert_entries__BKL(struct i915_address_space *vm,
 {
 	struct insert_entries arg = { vm, vma, level, flags };
 
-	stop_machine(bxt_vtd_ggtt_insert_entries__cb, &arg, NULL);
+	if (vtd_wa)
+		stop_machine(bxt_vtd_ggtt_insert_entries__cb, &arg, NULL);
+	else
+		gen8_ggtt_insert_entries( vm, vma, level, flags );
 }
 
 struct clear_range {
@@ -2764,7 +2770,10 @@ static void bxt_vtd_ggtt_clear_range__BKL(struct i915_address_space *vm,
 {
 	struct clear_range arg = { vm, start, length };
 
-	stop_machine(bxt_vtd_ggtt_clear_range__cb, &arg, NULL);
+	if (vtd_wa)
+		stop_machine(bxt_vtd_ggtt_clear_range__cb, &arg, NULL);
+	else
+		gen8_ggtt_clear_range(vm, start, length);
 }
 
 static void gen6_ggtt_clear_range(struct i915_address_space *vm,
@@ -3509,11 +3518,16 @@ static int gen8_gmch_probe(struct i915_ggtt *ggtt)
 	ggtt->vm.total = (size / sizeof(gen8_pte_t)) << PAGE_SHIFT;
 	ggtt->vm.cleanup = gen6_gmch_remove;
 	ggtt->vm.insert_page = gen8_ggtt_insert_page;
+	ggtt->vm.insert_page_fast = gen8_ggtt_insert_page;
 	ggtt->vm.clear_range = nop_clear_range;
-	if (!USES_FULL_PPGTT(dev_priv) || intel_scanout_needs_vtd_wa(dev_priv))
+	ggtt->vm.clear_range_fast = gen8_ggtt_clear_range;
+	if (!USES_FULL_PPGTT(dev_priv) || intel_scanout_needs_vtd_wa(dev_priv)) {
 		ggtt->vm.clear_range = gen8_ggtt_clear_range;
+		ggtt->vm.clear_range_fast = gen8_ggtt_clear_range;
+	}
 
 	ggtt->vm.insert_entries = gen8_ggtt_insert_entries;
+	ggtt->vm.insert_entries_fast = gen8_ggtt_insert_entries;
 
 	/* Serialize GTT updates with aperture access on BXT if VT-d is on. */
 	if (intel_ggtt_update_needs_vtd_wa(dev_priv)) {

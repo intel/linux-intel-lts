@@ -50,6 +50,10 @@
 unsigned int drm_debug = 0;
 EXPORT_SYMBOL(drm_debug);
 
+/*drm_i915_wa*/
+int vtd_wa = 0;
+EXPORT_SYMBOL(vtd_wa);
+
 MODULE_AUTHOR("Gareth Hughes, Leif Delgass, José Fonseca, Jon Smirl");
 MODULE_DESCRIPTION("DRM shared core routines");
 MODULE_LICENSE("GPL and additional rights");
@@ -63,6 +67,7 @@ MODULE_PARM_DESC(debug, "Enable debug output, where each bit enables a debug cat
 "\t\tBit 7 (0x80)  will enable LEASE messages (leasing code)\n"
 "\t\tBit 8 (0x100) will enable DP messages (displayport code)");
 module_param_named(debug, drm_debug, int, 0600);
+module_param(vtd_wa, int, 0644);
 
 static DEFINE_SPINLOCK(drm_minor_lock);
 static struct idr drm_minors_idr;

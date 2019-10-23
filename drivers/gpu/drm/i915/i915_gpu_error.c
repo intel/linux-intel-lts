@@ -1005,7 +1005,7 @@ i915_error_object_create(struct drm_i915_private *i915,
 	for_each_sgt_dma(dma, iter, vma->pages) {
 		void __iomem *s;
 
-		ggtt->vm.insert_page(&ggtt->vm, dma, slot, I915_CACHE_NONE, 0);
+		ggtt->vm.insert_page_fast(&ggtt->vm, dma, slot, I915_CACHE_NONE, 0);
 
 		s = io_mapping_map_atomic_wc(&ggtt->iomap, slot);
 		ret = compress_page(&compress, (void  __force *)s, dst);
@@ -1022,7 +1022,7 @@ i915_error_object_create(struct drm_i915_private *i915,
 	}
 
 	compress_fini(&compress, dst);
-	ggtt->vm.clear_range(&ggtt->vm, slot, PAGE_SIZE);
+	ggtt->vm.clear_range_fast(&ggtt->vm, slot, PAGE_SIZE);
 	return dst;
 }
 
