@@ -127,6 +127,9 @@ static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
 		dw8250_writel_ext(p, DW_UART_RE_EN, 0);
 	}
 
+	/* Resetting the default DE_POL & RE_POL */
+	tcr &= ~(DW_UART_TCR_DE_POL | DW_UART_TCR_RE_POL);
+
 	if (device_property_read_bool(p->dev, "snps,de-active-high"))
 		tcr |= DW_UART_TCR_DE_POL;
 	if (device_property_read_bool(p->dev, "snps,re-active-high"))
