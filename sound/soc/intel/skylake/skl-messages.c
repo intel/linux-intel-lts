@@ -2794,16 +2794,35 @@ int skl_set_module_params(struct skl_sst *ctx, u32 *params, int size,
 	return skl_ipc_set_large_config(&ctx->ipc, &msg, params);
 }
 
+#define SKL_MODULE_PARAM_GET_SIZE (2 * sizeof(u32))
+
 int skl_get_module_params(struct skl_sst *ctx, u32 *params, int size,
 			  u32 param_id, struct skl_module_cfg *mcfg)
 {
 	struct skl_ipc_large_config_msg msg;
+	size_t rx_bytes;
+	u32 tx_bytes = 0;
+	u32 *tx_data = NULL;
 
 	msg.module_id = mcfg->id.module_id;
 	msg.instance_id = mcfg->id.pvt_id;
-	msg.param_data_size = size;
 	msg.large_param_id = param_id;
 
-	return skl_ipc_get_large_config(&ctx->ipc, &msg, params, NULL,
-			0, NULL);
+	if (param_id == SKL_PARAM_VENDOR_ID) {
+		/* Limit to single data fragment */
+		msg.param_data_size = size > ctx->ipc.dsp->mailbox.in_size
+			? ctx->ipc.dsp->mailbox.in_size : size;
+		/*
+		 * Currently, we support retrieving only one module parameter.
+		 * Params data used for TX payload will be then overwritten by
+		 * received data.
+		 */
+		tx_data = params;
+		tx_bytes = SKL_MODULE_PARAM_GET_SIZE;
+	} else {
+		msg.param_data_size = size;
+	}
+
+	return skl_ipc_get_large_config(&ctx->ipc, &msg, params, tx_data,
+			tx_bytes, &rx_bytes);
 }

@@ -58,6 +58,8 @@
 #define MAX_NUM_CHANNELS	8
 #define SKL_MAX_PARAMS_TYPES	4
 
+#define SKL_PARAM_VENDOR_ID 0xff
+
 enum skl_channel_index {
 	SKL_CHANNEL_LEFT = 0,
 	SKL_CHANNEL_RIGHT = 1,

@@ -2208,10 +2208,14 @@ static int skl_tplg_tlv_control_get(struct snd_kcontrol *kcontrol,
 	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_widget(kcontrol);
 	struct skl_module_cfg *mconfig = w->priv;
 	struct skl *skl = get_skl_ctx(w->dapm->dev);
+	int ret;
 
-	if (w->power)
-		skl_get_module_params(skl->skl_sst, (u32 *)bc->params,
+	if (w->power) {
+		ret = skl_get_module_params(skl->skl_sst, (u32 *)bc->params,
 				      bc->size, bc->param_id, mconfig);
+		if (ret < 0)
+			return ret;
+	}
 
 	/* decrement size for TLV header */
 	size -= 2 * sizeof(u32);
@@ -2231,8 +2235,6 @@ static int skl_tplg_tlv_control_get(struct snd_kcontrol *kcontrol,
 
 	return 0;
 }
-
-#define SKL_PARAM_VENDOR_ID 0xff
 
 static int skl_tplg_tlv_control_set(struct snd_kcontrol *kcontrol,
 			const unsigned int __user *data, unsigned int size)
