@@ -77,6 +77,7 @@
 #define MCACOD_L3WB	0x017A	/* L3 Explicit Writeback */
 #define MCACOD_DATA	0x0134	/* Data Load */
 #define MCACOD_INSTR	0x0150	/* Instruction Fetch */
+#define MCACOD_IOERR	0x0e0b	/* Generic I/O error */
 
 /* MCi_MISC register defines */
 #define MCI_MISC_ADDR_LSB(m)	((m) & 0x3f)
@@ -86,6 +87,11 @@
 #define  MCI_MISC_ADDR_PHYS	2	/* physical address */
 #define  MCI_MISC_ADDR_MEM	3	/* memory address */
 #define  MCI_MISC_ADDR_GENERIC	7	/* generic */
+
+#define MCI_MISC_PCISEG_MASK	GENMASK_ULL(39, 32)
+#define MCI_MISC_PCISEG(m)	(((m) & MCI_MISC_PCISEG_MASK) >> 32)
+#define MCI_MISC_PCIRID_MASK	GENMASK_ULL(31, 16)
+#define MCI_MISC_PCIRID(m)	(((m) & MCI_MISC_PCIRID_MASK) >> 16)
 
 /* CTL2 register defines */
 #define MCI_CTL2_CMCI_EN		BIT_ULL(30)
