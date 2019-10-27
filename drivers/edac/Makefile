@@ -33,6 +33,7 @@ obj-$(CONFIG_EDAC_I7CORE)		+= i7core_edac.o
 obj-$(CONFIG_EDAC_SBRIDGE)		+= sb_edac.o
 obj-$(CONFIG_EDAC_PND2)			+= pnd2_edac.o
 obj-$(CONFIG_EDAC_IGEN6)			+= igen6_edac.o
+obj-$(CONFIG_EDAC_IEH)			+= ieh_edac.o
 obj-$(CONFIG_EDAC_E7XXX)		+= e7xxx_edac.o
 obj-$(CONFIG_EDAC_E752X)		+= e752x_edac.o
 obj-$(CONFIG_EDAC_I82443BXGX)		+= i82443bxgx_edac.o
