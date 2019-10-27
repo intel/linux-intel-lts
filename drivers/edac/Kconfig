@@ -282,6 +282,16 @@ config EDAC_IGEN6
 	  This In-Band ECC is first used on the Elkhart Lake SoC but
 	  may appear on others in the future.
 
+config EDAC_IEH
+	tristate "Intel Integrated Error Handler"
+	depends on PCI && X86_64
+	help
+	  Support for error detection and correction on the Intel
+	  CPU using I/O IEH (Integrated Error Handler). IEHs are PCIe
+	  devices which aggregate and report error events of different
+	  severities from various I/O devices, e.g., PCIe devices and
+	  legacy PCI devices.
+
 config EDAC_MPC85XX
 	bool "Freescale MPC83xx / MPC85xx"
 	depends on FSL_SOC && EDAC=y
