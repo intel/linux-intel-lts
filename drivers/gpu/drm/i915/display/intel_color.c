@@ -1024,21 +1024,21 @@ void intel_color_commit(const struct intel_crtc_state *crtc_state)
 
 static bool intel_can_preload_luts(const struct intel_crtc_state *new_crtc_state)
 {
-	struct intel_crtc *crtc = to_intel_crtc(new_crtc_state->base.crtc);
+	struct intel_crtc *crtc = to_intel_crtc(new_crtc_state->uapi.crtc);
 	struct intel_atomic_state *state =
-		to_intel_atomic_state(new_crtc_state->base.state);
+		to_intel_atomic_state(new_crtc_state->uapi.state);
 	const struct intel_crtc_state *old_crtc_state =
 		intel_atomic_get_old_crtc_state(state, crtc);
 
-	return !old_crtc_state->base.gamma_lut &&
-		!old_crtc_state->base.degamma_lut;
+	return !old_crtc_state->hw.gamma_lut &&
+		!old_crtc_state->hw.degamma_lut;
 }
 
 static bool chv_can_preload_luts(const struct intel_crtc_state *new_crtc_state)
 {
-	struct intel_crtc *crtc = to_intel_crtc(new_crtc_state->base.crtc);
+	struct intel_crtc *crtc = to_intel_crtc(new_crtc_state->uapi.crtc);
 	struct intel_atomic_state *state =
-		to_intel_atomic_state(new_crtc_state->base.state);
+		to_intel_atomic_state(new_crtc_state->uapi.state);
 	const struct intel_crtc_state *old_crtc_state =
 		intel_atomic_get_old_crtc_state(state, crtc);
 
@@ -1050,14 +1050,14 @@ static bool chv_can_preload_luts(const struct intel_crtc_state *new_crtc_state)
 	if (old_crtc_state->cgm_mode || new_crtc_state->cgm_mode)
 		return false;
 
-	return !old_crtc_state->base.gamma_lut;
+	return !old_crtc_state->hw.gamma_lut;
 }
 
 static bool glk_can_preload_luts(const struct intel_crtc_state *new_crtc_state)
 {
-	struct intel_crtc *crtc = to_intel_crtc(new_crtc_state->base.crtc);
+	struct intel_crtc *crtc = to_intel_crtc(new_crtc_state->uapi.crtc);
 	struct intel_atomic_state *state =
-		to_intel_atomic_state(new_crtc_state->base.state);
+		to_intel_atomic_state(new_crtc_state->uapi.state);
 	const struct intel_crtc_state *old_crtc_state =
 		intel_atomic_get_old_crtc_state(state, crtc);
 
@@ -1068,7 +1068,7 @@ static bool glk_can_preload_luts(const struct intel_crtc_state *new_crtc_state)
 	 * linear hardware degamma mid scanout.
 	 */
 	return !old_crtc_state->csc_enable &&
-		!old_crtc_state->base.gamma_lut;
+		!old_crtc_state->hw.gamma_lut;
 }
 
 int intel_color_check(struct intel_crtc_state *crtc_state)
