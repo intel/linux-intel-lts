@@ -2975,7 +2975,8 @@ static int skl_plane_surf_write(struct intel_vgpu *vgpu, unsigned int offset,
 	vgpu_vreg_t(vgpu, reg_1ac) = vgpu_vreg(vgpu, offset);
 
 	if ((vgpu_vreg_t(vgpu, PIPECONF(pipe)) & I965_PIPECONF_ACTIVE) &&
-			(vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id)) {
+		(vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id) &&
+		(*(u32 *)p_data != 0)) {
 		I915_WRITE(_MMIO(offset), vgpu_vreg(vgpu, offset));
 	}
 
