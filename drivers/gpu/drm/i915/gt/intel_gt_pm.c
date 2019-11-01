@@ -299,6 +299,8 @@ void intel_gt_suspend_late(struct intel_gt *gt)
 	if (pm_suspend_target() == PM_SUSPEND_TO_IDLE)
 		return;
 
+	intel_uc_suspend(&gt->uc);
+
 	with_intel_runtime_pm(gt->uncore->rpm, wakeref) {
 		intel_rps_disable(&gt->rps);
 		intel_rc6_disable(&gt->rc6);
