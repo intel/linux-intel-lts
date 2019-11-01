@@ -283,6 +283,8 @@ void intel_gt_suspend_late(struct intel_gt *gt)
 {
 	intel_wakeref_t wakeref;
 
+	user_forcewake(gt, true);
+
 	/* We expect to be idle already; but also want to be independent */
 	wait_for_suspend(gt);
 
