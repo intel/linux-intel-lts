@@ -259,6 +259,7 @@ static void wait_for_suspend(struct intel_gt *gt)
 		intel_gt_set_wedged(gt);
 	}
 
+	GEM_BUG_ON(atomic_read(&gt->user_wakeref));
 	intel_gt_pm_wait_for_idle(gt);
 }
 
@@ -272,7 +273,7 @@ void intel_gt_suspend_prepare(struct intel_gt *gt)
 
 static suspend_state_t pm_suspend_target(void)
 {
-#if IS_ENABLED(CONFIG_SUSPEND) && IS_ENABLED(CONFIG_PM_SLEEP)
+#if IS_ENABLED(CONFIG_PM_SLEEP)
 	return pm_suspend_target_state;
 #else
 	return PM_SUSPEND_TO_IDLE;
@@ -282,8 +283,6 @@ static suspend_state_t pm_suspend_target(void)
 void intel_gt_suspend_late(struct intel_gt *gt)
 {
 	intel_wakeref_t wakeref;
-
-	user_forcewake(gt, true);
 
 	/* We expect to be idle already; but also want to be independent */
 	wait_for_suspend(gt);
@@ -300,8 +299,6 @@ void intel_gt_suspend_late(struct intel_gt *gt)
 	 */
 	if (pm_suspend_target() == PM_SUSPEND_TO_IDLE)
 		return;
-
-	intel_uc_suspend(&gt->uc);
 
 	with_intel_runtime_pm(gt->uncore->rpm, wakeref) {
 		intel_rps_disable(&gt->rps);
