@@ -6137,10 +6137,12 @@ static int stmmac_hw_init(struct stmmac_priv *priv)
 		return ret;
 
 	/* Initialize TSN capability */
-	stmmac_tsnif_setup(priv, priv->hw);
-	ret = stmmac_tsn_init(priv, priv->hw, priv->dev);
-	if (ret)
-		return ret;
+	if (priv->hw->tsn_info.cap.est_support) {
+		stmmac_tsnif_setup(priv, priv->hw);
+		ret = stmmac_tsn_init(priv, priv->hw, priv->dev);
+		if (ret)
+			return ret;
+	}
 
 	/* Get the HW capability (new GMAC newer than 3.50a) */
 	priv->hw_cap_support = stmmac_get_hw_features(priv);
