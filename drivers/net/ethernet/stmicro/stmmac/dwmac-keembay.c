@@ -80,6 +80,29 @@ static int keembay_dwmac_probe(struct platform_device *pdev)
 	clk_prepare_enable(plat_dat->tx_clk);
 	dwmac->tx_clk = plat_dat->tx_clk;
 
+	ret = clk_set_rate(dwmac->tx_clk, 125000000);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"Can't set Tx clock rate: %d\n", ret);
+		return ret;
+	}
+
+	dev_info(&pdev->dev, "Setting stmmac clock");
+	ret = clk_set_rate(plat_dat->stmmac_clk, 125000000);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"Can't set stmmac clock rate: %d\n", ret);
+		return ret;
+	}
+
+	dev_info(&pdev->dev, "Setting PTP clock");
+	ret = clk_set_rate(plat_dat->clk_ptp_ref, 200000000);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"Can't set PTP clock rate: %d\n", ret);
+		return ret;
+	}
+
 	plat_dat->bsp_priv = dwmac;
 	plat_dat->fix_mac_speed = keembay_dwmac_fix_mac_speed;
 
