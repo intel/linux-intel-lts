@@ -1538,7 +1538,6 @@ intel_vgpu_create_workload(struct intel_vgpu *vgpu, int ring_id,
 	struct list_head *q = workload_q_head(vgpu, ring_id);
 	struct intel_vgpu_workload *last_workload = NULL;
 	struct intel_vgpu_workload *workload = NULL;
-	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 	u64 ring_context_gpa;
 	u32 head, tail, start, ctl, ctx_ctl, per_ctx, indirect_ctx;
 	u32 guest_head;
@@ -1657,11 +1656,14 @@ intel_vgpu_create_workload(struct intel_vgpu *vgpu, int ring_id,
 	/* Only scan and shadow the first workload in the queue
 	 * as there is only one pre-allocated buf-obj for shadow.
 	 */
+	/* scan_workload and prepare_shadow are executed in one thread to avoid
+	 * the incorrect mutex lock.
 	if (list_empty(workload_q_head(vgpu, ring_id))) {
 		intel_runtime_pm_get(&dev_priv->runtime_pm);
 		ret = intel_gvt_scan_and_shadow_workload(workload);
 		intel_runtime_pm_put_unchecked(&dev_priv->runtime_pm);
 	}
+	*/
 
 	if (ret) {
 		if (vgpu_is_vm_unhealthy(ret))
