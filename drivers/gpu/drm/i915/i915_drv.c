@@ -1541,7 +1541,8 @@ int i915_driver_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	i915_driver_register(dev_priv);
 
-	enable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
+	if (!intel_vgpu_active(dev_priv))
+		enable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
 
 	i915_welcome_messages(dev_priv);
 
