@@ -226,5 +226,12 @@ struct plat_stmmacenet_data {
 	bool has_safety_feat;
 	bool is_hfpga;
 	bool ehl_ao_wa;
+	/* TX and RX PHY latency (ns) */
+	u64 phy_tx_latency_1000;
+	u64 phy_tx_latency_100;
+	u64 phy_tx_latency_10;
+	u64 phy_rx_latency_1000;
+	u64 phy_rx_latency_100;
+	u64 phy_rx_latency_10;
 };
 #endif

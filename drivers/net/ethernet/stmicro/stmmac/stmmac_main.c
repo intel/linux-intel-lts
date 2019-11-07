@@ -421,6 +421,7 @@ static void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 {
 	struct skb_shared_hwtstamps shhwtstamp;
 	bool found = false;
+	u64 adjust = 0;
 	u64 ns = 0;
 
 	if (!priv->hwts_tx_en)
@@ -439,6 +440,19 @@ static void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 	}
 
 	if (found) {
+		switch (priv->speed) {
+		case SPEED_10:
+			adjust = priv->plat->phy_tx_latency_10;
+			break;
+		case SPEED_100:
+			adjust = priv->plat->phy_tx_latency_100;
+			break;
+		case SPEED_1000:
+			adjust = priv->plat->phy_tx_latency_1000;
+			break;
+		}
+
+		ns += adjust;
 		memset(&shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
 		shhwtstamp.hwtstamp = ns_to_ktime(ns);
 
@@ -462,6 +476,7 @@ static void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 {
 	struct skb_shared_hwtstamps *shhwtstamp = NULL;
 	struct dma_desc *desc = p;
+	u64 adjust = 0;
 	u64 ns = 0;
 
 	if (!priv->hwts_rx_en)
@@ -473,6 +488,20 @@ static void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 	/* Check if timestamp is available */
 	if (stmmac_get_rx_timestamp_status(priv, p, np, priv->adv_ts)) {
 		stmmac_get_timestamp(priv, desc, priv->adv_ts, &ns);
+
+		switch (priv->speed) {
+		case SPEED_10:
+			adjust = priv->plat->phy_rx_latency_10;
+			break;
+		case SPEED_100:
+			adjust = priv->plat->phy_rx_latency_100;
+			break;
+		case SPEED_1000:
+			adjust = priv->plat->phy_rx_latency_1000;
+			break;
+		}
+
+		ns -= adjust;
 		netdev_dbg(priv->dev, "get valid RX hw timestamp %llu\n", ns);
 		shhwtstamp = skb_hwtstamps(skb);
 		memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
