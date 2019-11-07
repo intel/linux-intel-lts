@@ -640,4 +640,10 @@ void assert_pipe(struct drm_i915_private *dev_priv, enum pipe pipe, bool state);
 #define I915_STATE_WARN_ON(x)						\
 	I915_STATE_WARN((x), "%s", "WARN_ON(" __stringify(x) ")")
 
+int get_pipe_from_crtc_index(struct drm_device *dev,
+			     unsigned int index,
+			     enum pipe *pipe);
+struct intel_crtc *get_intel_crtc_from_index(struct drm_device *dev,
+					     unsigned int index);
+
 #endif

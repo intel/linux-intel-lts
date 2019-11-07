@@ -3762,7 +3762,7 @@ bool intel_can_enable_sagv(struct intel_atomic_state *state)
 	enum pipe pipe;
 	int level, latency;
 
-	if (!intel_has_sagv(dev_priv))
+	if (!intel_has_sagv(dev_priv) || intel_vgpu_active(dev_priv))
 		return false;
 
 	/*

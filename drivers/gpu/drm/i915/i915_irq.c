@@ -2331,7 +2331,11 @@ gen8_de_irq_handler(struct drm_i915_private *dev_priv, u32 master_ctl)
 		I915_WRITE(GEN8_DE_PIPE_IIR(pipe), iir);
 
 		if (iir & GEN8_PIPE_VBLANK) {
-			drm_handle_vblank(&dev_priv->drm, pipe);
+			struct intel_crtc *crtc =
+				intel_get_crtc_for_pipe(dev_priv, pipe);
+
+			drm_handle_vblank(&dev_priv->drm,
+					  drm_crtc_index(&crtc->base));
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 			gvt_notify_vblank(dev_priv, pipe);
 #endif

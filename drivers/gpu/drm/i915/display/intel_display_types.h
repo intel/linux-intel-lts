@@ -1608,7 +1608,12 @@ intel_crtc_has_dp_encoder(const struct intel_crtc_state *crtc_state)
 static inline void
 intel_wait_for_vblank(struct drm_i915_private *dev_priv, enum pipe pipe)
 {
-	drm_wait_one_vblank(&dev_priv->drm, pipe);
+	struct intel_crtc *crtc;
+
+	crtc = intel_get_crtc_for_pipe(dev_priv, pipe);
+	if (crtc)
+		drm_wait_one_vblank(&dev_priv->drm,
+				    drm_crtc_index(&crtc->base));
 }
 static inline void
 intel_wait_for_vblank_if_active(struct drm_i915_private *dev_priv, enum pipe pipe)

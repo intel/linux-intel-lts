@@ -86,6 +86,26 @@
 #include "gvt.h"
 #endif
 
+int get_pipe_from_crtc_index(struct drm_device *dev, unsigned int index, enum pipe *pipe)
+{
+	struct drm_crtc *c = drm_crtc_from_index(dev, index);
+
+	if (WARN_ON(!c))
+		return -ENOENT;
+
+	*pipe =  (to_intel_crtc(c)->pipe);
+	return 0;
+}
+
+struct intel_crtc *get_intel_crtc_from_index(struct drm_device *dev,
+		unsigned int index)
+{
+	struct drm_crtc *c = drm_crtc_from_index(dev, index);
+
+	WARN_ON(!c);
+	return to_intel_crtc(c);
+}
+
 /* Primary plane formats for gen <= 3 */
 static const u32 i8xx_primary_formats[] = {
 	DRM_FORMAT_C8,
@@ -2546,7 +2566,7 @@ u32 intel_plane_fb_max_stride(struct drm_i915_private *dev_priv,
 	 * We assume the primary plane for pipe A has
 	 * the highest stride limits of them all.
 	 */
-	crtc = intel_get_crtc_for_pipe(dev_priv, PIPE_A);
+	crtc = get_intel_crtc_from_index(&(dev_priv->drm), 0);
 	if (!crtc)
 		return 0;
 
@@ -13719,11 +13739,11 @@ verify_single_dpll_state(struct drm_i915_private *dev_priv,
 	if (new_crtc_state->hw.active)
 		I915_STATE_WARN(!(pll->active_mask & crtc_mask),
 				"pll active mismatch (expected pipe %c in active mask 0x%02x)\n",
-				pipe_name(drm_crtc_index(&crtc->base)), pll->active_mask);
+				pipe_name(crtc->pipe), pll->active_mask);
 	else
 		I915_STATE_WARN(pll->active_mask & crtc_mask,
 				"pll active mismatch (didn't expect pipe %c in active mask 0x%02x)\n",
-				pipe_name(drm_crtc_index(&crtc->base)), pll->active_mask);
+				pipe_name(crtc->pipe), pll->active_mask);
 
 	I915_STATE_WARN(!(pll->state.crtc_mask & crtc_mask),
 			"pll enabled crtcs mismatch (expected 0x%x in 0x%02x)\n",
@@ -13752,10 +13772,10 @@ verify_shared_dpll_state(struct intel_crtc *crtc,
 
 		I915_STATE_WARN(pll->active_mask & crtc_mask,
 				"pll active mismatch (didn't expect pipe %c in active mask)\n",
-				pipe_name(drm_crtc_index(&crtc->base)));
+				pipe_name(crtc->pipe));
 		I915_STATE_WARN(pll->state.crtc_mask & crtc_mask,
 				"pll enabled crtcs mismatch (found %x in enabled mask)\n",
-				pipe_name(drm_crtc_index(&crtc->base)));
+				pipe_name(crtc->pipe));
 	}
 }
 
@@ -17490,7 +17510,8 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
 
 			if (crtc_state->hw.active &&
 			    crtc_state->shared_dpll == pll)
-				pll->state.crtc_mask |= 1 << crtc->pipe;
+				pll->state.crtc_mask |=
+					1 << drm_crtc_index(&crtc->base);
 		}
 		pll->active_mask = pll->state.crtc_mask;
 
