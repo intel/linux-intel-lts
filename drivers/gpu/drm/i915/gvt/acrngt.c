@@ -417,12 +417,40 @@ static ssize_t acrngt_sysfs_vgpu_id(struct kobject *kobj,
 	return 0;
 }
 
+static ssize_t acrngt_sysfs_vgpu_bar_info(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	u64 bar0_start, bar0_len, bar2_start, bar2_len;
+	u64 mask;
+	struct acrngt_hvm_dev *info;
+	struct intel_vgpu *vgpu;
+
+	info = container_of(kobj, struct acrngt_hvm_dev, kobj);
+	if (!info || !info->vgpu)
+		return 0;
+	vgpu = info->vgpu;
+	mask = ~(0xf);
+	/* clear last four bits according to PCI spec */
+	bar0_start = *(u64 *)(vgpu_cfg_space(vgpu) + PCI_BASE_ADDRESS_0) & mask;
+	bar0_len = vgpu->cfg_space.bar[0].size;
+	bar2_start = *(u64 *)(vgpu_cfg_space(vgpu) + PCI_BASE_ADDRESS_2) & mask;
+	bar2_len = vgpu->cfg_space.bar[1].size;
+	return sprintf(buf, "0x%016llx 0x%016llx\n0x%016llx 0x%016llx\n",
+		bar0_start, bar0_len, bar2_start, bar2_len);
+
+	return 0;
+}
+
 static struct kobj_attribute acrngt_vm_attr =
 __ATTR(vgpu_id, 0440, acrngt_sysfs_vgpu_id, NULL);
+
+static struct kobj_attribute acrngt_vgpu_bar_info =
+__ATTR(vgpu_bar_info, 0440, acrngt_sysfs_vgpu_bar_info, NULL);
 
 
 static struct attribute *acrngt_vm_attrs[] = {
 	&acrngt_vm_attr.attr,
+	&acrngt_vgpu_bar_info.attr,
 	NULL,   /* need to NULL terminate the list of attributes */
 };
 
