@@ -1100,7 +1100,7 @@ __execlists_schedule_in(struct i915_request *rq)
 		reset_active(rq, engine);
 
 	if (IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM))
-		execlists_check_context(ce, rq->engine);
+		execlists_check_context(ce, engine);
 
 	if (ce->tag) {
 		/* Use a fixed tag for OA and friends */
@@ -1162,14 +1162,6 @@ __execlists_schedule_out(struct i915_request *rq,
 	 * schedule_out can race with schedule_in meaning that we should
 	 * refrain from doing non-trivial work here.
 	 */
-
-	/*
-	 * If we have just completed this context, the engine may now be
-	 * idle and we want to re-enter powersaving.
-	 */
-	if (list_is_last(&rq->link, &ce->timeline->requests) &&
-	    i915_request_completed(rq))
-		intel_engine_add_retire(engine, ce->timeline);
 
 	intel_engine_context_out(engine);
 	execlists_context_status_change(rq, INTEL_CONTEXT_SCHEDULE_OUT);
