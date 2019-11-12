@@ -28,9 +28,6 @@
 # CVE-2019-12381
 0001-ip_sockglue-Fix-missing-check-bug-in-ip_ra_control-CVE-2019-12381.patch
 
-# CVE-2018-20976
-0001-xfs-clear-sb-s_fs_info-on-mount-failure-CVE-2018-20976.patch
-
 # CVE-2019-15217
 0001-media-usb-zr364xx-Fix-KASAN-null-ptr-deref-Read-in-z-CVE-2019-15217.patch
 
