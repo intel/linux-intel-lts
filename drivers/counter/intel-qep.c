@@ -104,6 +104,7 @@ struct intel_qep {
 	bool enabled;
 	bool phase_error;
 	int op_mode;
+	int cap_mode;
 };
 
 #define counter_to_qep(c)	(container_of((c), struct intel_qep, counter))
@@ -470,11 +471,101 @@ static ssize_t phase_error_read(struct counter_device *counter,
 			"error" : "no_error");
 }
 
+static ssize_t operating_mode_read(struct counter_device *counter,
+		struct counter_count *count, void *priv, char *buf)
+{
+	struct intel_qep *qep = counter_to_qep(counter);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", qep->op_mode ?
+			"capture" : "quadrature");
+}
+
+static ssize_t operating_mode_write(struct counter_device *counter,
+		struct counter_count *count, void *priv, const char *buf,
+		size_t len)
+{
+	struct intel_qep *qep = counter_to_qep(counter);
+	u32 reg;
+
+	if (qep->enabled)
+		return -EINVAL;
+
+	pm_runtime_get_sync(qep->dev);
+
+	reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
+
+	if (sysfs_streq(buf, "capture")) {
+		reg |= INTEL_QEPCON_OP_MODE;
+		qep->op_mode = INTEL_QEP_OP_MODE_CC;
+	} else if (sysfs_streq(buf, "quadrature")) {
+		reg &= ~INTEL_QEPCON_OP_MODE;
+		qep->op_mode = INTEL_QEP_OP_MODE_QEP;
+	}
+
+	intel_qep_writel(qep->regs, INTEL_QEPCON, reg);
+
+	pm_runtime_put(qep->dev);
+
+	return len;
+}
+
+static ssize_t capture_data_read(struct counter_device *counter,
+		struct counter_count *count, void *priv, char *buf)
+{
+	struct intel_qep *qep = counter_to_qep(counter);
+	u32 reg;
+
+	reg = intel_qep_readl(qep->regs, INTEL_QEPCAPBUF);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", reg);
+}
+
+static ssize_t capture_mode_read(struct counter_device *counter,
+		struct counter_count *count, void *priv, char *buf)
+{
+	struct intel_qep *qep = counter_to_qep(counter);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", qep->cap_mode ?
+			"both" : "single");
+}
+
+static ssize_t capture_mode_write(struct counter_device *counter,
+		struct counter_count *count, void *priv, const char *buf,
+		size_t len)
+{
+	struct intel_qep *qep = counter_to_qep(counter);
+	u32 reg;
+
+	if (qep->enabled)
+		return -EINVAL;
+
+	pm_runtime_get_sync(qep->dev);
+
+	reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
+
+	if (sysfs_streq(buf, "both")) {
+		reg |= INTEL_QEPCON_CAP_MODE;
+		qep->cap_mode = 1;
+	} else if (sysfs_streq(buf, "single")) {
+		reg &= ~INTEL_QEPCON_CAP_MODE;
+		qep->cap_mode = 0;
+	}
+
+	intel_qep_writel(qep->regs, INTEL_QEPCON, reg);
+
+	pm_runtime_put(qep->dev);
+
+	return len;
+}
+
 static const struct counter_count_ext intel_qep_count_ext[] = {
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(ceiling),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(enable),
 	INTEL_QEP_COUNTER_COUNT_EXT_RO(direction),
 	INTEL_QEP_COUNTER_COUNT_EXT_RO(phase_error),
+	INTEL_QEP_COUNTER_COUNT_EXT_RW(operating_mode),
+	INTEL_QEP_COUNTER_COUNT_EXT_RO(capture_data),
+	INTEL_QEP_COUNTER_COUNT_EXT_RW(capture_mode),
 };
 
 static struct counter_count intel_qep_counter_count[] = {
@@ -635,6 +726,7 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	qep->enabled = false;
 	qep->phase_error = false;
 	qep->op_mode = INTEL_QEP_OP_MODE_QEP;
+	qep->cap_mode = 0;
 
 	ret = counter_register(&qep->counter);
 	if (ret)
