@@ -64,6 +64,9 @@
 #define INTEL_QEP_DIRECTION_FORWARD 1
 #define INTEL_QEP_DIRECTION_BACKWARD !INTEL_QEP_DIRECTION_FORWARD
 
+#define INTEL_QEP_OP_MODE_QEP 0
+#define INTEL_QEP_OP_MODE_CC 1
+
 #define INTEL_QEP_COUNTER_EXT_RW(_name) \
 { \
 	.name = #_name, \
@@ -99,6 +102,8 @@ struct intel_qep {
 	u32 interrupt;
 	int direction;
 	bool enabled;
+	bool phase_error;
+	int op_mode;
 };
 
 #define counter_to_qep(c)	(container_of((c), struct intel_qep, counter))
@@ -157,8 +162,14 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 	mutex_lock(&qep->lock);
 
 	stat = qep->interrupt;
-	if (stat & INTEL_QEPINT_FIFOCRIT)
-		dev_dbg(qep->dev, "Fifo Critical\n");
+	if (stat & INTEL_QEPINT_FIFOCRIT) {
+		if (INTEL_QEP_OP_MODE_QEP == qep->op_mode) {
+			dev_dbg(qep->dev, "Phase Error detected\n");
+			qep->phase_error = true;
+		} else
+			dev_dbg(qep->dev, "Fifo Critical\n");
+	} else
+		qep->phase_error = false;
 
 	if (stat & INTEL_QEPINT_FIFOENTRY)
 		dev_dbg(qep->dev, "Fifo Entry\n");
@@ -450,10 +461,20 @@ static ssize_t direction_read(struct counter_device *counter,
 			"forward" : "backward");
 }
 
+static ssize_t phase_error_read(struct counter_device *counter,
+		struct counter_count *count, void *priv, char *buf)
+{
+	struct intel_qep *qep = counter_to_qep(counter);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", qep->phase_error ?
+			"error" : "no_error");
+}
+
 static const struct counter_count_ext intel_qep_count_ext[] = {
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(ceiling),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(enable),
 	INTEL_QEP_COUNTER_COUNT_EXT_RO(direction),
+	INTEL_QEP_COUNTER_COUNT_EXT_RO(phase_error),
 };
 
 static struct counter_count intel_qep_counter_count[] = {
@@ -611,6 +632,9 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	qep->counter.ext = intel_qep_ext;
 	qep->counter.num_ext = ARRAY_SIZE(intel_qep_ext);
 	qep->counter.priv = qep;
+	qep->enabled = false;
+	qep->phase_error = false;
+	qep->op_mode = INTEL_QEP_OP_MODE_QEP;
 
 	ret = counter_register(&qep->counter);
 	if (ret)
