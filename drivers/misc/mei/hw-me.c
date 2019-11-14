@@ -1494,7 +1494,8 @@ struct mei_device *mei_me_dev_init(struct pci_dev *pdev,
 	hw = to_me_hw(dev);
 
 	for (i = 0; i < DMA_DSCR_NUM; i++)
-		 dev->dr_dscr[i].size = cfg->dma_size[i];
+		dev->dr_dscr[i].size = cfg->dma_size[i];
+
 
 	mei_device_init(dev, &pdev->dev, &mei_me_hw_ops);
 	hw->cfg = cfg;
