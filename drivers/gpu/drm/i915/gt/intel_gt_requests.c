@@ -108,7 +108,6 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 {
 	struct intel_gt_timelines *timelines = &gt->timelines;
 	struct intel_timeline *tl, *tn;
-	unsigned long active_count = 0;
 	unsigned long flags;
 	bool interruptible;
 	LIST_HEAD(free);
@@ -121,10 +120,8 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 
 	spin_lock_irqsave(&timelines->lock, flags);
 	list_for_each_entry_safe(tl, tn, &timelines->active_list, link) {
-		if (!mutex_trylock(&tl->mutex)) {
-			active_count++; /* report busy to caller, try again? */
+		if (!mutex_trylock(&tl->mutex))
 			continue;
-		}
 
 		intel_timeline_get(tl);
 		GEM_BUG_ON(!atomic_read(&tl->active_count));
@@ -149,10 +146,9 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 
 		/* Resume iteration after dropping lock */
 		list_safe_reset_next(tl, tn, link);
+
 		if (atomic_dec_and_test(&tl->active_count))
 			list_del(&tl->link);
-		else
-			active_count += !!rcu_access_pointer(tl->last_request.fence);
 
 		mutex_unlock(&tl->mutex);
 
@@ -167,7 +163,7 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 	list_for_each_entry_safe(tl, tn, &free, link)
 		__intel_timeline_free(&tl->kref);
 
-	return active_count ? timeout : 0;
+	return list_empty(&timelines->active_list) ? 0 : timeout;
 }
 
 int intel_gt_wait_for_idle(struct intel_gt *gt, long timeout)
