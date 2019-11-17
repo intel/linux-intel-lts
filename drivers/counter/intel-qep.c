@@ -239,15 +239,12 @@ static int intel_qep_count_write(struct counter_device *counter,
 		struct counter_count *count,
 		struct counter_count_write_value *val)
 {
-	struct intel_qep *const qep = counter->priv;
 	unsigned long cnt;
 	int err;
 
 	err = counter_count_write_value_get(&cnt, COUNTER_COUNT_POSITION, val);
 	if (err)
 		return err;
-
-	intel_qep_writel(qep->regs, INTEL_QEPMAX, cnt);
 
 	return 0;
 }
@@ -370,7 +367,7 @@ static ssize_t ceiling_read(struct counter_device *counter,
 
 	reg = intel_qep_readl(qep->regs, INTEL_QEPMAX);
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", reg);
+	return snprintf(buf, PAGE_SIZE, "%u\n", reg);
 }
 
 static ssize_t ceiling_write(struct counter_device *counter,
