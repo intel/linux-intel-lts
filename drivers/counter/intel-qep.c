@@ -227,9 +227,9 @@ static int intel_qep_count_read(struct counter_device *counter,
 		struct counter_count_read_value *val)
 {
 	struct intel_qep *const qep = counter->priv;
-	uint32_t cntval;
+	unsigned long cntval;
 
-	cntval = intel_qep_readl(qep, INTEL_QEPCOUNT);
+	cntval = intel_qep_readl(qep->regs, INTEL_QEPCOUNT);
 	counter_count_read_value_set(val, COUNTER_COUNT_POSITION, &cntval);
 
 	return 0;
@@ -240,7 +240,7 @@ static int intel_qep_count_write(struct counter_device *counter,
 		struct counter_count_write_value *val)
 {
 	struct intel_qep *const qep = counter->priv;
-	u32 cnt;
+	unsigned long cnt;
 	int err;
 
 	err = counter_count_write_value_get(&cnt, COUNTER_COUNT_POSITION, val);
