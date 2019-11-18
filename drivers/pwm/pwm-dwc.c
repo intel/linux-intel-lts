@@ -92,8 +92,8 @@ static u32 __dwc_duty_ns(struct dwc_pwm *dwc, int pwm)
 	u32 duty;
 
 	duty = dwc_readl(dwc->base, DWC_TIM_LD_CNT2(pwm));
-	duty *= dwc->clk_period_ns;
 	duty += 1;
+	duty *= dwc->clk_period_ns;
 
 	return duty;
 }
@@ -103,8 +103,9 @@ static u32 __dwc_period_ns(struct dwc_pwm *dwc, int pwm, u32 duty)
 	u32 period;
 
 	period = dwc_readl(dwc->base, DWC_TIM_LD_CNT(pwm));
+	period += 1;
 	period *= dwc->clk_period_ns;
-	period += 1 + duty;
+	period += duty;
 
 	return period;
 }
