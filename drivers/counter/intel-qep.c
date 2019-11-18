@@ -130,6 +130,7 @@ static void intel_qep_init(struct intel_qep *qep, bool reset)
 	reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
 	reg &= ~INTEL_QEPCON_EN;
 	intel_qep_writel(qep->regs, INTEL_QEPCON, reg);
+	qep->enabled = false;
 
 	/* make sure periperal is disabled by reading one more time */
 	reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
@@ -391,11 +392,8 @@ static ssize_t enable_read(struct counter_device *counter,
 		struct counter_count *count, void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
-	u32 reg;
 
-	reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
-
-	return snprintf(buf, PAGE_SIZE, "%d\n", !!(reg & INTEL_QEPCON_EN));
+	return snprintf(buf, PAGE_SIZE, "%d\n", qep->enabled);
 }
 
 static ssize_t enable_write(struct counter_device *counter,
@@ -411,14 +409,22 @@ static ssize_t enable_write(struct counter_device *counter,
 	if (ret < 0)
 		return ret;
 
-	reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
+	if (val && !qep->enabled) {
+		pm_runtime_get_sync(qep->dev);
 
-	if (val)
+		reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
 		reg |= INTEL_QEPCON_EN;
-	else
+		intel_qep_writel(qep->regs, INTEL_QEPCON, reg);
+		qep->enabled = true;
+	} else if (!val && qep->enabled) {
+		reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
 		reg &= ~INTEL_QEPCON_EN;
+		intel_qep_writel(qep->regs, INTEL_QEPCON, reg);
+		qep->enabled = false;
 
-	intel_qep_writel(qep->regs, INTEL_QEPCON, reg);
+		pm_runtime_mark_last_busy(qep->dev);
+		pm_runtime_put_autosuspend(qep->dev);
+	}
 
 	return len;
 }
