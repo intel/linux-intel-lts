@@ -49,10 +49,10 @@ struct bh_service {
 static struct bh_service bh_srvc;
 
 /*
- * dal device session records list (array of list per dal device)
+ * dal device session records list
  * represents opened sessions to dal fw client
  */
-static struct list_head dal_dev_session_list[BH_CONN_MAX];
+static struct list_head dal_dev_session_list;
 
 /**
  * bh_get_msg_host_id - increase the shared variable bh_host_id_number by 1
@@ -75,18 +75,16 @@ u64 bh_get_msg_host_id(void)
 /**
  * bh_session_find - find session record by handle
  *
- * @conn_idx: DAL client connection idx
  * @host_id: session host id
  *
  * Return: pointer to bh_session_record if found
  *         NULL if the session wasn't found
  */
-struct bh_session_record *bh_session_find(unsigned int conn_idx, u64 host_id)
+struct bh_session_record *bh_session_find(u64 host_id)
 {
 	struct bh_session_record *pos;
-	struct list_head *session_list = &dal_dev_session_list[conn_idx];
 
-	list_for_each_entry(pos, session_list, link) {
+	list_for_each_entry(pos, &dal_dev_session_list, link) {
 		if (pos->host_id == host_id)
 			return pos;
 	}
@@ -97,25 +95,23 @@ struct bh_session_record *bh_session_find(unsigned int conn_idx, u64 host_id)
 /**
  * bh_session_add - add session record to list
  *
- * @conn_idx: fw client connection idx
  * @session: session record
  */
-void bh_session_add(unsigned int conn_idx, struct bh_session_record *session)
+void bh_session_add(struct bh_session_record *session)
 {
-	list_add_tail(&session->link, &dal_dev_session_list[conn_idx]);
+	list_add_tail(&session->link, &dal_dev_session_list);
 }
 
 /**
  * bh_session_remove - remove session record from list, ad release its memory
  *
- * @conn_idx: fw client connection idx
  * @host_id: session host id
  */
-void bh_session_remove(unsigned int conn_idx, u64 host_id)
+void bh_session_remove(u64 host_id)
 {
 	struct bh_session_record *session;
 
-	session = bh_session_find(conn_idx, host_id);
+	session = bh_session_find(host_id);
 
 	if (session) {
 		list_del(&session->link);
@@ -522,30 +518,25 @@ int bh_request(unsigned int conn_idx, void *cmd_hdr, unsigned int cmd_hdr_len,
 
 /**
  * bh_ession_list_free - free session list of given dal fw client
- *
- * @conn_idx: fw client connection idx
  */
-static void bh_session_list_free(unsigned int conn_idx)
+static void bh_session_list_free(void)
 {
 	struct bh_session_record *pos, *next;
-	struct list_head *session_list =  &dal_dev_session_list[conn_idx];
 
-	list_for_each_entry_safe(pos, next, session_list, link) {
+	list_for_each_entry_safe(pos, next, &dal_dev_session_list, link) {
 		list_del(&pos->link);
 		kfree(pos);
 	}
 
-	INIT_LIST_HEAD(session_list);
+	INIT_LIST_HEAD(&dal_dev_session_list);
 }
 
 /**
  * bh_session_list_init - initialize session list of given dal fw client
- *
- * @conn_idx: fw client connection idx
  */
-static void bh_session_list_init(unsigned int conn_idx)
+static void bh_session_list_init(void)
 {
-	INIT_LIST_HEAD(&dal_dev_session_list[conn_idx]);
+	INIT_LIST_HEAD(&dal_dev_session_list);
 }
 
 /**
@@ -597,7 +588,6 @@ int bh_proxy_check_svl_jta_blocked_state(uuid_t *ta_id)
 /**
  * bh_proxy_list_jta_packages - get list of ta packages in DAL
  *
- * @conn_idx: fw client connection idx
  * @count: out param to hold the count of ta packages in DAL
  * @ta_ids: out param to hold pointer to the ids of ta packages in DAL
  *           The buffer which holds the ids is allocated in this function
@@ -607,8 +597,7 @@ int bh_proxy_check_svl_jta_blocked_state(uuid_t *ta_id)
  *         <0 on system failure
  *         >0 on DAL FW failure
  */
-int bh_proxy_list_jta_packages(unsigned int conn_idx, unsigned int *count,
-			       uuid_t **ta_ids)
+int bh_proxy_list_jta_packages(unsigned int *count, uuid_t **ta_ids)
 {
 	int ret;
 	struct bh_command_header h;
@@ -634,7 +623,7 @@ int bh_proxy_list_jta_packages(unsigned int conn_idx, unsigned int *count,
 	h.id = BHP_CMD_LIST_TA_PACKAGES;
 
 	host_id = bh_get_msg_host_id();
-	ret = bh_request(conn_idx, &h, sizeof(h), NULL, 0, host_id,
+	ret = bh_request(BH_CONN_IDX_IVM, &h, sizeof(h), NULL, 0, host_id,
 			 (void **)&resp_hdr);
 
 	if (!ret)
@@ -681,7 +670,6 @@ out:
 /**
  * bh_proxy_dnload_jta - download ta package to DAL
  *
- * @conn_idx: fw client connection idx
  * @ta_id: trusted application (ta) id
  * @ta_pkg: ta binary package
  * @pkg_len: ta binary package length
@@ -690,8 +678,7 @@ out:
  *         <0 on system failure
  *         >0 on DAL FW failure
  */
-int bh_proxy_dnload_jta(unsigned int conn_idx, uuid_t *ta_id,
-			const char *ta_pkg, unsigned int pkg_len)
+int bh_proxy_dnload_jta(uuid_t *ta_id, const char *ta_pkg, unsigned int pkg_len)
 {
 	struct bh_command_header *h;
 	struct bh_download_jta_cmd *cmd;
@@ -712,7 +699,8 @@ int bh_proxy_dnload_jta(unsigned int conn_idx, uuid_t *ta_id,
 	cmd->ta_id = *ta_id;
 
 	host_id = bh_get_msg_host_id();
-	ret = bh_request(conn_idx, h, CMD_BUF_SIZE(*cmd), ta_pkg, pkg_len,
+	ret = bh_request(BH_CONN_IDX_IVM, h, CMD_BUF_SIZE(*cmd),
+			 ta_pkg, pkg_len,
 			 host_id, (void **)&resp_hdr);
 
 	if (!ret)
@@ -726,7 +714,6 @@ int bh_proxy_dnload_jta(unsigned int conn_idx, uuid_t *ta_id,
 /**
  * bh_proxy_open_jta_session - send open session command
  *
- * @conn_idx: fw client connection idx
  * @ta_id: trusted application (ta) id
  * @init_buffer: init parameters to the session (optional)
  * @init_len: length of the init parameters
@@ -738,8 +725,7 @@ int bh_proxy_dnload_jta(unsigned int conn_idx, uuid_t *ta_id,
  *         <0 on system failure
  *         >0 on DAL FW failure
  */
-int bh_proxy_open_jta_session(unsigned int conn_idx,
-			      uuid_t *ta_id,
+int bh_proxy_open_jta_session(uuid_t *ta_id,
 			      const char *init_buffer,
 			      unsigned int init_len,
 			      u64 *host_id,
@@ -752,6 +738,7 @@ int bh_proxy_open_jta_session(unsigned int conn_idx,
 	char cmdbuf[CMD_BUF_SIZE(*cmd)];
 	struct bh_response_header *resp_hdr;
 	struct bh_session_record *session;
+	unsigned int conn_idx = BH_CONN_IDX_IVM;
 
 	if (!host_id || !ta_id)
 		return -EINVAL;
@@ -770,7 +757,7 @@ int bh_proxy_open_jta_session(unsigned int conn_idx,
 		return -ENOMEM;
 
 	session->host_id = bh_get_msg_host_id();
-	bh_session_add(conn_idx, session);
+	bh_session_add(session);
 
 	h->id = BHP_CMD_OPEN_JTASESSION;
 	cmd->ta_id = *ta_id;
@@ -786,7 +773,7 @@ int bh_proxy_open_jta_session(unsigned int conn_idx,
 		 * VM might delete the TA pkg when no live session.
 		 * Download the TA pkg and open session again
 		 */
-		ret = bh_proxy_dnload_jta(conn_idx, ta_id, ta_pkg, pkg_len);
+		ret = bh_proxy_dnload_jta(ta_id, ta_pkg, pkg_len);
 		if (ret)
 			goto out;
 
@@ -806,7 +793,7 @@ int bh_proxy_open_jta_session(unsigned int conn_idx,
 
 out:
 	if (ret)
-		bh_session_remove(conn_idx, session->host_id);
+		bh_session_remove(session->host_id);
 
 	kfree(resp_hdr);
 
@@ -848,13 +835,10 @@ bool bh_is_initialized(void)
  */
 void bh_init_internal(void)
 {
-	unsigned int i;
-
 	if (!atomic_add_unless(&bh_state, 1, 1))
 		return;
 
-	for (i = BH_CONN_IDX_START; i < BH_CONN_MAX; i++)
-		bh_session_list_init(i);
+	bh_session_list_init();
 
 	INIT_LIST_HEAD(&bh_srvc.request_list);
 	mutex_init(&bh_srvc.request_lock);
@@ -869,13 +853,10 @@ void bh_init_internal(void)
  */
 void bh_deinit_internal(void)
 {
-	unsigned int i;
-
 	if (!atomic_add_unless(&bh_state, -1, 0))
 		return;
 
-	for (i = BH_CONN_IDX_START; i < BH_CONN_MAX; i++)
-		bh_session_list_free(i);
+	bh_session_list_free();
 
 	cancel_work_sync(&bh_srvc.work);
 	bh_request_list_free(&bh_srvc.request_list);
