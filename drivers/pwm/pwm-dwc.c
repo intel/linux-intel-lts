@@ -112,7 +112,7 @@ static u32 __dwc_period_ns(struct dwc_pwm *dwc, int pwm, u32 duty)
 
 static bool __dwc_is_enabled(struct dwc_pwm *dwc, int pwm)
 {
-	return !!dwc_readl(dwc->base, DWC_TIM_CTRL(pwm)) & DWC_TIM_CTRL_EN;
+	return !!(dwc_readl(dwc->base, DWC_TIM_CTRL(pwm)) & DWC_TIM_CTRL_EN);
 }
 
 static void __dwc_set_enable(struct dwc_pwm *dwc, int pwm, int enabled)
