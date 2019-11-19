@@ -70,8 +70,8 @@ static inline void dwc_writel(void __iomem *base, u32 offset, u32 value)
 	writel(value, base + offset);
 }
 
-static void __dwc_configure(struct dwc_pwm *dwc, int pwm, int duty_ns,
-		int period_ns)
+static void __dwc_configure(struct dwc_pwm *dwc, int pwm, unsigned int duty_ns,
+		unsigned int period_ns)
 {
 	u32 ctrl;
 	u32 high;
