@@ -139,8 +139,7 @@ static int dwc_pwm_apply(struct pwm_chip *pwm, struct pwm_device *pdev,
 		if (!pwm_is_enabled(pdev))
 			pm_runtime_get_sync(dwc->dev);
 	} else if (pwm_is_enabled(pdev)) {
-		pm_runtime_mark_last_busy(dwc->dev);
-		pm_runtime_put_autosuspend(dwc->dev);
+			pm_runtime_put_sync(dwc->dev);
 	}
 	__dwc_configure(dwc, pdev->hwpwm, state->duty_cycle, state->period);
 	__dwc_set_enable(dwc, pdev->hwpwm, state->enabled);
@@ -224,9 +223,7 @@ static int dwc_pci_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	if (ret)
 		goto err2;
 
-	pm_runtime_set_autosuspend_delay(dev, 1000);
-	pm_runtime_use_autosuspend(dev);
-	pm_runtime_put_noidle(dev);
+	pm_runtime_put(dev);
 	pm_runtime_allow(dev);
 
 	return 0;
