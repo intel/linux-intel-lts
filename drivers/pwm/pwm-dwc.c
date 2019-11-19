@@ -153,11 +153,15 @@ static void dwc_pwm_get_state(struct pwm_chip *pwm, struct pwm_device *pdev,
 {
 	struct dwc_pwm *dwc = to_dwc(pwm);
 
+	pm_runtime_get_sync(dwc->dev);
+
 	mutex_lock(&dwc->lock);
 	state->enabled = __dwc_is_enabled(dwc, pdev->hwpwm);
 	state->duty_cycle = __dwc_duty_ns(dwc, pdev->hwpwm);
 	state->period = __dwc_period_ns(dwc, pdev->hwpwm, state->duty_cycle);
 	mutex_unlock(&dwc->lock);
+
+	pm_runtime_put_sync(dwc->dev);
 }
 
 static const struct pwm_ops dwc_pwm_ops = {
