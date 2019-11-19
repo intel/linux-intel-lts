@@ -195,6 +195,15 @@ config DWMAC_SUN8I
 	  This selects Allwinner SoC glue layer support for the
 	  stmmac device driver. This driver is used for H3/A83T/A64
 	  EMAC ethernet controller.
+
+config DWMAC_KEEMBAY
+	tristate "STMicro Keembay dwmac support"
+	depends on OF && COMMON_CLK
+	depends on STMMAC_ETH
+	---help---
+	  Support for Ethernet controller on Keembay SoC.
+	  This selects the Keembay glue layer support for the
+	  stmmac device driver.
 endif
 
 config STMMAC_PCI
