@@ -672,7 +672,6 @@ void i915_active_acquire_barrier(struct i915_active *ref)
 	 * populated by i915_request_add_active_barriers() to point to the
 	 * request that will eventually release them.
 	 */
-	spin_lock_irqsave_nested(&ref->tree_lock, flags, SINGLE_DEPTH_NESTING);
 	llist_for_each_safe(pos, next, take_preallocated_barriers(ref)) {
 		struct active_node *node = barrier_from_ll(pos);
 		struct intel_engine_cs *engine = barrier_to_engine(node);
@@ -701,7 +700,6 @@ void i915_active_acquire_barrier(struct i915_active *ref)
 		llist_add(barrier_to_ll(node), &engine->barrier_tasks);
 		intel_engine_pm_put(engine);
 	}
-	spin_unlock_irqrestore(&ref->tree_lock, flags);
 }
 
 void i915_request_add_active_barriers(struct i915_request *rq)
