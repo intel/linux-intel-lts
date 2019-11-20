@@ -18,14 +18,12 @@
  *    http://www.opensource.org/licenses/gpl-license.html
  *    http://www.gnu.org/copyleft/gpl.html
  */
-
 #ifndef HANTRO_H
 #define HANTRO_H
 
 #include <linux/ioctl.h>
 #include <linux/dma-resv.h>
 #include <linux/dma-mapping.h>
-#include <drm/drmP.h>
 #include <drm/drm_vma_manager.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem.h>
@@ -37,6 +35,13 @@
 #include <linux/dma-fence.h>
 #endif
 
+#include <linux/platform_device.h>
+#include <linux/dma-contiguous.h>
+#include <linux/dma-mapping.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_fourcc.h>
+#include <drm/drm_framebuffer.h>
+#include <drm/drm_pci.h>
 
 /*these domain definitions are identical to hantro_bufmgr.h*/
 #define HANTRO_DOMAIN_NONE    0x00000
@@ -88,6 +93,11 @@ struct drm_gem_hantro_object {
 	int    handle;
 	int    flag;
 };
+
+struct dma_buf *hantro_prime_export(
+        struct drm_gem_object *obj,
+        int flags
+);
 
 struct hantro_fencecheck {
 	unsigned int handle;

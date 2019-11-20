@@ -89,11 +89,17 @@
  * same core.
  ********************************************************************/
 
-#define HXDEC_MAX_CORES                 4
+#define HXDEC_MAX_CORES                 8
 
 /* Logic module base address */
-#define SOCLE_LOGIC_0_BASE              0x20888000
-#define SOCLE_LOGIC_1_BASE              0x20888800
+#define SOCLE_LOGIC_0_BASE              0x18553A000 // VCDA
+#define SOCLE_LOGIC_1_BASE              0x18553B000 // VCDB
+#define SOCLE_LOGIC_2_BASE              0x28553A000 // VCDA
+#define SOCLE_LOGIC_3_BASE              0x28553B000 // VCDB
+#define SOCLE_LOGIC_4_BASE              0x38553A000 // VCDA
+#define SOCLE_LOGIC_5_BASE              0x38553B000 // VCDB
+#define SOCLE_LOGIC_6_BASE              0x48553A000 // VCDA
+#define SOCLE_LOGIC_7_BASE              0x48553B000 // VCDB
 
 #define VEXPRESS_LOGIC_0_BASE           0xFC010000
 #define VEXPRESS_LOGIC_1_BASE           0xFC020000
@@ -125,23 +131,47 @@ static const int DecHwId[] = {
 static unsigned long long multicorebase[HXDEC_MAX_CORES] = {
 	SOCLE_LOGIC_0_BASE,
 	SOCLE_LOGIC_1_BASE,
-	0,
-	0,
+	SOCLE_LOGIC_2_BASE,
+	SOCLE_LOGIC_3_BASE,
+	SOCLE_LOGIC_4_BASE,
+	SOCLE_LOGIC_5_BASE,
+	SOCLE_LOGIC_6_BASE,
+	SOCLE_LOGIC_7_BASE
 };
 
 static int irq[HXDEC_MAX_CORES] = {
 	DEC_IRQ_0,
 	DEC_IRQ_1,
-	-1,
-	-1,
+	DEC_IRQ_0,
+	DEC_IRQ_1,
+	DEC_IRQ_0,
+	DEC_IRQ_1,
+	DEC_IRQ_0,
+	DEC_IRQ_1
 };
 
 static unsigned int iosize[HXDEC_MAX_CORES] = {
 	DEC_IO_SIZE_0,
 	DEC_IO_SIZE_1,
-	-1,
-	-1,
+	DEC_IO_SIZE_0,
+	DEC_IO_SIZE_1,
+	DEC_IO_SIZE_0,
+	DEC_IO_SIZE_1,
+	DEC_IO_SIZE_0,
+	DEC_IO_SIZE_1
 };
+
+static int sliceidxtable[HXDEC_MAX_CORES] = {
+	1,
+	1,
+	0,
+	0,
+	2,
+	2,
+	3,
+	3
+};
+
 #endif
 //static int elements = 2;
 static int bdecprobed;
@@ -581,7 +611,7 @@ static int GetDecCoreID(
 	struct file *filp,
 	unsigned long format)
 {
-	long c;
+	long c = 0;
 	unsigned long flags;
 	int core_id = -1;
 	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
@@ -596,6 +626,7 @@ static int GetDecCoreID(
 		}
 		spin_unlock_irqrestore(&parentslice->owner_lock, flags);
 		dev = dev->next;
+		c++;
 	}
 	return core_id;
 }
@@ -757,10 +788,10 @@ static long DecFlushRegs(struct hantrodec_t *dev, struct core_desc *core)
 	iowrite32(0x0, (void *)(dev->hwregs + 4));
 	for (i = 2; i <= HANTRO_VC8000D_LAST_REG; i++)
 		iowrite32(dev->dec_regs[i], (void *)(dev->hwregs + i * 4));
+	for (i = 1; i <= HANTRO_VC8000D_LAST_REG; i++)
 
 	/* write the status register, which may start the decoder */
 	iowrite32(dev->dec_regs[1], (void *)(dev->hwregs + 4));
-
 	return 0;
 }
 
@@ -1090,12 +1121,12 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOCGHWOFFSET): {
-		__get_user(id, (int *)arg);
+		__get_user(id, (unsigned long *)arg);
 		pcore = getcoreCtrl(id);
 		if (pcore == NULL)
 			return -EFAULT;
 
-		__put_user(pcore->multicorebase_actual, (unsigned long *) arg);
+		__put_user(pcore->multicorebase_actual, (unsigned long long*) arg);
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOCGHWIOSIZE): {
@@ -1120,12 +1151,12 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			tmp = copy_to_user(((unsigned long long*) arg) + i,
 					&pcore->multicorebase_actual,
 					sizeof(pcore->multicorebase_actual));
+			if (tmp) {
+				pr_err("copy_to_user failed, returned %li\n", tmp);
+				return -EFAULT;
+			}
 			pcore = pcore->next;
 			i++;
-		}
-		if (tmp) {
-			pr_err("copy_to_user failed, returned %li\n", tmp);
-			return -EFAULT;
 		}
 		break;
 	}
@@ -1293,7 +1324,7 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		id = (u32)arg;
 		pcore = getcoreCtrl(id);
 		if (pcore == NULL)
-			return -EFAULT;
+			return 0; // -EFAULT;
 		id = ioread32((void *)pcore->hwregs);
 		return id;
 	}
@@ -1313,8 +1344,8 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		hw_id = ioread32((void *)(pcore->hwregs));
 		if (IS_G1(hw_id >> 16) || IS_G2(hw_id >> 16))
-			__put_user(hw_id, (u32 *) arg);
-		else {
+		{	__put_user(hw_id, (u32 *) arg);
+		} else {
 			hw_id = ioread32((void *)(pcore->hwregs + HANTRODEC_HW_BUILD_ID_OFF));
 			__put_user(hw_id, (u32 *) arg);
 		}
@@ -1448,7 +1479,7 @@ int hantrodec_probe(struct platform_device *pdev, struct hantro_core_info *prc, 
 		ResetAsic(pcore);
 		pcore->dec_owner = pcore->pp_owner = NULL;
 		/*fixme: only slice 0 for simulation*/
-		pcore->sliceidx = 0;
+		pcore->sliceidx = sliceidxtable[i];
 
 		if (auxcore != NULL) {
 			ReadCoreConfig(auxcore);

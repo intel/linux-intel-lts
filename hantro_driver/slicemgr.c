@@ -23,7 +23,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
- #include "hantro_priv.h"
+#include "hantro_priv.h"
 
 
 /*currently we simply not using dynamic chains*/
@@ -343,7 +343,7 @@ int slice_init(void)
 
 long hantroslice_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	switch (_IOC_NR(cmd)) {
+	switch (cmd) {
 	case DRM_IOCTL_HANTRO_GET_SLICENUM:
 		return get_slicenumber();
 	default:

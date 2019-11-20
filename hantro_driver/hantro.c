@@ -46,10 +46,10 @@
 
 /* compile options */
 #define USE_HW 1
-#define USE_CMA 1
-#define HAS_VC8000E
+#define USE_CMA 0
+#define HAS_VC8000E 
 #define HAS_VC8000D
-#define HAS_CACHECORE
+//#define HAS_CACHECORE
 
 /* debug */
 #define ENABLE_DEBUG
@@ -168,7 +168,7 @@ static int hantro_gem_dumb_create_internal(
 	struct drm_gem_hantro_object *cma_obj;
 	int min_pitch = DIV_ROUND_UP(args->width * args->bpp, 8);
 	struct drm_gem_object *obj;
-	unsigned int sliceidx = args->handle;
+	//unsigned int sliceidx = args->handle;
 
 	args->handle = 0;
 	if (mutex_lock_interruptible(&dev->struct_mutex))
@@ -180,6 +180,7 @@ static int hantro_gem_dumb_create_internal(
 		ret = -ENOMEM;
 		goto out;
 	}
+
 	obj = &cma_obj->base;
 	out_size =  in_size = sizeof(*args);
 	args->pitch = ALIGN(min_pitch, 64);
@@ -507,13 +508,14 @@ static vm_fault_t hantro_vm_fault(struct vm_fault *vmf)
 	return -EPERM;
 }
 #endif
-
+/* conflicting with def in powerpc io.h 
 #ifndef virt_to_bus
 static inline unsigned long virt_to_bus(void *address)
 {
 	return (unsigned long)address;
 }
 #endif
+*/
 static struct sg_table *hantro_gem_prime_get_sg_table(
 		struct drm_gem_object *obj)
 {
@@ -759,7 +761,7 @@ static int hantro_map_vaddr(
 		return -EINVAL;
 
 	cma_obj = to_drm_gem_hantro_obj(obj);
-	pamap->vm_addr = (unsigned long long)cma_obj->vaddr;
+	pamap->vm_addr = (unsigned long)cma_obj->vaddr;
 	pamap->phy_addr = cma_obj->paddr;
 
 	hantro_unref_drmobj(obj);
@@ -1583,23 +1585,20 @@ static const struct dma_buf_ops hantro_dmabuf_ops =  {
 #endif	/*#if KERNEL_VERSION(4, 20, 0) <= LINUX_VERSION_CODE*/
 
 static struct drm_driver hantro_drm_driver;
-static struct dma_buf *hantro_prime_export(
-	struct drm_gem_object *obj,
-	int flags)
-{
-	struct drm_gem_hantro_object *cma_obj;
-	struct dma_buf_export_info exp_info = {
-		.exp_name = KBUILD_MODNAME,
-		.owner = obj->dev->driver->fops->owner,
-		.ops = &hantro_dmabuf_ops,
-		.flags = flags,
-		.priv = obj,
-	};
 
-	cma_obj = to_drm_gem_hantro_obj(obj);
-	exp_info.resv = &cma_obj->kresv;
-	exp_info.size = cma_obj->num_pages << PAGE_SHIFT;
-	return drm_gem_dmabuf_export(obj->dev, &exp_info);
+struct dma_buf *hantro_prime_export(
+        struct drm_gem_object *obj,
+        int flags)
+{
+        struct dma_buf_export_info exp_info = {
+                .exp_name = KBUILD_MODNAME,
+                .owner = obj->dev->driver->fops->owner,
+                .ops = &hantro_dmabuf_ops,
+                .size = obj->size,
+                .flags = flags,
+                .priv = obj,
+        };
+        return drm_gem_dmabuf_export(obj->dev, &exp_info);
 }
 
 static void hantro_close_object(

@@ -49,12 +49,38 @@ static u32 resouce_shared;
  */
 /*0:no resource sharing inter cores 1: existing resource sharing*/
 #define RESOURCE_SHARED_INTER_CORES        0
+
+// slice 0
 /*customer specify according to own platform*/
-#define CORE_0_IO_ADDR                 0xc0000000
+#define CORE_0_IO_ADDR                 0x185539000 // VCE
 #define CORE_0_IO_SIZE                 (500 * 4)    /* bytes */
 /*customer specify according to own platform*/
-#define CORE_1_IO_ADDR                 0xd0000000
+#define CORE_1_IO_ADDR                 0x185538000 // VCEJ
 #define CORE_1_IO_SIZE                 (500 * 4)    /* bytes */
+
+// slice 1
+/*customer specify according to own platform*/
+#define CORE_2_IO_ADDR                 0x285539000 // VCE
+#define CORE_2_IO_SIZE                 (500 * 4)    /* bytes */
+/*customer specify according to own platform*/
+#define CORE_3_IO_ADDR                 0x285538000 // VCEJ
+#define CORE_3_IO_SIZE                 (500 * 4)    /* bytes */
+
+// slice 2
+/*customer specify according to own platform*/
+#define CORE_4_IO_ADDR                 0x385539000 // VCE
+#define CORE_4_IO_SIZE                 (500 * 4)    /* bytes */
+/*customer specify according to own platform*/
+#define CORE_5_IO_ADDR                 0x385538000 // VCEJ
+#define CORE_5_IO_SIZE                 (500 * 4)    /* bytes */
+
+// slice 3
+/*customer specify according to own platform*/
+#define CORE_6_IO_ADDR                 0x485539000 // VCE
+#define CORE_6_IO_SIZE                 (500 * 4)    /* bytes */
+/*customer specify according to own platform*/
+#define CORE_7_IO_ADDR                 0x485538000 // VCEJ
+#define CORE_7_IO_SIZE                 (500 * 4)    /* bytes */
 
 #define INT_PIN_CORE_0                    -1        /*IRQ pin of core 0*/
 #define INT_PIN_CORE_1                    -1        /*IRQ pin of core 1*/
@@ -67,8 +93,14 @@ static u32 resouce_shared;
 /*base_addr, iosize, irq, resource_shared*/
 #ifndef USE_DTB_PROBE
 static CORE_CONFIG core_array[] = {
-	{CORE_0_IO_ADDR, CORE_0_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 0}, /* core_0, hevc and avc */
-	{CORE_1_IO_ADDR, CORE_1_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 0},  /* core_1, jpeg */
+	{CORE_0_IO_ADDR, CORE_0_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 0}, 
+	{CORE_1_IO_ADDR, CORE_1_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 0},
+	{CORE_2_IO_ADDR, CORE_2_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 1}, 
+	{CORE_3_IO_ADDR, CORE_3_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 1},
+	{CORE_4_IO_ADDR, CORE_4_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 2}, 
+	{CORE_5_IO_ADDR, CORE_5_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 2},
+	{CORE_6_IO_ADDR, CORE_6_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 3}, 
+	{CORE_7_IO_ADDR, CORE_7_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 3},
 };
 #endif
 static int bencprobed;

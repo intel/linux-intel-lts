@@ -18,13 +18,12 @@
  *    http://www.opensource.org/licenses/gpl-license.html
  *    http://www.gnu.org/copyleft/gpl.html
  */
-
 #ifndef HANTRO_PRIV_H
 #define HANTRO_PRIV_H
 #include "hantro.h"
 #include "hantro_slice.h"
 
-#define USE_IRQ
+//#define USE_IRQ
 //#define USE_DTB_PROBE
 
 #define IRQNAME_DECODER		"irq_hantro_decoder"
