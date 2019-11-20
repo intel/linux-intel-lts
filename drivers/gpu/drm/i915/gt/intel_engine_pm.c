@@ -74,6 +74,22 @@ static inline void __timeline_mark_unlock(struct intel_context *ce,
 #endif /* !IS_ENABLED(CONFIG_LOCKDEP) */
 
 static void
+__intel_timeline_enter_and_release_pm(struct intel_timeline *tl,
+				      struct intel_engine_cs *engine)
+{
+	struct intel_gt_timelines *timelines = &engine->gt->timelines;
+
+	spin_lock(&timelines->lock);
+
+	if (!atomic_fetch_inc(&tl->active_count))
+		list_add_tail(&tl->link, &timelines->active_list);
+
+	__intel_wakeref_defer_park(&engine->wakeref);
+
+	spin_unlock(&timelines->lock);
+}
+
+static void
 __queue_and_release_pm(struct i915_request *rq,
 		       struct intel_timeline *tl,
 		       struct intel_engine_cs *engine)
@@ -167,6 +183,11 @@ static bool switch_to_kernel_context(struct intel_engine_cs *engine)
 
 	/* Expose ourselves to the world */
 	__queue_and_release_pm(rq, ce->timeline, engine);
+
+	__i915_request_queue(rq, NULL);
+
+	/* Expose ourselves to intel_gt_retire_requests() and new submission */
+	__intel_timeline_enter_and_release_pm(ce->timeline, engine);
 
 	result = false;
 out_unlock:
