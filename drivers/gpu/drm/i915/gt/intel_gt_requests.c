@@ -108,7 +108,6 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 {
 	struct intel_gt_timelines *timelines = &gt->timelines;
 	struct intel_timeline *tl, *tn;
-	unsigned long flags;
 	bool interruptible;
 	LIST_HEAD(free);
 
@@ -118,7 +117,7 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 
 	flush_submission(gt); /* kick the ksoftirqd tasklets */
 
-	spin_lock_irqsave(&timelines->lock, flags);
+	spin_lock(&timelines->lock);
 	list_for_each_entry_safe(tl, tn, &timelines->active_list, link) {
 		if (!mutex_trylock(&tl->mutex))
 			continue;
@@ -126,7 +125,7 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 		intel_timeline_get(tl);
 		GEM_BUG_ON(!atomic_read(&tl->active_count));
 		atomic_inc(&tl->active_count); /* pin the list element */
-		spin_unlock_irqrestore(&timelines->lock, flags);
+		spin_unlock(&timelines->lock);
 
 		if (timeout > 0) {
 			struct dma_fence *fence;
@@ -142,7 +141,7 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 
 		retire_requests(tl);
 
-		spin_lock_irqsave(&timelines->lock, flags);
+		spin_lock(&timelines->lock);
 
 		/* Resume iteration after dropping lock */
 		list_safe_reset_next(tl, tn, link);
@@ -157,7 +156,7 @@ long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout)
 			list_add(&tl->link, &free);
 		}
 	}
-	spin_unlock_irqrestore(&timelines->lock, flags);
+	spin_unlock(&timelines->lock);
 
 	list_for_each_entry_safe(tl, tn, &free, link)
 		__intel_timeline_free(&tl->kref);
