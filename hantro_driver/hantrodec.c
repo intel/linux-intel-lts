@@ -92,12 +92,16 @@
 #define HXDEC_MAX_CORES                 8
 
 /* Logic module base address */
+/* slice 0 */
 #define SOCLE_LOGIC_0_BASE              0x18553A000 // VCDA
 #define SOCLE_LOGIC_1_BASE              0x18553B000 // VCDB
+/* slice 1 */
 #define SOCLE_LOGIC_2_BASE              0x28553A000 // VCDA
 #define SOCLE_LOGIC_3_BASE              0x28553B000 // VCDB
+/* slice 2 */
 #define SOCLE_LOGIC_4_BASE              0x38553A000 // VCDA
 #define SOCLE_LOGIC_5_BASE              0x38553B000 // VCDB
+/* slice 3 */
 #define SOCLE_LOGIC_6_BASE              0x48553A000 // VCDA
 #define SOCLE_LOGIC_7_BASE              0x48553B000 // VCDB
 
@@ -141,31 +145,31 @@ static unsigned long long multicorebase[HXDEC_MAX_CORES] = {
 
 static int irq[HXDEC_MAX_CORES] = {
 	DEC_IRQ_0,
-	DEC_IRQ_1,
 	DEC_IRQ_0,
-	DEC_IRQ_1,
 	DEC_IRQ_0,
-	DEC_IRQ_1,
 	DEC_IRQ_0,
-	DEC_IRQ_1
+	DEC_IRQ_0,
+	DEC_IRQ_0,
+	DEC_IRQ_0,
+	DEC_IRQ_0
 };
 
 static unsigned int iosize[HXDEC_MAX_CORES] = {
 	DEC_IO_SIZE_0,
-	DEC_IO_SIZE_1,
 	DEC_IO_SIZE_0,
-	DEC_IO_SIZE_1,
 	DEC_IO_SIZE_0,
-	DEC_IO_SIZE_1,
 	DEC_IO_SIZE_0,
-	DEC_IO_SIZE_1
+	DEC_IO_SIZE_0,
+	DEC_IO_SIZE_0,
+	DEC_IO_SIZE_0,
+	DEC_IO_SIZE_0
 };
 
 static int sliceidxtable[HXDEC_MAX_CORES] = {
-	1,
-	1,
 	0,
 	0,
+	1,
+	1,
 	2,
 	2,
 	3,
