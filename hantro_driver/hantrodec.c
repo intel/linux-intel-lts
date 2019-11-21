@@ -175,7 +175,6 @@ static int sliceidxtable[HXDEC_MAX_CORES] = {
 	3,
 	3
 };
-
 #endif
 //static int elements = 2;
 static int bdecprobed;
@@ -792,10 +791,10 @@ static long DecFlushRegs(struct hantrodec_t *dev, struct core_desc *core)
 	iowrite32(0x0, (void *)(dev->hwregs + 4));
 	for (i = 2; i <= HANTRO_VC8000D_LAST_REG; i++)
 		iowrite32(dev->dec_regs[i], (void *)(dev->hwregs + i * 4));
-	for (i = 1; i <= HANTRO_VC8000D_LAST_REG; i++)
 
 	/* write the status register, which may start the decoder */
 	iowrite32(dev->dec_regs[1], (void *)(dev->hwregs + 4));
+
 	return 0;
 }
 
@@ -1232,7 +1231,7 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			PDEBUG("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
+		pcore = getcoreCtrl(slice);
 		if (pcore == NULL)
 			return -EFAULT;
 		return DecReadRegs(pcore, &core);
@@ -1253,7 +1252,8 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		__get_user(tmp64, (unsigned long long *)arg);
 		slice = tmp64 >> 32;
 		PDEBUG("Reserve DEC core, format = %i\n", (u32)tmp64);
-		if ((pcore = get_decnodes(slice, 0)) == NULL)
+		pcore = getcoreCtrl(slice);
+		if (pcore == NULL)
 			return -EFAULT;
 		return ReserveDecoder(pcore, filp, tmp64 & 0xffffffff);
 	}
@@ -1328,7 +1328,7 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		id = (u32)arg;
 		pcore = getcoreCtrl(id);
 		if (pcore == NULL)
-			return 0; // -EFAULT;
+			return 0;
 		id = ioread32((void *)pcore->hwregs);
 		return id;
 	}
@@ -1348,8 +1348,8 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		hw_id = ioread32((void *)(pcore->hwregs));
 		if (IS_G1(hw_id >> 16) || IS_G2(hw_id >> 16))
-		{	__put_user(hw_id, (u32 *) arg);
-		} else {
+			__put_user(hw_id, (u32 *) arg);
+		else {
 			hw_id = ioread32((void *)(pcore->hwregs + HANTRODEC_HW_BUILD_ID_OFF));
 			__put_user(hw_id, (u32 *) arg);
 		}
@@ -1482,7 +1482,6 @@ int hantrodec_probe(struct platform_device *pdev, struct hantro_core_info *prc, 
 		ReadCoreConfig(pcore);
 		ResetAsic(pcore);
 		pcore->dec_owner = pcore->pp_owner = NULL;
-		/*fixme: only slice 0 for simulation*/
 		pcore->sliceidx = sliceidxtable[i];
 
 		if (auxcore != NULL) {

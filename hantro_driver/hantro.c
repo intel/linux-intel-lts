@@ -47,7 +47,7 @@
 /* compile options */
 #define USE_HW 1
 #define USE_CMA 0
-#define HAS_VC8000E 
+#define HAS_VC8000E
 #define HAS_VC8000D
 //#define HAS_CACHECORE
 
