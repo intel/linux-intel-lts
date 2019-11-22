@@ -671,7 +671,9 @@ static int intel_qep_resume(struct device *dev)
 
 	return 0;
 }
+#endif
 
+#ifdef CONFIG_PM
 static int intel_qep_runtime_suspend(struct device *dev)
 {
 	return 0;
