@@ -1231,7 +1231,7 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			PDEBUG("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(slice);
+		pcore = getcoreCtrl(core.id);
 		if (pcore == NULL)
 			return -EFAULT;
 		return DecReadRegs(pcore, &core);
@@ -1251,11 +1251,14 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case _IOC_NR(HANTRODEC_IOCH_DEC_RESERVE): {
 		__get_user(tmp64, (unsigned long long *)arg);
 		slice = tmp64 >> 32;
-		PDEBUG("Reserve DEC core, format = %i\n", (u32)tmp64);
-		pcore = getcoreCtrl(slice);
+		pcore = getcoreCtrl(slice<<16);
 		if (pcore == NULL)
 			return -EFAULT;
-		return ReserveDecoder(pcore, filp, tmp64 & 0xffffffff);
+		i = ReserveDecoder(pcore, filp,(u32)tmp64);
+		if (i < 0)
+			return -EFAULT;
+		else
+			return i | (slice << 16);
 	}
 	case _IOC_NR(HANTRODEC_IOCT_DEC_RELEASE): {
 		pcore = getcoreCtrl((u32)arg);
