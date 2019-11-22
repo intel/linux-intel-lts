@@ -313,7 +313,9 @@ static int dwc_pci_resume(struct device *dev)
 
 	return 0;
 }
+#endif
 
+#ifdef CONFIG_PM
 static int dwc_pci_runtime_suspend(struct device *dev)
 {
 	/*
