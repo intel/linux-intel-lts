@@ -40,7 +40,6 @@ struct kmb_drm_private {
 	void __iomem			*lcd_mmio;
 	void __iomem			*mipi_mmio;
 	void __iomem			*msscam_mmio;
-	void __iomem			*cpr_mmio;
 	unsigned char			n_layers;
 	struct clk			*clk;
 	struct drm_crtc			crtc;

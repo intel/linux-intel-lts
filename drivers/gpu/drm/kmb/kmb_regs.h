@@ -36,7 +36,7 @@
 #define MSS_CAM_BASE_ADDR			(MIPI_BASE_ADDR + 0x10000)
 #define LCD_MMIO_SIZE				(0x3000)
 #define MIPI_MMIO_SIZE				(0x4000)
-#define MSS_CAM_MMIO_SIZE			(0x10)
+#define MSS_CAM_MMIO_SIZE			(0x30)
 
 /***************************************************************************
  *		   LCD controller control register defines

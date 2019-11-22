@@ -179,17 +179,6 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		iounmap(dev_p->mipi_mmio);
 		return -ENOMEM;
 	}
-/*testing*/
-	if (!request_mem_region(CPR_BASE_ADDR, 100, "cpr")) {
-		DRM_ERROR("failed to reserve %s registers\n", "cpr");
-		return -ENOMEM;
-	}
-	dev_p->cpr_mmio = ioremap_nocache(CPR_BASE_ADDR, 0x100);
-	if (!dev_p->cpr_mmio) {
-		DRM_ERROR("failed to ioremap %s registers\n", "CPR");
-		release_mem_region(CPR_BASE_ADDR, 100);
-		return -ENOMEM;
-	}
 
 	if (IS_ERR(dev_p->msscam_mmio)) {
 		DRM_ERROR("failed to map MSSCAM registers\n");
@@ -510,8 +499,10 @@ static void kmb_drm_unload(struct device *dev)
 		release_mem_region(MIPI_BASE_ADDR, MIPI_MMIO_SIZE);
 	}
 
-	if (dev_p->msscam_mmio)
+	if (dev_p->msscam_mmio) {
 		iounmap(dev_p->msscam_mmio);
+		release_mem_region(MSS_CAM_BASE_ADDR, MSS_CAM_MMIO_SIZE);
+	}
 
 	of_reserved_mem_device_release(drm->dev);
 	drm_mode_config_cleanup(drm);
