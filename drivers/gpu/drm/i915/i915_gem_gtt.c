@@ -154,7 +154,8 @@ int intel_sanitize_enable_ppgtt(struct drm_i915_private *dev_priv,
 	if (enable_ppgtt == 0 && INTEL_GEN(dev_priv) < 9)
 		return 0;
 
-	if (enable_ppgtt == 1)
+	/* Full PPGTT is required by the Gen9 cmdparser */
+	if (enable_ppgtt == 1 && INTEL_GEN(dev_priv) != 9)
 		return 1;
 
 	if (enable_ppgtt == 2 && has_full_ppgtt)
@@ -191,8 +192,8 @@ static int ppgtt_bind_vma(struct i915_vma *vma,
 
 	vma->pages = vma->obj->mm.pages;
 
-	/* Currently applicable only to VLV */
-	if (vma->obj->gt_ro)
+	/* Applicable to VLV, and gen8+ */
+	if (i915_gem_object_is_readonly(vma->obj))
 		pte_flags |= PTE_READ_ONLY;
 
 	vma->vm->insert_entries(vma->vm, vma->pages, vma->node.start,
@@ -209,10 +210,14 @@ static void ppgtt_unbind_vma(struct i915_vma *vma)
 }
 
 static gen8_pte_t gen8_pte_encode(dma_addr_t addr,
-				  enum i915_cache_level level)
+				  enum i915_cache_level level,
+				  u32 flags)
 {
 	gen8_pte_t pte = _PAGE_PRESENT | _PAGE_RW;
 	pte |= addr;
+
+	if (unlikely(flags & PTE_READ_ONLY))
+		pte &= ~_PAGE_RW;
 
 	switch (level) {
 	case I915_CACHE_NONE:
@@ -488,7 +493,7 @@ static void gen8_initialize_pt(struct i915_address_space *vm,
 	gen8_pte_t scratch_pte;
 
 	scratch_pte = gen8_pte_encode(vm->scratch_page.daddr,
-				      I915_CACHE_LLC);
+				      I915_CACHE_LLC, 0);
 
 	fill_px(vm->i915, pt, scratch_pte);
 }
@@ -747,7 +752,7 @@ static bool gen8_ppgtt_clear_pt(struct i915_address_space *vm,
 	unsigned int pte_end = pte + num_entries;
 	gen8_pte_t *pt_vaddr;
 	gen8_pte_t scratch_pte = gen8_pte_encode(vm->scratch_page.daddr,
-						 I915_CACHE_LLC);
+						 I915_CACHE_LLC, 0);
 
 	if (WARN_ON(!px_page(pt)))
 		return false;
@@ -868,7 +873,8 @@ gen8_ppgtt_insert_pte_entries(struct i915_address_space *vm,
 			      struct i915_page_directory_pointer *pdp,
 			      struct sg_page_iter *sg_iter,
 			      uint64_t start,
-			      enum i915_cache_level cache_level)
+			      enum i915_cache_level cache_level,
+			      u32 flags)
 {
 	struct i915_hw_ppgtt *ppgtt = i915_vm_to_ppgtt(vm);
 	gen8_pte_t *pt_vaddr;
@@ -887,7 +893,7 @@ gen8_ppgtt_insert_pte_entries(struct i915_address_space *vm,
 
 		pt_vaddr[pte] =
 			gen8_pte_encode(sg_page_iter_dma_address(sg_iter),
-					cache_level);
+					cache_level, flags);
 		if (++pte == GEN8_PTES) {
 			kunmap_px(ppgtt, pt_vaddr);
 			pt_vaddr = NULL;
@@ -908,7 +914,7 @@ static void gen8_ppgtt_insert_entries(struct i915_address_space *vm,
 				      struct sg_table *pages,
 				      uint64_t start,
 				      enum i915_cache_level cache_level,
-				      u32 unused)
+				      u32 flags)
 {
 	struct i915_hw_ppgtt *ppgtt = i915_vm_to_ppgtt(vm);
 	struct sg_page_iter sg_iter;
@@ -917,7 +923,7 @@ static void gen8_ppgtt_insert_entries(struct i915_address_space *vm,
 
 	if (!USES_FULL_48BIT_PPGTT(vm->i915)) {
 		gen8_ppgtt_insert_pte_entries(vm, &ppgtt->pdp, &sg_iter, start,
-					      cache_level);
+					      cache_level, flags);
 	} else {
 		struct i915_page_directory_pointer *pdp;
 		uint64_t pml4e;
@@ -925,7 +931,7 @@ static void gen8_ppgtt_insert_entries(struct i915_address_space *vm,
 
 		gen8_for_each_pml4e(pdp, &ppgtt->pml4, start, length, pml4e) {
 			gen8_ppgtt_insert_pte_entries(vm, pdp, &sg_iter,
-						      start, cache_level);
+						      start, cache_level, flags);
 		}
 	}
 }
@@ -1510,7 +1516,7 @@ static void gen8_dump_ppgtt(struct i915_hw_ppgtt *ppgtt, struct seq_file *m)
 	uint64_t start = ppgtt->base.start;
 	uint64_t length = ppgtt->base.total;
 	gen8_pte_t scratch_pte = gen8_pte_encode(vm->scratch_page.daddr,
-						 I915_CACHE_LLC);
+						 I915_CACHE_LLC, 0);
 
 	if (!USES_FULL_48BIT_PPGTT(vm->i915)) {
 		gen8_dump_pdp(&ppgtt->pdp, start, length, scratch_pte, m);
@@ -1579,6 +1585,14 @@ static int gen8_ppgtt_init(struct i915_hw_ppgtt *ppgtt)
 	ppgtt->base.clear_range = gen8_ppgtt_clear_range;
 	ppgtt->base.unbind_vma = ppgtt_unbind_vma;
 	ppgtt->base.bind_vma = ppgtt_bind_vma;
+
+	/*
+	 * From bdw, there is support for read-only pages in the PPGTT.
+	 *
+	 * XXX GVT is not honouring the lack of RW in the PTE bits.
+	 */
+	ppgtt->base.has_read_only = !intel_vgpu_active(ppgtt->base.i915);
+
 	ppgtt->debug_dump = gen8_dump_ppgtt;
 
 	if (USES_FULL_48BIT_PPGTT(dev_priv)) {
@@ -2393,7 +2407,7 @@ static void gen8_ggtt_insert_page(struct i915_address_space *vm,
 	gen8_pte_t __iomem *pte =
 		(gen8_pte_t __iomem *)ggtt->gsm + (offset >> PAGE_SHIFT);
 
-	gen8_set_pte(pte, gen8_pte_encode(addr, level));
+	gen8_set_pte(pte, gen8_pte_encode(addr, level, 0));
 
 	ggtt->invalidate(vm->i915);
 }
@@ -2401,7 +2415,7 @@ static void gen8_ggtt_insert_page(struct i915_address_space *vm,
 static void gen8_ggtt_insert_entries(struct i915_address_space *vm,
 				     struct sg_table *st,
 				     uint64_t start,
-				     enum i915_cache_level level, u32 unused)
+				     enum i915_cache_level level, u32 flags)
 {
 	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vm);
 	struct sgt_iter sgt_iter;
@@ -2410,10 +2424,18 @@ static void gen8_ggtt_insert_entries(struct i915_address_space *vm,
 	dma_addr_t addr;
 	int i = 0;
 
+	/* The GTT does not support read-only mappings */
+	GEM_BUG_ON(flags & PTE_READ_ONLY);
+
+	/*
+	 * Note that we ignore PTE_READ_ONLY here. The caller must be careful
+	 * not to allow the user to override access to a read only page.
+	 */
+
 	gtt_entries = (gen8_pte_t __iomem *)ggtt->gsm + (start >> PAGE_SHIFT);
 
 	for_each_sgt_dma(addr, sgt_iter, st) {
-		gtt_entry = gen8_pte_encode(addr, level);
+		gtt_entry = gen8_pte_encode(addr, level, 0);
 		gen8_set_pte(&gtt_entries[i++], gtt_entry);
 	}
 
@@ -2538,7 +2560,7 @@ static void gen8_ggtt_clear_range(struct i915_address_space *vm,
 		num_entries = max_entries;
 
 	scratch_pte = gen8_pte_encode(vm->scratch_page.daddr,
-				      I915_CACHE_LLC);
+				      I915_CACHE_LLC, 0);
 	for (i = 0; i < num_entries; i++)
 		gen8_set_pte(&gtt_base[i], scratch_pte);
 	readl(gtt_base);
@@ -2613,8 +2635,8 @@ static int ggtt_bind_vma(struct i915_vma *vma,
 	if (ret)
 		return ret;
 
-	/* Currently applicable only to VLV */
-	if (obj->gt_ro)
+	/* Applicable to VLV (gen8+ do not support RO in the GGTT) */
+	if (i915_gem_object_is_readonly(obj))
 		pte_flags |= PTE_READ_ONLY;
 
 	intel_runtime_pm_get(i915);
@@ -2646,7 +2668,7 @@ static int aliasing_gtt_bind_vma(struct i915_vma *vma,
 
 	/* Currently applicable only to VLV */
 	pte_flags = 0;
-	if (vma->obj->gt_ro)
+	if (i915_gem_object_is_readonly(vma->obj))
 		pte_flags |= PTE_READ_ONLY;
 
 
@@ -3244,6 +3266,8 @@ int i915_ggtt_init_hw(struct drm_i915_private *dev_priv)
 	 */
 	mutex_lock(&dev_priv->drm.struct_mutex);
 	i915_address_space_init(&ggtt->base, dev_priv, "[global]");
+	/* Only VLV supports read-only GGTT mappings */
+	ggtt->base.has_read_only = IS_VALLEYVIEW(dev_priv);
 	if (!HAS_LLC(dev_priv) && !USES_PPGTT(dev_priv))
 		ggtt->base.mm.color_adjust = i915_gtt_color_adjust;
 	mutex_unlock(&dev_priv->drm.struct_mutex);

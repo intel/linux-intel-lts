@@ -159,6 +159,8 @@ void i915_gem_context_free(struct kref *ctx_ref)
 	}
 
 	kfree(ctx->name);
+	kfree(ctx->jump_whitelist);
+
 	put_pid(ctx->pid);
 	list_del(&ctx->link);
 
@@ -340,6 +342,9 @@ __create_hw_context(struct drm_i915_private *dev_priv,
 		ctx->ggtt_offset_bias = GUC_WOPCM_TOP;
 	else
 		ctx->ggtt_offset_bias = I915_GTT_PAGE_SIZE;
+
+	ctx->jump_whitelist = NULL;
+	ctx->jump_whitelist_cmds = 0;
 
 	return ctx;
 

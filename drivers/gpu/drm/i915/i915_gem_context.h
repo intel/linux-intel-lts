@@ -175,6 +175,12 @@ struct i915_gem_context {
 
 	/** remap_slice: Bitmask of cache lines that need remapping */
 	u8 remap_slice;
+
+	/** jump_whitelist: Bit array for tracking cmds during cmdparsing */
+	unsigned long *jump_whitelist;
+
+	/** jump_whitelist_cmds: No of cmd slots available */
+	u32 jump_whitelist_cmds;
 };
 
 static inline bool i915_gem_context_is_closed(const struct i915_gem_context *ctx)
