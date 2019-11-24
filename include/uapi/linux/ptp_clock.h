@@ -36,6 +36,11 @@
 #define PTP_EXTTS_EDGES    (PTP_RISING_EDGE | PTP_FALLING_EDGE)
 
 /*
+ * Bits of the ptp_pin_desc.flags field:
+ */
+#define PTP_PINDESC_EVTCNTVALID	(1<<0)
+
+/*
  * flag fields valid for the new PTP_EXTTS_REQUEST2 ioctl.
  */
 #define PTP_EXTTS_VALID_FLAGS	(PTP_ENABLE_FEATURE |	\
@@ -63,13 +68,15 @@
 #define PTP_PEROUT_ONE_SHOT		(1<<0)
 #define PTP_PEROUT_DUTY_CYCLE		(1<<1)
 #define PTP_PEROUT_PHASE		(1<<2)
+#define PTP_PEROUT_FREQ_ADJ		(1<<3)
 
 /*
  * flag fields valid for the new PTP_PEROUT_REQUEST2 ioctl.
  */
 #define PTP_PEROUT_VALID_FLAGS		(PTP_PEROUT_ONE_SHOT | \
 					 PTP_PEROUT_DUTY_CYCLE | \
-					 PTP_PEROUT_PHASE)
+					 PTP_PEROUT_PHASE | \
+					 PTP_PEROUT_FREQ_ADJ)
 
 /*
  * No flags are valid for the original PTP_PEROUT_REQUEST ioctl
@@ -140,6 +147,14 @@ struct ptp_perout_request {
 		/* Reserved for future use. */
 		unsigned int rsv[4];
 	};
+};
+
+struct ptp_event_count_tstamp {
+	struct ptp_clock_time device_time;
+	unsigned long long event_count;
+	unsigned int index;
+	unsigned int flags;
+	unsigned int rsv[4];          /* Reserved for future use. */
 };
 
 #define PTP_MAX_SAMPLES 25 /* Maximum allowed offset measurement samples. */
@@ -213,9 +228,13 @@ struct ptp_pin_desc {
 	 */
 	unsigned int chan;
 	/*
+	 * Per pin capability flag
+	 */
+	unsigned int flags;
+	/*
 	 * Reserved for future use.
 	 */
-	unsigned int rsv[5];
+	unsigned int rsv[4];
 };
 
 #define PTP_CLK_MAGIC '='
@@ -245,6 +264,8 @@ struct ptp_pin_desc {
 	_IOWR(PTP_CLK_MAGIC, 18, struct ptp_sys_offset_extended)
 #define PTP_MASK_CLEAR_ALL  _IO(PTP_CLK_MAGIC, 19)
 #define PTP_MASK_EN_SINGLE  _IOW(PTP_CLK_MAGIC, 20, unsigned int)
+#define PTP_EVENT_COUNT_TSTAMP2 \
+	_IOWR(PTP_CLK_MAGIC, 19, struct ptp_event_count_tstamp)
 
 struct ptp_extts_event {
 	struct ptp_clock_time t; /* Time event occurred. */
