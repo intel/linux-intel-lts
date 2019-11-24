@@ -235,7 +235,19 @@ static __maybe_unused int m_can_pci_resume(struct device *dev)
 	return m_can_class_resume(dev);
 }
 
+static int __maybe_unused m_can_pci_runtime_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int __maybe_unused m_can_pci_runtime_resume(struct device *dev)
+{
+	return 0;
+}
+
 static const struct dev_pm_ops m_can_pci_pm_ops = {
+	SET_RUNTIME_PM_OPS(m_can_pci_runtime_suspend,
+			   m_can_pci_runtime_resume, NULL)
 	SET_SYSTEM_SLEEP_PM_OPS(m_can_pci_suspend, m_can_pci_resume)
 };
 
