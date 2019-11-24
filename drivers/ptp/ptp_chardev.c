@@ -134,6 +134,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 	struct ptp_clock *ptp = container_of(pc, struct ptp_clock, clock);
 	struct ptp_sys_offset_extended *extoff = NULL;
 	struct ptp_sys_offset_precise precise_offset;
+	struct ptp_event_count_tstamp counttstamp;
 	struct system_device_crosststamp xtstamp;
 	struct ptp_clock_info *ops = ptp->info;
 	struct ptp_sys_offset *sysoff = NULL;
@@ -256,6 +257,13 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			req.perout.flags &= PTP_PEROUT_V1_VALID_FLAGS;
 			zero_rsv_field(req.perout.rsv);
 		}
+		/* These flags don't make sense together */
+		if (cmd == PTP_PEROUT_REQUEST2 &&
+		    req.perout.flags & PTP_PEROUT_FREQ_ADJ &&
+		    req.perout.flags & PTP_PEROUT_ONE_SHOT) {
+			err = -EINVAL;
+			break;
+		}
 		if (req.perout.index >= ops->n_per_out) {
 			err = -EINVAL;
 			break;
@@ -266,6 +274,24 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			return -ERESTARTSYS;
 		err = ops->enable(ops, &req, enable);
 		mutex_unlock(&ptp->pincfg_mux);
+		break;
+
+	case PTP_EVENT_COUNT_TSTAMP2:
+		if (!ops->counttstamp)
+			return -ENOTSUPP;
+		if (copy_from_user(&counttstamp, (void __user *)arg,
+				   sizeof(counttstamp))) {
+			err = -EFAULT;
+			break;
+		}
+		if (check_rsv_field(counttstamp.rsv)) {
+			err = -EINVAL;
+			break;
+		}
+		err = ops->counttstamp(ops, &counttstamp);
+		if (!err && copy_to_user((void __user *)arg, &counttstamp,
+						sizeof(counttstamp)))
+			err = -EFAULT;
 		break;
 
 	case PTP_ENABLE_PPS:

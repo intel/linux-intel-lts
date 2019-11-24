@@ -154,6 +154,8 @@ struct ptp_clock_info {
 			  struct ptp_system_timestamp *sts);
 	int (*getcrosststamp)(struct ptp_clock_info *ptp,
 			      struct system_device_crosststamp *cts);
+	int (*counttstamp)(struct ptp_clock_info *ptp,
+			   struct ptp_event_count_tstamp *count);
 	int (*settime64)(struct ptp_clock_info *p, const struct timespec64 *ts);
 	int (*enable)(struct ptp_clock_info *ptp,
 		      struct ptp_clock_request *request, int on);
