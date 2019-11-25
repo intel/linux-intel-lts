@@ -236,6 +236,8 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 #endif
 	/* Set MIPI clock to 24 Mhz*/
 	DRM_INFO("Get clk_mipi before set = %ld\n", clk_get_rate(clk_mipi));
+//#define MIPI_CLK
+#ifdef MIPI_CLK
 	ret = clk_set_rate(clk_mipi, KMB_MIPI_DEFAULT_CLK);
 	DRM_INFO("Get clk_mipi after set = %ld\n", clk_get_rate(clk_mipi));
 	if (clk_get_rate(clk_mipi) != KMB_MIPI_DEFAULT_CLK) {
@@ -243,6 +245,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 				KMB_MIPI_DEFAULT_CLK);
 		goto setup_fail;
 	}
+#endif
 	DRM_INFO("Setting MIPI clock to %d Mhz ret = %d\n",
 			KMB_MIPI_DEFAULT_CLK/1000000, ret);
 	DRM_INFO("Get clk_mipi after set = %ld\n", clk_get_rate(clk_mipi));
@@ -339,8 +342,6 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_ERROR("failed to initialize DSI\n");
 		goto setup_fail;
 	}
-
-	DRM_INFO("%s : %d\n", __func__, __LINE__);
 #ifdef WIP
 	ret = drm_irq_install(drm, platform_get_irq(pdev, 0));
 	if (ret < 0) {
@@ -355,7 +356,6 @@ irq_fail:
 	drm_crtc_cleanup(&dev_p->crtc);
 #endif
 setup_fail:
-	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	of_reserved_mem_device_release(drm->dev);
 
 	return ret;

@@ -43,18 +43,19 @@
 
 static int hw_initialized;
 #define IMAGE_PATH "/home/root/1280x720.pnm"
-#define MIPI_TX_TEST_PATTERN_GENERATION
+//#define MIPI_TX_TEST_PATTERN_GENERATION
+//#define RTL_TEST
+//#define IMG_WIDTH_PX      640
+//#define IMG_HEIGHT_LINES  10
 
-#define IMG_HEIGHT_LINES  720
-#define IMG_WIDTH_PX      1280
 #define LCD_BYTESPP       1
 
 /*MIPI TX CFG*/
-#define MIPI_TX_ACTIVE_LANES  2
 //#define MIPI_TX_LANE_DATA_RATE_MBPS 1782
 #define MIPI_TX_LANE_DATA_RATE_MBPS 891
 //#define MIPI_TX_LANE_DATA_RATE_MBPS 80
 #define MIPI_TX_REF_CLK_KHZ         24000
+//#define MIPI_TX_REF_CLK_KHZ         23809
 #define MIPI_TX_CFG_CLK_KHZ         24000
 
 /*DPHY Tx test codes*/
@@ -98,6 +99,18 @@ static struct mipi_dsi_device *dsi_device;
  * these will eventually go to the device tree sections,
  * and can be used as a refernce later for device tree additions
  */
+#ifdef RES_1920x1080
+#define IMG_HEIGHT_LINES  1080
+#define IMG_WIDTH_PX      1920
+#define MIPI_TX_ACTIVE_LANES 4
+#endif
+
+#define RES_1280x720
+#ifdef RES_1280x720
+#define IMG_HEIGHT_LINES  720
+#define IMG_WIDTH_PX      1280
+#define MIPI_TX_ACTIVE_LANES 2
+#endif
 struct mipi_tx_frame_section_cfg mipi_tx_frame0_sect_cfg = {
 	.width_pixels = IMG_WIDTH_PX,
 	.height_lines = IMG_HEIGHT_LINES,
@@ -107,6 +120,22 @@ struct mipi_tx_frame_section_cfg mipi_tx_frame0_sect_cfg = {
 	.dma_packed = 1
 };
 
+#ifdef RES_1920x1080
+struct mipi_tx_frame_cfg mipitx_frame0_cfg = {
+	.sections[0] = &mipi_tx_frame0_sect_cfg,
+	.sections[1] = NULL,
+	.sections[2] = NULL,
+	.sections[3] = NULL,
+	.vsync_width = 5,
+	.v_backporch = 36,
+	.v_frontporch = 4,
+	.hsync_width = 44,
+	.h_backporch = 148,
+	.h_frontporch = 88
+};
+#endif
+
+#ifdef RES_1280x720
 struct mipi_tx_frame_cfg mipitx_frame0_cfg = {
 	.sections[0] = &mipi_tx_frame0_sect_cfg,
 	.sections[1] = NULL,
@@ -119,6 +148,7 @@ struct mipi_tx_frame_cfg mipitx_frame0_cfg = {
 	.h_backporch = 220,
 	.h_frontporch = 110,
 };
+#endif
 
 struct mipi_tx_dsi_cfg mipitx_dsi_cfg = {
 	.hfp_blank_en = 0,
@@ -140,8 +170,7 @@ struct mipi_ctrl_cfg mipi_tx_init_cfg = {
 	.lane_rate_mbps = MIPI_TX_LANE_DATA_RATE_MBPS,
 	.ref_clk_khz = MIPI_TX_REF_CLK_KHZ,
 	.cfg_clk_khz = MIPI_TX_CFG_CLK_KHZ,
-//      .data_if = MIPI_IF_PARALLEL,
-	.data_if = MIPI_IF_DMA,
+	.data_if = MIPI_IF_PARALLEL,
 	.tx_ctrl_cfg = {
 			.frames[0] = &mipitx_frame0_cfg,
 			.frames[1] = NULL,
@@ -333,7 +362,6 @@ static struct kmb_dsi_host *kmb_dsi_host_init(struct drm_device *drm,
 
 struct drm_bridge *kmb_dsi_host_bridge_init(struct device *dev)
 {
-	struct device_node *encoder_node;
 	struct drm_bridge *bridge;
 
 	/* Create and register MIPI DSI host */
@@ -612,7 +640,13 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_p,
 	ppl_llp_ratio = ((fg_cfg->bpp / 8) * sysclk * 1000) /
 	    ((fg_cfg->lane_rate_mbps / 8) * fg_cfg->active_lanes);
 
-	/*frame generator number of lines */
+	DRM_INFO("%s : %d bpp=%d sysclk=%d lane-rate=%d activ-lanes=%d\n",
+			__func__, __LINE__, fg_cfg->bpp, sysclk,
+			fg_cfg->lane_rate_mbps, fg_cfg->active_lanes);
+
+	DRM_INFO("%s : %d ppl_llp_ratio=%d\n", __func__, __LINE__,
+			ppl_llp_ratio);
+	/*frame generator number of lines*/
 	reg_adr = MIPI_TXm_HS_FGn_NUM_LINES(ctrl_no, frame_gen);
 	kmb_write_mipi(dev_p, reg_adr, fg_cfg->v_active);
 
@@ -773,8 +807,8 @@ static void mipi_tx_ctrl_cfg(struct kmb_drm_private *dev_p, u8 fg_id,
 	if (ctrl_cfg->tx_ctrl_cfg.tx_hact_wait_stop)
 		sync_cfg |= HACT_WAIT_STOP(fg_en);
 
-	/* MIPI_TX_HS_CTRL */
-	ctrl = HS_CTRL_EN;	/* type:DSI,source:LCD */
+	/* MIPI_TX_HS_CTRL*/
+	ctrl = HS_CTRL_EN | TX_SOURCE; /* type:DSI,source:LCD */
 	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->eotp_en)
 		ctrl |= DSI_EOTP_EN;
 	if (ctrl_cfg->tx_ctrl_cfg.tx_dsi_cfg->hfp_blank_en)
@@ -861,6 +895,7 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_p,
 		active_vchannels++;
 
 		/*connect lcd to mipi */
+		kmb_write_msscam(dev_p, MSS_LCD_MIPI_CFG, 1);
 
 		/*stop iterating as only one virtual channel shall be used for
 		 * LCD connection
@@ -1527,7 +1562,7 @@ static u32 wait_init_done(struct kmb_drm_private *dev_p, u32 dphy_no,
 				 kmb_read_mipi(dev_p, MIPI_DPHY_ERR_STAT6_7));
 			break;
 		}
-		udelay(1);
+//		udelay(1);
 	} while (stopstatedata != data_lanes);
 
 	DRM_INFO("********** DPHY %d INIT - %s **********\n",
@@ -1542,10 +1577,9 @@ static u32 wait_pll_lock(struct kmb_drm_private *dev_p, u32 dphy_no)
 	int status = 1;
 
 	do {
-		;
 		/*TODO-need to add a time out and return failure */
 		i++;
-		udelay(1);
+	//	udelay(1);
 		if (i > TIMEOUT) {
 			status = 0;
 			DRM_INFO("%s: timing out", __func__);
@@ -1602,7 +1636,7 @@ static u32 mipi_tx_init_dphy(struct kmb_drm_private *dev_p,
 			       cfg->active_lanes - MIPI_DPHY_D_LANES);
 		wait_pll_lock(dev_p, dphy_no);
 		wait_pll_lock(dev_p, dphy_no + 1);
-		udelay(1000);
+//		udelay(1000);
 		dphy_wait_fsm(dev_p, dphy_no, DPHY_TX_IDLE);
 	} else {		/* Single DPHY */
 		dphy_init_sequence(dev_p, cfg, dphy_no, cfg->active_lanes,
@@ -1726,11 +1760,9 @@ int kmb_kernel_read(struct file *file, loff_t offset,
 int kmb_dsi_hw_init(struct drm_device *dev)
 {
 	struct kmb_drm_private *dev_p = dev->dev_private;
-	int i;
 
 	if (hw_initialized)
 		return 0;
-	udelay(1000);
 	kmb_write_mipi(dev_p, DPHY_ENABLE, 0);
 	kmb_write_mipi(dev_p, DPHY_INIT_CTRL0, 0);
 	kmb_write_mipi(dev_p, DPHY_INIT_CTRL1, 0);
@@ -1738,19 +1770,15 @@ int kmb_dsi_hw_init(struct drm_device *dev)
 
 	/* initialize mipi controller */
 	mipi_tx_init_cntrl(dev_p, &mipi_tx_init_cfg);
-	/* irq initialization */
-	//mipi_tx_init_irqs(dev_p, &int_cfg, &mipi_tx_init_cfg.tx_ctrl_cfg);
 	/*d-phy initialization */
 	mipi_tx_init_dphy(dev_p, &mipi_tx_init_cfg);
 #ifdef MIPI_TX_TEST_PATTERN_GENERATION
-	for (i = MIPI_CTRL6; i < MIPI_CTRL6 + 1; i++) {
-		mipi_tx_hs_tp_gen(dev_p, 0, MIPI_TX_HS_TP_V_STRIPES,
-				  0x05, 0xffffff, 0xff00, i);
-	}
-	DRM_INFO("%s : %d MIPI_TXm_HS_CTRL = 0x%x\n", __func__,
-		 __LINE__, kmb_read_mipi(dev_p, MIPI_TXm_HS_CTRL(6)));
-#else
-	dma_data_length = image_height * image_width * unpacked_bytes;
+	mipi_tx_hs_tp_gen(dev_p, 0, MIPI_TX_HS_TP_V_STRIPES, 0x15, 0xff,
+			0xff00, MIPI_CTRL6);
+	DRM_INFO("%s : %d IRQ_STATUS = 0x%x\n", __func__, __LINE__,
+			GET_MIPI_TX_HS_IRQ_STATUS(dev_p, MIPI_CTRL6));
+#elseif MIPI_DMA
+	  dma_data_length = image_height * image_width * unpacked_bytes;
 	file = filp_open(IMAGE_PATH, O_RDWR, 0);
 	if (IS_ERR(file)) {
 		DRM_ERROR("filp_open failed\n");
@@ -1784,7 +1812,6 @@ int kmb_dsi_hw_init(struct drm_device *dev)
 	DRM_INFO("count = %d\n", count);
 	kfree(file_buf);
 	filp_close(file, NULL);
-
 #endif //MIPI_TX_TEST_PATTERN_GENERATION
 
 	hw_initialized = true;
@@ -1853,13 +1880,15 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 		return ret;
 	}
 #endif
+
 #ifndef FCCTEST
 	DRM_INFO("%s : %d Bridge attached : SUCCESS\n", __func__, __LINE__);
 #endif
 
 #ifdef FCCTEST
+#ifndef LCD_TEST
 	kmb_dsi_hw_init(dev);
 #endif
-
+#endif
 	return 0;
 }
