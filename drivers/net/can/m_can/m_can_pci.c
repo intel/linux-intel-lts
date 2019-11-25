@@ -26,6 +26,7 @@
 #define M_CAN_MRAM_OFFSET		0x800
 
 #define M_CAN_CLOCK_FREQ_EHL		100000000
+#define CTL_CSR_INT_CTL_OFFSET		0x508
 
 struct m_can_pci_priv {
 	void __iomem *base;
@@ -139,6 +140,9 @@ static int m_can_pci_probe(struct pci_dev *pci,
 	if (ret)
 		goto err;
 
+	/* Enable interrupt control at CAN wrapper IP */
+	writel(0x1, base + CTL_CSR_INT_CTL_OFFSET);
+
 	pm_runtime_set_autosuspend_delay(dev, 1000);
 	pm_runtime_use_autosuspend(dev);
 	pm_runtime_put_noidle(dev);
@@ -156,9 +160,13 @@ static void m_can_pci_remove(struct pci_dev *pci)
 {
 	struct net_device *dev = pci_get_drvdata(pci);
 	struct m_can_classdev *mcan_class = netdev_priv(dev);
+	struct m_can_pci_priv *priv = mcan_class->device_data;
 
 	pm_runtime_forbid(&pci->dev);
 	pm_runtime_get_noresume(&pci->dev);
+
+	/* Disable interrupt control at CAN wrapper IP */
+	writel(0x0, priv->base + CTL_CSR_INT_CTL_OFFSET);
 
 	pci_free_irq_vectors(pci);
 	m_can_class_unregister(mcan_class);
