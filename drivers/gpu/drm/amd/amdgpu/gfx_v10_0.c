@@ -1759,25 +1759,7 @@ static void gfx_v10_0_enable_gui_idle_interrupt(struct amdgpu_device *adev,
 
 static int gfx_v10_0_init_csb(struct amdgpu_device *adev)
 {
-	int r;
-
-	if (adev->in_gpu_reset) {
-		r = amdgpu_bo_reserve(adev->gfx.rlc.clear_state_obj, false);
-		if (r)
-			return r;
-
-		r = amdgpu_bo_kmap(adev->gfx.rlc.clear_state_obj,
-				   (void **)&adev->gfx.rlc.cs_ptr);
-		if (!r) {
-			adev->gfx.rlc.funcs->get_csb_buffer(adev,
-					adev->gfx.rlc.cs_ptr);
-			amdgpu_bo_kunmap(adev->gfx.rlc.clear_state_obj);
-		}
-
-		amdgpu_bo_unreserve(adev->gfx.rlc.clear_state_obj);
-		if (r)
-			return r;
-	}
+	adev->gfx.rlc.funcs->get_csb_buffer(adev, adev->gfx.rlc.cs_ptr);
 
 	adev->gfx.rlc.funcs->get_csb_buffer(adev, adev->gfx.rlc.cs_ptr);
 
