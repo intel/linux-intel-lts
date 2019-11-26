@@ -28,7 +28,7 @@ struct sst_generic_ipc;
 
 #define NO_OF_INJECTOR 6
 #define NO_OF_EXTRACTOR 8
-#define FW_REG_SZ 1024
+#define FW_REG_SZ 4096
 #define	SKL_EVENT_GLB_MODULE_NOTIFICATION	12
 #define	SKL_TPLG_CHG_NOTIFY	3
 
@@ -483,4 +483,7 @@ int skl_dsp_crash_dump_read(struct skl_sst *ctx, int idx, int stack_size);
 
 void skl_ipc_set_fw_cfg(struct sst_generic_ipc *ipc, u8 instance_id,
 			u16 module_id, u32 *data);
+
+void
+skl_process_log_buffer(struct sst_dsp *sst, int core);
 #endif /* __SKL_IPC_H */
