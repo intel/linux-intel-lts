@@ -3061,6 +3061,8 @@ static void icp_hpd_irq_setup(struct drm_i915_private *dev_priv,
 	enabled_irqs = intel_hpd_enabled_irqs(dev_priv, dev_priv->hotplug.pch_hpd);
 	hotplug_irqs = intel_hpd_hotplug_irqs(dev_priv, dev_priv->hotplug.pch_hpd);
 
+	I915_WRITE(SHPD_FILTER_CNT, SHPD_FILTER_CNT_500_ADJ);
+
 	ibx_display_interrupt_update(dev_priv, hotplug_irqs, enabled_irqs);
 
 	icp_ddi_hpd_detection_setup(dev_priv, ddi_enable_mask);
