@@ -106,6 +106,8 @@
 #define MEI_DEV_ID_ADP_S      0x7AE8  /* Alder Lake Point S */
 #define MEI_DEV_ID_ADP_LP     0x7A60  /* Alder Lake Point LP */
 
+#define MEI_DEV_ID_ADP_S      0x7AE8  /* Alder Lake Point S */
+
 /*
  * MEI HW Section
  */
