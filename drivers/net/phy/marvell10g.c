@@ -65,6 +65,8 @@ enum {
 	M88E2110_PORTCONTROL	= 0xc04a,
 	M88E2110_BOOT		= 0xc050,
 	M88E2110_LOOPBACK	= BIT(14),
+	M88E2110_BUFFERCONTROL	= 0xc033,
+	M88E2110_EEE_ENABLE	= BIT(1),
 };
 
 struct mv3310_priv {
@@ -291,6 +293,25 @@ static int mv3310_config_init(struct phy_device *phydev)
 		return -ENODEV;
 
 	return 0;
+}
+
+static int m88e2110_config_init(struct phy_device *phydev)
+{
+	int status;
+	u16 _eee;
+
+	/* Check that the PHY interface type is 88E2110 compatible */
+	if (phydev->interface != PHY_INTERFACE_MODE_USXGMII &&
+	    phydev->interface != PHY_INTERFACE_MODE_SGMII &&
+	    phydev->interface != PHY_INTERFACE_MODE_2500BASEX)
+		return -ENODEV;
+
+	_eee = M88E2110_EEE_ENABLE;
+	status = phy_modify_mmd(phydev, MDIO_MMD_PMAPMD,
+				M88E2110_BUFFERCONTROL,
+				_eee, _eee);
+
+	return status;
 }
 
 static int mv3310_get_features(struct phy_device *phydev)
@@ -560,7 +581,7 @@ static struct phy_driver mv3310_drivers[] = {
 		.suspend	= mv3310_suspend,
 		.resume		= mv3310_resume,
 		.soft_reset	= m88e2110_soft_reset,
-		.config_init	= mv3310_config_init,
+		.config_init	= m88e2110_config_init,
 		.config_aneg	= mv3310_config_aneg,
 		.aneg_done	= genphy_c45_aneg_done,
 		.read_status	= mv3310_read_status,
