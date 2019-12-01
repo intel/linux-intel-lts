@@ -1939,16 +1939,19 @@ static int alloc_dma_tx_desc_resources(struct stmmac_priv *priv)
 	 * Tx DMA channels     = 0, 1, 2, 3
 	 * Tx XDP DMA channels = 4, 5, 6, 7
 	 */
-	if (stmmac_enabled_xdp(priv))
+	if (stmmac_enabled_xdp(priv)) {
 		for (queue = 0; queue < qp_count; queue++) {
 			clear_queue_xdp(priv, queue);
 			set_queue_xdp(priv, queue + qp_count);
 		}
-	else
+		priv->plat->normal_tx_queue_count = qp_count;
+	} else {
 		for (queue = 0; queue < qp_count; queue++) {
 			clear_queue_xdp(priv, queue);
 			clear_queue_xdp(priv, queue + qp_count);
 		}
+		priv->plat->normal_tx_queue_count = tx_count;
+	}
 
 	/* TX queues buffers and DMA */
 	for (queue = 0; queue < tx_count; queue++) {
@@ -3019,10 +3022,7 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 
 	/* Configure real RX and TX queues */
 	netif_set_real_num_rx_queues(dev, priv->plat->rx_queues_to_use);
-	if (stmmac_enabled_xdp(priv))
-		netif_set_real_num_tx_queues(dev, priv->plat->num_queue_pairs);
-	else
-		netif_set_real_num_tx_queues(dev, priv->plat->tx_queues_to_use);
+	netif_set_real_num_tx_queues(dev, priv->plat->tx_queues_to_use);
 
 	/* Start the ball rolling... */
 	stmmac_start_all_dma(priv);
@@ -5300,6 +5300,8 @@ static int stmmac_setup_tc(struct net_device *ndev, enum tc_setup_type type,
 static u16 stmmac_select_queue(struct net_device *dev, struct sk_buff *skb,
 			       struct net_device *sb_dev)
 {
+	struct stmmac_priv *priv = netdev_priv(dev);
+
 	if (skb_shinfo(skb)->gso_type & (SKB_GSO_TCPV4 | SKB_GSO_TCPV6)) {
 		/*
 		 * There is no way to determine the number of TSO
@@ -5310,7 +5312,7 @@ static u16 stmmac_select_queue(struct net_device *dev, struct sk_buff *skb,
 		return 0;
 	}
 
-	return netdev_pick_tx(dev, skb, NULL) % dev->real_num_tx_queues;
+	return netdev_pick_tx(dev, skb, NULL) % priv->plat->normal_tx_queue_count;
 }
 
 static int stmmac_set_mac_address(struct net_device *ndev, void *addr)
