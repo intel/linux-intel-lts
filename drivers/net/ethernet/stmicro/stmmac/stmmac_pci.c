@@ -317,7 +317,7 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 
 	/* Set PTP clock rate for EHL as 200MHz */
-	plat->clk_ptp_rate = 200000000;
+	plat->clk_ptp_rate = 204860000;
 
 	return ehl_common_data(pdev, plat);
 }
