@@ -189,6 +189,18 @@ static void ptp_aux_kworker(struct kthread_work *work)
 		kthread_queue_delayed_work(ptp->kworker, &ptp->aux_work, delay);
 }
 
+static bool check_for_readability(struct ptp_pin_desc *pin_desc, size_t size)
+{
+	int i;
+	unsigned flags = PTP_PINDESC_INPUTDISABLE;
+
+	for(i = 0; i < size; ++i ) {
+		flags &= pin_desc[i].flags;
+	}
+
+	return flags == 0;
+}
+
 /* public interface */
 
 struct ptp_clock *ptp_clock_register(struct ptp_clock_info *info,
@@ -211,6 +223,8 @@ struct ptp_clock *ptp_clock_register(struct ptp_clock_info *info,
 		err = index;
 		goto no_slot;
 	}
+
+	ptp->defunct = !check_for_readability(info->pin_config, info->n_pins);
 
 	ptp->clock.ops = ptp_clock_ops;
 	ptp->clock.release = delete_ptp_clock;

@@ -150,6 +150,12 @@ config PWM_CROS_EC
 	  PWM driver for exposing a PWM attached to the ChromeOS Embedded
 	  Controller.
 
+config PWM_DWC
+	tristate "DesignWare PWM Controller"
+	depends on PCI
+	help
+	  PWM driver for Synopsys DWC PWM Controller attached to a PCI bus.
+
 config PWM_EP93XX
 	tristate "Cirrus Logic EP93xx PWM support"
 	depends on ARCH_EP93XX
