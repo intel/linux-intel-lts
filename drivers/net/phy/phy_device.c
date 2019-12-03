@@ -708,6 +708,7 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 	int i, reg_addr;
 	const int num_ids = ARRAY_SIZE(c45_ids->device_ids);
 	u32 *devs = &c45_ids->devices_in_package;
+	u32 valid_did = 0;
 
 	/* Find first non-zero Devices In package. Device zero is reserved
 	 * for 802.3 c45 complied PHYs, so don't probe it at first.
@@ -752,8 +753,16 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 		if (phy_reg < 0)
 			return -EIO;
 		c45_ids->device_ids[i] |= phy_reg;
+
+		if (c45_ids->device_ids[i] &&
+		    (c45_ids->device_ids[i] & 0x1fffffff) != 0x1fffffff)
+			valid_did |= (1 << i);
 	}
-	*phy_id = 0;
+	if (valid_did)
+		*phy_id = 0;
+	else
+		*phy_id = 0xffffffff;
+
 	return 0;
 }
 
@@ -820,9 +829,17 @@ struct phy_device *get_phy_device(struct mii_bus *bus, int addr, bool is_c45)
 	if (r)
 		return ERR_PTR(r);
 
-	/* If the phy_id is mostly Fs, there is no device there */
-	if ((phy_id & 0x1fffffff) == 0x1fffffff)
-		return ERR_PTR(-ENODEV);
+	/* For C45, get_phy_c45_ids() sets phy_id to all 1s to indicate
+	 * there is no device there. However, for C22, phy_id read from
+	 * PHY can be either all 1s or all 0s.
+	 */
+	if (is_c45) {
+		if ((phy_id & 0x1fffffff) == 0x1fffffff)
+			return ERR_PTR(-ENODEV);
+	} else {
+		if ((phy_id & 0x1fffffff) == 0x1fffffff || phy_id == 0x0)
+			return ERR_PTR(-ENODEV);
+	}
 
 	return phy_device_create(bus, addr, phy_id, is_c45, &c45_ids);
 }

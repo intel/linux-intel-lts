@@ -289,7 +289,7 @@ static void ndesc_display_ring(void *head, unsigned int size, bool rx)
 	pr_info("\n");
 }
 
-static void ndesc_get_addr(struct dma_desc *p, unsigned int *addr)
+static void ndesc_get_addr(struct dma_desc *p, dma_addr_t *addr)
 {
 	*addr = le32_to_cpu(p->des2);
 }

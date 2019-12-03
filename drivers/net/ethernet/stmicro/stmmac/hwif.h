@@ -54,6 +54,10 @@ struct stmmac_desc_ops {
 	void (*set_tx_ic)(struct dma_desc *p);
 	/* Last tx segment reports the transmit status */
 	int (*get_tx_ls)(struct dma_desc *p);
+	/* RX VLAN TCI */
+	int (*get_rx_vlan_tci)(struct dma_desc *p);
+	/* RX VLAN valid */
+	bool (*get_rx_vlan_valid)(struct dma_desc *p);
 	/* Return the transmit status looking at the TDES1 */
 	int (*tx_status)(void *data, struct stmmac_extra_stats *x,
 			struct dma_desc *p, void __iomem *ioaddr);
@@ -81,7 +85,7 @@ struct stmmac_desc_ops {
 	/* set MSS via context descriptor */
 	void (*set_mss)(struct dma_desc *p, unsigned int mss);
 	/* get descriptor skbuff address */
-	void (*get_addr)(struct dma_desc *p, unsigned int *addr);
+	void (*get_addr)(struct dma_desc *p, dma_addr_t *addr);
 	/* set descriptor skbuff address */
 	void (*set_addr)(struct dma_desc *p, dma_addr_t addr);
 	/* clear descriptor */
@@ -115,6 +119,10 @@ struct stmmac_desc_ops {
 	stmmac_do_void_callback(__priv, desc, set_tx_ic, __args)
 #define stmmac_get_tx_ls(__priv, __args...) \
 	stmmac_do_callback(__priv, desc, get_tx_ls, __args)
+#define stmmac_get_rx_vlan_tci(__priv, __args...) \
+	stmmac_do_callback(__priv, desc, get_rx_vlan_tci, __args)
+#define stmmac_get_rx_vlan_valid(__priv, __args...) \
+	stmmac_do_callback(__priv, desc, get_rx_vlan_valid, __args)
 #define stmmac_tx_status(__priv, __args...) \
 	stmmac_do_callback(__priv, desc, tx_status, __args)
 #define stmmac_get_tx_len(__priv, __args...) \
@@ -194,7 +202,7 @@ struct stmmac_dma_ops {
 	void (*start_rx)(void __iomem *ioaddr, u32 chan);
 	void (*stop_rx)(void __iomem *ioaddr, u32 chan);
 	int (*dma_interrupt) (void __iomem *ioaddr,
-			      struct stmmac_extra_stats *x, u32 chan);
+			      struct stmmac_extra_stats *x, u32 chan, u32 dir);
 	/* If supported then get the optional core features */
 	void (*get_hw_feature)(void __iomem *ioaddr,
 			       struct dma_features *dma_cap);
@@ -274,6 +282,12 @@ struct stmmac_safety_stats;
 struct stmmac_tc_entry;
 struct stmmac_pps_cfg;
 struct stmmac_rss;
+enum tsn_feat_id;
+enum tsn_hwtunable_id;
+struct est_gc_entry;
+struct est_gcrr;
+struct est_gc_config;
+enum mpacket_type;
 
 /* Helpers to program the MAC core */
 struct stmmac_ops {
@@ -281,6 +295,11 @@ struct stmmac_ops {
 	void (*core_init)(struct mac_device_info *hw, struct net_device *dev);
 	/* Enable the MAC RX/TX */
 	void (*set_mac)(void __iomem *ioaddr, bool enable);
+	/* Start/Stop TX/RX state machine of MAC */
+	void (*start_tx)(void __iomem *ioaddr);
+	void (*stop_tx)(void __iomem *ioaddr);
+	void (*start_rx)(void __iomem *ioaddr);
+	void (*stop_rx)(void __iomem *ioaddr);
 	/* Enable and verify that the IPC module is supported */
 	int (*rx_ipc)(struct mac_device_info *hw);
 	/* Enable RX Queues */
@@ -359,6 +378,18 @@ struct stmmac_ops {
 	void (*update_vlan_hash)(struct mac_device_info *hw, u32 hash,
 				 bool is_double);
 	void (*enable_vlan)(struct mac_device_info *hw, u32 type);
+	void (*rx_hw_vlan)(struct net_device *dev, struct mac_device_info *hw,
+			   struct dma_desc *rx_desc, struct sk_buff *skb);
+	void (*set_hw_vlan_mode)(void __iomem *ioaddr,
+				 netdev_features_t features);
+	int (*add_hw_vlan_rx_fltr)(struct net_device *dev,
+				   struct mac_device_info *hw,
+				   __be16 proto, u16 vid);
+	int (*del_hw_vlan_rx_fltr)(struct net_device *dev,
+				   struct mac_device_info *hw,
+				   __be16 proto, u16 vid);
+	void (*restore_hw_vlan_rx_fltr)(struct net_device *dev,
+					struct mac_device_info *hw);
 	/* TX Timestamp */
 	int (*get_mac_tx_timestamp)(struct mac_device_info *hw, u64 *ts);
 	/* Source Address Insertion / Replacement */
@@ -371,12 +402,85 @@ struct stmmac_ops {
 				bool en, bool udp, bool sa, bool inv,
 				u32 match);
 	void (*set_arp_offload)(struct mac_device_info *hw, bool en, u32 addr);
+	/* Check frame transmission is completed */
+	int (*mtl_tx_completed)(void __iomem *ioaddr, u32 tx_queues);
+	/* TSN APIs */
+	void (*tsnif_setup)(struct mac_device_info *mac);
+	int (*init_tsn)(struct mac_device_info *hw, struct net_device *dev);
+	int (*set_tsn_feat)(struct mac_device_info *hw,
+			    struct net_device *dev,
+			    enum tsn_feat_id featid, bool enable);
+	bool (*has_tsn_feat)(struct mac_device_info *hw, struct net_device *dev,
+			     enum tsn_feat_id featid);
+	void (*setup_tsn_hw)(struct mac_device_info *hw,
+			     struct net_device *dev, u32 fprq);
+	void (*unsetup_tsn_hw)(struct mac_device_info *hw,
+			       struct net_device *dev);
+	int (*set_tsn_hwtunable)(struct mac_device_info *hw,
+				 struct net_device *dev,
+				 enum tsn_hwtunable_id id,
+				 const u32 data);
+	int (*get_tsn_hwtunable)(struct mac_device_info *hw,
+				 struct net_device *dev,
+				 enum tsn_hwtunable_id id, u32 *data);
+	int (*set_est_enable)(struct mac_device_info *hw,
+			      struct net_device *dev, bool enable);
+	int (*get_est_bank)(struct mac_device_info *hw, struct net_device *dev,
+			    bool is_own, u32 *bank);
+	int (*set_est_gce)(struct mac_device_info *hw, struct net_device *dev,
+			   struct est_gc_entry *gce, u32 row,
+			   u32 dbgb, bool is_dbgm);
+	int (*get_est_gcl_len)(struct mac_device_info *hw,
+			       struct net_device *dev, u32 *gcl_len,
+			       u32 dbgb, bool is_dbgm);
+	int (*set_est_gcl_len)(struct mac_device_info *hw,
+			       struct net_device *dev, u32 gcl_len,
+			       u32 dbgb, bool is_dbgm);
+	int (*set_est_gcrr_times)(struct mac_device_info *hw,
+				  struct net_device *dev,
+				  struct est_gcrr *gcrr,
+				  u32 dbgb, bool is_dbgm);
+	int (*get_est_gcc)(struct mac_device_info *hw, struct net_device *dev,
+			   struct est_gc_config **gcc);
+	void (*est_irq_status)(struct mac_device_info *hw,
+			       struct net_device *dev);
+	void (*update_tsn_mmc_stat)(struct mac_device_info *hw,
+				    struct net_device *dev);
+	int (*dump_tsn_mmc)(struct mac_device_info *hw, int index,
+			    unsigned long *count, const char **desc);
+	int (*cbs_recal_idleslope)(struct mac_device_info *hw,
+				   struct net_device *dev,
+				   u32 queue,
+				   u32 *idle_slope);
+	int (*fpe_set_txqpec)(struct mac_device_info *hw,
+			      struct net_device *dev, u32 txqpec);
+	int (*fpe_set_enable)(struct mac_device_info *hw,
+			      struct net_device *dev, bool enable);
+	int (*fpe_get_config)(struct mac_device_info *hw,
+			      struct net_device *dev, u32 *txqpec,
+			      bool *enable);
+	int (*fpe_show_pmac_sts)(struct mac_device_info *hw,
+				 struct net_device *dev);
+	int (*fpe_send_mpacket)(struct mac_device_info *hw,
+				struct net_device *dev, enum mpacket_type type);
+	void (*fpe_link_state_handle)(struct mac_device_info *hw,
+				      struct net_device *dev, bool is_up);
+	void (*fpe_irq_status)(struct mac_device_info *hw,
+			       struct net_device *dev);
 };
 
 #define stmmac_core_init(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, core_init, __args)
 #define stmmac_mac_set(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, set_mac, __args)
+#define stmmac_start_mac_tx(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, start_tx, __args)
+#define stmmac_stop_mac_tx(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, stop_tx, __args)
+#define stmmac_start_mac_rx(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, start_rx, __args)
+#define stmmac_stop_mac_rx(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, stop_rx, __args)
 #define stmmac_rx_ipc(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, rx_ipc, __args)
 #define stmmac_rx_queue_enable(__priv, __args...) \
@@ -447,6 +551,16 @@ struct stmmac_ops {
 	stmmac_do_void_callback(__priv, mac, update_vlan_hash, __args)
 #define stmmac_enable_vlan(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, enable_vlan, __args)
+#define stmmac_rx_hw_vlan(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, rx_hw_vlan, __args)
+#define stmmac_set_hw_vlan_mode(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, set_hw_vlan_mode, __args)
+#define stmmac_add_hw_vlan_rx_fltr(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, add_hw_vlan_rx_fltr, __args)
+#define stmmac_del_hw_vlan_rx_fltr(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, del_hw_vlan_rx_fltr, __args)
+#define stmmac_restore_hw_vlan_rx_fltr(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, restore_hw_vlan_rx_fltr, __args)
 #define stmmac_get_mac_tx_timestamp(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, get_mac_tx_timestamp, __args)
 #define stmmac_sarc_configure(__priv, __args...) \
@@ -457,17 +571,93 @@ struct stmmac_ops {
 	stmmac_do_callback(__priv, mac, config_l4_filter, __args)
 #define stmmac_set_arp_offload(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, set_arp_offload, __args)
+#define stmmac_mtl_tx_completed(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, mtl_tx_completed, __args)
+#define stmmac_tsnif_setup(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, tsnif_setup, __args)
+#define stmmac_tsn_init(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, init_tsn, __args)
+#define stmmac_set_tsn_feat(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, set_tsn_feat, __args)
+#define stmmac_has_tsn_feat(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, has_tsn_feat, __args)
+#define stmmac_tsn_hw_setup(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, setup_tsn_hw, __args)
+#define stmmac_tsn_hw_unsetup(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, unsetup_tsn_hw, __args)
+#define stmmac_set_tsn_hwtunable(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_tsn_hwtunable, __args)
+#define stmmac_get_tsn_hwtunable(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, get_tsn_hwtunable, __args)
+#define stmmac_set_est_enable(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_est_enable, __args)
+#define stmmac_get_est_bank(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, get_est_bank, __args)
+#define stmmac_set_est_gce(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_est_gce, __args)
+#define stmmac_set_est_gcl_len(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_est_gcl_len, __args)
+#define stmmac_get_est_gcl_len(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, get_est_gcl_len, __args)
+#define stmmac_set_est_gcrr_times(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, set_est_gcrr_times, __args)
+#define stmmac_get_est_gcc(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, get_est_gcc, __args)
+#define stmmac_est_irq_status(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, est_irq_status, __args)
+#define stmmac_update_tsn_mmc_stat(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, update_tsn_mmc_stat, __args)
+#define stmmac_dump_tsn_mmc(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, dump_tsn_mmc, __args)
+#define stmmac_cbs_recal_idleslope(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, cbs_recal_idleslope, __args)
+#define stmmac_fpe_set_txqpec(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, fpe_set_txqpec, __args)
+#define stmmac_fpe_set_enable(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, fpe_set_enable, __args)
+#define stmmac_fpe_get_config(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, fpe_get_config, __args)
+#define stmmac_fpe_show_pmac_sts(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, fpe_show_pmac_sts, __args)
+#define stmmac_fpe_send_mpacket(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, fpe_send_mpacket, __args)
+#define stmmac_fpe_link_state_handle(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, fpe_link_state_handle, __args)
+#define stmmac_fpe_irq_status(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, fpe_irq_status, __args)
+
+/* Helpers for serdes */
+struct stmmac_serdes_ops {
+	int (*serdes_powerup)(struct net_device *ndev);
+	int (*serdes_powerdown)(struct net_device *ndev);
+	int (*speed_mode_2500)(struct net_device *ndev);
+};
+
+#define stmmac_serdes_powerup(__priv, __args...) \
+	stmmac_do_callback(__priv, serdes, serdes_powerup, __args)
+#define stmmac_serdes_powerdown(__priv, __args...) \
+	stmmac_do_callback(__priv, serdes, serdes_powerdown, __args)
+#define stmmac_speed_mode_2500(__priv, __args...) \
+	stmmac_do_callback(__priv, serdes, speed_mode_2500, __args)
+
+struct mii_bus;
+struct stmmac_priv;
 
 /* PTP and HW Timer helpers */
 struct stmmac_hwtimestamp {
 	void (*config_hw_tstamping) (void __iomem *ioaddr, u32 data);
 	void (*config_sub_second_increment)(void __iomem *ioaddr, u32 ptp_clock,
-					   int gmac4, u32 *ssinc);
+					   int gmac4, u32 *ssinc,
+					   bool is_hfpga);
 	int (*init_systime) (void __iomem *ioaddr, u32 sec, u32 nsec);
 	int (*config_addend) (void __iomem *ioaddr, u32 addend);
 	int (*adjust_systime) (void __iomem *ioaddr, u32 sec, u32 nsec,
 			       int add_sub, int gmac4);
 	void (*get_systime) (void __iomem *ioaddr, u64 *systime);
+	void (*get_arttime)(struct mii_bus *mii, int intel_adhoc_addr,
+			    u64 *art_time);
+	void (*get_ptptime)(void __iomem *ioaddr, u64 *ptp_time);
+	void (*tstamp_interrupt)(struct stmmac_priv *priv);
 };
 
 #define stmmac_config_hw_tstamping(__priv, __args...) \
@@ -482,6 +672,12 @@ struct stmmac_hwtimestamp {
 	stmmac_do_callback(__priv, ptp, adjust_systime, __args)
 #define stmmac_get_systime(__priv, __args...) \
 	stmmac_do_void_callback(__priv, ptp, get_systime, __args)
+#define stmmac_get_arttime(__priv, __args...) \
+	stmmac_do_void_callback(__priv, ptp, get_arttime, __args)
+#define stmmac_get_ptptime(__priv, __args...) \
+	stmmac_do_void_callback(__priv, ptp, get_ptptime, __args)
+#define stmmac_tstamp_interrupt(__priv, __args...) \
+	stmmac_do_void_callback(__priv, ptp, tstamp_interrupt, __args)
 
 /* Helpers to manage the descriptors for chain and ring modes */
 struct stmmac_mode_ops {
@@ -510,10 +706,11 @@ struct stmmac_mode_ops {
 #define stmmac_clean_desc3(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mode, clean_desc3, __args)
 
-struct stmmac_priv;
 struct tc_cls_u32_offload;
 struct tc_cbs_qopt_offload;
 struct flow_cls_offload;
+struct tc_taprio_qopt_offload;
+struct tc_etf_qopt_offload;
 
 struct stmmac_tc_ops {
 	int (*init)(struct stmmac_priv *priv);
@@ -523,6 +720,10 @@ struct stmmac_tc_ops {
 			 struct tc_cbs_qopt_offload *qopt);
 	int (*setup_cls)(struct stmmac_priv *priv,
 			 struct flow_cls_offload *cls);
+	int (*setup_taprio)(struct stmmac_priv *priv,
+			    struct tc_taprio_qopt_offload *qopt);
+	int (*setup_etf)(struct stmmac_priv *priv,
+			 struct tc_etf_qopt_offload *qopt);
 };
 
 #define stmmac_tc_init(__priv, __args...) \
@@ -533,6 +734,10 @@ struct stmmac_tc_ops {
 	stmmac_do_callback(__priv, tc, setup_cbs, __args)
 #define stmmac_tc_setup_cls(__priv, __args...) \
 	stmmac_do_callback(__priv, tc, setup_cls, __args)
+#define stmmac_tc_setup_taprio(__priv, __args...) \
+	stmmac_do_callback(__priv, tc, setup_taprio, __args)
+#define stmmac_tc_setup_etf(__priv, __args...) \
+	stmmac_do_callback(__priv, tc, setup_etf, __args)
 
 struct stmmac_counters;
 
@@ -554,7 +759,20 @@ struct stmmac_regs_off {
 	u32 mmc_off;
 };
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+struct stmmac_pm_ops {
+	int (*suspend)(struct stmmac_priv *priv, struct net_device *ndev);
+	int (*resume)(struct stmmac_priv *priv, struct net_device *ndev);
+};
+
+#define stmmac_pm_suspend(__priv, __args...) \
+	stmmac_do_callback(__priv, pm, suspend, __args)
+#define stmmac_pm_resume(__priv, __args...) \
+	stmmac_do_callback(__priv, pm, resume, __args)
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
+
 extern const struct stmmac_ops dwmac100_ops;
+extern const struct stmmac_serdes_ops intel_serdes_ops;
 extern const struct stmmac_dma_ops dwmac100_dma_ops;
 extern const struct stmmac_ops dwmac1000_ops;
 extern const struct stmmac_dma_ops dwmac1000_dma_ops;
@@ -563,16 +781,187 @@ extern const struct stmmac_dma_ops dwmac4_dma_ops;
 extern const struct stmmac_ops dwmac410_ops;
 extern const struct stmmac_dma_ops dwmac410_dma_ops;
 extern const struct stmmac_ops dwmac510_ops;
+extern const struct stmmac_dma_ops dwmac5_dma_ops;
 extern const struct stmmac_tc_ops dwmac510_tc_ops;
 extern const struct stmmac_ops dwxgmac210_ops;
 extern const struct stmmac_dma_ops dwxgmac210_dma_ops;
 extern const struct stmmac_desc_ops dwxgmac210_desc_ops;
 extern const struct stmmac_mmc_ops dwmac_mmc_ops;
 extern const struct stmmac_mmc_ops dwxgmac_mmc_ops;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+extern const struct stmmac_pm_ops dwmac_pm_ops;
+extern const struct stmmac_pm_ops dwmac_netprox_pm_ops;
+#endif
 
 #define GMAC_VERSION		0x00000020	/* GMAC CORE Version */
 #define GMAC4_VERSION		0x00000110	/* GMAC4+ CORE Version */
 
 int stmmac_hwif_init(struct stmmac_priv *priv);
+
+/* TSN Interface HW IP Specific Functions
+ * Note:
+ *  These functions implement IP specifics logics and are callable by TSN APIs
+ *  defined in struct stmmac_ops. To differentiate them from high level TSN
+ *  APIs, we use tsnif_xxx here.
+ */
+#define tsnif_do_void_callback(__hw, __cname,  __arg0, __args...) \
+({ \
+	int __result = -EINVAL; \
+	if ((__hw)->tsnif && (__hw)->tsnif->__cname) { \
+		(__hw)->tsnif->__cname((__arg0), ##__args); \
+		__result = 0; \
+	} \
+	__result; \
+})
+#define tsnif_do_callback(__hw, __cname,  __arg0, __args...) \
+({ \
+	int __result = -EINVAL; \
+	if ((__hw)->tsnif && (__hw)->tsnif->__cname) \
+		__result = (__hw)->tsnif->__cname((__arg0), ##__args); \
+	__result; \
+})
+
+struct tsn_mmc_stat;
+enum fpe_event;
+
+struct tsnif_ops {
+	u32 (*read_hwid)(void __iomem *ioaddr);
+	bool (*has_tsn_cap)(void __iomem *ioaddr, enum tsn_feat_id featid);
+	void (*hw_setup)(void __iomem *ioaddr, enum tsn_feat_id featid,
+			 u32 fprq);
+	/* IEEE 802.1Qbv Enhanced Scheduled Traffics (EST) */
+	u32 (*est_get_gcl_depth)(void __iomem *ioaddr);
+	u32 (*est_get_ti_width)(void __iomem *ioaddr);
+	u32 (*est_get_txqcnt)(void __iomem *ioaddr);
+	u32 (*est_get_rxqcnt)(void __iomem *ioaddr);
+	void (*est_get_max)(u32 *ptov_max, u32 *ctov_max, u32 *ct_max,
+			    u32 *idleslope_max);
+	int (*est_write_gcl_config)(void __iomem *ioaddr, u32 data, u32 addr,
+				    bool is_gcrr,
+				    u32 dbgb, bool is_dbgm);
+	int (*est_read_gcl_config)(void __iomem *ioaddr, u32 *data, u32 addr,
+				   bool is_gcrr,
+				   u32 dbgb, bool is_dbgm);
+	int (*est_read_gce)(void __iomem *ioaddr, u32 row,
+			    u32 *gates, u32 *ti_nsec,
+			    u32 ti_wid, u32 txqcnt,
+			    u32 dbgb, bool is_dbgm);
+	void (*est_set_tils)(void __iomem *ioaddr, const u32 tils);
+	void (*est_set_ptov)(void __iomem *ioaddr, const u32 ptov);
+	void (*est_set_ctov)(void __iomem *ioaddr, const u32 ctov);
+	int (*est_set_enable)(void __iomem *ioaddr, bool enable);
+	bool (*est_get_enable)(void __iomem *ioaddr);
+	u32 (*est_get_bank)(void __iomem *ioaddr, bool is_own);
+	void (*est_switch_swol)(void __iomem *ioaddr);
+	int (*est_irq_status)(void *ioaddr, struct net_device *dev,
+			      struct tsn_mmc_stat *mmc_stat,
+			      unsigned int txqcnt);
+	/* Frame Preemption (FPE) */
+	void (*fpe_get_info)(u32 *pmac_bit, u32 *afsz_max,
+			     u32 *hadv_max, u32 *radv_max);
+	void (*fpe_set_txqpec)(void *ioaddr, u32 txqpec, u32 txqmask);
+	void (*fpe_set_enable)(void *ioaddr, bool enable);
+	void (*fpe_get_config)(void *ioaddr, u32 *txqpec, bool *enable);
+	void (*fpe_get_pmac_sts)(void *ioaddr, u32 *hrs);
+	void (*fpe_set_afsz)(void *ioaddr, const u32 afsz);
+	void (*fpe_set_hadv)(void *ioaddr, const u32 hadv);
+	void (*fpe_set_radv)(void *ioaddr, const u32 radv);
+	void (*fpe_send_mpacket)(void *ioaddr, enum mpacket_type type);
+	void (*fpe_irq_status)(void *ioaddr, struct net_device *dev,
+			       enum fpe_event *fpe_event);
+	void (*fpe_mmc_irq_status)(void __iomem *ioaddr,
+				   struct net_device *dev);
+	void (*fpe_update_mmc_stat)(void __iomem *ioaddr,
+				    struct tsn_mmc_stat *mmc_stat);
+	/* Time-Based Scheduling (TBS) */
+	void (*tbs_get_max)(u32 *leos_max, u32 *legos_max,
+			    u32 *ftos_max, u32 *fgos_max);
+	void (*tbs_set_estm)(void __iomem *ioaddr, const u32 estm);
+	void (*tbs_set_leos)(void __iomem *ioaddr, const u32 leos,
+			     const u32 estm);
+	void (*tbs_set_legos)(void __iomem *ioaddr, const u32 legos,
+			      const u32 leos);
+	void (*tbs_set_ftos)(void __iomem *ioaddr, const u32 ftos,
+			     const u32 estm, const u32 fgos);
+	void (*tbs_set_fgos)(void __iomem *ioaddr, const u32 fgos,
+			     const u32 ftos);
+};
+
+#define tsnif_read_hwid(__hw, __args...) \
+	tsnif_do_callback(__hw, read_hwid, __args)
+#define tsnif_has_tsn_cap(__hw, __args...) \
+	tsnif_do_callback(__hw, has_tsn_cap, __args)
+#define tsnif_hw_setup(__hw, __args...) \
+	tsnif_do_void_callback(__hw, hw_setup, __args)
+#define tsnif_est_get_gcl_depth(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_gcl_depth, __args)
+#define tsnif_est_get_ti_width(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_ti_width, __args)
+#define tsnif_est_get_txqcnt(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_txqcnt, __args)
+#define tsnif_est_get_rxqcnt(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_rxqcnt, __args)
+#define tsnif_est_get_max(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_get_max, __args)
+#define tsnif_est_write_gcl_config(__hw, __args...) \
+	tsnif_do_callback(__hw, est_write_gcl_config, __args)
+#define tsnif_est_read_gcl_config(__hw, __args...) \
+	tsnif_do_callback(__hw, est_read_gcl_config, __args)
+#define tsnif_est_read_gce(__hw, __args...) \
+	tsnif_do_callback(__hw, est_read_gce, __args)
+#define tsnif_est_set_tils(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_set_tils, __args)
+#define tsnif_est_set_ptov(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_set_ptov, __args)
+#define tsnif_est_set_ctov(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_set_ctov, __args)
+#define tsnif_est_set_enable(__hw, __args...) \
+	tsnif_do_callback(__hw, est_set_enable, __args)
+#define tsnif_est_get_enable(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_enable, __args)
+#define tsnif_est_get_bank(__hw, __args...) \
+	tsnif_do_callback(__hw, est_get_bank, __args)
+#define tsnif_est_switch_swol(__hw, __args...) \
+	tsnif_do_void_callback(__hw, est_switch_swol, __args)
+#define tsnif_est_irq_status(__hw, __args...) \
+	tsnif_do_callback(__hw, est_irq_status, __args)
+#define tsnif_fpe_get_info(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_get_info, __args)
+#define tsnif_fpe_set_txqpec(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_txqpec, __args)
+#define tsnif_fpe_set_enable(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_enable, __args)
+#define tsnif_fpe_get_config(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_get_config, __args)
+#define tsnif_fpe_get_pmac_sts(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_get_pmac_sts, __args)
+#define tsnif_fpe_set_afsz(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_afsz, __args)
+#define tsnif_fpe_set_hadv(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_hadv, __args)
+#define tsnif_fpe_set_radv(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_radv, __args)
+#define tsnif_fpe_set_radv(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_set_radv, __args)
+#define tsnif_fpe_send_mpacket(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_send_mpacket, __args)
+#define tsnif_fpe_irq_status(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_irq_status, __args)
+#define tsnif_fpe_mmc_irq_status(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_mmc_irq_status, __args)
+#define tsnif_fpe_update_mmc_stat(__hw, __args...) \
+	tsnif_do_void_callback(__hw, fpe_update_mmc_stat, __args)
+#define tsnif_tbs_get_max(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_get_max, __args)
+#define tsnif_tbs_set_estm(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_set_estm, __args)
+#define tsnif_tbs_set_leos(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_set_leos, __args)
+#define tsnif_tbs_set_legos(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_set_legos, __args)
+#define tsnif_tbs_set_ftos(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_set_ftos, __args)
+#define tsnif_tbs_set_fgos(__hw, __args...) \
+	tsnif_do_void_callback(__hw, tbs_set_fgos, __args)
 
 #endif /* __STMMAC_HWIF_H__ */

@@ -127,6 +127,12 @@ struct phy_device *mdiobus_get_phy(struct mii_bus *bus, int addr)
 }
 EXPORT_SYMBOL(mdiobus_get_phy);
 
+struct mdio_device *mdiobus_get_mdio_device(struct mii_bus *bus, int addr)
+{
+	return bus->mdio_map[addr];
+}
+EXPORT_SYMBOL(mdiobus_get_mdio_device);
+
 bool mdiobus_is_registered_device(struct mii_bus *bus, int addr)
 {
 	return bus->mdio_map[addr];
@@ -328,8 +334,8 @@ static inline void of_mdiobus_link_mdiodev(struct mii_bus *mdio,
  *
  * Returns 0 on success or < 0 on error.
  */
-static int mdiobus_create_device(struct mii_bus *bus,
-				 struct mdio_board_info *bi)
+int mdiobus_create_device(struct mii_bus *bus,
+			  struct mdio_board_info *bi)
 {
 	struct mdio_device *mdiodev;
 	int ret = 0;
@@ -349,6 +355,7 @@ static int mdiobus_create_device(struct mii_bus *bus,
 
 	return ret;
 }
+EXPORT_SYMBOL(mdiobus_create_device);
 
 /**
  * __mdiobus_register - bring up all the PHYs on a given bus and attach them to bus
@@ -515,8 +522,12 @@ struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr)
 	int err;
 
 	phydev = get_phy_device(bus, addr, false);
-	if (IS_ERR(phydev))
-		return phydev;
+	if (IS_ERR(phydev)) {
+		/* Try C45 to ensure we don't miss PHY that only talks C45 */
+		phydev = get_phy_device(bus, addr, true);
+		if (IS_ERR(phydev))
+			return phydev;
+	}
 
 	/*
 	 * For DT, see if the auto-probed phy has a correspoding child

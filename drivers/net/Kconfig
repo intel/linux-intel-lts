@@ -528,4 +528,6 @@ config NET_FAILOVER
 	  datapath when the VF is unplugged.
 
 source "drivers/net/vnic/Kconfig"
+source "drivers/net/networkproxy/Kconfig"
+
 endif # NETDEVICES
