@@ -212,6 +212,7 @@ static int netprox_process_classifier_rule_read(struct np_rules *rule,
 	case NP_RL_T_IPV6:
 	case NP_RL_T_SNMP:
 	case NP_RL_T_TCP_WAKE_PORT:
+	case NP_RL_T_MDNS:
 		ret = netprox_read_from_agent(rule, content, size);
 		break;
 	default:
