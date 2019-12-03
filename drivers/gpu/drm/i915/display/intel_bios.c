@@ -1246,7 +1246,7 @@ static enum port get_port_by_ddc_pin(struct drm_i915_private *i915, u8 ddc_pin)
 	const struct ddi_vbt_port_info *info;
 	enum port port;
 
-	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+	for_each_port(port) {
 		info = &i915->vbt.ddi_port_info[port];
 
 		if (info->child && ddc_pin == info->alternate_ddc_pin)
@@ -1297,7 +1297,7 @@ static enum port get_port_by_aux_ch(struct drm_i915_private *i915, u8 aux_ch)
 	const struct ddi_vbt_port_info *info;
 	enum port port;
 
-	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+	for_each_port(port) {
 		info = &i915->vbt.ddi_port_info[port];
 
 		if (info->child && aux_ch == info->alternate_aux_channel)
@@ -1399,6 +1399,7 @@ static enum port dvo_port_to_port(u8 dvo_port)
 		[PORT_D] = { DVO_PORT_HDMID, DVO_PORT_DPD, -1},
 		[PORT_E] = { DVO_PORT_CRT, DVO_PORT_HDMIE, DVO_PORT_DPE},
 		[PORT_F] = { DVO_PORT_HDMIF, DVO_PORT_DPF, -1},
+		[PORT_G] = { DVO_PORT_HDMIG, DVO_PORT_DPG, -1},
 	};
 	enum port port;
 	int i;
@@ -1625,7 +1626,7 @@ parse_general_definitions(struct drm_i915_private *dev_priv,
 		expected_size = 37;
 	} else if (bdb->version <= 215) {
 		expected_size = 38;
-	} else if (bdb->version <= 216) {
+	} else if (bdb->version <= 229) {
 		expected_size = 39;
 	} else {
 		expected_size = sizeof(*child);
@@ -1721,7 +1722,7 @@ init_vbt_defaults(struct drm_i915_private *dev_priv)
 			!HAS_PCH_SPLIT(dev_priv));
 	DRM_DEBUG_KMS("Set default to SSC at %d kHz\n", dev_priv->vbt.lvds_ssc_freq);
 
-	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+	for_each_port(port) {
 		struct ddi_vbt_port_info *info =
 			&dev_priv->vbt.ddi_port_info[port];
 
@@ -1735,7 +1736,7 @@ init_vbt_missing_defaults(struct drm_i915_private *dev_priv)
 {
 	enum port port;
 
-	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+	for_each_port(port) {
 		struct ddi_vbt_port_info *info =
 			&dev_priv->vbt.ddi_port_info[port];
 		enum phy phy = intel_port_to_phy(dev_priv, port);
@@ -1843,7 +1844,7 @@ void intel_bios_init(struct drm_i915_private *dev_priv)
 	const struct bdb_header *bdb;
 	u8 __iomem *bios = NULL;
 
-	if (!HAS_DISPLAY(dev_priv)) {
+	if (!HAS_DISPLAY(dev_priv) || !INTEL_DISPLAY_ENABLED(dev_priv)) {
 		DRM_DEBUG_KMS("Skipping VBT init due to disabled display.\n");
 		return;
 	}
@@ -2257,6 +2258,9 @@ enum aux_ch intel_bios_port_aux_ch(struct drm_i915_private *dev_priv,
 		break;
 	case DP_AUX_F:
 		aux_ch = AUX_CH_F;
+		break;
+	case DP_AUX_G:
+		aux_ch = AUX_CH_G;
 		break;
 	default:
 		MISSING_CASE(info->alternate_aux_channel);
