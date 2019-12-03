@@ -21,6 +21,17 @@ config I2C_ALI1535
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-ali1535.
 
+config I2C_VIRTIO
+	tristate "VIRTIO I2C"
+	depends on VIRTIO
+	default n
+	help
+	  If you say yes to this option, support will be included for the vritual
+	  i2c adapter drvier. This i2c adapter based on virtio interface.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called i2c-virtio.
+
 config I2C_ALI1563
 	tristate "ALI 1563"
 	depends on PCI

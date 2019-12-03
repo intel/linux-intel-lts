@@ -230,4 +230,9 @@ source "drivers/interconnect/Kconfig"
 
 source "drivers/counter/Kconfig"
 
+source "drivers/vbs/Kconfig"
+
+source "drivers/acrn/Kconfig"
+
+source "drivers/vhm/Kconfig"
 endmenu
