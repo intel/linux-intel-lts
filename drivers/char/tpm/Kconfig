@@ -155,6 +155,14 @@ config TCG_CRB
 	  from within Linux.  To compile this driver as a module, choose
 	  M here; the module will be called tpm_crb.
 
+config TCG_FTPM_OPTEE
+	tristate "TPM 2.0 FTPM OP-TEE Interface"
+	depends on OPTEE
+	---help---
+	  This driver proxies for a firmware TPM 2.0 implementation, which
+	  leverages ARM Trustzone and OP-TEE Trusted Execution Environment.
+	  To compile this driver as a module, choose M here;
+
 config TCG_VTPM_PROXY
 	tristate "VTPM Proxy Interface"
 	depends on TCG_TPM

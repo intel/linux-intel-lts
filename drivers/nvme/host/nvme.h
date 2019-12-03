@@ -13,6 +13,7 @@
 #include <linux/blk-mq.h>
 #include <linux/lightnvm.h>
 #include <linux/sed-opal.h>
+#include <linux/rpmb.h>
 #include <linux/fault-inject.h>
 #include <linux/rcupdate.h>
 #include <linux/wait.h>
@@ -205,6 +206,7 @@ struct nvme_ctrl {
 	struct list_head subsys_entry;
 
 	struct opal_dev *opal_dev;
+	struct rpmb_dev *rdev;
 
 	char name[12];
 	u16 cntlid;
@@ -234,6 +236,7 @@ struct nvme_ctrl {
 	u32 oaes;
 	u32 aen_result;
 	u32 ctratt;
+	u32 rpmbs;
 	unsigned int shutdown_timeout;
 	unsigned int kato;
 	bool subsystem;
@@ -461,6 +464,12 @@ void nvme_start_ctrl(struct nvme_ctrl *ctrl);
 void nvme_stop_ctrl(struct nvme_ctrl *ctrl);
 void nvme_put_ctrl(struct nvme_ctrl *ctrl);
 int nvme_init_identify(struct nvme_ctrl *ctrl);
+int nvme_sec_send(struct nvme_ctrl *ctrl, u8 nssf, u16 spsp, u8 secp,
+		  void *buffer, size_t len);
+int nvme_sec_recv(struct nvme_ctrl *ctrl, u8 nssf, u16 spsp, u8 secp,
+		  void *buffer, size_t len);
+int nvme_init_rpmb(struct nvme_ctrl *ctrl);
+void nvme_exit_rpmb(struct nvme_ctrl *ctrl);
 
 void nvme_remove_namespaces(struct nvme_ctrl *ctrl);
 

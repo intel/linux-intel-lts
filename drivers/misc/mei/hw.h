@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2003-2018, Intel Corporation. All rights reserved
+ * Copyright (c) 2003-2019, Intel Corporation. All rights reserved
  * Intel Management Engine Interface (Intel MEI) Linux driver
  */
 
@@ -25,7 +25,7 @@
 /*
  * MEI Version
  */
-#define HBM_MINOR_VERSION                   1
+#define HBM_MINOR_VERSION                   2
 #define HBM_MAJOR_VERSION                   2
 
 /*
@@ -76,6 +76,18 @@
 #define HBM_MINOR_VERSION_DR               1
 #define HBM_MAJOR_VERSION_DR               2
 
+/*
+ * MEI version with vm tag support
+ */
+#define HBM_MINOR_VERSION_VT               2
+#define HBM_MAJOR_VERSION_VT               2
+
+/*
+ * MEI version with capabilities message support
+ */
+#define HBM_MINOR_VERSION_CAP              2
+#define HBM_MAJOR_VERSION_CAP              2
+
 /* Host bus message command opcode */
 #define MEI_HBM_CMD_OP_MSK                  0x7f
 /* Host bus message command RESPONSE */
@@ -120,6 +132,9 @@
 
 #define MEI_HBM_DMA_SETUP_REQ_CMD           0x12
 #define MEI_HBM_DMA_SETUP_RES_CMD           0x92
+
+#define MEI_HBM_CAPABILITIES_REQ_CMD        0x13
+#define MEI_HBM_CAPABILITIES_RES_CMD        0x93
 
 /*
  * MEI Stop Reason
@@ -182,9 +197,80 @@ enum mei_cl_connect_status {
 /*
  * Client Disconnect Status
  */
-enum  mei_cl_disconnect_status {
+enum mei_cl_disconnect_status {
 	MEI_CL_DISCONN_SUCCESS = MEI_HBMS_SUCCESS
 };
+
+enum mei_ext_hdr_type {
+	MEI_EXT_HDR_NONE = 0,
+	MEI_EXT_HDR_VTAG = 1,
+	MEI_EXT_HDR_GSC = 2,
+};
+
+/**
+ * struct mei_ext_hdr - extend header descriptor (TLV)
+ * @type: enum mei_ext_hdr_type
+ * @length: length exluding descriptor
+ * @ext_payload: payload of the specific extended header
+ * @hdr: place holder for actuall header
+ */
+struct mei_ext_hdr {
+	u8 type;
+	u8 length;
+	u8 ext_payload[2];
+	u8 hdr[0];
+};
+
+/**
+ * struct mei_ext_meta_hdr - extend header meta data
+ * @count: number of headers
+ * @size: total size of the extended header list excluding meta header
+ * @reserved: reserved
+ */
+struct mei_ext_meta_hdr {
+	u8 count;
+	u8 size;
+	u8 reserved[2];
+	struct mei_ext_hdr hdrs[0];
+};
+
+static inline struct mei_ext_hdr *mei_ext_begin(struct mei_ext_meta_hdr *meta)
+{
+	return meta->hdrs;
+}
+
+static inline struct mei_ext_hdr *mei_ext_next(struct mei_ext_hdr *ext)
+{
+	return (struct mei_ext_hdr *)(ext->hdr + (ext->length * 4));
+}
+
+static inline bool mei_ext_last(struct mei_ext_meta_hdr *meta,
+				struct mei_ext_hdr *ext)
+{
+	return (u8 *)ext >= (u8 *)meta + sizeof(*meta) + (meta->size * 4);
+}
+
+struct mei_gcs_sgl {
+	u32 low;
+	u32 high;
+	u32 length;
+} __packed;
+
+struct mei_ext_hdr_gcs_h2f {
+	u32                fence_id;
+	u32                addr_type;
+	u32                input_address_count;
+	u32                output_address_count;
+	struct mei_gcs_sgl input_buffer[0];
+	struct mei_gcs_sgl output_buffer[0];
+} __packed;
+
+struct mei_ext_hdr_gcs_f2h {
+	u8  client_id;
+	u8  reserved[3];
+	u32 fence_id;
+	u32 total_bytes_written;
+} __packed;
 
 /**
  * struct mei_msg_hdr - MEI BUS Interface Section
@@ -193,6 +279,7 @@ enum  mei_cl_disconnect_status {
  * @host_addr: host address
  * @length: message length
  * @reserved: reserved
+ * @extended: message has extended header
  * @dma_ring: message is on dma ring
  * @internal: message is internal
  * @msg_complete: last packet of the message
@@ -202,14 +289,13 @@ struct mei_msg_hdr {
 	u32 me_addr:8;
 	u32 host_addr:8;
 	u32 length:9;
-	u32 reserved:4;
+	u32 reserved:3;
+	u32 extended:1;
 	u32 dma_ring:1;
 	u32 internal:1;
 	u32 msg_complete:1;
 	u32 extension[0];
 } __packed;
-
-#define MEI_MSG_HDR_MAX 2
 
 struct mei_bus_message {
 	u8 hbm_cmd;
@@ -302,7 +388,8 @@ struct mei_client_properties {
 	u8 max_number_of_connections;
 	u8 fixed_address;
 	u8 single_recv_buf:1;
-	u8 reserved:7;
+	u8 vt_supported:1;
+	u8 reserved:6;
 	u32 max_msg_length;
 } __packed;
 
@@ -422,19 +509,17 @@ struct hbm_notification_request {
 
 /**
  * struct hbm_notification_response - start/stop notification response
- *
  * @hbm_cmd: bus message command header
  * @me_addr: address of the client in ME
- * @host_addr: - address of the client in the driver
+ * @host_addr: address of the client in the driver
  * @status: (mei_hbm_status) response status for the request
- *  - MEI_HBMS_SUCCESS: successful stop/start
- *  - MEI_HBMS_CLIENT_NOT_FOUND: if the connection could not be found.
- *  - MEI_HBMS_ALREADY_STARTED: for start requests for a previously
- *                         started notification.
- *  - MEI_HBMS_NOT_STARTED: for stop request for a connected client for whom
+ * * MEI_HBMS_SUCCESS: successful stop/start
+ * * MEI_HBMS_CLIENT_NOT_FOUND: if the connection could not be found.
+ * * MEI_HBMS_ALREADY_STARTED: for start requests for a previously
+ *                             started notification.
+ * * MEI_HBMS_NOT_STARTED: for stop request for a connected client for whom
  *                         asynchronous notifications are currently disabled.
- *
- * @start:  start = 1 or stop = 0 asynchronous notifications
+ * @start: start = 1 or stop = 0 asynchronous notifications
  * @reserved: reserved
  */
 struct hbm_notification_response {
@@ -528,6 +613,18 @@ struct hbm_dma_ring_ctrl {
 	u32 reserved3;
 	u32 dbuf_rd_idx;
 	u32 reserved4;
+} __packed;
+
+#define HBM_CAP_VM BIT(0)
+
+struct hbm_capability_request {
+	u8 hbm_cmd;
+	u8 capability_requested[3];
+} __packed;
+
+struct hbm_capability_response {
+	u8 hbm_cmd;
+	u8 capability_granted[3];
 } __packed;
 
 #endif
