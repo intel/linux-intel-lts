@@ -1335,6 +1335,14 @@ config PCENGINES_APU2
 	  To compile this driver as a module, choose M here: the module
 	  will be called pcengines-apuv2.
 
+config INTEL_ISHTP_ECLITE
+	tristate "Intel ISHTP eclite controller"
+	depends on INTEL_ISH_HID
+	depends on ACPI
+	help
+	  If you say Y here, you get support for talking to eclite fw on a
+	  dedicated low power chip over ISH Transport Protocol (ISHTP).
+
 source "drivers/platform/x86/intel_speed_select_if/Kconfig"
 
 endif # X86_PLATFORM_DEVICES
