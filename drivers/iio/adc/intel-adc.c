@@ -16,7 +16,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pci.h>
-#include <linux/pm_runtime.h>
 #include <linux/slab.h>
 
 #define ADC_DMA_CTRL			0x0000
@@ -387,11 +386,6 @@ static int intel_adc_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	if (ret)
 		goto err;
 
-	pm_runtime_set_autosuspend_delay(&pci->dev, 1000);
-	pm_runtime_use_autosuspend(&pci->dev);
-	pm_runtime_put_autosuspend(&pci->dev);
-	pm_runtime_allow(&pci->dev);
-
 	return 0;
 
 err:
@@ -401,9 +395,6 @@ err:
 
 static void intel_adc_remove(struct pci_dev *pci)
 {
-	pm_runtime_forbid(&pci->dev);
-	pm_runtime_get_noresume(&pci->dev);
-
 	pci_free_irq_vectors(pci);
 }
 
