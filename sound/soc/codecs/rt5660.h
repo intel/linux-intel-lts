@@ -833,6 +833,10 @@ struct rt5660_priv {
 	struct regmap *regmap;
 	struct clk *mclk;
 
+	struct snd_soc_jack *lo_jack;
+	struct delayed_work jack_detect_work;
+	int irq;
+
 	int sysclk;
 	int sysclk_src;
 	int lrck[RT5660_AIFS];
