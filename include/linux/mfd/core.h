@@ -45,6 +45,9 @@ struct mfd_cell {
 	/* device properties passed to the sub devices drivers */
 	struct property_entry *properties;
 
+	/* Software fwnode for the sub device */
+	const struct software_node *node;
+
 	/*
 	 * Device Tree compatible string
 	 * See: Documentation/devicetree/usage-model.txt Chapter 2.2 for details
