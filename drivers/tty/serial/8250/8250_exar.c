@@ -130,17 +130,6 @@ struct exar8250 {
 	int			line[0];
 };
 
-static void exar_pm(struct uart_port *port, unsigned int state, unsigned int old)
-{
-	/*
-	 * Exar UARTs have a SLEEP register that enables or disables each UART
-	 * to enter sleep mode separately. On the XR17V35x the register
-	 * is accessible to each UART at the UART_EXAR_SLEEP offset, but
-	 * the UART channel may only write to the corresponding bit.
-	 */
-	serial_port_out(port, UART_EXAR_SLEEP, state ? 0xff : 0);
-}
-
 /*
  * XR17V35x UARTs have an extra fractional divisor register (DLD)
  * Calculate divisor with extra 4-bit fractional portion
@@ -216,7 +205,6 @@ static int default_setup(struct exar8250 *priv, struct pci_dev *pcidev,
 		port->port.type = PORT_XR17D15X;
 	}
 
-	port->port.pm = exar_pm;
 	port->port.shutdown = exar_shutdown;
 
 	return 0;

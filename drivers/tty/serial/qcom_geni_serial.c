@@ -1193,22 +1193,6 @@ static struct uart_driver qcom_geni_uart_driver = {
 	.nr =  GENI_UART_PORTS,
 };
 
-static void qcom_geni_serial_pm(struct uart_port *uport,
-		unsigned int new_state, unsigned int old_state)
-{
-	struct qcom_geni_serial_port *port = to_dev_port(uport, uport);
-
-	/* If we've never been called, treat it as off */
-	if (old_state == UART_PM_STATE_UNDEFINED)
-		old_state = UART_PM_STATE_OFF;
-
-	if (new_state == UART_PM_STATE_ON && old_state == UART_PM_STATE_OFF)
-		geni_se_resources_on(&port->se);
-	else if (new_state == UART_PM_STATE_OFF &&
-			old_state == UART_PM_STATE_ON)
-		geni_se_resources_off(&port->se);
-}
-
 static const struct uart_ops qcom_geni_console_pops = {
 	.tx_empty = qcom_geni_serial_tx_empty,
 	.stop_tx = qcom_geni_serial_stop_tx,
@@ -1226,7 +1210,6 @@ static const struct uart_ops qcom_geni_console_pops = {
 	.poll_get_char	= qcom_geni_serial_get_char,
 	.poll_put_char	= qcom_geni_serial_poll_put_char,
 #endif
-	.pm = qcom_geni_serial_pm,
 };
 
 static const struct uart_ops qcom_geni_uart_pops = {
@@ -1242,7 +1225,6 @@ static const struct uart_ops qcom_geni_uart_pops = {
 	.type = qcom_geni_serial_get_type,
 	.set_mctrl = qcom_geni_serial_set_mctrl,
 	.get_mctrl = qcom_geni_serial_get_mctrl,
-	.pm = qcom_geni_serial_pm,
 };
 
 static int qcom_geni_serial_probe(struct platform_device *pdev)
