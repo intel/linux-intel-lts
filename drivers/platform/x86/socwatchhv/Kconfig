@@ -1,0 +1,6 @@
+menuconfig INTEL_SOCWATCH_HV
+	depends on (X86 || X86_64) && ACRN_VHM && ACRN_SHARED_BUFFER
+	tristate "SocWatch Hypervisor Driver Support"
+	default m
+	help
+	  Say Y here to enable SocWatch hypervisor driver
