@@ -109,11 +109,14 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	vm.vfront_porch = 0;
 //	vm.vback_porch = m->crtc_vtotal - m->crtc_vsync_end;
 	vm.vback_porch = 0;
-	vm.vsync_len = m->crtc_vsync_end - m->crtc_vsync_start;
+//	vm.vsync_len = m->crtc_vsync_end - m->crtc_vsync_start;
+	vm.vsync_len = 1;
 	//vm.hfront_porch = m->crtc_hsync_start - m->crtc_hdisplay;
 	vm.hfront_porch = 0;
-	vm.hback_porch = m->crtc_htotal - m->crtc_hsync_end;
-	vm.hsync_len = m->crtc_hsync_end - m->crtc_hsync_start;
+	vm.hback_porch = 0;
+	//vm.hback_porch = m->crtc_htotal - m->crtc_hsync_end;
+	vm.hsync_len = 1;
+//	vm.hsync_len = m->crtc_hsync_end - m->crtc_hsync_start;
 
 	vsync_start_offset = m->crtc_vsync_start - m->crtc_hsync_start;
 	vsync_end_offset = m->crtc_vsync_end - m->crtc_hsync_end;
@@ -125,13 +128,13 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 			vm.hback_porch, vm.hfront_porch, vm.hsync_len);
 	kmb_write_lcd(dev->dev_private, LCD_V_ACTIVEHEIGHT,
 			m->crtc_vdisplay - 1);
-	kmb_write_lcd(dev->dev_private, LCD_V_BACKPORCH, vm.vback_porch - 1);
-	kmb_write_lcd(dev->dev_private, LCD_V_FRONTPORCH, vm.vfront_porch - 1);
+	kmb_write_lcd(dev->dev_private, LCD_V_BACKPORCH, vm.vback_porch);
+	kmb_write_lcd(dev->dev_private, LCD_V_FRONTPORCH, vm.vfront_porch);
 	kmb_write_lcd(dev->dev_private, LCD_VSYNC_WIDTH, vm.vsync_len - 1);
 	kmb_write_lcd(dev->dev_private, LCD_H_ACTIVEWIDTH,
 			m->crtc_hdisplay - 1);
-	kmb_write_lcd(dev->dev_private, LCD_H_BACKPORCH, vm.hback_porch - 1);
-	kmb_write_lcd(dev->dev_private, LCD_H_FRONTPORCH, vm.hfront_porch - 1);
+	kmb_write_lcd(dev->dev_private, LCD_H_BACKPORCH, vm.hback_porch);
+	kmb_write_lcd(dev->dev_private, LCD_H_FRONTPORCH, vm.hfront_porch);
 	kmb_write_lcd(dev->dev_private, LCD_HSYNC_WIDTH, vm.hsync_len - 1);
 	/*this is hardcoded as 0 in the Myriadx code */
 	kmb_write_lcd(dev->dev_private, LCD_VSYNC_START, 0);
@@ -141,9 +144,9 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 		kmb_write_lcd(dev->dev_private,
 				LCD_VSYNC_WIDTH_EVEN, vm.vsync_len - 1);
 		kmb_write_lcd(dev->dev_private,
-				LCD_V_BACKPORCH_EVEN, vm.vback_porch - 1);
+				LCD_V_BACKPORCH_EVEN, vm.vback_porch);
 		kmb_write_lcd(dev->dev_private,
-				LCD_V_FRONTPORCH_EVEN, vm.vfront_porch - 1);
+				LCD_V_FRONTPORCH_EVEN, vm.vfront_porch);
 		kmb_write_lcd(dev->dev_private, LCD_V_ACTIVEHEIGHT_EVEN,
 			m->crtc_vdisplay - 1);
 		/*this is hardcoded as 10 in the Myriadx code*/

@@ -291,6 +291,8 @@ unsigned int set_bits_per_pixel(const struct drm_format_info *format)
 		val = LCD_LAYER_32BPP;
 		break;
 	}
+	DRM_INFO("%s : %d bpp=0x%x\n", __func__, __LINE__, bpp);
+	val = LCD_LAYER_24BPP;
 	return val;
 }
 
@@ -373,9 +375,8 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 		  | LCD_DMA_LAYER_CONT_UPDATE | LCD_DMA_LAYER_AXI_BURST_1
 		  | LCD_DMA_LAYER_VSTRIDE_EN;
 */
-	dma_cfg = LCD_DMA_LAYER_ENABLE
-		  | LCD_DMA_LAYER_AXI_BURST_1
-		  | LCD_DMA_LAYER_VSTRIDE_EN;
+	dma_cfg = LCD_DMA_LAYER_ENABLE | LCD_DMA_LAYER_VSTRIDE_EN
+		  | LCD_DMA_LAYER_AXI_BURST_16 | LCD_DMA_LAYER_CONT_UPDATE;
 
 	/* disable DMA first */
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
@@ -391,14 +392,13 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 
 	width = fb->width;
 	height = fb->height;
-	dma_len = width * height * fb->format->cpp[0];
+	dma_len = width * height * 1;
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LEN(plane_id), dma_len);
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LEN_SHADOW(plane_id), dma_len);
 
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id),
-			fb->pitches[0]);
+	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id), width);
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_WIDTH(plane_id),
-			(width*fb->format->cpp[0]));
+			(width));
 
 	/*program Cb/Cr for planar formats*/
 	if (num_planes > 1) {
@@ -453,11 +453,11 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	}
 
 //	ctrl |= LCD_CTRL_ENABLE;
-//	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
-//		| LCD_CTRL_CONTINUOUS | LCD_CTRL_OUTPUT_ENABLED;
-
 	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
-		| LCD_CTRL_ONE_SHOT | LCD_CTRL_OUTPUT_ENABLED;
+		| LCD_CTRL_CONTINUOUS | LCD_CTRL_OUTPUT_ENABLED;
+
+//	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
+//		| LCD_CTRL_ONE_SHOT | LCD_CTRL_OUTPUT_ENABLED;
 	/*LCD is connected to MIPI on kmb
 	 * Therefore this bit is required for DSI Tx
 	 */
@@ -476,7 +476,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	}
 
 	/*set background color to white*/
-	kmb_write_lcd(dev_p, LCD_BG_COLOUR_LS, 0xffffff);
+//	kmb_write_lcd(dev_p, LCD_BG_COLOUR_LS, 0xffffff);
 	/*leave RGB order,conversion mode and clip mode to default*/
 	/* do not interleave RGB channels for mipi Tx compatibility */
 	out_format |= LCD_OUTF_MIPI_RGB_MODE;

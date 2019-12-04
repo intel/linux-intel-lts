@@ -99,6 +99,7 @@ static struct mipi_dsi_device *dsi_device;
  * these will eventually go to the device tree sections,
  * and can be used as a refernce later for device tree additions
  */
+//#define RES_1920x1080
 #ifdef RES_1920x1080
 #define IMG_HEIGHT_LINES  1080
 #define IMG_WIDTH_PX      1920
@@ -281,10 +282,18 @@ static int kmb_dsi_get_modes(struct drm_connector *connector)
 	return num_modes;
 }
 
+void kmb_dsi_host_unregister(void)
+{
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
+	mipi_dsi_host_unregister(dsi_host);
+	kfree(dsi_host);
+}
+
 static void kmb_dsi_connector_destroy(struct drm_connector *connector)
 {
 	struct kmb_connector *kmb_connector = to_kmb_connector(connector);
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	drm_connector_cleanup(connector);
 	kfree(kmb_connector);
 }
@@ -293,8 +302,19 @@ static void kmb_dsi_encoder_destroy(struct drm_encoder *encoder)
 {
 	struct kmb_dsi *kmb_dsi = to_kmb_dsi(encoder);
 
+	DRM_INFO("%s : %d\n", __func__, __LINE__);
+	if (!kmb_dsi)
+		return;
+
+	kfree(kmb_dsi->dsi_host);
+
 	drm_encoder_cleanup(encoder);
+
+	kmb_dsi_connector_destroy(&kmb_dsi->attached_connector->base);
+
 	kfree(kmb_dsi);
+	if (!dsi_device)
+		kfree(dsi_device);
 }
 
 static const struct drm_encoder_funcs kmb_dsi_funcs = {
@@ -404,13 +424,8 @@ struct drm_bridge *kmb_dsi_host_bridge_init(struct device *dev)
 	return bridge;
 }
 
-void dsi_host_unregister(void)
-{
-	mipi_dsi_host_unregister(dsi_host);
-}
-
 u32 mipi_get_datatype_params(u32 data_type, u32 data_mode,
-			     struct mipi_data_type_params *params)
+		struct mipi_data_type_params *params)
 {
 	struct mipi_data_type_params data_type_parameters;
 
@@ -627,8 +642,10 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_p,
 
 	/*Get system clock for blanking period cnfigurations */
 	/*TODO need to get system clock from clock driver */
-	/* Assume 700 Mhz system clock for now */
-	sysclk = 500;
+	/* 500 Mhz system clock minus 50 - to account for the difference in
+	 * mipi clock speed in RTL tests
+	 */
+	sysclk = KMB_SYS_CLK_MHZ - 50;
 
 	/*ppl-pixel packing layer, llp-low level protocol
 	 * frame genartor timing parameters are clocked on the system clock
@@ -893,9 +910,6 @@ static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_p,
 			       ctrl_cfg->tx_ctrl_cfg.frames[frame_id]);
 
 		active_vchannels++;
-
-		/*connect lcd to mipi */
-		kmb_write_msscam(dev_p, MSS_LCD_MIPI_CFG, 1);
 
 		/*stop iterating as only one virtual channel shall be used for
 		 * LCD connection
@@ -1681,56 +1695,17 @@ void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p)
 
 }
 
-void dma_transfer(struct kmb_drm_private *dev_p, int mipi_number,
-		  u64 dma_start_address, int data_length)
+void connect_lcd_to_mipi(struct kmb_drm_private *dev_p)
 {
-	u64 dma_cfg_adr_offset;
-	u64 dma_start_adr_offset;
-	u64 dma_length_adr_offset;
-	u32 reg_wr_data;
-	int axi_burst_length;
-	int mipi_fifo_flush;
-	int dma_pipelined_axi_en;
-	int dma_en;
-	int dma_autorestart_mode_0;
-	int tx_rx;
-
-	DRM_INFO("%s: starting a new DMA transfer for mipi %d ", __func__,
-		 mipi_number);
-
-	if (mipi_number < 6)
-		tx_rx = 0;
-	else
-		tx_rx = 1;
-
-	dma_cfg_adr_offset =
-		MIPI_TX_HS_DMA_CFG + HS_OFFSET(mipi_number);
-	dma_start_adr_offset =
-		MIPI_TX_HS_DMA_START_ADR_CHAN0 + HS_OFFSET(mipi_number);
-	dma_length_adr_offset =
-		MIPI_TX_HS_DMA_LEN_CHAN0 + HS_OFFSET(mipi_number);
-
-	reg_wr_data = 0;
-	reg_wr_data = dma_start_address;
-	kmb_write_mipi(dev_p, dma_start_adr_offset, reg_wr_data);
-
-	reg_wr_data = 0;
-	reg_wr_data = data_length;
-	kmb_write_mipi(dev_p, dma_length_adr_offset, reg_wr_data);
-
-	axi_burst_length = 16;
-	mipi_fifo_flush = 0;
-	dma_pipelined_axi_en = 1;
-	dma_en = 1;
-	dma_autorestart_mode_0 = 0;
-
-	reg_wr_data = 0;
-	reg_wr_data =
-	    ((axi_burst_length & 0x1ffff) << 0 | (mipi_fifo_flush & 0xf) << 9 |
-	     (dma_pipelined_axi_en & 0x1) << 13 | (dma_en & 0xf) << 16 |
-	     (dma_autorestart_mode_0 & 0x3) << 24);
-
-	kmb_write_mipi(dev_p, dma_cfg_adr_offset, reg_wr_data);
+#ifdef LCD_TEST
+	/*connect lcd to mipi */
+	/*DISABLE MIPI->CIF CONNECTION*/
+	kmb_write_msscam(dev_p, MSS_MIPI_CIF_CFG, 0);
+	/*ENABLE LCD->MIPI CONNECTION */
+	kmb_write_msscam(dev_p, MSS_LCD_MIPI_CFG, 1);
+	/*DISABLE LCD->CIF LOOPBACK */
+	kmb_write_msscam(dev_p, MSS_LOOPBACK_CFG, 0);
+#endif
 }
 
 /**
@@ -1772,46 +1747,12 @@ int kmb_dsi_hw_init(struct drm_device *dev)
 	mipi_tx_init_cntrl(dev_p, &mipi_tx_init_cfg);
 	/*d-phy initialization */
 	mipi_tx_init_dphy(dev_p, &mipi_tx_init_cfg);
+	connect_lcd_to_mipi(dev_p);
 #ifdef MIPI_TX_TEST_PATTERN_GENERATION
 	mipi_tx_hs_tp_gen(dev_p, 0, MIPI_TX_HS_TP_V_STRIPES, 0x15, 0xff,
 			0xff00, MIPI_CTRL6);
 	DRM_INFO("%s : %d IRQ_STATUS = 0x%x\n", __func__, __LINE__,
 			GET_MIPI_TX_HS_IRQ_STATUS(dev_p, MIPI_CTRL6));
-#elseif MIPI_DMA
-	  dma_data_length = image_height * image_width * unpacked_bytes;
-	file = filp_open(IMAGE_PATH, O_RDWR, 0);
-	if (IS_ERR(file)) {
-		DRM_ERROR("filp_open failed\n");
-		return -EBADF;
-	}
-
-	file_buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!file_buf) {
-		DRM_ERROR("file_buf alloc failed\n");
-		return -ENOMEM;
-	}
-
-	i_size = i_size_read(file_inode(file));
-	while (offset < i_size) {
-
-		file_buf_len = kmb_kernel_read(file, offset,
-					       file_buf, PAGE_SIZE);
-		if (file_buf_len < 0) {
-			rc = file_buf_len;
-			break;
-		}
-		if (file_buf_len == 0)
-			break;
-		offset += file_buf_len;
-		count++;
-		dma_tx_start_address = file_buf;
-		dma_transfer(dev_p, MIPI_CTRL6, dma_tx_start_address,
-			     PAGE_SIZE);
-
-	}
-	DRM_INFO("count = %d\n", count);
-	kfree(file_buf);
-	filp_close(file, NULL);
 #endif //MIPI_TX_TEST_PATTERN_GENERATION
 
 	hw_initialized = true;
@@ -1848,12 +1789,11 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 	host = kmb_dsi_host_init(dev, kmb_dsi);
 	if (!host) {
 		DRM_ERROR("Faile to allocate host\n");
-//              drm_encoder_cleanup(encoder);
 		kfree(kmb_dsi);
 		kfree(kmb_connector);
 		return -ENOMEM;
 	}
-
+	kmb_dsi->dsi_host = host;
 	connector = &kmb_connector->base;
 	encoder = &kmb_dsi->base;
 	encoder->possible_crtcs = 1;
@@ -1868,7 +1808,6 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 	DRM_INFO("%s : %d connector = %s encoder = %s\n", __func__,
 		 __LINE__, connector->name, encoder->name);
 
-	DRM_INFO("%s : %d\n", __func__, __LINE__);
 	ret = drm_connector_attach_encoder(connector, encoder);
 
 	/* Link drm_bridge to encoder */

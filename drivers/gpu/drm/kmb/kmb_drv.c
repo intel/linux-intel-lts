@@ -236,7 +236,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 #endif
 	/* Set MIPI clock to 24 Mhz*/
 	DRM_INFO("Get clk_mipi before set = %ld\n", clk_get_rate(clk_mipi));
-//#define MIPI_CLK
+#define MIPI_CLK
 #ifdef MIPI_CLK
 	ret = clk_set_rate(clk_mipi, KMB_MIPI_DEFAULT_CLK);
 	DRM_INFO("Get clk_mipi after set = %ld\n", clk_get_rate(clk_mipi));
@@ -517,7 +517,7 @@ static void kmb_drm_unload(struct device *dev)
 	dev_set_drvdata(dev, NULL);
 
 	/* Unregister DSI host */
-	dsi_host_unregister();
+	kmb_dsi_host_unregister();
 }
 
 static int kmb_probe(struct platform_device *pdev)
@@ -588,7 +588,7 @@ err_free:
 	drm_mode_config_cleanup(drm);
 	dev_set_drvdata(dev, NULL);
 	drm_dev_put(drm);
-	dsi_host_unregister();
+	kmb_dsi_host_unregister();
 
 	return ret;
 }

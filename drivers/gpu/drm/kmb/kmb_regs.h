@@ -734,8 +734,10 @@
 			& (1 << (dphy - MIPI_DPHY6)))
 #define DPHY_CFG_CLK_EN				(0x18c)
 
+#define MSS_MIPI_CIF_CFG		(0x00)
 #define MSS_LCD_MIPI_CFG		(0x04)
 #define MSS_CAM_CLK_CTRL		(0x10)
+#define MSS_LOOPBACK_CFG		(0x0C)
 #define   LCD				(1<<1)
 #define   MIPI_COMMON			(1<<2)
 #define   MIPI_TX0			(1<<9)

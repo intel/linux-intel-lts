@@ -35,6 +35,7 @@
 #define KMB_LCD_DEFAULT_CLK		250000000
 #define KMB_MIPI_DEFAULT_CLK		24000000
 #define KMB_MIPI_DEFAULT_CFG_CLK	24000000
+#define KMB_SYS_CLK_MHZ			500
 
 struct kmb_drm_private {
 	struct drm_device		drm;
