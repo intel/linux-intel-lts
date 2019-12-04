@@ -41,6 +41,8 @@
 #include "hx280enc.h"
 #include <linux/irq.h>
 
+/* define this to use request_irq */
+//#define USE_IRQ
 static u32 resouce_shared;
 
 /*------------------------------------------------------------------------
@@ -82,8 +84,10 @@ static u32 resouce_shared;
 #define CORE_7_IO_ADDR                 0x485538000 // VCEJ
 #define CORE_7_IO_SIZE                 (500 * 4)    /* bytes */
 
-#define INT_PIN_CORE_0                    -1        /*IRQ pin of core 0*/
-#define INT_PIN_CORE_1                    -1        /*IRQ pin of core 1*/
+#define INT_PIN_CORE_0                    38        /* just a dummy */
+#define INT_PIN_CORE_1                    40        /* just a dummy */
+#define INT_PIN_CORE_2			  -1        /* for polling */
+
 
 #define HANTRO_VC8KE_REG_BWREAD 216
 #define HANTRO_VC8KE_REG_BWWRITE 220
@@ -93,14 +97,14 @@ static u32 resouce_shared;
 /*base_addr, iosize, irq, resource_shared*/
 #ifndef USE_DTB_PROBE
 static CORE_CONFIG core_array[] = {
-	{CORE_0_IO_ADDR, CORE_0_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 0}, 
+	{CORE_0_IO_ADDR, CORE_0_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 0},
 	{CORE_1_IO_ADDR, CORE_1_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 0},
-	{CORE_2_IO_ADDR, CORE_2_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 1}, 
-	{CORE_3_IO_ADDR, CORE_3_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 1},
-	{CORE_4_IO_ADDR, CORE_4_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 2}, 
-	{CORE_5_IO_ADDR, CORE_5_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 2},
-	{CORE_6_IO_ADDR, CORE_6_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 3}, 
-	{CORE_7_IO_ADDR, CORE_7_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 3},
+	{CORE_2_IO_ADDR, CORE_2_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 1},
+	{CORE_3_IO_ADDR, CORE_3_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 1},
+	{CORE_4_IO_ADDR, CORE_4_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 2},
+	{CORE_5_IO_ADDR, CORE_5_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 2},
+	{CORE_6_IO_ADDR, CORE_6_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 3},
+	{CORE_7_IO_ADDR, CORE_7_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 3},
 };
 #endif
 static int bencprobed;
@@ -501,21 +505,32 @@ int hantroenc_probe(struct platform_device *pdev, struct hantro_core_info *prc, 
 		ResetAsic(pcore);  /* reset hardware */
 
 #ifdef USE_IRQ
-		/* get the IRQ line */
+		/* FIXME: To get IRQ dynamically from device-tree */
 		irqnum = core_array[i].irq;
-		if (irqnum > 0) {
-			result = request_irq(irqnum, hantroenc_isr,
-#if KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE
-						SA_INTERRUPT | SA_SHIRQ,
-#else
-						IRQF_SHARED,
-#endif
-						"hx280enc", (void *)pcore);
-			if (result == 0)
+		if (irqnum > 0 && i == 0) {
+			int irq_num0 = platform_get_irq_byname(pdev, "irq_hantro_videoencoder");
+			result = request_irq(irq_num0, hantroenc_isr, IRQF_SHARED,
+					"irq_hantro_videoencoder", (void *)pcore);
+			if (result == 0) {
 				pcore->irqlist[0] = irqnum;
+				pr_info("hx280enc: request IRQ <%d> for core <%d> success\n", irqnum, i);
+			}
 			else
 				pr_info("hx280enc: request IRQ <%d> fail\n", irqnum);
 		}
+
+                if (irqnum > 0 && i == 1) {
+			int irq_num1 = platform_get_irq_byname(pdev, "irq_hantro_jpgencoder");
+                        result = request_irq(irq_num1, hantroenc_isr, IRQF_SHARED,
+					"irq_hantro_jpgencoder", (void *)pcore);
+                        if (result == 0) {
+                                pcore->irqlist[0] = irqnum;
+                                pr_info("hx280enc: request IRQ <%d> for core <%d> success\n", irqnum, i);
+                       }
+                       else
+                               pr_info("hx280enc: request IRQ <%d> fail\n", irqnum);
+               }
+
 #endif
 		add_encnode(pcore->core_cfg.sliceidx, pcore);
 	}

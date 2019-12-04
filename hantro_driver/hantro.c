@@ -1837,12 +1837,7 @@ MODULE_DEVICE_TABLE(platform, hantro_drm_platform_ids);
 
 static const struct of_device_id hantro_of_match[] = {
 	/*to match dtb, else reg io will fail*/
-#ifdef HAS_VC8000D
-	{ .compatible = "platform-vc8000d", },
-#endif
-#ifdef HAS_VC8000E
-	{ .compatible = "platform-vc8000e", },
-#endif
+	{ .compatible = "thunderbay,hantro", },
 	{/* sentinel */}
 };
 

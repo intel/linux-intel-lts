@@ -111,9 +111,12 @@
 #define DEC_IO_SIZE_0                   DEC_IO_SIZE_MAX /* bytes */
 #define DEC_IO_SIZE_1                   DEC_IO_SIZE_MAX /* bytes */
 
+/* define to use request_irq call */
+//#define USE_IRQ
 #ifdef USE_IRQ
-#define DEC_IRQ_0                       7
-#define DEC_IRQ_1                       8
+#define DEC_IRQ_0                       36 //just a dummy
+#define DEC_IRQ_1                       33 //just a dummy
+#define DEC_IRQ_2			-1 //for other slices using polling
 #else
 #define DEC_IRQ_0                       -1
 #define DEC_IRQ_1                       -1
@@ -145,13 +148,13 @@ static unsigned long long multicorebase[HXDEC_MAX_CORES] = {
 
 static int irq[HXDEC_MAX_CORES] = {
 	DEC_IRQ_0,
-	DEC_IRQ_0,
-	DEC_IRQ_0,
-	DEC_IRQ_0,
-	DEC_IRQ_0,
-	DEC_IRQ_0,
-	DEC_IRQ_0,
-	DEC_IRQ_0
+	DEC_IRQ_1,
+	DEC_IRQ_2,
+	DEC_IRQ_2,
+	DEC_IRQ_2,
+	DEC_IRQ_2,
+	DEC_IRQ_2,
+	DEC_IRQ_2
 };
 
 static unsigned int iosize[HXDEC_MAX_CORES] = {
@@ -1452,7 +1455,7 @@ int hantrodec_probe(struct platform_device *pdev, struct hantro_core_info *prc, 
 {
 	int result = 0;
 	int irqnum, i;
-#ifdef USE_DTB_PROBE	
+#ifdef USE_DTB_PROBE
 	int k, irqn;
 #endif
 	struct hantrodec_t *pcore, *auxcore;
@@ -1499,16 +1502,31 @@ int hantrodec_probe(struct platform_device *pdev, struct hantro_core_info *prc, 
 
 #ifdef USE_IRQ
 		irqnum = irq[i];
-		if (irqnum > 0) {
-			result = request_irq(irqnum, hantrodec_isr, IRQF_SHARED,
-				"irq_hantro_c1", (void *)pcore);
+		/* FIXME: To dynamically get the IRQ numbers from device-tree */
+		if (irqnum > 0 && i==0) {
+			int irq_num0 = platform_get_irq_byname(pdev, "irq_hantro_decoderA");
+			result = request_irq(irq_num0, hantrodec_isr, IRQF_SHARED,
+					"irq_hantro_decoderA", (void *)pcore);
 			if (result != 0) {
 				pr_info("dec can't reserve irq %d\n", irqnum);
 			} else {
-				pr_info("dec irq = %d\n", irqnum);
+				pr_info("dec irq = %d for core <%d> success\n", irqnum, i);
 				pcore->irqlist[0] = irqnum;
 			}
 		}
+
+                if (irqnum > 0 && i==1) {
+			int irq_num1 = platform_get_irq_byname(pdev, "irq_hantro_decoderB");
+                       	result = request_irq(irq_num1, hantrodec_isr, IRQF_SHARED,
+					"irq_hantro_decoderB", (void *)pcore);
+                       if (result != 0) {
+                               pr_info("dec can't reserve irq %d\n", irqnum);
+                       } else {
+                               pr_info("dec irq = %d for core <%d> success\n", irqnum, i);
+                               pcore->irqlist[0] = irqnum;
+                       }
+                }
+
 #endif
 	}
 #else	/*USE_DTB_PROBE*/
