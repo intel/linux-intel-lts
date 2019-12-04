@@ -170,13 +170,16 @@ static void get_arttime(struct mii_bus *mii, int intel_adhoc_addr,
 {
 	u64 ns;
 
-	ns = mii->read(mii, intel_adhoc_addr, PMC_ART_VALUE3);
+	ns = mdiobus_read(mii, intel_adhoc_addr, PMC_ART_VALUE3);
 	ns <<= GMAC4_ART_TIME_SHIFT;
-	ns |= mii->read(mii, intel_adhoc_addr, PMC_ART_VALUE2);
+
+	ns |= mdiobus_read(mii, intel_adhoc_addr, PMC_ART_VALUE2);
 	ns <<= GMAC4_ART_TIME_SHIFT;
-	ns |= mii->read(mii, intel_adhoc_addr, PMC_ART_VALUE1);
+
+	ns |= mdiobus_read(mii, intel_adhoc_addr, PMC_ART_VALUE1);
 	ns <<= GMAC4_ART_TIME_SHIFT;
-	ns |= mii->read(mii, intel_adhoc_addr, PMC_ART_VALUE0);
+
+	ns |= mdiobus_read(mii, intel_adhoc_addr, PMC_ART_VALUE0);
 
 	*art_time = ns;
 }
