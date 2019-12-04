@@ -94,3 +94,10 @@
  
 # CVE-2019-15291
 0001-media-b2c2-flexcop-usb-add-sanity-checking-CVE-2019-15291.patch
+
+# CVE-2019-19083
+0001-drm-amd-display-memory-leak-CVE-2019-19083.patch
+
+# CVE-2019-19082
+0001-drm-amd-display-prevent-memory-leak-CVE-2019-19082.patch
+
