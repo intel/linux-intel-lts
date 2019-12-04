@@ -180,7 +180,7 @@ static struct intel_sdvo *to_sdvo(struct intel_encoder *encoder)
 	return container_of(encoder, struct intel_sdvo, base);
 }
 
-static struct intel_sdvo *intel_attached_sdvo(struct drm_connector *connector)
+static struct intel_sdvo *intel_attached_sdvo(struct intel_connector *connector)
 {
 	return to_sdvo(intel_attached_encoder(connector));
 }
@@ -1561,7 +1561,7 @@ static bool intel_sdvo_connector_get_hw_state(struct intel_connector *connector)
 {
 	struct intel_sdvo_connector *intel_sdvo_connector =
 		to_intel_sdvo_connector(&connector->base);
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(&connector->base);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
 	u16 active_outputs = 0;
 
 	intel_sdvo_get_active_outputs(intel_sdvo, &active_outputs);
@@ -1833,7 +1833,7 @@ static enum drm_mode_status
 intel_sdvo_mode_valid(struct drm_connector *connector,
 		      struct drm_display_mode *mode)
 {
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	struct intel_sdvo_connector *intel_sdvo_connector =
 		to_intel_sdvo_connector(connector);
 	int max_dotclk = to_i915(connector->dev)->max_dotclk_freq;
@@ -1951,7 +1951,7 @@ intel_sdvo_multifunc_encoder(struct intel_sdvo *intel_sdvo)
 static struct edid *
 intel_sdvo_get_edid(struct drm_connector *connector)
 {
-	struct intel_sdvo *sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	return drm_get_edid(connector, &sdvo->ddc);
 }
 
@@ -1969,7 +1969,7 @@ intel_sdvo_get_analog_edid(struct drm_connector *connector)
 static enum drm_connector_status
 intel_sdvo_tmds_sink_detect(struct drm_connector *connector)
 {
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	struct intel_sdvo_connector *intel_sdvo_connector =
 		to_intel_sdvo_connector(connector);
 	enum drm_connector_status status;
@@ -2038,7 +2038,7 @@ static enum drm_connector_status
 intel_sdvo_detect(struct drm_connector *connector, bool force)
 {
 	u16 response;
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	struct intel_sdvo_connector *intel_sdvo_connector = to_intel_sdvo_connector(connector);
 	enum drm_connector_status ret;
 
@@ -2185,7 +2185,7 @@ static const struct drm_display_mode sdvo_tv_modes[] = {
 
 static void intel_sdvo_get_tv_modes(struct drm_connector *connector)
 {
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	const struct drm_connector_state *conn_state = connector->state;
 	struct intel_sdvo_sdtv_resolution_request tv_res;
 	u32 reply = 0, format_map = 0;
@@ -2225,7 +2225,7 @@ static void intel_sdvo_get_tv_modes(struct drm_connector *connector)
 
 static void intel_sdvo_get_lvds_modes(struct drm_connector *connector)
 {
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	struct drm_i915_private *dev_priv = to_i915(connector->dev);
 	struct drm_display_mode *newmode;
 
@@ -2389,7 +2389,7 @@ intel_sdvo_connector_atomic_set_property(struct drm_connector *connector,
 static int
 intel_sdvo_connector_register(struct drm_connector *connector)
 {
-	struct intel_sdvo *sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	int ret;
 
 	ret = intel_connector_register(connector);
@@ -2404,7 +2404,7 @@ intel_sdvo_connector_register(struct drm_connector *connector)
 static void
 intel_sdvo_connector_unregister(struct drm_connector *connector)
 {
-	struct intel_sdvo *sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *sdvo = intel_attached_sdvo(to_intel_connector(connector));
 
 	sysfs_remove_link(&connector->kdev->kobj,
 			  sdvo->ddc.dev.kobj.name);
@@ -2943,7 +2943,7 @@ static void intel_sdvo_output_cleanup(struct intel_sdvo *intel_sdvo)
 
 	list_for_each_entry_safe(connector, tmp,
 				 &dev->mode_config.connector_list, head) {
-		if (intel_attached_encoder(connector) == &intel_sdvo->base) {
+		if (intel_attached_encoder(to_intel_connector(connector)) == &intel_sdvo->base) {
 			drm_connector_unregister(connector);
 			intel_connector_destroy(connector);
 		}
