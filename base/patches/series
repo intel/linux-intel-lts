@@ -100,3 +100,9 @@
  
 # CVE-2019-18814
 0001-apparmor-Fix-use-after-free-in-aa_audit_rule_init-CVE-2019-18814.patch
+ 
+# CVE-2019-19083
+0001-drm-amd-display-memory-leak-CVE-2019-19083.patch
+ 
+# CVE-2019-19082
+0001-drm-amd-display-prevent-memory-leak-CVE-2019-19082.patch
