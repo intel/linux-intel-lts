@@ -237,28 +237,21 @@ static const enum counter_count_function intel_qep_count_functions[] = {
 
 static int intel_qep_count_read(struct counter_device *counter,
 		struct counter_count *count,
-		struct counter_count_read_value *val)
+		unsigned long *val)
 {
 	struct intel_qep *const qep = counter->priv;
 	unsigned long cntval;
 
 	cntval = intel_qep_readl(qep->regs, INTEL_QEPCOUNT);
-	counter_count_read_value_set(val, COUNTER_COUNT_POSITION, &cntval);
+	*val = cntval;
 
 	return 0;
 }
 
 static int intel_qep_count_write(struct counter_device *counter,
 		struct counter_count *count,
-		struct counter_count_write_value *val)
+		unsigned long val)
 {
-	unsigned long cnt;
-	int err;
-
-	err = counter_count_write_value_get(&cnt, COUNTER_COUNT_POSITION, val);
-	if (err)
-		return err;
-
 	return 0;
 }
 
