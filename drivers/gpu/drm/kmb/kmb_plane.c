@@ -117,6 +117,7 @@ static const u32 csc_coef_lcd[] = {
 	-179, 125, -226
 };
 
+
 static unsigned int check_pixel_format(struct drm_plane *plane, u32 format)
 {
 	int i;
@@ -265,17 +266,21 @@ unsigned int set_pixel_format(u32 format)
 		val = LCD_LAYER_FORMAT_RGBA8888 | LCD_LAYER_BGR_ORDER;
 		break;
 	}
+	DRM_INFO("%s : %d layer format val=%d\n", __func__, __LINE__, val);
 	return val;
 }
 
 unsigned int set_bits_per_pixel(const struct drm_format_info *format)
 {
-	int i;
 	u32 bpp = 0;
 	unsigned int val = 0;
 
-	for (i = 0; i < format->num_planes; i++)
-		bpp += 8 * format->cpp[i];
+	if (format->num_planes > 1) {
+		val = LCD_LAYER_8BPP;
+		return val;
+	}
+
+	bpp += 8*format->cpp[0];
 
 	switch (bpp) {
 	case 8:
@@ -291,8 +296,8 @@ unsigned int set_bits_per_pixel(const struct drm_format_info *format)
 		val = LCD_LAYER_32BPP;
 		break;
 	}
-	DRM_INFO("%s : %d bpp=0x%x\n", __func__, __LINE__, bpp);
-	val = LCD_LAYER_24BPP;
+
+	DRM_INFO("%s : %d bpp=%d val=%d\n", __func__, __LINE__, bpp, val);
 	return val;
 }
 
@@ -348,11 +353,12 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 
 	dev_p = plane->dev->dev_private;
 
-	src_w = plane->state->src_w >> 16;
+	src_w = (plane->state->src_w >> 16);
 	src_h = plane->state->src_h >> 16;
 	crtc_x = plane->state->crtc_x;
 	crtc_y = plane->state->crtc_y;
 
+	DRM_INFO("src_w=%d src_h=%d\n", src_w, src_h);
 	kmb_write_lcd(dev_p, LCD_LAYERn_WIDTH(plane_id), src_w-1);
 	kmb_write_lcd(dev_p, LCD_LAYERn_HEIGHT(plane_id), src_h-1);
 	kmb_write_lcd(dev_p, LCD_LAYERn_COL_START(plane_id), crtc_x);
@@ -362,6 +368,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	val |= set_bits_per_pixel(fb->format);
 	/*CHECKME Leon drvr sets it to 100 try this for now */
 	val |= LCD_LAYER_FIFO_100;
+	val |= LCD_LAYER_BGR_ORDER;
 	kmb_write_lcd(dev_p, LCD_LAYERn_CFG(plane_id), val);
 
 	/*re-initialize interrupts */
@@ -376,29 +383,33 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 		  | LCD_DMA_LAYER_VSTRIDE_EN;
 */
 	dma_cfg = LCD_DMA_LAYER_ENABLE | LCD_DMA_LAYER_VSTRIDE_EN
-		  | LCD_DMA_LAYER_AXI_BURST_16 | LCD_DMA_LAYER_CONT_UPDATE;
+		| LCD_DMA_LAYER_AXI_BURST_16 |
+		LCD_DMA_LAYER_CONT_PING_PONG_UPDATE;
 
 	/* disable DMA first */
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
 			~LCD_DMA_LAYER_ENABLE);
+	kmb_write_lcd(dev_p, LCD_FIFO_FLUSH + plane_id*0x400, 1);
 
 	/* pinpong mode is enabled - at the end of DMA transfer, start new
 	 * transfer alternatively using main and shadow register settings.
 	 * So update both main and shadow registers
 	 */
 	addr = drm_fb_cma_get_gem_addr(fb, plane->state, 0);
+	dev_p->fb_addr = addr;
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_ADDR(plane_id), addr);
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_SHADOW(plane_id), addr);
 
 	width = fb->width;
 	height = fb->height;
-	dma_len = width * height * 1;
+	dma_len = width * height * fb->format->cpp[0];
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LEN(plane_id), dma_len);
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LEN_SHADOW(plane_id), dma_len);
 
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id), width);
+	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id),
+			fb->pitches[0]);
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_WIDTH(plane_id),
-			(width));
+			(width*fb->format->cpp[0]));
 
 	/*program Cb/Cr for planar formats*/
 	if (num_planes > 1) {
@@ -436,6 +447,9 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 
 	/* enable DMA */
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
+	DRM_INFO("%s : %d dma_cfg=0x%x LCD_DMA_CFG=0x%x\n", __func__,
+			__LINE__, dma_cfg,
+			kmb_read_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id)));
 
 	switch (plane_id) {
 	case LAYER_0:
@@ -469,6 +483,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	 * from the Myriadx tests
 	 */
 	out_format |= LCD_OUTF_FORMAT_RGB888;
+//	out_format |= LCD_OUTF_BGR_ORDER;
 
 	if (val & LCD_LAYER_PLANAR_STORAGE) {
 		/*enable CSC if input is planar and output is RGB */
@@ -480,7 +495,9 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	/*leave RGB order,conversion mode and clip mode to default*/
 	/* do not interleave RGB channels for mipi Tx compatibility */
 	out_format |= LCD_OUTF_MIPI_RGB_MODE;
+//	out_format |= LCD_OUTF_SYNC_MODE ;
 	kmb_write_lcd(dev_p, LCD_OUT_FORMAT_CFG, out_format);
+
 //	kmb_write_lcd(dev_p, LCD_CONTROL, LCD_CTRL_ENABLE);
 #endif
 }

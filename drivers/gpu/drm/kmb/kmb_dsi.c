@@ -44,6 +44,7 @@
 static int hw_initialized;
 #define IMAGE_PATH "/home/root/1280x720.pnm"
 //#define MIPI_TX_TEST_PATTERN_GENERATION
+//#define MIPI_DMA
 //#define RTL_TEST
 //#define IMG_WIDTH_PX      640
 //#define IMG_HEIGHT_LINES  10
@@ -52,6 +53,7 @@ static int hw_initialized;
 
 /*MIPI TX CFG*/
 //#define MIPI_TX_LANE_DATA_RATE_MBPS 1782
+//#define MIPI_TX_LANE_DATA_RATE_MBPS 800
 #define MIPI_TX_LANE_DATA_RATE_MBPS 891
 //#define MIPI_TX_LANE_DATA_RATE_MBPS 80
 #define MIPI_TX_REF_CLK_KHZ         24000
@@ -99,14 +101,14 @@ static struct mipi_dsi_device *dsi_device;
  * these will eventually go to the device tree sections,
  * and can be used as a refernce later for device tree additions
  */
-//#define RES_1920x1080
+#define RES_1920x1080
 #ifdef RES_1920x1080
 #define IMG_HEIGHT_LINES  1080
 #define IMG_WIDTH_PX      1920
 #define MIPI_TX_ACTIVE_LANES 4
 #endif
 
-#define RES_1280x720
+//#define RES_1280x720
 #ifdef RES_1280x720
 #define IMG_HEIGHT_LINES  720
 #define IMG_WIDTH_PX      1280
@@ -116,9 +118,9 @@ struct mipi_tx_frame_section_cfg mipi_tx_frame0_sect_cfg = {
 	.width_pixels = IMG_WIDTH_PX,
 	.height_lines = IMG_HEIGHT_LINES,
 	.data_type = DSI_LP_DT_PPS_RGB888_24B,
-	//.data_mode = MIPI_DATA_MODE1,
-	.data_mode = MIPI_DATA_MODE0,
-	.dma_packed = 1
+	.data_mode = MIPI_DATA_MODE1,
+//	.data_mode = MIPI_DATA_MODE0,
+	.dma_packed = 0
 };
 
 #ifdef RES_1920x1080
@@ -563,12 +565,15 @@ static u32 mipi_tx_fg_section_cfg_regs(struct kmb_drm_private *dev_p,
 		<< MIPI_TX_SECT_VC_SHIFT);	/* bits [23:22] */
 	/* data mode */
 	cfg |= ((ph_cfg->data_mode & MIPI_TX_SECT_DM_MASK)
-		<< MIPI_TX_SECT_DM_SHIFT);	/* bits [24:25] */
-	cfg |= MIPI_TX_SECT_DMA_PACKED;
-	DRM_INFO("%s : %d ctrl=%d frame_id=%d section=%d cfg=%x\n",
-		 __func__, __LINE__, ctrl_no, frame_id, section, cfg);
+			<< MIPI_TX_SECT_DM_SHIFT); /* bits [24:25]*/
+	if (ph_cfg->dma_packed)
+		cfg |= MIPI_TX_SECT_DMA_PACKED;
+	DRM_INFO("%s : %d ctrl=%d frame_id=%d section=%d cfg=%x packed=%d\n",
+			__func__, __LINE__, ctrl_no, frame_id, section, cfg,
+			ph_cfg->dma_packed);
 	kmb_write_mipi(dev_p, (MIPI_TXm_HS_FGn_SECTo_PH(ctrl_no, frame_id,
-							section)), cfg);
+					section)), cfg);
+
 	/*unpacked bytes */
 	/*there are 4 frame generators and each fg has 4 sections
 	 *there are 2 registers for unpacked bytes -
@@ -620,6 +625,7 @@ static u32 mipi_tx_fg_section_cfg(struct kmb_drm_private *dev_p, u8 frame_id,
 	ph_cfg.wc = *wc;
 	ph_cfg.data_mode = frame_scfg->data_mode;
 	ph_cfg.data_type = frame_scfg->data_type;
+	ph_cfg.dma_packed = frame_scfg->dma_packed;
 	ph_cfg.vchannel = frame_id;
 
 	mipi_tx_fg_section_cfg_regs(dev_p, frame_id, section,
@@ -646,6 +652,7 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_p,
 	 * mipi clock speed in RTL tests
 	 */
 	sysclk = KMB_SYS_CLK_MHZ - 50;
+//	sysclk = KMB_SYS_CLK_MHZ;
 
 	/*ppl-pixel packing layer, llp-low level protocol
 	 * frame genartor timing parameters are clocked on the system clock

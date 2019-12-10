@@ -106,16 +106,16 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	kmb_dsi_hw_init(dev);
 #ifdef LCD_TEST
 //	vm.vfront_porch = m->crtc_vsync_start - m->crtc_vdisplay;
-	vm.vfront_porch = 0;
+	vm.vfront_porch = 2;
 //	vm.vback_porch = m->crtc_vtotal - m->crtc_vsync_end;
-	vm.vback_porch = 0;
+	vm.vback_porch = 2;
 //	vm.vsync_len = m->crtc_vsync_end - m->crtc_vsync_start;
 	vm.vsync_len = 1;
 	//vm.hfront_porch = m->crtc_hsync_start - m->crtc_hdisplay;
 	vm.hfront_porch = 0;
 	vm.hback_porch = 0;
 	//vm.hback_porch = m->crtc_htotal - m->crtc_hsync_end;
-	vm.hsync_len = 1;
+	vm.hsync_len = 7;
 //	vm.hsync_len = m->crtc_hsync_end - m->crtc_hsync_start;
 
 	vsync_start_offset = m->crtc_vsync_start - m->crtc_hsync_start;

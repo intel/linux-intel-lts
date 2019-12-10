@@ -283,6 +283,7 @@ struct mipi_tx_frame_sect_phcfg {
 	enum mipi_data_mode data_mode;
 	enum mipi_dsi_data_type data_type;
 	uint8_t vchannel;
+	uint8_t dma_packed;
 };
 
 struct mipi_tx_frame_cfg {

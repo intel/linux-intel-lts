@@ -370,6 +370,7 @@
 #define LCD_OUTF_BGR_ORDER			  (1 << 5)
 #define LCD_OUTF_Y_ORDER			  (1 << 6)
 #define LCD_OUTF_CRCB_ORDER			  (1 << 7)
+#define LCD_OUTF_SYNC_MODE			  (1 << 11)
 #define LCD_OUTF_RGB_CONV_MODE			  (1 << 14)
 #define LCD_OUTF_MIPI_RGB_MODE			  (1 << 18)
 
