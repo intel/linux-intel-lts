@@ -1916,24 +1916,31 @@ static void skl_set_probe_format(struct skl_sst *ctx,
 }
 
 /*
- * Algo module are DSP pre processing modules. Algo module take base module
- * configuration and params
+ * Algo modules are DSP pre processing modules. Algo module takes base module
+ * configuration (with generic extension) and params
  */
 
 static void skl_set_algo_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_algo_cfg *algo_mcfg)
 {
-	struct skl_base_cfg *base_cfg = (struct skl_base_cfg *)algo_mcfg;
+	char *params;
 
-	skl_set_base_module_format(ctx, mconfig, base_cfg);
+	skl_set_base_module_format(ctx, mconfig, &algo_mcfg->base_cfg);
+	skl_set_base_ext_module_format(ctx, mconfig,
+				       &algo_mcfg->base_cfg_ext);
 
 	if (mconfig->formats_config[SKL_PARAM_INIT].caps_size == 0)
 		return;
 
-	memcpy(algo_mcfg->params,
-			mconfig->formats_config[SKL_PARAM_INIT].caps,
-			mconfig->formats_config[SKL_PARAM_INIT].caps_size);
+	params = (char *)algo_mcfg + sizeof(struct skl_algo_cfg) +
+		(algo_mcfg->base_cfg_ext.nr_input_pins +
+		 algo_mcfg->base_cfg_ext.nr_output_pins) *
+		sizeof(struct skl_pin_format);
+
+	memcpy(params,
+	       mconfig->formats_config[SKL_PARAM_INIT].caps,
+	       mconfig->formats_config[SKL_PARAM_INIT].caps_size);
 
 }
 
@@ -1981,7 +1988,9 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 		return sizeof(struct skl_up_down_mixer_cfg);
 
 	case SKL_MODULE_TYPE_ALGO:
-		param_size = sizeof(struct skl_base_cfg);
+		param_size = sizeof(struct skl_algo_cfg) +
+			(m_res->nr_input_pins + m_res->nr_output_pins)
+			* sizeof(struct skl_pin_format);
 		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 		return param_size;
 
