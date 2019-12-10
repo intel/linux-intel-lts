@@ -203,8 +203,9 @@ struct skl_up_down_mixer_cfg {
 } __packed;
 
 struct skl_algo_cfg {
-	struct skl_base_cfg  base_cfg;
-	char params[0];
+	struct skl_base_cfg base_cfg;
+	struct skl_base_cfg_ext base_cfg_ext;
+	/* followed by module algorithm parameters */
 } __packed;
 
 struct skl_base_outfmt_cfg {
