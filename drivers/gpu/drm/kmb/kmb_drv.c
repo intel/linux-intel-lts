@@ -467,7 +467,7 @@ static struct drm_driver kmb_driver = {
 	.gem_prime_vunmap = drm_gem_cma_prime_vunmap,
 	.gem_prime_mmap = drm_gem_cma_prime_mmap,
 	.fops = &fops,
-	.name = "kmb_display",
+	.name = "kmb-drm",
 	.desc = "KEEMBAY DISPLAY DRIVER ",
 	.date = "20190122",
 	.major = 1,
@@ -645,7 +645,7 @@ static struct platform_driver kmb_platform_driver = {
 	.probe		= kmb_probe,
 	.remove		= kmb_remove,
 	.driver	= {
-		.name = "kmb_display",
+		.name = "kmb-drm",
 		.pm = &kmb_pm_ops,
 		.of_match_table	= kmb_of_match,
 	},
