@@ -38,6 +38,7 @@
  * Bits of the ptp_pin_desc.flags field:
  */
 #define PTP_PINDESC_EVTCNTVALID	(1<<0)
+#define PTP_PINDESC_INPUTPOLL	(1<<1)
 
 /*
  * flag fields valid for the new PTP_EXTTS_REQUEST2 ioctl.
