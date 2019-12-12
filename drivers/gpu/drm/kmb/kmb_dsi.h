@@ -342,7 +342,7 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge);
 void kmb_plane_destroy(struct drm_plane *plane);
 void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p);
 void kmb_dsi_host_unregister(void);
-int kmb_dsi_hw_init(struct drm_device *dev);
+int kmb_dsi_hw_init(struct drm_device *dev, struct drm_display_mode *mode);
 
 #define to_kmb_connector(x) container_of(x, struct kmb_connector, base)
 #define to_kmb_host(x) container_of(x, struct kmb_dsi_host, base)

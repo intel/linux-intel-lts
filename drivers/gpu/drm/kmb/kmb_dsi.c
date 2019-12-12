@@ -46,19 +46,12 @@ static int hw_initialized;
 //#define MIPI_TX_TEST_PATTERN_GENERATION
 //#define MIPI_DMA
 //#define RTL_TEST
-//#define IMG_WIDTH_PX      640
-//#define IMG_HEIGHT_LINES  10
-
-#define LCD_BYTESPP       1
 
 /*MIPI TX CFG*/
-//#define MIPI_TX_LANE_DATA_RATE_MBPS 1782
-//#define MIPI_TX_LANE_DATA_RATE_MBPS 800
 #define MIPI_TX_LANE_DATA_RATE_MBPS 891
-//#define MIPI_TX_LANE_DATA_RATE_MBPS 80
 #define MIPI_TX_REF_CLK_KHZ         24000
-//#define MIPI_TX_REF_CLK_KHZ         23809
 #define MIPI_TX_CFG_CLK_KHZ         24000
+#define MIPI_TX_BPP		    24
 
 /*DPHY Tx test codes*/
 #define TEST_CODE_FSM_CONTROL				0x03
@@ -97,23 +90,12 @@ static struct mipi_dsi_host *dsi_host;
 static struct mipi_dsi_device *dsi_device;
 
 /*
- * These are added here only temporarily for testing,
- * these will eventually go to the device tree sections,
- * and can be used as a refernce later for device tree additions
+ * Default setting is 1080p, 4 lanes.
  */
-#define RES_1920x1080
-#ifdef RES_1920x1080
 #define IMG_HEIGHT_LINES  1080
 #define IMG_WIDTH_PX      1920
 #define MIPI_TX_ACTIVE_LANES 4
-#endif
 
-//#define RES_1280x720
-#ifdef RES_1280x720
-#define IMG_HEIGHT_LINES  720
-#define IMG_WIDTH_PX      1280
-#define MIPI_TX_ACTIVE_LANES 2
-#endif
 struct mipi_tx_frame_section_cfg mipi_tx_frame0_sect_cfg = {
 	.width_pixels = IMG_WIDTH_PX,
 	.height_lines = IMG_HEIGHT_LINES,
@@ -123,7 +105,6 @@ struct mipi_tx_frame_section_cfg mipi_tx_frame0_sect_cfg = {
 	.dma_packed = 0
 };
 
-#ifdef RES_1920x1080
 struct mipi_tx_frame_cfg mipitx_frame0_cfg = {
 	.sections[0] = &mipi_tx_frame0_sect_cfg,
 	.sections[1] = NULL,
@@ -136,22 +117,6 @@ struct mipi_tx_frame_cfg mipitx_frame0_cfg = {
 	.h_backporch = 148,
 	.h_frontporch = 88
 };
-#endif
-
-#ifdef RES_1280x720
-struct mipi_tx_frame_cfg mipitx_frame0_cfg = {
-	.sections[0] = &mipi_tx_frame0_sect_cfg,
-	.sections[1] = NULL,
-	.sections[2] = NULL,
-	.sections[3] = NULL,
-	.vsync_width = 5,
-	.v_backporch = 20,
-	.v_frontporch = 5,
-	.hsync_width = 40,
-	.h_backporch = 220,
-	.h_frontporch = 110,
-};
-#endif
 
 struct mipi_tx_dsi_cfg mipitx_dsi_cfg = {
 	.hfp_blank_en = 0,
@@ -1739,10 +1704,58 @@ int kmb_kernel_read(struct file *file, loff_t offset,
 	return ret;
 }
 
-int kmb_dsi_hw_init(struct drm_device *dev)
+int kmb_dsi_hw_init(struct drm_device *dev, struct drm_display_mode *mode)
 {
 	struct kmb_drm_private *dev_p = dev->dev_private;
+	u64 data_rate;
 
+	mipi_tx_init_cfg.active_lanes = MIPI_TX_ACTIVE_LANES;
+	if (mode != NULL) {
+		mipi_tx_frame0_sect_cfg.width_pixels = mode->crtc_hdisplay;
+		mipi_tx_frame0_sect_cfg.height_lines = mode->crtc_vdisplay;
+		mipitx_frame0_cfg.vsync_width =
+			mode->crtc_vsync_end - mode->crtc_vsync_start;
+		mipitx_frame0_cfg.v_backporch =
+			mode->crtc_vtotal - mode->crtc_vsync_end;
+		mipitx_frame0_cfg.v_frontporch =
+			mode->crtc_vsync_start - mode->crtc_vdisplay;
+		mipitx_frame0_cfg.hsync_width =
+			mode->crtc_hsync_end - mode->crtc_hsync_start;
+		mipitx_frame0_cfg.h_backporch =
+			mode->crtc_htotal - mode->crtc_hsync_end;
+		mipitx_frame0_cfg.h_frontporch =
+			mode->crtc_hsync_start - mode->crtc_hdisplay;
+		/*lane rate = (vtotal*htotal*fps*bpp)/4 / 1000000
+		 * to convert to Mbps
+		 */
+		DRM_INFO("htotal = %d vtotal=%d refresh=%d\n",
+				mode->crtc_htotal, mode->crtc_vtotal,
+				mode->vrefresh);
+		data_rate =
+			((((u32)mode->crtc_vtotal * (u32)mode->crtc_htotal)
+			* (u32)mode->vrefresh
+			* MIPI_TX_BPP)/mipi_tx_init_cfg.active_lanes) / 1000000;
+		DRM_INFO("data_rate = %llu active_lanes=%d\n",
+				data_rate, mipi_tx_init_cfg.active_lanes);
+
+		/*when late rate < 800 - modeset fails with 4 lanes -
+		 * so switch to 2 lanes
+		 */
+		if (data_rate < 800) {
+			mipi_tx_init_cfg.active_lanes = 2;
+			mipi_tx_init_cfg.lane_rate_mbps = data_rate * 2;
+		} else {
+			mipi_tx_init_cfg.lane_rate_mbps = data_rate;
+		}
+		DRM_INFO("lane rate=%d\n", mipi_tx_init_cfg.lane_rate_mbps);
+		DRM_INFO("vfp= %d vbp= %d vsyc_len=%d hfp=%d hbp=%d hsync_len=%d lane-rate=%d\n",
+		mipitx_frame0_cfg.v_frontporch, mipitx_frame0_cfg.v_backporch,
+		mipitx_frame0_cfg.vsync_width,
+		mipitx_frame0_cfg.h_frontporch, mipitx_frame0_cfg.h_backporch,
+		mipitx_frame0_cfg.hsync_width,
+		mipi_tx_init_cfg.lane_rate_mbps);
+
+	}
 	if (hw_initialized)
 		return 0;
 	kmb_write_mipi(dev_p, DPHY_ENABLE, 0);
@@ -1825,15 +1838,13 @@ int kmb_dsi_init(struct drm_device *dev, struct drm_bridge *bridge)
 		drm_encoder_cleanup(encoder);
 		return ret;
 	}
-#endif
 
-#ifndef FCCTEST
 	DRM_INFO("%s : %d Bridge attached : SUCCESS\n", __func__, __LINE__);
 #endif
 
 #ifdef FCCTEST
 #ifndef LCD_TEST
-	kmb_dsi_hw_init(dev);
+	kmb_dsi_hw_init(dev, NULL);
 #endif
 #endif
 	return 0;

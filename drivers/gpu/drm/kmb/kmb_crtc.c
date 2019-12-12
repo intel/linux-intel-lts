@@ -103,7 +103,14 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	int vsync_end_offset;
 #endif
 	/* initialize mipi */
-	kmb_dsi_hw_init(dev);
+	kmb_dsi_hw_init(dev, m);
+	DRM_INFO("vfp= %d vbp= %d vsyc_len=%d hfp=%d hbp=%d hsync_len=%d\n",
+			m->crtc_vsync_start - m->crtc_vdisplay,
+			m->crtc_vtotal - m->crtc_vsync_end,
+			m->crtc_vsync_end - m->crtc_vsync_start,
+			m->crtc_hsync_start - m->crtc_hdisplay,
+			m->crtc_htotal - m->crtc_hsync_end,
+			m->crtc_hsync_end - m->crtc_hsync_start);
 #ifdef LCD_TEST
 //	vm.vfront_porch = m->crtc_vsync_start - m->crtc_vdisplay;
 	vm.vfront_porch = 2;
