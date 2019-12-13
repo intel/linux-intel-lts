@@ -230,6 +230,7 @@ static void intel_mst_post_disable_dp(struct intel_encoder *encoder,
 				      const struct intel_crtc_state *old_crtc_state,
 				      const struct drm_connector_state *old_conn_state)
 {
+	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
 	struct intel_dp_mst_encoder *intel_mst = enc_to_mst(&encoder->base);
 	struct intel_digital_port *intel_dig_port = intel_mst->primary;
 	struct intel_dp *intel_dp = &intel_dig_port->dp;
@@ -237,6 +238,16 @@ static void intel_mst_post_disable_dp(struct intel_encoder *encoder,
 		to_intel_connector(old_conn_state->connector);
 
 	intel_ddi_disable_pipe_clock(old_crtc_state);
+	intel_crtc_vblank_off(old_crtc_state);
+
+	intel_disable_pipe(old_crtc_state);
+
+	intel_ddi_disable_transcoder_func(old_crtc_state);
+
+	if (INTEL_GEN(dev_priv) >= 9)
+		skylake_scaler_disable(old_crtc_state);
+	else
+		ironlake_pfit_disable(old_crtc_state);
 
 	/* this can fail */
 	drm_dp_check_act_status(&intel_dp->mst_mgr);
