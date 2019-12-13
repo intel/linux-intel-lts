@@ -7238,8 +7238,6 @@ static void haswell_crtc_disable(struct intel_crtc_state *old_crtc_state,
 		ironlake_pfit_disable(old_crtc_state);
 
 	intel_encoders_post_disable(intel_crtc, old_crtc_state, state);
-
-	intel_encoders_post_pll_disable(intel_crtc, old_crtc_state, state);
 }
 
 static void i9xx_pfit_enable(const struct intel_crtc_state *crtc_state)
