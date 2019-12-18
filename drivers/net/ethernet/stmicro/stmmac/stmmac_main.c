@@ -2415,7 +2415,7 @@ xdp_tx_done:
 
 	/* We still have pending packets, let's call for a new scheduling */
 	if (tx_q->dirty_tx != tx_q->cur_tx)
-		mod_timer(&tx_q->txtimer, STMMAC_COAL_TIMER(10));
+		mod_timer(&tx_q->txtimer, STMMAC_COAL_TIMER(priv->tx_coal_timer));
 
 	if (!queue_is_xdp(priv, queue))
 		__netif_tx_unlock_bh(netdev_get_tx_queue(priv->dev, queue));
