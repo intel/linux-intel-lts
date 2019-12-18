@@ -313,7 +313,7 @@ i915_gem_object_flush_write_domain(struct drm_i915_gem_object *obj,
 		}
 		spin_unlock(&obj->vma.lock);
 
-		intel_frontbuffer_flush(obj->frontbuffer, ORIGIN_CPU);
+		i915_gem_object_flush_frontbuffer(obj, ORIGIN_CPU);
 		break;
 
 	case I915_GEM_DOMAIN_WC:
