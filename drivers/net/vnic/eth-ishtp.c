@@ -163,7 +163,7 @@ static int eth_ishtp_xmit(struct sk_buff *skb, struct net_device *dev)
 	status = eth_ishtp_cl_write(prv, &written);
 
 	/* Tx failed */
-	if (!status) {
+	if (status) {
 		dev_err(prv->dev, "xmit: ishtp_cl_write failed\n");
 		netif_stop_queue(dev);
 		return NETDEV_TX_BUSY;
