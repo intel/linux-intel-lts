@@ -5246,11 +5246,15 @@ static int stmmac_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 {
 	struct stmmac_priv *priv = cb_priv;
 	int ret = -EOPNOTSUPP;
+	struct flow_cls_offload *cls;
+
+	cls = (struct flow_cls_offload *)type_data;
 
 	if (!tc_cls_can_offload_and_chain0(priv->dev, type_data))
 		return ret;
 
-	stmmac_disable_all_queues(priv);
+	if (cls->command == FLOW_CLS_REPLACE)
+		stmmac_disable_all_queues(priv);
 
 	switch (type) {
 	case TC_SETUP_CLSU32:
@@ -5263,7 +5267,8 @@ static int stmmac_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 		break;
 	}
 
-	stmmac_enable_all_queues(priv);
+	if (cls->command == FLOW_CLS_REPLACE)
+		stmmac_enable_all_queues(priv);
 	return ret;
 }
 
