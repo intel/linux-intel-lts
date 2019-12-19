@@ -1163,7 +1163,7 @@ static int uart_break_ctl(struct tty_struct *tty, int break_state)
 		goto out;
 
 	pm_runtime_get_sync(uport->dev);
-	if (uport->type != PORT_UNKNOWN)
+	if (uport->type != PORT_UNKNOWN && uport->ops->break_ctl)
 		uport->ops->break_ctl(uport, break_state);
 	pm_runtime_mark_last_busy(uport->dev);
 	pm_runtime_put_autosuspend(uport->dev);
