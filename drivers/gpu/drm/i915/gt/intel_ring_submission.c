@@ -1950,6 +1950,10 @@ static void setup_vecs(struct intel_engine_cs *engine)
 
 int intel_ring_submission_setup(struct intel_engine_cs *engine)
 {
+	struct intel_timeline *timeline;
+	struct intel_ring *ring;
+	int err;
+
 	setup_common(engine);
 
 	switch (engine->class) {
@@ -1969,15 +1973,6 @@ int intel_ring_submission_setup(struct intel_engine_cs *engine)
 		MISSING_CASE(engine->class);
 		return -ENODEV;
 	}
-
-	return 0;
-}
-
-int intel_ring_submission_init(struct intel_engine_cs *engine)
-{
-	struct intel_timeline *timeline;
-	struct intel_ring *ring;
-	int err;
 
 	timeline = intel_timeline_create(engine->gt, engine->status_page.vma);
 	if (IS_ERR(timeline)) {
@@ -2004,16 +1999,10 @@ int intel_ring_submission_init(struct intel_engine_cs *engine)
 	engine->legacy.ring = ring;
 	engine->legacy.timeline = timeline;
 
-	err = intel_engine_init_common(engine);
-	if (err)
-		goto err_ring_unpin;
-
 	GEM_BUG_ON(timeline->hwsp_ggtt != engine->status_page.vma);
 
 	return 0;
 
-err_ring_unpin:
-	intel_ring_unpin(ring);
 err_ring:
 	intel_ring_put(ring);
 err_timeline_unpin:
