@@ -22,6 +22,7 @@
 #include <linux/of_address.h>
 #include <linux/io.h>
 #include <linux/slab.h>
+#include <linux/dovetail.h>
 #include <linux/sched/clock.h>
 #include <linux/sched_clock.h>
 #include <linux/acpi.h>
@@ -958,6 +959,9 @@ static void arch_counter_set_user_access(void)
 	else
 		cntkctl |= ARCH_TIMER_USR_VCT_ACCESS_EN;
 
+	if (IS_ENABLED(CONFIG_GENERIC_CLOCKSOURCE_VDSO))
+		cntkctl |= ARCH_TIMER_USR_PT_ACCESS_EN;
+
 	arch_timer_set_cntkctl(cntkctl);
 }
 
@@ -1102,6 +1106,10 @@ static void __init arch_counter_register(unsigned type)
 
 		arch_timer_read_counter = rd;
 		clocksource_counter.vdso_clock_mode = vdso_default;
+#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
+		if (vdso_default)
+			clocksource_counter.vdso_type = CLOCKSOURCE_VDSO_ARCHITECTED;
+#endif
 	} else {
 		arch_timer_read_counter = arch_counter_get_cntvct_mem;
 	}
