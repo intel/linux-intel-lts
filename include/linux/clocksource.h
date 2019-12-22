@@ -32,7 +32,14 @@ struct module;
 #include <asm/clocksource.h>
 #endif
 
+
 #include <vdso/clocksource.h>
+
+enum clocksource_vdso_type {
+	CLOCKSOURCE_VDSO_NONE = 0,
+	CLOCKSOURCE_VDSO_ARCHITECTED,
+	CLOCKSOURCE_VDSO_MMIO,	/* <= Must be last. */
+};
 
 /**
  * struct clocksource - hardware abstraction for a free running counter
@@ -113,6 +120,7 @@ struct clocksource {
 	int			rating;
 	enum clocksource_ids	id;
 	enum vdso_clock_mode	vdso_clock_mode;
+  	enum clocksource_vdso_type vdso_type;
 	unsigned long		flags;
 
 	int			(*enable)(struct clocksource *cs);
