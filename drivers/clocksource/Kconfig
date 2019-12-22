@@ -586,7 +586,7 @@ config CLKSRC_PXA
 config CLKSRC_IMX_GPT
 	bool "Clocksource using i.MX GPT" if COMPILE_TEST
 	depends on (ARM || ARM64) && HAVE_CLK
-	select CLKSRC_MMIO
+	imply GENERIC_CLOCKSOURCE_VDSO
 
 config CLKSRC_IMX_TPM
 	bool "Clocksource using i.MX TPM" if COMPILE_TEST
