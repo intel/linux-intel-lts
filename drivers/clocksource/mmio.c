@@ -463,6 +463,8 @@ int __init clocksource_user_mmio_init(struct clocksource_user_mmio *ucs,
 		goto fail;
 	}
 
+	ucs->mmio.clksrc.vdso_type = CLOCKSOURCE_VDSO_MMIO + ucs->id;
+
 	if (user_mmio_class) {
 		err = ucs_create_cdev(user_mmio_class, ucs);
 		if (err < 0) {
