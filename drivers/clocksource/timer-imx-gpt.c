@@ -163,8 +163,8 @@ static int __init mxc_clocksource_init(struct imx_timer *imxtm)
 	sched_clock_reg = reg;
 
 	sched_clock_register(mxc_read_sched_clock, 32, c);
-	return clocksource_mmio_init(reg, "mxc_timer1", c, 200, 32,
-			clocksource_mmio_readl_up);
+	return clocksource_user_single_mmio_init(reg, "mxc_timer1", c, 200, 32,
+					 clocksource_mmio_readl_up);
 }
 
 /* clock event */
