@@ -5174,8 +5174,6 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 		stmmac_napi_check(priv, chan, DMA_DIR_RX);
 	}
 
-	stmmac_tstamp_interrupt(priv, priv);
-
 	return IRQ_HANDLED;
 }
 
