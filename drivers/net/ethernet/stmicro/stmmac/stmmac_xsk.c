@@ -573,8 +573,10 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 	xdp.rxq = &rx_q->xdp_rxq;
 
 	while (likely(total_rx_packets < (unsigned int)budget)) {
+		struct skb_shared_hwtstamps *shhwtstamp = NULL;
+		struct dma_desc *rx_desc, *nx_desc;
 		struct stmmac_rx_buffer *buf;
-		struct dma_desc *rx_desc;
+		unsigned int next_entry;
 		unsigned int size;
 		int status;
 
@@ -606,8 +608,14 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 
 		size = stmmac_get_rx_frame_len(priv, rx_desc,
 					       coe);
-		if (!size)
-			break;
+		if (!size) {
+			if (!priv->hwts_all)
+				break;
+			/* If hw timestamping is enabled, move on to the
+			 * next desc as it might contain timestamps */
+			stmmac_inc_ntc(rx_q);
+			continue;
+		}
 
 		buf = stmmac_get_rx_buffer_zc(rx_q, size);
 
@@ -618,8 +626,28 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 			continue;
 		}
 
+		/* Increment to potentially get the next desc for reading HW T/S */
+		stmmac_inc_ntc(rx_q);
+
 		xdp.data = buf->umem_addr;
-		xdp.data_meta = xdp.data;
+
+		if (unlikely(priv->hwts_all)) {
+			xdp.data_meta = xdp.data - sizeof(u64);
+
+			next_entry = rx_q->cur_rx;
+
+			if (priv->extend_desc)
+				nx_desc = (struct dma_desc *)(rx_q->dma_erx +
+							      next_entry);
+			else
+				nx_desc = rx_q->dma_rx + next_entry;
+
+			stmmac_get_rx_hwtstamp(priv, rx_desc, nx_desc,
+					       (u64 *) xdp.data_meta);
+		} else {
+			xdp.data_meta = xdp.data;
+		}
+
 		xdp.data_hard_start = xdp.data - XDP_PACKET_HEADROOM;
 		xdp.data_end = xdp.data + size;
 		xdp.handle = buf->umem_handle;
@@ -637,7 +665,6 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 			total_rx_packets++;
 
 			fill_count++;
-			stmmac_inc_ntc(rx_q);
 			continue;
 		}
 
@@ -650,13 +677,17 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 
 		fill_count++;
 
-		stmmac_inc_ntc(rx_q);
-
 		if (eth_skb_pad(skb))
 			continue;
 
 		total_rx_bytes += skb->len;
 		total_rx_packets++;
+
+		/* Get Rx HW tstamp into SKB */
+		shhwtstamp = skb_hwtstamps(skb);
+		memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
+		stmmac_get_rx_hwtstamp(priv, rx_desc, nx_desc,
+				       &shhwtstamp->hwtstamp);
 
 		/* Use HW to strip VLAN header before fallback
 		 * to SW.
