@@ -1599,15 +1599,21 @@ static int switch_context(struct i915_request *rq)
 		return ret;
 
 	if (ce->state) {
-		u32 hw_flags;
+		u32 flags;
 
 		GEM_BUG_ON(rq->engine->id != RCS0);
 
-		hw_flags = 0;
-		if (!test_bit(CONTEXT_VALID_BIT, &ce->flags))
-			hw_flags = MI_RESTORE_INHIBIT;
+		/* For resource streamer on HSW+ and power context elsewhere */
+		BUILD_BUG_ON(HSW_MI_RS_SAVE_STATE_EN != MI_SAVE_EXT_STATE_EN);
+		BUILD_BUG_ON(HSW_MI_RS_RESTORE_STATE_EN != MI_RESTORE_EXT_STATE_EN);
 
-		ret = mi_set_context(rq, hw_flags);
+		flags = MI_SAVE_EXT_STATE_EN | MI_MM_SPACE_GTT;
+		if (test_bit(CONTEXT_VALID_BIT, &ce->flags))
+			flags |= MI_RESTORE_EXT_STATE_EN;
+		else
+			flags |= MI_RESTORE_INHIBIT;
+
+		ret = mi_set_context(rq, flags);
 		if (ret)
 			return ret;
 	}
