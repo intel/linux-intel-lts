@@ -1687,8 +1687,6 @@ static void free_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 	if (rx_q->page_pool) {
 		if (xdp_rxq_info_is_reg(&rx_q->xdp_rxq))
 			xdp_rxq_info_unreg(&rx_q->xdp_rxq);
-		else
-			page_pool_request_shutdown(rx_q->page_pool);
 
 		page_pool_destroy(rx_q->page_pool);
 	}
