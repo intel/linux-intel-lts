@@ -292,7 +292,7 @@ static const struct stmmac_hwif_entry {
 		.gmac = false,
 		.gmac4 = true,
 		.xgmac = false,
-		.mdio_intr_en = true,
+		.mdio_intr_en = false,
 		.has_serdes = true,
 		.tbs = true,
 		.min_id = DWMAC_CORE_5_10,
