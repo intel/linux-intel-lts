@@ -107,7 +107,7 @@
 #define LAYER3_DMA_IDLE				  (1<<24)
 #define LAYER3_DMA_FIFO_OVERFLOW		  (1<<25)
 #define LAYER3_DMA_FIFO_UNDERFLOW		  (1<<26)
-
+#define LCD_INT_LAYER				  (0x07fffff8)
 #define LCD_INT_ENABLE				(0x4 * 0x002)
 #define LCD_INT_CLEAR				(0x4 * 0x003)
 #define LCD_LINE_COUNT				(0x4 * 0x004)

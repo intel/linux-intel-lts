@@ -62,7 +62,8 @@ static int kmb_crtc_enable_vblank(struct drm_crtc *crtc)
 	kmb_write_lcd(dev->dev_private, LCD_VSTATUS_COMPARE,
 			LCD_VSTATUS_COMPARE_VSYNC);
 	/* enable vertical interrupt */
-	kmb_write_lcd(dev->dev_private, LCD_INT_ENABLE, LCD_INT_VERT_COMP);
+	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE,
+			LCD_INT_VERT_COMP);
 	return 0;
 }
 
@@ -73,13 +74,9 @@ static void kmb_crtc_disable_vblank(struct drm_crtc *crtc)
 	/*clear interrupt */
 	kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_VERT_COMP);
 	/* disable vertical interrupt */
-	kmb_write_lcd(dev->dev_private, LCD_INT_ENABLE, 0);
+	kmb_clr_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE,
+			LCD_INT_VERT_COMP);
 
-/* TBD
- *  set the BIT2 (VERTICAL_COMPARE_INTERRUPT) of the LCD_INT_ENABLE register
- *  set the required bit LCD_VSTATUS_COMPARE register
- *  Not sure if anything needs to be done in the ICB
- */
 }
 
 static const struct drm_crtc_funcs kmb_crtc_funcs = {
@@ -101,7 +98,7 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	struct videomode vm;
 	int vsync_start_offset;
 	int vsync_end_offset;
-#endif
+
 	/* initialize mipi */
 	kmb_dsi_hw_init(dev, m);
 	DRM_INFO("vfp= %d vbp= %d vsyc_len=%d hfp=%d hbp=%d hsync_len=%d\n",
@@ -111,7 +108,6 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 			m->crtc_hsync_start - m->crtc_hdisplay,
 			m->crtc_htotal - m->crtc_hsync_end,
 			m->crtc_hsync_end - m->crtc_hsync_start);
-#ifdef LCD_TEST
 //	vm.vfront_porch = m->crtc_vsync_start - m->crtc_vdisplay;
 	vm.vfront_porch = 2;
 //	vm.vback_porch = m->crtc_vtotal - m->crtc_vsync_end;
@@ -175,7 +171,7 @@ static void kmb_crtc_atomic_enable(struct drm_crtc *crtc,
 
 	clk_prepare_enable(lcd->clk);
 	kmb_crtc_mode_set_nofb(crtc);
-//	drm_crtc_vblank_on(crtc);
+	drm_crtc_vblank_on(crtc);
 }
 
 static void kmb_crtc_atomic_disable(struct drm_crtc *crtc,
@@ -186,33 +182,32 @@ static void kmb_crtc_atomic_disable(struct drm_crtc *crtc,
 	/* always disable planes on the CRTC that is being turned off */
 	drm_atomic_helper_disable_planes_on_crtc(old_state, false);
 
-//	drm_crtc_vblank_off(crtc);
+	drm_crtc_vblank_off(crtc);
 	clk_disable_unprepare(lcd->clk);
 }
 
 static void kmb_crtc_atomic_begin(struct drm_crtc *crtc,
 				  struct drm_crtc_state *state)
 {
-	/* TBD */
-	/*disable  vblank interrupts here
-	 * clear BIT 2 (VERTICAL_COMPARE_INTERRUPT) LCD_INT_ENABLE
-	 */
+	struct drm_device *dev = crtc->dev;
+
+	kmb_clr_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE,
+			LCD_INT_VERT_COMP);
 }
 
 static void kmb_crtc_atomic_flush(struct drm_crtc *crtc,
 				  struct drm_crtc_state *state)
 {
-	/* TBD */
-	/*enable  vblank interrupts after
-	 * set BIT 2 (VERTICAL_COMPARE_INTERRUPT) LCD_INT_ENABLE
-	 */
+	struct drm_device *dev = crtc->dev;
+
+	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE,
+			LCD_INT_VERT_COMP);
 
 	spin_lock_irq(&crtc->dev->event_lock);
 	if (crtc->state->event)
 		drm_crtc_send_vblank_event(crtc, crtc->state->event);
 	crtc->state->event = NULL;
 	spin_unlock_irq(&crtc->dev->event_lock);
-
 }
 
 static const struct drm_crtc_helper_funcs kmb_crtc_helper_funcs = {

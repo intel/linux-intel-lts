@@ -176,9 +176,9 @@ static void kmb_plane_atomic_disable(struct drm_plane *plane,
 		break;
 	}
 
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
-			~LCD_DMA_LAYER_ENABLE);
-	kmb_write_lcd(dev_p, LCD_CONTROL, ~ctrl);
+	kmb_clr_bitmask_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
+			LCD_DMA_LAYER_ENABLE);
+	kmb_clr_bitmask_lcd(dev_p, LCD_CONTROL, ctrl);
 }
 
 

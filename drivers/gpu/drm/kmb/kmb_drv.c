@@ -147,10 +147,8 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
 	struct kmb_drm_private *dev_p = drm->dev_private;
 	struct platform_device *pdev = to_platform_device(drm->dev);
-#ifdef WIP
 	/*u32 version;*/
-	int irq_lcd, irq_mipi;
-#endif
+	int irq_lcd;// irq_mipi;
 	int ret = 0;
 	unsigned long clk;
 
@@ -286,10 +284,9 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	kmb_set_bitmask_msscam(dev_p, MSS_CAM_CLK_CTRL, 0x1fff);
 	kmb_set_bitmask_msscam(dev_p, MSS_CAM_RSTN_CTRL, 0xffffffff);
 #endif //KMB_CLOCKS
-#ifdef WIP
 	/* Register irqs here - section 17.3 in databook
 	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
-	 * firmware has to redirect it to A53
+	 * firmware has redirected  79 to A53 IRQ 33
 	 */
 	DRM_INFO("platform_get_irq_byname %pOF\n", drm->dev->of_node);
 
@@ -299,14 +296,12 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	irq_lcd = platform_get_irq_byname(pdev, "irq_lcd");
 	if (irq_lcd < 0) {
 		DRM_ERROR("irq_lcd not found");
-		return irq_lcd;
+		goto setup_fail;
 	}
 
 	pr_info("irq_lcd platform_get_irq = %d\n", irq_lcd);
 
-	ret = request_irq(irq_lcd, kmb_isr, IRQF_SHARED, "irq_lcd", dev_p);
-	dev_p->irq_lcd = irq_lcd;
-
+#ifdef WIP
 	/* Allocate MIPI interrupt resources, enable interrupt line,
 	 * and setup IRQ handling
 	 */
@@ -342,19 +337,16 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_ERROR("failed to initialize DSI\n");
 		goto setup_fail;
 	}
-#ifdef WIP
-	ret = drm_irq_install(drm, platform_get_irq(pdev, 0));
+	ret = drm_irq_install(drm, irq_lcd);
 	if (ret < 0) {
 		DRM_ERROR("failed to install IRQ handler\n");
 		goto irq_fail;
 	}
-#endif
+	dev_p->irq_lcd = irq_lcd;
 	return 0;
 
-#ifdef WIP
 irq_fail:
 	drm_crtc_cleanup(&dev_p->crtc);
-#endif
 setup_fail:
 	of_reserved_mem_device_release(drm->dev);
 
@@ -400,6 +392,11 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR,
 				LCD_INT_LINE_CMP);
 	}
+	if (status & LCD_INT_LAYER) {
+		/* clear layer interrupts */
+		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_LAYER);
+	}
+
 	if (status & LCD_INT_VERT_COMP) {
 		/* read VSTATUS */
 		val = kmb_read_lcd(dev->dev_private, LCD_VSTATUS);
@@ -419,23 +416,20 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 	return IRQ_HANDLED;
 }
 
+#ifdef MIPI_IRQ
 static irqreturn_t  handle_mipi_irq(struct drm_device *dev)
 {
 	mipi_tx_handle_irqs(dev->dev_private);
 	return IRQ_HANDLED;
 }
+#endif
 
 static irqreturn_t kmb_isr(int irq, void *arg)
 {
 	struct drm_device *dev = (struct drm_device *)arg;
-	struct kmb_drm_private *dev_p = dev->dev_private;
 	irqreturn_t ret = IRQ_NONE;
 
-	if (irq == dev_p->irq_lcd)
-		ret = handle_lcd_irq(dev);
-	else if (irq == dev_p->irq_mipi)
-		ret = handle_mipi_irq(dev);
-
+	ret = handle_lcd_irq(dev);
 	return ret;
 }
 
@@ -567,6 +561,12 @@ static int kmb_probe(struct platform_device *pdev)
 
 	/* Set the CRTC's port so that the encoder component can find it */
 	lcd->crtc.port = of_graph_get_port_by_id(dev->of_node, 0);
+	ret = drm_vblank_init(drm, drm->mode_config.num_crtc);
+	DRM_INFO("mode_config.num_crtc=%d\n", drm->mode_config.num_crtc);
+	if (ret < 0) {
+		DRM_ERROR("failed to initialize vblank\n");
+		goto err_vblank;
+	}
 	drm_mode_config_reset(drm);
 	drm_kms_helper_poll_init(drm);
 
@@ -583,6 +583,7 @@ static int kmb_probe(struct platform_device *pdev)
 
 err_register:
 	drm_kms_helper_poll_fini(drm);
+err_vblank:
 	pm_runtime_disable(drm->dev);
 err_free:
 	drm_mode_config_cleanup(drm);
