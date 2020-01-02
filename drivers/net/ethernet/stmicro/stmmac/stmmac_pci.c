@@ -966,6 +966,8 @@ static int __maybe_unused stmmac_pci_suspend(struct device *dev)
 
 	pci_disable_device(pdev);
 	pci_wake_from_d3(pdev, true);
+	pci_set_power_state(pdev, PCI_D3hot);
+
 	return 0;
 }
 

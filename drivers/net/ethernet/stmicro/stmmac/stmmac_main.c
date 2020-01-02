@@ -6565,6 +6565,9 @@ int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
 
 	stmmac_stop_mac_rx(priv, priv->ioaddr);
 
+	if (priv->plat->has_serdes)
+		stmmac_serdes_powerdown(priv, ndev);
+
 	/* Enable Power down mode by programming the PMT regs */
 	if (device_may_wakeup(priv->device)) {
 		stmmac_pmt(priv, priv->hw, priv->wolopts);
@@ -6621,6 +6624,9 @@ int stmmac_suspend(struct device *dev)
 	stmmac_stop_all_dma(priv);
 	stmmac_stop_mac_tx(priv, priv->ioaddr);
 	stmmac_stop_mac_rx(priv, priv->ioaddr);
+
+	if (priv->plat->has_serdes)
+		stmmac_serdes_powerdown(priv, ndev);
 
 	/* Enable Power down mode by programming the PMT regs */
 	if (device_may_wakeup(priv->device)) {
