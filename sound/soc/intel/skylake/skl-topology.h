@@ -363,12 +363,11 @@ struct skl_pipe {
 	struct skl_pipe_params *p_params;
 	enum skl_pipe_state state;
 	u8 direction;
-	u8 cur_config_idx;
+	u8 pipe_config_idx;
 	u8 nr_cfgs;
 	struct skl_path_config configs[SKL_MAX_PATH_CONFIGS];
 	struct list_head w_list;
 	bool passthru;
-	u32 pipe_config_idx;
 };
 
 enum skl_module_state {
@@ -463,8 +462,6 @@ struct skl_module_cfg {
 	struct list_head kctl_domains;
 	struct skl_module_inst_id id;
 	struct skl_module *module;
-	int res_idx;
-	int fmt_idx;
 	int fmt_cfg_idx;
 	u8 domain;
 	bool homogenous_inputs;
@@ -668,5 +665,8 @@ void skl_delete_notify_kctl_list(struct skl_sst *skl_sst);
 struct snd_kcontrol *skl_get_notify_kcontrol(struct skl_sst *skl,
 				struct snd_card *card, u32 notify_id);
 void skl_tplg_fw_cfg_set(struct skl *skl);
-
+inline struct skl_module_iface
+	*skl_get_module_iface(struct skl_module_cfg *mconfig);
+inline struct skl_module_res
+	*skl_get_module_res(struct skl_module_cfg *mconfig);
 #endif

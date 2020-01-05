@@ -431,10 +431,6 @@ static int cnl_sdw_bra_pipe_cfg_pb(struct skl_sst *ctx,
 		goto error;
 	}
 
-	host_cpr_cfg->fmt_idx = 0;
-	host_cpr_cfg->res_idx = 0;
-	link_cpr_cfg->fmt_idx = 0;
-	link_cpr_cfg->res_idx = 0;
 	bra_data->pb_pipe = host_cpr_pipe;
 
 	host_cpr_pipe->p_params = &host_cpr_params;
@@ -693,10 +689,6 @@ static int cnl_sdw_bra_pipe_cfg_cp(struct skl_sst *ctx,
 		goto error;
 	}
 
-	link_cpr_cfg->fmt_idx = 0;
-	link_cpr_cfg->res_idx = 0;
-	host_cpr_cfg->fmt_idx = 0;
-	host_cpr_cfg->res_idx = 0;
 	bra_data->cp_pipe = link_cpr_pipe;
 	link_cpr_pipe->p_params = &link_cpr_params;
 	link_cpr_cfg->pipe = link_cpr_pipe;
@@ -1416,9 +1408,8 @@ static void skl_set_base_module_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_base_cfg *base_cfg)
 {
-	struct skl_module *module = mconfig->module;
-	struct skl_module_res *res = &module->resources[mconfig->res_idx];
-	struct skl_module_iface *fmt = &module->formats[mconfig->fmt_idx];
+	struct skl_module_res *res = skl_get_module_res(mconfig);
+	struct skl_module_iface *fmt = skl_get_module_iface(mconfig);
 	struct skl_module_fmt *format = &fmt->inputs[0].fmt;
 
 	base_cfg->audio_fmt.number_of_channels = format->channels;
@@ -1467,9 +1458,8 @@ static void skl_set_base_ext_module_format(struct skl_sst *ctx,
 {
 	struct skl_module_pin_resources *pin_res;
 	struct skl_pin_format *pin_fmt;
-	struct skl_module *module = mconfig->module;
-	struct skl_module_res *res = &module->resources[mconfig->res_idx];
-	struct skl_module_iface *fmt = &module->formats[mconfig->fmt_idx];
+	struct skl_module_res *res = skl_get_module_res(mconfig);
+	struct skl_module_iface *fmt = skl_get_module_iface(mconfig);
 	struct skl_module_fmt *format;
 	int i;
 	char *params;
@@ -1608,8 +1598,7 @@ static void skl_setup_cpr_gateway_cfg(struct skl_sst *ctx,
 			struct skl_cpr_cfg *cpr_mconfig)
 {
 	u32 dma_io_buf;
-	struct skl_module_res *res;
-	int res_idx = mconfig->res_idx;
+	struct skl_module_res *res = skl_get_module_res(mconfig);
 	struct skl *skl = get_skl_ctx(ctx->dev);
 
 	cpr_mconfig->gtw_cfg.node_id = skl_get_node_id(ctx, mconfig);
@@ -1620,11 +1609,8 @@ static void skl_setup_cpr_gateway_cfg(struct skl_sst *ctx,
 	}
 
 	if (skl->nr_modules) {
-		res = &mconfig->module->resources[mconfig->res_idx];
 		cpr_mconfig->gtw_cfg.dma_buffer_size = res->dma_buffer_size;
 		goto skip_buf_size_calc;
-	} else {
-		res = &mconfig->module->resources[res_idx];
 	}
 
 	switch (mconfig->hw_conn_type) {
@@ -1798,8 +1784,7 @@ static void skl_setup_out_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_audio_data_format *out_fmt)
 {
-	struct skl_module *module = mconfig->module;
-	struct skl_module_iface *fmt = &module->formats[mconfig->fmt_idx];
+	struct skl_module_iface *fmt = skl_get_module_iface(mconfig);
 	struct skl_module_fmt *format = &fmt->outputs[0].fmt;
 
 	out_fmt->number_of_channels = (u8)format->channels;
@@ -1841,8 +1826,7 @@ static void skl_set_src_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_src_module_cfg *src_mconfig)
 {
-	struct skl_module *module = mconfig->module;
-	struct skl_module_iface *iface = &module->formats[mconfig->fmt_idx];
+	struct skl_module_iface *iface = skl_get_module_iface(mconfig);
 	struct skl_module_fmt *fmt = &iface->outputs[0].fmt;
 
 	skl_set_base_module_format(ctx, mconfig,
@@ -1868,8 +1852,7 @@ static void skl_set_updown_mixer_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_up_down_mixer_cfg *mixer_mconfig)
 {
-	struct skl_module *module = mconfig->module;
-	struct skl_module_iface *iface = &module->formats[mconfig->fmt_idx];
+	struct skl_module_iface *iface = skl_get_module_iface(mconfig);
 	struct skl_module_fmt *fmt = &iface->outputs[0].fmt;
 
 	skl_set_base_module_format(ctx,	mconfig,
@@ -1903,10 +1886,8 @@ static void skl_setup_probe_gateway_cfg(struct skl_sst *ctx,
 			struct skl_probe_cfg *probe_cfg)
 {
 	union skl_connector_node_id node_id = {0};
-	struct skl_module_res *res;
+	struct skl_module_res *res = skl_get_module_res(mconfig);
 	struct skl_probe_config *pconfig = &ctx->probe_config;
-
-	res = &mconfig->module->resources[mconfig->res_idx];
 
 	pconfig->edma_buffsize = res->dma_buffer_size;
 
@@ -1950,8 +1931,8 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig)
 {
 	u16 param_size;
-	struct skl_module *module = mconfig->module;
-	struct skl_module_iface *iface = &module->formats[mconfig->fmt_idx];
+	struct skl_module_iface *iface = skl_get_module_iface(mconfig);
+
 	switch (mconfig->m_type) {
 	case SKL_MODULE_TYPE_COPIER:
 		param_size = sizeof(struct skl_cpr_cfg);
@@ -2416,12 +2397,8 @@ static struct
 skl_module_fmt *skl_get_pin_format(struct skl_module_cfg *mconfig,
 				   u8 pin_direction, u8 pin_idx)
 {
-	struct skl_module *module = mconfig->module;
-	int fmt_idx = mconfig->fmt_idx;
-	struct skl_module_iface *intf;
+	struct skl_module_iface *intf = skl_get_module_iface(mconfig);
 	struct skl_module_fmt *pin_fmt;
-
-	intf = &module->formats[fmt_idx];
 
 	if (pin_direction == SKL_INPUT_PIN)
 		pin_fmt = &intf->inputs[pin_idx].fmt;
@@ -2521,7 +2498,7 @@ int skl_bind_modules(struct skl_sst *ctx,
 	if (src_mcfg->m_type == SKL_MODULE_TYPE_COPIER && src_index > 0) {
 		pin_fmt.sink_id = src_index;
 		module = src_mcfg->module;
-		fmt = &module->formats[src_mcfg->fmt_idx];
+		fmt = skl_get_module_iface(src_mcfg);
 
 		/* Input fmt is same as that of src module input cfg */
 		format = &fmt->inputs[0].fmt;
