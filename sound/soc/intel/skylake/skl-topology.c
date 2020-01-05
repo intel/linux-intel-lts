@@ -570,8 +570,7 @@ static int skl_tplg_update_be_blob(struct snd_soc_dapm_widget *w,
 	struct nhlt_specific_cfg *cfg;
 	struct skl *skl = get_skl_ctx(ctx->dev);
 	u8 dev_type = skl_tplg_be_dev_type(m_cfg->dev_type);
-	int fmt_idx = m_cfg->fmt_idx;
-	struct skl_module_iface *m_iface = &m_cfg->module->formats[fmt_idx];
+	struct skl_module_iface *m_iface = skl_get_module_iface(m_cfg);
 
 	/* check if we already have blob */
 	if (m_cfg->formats_config[SKL_PARAM_INIT].caps_size > 0)
@@ -953,7 +952,6 @@ skl_tplg_init_pipe_modules(struct skl *skl, struct skl_pipe *pipe)
 	struct snd_soc_dapm_widget *w;
 	struct skl_module_cfg *mconfig;
 	struct skl_sst *ctx = skl->skl_sst;
-	u8 cfg_idx;
 	int ret = 0;
 
 	list_for_each_entry(w_module, &pipe->w_list, node) {
@@ -968,10 +966,6 @@ skl_tplg_init_pipe_modules(struct skl *skl, struct skl_pipe *pipe)
 					(uuid_le *)mconfig->guid);
 			return -EIO;
 		}
-
-		cfg_idx = mconfig->pipe->cur_config_idx;
-		mconfig->fmt_idx = mconfig->mod_cfg[cfg_idx].fmt_idx;
-		mconfig->res_idx = mconfig->mod_cfg[cfg_idx].res_idx;
 
 		if (mconfig->module->loadable && ctx->dsp->fw_ops.load_mod) {
 			ret = ctx->dsp->fw_ops.load_mod(ctx->dsp,
@@ -1101,30 +1095,28 @@ skl_tplg_get_pipe_config(struct skl *skl, struct skl_module_cfg *mconfig)
 	struct skl_sst *ctx = skl->skl_sst;
 	struct skl_pipe *pipe = mconfig->pipe;
 	struct skl_pipe_params *params = pipe->p_params;
-	struct skl_path_config *pconfig = &pipe->configs[0];
+	struct skl_path_config *pconfig;
 	struct skl_pipe_fmt *fmt = NULL;
 	bool in_fmt = false;
 	int i;
-	bool ret;
 
 	if (pipe->nr_cfgs == 0) {
-		pipe->cur_config_idx = 0;
+		pipe->pipe_config_idx = 0;
 		return 0;
 	}
 
-	ret = is_skl_tplg_multi_fmt(skl, pipe);
-	if (ret) {
-		pipe->cur_config_idx = pipe->pipe_config_idx;
+	if (is_skl_tplg_multi_fmt(skl, pipe)) {
+		dev_dbg(ctx->dev, "Using pipe config idx:%d\n",
+			pipe->pipe_config_idx);
+		pconfig = &pipe->configs[pipe->pipe_config_idx];
 		pipe->memory_pages = pconfig->mem_pages;
-		dev_dbg(ctx->dev, "found pipe config idx:%d\n",
-				pipe->cur_config_idx);
 		return 0;
 	}
+
 	if (pipe->conn_type == SKL_PIPE_CONN_TYPE_NONE) {
 		dev_dbg(ctx->dev, "No conn_type detected, take 0th config\n");
-		pipe->cur_config_idx = 0;
-		pipe->memory_pages = pconfig->mem_pages;
-
+		pipe->memory_pages = pipe->configs[0].mem_pages;
+		pipe->pipe_config_idx = 0;
 		return 0;
 	}
 
@@ -1143,15 +1135,14 @@ skl_tplg_get_pipe_config(struct skl *skl, struct skl_module_cfg *mconfig)
 
 		if (CHECK_HW_PARAMS(params->ch, params->s_freq, params->s_fmt,
 				    fmt->channels, fmt->freq, fmt->bps)) {
-			pipe->cur_config_idx = i;
+			pipe->pipe_config_idx = i;
 			pipe->memory_pages = pconfig->mem_pages;
-			dev_dbg(ctx->dev, "Using pipe config: %d\n", i);
-
+			dev_dbg(ctx->dev, "found pipe config: %d\n", i);
 			return 0;
 		}
 	}
 
-	dev_err(ctx->dev, "Invalid pipe config: %d %d %d for pipe: %d\n",
+	dev_err(ctx->dev, "Invalid pipe config: ch:%d freq:%d fmt:%d for pipe:%d\n",
 		params->ch, params->s_freq, params->s_fmt, pipe->ppl_id);
 	return -EINVAL;
 }
@@ -1967,10 +1958,9 @@ static int skl_tplg_send_gain_ipc(struct snd_soc_dapm_context *dapm,
 {
 	struct skl_gain_config *gain_cfg;
 	struct skl *skl = get_skl_ctx(dapm->dev);
-	struct skl_module_iface *m_intf;
+	struct skl_module_iface *m_intf = skl_get_module_iface(mconfig);
 	int num_channel, i, ret = 0;
 
-	m_intf = &mconfig->module->formats[mconfig->fmt_idx];
 	num_channel = (m_intf->outputs[0].fmt.channels >
 				MAX_NUM_CHANNELS) ? MAX_NUM_CHANNELS :
 					m_intf->outputs[0].fmt.channels;
@@ -2045,7 +2035,7 @@ static int skl_tplg_volume_ctl_info(struct snd_kcontrol *kcontrol,
 	w = snd_soc_dapm_kcontrol_widget(kcontrol);
 	mconfig = w->priv;
 
-	m_intf = &mconfig->module->formats[mconfig->fmt_idx];
+	m_intf = skl_get_module_iface(mconfig);
 	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
 	uinfo->count = m_intf->outputs[0].fmt.channels;
 	uinfo->value.integer.min = mc->min;
@@ -2059,10 +2049,9 @@ static int skl_tplg_volume_get(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_widget(kcontrol);
 	struct skl_module_cfg *mconfig = w->priv;
-	struct skl_module_iface *m_intf;
+	struct skl_module_iface *m_intf = skl_get_module_iface(mconfig);
 	int i, max_channels;
 
-	m_intf = &mconfig->module->formats[mconfig->fmt_idx];
 	max_channels = (m_intf->outputs[0].fmt.channels >
 				MAX_NUM_CHANNELS) ? MAX_NUM_CHANNELS :
 					m_intf->outputs[0].fmt.channels;
@@ -2115,16 +2104,12 @@ static int skl_tplg_volume_set(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_dapm_context *dapm;
-	struct snd_soc_dapm_widget *w;
-	struct skl_module_cfg *mconfig;
-	struct skl_module_iface *m_intf;
+	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_widget(kcontrol);
+	struct skl_module_cfg *mconfig = w->priv;
+	struct skl_module_iface *m_intf = skl_get_module_iface(mconfig);
 	int ret = 0, i, max_channels;
 
 	dapm = snd_soc_dapm_kcontrol_dapm(kcontrol);
-	w = snd_soc_dapm_kcontrol_widget(kcontrol);
-	mconfig = w->priv;
-
-	m_intf = &mconfig->module->formats[mconfig->fmt_idx];
 	max_channels = (m_intf->outputs[0].fmt.channels >
 				MAX_NUM_CHANNELS) ? MAX_NUM_CHANNELS :
 				m_intf->outputs[0].fmt.channels;
@@ -2627,11 +2612,8 @@ int skl_tplg_update_pipe_params(struct device *dev,
 	struct skl_module_res *res = &mconfig->module->resources[0];
 	struct skl *skl = get_skl_ctx(dev);
 	struct skl_module_fmt *format = NULL;
-	u8 cfg_idx = mconfig->pipe->cur_config_idx;
 
 	skl_tplg_fill_dma_id(mconfig, params);
-	mconfig->fmt_idx = mconfig->mod_cfg[cfg_idx].fmt_idx;
-	mconfig->res_idx = mconfig->mod_cfg[cfg_idx].res_idx;
 
 	if (skl->nr_modules)
 		return 0;
@@ -3632,20 +3614,6 @@ static int skl_tplg_get_token(struct device *dev,
 	int ret;
 	static int is_pipe_exists;
 	static int pin_index, dir, conf_idx, agg_id;
-	struct skl_module_iface *iface = NULL;
-	struct skl_module_res *res = NULL;
-	int res_idx = mconfig->res_idx;
-	int fmt_idx = mconfig->fmt_idx;
-
-	/*
-	 * If the manifest structure contains no modules, fill all
-	 * the module data to 0th index.
-	 * res_idx and fmt_idx are default set to 0.
-	 */
-	if (skl->nr_modules == 0) {
-		res = &mconfig->module->resources[res_idx];
-		iface = &mconfig->module->formats[fmt_idx];
-	}
 
 	if (tkn_elem->token > SKL_TKN_MAX)
 		return -EINVAL;
@@ -3714,7 +3682,8 @@ static int skl_tplg_get_token(struct device *dev,
 	case SKL_TKN_U32_MAX_MCPS:
 	case SKL_TKN_U32_OBS:
 	case SKL_TKN_U32_IBS:
-		ret = skl_tplg_fill_res_tkn(dev, tkn_elem, res, pin_index, dir);
+		ret = skl_tplg_fill_res_tkn(dev, tkn_elem,
+			skl_get_module_res(mconfig), pin_index, dir);
 		if (ret < 0)
 			return ret;
 
@@ -3811,14 +3780,14 @@ static int skl_tplg_get_token(struct device *dev,
 	case SKL_TKN_U32_FMT_INTERLEAVE:
 	case SKL_TKN_U32_FMT_SAMPLE_TYPE:
 	case SKL_TKN_U32_FMT_CH_MAP:
-		ret = skl_tplg_widget_fill_fmt(dev, iface, tkn_elem->token,
-				tkn_elem->value, dir, pin_index);
+		ret = skl_tplg_widget_fill_fmt(dev,
+			skl_get_module_iface(mconfig), tkn_elem->token,
+			tkn_elem->value, dir, pin_index);
 
 		if (ret < 0)
 			return ret;
 
 		break;
-
 	case SKL_TKN_U32_PIN_MOD_ID:
 	case SKL_TKN_U32_PIN_INST_ID:
 	case SKL_TKN_UUID:
@@ -5328,4 +5297,18 @@ int skl_tplg_init(struct snd_soc_component *component, struct hdac_bus *bus)
 		skl_update_single_module_event(skl, ppl->pipe);
 
 	return 0;
+}
+
+inline struct skl_module_iface
+	*skl_get_module_iface(struct skl_module_cfg *mconfig)
+{
+	return &mconfig->module->formats[mconfig->mod_cfg
+			[mconfig->pipe->pipe_config_idx].fmt_idx];
+}
+
+inline struct skl_module_res
+	*skl_get_module_res(struct skl_module_cfg *mconfig)
+{
+	return &mconfig->module->resources[mconfig->mod_cfg
+			[mconfig->pipe->pipe_config_idx].res_idx];
 }
