@@ -984,7 +984,7 @@ static inline void __iomem *ioremap_nocache(phys_addr_t offset, size_t size)
 #define ioremap_uc ioremap_uc
 static inline void __iomem *ioremap_uc(phys_addr_t offset, size_t size)
 {
-	return ioremap_nocache(offset, size);
+	return ioremap(offset, size);
 }
 #endif
 
