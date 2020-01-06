@@ -98,6 +98,7 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	struct videomode vm;
 	int vsync_start_offset;
 	int vsync_end_offset;
+	unsigned int val = 0;
 
 	/* initialize mipi */
 	kmb_dsi_hw_init(dev, m);
@@ -108,6 +109,9 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 			m->crtc_hsync_start - m->crtc_hdisplay,
 			m->crtc_htotal - m->crtc_hsync_end,
 			m->crtc_hsync_end - m->crtc_hsync_start);
+	val = kmb_read_lcd(dev->dev_private, LCD_INT_ENABLE);
+	kmb_clr_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE, val);
+	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_CLEAR, ~0x0);
 //	vm.vfront_porch = m->crtc_vsync_start - m->crtc_vdisplay;
 	vm.vfront_porch = 2;
 //	vm.vback_porch = m->crtc_vtotal - m->crtc_vsync_end;
@@ -156,9 +160,9 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 		kmb_write_lcd(dev->dev_private, LCD_VSYNC_START_EVEN, 10);
 		kmb_write_lcd(dev->dev_private, LCD_VSYNC_END_EVEN, 10);
 	}
-	/* enable VL1 layer as default */
 	kmb_write_lcd(dev->dev_private, LCD_TIMING_GEN_TRIG, ENABLE);
 	kmb_set_bitmask_lcd(dev->dev_private, LCD_CONTROL, LCD_CTRL_ENABLE);
+	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE, val);
 #endif
 	/* TBD */
 	/* set clocks here */

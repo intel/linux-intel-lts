@@ -57,8 +57,6 @@ static irqreturn_t kmb_isr(int irq, void *arg);
 
 static struct clk *clk_lcd;
 static struct clk *clk_mipi;
-static struct clk *clk_msscam;
-static struct clk *clk_pll0out0;
 static struct clk *clk_mipi_ecfg;
 static struct clk *clk_mipi_cfg;
 
@@ -79,12 +77,6 @@ int kmb_display_clk_enable(void)
 		DRM_ERROR("Failed to enable MIPI clock: %d\n", ret);
 		return ret;
 	}
-/*	ret = clk_prepare_enable(clk_msscam);
-	if (ret) {
-		DRM_ERROR("Failed to enable MSSCAM clock: %d\n", ret);
-		return ret;
-	}
-	*/
 
 	ret = clk_prepare_enable(clk_mipi_ecfg);
 	if (ret) {
@@ -107,8 +99,6 @@ static int kmb_display_clk_disable(void)
 		clk_disable_unprepare(clk_lcd);
 	if (clk_mipi)
 		clk_disable_unprepare(clk_mipi);
-	if (clk_msscam)
-		clk_disable_unprepare(clk_msscam);
 	if (clk_mipi_ecfg)
 		clk_disable_unprepare(clk_mipi_ecfg);
 	if (clk_mipi_cfg)
@@ -200,14 +190,6 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_ERROR("clk_get() failed clk_mipi\n");
 		goto setup_fail;
 	}
-	clk_pll0out0 = clk_get(&pdev->dev, "clk_pll0_out0");
-	if (IS_ERR(clk_pll0out0))
-		DRM_ERROR("clk_get() failed clk_pll0_out0\n");
-
-	if (clk_pll0out0)
-		DRM_INFO("Get clk_pll0out0 = %ld\n",
-				clk_get_rate(clk_pll0out0));
-
 	clk_mipi_ecfg = clk_get(&pdev->dev, "clk_mipi_ecfg");
 	if (IS_ERR(clk_mipi_ecfg)) {
 		DRM_ERROR("clk_get() failed clk_mipi_ecfg\n");
@@ -413,6 +395,9 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 			break;
 		}
 	}
+
+	/* clear all interrupts */
+	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_CLEAR, ~0x0);
 	return IRQ_HANDLED;
 }
 
