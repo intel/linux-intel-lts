@@ -317,6 +317,8 @@ static u32 linear_gain[] = {
 
 static void skl_init_single_module_pipe(struct snd_soc_dapm_widget *w,
 						struct skl *skl);
+static int skl_tplg_send_gain_ipc(struct snd_soc_dapm_context *dapm,
+				  struct skl_module_cfg *mconfig);
 static int skl_tplg_get_str_tkn(struct device *dev,
 		struct snd_soc_tplg_vendor_array *array,
 		struct skl *skl,
@@ -860,6 +862,7 @@ int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
 	struct soc_bytes_ext *sb;
 	struct skl_algo_data *bc;
 	struct skl_specific_cfg *sp_cfg;
+	struct skl_module_iface *m_intf;
 
 	if (mconfig->formats_config[SKL_PARAM_SET].caps_size > 0 &&
 		mconfig->formats_config[SKL_PARAM_SET].set_params ==
@@ -877,7 +880,6 @@ int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
 		if (k->access & SNDRV_CTL_ELEM_ACCESS_TLV_CALLBACK) {
 			sb = (void *) k->private_value;
 			bc = (struct skl_algo_data *)sb->dobj.private;
-
 			if (bc->set_params == SKL_PARAM_SET) {
 				ret = skl_set_module_params(ctx,
 						(u32 *)bc->params, bc->size,
@@ -886,6 +888,19 @@ int skl_tplg_set_module_params(struct snd_soc_dapm_widget *w,
 					return ret;
 			}
 		}
+	}
+
+	if (mconfig->m_type == SKL_MODULE_TYPE_GAIN) {
+		m_intf = skl_get_module_iface(mconfig);
+		i = min_t(int, m_intf->outputs[0].fmt.channels,
+			  MAX_NUM_CHANNELS);
+		while (--i)
+			if (mconfig->gain_data->volume[i] ==
+				mconfig->gain_data->volume[0])
+				mconfig->gain_data->unset &= ~(1 << i);
+
+		if (mconfig->gain_data->unset)
+			skl_tplg_send_gain_ipc(w->dapm, mconfig);
 	}
 
 	return 0;
@@ -1956,34 +1971,48 @@ int skl_tplg_dsp_log_set(struct snd_kcontrol *kcontrol,
 static int skl_tplg_send_gain_ipc(struct snd_soc_dapm_context *dapm,
 					struct skl_module_cfg *mconfig)
 {
-	struct skl_gain_config *gain_cfg;
+	struct skl_gain_config gain_cfg;
 	struct skl *skl = get_skl_ctx(dapm->dev);
 	struct skl_module_iface *m_intf = skl_get_module_iface(mconfig);
-	int num_channel, i, ret = 0;
+	int num_channels, num_channel, ret = 0;
 
-	num_channel = (m_intf->outputs[0].fmt.channels >
-				MAX_NUM_CHANNELS) ? MAX_NUM_CHANNELS :
-					m_intf->outputs[0].fmt.channels;
+	num_channels = min_t(int, m_intf->outputs[0].fmt.channels,
+			     MAX_NUM_CHANNELS);
+	gain_cfg.ramp_type = mconfig->gain_data->ramp_type;
+	gain_cfg.ramp_duration = mconfig->gain_data->ramp_duration;
 
-	gain_cfg = kzalloc(sizeof(*gain_cfg), GFP_KERNEL);
-	if (!gain_cfg)
-		return -ENOMEM;
-
-	gain_cfg->ramp_type = mconfig->gain_data->ramp_type;
-	gain_cfg->ramp_duration = mconfig->gain_data->ramp_duration;
-	for (i = 0; i < num_channel; i++) {
-		gain_cfg->channel_id = i;
-		gain_cfg->target_volume = mconfig->gain_data->volume[i];
-		ret = skl_set_module_params(skl->skl_sst, (u32 *)gain_cfg,
-				sizeof(*gain_cfg), 0, mconfig);
-		if (ret < 0) {
-			dev_err(dapm->dev,
-				"set gain for channel:%d failed\n", i);
-			break;
-		}
+	// check if all channels have the same vol to send single request
+	num_channel =  num_channels;
+	while (--num_channel && (mconfig->gain_data->volume[num_channel] ==
+			mconfig->gain_data->volume[0]))
+		;
+	if (!num_channel) {
+		gain_cfg.channel_id = SKL_ENABLE_ALL_CHANNELS;
+		gain_cfg.target_volume = mconfig->gain_data->volume[0];
+		ret = skl_set_module_params(skl->skl_sst, (u32 *)&gain_cfg,
+					    sizeof(gain_cfg), 0, mconfig);
+		if (ret < 0)
+			dev_err(dapm->dev, "set gain for all channels failed\n");
+		else
+			mconfig->gain_data->unset = SKL_GAIN_DATA_UNSET_NONE;
+		return ret;
 	}
-	kfree(gain_cfg);
 
+	for (num_channel = 0; num_channel < num_channels; num_channel++)
+		if (mconfig->gain_data->unset & (1 << num_channel)) {
+			gain_cfg.channel_id = num_channel;
+			gain_cfg.target_volume =
+				mconfig->gain_data->volume[num_channel];
+			ret = skl_set_module_params(skl->skl_sst,
+					(u32 *)&gain_cfg, sizeof(gain_cfg),
+				0, mconfig);
+			if (ret < 0) {
+				dev_err(dapm->dev, "set gain for channel:%d failed\n",
+					num_channel);
+				return ret;
+			}
+			mconfig->gain_data->unset &= ~(1 << num_channel);
+		}
 	return ret;
 }
 
@@ -2026,16 +2055,12 @@ static int skl_tplg_get_linear_toindex(int val)
 static int skl_tplg_volume_ctl_info(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_info *uinfo)
 {
-	struct soc_mixer_control *mc;
-	struct snd_soc_dapm_widget *w;
-	struct skl_module_iface *m_intf;
-	struct skl_module_cfg *mconfig;
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_widget(kcontrol);
+	struct skl_module_cfg *mconfig = w->priv;
+	struct skl_module_iface *m_intf = skl_get_module_iface(mconfig);
 
-	mc = (struct soc_mixer_control *)kcontrol->private_value;
-	w = snd_soc_dapm_kcontrol_widget(kcontrol);
-	mconfig = w->priv;
-
-	m_intf = skl_get_module_iface(mconfig);
 	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
 	uinfo->count = m_intf->outputs[0].fmt.channels;
 	uinfo->value.integer.min = mc->min;
@@ -2075,6 +2100,7 @@ static int skl_tplg_ramp_duration_set(struct snd_kcontrol *kcontrol,
 	w = snd_soc_dapm_kcontrol_widget(kcontrol);
 	mconfig = w->priv;
 	mconfig->gain_data->ramp_duration = ucontrol->value.integer.value[0];
+	mconfig->gain_data->unset = SKL_GAIN_DATA_UNSET_ALL;
 
 	if (w->power)
 		ret = skl_tplg_send_gain_ipc(dapm, mconfig);
@@ -2093,6 +2119,7 @@ static int skl_tplg_ramp_type_set(struct snd_kcontrol *kcontrol,
 	w = snd_soc_dapm_kcontrol_widget(kcontrol);
 	mconfig = w->priv;
 	mconfig->gain_data->ramp_type = ucontrol->value.integer.value[0];
+	mconfig->gain_data->unset = SKL_GAIN_DATA_UNSET_ALL;
 
 	if (w->power)
 		ret = skl_tplg_send_gain_ipc(dapm, mconfig);
@@ -2110,21 +2137,23 @@ static int skl_tplg_volume_set(struct snd_kcontrol *kcontrol,
 	int ret = 0, i, max_channels;
 
 	dapm = snd_soc_dapm_kcontrol_dapm(kcontrol);
-	max_channels = (m_intf->outputs[0].fmt.channels >
-				MAX_NUM_CHANNELS) ? MAX_NUM_CHANNELS :
-				m_intf->outputs[0].fmt.channels;
+	max_channels = min_t(int, m_intf->outputs[0].fmt.channels,
+			     MAX_NUM_CHANNELS);
 
 	for (i = 0; i < max_channels; i++)
 		if (ucontrol->value.integer.value[i] >=
 					ARRAY_SIZE(linear_gain)) {
-			dev_err(dapm->dev,
-				"Volume requested is out of range!!!\n");
+			dev_err(dapm->dev, "Volume requested is out of range!!!\n");
 			return -EINVAL;
 		}
 
 	for (i = 0; i < max_channels; i++)
-		mconfig->gain_data->volume[i] =
-			linear_gain[ucontrol->value.integer.value[i]];
+		if (mconfig->gain_data->volume[i] !=
+			linear_gain[ucontrol->value.integer.value[i]]) {
+			mconfig->gain_data->unset |= 1 << i;
+			mconfig->gain_data->volume[i] =
+				linear_gain[ucontrol->value.integer.value[i]];
+		}
 
 	if (w->power)
 		ret = skl_tplg_send_gain_ipc(dapm, mconfig);
@@ -4336,6 +4365,7 @@ static int skl_tplg_widget_load(struct snd_soc_component *cmpnt, int index,
 
 		mconfig->gain_data->ramp_duration = 0;
 		mconfig->gain_data->ramp_type = SKL_CURVE_NONE;
+		mconfig->gain_data->unset = SKL_GAIN_DATA_UNSET_ALL;
 		for (i = 0; i < MAX_NUM_CHANNELS; i++)
 			mconfig->gain_data->volume[i] = SKL_MAX_GAIN;
 	}

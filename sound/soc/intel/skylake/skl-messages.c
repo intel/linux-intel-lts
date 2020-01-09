@@ -37,7 +37,6 @@
 
 #define ASRC_MODE_UPLINK	2
 #define ASRC_MODE_DOWNLINK	1
-#define SKL_ENABLE_ALL_CHANNELS  0xffffffff
 
 static int skl_alloc_dma_buf(struct device *dev,
 		struct snd_dma_buffer *dmab, size_t size)
@@ -1813,6 +1812,8 @@ static int skl_set_gain_format(struct skl_sst *ctx,
 	gain_mconfig->gain_cfg.target_volume = gain_fmt->volume[0];
 	gain_mconfig->gain_cfg.ramp_type = gain_fmt->ramp_type;
 	gain_mconfig->gain_cfg.ramp_duration = gain_fmt->ramp_duration;
+	// channel 0 will be properly set after init
+	gain_fmt->unset = SKL_GAIN_DATA_UNSET_ALL_EXCEPT_FIRST;
 
 	return 0;
 }
@@ -1955,10 +1956,8 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 		return sizeof(struct skl_base_outfmt_cfg);
 
 	case SKL_MODULE_TYPE_GAIN:
-		param_size = sizeof(struct skl_base_cfg);
-		param_size += sizeof(struct skl_gain_config) *
-				iface->outputs[0].fmt.channels;
-		return param_size;
+		return sizeof(struct skl_base_cfg) +
+			sizeof(struct skl_gain_config);
 
 	case SKL_MODULE_TYPE_ALGO:
 	default:
