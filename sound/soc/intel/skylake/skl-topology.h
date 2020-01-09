@@ -57,6 +57,12 @@
 #define SKL_MAX_MODULE_RESOURCES	32
 #define MAX_NUM_CHANNELS	8
 #define SKL_MAX_PARAMS_TYPES	4
+#define SKL_ENABLE_ALL_CHANNELS  0xffffffff
+
+#define SKL_GAIN_DATA_UNSET_ALL	0xff
+#define SKL_GAIN_DATA_UNSET_ALL_EXCEPT_FIRST	0xfe
+#define SKL_GAIN_DATA_UNSET_NONE	0x0
+
 
 #define SKL_PARAM_VENDOR_ID 0xff
 
@@ -281,7 +287,7 @@ struct skl_kpb_params {
 struct skl_gain_module_config {
 	struct skl_base_cfg mconf;
 	struct skl_gain_config gain_cfg;
-};
+} __packed;
 
 struct skl_module_inst_id {
 	uuid_le mod_uuid;
@@ -441,6 +447,7 @@ struct skl_gain_data {
 	u64 ramp_duration;
 	u32 ramp_type;
 	u32 volume[MAX_NUM_CHANNELS];
+	u8 unset;
 };
 
 struct skl_tplg_domain {
