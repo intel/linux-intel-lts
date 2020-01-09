@@ -258,9 +258,10 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 		plat->setup_phy_conv = setup_intel_mgbe_phy_conv;
 		plat->remove_phy_conv = remove_intel_mgbe_phy_conv;
 		plat->has_serdes = 1;
-		/* intel specific adhoc (mdio) address for serdes & etc */
-		plat->intel_adhoc_addr = 0x15;
 	}
+
+	/* intel specific adhoc (mdio) address for serdes & etc */
+	plat->intel_adhoc_addr = 0x15;
 
 	/* Setup MSI vector offset specific to Intel mGbE controller */
 	plat->msi_phy_conv_vec = 30;
