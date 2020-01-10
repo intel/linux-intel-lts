@@ -13,6 +13,8 @@
 #define SCHED_CPUFREQ_MIGRATION	(1U << 1)
 
 #ifdef CONFIG_CPU_FREQ
+struct cpufreq_policy;
+
 struct update_util_data {
        void (*func)(struct update_util_data *data, u64 time, unsigned int flags);
 };
@@ -27,6 +29,7 @@ static inline unsigned long map_util_freq(unsigned long util,
 {
 	return (freq + (freq >> 2)) * util / cap;
 }
+bool cpufreq_this_cpu_can_update(struct cpufreq_policy *policy);
 #endif /* CONFIG_CPU_FREQ */
 
 #if defined(CONFIG_ENERGY_MODEL) && defined(CONFIG_CPU_FREQ_GOV_SCHEDUTIL)
