@@ -38,6 +38,10 @@
 
 #define NSEC_PER_SEC 1000000000LL
 
+#define POLL_TIME 10000 /*ms*/
+#define ptp_time_to_timespec(s) \
+		((struct timespec) {.tv_sec = s.sec, .tv_nsec = s.nsec })
+
 /* clock_adjtime is not available in GLIBC < 2.14 */
 #if !__GLIBC_PREREQ(2, 14)
 #include <sys/syscall.h>
@@ -114,6 +118,42 @@ static int64_t pctns(struct ptp_clock_time *t)
 	return t->sec * 1000000000LL + t->nsec;
 }
 
+struct timespec translate_sys_to_device(struct timespec sys_tgpio_time,
+					 uint64_t sys_tgpio_offset,
+					 double sys_tgpio_ratio,
+					 struct timespec sys)
+{
+	uint64_t delta;
+	uint64_t update_time;
+
+	delta = sys.tv_sec - sys_tgpio_time.tv_sec;
+	delta *= NSEC_PER_SEC;
+	delta += sys.tv_nsec;
+	delta -= sys_tgpio_time.tv_nsec;
+	delta = delta / sys_tgpio_ratio;
+	update_time = sys_tgpio_time.tv_sec * NSEC_PER_SEC + sys_tgpio_time.tv_nsec;
+	update_time -= sys_tgpio_offset;
+	update_time += delta;
+
+	return (struct timespec){ .tv_sec = update_time / NSEC_PER_SEC,
+		.tv_nsec = update_time % NSEC_PER_SEC };
+}
+
+int print_time(char *label, struct timespec ts)
+{
+	return printf("%s time: %ld,%09ld\n", label, ts.tv_sec, ts.tv_nsec);
+}
+
+static void millisleep(int millis)
+{
+	struct timespec sleep;
+
+	sleep.tv_sec = millis / 1000;
+	sleep.tv_nsec = (millis % 1000) * 1000000;
+
+	nanosleep(&sleep, NULL);
+}
+
 static void usage(char *progname)
 {
 	fprintf(stderr,
@@ -123,6 +163,7 @@ static void usage(char *progname)
 		" -c         query the ptp clock's capabilities\n"
 		" -d name    device to open\n"
 		" -e val     read 'val' external time stamp events\n"
+		" -E         poll for edge\n"
 		" -f val     adjust the ptp clock frequency by 'val' ppb\n"
 		" -g         get the ptp clock time\n"
 		" -h         prints this message\n"
@@ -156,11 +197,13 @@ int main(int argc, char *argv[])
 	struct ptp_extts_event event;
 	struct ptp_extts_request extts_request;
 	struct ptp_perout_request perout_request;
+	struct ptp_event_count_tstamp ect;
 	struct ptp_pin_desc desc;
 	struct timespec ts;
 	struct timex tx;
 	struct ptp_clock_time *pct;
 	struct ptp_sys_offset *sysoff;
+	uint64_t prev_ec;
 
 	char *progname;
 	unsigned int i;
@@ -184,6 +227,7 @@ int main(int argc, char *argv[])
 	int pps = -1;
 	int seconds = 0;
 	int settime = 0;
+	int poll = 0;
 
 	int64_t t1, t2, tp;
 	int64_t interval, offset;
@@ -193,7 +237,7 @@ int main(int argc, char *argv[])
 
 	progname = strrchr(argv[0], '/');
 	progname = progname ? 1+progname : argv[0];
-	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:ghH:i:k:lL:n:p:P:sSt:T:w:z"))) {
+	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:EghH:i:k:lL:n:p:P:sSt:T:w:z"))) {
 		switch (c) {
 		case 'a':
 			new_period = atoi(optarg);
@@ -206,6 +250,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'e':
 			extts = atoi(optarg);
+			break;
+		case 'E':
+			poll = 1;
 			break;
 		case 'f':
 			adjfreq = atoi(optarg);
@@ -502,6 +549,39 @@ int main(int argc, char *argv[])
 				perror("PTP_PEROUT_REQUEST2");
 			else
 				puts("periodic output request okay");
+		}
+	}
+
+	if (poll) {
+		struct timespec sys_tgpio_time;
+		uint64_t sys_tgpio_offset;
+		double sys_tgpio_ratio;
+
+		memset(&ect, 0, sizeof(ect));
+		ect.index = index;
+
+		if (ioctl(fd, PTP_EVENT_COUNT_TSTAMP2, &ect))
+			perror("PTP_EVENT_COUNT_TSTAMP2");
+
+		prev_ec = ect.event_count;
+
+		for (i = 0; i < POLL_TIME; ++i)	{
+			clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+
+			if (ioctl(fd, PTP_EVENT_COUNT_TSTAMP2, &ect))
+				perror("PTP_EVENT_COUNT_TSTAMP2");
+
+			if (ect.event_count != prev_ec)	{
+				printf("Event count: %llu\n", ect.event_count);
+				print_time("Event time", ptp_time_to_timespec(ect.device_time));
+				print_time("Approx System", ts);
+				print_time("Approx Translated Device",
+					translate_sys_to_device
+					(sys_tgpio_time, sys_tgpio_offset,
+					sys_tgpio_ratio, ts));
+				prev_ec = ect.event_count;
+			}
+			millisleep(1);
 		}
 	}
 
