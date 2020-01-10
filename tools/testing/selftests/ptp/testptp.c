@@ -166,6 +166,7 @@ static void usage(char *progname)
 		" -E         poll for edge\n"
 		" -f val     adjust the ptp clock frequency by 'val' ppb\n"
 		" -g         get the ptp clock time\n"
+		" -G         Compute TGPIO / System Clock Offset\n"
 		" -h         prints this message\n"
 		" -i val     index for event/trigger\n"
 		" -k val     measure the time offset between system and phc clock\n"
@@ -218,6 +219,7 @@ int main(int argc, char *argv[])
 	int extts = 0;
 	int flagtest = 0;
 	int gettime = 0;
+	int getratio = 0;
 	int index = 0;
 	int list_pins = 0;
 	int pct_offset = 0;
@@ -237,7 +239,7 @@ int main(int argc, char *argv[])
 
 	progname = strrchr(argv[0], '/');
 	progname = progname ? 1+progname : argv[0];
-	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:EghH:i:k:lL:n:p:P:sSt:T:w:z"))) {
+	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:EGghH:i:k:lL:n:p:P:sSt:T:w:z"))) {
 		switch (c) {
 		case 'a':
 			new_period = atoi(optarg);
@@ -262,6 +264,8 @@ int main(int argc, char *argv[])
 			break;
 		case 'H':
 			perout_phase = atoll(optarg);
+		case 'G':
+			getratio = 1;
 			break;
 		case 'i':
 			index = atoi(optarg);
@@ -389,6 +393,44 @@ int main(int argc, char *argv[])
 			printf("clock time: %ld.%09ld or %s",
 			       ts.tv_sec, ts.tv_nsec, ctime(&ts.tv_sec));
 		}
+	}
+
+	if (getratio) {
+		uint64_t sys_tgpio_offset;
+		double sys_tgpio_ratio;
+		uint32_t sys_delta;
+		uint64_t prev_ec;
+		struct timespec sys_tgpio_time;
+		struct ptp_sys_offset_precise sys_offset, sys_offset_0;
+
+		if (ioctl(fd, PTP_SYS_OFFSET_PRECISE, &sys_offset_0))
+			perror("PTP_SYS_OFFSET_PRECISE");
+
+		millisleep(2000);
+		if (ioctl(fd, PTP_SYS_OFFSET_PRECISE, &sys_offset))
+			perror("PTP_SYS_OFFSET_PRECISE");
+
+		sys_tgpio_offset = sys_offset.sys_monoraw.sec - sys_offset.device.sec;
+		sys_tgpio_offset *= NSEC_PER_SEC;
+		printf("Offset: %ld\n", sys_tgpio_offset);
+		sys_tgpio_offset += sys_offset.sys_monoraw.nsec;
+		printf("Offset: %ld\n", sys_tgpio_offset);
+		sys_tgpio_offset -= sys_offset.device.nsec;
+		printf("Offset: %ld\n", sys_tgpio_offset);
+		print_time("System", ptp_time_to_timespec(sys_offset.sys_monoraw));
+		print_time("Device", ptp_time_to_timespec(sys_offset.device));
+		sys_delta = sys_offset.sys_monoraw.sec - sys_offset_0.sys_monoraw.sec;
+		sys_delta *= NSEC_PER_SEC;
+		sys_delta += sys_offset.sys_monoraw.nsec - sys_offset_0.sys_monoraw.nsec;
+		printf("system delta: %u\n", sys_delta);
+		sys_tgpio_ratio = sys_offset.device.sec - sys_offset_0.device.sec;
+		sys_tgpio_ratio *= NSEC_PER_SEC;
+		sys_tgpio_ratio += sys_offset.device.nsec;
+		sys_tgpio_ratio -= sys_offset_0.device.nsec;
+		printf("device delta: %.0f\n", sys_tgpio_ratio);
+		sys_tgpio_ratio = sys_delta / sys_tgpio_ratio;
+		sys_tgpio_time = ptp_time_to_timespec(sys_offset.sys_monoraw);
+		printf("system:tgpio clock ratio = %.12f\n\n", sys_tgpio_ratio);
 	}
 
 	if (settime == 1) {
