@@ -117,6 +117,8 @@ static void usage(char *progname)
 {
 	fprintf(stderr,
 		"usage: %s [options]\n"
+		" -a val     adjust frequency for periodic output with a period\n"
+		"            of 'val' nanoseconds\n"
 		" -c         query the ptp clock's capabilities\n"
 		" -d name    device to open\n"
 		" -e val     read 'val' external time stamp events\n"
@@ -175,6 +177,7 @@ int main(int argc, char *argv[])
 	int list_pins = 0;
 	int pct_offset = 0;
 	int n_samples = 0;
+	int new_period = -1;
 	int pin_index = -1, pin_func;
 	int pps = -1;
 	int seconds = 0;
@@ -188,8 +191,11 @@ int main(int argc, char *argv[])
 
 	progname = strrchr(argv[0], '/');
 	progname = progname ? 1+progname : argv[0];
-	while (EOF != (c = getopt(argc, argv, "cd:e:f:ghH:i:k:lL:n:p:P:sSt:T:w:z"))) {
+	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:ghH:i:k:lL:n:p:P:sSt:T:w:z"))) {
 		switch (c) {
+		case 'a':
+			new_period = atoi(optarg);
+			break;
 		case 'c':
 			capabilities = 1;
 			break;
@@ -438,6 +444,18 @@ int main(int argc, char *argv[])
 	if (perout_phase >= 0 && perout < 0) {
 		puts("-H can only be specified together with -p");
 		return -1;
+	}
+
+	if (new_period >= 0) {
+		memset(&perout_request, 0, sizeof(perout_request));
+		perout_request.index = index;
+		perout_request.flags = PTP_PEROUT_FREQ_ADJ;
+		perout_request.period.nsec = new_period;
+		if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request)) {
+			perror("PTP_PEROUT_REQUEST");
+		} else {
+			puts("periodic output request okay");
+		}
 	}
 
 	if (perout >= 0) {
