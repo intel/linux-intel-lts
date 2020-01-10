@@ -386,20 +386,25 @@ int main(int argc, char *argv[])
 		} else {
 			puts("external time stamp request okay");
 		}
-		for (; extts; extts--) {
-			cnt = read(fd, &event, sizeof(event));
-			if (cnt != sizeof(event)) {
-				perror("read");
-				break;
+		memset(&desc, 0, sizeof(desc));
+		desc.index = index;
+		if (ioctl(fd, PTP_PIN_GETFUNC2, &desc))
+			perror("PTP_PIN_GETFUNC2");
+		if (!(desc.flags & PTP_PINDESC_INPUTDISABLE)) {
+			for (; extts; extts--) {
+				cnt = read(fd, &event, sizeof(event));
+				if (cnt != sizeof(event)) {
+					perror("read");
+					break;
+				}
+				printf("event index %u at %lld.%09u\n", event.index,
+				       event.t.sec, event.t.nsec);
+				fflush(stdout);
 			}
-			printf("event index %u at %lld.%09u\n", event.index,
-			       event.t.sec, event.t.nsec);
-			fflush(stdout);
-		}
-		/* Disable the feature again. */
-		extts_request.flags = 0;
-		if (ioctl(fd, PTP_EXTTS_REQUEST, &extts_request)) {
-			perror("PTP_EXTTS_REQUEST");
+			/* Disable the feature again. */
+			extts_request.flags = 0;
+			if (ioctl(fd, PTP_EXTTS_REQUEST, &extts_request))
+				perror("PTP_EXTTS_REQUEST");
 		}
 	}
 
