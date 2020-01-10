@@ -26,6 +26,7 @@
 #include <linux/ptp_clock.h>
 
 #define DEVICE "/dev/ptp0"
+#define NSEC_PER_SEC 1000000000L
 
 #ifndef ADJ_SETOFFSET
 #define ADJ_SETOFFSET 0x0100
@@ -137,6 +138,7 @@ static void usage(char *progname)
 		"            2 - periodic output\n"
 		" -n val     shift the ptp clock time by 'val' nanoseconds\n"
 		" -p val     enable output with a period of 'val' nanoseconds\n"
+		"            period val 0 to set single shot output for TGPIO pins\n"
 		" -H val     set output phase to 'val' nanoseconds (requires -p)\n"
 		" -w val     set output pulse width to 'val' nanoseconds (requires -p)\n"
 		" -P val     enable or disable (val=1|0) the system clock PPS\n"
@@ -458,7 +460,13 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (perout >= 0) {
+	if (perout >= 0 || single_shot == 1) {
+		memset(&desc, 0, sizeof(desc));
+		desc.index = index;
+		if (ioctl(fd, PTP_PIN_GETFUNC2, &desc)) {
+			perror("PTP_PIN_GETFUNC2");
+		}
+
 		if (clock_gettime(clkid, &ts)) {
 			perror("clock_gettime");
 			return -1;
@@ -482,10 +490,18 @@ int main(int argc, char *argv[])
 			perout_request.start.nsec = 0;
 		}
 
-		if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request)) {
-			perror("PTP_PEROUT_REQUEST");
+		if (perout <= 0 && (desc.flags & PTP_PINDESC_INPUTDISABLE)) {
+			perout_request.period.nsec = NSEC_PER_SEC / 2;
+			perout_request.flags = PTP_PEROUT_ONE_SHOT;
+			if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request))
+				perror("PTP_PEROUT_REQUEST2");
+			else
+				puts("single shot output request okay");
 		} else {
-			puts("periodic output request okay");
+			if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request))
+				perror("PTP_PEROUT_REQUEST2");
+			else
+				puts("periodic output request okay");
 		}
 	}
 
