@@ -178,6 +178,8 @@ static void usage(char *progname)
 		"            0 - none\n"
 		"            1 - external time stamp\n"
 		"            2 - periodic output\n"
+		" -O         enable single shot output for TGPIO pins\n"
+		"            this option is ignored for period val greater than 0\n"
 		" -p val     enable output with a period of 'val' nanoseconds\n"
 		"            period val 0 to set single shot output for TGPIO pins\n"
 		" -H val     set output phase to 'val' nanoseconds (requires -p)\n"
@@ -222,6 +224,7 @@ int main(int argc, char *argv[])
 	int list_pins = 0;
 	int pct_offset = 0;
 	int n_samples = 0;
+	int single_shot = -1;
 	int new_period = -1;
 	int pin_index = -1, pin_func;
 	int pps = -1;
@@ -237,7 +240,7 @@ int main(int argc, char *argv[])
 
 	progname = strrchr(argv[0], '/');
 	progname = progname ? 1+progname : argv[0];
-	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:EGghH:i:k:lL:p:P:sSt:T:w:z"))) {
+	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:EGghH:i:k:lL:Op:P:sSt:T:w:z"))) {
 		switch (c) {
 		case 'a':
 			new_period = atoi(optarg);
@@ -281,6 +284,9 @@ int main(int argc, char *argv[])
 				usage(progname);
 				return -1;
 			}
+			break;
+		case 'O':
+			single_shot = 1;
 			break;
 		case 'p':
 			perout = atoll(optarg);
