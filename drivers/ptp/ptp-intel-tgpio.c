@@ -90,6 +90,7 @@
 #define TGPIOCTL_OEC		BIT(12)
 #define TGPIOCTL_FIT		BIT(13)
 #define TGPIOCTL_IEC		GENMASK(15, 14)
+#define TGPIOCTL_IEC_EC	BIT(14)
 #define TGPIOCTL_ECC		BIT(16)
 #define TGPIOCTL_PSL		GENMASK(24, 17)
 #define TGPIOCTL_TS		GENMASK(29, 28)
@@ -289,19 +290,38 @@ static int intel_tgpio_config_input(struct intel_tgpio *tgpio,
 
 	offset = TGPIOCTL(index);
 	ctrl = intel_tgpio_readl(tgpio->base, offset);
-	ctrl &= ~(TGPIOCTL_TS | TGPIOCTL_EP | TGPIOCTL_DIR | TGPIOCTL_PWS);
+	ctrl &= ~(TGPIOCTL_TS | TGPIOCTL_EP | TGPIOCTL_DIR | TGPIOCTL_PWS |
+			TGPIOCTL_IEC_EC | TGPIOCTL_ICS);
 
 	if (on) {
+		int rising_cap, falling_cap;
+
 		tgpio->irq_mask |= TGPIOINT_EVENT_INTERRUPT(index);
 		ctrl |= TGPIOCTL_DIR | TGPIOCTL_TS_TMT0;
 
-		if ((extts->flags & PTP_RISING_EDGE) &&
-				(extts->flags & PTP_FALLING_EDGE))
-			ctrl |= TGPIOCTL_EP_TOGGLE_EDGE;
-		else if (extts->flags & PTP_RISING_EDGE)
+		/* To enable for Input Event Counter & Input Event Control */
+		/* TODO: temporarily using rsv0 to store the counter */
+		if ((extts->flags & PTP_EVENT_COUNTER_MODE) && extts->rsv[0]) {
+			ctrl |= TGPIOCTL_IEC_EC;
+			ctrl |= TGPIOCTL_ICS;
+
+			intel_tgpio_writel(tgpio->base, TGPIOCOMPV31_0(index),
+				extts->rsv[0]);
+			intel_tgpio_writel(tgpio->base, TGPIOCOMPV63_32(index),
+				0);
+		}
+
+		/* To enable Event Polarity for inout mode, */
+		/* default to capture both rising & failling */
+		rising_cap = extts->flags & PTP_RISING_EDGE;
+		falling_cap = extts->flags & PTP_FALLING_EDGE;
+
+		if (rising_cap && !falling_cap)
 			ctrl |= TGPIOCTL_EP_RISING_EDGE;
-		else if (extts->flags & PTP_FALLING_EDGE)
+		else if (!rising_cap && falling_cap)
 			ctrl |= TGPIOCTL_EP_FALLING_EDGE;
+		else
+			ctrl |= TGPIOCTL_EP_TOGGLE_EDGE;
 
 		/* gotta program all other bits before EN bit is set */
 		intel_tgpio_writel(tgpio->base, offset, ctrl);
@@ -327,7 +347,8 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 
 	offset = TGPIOCTL(index);
 	ctrl = intel_tgpio_readl(tgpio->base, offset);
-	ctrl &= ~(TGPIOCTL_TS | TGPIOCTL_EP | TGPIOCTL_DIR | TGPIOCTL_PWS);
+	ctrl &= ~(TGPIOCTL_TS | TGPIOCTL_EP | TGPIOCTL_DIR | TGPIOCTL_PWS |
+				TGPIOCTL_IEC_EC | TGPIOCTL_ICS);
 
 	if (on) {
 		struct ptp_clock_time *period = &perout->period;

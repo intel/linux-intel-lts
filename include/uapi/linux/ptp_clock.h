@@ -32,6 +32,7 @@
 #define PTP_RISING_EDGE    (1<<1)
 #define PTP_FALLING_EDGE   (1<<2)
 #define PTP_STRICT_FLAGS   (1<<3)
+#define PTP_EVENT_COUNTER_MODE	(1<<4)
 #define PTP_EXTTS_EDGES    (PTP_RISING_EDGE | PTP_FALLING_EDGE)
 
 /*
@@ -54,7 +55,8 @@
  */
 #define PTP_EXTTS_V1_VALID_FLAGS	(PTP_ENABLE_FEATURE |	\
 					 PTP_RISING_EDGE |	\
-					 PTP_FALLING_EDGE)
+					 PTP_FALLING_EDGE |	\
+					 PTP_EVENT_COUNTER_MODE)
 
 /*
  * Bits of the ptp_perout_request.flags field:
