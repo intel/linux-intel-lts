@@ -6297,6 +6297,14 @@ int stmmac_dvr_probe(struct device *device,
 	if (ret)
 		goto error_hw_init;
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy) {
+		dev_info(priv->device, "Network Proxy supported\n");
+		device_set_wakeup_capable(priv->device, 1);
+		device_set_wakeup_enable(priv->device, 1);
+	}
+#endif
+
 	stmmac_check_ether_addr(priv);
 
 	ndev->netdev_ops = &stmmac_netdev_ops;
