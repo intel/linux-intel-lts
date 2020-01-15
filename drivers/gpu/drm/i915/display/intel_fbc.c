@@ -811,6 +811,14 @@ static bool intel_fbc_can_enable(struct drm_i915_private *dev_priv)
 		return false;
 	}
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (dev_priv->gvt) {
+		i915_modparams.enable_fbc = 0;
+		fbc->no_fbc_reason = "Disable FBC for direct display in IDV";
+		return false;
+	}
+#endif
+
 	if (!i915_modparams.enable_fbc) {
 		fbc->no_fbc_reason = "disabled per module param or by default";
 		return false;
@@ -1276,6 +1284,14 @@ void intel_fbc_init_pipe_state(struct drm_i915_private *dev_priv)
  */
 static int intel_sanitize_fbc_option(struct drm_i915_private *dev_priv)
 {
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (dev_priv->gvt) {
+		i915_modparams.enable_fbc = 0;
+		DRM_WARN("Disable FBC for direct display in IDV\n");
+		return 0;
+	}
+#endif
+
 	if (i915_modparams.enable_fbc >= 0)
 		return !!i915_modparams.enable_fbc;
 
