@@ -625,12 +625,21 @@ static void csr_load_work_fn(struct work_struct *work)
 	struct drm_i915_private *dev_priv;
 	struct intel_csr *csr;
 	const struct firmware *fw = NULL;
+	bool skip_dmc = false;
 
 	dev_priv = container_of(work, typeof(*dev_priv), csr.work);
 	csr = &dev_priv->csr;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (dev_priv->gvt) {
+		skip_dmc = true;
+		DRM_WARN("Skip DMC firmware loading in IDV\n");
+	}
+#endif
 
-	request_firmware(&fw, dev_priv->csr.fw_path, &dev_priv->drm.pdev->dev);
-	parse_csr_fw(dev_priv, fw);
+	if (!skip_dmc) {
+		request_firmware(&fw, dev_priv->csr.fw_path, &dev_priv->drm.pdev->dev);
+		parse_csr_fw(dev_priv, fw);
+	}
 
 	if (dev_priv->csr.dmc_payload) {
 		intel_csr_load_program(dev_priv);
