@@ -219,54 +219,55 @@ unsigned int set_pixel_format(u32 format)
 		val = LCD_LAYER_FORMAT_NV12 | LCD_LAYER_PLANAR_STORAGE
 		    | LCD_LAYER_CRCB_ORDER;
 		break;
-		/* packed formats */
+	/* packed formats */
+	/* looks hw requires B & G to be swapped when RGB */
 	case DRM_FORMAT_RGB332:
-		val = LCD_LAYER_FORMAT_RGB332;
+		val = LCD_LAYER_FORMAT_RGB332 | LCD_LAYER_BGR_ORDER;
 		break;
 	case DRM_FORMAT_XBGR4444:
-		val = LCD_LAYER_FORMAT_RGBX4444 | LCD_LAYER_BGR_ORDER;
+		val = LCD_LAYER_FORMAT_RGBX4444;
 		break;
 	case DRM_FORMAT_ARGB4444:
-		val = LCD_LAYER_FORMAT_RGBA4444;
-		break;
-	case DRM_FORMAT_ABGR4444:
 		val = LCD_LAYER_FORMAT_RGBA4444 | LCD_LAYER_BGR_ORDER;
 		break;
-	case DRM_FORMAT_XRGB1555:
-		val = LCD_LAYER_FORMAT_XRGB1555;
+	case DRM_FORMAT_ABGR4444:
+		val = LCD_LAYER_FORMAT_RGBA4444;
 		break;
-	case DRM_FORMAT_XBGR1555:
+	case DRM_FORMAT_XRGB1555:
 		val = LCD_LAYER_FORMAT_XRGB1555 | LCD_LAYER_BGR_ORDER;
 		break;
-	case DRM_FORMAT_ARGB1555:
-		val = LCD_LAYER_FORMAT_RGBA1555;
+	case DRM_FORMAT_XBGR1555:
+		val = LCD_LAYER_FORMAT_XRGB1555;
 		break;
-	case DRM_FORMAT_ABGR1555:
+	case DRM_FORMAT_ARGB1555:
 		val = LCD_LAYER_FORMAT_RGBA1555 | LCD_LAYER_BGR_ORDER;
 		break;
-	case DRM_FORMAT_RGB565:
-		val = LCD_LAYER_FORMAT_RGB565;
+	case DRM_FORMAT_ABGR1555:
+		val = LCD_LAYER_FORMAT_RGBA1555;
 		break;
-	case DRM_FORMAT_BGR565:
+	case DRM_FORMAT_RGB565:
 		val = LCD_LAYER_FORMAT_RGB565 | LCD_LAYER_BGR_ORDER;
 		break;
-	case DRM_FORMAT_RGB888:
-		val = LCD_LAYER_FORMAT_RGB888;
+	case DRM_FORMAT_BGR565:
+		val = LCD_LAYER_FORMAT_RGB565;
 		break;
-	case DRM_FORMAT_BGR888:
+	case DRM_FORMAT_RGB888:
 		val = LCD_LAYER_FORMAT_RGB888 | LCD_LAYER_BGR_ORDER;
 		break;
-	case DRM_FORMAT_XRGB8888:
-		val = LCD_LAYER_FORMAT_RGBX8888;
+	case DRM_FORMAT_BGR888:
+		val = LCD_LAYER_FORMAT_RGB888;
 		break;
-	case DRM_FORMAT_XBGR8888:
+	case DRM_FORMAT_XRGB8888:
 		val = LCD_LAYER_FORMAT_RGBX8888 | LCD_LAYER_BGR_ORDER;
 		break;
+	case DRM_FORMAT_XBGR8888:
+		val = LCD_LAYER_FORMAT_RGBX8888;
+		break;
 	case DRM_FORMAT_ARGB8888:
-		val = LCD_LAYER_FORMAT_RGBA8888;
+		val = LCD_LAYER_FORMAT_RGBA8888 | LCD_LAYER_BGR_ORDER;
 		break;
 	case DRM_FORMAT_ABGR8888:
-		val = LCD_LAYER_FORMAT_RGBA8888 | LCD_LAYER_BGR_ORDER;
+		val = LCD_LAYER_FORMAT_RGBA8888;
 		break;
 	}
 	DRM_INFO("%s : %d layer format val=%d\n", __func__, __LINE__, val);
@@ -371,7 +372,6 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	val |= set_bits_per_pixel(fb->format);
 	/*CHECKME Leon drvr sets it to 100 try this for now */
 	val |= LCD_LAYER_FIFO_100;
-	val |= LCD_LAYER_BGR_ORDER;
 	kmb_write_lcd(dev_p, LCD_LAYERn_CFG(plane_id), val);
 
 	/*re-initialize interrupts */
