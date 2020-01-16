@@ -415,18 +415,6 @@ static int __maybe_unused mtk8250_runtime_resume(struct device *dev)
 	return 0;
 }
 
-static void
-mtk8250_do_pm(struct uart_port *port, unsigned int state, unsigned int old)
-{
-	if (!state)
-		pm_runtime_get_sync(port->dev);
-
-	serial8250_do_pm(port, state, old);
-
-	if (state)
-		pm_runtime_put_sync_suspend(port->dev);
-}
-
 #ifdef CONFIG_SERIAL_8250_DMA
 static bool mtk8250_dma_filter(struct dma_chan *chan, void *param)
 {
@@ -511,7 +499,6 @@ static int mtk8250_probe(struct platform_device *pdev)
 	spin_lock_init(&uart.port.lock);
 	uart.port.mapbase = regs->start;
 	uart.port.irq = irq->start;
-	uart.port.pm = mtk8250_do_pm;
 	uart.port.type = PORT_16550;
 	uart.port.flags = UPF_BOOT_AUTOCONF | UPF_FIXED_PORT;
 	uart.port.dev = &pdev->dev;

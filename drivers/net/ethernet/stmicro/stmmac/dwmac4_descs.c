@@ -200,6 +200,17 @@ static int dwmac4_get_tx_ls(struct dma_desc *p)
 		>> TDES3_LAST_DESCRIPTOR_SHIFT;
 }
 
+static inline int dwmac4_wrback_get_rx_vlan_tci(struct dma_desc *p)
+{
+	return (le32_to_cpu(p->des0) & RDES0_VLAN_TAG_MASK);
+}
+
+static inline bool dwmac4_wrback_get_rx_vlan_valid(struct dma_desc *p)
+{
+	return ((le32_to_cpu(p->des3) & RDES3_LAST_DESCRIPTOR) &&
+		(le32_to_cpu(p->des3) & RDES3_RDES0_VALID));
+}
+
 static int dwmac4_wrback_get_rx_frame_len(struct dma_desc *p, int rx_coe)
 {
 	return (le32_to_cpu(p->des3) & RDES3_PACKET_SIZE_MASK);
@@ -424,15 +435,26 @@ static void dwmac4_set_mss_ctxt(struct dma_desc *p, unsigned int mss)
 	p->des3 = cpu_to_le32(TDES3_CONTEXT_TYPE | TDES3_CTXT_TCMSSV);
 }
 
-static void dwmac4_get_addr(struct dma_desc *p, unsigned int *addr)
+static void dwmac4_get_addr(struct dma_desc *p, dma_addr_t *addr)
 {
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	*addr = le32_to_cpu(p->des1);
+	*addr <<= 32;
+	*addr |= le32_to_cpu(p->des0);
+#else
 	*addr = le32_to_cpu(p->des0);
+#endif
 }
 
 static void dwmac4_set_addr(struct dma_desc *p, dma_addr_t addr)
 {
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	p->des0 = cpu_to_le32(lower_32_bits(addr));
+	p->des1 = cpu_to_le32(upper_32_bits(addr));
+#else
 	p->des0 = cpu_to_le32(addr);
 	p->des1 = 0;
+#endif
 }
 
 static void dwmac4_clear(struct dma_desc *p)
@@ -500,6 +522,8 @@ const struct stmmac_desc_ops dwmac4_desc_ops = {
 	.set_tx_owner = dwmac4_set_tx_owner,
 	.set_rx_owner = dwmac4_set_rx_owner,
 	.get_tx_ls = dwmac4_get_tx_ls,
+	.get_rx_vlan_tci = dwmac4_wrback_get_rx_vlan_tci,
+	.get_rx_vlan_valid = dwmac4_wrback_get_rx_vlan_valid,
 	.get_rx_frame_len = dwmac4_wrback_get_rx_frame_len,
 	.enable_tx_timestamp = dwmac4_rd_enable_tx_timestamp,
 	.get_tx_timestamp_status = dwmac4_wrback_get_tx_timestamp_status,
@@ -512,6 +536,96 @@ const struct stmmac_desc_ops dwmac4_desc_ops = {
 	.init_rx_desc = dwmac4_rd_init_rx_desc,
 	.init_tx_desc = dwmac4_rd_init_tx_desc,
 	.display_ring = dwmac4_display_ring,
+	.set_mss = dwmac4_set_mss_ctxt,
+	.get_addr = dwmac4_get_addr,
+	.set_addr = dwmac4_set_addr,
+	.clear = dwmac4_clear,
+	.set_sarc = dwmac4_set_sarc,
+	.set_vlan_tag = dwmac4_set_vlan_tag,
+	.set_vlan = dwmac4_set_vlan,
+};
+
+static void dwmac5_rd_init_tx_desc(struct dma_desc *p, int mode, int end)
+{
+	p->des0 = 0;
+	p->des1 = 0;
+	p->des2 = 0;
+	p->des3 = 0;
+
+	if (mode == STMMAC_ENHANCED_TX_MODE) {
+		struct dma_enhanced_tx_desc *enhtxdesc;
+
+		enhtxdesc = container_of(p, struct dma_enhanced_tx_desc, basic);
+		enhtxdesc->etdes4 = 0;
+		enhtxdesc->etdes5 = 0;
+		enhtxdesc->etdes6 = 0;
+		enhtxdesc->etdes7 = 0;
+	}
+}
+
+static void dwmac5_release_tx_desc(struct dma_desc *p, int mode)
+{
+	p->des2 = 0;
+	p->des3 = 0;
+
+	if (mode == STMMAC_ENHANCED_TX_MODE) {
+		struct dma_enhanced_tx_desc *enhtxdesc;
+
+		enhtxdesc = container_of(p, struct dma_enhanced_tx_desc, basic);
+		enhtxdesc->etdes4 = 0;
+		enhtxdesc->etdes5 = 0;
+	}
+}
+
+static void dwmac5_display_ring(void *head, unsigned int size, bool rx)
+{
+	struct dma_enhanced_tx_desc *enhp = (struct dma_enhanced_tx_desc *)head;
+	struct dma_desc *p = (struct dma_desc *)head;
+	int i;
+
+	pr_info("%s descriptor ring:\n", rx ? "RX" : "TX");
+
+	for (i = 0; i < size; i++) {
+		if (rx) {
+			pr_info("%d [0x%x]: 0x%x 0x%x 0x%x 0x%x\n",
+				i, (unsigned int)virt_to_phys(p),
+				le32_to_cpu(p->des0), le32_to_cpu(p->des1),
+				le32_to_cpu(p->des2), le32_to_cpu(p->des3));
+			p++;
+		} else {
+			pr_info("%d [0x%x]: 0x%x 0x%x 0x%x 0x%x\n",
+				i, (unsigned int)virt_to_phys(enhp),
+				le32_to_cpu(enhp->basic.des0),
+				le32_to_cpu(enhp->basic.des1),
+				le32_to_cpu(enhp->basic.des2),
+				le32_to_cpu(enhp->basic.des3));
+			enhp++;
+		}
+	}
+}
+
+const struct stmmac_desc_ops dwmac5_desc_ops = {
+	.tx_status = dwmac4_wrback_get_tx_status,
+	.rx_status = dwmac4_wrback_get_rx_status,
+	.get_tx_len = dwmac4_rd_get_tx_len,
+	.get_tx_owner = dwmac4_get_tx_owner,
+	.set_tx_owner = dwmac4_set_tx_owner,
+	.set_rx_owner = dwmac4_set_rx_owner,
+	.get_tx_ls = dwmac4_get_tx_ls,
+	.get_rx_vlan_tci = dwmac4_wrback_get_rx_vlan_tci,
+	.get_rx_vlan_valid = dwmac4_wrback_get_rx_vlan_valid,
+	.get_rx_frame_len = dwmac4_wrback_get_rx_frame_len,
+	.enable_tx_timestamp = dwmac4_rd_enable_tx_timestamp,
+	.get_tx_timestamp_status = dwmac4_wrback_get_tx_timestamp_status,
+	.get_rx_timestamp_status = dwmac4_wrback_get_rx_timestamp_status,
+	.get_timestamp = dwmac4_get_timestamp,
+	.set_tx_ic = dwmac4_rd_set_tx_ic,
+	.prepare_tx_desc = dwmac4_rd_prepare_tx_desc,
+	.prepare_tso_tx_desc = dwmac4_rd_prepare_tso_tx_desc,
+	.release_tx_desc = dwmac5_release_tx_desc,
+	.init_rx_desc = dwmac4_rd_init_rx_desc,
+	.init_tx_desc = dwmac5_rd_init_tx_desc,
+	.display_ring = dwmac5_display_ring,
 	.set_mss = dwmac4_set_mss_ctxt,
 	.get_addr = dwmac4_get_addr,
 	.set_addr = dwmac4_set_addr,

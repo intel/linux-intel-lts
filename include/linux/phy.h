@@ -1252,9 +1252,16 @@ struct mdio_board_info {
 #if IS_ENABLED(CONFIG_MDIO_DEVICE)
 int mdiobus_register_board_info(const struct mdio_board_info *info,
 				unsigned int n);
+int mdiobus_create_device(struct mii_bus *bus, struct mdio_board_info *bi);
 #else
 static inline int mdiobus_register_board_info(const struct mdio_board_info *i,
 					      unsigned int n)
+{
+	return 0;
+}
+
+static inline int mdiobus_create_device(struct mii_bus *bus,
+					struct mdio_board_info *bi)
 {
 	return 0;
 }

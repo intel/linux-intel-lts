@@ -169,4 +169,20 @@ config SAMPLE_VFS
 	  as mount API and statx().  Note that this is restricted to the x86
 	  arch whilst it accesses system calls that aren't yet in all arches.
 
+config SAMPLE_INTEL_MEI
+	bool "Build example program working with intel mei driver"
+	depends on INTEL_MEI
+	help
+	  Build a sample program to work with mei device.
+
+config SAMPLE_INTEL_MEI_DAL_TEST
+	tristate "Test Module for Dynamic Application Loader for ME"
+	depends on INTEL_MEI
+	depends on INTEL_MEI_DAL
+	select SAMPLE_INTEL_MEI
+	help
+	  Testing Module for Dynamic Application Loader, to test the
+	  kernel space api from a user space client. The test module
+	  calls the kernel space api functions of DAL module.
+
 endif # SAMPLES

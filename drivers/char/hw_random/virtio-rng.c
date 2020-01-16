@@ -203,6 +203,9 @@ static struct virtio_driver virtio_rng_driver = {
 	.driver.name =	KBUILD_MODNAME,
 	.driver.owner =	THIS_MODULE,
 	.id_table =	id_table,
+#ifdef CONFIG_VIRTIO_PMD
+	.polling_mode = true,
+#endif
 	.probe =	virtrng_probe,
 	.remove =	virtrng_remove,
 	.scan =		virtrng_scan,

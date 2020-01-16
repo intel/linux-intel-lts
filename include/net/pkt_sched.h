@@ -180,6 +180,8 @@ struct tc_taprio_qopt_offload {
 	u64 cycle_time;
 	u64 cycle_time_extension;
 
+	/* bit nth being set means that the nth queue is preemptible */
+	u32 frame_preemption_queue_mask;
 	size_t num_entries;
 	struct tc_taprio_sched_entry entries[0];
 };

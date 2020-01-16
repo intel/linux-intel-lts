@@ -352,6 +352,10 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 	value = qopt->locredit * 1024ll * 8;
 	priv->plat->tx_queues_cfg[queue].low_credit = value & GENMASK(31, 0);
 
+	ret = stmmac_cbs_recal_idleslope(priv, priv->hw,
+					 priv->dev, queue,
+					 &priv->plat->tx_queues_cfg[queue].idle_slope);
+
 	ret = stmmac_config_cbs(priv, priv->hw,
 				priv->plat->tx_queues_cfg[queue].send_slope,
 				priv->plat->tx_queues_cfg[queue].idle_slope,
@@ -593,9 +597,183 @@ static int tc_setup_cls(struct stmmac_priv *priv,
 	return ret;
 }
 
+static int tc_setup_taprio(struct stmmac_priv *priv,
+			   struct tc_taprio_qopt_offload *qopt)
+{
+	u32 fpe_q_mask = qopt->frame_preemption_queue_mask;
+	u64 time_extension = qopt->cycle_time_extension;
+	u64 base_time = ktime_to_ns(qopt->base_time);
+	u64 cycle_time = qopt->cycle_time;
+	struct tsn_hw_cap *cap;
+	struct est_gcrr egcrr;
+	u32 extension_ns;
+	u32 extension_s;
+	u32 cycle_ns;
+	u32 cycle_s;
+	u32 base_ns;
+	u32 base_s;
+	int ret;
+	int i;
+
+	if (qopt->enable) {
+		stmmac_set_est_enable(priv, priv->hw, priv->dev, true);
+		dev_info(priv->device, "taprio: EST enabled\n");
+	} else {
+		if (priv->est_hw_del) {
+			stmmac_set_est_enable(priv, priv->hw, priv->dev, false);
+			dev_info(priv->device, "taprio: EST disabled\n");
+			stmmac_fpe_set_enable(priv, priv->hw, priv->dev, false);
+			dev_info(priv->device, "taprio: FPE disabled\n");
+		}
+
+		return 0;
+	}
+
+	if (stmmac_has_tsn_feat(priv, priv->hw, priv->dev, TSN_FEAT_ID_FPE) &&
+	    fpe_q_mask) {
+		ret = stmmac_fpe_set_txqpec(priv, priv->hw, priv->dev,
+					    fpe_q_mask);
+		if (ret)
+			return ret;
+
+		ret = stmmac_fpe_set_enable(priv, priv->hw, priv->dev, true);
+		if (ret)
+			return ret;
+
+		dev_info(priv->device, "taprio: FPE enabled (qmask=0x%x)\n",
+			 fpe_q_mask);
+	}
+
+	dev_dbg(priv->device,
+		"EST: base_time %llu, cycle_time %llu, cycle_extension %llu\n",
+		qopt->base_time, qopt->cycle_time,
+		qopt->cycle_time_extension);
+
+	cap = &priv->hw->tsn_info.cap;
+
+	for (i = 0; i < qopt->num_entries; i++) {
+		struct est_gc_entry sgce;
+
+		sgce.command = qopt->entries[i].command;
+		sgce.gates = qopt->entries[i].gate_mask;
+		sgce.ti_nsec = qopt->entries[i].interval;
+
+		/* cycle_time will be sum of all time interval
+		 * of the entries in the schedule if the
+		 * cycle_time is not provided
+		 */
+		if (!qopt->cycle_time)
+			cycle_time += qopt->entries[i].interval;
+
+		dev_dbg(priv->device,
+			"EST: gates 0x%x, ti_ns %u, cycle_ns %llu\n",
+			sgce.gates, sgce.ti_nsec, cycle_time);
+
+		if ((sgce.command == TC_TAPRIO_CMD_SET_AND_HOLD ||
+		     sgce.command == TC_TAPRIO_CMD_SET_AND_RELEASE) &&
+		     !fpe_q_mask) {
+			dev_err(priv->device,
+				"FPE: FPE QMask must not be all 0s!\n");
+				return -EINVAL;
+		}
+
+		/* If FPE is enabled together with EST, the GCL bit for TxQ0
+		 * marks if Set-And-Hold-MAC(1) or Set-And-Release-MAC(0)
+		 * operation. Under such condition, any TxQ that is marked as
+		 * preemptible in txqpec, the GCL bit is ignored. As this is
+		 * DWMAC specific definition, we clear 'gates' bit corresponds
+		 * to TxQ0 up-front to prevent incorrectly hold pMAC.
+		 */
+		if (fpe_q_mask) {
+			sgce.gates &= ~cap->pmac_bit;
+			if (sgce.command == TC_TAPRIO_CMD_SET_AND_HOLD)
+				sgce.gates |= cap->pmac_bit;
+		}
+
+		ret = stmmac_set_est_gce(priv, priv->hw, priv->dev,
+					 &sgce, i, 0, 0);
+		if (ret) {
+			dev_err(priv->device,
+				"EST: fail to program GC entry(%d).\n", i);
+
+			return ret;
+		}
+	}
+
+	ret = stmmac_set_est_gcl_len(priv, priv->hw, priv->dev,
+				     qopt->num_entries,
+				     0, 0);
+	if (ret) {
+		dev_err(priv->device,
+			"EST: fail to program GC length into HW\n");
+		return ret;
+	}
+
+	/* set est_info */
+	base_ns = do_div(base_time, NSEC_PER_SEC);
+	base_s = base_time;
+	dev_info(priv->device, "EST: base_s %u, base_ns %u\n",
+		 base_s, base_ns);
+
+	cycle_ns = do_div(cycle_time, NSEC_PER_SEC);
+	cycle_s = cycle_time;
+	dev_info(priv->device, "EST: cycle_s %u, cycle_ns %u\n",
+		 cycle_s, cycle_ns);
+
+	extension_ns = do_div(time_extension, NSEC_PER_SEC);
+	extension_s = time_extension;
+	dev_info(priv->device,
+		 "EST: cycle extension_s %u, cycle_extension_ns %u\n",
+		 extension_s, extension_ns);
+
+	if (extension_s) {
+		dev_err(priv->device,
+			"EST: extension in seconds not supported.\n");
+		return -EINVAL;
+	}
+
+	egcrr.cycle_sec = cycle_s;
+	egcrr.cycle_nsec = cycle_ns;
+	egcrr.base_sec = base_s;
+	egcrr.base_nsec = base_ns;
+	egcrr.ter_nsec = extension_ns;
+
+	ret = stmmac_set_est_gcrr_times(priv, priv->hw, priv->dev,
+					&egcrr, 0, 0);
+	if (ret) {
+		dev_err(priv->device,
+			"EST: fail to program GCRR times into HW\n");
+		return ret;
+	}
+
+	return ret;
+}
+
+static int tc_setup_etf(struct stmmac_priv *priv,
+			struct tc_etf_qopt_offload *qopt)
+{
+	if (!priv->enhanced_tx_desc)
+		return -EOPNOTSUPP;
+
+	if (priv->speed == SPEED_10)
+		return -EOPNOTSUPP;
+
+	if (priv->tso && qopt->enable) {
+		dev_warn(priv->device,
+			 "TSO is ON, please disable it to enable TBS\n");
+		return -EOPNOTSUPP;
+	}
+
+	priv->plat->tx_queues_cfg[qopt->queue].tbs_en = qopt->enable;
+
+	return 0;
+}
+
 const struct stmmac_tc_ops dwmac510_tc_ops = {
 	.init = tc_init,
 	.setup_cls_u32 = tc_setup_cls_u32,
 	.setup_cbs = tc_setup_cbs,
 	.setup_cls = tc_setup_cls,
+	.setup_taprio = tc_setup_taprio,
+	.setup_etf = tc_setup_etf,
 };

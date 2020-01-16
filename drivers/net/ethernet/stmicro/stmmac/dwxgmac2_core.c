@@ -15,34 +15,52 @@ static void dwxgmac2_core_init(struct mac_device_info *hw,
 			       struct net_device *dev)
 {
 	void __iomem *ioaddr = hw->pcsr;
+	int mtu = dev->mtu;
 	u32 tx, rx;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	struct stmmac_priv *priv = netdev_priv(dev);
 
-	tx = readl(ioaddr + XGMAC_TX_CONFIG);
-	rx = readl(ioaddr + XGMAC_RX_CONFIG);
+	if (!priv->networkproxy_exit) {
+#endif
+		tx = readl(ioaddr + XGMAC_TX_CONFIG);
+		rx = readl(ioaddr + XGMAC_RX_CONFIG);
 
-	tx |= XGMAC_CORE_INIT_TX;
-	rx |= XGMAC_CORE_INIT_RX;
+		tx |= XGMAC_CORE_INIT_TX;
+		rx |= XGMAC_CORE_INIT_RX;
 
-	if (hw->ps) {
-		tx |= XGMAC_CONFIG_TE;
-		tx &= ~hw->link.speed_mask;
-
-		switch (hw->ps) {
-		case SPEED_10000:
-			tx |= hw->link.xgmii.speed10000;
-			break;
-		case SPEED_2500:
-			tx |= hw->link.speed2500;
-			break;
-		case SPEED_1000:
-		default:
-			tx |= hw->link.speed1000;
-			break;
+		if (mtu >= 9000) {
+			rx |= XGMAC_CONFIG_GPSLCE;
+			rx |= XGMAC_JUMBO_LEN << XGMAC_CONFIG_GPSL_SHIFT;
+			rx |= XGMAC_CONFIG_WD;
+		} else if (mtu > 2000) {
+			rx |= XGMAC_CONFIG_JE;
+		} else if (mtu > 1500) {
+			rx |= XGMAC_CONFIG_S2KP;
 		}
-	}
 
-	writel(tx, ioaddr + XGMAC_TX_CONFIG);
-	writel(rx, ioaddr + XGMAC_RX_CONFIG);
+		if (hw->ps) {
+			tx |= XGMAC_CONFIG_TE;
+			tx &= ~hw->link.speed_mask;
+
+			switch (hw->ps) {
+			case SPEED_10000:
+				tx |= hw->link.xgmii.speed10000;
+				break;
+			case SPEED_2500:
+				tx |= hw->link.speed2500;
+				break;
+			case SPEED_1000:
+			default:
+				tx |= hw->link.speed1000;
+				break;
+			}
+		}
+
+		writel(tx, ioaddr + XGMAC_TX_CONFIG);
+		writel(rx, ioaddr + XGMAC_RX_CONFIG);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	}
+#endif
 	writel(XGMAC_INT_DEFAULT_EN, ioaddr + XGMAC_INT_EN);
 }
 
@@ -61,6 +79,42 @@ static void dwxgmac2_set_mac(void __iomem *ioaddr, bool enable)
 
 	writel(tx, ioaddr + XGMAC_TX_CONFIG);
 	writel(rx, ioaddr + XGMAC_RX_CONFIG);
+}
+
+static void dwxgmac2_mac_start_tx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + XGMAC_TX_CONFIG);
+	value |= XGMAC_CONFIG_TE;
+	writel(value, ioaddr + XGMAC_TX_CONFIG);
+}
+
+static void dwxgmac2_mac_stop_tx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + XGMAC_TX_CONFIG);
+	value &= ~XGMAC_CONFIG_TE;
+	writel(value, ioaddr + XGMAC_TX_CONFIG);
+}
+
+static void dwxgmac2_mac_start_rx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + XGMAC_RX_CONFIG);
+	value |= XGMAC_CONFIG_RE;
+	writel(value, ioaddr + XGMAC_RX_CONFIG);
+}
+
+static void dwxgmac2_mac_stop_rx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + XGMAC_RX_CONFIG);
+	value &= ~XGMAC_CONFIG_RE;
+	writel(value, ioaddr + XGMAC_RX_CONFIG);
 }
 
 static int dwxgmac2_rx_ipc(struct mac_device_info *hw)
@@ -1347,6 +1401,10 @@ static void dwxgmac2_set_arp_offload(struct mac_device_info *hw, bool en,
 const struct stmmac_ops dwxgmac210_ops = {
 	.core_init = dwxgmac2_core_init,
 	.set_mac = dwxgmac2_set_mac,
+	.start_tx = dwxgmac2_mac_start_tx,
+	.stop_tx = dwxgmac2_mac_stop_tx,
+	.start_rx = dwxgmac2_mac_start_rx,
+	.stop_rx = dwxgmac2_mac_stop_rx,
 	.rx_ipc = dwxgmac2_rx_ipc,
 	.rx_queue_enable = dwxgmac2_rx_queue_enable,
 	.rx_queue_prio = dwxgmac2_rx_queue_prio,

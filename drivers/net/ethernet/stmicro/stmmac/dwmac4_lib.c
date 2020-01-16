@@ -48,10 +48,6 @@ void dwmac4_dma_start_tx(void __iomem *ioaddr, u32 chan)
 
 	value |= DMA_CONTROL_ST;
 	writel(value, ioaddr + DMA_CHAN_TX_CONTROL(chan));
-
-	value = readl(ioaddr + GMAC_CONFIG);
-	value |= GMAC_CONFIG_TE;
-	writel(value, ioaddr + GMAC_CONFIG);
 }
 
 void dwmac4_dma_stop_tx(void __iomem *ioaddr, u32 chan)
@@ -60,10 +56,6 @@ void dwmac4_dma_stop_tx(void __iomem *ioaddr, u32 chan)
 
 	value &= ~DMA_CONTROL_ST;
 	writel(value, ioaddr + DMA_CHAN_TX_CONTROL(chan));
-
-	value = readl(ioaddr + GMAC_CONFIG);
-	value &= ~GMAC_CONFIG_TE;
-	writel(value, ioaddr + GMAC_CONFIG);
 }
 
 void dwmac4_dma_start_rx(void __iomem *ioaddr, u32 chan)
@@ -71,12 +63,7 @@ void dwmac4_dma_start_rx(void __iomem *ioaddr, u32 chan)
 	u32 value = readl(ioaddr + DMA_CHAN_RX_CONTROL(chan));
 
 	value |= DMA_CONTROL_SR;
-
 	writel(value, ioaddr + DMA_CHAN_RX_CONTROL(chan));
-
-	value = readl(ioaddr + GMAC_CONFIG);
-	value |= GMAC_CONFIG_RE;
-	writel(value, ioaddr + GMAC_CONFIG);
 }
 
 void dwmac4_dma_stop_rx(void __iomem *ioaddr, u32 chan)
@@ -115,11 +102,16 @@ void dwmac4_disable_dma_irq(void __iomem *ioaddr, u32 chan)
 }
 
 int dwmac4_dma_interrupt(void __iomem *ioaddr,
-			 struct stmmac_extra_stats *x, u32 chan)
+			 struct stmmac_extra_stats *x, u32 chan, u32 dir)
 {
 	u32 intr_status = readl(ioaddr + DMA_CHAN_STATUS(chan));
 	u32 intr_en = readl(ioaddr + DMA_CHAN_INTR_ENA(chan));
 	int ret = 0;
+
+	if (dir == DMA_DIR_RX)
+		intr_status &= DMA_CHAN_STATUS_MSK_RX;
+	else if (dir == DMA_DIR_TX)
+		intr_status &= DMA_CHAN_STATUS_MSK_TX;
 
 	/* ABNORMAL interrupts */
 	if (unlikely(intr_status & DMA_CHAN_STATUS_AIS)) {
@@ -141,20 +133,83 @@ int dwmac4_dma_interrupt(void __iomem *ioaddr,
 		}
 	}
 	/* TX/RX NORMAL interrupts */
-	if (likely(intr_status & DMA_CHAN_STATUS_NIS)) {
+	if (likely(intr_status & DMA_CHAN_STATUS_NIS))
 		x->normal_irq_n++;
-		if (likely(intr_status & DMA_CHAN_STATUS_RI)) {
+
+	if (likely(intr_status & DMA_CHAN_STATUS_RI)) {
+		u32 value;
+
+		value = readl(ioaddr + DMA_CHAN_INTR_ENA(chan));
+		/* to schedule NAPI on real RIE event. */
+		if (likely(value & DMA_CHAN_INTR_ENA_RIE)) {
 			x->rx_normal_irq_n++;
+			switch (chan) {
+			case 0x0:
+				x->q0_rx_irq_n++;
+				break;
+			case 0x1:
+				x->q1_rx_irq_n++;
+				break;
+			case 0x2:
+				x->q2_rx_irq_n++;
+				break;
+			case 0x3:
+				x->q3_rx_irq_n++;
+				break;
+			case 0x4:
+				x->q4_rx_irq_n++;
+				break;
+			case 0x5:
+				x->q5_rx_irq_n++;
+				break;
+			case 0x6:
+				x->q6_rx_irq_n++;
+				break;
+			case 0x7:
+				x->q7_rx_irq_n++;
+				break;
+			default:
+				break;
+			}
 			ret |= handle_rx;
 		}
-		if (likely(intr_status & (DMA_CHAN_STATUS_TI |
-					  DMA_CHAN_STATUS_TBU))) {
-			x->tx_normal_irq_n++;
-			ret |= handle_tx;
-		}
-		if (unlikely(intr_status & DMA_CHAN_STATUS_ERI))
-			x->rx_early_irq++;
 	}
+	if (likely(intr_status & DMA_CHAN_STATUS_TI)) {
+		x->tx_normal_irq_n++;
+		switch (chan) {
+		case 0x0:
+			x->q0_tx_irq_n++;
+			break;
+		case 0x1:
+			x->q1_tx_irq_n++;
+			break;
+		case 0x2:
+			x->q2_tx_irq_n++;
+			break;
+		case 0x3:
+			x->q3_tx_irq_n++;
+			break;
+		case 0x4:
+			x->q4_tx_irq_n++;
+			break;
+		case 0x5:
+			x->q5_tx_irq_n++;
+			break;
+		case 0x6:
+			x->q6_tx_irq_n++;
+			break;
+		case 0x7:
+			x->q7_tx_irq_n++;
+			break;
+		default:
+			break;
+		}
+		ret |= handle_tx;
+	}
+	if (unlikely(intr_status & DMA_CHAN_STATUS_TBU))
+		ret |= handle_tx;
+	if (unlikely(intr_status & DMA_CHAN_STATUS_ERI))
+		x->rx_early_irq++;
 
 	writel(intr_status & intr_en, ioaddr + DMA_CHAN_STATUS(chan));
 	return ret;

@@ -437,7 +437,7 @@ static void enh_desc_display_ring(void *head, unsigned int size, bool rx)
 	pr_info("\n");
 }
 
-static void enh_desc_get_addr(struct dma_desc *p, unsigned int *addr)
+static void enh_desc_get_addr(struct dma_desc *p, dma_addr_t *addr)
 {
 	*addr = le32_to_cpu(p->des2);
 }

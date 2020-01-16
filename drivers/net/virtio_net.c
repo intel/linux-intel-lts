@@ -3298,6 +3298,9 @@ static struct virtio_driver virtio_net_driver = {
 	.driver.owner =	THIS_MODULE,
 	.id_table =	id_table,
 	.validate =	virtnet_validate,
+#ifdef CONFIG_VIRTIO_PMD
+	.polling_mode =	true,
+#endif
 	.probe =	virtnet_probe,
 	.remove =	virtnet_remove,
 	.config_changed = virtnet_config_changed,

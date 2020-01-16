@@ -129,7 +129,7 @@ static void ufshcd_auto_hibern8_update(struct ufs_hba *hba, u32 ahit)
 	if (hba->ahit == ahit)
 		goto out_unlock;
 	hba->ahit = ahit;
-	if (!pm_runtime_suspended(hba->dev))
+	if (!pm_runtime_suspended(hba->dev) && !hba->ahit_disabled)
 		ufshcd_writel(hba, hba->ahit, REG_AUTO_HIBERNATE_IDLE_TIMER);
 out_unlock:
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
@@ -570,7 +570,7 @@ static ssize_t _name##_show(struct device *dev,				\
 	struct ufs_hba *hba = dev_get_drvdata(dev);			\
 	int ret;							\
 	int desc_len = QUERY_DESC_MAX_SIZE;				\
-	u8 *desc_buf;							\
+	char *desc_buf;							\
 									\
 	desc_buf = kzalloc(QUERY_DESC_MAX_SIZE, GFP_ATOMIC);		\
 	if (!desc_buf)                                                  \

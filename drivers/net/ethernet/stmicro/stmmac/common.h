@@ -21,6 +21,7 @@
 #include <linux/if_vlan.h>
 #endif
 
+#include "stmmac_tsn.h"
 #include "descs.h"
 #include "hwif.h"
 #include "mmc.h"
@@ -36,9 +37,16 @@
 
 #define STMMAC_CHAN0	0	/* Always supported and default for all chips */
 
-/* These need to be power of two, and >= 4 */
-#define DMA_TX_SIZE 512
-#define DMA_RX_SIZE 512
+/* TX and RX Descriptor Length, these need to be power of two.
+ * TX descriptor length less than 64 may cause transmit queue timed out error.
+ * RX descriptor length less than 64 may cause inconsistent Rx chain error.
+ */
+#define DMA_MIN_TX_SIZE		64
+#define DMA_MAX_TX_SIZE		1024
+#define DMA_DEFAULT_TX_SIZE	512
+#define DMA_MIN_RX_SIZE		64
+#define DMA_MAX_RX_SIZE		1024
+#define DMA_DEFAULT_RX_SIZE	512
 #define STMMAC_GET_ENTRY(x, size)	((x + 1) & (size - 1))
 
 #undef FRAME_FILTER_DEBUG
@@ -90,7 +98,23 @@ struct stmmac_extra_stats {
 	unsigned long rx_early_irq;
 	unsigned long threshold;
 	unsigned long tx_pkt_n;
+	unsigned long q0_tx_pkt_n;
+	unsigned long q1_tx_pkt_n;
+	unsigned long q2_tx_pkt_n;
+	unsigned long q3_tx_pkt_n;
+	unsigned long q4_tx_pkt_n;
+	unsigned long q5_tx_pkt_n;
+	unsigned long q6_tx_pkt_n;
+	unsigned long q7_tx_pkt_n;
 	unsigned long rx_pkt_n;
+	unsigned long q0_rx_pkt_n;
+	unsigned long q1_rx_pkt_n;
+	unsigned long q2_rx_pkt_n;
+	unsigned long q3_rx_pkt_n;
+	unsigned long q4_rx_pkt_n;
+	unsigned long q5_rx_pkt_n;
+	unsigned long q6_rx_pkt_n;
+	unsigned long q7_rx_pkt_n;
 	unsigned long normal_irq_n;
 	unsigned long rx_normal_irq_n;
 	unsigned long napi_poll;
@@ -98,6 +122,22 @@ struct stmmac_extra_stats {
 	unsigned long tx_clean;
 	unsigned long tx_set_ic_bit;
 	unsigned long irq_receive_pmt_irq_n;
+	unsigned long q0_rx_irq_n;
+	unsigned long q1_rx_irq_n;
+	unsigned long q2_rx_irq_n;
+	unsigned long q3_rx_irq_n;
+	unsigned long q4_rx_irq_n;
+	unsigned long q5_rx_irq_n;
+	unsigned long q6_rx_irq_n;
+	unsigned long q7_rx_irq_n;
+	unsigned long q0_tx_irq_n;
+	unsigned long q1_tx_irq_n;
+	unsigned long q2_tx_irq_n;
+	unsigned long q3_tx_irq_n;
+	unsigned long q4_tx_irq_n;
+	unsigned long q5_tx_irq_n;
+	unsigned long q6_tx_irq_n;
+	unsigned long q7_tx_irq_n;
 	/* MMC info */
 	unsigned long mmc_tx_irq_n;
 	unsigned long mmc_rx_irq_n;
@@ -240,6 +280,9 @@ struct stmmac_safety_stats {
 #define DMA_HW_FEAT_ACTPHYIF	0x70000000	/* Active/selected PHY iface */
 #define DEFAULT_DMA_PBL		8
 
+/* MSI defines */
+#define STMMAC_MSI_VEC_MAX	32
+
 /* PCS status and mask defines */
 #define	PCS_ANE_IRQ		BIT(2)	/* PCS Auto-Negotiation */
 #define	PCS_LINK_IRQ		BIT(1)	/* PCS Link */
@@ -287,6 +330,27 @@ enum dma_irq_status {
 	tx_hard_error_bump_tc = 0x2,
 	handle_rx = 0x4,
 	handle_tx = 0x8,
+};
+
+enum dma_irq_dir {
+	DMA_DIR_RX = 0x1,
+	DMA_DIR_TX = 0x2,
+	DMA_DIR_RXTX = 0x3,
+};
+
+enum request_irq_err {
+	REQ_IRQ_ERR_ALL,
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	REQ_IRQ_ERR_NETWORK_PROXY,
+#endif
+	REQ_IRQ_ERR_TX,
+	REQ_IRQ_ERR_RX,
+	REQ_IRQ_ERR_SFTY_UE,
+	REQ_IRQ_ERR_SFTY_CE,
+	REQ_IRQ_ERR_LPI,
+	REQ_IRQ_ERR_WOL,
+	REQ_IRQ_ERR_MAC,
+	REQ_IRQ_ERR_NO,
 };
 
 /* EEE and LPI defines */
@@ -362,6 +426,8 @@ struct dma_features {
 	unsigned int dvlan;
 	unsigned int l3l4fnum;
 	unsigned int arpoffsel;
+	/* Number of Auxiliary Snapshot Inputs */
+	unsigned int aux_snapshot_n;
 };
 
 /* GMAC TX FIFO is 8K, Rx FIFO is 16K */
@@ -386,6 +452,7 @@ struct dma_features {
 
 #define STMMAC_CHAIN_MODE	0x1
 #define STMMAC_RING_MODE	0x2
+#define STMMAC_ENHANCED_TX_MODE	0x3
 
 #define JUMBO_LEN		9000
 
@@ -434,11 +501,15 @@ struct mii_regs {
 
 struct mac_device_info {
 	const struct stmmac_ops *mac;
+	const struct stmmac_serdes_ops *serdes;
 	const struct stmmac_desc_ops *desc;
 	const struct stmmac_dma_ops *dma;
 	const struct stmmac_mode_ops *mode;
 	const struct stmmac_hwtimestamp *ptp;
 	const struct stmmac_tc_ops *tc;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	const struct stmmac_pm_ops *pm;
+#endif
 	const struct stmmac_mmc_ops *mmc;
 	struct mii_regs mii;	/* MII register Addresses */
 	struct mac_link link;
@@ -450,6 +521,16 @@ struct mac_device_info {
 	unsigned int pcs;
 	unsigned int pmt;
 	unsigned int ps;
+	bool mdio_intr_en;
+	wait_queue_head_t mdio_busy_wait;
+	unsigned int num_vlan;
+	u32 vlan_filter[32];
+	unsigned int promisc;
+	bool vlan_fail_q_en;
+	u8 vlan_fail_q;
+	const struct tsnif_ops *tsnif;
+	struct tsnif_info tsn_info;
+	bool cached_fpe_en;
 };
 
 struct stmmac_rx_routing {
@@ -479,5 +560,6 @@ void dwmac_dma_flush_tx_fifo(void __iomem *ioaddr);
 extern const struct stmmac_mode_ops ring_mode_ops;
 extern const struct stmmac_mode_ops chain_mode_ops;
 extern const struct stmmac_desc_ops dwmac4_desc_ops;
+extern const struct stmmac_desc_ops dwmac5_desc_ops;
 
 #endif /* __COMMON_H__ */

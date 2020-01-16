@@ -49,6 +49,8 @@
 #define DEBUG_HEXDUMP 0
 #define MAX_SOCKS 8
 
+#define TXTIME_PERIOD_NS 1000000	//1ms
+
 typedef __u64 u64;
 typedef __u32 u32;
 
@@ -71,6 +73,8 @@ static u32 opt_xdp_bind_flags = XDP_USE_NEED_WAKEUP;
 static u32 opt_umem_flags;
 static int opt_unaligned_chunks;
 static int opt_mmap_flags;
+static int opt_txtime;
+static int opt_period_ns = TXTIME_PERIOD_NS;
 static u32 opt_xdp_bind_flags;
 static int opt_xsk_frame_size = XSK_UMEM__DEFAULT_FRAME_SIZE;
 static int opt_timeout = 1000;
@@ -280,6 +284,14 @@ static size_t gen_eth_frame(struct xsk_umem_info *umem, u64 addr)
 	return sizeof(pkt_data) - 1;
 }
 
+static u64 get_time_sec(clockid_t clkid)
+{
+	struct timespec now;
+
+	clock_gettime(clkid, &now);
+	return now.tv_sec * 1000000000;
+}
+
 static struct xsk_umem_info *xsk_configure_umem(void *buffer, u64 size)
 {
 	struct xsk_umem_info *umem;
@@ -398,8 +410,8 @@ static void parse_command_line(int argc, char **argv)
 	opterr = 0;
 
 	for (;;) {
-		c = getopt_long(argc, argv, "Frtli:q:psSNn:czf:mu",
-				long_options, &option_index);
+		c = getopt_long(argc, argv, "Frtli:q:psSNn:czf:muTP:", long_options,
+				&option_index);
 		if (c == -1)
 			break;
 
@@ -452,7 +464,12 @@ static void parse_command_line(int argc, char **argv)
 			opt_need_wakeup = false;
 			opt_xdp_bind_flags &= ~XDP_USE_NEED_WAKEUP;
 			break;
-
+		case 'T':
+			opt_txtime = 1;
+			break;
+		case 'P':
+			opt_period_ns = atoi(optarg);
+			break;
 		default:
 			usage(basename(argv[0]));
 		}
@@ -608,7 +625,7 @@ static void rx_drop_all(void)
 	}
 }
 
-static void tx_only(struct xsk_socket_info *xsk, u32 frame_nb)
+static void tx_only(struct xsk_socket_info *xsk, u32 frame_nb, u64 tx_timestamp)
 {
 	u32 idx;
 
@@ -620,6 +637,8 @@ static void tx_only(struct xsk_socket_info *xsk, u32 frame_nb)
 				(frame_nb + i) << XSK_UMEM__DEFAULT_FRAME_SHIFT;
 			xsk_ring_prod__tx_desc(&xsk->tx, idx + i)->len =
 				sizeof(pkt_data) - 1;
+			xsk_ring_prod__tx_desc(&xsk->tx, idx + i)->txtime =
+				tx_timestamp;
 		}
 
 		xsk_ring_prod__submit(&xsk->tx, BATCH_SIZE);
@@ -643,6 +662,12 @@ static void tx_only_all(void)
 		fds[0].events = POLLOUT;
 	}
 
+	if (opt_txtime)
+		/* Initialize the first packet to the next second */
+		tx_timestamp = get_time_sec(CLOCK_TAI) + 1000000000;
+	else
+		tx_timestamp = 0;
+
 	for (;;) {
 		if (opt_poll) {
 			ret = poll(fds, num_socks, opt_timeout);
@@ -653,8 +678,11 @@ static void tx_only_all(void)
 				continue;
 		}
 
+		if (opt_txtime)
+			tx_timestamp += opt_period_ns;
+
 		for (i = 0; i < num_socks; i++)
-			tx_only(xsks[i], frame_nb[i]);
+			tx_only(xsks[i], frame_nb[i], tx_timestamp);
 	}
 }
 

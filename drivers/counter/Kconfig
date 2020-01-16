@@ -59,4 +59,10 @@ config FTM_QUADDEC
 	  To compile this driver as a module, choose M here: the
 	  module will be called ftm-quaddec.
 
+config INTEL_QEP
+	tristate "Intel Quadrature Encoder"
+	depends on PCI
+	help
+	  Support for Intel Quadrature Encoder Devices
+
 endif # COUNTER

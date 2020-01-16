@@ -115,6 +115,11 @@
 #define ERASE_64K_OPCODE_SHIFT		16
 #define ERASE_64K_OPCODE_MASK		(0xff << ERASE_OPCODE_SHIFT)
 
+/* Flash descriptor fields */
+#define FLVALSIG_MAGIC			0x0ff0a55a
+#define FLMAP0_NC_MASK			GENMASK(9, 8)
+#define FLMAP0_NC_SHIFT			8
+
 #define INTEL_SPI_TIMEOUT		5000 /* ms */
 #define INTEL_SPI_FIFO_SZ		64
 
@@ -122,7 +127,8 @@
  * struct intel_spi - Driver private data
  * @dev: Device pointer
  * @info: Pointer to board specific info
- * @nor: SPI NOR layer structure
+ * @nor: SPI NOR layer structures
+ * @nc: Number of flash chips
  * @base: Beginning of MMIO space
  * @pregs: Start of protection registers
  * @sregs: Start of software sequencer registers
@@ -140,7 +146,8 @@
 struct intel_spi {
 	struct device *dev;
 	const struct intel_spi_boardinfo *info;
-	struct spi_nor nor;
+	struct spi_nor nor[2];
+	size_t nc;
 	void __iomem *base;
 	void __iomem *pregs;
 	void __iomem *sregs;
@@ -535,13 +542,22 @@ static int intel_spi_sw_cycle(struct intel_spi *ispi, u8 opcode, int len,
 	return 0;
 }
 
+static void intel_spi_set_addr(const struct spi_nor *nor, loff_t addr)
+{
+	const struct intel_spi *ispi = nor->priv;
+
+	/* Pick correct flash component */
+	if (nor == &ispi->nor[1])
+		addr += ispi->nor[0].mtd.size;
+	writel(addr, ispi->base + FADDR);
+}
+
 static int intel_spi_read_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len)
 {
 	struct intel_spi *ispi = nor->priv;
 	int ret;
 
-	/* Address of the first chip */
-	writel(0, ispi->base + FADDR);
+	intel_spi_set_addr(nor, 0);
 
 	if (ispi->swseq_reg)
 		ret = intel_spi_sw_cycle(ispi, opcode, len,
@@ -590,7 +606,7 @@ static int intel_spi_write_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len)
 		return 0;
 	}
 
-	writel(0, ispi->base + FADDR);
+	intel_spi_set_addr(nor, 0);
 
 	/* Write the value beforehand */
 	ret = intel_spi_write_block(ispi, buf, len);
@@ -603,12 +619,49 @@ static int intel_spi_write_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len)
 	return intel_spi_hw_cycle(ispi, opcode, len);
 }
 
+static ssize_t __intel_spi_read(struct intel_spi *ispi, struct spi_nor *nor,
+				loff_t from, size_t len, u_char *read_buf)
+{
+	u32 val, status;
+	int ret;
+
+	if (nor)
+		intel_spi_set_addr(nor, from);
+	else
+		writel(from, ispi->base + FADDR);
+
+	val = readl(ispi->base + HSFSTS_CTL);
+	val &= ~(HSFSTS_CTL_FDBC_MASK | HSFSTS_CTL_FCYCLE_MASK);
+	val |= HSFSTS_CTL_AEL | HSFSTS_CTL_FCERR | HSFSTS_CTL_FDONE;
+	val |= (len - 1) << HSFSTS_CTL_FDBC_SHIFT;
+	val |= HSFSTS_CTL_FCYCLE_READ;
+	val |= HSFSTS_CTL_FGO;
+	writel(val, ispi->base + HSFSTS_CTL);
+
+	ret = intel_spi_wait_hw_busy(ispi);
+	if (ret)
+		return ret;
+
+	status = readl(ispi->base + HSFSTS_CTL);
+	if (status & HSFSTS_CTL_FCERR)
+		ret = -EIO;
+	else if (status & HSFSTS_CTL_AEL)
+		ret = -EACCES;
+
+	if (ret < 0) {
+		dev_err(ispi->dev, "read error: %llx: %#x\n", from,
+			status);
+		return ret;
+	}
+
+	return intel_spi_read_block(ispi, read_buf, len);
+}
+
 static ssize_t intel_spi_read(struct spi_nor *nor, loff_t from, size_t len,
 			      u_char *read_buf)
 {
 	struct intel_spi *ispi = nor->priv;
 	size_t block_size, retlen = 0;
-	u32 val, status;
 	ssize_t ret;
 
 	/*
@@ -635,33 +688,7 @@ static ssize_t intel_spi_read(struct spi_nor *nor, loff_t from, size_t len,
 		block_size = min_t(loff_t, from + block_size,
 				   round_up(from + 1, SZ_4K)) - from;
 
-		writel(from, ispi->base + FADDR);
-
-		val = readl(ispi->base + HSFSTS_CTL);
-		val &= ~(HSFSTS_CTL_FDBC_MASK | HSFSTS_CTL_FCYCLE_MASK);
-		val |= HSFSTS_CTL_AEL | HSFSTS_CTL_FCERR | HSFSTS_CTL_FDONE;
-		val |= (block_size - 1) << HSFSTS_CTL_FDBC_SHIFT;
-		val |= HSFSTS_CTL_FCYCLE_READ;
-		val |= HSFSTS_CTL_FGO;
-		writel(val, ispi->base + HSFSTS_CTL);
-
-		ret = intel_spi_wait_hw_busy(ispi);
-		if (ret)
-			return ret;
-
-		status = readl(ispi->base + HSFSTS_CTL);
-		if (status & HSFSTS_CTL_FCERR)
-			ret = -EIO;
-		else if (status & HSFSTS_CTL_AEL)
-			ret = -EACCES;
-
-		if (ret < 0) {
-			dev_err(ispi->dev, "read error: %llx: %#x\n", from,
-				status);
-			return ret;
-		}
-
-		ret = intel_spi_read_block(ispi, read_buf, block_size);
+		ret = __intel_spi_read(ispi, nor, from, block_size, read_buf);
 		if (ret)
 			return ret;
 
@@ -692,7 +719,7 @@ static ssize_t intel_spi_write(struct spi_nor *nor, loff_t to, size_t len,
 		block_size = min_t(loff_t, to + block_size,
 				   round_up(to + 1, SZ_4K)) - to;
 
-		writel(to, ispi->base + FADDR);
+		intel_spi_set_addr(nor, to);
 
 		val = readl(ispi->base + HSFSTS_CTL);
 		val &= ~(HSFSTS_CTL_FDBC_MASK | HSFSTS_CTL_FCYCLE_MASK);
@@ -755,7 +782,7 @@ static int intel_spi_erase(struct spi_nor *nor, loff_t offs)
 
 	if (ispi->swseq_erase) {
 		while (len > 0) {
-			writel(offs, ispi->base + FADDR);
+			intel_spi_set_addr(nor, offs);
 
 			ret = intel_spi_sw_cycle(ispi, nor->erase_opcode,
 						 0, OPTYPE_WRITE_WITH_ADDR);
@@ -773,7 +800,7 @@ static int intel_spi_erase(struct spi_nor *nor, loff_t offs)
 	ispi->atomic_preopcode = 0;
 
 	while (len > 0) {
-		writel(offs, ispi->base + FADDR);
+		intel_spi_set_addr(nor, offs);
 
 		val = readl(ispi->base + HSFSTS_CTL);
 		val &= ~(HSFSTS_CTL_FDBC_MASK | HSFSTS_CTL_FCYCLE_MASK);
@@ -821,6 +848,37 @@ static bool intel_spi_is_protected(const struct intel_spi *ispi,
 	return false;
 }
 
+static int intel_spi_read_desc(struct intel_spi *ispi)
+{
+	u32 buf[2], nc;
+	ssize_t ret;
+
+	ret = __intel_spi_read(ispi, NULL, 0x10, sizeof(buf), (u_char *)buf);
+	if (ret < 0) {
+		dev_warn(ispi->dev, "failed to read descriptor\n");
+		return ret;
+	}
+
+	dev_dbg(ispi->dev, "FLVALSIG=0x%08x\n", buf[0]);
+	dev_dbg(ispi->dev, "FLMAP0=0x%08x\n", buf[1]);
+
+	if (buf[0] != FLVALSIG_MAGIC) {
+		dev_warn(ispi->dev, "descriptor signature not valid\n");
+		return -ENODEV;
+	}
+
+	nc = (buf[1] & FLMAP0_NC_MASK) >> FLMAP0_NC_SHIFT;
+	if (nc == 0)
+		ispi->nc = 1;
+	else if (nc == 1)
+		ispi->nc = 2;
+	else
+		return -EINVAL;
+
+	dev_dbg(ispi->dev, "%zd flash components found\n", ispi->nc);
+	return 0;
+}
+
 /*
  * There will be a single partition holding all enabled flash regions. We
  * call this "BIOS".
@@ -830,8 +888,6 @@ static void intel_spi_fill_partition(struct intel_spi *ispi,
 {
 	u64 end;
 	int i;
-
-	memset(part, 0, sizeof(*part));
 
 	/* Start from the mandatory descriptor region */
 	part->size = 4096;
@@ -859,20 +915,56 @@ static void intel_spi_fill_partition(struct intel_spi *ispi,
 			ispi->writeable = false;
 
 		end = (limit << 12) + 4096;
-		if (end > part->size)
+		if (end > part->size && end <= ispi->nor[0].mtd.size)
 			part->size = end;
 	}
 }
 
-struct intel_spi *intel_spi_probe(struct device *dev,
-	struct resource *mem, const struct intel_spi_boardinfo *info)
+static int intel_spi_add_chip(struct intel_spi *ispi, struct spi_nor *nor,
+			      const char *name)
 {
 	const struct spi_nor_hwcaps hwcaps = {
 		.mask = SNOR_HWCAPS_READ |
 			SNOR_HWCAPS_READ_FAST |
 			SNOR_HWCAPS_PP,
 	};
-	struct mtd_partition part;
+	struct mtd_partition parts[1];
+	int ret, nr_parts = 0;
+
+	nor->dev = ispi->dev;
+	nor->priv = ispi;
+	nor->read_reg = intel_spi_read_reg;
+	nor->write_reg = intel_spi_write_reg;
+	nor->read = intel_spi_read;
+	nor->write = intel_spi_write;
+	nor->erase = intel_spi_erase;
+
+	memset(parts, 0, sizeof(parts));
+
+	ret = spi_nor_scan(nor, NULL, &hwcaps);
+	if (ret) {
+		dev_info(ispi->dev, "failed to locate the chip\n");
+		return ret;
+	}
+
+	/* Only the first chip has partition */
+	if (nor == &ispi->nor[0]) {
+		intel_spi_fill_partition(ispi, &parts[0]);
+		nr_parts = 1;
+	}
+
+	/* Prevent writes if not explicitly enabled */
+	if (!ispi->writeable || !writeable)
+		nor->mtd.flags &= ~MTD_WRITEABLE;
+	if (name)
+		nor->mtd.name = name;
+
+	return mtd_device_register(&nor->mtd, parts, nr_parts);
+}
+
+struct intel_spi *intel_spi_probe(struct device *dev,
+	struct resource *mem, const struct intel_spi_boardinfo *info)
+{
 	struct intel_spi *ispi;
 	int ret;
 
@@ -895,29 +987,21 @@ struct intel_spi *intel_spi_probe(struct device *dev,
 	if (ret)
 		return ERR_PTR(ret);
 
-	ispi->nor.dev = ispi->dev;
-	ispi->nor.priv = ispi;
-	ispi->nor.read_reg = intel_spi_read_reg;
-	ispi->nor.write_reg = intel_spi_write_reg;
-	ispi->nor.read = intel_spi_read;
-	ispi->nor.write = intel_spi_write;
-	ispi->nor.erase = intel_spi_erase;
-
-	ret = spi_nor_scan(&ispi->nor, NULL, &hwcaps);
-	if (ret) {
-		dev_info(dev, "failed to locate the chip\n");
-		return ERR_PTR(ret);
-	}
-
-	intel_spi_fill_partition(ispi, &part);
-
-	/* Prevent writes if not explicitly enabled */
-	if (!ispi->writeable || !writeable)
-		ispi->nor.mtd.flags &= ~MTD_WRITEABLE;
-
-	ret = mtd_device_register(&ispi->nor.mtd, &part, 1);
+	ret = intel_spi_read_desc(ispi);
 	if (ret)
 		return ERR_PTR(ret);
+
+	ret = intel_spi_add_chip(ispi, &ispi->nor[0], NULL);
+	if (ret)
+		return ERR_PTR(ret);
+
+	if (ispi->nc > 1) {
+		ret = intel_spi_add_chip(ispi, &ispi->nor[1], "chip1");
+		if (ret) {
+			mtd_device_unregister(&ispi->nor[0].mtd);
+			return ERR_PTR(ret);
+		}
+	}
 
 	return ispi;
 }
@@ -925,7 +1009,15 @@ EXPORT_SYMBOL_GPL(intel_spi_probe);
 
 int intel_spi_remove(struct intel_spi *ispi)
 {
-	return mtd_device_unregister(&ispi->nor.mtd);
+	int i, ret;
+
+	for (i = ispi->nc - 1; i >= 0; i--) {
+		ret = mtd_device_unregister(&ispi->nor[i].mtd);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(intel_spi_remove);
 

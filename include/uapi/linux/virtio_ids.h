@@ -47,4 +47,14 @@
 #define VIRTIO_ID_FS           26 /* virtio filesystem */
 #define VIRTIO_ID_PMEM         27 /* virtio pmem */
 
+/* ACRN virtio device types */
+#define	VIRTIO_ID_RPMB		0xFFFF
+#define	VIRTIO_ID_HECI		0xFFFE
+#define	VIRTIO_ID_AUDIO		0xFFFD
+#define	VIRTIO_ID_IPU		0xFFFC
+#define	VIRTIO_ID_TSN		0xFFFB
+#define	VIRTIO_ID_HYPERDMABUF	0xFFFA
+#define	VIRTIO_ID_HDCP		0xFFF9
+#define	VIRTIO_ID_COREU		0xFFF8
+
 #endif /* _LINUX_VIRTIO_IDS_H */

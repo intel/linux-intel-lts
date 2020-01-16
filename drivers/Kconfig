@@ -86,6 +86,8 @@ source "drivers/hwmon/Kconfig"
 
 source "drivers/thermal/Kconfig"
 
+source "drivers/trusty/Kconfig"
+
 source "drivers/watchdog/Kconfig"
 
 source "drivers/ssb/Kconfig"
@@ -228,4 +230,9 @@ source "drivers/interconnect/Kconfig"
 
 source "drivers/counter/Kconfig"
 
+source "drivers/vbs/Kconfig"
+
+source "drivers/acrn/Kconfig"
+
+source "drivers/vhm/Kconfig"
 endmenu

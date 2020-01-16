@@ -22,7 +22,13 @@ obj-$(CONFIG_INTEL_MEI_TXE) += mei-txe.o
 mei-txe-objs := pci-txe.o
 mei-txe-objs += hw-txe.o
 
+obj-$(CONFIG_INTEL_MEI_VIRTIO) += mei-virtio.o
+mei-virtio-objs := hw-virtio.o
+
 mei-$(CONFIG_EVENT_TRACING) += mei-trace.o
 CFLAGS_mei-trace.o = -I$(src)
 
 obj-$(CONFIG_INTEL_MEI_HDCP) += hdcp/
+obj-$(CONFIG_INTEL_MEI_SPD) += spd/
+obj-$(CONFIG_INTEL_MEI_DAL) += dal/
+

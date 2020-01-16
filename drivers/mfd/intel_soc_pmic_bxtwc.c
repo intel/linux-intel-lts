@@ -84,6 +84,7 @@ enum bxtwc_irqs_adc {
 
 enum bxtwc_irqs_chgr {
 	BXTWC_USBC_IRQ = 0,
+	BXTWC_I2C_IRQ,
 	BXTWC_CHGR0_IRQ,
 	BXTWC_CHGR1_IRQ,
 };
@@ -121,7 +122,8 @@ static const struct regmap_irq bxtwc_regmap_irqs_adc[] = {
 
 static const struct regmap_irq bxtwc_regmap_irqs_chgr[] = {
 	REGMAP_IRQ_REG(BXTWC_USBC_IRQ, 0, 0x20),
-	REGMAP_IRQ_REG(BXTWC_CHGR0_IRQ, 0, 0x1f),
+	REGMAP_IRQ_REG(BXTWC_I2C_IRQ, 0, 0x0f),
+	REGMAP_IRQ_REG(BXTWC_CHGR0_IRQ, 0, 0x10),
 	REGMAP_IRQ_REG(BXTWC_CHGR1_IRQ, 1, 0x1f),
 };
 
@@ -208,6 +210,10 @@ static struct resource usbc_resources[] = {
 	DEFINE_RES_IRQ(BXTWC_USBC_IRQ),
 };
 
+static struct resource i2c_resources[] = {
+	DEFINE_RES_IRQ(BXTWC_I2C_IRQ),
+};
+
 static struct resource charger_resources[] = {
 	DEFINE_RES_IRQ_NAMED(BXTWC_CHGR0_IRQ, "CHARGER"),
 	DEFINE_RES_IRQ_NAMED(BXTWC_CHGR1_IRQ, "CHARGER1"),
@@ -223,6 +229,18 @@ static struct resource bcu_resources[] = {
 
 static struct resource tmu_resources[] = {
 	DEFINE_RES_IRQ_NAMED(BXTWC_TMU_IRQ, "TMU"),
+};
+
+static struct software_node_ref_args usb_mux_ref;
+
+static const struct software_node_reference charger_refs[] = {
+	{ "usb-role-switch", 1, &usb_mux_ref },
+	{ }
+};
+
+static const struct software_node charger_node = {
+	.name = "charger",
+	.references = charger_refs
 };
 
 static struct mfd_cell bxt_wc_dev[] = {
@@ -242,9 +260,15 @@ static struct mfd_cell bxt_wc_dev[] = {
 		.resources = usbc_resources,
 	},
 	{
+		.name = "bxt_wcove_i2c",
+		.num_resources = ARRAY_SIZE(i2c_resources),
+		.resources = i2c_resources,
+	},
+	{
 		.name = "bxt_wcove_ext_charger",
 		.num_resources = ARRAY_SIZE(charger_resources),
 		.resources = charger_resources,
+		.node = &charger_node
 	},
 	{
 		.name = "bxt_wcove_bcu",
@@ -545,6 +569,10 @@ static int bxtwc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to add CRIT IRQ chip\n");
 		return ret;
 	}
+
+	usb_mux_ref.node = software_node_find_by_name(NULL, "intel-xhci-usb-sw");
+	if (!usb_mux_ref.node)
+		return -EPROBE_DEFER;
 
 	ret = devm_mfd_add_devices(&pdev->dev, PLATFORM_DEVID_NONE, bxt_wc_dev,
 				   ARRAY_SIZE(bxt_wc_dev), NULL, 0, NULL);

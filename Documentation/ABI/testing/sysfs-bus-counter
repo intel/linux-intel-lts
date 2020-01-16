@@ -146,6 +146,10 @@ Description:
 			updates	the respective count. Quadrature encoding
 			determines the direction.
 
+		quadrature x4 swapped:
+			Same as quadrature x4, however Phase A and Phase B
+			signals are swapped.
+
 What:		/sys/bus/counter/devices/counterX/countY/name
 KernelVersion:	5.2
 Contact:	linux-iio@vger.kernel.org

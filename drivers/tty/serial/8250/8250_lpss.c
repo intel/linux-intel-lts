@@ -315,9 +315,11 @@ static int lpss8250_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!uart.port.membase)
 		return -ENOMEM;
 
-	ret = lpss->board->setup(lpss, &uart.port);
-	if (ret)
-		return ret;
+	if (lpss->board->setup) {
+		ret = lpss->board->setup(lpss, &uart.port);
+		if (ret)
+			return ret;
+	}
 
 	dw8250_setup_port(&uart.port);
 

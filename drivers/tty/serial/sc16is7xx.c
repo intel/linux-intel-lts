@@ -1093,12 +1093,6 @@ static int sc16is7xx_verify_port(struct uart_port *port,
 	return 0;
 }
 
-static void sc16is7xx_pm(struct uart_port *port, unsigned int state,
-			 unsigned int oldstate)
-{
-	sc16is7xx_power(port, (state == UART_PM_STATE_ON) ? 1 : 0);
-}
-
 static void sc16is7xx_null_void(struct uart_port *port)
 {
 	/* Do nothing */
@@ -1120,7 +1114,6 @@ static const struct uart_ops sc16is7xx_ops = {
 	.release_port	= sc16is7xx_null_void,
 	.config_port	= sc16is7xx_config_port,
 	.verify_port	= sc16is7xx_verify_port,
-	.pm		= sc16is7xx_pm,
 };
 
 #ifdef CONFIG_GPIOLIB

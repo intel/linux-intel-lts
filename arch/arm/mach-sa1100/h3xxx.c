@@ -83,19 +83,6 @@ static struct resource h3xxx_flash_resource =
 /*
  * H3xxx uart support
  */
-static void h3xxx_uart_pm(struct uart_port *port, u_int state, u_int oldstate)
-{
-	if (port->mapbase == _Ser3UTCR0) {
-		if (!gpio_request(H3XXX_EGPIO_RS232_ON, "RS232 transceiver")) {
-			gpio_direction_output(H3XXX_EGPIO_RS232_ON, !state);
-			gpio_free(H3XXX_EGPIO_RS232_ON);
-		} else {
-			pr_err("%s: can't request H3XXX_EGPIO_RS232_ON\n",
-				__func__);
-		}
-	}
-}
-
 /*
  * Enable/Disable wake up events for this serial port.
  * Obviously, we only support this on the normal COM port.
@@ -115,7 +102,6 @@ static int h3xxx_uart_set_wake(struct uart_port *port, u_int enable)
 }
 
 static struct sa1100_port_fns h3xxx_port_fns __initdata = {
-	.pm		= h3xxx_uart_pm,
 	.set_wake	= h3xxx_uart_set_wake,
 };
 

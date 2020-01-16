@@ -261,9 +261,9 @@ static int intel_dsi_compute_config(struct intel_encoder *encoder,
 	struct intel_dsi *intel_dsi = container_of(encoder, struct intel_dsi,
 						   base);
 	struct intel_connector *intel_connector = intel_dsi->attached_connector;
-	struct intel_crtc *crtc = to_intel_crtc(pipe_config->base.crtc);
+	struct intel_crtc *crtc = to_intel_crtc(pipe_config->uapi.crtc);
 	const struct drm_display_mode *fixed_mode = intel_connector->panel.fixed_mode;
-	struct drm_display_mode *adjusted_mode = &pipe_config->base.adjusted_mode;
+	struct drm_display_mode *adjusted_mode = &pipe_config->hw.adjusted_mode;
 	int ret;
 
 	DRM_DEBUG_KMS("\n");
@@ -624,7 +624,7 @@ static void intel_dsi_port_enable(struct intel_encoder *encoder,
 				  const struct intel_crtc_state *crtc_state)
 {
 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
-	struct intel_crtc *crtc = to_intel_crtc(crtc_state->base.crtc);
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	struct intel_dsi *intel_dsi = enc_to_intel_dsi(&encoder->base);
 	enum port port;
 
@@ -746,10 +746,10 @@ static void intel_dsi_pre_enable(struct intel_encoder *encoder,
 				 const struct drm_connector_state *conn_state)
 {
 	struct intel_dsi *intel_dsi = enc_to_intel_dsi(&encoder->base);
-	struct drm_crtc *crtc = pipe_config->base.crtc;
+	struct drm_crtc *crtc = pipe_config->uapi.crtc;
 	struct drm_i915_private *dev_priv = to_i915(crtc->dev);
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
-	int pipe = intel_crtc->pipe;
+	enum pipe pipe = intel_crtc->pipe;
 	enum port port;
 	u32 val;
 	bool glk_cold_boot = false;
@@ -1032,9 +1032,9 @@ static void bxt_dsi_get_pipe_config(struct intel_encoder *encoder,
 	struct drm_device *dev = encoder->base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct drm_display_mode *adjusted_mode =
-					&pipe_config->base.adjusted_mode;
+					&pipe_config->hw.adjusted_mode;
 	struct drm_display_mode *adjusted_mode_sw;
-	struct intel_crtc *crtc = to_intel_crtc(pipe_config->base.crtc);
+	struct intel_crtc *crtc = to_intel_crtc(pipe_config->uapi.crtc);
 	struct intel_dsi *intel_dsi = enc_to_intel_dsi(&encoder->base);
 	unsigned int lane_count = intel_dsi->lane_count;
 	unsigned int bpp, fmt;
@@ -1045,7 +1045,7 @@ static void bxt_dsi_get_pipe_config(struct intel_encoder *encoder,
 				crtc_hblank_start_sw, crtc_hblank_end_sw;
 
 	/* FIXME: hw readout should not depend on SW state */
-	adjusted_mode_sw = &crtc->config->base.adjusted_mode;
+	adjusted_mode_sw = &crtc->config->hw.adjusted_mode;
 
 	/*
 	 * Atleast one port is active as encoder->get_config called only if
@@ -1204,7 +1204,7 @@ static void intel_dsi_get_config(struct intel_encoder *encoder,
 	}
 
 	if (pclk) {
-		pipe_config->base.adjusted_mode.crtc_clock = pclk;
+		pipe_config->hw.adjusted_mode.crtc_clock = pclk;
 		pipe_config->port_clock = pclk;
 	}
 }
@@ -1315,9 +1315,9 @@ static void intel_dsi_prepare(struct intel_encoder *intel_encoder,
 	struct drm_encoder *encoder = &intel_encoder->base;
 	struct drm_device *dev = encoder->dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
-	struct intel_crtc *intel_crtc = to_intel_crtc(pipe_config->base.crtc);
+	struct intel_crtc *intel_crtc = to_intel_crtc(pipe_config->uapi.crtc);
 	struct intel_dsi *intel_dsi = enc_to_intel_dsi(encoder);
-	const struct drm_display_mode *adjusted_mode = &pipe_config->base.adjusted_mode;
+	const struct drm_display_mode *adjusted_mode = &pipe_config->hw.adjusted_mode;
 	enum port port;
 	unsigned int bpp = mipi_dsi_pixel_format_to_bpp(intel_dsi->pixel_format);
 	u32 val, tmp;
@@ -1870,11 +1870,11 @@ void vlv_dsi_init(struct drm_i915_private *dev_priv)
 	 * port C. BXT isn't limited like this.
 	 */
 	if (IS_GEN9_LP(dev_priv))
-		intel_encoder->crtc_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C);
+		intel_encoder->pipe_mask = ~0;
 	else if (port == PORT_A)
-		intel_encoder->crtc_mask = BIT(PIPE_A);
+		intel_encoder->pipe_mask = BIT(PIPE_A);
 	else
-		intel_encoder->crtc_mask = BIT(PIPE_B);
+		intel_encoder->pipe_mask = BIT(PIPE_B);
 
 	if (dev_priv->vbt.dsi.config->dual_link)
 		intel_dsi->ports = BIT(PORT_A) | BIT(PORT_C);

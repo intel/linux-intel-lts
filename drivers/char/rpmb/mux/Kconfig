@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2018-2019, Intel Corporation.
+
+config RPMB_MUX
+	tristate "RPMB Mux kernel module interface /dev/rpmbmux"
+	default n
+	select RPMB
+	select CRYPTO_SHA256
+	select CRYPTO_HMAC
+	help
+	  Say yes here if you want to access RPMB from user space
+	  via character device interface /dev/rpmbmux, which  acts
+	  as a multiplexor above RPMB native driver.
+
+	  RPMB MUX owns RPMB authentication key internally for RPMB
+	  virtualization usage.
+
+config RPMB_MUX_KEY
+	bool "RPMB MUX Key handling"
+	depends on RPMB_SUPPORT
+	select CRYPTO_SHA256
+	select CRYPTO_HMAC
+	help
+	  Say yes here if you want to access RPMB MUX Key handling.

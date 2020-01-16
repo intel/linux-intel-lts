@@ -139,8 +139,10 @@ enum flag_idn {
 	QUERY_FLAG_IDN_RESERVED2			= 0x07,
 	QUERY_FLAG_IDN_FPHYRESOURCEREMOVAL		= 0x08,
 	QUERY_FLAG_IDN_BUSY_RTC				= 0x09,
-	QUERY_FLAG_IDN_RESERVED3			= 0x0A,
+	QUERY_FLAG_IDN_UNIFIED_MEMORY			= 0x0A,
 	QUERY_FLAG_IDN_PERMANENTLY_DISABLE_FW_UPDATE	= 0x0B,
+	QUERY_FLAG_IDN_SUSPEND_UM			= 0x0C,
+	QUERY_FLAG_IDN_UM_SUSPENDED			= 0x0D,
 };
 
 /* Attribute idn for Query requests */
@@ -163,8 +165,8 @@ enum attr_idn {
 	QUERY_ATTR_IDN_SECONDS_PASSED		= 0x0F,
 	QUERY_ATTR_IDN_CNTX_CONF		= 0x10,
 	QUERY_ATTR_IDN_CORR_PRG_BLK_NUM		= 0x11,
-	QUERY_ATTR_IDN_RESERVED2		= 0x12,
-	QUERY_ATTR_IDN_RESERVED3		= 0x13,
+	QUERY_ATTR_IDN_UM_AREA_SIZE		= 0x12,
+	QUERY_ATTR_IDN_MAX_UMPIU_REQS		= 0x13,
 	QUERY_ATTR_IDN_FFU_STATUS		= 0x14,
 	QUERY_ATTR_IDN_PSA_STATE		= 0x15,
 	QUERY_ATTR_IDN_PSA_DATA_SIZE		= 0x16,
@@ -258,7 +260,12 @@ enum device_desc_param {
 	DEVICE_DESC_PARAM_PSA_MAX_DATA		= 0x25,
 	DEVICE_DESC_PARAM_PSA_TMT		= 0x29,
 	DEVICE_DESC_PARAM_PRDCT_REV		= 0x2A,
+	DEVICE_DESC_PARAM_MIN_UMA_SZ		= 0x31,
 };
+
+#define UFS_DEVICE_SUB_CLASS_NONBOOTABLE	0x01
+#define UFS_DEVICE_SUB_CLASS_REMOVABLE		0x02
+#define UFS_DEVICE_SUB_CLASS_UM_SUPPORT		0x04
 
 /* Interconnect descriptor parameters offsets in bytes*/
 enum interconnect_desc_param {
@@ -536,12 +543,20 @@ struct ufs_dev_info {
 /**
  * ufs_dev_desc - ufs device details from the device descriptor
  *
+ * @subclass: device subclass
+ * @min_uma_sz: minimum UM area size
  * @wmanufacturerid: card details
  * @model: card model
+ * @serial_no: serial number
+ * @serial_no_len: serial number string length
  */
 struct ufs_dev_desc {
+	u8 subclass;
+	u32 min_uma_sz;
 	u16 wmanufacturerid;
-	u8 *model;
+	char *model;
+	char *serial_no;
+	size_t serial_no_len;
 };
 
 /**

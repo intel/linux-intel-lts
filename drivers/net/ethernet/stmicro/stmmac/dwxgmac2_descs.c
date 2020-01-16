@@ -239,7 +239,7 @@ static void dwxgmac2_set_mss(struct dma_desc *p, unsigned int mss)
 	p->des3 = cpu_to_le32(XGMAC_TDES3_CTXT | XGMAC_TDES3_TCMSSV);
 }
 
-static void dwxgmac2_get_addr(struct dma_desc *p, unsigned int *addr)
+static void dwxgmac2_get_addr(struct dma_desc *p, dma_addr_t *addr)
 {
 	*addr = le32_to_cpu(p->des0);
 }

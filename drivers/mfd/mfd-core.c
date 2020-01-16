@@ -196,6 +196,14 @@ static int mfd_add_device(struct device *parent, int id,
 			goto fail_alias;
 	}
 
+	if (cell->node) {
+		ret = software_node_register(cell->node);
+		if (ret)
+			goto fail_alias;
+
+		pdev->dev.fwnode = software_node_fwnode(cell->node);
+	}
+
 	ret = mfd_platform_add_cell(pdev, cell, usage_count);
 	if (ret)
 		goto fail_alias;

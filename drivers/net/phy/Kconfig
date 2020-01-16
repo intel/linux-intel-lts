@@ -364,6 +364,15 @@ config DP83867_PHY
 	---help---
 	  Currently supports the DP83867 PHY.
 
+config DWXPCS
+	tristate "Synopsys DesignWare PCS converter driver"
+	help
+	  This driver supports DW PCS IP that provides the Serial Gigabit
+	  Media Independent Interface(SGMII) between Ethernet physical media
+	  devices and the Gigabit Ethernet controller.
+
+	  Currently tested with stmmac.
+
 config FIXED_PHY
 	tristate "MDIO Bus/PHY emulation with fixed speed/link PHYs"
 	depends on PHYLIB

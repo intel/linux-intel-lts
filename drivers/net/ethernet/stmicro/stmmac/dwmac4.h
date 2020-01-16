@@ -17,6 +17,7 @@
 #define GMAC_PACKET_FILTER		0x00000008
 #define GMAC_HASH_TAB(x)		(0x10 + (x) * 4)
 #define GMAC_VLAN_TAG			0x00000050
+#define GMAC_VLAN_TAG_DATA		0x00000054
 #define GMAC_VLAN_HASH_TABLE		0x00000058
 #define GMAC_RX_FLOW_CTRL		0x00000090
 #define GMAC_VLAN_INCL			0x00000060
@@ -43,6 +44,7 @@
 #define GMAC_ARP_ADDR			0x00000210
 #define GMAC_ADDR_HIGH(reg)		(0x300 + reg * 8)
 #define GMAC_ADDR_LOW(reg)		(0x304 + reg * 8)
+#define GMAC_TIMESTAMP_STATUS		0x00000b20
 
 /* RX Queues Routing */
 #define GMAC_RXQCTRL_AVCPQ_MASK		GENMASK(2, 0)
@@ -67,6 +69,7 @@
 #define GMAC_PACKET_FILTER_PCF		BIT(7)
 #define GMAC_PACKET_FILTER_HPF		BIT(10)
 #define GMAC_PACKET_FILTER_VTFE		BIT(16)
+#define GMAC_PACKET_FILTER_RA		BIT(31)
 
 #define GMAC_MAX_PERFECT_ADDRESSES	128
 
@@ -81,6 +84,30 @@
 #define GMAC_VLAN_CSVL			BIT(19)
 #define GMAC_VLAN_VLC			GENMASK(17, 16)
 #define GMAC_VLAN_VLC_SHIFT		16
+#define GMAC_VLAN_VLHT			GENMASK(15, 0)
+
+/* MAC VLAN Tag */
+#define GMAC_VLAN_TAG_VID		GENMASK(15, 0)
+#define GMAC_VLAN_TAG_ETV		BIT(16)
+
+/* MAC VLAN Tag Control */
+#define GMAC_VLAN_TAG_CTRL_OB		BIT(0)
+#define GMAC_VLAN_TAG_CTRL_CT		BIT(1)
+#define GMAC_VLAN_TAG_CTRL_OFS_MASK	GENMASK(6, 2)
+#define GMAC_VLAN_TAG_CTRL_OFS_SHIFT	2
+#define GMAC_VLAN_TAG_CTRL_EVLS_MASK	GENMASK(22, 21)
+#define GMAC_VLAN_TAG_CTRL_EVLS_SHIFT	21
+#define GMAC_VLAN_TAG_CTRL_EVLRXS	BIT(24)
+
+#define GMAC_VLAN_TAG_STRIP_NONE	(0x0 << GMAC_VLAN_TAG_CTRL_EVLS_SHIFT)
+#define GMAC_VLAN_TAG_STRIP_PASS	(0x1 << GMAC_VLAN_TAG_CTRL_EVLS_SHIFT)
+#define GMAC_VLAN_TAG_STRIP_FAIL	(0x2 << GMAC_VLAN_TAG_CTRL_EVLS_SHIFT)
+#define GMAC_VLAN_TAG_STRIP_ALL		(0x3 << GMAC_VLAN_TAG_CTRL_EVLS_SHIFT)
+
+/* MAC VLAN Tag Data/Filter */
+#define GMAC_VLAN_TAG_DATA_VID		GENMASK(15, 0)
+#define GMAC_VLAN_TAG_DATA_VEN		BIT(16)
+#define GMAC_VLAN_TAG_DATA_ETV		BIT(17)
 
 /* MAC RX Queue Enable */
 #define GMAC_RX_QUEUE_CLEAR(queue)	~(GENMASK(1, 0) << ((queue) * 2))
@@ -91,12 +118,14 @@
 #define GMAC_RX_FLOW_CTRL_RFE		BIT(0)
 
 /* RX Queues Priorities */
-#define GMAC_RXQCTRL_PSRQX_MASK(x)	GENMASK(7 + ((x) * 8), 0 + ((x) * 8))
-#define GMAC_RXQCTRL_PSRQX_SHIFT(x)	((x) * 8)
+#define GMAC_RXQCTRL_PSRQX_MASK(x)	GENMASK(7 + (((x) % 4) * 8), \
+						0 + (((x) % 4) * 8))
+#define GMAC_RXQCTRL_PSRQX_SHIFT(x)	(((x) % 4) * 8)
 
 /* TX Queues Priorities */
-#define GMAC_TXQCTRL_PSTQX_MASK(x)	GENMASK(7 + ((x) * 8), 0 + ((x) * 8))
-#define GMAC_TXQCTRL_PSTQX_SHIFT(x)	((x) * 8)
+#define GMAC_TXQCTRL_PSTQX_MASK(x)	GENMASK(7 + (((x) % 4) * 8), \
+						0 + (((x) % 4) * 8))
+#define GMAC_TXQCTRL_PSTQX_SHIFT(x)	(((x) % 4) * 8)
 
 /* MAC Flow Control TX */
 #define GMAC_TX_FLOW_CTRL_TFE		BIT(1)
@@ -109,11 +138,17 @@
 #define GMAC_INT_PCS_PHYIS		BIT(3)
 #define GMAC_INT_PMT_EN			BIT(4)
 #define GMAC_INT_LPI_EN			BIT(5)
+#define GMAC_INT_TSIE			BIT(12)
 
 #define	GMAC_PCS_IRQ_DEFAULT	(GMAC_INT_RGSMIIS | GMAC_INT_PCS_LINK |	\
 				 GMAC_INT_PCS_ANE)
 
+#ifdef CONFIG_STMMAC_HWTS
+#define	GMAC_INT_DEFAULT_ENABLE	(GMAC_INT_PMT_EN | GMAC_INT_LPI_EN |\
+				 GMAC_INT_TSIE)
+#else
 #define	GMAC_INT_DEFAULT_ENABLE	(GMAC_INT_PMT_EN | GMAC_INT_LPI_EN)
+#endif
 
 enum dwmac4_irq_status {
 	time_stamp_irq = 0x00001000,
@@ -123,6 +158,7 @@ enum dwmac4_irq_status {
 	mmc_irq = 0x00000100,
 	lpi_irq = 0x00000020,
 	pmt_irq = 0x00000010,
+	mdio_irq = 0x00040000,
 };
 
 /* MAC PMT bitmap */
@@ -185,6 +221,7 @@ enum power_event {
 
 /* MAC HW features0 bitmap */
 #define GMAC_HW_FEAT_SAVLANINS		BIT(27)
+#define GMAC_HW_FEAT_TSSTSSEL		GENMASK(26, 25)
 #define GMAC_HW_FEAT_ADDMAC		BIT(18)
 #define GMAC_HW_FEAT_RXCOESEL		BIT(16)
 #define GMAC_HW_FEAT_TXCOSEL		BIT(14)
@@ -205,10 +242,12 @@ enum power_event {
 #define GMAC_HW_HASH_TB_SZ		GENMASK(25, 24)
 #define GMAC_HW_FEAT_AVSEL		BIT(20)
 #define GMAC_HW_TSOEN			BIT(18)
+#define GMAC_HW_FEAT_ADDR64		GENMASK(15, 14)
 #define GMAC_HW_TXFIFOSIZE		GENMASK(10, 6)
 #define GMAC_HW_RXFIFOSIZE		GENMASK(4, 0)
 
 /* MAC HW features2 bitmap */
+#define GMAC_HW_FEAT_AUXSNAPNUM		GENMASK(30, 28)
 #define GMAC_HW_FEAT_PPSOUTNUM		GENMASK(26, 24)
 #define GMAC_HW_FEAT_TXCHCNT		GENMASK(21, 18)
 #define GMAC_HW_FEAT_RXCHCNT		GENMASK(15, 12)
@@ -221,11 +260,18 @@ enum power_event {
 #define GMAC_HW_FEAT_FRPBS		GENMASK(12, 11)
 #define GMAC_HW_FEAT_FRPSEL		BIT(10)
 #define GMAC_HW_FEAT_DVLAN		BIT(5)
+#define GMAC_HW_FEAT_NRVF		GENMASK(2, 0)
 
 /* MAC HW ADDR regs */
 #define GMAC_HI_DCS			GENMASK(18, 16)
 #define GMAC_HI_DCS_SHIFT		16
 #define GMAC_HI_REG_AE			BIT(31)
+
+/* MAC Timestamp Status */
+#define GMAC_TIMESTAMP_AUXTSTRIG	BIT(2)
+#define GMAC_TIMESTAMP_ATSNS_MASK	GENMASK(29, 25)
+#define GMAC_TIMESTAMP_ATSNS_SHIFT	25
+#define GMAC_TIMESTAMP_ATSSTM		BIT(24)
 
 /*  MTL registers */
 #define MTL_OPERATION_MODE		0x00000c00

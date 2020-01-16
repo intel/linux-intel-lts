@@ -1143,7 +1143,11 @@ static int __init acpi_bus_init(void)
 	 */
 	acpi_ec_ecdt_probe();
 
+#if defined(CONFIG_ACRN) && defined(CONFIG_PREEMPT_RT_BASE)
+	status = acpi_enable_subsystem(ACPI_NO_ACPI_ENABLE | ACPI_NO_HANDLER_INIT);
+#else
 	status = acpi_enable_subsystem(ACPI_NO_ACPI_ENABLE);
+#endif
 	if (ACPI_FAILURE(status)) {
 		printk(KERN_ERR PREFIX
 		       "Unable to start the ACPI Interpreter\n");

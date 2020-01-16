@@ -1174,8 +1174,10 @@ back_from_confirm:
 				  sizeof(struct udphdr), &ipc, &rt,
 				  &cork, msg->msg_flags);
 		err = PTR_ERR(skb);
-		if (!IS_ERR_OR_NULL(skb))
+		if (!IS_ERR_OR_NULL(skb)) {
+			skb->tstamp = ipc.sockc.transmit_time;
 			err = udp_send_skb(skb, fl4, &cork);
+		}
 		goto out;
 	}
 

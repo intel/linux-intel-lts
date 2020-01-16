@@ -759,33 +759,6 @@ static void __init ams_delta_init(void)
 	omapfb_set_lcd_config(&ams_delta_lcd_config);
 }
 
-static void modem_pm(struct uart_port *port, unsigned int state, unsigned old)
-{
-	struct modem_private_data *priv = port->private_data;
-	int ret;
-
-	if (!priv)
-		return;
-
-	if (IS_ERR(priv->regulator))
-		return;
-
-	if (state == old)
-		return;
-
-	if (state == 0)
-		ret = regulator_enable(priv->regulator);
-	else if (old == 0)
-		ret = regulator_disable(priv->regulator);
-	else
-		ret = 0;
-
-	if (ret)
-		dev_warn(port->dev,
-			 "ams_delta modem_pm: failed to %sable regulator: %d\n",
-			 state ? "dis" : "en", ret);
-}
-
 static struct plat_serial8250_port ams_delta_modem_ports[] = {
 	{
 		.membase	= IOMEM(MODEM_VIRT),
@@ -796,7 +769,6 @@ static struct plat_serial8250_port ams_delta_modem_ports[] = {
 		.iotype		= UPIO_MEM,
 		.regshift	= 1,
 		.uartclk	= BASE_BAUD * 16,
-		.pm		= modem_pm,
 		.private_data	= &modem_priv,
 	},
 	{ },

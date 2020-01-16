@@ -398,6 +398,23 @@ config SND_SOC_INTEL_SKL_HDA_DSP_GENERIC_MACH
 
 endif ## SND_SOC_INTEL_SKYLAKE_HDAUDIO_CODEC || SND_SOC_SOF_HDA_AUDIO_CODEC
 
+if SND_SOC_SOF_TIGERLAKE
+
+config SND_SOC_INTEL_TGL_RT1308_MACH
+	tristate "TGL with RT1308 in I2S Mode"
+	depends on I2C && ACPI
+	depends on MFD_INTEL_LPSS || COMPILE_TEST
+	select SND_SOC_RT1308
+	select SND_SOC_DMIC
+	select SND_SOC_HDAC_HDMI if SND_SOC_SOF_HDA_COMMON
+	help
+	   This adds support for ASoC machine driver for Tigerlake platforms
+	   with RT1308 I2S audio codec.
+	   Say Y if you have such a device.
+	   If unsure select "N".
+
+endif ## SND_SOC_SOF_TIGERLAKE
+
 if SND_SOC_SOF_HDA_COMMON || SND_SOC_SOF_BAYTRAIL
 config SND_SOC_INTEL_SOF_RT5682_MACH
 	tristate "SOF with rt5682 codec in I2S Mode"
@@ -423,5 +440,25 @@ config SND_SOC_INTEL_CML_LP_DA7219_MAX98357A_MACH
 	select SND_SOC_INTEL_DA7219_MAX98357A_GENERIC
 
 endif ## SND_SOC_SOF_COMETLAKE_LP && SND_SOC_SOF_HDA_LINK
+
+config SND_SOC_INTEL_EHL_RT5660_MACH
+	tristate "EHL with RT5660 in I2S mode"
+	depends on I2C && ACPI
+	depends on MFD_INTEL_LPSS || COMPILE_TEST
+	select SND_SOC_RT5660
+	help
+	  This adds support for ASoC machine driver for Elkhart Lake platform
+	  with RT5660 I2S audio codec.
+	  Say Y or m if you have such a device. This is a recommended option.
+	  If unsure select "N".
+
+config SND_SOC_INTEL_EHL_RT5660_FPGA
+	tristate "RT5660 on IP FPGA"
+	depends on SND_SOC_INTEL_EHL_RT5660_MACH
+	help
+	 This option will be reverded after power on.
+	 It's only for testing purposes.
+	 Select this option if testing RT5660 on IP FPGA
+	 If unsure select "N".
 
 endif ## SND_SOC_INTEL_MACH

@@ -1,0 +1,10 @@
+config INTEL_SOCPERF
+	bool "Socperf kernel driver"
+	depends on X86 || X86_64
+	default y
+
+config SOCPERF
+	tristate "Socperf kernel driver"
+	depends on INTEL_SOCPERF
+	depends on ACPI && PCI
+	default m

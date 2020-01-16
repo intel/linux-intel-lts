@@ -3,7 +3,6 @@
  * NVM Express device driver
  * Copyright (c) 2011-2014, Intel Corporation.
  */
-
 #include <linux/blkdev.h>
 #include <linux/blk-mq.h>
 #include <linux/delay.h>
@@ -1990,24 +1989,53 @@ static const struct pr_ops nvme_pr_ops = {
 	.pr_clear	= nvme_pr_clear,
 };
 
-#ifdef CONFIG_BLK_SED_OPAL
-int nvme_sec_submit(void *data, u16 spsp, u8 secp, void *buffer, size_t len,
-		bool send)
+int nvme_sec_send(struct nvme_ctrl *ctrl, u8 nssf, u16 spsp, u8 secp,
+		  void *buffer, size_t len)
 {
-	struct nvme_ctrl *ctrl = data;
 	struct nvme_command cmd;
 
+	dev_dbg(ctrl->device, "%s target = %hhu SPSP = %hu SECP = %hhX len=%zd\n",
+		__func__, nssf, spsp, secp, len);
+
 	memset(&cmd, 0, sizeof(cmd));
-	if (send)
-		cmd.common.opcode = nvme_admin_security_send;
-	else
-		cmd.common.opcode = nvme_admin_security_recv;
+	cmd.common.opcode = nvme_admin_security_send;
 	cmd.common.nsid = 0;
-	cmd.common.cdw10 = cpu_to_le32(((u32)secp) << 24 | ((u32)spsp) << 8);
+	cmd.common.cdw10 = cpu_to_le32(((u32)secp) << 24 | ((u32)spsp) << 8 | nssf);
 	cmd.common.cdw11 = cpu_to_le32(len);
 
 	return __nvme_submit_sync_cmd(ctrl->admin_q, &cmd, NULL, buffer, len,
 				      ADMIN_TIMEOUT, NVME_QID_ANY, 1, 0, false);
+}
+EXPORT_SYMBOL_GPL(nvme_sec_send);
+
+int nvme_sec_recv(struct nvme_ctrl *ctrl, u8 nssf, u16 spsp, u8 secp,
+		  void *buffer, size_t len)
+{
+	struct nvme_command cmd;
+
+	dev_dbg(ctrl->device, "%s target = %hhu SPSP = %hu SECP = %hhX len=%zd\n",
+		__func__, nssf, spsp, secp, len);
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.common.opcode = nvme_admin_security_recv;
+	cmd.common.nsid = 0;
+	cmd.common.cdw10 = cpu_to_le32(((u32)secp) << 24 | ((u32)spsp) << 8 | nssf);
+	cmd.common.cdw11 = cpu_to_le32(len);
+	return __nvme_submit_sync_cmd(ctrl->admin_q, &cmd, NULL, buffer, len,
+				      ADMIN_TIMEOUT, NVME_QID_ANY, 1, 0, false);
+}
+EXPORT_SYMBOL_GPL(nvme_sec_recv);
+
+#ifdef CONFIG_BLK_SED_OPAL
+int nvme_sec_submit(void *data, u16 spsp, u8 secp, void *buffer, size_t len,
+		    bool send)
+{
+	struct nvme_ctrl *ctrl = data;
+
+	if (send)
+		return nvme_sec_send(ctrl, 0, spsp, secp, buffer, len);
+	else
+		return nvme_sec_recv(ctrl, 0, spsp, secp, buffer, len);
 }
 EXPORT_SYMBOL_GPL(nvme_sec_submit);
 #endif /* CONFIG_BLK_SED_OPAL */
@@ -2868,7 +2896,10 @@ int nvme_init_identify(struct nvme_ctrl *ctrl)
 		ctrl->hmmaxd = le16_to_cpu(id->hmmaxd);
 	}
 
+	ctrl->rpmbs = le32_to_cpu(id->rpmbs);
+
 	ret = nvme_mpath_init(ctrl, id);
+
 	kfree(id);
 
 	if (ret < 0)

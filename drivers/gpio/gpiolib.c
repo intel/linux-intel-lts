@@ -390,6 +390,14 @@ static void gpiochip_free_valid_mask(struct gpio_chip *gpiochip)
 	gpiochip->valid_mask = NULL;
 }
 
+static int gpiochip_add_pin_ranges(struct gpio_chip *gc)
+{
+	if (gc->add_pin_ranges)
+		return gc->add_pin_ranges(gc);
+
+	return 0;
+}
+
 bool gpiochip_line_is_valid(const struct gpio_chip *gpiochip,
 				unsigned int offset)
 {
@@ -1403,15 +1411,19 @@ int gpiochip_add_data_with_key(struct gpio_chip *chip, void *data,
 		}
 	}
 
+	ret = gpiochip_add_pin_ranges(chip);
+	if (ret)
+		goto err_remove_of_chip;
+
 	acpi_gpiochip_add(chip);
 
 	machine_gpiochip_add(chip);
 
-	ret = gpiochip_irqchip_init_hw(chip);
+	ret = gpiochip_irqchip_init_valid_mask(chip);
 	if (ret)
 		goto err_remove_acpi_chip;
 
-	ret = gpiochip_irqchip_init_valid_mask(chip);
+	ret = gpiochip_irqchip_init_hw(chip);
 	if (ret)
 		goto err_remove_acpi_chip;
 
@@ -1444,6 +1456,7 @@ err_remove_of_chip:
 	gpiochip_free_hogs(chip);
 	of_gpiochip_remove(chip);
 err_free_gpiochip_mask:
+	gpiochip_remove_pin_ranges(chip);
 	gpiochip_free_valid_mask(chip);
 err_remove_from_list:
 	spin_lock_irqsave(&gpio_lock, flags);
@@ -1499,8 +1512,8 @@ void gpiochip_remove(struct gpio_chip *chip)
 	gdev->chip = NULL;
 	gpiochip_irqchip_remove(chip);
 	acpi_gpiochip_remove(chip);
-	gpiochip_remove_pin_ranges(chip);
 	of_gpiochip_remove(chip);
+	gpiochip_remove_pin_ranges(chip);
 	gpiochip_free_valid_mask(chip);
 	/*
 	 * We accept no more calls into the driver from this point, so

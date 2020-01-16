@@ -15,6 +15,7 @@
 
 #include "stmmac.h"
 #include "stmmac_platform.h"
+#include "dwmac4.h"
 
 static int dwmac_generic_probe(struct platform_device *pdev)
 {
@@ -44,6 +45,7 @@ static int dwmac_generic_probe(struct platform_device *pdev)
 
 		/* Set default value for unicast filter entries */
 		plat_dat->unicast_filter_entries = 1;
+		plat_dat->eee_usecs_rate = plat_dat->clk_ptp_rate;
 	}
 
 	/* Custom initialisation (if needed) */
@@ -51,6 +53,13 @@ static int dwmac_generic_probe(struct platform_device *pdev)
 		ret = plat_dat->init(pdev, plat_dat->bsp_priv);
 		if (ret)
 			goto err_remove_config_dt;
+	}
+
+	if (plat_dat->eee_usecs_rate > 0) {
+		u32 tx_lpi_usec;
+
+		tx_lpi_usec = (plat_dat->eee_usecs_rate / 1000000) - 1;
+		writel(tx_lpi_usec, stmmac_res.addr + GMAC_1US_TIC_COUNTER);
 	}
 
 	ret = stmmac_dvr_probe(&pdev->dev, plat_dat, &stmmac_res);

@@ -676,21 +676,6 @@ fixup_assabet(struct tag *tags, char **cmdline)
 		printk("Neponset expansion board detected\n");
 }
 
-
-static void assabet_uart_pm(struct uart_port *port, u_int state, u_int oldstate)
-{
-	if (port->mapbase == _Ser1UTCR0) {
-		if (state)
-			ASSABET_BCR_clear(ASSABET_BCR_RS232EN);
-		else
-			ASSABET_BCR_set(ASSABET_BCR_RS232EN);
-	}
-}
-
-static struct sa1100_port_fns assabet_port_fns __initdata = {
-	.pm		= assabet_uart_pm,
-};
-
 static struct map_desc assabet_io_desc[] __initdata = {
   	{	/* Board Control Register */
 		.virtual	=  0xf1000000,
@@ -718,9 +703,6 @@ static void __init assabet_map_io(void)
 	MSC1 = (MSC1 & ~0xffff) |
 		MSC_NonBrst | MSC_32BitStMem |
 		MSC_RdAcc(2) | MSC_WrAcc(2) | MSC_Rec(0);
-
-	if (!machine_has_neponset())
-		sa1100_register_uart_fns(&assabet_port_fns);
 
 	/*
 	 * When Neponset is attached, the first UART should be

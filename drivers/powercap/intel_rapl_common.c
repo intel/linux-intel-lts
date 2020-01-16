@@ -986,6 +986,7 @@ static const struct x86_cpu_id rapl_ids[] __initconst = {
 	INTEL_CPU_FAM6(ATOM_GOLDMONT, rapl_defaults_core),
 	INTEL_CPU_FAM6(ATOM_GOLDMONT_PLUS, rapl_defaults_core),
 	INTEL_CPU_FAM6(ATOM_GOLDMONT_D, rapl_defaults_core),
+	INTEL_CPU_FAM6(ATOM_TREMONT, rapl_defaults_core),
 	INTEL_CPU_FAM6(ATOM_TREMONT_D, rapl_defaults_core),
 
 	INTEL_CPU_FAM6(XEON_PHI_KNL, rapl_defaults_hsw_server),
