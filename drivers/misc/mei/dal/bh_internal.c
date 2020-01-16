@@ -429,7 +429,7 @@ static void bh_request_work(struct work_struct *work)
 	ret = bh_send_recv_message(request);
 	request->ret = ret;
 
-	if (wq_has_sleeper(&request->complete.wait)) {
+	if (swq_has_sleeper(&request->complete.wait)) {
 		mutex_unlock(&bh_srv->request_lock);
 		complete(&request->complete);
 		return;
