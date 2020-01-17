@@ -1,9 +1,6 @@
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
 
-# CVE-2018-12614
-0001-powerpc-pseries-dlpar-Fix-a-missing-check-in-dlpar_p-CVE-2019-12614.patch
-
 # CVE-2018-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
 
@@ -26,14 +23,8 @@
 # CVE-2019-19067
 0001-drm-amdgpu-fix-multiple-memory-leaks-in-acp_hw_init-CVE-2019-19067.patch
 
-# CVE-2019-19063
-0001-rtlwifi-prevent-memory-leak-in-rtl_usb_probe-CVE-2019-19063.patch
-
 # CVE-2019-19058
 0001-iwlwifi-dbg_ini-fix-memory-leak-in-alloc_sgtable-CVE-2019-19058.patch
-
-# CVE-2019-19079
-0001-net-qrtr-fix-memort-leak-in-qrtr_tun_write_iter-CVE-2019-19079.patch
 
 # CVE-2019-19066
 0001-scsi-bfa-release-allocated-memory-in-case-of-error-CVE-2019-19066.patch
@@ -41,17 +32,8 @@
 # CVE-2019-19059
 0001-iwlwifi-pcie-fix-memory-leaks-in-iwl_pcie_ctxt_info-CVE-2019-19059.patch
  
-# CVE-2019-19057
-0001-mwifiex-pcie-Fix-memory-leak-in-mwifiex_pcie_init_ev-CVE-2019-19057.patch
- 
-# CVE-2019-19071
-0001-rsi-release-skb-if-rsi_prepare_beacon-fails-CVE-2019-19071.patch
- 
 # CVE-2019-19072
 0001-tracing-Have-error-path-in-predicate_parse-free-its-CVE-2019-19072.patch
- 
-# CVE-2019-19062
-0001-crypto-user-fix-memory-leak-in-crypto_report-CVE-2019-19062.patch
  
 # CVE-2019-19068
 0001-rtl8xxxu-prevent-leaking-urb-CVE-2019-19068.patch
@@ -64,9 +46,6 @@
  
 # CVE-2019-19056
 0001-mwifiex-pcie-Fix-memory-leak-in-mwifiex_pcie_alloc_c-CVE-2019-19056.patch
- 
-# CVE-2019-18809
-0001-media-usb-fix-memory-leak-in-af9005_identify_state-CVE-2019-18809.patch
  
 # CVE-2019-18814
 0001-apparmor-Fix-use-after-free-in-aa_audit_rule_init-CVE-2019-18814.patch
@@ -89,9 +68,6 @@
 # CVE-2019-19073
 0001-ath9k_htc-release-allocated-buffer-if-timed-out-CVE-2019-19073.patch
  
-# CVE-2019-18786
-0001-media-rcar_drif-fix-a-memory-disclosure-CVE-2019-18786.patch
- 
 # CVE-2019-15291
 0001-media-b2c2-flexcop-usb-add-sanity-checking-CVE-2019-15291.patch
 
@@ -101,6 +77,8 @@
 # CVE-2019-19082
 0001-drm-amd-display-prevent-memory-leak-CVE-2019-19082.patch
 
- 
 # CVE-2020-0009
 0001-staging-android-ashmem-Disallow-ashmem-memory-from-b-CVE-2020-0009.patch
+
+# CVE-2019-19602
+0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
