@@ -31,9 +31,6 @@
 # CVE-2019-15217
 0001-media-usb-zr364xx-Fix-KASAN-null-ptr-deref-Read-in-z-CVE-2019-15217.patch
 
-# CVE-2019-15917
-0001-Bluetooth-hci_ldisc-Postpone-HCI_UART_PROTO_READY-bi-CVE-2019-15917.patch
-
 # CVE-2018-21008
 0001-rsi-add-fix-for-crash-during-assertions-CVE-2018-21008.patch
 
@@ -52,26 +49,14 @@
 # CVE-2019-18808
 0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
 
-# CVE-2019-18809
-0001-media-usb-fix-memory-leak-in-af9005_identify_state.patch
-
 # CVE-2019-19054
 0001-media-rc-prevent-memory-leak-in-cx23888_ir_probe.patch
 
 # CVE-2019-19056
 0001-mwifiex-pcie-Fix-memory-leak-in-mwifiex_pcie_alloc_c.patch
 
-# CVE-2019-19057
-0001-mwifiex-pcie-Fix-memory-leak-in-mwifiex_pcie_init_ev.patch
-
 # CVE-2019-19068
 0001-rtl8xxxu-prevent-leaking-urb.patch
-
-# CVE-2019-19062
-0001-crypto-user-fix-memory-leak-in-crypto_report.patch
-
-# CVE-2019-19063
-0001-rtlwifi-prevent-memory-leak-in-rtl_usb_probe.patch
 
 # CVE-2019-19066
 0001-scsi-bfa-release-allocated-memory-in-case-of-error.patch
