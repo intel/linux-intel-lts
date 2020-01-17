@@ -541,6 +541,12 @@ static void dwmac5_dma_init_tx_chan(void __iomem *ioaddr,
 	value |= DMA_CONTROL_OSP;
 
 	writel(value, ioaddr + DMA_CHAN_TX_CONTROL(chan));
+
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	writel(upper_32_bits(dma_tx_phy),
+	       ioaddr + DMA_CHAN_TX_BASE_HI_ADDR(chan));
+#endif
+
 	writel(dma_tx_phy, ioaddr + DMA_CHAN_TX_BASE_ADDR(chan));
 }
 
