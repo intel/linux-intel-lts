@@ -159,6 +159,16 @@ inline long hcall_deassign_ptdev(unsigned long vmid, unsigned long bdf)
 	return acrn_hypercall2(HC_DEASSIGN_PTDEV, vmid, bdf);
 }
 
+inline long hcall_assign_pcidev(unsigned long vmid, unsigned long addr)
+{
+	return acrn_hypercall2(HC_ASSIGN_PCIDEV, vmid, addr);
+}
+
+inline long hcall_deassign_pcidev(unsigned long vmid, unsigned long addr)
+{
+	return acrn_hypercall2(HC_DEASSIGN_PCIDEV, vmid, addr);
+}
+
 inline long hcall_set_ptdev_intr_info(unsigned long vmid, unsigned long pt_irq)
 {
 	return acrn_hypercall2(HC_SET_PTDEV_INTR_INFO, vmid, pt_irq);
