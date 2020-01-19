@@ -105,12 +105,13 @@ static const char *vmm_signature[] = {
 /* Detect VMM and return vmm_id */
 static inline int trusty_detect_vmm(void)
 {
+#if IS_ENABLED(CONFIG_TRUSTY)
 	int i;
 	for (i = 0; i < VMM_SUPPORTED_NUM; i++) {
 		if (hypervisor_cpuid_base(vmm_signature[i], 0))
 			return i;
 	}
-
+#endif
 	return -EINVAL;
 }
 
