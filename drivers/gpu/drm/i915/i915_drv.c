@@ -327,7 +327,7 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		value = i915_modparams.semaphores;
 		break;
 	case I915_PARAM_HAS_SECURE_BATCHES:
-		value = capable(CAP_SYS_ADMIN);
+		value = HAS_SECURE_BATCHES(dev_priv) && capable(CAP_SYS_ADMIN);
 		break;
 	case I915_PARAM_CMD_PARSER_VERSION:
 		value = i915_cmd_parser_get_version(dev_priv);
@@ -1647,6 +1647,7 @@ static int i915_drm_suspend_late(struct drm_device *dev, bool hibernation)
 	disable_rpm_wakeref_asserts(dev_priv);
 
 	intel_display_set_init_power(dev_priv, false);
+	i915_rc6_ctx_wa_suspend(dev_priv);
 
 	fw_csr = !IS_GEN9_LP(dev_priv) &&
 		suspend_to_idle(dev_priv) && dev_priv->csr.dmc_payload;
@@ -1883,6 +1884,7 @@ static int i915_drm_resume_early(struct drm_device *dev)
 		intel_display_set_init_power(dev_priv, true);
 
 	i915_gem_sanitize(dev_priv);
+	i915_rc6_ctx_wa_resume(dev_priv);
 
 	enable_rpm_wakeref_asserts(dev_priv);
 
