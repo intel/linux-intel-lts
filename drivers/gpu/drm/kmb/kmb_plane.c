@@ -104,11 +104,12 @@ static const u32 kmb_formats_v[] = {
 #define LCD_INT_GL1 (LAYER3_DMA_DONE | LAYER3_DMA_IDLE | LCD_INT_GL1_ERR)
 
 const uint32_t layer_irqs[] = {
-				LCD_INT_VL0,
-				LCD_INT_VL1,
-				LCD_INT_GL0,
-				LCD_INT_GL1
-			      };
+	LCD_INT_VL0,
+	LCD_INT_VL1,
+	LCD_INT_GL0,
+	LCD_INT_GL1
+};
+
 /*Conversion (yuv->rgb) matrix from myriadx */
 static const u32 csc_coef_lcd[] = {
 	1024, 0, 1436,
@@ -116,7 +117,6 @@ static const u32 csc_coef_lcd[] = {
 	1024, 1814, 0,
 	-179, 125, -226
 };
-
 
 static unsigned int check_pixel_format(struct drm_plane *plane, u32 format)
 {
@@ -135,7 +135,6 @@ static int kmb_plane_atomic_check(struct drm_plane *plane,
 	struct drm_framebuffer *fb;
 	int ret;
 
-
 	fb = state->fb;
 
 	if (!fb || !state->crtc)
@@ -151,7 +150,7 @@ static int kmb_plane_atomic_check(struct drm_plane *plane,
 }
 
 static void kmb_plane_atomic_disable(struct drm_plane *plane,
-				struct drm_plane_state *state)
+				     struct drm_plane_state *state)
 {
 	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
 	int ctrl = 0;
@@ -177,13 +176,12 @@ static void kmb_plane_atomic_disable(struct drm_plane *plane,
 	}
 
 	kmb_clr_bitmask_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
-			LCD_DMA_LAYER_ENABLE);
+			    LCD_DMA_LAYER_ENABLE);
 	kmb_clr_bitmask_lcd(dev_p, LCD_CONTROL, ctrl);
 	DRM_INFO("%s : %d lcd_ctrl = 0x%x lcd_int_enable=0x%x\n",
-			__func__, __LINE__, kmb_read_lcd(dev_p, LCD_CONTROL),
-			kmb_read_lcd(dev_p, LCD_INT_ENABLE));
+		 __func__, __LINE__, kmb_read_lcd(dev_p, LCD_CONTROL),
+		 kmb_read_lcd(dev_p, LCD_INT_ENABLE));
 }
-
 
 unsigned int set_pixel_format(u32 format)
 {
@@ -219,8 +217,8 @@ unsigned int set_pixel_format(u32 format)
 		val = LCD_LAYER_FORMAT_NV12 | LCD_LAYER_PLANAR_STORAGE
 		    | LCD_LAYER_CRCB_ORDER;
 		break;
-	/* packed formats */
-	/* looks hw requires B & G to be swapped when RGB */
+		/* packed formats */
+		/* looks hw requires B & G to be swapped when RGB */
 	case DRM_FORMAT_RGB332:
 		val = LCD_LAYER_FORMAT_RGB332 | LCD_LAYER_BGR_ORDER;
 		break;
@@ -284,7 +282,7 @@ unsigned int set_bits_per_pixel(const struct drm_format_info *format)
 		return val;
 	}
 
-	bpp += 8*format->cpp[0];
+	bpp += 8 * format->cpp[0];
 
 	switch (bpp) {
 	case 8:
@@ -331,7 +329,6 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 #ifdef LCD_TEST
 	struct drm_framebuffer *fb;
 	struct kmb_drm_private *dev_p;
-	dma_addr_t addr;
 	unsigned int width;
 	unsigned int height;
 	unsigned int dma_len;
@@ -341,6 +338,9 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	unsigned int src_w, src_h, crtc_x, crtc_y;
 	unsigned char plane_id;
 	int num_planes;
+	/*plane initialization status */
+	static int plane_init_status[KMB_MAX_PLANES] = { 0, 0, 0, 0 };
+	static dma_addr_t addr[MAX_SUB_PLANES] = { 0, 0, 0 };
 
 	if (!plane || !plane->state || !state)
 		return;
@@ -353,8 +353,6 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	kmb_plane = to_kmb_plane(plane);
 	plane_id = kmb_plane->id;
 
-
-
 	dev_p = plane->dev->dev_private;
 
 	src_w = (plane->state->src_w >> 16);
@@ -362,146 +360,145 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	crtc_x = plane->state->crtc_x;
 	crtc_y = plane->state->crtc_y;
 
-	DRM_INFO("src_w=%d src_h=%d\n", src_w, src_h);
-	kmb_write_lcd(dev_p, LCD_LAYERn_WIDTH(plane_id), src_w-1);
-	kmb_write_lcd(dev_p, LCD_LAYERn_HEIGHT(plane_id), src_h-1);
-	kmb_write_lcd(dev_p, LCD_LAYERn_COL_START(plane_id), crtc_x);
-	kmb_write_lcd(dev_p, LCD_LAYERn_ROW_START(plane_id), crtc_y);
+	DRM_INFO
+	    ("%s : %d src_w=%d src_h=%d, fb->format->format=0x%x fb->flags=0x%x",
+	     __func__, __LINE__, src_w, src_h, fb->format->format, fb->flags);
+	if (plane_init_status[plane_id] != INITIALIZED) {
+		kmb_write_lcd(dev_p, LCD_LAYERn_WIDTH(plane_id), src_w - 1);
+		kmb_write_lcd(dev_p, LCD_LAYERn_HEIGHT(plane_id), src_h - 1);
+		kmb_write_lcd(dev_p, LCD_LAYERn_COL_START(plane_id), crtc_x);
+		kmb_write_lcd(dev_p, LCD_LAYERn_ROW_START(plane_id), crtc_y);
 
-	val = set_pixel_format(fb->format->format);
-	val |= set_bits_per_pixel(fb->format);
-	/*CHECKME Leon drvr sets it to 100 try this for now */
-	val |= LCD_LAYER_FIFO_100;
-	kmb_write_lcd(dev_p, LCD_LAYERn_CFG(plane_id), val);
+		val = set_pixel_format(fb->format->format);
+		val |= set_bits_per_pixel(fb->format);
+		/*CHECKME Leon drvr sets it to 100 try this for now */
+		val |= LCD_LAYER_FIFO_100;
+		kmb_write_lcd(dev_p, LCD_LAYERn_CFG(plane_id), val);
 
-	/*re-initialize interrupts */
-	kmb_clr_bitmask_lcd(dev_p, LCD_INT_ENABLE, layer_irqs[plane_id]);
-	kmb_set_bitmask_lcd(dev_p, LCD_INT_CLEAR, layer_irqs[plane_id]);
-	kmb_set_bitmask_lcd(dev_p, LCD_INT_ENABLE, layer_irqs[plane_id]);
+		/*re-initialize interrupts */
+		kmb_clr_bitmask_lcd(dev_p, LCD_INT_ENABLE,
+				    layer_irqs[plane_id]);
+		kmb_set_bitmask_lcd(dev_p, LCD_INT_CLEAR, layer_irqs[plane_id]);
 
-	/*TBD check visible? */
-/*
-	dma_cfg = LCD_DMA_LAYER_ENABLE | LCD_DMA_LAYER_AUTO_UPDATE
-		  | LCD_DMA_LAYER_CONT_UPDATE | LCD_DMA_LAYER_AXI_BURST_1
-		  | LCD_DMA_LAYER_VSTRIDE_EN;
-*/
-	dma_cfg = LCD_DMA_LAYER_ENABLE | LCD_DMA_LAYER_VSTRIDE_EN
-		| LCD_DMA_LAYER_AXI_BURST_16 |
-		LCD_DMA_LAYER_CONT_PING_PONG_UPDATE;
+		dma_cfg = LCD_DMA_LAYER_ENABLE | LCD_DMA_LAYER_VSTRIDE_EN |
+		    LCD_DMA_LAYER_CONT_UPDATE | LCD_DMA_LAYER_AXI_BURST_16;
 
-	/* disable DMA first */
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
-			~LCD_DMA_LAYER_ENABLE);
-	kmb_write_lcd(dev_p, LCD_FIFO_FLUSH + plane_id*0x400, 1);
+		width = fb->width;
+		height = fb->height;
+		dma_len = (width * height * fb->format->cpp[0]);
+		DRM_INFO("%s : %d dma_len=%d ", __func__, __LINE__, dma_len);
+		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LEN(plane_id), dma_len);
+		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LEN_SHADOW(plane_id),
+			      dma_len);
 
-	/* pinpong mode is enabled - at the end of DMA transfer, start new
-	 * transfer alternatively using main and shadow register settings.
-	 * So update both main and shadow registers
-	 */
-	addr = drm_fb_cma_get_gem_addr(fb, plane->state, 0);
-	dev_p->fb_addr = addr;
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_ADDR(plane_id), addr);
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_SHADOW(plane_id), addr);
+		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id),
+			      fb->pitches[0]);
+		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_WIDTH(plane_id),
+			      (width * fb->format->cpp[0]));
 
-	width = fb->width;
-	height = fb->height;
-	dma_len = width * height * fb->format->cpp[0];
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LEN(plane_id), dma_len);
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LEN_SHADOW(plane_id), dma_len);
-
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id),
-			fb->pitches[0]);
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_LINE_WIDTH(plane_id),
-			(width*fb->format->cpp[0]));
-
-	/*program Cb/Cr for planar formats*/
-	if (num_planes > 1) {
-		if (fb->format->format == DRM_FORMAT_YUV420 ||
-				fb->format->format == DRM_FORMAT_YVU420)
-			width /= 2;
-		addr = drm_fb_cma_get_gem_addr(fb, plane->state, LAYER_1);
-		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_CB_ADR(plane_id),
-				addr);
-		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_CB_SHADOW(plane_id),
-				addr);
-		kmb_write_lcd(dev_p,
-				LCD_LAYERn_DMA_CB_LINE_VSTRIDE(plane_id),
-				fb->pitches[LAYER_1]);
-		kmb_write_lcd(dev_p,
-				LCD_LAYERn_DMA_CB_LINE_WIDTH(plane_id),
-				(width*fb->format->cpp[0]));
-		if (num_planes == 3) {
-			addr = drm_fb_cma_get_gem_addr(fb, plane->state,
-					LAYER_2);
+		/*program Cb/Cr for planar formats */
+		if (num_planes > 1) {
+			if (fb->format->format == DRM_FORMAT_YUV420 ||
+			    fb->format->format == DRM_FORMAT_YVU420)
+				width /= 2;
 			kmb_write_lcd(dev_p,
-				LCD_LAYERn_DMA_START_CR_ADR(plane_id),
-				addr);
+				      LCD_LAYERn_DMA_CB_LINE_VSTRIDE(plane_id),
+				      fb->pitches[LAYER_1]);
 			kmb_write_lcd(dev_p,
-				LCD_LAYERn_DMA_START_CR_SHADOW(plane_id),
-				addr);
-			kmb_write_lcd(dev_p,
-				LCD_LAYERn_DMA_CR_LINE_VSTRIDE(plane_id),
-				fb->pitches[LAYER_2]);
-			kmb_write_lcd(dev_p,
-				LCD_LAYERn_DMA_CR_LINE_WIDTH(plane_id),
-				(width*fb->format->cpp[0]));
+				      LCD_LAYERn_DMA_CB_LINE_WIDTH(plane_id),
+				      (width * fb->format->cpp[0]));
+			if (num_planes == 3) {
+				kmb_write_lcd(dev_p,
+					      LCD_LAYERn_DMA_CR_LINE_VSTRIDE
+					      (plane_id), fb->pitches[LAYER_2]);
+				kmb_write_lcd(dev_p,
+					      LCD_LAYERn_DMA_CR_LINE_WIDTH
+					      (plane_id),
+					      (width * fb->format->cpp[0]));
+			}
 		}
+
+		/* enable DMA */
+		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
+		DRM_INFO("%s : %d dma_cfg=0x%x LCD_DMA_CFG=0x%x\n",
+			 __func__, __LINE__, dma_cfg,
+			 kmb_read_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id)));
+
+		switch (plane_id) {
+		case LAYER_0:
+			ctrl = LCD_CTRL_VL1_ENABLE;
+			break;
+		case LAYER_1:
+			ctrl = LCD_CTRL_VL2_ENABLE;
+			break;
+		case LAYER_2:
+			ctrl = LCD_CTRL_GL1_ENABLE;
+			break;
+		case LAYER_3:
+			ctrl = LCD_CTRL_GL2_ENABLE;
+			break;
+		}
+
+		ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
+		    | LCD_CTRL_CONTINUOUS | LCD_CTRL_OUTPUT_ENABLED;
+
+		/*LCD is connected to MIPI on kmb
+		 * Therefore this bit is required for DSI Tx
+		 */
+		ctrl |= LCD_CTRL_VHSYNC_IDLE_LVL;
+
+		kmb_set_bitmask_lcd(dev_p, LCD_CONTROL, ctrl);
+
+		/* FIXME no doc on how to set output format,these values are
+		 * taken from the Myriadx tests
+		 */
+		out_format |= LCD_OUTF_FORMAT_RGB888;
+
+		if (val & LCD_LAYER_PLANAR_STORAGE) {
+			/*enable CSC if input is planar and output is RGB */
+			config_csc(dev_p, plane_id);
+		}
+
+		/*set background color to white */
+		//      kmb_write_lcd(dev_p, LCD_BG_COLOUR_LS, 0xffffff);
+		/*leave RGB order,conversion mode and clip mode to default */
+		/* do not interleave RGB channels for mipi Tx compatibility */
+		out_format |= LCD_OUTF_MIPI_RGB_MODE;
+		kmb_write_lcd(dev_p, LCD_OUT_FORMAT_CFG, out_format);
+
+		kmb_set_bitmask_lcd(dev_p, LCD_INT_ENABLE,
+				    layer_irqs[plane_id]);
+		plane_init_status[plane_id] = INITIALIZED;
 	}
 
-	/* enable DMA */
-	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
-	DRM_INFO("%s : %d dma_cfg=0x%x LCD_DMA_CFG=0x%x\n", __func__,
-			__LINE__, dma_cfg,
-			kmb_read_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id)));
-
-	switch (plane_id) {
-	case LAYER_0:
-		ctrl = LCD_CTRL_VL1_ENABLE;
-		break;
-	case LAYER_1:
-		ctrl = LCD_CTRL_VL2_ENABLE;
-		break;
-	case LAYER_2:
-		ctrl = LCD_CTRL_GL1_ENABLE;
-		break;
-	case LAYER_3:
-		ctrl = LCD_CTRL_GL2_ENABLE;
-		break;
+	addr[Y_PLANE] = drm_fb_cma_get_gem_addr(fb, plane->state, 0);
+	dev_p->fb_addr = (dma_addr_t) addr;
+	if (num_planes > 1) {
+		addr[U_PLANE] = drm_fb_cma_get_gem_addr(fb, plane->state,
+							U_PLANE);
+		if (num_planes == 3)
+			addr[V_PLANE] =
+			    drm_fb_cma_get_gem_addr(fb, plane->state, V_PLANE);
 	}
-
-//	ctrl |= LCD_CTRL_ENABLE;
-	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
-		| LCD_CTRL_CONTINUOUS | LCD_CTRL_OUTPUT_ENABLED;
-
-//	ctrl |= LCD_CTRL_PROGRESSIVE | LCD_CTRL_TIM_GEN_ENABLE
-//		| LCD_CTRL_ONE_SHOT | LCD_CTRL_OUTPUT_ENABLED;
-	/*LCD is connected to MIPI on kmb
-	 * Therefore this bit is required for DSI Tx
-	 */
-	ctrl |= LCD_CTRL_VHSYNC_IDLE_LVL;
-
-	kmb_set_bitmask_lcd(dev_p, LCD_CONTROL, ctrl);
-
-	/* FIXME no doc on how to set output format,these values are taken
-	 * from the Myriadx tests
-	 */
-	out_format |= LCD_OUTF_FORMAT_RGB888;
-//	out_format |= LCD_OUTF_BGR_ORDER;
-
-	if (val & LCD_LAYER_PLANAR_STORAGE) {
-		/*enable CSC if input is planar and output is RGB */
-		config_csc(dev_p, plane_id);
+	/* disable DMA first */
+	kmb_clr_bitmask_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
+			    LCD_DMA_LAYER_ENABLE);
+	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_ADDR(plane_id),
+		      addr[Y_PLANE] + fb->offsets[0]);
+	if (num_planes > 1) {
+		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_CB_ADR(plane_id),
+			      addr[U_PLANE]);
+		if (num_planes == 3)
+			kmb_write_lcd(dev_p,
+				      LCD_LAYERn_DMA_START_CR_ADR(plane_id),
+				      addr[V_PLANE]);
 	}
+	/* Enable DMA */
+	kmb_set_bitmask_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
+			    LCD_DMA_LAYER_ENABLE);
+	DRM_INFO("%s : %d flipping.....\n", __func__, __LINE__);
+	return;
 
-	/*set background color to white*/
-//	kmb_write_lcd(dev_p, LCD_BG_COLOUR_LS, 0xffffff);
-	/*leave RGB order,conversion mode and clip mode to default*/
-	/* do not interleave RGB channels for mipi Tx compatibility */
-	out_format |= LCD_OUTF_MIPI_RGB_MODE;
-//	out_format |= LCD_OUTF_SYNC_MODE ;
-	kmb_write_lcd(dev_p, LCD_OUT_FORMAT_CFG, out_format);
-
-//	kmb_write_lcd(dev_p, LCD_CONTROL, LCD_CTRL_ENABLE);
 #endif
 }
 
@@ -514,6 +511,7 @@ static const struct drm_plane_helper_funcs kmb_plane_helper_funcs = {
 void kmb_plane_destroy(struct drm_plane *plane)
 {
 	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
+
 	drm_plane_cleanup(plane);
 	kfree(kmb_plane);
 }
@@ -592,7 +590,7 @@ struct kmb_plane *kmb_plane_init(struct drm_device *drm)
 		}
 
 		plane_type = (i == 0) ? DRM_PLANE_TYPE_PRIMARY :
-			DRM_PLANE_TYPE_OVERLAY;
+		    DRM_PLANE_TYPE_OVERLAY;
 		if (i < 2) {
 			plane_formats = kmb_formats_v;
 			num_plane_formats = ARRAY_SIZE(kmb_formats_v);
@@ -602,13 +600,14 @@ struct kmb_plane *kmb_plane_init(struct drm_device *drm)
 		}
 
 		ret = drm_universal_plane_init(drm, &plane->base_plane,
-				POSSIBLE_CRTCS,
-				&kmb_plane_funcs, plane_formats,
-					num_plane_formats,
-					NULL, plane_type, "plane %d", i);
+					       POSSIBLE_CRTCS,
+					       &kmb_plane_funcs, plane_formats,
+					       num_plane_formats,
+					       NULL, plane_type, "plane %d", i);
 		if (ret < 0) {
-			DRM_ERROR("drm_universal_plane_init -failed with ret=%d"
-					, ret);
+			DRM_ERROR
+			    ("drm_universal_plane_init -failed with ret=%d",
+			     ret);
 			goto cleanup;
 		}
 

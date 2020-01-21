@@ -36,6 +36,13 @@ enum layer_id {
 	KMB_MAX_PLANES,
 };
 
+enum sub_plane_id {
+	Y_PLANE,
+	U_PLANE,
+	V_PLANE,
+	MAX_SUB_PLANES,
+};
+
 struct kmb_plane {
 	struct drm_plane base_plane;
 	struct kmb_drm_private kmb_dev;
@@ -48,6 +55,7 @@ struct kmb_plane_state {
 };
 
 #define POSSIBLE_CRTCS 1
+#define INITIALIZED 1
 #define to_kmb_plane(x) container_of(x, struct kmb_plane, base_plane)
 
 #define to_kmb_plane_state(x) \
