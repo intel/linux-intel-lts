@@ -3941,7 +3941,7 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 		res_lines = wm->wm[level - 1].plane_res_l;
 	}
 
-	if (res_lines >= 31 && level == 0) {
+	if (res_lines > 31 && level == 0) {
 		struct drm_plane *plane = pstate->plane;
 
 		DRM_DEBUG_KMS("Requested display configuration exceeds system watermark limitations\n");
