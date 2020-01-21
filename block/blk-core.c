@@ -973,10 +973,10 @@ void blk_queue_exit(struct request_queue *q)
 	percpu_ref_put(&q->q_usage_counter);
 }
 
-static void blk_queue_usage_counter_release_swork(struct swork_event *sev)
+static void blk_queue_usage_counter_release_wrk(struct work_struct *work)
 {
 	struct request_queue *q =
-		container_of(sev, struct request_queue, mq_pcpu_wake);
+		container_of(work, struct request_queue, mq_pcpu_wake);
 
 	wake_up_all(&q->mq_freeze_wq);
 }
@@ -987,7 +987,7 @@ static void blk_queue_usage_counter_release(struct percpu_ref *ref)
 		container_of(ref, struct request_queue, q_usage_counter);
 
 	if (wq_has_sleeper(&q->mq_freeze_wq))
-		swork_queue(&q->mq_pcpu_wake);
+		schedule_work(&q->mq_pcpu_wake);
 }
 
 static void blk_rq_timed_out_timer(struct timer_list *t)
@@ -1084,7 +1084,7 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id,
 	queue_flag_set_unlocked(QUEUE_FLAG_BYPASS, q);
 
 	init_waitqueue_head(&q->mq_freeze_wq);
-	INIT_SWORK(&q->mq_pcpu_wake, blk_queue_usage_counter_release_swork);
+	INIT_WORK(&q->mq_pcpu_wake, blk_queue_usage_counter_release_wrk);
 
 	/*
 	 * Init percpu_ref in atomic mode so that it's faster to shutdown.
@@ -3973,8 +3973,6 @@ int __init blk_dev_init(void)
 					    WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
 	if (!kblockd_workqueue)
 		panic("Failed to create kblockd\n");
-
-	BUG_ON(swork_get());
 
 	request_cachep = kmem_cache_create("blkdev_requests",
 			sizeof(struct request), 0, SLAB_PANIC, NULL);

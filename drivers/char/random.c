@@ -265,7 +265,6 @@
 #include <linux/syscalls.h>
 #include <linux/completion.h>
 #include <linux/uuid.h>
-#include <linux/locallock.h>
 #include <crypto/chacha20.h>
 
 #include <asm/processor.h>
