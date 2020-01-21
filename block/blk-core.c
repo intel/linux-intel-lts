@@ -787,6 +787,9 @@ void blk_cleanup_queue(struct request_queue *q)
 	 * prevent that q->request_fn() gets invoked after draining finished.
 	 */
 	blk_freeze_queue(q);
+
+	rq_qos_exit(q);
+
 	spin_lock_irq(lock);
 	queue_flag_set(QUEUE_FLAG_DEAD, q);
 	spin_unlock_irq(lock);
@@ -819,7 +822,8 @@ void blk_cleanup_queue(struct request_queue *q)
 	blk_exit_queue(q);
 
 	if (q->mq_ops)
-		blk_mq_free_queue(q);
+		blk_mq_exit_queue(q);
+
 	percpu_ref_exit(&q->q_usage_counter);
 
 	spin_lock_irq(lock);
@@ -1177,7 +1181,7 @@ int blk_init_allocated_queue(struct request_queue *q)
 {
 	WARN_ON_ONCE(q->mq_ops);
 
-	q->fq = blk_alloc_flush_queue(q, NUMA_NO_NODE, q->cmd_size);
+	q->fq = blk_alloc_flush_queue(q, NUMA_NO_NODE, q->cmd_size, GFP_KERNEL);
 	if (!q->fq)
 		return -ENOMEM;
 

@@ -260,7 +260,7 @@ static void tcp_ecn_accept_cwr(struct sock *sk, const struct sk_buff *skb)
 
 static void tcp_ecn_withdraw_cwr(struct tcp_sock *tp)
 {
-	tp->ecn_flags &= ~TCP_ECN_DEMAND_CWR;
+	tp->ecn_flags &= ~TCP_ECN_QUEUE_CWR;
 }
 
 static void __tcp_ecn_check_ce(struct sock *sk, const struct sk_buff *skb)
@@ -426,26 +426,7 @@ static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 	}
 }
 
-/* 3. Tuning rcvbuf, when connection enters established state. */
-static void tcp_fixup_rcvbuf(struct sock *sk)
-{
-	u32 mss = tcp_sk(sk)->advmss;
-	int rcvmem;
-
-	rcvmem = 2 * SKB_TRUESIZE(mss + MAX_TCP_HEADER) *
-		 tcp_default_init_rwnd(mss);
-
-	/* Dynamic Right Sizing (DRS) has 2 to 3 RTT latency
-	 * Allow enough cushion so that sender is not limited by our window
-	 */
-	if (sock_net(sk)->ipv4.sysctl_tcp_moderate_rcvbuf)
-		rcvmem <<= 2;
-
-	if (sk->sk_rcvbuf < rcvmem)
-		sk->sk_rcvbuf = min(rcvmem, sock_net(sk)->ipv4.sysctl_tcp_rmem[2]);
-}
-
-/* 4. Try to fixup all. It is made immediately after connection enters
+/* 3. Try to fixup all. It is made immediately after connection enters
  *    established state.
  */
 void tcp_init_buffer_space(struct sock *sk)
@@ -454,12 +435,10 @@ void tcp_init_buffer_space(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int maxwin;
 
-	if (!(sk->sk_userlocks & SOCK_RCVBUF_LOCK))
-		tcp_fixup_rcvbuf(sk);
 	if (!(sk->sk_userlocks & SOCK_SNDBUF_LOCK))
 		tcp_sndbuf_expand(sk);
 
-	tp->rcvq_space.space = tp->rcv_wnd;
+	tp->rcvq_space.space = min_t(u32, tp->rcv_wnd, TCP_INIT_CWND * tp->advmss);
 	tcp_mstamp_refresh(tp);
 	tp->rcvq_space.time = tp->tcp_mstamp;
 	tp->rcvq_space.seq = tp->copied_seq;
@@ -485,7 +464,7 @@ void tcp_init_buffer_space(struct sock *sk)
 	tp->snd_cwnd_stamp = tcp_jiffies32;
 }
 
-/* 5. Recalculate window clamp after socket hit its memory bounds. */
+/* 4. Recalculate window clamp after socket hit its memory bounds. */
 static void tcp_clamp_window(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -3369,7 +3348,7 @@ static void tcp_rcv_nxt_update(struct tcp_sock *tp, u32 seq)
 
 	sock_owned_by_me((struct sock *)tp);
 	tp->bytes_received += delta;
-	tp->rcv_nxt = seq;
+	WRITE_ONCE(tp->rcv_nxt, seq);
 }
 
 /* Update our send window.
@@ -5850,7 +5829,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		/* Ok.. it's good. Set up sequence numbers and
 		 * move to established.
 		 */
-		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
+		WRITE_ONCE(tp->rcv_nxt, TCP_SKB_CB(skb)->seq + 1);
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
@@ -5953,7 +5932,7 @@ discard:
 			tp->tcp_header_len = sizeof(struct tcphdr);
 		}
 
-		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
+		WRITE_ONCE(tp->rcv_nxt, TCP_SKB_CB(skb)->seq + 1);
 		tp->copied_seq = tp->rcv_nxt;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 

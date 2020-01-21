@@ -32,14 +32,9 @@ void xdp_del_sk_umem(struct xdp_umem *umem, struct xdp_sock *xs)
 {
 	unsigned long flags;
 
-	if (xs->dev) {
-		spin_lock_irqsave(&umem->xsk_list_lock, flags);
-		list_del_rcu(&xs->list);
-		spin_unlock_irqrestore(&umem->xsk_list_lock, flags);
-
-		if (umem->zc)
-			synchronize_net();
-	}
+	spin_lock_irqsave(&umem->xsk_list_lock, flags);
+	list_del_rcu(&xs->list);
+	spin_unlock_irqrestore(&umem->xsk_list_lock, flags);
 }
 
 int xdp_umem_query(struct net_device *dev, u16 queue_id)
@@ -322,7 +317,7 @@ static int xdp_umem_reg(struct xdp_umem *umem, struct xdp_umem_reg *mr)
 	umem->pages = kcalloc(umem->npgs, sizeof(*umem->pages), GFP_KERNEL);
 	if (!umem->pages) {
 		err = -ENOMEM;
-		goto out_account;
+		goto out_pin;
 	}
 
 	for (i = 0; i < umem->npgs; i++)
@@ -330,6 +325,8 @@ static int xdp_umem_reg(struct xdp_umem *umem, struct xdp_umem_reg *mr)
 
 	return 0;
 
+out_pin:
+	xdp_umem_unpin_pages(umem);
 out_account:
 	xdp_umem_unaccount_pages(umem);
 	return err;

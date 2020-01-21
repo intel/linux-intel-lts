@@ -4219,15 +4219,21 @@ static int pci_quirk_amd_sb_acs(struct pci_dev *dev, u16 acs_flags)
 
 static bool pci_quirk_cavium_acs_match(struct pci_dev *dev)
 {
+	if (!pci_is_pcie(dev) || pci_pcie_type(dev) != PCI_EXP_TYPE_ROOT_PORT)
+		return false;
+
+	switch (dev->device) {
 	/*
-	 * Effectively selects all downstream ports for whole ThunderX 1
-	 * family by 0xf800 mask (which represents 8 SoCs), while the lower
-	 * bits of device ID are used to indicate which subdevice is used
-	 * within the SoC.
+	 * Effectively selects all downstream ports for whole ThunderX1
+	 * (which represents 8 SoCs).
 	 */
-	return (pci_is_pcie(dev) &&
-		(pci_pcie_type(dev) == PCI_EXP_TYPE_ROOT_PORT) &&
-		((dev->device & 0xf800) == 0xa000));
+	case 0xa000 ... 0xa7ff: /* ThunderX1 */
+	case 0xaf84:  /* ThunderX2 */
+	case 0xb884:  /* ThunderX3 */
+		return true;
+	default:
+		return false;
+	}
 }
 
 static int pci_quirk_cavium_acs(struct pci_dev *dev, u16 acs_flags)
@@ -4576,7 +4582,7 @@ int pci_dev_specific_acs_enabled(struct pci_dev *dev, u16 acs_flags)
 #define INTEL_BSPR_REG_BPPD  (1 << 9)
 
 /* Upstream Peer Decode Configuration Register */
-#define INTEL_UPDCR_REG 0x1114
+#define INTEL_UPDCR_REG 0x1014
 /* 5:0 Peer Decode Enable bits */
 #define INTEL_UPDCR_REG_MASK 0x3f
 
@@ -5082,59 +5088,95 @@ static void quirk_switchtec_ntb_dma_alias(struct pci_dev *pdev)
 	pci_iounmap(pdev, mmio);
 	pci_disable_device(pdev);
 }
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8531,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8532,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8533,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8534,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8535,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8536,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8543,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8544,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8545,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8546,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8551,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8552,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8553,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8554,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8555,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8556,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8561,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8562,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8563,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8564,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8565,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8566,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8571,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8572,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8573,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8574,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8575,
-			quirk_switchtec_ntb_dma_alias);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MICROSEMI, 0x8576,
-			quirk_switchtec_ntb_dma_alias);
+#define SWITCHTEC_QUIRK(vid) \
+	DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_MICROSEMI, vid, \
+		PCI_CLASS_BRIDGE_OTHER, 8, quirk_switchtec_ntb_dma_alias)
+
+SWITCHTEC_QUIRK(0x8531);  /* PFX 24xG3 */
+SWITCHTEC_QUIRK(0x8532);  /* PFX 32xG3 */
+SWITCHTEC_QUIRK(0x8533);  /* PFX 48xG3 */
+SWITCHTEC_QUIRK(0x8534);  /* PFX 64xG3 */
+SWITCHTEC_QUIRK(0x8535);  /* PFX 80xG3 */
+SWITCHTEC_QUIRK(0x8536);  /* PFX 96xG3 */
+SWITCHTEC_QUIRK(0x8541);  /* PSX 24xG3 */
+SWITCHTEC_QUIRK(0x8542);  /* PSX 32xG3 */
+SWITCHTEC_QUIRK(0x8543);  /* PSX 48xG3 */
+SWITCHTEC_QUIRK(0x8544);  /* PSX 64xG3 */
+SWITCHTEC_QUIRK(0x8545);  /* PSX 80xG3 */
+SWITCHTEC_QUIRK(0x8546);  /* PSX 96xG3 */
+SWITCHTEC_QUIRK(0x8551);  /* PAX 24XG3 */
+SWITCHTEC_QUIRK(0x8552);  /* PAX 32XG3 */
+SWITCHTEC_QUIRK(0x8553);  /* PAX 48XG3 */
+SWITCHTEC_QUIRK(0x8554);  /* PAX 64XG3 */
+SWITCHTEC_QUIRK(0x8555);  /* PAX 80XG3 */
+SWITCHTEC_QUIRK(0x8556);  /* PAX 96XG3 */
+SWITCHTEC_QUIRK(0x8561);  /* PFXL 24XG3 */
+SWITCHTEC_QUIRK(0x8562);  /* PFXL 32XG3 */
+SWITCHTEC_QUIRK(0x8563);  /* PFXL 48XG3 */
+SWITCHTEC_QUIRK(0x8564);  /* PFXL 64XG3 */
+SWITCHTEC_QUIRK(0x8565);  /* PFXL 80XG3 */
+SWITCHTEC_QUIRK(0x8566);  /* PFXL 96XG3 */
+SWITCHTEC_QUIRK(0x8571);  /* PFXI 24XG3 */
+SWITCHTEC_QUIRK(0x8572);  /* PFXI 32XG3 */
+SWITCHTEC_QUIRK(0x8573);  /* PFXI 48XG3 */
+SWITCHTEC_QUIRK(0x8574);  /* PFXI 64XG3 */
+SWITCHTEC_QUIRK(0x8575);  /* PFXI 80XG3 */
+SWITCHTEC_QUIRK(0x8576);  /* PFXI 96XG3 */
+
+/*
+ * On Lenovo Thinkpad P50 SKUs with a Nvidia Quadro M1000M, the BIOS does
+ * not always reset the secondary Nvidia GPU between reboots if the system
+ * is configured to use Hybrid Graphics mode.  This results in the GPU
+ * being left in whatever state it was in during the *previous* boot, which
+ * causes spurious interrupts from the GPU, which in turn causes us to
+ * disable the wrong IRQ and end up breaking the touchpad.  Unsurprisingly,
+ * this also completely breaks nouveau.
+ *
+ * Luckily, it seems a simple reset of the Nvidia GPU brings it back to a
+ * clean state and fixes all these issues.
+ *
+ * When the machine is configured in Dedicated display mode, the issue
+ * doesn't occur.  Fortunately the GPU advertises NoReset+ when in this
+ * mode, so we can detect that and avoid resetting it.
+ */
+static void quirk_reset_lenovo_thinkpad_p50_nvgpu(struct pci_dev *pdev)
+{
+	void __iomem *map;
+	int ret;
+
+	if (pdev->subsystem_vendor != PCI_VENDOR_ID_LENOVO ||
+	    pdev->subsystem_device != 0x222e ||
+	    !pdev->reset_fn)
+		return;
+
+	if (pci_enable_device_mem(pdev))
+		return;
+
+	/*
+	 * Based on nvkm_device_ctor() in
+	 * drivers/gpu/drm/nouveau/nvkm/engine/device/base.c
+	 */
+	map = pci_iomap(pdev, 0, 0x23000);
+	if (!map) {
+		pci_err(pdev, "Can't map MMIO space\n");
+		goto out_disable;
+	}
+
+	/*
+	 * Make sure the GPU looks like it's been POSTed before resetting
+	 * it.
+	 */
+	if (ioread32(map + 0x2240c) & 0x2) {
+		pci_info(pdev, FW_BUG "GPU left initialized by EFI, resetting\n");
+		ret = pci_reset_bus(pdev);
+		if (ret < 0)
+			pci_err(pdev, "Failed to reset GPU: %d\n", ret);
+	}
+
+	iounmap(map);
+out_disable:
+	pci_disable_device(pdev);
+}
+DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_NVIDIA, 0x13b1,
+			      PCI_CLASS_DISPLAY_VGA, 8,
+			      quirk_reset_lenovo_thinkpad_p50_nvgpu);
