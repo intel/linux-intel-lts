@@ -6614,6 +6614,7 @@ int stmmac_suspend(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
+	int ret;
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 	stmmac_pm_suspend(priv, priv, ndev);
 #else
@@ -6627,6 +6628,16 @@ int stmmac_suspend(struct device *dev)
 	netif_device_detach(ndev);
 
 	stmmac_disable_all_queues(priv);
+
+	/* Remove phy converter */
+	if (priv->plat->remove_phy_conv) {
+		ret = priv->plat->remove_phy_conv(priv->mii);
+		if (ret < 0) {
+			netdev_err(priv->dev,
+				   "%s: ERROR: remove phy conv (error: %d)\n",
+				   __func__, ret);
+		}
+	}
 
 	/* Stop TX/RX DMA */
 	stmmac_stop_all_dma(priv);
@@ -6826,6 +6837,7 @@ int stmmac_resume(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
+	int ret;
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 	stmmac_pm_resume(priv, priv, ndev);
 #else
@@ -6880,6 +6892,19 @@ int stmmac_resume(struct device *dev)
 	}
 
 	phylink_mac_change(priv->phylink, true);
+
+	/* Start phy converter after MDIO bus IRQ handling is up */
+	if (priv->plat->setup_phy_conv) {
+		ret = priv->plat->setup_phy_conv(priv->mii, priv->phy_conv_irq,
+						 priv->plat->phy_addr,
+						 priv->plat->speed_2500_en);
+
+		if (ret < 0) {
+			netdev_err(priv->dev,
+				   "%s: ERROR: setup phy conv (error: %d)\n",
+				   __func__, ret);
+		}
+	}
 #endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
 
 	return 0;
