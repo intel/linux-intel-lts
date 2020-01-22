@@ -19,9 +19,6 @@
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
 
-# CVE-2019-12614
-0001-powerpc-pseries-dlpar-Fix-a-missing-check-in-dlpar_p-CVE-2019-12614.patch
-
 # CVE-2019-3846
 0004-mwifiex-use-total_ie_len-in-mwifiex_update_bss_desc-CVE-2019-3846.patch
 
@@ -46,20 +43,11 @@
 #CVE-2019-15099
 0001-ath10k-Fix-a-NULL-ptr-deref-bug-in-ath10k_usb_alloc_CVE-2019-15099.patch
 
-#CVE-2019-18683
-0001-media-vivid-Fix-wrong-locking-that-causes-race-condi.patch
-
 #CVE-2019-18808
 0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
 
-#CVE-2019-18809
-0001-media-usb-fix-memory-leak-in-af9005_identify_state.patch
-
 #CVE-2019-19073
 0001-ath9k_htc-release-allocated-buffer-if-timed-out.patch
-
-#CVE-2019-19078
-0001-ath10k-fix-memory-leak.patch
 
 #CVE-2019-19074
 0001-ath9k-release-allocated-buffer-if-timed-out.patch
@@ -67,29 +55,8 @@
 #CVE-2019-19054
 0001-media-rc-prevent-memory-leak-in-cx23888_ir_probe.patch
 
-#CVE-2019-19056
-0001-mwifiex-pcie-Fix-memory-leak-in-mwifiex_pcie_alloc_c.patch
-
-#CVE-2019-19057
-0001-mwifiex-pcie-Fix-memory-leak-in-mwifiex_pcie_init_ev.patch
-
-#CVE-2019-19068
-0001-rtl8xxxu-prevent-leaking-urb.patch
-
-#CVE-2019-19071
-0001-rsi-release-skb-if-rsi_prepare_beacon-fails.patch
-
-#CVE-2019-19062
-0001-crypto-user-fix-memory-leak-in-crypto_report.patch
-
-#CVE-2019-19063
-0001-rtlwifi-prevent-memory-leak-in-rtl_usb_probe.patch
-
 #CVE-2019-19058
 0001-iwlwifi-dbg_ini-fix-memory-leak-in-alloc_sgtable.patch
-
-#CVE-2019-19066
-0001-scsi-bfa-release-allocated-memory-in-case-of-error.patch
 
 #CVE-2019-19060
 0001-iio-imu-adis16400-release-allocated-memory-on-failur.patch
@@ -102,12 +69,6 @@
 
 #CVE-2019-19252
 0001-vcs-prevent-write-access-to-vcsu-devices.patch
-
-#CVE-2019-14895
-0001-mwifiex-fix-possible-heap-overflow-in-mwifiex_proces.patch
-
-#CVE-2019-14901
-0001-mwifiex-Fix-heap-overflow-in-mmwifiex_process_tdls_a.patch
 
 #CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
