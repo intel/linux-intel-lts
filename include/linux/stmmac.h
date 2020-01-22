@@ -135,6 +135,7 @@ struct plat_stmmacenet_data {
 	int intel_adhoc_addr;
 	int interface;
 	int phy_interface;
+	struct pci_dev *pdev;
 	struct stmmac_mdio_bus_data *mdio_bus_data;
 	struct device_node *phy_node;
 	struct device_node *phylink_node;
