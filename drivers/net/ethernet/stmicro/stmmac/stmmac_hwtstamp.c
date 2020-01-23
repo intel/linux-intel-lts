@@ -197,6 +197,7 @@ static void get_ptptime(void __iomem *ptpaddr, u64 *ptp_time)
 static void tstamp_interrupt(struct stmmac_priv *priv)
 {
 	struct ptp_clock_event event;
+	unsigned long flags;
 	u32 num_snapshot;
 	u32 tsync_int;
 	u64 ptp_time;
@@ -214,7 +215,9 @@ static void tstamp_interrupt(struct stmmac_priv *priv)
 				GMAC_TIMESTAMP_ATSNS_SHIFT;
 
 		for (i = 0; i < num_snapshot; i++) {
+			spin_lock_irqsave(&priv->ptp_lock, flags);
 			get_ptptime(priv->ptpaddr, &ptp_time);
+			spin_unlock_irqrestore(&priv->ptp_lock, flags);
 			event.type = PTP_CLOCK_EXTTS;
 			event.index = 0;
 			event.timestamp = ptp_time;
