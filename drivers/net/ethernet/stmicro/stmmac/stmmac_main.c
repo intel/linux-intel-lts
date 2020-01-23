@@ -2917,7 +2917,8 @@ static void stmmac_safety_feat_configuration(struct stmmac_priv *priv)
  *  0 on success and an appropriate (-)ve integer as defined in errno.h
  *  file on failure.
  */
-static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
+static int stmmac_hw_setup(struct net_device *dev, bool init_ptp,
+			   bool lock_acquired)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
 	u32 rx_cnt = priv->plat->rx_queues_to_use;
@@ -3021,8 +3022,12 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 		stmmac_enable_vlan(priv, priv->hw, STMMAC_VLAN_INSERT);
 
 	/* Configure real RX and TX queues */
+	if (!lock_acquired)
+		rtnl_lock();
 	netif_set_real_num_rx_queues(dev, priv->plat->rx_queues_to_use);
 	netif_set_real_num_tx_queues(dev, priv->plat->tx_queues_to_use);
+	if (!lock_acquired)
+		rtnl_unlock();
 
 	/* Start the ball rolling... */
 	stmmac_start_all_dma(priv);
@@ -3427,7 +3432,7 @@ static int stmmac_open(struct net_device *dev)
 		goto init_error;
 	}
 
-	ret = stmmac_hw_setup(dev, true);
+	ret = stmmac_hw_setup(dev, true, true);
 	if (ret < 0) {
 		netdev_err(priv->dev, "%s: Hw setup failed\n", __func__);
 		goto init_error;
@@ -6727,7 +6732,7 @@ int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev)
 
 	stmmac_clear_descriptors(priv);
 
-	stmmac_hw_setup(ndev, false);
+	stmmac_hw_setup(ndev, false, false);
 	stmmac_init_coalesce(priv);
 	stmmac_set_rx_mode(ndev);
 
@@ -6875,7 +6880,7 @@ int stmmac_resume(struct device *dev)
 
 	stmmac_clear_descriptors(priv);
 
-	stmmac_hw_setup(ndev, false);
+	stmmac_hw_setup(ndev, false, false);
 	stmmac_init_coalesce(priv);
 	stmmac_set_rx_mode(ndev);
 
