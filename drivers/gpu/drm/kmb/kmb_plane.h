@@ -61,8 +61,10 @@ enum layer_id {
 	LAYER_1,
 	LAYER_2,
 	LAYER_3,
-	KMB_MAX_PLANES,
+//	KMB_MAX_PLANES,
 };
+
+#define KMB_MAX_PLANES 1
 
 enum sub_plane_id {
 	Y_PLANE,
@@ -123,6 +125,11 @@ static const u32 csc_coef_lcd[] = {
 	1024, -352, -731,
 	1024, 1814, 0,
 	-179, 125, -226
+};
+
+struct layer_status {
+	bool disable;
+	u32 ctrl;
 };
 
 struct kmb_plane *kmb_plane_init(struct drm_device *drm);

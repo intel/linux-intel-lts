@@ -42,6 +42,8 @@
 #include "kmb_regs.h"
 #include "kmb_drv.h"
 
+struct layer_status plane_status[KMB_MAX_PLANES];
+
 const uint32_t layer_irqs[] = {
 	LCD_INT_VL0,
 	LCD_INT_VL1,
@@ -83,34 +85,24 @@ static void kmb_plane_atomic_disable(struct drm_plane *plane,
 				     struct drm_plane_state *state)
 {
 	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
-	int ctrl = 0;
-	struct kmb_drm_private *dev_p;
-	int plane_id;
-
-	dev_p = plane->dev->dev_private;
-	plane_id = kmb_plane->id;
+	int plane_id = kmb_plane->id;
 
 	switch (plane_id) {
 	case LAYER_0:
-		ctrl = LCD_CTRL_VL1_ENABLE;
+		plane_status[plane_id].ctrl = LCD_CTRL_VL1_ENABLE;
 		break;
 	case LAYER_1:
-		ctrl = LCD_CTRL_VL2_ENABLE;
+		plane_status[plane_id].ctrl = LCD_CTRL_VL2_ENABLE;
 		break;
 	case LAYER_2:
-		ctrl = LCD_CTRL_GL1_ENABLE;
+		plane_status[plane_id].ctrl = LCD_CTRL_GL1_ENABLE;
 		break;
 	case LAYER_3:
-		ctrl = LCD_CTRL_GL2_ENABLE;
+		plane_status[plane_id].ctrl = LCD_CTRL_GL2_ENABLE;
 		break;
 	}
 
-	kmb_clr_bitmask_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id),
-			    LCD_DMA_LAYER_ENABLE);
-	kmb_clr_bitmask_lcd(dev_p, LCD_CONTROL, ctrl);
-	DRM_DEBUG("%s : %d lcd_ctrl = 0x%x lcd_int_enable=0x%x\n",
-		  __func__, __LINE__, kmb_read_lcd(dev_p, LCD_CONTROL),
-		  kmb_read_lcd(dev_p, LCD_INT_ENABLE));
+	plane_status[plane_id].disable = true;
 }
 
 unsigned int set_pixel_format(u32 format)

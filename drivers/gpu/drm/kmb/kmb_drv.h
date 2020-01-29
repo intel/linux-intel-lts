@@ -39,6 +39,7 @@
 
 #define crtc_to_kmb_priv(x)	container_of(x, struct kmb_drm_private, crtc)
 
+
 struct kmb_drm_private {
 	struct drm_device drm;
 	void __iomem *lcd_mmio;

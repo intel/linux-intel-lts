@@ -62,6 +62,8 @@ static struct clk *clk_mipi_cfg;
 
 struct drm_bridge *adv_bridge;
 
+extern struct layer_status plane_status[KMB_MAX_PLANES];
+
 int kmb_display_clk_enable(void)
 {
 	int ret = 0;
@@ -367,25 +369,48 @@ static void kmb_setup_mode_config(struct drm_device *drm)
 static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 {
 	unsigned long status, val;
+	int plane_id;
+	struct kmb_drm_private *dev_p = dev->dev_private;
 
 	status = kmb_read_lcd(dev->dev_private, LCD_INT_STATUS);
 	if (status & LCD_INT_EOF) {
 		/* TODO - handle EOF interrupt? */
-		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_EOF);
+		kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_EOF);
+
+		/* When disabling/enabling LCD layers, the change takes effect
+		 * immediately and does not wait for EOF (end of frame).
+		 * When kmb_plane_atomic_disable is called, mark the plane as
+		 * disabled but actually disable the plane when EOF irq is
+		 * being handled.
+		 */
+		for (plane_id = LAYER_0; plane_id < KMB_MAX_PLANES;
+				plane_id++) {
+			if (plane_status[plane_id].disable) {
+				kmb_clr_bitmask_lcd(dev_p,
+					LCD_LAYERn_DMA_CFG(plane_id),
+					LCD_DMA_LAYER_ENABLE);
+
+				kmb_clr_bitmask_lcd(dev_p, LCD_CONTROL,
+					plane_status[plane_id].ctrl);
+
+				plane_status[plane_id].disable = false;
+			}
+		}
 	}
+
 	if (status & LCD_INT_LINE_CMP) {
 		/* clear line compare interrupt */
-		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR,
-			      LCD_INT_LINE_CMP);
+		kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_LINE_CMP);
 	}
+
 	if (status & LCD_INT_LAYER) {
 		/* Clear layer interrupts */
-		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_LAYER);
+		kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_LAYER);
 	}
 
 	if (status & LCD_INT_VERT_COMP) {
 		/* Read VSTATUS */
-		val = kmb_read_lcd(dev->dev_private, LCD_VSTATUS);
+		val = kmb_read_lcd(dev_p, LCD_VSTATUS);
 		val = (val & LCD_VSTATUS_VERTICAL_STATUS_MASK);
 		switch (val) {
 		case LCD_VSTATUS_COMPARE_VSYNC:
@@ -401,7 +426,7 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 	}
 
 	/* Clear all interrupts */
-	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_CLEAR, ~0x0);
+	kmb_set_bitmask_lcd(dev_p, LCD_INT_CLEAR, 1);
 	return IRQ_HANDLED;
 }
 
