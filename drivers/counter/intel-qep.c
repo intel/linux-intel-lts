@@ -114,6 +114,7 @@ struct intel_qep {
 	bool phase_error;
 	int op_mode;
 	int cap_mode;
+	u32 clk_div;
 };
 
 #define counter_to_qep(c)	(container_of((c), struct intel_qep, counter))
@@ -567,6 +568,45 @@ static ssize_t capture_mode_write(struct counter_device *counter,
 	return len;
 }
 
+static ssize_t clock_divider_read(struct counter_device *counter,
+		struct counter_count *count, void *priv, char *buf)
+{
+	struct intel_qep *qep = counter_to_qep(counter);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", (1 << qep->clk_div));
+}
+
+static ssize_t clock_divider_write(struct counter_device *counter,
+		struct counter_count *count, void *priv, const char *buf,
+		size_t len)
+{
+	struct intel_qep *qep = counter_to_qep(counter);
+	int ret;
+	u32 div;
+
+	if (qep->enabled)
+		return -EINVAL;
+
+	pm_runtime_get_sync(qep->dev);
+
+	ret = kstrtou32(buf, 0, &div);
+	if (ret < 0)
+		return ret;
+
+	if (div > 128 || !div) {
+		dev_info(qep->dev, "Divisor value is between 1 and 128.\n");
+		pm_runtime_put(qep->dev);
+		return -EINVAL;
+	}
+
+	qep->clk_div = ffs(div) - 1;
+	intel_qep_writel(qep->regs, INTEL_QEPCAPDIV, qep->clk_div);
+
+	pm_runtime_put(qep->dev);
+
+	return len;
+}
+
 static const struct counter_count_ext intel_qep_count_ext[] = {
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(ceiling),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(enable),
@@ -575,6 +615,7 @@ static const struct counter_count_ext intel_qep_count_ext[] = {
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(operating_mode),
 	INTEL_QEP_COUNTER_COUNT_EXT_RO(capture_data),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(capture_mode),
+	INTEL_QEP_COUNTER_COUNT_EXT_RW(clock_divider),
 };
 
 static struct counter_count intel_qep_counter_count[] = {
