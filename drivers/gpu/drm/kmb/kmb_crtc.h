@@ -31,6 +31,9 @@
 #include <drm/drmP.h>
 #include "kmb_drv.h"
 
+#define to_kmb_crtc_state(x) container_of(x, struct kmb_crtc_state, crtc_base)
+#define to_kmb_crtc(x) container_of(x, struct kmb_crtc, crtc_base)
+
 struct kmb_crtc {
 	struct drm_crtc crtc_base;
 	struct kmb_drm_private kmb_dev;
@@ -39,8 +42,7 @@ struct kmb_crtc {
 struct kmb_crtc_state {
 	struct drm_crtc_state crtc_base;
 };
-#define to_kmb_crtc_state(x) container_of(x, struct kmb_crtc_state, crtc_base)
-#define to_kmb_crtc(x) container_of(x, struct kmb_crtc, crtc_base)
+
 extern void kmb_plane_destroy(struct drm_plane *plane);
 extern struct kmb_plane *kmb_plane_init(struct drm_device *drm);
 #endif /* __KMB_CRTC_H__ */

@@ -553,9 +553,10 @@
 /* MIPI IRQ */
 #define MIPI_CTRL_IRQ_STATUS0				(0x00)
 #define   MIPI_DPHY_ERR_IRQ				1
-#define   MIPI_DPHY_ERR_MASK				0x7FE /*bits 1-10 */
+#define   MIPI_DPHY_ERR_MASK				0x7FE	/*bits 1-10 */
 #define   MIPI_HS_IRQ					13
-#define   MIPI_HS_IRQ_MASK				0x7FE000 /*bits 13-22 */
+/*bits 13-22 */
+#define   MIPI_HS_IRQ_MASK				0x7FE000
 #define   MIPI_LP_EVENT_IRQ				25
 #define   MIPI_GET_IRQ_STAT0(dev)		kmb_read_mipi(dev, \
 						MIPI_CTRL_IRQ_STATUS0)
@@ -735,18 +736,18 @@
 			& (1 << (dphy - MIPI_DPHY6)))
 #define DPHY_CFG_CLK_EN				(0x18c)
 
-#define MSS_MIPI_CIF_CFG		(0x00)
-#define MSS_LCD_MIPI_CFG		(0x04)
-#define MSS_CAM_CLK_CTRL		(0x10)
-#define MSS_LOOPBACK_CFG		(0x0C)
-#define   LCD				(1<<1)
-#define   MIPI_COMMON			(1<<2)
-#define   MIPI_TX0			(1<<9)
-#define MSS_CAM_RSTN_CTRL		(0x14)
-#define MSS_CAM_RSTN_SET		(0x20)
-#define MSS_CAM_RSTN_CLR		(0x24)
+#define MSS_MIPI_CIF_CFG			(0x00)
+#define MSS_LCD_MIPI_CFG			(0x04)
+#define MSS_CAM_CLK_CTRL			(0x10)
+#define MSS_LOOPBACK_CFG			(0x0C)
+#define   LCD					(1<<1)
+#define   MIPI_COMMON				(1<<2)
+#define   MIPI_TX0				(1<<9)
+#define MSS_CAM_RSTN_CTRL			(0x14)
+#define MSS_CAM_RSTN_SET			(0x20)
+#define MSS_CAM_RSTN_CLR			(0x24)
 
-#define MSSCPU_CPR_CLK_EN		(0x0)
-#define MSSCPU_CPR_RST_EN		(0x10)
+#define MSSCPU_CPR_CLK_EN			(0x0)
+#define MSSCPU_CPR_RST_EN			(0x10)
 #define BIT_MASK_16				(0xffff)
 #endif /* __KMB_REGS_H__ */

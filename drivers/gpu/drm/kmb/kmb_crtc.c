@@ -60,10 +60,10 @@ static int kmb_crtc_enable_vblank(struct drm_crtc *crtc)
 	kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_VERT_COMP);
 	/*set which interval to generate vertical interrupt */
 	kmb_write_lcd(dev->dev_private, LCD_VSTATUS_COMPARE,
-			LCD_VSTATUS_COMPARE_VSYNC);
+		      LCD_VSTATUS_COMPARE_VSYNC);
 	/* enable vertical interrupt */
 	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE,
-			LCD_INT_VERT_COMP);
+			    LCD_INT_VERT_COMP);
 	return 0;
 }
 
@@ -75,7 +75,7 @@ static void kmb_crtc_disable_vblank(struct drm_crtc *crtc)
 	kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_VERT_COMP);
 	/* disable vertical interrupt */
 	kmb_clr_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE,
-			LCD_INT_VERT_COMP);
+			    LCD_INT_VERT_COMP);
 
 }
 
@@ -103,38 +103,38 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	/* initialize mipi */
 	kmb_dsi_hw_init(dev, m);
 	DRM_INFO("vfp= %d vbp= %d vsyc_len=%d hfp=%d hbp=%d hsync_len=%d\n",
-			m->crtc_vsync_start - m->crtc_vdisplay,
-			m->crtc_vtotal - m->crtc_vsync_end,
-			m->crtc_vsync_end - m->crtc_vsync_start,
-			m->crtc_hsync_start - m->crtc_hdisplay,
-			m->crtc_htotal - m->crtc_hsync_end,
-			m->crtc_hsync_end - m->crtc_hsync_start);
+		 m->crtc_vsync_start - m->crtc_vdisplay,
+		 m->crtc_vtotal - m->crtc_vsync_end,
+		 m->crtc_vsync_end - m->crtc_vsync_start,
+		 m->crtc_hsync_start - m->crtc_hdisplay,
+		 m->crtc_htotal - m->crtc_hsync_end,
+		 m->crtc_hsync_end - m->crtc_hsync_start);
 	val = kmb_read_lcd(dev->dev_private, LCD_INT_ENABLE);
 	kmb_clr_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE, val);
 	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_CLEAR, ~0x0);
-//	vm.vfront_porch = m->crtc_vsync_start - m->crtc_vdisplay;
+//      vm.vfront_porch = m->crtc_vsync_start - m->crtc_vdisplay;
 	vm.vfront_porch = 2;
-//	vm.vback_porch = m->crtc_vtotal - m->crtc_vsync_end;
+//      vm.vback_porch = m->crtc_vtotal - m->crtc_vsync_end;
 	vm.vback_porch = 2;
-//	vm.vsync_len = m->crtc_vsync_end - m->crtc_vsync_start;
+//      vm.vsync_len = m->crtc_vsync_end - m->crtc_vsync_start;
 	vm.vsync_len = 1;
 	//vm.hfront_porch = m->crtc_hsync_start - m->crtc_hdisplay;
 	vm.hfront_porch = 0;
 	vm.hback_porch = 0;
 	//vm.hback_porch = m->crtc_htotal - m->crtc_hsync_end;
 	vm.hsync_len = 7;
-//	vm.hsync_len = m->crtc_hsync_end - m->crtc_hsync_start;
+//      vm.hsync_len = m->crtc_hsync_end - m->crtc_hsync_start;
 
 	vsync_start_offset = m->crtc_vsync_start - m->crtc_hsync_start;
 	vsync_end_offset = m->crtc_vsync_end - m->crtc_hsync_end;
 
-	DRM_INFO("%s : %dactive height= %d vbp=%d vfp=%d vsync-w=%d h-active=%d h-bp=%d h-fp=%d hysnc-l=%d\n",
-			__func__, __LINE__, m->crtc_vdisplay,
-			vm.vback_porch, vm.vfront_porch,
-			vm.vsync_len, m->crtc_hdisplay,
-			vm.hback_porch, vm.hfront_porch, vm.hsync_len);
+	DRM_DEBUG
+	    ("%s : %dactive height= %d vbp=%d vfp=%d vsync-w=%d h-active=%d h-bp=%d h-fp=%d hysnc-l=%d",
+	     __func__, __LINE__, m->crtc_vdisplay, vm.vback_porch,
+	     vm.vfront_porch, vm.vsync_len, m->crtc_hdisplay, vm.hback_porch,
+	     vm.hfront_porch, vm.hsync_len);
 	kmb_write_lcd(dev->dev_private, LCD_V_ACTIVEHEIGHT,
-			m->crtc_vdisplay - 1);
+		      m->crtc_vdisplay - 1);
 	kmb_write_lcd(dev->dev_private, LCD_V_BACKPORCH, vm.vback_porch);
 	kmb_write_lcd(dev->dev_private, LCD_V_FRONTPORCH, vm.vfront_porch);
 	kmb_write_lcd(dev->dev_private, LCD_VSYNC_WIDTH, vm.vsync_len - 1);
@@ -149,14 +149,14 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 
 	if (m->flags == DRM_MODE_FLAG_INTERLACE) {
 		kmb_write_lcd(dev->dev_private,
-				LCD_VSYNC_WIDTH_EVEN, vm.vsync_len - 1);
+			      LCD_VSYNC_WIDTH_EVEN, vm.vsync_len - 1);
 		kmb_write_lcd(dev->dev_private,
 				LCD_V_BACKPORCH_EVEN, vm.vback_porch);
 		kmb_write_lcd(dev->dev_private,
 				LCD_V_FRONTPORCH_EVEN, vm.vfront_porch);
 		kmb_write_lcd(dev->dev_private, LCD_V_ACTIVEHEIGHT_EVEN,
-			m->crtc_vdisplay - 1);
-		/*this is hardcoded as 10 in the Myriadx code*/
+			      m->crtc_vdisplay - 1);
+		/*this is hardcoded as 10 in the Myriadx code */
 		kmb_write_lcd(dev->dev_private, LCD_VSYNC_START_EVEN, 10);
 		kmb_write_lcd(dev->dev_private, LCD_VSYNC_END_EVEN, 10);
 	}
@@ -196,7 +196,7 @@ static void kmb_crtc_atomic_begin(struct drm_crtc *crtc,
 	struct drm_device *dev = crtc->dev;
 
 	kmb_clr_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE,
-			LCD_INT_VERT_COMP);
+			    LCD_INT_VERT_COMP);
 }
 
 static void kmb_crtc_atomic_flush(struct drm_crtc *crtc,
@@ -205,7 +205,7 @@ static void kmb_crtc_atomic_flush(struct drm_crtc *crtc,
 	struct drm_device *dev = crtc->dev;
 
 	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_ENABLE,
-			LCD_INT_VERT_COMP);
+			    LCD_INT_VERT_COMP);
 
 	spin_lock_irq(&crtc->dev->event_lock);
 	if (crtc->state->event)

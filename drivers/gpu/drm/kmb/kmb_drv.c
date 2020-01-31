@@ -26,7 +26,7 @@
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/clk.h>
-#include <linux/component.h>
+//#include <linux/component.h>
 #include <linux/console.h>
 #include <linux/list.h>
 #include <linux/of_graph.h>
@@ -50,9 +50,9 @@
 #include "kmb_plane.h"
 #include "kmb_dsi.h"
 
-#define DEBUG
+//#define DEBUG
 
-/*IRQ handler*/
+/* IRQ handler */
 static irqreturn_t kmb_isr(int irq, void *arg);
 
 static struct clk *clk_lcd;
@@ -128,8 +128,6 @@ static void __iomem *kmb_map_mmio(struct platform_device *pdev, char *name)
 		release_mem_region(res->start, size);
 		return ERR_PTR(-ENOMEM);
 	}
-	DRM_INFO("%s : %d mapped %s mmio size = %d\n", __func__, __LINE__,
-			name, size);
 	return mem;
 }
 
@@ -137,8 +135,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
 	struct kmb_drm_private *dev_p = drm->dev_private;
 	struct platform_device *pdev = to_platform_device(drm->dev);
-	/*u32 version;*/
-	int irq_lcd;// irq_mipi;
+	int irq_lcd;
 	int ret = 0;
 	unsigned long clk;
 
@@ -157,8 +154,8 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		return -ENOMEM;
 	}
 
-	/* This is only for MIPI_TX_MSS_LCD_MIPI_CFG and MSS_CAM_CLK_CTRL
-	 * register
+	/* This is only for MIPI_TX_MSS_LCD_MIPI_CFG and
+	 * MSS_CAM_CLK_CTRL register
 	 */
 	dev_p->msscam_mmio = kmb_map_mmio(pdev, "msscam_regs");
 	if (IS_ERR(dev_p->msscam_mmio)) {
@@ -174,22 +171,21 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		iounmap(dev_p->mipi_mmio);
 		return -ENOMEM;
 	}
-
-
-
 #define KMB_CLOCKS
 #ifdef KMB_CLOCKS
-	/* Enable display clocks*/
+	/* Enable display clocks */
 	clk_lcd = clk_get(&pdev->dev, "clk_lcd");
 	if (IS_ERR(clk_lcd)) {
 		DRM_ERROR("clk_get() failed clk_lcd\n");
 		goto setup_fail;
 	}
+
 	clk_mipi = clk_get(&pdev->dev, "clk_mipi");
 	if (IS_ERR(clk_mipi)) {
 		DRM_ERROR("clk_get() failed clk_mipi\n");
 		goto setup_fail;
 	}
+
 	clk_mipi_ecfg = clk_get(&pdev->dev, "clk_mipi_ecfg");
 	if (IS_ERR(clk_mipi_ecfg)) {
 		DRM_ERROR("clk_get() failed clk_mipi_ecfg\n");
@@ -201,59 +197,63 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_ERROR("clk_get() failed clk_mipi_cfg\n");
 		goto setup_fail;
 	}
-
 #ifdef LCD_TEST
-	/* Set LCD clock to 200 Mhz*/
-	DRM_INFO("Get clk_lcd before set = %ld\n", clk_get_rate(clk_lcd));
+	/* Set LCD clock to 200 Mhz */
+	DRM_DEBUG("Get clk_lcd before set = %ld\n", clk_get_rate(clk_lcd));
 	ret = clk_set_rate(clk_lcd, KMB_LCD_DEFAULT_CLK);
 	if (clk_get_rate(clk_lcd) != KMB_LCD_DEFAULT_CLK) {
 		DRM_ERROR("failed to set to clk_lcd to %d\n",
-				KMB_LCD_DEFAULT_CLK);
+			  KMB_LCD_DEFAULT_CLK);
 	}
-	DRM_INFO("Setting LCD clock to %d Mhz ret = %d\n",
-			KMB_LCD_DEFAULT_CLK/1000000, ret);
+	DRM_INFO("Setting LCD clock tp %d Mhz ret = %d\n",
+		 KMB_LCD_DEFAULT_CLK / 1000000, ret);
 	DRM_INFO("Get clk_lcd after set = %ld\n", clk_get_rate(clk_lcd));
 #endif
-	/* Set MIPI clock to 24 Mhz*/
-	DRM_INFO("Get clk_mipi before set = %ld\n", clk_get_rate(clk_mipi));
+
 #define MIPI_CLK
 #ifdef MIPI_CLK
+	/* Set MIPI clock to 24 Mhz */
+	DRM_DEBUG("Get clk_mipi before set = %ld\n", clk_get_rate(clk_mipi));
 	ret = clk_set_rate(clk_mipi, KMB_MIPI_DEFAULT_CLK);
 	DRM_INFO("Get clk_mipi after set = %ld\n", clk_get_rate(clk_mipi));
 	if (clk_get_rate(clk_mipi) != KMB_MIPI_DEFAULT_CLK) {
 		DRM_ERROR("failed to set to clk_mipi to %d\n",
-				KMB_MIPI_DEFAULT_CLK);
+			  KMB_MIPI_DEFAULT_CLK);
 		goto setup_fail;
 	}
 #endif
 	DRM_INFO("Setting MIPI clock to %d Mhz ret = %d\n",
-			KMB_MIPI_DEFAULT_CLK/1000000, ret);
+		 KMB_MIPI_DEFAULT_CLK / 1000000, ret);
 	DRM_INFO("Get clk_mipi after set = %ld\n", clk_get_rate(clk_mipi));
 
 	clk = clk_get_rate(clk_mipi_ecfg);
 	if (clk != KMB_MIPI_DEFAULT_CFG_CLK) {
-		/* Set MIPI_ECFG clock to 24 Mhz*/
+		/* Set MIPI_ECFG clock to 24 Mhz */
 		DRM_INFO("Get clk_mipi_ecfg before set = %ld\n", clk);
+
 		ret = clk_set_rate(clk_mipi_ecfg, KMB_MIPI_DEFAULT_CFG_CLK);
 		clk = clk_get_rate(clk_mipi_ecfg);
-		if (clk != KMB_MIPI_DEFAULT_CLK) {
+		if (clk != KMB_MIPI_DEFAULT_CFG_CLK) {
 			DRM_ERROR("failed to set to clk_mipi_ecfg to %d\n",
-					KMB_MIPI_DEFAULT_CLK);
+				  KMB_MIPI_DEFAULT_CFG_CLK);
 			goto setup_fail;
 		}
+
 		DRM_INFO("Setting MIPI_ECFG clock tp %d Mhz ret = %d\n",
-				KMB_MIPI_DEFAULT_CLK/1000000, ret);
+			 KMB_MIPI_DEFAULT_CFG_CLK / 1000000, ret);
+		DRM_INFO("Get clk_mipi_ecfg after set = %ld\n", clk);
 	}
 
 	clk = clk_get_rate(clk_mipi_cfg);
 	if (clk != KMB_MIPI_DEFAULT_CFG_CLK) {
-		/* Set MIPI_CFG clock to 24 Mhz*/
+		/* Set MIPI_CFG clock to 24 Mhz */
 		DRM_INFO("Get clk_mipi_cfg before set = %ld\n", clk);
+
 		ret = clk_set_rate(clk_mipi_cfg, 24000000);
 		clk = clk_get_rate(clk_mipi_cfg);
 		if (clk != KMB_MIPI_DEFAULT_CFG_CLK) {
 			DRM_ERROR("failed to set to clk_mipi_cfg to %d\n",
-					KMB_MIPI_DEFAULT_CFG_CLK);
+				  KMB_MIPI_DEFAULT_CFG_CLK);
 			goto setup_fail;
 		}
 		DRM_INFO("Setting MIPI_CFG clock tp 24Mhz ret = %d\n", ret);
@@ -262,10 +262,12 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 
 	ret = kmb_display_clk_enable();
 
-	/* enable MSS_CAM_CLK_CTRL for MIPI TX and LCD */
+	/* Enable MSS_CAM_CLK_CTRL for MIPI TX and LCD */
 	kmb_set_bitmask_msscam(dev_p, MSS_CAM_CLK_CTRL, 0x1fff);
 	kmb_set_bitmask_msscam(dev_p, MSS_CAM_RSTN_CTRL, 0xffffffff);
+
 #endif //KMB_CLOCKS
+
 	/* Register irqs here - section 17.3 in databook
 	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
 	 * firmware has redirected  79 to A53 IRQ 33
@@ -312,19 +314,21 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		goto setup_fail;
 	}
 
-
 	/* Initialize MIPI DSI */
 	ret = kmb_dsi_init(drm, adv_bridge);
 	if (ret) {
 		DRM_ERROR("failed to initialize DSI\n");
 		goto setup_fail;
 	}
+
 	ret = drm_irq_install(drm, irq_lcd);
 	if (ret < 0) {
 		DRM_ERROR("failed to install IRQ handler\n");
 		goto irq_fail;
 	}
+
 	dev_p->irq_lcd = irq_lcd;
+
 	return 0;
 
 irq_fail:
@@ -336,10 +340,11 @@ setup_fail:
 }
 
 int kmb_atomic_helper_check(struct drm_device *dev,
-		struct drm_atomic_state *state)
+			    struct drm_atomic_state *state)
 {
 	if (!state)
 		return 0;
+
 	return drm_atomic_helper_check(dev, state);
 }
 
@@ -359,28 +364,27 @@ static void kmb_setup_mode_config(struct drm_device *drm)
 	drm->mode_config.funcs = &kmb_mode_config_funcs;
 }
 
-
 static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 {
 	unsigned long status, val;
 
 	status = kmb_read_lcd(dev->dev_private, LCD_INT_STATUS);
 	if (status & LCD_INT_EOF) {
-		/*To DO - handle EOF interrupt? */
+		/* TODO - handle EOF interrupt? */
 		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_EOF);
 	}
 	if (status & LCD_INT_LINE_CMP) {
 		/* clear line compare interrupt */
 		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR,
-				LCD_INT_LINE_CMP);
+			      LCD_INT_LINE_CMP);
 	}
 	if (status & LCD_INT_LAYER) {
-		/* clear layer interrupts */
+		/* Clear layer interrupts */
 		kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR, LCD_INT_LAYER);
 	}
 
 	if (status & LCD_INT_VERT_COMP) {
-		/* read VSTATUS */
+		/* Read VSTATUS */
 		val = kmb_read_lcd(dev->dev_private, LCD_VSTATUS);
 		val = (val & LCD_VSTATUS_VERTICAL_STATUS_MASK);
 		switch (val) {
@@ -390,19 +394,19 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 		case LCD_VSTATUS_COMPARE_FRONT_PORCH:
 			/* clear vertical compare interrupt */
 			kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR,
-					LCD_INT_VERT_COMP);
+				      LCD_INT_VERT_COMP);
 			drm_handle_vblank(dev, 0);
 			break;
 		}
 	}
 
-	/* clear all interrupts */
+	/* Clear all interrupts */
 	kmb_set_bitmask_lcd(dev->dev_private, LCD_INT_CLEAR, ~0x0);
 	return IRQ_HANDLED;
 }
 
 #ifdef MIPI_IRQ
-static irqreturn_t  handle_mipi_irq(struct drm_device *dev)
+static irqreturn_t handle_mipi_irq(struct drm_device *dev)
 {
 	mipi_tx_handle_irqs(dev->dev_private);
 	return IRQ_HANDLED;
@@ -428,7 +432,7 @@ DEFINE_DRM_GEM_CMA_FOPS(fops);
 
 static struct drm_driver kmb_driver = {
 	.driver_features = DRIVER_HAVE_IRQ | DRIVER_GEM |
-			DRIVER_MODESET | DRIVER_ATOMIC,
+	    DRIVER_MODESET | DRIVER_ATOMIC,
 	.irq_handler = kmb_isr,
 	.irq_preinstall = kmb_irq_reset,
 	.irq_uninstall = kmb_irq_reset,
@@ -458,7 +462,9 @@ static void kmb_drm_unload(struct device *dev)
 	struct drm_device *drm = dev_get_drvdata(dev);
 	struct kmb_drm_private *dev_p = drm->dev_private;
 
+#ifdef DEBUG
 	dump_stack();
+#endif
 	drm_dev_unregister(drm);
 	drm_kms_helper_poll_fini(drm);
 	of_node_put(dev_p->crtc.port);
@@ -486,7 +492,7 @@ static void kmb_drm_unload(struct device *dev)
 	of_reserved_mem_device_release(drm->dev);
 	drm_mode_config_cleanup(drm);
 
-	/*release clks */
+	/* Release clks */
 	kmb_display_clk_disable();
 	clk_put(clk_lcd);
 	clk_put(clk_mipi);
@@ -513,7 +519,8 @@ static int kmb_probe(struct platform_device *pdev)
 	 *  and then the rest of the driver initialization can procees
 	 *  afterwards and the bridge can be successfully attached.
 	 */
-	adv_bridge =  kmb_dsi_host_bridge_init(dev);
+	adv_bridge = kmb_dsi_host_bridge_init(dev);
+
 #ifndef FCCTEST
 	if (adv_bridge == ERR_PTR(-EPROBE_DEFER))
 		return -EPROBE_DEFER;
@@ -522,6 +529,7 @@ static int kmb_probe(struct platform_device *pdev)
 		return PTR_ERR(adv_bridge);
 	}
 #endif
+
 	/* Create DRM device */
 	drm = drm_dev_alloc(&kmb_driver, dev);
 	if (IS_ERR(drm))
@@ -533,7 +541,7 @@ static int kmb_probe(struct platform_device *pdev)
 
 	drm->dev_private = lcd;
 	kmb_setup_mode_config(drm);
-		dev_set_drvdata(dev, drm);
+	dev_set_drvdata(dev, drm);
 
 	/* Load driver */
 	lcd->n_layers = KMB_MAX_PLANES;
@@ -552,6 +560,7 @@ static int kmb_probe(struct platform_device *pdev)
 		DRM_ERROR("failed to initialize vblank\n");
 		goto err_vblank;
 	}
+
 	drm_mode_config_reset(drm);
 	drm_kms_helper_poll_init(drm);
 
@@ -562,7 +571,7 @@ static int kmb_probe(struct platform_device *pdev)
 		goto err_register;
 
 #ifndef FCCTEST
-//	drm_fbdev_generic_setup(drm, 32);
+	//drm_fbdev_generic_setup(drm, 32);
 #endif
 	return 0;
 
@@ -585,7 +594,7 @@ static int kmb_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id  kmb_of_match[] = {
+static const struct of_device_id kmb_of_match[] = {
 	{.compatible = "intel,kmb_display"},
 	{},
 };
@@ -628,13 +637,13 @@ static int __maybe_unused kmb_pm_resume(struct device *dev)
 static SIMPLE_DEV_PM_OPS(kmb_pm_ops, kmb_pm_suspend, kmb_pm_resume);
 
 static struct platform_driver kmb_platform_driver = {
-	.probe		= kmb_probe,
-	.remove		= kmb_remove,
-	.driver	= {
-		.name = "kmb-drm",
-		.pm = &kmb_pm_ops,
-		.of_match_table	= kmb_of_match,
-	},
+	.probe = kmb_probe,
+	.remove = kmb_remove,
+	.driver = {
+		   .name = "kmb-drm",
+		   .pm = &kmb_pm_ops,
+		   .of_match_table = kmb_of_match,
+		   },
 };
 
 module_platform_driver(kmb_platform_driver);

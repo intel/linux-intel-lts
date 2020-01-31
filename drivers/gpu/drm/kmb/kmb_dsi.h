@@ -32,6 +32,60 @@
 #include <drm/drm_modes.h>
 #include "kmb_drv.h"
 
+/* MIPI TX CFG*/
+#define MIPI_TX_LANE_DATA_RATE_MBPS 891
+#define MIPI_TX_REF_CLK_KHZ         24000
+#define MIPI_TX_CFG_CLK_KHZ         24000
+#define MIPI_TX_BPP		    24
+
+/* DPHY Tx test codes*/
+#define TEST_CODE_FSM_CONTROL				0x03
+#define TEST_CODE_MULTIPLE_PHY_CTRL			0x0C
+#define TEST_CODE_PLL_PROPORTIONAL_CHARGE_PUMP_CTRL	0x0E
+#define TEST_CODE_PLL_INTEGRAL_CHARGE_PUMP_CTRL		0x0F
+#define TEST_CODE_PLL_VCO_CTRL				0x12
+#define TEST_CODE_PLL_GMP_CTRL				0x13
+#define TEST_CODE_PLL_PHASE_ERR_CTRL			0x14
+#define TEST_CODE_PLL_LOCK_FILTER			0x15
+#define TEST_CODE_PLL_UNLOCK_FILTER			0x16
+#define TEST_CODE_PLL_INPUT_DIVIDER			0x17
+#define TEST_CODE_PLL_FEEDBACK_DIVIDER			0x18
+#define   PLL_FEEDBACK_DIVIDER_HIGH			(1 << 7)
+#define TEST_CODE_PLL_OUTPUT_CLK_SEL			0x19
+#define   PLL_N_OVR_EN					(1 << 4)
+#define   PLL_M_OVR_EN					(1 << 5)
+#define TEST_CODE_VOD_LEVEL				0x24
+#define TEST_CODE_PLL_CHARGE_PUMP_BIAS			0x1C
+#define TEST_CODE_PLL_LOCK_DETECTOR			0x1D
+#define TEST_CODE_HS_FREQ_RANGE_CFG			0x44
+#define TEST_CODE_PLL_ANALOG_PROG			0x1F
+#define TEST_CODE_SLEW_RATE_OVERRIDE_CTRL		0xA0
+#define TEST_CODE_SLEW_RATE_DDL_LOOP_CTRL		0xA3
+#define TEST_CODE_SLEW_RATE_DDL_CYCLES			0xA4
+
+/* DPHY params */
+#define PLL_N_MIN	0
+#define PLL_N_MAX	15
+#define PLL_M_MIN	62
+#define PLL_M_MAX	623
+#define PLL_FVCO_MAX	1250
+
+#define TIMEOUT		600
+
+#define MIPI_TX_FRAME_GEN				4
+#define MIPI_TX_FRAME_GEN_SECTIONS			4
+#define MIPI_CTRL_VIRTUAL_CHANNELS			4
+#define MIPI_D_LANES_PER_DPHY				2
+#define MIPI_CTRL_2LANE_MAX_MC_FIFO_LOC			255
+#define MIPI_CTRL_4LANE_MAX_MC_FIFO_LOC			511
+/* 2 Data Lanes per D-PHY */
+#define MIPI_DPHY_D_LANES				2
+#define MIPI_DPHY_DEFAULT_BIT_RATES			63
+
+#define to_kmb_connector(x) container_of(x, struct kmb_connector, base)
+#define to_kmb_host(x) container_of(x, struct kmb_dsi_host, base)
+#define to_kmb_dsi(x) container_of(x, struct kmb_dsi, base)
+
 struct kmb_connector;
 struct kmb_dsi_host;
 
@@ -54,16 +108,7 @@ struct kmb_connector {
 	struct drm_display_mode *fixed_mode;
 };
 
-#define MIPI_TX_FRAME_GEN	4
-#define MIPI_TX_FRAME_GEN_SECTIONS 4
-#define MIPI_CTRL_VIRTUAL_CHANNELS 4
-#define MIPI_D_LANES_PER_DPHY	2
-#define MIPI_CTRL_2LANE_MAX_MC_FIFO_LOC	255
-#define MIPI_CTRL_4LANE_MAX_MC_FIFO_LOC	511
-#define MIPI_DPHY_D_LANES		2  /* 2 Data Lanes per D-PHY*/
-#define MIPI_DPHY_DEFAULT_BIT_RATES 63
-
-/*DPHY Tx test codes */
+/* DPHY Tx test codes */
 
 enum mipi_ctrl_num {
 	MIPI_CTRL0 = 0,
@@ -253,7 +298,7 @@ struct mipi_tx_dsi_cfg {
 struct mipi_tx_frame_section_cfg {
 	uint32_t dma_v_stride;
 	uint16_t dma_v_scale_cfg;
-	uint16_t width_pixels;	/*  Frame width */
+	uint16_t width_pixels;
 	uint16_t height_lines;
 	uint8_t dma_packed;
 	uint8_t bpp;
@@ -325,15 +370,15 @@ struct mipi_ctrl_cfg {
 	struct mipi_tx_ctrl_cfg tx_ctrl_cfg;
 };
 
-/*structure for storing user specified interrupts that are enabled */
+/* Structure for storing user specified interrupts that are enabled */
 union mipi_irq_cfg {
 	uint8_t value;
 	struct {
-		uint8_t line_compare : 1;
-		uint8_t dma_event : 1;
-		uint8_t frame_done : 1;
-		uint8_t ctrl_error : 1;
-		uint8_t dphy_error : 1;
+		uint8_t line_compare:1;
+		uint8_t dma_event:1;
+		uint8_t frame_done:1;
+		uint8_t ctrl_error:1;
+		uint8_t dphy_error:1;
 	} irq_cfg;
 };
 
@@ -343,9 +388,4 @@ void kmb_plane_destroy(struct drm_plane *plane);
 void mipi_tx_handle_irqs(struct kmb_drm_private *dev_p);
 void kmb_dsi_host_unregister(void);
 int kmb_dsi_hw_init(struct drm_device *dev, struct drm_display_mode *mode);
-
-#define to_kmb_connector(x) container_of(x, struct kmb_connector, base)
-#define to_kmb_host(x) container_of(x, struct kmb_dsi_host, base)
-#define to_kmb_dsi(x) container_of(x, struct kmb_dsi, base)
-
 #endif /* __KMB_DSI_H__ */
