@@ -463,6 +463,9 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 			break;
 		}
 
+		/* Correct the clk domain crossing CDC error */
+		adjust += -(2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate));
+
 		ns += adjust;
 		*hwtstamp = ns_to_ktime(ns);
 		netdev_dbg(priv->dev, "get valid TX hw timestamp %llu\n", ns);
@@ -513,6 +516,9 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			adjust += priv->plat->xpcs_rx_latency_2500;
 			break;
 		}
+
+		/* Correct the clk domain crossing CDC error */
+		adjust += 2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate);
 
 		ns -= adjust;
 		netdev_dbg(priv->dev, "get valid RX hw timestamp %llu\n", ns);
