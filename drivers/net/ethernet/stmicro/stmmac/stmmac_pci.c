@@ -61,6 +61,28 @@ static int stmmac_pci_find_phy_addr(struct pci_dev *pdev,
 	return -ENODEV;
 }
 
+static void ehl_sgmii_path_latency_data(struct plat_stmmacenet_data *plat)
+{
+	/* SGMII TX and RX PHY latency (ns) */
+	plat->phy_tx_latency_10 = 5385;
+	plat->phy_tx_latency_100 = 666;
+	plat->phy_tx_latency_1000 = 219;
+	plat->phy_rx_latency_10 = 5902;
+	plat->phy_rx_latency_100 = 821;
+	plat->phy_rx_latency_1000 = 343;
+}
+
+static void ehl_rgmii_path_latency_data(struct plat_stmmacenet_data *plat)
+{
+	/* RGMII TX and RX PHY latency (ns) */
+	plat->phy_tx_latency_10 = 6066;
+	plat->phy_tx_latency_100 = 656;
+	plat->phy_tx_latency_1000 = 224;
+	plat->phy_rx_latency_10 = 2130;
+	plat->phy_rx_latency_100 = 362;
+	plat->phy_rx_latency_1000 = 231;
+}
+
 static void common_default_data(struct plat_stmmacenet_data *plat)
 {
 	plat->clk_csr = 2;	/* clk_csr_i = 20-35MHz & MDC = clk_csr_i/16 */
@@ -298,14 +320,6 @@ static int ehl_common_data(struct pci_dev *pdev,
 	/* Maximum TX XDP queue */
 	plat->max_combined = 4;
 
-	/* TX and RX PHY latency (ns) */
-	plat->phy_tx_latency_10 = 6066;
-	plat->phy_tx_latency_100 = 657;
-	plat->phy_tx_latency_1000 = 224;
-	plat->phy_rx_latency_10 = 2130;
-	plat->phy_rx_latency_100 = 362;
-	plat->phy_rx_latency_1000 = 231;
-
 	ret = intel_mgbe_common_data(pdev, plat);
 	if (ret)
 		return ret;
@@ -318,6 +332,7 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 {
 	plat->phy_addr = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	ehl_sgmii_path_latency_data(plat);
 
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 204860000;
@@ -334,6 +349,7 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 {
 	plat->phy_addr = 0;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII;
+	ehl_rgmii_path_latency_data(plat);
 
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 200000000;
@@ -392,6 +408,8 @@ static int ehl_pse0_rgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII_ID;
+	ehl_rgmii_path_latency_data(plat);
+
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -403,6 +421,8 @@ static int ehl_pse0_sgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	ehl_sgmii_path_latency_data(plat);
+
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -437,6 +457,8 @@ static int ehl_pse1_rgmii1g_data(struct pci_dev *pdev,
 {
 	plat->pdev = pdev;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII_ID;
+	ehl_rgmii_path_latency_data(plat);
+
 	return ehl_pse1_common_data(pdev, plat);
 }
 
@@ -448,6 +470,8 @@ static int ehl_pse1_sgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	ehl_sgmii_path_latency_data(plat);
+
 	return ehl_pse1_common_data(pdev, plat);
 }
 
