@@ -288,6 +288,13 @@ static int hda_init(struct snd_sof_dev *sdev)
 	/* HDA base */
 	sdev->bar[HDA_DSP_HDA_BAR] = bus->remap_addr;
 
+	/* init i915 and HDMI codecs */
+	ret = hda_codec_i915_init(sdev);
+	if (ret < 0) {
+		dev_err(sdev->dev, "error: init i915 and HDMI codec failed\n");
+		return ret;
+	}
+
 	/* get controller capabilities */
 	ret = hda_dsp_ctrl_get_caps(sdev);
 	if (ret < 0)
@@ -364,15 +371,6 @@ static int hda_init_caps(struct snd_sof_dev *sdev)
 	/* check if dsp is there */
 	if (bus->ppcap)
 		dev_dbg(sdev->dev, "PP capability, will probe DSP later.\n");
-
-#if IS_ENABLED(CONFIG_SND_SOC_SOF_HDA)
-	/* init i915 and HDMI codecs */
-	ret = hda_codec_i915_init(sdev);
-	if (ret < 0) {
-		dev_err(sdev->dev, "error: init i915 and HDMI codec failed\n");
-		return ret;
-	}
-#endif
 
 	/* Init HDA controller after i915 init */
 	ret = hda_dsp_ctrl_init_chip(sdev, true);
@@ -674,6 +672,7 @@ free_streams:
 hdac_bus_unmap:
 	platform_device_unregister(hdev->dmic_dev);
 	iounmap(bus->remap_addr);
+	hda_codec_i915_exit(sdev);
 err:
 	return ret;
 }
