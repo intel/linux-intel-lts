@@ -61,6 +61,36 @@ static int stmmac_pci_find_phy_addr(struct pci_dev *pdev,
 	return -ENODEV;
 }
 
+static void ehl_sgmii_path_latency_data(struct plat_stmmacenet_data *plat)
+{
+	/* SGMII TX and RX PHY latency (ns) */
+	plat->phy_tx_latency_10 = 5385;
+	plat->phy_tx_latency_100 = 666;
+	plat->phy_tx_latency_1000 = 219;
+	plat->phy_rx_latency_10 = 5902;
+	plat->phy_rx_latency_100 = 821;
+	plat->phy_rx_latency_1000 = 343;
+
+	/* xPCS TX and RX latency (ns) */
+	plat->xpcs_tx_latency_10 = 856;
+	plat->xpcs_tx_latency_100 = 136;
+	plat->xpcs_tx_latency_1000 = 56;
+	plat->xpcs_rx_latency_10 = 7084;
+	plat->xpcs_rx_latency_100 = 784;
+	plat->xpcs_rx_latency_1000 = 160;
+}
+
+static void ehl_rgmii_path_latency_data(struct plat_stmmacenet_data *plat)
+{
+	/* RGMII TX and RX PHY latency (ns) */
+	plat->phy_tx_latency_10 = 6066;
+	plat->phy_tx_latency_100 = 656;
+	plat->phy_tx_latency_1000 = 224;
+	plat->phy_rx_latency_10 = 2130;
+	plat->phy_rx_latency_100 = 362;
+	plat->phy_rx_latency_1000 = 231;
+}
+
 static void common_default_data(struct plat_stmmacenet_data *plat)
 {
 	plat->clk_csr = 2;	/* clk_csr_i = 20-35MHz & MDC = clk_csr_i/16 */
@@ -155,12 +185,14 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 {
 	int i;
 
+	plat->pdev = pdev;
+	plat->bus_id = pci_dev_id(pdev);
+
 	plat->clk_csr = 5;
 	plat->clk_trail_n = 2;
 	plat->has_gmac = 0;
 	plat->has_gmac4 = 1;
 	plat->has_tbs = 1;
-	plat->has_safety_feat = 0;
 	plat->force_sf_dma_mode = 0;
 	plat->tso_en = 1;
 	plat->tsn_est_en = 1;
@@ -184,8 +216,8 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 		plat->rx_queues_cfg[i].mode_to_use = MTL_QUEUE_DCB;
 		plat->rx_queues_cfg[i].chan = i;
 
-		/* Disable Priority config by default */
-		plat->rx_queues_cfg[i].use_prio = false;
+		/* Enable Priority config by default */
+		plat->rx_queues_cfg[i].use_prio = true;
 
 		/* Disable RX queues routing by default */
 		plat->rx_queues_cfg[i].pkt_route = 0x0;
@@ -259,9 +291,10 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 		plat->setup_phy_conv = setup_intel_mgbe_phy_conv;
 		plat->remove_phy_conv = remove_intel_mgbe_phy_conv;
 		plat->has_serdes = 1;
-		/* intel specific adhoc (mdio) address for serdes & etc */
-		plat->intel_adhoc_addr = 0x15;
 	}
+
+	/* intel specific adhoc (mdio) address for serdes & etc */
+	plat->intel_adhoc_addr = 0x15;
 
 	/* Setup MSI vector offset specific to Intel mGbE controller */
 	plat->msi_phy_conv_vec = 30;
@@ -291,16 +324,9 @@ static int ehl_common_data(struct pci_dev *pdev,
 
 	plat->rx_queues_to_use = 8;
 	plat->tx_queues_to_use = 8;
+	plat->has_safety_feat = 1;
 	/* Maximum TX XDP queue */
 	plat->max_combined = 4;
-
-	/* TX and RX PHY latency (ns) */
-	plat->phy_tx_latency_10 = 6066;
-	plat->phy_tx_latency_100 = 657;
-	plat->phy_tx_latency_1000 = 224;
-	plat->phy_rx_latency_10 = 2130;
-	plat->phy_rx_latency_100 = 362;
-	plat->phy_rx_latency_1000 = 231;
 
 	ret = intel_mgbe_common_data(pdev, plat);
 	if (ret)
@@ -312,12 +338,12 @@ static int ehl_common_data(struct pci_dev *pdev,
 static int ehl_sgmii_data(struct pci_dev *pdev,
 			  struct plat_stmmacenet_data *plat)
 {
-	plat->bus_id = 1;
 	plat->phy_addr = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	ehl_sgmii_path_latency_data(plat);
 
 	/* Set PTP clock rate for EHL as 200MHz */
-	plat->clk_ptp_rate = 200000000;
+	plat->clk_ptp_rate = 204860000;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -329,9 +355,9 @@ static struct stmmac_pci_info ehl_sgmii1g_pci_info = {
 static int ehl_rgmii_data(struct pci_dev *pdev,
 			  struct plat_stmmacenet_data *plat)
 {
-	plat->bus_id = 1;
 	plat->phy_addr = 0;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII;
+	ehl_rgmii_path_latency_data(plat);
 
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 200000000;
@@ -367,7 +393,6 @@ static void ehl_pse_work_around(struct pci_dev *pdev,
 static int ehl_pse0_common_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
-	plat->bus_id = 2;
 	plat->phy_addr = 1;
 	ehl_pse_work_around(pdev, plat);
 
@@ -391,6 +416,8 @@ static int ehl_pse0_rgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII_ID;
+	ehl_rgmii_path_latency_data(plat);
+
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -402,6 +429,8 @@ static int ehl_pse0_sgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	ehl_sgmii_path_latency_data(plat);
+
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -412,7 +441,6 @@ static struct stmmac_pci_info ehl_pse0_sgmii1g_pci_info = {
 static int ehl_pse1_common_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
-	plat->bus_id = 3;
 	plat->phy_addr = 1;
 	ehl_pse_work_around(pdev, plat);
 
@@ -435,7 +463,10 @@ static int ehl_pse1_common_data(struct pci_dev *pdev,
 static int ehl_pse1_rgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
+	plat->pdev = pdev;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII_ID;
+	ehl_rgmii_path_latency_data(plat);
+
 	return ehl_pse1_common_data(pdev, plat);
 }
 
@@ -447,6 +478,8 @@ static int ehl_pse1_sgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	ehl_sgmii_path_latency_data(plat);
+
 	return ehl_pse1_common_data(pdev, plat);
 }
 
@@ -463,6 +496,16 @@ static int tgl_common_data(struct pci_dev *pdev,
 	plat->tx_queues_to_use = 4;
 	/* Maximum TX XDP queue */
 	plat->max_combined = 2;
+
+	/* TX and RX Marvell 88E2110 PHY latency (ns) */
+	plat->phy_tx_latency_10 = 6652;
+	plat->phy_tx_latency_100 = 1152;
+	plat->phy_tx_latency_1000 = 297;
+	plat->phy_tx_latency_2500 = 2772;
+	plat->phy_rx_latency_10 = 12490;
+	plat->phy_rx_latency_100 = 1472;
+	plat->phy_rx_latency_1000 = 405;
+	plat->phy_rx_latency_2500 = 2638;
 
 	plat->clk_ptp_rate = 200000000;
 	ret = intel_mgbe_common_data(pdev, plat);
@@ -955,6 +998,8 @@ static int __maybe_unused stmmac_pci_suspend(struct device *dev)
 
 	pci_disable_device(pdev);
 	pci_wake_from_d3(pdev, true);
+	pci_set_power_state(pdev, PCI_D3hot);
+
 	return 0;
 }
 

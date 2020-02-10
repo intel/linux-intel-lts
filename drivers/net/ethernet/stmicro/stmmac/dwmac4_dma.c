@@ -417,6 +417,8 @@ static void dwmac4_get_hw_feature(void __iomem *ioaddr,
 	dma_cap->aux_snapshot_n =
 		(hw_cap & GMAC_HW_FEAT_AUXSNAPNUM) >> 28;
 
+	dma_cap->l3l4fnum = (hw_cap & GMAC_HWFEAT_L3L4FNUM) >> 27;
+
 	/* MAC HW feature3 */
 	hw_cap = readl(ioaddr + GMAC_HW_FEATURE3);
 
@@ -539,6 +541,12 @@ static void dwmac5_dma_init_tx_chan(void __iomem *ioaddr,
 	value |= DMA_CONTROL_OSP;
 
 	writel(value, ioaddr + DMA_CHAN_TX_CONTROL(chan));
+
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+	writel(upper_32_bits(dma_tx_phy),
+	       ioaddr + DMA_CHAN_TX_BASE_HI_ADDR(chan));
+#endif
+
 	writel(dma_tx_phy, ioaddr + DMA_CHAN_TX_BASE_ADDR(chan));
 }
 

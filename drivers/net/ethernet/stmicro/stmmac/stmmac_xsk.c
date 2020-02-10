@@ -573,8 +573,10 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 	xdp.rxq = &rx_q->xdp_rxq;
 
 	while (likely(total_rx_packets < (unsigned int)budget)) {
+		struct skb_shared_hwtstamps *shhwtstamp = NULL;
+		struct dma_desc *rx_desc, *nx_desc;
 		struct stmmac_rx_buffer *buf;
-		struct dma_desc *rx_desc;
+		unsigned int next_entry;
 		unsigned int size;
 		int status;
 
@@ -606,8 +608,14 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 
 		size = stmmac_get_rx_frame_len(priv, rx_desc,
 					       coe);
-		if (!size)
-			break;
+		if (!size) {
+			if (!priv->hwts_all)
+				break;
+			/* If hw timestamping is enabled, move on to the
+			 * next desc as it might contain timestamps */
+			stmmac_inc_ntc(rx_q);
+			continue;
+		}
 
 		buf = stmmac_get_rx_buffer_zc(rx_q, size);
 
@@ -618,8 +626,28 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 			continue;
 		}
 
+		/* Increment to potentially get the next desc for reading HW T/S */
+		stmmac_inc_ntc(rx_q);
+
 		xdp.data = buf->umem_addr;
-		xdp.data_meta = xdp.data;
+
+		if (unlikely(priv->hwts_all)) {
+			xdp.data_meta = xdp.data - sizeof(u64);
+
+			next_entry = rx_q->cur_rx;
+
+			if (priv->extend_desc)
+				nx_desc = (struct dma_desc *)(rx_q->dma_erx +
+							      next_entry);
+			else
+				nx_desc = rx_q->dma_rx + next_entry;
+
+			stmmac_get_rx_hwtstamp(priv, rx_desc, nx_desc,
+					       (u64 *) xdp.data_meta);
+		} else {
+			xdp.data_meta = xdp.data;
+		}
+
 		xdp.data_hard_start = xdp.data - XDP_PACKET_HEADROOM;
 		xdp.data_end = xdp.data + size;
 		xdp.handle = buf->umem_handle;
@@ -637,7 +665,6 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 			total_rx_packets++;
 
 			fill_count++;
-			stmmac_inc_ntc(rx_q);
 			continue;
 		}
 
@@ -650,13 +677,17 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 
 		fill_count++;
 
-		stmmac_inc_ntc(rx_q);
-
 		if (eth_skb_pad(skb))
 			continue;
 
 		total_rx_bytes += skb->len;
 		total_rx_packets++;
+
+		/* Get Rx HW tstamp into SKB */
+		shhwtstamp = skb_hwtstamps(skb);
+		memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
+		stmmac_get_rx_hwtstamp(priv, rx_desc, nx_desc,
+				       &shhwtstamp->hwtstamp);
 
 		/* Use HW to strip VLAN header before fallback
 		 * to SW.
@@ -730,13 +761,18 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 
 		stmmac_set_desc_addr(priv, tx_desc, dma);
 
-		if (stmmac_enabled_xdp(priv) && desc.txtime > 0) {
+		if (stmmac_enabled_xdp(priv) &&
+		    priv->plat->tx_queues_cfg[xdp_q->queue_index].tbs_en &&
+		    desc.txtime > 0) {
 			if (stmmac_set_tbs_launchtime(priv, tx_desc,
 						      desc.txtime)) {
 				netdev_warn(priv->dev, "Launch time setting"
 						       "failed\n");
 			}
 		}
+
+		if (unlikely(priv->hwts_all))
+			stmmac_enable_tx_timestamp(priv, tx_desc);
 
 		stmmac_prepare_tx_desc(priv, tx_desc, /* Tx descriptor */
 				       1, /* is first descriptor */
@@ -759,6 +795,62 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 	}
 
 	return !!budget && work_done;
+}
+
+/**
+ * stmmac_xdp_read_tx_status - Reads the tx status and retrieve timestamps.
+ * @priv: driver private structure
+ * @queue: TX XDP queue
+ * @entry: entry to be read
+ *
+ **/
+static void stmmac_xdp_read_tx_status(struct stmmac_priv *priv, u32 queue,
+				       u32 entry)
+{
+	struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
+	int retry_attempt = 0, limit = 10;
+	struct dma_desc *p;
+	u64 tx_hwtstamp = 0;
+	int status;
+
+	if (priv->extend_desc)
+		p = (struct dma_desc *)(tx_q->dma_etx + entry);
+	else if (priv->enhanced_tx_desc)
+		p = &(tx_q->dma_enhtx + entry)->basic;
+	else
+		p = tx_q->dma_tx + entry;
+
+	status = stmmac_tx_status(priv, &priv->dev->stats,
+			&priv->xstats, p, priv->ioaddr);
+
+	/* Check if the descriptor is owned by the DMA */
+	if (unlikely(status & tx_dma_own)) {
+		/* Attempt to retry to guarantee timestamps are retrieved. */
+		while(retry_attempt < limit) {
+			udelay(1);
+			status = stmmac_tx_status(priv, &priv->dev->stats,
+						  &priv->xstats, p,
+						  priv->ioaddr);
+
+			if ((status & tx_dma_own) &&
+			    (retry_attempt == limit))
+				return;
+			else if (!(status & tx_dma_own))
+				break;
+			else
+				retry_attempt++;
+		}
+	}
+
+	/* Make sure descriptor fields are read after reading the own bit.*/
+	dma_rmb();
+
+	/* Just consider the last segment and ...*/
+	if (likely(!(status & tx_not_ls))) {
+		stmmac_get_tx_hwtstamp(priv, p, &tx_hwtstamp);
+		if (tx_hwtstamp)
+			trace_printk("XDP TX HW TS %llu\n", tx_hwtstamp);
+	}
 }
 
 /**
@@ -805,6 +897,14 @@ int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 	entry = xdp_q->dirty_tx;
 
 	for (i = 0; i < completed_frames; i++) {
+
+		/* To increase efficiency, we only read the status register
+		 * if user requests for timestamps. Future work can include
+		 * tx statistics in here.
+		 */
+		if (priv->hwts_all)
+			stmmac_xdp_read_tx_status(priv, queue, entry);
+
 		if (xdp_q->xdpf[entry])
 			stmac_clean_xdp_tx_buffer(priv, queue, entry);
 		else

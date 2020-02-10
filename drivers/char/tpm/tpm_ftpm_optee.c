@@ -215,13 +215,13 @@ static void fwtpm_cancel(struct tpm_chip *chip)
 
 	arg.cancel_id = priv->cancel_id;
 	arg.session = priv->sess;
-
+/*
 	if (tee_client_cancel_req(priv->ctx, &arg)) {
 		dev_err(&chip->dev,
 			"Cancel request failed\n");
 		return;
 	}
-
+*/
 	priv->is_canceled = true;
 }
 

@@ -28,8 +28,8 @@
 #define ECL_ISH_WRITE	0x2
 #define ECL_ISH_HEADER_VERSION	0
 
-#define ECL_CL_RX_RING_SIZE	8
-#define ECL_CL_TX_RING_SIZE	4
+#define ECL_CL_RX_RING_SIZE	64
+#define ECL_CL_TX_RING_SIZE	32
 
 #define ECL_DATA_OPR_BUFLEN	384
 
@@ -77,9 +77,10 @@ struct ishtp_opregion_dev {
 	struct ishtp_fw_client *fw_client;
 	struct ishtp_cl_rb *rb;
 	struct acpi_handle *acpi_handle;
-	unsigned int dsm_event_id;
+	unsigned int ish_link_ready;
+	unsigned int ish_read_done;
 	wait_queue_head_t read_wait;
-	struct work_struct event_work;
+	wait_queue_head_t link_wait;
 	struct work_struct reset_work;
 };
 
@@ -99,8 +100,8 @@ static const guid_t ecl_acpi_guid =
  * @opr_dev - pointer to opregion device
  *
  * @This function issues a read request to eclite FW and waits until it
- * receives a response. When response is received the read data is copied to
- * opregion buffer.
+ * receives a response. When response is received the read data is copied
+ * to opregion buffer.
  */
 static int ecl_ish_cl_read(struct ishtp_opregion_dev *opr_dev)
 {
@@ -115,14 +116,36 @@ static int ecl_ish_cl_read(struct ishtp_opregion_dev *opr_dev)
 	header.event = opr_dev->opr_context.cmd_area.event_id;
 	len = sizeof(header);
 
+	rv = wait_event_interruptible_timeout(opr_dev->link_wait,
+					      opr_dev->ish_link_ready,
+					      5 * HZ);
+	if (!rv) {
+		dev_warn(cl_data_to_dev(opr_dev),
+			"[ish_rd] timeout, Link not ready\n");
+		return -EIO;
+	}
+
+	dev_dbg(cl_data_to_dev(opr_dev),
+		"[ish_rd] Req: off : %x, len : %x\n",
+		header.offset,
+		header.data_len);
+
+	opr_dev->ish_read_done = 0;
+
 	rv = ishtp_cl_send(opr_dev->ecl_ishtp_cl, (uint8_t *)&header, len);
 	if (rv) {
 		dev_err(cl_data_to_dev(opr_dev), "ish-read : send failed\n");
 		return rv;
 	}
 
-	wait_event_interruptible(opr_dev->read_wait, opr_dev->rb != NULL);
-	opr_dev->rb = NULL;
+	rv = wait_event_interruptible_timeout(opr_dev->read_wait,
+					      opr_dev->ish_read_done,
+					      5 * HZ);
+	if (!rv) {
+		dev_warn(cl_data_to_dev(opr_dev),
+			"[ish_rd] No response from firmware\n");
+		return -EIO;
+	}
 
 	return 0;
 }
@@ -272,54 +295,44 @@ static int acpi_opregion_init(struct ishtp_opregion_dev *opr_dev)
 	return 0;
 }
 
-static void ecl_acpi_invoke_dsm(struct work_struct *work)
-{
-	struct ishtp_opregion_dev *opr_dev;
-	union acpi_object *obj;
-
-	opr_dev = container_of(work, struct ishtp_opregion_dev, event_work);
-
-	obj = acpi_evaluate_dsm(opr_dev->acpi_handle, &ecl_acpi_guid, 0,
-				opr_dev->dsm_event_id, NULL);
-	if (!obj) {
-		dev_warn(cl_data_to_dev(opr_dev), "_DSM fn call failed\n");
-		return;
-	}
-
-	dev_dbg(cl_data_to_dev(opr_dev), "Exec DSM function code: %d success\n",
-		opr_dev->dsm_event_id);
-	ACPI_FREE(obj);
-}
-
 static void ecl_ish_process_rx_data(struct ishtp_opregion_dev *opr_dev)
 {
 	struct ecl_message *message =
 		(struct ecl_message *)opr_dev->rb->buffer.data;
 
 	dev_dbg(cl_data_to_dev(opr_dev),
-		"[ish_rd] Resp: off : %x, len : %x\n",
+		"[ish_rd] Rsp: off : %x, len : %x\n",
 		message->header.offset,
 		message->header.data_len);
 
 	memcpy(opr_dev->opr_context.data_area.data + message->header.offset,
 	       message->payload, message->header.data_len);
 
+	opr_dev->ish_read_done = 1;
 	wake_up_interruptible(&opr_dev->read_wait);
 }
 
 static void ecl_ish_process_rx_event(struct ishtp_opregion_dev *opr_dev)
 {
+	union acpi_object *obj;
+
 	struct ecl_message_header *header =
 		(struct ecl_message_header *)opr_dev->rb->buffer.data;
 
 	dev_dbg(cl_data_to_dev(opr_dev),
-		"[ish_ev] Evt received: %8x\n", header->event);
+		"[ish_event] Received: %8x\n", header->event);
 
-	opr_dev->dsm_event_id = header->event;
+	obj = acpi_evaluate_dsm(opr_dev->acpi_handle, &ecl_acpi_guid, 0,
+				header->event, NULL);
+	if (!obj) {
+		dev_warn(cl_data_to_dev(opr_dev), "_DSM fn call failed\n");
+		return;
+	}
 
-	schedule_work(&opr_dev->event_work);
+	dev_dbg(cl_data_to_dev(opr_dev), "Exec DSM function code: %d success\n",
+		header->event);
 
-	opr_dev->rb = NULL;
+	ACPI_FREE(obj);
 }
 
 static void ecl_ishtp_cl_event_cb(struct ishtp_cl_device *cl_device)
@@ -374,7 +387,8 @@ static int ecl_ishtp_cl_init(struct ishtp_cl *ecl_ishtp_cl)
 		return -ENOENT;
 	}
 
-	ishtp_cl_set_fw_client_id(ecl_ishtp_cl, ishtp_get_fw_client_id(fw_client));
+	ishtp_cl_set_fw_client_id(ecl_ishtp_cl,
+				  ishtp_get_fw_client_id(fw_client));
 	ishtp_set_connection_state(ecl_ishtp_cl, ISHTP_CL_CONNECTING);
 
 	rv = ishtp_cl_connect(ecl_ishtp_cl);
@@ -403,8 +417,10 @@ static void ecl_ishtp_cl_reset_handler(struct work_struct *work)
 	struct ishtp_cl_device *cl_device;
 	struct ishtp_cl *ecl_ishtp_cl;
 	int rv;
+	int retry;
 
 	opr_dev = container_of(work, struct ishtp_opregion_dev, reset_work);
+	opr_dev->ish_link_ready = false;
 
 	cl_device = opr_dev->cl_device;
 	ecl_ishtp_cl = opr_dev->ecl_ishtp_cl;
@@ -420,13 +436,24 @@ static void ecl_ishtp_cl_reset_handler(struct work_struct *work)
 
 	opr_dev->ecl_ishtp_cl = ecl_ishtp_cl;
 
-	rv = ecl_ishtp_cl_init(ecl_ishtp_cl);
+	for (retry = 0; retry < 3; ++retry) {
+		rv = ecl_ishtp_cl_init(ecl_ishtp_cl);
+		if (!rv)
+			break;
+	}
 	if (rv) {
 		ishtp_cl_free(ecl_ishtp_cl);
 		opr_dev->ecl_ishtp_cl = NULL;
+		dev_err(cl_data_to_dev(opr_dev),
+			"[eclite_rst_handler] Reset failed. Link not ready.\n");
+		return;
 	}
 
 	ishtp_register_event_cb(cl_device, ecl_ishtp_cl_event_cb);
+
+	opr_dev->ish_link_ready = true;
+
+	wake_up_interruptible(&opr_dev->link_wait);
 }
 
 static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
@@ -450,7 +477,7 @@ static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
 	opr_dev->cl_device = cl_device;
 
 	init_waitqueue_head(&opr_dev->read_wait);
-	INIT_WORK(&opr_dev->event_work, ecl_acpi_invoke_dsm);
+	init_waitqueue_head(&opr_dev->link_wait);
 	INIT_WORK(&opr_dev->reset_work, ecl_ishtp_cl_reset_handler);
 
 	/* Initialize ish client device */
@@ -466,6 +493,8 @@ static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
 	ishtp_register_event_cb(cl_device, ecl_ishtp_cl_event_cb);
 
 	ishtp_get_device(cl_device);
+
+	opr_dev->ish_link_ready = true;
 
 	/* Now find ACPI device and init opregion handlers */
 	rv = acpi_opregion_init(opr_dev);
@@ -505,7 +534,6 @@ static int ecl_ishtp_cl_remove(struct ishtp_cl_device *cl_device)
 					  ecl_opregion_data_handler);
 
 	cancel_work_sync(&opr_dev->reset_work);
-	cancel_work_sync(&opr_dev->event_work);
 
 	ishtp_set_connection_state(ecl_ishtp_cl, ISHTP_CL_DISCONNECTING);
 	ishtp_cl_disconnect(ecl_ishtp_cl);

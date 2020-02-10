@@ -326,7 +326,6 @@ static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem)
 	int ret;
 	u32 idx;
 	int i;
-
 	xsk = calloc(1, sizeof(*xsk));
 	if (!xsk)
 		exit_with_error(errno);
@@ -356,7 +355,6 @@ static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem)
 			i * opt_xsk_frame_size;
 	xsk_ring_prod__submit(&xsk->umem->fq,
 			      XSK_RING_PROD__DEFAULT_NUM_DESCS);
-
 	return xsk;
 }
 
@@ -587,11 +585,13 @@ static void rx_drop(struct xsk_socket_info *xsk, struct pollfd *fds)
 	for (i = 0; i < rcvd; i++) {
 		u64 addr = xsk_ring_cons__rx_desc(&xsk->rx, idx_rx)->addr;
 		u32 len = xsk_ring_cons__rx_desc(&xsk->rx, idx_rx++)->len;
-		u64 orig = xsk_umem__extract_addr(addr);
-
-		addr = xsk_umem__add_offset_to_addr(addr);
 		char *pkt = xsk_umem__get_data(xsk->umem->buffer, addr);
 
+		*pkt = xsk_umem__get_data(xsk->umem->buffer, addr);
+		printf("Packet data @ %p and timestamp %llx\n",
+			pkt, *(uint64_t *)(pkt - sizeof(uint64_t)));
+
+		u64 orig = xsk_umem__extract_addr(addr);
 		hex_dump(pkt, len, addr);
 		*xsk_ring_prod__fill_addr(&xsk->umem->fq, idx_fq++) = orig;
 	}

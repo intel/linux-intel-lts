@@ -135,6 +135,7 @@ struct plat_stmmacenet_data {
 	int intel_adhoc_addr;
 	int interface;
 	int phy_interface;
+	struct pci_dev *pdev;
 	struct stmmac_mdio_bus_data *mdio_bus_data;
 	struct device_node *phy_node;
 	struct device_node *phylink_node;
@@ -160,6 +161,7 @@ struct plat_stmmacenet_data {
 	u32 rx_queues_to_use;
 	u32 tx_queues_to_use;
 	u32 num_queue_pairs;
+	u32 normal_tx_queue_count;
 	u32 max_combined;
 	u8 rx_sched_algorithm;
 	u8 tx_sched_algorithm;
@@ -235,11 +237,22 @@ struct plat_stmmacenet_data {
 	bool is_hfpga;
 	bool ehl_ao_wa;
 	/* TX and RX PHY latency (ns) */
+	u64 phy_tx_latency_2500;
 	u64 phy_tx_latency_1000;
 	u64 phy_tx_latency_100;
 	u64 phy_tx_latency_10;
+	u64 phy_rx_latency_2500;
 	u64 phy_rx_latency_1000;
 	u64 phy_rx_latency_100;
 	u64 phy_rx_latency_10;
+	/* xPCS TX and RX latency (ns) */
+	u64 xpcs_tx_latency_2500;
+	u64 xpcs_tx_latency_1000;
+	u64 xpcs_tx_latency_100;
+	u64 xpcs_tx_latency_10;
+	u64 xpcs_rx_latency_2500;
+	u64 xpcs_rx_latency_1000;
+	u64 xpcs_rx_latency_100;
+	u64 xpcs_rx_latency_10;
 };
 #endif
