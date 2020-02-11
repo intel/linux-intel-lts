@@ -311,6 +311,9 @@ struct mei_msg_hdr {
 	u32 extension[0];
 } __packed;
 
+/* The length is up to 9 bits */
+#define MEI_MSG_MAX_LEN_MASK GENMASK(9, 0)
+
 struct mei_bus_message {
 	u8 hbm_cmd;
 	u8 data[0];
