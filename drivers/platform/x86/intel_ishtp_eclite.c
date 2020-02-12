@@ -132,6 +132,9 @@ static int ecl_ish_cl_read(struct ishtp_opregion_dev *opr_dev)
 
 	opr_dev->ish_read_done = 0;
 
+	if (!opr_dev->ish_link_ready)
+		return -EIO;
+
 	rv = ishtp_cl_send(opr_dev->ecl_ishtp_cl, (uint8_t *)&header, len);
 	if (rv) {
 		dev_err(cl_data_to_dev(opr_dev), "ish-read : send failed\n");
@@ -173,6 +176,9 @@ static int ecl_ish_cl_write(struct ishtp_opregion_dev *opr_dev)
 	memcpy(message.payload,
 	       opr_dev->opr_context.data_area.data + message.header.offset,
 	       message.header.data_len);
+
+	if (!opr_dev->ish_link_ready)
+		return -EIO;
 
 	return ishtp_cl_send(opr_dev->ecl_ishtp_cl, (uint8_t *)&message, len);
 
@@ -555,12 +561,38 @@ static int ecl_ishtp_cl_reset(struct ishtp_cl_device *cl_device)
 	return 0;
 }
 
+static int ecl_ishtp_cl_suspend(struct device *device)
+{
+	struct ishtp_cl_device *cl_device = ishtp_dev_to_cl_device(device);
+	struct ishtp_cl *ecl_ishtp_cl = ishtp_get_drvdata(cl_device);
+	struct ishtp_opregion_dev *opr_dev =
+		ishtp_get_client_data(ecl_ishtp_cl);
+
+	opr_dev->ish_link_ready = false;
+
+	ishtp_set_connection_state(ecl_ishtp_cl, ISHTP_CL_DISCONNECTING);
+	ishtp_cl_disconnect(ecl_ishtp_cl);
+
+	return 0;
+}
+
+static int ecl_ishtp_cl_resume(struct device *device)
+{
+	return 0;
+}
+
+static const struct dev_pm_ops ecl_ishtp_pm_ops = {
+	.suspend = ecl_ishtp_cl_suspend,
+	.resume = ecl_ishtp_cl_resume,
+};
+
 static struct ishtp_cl_driver ecl_ishtp_cl_driver = {
 	.name = "ishtp-eclite",
 	.guid = &ecl_ishtp_guid,
 	.probe = ecl_ishtp_cl_probe,
 	.remove = ecl_ishtp_cl_remove,
 	.reset = ecl_ishtp_cl_reset,
+	.driver.pm = &ecl_ishtp_pm_ops,
 };
 
 static int __init ecl_ishtp_init(void)
