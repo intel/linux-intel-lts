@@ -430,6 +430,7 @@ static int ehl_pse0_sgmii1g_data(struct pci_dev *pdev,
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	ehl_sgmii_path_latency_data(plat);
+	plat->serdes_pse_sgmii_wa = 1;
 
 	return ehl_pse0_common_data(pdev, plat);
 }
@@ -479,6 +480,7 @@ static int ehl_pse1_sgmii1g_data(struct pci_dev *pdev,
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	ehl_sgmii_path_latency_data(plat);
+	plat->serdes_pse_sgmii_wa = 1;
 
 	return ehl_pse1_common_data(pdev, plat);
 }

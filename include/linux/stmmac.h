@@ -236,6 +236,7 @@ struct plat_stmmacenet_data {
 	bool has_safety_feat;
 	bool is_hfpga;
 	bool ehl_ao_wa;
+	bool serdes_pse_sgmii_wa;
 	/* TX and RX PHY latency (ns) */
 	u64 phy_tx_latency_2500;
 	u64 phy_tx_latency_1000;

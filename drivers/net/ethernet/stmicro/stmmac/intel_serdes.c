@@ -67,7 +67,7 @@ static int intel_serdes_powerup(struct net_device *ndev)
 				  SERDES_PLL_CLK,
 				  SERDES_PLL_CLK);
 
-	if (data) {
+	if (data && !priv->plat->serdes_pse_sgmii_wa) {
 		dev_err(priv->device, "Serdes PLL clk request timeout\n");
 		return data;
 	}
@@ -87,7 +87,7 @@ static int intel_serdes_powerup(struct net_device *ndev)
 				  SERDES_RST,
 				  SERDES_RST);
 
-	if (data) {
+	if (data && !priv->plat->serdes_pse_sgmii_wa) {
 		dev_err(priv->device, "Serdes assert lane reset timeout\n");
 		return data;
 	}
@@ -108,7 +108,7 @@ static int intel_serdes_powerup(struct net_device *ndev)
 				  SERDES_PWR_ST_MASK,
 				  SERDES_PWR_ST_P0 << SERDES_PWR_ST_SHIFT);
 
-	if (data) {
+	if (data && !priv->plat->serdes_pse_sgmii_wa) {
 		dev_err(priv->device, "Serdes power state P0 timeout.\n");
 		return data;
 	}
@@ -143,7 +143,7 @@ static int intel_serdes_powerdown(struct net_device *ndev)
 				  SERDES_PWR_ST_MASK,
 				  SERDES_PWR_ST_P3 << SERDES_PWR_ST_SHIFT);
 
-	if (data) {
+	if (data && !priv->plat->serdes_pse_sgmii_wa) {
 		dev_err(priv->device, "Serdes power state P3 timeout\n");
 		return data;
 	}
@@ -163,7 +163,7 @@ static int intel_serdes_powerdown(struct net_device *ndev)
 				  SERDES_PLL_CLK,
 				  (u32)~SERDES_PLL_CLK);
 
-	if (data) {
+	if (data && !priv->plat->serdes_pse_sgmii_wa) {
 		dev_err(priv->device, "Serdes PLL clk de-assert timeout\n");
 		return data;
 	}
@@ -183,7 +183,7 @@ static int intel_serdes_powerdown(struct net_device *ndev)
 				  SERDES_RST,
 				  (u32)~SERDES_RST);
 
-	if (data) {
+	if (data && !priv->plat->serdes_pse_sgmii_wa) {
 		dev_err(priv->device, "Serdes de-assert lane reset timeout\n");
 		return data;
 	}
