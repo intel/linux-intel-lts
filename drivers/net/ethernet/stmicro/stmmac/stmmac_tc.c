@@ -311,8 +311,9 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 {
 	u32 tx_queues_count = priv->plat->tx_queues_to_use;
 	u32 queue = qopt->queue;
-	u32 ptr, speed_div;
+	u32 speed_div = 0;
 	u32 mode_to_use;
+	u32 ptr = 0;
 	u64 value;
 	int ret;
 
@@ -321,7 +322,8 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 		return -EINVAL;
 	if (!priv->dma_cap.av)
 		return -EOPNOTSUPP;
-	if (priv->speed != SPEED_100 && priv->speed != SPEED_1000)
+	if (priv->speed != SPEED_100 && priv->speed != SPEED_1000 &&
+	    priv->speed != SPEED_2500)
 		return -EOPNOTSUPP;
 
 	mode_to_use = priv->plat->tx_queues_cfg[queue].mode_to_use;
@@ -336,8 +338,20 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 	}
 
 	/* Port Transmit Rate and Speed Divider */
-	ptr = (priv->speed == SPEED_100) ? 4 : 8;
-	speed_div = (priv->speed == SPEED_100) ? 100000 : 1000000;
+	switch (priv->speed) {
+	case SPEED_2500:
+		ptr = 8;
+		speed_div = 2500000;
+		break;
+	case SPEED_1000:
+		ptr = 8;
+		speed_div = 1000000;
+		break;
+	case SPEED_100:
+		ptr = 4;
+		speed_div = 100000;
+		break;
+	}
 
 	/* Final adjustments for HW */
 	value = div_s64(qopt->idleslope * 1024ll * ptr, speed_div);
