@@ -20,6 +20,7 @@
 #define MDIO_MII_MMD_DIGITAL_CTRL_1	0x8000	/* Digital Control 1 */
 #define MDIO_MII_MMD_AN_CTRL		0x8001	/* AN Control */
 #define MDIO_MII_MMD_AN_STAT		0x8002	/* AN Status */
+#define MDIO_MII_MMD_EEE_MCTRL0		0x8006	/* EEE Mode Control Register */
 
 /* MII MMD SR AN Advertisement & Link Partner Ability are slightly
  * different from MII_ADVERTISEMENT & MII_LPA in below fields:
@@ -63,6 +64,21 @@
 #define AN_CL37_EN		BIT(12)	/* Enable Clause 37 auto-nego */
 #define SGMII_SPEED_SS13	BIT(13)	/* SGMII speed along with SS6 */
 #define SGMII_SPEED_SS6		BIT(6)	/* SGMII speed along with SS13 */
+
+/* VR MII EEE Control defines */
+#define VR_MII_EEE_LTX_EN		BIT(0)  /* LPI Tx Enable */
+#define VR_MII_EEE_LRX_EN		BIT(1)  /* LPI Rx Enable */
+#define VR_MII_EEE_TX_QUIET_EN		BIT(2)  /* Tx Quiet Enable */
+#define VR_MII_EEE_RX_QUIET_EN		BIT(3)  /* Rx Quiet Enable */
+#define VR_MII_EEE_TX_EN_CTRL		BIT(4)  /* Tx Control Enable */
+#define VR_MII_EEE_RX_EN_CTRL		BIT(7)  /* Rx Control Enable */
+
+/* 100ns Clock Tic Multiplying Factor where
+ * clk_eee_i freq is 19.2Mhz, clk_eee_i_time_period is 52ns
+ * clk_eee_i_time_period * (MULT_FACT_100NS + 1)
+ * = 52*(1+1) = 104ns (within 80 to 120 ns)
+ */
+#define VR_MII_EEE_MULT_FACT_100NS	BIT(8)
 
 enum dwxpcs_state_t {
 	__DWXPCS_REMOVING,
@@ -177,6 +193,15 @@ static void dwxpcs_init(struct dwxpcs_priv *priv)
 			   (MDIO_MII_MMD_PSE_BOTH << MDIO_MII_MMD_PSE_SHIFT);
 		xpcs_write(XPCS_MDIO_MII_MMD, MII_ADVERTISE, phydata);
 	}
+	/* Enable EEE */
+	phydata = VR_MII_EEE_LTX_EN | VR_MII_EEE_LRX_EN |
+			VR_MII_EEE_TX_QUIET_EN |
+			VR_MII_EEE_RX_QUIET_EN |
+			VR_MII_EEE_TX_EN_CTRL |
+			VR_MII_EEE_RX_EN_CTRL |
+			VR_MII_EEE_MULT_FACT_100NS;
+	xpcs_write(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_EEE_MCTRL0, phydata);
+
 }
 
 static int dwxpcs_read_status(struct phy_device *phydev)
