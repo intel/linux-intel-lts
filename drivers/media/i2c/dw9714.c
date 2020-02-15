@@ -6,6 +6,7 @@
  *
  */
 
+#include <linux/version.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/i2c.h>
@@ -208,7 +209,8 @@ static int dw9714_probe(struct i2c_client *client,
 	return 0;
 
 err_cleanup:
-	dw9714_subdev_cleanup(dw9714_dev);
+	v4l2_ctrl_handler_free(&dw9714_dev->ctrls_vcm);
+	media_entity_cleanup(&dw9714_dev->subdev_vcm.entity);
 	dev_err(&client->dev, "Probe failed: %d\n", rval);
 	return rval;
 }
