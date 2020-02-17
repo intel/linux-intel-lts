@@ -609,8 +609,10 @@ int netprox_ipc_recv(int cmd, unsigned char *payload, int size)
 		np_ctx->agent_state = NP_AGENT_READY;
 		break;
 	case NP_A2H_CMD_HOST_IS_AWAKE:
-		/* wake up and trigger proxy exit */
-		netprox_host_proxy_exit();
+		/* Ethernet driver's resume function will eventually
+		 * call into netprox_host_proxy_exit() function. Thus,
+		 * do nothing here.
+		 */
 		break;
 	case NP_A2H_CMD_HOST_IS_EXITED:
 		np_ctx->host_state = NP_HOST_PROXY_EXIT;
