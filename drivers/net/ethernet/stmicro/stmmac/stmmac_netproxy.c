@@ -40,16 +40,12 @@ static void netprox_resume_task(struct work_struct *work)
 						netprox_task);
 	struct net_device *ndev = priv->dev;
 
-	rtnl_lock();
-
 	priv->networkproxy_exit = 1;
 	stmmac_resume_common(priv, ndev);
 	priv->networkproxy_exit = 0;
 
 	if (ndev->phydev)
 		phy_start_machine(ndev->phydev);
-
-	rtnl_unlock();
 
 	netif_device_attach(ndev);
 }
