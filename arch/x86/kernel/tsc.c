@@ -1218,6 +1218,7 @@ int unsynchronized_tsc(void)
 static struct system_counterval_t _convert_art_to_tsc(u64 art, bool dur)
 {
 	u64 tmp, res, rem;
+	unsigned int eax_denominator, ebx_numerator, ecx_hz, edx;
 
 	rem = do_div(art, art_to_tsc_denominator);
 
@@ -1227,6 +1228,16 @@ static struct system_counterval_t _convert_art_to_tsc(u64 art, bool dur)
 	do_div(tmp, art_to_tsc_denominator);
 	if (!dur)
 		res += tmp + art_to_tsc_offset;
+
+	/* TigerLake MCP A2 has a ART value of 0.5x of actual ART.
+	 * As it has same CPU family and model as the rest of the TigerLake
+	 * CPU skus, we can only differentiate them using numerator value in
+	 * CPUID Leaf 15H.
+	 */
+	cpuid(0x15, &eax_denominator, &ebx_numerator, &ecx_hz, &edx);
+	if (boot_cpu_data.x86_model == INTEL_FAM6_TIGERLAKE_L &&
+	    ebx_numerator == 0x5e)
+		res *= 2;
 
 	return (struct system_counterval_t) {.cs = art_related_clocksource,
 			.cycles = res};
