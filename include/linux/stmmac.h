@@ -230,11 +230,13 @@ struct plat_stmmacenet_data {
 	u32 ftos;
 	u32 fgos;
 	bool has_art;
+	int pmc_art_to_pse_art_ratio;
 	int int_snapshot_num;
 	int ext_snapshot_num;
 	int ext_snapshot_en;
 	bool has_safety_feat;
 	bool is_hfpga;
+	bool is_pse;
 	bool ehl_ao_wa;
 	bool serdes_pse_sgmii_wa;
 	/* TX and RX PHY latency (ns) */

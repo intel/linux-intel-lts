@@ -393,7 +393,18 @@ static void ehl_pse_work_around(struct pci_dev *pdev,
 static int ehl_pse0_common_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
+	if (boot_cpu_has(X86_FEATURE_ART)) {
+		unsigned int unused[3], ecx_pmc_art_freq;
+		/* Elkhart Lake PSE ART is 19.2MHz */
+		int pse_art_freq = 19200000;
+
+		cpuid(0x15, unused, unused + 1, &ecx_pmc_art_freq, unused + 2);
+		plat->pmc_art_to_pse_art_ratio = ecx_pmc_art_freq /
+						 pse_art_freq;
+	}
+
 	plat->phy_addr = 1;
+	plat->is_pse = 1;
 	ehl_pse_work_around(pdev, plat);
 
 	if (plat->is_hfpga)
@@ -442,7 +453,18 @@ static struct stmmac_pci_info ehl_pse0_sgmii1g_pci_info = {
 static int ehl_pse1_common_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
+	if (boot_cpu_has(X86_FEATURE_ART)) {
+		unsigned int unused[3], ecx_pmc_art_freq;
+		/* Elkhart Lake PSE ART is 19.2MHz */
+		int pse_art_freq = 19200000;
+
+		cpuid(0x15, unused, unused + 1, &ecx_pmc_art_freq, unused + 2);
+		plat->pmc_art_to_pse_art_ratio = ecx_pmc_art_freq /
+						 pse_art_freq;
+	}
+
 	plat->phy_addr = 1;
+	plat->is_pse = 1;
 	ehl_pse_work_around(pdev, plat);
 
 	if (plat->is_hfpga)
