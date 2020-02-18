@@ -1228,9 +1228,6 @@ static struct system_counterval_t _convert_art_to_tsc(u64 art, bool dur)
 	if (!dur)
 		res += tmp + art_to_tsc_offset;
 
-	if (boot_cpu_data.x86_model == INTEL_FAM6_TIGERLAKE_L)
-		res *= 2;
-
 	return (struct system_counterval_t) {.cs = art_related_clocksource,
 			.cycles = res};
 }
