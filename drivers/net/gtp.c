@@ -784,11 +784,13 @@ static int gtp_hashtable_new(struct gtp_dev *gtp, int hsize)
 {
 	int i;
 
-	gtp->addr_hash = kmalloc(sizeof(struct hlist_head) * hsize, GFP_KERNEL);
+	gtp->addr_hash = kmalloc(sizeof(struct hlist_head) * hsize,
+				 GFP_KERNEL | __GFP_NOWARN);
 	if (gtp->addr_hash == NULL)
 		return -ENOMEM;
 
-	gtp->tid_hash = kmalloc(sizeof(struct hlist_head) * hsize, GFP_KERNEL);
+	gtp->tid_hash = kmalloc(sizeof(struct hlist_head) * hsize,
+				GFP_KERNEL | __GFP_NOWARN);
 	if (gtp->tid_hash == NULL)
 		goto err1;
 
@@ -836,7 +838,9 @@ static int gtp_encap_enable(struct net_device *dev, struct gtp_dev *gtp,
 		return -ENOENT;
 	}
 
-	if (sock0->sk->sk_protocol != IPPROTO_UDP) {
+	if (sock0->sk->sk_protocol != IPPROTO_UDP ||
+	    sock0->sk->sk_type != SOCK_DGRAM ||
+	    (sock0->sk->sk_family != AF_INET && sock0->sk->sk_family != AF_INET6)) {
 		netdev_dbg(dev, "socket fd=%d not UDP\n", fd_gtp0);
 		err = -EINVAL;
 		goto err1;
