@@ -3956,6 +3956,50 @@ static int delay_250ms_after_flr(struct pci_dev *dev, int probe)
 	return 0;
 }
 
+static int set_gmbus_and_flr(struct pci_dev *dev, int probe)
+{
+	void __iomem *bar;
+	const u32 PCH_GMBUS0 = 0xc5100;
+	u32 gmbus_rd;
+	u32 gmbus_wr;
+	u32 gmbus_rd2;
+	u16 cmd;
+
+	if (!pcie_has_flr(dev))
+		return -ENOTTY;
+
+	if (probe)
+		return 0;
+
+	bar = pci_iomap(dev, 0, PCH_GMBUS0 + sizeof(gmbus_rd));
+	if (!bar) {
+		pr_err("%04x:%04x %s unable to iomap bar 0", dev->vendor, dev->device, __func__);
+		return -ENOTTY;
+	}
+
+	pci_read_config_word(dev, PCI_COMMAND, &cmd);
+	pci_write_config_word(dev, PCI_COMMAND, cmd | PCI_COMMAND_MEMORY);
+
+	pr_err("%04x:%04x %s devfn=0x%x offset=0x%x", dev->vendor, dev->device, __func__, dev->devfn, PCH_GMBUS0);
+	gmbus_rd = readl(bar + PCH_GMBUS0);
+
+	pr_err("%04x:%04x %s gmbus(0x%x)=0x%x before wa", dev->vendor, dev->device, __func__, PCH_GMBUS0, gmbus_rd);
+
+	/* wa for pch slow clock */
+	gmbus_wr = (gmbus_rd & ~0x1F);
+	iowrite32(gmbus_wr, bar + PCH_GMBUS0);
+	gmbus_wr |= 0x1;
+	iowrite32(gmbus_wr, bar + PCH_GMBUS0);
+	gmbus_rd2 = readl(bar + PCH_GMBUS0);
+	pr_err("%04x:%04x %s gmbus=0x%x after wa before flr", dev->vendor, dev->device, __func__, gmbus_rd2);
+
+	pci_iounmap(dev, bar);
+
+	pcie_flr(dev);
+
+	return 0;
+}
+
 static const struct pci_dev_reset_methods pci_dev_reset_methods[] = {
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82599_SFP_VF,
 		 reset_intel_82599_sfp_virtfn },
@@ -3965,6 +4009,8 @@ static const struct pci_dev_reset_methods pci_dev_reset_methods[] = {
 		reset_ivb_igd },
 	{ PCI_VENDOR_ID_SAMSUNG, 0xa804, nvme_disable_and_flr },
 	{ PCI_VENDOR_ID_INTEL, 0x0953, delay_250ms_after_flr },
+	{ PCI_VENDOR_ID_INTEL, 0x4551, set_gmbus_and_flr },
+	{ PCI_VENDOR_ID_INTEL, 0x4571, set_gmbus_and_flr },
 	{ PCI_VENDOR_ID_CHELSIO, PCI_ANY_ID,
 		reset_chelsio_generic_dev },
 	{ 0 }
