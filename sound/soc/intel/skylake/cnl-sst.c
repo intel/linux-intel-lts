@@ -461,11 +461,6 @@ static struct sst_ops cnl_ops = {
 	.free = cnl_dsp_free,
 };
 
-#define IPC_GLB_NOTIFY_RSP_SHIFT	29
-#define IPC_GLB_NOTIFY_RSP_MASK		0x1
-#define IPC_GLB_NOTIFY_RSP_TYPE(x)	(((x) >> IPC_GLB_NOTIFY_RSP_SHIFT) \
-					& IPC_GLB_NOTIFY_RSP_MASK)
-
 static irqreturn_t cnl_dsp_irq_thread_handler(int irq, void *context)
 {
 	struct sst_dsp *dsp = context;

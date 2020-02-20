@@ -295,6 +295,12 @@ struct sst_mem_block {
 	struct list_head list;		/* Map list of free/used blocks */
 };
 
+enum ipc_state {
+	IPC_STATE_RESET = 0,
+	IPC_STATE_RECEIVED,
+	IPC_STATE_DEFERRED,
+};
+
 /*
  * Generic SST Shim Interface.
  */
@@ -311,6 +317,7 @@ struct sst_dsp {
 	void *thread_context;
 	int irq;
 	u32 id;
+	enum ipc_state ipc_state;
 
 	/* operations */
 	struct sst_ops *ops;

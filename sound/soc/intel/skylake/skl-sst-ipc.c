@@ -68,11 +68,6 @@
 #define IPC_GLB_NOTIFY_MSG_TYPE(x)	(((x) >> IPC_GLB_NOTIFY_MSG_TYPE_SHIFT)	\
 						& IPC_GLB_NOTIFY_MSG_TYPE_MASK)
 
-#define IPC_GLB_NOTIFY_RSP_SHIFT	29
-#define IPC_GLB_NOTIFY_RSP_MASK		0x1
-#define IPC_GLB_NOTIFY_RSP_TYPE(x)	(((x) >> IPC_GLB_NOTIFY_RSP_SHIFT) \
-					& IPC_GLB_NOTIFY_RSP_MASK)
-
 /* Pipeline operations */
 
 /* Create pipeline message */
@@ -583,7 +578,8 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 		struct skl_ipc_header header)
 {
 	struct skl_sst *skl = container_of(ipc, struct skl_sst, ipc);
-	int ret;
+	int ret = 0;
+	unsigned long flags;
 
 	if (IPC_GLB_NOTIFY_MSG_TYPE(header.primary)) {
 		switch (IPC_GLB_NOTIFY_TYPE(header.primary)) {
@@ -635,7 +631,6 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 			if (ret < 0) {
 				dev_err(ipc->dev,
 					"dsp crash dump read fail:%d\n", ret);
-				return ret;
 			}
 			break;
 
@@ -655,7 +650,17 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 		}
 	}
 
-	return 0;
+	if (!list_empty(&ipc->rx_list)) {
+		struct ipc_message *msg =
+			list_first_entry(&ipc->rx_list, struct ipc_message,
+					 list);
+
+		spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+		sst_ipc_tx_msg_reply_complete(ipc, msg);
+		spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+	}
+
+	return ret;
 }
 
 static int skl_ipc_set_reply_error_code(u32 reply)
