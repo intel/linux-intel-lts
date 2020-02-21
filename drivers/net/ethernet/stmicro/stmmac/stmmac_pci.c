@@ -269,7 +269,7 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->eee_usecs_rate = plat->clk_ptp_rate;
 	/* Set system clock */
 	plat->stmmac_clk = clk_register_fixed_rate(&pdev->dev,
-						   "stmmac-clk", NULL, 0,
+						   pci_name(pdev), NULL, 0,
 						   plat->clk_ptp_rate);
 
 	if (IS_ERR(plat->stmmac_clk)) {
