@@ -5911,10 +5911,6 @@ done:
 	return NOTIFY_DONE;
 }
 
-static struct notifier_block stmmac_notifier = {
-	.notifier_call = stmmac_device_event,
-};
-
 static void stmmac_init_fs(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
@@ -5930,14 +5926,15 @@ static void stmmac_init_fs(struct net_device *dev)
 	debugfs_create_file("dma_cap", 0444, priv->dbgfs_dir, dev,
 			    &stmmac_dma_cap_fops);
 
-	register_netdevice_notifier(&stmmac_notifier);
+	priv->stmmac_notifier.notifier_call = &stmmac_device_event;
+	register_netdevice_notifier(&priv->stmmac_notifier);
 }
 
 static void stmmac_exit_fs(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
 
-	unregister_netdevice_notifier(&stmmac_notifier);
+	unregister_netdevice_notifier(&priv->stmmac_notifier);
 	debugfs_remove_recursive(priv->dbgfs_dir);
 }
 #endif /* CONFIG_DEBUG_FS */
