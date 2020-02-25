@@ -761,6 +761,7 @@ static void intel_qep_remove(struct pci_dev *pci)
 	pm_runtime_get_noresume(dev);
 
 	intel_qep_writel(qep->regs, INTEL_QEPCON, 0);
+	devm_free_irq(&pci->dev, pci_irq_vector(pci, 0), qep);
 	pci_free_irq_vectors(pci);
 	counter_unregister(&qep->counter);
 }
