@@ -395,6 +395,7 @@ err:
 
 static void intel_adc_remove(struct pci_dev *pci)
 {
+	devm_free_irq(&pci->dev, pci_irq_vector(pci, 0), pci_get_drvdata(pci));
 	pci_free_irq_vectors(pci);
 }
 
