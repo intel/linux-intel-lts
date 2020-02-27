@@ -338,15 +338,20 @@ void stmmac_ptp_register(struct stmmac_priv *priv)
 {
 	int aux_snapshot_n;
 	int i;
-#ifdef CONFIG_STMMAC_HWTS
+
 	void __iomem *ioaddr = priv->hw->pcsr;
 	u32 gpio_value;
 
-	/* set 200 Mhz xtal clock for Hammock Harbor */
 	gpio_value = readl(ioaddr + GMAC_GPIO_STATUS);
-	gpio_value &= ~GPO0;
+
+	if (priv->plat->is_pse) {
+		gpio_value &= ~PTP_PSE_CLK_FREQ_MASK;
+		gpio_value |= PTP_PSE_CLK_FREQ_200MHZ;
+	} else {
+		gpio_value &= ~GPO0;
+	}
+
 	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
-#endif
 
 	for (i = 0; i < priv->dma_cap.pps_out_num; i++) {
 		if (i >= STMMAC_PPS_MAX)

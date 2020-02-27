@@ -81,7 +81,14 @@
 #define	GMAC_GPIO_STATUS	0x20c	/* MAC GPIO Status */
 #define	GPO0			BIT(16)	/* GPO0 clock type for HH */
 #define	GPO1			BIT(17)	/* GPO1 high-active signal */
+#define	GPO2			BIT(19)	/* GPO2 clock type for HH */
 #define	GMAC4_ART_TIME_SHIFT	16	/* ART TIME 16-bits shift */
+
+/* Select Frequency for the PSE PTP Clock */
+#define PTP_PSE_CLK_FREQ_MASK		((GPO0) | (GPO2))
+#define PTP_PSE_CLK_FREQ_19_2MHZ	GPO0
+#define PTP_PSE_CLK_FREQ_256MHZ		0x0
+#define PTP_PSE_CLK_FREQ_200MHZ		((GPO0) | (GPO2))
 
 enum aux_snapshot {
 	AUX_SNAPSHOT0 = 0x10,

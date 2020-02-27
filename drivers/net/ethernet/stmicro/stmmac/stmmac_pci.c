@@ -410,7 +410,7 @@ static int ehl_pse0_common_data(struct pci_dev *pdev,
 	if (plat->is_hfpga)
 		plat->clk_ptp_rate = 20000000;
 	else
-		plat->clk_ptp_rate = 256000000;
+		plat->clk_ptp_rate = 200000000;
 
 	/* store A2H packets in L2 SRAM, access through BAR0 + 128KB */
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
@@ -470,7 +470,7 @@ static int ehl_pse1_common_data(struct pci_dev *pdev,
 	if (plat->is_hfpga)
 		plat->clk_ptp_rate = 20000000;
 	else
-		plat->clk_ptp_rate = 256000000;
+		plat->clk_ptp_rate = 200000000;
 
 	/* store A2H packets in L2 SRAM, access through BAR0 + 128KB */
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
