@@ -6698,6 +6698,7 @@ int stmmac_suspend(struct device *dev)
 	stmmac_pm_suspend(priv, priv, ndev);
 #else
 	int ret;
+	u32 chan;
 
 	if (!ndev || !netif_running(ndev))
 		return 0;
@@ -6709,6 +6710,9 @@ int stmmac_suspend(struct device *dev)
 	netif_device_detach(ndev);
 
 	stmmac_disable_all_queues(priv);
+
+	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
+		del_timer_sync(&priv->tx_queue[chan].txtimer);
 
 	/* Remove phy converter */
 	if (priv->plat->remove_phy_conv) {
