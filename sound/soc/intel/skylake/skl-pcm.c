@@ -344,7 +344,10 @@ static int skl_pcm_prepare(struct snd_pcm_substream *substream,
 		(mconfig->pipe->state == SKL_PIPE_CREATED) ||
 		(mconfig->pipe->state == SKL_PIPE_PAUSED))) {
 
-		skl_reset_pipe(skl->skl_sst, mconfig->pipe);
+		ret = skl_reset_pipe(skl->skl_sst, mconfig->pipe);
+		if (ret < 0)
+			return ret;
+
 		ret = skl_pcm_host_dma_prepare(dai->dev,
 					mconfig->pipe->p_params);
 		if (ret < 0)
