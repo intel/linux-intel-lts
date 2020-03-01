@@ -50,8 +50,5 @@
 # CVE-2019-19082
 0001-drm-amd-display-prevent-memory-leak-CVE-2019-19082.patch
 
-# CVE-2020-0009
-0001-staging-android-ashmem-Disallow-ashmem-memory-from-b-CVE-2020-0009.patch
-
 # CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
