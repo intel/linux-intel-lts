@@ -128,13 +128,13 @@ static int ucsi_exec_command(struct ucsi *ucsi, u64 cmd)
 	return UCSI_CCI_LENGTH(cci);
 }
 
-static int ucsi_run_command(struct ucsi *ucsi, u64 command,
+static int ucsi_run_command(struct ucsi *ucsi, struct ucsi_control *ctrl,
 			    void *data, size_t size)
 {
 	u8 length;
 	int ret;
 
-	ret = ucsi_exec_command(ucsi, command);
+	ret = ucsi_exec_command(ucsi, ctrl->raw_cmd);
 	if (ret < 0)
 		return ret;
 
@@ -153,13 +153,13 @@ static int ucsi_run_command(struct ucsi *ucsi, u64 command,
 	return length;
 }
 
-int ucsi_send_command(struct ucsi *ucsi, u64 command,
+int ucsi_send_command(struct ucsi *ucsi, struct ucsi_control *ctrl,
 		      void *retval, size_t size)
 {
 	int ret;
 
 	mutex_lock(&ucsi->ppm_lock);
-	ret = ucsi_run_command(ucsi, command, retval, size);
+	ret = ucsi_run_command(ucsi, ctrl, retval, size);
 	mutex_unlock(&ucsi->ppm_lock);
 
 	return ret;
@@ -168,12 +168,11 @@ EXPORT_SYMBOL_GPL(ucsi_send_command);
 
 int ucsi_resume(struct ucsi *ucsi)
 {
-	u64 command;
+	struct ucsi_control ctrl;
 
 	/* Restore UCSI notification enable mask after system resume */
-	command = UCSI_SET_NOTIFICATION_ENABLE | UCSI_ENABLE_NTFY_ALL;
-
-	return ucsi_send_command(ucsi, command, NULL, 0);
+	UCSI_CMD_SET_NTFY_ENABLE(ctrl, UCSI_ENABLE_NTFY_ALL);
+	return ucsi_send_command(ucsi, &ctrl, NULL, 0);
 }
 EXPORT_SYMBOL_GPL(ucsi_resume);
 /* -------------------------------------------------------------------------- */
@@ -181,14 +180,14 @@ EXPORT_SYMBOL_GPL(ucsi_resume);
 void ucsi_altmode_update_active(struct ucsi_connector *con)
 {
 	const struct typec_altmode *altmode = NULL;
-	u64 command;
+	struct ucsi_control ctrl;
 	u16 version;
 	int ret;
 	u8 cur;
 	int i;
 
-	command = UCSI_GET_CURRENT_CAM | UCSI_CONNECTOR_NUMBER(con->num);
-	ret = ucsi_run_command(con->ucsi, command, &cur, sizeof(cur));
+	UCSI_CMD_GET_CURRENT_CAM(ctrl, con->num);
+	ret = ucsi_run_command(con->ucsi, &ctrl, &cur, sizeof(cur));
 	if (ret < 0) {
 		ret = con->ucsi->ops->read(con->ucsi, UCSI_VERSION, &version,
 					   sizeof(version));
@@ -308,7 +307,7 @@ static int ucsi_register_altmodes(struct ucsi_connector *con, u8 recipient)
 	int max_altmodes = UCSI_MAX_ALTMODES;
 	struct typec_altmode_desc desc;
 	struct ucsi_altmode alt[2];
-	u64 command;
+	struct ucsi_control ctrl;
 	int num = 1;
 	int ret;
 	int len;
@@ -326,11 +325,8 @@ static int ucsi_register_altmodes(struct ucsi_connector *con, u8 recipient)
 
 	for (i = 0; i < max_altmodes;) {
 		memset(alt, 0, sizeof(alt));
-		command = UCSI_GET_ALTERNATE_MODES;
-		command |= UCSI_GET_ALTMODE_RECIPIENT(recipient);
-		command |= UCSI_GET_ALTMODE_CONNECTOR_NUMBER(con->num);
-		command |= UCSI_GET_ALTMODE_OFFSET(i);
-		len = ucsi_run_command(con->ucsi, command, alt, sizeof(alt));
+		UCSI_CMD_GET_ALTERNATE_MODES(ctrl, recipient, con->num, i, 1);
+		len = ucsi_run_command(con->ucsi, &ctrl, alt, sizeof(alt));
 		if (len <= 0)
 			return len;
 
@@ -491,14 +487,13 @@ static void ucsi_handle_connector_change(struct work_struct *work)
 	struct ucsi_connector *con = container_of(work, struct ucsi_connector,
 						  work);
 	struct ucsi *ucsi = con->ucsi;
-	u64 command;
+	struct ucsi_control ctrl;
 	int ret;
 
 	mutex_lock(&con->lock);
 
-	command = UCSI_GET_CONNECTOR_STATUS | UCSI_CONNECTOR_NUMBER(con->num);
-	ret = ucsi_send_command(ucsi, command, &con->status,
-				sizeof(con->status));
+	UCSI_CMD_GET_CONNECTOR_STATUS(ctrl, con->num);
+	ret = ucsi_send_command(ucsi, &ctrl, &con->status, sizeof(con->status));
 	if (ret < 0) {
 		dev_err(ucsi->dev, "%s: GET_CONNECTOR_STATUS failed (%d)\n",
 			__func__, ret);
@@ -542,9 +537,8 @@ static void ucsi_handle_connector_change(struct work_struct *work)
 		 * Running GET_CAM_SUPPORTED command just to make sure the PPM
 		 * does not get stuck in case it assumes we do so.
 		 */
-		command = UCSI_GET_CAM_SUPPORTED;
-		command |= UCSI_CONNECTOR_NUMBER(con->num);
-		ucsi_run_command(con->ucsi, command, NULL, 0);
+		UCSI_CMD_GET_CAM_SUPPORTED(ctrl, con->num);
+		ucsi_run_command(con->ucsi, &ctrl, NULL, 0);
 	}
 
 	if (con->status.change & UCSI_CONSTAT_PARTNER_CHANGE)
@@ -579,12 +573,11 @@ EXPORT_SYMBOL_GPL(ucsi_connector_change);
 
 static int ucsi_reset_connector(struct ucsi_connector *con, bool hard)
 {
-	u64 command;
+	struct ucsi_control ctrl;
 
-	command = UCSI_CONNECTOR_RESET | UCSI_CONNECTOR_NUMBER(con->num);
-	command |= hard ? UCSI_CONNECTOR_RESET_HARD : 0;
+	UCSI_CMD_CONNECTOR_RESET(ctrl, con, hard);
 
-	return ucsi_send_command(con->ucsi, command, NULL, 0);
+	return ucsi_send_command(con->ucsi, &ctrl, NULL, 0);
 }
 
 static int ucsi_reset_ppm(struct ucsi *ucsi)
@@ -624,21 +617,21 @@ static int ucsi_reset_ppm(struct ucsi *ucsi)
 	return 0;
 }
 
-static int ucsi_role_cmd(struct ucsi_connector *con, u64 command)
+static int ucsi_role_cmd(struct ucsi_connector *con, struct ucsi_control *ctrl)
 {
 	int ret;
 
-	ret = ucsi_send_command(con->ucsi, command, NULL, 0);
+	ret = ucsi_send_command(con->ucsi, ctrl, NULL, 0);
 	if (ret == -ETIMEDOUT) {
-		u64 c;
+		struct ucsi_control c;
 
 		/* PPM most likely stopped responding. Resetting everything. */
 		mutex_lock(&con->ucsi->ppm_lock);
 		ucsi_reset_ppm(con->ucsi);
 		mutex_unlock(&con->ucsi->ppm_lock);
 
-		c = UCSI_SET_NOTIFICATION_ENABLE | UCSI_ENABLE_NTFY_ALL;
-		ucsi_send_command(con->ucsi, c, NULL, 0);
+		UCSI_CMD_SET_NTFY_ENABLE(c, UCSI_ENABLE_NTFY_ALL);
+		ucsi_send_command(con->ucsi, &c, NULL, 0);
 
 		ucsi_reset_connector(con, true);
 	}
@@ -649,7 +642,7 @@ static int ucsi_role_cmd(struct ucsi_connector *con, u64 command)
 static int ucsi_dr_swap(struct typec_port *port, enum typec_data_role role)
 {
 	struct ucsi_connector *con = typec_get_drvdata(port);
-	u64 command;
+	struct ucsi_control ctrl;
 	int ret = 0;
 
 	mutex_lock(&con->lock);
@@ -665,10 +658,8 @@ static int ucsi_dr_swap(struct typec_port *port, enum typec_data_role role)
 	     role == TYPEC_HOST))
 		goto out_unlock;
 
-	command = UCSI_SET_UOR | UCSI_CONNECTOR_NUMBER(con->num);
-	command |= UCSI_SET_UOR_ROLE(role);
-	command |= UCSI_SET_UOR_ACCEPT_ROLE_SWAPS;
-	ret = ucsi_role_cmd(con, command);
+	UCSI_CMD_SET_UOR(ctrl, con, role);
+	ret = ucsi_role_cmd(con, &ctrl);
 	if (ret < 0)
 		goto out_unlock;
 
@@ -685,7 +676,7 @@ out_unlock:
 static int ucsi_pr_swap(struct typec_port *port, enum typec_role role)
 {
 	struct ucsi_connector *con = typec_get_drvdata(port);
-	u64 command;
+	struct ucsi_control ctrl;
 	int ret = 0;
 
 	mutex_lock(&con->lock);
@@ -698,10 +689,8 @@ static int ucsi_pr_swap(struct typec_port *port, enum typec_role role)
 	if (con->status.pwr_dir == role)
 		goto out_unlock;
 
-	command = UCSI_SET_PDR | UCSI_CONNECTOR_NUMBER(con->num);
-	command |= UCSI_SET_PDR_ROLE(role);
-	command |= UCSI_SET_PDR_ACCEPT_ROLE_SWAPS;
-	ret = ucsi_role_cmd(con, command);
+	UCSI_CMD_SET_PDR(ctrl, con, role);
+	ret = ucsi_role_cmd(con, &ctrl);
 	if (ret < 0)
 		goto out_unlock;
 
@@ -744,7 +733,7 @@ static int ucsi_register_port(struct ucsi *ucsi, int index)
 	struct ucsi_connector *con = &ucsi->connector[index];
 	struct typec_capability *cap = &con->typec_cap;
 	enum typec_accessory *accessory = cap->accessory;
-	u64 command;
+	struct ucsi_control ctrl;
 	int ret;
 
 	INIT_WORK(&con->work, ucsi_handle_connector_change);
@@ -754,9 +743,8 @@ static int ucsi_register_port(struct ucsi *ucsi, int index)
 	con->ucsi = ucsi;
 
 	/* Get connector capability */
-	command = UCSI_GET_CONNECTOR_CAPABILITY;
-	command |= UCSI_CONNECTOR_NUMBER(con->num);
-	ret = ucsi_run_command(ucsi, command, &con->cap, sizeof(con->cap));
+	UCSI_CMD_GET_CONNECTOR_CAPABILITY(ctrl, con->num);
+	ret = ucsi_run_command(ucsi, &ctrl, &con->cap, sizeof(con->cap));
 	if (ret < 0)
 		return ret;
 
@@ -799,9 +787,8 @@ static int ucsi_register_port(struct ucsi *ucsi, int index)
 			con->num);
 
 	/* Get the status */
-	command = UCSI_GET_CONNECTOR_STATUS | UCSI_CONNECTOR_NUMBER(con->num);
-	ret = ucsi_run_command(ucsi, command, &con->status,
-			       sizeof(con->status));
+	UCSI_CMD_GET_CONNECTOR_STATUS(ctrl, con->num);
+	ret = ucsi_run_command(ucsi, &ctrl, &con->status, sizeof(con->status));
 	if (ret < 0) {
 		dev_err(ucsi->dev, "con%d: failed to get status\n", con->num);
 		return 0;
@@ -849,7 +836,7 @@ static int ucsi_register_port(struct ucsi *ucsi, int index)
 int ucsi_init(struct ucsi *ucsi)
 {
 	struct ucsi_connector *con;
-	u64 command;
+	struct ucsi_control ctrl;
 	int ret;
 	int i;
 
@@ -863,15 +850,15 @@ int ucsi_init(struct ucsi *ucsi)
 	}
 
 	/* Enable basic notifications */
-	command = UCSI_SET_NOTIFICATION_ENABLE;
-	command |= UCSI_ENABLE_NTFY_CMD_COMPLETE | UCSI_ENABLE_NTFY_ERROR;
-	ret = ucsi_run_command(ucsi, command, NULL, 0);
+	UCSI_CMD_SET_NTFY_ENABLE(ctrl, UCSI_ENABLE_NTFY_CMD_COMPLETE |
+					UCSI_ENABLE_NTFY_ERROR);
+	ret = ucsi_run_command(ucsi, &ctrl, NULL, 0);
 	if (ret < 0)
 		goto err_reset;
 
 	/* Get PPM capabilities */
-	command = UCSI_GET_CAPABILITY;
-	ret = ucsi_run_command(ucsi, command, &ucsi->cap, sizeof(ucsi->cap));
+	UCSI_CMD_GET_CAPABILITY(ctrl);
+	ret = ucsi_run_command(ucsi, &ctrl, &ucsi->cap, sizeof(ucsi->cap));
 	if (ret < 0)
 		goto err_reset;
 
@@ -896,8 +883,8 @@ int ucsi_init(struct ucsi *ucsi)
 	}
 
 	/* Enable all notifications */
-	command = UCSI_SET_NOTIFICATION_ENABLE | UCSI_ENABLE_NTFY_ALL;
-	ret = ucsi_run_command(ucsi, command, NULL, 0);
+	UCSI_CMD_SET_NTFY_ENABLE(ctrl, UCSI_ENABLE_NTFY_ALL);
+	ret = ucsi_run_command(ucsi, &ctrl, NULL, 0);
 	if (ret < 0)
 		goto err_unregister;
 
@@ -1018,15 +1005,15 @@ EXPORT_SYMBOL_GPL(ucsi_register);
  */
 void ucsi_unregister(struct ucsi *ucsi)
 {
-	u64 command;
+	struct ucsi_control ctrl;
 	int i;
 
 	/* Make sure that we are not in the middle of driver initialization */
 	cancel_work_sync(&ucsi->work);
 
 	/* Disable everything except command complete notification */
-	command = UCSI_SET_NOTIFICATION_ENABLE | UCSI_ENABLE_NTFY_CMD_COMPLETE;
-	ucsi_send_command(ucsi, command, NULL, 0);
+	UCSI_CMD_SET_NTFY_ENABLE(ctrl, UCSI_ENABLE_NTFY_CMD_COMPLETE)
+	ucsi_send_command(ucsi, &ctrl, NULL, 0);
 
 	for (i = 0; i < ucsi->cap.num_connectors; i++) {
 		cancel_work_sync(&ucsi->connector[i].work);
