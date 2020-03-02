@@ -202,7 +202,6 @@ static int tce_buildmulti_pSeriesLP(struct iommu_table *tbl, long tcenum,
 
 	/* to protect tcep and the page behind it */
 	local_lock_irqsave(tcp_page_lock, flags);
-
 	tcep = __this_cpu_read(tce_page);
 
 	/* This is safe to do since interrupts are off when we're called
