@@ -3828,7 +3828,10 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
 	      priv->hwts_tx_en)) {
 		stmmac_tx_timer_arm(priv, queue);
 	} else {
-		desc = &tx_q->dma_tx[tx_q->cur_tx];
+		if (priv->enhanced_tx_desc)
+			desc = &(tx_q->dma_enhtx + tx_q->cur_tx)->basic;
+		else
+			desc = tx_q->dma_tx + tx_q->cur_tx;
 		tx_q->tx_count_frames = 0;
 		stmmac_set_tx_ic(priv, desc);
 		priv->xstats.tx_set_ic_bit++;
@@ -6593,11 +6596,23 @@ EXPORT_SYMBOL_GPL(stmmac_dvr_remove);
  */
 int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
 {
+	int ret;
+
 	mutex_lock(&priv->lock);
 
 	netif_device_detach(ndev);
 
 	stmmac_disable_all_queues(priv);
+
+	/* Remove phy converter */
+	if (priv->plat->remove_phy_conv) {
+		ret = priv->plat->remove_phy_conv(priv->mii);
+		if (ret < 0) {
+			netdev_err(priv->dev,
+				   "%s: ERROR: remove phy conv (error: %d)\n",
+				   __func__, ret);
+		}
+	}
 
 	/* Stop TX/RX DMA */
 	stmmac_stop_all_dma(priv);
@@ -6621,7 +6636,7 @@ int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
 	if (!ndev || !netif_running(ndev))
 		return 0;
 
-	phylink_stop(priv->phylink);
+	phylink_mac_change(priv->phylink, false);
 
 	stmmac_suspend_common(priv, ndev);
 
@@ -6637,11 +6652,19 @@ int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
 		stmmac_pmt(priv, priv->hw, priv->wolopts);
 		priv->irq_wake = 1;
 	} else {
+		mutex_unlock(&priv->lock);
+		rtnl_lock();
+		phylink_stop(priv->phylink);
+		rtnl_unlock();
+		mutex_lock(&priv->lock);
+
 		stmmac_mac_set(priv, priv->ioaddr, false);
 		pinctrl_pm_select_sleep_state(priv->device);
 		/* Disable clock in case of PWM is off */
-		clk_disable(priv->plat->pclk);
-		clk_disable(priv->plat->stmmac_clk);
+		if (priv->plat->clk_ptp_ref)
+			clk_disable_unprepare(priv->plat->clk_ptp_ref);
+		clk_disable_unprepare(priv->plat->pclk);
+		clk_disable_unprepare(priv->plat->stmmac_clk);
 	}
 
 	if (stmmac_has_tsn_feat(priv, priv->hw, ndev, TSN_FEAT_ID_FPE)) {
@@ -6670,10 +6693,13 @@ int stmmac_suspend(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
-	int ret;
+
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 	stmmac_pm_suspend(priv, priv, ndev);
 #else
+	int ret;
+	u32 chan;
+
 	if (!ndev || !netif_running(ndev))
 		return 0;
 
@@ -6684,6 +6710,9 @@ int stmmac_suspend(struct device *dev)
 	netif_device_detach(ndev);
 
 	stmmac_disable_all_queues(priv);
+
+	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
+		del_timer_sync(&priv->tx_queue[chan].txtimer);
 
 	/* Remove phy converter */
 	if (priv->plat->remove_phy_conv) {
@@ -6805,6 +6834,8 @@ EXPORT_SYMBOL_GPL(stmmac_resume_common);
  */
 int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 {
+	int ret;
+
 	if (!netif_running(ndev))
 		return 0;
 
@@ -6822,8 +6853,10 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 	} else {
 		pinctrl_pm_select_default_state(priv->device);
 		/* enable the clk previously disabled */
-		clk_enable(priv->plat->stmmac_clk);
-		clk_enable(priv->plat->pclk);
+		clk_prepare_enable(priv->plat->stmmac_clk);
+		clk_prepare_enable(priv->plat->pclk);
+		if (priv->plat->clk_ptp_ref)
+			clk_prepare_enable(priv->plat->clk_ptp_ref);
 		/* reset the phy so that it's ready */
 		if (priv->mii)
 			stmmac_mdio_reset(priv->mii);
@@ -6833,7 +6866,26 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 
 	stmmac_resume_common(priv, ndev);
 
-	phylink_start(priv->phylink);
+	if (!device_may_wakeup(priv->device)) {
+		rtnl_lock();
+		phylink_start(priv->phylink);
+		rtnl_unlock();
+	}
+
+	phylink_mac_change(priv->phylink, true);
+
+	/* Start phy converter after MDIO bus IRQ handling is up */
+	if (priv->plat->setup_phy_conv) {
+		ret = priv->plat->setup_phy_conv(priv->mii, priv->phy_conv_irq,
+						 priv->plat->phy_addr,
+						 priv->plat->speed_2500_en);
+
+		if (ret < 0) {
+			netdev_err(priv->dev,
+				   "%s: ERROR: setup phy conv (error: %d)\n",
+				   __func__, ret);
+		}
+	}
 
 	return 0;
 }
@@ -6893,10 +6945,12 @@ int stmmac_resume(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
-	int ret;
+
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 	stmmac_pm_resume(priv, priv, ndev);
 #else
+	int ret;
+
 	if (!netif_running(ndev))
 		return 0;
 

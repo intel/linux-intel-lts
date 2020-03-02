@@ -32,6 +32,7 @@
 #define ECL_CL_TX_RING_SIZE	32
 
 #define ECL_DATA_OPR_BUFLEN	384
+#define ECL_EVENTS_NOTIFY	333
 
 #define cmd_opr_offsetof(element)	offsetof(struct opregion_cmd, element)
 #define cl_data_to_dev(opr_dev)	ishtp_device((opr_dev)->cl_device)
@@ -78,6 +79,7 @@ struct ishtp_opregion_dev {
 	struct ishtp_cl_rb *rb;
 	struct acpi_handle *acpi_handle;
 	unsigned int ish_link_ready;
+	unsigned int ish_pm_suspended;
 	unsigned int ish_read_done;
 	wait_queue_head_t read_wait;
 	wait_queue_head_t link_wait;
@@ -117,12 +119,13 @@ static int ecl_ish_cl_read(struct ishtp_opregion_dev *opr_dev)
 	len = sizeof(header);
 
 	rv = wait_event_interruptible_timeout(opr_dev->link_wait,
-					      opr_dev->ish_link_ready,
+					      (opr_dev->ish_link_ready &&
+					       !opr_dev->ish_pm_suspended),
 					      5 * HZ);
 	if (!rv) {
 		dev_warn(cl_data_to_dev(opr_dev),
 			"[ish_rd] timeout, Link not ready\n");
-		return -EIO;
+		return 0;
 	}
 
 	dev_dbg(cl_data_to_dev(opr_dev),
@@ -132,10 +135,13 @@ static int ecl_ish_cl_read(struct ishtp_opregion_dev *opr_dev)
 
 	opr_dev->ish_read_done = 0;
 
+	if (!opr_dev->ish_link_ready || opr_dev->ish_pm_suspended)
+		return 0;
+
 	rv = ishtp_cl_send(opr_dev->ecl_ishtp_cl, (uint8_t *)&header, len);
 	if (rv) {
 		dev_err(cl_data_to_dev(opr_dev), "ish-read : send failed\n");
-		return rv;
+		return 0;
 	}
 
 	rv = wait_event_interruptible_timeout(opr_dev->read_wait,
@@ -144,7 +150,7 @@ static int ecl_ish_cl_read(struct ishtp_opregion_dev *opr_dev)
 	if (!rv) {
 		dev_warn(cl_data_to_dev(opr_dev),
 			"[ish_rd] No response from firmware\n");
-		return -EIO;
+		return 0;
 	}
 
 	return 0;
@@ -173,6 +179,9 @@ static int ecl_ish_cl_write(struct ishtp_opregion_dev *opr_dev)
 	memcpy(message.payload,
 	       opr_dev->opr_context.data_area.data + message.header.offset,
 	       message.header.data_len);
+
+	if (!opr_dev->ish_link_ready || opr_dev->ish_pm_suspended)
+		return 0;
 
 	return ishtp_cl_send(opr_dev->ecl_ishtp_cl, (uint8_t *)&message, len);
 
@@ -335,6 +344,24 @@ static void ecl_ish_process_rx_event(struct ishtp_opregion_dev *opr_dev)
 	ACPI_FREE(obj);
 }
 
+static int ecl_ish_cl_enable_events(struct ishtp_opregion_dev *opr_dev,
+				     bool config_enable)
+{
+	struct ecl_message message = { 0 };
+	int len;
+
+	message.header.version = ECL_ISH_HEADER_VERSION;
+	message.header.data_type = ECL_MSG_DATA;
+	message.header.request_type = ECL_ISH_WRITE;
+	message.header.offset = ECL_EVENTS_NOTIFY;
+	message.header.data_len = 1;
+	message.payload[0] = config_enable;
+
+	len = sizeof(struct ecl_message_header) + message.header.data_len;
+
+	return ishtp_cl_send(opr_dev->ecl_ishtp_cl, (uint8_t *)&message, len);
+}
+
 static void ecl_ishtp_cl_event_cb(struct ishtp_cl_device *cl_device)
 {
 	struct ishtp_opregion_dev *opr_dev;
@@ -389,6 +416,7 @@ static int ecl_ishtp_cl_init(struct ishtp_cl *ecl_ishtp_cl)
 
 	ishtp_cl_set_fw_client_id(ecl_ishtp_cl,
 				  ishtp_get_fw_client_id(fw_client));
+
 	ishtp_set_connection_state(ecl_ishtp_cl, ISHTP_CL_CONNECTING);
 
 	rv = ishtp_cl_connect(ecl_ishtp_cl);
@@ -420,6 +448,7 @@ static void ecl_ishtp_cl_reset_handler(struct work_struct *work)
 	int retry;
 
 	opr_dev = container_of(work, struct ishtp_opregion_dev, reset_work);
+
 	opr_dev->ish_link_ready = false;
 
 	cl_device = opr_dev->cl_device;
@@ -450,6 +479,8 @@ static void ecl_ishtp_cl_reset_handler(struct work_struct *work)
 	}
 
 	ishtp_register_event_cb(cl_device, ecl_ishtp_cl_event_cb);
+
+	ecl_ish_cl_enable_events(opr_dev, 1);
 
 	opr_dev->ish_link_ready = true;
 
@@ -495,6 +526,7 @@ static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
 	ishtp_get_device(cl_device);
 
 	opr_dev->ish_link_ready = true;
+	opr_dev->ish_pm_suspended = false;
 
 	/* Now find ACPI device and init opregion handlers */
 	rv = acpi_opregion_init(opr_dev);
@@ -506,6 +538,8 @@ static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
 
 	/* Reprobe devices depending on ECLite - battery, fan, etc. */
 	acpi_walk_dep_device_list(opr_dev->acpi_handle);
+
+	ecl_ish_cl_enable_events(opr_dev, 1);
 
 	return 0;
 
@@ -524,6 +558,8 @@ static int ecl_ishtp_cl_remove(struct ishtp_cl_device *cl_device)
 	struct ishtp_cl *ecl_ishtp_cl = ishtp_get_drvdata(cl_device);
 	struct ishtp_opregion_dev *opr_dev =
 		ishtp_get_client_data(ecl_ishtp_cl);
+
+	ecl_ish_cl_enable_events(opr_dev, 0);
 
 	acpi_remove_address_space_handler(opr_dev->acpi_handle,
 					  ECLITE_CMD_OPREGION_ID,
@@ -555,12 +591,44 @@ static int ecl_ishtp_cl_reset(struct ishtp_cl_device *cl_device)
 	return 0;
 }
 
+static int ecl_ishtp_cl_suspend(struct device *device)
+{
+	struct ishtp_cl_device *cl_device = ishtp_dev_to_cl_device(device);
+	struct ishtp_cl *ecl_ishtp_cl = ishtp_get_drvdata(cl_device);
+	struct ishtp_opregion_dev *opr_dev =
+		ishtp_get_client_data(ecl_ishtp_cl);
+
+	opr_dev->ish_pm_suspended = true;
+	ecl_ish_cl_enable_events(opr_dev, 0);
+
+	return 0;
+}
+
+static int ecl_ishtp_cl_resume(struct device *device)
+{
+	struct ishtp_cl_device *cl_device = ishtp_dev_to_cl_device(device);
+	struct ishtp_cl *ecl_ishtp_cl = ishtp_get_drvdata(cl_device);
+	struct ishtp_opregion_dev *opr_dev =
+		ishtp_get_client_data(ecl_ishtp_cl);
+
+	ecl_ish_cl_enable_events(opr_dev, 1);
+	opr_dev->ish_pm_suspended = false;
+
+	return 0;
+}
+
+static const struct dev_pm_ops ecl_ishtp_pm_ops = {
+	.suspend = ecl_ishtp_cl_suspend,
+	.resume = ecl_ishtp_cl_resume,
+};
+
 static struct ishtp_cl_driver ecl_ishtp_cl_driver = {
 	.name = "ishtp-eclite",
 	.guid = &ecl_ishtp_guid,
 	.probe = ecl_ishtp_cl_probe,
 	.remove = ecl_ishtp_cl_remove,
 	.reset = ecl_ishtp_cl_reset,
+	.driver.pm = &ecl_ishtp_pm_ops,
 };
 
 static int __init ecl_ishtp_init(void)
