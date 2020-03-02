@@ -390,6 +390,12 @@ static enum tcpm_state tcpm_default_state(struct tcpm_port *port)
 	return SRC_UNATTACHED;
 }
 
+static inline
+struct tcpm_port *typec_cap_to_tcpm(const struct typec_capability *cap)
+{
+	return container_of(cap, struct tcpm_port, typec_caps);
+}
+
 static bool tcpm_port_is_disconnected(struct tcpm_port *port)
 {
 	return (!port->attached && port->cc1 == TYPEC_CC_OPEN &&
@@ -3964,9 +3970,10 @@ void tcpm_pd_hard_reset(struct tcpm_port *port)
 }
 EXPORT_SYMBOL_GPL(tcpm_pd_hard_reset);
 
-static int tcpm_dr_set(struct typec_port *p, enum typec_data_role data)
+static int tcpm_dr_set(const struct typec_capability *cap,
+		       enum typec_data_role data)
 {
-	struct tcpm_port *port = typec_get_drvdata(p);
+	struct tcpm_port *port = typec_cap_to_tcpm(cap);
 	int ret;
 
 	mutex_lock(&port->swap_lock);
@@ -4031,9 +4038,10 @@ swap_unlock:
 	return ret;
 }
 
-static int tcpm_pr_set(struct typec_port *p, enum typec_role role)
+static int tcpm_pr_set(const struct typec_capability *cap,
+		       enum typec_role role)
 {
-	struct tcpm_port *port = typec_get_drvdata(p);
+	struct tcpm_port *port = typec_cap_to_tcpm(cap);
 	int ret;
 
 	mutex_lock(&port->swap_lock);
@@ -4074,9 +4082,10 @@ swap_unlock:
 	return ret;
 }
 
-static int tcpm_vconn_set(struct typec_port *p, bool source)
+static int tcpm_vconn_set(const struct typec_capability *cap,
+			  enum typec_role role)
 {
-	struct tcpm_port *port = typec_get_drvdata(p);
+	struct tcpm_port *port = typec_cap_to_tcpm(cap);
 	int ret;
 
 	mutex_lock(&port->swap_lock);
@@ -4087,7 +4096,7 @@ static int tcpm_vconn_set(struct typec_port *p, bool source)
 		goto port_unlock;
 	}
 
-	if (source == port->vconn_role) {
+	if (role == port->vconn_role) {
 		ret = 0;
 		goto port_unlock;
 	}
@@ -4113,9 +4122,9 @@ swap_unlock:
 	return ret;
 }
 
-static int tcpm_try_role(struct typec_port *p, int role)
+static int tcpm_try_role(const struct typec_capability *cap, int role)
 {
-	struct tcpm_port *port = typec_get_drvdata(p);
+	struct tcpm_port *port = typec_cap_to_tcpm(cap);
 	struct tcpc_dev	*tcpc = port->tcpc;
 	int ret = 0;
 
@@ -4322,9 +4331,10 @@ static void tcpm_init(struct tcpm_port *port)
 	tcpm_set_state(port, PORT_RESET, 0);
 }
 
-static int tcpm_port_type_set(struct typec_port *p, enum typec_port_type type)
+static int tcpm_port_type_set(const struct typec_capability *cap,
+			      enum typec_port_type type)
 {
-	struct tcpm_port *port = typec_get_drvdata(p);
+	struct tcpm_port *port = typec_cap_to_tcpm(cap);
 
 	mutex_lock(&port->lock);
 	if (type == port->port_type)
@@ -4348,14 +4358,6 @@ port_unlock:
 	mutex_unlock(&port->lock);
 	return 0;
 }
-
-static const struct typec_operations tcpm_ops = {
-	.try_role = tcpm_try_role,
-	.dr_set = tcpm_dr_set,
-	.pr_set = tcpm_pr_set,
-	.vconn_set = tcpm_vconn_set,
-	.port_type_set = tcpm_port_type_set
-};
 
 void tcpm_tcpc_reset(struct tcpm_port *port)
 {
@@ -4770,8 +4772,11 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 	port->typec_caps.fwnode = tcpc->fwnode;
 	port->typec_caps.revision = 0x0120;	/* Type-C spec release 1.2 */
 	port->typec_caps.pd_revision = 0x0300;	/* USB-PD spec release 3.0 */
-	port->typec_caps.driver_data = port;
-	port->typec_caps.ops = &tcpm_ops;
+	port->typec_caps.dr_set = tcpm_dr_set;
+	port->typec_caps.pr_set = tcpm_pr_set;
+	port->typec_caps.vconn_set = tcpm_vconn_set;
+	port->typec_caps.try_role = tcpm_try_role;
+	port->typec_caps.port_type_set = tcpm_port_type_set;
 
 	port->partner_desc.identity = &port->partner_ident;
 	port->port_type = port->typec_caps.type;
