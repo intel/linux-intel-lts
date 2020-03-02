@@ -328,7 +328,7 @@ static struct kmb_dsi_host *kmb_dsi_host_init(struct drm_device *drm,
 
 struct drm_bridge *kmb_dsi_host_bridge_init(struct device *dev)
 {
-	struct drm_bridge *bridge;
+	struct drm_bridge *bridge = NULL;
 #ifndef FCCTEST
 	struct device_node *encoder_node;
 #endif
@@ -836,7 +836,7 @@ static void mipi_tx_hs_tp_gen(struct kmb_drm_private *dev_p, int vc,
 static u32 mipi_tx_init_cntrl(struct kmb_drm_private *dev_p,
 			      struct mipi_ctrl_cfg *ctrl_cfg)
 {
-	u32 ret;
+	u32 ret = 0;
 	u8 active_vchannels = 0;
 	u8 frame_id, sect;
 	u32 bits_per_pclk = 0;
