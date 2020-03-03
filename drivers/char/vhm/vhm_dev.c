@@ -500,6 +500,44 @@ create_vm_fail:
 		}
 		break;
 	}
+	case IC_ASSIGN_PCIDEV: {
+		struct acrn_pcidev *pcidev;
+
+		pcidev = acrn_mempool_alloc(GFP_KERNEL);
+		if (pcidev == NULL)
+			return -EFAULT;
+		if (copy_from_user(pcidev,
+				(void *)ioctl_param, sizeof(*pcidev))) {
+			ret = -EFAULT;
+		} else {
+			ret = hcall_assign_pcidev(vm->vmid,
+					virt_to_phys(pcidev));
+			if (ret < 0)
+				pr_err("vhm: failed to assign pci device!\n");
+		}
+		acrn_mempool_free(pcidev);
+		break;
+	}
+
+	case IC_DEASSIGN_PCIDEV: {
+		struct acrn_pcidev *pcidev;
+
+		pcidev = acrn_mempool_alloc(GFP_KERNEL);
+		if (pcidev == NULL)
+			return -EFAULT;
+
+		if (copy_from_user(pcidev,
+				(void *)ioctl_param, sizeof(*pcidev))) {
+			ret = -EFAULT;
+		} else {
+			ret = hcall_deassign_pcidev(vm->vmid,
+					virt_to_phys(pcidev));
+			if (ret < 0)
+				pr_err("vhm: failed to deassign pci device!\n");
+		}
+		acrn_mempool_free(pcidev);
+		break;
+	}
 
 	case IC_SET_PTDEV_INTR_INFO: {
 		struct hc_ptdev_irq *hc_pt_irq;
