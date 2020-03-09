@@ -192,7 +192,7 @@ int cnl_dsp_disable_core(struct sst_dsp *ctx, unsigned int core_mask)
 irqreturn_t cnl_dsp_sst_interrupt(int irq, void *dev_id)
 {
 	struct sst_dsp *ctx = dev_id;
-	u32 val;
+	u32 val, hipcida, hipctdr;
 	irqreturn_t ret = IRQ_NONE;
 
 	spin_lock(&ctx->spinlock);
@@ -200,18 +200,33 @@ irqreturn_t cnl_dsp_sst_interrupt(int irq, void *dev_id)
 	val = sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_ADSPIS);
 	ctx->intr_status = val;
 
-	if (val == 0xffffffff) {
-		spin_unlock(&ctx->spinlock);
-		return IRQ_NONE;
+	if (val == 0xffffffff || !(val & CNL_ADSPIS_IPC))
+		goto end;
+
+	hipcida = sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_HIPCIDA);
+	hipctdr = sst_dsp_shim_read_unlocked(ctx, CNL_ADSP_REG_HIPCTDR);
+
+	if (hipcida & CNL_ADSP_REG_HIPCIDA_DONE) {
+		sst_dsp_shim_update_bits_unlocked(ctx, CNL_ADSP_REG_HIPCCTL,
+			CNL_ADSP_REG_HIPCCTL_DONE, 0);
+
+		/* clear done bit - tell dsp operation is complete */
+		sst_dsp_shim_update_bits_forced_unlocked(ctx, CNL_ADSP_REG_HIPCIDA,
+			CNL_ADSP_REG_HIPCIDA_DONE, CNL_ADSP_REG_HIPCIDA_DONE);
+
+		/* unmask done interrupt */
+		sst_dsp_shim_update_bits_unlocked(ctx, CNL_ADSP_REG_HIPCCTL,
+			CNL_ADSP_REG_HIPCCTL_DONE, CNL_ADSP_REG_HIPCCTL_DONE);
+		ret = IRQ_HANDLED;
 	}
 
-	if (val & CNL_ADSPIS_IPC) {
+	if (hipctdr & CNL_ADSP_REG_HIPCTDR_BUSY) {
 		cnl_ipc_int_disable(ctx);
 		ret = IRQ_WAKE_THREAD;
 	}
 
+end:
 	spin_unlock(&ctx->spinlock);
-
 	return ret;
 }
 
