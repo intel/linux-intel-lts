@@ -32,6 +32,11 @@ struct sst_generic_ipc;
 #define	SKL_EVENT_GLB_MODULE_NOTIFICATION	12
 #define	SKL_TPLG_CHG_NOTIFY	3
 
+#define IPC_GLB_NOTIFY_RSP_SHIFT	29
+#define IPC_GLB_NOTIFY_RSP_MASK		0x1
+#define IPC_GLB_NOTIFY_RSP_TYPE(x)	(((x) >> IPC_GLB_NOTIFY_RSP_SHIFT) \
+					& IPC_GLB_NOTIFY_RSP_MASK)
+
 enum skl_ipc_pipeline_state {
 	PPL_INVALID_STATE =	0,
 	PPL_UNINITIALIZED =	1,
