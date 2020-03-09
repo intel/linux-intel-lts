@@ -22,15 +22,6 @@
 # CVE-2019-3846
 0004-mwifiex-use-total_ie_len-in-mwifiex_update_bss_desc-CVE-2019-3846.patch
 
-# CVE-2019-15918
-0001-cifs-Fix-lease-buffer-length-error-CVE-2019-15918.patch
-
-# CVE-2019-15217
-0001-media-usb-zr364xx-Fix-KASAN-null-ptr-deref-Read-in-z-CVE-2019-15217.patch
-
-# CVE-2018-21008
-0001-rsi-add-fix-for-crash-during-assertions-CVE-2018-21008.patch
-
 # CVE-2019-12455
 0001-clk-sunxi-fix-a-missing-check-bug-in-sunxi_divs_clk_CVE-2019-12455.patch
 
@@ -55,20 +46,39 @@
 #CVE-2019-19054
 0001-media-rc-prevent-memory-leak-in-cx23888_ir_probe.patch
 
-#CVE-2019-19058
-0001-iwlwifi-dbg_ini-fix-memory-leak-in-alloc_sgtable.patch
-
 #CVE-2019-19060
 0001-iio-imu-adis16400-release-allocated-memory-on-failur.patch
 
 #CVE-2019-19067
 0001-drm-amdgpu-fix-multiple-memory-leaks-in-acp_hw_init.patch
 
-#CVE-2019-19051
-0001-wimax-i2400-Fix-memory-leak-in-i2400m_op_rfkill_sw_t.patch
-
 #CVE-2019-19252
 0001-vcs-prevent-write-access-to-vcsu-devices.patch
 
 #CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
+
+#CVE-2019-19770
+0001-debugfs-add-support-for-more-elaborate-d_fsdata.patch
+0002-debugfs-implement-per-file-removal-protection.patch
+0003-debugfs-debugfs_real_fops-drop-__must_hold-sparse-an.patch
+0004-debugfs-convert-to-debugfs_file_get-and-put.patch
+0005-IB-hfi1-convert-to-debugfs_file_get-and-put.patch
+0006-debugfs-call-debugfs_real_fops-only-after-debugfs_fi.patch
+0007-debugfs-defer-debugfs_fsdata-allocation-to-first-usa.patch
+0008-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
+0009-debugfs-simplify-__debugfs_remove_file.patch
+0010-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
+
+#CVE-2020-8648
+0011-vt-selection-close-sel_buffer-race.patch
+
+#CVE-2019-10220
+0012-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
+0013-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
+
+#CVE-2019-16233
+0014-scsi-qla2xxx-fix-a-potential-NULL-pointer-dereferenc.patch
+
+#CVE-2019-16234
+0015-iwlwifi-pcie-fix-rb_allocator-workqueue-allocation.patch

@@ -1,0 +1,60 @@
+From 55cbb509a4aef0cd86f1c511e65f72ba1a27272c Mon Sep 17 00:00:00 2001
+From: Nicolai Stange <nicstange@gmail.com>
+Date: Tue, 31 Oct 2017 00:15:49 +0100
+Subject: [PATCH 03/15] debugfs: debugfs_real_fops(): drop __must_hold sparse
+ annotation
+
+Currently, debugfs_real_fops() is annotated with a
+__must_hold(&debugfs_srcu) sparse annotation.
+
+With the conversion of the SRCU based protection of users against
+concurrent file removals to a per-file refcount based scheme, this becomes
+wrong.
+
+Drop this annotation.
+
+Change-Id: I21865b4a7abd4468c8495c9c7c38f5c0d8e97576
+Tracked-On: PKT-3118
+Signed-off-by: Nicolai Stange <nicstange@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/debugfs/file.c       | 6 +-----
+ include/linux/debugfs.h | 3 +--
+ 2 files changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/fs/debugfs/file.c b/fs/debugfs/file.c
+index 6644bfd..0851167 100644
+--- a/fs/debugfs/file.c
++++ b/fs/debugfs/file.c
+@@ -98,13 +98,9 @@ EXPORT_SYMBOL_GPL(debugfs_use_file_finish);
+ #define F_DENTRY(filp) ((filp)->f_path.dentry)
+ 
+ const struct file_operations *debugfs_real_fops(const struct file *filp)
+-	__must_hold(&debugfs_srcu)
+ {
+ 	struct debugfs_fsdata *fsd = F_DENTRY(filp)->d_fsdata;
+-	/*
+-	 * Neither the pointer to the struct file_operations, nor its
+-	 * contents ever change -- srcu_dereference() is not needed here.
+-	 */
++
+ 	return fsd->real_fops;
+ }
+ EXPORT_SYMBOL_GPL(debugfs_real_fops);
+diff --git a/include/linux/debugfs.h b/include/linux/debugfs.h
+index 3b914d5..c5eda25 100644
+--- a/include/linux/debugfs.h
++++ b/include/linux/debugfs.h
+@@ -95,8 +95,7 @@ int debugfs_use_file_start(const struct dentry *dentry, int *srcu_idx)
+ 
+ void debugfs_use_file_finish(int srcu_idx) __releases(&debugfs_srcu);
+ 
+-const struct file_operations *debugfs_real_fops(const struct file *filp)
+-	__must_hold(&debugfs_srcu);
++const struct file_operations *debugfs_real_fops(const struct file *filp);
+ 
+ int debugfs_file_get(struct dentry *dentry);
+ void debugfs_file_put(struct dentry *dentry);
+-- 
+2.7.4
+

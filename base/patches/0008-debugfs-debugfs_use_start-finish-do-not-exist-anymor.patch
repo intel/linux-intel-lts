@@ -1,0 +1,36 @@
+From 7f10f3f06cf1a8c609da8d78ef1700d3c8986077 Mon Sep 17 00:00:00 2001
+From: Sergey Senozhatsky <sergey.senozhatsky@gmail.com>
+Date: Sun, 30 Dec 2018 12:46:52 +0900
+Subject: [PATCH 08/15] debugfs: debugfs_use_start/finish do not exist anymore
+
+debugfs_use_file_start() and debugfs_use_file_finish() do not exist
+since commit c9afbec27089 ("debugfs: purge obsolete SRCU based removal
+protection"); tweak debugfs_create_file_unsafe() comment.
+
+Change-Id: I09f74fe9518d92ac1b28a227b741b93600ec29a1
+Tracked-On: PKT-3118
+Signed-off-by: Sergey Senozhatsky <sergey.senozhatsky@gmail.com>
+Reviewed-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/debugfs/inode.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/debugfs/inode.c b/fs/debugfs/inode.c
+index 6093824..c82ef94 100644
+--- a/fs/debugfs/inode.c
++++ b/fs/debugfs/inode.c
+@@ -437,8 +437,8 @@ EXPORT_SYMBOL_GPL(debugfs_create_file);
+  * debugfs core.
+  *
+  * It is your responsibility to protect your struct file_operation
+- * methods against file removals by means of debugfs_use_file_start()
+- * and debugfs_use_file_finish(). ->open() is still protected by
++ * methods against file removals by means of debugfs_file_get()
++ * and debugfs_file_put(). ->open() is still protected by
+  * debugfs though.
+  *
+  * Any struct file_operations defined by means of
+-- 
+2.7.4
+

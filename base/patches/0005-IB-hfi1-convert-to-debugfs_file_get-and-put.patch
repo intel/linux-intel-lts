@@ -1,0 +1,64 @@
+From 7fe4ed098f764dc2d566027c991f6d5b7b1639fa Mon Sep 17 00:00:00 2001
+From: Nicolai Stange <nicstange@gmail.com>
+Date: Tue, 31 Oct 2017 00:15:51 +0100
+Subject: [PATCH 05/15] IB/hfi1: convert to debugfs_file_get() and -put()
+
+Convert all calls to the now obsolete debugfs_use_file_start() and
+debugfs_use_file_finish() to the new debugfs_file_get() and
+debugfs_file_put() API.
+
+Change-Id: I077fb08d77a54321b90cd7f138ddd111cae974f9
+Tracked-On: PKT-3118
+Fixes: 49d200deaa68 ("debugfs: prevent access to removed files' private data")
+Signed-off-by: Nicolai Stange <nicstange@gmail.com>
+Reviewed-by: Dennis Dalessandro <dennis.dalessandro@intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/infiniband/hw/hfi1/debugfs.c | 20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/infiniband/hw/hfi1/debugfs.c b/drivers/infiniband/hw/hfi1/debugfs.c
+index f661b38..8ab2c40 100644
+--- a/drivers/infiniband/hw/hfi1/debugfs.c
++++ b/drivers/infiniband/hw/hfi1/debugfs.c
+@@ -71,13 +71,13 @@ static ssize_t hfi1_seq_read(
+ 	loff_t *ppos)
+ {
+ 	struct dentry *d = file->f_path.dentry;
+-	int srcu_idx;
+ 	ssize_t r;
+ 
+-	r = debugfs_use_file_start(d, &srcu_idx);
+-	if (likely(!r))
+-		r = seq_read(file, buf, size, ppos);
+-	debugfs_use_file_finish(srcu_idx);
++	r = debugfs_file_get(d);
++	if (unlikely(r))
++		return r;
++	r = seq_read(file, buf, size, ppos);
++	debugfs_file_put(d);
+ 	return r;
+ }
+ 
+@@ -87,13 +87,13 @@ static loff_t hfi1_seq_lseek(
+ 	int whence)
+ {
+ 	struct dentry *d = file->f_path.dentry;
+-	int srcu_idx;
+ 	loff_t r;
+ 
+-	r = debugfs_use_file_start(d, &srcu_idx);
+-	if (likely(!r))
+-		r = seq_lseek(file, offset, whence);
+-	debugfs_use_file_finish(srcu_idx);
++	r = debugfs_file_get(d);
++	if (unlikely(r))
++		return r;
++	r = seq_lseek(file, offset, whence);
++	debugfs_file_put(d);
+ 	return r;
+ }
+ 
+-- 
+2.7.4
+

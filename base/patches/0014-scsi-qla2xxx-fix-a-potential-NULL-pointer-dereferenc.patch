@@ -1,0 +1,37 @@
+From edf76ff622903524e7467687cce8a53ffcec4760 Mon Sep 17 00:00:00 2001
+From: "Zhang, Baoli" <baoli.zhang@intel.com>
+Date: Thu, 20 Feb 2020 17:09:39 +0800
+Subject: [PATCH 14/15] scsi: qla2xxx: fix a potential NULL pointer dereference
+
+alloc_workqueue is not checked for errors and as a result a potential
+NULL dereference could occur.
+
+Change-Id: I9aac2973245c1ca3cb432457394b5ac222b6c544
+Tracked-On: PKT-3126
+Link: https://lore.kernel.org/r/1568824618-4366-1-git-send-email-allen.pais@oracle.com
+Signed-off-by: Allen Pais <allen.pais@oracle.com>
+Reviewed-by: Martin Wilck <mwilck@suse.com>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+---
+ drivers/scsi/qla2xxx/qla_os.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/scsi/qla2xxx/qla_os.c b/drivers/scsi/qla2xxx/qla_os.c
+index 5f9d4db..d402401 100644
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -3178,6 +3178,10 @@ qla2x00_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
+ 	    base_vha->mgmt_svr_loop_id, host->sg_tablesize);
+ 
+ 	ha->wq = alloc_workqueue("qla2xxx_wq", WQ_MEM_RECLAIM, 0);
++	if (unlikely(!ha->wq)) {
++		ret = -ENOMEM;
++		goto probe_failed;
++	}
+ 
+ 	if (ha->mqenable) {
+ 		bool mq = false;
+-- 
+2.7.4
+

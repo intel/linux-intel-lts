@@ -1,0 +1,204 @@
+From 1ea77e0a9379bad197d852540397fc64b511da41 Mon Sep 17 00:00:00 2001
+From: Nicolai Stange <nicstange@gmail.com>
+Date: Tue, 31 Oct 2017 00:15:48 +0100
+Subject: [PATCH 02/15] debugfs: implement per-file removal protection
+
+Since commit 49d200deaa68 ("debugfs: prevent access to removed files'
+private data"), accesses to a file's private data are protected from
+concurrent removal by covering all file_operations with a SRCU read section
+and sychronizing with those before returning from debugfs_remove() by means
+of synchronize_srcu().
+
+As pointed out by Johannes Berg, there are debugfs files with forever
+blocking file_operations. Their corresponding SRCU read side sections would
+block any debugfs_remove() forever as well, even unrelated ones. This
+results in a livelock. Because a remover can't cancel any indefinite
+blocking within foreign files, this is a problem.
+
+Resolve this by introducing support for more granular protection on a
+per-file basis.
+
+This is implemented by introducing an  'active_users' refcount_t to the
+per-file struct debugfs_fsdata state. At file creation time, it is set to
+one and a debugfs_remove() will drop that initial reference. The new
+debugfs_file_get() and debugfs_file_put(), intended to be used in place of
+former debugfs_use_file_start() and debugfs_use_file_finish(), increment
+and decrement it respectively. Once the count drops to zero,
+debugfs_file_put() will signal a completion which is possibly being waited
+for from debugfs_remove().
+Thus, as long as there is a debugfs_file_get() not yet matched by a
+corresponding debugfs_file_put() around, debugfs_remove() will block.
+
+Actual users of debugfs_use_file_start() and -finish() will get converted
+to the new debugfs_file_get() and debugfs_file_put() by followup patches.
+
+Change-Id: I01517c6c5c545c5eedac1a6b58373d1b8ebbec72
+Tracked-On: PKT-3118
+Fixes: 49d200deaa68 ("debugfs: prevent access to removed files' private data")
+Reported-by: Johannes Berg <johannes@sipsolutions.net>
+Signed-off-by: Nicolai Stange <nicstange@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/debugfs/file.c       | 48 ++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/debugfs/inode.c      | 29 +++++++++++++++++++++++------
+ fs/debugfs/internal.h   |  2 ++
+ include/linux/debugfs.h | 11 +++++++++++
+ 4 files changed, 84 insertions(+), 6 deletions(-)
+
+diff --git a/fs/debugfs/file.c b/fs/debugfs/file.c
+index b6f5dda..6644bfd 100644
+--- a/fs/debugfs/file.c
++++ b/fs/debugfs/file.c
+@@ -109,6 +109,54 @@ const struct file_operations *debugfs_real_fops(const struct file *filp)
+ }
+ EXPORT_SYMBOL_GPL(debugfs_real_fops);
+ 
++/**
++ * debugfs_file_get - mark the beginning of file data access
++ * @dentry: the dentry object whose data is being accessed.
++ *
++ * Up to a matching call to debugfs_file_put(), any successive call
++ * into the file removing functions debugfs_remove() and
++ * debugfs_remove_recursive() will block. Since associated private
++ * file data may only get freed after a successful return of any of
++ * the removal functions, you may safely access it after a successful
++ * call to debugfs_file_get() without worrying about lifetime issues.
++ *
++ * If -%EIO is returned, the file has already been removed and thus,
++ * it is not safe to access any of its data. If, on the other hand,
++ * it is allowed to access the file data, zero is returned.
++ */
++int debugfs_file_get(struct dentry *dentry)
++{
++	struct debugfs_fsdata *fsd = dentry->d_fsdata;
++
++	/* Avoid starvation of removers. */
++	if (d_unlinked(dentry))
++		return -EIO;
++
++	if (!refcount_inc_not_zero(&fsd->active_users))
++		return -EIO;
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(debugfs_file_get);
++
++/**
++ * debugfs_file_put - mark the end of file data access
++ * @dentry: the dentry object formerly passed to
++ *          debugfs_file_get().
++ *
++ * Allow any ongoing concurrent call into debugfs_remove() or
++ * debugfs_remove_recursive() blocked by a former call to
++ * debugfs_file_get() to proceed and return to its caller.
++ */
++void debugfs_file_put(struct dentry *dentry)
++{
++	struct debugfs_fsdata *fsd = dentry->d_fsdata;
++
++	if (refcount_dec_and_test(&fsd->active_users))
++		complete(&fsd->active_users_drained);
++}
++EXPORT_SYMBOL_GPL(debugfs_file_put);
++
+ static int open_proxy_open(struct inode *inode, struct file *filp)
+ {
+ 	const struct dentry *dentry = F_DENTRY(filp);
+diff --git a/fs/debugfs/inode.c b/fs/debugfs/inode.c
+index 203f06c..f40c690 100644
+--- a/fs/debugfs/inode.c
++++ b/fs/debugfs/inode.c
+@@ -379,6 +379,7 @@ static struct dentry *__debugfs_create_file(const char *name, umode_t mode,
+ 
+ 	inode->i_fop = proxy_fops;
+ 	fsd->real_fops = real_fops;
++	refcount_set(&fsd->active_users, 1);
+ 	dentry->d_fsdata = fsd;
+ 
+ 	d_instantiate(dentry, inode);
+@@ -636,18 +637,34 @@ struct dentry *debugfs_create_symlink(const char *name, struct dentry *parent,
+ }
+ EXPORT_SYMBOL_GPL(debugfs_create_symlink);
+ 
++static void __debugfs_remove_file(struct dentry *dentry, struct dentry *parent)
++{
++	struct debugfs_fsdata *fsd;
++
++	simple_unlink(d_inode(parent), dentry);
++	d_delete(dentry);
++	fsd = dentry->d_fsdata;
++	init_completion(&fsd->active_users_drained);
++	if (!refcount_dec_and_test(&fsd->active_users))
++		wait_for_completion(&fsd->active_users_drained);
++}
++
+ static int __debugfs_remove(struct dentry *dentry, struct dentry *parent)
+ {
+ 	int ret = 0;
+ 
+ 	if (simple_positive(dentry)) {
+ 		dget(dentry);
+-		if (d_is_dir(dentry))
+-			ret = simple_rmdir(d_inode(parent), dentry);
+-		else
+-			simple_unlink(d_inode(parent), dentry);
+-		if (!ret)
+-			d_delete(dentry);
++		if (!d_is_reg(dentry)) {
++			if (d_is_dir(dentry))
++				ret = simple_rmdir(d_inode(parent), dentry);
++			else
++				simple_unlink(d_inode(parent), dentry);
++			if (!ret)
++				d_delete(dentry);
++		} else {
++			__debugfs_remove_file(dentry, parent);
++		}
+ 		dput(dentry);
+ 	}
+ 	return ret;
+diff --git a/fs/debugfs/internal.h b/fs/debugfs/internal.h
+index 512601e..0eea994 100644
+--- a/fs/debugfs/internal.h
++++ b/fs/debugfs/internal.h
+@@ -21,6 +21,8 @@ extern const struct file_operations debugfs_full_proxy_file_operations;
+ 
+ struct debugfs_fsdata {
+ 	const struct file_operations *real_fops;
++	refcount_t active_users;
++	struct completion active_users_drained;
+ };
+ 
+ #endif /* _DEBUGFS_INTERNAL_H_ */
+diff --git a/include/linux/debugfs.h b/include/linux/debugfs.h
+index cbee5f4..3b914d5 100644
+--- a/include/linux/debugfs.h
++++ b/include/linux/debugfs.h
+@@ -98,6 +98,9 @@ void debugfs_use_file_finish(int srcu_idx) __releases(&debugfs_srcu);
+ const struct file_operations *debugfs_real_fops(const struct file *filp)
+ 	__must_hold(&debugfs_srcu);
+ 
++int debugfs_file_get(struct dentry *dentry);
++void debugfs_file_put(struct dentry *dentry);
++
+ ssize_t debugfs_attr_read(struct file *file, char __user *buf,
+ 			size_t len, loff_t *ppos);
+ ssize_t debugfs_attr_write(struct file *file, const char __user *buf,
+@@ -236,6 +239,14 @@ static inline void debugfs_use_file_finish(int srcu_idx)
+ 	__releases(&debugfs_srcu)
+ { }
+ 
++static inline int debugfs_file_get(struct dentry *dentry)
++{
++	return 0;
++}
++
++static inline void debugfs_file_put(struct dentry *dentry)
++{ }
++
+ static inline ssize_t debugfs_attr_read(struct file *file, char __user *buf,
+ 					size_t len, loff_t *ppos)
+ {
+-- 
+2.7.4
+
