@@ -103,6 +103,11 @@ struct sst_generic_ipc;
 #define CNL_ADSPCS_CPA_SHIFT	24
 #define CNL_ADSPCS_CPA(x)	(x << CNL_ADSPCS_CPA_SHIFT)
 
+#define CNL_IPC_GLB_NOTIFY_RSP_SHIFT	29
+#define CNL_IPC_GLB_NOTIFY_RSP_MASK	0x1
+#define CNL_IPC_GLB_NOTIFY_RSP_TYPE(x)	(((x) >> CNL_IPC_GLB_NOTIFY_RSP_SHIFT) \
+					& CNL_IPC_GLB_NOTIFY_RSP_MASK)
+
 int cnl_dsp_enable_core(struct sst_dsp *ctx, unsigned int core);
 int cnl_dsp_disable_core(struct sst_dsp *ctx, unsigned int core);
 irqreturn_t cnl_dsp_sst_interrupt(int irq, void *dev_id);

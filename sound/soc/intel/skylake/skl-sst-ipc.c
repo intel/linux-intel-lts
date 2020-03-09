@@ -68,11 +68,6 @@
 #define IPC_GLB_NOTIFY_MSG_TYPE(x)	(((x) >> IPC_GLB_NOTIFY_MSG_TYPE_SHIFT)	\
 						& IPC_GLB_NOTIFY_MSG_TYPE_MASK)
 
-#define IPC_GLB_NOTIFY_RSP_SHIFT	29
-#define IPC_GLB_NOTIFY_RSP_MASK		0x1
-#define IPC_GLB_NOTIFY_RSP_TYPE(x)	(((x) >> IPC_GLB_NOTIFY_RSP_SHIFT) \
-					& IPC_GLB_NOTIFY_RSP_MASK)
-
 /* Pipeline operations */
 
 /* Create pipeline message */
