@@ -343,7 +343,7 @@ int skl_dsp_boot(struct sst_dsp *ctx)
 irqreturn_t skl_dsp_sst_interrupt(int irq, void *dev_id)
 {
 	struct sst_dsp *ctx = dev_id;
-	u32 val;
+	u32 val, hipcie, hipct;
 	irqreturn_t result = IRQ_NONE;
 
 	spin_lock(&ctx->spinlock);
@@ -351,23 +351,35 @@ irqreturn_t skl_dsp_sst_interrupt(int irq, void *dev_id)
 	val = sst_dsp_shim_read_unlocked(ctx, SKL_ADSP_REG_ADSPIS);
 	ctx->intr_status = val;
 
-	if (val == 0xffffffff) {
-		spin_unlock(&ctx->spinlock);
-		return IRQ_NONE;
+	if (!(val & SKL_ADSPIS_IPC))
+		goto end;
+
+	hipcie = sst_dsp_shim_read_unlocked(ctx, SKL_ADSP_REG_HIPCIE);
+	hipct = sst_dsp_shim_read_unlocked(ctx, SKL_ADSP_REG_HIPCT);
+
+	if (hipcie & SKL_ADSP_REG_HIPCIE_DONE) {
+		sst_dsp_shim_update_bits_unlocked(ctx, SKL_ADSP_REG_HIPCCTL,
+			SKL_ADSP_REG_HIPCCTL_DONE, 0);
+
+		/* clear DONE bit - tell DSP we have completed the operation */
+		sst_dsp_shim_update_bits_forced_unlocked(ctx,
+			SKL_ADSP_REG_HIPCIE, SKL_ADSP_REG_HIPCIE_DONE,
+			SKL_ADSP_REG_HIPCIE_DONE);
+
+		/* unmask Done interrupt */
+		sst_dsp_shim_update_bits_unlocked(ctx, SKL_ADSP_REG_HIPCCTL,
+			SKL_ADSP_REG_HIPCCTL_DONE, SKL_ADSP_REG_HIPCCTL_DONE);
+		if (result != IRQ_WAKE_THREAD)
+			result = IRQ_HANDLED;
 	}
 
-	if (val & SKL_ADSPIS_IPC) {
+	if (hipct & SKL_ADSP_REG_HIPCT_BUSY) {
 		skl_ipc_int_disable(ctx);
 		result = IRQ_WAKE_THREAD;
 	}
 
-	if (val & SKL_ADSPIS_CL_DMA) {
-		skl_cldma_int_disable(ctx);
-		result = IRQ_WAKE_THREAD;
-	}
-
+end:
 	spin_unlock(&ctx->spinlock);
-
 	return result;
 }
 /*

@@ -773,34 +773,19 @@ irqreturn_t skl_dsp_irq_thread_handler(int irq, void *context)
 	struct skl_sst *skl = sst_dsp_get_thread_context(dsp);
 	struct sst_generic_ipc *ipc = &skl->ipc;
 	struct skl_ipc_header header = {0};
-	u32 hipcie, hipct, hipcte;
-	int ipc_irq = 0;
+	u32 hipct, hipcte;
+	int ret = IRQ_NONE;
 
-	if (dsp->intr_status & SKL_ADSPIS_CL_DMA)
+	if (dsp->intr_status & SKL_ADSPIS_CL_DMA) {
 		skl_cldma_process_intr(dsp);
+		ret = IRQ_HANDLED;
+	}
 
 	/* Here we handle IPC interrupts only */
 	if (!(dsp->intr_status & SKL_ADSPIS_IPC))
-		return IRQ_NONE;
+		return ret;
 
-	hipcie = sst_dsp_shim_read_unlocked(dsp, SKL_ADSP_REG_HIPCIE);
 	hipct = sst_dsp_shim_read_unlocked(dsp, SKL_ADSP_REG_HIPCT);
-
-	/* reply message from DSP */
-	if (hipcie & SKL_ADSP_REG_HIPCIE_DONE) {
-		sst_dsp_shim_update_bits(dsp, SKL_ADSP_REG_HIPCCTL,
-			SKL_ADSP_REG_HIPCCTL_DONE, 0);
-
-		/* clear DONE bit - tell DSP we have completed the operation */
-		sst_dsp_shim_update_bits_forced(dsp, SKL_ADSP_REG_HIPCIE,
-			SKL_ADSP_REG_HIPCIE_DONE, SKL_ADSP_REG_HIPCIE_DONE);
-
-		ipc_irq = 1;
-
-		/* unmask Done interrupt */
-		sst_dsp_shim_update_bits(dsp, SKL_ADSP_REG_HIPCCTL,
-			SKL_ADSP_REG_HIPCCTL_DONE, SKL_ADSP_REG_HIPCCTL_DONE);
-	}
 
 	/* New message from DSP */
 	if (hipct & SKL_ADSP_REG_HIPCT_BUSY) {
@@ -822,19 +807,17 @@ irqreturn_t skl_dsp_irq_thread_handler(int irq, void *context)
 		/* clear  busy interrupt */
 		sst_dsp_shim_update_bits_forced(dsp, SKL_ADSP_REG_HIPCT,
 			SKL_ADSP_REG_HIPCT_BUSY, SKL_ADSP_REG_HIPCT_BUSY);
-		ipc_irq = 1;
+
+		skl_ipc_int_enable(dsp);
+
+		/* continue to send any remaining messages... */
+		if (!list_empty(&ipc->tx_list))
+			queue_work(system_highpri_wq, &ipc->kwork);
+
+		ret = IRQ_HANDLED;
 	}
 
-	if (ipc_irq == 0)
-		return IRQ_NONE;
-
-	skl_ipc_int_enable(dsp);
-
-	/* continue to send any remaining messages... */
-	if (!list_empty(&ipc->tx_list))
-		queue_work(system_highpri_wq, &ipc->kwork);
-
-	return IRQ_HANDLED;
+	return ret;
 }
 
 void skl_ipc_int_enable(struct sst_dsp *ctx)
