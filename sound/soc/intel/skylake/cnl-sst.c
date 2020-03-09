@@ -472,32 +472,14 @@ static irqreturn_t cnl_dsp_irq_thread_handler(int irq, void *context)
 	struct skl_sst *cnl = sst_dsp_get_thread_context(dsp);
 	struct sst_generic_ipc *ipc = &cnl->ipc;
 	struct skl_ipc_header header = {0};
-	u32 hipcida, hipctdr, hipctdd;
-	int ipc_irq = 0;
+	u32 hipctdr, hipctdd;
 
 	/* Here we handle IPC interrupts only */
 	if (!(dsp->intr_status & CNL_ADSPIS_IPC))
 		return IRQ_NONE;
 
-	hipcida = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCIDA);
 	hipctdr = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCTDR);
 	hipctdd = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCTDD);
-
-	/* reply message from DSP */
-	if (hipcida & CNL_ADSP_REG_HIPCIDA_DONE) {
-		sst_dsp_shim_update_bits(dsp, CNL_ADSP_REG_HIPCCTL,
-			CNL_ADSP_REG_HIPCCTL_DONE, 0);
-
-		/* clear DONE bit - tell DSP we have completed the operation */
-		sst_dsp_shim_update_bits_forced(dsp, CNL_ADSP_REG_HIPCIDA,
-			CNL_ADSP_REG_HIPCIDA_DONE, CNL_ADSP_REG_HIPCIDA_DONE);
-
-		ipc_irq = 1;
-
-		/* unmask Done interrupt */
-		sst_dsp_shim_update_bits(dsp, CNL_ADSP_REG_HIPCCTL,
-			CNL_ADSP_REG_HIPCCTL_DONE, CNL_ADSP_REG_HIPCCTL_DONE);
-	}
 
 	/* New message from DSP */
 	if (hipctdr & CNL_ADSP_REG_HIPCTDR_BUSY) {
@@ -520,18 +502,15 @@ static irqreturn_t cnl_dsp_irq_thread_handler(int irq, void *context)
 		/* set done bit to ack DSP */
 		sst_dsp_shim_update_bits_forced(dsp, CNL_ADSP_REG_HIPCTDA,
 			CNL_ADSP_REG_HIPCTDA_DONE, CNL_ADSP_REG_HIPCTDA_DONE);
-		ipc_irq = 1;
+
+		cnl_ipc_int_enable(dsp);
+
+		/* continue to send any remaining messages... */
+		schedule_work(&ipc->kwork);
+
+		return IRQ_HANDLED;
 	}
-
-	if (ipc_irq == 0)
-		return IRQ_NONE;
-
-	cnl_ipc_int_enable(dsp);
-
-	/* continue to send any remaining messages... */
-	schedule_work(&ipc->kwork);
-
-	return IRQ_HANDLED;
+	return IRQ_NONE;
 }
 
 static struct sst_dsp_device cnl_dev = {
