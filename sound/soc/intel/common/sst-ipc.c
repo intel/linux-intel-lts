@@ -57,9 +57,28 @@ static int tx_wait_done(struct sst_generic_ipc *ipc,
 	unsigned long flags;
 	int ret;
 
+	wait_event(msg->waitq, ipc->sent);
+again:
 	/* wait for DSP completion (in all cases atm inc pending) */
 	ret = wait_event_timeout(msg->waitq, msg->complete,
 		msecs_to_jiffies(IPC_TIMEOUT_MSECS));
+
+	if (ipc->dsp->ipc_state == IPC_STATE_RECEIVED) {
+		/* fw did its job, now wait until it's processed */
+		if (!ret) {
+			wait_event(msg->waitq, msg->complete);
+			ret = 1;
+		}
+	}
+
+	if (ipc->dsp->ipc_state == IPC_STATE_DEFERRED) {
+		/* reply delayed due to nofitication */
+		if (!ret)
+			wait_event(msg->waitq, msg->complete);
+		msg->complete = false;
+		ipc->dsp->ipc_state = IPC_STATE_RESET;
+		goto again;
+	}
 
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
 	if (ret == 0) {
@@ -118,6 +137,8 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
 	msg->errno = 0;
 	msg->pending = false;
 	msg->complete = false;
+	ipc->sent = false;
+	ipc->dsp->ipc_state = IPC_STATE_RESET;
 
 	if ((tx_bytes) && (ipc->ops.tx_data_copy != NULL))
 		ipc->ops.tx_data_copy(msg, tx_data, tx_bytes);
@@ -131,6 +152,7 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
         } else {
                 spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
                 ipc->ops.direct_tx_msg(ipc);
+		ipc->sent = true;
         }
 
 	if (wait)
@@ -198,8 +220,12 @@ static void ipc_tx_msgs(struct work_struct *work)
 		msg = list_first_entry(&ipc->tx_list, struct ipc_message, list);
 		list_move(&msg->list, &ipc->rx_list);
 
-		if (ipc->ops.tx_msg != NULL)
+		if (ipc->ops.tx_msg != NULL) {
 			ipc->ops.tx_msg(ipc, msg);
+			ipc->sent = true;
+			if (msg->wait)
+				wake_up(&msg->waitq);
+		}
 	}
 
 	spin_unlock_irq(&ipc->dsp->spinlock);

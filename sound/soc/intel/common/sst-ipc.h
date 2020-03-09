@@ -67,6 +67,7 @@ struct sst_generic_ipc {
 	wait_queue_head_t wait_txq;
 	struct task_struct *tx_thread;
 	struct work_struct kwork;
+	bool sent;
 	bool pending;
 	struct ipc_message *msg;
 	int tx_data_max_size;
