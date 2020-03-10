@@ -52,3 +52,21 @@
 
 # CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
+
+# CVE-2020-8648
+0001-vt-selection-close-sel_buffer-race.patch
+
+# CVE-2019-10220
+0002-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
+0003-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
+
+# CVE-2019-16234
+0004-iwlwifi-pcie-fix-rb_allocator-workqueue-allocation.patch
+
+# CVE-2019-19770
+0005-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
+0006-debugfs-simplify-__debugfs_remove_file.patch
+0007-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
+
+# CVE-2020-8647
+0008-vgacon-Fix-a-UAF-in-vgacon_invert_region.patch
