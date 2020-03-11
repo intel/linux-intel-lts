@@ -144,16 +144,8 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
 		ipc->ops.tx_data_copy(msg, tx_data, tx_bytes);
 
 	list_add_tail(&msg->list, &ipc->tx_list);
-
-	if ((ipc->ops.is_dsp_busy && ipc->ops.is_dsp_busy(ipc->dsp)) ||
-                        (ipc->ops.direct_tx_msg == NULL)) {
-		queue_work(system_highpri_wq, &ipc->kwork);
-                spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
-        } else {
-                spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
-                ipc->ops.direct_tx_msg(ipc);
-		ipc->sent = true;
-        }
+	queue_work(system_highpri_wq, &ipc->kwork);
+        spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 
 	if (wait)
 		return tx_wait_done(ipc, msg, rx_data,
