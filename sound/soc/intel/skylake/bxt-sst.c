@@ -589,13 +589,19 @@ static int bxt_set_dsp_D0(struct sst_dsp *ctx, unsigned int core_id)
 	/* If core 1 was turned on for booting core 0, turn it off */
 		skl_dsp_core_power_down(ctx, SKL_DSP_CORE_MASK(1));
 		if (ret == 0) {
-			dev_err(ctx->dev, "%s: DSP boot timeout\n", __func__);
-			dev_err(ctx->dev, "Error code=0x%x: FW status=0x%x\n",
+			dev_warn(ctx->dev,
+				"DSP boot timeout: Error code=0x%x: FW status=0x%x\n",
 				sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE),
 				sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS));
-			dev_err(ctx->dev, "Failed to set core0 to D0 state\n");
-			ret = -EIO;
-			goto err;
+			dev_warn(ctx->dev,"Reloading FW\n");
+
+			ret = bxt_sst_init_fw(skl->dev, skl);
+			if (ret < 0) {
+				dev_err(ctx->dev, "Reload fw failed: %d\n", ret);
+				dev_err(ctx->dev, "Failed to set core0 to D0 state\n");
+				ret = -EIO;
+				goto err;
+			}
 		}
 	}
 
@@ -625,7 +631,6 @@ err:
 	if (core_id == SKL_DSP_CORE0_ID)
 		core_mask |= SKL_DSP_CORE_MASK(1);
 	skl_dsp_disable_core(ctx, core_mask);
-
 	return ret;
 }
 
