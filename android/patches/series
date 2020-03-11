@@ -70,3 +70,6 @@
 
 # CVE-2020-8647
 0008-vgacon-Fix-a-UAF-in-vgacon_invert_region.patch
+
+#CVE-2019-19768
+0001-blktrace-Protect-q-blk_trace-with-RCU.patch
