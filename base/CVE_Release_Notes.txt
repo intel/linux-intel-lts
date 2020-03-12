@@ -336,7 +336,6 @@ CVEs fixed in 4.19.92:
   CVE-2019-16230: 55248674330101fb3ccf7cec8b729e8e067e5f71 drm/amdkfd: fix a potential NULL pointer dereference (v2)
   CVE-2019-16232: 60bb6967b543be59f66f60526ca816e1b33ec480 libertas: fix a potential NULL pointer dereference
   CVE-2019-18786: debdd16cbd99ffc767227685e2738e5b495b7c54 media: rcar_drif: fix a memory disclosure
-  CVE-2019-19037: 1e62ac6b1307129c0f9ca68e9db4227239b4ab19 ext4: fix ext4_empty_dir() for directories with holes
   CVE-2019-19057: 1b3e52db38471d5ac896eb9be111565e3734d5b5 mwifiex: pcie: Fix memory leak in mwifiex_pcie_init_evt_ring
   CVE-2019-19063: 3717a450f83945c481059a6921440e5e6fe3c856 rtlwifi: prevent memory leak in rtl_usb_probe
   CVE-2019-19947: 9ed59600c3524f12144b30cfc1d86734cfb3927b can: kvaser_usb: kvaser_usb_leaf: Fix some info-leaks to USB devices
@@ -345,8 +344,38 @@ CVEs fixed in 4.19.94:
   CVE-2019-18809: d933de8115f3263fd50cf3b1f1dac2faff02fd89 media: usb: fix memory leak in af9005_identify_state
   CVE-2019-19965: 8b9bf467061bc89ccf4a43be637e08d8a70fd76d scsi: libsas: stop discovering if oob mode is disconnected
 
+CVEs fixed in 4.19.95:
+  CVE-2019-14901: 21f08020dd8519baf209348c345131a8967e3cef mwifiex: Fix heap overflow in mmwifiex_process_tdls_action_frame()
+
+CVEs fixed in 4.19.96:
+  CVE-2019-14615: dd4f3b3508f65fe37975db223365216316da3998 drm/i915/gen9: Clear residual context state on context switch
+  CVE-2019-14895: 0aa8632c57930243bea6fa4ebcbff8fac089e664 mwifiex: fix possible heap overflow in mwifiex_process_country_ie()
+  CVE-2019-19056: f2bde0e9989e243345316e3c96b352ab94037340 mwifiex: pcie: Fix memory leak in mwifiex_pcie_alloc_cmdrsp_buf
+  CVE-2019-19066: 486f51201528126bec2c647fa9d4216fc4fda91b scsi: bfa: release allocated memory in case of error
+  CVE-2019-19068: 0e27512c5d0bc2c3d33c1e7f73a8983015c82b83 rtl8xxxu: prevent leaking urb
+
+CVEs fixed in 4.19.97:
+  CVE-2019-15217: 0648766cb7d336e5932278c316aef6aac35d60ab media: usb:zr364xx:Fix KASAN:null-ptr-deref Read in zr364xx_vidioc_querycap
+  CVE-2019-19058: 09044a4a142404799e519def0bbfcc98fa68c677 iwlwifi: dbg_ini: fix memory leak in alloc_sgtable
+  CVE-2019-19059: 6e41dd9731e13b0bdf2f57f84b9d25d009bd9f87 iwlwifi: pcie: fix memory leaks in iwl_pcie_ctxt_info_gen3_init
+  CVE-2019-19077: d203ff6a3059b7fc3a9b48048eaf5641ed7fda2c RDMA: Fix goto target to release the allocated memory
+  CVE-2019-20096: e58c590c772eb5dc5a3603c5aef4148f47ab2e20 dccp: Fix memleak in __feat_register_sp
+  CVE-2019-5108: 8f483142b0bb278f67eabccbe3d6a0e8c45284ad mac80211: Do not send Layer 2 Update frame before authorization
+  CVE-2019-9445: 4124927e36b7753efb6faf1a508e2bc6783343cf f2fs: check if file namelen exceeds max value
+
+CVEs fixed in 4.19.99:
+  CVE-2019-19046: 211eabc55d07fc3709e967b08b6f5bb77198dbd0 ipmi: Fix memory leak in __ipmi_bmc_register
+
+CVEs fixed in 4.19.100:
+  CVE-2019-14896: cbd56515be5a8ea97134ef762b7a2923b94cb9c4 libertas: Fix two buffer overflows at parsing bss descriptor
+  CVE-2019-14897: cbd56515be5a8ea97134ef762b7a2923b94cb9c4 libertas: Fix two buffer overflows at parsing bss descriptor
+  CVE-2020-8428: 752f72edea55f9b7c6fd019e71365def13a0f2b6 do_last(): fetch directory ->i_mode and ->i_uid before it's too late
+
+CVEs fixed in 4.19.103:
+  CVE-2019-3016: 25a7898937f4a9f32ca2d1e9b7f5f07176af8037 x86/kvm: Be careful not to clear KVM_VCPU_FLUSH_TLB bit
+
  
-CVEs Fixed in this 4.19.94 LTS 4.19 release 
+CVEs Fixed in this 4.19.106 LTS 4.19 release 
 ====================================================
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
@@ -363,9 +392,6 @@ CVEs Fixed in this 4.19.94 LTS 4.19 release
 # CVE-2019-12381
 0001-ip_sockglue-Fix-missing-check-bug-in-ip_ra_control-CVE-2019-12381.patch
 
-# CVE-2019-15217
-0001-media-usb-zr364xx-Fix-KASAN-null-ptr-deref-Read-in-z-CVE-2019-15217.patch
-
 # CVE-2019-3874
 0001-sctp-implement-memory-accounting-on-rx-path-CVE-2019-3874.patch
 0002-sctp-implement-memory-accounting-on-tx-path-CVE-2019-3874.patch
@@ -376,15 +402,6 @@ CVEs Fixed in this 4.19.94 LTS 4.19 release
 # CVE-2019-15099
 0001-ath10k-Fix-a-NULL-ptr-deref-bug-in-ath10k_usb_alloc-CVE-2019-15099.patch
 
-# CVE-2019-19058
-0001-iwlwifi-dbg_ini-fix-memory-leak-in-alloc_sgtable-CVE-2019-19058.patch
-
-# CVE-2019-19059
-0001-iwlwifi-pcie-fix-memory-leaks-in-iwl_pcie_ctxt_info-CVE-2019-19059.patch
-
-# CVE-2019-19066
-0001-scsi-bfa-release-allocated-memory-in-case-of-error-CVE-2019-19066.patch
-
 # CVE-2019-19067
 0001-drm-amdgpu-fix-multiple-memory-leaks-in-acp_hw_init-CVE-2019-19067.patch
 
@@ -394,26 +411,11 @@ CVEs Fixed in this 4.19.94 LTS 4.19 release
 # CVE-2019-19072
 0001-tracing-Have-error-path-in-predicate_parse-free-its-CVE-2019-19072.patch
  
-# CVE-2019-19068
-0001-rtl8xxxu-prevent-leaking-urb-CVE-2019-19068.patch
- 
 # CVE-2019-19054
 0001-media-rc-prevent-memory-leak-in-cx23888_ir_probe-CVE-2019-19054.patch
  
-# CVE-2019-19056 
-0001-mwifiex-pcie-Fix-memory-leak-in-mwifiex_pcie_alloc_c-CVE-2019-19056.patch
- 
-# CVE-2019-19046
-0001-ipmi-Fix-memory-leak-in-__ipmi_bmc_register-CVE-2019-19046.patch
- 
 # CVE-2019-19074
 0001-ath9k-release-allocated-buffer-if-timed-out-CVE-2019-19074.patch
- 
-# CVE-2019-19078
-0001-ath10k-fix-memory-leak-CVE-2019-19078.patch
- 
-# CVE-2019-19077
-0001-RDMA-Fix-goto-target-to-release-the-allocated-memory-CVE-2019-19077.patch
  
 # CVE-2019-18808
 0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-CVE-2019-18808.patch
@@ -435,5 +437,26 @@ CVEs Fixed in this 4.19.94 LTS 4.19 release
 
 # CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
+
+# CVE-2020-8648
+0001-vt-selection-close-sel_buffer-race.patch
+
+# CVE-2019-10220
+0002-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
+0003-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
+
+# CVE-2019-16234
+0004-iwlwifi-pcie-fix-rb_allocator-workqueue-allocation.patch
+
+# CVE-2019-19770
+0005-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
+0006-debugfs-simplify-__debugfs_remove_file.patch
+0007-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
+
+# CVE-2020-8647
+0008-vgacon-Fix-a-UAF-in-vgacon_invert_region.patch
+
+#CVE-2019-19768
+0001-blktrace-Protect-q-blk_trace-with-RCU.patch
  
 ================
