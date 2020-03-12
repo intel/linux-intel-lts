@@ -1218,10 +1218,10 @@ static u64 execlists_update_context(struct i915_request *rq)
 	 * an earlier request.
 	 */
 	tail = intel_ring_set_tail(rq->ring, rq->tail);
-	prev = ce->lrc_reg_state[CTX_RING_TAIL + 1];
+	prev = ce->lrc_reg_state[CTX_RING_TAIL];
 	if (unlikely(intel_ring_direction(rq->ring, tail, prev) <= 0))
 		desc |= CTX_DESC_FORCE_RESTORE;
-	ce->lrc_reg_state[CTX_RING_TAIL + 1] = tail;
+	ce->lrc_reg_state[CTX_RING_TAIL] = tail;
 	rq->tail = rq->wa_tail;
 
 	/*
