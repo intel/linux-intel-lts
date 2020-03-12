@@ -3335,9 +3335,10 @@ static int stmmac_request_irq(struct net_device *dev)
 		if (priv->netprox_irq > 0 && priv->netprox_irq != dev->irq) {
 			int_name = priv->int_name_netprox_irq;
 			sprintf(int_name, "%s:%s", dev->name, "netprox");
-			ret = request_irq(priv->netprox_irq,
-					  netproxy_irq,
-					  0, int_name, dev);
+			ret = request_threaded_irq(priv->netprox_irq,
+						   netproxy_isr,
+						   netproxy_isr_thread, 0,
+						   int_name, dev);
 			if (unlikely(ret < 0)) {
 				netdev_err(priv->dev,
 					   "%s: alloc netprox MSI %d (error: %d)\n",

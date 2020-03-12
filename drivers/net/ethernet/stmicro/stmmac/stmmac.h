@@ -280,7 +280,6 @@ struct stmmac_priv {
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 	/* Network Proxy A2H Worker */
 	struct workqueue_struct *netprox_wq;
-	struct work_struct netprox_task;
 	bool networkproxy_exit;
 #endif
 
