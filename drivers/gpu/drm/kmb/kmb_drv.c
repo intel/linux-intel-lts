@@ -383,15 +383,15 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 		 * disabled but actually disable the plane when EOF irq is
 		 * being handled.
 		 */
-		for (plane_id = LAYER_0; plane_id < KMB_MAX_PLANES;
-				plane_id++) {
+		for (plane_id = LAYER_0; plane_id < KMB_MAX_PLANES; plane_id++) {
 			if (plane_status[plane_id].disable) {
 				kmb_clr_bitmask_lcd(dev_p,
-					LCD_LAYERn_DMA_CFG(plane_id),
-					LCD_DMA_LAYER_ENABLE);
+						    LCD_LAYERn_DMA_CFG
+						    (plane_id),
+						    LCD_DMA_LAYER_ENABLE);
 
 				kmb_clr_bitmask_lcd(dev_p, LCD_CONTROL,
-					plane_status[plane_id].ctrl);
+					    plane_status[plane_id].ctrl);
 
 				plane_status[plane_id].disable = false;
 			}
@@ -401,11 +401,6 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 	if (status & LCD_INT_LINE_CMP) {
 		/* clear line compare interrupt */
 		kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_LINE_CMP);
-	}
-
-	if (status & LCD_INT_LAYER) {
-		/* Clear layer interrupts */
-		kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_LAYER);
 	}
 
 	if (status & LCD_INT_VERT_COMP) {
@@ -423,6 +418,59 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 			drm_handle_vblank(dev, 0);
 			break;
 		}
+	}
+
+	if (status & LCD_INT_DMA_ERR) {
+		val = (status & LCD_INT_DMA_ERR);
+		/* LAYER0 - VL0 */
+		if (val & LAYER0_DMA_FIFO_UNDEFLOW)
+			DRM_INFO("LAYER0:VL0 DMA UNDERFLOW val = 0x%lx", val);
+		if (val & LAYER0_DMA_FIFO_OVERFLOW)
+			DRM_INFO("LAYER0:VL0 DMA OVERFLOW val = 0x%lx", val);
+		if (val & LAYER0_DMA_CB_FIFO_OVERFLOW)
+			DRM_INFO("LAYER0:VL0 DMA CB OVERFLOW val = 0x%lx", val);
+		if (val & LAYER0_DMA_CB_FIFO_UNDERFLOW)
+			DRM_INFO("LAYER0:VL0 DMA CB UNDERFLOW val = 0x%lx",
+				 val);
+		if (val & LAYER0_DMA_CR_FIFO_UNDERFLOW)
+			DRM_INFO("LAYER0:VL0 DMA CR UNDERFLOW val = 0x%lx",
+				 val);
+		if (val & LAYER0_DMA_CR_FIFO_OVERFLOW)
+			DRM_INFO("LAYER0:VL0 DMA CR OVERFLOW val = 0x%lx", val);
+
+		/* LAYER1 - VL1 */
+		if (val & LAYER1_DMA_FIFO_UNDERFLOW)
+			DRM_INFO("LAYER1:VL1 DMA UNDERFLOW val = 0x%lx", val);
+		if (val & LAYER1_DMA_FIFO_OVERFLOW)
+			DRM_INFO("LAYER1:VL1 DMA OVERFLOW val = 0x%lx", val);
+		if (val & LAYER1_DMA_CB_FIFO_OVERFLOW)
+			DRM_INFO("LAYER1:VL1 DMA CB OVERFLOW val = 0x%lx", val);
+		if (val & LAYER1_DMA_CB_FIFO_UNDERFLOW)
+			DRM_INFO("LAYER1:VL1 DMA CB UNDERFLOW val = 0x%lx",
+				 val);
+		if (val & LAYER1_DMA_CR_FIFO_UNDERFLOW)
+			DRM_INFO("LAYER1:VL1 DMA CR UNDERFLOW val = 0x%lx",
+				 val);
+		if (val & LAYER1_DMA_CR_FIFO_OVERFLOW)
+			DRM_INFO("LAYER1:VL1 DMA CR OVERFLOW val = 0x%lx", val);
+
+		/* LAYER2 - GL0 */
+		if (val & LAYER2_DMA_FIFO_UNDERFLOW)
+			DRM_INFO("LAYER2:GL0 DMA UNDERFLOW val = 0x%lx", val);
+		if (val & LAYER2_DMA_FIFO_OVERFLOW)
+			DRM_INFO("LAYER2:GL0 DMA OVERFLOW val = 0x%lx", val);
+
+		/* LAYER3 - GL1 */
+		if (val & LAYER3_DMA_FIFO_UNDERFLOW)
+			DRM_INFO("LAYER3:GL1 DMA UNDERFLOW val = 0x%lx", val);
+		if (val & LAYER3_DMA_FIFO_UNDERFLOW)
+			DRM_INFO("LAYER3:GL1 DMA OVERFLOW val = 0x%lx", val);
+
+	}
+
+	if (status & LCD_INT_LAYER) {
+		/* Clear layer interrupts */
+		kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_LAYER);
 	}
 
 	/* Clear all interrupts */
