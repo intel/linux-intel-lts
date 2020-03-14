@@ -428,6 +428,35 @@ struct acrn_vm_pci_msix_remap {
 } __attribute__((aligned(8)));
 
 /**
+ * @brief Info to assign or deassign PCI for a VM
+ *
+ * the parameter for HC_ASSIGN_PCIDEV or HC_DEASSIGN_PCIDEV hypercall
+ */
+struct acrn_pcidev {
+	/** type of PCI device */
+	uint32_t type;
+
+	/** pass-through PCI device virtual BDF# */
+	uint16_t virt_bdf;
+
+	/** pass-through PCI device physical BDF# */
+	uint16_t phys_bdf;
+
+	/** raw data of PCI Interrupt Line */
+	uint8_t intr_line;
+
+	/** raw data of PCI Interrupt Pin */
+	uint8_t intr_pin;
+
+	/** raw data of PCI bar */
+	uint32_t bar[6];
+
+	/** reserved for extension */
+	uint32_t reserved[6];
+
+} __aligned(8);
+
+/**
  * @brief The guest config pointer offset.
  *
  * It's designed to support passing DM config data pointer, based on it,
