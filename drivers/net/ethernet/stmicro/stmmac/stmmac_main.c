@@ -5005,7 +5005,6 @@ static void stmmac_common_interrupt(struct stmmac_priv *priv)
 	u32 rx_cnt = priv->plat->rx_queues_to_use;
 	u32 tx_cnt = priv->plat->tx_queues_to_use;
 	u32 queues_count;
-	u32 queue;
 	bool xmac;
 
 	xmac = priv->plat->has_gmac4 || priv->plat->has_xgmac;
@@ -5023,7 +5022,6 @@ static void stmmac_common_interrupt(struct stmmac_priv *priv)
 	/* To handle GMAC own interrupts */
 	if ((priv->plat->has_gmac) || xmac) {
 		int status = stmmac_host_irq_status(priv, priv->hw, &priv->xstats);
-		int mtl_status;
 
 		if (unlikely(status)) {
 			/* For LPI we need to save the tx status */
@@ -5031,20 +5029,6 @@ static void stmmac_common_interrupt(struct stmmac_priv *priv)
 				priv->tx_path_in_lpi_mode = true;
 			if (status & CORE_IRQ_TX_PATH_EXIT_LPI_MODE)
 				priv->tx_path_in_lpi_mode = false;
-		}
-
-		for (queue = 0; queue < queues_count; queue++) {
-			struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
-
-			mtl_status = stmmac_host_mtl_irq_status(priv, priv->hw,
-								queue);
-			if (mtl_status != -EINVAL)
-				status |= mtl_status;
-
-			if (status & CORE_IRQ_MTL_RX_OVERFLOW)
-				stmmac_set_rx_tail_ptr(priv, priv->ioaddr,
-						       rx_q->rx_tail_addr,
-						       queue);
 		}
 
 		/* PCS link status */
@@ -5186,6 +5170,7 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	struct stmmac_rx_queue *rx_q = (struct stmmac_rx_queue *)data;
 	int chan = rx_q->queue_index;
 	struct stmmac_priv *priv;
+	int mtl_status;
 
 	priv = container_of(rx_q, struct stmmac_priv, rx_queue[chan]);
 
@@ -5197,6 +5182,16 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	/* Check if adapter is up */
 	if (test_bit(STMMAC_DOWN, &priv->state))
 		return IRQ_HANDLED;
+
+	mtl_status = stmmac_host_mtl_irq_status(priv, priv->hw,
+						chan);
+
+	if (mtl_status & CORE_IRQ_MTL_RX_OVERFLOW) {
+		stmmac_set_rx_tail_ptr(priv, priv->ioaddr,
+				       rx_q->rx_tail_addr,
+				       chan);
+		return IRQ_HANDLED;
+	}
 
 	/* Skip napi for XDP ZC queues to reduce latency.
 	 * Penalties of not using NAPI should be minimal for XDP's case.
@@ -6311,6 +6306,7 @@ int stmmac_dvr_probe(struct device *device,
 	priv->plat = plat_dat;
 	priv->ioaddr = res->addr;
 	priv->dev->base_addr = (unsigned long)res->addr;
+	priv->plat->dma_cfg->multi_msi_en = priv->plat->multi_msi_en;
 
 	priv->dev->irq = res->irq;
 	priv->wol_irq = res->wol_irq;

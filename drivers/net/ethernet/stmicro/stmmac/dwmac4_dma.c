@@ -146,6 +146,14 @@ static void dwmac4_dma_init(void __iomem *ioaddr,
 #endif
 
 	writel(value, ioaddr + DMA_SYS_BUS_MODE);
+
+	value = readl(ioaddr + DMA_BUS_MODE);
+
+	if (dma_cfg->multi_msi_en) {
+		value &= ~DMA_BUS_MODE_INTM_MASK;
+		value |= (DMA_BUS_MODE_INTM_MODE1 << DMA_BUS_MODE_INTM_SHIFT);
+	}
+	writel(value, ioaddr + DMA_BUS_MODE);
 }
 
 static void _dwmac4_dump_dma_regs(void __iomem *ioaddr, u32 channel,

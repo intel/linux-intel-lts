@@ -93,6 +93,7 @@ struct stmmac_dma_cfg {
 	int fixed_burst;
 	int mixed_burst;
 	bool aal;
+	bool multi_msi_en;
 };
 
 #define AXI_BLEN	7
