@@ -866,10 +866,9 @@ static int setup_gop_display(struct intel_vgpu *vgpu)
 	width--;
 	height--;
 	surf = vgpu->gm.high_gm_node.start;
+
 	ctl = PLANE_CTL_ENABLE | PLANE_CTL_FORMAT_XRGB_8888;
-	ctl |= PLANE_CTL_PIPE_GAMMA_ENABLE |
-		PLANE_CTL_PIPE_CSC_ENABLE |
-		PLANE_CTL_PLANE_GAMMA_DISABLE;
+
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
 	I915_WRITE_FW(PLANE_OFFSET(pipe, plane), 0);
 	I915_WRITE_FW(PLANE_STRIDE(pipe, plane), stride);
