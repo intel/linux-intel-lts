@@ -948,7 +948,7 @@ int stmmac_xsk_wakeup(struct net_device *dev, u32 queue, u32 flags)
 	struct stmmac_tx_queue *xdp_q;
 	struct stmmac_channel *ch;
 
-	xdp_q = &priv->xdp_queue[queue];
+	xdp_q = &priv->tx_queue[queue + qp_num];
 	ch = &priv->channel[queue + qp_num];
 
 	if (test_bit(STMMAC_DOWN, &priv->state))

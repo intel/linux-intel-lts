@@ -300,6 +300,9 @@ struct stmmac_priv {
 	/* WA for EST */
 	int est_hw_del;
 
+	/* Flag to track driver state from normal->xdp or vice versa */
+	bool cur_mode_is_normal;
+
 	/* XDP BPF Program */
 	struct bpf_prog *xdp_prog;
 
@@ -358,7 +361,11 @@ static inline bool stmmac_enabled_xdp(struct stmmac_priv *priv)
 
 static inline bool queue_is_xdp(struct stmmac_priv *priv, u32 queue_index)
 {
-	return (priv->tx_queue_is_xdp[queue_index] == true);
+	if (priv->tx_queue_is_xdp[queue_index] &&
+	    !priv->cur_mode_is_normal)
+		return true;
+
+	return false;
 }
 
 static inline void set_queue_xdp(struct stmmac_priv *priv, u32 queue_index)
@@ -374,6 +381,9 @@ static inline void clear_queue_xdp(struct stmmac_priv *priv, u32 queue_index)
 static inline struct stmmac_tx_queue *get_tx_queue(struct stmmac_priv *priv,
 						   u32 queue_index)
 {
+	if (queue_is_xdp(priv, queue_index) && !priv->cur_mode_is_normal)
+		return &priv->tx_queue[queue_index];
+
 	return queue_is_xdp(priv, queue_index) ?
 	       &priv->xdp_queue[queue_index - priv->plat->num_queue_pairs] :
 	       &priv->tx_queue[queue_index];
