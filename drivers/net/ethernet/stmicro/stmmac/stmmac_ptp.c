@@ -11,7 +11,9 @@
 #include "stmmac_ptp.h"
 #include "dwmac4.h"
 #include <linux/iopoll.h>
-
+#ifdef CONFIG_X86
+#include <asm/intel-family.h>
+#endif
 /**
  * stmmac_adjust_freq
  *
@@ -214,6 +216,8 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 	struct stmmac_priv *priv = (struct stmmac_priv *)ctx;
 	void __iomem *ptpaddr = priv->ptpaddr;
 	void __iomem *ioaddr = priv->hw->pcsr;
+	unsigned int ebx_numerator;
+	unsigned int unused[3];
 	unsigned long flags;
 	u32 num_snapshot;
 	u32 gpio_value;
@@ -288,9 +292,22 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 	 * compared to the PMC ART, so we will need to perform a multiplication
 	 * to match the PMC ART frequency.
 	 */
-	if (priv->plat->is_pse)
+	if (priv->plat->is_pse) {
 		system->cycles *= priv->plat->pmc_art_to_pse_art_ratio;
-
+		return 0;
+	}
+#ifdef CONFIG_X86
+	/* [REVERTME] Workaround: TigerLake Internal MCP A2 stepping has ART
+	 * value of 0.5x of actual ART. As it has same CPU family and model as
+	 * the rest of the TigerLak CPU skus, we can only differentiate them
+	 * using numerator value define in CPUID Leaf 15H. Note that this
+	 * workaround is not required for Tigerlake Internal MCP A6 stepping.
+	 */
+	cpuid(0x15, unused, &ebx_numerator, unused + 1, unused + 2);
+	if (boot_cpu_data.x86_model == INTEL_FAM6_TIGERLAKE_L &&
+	    ebx_numerator == 0x5e)
+		system->cycles *= 2;
+#endif
 	return 0;
 }
 
