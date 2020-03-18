@@ -631,7 +631,8 @@ void intel_vgpu_clean_display(struct intel_vgpu *vgpu)
 {
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 
-	if (IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv))
+	if (IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv) ||
+		IS_COFFEELAKE(dev_priv))
 		clean_virtual_monitors(vgpu);
 	else if (IS_SKYLAKE(dev_priv))
 		clean_virtual_dp_monitor(vgpu, PORT_D);
@@ -656,7 +657,8 @@ int intel_vgpu_init_display(struct intel_vgpu *vgpu, u64 resolution)
 
 	intel_vgpu_init_i2c_edid(vgpu);
 
-	if (IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv))
+	if (IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv) ||
+		IS_COFFEELAKE(dev_priv))
 		return setup_virtual_monitors(vgpu);
 	else if (IS_SKYLAKE(dev_priv))
 		return setup_virtual_monitor(vgpu, PORT_D, GVT_DP_D,
