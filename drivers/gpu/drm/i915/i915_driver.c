@@ -888,12 +888,29 @@ static void i915_virtualization_commit(struct drm_i915_private *i915)
  */
 int i915_driver_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
+	const struct intel_device_info *match_info =
+                (struct intel_device_info *)ent->driver_data;
 	struct drm_i915_private *i915;
 	int ret;
 
 	i915 = i915_driver_create(pdev, ent);
 	if (IS_ERR(i915))
 		return PTR_ERR(i915);
+
+	/*
+	 * Hack to enable CCS and set ppgtt_size to 47
+	 * on TGL and DG1 for testing purpose
+	 *
+	 */
+	if ((match_info->platform == INTEL_DG1 ||
+	    match_info->platform == INTEL_TIGERLAKE ||
+		match_info->platform == INTEL_ALDERLAKE_S ||
+		match_info->platform == INTEL_ALDERLAKE_P) &&
+	    (i915->params.enable_guc & ENABLE_GUC_SUBMISSION)
+	    && i915->params.enable_guc != -1) {
+		mkwrite_device_info(i915)->ppgtt_size = 47;
+		mkwrite_device_info(i915)->platform_engine_mask |= BIT(CCS0);
+	}
 
 	/* Disable nuclear pageflip by default on pre-ILK */
 	if (!i915->params.nuclear_pageflip && DISPLAY_VER(i915) < 5)
