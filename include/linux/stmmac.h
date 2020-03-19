@@ -233,8 +233,9 @@ struct plat_stmmacenet_data {
 	bool has_art;
 	int pmc_art_to_pse_art_ratio;
 	int int_snapshot_num;
+	bool int_snapshot_en;
 	int ext_snapshot_num;
-	int ext_snapshot_en;
+	bool ext_snapshot_en;
 	bool has_safety_feat;
 	bool is_hfpga;
 	bool is_pse;

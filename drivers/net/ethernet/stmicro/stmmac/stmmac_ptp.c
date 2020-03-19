@@ -219,8 +219,9 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 	u32 acr_value;
 	u64 art_time;
 	u64 ptp_time;
-	u32 v;
 	int i;
+
+	priv->plat->int_snapshot_en = 1;
 
 	/* Enable Internal snapshot trigger */
 	acr_value = readl(ptpaddr + PTP_ACR);
@@ -259,12 +260,8 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
 
 	/* Time sync done Indication - Interrupt method */
-	if (priv->hw->mdio_intr_en) {
-		if (!wait_event_timeout(priv->hw->mdio_busy_wait,
-					stmmac_cross_ts_isr(priv), HZ / 100))
-			return -ETIMEDOUT;
-	} else if (readl_poll_timeout(priv->ioaddr + GMAC_INT_STATUS, v,
-				     (v & GMAC_INT_TSIE), 100, 10000))
+	if (!wait_event_timeout(priv->tstamp_busy_wait,
+				stmmac_cross_ts_isr(priv), HZ / 100))
 		return -ETIMEDOUT;
 
 	num_snapshot = (readl(ioaddr + GMAC_TIMESTAMP_STATUS) &
@@ -282,6 +279,8 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 				   priv->plat->intel_adhoc_addr, &art_time);
 		*system = convert_art_to_tsc(art_time);
 	}
+
+	priv->plat->int_snapshot_en = 0;
 
 	/* In the case of PSE Local ART, it might be running different frequency
 	 * compared to the PMC ART, so we will need to perform a multiplication

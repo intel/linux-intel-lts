@@ -189,6 +189,7 @@ struct stmmac_priv {
 	struct device *device;
 	struct mac_device_info *hw;
 	int (*hwif_quirks)(struct stmmac_priv *priv);
+	wait_queue_head_t tstamp_busy_wait;
 	struct mutex lock;
 	int hwts_all;
 
