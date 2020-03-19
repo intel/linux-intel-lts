@@ -870,6 +870,21 @@ int i915_driver_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (IS_ERR(i915))
 		return PTR_ERR(i915);
 
+	/*
+	 * Hack to enable CCS and set ppgtt_size to 47
+	 * on TGL and DG1 for testing purpose
+	 *
+	 */
+	if ((match_info->platform == INTEL_DG1 ||
+	    match_info->platform == INTEL_TIGERLAKE ||
+		match_info->platform == INTEL_ALDERLAKE_S ||
+		match_info->platform == INTEL_ALDERLAKE_P) &&
+	    (i915->params.enable_guc & ENABLE_GUC_SUBMISSION)
+	    && i915->params.enable_guc != -1) {
+		mkwrite_device_info(i915)->ppgtt_size = 47;
+		mkwrite_device_info(i915)->platform_engine_mask |= BIT(CCS0);
+	}
+
 	/* Disable nuclear pageflip by default on pre-ILK */
 	if (!i915->params.nuclear_pageflip && match_info->graphics.ver < 5)
 		i915->drm.driver_features &= ~DRIVER_ATOMIC;
