@@ -523,10 +523,10 @@ struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr)
 	struct phy_device *phydev;
 	int err;
 
-	phydev = get_phy_device(bus, addr, false);
+	phydev = get_phy_device(bus, addr, true);
 	if (IS_ERR(phydev)) {
-		/* Try C45 to ensure we don't miss PHY that only talks C45 */
-		phydev = get_phy_device(bus, addr, true);
+		/* Try C22 if the PHY does not talk C45 */
+		phydev = get_phy_device(bus, addr, false);
 		if (IS_ERR(phydev))
 			return phydev;
 	}
