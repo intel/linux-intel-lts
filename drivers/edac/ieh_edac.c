@@ -36,7 +36,7 @@
 
 #include "edac_mc.h"
 
-#define IEH_REVISION	"v1.7"
+#define IEH_REVISION	"v1.8"
 
 #define EDAC_MOD_STR	"ieh_edac"
 #define IEH_NMI_NAME	"ieh"
@@ -174,6 +174,14 @@ static LIST_HEAD(south_ieh_list);
 
 static struct ieh_config tgl_u_cfg = {
 	.did	= IEH_DID_TGL_U,
+	.action	= RESTART,
+};
+
+/* Tiger Lake-H SoC */
+#define IEH_DID_TGL_H		0x43af
+
+static struct ieh_config tgl_h_cfg = {
+	.did	= IEH_DID_TGL_H,
 	.action	= RESTART,
 };
 
@@ -526,6 +534,7 @@ static struct notifier_block ieh_mce_dec = {
 
 static const struct x86_cpu_id ieh_cpuids[] = {
 	INTEL_CPU_FAM6(TIGERLAKE_L, tgl_u_cfg),
+	INTEL_CPU_FAM6(TIGERLAKE, tgl_h_cfg),
 	{}
 };
 MODULE_DEVICE_TABLE(x86cpu, ieh_cpuids);
