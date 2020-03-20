@@ -500,6 +500,15 @@ config XILINX_GMII2RGMII
 	  the Reduced Gigabit Media Independent Interface(RGMII) between
 	  Ethernet physical media devices and the Gigabit Ethernet controller.
 
+config INTEL_GPY_PHY
+	tristate "INTEL(R) Ethernet Network Connection GPY driver"
+	help
+	  This is the driver for the Intel Swanville low power Ethernet GPY
+	  PHY series.
+	  The PHY is INTEL(R) Ethernet Network Connection GPY211.
+
+	  Currently tested on GPY211 that mentioned above.
+
 endif # PHYLIB
 
 config MICREL_KS8995MA
