@@ -272,6 +272,7 @@ struct stmmac_priv {
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *dbgfs_dir;
+	struct notifier_block stmmac_notifier;
 #endif
 
 	unsigned long state;

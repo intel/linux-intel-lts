@@ -137,8 +137,11 @@ static int ucsi_exec_command(struct ucsi *ucsi, u64 cmd)
 	if (cci & UCSI_CCI_NOT_SUPPORTED)
 		return -EOPNOTSUPP;
 
-	if (cci & UCSI_CCI_ERROR)
+	if (cci & UCSI_CCI_ERROR) {
+		if (cmd == UCSI_GET_ERROR_STATUS)
+			return -EIO;
 		return ucsi_read_error(ucsi);
+	}
 
 	return UCSI_CCI_LENGTH(cci);
 }
@@ -197,7 +200,6 @@ void ucsi_altmode_update_active(struct ucsi_connector *con)
 {
 	const struct typec_altmode *altmode = NULL;
 	u64 command;
-	u16 version;
 	int ret;
 	u8 cur;
 	int i;
@@ -205,9 +207,7 @@ void ucsi_altmode_update_active(struct ucsi_connector *con)
 	command = UCSI_GET_CURRENT_CAM | UCSI_CONNECTOR_NUMBER(con->num);
 	ret = ucsi_run_command(con->ucsi, command, &cur, sizeof(cur));
 	if (ret < 0) {
-		ret = con->ucsi->ops->read(con->ucsi, UCSI_VERSION, &version,
-					   sizeof(version));
-		if (ret || version > 0x0100) {
+		if (con->ucsi->version > 0x0100) {
 			dev_err(con->ucsi->dev,
 				"GET_CURRENT_CAM command failed\n");
 			return;
@@ -1021,14 +1021,14 @@ EXPORT_SYMBOL_GPL(ucsi_destroy);
  */
 int ucsi_register(struct ucsi *ucsi)
 {
-	u16 version;
 	int ret;
 
-	ret = ucsi->ops->read(ucsi, UCSI_VERSION, &version, sizeof(version));
+	ret = ucsi->ops->read(ucsi, UCSI_VERSION, &ucsi->version,
+			      sizeof(ucsi->version));
 	if (ret)
 		return ret;
 
-	if (!version)
+	if (!ucsi->version)
 		return -ENODEV;
 
 	queue_work(system_long_wq, &ucsi->work);

@@ -463,6 +463,9 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 			break;
 		}
 
+		/* Correct the clk domain crossing CDC error */
+		adjust += -(2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate));
+
 		ns += adjust;
 		*hwtstamp = ns_to_ktime(ns);
 		netdev_dbg(priv->dev, "get valid TX hw timestamp %llu\n", ns);
@@ -513,6 +516,9 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			adjust += priv->plat->xpcs_rx_latency_2500;
 			break;
 		}
+
+		/* Correct the clk domain crossing CDC error */
+		adjust += 2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate);
 
 		ns -= adjust;
 		netdev_dbg(priv->dev, "get valid RX hw timestamp %llu\n", ns);
@@ -5911,10 +5917,6 @@ done:
 	return NOTIFY_DONE;
 }
 
-static struct notifier_block stmmac_notifier = {
-	.notifier_call = stmmac_device_event,
-};
-
 static void stmmac_init_fs(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
@@ -5930,14 +5932,15 @@ static void stmmac_init_fs(struct net_device *dev)
 	debugfs_create_file("dma_cap", 0444, priv->dbgfs_dir, dev,
 			    &stmmac_dma_cap_fops);
 
-	register_netdevice_notifier(&stmmac_notifier);
+	priv->stmmac_notifier.notifier_call = &stmmac_device_event;
+	register_netdevice_notifier(&priv->stmmac_notifier);
 }
 
 static void stmmac_exit_fs(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
 
-	unregister_netdevice_notifier(&stmmac_notifier);
+	unregister_netdevice_notifier(&priv->stmmac_notifier);
 	debugfs_remove_recursive(priv->dbgfs_dir);
 }
 #endif /* CONFIG_DEBUG_FS */

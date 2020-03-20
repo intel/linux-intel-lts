@@ -108,16 +108,26 @@ int ptp_open(struct posix_clock *pc, fmode_t fmode)
 }
 
 /* Returns -1 if any reserved fields are non-zero */
-static inline int check_rsv_field(unsigned int *field, size_t size)
+static inline int _check_rsv_field(unsigned int *field, size_t size)
 {
 	unsigned int *iter;
 	int ret = 0;
 
-	for(iter = field; iter < field+size && ret == 0; ++iter)
-		ret = *field == 0 ? 0 : -1;
+	for (iter = field; iter < field+size && ret == 0; ++iter)
+		ret = *iter == 0 ? 0 : -1;
 
 	return ret;
 }
+#define check_rsv_field(field) _check_rsv_field(field, ARRAY_SIZE(field))
+
+static inline void _zero_rsv_field(unsigned int *field, size_t size)
+{
+	unsigned int *iter;
+
+	for (iter = field; iter < field+size; ++iter)
+		*iter = 0;
+}
+#define zero_rsv_field(field) _zero_rsv_field(field, ARRAY_SIZE(field))
 
 long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 {
@@ -168,7 +178,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			req.extts.flags |= PTP_STRICT_FLAGS;
 			/* Make sure no reserved bit is set. */
 			if ((req.extts.flags & ~PTP_EXTTS_VALID_FLAGS) ||
-			    req.extts.rsv[0] || req.extts.rsv[1]) {
+			    check_rsv_field(req.extts.rsv)) {
 				err = -EINVAL;
 				break;
 			}
@@ -180,8 +190,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			}
 		} else if (cmd == PTP_EXTTS_REQUEST) {
 			req.extts.flags &= PTP_EXTTS_V1_VALID_FLAGS;
-			req.extts.rsv[0] = 0;
-			req.extts.rsv[1] = 0;
+			zero_rsv_field(req.extts.rsv);
 		}
 		if (req.extts.index >= ops->n_ext_ts) {
 			err = -EINVAL;
@@ -202,17 +211,20 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			break;
 		}
 		if (((req.perout.flags & ~PTP_PEROUT_VALID_FLAGS) ||
-			req.perout.rsv[0] || req.perout.rsv[1] ||
-			req.perout.rsv[2] || req.perout.rsv[3]) &&
-			cmd == PTP_PEROUT_REQUEST2) {
+		     check_rsv_field(req.perout.rsv)) &&
+		    cmd == PTP_PEROUT_REQUEST2) {
 			err = -EINVAL;
 			break;
 		} else if (cmd == PTP_PEROUT_REQUEST) {
 			req.perout.flags &= PTP_PEROUT_V1_VALID_FLAGS;
-			req.perout.rsv[0] = 0;
-			req.perout.rsv[1] = 0;
-			req.perout.rsv[2] = 0;
-			req.perout.rsv[3] = 0;
+			zero_rsv_field(req.perout.rsv);
+		}
+		/* These flags don't make sense together */
+		if (cmd == PTP_PEROUT_REQUEST2 &&
+		    req.perout.flags & PTP_PEROUT_FREQ_ADJ &&
+		    req.perout.flags & PTP_PEROUT_ONE_SHOT) {
+			err = -EINVAL;
+			break;
 		}
 		if (req.perout.index >= ops->n_per_out) {
 			err = -EINVAL;
@@ -231,9 +243,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			break;
 		}
-		if (counttstamp.flags & ~PTP_EVENT_COUNT_TSTAMP_POL_LOW)
-			counttstamp.flags &= PTP_EVENT_COUNT_TSTAMP_POL_LOW;
-		if (counttstamp.rsv[0] || counttstamp.rsv[1]) {
+		if (check_rsv_field(counttstamp.rsv)) {
 			err = -EINVAL;
 			break;
 		}
@@ -292,7 +302,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			break;
 		}
 		if (extoff->n_samples > PTP_MAX_SAMPLES
-		    || extoff->rsv[0] || extoff->rsv[1] || extoff->rsv[2]) {
+		    || check_rsv_field(extoff->rsv)) {
 			err = -EINVAL;
 			break;
 		}
@@ -352,12 +362,11 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			break;
 		}
-		if (check_rsv_field(pd.rsv, sizeof(pd.rsv)/sizeof(pd.rsv[0])
-				&& cmd == PTP_PIN_GETFUNC2)) {
+		if (check_rsv_field(pd.rsv) && cmd == PTP_PIN_GETFUNC2) {
 			err = -EINVAL;
 			break;
 		} else if (cmd == PTP_PIN_GETFUNC) {
-			memset(pd.rsv, 0, sizeof(pd.rsv));
+			zero_rsv_field(pd.rsv);
 		}
 		pin_index = pd.index;
 		if (pin_index >= ops->n_pins) {
@@ -379,12 +388,11 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			break;
 		}
-		if (check_rsv_field(pd.rsv, sizeof(pd.rsv)/sizeof(pd.rsv[0])
-				    && cmd == PTP_PIN_SETFUNC2)) {
+		if (check_rsv_field(pd.rsv) && cmd == PTP_PIN_SETFUNC2) {
 			err = -EINVAL;
 			break;
 		} else if (cmd == PTP_PIN_SETFUNC) {
-			memset(pd.rsv, 0, sizeof(pd.rsv));
+			zero_rsv_field(pd.rsv);
 		}
 		pin_index = pd.index;
 		if (pin_index >= ops->n_pins) {

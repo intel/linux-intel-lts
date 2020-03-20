@@ -107,21 +107,18 @@ config PTP_1588_CLOCK_PCH
 	  To compile this driver as a module, choose M here: the module
 	  will be called ptp_pch.
 
-config PTP_INTEL_TGPIO
-	tristate "Intel Timed GPIO"
-	depends on X86
-	depends on PCI
-	imply PTP_1588_CLOCK
-	help
-	  This driver asdds support for Intel Timed GPIO
-
 config PTP_INTEL_PMC_TGPIO
 	tristate "Intel PMC Timed GPIO"
 	depends on X86
 	depends on ACPI
-	imply PTP_1588_CLOCK
+	depends on PTP_1588_CLOCK
 	help
-	  This driver adds support for Intel PMC Timed GPIO Controller
+	  This driver adds support for Intel PMC Timed-Aware GPIO (TGPIO)
+	  Controller. The device clock used to drive TGPIO logic is the
+	  Always Running Timer (ART).
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called ptp-intel-pmc-tgpio.
 
 config PTP_1588_CLOCK_KVM
 	tristate "KVM virtual PTP clock"

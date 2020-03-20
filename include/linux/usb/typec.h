@@ -168,7 +168,7 @@ struct typec_partner_desc {
 	struct usb_pd_identity	*identity;
 };
 
-/*
+/**
  * struct typec_operations - USB Type-C Port Operations
  * @try_role: Set data role preference for DRP port
  * @dr_set: Set Data Role
@@ -178,10 +178,11 @@ struct typec_partner_desc {
  */
 struct typec_operations {
 	int (*try_role)(struct typec_port *port, int role);
-	int (*dr_set)(struct typec_port *port, enum typec_data_role);
-	int (*pr_set)(struct typec_port *port, enum typec_role);
-	int (*vconn_set)(struct typec_port *port, bool source);
-	int (*port_type_set)(struct typec_port *port, enum typec_port_type);
+	int (*dr_set)(struct typec_port *port, enum typec_data_role role);
+	int (*pr_set)(struct typec_port *port, enum typec_role role);
+	int (*vconn_set)(struct typec_port *port, enum typec_role role);
+	int (*port_type_set)(struct typec_port *port,
+			     enum typec_port_type type);
 };
 
 /*

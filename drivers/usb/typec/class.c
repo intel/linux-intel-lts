@@ -46,19 +46,14 @@ struct typec_port {
 	enum typec_role			vconn_role;
 	enum typec_pwr_opmode		pwr_opmode;
 	enum typec_port_type		port_type;
-	enum typec_port_type		fixed_role;
-	enum typec_port_data		port_roles;
-	enum typec_accessory		accessory[TYPEC_MAX_ACCESSORY];
 	struct mutex			port_type_lock;
-
-	u16				revision;
-	u16				pd_revision;
 
 	enum typec_orientation		orientation;
 	struct typec_switch		*sw;
 	struct typec_mux		*mux;
 
-	const struct typec_operations	*ops;
+	const struct typec_capability	*cap;
+	const struct typec_operations   *ops;
 };
 
 #define to_typec_port(_dev_) container_of(_dev_, struct typec_port, dev)
@@ -956,8 +951,13 @@ preferred_role_store(struct device *dev, struct device_attribute *attr,
 	int role;
 	int ret;
 
-	if (port->fixed_role != TYPEC_PORT_DRP) {
+	if (port->cap->type != TYPEC_PORT_DRP) {
 		dev_dbg(dev, "Preferred role only supported with DRP ports\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!port->ops || !port->ops->try_role) {
+		dev_dbg(dev, "Setting preferred role not supported\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -967,11 +967,6 @@ preferred_role_store(struct device *dev, struct device_attribute *attr,
 			role = TYPEC_NO_PREFERRED_ROLE;
 		else
 			return -EINVAL;
-	}
-
-	if (!port->ops || !port->ops->try_role) {
-		dev_dbg(dev, "Setting preferred role not supported\n");
-		return -EOPNOTSUPP;
 	}
 
 	ret = port->ops->try_role(port, role);
@@ -988,7 +983,7 @@ preferred_role_show(struct device *dev, struct device_attribute *attr,
 {
 	struct typec_port *port = to_typec_port(dev);
 
-	if (port->fixed_role != TYPEC_PORT_DRP)
+	if (port->cap->type != TYPEC_PORT_DRP)
 		return 0;
 
 	if (port->prefer_role < 0)
@@ -1005,18 +1000,17 @@ static ssize_t data_role_store(struct device *dev,
 	struct typec_port *port = to_typec_port(dev);
 	int ret;
 
+	if (!port->ops || !port->ops->dr_set) {
+		dev_dbg(dev, "data role swapping not supported\n");
+		return -EOPNOTSUPP;
+	}
+
 	ret = sysfs_match_string(typec_data_roles, buf);
 	if (ret < 0)
 		return ret;
 
 	mutex_lock(&port->port_type_lock);
-	if (port->port_roles != TYPEC_PORT_DRD) {
-		ret = -EOPNOTSUPP;
-		goto unlock_and_ret;
-	}
-
-	if (!port->ops || !port->ops->dr_set) {
-		dev_dbg(dev, "data role swapping not supported\n");
+	if (port->cap->data != TYPEC_PORT_DRD) {
 		ret = -EOPNOTSUPP;
 		goto unlock_and_ret;
 	}
@@ -1036,7 +1030,7 @@ static ssize_t data_role_show(struct device *dev,
 {
 	struct typec_port *port = to_typec_port(dev);
 
-	if (port->port_roles == TYPEC_PORT_DRD)
+	if (port->cap->data == TYPEC_PORT_DRD)
 		return sprintf(buf, "%s\n", port->data_role == TYPEC_HOST ?
 			       "[host] device" : "host [device]");
 
@@ -1051,8 +1045,13 @@ static ssize_t power_role_store(struct device *dev,
 	struct typec_port *port = to_typec_port(dev);
 	int ret;
 
-	if (!port->pd_revision) {
+	if (!port->cap->pd_revision) {
 		dev_dbg(dev, "USB Power Delivery not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!port->ops || !port->ops->pr_set) {
+		dev_dbg(dev, "power role swapping not supported\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -1066,24 +1065,18 @@ static ssize_t power_role_store(struct device *dev,
 		return ret;
 
 	mutex_lock(&port->port_type_lock);
-	if (port->fixed_role != TYPEC_PORT_DRP) {
+	if (port->port_type != TYPEC_PORT_DRP) {
 		dev_dbg(dev, "port type fixed at \"%s\"",
-			     typec_port_power_roles[port->fixed_role]);
+			     typec_port_power_roles[port->port_type]);
 		ret = -EOPNOTSUPP;
 		goto unlock_and_ret;
 	}
-
-	if (!port->ops || !port->ops->pr_set) {
-		dev_dbg(dev, "power role swapping not supported\n");
-		ret = -EOPNOTSUPP;
-		goto unlock_and_ret;
-	}
-	ret = size;
 
 	ret = port->ops->pr_set(port, ret);
 	if (ret)
 		goto unlock_and_ret;
 
+	ret = size;
 unlock_and_ret:
 	mutex_unlock(&port->port_type_lock);
 	return ret;
@@ -1094,7 +1087,7 @@ static ssize_t power_role_show(struct device *dev,
 {
 	struct typec_port *port = to_typec_port(dev);
 
-	if (port->fixed_role == TYPEC_PORT_DRP)
+	if (port->cap->type == TYPEC_PORT_DRP)
 		return sprintf(buf, "%s\n", port->pwr_role == TYPEC_SOURCE ?
 			       "[source] sink" : "source [sink]");
 
@@ -1110,8 +1103,8 @@ port_type_store(struct device *dev, struct device_attribute *attr,
 	int ret;
 	enum typec_port_type type;
 
-	if ((!port->ops || !port->ops->port_type_set) ||
-	    port->fixed_role != TYPEC_PORT_DRP) {
+	if (port->cap->type != TYPEC_PORT_DRP ||
+	    !port->ops || !port->ops->port_type_set) {
 		dev_dbg(dev, "changing port type not supported\n");
 		return -EOPNOTSUPP;
 	}
@@ -1123,7 +1116,7 @@ port_type_store(struct device *dev, struct device_attribute *attr,
 	type = ret;
 	mutex_lock(&port->port_type_lock);
 
-	if (port->fixed_role == type) {
+	if (port->port_type == type) {
 		ret = size;
 		goto unlock_and_ret;
 	}
@@ -1132,7 +1125,7 @@ port_type_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		goto unlock_and_ret;
 
-	port->fixed_role = type;
+	port->port_type = type;
 	ret = size;
 
 unlock_and_ret:
@@ -1146,11 +1139,11 @@ port_type_show(struct device *dev, struct device_attribute *attr,
 {
 	struct typec_port *port = to_typec_port(dev);
 
-	if (port->fixed_role == TYPEC_PORT_DRP)
+	if (port->cap->type == TYPEC_PORT_DRP)
 		return sprintf(buf, "%s\n",
-			       typec_port_types_drp[port->fixed_role]);
+			       typec_port_types_drp[port->port_type]);
 
-	return sprintf(buf, "[%s]\n", typec_port_power_roles[port->fixed_role]);
+	return sprintf(buf, "[%s]\n", typec_port_power_roles[port->cap->type]);
 }
 static DEVICE_ATTR_RW(port_type);
 
@@ -1179,8 +1172,13 @@ static ssize_t vconn_source_store(struct device *dev,
 	bool source;
 	int ret;
 
-	if (!port->pd_revision) {
+	if (!port->cap->pd_revision) {
 		dev_dbg(dev, "VCONN swap depends on USB Power Delivery\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!port->ops || !port->ops->vconn_set) {
+		dev_dbg(dev, "VCONN swapping not supported\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -1188,12 +1186,7 @@ static ssize_t vconn_source_store(struct device *dev,
 	if (ret)
 		return ret;
 
-	if (!port->ops || !port->ops->vconn_set) {
-		dev_dbg(dev, "VCONN swapping not supported\n");
-		return -EOPNOTSUPP;
-	}
-
-	ret = port->ops->vconn_set(port, source);
+	ret = port->ops->vconn_set(port, (enum typec_role)source);
 	if (ret)
 		return ret;
 
@@ -1218,10 +1211,10 @@ static ssize_t supported_accessory_modes_show(struct device *dev,
 	ssize_t ret = 0;
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(port->accessory); i++) {
-		if (port->accessory[i])
+	for (i = 0; i < ARRAY_SIZE(port->cap->accessory); i++) {
+		if (port->cap->accessory[i])
 			ret += sprintf(buf + ret, "%s ",
-			       typec_accessory_modes[port->accessory[i]]);
+			       typec_accessory_modes[port->cap->accessory[i]]);
 	}
 
 	if (!ret)
@@ -1238,7 +1231,7 @@ static ssize_t usb_typec_revision_show(struct device *dev,
 				       char *buf)
 {
 	struct typec_port *port = to_typec_port(dev);
-	u16 rev = port->revision;
+	u16 rev = port->cap->revision;
 
 	return sprintf(buf, "%d.%d\n", (rev >> 8) & 0xff, (rev >> 4) & 0xf);
 }
@@ -1250,7 +1243,7 @@ static ssize_t usb_power_delivery_revision_show(struct device *dev,
 {
 	struct typec_port *p = to_typec_port(dev);
 
-	return sprintf(buf, "%d\n", (p->pd_revision >> 8) & 0xff);
+	return sprintf(buf, "%d\n", (p->cap->pd_revision >> 8) & 0xff);
 }
 static DEVICE_ATTR_RO(usb_power_delivery_revision);
 
@@ -1287,6 +1280,7 @@ static void typec_release(struct device *dev)
 	ida_destroy(&port->mode_ids);
 	typec_switch_put(port->sw);
 	typec_mux_put(port->mux);
+	kfree(port->cap);
 	kfree(port);
 }
 
@@ -1551,7 +1545,6 @@ struct typec_port *typec_register_port(struct device *parent,
 	struct typec_port *port;
 	int ret;
 	int id;
-	int i;
 
 	port = kzalloc(sizeof(*port), GFP_KERNEL);
 	if (!port)
@@ -1601,15 +1594,7 @@ struct typec_port *typec_register_port(struct device *parent,
 	port->id = id;
 	port->ops = cap->ops;
 	port->port_type = cap->type;
-	port->fixed_role = cap->type;
-	port->port_roles = cap->data;
 	port->prefer_role = cap->prefer_role;
-
-	port->revision = cap->revision;
-	port->pd_revision = cap->pd_revision;
-
-	for (i = 0; i < TYPEC_MAX_ACCESSORY; i++)
-		port->accessory[i] = cap->accessory[i];
 
 	device_initialize(&port->dev);
 	port->dev.class = typec_class;
@@ -1618,6 +1603,12 @@ struct typec_port *typec_register_port(struct device *parent,
 	port->dev.type = &typec_port_dev_type;
 	dev_set_name(&port->dev, "port%d", id);
 	dev_set_drvdata(&port->dev, cap->driver_data);
+
+	port->cap = kmemdup(cap, sizeof(*cap), GFP_KERNEL);
+	if (!port->cap) {
+		put_device(&port->dev);
+		return ERR_PTR(-ENOMEM);
+	}
 
 	port->sw = typec_switch_get(&port->dev);
 	if (IS_ERR(port->sw)) {

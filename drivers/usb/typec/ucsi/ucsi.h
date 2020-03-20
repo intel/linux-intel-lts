@@ -81,7 +81,7 @@ void ucsi_connector_change(struct ucsi *ucsi, u8 num);
 #define UCSI_GET_CONNECTOR_STATUS	0x12
 #define UCSI_GET_ERROR_STATUS		0x13
 
-#define UCSI_CONNECTOR_NUMBER(_num_)		((_num_) << 16)
+#define UCSI_CONNECTOR_NUMBER(_num_)		((u64)(_num_) << 16)
 
 /* CONNECTOR_RESET command bits */
 #define UCSI_CONNECTOR_RESET_HARD		BIT(23) /* Deprecated in v1.1 */
@@ -94,15 +94,15 @@ void ucsi_connector_change(struct ucsi *ucsi, u8 num);
 #define UCSI_ENABLE_NTFY_CMD_COMPLETE		BIT(16)
 #define UCSI_ENABLE_NTFY_EXT_PWR_SRC_CHANGE	BIT(17)
 #define UCSI_ENABLE_NTFY_PWR_OPMODE_CHANGE	BIT(18)
-#define UCSI_ENABLE_NTFY_CAP_CHANGE		BIT(19)
-#define UCSI_ENABLE_NTFY_PWR_LEVEL_CHANGE	BIT(20)
-#define UCSI_ENABLE_NTFY_PD_RESET_COMPLETE	BIT(21)
-#define UCSI_ENABLE_NTFY_CAM_CHANGE		BIT(22)
-#define UCSI_ENABLE_NTFY_BAT_STATUS_CHANGE	BIT(23)
-#define UCSI_ENABLE_NTFY_PARTNER_CHANGE		BIT(24)
-#define UCSI_ENABLE_NTFY_PWR_DIR_CHANGE		BIT(25)
-#define UCSI_ENABLE_NTFY_CONNECTOR_CHANGE	BIT(26)
-#define UCSI_ENABLE_NTFY_ERROR			BIT(27)
+#define UCSI_ENABLE_NTFY_CAP_CHANGE		BIT(21)
+#define UCSI_ENABLE_NTFY_PWR_LEVEL_CHANGE	BIT(22)
+#define UCSI_ENABLE_NTFY_PD_RESET_COMPLETE	BIT(23)
+#define UCSI_ENABLE_NTFY_CAM_CHANGE		BIT(24)
+#define UCSI_ENABLE_NTFY_BAT_STATUS_CHANGE	BIT(25)
+#define UCSI_ENABLE_NTFY_PARTNER_CHANGE		BIT(27)
+#define UCSI_ENABLE_NTFY_PWR_DIR_CHANGE		BIT(28)
+#define UCSI_ENABLE_NTFY_CONNECTOR_CHANGE	BIT(30)
+#define UCSI_ENABLE_NTFY_ERROR			BIT(31)
 #define UCSI_ENABLE_NTFY_ALL			0xdbe70000
 
 /* SET_UOR command bits */
@@ -230,10 +230,10 @@ struct ucsi_connector_status {
 #define   UCSI_CONSTAT_PWR_OPMODE_TYPEC3_0	5
 #define UCSI_CONSTAT_CONNECTED			BIT(3)
 #define UCSI_CONSTAT_PWR_DIR			BIT(4)
-#define UCSI_CONSTAT_PARTNER_FLAGS(_f_)		((_f_) & GENMASK(12, 5) >> 5)
+#define UCSI_CONSTAT_PARTNER_FLAGS(_f_)		(((_f_) & GENMASK(12, 5)) >> 5)
 #define   UCSI_CONSTAT_PARTNER_FLAG_USB		1
 #define   UCSI_CONSTAT_PARTNER_FLAG_ALT_MODE	2
-#define UCSI_CONSTAT_PARTNER_TYPE(_f_)		((_f_) & GENMASK(15, 13) >> 13)
+#define UCSI_CONSTAT_PARTNER_TYPE(_f_)		(((_f_) & GENMASK(15, 13)) >> 13)
 #define   UCSI_CONSTAT_PARTNER_TYPE_DFP		1
 #define   UCSI_CONSTAT_PARTNER_TYPE_UFP		2
 #define   UCSI_CONSTAT_PARTNER_TYPE_CABLE	3 /* Powered Cable */
@@ -247,7 +247,7 @@ struct ucsi_connector_status {
 #define   UCSI_CONSTAT_BC_NOMINAL_CHARGING	1
 #define   UCSI_CONSTAT_BC_SLOW_CHARGING		2
 #define   UCSI_CONSTAT_BC_TRICKLE_CHARGING	3
-#define UCSI_CONSTAT_PROVIDER_CAP_LIMIT(_p_)	((_p_) & GENMASK(6, 3) >> 3)
+#define UCSI_CONSTAT_PROVIDER_CAP_LIMIT(_p_)	(((_p_) & GENMASK(6, 3)) >> 3)
 #define   UCSI_CONSTAT_CAP_PWR_LOWERED		0
 #define   UCSI_CONSTAT_CAP_PWR_BUDGET_LIMIT	1
 } __packed;
@@ -255,6 +255,7 @@ struct ucsi_connector_status {
 /* -------------------------------------------------------------------------- */
 
 struct ucsi {
+	u16 version;
 	struct device *dev;
 	struct driver_data *driver_data;
 

@@ -284,6 +284,13 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 		*system = convert_art_to_tsc(art_time);
 	}
 
+	/* In the case of PSE Local ART, it might be running different frequency
+	 * compared to the PMC ART, so we will need to perform a multiplication
+	 * to match the PMC ART frequency.
+	 */
+	if (priv->plat->is_pse)
+		system->cycles *= priv->plat->pmc_art_to_pse_art_ratio;
+
 	return 0;
 }
 

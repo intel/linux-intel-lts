@@ -37,14 +37,8 @@
 /*
  * Bits of the ptp_pin_desc.flags field:
  */
-#define PTP_PINDESC_INPUTDISABLE	(1<<0)
-#define PTP_PINDESC_COUNTVALID		(1<<1)
-
-/*
- * Pin description flags (read only) for PTP_PIN_GETFUNC2
- */
-#define PTP_PINDESC_VALID_FLAGS	(PTP_PINDESC_INPUTDISABLE |	\
-				 PTP_PINDESC_COUNTVALID)
+#define PTP_PINDESC_EVTCNTVALID	(1<<0)
+#define PTP_PINDESC_INPUTPOLL	(1<<1)
 
 /*
  * flag fields valid for the new PTP_EXTTS_REQUEST2 ioctl.
@@ -121,15 +115,11 @@ struct ptp_perout_request {
 };
 
 struct ptp_event_count_tstamp {
-	unsigned int index;
-
-#define PTP_EVENT_COUNT_TSTAMP_POL_HIGH 0
-#define PTP_EVENT_COUNT_TSTAMP_POL_LOW BIT(0)
-	unsigned int flags;
-
 	struct ptp_clock_time device_time;
 	unsigned long long event_count;
-	unsigned int rsv[2];          /* Reserved for future use. */
+	unsigned int index;
+	unsigned int flags;
+	unsigned int rsv[4];          /* Reserved for future use. */
 };
 
 #define PTP_MAX_SAMPLES 25 /* Maximum allowed offset measurement samples. */
