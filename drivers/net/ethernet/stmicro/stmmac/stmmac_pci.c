@@ -539,17 +539,28 @@ static int tgl_common_data(struct pci_dev *pdev,
 	return 0;
 }
 
-static int tgl_sgmii_data(struct pci_dev *pdev,
-			  struct plat_stmmacenet_data *plat)
+static int tgl_sgmii_phy0_data(struct pci_dev *pdev,
+			       struct plat_stmmacenet_data *plat)
 {
-	plat->bus_id = 1;
 	plat->phy_addr = 0;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	return tgl_common_data(pdev, plat);
 }
 
-static struct stmmac_pci_info tgl_sgmii1g_pci_info = {
-	.setup = tgl_sgmii_data,
+static struct stmmac_pci_info tgl_sgmii1g_phy0_pci_info = {
+	.setup = tgl_sgmii_phy0_data,
+};
+
+static int tgl_sgmii_phy1_data(struct pci_dev *pdev,
+			       struct plat_stmmacenet_data *plat)
+{
+	plat->phy_addr = 1;
+	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	return tgl_common_data(pdev, plat);
+}
+
+static struct stmmac_pci_info tgl_sgmii1g_phy1_pci_info = {
+	.setup = tgl_sgmii_phy1_data,
 };
 
 static int synp_haps_sgmii_data(struct pci_dev *pdev,
@@ -1061,6 +1072,8 @@ static SIMPLE_DEV_PM_OPS(stmmac_pm_ops, stmmac_pci_suspend, stmmac_pci_resume);
 #define STMMAC_EHL_PSE1_SGMII1G_ID	0x4bb1
 #define STMMAC_EHL_PSE1_SGMII2G5_ID	0x4bb2
 #define STMMAC_TGL_SGMII1G_ID	0xa0ac
+#define STMMAC_TGLH_SGMII1G_0_ID 0x43ac
+#define STMMAC_TGLH_SGMII1G_1_ID 0x43a2
 #define STMMAC_GMAC5_ID		0x7102
 #define DEVICE_ID_HAPS_6X	0x7101
 #define STMMAC_ICP_LP_ID	0x34ac
@@ -1089,7 +1102,12 @@ static const struct pci_device_id stmmac_id_table[] = {
 		      ehl_pse1_sgmii1g_pci_info),
 	STMMAC_DEVICE(INTEL, STMMAC_EHL_PSE1_SGMII2G5_ID,
 		      ehl_pse1_sgmii1g_pci_info),
-	STMMAC_DEVICE(INTEL, STMMAC_TGL_SGMII1G_ID, tgl_sgmii1g_pci_info),
+	STMMAC_DEVICE(INTEL, STMMAC_TGL_SGMII1G_ID,
+		      tgl_sgmii1g_phy0_pci_info),
+	STMMAC_DEVICE(INTEL, STMMAC_TGLH_SGMII1G_0_ID,
+		      tgl_sgmii1g_phy0_pci_info),
+	STMMAC_DEVICE(INTEL, STMMAC_TGLH_SGMII1G_1_ID,
+		      tgl_sgmii1g_phy1_pci_info),
 	STMMAC_DEVICE(SYNOPSYS, STMMAC_GMAC5_ID, snps_gmac5_pci_info),
 	STMMAC_DEVICE(SYNOPSYS, DEVICE_ID_HAPS_6X, synp_haps_pci_info),
 	STMMAC_DEVICE(INTEL, STMMAC_ICP_LP_ID, icl_pci_info),
