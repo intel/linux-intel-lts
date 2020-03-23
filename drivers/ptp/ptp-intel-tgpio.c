@@ -328,11 +328,18 @@ static int intel_tgpio_config_input(struct intel_tgpio *tgpio,
 
 		ctrl |= TGPIOCTL_EN;
 	} else {
-		tgpio->irq_mask &= ~TGPIOINT_EVENT_INTERRUPT(index);
 		ctrl &= ~TGPIOCTL_EN;
+		intel_tgpio_writel(tgpio->base, offset, ctrl);
+
+		intel_tgpio_writeq(tgpio->base, TGPIOCOMPV31_0(index), 0);
+		tgpio->irq_mask &= ~TGPIOINT_EVENT_INTERRUPT(index);
+		ctrl = 0x0;
 	}
 
+	/* For everytime we mask the interrupt, we need to */
+	/* flush the corresponding Raw Interrupt Status  */
 	intel_tgpio_writel(tgpio->base, TGPIOMSC, tgpio->irq_mask);
+	intel_tgpio_writel(tgpio->base, TGPIOICR, tgpio->irq_mask);
 	intel_tgpio_writel(tgpio->base, offset, ctrl);
 
 	return 0;
@@ -375,6 +382,11 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 		ctrl |= TGPIOCTL_EN;
 	} else {
 		ctrl &= ~TGPIOCTL_EN;
+		intel_tgpio_writel(tgpio->base, offset, ctrl);
+
+		intel_tgpio_writeq(tgpio->base, TGPIOCOMPV31_0(index), 0);
+		intel_tgpio_writeq(tgpio->base, TGPIOPIV31_0(index), 0);
+		ctrl = 0x0;
 	}
 
 	intel_tgpio_writel(tgpio->base, offset, ctrl);
