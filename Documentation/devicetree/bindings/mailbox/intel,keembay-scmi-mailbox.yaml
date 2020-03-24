@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+# Copyright (c) 2020 Intel Corporation
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/mailbox/intel,keembay-scmi-mailbox.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+
+title: Intel Keem Bay SCMI mailbox
+
+maintainers:
+  - Paul Murphy <paul.j.murphy@intel.com>
+
+description: |
+  The Intel Keem Bay SCMI mailbox is used to communicate SCMI messages to the
+  runtime service in BL31 behaving as the SCMI 'SCP'.
+  Refer to ./mailbox.txt for generic information about mailbox device-tree
+  bindings.
+  For more information about SCMI, refer to the bindings described in
+  Documentation/devicetree/bindings/arm/arm,scmi.txt
+
+properties:
+  compatible:
+    enum:
+      - intel,keembay-scmi-mailbox
+
+  "#mbox-cells":
+    const: 1
+
+  memory-region:
+    description:
+      Memory region describing the SCMI shared memory
+
+required:
+  - compatible
+  - "#mbox-cells"
+  - memory-region
+
+examples:
+  - |
+    scmi_mailbox: scmi_mailbox {
+        compatible = "intel,keembay-scmi-mailbox";
+        #mbox-cells = <1>;
+        memory-region = <&scmi_sec_shmem>;
+    };
