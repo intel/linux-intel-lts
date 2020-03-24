@@ -11,7 +11,10 @@
 #define AC_MAX_INS_REASONS_LENGTH 1024
 #define AC_MAX_USED_SERVICES 20
 #define AC_MAX_PROPS_LENGTH 2048
-#define AC_MAX_PACK_HASH_LEN 32
+#define AC_PACK_HASH_LEN_V1 32
+#define AC_PACK_HASH_LEN_V2 48
+#define AC_MAX_PACK_HASH_LEN AC_PACK_HASH_LEN_V2
+#define AC_PACK_SIG_VER_OFFSET 44
 
 /**
  * enum ac_cmd_id - acp file command (acp type)
@@ -41,13 +44,16 @@ enum ac_cmd_id {
 };
 
 /**
- * struct ac_pack_hash - ta pack hash
+ * enum ac_sig_version - bh signature version
  *
- * @data: ta hash
+ * @ac_SIG_VERSION_1: signature version 1 (2K)
+ * @ac_SIG_VERSION_2: signature version 2 (3K)
  */
-struct ac_pack_hash {
-	u8 data[AC_MAX_PACK_HASH_LEN];
-} __packed;
+enum ac_sig_version {
+	AC_SIG_VERSION_NONE = 0,
+	AC_SIG_VERSION_1 = 1,
+	AC_SIG_VERSION_2 = 2,
+};
 
 /**
  * struct ac_pack_header - admin comman pack header
@@ -136,14 +142,14 @@ struct ac_pack {
  * @ta_svn: ta security version number
  * @hash_alg_type: ta hash algorithm type
  * @ta_reserved: reserved bytes
- * @hash: ta pack hash
+ * @ta_pack_hash: ta pack hash length can be 32 or 48 bytes.
  */
 struct ac_ins_ta_header {
 	uuid_t ta_id;
 	u32 ta_svn;
 	u8 hash_alg_type;
 	u8 ta_reserved[3];
-	struct ac_pack_hash hash;
+	u8 ta_pack_hash[];
 } __packed;
 
 /**
