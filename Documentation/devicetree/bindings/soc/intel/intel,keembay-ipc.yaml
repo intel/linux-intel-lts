@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+# Copyright (C) 2020 Intel Corporation
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/soc/intel/intel,keembay-ipc.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+
+title: Keem Bay IPC
+
+maintainers:
+  - Daniele Alessandrelli <daniele.alessandrelli@intel.com>
+
+description: |
+  The Keem Bay IPC driver enables Inter-Processor Communication (IPC) with the
+  Visual Processor Unit (VPU) embedded in the Intel Movidius SoC code named
+  Keem Bay.
+
+properties:
+  compatible:
+    const: intel,keembay-ipc
+
+  reg:
+    items:
+      - description: The CSS (CPU) FIFO registers
+      - description: The MSS (VPU) FIFO registers
+
+  reg-names:
+    items:
+      - const: css_fifo
+      - const: mss_fifo
+
+  interrupts:
+    items:
+      - description: CSS FIFO not-empty interrupt
+
+  '#interrupt-cells':
+    const: 2
+
+  interrupt-controller: true
+
+  memory-region:
+    items:
+      - description: Reserved memory region used for CSS IPC buffers
+      - description: Reserved memory region used for MSS IPC buffers
+
+required:
+  - compatible
+  - reg
+  - reg-names
+  - interrupts
+  - '#interrupt-cells'
+  - memory-region
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/irq.h>
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+    ipc@203300f0 {
+          compatible = "intel,keembay-ipc";
+          reg = <0x203300f0 0x310>, /* CPU TIM FIFO */
+                <0x208200f0 0x310>; /* VPU TIM FIFO */
+          reg-names = "css_fifo", "mss_fifo";
+          #interrupt-cells = <2>;
+          interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
+          memory-region = <&css_ipc_reserved>, <&mss_ipc_reserved>;
+    };
