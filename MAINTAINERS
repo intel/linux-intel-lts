@@ -8880,6 +8880,12 @@ W:	http://lse.sourceforge.net/kdump/
 S:	Maintained
 F:	Documentation/admin-guide/kdump/
 
+KEEMBAY SCMI MAILBOX DRIVER
+M:	Paul Murphy <paul.j.murphy@intel.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/mailbox/intel,keembay-scmi-mailbox.yaml
+F:	drivers/mailbox/keembay-scmi-mailbox.c
+
 KEENE FM RADIO TRANSMITTER DRIVER
 M:	Hans Verkuil <hverkuil@xs4all.nl>
 L:	linux-media@vger.kernel.org
