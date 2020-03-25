@@ -172,11 +172,6 @@ static int stmmac_enable(struct ptp_clock_info *ptp,
 			/* Enable External snapshot trigger */
 			acr_value |= priv->plat->ext_snapshot_num;
 			acr_value |= PTP_ACR_ATSFC;
-
-			/* Clear interrupt from PPS */
-			if (readl(priv->ioaddr + GMAC_INT_STATUS) &
-				  GMAC_INT_TSIE)
-				readl(priv->ioaddr + GMAC_TIMESTAMP_STATUS);
 			pr_info("Auxiliary Snapshot %d enabled\n",
 				priv->plat->ext_snapshot_num >> 5);
 		} else {

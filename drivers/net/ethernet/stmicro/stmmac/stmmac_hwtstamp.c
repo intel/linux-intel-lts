@@ -199,6 +199,7 @@ static void tstamp_interrupt(struct stmmac_priv *priv)
 	struct ptp_clock_event event;
 	unsigned long flags;
 	u32 num_snapshot;
+	u32 ts_status;
 	u32 tsync_int;
 	u64 ptp_time;
 	int i;
@@ -209,10 +210,14 @@ static void tstamp_interrupt(struct stmmac_priv *priv)
 	if (!tsync_int)
 		return;
 
+	/* Read timestamp status to clear interrupt from either external
+	 * timestamp or start/end of PPS.
+	 */
+	ts_status = readl(priv->ioaddr + GMAC_TIMESTAMP_STATUS);
+
 	if (priv->plat->ext_snapshot_en) {
-		num_snapshot = (readl(priv->ioaddr + GMAC_TIMESTAMP_STATUS) &
-				GMAC_TIMESTAMP_ATSNS_MASK) >>
-				GMAC_TIMESTAMP_ATSNS_SHIFT;
+		num_snapshot = (ts_status & GMAC_TIMESTAMP_ATSNS_MASK) >>
+			       GMAC_TIMESTAMP_ATSNS_SHIFT;
 
 		for (i = 0; i < num_snapshot; i++) {
 			spin_lock_irqsave(&priv->ptp_lock, flags);
