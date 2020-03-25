@@ -574,7 +574,7 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 
 	while (likely(total_rx_packets < (unsigned int)budget)) {
 		struct skb_shared_hwtstamps *shhwtstamp = NULL;
-		struct dma_desc *rx_desc, *nx_desc;
+		struct dma_desc *rx_desc, *nx_desc = NULL;
 		struct stmmac_rx_buffer *buf;
 		unsigned int next_entry;
 		unsigned int size;
