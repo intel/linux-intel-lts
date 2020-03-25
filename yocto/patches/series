@@ -1,11 +1,5 @@
-# CVE-2020-8648
-0001-vt-selection-close-sel_buffer-race.patch
-
 # CVE-2019-19054
 0002-media-rc-prevent-memory-leak-in-cx23888_ir_probe.patch
 
 # CVE-2019-18808
 0003-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
-
-# CVE-2020-8647
-0004-vgacon-Fix-a-UAF-in-vgacon_invert_region.patch
