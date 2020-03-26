@@ -155,6 +155,17 @@ config DMI_SYSFS
 config DMI_SCAN_MACHINE_NON_EFI_FALLBACK
 	bool
 
+config KEEMBAY_VPU_IPC
+	tristate "Intel Keem Bay VPU IPC Driver"
+	depends on KEEMBAY_IPC
+	depends on HAVE_ARM_SMCCC
+	help
+	  This option enables support for loading and communicating with
+          the firmware on the VPU of the Keem Bay SoC. The driver depends
+          on the Keem Bay IPC driver to do communication, and it depends
+          on secure world monitor software to do the control of the VPU
+          state.
+
 config ISCSI_IBFT_FIND
 	bool "iSCSI Boot Firmware Table Attributes"
 	depends on X86 && ISCSI_IBFT
