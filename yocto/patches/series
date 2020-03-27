@@ -1,0 +1,5 @@
+# CVE-2019-19054
+0002-media-rc-prevent-memory-leak-in-cx23888_ir_probe.patch
+
+# CVE-2019-18808
+0003-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
