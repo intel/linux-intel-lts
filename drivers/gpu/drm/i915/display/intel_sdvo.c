@@ -1933,12 +1933,11 @@ static void intel_sdvo_enable_hotplug(struct intel_encoder *encoder)
 
 static enum intel_hotplug_state
 intel_sdvo_hotplug(struct intel_encoder *encoder,
-		   struct intel_connector *connector,
-		   bool irq_received)
+		   struct intel_connector *connector)
 {
 	intel_sdvo_enable_hotplug(encoder);
 
-	return intel_encoder_hotplug(encoder, connector, irq_received);
+	return intel_encoder_hotplug(encoder, connector);
 }
 
 static bool
