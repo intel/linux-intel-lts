@@ -78,7 +78,7 @@
 #define HANTRO_VC8000D_LAST_REG         (HANTRO_VC8000D_REGS-1)
 
 #define HANTRO_VC8KD_REG_BWREAD     300
-#define HANTRO_VC8KD_REG_BWWRITE   301
+#define HANTRO_VC8KD_REG_BWWRITE   304
 #define VC8KD_BURSTWIDTH                         16
 
 
@@ -120,6 +120,7 @@
 #else
 #define DEC_IRQ_0                       -1
 #define DEC_IRQ_1                       -1
+#define DEC_IRQ_2                       -1
 #endif
 
 /***********************************************************************/
