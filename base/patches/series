@@ -55,21 +55,12 @@
 # CVE-2019-19252
 0001-vcs-prevent-write-access-to-vcsu-devices.patch
 
-# CVE-2019-14901
-0001-mwifiex-Fix-heap-overflow-in-mmwifiex_process_tdls_a.patch
-
 # CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
-
-# CVE-2020-8648
-0001-vt-selection-close-sel_buffer-race.patch
 
 # CVE-2019-10220
 0002-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
 0003-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
-
-# CVE-2019-16233
-0004-drivers-handle-workqueue-allocation-failure-case.patch
 
 # CVE-2019-19768
 0001-blktrace-Protect-q-blk_trace-with-RCU.patch
