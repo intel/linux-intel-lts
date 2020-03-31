@@ -3473,16 +3473,22 @@ static void skl_detach_scaler(struct intel_crtc *intel_crtc, int id)
 {
 	struct drm_device *dev = intel_crtc->base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
+	int pipe = intel_crtc->pipe;
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 	if (intel_gvt_active(dev_priv) &&
-	    dev_priv->gvt->pipe_info[intel_crtc->pipe].scaler_owner[id] != 0)
-		return;
+	    dev_priv->gvt->pipe_info[pipe].scaler_owner[id] != 0) {
+		int domain_id;
+
+		domain_id = dev_priv->gvt->pipe_info[pipe].scaler_owner[id];
+		if (dev_priv->gvt->domain_ready[domain_id])
+			return;
+	}
 #endif
 
-	I915_WRITE(SKL_PS_CTRL(intel_crtc->pipe, id), 0);
-	I915_WRITE(SKL_PS_WIN_POS(intel_crtc->pipe, id), 0);
-	I915_WRITE(SKL_PS_WIN_SZ(intel_crtc->pipe, id), 0);
+	I915_WRITE(SKL_PS_CTRL(pipe, id), 0);
+	I915_WRITE(SKL_PS_WIN_POS(pipe, id), 0);
+	I915_WRITE(SKL_PS_WIN_SZ(pipe, id), 0);
 }
 
 /*

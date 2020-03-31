@@ -81,6 +81,8 @@ void acrngt_instance_destroy(struct intel_vgpu *vgpu)
 	struct intel_gvt *gvt = acrngt_priv.gvt;
 
 	if (vgpu) {
+		int domain_id = vgpu->id;
+
 		info = (struct acrngt_hvm_dev *)vgpu->handle;
 
 		if (info && info->emulation_thread != NULL)
@@ -97,6 +99,7 @@ void acrngt_instance_destroy(struct intel_vgpu *vgpu)
 
 		intel_gvt_ops->vgpu_release(vgpu);
 		intel_gvt_ops->vgpu_destroy(vgpu);
+		gvt->domain_ready[domain_id] = false;
 	}
 
 	if (info) {
@@ -304,6 +307,8 @@ struct intel_vgpu *acrngt_instance_create(domid_t vm_id,
 		gvt_err("failed to create vgpu\n");
 		return NULL;
 	}
+	/* after the VGPU is created, the domain owner is ready */
+	acrngt_priv.gvt->domain_ready[vgpu->id] = true;
 
 	info = kzalloc(sizeof(struct acrngt_hvm_dev), GFP_KERNEL);
 	if (info == NULL) {

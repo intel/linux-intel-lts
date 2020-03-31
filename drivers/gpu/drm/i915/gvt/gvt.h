@@ -383,6 +383,7 @@ struct intel_gvt {
 
 	void *intel_gvt_vreg_pool[GVT_MAX_VGPU];
 	bool intel_gvt_vreg_allocated[GVT_MAX_VGPU];
+	bool domain_ready[1 << 4];
 };
 
 static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
