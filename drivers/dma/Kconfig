@@ -141,6 +141,13 @@ config DMA_BCM2835
 	select DMA_ENGINE
 	select DMA_VIRTUAL_CHANNELS
 
+config DMA_BCM2835_OOB
+	bool "Out-of-band support for BCM2835 DMA"
+	depends on DMA_BCM2835 && DOVETAIL
+	select DMA_VIRTUAL_CHANNELS_OOB
+	help
+	  Enable out-of-band requests to BCM2835 DMA.
+
 config DMA_JZ4780
 	tristate "JZ4780 DMA support"
 	depends on MIPS || COMPILE_TEST
