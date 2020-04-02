@@ -47,6 +47,10 @@ config DMA_ENGINE
 config DMA_VIRTUAL_CHANNELS
 	tristate
 
+config DMA_VIRTUAL_CHANNELS_OOB
+	def_bool n
+	depends on DMA_VIRTUAL_CHANNELS && DOVETAIL
+
 config DMA_ACPI
 	def_bool y
 	depends on ACPI
