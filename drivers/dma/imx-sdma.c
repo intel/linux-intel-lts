@@ -536,6 +536,10 @@ struct sdma_engine {
 	/* clock ratio for AHB:SDMA core. 1:1 is 1, 2:1 is 0*/
 	bool				clk_ratio;
 	bool                            fw_loaded;
+#ifdef CONFIG_IMX_SDMA_OOB
+	hard_spinlock_t			oob_lock;
+	u32				pending_stat;
+#endif
 };
 
 static int sdma_config_write(struct dma_chan *chan,
@@ -829,6 +833,11 @@ static struct sdma_desc *to_sdma_desc(struct dma_async_tx_descriptor *t)
 	return container_of(t, struct sdma_desc, vd.tx);
 }
 
+static inline bool sdma_oob_capable(void)
+{
+	return IS_ENABLED(CONFIG_IMX_SDMA_OOB);
+}
+
 static void sdma_start_desc(struct sdma_channel *sdmac)
 {
 	struct virt_dma_desc *vd = vchan_next_desc(&sdmac->vc);
@@ -846,7 +855,8 @@ static void sdma_start_desc(struct sdma_channel *sdmac)
 
 	sdma->channel_control[channel].base_bd_ptr = desc->bd_phys;
 	sdma->channel_control[channel].current_bd_ptr = desc->bd_phys;
-	sdma_enable_channel(sdma, sdmac->channel);
+	if (!sdma_oob_capable() || !vchan_oob_pulsed(vd))
+		sdma_enable_channel(sdma, sdmac->channel);
 }
 
 static void sdma_update_channel_loop(struct sdma_channel *sdmac)
@@ -889,9 +899,9 @@ static void sdma_update_channel_loop(struct sdma_channel *sdmac)
 		 * SDMA transaction status by the time the client tasklet is
 		 * executed.
 		 */
-		spin_unlock(&sdmac->vc.lock);
+		vchan_unlock(&sdmac->vc);
 		dmaengine_desc_get_callback_invoke(&desc->vd.tx, NULL);
-		spin_lock(&sdmac->vc.lock);
+		vchan_lock(&sdmac->vc);
 
 		/* Assign buffer ownership to SDMA */
 		bd->mode.status |= BD_DONE;
@@ -913,20 +923,21 @@ static void sdma_update_channel_loop(struct sdma_channel *sdmac)
 static void mxc_sdma_handle_channel_normal(struct sdma_channel *data)
 {
 	struct sdma_channel *sdmac = (struct sdma_channel *) data;
+	struct sdma_desc *desc = sdmac->desc;
 	struct sdma_buffer_descriptor *bd;
 	int i, error = 0;
 
-	sdmac->desc->chn_real_count = 0;
+	desc->chn_real_count = 0;
 	/*
 	 * non loop mode. Iterate over all descriptors, collect
 	 * errors and call callback function
 	 */
-	for (i = 0; i < sdmac->desc->num_bd; i++) {
-		bd = &sdmac->desc->bd[i];
+	for (i = 0; i < desc->num_bd; i++) {
+		bd = &desc->bd[i];
 
 		if (bd->mode.status & (BD_DONE | BD_RROR))
 			error = -EIO;
-		sdmac->desc->chn_real_count += bd->mode.count;
+		desc->chn_real_count += bd->mode.count;
 	}
 
 	if (error)
@@ -935,36 +946,83 @@ static void mxc_sdma_handle_channel_normal(struct sdma_channel *data)
 		sdmac->status = DMA_COMPLETE;
 }
 
-static irqreturn_t sdma_int_handler(int irq, void *dev_id)
+static unsigned long sdma_do_channels(struct sdma_engine *sdma,
+				unsigned long stat)
 {
-	struct sdma_engine *sdma = dev_id;
-	unsigned long stat;
+	unsigned long mask = stat;
 
-	stat = readl_relaxed(sdma->regs + SDMA_H_INTR);
-	writel_relaxed(stat, sdma->regs + SDMA_H_INTR);
-	/* channel 0 is special and not handled here, see run_channel0() */
-	stat &= ~1;
-
-	while (stat) {
-		int channel = fls(stat) - 1;
+	while (mask) {
+		int channel = fls(mask) - 1;
 		struct sdma_channel *sdmac = &sdma->channel[channel];
 		struct sdma_desc *desc;
 
-		spin_lock(&sdmac->vc.lock);
+		vchan_lock(&sdmac->vc);
 		desc = sdmac->desc;
 		if (desc) {
+			if (running_oob() && !vchan_oob_handled(&desc->vd))
+				goto next;
 			if (sdmac->flags & IMX_DMA_SG_LOOP) {
 				sdma_update_channel_loop(sdmac);
 			} else {
 				mxc_sdma_handle_channel_normal(sdmac);
+				if (running_oob()) {
+					vchan_unlock(&sdmac->vc);
+					dmaengine_desc_get_callback_invoke(&desc->vd.tx, NULL);
+					__clear_bit(channel, &stat);
+					goto next_unlocked;
+				}
 				vchan_cookie_complete(&desc->vd);
 				sdma_start_desc(sdmac);
 			}
 		}
-
-		spin_unlock(&sdmac->vc.lock);
 		__clear_bit(channel, &stat);
+	next:
+		vchan_unlock(&sdmac->vc);
+	next_unlocked:
+		__clear_bit(channel, &mask);
 	}
+
+	return stat;
+}
+
+static irqreturn_t sdma_int_handler(int irq, void *dev_id)
+{
+	struct sdma_engine *sdma = dev_id;
+	unsigned long stat, flags __maybe_unused;
+
+#ifdef CONFIG_IMX_SDMA_OOB
+	if (running_oob()) {
+		stat = readl_relaxed(sdma->regs + SDMA_H_INTR);
+		writel_relaxed(stat, sdma->regs + SDMA_H_INTR);
+		/*
+		 * Locking is only to guard against IRQ migration with
+		 * a delayed in-band event running from a remote CPU
+		 * after some IRQ routing changed the affinity of the
+		 * out-of-band handler in the meantime.
+		 */
+		stat = sdma_do_channels(sdma, stat & ~1);
+		if (stat) {
+			raw_spin_lock(&sdma->oob_lock);
+			sdma->pending_stat |= stat;
+			raw_spin_unlock(&sdma->oob_lock);
+			/* Call us back from in-band context. */
+			irq_post_inband(irq);
+		}
+		return IRQ_HANDLED;
+	}
+
+	/* In-band IRQ context: stalled, but hard irqs are on. */
+	raw_spin_lock_irqsave(&sdma->oob_lock, flags);
+	stat = sdma->pending_stat;
+	sdma->pending_stat = 0;
+	raw_spin_unlock_irqrestore(&sdma->oob_lock, flags);
+	sdma_do_channels(sdma, stat);
+#else
+	stat = readl_relaxed(sdma->regs + SDMA_H_INTR);
+	writel_relaxed(stat, sdma->regs + SDMA_H_INTR);
+	/* channel 0 is special and not handled here, see run_channel0() */
+	sdma_do_channels(sdma, stat & ~1);
+#endif
 
 	return IRQ_HANDLED;
 }
@@ -1179,7 +1237,7 @@ static int sdma_terminate_all(struct dma_chan *chan)
 	struct sdma_channel *sdmac = to_sdma_chan(chan);
 	unsigned long flags;
 
-	spin_lock_irqsave(&sdmac->vc.lock, flags);
+	vchan_lock_irqsave(&sdmac->vc, flags);
 
 	sdma_disable_channel(chan);
 
@@ -1193,10 +1251,11 @@ static int sdma_terminate_all(struct dma_chan *chan)
 		 */
 		vchan_get_all_descriptors(&sdmac->vc, &sdmac->terminated);
 		sdmac->desc = NULL;
+		vchan_unlock_irqrestore(&sdmac->vc, flags);
 		schedule_work(&sdmac->terminate_worker);
+	} else {
+		vchan_unlock_irqrestore(&sdmac->vc, flags);
 	}
-
-	spin_unlock_irqrestore(&sdmac->vc.lock, flags);
 
 	return 0;
 }
@@ -1601,6 +1660,15 @@ static struct dma_async_tx_descriptor *sdma_prep_slave_sg(
 	struct scatterlist *sg;
 	struct sdma_desc *desc;
 
+	if (!sdma_oob_capable()) {
+		if (flags & (DMA_OOB_INTERRUPT|DMA_OOB_PULSE)) {
+			dev_err(sdma->dev,
+				"%s: out-of-band slave transfers disabled\n",
+				__func__);
+			return NULL;
+		}
+	}
+
 	sdma_config_write(chan, &sdmac->slave_config, direction);
 
 	desc = sdma_transfer_init(sdmac, direction, sg_len);
@@ -1652,7 +1720,8 @@ static struct dma_async_tx_descriptor *sdma_prep_slave_sg(
 
 		if (i + 1 == sg_len) {
 			param |= BD_INTR;
-			param |= BD_LAST;
+			if (!sdma_oob_capable() || !(flags & DMA_OOB_PULSE))
+				param |= BD_LAST;
 			param &= ~BD_CONT;
 		}
 
@@ -1686,6 +1755,20 @@ static struct dma_async_tx_descriptor *sdma_prep_dma_cyclic(
 	struct sdma_desc *desc;
 
 	dev_dbg(sdma->dev, "%s channel: %d\n", __func__, channel);
+
+	if (!sdma_oob_capable()) {
+		if (flags & (DMA_OOB_INTERRUPT|DMA_OOB_PULSE)) {
+			dev_err(sdma->dev,
+				"%s: out-of-band cyclic transfers disabled\n",
+				__func__);
+			return NULL;
+		}
+	} else if (flags & DMA_OOB_PULSE) {
+		dev_err(chan->device->dev,
+			"%s: no pulse mode with out-of-band cyclic transfers\n",
+			__func__);
+		return NULL;
+	}
 
 	sdma_config_write(chan, &sdmac->slave_config, direction);
 
@@ -1826,7 +1909,7 @@ static enum dma_status sdma_tx_status(struct dma_chan *chan,
 	if (ret == DMA_COMPLETE || !txstate)
 		return ret;
 
-	spin_lock_irqsave(&sdmac->vc.lock, flags);
+	vchan_lock_irqsave(&sdmac->vc, flags);
 
 	vd = vchan_find_desc(&sdmac->vc, cookie);
 	if (vd)
@@ -1844,7 +1927,7 @@ static enum dma_status sdma_tx_status(struct dma_chan *chan,
 		residue = 0;
 	}
 
-	spin_unlock_irqrestore(&sdmac->vc.lock, flags);
+	vchan_unlock_irqrestore(&sdmac->vc, flags);
 
 	dma_set_tx_state(txstate, chan->completed_cookie, chan->cookie,
 			 residue);
@@ -1857,11 +1940,38 @@ static void sdma_issue_pending(struct dma_chan *chan)
 	struct sdma_channel *sdmac = to_sdma_chan(chan);
 	unsigned long flags;
 
-	spin_lock_irqsave(&sdmac->vc.lock, flags);
+	vchan_lock_irqsave(&sdmac->vc, flags);
 	if (vchan_issue_pending(&sdmac->vc) && !sdmac->desc)
 		sdma_start_desc(sdmac);
-	spin_unlock_irqrestore(&sdmac->vc.lock, flags);
+	vchan_unlock_irqrestore(&sdmac->vc, flags);
 }
+
+#ifdef CONFIG_IMX_SDMA_OOB
+static int sdma_pulse_oob(struct dma_chan *chan)
+{
+	struct sdma_channel *sdmac = to_sdma_chan(chan);
+	struct sdma_desc *desc = sdmac->desc;
+	unsigned long flags;
+	int n, ret = -EIO;
+
+	vchan_lock_irqsave(&sdmac->vc, flags);
+	if (desc && vchan_oob_pulsed(&desc->vd)) {
+		for (n = 0; n < desc->num_bd - 1; n++)
+			desc->bd[n].mode.status |= BD_DONE;
+		desc->bd[n].mode.status |= BD_DONE|BD_WRAP;
+		sdma_enable_channel(sdmac->sdma, sdmac->channel);
+		ret = 0;
+	}
+	vchan_unlock_irqrestore(&sdmac->vc, flags);
+
+	return ret;
+}
+#else
+static int sdma_pulse_oob(struct dma_chan *chan)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 #define SDMA_SCRIPT_ADDRS_ARRAY_SIZE_V1	34
 #define SDMA_SCRIPT_ADDRS_ARRAY_SIZE_V2	38
@@ -2112,6 +2222,9 @@ static int sdma_init(struct sdma_engine *sdma)
 	clk_disable(sdma->clk_ipg);
 	clk_disable(sdma->clk_ahb);
 
+#ifdef CONFIG_IMX_SDMA_OOB
+	raw_spin_lock_init(&sdma->oob_lock);
+#endif
 	return 0;
 
 err_dma_alloc:
@@ -2213,7 +2326,8 @@ static int sdma_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_clk;
 
-	ret = devm_request_irq(&pdev->dev, irq, sdma_int_handler, 0,
+	ret = devm_request_irq(&pdev->dev, irq, sdma_int_handler,
+			       IS_ENABLED(CONFIG_IMX_SDMA_OOB) ? IRQF_OOB : 0,
 				dev_name(&pdev->dev), sdma);
 	if (ret)
 		goto err_irq;
@@ -2233,6 +2347,7 @@ static int sdma_probe(struct platform_device *pdev)
 
 	dma_cap_set(DMA_SLAVE, sdma->dma_device.cap_mask);
 	dma_cap_set(DMA_CYCLIC, sdma->dma_device.cap_mask);
+	dma_cap_set(DMA_OOB, sdma->dma_device.cap_mask);
 	dma_cap_set(DMA_MEMCPY, sdma->dma_device.cap_mask);
 
 	INIT_LIST_HEAD(&sdma->dma_device.channels);
@@ -2283,6 +2398,7 @@ static int sdma_probe(struct platform_device *pdev)
 	sdma->dma_device.residue_granularity = DMA_RESIDUE_GRANULARITY_SEGMENT;
 	sdma->dma_device.device_prep_dma_memcpy = sdma_prep_memcpy;
 	sdma->dma_device.device_issue_pending = sdma_issue_pending;
+	sdma->dma_device.device_pulse_oob = sdma_pulse_oob;
 	sdma->dma_device.copy_align = 2;
 	dma_set_max_seg_size(sdma->dma_device.dev, SDMA_BD_MAX_CNT);
 
@@ -2325,6 +2441,16 @@ static int sdma_probe(struct platform_device *pdev)
 			dev_warn(&pdev->dev, "failed to get firmware from device tree\n");
 	}
 
+	/*
+	 * Keep the clocks enabled at any time if we plan to use the
+	 * DMA from out-of-band context, bumping their refcount to
+	 * keep them on until sdma_remove() is called eventually.
+	 */
+	if (IS_ENABLED(CONFIG_IMX_SDMA_OOB)) {
+		clk_enable(sdma->clk_ipg);
+		clk_enable(sdma->clk_ahb);
+	}
+
 	return 0;
 
 err_register:
@@ -2342,6 +2468,11 @@ static int sdma_remove(struct platform_device *pdev)
 {
 	struct sdma_engine *sdma = platform_get_drvdata(pdev);
 	int i;
+
+	if (IS_ENABLED(CONFIG_IMX_SDMA_OOB)) {
+		clk_disable(sdma->clk_ahb);
+		clk_disable(sdma->clk_ipg);
+	}
 
 	devm_free_irq(&pdev->dev, sdma->irq, sdma);
 	dma_async_device_unregister(&sdma->dma_device);
