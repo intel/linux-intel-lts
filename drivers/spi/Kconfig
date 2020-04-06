@@ -142,6 +142,13 @@ config SPI_BCM2835
 	  is for the regular SPI controller. Slave mode operation is not also
 	  not supported.
 
+config SPI_BCM2835_OOB
+	bool "Out-of-band support for BCM2835 SPI controller"
+	depends on SPI_BCM2835 && DOVETAIL
+	select SPI_OOB
+	help
+	  Enable out-of-band cyclic transfers.
+
 config SPI_BCM2835AUX
 	tristate "BCM2835 SPI auxiliary controller"
 	depends on ((ARCH_BCM2835 || ARCH_BRCMSTB) && GPIOLIB) || COMPILE_TEST
