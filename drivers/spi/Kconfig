@@ -32,6 +32,10 @@ config SPI_DEBUG
 	  Say "yes" to enable debug messaging (like dev_dbg and pr_debug),
 	  sysfs, and debugfs support in SPI controller and protocol drivers.
 
+config SPI_OOB
+	def_bool n
+	depends on HAS_DMA && DOVETAIL
+
 #
 # MASTER side ... talking to discrete SPI slave chips including microcontrollers
 #
