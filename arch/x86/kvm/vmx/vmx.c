@@ -657,14 +657,15 @@ static int vmx_set_guest_uret_msr(struct vcpu_vmx *vmx,
 				  struct vmx_uret_msr *msr, u64 data)
 {
 	unsigned int slot = msr - vmx->guest_uret_msrs;
+	unsigned long flags;
 	int ret = 0;
 
 	u64 old_msr_data = msr->data;
 	msr->data = data;
 	if (msr->load_into_hardware) {
-		preempt_disable();
+		flags = hard_preempt_disable();
 		ret = kvm_set_user_return_msr(slot, msr->data, msr->mask);
-		preempt_enable();
+		hard_preempt_enable(flags);
 		if (ret)
 			msr->data = old_msr_data;
 	}
@@ -1284,19 +1285,23 @@ static void vmx_prepare_switch_to_host(struct vcpu_vmx *vmx)
 #ifdef CONFIG_X86_64
 static u64 vmx_read_guest_kernel_gs_base(struct vcpu_vmx *vmx)
 {
-	preempt_disable();
+	unsigned long flags;
+
+	flags = hard_preempt_disable();
 	if (vmx->guest_state_loaded)
 		rdmsrl(MSR_KERNEL_GS_BASE, vmx->msr_guest_kernel_gs_base);
-	preempt_enable();
+	hard_preempt_enable(flags);
 	return vmx->msr_guest_kernel_gs_base;
 }
 
 static void vmx_write_guest_kernel_gs_base(struct vcpu_vmx *vmx, u64 data)
 {
-	preempt_disable();
+	unsigned long flags;
+
+	flags = hard_preempt_disable();
 	if (vmx->guest_state_loaded)
 		wrmsrl(MSR_KERNEL_GS_BASE, data);
-	preempt_enable();
+	hard_preempt_enable(flags);
 	vmx->msr_guest_kernel_gs_base = data;
 }
 #endif
@@ -1741,6 +1746,7 @@ static void vmx_setup_uret_msrs(struct vcpu_vmx *vmx)
 	 * The SYSCALL MSRs are only needed on long mode guests, and only
 	 * when EFER.SCE is set.
 	 */
+	hard_cond_local_irq_disable();
 	load_syscall_msrs = is_long_mode(&vmx->vcpu) &&
 			    (vmx->vcpu.arch.efer & EFER_SCE);
 
@@ -1761,6 +1767,8 @@ static void vmx_setup_uret_msrs(struct vcpu_vmx *vmx)
 	 * so that TSX remains always disabled.
 	 */
 	vmx_setup_uret_msr(vmx, MSR_IA32_TSX_CTRL, boot_cpu_has(X86_FEATURE_RTM));
+
+	hard_cond_local_irq_enable();
 
 	/*
 	 * The set of MSRs to load may have changed, reload MSRs before the
@@ -2026,6 +2034,7 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	u32 msr_index = msr_info->index;
 	u64 data = msr_info->data;
 	u32 index;
+	unsigned long flags;
 
 	switch (msr_index) {
 	case MSR_EFER:
@@ -2307,11 +2316,22 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 
 	default:
 	find_uret_msr:
+		/*
+		 * Dovetail: guest MSRs may be activated independently
+		 * from vcpu_run(): rely on the notifier for restoring
+		 * them upon preemption by the companion core, right
+		 * before the current CPU switches to out-of-band
+		 * scheduling (see dovetail_context_switch()).
+		 */
 		msr = vmx_find_uret_msr(vmx, msr_index);
-		if (msr)
+		if (msr) {
+			flags = hard_cond_local_irq_save();
+			inband_enter_guest(vcpu);
 			ret = vmx_set_guest_uret_msr(vmx, msr, data);
-		else
+			hard_cond_local_irq_restore(flags);
+		} else {
 			ret = kvm_set_msr_common(vcpu, msr_info);
+		}
 	}
 
 	/* FB_CLEAR may have changed, also update the FB_CLEAR_DIS behavior */
@@ -7012,7 +7032,9 @@ static int vmx_create_vcpu(struct kvm_vcpu *vcpu)
 	vmx_vcpu_load(vcpu, cpu);
 	vcpu->cpu = cpu;
 	init_vmcs(vmx);
+	hard_cond_local_irq_disable();
 	vmx_vcpu_put(vcpu);
+	hard_cond_local_irq_enable();
 	put_cpu();
 	if (cpu_need_virtualize_apic_accesses(vcpu)) {
 		err = alloc_apic_access_page(vcpu->kvm);
