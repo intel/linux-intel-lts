@@ -178,6 +178,7 @@ struct kvm_user_return_msrs_global {
 struct kvm_user_return_msrs {
 	struct user_return_notifier urn;
 	bool registered;
+	bool dirty;
 	struct kvm_user_return_msr_values {
 		u64 host;
 		u64 curr;
@@ -295,12 +296,29 @@ static inline void kvm_async_pf_hash_reset(struct kvm_vcpu *vcpu)
 		vcpu->arch.apf.gfns[i] = ~0;
 }
 
+static void __kvm_on_user_return(struct kvm_user_return_msrs *msrs)
+{
+	struct kvm_user_return_msr_values *values;
+	unsigned slot;
+
+	if (!msrs->dirty)
+		return;
+
+	for (slot = 0; slot < user_return_msrs_global.nr; ++slot) {
+		values = &msrs->values[slot];
+		if (values->host != values->curr) {
+			wrmsrl(user_return_msrs_global.msrs[slot], values->host);
+			values->curr = values->host;
+		}
+	}
+
+	msrs->dirty = false;
+}
+
 static void kvm_on_user_return(struct user_return_notifier *urn)
 {
-	unsigned slot;
 	struct kvm_user_return_msrs *msrs
 		= container_of(urn, struct kvm_user_return_msrs, urn);
-	struct kvm_user_return_msr_values *values;
 	unsigned long flags;
 
 	/*
@@ -313,13 +331,10 @@ static void kvm_on_user_return(struct user_return_notifier *urn)
 		user_return_notifier_unregister(urn);
 	}
 	local_irq_restore(flags);
-	for (slot = 0; slot < user_return_msrs_global.nr; ++slot) {
-		values = &msrs->values[slot];
-		if (values->host != values->curr) {
-			wrmsrl(user_return_msrs_global.msrs[slot], values->host);
-			values->curr = values->host;
-		}
-	}
+	flags = hard_cond_local_irq_save();
+	__kvm_on_user_return(msrs);
+	hard_cond_local_irq_restore(flags);
+	inband_exit_guest();
 }
 
 int kvm_probe_user_return_msr(u32 msr)
@@ -374,6 +389,7 @@ int kvm_set_user_return_msr(unsigned slot, u64 value, u64 mask)
 	if (err)
 		return 1;
 
+	msrs->dirty = true;
 	msrs->values[slot].curr = value;
 	if (!msrs->registered) {
 		msrs->urn.on_user_return = kvm_on_user_return;
@@ -4048,10 +4064,22 @@ static void kvm_steal_time_set_preempted(struct kvm_vcpu *vcpu)
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 {
+	struct kvm_user_return_msrs *msrs = this_cpu_ptr(user_return_msrs);
+	unsigned long flags;
 	int idx;
 
 	if (vcpu->preempted)
 		vcpu->arch.preempted_in_kernel = !kvm_x86_ops.get_cpl(vcpu);
+
+	flags = hard_cond_local_irq_save();
+	/*
+	 * Skip steal time accounting from the out-of-band stage since
+	 * this is oob-unsafe. We leave it to the next call from the
+	 * inband stage.
+	 */
+	if (running_oob())
+		goto skip_steal_time_update;
+
 
 	/*
 	 * Disable page faults because we're in atomic context here.
@@ -4070,6 +4098,7 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 	kvm_steal_time_set_preempted(vcpu);
 	srcu_read_unlock(&vcpu->kvm->srcu, idx);
 	pagefault_enable();
+skip_steal_time_update:
 	kvm_x86_ops.vcpu_put(vcpu);
 	vcpu->arch.last_host_tsc = rdtsc();
 	/*
@@ -4078,7 +4107,40 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 	 * guest. do_debug expects dr6 to be cleared after it runs, do the same.
 	 */
 	set_debugreg(0, 6);
+
+	inband_set_vcpu_release_state(vcpu, false);
+	if (!msrs->dirty)
+		inband_exit_guest();
+
+	hard_cond_local_irq_restore(flags);
 }
+
+#ifdef CONFIG_DOVETAIL
+/* hard irqs off. */
+void kvm_handle_oob_switch(struct kvm_oob_notifier *nfy)
+{
+	struct kvm_user_return_msrs *msrs = this_cpu_ptr(user_return_msrs);
+	struct kvm_vcpu *vcpu;
+
+	vcpu = container_of(nfy, struct kvm_vcpu, oob_notifier);
+	/*
+	 * If user_return MSRs were still active when leaving
+	 * kvm_arch_vcpu_put(), inband_exit_guest() was not invoked,
+	 * so we might get called later on before kvm_on_user_return()
+	 * had a chance to run, if a switch to out-of-band scheduling
+	 * sneaks in in the meantime.  Prevent kvm_arch_vcpu_put()
+	 * from running twice in such a case by checking ->put_vcpu
+	 * from the notifier block.
+	 */
+	if (nfy->put_vcpu)
+		kvm_arch_vcpu_put(vcpu);
+
+	__kvm_on_user_return(msrs);
+	inband_exit_guest();
+}
+#else
+#define kvm_handle_oob_switch  NULL
+#endif
 
 static int kvm_vcpu_ioctl_get_lapic(struct kvm_vcpu *vcpu,
 				    struct kvm_lapic_state *s)
@@ -9027,6 +9089,10 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	}
 
 	preempt_disable();
+	local_irq_disable_full();
+
+	inband_enter_guest(vcpu);
+	inband_set_vcpu_release_state(vcpu, true);
 
 	kvm_x86_ops.prepare_guest_switch(vcpu);
 
@@ -9035,7 +9101,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	 * IPI are then delayed after guest entry, which ensures that they
 	 * result in virtual interrupt delivery.
 	 */
-	local_irq_disable();
 	vcpu->mode = IN_GUEST_MODE;
 
 	srcu_read_unlock(&vcpu->kvm->srcu, vcpu->srcu_idx);
@@ -9064,7 +9129,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	if (kvm_vcpu_exit_request(vcpu)) {
 		vcpu->mode = OUTSIDE_GUEST_MODE;
 		smp_wmb();
-		local_irq_enable();
+		local_irq_enable_full();
 		preempt_enable();
 		vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
 		r = 1;
@@ -9136,9 +9201,9 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	 * stat.exits increment will do nicely.
 	 */
 	kvm_before_interrupt(vcpu);
-	local_irq_enable();
+	local_irq_enable_full();
 	++vcpu->stat.exits;
-	local_irq_disable();
+	local_irq_disable_full();
 	kvm_after_interrupt(vcpu);
 
 	/*
@@ -9158,7 +9223,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		}
 	}
 
-	local_irq_enable();
+	local_irq_enable_full();
 	preempt_enable();
 
 	vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
@@ -10078,6 +10143,7 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	if (r)
 		goto free_guest_fpu;
 
+	inband_init_vcpu(vcpu, kvm_handle_oob_switch);
 	vcpu->arch.arch_capabilities = kvm_get_arch_capabilities();
 	vcpu->arch.msr_platform_info = MSR_PLATFORM_INFO_CPUID_FAULT;
 	kvm_vcpu_mtrr_init(vcpu);
