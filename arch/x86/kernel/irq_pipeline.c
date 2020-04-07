@@ -156,6 +156,12 @@ static void do_sysvec_inband(struct irq_desc *desc, struct pt_regs *regs)
 					regs);
 		break;
 #endif
+#ifdef CONFIG_KVM_GUEST
+	case HYPERVISOR_CALLBACK_VECTOR:
+		run_sysvec_on_irqstack_cond(__sysvec_kvm_asyncpf_interrupt,
+					    regs);
+		break;
+#endif
 	case LOCAL_TIMER_VECTOR:
 		run_sysvec_on_irqstack_cond(__sysvec_apic_timer_interrupt,
 					regs);
