@@ -377,8 +377,22 @@ CVEs fixed in 4.19.100:
 CVEs fixed in 4.19.103:
   CVE-2019-3016: 25a7898937f4a9f32ca2d1e9b7f5f07176af8037 x86/kvm: Be careful not to clear KVM_VCPU_FLUSH_TLB bit
 
+CVEs fixed in 4.19.107:
+  CVE-2020-0009: a4307700608e43dcf9b8abf1ee74f68227e9c61a staging: android: ashmem: Disallow ashmem memory from being remapped
+  CVE-2020-2732: ed9e97c35b454ceb1da4f65c318015a7ab298dae KVM: nVMX: Don't emulate instructions in guest mode
+  CVE-2020-9383: c8fd87c53a1509162b910cec91c0c46753c58f9a floppy: check FDC index for errors before assigning it
+
+CVEs fixed in 4.19.108:
+  CVE-2019-16234: 1d8780188c8d7f009a05d40fbb8a111eab89746d iwlwifi: pcie: fix rb_allocator workqueue allocation
+  CVE-2020-10942: ad598a48fe61c6c2407f08a807cb7a2ea83386b3 vhost: Check docket sk_family instead of call getname
+
+CVEs fixed in 4.19.109:
+  CVE-2020-8647: 7abe1e0a874418b07524c9e07225df1cbb421ce9 vgacon: Fix a UAF in vgacon_invert_region
+  CVE-2020-8648: 31559b59040fc0e6ad363642112d4eb03ad4ebb7 vt: selection, close sel_buffer race
+  CVE-2020-8649: 7abe1e0a874418b07524c9e07225df1cbb421ce9 vgacon: Fix a UAF in vgacon_invert_region
+
  
-CVEs Fixed in this 4.19.106 LTS 4.19 release 
+CVEs Fixed in this 4.19.114 LTS 4.19 release 
 ====================================================
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
@@ -426,9 +440,6 @@ CVEs Fixed in this 4.19.106 LTS 4.19 release
 # CVE-2019-15291
 0001-media-b2c2-flexcop-usb-add-sanity-checking-CVE-2019-15291.patch
  
-# CVE-2019-19051
-0001-wimax-i2400-Fix-memory-leak-in-i2400m_op_rfkill_sw_t-CVE-2019-19051.patch
- 
 # CVE-2019-18814
 0001-apparmor-Fix-use-after-free-in-aa_audit_rule_init-CVE-2019-18814.patch
  
@@ -441,23 +452,14 @@ CVEs Fixed in this 4.19.106 LTS 4.19 release
 # CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
 
-# CVE-2020-8648
-0001-vt-selection-close-sel_buffer-race.patch
-
 # CVE-2019-10220
 0002-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
 0003-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
-
-# CVE-2019-16234
-0004-iwlwifi-pcie-fix-rb_allocator-workqueue-allocation.patch
 
 # CVE-2019-19770
 0005-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
 0006-debugfs-simplify-__debugfs_remove_file.patch
 0007-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
-
-# CVE-2020-8647
-0008-vgacon-Fix-a-UAF-in-vgacon_invert_region.patch
 
 #CVE-2019-19768
 0001-blktrace-Protect-q-blk_trace-with-RCU.patch
