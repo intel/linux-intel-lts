@@ -6298,7 +6298,10 @@ void stmmac_clean_all_tx_rings(struct stmmac_priv *priv)
 	for (queue = 0; queue < tx_count; queue++) {
 		struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
 
-		stmmac_clean_tx_queue(priv, tx_q);
+		if (queue_is_xdp(priv, queue) && tx_q->xsk_umem)
+			stmmac_xsk_clean_tx_queue(tx_q);
+		else
+			stmmac_clean_tx_queue(priv, tx_q);
 	}
 }
 
