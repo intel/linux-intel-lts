@@ -73,10 +73,7 @@ static int dal_dev_release(struct inode *inode, struct file *fp)
 	struct dal_client *dc = fp->private_data;
 	struct dal_device *ddev = dc->ddev;
 
-	if (mutex_lock_interruptible(&ddev->context_lock)) {
-		dev_dbg(&ddev->dev, "signal interrupted\n");
-		return -ERESTARTSYS;
-	}
+	mutex_lock(&ddev->context_lock);
 
 	dal_dc_destroy(ddev, dc->intf);
 
