@@ -167,10 +167,14 @@ static void stmmac_disable_all_queues(struct stmmac_priv *priv)
 	for (queue = 0; queue < maxq; queue++) {
 		struct stmmac_channel *ch = &priv->channel[queue];
 
-		if (queue < rx_queues_cnt)
+		if (queue < rx_queues_cnt) {
+			napi_synchronize(&ch->rx_napi);
 			napi_disable(&ch->rx_napi);
-		if (queue < tx_queues_cnt)
+		}
+		if (queue < tx_queues_cnt) {
+			napi_synchronize(&ch->tx_napi);
 			napi_disable(&ch->tx_napi);
+		}
 	}
 }
 
@@ -6747,6 +6751,8 @@ int stmmac_suspend(struct device *dev)
 
 	netif_device_detach(ndev);
 
+	netif_carrier_off(priv->dev);
+
 	stmmac_disable_all_queues(priv);
 
 	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
@@ -7017,8 +7023,6 @@ int stmmac_resume(struct device *dev)
 			stmmac_mdio_reset(priv->mii);
 	}
 
-	netif_device_attach(ndev);
-
 	mutex_lock(&priv->lock);
 
 	stmmac_reset_queues_param(priv);
@@ -7055,6 +7059,8 @@ int stmmac_resume(struct device *dev)
 				   __func__, ret);
 		}
 	}
+
+	netif_device_attach(ndev);
 #endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
 
 	return 0;
