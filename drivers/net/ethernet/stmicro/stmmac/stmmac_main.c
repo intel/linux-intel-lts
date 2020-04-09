@@ -6271,6 +6271,37 @@ int stmmac_reinit_ringparam(struct net_device *dev, u32 rx_size, u32 tx_size)
 	return ret;
 }
 
+static void stmmac_clean_tx_queue(struct stmmac_priv *priv,
+				  struct stmmac_tx_queue *tx_q)
+{
+	u32 queue = tx_q->queue_index;
+	unsigned int entry;
+
+	entry = tx_q->dirty_tx;
+	while (entry != tx_q->cur_tx) {
+		/* Free all the Tx ring sk_buffs */
+		stmmac_free_tx_buffer(priv, queue, entry);
+
+		entry = STMMAC_GET_ENTRY(entry, priv->dma_tx_size);
+	}
+	tx_q->dirty_tx = entry;
+
+	/* reset BQL for queue */
+	netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, queue));
+}
+
+void stmmac_clean_all_tx_rings(struct stmmac_priv *priv)
+{
+	u32 tx_count = priv->plat->tx_queues_to_use;
+	u32 queue;
+
+	for (queue = 0; queue < tx_count; queue++) {
+		struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
+
+		stmmac_clean_tx_queue(priv, tx_q);
+	}
+}
+
 /**
  * stmmac_dvr_probe
  * @device: device pointer
@@ -6763,6 +6794,8 @@ int stmmac_suspend(struct device *dev)
 			    priv->hw->cached_fpe_en);
 		stmmac_fpe_set_enable(priv, priv->hw, ndev, false);
 	}
+
+	stmmac_clean_all_tx_rings(priv);
 
 	mutex_unlock(&priv->lock);
 
