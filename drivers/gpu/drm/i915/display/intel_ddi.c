@@ -567,6 +567,20 @@ static const struct cnl_ddi_buf_trans icl_combo_phy_ddi_translations_hdmi[] = {
 	{ 0x6, 0x7F, 0x35, 0x00, 0x0A },	/* 600   850      3.0   */
 };
 
+static const struct cnl_ddi_buf_trans ehl_combo_phy_ddi_translations_hbr2_hbr3[] = {
+						/* NT mV Trans mV db    */
+	{ 0xA, 0x33, 0x3F, 0x00, 0x00 },	/* 350   350      0.0   */
+	{ 0xA, 0x47, 0x36, 0x00, 0x09 },	/* 350   500      3.1   */
+	{ 0xC, 0x64, 0x30, 0x00, 0x0F },	/* 350   700      6.0   */
+	{ 0x6, 0x7F, 0x2C, 0x00, 0x13 },	/* 350   900      8.2   */
+	{ 0xA, 0x46, 0x3F, 0x00, 0x00 },	/* 500   500      0.0   */
+	{ 0xC, 0x64, 0x36, 0x00, 0x09 },	/* 500   700      2.9   */
+	{ 0x6, 0x7F, 0x30, 0x00, 0x0F },	/* 500   900      5.1   */
+	{ 0xC, 0x61, 0x3F, 0x00, 0x00 },	/* 650   700      0.6   */
+	{ 0x6, 0x7F, 0x37, 0x00, 0x08 },	/* 600   900      3.5   */
+	{ 0x6, 0x7F, 0x3F, 0x00, 0x00 },	/* 900   900      0.0   */
+};
+
 struct icl_mg_phy_ddi_buf_trans {
 	u32 cri_txdeemph_override_5_0;
 	u32 cri_txdeemph_override_11_6;
@@ -593,7 +607,7 @@ struct tgl_dkl_phy_ddi_buf_trans {
 	u32 dkl_de_emphasis_control;
 };
 
-static const struct tgl_dkl_phy_ddi_buf_trans tgl_dkl_phy_ddi_translations[] = {
+static const struct tgl_dkl_phy_ddi_buf_trans tgl_dkl_phy_dp_ddi_trans[] = {
 				/* VS	pre-emp	Non-trans mV	Pre-emph dB */
 	{ 0x7, 0x0, 0x00 },	/* 0	0	400mV		0 dB */
 	{ 0x5, 0x0, 0x03 },	/* 0	1	400mV		3.5 dB */
@@ -605,6 +619,48 @@ static const struct tgl_dkl_phy_ddi_buf_trans tgl_dkl_phy_ddi_translations[] = {
 	{ 0x2, 0x0, 0x00 },	/* 2	0	800mV		0 dB */
 	{ 0x0, 0x0, 0x0B },	/* 2	1	800mV		3.5 dB */
 	{ 0x0, 0x0, 0x00 },	/* 3	0	1200mV		0 dB HDMI default */
+};
+
+static const struct tgl_dkl_phy_ddi_buf_trans tgl_dkl_phy_hdmi_ddi_trans[] = {
+				/* HDMI Preset	VS	Pre-emph */
+	{ 0x7, 0x0, 0x0 },	/* 1		400mV	0dB */
+	{ 0x6, 0x0, 0x0 },	/* 2		500mV	0dB */
+	{ 0x4, 0x0, 0x0 },	/* 3		650mV	0dB */
+	{ 0x2, 0x0, 0x0 },	/* 4		800mV	0dB */
+	{ 0x0, 0x0, 0x0 },	/* 5		1000mV	0dB */
+	{ 0x0, 0x0, 0x5 },	/* 6		Full	-1.5 dB */
+	{ 0x0, 0x0, 0x6 },	/* 7		Full	-1.8 dB */
+	{ 0x0, 0x0, 0x7 },	/* 8		Full	-2 dB */
+	{ 0x0, 0x0, 0x8 },	/* 9		Full	-2.5 dB */
+	{ 0x0, 0x0, 0xA },	/* 10		Full	-3 dB */
+};
+
+static const struct cnl_ddi_buf_trans tgl_combo_phy_ddi_translations_dp_hbr[] = {
+						/* NT mV Trans mV db    */
+	{ 0xA, 0x32, 0x3F, 0x00, 0x00 },	/* 350   350      0.0   */
+	{ 0xA, 0x4F, 0x37, 0x00, 0x08 },	/* 350   500      3.1   */
+	{ 0xC, 0x71, 0x2F, 0x00, 0x10 },	/* 350   700      6.0   */
+	{ 0x6, 0x7D, 0x2B, 0x00, 0x14 },	/* 350   900      8.2   */
+	{ 0xA, 0x4C, 0x3F, 0x00, 0x00 },	/* 500   500      0.0   */
+	{ 0xC, 0x73, 0x34, 0x00, 0x0B },	/* 500   700      2.9   */
+	{ 0x6, 0x7F, 0x2F, 0x00, 0x10 },	/* 500   900      5.1   */
+	{ 0xC, 0x6C, 0x3C, 0x00, 0x03 },	/* 650   700      0.6   */
+	{ 0x6, 0x7F, 0x35, 0x00, 0x0A },	/* 600   900      3.5   */
+	{ 0x6, 0x7F, 0x3F, 0x00, 0x00 },	/* 900   900      0.0   */
+};
+
+static const struct cnl_ddi_buf_trans tgl_combo_phy_ddi_translations_dp_hbr2[] = {
+						/* NT mV Trans mV db    */
+	{ 0xA, 0x35, 0x3F, 0x00, 0x00 },	/* 350   350      0.0   */
+	{ 0xA, 0x4F, 0x37, 0x00, 0x08 },	/* 350   500      3.1   */
+	{ 0xC, 0x63, 0x2F, 0x00, 0x10 },	/* 350   700      6.0   */
+	{ 0x6, 0x7F, 0x2B, 0x00, 0x14 },	/* 350   900      8.2   */
+	{ 0xA, 0x47, 0x3F, 0x00, 0x00 },	/* 500   500      0.0   */
+	{ 0xC, 0x63, 0x34, 0x00, 0x0B },	/* 500   700      2.9   */
+	{ 0x6, 0x7F, 0x2F, 0x00, 0x10 },	/* 500   900      5.1   */
+	{ 0xC, 0x61, 0x3C, 0x00, 0x03 },	/* 650   700      0.6   */
+	{ 0x6, 0x7B, 0x35, 0x00, 0x0A },	/* 600   900      3.5   */
+	{ 0x6, 0x7F, 0x3F, 0x00, 0x00 },	/* 900   900      0.0   */
 };
 
 static const struct ddi_buf_trans *
@@ -886,6 +942,33 @@ icl_get_combo_buf_trans(struct drm_i915_private *dev_priv, int type, int rate,
 	return icl_combo_phy_ddi_translations_dp_hbr2;
 }
 
+static const struct cnl_ddi_buf_trans *
+ehl_get_combo_buf_trans(struct drm_i915_private *dev_priv, int type, int rate,
+			int *n_entries)
+{
+	if (type == INTEL_OUTPUT_DP && rate > 270000) {
+		*n_entries = ARRAY_SIZE(ehl_combo_phy_ddi_translations_hbr2_hbr3);
+		return ehl_combo_phy_ddi_translations_hbr2_hbr3;
+	}
+
+	return icl_get_combo_buf_trans(dev_priv, type, rate, n_entries);
+}
+
+static const struct cnl_ddi_buf_trans *
+tgl_get_combo_buf_trans(struct drm_i915_private *dev_priv, int type, int rate,
+			int *n_entries)
+{
+	if (type != INTEL_OUTPUT_DP) {
+		return icl_get_combo_buf_trans(dev_priv, type, rate, n_entries);
+	} else if (rate > 270000) {
+		*n_entries = ARRAY_SIZE(tgl_combo_phy_ddi_translations_dp_hbr2);
+		return tgl_combo_phy_ddi_translations_dp_hbr2;
+	}
+
+	*n_entries = ARRAY_SIZE(tgl_combo_phy_ddi_translations_dp_hbr);
+	return tgl_combo_phy_ddi_translations_dp_hbr;
+}
+
 static int intel_ddi_hdmi_level(struct drm_i915_private *dev_priv, enum port port)
 {
 	int n_entries, level, default_entry;
@@ -895,10 +978,10 @@ static int intel_ddi_hdmi_level(struct drm_i915_private *dev_priv, enum port por
 
 	if (INTEL_GEN(dev_priv) >= 12) {
 		if (intel_phy_is_combo(dev_priv, phy))
-			icl_get_combo_buf_trans(dev_priv, INTEL_OUTPUT_HDMI,
+			tgl_get_combo_buf_trans(dev_priv, INTEL_OUTPUT_HDMI,
 						0, &n_entries);
 		else
-			n_entries = ARRAY_SIZE(tgl_dkl_phy_ddi_translations);
+			n_entries = ARRAY_SIZE(tgl_dkl_phy_hdmi_ddi_trans);
 		default_entry = n_entries - 1;
 	} else if (INTEL_GEN(dev_priv) == 11) {
 		if (intel_phy_is_combo(dev_priv, phy))
@@ -2023,7 +2106,7 @@ bool intel_ddi_connector_get_hw_state(struct intel_connector *intel_connector)
 		goto out;
 	}
 
-	if (HAS_TRANSCODER_EDP(dev_priv) && port == PORT_A)
+	if (HAS_TRANSCODER_EDP(dev_priv) && port == PORT_A && !intel_vgpu_active(dev_priv))
 		cpu_transcoder = TRANSCODER_EDP;
 	else
 		cpu_transcoder = (enum transcoder) pipe;
@@ -2370,12 +2453,15 @@ u8 intel_ddi_dp_voltage_max(struct intel_encoder *encoder)
 
 	if (INTEL_GEN(dev_priv) >= 12) {
 		if (intel_phy_is_combo(dev_priv, phy))
-			icl_get_combo_buf_trans(dev_priv, encoder->type,
+			tgl_get_combo_buf_trans(dev_priv, encoder->type,
 						intel_dp->link_rate, &n_entries);
 		else
-			n_entries = ARRAY_SIZE(tgl_dkl_phy_ddi_translations);
+			n_entries = ARRAY_SIZE(tgl_dkl_phy_dp_ddi_trans);
 	} else if (INTEL_GEN(dev_priv) == 11) {
-		if (intel_phy_is_combo(dev_priv, phy))
+		if (IS_ELKHARTLAKE(dev_priv))
+			ehl_get_combo_buf_trans(dev_priv, encoder->type,
+						intel_dp->link_rate, &n_entries);
+		else if (intel_phy_is_combo(dev_priv, phy))
 			icl_get_combo_buf_trans(dev_priv, encoder->type,
 						intel_dp->link_rate, &n_entries);
 		else
@@ -2565,8 +2651,15 @@ static void icl_ddi_combo_vswing_program(struct drm_i915_private *dev_priv,
 	u32 n_entries, val;
 	int ln;
 
-	ddi_translations = icl_get_combo_buf_trans(dev_priv, type, rate,
-						   &n_entries);
+	if (INTEL_GEN(dev_priv) >= 12)
+		ddi_translations = tgl_get_combo_buf_trans(dev_priv, type, rate,
+							   &n_entries);
+	else if (IS_ELKHARTLAKE(dev_priv))
+		ddi_translations = ehl_get_combo_buf_trans(dev_priv, type, rate,
+							   &n_entries);
+	else
+		ddi_translations = icl_get_combo_buf_trans(dev_priv, type, rate,
+							   &n_entries);
 	if (!ddi_translations)
 		return;
 
@@ -2825,8 +2918,13 @@ tgl_dkl_phy_ddi_vswing_sequence(struct intel_encoder *encoder, int link_clock,
 	const struct tgl_dkl_phy_ddi_buf_trans *ddi_translations;
 	u32 n_entries, val, ln, dpcnt_mask, dpcnt_val;
 
-	n_entries = ARRAY_SIZE(tgl_dkl_phy_ddi_translations);
-	ddi_translations = tgl_dkl_phy_ddi_translations;
+	if (encoder->type == INTEL_OUTPUT_HDMI) {
+		n_entries = ARRAY_SIZE(tgl_dkl_phy_hdmi_ddi_trans);
+		ddi_translations = tgl_dkl_phy_hdmi_ddi_trans;
+	} else {
+		n_entries = ARRAY_SIZE(tgl_dkl_phy_dp_ddi_trans);
+		ddi_translations = tgl_dkl_phy_dp_ddi_trans;
+	}
 
 	if (level >= n_entries)
 		level = n_entries - 1;
@@ -4205,7 +4303,9 @@ static bool intel_ddi_is_audio_enabled(struct drm_i915_private *dev_priv,
 void intel_ddi_compute_min_voltage_level(struct drm_i915_private *dev_priv,
 					 struct intel_crtc_state *crtc_state)
 {
-	if (INTEL_GEN(dev_priv) >= 11 && crtc_state->port_clock > 594000)
+	if (IS_ELKHARTLAKE(dev_priv) && crtc_state->port_clock > 594000)
+		crtc_state->min_voltage_level = 3;
+	else if (INTEL_GEN(dev_priv) >= 11 && crtc_state->port_clock > 594000)
 		crtc_state->min_voltage_level = 1;
 	else if (IS_CANNONLAKE(dev_priv) && crtc_state->port_clock > 594000)
 		crtc_state->min_voltage_level = 2;
@@ -4387,7 +4487,7 @@ static int intel_ddi_compute_config(struct intel_encoder *encoder,
 	enum port port = encoder->port;
 	int ret;
 
-	if (HAS_TRANSCODER_EDP(dev_priv) && port == PORT_A)
+	if (HAS_TRANSCODER_EDP(dev_priv) && port == PORT_A && !intel_vgpu_active(dev_priv))
 		pipe_config->cpu_transcoder = TRANSCODER_EDP;
 
 	if (intel_crtc_has_type(pipe_config, INTEL_OUTPUT_HDMI)) {
@@ -4694,7 +4794,8 @@ void intel_ddi_init(struct drm_i915_private *dev_priv, enum port port)
 	init_hdmi = port_info->supports_dvi || port_info->supports_hdmi;
 	init_dp = port_info->supports_dp;
 
-	if (intel_bios_is_lspcon_present(dev_priv, port)) {
+	if (!intel_vgpu_active(dev_priv) &&
+			intel_bios_is_lspcon_present(dev_priv, port)) {
 		/*
 		 * Lspcon device needs to be driven with DP connector
 		 * with special detection sequence. So make sure DP

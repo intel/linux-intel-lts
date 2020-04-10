@@ -49,9 +49,11 @@
 #include "fb_decoder.h"
 #include "dmabuf.h"
 #include "page_track.h"
+#include "display/intel_display_types.h"
 
 #define GVT_MAX_VGPU 8
 
+#define GVT_CURSOR_BLOCKS 8
 struct intel_gvt_host {
 	struct device *dev;
 	bool initialized;
@@ -66,6 +68,7 @@ struct intel_gvt_device_info {
 	u32 max_support_vgpus;
 	u32 cfg_space_size;
 	u32 mmio_size;
+	u32 mmio_size_order;
 	u32 mmio_bar;
 	unsigned long msi_cap_offset;
 	u32 gtt_start_offset;
@@ -75,12 +78,24 @@ struct intel_gvt_device_info {
 	u32 max_surface_size;
 };
 
+struct gvt_gop_info {
+	unsigned int fb_base;
+	unsigned int width;
+	unsigned int height;
+	unsigned int pitch;
+	unsigned int Bpp;
+	unsigned int size;
+};
+
 /* GM resources owned by a vGPU */
 struct intel_vgpu_gm {
 	u64 aperture_sz;
 	u64 hidden_sz;
 	struct drm_mm_node low_gm_node;
 	struct drm_mm_node high_gm_node;
+	struct page **gop_fb_pages;
+	struct gvt_gop_info gop;
+	u32 gop_fb_size;
 };
 
 #define INTEL_GVT_MAX_NUM_FENCES 32
@@ -94,6 +109,7 @@ struct intel_vgpu_fence {
 
 struct intel_vgpu_mmio {
 	void *vreg;
+	struct gvt_shared_page *shared_page;
 };
 
 #define INTEL_GVT_MAX_BAR_NUM 4
@@ -115,6 +131,9 @@ struct intel_vgpu_irq {
 	DECLARE_BITMAP(flip_done_event[I915_MAX_PIPES],
 		       INTEL_GVT_EVENT_MAX);
 };
+
+/* ToDo: GOP_FB_BASE from kernel parameter */
+#define GOP_FB_BASE	0xDF000000
 
 struct intel_vgpu_opregion {
 	bool mapped;
@@ -229,6 +248,9 @@ struct intel_vgpu {
 	struct completion vblank_done;
 
 	u32 scan_nonprivbb;
+
+	unsigned long long *cached_guest_entry;
+	bool ge_cache_enable;
 };
 
 /* validating GM healthy status*/
@@ -298,6 +320,18 @@ struct intel_vgpu_type {
 	enum intel_vgpu_edid resolution;
 };
 
+struct intel_gvt_pipe_info {
+	enum pipe pipe_num;
+	int owner;
+	struct intel_gvt *gvt;
+	struct work_struct vblank_work;
+	int plane_owner[I915_MAX_PLANES];
+	int scaler_owner[SKL_NUM_SCALERS];
+	struct skl_ddb_entry plane_ddb_y[I915_MAX_PLANES];
+	struct skl_ddb_entry plane_ddb_uv[I915_MAX_PLANES];
+	struct skl_ddb_entry pipe_ddb;
+};
+
 struct intel_gvt {
 	/* GVT scope lock, protect GVT itself, and all resource currently
 	 * not yet protected by special locks(vgpu and scheduler lock).
@@ -331,6 +365,8 @@ struct intel_gvt {
 	 */
 	unsigned long service_request;
 
+	struct intel_gvt_pipe_info pipe_info[I915_MAX_PIPES];
+
 	struct {
 		struct engine_mmio *mmio;
 		int ctx_mmio_count[I915_NUM_ENGINES];
@@ -341,6 +377,10 @@ struct intel_gvt {
 	} engine_mmio_list;
 
 	struct dentry *debugfs_root;
+	struct work_struct active_hp_work;
+
+	void *intel_gvt_vreg_pool[GVT_MAX_VGPU];
+	bool intel_gvt_vreg_allocated[GVT_MAX_VGPU];
 };
 
 static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
@@ -455,6 +495,11 @@ void intel_vgpu_write_fence(struct intel_vgpu *vgpu,
 	idr_for_each_entry((&(gvt)->vgpu_idr), (vgpu), (id)) \
 		for_each_if(vgpu->active)
 
+#define for_each_universal_scaler(__dev_priv, __pipe, __s)		\
+	for ((__s) = 0;							\
+	     (__s) < RUNTIME_INFO(__dev_priv)->num_scalers[(__pipe)] + 1; \
+	     (__s)++)
+
 static inline void intel_vgpu_write_pci_bar(struct intel_vgpu *vgpu,
 					    u32 offset, u32 val, bool low)
 {
@@ -527,6 +572,8 @@ void intel_vgpu_init_cfg_space(struct intel_vgpu *vgpu,
 		bool primary);
 void intel_vgpu_reset_cfg_space(struct intel_vgpu *vgpu);
 
+int set_pvmmio(struct intel_vgpu *vgpu, bool map);
+
 int intel_vgpu_emulate_cfg_read(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes);
 
@@ -545,6 +592,7 @@ static inline u64 intel_vgpu_get_bar_gpa(struct intel_vgpu *vgpu, int bar)
 void intel_vgpu_clean_opregion(struct intel_vgpu *vgpu);
 int intel_vgpu_init_opregion(struct intel_vgpu *vgpu);
 int intel_vgpu_opregion_base_write_handler(struct intel_vgpu *vgpu, u32 gpa);
+int map_vgpu_opregion(struct intel_vgpu *vgpu, bool map);
 
 int intel_vgpu_emulate_opregion_request(struct intel_vgpu *vgpu, u32 swsci);
 void populate_pvinfo_page(struct intel_vgpu *vgpu);
@@ -579,6 +627,7 @@ struct intel_gvt_ops {
 	void (*emulate_hotplug)(struct intel_vgpu *vgpu, bool connected);
 };
 
+void intel_gvt_allocate_ddb(struct intel_gvt *gvt, unsigned int active_crtcs);
 
 enum {
 	GVT_FAILSAFE_UNSUPPORTED_GUEST,
@@ -691,6 +740,8 @@ void intel_gvt_debugfs_remove_vgpu(struct intel_vgpu *vgpu);
 void intel_gvt_debugfs_init(struct intel_gvt *gvt);
 void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
 
+void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu);
+void intel_gvt_free_vreg(struct intel_vgpu *vgpu);
 
 #include "trace.h"
 #include "mpt.h"

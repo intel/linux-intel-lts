@@ -55,10 +55,6 @@ static unsigned char edid_get_byte(struct intel_vgpu *vgpu)
 		gvt_vgpu_err("Driver tries to read EDID without proper sequence!\n");
 		return 0;
 	}
-	if (edid->current_edid_read >= EDID_SIZE) {
-		gvt_vgpu_err("edid_get_byte() exceeds the size of EDID!\n");
-		return 0;
-	}
 
 	if (!edid->edid_available) {
 		gvt_vgpu_err("Reading EDID but EDID is not available!\n");
@@ -454,6 +450,89 @@ static inline int get_aux_ch_reg(unsigned int offset)
 	return reg;
 }
 
+static u8 edid_checksum(struct edid *edid)
+{
+	u8 *raw = (u8 *)edid, csum = 0;
+	int i;
+
+	for (i = 0; i < EDID_LENGTH; i++)
+		csum += raw[i];
+
+	return csum;
+}
+
+struct edid *intel_gvt_create_edid_from_mode(struct drm_display_mode *mode)
+{
+	struct edid *edid = NULL;
+	struct detailed_pixel_timing *pt;
+
+	edid = kzalloc(sizeof(struct edid), GFP_KERNEL);
+	if (edid) {
+		/* EDID header */
+		memset(&edid->header[1], 0xff, 6);
+		/* Vendor & product info */
+		edid->mfg_id[0] = 0x22, edid->mfg_id[1] = 0xf0;
+		edid->prod_code[0] = 0x54, edid->prod_code[1] = 0x29;
+		edid->serial = 0x00000000;
+		edid->mfg_week = 0x05, edid->mfg_year = 0x19;
+		/* EDID version */
+		edid->version = 0x01, edid->revision = 0x04;
+		/* Display info */
+		edid->input = 0xa5;
+		edid->width_cm = 0x34;
+		edid->height_cm = 0x20;
+		edid->gamma = 0x78;
+		edid->features = 0x23;
+		/* Color characteristics */
+		edid->red_green_lo = 0xfc;
+		edid->black_white_lo = 0x81;
+		edid->red_x = 0xa4, edid->red_y = 0x55;
+		edid->green_x = 0x4d, edid->green_y =  0x9d;
+		edid->blue_x = 0x25, edid->blue_y = 0x12;
+		edid->white_x = 0x50, edid->white_y = 0x54;
+		/* Detailed timings */
+		edid->detailed_timings[0].pixel_clock = cpu_to_le16(mode->clock / 10);
+		pt = &edid->detailed_timings[0].data.pixel_data;
+		pt->hactive_lo = mode->hdisplay & 0xff;
+		pt->hblank_lo = (mode->htotal - mode->hdisplay) & 0xff;
+		pt->hactive_hblank_hi = (mode->hdisplay & 0xf00) >> 4
+			| ((mode->htotal - mode->hdisplay) & 0xf00) >> 8;
+		pt->vactive_lo = mode->vdisplay & 0xff;
+		pt->vblank_lo = (mode->vtotal - mode->vdisplay) & 0xff;
+		pt->vactive_vblank_hi = (mode->vdisplay & 0xf00) >> 4
+			| ((mode->vtotal - mode->vdisplay) & 0xf00) >> 8;
+		pt->hsync_offset_lo = (mode->hsync_start - mode->hdisplay) & 0xff;
+		pt->hsync_pulse_width_lo = (mode->hsync_end - mode->hsync_start) & 0xff;
+		pt->vsync_offset_pulse_width_lo =
+			((mode->vsync_start - mode->vdisplay) & 0x0f) << 4;
+		pt->vsync_offset_pulse_width_lo |=
+			(mode->vsync_end - mode->vsync_start) & 0x0f;
+		pt->hsync_vsync_offset_pulse_width_hi =
+			((mode->hsync_start - mode->hdisplay) & 0x300) >> 2;
+		pt->hsync_vsync_offset_pulse_width_hi |=
+			((mode->hsync_end - mode->hsync_start) & 0x300) >> 4;
+		pt->hsync_vsync_offset_pulse_width_hi |=
+			((mode->vsync_start - mode->vdisplay) & 0x30) >> 2;
+		pt->hsync_vsync_offset_pulse_width_hi |=
+			((mode->vsync_end - mode->vsync_start) & 0x30) >> 4;
+		pt->width_mm_lo = mode->width_mm & 0xff;
+		pt->height_mm_lo = mode->height_mm & 0xff;
+		pt->width_height_mm_hi = (mode->width_mm & 0xf00) >> 4;
+		pt->width_height_mm_hi |= (mode->height_mm & 0xf00) >> 8;
+
+		pt->misc = mode->flags & DRM_MODE_FLAG_PHSYNC ?
+			DRM_EDID_PT_HSYNC_POSITIVE : 0;
+		pt->misc |= mode->flags & DRM_MODE_FLAG_PVSYNC ?
+			DRM_EDID_PT_VSYNC_POSITIVE : 0;
+		pt->misc |= mode->flags & DRM_MODE_FLAG_INTERLACE ?
+			DRM_EDID_PT_INTERLACED : 0;
+
+		edid->checksum = 0 - edid_checksum(edid);
+	}
+
+	return edid;
+}
+
 #define AUX_CTL_MSG_LENGTH(reg) \
 	((reg & DP_AUX_CH_CTL_MESSAGE_SIZE_MASK) >> \
 		DP_AUX_CH_CTL_MESSAGE_SIZE_SHIFT)
@@ -479,6 +558,8 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
 	u32 value = *(u32 *)p_data;
 	int aux_data_for_write = 0;
 	int reg = get_aux_ch_reg(offset);
+	uint8_t rxbuf[20] = {0};
+	size_t rxsize;
 
 	if (reg != AUX_CH_CTL) {
 		vgpu_vreg(vgpu, offset) = value;
@@ -486,6 +567,12 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
 	}
 
 	msg_length = AUX_CTL_MSG_LENGTH(value);
+	if (WARN_ON(msg_length <= 0 || msg_length > 20))
+		return;
+
+	for (rxsize = 0; rxsize < msg_length; rxsize += 4)
+		intel_dp_unpack_aux(vgpu_vreg(vgpu, offset + 4 + rxsize),
+				rxbuf + rxsize, msg_length - rxsize);
 	// check the msg in DATA register.
 	msg = vgpu_vreg(vgpu, offset + 4);
 	addr = (msg >> 8) & 0xffff;
@@ -525,12 +612,13 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
 			}
 		}
 	} else if ((op & 0x1) == GVT_AUX_I2C_WRITE) {
-		/* TODO
-		 * We only support EDID reading from I2C_over_AUX. And
-		 * we do not expect the index mode to be used. Right now
-		 * the WRITE operation is ignored. It is good enough to
-		 * support the gfx driver to do EDID access.
+		/* We only support EDID reading from I2C_over_AUX.
+		 * But if EDID has extension blocks, we use this write
+		 * operation to set block starting address
 		 */
+		if (addr == EDID_ADDR) {
+			i2c_edid->current_edid_read = rxbuf[4];
+		}
 	} else {
 		if (WARN_ON((op & 0x1) != GVT_AUX_I2C_READ))
 			return;

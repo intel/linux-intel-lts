@@ -11,7 +11,9 @@
 #include "stmmac_ptp.h"
 #include "dwmac4.h"
 #include <linux/iopoll.h>
-
+#ifdef CONFIG_X86
+#include <asm/intel-family.h>
+#endif
 /**
  * stmmac_adjust_freq
  *
@@ -170,11 +172,6 @@ static int stmmac_enable(struct ptp_clock_info *ptp,
 			/* Enable External snapshot trigger */
 			acr_value |= priv->plat->ext_snapshot_num;
 			acr_value |= PTP_ACR_ATSFC;
-
-			/* Clear interrupt from PPS */
-			if (readl(priv->ioaddr + GMAC_INT_STATUS) &
-				  GMAC_INT_TSIE)
-				readl(priv->ioaddr + GMAC_TIMESTAMP_STATUS);
 			pr_info("Auxiliary Snapshot %d enabled\n",
 				priv->plat->ext_snapshot_num >> 5);
 		} else {
@@ -214,14 +211,17 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 	struct stmmac_priv *priv = (struct stmmac_priv *)ctx;
 	void __iomem *ptpaddr = priv->ptpaddr;
 	void __iomem *ioaddr = priv->hw->pcsr;
+	unsigned int ebx_numerator;
+	unsigned int unused[3];
 	unsigned long flags;
 	u32 num_snapshot;
 	u32 gpio_value;
 	u32 acr_value;
 	u64 art_time;
 	u64 ptp_time;
-	u32 v;
 	int i;
+
+	priv->plat->int_snapshot_en = 1;
 
 	/* Enable Internal snapshot trigger */
 	acr_value = readl(ptpaddr + PTP_ACR);
@@ -260,12 +260,8 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
 
 	/* Time sync done Indication - Interrupt method */
-	if (priv->hw->mdio_intr_en) {
-		if (!wait_event_timeout(priv->hw->mdio_busy_wait,
-					stmmac_cross_ts_isr(priv), HZ / 100))
-			return -ETIMEDOUT;
-	} else if (readl_poll_timeout(priv->ioaddr + GMAC_INT_STATUS, v,
-				     (v & GMAC_INT_TSIE), 100, 10000))
+	if (!wait_event_timeout(priv->tstamp_busy_wait,
+				stmmac_cross_ts_isr(priv), HZ / 100))
 		return -ETIMEDOUT;
 
 	num_snapshot = (readl(ioaddr + GMAC_TIMESTAMP_STATUS) &
@@ -284,13 +280,28 @@ static int stmmac_get_syncdevicetime(ktime_t *device,
 		*system = convert_art_to_tsc(art_time);
 	}
 
+	priv->plat->int_snapshot_en = 0;
+
 	/* In the case of PSE Local ART, it might be running different frequency
 	 * compared to the PMC ART, so we will need to perform a multiplication
 	 * to match the PMC ART frequency.
 	 */
-	if (priv->plat->is_pse)
+	if (priv->plat->is_pse) {
 		system->cycles *= priv->plat->pmc_art_to_pse_art_ratio;
-
+		return 0;
+	}
+#ifdef CONFIG_X86
+	/* [REVERTME] Workaround: TigerLake Internal MCP A2 stepping has ART
+	 * value of 0.5x of actual ART. As it has same CPU family and model as
+	 * the rest of the TigerLak CPU skus, we can only differentiate them
+	 * using numerator value define in CPUID Leaf 15H. Note that this
+	 * workaround is not required for Tigerlake Internal MCP A6 stepping.
+	 */
+	cpuid(0x15, unused, &ebx_numerator, unused + 1, unused + 2);
+	if (boot_cpu_data.x86_model == INTEL_FAM6_TIGERLAKE_L &&
+	    ebx_numerator == 0x5e)
+		system->cycles *= 2;
+#endif
 	return 0;
 }
 
@@ -338,15 +349,20 @@ void stmmac_ptp_register(struct stmmac_priv *priv)
 {
 	int aux_snapshot_n;
 	int i;
-#ifdef CONFIG_STMMAC_HWTS
+
 	void __iomem *ioaddr = priv->hw->pcsr;
 	u32 gpio_value;
 
-	/* set 200 Mhz xtal clock for Hammock Harbor */
 	gpio_value = readl(ioaddr + GMAC_GPIO_STATUS);
-	gpio_value &= ~GPO0;
+
+	if (priv->plat->is_pse) {
+		gpio_value &= ~PTP_PSE_CLK_FREQ_MASK;
+		gpio_value |= PTP_PSE_CLK_FREQ_200MHZ;
+	} else {
+		gpio_value &= ~GPO0;
+	}
+
 	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
-#endif
 
 	for (i = 0; i < priv->dma_cap.pps_out_num; i++) {
 		if (i >= STMMAC_PPS_MAX)

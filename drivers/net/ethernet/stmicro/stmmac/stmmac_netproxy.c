@@ -29,37 +29,39 @@
 static struct np_netdev np_netdev = { 0 };
 static struct np_shm np_shm = { NULL };
 
-/**
- * netprox_resume_task - stmmac network proxy resume task
- * @work: work item to retrieve stmmac_priv
- * Description: Add task to resume stmmac Ethernet driver.
+/*  netproxy_isr - Network Proxy interrupt service routine
+ *  @irq: interrupt number.
+ *  @dev_id: to pass the net device pointer.
+ *  Description: ISR to service Network Proxy interrupt.
  */
-static void netprox_resume_task(struct work_struct *work)
+irqreturn_t netproxy_isr(int irq, void *dev_id)
 {
-	struct stmmac_priv *priv = container_of(work, struct stmmac_priv,
-						netprox_task);
-	struct net_device *ndev = priv->dev;
+	struct net_device *ndev = (struct net_device *)dev_id;
+	struct stmmac_priv *priv = netdev_priv(ndev);
+	u32 value;
 
-	priv->networkproxy_exit = 1;
-	stmmac_resume_common(priv, ndev);
-	priv->networkproxy_exit = 0;
+	value = readl(priv->ioaddr + GBE_PROXYMODE_EXIT_STS_REG);
+	writel(value, priv->ioaddr + GBE_PROXYMODE_EXIT_STS_REG);
 
-	if (ndev->phydev)
-		phy_start_machine(ndev->phydev);
+	if (!netif_running(ndev)) {
+		netdev_err(priv->dev,
+			   "Netprox exit failed: netdev is not running\n");
+		return IRQ_HANDLED;
+	}
 
-	netif_device_attach(ndev);
+	return IRQ_WAKE_THREAD;
 }
 
 #define EHL_PSE_ETH_DMA_MISC_OFFSET		0x10000
 #define EHL_PSE_ETH_DMA_MISC_DTM_DRAM		3
 #define EHL_PSE_ETH_DMA_TOTAL_CH		16
 
-/*  netproxy_irq - Network Proxy interrupt handling
+/*  netproxy_isr_thread - Network Proxy ISR thread
  *  @irq: interrupt number.
  *  @dev_id: to pass the net device pointer.
- *  Description: ISR to service Network Proxy interrupt.
+ *  Description: Thread to service Network Proxy interrupt.
  */
-irqreturn_t netproxy_irq(int irq, void *dev_id)
+irqreturn_t netproxy_isr_thread(int irq, void *dev_id)
 {
 	struct net_device *ndev = (struct net_device *)dev_id;
 	struct stmmac_priv *priv = netdev_priv(ndev);
@@ -73,15 +75,6 @@ irqreturn_t netproxy_irq(int irq, void *dev_id)
 	void __iomem *pkt_content;
 	void __iomem *a2h_mem_ptr = priv->ioaddr + NETWORK_PROXY_SHMEM_OFFSET;
 	u32 value;
-
-	value = readl(priv->ioaddr + GBE_PROXYMODE_EXIT_STS_REG);
-	writel(value, priv->ioaddr + GBE_PROXYMODE_EXIT_STS_REG);
-
-	if (!netif_running(ndev)) {
-		netdev_err(priv->dev,
-			   "Netprox exit failed: netdev is not running\n");
-		return IRQ_HANDLED;
-	}
 
 	/* Get A2H memory pool header */
 	memcpy_fromio((void *)&a2h_hdr, a2h_mem_ptr, a2h_hdr_len);
@@ -137,7 +130,14 @@ err_skb:
 		       + i * sizeof(u32));
 	}
 
-	queue_work(priv->netprox_wq, &priv->netprox_task);
+	priv->networkproxy_exit = 1;
+	stmmac_resume_common(priv, ndev);
+	priv->networkproxy_exit = 0;
+
+	if (ndev->phydev)
+		phy_start_machine(ndev->phydev);
+
+	netif_device_attach(ndev);
 
 	return IRQ_HANDLED;
 }
@@ -242,8 +242,6 @@ int stmmac_netproxy_register(struct net_device *ndev)
 		dev_err(priv->device, "failed to create netprox workqueue\n");
 		return -1;
 	}
-
-	INIT_WORK(&priv->netprox_task, netprox_resume_task);
 
 	np_netdev.netdev = ndev;
 	np_netdev.proxy_enter = &stmmac_netproxy_enter;

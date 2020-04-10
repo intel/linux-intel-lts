@@ -3178,6 +3178,7 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN7_FF_THREAD_MODE		_MMIO(0x20a0)
 #define   GEN7_FF_SCHED_MASK		0x0077070
 #define   GEN8_FF_DS_REF_CNT_FFME	(1 << 19)
+#define   GEN12_FF_TESSELATION_DOP_GATE_DISABLE BIT(19)
 #define   GEN7_FF_TS_SCHED_HS1		(0x5 << 16)
 #define   GEN7_FF_TS_SCHED_HS0		(0x3 << 16)
 #define   GEN7_FF_TS_SCHED_LOAD_BALANCE	(0x1 << 16)
@@ -3295,6 +3296,7 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 
 /* Framebuffer compression for Ivybridge */
 #define IVB_FBC_RT_BASE			_MMIO(0x7020)
+#define IVB_FBC_RT_BASE_UPPER		_MMIO(0x7024)
 
 #define IPS_CTL		_MMIO(0x43408)
 #define   IPS_ENABLE	(1 << 31)
@@ -5861,6 +5863,9 @@ enum {
 #define PIPE_C_OFFSET		0x72000
 #define PIPE_D_OFFSET		0x73000
 #define CHV_PIPE_C_OFFSET	0x74000
+
+#define __PIPEBDSL		0x71000
+#define __PIPECDSL		0x72000
 /*
  * There's actually no pipe EDP. Some pipe registers have
  * simply shifted from the pipe to the transcoder, while
@@ -7761,6 +7766,7 @@ enum {
 
 #define GEN8_CHICKEN_DCPR_1		_MMIO(0x46430)
 #define   SKL_SELECT_ALTERNATE_DC_EXIT	(1 << 30)
+#define   CNL_DELAY_PMRSP		(1 << 22)
 #define   MASK_WAKEMEM			(1 << 13)
 #define   CNL_DDI_CLOCK_REG_ACCESS_ON	(1 << 7)
 
@@ -8793,6 +8799,9 @@ enum {
 
 #define  HSW_IDICR				_MMIO(0x9008)
 #define    IDIHASHMSK(x)			(((x) & 0x3f) << 16)
+#define    IDI_QOS_MASK                         (3 << 22)
+#define    IDI_QOS_SHIFT			22
+
 #define  HSW_EDRAM_CAP				_MMIO(0x120010)
 #define    EDRAM_ENABLED			0x1
 #define    EDRAM_NUM_BANKS(cap)			(((cap) >> 1) & 0xf)
@@ -8979,6 +8988,8 @@ enum {
 #define     GEN6_PCODE_UNIMPLEMENTED_CMD	0xFF
 #define     GEN7_PCODE_TIMEOUT			0x2
 #define     GEN7_PCODE_ILLEGAL_DATA		0x3
+#define     GEN11_PCODE_ILLEGAL_SUBCOMMAND	0x4
+#define     GEN11_PCODE_LOCKED			0x6
 #define     GEN7_PCODE_MIN_FREQ_TABLE_GT_RATIO_OUT_OF_RANGE 0x10
 #define   GEN6_PCODE_WRITE_RC6VIDS		0x4
 #define   GEN6_PCODE_READ_RC6VIDS		0x5
@@ -9127,11 +9138,18 @@ enum {
 #define   THROTTLE_12_5				(7 << 2)
 #define   DISABLE_EARLY_EOT			(1 << 1)
 
-#define GEN7_ROW_CHICKEN2		_MMIO(0xe4f4)
+#define GEN7_ROW_CHICKEN2			_MMIO(0xe4f4)
+#define   GEN12_DISABLE_EARLY_READ		REG_BIT(14)
+#define   GEN12_PUSH_CONST_DEREF_HOLD_DIS	REG_BIT(8)
+
 #define GEN7_ROW_CHICKEN2_GT2		_MMIO(0xf4f4)
 #define   DOP_CLOCK_GATING_DISABLE	(1 << 0)
 #define   PUSH_CONSTANT_DEREF_DISABLE	(1 << 8)
 #define   GEN11_TDL_CLOCK_GATING_FIX_DISABLE	(1 << 1)
+
+#define GEN9_ROW_CHICKEN4		_MMIO(0xe48c)
+#define   GEN12_DISABLE_TDL_PUSH	REG_BIT(9)
+#define   GEN11_DIS_PICK_2ND_EU		REG_BIT(7)
 
 #define HSW_ROW_CHICKEN3		_MMIO(0xe49c)
 #define  HSW_ROW_CHICKEN3_L3_GLOBAL_ATOMICS_DISABLE    (1 << 6)
@@ -12012,5 +12030,37 @@ enum skl_power_gate {
 #define DSB_CTRL(pipe, id)		_MMIO(DSBSL_INSTANCE(pipe, id) + 0x8)
 #define   DSB_ENABLE			(1 << 31)
 #define   DSB_STATUS			(1 << 0)
+
+#include "gvt/reg.h"
+/* GVT has special read process from some MMIO register,
+ * which so that should be trapped to GVT to make a
+ * complete emulation. Such MMIO is not too much, now using
+ * a static list to cover them.
+ */
+static inline bool in_mmio_read_trap_list(u32 reg)
+{
+	if (unlikely(reg >= PCH_GMBUS0.reg && reg <= PCH_GMBUS5.reg))
+		return true;
+
+	if (unlikely(reg == RING_TIMESTAMP(RENDER_RING_BASE).reg ||
+		reg == RING_TIMESTAMP(BLT_RING_BASE).reg ||
+		reg == RING_TIMESTAMP(GEN6_BSD_RING_BASE).reg ||
+		reg == RING_TIMESTAMP(VEBOX_RING_BASE).reg ||
+		reg == RING_TIMESTAMP(GEN8_BSD2_RING_BASE).reg ||
+		reg == RING_TIMESTAMP_UDW(RENDER_RING_BASE).reg ||
+		reg == RING_TIMESTAMP_UDW(BLT_RING_BASE).reg ||
+		reg == RING_TIMESTAMP_UDW(GEN6_BSD_RING_BASE).reg ||
+		reg == RING_TIMESTAMP_UDW(VEBOX_RING_BASE).reg))
+		return true;
+
+	if (unlikely(reg == SBI_DATA.reg || reg == 0x6c060 || reg == 0x206c))
+		return true;
+
+	if (unlikely(reg == _PIPEADSL ||
+				reg == __PIPEBDSL ||
+				reg == __PIPECDSL))
+		return true;
+	return false;
+}
 
 #endif /* _I915_REG_H_ */

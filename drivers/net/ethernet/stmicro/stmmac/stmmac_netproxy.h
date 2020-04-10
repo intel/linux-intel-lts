@@ -33,6 +33,7 @@
 
 int stmmac_netproxy_register(struct net_device *netdev);
 int stmmac_netproxy_deregister(struct net_device *netdev);
-irqreturn_t netproxy_irq(int irq, void *dev_id);
+irqreturn_t netproxy_isr(int irq, void *dev_id);
+irqreturn_t netproxy_isr_thread(int irq, void *dev_id);
 
 #endif /* __STMMAC_NETWORK_PROXY_H__ */

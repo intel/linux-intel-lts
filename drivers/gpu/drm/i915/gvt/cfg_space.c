@@ -112,6 +112,13 @@ int intel_vgpu_emulate_cfg_read(struct intel_vgpu *vgpu, unsigned int offset,
 	if (WARN_ON(offset + bytes > vgpu->gvt->device_info.cfg_space_size))
 		return -EINVAL;
 
+	if (rounddown(offset, 4) == INTEL_GVT_PCI_OPREGION) {
+		if (!vgpu_opregion(vgpu)->mapped) {
+			gvt_dbg_dpy("set up virtual opregion mapping\n");
+			map_vgpu_opregion(vgpu, true);
+		}
+	}
+
 	memcpy(p_data, vgpu_cfg_space(vgpu) + offset, bytes);
 	return 0;
 }
@@ -307,9 +314,22 @@ int intel_vgpu_emulate_cfg_write(struct intel_vgpu *vgpu, unsigned int offset,
 
 	/* First check if it's PCI_COMMAND */
 	if (IS_ALIGNED(offset, 2) && offset == PCI_COMMAND) {
-		if (WARN_ON(bytes > 2))
+		if (WARN_ON(bytes != 2 && bytes != 4))
 			return -EINVAL;
-		return emulate_pci_command_write(vgpu, offset, p_data, bytes);
+
+		ret = -EINVAL;
+		if (bytes == 2)
+			ret = emulate_pci_command_write(vgpu, offset,
+							p_data, bytes);
+		if (bytes ==  4) {
+			ret = emulate_pci_command_write(vgpu, offset,
+							p_data, 2);
+			if (ret)
+				return ret;
+			vgpu_pci_cfg_mem_write(vgpu, offset + 2,
+					       (u8 *)p_data + 2, 2);
+		}
+		return ret;
 	}
 
 	switch (rounddown(offset, 4)) {
@@ -334,6 +354,7 @@ int intel_vgpu_emulate_cfg_write(struct intel_vgpu *vgpu, unsigned int offset,
 	case INTEL_GVT_PCI_OPREGION:
 		if (WARN_ON(!IS_ALIGNED(offset, 4)))
 			return -EINVAL;
+
 		ret = intel_vgpu_opregion_base_write_handler(vgpu,
 						   *(u32 *)p_data);
 		if (ret)
@@ -411,6 +432,8 @@ void intel_vgpu_reset_cfg_space(struct intel_vgpu *vgpu)
 				INTEL_GVT_PCI_CLASS_VGA_OTHER;
 
 	if (cmd & PCI_COMMAND_MEMORY) {
+		if (VGPU_PVMMIO(vgpu))
+			set_pvmmio(vgpu, false);
 		trap_gttmmio(vgpu, false);
 		map_aperture(vgpu, false);
 	}

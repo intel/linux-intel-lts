@@ -28,9 +28,8 @@ static void dwmac4_core_init(struct mac_device_info *hw,
 	void __iomem *ioaddr = hw->pcsr;
 	u32 value = readl(ioaddr + GMAC_CONFIG);
 	int mtu = dev->mtu;
-#ifdef CONFIG_STMMAC_NETWORK_PROXY
 	struct stmmac_priv *priv = netdev_priv(dev);
-
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
 	if (!priv->networkproxy_exit) {
 #endif
 		value |= GMAC_CORE_INIT;
@@ -75,6 +74,9 @@ static void dwmac4_core_init(struct mac_device_info *hw,
 		value |= GMAC_INT_FPE_EN;
 
 	writel(value, ioaddr + GMAC_INT_EN);
+
+	if (GMAC_INT_DEFAULT_ENABLE & GMAC_INT_TSIE)
+		init_waitqueue_head(&priv->tstamp_busy_wait);
 }
 
 void dwmac4_mac_start_tx(void __iomem *ioaddr)

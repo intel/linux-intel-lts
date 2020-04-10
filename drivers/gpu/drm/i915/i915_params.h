@@ -78,7 +78,16 @@ struct drm_printer;
 	param(bool, verbose_state_checks, true) \
 	param(bool, nuclear_pageflip, false) \
 	param(bool, enable_dp_mst, true) \
-	param(bool, enable_gvt, false)
+	param(int, domain_scaler_owner, 0x11100) \
+	param(unsigned int, enable_pvmmio, \
+			PVMMIO_ELSP_SUBMIT | PVMMIO_PPGTT_UPDATE) \
+	param(bool, enable_gvt, false) \
+	param(int, gvt_workload_priority, 0) \
+	param(unsigned long, avail_planes_per_pipe, 0) \
+	param(unsigned long, domain_plane_owners, 0) \
+	param(bool, enable_context_restore, false) \
+	param(bool, enable_hp_work, false)
+
 
 #define MEMBER(T, member, ...) T member;
 struct i915_params {

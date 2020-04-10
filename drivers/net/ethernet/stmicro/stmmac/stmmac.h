@@ -189,6 +189,7 @@ struct stmmac_priv {
 	struct device *device;
 	struct mac_device_info *hw;
 	int (*hwif_quirks)(struct stmmac_priv *priv);
+	wait_queue_head_t tstamp_busy_wait;
 	struct mutex lock;
 	int hwts_all;
 
@@ -280,7 +281,6 @@ struct stmmac_priv {
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 	/* Network Proxy A2H Worker */
 	struct workqueue_struct *netprox_wq;
-	struct work_struct netprox_task;
 	bool networkproxy_exit;
 #endif
 

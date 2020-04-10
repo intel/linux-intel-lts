@@ -37,6 +37,11 @@
 
 void populate_pvinfo_page(struct intel_vgpu *vgpu)
 {
+	enum pipe pipe;
+	int scaler;
+	struct intel_gvt *gvt = vgpu->gvt;
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+
 	/* setup the ballooning information */
 	vgpu_vreg64_t(vgpu, vgtif_reg(magic)) = VGT_MAGIC;
 	vgpu_vreg_t(vgpu, vgtif_reg(version_major)) = 1;
@@ -47,6 +52,7 @@ void populate_pvinfo_page(struct intel_vgpu *vgpu)
 	vgpu_vreg_t(vgpu, vgtif_reg(vgt_caps)) = VGT_CAPS_FULL_PPGTT;
 	vgpu_vreg_t(vgpu, vgtif_reg(vgt_caps)) |= VGT_CAPS_HWSP_EMULATION;
 	vgpu_vreg_t(vgpu, vgtif_reg(vgt_caps)) |= VGT_CAPS_HUGE_GTT;
+	vgpu_vreg_t(vgpu, vgtif_reg(vgt_caps)) |= VGT_CAPS_GOP_SUPPORT;
 
 	vgpu_vreg_t(vgpu, vgtif_reg(avail_rs.mappable_gmadr.base)) =
 		vgpu_aperture_gmadr_base(vgpu);
@@ -61,6 +67,23 @@ void populate_pvinfo_page(struct intel_vgpu *vgpu)
 
 	vgpu_vreg_t(vgpu, vgtif_reg(cursor_x_hot)) = UINT_MAX;
 	vgpu_vreg_t(vgpu, vgtif_reg(cursor_y_hot)) = UINT_MAX;
+
+	vgpu_vreg_t(vgpu, vgtif_reg(scaler_owned)) = 0;
+	for_each_pipe(dev_priv, pipe)
+		for_each_universal_scaler(dev_priv, pipe, scaler)
+			if (gvt->pipe_info[pipe].scaler_owner[scaler] ==
+				vgpu->id)
+				vgpu_vreg_t(vgpu, vgtif_reg(scaler_owned)) |=
+					1 << (pipe * SKL_NUM_SCALERS + scaler);
+
+	vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio)) = 0;
+
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.fb_base)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.width)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.height)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.pitch)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.Bpp)) = 0;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.size)) = 0;
 
 	gvt_dbg_core("Populate PVINFO PAGE for vGPU %d\n", vgpu->id);
 	gvt_dbg_core("aperture base [GMADR] 0x%llx size 0x%llx\n",
@@ -292,6 +315,7 @@ void intel_gvt_destroy_vgpu(struct intel_vgpu *vgpu)
 	intel_vgpu_clean_gtt(vgpu);
 	intel_gvt_hypervisor_detach_vgpu(vgpu);
 	intel_vgpu_free_resource(vgpu);
+	intel_vgpu_reset_cfg_space(vgpu);
 	intel_vgpu_clean_mmio(vgpu);
 	intel_vgpu_dmabuf_cleanup(vgpu);
 	mutex_unlock(&vgpu->vgpu_lock);
@@ -535,6 +559,7 @@ void intel_gvt_reset_vgpu_locked(struct intel_vgpu *vgpu, bool dmlr,
 	struct intel_gvt *gvt = vgpu->gvt;
 	struct intel_gvt_workload_scheduler *scheduler = &gvt->scheduler;
 	intel_engine_mask_t resetting_eng = dmlr ? ALL_ENGINES : engine_mask;
+	u32 enable_pvmmio = vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio));
 
 	gvt_dbg_core("------------------------------------------\n");
 	gvt_dbg_core("resseting vgpu%d, dmlr %d, engine_mask %08x\n",
@@ -566,6 +591,8 @@ void intel_gvt_reset_vgpu_locked(struct intel_vgpu *vgpu, bool dmlr,
 
 		intel_vgpu_reset_mmio(vgpu, dmlr);
 		populate_pvinfo_page(vgpu);
+		vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio)) = enable_pvmmio;
+		intel_vgpu_reset_display(vgpu);
 
 		if (dmlr) {
 			intel_vgpu_reset_display(vgpu);

@@ -48,7 +48,7 @@
 
 struct intel_vgpu_edid_data {
 	bool data_valid;
-	unsigned char edid_block[EDID_SIZE];
+	unsigned char edid_block[0];
 };
 
 enum gmbus_cycle_type {
@@ -146,5 +146,7 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
 		int port_idx,
 		unsigned int offset,
 		void *p_data);
+
+struct edid *intel_gvt_create_edid_from_mode(struct drm_display_mode *mode);
 
 #endif /*_GVT_EDID_H_*/

@@ -33,6 +33,7 @@
  */
 
 #include "i915_drv.h"
+#include "display/intel_display_types.h"
 #include "gvt.h"
 
 static int get_edp_pipe(struct intel_vgpu *vgpu)
@@ -191,6 +192,12 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
 				BXT_DE_PORT_HP_DDIC;
 		}
 
+		vgpu_vreg_t(vgpu, SKL_FUSE_STATUS) |=
+				SKL_FUSE_DOWNLOAD_STATUS |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG0) |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG1) |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG2);
+
 		return;
 	}
 
@@ -229,7 +236,7 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
 			vgpu_vreg_t(vgpu, PORT_CLK_SEL(PORT_B)) |=
 				PORT_CLK_SEL_LCPLL_810;
 		}
-		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_B)) |= DDI_BUF_CTL_ENABLE;
+		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_B)) &= ~DDI_BUF_CTL_ENABLE;
 		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_B)) &= ~DDI_BUF_IS_IDLE;
 		vgpu_vreg_t(vgpu, SDEISR) |= SDE_PORTB_HOTPLUG_CPT;
 	}
@@ -249,7 +256,7 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
 			vgpu_vreg_t(vgpu, PORT_CLK_SEL(PORT_C)) |=
 				PORT_CLK_SEL_LCPLL_810;
 		}
-		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_C)) |= DDI_BUF_CTL_ENABLE;
+		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_C)) &= ~DDI_BUF_CTL_ENABLE;
 		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_C)) &= ~DDI_BUF_IS_IDLE;
 		vgpu_vreg_t(vgpu, SFUSE_STRAP) |= SFUSE_STRAP_DDIC_DETECTED;
 	}
@@ -269,7 +276,7 @@ static void emulate_monitor_status_change(struct intel_vgpu *vgpu)
 			vgpu_vreg_t(vgpu, PORT_CLK_SEL(PORT_D)) |=
 				PORT_CLK_SEL_LCPLL_810;
 		}
-		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_D)) |= DDI_BUF_CTL_ENABLE;
+		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_D)) &= ~DDI_BUF_CTL_ENABLE;
 		vgpu_vreg_t(vgpu, DDI_BUF_CTL(PORT_D)) &= ~DDI_BUF_IS_IDLE;
 		vgpu_vreg_t(vgpu, SFUSE_STRAP) |= SFUSE_STRAP_DDID_DETECTED;
 	}
@@ -316,15 +323,20 @@ static void clean_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num)
 	port->dpcd = NULL;
 }
 
-static int setup_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num,
-				    int type, unsigned int resolution)
+static int setup_virtual_monitor(struct intel_vgpu *vgpu, int port_num,
+		int type, unsigned int resolution, void *edid, bool is_dp)
 {
 	struct intel_vgpu_port *port = intel_vgpu_port(vgpu, port_num);
+	int valid_extensions = 1;
+	struct edid *tmp_edid = NULL;
 
 	if (WARN_ON(resolution >= GVT_EDID_NUM))
 		return -EINVAL;
 
-	port->edid = kzalloc(sizeof(*(port->edid)), GFP_KERNEL);
+	if (edid)
+		valid_extensions += ((struct edid *)edid)->extensions;
+	port->edid = kzalloc(sizeof(*(port->edid))
+			+ valid_extensions * EDID_SIZE, GFP_KERNEL);
 	if (!port->edid)
 		return -ENOMEM;
 
@@ -334,13 +346,30 @@ static int setup_virtual_dp_monitor(struct intel_vgpu *vgpu, int port_num,
 		return -ENOMEM;
 	}
 
-	memcpy(port->edid->edid_block, virtual_dp_monitor_edid[resolution],
-			EDID_SIZE);
+	if (edid)
+		memcpy(port->edid->edid_block, edid, EDID_SIZE * valid_extensions);
+	else
+		memcpy(port->edid->edid_block, virtual_dp_monitor_edid[resolution],
+				EDID_SIZE);
+
+	/* Sometimes the physical display will report the EDID with no
+	 * digital bit set, which will cause the guest fail to enumerate
+	 * the virtual HDMI monitor. So here we will set the digital
+	 * bit and re-calculate the checksum.
+	 */
+	tmp_edid = ((struct edid *)port->edid->edid_block);
+	if (!(tmp_edid->input & DRM_EDID_INPUT_DIGITAL)) {
+		tmp_edid->input += DRM_EDID_INPUT_DIGITAL;
+		tmp_edid->checksum -= DRM_EDID_INPUT_DIGITAL;
+	}
+
 	port->edid->data_valid = true;
 
-	memcpy(port->dpcd->data, dpcd_fix_data, DPCD_HEADER_SIZE);
-	port->dpcd->data_valid = true;
-	port->dpcd->data[DPCD_SINK_COUNT] = 0x1;
+	if (is_dp) {
+		memcpy(port->dpcd->data, dpcd_fix_data, DPCD_HEADER_SIZE);
+		port->dpcd->data_valid = true;
+		port->dpcd->data[DPCD_SINK_COUNT] = 0x1;
+	}
 	port->type = type;
 	port->id = resolution;
 
@@ -475,6 +504,122 @@ void intel_vgpu_emulate_hotplug(struct intel_vgpu *vgpu, bool connected)
 	}
 }
 
+static void intel_gvt_vblank_work(struct work_struct *w)
+{
+	struct intel_gvt_pipe_info *pipe_info = container_of(w,
+			struct intel_gvt_pipe_info, vblank_work);
+	struct intel_gvt *gvt = pipe_info->gvt;
+	struct intel_vgpu *vgpu;
+	int id;
+
+	mutex_lock(&gvt->lock);
+	for_each_active_vgpu(gvt, vgpu, id)
+		emulate_vblank_on_pipe(vgpu, pipe_info->pipe_num);
+	mutex_unlock(&gvt->lock);
+}
+
+#define BITS_PER_DOMAIN 4
+#define MAX_SCALERS_PER_DOMAIN 2
+
+#define DOMAIN_SCALER_OWNER(owner, pipe, scaler) \
+	((((owner) >> (pipe) * BITS_PER_DOMAIN * MAX_SCALERS_PER_DOMAIN) >>  \
+	BITS_PER_DOMAIN * (scaler)) & 0xf)
+
+int intel_check_planes(struct intel_vgpu *vgpu, int pipe)
+{
+	int plane = 0;
+	bool ret = false;
+
+	for (plane = 0;
+	     plane < ((RUNTIME_INFO(vgpu->gvt->dev_priv)->num_sprites[pipe]) + 1);
+	     plane++) {
+		if (vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id) {
+			ret = true;
+			break;
+		}
+	}
+	return ret;
+}
+
+void intel_gvt_init_pipe_info(struct intel_gvt *gvt)
+{
+	enum pipe pipe;
+	unsigned int scaler;
+	unsigned int domain_scaler_owner = i915_modparams.domain_scaler_owner;
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+
+	for (pipe = PIPE_A; pipe <= PIPE_C; pipe++) {
+		gvt->pipe_info[pipe].pipe_num = pipe;
+		gvt->pipe_info[pipe].gvt = gvt;
+		INIT_WORK(&gvt->pipe_info[pipe].vblank_work,
+				intel_gvt_vblank_work);
+		/* Each nibble represents domain id
+		 * ids can be from 0-F. 0 for Dom0, 1,2,3...0xF for DomUs
+		 * scaler_owner[i] holds the id of the domain that owns it,
+		 * eg:0,1,2 etc
+		 */
+		for_each_universal_scaler(dev_priv, pipe, scaler)
+			gvt->pipe_info[pipe].scaler_owner[scaler] =
+			DOMAIN_SCALER_OWNER(domain_scaler_owner, pipe, scaler);
+	}
+}
+
+bool gvt_emulate_hdmi; /* default value: false */
+
+int setup_virtual_monitors(struct intel_vgpu *vgpu)
+{
+	struct intel_connector *connector = NULL;
+	struct drm_connector_list_iter conn_iter;
+	int pipe = 0;
+	int ret = 0;
+	struct edid *edid;
+	int type = gvt_emulate_hdmi ? GVT_HDMI_B : GVT_DP_B;
+	int port = PORT_B;
+
+
+	drm_connector_list_iter_begin(&vgpu->gvt->dev_priv->drm, &conn_iter);
+	for_each_intel_connector_iter(connector, &conn_iter) {
+		if (connector->encoder->get_hw_state(connector->encoder, &pipe)) {
+			/* if no planes are allocated for this pipe, skip it */
+			if (i915_modparams.avail_planes_per_pipe &&
+			    !intel_check_planes(vgpu, pipe))
+				continue;
+
+			if (connector->panel.fixed_mode) {
+				edid = intel_gvt_create_edid_from_mode(
+						connector->panel.fixed_mode);
+			} else if (connector->detect_edid) {
+				edid = connector->detect_edid;
+			} else {
+				continue;
+			}
+			/* Get (Dom0) port associated with current pipe. */
+			port = enc_to_dig_port(
+					&(connector->encoder->base))->base.port;
+			ret = setup_virtual_monitor(vgpu, port,
+				type, 0, edid, !gvt_emulate_hdmi);
+			if (ret)
+				return ret;
+			type++;
+			port++;
+		}
+	}
+	drm_connector_list_iter_end(&conn_iter);
+	return 0;
+}
+
+void clean_virtual_monitors(struct intel_vgpu *vgpu)
+{
+	int port = 0;
+
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+		struct intel_vgpu_port *p = intel_vgpu_port(vgpu, port);
+
+		if (p->edid)
+			clean_virtual_dp_monitor(vgpu, port);
+	}
+}
+
 /**
  * intel_vgpu_clean_display - clean vGPU virtual display emulation
  * @vgpu: a vGPU
@@ -486,8 +631,10 @@ void intel_vgpu_clean_display(struct intel_vgpu *vgpu)
 {
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 
-	if (IS_SKYLAKE(dev_priv) || IS_KABYLAKE(dev_priv) ||
-	    IS_COFFEELAKE(dev_priv))
+	if (IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv) ||
+		IS_COFFEELAKE(dev_priv))
+		clean_virtual_monitors(vgpu);
+	else if (IS_SKYLAKE(dev_priv))
 		clean_virtual_dp_monitor(vgpu, PORT_D);
 	else
 		clean_virtual_dp_monitor(vgpu, PORT_B);
@@ -510,13 +657,15 @@ int intel_vgpu_init_display(struct intel_vgpu *vgpu, u64 resolution)
 
 	intel_vgpu_init_i2c_edid(vgpu);
 
-	if (IS_SKYLAKE(dev_priv) || IS_KABYLAKE(dev_priv) ||
-	    IS_COFFEELAKE(dev_priv))
-		return setup_virtual_dp_monitor(vgpu, PORT_D, GVT_DP_D,
-						resolution);
+	if (IS_BROXTON(dev_priv) || IS_KABYLAKE(dev_priv) ||
+		IS_COFFEELAKE(dev_priv))
+		return setup_virtual_monitors(vgpu);
+	else if (IS_SKYLAKE(dev_priv))
+		return setup_virtual_monitor(vgpu, PORT_D, GVT_DP_D,
+						resolution, NULL, true);
 	else
-		return setup_virtual_dp_monitor(vgpu, PORT_B, GVT_DP_B,
-						resolution);
+		return setup_virtual_monitor(vgpu, PORT_B, GVT_DP_B,
+						resolution, NULL, true);
 }
 
 /**
@@ -529,4 +678,247 @@ int intel_vgpu_init_display(struct intel_vgpu *vgpu, u64 resolution)
 void intel_vgpu_reset_display(struct intel_vgpu *vgpu)
 {
 	emulate_monitor_status_change(vgpu);
+}
+
+
+#define GOP_FB_SIZE		0x800000
+#define GOP_DISPLAY_WIDTH	1920u
+#define GOP_DISPLAY_HEIGHT	1080u
+
+/*
+ * check_gop_mode to query current mode and pass it to GOP
+ *
+ * 1. Get current mode from ctrc)
+ * 2. use crtc mode as GOP mode if mode <=1920x1080
+ * 3. use 1920x1080 as GOP mode if mode > 1080p
+ * 4.   enable panel scale (ToDO)
+ * 5. pass GOP mode to OVMF
+ *
+ */
+static int check_gop_mode(struct intel_vgpu *vgpu)
+{
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+	unsigned int pipe, plane;
+	struct intel_crtc *crtc;
+	struct intel_crtc_state *crtc_state;
+	struct drm_display_mode mode;
+	bool found = false;
+
+	/* we will get the gop output on the first pipe the vgpu ownes */
+	for_each_pipe(dev_priv, pipe) {
+		for_each_universal_plane(dev_priv, pipe, plane) {
+			if (vgpu->gvt->pipe_info[pipe].plane_owner[plane]
+					== vgpu->id) {
+				found = true;
+				break;
+			}
+		}
+		if (found)
+			break;
+	}
+
+	if (found == false) {
+		gvt_dbg_dpy("Failed to find owned plane for %d", vgpu->id);
+		return -ENODEV;
+	}
+
+	crtc = intel_get_crtc_for_pipe(vgpu->gvt->dev_priv, pipe);
+	crtc_state = to_intel_crtc_state(crtc->base.state);
+	intel_mode_from_pipe_config(&mode, crtc_state);
+
+	drm_mode_debug_printmodeline(&mode);
+
+	if (mode.vdisplay <= 0 || mode.hdisplay <= 0)
+		return -EINVAL;
+
+	vgpu->gm.gop.width = mode.hdisplay;
+	vgpu->gm.gop.height = mode.vdisplay;
+	vgpu->gm.gop.pitch = mode.hdisplay;
+	vgpu->gm.gop.Bpp = 4;
+
+	/* populate mode for OVMF GOP driver */
+	if (mode.hdisplay * mode.vdisplay * 4 > GOP_FB_SIZE) {
+		vgpu_vreg_t(vgpu, vgtif_reg(gop.width)) =
+			min(vgpu->gm.gop.width, GOP_DISPLAY_WIDTH);
+		vgpu_vreg_t(vgpu, vgtif_reg(gop.height)) =
+			min(vgpu->gm.gop.height, GOP_DISPLAY_HEIGHT);
+		vgpu_vreg_t(vgpu, vgtif_reg(gop.pitch)) =
+			min(vgpu->gm.gop.pitch, GOP_DISPLAY_WIDTH);
+	} else {
+		vgpu_vreg_t(vgpu, vgtif_reg(gop.width)) = vgpu->gm.gop.width;
+		vgpu_vreg_t(vgpu, vgtif_reg(gop.height)) = vgpu->gm.gop.height;
+		vgpu_vreg_t(vgpu, vgtif_reg(gop.pitch)) = vgpu->gm.gop.pitch;
+	}
+
+	vgpu->gm.gop.size = 4 * vgpu_vreg_t(vgpu, vgtif_reg(gop.width)) *
+				vgpu_vreg_t(vgpu, vgtif_reg(gop.height));
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.Bpp)) = 4;
+	vgpu_vreg_t(vgpu, vgtif_reg(gop.size)) = vgpu->gm.gop.size;
+
+	DRM_INFO("prepare GOP fb: %dKB for %dX%d@%d\n",
+			vgpu_vreg_t(vgpu, vgtif_reg(gop.size))>>10,
+			vgpu_vreg_t(vgpu, vgtif_reg(gop.width)),
+			vgpu_vreg_t(vgpu, vgtif_reg(gop.height)),
+			vgpu_vreg_t(vgpu, vgtif_reg(gop.Bpp))*8);
+	return 0;
+}
+
+/*
+ * prepare_gop_fb will allocate a arrange of memory, and then map them
+ * into the ggtt table of the guest partition in the aperture.
+ */
+static int prepare_gop_fb(struct intel_vgpu *vgpu, u32 size)
+{
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+	struct page **pages = NULL;
+	u32 count, npages = size >> PAGE_SHIFT;
+	struct i915_ggtt *ggtt = &dev_priv->ggtt;
+	struct i915_vma vma;
+	struct drm_mm_node *node = &vgpu->gm.high_gm_node;
+	struct sg_table st;
+	unsigned int cache_level = HAS_LLC(dev_priv) ?
+				I915_CACHE_LLC : I915_CACHE_NONE;
+	int ret = 0;
+
+	pages = kmalloc_array(npages, sizeof(struct page *), GFP_KERNEL);
+	if (!pages)
+		return -ENOMEM;
+
+	for (count = 0; count < npages; count++) {
+		struct page *page = alloc_page(GFP_KERNEL);
+		if (!page) {
+			ret = -ENOMEM;
+			goto free_pgs;
+		}
+		pages[count] = page;
+
+		intel_gvt_hypervisor_map_gfn_to_mfn (vgpu,
+				(GOP_FB_BASE >> PAGE_SHIFT) + count,
+				page_to_pfn(page), 1, true);
+	}
+
+	ret = sg_alloc_table_from_pages(&st, pages, npages,
+			0, npages << PAGE_SHIFT, GFP_KERNEL);
+	if (ret)
+		goto free_pgs;
+
+	if (!dma_map_sg(&dev_priv->drm.pdev->dev, st.sgl, st.nents,
+				PCI_DMA_BIDIRECTIONAL)) {
+		ret = -ENOMEM;
+		goto free_sg;
+	}
+
+	memset(&vma, 0, sizeof(vma));
+	vma.node.start = node->start;
+	vma.node.size = size;
+	vma.pages = &st;
+	ggtt->vm.insert_entries(&ggtt->vm, &vma, cache_level, 0);
+	sg_free_table(&st);
+
+	vgpu->gm.gop_fb_pages = pages;
+	vgpu->gm.gop_fb_size = count;
+	return 0;
+
+free_sg:
+	sg_free_table(&st);
+
+free_pgs:
+	release_pages(pages, count);
+	kfree(pages);
+	return ret;
+}
+
+static int setup_gop_display(struct intel_vgpu *vgpu)
+{
+	int ret = 0;
+	unsigned int pipe, plane;
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+	bool found = false;
+
+	u32 width, height, Bpp;
+	u32 stride, ctl, surf;
+	unsigned long irqflags;
+
+	width = vgpu_vreg_t(vgpu, vgtif_reg(gop.width));
+	height = vgpu_vreg_t(vgpu, vgtif_reg(gop.height));
+	Bpp = vgpu_vreg_t(vgpu, vgtif_reg(gop.Bpp));
+
+	DRM_INFO("Set up display w:%u h:%u for GOP \n", width, height);
+
+	/* we will display the gop output on the first plane the vgpu ownes */
+	for_each_pipe(dev_priv, pipe) {
+		for_each_universal_plane(dev_priv, pipe, plane) {
+			if (vgpu->gvt->pipe_info[pipe].plane_owner[plane]
+					== vgpu->id) {
+				found = true;
+				break;
+			}
+		}
+		if (found)
+			break;
+	}
+
+	if (!found) {
+		gvt_dbg_dpy("Failed to find owned plane for %d", vgpu->id);
+		return -ENODEV;
+	}
+
+	/* Sizes are 0 based */
+	stride = width * Bpp / 64; /* 32bit per pixel */
+	width--;
+	height--;
+	surf = vgpu->gm.high_gm_node.start;
+
+	ctl = PLANE_CTL_ENABLE | PLANE_CTL_FORMAT_XRGB_8888;
+
+	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
+	I915_WRITE_FW(PLANE_OFFSET(pipe, plane), 0);
+	I915_WRITE_FW(PLANE_STRIDE(pipe, plane), stride);
+	I915_WRITE_FW(PLANE_SIZE(pipe, plane), (height << 16) | width);
+	I915_WRITE_FW(PLANE_AUX_DIST(pipe, plane), 0xFFFFF000);
+	I915_WRITE_FW(PLANE_AUX_OFFSET(pipe, plane), 0);
+	I915_WRITE_FW(PLANE_POS(pipe, plane), 0);
+	I915_WRITE_FW(PLANE_CTL(pipe, plane), ctl);
+	I915_WRITE_FW(PLANE_SURF(pipe, plane), surf);
+	I915_READ_FW(PLANE_SURF(pipe, plane));
+	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
+	return ret;
+}
+
+int intel_vgpu_g2v_setup_gop(struct intel_vgpu *vgpu)
+{
+	int ret = 0;
+
+	gvt_dbg_dpy("intel_vgpu_g2v_setup_gop\n");
+
+	if (vgpu->gm.gop_fb_pages)
+		goto Done;
+
+	ret = check_gop_mode(vgpu);
+	if (ret) {
+		gvt_vgpu_err("gop check pipe faile %d\n", ret);
+		goto Done;
+	}
+
+	ret = prepare_gop_fb(vgpu, vgpu->gm.gop.size);
+	if (ret) {
+		gvt_vgpu_err("gop prepared failed %d\n", ret);
+		goto Done;
+	}
+
+	ret = setup_gop_display(vgpu);
+	if (ret) {
+		gvt_vgpu_err("gop display setup failed %d\n", ret);
+		goto Done;
+	}
+
+	vgpu->gm.gop.fb_base = GOP_FB_BASE;
+
+	vgpu_vreg(vgpu, _vgtif_reg(gop.fb_base)) = vgpu->gm.gop.fb_base;
+
+	gvt_dbg_dpy("set up gop FbBase: %x\n",
+			vgpu_vreg(vgpu, _vgtif_reg(gop.fb_base)));
+
+Done:
+	return 0;
 }
