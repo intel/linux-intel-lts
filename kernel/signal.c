@@ -448,9 +448,7 @@ __sigqueue_do_alloc(int sig, struct task_struct *t, gfp_t flags,
 		get_uid(user);
 	rcu_read_unlock();
 
-	if (override_rlimit ||
-	    atomic_read(&user->sigpending) <=
-			task_rlimit(t, RLIMIT_SIGPENDING)) {
+	if (override_rlimit || likely(sigpending <= task_rlimit(t, RLIMIT_SIGPENDING))) {
 		if (!fromslab)
 			q = get_task_cache(t);
 		if (!q)
