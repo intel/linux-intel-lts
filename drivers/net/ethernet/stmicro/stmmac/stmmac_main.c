@@ -6638,13 +6638,19 @@ EXPORT_SYMBOL_GPL(stmmac_dvr_remove);
  */
 int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
 {
+	u32 chan;
 	int ret;
 
 	mutex_lock(&priv->lock);
 
 	netif_device_detach(ndev);
 
+	netif_carrier_off(priv->dev);
+
 	stmmac_disable_all_queues(priv);
+
+	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
+		del_timer_sync(&priv->tx_queue[chan].txtimer);
 
 	/* Remove phy converter */
 	if (priv->plat->remove_phy_conv) {
@@ -6659,6 +6665,8 @@ int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
 	/* Stop TX/RX DMA */
 	stmmac_stop_all_dma(priv);
 	stmmac_stop_mac_tx(priv, priv->ioaddr);
+
+	stmmac_clean_all_tx_rings(priv);
 
 	mutex_unlock(&priv->lock);
 
@@ -6908,8 +6916,6 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 			stmmac_mdio_reset(priv->mii);
 	}
 
-	netif_device_attach(ndev);
-
 	stmmac_resume_common(priv, ndev);
 
 	if (!device_may_wakeup(priv->device)) {
@@ -6932,6 +6938,8 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 				   __func__, ret);
 		}
 	}
+
+	netif_device_attach(ndev);
 
 	return 0;
 }
