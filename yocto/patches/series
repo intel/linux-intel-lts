@@ -3,3 +3,6 @@
 
 # CVE-2019-18808
 0003-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
+
+# CVE-2019-19377
+0001-btrfs-Don-t-submit-any-btree-write-bio-if-the-fs-has.patch
