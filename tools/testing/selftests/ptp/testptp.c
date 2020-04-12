@@ -487,7 +487,7 @@ int main(int argc, char *argv[])
 		if (ioctl(fd, PTP_PIN_GETFUNC2, &desc)) {
 			perror("PTP_PIN_GETFUNC2");
 		}
-		if (!(desc.flags & PTP_PINDESC_INPUTDISABLE)) {
+		if (!(desc.flags & PTP_PINDESC_INPUTPOLL)) {
 			for (; extts; extts--) {
 				cnt = read(fd, &event, sizeof(event));
 				if (cnt != sizeof(event)) {
@@ -557,7 +557,7 @@ int main(int argc, char *argv[])
 		perout_request.start.sec = ts.tv_sec + 2;
 		perout_request.start.nsec = 0;
 		perout_request.period.sec = 0;
-		if (perout <= 0 && (desc.flags & PTP_PINDESC_INPUTDISABLE)) {
+		if (perout <= 0 && (desc.flags & PTP_PINDESC_INPUTPOLL)) {
 			perout_request.period.nsec = NSEC_PER_SEC / 2;
 			perout_request.flags = PTP_PEROUT_ONE_SHOT;
 			if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request)) {
