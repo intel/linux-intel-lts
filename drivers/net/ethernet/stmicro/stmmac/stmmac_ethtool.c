@@ -786,8 +786,16 @@ static int stmmac_ethtool_op_set_eee(struct net_device *dev,
 	if (ret)
 		return ret;
 
-	priv->tx_lpi_timer = edata->tx_lpi_timer;
 	priv->tx_lpi_enabled = edata->tx_lpi_enabled;
+
+	if (!edata->eee_enabled || !priv->tx_lpi_enabled)
+		return 0;
+
+	if (priv->tx_lpi_timer != edata->tx_lpi_timer) {
+		priv->tx_lpi_timer = edata->tx_lpi_timer;
+		stmmac_eee_init(priv);
+	}
+
 	return 0;
 }
 
