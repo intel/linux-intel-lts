@@ -27,26 +27,67 @@
 
 
 /*currently we simply not using dynamic chains*/
-static struct slice_info slicehdr[MULTI_SLICE_LIMIT];
+static struct slice_info *slicehdr;
+static int slicenum;
 static struct mutex slice_mutex;
+
+int findslice_bydev(struct device *dev)
+{
+	int i = 0;
+	struct slice_info *hdr = slicehdr;
+
+	while (hdr != NULL) {
+		if (hdr->dev == dev)
+			return i;
+		i++;
+		hdr = hdr->next;
+	}
+	return -1;
+}
+
+struct slice_info *getslicenode(u32 sliceindex)
+{
+	int i = 0;
+	struct slice_info *hdr = slicehdr;
+
+	if (sliceindex >= slicenum)
+		return NULL;
+	mutex_lock(&slice_mutex);
+	for (i = 0; i < sliceindex; i++)
+		hdr = hdr->next;
+	mutex_unlock(&slice_mutex);
+
+	return hdr;
+}
 
 int get_slicecorenum(u32 sliceindex, slice_coretype type)
 {
-	if (sliceindex >= MULTI_SLICE_LIMIT)
+	struct slice_info *hdr = getslicenode(sliceindex);
+
+	if (hdr == NULL)
 		return 0;
 
 	switch (type) {
 	case CORE_ENC:
-		return slicehdr[sliceindex].enccore_num;
+		return hdr->enccore_num;
 	case CORE_DEC:
-		return slicehdr[sliceindex].deccore_num;
+		return hdr->deccore_num;
 	case CORE_CACHE:
-		return slicehdr[sliceindex].cachecore_num;
+		return hdr->cachecore_num;
 	case CORE_DEC400:
-		return slicehdr[sliceindex].dec400core_num;
+		return hdr->dec400core_num;
 	default:
 		return 0;
 	}
+}
+
+u32 getsliceconfig(u32 sliceindex)
+{
+	struct slice_info *hdr = getslicenode(sliceindex);
+
+	if (hdr == NULL)
+		return 0;
+	return hdr->config;
 }
 
 /*get dec nodes list hdr of a slice*/
@@ -54,12 +95,13 @@ struct hantrodec_t *get_decnodes(u32 sliceindex, u32 nodeidx)
 {
 	int i;
 	struct hantrodec_t *p;
-	
-	if(sliceindex >= MULTI_SLICE_LIMIT)
+	struct slice_info *hdr = getslicenode(sliceindex);
+
+	if (hdr == NULL)
 		return NULL;
 
 	mutex_lock(&slice_mutex);
-	p = slicehdr[sliceindex].dechdr;
+	p = hdr->dechdr;
 	for (i = 0; i < nodeidx; i++) {
 		if (p == NULL)
 			break;
@@ -74,12 +116,13 @@ struct hantroenc_t *get_encnodes(u32 sliceindex, u32 nodeidx)
 {
 	int i;
 	struct hantroenc_t *p;
-	
-	if(sliceindex >= MULTI_SLICE_LIMIT)
+	struct slice_info *hdr = getslicenode(sliceindex);
+
+	if (hdr == NULL)
 		return NULL;
 
 	mutex_lock(&slice_mutex);
-	p = slicehdr[sliceindex].enchdr;
+	p = hdr->enchdr;
 	for (i = 0; i < nodeidx; i++) {
 		if (p == NULL)
 			break;
@@ -94,12 +137,14 @@ struct cache_dev_t *get_cachenodes(u32 sliceindex, u32 nodeidx)
 {
 	int i;
 	struct cache_dev_t *p;
-	
-	if (sliceindex >= MULTI_SLICE_LIMIT)
+	struct slice_info *hdr = getslicenode(sliceindex);
+
+	if (hdr == NULL)
 		return NULL;
 
+
 	mutex_lock(&slice_mutex);
-	p = slicehdr[sliceindex].cachehdr;
+	p = hdr->cachehdr;
 	for (i = 0; i < nodeidx; i++) {
 		if (p == NULL)
 			break;
@@ -109,28 +154,91 @@ struct cache_dev_t *get_cachenodes(u32 sliceindex, u32 nodeidx)
 	return p;
 }
 
-/*get dec400 nodes list hdr of a slice*/
-/*fixme: after merge dec400 code*/
-void *get_dec400nodes(u32 sliceindex)
+struct cache_dev_t *get_cachenodebytype(u32 sliceindex, u32 parenttype, u32 parentnodeidx)
 {
-	if (sliceindex >= MULTI_SLICE_LIMIT)
+	struct cache_dev_t *p;
+	struct slice_info *hdr = getslicenode(sliceindex);
+
+	if (hdr == NULL)
 		return NULL;
 
-	return slicehdr[sliceindex].enchdr;
+
+	mutex_lock(&slice_mutex);
+	p = hdr->cachehdr;
+	while(p != NULL) {
+		if (p->parentid == parentnodeidx &&
+			((parenttype == NODE_TYPE_DEC && p->parenttype == CORE_DEC)
+			|| (parenttype == NODE_TYPE_ENC && p->parenttype == CORE_ENC)))
+			break;
+		p = p->next;
+	}
+	mutex_unlock(&slice_mutex);
+	return p;
+
+}
+
+/*get dec400 nodes list hdr of a slice*/
+struct dec400_t *get_dec400nodes(u32 sliceindex, u32 nodeidx)
+{
+	int i;
+	struct dec400_t *p;
+	struct slice_info *hdr = getslicenode(sliceindex);
+
+	if (hdr == NULL)
+		return NULL;
+
+	mutex_lock(&slice_mutex);
+	p = hdr->dec400hdr;
+	for (i = 0; i < nodeidx; i++) {
+		if (p == NULL)
+			break;
+		p = p->next;
+	}
+	mutex_unlock(&slice_mutex);
+	return p;
+}
+
+/*get dec400 nodes by parent type and parent core num */
+struct dec400_t *get_dec400nodebytype(u32 sliceindex, u32 parenttype, u32 parentnodeidx)
+{
+	struct dec400_t *p;
+	struct slice_info *hdr = getslicenode(sliceindex);
+
+	if (hdr == NULL)
+		return NULL;
+
+	mutex_lock(&slice_mutex);
+	p = hdr->dec400hdr;
+	while (p != NULL) {
+		if (p->parentid == parentnodeidx &&
+			((parenttype == NODE_TYPE_DEC && p->parenttype == CORE_DEC)
+			|| (parenttype == NODE_TYPE_ENC && p->parenttype == CORE_ENC)))
+			break;
+		p = p->next;
+	}
+	mutex_unlock(&slice_mutex);
+	return p;
 }
 
 int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 {
-	int c;
-	struct slice_info *splice;
 	struct hantrodec_t *pdec;
-	struct cache_dev_t *pcache;
-	
-	if (sliceindex >= MULTI_SLICE_LIMIT)
-		return -EINVAL;
+	struct slice_info *splice = getslicenode(sliceindex);
 
+#ifdef USE_DTB_PROBE
+	if (splice == NULL)
+		return -EINVAL;
+#else
+	if (splice == NULL && sliceindex == slicenum) {		
+		sliceindex = addslice(NULL, 0, 0);
+		if (sliceindex < 0)
+			return -EINVAL;
+		splice = getslicenode(sliceindex);
+	}
+	if (splice == NULL)
+		return -EINVAL;
+#endif
 	mutex_lock(&slice_mutex);
-	splice = &slicehdr[sliceindex];
 	pdec = splice->dechdr;
 	if (pdec == NULL)
 		splice->dechdr = deccore;
@@ -142,21 +250,9 @@ int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 	deccore->next = NULL;
 	splice->deccore_num++;
 	deccore->core_id = splice->deccore_num - 1;
+	deccore->sliceidx = sliceindex;
+	splice->config |= CONFIG_HWDEC;
 
-	deccore->cachecore[0] = deccore->cachecore[1] = NULL;
-	deccore->dec400 = NULL;
-	pcache = splice->cachehdr;
-	c = 0;
-	while (pcache != NULL) {
-		if (pcache->core_cfg.parentaddr == (unsigned long long)deccore->multicorebase) {
-			deccore->cachecore[c] = pcache;
-			pcache->parentcore = deccore;
-			c++;
-		}
-		pcache = pcache->next;
-		if (c >= 2)
-			break;
-	}
 	sema_init(&splice->dec_core_sem, splice->deccore_num);
 	mutex_unlock(&slice_mutex);
 	return 0;
@@ -164,16 +260,22 @@ int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 
 int add_encnode(u32 sliceindex, struct hantroenc_t *enccore)
 {
-	int c;
-	struct slice_info *splice;
 	struct hantroenc_t *penc;
-	struct cache_dev_t *pcache;
+	struct slice_info *splice = getslicenode(sliceindex);
 
-	if(sliceindex >= MULTI_SLICE_LIMIT)
+#ifdef USE_DTB_PROBE
+	if (splice == NULL)
 		return -EINVAL;
+#else
+	if (splice == NULL && sliceindex == slicenum) {		
+		sliceindex = addslice(NULL, 0, 0);
+		if (sliceindex < 0)
+			return -EINVAL;
+		splice = getslicenode(sliceindex);
+	}
+#endif
 
 	mutex_lock(&slice_mutex);
-	splice = &slicehdr[sliceindex];
 	penc = splice->enchdr;
 	if (penc == NULL)
 		splice->enchdr = enccore;
@@ -185,42 +287,82 @@ int add_encnode(u32 sliceindex, struct hantroenc_t *enccore)
 	enccore->next = NULL;
 	splice->enccore_num++;
 	enccore->core_id = splice->enccore_num - 1;
-
-	pcache = splice->cachehdr;
-	c = 0;
-	while (pcache != NULL) {
-		if (pcache->core_cfg.parentaddr == (unsigned long long)enccore->core_cfg.base_addr) {
-			enccore->cachecore[c] = pcache;
-			pcache->parentcore = enccore;
-			c++;
-		}
-		pcache = pcache->next;
-		if (c >= 2)
-			break;
-	}
+	enccore->core_cfg.sliceidx = sliceindex;
+	splice->config |= CONFIG_HWENC;
 	mutex_unlock(&slice_mutex);
 	return 0;
 }
 
-int add_dec400node(u32 sliceindex, void *dec400core)
+int add_dec400node(u32 sliceindex, struct dec400_t *dec400core)
 {
-	if(sliceindex >= MULTI_SLICE_LIMIT)
+	struct dec400_t *pdec400;
+	struct hantrodec_t *pdec;
+	struct hantroenc_t *penc;
+	struct slice_info *splice = getslicenode(sliceindex);;
+
+	if (splice == NULL)
 		return -EINVAL;
+
+	mutex_lock(&slice_mutex);
+	pdec400 = splice->dec400hdr;
+	if (pdec400 == NULL)
+		splice->dec400hdr = dec400core;
+	else {
+		while (pdec400->next != NULL)
+			pdec400 = pdec400->next;
+		pdec400->next = dec400core;
+	}
+	dec400core->next = NULL;
+	splice->dec400core_num++;
+	dec400core->core_id = splice->dec400core_num - 1;
+	splice->config |= CONFIG_DEC400;
+	dec400core->core_cfg.sliceidx = sliceindex;
+
+	//set default
+	dec400core->parentcore = splice;
+	dec400core->parentid = CORE_SLICE;
+
+	if (dec400core->core_cfg.parentaddr == splice->rsvmem_addr) {
+		dec400core->parentcore = splice;
+		dec400core->parenttype = CORE_SLICE;	
+		goto end;
+	}
+	penc = splice->enchdr;
+	while (penc != NULL) {
+		if ((unsigned long long)penc->core_cfg.base_addr == dec400core->core_cfg.parentaddr) {
+			dec400core->parentcore = penc;
+			dec400core->parentid = penc->core_id;
+			dec400core->parenttype = CORE_ENC;
+			goto end;
+		}
+		penc = penc->next;
+	}
+	pdec = splice->dechdr;
+	while (pdec != NULL) {
+		if ((unsigned long long)pdec->multicorebase == dec400core->core_cfg.parentaddr) {
+			dec400core->parentcore = pdec;
+			dec400core->parentid = pdec->core_id;
+			dec400core->parenttype = CORE_DEC;
+			goto end;
+		}
+		pdec = pdec->next;
+	}
+end:
+	mutex_unlock(&slice_mutex);
 	return 0;
 }
 
 int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore)
 {
-	struct slice_info *splice;
 	struct cache_dev_t *pcache;
 	struct hantrodec_t *pdec;
 	struct hantroenc_t *penc;
+	struct slice_info *splice = getslicenode(sliceindex);;
 
-	if(sliceindex >= MULTI_SLICE_LIMIT)
-		return -EINVAL;
+	if (splice == NULL)
+		return -ENODEV;
 
 	mutex_lock(&slice_mutex);
-	splice = &slicehdr[sliceindex];
 	pcache = splice->cachehdr;
 	if (pcache == NULL)
 		splice->cachehdr = cachecore;
@@ -232,16 +374,20 @@ int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore)
 	cachecore->next = NULL;
 	splice->cachecore_num++;
 	cachecore->core_id = splice->cachecore_num - 1;
+	cachecore->core_cfg.sliceidx = sliceindex;
+	splice->config |= CONFIG_L2CACHE;
 
-	if(cachecore->core_cfg.client == VC8000E) {
+	//set default
+	cachecore->parentcore = splice;
+	cachecore->parentid = CORE_SLICE;
+
+	if (cachecore->core_cfg.client == VC8000E) {
 		penc = splice->enchdr;
 		while (penc != NULL) {
-			if((unsigned long long)penc->core_cfg.base_addr == cachecore->core_cfg.parentaddr) {
+			if ((unsigned long long)penc->core_cfg.base_addr == cachecore->core_cfg.parentaddr) {
 				cachecore->parentcore = penc;
-				if(penc->cachecore[0] == NULL)
-					penc->cachecore[0] = cachecore;
-				else
-					penc->cachecore[1] = cachecore;
+				cachecore->parentid = penc->core_id;
+				cachecore->parenttype = CORE_ENC;
 				break;
 			}
 			penc = penc->next;
@@ -249,12 +395,10 @@ int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore)
 	} else {
 		pdec = splice->dechdr;
 		while (pdec != NULL) {
-			if((unsigned long long)pdec->multicorebase == cachecore->core_cfg.parentaddr) {
+			if ((unsigned long long)pdec->multicorebase == cachecore->core_cfg.parentaddr) {
 				cachecore->parentcore = pdec;
-				if(pdec->cachecore[0] == NULL)
-					pdec->cachecore[0] = cachecore;
-				else
-					pdec->cachecore[1] = cachecore;
+				cachecore->parentid = pdec->core_id;
+				cachecore->parenttype = CORE_DEC;
 				break;
 			}
 			pdec = pdec->next;
@@ -266,77 +410,105 @@ int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore)
 
 int get_slicenumber(void)
 {
-	int i, c = 0;
-
-	mutex_lock(&slice_mutex);
-	for (i = 0; i < MULTI_SLICE_LIMIT; i++) {
-		if (slicehdr[i].deccore_num != 0 || slicehdr[i].enccore_num != 0)
-			c++;
-	}
-	mutex_unlock(&slice_mutex);
-	return c;
+	return slicenum;
 }
 
 struct slice_info *getparentslice(void *node, int type)
 {
+	u32 idx;
+
 	switch (type) {
 	case CORE_CACHE:
-		return &slicehdr[((struct cache_dev_t *)node)->core_cfg.sliceidx];
+		idx = ((struct cache_dev_t *)node)->core_cfg.sliceidx;
+		break;
 	case CORE_DEC:
-		return &slicehdr[((struct hantrodec_t *)node)->sliceidx];
+		idx = ((struct hantrodec_t *)node)->sliceidx;
+		break;
 	case CORE_ENC:
-		return &slicehdr[((struct hantroenc_t *)node)->core_cfg.sliceidx];
+		idx = ((struct hantroenc_t *)node)->core_cfg.sliceidx;
+		break;
 	case CORE_DEC400:
+		idx = ((struct dec400_t *)node)->core_cfg.sliceidx;
+		break;
 	default:
 		return NULL;
 	}
+	return getslicenode(idx);
 }
 
 /*for driver unload*/
 int slice_remove(void)
 {
-	int i;
+	struct slice_info *post, *prev;
 
-	for (i = 0; i < MULTI_SLICE_LIMIT; i++) {
-		slicehdr[i].deccore_num = slicehdr[i].enccore_num = slicehdr[i].cachecore_num = slicehdr[i].dec400core_num = 0;
-		slicehdr[i].dechdr = NULL;
-		slicehdr[i].enchdr = NULL;
-		slicehdr[i].cachehdr = NULL;
-		slicehdr[i].dec400hdr = NULL;
+	post = prev = slicehdr;
+	mutex_lock(&slice_mutex);	
+	while (prev != NULL) {
+		post = prev->next;
+		kfree(prev);
+		prev = post;
 	}
+	slicenum = 0;
+	slicehdr = NULL;
+	mutex_unlock(&slice_mutex);
 	return 0;
 }
 
-/*for driver load*/
-int slice_init(void)
+int addslice(struct device *dev, phys_addr_t sliceaddr, phys_addr_t slicesize)
 {
-	int i;
+	struct slice_info * pslice = kzalloc(sizeof(struct slice_info), GFP_KERNEL);
 
-	for (i = 0; i < MULTI_SLICE_LIMIT; i++) {
-		slicehdr[i].deccore_num = slicehdr[i].enccore_num = slicehdr[i].cachecore_num = slicehdr[i].dec400core_num = 0;
-		slicehdr[i].dechdr = NULL;
-		slicehdr[i].enchdr = NULL;
-		slicehdr[i].cachehdr = NULL;
-		slicehdr[i].dec400hdr = NULL;
+	if (pslice == NULL)
+		return -ENOMEM;
 
-		init_waitqueue_head(&slicehdr[i].cache_hw_queue);
-		init_waitqueue_head(&slicehdr[i].cache_wait_queue);
-		spin_lock_init(&slicehdr[i].cache_owner_lock);
+	pslice->dev = dev;
+	pslice->rsvmem_addr = sliceaddr;
+	pslice->memsize = slicesize;
+	pslice->config = 0;
+	pslice->next = NULL;
+	pslice->deccore_num = pslice->enccore_num = pslice->cachecore_num = pslice->dec400core_num = 0;
+	pslice->dechdr = NULL;
+	pslice->enchdr = NULL;
+	pslice->cachehdr = NULL;
+	pslice->dec400hdr = NULL;
 
-		sema_init(&slicehdr[i].enc_core_sem, 1);
-		init_waitqueue_head(&slicehdr[i].enc_hw_queue);
-		spin_lock_init(&slicehdr[i].enc_owner_lock);
-		init_waitqueue_head(&slicehdr[i].enc_wait_queue);
+	init_waitqueue_head(&pslice->cache_hw_queue);
+	init_waitqueue_head(&pslice->cache_wait_queue);
+	spin_lock_init(&pslice->cache_owner_lock);
 
-		slicehdr[i].dec_irq = 0;
-		slicehdr[i].pp_irq = 0;
-		spin_lock_init(&slicehdr[i].owner_lock);
-		init_waitqueue_head(&slicehdr[i].dec_wait_queue);
-		init_waitqueue_head(&slicehdr[i].pp_wait_queue);
-		init_waitqueue_head(&slicehdr[i].hw_queue);
-		sema_init(&slicehdr[i].pp_core_sem, 1);
-		/*dec_core_sem could only be initialized after all dec core be inserted*/
+	sema_init(&pslice->enc_core_sem, 1);
+	init_waitqueue_head(&pslice->enc_hw_queue);
+	spin_lock_init(&pslice->enc_owner_lock);
+	init_waitqueue_head(&pslice->enc_wait_queue);
+
+	pslice->dec_irq = 0;
+	pslice->pp_irq = 0;
+	spin_lock_init(&pslice->owner_lock);
+	init_waitqueue_head(&pslice->dec_wait_queue);
+	init_waitqueue_head(&pslice->pp_wait_queue);
+	init_waitqueue_head(&pslice->hw_queue);
+	sema_init(&pslice->pp_core_sem, 1);
+	/*dec_core_sem could only be initialized after all dec core be inserted*/
+
+	mutex_lock(&slice_mutex);
+	if (slicehdr == NULL) {
+		slicehdr = pslice;
+	} else {
+		struct slice_info * head = slicehdr;
+		while (head->next != NULL)
+			head = head->next;
+		head->next = pslice;	
 	}
+	slicenum++;
+	mutex_unlock(&slice_mutex);
+	return slicenum - 1;
+}
+
+/*for driver load*/
+int __init slice_init(void)
+{
+	slicenum = 0;
+	slicehdr = NULL;
 	mutex_init(&slice_mutex);
 	return 0;
 }
@@ -353,25 +525,29 @@ long hantroslice_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 void slice_printdebug(void)
 {
-#ifdef DEBUG
 	struct hantrodec_t *pdec, *pdec2;
 	struct hantroenc_t *penc, *penc2;
+	struct slice_info *pslice;
 	struct cache_dev_t *pcache, *pcache2;
+	struct dec400_t *pdec400, *pdec400_2;
 	int i, n = get_slicenumber(), k;
-	int decn, encn, cachen;
+	int decn, encn, cachen, dec400n;
 	struct slice_info *slice0, *slice1;
 
 	printk("########### slice info start #############");
 	printk("slice num = %d", n);
+	slice0 = slicehdr;
 	for (i = 0; i < n; i++) {
-		printk("slice %d:", i);
-		slice0 = &slicehdr[i];
+		printk("slice %d:%lx:%llx:%lld:%x", i, (unsigned long)slice0->dev, slice0->rsvmem_addr, slice0->memsize, slice0->config);
+
 		decn = get_slicecorenum(i, CORE_DEC);
 		printk("dec num = %d", decn);
 		encn = get_slicecorenum(i, CORE_ENC);
 		printk("enc num = %d", encn);
 		cachen = get_slicecorenum(i, CORE_CACHE);
 		printk("cache  num = %d", cachen);
+		dec400n = get_slicecorenum(i, CORE_DEC400);
+		printk("dec400n num = %d", dec400n);
 
 		pdec = get_decnodes(i, 0);
 		k = 0;
@@ -383,7 +559,7 @@ void slice_printdebug(void)
 				printk("get_decnodes fails @ %d", k);
 			if (slice0 != slice1)
 				printk("getparentslice fails @ dec %d:%d", i, k);
-			printk("addr=%lx, size=%d", pdec->multicorebase, pdec->iosize);
+			printk("addr=%llx, size=%d", pdec->multicorebase, pdec->iosize);
 			printk("irq0=%d, irq1=%d", pdec->irqlist[0], pdec->irqlist[1]);
 			if (pdec->its_main_core_id != NULL) {
 				pdec2 = pdec->its_main_core_id;
@@ -393,21 +569,13 @@ void slice_printdebug(void)
 				pdec2 = pdec->its_aux_core_id;
 				printk("aux core = %d:%d", pdec2->sliceidx, pdec2->core_id);
 			}
-			if (pdec->cachecore[0] != NULL) {
-				pcache = pdec->cachecore[0];
-				printk("cache 0 = %d:%lx", pcache->core_id, pcache->core_cfg.base_addr);
-			}
-			if (pdec->cachecore[1] != NULL) {
-				pcache = pdec->cachecore[1];
-				printk("cache 1 = %d:%lx", pcache->core_id, pcache->core_cfg.base_addr);
-			}
 			pdec = pdec->next;
 			k++;
 		}
-		
+
 		penc = get_encnodes(i, 0);
 		k = 0;
-		while(penc != NULL) {
+		while (penc != NULL) {
 			printk("enc core %d:", k);
 			penc2 = get_encnodes(i, k);
 			slice1 = getparentslice(penc, CORE_ENC);
@@ -415,23 +583,15 @@ void slice_printdebug(void)
 				printk("get_encnodes fails @ %d", k);
 			if (slice0 != slice1)
 				printk("getparentslice fails @ enc %d:%d", i, k);
-			printk("addr=%lx, size=%d", penc->core_cfg.base_addr, penc->core_cfg.iosize);
+			printk("addr=%llx, size=%d", penc->core_cfg.base_addr, penc->core_cfg.iosize);
 			printk("irq0=%d, irq1=%d", penc->irqlist[0], penc->irqlist[1]);
-			if (penc->cachecore[0] != NULL) {
-				pcache = penc->cachecore[0];
-				printk("cache 0 = %d:%lx", pcache->core_id, pcache->core_cfg.base_addr);
-			}			
-			if (penc->cachecore[1] != NULL) {
-				pcache = penc->cachecore[1];
-				printk("cache 1 = %d:%lx", pcache->core_id, pcache->core_cfg.base_addr);
-			}			
 			penc = penc->next;
 			k++;
 		}
 
 		pcache = get_cachenodes(i, 0);
 		k = 0;
-		while(pcache != NULL) {
+		while (pcache != NULL) {
 			printk("cache core %d:", k);
 			pcache2 = get_cachenodes(i, k);
 			slice1 = getparentslice(pcache, CORE_CACHE);
@@ -439,27 +599,65 @@ void slice_printdebug(void)
 				printk("get_cachenodes fails @ %d", k);
 			if (slice0 != slice1)
 				printk("getparentslice fails @ cache %d:%d", i, k);
-			printk("addr=%lx, size=%d, type=%d, dir=%d", pcache->core_cfg.base_addr,
+			printk("addr=%llx, size=%d, type=%d, dir=%d", pcache->core_cfg.base_addr,
 				pcache->core_cfg.iosize, pcache->core_cfg.client, pcache->core_cfg.dir);
 			printk("irq0=%d, irq1=%d", pcache->irqlist[0], pcache->irqlist[1]);
 			printk("parent addr=%llx",  pcache->core_cfg.parentaddr);
 			if (pcache->parentcore != NULL) {
-				if(pcache->core_cfg.client == VC8000E) {
+				if (pcache->core_cfg.client == VC8000E) {
 					penc = (struct hantroenc_t *)pcache->parentcore;
-					printk("parent enc core = %d:%d,addr %lx", penc->core_cfg.sliceidx,
+					printk("parent enc core = %d:%d,addr %llx", penc->core_cfg.sliceidx,
 						penc->core_id, penc->core_cfg.base_addr);
 				} else {
 					pdec = (struct hantrodec_t *)pcache->parentcore;
-					printk("parent dec core = %d:%d,addr %lx", pdec->sliceidx,
+					printk("parent dec core = %d:%d,addr %llx", pdec->sliceidx,
 						pdec->core_id, pdec->multicorebase);
 				}
 			} else
 				printk("parent core = NULL");
 			pcache = pcache->next;
 			k++;
-		}		
+		}
+		pdec400 = get_dec400nodes(i, 0);
+		k = 0;
+		while (pdec400 != NULL) {
+			printk("dec400 core %d:", k);
+			pdec400_2 = get_dec400nodes(i, k);
+			slice1 = getparentslice(pdec400, CORE_DEC400);
+			if (pdec400 != pdec400_2)
+				printk("get_dec400nodes fails @ %d", k);
+			if (slice0 != slice1)
+				printk("getparentslice fails @ dec400 %d:%d", i, k);
+			printk("addr=%llx, size=%d", pdec400->core_cfg.dec400corebase,
+				pdec400->core_cfg.iosize);
+			printk("parent addr=%llx",  pdec400->core_cfg.parentaddr);
+			if (pdec400->parentcore != NULL) {
+				switch (pdec400->parenttype) {
+				case CORE_ENC:
+					penc = (struct hantroenc_t *)pdec400->parentcore;
+					printk("parent enc core = %d:%d,addr %llx", penc->core_cfg.sliceidx,
+						penc->core_id, penc->core_cfg.base_addr);
+					break;
+				case CORE_DEC:
+					pdec = (struct hantrodec_t *)pdec400->parentcore;
+					printk("parent dec core = %d:%d,addr %llx", pdec->sliceidx,
+						pdec->core_id, pdec->multicorebase);
+					break;
+				case CORE_SLICE:
+					pslice = (struct slice_info *)pdec400->parentcore;
+					printk("parent slice addr %llx", pslice->rsvmem_addr);
+					break;
+				default:
+					printk("error: dec400 parent type unknown");
+					break;
+				}
+			} else
+				printk("parent core = NULL");
+			pdec400 = pdec400->next;
+			k++;
+		}
+		slice0 = slice0->next;
 	}
 	printk("########### slice info finish #############");
-#endif	
 }
 

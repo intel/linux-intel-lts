@@ -1,5 +1,5 @@
 /*
- *    Hantro cache controller header file.
+ *    Hantro dec400 controller hardware driver header file.
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
@@ -17,35 +17,20 @@
  *    https://opensource.org/licenses/gpl-2.0.php
  */
 
-#ifndef _CACHE_H_
-#define _CACHE_H_
-#include <linux/ioctl.h>
+#ifndef _HANTRO_DEC400_H_
+#define _HANTRO_DEC400_H_
+
 #include "hantro_priv.h"
 #include "hantro.h"
 
-#undef PDEBUG   /* undef it, just in case */
-#ifdef CACHE_DEBUG
-#ifdef __KERNEL__
-/* This one if debugging is on, and kernel space */
-#define PDEBUG printk
-#else
-/* This one for user space */
-#define PDEBUG(fmt, args...) printf(__FILE__ ":%d: " fmt, __LINE__, ## args)
-#endif
-#else
-#define PDEBUG(fmt, args...)  /* not debugging: nothing */
-#endif
-
-long hantrocache_ioctl(
+int hantro_dec400_probe(dtbnode *pnode);
+void hantro_dec400_cleanup(void);
+long hantrodec400_ioctl(
 	struct file *filp,
 	unsigned int cmd,
 	unsigned long arg);
+int hantrodec400_init(void);
 
-int cache_init(void);
-int cache_probe(dtbnode *pnode);
-void cache_cleanup(void);
-int cache_open(struct inode *inode, struct file *filp);
-int cache_release(void);
+#endif	//_HANTRO_DEC400_H_
 
-#endif /* !_CACHE_H_ */
 

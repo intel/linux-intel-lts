@@ -3,21 +3,20 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License, version 2, as
+ *    published by the Free Software Foundation.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
+ *    GNU General Public License version 2 for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Version 2 at the following locations:
+ *    https://opensource.org/licenses/gpl-2.0.php
  */
+
 #ifndef HANTRO_H
 #define HANTRO_H
 
@@ -55,9 +54,21 @@
 #define CONFIG_HWDEC		(1 << 0)
 #define CONFIG_HWENC		(1 << 1)
 #define CONFIG_L2CACHE		(1 << 2)
+#define CONFIG_DEC400		(1 << 3)
+
+#define KCORE(id) ((u32)(id)&0xff)
+#define NODETYPE(id) (((u32)id >> 8) &0xff)
+#define SLICE(id) ((u32)(id)>>16)
+
+/* slice index definition is unchanged. 
+    for dec400/cache NODE(id) refers to its parent core number based on NODETYPE 
+    for dec/enc, NODE(id) refers to its core num, and NODETYPE is unuseful. */
+/*node type for NODETYPE(id), apply to be expanded */
+#define NODE_TYPE_DEC	1
+#define NODE_TYPE_ENC	2
 
 typedef enum {
-	VC8000E = 0,
+	VC8000E,
 	VC8000D_0,
 	VC8000D_1,
 	DECODER_G1_0,
@@ -91,13 +102,9 @@ struct drm_gem_hantro_object {
 	struct dma_resv kresv;
 	unsigned int ctxno;
 	int    handle;
+	int	sliceidx;
 	int    flag;
 };
-
-struct dma_buf *hantro_prime_export(
-        struct drm_gem_object *obj,
-        int flags
-);
 
 struct hantro_fencecheck {
 	unsigned int handle;
@@ -171,18 +178,18 @@ struct core_desc {
 #define DRM_IOCTL_HANTRO_PTR_PHYADDR     DRM_IOWR(HANTRO_IOCTL_START+9, unsigned long *)
 
 /* hantro enc related */
-#define HX280ENC_IOC_START              DRM_IO(HANTRO_IOCTL_START + 16)
+#define HX280ENC_IOC_START              DRM_IO(HANTRO_IOCTL_START + 17)
 #define HX280ENC_IOCGHWOFFSET           DRM_IOR(HANTRO_IOCTL_START +  17, unsigned long long *)
 #define HX280ENC_IOCGHWIOSIZE           DRM_IOWR(HANTRO_IOCTL_START + 18, unsigned long *)
 #define HX280ENC_IOC_CLI                DRM_IO(HANTRO_IOCTL_START + 19)
 #define HX280ENC_IOC_STI                DRM_IO(HANTRO_IOCTL_START + 20)
 #define HX280ENC_IOCHARDRESET           DRM_IO(HANTRO_IOCTL_START + 21)   /* debugging tool */
-#define HX280ENC_IOCGSRAMOFFSET         DRM_IOR(HANTRO_IOCTL_START +  22, unsigned long *)
+#define HX280ENC_IOCGSRAMOFFSET         DRM_IOR(HANTRO_IOCTL_START +  22, unsigned long long *)
 #define HX280ENC_IOCGSRAMEIOSIZE        DRM_IOR(HANTRO_IOCTL_START +  23, unsigned int *)
-#define HX280ENC_IOCH_ENC_RESERVE       DRM_IOR(HANTRO_IOCTL_START + 24, unsigned long *)
-#define HX280ENC_IOCH_ENC_RELEASE       DRM_IOR(HANTRO_IOCTL_START + 25, unsigned long *)
+#define HX280ENC_IOCH_ENC_RESERVE       DRM_IOWR(HANTRO_IOCTL_START + 24, unsigned long *)
+#define HX280ENC_IOCH_ENC_RELEASE       DRM_IOW(HANTRO_IOCTL_START + 25, unsigned long *)
 #define HX280ENC_IOCG_CORE_NUM          DRM_IO(HANTRO_IOCTL_START + 26)
-#define HX280ENC_IOCG_CORE_WAIT         DRM_IOR(HANTRO_IOCTL_START + 27, unsigned int *)
+#define HX280ENC_IOCG_CORE_WAIT         DRM_IOWR(HANTRO_IOCTL_START + 27, unsigned int *)
 //#define HX280ENC_IOCG_WRITE_REG         DRM_IOW( HANTRO_IOCTL_START+ 28, struct core_desc *)
 //#define HX280ENC_IOCG_READ_REG          DRM_IOWR(HANTRO_IOCTL_START+ 29, struct core_desc *)
 //#define HX280ENC_IOCG_PUSH_REG          DRM_IOW( HANTRO_IOCTL_START+ 30, struct core_desc *)
@@ -193,13 +200,13 @@ struct core_desc {
 /*slice related*/
 #define HANTROSLICE_IOC_START             DRM_IO(HANTRO_IOCTL_START + 33)
 #define DRM_IOCTL_HANTRO_GET_SLICENUM	DRM_IO(HANTRO_IOCTL_START+33)
-#define HANTROSLICE_IOC_END             DRM_IO(HANTRO_IOCTL_START + 39)
+#define HANTROSLICE_IOC_END             DRM_IO(HANTRO_IOCTL_START + 40)
 
 /* hantro dec related */
-#define HANTRODEC_IOC_START             DRM_IO(HANTRO_IOCTL_START + 40)
+#define HANTRODEC_IOC_START             DRM_IO(HANTRO_IOCTL_START + 41)
 #define HANTRODEC_PP_INSTANCE           DRM_IO(HANTRO_IOCTL_START + 41)
 #define HANTRODEC_HW_PERFORMANCE        DRM_IO(HANTRO_IOCTL_START + 42)
-#define HANTRODEC_IOCGHWOFFSET          DRM_IOR(HANTRO_IOCTL_START +  43, unsigned long *)
+#define HANTRODEC_IOCGHWOFFSET          DRM_IOWR(HANTRO_IOCTL_START +  43, unsigned long long*)
 #define HANTRODEC_IOCGHWIOSIZE          DRM_IOWR(HANTRO_IOCTL_START +  44, unsigned int *)
 #define HANTRODEC_IOC_CLI               DRM_IO(HANTRO_IOCTL_START + 45)
 #define HANTRODEC_IOC_STI               DRM_IO(HANTRO_IOCTL_START + 46)
@@ -211,7 +218,7 @@ struct core_desc {
 #define HANTRODEC_IOCT_DEC_RELEASE      DRM_IO(HANTRO_IOCTL_START + 52)
 #define HANTRODEC_IOCQ_PP_RESERVE       DRM_IO(HANTRO_IOCTL_START + 53)
 #define HANTRODEC_IOCT_PP_RELEASE       DRM_IO(HANTRO_IOCTL_START + 54)
-#define HANTRODEC_IOCX_DEC_WAIT         DRM_IOWR(HANTRO_IOCTL_START + 55, struct core_desc *)
+#define HANTRODEC_IOCX_DEC_WAIT         DRM_IOW(HANTRO_IOCTL_START + 55, struct core_desc *)
 #define HANTRODEC_IOCX_PP_WAIT          DRM_IOWR(HANTRO_IOCTL_START + 56, struct core_desc *)
 #define HANTRODEC_IOCS_DEC_PULL_REG     DRM_IOWR(HANTRO_IOCTL_START + 57, struct core_desc *)
 #define HANTRODEC_IOCS_PP_PULL_REG      DRM_IOWR(HANTRO_IOCTL_START + 58, struct core_desc *)
@@ -237,6 +244,14 @@ struct core_desc {
 //#define CACHE_IOCGBUFBUSADDRESS _IOR(CACHE_IOC_MAGIC,  1, unsigned long *)
 //#define CACHE_IOCGBUFSIZE       _IOR(CACHE_IOC_MAGIC,  2, unsigned int *)
 //#define CACHE_IOC_MAXNR 30
-#define HANTROCACHE_IOC_END               DRM_IO(HANTRO_IOCTL_START + 90)
+#define HANTROCACHE_IOC_END               DRM_IO(HANTRO_IOCTL_START + 89)
+
+#define HANTRODEC400_IOC_START             DRM_IO(HANTRO_IOCTL_START + 90)
+#define DEC400_IOCGHWIOSIZE     			DRM_IO(HANTRO_IOCTL_START + 90)
+#define DEC400_IOCS_DEC_WRITE_REG   	DRM_IOW(HANTRO_IOCTL_START + 91, struct core_desc *)
+#define DEC400_IOCS_DEC_READ_REG    	DRM_IOWR(HANTRO_IOCTL_START + 92, struct core_desc *)
+#define DEC400_IOCS_DEC_PUSH_REG    	DRM_IOW(HANTRO_IOCTL_START + 93, struct core_desc *)
+#define DEC400_IOCGHWOFFSET			DRM_IOWR(HANTRO_IOCTL_START + 94, unsigned long long *)
+#define HANTRODEC400_IOC_END               	DRM_IO(HANTRO_IOCTL_START + 99)
 
 #endif /* HANTRO_H */

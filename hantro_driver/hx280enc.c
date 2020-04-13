@@ -3,20 +3,18 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License, version 2, as
+ *    published by the Free Software Foundation.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
+ *    GNU General Public License version 2 for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Version 2 at the following locations:
+ *    https://opensource.org/licenses/gpl-2.0.php
  */
 
 #include <linux/kernel.h>
@@ -41,8 +39,6 @@
 #include "hx280enc.h"
 #include <linux/irq.h>
 
-/* define this to use request_irq */
-//#define USE_IRQ
 static u32 resouce_shared;
 
 /*------------------------------------------------------------------------
@@ -84,10 +80,8 @@ static u32 resouce_shared;
 #define CORE_7_IO_ADDR                 0x485538000 // VCEJ
 #define CORE_7_IO_SIZE                 (500 * 4)    /* bytes */
 
-#define INT_PIN_CORE_0                    38        /* just a dummy */
-#define INT_PIN_CORE_1                    40        /* just a dummy */
-#define INT_PIN_CORE_2			  -1        /* for polling */
-
+#define INT_PIN_CORE_0                    -1        /*IRQ pin of core 0*/
+#define INT_PIN_CORE_1                    -1        /*IRQ pin of core 1*/
 
 #define HANTRO_VC8KE_REG_BWREAD 216
 #define HANTRO_VC8KE_REG_BWWRITE 220
@@ -97,14 +91,14 @@ static u32 resouce_shared;
 /*base_addr, iosize, irq, resource_shared*/
 #ifndef USE_DTB_PROBE
 static CORE_CONFIG core_array[] = {
-	{CORE_0_IO_ADDR, CORE_0_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 0},
+	{CORE_0_IO_ADDR, CORE_0_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 0}, 
 	{CORE_1_IO_ADDR, CORE_1_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 0},
-	{CORE_2_IO_ADDR, CORE_2_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 1},
-	{CORE_3_IO_ADDR, CORE_3_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 1},
-	{CORE_4_IO_ADDR, CORE_4_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 2},
-	{CORE_5_IO_ADDR, CORE_5_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 2},
-	{CORE_6_IO_ADDR, CORE_6_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 3},
-	{CORE_7_IO_ADDR, CORE_7_IO_SIZE, INT_PIN_CORE_2, RESOURCE_SHARED_INTER_CORES, 3},
+	{CORE_2_IO_ADDR, CORE_2_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 1}, 
+	{CORE_3_IO_ADDR, CORE_3_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 1},
+	{CORE_4_IO_ADDR, CORE_4_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 2}, 
+	{CORE_5_IO_ADDR, CORE_5_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 2},
+	{CORE_6_IO_ADDR, CORE_6_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 3}, 
+	{CORE_7_IO_ADDR, CORE_7_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 3},
 };
 #endif
 static int bencprobed;
@@ -119,7 +113,7 @@ static int ReserveIO(struct hantroenc_t *pcore);
 static void ReleaseIO(struct hantroenc_t *pcore);
 static void ResetAsic(struct hantroenc_t *dev);
 static int CheckCoreOccupation(struct hantroenc_t *dev);
-static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info);
+static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum);
 
 /* IRQ handler */
 #if KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE
@@ -129,7 +123,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id);
 #endif
 
 /*********************local variable declaration*****************/
-unsigned long sram_base;
+unsigned long long sram_base;
 unsigned int sram_size;
 /* and this is our MAJOR; use 0 for dynamic allocation (recommended)*/
 static int hantroenc_major;
@@ -145,7 +139,6 @@ static int CheckEncIrq(struct hantroenc_t *dev, u32 *core_info, u32 *irq_status,
 
 	core_mapping = (u8)(*core_info & 0xFF);
 
-	//printk("core_mapping = %d\n",core_mapping);
 	while (core_mapping) {
 		if (core_mapping & 0x1) {
 			if (i >= nodenum)
@@ -169,7 +162,6 @@ static int CheckEncIrq(struct hantroenc_t *dev, u32 *core_info, u32 *irq_status,
 		i++;
 		dev = dev->next;
 	}
-	//printk("rdy=%d\n",rdy);
 	return rdy;
 }
 static unsigned int WaitEncReady(struct hantroenc_t *dev, u32 *core_info, u32 *irq_status, u32 nodenum)
@@ -182,21 +174,32 @@ static unsigned int WaitEncReady(struct hantroenc_t *dev, u32 *core_info, u32 *i
 		parentslice->enc_wait_queue,
 		CheckEncIrq(dev, core_info, irq_status, nodenum))) {
 		PDEBUG("ENC wait_event_interruptible interrupted\n");
-		ReleaseEncoder(dev, core_info);
+		ReleaseEncoder(dev, core_info, nodenum);
 		return -ERESTARTSYS;
 	}
 
 	return 0;
 }
 
-u32 hantroenc_readbandwidth(int isreadBW)
+u32 hantroenc_readbandwidth(int sliceidx, int isreadBW)
 {
 	int i, slicen = get_slicenumber();
 	u32 bandwidth = 0;
 	struct hantroenc_t *pcore;
 
-	for (i = 0; i < slicen; i++) {
-		pcore = get_encnodes(i, 0);
+	if (sliceidx < 0) {
+		for (i = 0; i < slicen; i++) {
+			pcore = get_encnodes(i, 0);
+			while (pcore != NULL) {
+				if (isreadBW)
+					bandwidth += ioread32((void *)(pcore->hwregs + HANTRO_VC8KE_REG_BWREAD * 4));
+				else
+					bandwidth += ioread32((void *)(pcore->hwregs + HANTRO_VC8KE_REG_BWWRITE * 4));
+				pcore = pcore->next;
+			}
+		}
+	} else {
+		pcore = get_encnodes(sliceidx, 0);
 		while (pcore != NULL) {
 			if (isreadBW)
 				bandwidth += ioread32((void *)(pcore->hwregs + HANTRO_VC8KE_REG_BWREAD * 4));
@@ -213,7 +216,7 @@ static int CheckCoreOccupation(struct hantroenc_t *dev)
 	int ret = 0;
 	unsigned long flags;
 	struct slice_info *parentslice = getparentslice(dev, CORE_ENC);
-
+	
 	spin_lock_irqsave(&parentslice->enc_owner_lock, flags);
 	if (!dev->is_reserved) {
 		dev->is_reserved = 1;
@@ -296,7 +299,7 @@ static long ReserveEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 	return 0;
 }
 
-static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info)
+static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 {
 	unsigned long flags;
 	u32 core_num = 0;
@@ -312,6 +315,8 @@ static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info)
 	/* release specified core id */
 	while (core_mapping) {
 		if (core_mapping & 0x1) {
+			if (i >= nodenum)
+				break;
 			core_id = i;
 			spin_lock_irqsave(&parentslice->enc_owner_lock, flags);
 			PDEBUG("dev[core_id].pid=%d,current->pid=%d\n", dev->pid, current->pid);
@@ -347,8 +352,8 @@ long hantroenc_ioctl(
 
 	switch (cmd) {
 	case HX280ENC_IOCGHWOFFSET: {
-		__get_user(id, (unsigned long *)arg);
-		node = NODE(id);
+		__get_user(id, (unsigned long long *)arg);
+		node = KCORE(id);
 		slice = SLICE(id);
 		pcore = get_encnodes(slice, node);
 		if (pcore == NULL)
@@ -361,7 +366,7 @@ long hantroenc_ioctl(
 	case HX280ENC_IOCGHWIOSIZE: {
 		u32 io_size;
 		__get_user(id, (unsigned long *)arg);
-		node = NODE(id);
+		node = KCORE(id);
 		slice = SLICE(id);
 		pcore = get_encnodes(slice, node);
 		if (pcore == NULL)
@@ -371,7 +376,7 @@ long hantroenc_ioctl(
 		return 0;
 	}
 	case HX280ENC_IOCGSRAMOFFSET:
-		__put_user(sram_base, (unsigned long *) arg);
+		__put_user(sram_base, (unsigned long long *) arg);
 		break;
 	case HX280ENC_IOCGSRAMEIOSIZE:
 		__put_user(sram_size, (unsigned int *) arg);
@@ -385,10 +390,11 @@ long hantroenc_ioctl(
 		__get_user(core_info, (unsigned long *)arg);
 		slice = (core_info >> 16) & 0xff;
 		pcore = get_encnodes(slice, 0);		/*from list header*/
-		if (pcore == NULL)
+		if (pcore == NULL) {
+			printk("wrong slice num");
 			return -EFAULT;
+		}
 		tmp = get_slicecorenum(slice, CORE_ENC);
-
 		ret = ReserveEncoder(pcore, &core_info, tmp);
 		if (ret == 0)
 			__put_user(core_info, (u32 *) arg);
@@ -401,8 +407,8 @@ long hantroenc_ioctl(
 		if (pcore == NULL)
 			return -EFAULT;
 		PDEBUG("Release ENC Core\n");
-
-		ReleaseEncoder(pcore, &core_info);
+		tmp = get_slicecorenum(slice, CORE_ENC);	
+		ReleaseEncoder(pcore, &core_info, tmp);
 
 		break;
 	}
@@ -433,7 +439,6 @@ long hantroenc_ioctl(
 
 int hantroenc_release(void)
 {
-	/*fixme: should we release dev by fd? */
 	struct slice_info *parentslice;
 	int i, slicen = get_slicenumber();
 	struct hantroenc_t *dev;
@@ -463,7 +468,7 @@ int hantroenc_release(void)
 	return 0;
 }
 
-int hantroenc_init(void)
+int __init hantroenc_init(void)
 {
 	sram_base = 0;
 	sram_size = 0;
@@ -473,9 +478,9 @@ int hantroenc_init(void)
 	return 0;
 }
 
-int hantroenc_probe(struct platform_device *pdev, struct hantro_core_info *prc, int core_num)
+int hantroenc_probe(dtbnode *pnode)
 {
-	int result = 0, irqnum;
+	int result = 0;
 	struct hantroenc_t *pcore;
 	int i;
 
@@ -483,21 +488,21 @@ int hantroenc_probe(struct platform_device *pdev, struct hantro_core_info *prc, 
 	if (bencprobed != 0)
 		return 0;
 	bencprobed = 1;
-	for (i = 0; i < sizeof(core_array) / sizeof(CORE_CONFIG); i++) {
+	for (i = 0; i < ARRAY_SIZE(core_array); i++) {
+		int irqnum;
 		pcore = vmalloc(sizeof(struct hantroenc_t));
 		if (pcore == NULL)
-			return -ENOMEM;
+			continue;
 
 		memset(pcore, 0, sizeof(struct hantroenc_t));
-		//pcore->core_id = i;	//move to slice insertion
 		pcore->core_cfg.base_addr = core_array[i].base_addr;
 		pcore->core_cfg.iosize = core_array[i].iosize;
 		pcore->core_cfg.sliceidx = core_array[i].sliceidx;
 
 		result = ReserveIO(pcore);
 		if (result < 0) {
-			pr_info("hx280enc: reserve reg 0x%llx-0x%llx fail\n",
-				prc->mem->start, prc->mem->end);
+			pr_err("hx280enc: reserve reg 0x%llx-0x%lld fail\n",
+				pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
 			vfree(pcore);
 			continue;
 		}
@@ -505,85 +510,69 @@ int hantroenc_probe(struct platform_device *pdev, struct hantro_core_info *prc, 
 		ResetAsic(pcore);  /* reset hardware */
 
 #ifdef USE_IRQ
-		/* FIXME: To get IRQ dynamically from device-tree */
 		irqnum = core_array[i].irq;
-		if (irqnum > 0 && i == 0) {
-			int irq_num0 = platform_get_irq_byname(pdev, "irq_hantro_videoencoder");
-			result = request_irq(irq_num0, hantroenc_isr, IRQF_SHARED,
-					"irq_hantro_videoencoder", (void *)pcore);
-			if (result == 0) {
+		if (irqnum > 0) {
+			result = request_irq(irqnum, hantroenc_isr,
+						IRQF_SHARED,
+						"hx280enc", (void *)pcore);
+			if (result == 0)
 				pcore->irqlist[0] = irqnum;
-				pr_info("hx280enc: request IRQ <%d> for core <%d> success\n", irqnum, i);
+			else {
+				pr_err("hx280enc: request IRQ <%d> fail\n", irqnum);
+				ReleaseIO(pcore);
+				vfree(pcore);
+				continue;
 			}
-			else
-				pr_info("hx280enc: request IRQ <%d> fail\n", irqnum);
 		}
-
-                if (irqnum > 0 && i == 1) {
-			int irq_num1 = platform_get_irq_byname(pdev, "irq_hantro_jpgencoder");
-                        result = request_irq(irq_num1, hantroenc_isr, IRQF_SHARED,
-					"irq_hantro_jpgencoder", (void *)pcore);
-                        if (result == 0) {
-                                pcore->irqlist[0] = irqnum;
-                                pr_info("hx280enc: request IRQ <%d> for core <%d> success\n", irqnum, i);
-                       }
-                       else
-                               pr_info("hx280enc: request IRQ <%d> fail\n", irqnum);
-               }
-
 #endif
 		add_encnode(pcore->core_cfg.sliceidx, pcore);
 	}
 #else	/*USE_DTB_PROBE*/
-	for (i = 0; i < core_num; i++) {
-		int k, irqn = 0;
-		if (strstr(prc->mem->name, RESNAME_ENCODER) == prc->mem->name)
-			goto looptail;
+	{
+		int irqn;
 
 		pcore = vmalloc(sizeof(struct hantroenc_t));
 		if (pcore == NULL)
 			return -ENOMEM;
 
 		memset(pcore, 0, sizeof(struct hantroenc_t));
-		//pcore->core_id = total_core_num;	////move to slice insertion
-		pcore->core_cfg.base_addr = prc->mem->start;
-		pcore->core_cfg.iosize = prc->mem->end - prc->mem->start + 1;
+		pcore->core_cfg.base_addr = pnode->ioaddr;
+		pcore->core_cfg.iosize = pnode->iosize;
 
 		result = ReserveIO(pcore);
 		if (result < 0) {
-			pr_info("hx280enc: reserve reg 0x%lx-0x%lxfail\n",
-				prc->mem->start, prc->mem->end);
+			pr_err("hx280enc: reserve reg 0x%llx:%lldfail\n",
+				pnode->ioaddr, pnode->iosize);
 			vfree(pcore);
-			goto looptail;
+			return -ENODEV;
 		}
 
 		ResetAsic(pcore);  /* reset hardware */
-
-#ifdef USE_IRQ
-		/* get the IRQ line */
 		irqn = 0;
-		for (k = 0; k < prc->irqnum; k++) {
-			irqnum = platform_get_irq_byname(pdev, prc->irqlist[k]->name);
-			if (irqnum > 0) {
-				result = request_irq(irqnum, hantroenc_isr,
-#if KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE
-							SA_INTERRUPT | SA_SHIRQ,
-#else
+		for (i = 0; i < 4; i++)
+			pcore->irqlist[i] = -1; 
+#ifdef USE_IRQ
+		for (i = 0; i < 4; i++) {
+			if (pnode->irq[i] > 0) {
+				strcpy(pcore->irq_name[i], pnode->irq_name[i]);
+				result = request_irq(pnode->irq[i], hantroenc_isr,
 							IRQF_SHARED,
-#endif
-							"hx280enc", (void *)pcore);
+							pcore->irq_name[i], (void *)pcore);
 				if (result == 0) {
-					pcore->irqlist[irqn] = irqnum;
+					pcore->irqlist[irqn] = pnode->irq[i];
 					irqn++;
-				} else
-					pr_info("hx280enc: request IRQ <%d> fail\n", irqnum);
+				} else {
+					printk("hx280enc: request IRQ <%d> fail\n", pnode->irq[i]);
+					ReleaseIO(pcore);
+					vfree(pcore);
+					return -EINVAL;
+				}
 			}
 		}
 #endif
-		/*fixme: only slice 0 for now until device tree is ready */
-		add_encnode(0, pcore);
-looptail:
-		prc++;
+		add_encnode(pnode->sliceidx, pcore);
+		printk("add enc node %lx:%d @ slice %d:%lx", (unsigned long)pcore, pcore->core_id,
+			pnode->sliceidx, (unsigned long)getslicenode(pnode->sliceidx));
 	}
 #endif	/*USE_DTB_PROBE*/
 	pr_info("hx280enc: module inserted. Major <%d>\n", hantroenc_major);
@@ -591,7 +580,7 @@ looptail:
 	return 0;
 }
 
-void hantroenc_cleanup(void)
+void __exit hantroenc_cleanup(void)
 {
 	int i, k, slicen = get_slicenumber();
 	struct hantroenc_t *pcore, *pnext;
@@ -625,15 +614,16 @@ static int ReserveIO(struct hantroenc_t *pcore)
 	u32 hwid;
 
 	if (!request_mem_region
-		(pcore->core_cfg.base_addr, pcore->core_cfg.iosize, "hx280enc")) {
+		(pcore->core_cfg.base_addr, pcore->core_cfg.iosize, pcore->reg_name)) {
 		pr_info("hantroenc: failed to reserve HW regs\n");
 		return -1;
 	}
 
-	pcore->hwregs = (u8 *) ioremap_nocache(pcore->core_cfg.base_addr,
+	pcore->hwregs = (u8 *) ioremap(pcore->core_cfg.base_addr,
 							pcore->core_cfg.iosize);
 	if (pcore->hwregs == NULL) {
 		pr_info("hantroenc: failed to ioremap HW regs\n");
+		release_mem_region(pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
 		return -1;
 	}
 
@@ -679,7 +669,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 	/*If core is not reserved by any user, but irq is received, just ignore it*/
 	spin_lock_irqsave(&parentslice->enc_owner_lock, flags);
 	if (!dev->is_reserved) {
-		pr_info("hantroenc_isr:received IRQ but core is not reserved!\n");
+		printk("hantroenc_isr:received IRQ but core is not reserved!\n");
 		irq_status = (u32)ioread32((void *)(dev->hwregs + 0x04));
 		if (irq_status & 0x01) {
 			/* clear all IRQ bits. (hwId >= 0x80006100) means IRQ is cleared by writting 1 */
@@ -701,9 +691,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 	}
 	spin_unlock_irqrestore(&parentslice->enc_owner_lock, flags);
 
-	pr_info("hantroenc_isr:received IRQ!\n");
 	irq_status = (u32)ioread32((void *)(dev->hwregs + 0x04));
-	pr_info("irq_status of %d is:%x\n", dev->core_id, irq_status);
 	if (irq_status & 0x01) {
 		/* clear all IRQ bits. (hwId >= 0x80006100) means IRQ is cleared by writting 1 */
 		u32 hwId = ioread32((void *)dev->hwregs);
@@ -722,7 +710,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 		handled++;
 	}
 	if (!handled)
-		PDEBUG("IRQ received, but not hantro's!\n");
+		printk("IRQ received, but not hantro enc's!\n");
 
 	return IRQ_HANDLED;
 }

@@ -1,26 +1,20 @@
 /*
- * Copyright(C) 2018 Verisilicon
- * All Rights Reserved.
+ *    Hantro decoder hardware driver.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the
- * "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sub license, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
+ *    Copyright (c) 2017, VeriSilicon Inc.
  *
- * The above copyright notice and this permission notice (including the
- * next paragraph) shall be included in all copies or substantial portions
- * of the Software.
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License, version 2, as
+ *    published by the Free Software Foundation.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
- * IN NO EVENT SHALL PRECISION INSIGHT AND/OR ITS SUPPLIERS BE LIABLE FOR
- * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
- * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License version 2 for more details.
+ *
+ *    You may obtain a copy of the GNU General Public License
+ *    Version 2 at the following locations:
+ *    https://opensource.org/licenses/gpl-2.0.php
  */
 
 #ifndef HANTRO_SLICE_H
@@ -29,19 +23,21 @@
 #include "hantro.h"
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MULTI_SLICE_LIMIT	8		//MAX slice supported now
 #define MAX_CACHE_PERCORE	2		//MAX cache number connected with a core
 
-#define NODE(id) ((u32)(id)&0xff)
-#define SLICE(id) ((u32)(id)>>16)
+#define HANTRO_INVALID_ID	-1
 
 /*supported core type*/
 typedef enum {
+	CORE_UNKNOWN = -1,
+	CORE_SLICE = 0,
 	CORE_DEC,
 	CORE_ENC,
 	CORE_CACHE,
 	CORE_DEC400,
-}slice_coretype;
+} slice_coretype;
 
 struct cache_core_config {
 	cache_client_type client;
@@ -65,12 +61,36 @@ struct cache_dev_t {
 	char *buffer;
 	unsigned int buffsize;
 	u8 *hwregs;
+	char reg_name[32];
 	unsigned long long com_base_addr;//common base addr of each L2
 	int irqlist[4];
 
-	void *parentcore;	//either struct hantroenc_t or struct hantrodec_t;
+	slice_coretype parenttype;
+	u32 parentid;		//parent codec core's core_id
+	void *parentcore;	//either struct hantroenc_t or struct hantrodec_t, or slice itself
 
 	struct cache_dev_t *next;
+};
+
+struct dec400_core_cfg {
+	unsigned long long dec400corebase;
+	volatile unsigned int iosize;
+	u32 sliceidx;
+	unsigned long long parentaddr;
+};
+
+struct dec400_t {
+	struct dec400_core_cfg core_cfg;
+
+	u32 core_id;
+	volatile u8 *hwregs;
+
+	char reg_name[32];
+	slice_coretype parenttype;
+	u32 parentid;		//parent codec core's core_id
+	void *parentcore;	//either struct hantroenc_t or struct hantrodec_t, or slice itself
+
+	struct dec400_t *next;
 };
 
 typedef struct {
@@ -94,12 +114,11 @@ struct hantroenc_t {
 	char *buffer;
 	unsigned int buffsize;
 	u8 *hwregs;
+	char reg_name[32];
 	struct fasync_struct *async_queue;
 	int irqlist[4];
-
-	void *dec400;
-	struct cache_dev_t *cachecore[2];
-
+	char irq_name[4][32];
+	
 	struct hantroenc_t *next;
 };
 
@@ -124,7 +143,7 @@ struct hantrodec_t {
 	 */
 	u8 *hwregs;
 	int hw_id;
-
+	char reg_name[32];
 	unsigned long long multicorebase;
 	/* Because one core may contain multi-pipeline,
 	 * so multicore base may be changed
@@ -133,10 +152,8 @@ struct hantrodec_t {
 
 	u32 dec_regs[DEC_IO_SIZE_MAX / 4];
 	int irqlist[4];
-
+	char irq_name[4][32];
 	u32 sliceidx;
-	void *dec400;
-	struct cache_dev_t *cachecore[2];
 
 	struct file *dec_owner;
 	struct file *pp_owner;
@@ -163,6 +180,10 @@ And only ID to connect dec/enc to dec400/cache core is their HW address.
 */
 
 struct slice_info {
+	struct device *dev;	//related dev, for drm usage
+	phys_addr_t rsvmem_addr;
+	phys_addr_t memsize;
+	u32 config; 
 	int deccore_num;
 	int enccore_num;
 	int dec400core_num;
@@ -171,8 +192,7 @@ struct slice_info {
 	struct hantrodec_t *dechdr;
 	struct hantroenc_t *enchdr;
 	struct cache_dev_t *cachehdr;
-	/*fixme: after merge dec400 code*/
-	void *dec400hdr;
+	struct dec400_t *dec400hdr;
 
 	/* orig cache global vars*/
 	wait_queue_head_t cache_hw_queue;
@@ -194,16 +214,24 @@ struct slice_info {
 	wait_queue_head_t hw_queue;
 	struct semaphore dec_core_sem;
 	struct semaphore pp_core_sem;
+
+	struct slice_info *next;
 };
 
+int findslice_bydev(struct device *dev);
+int addslice(struct device *dev, phys_addr_t sliceaddr, phys_addr_t slicesize);
+u32 getsliceconfig(u32 sliceindex);
+struct slice_info *getslicenode(u32 sliceindex);
 int get_slicecorenum(u32 sliceindex, slice_coretype type);
 struct hantrodec_t *get_decnodes(u32 sliceindex, u32 nodeidx);
 struct hantroenc_t *get_encnodes(u32 sliceindex, u32 nodeidx);
 struct cache_dev_t *get_cachenodes(u32 sliceindex, u32 nodeidx);
-void *get_dec400nodes(u32 sliceindex);
+struct cache_dev_t *get_cachenodebytype(u32 sliceindex, u32 parenttype, u32 parentnodeidx);
+struct dec400_t *get_dec400nodes(u32 sliceindex, u32 nodeidx);
+struct dec400_t *get_dec400nodebytype(u32 sliceindex, u32 parenttype, u32 parentnodeidx);
 int add_decnode(u32 sliceindex, struct hantrodec_t *deccore);
 int add_encnode(u32 sliceindex, struct hantroenc_t *enccore);
-int add_dec400node(u32 sliceindex, void *dec400core);
+int add_dec400node(u32 sliceindex, struct dec400_t *dec400core);
 int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore);
 int get_slicenumber(void);
 struct slice_info *getparentslice(void *node, int type);

@@ -3,20 +3,18 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License, version 2, as
+ *    published by the Free Software Foundation.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
+ *    GNU General Public License version 2 for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Version 2 at the following locations:
+ *    https://opensource.org/licenses/gpl-2.0.php
  */
 
 #include "hantro_priv.h"
@@ -56,6 +54,17 @@ static bool hantro_fence_signaled(hantro_fence_t *fobj)
 	return ret;
 }
 
+static void hantro_fence_free(hantro_fence_t *fence)
+{
+	kfree(fence->lock);
+	fence->lock = NULL;
+#if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
+	fence_free(fence);
+#else
+	dma_fence_free(fence);
+#endif
+}
+
 const static hantro_fence_op_t hantro_fenceops = {
 	.get_driver_name = hantro_fence_get_driver_name,
 	.get_timeline_name = hantro_fence_get_timeline_name,
@@ -79,6 +88,7 @@ static hantro_fence_t *alloc_fence(unsigned int ctxno)
 		return NULL;
 	}
 
+	spin_lock_init(lock);
 	hantro_fence_init(fobj, &hantro_fenceops, lock, ctxno, seqno++);
 	clear_bit(HANTRO_FENCE_FLAG_SIGNAL_BIT, &fobj->flags);
 	set_bit(HANTRO_FENCE_FLAG_ENABLE_SIGNAL_BIT, &fobj->flags);
@@ -141,25 +151,11 @@ static int fence_idr_fini(int id, void *p, void *data)
 
 void releaseFenceData(void)
 {
+	mutex_lock(&fence_mutex);
 	idr_for_each(&fence_idr, fence_idr_fini, NULL);
 	idr_destroy(&fence_idr);
+	mutex_unlock(&fence_mutex);
 }
-
-#if 0
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-static int reservation_object_lock(
-	struct reservation_object *obj,
-	struct ww_acquire_ctx *ctx)
-{
-	return ww_mutex_lock(&obj->lock, ctx);
-}
-
-static void reservation_object_unlock(struct reservation_object *obj)
-{
-	ww_mutex_unlock(&obj->lock);
-}
-#endif
-#endif
 
 int hantro_acquirebuf(
 	struct drm_device *dev,
@@ -183,8 +179,10 @@ int hantro_acquirebuf(
 				to_drm_gem_hantro_obj(obj);
 
 			resv = &hobj->kresv;
-		} else
-			return -ENOENT;
+		} else {
+			ret = -ENOENT;
+			goto err;
+		}
 	} else
 		resv = obj->dma_buf->resv;
 
@@ -252,6 +250,7 @@ int hantro_testbufvalid(
 	if (!obj)
 		return -ENOENT;
 
+	hantro_unref_drmobj(obj);
 	if (!obj->dma_buf) {
 		if (hantro_dev.drm_dev == obj->dev) {
 			struct drm_gem_hantro_object *hobj =
@@ -291,7 +290,9 @@ int hantro_releasebuf(
 
 	hantro_fence_signal(fence);
 	hantro_fence_put(fence);
+	mutex_lock(&fence_mutex);
 	idr_remove(&fence_idr, arg->fence_handle);
+	mutex_unlock(&fence_mutex);
 	return ret;
 }
 

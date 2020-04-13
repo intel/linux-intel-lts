@@ -3,20 +3,18 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License, version 2, as
+ *    published by the Free Software Foundation.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
+ *    GNU General Public License version 2 for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Version 2 at the following locations:
+ *    https://opensource.org/licenses/gpl-2.0.php
  */
 
 #include <linux/io.h>
@@ -43,6 +41,9 @@
 #include "hx280enc.h"
 #include "hantrodec.h"
 #include "hantrocache.h"
+#include "hantrodec400.h"
+#include <linux/of_reserved_mem.h>
+#include <linux/of_irq.h>
 
 /* compile options */
 #define USE_HW 1
@@ -50,8 +51,10 @@
 #define HAS_VC8000E
 #define HAS_VC8000D
 //#define HAS_CACHECORE
+//#define HAS_DEC400
 
 /* debug */
+//#define DMA_DEBUG_ALLOC
 #define ENABLE_DEBUG
 #ifdef ENABLE_DEBUG
 #define DBG(...) pr_info(__VA_ARGS__)
@@ -61,9 +64,9 @@
 
 #define DRIVER_NAME      "hantro"
 #define DRIVER_DESC      "hantro DRM"
-#define DRIVER_DATE      "20171114"
+#define DRIVER_DATE      "20200228"
 #define DRIVER_MAJOR      1
-#define DRIVER_MINOR      0
+#define DRIVER_MINOR      1
 
 struct hantro_device_handle hantro_dev;
 
@@ -168,8 +171,12 @@ static int hantro_gem_dumb_create_internal(
 	struct drm_gem_hantro_object *cma_obj;
 	int min_pitch = DIV_ROUND_UP(args->width * args->bpp, 8);
 	struct drm_gem_object *obj;
-	//unsigned int sliceidx = args->handle;
+	unsigned int sliceidx = args->handle;
+	struct slice_info *pslice = getslicenode(sliceidx);
+	unsigned long attribs = 0;
 
+	if (pslice == NULL)
+		return -EINVAL;
 	args->handle = 0;
 	if (mutex_lock_interruptible(&dev->struct_mutex))
 		return -EBUSY;
@@ -180,7 +187,6 @@ static int hantro_gem_dumb_create_internal(
 		ret = -ENOMEM;
 		goto out;
 	}
-
 	obj = &cma_obj->base;
 	out_size =  in_size = sizeof(*args);
 	args->pitch = ALIGN(min_pitch, 64);
@@ -192,6 +198,7 @@ static int hantro_gem_dumb_create_internal(
 	cma_obj->pageaddr      = NULL;
 	cma_obj->pages      = NULL;
 	cma_obj->vaddr = NULL;
+	cma_obj->sliceidx = sliceidx;
 
 /*CMA is temp disabled here for these reasons:
  *1. to bring up CMA, CONFIG_DMA_CMA shoule be enabled in kernel building
@@ -204,13 +211,13 @@ static int hantro_gem_dumb_create_internal(
 #if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
 	cma_obj->pageaddr =
 		dma_alloc_from_contiguous(
-			dev->dev,
+			pslice->dev,
 			args->size >> PAGE_SHIFT,
 			1);
 #else
 	cma_obj->pageaddr =
 		dma_alloc_from_contiguous(
-			dev->dev,
+			pslice->dev,
 			args->size >> PAGE_SHIFT,
 			1,
 			GFP_KERNEL);
@@ -225,7 +232,7 @@ static int hantro_gem_dumb_create_internal(
 #else
 	cma_obj->vaddr =
 		dma_alloc_coherent(
-			dev->dev,
+			pslice->dev,
 			args->size,
 			&cma_obj->paddr,
 			GFP_KERNEL | GFP_DMA);
@@ -243,12 +250,12 @@ static int hantro_gem_dumb_create_internal(
 	if (ret) {
 #if USE_CMA
 		dma_release_from_contiguous(
-			dev->dev,
+			pslice->dev,
 			cma_obj->pageaddr,
 			cma_obj->num_pages);
 #else
 		dma_free_coherent(
-			obj->dev->dev,
+			pslice->dev,
 			args->size,
 			cma_obj->vaddr,
 			cma_obj->paddr);
@@ -257,6 +264,10 @@ static int hantro_gem_dumb_create_internal(
 	}
 	init_hantro_resv(&cma_obj->kresv, cma_obj);
 	cma_obj->handle = args->handle;
+#if DMA_DEBUG_ALLOC
+	printk("%s:%d,%lx:%llx:%d:%d\n", __func__, sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, args->size);
+#endif
+
 out:
 	mutex_unlock(&dev->struct_mutex);
 	return ret;
@@ -329,35 +340,42 @@ static int hantro_release_dumb(
 {
 	struct drm_gem_object *gemobj = obj;
 	struct drm_gem_hantro_object *cma_obj;
+	struct slice_info *pslice;
 
 	cma_obj = to_drm_gem_hantro_obj(gemobj);
 
 	drm_gem_free_mmap_offset(&cma_obj->base);
-	dma_resv_fini(&cma_obj->kresv);
 
 	if (cma_obj->flag & HANTRO_GEM_FLAG_EXPORT) {
 		drm_gem_handle_delete(file_priv, cma_obj->handle);
 		hantro_unref_drmobj(obj);
 		return 0;
 	}
-
 	drm_gem_object_release(gemobj);
 	drm_gem_handle_delete(file_priv, cma_obj->handle);
-
+	pslice = getslicenode(cma_obj->sliceidx);
+	if (!pslice) {
+		return 0;
+	}
 #if USE_CMA
 	if (cma_obj->pageaddr)
 		dma_release_from_contiguous(
-			dev->dev,
+			pslice->dev,
 			cma_obj->pageaddr,
 			cma_obj->num_pages);
 #else
 	if (cma_obj->vaddr)
 		dma_free_coherent(
-			gemobj->dev->dev,
+			pslice->dev,
 			cma_obj->base.size,
 			cma_obj->vaddr,
 			cma_obj->paddr);
 #endif
+#if DMA_DEBUG_ALLOC 
+        printk("%s:%d,%lx:%llx:%d:%d\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
+#endif
+
+	dma_resv_fini(&cma_obj->kresv);
 	kfree(cma_obj);
 
 	return 0;
@@ -376,6 +394,8 @@ static int hantro_mmap(
 	int sgtidx = 0;
 	struct scatterlist *pscatter = NULL;
 	struct page **pages = NULL;
+	struct slice_info *pslice;
+	struct device *dev;
 
 	if (mutex_lock_interruptible(&hantro_dev.drm_dev->struct_mutex))
 		return -EBUSY;
@@ -390,18 +410,27 @@ static int hantro_mmap(
 			obj = NULL;
 	}
 	drm_vma_offset_unlock_lookup(hantro_dev.drm_dev->vma_offset_manager);
-	hantro_unref_drmobj(obj);
 
 	if (!obj) {
 		mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
 		return -EINVAL;
 	}
+	hantro_unref_drmobj(obj);
 	cma_obj = to_drm_gem_hantro_obj(obj);
 
 	if (page_num > cma_obj->num_pages) {
 		mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
 		return -EINVAL;
 	}
+	if ((cma_obj->flag & HANTRO_GEM_FLAG_IMPORT) == 0) {
+		pslice = getslicenode(cma_obj->sliceidx);
+		if (!pslice) {
+			mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
+			return -EINVAL;
+		}
+		dev = pslice->dev;
+	} else
+		dev = obj->dev->dev;
 
 	if ((cma_obj->flag & HANTRO_GEM_FLAG_IMPORT) == 0) {
 		address = (unsigned long)cma_obj->vaddr;
@@ -429,7 +458,7 @@ static int hantro_mmap(
 
 	vma->vm_pgoff = 0;
 	if (dma_mmap_coherent(
-		hantro_dev.drm_dev->dev,
+		dev,
 		vma,
 		cma_obj->vaddr,
 		cma_obj->paddr,
@@ -458,13 +487,6 @@ static int hantro_device_open(
 	int ret;
 
 	ret = drm_open(inode, filp);
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-	if (ret == 0) {
-		struct drm_file *file_priv = filp->private_data;
-
-		hantro_dev.drm_dev->dev = file_priv->minor->dev->dev;
-	}
-#endif
 #if USE_HW == 1      /*hw init*/
 #ifdef HAS_VC8000D
 	hantrodec_open(inode, filp);
@@ -481,6 +503,9 @@ static int hantro_device_release(struct inode *inode, struct file *filp)
 #if USE_HW == 1
 #ifdef HAS_CACHECORE
 	cache_release();
+#endif
+#ifdef HAS_VC8000D
+	hantrodec_release(filp);
 #endif
 #ifdef HAS_VC8000E
 	hantroenc_release();
@@ -508,26 +533,28 @@ static vm_fault_t hantro_vm_fault(struct vm_fault *vmf)
 	return -EPERM;
 }
 #endif
-/* conflicting with def in powerpc io.h 
+
 #ifndef virt_to_bus
 static inline unsigned long virt_to_bus(void *address)
 {
 	return (unsigned long)address;
 }
 #endif
-*/
 static struct sg_table *hantro_gem_prime_get_sg_table(
 		struct drm_gem_object *obj)
 {
 	struct drm_gem_hantro_object *cma_obj = to_drm_gem_hantro_obj(obj);
+	struct slice_info *pslice = getslicenode(cma_obj->sliceidx);
 	struct sg_table *sgt;
 	int ret;
 
+	if (!pslice)
+		return NULL;
 	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
 	if (!sgt)
 		return NULL;
 
-	ret = dma_get_sgtable(obj->dev->dev, sgt, cma_obj->vaddr,
+	ret = dma_get_sgtable(pslice->dev, sgt, cma_obj->vaddr,
 			cma_obj->paddr, obj->size);
 	if (ret < 0)
 		goto out;
@@ -623,7 +650,6 @@ static int hantro_gem_prime_mmap(
 	int ret = 0;
 
 	cma_obj = to_drm_gem_hantro_obj(obj);
-
 	if (page_num > cma_obj->num_pages)
 		return -EINVAL;
 
@@ -639,6 +665,8 @@ static int hantro_gem_prime_mmap(
 
 	vma->vm_flags &= ~VM_PFNMAP;
 	vma->vm_pgoff = 0;
+	if (mutex_lock_interruptible(&hantro_dev.drm_dev->struct_mutex))
+		return -EBUSY;
 	if (dma_mmap_coherent(
 		obj->dev->dev,
 		vma,
@@ -649,6 +677,7 @@ static int hantro_gem_prime_mmap(
 		mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
 		return -EAGAIN;
 	}
+	mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
 	vma->vm_private_data = cma_obj;
 	return ret;
 }
@@ -663,6 +692,7 @@ static struct drm_gem_object *hantro_drm_gem_prime_import(
 static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 {
 	struct drm_gem_hantro_object *cma_obj;
+	struct slice_info *pslice;
 /*dma buf imported from others,
  *release data structures allocated by ourselves
  */
@@ -684,19 +714,23 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 			dma_buf_vunmap(gem_obj->import_attach->dmabuf, cma_obj->vaddr);
 		drm_prime_gem_destroy(gem_obj, cma_obj->sgt);
 	} else if (cma_obj->vaddr) {
+		pslice = getslicenode(cma_obj->sliceidx);
+		if (!pslice)
+			return;
 #if USE_CMA
 		dma_release_from_contiguous(
-			gem_obj->dev->dev,
+			pslice->dev,
 			cma_obj->pageaddr,
 			cma_obj->num_pages);
 #else
 		dma_free_coherent(
-			gem_obj->dev->dev,
+			pslice->dev,
 			cma_obj->base.size,
 			cma_obj->vaddr,
 			cma_obj->paddr);
 #endif
 	}
+	dma_resv_fini(&cma_obj->kresv);
 	kfree(cma_obj);
 }
 
@@ -761,7 +795,7 @@ static int hantro_map_vaddr(
 		return -EINVAL;
 
 	cma_obj = to_drm_gem_hantro_obj(obj);
-	pamap->vm_addr = (unsigned long)cma_obj->vaddr;
+	pamap->vm_addr = (unsigned long long)cma_obj->vaddr;
 	pamap->phy_addr = cma_obj->paddr;
 
 	hantro_unref_drmobj(obj);
@@ -1396,7 +1430,7 @@ static long hantro_ioctl(
 #endif
 
 	out_size = in_size = _IOC_SIZE(cmd);
-	//printk("ioctl cmd %d\n", nr);
+
 
 	if (in_size > 0) {
 		if (_IOC_DIR(cmd) & _IOC_READ)
@@ -1435,6 +1469,15 @@ static long hantro_ioctl(
 		nr <= DRM_IOCTL_NR(HANTROCACHE_IOC_END)) {
 #ifdef HAS_CACHECORE
 		return hantrocache_ioctl(filp, cmd, arg);
+#else
+		return -EFAULT;
+#endif
+	}
+
+	if (nr >= DRM_IOCTL_NR(HANTRODEC400_IOC_START) &&
+		nr <= DRM_IOCTL_NR(HANTRODEC400_IOC_END)) {
+#ifdef HAS_DEC400
+		return hantrodec400_ioctl(filp, cmd, arg);
 #else
 		return -EFAULT;
 #endif
@@ -1485,7 +1528,7 @@ static const struct file_operations hantro_fops = {
 	.compat_ioctl = drm_compat_ioctl,
 };
 
-void hantro_gem_vm_close(struct vm_area_struct *vma)
+static void hantro_gem_vm_close(struct vm_area_struct *vma)
 {
 	struct drm_gem_hantro_object *obj =
 		(struct drm_gem_hantro_object *)vma->vm_private_data;
@@ -1503,6 +1546,12 @@ void hantro_gem_vm_close(struct vm_area_struct *vma)
 	drm_gem_vm_close(vma);
 }
 
+#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
+static int hantro_unload(struct drm_device *dev)
+{
+	return 0;
+}
+#else
 static void hantro_release(struct drm_device *dev)
 {
 #if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
@@ -1510,12 +1559,6 @@ static void hantro_release(struct drm_device *dev)
 #else
 	drm_dev_fini(hantro_dev.drm_dev);
 #endif
-}
-
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-static int hantro_unload(struct drm_device *dev)
-{
-	return 0;
 }
 #endif
 
@@ -1576,8 +1619,6 @@ static const struct dma_buf_ops hantro_dmabuf_ops =  {
 	.map_dma_buf = hantro_gem_map_dma_buf,
 	.unmap_dma_buf = drm_gem_unmap_dma_buf,
 	.release = hantro_gem_dmabuf_release,
-	.map = hantro_gem_dmabuf_kmap,
-	.unmap = hantro_gem_dmabuf_kunmap,
 	.mmap = hantro_gem_dmabuf_mmap,
 	.vmap = hantro_gem_dmabuf_vmap,
 	.vunmap = drm_gem_dmabuf_vunmap,
@@ -1585,20 +1626,23 @@ static const struct dma_buf_ops hantro_dmabuf_ops =  {
 #endif	/*#if KERNEL_VERSION(4, 20, 0) <= LINUX_VERSION_CODE*/
 
 static struct drm_driver hantro_drm_driver;
-
-struct dma_buf *hantro_prime_export(
-        struct drm_gem_object *obj,
-        int flags)
+static struct dma_buf *hantro_prime_export(
+	struct drm_gem_object *obj,
+	int flags)
 {
-        struct dma_buf_export_info exp_info = {
-                .exp_name = KBUILD_MODNAME,
-                .owner = obj->dev->driver->fops->owner,
-                .ops = &hantro_dmabuf_ops,
-                .size = obj->size,
-                .flags = flags,
-                .priv = obj,
-        };
-        return drm_gem_dmabuf_export(obj->dev, &exp_info);
+	struct drm_gem_hantro_object *cma_obj;
+	struct dma_buf_export_info exp_info = {
+		.exp_name = KBUILD_MODNAME,
+		.owner = obj->dev->driver->fops->owner,
+		.ops = &hantro_dmabuf_ops,
+		.flags = flags,
+		.priv = obj,
+	};
+
+	cma_obj = to_drm_gem_hantro_obj(obj);
+	exp_info.resv = &cma_obj->kresv;
+	exp_info.size = cma_obj->num_pages << PAGE_SHIFT;
+	return drm_gem_dmabuf_export(obj->dev, &exp_info);
 }
 
 static void hantro_close_object(
@@ -1672,158 +1716,267 @@ bandwidthDecRead_show(struct device *kdev, struct device_attribute *attr, char *
 	 *  data is just an example. Real data should be read from HW registers
 	 *  this file is read only.
 	 */
-	u32 bandwidth = hantrodec_readbandwidth(1);
+	u32 bandwidth;
+	int sliceidx = findslice_bydev(kdev);
 
+	if (sliceidx < 0)
+		return 0;
+	bandwidth = hantrodec_readbandwidth(sliceidx, 1);
 	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
 }
 
 static ssize_t
 bandwidthDecWrite_show(struct device *kdev, struct device_attribute *attr, char *buf)
 {
-	u32 bandwidth = hantrodec_readbandwidth(0);
+	u32 bandwidth;
+	int sliceidx = findslice_bydev(kdev);
 
+	if (sliceidx < 0)
+		return 0;
+	bandwidth = hantrodec_readbandwidth(sliceidx, 0);
 	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
 }
 
 static ssize_t
 bandwidthEncRead_show(struct device *kdev, struct device_attribute *attr, char *buf)
 {
-	u32 bandwidth = hantroenc_readbandwidth(1);
+	u32 bandwidth;
+	int sliceidx = findslice_bydev(kdev);
 
+	if (sliceidx < 0)
+		return 0;
+	bandwidth = hantroenc_readbandwidth(sliceidx, 1);
 	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
 }
 
 static ssize_t
 bandwidthEncWrite_show(struct device *kdev, struct device_attribute *attr, char *buf)
 {
-	u32 bandwidth = hantroenc_readbandwidth(0);
-
+	u32 bandwidth;
+	int sliceidx = findslice_bydev(kdev);
+	
+	if (sliceidx < 0)
+		return 0;
+	bandwidth = hantroenc_readbandwidth(sliceidx, 0);
 	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
 }
+static DEVICE_ATTR(BWDecRead, 0444, bandwidthDecRead_show, NULL);
+static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
+static DEVICE_ATTR(BWEncRead, 0444, bandwidthEncRead_show, NULL);
+static DEVICE_ATTR(BWEncWrite, 0444, bandwidthEncWrite_show, NULL);
 
-static DEVICE_ATTR(bandwidthDecRead, 0444, bandwidthDecRead_show, NULL);
-static DEVICE_ATTR(bandwidthDecWrite, 0444, bandwidthDecWrite_show, NULL);
-static DEVICE_ATTR(bandwidthEncRead, 0444, bandwidthEncRead_show, NULL);
-static DEVICE_ATTR(bandwidthEncWrite, 0444, bandwidthEncWrite_show, NULL);
+static struct attribute *hantro_attrs[] = {
+	&dev_attr_BWDecRead.attr,
+	&dev_attr_BWDecWrite.attr,
+	&dev_attr_BWEncRead.attr,
+	&dev_attr_BWEncWrite.attr,
+	NULL,
+};
 
-static int hantro_createsysfsAPI(struct device *dev)
+static const struct attribute_group hantro_attr_group = {
+    .attrs = hantro_attrs,
+ };
+
+#ifdef USE_DTB_PROBE
+static int getnodetype(const char *name)
 {
-	int result;
+	if (strstr(name, NODENAME_DECODER) == name)	
+		return CORE_DEC;
+	if (strstr(name, NODENAME_ENCODER) == name)	
+		return CORE_ENC;
+	if (strstr(name, NODENAME_CACHE) == name)	
+		return CORE_CACHE;
+	if (strstr(name, NODENAME_DEC400) == name)	
+		return CORE_DEC400;
+	return CORE_UNKNOWN;
+}
 
-	result = device_create_file(dev, &dev_attr_bandwidthDecRead);
-	if (result != 0)
-		return result;
+static dtbnode * trycreatenode(
+	struct platform_device *pdev,
+	struct device_node *ofnode,
+	int sliceidx,
+	int parenttype,
+	phys_addr_t parentaddr
+	)
+{
+	struct fwnode_handle *fwnode;
+	struct resource r;
+	int i, na, ns, ret;
+	int endian = of_device_is_big_endian(ofnode);
+	u32 reg_u32[4];
+	const char *reg_name;
+	uint64_t ioaddress, iosize;
 
-	result = device_create_file(dev, &dev_attr_bandwidthDecWrite);
-	if (result != 0) {
-		device_remove_file(dev, &dev_attr_bandwidthDecRead);
-		return result;
+	dtbnode *pnode = kzalloc(sizeof(dtbnode), GFP_KERNEL);
+	if (!pnode)
+		return NULL;
+
+	pnode->type = getnodetype(ofnode->name);
+	pnode->parentaddr = parentaddr;
+	pnode->parenttype = parenttype;
+	pnode->sliceidx = sliceidx;
+	pnode->ofnode = ofnode;
+	fwnode = &ofnode->fwnode;
+
+	na = of_n_addr_cells(ofnode);
+	ns = of_n_size_cells(ofnode);
+	if (na > 2 || ns > 2) {
+		pr_err("cell size too big");
+		kfree(pnode);
+		return NULL;
 	}
 
-	result = device_create_file(dev, &dev_attr_bandwidthEncRead);
-	if (result != 0) {
-		device_remove_file(dev, &dev_attr_bandwidthDecRead);
-		device_remove_file(dev, &dev_attr_bandwidthDecWrite);
-		return result;
-	}
+	fwnode_property_read_u32_array(fwnode, "reg", reg_u32, na+ns);
+	if (na == 2) {
+		if (!endian) {
+			ioaddress = reg_u32[0];
+			ioaddress <<= 32;
+			ioaddress |= reg_u32[1];
+		} else {
+			ioaddress = reg_u32[1];
+			ioaddress <<= 32;
+			ioaddress |= reg_u32[0];
+		}
+	} else
+		ioaddress = reg_u32[0];
+	if (ns == 2) {
+		if (!endian) {
+			iosize = reg_u32[na];
+			iosize <<=32;
+			iosize |= reg_u32[na + 1];
+		} else {
+			iosize = reg_u32[na + 1];
+			iosize <<= 32;
+			iosize |= reg_u32[na];
+		}
+	} else
+		iosize = reg_u32[na];
+	pnode->ioaddr = ioaddress;
+	pnode->iosize = iosize;
 
-	result = device_create_file(dev, &dev_attr_bandwidthEncWrite);
-	if (result != 0) {
-		device_remove_file(dev, &dev_attr_bandwidthDecRead);
-		device_remove_file(dev, &dev_attr_bandwidthDecWrite);
-		device_remove_file(dev, &dev_attr_bandwidthEncRead);
-		return result;
+	fwnode_property_read_string(fwnode, "reg-names", &reg_name);
+
+	if (strlen(reg_name))
+             strcpy(pnode->reg_name, reg_name);
+        else
+             strcpy(pnode->reg_name, "hantro_reg");
+
+	for (i = 0; i < 4; i++) {
+		if (of_irq_to_resource(ofnode, i, &r) > 0) {
+			int irq = platform_get_irq_byname(pdev, r.name);
+			pnode->irq[i] = r.start;
+			if (strlen(r.name))
+				strcpy(pnode->irq_name[i], r.name);
+			else
+				strcpy(pnode->irq_name[i], "hantro_irq");
+                        pr_info("irq %d:%s = %lld:%d", i, r.name, r.start, irq);
+		} else
+			pnode->irq[i] = -1;
+	}
+		
+	switch (pnode->type) {
+	case CORE_DEC:
+		ret = hantrodec_probe(pnode);
+		break;
+	case CORE_ENC:
+		ret = hantroenc_probe(pnode);
+		break;
+	// Cache and DEC400 disabled for now in hantro driver
+	case CORE_CACHE:
+//		ret = cache_probe(pnode);
+		break;
+	case CORE_DEC400:
+//		ret = hantro_dec400_probe(pnode);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+	
+	if (ret < 0) {
+		kfree(pnode);
+		pnode = NULL;
+	}
+	return pnode;
+}
+
+static int hantro_analyze_subnode(
+	struct platform_device *pdev,
+	struct device_node *slice,
+	int sliceidx)
+{
+	dtbnode *head, *nhead, *newtail, *node;	
+	pr_info("dev node %s", slice->name);
+
+	head = kzalloc(sizeof(dtbnode), GFP_KERNEL);
+	if (!head)
+		return -ENOMEM;
+	head->type = head->parenttype = CORE_SLICE;
+	head->ofnode = slice;
+	head->ioaddr = -1;
+	head->iosize = 0;
+	head->next = NULL;
+
+	/*this is a wide first tree structure iteration, result is stored in slice info*/
+	while(head != NULL) {
+		nhead = newtail = NULL;
+		while (head != NULL) {
+			struct device_node *child, *ofnode = head->ofnode;
+			for_each_child_of_node(ofnode, child) {
+				node = trycreatenode(pdev, child, sliceidx, head->type, head->ioaddr);
+				if (node) {
+					if (nhead == NULL)
+						nhead = newtail = node;
+					else
+						newtail->next = node;
+					node->next = NULL;
+					newtail = node;
+				}	
+			}
+			node = head->next;
+			kfree(head);
+			head = node;
+		}
+		head = nhead;
 	}
 	return 0;
 }
-#ifdef USE_DTB_PROBE
-static int hantro_analyze_resources(struct platform_device *dev, struct hantro_core_info *core_rc)
-{
-	int i, k, c, core_num = 0, len;
-	unsigned long validmemtype = IORESOURCE_IO | IORESOURCE_MEM	| IORESOURCE_REG;
+#endif	//USE_DTB_PROBE
 
-	for (i = 0; i < dev->num_resources; i++) {
-		struct resource *r = &dev->resource[i];
-
-		if ((resource_type(r) & validmemtype) == 0)
-			continue;
-		if (r->flags & IORESOURCE_BUSY)
-			continue;
-
-		core_rc[core_num].mem = r;
-		core_rc[core_num].irqnum = 0;
-
-		/* get its irqs */
-		for (k = 0; k < dev->num_resources; k++) {
-			struct resource *r = &dev->resource[k];
-
-			if ((resource_type(r) & IORESOURCE_IRQ) == 0)
-				continue;
-			/*need name be irq_x format */
-			len = strlen(r->name);
-			c = r->name[len - 1] - 0x30;
-			if (c != core_num)
-				continue;
-			core_rc[core_num].irqlist[core_rc[core_num].irqnum] = r;
-			core_rc[core_num].irqnum++;
-		}
-		core_num++;
-	}
-
-	return core_num;
-}
-#endif
 static int hantro_drm_probe(struct platform_device *pdev)
 {
-	int result = 0, core_num = 0;
-	struct hantro_core_info *core_rc = NULL;
+	struct device *dev = &pdev->dev;
+	int result = 0;
+	int sliceidx = -1;
 
+	if (dev->of_node) {
+		//probe from system DTB
+		/*try to attach 1st rsv mem to dtb node*/
+		result = of_reserved_mem_device_init(dev);
+
+		dma_set_mask(dev, DMA_BIT_MASK(48));
+	        dma_set_coherent_mask(dev, DMA_BIT_MASK(48));
+
+		if (result == 0)
+			sliceidx = addslice(dev, -1, 0);
+		else
+			sliceidx = addslice(NULL, -1, 0);	//leave to end of init, set to default drm platform dev and default cma area
+#ifdef USE_DTB_PROBE
+#if USE_HW == 1	
+		/*go throug all sub dtb node' resources */
+		if (sliceidx >= 0 && dev->of_node != NULL)
+			hantro_analyze_subnode(pdev, dev->of_node, sliceidx);
+#endif	
+#endif
+	}
 	pr_info("dev %s probe", pdev->name);
 
-#ifdef USE_DTB_PROBE
-	if (pdev->num_resources <= 0)
-		return 0;
-	core_rc = kzalloc(sizeof(struct hantro_core_info) * pdev->num_resources, GFP_KERNEL);
-	if (!core_rc)
-		return -ENOMEM;
-
-	memset(core_rc, 0, sizeof(struct hantro_core_info) * pdev->num_resources);
-	core_num = hantro_analyze_resources(pdev, core_rc);
-#endif
-
-#if USE_HW == 1
-#ifdef HAS_VC8000D
-	/*check if pdev equals hantro_dev.platformdev*/
-	result = hantrodec_probe(pdev, core_rc, core_num);
-	if (result == 0)
-		hantro_dev.config |= CONFIG_HWDEC;
-#endif
-#ifdef HAS_VC8000E
-	result = hantroenc_probe(pdev, core_rc, core_num);
-	if (result == 0)
-		hantro_dev.config |= CONFIG_HWENC;
-#endif
-#ifdef HAS_CACHECORE
-	result = cache_probe(pdev, core_rc, core_num);
-	if (result == 0)
-		hantro_dev.config |= CONFIG_L2CACHE;
-#endif
-#endif
-
-#ifdef USE_DTB_PROBE
-	kfree(core_rc);
-#endif
 	return 0;
 }
+
 
 static int hantro_drm_remove(struct platform_device *pdev)
 {
-	struct device *dev = &pdev->dev;
-
-	device_remove_file(dev, &dev_attr_bandwidthDecRead);
-	device_remove_file(dev, &dev_attr_bandwidthDecWrite);
-	device_remove_file(dev, &dev_attr_bandwidthEncRead);
-	device_remove_file(dev, &dev_attr_bandwidthEncWrite);
 	return 0;
 }
 
@@ -1833,11 +1986,18 @@ static const struct platform_device_id hantro_drm_platform_ids[] = {
 	},
 	{ },
 };
+
 MODULE_DEVICE_TABLE(platform, hantro_drm_platform_ids);
 
 static const struct of_device_id hantro_of_match[] = {
 	/*to match dtb, else reg io will fail*/
-	{ .compatible = "thunderbay,hantro", },
+	{ .compatible = "thunderbay,hantro",},
+#ifdef HAS_VC8000D
+	{ .compatible = "platform-vc8000d", },
+#endif
+#ifdef HAS_VC8000E
+	{ .compatible = "platform-vc8000e", },
+#endif
 	{/* sentinel */}
 };
 
@@ -1887,7 +2047,7 @@ static struct platform_driver hantro_drm_platform_driver = {
 static const struct platform_device_info hantro_platform_info = {
 	.name		= DRIVER_NAME,
 	.id		= -1,
-	.dma_mask	= DMA_BIT_MASK(64),
+	.dma_mask	= DMA_BIT_MASK(48),
 };
 
 #if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
@@ -1896,6 +2056,7 @@ static int hantro_major = 1;  /* dynamic */
 void __exit hantro_cleanup(void)
 {
 	hantro_dev.config = 0;
+
 #if USE_HW == 1      /*hw init*/
 #ifdef HAS_VC8000D
 	hantrodec_cleanup();
@@ -1906,23 +2067,24 @@ void __exit hantro_cleanup(void)
 #ifdef HAS_CACHECORE
 	cache_cleanup();
 #endif
+#ifdef HAS_DEC400
+	hantro_dec400_cleanup();
+#endif
 #endif
 	/*this one must be after above ones to maintain list*/
 	slice_remove();
 	releaseFenceData();
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-	unregister_chrdev(hantro_major, DRIVER_NAME);
-#else
+	// reserved mem relese need to be called somewhere
+	// of_reserved_mem_device_release(sinfo->dev);
 	drm_dev_unregister(hantro_dev.drm_dev);
 	drm_dev_fini(hantro_dev.drm_dev);
-#endif
 	platform_device_unregister(hantro_dev.platformdev);
 	platform_driver_unregister(&hantro_drm_platform_driver);
 }
 
 int __init hantro_init(void)
 {
-	int result;
+	int result, i;
 
 	/*_init functions will init static vairables, while probe will init dynamic emelemts from DTB */
 	/*slice init must be in first to clear list*/
@@ -1930,53 +2092,77 @@ int __init hantro_init(void)
 	hantroenc_init();
 	hantrodec_init();
 	cache_init();
+	hantrodec400_init();
 	hantro_dev.config = 0;
+
+	result = platform_driver_register(&hantro_drm_platform_driver);
+	if (result < 0) {
+		pr_err("hantro create platform driver fail");
+		return result;
+	}
+
+	/*this is not a DTB node related platform device. Use it for drmdev's root node only*/
 	hantro_dev.platformdev = platform_device_register_full(&hantro_platform_info);
 	if (hantro_dev.platformdev == NULL) {
-		pr_info("hantro create platform device fail");
-		return -1;
+		platform_driver_unregister(&hantro_drm_platform_driver);
+		pr_err("hantro create platform device fail");
+		return PTR_ERR(hantro_dev.platformdev);
 	}
 
 	/*it must be here instead of in probe*/
 	hantro_dev.drm_dev = drm_dev_alloc(&hantro_drm_driver, &hantro_dev.platformdev->dev);
 	if (IS_ERR(hantro_dev.drm_dev)) {
 		DBG("init drm failed\n");
+		platform_device_unregister(hantro_dev.platformdev);
+		platform_driver_unregister(&hantro_drm_platform_driver);
 		return PTR_ERR(hantro_dev.drm_dev);
 	}
 
-#if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
-	hantro_dev.drm_dev->platformdev = hantro_dev.platformdev;
-#endif
 	hantro_dev.drm_dev->dev = &hantro_dev.platformdev->dev;
-	pr_info("hantro device created");
-
 	drm_mode_config_init(hantro_dev.drm_dev);
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-	result = register_chrdev(hantro_major, DRIVER_NAME, &hantro_fops);
-	if (result < 0) {
-		return result;
-	} else if (result != 0) { /* this is for dynamic major */
-		hantro_major = result;
-	}
-#else
 	result  = drm_dev_register(hantro_dev.drm_dev, 0);
-#endif
-	result = platform_driver_register(&hantro_drm_platform_driver);
+
 	if (result < 0) {
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-		unregister_chrdev(hantro_major, DRIVER_NAME);
-#else
 		drm_dev_unregister(hantro_dev.drm_dev);
 		drm_dev_fini(hantro_dev.drm_dev);
-#endif
 		platform_device_unregister(hantro_dev.platformdev);
-	} else {
-		result = hantro_createsysfsAPI(hantro_dev.drm_dev->dev);
-		if (result != 0)
-			pr_info("create sysfs fail");
-		initFenceData();
+		platform_driver_unregister(&hantro_drm_platform_driver);
+		return result;
 	}
-	slice_printdebug();
+	initFenceData();
+
+#ifndef USE_DTB_PROBE	//static table analyze, dec and enc must be in the front
+#if USE_HW == 1
+#ifdef HAS_VC8000D
+	result = hantrodec_probe(NULL);
+#endif
+#ifdef HAS_VC8000E
+	result = hantroenc_probe(NULL);
+#endif
+#ifdef HAS_CACHECORE
+//	result = cache_probe(NULL);
+#endif
+#ifdef HAS_DEC400
+//	result = hantro_dec400_probe(NULL);
+#endif
+#endif	//USE_HW==1
+#endif	//USE_DTB_PROBE
+	if (get_slicenumber() == 0)
+		addslice(hantro_dev.drm_dev->dev, -1, 0);	//for PC, no DTB probe, create a default dev
+	for (i = 0; i < get_slicenumber(); i++) {
+		struct slice_info *pslice = getslicenode(i);
+		hantro_dev.config |= getsliceconfig(i);
+		if (pslice->dev == NULL)
+			pslice->dev = hantro_dev.drm_dev->dev;
+
+		result = devm_device_add_group(pslice->dev, &hantro_attr_group);
+
+		if (result != 0)
+			pr_info("create sysfs %d fail", i);
+
+	}
+	// slice_printdebug();
+	pr_info("hantro device created");
 	return result;
 }
 

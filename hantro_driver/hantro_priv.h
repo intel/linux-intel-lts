@@ -3,35 +3,27 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License, version 2, as
+ *    published by the Free Software Foundation.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
+ *    GNU General Public License version 2 for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Version 2 at the following locations:
+ *    https://opensource.org/licenses/gpl-2.0.php
  */
+
 #ifndef HANTRO_PRIV_H
 #define HANTRO_PRIV_H
 #include "hantro.h"
 #include "hantro_slice.h"
 
 //#define USE_IRQ
-//#define USE_DTB_PROBE
-
-#define IRQNAME_DECODER		"irq_hantro_decoder"
-
-#define RESNAME_VIDEOENC	"regs_videoencoder"
-#define RESNAME_JPGENC		"regs_jpgencoder"
-#define IRQNAME_VENC		"irq_hantro_videoencoder"
-#define IRQNAME_JPGENC		"irq_hantro_jpgencoder"
+#define USE_DTB_PROBE
 
 #define HANTRO_GEM_FLAG_IMPORT    (1 << 0)
 #define HANTRO_GEM_FLAG_EXPORT    (1 << 1)
@@ -49,15 +41,24 @@
 #define hantro_unref_drmobj		drm_gem_object_unreference_unlocked
 #endif
 
-#define RESNAME_DECODER		"decoder_"
-#define RESNAME_ENCODER		"encoder_"
-#define RESNAME_CACHE			"cache_"
+#define NODENAME_DECODER		"decoder"
+#define NODENAME_ENCODER		"encoder"
+#define NODENAME_CACHE		"cache"
+#define NODENAME_DEC400		"dec400"
 
-struct hantro_core_info {
-	struct resource *mem;
-	struct resource *irqlist[4];		/*Fix me: suggest each core has at most 4 irqs.*/
-	int irqnum;
-};
+typedef struct dtbnode {
+	struct device_node *ofnode;
+	int type;
+	phys_addr_t ioaddr;
+	phys_addr_t iosize;
+	char reg_name[32];
+	int irq[4];
+        char irq_name[4][32];
+	int parenttype;
+	phys_addr_t parentaddr;
+	int sliceidx;
+	struct dtbnode *next;
+} dtbnode;
 
 struct hantro_device_handle {
 	struct platform_device *platformdev;	/* parent device */
@@ -80,11 +81,6 @@ static inline signed long hantro_fence_default_wait(
 	signed long timeout)
 {
 	return fence_default_wait(fence, intr, timeout);
-}
-
-static inline void hantro_fence_free(hantro_fence_t *fence)
-{
-	fence_free(fence);
 }
 
 static inline  void hantro_fence_init(
@@ -168,11 +164,6 @@ static inline  signed long hantro_fence_default_wait(
 	signed long timeout)
 {
 	return dma_fence_default_wait(fence, intr, timeout);
-}
-
-static inline  void hantro_fence_free(hantro_fence_t *fence)
-{
-	dma_fence_free(fence);
 }
 
 static inline  void hantro_fence_init(

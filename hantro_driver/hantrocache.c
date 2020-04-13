@@ -3,20 +3,18 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License, version 2, as
+ *    published by the Free Software Foundation.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
+ *    GNU General Public License version 2 for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Version 2 at the following locations:
+ *    https://opensource.org/licenses/gpl-2.0.php
  */
 
 #include <linux/kernel.h>
@@ -38,7 +36,7 @@
 #include <asm/irq.h>
 #include <linux/version.h>
 #include <linux/vmalloc.h>
-
+#include <linux/of.h>
 #include "hantrocache.h"
 
 /********variables declaration related with race condition**********/
@@ -79,8 +77,8 @@ static u32 gBaseLen;                   /* Base register address Length */
 #define CORE_2_IO_BASE                 0x780000//the base addr of core. for PCIE, it refers to offset from bar
 #define CORE_3_IO_BASE                 0x780000//the base addr of core. for PCIE, it refers to offset from bar
 
-#define CORE_0_IO_SIZE                 ((6+4*8) * 4)    //bytes cache register size
-#define CORE_1_IO_SIZE                 ((5+5*8) * 4)    //bytes shaper register size
+#define CORE_0_IO_SIZE                 0x800    //bytes cache register size
+#define CORE_1_IO_SIZE                 0x800    //bytes shaper register size
 
 
 #define CORE_2_IO_SIZE                 ((6+4*8) * 4)    //bytes cache register size
@@ -97,12 +95,14 @@ static u32 gBaseLen;                   /* Base register address Length */
 #ifndef USE_DTB_PROBE
 static struct cache_core_config cache_core_array[] = {
 	/*note parent address is copied from hx280enc.c's CORE_x_IO_ADDR and hantrodec.c's SOCLE_LOGIC_x_BASE */
-	{VC8000E, CORE_0_IO_BASE, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_RD, 0, 0xc0000000}, //core_0 just support cache read for VC8000E
-	{VC8000E, CORE_1_IO_BASE, CORE_1_IO_SIZE, INT_PIN_CORE_1, DIR_WR, 0, 0xd0000000}, //core_1 just support cache write for VC8000E
-	{VC8000D_0, CORE_0_IO_BASE, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_RD, 0, 0x20888000}, //core_0 just support cache read for VC8000D_0
-	{VC8000D_0, CORE_1_IO_BASE, CORE_1_IO_SIZE, INT_PIN_CORE_1, DIR_WR, 0, 0x20888000}, //core_1 just support cache write for VC8000D_0
-	{VC8000D_1, CORE_2_IO_BASE, CORE_2_IO_SIZE, INT_PIN_CORE_2, DIR_RD, 0, 0x20888800}, //core_0 just support cache read for VC8000D_1
-	{VC8000D_1, CORE_3_IO_BASE, CORE_3_IO_SIZE, INT_PIN_CORE_3, DIR_WR, 0, 0x20888800} //core_1 just support cache write for VC8000D_1
+	{VC8000D_0, 0x18553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 0, 0x18553a000},
+	{VC8000D_1, 0x18553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 0, 0x18553b000},
+	{VC8000D_0, 0x28553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 1, 0x28553a000},
+	{VC8000D_1, 0x28553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 1, 0x28553b000},
+	{VC8000D_0, 0x38553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 2, 0x38553a000},
+	{VC8000D_1, 0x38553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 2, 0x38553b000},
+	{VC8000D_0, 0x48553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 3, 0x48553a000},
+	{VC8000D_1, 0x48553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 3, 0x48553b000},
 };
 #endif
 static int bcacheprobed;
@@ -172,7 +172,7 @@ static int CheckCoreOccupation(struct cache_dev_t *dev)
 	return ret;
 }
 
-static int GetWorkableCore(struct cache_dev_t *dev, u32 *core_id)
+static int GetWorkableCore(struct cache_dev_t *dev, u32 parentid, u32 *core_id)
 {
 	int i = 0, ret = 0;
 	driver_cache_dir dir = (*core_id) & 0x01;
@@ -181,7 +181,8 @@ static int GetWorkableCore(struct cache_dev_t *dev, u32 *core_id)
 	while (dev != NULL) {
 	/* a valid free Core*/
 		if (dev->is_valid && dev->core_cfg.client == client &&
-			dev->core_cfg.dir == dir && CheckCoreOccupation(dev)) {
+			dev->core_cfg.dir == dir && dev->parentid == parentid &&
+				CheckCoreOccupation(dev)) {
 			ret = 1;
 			*core_id = i;
 			break;
@@ -192,7 +193,7 @@ static int GetWorkableCore(struct cache_dev_t *dev, u32 *core_id)
 	return ret;
 }
 
-static long ReserveCore(struct cache_dev_t *dev, u32 *core_id)
+static long ReserveCore(struct cache_dev_t *dev, u32 parentid, u32 *core_id)
 {
 	/*fixe me: dir bits is not enough for 3 choice */
 	driver_cache_dir dir = (*core_id) & 0x01;
@@ -203,7 +204,8 @@ static long ReserveCore(struct cache_dev_t *dev, u32 *core_id)
 
 	while (pccore != NULL) {
 		/* a valid core supports such client and dir*/
-		if (pccore->is_valid && pccore->core_cfg.client == client && pccore->core_cfg.dir == dir) {
+		if (pccore->is_valid && pccore->core_cfg.client == client && pccore->core_cfg.dir == dir &&
+			pccore->parentid == parentid) {
 			status = 1;
 			break;
 		}
@@ -216,7 +218,7 @@ static long ReserveCore(struct cache_dev_t *dev, u32 *core_id)
 	parentslice = getparentslice(dev, CORE_CACHE);
 
 	/* lock a core that has specified core id*/
-	if (wait_event_interruptible(parentslice->cache_hw_queue, GetWorkableCore(dev, core_id) != 0))
+	if (wait_event_interruptible(parentslice->cache_hw_queue, GetWorkableCore(dev, parentid, core_id) != 0))
 		return -ERESTARTSYS;
 
 	return 0;
@@ -248,7 +250,7 @@ long hantrocache_ioctl(
 	unsigned long arg)
 {
 	int ret = 0;
-	unsigned int tmp, id, slice, node;
+	u32 tmp, id, slice, node, type;
 	u32 core_id;
 	unsigned long long tmp64;
 	struct cache_dev_t *pccore;
@@ -257,18 +259,20 @@ long hantrocache_ioctl(
 	case CACHE_IOCGHWOFFSET:
 		__get_user(id, (int *)arg);
 		slice = SLICE(id);
-		node = NODE(id);
-		pccore = get_cachenodes(slice, node);
+		type = NODETYPE(id);
+		node = KCORE(id);
+		pccore = get_cachenodebytype(slice, type, node);
 		if (pccore == NULL)
 			return -EFAULT;
 		else
-			__put_user(pccore->com_base_addr, (unsigned long long*) arg);
+			__put_user(pccore->com_base_addr, (unsigned long long *) arg);
 		break;
 	case CACHE_IOCGHWIOSIZE:
-		__get_user(id, (int *)arg);
+		id = (u32)arg;
 		slice = SLICE(id);
-		node = NODE(id);
-		pccore = get_cachenodes(slice, node);
+		type = NODETYPE(id);
+		node = KCORE(id);
+		pccore = get_cachenodebytype(slice, type, node);
 		if (pccore == NULL)
 			return -EFAULT;
 		else
@@ -278,24 +282,26 @@ long hantrocache_ioctl(
 		id = arg;
 		id = get_slicecorenum(id, CORE_CACHE);
 		return id;
-		break;
 	case CACHE_IOCH_HW_RESERVE:
 		__get_user(tmp64, (unsigned long long *)arg);
-		slice = tmp64 >> 32;
-		core_id = (u32)arg;//get client and direction info
+		id = tmp64 >> 32;
+		slice = SLICE(id);
+		node = KCORE(id);
+		core_id = (u32)tmp64;//get client and direction info
 		pccore = get_cachenodes(slice, 0);
 		if (pccore == NULL)
 			return -EFAULT;
 
-		ret = ReserveCore(pccore, &core_id);
+		ret = ReserveCore(pccore, node, &core_id);
 		if (ret == 0)
 			return core_id;
 		return ret;
 	case CACHE_IOCH_HW_RELEASE:
 		core_id = (u32)arg;
 		slice = SLICE(core_id);
-		node = NODE(core_id);
-		pccore = get_cachenodes(slice, node);
+		type = NODETYPE(core_id);
+		node = KCORE(core_id);
+		pccore = get_cachenodebytype(slice, type, node);
 		if (pccore == NULL)
 			return -EFAULT;
 		else
@@ -304,14 +310,15 @@ long hantrocache_ioctl(
 	case CACHE_IOCG_ABORT_WAIT:
 		core_id = (u32)arg;
 		slice = SLICE(core_id);
-		node = NODE(core_id);
-		pccore = get_cachenodes(slice, node);
+		type = NODETYPE(core_id);
+		node = KCORE(core_id);
+		pccore = get_cachenodebytype(slice, type, node);
 		if (pccore == NULL)
 			return -EFAULT;
 		tmp = WaitCacheReady(pccore);
 		if (tmp == 0)
 			return pccore->irq_status;
-		return 0;
+		break;
 	}
 	return 0;
 }
@@ -380,7 +387,7 @@ static void PcieClose(void)
 }
 #endif
 
-int cache_init(void)
+int __init cache_init(void)
 {
 	int result = 0;
 
@@ -420,17 +427,19 @@ static void cache_getcachetype(const char *name, int *client, int *dir)
 		*dir = -1;
 }
 #endif
-int cache_probe(struct platform_device *pdev, struct hantro_core_info *prc, int corenum)
+
+int cache_probe(dtbnode *pnode)
 {
 	int result;
-	int i, irqnum, irqn = 0;
+	int i;
 	struct cache_dev_t *pccore;
 
 #ifndef USE_DTB_PROBE	/*simulate and compatible with old code*/
 	if (bcacheprobed != 0)
 		return 0;
 	bcacheprobed = 1;
-	for (i = 0; i < sizeof(cache_core_array) / sizeof(struct cache_core_config); i++) {
+	for (i = 0; i < ARRAY_SIZE(cache_core_array); i++) {
+		int irqnum, irqn = 0;
 		pccore = vmalloc(sizeof(struct cache_dev_t));
 		if (pccore == NULL)
 			return -ENOMEM;
@@ -443,100 +452,92 @@ int cache_probe(struct platform_device *pdev, struct hantro_core_info *prc, int 
 		pccore->core_cfg.dir = cache_core_array[i].dir;
 		pccore->core_cfg.sliceidx = cache_core_array[i].sliceidx;
 		pccore->core_cfg.parentaddr = cache_core_array[i].parentaddr;
-		//pccore->core_id = i;	//move to slice insertion
 
 		result = ReserveIO(pccore);
 		if (result < 0) {
-			pr_info("cachecore: reserve reg 0x%llx-0x%llx fail\n",
-				prc->mem->start, prc->mem->end);
+			pr_info("cachecore: reserve reg 0x%llx-0x%d fail\n",
+				pccore->com_base_addr, pccore->core_cfg.iosize);
 			vfree(pccore);
 			continue;
 		}
 
 		ResetAsic(pccore);  /* reset hardware */
+		pccore->is_valid = 1;
 #ifdef USE_IRQ
 		irqn = 0;
 		irqnum = cache_core_array[i].irq;
 		if (irqnum > 0) {
 			result = request_irq(irqnum, cache_isr,
-#if (KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE)
-				SA_INTERRUPT | SA_SHIRQ,
-#else
 				IRQF_SHARED,
-#endif
 				"hantro_cache", (void *)pccore);
 			if (result == 0) {
 				pccore->irqlist[irqn] = irqnum;
 				irqn++;
-			} else
+			} else {
 				pr_info("cachecore: request IRQ <%d> fail\n", irqnum);
+				ReleaseIO(pccore);
+				vfree(pccore);
+				continue;
+			}
 		}
 #endif
-		pccore->is_valid = 1;
 		add_cachenode(pccore->core_cfg.sliceidx, pccore);
 	}
 
 #else	/*USE_DTB_PROBE*/
 #ifndef PCI_BUS
-	for (i = 0; i < corenum; i++) {
-		int k, type, dir;
+	{
+		int type, dir;
 
-		if (strstr(prc->mem->name, RESNAME_CACHE) == prc->mem->name)
-			goto looptail;
-		cache_getcachetype(prc->mem->name, &type, &dir);
+		cache_getcachetype(pnode->ofnode->name, &type, &dir);
 		if (type == -1 || dir == -1)
-			goto looptail;
+			return -EINVAL;
 		pccore = vmalloc(sizeof(struct cache_dev_t));
 		if (pccore == NULL)
 			return -ENOMEM;
 
 		memset(pccore, 0, sizeof(struct cache_dev_t));
-
-		pccore->com_base_addr = pccore->core_cfg.base_addr = prc->mem->start;
-		pccore->core_cfg.iosize = prc->mem->end - prc->mem->start + 1;
+		pccore->com_base_addr = pccore->core_cfg.base_addr = pnode->ioaddr;
+		pccore->core_cfg.iosize = pnode->iosize;
 		pccore->core_cfg.client = type;
 		pccore->core_cfg.dir = dir;
-		//pccore->core_id = i;	////move to slice insertion
 
 		result = ReserveIO(pccore);
 		if (result < 0) {
-			pr_info("cachecore: reserve reg 0x%llx-0x%llx fail\n",
-				prc->mem->start, prc->mem->end);
+			pr_err("cachecore: reserve reg 0x%llx-0x%llx fail\n",
+				pnode->ioaddr, pnode->iosize);
 			vfree(pccore);
-			goto looptail;
+			return -ENODEV;
 		}
 
 		ResetAsic(pccore);  /* reset hardware */
+		pccore->is_valid = 1;
+		for (i = 0; i < 4; i++)
+			pccore->irqlist[i] = -1;
 #ifdef USE_IRQ
-		irqn = 0;
-		for (k = 0; k < prc->irqnum; k++) {
-			irqnum = platform_get_irq_byname(pdev, prc->irqlist[k]->name);
-			if (irqnum > 0) {
-				result = request_irq(irqnum, cache_isr,
-#if (KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE)
-					SA_INTERRUPT | SA_SHIRQ,
-#else
-					IRQF_SHARED,
-#endif
-					"hantro_cache", (void *)pccore);
-				if (result == 0)
-					pccore->irqlist[0] = irqnum;
-				else
-					pr_info("cachecore: request IRQ <%d> fail\n", irqnum);
+		if (pnode->irq[0] > 0) {
+			result = request_irq(pnode->irq[0], cache_isr,
+				IRQF_SHARED,
+				"hantro_cache", (void *)pccore);
+			if (result == 0)
+				pccore->irqlist[0] = pnode->irq[0];
+			else {
+				pr_err("cachecore: request IRQ <%d> fail\n", pnode->irq[0]);
+				ReleaseIO(pccore);
+				vfree(pccore);
+				return -EINVAL;
 			}
 		}
 #endif
-		pccore->is_valid = 1;
-		add_cachenode(0, pccore);
-looptail:
-		prc++;
+		pccore->core_cfg.parentaddr = pnode->parentaddr;
+		add_cachenode(pnode->sliceidx, pccore);
 	}
 #endif	/*not def PCI_BUS*/
 #endif	/*USE_DTB_PROBE*/
 	return 0;
 }
 
-void cache_cleanup(void)
+void __exit cache_cleanup(void)
 {
 #ifndef PCI_BUS
 	int i, k, slicen = get_slicenumber();
@@ -573,7 +574,7 @@ static int cache_get_hwid(unsigned long base_addr, int *hwid)
 		return -1;
 	}
 
-	hwregs = (u8 *) ioremap_nocache(base_addr, 4);
+	hwregs = (u8 *) ioremap(base_addr, 4);
 	if (hwregs == NULL) {
 		PDEBUG(KERN_INFO "hantr_cache: failed to ioremap HW regs\n");
 		release_mem_region(base_addr, 4);
@@ -624,14 +625,14 @@ static int ReserveIO(struct cache_dev_t *pccore)
 			pccore->core_cfg.base_addr += CACHE_ONLY_OFFSET;
 	}
 
-	if (!request_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize, "hantro_cache")) {
+	if (!request_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize, pccore->reg_name)) {
 		PDEBUG(KERN_INFO "hantr_cache: failed to reserve HW regs,core:%d\n", i);
 		pccore->is_valid = 0;
 		return -1;
 	}
 
 	pccore->hwregs =
-		(u8 *) ioremap_nocache(pccore->core_cfg.base_addr,
+		(u8 *) ioremap(pccore->core_cfg.base_addr,
 			pccore->core_cfg.iosize);
 
 	if (pccore->hwregs == NULL) {
