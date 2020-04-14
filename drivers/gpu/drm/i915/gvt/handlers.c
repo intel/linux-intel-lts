@@ -2101,13 +2101,13 @@ static int ring_mode_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 		(*(u32 *)p_data) &= ~_MASKED_BIT_ENABLE(2);
 	write_vreg(vgpu, offset, p_data, bytes);
 
-	if (data & _MASKED_BIT_ENABLE(1)) {
+	if ((data & _MASKED_BIT_ENABLE(1)) == _MASKED_BIT_ENABLE(1)) {
 		enter_failsafe_mode(vgpu, GVT_FAILSAFE_UNSUPPORTED_GUEST);
 		return 0;
 	}
 
 	if (IS_COFFEELAKE(vgpu->gvt->dev_priv) &&
-	    data & _MASKED_BIT_ENABLE(2)) {
+	    (data & _MASKED_BIT_ENABLE(2)) == _MASKED_BIT_ENABLE(2)) {
 		enter_failsafe_mode(vgpu, GVT_FAILSAFE_UNSUPPORTED_GUEST);
 		return 0;
 	}
@@ -3999,4 +3999,24 @@ default_rw:
 	return is_read ?
 		intel_vgpu_default_mmio_read(vgpu, offset, pdata, bytes) :
 		intel_vgpu_default_mmio_write(vgpu, offset, pdata, bytes);
+}
+
+void intel_gvt_restore_regs(struct intel_gvt *gvt)
+{
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+	struct intel_vgpu *vgpu;
+	int i, id;
+
+	for_each_active_vgpu(gvt, vgpu, id) {
+		mmio_hw_access_pre(dev_priv);
+		for (i = 0; i < vgpu_fence_sz(vgpu); i++) {
+			intel_vgpu_write_fence(vgpu, i, vgpu_vreg64(vgpu,
+				fence_num_to_offset(i)));
+		}
+#define VGPU_RESTORE_REG(offset) I915_WRITE(_MMIO(offset), \
+		vgpu_vreg(vgpu, offset))
+		VGPU_RESTORE_REG(0x4df4);
+		VGPU_RESTORE_REG(0x4dfc);
+		mmio_hw_access_post(dev_priv);
+	}
 }
