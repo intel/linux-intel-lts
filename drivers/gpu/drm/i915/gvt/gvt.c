@@ -367,6 +367,8 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
 		goto out_clean_types;
 	}
 
+	intel_gvt_init_display(gvt);
+
 	vgpu = intel_gvt_create_idle_vgpu(gvt);
 	if (IS_ERR(vgpu)) {
 		ret = PTR_ERR(vgpu);

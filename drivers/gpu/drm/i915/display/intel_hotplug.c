@@ -359,6 +359,10 @@ static void i915_hotplug_work_func(struct work_struct *work)
 	mutex_lock(&dev->mode_config.mutex);
 	DRM_DEBUG_KMS("running encoder hotplug functions\n");
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	DRM_WARN("hotplug can't be supported in idv\n");
+#endif
+
 	spin_lock_irq(&dev_priv->irq_lock);
 
 	hpd_event_bits = dev_priv->hotplug.event_bits;

@@ -699,7 +699,7 @@ u32 intel_dp_pack_aux(const u8 *src, int src_bytes)
 	return v;
 }
 
-static void intel_dp_unpack_aux(u32 src, u8 *dst, int dst_bytes)
+void intel_dp_unpack_aux(u32 src, u8 *dst, int dst_bytes)
 {
 	int i;
 	if (dst_bytes > 4)
