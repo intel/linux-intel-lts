@@ -409,6 +409,45 @@ out_clean_idr:
 	return ret;
 }
 
+int intel_gvt_pm_suspend(struct intel_gvt *gvt)
+{
+	intel_gvt_save_ggtt(gvt);
+	return 0;
+}
+
+int intel_gvt_pm_early_resume(struct intel_gvt *gvt)
+{
+	intel_gvt_init_ddb(gvt);
+	return 0;
+}
+
+int intel_gvt_pm_resume(struct intel_gvt *gvt)
+{
+	struct intel_vgpu *vgpu = NULL;
+	struct intel_vgpu_display *disp_cfg = NULL;
+	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	int id;
+
+	intel_gvt_restore_regs(gvt);
+	intel_gvt_restore_ggtt(gvt);
+
+	mutex_lock(&gvt->lock);
+	for_each_active_vgpu(gvt, vgpu, id) {
+		mutex_lock(&vgpu->vgpu_lock);
+		mutex_lock(&gvt->sw_in_progress);
+		disp_cfg = &vgpu->disp_cfg;
+		list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
+			if (disp_path->p_pipe != INVALID_PIPE && disp_path->foreground_state)
+				intel_gvt_switch_display_pipe(vgpu->gvt, disp_path->p_pipe, NULL, vgpu);
+		}
+		mutex_unlock(&gvt->sw_in_progress);
+		mutex_unlock(&vgpu->vgpu_lock);
+	}
+	mutex_unlock(&gvt->lock);
+
+	return 0;
+}
+
 int
 intel_gvt_register_hypervisor(struct intel_gvt_mpt *m)
 {

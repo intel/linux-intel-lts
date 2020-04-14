@@ -744,7 +744,7 @@ static void intel_gvt_ddb_entry_write(struct drm_i915_private *dev_priv,
  * plane information of DomU's planes, so here we statically allocate the
  * ddb entries for all the possible enabled planes.
  */
-static void intel_gvt_init_ddb(struct intel_gvt *gvt)
+void intel_gvt_init_ddb(struct intel_gvt *gvt)
 {
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
 	struct intel_device_info *info = mkwrite_device_info(dev_priv);
@@ -1861,9 +1861,9 @@ static int prepare_for_switch_display(struct intel_gvt *gvt, enum pipe pipe)
 	return 0;
 }
 
-static void intel_gvt_switch_display_pipe(struct intel_gvt *gvt, enum pipe pipe,
-					  struct intel_vgpu *old_v,
-					  struct intel_vgpu *new_v)
+void intel_gvt_switch_display_pipe(struct intel_gvt *gvt, enum pipe pipe,
+				   struct intel_vgpu *old_v,
+				   struct intel_vgpu *new_v)
 {
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
 	struct intel_runtime_info *runtime = RUNTIME_INFO(dev_priv);

@@ -106,6 +106,7 @@ struct intel_vgpu_pci_bar {
 struct intel_vgpu_cfg_space {
 	unsigned char virtual_cfg_space[PCI_CFG_SPACE_EXP_SIZE];
 	struct intel_vgpu_pci_bar bar[INTEL_GVT_MAX_BAR_NUM];
+	u32 pmcsr_off;
 };
 
 #define vgpu_cfg_space(vgpu) ((vgpu)->cfg_space.virtual_cfg_space)
@@ -187,6 +188,9 @@ struct intel_vgpu {
 	struct intel_vgpu_submission submission;
 	struct radix_tree_root page_track_tree;
 	u32 hws_pga[I915_NUM_ENGINES];
+	u64 *ggtt_entries; /* place to save ggtt entries in suspend */
+	/* Set on PCI_D3, reset on DMLR, not reflecting the actual PM state */
+	bool d3_entered;
 
 	struct dentry *debugfs;
 
@@ -817,6 +821,11 @@ void intel_vgpu_update_plane_scaler(struct intel_vgpu *vgpu,
 void intel_vgpu_update_plane_wm(struct intel_vgpu *vgpu,
 	struct intel_crtc *intel_crtc, enum plane_id plane);
 u32 vgpu_calc_wm_level(const struct skl_wm_level *level);
+
+void intel_gvt_init_ddb(struct intel_gvt *gvt);
+int intel_gvt_pm_suspend(struct intel_gvt *gvt);
+int intel_gvt_pm_early_resume(struct intel_gvt *gvt);
+int intel_gvt_pm_resume(struct intel_gvt *gvt);
 
 #include "trace.h"
 #include "mpt.h"
