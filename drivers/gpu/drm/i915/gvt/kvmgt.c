@@ -608,7 +608,8 @@ static int kvmgt_set_opregion(void *p_vgpu)
 static int kvmgt_set_edid(void *p_vgpu, int port_num)
 {
 	struct intel_vgpu *vgpu = (struct intel_vgpu *)p_vgpu;
-	struct intel_vgpu_port *port = intel_vgpu_port(vgpu, port_num);
+	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
+	struct intel_vgpu_display_path *disp_path = NULL, *n;
 	struct vfio_edid_region *base;
 	int ret;
 
@@ -620,9 +621,12 @@ static int kvmgt_set_edid(void *p_vgpu, int port_num)
 	base->vfio_edid_regs.edid_offset = EDID_BLOB_OFFSET;
 	base->vfio_edid_regs.edid_max_size = EDID_SIZE;
 	base->vfio_edid_regs.edid_size = EDID_SIZE;
-	base->vfio_edid_regs.max_xres = vgpu_edid_xres(port->id);
-	base->vfio_edid_regs.max_yres = vgpu_edid_yres(port->id);
-	base->edid_blob = port->edid->edid_block;
+	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
+		base->vfio_edid_regs.max_xres = vgpu_edid_xres(disp_path->edid_id);
+		base->vfio_edid_regs.max_yres = vgpu_edid_yres(disp_path->edid_id);
+		base->edid_blob = disp_path->edid->edid_block;
+		break;
+	}
 
 	ret = intel_vgpu_register_reg(vgpu,
 			VFIO_REGION_TYPE_GFX,

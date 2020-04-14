@@ -2923,13 +2923,20 @@ static int i915_ddb_info(struct seq_file *m, void *unused)
 
 		for_each_plane_id_on_crtc(crtc, plane_id) {
 			entry = &crtc_state->wm.skl.plane_ddb_y[plane_id];
-			seq_printf(m, "  Plane%-8d%8u%8u%8u\n", plane_id + 1,
+			seq_printf(m, "  YPlane%-8d%8u%8u%8u\n", plane_id + 1,
+				   entry->start, entry->end,
+				   skl_ddb_entry_size(entry));
+			entry = &crtc_state->wm.skl.plane_ddb_uv[plane_id];
+			seq_printf(m, "  UVPlane%-8d%8u%8u%8u\n", plane_id + 1,
 				   entry->start, entry->end,
 				   skl_ddb_entry_size(entry));
 		}
 
 		entry = &crtc_state->wm.skl.plane_ddb_y[PLANE_CURSOR];
-		seq_printf(m, "  %-13s%8u%8u%8u\n", "Cursor", entry->start,
+		seq_printf(m, "  %-13s%8u%8u%8u\n", "YCursor", entry->start,
+			   entry->end, skl_ddb_entry_size(entry));
+		entry = &crtc_state->wm.skl.plane_ddb_uv[PLANE_CURSOR];
+		seq_printf(m, "  %-13s%8u%8u%8u\n", "UVCursor", entry->start,
 			   entry->end, skl_ddb_entry_size(entry));
 	}
 

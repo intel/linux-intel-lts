@@ -48,7 +48,7 @@
 
 struct intel_vgpu_edid_data {
 	bool data_valid;
-	unsigned char edid_block[EDID_SIZE];
+	unsigned char edid_block[0];
 };
 
 enum gmbus_cycle_type {
@@ -134,7 +134,8 @@ struct intel_vgpu_i2c_edid {
 	struct intel_vgpu_i2c_aux_ch aux_ch;
 };
 
-void intel_vgpu_init_i2c_edid(struct intel_vgpu *vgpu);
+void intel_vgpu_init_i2c_edid(struct intel_vgpu *vgpu,
+			      struct intel_vgpu_i2c_edid *edid);
 
 int intel_gvt_i2c_handle_gmbus_read(struct intel_vgpu *vgpu,
 		unsigned int offset, void *p_data, unsigned int bytes);
@@ -143,7 +144,7 @@ int intel_gvt_i2c_handle_gmbus_write(struct intel_vgpu *vgpu,
 		unsigned int offset, void *p_data, unsigned int bytes);
 
 void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
-		int port_idx,
+		enum port port,
 		unsigned int offset,
 		void *p_data);
 
