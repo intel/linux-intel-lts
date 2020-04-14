@@ -1799,14 +1799,14 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 		/* interrupt status register read */
 		irq_status_dec = ioread32((void *)hwregs +
 			HANTRODEC_IRQ_STAT_DEC_OFF);
-		pr_info("irq = %x\n", irq_status_dec);
+		//pr_info("irq = %x\n", irq_status_dec);
 		if (irq_status_dec & HANTRODEC_DEC_IRQ) {
 			/* clear dec IRQ */
 			irq_status_dec &= (~HANTRODEC_DEC_IRQ);
 			iowrite32(irq_status_dec, (void *)hwregs +
 					HANTRODEC_IRQ_STAT_DEC_OFF);
 
-			pr_info("decoder IRQ received! Core %d\n", i);
+			//pr_info("decoder IRQ received! Core %d\n", i);
 
 			atomic_inc(&irq_rx);
 

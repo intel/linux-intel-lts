@@ -22,7 +22,7 @@
 #include "hantro.h"
 #include "hantro_slice.h"
 
-//#define USE_IRQ
+#define USE_IRQ
 #define USE_DTB_PROBE
 
 #define HANTRO_GEM_FLAG_IMPORT    (1 << 0)
