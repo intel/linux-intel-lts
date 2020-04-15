@@ -4140,7 +4140,7 @@ static const struct i915_power_well_desc tgl_power_wells[] = {
 	{
 		.name = "AUX D TBT1",
 		.domains = TGL_AUX_D_TBT1_IO_POWER_DOMAINS,
-		.ops = &hsw_power_well_ops,
+		.ops = &icl_tc_phy_aux_power_well_ops,
 		.id = DISP_PW_ID_NONE,
 		{
 			.hsw.regs = &icl_aux_power_well_regs,
@@ -4151,7 +4151,7 @@ static const struct i915_power_well_desc tgl_power_wells[] = {
 	{
 		.name = "AUX E TBT2",
 		.domains = TGL_AUX_E_TBT2_IO_POWER_DOMAINS,
-		.ops = &hsw_power_well_ops,
+		.ops = &icl_tc_phy_aux_power_well_ops,
 		.id = DISP_PW_ID_NONE,
 		{
 			.hsw.regs = &icl_aux_power_well_regs,
@@ -4162,7 +4162,7 @@ static const struct i915_power_well_desc tgl_power_wells[] = {
 	{
 		.name = "AUX F TBT3",
 		.domains = TGL_AUX_F_TBT3_IO_POWER_DOMAINS,
-		.ops = &hsw_power_well_ops,
+		.ops = &icl_tc_phy_aux_power_well_ops,
 		.id = DISP_PW_ID_NONE,
 		{
 			.hsw.regs = &icl_aux_power_well_regs,
@@ -4173,7 +4173,7 @@ static const struct i915_power_well_desc tgl_power_wells[] = {
 	{
 		.name = "AUX G TBT4",
 		.domains = TGL_AUX_G_TBT4_IO_POWER_DOMAINS,
-		.ops = &hsw_power_well_ops,
+		.ops = &icl_tc_phy_aux_power_well_ops,
 		.id = DISP_PW_ID_NONE,
 		{
 			.hsw.regs = &icl_aux_power_well_regs,
@@ -4184,7 +4184,7 @@ static const struct i915_power_well_desc tgl_power_wells[] = {
 	{
 		.name = "AUX H TBT5",
 		.domains = TGL_AUX_H_TBT5_IO_POWER_DOMAINS,
-		.ops = &hsw_power_well_ops,
+		.ops = &icl_tc_phy_aux_power_well_ops,
 		.id = DISP_PW_ID_NONE,
 		{
 			.hsw.regs = &icl_aux_power_well_regs,
@@ -4195,7 +4195,7 @@ static const struct i915_power_well_desc tgl_power_wells[] = {
 	{
 		.name = "AUX I TBT6",
 		.domains = TGL_AUX_I_TBT6_IO_POWER_DOMAINS,
-		.ops = &hsw_power_well_ops,
+		.ops = &icl_tc_phy_aux_power_well_ops,
 		.id = DISP_PW_ID_NONE,
 		{
 			.hsw.regs = &icl_aux_power_well_regs,
@@ -4526,10 +4526,7 @@ static void icl_mbus_init(struct drm_i915_private *dev_priv)
 		MBUS_ABOX_BT_CREDIT_POOL2_MASK |
 		MBUS_ABOX_B_CREDIT_MASK |
 		MBUS_ABOX_BW_CREDIT_MASK;
-
-	val = I915_READ(MBUS_ABOX_CTL);
-	val &= ~mask;
-	val |= MBUS_ABOX_BT_CREDIT_POOL1(16) |
+	val = MBUS_ABOX_BT_CREDIT_POOL1(16) |
 		MBUS_ABOX_BT_CREDIT_POOL2(16) |
 		MBUS_ABOX_B_CREDIT(1) |
 		MBUS_ABOX_BW_CREDIT(1);
@@ -5040,6 +5037,14 @@ static void tgl_bw_buddy_init(struct drm_i915_private *dev_priv)
 			       table[i].page_mask);
 		intel_de_write(dev_priv, BW_BUDDY2_PAGE_MASK,
 			       table[i].page_mask);
+
+		/* Wa_22010178259:tgl */
+		intel_de_rmw(dev_priv, BW_BUDDY1_CTL,
+			     BW_BUDDY_TLB_REQ_TIMER_MASK,
+			     REG_FIELD_PREP(BW_BUDDY_TLB_REQ_TIMER_MASK, 0x8));
+		intel_de_rmw(dev_priv, BW_BUDDY2_CTL,
+			     BW_BUDDY_TLB_REQ_TIMER_MASK,
+			     REG_FIELD_PREP(BW_BUDDY_TLB_REQ_TIMER_MASK, 0x8));
 	}
 }
 
