@@ -46,6 +46,7 @@ struct np_ipcdev {
 struct np_netdev {
 	struct net_device *netdev;
 	int (*proxy_enter)(struct net_device *netdev);
+	void (*proxy_wakeup_enable)(struct net_device *netdev, bool enable);
 };
 
 /* Network Device for Network Proxy Agent */

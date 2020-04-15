@@ -599,6 +599,8 @@ EXPORT_SYMBOL(netprox_host_proxy_exit);
 
 int netprox_ipc_recv(int cmd, unsigned char *payload, int size)
 {
+	struct net_device *netdev = np_ctx->np_netdev->netdev;
+
 	/* Process IPC message from Network Proxy Agent */
 	switch (cmd) {
 	case NP_A2H_CMD_AGENT_INFO:
@@ -607,6 +609,7 @@ int netprox_ipc_recv(int cmd, unsigned char *payload, int size)
 		break;
 	case NP_A2H_CMD_AGENT_READY:
 		np_ctx->agent_state = NP_AGENT_READY;
+		np_ctx->np_netdev->proxy_wakeup_enable(netdev, 1);
 		break;
 	case NP_A2H_CMD_HOST_IS_AWAKE:
 		/* Ethernet driver's resume function will eventually
