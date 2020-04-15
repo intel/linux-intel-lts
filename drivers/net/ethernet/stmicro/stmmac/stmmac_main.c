@@ -6402,7 +6402,6 @@ int stmmac_dvr_probe(struct device *device,
 	if (priv->plat->has_netproxy) {
 		dev_info(priv->device, "Network Proxy supported\n");
 		device_set_wakeup_capable(priv->device, 1);
-		device_set_wakeup_enable(priv->device, 1);
 	}
 #endif
 
