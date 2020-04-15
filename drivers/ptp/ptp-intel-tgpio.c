@@ -14,6 +14,7 @@
 #include <linux/pci.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/spinlock.h>
+#include <linux/pm_runtime.h>
 
 #define TGPIOCTL(n)		(((n) * 0x40) + 0x00)
 #define TGPIOCOMPV31_0(n)	(((n) * 0x40) + 0x04)
@@ -114,6 +115,16 @@
 #define NSECS_PER_SEC		1000000000
 #define TGPIO_MAX_ADJ_TIME	999999900
 
+#define TGPIO_MAX_PIN		20
+
+#define TGPIO_D0I3C		1000
+#define TGPIO_CGSR		1004
+#define TGPIO_D0I3_CIP	BIT(0)
+#define TGPIO_D0I3_IR		BIT(1)
+#define TGPIO_D0I3_EN		BIT(2)
+#define TGPIO_D0I3_RR		BIT(3)
+#define TGPIO_CGSR_CG		BIT(16)
+
 struct intel_tgpio {
 	struct ptp_clock_info	info;
 	struct ptp_clock	*clock;
@@ -124,8 +135,13 @@ struct intel_tgpio {
 
 	u32			irq_status;
 	u32			irq_mask;
+
+	u32			pin_state[TGPIO_MAX_PIN];
+	u32			saved_ctl_regs[TGPIO_MAX_PIN];
+	u64			saved_piv_regs[TGPIO_MAX_PIN];
 };
 #define to_intel_tgpio(i)	(container_of((i), struct intel_tgpio, info))
+
 
 static inline u64 to_intel_tgpio_time(struct ptp_clock_time *t)
 {
@@ -212,6 +228,8 @@ static int intel_tgpio_adjfine(struct ptp_clock_info *info, long scaled_ppm)
 	u32			reg;
 	bool			isgn;
 
+	pm_runtime_get_sync(tgpio->dev);
+
 	spin_lock_irqsave(&tgpio->lock, flags);
 	if (scaled_ppm < 0) {
 		isgn = true;
@@ -231,6 +249,8 @@ static int intel_tgpio_adjfine(struct ptp_clock_info *info, long scaled_ppm)
 	intel_tgpio_writel(tgpio->base, TIMINCA_GLOBAL, reg);
 	spin_unlock_irqrestore(&tgpio->lock, flags);
 
+	pm_runtime_put(tgpio->dev);
+
 	return 0;
 }
 
@@ -244,6 +264,8 @@ static int intel_tgpio_adjtime(struct ptp_clock_info *info, s64 delta)
 	if (delta > TGPIO_MAX_ADJ_TIME)
 		return -EINVAL;
 
+	pm_runtime_get_sync(tgpio->dev);
+
 	then = ns_to_timespec64(delta);
 
 	spin_lock_irqsave(&tgpio->lock, flags);
@@ -251,6 +273,8 @@ static int intel_tgpio_adjtime(struct ptp_clock_info *info, s64 delta)
 	now = timespec64_add(now, then);
 	intel_tgpio_set_time(tgpio, &now);
 	spin_unlock_irqrestore(&tgpio->lock, flags);
+
+	pm_runtime_put(tgpio->dev);
 
 	return 0;
 }
@@ -261,9 +285,13 @@ static int intel_tgpio_gettime64(struct ptp_clock_info *info,
 	struct intel_tgpio	*tgpio = to_intel_tgpio(info);
 	unsigned long		flags;
 
+	pm_runtime_get_sync(tgpio->dev);
+
 	spin_lock_irqsave(&tgpio->lock, flags);
 	intel_tgpio_get_time(tgpio, ts);
 	spin_unlock_irqrestore(&tgpio->lock, flags);
+
+	pm_runtime_put(tgpio->dev);
 
 	return 0;
 }
@@ -342,6 +370,13 @@ static int intel_tgpio_config_input(struct intel_tgpio *tgpio,
 	intel_tgpio_writel(tgpio->base, TGPIOICR, tgpio->irq_mask);
 	intel_tgpio_writel(tgpio->base, offset, ctrl);
 
+	/* -1 refernce if on ON -> OFF */
+	if (tgpio->pin_state[index] && !on)
+		pm_runtime_put(tgpio->dev);
+
+	/* Keep current pin state */
+	tgpio->pin_state[index] = on;
+
 	return 0;
 }
 
@@ -351,6 +386,10 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 	unsigned int		index = perout->index;
 	u32			offset;
 	u32			ctrl;
+
+	/* +1 reference if pin OFF -> ON */
+	if (!tgpio->pin_state[index] && on)
+		pm_runtime_get_sync(tgpio->dev);
 
 	offset = TGPIOCTL(index);
 	ctrl = intel_tgpio_readl(tgpio->base, offset);
@@ -391,6 +430,13 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 
 	intel_tgpio_writel(tgpio->base, offset, ctrl);
 
+	/* -1 refernce if on ON -> OFF */
+	if (tgpio->pin_state[index] && !on)
+		pm_runtime_put(tgpio->dev);
+
+	/* Keep current pin state */
+	tgpio->pin_state[index] = on;
+
 	return 0;
 }
 
@@ -424,10 +470,14 @@ static int intel_tgpio_get_time_fn(ktime_t *device_time,
 	struct timespec64	ts;
 	u64			cycles;
 
+	pm_runtime_get_sync(tgpio->dev);
+
 	intel_tgpio_get_time(tgpio, &ts);
 	*device_time = timespec64_to_ktime(ts);
 	cycles = intel_tgpio_readq(tgpio->base, LXTS_ART_LOW_GLOBAL);
 	*system_counter = convert_art_to_tsc(cycles);
+
+	pm_runtime_put(tgpio->dev);
 
 	return 0;
 }
@@ -580,6 +630,11 @@ static int intel_tgpio_probe(struct pci_dev *pci,
 	if (ret)
 		goto err1;
 
+	pm_runtime_set_autosuspend_delay(&pci->dev, 3000);
+	pm_runtime_use_autosuspend(&pci->dev);
+	pm_runtime_put_autosuspend(&pci->dev);
+	pm_runtime_allow(&pci->dev);
+
 	return 0;
 
 err1:
@@ -595,10 +650,156 @@ static void intel_tgpio_remove(struct pci_dev *pci)
 	struct intel_tgpio	*tgpio = pci_get_drvdata(pci);
 	int irq = pci_irq_vector(pci, 1);
 
+	pm_runtime_forbid(&pci->dev);
+	pm_runtime_get_noresume(&pci->dev);
+
+	/* disable TMT0 */
+	intel_tgpio_writel(tgpio->base, TMTCTL_TSG, 0);
+
 	devm_free_irq(&pci->dev, irq, tgpio);
 	pci_free_irq_vectors(pci);
 	ptp_clock_unregister(tgpio->clock);
 }
+
+
+#ifdef CONFIG_PM_SLEEP
+static int intel_tgpio_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct intel_tgpio	*tgpio = pci_get_drvdata(pdev);
+	int i = 0;
+	u32 d0i3c_reg, cgsr_reg = 0;
+
+	/* Store and disable PIN */
+	for (i = 0; i < TGPIO_MAX_PIN; i++) {
+		tgpio->saved_ctl_regs[i] = intel_tgpio_readl(tgpio->base,
+				TGPIOCTL(i));
+		tgpio->saved_piv_regs[i] = intel_tgpio_readq(tgpio->base,
+				TGPIOPIV31_0(i));
+		intel_tgpio_writel(tgpio->base, TGPIOCTL(i), 0);
+	}
+
+	/* Disable TMT0 */
+	intel_tgpio_writel(tgpio->base, TMTCTL_TSG, 0);
+
+	d0i3c_reg = intel_tgpio_readl(tgpio->base, TGPIO_D0I3C);
+	cgsr_reg = intel_tgpio_readl(tgpio->base, TGPIO_CGSR);
+
+	/* enable D0i3 BIT(2) & disable interrupt BIT(1)*/
+	d0i3c_reg |= TGPIO_D0I3_EN;
+	d0i3c_reg &= ~TGPIO_D0I3_IR;
+
+	/* enable clock gating BIT(16)*/
+	cgsr_reg |= TGPIO_CGSR_CG;
+
+	intel_tgpio_writel(tgpio->base, TGPIO_D0I3C, d0i3c_reg);
+	intel_tgpio_writel(tgpio->base, TGPIO_CGSR, cgsr_reg);
+
+	return 0;
+}
+
+static int intel_tgpio_resume(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct intel_tgpio	*tgpio = pci_get_drvdata(pdev);
+	int i = 0;
+	struct timespec64 *ts;
+	u32 d0i3c_reg, cgsr_reg = 0;
+
+	ts = devm_kzalloc(dev, sizeof(*ts), GFP_KERNEL);
+
+	d0i3c_reg = intel_tgpio_readl(tgpio->base, TGPIO_D0I3C);
+	cgsr_reg = intel_tgpio_readl(tgpio->base, TGPIO_CGSR);
+
+	/* disable D0i3 BIT(2) & disable interrupt BIT(1)*/
+	d0i3c_reg &= ~(TGPIO_D0I3_IR | TGPIO_D0I3_EN);
+
+	/* disable clock gating BIT(16)*/
+	cgsr_reg &= ~TGPIO_CGSR_CG;
+
+	intel_tgpio_writel(tgpio->base, TGPIO_D0I3C, d0i3c_reg);
+	intel_tgpio_writel(tgpio->base, TGPIO_CGSR, cgsr_reg);
+
+	/* Enable TMT0 */
+	intel_tgpio_writel(tgpio->base, TMTCTL_TSG, TMTCTL_TMT_ENABLE);
+
+	/* Reset the COMPV for output pin, 2 seconds into future */
+	intel_tgpio_get_time(tgpio, ts);
+	ts->tv_sec += 2;
+
+	/* Restore and enable PIN */
+	for (i = 0; i < TGPIO_MAX_PIN; i++) {
+		intel_tgpio_writel(tgpio->base, TGPIOCOMPV31_0(i), ts->tv_nsec);
+		intel_tgpio_writel(tgpio->base, TGPIOCOMPV63_32(i), ts->tv_sec);
+		intel_tgpio_writeq(tgpio->base, TGPIOPIV31_0(i),
+				tgpio->saved_piv_regs[i]);
+		intel_tgpio_writel(tgpio->base, TGPIOCTL(i),
+				(tgpio->saved_ctl_regs[i] & ~TGPIOCTL_EN));
+		intel_tgpio_writel(tgpio->base, TGPIOCTL(i),
+				tgpio->saved_ctl_regs[i]);
+	}
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_PM
+static int intel_tgpio_runtime_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct intel_tgpio	*tgpio = pci_get_drvdata(pdev);
+	u32 d0i3c_reg, cgsr_reg = 0;
+
+	/* Disable TMT0 */
+	intel_tgpio_writel(tgpio->base, TMTCTL_TSG, 0);
+
+	d0i3c_reg = intel_tgpio_readl(tgpio->base, TGPIO_D0I3C);
+	cgsr_reg = intel_tgpio_readl(tgpio->base, TGPIO_CGSR);
+
+	/* enable D0i3 BIT(2) & disable interrupt BIT(1)*/
+	d0i3c_reg |= TGPIO_D0I3_EN;
+	d0i3c_reg &= ~TGPIO_D0I3_IR;
+
+	/* enable clock gating BIT(16)*/
+	cgsr_reg |= TGPIO_CGSR_CG;
+
+	intel_tgpio_writel(tgpio->base, TGPIO_D0I3C, d0i3c_reg);
+	intel_tgpio_writel(tgpio->base, TGPIO_CGSR, cgsr_reg);
+
+	return 0;
+}
+
+static int intel_tgpio_runtime_resume(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct intel_tgpio	*tgpio = pci_get_drvdata(pdev);
+
+	u32 d0i3c_reg, cgsr_reg = 0;
+
+	d0i3c_reg = intel_tgpio_readl(tgpio->base, TGPIO_D0I3C);
+	cgsr_reg = intel_tgpio_readl(tgpio->base, TGPIO_CGSR);
+
+	/* disable D0i3 BIT(2) & disable interrupt BIT(1)*/
+	d0i3c_reg &= ~(TGPIO_D0I3_IR | TGPIO_D0I3_EN);
+
+	/* disable clock gating BIT(16)*/
+	cgsr_reg &= ~TGPIO_CGSR_CG;
+
+	intel_tgpio_writel(tgpio->base, TGPIO_D0I3C, d0i3c_reg);
+	intel_tgpio_writel(tgpio->base, TGPIO_CGSR, cgsr_reg);
+
+	/* Enable TMT0 */
+	intel_tgpio_writel(tgpio->base, TMTCTL_TSG, TMTCTL_TMT_ENABLE);
+
+	return 0;
+}
+#endif
+
+static const struct dev_pm_ops intel_tgpio_pm_ops = {
+	SET_RUNTIME_PM_OPS(intel_tgpio_runtime_suspend,
+			intel_tgpio_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(intel_tgpio_suspend, intel_tgpio_resume)
+};
 
 static const struct pci_device_id intel_tgpio_id_table[] = {
 	{ PCI_VDEVICE(INTEL, 0x4b88), /* EHL */ },
@@ -612,6 +813,9 @@ static struct pci_driver intel_tgpio_driver = {
 	.id_table	= intel_tgpio_id_table,
 	.probe		= intel_tgpio_probe,
 	.remove		= intel_tgpio_remove,
+	.driver = {
+		.pm = &intel_tgpio_pm_ops,
+	},
 };
 
 module_pci_driver(intel_tgpio_driver);
