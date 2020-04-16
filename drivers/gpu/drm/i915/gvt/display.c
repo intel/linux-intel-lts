@@ -702,7 +702,7 @@ static void intel_gvt_connector_change_work(struct work_struct *w)
 
 	if (!idr_is_empty(&gvt->vgpu_idr)) {
 		mutex_unlock(&gvt->lock);
-		gvt_dbg_dpy("Available port mask %08x and selected mask 0x%016llx "
+		gvt_dbg_dpy("Available port mask %016llx and selected mask 0x%016llx "
 			    "unchanged due to hotplug after vGPU creation\n",
 			    gvt->avail_disp_port_mask, gvt->sel_disp_port_mask);
 		return;
@@ -719,7 +719,7 @@ static void intel_gvt_connector_change_work(struct work_struct *w)
 
 		port_ext = intel_gvt_external_disp_id_from_port(port);
 		// Available port is set in corresponding port position.
-		gvt->avail_disp_port_mask |= (port_ext << port * 4);
+		gvt->avail_disp_port_mask |= intel_gvt_port_to_mask_bit(port_ext, port);
 		// Available port is assigned to vGPU in sequence.
 		gvt->sel_disp_port_mask |= ((1 << port) << id * 8);
 		++id;
@@ -1097,6 +1097,11 @@ enum port intel_gvt_port_from_external_disp_id(u8 port_id)
 	if (port_id)
 		port = (enum port)(port_id - 1);
 	return port;
+}
+
+u64 intel_gvt_port_to_mask_bit(u8 port_sel, enum port port)
+{
+	return ((u64)port_sel << port * 4);
 }
 
 enum pipe intel_gvt_pipe_from_port(struct drm_i915_private *dev_priv,
@@ -2300,7 +2305,7 @@ void intel_gvt_store_vgpu_display_mask(struct drm_i915_private *dev_priv,
 				if (mask_vgpu & (1 << port)) {
 					port_sel = intel_gvt_external_disp_id_from_port(port);
 					if (port_sel == 0 ||
-					    !(gvt->avail_disp_port_mask & (port_sel << port * 4))) {
+					    !(gvt->avail_disp_port_mask & intel_gvt_port_to_mask_bit(port_sel, port))) {
 						gvt_err("Selected PORT_%c for vGPU-%d isn't available\n",
 							port_name(port), id + 1);
 						valid_mask = false;
