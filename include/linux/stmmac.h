@@ -259,5 +259,6 @@ struct plat_stmmacenet_data {
 	u64 xpcs_rx_latency_1000;
 	u64 xpcs_rx_latency_100;
 	u64 xpcs_rx_latency_10;
+	bool eee_timer;
 };
 #endif

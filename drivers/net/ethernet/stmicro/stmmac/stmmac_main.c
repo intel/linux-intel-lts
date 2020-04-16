@@ -353,6 +353,11 @@ static void stmmac_enable_eee_mode(struct stmmac_priv *priv)
  */
 void stmmac_disable_eee_mode(struct stmmac_priv *priv)
 {
+	if (!priv->plat->eee_timer) {
+		stmmac_lpi_entry_timer_enable(priv, LPI_ET_DISABLE);
+		return;
+	}
+
 	stmmac_reset_eee_mode(priv, priv->hw);
 	del_timer_sync(&priv->eee_ctrl_timer);
 	priv->tx_path_in_lpi_mode = false;
@@ -371,6 +376,16 @@ static void stmmac_eee_ctrl_timer(struct timer_list *t)
 
 	stmmac_enable_eee_mode(priv);
 	mod_timer(&priv->eee_ctrl_timer, STMMAC_LPI_T(priv->tx_lpi_timer));
+}
+
+void stmmac_lpi_entry_timer_enable(struct stmmac_priv *priv, bool en)
+{
+	int tx_lpi_timer;
+
+	/* Clear/set the SW EEE timer flag based on LPI ET enablement */
+	priv->plat->eee_timer = en ? 0 : 1;
+	tx_lpi_timer  = en ? priv->tx_lpi_timer : 0;
+	stmmac_set_eee_lpi_timer(priv, priv->hw, tx_lpi_timer);
 }
 
 /**
@@ -403,6 +418,7 @@ bool stmmac_eee_init(struct stmmac_priv *priv)
 	if (!priv->eee_active) {
 		if (priv->eee_enabled) {
 			netdev_dbg(priv->dev, "disable EEE\n");
+			stmmac_lpi_entry_timer_enable(priv, LPI_ET_DISABLE);
 			del_timer_sync(&priv->eee_ctrl_timer);
 			stmmac_set_eee_timer(priv, priv->hw, 0, tw_timer);
 		}
@@ -416,7 +432,14 @@ bool stmmac_eee_init(struct stmmac_priv *priv)
 				     tw_timer);
 	}
 
-	mod_timer(&priv->eee_ctrl_timer, STMMAC_LPI_T(tx_lpi_timer));
+	if (priv->plat->has_gmac4 && priv->tx_lpi_timer <= STMMAC_ET_MAX) {
+		del_timer_sync(&priv->eee_ctrl_timer);
+		priv->tx_path_in_lpi_mode = false;
+		stmmac_lpi_entry_timer_enable(priv, LPI_ET_ENABLE);
+	} else {
+		stmmac_lpi_entry_timer_enable(priv, LPI_ET_DISABLE);
+		mod_timer(&priv->eee_ctrl_timer, STMMAC_LPI_T(tx_lpi_timer));
+	}
 
 	mutex_unlock(&priv->lock);
 	netdev_dbg(priv->dev, "Energy-Efficient Ethernet initialized\n");
@@ -2356,7 +2379,8 @@ static int stmmac_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 	}
 
 xdp_tx_done:
-	if ((priv->eee_enabled) && (!priv->tx_path_in_lpi_mode)) {
+	if (priv->eee_enabled && !priv->tx_path_in_lpi_mode &&
+	    priv->plat->eee_timer) {
 		stmmac_enable_eee_mode(priv);
 		mod_timer(&priv->eee_ctrl_timer,
 			  STMMAC_LPI_T(priv->tx_lpi_timer));
@@ -3999,7 +4023,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	tx_q = &priv->tx_queue[queue];
 
-	if (priv->tx_path_in_lpi_mode)
+	if (priv->tx_path_in_lpi_mode && priv->plat->eee_timer)
 		stmmac_disable_eee_mode(priv);
 
 	/* Manage oversized TCP frames for GMAC4/GMAC5 device.

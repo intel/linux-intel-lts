@@ -336,6 +336,7 @@ int stmmac_dvr_probe(struct device *device,
 		     struct stmmac_resources *res);
 void stmmac_disable_eee_mode(struct stmmac_priv *priv);
 bool stmmac_eee_init(struct stmmac_priv *priv);
+void stmmac_lpi_entry_timer_enable(struct stmmac_priv *priv, bool en);
 int stmmac_reinit_queues(struct net_device *dev, u32 rx_cnt, u32 tx_cnt);
 int stmmac_reinit_ringparam(struct net_device *dev, u32 rx_size, u32 tx_size);
 #ifdef CONFIG_STMMAC_NETWORK_PROXY

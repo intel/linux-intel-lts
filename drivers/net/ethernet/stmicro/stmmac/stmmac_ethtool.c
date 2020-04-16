@@ -786,6 +786,9 @@ static int stmmac_ethtool_op_set_eee(struct net_device *dev,
 	if (ret)
 		return ret;
 
+	/* TODO: Disable assertion of TX LPI if tx_lpi_enabled
+	 * is set to false.
+	 */
 	priv->tx_lpi_enabled = edata->tx_lpi_enabled;
 
 	if (!edata->eee_enabled || !priv->tx_lpi_enabled)
