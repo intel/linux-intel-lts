@@ -392,7 +392,7 @@ struct intel_gvt {
 	struct work_struct switch_display_work;
 
 	/*
-	 * Available display port mask for PORT_A to PORT_A+7 (low to high).
+	 * Available display port mask for PORT_A to I915_MAX_PORTS (low to high).
 	 * Each hex digit represents the availability of corresponding port.
 	 * 0: Port isn't available.
 	 * x: Port x is available.
@@ -403,12 +403,12 @@ struct intel_gvt {
 	 *      PORT_C: Available.
 	 *      PORT_D: Available.
 	 */
-	u32 avail_disp_port_mask;
+	u64 avail_disp_port_mask;
 
 	/*
 	 * Bit mask of selected ports for vGPU-1 to vGPU-8 (low to high).
 	 * Each byte represents the bit mask of assigned ports for vGPU id.
-	 * From LSB to MSB (PORT_A to PORT_A+7):
+	 * From LSB to MSB (PORT_A to I915_MAX_PORTS):
 	 *   0: This port isn't assigned to that vGPU.
 	 *   1: This port is assigned to that vGPU.
 	 * Be noticed that bit position base is same as enum type PORT_x, and
@@ -421,7 +421,7 @@ struct intel_gvt {
 	u64 sel_disp_port_mask;
 
 	/*
-	 * Display owner for PORT_A to PORT_A+7 (low to high).
+	 * Display owner for PORT_A to I915_MAX_PORTS (low to high).
 	 * Each hex digit represents the owner vGPU id of corresponding port.
 	 * 0: display N/A or owned by host.
 	 * x: display owned by vGPU x.
@@ -797,6 +797,7 @@ void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
 
 u8 intel_gvt_external_disp_id_from_port(enum port port);
 enum port intel_gvt_port_from_external_disp_id(u8 port_id);
+u64 intel_gvt_port_to_mask_bit(u8 port_sel, enum port port);
 enum pipe intel_gvt_pipe_from_port(
 	struct drm_i915_private *dev_priv, enum port port);
 enum port intel_gvt_port_from_pipe(

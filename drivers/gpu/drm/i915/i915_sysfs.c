@@ -621,7 +621,7 @@ static ssize_t gvt_disp_ports_status_show(
 	if (!buf_size)
 		return count_total;
 
-	count = snprintf(buf, buf_size, "Available display ports: 0x%08x\n",
+	count = snprintf(buf, buf_size, "Available display ports: 0x%016llx\n",
 			 gvt->avail_disp_port_mask);
 	buf_size -= count;
 	count_total += count;
@@ -631,7 +631,7 @@ static ssize_t gvt_disp_ports_status_show(
 
 	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
 		port_sel = intel_gvt_external_disp_id_from_port(port);
-		if (gvt->avail_disp_port_mask & (port_sel << port * 4)) {
+		if (gvt->avail_disp_port_mask & intel_gvt_port_to_mask_bit(port_sel, port)) {
 			count = snprintf(buf, buf_size, "  ( PORT_%c(%d) )\n",
 					 port_name(port), port_sel);
 			buf_size -= count;
@@ -660,7 +660,7 @@ static ssize_t gvt_disp_ports_status_show(
 		return count_total;
 
 	count = snprintf(buf, buf_size,
-			 "    Bit mask is decoded from LSB to MSB (PORT_A to PORT_A+7):\n");
+			 "    Bit mask is decoded from LSB to MSB (PORT_A to I915_MAX_PORTS):\n");
 	buf_size -= count;
 	count_total += count;
 	buf += count;
@@ -745,7 +745,7 @@ static ssize_t gvt_disp_ports_status_show(
 
 	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
 		port_sel = intel_gvt_external_disp_id_from_port(port);
-		if (gvt->avail_disp_port_mask & (port_sel << port * 4)) {
+		if (gvt->avail_disp_port_mask & intel_gvt_port_to_mask_bit(port_sel, port)) {
 			count = snprintf(buf, buf_size, "  ( PORT_%c(%d) ",
 					 port_name(port), port_sel);
 			buf_size -= count;
