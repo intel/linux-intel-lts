@@ -38,6 +38,10 @@
 #include "intel_display_types.h"
 #include "intel_opregion.h"
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+#include "gvt.h"
+#endif
+
 #define OPREGION_HEADER_OFFSET 0
 #define OPREGION_ACPI_OFFSET   0x100
 #define   ACPI_CLID 0x01ac /* current lid state indicator */
@@ -409,6 +413,12 @@ int intel_opregion_notify_encoder(struct intel_encoder *intel_encoder,
 	}
 
 	parm |= type << (16 + port * 3);
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (dev_priv->gvt)
+		queue_work(system_unbound_wq,
+			   &dev_priv->gvt->connector_change_work);
+#endif
 
 	return swsci(dev_priv, SWSCI_SBCB_DISPLAY_POWER_STATE, parm, NULL);
 }

@@ -6792,9 +6792,6 @@ static void intel_encoders_enable(struct intel_crtc *crtc,
 	struct drm_connector_state *conn_state;
 	struct drm_connector *conn;
 	int i;
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
-#endif
 
 	for_each_new_connector_in_state(&state->base, conn, conn_state, i) {
 		struct intel_encoder *encoder =
@@ -6807,11 +6804,6 @@ static void intel_encoders_enable(struct intel_crtc *crtc,
 			encoder->enable(encoder, crtc_state, conn_state);
 		intel_opregion_notify_encoder(encoder, true);
 	}
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt)
-		queue_work(system_unbound_wq,
-			   &dev_priv->gvt->connector_change_work);
-#endif
 }
 
 static void intel_encoders_disable(struct intel_crtc *crtc,
@@ -6821,9 +6813,6 @@ static void intel_encoders_disable(struct intel_crtc *crtc,
 	struct drm_connector_state *old_conn_state;
 	struct drm_connector *conn;
 	int i;
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
-#endif
 
 	for_each_old_connector_in_state(&state->base, conn, old_conn_state, i) {
 		struct intel_encoder *encoder =
@@ -6836,11 +6825,6 @@ static void intel_encoders_disable(struct intel_crtc *crtc,
 		if (encoder->disable)
 			encoder->disable(encoder, old_crtc_state, old_conn_state);
 	}
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt)
-		queue_work(system_unbound_wq,
-			   &dev_priv->gvt->connector_change_work);
-#endif
 }
 
 static void intel_encoders_post_disable(struct intel_crtc *crtc,
