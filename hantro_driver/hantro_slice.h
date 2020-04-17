@@ -68,6 +68,7 @@ struct cache_dev_t {
 	slice_coretype parenttype;
 	u32 parentid;		//parent codec core's core_id
 	void *parentcore;	//either struct hantroenc_t or struct hantrodec_t, or slice itself
+	void *parentslice;
 
 	struct cache_dev_t *next;
 };
@@ -90,6 +91,7 @@ struct dec400_t {
 	u32 parentid;		//parent codec core's core_id
 	void *parentcore;	//either struct hantroenc_t or struct hantrodec_t, or slice itself
 
+	void *parentslice;
 	struct dec400_t *next;
 };
 
@@ -118,7 +120,7 @@ struct hantroenc_t {
 	struct fasync_struct *async_queue;
 	int irqlist[4];
 	char irq_name[4][32];
-	
+	void *parentslice;
 	struct hantroenc_t *next;
 };
 
@@ -157,6 +159,7 @@ struct hantrodec_t {
 
 	struct file *dec_owner;
 	struct file *pp_owner;
+	void *parentslice;
 	struct hantrodec_t *next;
 };
 
@@ -224,6 +227,7 @@ u32 getsliceconfig(u32 sliceindex);
 struct slice_info *getslicenode(u32 sliceindex);
 int get_slicecorenum(u32 sliceindex, slice_coretype type);
 struct hantrodec_t *get_decnodes(u32 sliceindex, u32 nodeidx);
+struct hantrodec_t *getfirst_decnodes(struct slice_info *pslice);
 struct hantroenc_t *get_encnodes(u32 sliceindex, u32 nodeidx);
 struct cache_dev_t *get_cachenodes(u32 sliceindex, u32 nodeidx);
 struct cache_dev_t *get_cachenodebytype(u32 sliceindex, u32 parenttype, u32 parentnodeidx);

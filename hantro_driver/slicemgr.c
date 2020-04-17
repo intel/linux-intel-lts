@@ -36,12 +36,16 @@ int findslice_bydev(struct device *dev)
 	int i = 0;
 	struct slice_info *hdr = slicehdr;
 
+	mutex_lock(&slice_mutex);
 	while (hdr != NULL) {
-		if (hdr->dev == dev)
+		if (hdr->dev == dev) {
+			mutex_unlock(&slice_mutex);
 			return i;
+		}
 		i++;
 		hdr = hdr->next;
 	}
+	mutex_unlock(&slice_mutex);
 	return -1;
 }
 
@@ -110,6 +114,12 @@ struct hantrodec_t *get_decnodes(u32 sliceindex, u32 nodeidx)
 	mutex_unlock(&slice_mutex);
 	return p;
 }
+
+struct hantrodec_t *getfirst_decnodes(struct slice_info *pslice)
+{
+	return pslice->dechdr;
+}
+
 
 /*get enc nodes list hdr of a slice*/
 struct hantroenc_t *get_encnodes(u32 sliceindex, u32 nodeidx)
@@ -251,6 +261,7 @@ int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 	splice->deccore_num++;
 	deccore->core_id = splice->deccore_num - 1;
 	deccore->sliceidx = sliceindex;
+	deccore->parentslice = splice;
 	splice->config |= CONFIG_HWDEC;
 
 	sema_init(&splice->dec_core_sem, splice->deccore_num);
@@ -288,6 +299,7 @@ int add_encnode(u32 sliceindex, struct hantroenc_t *enccore)
 	splice->enccore_num++;
 	enccore->core_id = splice->enccore_num - 1;
 	enccore->core_cfg.sliceidx = sliceindex;
+	enccore->parentslice = splice;
 	splice->config |= CONFIG_HWENC;
 	mutex_unlock(&slice_mutex);
 	return 0;
@@ -321,6 +333,7 @@ int add_dec400node(u32 sliceindex, struct dec400_t *dec400core)
 	//set default
 	dec400core->parentcore = splice;
 	dec400core->parentid = CORE_SLICE;
+	dec400core->parentslice = splice;
 
 	if (dec400core->core_cfg.parentaddr == splice->rsvmem_addr) {
 		dec400core->parentcore = splice;
@@ -380,6 +393,7 @@ int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore)
 	//set default
 	cachecore->parentcore = splice;
 	cachecore->parentid = CORE_SLICE;
+	cachecore->parentslice = splice;
 
 	if (cachecore->core_cfg.client == VC8000E) {
 		penc = splice->enchdr;
@@ -415,25 +429,26 @@ int get_slicenumber(void)
 
 struct slice_info *getparentslice(void *node, int type)
 {
-	u32 idx;
+	struct slice_info *pslice = NULL;
 
 	switch (type) {
 	case CORE_CACHE:
-		idx = ((struct cache_dev_t *)node)->core_cfg.sliceidx;
+		pslice = (struct slice_info *)((struct cache_dev_t *)node)->parentslice;
+;
 		break;
 	case CORE_DEC:
-		idx = ((struct hantrodec_t *)node)->sliceidx;
+		pslice = (struct slice_info *)((struct hantrodec_t *)node)->parentslice;
 		break;
 	case CORE_ENC:
-		idx = ((struct hantroenc_t *)node)->core_cfg.sliceidx;
+		pslice = (struct slice_info *)((struct hantroenc_t *)node)->parentslice;
 		break;
 	case CORE_DEC400:
-		idx = ((struct dec400_t *)node)->core_cfg.sliceidx;
+		pslice = (struct slice_info *)((struct dec400_t *)node)->parentslice;
 		break;
 	default:
-		return NULL;
+		break;
 	}
-	return getslicenode(idx);
+	return pslice;
 }
 
 /*for driver unload*/

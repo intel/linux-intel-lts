@@ -391,7 +391,7 @@ long hantroenc_ioctl(
 		slice = (core_info >> 16) & 0xff;
 		pcore = get_encnodes(slice, 0);		/*from list header*/
 		if (pcore == NULL) {
-			printk("wrong slice num");
+			pr_info("wrong slice num");
 			return -EFAULT;
 		}
 		tmp = get_slicecorenum(slice, CORE_ENC);
@@ -562,7 +562,7 @@ int hantroenc_probe(dtbnode *pnode)
 					pcore->irqlist[irqn] = pnode->irq[i];
 					irqn++;
 				} else {
-					printk("hx280enc: request IRQ <%d> fail\n", pnode->irq[i]);
+					pr_info("hx280enc: request IRQ <%d> fail\n", pnode->irq[i]);
 					ReleaseIO(pcore);
 					vfree(pcore);
 					return -EINVAL;
@@ -571,12 +571,11 @@ int hantroenc_probe(dtbnode *pnode)
 		}
 #endif
 		add_encnode(pnode->sliceidx, pcore);
-		printk("add enc node %lx:%d @ slice %d:%lx", (unsigned long)pcore, pcore->core_id,
-			pnode->sliceidx, (unsigned long)getslicenode(pnode->sliceidx));
 	}
 #endif	/*USE_DTB_PROBE*/
-	pr_info("hx280enc: module inserted. Major <%d>\n", hantroenc_major);
-
+	
+	PDEBUG("hx280enc: module inserted. Major <%d>\n", hantroenc_major);
+	
 	return 0;
 }
 
@@ -606,7 +605,6 @@ void __exit hantroenc_cleanup(void)
 		}
 	}
 	bencprobed = 0;
-	pr_info("hantroenc: module removed\n");
 }
 
 static int ReserveIO(struct hantroenc_t *pcore)
@@ -629,7 +627,6 @@ static int ReserveIO(struct hantroenc_t *pcore)
 
 	/*read hwid and check validness and store it*/
 	hwid = (u32)ioread32((void *)pcore->hwregs);
-	pr_info("hwid=0x%08x\n", hwid);
 
 	/* check for encoder HW ID */
 	if (((((hwid >> 16) & 0xFFFF) != ((ENC_HW_ID1 >> 16) & 0xFFFF))) &&
@@ -641,8 +638,8 @@ static int ReserveIO(struct hantroenc_t *pcore)
 	}
 	pcore->hw_id = hwid;
 
-	pr_info("hantroenc: HW at base <%llx> with ID <0x%08x>\n",
-	       pcore->core_cfg.base_addr, hwid);
+	pr_info("hantroenc: HW at base <0x%llx> with ID 0x%x\n",
+	       pcore->core_cfg.base_addr, (hwid >> 16) & 0xFFFF );
 
 	return 0;
 }
@@ -669,7 +666,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 	/*If core is not reserved by any user, but irq is received, just ignore it*/
 	spin_lock_irqsave(&parentslice->enc_owner_lock, flags);
 	if (!dev->is_reserved) {
-		printk("hantroenc_isr:received IRQ but core is not reserved!\n");
+		pr_info("hantroenc_isr:received IRQ but core is not reserved!\n");
 		irq_status = (u32)ioread32((void *)(dev->hwregs + 0x04));
 		if (irq_status & 0x01) {
 			/* clear all IRQ bits. (hwId >= 0x80006100) means IRQ is cleared by writting 1 */
@@ -710,7 +707,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 		handled++;
 	}
 	if (!handled)
-		printk("IRQ received, but not hantro enc's!\n");
+		pr_info("IRQ received, but not hantro enc's!\n");
 
 	return IRQ_HANDLED;
 }

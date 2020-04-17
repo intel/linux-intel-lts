@@ -264,8 +264,8 @@ static int hantro_gem_dumb_create_internal(
 	}
 	init_hantro_resv(&cma_obj->kresv, cma_obj);
 	cma_obj->handle = args->handle;
-#if DMA_DEBUG_ALLOC
-	printk("%s:%d,%lx:%llx:%d:%d\n", __func__, sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, args->size);
+#ifdef DMA_DEBUG_ALLOC
+	pr_info("%s:%d,%lx:%llx:%d:%d\n", __func__, sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, args->size);
 #endif
 
 out:
@@ -371,8 +371,9 @@ static int hantro_release_dumb(
 			cma_obj->vaddr,
 			cma_obj->paddr);
 #endif
-#if DMA_DEBUG_ALLOC 
-        printk("%s:%d,%lx:%llx:%d:%d\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
+
+#ifdef DMA_DEBUG_ALLOC 
+        pr_info("%s:%d,%lx:%llx:%d:%d\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
 #endif
 
 	dma_resv_fini(&cma_obj->kresv);
@@ -729,6 +730,11 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 			cma_obj->vaddr,
 			cma_obj->paddr);
 #endif
+
+#ifdef DMA_DEBUG_ALLOC
+        pr_info("%s:%d,%lx:%llx:%d:%d\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
+#endif
+
 	}
 	dma_resv_fini(&cma_obj->kresv);
 	kfree(cma_obj);
@@ -1760,6 +1766,7 @@ bandwidthEncWrite_show(struct device *kdev, struct device_attribute *attr, char 
 	bandwidth = hantroenc_readbandwidth(sliceidx, 0);
 	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
 }
+
 static DEVICE_ATTR(BWDecRead, 0444, bandwidthDecRead_show, NULL);
 static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
 static DEVICE_ATTR(BWEncRead, 0444, bandwidthEncRead_show, NULL);
@@ -1863,13 +1870,13 @@ static dtbnode * trycreatenode(
 
 	for (i = 0; i < 4; i++) {
 		if (of_irq_to_resource(ofnode, i, &r) > 0) {
-			int irq = platform_get_irq_byname(pdev, r.name);
+			//int irq = platform_get_irq_byname(pdev, r.name);
 			pnode->irq[i] = r.start;
 			if (strlen(r.name))
 				strcpy(pnode->irq_name[i], r.name);
 			else
 				strcpy(pnode->irq_name[i], "hantro_irq");
-                        pr_info("irq %d:%s = %lld:%d", i, r.name, r.start, irq);
+                        PDEBUG("irq %s: mapping = %lld\n", r.name, r.end);
 		} else
 			pnode->irq[i] = -1;
 	}
@@ -1897,6 +1904,7 @@ static dtbnode * trycreatenode(
 		kfree(pnode);
 		pnode = NULL;
 	}
+
 	return pnode;
 }
 
@@ -1906,7 +1914,6 @@ static int hantro_analyze_subnode(
 	int sliceidx)
 {
 	dtbnode *head, *nhead, *newtail, *node;	
-	pr_info("dev node %s", slice->name);
 
 	head = kzalloc(sizeof(dtbnode), GFP_KERNEL);
 	if (!head)
@@ -1916,7 +1923,6 @@ static int hantro_analyze_subnode(
 	head->ioaddr = -1;
 	head->iosize = 0;
 	head->next = NULL;
-
 	/*this is a wide first tree structure iteration, result is stored in slice info*/
 	while(head != NULL) {
 		nhead = newtail = NULL;
@@ -1939,6 +1945,7 @@ static int hantro_analyze_subnode(
 		}
 		head = nhead;
 	}
+
 	return 0;
 }
 #endif	//USE_DTB_PROBE
@@ -1969,7 +1976,6 @@ static int hantro_drm_probe(struct platform_device *pdev)
 #endif	
 #endif
 	}
-	pr_info("dev %s probe", pdev->name);
 
 	return 0;
 }
@@ -2080,6 +2086,7 @@ void __exit hantro_cleanup(void)
 	drm_dev_fini(hantro_dev.drm_dev);
 	platform_device_unregister(hantro_dev.platformdev);
 	platform_driver_unregister(&hantro_drm_platform_driver);
+	pr_info("hantro driver removed\n");
 }
 
 int __init hantro_init(void)
@@ -2158,11 +2165,11 @@ int __init hantro_init(void)
 		result = devm_device_add_group(pslice->dev, &hantro_attr_group);
 
 		if (result != 0)
-			pr_info("create sysfs %d fail", i);
+			pr_info("create sysfs %d fail\n", i);
 
 	}
 	// slice_printdebug();
-	pr_info("hantro device created");
+	pr_info("hantro device created\n");
 	return result;
 }
 

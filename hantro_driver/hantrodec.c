@@ -328,37 +328,37 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 
 		tmp = (reg >> DWL_H264_E) & 0x3U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has H264\n", c);
+			PDEBUG("hantrodec: core[%d] has H264\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_H264_DEC : 0;
 
 		tmp = (reg >> DWL_JPEG_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has JPEG\n", c);
+			PDEBUG("hantrodec: core[%d] has JPEG\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_JPEG_DEC : 0;
 
 		tmp = (reg >> DWL_MPEG4_E) & 0x3U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has MPEG4\n", c);
+			PDEBUG("hantrodec: core[%d] has MPEG4\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_MPEG4_DEC : 0;
 
 		tmp = (reg >> DWL_VC1_E) & 0x3U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has VC1\n", c);
+			PDEBUG("hantrodec: core[%d] has VC1\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_VC1_DEC : 0;
 
 		tmp = (reg >> DWL_MPEG2_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has MPEG2\n", c);
+			PDEBUG("hantrodec: core[%d] has MPEG2\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_MPEG2_DEC : 0;
 
 		tmp = (reg >> DWL_VP6_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has VP6\n", c);
+			PDEBUG("hantrodec: core[%d] has VP6\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_VP6_DEC : 0;
 
@@ -372,21 +372,21 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 				(1 << DWL_WEBP_E);
 		tmp = (reg & mask);
 		if (tmp & (1 << DWL_VP8_E))
-			pr_info("hantrodec: core[%d] has VP8\n", c);
+			PDEBUG("hantrodec: core[%d] has VP8\n", c);
 		if (tmp & (1 << DWL_VP7_E))
-			pr_info("hantrodec: core[%d] has VP7\n", c);
+			PDEBUG("hantrodec: core[%d] has VP7\n", c);
 		if (tmp & (1 << DWL_WEBP_E))
-			pr_info("hantrodec: core[%d] has WebP\n", c);
+			PDEBUG("hantrodec: core[%d] has WebP\n", c);
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VP8_DEC : 0;
 
 		tmp = (reg >> DWL_AVS_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has AVS\n", c);
+			PDEBUG("hantrodec: core[%d] has AVS\n", c);
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_AVS_DEC : 0;
 
 		tmp = (reg >> DWL_RV_E) & 0x03U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has RV\n", c);
+			PDEBUG("hantrodec: core[%d] has RV\n", c);
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_RV_DEC : 0;
 
 		/* Post-processor configuration */
@@ -396,7 +396,7 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 
 		tmp = (reg >> DWL_G1_PP_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has PP\n", c);
+			PDEBUG("hantrodec: core[%d] has PP\n", c);
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_PP : 0;
 	} else if ((IS_G2(dev->hw_id))) {
 		reg = ioread32((void *)(dev->hwregs +
@@ -404,13 +404,13 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 
 		tmp = (reg >> DWL_G2_HEVC_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has HEVC\n", c);
+			PDEBUG("hantrodec: core[%d] has HEVC\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_HEVC_DEC : 0;
 
 		tmp = (reg >> DWL_G2_VP9_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has VP9\n", c);
+			PDEBUG("hantrodec: core[%d] has VP9\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_VP9_DEC : 0;
 
@@ -420,7 +420,7 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 
 		tmp = (reg >> DWL_G2_PP_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has PP\n", c);
+			PDEBUG("hantrodec: core[%d] has PP\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_PP : 0;
 	} else if ((IS_VC8000D(dev->hw_id)) &&
@@ -430,42 +430,42 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 
 		tmp = (reg >> DWL_H264_E) & 0x3U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has H264\n", c);
+			PDEBUG("hantrodec: core[%d] has H264\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_H264_DEC : 0;
 
 		tmp = (reg >> DWL_H264HIGH10_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has H264HIGH10\n", c);
+			PDEBUG("hantrodec: core[%d] has H264HIGH10\n", c);
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_H264_DEC : 0;
 
 		tmp = (reg >> DWL_JPEG_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has JPEG\n", c);
+			PDEBUG("hantrodec: core[%d] has JPEG\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_JPEG_DEC : 0;
 
 		tmp = (reg >> DWL_MPEG4_E) & 0x3U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has MPEG4\n", c);
+			PDEBUG("hantrodec: core[%d] has MPEG4\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_MPEG4_DEC : 0;
 
 		tmp = (reg >> DWL_VC1_E) & 0x3U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has VC1\n", c);
+			PDEBUG("hantrodec: core[%d] has VC1\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_VC1_DEC : 0;
 
 		tmp = (reg >> DWL_MPEG2_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has MPEG2\n", c);
+			PDEBUG("hantrodec: core[%d] has MPEG2\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_MPEG2_DEC : 0;
 
 		tmp = (reg >> DWL_VP6_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has VP6\n", c);
+			PDEBUG("hantrodec: core[%d] has VP6\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_VP6_DEC : 0;
 
@@ -478,23 +478,23 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 				(1 << DWL_WEBP_E);
 		tmp = (reg & mask);
 		if (tmp & (1 << DWL_VP8_E))
-			pr_info("hantrodec: core[%d] has VP8\n", c);
+			PDEBUG("hantrodec: core[%d] has VP8\n", c);
 		if (tmp & (1 << DWL_VP7_E))
-			pr_info("hantrodec: core[%d] has VP7\n", c);
+			PDEBUG("hantrodec: core[%d] has VP7\n", c);
 		if (tmp & (1 << DWL_WEBP_E))
-			pr_info("hantrodec: core[%d] has WebP\n", c);
+			PDEBUG("hantrodec: core[%d] has WebP\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_VP8_DEC : 0;
 
 		tmp = (reg >> DWL_AVS_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has AVS\n", c);
+			PDEBUG("hantrodec: core[%d] has AVS\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_AVS_DEC : 0;
 
 		tmp = (reg >> DWL_RV_E) & 0x03U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has RV\n", c);
+			PDEBUG("hantrodec: core[%d] has RV\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_RV_DEC : 0;
 
@@ -503,13 +503,13 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 
 		tmp = (reg >> DWL_HEVC_E) & 0x07U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has HEVC\n", c);
+			PDEBUG("hantrodec: core[%d] has HEVC\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_HEVC_DEC : 0;
 
 		tmp = (reg >> DWL_VP9_E) & 0x07U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has VP9\n", c);
+			PDEBUG("hantrodec: core[%d] has VP9\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_VP9_DEC : 0;
 
@@ -519,7 +519,7 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 
 		tmp = (reg >> DWL_PP_E) & 0x01U;
 		if (tmp)
-			pr_info("hantrodec: core[%d] has PP\n", c);
+			PDEBUG("hantrodec: core[%d] has PP\n", c);
 		dev->cfg |=
 			tmp ? 1 << DWL_CLIENT_TYPE_PP : 0;
 
@@ -531,13 +531,13 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 
 			tmp = (reg >> DWL_H264_PIPELINE_E) & 0x01U;
 			if (tmp)
-				pr_info("hantrodec: core[%d] has pipeline H264\n", c);
+				PDEBUG("hantrodec: core[%d] has pipeline H264\n", c);
 			next->cfg |=
 				tmp ? 1 << DWL_CLIENT_TYPE_H264_DEC : 0;
 
 			tmp = (reg >> DWL_JPEG_PIPELINE_E) & 0x01U;
 			if (tmp)
-				pr_info("hantrodec: core[%d] has pipeline JPEG\n", c);
+				PDEBUG("hantrodec: core[%d] has pipeline JPEG\n", c);
 			next->cfg |=
 				tmp ? 1 << DWL_CLIENT_TYPE_JPEG_DEC : 0;
 		}
@@ -1464,7 +1464,6 @@ int hantrodec_probe(dtbnode *pnode)
 {
 	int i, result = 0;
 	struct hantrodec_t *pcore, *auxcore;
-
 #ifndef USE_DTB_PROBE	/*simulate and compatible with old code*/
 	if (bdecprobed != 0)
 		return 0;
@@ -1487,7 +1486,6 @@ int hantrodec_probe(dtbnode *pnode)
 			vfree(pcore);
 			continue;
 		}
-		pr_info("reserveIO success\n");
 
 		ReadCoreConfig(pcore);
 		ResetAsic(pcore);
@@ -1515,7 +1513,6 @@ int hantrodec_probe(dtbnode *pnode)
 				}
 				continue;
 			} else {
-				pr_info("dec irq = %d\n", irqnum);
 				pcore->irqlist[0] = irqnum;
 			}
 		}
@@ -1542,7 +1539,6 @@ int hantrodec_probe(dtbnode *pnode)
 			vfree(pcore);
 			return -ENODEV;
 		}
-		pr_info("reserveIO success\n");
 
 		ReadCoreConfig(pcore);
 		ResetAsic(pcore);
@@ -1574,7 +1570,6 @@ int hantrodec_probe(dtbnode *pnode)
 					}
 					return -ENODEV;
 				} else {
-					pr_info("dec irq = %d\n", pnode->irq[i]);
 					pcore->irqlist[irqn] = pnode->irq[i];
 					irqn++;
 				}
@@ -1587,8 +1582,8 @@ int hantrodec_probe(dtbnode *pnode)
 
 
 	}
-#endif	/*USE_DTB_PROBE*/
 
+#endif	/*USE_DTB_PROBE*/
 	return 0;
 }
 
@@ -1639,15 +1634,15 @@ static int CheckHwId(struct hantrodec_t *dev)
 
 	while (num_hw--) {
 		if (hwid == DecHwId[num_hw]) {
-			pr_info("hantrodec: Supported HW found at 0x%16llx\n",
-			       dev->multicorebase_actual);
+			pr_info("hantrodec: HW at base <0x%llx> with ID 0x%x\n",
+			       dev->multicorebase_actual, hwid);
 			found = 1;
 			dev->hw_id = hwid;
 			break;
 		}
 	}
 	if (!found) {
-		pr_info("hantrodec: Unknown HW found at 0x%16llx\n",
+		pr_info("hantrodec: Unknown HW found at 0x%llx\n",
 		       dev->multicorebase_actual);
 		return 0;
 	}
@@ -1790,7 +1785,7 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 	u32 irq_status_dec;
 	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
 
-	dev = get_decnodes(dev->sliceidx, 0);
+	dev = getfirst_decnodes(parentslice);
 	spin_lock_irqsave(&parentslice->owner_lock, flags);
 
 	while (dev != NULL) {
@@ -1799,14 +1794,13 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 		/* interrupt status register read */
 		irq_status_dec = ioread32((void *)hwregs +
 			HANTRODEC_IRQ_STAT_DEC_OFF);
-		//pr_info("irq = %x\n", irq_status_dec);
 		if (irq_status_dec & HANTRODEC_DEC_IRQ) {
 			/* clear dec IRQ */
 			irq_status_dec &= (~HANTRODEC_DEC_IRQ);
 			iowrite32(irq_status_dec, (void *)hwregs +
 					HANTRODEC_IRQ_STAT_DEC_OFF);
 
-			//pr_info("decoder IRQ received! Core %d\n", i);
+			PDEBUG("decoder IRQ received! Core %d\n", i);
 
 			atomic_inc(&irq_rx);
 
