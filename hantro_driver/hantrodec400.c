@@ -307,6 +307,7 @@ int hantro_dec400_probe(dtbnode *pnode)
 		}
 		dec400_ResetAsic(pdec400);
 		add_dec400node(pnode->sliceidx, pdec400);
+		pr_info("hantrodec400: HW at base <0x%llx>\n", pdec400->core_cfg.dec400corebase);
 	}
 #endif
 	return 0;

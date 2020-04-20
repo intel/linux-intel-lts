@@ -1767,16 +1767,72 @@ bandwidthEncWrite_show(struct device *kdev, struct device_attribute *attr, char 
 	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
 }
 
+static ssize_t
+memory_usage_show(struct device *kdev, struct device_attribute *attr, char *buf)
+{
+
+        struct drm_device *ddev = hantro_dev.drm_dev;
+        struct drm_file *file;
+	struct drm_gem_hantro_object *cma_obj;
+	int sliceidx = findslice_bydev(kdev);
+	int buf_used = 0, alloc_count=0;
+	ssize_t mem_used = 0;
+	bool noprint=false;
+
+        buf_used = snprintf(buf, PAGE_SIZE, "Memory usage for slice %d:\n", sliceidx);
+        buf_used += snprintf(buf + buf_used, PAGE_SIZE, "Physical Addr: Size\n");
+  
+	mutex_lock(&ddev->filelist_mutex);
+	// Go through all open drm files
+        list_for_each_entry(file, &ddev->filelist, lhead) {
+                struct drm_gem_object *gobj;
+                int handle;
+                struct idr *list =  (struct idr *) file->driver_priv;
+		mutex_lock(&ddev->struct_mutex);
+		// Traverse through cma objects added to file's driver_priv
+		// checkout hantro_recordmem
+		idr_for_each_entry(file->driver_priv, gobj, handle) {
+       			if (gobj) {
+				cma_obj = to_drm_gem_hantro_obj(gobj);
+				if (cma_obj && cma_obj->sliceidx ==  sliceidx) {
+					 if (buf_used < ( PAGE_SIZE - 200)) {
+					 	 buf_used += snprintf(buf + buf_used, PAGE_SIZE, "0x%-11llx: %ldK\n", cma_obj->paddr, cma_obj->base.size/1024);
+					 }
+					 else {
+						 // optimization to save buf space due to a PAGE_SIZE mem only
+						 if (noprint == false) { 
+							 buf_used += snprintf(buf + buf_used, PAGE_SIZE, " .... \n");
+							 noprint = true; //print ... only one time
+						 }
+					 }
+
+				           mem_used += cma_obj->base.size;
+					   alloc_count++;
+				}
+			}
+		}
+                mutex_unlock(&ddev->struct_mutex);
+        }
+	
+        mutex_unlock(&ddev->filelist_mutex);
+	buf_used += snprintf(buf + buf_used, PAGE_SIZE,"\n%ldK in %d allocations\n\n",  mem_used/1024, alloc_count);
+
+	return buf_used;
+}
+
+
 static DEVICE_ATTR(BWDecRead, 0444, bandwidthDecRead_show, NULL);
 static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
 static DEVICE_ATTR(BWEncRead, 0444, bandwidthEncRead_show, NULL);
 static DEVICE_ATTR(BWEncWrite, 0444, bandwidthEncWrite_show, NULL);
+static DEVICE_ATTR(mem_usage, 0444, memory_usage_show, NULL);
 
 static struct attribute *hantro_attrs[] = {
 	&dev_attr_BWDecRead.attr,
 	&dev_attr_BWDecWrite.attr,
 	&dev_attr_BWEncRead.attr,
 	&dev_attr_BWEncWrite.attr,
+	&dev_attr_mem_usage.attr,
 	NULL,
 };
 
