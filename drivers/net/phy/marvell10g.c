@@ -554,8 +554,9 @@ out:
 
 static int m88e2110_loopback(struct phy_device *phydev, bool enable)
 {
-	return phy_write_mmd(phydev, MDIO_MMD_PCS, MV_PCS_BASE_T,
-			     M88E2110_LOOPBACK);
+	return phy_modify_mmd(phydev, MDIO_MMD_PCS, MV_PCS_BASE_T,
+			  M88E2110_LOOPBACK,
+			  enable ? M88E2110_LOOPBACK : 0);
 }
 
 static struct phy_driver mv3310_drivers[] = {
