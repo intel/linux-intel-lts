@@ -28,10 +28,12 @@
 
 #include "kmb_regs.h"
 
-#define FCCTEST
+//#define FCCTEST
 #define LCD_TEST
-#define KMB_MAX_WIDTH			1920	/*max width in pixels */
-#define KMB_MAX_HEIGHT			1080	/*max height in pixels */
+#define KMB_MAX_WIDTH			1920 /*max width in pixels */
+#define KMB_MAX_HEIGHT			1080 /*max height in pixels */
+#define KMB_MIN_WIDTH                   1920 /*max width in pixels */
+#define KMB_MIN_HEIGHT                  1080 /*max height in pixels */
 #define KMB_LCD_DEFAULT_CLK		250000000
 #define KMB_MIPI_DEFAULT_CLK		24000000
 #define KMB_MIPI_DEFAULT_CFG_CLK	24000000

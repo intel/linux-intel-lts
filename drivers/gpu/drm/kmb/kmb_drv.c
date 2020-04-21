@@ -359,8 +359,8 @@ static const struct drm_mode_config_funcs kmb_mode_config_funcs = {
 static void kmb_setup_mode_config(struct drm_device *drm)
 {
 	drm_mode_config_init(drm);
-	drm->mode_config.min_width = 0;
-	drm->mode_config.min_height = 0;
+	drm->mode_config.min_width = KMB_MIN_WIDTH;
+	drm->mode_config.min_height = KMB_MIN_HEIGHT;
 	drm->mode_config.max_width = KMB_MAX_WIDTH;
 	drm->mode_config.max_height = KMB_MAX_HEIGHT;
 	drm->mode_config.funcs = &kmb_mode_config_funcs;

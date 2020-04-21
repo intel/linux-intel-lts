@@ -78,6 +78,8 @@ static int kmb_plane_atomic_check(struct drm_plane *plane,
 
 	if (state->crtc_w > KMB_MAX_WIDTH || state->crtc_h > KMB_MAX_HEIGHT)
 		return -EINVAL;
+	if (state->crtc_w < KMB_MIN_WIDTH || state->crtc_h < KMB_MIN_HEIGHT)
+		return -EINVAL;
 	return 0;
 }
 
