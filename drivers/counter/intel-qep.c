@@ -299,7 +299,7 @@ static int intel_qep_action_get(struct counter_device *counter,
 
 	reg = intel_qep_readl(qep->regs, INTEL_QEPCON);
 
-	*action = reg & synapse->signal->id ?
+	*action = (reg & synapse->signal->id) ?
 		INTEL_QEP_SYNAPSE_ACTION_RISING_EDGE :
 		INTEL_QEP_SYNAPSE_ACTION_FALLING_EDGE;
 
