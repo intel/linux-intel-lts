@@ -20,11 +20,14 @@
 #define EHL_GPI_IS	0x100
 #define EHL_GPI_IE	0x120
 
-#define EHL_GPP(r, s, e)				\
+#define INTEL_GPIO_BASE_NOMAP -1
+
+#define EHL_GPP(r, s, e, g)				\
 	{						\
 		.reg_num = (r),				\
 		.base = (s),				\
 		.size = ((e) - (s) + 1),		\
+		.gpio_base = (g),			\
 	}
 
 #define EHL_COMMUNITY(b, s, e, g)			\
@@ -378,35 +381,39 @@ static const struct pinctrl_pin_desc ehl_pins[] = {
 };
 
 static const struct intel_padgroup ehl_community0_gpps[] = {
-	EHL_GPP(0, 0, 25),	/* GPP_B */
-	EHL_GPP(1, 26, 41),	/* GPP_T */
-	EHL_GPP(2, 42, 66),	/* GPP_G */
+	EHL_GPP(0, 0, 25, 0),	/* GPP_B */
+	EHL_GPP(1, 26, 41, 32),	/* GPP_T */
+	EHL_GPP(2, 42, 66, 64),	/* GPP_G */
 };
 
 static const struct intel_padgroup ehl_community1_gpps[] = {
-	EHL_GPP(0, 67, 82),	/* GPP_V */
-	EHL_GPP(1, 83, 106),	/* GPP_H */
-	EHL_GPP(2, 107, 127),	/* GPP_D */
-	EHL_GPP(3, 128, 151),	/* GPP_U */
-	EHL_GPP(4, 152, 179),	/* vGPIO */
+	EHL_GPP(0, 67, 82, 96),	/* GPP_V */
+	EHL_GPP(1, 83, 106, 128),	/* GPP_H */
+	EHL_GPP(2, 107, 127, 160),	/* GPP_D */
+	EHL_GPP(3, 128, 151, 192),	/* GPP_U */
+	EHL_GPP(4, 152, 179, 224),	/* vGPIO */
+};
+
+static const struct intel_padgroup ehl_community2_gpps[] = {
+	/* PLACE HOLDER */
 };
 
 static const struct intel_padgroup ehl_community3_gpps[] = {
-	EHL_GPP(0, 180, 196),	/* CPU */
-	EHL_GPP(1, 197, 198),	/* GPP_S */
-	EHL_GPP(2, 199, 222),	/* GPP_A */
-	EHL_GPP(3, 223, 226),	/* vGPIO_3 */
+	EHL_GPP(0, 180, 196, INTEL_GPIO_BASE_NOMAP),	/* CPU */
+	EHL_GPP(1, 197, 198, 256),	/* GPP_S */
+	EHL_GPP(2, 199, 222, 288),	/* GPP_A */
+	EHL_GPP(3, 223, 226, 320),	/* vGPIO_3 */
 };
 
 static const struct intel_padgroup ehl_community4_gpps[] = {
-	EHL_GPP(0, 227, 250),	/* GPP_C */
-	EHL_GPP(1, 251, 275),	/* GPP_F */
-	EHL_GPP(2, 276, 281),	/* HVCMOS */
-	EHL_GPP(3, 282, 306),	/* GPP_E */
+	EHL_GPP(0, 227, 250, 352),	/* GPP_C */
+	EHL_GPP(1, 251, 275, 384),	/* GPP_F */
+	EHL_GPP(2, 276, 281, INTEL_GPIO_BASE_NOMAP),	/* HVCMOS */
+	EHL_GPP(3, 282, 306, 416),	/* GPP_E */
 };
 
 static const struct intel_padgroup ehl_community5_gpps[] = {
-	EHL_GPP(0, 307, 314),	/* GPP_R */
+	EHL_GPP(0, 307, 314, 448),	/* GPP_R */
 };
 
 static const struct intel_community ehl_communities[] = {
