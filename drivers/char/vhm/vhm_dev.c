@@ -157,10 +157,13 @@ static ssize_t vhm_dev_write(struct file *filep, const char *buffer,
 static void update_assigned_vf_state(uint16_t bdf, bool is_assigned)
 {
 	struct pci_dev *dev = NULL;
+	struct pci_bus *bus;
 
-	dev = pci_get_slot(pci_find_bus(0, PCI_BUS_NUM(bdf)),
-			(bdf & 0xFF));
+	bus = pci_find_bus(0, PCI_BUS_NUM(bdf));
+	if (!bus)
+		return;
 
+	dev = pci_get_slot(bus, (bdf & 0xFF));
 	if (dev) {
 		if (dev->is_virtfn) {
 			if (is_assigned)
