@@ -239,7 +239,7 @@ int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 	if (splice == NULL)
 		return -EINVAL;
 #else
-	if (splice == NULL && sliceindex == slicenum) {		
+	if (splice == NULL && sliceindex == slicenum) {
 		sliceindex = addslice(NULL, 0, 0);
 		if (sliceindex < 0)
 			return -EINVAL;
@@ -278,7 +278,7 @@ int add_encnode(u32 sliceindex, struct hantroenc_t *enccore)
 	if (splice == NULL)
 		return -EINVAL;
 #else
-	if (splice == NULL && sliceindex == slicenum) {		
+	if (splice == NULL && sliceindex == slicenum) {
 		sliceindex = addslice(NULL, 0, 0);
 		if (sliceindex < 0)
 			return -EINVAL;
@@ -337,7 +337,7 @@ int add_dec400node(u32 sliceindex, struct dec400_t *dec400core)
 
 	if (dec400core->core_cfg.parentaddr == splice->rsvmem_addr) {
 		dec400core->parentcore = splice;
-		dec400core->parenttype = CORE_SLICE;	
+		dec400core->parenttype = CORE_SLICE;
 		goto end;
 	}
 	penc = splice->enchdr;
@@ -457,7 +457,7 @@ int slice_remove(void)
 	struct slice_info *post, *prev;
 
 	post = prev = slicehdr;
-	mutex_lock(&slice_mutex);	
+	mutex_lock(&slice_mutex);
 	while (prev != NULL) {
 		post = prev->next;
 		kfree(prev);
@@ -512,7 +512,7 @@ int addslice(struct device *dev, phys_addr_t sliceaddr, phys_addr_t slicesize)
 		struct slice_info * head = slicehdr;
 		while (head->next != NULL)
 			head = head->next;
-		head->next = pslice;	
+		head->next = pslice;
 	}
 	slicenum++;
 	mutex_unlock(&slice_mutex);

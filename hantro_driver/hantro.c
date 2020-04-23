@@ -54,7 +54,7 @@
 //#define HAS_DEC400
 
 /* debug */
-//#define DMA_DEBUG_ALLOC
+#define DMA_DEBUG_ALLOC 0
 #define ENABLE_DEBUG
 #ifdef ENABLE_DEBUG
 #define DBG(...) pr_info(__VA_ARGS__)
@@ -173,7 +173,6 @@ static int hantro_gem_dumb_create_internal(
 	struct drm_gem_object *obj;
 	unsigned int sliceidx = args->handle;
 	struct slice_info *pslice = getslicenode(sliceidx);
-	unsigned long attribs = 0;
 
 	if (pslice == NULL)
 		return -EINVAL;
@@ -265,7 +264,7 @@ static int hantro_gem_dumb_create_internal(
 	init_hantro_resv(&cma_obj->kresv, cma_obj);
 	cma_obj->handle = args->handle;
 #ifdef DMA_DEBUG_ALLOC
-	pr_info("%s:%d,%lx:%llx:%d:%d\n", __func__, sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, args->size);
+	pr_info("%s:%d,%lx:%llx:%llx\n", __func__, sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, args->size);
 #endif
 
 out:
@@ -373,7 +372,7 @@ static int hantro_release_dumb(
 #endif
 
 #ifdef DMA_DEBUG_ALLOC 
-        pr_info("%s:%d,%lx:%llx:%d:%d\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
+        pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
 #endif
 
 	dma_resv_fini(&cma_obj->kresv);
@@ -732,7 +731,7 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 #endif
 
 #ifdef DMA_DEBUG_ALLOC
-        pr_info("%s:%d,%lx:%llx:%d:%d\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
+        pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
 #endif
 
 	}
@@ -1563,7 +1562,6 @@ static void hantro_release(struct drm_device *dev)
 #if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
 	drm_dev_unregister(hantro_dev.drm_dev);
 #else
-	drm_dev_fini(hantro_dev.drm_dev);
 #endif
 }
 #endif
@@ -1572,16 +1570,6 @@ static void hantro_release(struct drm_device *dev)
 static void hantro_gem_dmabuf_release(struct dma_buf *dma_buf)
 {
 	return drm_gem_dmabuf_release(dma_buf);
-}
-
-static void *hantro_gem_dmabuf_kmap(struct dma_buf *dma_buf, unsigned long page_num)
-{
-	return NULL;
-}
-
-static void hantro_gem_dmabuf_kunmap(struct dma_buf *dma_buf, unsigned long page_num,
-			   void *addr)
-{
 }
 
 static int hantro_gem_map_attach(struct dma_buf *dma_buf,
@@ -1760,7 +1748,7 @@ bandwidthEncWrite_show(struct device *kdev, struct device_attribute *attr, char 
 {
 	u32 bandwidth;
 	int sliceidx = findslice_bydev(kdev);
-	
+
 	if (sliceidx < 0)
 		return 0;
 	bandwidth = hantroenc_readbandwidth(sliceidx, 0);
@@ -1787,7 +1775,6 @@ memory_usage_show(struct device *kdev, struct device_attribute *attr, char *buf)
         list_for_each_entry(file, &ddev->filelist, lhead) {
                 struct drm_gem_object *gobj;
                 int handle;
-                struct idr *list =  (struct idr *) file->driver_priv;
 		mutex_lock(&ddev->struct_mutex);
 		// Traverse through cma objects added to file's driver_priv
 		// checkout hantro_recordmem
@@ -1843,13 +1830,13 @@ static const struct attribute_group hantro_attr_group = {
 #ifdef USE_DTB_PROBE
 static int getnodetype(const char *name)
 {
-	if (strstr(name, NODENAME_DECODER) == name)	
+	if (strstr(name, NODENAME_DECODER) == name)
 		return CORE_DEC;
-	if (strstr(name, NODENAME_ENCODER) == name)	
+	if (strstr(name, NODENAME_ENCODER) == name)
 		return CORE_ENC;
-	if (strstr(name, NODENAME_CACHE) == name)	
+	if (strstr(name, NODENAME_CACHE) == name)
 		return CORE_CACHE;
-	if (strstr(name, NODENAME_DEC400) == name)	
+	if (strstr(name, NODENAME_DEC400) == name)
 		return CORE_DEC400;
 	return CORE_UNKNOWN;
 }
@@ -1864,7 +1851,7 @@ static dtbnode * trycreatenode(
 {
 	struct fwnode_handle *fwnode;
 	struct resource r;
-	int i, na, ns, ret;
+	int i, na, ns, ret = 0;
 	int endian = of_device_is_big_endian(ofnode);
 	u32 reg_u32[4];
 	const char *reg_name;
@@ -1936,7 +1923,7 @@ static dtbnode * trycreatenode(
 		} else
 			pnode->irq[i] = -1;
 	}
-		
+
 	switch (pnode->type) {
 	case CORE_DEC:
 		ret = hantrodec_probe(pnode);
@@ -1947,15 +1934,15 @@ static dtbnode * trycreatenode(
 	// Cache and DEC400 disabled for now in hantro driver
 	case CORE_CACHE:
 //		ret = cache_probe(pnode);
-		break;
+//		break;
 	case CORE_DEC400:
 //		ret = hantro_dec400_probe(pnode);
-		break;
+//		break;
 	default:
 		ret = -EINVAL;
 		break;
 	}
-	
+
 	if (ret < 0) {
 		kfree(pnode);
 		pnode = NULL;
@@ -1969,7 +1956,7 @@ static int hantro_analyze_subnode(
 	struct device_node *slice,
 	int sliceidx)
 {
-	dtbnode *head, *nhead, *newtail, *node;	
+	dtbnode *head, *nhead, *newtail, *node;
 
 	head = kzalloc(sizeof(dtbnode), GFP_KERNEL);
 	if (!head)
@@ -1993,7 +1980,7 @@ static int hantro_analyze_subnode(
 						newtail->next = node;
 					node->next = NULL;
 					newtail = node;
-				}	
+				}
 			}
 			node = head->next;
 			kfree(head);
@@ -2025,11 +2012,11 @@ static int hantro_drm_probe(struct platform_device *pdev)
 		else
 			sliceidx = addslice(NULL, -1, 0);	//leave to end of init, set to default drm platform dev and default cma area
 #ifdef USE_DTB_PROBE
-#if USE_HW == 1	
+#if USE_HW == 1
 		/*go throug all sub dtb node' resources */
 		if (sliceidx >= 0 && dev->of_node != NULL)
 			hantro_analyze_subnode(pdev, dev->of_node, sliceidx);
-#endif	
+#endif
 #endif
 	}
 
@@ -2139,7 +2126,6 @@ void __exit hantro_cleanup(void)
 	// reserved mem relese need to be called somewhere
 	// of_reserved_mem_device_release(sinfo->dev);
 	drm_dev_unregister(hantro_dev.drm_dev);
-	drm_dev_fini(hantro_dev.drm_dev);
 	platform_device_unregister(hantro_dev.platformdev);
 	platform_driver_unregister(&hantro_drm_platform_driver);
 	pr_info("hantro driver removed\n");
@@ -2187,7 +2173,6 @@ int __init hantro_init(void)
 
 	if (result < 0) {
 		drm_dev_unregister(hantro_dev.drm_dev);
-		drm_dev_fini(hantro_dev.drm_dev);
 		platform_device_unregister(hantro_dev.platformdev);
 		platform_driver_unregister(&hantro_drm_platform_driver);
 		return result;

@@ -193,7 +193,7 @@ long hantrodec400_ioctl(
 		if (pdec400 == NULL)
 			return -EFAULT;
 
-			return pdec400->core_cfg.iosize;
+		return pdec400->core_cfg.iosize;
 	case DEC400_IOCS_DEC_WRITE_REG:
 		ret = copy_from_user(&coredesc, (void *)arg, sizeof(struct core_desc));
 		if (ret) {

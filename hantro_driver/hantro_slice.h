@@ -186,7 +186,7 @@ struct slice_info {
 	struct device *dev;	//related dev, for drm usage
 	phys_addr_t rsvmem_addr;
 	phys_addr_t memsize;
-	u32 config; 
+	u32 config;
 	int deccore_num;
 	int enccore_num;
 	int dec400core_num;

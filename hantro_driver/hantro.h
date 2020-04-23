@@ -40,7 +40,7 @@
 #include <drm/drm_drv.h>
 #include <drm/drm_fourcc.h>
 #include <drm/drm_framebuffer.h>
-#include <drm/drm_pci.h>
+#include <drm/drm_legacy.h>
 
 /*these domain definitions are identical to hantro_bufmgr.h*/
 #define HANTRO_DOMAIN_NONE    0x00000
@@ -60,8 +60,8 @@
 #define NODETYPE(id) (((u32)id >> 8) &0xff)
 #define SLICE(id) ((u32)(id)>>16)
 
-/* slice index definition is unchanged. 
-    for dec400/cache NODE(id) refers to its parent core number based on NODETYPE 
+/* slice index definition is unchanged.
+    for dec400/cache NODE(id) refers to its parent core number based on NODETYPE
     for dec/enc, NODE(id) refers to its core num, and NODETYPE is unuseful. */
 /*node type for NODETYPE(id), apply to be expanded */
 #define NODE_TYPE_DEC	1

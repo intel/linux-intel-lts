@@ -115,11 +115,13 @@ static void ResetAsic(struct hantroenc_t *dev);
 static int CheckCoreOccupation(struct hantroenc_t *dev);
 static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum);
 
+#ifdef USE_IRQ
 /* IRQ handler */
 #if KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE
 static irqreturn_t hantroenc_isr(int irq, void *dev_id, struct pt_regs *regs);
 #else
 static irqreturn_t hantroenc_isr(int irq, void *dev_id);
+#endif
 #endif
 
 /*********************local variable declaration*****************/
@@ -216,7 +218,7 @@ static int CheckCoreOccupation(struct hantroenc_t *dev)
 	int ret = 0;
 	unsigned long flags;
 	struct slice_info *parentslice = getparentslice(dev, CORE_ENC);
-	
+
 	spin_lock_irqsave(&parentslice->enc_owner_lock, flags);
 	if (!dev->is_reserved) {
 		dev->is_reserved = 1;
@@ -407,7 +409,7 @@ long hantroenc_ioctl(
 		if (pcore == NULL)
 			return -EFAULT;
 		PDEBUG("Release ENC Core\n");
-		tmp = get_slicecorenum(slice, CORE_ENC);	
+		tmp = get_slicecorenum(slice, CORE_ENC);
 		ReleaseEncoder(pcore, &core_info, tmp);
 
 		break;
@@ -550,7 +552,7 @@ int hantroenc_probe(dtbnode *pnode)
 		ResetAsic(pcore);  /* reset hardware */
 		irqn = 0;
 		for (i = 0; i < 4; i++)
-			pcore->irqlist[i] = -1; 
+			pcore->irqlist[i] = -1;
 #ifdef USE_IRQ
 		for (i = 0; i < 4; i++) {
 			if (pnode->irq[i] > 0) {
@@ -651,6 +653,7 @@ static void ReleaseIO(struct hantroenc_t *pcore)
 	release_mem_region(pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
 }
 
+#ifdef USE_IRQ
 #if KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE
 static irqreturn_t hantroenc_isr(int irq, void *dev_id, struct pt_regs *regs)
 #else
@@ -711,6 +714,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 
 	return IRQ_HANDLED;
 }
+#endif
 
 static void ResetAsic(struct hantroenc_t *dev)
 {

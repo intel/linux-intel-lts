@@ -115,11 +115,13 @@ static int bcacheprobed;
 static int ReserveIO(struct cache_dev_t *);
 static void ReleaseIO(struct cache_dev_t *);
 static void ResetAsic(struct cache_dev_t *dev);
+#ifdef USE_IRQ
 #ifndef PCI_BUS
 #if (KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE)
 static irqreturn_t cache_isr(int irq, void *dev_id, struct pt_regs *regs);
 #else
 static irqreturn_t cache_isr(int irq, void *dev_id);
+#endif
 #endif
 #endif
 /*********************local variable declaration*****************/
@@ -659,6 +661,7 @@ static void ReleaseIO(struct cache_dev_t *pccore)
 	release_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize);
 }
 
+#ifdef USE_IRQ
 #ifndef PCI_BUS
 #if (KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE)
 static irqreturn_t cache_isr(int irq, void *dev_id, struct pt_regs *regs)
@@ -709,6 +712,7 @@ static irqreturn_t cache_isr(int irq, void *dev_id)
 		PDEBUG("IRQ received, but not cache's!\n");
 	return IRQ_HANDLED;
 }
+#endif
 #endif
 
 static void ResetAsic(struct cache_dev_t *dev)

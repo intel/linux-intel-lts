@@ -203,8 +203,10 @@ static void ResetAsic(struct hantrodec_t *dev);
 static void dump_regs(struct hantrodec_t *dev);
 #endif
 
+#ifdef USE_IRQ
 /* IRQ handler */
 static irqreturn_t hantrodec_isr(int irq, void *dev_id);
+#endif
 
 atomic_t irq_rx = ATOMIC_INIT(0);
 atomic_t irq_tx = ATOMIC_INIT(0);
@@ -1634,7 +1636,7 @@ static int CheckHwId(struct hantrodec_t *dev)
 
 	while (num_hw--) {
 		if (hwid == DecHwId[num_hw]) {
-			pr_info("hantrodec: HW at base <0x%llx> with ID 0x%x\n",
+			pr_info("hantrodec: HW at base <0x%llx> with ID 0x%lx\n",
 			       dev->multicorebase_actual, hwid);
 			found = 1;
 			dev->hw_id = hwid;
@@ -1767,6 +1769,7 @@ static void ReleaseIO(struct hantrodec_t *dev)
 	release_mem_region(dev->multicorebase_actual, dev->iosize);
 }
 
+#ifdef USE_IRQ
 /*---------------------------------------------------------------------------
  *Function name   : hantrodec_isr
  *Description     : interrupt handler
@@ -1821,6 +1824,7 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 	(void)hwregs;
 	return IRQ_RETVAL(handled);
 }
+#endif
 
 /*---------------------------------------------------------------------------
  *Function name   : ResetAsic
