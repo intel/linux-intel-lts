@@ -132,7 +132,7 @@ static int etnaviv_iommu_find_iova(struct etnaviv_iommu *mmu,
 		 */
 		if (mmu->last_iova) {
 			mmu->last_iova = 0;
-			mmu->need_flush = true;
+			mmu->flush_seq++;
 			continue;
 		}
 
@@ -195,6 +195,7 @@ static int etnaviv_iommu_find_iova(struct etnaviv_iommu *mmu,
 		 * We removed enough mappings so that the new allocation will
 		 * succeed, retry the allocation one more time.
 		 */
+		mmu->flush_seq++;
 	}
 
 	return ret;
@@ -346,7 +347,7 @@ int etnaviv_iommu_get_suballoc_va(struct etnaviv_gpu *gpu, dma_addr_t paddr,
 			return ret;
 		}
 		mmu->last_iova = vram_node->start + size;
-		gpu->mmu->need_flush = true;
+		mmu->flush_seq++;
 		mutex_unlock(&mmu->lock);
 
 		*iova = (u32)vram_node->start;
