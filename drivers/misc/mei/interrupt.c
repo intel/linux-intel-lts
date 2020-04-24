@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ * Copyright (c) 2003-2018, Intel Corporation. All rights reserved.
  * Intel Management Engine Interface (Intel MEI) Linux driver
- * Copyright (c) 2003-2012, Intel Corporation.
  */
 
 #include <linux/export.h>
@@ -131,8 +131,7 @@ static int mei_cl_irq_read_msg(struct mei_cl *cl,
 			case MEI_EXT_HDR_VTAG:
 				vtag = ext;
 				break;
-			case MEI_EXT_HDR_GSC:
-			case MEI_EXT_HDR_NONE:
+			case MEI_EXT_HDR_NONE: /* fallthrough */
 			default:
 				cb->status = -EPROTO;
 				break;
@@ -155,7 +154,6 @@ static int mei_cl_irq_read_msg(struct mei_cl *cl,
 			goto discard;
 		}
 		cb->vtag = vtag->ext_payload[0];
-
 	}
 
 	if (!mei_cl_is_connected(cl)) {
