@@ -80,6 +80,13 @@ err_unlock:
 	return err;
 }
 
+/**
+ * mei_cl_vtag_remove_by_fp - remove vtag that corresponds to fp from list
+ *
+ * @cl: host client
+ * @fp: pointer to file structure
+ *
+ */
 static void mei_cl_vtag_remove_by_fp(const struct mei_cl *cl,
 				     const struct file *fp)
 {
@@ -125,7 +132,10 @@ static int mei_release(struct inode *inode, struct file *file)
 	}
 
 	rets = mei_cl_disconnect(cl);
-	/* Check again: This is necessary since disconnect releases the lock. */
+	/*
+	 * Check again: This is necessary since disconnect releases the lock
+	 * and another client can connect in the meantime.
+	 */
 	if (!list_empty(&cl->vtag_map)) {
 		cl_dbg(dev, cl, "not the last vtag after disconnect\n");
 		mei_cl_flush_queues(cl, file);
@@ -267,6 +277,14 @@ out:
 	return rets;
 }
 
+/**
+ * mei_cl_vtag_by_fp - obtain the vtag by file pointer
+ *
+ * @cl: host client
+ * @fp: pointer to file structure
+ *
+ * Return: vtag value on success, otherwise 0
+ */
 static u8 mei_cl_vtag_by_fp(const struct mei_cl *cl, const struct file *fp)
 {
 	struct mei_cl_vtag *cl_vtag;
@@ -439,6 +457,19 @@ end:
 	return rets;
 }
 
+/**
+ * mei_vt_support_check - check if client support vtags
+ *
+ * Locking: called under "dev->device_lock" lock
+ *
+ * @dev: mei_device
+ * @uuid: client UUID
+ *
+ * Return:
+ *	0 - supported
+ *	-ENOTTY - no such client
+ *	-EOPNOTSUPP - vtags are not supported by client
+ */
 static int mei_vt_support_check(struct mei_device *dev, const uuid_le *uuid)
 {
 	struct mei_me_client *me_cl;
@@ -459,6 +490,18 @@ static int mei_vt_support_check(struct mei_device *dev, const uuid_le *uuid)
 	return ret;
 }
 
+/**
+ * mei_ioctl_connect_vtag - connect to fw client with vtag IOCTL function
+ *
+ * @file: private data of the file object
+ * @in_client_uuid: requested UUID for connection
+ * @client: IOCTL connect data, output parameters
+ * @vtag: vm tag
+ *
+ * Locking: called under "dev->device_lock" lock
+ *
+ * Return: 0 on success, <0 on failure.
+ */
 static int mei_ioctl_connect_vtag(struct file *file,
 				  const uuid_le *in_client_uuid,
 				  struct mei_client *client,
@@ -474,38 +517,52 @@ static int mei_ioctl_connect_vtag(struct file *file,
 
 	dev_dbg(dev->dev, "FW Client %pUl vtag %d\n", in_client_uuid, vtag);
 
-	if (cl->state != MEI_FILE_INITIALIZING &&
-	    cl->state != MEI_FILE_DISCONNECTED)
-		return  -EBUSY;
-
-	list_for_each_entry(pos, &dev->file_list, link) {
-		if (pos == cl)
-			continue;
-		if (!pos->me_cl)
-			continue;
-
-		/* FIXME: just compare me_cl addr */
-		if (uuid_le_cmp(*mei_cl_uuid(pos), *in_client_uuid))
-			continue;
-
-		/* if tag already exist try another fp */
-		if (!IS_ERR(mei_cl_fp_by_vtag(pos, vtag)))
-			continue;
-
-		/* replace cl with acquired one */
-		dev_dbg(dev->dev, "replacing with existing cl\n");
-		mei_cl_unlink(cl);
-		kfree(cl);
-		file->private_data = pos;
-		cl = pos;
+	switch (cl->state) {
+	case MEI_FILE_DISCONNECTED:
+		if (mei_cl_vtag_by_fp(cl, file) != vtag) {
+			dev_err(dev->dev, "reconnect with different vtag\n");
+			return -EINVAL;
+		}
 		break;
+	case MEI_FILE_INITIALIZING:
+		/* malicious connect from another thread may push vtag */
+		if (!IS_ERR(mei_cl_fp_by_vtag(cl, vtag))) {
+			dev_err(dev->dev, "vtag already filled\n");
+			return -EINVAL;
+		}
+
+		list_for_each_entry(pos, &dev->file_list, link) {
+			if (pos == cl)
+				continue;
+			if (!pos->me_cl)
+				continue;
+
+			/* only search for same UUID */
+			if (uuid_le_cmp(*mei_cl_uuid(pos), *in_client_uuid))
+				continue;
+
+			/* if tag already exist try another fp */
+			if (!IS_ERR(mei_cl_fp_by_vtag(pos, vtag)))
+				continue;
+
+			/* replace cl with acquired one */
+			dev_dbg(dev->dev, "replacing with existing cl\n");
+			mei_cl_unlink(cl);
+			kfree(cl);
+			file->private_data = pos;
+			cl = pos;
+			break;
+		}
+
+		cl_vtag = mei_cl_vtag_alloc(file, vtag);
+		if (IS_ERR(cl_vtag))
+			return -ENOMEM;
+
+		list_add_tail(&cl_vtag->list, &cl->vtag_map);
+		break;
+	default:
+		return -EBUSY;
 	}
-
-	cl_vtag = mei_cl_vtag_alloc(file, vtag);
-	if (IS_ERR(cl_vtag))
-		return -ENOMEM;
-
-	list_add_tail(&cl_vtag->list, &cl->vtag_map);
 
 	while (cl->state != MEI_FILE_INITIALIZING &&
 	       cl->state != MEI_FILE_DISCONNECTED &&
@@ -622,7 +679,6 @@ static long mei_ioctl(struct file *file, unsigned int cmd, unsigned long data)
 		rets = mei_vt_support_check(dev, cl_uuid);
 		if (rets == -ENOTTY)
 			goto out;
-
 		if (!rets)
 			rets = mei_ioctl_connect_vtag(file, cl_uuid, props,
 						      vtag);

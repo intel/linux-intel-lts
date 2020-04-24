@@ -352,6 +352,14 @@ static inline void mei_tx_cb_dequeue(struct mei_cl_cb *cb)
 	mei_io_cb_free(cb);
 }
 
+/**
+ * mei_cl_set_read_by_fp - set pending_read flag to vtag struct for given fp
+ *
+ * Locking: called under "dev->device_lock" lock
+ *
+ * @cl: mei client
+ * @fp: pointer to file structure
+ */
 static void mei_cl_set_read_by_fp(const struct mei_cl *cl,
 				  const struct file *fp)
 {
@@ -569,6 +577,7 @@ int mei_cl_flush_queues(struct mei_cl *cl, const struct file *fp)
 	cl_dbg(dev, cl, "remove list entry belonging to cl\n");
 	mei_io_tx_list_free_cl(&cl->dev->write_list, cl, fp);
 	mei_io_tx_list_free_cl(&cl->dev->write_waiting_list, cl, fp);
+	/* free pending and control cb only in final flush */
 	if (!fp) {
 		mei_io_list_flush_cl(&cl->dev->ctrl_wr_list, cl);
 		mei_io_list_flush_cl(&cl->dev->ctrl_rd_list, cl);
@@ -1267,6 +1276,16 @@ static int mei_cl_tx_flow_ctrl_creds_reduce(struct mei_cl *cl)
 	return 0;
 }
 
+/**
+ * mei_cl_vtag_alloc - allocate and fill the vtag structure
+ *
+ * @fp: pointer to file structure
+ * @vtag: vm tag
+ *
+ * Return:
+ * * Pointer to allocated struct - on success
+ * * ERR_PTR(-ENOMEM) on memory allocation failure
+ */
 struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag)
 {
 	struct mei_cl_vtag *cl_vtag;
@@ -1282,6 +1301,16 @@ struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag)
 	return cl_vtag;
 }
 
+/**
+ * mei_cl_fp_by_vtag - obtain the file pointer by vtag
+ *
+ * @cl: host client
+ * @vtag: vm tag
+ *
+ * Return:
+ * * A file pointer - on success
+ * * ERR_PTR(-ENOENT) if vtag is not found in the client vtag list
+ */
 const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag)
 {
 	struct mei_cl_vtag *vtag_l;
@@ -1293,6 +1322,12 @@ const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag)
 	return ERR_PTR(-ENOENT);
 }
 
+/**
+ * mei_cl_reset_read_by_vtag - reset pending_read flag by given vtag
+ *
+ * @cl: host client
+ * @vtag: vm tag
+ */
 static void mei_cl_reset_read_by_vtag(const struct mei_cl *cl, u8 vtag)
 {
 	struct mei_cl_vtag *vtag_l;
@@ -1305,6 +1340,12 @@ static void mei_cl_reset_read_by_vtag(const struct mei_cl *cl, u8 vtag)
 	}
 }
 
+/**
+ * mei_cl_read_vtag_add_fc - add flow control for next pending reader
+ *                           in the vtag list
+ *
+ * @cl: host client
+ */
 static void mei_cl_read_vtag_add_fc(struct mei_cl *cl)
 {
 	struct mei_cl_vtag *cl_vtag;
@@ -1321,7 +1362,16 @@ static void mei_cl_read_vtag_add_fc(struct mei_cl *cl)
 	}
 }
 
-static int mei_cl_vt_support_check(struct mei_cl *cl)
+/**
+ * mei_cl_vt_support_check - check if client support vtags
+ *
+ * @cl: host client
+ *
+ * Return:
+ * * 0 - supported, or not connected at all
+ * * -EOPNOTSUPP - vtags are not supported by client
+ */
+int mei_cl_vt_support_check(const struct mei_cl *cl)
 {
 	struct mei_device *dev = cl->dev;
 
@@ -1334,6 +1384,14 @@ static int mei_cl_vt_support_check(struct mei_cl *cl)
 	return cl->me_cl->props.vt_supported ? 0 : -EOPNOTSUPP;
 }
 
+/**
+ * mei_cl_add_rd_completed - add read completed callback to list with lock
+ *                           and vtag check
+ *
+ * @cl: host client
+ * @cb: callback block
+ *
+ */
 void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb)
 {
 	const struct file *fp;
@@ -1352,6 +1410,20 @@ void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb)
 
 	spin_lock(&cl->rd_completed_lock);
 	list_add_tail(&cb->list, &cl->rd_completed);
+	spin_unlock(&cl->rd_completed_lock);
+}
+
+/**
+ * mei_cl_del_rd_completed - free read completed callback with lock
+ *
+ * @cl: host client
+ * @cb: callback block
+ *
+ */
+void mei_cl_del_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb)
+{
+	spin_lock(&cl->rd_completed_lock);
+	mei_io_cb_free(cb);
 	spin_unlock(&cl->rd_completed_lock);
 }
 
@@ -1649,14 +1721,22 @@ nortpm:
 	return rets;
 }
 
+static inline u8 mei_ext_hdr_set_vtag(struct mei_ext_hdr *ext, u8 vtag)
+{
+	ext->type = MEI_EXT_HDR_VTAG;
+	ext->ext_payload[0] = vtag;
+	ext->length = mei_data2slots(sizeof(*ext));
+	return ext->length;
+}
+
 /**
- * mei_msg_hdr_init - initialize mei message header
+ * mei_msg_hdr_init - allocate and initialize mei message header
  *
  * @cb: message callback structure
  *
- * Return: initialized header
+ * Return: a pointer to initialized header
  */
-static struct mei_msg_hdr *mei_msg_hdr_init(struct mei_cl_cb *cb)
+static struct mei_msg_hdr *mei_msg_hdr_init(const struct mei_cl_cb *cb)
 {
 	size_t hdr_len;
 	struct mei_ext_meta_hdr *meta;
@@ -1664,16 +1744,24 @@ static struct mei_msg_hdr *mei_msg_hdr_init(struct mei_cl_cb *cb)
 	struct mei_msg_hdr *mei_hdr;
 	bool is_ext, is_vtag;
 
-	is_ext = (cb->vtag && cb->buf_idx == 0);
-	is_vtag = is_ext;
+	if (!cb)
+		return ERR_PTR(-EINVAL);
 
+	/* Extended header for vtag is attached only on the first fragment */
+	is_vtag = (cb->vtag && cb->buf_idx == 0);
+	is_ext = is_vtag;
+
+	/* Compute extended header size */
 	hdr_len = sizeof(*mei_hdr);
-	if (is_ext)
-		hdr_len += sizeof(*meta);
 
+	if (!is_ext)
+		goto setup_hdr;
+
+	hdr_len += sizeof(*meta);
 	if (is_vtag)
 		hdr_len += sizeof(*ext);
 
+setup_hdr:
 	mei_hdr = kzalloc(hdr_len, GFP_KERNEL);
 	if (!mei_hdr)
 		return ERR_PTR(-ENOMEM);
@@ -1689,12 +1777,7 @@ static struct mei_msg_hdr *mei_msg_hdr_init(struct mei_cl_cb *cb)
 	meta = (struct mei_ext_meta_hdr *)mei_hdr->extension;
 	if (is_vtag) {
 		meta->count++;
-		meta->size = mei_data2slots(sizeof(*ext));
-
-		ext = meta->hdrs;
-		ext->type = MEI_EXT_HDR_VTAG;
-		ext->ext_payload[0] = cb->vtag;
-		ext->length = mei_data2slots(sizeof(*ext));
+		meta->size += mei_ext_hdr_set_vtag(meta->hdrs, cb->vtag);
 	}
 out:
 	mei_hdr->length = hdr_len - sizeof(*mei_hdr);
@@ -1765,7 +1848,7 @@ int mei_cl_irq_write(struct mei_cl *cl, struct mei_cl_cb *cb,
 		goto err;
 	}
 
-	cl_dbg(dev, cl, "Extend Header %d vtag = %d\n",
+	cl_dbg(dev, cl, "Extended Header %d vtag = %d\n",
 	       mei_hdr->extended, cb->vtag);
 
 	hdr_len = sizeof(*mei_hdr) + mei_hdr->length;
@@ -1890,7 +1973,7 @@ ssize_t mei_cl_write(struct mei_cl *cl, struct mei_cl_cb *cb)
 		goto err;
 	}
 
-	cl_dbg(dev, cl, "Extend Header %d vtag = %d\n",
+	cl_dbg(dev, cl, "Extended Header %d vtag = %d\n",
 	       mei_hdr->extended, cb->vtag);
 
 	hdr_len = sizeof(*mei_hdr) + mei_hdr->length;
@@ -1991,7 +2074,6 @@ free:
 
 	return rets;
 }
-
 
 /**
  * mei_cl_complete - processes completed operation for a client

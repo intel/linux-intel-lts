@@ -174,7 +174,7 @@ struct mei_cl;
  * @fop_type: file operation type
  * @buf: buffer for data associated with the callback
  * @buf_idx: last read index
- * @vtag: vm tag
+ * @vtag: virtual tag
  * @fp: pointer to file structure
  * @status: io status of the cb
  * @internal: communication between driver and FW flag
@@ -193,6 +193,14 @@ struct mei_cl_cb {
 	u32 blocking:1;
 };
 
+/**
+ * struct mei_cl_vtag - file pointer to vtag mapping structure
+ *
+ * @list: link in map queue
+ * @fp: file pointer
+ * @vtag: corresponding vtag
+ * @pending_read: the read is pending on this file
+ */
 struct mei_cl_vtag {
 	struct list_head list;
 	const struct file *fp;
@@ -216,7 +224,7 @@ struct mei_cl_vtag {
  * @me_cl: fw client connected
  * @fp: file associated with client
  * @host_client_id: host id
- * @vtag_map: vm tag map
+ * @vtag_map: vtag map
  * @tx_flow_ctrl_creds: transmit flow credentials
  * @rx_flow_ctrl_creds: receive flow credentials
  * @timer_count:  watchdog timer for operation completion

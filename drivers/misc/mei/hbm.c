@@ -341,7 +341,7 @@ static int mei_hbm_capabilities_req(struct mei_device *dev)
 	memset(&req, 0, sizeof(req));
 	req.hbm_cmd = MEI_HBM_CAPABILITIES_REQ_CMD;
 	if (dev->hbm_f_vt_supported)
-		req.capability_requested[0] = HBM_CAP_VM;
+		req.capability_requested[0] = HBM_CAP_VT;
 
 	ret = mei_hbm_write_message(dev, &mei_hdr, &req);
 	if (ret) {
@@ -1232,7 +1232,7 @@ int mei_hbm_dispatch(struct mei_device *dev, struct mei_msg_hdr *hdr)
 		}
 
 		capability_res = (struct hbm_capability_response *)mei_msg;
-		if (!(capability_res->capability_granted[0] & HBM_CAP_VM))
+		if (!(capability_res->capability_granted[0] & HBM_CAP_VT))
 			dev->hbm_f_vt_supported = 0;
 
 		if (dev->hbm_f_dr_supported) {
