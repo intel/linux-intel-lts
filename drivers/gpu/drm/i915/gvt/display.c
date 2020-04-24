@@ -1942,6 +1942,8 @@ void intel_gvt_switch_display_pipe(struct intel_gvt *gvt, enum pipe pipe,
 		      vgpu_vreg_t(new_v, PIPESRC(v_pipe)) :
 		      d0_pipe_regs->pipesrc);
 
+	intel_gvt_flush_pipe_color(gvt, pipe, new_v);
+
 	for (scaler = 0; scaler < max_scaler; scaler++) {
 		I915_WRITE_FW(SKL_PS_CTRL(pipe, scaler), new_v ?
 			      disp_path->scaler_cfg.ctrl[scaler] :
@@ -2072,6 +2074,57 @@ void intel_gvt_switch_display_pipe(struct intel_gvt *gvt, enum pipe pipe,
 	}
 
 	drm_modeset_unlock(&crtc->base.mutex);
+}
+
+void intel_gvt_flush_pipe_color(struct intel_gvt *gvt, enum pipe pipe,
+				struct intel_vgpu *vgpu)
+{
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+	struct intel_dom0_pipe_regs *pipe_regs =
+		&gvt->pipe_info[pipe].dom0_pipe_regs;
+	int i;
+
+	if (vgpu) {
+		I915_WRITE_FW(SKL_BOTTOM_COLOR(pipe), vgpu_vreg_t(vgpu, SKL_BOTTOM_COLOR(pipe)));
+		I915_WRITE_FW(GAMMA_MODE(pipe), vgpu_vreg_t(vgpu, GAMMA_MODE(pipe)));
+		I915_WRITE_FW(PIPE_CSC_MODE(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_MODE(pipe)));
+		I915_WRITE_FW(PIPE_CSC_PREOFF_HI(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_PREOFF_HI(pipe)));
+		I915_WRITE_FW(PIPE_CSC_PREOFF_ME(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_PREOFF_ME(pipe)));
+		I915_WRITE_FW(PIPE_CSC_PREOFF_LO(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_PREOFF_LO(pipe)));
+		I915_WRITE_FW(PIPE_CSC_COEFF_RY_GY(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_COEFF_RY_GY(pipe)));
+		I915_WRITE_FW(PIPE_CSC_COEFF_BY(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_COEFF_BY(pipe)));
+		I915_WRITE_FW(PIPE_CSC_COEFF_RU_GU(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_COEFF_RU_GU(pipe)));
+		I915_WRITE_FW(PIPE_CSC_COEFF_BU(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_COEFF_BU(pipe)));
+		I915_WRITE_FW(PIPE_CSC_COEFF_RV_GV(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_COEFF_RV_GV(pipe)));
+		I915_WRITE_FW(PIPE_CSC_COEFF_BV(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_COEFF_BV(pipe)));
+		I915_WRITE_FW(PIPE_CSC_POSTOFF_HI(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_POSTOFF_HI(pipe)));
+		I915_WRITE_FW(PIPE_CSC_POSTOFF_ME(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_POSTOFF_ME(pipe)));
+		I915_WRITE_FW(PIPE_CSC_POSTOFF_LO(pipe), vgpu_vreg_t(vgpu, PIPE_CSC_POSTOFF_LO(pipe)));
+		for (i = 0; i < 256; i++) {
+			I915_WRITE_FW(LGC_PALETTE(pipe, i),
+				      vgpu_vreg_t(vgpu, LGC_PALETTE(pipe, i)));
+		}
+	} else {
+		I915_WRITE_FW(SKL_BOTTOM_COLOR(pipe), pipe_regs->bottom_color);
+		I915_WRITE_FW(GAMMA_MODE(pipe), pipe_regs->gamma_mode);
+		I915_WRITE_FW(PIPE_CSC_MODE(pipe), pipe_regs->csc_mode);
+		I915_WRITE_FW(PIPE_CSC_PREOFF_HI(pipe), pipe_regs->csc_preoff_hi);
+		I915_WRITE_FW(PIPE_CSC_PREOFF_ME(pipe), pipe_regs->csc_preoff_me);
+		I915_WRITE_FW(PIPE_CSC_PREOFF_LO(pipe), pipe_regs->csc_preoff_lo);
+		I915_WRITE_FW(PIPE_CSC_COEFF_RY_GY(pipe), pipe_regs->csc_coeff_rygy);
+		I915_WRITE_FW(PIPE_CSC_COEFF_BY(pipe), pipe_regs->csc_coeff_by);
+		I915_WRITE_FW(PIPE_CSC_COEFF_RU_GU(pipe), pipe_regs->csc_coeff_rugu);
+		I915_WRITE_FW(PIPE_CSC_COEFF_BU(pipe), pipe_regs->csc_coeff_bu);
+		I915_WRITE_FW(PIPE_CSC_COEFF_RV_GV(pipe), pipe_regs->csc_coeff_rvgv);
+		I915_WRITE_FW(PIPE_CSC_COEFF_BV(pipe), pipe_regs->csc_coeff_bv);
+		I915_WRITE_FW(PIPE_CSC_POSTOFF_HI(pipe), pipe_regs->csc_postoff_hi);
+		I915_WRITE_FW(PIPE_CSC_POSTOFF_ME(pipe), pipe_regs->csc_postoff_me);
+		I915_WRITE_FW(PIPE_CSC_POSTOFF_LO(pipe), pipe_regs->csc_postoff_lo);
+		for (i = 0; i < 256; i++) {
+			I915_WRITE_FW(LGC_PALETTE(pipe, i),
+				      pipe_regs->lgc_palette[i]);
+		}
+	}
 }
 
 static void intel_gvt_switch_display_work(struct work_struct *w)

@@ -11172,6 +11172,10 @@ static bool haswell_get_pipe_config(struct intel_crtc *crtc,
 	enum intel_display_power_domain power_domain;
 	u64 power_domain_mask;
 	bool active;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_pipe_regs *pipe_regs = NULL;
+#endif
 
 	intel_crtc_init_scalers(crtc, pipe_config);
 
@@ -11238,6 +11242,15 @@ static bool haswell_get_pipe_config(struct intel_crtc *crtc,
 
 	if (INTEL_GEN(dev_priv) >= 9) {
 		u32 tmp = I915_READ(SKL_BOTTOM_COLOR(crtc->pipe));
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+		if (gvt && gvt->pipe_info[crtc->pipe].owner) {
+			pipe_regs = &gvt->pipe_info[crtc->pipe].dom0_pipe_regs;
+			pipe_config->gamma_mode = pipe_regs->gamma_mode;
+			pipe_config->csc_mode = pipe_regs->csc_mode;
+			tmp = pipe_regs->bottom_color;
+		}
+#endif
 
 		if (tmp & SKL_BOTTOM_COLOR_GAMMA_ENABLE)
 			pipe_config->gamma_enable = true;
@@ -17779,6 +17792,14 @@ static void intel_sanitize_crtc(struct intel_crtc *crtc,
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc_state *crtc_state = to_intel_crtc_state(crtc->base.state);
 	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+	bool skip = false;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_pipe_regs *pipe_regs = NULL;
+
+	if (gvt && gvt->pipe_info[crtc->pipe].owner)
+		skip = true;
+#endif
 
 	/* Clear any frame start delays used for debugging left by the BIOS */
 	if (crtc->active && !transcoder_is_dsi(cpu_transcoder)) {
@@ -17805,10 +17826,20 @@ static void intel_sanitize_crtc(struct intel_crtc *crtc,
 		 * Disable any background color set by the BIOS, but enable the
 		 * gamma and CSC to match how we program our planes.
 		 */
-		if (INTEL_GEN(dev_priv) >= 9)
-			I915_WRITE(SKL_BOTTOM_COLOR(crtc->pipe),
-				   SKL_BOTTOM_COLOR_GAMMA_ENABLE |
-				   SKL_BOTTOM_COLOR_CSC_ENABLE);
+		if (INTEL_GEN(dev_priv) >= 9) {
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+			if (gvt) {
+				pipe_regs = &gvt->pipe_info[crtc->pipe].dom0_pipe_regs;
+				pipe_regs->bottom_color =
+					SKL_BOTTOM_COLOR_GAMMA_ENABLE |
+					SKL_BOTTOM_COLOR_CSC_ENABLE;
+			}
+#endif
+			if (!skip)
+				I915_WRITE(SKL_BOTTOM_COLOR(crtc->pipe),
+					   SKL_BOTTOM_COLOR_GAMMA_ENABLE |
+					   SKL_BOTTOM_COLOR_CSC_ENABLE);
+		}
 	}
 
 	/* Adjust the state of the output pipe according to whether we
