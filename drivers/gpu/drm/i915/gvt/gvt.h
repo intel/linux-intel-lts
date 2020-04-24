@@ -303,6 +303,22 @@ struct intel_dom0_pipe_regs {
 	u32 scaler_win_pos[I915_MAX_PIPES];
 	u32 scaler_win_size[I915_MAX_PIPES];
 	u32 scaler_pwr_gate[I915_MAX_PIPES];
+	u32 bottom_color;
+	u32 gamma_mode;
+	u32 csc_mode;
+	u32 csc_preoff_hi;
+	u32 csc_preoff_me;
+	u32 csc_preoff_lo;
+	u32 csc_coeff_rygy;
+	u32 csc_coeff_by;
+	u32 csc_coeff_rugu;
+	u32 csc_coeff_bu;
+	u32 csc_coeff_rvgv;
+	u32 csc_coeff_bv;
+	u32 csc_postoff_hi;
+	u32 csc_postoff_me;
+	u32 csc_postoff_lo;
+	u32 lgc_palette[256];
 };
 
 struct intel_dom0_plane_regs {

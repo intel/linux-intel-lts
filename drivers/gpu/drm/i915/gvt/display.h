@@ -248,6 +248,8 @@ void intel_vgpu_clean_display(struct intel_vgpu *vgpu);
 void intel_gvt_switch_display_pipe(struct intel_gvt *gvt, enum pipe pipe,
 				   struct intel_vgpu *old_v,
 				   struct intel_vgpu *new_v);
+void intel_gvt_flush_pipe_color(struct intel_gvt *gvt, enum pipe pipe,
+				struct intel_vgpu *vgpu);
 
 int pipe_is_enabled(struct intel_vgpu *vgpu, enum pipe pipe);
 
