@@ -33,6 +33,7 @@
 #define PTP_FALLING_EDGE   (1<<2)
 #define PTP_STRICT_FLAGS   (1<<3)
 #define PTP_EXT_OFFSET     (1<<4)
+#define PTP_EVENT_COUNTER_MODE (1<<5)
 #define PTP_EXTTS_EDGES    (PTP_RISING_EDGE | PTP_FALLING_EDGE)
 
 /*
