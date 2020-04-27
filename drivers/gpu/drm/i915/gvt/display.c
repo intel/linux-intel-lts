@@ -831,6 +831,83 @@ static int intel_gvt_switch_pipe_owner(struct intel_gvt *gvt, enum pipe pipe,
 	return 0;
 }
 
+static void direct_display_init_d0_regs(struct intel_gvt *gvt, enum pipe pipe)
+{
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+	struct intel_runtime_info *runtime = RUNTIME_INFO(dev_priv);
+	struct intel_dom0_pipe_regs *pipe_regs = NULL;
+	struct intel_dom0_plane_regs *plane_regs = NULL;
+	enum plane_id plane;
+	int i, level, max_level, scaler, max_scaler = 0;
+	unsigned long irqflags;
+
+	pipe_regs = &gvt->pipe_info[pipe].dom0_pipe_regs;
+	max_scaler = runtime->num_scalers[pipe];
+	max_level = ilk_wm_max_level(dev_priv);
+
+	mmio_hw_access_pre(dev_priv);
+	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
+
+	pipe_regs->pipesrc = I915_READ_FW(PIPESRC(pipe));
+	for (scaler = 0; scaler < max_scaler; scaler++) {
+		pipe_regs->scaler_ctl[scaler] = I915_READ_FW(SKL_PS_CTRL(pipe, scaler));
+		pipe_regs->scaler_win_pos[scaler] = I915_READ_FW(SKL_PS_WIN_POS(pipe, scaler));
+		pipe_regs->scaler_win_size[scaler] = I915_READ_FW(SKL_PS_WIN_SZ(pipe, scaler));
+		pipe_regs->scaler_pwr_gate[scaler] = I915_READ_FW(SKL_PS_PWR_GATE(pipe, scaler));
+	}
+	pipe_regs->bottom_color = I915_READ_FW(SKL_BOTTOM_COLOR(pipe));
+	pipe_regs->gamma_mode = I915_READ_FW(GAMMA_MODE(pipe));
+	pipe_regs->csc_mode = I915_READ_FW(PIPE_CSC_MODE(pipe));
+	pipe_regs->csc_preoff_hi = I915_READ_FW(PIPE_CSC_PREOFF_HI(pipe));
+	pipe_regs->csc_preoff_me = I915_READ_FW(PIPE_CSC_PREOFF_ME(pipe));
+	pipe_regs->csc_preoff_lo = I915_READ_FW(PIPE_CSC_PREOFF_LO(pipe));
+	pipe_regs->csc_coeff_rygy = I915_READ_FW(PIPE_CSC_COEFF_RY_GY(pipe));
+	pipe_regs->csc_coeff_by = I915_READ_FW(PIPE_CSC_COEFF_BY(pipe));
+	pipe_regs->csc_coeff_rugu = I915_READ_FW(PIPE_CSC_COEFF_RU_GU(pipe));
+	pipe_regs->csc_coeff_bu = I915_READ_FW(PIPE_CSC_COEFF_BU(pipe));
+	pipe_regs->csc_coeff_rvgv = I915_READ_FW(PIPE_CSC_COEFF_RV_GV(pipe));
+	pipe_regs->csc_coeff_bv = I915_READ_FW(PIPE_CSC_COEFF_BV(pipe));
+	pipe_regs->csc_postoff_hi = I915_READ_FW(PIPE_CSC_POSTOFF_HI(pipe));
+	pipe_regs->csc_postoff_me = I915_READ_FW(PIPE_CSC_POSTOFF_ME(pipe));
+	pipe_regs->csc_postoff_lo = I915_READ_FW(PIPE_CSC_POSTOFF_LO(pipe));
+	for (i = 0; i < 256; i++) {
+		pipe_regs->lgc_palette[i] = I915_READ_FW(LGC_PALETTE(pipe, i));
+	}
+
+	for_each_universal_plane(dev_priv, pipe, plane) {
+		plane_regs = &gvt->pipe_info[pipe].plane_info[plane].dom0_regs;
+		if (plane == PLANE_CURSOR) {
+			plane_regs->plane_ctl = I915_READ_FW(CURCNTR(pipe));
+			plane_regs->plane_pos = I915_READ_FW(CURPOS(pipe));
+			plane_regs->cur_fbc_ctl = I915_READ_FW(CUR_FBC_CTL(pipe));
+			plane_regs->plane_surf = I915_READ_FW(CURBASE(pipe));
+			for (level = 0; level <= max_level; level++) {
+				plane_regs->plane_wm[level] = I915_READ_FW(CUR_WM(pipe, level));
+			}
+			plane_regs->plane_wm_trans = I915_READ_FW(CUR_WM_TRANS(pipe));
+		} else {
+			plane_regs->plane_ctl = I915_READ_FW(PLANE_CTL(pipe, plane));
+			plane_regs->plane_stride = I915_READ_FW(PLANE_STRIDE(pipe, plane));
+			plane_regs->plane_pos = I915_READ_FW(PLANE_POS(pipe, plane));
+			plane_regs->plane_size = I915_READ_FW(PLANE_SIZE(pipe, plane));
+			plane_regs->plane_keyval = I915_READ_FW(PLANE_KEYVAL(pipe, plane));
+			plane_regs->plane_keymsk = I915_READ_FW(PLANE_KEYMSK(pipe, plane));
+			plane_regs->plane_keymax = I915_READ_FW(PLANE_KEYMAX(pipe, plane));
+			plane_regs->plane_offset = I915_READ_FW(PLANE_OFFSET(pipe, plane));
+			plane_regs->plane_aux_dist = I915_READ_FW(PLANE_AUX_DIST(pipe, plane));
+			plane_regs->plane_aux_offset = I915_READ_FW(PLANE_AUX_OFFSET(pipe, plane));
+			plane_regs->plane_surf = I915_READ_FW(PLANE_SURF(pipe, plane));
+			for (level = 0; level <= max_level; level++) {
+				plane_regs->plane_wm[level] = I915_READ_FW(PLANE_WM(pipe, plane, level));
+			}
+			plane_regs->plane_wm_trans = I915_READ_FW(PLANE_WM_TRANS(pipe, plane));
+		}
+	}
+
+	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
+	mmio_hw_access_post(dev_priv);
+}
+
 int setup_vgpu_virtual_display_path(struct intel_vgpu *vgpu,
 				    struct intel_vgpu_display_path *disp_path)
 {
@@ -908,6 +985,10 @@ int setup_vgpu_virtual_display_path(struct intel_vgpu *vgpu,
 			    disp_path->vsync_interval_ns,
 			    pipe_name(disp_path->p_pipe));
 	}
+
+	// Init d0 regs from HW in case they are not updated by i915 after VBIOS
+	if (disp_path->p_pipe != INVALID_PIPE)
+		direct_display_init_d0_regs(vgpu->gvt, disp_path->p_pipe);
 
 	return ret;
 }
