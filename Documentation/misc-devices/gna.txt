@@ -1,0 +1,44 @@
+Intel(R) Gaussian & Neural Accelerator (Intel(R) GNA)
+=====================================================
+
+Acronyms
+========
+GNA	- Gaussian & Neural Accelerator
+GMM	- Gaussian Mixer Model
+CNN	- Convolutional Neural Network
+RNN	- Recurrent Neural Networks
+DNN	- Deep Neural Networks
+
+Introduction
+============
+The Intel GNA is an Internal PCI fixed device available on several Intel platforms/SoCs.
+Feature set depends on the Intel Chipset SKU.
+
+Intel GNA provides hardware accelerated computation for GMMs and Neural Networks.
+It supports several layer types: affine, recurrent, and convolutional among others.
+Hardware also provides helper layer types for copying and transposing matrices.
+
+Linux Driver
+============
+Intel GNA driver is a pci driver as Intel GNA is a PCI device.
+The driver also registers a character device to expose file operations via dev node.
+
+The driver probes/removes PCI device, implements file operations, handles runtime
+power management, and interacts with hardware through MMIO registers.
+
+IOCTL
+=====
+Intel GNA driver controls the device through IOCTL interface.
+Following IOCTL commands are supported:
+       GNA_MAP_USRPTR lock user pages and GNA MMU setups for DMA transfer.
+       GNA_UNMAP_USRPTR unlocks user pages and releases GNA MMU structures.
+       GNA_SCORE submits a request to the device queue.
+       GNA_WAIT blocks and waits on the submitted request.
+       GNA_CPBLTS gets driver and device capabilities.
+
+Notes
+=====
+- Intel GNA hardware can process one request at given time using FIFO queue.
+- The driver locks user pages at GNA_MAP_USRPTR and keeps them locked until
+  GNA_UNMAP_USRPTR is called from user space.
+- Intel GNA driver supports more than one opened file.
