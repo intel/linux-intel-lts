@@ -86,7 +86,7 @@
 #define LAYER0_DMA_DONE				  (1<<3)
 #define LAYER0_DMA_IDLE				  (1<<4)
 #define LAYER0_DMA_FIFO_OVERFLOW		  (1<<5)
-#define LAYER0_DMA_FIFO_UNDEFLOW		  (1<<6)
+#define LAYER0_DMA_FIFO_UNDERFLOW		  (1<<6)
 #define LAYER0_DMA_CB_FIFO_OVERFLOW		  (1<<7)
 #define LAYER0_DMA_CB_FIFO_UNDERFLOW		  (1<<8)
 #define LAYER0_DMA_CR_FIFO_OVERFLOW		  (1<<9)
@@ -402,6 +402,7 @@
 #define LCD_PWM2_HIGH_LOW			(0x4 * 0x81a)
 #define LCD_VIDEO0_DMA0_BYTES			(0x4 * 0xb00)
 #define LCD_VIDEO0_DMA0_STATE			(0x4 * 0xb01)
+#define LCD_DMA_STATE_ACTIVE			  (1 << 3)
 #define LCD_VIDEO0_DMA1_BYTES			(0x4 * 0xb02)
 #define LCD_VIDEO0_DMA1_STATE			(0x4 * 0xb03)
 #define LCD_VIDEO0_DMA2_BYTES			(0x4 * 0xb04)
@@ -750,4 +751,8 @@
 #define MSSCPU_CPR_CLK_EN			(0x0)
 #define MSSCPU_CPR_RST_EN			(0x10)
 #define BIT_MASK_16				(0xffff)
+/*icam lcd qos */
+#define LCD_QOS_PRORITY				(0x8)
+#define LCD_QOS_MODE				(0xC)
+#define LCD_QOS_BW				(0x10)
 #endif /* __KMB_REGS_H__ */

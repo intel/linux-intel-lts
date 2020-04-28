@@ -34,28 +34,31 @@
 #define KMB_MAX_HEIGHT			1080 /*max height in pixels */
 #define KMB_MIN_WIDTH                   1920 /*max width in pixels */
 #define KMB_MIN_HEIGHT                  1080 /*max height in pixels */
-#define KMB_LCD_DEFAULT_CLK		250000000
+#define KMB_LCD_DEFAULT_CLK		200000000
 #define KMB_MIPI_DEFAULT_CLK		24000000
 #define KMB_MIPI_DEFAULT_CFG_CLK	24000000
 #define KMB_SYS_CLK_MHZ			500
 
 #define crtc_to_kmb_priv(x)	container_of(x, struct kmb_drm_private, crtc)
 
-
+#define ICAM_MMIO		0x3b100000
+#define ICAM_LCD_OFFSET		0x1080
+#define ICAM_MMIO_SIZE		0x2000
 struct kmb_drm_private {
-	struct drm_device drm;
-	void __iomem *lcd_mmio;
-	void __iomem *mipi_mmio;
-	void __iomem *msscam_mmio;
-	unsigned char n_layers;
-	struct clk *clk;
-	struct drm_crtc crtc;
-	struct kmb_plane *plane;
-	struct drm_atomic_state *state;
-	spinlock_t irq_lock;
-	int irq_lcd;
-	int irq_mipi;
-	dma_addr_t fb_addr;
+	struct drm_device		drm;
+	void __iomem			*lcd_mmio;
+	void __iomem			*mipi_mmio;
+	void __iomem			*msscam_mmio;
+	void __iomem                    *icamlcd_mmio;
+	unsigned char			n_layers;
+	struct clk			*clk;
+	struct drm_crtc			crtc;
+	struct kmb_plane		*plane;
+	struct drm_atomic_state		*state;
+	spinlock_t			irq_lock;
+	int				irq_lcd;
+	int				irq_mipi;
+	dma_addr_t			fb_addr;
 };
 
 static inline struct kmb_drm_private *to_kmb(const struct drm_device *dev)

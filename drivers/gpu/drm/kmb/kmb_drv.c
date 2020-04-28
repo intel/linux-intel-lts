@@ -51,10 +51,10 @@
 #include "kmb_dsi.h"
 
 //#define DEBUG
-
 /* IRQ handler */
 static irqreturn_t kmb_isr(int irq, void *arg);
 
+int under_flow = 0, flush_done = 0, layer_no = 0;
 static struct clk *clk_lcd;
 static struct clk *clk_mipi;
 static struct clk *clk_mipi_ecfg;
@@ -133,6 +133,7 @@ static void __iomem *kmb_map_mmio(struct platform_device *pdev, char *name)
 	return mem;
 }
 
+//#define ICAM_LCD_QOS
 static int kmb_load(struct drm_device *drm, unsigned long flags)
 {
 	struct kmb_drm_private *dev_p = drm->dev_private;
@@ -140,6 +141,9 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	int irq_lcd;
 	int ret = 0;
 	unsigned long clk;
+#ifdef ICAM_LCD_QOS
+	int val = 0;
+#endif
 
 	/* Map MIPI MMIO registers */
 	dev_p->mipi_mmio = kmb_map_mmio(pdev, "mipi_regs");
@@ -173,6 +177,13 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		iounmap(dev_p->mipi_mmio);
 		return -ENOMEM;
 	}
+#ifdef ICAM_LCD_QOS
+	dev_p->icamlcd_mmio = ioremap_nocache(ICAM_MMIO, ICAM_MMIO_SIZE);
+	if (IS_ERR(dev_p->icamlcd_mmio)) {
+		DRM_ERROR("failed to map ICAM registers\n");
+		return -ENOMEM;
+	}
+#endif
 #define KMB_CLOCKS
 #ifdef KMB_CLOCKS
 	/* Enable display clocks */
@@ -268,7 +279,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 	kmb_set_bitmask_msscam(dev_p, MSS_CAM_CLK_CTRL, 0x1fff);
 	kmb_set_bitmask_msscam(dev_p, MSS_CAM_RSTN_CTRL, 0xffffffff);
 
-#endif //KMB_CLOCKS
+#endif				//KMB_CLOCKS
 
 	/* Register irqs here - section 17.3 in databook
 	 * lists LCD at 79 and 82 for MIPI under MSS CPU -
@@ -331,11 +342,29 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 
 	dev_p->irq_lcd = irq_lcd;
 
+	/* icam tests */
+#ifdef ICAM_LCD_QOS
+	/*generator mode = 0 fixed mode=1 limiter */
+	writel(1, (dev_p->icamlcd_mmio + ICAM_LCD_OFFSET + LCD_QOS_MODE));
+	/* b/w */
+	writel(0x60, (dev_p->icamlcd_mmio + ICAM_LCD_OFFSET + LCD_QOS_BW));
+
+	/* set priority.p1 */
+	val = readl(dev_p->icamlcd_mmio + ICAM_LCD_OFFSET + LCD_QOS_PRORITY);
+	val &= ~(0x700);
+	writel(val | 0x100,
+	       (dev_p->icamlcd_mmio + ICAM_LCD_OFFSET + LCD_QOS_PRORITY));
+
+	DRM_INFO("ICAM mode = 0x%x, priority = 0x%x bandwidth=0x%x",
+		 readl(dev_p->icamlcd_mmio + 0x1080 + LCD_QOS_MODE),
+		 readl(dev_p->icamlcd_mmio + 0x1080 + LCD_QOS_PRORITY),
+		 readl(dev_p->icamlcd_mmio + 0x1080 + LCD_QOS_BW));
+#endif
 	return 0;
 
-irq_fail:
+ irq_fail:
 	drm_crtc_cleanup(&dev_p->crtc);
-setup_fail:
+ setup_fail:
 	of_reserved_mem_device_release(drm->dev);
 
 	return ret;
@@ -368,13 +397,15 @@ static void kmb_setup_mode_config(struct drm_device *drm)
 
 static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 {
-	unsigned long status, val;
-	int plane_id;
+	volatile unsigned long status, val, val1;
+	int plane_id, dma0_state, dma1_state;
 	struct kmb_drm_private *dev_p = dev->dev_private;
 
 	status = kmb_read_lcd(dev->dev_private, LCD_INT_STATUS);
+
 	if (status & LCD_INT_EOF) {
 		/* TODO - handle EOF interrupt? */
+
 		kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_EOF);
 
 		/* When disabling/enabling LCD layers, the change takes effect
@@ -396,6 +427,30 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 				plane_status[plane_id].disable = false;
 			}
 		}
+		if (under_flow) {
+			/*DMA Recovery after underflow */
+			DRM_INFO("EOF:S");
+			dma0_state = (layer_no == 0) ?
+			    LCD_VIDEO0_DMA0_STATE : LCD_VIDEO1_DMA0_STATE;
+			dma1_state = (layer_no == 0) ?
+			    LCD_VIDEO0_DMA1_STATE : LCD_VIDEO1_DMA1_STATE;
+
+			do {
+				kmb_write_lcd(dev_p, LCD_FIFO_FLUSH, 1);
+				val = kmb_read_lcd(dev_p, dma0_state)
+				    & LCD_DMA_STATE_ACTIVE;
+				val1 = kmb_read_lcd(dev_p, dma1_state)
+				    & LCD_DMA_STATE_ACTIVE;
+			} while ((val || val1));
+			/*disable dma */
+			kmb_clr_bitmask_lcd(dev_p, LCD_LAYERn_DMA_CFG(layer_no),
+					    LCD_DMA_LAYER_ENABLE);
+			kmb_write_lcd(dev_p, LCD_FIFO_FLUSH, 1);
+			flush_done = 1;
+			under_flow = 0;
+			DRM_INFO("EOF:E ");
+		}
+
 	}
 
 	if (status & LCD_INT_LINE_CMP) {
@@ -409,48 +464,86 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 		val = (val & LCD_VSTATUS_VERTICAL_STATUS_MASK);
 		switch (val) {
 		case LCD_VSTATUS_COMPARE_VSYNC:
+			/* Clear vertical compare interrupt */
+			kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_VERT_COMP);
+			if (flush_done) {
+				kmb_set_bitmask_lcd(dev_p,
+						    LCD_LAYERn_DMA_CFG
+						    (layer_no),
+						    LCD_DMA_LAYER_ENABLE);
+				flush_done = 0;
+			}
+			drm_handle_vblank(dev, 0);
+			break;
 		case LCD_VSTATUS_COMPARE_BACKPORCH:
 		case LCD_VSTATUS_COMPARE_ACTIVE:
 		case LCD_VSTATUS_COMPARE_FRONT_PORCH:
-			/* clear vertical compare interrupt */
-			kmb_write_lcd(dev->dev_private, LCD_INT_CLEAR,
-				      LCD_INT_VERT_COMP);
-			drm_handle_vblank(dev, 0);
+			kmb_write_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_VERT_COMP);
 			break;
 		}
 	}
-
 	if (status & LCD_INT_DMA_ERR) {
-		val = (status & LCD_INT_DMA_ERR);
+		val =
+		    (status & LCD_INT_DMA_ERR &
+		     kmb_read_lcd(dev_p, LCD_INT_ENABLE));
 		/* LAYER0 - VL0 */
-		if (val & LAYER0_DMA_FIFO_UNDEFLOW)
-			DRM_INFO("LAYER0:VL0 DMA UNDERFLOW val = 0x%lx", val);
+		if (val & (LAYER0_DMA_FIFO_UNDERFLOW |
+			   LAYER0_DMA_CB_FIFO_UNDERFLOW |
+			   LAYER0_DMA_CR_FIFO_UNDERFLOW)) {
+			under_flow++;
+			DRM_INFO
+			    ("!LAYER0:VL0 DMA UNDERFLOW val = 0x%lx,under_flow=%d",
+			     val, under_flow);
+			/*disable underflow inerrupt */
+			kmb_clr_bitmask_lcd(dev_p, LCD_INT_ENABLE,
+					    LAYER0_DMA_FIFO_UNDERFLOW |
+					    LAYER0_DMA_CB_FIFO_UNDERFLOW |
+					    LAYER0_DMA_CR_FIFO_UNDERFLOW);
+			kmb_set_bitmask_lcd(dev_p, LCD_INT_CLEAR,
+					    LAYER0_DMA_CB_FIFO_UNDERFLOW |
+					    LAYER0_DMA_FIFO_UNDERFLOW |
+					    LAYER0_DMA_CR_FIFO_UNDERFLOW);
+			/*disable auto restart mode */
+			kmb_clr_bitmask_lcd(dev_p, LCD_LAYERn_DMA_CFG(0),
+				    LCD_DMA_LAYER_CONT_PING_PONG_UPDATE);
+			layer_no = 0;
+		}
+
 		if (val & LAYER0_DMA_FIFO_OVERFLOW)
 			DRM_INFO("LAYER0:VL0 DMA OVERFLOW val = 0x%lx", val);
 		if (val & LAYER0_DMA_CB_FIFO_OVERFLOW)
 			DRM_INFO("LAYER0:VL0 DMA CB OVERFLOW val = 0x%lx", val);
-		if (val & LAYER0_DMA_CB_FIFO_UNDERFLOW)
-			DRM_INFO("LAYER0:VL0 DMA CB UNDERFLOW val = 0x%lx",
-				 val);
-		if (val & LAYER0_DMA_CR_FIFO_UNDERFLOW)
-			DRM_INFO("LAYER0:VL0 DMA CR UNDERFLOW val = 0x%lx",
-				 val);
 		if (val & LAYER0_DMA_CR_FIFO_OVERFLOW)
 			DRM_INFO("LAYER0:VL0 DMA CR OVERFLOW val = 0x%lx", val);
 
 		/* LAYER1 - VL1 */
-		if (val & LAYER1_DMA_FIFO_UNDERFLOW)
-			DRM_INFO("LAYER1:VL1 DMA UNDERFLOW val = 0x%lx", val);
+		if (val & (LAYER1_DMA_FIFO_UNDERFLOW |
+			   LAYER1_DMA_CB_FIFO_UNDERFLOW |
+			   LAYER1_DMA_CR_FIFO_UNDERFLOW)) {
+			under_flow++;
+			DRM_INFO
+			    ("!LAYER1:VL1 DMA UNDERFLOW val = 0x%lx, under_flow=%d",
+			     val, under_flow);
+			/*disable underflow inerrupt */
+			kmb_clr_bitmask_lcd(dev_p, LCD_INT_ENABLE,
+					    LAYER1_DMA_FIFO_UNDERFLOW |
+					    LAYER1_DMA_CB_FIFO_UNDERFLOW |
+					    LAYER1_DMA_CR_FIFO_UNDERFLOW);
+			kmb_set_bitmask_lcd(dev_p, LCD_INT_CLEAR,
+					    LAYER1_DMA_CB_FIFO_UNDERFLOW |
+					    LAYER1_DMA_FIFO_UNDERFLOW |
+					    LAYER1_DMA_CR_FIFO_UNDERFLOW);
+			/*disable auto restart mode */
+			kmb_clr_bitmask_lcd(dev_p, LCD_LAYERn_DMA_CFG(1),
+				    LCD_DMA_LAYER_CONT_PING_PONG_UPDATE);
+			layer_no = 1;
+		}
+
+		/* LAYER1 - VL1 */
 		if (val & LAYER1_DMA_FIFO_OVERFLOW)
 			DRM_INFO("LAYER1:VL1 DMA OVERFLOW val = 0x%lx", val);
 		if (val & LAYER1_DMA_CB_FIFO_OVERFLOW)
 			DRM_INFO("LAYER1:VL1 DMA CB OVERFLOW val = 0x%lx", val);
-		if (val & LAYER1_DMA_CB_FIFO_UNDERFLOW)
-			DRM_INFO("LAYER1:VL1 DMA CB UNDERFLOW val = 0x%lx",
-				 val);
-		if (val & LAYER1_DMA_CR_FIFO_UNDERFLOW)
-			DRM_INFO("LAYER1:VL1 DMA CR UNDERFLOW val = 0x%lx",
-				 val);
 		if (val & LAYER1_DMA_CR_FIFO_OVERFLOW)
 			DRM_INFO("LAYER1:VL1 DMA CR OVERFLOW val = 0x%lx", val);
 
@@ -465,7 +558,6 @@ static irqreturn_t handle_lcd_irq(struct drm_device *dev)
 			DRM_INFO("LAYER3:GL1 DMA UNDERFLOW val = 0x%lx", val);
 		if (val & LAYER3_DMA_FIFO_UNDERFLOW)
 			DRM_INFO("LAYER3:GL1 DMA OVERFLOW val = 0x%lx", val);
-
 	}
 
 	if (status & LCD_INT_LAYER) {
@@ -648,11 +740,11 @@ static int kmb_probe(struct platform_device *pdev)
 #endif
 	return 0;
 
-err_register:
+ err_register:
 	drm_kms_helper_poll_fini(drm);
-err_vblank:
+ err_vblank:
 	pm_runtime_disable(drm->dev);
-err_free:
+ err_free:
 	drm_mode_config_cleanup(drm);
 	dev_set_drvdata(dev, NULL);
 	drm_dev_put(drm);

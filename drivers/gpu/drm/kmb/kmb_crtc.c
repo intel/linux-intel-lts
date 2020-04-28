@@ -116,25 +116,25 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	vm.vfront_porch = 2;
 //      vm.vback_porch = m->crtc_vtotal - m->crtc_vsync_end;
 	vm.vback_porch = 2;
-//      vm.vsync_len = m->crtc_vsync_end - m->crtc_vsync_start;
-	vm.vsync_len = 1;
+//	vm.vsync_len = m->crtc_vsync_end - m->crtc_vsync_start;
+	vm.vsync_len = 8;
 	//vm.hfront_porch = m->crtc_hsync_start - m->crtc_hdisplay;
 	vm.hfront_porch = 0;
 	vm.hback_porch = 0;
 	//vm.hback_porch = m->crtc_htotal - m->crtc_hsync_end;
-	vm.hsync_len = 7;
-//      vm.hsync_len = m->crtc_hsync_end - m->crtc_hsync_start;
+	vm.hsync_len = 28;
+//	vm.hsync_len = m->crtc_hsync_end - m->crtc_hsync_start;
 
-	vsync_start_offset = m->crtc_vsync_start - m->crtc_hsync_start;
-	vsync_end_offset = m->crtc_vsync_end - m->crtc_hsync_end;
+	vsync_start_offset =  m->crtc_vsync_start -  m->crtc_hsync_start;
+	vsync_end_offset =  m->crtc_vsync_end - m->crtc_hsync_end;
 
-	DRM_DEBUG
-	    ("%s : %dactive height= %d vbp=%d vfp=%d vsync-w=%d h-active=%d h-bp=%d h-fp=%d hysnc-l=%d",
-	     __func__, __LINE__, m->crtc_vdisplay, vm.vback_porch,
-	     vm.vfront_porch, vm.vsync_len, m->crtc_hdisplay, vm.hback_porch,
-	     vm.hfront_porch, vm.hsync_len);
+	DRM_DEBUG("%s : %dactive height= %d vbp=%d vfp=%d vsync-w=%d h-active=%d h-bp=%d h-fp=%d hysnc-l=%d",
+			__func__, __LINE__,
+			m->crtc_vdisplay, vm.vback_porch, vm.vfront_porch,
+			vm.vsync_len, m->crtc_hdisplay, vm.hback_porch,
+			vm.hfront_porch, vm.hsync_len);
 	kmb_write_lcd(dev->dev_private, LCD_V_ACTIVEHEIGHT,
-		      m->crtc_vdisplay - 1);
+			m->crtc_vdisplay - 1);
 	kmb_write_lcd(dev->dev_private, LCD_V_BACKPORCH, vm.vback_porch);
 	kmb_write_lcd(dev->dev_private, LCD_V_FRONTPORCH, vm.vfront_porch);
 	kmb_write_lcd(dev->dev_private, LCD_VSYNC_WIDTH, vm.vsync_len - 1);
@@ -146,7 +146,8 @@ static void kmb_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	/*this is hardcoded as 0 in the Myriadx code */
 	kmb_write_lcd(dev->dev_private, LCD_VSYNC_START, 0);
 	kmb_write_lcd(dev->dev_private, LCD_VSYNC_END, 0);
-
+	/* back ground color */
+	kmb_write_lcd(dev->dev_private, LCD_BG_COLOUR_LS, 0x4);
 	if (m->flags == DRM_MODE_FLAG_INTERLACE) {
 		kmb_write_lcd(dev->dev_private,
 			      LCD_VSYNC_WIDTH_EVEN, vm.vsync_len - 1);

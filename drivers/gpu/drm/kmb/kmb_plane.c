@@ -43,7 +43,6 @@
 #include "kmb_drv.h"
 
 struct layer_status plane_status[KMB_MAX_PLANES];
-
 const uint32_t layer_irqs[] = {
 	LCD_INT_VL0,
 	LCD_INT_VL1,
@@ -268,12 +267,16 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	fb = plane->state->fb;
 	if (!fb)
 		return;
-
 	num_planes = fb->format->num_planes;
 	kmb_plane = to_kmb_plane(plane);
 	plane_id = kmb_plane->id;
 
 	dev_p = plane->dev->dev_private;
+
+	if (under_flow || flush_done) {
+		DRM_DEBUG("plane_update:underflow!!!! returning");
+		return;
+	}
 
 	src_w = (plane->state->src_w >> 16);
 	src_h = plane->state->src_h >> 16;
@@ -394,6 +397,11 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
 	DRM_DEBUG("dma_cfg=0x%x LCD_DMA_CFG=0x%x\n", dma_cfg,
 		  kmb_read_lcd(dev_p, LCD_LAYERn_DMA_CFG(plane_id)));
+
+	kmb_set_bitmask_lcd(dev_p, LCD_INT_CLEAR, LCD_INT_EOF |
+			LCD_INT_DMA_ERR);
+	kmb_set_bitmask_lcd(dev_p, LCD_INT_ENABLE, LCD_INT_EOF |
+			LCD_INT_DMA_ERR);
 #endif
 }
 
