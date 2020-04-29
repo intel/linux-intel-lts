@@ -178,7 +178,12 @@ static inline u64 *xskq_validate_addr(struct xsk_queue *q, u64 *addr,
 		struct xdp_umem_ring *ring = (struct xdp_umem_ring *)q->ring;
 		unsigned int idx = q->cons_tail & q->ring_mask;
 
-		*addr = READ_ONCE(ring->desc[idx]) & q->chunk_mask;
+		/* WORKAROUND for stmmac AF_XDP Zero-Copy rx-path:
+		 * This enables the driver to map the dynamic dma_addresses
+		 * correctly as otherwise all packets will use a single
+		 * dma_address, causing packet duplication/losses
+		 */
+		*addr = (idx * 4096) & q->chunk_mask;
 
 		if (umem->flags & XDP_UMEM_UNALIGNED_CHUNK_FLAG) {
 			if (xskq_is_valid_addr_unaligned(q, *addr,

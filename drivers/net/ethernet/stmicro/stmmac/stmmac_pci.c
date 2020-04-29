@@ -176,6 +176,7 @@ static int remove_intel_mgbe_phy_conv(struct mii_bus *bus)
 		return -1;
 
 	mdio_device_remove(mdiodev);
+	mdio_device_free(mdiodev);
 
 	return 0;
 }
