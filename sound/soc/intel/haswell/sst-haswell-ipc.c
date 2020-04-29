@@ -98,7 +98,6 @@
 #define IPC_FW_READY		(0x1 << 29)
 #define IPC_STATUS_MASK		(0x3 << 30)
 
-#define IPC_EMPTY_LIST_SIZE	8
 #define IPC_MAX_STREAMS		4
 
 /* Mailbox */
@@ -633,7 +632,6 @@ static int hsw_process_reply(struct sst_hsw *hsw, u32 header)
 		hsw_stream_update(hsw, msg);
 
 	/* wake up and return the error if we have waiters on this message ? */
-	list_del(&msg->list);
 	sst_ipc_tx_msg_reply_complete(&hsw->ipc, msg);
 
 	return 1;
@@ -815,9 +813,6 @@ static irqreturn_t hsw_irq_thread(int irq, void *context)
 	}
 
 	spin_unlock_irqrestore(&sst->spinlock, flags);
-
-	/* continue to send any remaining messages... */
-	schedule_work(&ipc->kwork);
 
 	return IRQ_HANDLED;
 }
@@ -1658,8 +1653,6 @@ int sst_hsw_dsp_runtime_suspend(struct sst_hsw *hsw)
 	ret = sst_hsw_dx_state_dump(hsw);
 	if (ret < 0)
 		return ret;
-
-	sst_ipc_drop_all(&hsw->ipc);
 
 	return 0;
 }

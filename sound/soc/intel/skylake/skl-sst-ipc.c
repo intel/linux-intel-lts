@@ -42,8 +42,6 @@
 
 #define IPC_TIMEOUT_MSECS		3000
 
-#define IPC_EMPTY_LIST_SIZE		8
-
 #define IPC_MSG_TARGET_SHIFT		30
 #define IPC_MSG_TARGET_MASK		0x1
 #define IPC_MSG_TARGET(x)		(((x) & IPC_MSG_TARGET_MASK) \
@@ -371,19 +369,14 @@ int skl_ipc_check_D0i0(struct sst_dsp *dsp, bool state)
 static struct ipc_message *skl_ipc_reply_get_msg(struct sst_generic_ipc *ipc,
 				u64 ipc_header)
 {
-	struct ipc_message *msg =  NULL;
-	struct skl_ipc_header *header = (struct skl_ipc_header *)(&ipc_header);
-
-	if (list_empty(&ipc->rx_list)) {
-		dev_err(ipc->dev, "ipc: rx list is empty but received 0x%x\n",
-			header->primary);
-		goto out;
+	if (!ipc->msg) {
+		dev_err(ipc->dev,
+			"Received 0x%llx, no ongoing communication\n",
+			ipc_header);
+		return NULL;
 	}
 
-	msg = list_first_entry(&ipc->rx_list, struct ipc_message, list);
-
-out:
-	return msg;
+	return ipc->msg;
 
 }
 
@@ -650,15 +643,11 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 		}
 	}
 
-	if (!list_empty(&ipc->rx_list)) {
-		struct ipc_message *msg =
-			list_first_entry(&ipc->rx_list, struct ipc_message,
-					 list);
-
-		spin_lock_irqsave(&ipc->dsp->spinlock, flags);
-		sst_ipc_tx_msg_reply_complete(ipc, msg);
-		spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+	if (mutex_is_locked(&ipc->mutex)) {
+		sst_ipc_tx_msg_reply_complete(ipc, ipc->msg);
 	}
+	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 
 	return ret;
 }
@@ -735,7 +724,6 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 	}
 
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
-	list_del(&msg->list);
 	sst_ipc_tx_msg_reply_complete(ipc, msg);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 }
@@ -782,10 +770,6 @@ irqreturn_t skl_dsp_irq_thread_handler(int irq, void *context)
 			SKL_ADSP_REG_HIPCT_BUSY, SKL_ADSP_REG_HIPCT_BUSY);
 
 		skl_ipc_int_enable(dsp);
-
-		/* continue to send any remaining messages... */
-		if (!list_empty(&ipc->tx_list))
-			queue_work(system_highpri_wq, &ipc->kwork);
 
 		ret =  IRQ_HANDLED;
 	}
