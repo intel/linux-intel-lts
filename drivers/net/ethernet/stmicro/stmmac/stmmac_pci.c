@@ -230,6 +230,13 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 
 		/* Disable Priority config by default */
 		plat->tx_queues_cfg[i].use_prio = false;
+
+		/* Enable per queue TBS support on half of the Tx Queues.
+		 * For examples, if tx_queue_to_use = 8, then Tx Queue 4, 5, 6,
+		 * and 7 will have TBS support.
+		 */
+		if (plat->tsn_tbs_en && i >= (plat->tx_queues_to_use / 2))
+			plat->tx_queues_cfg[i].tbs_en = 1;
 	}
 
 	/* FIFO size is 4096 bytes for 1 tx/rx queue */

@@ -48,9 +48,13 @@ struct stmmac_tx_info {
 	bool is_jumbo;
 };
 
+#define STMMAC_TBS_AVAIL	BIT(0)
+#define STMMAC_TBS_EN		BIT(1)
+
 /* Frequently used values are kept adjacent for cache effect */
 struct stmmac_tx_queue {
 	u32 tx_count_frames;
+	int tbs;
 	struct timer_list txtimer;
 	u32 queue_index;
 	struct stmmac_priv *priv_data;
@@ -236,7 +240,6 @@ struct stmmac_priv {
 	int tx_lpi_enabled;
 	unsigned int mode;
 	unsigned int chain_mode;
-	int enhanced_tx_desc;
 	int extend_desc;
 	struct hwtstamp_config tstamp_config;
 	struct ptp_clock *ptp_clock;
