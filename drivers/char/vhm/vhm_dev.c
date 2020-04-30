@@ -891,9 +891,13 @@ static int __init vhm_init(void)
 
 	acrn_ioreq_driver_init();
 
-	/* The biggest consumer is the get_platform_info hypercall, and the size
-	 * it requires is a function of the number of the physical CPUs */
-	acrn_mempool_init(16, nr_cpu_ids * 2560 + 512);
+	/*
+	 * The biggest consumer is the get_platform_info hypercall. Statically
+	 * use 2MB as this is enough for any reasonable amount of VMs the
+	 * hypervisor may have in its VM config and also aligns with the design
+	 * of 2MB huge pages.
+	 */
+	acrn_mempool_init(16, SZ_2M);
 	pr_info("vhm: Virtio & Hypervisor service module initialized\n");
 	return 0;
 }
