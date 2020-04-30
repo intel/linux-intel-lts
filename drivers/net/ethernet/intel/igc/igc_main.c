@@ -65,7 +65,7 @@ enum latency_range {
 };
 
 /**
- * igc_power_down_link - Power down the phy/serdes link
+ * igc_power_down_link - Power down the phy link
  * @adapter: address of board private structure
  */
 static void igc_power_down_link(struct igc_adapter *adapter)
