@@ -1571,6 +1571,7 @@ static void hantro_release(struct drm_device *dev)
 #if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
 	drm_dev_unregister(hantro_dev.drm_dev);
 #else
+	drm_dev_fini(hantro_dev.drm_dev);
 #endif
 }
 #endif
@@ -2139,6 +2140,7 @@ void __exit hantro_cleanup(void)
 	// reserved mem relese need to be called somewhere
 	// of_reserved_mem_device_release(sinfo->dev);
 	drm_dev_unregister(hantro_dev.drm_dev);
+	drm_dev_fini(hantro_dev.drm_dev);
 	platform_device_unregister(hantro_dev.platformdev);
 	platform_driver_unregister(&hantro_drm_platform_driver);
 	pr_info("hantro driver removed\n");
@@ -2186,6 +2188,7 @@ int __init hantro_init(void)
 
 	if (result < 0) {
 		drm_dev_unregister(hantro_dev.drm_dev);
+		drm_dev_fini(hantro_dev.drm_dev);
 		platform_device_unregister(hantro_dev.platformdev);
 		platform_driver_unregister(&hantro_drm_platform_driver);
 		return result;
