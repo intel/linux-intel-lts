@@ -64,7 +64,7 @@ struct cache_dev_t {
 	char reg_name[32];
 	unsigned long long com_base_addr;//common base addr of each L2
 	int irqlist[4];
-
+	char irq_name[4][32];
 	slice_coretype parenttype;
 	u32 parentid;		//parent codec core's core_id
 	void *parentcore;	//either struct hantroenc_t or struct hantrodec_t, or slice itself

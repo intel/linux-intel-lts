@@ -185,15 +185,24 @@ long hantrodec400_ioctl(
 		}
 		return 0;
 	case DEC400_IOCGHWIOSIZE:
-		id = arg;
+		ret = copy_from_user(&id, (void *)arg, sizeof(u32));
+                if (ret) {
+                        pr_err("copy_from_user failed, returned %d\n", ret);
+                        return -EFAULT;
+                }
+
 		slice = SLICE(id);
 		type = NODETYPE(id);
 		node = KCORE(id);
 		pdec400 = get_dec400nodebytype(slice, type, node);
 		if (pdec400 == NULL)
 			return -EFAULT;
-
-		return pdec400->core_cfg.iosize;
+		ret = __put_user(pdec400->core_cfg.iosize, (unsigned int *) arg);
+		if (ret) {
+                        pr_err("copy_to_user failed, returned %d\n", ret);
+                        return -EFAULT;
+                }
+		return 0;
 	case DEC400_IOCS_DEC_WRITE_REG:
 		ret = copy_from_user(&coredesc, (void *)arg, sizeof(struct core_desc));
 		if (ret) {

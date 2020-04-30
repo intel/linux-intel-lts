@@ -497,7 +497,6 @@ int cache_probe(dtbnode *pnode)
 		pccore = vmalloc(sizeof(struct cache_dev_t));
 		if (pccore == NULL)
 			return -ENOMEM;
-
 		memset(pccore, 0, sizeof(struct cache_dev_t));
 		pccore->com_base_addr = pccore->core_cfg.base_addr = pnode->ioaddr;
 		pccore->core_cfg.iosize = pnode->iosize;
@@ -518,9 +517,10 @@ int cache_probe(dtbnode *pnode)
 			pccore->irqlist[i] = -1;
 #ifdef USE_IRQ
 		if (pnode->irq[0] > 0) {
+			strcpy(pccore->irq_name[0], pnode->irq_name[0]);
 			result = request_irq(pnode->irq[0], cache_isr,
 				IRQF_SHARED,
-				"hantro_cache", (void *)pccore);
+				pccore->irq_name[0], (void *)pccore);
 			if (result == 0)
 				pccore->irqlist[0] = pnode->irq[0];
 			else {
@@ -533,6 +533,7 @@ int cache_probe(dtbnode *pnode)
 #endif
 		pccore->core_cfg.parentaddr = pnode->parentaddr;
 		add_cachenode(pnode->sliceidx, pccore);
+		pr_info("hantrocache: HW at base <0x%llx>\n", pccore->core_cfg.base_addr);
 	}
 #endif	/*not def PCI_BUS*/
 #endif	/*USE_DTB_PROBE*/
@@ -570,12 +571,10 @@ void __exit cache_cleanup(void)
 static int cache_get_hwid(unsigned long base_addr, int *hwid)
 {
 	u8 *hwregs = NULL;
-
 	if (!request_mem_region(base_addr, 4, "hantro_cache")) {
 		PDEBUG(KERN_INFO "hantr_cache: failed to reserve HW regs,base_addr:%p\n", (void *)base_addr);
 		return -1;
 	}
-
 	hwregs = (u8 *) ioremap(base_addr, 4);
 	if (hwregs == NULL) {
 		PDEBUG(KERN_INFO "hantr_cache: failed to ioremap HW regs\n");
@@ -603,6 +602,7 @@ static int ReserveIO(struct cache_dev_t *pccore)
 
 	hw_cfg = (hwid & 0xF0000)>>16;
 
+
 	if (hw_cfg > 2)
 		return -1;
 
@@ -616,15 +616,23 @@ static int ReserveIO(struct cache_dev_t *pccore)
 	if (pccore->is_valid == 0)
 		return -1;
 
-	if (hwid == 0 && pccore->core_cfg.dir == DIR_RD)
+	if (hwid == 0 && pccore->core_cfg.dir == DIR_RD) {
 		pccore->core_cfg.base_addr += CACHE_WITH_SHAPER_OFFSET;
+		pccore->core_cfg.iosize -= CACHE_WITH_SHAPER_OFFSET;
+	}
 	else if (hwid != 0) {
-		if (pccore->core_cfg.dir == DIR_WR)
+		if (pccore->core_cfg.dir == DIR_WR) {
 			pccore->core_cfg.base_addr += SHAPER_OFFSET;
-		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 0)
+			pccore->core_cfg.iosize -= SHAPER_OFFSET;
+		}
+		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 0) {
 			pccore->core_cfg.base_addr += CACHE_WITH_SHAPER_OFFSET;
-		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 1)
+			pccore->core_cfg.iosize -= CACHE_WITH_SHAPER_OFFSET;
+		}
+		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 1) {
 			pccore->core_cfg.base_addr += CACHE_ONLY_OFFSET;
+			pccore->core_cfg.iosize -= CACHE_ONLY_OFFSET;
+		}
 	}
 
 	if (!request_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize, pccore->reg_name)) {

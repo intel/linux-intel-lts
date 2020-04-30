@@ -54,7 +54,7 @@
 //#define HAS_DEC400
 
 /* debug */
-#define DMA_DEBUG_ALLOC 0
+//#define DMA_DEBUG_ALLOC
 #define ENABLE_DEBUG
 #ifdef ENABLE_DEBUG
 #define DBG(...) pr_info(__VA_ARGS__)
@@ -69,6 +69,7 @@
 #define DRIVER_MINOR      1
 
 struct hantro_device_handle hantro_dev;
+static ssize_t memory_usage_show_internal(int sliceidx, char *buf);
 
 #if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
 void debug_dma_alloc_coherent(
@@ -269,6 +270,14 @@ static int hantro_gem_dumb_create_internal(
 
 out:
 	mutex_unlock(&dev->struct_mutex);
+	if( ret == -ENOMEM)
+	{
+                char *buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+                memory_usage_show_internal(sliceidx, buf);
+                pr_info("Slice %d out of memory\n%s",sliceidx, buf);
+                kfree(buf);
+	}
+	
 	return ret;
 }
 
@@ -1756,13 +1765,12 @@ bandwidthEncWrite_show(struct device *kdev, struct device_attribute *attr, char 
 }
 
 static ssize_t
-memory_usage_show(struct device *kdev, struct device_attribute *attr, char *buf)
+memory_usage_show_internal(int sliceidx, char *buf)
 {
 
         struct drm_device *ddev = hantro_dev.drm_dev;
         struct drm_file *file;
 	struct drm_gem_hantro_object *cma_obj;
-	int sliceidx = findslice_bydev(kdev);
 	int buf_used = 0, alloc_count=0;
 	ssize_t mem_used = 0;
 	bool noprint=false;
@@ -1807,6 +1815,12 @@ memory_usage_show(struct device *kdev, struct device_attribute *attr, char *buf)
 	return buf_used;
 }
 
+static ssize_t
+memory_usage_show(struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	int sliceidx = findslice_bydev(kdev);
+	return memory_usage_show_internal(sliceidx, buf);
+}
 
 static DEVICE_ATTR(BWDecRead, 0444, bandwidthDecRead_show, NULL);
 static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
@@ -1903,7 +1917,6 @@ static dtbnode * trycreatenode(
 		iosize = reg_u32[na];
 	pnode->ioaddr = ioaddress;
 	pnode->iosize = iosize;
-
 	fwnode_property_read_string(fwnode, "reg-names", &reg_name);
 
 	if (strlen(reg_name))
@@ -1933,11 +1946,11 @@ static dtbnode * trycreatenode(
 		break;
 	// Cache and DEC400 disabled for now in hantro driver
 	case CORE_CACHE:
-//		ret = cache_probe(pnode);
-//		break;
+		//ret = cache_probe(pnode);
+		break;
 	case CORE_DEC400:
-//		ret = hantro_dec400_probe(pnode);
-//		break;
+		//ret = hantro_dec400_probe(pnode);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -2209,7 +2222,7 @@ int __init hantro_init(void)
 			pr_info("create sysfs %d fail\n", i);
 
 	}
-	// slice_printdebug();
+	//slice_printdebug();
 	pr_info("hantro device created\n");
 	return result;
 }
