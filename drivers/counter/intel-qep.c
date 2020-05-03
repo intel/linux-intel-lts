@@ -59,6 +59,8 @@
 #define INTEL_QEPCON_FIFO_THRE(n) ((((n) - 1) & 7) << 12)
 #define INTEL_QEPCON_FIFO_EMPTY	BIT(15)
 
+#define INTEL_QEPCON_MAX_FIFO_SIZE	8
+
 /* QEPFLT */
 #define INTEL_QEPFLT_MAX_COUNT(n) ((n) & 0x1fffff)
 
@@ -115,6 +117,8 @@ struct intel_qep {
 	int op_mode;
 	int cap_mode;
 	u32 clk_div;
+	bool cap_done;
+	u32 cap_buf[INTEL_QEPCON_MAX_FIFO_SIZE];
 };
 
 #define counter_to_qep(c)	(container_of((c), struct intel_qep, counter))
@@ -169,6 +173,8 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 {
 	struct intel_qep	*qep = _qep;
 	u32			stat;
+	u32			qep_con;
+	int			num = 0;
 
 	mutex_lock(&qep->lock);
 
@@ -177,13 +183,21 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 		if (INTEL_QEP_OP_MODE_QEP == qep->op_mode) {
 			dev_dbg(qep->dev, "Phase Error detected\n");
 			qep->phase_error = true;
-		} else
+		} else {
 			dev_dbg(qep->dev, "Fifo Critical\n");
+			/* Read FIFO and populate structure */
+			qep_con = intel_qep_readl(qep->regs, INTEL_QEPCON);
+			while (!(qep_con & INTEL_QEPCON_FIFO_EMPTY && num != INTEL_QEPCON_MAX_FIFO_SIZE)) {
+				qep->cap_buf[num++] = intel_qep_readl(qep->regs, INTEL_QEPCAPBUF);
+				qep_con = intel_qep_readl(qep->regs, INTEL_QEPCON);
+			}
+			/* Notify capture done & Disable QEP to avoid additional capture */
+			qep->cap_done = true;
+			qep_con &= ~INTEL_QEPCON_EN;
+			intel_qep_writel(qep->regs, INTEL_QEPCON, qep_con);
+		}
 	} else
 		qep->phase_error = false;
-
-	if (stat & INTEL_QEPINT_FIFOENTRY)
-		dev_dbg(qep->dev, "Fifo Entry\n");
 
 	if (stat & INTEL_QEPINT_QEPDIR)
 		qep->direction = !qep->direction;
@@ -506,6 +520,7 @@ static ssize_t operating_mode_write(struct counter_device *counter,
 
 	if (sysfs_streq(buf, "capture")) {
 		reg |= INTEL_QEPCON_OP_MODE;
+		reg |= INTEL_QEPCON_FIFO_THRE(INTEL_QEPCON_MAX_FIFO_SIZE);
 		qep->op_mode = INTEL_QEP_OP_MODE_CC;
 	} else if (sysfs_streq(buf, "quadrature")) {
 		reg &= ~INTEL_QEPCON_OP_MODE;
@@ -523,11 +538,28 @@ static ssize_t capture_data_read(struct counter_device *counter,
 		struct counter_count *count, void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
-	u32 reg;
+	static int index;
+	u32 cap_val;
+	u32 qep_con;
 
-	reg = intel_qep_readl(qep->regs, INTEL_QEPCAPBUF);
+	if (INTEL_QEP_OP_MODE_QEP == qep->op_mode)
+		return -EINVAL;
 
-	return snprintf(buf, PAGE_SIZE, "%u\n", reg);
+	if (!qep->cap_done)
+		return -EINVAL;
+
+	cap_val = qep->cap_buf[index++];
+
+	/* Reset index & Re-enable Capture Mode */
+	if (index >= INTEL_QEPCON_MAX_FIFO_SIZE) {
+		qep_con = intel_qep_readl(qep->regs, INTEL_QEPCON);
+		qep_con |= INTEL_QEPCON_EN;
+		intel_qep_writel(qep->regs, INTEL_QEPCON, qep_con);
+		index = 0;
+		qep->cap_done = false;
+	}
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", cap_val);
 }
 
 static ssize_t capture_mode_read(struct counter_device *counter,
@@ -736,6 +768,7 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	void __iomem		*regs;
 	int			ret;
 	int			irq;
+	int			i;
 
 	qep = devm_kzalloc(dev, sizeof(*qep), GFP_KERNEL);
 	if (!qep)
@@ -777,6 +810,10 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	qep->phase_error = false;
 	qep->op_mode = INTEL_QEP_OP_MODE_QEP;
 	qep->cap_mode = 0;
+	qep->cap_done = false;
+
+	for (i = 0; i < INTEL_QEPCON_MAX_FIFO_SIZE; i++)
+		qep->cap_buf[i] = 0;
 
 	ret = counter_register(&qep->counter);
 	if (ret)
