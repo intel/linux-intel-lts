@@ -589,7 +589,7 @@ int dal_dc_setup(struct dal_device *ddev, enum dal_intf intf)
 		return  -ENOMEM;
 
 	/* each buffer contains data and length */
-	readq_sz = (DAL_MAX_BUFFER_SIZE + sizeof(ddev->bh_fw_msg->len)) *
+	readq_sz = (DAL_MAX_BUFFER_SIZE + sizeof(ddev->bh_fw_msg)) *
 		   DAL_BUFFERS_PER_CLIENT;
 	ret = kfifo_alloc(&dc->read_queue, readq_sz, GFP_KERNEL);
 	if (ret) {

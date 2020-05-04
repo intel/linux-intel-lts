@@ -90,7 +90,7 @@ struct dal_client {
  */
 struct dal_bh_msg {
 	size_t len;
-	char msg[0];
+	char msg[];
 };
 
 /**

@@ -95,7 +95,7 @@ struct ac_pack_header {
  */
 struct ac_ta_id_list {
 	u32 num;
-	uuid_t list[0];
+	uuid_t list[];
 } __packed;
 
 /**
@@ -109,7 +109,7 @@ struct ac_ta_id_list {
 struct ac_prop_list {
 	u32 num;
 	u32 len;
-	s8 data[0];
+	s8 data[];
 } __packed;
 
 /**
@@ -121,7 +121,7 @@ struct ac_prop_list {
  */
 struct ac_ins_reasons {
 	u32 len;
-	u32 data[0];
+	u32 data[];
 } __packed;
 
 /**
@@ -132,7 +132,7 @@ struct ac_ins_reasons {
  */
 struct ac_pack {
 	struct ac_pack_header *head;
-	char data[0];
+	char data[];
 } __packed;
 
 /**
