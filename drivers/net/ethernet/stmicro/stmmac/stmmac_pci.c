@@ -407,6 +407,7 @@ static int ehl_pse0_common_data(struct pci_dev *pdev,
 #endif
 
 	plat->is_pse = 1;
+	plat->dma_bit_mask = 32;
 	ehl_pse_work_around(pdev, plat);
 
 	if (plat->is_hfpga)
@@ -467,6 +468,7 @@ static int ehl_pse1_common_data(struct pci_dev *pdev,
 	}
 #endif
 	plat->is_pse = 1;
+	plat->dma_bit_mask = 32;
 	ehl_pse_work_around(pdev, plat);
 
 	if (plat->is_hfpga)
