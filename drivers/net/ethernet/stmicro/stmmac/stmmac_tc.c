@@ -815,12 +815,6 @@ static int tc_setup_etf(struct stmmac_priv *priv,
 	if (priv->speed == SPEED_10)
 		return -EOPNOTSUPP;
 
-	if (priv->tso && qopt->enable) {
-		dev_warn(priv->device,
-			 "TSO is ON, please disable it to enable TBS\n");
-		return -EOPNOTSUPP;
-	}
-
 	if (qopt->enable)
 		priv->tx_queue[qopt->queue].tbs |= STMMAC_TBS_EN;
 	else

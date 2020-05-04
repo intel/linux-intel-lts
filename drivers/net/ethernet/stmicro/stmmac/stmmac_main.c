@@ -3040,12 +3040,6 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp,
 	/* set TX and RX rings length */
 	stmmac_set_rings_length(priv);
 
-	/* Enable TSO */
-	if (priv->tso) {
-		for (chan = 0; chan < tx_cnt; chan++)
-			stmmac_enable_tso(priv, priv->ioaddr, 1, chan);
-	}
-
 	/* Enable Split Header */
 	if (priv->sph && priv->hw->rx_csum) {
 		for (chan = 0; chan < rx_cnt; chan++)
@@ -3064,12 +3058,15 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp,
 	if (!lock_acquired)
 		rtnl_unlock();
 
-	/* TBS */
+	/* TSO and TBS are mutually exclusive. Only enable TSO when TBS is not
+	 * available in that particular Tx Queue.
+	 */
 	for (chan = 0; chan < tx_cnt; chan++) {
 		struct stmmac_tx_queue *tx_q = &priv->tx_queue[chan];
-		int enable = tx_q->tbs & STMMAC_TBS_AVAIL;
-
-		stmmac_enable_tbs(priv, priv->ioaddr, enable, chan);
+		if (tx_q->tbs & STMMAC_TBS_AVAIL)
+			stmmac_enable_tbs(priv, priv->ioaddr, 1, chan);
+		else if (priv->tso)
+			stmmac_enable_tso(priv, priv->ioaddr, 1, chan);
 	}
 
 	/* Start the ball rolling... */
@@ -4001,8 +3998,12 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (priv->tx_path_in_lpi_mode)
 		stmmac_disable_eee_mode(priv);
 
-	/* Manage oversized TCP frames for GMAC4 device */
-	if (skb_is_gso(skb) && priv->tso) {
+	/* Manage oversized TCP frames for GMAC4/GMAC5 device.
+	 * TSO feature is mutually exclusive with TBS feature which is using
+	 * enhanced descriptor. Therefore, we only implement TCP segmentation
+	 * on Tx Queues which have no TBS support.
+	 */
+	if (skb_is_gso(skb) && priv->tso && !(tx_q->tbs & STMMAC_TBS_AVAIL)) {
 		if (skb_shinfo(skb)->gso_type & (SKB_GSO_TCPV4 | SKB_GSO_TCPV6))
 			return stmmac_tso_xmit(skb, dev);
 	}
