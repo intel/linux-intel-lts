@@ -161,6 +161,7 @@ CVEs fixed in 4.19.47:
 
 CVEs fixed in 4.19.48:
   CVE-2019-10638: 07480da0c8a1979e0973d6dd783b6aed966dccf6 inet: switch IP ID generator to siphash
+  CVE-2020-10720: 39fd0dc4a5565a1df7d84b1c92d2050233b15b5a net-gro: fix use-after-free read in napi_gro_frags()
 
 CVEs fixed in 4.19.49:
   CVE-2019-15212: d2d93077bac37c6895d8c58f564699a3a897c5db USB: rio500: refuse more than one device at a time
@@ -246,6 +247,7 @@ CVEs fixed in 4.19.73:
   CVE-2019-15030: 47a0f70d7d9ac3d6b1a96b312d07bc67af3834e9 powerpc/tm: Fix FP/VMX unavailable exceptions inside a transaction
   CVE-2019-15031: 569775bd536416ed9049aa580d9f89a0b4307d60 powerpc/tm: Fix restoring FP/VMX facility incorrectly on interrupts
   CVE-2019-15918: 4061e662c8e9f5fb796b05fd2ab58fed8cd16d59 cifs: Fix lease buffer length error
+  CVE-2019-19319: 2fd4629de51974002f4e9cf1a35a1926dd6c9d99 ext4: protect journal inode's blocks using block_validity
 
 CVEs fixed in 4.19.74:
   CVE-2019-15504: 3622d621e9beca76d53cd3007eb7b1d6e724716b rsi: fix a double free bug in rsi_91x_deinit()
@@ -343,6 +345,9 @@ CVEs fixed in 4.19.92:
   CVE-2019-19063: 3717a450f83945c481059a6921440e5e6fe3c856 rtlwifi: prevent memory leak in rtl_usb_probe
   CVE-2019-19947: 9ed59600c3524f12144b30cfc1d86734cfb3927b can: kvaser_usb: kvaser_usb_leaf: Fix some info-leaks to USB devices
 
+CVEs fixed in 4.19.93:
+  CVE-2020-10690: 0393b8720128d5b39db8523e5bfbfc689f18c37c ptp: fix the race between the release of ptp_clock and cdev
+
 CVEs fixed in 4.19.94:
   CVE-2019-18809: d933de8115f3263fd50cf3b1f1dac2faff02fd89 media: usb: fix memory leak in af9005_identify_state
   CVE-2019-19965: 8b9bf467061bc89ccf4a43be637e08d8a70fd76d scsi: libsas: stop discovering if oob mode is disconnected
@@ -392,13 +397,30 @@ CVEs fixed in 4.19.109:
   CVE-2020-8648: 31559b59040fc0e6ad363642112d4eb03ad4ebb7 vt: selection, close sel_buffer race
   CVE-2020-8649: 7abe1e0a874418b07524c9e07225df1cbb421ce9 vgacon: Fix a UAF in vgacon_invert_region
 
+CVEs fixed in 4.19.111:
+  CVE-2020-12465: 319478cbd2be90995b011ca6adbd834121eb7acf mt76: fix array overflow on receiving too many fragments for a packet
+
 CVEs fixed in 4.19.114:
   CVE-2020-11608: 747a7431661ab3c22ad1e721558bdf9e3d53d4a6 media: ov519: add missing endpoint sanity checks
   CVE-2020-11609: 70764334b2bcb15c67dfbd912d9a9f7076f6d0df media: stv06xx: add missing descriptor sanity checks
   CVE-2020-11668: 5d064d7f0327d9425c5f63fa96efc70a74032d8b media: xirlink_cit: add missing descriptor sanity checks
 
+CVEs fixed in 4.19.115:
+  CVE-2020-11494: b774578329afb238ccd504477731129aa15e9ec2 slcan: Don't transmit uninitialized stack data in padding
+  CVE-2020-11565: fa138035f104ae14651ee3217d81fc16cd3aba4d mm: mempolicy: require at least one nodeid for MPOL_PREFERRED
+
+CVEs fixed in 4.19.116:
+  CVE-2020-11669: 1855c5436fa50e8dc930b0a24c52157dceef9a54 powerpc/powernv/idle: Restore AMR/UAMOR/AMOR after idle
+
+CVEs fixed in 4.19.119:
+  CVE-2019-19768: 473d7f5ed75b8c3750f0c6b442c8e23090d6da8f blktrace: Protect q->blk_trace with RCU
+  CVE-2020-0067: ed523cbd4a6594edf123dc03ec9d70ea4f793671 f2fs: fix to avoid memory leakage in f2fs_listxattr
+  CVE-2020-11884: 215d1f3928713d6eaec67244bcda72105b898000 s390/mm: fix page table upgrade vs 2ndary address mode accesses
+  CVE-2020-12464: 45ea77b75a604da875186519fea94997175c38e3 USB: core: Fix free-while-in-use bug in the USB S-Glibrary
+  CVE-2020-1749: 5dd6835278454a7c7a045462253625de7c16b13e net: ipv6_stub: use ip6_dst_lookup_flow instead of ip6_dst_lookup
+
  
-CVEs Fixed in this 4.19.114 LTS 4.19 release 
+CVEs Fixed in this 4.19.119 LTS 4.19 release 
 ====================================================
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
@@ -466,8 +488,5 @@ CVEs Fixed in this 4.19.114 LTS 4.19 release
 0005-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
 0006-debugfs-simplify-__debugfs_remove_file.patch
 0007-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
-
-#CVE-2019-19768
-0001-blktrace-Protect-q-blk_trace-with-RCU.patch
  
 ================
