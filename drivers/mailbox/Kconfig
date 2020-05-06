@@ -23,6 +23,15 @@ config ARM_MHU_V2
 	  Say Y here if you want to build the ARM MHUv2 controller driver,
 	  which provides unidirectional mailboxes between processing elements.
 
+config THUNDERBAY_SCMI_MBOX
+	tristate "Thunder Bay SoC SCMI Mailbox"
+	depends on HAVE_ARM_SMCCC
+	help
+	  An implementation of a mailbox implemented using 'smc' calls to the
+	  ARM secure world monitor. This enables communication with an 'SCP'
+	  running in the secure world on Thunder Bay SoCs.
+	  Say Y here if you want to build the Thunder Bay SoC SCMI Mailbox.
+
 config IMX_MBOX
 	tristate "i.MX Mailbox"
 	depends on ARCH_MXC || COMPILE_TEST
