@@ -39,7 +39,7 @@ void *acrn_mempool_alloc(gfp_t gfp_flag)
 	if (acrn_mempool == NULL)
 		return NULL;
 
-	return mempool_alloc(acrn_mempool, gfp_flag);
+	return mempool_alloc(acrn_mempool, gfp_flag | __GFP_COMP);
 }
 EXPORT_SYMBOL_GPL(acrn_mempool_alloc);
 
