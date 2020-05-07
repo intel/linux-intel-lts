@@ -548,7 +548,6 @@ static struct crl_register_write_rep ox03a10_1920_1088_12DCG[] = {
 	{ 0x3216, CRL_REG_LEN_08BIT, 0x02 },
 	{ 0x3221, CRL_REG_LEN_08BIT, 0x02 },/* enable CRC */
 	{ 0x366f, CRL_REG_LEN_08BIT, 0xf4 },/* front 2 rows, end 2 rows */
-	{ 0x0100, CRL_REG_LEN_08BIT, 0x01 },
 };
 
 static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
@@ -989,7 +988,6 @@ static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
 	{ 0x3216, CRL_REG_LEN_08BIT, 0x02 },
 	{ 0x3221, CRL_REG_LEN_08BIT, 0x02 },/* enable CRC */
 	{ 0x366f, CRL_REG_LEN_08BIT, 0xf4 },/* front 2 rows, end 2 rows */
-	{ 0x0100, CRL_REG_LEN_08BIT, 0x01 },
 };
 
 static struct crl_register_write_rep ox03a10_1920_1088_12DCG_12VS[] = {
@@ -1445,7 +1443,6 @@ static struct crl_register_write_rep ox03a10_1920_1088_12DCG_12VS[] = {
 	{ 0x384c, CRL_REG_LEN_08BIT, 0x03 },
 	{ 0x384d, CRL_REG_LEN_08BIT, 0xc0 },
 	{ 0x460c, CRL_REG_LEN_08BIT, 0x40 },
-	{ 0x0100, CRL_REG_LEN_08BIT, 0x01 },
 };
 
 struct crl_ctrl_data_pair ox03a10_ctrl_data_modes[] = {
@@ -2084,6 +2081,10 @@ struct crl_pll_configuration ox03a10_pll_configurations[] = {
 		.pll_regs_items = 0,
 		.pll_regs = 0,
 	},
+};
+
+static struct crl_register_write_rep ox03a10_streamon_regs[] = {
+       { 0x0100, CRL_REG_LEN_08BIT, 0x01 }
 };
 
 static struct crl_register_write_rep ox03a10_streamoff_regs[] = {

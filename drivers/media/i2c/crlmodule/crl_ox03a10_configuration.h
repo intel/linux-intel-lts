@@ -43,6 +43,9 @@ struct crl_sensor_configuration ox03a10_crl_configuration = {
 	.csi_fmts_items = ARRAY_SIZE(ox03a10_crl_csi_data_fmt),
 	.csi_fmts = ox03a10_crl_csi_data_fmt,
 
+        .streamon_regs_items = ARRAY_SIZE(ox03a10_streamon_regs),
+        .streamon_regs = ox03a10_streamon_regs,
+
 	.streamoff_regs_items = ARRAY_SIZE(ox03a10_streamoff_regs),
 	.streamoff_regs = ox03a10_streamoff_regs,
 
