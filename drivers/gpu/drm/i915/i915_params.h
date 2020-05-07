@@ -78,7 +78,8 @@ struct drm_printer;
 	param(int, gvt_workload_priority, 0) \
 	param(bool, enable_initial_modeset, false) \
 	param(bool, enable_gvt, false) \
-	param(bool, enable_context_restore, false)
+	param(bool, enable_context_restore, false) \
+	param(bool, disable_hp_work, false)
 
 #define MEMBER(T, member, ...) T member;
 struct i915_params {

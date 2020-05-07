@@ -261,6 +261,9 @@ i915_param_named_unsafe(domain_plane_owners, ullong, 0400,
 i915_param_named_unsafe(enable_context_restore, bool, 0400,
 	"To togger non-context regs save/restore feature(default:false)");
 
+i915_param_named(disable_hp_work, bool, 0400,
+	"To disable active the high-performance mode during vGPU busy(default:false)");
+
 static __always_inline void _print_param(struct drm_printer *p,
 					 const char *name,
 					 const char *type,

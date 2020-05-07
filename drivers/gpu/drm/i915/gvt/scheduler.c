@@ -314,7 +314,8 @@ static int shadow_context_status_change(struct notifier_block *nb,
 
 	switch (action) {
 	case INTEL_CONTEXT_SCHEDULE_IN:
-		schedule_work(&gvt->active_hp_work);
+		if (!i915_modparams.disable_hp_work)
+			schedule_work(&gvt->active_hp_work);
 		if (!i915_modparams.enable_context_restore) {
 			atomic_set(&workload->shadow_ctx_active, 1);
 			break;
