@@ -82,6 +82,15 @@ struct intel_gvt_device_info {
 	u32 max_surface_size;
 };
 
+struct gvt_gop_info {
+	unsigned int fb_base;
+	unsigned int width;
+	unsigned int height;
+	unsigned int pitch;
+	unsigned int Bpp;
+	unsigned int size;
+};
+
 /* GM resources owned by a vGPU */
 struct intel_vgpu_gm {
 	u64 aperture_sz;
@@ -90,6 +99,7 @@ struct intel_vgpu_gm {
 	struct drm_mm_node low_gm_node;
 	struct drm_mm_node high_gm_node;
 	struct page **gop_fb_pages;
+	struct gvt_gop_info gop;
 	u32 gop_fb_size;
 };
 
@@ -130,6 +140,7 @@ struct intel_vgpu_irq {
 		       INTEL_GVT_EVENT_MAX);
 };
 
+/* ToDo: GOP_FB_BASE from kernel parameter */
 #define GOP_FB_BASE	0xDF000000
 
 struct intel_vgpu_opregion {
