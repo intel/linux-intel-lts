@@ -526,8 +526,8 @@ static bool cnl_ipc_is_dsp_busy(struct sst_dsp *dsp)
 {
 	u32 hipcidr;
 
-	hipcidr = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCIDR);
-	return (hipcidr & CNL_ADSP_REG_HIPCIDR_BUSY);
+	hipcidr = sst_dsp_shim_read_unlocked(dsp, CNL_ADSP_REG_HIPCTDR);
+	return (hipcidr & CNL_ADSP_REG_HIPCTDR_BUSY);
 }
 
 static int cnl_ipc_init(struct device *dev, struct skl_sst *cnl)

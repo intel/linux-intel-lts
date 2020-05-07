@@ -249,12 +249,6 @@ irqreturn_t cnl_dsp_sst_interrupt(int irq, void *dev_id)
 	}
 
 	if (hipctdr & CNL_ADSP_REG_HIPCTDR_BUSY) {
-		if (hipctdr & CNL_ADSP_REG_HIPCTDR_BUSY) {
-			if (IPC_GLB_NOTIFY_RSP_TYPE(hipctdr))
-				ctx->ipc_state = IPC_STATE_RECEIVED;
-			else if(ctx->ipc_state != IPC_STATE_RECEIVED)
-				ctx->ipc_state = IPC_STATE_DEFERRED;
-		}
 		cnl_ipc_int_disable(ctx);
 		result = IRQ_WAKE_THREAD;
 	}

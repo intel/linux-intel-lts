@@ -332,8 +332,8 @@ static bool skl_ipc_is_dsp_busy(struct sst_dsp *dsp)
 {
 	u32 hipci;
 
-	hipci = sst_dsp_shim_read_unlocked(dsp, SKL_ADSP_REG_HIPCI);
-	return (hipci & SKL_ADSP_REG_HIPCI_BUSY);
+	hipci = sst_dsp_shim_read_unlocked(dsp, SKL_ADSP_REG_HIPCT);
+	return (hipci & SKL_ADSP_REG_HIPCT_BUSY);
 }
 
 /* Lock to be held by caller */
@@ -644,9 +644,7 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 	}
 
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
-	if (mutex_is_locked(&ipc->mutex)) {
-		sst_ipc_tx_msg_reply_complete(ipc, ipc->msg);
-	}
+	sst_ipc_tx_msg_reply_complete(ipc, ipc->msg);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 
 	return ret;
@@ -724,6 +722,7 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 	}
 
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+	ipc->response_processed = true;
 	sst_ipc_tx_msg_reply_complete(ipc, msg);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 }
