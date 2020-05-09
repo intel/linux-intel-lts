@@ -682,6 +682,28 @@ static void bdw_load_lut_10(struct intel_crtc *crtc,
 	const struct drm_color_lut *lut = blob->data;
 	int i, lut_size = drm_color_lut_size(blob);
 	enum pipe pipe = crtc->pipe;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_pipe_regs *pipe_regs = &gvt->pipe_info[pipe].dom0_pipe_regs;
+	struct prec_pal_data *pal_data = NULL;
+	if (prec_index & PAL_PREC_SPLIT_MODE)
+		pal_data = pipe_regs->prec_palette_split;
+	else
+		pal_data = pipe_regs->prec_palette_nonsplit;
+
+	for (i = 0; i < hw_lut_size; i++) {
+		/* We discard half the user entries in split gamma mode */
+		const struct drm_color_lut *entry =
+			&lut[i * (lut_size - 1) / (hw_lut_size - 1)];
+
+		// No need set dirty bit here since all set in d0_regs.
+		pal_data[prec_index + i].val = ilk_lut_10(entry);
+		//pal_data[prec_index + i].dirty = 1;
+	}
+
+	if (gvt && gvt->pipe_info[pipe].owner)
+		return;
+#endif
 
 	I915_WRITE(PREC_PAL_INDEX(pipe), prec_index |
 		   PAL_PREC_AUTO_INCREMENT);
