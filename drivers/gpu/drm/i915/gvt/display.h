@@ -144,6 +144,11 @@ struct vgpu_scaler_config {
 	u32 ctrl[2];
 };
 
+struct prec_pal_data {
+	u32 val;
+	bool dirty;
+};
+
 enum {
 	INTEL_GVT_DIRECT_DISPLAY_HW_VSYNC = 0
 };
@@ -178,6 +183,9 @@ struct intel_vgpu_display_path {
 	struct vgpu_scaler_config scaler_cfg;
 	/* watermark for vgpu */
 	struct skl_pipe_wm wm_cfg;
+	/* Precision palette data */
+	struct prec_pal_data prec_palette_split[PAL_PREC_INDEX_VALUE_MASK + 1];
+	struct prec_pal_data prec_palette_nonsplit[PAL_PREC_INDEX_VALUE_MASK + 1];
 	/* current foreground state of display */
 	u32 foreground_state;
 	/* request to switch this vgpu as foreground */

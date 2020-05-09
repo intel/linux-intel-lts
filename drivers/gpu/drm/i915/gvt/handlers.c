@@ -1271,6 +1271,100 @@ static int skl_csc_mmio_write(struct intel_vgpu *vgpu,
 	return skl_mmio_write_pipe_dist(vgpu, offset, p_data, bytes, 8);
 }
 
+/* PREC_PAL_INDEX & PREC_PAL_DATA support incremental mode in which any r/w to
+ * to PREC_PAL_DATA will increase PREC_PAL_INDEX bits [9:0].
+ * Proper HW programming requires always setting PREC_PAL_INDEX first, then
+ * PREC_PAL_DATA. If PAL_PREC_AUTO_INCREMENT enabled, PREC_PAL_INDEX should
+ * increase by 1 automatically after a r/w.
+ * Check if PAL_PREC_AUTO_INCREMENT enabled so that GVT can save or output
+ * correct PREC_PAL_DATA at proper index when written to or read from.
+ * Inside GVT, code should check the prec_palette[] instead of reading the vreg
+ * for correct PREC_PAL_DATA. The mmio r/w emulate routine will output correctly.
+ */
+static int skl_prec_pal_index_mmio_write(struct intel_vgpu *vgpu,
+					 unsigned int offset, void *p_data,
+					 unsigned int bytes)
+{
+	return skl_mmio_write_pipe_dist(vgpu, offset, p_data, bytes, 11);
+}
+
+static int skl_prec_pal_data_mmio_read(struct intel_vgpu *vgpu,
+				       unsigned int offset, void *p_data,
+				       unsigned int bytes)
+{
+	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
+	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	enum pipe pipe = (((offset) >> 11) & 0x3);
+
+	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
+		if (disp_path->pipe == pipe)
+			break;
+	}
+
+	if (disp_path) {
+		u32 prec_pal_idx = vgpu_vreg(vgpu, PREC_PAL_INDEX(pipe).reg);
+		u32 index = prec_pal_idx & PAL_PREC_INDEX_VALUE_MASK;
+		u32 mode = prec_pal_idx & ~PAL_PREC_INDEX_VALUE_MASK;
+		struct prec_pal_data *pal_data = NULL;
+
+		if (prec_pal_idx & PAL_PREC_SPLIT_MODE)
+			pal_data = disp_path->prec_palette_split;
+		else
+			pal_data = disp_path->prec_palette_nonsplit;
+		vgpu_vreg(vgpu, offset) = pal_data[index].val;
+
+		// Roll over to 0 after reaching end of the allowed range
+		if (prec_pal_idx & PAL_PREC_AUTO_INCREMENT) {
+			++index;
+			index &= PAL_PREC_INDEX_VALUE_MASK;
+			vgpu_vreg(vgpu, PREC_PAL_INDEX(pipe).reg) = index | mode;
+		}
+	}
+
+	read_vreg(vgpu, offset, p_data, bytes);
+	return 0;
+}
+
+static int skl_prec_pal_data_mmio_write(struct intel_vgpu *vgpu,
+					unsigned int offset, void *p_data,
+					unsigned int bytes)
+{
+	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
+	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	enum pipe pipe = (((offset) >> 11) & 0x3);
+
+	write_vreg(vgpu, offset, p_data, bytes);
+
+	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
+		if (disp_path->pipe == pipe)
+			break;
+	}
+
+	if (disp_path) {
+		u32 prec_pal_idx = vgpu_vreg(vgpu, PREC_PAL_INDEX(pipe).reg);
+		u32 index = prec_pal_idx & PAL_PREC_INDEX_VALUE_MASK;
+		u32 mode = prec_pal_idx & ~PAL_PREC_INDEX_VALUE_MASK;
+		struct prec_pal_data *pal_data = NULL;
+
+		if (prec_pal_idx & PAL_PREC_SPLIT_MODE)
+			pal_data = disp_path->prec_palette_split;
+		else
+			pal_data = disp_path->prec_palette_nonsplit;
+
+		pal_data[index].val = vgpu_vreg(vgpu, offset);
+		pal_data[index].dirty = 1;
+
+		// Roll over to 0 after reaching end of the allowed range
+		if (prec_pal_idx & PAL_PREC_AUTO_INCREMENT) {
+			++index;
+			index &= PAL_PREC_INDEX_VALUE_MASK;
+			vgpu_vreg(vgpu, PREC_PAL_INDEX(pipe).reg) = index | mode;
+		}
+	}
+
+	return skl_mmio_write_pipe_dist(vgpu, offset, p_data, bytes, 11);
+}
+
 static int skl_lgc_palette_mmio_write(struct intel_vgpu *vgpu,
 				      unsigned int offset, void *p_data,
 				      unsigned int bytes)
@@ -2846,17 +2940,10 @@ static int init_generic_mmio_info(struct intel_gvt *gvt)
 	MMIO_PIPES_DH(PIPE_CSC_POSTOFF_HI, D_PRE_SKL, NULL, NULL);
 	MMIO_PIPES_DH(PIPE_CSC_POSTOFF_ME, D_PRE_SKL, NULL, NULL);
 	MMIO_PIPES_DH(PIPE_CSC_POSTOFF_LO, D_PRE_SKL, NULL, NULL);
-
-	MMIO_D(PREC_PAL_INDEX(PIPE_A), D_ALL);
-	MMIO_D(PREC_PAL_DATA(PIPE_A), D_ALL);
+	MMIO_PIPES_DH(PREC_PAL_INDEX, D_PRE_SKL, NULL, NULL);
+	MMIO_PIPES_DH(PREC_PAL_DATA, D_PRE_SKL, NULL, NULL);
 	MMIO_F(PREC_PAL_GC_MAX(PIPE_A, 0), 4 * 3, 0, 0, 0, D_ALL, NULL, NULL);
-
-	MMIO_D(PREC_PAL_INDEX(PIPE_B), D_ALL);
-	MMIO_D(PREC_PAL_DATA(PIPE_B), D_ALL);
 	MMIO_F(PREC_PAL_GC_MAX(PIPE_B, 0), 4 * 3, 0, 0, 0, D_ALL, NULL, NULL);
-
-	MMIO_D(PREC_PAL_INDEX(PIPE_C), D_ALL);
-	MMIO_D(PREC_PAL_DATA(PIPE_C), D_ALL);
 	MMIO_F(PREC_PAL_GC_MAX(PIPE_C, 0), 4 * 3, 0, 0, 0, D_ALL, NULL, NULL);
 
 	MMIO_D(_MMIO(0x60110), D_ALL);
@@ -3596,6 +3683,11 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 	MMIO_PIPES_DH(PIPE_CSC_POSTOFF_HI, D_SKL_PLUS, NULL, skl_csc_mmio_write);
 	MMIO_PIPES_DH(PIPE_CSC_POSTOFF_ME, D_SKL_PLUS, NULL, skl_csc_mmio_write);
 	MMIO_PIPES_DH(PIPE_CSC_POSTOFF_LO, D_SKL_PLUS, NULL, skl_csc_mmio_write);
+	MMIO_PIPES_DH(PREC_PAL_INDEX, D_SKL_PLUS, NULL,
+		      skl_prec_pal_index_mmio_write);
+	MMIO_PIPES_DH(PREC_PAL_DATA, D_SKL_PLUS,
+		      skl_prec_pal_data_mmio_read,
+		      skl_prec_pal_data_mmio_write);
 
 	return 0;
 }

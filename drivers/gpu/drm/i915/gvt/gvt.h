@@ -319,6 +319,8 @@ struct intel_dom0_pipe_regs {
 	u32 csc_postoff_me;
 	u32 csc_postoff_lo;
 	u32 lgc_palette[256];
+	struct prec_pal_data prec_palette_split[PAL_PREC_INDEX_VALUE_MASK + 1];
+	struct prec_pal_data prec_palette_nonsplit[PAL_PREC_INDEX_VALUE_MASK + 1];
 };
 
 struct intel_dom0_plane_regs {
