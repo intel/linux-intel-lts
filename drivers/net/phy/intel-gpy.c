@@ -19,6 +19,15 @@
 				 GPY_INTR_DXMC | \
 				 GPY_INTR_ANC)
 
+/* GPY VENDOR SPECIFIC 1 */
+#define GPY_VSPEC1_SGMII_CTRL	0x8
+#define GPY_VSPEC1_SGMII_STS	0x9
+#define GPY_SGMII_ANEN		BIT(12)		/* Aneg enable */
+#define GPY_SGMII_ANOK		BIT(5)		/* Aneg complete */
+#define GPY_SGMII_LS		BIT(2)		/* Link status */
+#define GPY_SGMII_DR_MASK	GENMASK(1, 0)	/* Data rate */
+#define GPY_SGMII_DR_2500	0x3
+
 static int gpy_config_aneg(struct phy_device *phydev)
 {
 	bool changed = false;
@@ -42,6 +51,58 @@ static int gpy_config_aneg(struct phy_device *phydev)
 		return ret;
 	if (ret > 0)
 		changed = true;
+
+	ret = phy_read_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_STS);
+
+	if (linkmode_test_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT,
+			      phydev->advertising)) {
+		/* For SGMII 2.5Gbps link, MAC side SGMII will turn off
+		 * autoneg as not all PHY supports autoneg for 2.5Gbps.
+		 * GPY211 will disable autoneg by toggling the BIT12
+		 */
+		if ((ret & GPY_SGMII_ANOK) && (!(ret & GPY_SGMII_LS))) {
+			phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
+					       GPY_VSPEC1_SGMII_CTRL,
+					       GPY_SGMII_ANEN,
+					       GPY_SGMII_ANEN);
+			phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1,
+					   GPY_VSPEC1_SGMII_CTRL,
+					   GPY_SGMII_ANEN);
+
+			/* If the SGMII link is not at 2.5Gbps mode,
+			 * restart the TPI link by toggling TPI
+			 * autoneg bit. As the SGMII buad rate will
+			 * follow the TPI link
+			 */
+			if ((ret & GPY_SGMII_DR_MASK) != GPY_SGMII_DR_2500)
+				genphy_c45_an_disable_aneg(phydev);
+
+			changed = true;
+		}
+	} else {
+		/* For SGMII 10/100/1000Mbps link, enable the SGMII
+		 * autoneg by toggling the BIT12
+		 */
+		if (ret & GPY_SGMII_ANOK || (!(ret & GPY_SGMII_LS))) {
+			phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1,
+					   GPY_VSPEC1_SGMII_CTRL,
+					   GPY_SGMII_ANEN);
+			phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
+					       GPY_VSPEC1_SGMII_CTRL,
+					       GPY_SGMII_ANEN,
+					       GPY_SGMII_ANEN);
+
+			/* If the SGMII link is not at 10/100/1000Mbps,
+			 * restart the TPI link by toggling TPI
+			 * autoneg bit. As the SGMII buad rate will
+			 * follow the TPI link
+			 */
+			if ((ret & GPY_SGMII_DR_MASK) == GPY_SGMII_DR_2500)
+				genphy_c45_an_disable_aneg(phydev);
+
+			changed = true;
+		}
+	}
 
 	return genphy_c45_check_and_restart_aneg(phydev, changed);
 }
@@ -119,7 +180,7 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.name		= "INTEL(R) Ethernet Network Connection GPY",
 		.get_features	= genphy_c45_pma_read_abilities,
 		.aneg_done	= genphy_c45_aneg_done,
-		.soft_reset	= genphy_soft_reset,
+		.soft_reset	= genphy_no_soft_reset,
 		.ack_interrupt	= gpy_ack_interrupt,
 		.did_interrupt	= gpy_did_interrupt,
 		.config_intr	= gpy_config_intr,
