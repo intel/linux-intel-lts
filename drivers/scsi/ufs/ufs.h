@@ -533,7 +533,7 @@ struct ufs_dev_info {
 	u8 max_lu_supported;
 	u8 wb_dedicated_lu;
 	u16 wmanufacturerid;
-	/*UFS device Product Name */
+	/* UFS device Product Name */
 	u8 *model;
 	u16 wspecversion;
 	u32 clk_gating_wait_us;
@@ -542,6 +542,9 @@ struct ufs_dev_info {
 	u32 d_wb_alloc_units;
 	bool b_rpm_dev_flush_capable;
 	u8 b_presrv_uspc_en;
+	/* UFS Serial number */
+	u8 *serial_no;
+	size_t serial_no_len;
 };
 
 /**
