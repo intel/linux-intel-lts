@@ -28,6 +28,27 @@
 #define GPY_SGMII_DR_MASK	GENMASK(1, 0)	/* Data rate */
 #define GPY_SGMII_DR_2500	0x3
 
+/* WA for Q-SPEC GPY115 PHY ID */
+#define INTEL_PHY_ID_GPY115_C22		0x67C9DE00
+
+static int gpy_soft_reset(struct phy_device *phydev)
+{
+	int ret;
+	int phy_id;
+
+	ret = phy_read(phydev, MII_PHYSID1);
+	phy_id = ret << 16;
+
+	ret = phy_read(phydev, MII_PHYSID2);
+	phy_id |= ret;
+
+	/* WA for GPY115 which need a soft reset even after a hard reset */
+	if (phy_id == INTEL_PHY_ID_GPY115_C22)
+		return genphy_soft_reset(phydev);
+
+	return genphy_no_soft_reset(phydev);
+}
+
 static int gpy_config_aneg(struct phy_device *phydev)
 {
 	bool changed = false;
@@ -180,7 +201,7 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.name		= "INTEL(R) Ethernet Network Connection GPY",
 		.get_features	= genphy_c45_pma_read_abilities,
 		.aneg_done	= genphy_c45_aneg_done,
-		.soft_reset	= genphy_no_soft_reset,
+		.soft_reset	= gpy_soft_reset,
 		.ack_interrupt	= gpy_ack_interrupt,
 		.did_interrupt	= gpy_did_interrupt,
 		.config_intr	= gpy_config_intr,
