@@ -19,6 +19,7 @@
 #include <scsi/scsi_driver.h>
 #include <scsi/sg.h>
 #include <linux/rpmb.h>
+#include <linux/string.h>
 #include "ufshcd.h"
 #include "ufs_quirks.h"
 #include "unipro.h"
@@ -7623,9 +7624,16 @@ static struct rpmb_ops ufshcd_rpmb_dev_ops = {
 
 static inline void ufshcd_rpmb_add(struct ufs_hba *hba)
 {
+	struct ufs_dev_info *dev_info = &hba->dev_info;
 	struct rpmb_dev *rdev;
 	u8 rpmb_rw_size = 1;
 	int ret;
+
+	ufshcd_rpmb_dev_ops.dev_id = kmemdup(dev_info->serial_no,
+					     dev_info->serial_no_len,
+					     GFP_KERNEL);
+	if (ufshcd_rpmb_dev_ops.dev_id)
+		ufshcd_rpmb_dev_ops.dev_id_len = dev_info->serial_no_len;
 
 	ret = scsi_device_get(hba->sdev_ufs_rpmb);
 	if (ret)
@@ -7665,6 +7673,9 @@ static inline void ufshcd_rpmb_remove(struct ufs_hba *hba)
 	rpmb_dev_unregister_by_device(hba->dev, 0);
 	scsi_device_put(hba->sdev_ufs_rpmb);
 	hba->sdev_ufs_rpmb = NULL;
+
+	kfree(ufshcd_rpmb_dev_ops.dev_id);
+	ufshcd_rpmb_dev_ops.dev_id = NULL;
 }
 
 static inline void ufshcd_blk_pm_runtime_init(struct scsi_device *sdev)
@@ -7867,7 +7878,7 @@ static void ufs_fixup_device_setup(struct ufs_hba *hba)
 static int ufs_get_device_desc(struct ufs_hba *hba)
 {
 	int err;
-	u8 model_index;
+	u8 index;
 	u8 b_ufs_feature_sup;
 	u8 *desc_buf;
 	struct ufs_dev_info *dev_info = &hba->dev_info;
@@ -7898,7 +7909,7 @@ static int ufs_get_device_desc(struct ufs_hba *hba)
 				      desc_buf[DEVICE_DESC_PARAM_SPEC_VER + 1];
 	b_ufs_feature_sup = desc_buf[DEVICE_DESC_PARAM_UFS_FEAT];
 
-	model_index = desc_buf[DEVICE_DESC_PARAM_PRDCT_NAME];
+	index = desc_buf[DEVICE_DESC_PARAM_PRDCT_NAME];
 
 	if (dev_info->wspecversion >= UFS_DEV_HPB_SUPPORT_VERSION &&
 	    (b_ufs_feature_sup & UFS_DEV_HPB_SUPPORT)) {
@@ -7916,7 +7927,7 @@ static int ufs_get_device_desc(struct ufs_hba *hba)
 			dev_info->hpb_enabled = true;
 	}
 
-	err = ufshcd_read_string_desc(hba, model_index,
+	err = ufshcd_read_string_desc(hba, index,
 				      &dev_info->model, SD_ASCII_STD);
 	if (err < 0) {
 		dev_err(hba->dev, "%s: Failed reading Product Name. err = %d\n",
@@ -7932,6 +7943,14 @@ static int ufs_get_device_desc(struct ufs_hba *hba)
 	ufshcd_wb_probe(hba, desc_buf);
 
 	ufshcd_temp_notif_probe(hba, desc_buf);
+
+	index = desc_buf[DEVICE_DESC_PARAM_SN];
+	err = ufshcd_read_string_desc(hba, index, &dev_info->serial_no, SD_RAW);
+	if (err < 0) {
+		dev_err(hba->dev, "%s: Failed reading Serial No. err = %d\n",
+			__func__, err);
+		goto out;
+	}
 
 	/*
 	 * ufshcd_read_string_desc returns size of the string
@@ -7950,6 +7969,9 @@ static void ufs_put_device_desc(struct ufs_hba *hba)
 
 	kfree(dev_info->model);
 	dev_info->model = NULL;
+
+	kfree(dev_info->serial_no);
+	dev_info->serial_no = NULL;
 }
 
 /**
