@@ -14,6 +14,7 @@
 #include <linux/signal.h>
 #include <linux/sched/signal.h>
 #include <linux/smp.h>
+#include <linux/dovetail.h>
 #include <linux/init.h>
 #include <linux/uaccess.h>
 #include <linux/user.h>
@@ -248,7 +249,10 @@ static void vfp_raise_exceptions(u32 exceptions, u32 inst, u32 fpscr, struct pt_
 
 	if (exceptions == VFP_EXCEPTION_ERROR) {
 		vfp_panic("unhandled bounce", inst);
-		vfp_raise_sigfpe(FPE_FLTINV, regs);
+		if (mark_cond_trap_entry(ARM_TRAP_VFP, regs)) {
+			vfp_raise_sigfpe(FPE_FLTINV, regs);
+			mark_trap_exit(ARM_TRAP_VFP, regs);
+		}
 		return;
 	}
 
