@@ -150,18 +150,6 @@ THUMB(	fpreg	.req	r7	)
 #endif
 	.endm
 
-	.macro  disable_irq_if_pipelined
-#ifdef CONFIG_IRQ_PIPELINE
-	disable_irq_notrace
-#endif
-	.endm
-
-	.macro  enable_irq_if_pipelined
-#ifdef CONFIG_IRQ_PIPELINE
-	enable_irq_notrace
-#endif
-	.endm
-
 	.macro disable_irq, save=1
 	disable_irq_notrace
 	asm_trace_hardirqs_off \save
