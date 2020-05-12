@@ -41,6 +41,10 @@
 #endif
 
 	.macro	irq_handler, from_user:req
+#ifdef CONFIG_DOVETAIL
+	mov	r0, sp
+	bl	irq_service_handler
+#else
 	mov	r1, sp
 	ldr_this_cpu r2, irq_stack_ptr, r2, r3
 	.if	\from_user == 0
@@ -64,6 +68,7 @@
 	mov_l	r0, irq_service_handler
 	bl	call_with_stack
 1:
+#endif /* !CONFIG_DOVETAIL */
 	.endm
 
 	.macro	pabt_helper
