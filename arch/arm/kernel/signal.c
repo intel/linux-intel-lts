@@ -640,6 +640,17 @@ static int do_signal(struct pt_regs *regs, int syscall)
 	return 0;
 }
 
+static inline void do_retuser(void)
+{
+	unsigned int thread_flags;
+
+	if (dovetailing()) {
+		thread_flags = current_thread_info()->flags;
+		if (thread_flags & _TIF_RETUSER)
+			inband_retuser_notify();
+	}
+}
+
 asmlinkage int
 do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 {
@@ -668,6 +679,7 @@ do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 			if (thread_flags & _TIF_SIGPENDING) {
 				int restart = do_signal(regs, syscall);
 				if (unlikely(restart)) {
+					do_retuser();
 					/*
 					 * Restart without handlers.
 					 * Deal with it without leaving
@@ -682,8 +694,14 @@ do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 				tracehook_notify_resume(regs);
 				rseq_handle_notify_resume(NULL, regs);
 			}
+			do_retuser();
 		}
 		hard_local_irq_disable();
+
+		/* RETUSER might have switched oob */
+		if (!running_inband())
+			break;
+
 		thread_flags = current_thread_info()->flags;
 	} while (inband_irq_pending() || (thread_flags & _TIF_WORK_MASK));
 	return 0;

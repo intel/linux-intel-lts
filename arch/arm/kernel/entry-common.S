@@ -3,6 +3,7 @@
  *  linux/arch/arm/kernel/entry-common.S
  *
  *  Copyright (C) 2000 Russell King
+ *  Copyright (C) 2005 Stelian Pop.
  */
 
 #include <asm/assembler.h>
@@ -12,6 +13,7 @@
 #include <asm/memory.h>
 #ifdef CONFIG_AEABI
 #include <asm/unistd-oabi.h>
+#include <uapi/asm-generic/dovetail.h>
 #endif
 
 	.equ	NR_syscalls, __NR_syscalls
@@ -53,7 +55,8 @@ __ret_fast_syscall:
 	cmp	r2, #TASK_SIZE
 	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]		@ re-check for syscall tracing
-	tst	r1, #_TIF_SYSCALL_WORK | _TIF_WORK_MASK
+	ldr	r2, =#_TIF_SYSCALL_WORK | _TIF_WORK_MASK
+	ands	r2, r1, r2
 	bne	fast_work_pending
 
 
@@ -90,7 +93,8 @@ __ret_fast_syscall:
 	cmp	r2, #TASK_SIZE
 	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]		@ re-check for syscall tracing
-	tst	r1, #_TIF_SYSCALL_WORK | _TIF_WORK_MASK
+	ldr	r2, =#_TIF_SYSCALL_WORK | _TIF_WORK_MASK
+	ands	r2, r1, r2
 	beq	no_work_pending
  UNWIND(.fnend		)
 ENDPROC(ret_fast_syscall)
@@ -131,7 +135,8 @@ ENTRY(ret_to_user_from_irq)
 	cmp	r2, #TASK_SIZE
 	blne	addr_limit_check_failed
 	ldr	r1, [tsk, #TI_FLAGS]
-	tst	r1, #_TIF_WORK_MASK
+	ldr	r2, =#_TIF_WORK_MASK
+	ands	r2, r1, r2
 	bne	slow_work_pending
 no_work_pending:
 	asm_trace_hardirqs_on save = 0
@@ -144,7 +149,7 @@ no_work_pending:
 ENDPROC(ret_to_user_from_irq)
 ENDPROC(ret_to_user)
 ENTRY(fast_ret_to_user)
-	disable_irq_notrace
+	disable_irq_notrace			@ disable interrupts
 	b	no_work_pending
 ENDPROC(fast_ret_to_user)
 
@@ -252,6 +257,44 @@ ENTRY(vector_swi)
  TRACE(	ldmia	sp, {r0 - r3}		)
 
 local_restart:
+#ifdef CONFIG_DOVETAIL
+	ldr	r10, [tsk, #TI_LOCAL_FLAGS]	@ tsk(r9) is callee-saved
+	ldr	r0, =#__OOB_SYSCALL_BIT
+	ands	r0, scno, r0
+	beq	slow_path
+	tst	r10, #_TLF_OOB
+	beq	slow_path
+	mov	r0, sp				@ regs
+	bl	handle_oob_syscall
+	ldr	r10, [tsk, #TI_LOCAL_FLAGS]
+	tst	r10, #_TLF_OOB
+	bne	fastcall_exit_check		@ check for MAYDAY
+	bl	sync_inband_irqs
+	b	ret_slow_syscall
+fastcall_exit_check:
+	ldr	r10, [tsk, #TI_FLAGS]
+	tst	r10, #_TIF_MAYDAY
+	beq	fast_ret_to_user
+	mov	r0, sp
+	bl	dovetail_call_mayday
+	b	fast_ret_to_user
+slow_path:
+	tst	r10, #_TLF_DOVETAIL
+	bne	pipeline_syscall
+	ands	r0, scno, r0
+	beq	root_syscall
+pipeline_syscall:
+	mov	r0, sp				@ regs
+	bl	__pipeline_syscall
+	ldr	r10, [tsk, #TI_LOCAL_FLAGS]
+	tst	r10, #_TLF_OOB
+	bne	fast_ret_to_user
+	cmp	r0, #0
+	bgt	ret_slow_syscall
+root_syscall:
+	ldmia	sp, { r0 - r3 }
+#endif /* CONFIG_DOVETAIL */
+
 	ldr	r10, [tsk, #TI_FLAGS]		@ check for syscall tracing
 	stmdb	sp!, {r4, r5}			@ push fifth and sixth args
 
