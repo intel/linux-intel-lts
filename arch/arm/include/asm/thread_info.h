@@ -140,6 +140,7 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 #define TIF_SYSCALL_TRACEPOINT	6	/* syscall tracepoint instrumentation */
 #define TIF_SECCOMP		7	/* seccomp syscall filtering active */
 #define TIF_NOTIFY_SIGNAL	8	/* signal notifications exist */
+#define TIF_RETUSER		9	/* INBAND_TASK_RETUSER is pending */
 
 #define TIF_USING_IWMMXT	17
 #define TIF_MEMDIE		18	/* is terminating due to OOM killer */
@@ -155,10 +156,14 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 #define _TIF_SYSCALL_TRACEPOINT	(1 << TIF_SYSCALL_TRACEPOINT)
 #define _TIF_SECCOMP		(1 << TIF_SECCOMP)
 #define _TIF_NOTIFY_SIGNAL	(1 << TIF_NOTIFY_SIGNAL)
+#define _TIF_RETUSER		(1 << TIF_RETUSER)
 #define _TIF_USING_IWMMXT	(1 << TIF_USING_IWMMXT)
 #define _TIF_MAYDAY		(1 << TIF_MAYDAY)
 
-/* Checks for any syscall work in entry-common.S */
+/*
+ * Checks for any syscall work in entry-common.S.
+ * CAUTION: Only bit0-bit15 are tested there.
+ */
 #define _TIF_SYSCALL_WORK (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | \
 			   _TIF_SYSCALL_TRACEPOINT | _TIF_SECCOMP)
 
@@ -167,7 +172,7 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
  */
 #define _TIF_WORK_MASK		(_TIF_NEED_RESCHED | _TIF_SIGPENDING | \
 				 _TIF_NOTIFY_RESUME | _TIF_UPROBE | \
-				 _TIF_NOTIFY_SIGNAL)
+				 _TIF_NOTIFY_SIGNAL | _TIF_RETUSER)
 
 /*
  * Local (synchronous) thread flags.
