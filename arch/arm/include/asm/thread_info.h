@@ -146,6 +146,7 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 #define TIF_MEMDIE		18	/* is terminating due to OOM killer */
 #define TIF_RESTORE_SIGMASK	20
 #define TIF_MAYDAY		21	/* emergency trap pending */
+#define TIF_RETUSER		22	/* INBAND_TASK_RETUSER is pending */
 
 #define _TIF_SIGPENDING		(1 << TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1 << TIF_NEED_RESCHED)
@@ -157,6 +158,7 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 #define _TIF_SECCOMP		(1 << TIF_SECCOMP)
 #define _TIF_USING_IWMMXT	(1 << TIF_USING_IWMMXT)
 #define _TIF_MAYDAY		(1 << TIF_MAYDAY)
+#define _TIF_RETUSER		(1 << TIF_RETUSER)
 
 /* Checks for any syscall work in entry-common.S */
 #define _TIF_SYSCALL_WORK (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | \
@@ -166,7 +168,7 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
  * Change these and you break ASM code in entry-common.S
  */
 #define _TIF_WORK_MASK		(_TIF_NEED_RESCHED | _TIF_SIGPENDING | \
-				 _TIF_NOTIFY_RESUME | _TIF_UPROBE)
+				 _TIF_NOTIFY_RESUME | _TIF_UPROBE | _TIF_RETUSER)
 
 /*
  * Local (synchronous) thread flags.
