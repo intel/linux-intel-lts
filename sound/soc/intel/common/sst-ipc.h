@@ -27,7 +27,6 @@
 #define IPC_MAX_MAILBOX_BYTES	256
 
 struct ipc_message {
-	struct list_head list;
 	u64 header;
 
 	/* direction wrt host CPU */
@@ -60,13 +59,9 @@ struct sst_generic_ipc {
 	struct sst_dsp *dsp;
 
 	/* IPC messaging */
-	struct list_head tx_list;
-	struct list_head rx_list;
-	struct list_head empty_list;
+	struct mutex mutex;
 	wait_queue_head_t wait_txq;
 	struct task_struct *tx_thread;
-	struct work_struct kwork;
-	bool sent;
 	bool pending;
 	struct ipc_message *msg;
 	int tx_data_max_size;
@@ -91,7 +86,6 @@ struct ipc_message *sst_ipc_reply_find_msg(struct sst_generic_ipc *ipc,
 void sst_ipc_tx_msg_reply_complete(struct sst_generic_ipc *ipc,
 	struct ipc_message *msg);
 
-void sst_ipc_drop_all(struct sst_generic_ipc *ipc);
 int sst_ipc_init(struct sst_generic_ipc *ipc);
 void sst_ipc_fini(struct sst_generic_ipc *ipc);
 

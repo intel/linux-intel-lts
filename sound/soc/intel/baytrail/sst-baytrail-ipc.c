@@ -36,8 +36,6 @@
 #define IPC_TIMEOUT_MSECS	300
 #define IPC_BOOT_MSECS		200
 
-#define IPC_EMPTY_LIST_SIZE	8
-
 /* IPC header bits */
 #define IPC_HEADER_MSG_ID_MASK	0xff
 #define IPC_HEADER_MSG_ID(x)	((x) & IPC_HEADER_MSG_ID_MASK)
@@ -256,7 +254,6 @@ static int sst_byt_process_reply(struct sst_byt *byt, u64 header)
 	/* update any stream states */
 	sst_byt_stream_update(byt, msg);
 
-	list_del(&msg->list);
 	/* wake up */
 	sst_ipc_tx_msg_reply_complete(&byt->ipc, msg);
 
@@ -335,9 +332,6 @@ static irqreturn_t sst_byt_irq_thread(int irq, void *context)
 	}
 
 	spin_unlock_irqrestore(&sst->spinlock, flags);
-
-	/* continue to send any remaining messages... */
-	schedule_work(&ipc->kwork);
 
 	return IRQ_HANDLED;
 }
@@ -578,7 +572,6 @@ int sst_byt_dsp_suspend_late(struct device *dev, struct sst_pdata *pdata)
 
 	dev_dbg(byt->dev, "dsp reset\n");
 	sst_dsp_reset(byt->dsp);
-	sst_ipc_drop_all(&byt->ipc);
 	dev_dbg(byt->dev, "dsp in reset\n");
 
 	dev_dbg(byt->dev, "free all blocks and unload fw\n");
