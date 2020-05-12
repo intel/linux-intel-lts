@@ -466,9 +466,6 @@ static irqreturn_t cnl_dsp_irq_thread_handler(int irq, void *context)
 
 		cnl_ipc_int_enable(dsp);
 
-		/* continue to send any remaining messages */
-		schedule_work(&ipc->kwork);
-
 		return IRQ_HANDLED;
 	}
 
