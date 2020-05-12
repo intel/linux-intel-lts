@@ -149,12 +149,44 @@ void __init init_IRQ(void)
 }
 
 #ifdef CONFIG_IRQ_PIPELINE
+
+#ifdef CONFIG_DOVETAIL
+/*
+ * When Dovetail is enabled, the companion core may switch contexts
+ * over the irq stack, therefore subsequent interrupts might be taken
+ * over sibling stack contexts. So we need a not so subtle way of
+ * figuring out whether the irq stack is already current, which cannot
+ * depend on the value of the stack pointer. Instead, we track the
+ * interrupt nesting depth for a CPU in irq_nesting.
+ */
+DEFINE_PER_CPU(int, irq_nesting);
+
+asmlinkage int __exception_irq_entry
+handle_arch_irq_pipelined(struct pt_regs *regs)
+{
+	if (this_cpu_inc_return(irq_nesting) == 1) {
+		void (*handler)(void *) =
+			(typeof(handler))
+			(void (*)(void))handle_irq_pipelined;
+		call_with_stack(handler, regs, __this_cpu_read(irq_stack_ptr));
+		this_cpu_dec(irq_nesting);
+		return running_inband() && !irqs_disabled();
+	}
+
+	return handle_irq_pipelined(regs);
+}
+
+#else /* !CONFIG_DOVETAIL*/
+
 asmlinkage int __exception_irq_entry
 handle_arch_irq_pipelined(struct pt_regs *regs)
 {
 	return handle_irq_pipelined(regs);
 }
-#endif
+
+#endif /* !CONFIG_DOVETAIL*/
+
+#endif	/* CONFIG_IRQ_PIPELINE */
 
 #ifdef CONFIG_SPARSE_IRQ
 int __init arch_probe_nr_irqs(void)
