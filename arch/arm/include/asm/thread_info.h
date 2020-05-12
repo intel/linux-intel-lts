@@ -174,6 +174,7 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 #define _TLF_OOB		0x0001
 #define _TLF_DOVETAIL		0x0002
 #define _TLF_OFFSTAGE		0x0004
+#define _TLF_OOBTRAP		0x0008
 
 #endif /* __KERNEL__ */
 #endif /* __ASM_ARM_THREAD_INFO_H */
