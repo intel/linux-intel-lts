@@ -392,6 +392,20 @@ static u64 clear_seq;
 #define LOG_LEVEL(v)		((v) & 0x07)
 #define LOG_FACILITY(v)		((v) >> 3 & 0xff)
 
+#if 0
+/*
+ * We cannot access per-CPU data (e.g. per-CPU flush irq_work) before
+ * per_cpu_areas are initialised. This variable is set to true when
+ * it's safe to access per-CPU data.
+ */
+static bool __printk_percpu_data_ready __read_mostly;
+
+bool printk_percpu_data_ready(void)
+{
+	return __printk_percpu_data_ready;
+}
+#endif
+
 /* Return log buffer address */
 char *log_buf_addr_get(void)
 {
@@ -1011,13 +1025,14 @@ static inline void log_buf_add_cpu(void) {}
 #endif /* CONFIG_SMP */
 #endif /* 0 */
 
+#if 0
 static void __init set_percpu_data_ready(void)
 {
-	printk_safe_init();
 	/* Make sure we set this flag only after printk_safe() init is done */
 	barrier();
 	__printk_percpu_data_ready = true;
 }
+#endif
 
 void __init setup_log_buf(int early)
 {
