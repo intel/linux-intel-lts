@@ -65,45 +65,9 @@ static const struct snd_soc_dapm_route rt5660_map[] = {
 	{"DMic", NULL, "SoC DMIC"},
 };
 
-struct sof_hdmi_pcm {
-	struct list_head head;
-	struct snd_soc_dai *codec_dai;
-	int device;
-};
-
-static int hdmi_init(struct snd_soc_pcm_runtime *rtd)
-{
-	struct sof_card_private *ctx = snd_soc_card_get_drvdata(rtd->card);
-	struct snd_soc_dai *dai = asoc_rtd_to_codec(rtd, 0);
-	struct sof_hdmi_pcm *pcm;
-
-	pcm = devm_kzalloc(rtd->card->dev, sizeof(*pcm), GFP_KERNEL);
-	if (!pcm)
-		return -ENOMEM;
-
-	/* dai_link id is 1:1 mapped to the PCM device */
-	pcm->device = rtd->dai_link->id;
-	pcm->codec_dai = dai;
-
-	list_add_tail(&pcm->head, &ctx->hdmi_pcm_list);
-
-	return 0;
-}
-
 static int card_late_probe(struct snd_soc_card *card)
 {
-	struct sof_card_private *ctx = snd_soc_card_get_drvdata(card);
-	struct sof_hdmi_pcm *pcm;
-
-	if (list_empty(&ctx->hdmi_pcm_list))
-		return -ENOENT;
-
-	if (!ctx->idisp_codec)
-		return 0;
-
-	pcm = list_first_entry(&ctx->hdmi_pcm_list, struct sof_hdmi_pcm, head);
-
-	return hda_dsp_hdmi_build_controls(card, pcm->codec_dai->component);
+	return 0;
 }
 
 static int rt5660_hw_params(struct snd_pcm_substream *substream,
@@ -152,26 +116,6 @@ SND_SOC_DAILINK_DEF(dmic_codec,
 SND_SOC_DAILINK_DEF(dmic16k,
 	DAILINK_COMP_ARRAY(COMP_CPU("DMIC16k Pin")));
 
-SND_SOC_DAILINK_DEF(idisp1_pin,
-	DAILINK_COMP_ARRAY(COMP_CPU("iDisp1 Pin")));
-SND_SOC_DAILINK_DEF(idisp1_codec,
-	DAILINK_COMP_ARRAY(COMP_CODEC("ehdaudio0D2", "intel-hdmi-hifi1")));
-
-SND_SOC_DAILINK_DEF(idisp2_pin,
-	DAILINK_COMP_ARRAY(COMP_CPU("iDisp2 Pin")));
-SND_SOC_DAILINK_DEF(idisp2_codec,
-	DAILINK_COMP_ARRAY(COMP_CODEC("ehdaudio0D2", "intel-hdmi-hifi2")));
-
-SND_SOC_DAILINK_DEF(idisp3_pin,
-	DAILINK_COMP_ARRAY(COMP_CPU("iDisp3 Pin")));
-SND_SOC_DAILINK_DEF(idisp3_codec,
-	DAILINK_COMP_ARRAY(COMP_CODEC("ehdaudio0D2", "intel-hdmi-hifi3")));
-
-SND_SOC_DAILINK_DEF(idisp4_pin,
-	DAILINK_COMP_ARRAY(COMP_CPU("iDisp4 Pin")));
-SND_SOC_DAILINK_DEF(idisp4_codec,
-	DAILINK_COMP_ARRAY(COMP_CODEC("ehdaudio0D2", "intel-hdmi-hifi4")));
-
 static struct snd_soc_dai_link ehl_rt5660_dailink[] = {
 	/* back ends */
 	{
@@ -198,38 +142,6 @@ static struct snd_soc_dai_link ehl_rt5660_dailink[] = {
 		.dpcm_capture = 1,
 		.no_pcm = 1,
 		SND_SOC_DAILINK_REG(dmic16k, dmic_codec, platform),
-	},
-	{
-		.name = "iDisp1",
-		.id = 5,
-		.init = hdmi_init,
-		.dpcm_playback = 1,
-		.no_pcm = 1,
-		SND_SOC_DAILINK_REG(idisp1_pin, idisp1_codec, platform),
-	},
-	{
-		.name = "iDisp2",
-		.id = 6,
-		.init = hdmi_init,
-		.dpcm_playback = 1,
-		.no_pcm = 1,
-		SND_SOC_DAILINK_REG(idisp2_pin, idisp2_codec, platform),
-	},
-	{
-		.name = "iDisp3",
-		.id = 7,
-		.init = hdmi_init,
-		.dpcm_playback = 1,
-		.no_pcm = 1,
-		SND_SOC_DAILINK_REG(idisp3_pin, idisp3_codec, platform),
-	},
-	{
-		.name = "iDisp4",
-		.id = 8,
-		.init = hdmi_init,
-		.dpcm_playback = 1,
-		.no_pcm = 1,
-		SND_SOC_DAILINK_REG(idisp4_pin, idisp4_codec, platform),
 	},
 };
 
