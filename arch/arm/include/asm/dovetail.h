@@ -17,4 +17,17 @@
 #define ARM_TRAP_UNDEFINSTR	7	/* Undefined instruction */
 #define ARM_TRAP_ALIGNMENT	8	/* Unaligned access exception */
 
+#if !defined(__ASSEMBLY__) && defined(CONFIG_DOVETAIL)
+
+static inline void arch_dovetail_exec_prepare(void)
+{ }
+
+static inline void arch_dovetail_switch_prepare(bool leave_inband)
+{ }
+
+static inline void arch_dovetail_switch_finish(bool enter_inband)
+{ }
+
+#endif
+
 #endif /* _ASM_ARM_DOVETAIL_H */
