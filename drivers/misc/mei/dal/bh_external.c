@@ -200,7 +200,6 @@ int bh_ta_session_open(u64 *host_id, const char *ta_id,
 {
 	int ret;
 	uuid_t bin_ta_id;
-	unsigned int conn_idx;
 	unsigned int count;
 	bool found;
 	uuid_t *ta_ids = NULL;
@@ -224,12 +223,9 @@ int bh_ta_session_open(u64 *host_id, const char *ta_id,
 	if (ret)
 		return ret;
 
-	/* 1: vm conn_idx is IVM dal FW client */
-	conn_idx = BH_CONN_IDX_IVM;
-
-	/* 2.1: check whether the ta pkg existed in VM or not */
+	/* 1: check whether the ta pkg existed in VM or not */
 	count = 0;
-	ret = bh_proxy_list_jta_packages(conn_idx, &count, &ta_ids);
+	ret = bh_proxy_list_jta_packages(&count, &ta_ids);
 	if (ret)
 		return ret;
 
@@ -244,14 +240,13 @@ int bh_ta_session_open(u64 *host_id, const char *ta_id,
 
 	/* 2.2: download ta pkg if not already present. */
 	if (!found) {
-		ret = bh_proxy_dnload_jta(conn_idx, &bin_ta_id,
-					  ta_pkg, pkg_len);
+		ret = bh_proxy_dnload_jta(&bin_ta_id, ta_pkg, pkg_len);
 		if (ret && ret != BHE_PACKAGE_EXIST)
 			return ret;
 	}
 
 	/* 3: send open session command to VM */
-	ret = bh_proxy_open_jta_session(conn_idx, &bin_ta_id,
+	ret = bh_proxy_open_jta_session(&bin_ta_id,
 					init_param, init_len,
 					host_id, ta_pkg, pkg_len);
 	return ret;
@@ -310,7 +305,7 @@ int bh_ta_session_command(u64 host_id, int command_id,
 	if (output)
 		*output = NULL;
 
-	session = bh_session_find(conn_idx, host_id);
+	session = bh_session_find(host_id);
 	if (!session)
 		return -EINVAL;
 
@@ -375,7 +370,7 @@ int bh_ta_session_command(u64 host_id, int command_id,
 
 out:
 	if (bh_session_is_killed(resp_hdr->code))
-		bh_session_remove(conn_idx, session->host_id);
+		bh_session_remove(session->host_id);
 
 	kfree(resp_hdr);
 
@@ -404,7 +399,7 @@ int bh_ta_session_close(u64 host_id)
 	memset(cmdbuf, 0, sizeof(cmdbuf));
 	resp_hdr = NULL;
 
-	session = bh_session_find(conn_idx, host_id);
+	session = bh_session_find(host_id);
 	if (!session)
 		return -EINVAL;
 
@@ -422,7 +417,7 @@ int bh_ta_session_close(u64 host_id)
 	 * It means that host app should call this API at appropriate time.
 	 */
 	if (ret != BHE_IAC_EXIST_INTERNAL_SESSION)
-		bh_session_remove(conn_idx, host_id);
+		bh_session_remove(host_id);
 
 	return ret;
 }

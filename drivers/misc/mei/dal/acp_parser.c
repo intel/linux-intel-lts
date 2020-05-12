@@ -12,7 +12,8 @@
 /* CSS Header + CSS Crypto Block
  * Prefixes each signed ACP package
  */
-#define AC_CSS_HEADER_LENGTH    (128 + 520)
+#define AC_CSS_HEADER_LENGTH_V1 (128 + 520)
+#define AC_CSS_HEADER_LENGTH_V2 (128 + 776)
 
 /**
  * struct ac_pr_state - admin command pack reader state
@@ -172,6 +173,46 @@ static bool ac_pr_is_safe_to_read(const struct ac_pr_state *pr, size_t n_move)
 static bool ac_pr_is_end(const struct ac_pr_state *pr)
 {
 	return (pr->cur == pr->head + pr->total);
+}
+
+static unsigned int acp_get_sig_version(const char *data, size_t size)
+{
+	u32 sig_ver;
+
+	if (size < AC_PACK_SIG_VER_OFFSET + sizeof(sig_ver))
+		return AC_SIG_VERSION_NONE;
+
+	sig_ver = *(u32 *)(data + AC_PACK_SIG_VER_OFFSET);
+
+	if (sig_ver == AC_SIG_VERSION_1 || sig_ver == AC_SIG_VERSION_2)
+		return sig_ver;
+
+	return AC_SIG_VERSION_NONE;
+}
+
+static size_t acp_get_hash_pack_len(unsigned int sig_ver)
+{
+	switch (sig_ver) {
+	case AC_SIG_VERSION_1:
+		return AC_PACK_HASH_LEN_V1;
+	case AC_SIG_VERSION_2:
+		return AC_PACK_HASH_LEN_V2;
+	}
+
+	return 0;
+}
+
+/* Intel CSS Header + CSS Cypto Block which prefixes each signed ACP pkg */
+static int acp_get_css_hdr_len(unsigned int sig_ver)
+{
+	switch (sig_ver) {
+	case AC_SIG_VERSION_1:
+		return AC_CSS_HEADER_LENGTH_V1;
+	case AC_SIG_VERSION_2:
+		return AC_CSS_HEADER_LENGTH_V2;
+	}
+
+	return 0;
 }
 
 /**
@@ -362,18 +403,23 @@ static int acp_load_ins_jta_prop(struct ac_pr_state *pr,
  *
  * @pr: pack reader
  * @head: out param to hold the installation header
+ * @hash_size: ta hash size
  *
  * Return: 0 on success
  *         -EINVAL on invalid parameters
  */
 static int acp_load_ins_jta_head(struct ac_pr_state *pr,
-				 struct ac_ins_ta_header **head)
+				 struct ac_ins_ta_header **head,
+				 unsigned int hash_size)
 {
+	size_t hdr_size;
+
 	if (!ac_pr_is_safe_to_read(pr, sizeof(**head)))
 		return -EINVAL;
 
 	*head = (struct ac_ins_ta_header *)pr->cur;
-	return ac_pr_align_move(pr, sizeof(**head));
+	hdr_size = sizeof(**head) + hash_size;
+	return ac_pr_align_move(pr, hdr_size);
 }
 
 /**
@@ -381,12 +427,14 @@ static int acp_load_ins_jta_head(struct ac_pr_state *pr,
  *
  * @pr: pack reader
  * @pack: out param to hold install information
+ * @hash_size: ta hash size
  *
  * Return: 0 on success
  *         -EINVAL on invalid parameters
  */
 static int acp_load_ins_jta(struct ac_pr_state *pr,
-			    struct ac_ins_jta_pack *pack)
+			    struct ac_ins_jta_pack *pack,
+			    unsigned int hash_size)
 {
 	int ret;
 
@@ -394,7 +442,7 @@ static int acp_load_ins_jta(struct ac_pr_state *pr,
 	if (ret)
 		return ret;
 
-	ret = acp_load_ins_jta_head(pr, &pack->head);
+	ret = acp_load_ins_jta_head(pr, &pack->head, hash_size);
 
 	return ret;
 }
@@ -423,6 +471,7 @@ static int acp_load_pack_head(struct ac_pr_state *pr,
  *
  * @raw_pack: acp file content, without the acp CSS header
  * @size: acp file size (without CSS header)
+ * @sig_ver: version of pack signature
  * @cmd_id: command id
  * @pack: out param to hold the loaded pack
  *
@@ -430,12 +479,14 @@ static int acp_load_pack_head(struct ac_pr_state *pr,
  *         -EINVAL on invalid parameters
  */
 static int acp_load_pack(const char *raw_pack, unsigned int size,
-			 unsigned int cmd_id, struct ac_pack *pack)
+			 unsigned int sig_ver, unsigned int cmd_id,
+			 struct ac_pack *pack)
 {
 	int ret;
 	struct ac_pr_state pr;
 	struct ac_ins_jta_pack_ext *pack_ext;
 	struct ac_ins_jta_prop_ext *prop_ext;
+	unsigned int hash_size;
 
 	ret = ac_pr_init(&pr, raw_pack, size);
 	if (ret)
@@ -450,10 +501,12 @@ static int acp_load_pack(const char *raw_pack, unsigned int size,
 	if (cmd_id != AC_INSTALL_JTA_PROP && cmd_id != pack->head->cmd_id)
 		return -EINVAL;
 
+	hash_size = acp_get_hash_pack_len(sig_ver);
+
 	switch (cmd_id) {
 	case AC_INSTALL_JTA:
 		pack_ext = (struct ac_ins_jta_pack_ext *)pack;
-		ret = acp_load_ins_jta(&pr, &pack_ext->cmd_pack);
+		ret = acp_load_ins_jta(&pr, &pack_ext->cmd_pack, hash_size);
 		if (ret)
 			break;
 		ret = acp_load_ta_pack(&pr, &pack_ext->ta_pack);
@@ -495,13 +548,22 @@ int acp_pload_ins_jta(const void *raw_data, unsigned int size,
 		      struct ac_ins_jta_pack_ext *pack)
 {
 	int ret;
+	unsigned int sig_ver;
+	unsigned int css_hdr_len;
 
-	if (!raw_data || size <= AC_CSS_HEADER_LENGTH || !pack)
+	if (!raw_data || !pack)
 		return -EINVAL;
 
-	ret = acp_load_pack((const char *)raw_data + AC_CSS_HEADER_LENGTH,
-			    size - AC_CSS_HEADER_LENGTH,
-			    AC_INSTALL_JTA, (struct ac_pack *)pack);
+	sig_ver = acp_get_sig_version(raw_data, size);
+	if (sig_ver == AC_SIG_VERSION_NONE)
+		return -EINVAL;
+
+	css_hdr_len = acp_get_css_hdr_len(sig_ver);
+	if (size < css_hdr_len)
+		return -EINVAL;
+
+	ret = acp_load_pack(raw_data + css_hdr_len, size - css_hdr_len,
+			    sig_ver, AC_INSTALL_JTA, (struct ac_pack *)pack);
 
 	return ret;
 }

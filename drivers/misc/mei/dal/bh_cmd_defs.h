@@ -124,7 +124,7 @@ struct  bh_command_header {
 	u64 seq;
 	u32 id;
 	u8 pad[4];
-	s8 cmd[0];
+	s8 cmd[];
 } __packed;
 
 /**
@@ -143,7 +143,7 @@ struct bh_response_header {
 	u64 ta_session_id;
 	s32 code;
 	u8 pad[4];
-	s8 data[0];
+	s8 data[];
 } __packed;
 
 /**
@@ -154,7 +154,7 @@ struct bh_response_header {
  */
 struct bh_download_jta_cmd {
 	uuid_t ta_id;
-	s8 ta_blob[0];
+	s8 ta_blob[];
 } __packed;
 
 /**
@@ -165,7 +165,7 @@ struct bh_download_jta_cmd {
  */
 struct bh_open_jta_session_cmd {
 	uuid_t ta_id;
-	s8 buffer[0];
+	s8 buffer[];
 } __packed;
 
 /**
@@ -189,7 +189,7 @@ struct bh_cmd {
 	u64 ta_session_id;
 	s32 command;
 	u32 outlen;
-	s8 buffer[0];
+	s8 buffer[];
 } __packed;
 
 /**
@@ -210,7 +210,7 @@ struct bh_check_svl_jta_blocked_state_cmd {
  */
 struct bh_resp {
 	__be32 response;
-	s8 buffer[0];
+	s8 buffer[];
 } __packed;
 
 /**
@@ -232,7 +232,7 @@ struct bh_resp_bof {
  */
 struct bh_resp_list_ta_packages {
 	u32 count;
-	uuid_t ta_ids[0];
+	uuid_t ta_ids[];
 } __packed;
 
 #endif /* __BH_DAL_H_*/
