@@ -799,62 +799,6 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 }
 
 /**
- * stmmac_xdp_read_tx_status - Reads the tx status and retrieve timestamps.
- * @priv: driver private structure
- * @queue: TX XDP queue
- * @entry: entry to be read
- *
- **/
-static void stmmac_xdp_read_tx_status(struct stmmac_priv *priv, u32 queue,
-				       u32 entry)
-{
-	struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
-	int retry_attempt = 0, limit = 10;
-	struct dma_desc *p;
-	u64 tx_hwtstamp = 0;
-	int status;
-
-	if (priv->extend_desc)
-		p = (struct dma_desc *)(tx_q->dma_etx + entry);
-	else if (tx_q->tbs & STMMAC_TBS_AVAIL)
-		p = &(tx_q->dma_enhtx + entry)->basic;
-	else
-		p = tx_q->dma_tx + entry;
-
-	status = stmmac_tx_status(priv, &priv->dev->stats,
-			&priv->xstats, p, priv->ioaddr);
-
-	/* Check if the descriptor is owned by the DMA */
-	if (unlikely(status & tx_dma_own)) {
-		/* Attempt to retry to guarantee timestamps are retrieved. */
-		while(retry_attempt < limit) {
-			udelay(1);
-			status = stmmac_tx_status(priv, &priv->dev->stats,
-						  &priv->xstats, p,
-						  priv->ioaddr);
-
-			if ((status & tx_dma_own) &&
-			    (retry_attempt == limit))
-				return;
-			else if (!(status & tx_dma_own))
-				break;
-			else
-				retry_attempt++;
-		}
-	}
-
-	/* Make sure descriptor fields are read after reading the own bit.*/
-	dma_rmb();
-
-	/* Just consider the last segment and ...*/
-	if (likely(!(status & tx_not_ls))) {
-		stmmac_get_tx_hwtstamp(priv, p, &tx_hwtstamp);
-		if (tx_hwtstamp)
-			trace_printk("XDP TX HW TS %llu\n", tx_hwtstamp);
-	}
-}
-
-/**
  * stmac_clean_xdp_tx_buffer - Frees and unmaps an XDP Tx entry
  * @priv: driver private structure
  * @queue: TX XDP queue
@@ -882,9 +826,9 @@ static void stmac_clean_xdp_tx_buffer(struct stmmac_priv *priv, u32 queue,
 int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 {
 	struct stmmac_tx_queue *xdp_q = get_tx_queue(priv, queue);
-	u32 i, frames_ready, xsk_frames = 0, completed_frames = 0;
+	u32 frames_ready, xsk_frames = 0, completed_frames = 0;
 	struct xdp_umem *umem = xdp_q->xsk_umem;
-	u32 entry, total_bytes = 0;
+	u32 entry, total_bytes = 0, count = 0;
 
 	frames_ready = STMMAC_TX_DESC_TO_CLEAN(xdp_q);
 
@@ -897,14 +841,49 @@ int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 
 	entry = xdp_q->dirty_tx;
 
-	for (i = 0; i < completed_frames; i++) {
+	while ((entry != xdp_q->cur_tx) && (count < completed_frames)) {
+		struct dma_desc *p;
+		int status;
 
-		/* To increase efficiency, we only read the status register
-		 * if user requests for timestamps. Future work can include
-		 * tx statistics in here.
-		 */
-		if (priv->hwts_all)
-			stmmac_xdp_read_tx_status(priv, queue, entry);
+		if (priv->extend_desc)
+			p = (struct dma_desc *)(xdp_q->dma_etx + entry);
+		else if (xdp_q->tbs & STMMAC_TBS_AVAIL)
+			p = &(xdp_q->dma_enhtx + entry)->basic;
+		else
+			p = xdp_q->dma_tx + entry;
+
+		status = stmmac_tx_status(priv, &priv->dev->stats,
+					  &priv->xstats, p, priv->ioaddr);
+
+		/* Check if the descriptor is owned by the DMA */
+		if (unlikely(status & tx_dma_own))
+			break;
+
+		count++;
+
+		/* Ensure descriptor fields are read after reading own bit */
+		dma_rmb();
+
+		/* Just consider the last segment and ...*/
+		if (likely(!(status & tx_not_ls))) {
+			ktime_t tx_hwtstamp;
+
+			/* ... verify the status error condition */
+			if (unlikely(status & tx_err)) {
+				priv->dev->stats.tx_errors++;
+			} else {
+				priv->dev->stats.tx_packets++;
+				priv->xstats.tx_pkt_n++;
+			}
+
+			if (unlikely(priv->hwts_all)) {
+				stmmac_get_tx_hwtstamp(priv, p, &tx_hwtstamp);
+				trace_printk("XDP TX HW TS %llu\n",
+					     tx_hwtstamp);
+			}
+		}
+
+		stmmac_clean_desc3(priv, xdp_q, p);
 
 		if (xdp_q->xdpf[entry])
 			stmac_clean_xdp_tx_buffer(priv, queue, entry);
@@ -913,6 +892,12 @@ int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 
 		xdp_q->xdpf[entry] =  NULL;
 		total_bytes += xdp_q->tx_skbuff_dma[entry].len;
+
+		if (xdp_q->tbs & STMMAC_TBS_AVAIL)
+			stmmac_release_tx_desc(priv, p,
+					       STMMAC_ENHANCED_TX_MODE);
+		else
+			stmmac_release_tx_desc(priv, p, priv->mode);
 
 		entry = STMMAC_GET_ENTRY(entry, priv->dma_tx_size);
 	}
@@ -924,7 +909,6 @@ int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 		xsk_umem_complete_tx(umem, xsk_frames);
 
 	priv->dev->stats.tx_bytes += total_bytes;
-	priv->dev->stats.tx_packets += completed_frames;
 
 out_xmit:
 	if (spin_trylock(&xdp_q->xdp_xmit_lock)) {
@@ -932,7 +916,7 @@ out_xmit:
 		spin_unlock(&xdp_q->xdp_xmit_lock);
 	}
 
-	return completed_frames;
+	return count;
 }
 
 /**
