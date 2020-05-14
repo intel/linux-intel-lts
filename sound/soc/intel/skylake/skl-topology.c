@@ -4934,14 +4934,14 @@ static int skl_tplg_get_int_tkn(struct device *dev,
 		if (!fmt)
 			return -EINVAL;
 
-		res->nr_input_pins = tkn_elem->value;
+		fmt->nr_in_fmt = tkn_elem->value;
 		break;
 
 	case SKL_TKN_MM_U32_NUM_OUT_FMT:
 		if (!fmt)
 			return -EINVAL;
 
-		res->nr_output_pins = tkn_elem->value;
+		fmt->nr_out_fmt = tkn_elem->value;
 		break;
 
 	case SKL_TKN_U32_FMT_CH:
