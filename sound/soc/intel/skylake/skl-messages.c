@@ -1473,11 +1473,11 @@ static void skl_set_base_ext_module_format(struct skl_sst *ctx,
 	struct skl_module_iface *fmt = &module->formats[mconfig->fmt_idx];
 	struct skl_module_fmt *format;
 
-	base_cfg_ext->nr_input_pins = res->nr_input_pins;
-	base_cfg_ext->nr_output_pins = res->nr_output_pins;
+	base_cfg_ext->nr_input_pins = fmt->nr_in_fmt;
+	base_cfg_ext->nr_output_pins = fmt->nr_out_fmt;
 	base_cfg_ext->priv_param_length = 0;
 
-	for (i = 0; i < res->nr_input_pins; i++) {
+	for (i = 0; i < fmt->nr_in_fmt; i++) {
 		pin_res = &res->input[i];
 		pin_fmt = &base_cfg_ext->pins_fmt[i];
 
@@ -1488,9 +1488,9 @@ static void skl_set_base_ext_module_format(struct skl_sst *ctx,
 		fill_pin_params(&pin_fmt->audio_fmt, format);
 	}
 
-	for (i = 0; i < res->nr_output_pins; i++) {
+	for (i = 0; i < fmt->nr_out_fmt; i++) {
 		pin_res = &res->output[i];
-		pin_fmt = &base_cfg_ext->pins_fmt[res->nr_input_pins + i];
+		pin_fmt = &base_cfg_ext->pins_fmt[fmt->nr_in_fmt + i];
 
 		pin_fmt->pin_idx = pin_res->pin_index;
 		pin_fmt->buf_size = pin_res->buf_size;
@@ -1989,8 +1989,8 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 
 	case SKL_MODULE_TYPE_ALGO:
 		param_size = sizeof(struct skl_algo_cfg) +
-			(m_res->nr_input_pins + m_res->nr_output_pins)
-			* sizeof(struct skl_pin_format);
+			     (m_intf->nr_in_fmt + m_intf->nr_out_fmt) *
+				     sizeof(struct skl_pin_format);
 		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 		return param_size;
 
@@ -2008,8 +2008,8 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 	case SKL_MODULE_TYPE_BASE_GENEXT:
 		param_size = sizeof(struct skl_base_cfg);
 		param_size += sizeof(struct skl_base_cfg_ext) +
-			(m_res->nr_input_pins + m_res->nr_output_pins)
-			* sizeof(struct skl_pin_format);
+			      (m_intf->nr_in_fmt + m_intf->nr_out_fmt) *
+				      sizeof(struct skl_pin_format);
 		return param_size;
 
 	default:
