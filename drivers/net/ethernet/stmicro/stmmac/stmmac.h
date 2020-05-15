@@ -220,6 +220,7 @@ struct stmmac_priv {
 
 	struct phylink_config phylink_config;
 	struct phylink *phylink;
+	bool phylink_up;
 
 	struct stmmac_extra_stats xstats ____cacheline_aligned_in_smp;
 	struct stmmac_safety_stats sstats;
@@ -230,6 +231,7 @@ struct stmmac_priv {
 	int synopsys_id;
 	u32 msg_enable;
 	int wolopts;
+	int saved_wolopts;
 	int wol_irq;
 	int clk_csr;
 	struct timer_list eee_ctrl_timer;

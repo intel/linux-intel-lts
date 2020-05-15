@@ -45,6 +45,7 @@
 #include <linux/of_mdio.h>
 #include <linux/bpf.h>
 #include <linux/bpf_trace.h>
+#include <linux/pm_runtime.h>
 #include <net/xdp.h>
 #include "dwmac1000.h"
 #include "dwxgmac2.h"
@@ -1037,12 +1038,18 @@ static void stmmac_mac_link_down(struct phylink_config *config,
 {
 	struct stmmac_priv *priv = netdev_priv(to_net_dev(config->dev));
 
+	priv->phylink_up = false;
+
 	stmmac_mac_set(priv, priv->ioaddr, false);
 	priv->eee_active = false;
 	stmmac_eee_init(priv);
 	stmmac_set_eee_pls(priv, priv->hw, false);
 	stmmac_fpe_link_state_handle(priv, priv->hw, priv->dev, false);
 
+	/* Schedule runtime suspend if the device's runtime PM status allows it
+	 * to be suspended.
+	 */
+	pm_runtime_idle(priv->device);
 }
 
 static void stmmac_mac_link_up(struct phylink_config *config,
@@ -1050,6 +1057,11 @@ static void stmmac_mac_link_up(struct phylink_config *config,
 			       struct phy_device *phy)
 {
 	struct stmmac_priv *priv = netdev_priv(to_net_dev(config->dev));
+
+	priv->phylink_up = true;
+
+	/* Cancel any scheduled runtime suspend request */
+	pm_runtime_resume(priv->device);
 
 	stmmac_mac_set(priv, priv->ioaddr, true);
 	if (phy && priv->dma_cap.eee) {
@@ -3454,6 +3466,12 @@ static int stmmac_open(struct net_device *dev)
 	u32 chan;
 	int ret;
 
+	/* Use pm_runtime_get_sync() call paired with pm_runtime_put() call to
+	 * ensure that the device is not put into runtime suspend during the
+	 * operation.
+	 */
+	pm_runtime_get_sync(priv->device);
+
 	if (priv->hw->pcs != STMMAC_PCS_RGMII &&
 	    priv->hw->pcs != STMMAC_PCS_TBI &&
 	    priv->hw->pcs != STMMAC_PCS_RTBI) {
@@ -3462,7 +3480,7 @@ static int stmmac_open(struct net_device *dev)
 			netdev_err(priv->dev,
 				   "%s: Cannot attach to PHY (error: %d)\n",
 				   __func__, ret);
-			return ret;
+			goto out;
 		}
 	}
 
@@ -3562,6 +3580,7 @@ static int stmmac_open(struct net_device *dev)
 		stmmac_netproxy_register(dev);
 #endif
 
+	pm_runtime_put(priv->device);
 	return 0;
 
 phy_conv_error:
@@ -3582,6 +3601,8 @@ init_error:
 	free_dma_desc_resources(priv);
 dma_desc_error:
 	phylink_disconnect_phy(priv->phylink);
+out:
+	pm_runtime_put(priv->device);
 	return ret;
 }
 
@@ -3596,6 +3617,12 @@ static int stmmac_release(struct net_device *dev)
 	struct stmmac_priv *priv = netdev_priv(dev);
 	u32 chan;
 	int ret;
+
+	/* Use pm_runtime_get_sync() call paired with pm_runtime_put() call to
+	 * ensure that the device is not put into runtime suspend during the
+	 * operation.
+	 */
+	pm_runtime_get_sync(priv->device);
 
 	if (priv->eee_enabled)
 		del_timer_sync(&priv->eee_ctrl_timer);
@@ -3622,7 +3649,7 @@ static int stmmac_release(struct net_device *dev)
 			netdev_err(priv->dev,
 				   "%s: ERROR: remove phy conv (error: %d)\n",
 				   __func__, ret);
-			return 0;
+			goto out;
 		}
 	}
 
@@ -3648,7 +3675,8 @@ static int stmmac_release(struct net_device *dev)
 	if (priv->plat->has_netproxy)
 		stmmac_netproxy_deregister(dev);
 #endif
-
+out:
+	pm_runtime_put(priv->device);
 	return 0;
 }
 
@@ -6626,6 +6654,23 @@ int stmmac_dvr_probe(struct device *device,
 	stmmac_init_fs(ndev);
 #endif
 
+	/* Runtime PM is mutually exclusive with network proxy service */
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy)
+		return ret;
+#endif
+
+	/* To support runtime PM, we need to make sure usage_count is equal to 0
+	 * when runtime_auto flag is set. Otherwise, it should be equal to 1.
+	 */
+	if (priv->device->power.runtime_auto) {
+		while (atomic_read(&priv->device->power.usage_count) > 0)
+			pm_runtime_put_noidle(device);
+	} else {
+		while (atomic_read(&priv->device->power.usage_count) > 1)
+			pm_runtime_put_noidle(device);
+	}
+
 	return ret;
 
 error_netdev_register:
@@ -6655,6 +6700,9 @@ int stmmac_dvr_remove(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
+
+	/* Increase device’s usage_count so that runtime PM is disabled */
+	pm_runtime_get_noresume(dev);
 
 	netdev_info(priv->dev, "%s: removing driver", __func__);
 
