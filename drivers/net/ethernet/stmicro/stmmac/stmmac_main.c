@@ -514,6 +514,7 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			    struct dma_desc *np, ktime_t *hwtstamp)
 {
+	void __iomem *ptpaddr = priv->ptpaddr;
 	struct dma_desc *desc = p;
 	u64 adjust = 0;
 	u64 ns = 0;
@@ -552,10 +553,15 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 
 		ns -= adjust;
 		netdev_dbg(priv->dev, "get valid RX hw timestamp %llu\n", ns);
-		*hwtstamp = ns_to_ktime(ns);
 	} else  {
 		netdev_dbg(priv->dev, "cannot get RX hw timestamp\n");
+		/* RX HW T/S invalid, fallback to current PTP time instead
+		 * of not updating hwtstamp (which can be valid stale data
+		 * from past)
+		 */
+		stmmac_get_systime(priv, ptpaddr, &ns);
 	}
+	*hwtstamp = ns_to_ktime(ns);
 }
 
 /**

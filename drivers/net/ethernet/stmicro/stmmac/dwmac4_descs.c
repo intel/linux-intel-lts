@@ -252,12 +252,14 @@ static int dwmac4_rx_check_timestamp(void *desc)
 	unsigned int rdes0 = le32_to_cpu(p->des0);
 	unsigned int rdes1 = le32_to_cpu(p->des1);
 	unsigned int rdes3 = le32_to_cpu(p->des3);
-	u32 own, ctxt;
+	u32 own, ctxt, de;
 	int ret = 1;
 
 	own = rdes3 & RDES3_OWN;
 	ctxt = ((rdes3 & RDES3_CONTEXT_DESCRIPTOR)
 		>> RDES3_CONTEXT_DESCRIPTOR_SHIFT);
+	de = ((rdes3 & RDES3_CONTEXT_DESCRIPTOR_ERR)
+		>> RDES3_CONTEXT_DESCRIPTOR_ERR_SHIFT);
 
 	if (likely(!own && ctxt)) {
 		if ((rdes0 == 0xffffffff) && (rdes1 == 0xffffffff))
@@ -267,6 +269,10 @@ static int dwmac4_rx_check_timestamp(void *desc)
 			/* A valid Timestamp is ready to be read */
 			ret = 0;
 	}
+
+	/* Descriptor Error */
+	if (unlikely(de))
+		ret = -EINVAL;
 
 	/* Timestamp not ready */
 	return ret;
