@@ -452,15 +452,13 @@ out:
 }
 
 /**
- * vm_support - enable on bus clients with vm support
+ * vt_support - enable on bus clients with vtag support
  *
  * @cldev: me clients device
  */
-static void vm_support(struct mei_cl_device *cldev)
+static void vt_support(struct mei_cl_device *cldev)
 {
-	dev_dbg(&cldev->dev, "running hook %s\n", __func__);
-
-	if (cldev->me_cl->props.vm_supported == 1)
+	if (cldev->me_cl->props.vt_supported == 1)
 		cldev->do_match = 1;
 }
 
@@ -476,7 +474,7 @@ static struct mei_fixup {
 	MEI_FIXUP(MEI_UUID_NFC_HCI, mei_nfc),
 	MEI_FIXUP(MEI_UUID_WD, mei_wd),
 	MEI_FIXUP(MEI_UUID_MKHIF_FIX, mei_mkhi_fix),
-	MEI_FIXUP(MEI_UUID_ANY, vm_support),
+	MEI_FIXUP(MEI_UUID_ANY, vt_support),
 };
 
 /**
@@ -498,4 +496,3 @@ void mei_cl_bus_dev_fixup(struct mei_cl_device *cldev)
 			f->hook(cldev);
 	}
 }
-

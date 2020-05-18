@@ -59,7 +59,7 @@ static ssize_t mei_dbgfs_read_meclients(struct file *fp, char __user *ubuf,
 				me_cl->props.max_msg_length,
 				me_cl->props.single_recv_buf,
 				kref_read(&me_cl->refcnt),
-				me_cl->props.vm_supported);
+				me_cl->props.vt_supported);
 
 			mei_me_cl_put(me_cl);
 		}
@@ -177,8 +177,8 @@ static ssize_t mei_dbgfs_read_devstate(struct file *fp, char __user *ubuf,
 				 dev->hbm_f_os_supported);
 		pos += scnprintf(buf + pos, bufsz - pos, "\tDR: %01d\n",
 				 dev->hbm_f_dr_supported);
-		pos += scnprintf(buf + pos, bufsz - pos, "\tVM: %01d\n",
-				 dev->hbm_f_vm_supported);
+		pos += scnprintf(buf + pos, bufsz - pos, "\tVT: %01d\n",
+				 dev->hbm_f_vt_supported);
 		pos += scnprintf(buf + pos, bufsz - pos, "\tCAP: %01d\n",
 				 dev->hbm_f_cap_supported);
 	}
