@@ -394,34 +394,6 @@ static bool stmmac_alloc_rx_buffers_fast_zc(struct stmmac_rx_queue *rx_q,
 }
 
 /**
- * stmmac_get_rx_buffer_zc - Return the current Rx buffer
- * @rx_q: Rx queue structure
- * @size: The size of the rx buffer (read from descriptor)
- *
- * This function returns the current, received Rx buffer, and also
- * does DMA synchronization for the Rx queue.
- *
- * Returns the received Rx buffer
- **/
-static struct stmmac_rx_buffer *stmmac_get_rx_buffer_zc(struct stmmac_rx_queue *rx_q,
-							const unsigned int size)
-{
-	struct stmmac_rx_buffer *buf;
-	struct stmmac_priv *priv;
-
-	buf = &rx_q->buf_pool[rx_q->cur_rx];
-	priv = rx_q->priv_data;
-
-	/* we are reusing so sync this buffer for CPU use */
-	dma_sync_single_range_for_cpu(priv->device,
-				      buf->addr, 0,
-				      size,
-				      DMA_BIDIRECTIONAL);
-
-	return buf;
-}
-
-/**
  * stmmac_reuse_rx_buffer_zc - Recycle an Rx buffer
  * @rx_q: Rx queue
  * @old_buf: The Rx buffer to recycle
@@ -529,56 +501,46 @@ static struct sk_buff *stmmac_construct_skb_zc(struct stmmac_rx_queue *rx_q,
 	return skb;
 }
 
-/**
- * stmmac_inc_ntc: Advance the next_to_clean index
- * @rx_q: Rx queue
- **/
-static void stmmac_inc_ntc(struct stmmac_rx_queue *rx_q)
-{
-	struct stmmac_priv *priv = rx_q->priv_data;
-	struct dma_desc *rx_desc;
-	u32 ntc;
-
-	ntc = rx_q->cur_rx + 1;
-	ntc = (ntc < priv->dma_rx_size) ? ntc : 0;
-	rx_q->cur_rx = ntc;
-
-	if (priv->extend_desc)
-		rx_desc = (struct dma_desc *)(rx_q->dma_erx + ntc);
-	else
-		rx_desc = rx_q->dma_rx + ntc;
-
-	prefetch(rx_desc);
-}
-
-/**
- * stmmac_rx_zc - Consumes Rx packets from the hardware queue
- * @rx_q: Rx queue structure
- * @budget: NAPI budget
- *
- * Returns amount of work completed
- **/
 int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 {
-	unsigned int total_rx_bytes = 0, total_rx_packets = 0;
 	struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
 	struct stmmac_channel *ch = &priv->channel[queue];
 	u16 fill_count = STMMAC_RX_DESC_UNUSED(rx_q);
+	unsigned int count = 0, error = 0, len = 0;
+	int status = 0, coe = priv->hw->rx_csum;
 	unsigned int xdp_res, xdp_xmit = 0;
-	int coe = priv->hw->rx_csum;
+	int next_entry = rx_q->cur_rx;
+	struct sk_buff *skb = NULL;
 	bool failure = false;
-	struct sk_buff *skb;
 	struct xdp_buff xdp;
 
 	xdp.rxq = &rx_q->xdp_rxq;
 
-	while (likely(total_rx_packets < (unsigned int)budget)) {
+	while (likely(count < (unsigned int)budget)) {
 		struct skb_shared_hwtstamps *shhwtstamp = NULL;
-		struct dma_desc *rx_desc, *nx_desc = NULL;
+		enum pkt_hash_types hash_type;
 		struct stmmac_rx_buffer *buf;
-		unsigned int next_entry;
-		unsigned int size;
-		int status;
+		struct dma_desc *np, *p;
+		int entry;
+		u32 hash;
+
+		if (!count && rx_q->state_saved) {
+			skb = rx_q->state.skb;
+			error = rx_q->state.error;
+			len = rx_q->state.len;
+		} else {
+			rx_q->state_saved = false;
+			skb = NULL;
+			error = 0;
+			len = 0;
+		}
+
+		if (count >= budget)
+			break;
+
+read_again:
+		entry = next_entry;
+		buf = &rx_q->buf_pool[entry];
 
 		if (fill_count >= STMMAC_RX_BUFFER_WRITE) {
 			failure = failure ||
@@ -588,68 +550,113 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 		}
 
 		if (priv->extend_desc)
-			rx_desc = (struct dma_desc *)(rx_q->dma_erx +
-						      rx_q->cur_rx);
+			p = (struct dma_desc *)(rx_q->dma_erx + entry);
 		else
-			rx_desc = rx_q->dma_rx + rx_q->cur_rx;
-
-		/* This memory barrier is needed to keep us from reading
-		 * any other fields out of the rx_desc until we have
-		 * verified the descriptor has been written back.
-		 */
-		dma_rmb();
+			p = rx_q->dma_rx + entry;
 
 		/* read the status of the incoming frame */
 		status = stmmac_rx_status(priv, &priv->dev->stats,
-					  &priv->xstats, rx_desc);
-
+					  &priv->xstats, p);
+		/* check if managed by the DMA otherwise go ahead */
 		if (unlikely(status & dma_own))
 			break;
 
-		size = stmmac_get_rx_frame_len(priv, rx_desc,
-					       coe);
-		if (!size) {
-			if (!priv->hwts_all)
-				break;
-			/* If hw timestamping is enabled, move on to the
-			 * next desc as it might contain timestamps */
-			stmmac_inc_ntc(rx_q);
-			continue;
-		}
+		rx_q->cur_rx = STMMAC_GET_ENTRY(rx_q->cur_rx,
+						priv->dma_rx_size);
+		next_entry = rx_q->cur_rx;
 
-		buf = stmmac_get_rx_buffer_zc(rx_q, size);
+		if (priv->extend_desc)
+			np = (struct dma_desc *)(rx_q->dma_erx + next_entry);
+		else
+			np = rx_q->dma_rx + next_entry;
 
+		prefetch(np);
+
+		if (priv->extend_desc)
+			stmmac_rx_extended_status(priv, &priv->dev->stats,
+						  &priv->xstats,
+						  rx_q->dma_erx + entry);
 		if (unlikely(status == discard_frame)) {
 			stmmac_reuse_rx_buffer_zc(rx_q, buf);
-			priv->dev->stats.rx_errors++;
 			fill_count++;
+			error = 1;
+			if (!priv->hwts_rx_en || !priv->hwts_all)
+				priv->dev->stats.rx_errors++;
+		}
+
+		if (unlikely(error && (status & rx_not_ls)))
+			goto read_again;
+		if (unlikely(error)) {
+			count++;
+			skb = NULL;
 			continue;
 		}
 
-		/* Increment to potentially get the next desc for reading HW T/S */
-		stmmac_inc_ntc(rx_q);
+		/* Buffer is good. Go on. */
+
+		/* XDP Frame does not support primary and secondary buffers
+		 * for now.
+		 */
+		len = stmmac_get_rx_frame_len(priv, p, coe);
+
+		/* If frame length is greater than skb buffer size
+		 * (preallocated during init) then the packet is ignored
+		 */
+		if (len > rx_q->dma_buf_sz) {
+			if (net_ratelimit())
+				netdev_err(priv->dev,
+					   "len %d larger than size (%d)\n",
+					   len, rx_q->dma_buf_sz);
+			priv->dev->stats.rx_length_errors++;
+			fill_count++;
+			skb = NULL;
+			continue;
+		}
+
+		/* ACS is set; GMAC core strips PAD/FCS for IEEE 802.3
+		 * Type frames (LLC/LLC-SNAP)
+		 *
+		 * llc_snap is never checked in GMAC >= 4, so this ACS
+		 * feature is always disabled and packets need to be
+		 * stripped manually.
+		 */
+		if (likely(!(status & rx_not_ls)) &&
+		    (likely(priv->synopsys_id >= DWMAC_CORE_4_00) ||
+		     unlikely(status != llc_snap)))
+			len -= ETH_FCS_LEN;
+
+		/* Check if we get the final descriptor which may
+		 * contain PTP time-stamping value in the following
+		 * context descriptor
+		 */
+		if (likely(status & rx_not_ls)) {
+			stmmac_reuse_rx_buffer_zc(rx_q, buf);
+			fill_count++;
+			goto read_again;
+		}
+
+		/* Got a real packet, continue to process */
+
+		/* we are reusing so sync this buffer for CPU use */
+		dma_sync_single_range_for_cpu(priv->device,
+					      buf->addr, 0,
+					      len,
+					      DMA_BIDIRECTIONAL);
 
 		xdp.data = buf->umem_addr;
 
-		if (unlikely(priv->hwts_all)) {
-			xdp.data_meta = xdp.data - sizeof(u64);
+		if (unlikely(priv->hwts_all) || unlikely(priv->hwts_rx_en)) {
+			/* We use XDP meta data to store T/S */
+			xdp.data_meta = xdp.data - sizeof(ktime_t);
 
-			next_entry = rx_q->cur_rx;
-
-			if (priv->extend_desc)
-				nx_desc = (struct dma_desc *)(rx_q->dma_erx +
-							      next_entry);
-			else
-				nx_desc = rx_q->dma_rx + next_entry;
-
-			stmmac_get_rx_hwtstamp(priv, rx_desc, nx_desc,
-					       (u64 *) xdp.data_meta);
+			stmmac_get_rx_hwtstamp(priv, p, np,
+					       (ktime_t *)xdp.data_meta);
 		} else {
 			xdp.data_meta = xdp.data;
 		}
 
 		xdp.data_hard_start = xdp.data - XDP_PACKET_HEADROOM;
-		xdp.data_end = xdp.data + size;
+		xdp.data_end = xdp.data + len;
 		xdp.handle = buf->umem_handle;
 
 		xdp_res = stmmac_run_xdp_zc(rx_q, &xdp);
@@ -661,10 +668,13 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 				stmmac_reuse_rx_buffer_zc(rx_q, buf);
 			}
 
-			total_rx_bytes += size;
-			total_rx_packets++;
+			priv->dev->stats.rx_bytes += len;
+			priv->dev->stats.rx_packets++;
+			count++;
 
 			fill_count++;
+			skb = NULL;
+
 			continue;
 		}
 
@@ -680,20 +690,16 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 		if (eth_skb_pad(skb))
 			continue;
 
-		total_rx_bytes += skb->len;
-		total_rx_packets++;
-
 		/* Get Rx HW tstamp into SKB */
 		shhwtstamp = skb_hwtstamps(skb);
 		memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
-		stmmac_get_rx_hwtstamp(priv, rx_desc, nx_desc,
-				       &shhwtstamp->hwtstamp);
+		stmmac_get_rx_hwtstamp(priv, p, np, &shhwtstamp->hwtstamp);
 
 		/* Use HW to strip VLAN header before fallback
 		 * to SW.
 		 */
 		status = stmmac_rx_hw_vlan(priv, priv->dev,
-					   priv->hw, rx_desc, skb);
+					   priv->hw, p, skb);
 		if (status == -EINVAL)
 			stmmac_rx_vlan(priv->dev, skb);
 
@@ -704,15 +710,28 @@ int stmmac_rx_zc(struct stmmac_priv *priv, int budget, u32 queue)
 		else
 			skb->ip_summed = CHECKSUM_UNNECESSARY;
 
+		if (!stmmac_get_rx_hash(priv, p, &hash, &hash_type))
+			skb_set_hash(skb, hash, hash_type);
+
+		skb_record_rx_queue(skb, queue);
 		napi_gro_receive(&ch->rx_napi, skb);
+		skb = NULL;
+
+		priv->dev->stats.rx_bytes += len;
+		priv->dev->stats.rx_packets++;
+		count++;
+	}
+
+	if (status & rx_not_ls || skb) {
+		rx_q->state_saved = true;
+		rx_q->state.skb = skb;
+		rx_q->state.error = error;
+		rx_q->state.len = len;
 	}
 
 	stmmac_finalize_xdp_rx(rx_q, xdp_xmit);
 
-	priv->dev->stats.rx_packets += total_rx_packets;
-	priv->dev->stats.rx_bytes += total_rx_bytes;
-
-	return failure ? budget : (int)total_rx_packets;
+	return failure ? budget : (int)count;
 }
 
 /**
