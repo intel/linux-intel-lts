@@ -112,13 +112,20 @@ static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
 
 	/* Clearing unsupported flags. */
 	rs485->flags &= SER_RS485_ENABLED | SER_RS485_9BIT_ENABLED |
-			SER_RS485_9BIT_TX_ADDR | SER_RS485_9BIT_RX_ADDR;
+			SER_RS485_9BIT_TX_ADDR | SER_RS485_9BIT_RX_ADDR | SER_RS485_RX_DURING_TX;
 
 	tcr = dw8250_readl_ext(p, DW_UART_TCR);
+	/* Reset previous Transfer Mode */
+	tcr &= ~DW_UART_TCR_XFER_MODE(3);
 
-	/* REVISIT: Only supporting Hardware Controlled Half Duplex mode. */
+	/* REVISIT: Only supporting Hardware Controlled Half Duplex & Duplex mode. */
 	if (rs485->flags & SER_RS485_ENABLED) {
-		tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(2);
+
+		/* Using SER_RS485_RX_DURING_TX to indicate Full Duplex Mode */
+		if (rs485->flags & SER_RS485_RX_DURING_TX)
+			tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(0);
+		else
+			tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(2);
 		dw8250_writel_ext(p, DW_UART_DE_EN, 1);
 		dw8250_writel_ext(p, DW_UART_RE_EN, 1);
 	} else {
