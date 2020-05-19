@@ -227,6 +227,12 @@ static int dwmac4_wrback_get_tx_timestamp_status(struct dma_desc *p)
 	if (le32_to_cpu(p->des3) & TDES3_CONTEXT_TYPE)
 		return 0;
 
+	/* Check for descriptor error
+	 * TODO: See if need to check against other descriptor error bits.
+	 */
+	if (le32_to_cpu(p->des3) & TDES3_DESC_ERR)
+		return 0;
+
 	/* Tx Timestamp Status is 1 so des0 and des1'll have valid values */
 	if (le32_to_cpu(p->des3) & TDES3_TIMESTAMP_STATUS)
 		return 1;

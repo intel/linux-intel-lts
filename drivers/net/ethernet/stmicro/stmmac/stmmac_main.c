@@ -458,6 +458,7 @@ bool stmmac_eee_init(struct stmmac_priv *priv)
 void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 			    struct dma_desc *p, ktime_t *hwtstamp)
 {
+	void __iomem *ptpaddr = priv->ptpaddr;
 	bool found = false;
 	u64 adjust = 0;
 	u64 ns = 0;
@@ -497,9 +498,16 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 		adjust += -(2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate));
 
 		ns += adjust;
-		*hwtstamp = ns_to_ktime(ns);
 		netdev_dbg(priv->dev, "get valid TX hw timestamp %llu\n", ns);
+	} else {
+		netdev_dbg(priv->dev, "cannot get TX hw timestamp\n");
+		/* TX HW T/S invalid, fallback to current PTP time instead
+		 * of not updating hwtstamp (which can be valid stale data
+		 * from past)
+		 */
+		stmmac_get_systime(priv, ptpaddr, &ns);
 	}
+	*hwtstamp = ns_to_ktime(ns);
 }
 
 /* stmmac_get_rx_hwtstamp - get HW RX timestamps
