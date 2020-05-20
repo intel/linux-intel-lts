@@ -569,11 +569,10 @@ static int hsw_process_reply(struct sst_hsw *hsw, u32 header)
 	switch (reply) {
 	case IPC_GLB_REPLY_PENDING:
 		trace_ipc_pending_reply("received", header);
-		msg->pending = true;
 		hsw->ipc.pending = true;
 		return 1;
 	case IPC_GLB_REPLY_SUCCESS:
-		if (msg->pending) {
+		if (hsw->ipc.pending) {
 			trace_ipc_pending_reply("completed", header);
 			sst_dsp_inbox_read(hsw->dsp, msg->rx_data,
 				msg->rx_size);

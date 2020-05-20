@@ -66,26 +66,31 @@ static int tx_wait_done(struct sst_generic_ipc *ipc,
 
 again:
 	/* wait for DSP completion (in all cases atm inc pending) */
-	ret = wait_event_timeout(ipc->msg->waitq, ipc->msg->complete,
-		msecs_to_jiffies(IPC_TIMEOUT_MSECS));
+	ret = wait_for_completion_timeout(&ipc->complete,
+					  msecs_to_jiffies(IPC_TIMEOUT_MSECS));
 
-	if (ipc->dsp->ipc_state == IPC_STATE_RECEIVED) {
-		/* fw did its job, now wait until it's processed */
-		if (!ret) {
-			wait_event(ipc->msg->waitq, ipc->msg->complete);
-			ret = 1;
-		}
+	if (!ret) {
+		if (ipc->ops.is_dsp_busy && !ipc->ops.is_dsp_busy(ipc->dsp))
+			/* real timeout */
+			goto end;
+		/*
+		 * fw did its job, either notification or reply
+		 * has been received - now wait until it's processed
+		 */
+		wait_for_completion_killable(&ipc->complete);
+		ret = 1;
 	}
 
-	if (ipc->dsp->ipc_state == IPC_STATE_DEFERRED) {
+	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+	if (!ipc->response_processed) {
 		/* reply delayed due to nofitication */
-		if (!ret)
-			wait_event(ipc->msg->waitq, ipc->msg->complete);
-		ipc->msg->complete = false;
-		ipc->dsp->ipc_state = IPC_STATE_RESET;
+		reinit_completion(&ipc->complete);
+		spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 		goto again;
 	}
+	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 
+end:
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
 	if (ret == 0) {
 		if (ipc->ops.shim_dbg != NULL)
@@ -142,9 +147,9 @@ static int ipc_tx_message(struct sst_generic_ipc *ipc, u64 header,
 
 	msg->wait = wait;
 	msg->errno = 0;
-	msg->pending = false;
-	msg->complete = false;
-	ipc->dsp->ipc_state = IPC_STATE_RESET;
+	ipc->pending = false;
+	ipc->response_processed = false;
+	reinit_completion(&ipc->complete);
 
 	if ((tx_bytes) && (ipc->ops.tx_data_copy != NULL))
 		ipc->ops.tx_data_copy(msg, tx_data, tx_bytes);
@@ -229,10 +234,8 @@ EXPORT_SYMBOL_GPL(sst_ipc_reply_find_msg);
 void sst_ipc_tx_msg_reply_complete(struct sst_generic_ipc *ipc,
 	struct ipc_message *msg)
 {
-	msg->complete = true;
-
 	if (msg->wait)
-		wake_up(&msg->waitq);
+		complete(&ipc->complete);
 }
 EXPORT_SYMBOL_GPL(sst_ipc_tx_msg_reply_complete);
 
@@ -240,6 +243,7 @@ int sst_ipc_init(struct sst_generic_ipc *ipc)
 {
 	init_waitqueue_head(&ipc->wait_txq);
 	mutex_init(&ipc->mutex);
+	init_completion(&ipc->complete);
 
 	return msg_init(ipc);
 }

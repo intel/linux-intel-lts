@@ -374,10 +374,6 @@ irqreturn_t skl_dsp_sst_interrupt(int irq, void *dev_id)
 	}
 
 	if (hipct & SKL_ADSP_REG_HIPCT_BUSY) {
-		if (IPC_GLB_NOTIFY_RSP_TYPE(hipct))
-			ctx->ipc_state = IPC_STATE_RECEIVED;
-		else if (ctx->ipc_state != IPC_STATE_RECEIVED)
-			ctx->ipc_state = IPC_STATE_DEFERRED;
 		skl_ipc_int_disable(ctx);
 		result = IRQ_WAKE_THREAD;
 	}
