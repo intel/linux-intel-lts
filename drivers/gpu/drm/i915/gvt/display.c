@@ -2726,23 +2726,29 @@ void intel_gvt_init_display(struct intel_gvt *gvt)
  */
 static int check_gop_mode(struct intel_vgpu *vgpu)
 {
-	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 	unsigned int pipe;
 	struct intel_crtc *crtc;
 	struct intel_crtc_state *crtc_state;
 	struct drm_display_mode mode;
+	enum port port = PORT_NONE;
+	u64 *port_mask = &vgpu->gvt->sel_disp_port_mask;
 	bool found = false;
 
-	/* we will get the gop output on the first pipe the vgpu ownes */
-	for_each_pipe(dev_priv, pipe) {
-		if (vgpu->gvt->pipe_info[pipe].owner == vgpu->id) {
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+		if ((*port_mask >> (vgpu->id - 1) * 8) & 0xFF & (1 << port)) {
 			found = true;
 			break;
 		}
 	}
 
 	if (found == false) {
-		gvt_dbg_dpy("Failed to find owned plane for %d", vgpu->id);
+		gvt_dbg_dpy("Can't find port %d for vgpu-%d\n", port, vgpu->id);
+		return -ENODEV;
+	}
+
+	pipe = intel_gvt_pipe_from_port(vgpu->gvt->dev_priv, port);
+	if (pipe == INVALID_PIPE) {
+		gvt_dbg_dpy("Bad mapping {vgpu-%d, port:%d}\n", vgpu->id, port);
 		return -ENODEV;
 	}
 
@@ -2861,23 +2867,29 @@ static int setup_gop_display(struct intel_vgpu *vgpu)
 	u32 width, height, Bpp;
 	u32 stride, ctl, surf;
 	unsigned long irqflags;
+	u64 *port_mask = &vgpu->gvt->sel_disp_port_mask;
+	enum port port = PORT_NONE;
 
 	width = vgpu_vreg_t(vgpu, vgtif_reg(gop.width));
 	height = vgpu_vreg_t(vgpu, vgtif_reg(gop.height));
 	Bpp = vgpu_vreg_t(vgpu, vgtif_reg(gop.Bpp));
 
 	DRM_INFO("Set up display w:%u h:%u for GOP \n", width, height);
-
-	/* we will display the gop output on the first plane the vgpu ownes */
-	for_each_pipe(dev_priv, pipe) {
-		if (vgpu->gvt->pipe_info[pipe].owner == vgpu->id) {
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+		if ((*port_mask >> (vgpu->id - 1) * 8) & 0xFF & (1 << port)) {
 			found = true;
 			break;
 		}
 	}
 
-	if (!found) {
-		gvt_dbg_dpy("Failed to find owned pipe for %d", vgpu->id);
+	if (found == false) {
+		gvt_dbg_dpy("Can't find port %d for vgpu-%d\n", port, vgpu->id);
+		return -ENODEV;
+	}
+
+	pipe = intel_gvt_pipe_from_port(vgpu->gvt->dev_priv, port);
+	if (pipe == INVALID_PIPE) {
+		gvt_dbg_dpy("Bad mapping {vgpu-%d ,port %d}\n", vgpu->id, port);
 		return -ENODEV;
 	}
 
