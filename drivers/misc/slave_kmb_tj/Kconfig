@@ -1,0 +1,6 @@
+config SLAVE_KMB_TJ
+	tristate "KMB Tj in slave mode"
+	default y
+	help
+	  Enable this option if you want to have support for thermal management
+	  controller present in Keembay

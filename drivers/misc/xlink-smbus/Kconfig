@@ -1,0 +1,18 @@
+# Copyright (C) 2019 Intel Corporation
+# SPDX-License-Identifier: GPL-2.0-only
+
+config XLINK_SMBUS
+	tristate "Enable smbus interface over xlink PCIe"
+	default m
+	depends on XLINK_CORE
+	help
+	 Enable xlink-pcie as i2c adapater both slave and master
+
+
+config XLINKI2C_ADAPTER
+	tristate "Enable as i2c controller -> Local Host-Disabled, RemoteHost - Enabled"
+	default n
+	help
+	 Enable I2C adapter over xlink - calls xlink APIs for transfer,
+	 and if not defined, calls the real i2c adapter APIs (here it is synopsys)
+

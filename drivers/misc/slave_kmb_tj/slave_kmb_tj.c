@@ -1,0 +1,269 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * I2C slave mode Keembay Junction Tj temperature.
+ *
+ * Copyright (C) 2019-2020 Intel Corporation
+ */
+
+
+#include <asm/page.h>
+#include <linux/bitfield.h>
+#include <linux/i2c.h>
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/sysfs.h>
+#include <linux/sched/mm.h>
+#include <linux/of_address.h>
+
+#define I2C_SLAVE_BYTELEN GENMASK(15, 0)
+#define I2C_SLAVE_FLAG_ADDR16 BIT(16)
+#define I2C_SLAVE_FLAG_RO BIT(17)
+#define I2C_SLAVE_DEVICE_MAGIC(_len, _flags) ((_flags) | (_len))
+
+#if IS_ENABLED(CONFIG_I2C_SLAVE)
+
+struct kmb_tj_data {
+	struct bin_attribute bin;
+	spinlock_t buffer_lock;
+	u16 buffer_idx;
+	u16 address_mask;
+	u8 num_address_bytes;
+	u8 idx_write_cnt;
+	bool read_only;
+	u8 buffer[];
+};
+
+extern int kmb_tj_temp_list[];
+
+static int i2c_slave_kmb_tj_slave_cb(struct i2c_client *client,
+				     enum i2c_slave_event event, u8 *val)
+{
+	struct kmb_tj_data *kmb_tj = i2c_get_clientdata(client);
+	unsigned char *temp;
+
+	switch (event) {
+	case I2C_SLAVE_WRITE_RECEIVED:
+	{
+		if (kmb_tj->idx_write_cnt < kmb_tj->num_address_bytes) {
+			if (kmb_tj->idx_write_cnt == 0)
+				kmb_tj->buffer_idx = 0;
+
+			kmb_tj->buffer_idx = *val | (kmb_tj->buffer_idx << 8);
+			kmb_tj->idx_write_cnt++;
+			spin_lock(&kmb_tj->buffer_lock);
+			temp = (unsigned char *)(kmb_tj_temp_list);
+			kmb_tj->buffer[kmb_tj->buffer_idx]
+				= temp[kmb_tj->buffer_idx];
+			spin_unlock(&kmb_tj->buffer_lock);
+		} else {
+			if (!kmb_tj->read_only) {
+				printk(KERN_WARNING "Error"
+						"I2C_SLAVE_WRITE_RECEIVED,"
+						"KMB TJ reg are readonly\n");
+				return -1; /* write not allowed */
+			}
+		}
+		break;
+	}
+
+	case I2C_SLAVE_READ_PROCESSED:
+	{
+		/* The previous byte made it to the bus, get next one */
+		kmb_tj->buffer_idx++;
+	}
+		/* fallthrough */
+	case I2C_SLAVE_READ_REQUESTED:
+	{
+		if (kmb_tj->buffer_idx >= (6 * sizeof(int))) {
+			printk(KERN_WARNING "Error Wrong Offset \n");
+			/* only first four bytes correspond to Tj Temperature */
+			return -1;
+		}
+
+		spin_lock(&kmb_tj->buffer_lock);
+		*val = kmb_tj->buffer[kmb_tj->buffer_idx];
+		spin_unlock(&kmb_tj->buffer_lock);
+		/*
+		 * Do not increment buffer_idx here, because we don't know if
+		 * this byte will be actually used. Read Linux I2C slave docs
+		 * for details.
+		 */
+		break;
+	}
+
+	case I2C_SLAVE_STOP:
+	{
+		kmb_tj->idx_write_cnt = 0;
+		break;
+	}
+	case I2C_SLAVE_WRITE_REQUESTED:
+	{
+
+		kmb_tj->idx_write_cnt = 0;
+		break;
+	}
+
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static ssize_t i2c_slave_kmb_tj_bin_read(struct file *filp,
+					struct kobject *kobj,
+					struct bin_attribute *attr,
+					char *buf, loff_t off, size_t count)
+{
+	struct kmb_tj_data *kmb_tj;
+	unsigned long flags;
+
+	kmb_tj = dev_get_drvdata(container_of(kobj, struct device, kobj));
+
+	spin_lock_irqsave(&kmb_tj->buffer_lock, flags);
+	memcpy(buf, &kmb_tj->buffer[off], count);
+	spin_unlock_irqrestore(&kmb_tj->buffer_lock, flags);
+
+	return count;
+}
+
+#if 0
+/* Write to keembay TJ sensor registers not allowed, as they are readonly */
+static ssize_t i2c_slave_kmb_tj_bin_write(
+		struct file *filp, struct kobject *kobj,
+		struct bin_attribute *attr, char *buf,
+		loff_t off, size_t count)
+{
+	struct kmb_tj_data *kmb_tj;
+	unsigned long flags;
+
+	kmb_tj = dev_get_drvdata(container_of(kobj, struct device, kobj));
+
+	spin_lock_irqsave(&kmb_tj->buffer_lock, flags);
+	memcpy(&kmb_tj->buffer[off], buf, count);
+	spin_unlock_irqrestore(&kmb_tj->buffer_lock, flags);
+
+	return count;
+}
+#endif
+
+static int hddl_device_identify(uint32_t *board_id, uint32_t *kmb_id) /* TODO */
+{
+	char *gpio_base_address;
+
+	gpio_base_address = ioremap(0x20320000, 2048);
+
+
+	/* Configure the GPIOs */
+
+	*((volatile int*)(gpio_base_address + 0x2CC)) =  0x1C0F;
+	*((volatile int*)(gpio_base_address + 0x2D0)) =  0x1C0F;
+	*((volatile int*)(gpio_base_address + 0x2D4)) =  0x1C0F;
+
+	*(volatile int*)(gpio_base_address + 0x328) =  0x1C0F;
+	*(volatile int*)(gpio_base_address + 0x32C) =  0x1C0F;
+	*(volatile int*)(gpio_base_address + 0x330) =  0x1C0F;
+
+	*board_id = *((volatile int*)(gpio_base_address + 0x24));
+	*board_id = (*board_id >> 19)&0x7;
+	*kmb_id = *((volatile int*)(gpio_base_address + 0x28));
+	*kmb_id = (*kmb_id >> 10)&0x7;
+	printk(KERN_INFO "HDDL:Board Id = %x\n", *board_id);
+	printk(KERN_INFO "HDDL:Kmb Id = %x\n", *kmb_id);
+
+	pr_info("HDDL: hddl_device_identify done\n");
+	return 0;
+}
+
+static int i2c_slave_kmb_tj_probe(struct i2c_client *client,
+				const struct i2c_device_id *id)
+{
+	struct kmb_tj_data *kmb_tj;
+	int ret;
+	unsigned int size =
+		FIELD_GET(I2C_SLAVE_BYTELEN, id->driver_data);
+	unsigned int flag_addr16 =
+		FIELD_GET(I2C_SLAVE_FLAG_ADDR16, id->driver_data);
+	unsigned int slave_addr;
+	uint32_t board_id, kmb_id;
+
+	hddl_device_identify(&board_id, &kmb_id);
+	if (board_id <= 4) {
+		/* Slave address range 0x10 -- 0x1F */
+		slave_addr = kmb_id + 0x10 + (board_id * 3);
+	} else {
+		/* slave address range 0x60 -- 0x6F */
+		slave_addr = kmb_id + 0x60 + ((board_id - 5) * 3);
+	}
+
+	printk(KERN_INFO "HDDL: Slave Address = %x\n", slave_addr);
+
+	kmb_tj = devm_kzalloc(&client->dev,
+			sizeof(struct kmb_tj_data) + size, GFP_KERNEL);
+	if (!kmb_tj)
+		return -ENOMEM;
+
+	client->addr = slave_addr;
+	kmb_tj->idx_write_cnt = 0;
+	kmb_tj->num_address_bytes = flag_addr16 ? 2 : 1;
+	kmb_tj->address_mask = size - 1;
+	kmb_tj->read_only = FIELD_GET(I2C_SLAVE_FLAG_RO, id->driver_data);
+	spin_lock_init(&kmb_tj->buffer_lock);
+	i2c_set_clientdata(client, kmb_tj);
+
+	sysfs_bin_attr_init(&kmb_tj->bin);	/* TODO */
+	kmb_tj->bin.attr.name = "slave-kmb-tj";
+	kmb_tj->bin.attr.mode = S_IRUSR | S_IWUSR;
+	kmb_tj->bin.read = i2c_slave_kmb_tj_bin_read;
+	/* kmb_tj->bin.write = i2c_slave_kmb_tj_bin_write; */
+	/* Write not allowed to registers */
+	kmb_tj->bin.size = size;
+
+	ret = sysfs_create_bin_file(&client->dev.kobj, &kmb_tj->bin);
+	if (ret)
+		return ret;
+
+	ret = i2c_slave_register(client, i2c_slave_kmb_tj_slave_cb);
+	if (ret) {
+		sysfs_remove_bin_file(&client->dev.kobj, &kmb_tj->bin);
+		return ret;
+	}
+
+	return 0;
+};
+
+static int i2c_slave_kmb_tj_remove(struct i2c_client *client)
+{
+	struct kmb_tj_data *kmb_tj = i2c_get_clientdata(client);
+
+	/* kfree(kmb_tj);  not required as for devm_kzalloc */
+	i2c_slave_unregister(client);
+	sysfs_remove_bin_file(&client->dev.kobj, &kmb_tj->bin);
+
+	return 0;
+}
+
+static const struct i2c_device_id i2c_slave_kmb_tj_id[] = {
+	{ "slave-kmb-tj", 16 },
+	{}
+};
+MODULE_DEVICE_TABLE(i2c, i2c_slave_kmb_tj_id);
+
+static struct i2c_driver i2c_slave_kmb_tj_driver = {
+	.driver = {
+		.name = "slave-kmb-tj",
+	},
+	.probe = i2c_slave_kmb_tj_probe,
+	.remove = i2c_slave_kmb_tj_remove,
+	.id_table = i2c_slave_kmb_tj_id,
+};
+module_i2c_driver(i2c_slave_kmb_tj_driver);
+
+#endif /* CONFIG_I2C_SLAVE */
+
+MODULE_AUTHOR("Vaidya, Mahesh R <mahesh.r.vaidya@intel.com>");
+MODULE_DESCRIPTION("I2C slave mode Keembay Junction temperature Driver");
+MODULE_LICENSE("GPL v2");
