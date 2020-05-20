@@ -1105,7 +1105,7 @@ static void tgl_uncore_imc_freerunning_init_box(struct intel_uncore_box *box)
 		return;
 	}
 	mch_bar &= ~BIT(0);
-	addr = (resource_size_t)(mch_bar + TGL_UNCORE_MMIO_IMC_MEM_OFFSET * pmu->pmu_idx);
+	addr = mch_bar + (resource_size_t)(TGL_UNCORE_MMIO_IMC_MEM_OFFSET * pmu->pmu_idx);
 
 #ifdef CONFIG_PHYS_ADDR_T_64BIT
 	pci_read_config_dword(pdev, SNB_UNCORE_PCI_IMC_BAR_OFFSET + 4, &mch_bar);
