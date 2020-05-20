@@ -332,8 +332,8 @@ static bool skl_ipc_is_dsp_busy(struct sst_dsp *dsp)
 {
 	u32 hipci;
 
-	hipci = sst_dsp_shim_read_unlocked(dsp, SKL_ADSP_REG_HIPCI);
-	return (hipci & SKL_ADSP_REG_HIPCI_BUSY);
+	hipci = sst_dsp_shim_read_unlocked(dsp, SKL_ADSP_REG_HIPCT);
+	return (hipci & SKL_ADSP_REG_HIPCT_BUSY);
 }
 
 /* Lock to be held by caller */
@@ -570,7 +570,8 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 		struct skl_ipc_header header)
 {
 	struct skl_sst *skl = container_of(ipc, struct skl_sst, ipc);
-	int ret;
+	unsigned long flags;
+	int ret = 0;
 
 	if (IPC_GLB_NOTIFY_MSG_TYPE(header.primary)) {
 		switch (IPC_GLB_NOTIFY_TYPE(header.primary)) {
@@ -622,7 +623,6 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 			if (ret < 0) {
 				dev_err(ipc->dev,
 					"dsp crash dump read fail:%d\n", ret);
-				return ret;
 			}
 			break;
 
@@ -631,7 +631,6 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 			if (ret < 0) {
 				dev_err(ipc->dev,
 				"Module Notification read fail:%d\n", ret);
-				return ret;
 			}
 			break;
 
@@ -642,7 +641,11 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 		}
 	}
 
-	return 0;
+	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+	sst_ipc_tx_msg_reply_complete(ipc, ipc->msg);
+	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
+
+	return ret;
 }
 
 static int skl_ipc_set_reply_error_code(u32 reply)
@@ -716,6 +719,7 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 		}
 	}
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
+	ipc->response_processed = true;
 	sst_ipc_tx_msg_reply_complete(ipc, msg);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 }

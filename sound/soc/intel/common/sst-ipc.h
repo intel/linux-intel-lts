@@ -35,9 +35,6 @@ struct ipc_message {
 	char *rx_data;
 	size_t rx_size;
 
-	wait_queue_head_t waitq;
-	bool pending;
-	bool complete;
 	bool wait;
 	int errno;
 };
@@ -60,6 +57,8 @@ struct sst_generic_ipc {
 
 	/* IPC messaging */
 	struct mutex mutex;
+	struct completion complete;
+	bool response_processed;
 	wait_queue_head_t wait_txq;
 	struct task_struct *tx_thread;
 	bool pending;
