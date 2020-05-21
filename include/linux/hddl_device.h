@@ -9,8 +9,8 @@
 #define __HDDL_DEVICE_H
 
 #define HDDL_MAGIC 'x'
-#define HDDL_WRITE_SW_ID        _IOW(HDDL_MAGIC, 'a', void*)
-#define HDDL_READ_SW_ID_DATA    _IOR(HDDL_MAGIC, 'b', void*)
+#define HDDL_READ_SW_ID_DATA    _IOW(HDDL_MAGIC, 'a', void*)
+#define HDDL_SOFT_RESET		      _IOW(HDDL_MAGIC, 'b', void*)
 
 typedef struct hddl_device_kmb_st {
 	uint32_t board_id;
@@ -29,6 +29,14 @@ typedef struct sw_id_hddl_data {
 	uint32_t board_id;
 	uint32_t soc_id;
 	uint32_t soc_adaptor_no[2];
+	uint32_t sw_id;
+	uint32_t return_id;
 } T_SW_ID_HDDL_DATA;
 
+typedef struct sw_id_soft_reset {
+	uint32_t sw_id;
+	uint32_t return_id;
+} T_SW_ID_SOFT_RESET;
+
 #endif /* __HDDL_DEVICE_H */
+

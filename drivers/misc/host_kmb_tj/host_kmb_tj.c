@@ -263,16 +263,16 @@ static int host_kmb_tj_probe(struct i2c_client *client,
 	uint32_t *device_id = client->dev.platform_data;
 
 	if (strstr(client->adapter->name, "SMBus I801") != NULL)
-		i2c_str = "smbus";
+		i2c_str = "smb";
 	else
-		i2c_str = "xlink";
+		i2c_str = "xlk";
 
 	host_kmb_trip_info1 = kzalloc(
 			sizeof(struct kmb_trip_point_info), GFP_KERNEL);
 	memcpy(host_kmb_trip_info1, &mss_zone_trip_info_host,
 				sizeof(struct kmb_trip_point_info));
 	host_kmb_trip_info1->sensor_name = kasprintf(GFP_KERNEL,
-				"mss_host_%s-%x", i2c_str, *device_id);
+				"mss_%s-%x", i2c_str, *device_id);
 	host_kmb_trip_info1->thermal_info =  kzalloc(
 			sizeof(struct keembay_therm_info), GFP_KERNEL);
 	host_kmb_trip_info1->thermal_info->i2c_c = client;
@@ -282,7 +282,7 @@ static int host_kmb_tj_probe(struct i2c_client *client,
 	memcpy(host_kmb_trip_info2, &css_zone_trip_info_host,
 				sizeof(struct kmb_trip_point_info));
 	host_kmb_trip_info2->sensor_name = kasprintf(GFP_KERNEL,
-				"css_host_%s-%x", i2c_str, *device_id);
+				"css_%s-%x", i2c_str, *device_id);
 	host_kmb_trip_info2->thermal_info =  kzalloc(
 			sizeof(struct keembay_therm_info), GFP_KERNEL);
 	host_kmb_trip_info2->thermal_info->i2c_c = client;
@@ -292,7 +292,7 @@ static int host_kmb_tj_probe(struct i2c_client *client,
 	memcpy(host_kmb_trip_info3, &nce_max_zone_trip_info_host,
 				sizeof(struct kmb_trip_point_info));
 	host_kmb_trip_info3->sensor_name = kasprintf(GFP_KERNEL,
-				"nce_host_%s-%x", i2c_str, *device_id);
+				"nce_%s-%x", i2c_str, *device_id);
 	host_kmb_trip_info3->thermal_info =
 		kzalloc(sizeof(struct keembay_therm_info), GFP_KERNEL);
 	host_kmb_trip_info3->thermal_info->i2c_c = client;
@@ -302,7 +302,7 @@ static int host_kmb_tj_probe(struct i2c_client *client,
 	memcpy(host_kmb_trip_info4, &soc_max_zone_trip_info_host,
 				sizeof(struct kmb_trip_point_info));
 	host_kmb_trip_info4->sensor_name = kasprintf(
-			GFP_KERNEL, "soc_host_%s-%x", i2c_str, *device_id);
+			GFP_KERNEL, "soc_%s-%x", i2c_str, *device_id);
 	host_kmb_trip_info4->thermal_info =  kzalloc(
 			sizeof(struct keembay_therm_info), GFP_KERNEL);
 	host_kmb_trip_info4->thermal_info->i2c_c = client;

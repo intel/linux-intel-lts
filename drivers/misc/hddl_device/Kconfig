@@ -3,7 +3,7 @@
 
 config HDDL_DEVICE
 	tristate "Support for hddl device"
-	default M
+	default m
 	depends on XLINK_CORE
 	help
 	  hddl device management
@@ -12,5 +12,6 @@ config HDDL_DEVICE
 config HDDL_LOCAL_HOST
 	tristate "Support for hddl device local host"
 	depends on XLINK_CORE
+	default y
 	help
 	  hddl device management for local host

@@ -3,7 +3,7 @@
 
 config XLINK_SMBUS
 	tristate "Enable smbus interface over xlink PCIe"
-	default m
+	default y
 	depends on XLINK_CORE
 	help
 	 Enable xlink-pcie as i2c adapater both slave and master
