@@ -116,6 +116,13 @@ static int thunderbay_rst_probe(struct platform_device *pdev)
 
 	dev_info(dev, "Reset Driver registered successfully.\n");
 
+//Release reset to VPU.
+	if ((!strncmp(rst->rcdev.of_node->full_name, "reset-controller@185520000", sizeof("reset-controller@185520000"))) ||
+	    (!strncmp(rst->rcdev.of_node->full_name, "reset-controller@285520000", sizeof("reset-controller@285520000"))) ||
+	    (!strncmp(rst->rcdev.of_node->full_name, "reset-controller@385520000", sizeof("reset-controller@385520000"))) ||
+	    (!strncmp(rst->rcdev.of_node->full_name, "reset-controller@485520000", sizeof("reset-controller@485520000"))))
+		writel(1, rst->reg_base + THUNDERBAY_RESET_SET_OFFSET);
+
 	return 0;
 }
 
