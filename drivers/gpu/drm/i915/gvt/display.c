@@ -2900,11 +2900,15 @@ static int setup_gop_display(struct intel_vgpu *vgpu)
 	width--;
 	height--;
 	surf = vgpu->gm.high_gm_node.start;
-	ctl = PLANE_CTL_ENABLE | PLANE_CTL_FORMAT_XRGB_8888;
-	ctl |= PLANE_CTL_PIPE_GAMMA_ENABLE |
-		PLANE_CTL_PIPE_CSC_ENABLE |
-		PLANE_CTL_PLANE_GAMMA_DISABLE;
+
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
+	ctl = I915_READ_FW(PLANE_CTL(pipe, 0));
+	if ((ctl & PLANE_CTL_ENABLE) == 0) {
+		ctl = PLANE_CTL_ENABLE | PLANE_CTL_FORMAT_XRGB_8888;
+		ctl |= PLANE_CTL_PIPE_GAMMA_ENABLE |
+			PLANE_CTL_PIPE_CSC_ENABLE |
+			PLANE_CTL_PLANE_GAMMA_DISABLE;
+	}
 	I915_WRITE_FW(PLANE_OFFSET(pipe, 0), 0);
 	I915_WRITE_FW(PLANE_STRIDE(pipe, 0), stride);
 	I915_WRITE_FW(PLANE_SIZE(pipe, 0), (height << 16) | width);
