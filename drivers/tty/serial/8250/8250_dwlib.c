@@ -148,11 +148,14 @@ static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
 
 	/* XXX: Proof of concept for 9-bit transfer mode. */
 	if (rs485->flags & SER_RS485_9BIT_ENABLED) {
+		/* Clear TAR & RAR of any previous values */
+		dw8250_writel_ext(p, DW_UART_TAR, 0x0);
+		dw8250_writel_ext(p, DW_UART_RAR, 0x0);
 		lcr = DW_UART_LCR_EXT_DLS_E;
-		if (SER_RS485_9BIT_TX_ADDR) {
+		if (rs485->flags & SER_RS485_9BIT_TX_ADDR) {
 			dw8250_writel_ext(p, DW_UART_TAR, rs485->padding[0]);
 			lcr |= DW_UART_LCR_EXT_SEND_ADDR;
-		} else if (SER_RS485_9BIT_RX_ADDR) {
+		} else if (rs485->flags & SER_RS485_9BIT_RX_ADDR) {
 			dw8250_writel_ext(p, DW_UART_RAR, rs485->padding[0]);
 			lcr |= DW_UART_LCR_EXT_ADDR_MATCH;
 		}
