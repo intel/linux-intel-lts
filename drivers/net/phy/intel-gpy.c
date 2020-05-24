@@ -7,9 +7,11 @@
 
 #include <linux/intel_phy.h>
 #include <linux/phy.h>
+#include <linux/netdevice.h>
 
 #define GPY_IMASK		0x19	/* interrupt mask */
 #define GPY_ISTAT		0x1A	/* interrupt status */
+#define GPY_INTR_WOL		BIT(15)	/* Wake-on-LAN */
 #define GPY_INTR_ANC		BIT(10)	/* Auto-Neg complete */
 #define GPY_INTR_DXMC		BIT(2)	/* Duplex mode change */
 #define GPY_INTR_LSPC		BIT(1)	/* Link speed change */
@@ -27,6 +29,14 @@
 #define GPY_SGMII_LS		BIT(2)		/* Link status */
 #define GPY_SGMII_DR_MASK	GENMASK(1, 0)	/* Data rate */
 #define GPY_SGMII_DR_2500	0x3
+
+/* GPY VENDOR SPECIFIC 2 */
+#define GPY_VSPEC2_WOL_CTL	0xe06
+#define GPY_WOL_EN		BIT(0)
+
+#define GPY_VSPEV2_WOL_AD01	0xe08		/* WOL addr Byte5:Byte6 */
+#define GPY_VSPEV2_WOL_AD23	0xe09		/* WOL addr Byte3:Byte4 */
+#define GPY_VSPEV2_WOL_AD45	0xe0a		/* WOL addr Byte1:Byte2 */
 
 /* WA for Q-SPEC GPY115 PHY ID */
 #define INTEL_PHY_ID_GPY115_C22		0x67C9DE00
@@ -194,6 +204,85 @@ static int gpy_read_status(struct phy_device *phydev)
 	return ret;
 }
 
+static void gpy_get_wol(struct phy_device *phydev,
+			struct ethtool_wolinfo *wol)
+{
+	int ret = 0;
+
+	wol->supported = WAKE_MAGIC;
+	wol->wolopts = 0;
+
+	ret = phy_read_mmd(phydev, MDIO_MMD_VEND2, GPY_VSPEC2_WOL_CTL);
+
+	if (ret & GPY_WOL_EN)
+		wol->wolopts |= WAKE_MAGIC;
+}
+
+static int gpy_set_wol(struct phy_device *phydev,
+		       struct ethtool_wolinfo *wol)
+{
+	struct net_device *attach_dev = phydev->attached_dev;
+	int ret = 0;
+
+	if (wol->wolopts & WAKE_MAGIC) {
+		/* There are discrepancy in the datasheet where the
+		 * register name does not reflect correctly on the content
+		 * MAC address - Byte0:Byte1:Byte2:Byte3:Byte4:Byte5
+		 * GPY_VSPEV2_WOL_AD45 = Byte0:Byte1
+		 * GPY_VSPEV2_WOL_AD23 = Byte2:Byte3
+		 * GPY_VSPEV2_WOL_AD01 = Byte4:Byte5
+		 */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       GPY_VSPEV2_WOL_AD45,
+				       ((attach_dev->dev_addr[0] << 8) |
+				       attach_dev->dev_addr[1]));
+
+		if (ret < 0)
+			return ret;
+
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       GPY_VSPEV2_WOL_AD23,
+				       ((attach_dev->dev_addr[2] << 8) |
+				       attach_dev->dev_addr[3]));
+
+		if (ret < 0)
+			return ret;
+
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       GPY_VSPEV2_WOL_AD01,
+				       ((attach_dev->dev_addr[4] << 8) |
+				       attach_dev->dev_addr[5]));
+
+		if (ret < 0)
+			return ret;
+
+		/* Enable the WOL interrupt */
+		ret = phy_write(phydev, GPY_IMASK, GPY_INTR_WOL);
+
+		if (ret < 0)
+			return ret;
+
+		/* Enable magic packet matching */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       GPY_VSPEC2_WOL_CTL,
+				       GPY_WOL_EN);
+
+		if (ret < 0)
+			return ret;
+
+	} else {
+		/* Disable magic packet matching */
+		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2,
+					 GPY_VSPEC2_WOL_CTL,
+					 GPY_WOL_EN);
+
+		if (ret < 0)
+			return ret;
+	}
+
+	return ret;
+}
+
 static struct phy_driver intel_gpy_drivers[] = {
 	{
 		.phy_id		= INTEL_PHY_ID_GPY,
@@ -208,6 +297,8 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.config_aneg	= gpy_config_aneg,
 		.read_status	= gpy_read_status,
 		.set_loopback	= genphy_loopback,
+		.get_wol	= gpy_get_wol,
+		.set_wol	= gpy_set_wol,
 	},
 };
 module_phy_driver(intel_gpy_drivers);
