@@ -46,6 +46,16 @@
 #define NODENAME_CACHE		"cache"
 #define NODENAME_DEC400		"dec400"
 
+/* Reset control defines */
+#define RESET_ID_TOTAL 19
+#define RESET_DEASSERTED 0
+#define RESET_ASSERTED 1
+
+/* Clock control defines */
+#define CLOCK_ID_TOTAL 8
+#define CLOCK_DISABLED 0
+#define CLOCK_ENABLED 1
+
 typedef struct dtbnode {
 	struct device_node *ofnode;
 	int type;
@@ -54,10 +64,15 @@ typedef struct dtbnode {
 	char reg_name[32];
 	int irq[4];
         char irq_name[4][32];
+	int reset_count;
+	char reset_names[4][32];
+	int clock_count;
+	char clock_names[4][32];
 	int parenttype;
 	phys_addr_t parentaddr;
 	int sliceidx;
 	struct dtbnode *next;
+	struct device *dev;
 } dtbnode;
 
 struct hantro_device_handle {
