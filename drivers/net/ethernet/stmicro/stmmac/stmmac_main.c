@@ -1616,7 +1616,6 @@ static void init_dma_tx_desc_ring(struct stmmac_priv *priv, u32 queue)
 		  (u32)tx_q->dma_tx_phy);
 
 	if (queue_is_xdp(priv, queue)) {
-		spin_lock_init(&tx_q->xdp_xmit_lock);
 		tx_q->xsk_umem = stmmac_xsk_tx_umem(priv, queue);
 		tx_q->tbs = priv->tx_queue[tx_q->queue_index].tbs;
 	}

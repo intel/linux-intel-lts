@@ -739,6 +739,15 @@ read_again:
 		rx_q->state.len = len;
 	}
 
+	if (xsk_umem_uses_need_wakeup(rx_q->xsk_umem)) {
+		if (failure || rx_q->cur_rx == rx_q->dirty_rx)
+			xsk_set_rx_need_wakeup(rx_q->xsk_umem);
+		else
+			xsk_clear_rx_need_wakeup(rx_q->xsk_umem);
+
+		return (int)count;
+	}
+
 	stmmac_finalize_xdp_rx(rx_q, xdp_xmit);
 
 	return failure ? budget : (int)count;
@@ -884,7 +893,7 @@ int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 	frames_ready = STMMAC_TX_DESC_TO_CLEAN(xdp_q);
 
 	if (frames_ready == 0)
-		goto out_xmit;
+		goto tx_clean_done;
 	else if (frames_ready > budget)
 		completed_frames = budget;
 	else
@@ -959,17 +968,16 @@ int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 	if (xsk_frames)
 		xsk_umem_complete_tx(umem, xsk_frames);
 
+	if (xsk_umem_uses_need_wakeup(xdp_q->xsk_umem))
+		xsk_set_tx_need_wakeup(xdp_q->xsk_umem);
+
 	/* We still have pending packets, let's call for a new scheduling */
 	if (xdp_q->dirty_tx != xdp_q->cur_tx)
 		stmmac_tx_timer_arm(priv, xdp_q->queue_index);
 
 	priv->dev->stats.tx_bytes += total_bytes;
 
-out_xmit:
-	if (spin_trylock(&xdp_q->xdp_xmit_lock)) {
-		stmmac_xmit_zc(xdp_q, budget);
-		spin_unlock(&xdp_q->xdp_xmit_lock);
-	}
+tx_clean_done:
 
 	return count;
 }
@@ -986,10 +994,19 @@ int stmmac_xsk_wakeup(struct net_device *dev, u32 queue, u32 flags)
 	struct stmmac_priv *priv = netdev_priv(dev);
 	u16 qp_num = priv->plat->num_queue_pairs;
 	struct stmmac_tx_queue *xdp_q;
+	struct stmmac_rx_queue *rx_q;
+	struct stmmac_channel *rx_ch;
 	struct stmmac_channel *ch;
 
-	xdp_q = &priv->tx_queue[queue + qp_num];
+	/* queue index is relative to XDP Queue ID.
+	 * XDP Q(N) maps: XDP TXQ[qp+N], SKB TXQ[N] & XDP/SKB RXQ[N]
+	 * where 0 < N < qp_num
+	 */
+	xdp_q = get_tx_queue(priv, queue + qp_num);
 	ch = &priv->channel[queue + qp_num];
+
+	rx_q = &priv->rx_queue[queue];
+	rx_ch = &priv->channel[queue];
 
 	if (test_bit(STMMAC_DOWN, &priv->state))
 		return -ENETDOWN;
@@ -1003,17 +1020,13 @@ int stmmac_xsk_wakeup(struct net_device *dev, u32 queue, u32 flags)
 	if (!xdp_q->xsk_umem)
 		return -ENXIO;
 
-	spin_lock(&xdp_q->xdp_xmit_lock);
-	stmmac_xmit_zc(xdp_q, priv->dma_tx_size);
-	spin_unlock(&xdp_q->xdp_xmit_lock);
+	if (flags & XDP_WAKEUP_TX)
+		stmmac_xmit_zc(xdp_q, priv->dma_tx_size);
 
-	/* The idea here is that if NAPI is running, mark a miss, so
-	 * it will run again. Since we do not have interrupt here,
-	 * we directly call the stmmac_xmit_zc() instead
-	 */
-	if (!napi_if_scheduled_mark_missed(&ch->tx_napi)) {
-		if (likely(napi_schedule_prep(&ch->tx_napi)))
-			__napi_schedule(&ch->tx_napi);
+	if (flags & XDP_WAKEUP_RX &&
+	    !napi_if_scheduled_mark_missed(&rx_ch->rx_napi)) {
+		if (likely(napi_schedule_prep(&rx_ch->rx_napi)))
+			__napi_schedule(&rx_ch->rx_napi);
 	}
 
 	return 0;

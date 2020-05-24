@@ -71,7 +71,6 @@ struct stmmac_tx_queue {
 	u32 mss;
 	struct xdp_umem *xsk_umem;
 	struct zero_copy_allocator zca; /* ZC allocator */
-	spinlock_t xdp_xmit_lock;
 };
 
 struct stmmac_rx_buffer {
