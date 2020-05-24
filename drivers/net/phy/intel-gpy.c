@@ -41,6 +41,40 @@
 /* WA for Q-SPEC GPY115 PHY ID */
 #define INTEL_PHY_ID_GPY115_C22		0x67C9DE00
 
+static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
+{
+	int cap, old_adv, adv = 0, ret;
+
+	cap = phy_read_mmd(phydev, MDIO_MMD_PCS, MDIO_PCS_EEE_ABLE);
+	if (cap < 0)
+		return cap;
+
+	old_adv = phy_read_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV);
+	if (old_adv < 0)
+		return old_adv;
+
+	if (data->eee_enabled) {
+		adv = !data->advertised ? cap :
+		      ethtool_adv_to_mmd_eee_adv_t(data->advertised) & cap;
+		adv &= ~phydev->eee_broken_modes;
+	}
+
+	if (old_adv != adv) {
+		ret = phy_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, adv);
+		if (ret < 0)
+			return ret;
+
+		/* C45 access to restart autonegotiation is not supported
+		 * in the GPY PHYs, hence use C22 access for this.
+		 */
+		ret = genphy_restart_aneg(phydev);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
 static int gpy_soft_reset(struct phy_device *phydev)
 {
 	int ret;
@@ -290,6 +324,7 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.name		= "INTEL(R) Ethernet Network Connection GPY",
 		.get_features	= genphy_c45_pma_read_abilities,
 		.aneg_done	= genphy_c45_aneg_done,
+		.set_eee	= gpy_set_eee,
 		.soft_reset	= gpy_soft_reset,
 		.ack_interrupt	= gpy_ack_interrupt,
 		.did_interrupt	= gpy_did_interrupt,
