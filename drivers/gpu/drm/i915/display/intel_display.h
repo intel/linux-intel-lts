@@ -463,11 +463,6 @@ enum phy_fia {
 			     ((connector) = to_intel_connector((__state)->base.connectors[__i].ptr), \
 			     (new_connector_state) = to_intel_digital_connector_state((__state)->base.connectors[__i].new_state), 1))
 
-#define BITS_PER_PIPE 8
-#define AVAIL_PLANE_PER_PIPE(dev_priv, mask, pipe)  \
-	(((mask) >> (pipe) * BITS_PER_PIPE) & \
-	   ((1 << ((RUNTIME_INFO(dev_priv)->num_sprites[pipe]) + 1)) - 1))
-
 void intel_link_compute_m_n(u16 bpp, int nlanes,
 			    int pixel_clock, int link_clock,
 			    struct intel_link_m_n *m_n,
@@ -595,9 +590,6 @@ unsigned int i9xx_plane_max_stride(struct intel_plane *plane,
 				   unsigned int rotation);
 int bdw_get_pipemisc_bpp(struct intel_crtc *crtc);
 
-/* intel_dp.c */
-void intel_dp_unpack_aux(uint32_t src, uint8_t *dst, int dst_bytes);
-
 struct intel_display_error_state *
 intel_display_capture_error_state(struct drm_i915_private *dev_priv);
 void intel_display_print_error_state(struct drm_i915_error_state_buf *e,
@@ -649,11 +641,5 @@ void assert_pipe(struct drm_i915_private *dev_priv, enum pipe pipe, bool state);
 
 #define I915_STATE_WARN_ON(x)						\
 	I915_STATE_WARN((x), "%s", "WARN_ON(" __stringify(x) ")")
-
-int get_pipe_from_crtc_index(struct drm_device *dev,
-			     unsigned int index,
-			     enum pipe *pipe);
-struct intel_crtc *get_intel_crtc_from_index(struct drm_device *dev,
-					     unsigned int index);
 
 #endif

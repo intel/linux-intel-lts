@@ -2849,34 +2849,6 @@ out:
 	return ret;
 }
 
-#define GEN8_PDPES    4
-int gvt_emit_pdps(struct intel_vgpu_workload *workload)
-{
-	const int num_cmds = GEN8_PDPES * 2;
-	struct i915_request *req = workload->req;
-	struct intel_engine_cs *engine = req->engine;
-	u32 base = engine->mmio_base;
-	u32 *cs;
-	u32 *pdps = (u32 *)(workload->shadow_mm->ppgtt_mm.shadow_pdps);
-	int i;
-
-	cs = intel_ring_begin(req, num_cmds * 2 + 2);
-	if (IS_ERR(cs))
-		return PTR_ERR(cs);
-
-	*cs++ = MI_LOAD_REGISTER_IMM(num_cmds);
-	for (i = 0; i < GEN8_PDPES; i++) {
-		*cs++ = i915_mmio_reg_offset(GEN8_RING_PDP_LDW(base, i));
-		*cs++ = pdps[i * 2];
-		*cs++ = i915_mmio_reg_offset(GEN8_RING_PDP_UDW(base, i));
-		*cs++ = pdps[i * 2 + 1];
-	}
-	*cs++ = MI_NOOP;
-	intel_ring_advance(req, cs);
-
-	return 0;
-}
-
 static int shadow_workload_ring_buffer(struct intel_vgpu_workload *workload)
 {
 	struct intel_vgpu *vgpu = workload->vgpu;

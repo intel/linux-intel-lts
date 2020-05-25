@@ -50,10 +50,6 @@
 #define _PRI_PLANE_Y_OFF_SHIFT		16
 #define _PRI_PLANE_Y_OFF_MASK		(0xfff << _PRI_PLANE_Y_OFF_SHIFT)
 
-#define _PLANE_SIZE_HEIGHT_SHIFT	16
-#define _PLANE_SIZE_HEIGHT_MASK		(0xfff << _PLANE_SIZE_HEIGHT_SHIFT)
-#define _PLANE_SIZE_WIDTH_MASK		0x1fff
-
 #define _CURSOR_MODE			0x3f
 #define _CURSOR_ALPHA_FORCE_SHIFT	8
 #define _CURSOR_ALPHA_FORCE_MASK	(0x3 << _CURSOR_ALPHA_FORCE_SHIFT)
@@ -169,4 +165,5 @@ int intel_vgpu_decode_cursor_plane(struct intel_vgpu *vgpu,
 	struct intel_vgpu_cursor_plane_format *plane);
 int intel_vgpu_decode_sprite_plane(struct intel_vgpu *vgpu,
 	struct intel_vgpu_sprite_plane_format *plane);
+
 #endif

@@ -308,7 +308,7 @@ intel_reference_shared_dpll(struct intel_atomic_state *state,
 	DRM_DEBUG_DRIVER("using %s for pipe %c\n", pll->info->name,
 			 pipe_name(crtc->pipe));
 
-	shared_dpll[id].crtc_mask |= 1 << (drm_crtc_index(&crtc->base));
+	shared_dpll[id].crtc_mask |= 1 << crtc->pipe;
 }
 
 static void intel_unreference_shared_dpll(struct intel_atomic_state *state,
@@ -318,8 +318,7 @@ static void intel_unreference_shared_dpll(struct intel_atomic_state *state,
 	struct intel_shared_dpll_state *shared_dpll;
 
 	shared_dpll = intel_atomic_get_shared_dpll_state(&state->base);
-	shared_dpll[pll->info->id].crtc_mask &=
-			~(1 << drm_crtc_index(&crtc->base));
+	shared_dpll[pll->info->id].crtc_mask &= ~(1 << crtc->pipe);
 }
 
 static void intel_put_dpll(struct intel_atomic_state *state,

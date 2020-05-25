@@ -48,10 +48,6 @@
 #include "intel_psr.h"
 #include "intel_sprite.h"
 
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-#include "gvt.h"
-#endif
-
 int intel_usecs_to_scanlines(const struct drm_display_mode *adjusted_mode,
 			     int usecs)
 {
@@ -609,12 +605,6 @@ skl_program_plane(struct intel_plane *plane,
 		plane_color_ctl = plane_state->color_ctl |
 			glk_plane_color_ctl_crtc(crtc_state);
 
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt &&
-			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
-		return;
-#endif
-
 	/* Sizes are 0 based */
 	src_w--;
 	src_h--;
@@ -650,9 +640,7 @@ skl_program_plane(struct intel_plane *plane,
 	if (fb->format->is_yuv && icl_is_hdr_plane(dev_priv, plane_id))
 		icl_program_input_csc(plane, crtc_state, plane_state);
 
-	/* In VGPU or gvt-g mode, skip plane DDB/WM */
-	if (!(intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv)))
-		skl_write_plane_wm(plane, crtc_state);
+	skl_write_plane_wm(plane, crtc_state);
 
 	I915_WRITE_FW(PLANE_KEYVAL(pipe, plane_id), key->min_value);
 	I915_WRITE_FW(PLANE_KEYMSK(pipe, plane_id), keymsk);
@@ -702,20 +690,12 @@ skl_disable_plane(struct intel_plane *plane,
 	enum pipe pipe = plane->pipe;
 	unsigned long irqflags;
 
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt &&
-			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
-		return;
-#endif
-
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
 
 	if (icl_is_hdr_plane(dev_priv, plane_id))
 		I915_WRITE_FW(PLANE_CUS_CTL(pipe, plane_id), 0);
 
-	/* In VGPU ornative mode, skip plane DDB/WM */
-	if (!(intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv)))
-		skl_write_plane_wm(plane, crtc_state);
+	skl_write_plane_wm(plane, crtc_state);
 
 	I915_WRITE_FW(PLANE_CTL(pipe, plane_id), 0);
 	I915_WRITE_FW(PLANE_SURF(pipe, plane_id), 0);
@@ -2925,11 +2905,6 @@ static const u32 *skl_get_plane_formats(struct drm_i915_private *dev_priv,
 					enum pipe pipe, enum plane_id plane_id,
 					int *num_formats)
 {
-	if (intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv)) {
-		*num_formats = ARRAY_SIZE(skl_plane_formats);
-		return skl_plane_formats;
-	}
-
 	if (skl_plane_has_planar(dev_priv, pipe, plane_id)) {
 		*num_formats = ARRAY_SIZE(skl_planar_formats);
 		return skl_planar_formats;
@@ -3044,17 +3019,10 @@ skl_universal_plane_create(struct drm_i915_private *dev_priv,
 		modifiers = gen12_get_plane_modifiers(plane_id);
 		plane_funcs = &gen12_plane_funcs;
 	} else {
-		if (intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv))
-			plane->has_ccs = false;
-
 		if (plane->has_ccs)
 			modifiers = skl_plane_format_modifiers_ccs;
 		else
 			modifiers = skl_plane_format_modifiers_noccs;
-
-		if (intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv))
-			modifiers = i9xx_plane_format_modifiers;
-
 		plane_funcs = &skl_plane_funcs;
 	}
 
@@ -3063,7 +3031,7 @@ skl_universal_plane_create(struct drm_i915_private *dev_priv,
 	else
 		plane_type = DRM_PLANE_TYPE_OVERLAY;
 
-	possible_crtcs = 1 << (dev_priv->drm.mode_config.num_crtc);
+	possible_crtcs = BIT(pipe);
 
 	ret = drm_universal_plane_init(&dev_priv->drm, &plane->base,
 				       possible_crtcs, plane_funcs,
