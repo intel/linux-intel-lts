@@ -61,9 +61,3 @@
 # CVE-2019-10220
 0002-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
 0003-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
-
-# CVE-2019-19768
-0001-blktrace-Protect-q-blk_trace-with-RCU.patch
-
-# CVE-2019-19319
-0001-ext4-protect-journal-inode-s-blocks-using-block_vali.patch
