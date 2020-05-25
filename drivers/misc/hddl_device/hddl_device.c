@@ -64,7 +64,7 @@ static struct i2c_board_info host_i2c_devices[] = {
 #else
 	static struct i2c_board_info kmb_i2c_devices[] = {
 		{
-			I2C_BOARD_INFO("slave-kmb-tj", 0x4000005b),
+			I2C_BOARD_INFO("slave-kmb-tj", (unsigned short)0x4000005b),
 		},
 	};
 #endif
@@ -236,9 +236,10 @@ static int hddl_per_device_connect_thread(void *thread_param)
 	struct timespec64 ts;
 	uint32_t chan_num;
 	uint32_t j = 0;
+	#ifndef CONFIG_HDDL_LOCAL_HOST
 	struct i2c_adapter *temp;
 	struct i2c_board_info temp_host_i2c_device;
-
+	#endif
 	struct xlink_handle *devH = thread_param;
 
 	struct platform_device_info xlink_i2c_info = {0};
