@@ -58,17 +58,17 @@
 #define ENABLE_HANTRO_CLK
 
 /* debug */
-#define DMA_DEBUG_ALLOC
-/*#define ENABLE_DEBUG
+//#define DMA_DEBUG_ALLOC
+//#define ENABLE_DEBUG
 #ifdef ENABLE_DEBUG
-#define pr_info(...) pr_info(__VA_ARGS__)
+#define DBG(...) pr_info(__VA_ARGS__)
 #else
-#define pr_info(...)
+#define DBG(...)
 #endif
-*/
+
 #define DRIVER_NAME      "hantro"
 #define DRIVER_DESC      "hantro DRM"
-#define DRIVER_DATE      "20200228"
+#define DRIVER_DATE      "20200526"
 #define DRIVER_MAJOR      1
 #define DRIVER_MINOR      1
 
@@ -240,8 +240,10 @@ static int hantro_gem_dumb_create_internal(
 			args->size,
 			&cma_obj->paddr,
 			GFP_KERNEL | GFP_DMA);
-
-	pr_info("dumb_create_internal: dma_alloc_coherent cma_obj->paddr = %llx, size = %d\n", cma_obj->paddr, args->size);
+#ifdef DMA_DEBUG_ALLOC
+	pr_info("dumb_create_internal: dma_alloc_coherent cma_obj->paddr = %llx, size = %d, pslice->dev = %s\n", cma_obj->paddr, args->size,
+		dev_name(pslice->dev));
+#endif
 	if (cma_obj->vaddr == NULL) {
 		kfree(cma_obj);
 		ret = -ENOMEM;
@@ -386,7 +388,7 @@ static int hantro_release_dumb(
 			cma_obj->paddr);
 #endif
 
-#ifdef DMA_DEBUG_ALLOC 
+#ifdef DMA_DEBUG_ALLOC
         pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
 #endif
 
@@ -1258,7 +1260,7 @@ static int hantro_getmagic(
 			file_priv->magic = ret;
 	}
 	auth->magic = file_priv->magic;
-	pr_info("kmagic %d\n", auth->magic);
+	DBG("kmagic %d\n", auth->magic);
 	mutex_unlock(&dev->struct_mutex);
 
 	return ret < 0 ? ret : 0;
@@ -1274,7 +1276,7 @@ static int hantro_authmagic(
 
 	mutex_lock(&dev->struct_mutex);
 	file = idr_find(&file_priv->master->magic_map, auth->magic);
-	pr_info("get kmagic %d\n", auth->magic);
+	DBG("get kmagic %d\n", auth->magic);
 	if (file) {
 		file->authenticated = 1;
 		idr_replace(&file_priv->master->magic_map, NULL, auth->magic);
@@ -1940,7 +1942,7 @@ static dtbnode * trycreatenode(
 				strcpy(pnode->irq_name[i], r.name);
 			else
 				strcpy(pnode->irq_name[i], "hantro_irq");
-                        pr_info("irq %s: mapping = %lld\n", r.name, r.end);
+                        DBG("irq %s: mapping = %lld\n", r.name, r.end);
 		} else
 			pnode->irq[i] = -1;
 	}
@@ -2046,9 +2048,9 @@ static int hantro_enable_clock(struct platform_device *pdev)
 	};
 
 	for (i  = 0; i < CLOCK_ID_TOTAL; i++) {
-		pr_info("hantro: clock_name = %s\n", clock_names[i]);
+		DBG("hantro: clock_name = %s\n", clock_names[i]);
 		struct clk *hantro_clk = clk_get(&pdev->dev, clock_names[i]);
-		pr_info("hantro: hantro_enable_clock: done clk_get for clock_name = %s\n", clock_names[i]);
+		DBG("hantro: hantro_enable_clock: done clk_get for clock_name = %s\n", clock_names[i]);
 		clk_prepare_enable(hantro_clk);
 		pr_info("hantro: default clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(hantro_clk));
 		clk_set_rate(hantro_clk, 800000000);
@@ -2076,9 +2078,9 @@ static int hantro_disable_clock(struct platform_device *pdev)
 	};
 
 	for (i  = 0; i < CLOCK_ID_TOTAL; i++) {
-		pr_info("hantro: clock_name = %s\n", clock_names[i]);
+		DBG("hantro: clock_name = %s\n", clock_names[i]);
 		struct clk *hantro_clk = clk_get(&pdev->dev, clock_names[i]);
-		pr_info("hantro: hantro_disable_clock: done clk_get for clock_name = %s\n", clock_names[i]);
+		DBG("hantro: hantro_disable_clock: done clk_get for clock_name = %s\n", clock_names[i]);
 		clk_disable_unprepare(hantro_clk);
 		pr_info("hantro: clock_name = %s disabled unprepared\n", clock_names[i]);
 	}
@@ -2124,9 +2126,9 @@ static int hantro_reset_control_deassert(struct platform_device *pdev)
 	};
 
 	for (i  = 0; i < RESET_ID_TOTAL; i++) {
-		pr_info("hantro: reset_name = %s\n", reset_names[i]);
+		DBG("hantro: reset_name = %s\n", reset_names[i]);
 		struct reset_control *hantro_reset = devm_reset_control_get(&pdev->dev, reset_names[i]);
-		pr_info("hantro_reset_control_deassert: done reset_control_get for reset_name = %s\n", reset_names[i]);
+		DBG("hantro_reset_control_deassert: done reset_control_get for reset_name = %s\n", reset_names[i]);
 		ret = reset_control_deassert(hantro_reset);
 
 		if (ret != 0) {
@@ -2170,9 +2172,9 @@ static int hantro_reset_control_assert(struct platform_device *pdev)
 	};
 
 	for (i  = 0; i < RESET_ID_TOTAL; i++) {
-		pr_info("hantro: reset_name = %s\n", reset_names[i]);
+		DBG("hantro: reset_name = %s\n", reset_names[i]);
 		struct reset_control *hantro_reset = devm_reset_control_get(&pdev->dev, reset_names[i]);
-		pr_info("hantro_reset_control_assert: done reset_control_get for reset_name = %s\n", reset_names[i]);
+		DBG("hantro_reset_control_assert: done reset_control_get for reset_name = %s\n", reset_names[i]);
 		ret = reset_control_assert(hantro_reset);
 
 		if (ret != 0) {
@@ -2238,18 +2240,18 @@ static int hantro_drm_probe(struct platform_device *pdev)
 	int result = 0;
 	int sliceidx = -1;
 
-        pr_info("hantro_drm_probe: dev %s probe", pdev->name);
+        DBG("hantro_drm_probe: dev %s probe", pdev->name);
 
 /*TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
 #ifdef ENABLE_HANTRO_CLK
-	pr_info("hantro_drm_probe: going to call hantro_enable_clock here\n");
+	DBG("hantro_drm_probe: going to call hantro_enable_clock here\n");
 	if (is_clock_enabled == CLOCK_DISABLED)
 		hantro_enable_clock(pdev);
 	else
 		pr_info("hantro_drm_probe: hantro_enable_clock has been done - not doing it again!\n");
 #endif
 #ifdef USE_RESET
-	pr_info("hantro_drm_probe: hantro_reset_control_deassert!\n");
+	DBG("hantro_drm_probe: hantro_reset_control_deassert!\n");
 	if (is_reset_asserted == RESET_ASSERTED)
 		hantro_reset_control_deassert(pdev);
 	else
@@ -2313,13 +2315,13 @@ static int hantro_pm_suspend(struct device *kdev)
 {
 	//what should we do on HW? Disable IRQ, slow down clock,
 	// disable DMA, etc?
-	//pr_info("\nhantro suspend");
+	//DBG("\nhantro suspend");
 	return 0;
 }
 
 static int hantro_pm_resume(struct device *kdev)
 {
-	//pr_info("\nhantro resume");
+	//DBG("\nhantro resume");
 	return 0;
 }
 
@@ -2368,14 +2370,14 @@ void __exit hantro_cleanup(void)
 /* TBH PO: For now do not assert reset yet until power isolation sequence is implemented */
 #if 0
 //#ifdef USE_RESET
-	pr_info("hantro_cleanup: hantro_reset_control_assert!\n");
+	DBG("hantro_cleanup: hantro_reset_control_assert!\n");
 	if (is_reset_asserted == RESET_DEASSERTED)
 		hantro_reset_control_assert(hantro_dev.platformdev);
 	else
 		pr_info("hantro cleanup: reset control assert has been done, not doing it again!\n");
 #endif
 #ifdef ENABLE_HANTRO_CLK
-	pr_info("hantro_cleanup: hantro_disable_clock!\n");
+	DBG("hantro_cleanup: hantro_disable_clock!\n");
 	if (is_clock_enabled == CLOCK_ENABLED)
 		hantro_disable_clock(hantro_dev.platformdev);
 	else

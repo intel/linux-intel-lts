@@ -150,7 +150,7 @@ static int CheckEncIrq(struct hantroenc_t *dev, u32 *core_info, u32 *irq_status,
 
 			if (dev->irq_received) {
 				/* reset the wait condition(s) */
-				pr_info("check %d irq ready\n", i);
+				PDEBUG("check %d irq ready\n", i);
 				dev->irq_received = 0;
 				rdy = 1;
 				*core_info = i;
@@ -170,7 +170,7 @@ static unsigned int WaitEncReady(struct hantroenc_t *dev, u32 *core_info, u32 *i
 {
 	struct slice_info *parentslice = getparentslice(dev, CORE_ENC);
 
-	pr_info("%s\n", __func__);
+	PDEBUG("%s\n", __func__);
 
 	if (wait_event_interruptible(
 		parentslice->enc_wait_queue,
@@ -224,7 +224,7 @@ static int CheckCoreOccupation(struct hantroenc_t *dev)
 		dev->is_reserved = 1;
 		dev->pid = current->pid;
 		ret = 1;
-		pr_info("%s pid=%d\n", __func__, dev->pid);
+		PDEBUG("%s pid=%d\n", __func__, dev->pid);
 	}
 
 	spin_unlock_irqrestore(&parentslice->enc_owner_lock, flags);
@@ -250,7 +250,7 @@ static int GetWorkableCore(struct hantroenc_t *dev, u32 *core_info, u32 *core_in
 	else
 		required_num = ((*core_info_tmp & 0xF00) >> 8);
 
-	pr_info("%s:required_num=%d,core_info=%x\n",
+	PDEBUG("%s:required_num=%d,core_info=%x\n",
 		__func__, required_num, *core_info);
 
 	if (required_num) {
@@ -279,13 +279,13 @@ static int GetWorkableCore(struct hantroenc_t *dev, u32 *core_info, u32 *core_in
 	} else
 		ret = 1;
 
-	pr_info("*core_info = %x\n", *core_info);
+	PDEBUG("*core_info = %x\n", *core_info);
 	return ret;
 }
 
 static long ReserveEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 {
-	pr_info("hx280enc: ReserveEncoder\n");
+	PDEBUG("hx280enc: ReserveEncoder\n");
 	struct slice_info *parentslice = getparentslice(dev, CORE_ENC);
 	u32 core_info_tmp = 0;
 	/*If HW resources are shared inter cores, just make sure only one is using the HW*/
@@ -314,7 +314,7 @@ static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 
 	core_mapping = (u8)(*core_info & 0xFF);
 
-	pr_info("%s:core_num=%d,core_mapping=%x\n", __func__, core_num, core_mapping);
+	PDEBUG("%s:core_num=%d,core_mapping=%x\n", __func__, core_num, core_mapping);
 	/* release specified core id */
 	while (core_mapping) {
 		if (core_mapping & 0x1) {
@@ -322,7 +322,7 @@ static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 				break;
 			core_id = i;
 			spin_lock_irqsave(&parentslice->enc_owner_lock, flags);
-			pr_info("dev[core_id].pid=%d,current->pid=%d\n", dev->pid, current->pid);
+			PDEBUG("dev[core_id].pid=%d,current->pid=%d\n", dev->pid, current->pid);
 			if (dev->is_reserved && dev->pid == current->pid) {
 				dev->pid = -1;
 				dev->is_reserved = 0;
@@ -389,7 +389,7 @@ long hantroenc_ioctl(
 		return get_slicecorenum(tmp, CORE_ENC);
 	case HX280ENC_IOCH_ENC_RESERVE: {
 		int ret;
-		pr_info("Reserve ENC Cores\n");
+		PDEBUG("Reserve ENC Cores\n");
 		__get_user(core_info, (unsigned long *)arg);
 		slice = (core_info >> 16) & 0xff;
 		pcore = get_encnodes(slice, 0);		/*from list header*/
@@ -409,7 +409,7 @@ long hantroenc_ioctl(
 		pcore = get_encnodes(slice, 0);		/*from list header*/
 		if (pcore == NULL)
 			return -EFAULT;
-		pr_info("Release ENC Core\n");
+		PDEBUG("Release ENC Core\n");
 		tmp = get_slicecorenum(slice, CORE_ENC);
 		ReleaseEncoder(pcore, &core_info, tmp);
 
@@ -459,7 +459,7 @@ int hantroenc_release(void)
 				dev->is_reserved = 0;
 				dev->irq_received = 0;
 				dev->irq_status = 0;
-				pr_info("release reserved core\n");
+				PDEBUG("release reserved core\n");
 			}
 			spin_unlock_irqrestore(&parentslice->enc_owner_lock, flags);
 			dev = dev->next;
@@ -473,7 +473,7 @@ int hantroenc_release(void)
 
 int __init hantroenc_init(void)
 {
-	pr_info("hantroenc_init\n");
+	PDEBUG("hantroenc_init\n");
 	sram_base = 0;
 	sram_size = 0;
 	hantroenc_major = 0;
@@ -519,7 +519,7 @@ int hantroenc_probe(dtbnode *pnode)
 #ifdef USE_IRQ
 		irqnum = core_array[i].irq;
 		if (irqnum > 0) {
-			pr_info("hx280enc: trying to request IRQ\n");
+			PDEBUG("hx280enc: trying to request IRQ\n");
 			result = request_irq(irqnum, hantroenc_isr,
 						IRQF_SHARED,
 						"hx280enc", (void *)pcore);
@@ -621,7 +621,7 @@ void __exit hantroenc_cleanup(void)
 static int ReserveIO(struct hantroenc_t *pcore)
 {
 	u32 hwid;
-	pr_info("hx280enc: ReserveIO called\n");
+	PDEBUG("hx280enc: ReserveIO called\n");
 	if (!request_mem_region
 		(pcore->core_cfg.base_addr, pcore->core_cfg.iosize, pcore->reg_name)) {
 		pr_info("hantroenc: failed to reserve HW regs\n");
@@ -678,7 +678,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 	/*If core is not reserved by any user, but irq is received, just ignore it*/
 	spin_lock_irqsave(&parentslice->enc_owner_lock, flags);
 	if (!dev->is_reserved) {
-		pr_info("hantroenc_isr:received IRQ but core is not reserved!\n");
+		PDEBUG("hantroenc_isr:received IRQ but core is not reserved!\n");
 		irq_status = (u32)ioread32((void *)(dev->hwregs + 0x04));
 		if (irq_status & 0x01) {
 			/* clear all IRQ bits. (hwId >= 0x80006100) means IRQ is cleared by writting 1 */
@@ -727,7 +727,7 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 
 static void ResetAsic(struct hantroenc_t *dev)
 {
-	pr_info("hx280enc: ResetAsic\n");
+	PDEBUG("hx280enc: ResetAsic\n");
 	int i;
 
 	iowrite32(0, (void *)(dev->hwregs + 0x14));
