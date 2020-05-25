@@ -2104,7 +2104,7 @@ bool intel_ddi_connector_get_hw_state(struct intel_connector *intel_connector)
 		goto out;
 	}
 
-	if (HAS_TRANSCODER_EDP(dev_priv) && port == PORT_A && !intel_vgpu_active(dev_priv))
+	if (HAS_TRANSCODER_EDP(dev_priv) && port == PORT_A)
 		cpu_transcoder = TRANSCODER_EDP;
 	else
 		cpu_transcoder = (enum transcoder) pipe;
@@ -4493,7 +4493,7 @@ static int intel_ddi_compute_config(struct intel_encoder *encoder,
 	enum port port = encoder->port;
 	int ret;
 
-	if (HAS_TRANSCODER_EDP(dev_priv) && port == PORT_A && !intel_vgpu_active(dev_priv))
+	if (HAS_TRANSCODER_EDP(dev_priv) && port == PORT_A)
 		pipe_config->cpu_transcoder = TRANSCODER_EDP;
 
 	if (intel_crtc_has_type(pipe_config, INTEL_OUTPUT_HDMI)) {
@@ -4800,8 +4800,7 @@ void intel_ddi_init(struct drm_i915_private *dev_priv, enum port port)
 	init_hdmi = port_info->supports_dvi || port_info->supports_hdmi;
 	init_dp = port_info->supports_dp;
 
-	if (!intel_vgpu_active(dev_priv) &&
-			intel_bios_is_lspcon_present(dev_priv, port)) {
+	if (intel_bios_is_lspcon_present(dev_priv, port)) {
 		/*
 		 * Lspcon device needs to be driven with DP connector
 		 * with special detection sequence. So make sure DP

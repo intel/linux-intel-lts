@@ -1711,12 +1711,6 @@ static void uncore_raw_init(struct intel_uncore *uncore)
 {
 	GEM_BUG_ON(intel_uncore_has_forcewake(uncore));
 
-	if (intel_vgpu_active(uncore->i915)) {
-		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, gen2);
-		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, gen2);
-		return;
-	}
-
 	if (IS_GEN(uncore->i915, 5)) {
 		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, gen5);
 		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, gen5);
@@ -2127,54 +2121,6 @@ intel_uncore_forcewake_for_reg(struct intel_uncore *uncore,
 	WARN_ON(fw_domains & ~uncore->fw_domains);
 
 	return fw_domains;
-}
-
-u8 __raw_uncore_read8(const struct intel_uncore *uncore, i915_reg_t reg)
-{
-	struct drm_i915_private *dev_priv;
-
-	dev_priv = uncore->i915;
-	if (!intel_vgpu_active(dev_priv) || !i915_modparams.enable_pvmmio ||
-			likely(!in_mmio_read_trap_list(reg.reg)))
-		return readb((uncore)->regs + i915_mmio_reg_offset(reg));
-	dev_priv->shared_page->reg_addr = i915_mmio_reg_offset(reg);
-	return readb(uncore->regs + i915_mmio_reg_offset(vgtif_reg(pv_mmio)));
-}
-
-u16 __raw_uncore_read16(const struct intel_uncore *uncore, i915_reg_t reg)
-{
-	struct drm_i915_private *dev_priv;
-
-	dev_priv = uncore->i915;
-	if (!intel_vgpu_active(dev_priv) || !i915_modparams.enable_pvmmio ||
-			likely(!in_mmio_read_trap_list(reg.reg)))
-		return readw((uncore)->regs + i915_mmio_reg_offset(reg));
-	dev_priv->shared_page->reg_addr = i915_mmio_reg_offset(reg);
-	return readw(uncore->regs + i915_mmio_reg_offset(vgtif_reg(pv_mmio)));
-}
-
-u32 __raw_uncore_read32(const struct intel_uncore *uncore, i915_reg_t reg)
-{
-	struct drm_i915_private *dev_priv;
-
-	dev_priv = uncore->i915;
-	if (!intel_vgpu_active(dev_priv) || !i915_modparams.enable_pvmmio ||
-			likely(!in_mmio_read_trap_list(reg.reg)))
-		return readl((uncore)->regs + i915_mmio_reg_offset(reg));
-	dev_priv->shared_page->reg_addr = i915_mmio_reg_offset(reg);
-	return readl(uncore->regs + i915_mmio_reg_offset(vgtif_reg(pv_mmio)));
-}
-
-u64 __raw_uncore_read64(const struct intel_uncore *uncore, i915_reg_t reg)
-{
-	struct drm_i915_private *dev_priv;
-
-	dev_priv = uncore->i915;
-	if (!intel_vgpu_active(dev_priv) || !i915_modparams.enable_pvmmio ||
-			likely(!in_mmio_read_trap_list(reg.reg)))
-		return readq((uncore)->regs + i915_mmio_reg_offset(reg));
-	dev_priv->shared_page->reg_addr = i915_mmio_reg_offset(reg);
-	return readq(uncore->regs + i915_mmio_reg_offset(vgtif_reg(pv_mmio)));
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)

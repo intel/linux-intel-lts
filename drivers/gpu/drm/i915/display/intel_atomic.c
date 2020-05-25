@@ -274,11 +274,9 @@ static void intel_atomic_setup_scaler(struct intel_crtc_scaler_state *scaler_sta
 			if (scaler_state->scalers[j].in_use)
 				continue;
 
-			else if (scaler_state->scalers[j].owned == 1) {
-				*scaler_id = j;
-				scaler_state->scalers[*scaler_id].in_use = 1;
-				break;
-			}
+			*scaler_id = j;
+			scaler_state->scalers[*scaler_id].in_use = 1;
+			break;
 		}
 	}
 
