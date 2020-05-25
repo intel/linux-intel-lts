@@ -313,7 +313,7 @@ struct stmmac_priv {
 	struct bpf_prog *xdp_prog;
 
 	/* AF_XDP zero-copy */
-	unsigned long af_xdp_zc_qps; /* tracks AF_XDP ZC enabled qps */
+	unsigned long *af_xdp_zc_qps; /* tracks AF_XDP ZC enabled qps */
 	struct xdp_umem **xsk_umems;
 };
 

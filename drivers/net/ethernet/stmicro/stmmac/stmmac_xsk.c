@@ -99,7 +99,7 @@ static int stmmac_xsk_umem_enable(struct stmmac_priv *priv,
 	if (err)
 		return err;
 
-	set_bit(qid, &priv->af_xdp_zc_qps);
+	set_bit(qid, priv->af_xdp_zc_qps);
 
 	if_running = netif_running(priv->dev) && stmmac_enabled_xdp(priv);
 
@@ -147,7 +147,7 @@ static int stmmac_xsk_umem_disable(struct stmmac_priv *priv, u16 qid)
 			return err;
 	}
 
-	clear_bit(qid, &priv->af_xdp_zc_qps);
+	clear_bit(qid, priv->af_xdp_zc_qps);
 	stmmac_xsk_umem_dma_unmap(priv, umem);
 
 	if (if_running) {

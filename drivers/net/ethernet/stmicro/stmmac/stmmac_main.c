@@ -1432,7 +1432,7 @@ static struct xdp_umem *stmmac_xsk_rx_umem(struct stmmac_priv *priv, u32 queue)
 {
 	bool xdp_on = stmmac_enabled_xdp(priv);
 
-	if (!xdp_on || !test_bit(queue, &priv->af_xdp_zc_qps))
+	if (!xdp_on || !test_bit(queue, priv->af_xdp_zc_qps))
 		return NULL;
 
 	return xdp_get_umem_from_qid(priv->dev, queue);
@@ -1451,7 +1451,7 @@ static struct xdp_umem *stmmac_xsk_tx_umem(struct stmmac_priv *priv, u32 queue)
 	if (queue_is_xdp(priv, queue))
 		queue -= priv->plat->num_queue_pairs;
 
-	if (!xdp_on || !test_bit(queue, &priv->af_xdp_zc_qps))
+	if (!xdp_on || !test_bit(queue, priv->af_xdp_zc_qps))
 		return NULL;
 
 	return xdp_get_umem_from_qid(priv->dev, queue);
@@ -6579,6 +6579,10 @@ int stmmac_dvr_probe(struct device *device,
 	/* Verify driver arguments */
 	stmmac_verify_args();
 
+	priv->af_xdp_zc_qps = bitmap_zalloc(MTL_MAX_TX_QUEUES / 2, GFP_KERNEL);
+	if (!priv->af_xdp_zc_qps)
+		return -ENOMEM;
+
 	/* Allocate workqueue */
 	priv->wq = create_singlethread_workqueue("stmmac_wq");
 	if (!priv->wq) {
@@ -6811,7 +6815,7 @@ error_mdio_register:
 
 error_hw_init:
 	destroy_workqueue(priv->wq);
-
+	bitmap_free(priv->af_xdp_zc_qps);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(stmmac_dvr_probe);
@@ -6856,6 +6860,7 @@ int stmmac_dvr_remove(struct device *dev)
 		stmmac_mdio_unregister(ndev);
 	destroy_workqueue(priv->wq);
 	mutex_destroy(&priv->lock);
+	bitmap_free(priv->af_xdp_zc_qps);
 
 	return 0;
 }
