@@ -107,6 +107,30 @@ endif # CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4
 
 endif # CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
 
+config CRYPTO_DEV_KEEMBAY_OCS_HCU
+	tristate "Support for Keem Bay OCS HCU HW acceleration"
+	select CRYPTO_ENGINE
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS)
+	  HCU (Hash Control Unit) hardware acceleration for use
+	  with Crypto API.
+
+	  Provides OCS implementation of sha256, sha384, sha512 as well
+	  as the HMAC variant of these algorithms.
+
+config CRYPTO_DEV_KEEMBAY_OCS_HCU_HMAC_SHA224
+	bool "Support for Keem Bay SHA224 and HMAC(SHA224) HW acceleration"
+	default n
+	depends on CRYPTO_DEV_KEEMBAY_OCS_HCU
+
+	help
+	  Enables support for the Keem Bay OCS HCU SHA224 and HMAC(SHA224)
+	  algorithms. These algorithms are not recommended for use.
+
+	  Provides OCS implementation of sha224 as well as the HMAC variant of
+	  this algorithm.
+
 config CRYPTO_DEV_KEEMBAY_OCS_ECC
 	tristate "Support for Keembay OCS ECC HW acceleration"
 	select CRYPTO_ECDH
