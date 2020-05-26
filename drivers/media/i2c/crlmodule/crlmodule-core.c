@@ -3262,6 +3262,40 @@ static int crlmodule_set_registers(struct v4l2_subdev *sd, struct crl_registers_
 	return ret;
 }
 
+/*
+ * In the case of sensor powered off by others, then init sensor explicitly.
+ */
+static int crlmodule_sensor_init(struct v4l2_subdev *sd, struct crl_sensor_init *arg)
+{
+	struct crl_subdev *ssd = to_crlmodule_subdev(sd);
+	struct crl_sensor *sensor = ssd->sensor;
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->src->sd);
+	int ret = 0;
+
+	ret = crlmodule_write_regs(sensor,
+			sensor->sensor_ds->onetime_init_regs,
+			sensor->sensor_ds->onetime_init_regs_items);
+	if (ret) {
+		dev_err(&client->dev, "%s failed to set powerup registers\n",
+			__func__);
+		return ret;
+	}
+
+	if (sensor->sensor_ds->sensor_init) {
+		ret = sensor->sensor_ds->sensor_init(client);
+
+		if (ret) {
+			dev_err(&client->dev,
+				"%s failed to run sensor specific init\n",
+				__func__);
+			ret = -ENODEV;
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 static long crlmodule_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	int ret;
@@ -3272,6 +3306,9 @@ static long crlmodule_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		break;
 	case CRL_S_REGISTERS:
 		ret = crlmodule_set_registers(sd, arg);
+		break;
+	case CRL_SENSOR_INIT:
+		ret = crlmodule_sensor_init(sd, arg);
 		break;
 	default:
 		ret = -1;
