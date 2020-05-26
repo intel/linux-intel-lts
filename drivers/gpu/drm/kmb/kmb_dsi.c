@@ -609,20 +609,10 @@ static void mipi_tx_fg_cfg_regs(struct kmb_drm_private *dev_p, u8 frame_gen,
 	u32 ppl_llp_ratio;
 	u32 ctrl_no = MIPI_CTRL6, reg_adr, val, offset;
 
-#ifdef GET_SYS_CLK
-	/* Get system clock for blanking period cnfigurations */
-	sc = get_clock_frequency(CPR_CLK_SYSTEM, &sysclk);
-	if (sc)
-		return sc;
-
-	/* Convert to MHZ */
-	sysclk /= 1000;
-#else
 	/* 500 Mhz system clock minus 50 to account for the difference in
 	 * MIPI clock speed in RTL tests
 	 */
-	sysclk = KMB_SYS_CLK_MHZ - 50;
-#endif
+	sysclk = dev_p->sys_clk_mhz - 50;
 
 	/* PPL-Pixel Packing Layer, LLP-Low Level Protocol
 	 * Frame genartor timing parameters are clocked on the system clock,

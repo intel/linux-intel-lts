@@ -59,6 +59,7 @@ static struct clk *clk_lcd;
 static struct clk *clk_mipi;
 static struct clk *clk_mipi_ecfg;
 static struct clk *clk_mipi_cfg;
+static struct clk *clk_pll0;
 
 struct drm_bridge *adv_bridge;
 
@@ -144,6 +145,7 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 #ifdef ICAM_LCD_QOS
 	int val = 0;
 #endif
+	struct device_node *vpu_dev;
 
 	/* Map MIPI MMIO registers */
 	dev_p->mipi_mmio = kmb_map_mmio(pdev, "mipi_regs");
@@ -210,6 +212,15 @@ static int kmb_load(struct drm_device *drm, unsigned long flags)
 		DRM_ERROR("clk_get() failed clk_mipi_cfg\n");
 		goto setup_fail;
 	}
+	vpu_dev = of_find_node_by_path("/soc/vpu-ipc");
+	DRM_INFO("vpu node = %pOF", vpu_dev);
+	clk_pll0 = of_clk_get_by_name(vpu_dev, "pll_0_out_0");
+	if (IS_ERR(clk_pll0)) {
+		DRM_ERROR("clk_get() failed clk_pll0 ");
+		goto setup_fail;
+	}
+	dev_p->sys_clk_mhz = clk_get_rate(clk_pll0)/1000000;
+	DRM_INFO("system clk = %d Mhz", dev_p->sys_clk_mhz);
 #ifdef LCD_TEST
 	/* Set LCD clock to 200 Mhz */
 	DRM_DEBUG("Get clk_lcd before set = %ld\n", clk_get_rate(clk_lcd));

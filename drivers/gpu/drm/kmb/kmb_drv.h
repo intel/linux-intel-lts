@@ -58,6 +58,7 @@ struct kmb_drm_private {
 	spinlock_t			irq_lock;
 	int				irq_lcd;
 	int				irq_mipi;
+	int				sys_clk_mhz;
 	dma_addr_t			fb_addr;
 };
 
