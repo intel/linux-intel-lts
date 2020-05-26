@@ -1620,6 +1620,7 @@ static void init_dma_tx_desc_ring(struct stmmac_priv *priv, u32 queue)
 	if (queue_is_xdp(priv, queue)) {
 		spin_lock_init(&tx_q->xdp_xmit_lock);
 		tx_q->xsk_umem = stmmac_xsk_tx_umem(priv, queue);
+		tx_q->tbs = priv->tx_queue[tx_q->queue_index].tbs;
 	}
 
 	/* Setup the chained descriptor addresses */
@@ -3520,6 +3521,18 @@ static int stmmac_open(struct net_device *dev)
 	if (!priv->plat->num_queue_pairs)
 		priv->plat->num_queue_pairs = priv->plat->max_combined;
 
+	/* Mirror XDP Tx TBS setting on the 2H of Tx Queue's TBS */
+	for (chan = 0; chan < priv->plat->num_queue_pairs; chan++) {
+		int qp_num = priv->plat->num_queue_pairs;
+		struct stmmac_tx_queue *xdp_q, *tx_q;
+
+		/* XDP TxQ takes the 2H of the total HW TxQ */
+		xdp_q = &priv->xdp_queue[chan];
+		tx_q = &priv->tx_queue[chan + qp_num];
+
+		xdp_q->tbs = tx_q->tbs;
+	}
+
 	/* Configure normal_tx_queue_count here as the value of num_queue_pairs
 	 * can be changed through stmmac_reinit_queues triggered by ethool
 	 */
@@ -4481,7 +4494,7 @@ static int stmmac_xmit_xdp_queue(struct xdp_frame *xdpf,
 
 	if (likely(priv->extend_desc))
 		desc = (struct dma_desc *)(xdp_q->dma_etx + entry);
-	else if (priv->tx_queue[xdp_q->queue_index].tbs & STMMAC_TBS_AVAIL)
+	else if (xdp_q->tbs & STMMAC_TBS_AVAIL)
 		desc = &xdp_q->dma_enhtx[entry].basic;
 	else
 		desc = xdp_q->dma_tx + entry;
@@ -4583,7 +4596,7 @@ void stmmac_xdp_queue_update_tail(struct stmmac_tx_queue *xdp_q)
 		xdp_q->tx_tail_addr = xdp_q->dma_tx_phy +
 					(xdp_q->cur_tx *
 					sizeof(struct dma_extended_desc));
-	else if (priv->tx_queue[xdp_q->queue_index].tbs & STMMAC_TBS_AVAIL)
+	else if (xdp_q->tbs & STMMAC_TBS_AVAIL)
 		xdp_q->tx_tail_addr = xdp_q->dma_tx_phy +
 					(xdp_q->cur_tx *
 					sizeof(struct dma_enhanced_tx_desc));
@@ -5687,7 +5700,7 @@ static void stmmac_txrx_ch_init(struct stmmac_priv *priv, u16 qid)
 	stmmac_init_tx_chan(priv, priv->ioaddr, priv->plat->dma_cfg,
 			    xdp_q->dma_tx_phy, xdp_q->queue_index);
 
-	if (priv->tx_queue[xdp_q->queue_index].tbs & STMMAC_TBS_AVAIL)
+	if (xdp_q->tbs & STMMAC_TBS_AVAIL)
 		stmmac_enable_tbs(priv, priv->ioaddr, 1, xdp_q->queue_index);
 
 	xdp_q->tx_tail_addr = xdp_q->dma_tx_phy;

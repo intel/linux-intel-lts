@@ -767,8 +767,7 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 
 		if (likely(priv->extend_desc))
 			tx_desc = (struct dma_desc *)(xdp_q->dma_etx + entry);
-		else if (priv->tx_queue[xdp_q->queue_index].tbs &
-			 STMMAC_TBS_AVAIL)
+		else if (xdp_q->tbs & STMMAC_TBS_AVAIL)
 			tx_desc = &xdp_q->dma_enhtx[entry].basic;
 		else
 			tx_desc = xdp_q->dma_tx + entry;
@@ -782,13 +781,12 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 		stmmac_set_desc_addr(priv, tx_desc, dma);
 
 		if (stmmac_enabled_xdp(priv) &&
-		    (priv->tx_queue[xdp_q->queue_index].tbs & STMMAC_TBS_EN) &&
+		    (xdp_q->tbs & STMMAC_TBS_EN) &&
 		    desc.txtime > 0) {
 			if (stmmac_set_tbs_launchtime(priv, tx_desc,
-						      desc.txtime)) {
+						      desc.txtime))
 				netdev_warn(priv->dev, "Launch time setting"
 						       "failed\n");
-			}
 		}
 
 		if (unlikely(priv->hwts_all))
