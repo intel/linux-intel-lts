@@ -1728,22 +1728,39 @@ static void dma_free_rx_skbufs(struct stmmac_priv *priv, u32 queue)
 	}
 }
 
+static void stmmac_skb_clean_tx_queue(struct stmmac_priv *priv,
+				      struct stmmac_tx_queue *tx_q)
+{
+	u32 queue = tx_q->queue_index;
+	unsigned int entry, count;
+
+	entry = tx_q->dirty_tx;
+	while (entry != tx_q->cur_tx) {
+		/* Free all the Tx ring sk_buffs */
+		stmmac_free_tx_buffer(priv, queue, entry);
+
+		entry = STMMAC_GET_ENTRY(entry, priv->dma_tx_size);
+		count++;
+	}
+	tx_q->dirty_tx = entry;
+
+	/* reset BQL for queue */
+	netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, queue));
+}
+
 /**
- * dma_free_tx_skbufs - free TX dma buffers
+ * stmmac_xsk_clean_tx_queue - free TX dma buffers
  * @priv: private structure
  * @queue: TX queue index
  */
-static void dma_free_tx_skbufs(struct stmmac_priv *priv, u32 queue)
+static void stmmac_clean_tx_queue(struct stmmac_priv *priv, u32 queue)
 {
 	struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
-	int i;
 
-	if (queue_is_xdp(priv, queue) && tx_q->xsk_umem) {
+	if (queue_is_xdp(priv, queue) && tx_q->xsk_umem)
 		stmmac_xsk_clean_tx_queue(tx_q);
-	} else {
-		for (i = 0; i < priv->dma_tx_size; i++)
-			stmmac_free_tx_buffer(priv, queue, i);
-	}
+	else
+		stmmac_skb_clean_tx_queue(priv, tx_q);
 }
 
 static void free_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
@@ -1796,7 +1813,7 @@ static void free_dma_tx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 		synchronize_rcu();
 
 	/* Release the DMA TX socket buffers */
-	dma_free_tx_skbufs(priv, queue);
+	stmmac_clean_tx_queue(priv, queue);
 
 	/* Free DMA regions of consistent memory previously allocated */
 	if (priv->extend_desc)
@@ -2412,7 +2429,7 @@ static void stmmac_tx_err(struct stmmac_priv *priv, u32 chan)
 	stmmac_stop_mac_tx(priv, priv->ioaddr);
 
 	/* Clean-up TX or TX XDP queue */
-	dma_free_tx_skbufs(priv, chan);
+	stmmac_clean_tx_queue(priv, chan);
 	stmmac_clear_tx_descriptors(priv, chan);
 	tx_q->dirty_tx = 0;
 	tx_q->cur_tx = 0;
@@ -6588,38 +6605,12 @@ int stmmac_reinit_ringparam(struct net_device *dev, u32 rx_size, u32 tx_size)
 	return ret;
 }
 
-static void stmmac_clean_tx_queue(struct stmmac_priv *priv,
-				  struct stmmac_tx_queue *tx_q)
-{
-	u32 queue = tx_q->queue_index;
-	unsigned int entry;
-
-	entry = tx_q->dirty_tx;
-	while (entry != tx_q->cur_tx) {
-		/* Free all the Tx ring sk_buffs */
-		stmmac_free_tx_buffer(priv, queue, entry);
-
-		entry = STMMAC_GET_ENTRY(entry, priv->dma_tx_size);
-	}
-	tx_q->dirty_tx = entry;
-
-	/* reset BQL for queue */
-	netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, queue));
-}
-
 void stmmac_clean_all_tx_rings(struct stmmac_priv *priv)
 {
-	u32 tx_count = priv->plat->tx_queues_to_use;
 	u32 queue;
 
-	for (queue = 0; queue < tx_count; queue++) {
-		struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
-
-		if (queue_is_xdp(priv, queue) && tx_q->xsk_umem)
-			stmmac_xsk_clean_tx_queue(tx_q);
-		else
-			stmmac_clean_tx_queue(priv, tx_q);
-	}
+	for (queue = 0; queue < priv->plat->tx_queues_to_use; queue++)
+		stmmac_clean_tx_queue(priv, queue);
 }
 
 /**
