@@ -1738,8 +1738,7 @@ static void dma_free_tx_skbufs(struct stmmac_priv *priv, u32 queue)
 	struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
 	int i;
 
-	if (queue_is_xdp(priv, queue) && tx_q->xsk_umem &&
-	    !priv->cur_mode_is_normal) {
+	if (queue_is_xdp(priv, queue) && tx_q->xsk_umem) {
 		stmmac_xsk_clean_tx_queue(tx_q);
 	} else {
 		for (i = 0; i < priv->dma_tx_size; i++)
@@ -3545,8 +3544,6 @@ static int stmmac_open(struct net_device *dev)
 		priv->dma_rx_size = DMA_DEFAULT_RX_SIZE;
 	if (!priv->dma_tx_size)
 		priv->dma_tx_size = DMA_DEFAULT_TX_SIZE;
-
-	priv->cur_mode_is_normal = true;
 
 	ret = alloc_dma_desc_resources(priv);
 	if (ret < 0) {
@@ -5861,9 +5858,6 @@ static int stmmac_xdp_setup(struct stmmac_priv *priv,
 
 	old_prog = xchg(&priv->xdp_prog, prog);
 
-	/* Begin transition between normal->xdp or xdp->normal */
-	priv->cur_mode_is_normal = !priv->cur_mode_is_normal;
-
 	for (i = 0; i < priv->plat->num_queue_pairs; i++) {
 		err = stmmac_queue_pair_enable(priv, i);
 		if (err)
@@ -5876,7 +5870,7 @@ static int stmmac_xdp_setup(struct stmmac_priv *priv,
 	/* Kick start the NAPI context if there is an AF_XDP socket open
 	 * on that queue id. This so that receiving will start.
 	 */
-	if (need_reset && !priv->cur_mode_is_normal)
+	if (need_reset)
 		for (i = 0; i < priv->plat->num_queue_pairs; i++)
 			if (priv->xdp_queue[i].xsk_umem)
 				(void)stmmac_xsk_wakeup(priv->dev, i,
