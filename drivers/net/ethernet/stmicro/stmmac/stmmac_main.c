@@ -5642,11 +5642,6 @@ static void stmmac_txrx_desc_control(struct stmmac_priv *priv, u16 qid, bool en)
 	u16 qp_num = priv->plat->num_queue_pairs;
 
 	if (en) {
-		if (stmmac_enabled_xdp(priv)) {
-			clear_queue_xdp(priv, qid);
-			set_queue_xdp(priv, qid + qp_num);
-		}
-
 		alloc_dma_rx_desc_resources_q(priv, qid);
 		alloc_dma_tx_desc_resources_q(priv, qid);
 		alloc_dma_tx_desc_resources_q(priv, qid + qp_num);
@@ -5658,11 +5653,6 @@ static void stmmac_txrx_desc_control(struct stmmac_priv *priv, u16 qid, bool en)
 		free_dma_rx_desc_resources_q(priv, qid);
 		free_dma_tx_desc_resources_q(priv, qid);
 		free_dma_tx_desc_resources_q(priv, qid + qp_num);
-
-		if (!stmmac_enabled_xdp(priv)) {
-			clear_queue_xdp(priv, qid);
-			clear_queue_xdp(priv, qid + qp_num);
-		}
 	}
 }
 
@@ -5725,6 +5715,18 @@ int stmmac_queue_pair_enable(struct stmmac_priv *priv, u16 qid)
 
 		return -EINVAL;
 	}
+
+	/* XDP BPF must be loaded before TX & XDP TX queue pair are enabled and
+	 * the Tx XDP queue is assigned with higher TxQ starting from
+	 * num_queue_pairs. For example, for controller with 8 HW DMA channels
+	 * and num_queue_pairs=4, then:
+	 * Tx DMA channels     = 0, 1, 2, 3
+	 * Tx XDP DMA channels = 4, 5, 6, 7
+	 */
+	if (stmmac_enabled_xdp(priv))
+		set_queue_xdp(priv, qid + qp_num);
+	else
+		clear_queue_xdp(priv, qid + qp_num);
 
 	stmmac_txrx_desc_control(priv, qid, true);
 	stmmac_txrx_ch_init(priv, qid);
