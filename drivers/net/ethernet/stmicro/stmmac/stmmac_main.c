@@ -6815,6 +6815,9 @@ int stmmac_suspend(struct device *dev)
 
 	phylink_mac_change(priv->phylink, false);
 
+	if (ndev->phydev && device_may_wakeup(priv->device))
+		phy_stop_machine(ndev->phydev);
+
 	mutex_lock(&priv->lock);
 
 	netif_device_detach(ndev);
@@ -7111,6 +7114,8 @@ int stmmac_resume(struct device *dev)
 		rtnl_lock();
 		phylink_start(priv->phylink);
 		rtnl_unlock();
+	} else if (ndev->phydev) {
+		phy_start_machine(ndev->phydev);
 	}
 
 	phylink_mac_change(priv->phylink, true);
