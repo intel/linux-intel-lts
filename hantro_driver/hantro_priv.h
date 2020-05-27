@@ -64,10 +64,6 @@ typedef struct dtbnode {
 	char reg_name[32];
 	int irq[4];
         char irq_name[4][32];
-	int reset_count;
-	char reset_names[4][32];
-	int clock_count;
-	char clock_names[4][32];
 	int parenttype;
 	phys_addr_t parentaddr;
 	int sliceidx;

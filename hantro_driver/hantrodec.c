@@ -801,7 +801,7 @@ static long WaitDecReadyAndRefreshRegs(struct hantrodec_t *dev, struct core_desc
 	long ret;
 	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
 
-	pr_info("wait_event_interruptible DEC[%d]\n", id);
+	PDEBUG("wait_event_interruptible DEC[%d]\n", id);
 
 	ret = wait_event_interruptible_timeout(parentslice->dec_wait_queue, CheckDecIrq(dev, id), msecs_to_jiffies(10));
 	if (ret == -ERESTARTSYS) {
@@ -978,7 +978,7 @@ static long WaitPPReadyAndRefreshRegs(struct hantrodec_t *dev, struct core_desc 
 	u32 id = Core->id;
 	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
 
-	pr_info("wait_event_interruptible PP[%d]\n", id);
+	PDEBUG("wait_event_interruptible PP[%d]\n", id);
 
 	if (wait_event_interruptible(parentslice->pp_wait_queue, CheckPPIrq(dev, id))) {
 		pr_err("PP[%d]  failed to wait_event_interruptible interrupted\n", id);
@@ -1034,7 +1034,7 @@ static int CheckCoreIrq(struct hantrodec_t *dev, const struct file *filp, u32 *i
 static long WaitCoreReady(struct hantrodec_t *dev, const struct file *filp, u32 *id)
 {
 	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
-	pr_info("wait_event_interruptible CORE\n");
+	PDEBUG("wait_event_interruptible CORE\n");
 
 	if (wait_event_interruptible(parentslice->dec_wait_queue,
 		CheckCoreIrq(dev, filp, id))) {

@@ -175,7 +175,7 @@ static unsigned int WaitEncReady(struct hantroenc_t *dev, u32 *core_info, u32 *i
 	if (wait_event_interruptible(
 		parentslice->enc_wait_queue,
 		CheckEncIrq(dev, core_info, irq_status, nodenum))) {
-		pr_info("ENC wait_event_interruptible interrupted\n");
+		PDEBUG("ENC wait_event_interruptible interrupted\n");
 		ReleaseEncoder(dev, core_info, nodenum);
 		return -ERESTARTSYS;
 	}

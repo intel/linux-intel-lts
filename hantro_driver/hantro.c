@@ -1947,61 +1947,6 @@ static dtbnode * trycreatenode(
 			pnode->irq[i] = -1;
 	}
 
-	pnode->reset_count = 0;
-	pnode->clock_count = 0;
-
-	// Read reset names
-	count = fwnode_property_read_string_array(fwnode, "reset-names", NULL, 0);
-
-        if (count > 0 && count < 4)
-	{
-
-		names = kcalloc(count, sizeof(*names), GFP_KERNEL);
-		if (!names)
-			return NULL;
-
-		ret = fwnode_property_read_string_array(fwnode, "reset-names",
-                                                names, count);
-		if (ret < 0) {
-			pr_err("failed to read reset names\n");
-			kfree(names);
-			return NULL;
-		}
-
-		for (i = 0; i < count; i++) {
-			strcpy(pnode->reset_names[i], names[i]);
-		}
-		pnode->reset_count = count;
-
-		kfree(names);
-	}
-
-	// Read clock names
-	count = fwnode_property_read_string_array(fwnode, "clock-names", NULL, 0);
-
-        if (count > 0 && count < 4)
-        {
-
-                names = kcalloc(count, sizeof(*names), GFP_KERNEL);
-                if (!names)
-                        return NULL;
-
-                ret = fwnode_property_read_string_array(fwnode, "clock-names",
-                                                names, count);
-                if (ret < 0) {
-                        pr_err("failed to read clock names\n");
-                        kfree(names);
-                        return NULL;
-                }
-
-                for (i = 0; i < count; i++)
-                        strcpy(pnode->clock_names[i], names[i]);
-
-	        pnode->clock_count = count;
-
-                kfree(names);
-        }
-
 	switch (pnode->type) {
 	case CORE_DEC:
 		ret = hantrodec_probe(pnode);
@@ -2029,166 +1974,94 @@ static dtbnode * trycreatenode(
 	return pnode;
 }
 
-#ifdef ENABLE_HANTRO_CLK
-static int is_clock_enabled = CLOCK_DISABLED;
 
-/* TBH PO: hantro_enable_clock to enable the media SS clocks at init */
-static int hantro_enable_clock(struct platform_device *pdev)
+/* hantro_enable_clock to enable/disable the media SS clocks */
+static int hantro_clock_control(struct platform_device *pdev, bool enable)
 {
-	int i;
-	char clock_names[CLOCK_ID_TOTAL][32] = {
-		"vc8000ej_coreclk_computess0",
-		"vc8000ej_aclk_computess0",
-		"vc8000e_coreclk_computess0",
-		"vc8000e_aclk_computess0",
-		"vc8000da_coreclk_computess0",
-		"vc8000da_aclk_computess0",
-		"vc8000db_coreclk_computess0",
-		"vc8000db_aclk_computess0",
-	};
+	struct device *dev = &pdev->dev;
+	struct device_node *ofnode = dev->of_node;
+	struct fwnode_handle *fwnode = &ofnode->fwnode;
+	const char **clock_names;
+	int i = 0, ret = 0, count = 0;
 
-	for (i  = 0; i < CLOCK_ID_TOTAL; i++) {
-		DBG("hantro: clock_name = %s\n", clock_names[i]);
-		struct clk *hantro_clk = clk_get(&pdev->dev, clock_names[i]);
-		DBG("hantro: hantro_enable_clock: done clk_get for clock_name = %s\n", clock_names[i]);
-		clk_prepare_enable(hantro_clk);
-		pr_info("hantro: default clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(hantro_clk));
-		clk_set_rate(hantro_clk, 800000000);
-		pr_info("hantro: set 800 Mhz clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(hantro_clk));
-	}
+	// Read clock names
+        count = device_property_read_string_array(dev, "clock-names", NULL, 0);
+        if (count > 0 ) {
+                clock_names = kcalloc(count, sizeof(*clock_names), GFP_KERNEL);
+                if (!clock_names)
+                        return NULL;
+                ret = device_property_read_string_array(dev, "clock-names",
+                                                clock_names, count);
+                if (ret < 0) {
+                        pr_err("failed to read clock names\n");
+                        kfree(clock_names);
+                        return NULL;
+                }
 
-	is_clock_enabled = CLOCK_ENABLED;
-
-	return 0;
-}
-
-/* TBH PO: hantro_disable_clock at cleanup */
-static int hantro_disable_clock(struct platform_device *pdev)
-{
-	int i;
-	char clock_names[CLOCK_ID_TOTAL][32] = {
-		"vc8000ej_coreclk_computess0",
-		"vc8000ej_aclk_computess0",
-		"vc8000e_coreclk_computess0",
-		"vc8000e_aclk_computess0",
-		"vc8000da_coreclk_computess0",
-		"vc8000da_aclk_computess0",
-		"vc8000db_coreclk_computess0",
-		"vc8000db_aclk_computess0",
-	};
-
-	for (i  = 0; i < CLOCK_ID_TOTAL; i++) {
-		DBG("hantro: clock_name = %s\n", clock_names[i]);
-		struct clk *hantro_clk = clk_get(&pdev->dev, clock_names[i]);
-		DBG("hantro: hantro_disable_clock: done clk_get for clock_name = %s\n", clock_names[i]);
-		clk_disable_unprepare(hantro_clk);
-		pr_info("hantro: clock_name = %s disabled unprepared\n", clock_names[i]);
-	}
-
-	is_clock_enabled = CLOCK_DISABLED;
-
-	return 0;
-}
-#endif
-#ifdef USE_RESET
-/* Probe is called multiple times for multi-slice device-tree,
-   need to check whether the HW cores have been reset asserted
-   or de-asserted.
-*/
-static int is_reset_asserted = RESET_ASSERTED;
-
-/* TBH PO: hantro_reset_control_deassert function to de-assert the media cores at init */
-static int hantro_reset_control_deassert(struct platform_device *pdev)
-{
-	int ret, i;
-	/* to be queried dynamically later on from device-tree for the names,
-	   reset IDs are from device-tree */
-	char reset_names[RESET_ID_TOTAL][32] = {
-		"vcej_reset_core",
-		"vcej_reset_areset",
-		"vcej_reset_preset",
-		"vce_reset_core",
-		"vce_reset_areset",
-		"vce_reset_preset",
-		"vcda_reset_core",
-		"vcda_reset_areset",
-		"vcda_reset_preset",
-		"vcdb_reset_core",
-		"vcdb_reset_areset",
-		"vcdb_reset_preset",
-		"tbu0_areset",
-		"tbu1_areset",
-		"tbu2_areset",
-		"tbu3_areset",
-		"tbu4_areset",
-		"tcu_areset",
-		"dti_areset"
-	};
-
-	for (i  = 0; i < RESET_ID_TOTAL; i++) {
-		DBG("hantro: reset_name = %s\n", reset_names[i]);
-		struct reset_control *hantro_reset = devm_reset_control_get(&pdev->dev, reset_names[i]);
-		DBG("hantro_reset_control_deassert: done reset_control_get for reset_name = %s\n", reset_names[i]);
-		ret = reset_control_deassert(hantro_reset);
-
-		if (ret != 0) {
-			pr_info("ERROR: Can't de-assert the reset ID %d for reset_name = %s\n", (i + 3), reset_names[i]);
-		} else {
-			pr_info("hantro: Success de-assert the reset ID %d for reset_name = %s\n", (i + 3), reset_names[i]);
+                for (i = 0; i < count; i++) {
+			DBG("hantro: clock_name = %s\n", clock_names[i]);
+			struct clk *dev_clk = clk_get(&pdev->dev, clock_names[i]);
+                        if (enable == true)  {
+                              clk_prepare_enable(dev_clk);
+                              pr_info("hantro: default clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
+                              //clk_set_rate(dev_clk, 800000000);
+                              //pr_info("hantro: set 800 Mhz clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
+			}
+			else {
+                             clk_disable_unprepare(dev_clk);
+			}
 		}
-	}
-
-	is_reset_asserted = RESET_DEASSERTED;
+                kfree(clock_names);
+        }
 
 	return 0;
 }
 
-/* TBH PO: hantro_reset_control_assert function to assert the media cores at cleanup */
-static int hantro_reset_control_assert(struct platform_device *pdev)
+/* hantro_reset_clock to de-assert/assert the media SS cores and MMU */
+static int hantro_reset_control(struct platform_device *pdev, bool deassert)
 {
-	int ret, i;
-	/* to be queried dynamically later on from device-tree for the names,
-	   reset IDs are from device-tree */
-	char reset_names[RESET_ID_TOTAL][32] = {
-		"vcej_reset_core",
-		"vcej_reset_areset",
-		"vcej_reset_preset",
-		"vce_reset_core",
-		"vce_reset_areset",
-		"vce_reset_preset",
-		"vcda_reset_core",
-		"vcda_reset_areset",
-		"vcda_reset_preset",
-		"vcdb_reset_core",
-		"vcdb_reset_areset",
-		"vcdb_reset_preset",
-                "tbu0_areset",
-                "tbu1_areset",
-                "tbu2_areset",
-                "tbu3_areset",
-                "tbu4_areset",
-                "tcu_areset",
-                "dti_areset"
-	};
 
-	for (i  = 0; i < RESET_ID_TOTAL; i++) {
-		DBG("hantro: reset_name = %s\n", reset_names[i]);
-		struct reset_control *hantro_reset = devm_reset_control_get(&pdev->dev, reset_names[i]);
-		DBG("hantro_reset_control_assert: done reset_control_get for reset_name = %s\n", reset_names[i]);
-		ret = reset_control_assert(hantro_reset);
+        struct device *dev = &pdev->dev;
+        const char **reset_names;
+        int i = 0, ret = 0, count = 0;
+        // Read reset names
+        count = device_property_read_string_array(dev, "reset-names", NULL, 0);
 
-		if (ret != 0) {
-			pr_info("ERROR: Can't assert the reset ID %d for reset_name = %s\n", (i + 3), reset_names[i]);
-		} else {
-			pr_info("hantro: Success assert the reset ID %d for reset_name = %s\n", (i + 3), reset_names[i]);
-		}
-	}
+        if (count > 0) {
+                reset_names = kcalloc(count, sizeof(*reset_names), GFP_KERNEL);
+                if (!reset_names)
+                        return NULL;
 
-	is_reset_asserted = RESET_ASSERTED;
+                ret = device_property_read_string_array(dev, "reset-names",
+                                                reset_names, count);
+                if (ret < 0) {
+                        pr_err("failed to read clock names\n");
+                        kfree(reset_names);
+                        return NULL;
+                }
 
-	return 0;
+                for (i = 0; i < count; i++) {
+                        DBG("hantro: reset_name = %s\n", reset_names[i]);
+			struct reset_control *dev_reset = devm_reset_control_get(dev, reset_names[i]);
+                        if (deassert == true) {
+				ret = reset_control_deassert(dev_reset);
+				if (ret < 0) {
+					pr_err("failed to deassert reset : %s, %d\n", reset_names[i], ret);
+				}
+			}
+			else {
+				ret = reset_control_assert(dev_reset);
+                                if (ret < 0) {
+                                        pr_err("failed to assert reset : %s, %d\n", reset_names[i], ret);
+                                }
+			}
+
+                }
+                kfree(reset_names);
+        }
+
+        return 0;
 }
-#endif
 
 static int hantro_analyze_subnode(
 	struct platform_device *pdev,
@@ -2239,23 +2112,16 @@ static int hantro_drm_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	int result = 0;
 	int sliceidx = -1;
+	struct fwnode_handle *child;
+        pr_info("hantro_drm_probe: dev %s probe", pdev->name);
 
-        DBG("hantro_drm_probe: dev %s probe", pdev->name);
-
-/*TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
+        /*TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
 #ifdef ENABLE_HANTRO_CLK
-	DBG("hantro_drm_probe: going to call hantro_enable_clock here\n");
-	if (is_clock_enabled == CLOCK_DISABLED)
-		hantro_enable_clock(pdev);
-	else
-		pr_info("hantro_drm_probe: hantro_enable_clock has been done - not doing it again!\n");
+	hantro_clock_control(pdev,true);
 #endif
-#ifdef USE_RESET
-	DBG("hantro_drm_probe: hantro_reset_control_deassert!\n");
-	if (is_reset_asserted == RESET_ASSERTED)
-		hantro_reset_control_deassert(pdev);
-	else
-		pr_info("hantro_drm_probe: reset control de-assert has already been done - not doing it again!\n");
+
+#ifdef  USE_RESET
+	hantro_reset_control(pdev, true);
 #endif
 
 	if (dev->of_node) {
@@ -2285,6 +2151,18 @@ static int hantro_drm_probe(struct platform_device *pdev)
 
 static int hantro_drm_remove(struct platform_device *pdev)
 {
+
+#ifdef  USE_RESET
+	// disabled for now
+	/* TBH PO: Have to assert reset before disabling clocks */
+	/* TBH PO: For now do not assert reset yet until power isolation sequence is implemented */
+	// hantro_reset_control(pdev, false);
+#endif
+
+#ifdef ENABLE_HANTRO_CLK
+        hantro_clock_control(pdev,false);
+#endif
+
 	return 0;
 }
 
@@ -2366,23 +2244,6 @@ static int hantro_major = 1;  /* dynamic */
 void __exit hantro_cleanup(void)
 {
 	hantro_dev.config = 0;
-/* TBH PO: Have to assert reset before disabling clocks */
-/* TBH PO: For now do not assert reset yet until power isolation sequence is implemented */
-#if 0
-//#ifdef USE_RESET
-	DBG("hantro_cleanup: hantro_reset_control_assert!\n");
-	if (is_reset_asserted == RESET_DEASSERTED)
-		hantro_reset_control_assert(hantro_dev.platformdev);
-	else
-		pr_info("hantro cleanup: reset control assert has been done, not doing it again!\n");
-#endif
-#ifdef ENABLE_HANTRO_CLK
-	DBG("hantro_cleanup: hantro_disable_clock!\n");
-	if (is_clock_enabled == CLOCK_ENABLED)
-		hantro_disable_clock(hantro_dev.platformdev);
-	else
-		pr_info("hantro cleanup: hantro_disable_clock has been done, not doing it again!\n");
-#endif
 #if USE_HW == 1      /*hw init*/
 #ifdef HAS_VC8000D
 	hantrodec_cleanup();
