@@ -5963,6 +5963,10 @@ static int stmmac_xdp_setup(struct stmmac_priv *priv,
 	old_prog = xchg(&priv->xdp_prog, prog);
 
 	if (need_reset) {
+		if (!prog)
+			/* Wait until ndo_xsk_wakeup completes. */
+			synchronize_rcu();
+
 		err = stmmac_all_queue_pairs_enable(priv);
 		if (err)
 			return err;
