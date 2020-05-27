@@ -134,9 +134,6 @@ err_skb:
 	stmmac_resume_common(priv, ndev);
 	priv->networkproxy_exit = 0;
 
-	if (ndev->phydev)
-		phy_start_machine(ndev->phydev);
-
 	netif_device_attach(ndev);
 
 	return IRQ_HANDLED;
@@ -176,9 +173,6 @@ static int stmmac_netprox_suspend(struct stmmac_priv *priv,
 
 	/* Message Network Proxy Agent to enter proxy mode */
 	netprox_host_proxy_enter();
-
-	if (ndev->phydev)
-		phy_stop_machine(ndev->phydev);
 
 	stmmac_suspend_common(priv, ndev);
 
