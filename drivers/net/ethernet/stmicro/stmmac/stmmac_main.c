@@ -1450,6 +1450,8 @@ static struct xdp_umem *stmmac_xsk_tx_umem(struct stmmac_priv *priv, u32 queue)
 
 	if (queue_is_xdp(priv, queue))
 		queue -= priv->plat->num_queue_pairs;
+	else
+		return NULL;
 
 	if (!xdp_on || !test_bit(queue, priv->af_xdp_zc_qps))
 		return NULL;
