@@ -2007,39 +2007,11 @@ err_dma:
  */
 static int alloc_dma_tx_desc_resources(struct stmmac_priv *priv)
 {
-	u32 tx_count = priv->plat->tx_queues_to_use;
-	u32 qp_count;
 	u32 queue;
 	int ret;
 
-	/* Setup RX, TX & TX XDP queue pair count if uninitialized */
-	if (!priv->plat->num_queue_pairs)
-		priv->plat->num_queue_pairs = priv->plat->max_combined;
-
-	qp_count = priv->plat->num_queue_pairs;
-
-	/* When XDP is enabled, Tx XDP queue is assigned with higher
-	 * TxQ starting from num_queue_pairs. For example, for IP
-	 * with 8 HW DMA channels and num_queue_pairs=4 then:
-	 * Tx DMA channels     = 0, 1, 2, 3
-	 * Tx XDP DMA channels = 4, 5, 6, 7
-	 */
-	if (stmmac_enabled_xdp(priv)) {
-		for (queue = 0; queue < qp_count; queue++) {
-			clear_queue_xdp(priv, queue);
-			set_queue_xdp(priv, queue + qp_count);
-		}
-		priv->plat->normal_tx_queue_count = qp_count;
-	} else {
-		for (queue = 0; queue < qp_count; queue++) {
-			clear_queue_xdp(priv, queue);
-			clear_queue_xdp(priv, queue + qp_count);
-		}
-		priv->plat->normal_tx_queue_count = tx_count;
-	}
-
 	/* TX queues buffers and DMA */
-	for (queue = 0; queue < tx_count; queue++) {
+	for (queue = 0; queue < priv->plat->tx_queues_to_use; queue++) {
 		ret = alloc_dma_tx_desc_resources_q(priv, queue);
 		if (ret)
 			return ret;
@@ -3541,6 +3513,21 @@ static int stmmac_open(struct net_device *dev)
 				   __func__, chan);
 		}
 	}
+
+	/* Setup RX, TX & TX XDP queue pair count if uninitialized. Another
+	 * update is possible via stmmac_reinit_queues() triggered by ethtool.
+	 */
+	if (!priv->plat->num_queue_pairs)
+		priv->plat->num_queue_pairs = priv->plat->max_combined;
+
+	/* Configure normal_tx_queue_count here as the value of num_queue_pairs
+	 * can be changed through stmmac_reinit_queues triggered by ethool
+	 */
+	if (stmmac_enabled_xdp(priv))
+		priv->plat->normal_tx_queue_count = priv->plat->num_queue_pairs;
+	else
+		priv->plat->normal_tx_queue_count =
+						   priv->plat->tx_queues_to_use;
 
 	if (!priv->dma_rx_size)
 		priv->dma_rx_size = DMA_DEFAULT_RX_SIZE;
