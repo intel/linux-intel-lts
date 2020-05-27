@@ -66,12 +66,22 @@ static irqreturn_t bcm2835_time_interrupt(int irq, void *dev_id)
 	}
 }
 
+static struct clocksource_user_mmio clocksource_bcm2835 = {
+	.mmio.clksrc = {
+		.rating		= 300,
+		.read		= clocksource_mmio_readl_up,
+		.mask		= CLOCKSOURCE_MASK(32),
+		.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
+	},
+};
+
 static int __init bcm2835_timer_init(struct device_node *node)
 {
 	void __iomem *base;
 	u32 freq;
 	int irq, ret;
 	struct bcm2835_timer *timer;
+	struct clocksource_mmio_regs mmr;
 
 	base = of_iomap(node, 0);
 	if (!base) {
@@ -88,8 +98,13 @@ static int __init bcm2835_timer_init(struct device_node *node)
 	system_clock = base + REG_COUNTER_LO;
 	sched_clock_register(bcm2835_sched_read, 32, freq);
 
-	clocksource_mmio_init(base + REG_COUNTER_LO, node->name,
-		freq, 300, 32, clocksource_mmio_readl_up);
+	mmr.reg_lower = base + REG_COUNTER_LO;
+	mmr.bits_lower = 32;
+	mmr.reg_upper = 0;
+	mmr.bits_upper = 0;
+	mmr.revmap = NULL;
+	clocksource_bcm2835.mmio.clksrc.name = node->name;
+	clocksource_user_mmio_init(&clocksource_bcm2835, &mmr, freq);
 
 	irq = irq_of_parse_and_map(node, DEFAULT_TIMER);
 	if (irq <= 0) {
