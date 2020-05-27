@@ -5757,6 +5757,30 @@ int stmmac_queue_pair_enable(struct stmmac_priv *priv, u16 qid)
 	return 0;
 }
 
+int stmmac_all_queue_pairs_enable(struct stmmac_priv *priv)
+{
+	int i;
+
+	mutex_lock(&priv->lock);
+
+	if (stmmac_enabled_xdp(priv))
+		priv->plat->normal_tx_queue_count = priv->plat->num_queue_pairs;
+	else
+		priv->plat->normal_tx_queue_count =
+						   priv->plat->tx_queues_to_use;
+
+	for (i = 0; i < priv->plat->num_queue_pairs; i++) {
+		int err = stmmac_queue_pair_enable(priv, i);
+
+		if (err)
+			return err;
+	}
+
+	mutex_unlock(&priv->lock);
+
+	return 0;
+}
+
 /**
  * stmmac_queue_pair_disable - Disables a queue pair
  * @priv: driver private structure
@@ -5785,6 +5809,24 @@ int stmmac_queue_pair_disable(struct stmmac_priv *priv, u16 qid)
 	stmmac_txrx_desc_control(priv, qid, false);
 
 	return ret;
+}
+
+int stmmac_all_queue_pairs_disable(struct stmmac_priv *priv)
+{
+	int i;
+
+	mutex_lock(&priv->lock);
+
+	for (i = 0; i < priv->plat->num_queue_pairs; i++) {
+		int err = stmmac_queue_pair_disable(priv, i);
+
+		if (err)
+			return err;
+	}
+
+	mutex_unlock(&priv->lock);
+
+	return 0;
 }
 
 /**
@@ -5858,16 +5900,16 @@ static int stmmac_xdp_setup(struct stmmac_priv *priv,
 	/* Turning AF_XDP ZC on->off/off->on requires rebuild of rings */
 	need_reset = (stmmac_enabled_xdp(priv) != !!prog);
 
-	for (i = 0; i < priv->plat->num_queue_pairs; i++) {
-		err = stmmac_queue_pair_disable(priv, i);
+	if (need_reset) {
+		err = stmmac_all_queue_pairs_disable(priv);
 		if (err)
 			return err;
 	}
 
 	old_prog = xchg(&priv->xdp_prog, prog);
 
-	for (i = 0; i < priv->plat->num_queue_pairs; i++) {
-		err = stmmac_queue_pair_enable(priv, i);
+	if (need_reset) {
+		err = stmmac_all_queue_pairs_enable(priv);
 		if (err)
 			return err;
 	}
@@ -5878,11 +5920,11 @@ static int stmmac_xdp_setup(struct stmmac_priv *priv,
 	/* Kick start the NAPI context if there is an AF_XDP socket open
 	 * on that queue id. This so that receiving will start.
 	 */
-	if (need_reset)
+	if (need_reset && prog)
 		for (i = 0; i < priv->plat->num_queue_pairs; i++)
 			if (priv->xdp_queue[i].xsk_umem)
 				(void)stmmac_xsk_wakeup(priv->dev, i,
-							XDP_WAKEUP_TX);
+							XDP_WAKEUP_RX);
 
 	return 0;
 }
