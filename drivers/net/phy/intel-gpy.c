@@ -117,59 +117,7 @@ static int gpy_config_aneg(struct phy_device *phydev)
 	if (ret > 0)
 		changed = true;
 
-	ret = phy_read_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_STS);
-
-	if (linkmode_test_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT,
-			      phydev->advertising)) {
-		/* For SGMII 2.5Gbps link, MAC side SGMII will turn off
-		 * autoneg as not all PHY supports autoneg for 2.5Gbps.
-		 * GPY211 will disable autoneg by toggling the BIT12
-		 */
-		if ((ret & GPY_SGMII_ANOK) && (!(ret & GPY_SGMII_LS))) {
-			phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
-					       GPY_VSPEC1_SGMII_CTRL,
-					       GPY_SGMII_ANEN,
-					       GPY_SGMII_ANEN);
-			phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1,
-					   GPY_VSPEC1_SGMII_CTRL,
-					   GPY_SGMII_ANEN);
-
-			/* If the SGMII link is not at 2.5Gbps mode,
-			 * restart the TPI link by toggling TPI
-			 * autoneg bit. As the SGMII buad rate will
-			 * follow the TPI link
-			 */
-			if ((ret & GPY_SGMII_DR_MASK) != GPY_SGMII_DR_2500)
-				genphy_c45_an_disable_aneg(phydev);
-
-			changed = true;
-		}
-	} else {
-		/* For SGMII 10/100/1000Mbps link, enable the SGMII
-		 * autoneg by toggling the BIT12
-		 */
-		if (ret & GPY_SGMII_ANOK || (!(ret & GPY_SGMII_LS))) {
-			phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1,
-					   GPY_VSPEC1_SGMII_CTRL,
-					   GPY_SGMII_ANEN);
-			phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
-					       GPY_VSPEC1_SGMII_CTRL,
-					       GPY_SGMII_ANEN,
-					       GPY_SGMII_ANEN);
-
-			/* If the SGMII link is not at 10/100/1000Mbps,
-			 * restart the TPI link by toggling TPI
-			 * autoneg bit. As the SGMII buad rate will
-			 * follow the TPI link
-			 */
-			if ((ret & GPY_SGMII_DR_MASK) == GPY_SGMII_DR_2500)
-				genphy_c45_an_disable_aneg(phydev);
-
-			changed = true;
-		}
-	}
-
-	return genphy_c45_check_and_restart_aneg(phydev, changed);
+	return changed ? genphy_restart_aneg(phydev) : 0;
 }
 
 static int gpy_ack_interrupt(struct phy_device *phydev)
