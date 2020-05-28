@@ -660,6 +660,8 @@ const struct stmmac_desc_ops dwmac5_desc_ops = {
 	.set_sarc = dwmac4_set_sarc,
 	.set_vlan_tag = dwmac4_set_vlan_tag,
 	.set_vlan = dwmac4_set_vlan,
+	.get_rx_header_len = dwmac4_get_rx_header_len,
+	.set_sec_addr = dwmac4_set_sec_addr,
 };
 
 const struct stmmac_mode_ops dwmac4_ring_mode_ops = {

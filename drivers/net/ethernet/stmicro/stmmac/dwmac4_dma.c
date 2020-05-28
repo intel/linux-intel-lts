@@ -622,4 +622,5 @@ const struct stmmac_dma_ops dwmac5_dma_ops = {
 	.qmode = dwmac4_qmode,
 	.set_bfsize = dwmac4_set_bfsize,
 	.enable_tbs = dwmac5_enable_tbs,
+	.enable_sph = dwmac4_enable_sph,
 };
