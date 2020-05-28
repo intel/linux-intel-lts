@@ -5408,26 +5408,7 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
-	if (rx_q->xsk_umem && priv->xdp_prog) {
-		int status = stmmac_dma_interrupt_status(priv, priv->ioaddr,
-							 &priv->xstats,
-							 chan,
-							 DMA_DIR_RX);
-
-		if ((status & handle_rx) &&
-		    chan < priv->plat->num_queue_pairs) {
-			/* Skip napi for XDP ZC queues to reduce latency.
-			 * Penalties of not using NAPI should be minimal for
-			 * XDP's case. Alternatively, users can increase the Rx
-			 * interrupt coalesce.
-			 */
-			stmmac_disable_dma_irq(priv, priv->ioaddr, chan, 1, 0);
-			stmmac_rx_zc(priv, priv->dma_rx_size, chan);
-			stmmac_enable_dma_irq(priv, priv->ioaddr, chan, 1, 0);
-		}
-	} else {
-		stmmac_napi_check(priv, chan, DMA_DIR_RX);
-	}
+	stmmac_napi_check(priv, chan, DMA_DIR_RX);
 
 	return IRQ_HANDLED;
 }
