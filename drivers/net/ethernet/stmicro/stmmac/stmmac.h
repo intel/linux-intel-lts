@@ -358,6 +358,8 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
 #define STMMAC_RX_DMA_ATTR \
 	(DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
 
+#define STMMAC_COAL_TIMER(x) (jiffies + usecs_to_jiffies(x))
+
 static inline bool stmmac_enabled_xdp(struct stmmac_priv *priv)
 {
 	return !!priv->xdp_prog;
@@ -412,6 +414,7 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			    ktime_t *hwtstamp);
 int stmmac_set_tbs_launchtime(struct stmmac_priv *priv, struct dma_desc *desc,
 			      u64 tx_time);
+void stmmac_tx_timer_arm(struct stmmac_priv *priv, u32 queue);
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,
 			 struct ethtool_test *etest, u64 *buf);
