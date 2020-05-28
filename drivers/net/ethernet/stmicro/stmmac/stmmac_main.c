@@ -5696,6 +5696,21 @@ static void stmmac_txrx_ch_init(struct stmmac_priv *priv, u16 qid)
 			       xdp_q->queue_index);
 }
 
+static void stmmac_sph_control(struct stmmac_priv *priv, u16 qid)
+{
+	struct stmmac_rx_queue *rx_q = &priv->rx_queue[qid];
+
+	/* RX XDP ZC does not support split header */
+	if (priv->sph && priv->hw->rx_csum > 0) {
+		if (rx_q->xsk_umem)
+			stmmac_enable_sph(priv, priv->ioaddr, false, qid);
+		else
+			stmmac_enable_sph(priv, priv->ioaddr, true, qid);
+	} else {
+		stmmac_enable_sph(priv, priv->ioaddr, false, qid);
+	}
+}
+
 /**
  * stmmac_queue_pair_enable - Enables a queue pair
  * @priv: driver private structure
@@ -5730,6 +5745,8 @@ int stmmac_queue_pair_enable(struct stmmac_priv *priv, u16 qid)
 
 	stmmac_txrx_desc_control(priv, qid, true);
 	stmmac_txrx_ch_init(priv, qid);
+	stmmac_sph_control(priv, qid);
+
 	stmmac_txrx_dma_control(priv, qid, true);
 
 	ret = stmmac_txrx_irq_control(priv, qid, true);
