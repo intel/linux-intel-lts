@@ -473,6 +473,7 @@ void intel_link_compute_m_n(u16 bpp, int nlanes,
 			    struct intel_link_m_n *m_n,
 			    bool constant_n, bool fec_enable);
 bool is_ccs_modifier(u64 modifier);
+int intel_main_to_aux_plane(const struct drm_framebuffer *fb, int main_plane);
 void lpt_disable_clkout_dp(struct drm_i915_private *dev_priv);
 u32 intel_plane_fb_max_stride(struct drm_i915_private *dev_priv,
 			      u32 pixel_format, u64 modifier);
@@ -601,6 +602,10 @@ struct intel_display_error_state *
 intel_display_capture_error_state(struct drm_i915_private *dev_priv);
 void intel_display_print_error_state(struct drm_i915_error_state_buf *e,
 				     struct intel_display_error_state *error);
+
+bool
+intel_format_info_is_yuv_semiplanar(const struct drm_format_info *info,
+				    uint64_t modifier);
 
 /* modesetting */
 void intel_modeset_init_hw(struct drm_i915_private *i915);

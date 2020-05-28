@@ -6802,6 +6802,7 @@ enum {
 #define   PLANE_CTL_YUV422_VYUY			(3 << 16)
 #define   PLANE_CTL_RENDER_DECOMPRESSION_ENABLE	(1 << 15)
 #define   PLANE_CTL_TRICKLE_FEED_DISABLE	(1 << 14)
+#define   PLANE_CTL_CLEAR_COLOR_DISABLE		(1 << 13) /* TGL+ */
 #define   PLANE_CTL_PLANE_GAMMA_DISABLE		(1 << 13) /* Pre-GLK */
 #define   PLANE_CTL_TILED_MASK			(0x7 << 10)
 #define   PLANE_CTL_TILED_LINEAR		(0 << 10)
@@ -6809,6 +6810,7 @@ enum {
 #define   PLANE_CTL_TILED_Y			(4 << 10)
 #define   PLANE_CTL_TILED_YF			(5 << 10)
 #define   PLANE_CTL_FLIP_HORIZONTAL		(1 << 8)
+#define   PLANE_CTL_MEDIA_DECOMPRESSION_ENABLE	(1 << 4) /* TGL+ */
 #define   PLANE_CTL_ALPHA_MASK			(0x3 << 4) /* Pre-GLK */
 #define   PLANE_CTL_ALPHA_DISABLE		(0 << 4)
 #define   PLANE_CTL_ALPHA_SW_PREMULTIPLY	(2 << 4)
@@ -8496,6 +8498,7 @@ enum {
 #define  FDI_BC_BIFURCATION_SELECT	(1 << 12)
 #define  CHASSIS_CLK_REQ_DURATION_MASK	(0xf << 8)
 #define  CHASSIS_CLK_REQ_DURATION(x)	((x) << 8)
+#define  SBCLK_RUN_REFCLK_DIS		(1 << 7)
 #define  SPT_PWM_GRANULARITY		(1 << 0)
 #define SOUTH_CHICKEN2		_MMIO(0xc2004)
 #define  FDI_MPHY_IOSFSB_RESET_STATUS	(1 << 13)

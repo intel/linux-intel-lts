@@ -127,7 +127,7 @@ struct stmmac_txq_cfg {
 	u32 low_credit;
 	bool use_prio;
 	u32 prio;
-	bool tbs_en;
+	int tbs_en;
 };
 
 struct plat_stmmacenet_data {
@@ -241,6 +241,7 @@ struct plat_stmmacenet_data {
 	bool is_pse;
 	bool ehl_ao_wa;
 	bool serdes_pse_sgmii_wa;
+	u32 dma_bit_mask;
 	/* TX and RX PHY latency (ns) */
 	u64 phy_tx_latency_2500;
 	u64 phy_tx_latency_1000;

@@ -192,8 +192,8 @@ static const struct pmc_bit_map cnp_pfear_map[] = {
 	{"SPE",                 BIT(5)},
 	{"Fuse",                BIT(6)},
 	/*
-	 * Reserved for Cannon Lake but valid for Ice Lake,
-	 * Tiger Lake and Elkhart Lake.
+	 * Reserved for Cannon Lake but valid for Ice Lake, Comet Lake
+	 * and Tiger Lake.
 	 */
 	{"SBR8",		BIT(7)},
 
@@ -239,8 +239,8 @@ static const struct pmc_bit_map cnp_pfear_map[] = {
 	{"HDA_PGD5",            BIT(3)},
 	{"HDA_PGD6",            BIT(4)},
 	/*
-	 * Reserved for Cannon Lake but valid for Ice Lake,
-	 * Tiger Lake and Elkhart Lake.
+	 * Reserved for Cannon Lake but valid for Ice Lake, Comet Lake
+	 * and Tiger Lake.
 	 */
 	{"PSF6",		BIT(5)},
 	{"PSF7",		BIT(6)},
@@ -273,7 +273,7 @@ static const struct pmc_bit_map *ext_icl_pfear_map[] = {
 };
 
 static const struct pmc_bit_map tgl_pfear_map[] = {
-	/* Tiger Lake and Elkhart Lake generation onwards only */
+	/* Tiger Lake generation onwards only */
 	{"PSF9",		BIT(0)},
 	{"RES_66",		BIT(1)},
 	{"RES_67",		BIT(2)},
@@ -421,7 +421,7 @@ static const struct pmc_reg_map tgl_reg_map = {
 	.ppfear_buckets = ICL_PPFEAR_NUM_ENTRIES,
 	.pm_cfg_offset = CNP_PMC_PM_CFG_OFFSET,
 	.pm_read_disable_bit = CNP_PMC_READ_DISABLE_BIT,
-	.ltr_ignore_max = ICL_NUM_IP_IGN_ALLOWED,
+	.ltr_ignore_max = TGL_NUM_IP_IGN_ALLOWED,
 };
 
 static inline u8 pmc_core_reg_read_byte(struct pmc_dev *pmcdev, int offset)
@@ -877,11 +877,11 @@ static const struct x86_cpu_id intel_pmc_core_ids[] = {
 	INTEL_CPU_FAM6(CANNONLAKE_L, cnp_reg_map),
 	INTEL_CPU_FAM6(ICELAKE_L, icl_reg_map),
 	INTEL_CPU_FAM6(ICELAKE_NNPI, icl_reg_map),
-	INTEL_CPU_FAM6(TIGERLAKE_L, tgl_reg_map),
-	INTEL_CPU_FAM6(TIGERLAKE, tgl_reg_map),
 	INTEL_CPU_FAM6(ATOM_TREMONT, tgl_reg_map),
 	INTEL_CPU_FAM6(COMETLAKE, cnp_reg_map),
 	INTEL_CPU_FAM6(COMETLAKE_L, cnp_reg_map),
+	INTEL_CPU_FAM6(TIGERLAKE_L, tgl_reg_map),
+	INTEL_CPU_FAM6(TIGERLAKE, tgl_reg_map),
 	{}
 };
 

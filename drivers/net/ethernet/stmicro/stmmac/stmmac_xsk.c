@@ -748,7 +748,8 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 
 		if (likely(priv->extend_desc))
 			tx_desc = (struct dma_desc *)(xdp_q->dma_etx + entry);
-		else if (priv->enhanced_tx_desc)
+		else if (priv->tx_queue[xdp_q->queue_index].tbs &
+			 STMMAC_TBS_AVAIL)
 			tx_desc = &xdp_q->dma_enhtx[entry].basic;
 		else
 			tx_desc = xdp_q->dma_tx + entry;
@@ -762,7 +763,7 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 		stmmac_set_desc_addr(priv, tx_desc, dma);
 
 		if (stmmac_enabled_xdp(priv) &&
-		    priv->plat->tx_queues_cfg[xdp_q->queue_index].tbs_en &&
+		    (priv->tx_queue[xdp_q->queue_index].tbs & STMMAC_TBS_EN) &&
 		    desc.txtime > 0) {
 			if (stmmac_set_tbs_launchtime(priv, tx_desc,
 						      desc.txtime)) {
@@ -815,7 +816,7 @@ static void stmmac_xdp_read_tx_status(struct stmmac_priv *priv, u32 queue,
 
 	if (priv->extend_desc)
 		p = (struct dma_desc *)(tx_q->dma_etx + entry);
-	else if (priv->enhanced_tx_desc)
+	else if (tx_q->tbs & STMMAC_TBS_AVAIL)
 		p = &(tx_q->dma_enhtx + entry)->basic;
 	else
 		p = tx_q->dma_tx + entry;
@@ -948,7 +949,7 @@ int stmmac_xsk_wakeup(struct net_device *dev, u32 queue, u32 flags)
 	struct stmmac_tx_queue *xdp_q;
 	struct stmmac_channel *ch;
 
-	xdp_q = &priv->xdp_queue[queue];
+	xdp_q = &priv->tx_queue[queue + qp_num];
 	ch = &priv->channel[queue + qp_num];
 
 	if (test_bit(STMMAC_DOWN, &priv->state))

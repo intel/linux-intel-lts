@@ -1957,6 +1957,74 @@ static unsigned int intel_tile_size(const struct drm_i915_private *dev_priv)
 	return IS_GEN(dev_priv, 2) ? 2048 : 4096;
 }
 
+static bool is_ccs_plane(const struct drm_framebuffer *fb, int plane)
+{
+	if (!is_ccs_modifier(fb->modifier))
+		return false;
+
+	return plane >= fb->format->num_planes / 2;
+}
+
+static bool is_gen12_ccs_modifier(u64 modifier)
+{
+	return modifier == I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS ||
+	       modifier == I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS;
+
+}
+
+static bool is_gen12_ccs_plane(const struct drm_framebuffer *fb, int plane)
+{
+	return is_gen12_ccs_modifier(fb->modifier) && is_ccs_plane(fb, plane);
+}
+
+static bool is_aux_plane(const struct drm_framebuffer *fb, int plane)
+{
+	if (is_ccs_modifier(fb->modifier))
+		return is_ccs_plane(fb, plane);
+
+	return plane == 1;
+}
+
+static int main_to_ccs_plane(const struct drm_framebuffer *fb, int main_plane)
+{
+	WARN_ON(!is_ccs_modifier(fb->modifier) ||
+		(main_plane && main_plane >= fb->format->num_planes / 2));
+
+	return fb->format->num_planes / 2 + main_plane;
+}
+
+static int ccs_to_main_plane(const struct drm_framebuffer *fb, int ccs_plane)
+{
+	WARN_ON(!is_ccs_modifier(fb->modifier) ||
+		ccs_plane < fb->format->num_planes / 2);
+
+	return ccs_plane - fb->format->num_planes / 2;
+}
+
+/* Return either the main plane's CCS or - if not a CCS FB - UV plane */
+int intel_main_to_aux_plane(const struct drm_framebuffer *fb, int main_plane)
+{
+	if (is_ccs_modifier(fb->modifier))
+		return main_to_ccs_plane(fb, main_plane);
+
+	return 1;
+}
+
+bool
+intel_format_info_is_yuv_semiplanar(const struct drm_format_info *info,
+				    uint64_t modifier)
+{
+	return info->is_yuv &&
+	       info->num_planes == (is_ccs_modifier(modifier) ? 4 : 2);
+}
+
+static bool is_semiplanar_uv_plane(const struct drm_framebuffer *fb,
+				   int color_plane)
+{
+	return intel_format_info_is_yuv_semiplanar(fb->format, fb->modifier) &&
+	       color_plane == 1;
+}
+
 static unsigned int
 intel_tile_width_bytes(const struct drm_framebuffer *fb, int color_plane)
 {
@@ -1972,8 +2040,13 @@ intel_tile_width_bytes(const struct drm_framebuffer *fb, int color_plane)
 		else
 			return 512;
 	case I915_FORMAT_MOD_Y_TILED_CCS:
-		if (color_plane == 1)
+		if (is_ccs_plane(fb, color_plane))
 			return 128;
+		/* fall through */
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
+		if (is_ccs_plane(fb, color_plane))
+			return 64;
 		/* fall through */
 	case I915_FORMAT_MOD_Y_TILED:
 		if (IS_GEN(dev_priv, 2) || HAS_128_BYTE_Y_TILING(dev_priv))
@@ -1981,7 +2054,7 @@ intel_tile_width_bytes(const struct drm_framebuffer *fb, int color_plane)
 		else
 			return 512;
 	case I915_FORMAT_MOD_Yf_TILED_CCS:
-		if (color_plane == 1)
+		if (is_ccs_plane(fb, color_plane))
 			return 128;
 		/* fall through */
 	case I915_FORMAT_MOD_Yf_TILED:
@@ -2008,6 +2081,9 @@ intel_tile_width_bytes(const struct drm_framebuffer *fb, int color_plane)
 static unsigned int
 intel_tile_height(const struct drm_framebuffer *fb, int color_plane)
 {
+	if (is_gen12_ccs_plane(fb, color_plane))
+		return 1;
+
 	return intel_tile_size(to_i915(fb->dev)) /
 		intel_tile_width_bytes(fb, color_plane);
 }
@@ -2021,7 +2097,17 @@ static void intel_tile_dims(const struct drm_framebuffer *fb, int color_plane,
 	unsigned int cpp = fb->format->cpp[color_plane];
 
 	*tile_width = tile_width_bytes / cpp;
-	*tile_height = intel_tile_size(to_i915(fb->dev)) / tile_width_bytes;
+	*tile_height = intel_tile_height(fb, color_plane);
+}
+
+static unsigned int intel_tile_row_size(const struct drm_framebuffer *fb,
+					int color_plane)
+{
+	unsigned int tile_width, tile_height;
+
+	intel_tile_dims(fb, color_plane, &tile_width, &tile_height);
+
+	return fb->pitches[color_plane] * tile_height;
 }
 
 unsigned int
@@ -2098,7 +2184,8 @@ static unsigned int intel_surf_alignment(const struct drm_framebuffer *fb,
 	struct drm_i915_private *dev_priv = to_i915(fb->dev);
 
 	/* AUX_DIST needs only 4K alignment */
-	if (color_plane == 1)
+	if ((INTEL_GEN(dev_priv) < 12 && is_aux_plane(fb, color_plane)) ||
+	    is_ccs_plane(fb, color_plane))
 		return 4096;
 
 	switch (fb->modifier) {
@@ -2108,9 +2195,19 @@ static unsigned int intel_surf_alignment(const struct drm_framebuffer *fb,
 		if (INTEL_GEN(dev_priv) >= 9)
 			return 256 * 1024;
 		return 0;
+	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
+		if (is_semiplanar_uv_plane(fb, color_plane))
+			return intel_tile_row_size(fb, color_plane);
+		/* Fall-through */
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+		return 16 * 1024;
 	case I915_FORMAT_MOD_Y_TILED_CCS:
 	case I915_FORMAT_MOD_Yf_TILED_CCS:
 	case I915_FORMAT_MOD_Y_TILED:
+		if (INTEL_GEN(dev_priv) >= 12 &&
+		    is_semiplanar_uv_plane(fb, color_plane))
+			return intel_tile_row_size(fb, color_plane);
+		/* Fall-through */
 	case I915_FORMAT_MOD_Yf_TILED:
 		return 1 * 1024 * 1024;
 	default:
@@ -2147,6 +2244,8 @@ intel_pin_and_fence_fb_obj(struct drm_framebuffer *fb,
 		return ERR_PTR(-EINVAL);
 
 	alignment = intel_surf_alignment(fb, 0);
+	if (WARN_ON(alignment && !is_power_of_2(alignment)))
+		return ERR_PTR(-EINVAL);
 
 	/* Note that the w/a also requires 64 PTE of padding following the
 	 * bo. We currently fill all unused PTE with the shadow page and so
@@ -2302,9 +2401,10 @@ static u32 intel_adjust_tile_offset(int *x, int *y,
 	return new_offset;
 }
 
-static bool is_surface_linear(u64 modifier, int color_plane)
+static bool is_surface_linear(const struct drm_framebuffer *fb, int color_plane)
 {
-	return modifier == DRM_FORMAT_MOD_LINEAR;
+	return fb->modifier == DRM_FORMAT_MOD_LINEAR ||
+	       is_gen12_ccs_plane(fb, color_plane);
 }
 
 static u32 intel_adjust_aligned_offset(int *x, int *y,
@@ -2319,7 +2419,7 @@ static u32 intel_adjust_aligned_offset(int *x, int *y,
 
 	WARN_ON(new_offset > old_offset);
 
-	if (!is_surface_linear(fb->modifier, color_plane)) {
+	if (!is_surface_linear(fb, color_plane)) {
 		unsigned int tile_size, tile_width, tile_height;
 		unsigned int pitch_tiles;
 
@@ -2386,10 +2486,7 @@ static u32 intel_compute_aligned_offset(struct drm_i915_private *dev_priv,
 	unsigned int cpp = fb->format->cpp[color_plane];
 	u32 offset, offset_aligned;
 
-	if (alignment)
-		alignment--;
-
-	if (!is_surface_linear(fb->modifier, color_plane)) {
+	if (!is_surface_linear(fb, color_plane)) {
 		unsigned int tile_size, tile_width, tile_height;
 		unsigned int tile_rows, tiles, pitch_tiles;
 
@@ -2410,17 +2507,24 @@ static u32 intel_compute_aligned_offset(struct drm_i915_private *dev_priv,
 		*x %= tile_width;
 
 		offset = (tile_rows * pitch_tiles + tiles) * tile_size;
-		offset_aligned = offset & ~alignment;
+
+		offset_aligned = offset;
+		if (alignment)
+			offset_aligned = rounddown(offset_aligned, alignment);
 
 		intel_adjust_tile_offset(x, y, tile_width, tile_height,
 					 tile_size, pitch_tiles,
 					 offset, offset_aligned);
 	} else {
 		offset = *y * pitch + *x * cpp;
-		offset_aligned = offset & ~alignment;
-
-		*y = (offset & alignment) / pitch;
-		*x = ((offset & alignment) - *y * pitch) / cpp;
+		offset_aligned = offset;
+		if (alignment) {
+			offset_aligned = rounddown(offset_aligned, alignment);
+			*y = (offset % alignment) / pitch;
+			*x = ((offset % alignment) - *y * pitch) / cpp;
+		} else {
+			*y = *x = 0;
+		}
 	}
 
 	return offset_aligned;
@@ -2453,9 +2557,17 @@ static int intel_fb_offset_to_xy(int *x, int *y,
 {
 	struct drm_i915_private *dev_priv = to_i915(fb->dev);
 	unsigned int height;
+	u32 alignment;
 
-	if (fb->modifier != DRM_FORMAT_MOD_LINEAR &&
-	    fb->offsets[color_plane] % intel_tile_size(dev_priv)) {
+	if (INTEL_GEN(dev_priv) >= 12 &&
+	    is_semiplanar_uv_plane(fb, color_plane))
+		alignment = intel_tile_row_size(fb, color_plane);
+	else if (fb->modifier != DRM_FORMAT_MOD_LINEAR)
+		alignment = intel_tile_size(dev_priv);
+	else
+		alignment = 0;
+
+	if (alignment != 0 && fb->offsets[color_plane] % alignment) {
 		DRM_DEBUG_KMS("Misaligned offset 0x%08x for color plane %d\n",
 			      fb->offsets[color_plane], color_plane);
 		return -EINVAL;
@@ -2491,6 +2603,8 @@ static unsigned int intel_fb_modifier_to_tiling(u64 fb_modifier)
 		return I915_TILING_X;
 	case I915_FORMAT_MOD_Y_TILED:
 	case I915_FORMAT_MOD_Y_TILED_CCS:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
 		return I915_TILING_Y;
 	default:
 		return I915_TILING_NONE;
@@ -2511,7 +2625,7 @@ static unsigned int intel_fb_modifier_to_tiling(u64 fb_modifier)
  * us a ratio of one byte in the CCS for each 8x16 pixels in the
  * main surface.
  */
-static const struct drm_format_info ccs_formats[] = {
+static const struct drm_format_info skl_ccs_formats[] = {
 	{ .format = DRM_FORMAT_XRGB8888, .depth = 24, .num_planes = 2,
 	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, },
 	{ .format = DRM_FORMAT_XBGR8888, .depth = 24, .num_planes = 2,
@@ -2520,6 +2634,52 @@ static const struct drm_format_info ccs_formats[] = {
 	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, .has_alpha = true, },
 	{ .format = DRM_FORMAT_ABGR8888, .depth = 32, .num_planes = 2,
 	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, .has_alpha = true, },
+};
+
+/*
+ * Gen-12 compression uses 4 bits of CCS data for each cache line pair in the
+ * main surface. And each 64B CCS cache line represents an area of 4x1 Y-tiles
+ * in the main surface. With 4 byte pixels and each Y-tile having dimensions of
+ * 32x32 pixels, the ratio turns out to 1B in the CCS for every 2x32 pixels in
+ * the main surface.
+ */
+static const struct drm_format_info gen12_ccs_formats[] = {
+	{ .format = DRM_FORMAT_XRGB8888, .depth = 24, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR8888, .depth = 24, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB8888, .depth = 32, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR8888, .depth = 32, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_YUYV, .num_planes = 2,
+	  .char_per_block = { 2, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 2, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_YVYU, .num_planes = 2,
+	  .char_per_block = { 2, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 2, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_UYVY, .num_planes = 2,
+	  .char_per_block = { 2, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 2, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_VYUY, .num_planes = 2,
+	  .char_per_block = { 2, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 2, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_NV12, .num_planes = 4,
+	  .char_per_block = { 1, 2, 1, 1 }, .block_w = { 1, 1, 4, 4 }, .block_h = { 1, 1, 1, 1 },
+	  .hsub = 2, .vsub = 2, .is_yuv = true },
+	{ .format = DRM_FORMAT_P010, .num_planes = 4,
+	  .char_per_block = { 2, 4, 1, 1 }, .block_w = { 1, 1, 2, 2 }, .block_h = { 1, 1, 1, 1 },
+	  .hsub = 2, .vsub = 2, .is_yuv = true },
+	{ .format = DRM_FORMAT_P012, .num_planes = 4,
+	  .char_per_block = { 2, 4, 1, 1 }, .block_w = { 1, 1, 2, 2 }, .block_h = { 1, 1, 1, 1 },
+	  .hsub = 2, .vsub = 2, .is_yuv = true },
+	{ .format = DRM_FORMAT_P016, .num_planes = 4,
+	  .char_per_block = { 2, 4, 1, 1 }, .block_w = { 1, 1, 2, 2 }, .block_h = { 1, 1, 1, 1 },
+	  .hsub = 2, .vsub = 2, .is_yuv = true },
 };
 
 static const struct drm_format_info *
@@ -2542,8 +2702,13 @@ intel_get_format_info(const struct drm_mode_fb_cmd2 *cmd)
 	switch (cmd->modifier[0]) {
 	case I915_FORMAT_MOD_Y_TILED_CCS:
 	case I915_FORMAT_MOD_Yf_TILED_CCS:
-		return lookup_format_info(ccs_formats,
-					  ARRAY_SIZE(ccs_formats),
+		return lookup_format_info(skl_ccs_formats,
+					  ARRAY_SIZE(skl_ccs_formats),
+					  cmd->pixel_format);
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
+		return lookup_format_info(gen12_ccs_formats,
+					  ARRAY_SIZE(gen12_ccs_formats),
 					  cmd->pixel_format);
 	default:
 		return NULL;
@@ -2552,8 +2717,16 @@ intel_get_format_info(const struct drm_mode_fb_cmd2 *cmd)
 
 bool is_ccs_modifier(u64 modifier)
 {
-	return modifier == I915_FORMAT_MOD_Y_TILED_CCS ||
+	return modifier == I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS ||
+	       modifier == I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS ||
+	       modifier == I915_FORMAT_MOD_Y_TILED_CCS ||
 	       modifier == I915_FORMAT_MOD_Yf_TILED_CCS;
+}
+
+static int gen12_ccs_aux_stride(struct drm_framebuffer *fb, int ccs_plane)
+{
+	return DIV_ROUND_UP(fb->pitches[ccs_to_main_plane(fb, ccs_plane)],
+			    512) * 64;
 }
 
 u32 intel_plane_fb_max_stride(struct drm_i915_private *dev_priv,
@@ -2600,8 +2773,9 @@ static u32
 intel_fb_stride_alignment(const struct drm_framebuffer *fb, int color_plane)
 {
 	struct drm_i915_private *dev_priv = to_i915(fb->dev);
+	u32 tile_width;
 
-	if (fb->modifier == DRM_FORMAT_MOD_LINEAR) {
+	if (is_surface_linear(fb, color_plane)) {
 		u32 max_stride = intel_plane_fb_max_stride(dev_priv,
 							   fb->format->format,
 							   fb->modifier);
@@ -2610,13 +2784,34 @@ intel_fb_stride_alignment(const struct drm_framebuffer *fb, int color_plane)
 		 * To make remapping with linear generally feasible
 		 * we need the stride to be page aligned.
 		 */
-		if (fb->pitches[color_plane] > max_stride)
+		if (fb->pitches[color_plane] > max_stride &&
+		    !is_ccs_modifier(fb->modifier))
 			return intel_tile_size(dev_priv);
 		else
 			return 64;
-	} else {
-		return intel_tile_width_bytes(fb, color_plane);
 	}
+
+	tile_width = intel_tile_width_bytes(fb, color_plane);
+	if (is_ccs_modifier(fb->modifier)) {
+		/*
+		 * Display WA #0531: skl,bxt,kbl,glk
+		 *
+		 * Render decompression and plane width > 3840
+		 * combined with horizontal panning requires the
+		 * plane stride to be a multiple of 4. We'll just
+		 * require the entire fb to accommodate that to avoid
+		 * potential runtime errors at plane configuration time.
+		 */
+		if (IS_GEN(dev_priv, 9) && color_plane == 0 && fb->width > 3840)
+			tile_width *= 4;
+		/*
+		 * The main surface pitch must be padded to a multiple of four
+		 * tile widths.
+		 */
+		else if (INTEL_GEN(dev_priv) >= 12)
+			tile_width *= 4;
+	}
+	return tile_width;
 }
 
 bool intel_plane_can_remap(const struct intel_plane_state *plane_state)
@@ -2687,12 +2882,171 @@ static bool intel_plane_needs_remap(const struct intel_plane_state *plane_state)
 	return stride > max_stride;
 }
 
+static void
+intel_fb_plane_get_subsampling(int *hsub, int *vsub,
+			       const struct drm_framebuffer *fb,
+			       int color_plane)
+{
+	int main_plane;
+
+	if (color_plane == 0) {
+		*hsub = 1;
+		*vsub = 1;
+
+		return;
+	}
+
+	/*
+	 * TODO: Deduct the subsampling from the char block for all CCS
+	 * formats and planes.
+	 */
+	if (!is_gen12_ccs_plane(fb, color_plane)) {
+		*hsub = fb->format->hsub;
+		*vsub = fb->format->vsub;
+
+		return;
+	}
+
+	main_plane = ccs_to_main_plane(fb, color_plane);
+	*hsub = drm_format_info_block_width(fb->format, color_plane) /
+		drm_format_info_block_width(fb->format, main_plane);
+
+	/*
+	 * The min stride check in the core framebuffer_check() function
+	 * assumes that format->hsub applies to every plane except for the
+	 * first plane. That's incorrect for the CCS AUX plane of the first
+	 * plane, but for the above check to pass we must define the block
+	 * width with that subsampling applied to it. Adjust the width here
+	 * accordingly, so we can calculate the actual subsampling factor.
+	 */
+	if (main_plane == 0)
+		*hsub *= fb->format->hsub;
+
+	*vsub = 32;
+}
+static int
+intel_fb_check_ccs_xy(struct drm_framebuffer *fb, int ccs_plane, int x, int y)
+{
+	struct intel_framebuffer *intel_fb = to_intel_framebuffer(fb);
+	int main_plane;
+	int hsub, vsub;
+	int tile_width, tile_height;
+	int ccs_x, ccs_y;
+	int main_x, main_y;
+
+	if (!is_ccs_plane(fb, ccs_plane))
+		return 0;
+
+	intel_tile_dims(fb, ccs_plane, &tile_width, &tile_height);
+	intel_fb_plane_get_subsampling(&hsub, &vsub, fb, ccs_plane);
+
+	tile_width *= hsub;
+	tile_height *= vsub;
+
+	ccs_x = (x * hsub) % tile_width;
+	ccs_y = (y * vsub) % tile_height;
+
+	main_plane = ccs_to_main_plane(fb, ccs_plane);
+	main_x = intel_fb->normal[main_plane].x % tile_width;
+	main_y = intel_fb->normal[main_plane].y % tile_height;
+
+	/*
+	 * CCS doesn't have its own x/y offset register, so the intra CCS tile
+	 * x/y offsets must match between CCS and the main surface.
+	 */
+	if (main_x != ccs_x || main_y != ccs_y) {
+		DRM_DEBUG_KMS("Bad CCS x/y (main %d,%d ccs %d,%d) full (main %d,%d ccs %d,%d)\n",
+			      main_x, main_y,
+			      ccs_x, ccs_y,
+			      intel_fb->normal[main_plane].x,
+			      intel_fb->normal[main_plane].y,
+			      x, y);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void
+intel_fb_plane_dims(int *w, int *h, struct drm_framebuffer *fb, int color_plane)
+{
+	int main_plane = is_ccs_plane(fb, color_plane) ?
+			 ccs_to_main_plane(fb, color_plane) : 0;
+	int main_hsub, main_vsub;
+	int hsub, vsub;
+
+	intel_fb_plane_get_subsampling(&main_hsub, &main_vsub, fb, main_plane);
+	intel_fb_plane_get_subsampling(&hsub, &vsub, fb, color_plane);
+	*w = fb->width / main_hsub / hsub;
+	*h = fb->height / main_vsub / vsub;
+}
+
+/*
+ * Setup the rotated view for an FB plane and return the size the GTT mapping
+ * requires for this view.
+ */
+static u32
+setup_fb_rotation(int plane, const struct intel_remapped_plane_info *plane_info,
+		  u32 gtt_offset_rotated, int x, int y,
+		  unsigned int width, unsigned int height,
+		  unsigned int tile_size,
+		  unsigned int tile_width, unsigned int tile_height,
+		  struct drm_framebuffer *fb)
+{
+	struct intel_framebuffer *intel_fb = to_intel_framebuffer(fb);
+	struct intel_rotation_info *rot_info = &intel_fb->rot_info;
+	unsigned int pitch_tiles;
+	struct drm_rect r;
+
+	/* Y or Yf modifiers required for 90/270 rotation */
+	if (fb->modifier != I915_FORMAT_MOD_Y_TILED &&
+	    fb->modifier != I915_FORMAT_MOD_Yf_TILED)
+		return 0;
+
+	if (WARN_ON(plane >= ARRAY_SIZE(rot_info->plane)))
+		return 0;
+
+	rot_info->plane[plane] = *plane_info;
+
+	intel_fb->rotated[plane].pitch = plane_info->height * tile_height;
+
+	/* rotate the x/y offsets to match the GTT view */
+	drm_rect_init(&r, x, y, width, height);
+	drm_rect_rotate(&r,
+			plane_info->width * tile_width,
+			plane_info->height * tile_height,
+			DRM_MODE_ROTATE_270);
+	x = r.x1;
+	y = r.y1;
+
+	/* rotate the tile dimensions to match the GTT view */
+	pitch_tiles = intel_fb->rotated[plane].pitch / tile_height;
+	swap(tile_width, tile_height);
+
+	/*
+	 * We only keep the x/y offsets, so push all of the
+	 * gtt offset into the x/y offsets.
+	 */
+	intel_adjust_tile_offset(&x, &y,
+				 tile_width, tile_height,
+				 tile_size, pitch_tiles,
+				 gtt_offset_rotated * tile_size, 0);
+
+	/*
+	 * First pixel of the framebuffer from
+	 * the start of the rotated gtt mapping.
+	 */
+	intel_fb->rotated[plane].x = x;
+	intel_fb->rotated[plane].y = y;
+
+	return plane_info->width * plane_info->height;
+}
+
 static int
 intel_fill_fb_info(struct drm_i915_private *dev_priv,
 		   struct drm_framebuffer *fb)
 {
 	struct intel_framebuffer *intel_fb = to_intel_framebuffer(fb);
-	struct intel_rotation_info *rot_info = &intel_fb->rot_info;
 	struct drm_i915_gem_object *obj = intel_fb_obj(fb);
 	u32 gtt_offset_rotated = 0;
 	unsigned int max_size = 0;
@@ -2707,8 +3061,7 @@ intel_fill_fb_info(struct drm_i915_private *dev_priv,
 		int ret;
 
 		cpp = fb->format->cpp[i];
-		width = drm_framebuffer_plane_width(fb->width, fb, i);
-		height = drm_framebuffer_plane_height(fb->height, fb, i);
+		intel_fb_plane_dims(&width, &height, fb, i);
 
 		ret = intel_fb_offset_to_xy(&x, &y, fb, i);
 		if (ret) {
@@ -2717,36 +3070,9 @@ intel_fill_fb_info(struct drm_i915_private *dev_priv,
 			return ret;
 		}
 
-		if (is_ccs_modifier(fb->modifier) && i == 1) {
-			int hsub = fb->format->hsub;
-			int vsub = fb->format->vsub;
-			int tile_width, tile_height;
-			int main_x, main_y;
-			int ccs_x, ccs_y;
-
-			intel_tile_dims(fb, i, &tile_width, &tile_height);
-			tile_width *= hsub;
-			tile_height *= vsub;
-
-			ccs_x = (x * hsub) % tile_width;
-			ccs_y = (y * vsub) % tile_height;
-			main_x = intel_fb->normal[0].x % tile_width;
-			main_y = intel_fb->normal[0].y % tile_height;
-
-			/*
-			 * CCS doesn't have its own x/y offset register, so the intra CCS tile
-			 * x/y offsets must match between CCS and the main surface.
-			 */
-			if (main_x != ccs_x || main_y != ccs_y) {
-				DRM_DEBUG_KMS("Bad CCS x/y (main %d,%d ccs %d,%d) full (main %d,%d ccs %d,%d)\n",
-					      main_x, main_y,
-					      ccs_x, ccs_y,
-					      intel_fb->normal[0].x,
-					      intel_fb->normal[0].y,
-					      x, y);
-				return -EINVAL;
-			}
-		}
+		ret = intel_fb_check_ccs_xy(fb, i, x, y);
+		if (ret)
+			return ret;
 
 		/*
 		 * The fence (if used) is aligned to the start of the object
@@ -2777,23 +3103,21 @@ intel_fill_fb_info(struct drm_i915_private *dev_priv,
 						      tile_size);
 		offset /= tile_size;
 
-		if (!is_surface_linear(fb->modifier, i)) {
+		if (!is_surface_linear(fb, i)) {
+			struct intel_remapped_plane_info plane_info;
 			unsigned int tile_width, tile_height;
-			unsigned int pitch_tiles;
-			struct drm_rect r;
 
 			intel_tile_dims(fb, i, &tile_width, &tile_height);
 
-			rot_info->plane[i].offset = offset;
-			rot_info->plane[i].stride = DIV_ROUND_UP(fb->pitches[i], tile_width * cpp);
-			rot_info->plane[i].width = DIV_ROUND_UP(x + width, tile_width);
-			rot_info->plane[i].height = DIV_ROUND_UP(y + height, tile_height);
-
-			intel_fb->rotated[i].pitch =
-				rot_info->plane[i].height * tile_height;
+			plane_info.offset = offset;
+			plane_info.stride = DIV_ROUND_UP(fb->pitches[i],
+							 tile_width * cpp);
+			plane_info.width = DIV_ROUND_UP(x + width, tile_width);
+			plane_info.height = DIV_ROUND_UP(y + height,
+							 tile_height);
 
 			/* how many tiles does this plane need */
-			size = rot_info->plane[i].stride * rot_info->plane[i].height;
+			size = plane_info.stride * plane_info.height;
 			/*
 			 * If the plane isn't horizontally tile aligned,
 			 * we need one more tile.
@@ -2801,36 +3125,13 @@ intel_fill_fb_info(struct drm_i915_private *dev_priv,
 			if (x != 0)
 				size++;
 
-			/* rotate the x/y offsets to match the GTT view */
-			drm_rect_init(&r, x, y, width, height);
-			drm_rect_rotate(&r,
-					rot_info->plane[i].width * tile_width,
-					rot_info->plane[i].height * tile_height,
-					DRM_MODE_ROTATE_270);
-			x = r.x1;
-			y = r.y1;
-
-			/* rotate the tile dimensions to match the GTT view */
-			pitch_tiles = intel_fb->rotated[i].pitch / tile_height;
-			swap(tile_width, tile_height);
-
-			/*
-			 * We only keep the x/y offsets, so push all of the
-			 * gtt offset into the x/y offsets.
-			 */
-			intel_adjust_tile_offset(&x, &y,
-						 tile_width, tile_height,
-						 tile_size, pitch_tiles,
-						 gtt_offset_rotated * tile_size, 0);
-
-			gtt_offset_rotated += rot_info->plane[i].width * rot_info->plane[i].height;
-
-			/*
-			 * First pixel of the framebuffer from
-			 * the start of the rotated gtt mapping.
-			 */
-			intel_fb->rotated[i].x = x;
-			intel_fb->rotated[i].y = y;
+			gtt_offset_rotated +=
+				setup_fb_rotation(i, &plane_info,
+						  gtt_offset_rotated,
+						  x, y, width, height,
+						  tile_size,
+						  tile_width, tile_height,
+						  fb);
 		} else {
 			size = DIV_ROUND_UP((y + height) * fb->pitches[i] +
 					    x * cpp, tile_size);
@@ -2914,6 +3215,7 @@ intel_plane_remap_gtt(struct intel_plane_state *plane_state)
 						      DRM_MODE_ROTATE_0, tile_size);
 		offset /= tile_size;
 
+		WARN_ON(i >= ARRAY_SIZE(info->plane));
 		info->plane[i].offset = offset;
 		info->plane[i].stride = DIV_ROUND_UP(fb->pitches[i],
 						     tile_width * cpp);
@@ -3375,6 +3677,7 @@ static int skl_max_plane_width(const struct drm_framebuffer *fb,
 			return 5120;
 	case I915_FORMAT_MOD_Y_TILED_CCS:
 	case I915_FORMAT_MOD_Yf_TILED_CCS:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
 		/* FIXME AUX plane? */
 	case I915_FORMAT_MOD_Y_TILED:
 	case I915_FORMAT_MOD_Yf_TILED:
@@ -3433,17 +3736,20 @@ static int icl_max_plane_height(void)
 	return 4320;
 }
 
-static bool skl_check_main_ccs_coordinates(struct intel_plane_state *plane_state,
-					   int main_x, int main_y, u32 main_offset)
+static bool
+skl_check_main_ccs_coordinates(struct intel_plane_state *plane_state,
+			       int main_x, int main_y, u32 main_offset,
+			       int ccs_plane)
 {
 	const struct drm_framebuffer *fb = plane_state->hw.fb;
-	int hsub = fb->format->hsub;
-	int vsub = fb->format->vsub;
-	int aux_x = plane_state->color_plane[1].x;
-	int aux_y = plane_state->color_plane[1].y;
-	u32 aux_offset = plane_state->color_plane[1].offset;
-	u32 alignment = intel_surf_alignment(fb, 1);
+	int aux_x = plane_state->color_plane[ccs_plane].x;
+	int aux_y = plane_state->color_plane[ccs_plane].y;
+	u32 aux_offset = plane_state->color_plane[ccs_plane].offset;
+	u32 alignment = intel_surf_alignment(fb, ccs_plane);
+	int hsub;
+	int vsub;
 
+	intel_fb_plane_get_subsampling(&hsub, &vsub, fb, ccs_plane);
 	while (aux_offset >= main_offset && aux_y <= main_y) {
 		int x, y;
 
@@ -3455,8 +3761,12 @@ static bool skl_check_main_ccs_coordinates(struct intel_plane_state *plane_state
 
 		x = aux_x / hsub;
 		y = aux_y / vsub;
-		aux_offset = intel_plane_adjust_aligned_offset(&x, &y, plane_state, 1,
-							       aux_offset, aux_offset - alignment);
+		aux_offset = intel_plane_adjust_aligned_offset(&x, &y,
+							       plane_state,
+							       ccs_plane,
+							       aux_offset,
+							       aux_offset -
+								alignment);
 		aux_x = x * hsub + aux_x % hsub;
 		aux_y = y * vsub + aux_y % vsub;
 	}
@@ -3464,9 +3774,9 @@ static bool skl_check_main_ccs_coordinates(struct intel_plane_state *plane_state
 	if (aux_x != main_x || aux_y != main_y)
 		return false;
 
-	plane_state->color_plane[1].offset = aux_offset;
-	plane_state->color_plane[1].x = aux_x;
-	plane_state->color_plane[1].y = aux_y;
+	plane_state->color_plane[ccs_plane].offset = aux_offset;
+	plane_state->color_plane[ccs_plane].x = aux_x;
+	plane_state->color_plane[ccs_plane].y = aux_y;
 
 	return true;
 }
@@ -3482,7 +3792,10 @@ static int skl_check_main_surface(struct intel_plane_state *plane_state)
 	int h = drm_rect_height(&plane_state->uapi.src) >> 16;
 	int max_width;
 	int max_height;
-	u32 alignment, offset, aux_offset = plane_state->color_plane[1].offset;
+	u32 alignment;
+	u32 offset;
+	int aux_plane = intel_main_to_aux_plane(fb, 0);
+	u32 aux_offset = plane_state->color_plane[aux_plane].offset;
 
 	if (INTEL_GEN(dev_priv) >= 11)
 		max_width = icl_max_plane_width(fb, 0, rotation);
@@ -3505,6 +3818,8 @@ static int skl_check_main_surface(struct intel_plane_state *plane_state)
 	intel_add_fb_offsets(&x, &y, plane_state, 0);
 	offset = intel_plane_compute_aligned_offset(&x, &y, plane_state, 0);
 	alignment = intel_surf_alignment(fb, 0);
+	if (WARN_ON(alignment && !is_power_of_2(alignment)))
+		return -EINVAL;
 
 	/*
 	 * AUX surface offset is specified as the distance from the
@@ -3540,7 +3855,8 @@ static int skl_check_main_surface(struct intel_plane_state *plane_state)
 	 * they match with the main surface x/y offsets.
 	 */
 	if (is_ccs_modifier(fb->modifier)) {
-		while (!skl_check_main_ccs_coordinates(plane_state, x, y, offset)) {
+		while (!skl_check_main_ccs_coordinates(plane_state, x, y,
+						       offset, aux_plane)) {
 			if (offset == 0)
 				break;
 
@@ -3548,7 +3864,8 @@ static int skl_check_main_surface(struct intel_plane_state *plane_state)
 								   offset, offset - alignment);
 		}
 
-		if (x != plane_state->color_plane[1].x || y != plane_state->color_plane[1].y) {
+		if (x != plane_state->color_plane[aux_plane].x ||
+		    y != plane_state->color_plane[aux_plane].y) {
 			DRM_DEBUG_KMS("Unable to find suitable display surface offset due to CCS\n");
 			return -EINVAL;
 		}
@@ -3572,7 +3889,8 @@ static int skl_check_nv12_aux_surface(struct intel_plane_state *plane_state)
 {
 	const struct drm_framebuffer *fb = plane_state->hw.fb;
 	unsigned int rotation = plane_state->hw.rotation;
-	int max_width = skl_max_plane_width(fb, 1, rotation);
+	int uv_plane = 1;
+	int max_width = skl_max_plane_width(fb, uv_plane, rotation);
 	int max_height = 4096;
 	int x = plane_state->uapi.src.x1 >> 17;
 	int y = plane_state->uapi.src.y1 >> 17;
@@ -3580,8 +3898,9 @@ static int skl_check_nv12_aux_surface(struct intel_plane_state *plane_state)
 	int h = drm_rect_height(&plane_state->uapi.src) >> 17;
 	u32 offset;
 
-	intel_add_fb_offsets(&x, &y, plane_state, 1);
-	offset = intel_plane_compute_aligned_offset(&x, &y, plane_state, 1);
+	intel_add_fb_offsets(&x, &y, plane_state, uv_plane);
+	offset = intel_plane_compute_aligned_offset(&x, &y,
+						    plane_state, uv_plane);
 
 	/* FIXME not quite sure how/if these apply to the chroma plane */
 	if (w > max_width || h > max_height) {
@@ -3590,9 +3909,39 @@ static int skl_check_nv12_aux_surface(struct intel_plane_state *plane_state)
 		return -EINVAL;
 	}
 
-	plane_state->color_plane[1].offset = offset;
-	plane_state->color_plane[1].x = x;
-	plane_state->color_plane[1].y = y;
+	if (is_ccs_modifier(fb->modifier)) {
+		int ccs_plane = main_to_ccs_plane(fb, uv_plane);
+		int aux_offset = plane_state->color_plane[ccs_plane].offset;
+		int alignment = intel_surf_alignment(fb, uv_plane);
+
+		if (offset > aux_offset)
+			offset = intel_plane_adjust_aligned_offset(&x, &y,
+								   plane_state,
+								   uv_plane,
+								   offset,
+								   aux_offset & ~(alignment - 1));
+
+		while (!skl_check_main_ccs_coordinates(plane_state, x, y,
+						       offset, ccs_plane)) {
+			if (offset == 0)
+				break;
+
+			offset = intel_plane_adjust_aligned_offset(&x, &y,
+								   plane_state,
+								   uv_plane,
+								   offset, offset - alignment);
+		}
+
+		if (x != plane_state->color_plane[ccs_plane].x ||
+		    y != plane_state->color_plane[ccs_plane].y) {
+			DRM_DEBUG_KMS("Unable to find suitable display surface offset due to CCS\n");
+			return -EINVAL;
+		}
+	}
+
+	plane_state->color_plane[uv_plane].offset = offset;
+	plane_state->color_plane[uv_plane].x = x;
+	plane_state->color_plane[uv_plane].y = y;
 
 	return 0;
 }
@@ -3602,18 +3951,40 @@ static int skl_check_ccs_aux_surface(struct intel_plane_state *plane_state)
 	const struct drm_framebuffer *fb = plane_state->hw.fb;
 	int src_x = plane_state->uapi.src.x1 >> 16;
 	int src_y = plane_state->uapi.src.y1 >> 16;
-	int hsub = fb->format->hsub;
-	int vsub = fb->format->vsub;
-	int x = src_x / hsub;
-	int y = src_y / vsub;
 	u32 offset;
+	int ccs_plane;
 
-	intel_add_fb_offsets(&x, &y, plane_state, 1);
-	offset = intel_plane_compute_aligned_offset(&x, &y, plane_state, 1);
+	for (ccs_plane = 0; ccs_plane < fb->format->num_planes; ccs_plane++) {
+		int main_hsub, main_vsub;
+		int hsub, vsub;
+		int x, y;
 
-	plane_state->color_plane[1].offset = offset;
-	plane_state->color_plane[1].x = x * hsub + src_x % hsub;
-	plane_state->color_plane[1].y = y * vsub + src_y % vsub;
+		if (!is_ccs_plane(fb, ccs_plane))
+			continue;
+
+		intel_fb_plane_get_subsampling(&main_hsub, &main_vsub, fb,
+					       ccs_to_main_plane(fb, ccs_plane));
+		intel_fb_plane_get_subsampling(&hsub, &vsub, fb, ccs_plane);
+
+		hsub *= main_hsub;
+		vsub *= main_vsub;
+		x = src_x / hsub;
+		y = src_y / vsub;
+
+		intel_add_fb_offsets(&x, &y, plane_state, ccs_plane);
+
+		offset = intel_plane_compute_aligned_offset(&x, &y,
+							    plane_state,
+							    ccs_plane);
+
+		plane_state->color_plane[ccs_plane].offset = offset;
+		plane_state->color_plane[ccs_plane].x = (x * hsub +
+							 src_x % hsub) /
+							main_hsub;
+		plane_state->color_plane[ccs_plane].y = (y * vsub +
+							 src_y % vsub) /
+							main_vsub;
+	}
 
 	return 0;
 }
@@ -3622,6 +3993,7 @@ int skl_check_plane_surface(struct intel_plane_state *plane_state)
 {
 	const struct drm_framebuffer *fb = plane_state->hw.fb;
 	int ret;
+	bool needs_aux = false;
 
 	ret = intel_plane_compute_gtt(plane_state);
 	if (ret)
@@ -3631,21 +4003,32 @@ int skl_check_plane_surface(struct intel_plane_state *plane_state)
 		return 0;
 
 	/*
-	 * Handle the AUX surface first since
-	 * the main surface setup depends on it.
+	 * Handle the AUX surface first since the main surface setup depends on
+	 * it.
 	 */
-	if (drm_format_info_is_yuv_semiplanar(fb->format)) {
-		ret = skl_check_nv12_aux_surface(plane_state);
-		if (ret)
-			return ret;
-	} else if (is_ccs_modifier(fb->modifier)) {
+	if (is_ccs_modifier(fb->modifier)) {
+		needs_aux = true;
 		ret = skl_check_ccs_aux_surface(plane_state);
 		if (ret)
 			return ret;
-	} else {
-		plane_state->color_plane[1].offset = ~0xfff;
-		plane_state->color_plane[1].x = 0;
-		plane_state->color_plane[1].y = 0;
+	}
+
+	if (intel_format_info_is_yuv_semiplanar(fb->format,
+						fb->modifier)) {
+		needs_aux = true;
+		ret = skl_check_nv12_aux_surface(plane_state);
+		if (ret)
+			return ret;
+	}
+
+	if (!needs_aux) {
+		int i;
+
+		for (i = 1; i < fb->format->num_planes; i++) {
+			plane_state->color_plane[i].offset = ~0xfff;
+			plane_state->color_plane[i].x = 0;
+			plane_state->color_plane[i].y = 0;
+		}
 	}
 
 	ret = skl_check_main_surface(plane_state);
@@ -4109,7 +4492,7 @@ static unsigned int skl_plane_stride_mult(const struct drm_framebuffer *fb,
 	 * The stride is either expressed as a multiple of 64 bytes chunks for
 	 * linear buffers or in number of tiles for tiled buffers.
 	 */
-	if (fb->modifier == DRM_FORMAT_MOD_LINEAR)
+	if (is_surface_linear(fb, color_plane))
 		return 64;
 	else if (drm_rotation_90_or_270(rotation))
 		return intel_tile_height(fb, color_plane);
@@ -4239,6 +4622,12 @@ static u32 skl_plane_ctl_tiling(u64 fb_modifier)
 		return PLANE_CTL_TILED_Y;
 	case I915_FORMAT_MOD_Y_TILED_CCS:
 		return PLANE_CTL_TILED_Y | PLANE_CTL_RENDER_DECOMPRESSION_ENABLE;
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+		return PLANE_CTL_TILED_Y |
+		       PLANE_CTL_RENDER_DECOMPRESSION_ENABLE |
+		       PLANE_CTL_CLEAR_COLOR_DISABLE;
+	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
+		return PLANE_CTL_TILED_Y | PLANE_CTL_MEDIA_DECOMPRESSION_ENABLE;
 	case I915_FORMAT_MOD_Yf_TILED:
 		return PLANE_CTL_TILED_YF;
 	case I915_FORMAT_MOD_Yf_TILED_CCS:
@@ -5588,7 +5977,8 @@ static int
 skl_update_scaler(struct intel_crtc_state *crtc_state, bool force_detach,
 		  unsigned int scaler_user, int *scaler_id,
 		  int src_w, int src_h, int dst_w, int dst_h,
-		  const struct drm_format_info *format, bool need_scaler)
+		  const struct drm_format_info *format,
+		  u64 modifier, bool need_scaler)
 {
 	struct intel_crtc_scaler_state *scaler_state =
 		&crtc_state->scaler_state;
@@ -5642,7 +6032,7 @@ skl_update_scaler(struct intel_crtc_state *crtc_state, bool force_detach,
 		return 0;
 	}
 
-	if (format && drm_format_info_is_yuv_semiplanar(format) &&
+	if (format && intel_format_info_is_yuv_semiplanar(format, modifier) &&
 	    (src_h < SKL_MIN_YUV_420_SRC_H || src_w < SKL_MIN_YUV_420_SRC_W)) {
 		DRM_DEBUG_KMS("Planar YUV: src dimensions not met\n");
 		return -EINVAL;
@@ -5694,7 +6084,8 @@ int skl_update_scaler_crtc(struct intel_crtc_state *state)
 				 &state->scaler_state.scaler_id,
 				 state->pipe_src_w, state->pipe_src_h,
 				 adjusted_mode->crtc_hdisplay,
-				 adjusted_mode->crtc_vdisplay, NULL, need_scaler);
+				 adjusted_mode->crtc_vdisplay, NULL, 0,
+				 need_scaler);
 }
 
 /**
@@ -5719,7 +6110,7 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 
 	/* Pre-gen11 and SDR planes always need a scaler for planar formats. */
 	if (!icl_is_hdr_plane(dev_priv, intel_plane->id) &&
-	    fb && drm_format_info_is_yuv_semiplanar(fb->format))
+	    fb && intel_format_info_is_yuv_semiplanar(fb->format, fb->modifier))
 		need_scaler = true;
 
 	ret = skl_update_scaler(crtc_state, force_detach,
@@ -5729,7 +6120,9 @@ static int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 				drm_rect_height(&plane_state->uapi.src) >> 16,
 				drm_rect_width(&plane_state->uapi.dst),
 				drm_rect_height(&plane_state->uapi.dst),
-				fb ? fb->format : NULL, need_scaler);
+				fb ? fb->format : NULL,
+				fb ? fb->modifier : 0,
+				need_scaler);
 
 	if (ret || plane_state->scaler_id < 0)
 		return ret;
@@ -10073,7 +10466,11 @@ skylake_get_initial_plane_config(struct intel_crtc *crtc,
 	case PLANE_CTL_TILED_Y:
 		plane_config->tiling = I915_TILING_Y;
 		if (val & PLANE_CTL_RENDER_DECOMPRESSION_ENABLE)
-			fb->modifier = I915_FORMAT_MOD_Y_TILED_CCS;
+			fb->modifier = INTEL_GEN(dev_priv) >= 12 ?
+				I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS :
+				I915_FORMAT_MOD_Y_TILED_CCS;
+		else if (val & PLANE_CTL_MEDIA_DECOMPRESSION_ENABLE)
+			fb->modifier = I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS;
 		else
 			fb->modifier = I915_FORMAT_MOD_Y_TILED;
 		break;
@@ -16556,8 +16953,11 @@ static int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 	}
 
 	/* FIXME need to adjust LINOFF/TILEOFF accordingly. */
-	if (mode_cmd->offsets[0] != 0)
+	if (mode_cmd->offsets[0] != 0) {
+		DRM_DEBUG_KMS("plane 0 offset (0x%08x) must be 0\n",
+			      mode_cmd->offsets[0]);
 		goto err;
+	}
 
 	drm_helper_mode_fill_fb_struct(&dev_priv->drm, fb, mode_cmd);
 
@@ -16570,24 +16970,21 @@ static int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 		}
 
 		stride_alignment = intel_fb_stride_alignment(fb, i);
-
-		/*
-		 * Display WA #0531: skl,bxt,kbl,glk
-		 *
-		 * Render decompression and plane width > 3840
-		 * combined with horizontal panning requires the
-		 * plane stride to be a multiple of 4. We'll just
-		 * require the entire fb to accommodate that to avoid
-		 * potential runtime errors at plane configuration time.
-		 */
-		if (IS_GEN(dev_priv, 9) && i == 0 && fb->width > 3840 &&
-		    is_ccs_modifier(fb->modifier))
-			stride_alignment *= 4;
-
 		if (fb->pitches[i] & (stride_alignment - 1)) {
 			DRM_DEBUG_KMS("plane %d pitch (%d) must be at least %u byte aligned\n",
 				      i, fb->pitches[i], stride_alignment);
 			goto err;
+		}
+
+		if (is_gen12_ccs_plane(fb, i)) {
+			int ccs_aux_stride = gen12_ccs_aux_stride(fb, i);
+
+			if (fb->pitches[i] != ccs_aux_stride) {
+				DRM_DEBUG_KMS("ccs aux plane %d pitch (%d) must be %d\n",
+					      i,
+					      fb->pitches[i], ccs_aux_stride);
+				goto err;
+			}
 		}
 
 		fb->obj[i] = &obj->base;
