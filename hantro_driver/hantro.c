@@ -72,6 +72,9 @@
 #define DRIVER_MAJOR      1
 #define DRIVER_MINOR      1
 
+/* Currently only used to check MMU disabled/enabled */
+#define TBH_MMU_TCU_SMMU_CR0 0x185400020
+
 struct hantro_device_handle hantro_dev;
 static ssize_t memory_usage_show_internal(int sliceidx, char *buf);
 
@@ -1974,6 +1977,34 @@ static dtbnode * trycreatenode(
 	return pnode;
 }
 
+/* hantro_mmu_control is used to check whether media MMU is enabled or disabled */
+static void hantro_mmu_control(void)
+{
+	unsigned long tbh_mmu_tcu_smmu_cr0 = TBH_MMU_TCU_SMMU_CR0;
+	u8 *tbh_mmu_tcu_smmu_cr0_register;
+	int is_mmu_enabled;
+
+        /* request mem region of TBH_MMU_TCU_SMMU_CR0 */
+        if (!request_mem_region(tbh_mmu_tcu_smmu_cr0, 0x32,"tbh_mmu_tcu_smmu_cr0")) {
+               pr_info("tbh_mmu_tcu_smmu_cr0: failed to request mem region\n");
+        }
+
+	/* ioremap to the TBH_MMU_TCU_SMMU_CR0 */
+        tbh_mmu_tcu_smmu_cr0_register = (u8 *) ioremap(tbh_mmu_tcu_smmu_cr0, 0x32);
+	if (tbh_mmu_tcu_smmu_cr0_register == NULL) {
+		pr_info("tbh_mmu_tcu_smmu_cr0_register: failed to ioremap tbh_mmu_tcu_smmu_cr0_register\n");
+	}
+	else {
+		is_mmu_enabled = ioread32((void *)(tbh_mmu_tcu_smmu_cr0_register));
+		if (is_mmu_enabled)
+			printk("hantro_init: Media MMU600 is enabled, is_mmu_enabled = %d\n", is_mmu_enabled);
+		else
+			printk("hantro_init: Media MMU600 is disabled, is_mmu_enabled = %d\n", is_mmu_enabled);
+		iounmap((void *) is_mmu_enabled);
+	        release_mem_region(tbh_mmu_tcu_smmu_cr0, 0x32);
+	}
+
+}
 
 /* hantro_enable_clock to enable/disable the media SS clocks */
 static int hantro_clock_control(struct platform_device *pdev, bool enable)
@@ -2123,6 +2154,8 @@ static int hantro_drm_probe(struct platform_device *pdev)
 #ifdef  USE_RESET
 	hantro_reset_control(pdev, true);
 #endif
+	/* Check the status of media MMU, whether it is enabled/disabled after reset de-assert of MMU */
+	hantro_mmu_control();
 
 	if (dev->of_node) {
 		//probe from system DTB
