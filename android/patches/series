@@ -29,9 +29,6 @@
 # CVE-2019-18808
 0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-CVE-2019-18808.patch
  
-# CVE-2019-18814
-0001-apparmor-Fix-use-after-free-in-aa_audit_rule_init-CVE-2019-18814.patch
- 
 # CVE-2019-19074
 0001-ath9k-release-allocated-buffer-if-timed-out-CVE-2019-19074.patch
  
