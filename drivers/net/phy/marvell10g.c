@@ -45,6 +45,11 @@ enum {
 	MV_PCS_PAIRSWAP_AB	= 0x0002,
 	MV_PCS_PAIRSWAP_NONE	= 0x0003,
 
+	/* Copper Specific Interrupt registers */
+	MV_PCS_INTR_ENABLE	= 0x8010,
+	MV_PCS_INTR_STS		= 0x8011,
+	PM_PCS_INTR_LSC		= BIT(10),
+
 	/* These registers appear at 0x800X and 0xa00X - the 0xa00X control
 	 * registers appear to set themselves to the 0x800X when AN is
 	 * restarted, but status registers appear readable from either.
@@ -575,13 +580,18 @@ static void m88e2110_get_wol(struct phy_device *phydev,
 {
 	int ret = 0;
 
-	wol->supported = WAKE_MAGIC;
+	wol->supported = WAKE_MAGIC | WAKE_PHY;
 	wol->wolopts = 0;
 
 	ret = phy_read_mmd(phydev, MDIO_MMD_VEND2, MV_V2_WOL_CTRL);
 
 	if (ret & MV_V2_WOL_MAGIC_PKT_EN)
 		wol->wolopts |= WAKE_MAGIC;
+
+	ret = phy_read_mmd(phydev, MDIO_MMD_PCS, MV_PCS_INTR_ENABLE);
+
+	if (ret & PM_PCS_INTR_LSC)
+		wol->wolopts |= WAKE_PHY;
 }
 
 static int m88e2110_set_wol(struct phy_device *phydev,
@@ -652,6 +662,24 @@ static int m88e2110_set_wol(struct phy_device *phydev,
 		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2,
 					 MV_V2_WOL_CTRL,
 					 MV_V2_WOL_CLEAR_STS);
+
+		if (ret < 0)
+			return ret;
+	}
+
+	if (wol->wolopts & WAKE_PHY) {
+		/* Enable the link status changed interrupt */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_PCS,
+				       MV_PCS_INTR_ENABLE,
+				       PM_PCS_INTR_LSC);
+
+		if (ret < 0)
+			return ret;
+	} else {
+		/* Disable the link status changed interrupt */
+		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_PCS,
+					 MV_PCS_INTR_ENABLE,
+					 PM_PCS_INTR_LSC);
 
 		if (ret < 0)
 			return ret;
