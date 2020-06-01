@@ -5728,6 +5728,16 @@ static void stmmac_sph_control(struct stmmac_priv *priv, u16 qid)
 	}
 }
 
+static void stmmac_tx_timer_control(struct stmmac_priv *priv, u16 qid, bool en)
+{
+	u16 qp_num = priv->plat->num_queue_pairs;
+
+	if (en)
+		stmmac_add_txtimer_q(priv, qid + qp_num);
+	else
+		stmmac_remove_txtimer_q(priv, qid + qp_num);
+}
+
 /**
  * stmmac_queue_pair_enable - Enables a queue pair
  * @priv: driver private structure
@@ -5766,6 +5776,7 @@ int stmmac_queue_pair_enable(struct stmmac_priv *priv, u16 qid)
 	stmmac_txrx_desc_control(priv, qid, true);
 	stmmac_txrx_ch_init(priv, qid);
 	stmmac_sph_control(priv, qid);
+	stmmac_tx_timer_control(priv, qid, true);
 
 	stmmac_txrx_dma_control(priv, qid, true);
 
@@ -5825,6 +5836,8 @@ int stmmac_queue_pair_disable(struct stmmac_priv *priv, u16 qid)
 		return 0;
 
 	stmmac_napi_control(priv, qid, false);
+	stmmac_tx_timer_control(priv, qid, false);
+
 	ret = stmmac_txrx_irq_control(priv, qid, false);
 	if (ret)
 		return ret;
