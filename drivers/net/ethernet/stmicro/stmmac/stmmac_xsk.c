@@ -746,8 +746,10 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 	struct stmmac_priv *priv = xdp_q->priv_data;
 	struct dma_desc *tx_desc = NULL;
 	bool work_done = true;
+	unsigned int tx_packets;
 	struct xdp_desc desc;
 	dma_addr_t dma;
+	bool set_ic;
 	int entry = xdp_q->cur_tx;
 	int first_entry = xdp_q->cur_tx;
 
@@ -789,8 +791,28 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 						       "failed\n");
 		}
 
-		if (unlikely(priv->hwts_all))
+		tx_packets =  (entry + 1) - first_entry;
+		xdp_q->tx_count_frames += tx_packets;
+
+		if (unlikely(priv->hwts_all)) {
 			stmmac_enable_tx_timestamp(priv, tx_desc);
+			set_ic = true;
+		} else if (!priv->tx_coal_frames) {
+			set_ic = false;
+		} else if (tx_packets > priv->tx_coal_frames) {
+			set_ic = true;
+		} else if ((xdp_q->tx_count_frames % priv->tx_coal_frames) <
+			   tx_packets) {
+			set_ic = true;
+		} else {
+			set_ic = false;
+		}
+
+		if (set_ic) {
+			xdp_q->tx_count_frames = 0;
+			stmmac_set_tx_ic(priv, tx_desc);
+			priv->xstats.tx_set_ic_bit++;
+		}
 
 		stmmac_prepare_tx_desc(priv, tx_desc, /* Tx descriptor */
 				       1, /* is first descriptor */
@@ -801,15 +823,16 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 				       1, /* is last segment */
 				       desc.len); /* Total packet length */
 
-		wmb();
-
 		entry = STMMAC_GET_ENTRY(entry, priv->dma_tx_size);
-		xdp_q->cur_tx = entry;
 	}
 
 	if (first_entry != entry) {
+		/* Ensure data is written before updating tail-pointer */
+		wmb();
+		xdp_q->cur_tx = entry;
 		stmmac_xdp_queue_update_tail(xdp_q);
 		xsk_umem_consume_tx_done(xdp_q->xsk_umem);
+		stmmac_tx_timer_arm(priv, xdp_q->queue_index);
 	}
 
 	return !!budget && work_done;
@@ -924,6 +947,10 @@ int stmmac_xdp_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 
 	if (xsk_frames)
 		xsk_umem_complete_tx(umem, xsk_frames);
+
+	/* We still have pending packets, let's call for a new scheduling */
+	if (xdp_q->dirty_tx != xdp_q->cur_tx)
+		stmmac_tx_timer_arm(priv, xdp_q->queue_index);
 
 	priv->dev->stats.tx_bytes += total_bytes;
 
