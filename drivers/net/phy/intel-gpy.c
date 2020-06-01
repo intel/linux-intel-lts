@@ -191,13 +191,18 @@ static void gpy_get_wol(struct phy_device *phydev,
 {
 	int ret = 0;
 
-	wol->supported = WAKE_MAGIC;
+	wol->supported = WAKE_MAGIC | WAKE_PHY;
 	wol->wolopts = 0;
 
 	ret = phy_read_mmd(phydev, MDIO_MMD_VEND2, GPY_VSPEC2_WOL_CTL);
 
 	if (ret & GPY_WOL_EN)
 		wol->wolopts |= WAKE_MAGIC;
+
+	ret = phy_read(phydev, GPY_IMASK);
+
+	if (ret & GPY_INTR_LSTC)
+		wol->wolopts |= WAKE_PHY;
 }
 
 static int gpy_set_wol(struct phy_device *phydev,
@@ -257,6 +262,20 @@ static int gpy_set_wol(struct phy_device *phydev,
 		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2,
 					 GPY_VSPEC2_WOL_CTL,
 					 GPY_WOL_EN);
+
+		if (ret < 0)
+			return ret;
+	}
+
+	if (wol->wolopts & WAKE_PHY) {
+		/* Enable the link state change interrupt */
+		ret = phy_set_bits(phydev, GPY_IMASK, GPY_INTR_LSTC);
+
+		if (ret < 0)
+			return ret;
+	} else {
+		/* Disable the link state change interrupt */
+		ret = phy_clear_bits(phydev, GPY_IMASK, GPY_INTR_LSTC);
 
 		if (ret < 0)
 			return ret;
