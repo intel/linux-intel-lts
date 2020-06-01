@@ -281,7 +281,7 @@ struct stmmac_priv {
 	struct dentry *dbgfs_dir;
 #endif
 
-	unsigned long state;
+	unsigned long *state;
 	struct workqueue_struct *wq;
 	struct work_struct service_task;
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
@@ -317,8 +317,9 @@ struct stmmac_priv {
 enum stmmac_state {
 	STMMAC_DOWN,
 	STMMAC_RESET_REQUESTED,
-	STMMAC_RESETING,
+	STMMAC_RESETTING,
 	STMMAC_SERVICE_SCHED,
+	STMMAC_STATE_MAX,
 };
 
 int stmmac_mdio_unregister(struct net_device *ndev);

@@ -202,15 +202,15 @@ static void stmmac_enable_all_queues(struct stmmac_priv *priv)
 
 static void stmmac_service_event_schedule(struct stmmac_priv *priv)
 {
-	if (!test_bit(STMMAC_DOWN, &priv->state) &&
-	    !test_and_set_bit(STMMAC_SERVICE_SCHED, &priv->state))
+	if (!test_bit(STMMAC_DOWN, priv->state) &&
+	    !test_and_set_bit(STMMAC_SERVICE_SCHED, priv->state))
 		queue_work(priv->wq, &priv->service_task);
 }
 
 static void stmmac_global_err(struct stmmac_priv *priv)
 {
 	netif_carrier_off(priv->dev);
-	set_bit(STMMAC_RESET_REQUESTED, &priv->state);
+	set_bit(STMMAC_RESET_REQUESTED, priv->state);
 	stmmac_service_event_schedule(priv);
 }
 
@@ -5283,7 +5283,7 @@ static irqreturn_t stmmac_interrupt(int irq, void *dev_id)
 	struct stmmac_priv *priv = netdev_priv(dev);
 
 	/* Check if adapter is up */
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
 	/* Check if a fatal error happened */
@@ -5310,7 +5310,7 @@ static irqreturn_t stmmac_mac_interrupt(int irq, void *dev_id)
 	}
 
 	/* Check if adapter is up */
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
 	/* To handle Common interrupts */
@@ -5330,7 +5330,7 @@ static irqreturn_t stmmac_safety_interrupt(int irq, void *dev_id)
 	}
 
 	/* Check if adapter is up */
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
 	/* Check if a fatal error happened */
@@ -5352,7 +5352,7 @@ static irqreturn_t stmmac_msi_intr_tx(int irq, void *data)
 	}
 
 	/* Check if adapter is up */
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
 	status = stmmac_napi_check(priv, chan, DMA_DIR_TX);
@@ -5395,7 +5395,7 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	}
 
 	/* Check if adapter is up */
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
 	if (rx_q->xsk_umem && priv->xdp_prog) {
@@ -5432,7 +5432,7 @@ static void stmmac_poll_controller(struct net_device *dev)
 	int i;
 
 	/* If adapter is down, do nothing */
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return;
 
 	if (priv->plat->multi_msi_en) {
@@ -5588,8 +5588,11 @@ static void stmmac_napi_control(struct stmmac_priv *priv, u16 qid, bool en)
 		napi_enable(&ch->tx_napi);
 		napi_enable(&xdp_ch->tx_napi);
 	} else {
+		napi_synchronize(&ch->rx_napi);
 		napi_disable(&ch->rx_napi);
+		napi_synchronize(&ch->tx_napi);
 		napi_disable(&ch->tx_napi);
+		napi_synchronize(&xdp_ch->tx_napi);
 		napi_disable(&xdp_ch->tx_napi);
 	}
 }
@@ -5697,9 +5700,13 @@ static void stmmac_txrx_desc_control(struct stmmac_priv *priv, u16 qid, bool en)
 		alloc_dma_tx_desc_resources_q(priv, qid);
 		alloc_dma_tx_desc_resources_q(priv, qid + qp_num);
 
-		init_dma_rx_desc_ring(priv, qid, 0);
+		init_dma_rx_desc_ring(priv, qid, GFP_KERNEL);
 		init_dma_tx_desc_ring(priv, qid);
 		init_dma_tx_desc_ring(priv, qid + qp_num);
+
+		stmmac_clear_rx_descriptors(priv, qid);
+		stmmac_clear_tx_descriptors(priv, qid);
+		stmmac_clear_tx_descriptors(priv, qid + qp_num);
 	} else {
 		free_dma_rx_desc_resources_q(priv, qid);
 		free_dma_tx_desc_resources_q(priv, qid);
@@ -5817,6 +5824,7 @@ int stmmac_queue_pair_enable(struct stmmac_priv *priv, u16 qid)
 	ret = stmmac_txrx_irq_control(priv, qid, true);
 	if (ret)
 		return ret;
+
 	stmmac_napi_control(priv, qid, true);
 
 	return 0;
@@ -5840,6 +5848,9 @@ int stmmac_all_queue_pairs_enable(struct stmmac_priv *priv)
 		if (err)
 			return err;
 	}
+
+	stmmac_start_mac_tx(priv, priv->ioaddr);
+	stmmac_start_mac_rx(priv, priv->ioaddr);
 
 	mutex_unlock(&priv->lock);
 
@@ -5877,6 +5888,7 @@ int stmmac_queue_pair_disable(struct stmmac_priv *priv, u16 qid)
 		return ret;
 
 	stmmac_txrx_dma_control(priv, qid, false);
+
 	stmmac_txrx_desc_control(priv, qid, false);
 
 	return ret;
@@ -5887,6 +5899,9 @@ int stmmac_all_queue_pairs_disable(struct stmmac_priv *priv)
 	int i;
 
 	mutex_lock(&priv->lock);
+
+	stmmac_stop_mac_tx(priv, priv->ioaddr);
+	stmmac_stop_mac_rx(priv, priv->ioaddr);
 
 	for (i = 0; i < priv->plat->num_queue_pairs; i++) {
 		int err = stmmac_queue_pair_disable(priv, i);
@@ -5916,7 +5931,7 @@ int stmmac_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
 
 	queue_index %= priv->plat->num_queue_pairs;
 
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return -ENETDOWN;
 
 	if (!stmmac_enabled_xdp(priv))
@@ -6383,23 +6398,23 @@ static const struct net_device_ops stmmac_netdev_ops = {
 
 static void stmmac_reset_subtask(struct stmmac_priv *priv)
 {
-	if (!test_and_clear_bit(STMMAC_RESET_REQUESTED, &priv->state))
+	if (!test_and_clear_bit(STMMAC_RESET_REQUESTED, priv->state))
 		return;
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return;
 
 	netdev_err(priv->dev, "Reset adapter.\n");
 
 	rtnl_lock();
 	netif_trans_update(priv->dev);
-	while (test_and_set_bit(STMMAC_RESETING, &priv->state))
+	while (test_and_set_bit(STMMAC_RESETTING, priv->state))
 		usleep_range(1000, 2000);
 
-	set_bit(STMMAC_DOWN, &priv->state);
+	set_bit(STMMAC_DOWN, priv->state);
 	dev_close(priv->dev);
 	dev_open(priv->dev, NULL);
-	clear_bit(STMMAC_DOWN, &priv->state);
-	clear_bit(STMMAC_RESETING, &priv->state);
+	clear_bit(STMMAC_DOWN, priv->state);
+	clear_bit(STMMAC_RESETTING, priv->state);
 	rtnl_unlock();
 }
 
@@ -6409,7 +6424,7 @@ static void stmmac_service_task(struct work_struct *work)
 			service_task);
 
 	stmmac_reset_subtask(priv);
-	clear_bit(STMMAC_SERVICE_SCHED, &priv->state);
+	clear_bit(STMMAC_SERVICE_SCHED, priv->state);
 }
 
 /**
@@ -6672,6 +6687,10 @@ int stmmac_dvr_probe(struct device *device,
 	/* Verify driver arguments */
 	stmmac_verify_args();
 
+	priv->state = bitmap_zalloc(STMMAC_STATE_MAX, GFP_KERNEL);
+	if (!priv->state)
+		return -ENOMEM;
+
 	priv->af_xdp_zc_qps = bitmap_zalloc(MTL_MAX_TX_QUEUES / 2, GFP_KERNEL);
 	if (!priv->af_xdp_zc_qps)
 		return -ENOMEM;
@@ -6908,6 +6927,7 @@ error_mdio_register:
 
 error_hw_init:
 	destroy_workqueue(priv->wq);
+	bitmap_free(priv->state);
 	bitmap_free(priv->af_xdp_zc_qps);
 	return ret;
 }
@@ -6953,6 +6973,7 @@ int stmmac_dvr_remove(struct device *dev)
 		stmmac_mdio_unregister(ndev);
 	destroy_workqueue(priv->wq);
 	mutex_destroy(&priv->lock);
+	bitmap_free(priv->state);
 	bitmap_free(priv->af_xdp_zc_qps);
 
 	return 0;
