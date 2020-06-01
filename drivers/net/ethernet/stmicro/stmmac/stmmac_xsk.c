@@ -1062,6 +1062,7 @@ void stmmac_xsk_clean_tx_queue(struct stmmac_tx_queue *tx_q)
 		else
 			xsk_frames++;
 
+		tx_q->xdpf[ntc] =  NULL;
 		ntc = STMMAC_GET_ENTRY(ntc, priv->dma_tx_size);
 	}
 
