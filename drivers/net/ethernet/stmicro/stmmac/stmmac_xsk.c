@@ -332,7 +332,16 @@ __stmmac_alloc_rx_buffers_zc(struct stmmac_rx_queue *rx_q, u16 count,
 
 		stmmac_set_desc_addr(priv, rx_desc, buf->addr);
 		stmmac_refill_desc3(priv, rx_q, rx_desc);
-		use_rx_wd = priv->use_riwt && rx_q->rx_count_frames;
+
+		rx_q->rx_count_frames++;
+		rx_q->rx_count_frames += priv->rx_coal_frames;
+		if (rx_q->rx_count_frames > priv->rx_coal_frames)
+			rx_q->rx_count_frames = 0;
+
+		use_rx_wd = !priv->rx_coal_frames;
+		use_rx_wd |= rx_q->rx_count_frames > 0;
+		if (!priv->use_riwt)
+			use_rx_wd = false;
 
 		stmmac_set_rx_owner(priv, rx_desc, use_rx_wd);
 		last_refill = entry;
