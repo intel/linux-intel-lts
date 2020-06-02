@@ -191,6 +191,8 @@ unsigned int set_pixel_format(u32 format)
 		val = LCD_LAYER_FORMAT_RGBA8888;
 		break;
 	}
+	DRM_INFO_ONCE("%s : %d format=0x%x val=0x%x\n",
+			 __func__, __LINE__, format, val);
 	return val;
 }
 
@@ -301,38 +303,48 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	dev_p->fb_addr = addr[Y_PLANE];
 	kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_ADDR(plane_id),
 		      addr[Y_PLANE] + fb->offsets[0]);
+	val = set_pixel_format(fb->format->format);
+	val |= set_bits_per_pixel(fb->format);
 	/* Program Cb/Cr for planar formats */
 	if (num_planes > 1) {
-		if (fb->format->format == DRM_FORMAT_YUV420 ||
-		    fb->format->format == DRM_FORMAT_YVU420)
-			width /= 2;
-
 		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CB_LINE_VSTRIDE(plane_id),
-			      fb->pitches[LAYER_1]);
-
+				width*fb->format->cpp[0]);
 		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_CB_LINE_WIDTH(plane_id),
 			      (width * fb->format->cpp[0]));
 
 		addr[U_PLANE] = drm_fb_cma_get_gem_addr(fb, plane->state,
-							U_PLANE);
-		kmb_write_lcd(dev_p, LCD_LAYERn_DMA_START_CB_ADR(plane_id),
-			      addr[U_PLANE]);
+				U_PLANE);
+		/* check if Cb/Cr is swapped*/
+		if ((num_planes == 3) && (val & LCD_LAYER_CRCB_ORDER))
+			kmb_write_lcd(dev_p,
+					LCD_LAYERn_DMA_START_CR_ADR(plane_id),
+					addr[U_PLANE]);
+		else
+			kmb_write_lcd(dev_p,
+					LCD_LAYERn_DMA_START_CB_ADR(plane_id),
+					addr[U_PLANE]);
 
 		if (num_planes == 3) {
 			kmb_write_lcd(dev_p,
-				      LCD_LAYERn_DMA_CR_LINE_VSTRIDE(plane_id),
-				      fb->pitches[LAYER_2]);
+				LCD_LAYERn_DMA_CR_LINE_VSTRIDE(plane_id),
+				((width)*fb->format->cpp[0]));
 
 			kmb_write_lcd(dev_p,
-				      LCD_LAYERn_DMA_CR_LINE_WIDTH(plane_id),
-				      (width * fb->format->cpp[0]));
+				LCD_LAYERn_DMA_CR_LINE_WIDTH(plane_id),
+				((width)*fb->format->cpp[0]));
 
 			addr[V_PLANE] = drm_fb_cma_get_gem_addr(fb,
-								plane->state,
-								V_PLANE);
-			kmb_write_lcd(dev_p,
-				      LCD_LAYERn_DMA_START_CR_ADR(plane_id),
-				      addr[V_PLANE]);
+					plane->state, V_PLANE);
+
+			/* check if Cb/Cr is swapped*/
+			if (val & LCD_LAYER_CRCB_ORDER)
+				kmb_write_lcd(dev_p,
+					LCD_LAYERn_DMA_START_CB_ADR(plane_id),
+					addr[V_PLANE]);
+			else
+				kmb_write_lcd(dev_p,
+					LCD_LAYERn_DMA_START_CR_ADR(plane_id),
+					addr[V_PLANE]);
 		}
 	}
 
@@ -341,8 +353,6 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	kmb_write_lcd(dev_p, LCD_LAYERn_COL_START(plane_id), crtc_x);
 	kmb_write_lcd(dev_p, LCD_LAYERn_ROW_START(plane_id), crtc_y);
 
-	val = set_pixel_format(fb->format->format);
-	val |= set_bits_per_pixel(fb->format);
 	/*CHECKME Leon drvr sets it to 100 try this for now */
 	val |= LCD_LAYER_FIFO_100;
 
