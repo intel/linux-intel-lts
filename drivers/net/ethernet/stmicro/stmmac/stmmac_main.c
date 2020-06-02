@@ -5621,8 +5621,12 @@ static int stmmac_txrx_irq_control(struct stmmac_priv *priv, u16 qid, bool en)
 			goto irq_err;
 
 		int_name = priv->int_name_tx_irq[qid + qp_num];
-		sprintf(int_name, "%s:%s-%d", priv->dev->name,
-			"tx-xdp", qid + qp_num);
+		if (queue_is_xdp(priv, qid + qp_num))
+			sprintf(int_name, "%s:%s-%d", priv->dev->name,
+				"tx-xdp", qid + qp_num);
+		else
+			sprintf(int_name, "%s:%s-%d", priv->dev->name,
+				"tx", qid + qp_num);
 		ret = request_irq(priv->tx_irq[qid + qp_num],
 				  stmmac_msi_intr_tx,
 				  0, int_name,
