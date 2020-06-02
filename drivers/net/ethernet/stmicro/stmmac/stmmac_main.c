@@ -5731,6 +5731,9 @@ int stmmac_queue_pair_enable(struct stmmac_priv *priv, u16 qid)
 		return -EINVAL;
 	}
 
+	if (!test_bit(qid, priv->af_xdp_zc_qps))
+		return 0;
+
 	/* XDP BPF must be loaded before TX & XDP TX queue pair are enabled and
 	 * the Tx XDP queue is assigned with higher TxQ starting from
 	 * num_queue_pairs. For example, for controller with 8 HW DMA channels
@@ -5800,6 +5803,9 @@ int stmmac_queue_pair_disable(struct stmmac_priv *priv, u16 qid)
 
 		return -EINVAL;
 	}
+
+	if (!test_bit(qid, priv->af_xdp_zc_qps))
+		return 0;
 
 	stmmac_napi_control(priv, qid, false);
 	ret = stmmac_txrx_irq_control(priv, qid, false);
