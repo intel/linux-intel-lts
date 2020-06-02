@@ -306,6 +306,7 @@ __stmmac_alloc_rx_buffers_zc(struct stmmac_rx_queue *rx_q, u16 count,
 					struct stmmac_rx_buffer *buf))
 {
 	struct stmmac_priv *priv = rx_q->priv_data;
+	int qid = rx_q->queue_index;
 	u16 entry = rx_q->dirty_rx;
 	bool ok = true;
 	struct stmmac_rx_buffer *buf;
@@ -334,11 +335,11 @@ __stmmac_alloc_rx_buffers_zc(struct stmmac_rx_queue *rx_q, u16 count,
 		stmmac_refill_desc3(priv, rx_q, rx_desc);
 
 		rx_q->rx_count_frames++;
-		rx_q->rx_count_frames += priv->rx_coal_frames;
-		if (rx_q->rx_count_frames > priv->rx_coal_frames)
+		rx_q->rx_count_frames += priv->rx_coal_frames[qid];
+		if (rx_q->rx_count_frames > priv->rx_coal_frames[qid])
 			rx_q->rx_count_frames = 0;
 
-		use_rx_wd = !priv->rx_coal_frames;
+		use_rx_wd = !priv->rx_coal_frames[qid];
 		use_rx_wd |= rx_q->rx_count_frames > 0;
 		if (!priv->use_riwt)
 			use_rx_wd = false;
@@ -359,7 +360,7 @@ no_buffers:
 		rx_q->rx_tail_addr = rx_q->dma_rx_phy + (last_refill *
 				     sizeof(struct dma_desc));
 		stmmac_set_rx_tail_ptr(priv, priv->ioaddr,
-				       rx_q->rx_tail_addr, rx_q->queue_index);
+				       rx_q->rx_tail_addr, qid);
 	}
 
 	return ok;
@@ -753,6 +754,7 @@ read_again:
 static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 {
 	struct stmmac_priv *priv = xdp_q->priv_data;
+	int qid = xdp_q->queue_index;
 	struct dma_desc *tx_desc = NULL;
 	bool work_done = true;
 	unsigned int tx_packets;
@@ -806,12 +808,12 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 		if (unlikely(priv->hwts_all)) {
 			stmmac_enable_tx_timestamp(priv, tx_desc);
 			set_ic = true;
-		} else if (!priv->tx_coal_frames) {
+		} else if (!priv->tx_coal_frames[qid]) {
 			set_ic = false;
-		} else if (tx_packets > priv->tx_coal_frames) {
+		} else if (tx_packets > priv->tx_coal_frames[qid]) {
 			set_ic = true;
-		} else if ((xdp_q->tx_count_frames % priv->tx_coal_frames) <
-			   tx_packets) {
+		} else if ((xdp_q->tx_count_frames %
+			    priv->tx_coal_frames[qid]) < tx_packets) {
 			set_ic = true;
 		} else {
 			set_ic = false;
@@ -841,7 +843,7 @@ static bool stmmac_xmit_zc(struct stmmac_tx_queue *xdp_q, unsigned int budget)
 		xdp_q->cur_tx = entry;
 		stmmac_xdp_queue_update_tail(xdp_q);
 		xsk_umem_consume_tx_done(xdp_q->xsk_umem);
-		stmmac_tx_timer_arm(priv, xdp_q->queue_index);
+		stmmac_tx_timer_arm(priv, qid);
 	}
 
 	return !!budget && work_done;
