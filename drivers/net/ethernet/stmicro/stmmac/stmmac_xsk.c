@@ -311,7 +311,6 @@ __stmmac_alloc_rx_buffers_zc(struct stmmac_rx_queue *rx_q, u16 count,
 	bool ok = true;
 	struct stmmac_rx_buffer *buf;
 	struct dma_desc *rx_desc;
-	unsigned int last_refill = entry;
 
 	do {
 		bool use_rx_wd;
@@ -345,7 +344,6 @@ __stmmac_alloc_rx_buffers_zc(struct stmmac_rx_queue *rx_q, u16 count,
 			use_rx_wd = false;
 
 		stmmac_set_rx_owner(priv, rx_desc, use_rx_wd);
-		last_refill = entry;
 		entry = STMMAC_GET_ENTRY(entry, priv->dma_rx_size);
 
 		count--;
@@ -357,7 +355,7 @@ no_buffers:
 		rx_q->next_to_alloc = entry;
 
 		wmb();
-		rx_q->rx_tail_addr = rx_q->dma_rx_phy + (last_refill *
+		rx_q->rx_tail_addr = rx_q->dma_rx_phy + (entry *
 				     sizeof(struct dma_desc));
 		stmmac_set_rx_tail_ptr(priv, priv->ioaddr,
 				       rx_q->rx_tail_addr, qid);
