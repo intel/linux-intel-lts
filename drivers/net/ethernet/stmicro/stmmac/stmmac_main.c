@@ -1384,12 +1384,12 @@ static void stmmac_free_rx_buffer(struct stmmac_priv *priv, u32 queue, int i)
 }
 
 /**
- * stmmac_free_tx_buffer - free RX dma buffers
+ * stmmac_unmap_tx_buffer - free RX dma buffers
  * @priv: private structure
  * @queue: RX queue index
  * @i: buffer index.
  */
-static void stmmac_free_tx_buffer(struct stmmac_priv *priv, u32 queue, int i)
+static void stmmac_unmap_tx_buffer(struct stmmac_priv *priv, u32 queue, int i)
 {
 	struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
 
@@ -1406,16 +1406,8 @@ static void stmmac_free_tx_buffer(struct stmmac_priv *priv, u32 queue, int i)
 					 DMA_TO_DEVICE);
 	}
 
-	if (tx_q->tx_skbuff[i]) {
-		dev_kfree_skb_any(tx_q->tx_skbuff[i]);
-		tx_q->tx_skbuff[i] = NULL;
-	}
-
-	if (tx_q->xdpf[i]) {
-		xdp_return_frame(tx_q->xdpf[i]);
-		tx_q->xdpf[i] = NULL;
-	}
-
+	tx_q->tx_skbuff_dma[i].last_segment = false;
+	tx_q->tx_skbuff_dma[i].is_jumbo = false;
 	tx_q->tx_skbuff_dma[i].buf = 0;
 	tx_q->tx_skbuff_dma[i].map_as_page = false;
 }
@@ -1731,21 +1723,60 @@ static void dma_free_rx_skbufs(struct stmmac_priv *priv, u32 queue)
 static void stmmac_skb_clean_tx_queue(struct stmmac_priv *priv,
 				      struct stmmac_tx_queue *tx_q)
 {
+	unsigned int bytes_compl = 0, pkts_compl = 0;
 	u32 queue = tx_q->queue_index;
 	unsigned int entry, count;
 
+	__netif_tx_lock_bh(netdev_get_tx_queue(priv->dev, queue));
+
 	entry = tx_q->dirty_tx;
 	while (entry != tx_q->cur_tx) {
+		struct sk_buff *skb = tx_q->tx_skbuff[entry];
+		struct dma_desc *p;
+
+		if (priv->extend_desc)
+			p = (struct dma_desc *)(tx_q->dma_etx + entry);
+		else if (tx_q->tbs & STMMAC_TBS_AVAIL)
+			p = &(tx_q->dma_enhtx + entry)->basic;
+		else
+			p = tx_q->dma_tx + entry;
+
 		/* Free all the Tx ring sk_buffs */
-		stmmac_free_tx_buffer(priv, queue, entry);
+		stmmac_unmap_tx_buffer(priv, queue, entry);
+
+		if (skb) {
+			pkts_compl++;
+			bytes_compl += skb->len;
+			dev_consume_skb_any(skb);
+			tx_q->tx_skbuff[entry] = NULL;
+		}
+
+		if (tx_q->xdpf[entry]) {
+			pkts_compl++;
+			bytes_compl += tx_q->xdpf[entry]->len;
+			xdp_return_frame(tx_q->xdpf[entry]);
+			tx_q->xdpf[entry] = NULL;
+		}
+
+		stmmac_clean_desc3(priv, tx_q, p);
+		if (tx_q->tbs & STMMAC_TBS_AVAIL)
+			stmmac_release_tx_desc(priv, p,
+					       STMMAC_ENHANCED_TX_MODE);
+		else
+			stmmac_release_tx_desc(priv, p, priv->mode);
 
 		entry = STMMAC_GET_ENTRY(entry, priv->dma_tx_size);
 		count++;
 	}
 	tx_q->dirty_tx = entry;
 
+	netdev_tx_completed_queue(netdev_get_tx_queue(priv->dev, queue),
+				  pkts_compl, bytes_compl);
+
 	/* reset BQL for queue */
 	netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, queue));
+
+	__netif_tx_unlock_bh(netdev_get_tx_queue(priv->dev, queue));
 }
 
 /**
