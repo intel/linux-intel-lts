@@ -1006,7 +1006,7 @@ int stmmac_xsk_wakeup(struct net_device *dev, u32 queue, u32 flags)
 	rx_q = &priv->rx_queue[queue];
 	rx_ch = &priv->channel[queue];
 
-	if (test_bit(STMMAC_DOWN, &priv->state))
+	if (test_bit(STMMAC_DOWN, priv->state))
 		return -ENETDOWN;
 
 	if (!stmmac_enabled_xdp(priv))
