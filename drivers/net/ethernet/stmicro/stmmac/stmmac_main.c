@@ -2387,8 +2387,7 @@ xdp_tx_done:
 
 	/* We still have pending packets, let's call for a new scheduling */
 	if (tx_q->dirty_tx != tx_q->cur_tx)
-		mod_timer(&tx_q->txtimer,
-			  STMMAC_COAL_TIMER(priv->tx_coal_timer[queue]));
+		stmmac_tx_timer_arm(priv, queue);
 
 	if (!queue_is_xdp(priv, queue))
 		__netif_tx_unlock_bh(netdev_get_tx_queue(priv->dev, queue));
@@ -2692,8 +2691,11 @@ void stmmac_tx_timer_arm(struct stmmac_priv *priv, u32 queue)
 {
 	struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
 
-	mod_timer(&tx_q->txtimer,
-		  STMMAC_COAL_TIMER(priv->tx_coal_timer[queue]));
+	if (!priv->tx_timer_scheduled[queue]) {
+		mod_timer(&tx_q->txtimer,
+			  STMMAC_COAL_TIMER(priv->tx_coal_timer[queue]));
+		priv->tx_timer_scheduled[queue] = true;
+	}
 }
 
 /**
@@ -2717,6 +2719,9 @@ static void stmmac_tx_timer(struct timer_list *t)
 		stmmac_disable_dma_irq(priv, priv->ioaddr, ch->index, 0, 1);
 		spin_unlock_irqrestore(&ch->lock, flags);
 		__napi_schedule(&ch->tx_napi);
+		priv->tx_timer_scheduled[tx_q->queue_index] = false;
+	} else {
+		stmmac_tx_timer_arm(priv, tx_q->queue_index);
 	}
 }
 
@@ -2725,6 +2730,7 @@ static void stmmac_add_txtimer_q(struct stmmac_priv *priv, u32 queue)
 	struct stmmac_tx_queue *tx_q = get_tx_queue(priv, queue);
 
 	timer_setup(&tx_q->txtimer, stmmac_tx_timer, 0);
+	priv->tx_timer_scheduled[queue] = false;
 }
 
 static void stmmac_remove_txtimer_q(struct stmmac_priv *priv, u32 queue)
@@ -5320,11 +5326,9 @@ static irqreturn_t stmmac_safety_interrupt(int irq, void *dev_id)
 static irqreturn_t stmmac_msi_intr_tx(int irq, void *data)
 {
 	struct stmmac_tx_queue *tx_q = (struct stmmac_tx_queue *)data;
+	struct stmmac_priv *priv = tx_q->priv_data;
 	int chan = tx_q->queue_index;
-	struct stmmac_priv *priv;
 	int status;
-
-	priv = container_of(tx_q, struct stmmac_priv, tx_queue[chan]);
 
 	if (unlikely(!data)) {
 		netdev_err(priv->dev, "%s: invalid dev pointer\n", __func__);

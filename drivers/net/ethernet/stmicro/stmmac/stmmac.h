@@ -173,6 +173,7 @@ struct stmmac_flow_entry {
 
 struct stmmac_priv {
 	/* Frequently used values are kept adjacent for cache effect */
+	bool tx_timer_scheduled[MTL_MAX_TX_QUEUES];
 	u32 tx_coal_frames[MTL_MAX_TX_QUEUES];
 	u32 tx_coal_timer[MTL_MAX_TX_QUEUES];
 	u32 rx_coal_frames[MTL_MAX_RX_QUEUES];
