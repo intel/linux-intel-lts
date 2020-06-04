@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (C) 2020, Intel Corporation
+ *
+ * Device tree describing Keem Bay EVM board.
+ */
+
+/dts-v1/;
+
+#include "keembay-soc.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "Keem Bay EVM";
+	compatible = "intel,keembay-evm";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	aliases {
+		serial0 = &uart3;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		/* 2GB of DDR memory. */
+		reg = <0x0 0x80000000 0x0 0x80000000>;
+	};
+
+	sysmem@84000000 {
+		compatible = "mmio-sram";
+		reg = <0x0 0x84000000 0x0 0x800000>;
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges = <0 0x0 0x0 0x84000000 0x0 0x800000>;
+		/*
+		 * Allocate 1MB at fixed location for shared memory between
+		 * non-secure world and BL31 to be used for SCMI.
+		 */
+		scmi_sec_shmem: scmi_sec_shmem@0 {
+			compatible = "arm,scmi-shmem";
+			reg = <0x0 0x0 0x0 0x100000>;
+			pool;
+		};
+	};
+};
+
+&uart3 {
+	status = "okay";
+};
