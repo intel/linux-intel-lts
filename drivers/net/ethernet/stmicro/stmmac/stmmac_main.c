@@ -5254,7 +5254,6 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	struct stmmac_rx_queue *rx_q = (struct stmmac_rx_queue *)data;
 	int chan = rx_q->queue_index;
 	struct stmmac_priv *priv;
-	int mtl_status;
 
 	priv = container_of(rx_q, struct stmmac_priv, rx_queue[chan]);
 
@@ -5266,16 +5265,6 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	/* Check if adapter is up */
 	if (test_bit(STMMAC_DOWN, &priv->state))
 		return IRQ_HANDLED;
-
-	mtl_status = stmmac_host_mtl_irq_status(priv, priv->hw,
-						chan);
-
-	if (mtl_status & CORE_IRQ_MTL_RX_OVERFLOW) {
-		stmmac_set_rx_tail_ptr(priv, priv->ioaddr,
-				       rx_q->rx_tail_addr,
-				       chan);
-		return IRQ_HANDLED;
-	}
 
 	if (rx_q->xsk_umem && priv->xdp_prog) {
 		int status = stmmac_dma_interrupt_status(priv, priv->ioaddr,
