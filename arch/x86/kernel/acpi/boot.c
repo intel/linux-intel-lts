@@ -1320,9 +1320,6 @@ static inline bool is_TCC_range(u64 start, u64 end)
 {
 	int i;
 
-	if (!ptct_psram_regions)
-		return false;
-
 	for (i = 0; i < total_psram_region; i++) {
 		if ((start >= ptct_psram_regions[i].phyaddr_start) &&
 			(end <= ptct_psram_regions[i].phyaddr_end))
