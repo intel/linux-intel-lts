@@ -2518,7 +2518,7 @@ static void intel_vgpu_destroy_ggtt_mm(struct intel_vgpu *vgpu)
 	vgpu->gtt.ggtt_mm = NULL;
 
 	if (vgpu->ggtt_entries) {
-		kfree(vgpu->ggtt_entries);
+		vfree(vgpu->ggtt_entries);
 		vgpu->ggtt_entries = NULL;
 	}
 }
@@ -2877,8 +2877,7 @@ void intel_gvt_save_ggtt(struct intel_gvt *gvt)
 	for_each_active_vgpu(gvt, vgpu, id) {
 		num_low = vgpu_aperture_sz(vgpu) >> PAGE_SHIFT;
 		num_hi = vgpu_hidden_sz(vgpu) >> PAGE_SHIFT;
-		vgpu->ggtt_entries = kzalloc((num_low + num_hi) *
-				sizeof(u64), GFP_KERNEL);
+		vgpu->ggtt_entries = vzalloc((num_low + num_hi) * sizeof(u64));
 		if (!vgpu->ggtt_entries)
 			continue;
 
@@ -2923,7 +2922,7 @@ void intel_gvt_restore_ggtt(struct intel_gvt *gvt)
 		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
 		memcpy(addr, (u64 *)vgpu->ggtt_entries + num_low, num_hi);
 
-		kfree(vgpu->ggtt_entries);
+		vfree(vgpu->ggtt_entries);
 		vgpu->ggtt_entries = NULL;
 	}
 }
