@@ -8890,6 +8890,11 @@ W:	http://lse.sourceforge.net/kdump/
 S:	Maintained
 F:	Documentation/admin-guide/kdump/
 
+KEEMBAY_OCS_ECC
+M:	Prabhjot Khurana<prabhjot.khurana@intel.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/crypto/intel,keembay-ocs-ecc.yaml
+
 KEEMBAY SCMI MAILBOX DRIVER
 M:	Paul Murphy <paul.j.murphy@intel.com>
 S:	Maintained
