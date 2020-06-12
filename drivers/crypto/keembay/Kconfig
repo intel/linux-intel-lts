@@ -106,3 +106,15 @@ config CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4_CTS
 endif # CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4
 
 endif # CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+
+config CRYPTO_DEV_KEEMBAY_OCS_ECC
+	tristate "Support for Keembay OCS ECC HW acceleration"
+	select CRYPTO_ECDH
+	select CRYPTO_ENGINE
+
+	help
+	  Support for Keembay Offload and Crypto Subsystem (OCS)
+	  ECC (Elliptic Curve Cryptography) hardware acceleration for use
+	  with Crypto API.
+
+	  Provides OCS acceleration for ECDH-256, ECDH-384.
