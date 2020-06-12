@@ -1,19 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- *
  * Intel Management Engine Interface (Intel MEI) Linux driver
  * Copyright (c) 2003-2012, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
-
 #include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
@@ -352,8 +341,8 @@ static int mei_hbm_capabilities_req(struct mei_device *dev)
 
 	memset(&req, 0, sizeof(req));
 	req.hbm_cmd = MEI_HBM_CAPABILITIES_REQ_CMD;
-	if (dev->hbm_f_vm_supported)
-		req.capability_requested[0] = HBM_CAP_VM;
+	if (dev->hbm_f_vt_supported)
+		req.capability_requested[0] = HBM_CAP_VT;
 
 	ret = mei_hbm_write_message(dev, &mei_hdr, &req);
 	if (ret) {
@@ -1094,16 +1083,14 @@ static void mei_hbm_config_features(struct mei_device *dev)
 	     dev->version.minor_version >= HBM_MINOR_VERSION_DR))
 		dev->hbm_f_dr_supported = 1;
 
-	/* VM Tag Support */
-
-	dev->hbm_f_vm_supported = 0;
-	if (dev->version.major_version > HBM_MAJOR_VERSION_VM ||
-	    (dev->version.major_version == HBM_MAJOR_VERSION_VM &&
-	     dev->version.minor_version >= HBM_MINOR_VERSION_VM))
-		dev->hbm_f_vm_supported = 1;
+	/* VTag Support */
+	dev->hbm_f_vt_supported = 0;
+	if (dev->version.major_version > HBM_MAJOR_VERSION_VT ||
+	    (dev->version.major_version == HBM_MAJOR_VERSION_VT &&
+	     dev->version.minor_version >= HBM_MINOR_VERSION_VT))
+		dev->hbm_f_vt_supported = 1;
 
 	/* Capability message Support */
-
 	dev->hbm_f_cap_supported = 0;
 	if (dev->version.major_version > HBM_MAJOR_VERSION_CAP ||
 	    (dev->version.major_version == HBM_MAJOR_VERSION_CAP &&
@@ -1246,8 +1233,8 @@ int mei_hbm_dispatch(struct mei_device *dev, struct mei_msg_hdr *hdr)
 		}
 
 		capability_res = (struct hbm_capability_response *)mei_msg;
-		if (!(capability_res->capability_granted[0] & HBM_CAP_VM))
-			dev->hbm_f_vm_supported = 0;
+		if (!(capability_res->capability_granted[0] & HBM_CAP_VT))
+			dev->hbm_f_vt_supported = 0;
 
 		if (dev->hbm_f_dr_supported) {
 			if (mei_dmam_ring_alloc(dev))

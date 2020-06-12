@@ -167,7 +167,8 @@ int swhv_init_per_cpu_buffers(void)
 	/* TODO understand the use of this API */
 	foreach_cpu(cpu, pcpu_num)
 	{
-		ret = sbuf_share_setup(cpu, ACRN_SOCWATCH, sbuf_per_cpu[cpu]);
+		ret = sbuf_share_setup(cpu, ACRN_SOCWATCH,
+				virt_to_phys(sbuf_per_cpu[cpu]));
 		if (ret < 0) {
 			pw_pr_error("Failed to setup buffer for cpu %d\n", cpu);
 			goto out_sbuf;
@@ -177,7 +178,7 @@ int swhv_init_per_cpu_buffers(void)
 	return PW_SUCCESS;
 out_sbuf:
 	for (i = --cpu; i >= 0; i--) {
-		sbuf_share_setup(i, ACRN_SOCWATCH, NULL);
+		sbuf_share_setup(i, ACRN_SOCWATCH, 0);
 	}
 	cpu = pcpu_num;
 
@@ -203,7 +204,7 @@ void swhv_destroy_per_cpu_buffers(void)
 		 */
 
 		/* set sbuf pointer to NULL in HV */
-		sbuf_share_setup(cpu, ACRN_SOCWATCH, NULL);
+		sbuf_share_setup(cpu, ACRN_SOCWATCH, 0);
 
 		/* free sbuf, sbuf_per_cpu[cpu] should be set NULL */
 		sbuf_free(sbuf_per_cpu[cpu]);

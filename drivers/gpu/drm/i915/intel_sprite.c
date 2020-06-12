@@ -326,8 +326,14 @@ skl_update_plane(struct intel_plane *plane,
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 	if (dev_priv->gvt &&
-			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
-		return;
+			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id]) {
+		int domain_id;
+
+		domain_id =
+			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id];
+		if (dev_priv->gvt->domain_ready[domain_id])
+			return;
+	}
 #endif
 	/* Sizes are 0 based */
 	src_w--;
@@ -437,8 +443,14 @@ skl_disable_plane(struct intel_plane *plane, struct intel_crtc *crtc)
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 	if (dev_priv->gvt &&
-			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
-		return;
+			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id]) {
+		int domain_id;
+
+		domain_id =
+			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id];
+		if (dev_priv->gvt->domain_ready[domain_id])
+			return;
+	}
 #endif
 
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);

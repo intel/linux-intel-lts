@@ -57,6 +57,7 @@ enum vgt_g2v_type {
 	VGT_G2V_PPGTT_L4_INSERT,
 	VGT_G2V_GGTT_INSERT,
 	VGT_G2V_GGTT_CLEAR,
+	VGT_G2V_GOP_SETUP,
 	VGT_G2V_MAX,
 };
 
@@ -135,6 +136,7 @@ enum pvmmio_levels {
 #define VGT_CAPS_FULL_48BIT_PPGTT	BIT(2)
 #define VGT_CAPS_HWSP_EMULATION		BIT(3)
 #define VGT_CAPS_HUGE_GTT		BIT(4)
+#define VGT_CAPS_GOP_SUPPORT		BIT(5)
 
 #define PVMMIO_LEVEL(dev_priv, level) \
 	(intel_vgpu_active(dev_priv) && (i915_modparams.enable_pvmmio & level))
@@ -192,9 +194,19 @@ struct vgt_if {
 	u32 enable_pvmmio;
 	u32 pv_mmio;
 	u32 scaler_owned;
-
-	u32  rsv7[0x200 - 27];    /* pad to one page */
+	struct {
+		u32 fb_base;
+		u32 width;
+		u32 height;
+		u32 pitch;
+		u32 Bpp;
+		u32 size;
+	} gop;
+	u32  rsv8[0x200 - 33];    /* pad to one page */
 } __packed;
+
+#define _vgtif_reg(x) \
+	(VGT_PVINFO_PAGE + offsetof(struct vgt_if, x))
 
 #define vgtif_reg(x) \
 	_MMIO((VGT_PVINFO_PAGE + offsetof(struct vgt_if, x)))

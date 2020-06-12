@@ -339,18 +339,21 @@ void intel_gvt_allocate_ddb(struct intel_gvt *gvt,
 	for_each_pipe_masked(dev_priv, pipe, active_crtcs) {
 		start = pipe_size * (i++);
 		end = start + pipe_size;
-		ddb->plane[pipe][PLANE_CURSOR].start = end - 8;
+		ddb->plane[pipe][PLANE_CURSOR].start = end - GVT_CURSOR_BLOCKS;
 		ddb->plane[pipe][PLANE_CURSOR].end = end;
 
 		plane_cnt = (INTEL_INFO(dev_priv)->num_sprites[pipe] + 1);
-		plane_size = (pipe_size - 8) / plane_cnt;
+		plane_size = (pipe_size - GVT_CURSOR_BLOCKS) / plane_cnt;
 
 		for_each_universal_plane(dev_priv, pipe, plane) {
 			ddb->plane[pipe][plane].start = start +
-				(plane * (pipe_size - 8) / plane_cnt);
+				(plane * (pipe_size - GVT_CURSOR_BLOCKS) /
+					plane_cnt);
 			ddb->plane[pipe][plane].end =
 				ddb->plane[pipe][plane].start + plane_size;
 		}
+
+		memcpy(&gvt->ddb, ddb, sizeof(*ddb));
 	}
 }
 

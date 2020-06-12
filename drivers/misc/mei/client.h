@@ -1,17 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- *
+ * Copyright (c) 2003-2018, Intel Corporation. All rights reserved.
  * Intel Management Engine Interface (Intel MEI) Linux driver
- * Copyright (c) 2003-2012, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
 
 #ifndef _MEI_CLIENT_H_
@@ -104,15 +94,15 @@ static inline u8 mei_me_cl_fixed(const struct mei_me_client *me_cl)
 }
 
 /**
- * mei_me_cl_vm - return me client vm supported status
+ * mei_me_cl_vt - return me client vtag supported status
  *
  * @me_cl: me client
  *
- * Return: true if me client supports vm tagging
+ * Return: true if me client supports vt tagging
  */
-static inline bool mei_me_cl_vm(const struct mei_me_client *me_cl)
+static inline bool mei_me_cl_vt(const struct mei_me_client *me_cl)
 {
-	return me_cl->props.vm_supported == 1;
+	return me_cl->props.vt_supported == 1;
 }
 
 /**
@@ -144,15 +134,9 @@ int mei_cl_unlink(struct mei_cl *cl);
 struct mei_cl *mei_cl_alloc_linked(struct mei_device *dev);
 
 struct mei_cl_cb *mei_cl_read_cb(struct mei_cl *cl, const struct file *fp);
-void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb);
 
-static inline void mei_cl_del_rd_completed(struct mei_cl *cl,
-					   struct mei_cl_cb *cb)
-{
-	spin_lock(&cl->rd_completed_lock);
-	mei_io_cb_free(cb);
-	spin_unlock(&cl->rd_completed_lock);
-}
+void mei_cl_add_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb);
+void mei_cl_del_rd_completed(struct mei_cl *cl, struct mei_cl_cb *cb);
 
 struct mei_cl_cb *mei_cl_alloc_cb(struct mei_cl *cl, size_t length,
 				  enum mei_cb_file_ops type,
@@ -164,6 +148,7 @@ int mei_cl_flush_queues(struct mei_cl *cl, const struct file *fp);
 
 struct mei_cl_vtag *mei_cl_vtag_alloc(struct file *fp, u8 vtag);
 const struct file *mei_cl_fp_by_vtag(const struct mei_cl *cl, u8 vtag);
+int mei_cl_vt_support_check(const struct mei_cl *cl);
 /*
  *  MEI input output function prototype
  */

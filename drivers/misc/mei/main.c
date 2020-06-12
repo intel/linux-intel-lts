@@ -1,18 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- *
  * Intel Management Engine Interface (Intel MEI) Linux driver
  * Copyright (c) 2003-2018, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
+
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
@@ -83,6 +74,13 @@ err_unlock:
 	return err;
 }
 
+/**
+ * mei_cl_vtag_remove_by_fp - remove vtag that corresponds to fp from list
+ *
+ * @cl: host client
+ * @fp: pointer to file structure
+ *
+ */
 static void mei_cl_vtag_remove_by_fp(const struct mei_cl *cl,
 				     const struct file *fp)
 {
@@ -128,7 +126,10 @@ static int mei_release(struct inode *inode, struct file *file)
 	}
 
 	rets = mei_cl_disconnect(cl);
-	/* Check again: This is necessary since disconnect releases the lock. */
+	/*
+	 * Check again: This is necessary since disconnect releases the lock
+	 * and another client can connect in the meantime.
+	 */
 	if (!list_empty(&cl->vtag_map)) {
 		cl_dbg(dev, cl, "not the last vtag after disconnect\n");
 		mei_cl_flush_queues(cl, file);
@@ -270,6 +271,14 @@ out:
 	return rets;
 }
 
+/**
+ * mei_cl_vtag_by_fp - obtain the vtag by file pointer
+ *
+ * @cl: host client
+ * @fp: pointer to file structure
+ *
+ * Return: vtag value on success, otherwise 0
+ */
 static u8 mei_cl_vtag_by_fp(const struct mei_cl *cl, const struct file *fp)
 {
 	struct mei_cl_vtag *cl_vtag;
@@ -442,15 +451,26 @@ end:
 	return rets;
 }
 
-static int mei_vm_support_check(struct mei_device *dev, const uuid_le *uuid)
+/**
+ * mei_vt_support_check - check if client support vtags
+ *
+ * Locking: called under "dev->device_lock" lock
+ *
+ * @dev: mei_device
+ * @uuid: client UUID
+ *
+ * Return:
+ *	0 - supported
+ *	-ENOTTY - no such client
+ *	-EOPNOTSUPP - vtags are not supported by client
+ */
+static int mei_vt_support_check(struct mei_device *dev, const uuid_le *uuid)
 {
 	struct mei_me_client *me_cl;
 	int ret;
 
-	if (!dev->hbm_f_vm_supported) {
-		dev_dbg(dev->dev, "VTag not supported\n");
+	if (!dev->hbm_f_vt_supported)
 		return -EOPNOTSUPP;
-	}
 
 	me_cl = mei_me_cl_by_uuid(dev, uuid);
 	if (!me_cl) {
@@ -458,12 +478,24 @@ static int mei_vm_support_check(struct mei_device *dev, const uuid_le *uuid)
 			uuid);
 		return -ENOTTY;
 	}
-	ret = me_cl->props.vm_supported ? 0 : -EOPNOTSUPP;
+	ret = me_cl->props.vt_supported ? 0 : -EOPNOTSUPP;
 	mei_me_cl_put(me_cl);
 
 	return ret;
 }
 
+/**
+ * mei_ioctl_connect_vtag - connect to fw client with vtag IOCTL function
+ *
+ * @file: private data of the file object
+ * @in_client_uuid: requested UUID for connection
+ * @client: IOCTL connect data, output parameters
+ * @vtag: vm tag
+ *
+ * Locking: called under "dev->device_lock" lock
+ *
+ * Return: 0 on success, <0 on failure.
+ */
 static int mei_ioctl_connect_vtag(struct file *file,
 				  const uuid_le *in_client_uuid,
 				  struct mei_client *client,
@@ -479,38 +511,52 @@ static int mei_ioctl_connect_vtag(struct file *file,
 
 	dev_dbg(dev->dev, "FW Client %pUl vtag %d\n", in_client_uuid, vtag);
 
-	if (cl->state != MEI_FILE_INITIALIZING &&
-	    cl->state != MEI_FILE_DISCONNECTED)
-		return  -EBUSY;
-
-	list_for_each_entry(pos, &dev->file_list, link) {
-		if (pos == cl)
-			continue;
-		if (!pos->me_cl)
-			continue;
-
-		/* FIXME: just compare me_cl addr */
-		if (uuid_le_cmp(*mei_cl_uuid(pos), *in_client_uuid))
-			continue;
-
-		/* if tag already exist try another fp */
-		if (!IS_ERR(mei_cl_fp_by_vtag(pos, vtag)))
-			continue;
-
-		/* replace cl with acquired one */
-		dev_dbg(dev->dev, "replacing with existing cl\n");
-		mei_cl_unlink(cl);
-		kfree(cl);
-		file->private_data = pos;
-		cl = pos;
+	switch (cl->state) {
+	case MEI_FILE_DISCONNECTED:
+		if (mei_cl_vtag_by_fp(cl, file) != vtag) {
+			dev_err(dev->dev, "reconnect with different vtag\n");
+			return -EINVAL;
+		}
 		break;
+	case MEI_FILE_INITIALIZING:
+		/* malicious connect from another thread may push vtag */
+		if (!IS_ERR(mei_cl_fp_by_vtag(cl, vtag))) {
+			dev_err(dev->dev, "vtag already filled\n");
+			return -EINVAL;
+		}
+
+		list_for_each_entry(pos, &dev->file_list, link) {
+			if (pos == cl)
+				continue;
+			if (!pos->me_cl)
+				continue;
+
+			/* only search for same UUID */
+			if (uuid_le_cmp(*mei_cl_uuid(pos), *in_client_uuid))
+				continue;
+
+			/* if tag already exist try another fp */
+			if (!IS_ERR(mei_cl_fp_by_vtag(pos, vtag)))
+				continue;
+
+			/* replace cl with acquired one */
+			dev_dbg(dev->dev, "replacing with existing cl\n");
+			mei_cl_unlink(cl);
+			kfree(cl);
+			file->private_data = pos;
+			cl = pos;
+			break;
+		}
+
+		cl_vtag = mei_cl_vtag_alloc(file, vtag);
+		if (IS_ERR(cl_vtag))
+			return -ENOMEM;
+
+		list_add_tail(&cl_vtag->list, &cl->vtag_map);
+		break;
+	default:
+		return -EBUSY;
 	}
-
-	cl_vtag = mei_cl_vtag_alloc(file, vtag);
-	if (IS_ERR(cl_vtag))
-		return -ENOMEM;
-
-	list_add_tail(&cl_vtag->list, &cl->vtag_map);
 
 	while (cl->state != MEI_FILE_INITIALIZING &&
 	       cl->state != MEI_FILE_DISCONNECTED &&
@@ -624,7 +670,10 @@ static long mei_ioctl(struct file *file, unsigned int cmd, unsigned long data)
 		props = &conn.out_client_properties;
 		vtag = 0;
 
-		if (!mei_vm_support_check(dev, cl_uuid))
+		rets = mei_vt_support_check(dev, cl_uuid);
+		if (rets == -ENOTTY)
+			goto out;
+		if (!rets)
 			rets = mei_ioctl_connect_vtag(file, cl_uuid, props,
 						      vtag);
 		else
@@ -654,12 +703,12 @@ static long mei_ioctl(struct file *file, unsigned int cmd, unsigned long data)
 		props = &conn_vtag.out_client_properties;
 		vtag = conn_vtag.connect.vtag;
 
-		if (mei_vm_support_check(dev, cl_uuid)) {
+		rets = mei_vt_support_check(dev, cl_uuid);
+		if (rets == -EOPNOTSUPP)
 			dev_dbg(dev->dev, "FW Client %pUl does not support vtags\n",
 				cl_uuid);
-			rets = -EOPNOTSUPP;
+		if (rets)
 			goto out;
-		}
 
 		if (!vtag) {
 			dev_dbg(dev->dev, "vtag can't be zero\n");

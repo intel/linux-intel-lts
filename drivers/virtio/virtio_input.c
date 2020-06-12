@@ -372,6 +372,9 @@ static struct virtio_driver virtio_input_driver = {
 	.feature_table       = features,
 	.feature_table_size  = ARRAY_SIZE(features),
 	.id_table            = id_table,
+#ifdef CONFIG_VIRTIO_PMD
+	.polling_mode        = true,
+#endif
 	.probe               = virtinput_probe,
 	.remove              = virtinput_remove,
 #ifdef CONFIG_PM_SLEEP

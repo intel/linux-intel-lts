@@ -1,16 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Intel Management Engine Interface (Intel MEI) Linux driver
  * Copyright (c) 2003-2018, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
 
 #ifndef _MEI_HW_TYPES_H_
@@ -88,8 +78,8 @@
 /*
  * MEI version with vm tag support
  */
-#define HBM_MINOR_VERSION_VM               2
-#define HBM_MAJOR_VERSION_VM               2
+#define HBM_MINOR_VERSION_VT               2
+#define HBM_MAJOR_VERSION_VT               2
 
 /*
  * MEI version with capabilities message support
@@ -210,18 +200,24 @@ enum mei_cl_disconnect_status {
 	MEI_CL_DISCONN_SUCCESS = MEI_HBMS_SUCCESS
 };
 
+/**
+ * enum mei_ext_hdr_type - extended header type used in
+ *    extended header TLV
+ *
+ * @MEI_EXT_HDR_NONE: sentinel
+ * @MEI_EXT_HDR_VTAG: vtag header
+ */
 enum mei_ext_hdr_type {
 	MEI_EXT_HDR_NONE = 0,
 	MEI_EXT_HDR_VTAG = 1,
-	MEI_EXT_HDR_GSC = 2,
 };
 
 /**
  * struct mei_ext_hdr - extend header descriptor (TLV)
  * @type: enum mei_ext_hdr_type
- * @length: length exluding descriptor
+ * @length: length excluding descriptor
  * @ext_payload: payload of the specific extended header
- * @hdr: place holder for actuall header
+ * @hdr: place holder for actual header
  */
 struct mei_ext_hdr {
 	u8 type;
@@ -235,6 +231,7 @@ struct mei_ext_hdr {
  * @count: number of headers
  * @size: total size of the extended header list excluding meta header
  * @reserved: reserved
+ * @hdrs: extended headers TLV list
  */
 struct mei_ext_meta_hdr {
 	u8 count;
@@ -243,43 +240,50 @@ struct mei_ext_meta_hdr {
 	struct mei_ext_hdr hdrs[0];
 };
 
+/*
+ * Extended header iterator functions
+ */
+/**
+ * mei_ext_hdr - extended header iterator begin
+ *
+ * @meta: meta header of the extended header list
+ *
+ * Return:
+ *     The first extended header
+ */
 static inline struct mei_ext_hdr *mei_ext_begin(struct mei_ext_meta_hdr *meta)
 {
 	return meta->hdrs;
 }
 
-static inline struct mei_ext_hdr *mei_ext_next(struct mei_ext_hdr *ext)
-{
-	return (struct mei_ext_hdr *)(ext->hdr + (ext->length * 4));
-}
-
+/**
+ * mei_ext_last - check if the ext is the last one in the TLV list
+ *
+ * @meta: meta header of the extended header list
+ * @ext: a meta header on the list
+ *
+ * Return: true if ext is the last header on the list
+ */
 static inline bool mei_ext_last(struct mei_ext_meta_hdr *meta,
 				struct mei_ext_hdr *ext)
 {
 	return (u8 *)ext >= (u8 *)meta + sizeof(*meta) + (meta->size * 4);
 }
 
-struct mei_gcs_sgl {
-	u32 low;
-	u32 high;
-	u32 length;
-} __packed;
-
-struct mei_ext_hdr_gcs_h2f {
-	u32                fence_id;
-	u32                addr_type;
-	u32                input_address_count;
-	u32                output_address_count;
-	struct mei_gcs_sgl input_buffer[0];
-	struct mei_gcs_sgl output_buffer[0];
-} __packed;
-
-struct mei_ext_hdr_gcs_f2h {
-	u8  client_id;
-	u8  reserved[3];
-	u32 fence_id;
-	u32 total_bytes_written;
-} __packed;
+/**
+ *mei_ext_next - following extended header on the TLV list
+ *
+ * @ext: current extend header
+ *
+ * Context: The function does not check for the overflows,
+ *          one should call mei_ext_last before.
+ *
+ * Return: The following extend header after @ext
+ */
+static inline struct mei_ext_hdr *mei_ext_next(struct mei_ext_hdr *ext)
+{
+	return (struct mei_ext_hdr *)(ext->hdr + (ext->length * 4));
+}
 
 /**
  * struct mei_msg_hdr - MEI BUS Interface Section
@@ -305,6 +309,9 @@ struct mei_msg_hdr {
 	u32 msg_complete:1;
 	u32 extension[0];
 } __packed;
+
+/* The length is up to 9 bits */
+#define MEI_MSG_MAX_LEN_MASK GENMASK(9, 0)
 
 struct mei_bus_message {
 	u8 hbm_cmd;
@@ -391,13 +398,25 @@ struct hbm_host_enum_response {
 	u8 valid_addresses[32];
 } __packed;
 
+/**
+ * struct mei_client_properties - mei client properties
+ *
+ * @protocol_name: guid of the client
+ * @protocol_version: client protocol version
+ * @max_number_of_connections: number of possible connections.
+ * @fixed_address: fixed me address (0 if the client is dynamic)
+ * @single_recv_buf: 1 if all connections share a single receive buffer.
+ * @vt_supported: the client support vtag
+ * @reserved: reserved
+ * @max_msg_length: MTU of the client
+ */
 struct mei_client_properties {
 	uuid_le protocol_name;
 	u8 protocol_version;
 	u8 max_number_of_connections;
 	u8 fixed_address;
 	u8 single_recv_buf:1;
-	u8 vm_supported:1;
+	u8 vt_supported:1;
 	u8 reserved:6;
 	u32 max_msg_length;
 } __packed;
@@ -518,17 +537,19 @@ struct hbm_notification_request {
 
 /**
  * struct hbm_notification_response - start/stop notification response
+ *
  * @hbm_cmd: bus message command header
  * @me_addr: address of the client in ME
  * @host_addr: address of the client in the driver
  * @status: (mei_hbm_status) response status for the request
- * * MEI_HBMS_SUCCESS: successful stop/start
- * * MEI_HBMS_CLIENT_NOT_FOUND: if the connection could not be found.
- * * MEI_HBMS_ALREADY_STARTED: for start requests for a previously
- *                             started notification.
- * * MEI_HBMS_NOT_STARTED: for stop request for a connected client for whom
+ *  - MEI_HBMS_SUCCESS: successful stop/start
+ *  - MEI_HBMS_CLIENT_NOT_FOUND: if the connection could not be found.
+ *  - MEI_HBMS_ALREADY_STARTED: for start requests for a previously
+ *                         started notification.
+ *  - MEI_HBMS_NOT_STARTED: for stop request for a connected client for whom
  *                         asynchronous notifications are currently disabled.
- * @start: start = 1 or stop = 0 asynchronous notifications
+ *
+ * @start:  start = 1 or stop = 0 asynchronous notifications
  * @reserved: reserved
  */
 struct hbm_notification_response {
@@ -624,13 +645,26 @@ struct hbm_dma_ring_ctrl {
 	u32 reserved4;
 } __packed;
 
-#define HBM_CAP_VM BIT(0)
+/* virtual tag supported */
+#define HBM_CAP_VT BIT(0)
 
+/**
+ * struct hbm_capability_request - capability request from host to fw
+ *
+ * @hbm_cmd : bus message command header
+ * @capability_requested: bitmask of capabilities requested by host
+ */
 struct hbm_capability_request {
 	u8 hbm_cmd;
 	u8 capability_requested[3];
 } __packed;
 
+/**
+ * struct hbm_capability_response - capability response from fw to host
+ *
+ * @hbm_cmd : bus message command header
+ * @capability_granted: bitmask of capabilities granted by FW
+ */
 struct hbm_capability_response {
 	u8 hbm_cmd;
 	u8 capability_granted[3];

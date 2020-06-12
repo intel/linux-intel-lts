@@ -80,9 +80,14 @@ static bool use_connector(struct drm_connector *connector)
 			break;
 		}
 
-		connector->status = connector->funcs->detect(connector, true);
-		if (connector->status != connector_status_connected) {
-			connector->force = cl_mode->force;
+		if (connector->funcs && connector->funcs->detect) {
+			connector->status =
+			   connector->funcs->detect(connector, true);
+			if (connector->status != connector_status_connected) {
+				connector->force = cl_mode->force;
+				connector->status = connector_status_connected;
+			}
+		} else {
 			connector->status = connector_status_connected;
 		}
 		return true;
@@ -316,6 +321,8 @@ static void modeset_config_fn(struct work_struct *work)
 			else if (connector->helper_private && connector->helper_private->detect_ctx)
 				connector->status = connector->helper_private->detect_ctx(connector,
 									    NULL, true);
+			else
+				connector->status = connector_status_connected;
 			drm_modeset_unlock(&dev->mode_config.connection_mutex);
 
 			if (connector->status == connector_status_connected) {

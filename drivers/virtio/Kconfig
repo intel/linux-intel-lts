@@ -100,4 +100,14 @@ config ACRN_VIRTIO_DEVICES
 
 	  If unsure, say 'N'.
 
+config VIRTIO_PMD
+	bool "Enable polling mode for virtio devices"
+	default n
+	depends on VIRTIO
+	help
+	 This option enables polling mode for virtio devices including
+	 virtio-net, virtio-blk, virtio-console and virtio-input devices.
+
+	 If unsure, say 'N'.
+
 endif # VIRTIO_MENU

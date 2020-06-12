@@ -81,6 +81,8 @@ void acrngt_instance_destroy(struct intel_vgpu *vgpu)
 	struct intel_gvt *gvt = acrngt_priv.gvt;
 
 	if (vgpu) {
+		int domain_id = vgpu->id;
+
 		info = (struct acrngt_hvm_dev *)vgpu->handle;
 
 		if (info && info->emulation_thread != NULL)
@@ -97,6 +99,7 @@ void acrngt_instance_destroy(struct intel_vgpu *vgpu)
 
 		intel_gvt_ops->vgpu_release(vgpu);
 		intel_gvt_ops->vgpu_destroy(vgpu);
+		gvt->domain_ready[domain_id] = false;
 	}
 
 	if (info) {
@@ -304,6 +307,8 @@ struct intel_vgpu *acrngt_instance_create(domid_t vm_id,
 		gvt_err("failed to create vgpu\n");
 		return NULL;
 	}
+	/* after the VGPU is created, the domain owner is ready */
+	acrngt_priv.gvt->domain_ready[vgpu->id] = true;
 
 	info = kzalloc(sizeof(struct acrngt_hvm_dev), GFP_KERNEL);
 	if (info == NULL) {
@@ -415,12 +420,38 @@ static ssize_t acrngt_sysfs_vgpu_id(struct kobject *kobj,
 	return 0;
 }
 
+static ssize_t acrngt_sysfs_vgpu_bar_info(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	u64 bar0_start, bar0_len, bar2_start, bar2_len;
+	u64 mask;
+	struct acrngt_hvm_dev *info;
+	struct intel_vgpu *vgpu;
+
+	info = container_of(kobj, struct acrngt_hvm_dev, kobj);
+	if (!info || !info->vgpu)
+		return 0;
+	vgpu = info->vgpu;
+	mask = ~(0xf);
+	/* clear last four bits according to PCI spec */
+	bar0_start = *(u64 *)(vgpu_cfg_space(vgpu) + PCI_BASE_ADDRESS_0) & mask;
+	bar0_len = vgpu->cfg_space.bar[0].size;
+	bar2_start = *(u64 *)(vgpu_cfg_space(vgpu) + PCI_BASE_ADDRESS_2) & mask;
+	bar2_len = vgpu->cfg_space.bar[1].size;
+	return sprintf(buf, "0x%016llx 0x%016llx\n0x%016llx 0x%016llx\n",
+			bar0_start, bar0_len, bar2_start, bar2_len);
+}
+
 static struct kobj_attribute acrngt_vm_attr =
 __ATTR(vgpu_id, 0440, acrngt_sysfs_vgpu_id, NULL);
+
+static struct kobj_attribute acrngt_vgpu_bar_info =
+__ATTR(vgpu_bar_info, 0440, acrngt_sysfs_vgpu_bar_info, NULL);
 
 
 static struct attribute *acrngt_vm_attrs[] = {
 	&acrngt_vm_attr.attr,
+	&acrngt_vgpu_bar_info.attr,
 	NULL,   /* need to NULL terminate the list of attributes */
 };
 
@@ -985,6 +1016,33 @@ static void acrngt_dma_unmap_guest_page(unsigned long handle,
 {
 }
 
+static int acrngt_set_opregion(void *p_vgpu)
+{
+	struct intel_vgpu *vgpu = (struct intel_vgpu *)p_vgpu;
+	void *base;
+	u32 asls;
+	int i;
+
+	gvt_dbg_dpy("acrngt set opregion\n");
+
+	base = vgpu_opregion(vgpu)->va;
+	if (!base)
+		return -ENOMEM;
+
+	/* hard code opregion to [0xDFFFD000, 0xE0000000]
+	 * ToDo:
+	 * 1. reserve the region in dm then use it in OVMF and kernel
+	 * 2. pass the offset to acrngt through kernel parameter
+	 */
+	asls = 0xDFFFD000;
+	*(u32 *)(vgpu_cfg_space(vgpu) + INTEL_GVT_PCI_OPREGION) = asls;
+
+	for (i = 0; i < INTEL_GVT_OPREGION_PAGES; i++)
+		vgpu_opregion(vgpu)->gfn[i] = (asls >> PAGE_SHIFT) + i;
+
+	return 0;
+}
+
 struct intel_gvt_mpt acrn_gvt_mpt = {
 	//.detect_host = acrngt_detect_host,
 	.host_init = acrngt_host_init,
@@ -1004,6 +1062,7 @@ struct intel_gvt_mpt acrn_gvt_mpt = {
 	.set_trap_area = acrngt_set_trap_area,
 	.set_pvmmio = acrngt_set_pvmmio,
 	.dom0_ready = acrngt_dom0_ready,
+	.set_opregion = acrngt_set_opregion,
 };
 EXPORT_SYMBOL_GPL(acrn_gvt_mpt);
 

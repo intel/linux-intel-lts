@@ -182,4 +182,5 @@ void intel_vgpu_clean_display(struct intel_vgpu *vgpu);
 
 int pipe_is_enabled(struct intel_vgpu *vgpu, int pipe);
 
+int intel_vgpu_g2v_setup_gop(struct intel_vgpu *vgpu);
 #endif

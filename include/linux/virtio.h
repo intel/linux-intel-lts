@@ -90,6 +90,10 @@ dma_addr_t virtqueue_get_desc_addr(struct virtqueue *vq);
 dma_addr_t virtqueue_get_avail_addr(struct virtqueue *vq);
 dma_addr_t virtqueue_get_used_addr(struct virtqueue *vq);
 
+#ifdef CONFIG_VIRTIO_PMD
+void virtio_poll_virtqueues(struct virtio_device *dev);
+#endif
+
 /*
  * Legacy accessors -- in almost all cases, these are the wrong functions
  * to use.
@@ -135,6 +139,10 @@ struct virtio_device {
 	struct list_head vqs;
 	u64 features;
 	void *priv;
+#ifdef CONFIG_VIRTIO_PMD
+	spinlock_t vq_lock;
+	struct hrtimer hr_timer;
+#endif
 };
 
 static inline struct virtio_device *dev_to_virtio(struct device *_dev)
@@ -152,6 +160,7 @@ void virtio_config_changed(struct virtio_device *dev);
 void virtio_config_disable(struct virtio_device *dev);
 void virtio_config_enable(struct virtio_device *dev);
 int virtio_finalize_features(struct virtio_device *dev);
+void virtio_device_ready(struct virtio_device *dev);
 #ifdef CONFIG_PM_SLEEP
 int virtio_device_freeze(struct virtio_device *dev);
 int virtio_device_restore(struct virtio_device *dev);
@@ -184,6 +193,9 @@ struct virtio_driver {
 	unsigned int feature_table_size;
 	const unsigned int *feature_table_legacy;
 	unsigned int feature_table_size_legacy;
+#ifdef CONFIG_VIRTIO_PMD
+	bool polling_mode;
+#endif
 	int (*validate)(struct virtio_device *dev);
 	int (*probe)(struct virtio_device *dev);
 	void (*scan)(struct virtio_device *dev);
@@ -199,6 +211,15 @@ static inline struct virtio_driver *drv_to_virtio(struct device_driver *drv)
 {
 	return container_of(drv, struct virtio_driver, driver);
 }
+
+#ifdef CONFIG_VIRTIO_PMD
+static inline bool virtio_polling_mode_enabled(struct virtio_device *dev)
+{
+	struct virtio_driver *drv = drv_to_virtio(dev->dev.driver);
+
+	return drv->polling_mode;
+}
+#endif
 
 int register_virtio_driver(struct virtio_driver *drv);
 void unregister_virtio_driver(struct virtio_driver *drv);

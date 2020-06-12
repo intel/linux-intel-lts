@@ -53,13 +53,19 @@ static int preallocated_oos_pages = 2048;
  */
 bool intel_gvt_ggtt_validate_range(struct intel_vgpu *vgpu, u64 addr, u32 size)
 {
-	if ((!vgpu_gmadr_is_valid(vgpu, addr)) || (size
-			&& !vgpu_gmadr_is_valid(vgpu, addr + size - 1))) {
-		gvt_vgpu_err("invalid range gmadr 0x%llx size 0x%x\n",
-				addr, size);
-		return false;
-	}
-	return true;
+	if (size == 0)
+		return vgpu_gmadr_is_valid(vgpu, addr);
+
+	if (vgpu_gmadr_is_aperture(vgpu, addr) &&
+	    vgpu_gmadr_is_aperture(vgpu, addr + size - 1))
+		return true;
+	else if (vgpu_gmadr_is_hidden(vgpu, addr) &&
+		 vgpu_gmadr_is_hidden(vgpu, addr + size - 1))
+		return true;
+
+	gvt_dbg_mm("Invalid ggtt range at 0x%llx, size: 0x%x\n",
+		     addr, size);
+	return false;
 }
 
 /* translate a guest gmadr to host gmadr */
@@ -2660,6 +2666,18 @@ static void intel_vgpu_destroy_ggtt_mm(struct intel_vgpu *vgpu)
 	vgpu->gtt.ggtt_mm = NULL;
 }
 
+static void clean_gvt_gop(struct intel_vgpu *vgpu)
+{
+	int i;
+
+	for (i = 0; i < vgpu->gm.gop_fb_size; i++)
+		intel_gvt_hypervisor_map_gfn_to_mfn(vgpu,
+			(GOP_FB_BASE >> PAGE_SHIFT) + i,
+			page_to_pfn(vgpu->gm.gop_fb_pages[i]), 1, false);
+
+	release_pages(vgpu->gm.gop_fb_pages, vgpu->gm.gop_fb_size);
+	kfree(vgpu->gm.gop_fb_pages);
+}
 /**
  * intel_vgpu_clean_gtt - clean up per-vGPU graphics memory virulization
  * @vgpu: a vGPU
@@ -2675,6 +2693,8 @@ void intel_vgpu_clean_gtt(struct intel_vgpu *vgpu)
 	intel_vgpu_destroy_all_ppgtt_mm(vgpu);
 	intel_vgpu_destroy_ggtt_mm(vgpu);
 	kfree(vgpu->cached_guest_entry);
+	if (vgpu->gm.gop_fb_pages)
+		clean_gvt_gop(vgpu);
 	release_scratch_page_tree(vgpu);
 }
 

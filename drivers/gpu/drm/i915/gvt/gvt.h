@@ -52,6 +52,7 @@
 
 #define GVT_MAX_VGPU 8
 
+#define GVT_CURSOR_BLOCKS 8
 enum {
 	INTEL_GVT_HYPERVISOR_XEN = 0,
 	INTEL_GVT_HYPERVISOR_KVM,
@@ -81,6 +82,15 @@ struct intel_gvt_device_info {
 	u32 max_surface_size;
 };
 
+struct gvt_gop_info {
+	unsigned int fb_base;
+	unsigned int width;
+	unsigned int height;
+	unsigned int pitch;
+	unsigned int Bpp;
+	unsigned int size;
+};
+
 /* GM resources owned by a vGPU */
 struct intel_vgpu_gm {
 	u64 aperture_sz;
@@ -88,6 +98,9 @@ struct intel_vgpu_gm {
 	struct sg_table *st;
 	struct drm_mm_node low_gm_node;
 	struct drm_mm_node high_gm_node;
+	struct page **gop_fb_pages;
+	struct gvt_gop_info gop;
+	u32 gop_fb_size;
 };
 
 #define INTEL_GVT_MAX_NUM_FENCES 32
@@ -126,6 +139,9 @@ struct intel_vgpu_irq {
 	DECLARE_BITMAP(flip_done_event[INTEL_GVT_MAX_PIPE],
 		       INTEL_GVT_EVENT_MAX);
 };
+
+/* ToDo: GOP_FB_BASE from kernel parameter */
+#define GOP_FB_BASE	0xDF000000
 
 struct intel_vgpu_opregion {
 	bool mapped;
@@ -186,7 +202,7 @@ struct intel_vgpu {
 	 * scheduler structure. So below 2 vgpu data are protected
 	 * by sched_lock, not vgpu_lock.
 	 */
-	void *sched_data[I915_NUM_ENGINES];
+	void *sched_data;
 	struct vgpu_sched_ctl sched_ctl;
 
 	struct intel_vgpu_fence fence;
@@ -239,7 +255,6 @@ struct intel_vgpu {
 
 	unsigned long long *cached_guest_entry;
 	bool ge_cache_enable;
-	bool entire_nonctxmmio_checked;
 };
 
 /* validating GM healthy status*/
@@ -290,15 +305,9 @@ struct intel_gvt_mmio {
 	struct gvt_mmio_block *mmio_block;
 	unsigned int num_mmio_block;
 
-	void *mmio_host_cache;
-	bool host_cache_initialized;
 	DECLARE_HASHTABLE(mmio_info_table, INTEL_GVT_MMIO_HASH_BITS);
 	unsigned long num_tracked_mmio;
 };
-
-/* Macro for easily access host engine mmio cached register */
-#define gvt_host_reg(gvt, reg)				\
-	(*(u32 *)(gvt->mmio.mmio_host_cache + reg))	\
 
 struct intel_gvt_firmware {
 	void *cfg_space;
@@ -374,6 +383,7 @@ struct intel_gvt {
 
 	void *intel_gvt_vreg_pool[GVT_MAX_VGPU];
 	bool intel_gvt_vreg_allocated[GVT_MAX_VGPU];
+	bool domain_ready[1 << 4];
 };
 
 static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
@@ -589,6 +599,7 @@ int map_gttmmio(struct intel_vgpu *vgpu, bool map);
 void intel_vgpu_clean_opregion(struct intel_vgpu *vgpu);
 int intel_vgpu_init_opregion(struct intel_vgpu *vgpu);
 int intel_vgpu_opregion_base_write_handler(struct intel_vgpu *vgpu, u32 gpa);
+int map_vgpu_opregion(struct intel_vgpu *vgpu, bool map);
 
 int intel_vgpu_emulate_opregion_request(struct intel_vgpu *vgpu, u32 swsci);
 void populate_pvinfo_page(struct intel_vgpu *vgpu);
@@ -764,8 +775,6 @@ void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
 
 void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu);
 void intel_gvt_free_vreg(struct intel_vgpu *vgpu);
-
-bool is_force_nonpriv_mmio(unsigned int offset);
 
 #include "trace.h"
 #include "mpt.h"

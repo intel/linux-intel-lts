@@ -1200,9 +1200,6 @@ static int sbi_ctl_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	return 0;
 }
 
-#define _vgtif_reg(x) \
-	(VGT_PVINFO_PAGE + offsetof(struct vgt_if, x))
-
 static int pvinfo_mmio_read(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes)
 {
@@ -1243,6 +1240,12 @@ static int pvinfo_mmio_read(struct intel_vgpu *vgpu, unsigned int offset,
 	case 0x7881c:
 	case _vgtif_reg(scaler_owned):
 	case _vgtif_reg(enable_pvmmio):
+		break;
+	case _vgtif_reg(gop.fb_base) ... _vgtif_reg(gop.size):
+		gvt_vgpu_err("pvinfo read gop: [%x:%x] = %x\n",
+				offset, bytes, *(u32 *)p_data);
+		if (offset + bytes > _vgtif_reg(gop.size) + 4)
+			invalid_read = true;
 		break;
 	default:
 		invalid_read = true;
@@ -1289,6 +1292,8 @@ static int handle_g2v_notification(struct intel_vgpu *vgpu, int notification)
 	case VGT_G2V_EXECLIST_CONTEXT_DESTROY:
 	case 1:	/* Remove this in guest driver. */
 		break;
+	case VGT_G2V_GOP_SETUP:
+		return intel_vgpu_g2v_setup_gop(vgpu);
 	default:
 		gvt_vgpu_err("Invalid PV notification %d\n", notification);
 	}
@@ -1798,7 +1803,21 @@ static int ring_mode_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	bool enable_execlist;
 	int ret;
 
+	(*(u32 *)p_data) &= ~_MASKED_BIT_ENABLE(1);
+	if (IS_COFFEELAKE(vgpu->gvt->dev_priv))
+		(*(u32 *)p_data) &= ~_MASKED_BIT_ENABLE(2);
 	write_vreg(vgpu, offset, p_data, bytes);
+
+	if (data & _MASKED_BIT_ENABLE(1)) {
+		enter_failsafe_mode(vgpu, GVT_FAILSAFE_UNSUPPORTED_GUEST);
+		return 0;
+	}
+
+	if (IS_COFFEELAKE(vgpu->gvt->dev_priv) &&
+	    data & _MASKED_BIT_ENABLE(2)) {
+		enter_failsafe_mode(vgpu, GVT_FAILSAFE_UNSUPPORTED_GUEST);
+		return 0;
+	}
 
 	/* when PPGTT mode enabled, we will check if guest has called
 	 * pvinfo, if not, we will treat this guest as non-gvtg-aware
@@ -1878,6 +1897,21 @@ static int ring_reset_ctl_write(struct intel_vgpu *vgpu,
 		data &= ~RESET_CTL_READY_TO_RESET;
 
 	vgpu_vreg(vgpu, offset) = data;
+	return 0;
+}
+
+static int csfe_chicken1_mmio_write(struct intel_vgpu *vgpu,
+				    unsigned int offset, void *p_data,
+				    unsigned int bytes)
+{
+	u32 data = *(u32 *)p_data;
+
+	(*(u32 *)p_data) &= ~_MASKED_BIT_ENABLE(0x18);
+	write_vreg(vgpu, offset, p_data, bytes);
+
+	if (data & _MASKED_BIT_ENABLE(0x10) || data & _MASKED_BIT_ENABLE(0x8))
+		enter_failsafe_mode(vgpu, GVT_FAILSAFE_UNSUPPORTED_GUEST);
+
 	return 0;
 }
 
@@ -2054,25 +2088,25 @@ static int init_generic_mmio_info(struct intel_gvt *gvt)
 	MMIO_D(PIPE_FRMCOUNT_G4X(PIPE_C), D_ALL);
 	MMIO_D(PIPE_FRMCOUNT_G4X(_PIPE_EDP), D_ALL);
 
-	MMIO_D(CURCNTR(PIPE_A), D_ALL);
-	MMIO_D(CURCNTR(PIPE_B), D_ALL);
-	MMIO_D(CURCNTR(PIPE_C), D_ALL);
+	MMIO_D(CURCNTR(PIPE_A), D_BDW);
+	MMIO_D(CURCNTR(PIPE_B), D_BDW);
+	MMIO_D(CURCNTR(PIPE_C), D_BDW);
 
-	MMIO_D(CURPOS(PIPE_A), D_ALL);
-	MMIO_D(CURPOS(PIPE_B), D_ALL);
-	MMIO_D(CURPOS(PIPE_C), D_ALL);
+	MMIO_D(CURPOS(PIPE_A), D_BDW);
+	MMIO_D(CURPOS(PIPE_B), D_BDW);
+	MMIO_D(CURPOS(PIPE_C), D_BDW);
 
-	MMIO_D(CURBASE(PIPE_A), D_ALL);
-	MMIO_D(CURBASE(PIPE_B), D_ALL);
-	MMIO_D(CURBASE(PIPE_C), D_ALL);
+	MMIO_D(CURBASE(PIPE_A), D_BDW);
+	MMIO_D(CURBASE(PIPE_B), D_BDW);
+	MMIO_D(CURBASE(PIPE_C), D_BDW);
 
-	MMIO_D(CUR_FBC_CTL(PIPE_A), D_ALL);
-	MMIO_D(CUR_FBC_CTL(PIPE_B), D_ALL);
-	MMIO_D(CUR_FBC_CTL(PIPE_C), D_ALL);
+	MMIO_D(CUR_FBC_CTL(PIPE_A), D_BDW);
+	MMIO_D(CUR_FBC_CTL(PIPE_B), D_BDW);
+	MMIO_D(CUR_FBC_CTL(PIPE_C), D_BDW);
 
-	MMIO_D(_MMIO(0x700ac), D_ALL);
-	MMIO_D(_MMIO(0x710ac), D_ALL);
-	MMIO_D(_MMIO(0x720ac), D_ALL);
+	MMIO_D(CURSURFLIVE(PIPE_A), D_BDW);
+	MMIO_D(CURSURFLIVE(PIPE_B), D_BDW);
+	MMIO_D(CURSURFLIVE(PIPE_C), D_BDW);
 
 	MMIO_D(_MMIO(0x70090), D_ALL);
 	MMIO_D(_MMIO(0x70094), D_ALL);
@@ -2941,7 +2975,8 @@ static int skl_plane_surf_write(struct intel_vgpu *vgpu, unsigned int offset,
 	vgpu_vreg_t(vgpu, reg_1ac) = vgpu_vreg(vgpu, offset);
 
 	if ((vgpu_vreg_t(vgpu, PIPECONF(pipe)) & I965_PIPECONF_ACTIVE) &&
-			(vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id)) {
+		(vgpu->gvt->pipe_info[pipe].plane_owner[plane] == vgpu->id) &&
+		(*(u32 *)p_data != 0)) {
 		I915_WRITE(_MMIO(offset), vgpu_vreg(vgpu, offset));
 	}
 
@@ -2987,6 +3022,43 @@ static int pv_plane_wm_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	return 0;
 }
 
+static int skl_cursor_surf_write(struct intel_vgpu *vgpu, unsigned int offset,
+		void *p_data, unsigned int bytes)
+{
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+	unsigned int pipe = SKL_PLANE_REG_TO_PIPE(offset);
+
+	write_vreg(vgpu, offset, p_data, bytes);
+	vgpu_vreg_t(vgpu, CURSURFLIVE(pipe)) = vgpu_vreg(vgpu, offset);
+
+	if ((vgpu_vreg_t(vgpu, PIPECONF(pipe)) & I965_PIPECONF_ACTIVE) &&
+		(vgpu->gvt->pipe_info[pipe].plane_owner[0] == vgpu->id)) {
+		/* Each pipe has a primary and a cursor plane. Here we use
+		 * primary plane's ownership to decide whether the vm has the
+		 * cursor.
+		 */
+		I915_WRITE(_MMIO(offset), vgpu_vreg(vgpu, offset));
+	}
+
+	return 0;
+}
+
+
+static int skl_cursor_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
+		void *p_data, unsigned int bytes)
+{
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
+	unsigned int pipe = SKL_PLANE_REG_TO_PIPE(offset);
+
+	write_vreg(vgpu, offset, p_data, bytes);
+	if ((vgpu_vreg_t(vgpu, PIPECONF(pipe)) & I965_PIPECONF_ACTIVE) &&
+		(vgpu->gvt->pipe_info[pipe].plane_owner[0] == vgpu->id)) {
+		I915_WRITE(_MMIO(offset), vgpu_vreg(vgpu, offset));
+	}
+
+	return 0;
+}
+
 #define MMIO_PIPES_SDH(prefix, plane, s, d, r, w) do { \
 	int pipe; \
 	for_each_pipe(dev_priv, pipe) \
@@ -3014,8 +3086,6 @@ static int skl_ps_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 
 	if (pipe >=  I915_MAX_PIPES || scaler >= SKL_NUM_SCALERS ||
 	    vgpu->gvt->pipe_info[pipe].scaler_owner[scaler] != vgpu->id) {
-		gvt_vgpu_err("Unsupport pipe %d, scaler %d scaling\n",
-			pipe, scaler);
 		return 0;
 	}
 
@@ -3129,29 +3199,50 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 	MMIO_PLANES_DH(PLANE_AUX_DIST, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 	MMIO_PLANES_DH(PLANE_AUX_OFFSET, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 
-	if (i915_modparams.avail_planes_per_pipe) {
-		MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, NULL);
-		MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, NULL);
-	} else {
-		MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL, skl_plane_mmio_write);
-		MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, skl_plane_mmio_write);
-	}
+	MMIO_PLANES_SDH(PLANE_WM_BASE, 4 * 8, D_SKL_PLUS, NULL,
+			skl_plane_mmio_write);
+	MMIO_PLANES_DH(PLANE_WM_TRANS, D_SKL_PLUS, NULL, skl_plane_mmio_write);
 
 	MMIO_PLANES_DH(PLANE_NV12_BUF_CFG, D_SKL_PLUS, NULL,
 		       pv_plane_wm_mmio_write);
 	MMIO_PLANES_DH(PLANE_BUF_CFG, D_SKL_PLUS, NULL, NULL);
 
+
+	MMIO_DH(CURCNTR(PIPE_A), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+	MMIO_DH(CURCNTR(PIPE_B), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+	MMIO_DH(CURCNTR(PIPE_C), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+
+	MMIO_DH(CURPOS(PIPE_A), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+	MMIO_DH(CURPOS(PIPE_B), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+	MMIO_DH(CURPOS(PIPE_C), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+
+	MMIO_DH(CURBASE(PIPE_A), D_SKL_PLUS, NULL, skl_cursor_surf_write);
+	MMIO_DH(CURBASE(PIPE_B), D_SKL_PLUS, NULL, skl_cursor_surf_write);
+	MMIO_DH(CURBASE(PIPE_C), D_SKL_PLUS, NULL, skl_cursor_surf_write);
+
+	MMIO_DH(CUR_FBC_CTL(PIPE_A), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+	MMIO_DH(CUR_FBC_CTL(PIPE_B), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+	MMIO_DH(CUR_FBC_CTL(PIPE_C), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+
+	MMIO_DH(CURSURFLIVE(PIPE_A), D_SKL_PLUS, NULL, NULL);
+	MMIO_DH(CURSURFLIVE(PIPE_B), D_SKL_PLUS, NULL, NULL);
+	MMIO_DH(CURSURFLIVE(PIPE_C), D_SKL_PLUS, NULL, NULL);
+
+
 	MMIO_DH(CUR_BUF_CFG(PIPE_A), D_SKL_PLUS, NULL, NULL);
 	MMIO_DH(CUR_BUF_CFG(PIPE_B), D_SKL_PLUS, NULL, NULL);
 	MMIO_DH(CUR_BUF_CFG(PIPE_C), D_SKL_PLUS, NULL, NULL);
 
-	MMIO_F(CUR_WM(PIPE_A, 0), 4 * 8, 0, 0, 0, D_SKL_PLUS, NULL, NULL);
-	MMIO_F(CUR_WM(PIPE_B, 0), 4 * 8, 0, 0, 0, D_SKL_PLUS, NULL, NULL);
-	MMIO_F(CUR_WM(PIPE_C, 0), 4 * 8, 0, 0, 0, D_SKL_PLUS, NULL, NULL);
+	MMIO_F(CUR_WM(PIPE_A, 0), 4 * 8, 0, 0, 0, D_SKL_PLUS,
+			NULL, skl_cursor_mmio_write);
+	MMIO_F(CUR_WM(PIPE_B, 0), 4 * 8, 0, 0, 0, D_SKL_PLUS,
+			NULL, skl_cursor_mmio_write);
+	MMIO_F(CUR_WM(PIPE_C, 0), 4 * 8, 0, 0, 0, D_SKL_PLUS,
+			NULL, skl_cursor_mmio_write);
 
-	MMIO_DH(CUR_WM_TRANS(PIPE_A), D_SKL_PLUS, NULL, NULL);
-	MMIO_DH(CUR_WM_TRANS(PIPE_B), D_SKL_PLUS, NULL, NULL);
-	MMIO_DH(CUR_WM_TRANS(PIPE_C), D_SKL_PLUS, NULL, NULL);
+	MMIO_DH(CUR_WM_TRANS(PIPE_A), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+	MMIO_DH(CUR_WM_TRANS(PIPE_B), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
+	MMIO_DH(CUR_WM_TRANS(PIPE_C), D_SKL_PLUS, NULL, skl_cursor_mmio_write);
 
 	MMIO_D(_MMIO(0x8f074), D_SKL_PLUS);
 	MMIO_D(_MMIO(0x8f004), D_SKL_PLUS);
@@ -3208,7 +3299,10 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 	MMIO_D(_MMIO(0x72034), D_SKL_PLUS);
 
 	MMIO_D(_MMIO(0x44500), D_SKL_PLUS);
-	MMIO_DFH(GEN9_CSFE_CHICKEN1_RCS, D_SKL_PLUS, F_CMD_ACCESS, NULL, NULL);
+#define CSFE_CHICKEN1_REG(base) _MMIO((base) + 0xD4)
+	MMIO_RING_DFH(CSFE_CHICKEN1_REG, D_SKL_PLUS, F_MODE_MASK | F_CMD_ACCESS,
+		      NULL, csfe_chicken1_mmio_write);
+#undef CSFE_CHICKEN1_REG
 	MMIO_DFH(GEN8_HDC_CHICKEN1, D_SKL_PLUS, F_MODE_MASK | F_CMD_ACCESS,
 		 NULL, NULL);
 	MMIO_DFH(GEN9_WM_CHICKEN3, D_SKL_PLUS, F_MODE_MASK | F_CMD_ACCESS,
@@ -3437,9 +3531,6 @@ void intel_gvt_clean_mmio_info(struct intel_gvt *gvt)
 
 	vfree(gvt->mmio.mmio_attribute);
 	gvt->mmio.mmio_attribute = NULL;
-
-	vfree(gvt->mmio.mmio_host_cache);
-	gvt->mmio.mmio_host_cache = NULL;
 }
 
 /* Special MMIO blocks. */
@@ -3473,12 +3564,6 @@ int intel_gvt_setup_mmio_info(struct intel_gvt *gvt)
 	gvt->mmio.mmio_attribute = vzalloc(size);
 	if (!gvt->mmio.mmio_attribute)
 		return -ENOMEM;
-
-	gvt->mmio.mmio_host_cache = vzalloc(info->mmio_size);
-	if (!gvt->mmio.mmio_host_cache) {
-		vfree(gvt->mmio.mmio_attribute);
-		return -ENOMEM;
-	}
 
 	ret = init_generic_mmio_info(gvt);
 	if (ret)

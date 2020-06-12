@@ -1058,7 +1058,7 @@ static OS_STATUS lwpmudrv_Initialize_Driver(PVOID buf_usr_to_drv,
 			}
 
 			status = sbuf_share_setup(cpu_num, ACRN_SEP,
-						  samp_buf_per_cpu[cpu_num]);
+				virt_to_phys(samp_buf_per_cpu[cpu_num]));
 			if (status < 0) {
 				status = OS_FAULT;
 				pr_err("Failed to set up sampbuf on cpu%d\n",
@@ -4423,7 +4423,7 @@ static OS_STATUS lwpmudrv_Finish_Stop(void)
 #else
 		for (cpu = 0; cpu < GLOBAL_STATE_num_cpus(driver_state);
 		     cpu++) {
-			sbuf_share_setup(cpu, ACRN_SEP, NULL);
+			sbuf_share_setup(cpu, ACRN_SEP, 0);
 			sbuf_free(samp_buf_per_cpu[cpu]);
 		}
 		samp_buf_per_cpu = CONTROL_Free_Memory(samp_buf_per_cpu);

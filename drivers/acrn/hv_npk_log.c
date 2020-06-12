@@ -91,6 +91,7 @@
 #include <linux/pci.h>
 #include <linux/vhm/acrn_hv_defs.h>
 #include <linux/vhm/vhm_hypercall.h>
+#include <linux/vhm/acrn_vhm_mm.h>
 #include "hv_npk_log.h"
 
 #define HV_NPK_LOG_USAGE \
@@ -254,7 +255,7 @@ static int hv_npk_log_conf_set(const char *val, const struct kernel_param *kp)
 {
 	char **argv;
 	int i, argc, ret = -EINVAL;
-	struct hv_npk_log_param cmd;
+	struct hv_npk_log_param *cmd = NULL;
 	unsigned int args[HV_NPK_LOG_MAX_PARAM];
 
 	if (!hnl_conf && load_npk_conf() < 0)
@@ -270,47 +271,49 @@ static int hv_npk_log_conf_set(const char *val, const struct kernel_param *kp)
 		if (kstrtouint(argv[i], 10, &args[i]) < 0)
 			goto out;
 
-	memset(&cmd, 0, sizeof(struct hv_npk_log_param));
-	cmd.loglevel = 0xffffU;
-	cmd.cmd = HV_NPK_LOG_CMD_INVALID;
+	cmd = acrn_mempool_alloc(GFP_KERNEL);
+	memset(cmd, 0, sizeof(struct hv_npk_log_param));
+	cmd->loglevel = 0xffffU;
+	cmd->cmd = HV_NPK_LOG_CMD_INVALID;
 	switch (tolower(argv[0][0])) {
 	case 'e': /* enable */
 	case 'c': /* configure */
 		if (!strncasecmp(argv[0], "enable", strlen(argv[0]))) {
-			cmd.cmd = HV_NPK_LOG_CMD_ENABLE;
+			cmd->cmd = HV_NPK_LOG_CMD_ENABLE;
 		} else if (!strncasecmp(argv[0], "configure", strlen(argv[0]))
 				&& argc != 1) {
-			cmd.cmd = HV_NPK_LOG_CMD_CONF;
+			cmd->cmd = HV_NPK_LOG_CMD_CONF;
 		} else
 			break;
 
 		if (argc <= 2) {
-			cmd.loglevel = argc == 2 ? args[1] : 0xffffU;
+			cmd->loglevel = argc == 2 ? args[1] : 0xffffU;
 			if (hnl_conf->master == HV_NPK_LOG_UNKNOWN)
-				mc2addr(&cmd.mmio_addr, HV_NPK_LOG_DFT_MASTER,
+				mc2addr(&cmd->mmio_addr, HV_NPK_LOG_DFT_MASTER,
 						HV_NPK_LOG_DFT_CHANNEL);
-		} else if (argc > 2 && !mc2addr(&cmd.mmio_addr,
+		} else if (argc > 2 && !mc2addr(&cmd->mmio_addr,
 					args[1], args[2])) {
-			cmd.loglevel = argc == 4 ? args[3] : 0xffffU;
+			cmd->loglevel = argc == 4 ? args[3] : 0xffffU;
 		}
 		break;
 	case 'd': /* disable */
 		if (!strncasecmp(argv[0], "disable", strlen(argv[0]))
 				&& argc == 1)
-			cmd.cmd = HV_NPK_LOG_CMD_DISABLE;
+			cmd->cmd = HV_NPK_LOG_CMD_DISABLE;
 		break;
 	default:
 		pr_err("Unsupported command : %s\n", argv[0]);
 		break;
 	}
 
-	if (cmd.cmd != HV_NPK_LOG_CMD_INVALID) {
-		ret = hcall_setup_hv_npk_log(virt_to_phys(&cmd));
-		ret = (ret < 0 || cmd.res == HV_NPK_LOG_RES_KO) ? -EINVAL : 0;
+	if (cmd->cmd != HV_NPK_LOG_CMD_INVALID) {
+		ret = hcall_setup_hv_npk_log(virt_to_phys(cmd));
+		ret = (ret < 0 || cmd->res == HV_NPK_LOG_RES_KO) ? -EINVAL : 0;
 	}
 
 out:
 	argv_free(argv);
+	acrn_mempool_free(cmd);
 	if (ret < 0)
 		pr_err("Unsupported configuration : %s\n", val);
 	return ret;
@@ -320,27 +323,29 @@ out:
 static int hv_npk_log_conf_get(char *buffer, const struct kernel_param *kp)
 {
 	long ret;
-	struct hv_npk_log_param query;
+	struct hv_npk_log_param *query;
 
 	if (!hnl_conf && load_npk_conf() < 0)
 		return sprintf(buffer, "%s\n",
 				"Failed to init the configuration.");
 
-	memset(&query, 0, sizeof(struct hv_npk_log_param));
-	query.cmd = HV_NPK_LOG_CMD_QUERY;
-	ret = hcall_setup_hv_npk_log(virt_to_phys(&query));
-	if (ret < 0 || query.res == HV_NPK_LOG_RES_KO)
+	query = acrn_mempool_alloc(GFP_KERNEL);
+	memset(query, 0, sizeof(struct hv_npk_log_param));
+	query->cmd = HV_NPK_LOG_CMD_QUERY;
+	ret = hcall_setup_hv_npk_log(virt_to_phys(query));
+	if (ret < 0 || query->res == HV_NPK_LOG_RES_KO)
 		return sprintf(buffer, "%s\n", "Failed to invoke the hcall.");
 
-	if (!addr2mc(query.mmio_addr, &hnl_conf->master, &hnl_conf->channel)) {
-		hnl_conf->status = query.res == HV_NPK_LOG_RES_ENABLED ?
+	if (!addr2mc(query->mmio_addr, &hnl_conf->master, &hnl_conf->channel)) {
+		hnl_conf->status = query->res == HV_NPK_LOG_RES_ENABLED ?
 			HV_NPK_LOG_ENABLED : HV_NPK_LOG_DISABLED;
 	} else {
 		hnl_conf->status = HV_NPK_LOG_UNKNOWN;
 		hnl_conf->master = HV_NPK_LOG_UNKNOWN;
 		hnl_conf->channel = HV_NPK_LOG_UNKNOWN;
 	}
-	hnl_conf->loglevel = query.loglevel;
+	hnl_conf->loglevel = query->loglevel;
+	acrn_mempool_free(query);
 
 	return scnprintf(buffer, PAGE_SIZE, "Master(SW:%d~%d FW:%d~%d):%d "
 			"Channel(0~%d):%d Status:%d Log Level: %d\n%s\n",

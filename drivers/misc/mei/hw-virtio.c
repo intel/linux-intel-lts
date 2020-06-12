@@ -224,9 +224,12 @@ static void mei_virtio_free_outbufs(struct mei_virtio_hw *hw)
  * @hdr: mei header of message
  * @hdr_len: header length
  * @data: message payload will be written
- * @data_len: messag payload length
+ * @data_len: message payload length
  *
- * Return: -EIO if write has failed
+ * Return:
+ * *  0: on success
+ * * -EIO: if write has failed
+ * * -ENOMEM: on memory allocation failure
  */
 static int mei_virtio_write_message(struct mei_device *dev,
 				    const void *hdr, size_t hdr_len,
@@ -593,10 +596,8 @@ static void mei_virtio_intr_handler(struct work_struct *work)
 
 end:
 	if (dev->dev_state != MEI_DEV_DISABLED) {
-		if (!virtqueue_enable_cb(hw->in)) {
-			dev_dbg(dev->dev, "IN queue pending 1\n");
+		if (!virtqueue_enable_cb(hw->in))
 			schedule_work(&hw->intr_handler);
-		}
 	}
 
 	mutex_unlock(&dev->device_lock);

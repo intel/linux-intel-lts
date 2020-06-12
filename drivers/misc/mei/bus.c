@@ -1,16 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
+ * Copyright (c) 2012-2019, Intel Corporation. All rights reserved.
  * Intel Management Engine Interface (Intel MEI) Linux driver
- * Copyright (c) 2012-2013, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
 
 #include <linux/module.h>
@@ -504,14 +495,66 @@ static void mei_cl_bus_module_put(struct mei_cl_device *cldev)
 	module_put(cldev->bus->dev->driver->owner);
 }
 
-static int mei_cldev_vm_support_check(struct mei_cl_device *cldev)
+/**
+ * mei_cl_bus_vtag - get bus vtag entry wrapper
+ *     The tag for bus client is always first.
+ *
+ * @cl: host client
+ *
+ * Return: bus vtag or NULL
+ */
+static inline struct mei_cl_vtag *mei_cl_bus_vtag(struct mei_cl *cl)
 {
-	struct mei_device *bus = cldev->bus;
+	return list_first_entry_or_null(&cl->vtag_map,
+					struct mei_cl_vtag, list);
+}
 
-	if (!bus->hbm_f_vm_supported)
-		return -EOPNOTSUPP;
+/**
+ * mei_cl_bus_vtag_alloc - add bus client entry to vtag map
+ *
+ * @cldev: me client device
+ *
+ * Return:
+ * * 0 on success
+ * * -ENOMEM if memory allocation failed
+ */
+static int mei_cl_bus_vtag_alloc(struct mei_cl_device *cldev)
+{
+	struct mei_cl *cl = cldev->cl;
+	struct mei_cl_vtag *cl_vtag;
 
-	return cldev->me_cl->props.vm_supported ? 0 : -EOPNOTSUPP;
+	/*
+	 * Bail out if the client does not supports vtags
+	 * or has already allocated one
+	 */
+	if (mei_cl_vt_support_check(cl) || mei_cl_bus_vtag(cl))
+		return 0;
+
+	cl_vtag = mei_cl_vtag_alloc(NULL, 0);
+	if (IS_ERR(cl_vtag))
+		return -ENOMEM;
+
+	list_add_tail(&cl_vtag->list, &cl->vtag_map);
+
+	return 0;
+}
+
+/**
+ * mei_cl_bus_vtag_free - remove the bus entry from vtag map
+ *
+ * @cldev: me client device
+ */
+static void mei_cl_bus_vtag_free(struct mei_cl_device *cldev)
+{
+	struct mei_cl *cl = cldev->cl;
+	struct mei_cl_vtag *cl_vtag;
+
+	cl_vtag = mei_cl_bus_vtag(cl);
+	if (!cl_vtag)
+		return;
+
+	list_del(&cl_vtag->list);
+	kfree(cl_vtag);
 }
 
 /**
@@ -526,7 +569,6 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 {
 	struct mei_device *bus = cldev->bus;
 	struct mei_cl *cl;
-	struct mei_cl_vtag *cl_vtag;
 	int ret;
 
 	cl = cldev->cl;
@@ -551,19 +593,15 @@ int mei_cldev_enable(struct mei_cl_device *cldev)
 		goto out;
 	}
 
-	if (!mei_cldev_vm_support_check(cldev)) {
-		cl_vtag = mei_cl_vtag_alloc(NULL, 0);
-		if (IS_ERR(cl_vtag)) {
-			ret = -ENOMEM;
-			goto out;
-		}
-
-		list_add_tail(&cl_vtag->list, &cl->vtag_map);
-	}
+	ret = mei_cl_bus_vtag_alloc(cldev);
+	if (ret)
+		goto out;
 
 	ret = mei_cl_connect(cl, cldev->me_cl, NULL);
-	if (ret < 0)
+	if (ret < 0) {
 		dev_err(&cldev->dev, "cannot connect\n");
+		mei_cl_bus_vtag_free(cldev);
+	}
 
 out:
 	mutex_unlock(&bus->device_lock);
@@ -603,7 +641,6 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 {
 	struct mei_device *bus;
 	struct mei_cl *cl;
-	struct mei_cl_vtag *cl_vtag;
 	int err;
 
 	if (!cldev)
@@ -617,12 +654,7 @@ int mei_cldev_disable(struct mei_cl_device *cldev)
 
 	mutex_lock(&bus->device_lock);
 
-	cl_vtag = list_first_entry_or_null(&cl->vtag_map,
-					   struct mei_cl_vtag, list);
-	if (cl_vtag) {
-		list_del(&cl_vtag->list);
-		kfree(cl_vtag);
-	}
+	mei_cl_bus_vtag_free(cldev);
 
 	if (!mei_cl_is_connected(cl)) {
 		dev_dbg(bus->dev, "Already disconnected\n");
@@ -803,7 +835,7 @@ static ssize_t uuid_show(struct device *dev, struct device_attribute *a,
 	struct mei_cl_device *cldev = to_mei_cl_device(dev);
 	const uuid_le *uuid = mei_me_cl_uuid(cldev->me_cl);
 
-	return scnprintf(buf, PAGE_SIZE, "%pUl", uuid);
+	return sprintf(buf, "%pUl", uuid);
 }
 static DEVICE_ATTR_RO(uuid);
 
@@ -813,7 +845,7 @@ static ssize_t version_show(struct device *dev, struct device_attribute *a,
 	struct mei_cl_device *cldev = to_mei_cl_device(dev);
 	u8 version = mei_me_cl_ver(cldev->me_cl);
 
-	return scnprintf(buf, PAGE_SIZE, "%02X", version);
+	return sprintf(buf, "%02X", version);
 }
 static DEVICE_ATTR_RO(version);
 
@@ -835,7 +867,7 @@ static ssize_t max_conn_show(struct device *dev, struct device_attribute *a,
 	struct mei_cl_device *cldev = to_mei_cl_device(dev);
 	u8 maxconn = mei_me_cl_max_conn(cldev->me_cl);
 
-	return scnprintf(buf, PAGE_SIZE, "%d", maxconn);
+	return sprintf(buf, "%d", maxconn);
 }
 static DEVICE_ATTR_RO(max_conn);
 
@@ -845,7 +877,7 @@ static ssize_t fixed_show(struct device *dev, struct device_attribute *a,
 	struct mei_cl_device *cldev = to_mei_cl_device(dev);
 	u8 fixed = mei_me_cl_fixed(cldev->me_cl);
 
-	return scnprintf(buf, PAGE_SIZE, "%d", fixed);
+	return sprintf(buf, "%d", fixed);
 }
 static DEVICE_ATTR_RO(fixed);
 
@@ -853,9 +885,9 @@ static ssize_t vtag_show(struct device *dev, struct device_attribute *a,
 			 char *buf)
 {
 	struct mei_cl_device *cldev = to_mei_cl_device(dev);
-	bool vm = mei_me_cl_vm(cldev->me_cl);
+	bool vt = mei_me_cl_vt(cldev->me_cl);
 
-	return scnprintf(buf, PAGE_SIZE, "%d", vm);
+	return sprintf(buf, "%d", vt);
 }
 static DEVICE_ATTR_RO(vtag);
 
@@ -865,7 +897,7 @@ static ssize_t max_len_show(struct device *dev, struct device_attribute *a,
 	struct mei_cl_device *cldev = to_mei_cl_device(dev);
 	u32 maxlen = mei_me_cl_max_len(cldev->me_cl);
 
-	return scnprintf(buf, PAGE_SIZE, "%u", maxlen);
+	return sprintf(buf, "%u", maxlen);
 }
 static DEVICE_ATTR_RO(max_len);
 

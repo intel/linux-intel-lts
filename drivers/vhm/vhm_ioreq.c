@@ -61,11 +61,15 @@
 #include <linux/mm.h>
 #include <linux/poll.h>
 #include <linux/delay.h>
+#include <linux/debugfs.h>
 #include <linux/vhm/acrn_common.h>
 #include <linux/vhm/acrn_vhm_ioreq.h>
 #include <linux/vhm/vhm_vm_mngt.h>
 #include <linux/vhm/vhm_hypercall.h>
+#include <linux/vhm/acrn_vhm_mm.h>
 #include <linux/idr.h>
+
+#define IOREQ_RANGE_ENTRIES	8
 
 static DEFINE_SPINLOCK(client_lock);
 static struct idr	idr_client;
@@ -75,11 +79,17 @@ struct ioreq_range {
 	uint32_t type;
 	long start;
 	long end;
+
+#ifdef CONFIG_STACKTRACE
+	struct stack_trace st;
+	unsigned long st_entries[IOREQ_RANGE_ENTRIES];
+#endif
 };
 
 enum IOREQ_CLIENT_BITS {
         IOREQ_CLIENT_DESTROYING = 0,
         IOREQ_CLIENT_EXIT,
+	IOREQ_THREAD_START,
 };
 
 struct ioreq_client {
@@ -354,8 +364,7 @@ int acrn_ioreq_create_fallback_client(unsigned long vmid, char *name)
 	return client_id;
 }
 
-/* When one client is removed from VM, the refcnt is decreased */
-static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
+static void acrn_ioreq_remove_client_pervm(struct ioreq_client *client,
 		struct vhm_vm *vm)
 {
 	struct list_head *pos, *tmp;
@@ -363,7 +372,9 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 	set_bit(IOREQ_CLIENT_DESTROYING, &client->flags);
 	acrn_ioreq_notify_client(client);
 
-	while (client->vhm_create_kthread && !test_bit(IOREQ_CLIENT_EXIT, &client->flags))
+	while (client->vhm_create_kthread &&
+			!test_bit(IOREQ_CLIENT_EXIT, &client->flags)
+			&& test_bit(IOREQ_THREAD_START, &client->flags))
 		msleep(10);
 
 	spin_lock_bh(&client->range_lock);
@@ -382,6 +393,9 @@ static void acrn_ioreq_destroy_client_pervm(struct ioreq_client *client,
 	if (client->id == vm->ioreq_fallback_client)
 		vm->ioreq_fallback_client = -1;
 
+	/* When one client is removed from VM, the refcnt is decreased
+	 * it is pair with acrn_ioreq_get_client in acrn_ioreq_create_client
+	 */
 	acrn_ioreq_put_client(client);
 }
 
@@ -394,6 +408,9 @@ void acrn_ioreq_destroy_client(int client_id)
 		return;
 	}
 
+	/* Remove client id from IDR to avoid some invalid ioreq
+	 * during destroying client
+	 */
 	spin_lock_bh(&client_lock);
 	client = idr_remove(&idr_client, client_id);
 	spin_unlock_bh(&client_lock);
@@ -407,7 +424,10 @@ void acrn_ioreq_destroy_client(int client_id)
 
 	might_sleep();
 
-	acrn_ioreq_destroy_client_pervm(client, client->ref_vm);
+	acrn_ioreq_remove_client_pervm(client, client->ref_vm);
+	/* it will free client, it is pair with alloc_client
+	 * in acrn_ioreq_destroy_client
+	 */
 	acrn_ioreq_put_client(client);
 }
 EXPORT_SYMBOL_GPL(acrn_ioreq_destroy_client);
@@ -462,6 +482,14 @@ int acrn_ioreq_add_iorange(int client_id, uint32_t type,
 	range->type = type;
 	range->start = start;
 	range->end = end;
+
+#ifdef CONFIG_STACKTRACE
+	range->st.max_entries = IOREQ_RANGE_ENTRIES;
+	range->st.entries = range->st_entries;
+	range->st.nr_entries = 0;
+	range->st.skip = 0;
+	save_stack_trace(&range->st);
+#endif
 
 	spin_lock_bh(&client->range_lock);
 	list_add(&range->list, &client->range_list);
@@ -573,6 +601,7 @@ static int ioreq_client_thread(void *data)
 		return -EINVAL;
 	}
 
+	set_bit(IOREQ_THREAD_START, &client->flags);
 	while (1) {
 		if (is_destroying(client)) {
 			pr_info("vhm-ioreq: client destroying->stop thread\n");
@@ -597,6 +626,7 @@ static int ioreq_client_thread(void *data)
 	}
 
 	set_bit(IOREQ_CLIENT_EXIT, &client->flags);
+	clear_bit(IOREQ_THREAD_START, &client->flags);
 	acrn_ioreq_put_client(client);
 	return 0;
 }
@@ -837,13 +867,39 @@ static int handle_cf8cfc(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
 	return err ? err: req_handled;
 }
 
-static bool bdf_match(struct vhm_vm *vm, struct ioreq_client *client)
+#define MAXBUSES		(PCI_BUSMAX + 1)
+#define PCI_EMUL_ECFG_BASE	0xE0000000
+#define PCI_EMUL_ECFG_SIZE	(MAXBUSES * 1024 * 1024)
+#define PCI_EMUL_ECFG_BOARDER	(PCI_EMUL_ECFG_BASE + PCI_EMUL_ECFG_SIZE)
+
+static int handle_pcie_cfg(struct vhm_vm *vm, struct vhm_request *req, int vcpu)
+{
+	uint64_t addr = req->reqs.mmio_request.address;
+
+	if (req->type != REQ_MMIO || addr < PCI_EMUL_ECFG_BASE ||
+		addr + req->reqs.mmio_request.size >= PCI_EMUL_ECFG_BOARDER) {
+		return -1;
+	}
+
+	addr -= PCI_EMUL_ECFG_BASE;
+
+	req->type = REQ_PCICFG;
+	req->reqs.pci_request.bus = (addr >> 20) & 0xFF;
+	req->reqs.pci_request.dev = (addr >> 15) & 0x1F;
+	req->reqs.pci_request.func = (addr >> 12) & 0x7;
+	req->reqs.pci_request.reg = addr & 0xfff;
+
+	return 0;
+}
+
+static bool bdf_match(struct vhm_request *req, struct ioreq_client *client)
 {
 	int cached_bus, cached_dev, cached_func;
 
-	cached_bus = (vm->pci_conf_addr >> 16) & PCI_BUSMAX;
-	cached_dev = (vm->pci_conf_addr >> 11) & PCI_SLOTMAX;
-	cached_func = (vm->pci_conf_addr >> 8) & PCI_FUNCMAX;
+	cached_bus = req->reqs.pci_request.bus;
+	cached_dev = req->reqs.pci_request.dev;
+	cached_func = req->reqs.pci_request.func;
+
 	return (client->trap_bdf &&
 		client->pci_bus == cached_bus &&
 		client->pci_dev == cached_dev &&
@@ -871,7 +927,7 @@ static struct ioreq_client *acrn_ioreq_find_client_by_request(struct vhm_vm *vm,
 		}
 
 		if (req->type == REQ_PCICFG) {
-			if (bdf_match(vm, client)) { /* bdf match client */
+			if (bdf_match(req, client)) { /* bdf match client */
 				target_client = client->id;
 				break;
 			} else /* other or fallback client */
@@ -921,6 +977,7 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
 		if (atomic_read(&req->processed) == REQ_STATE_PENDING) {
 			if (handle_cf8cfc(vm, req, i))
 				continue;
+			handle_pcie_cfg(vm, req, i);
 			client = acrn_ioreq_find_client_by_request(vm, req);
 			if (client == NULL) {
 				pr_err("vhm-ioreq: failed to "
@@ -1011,7 +1068,7 @@ unsigned int vhm_dev_poll(struct file *filep, poll_table *wait)
 
 int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma)
 {
-	struct acrn_set_ioreq_buffer set_buffer;
+	struct acrn_set_ioreq_buffer *set_buffer;
 	struct page *page;
 	int ret;
 
@@ -1024,12 +1081,14 @@ int acrn_ioreq_init(struct vhm_vm *vm, unsigned long vma)
 		return -ENOMEM;
 	}
 
+	set_buffer = acrn_mempool_alloc(GFP_KERNEL);
 	vm->req_buf = page_address(page);
 	vm->pg = page;
 
-	set_buffer.req_buf = page_to_phys(page);
+	set_buffer->req_buf = page_to_phys(page);
 
-	ret = hcall_set_ioreq_buffer(vm->vmid, virt_to_phys(&set_buffer));
+	ret = hcall_set_ioreq_buffer(vm->vmid, virt_to_phys(set_buffer));
+	acrn_mempool_free(set_buffer);
 	if (ret < 0) {
 		pr_err("vhm-ioreq: failed to set request buffer !\n");
 		return -EFAULT;
@@ -1050,19 +1109,77 @@ void acrn_ioreq_free(struct vhm_vm *vm)
 	 * The below is used to assure that the client is still released even when
 	 * it is not called.
 	 */
-	if (!test_and_set_bit(VHM_VM_IOREQ, &vm->flags)) {
+	get_vm(vm);
+	list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
+		struct ioreq_client *client =
+			container_of(pos, struct ioreq_client, list);
+		acrn_ioreq_destroy_client(client->id);
+	}
+	put_vm(vm);
+
+}
+
+static struct dentry *vhm_debugfs_dir;
+
+static void vhm_ioclient_range_show_one(struct seq_file *s,
+	struct ioreq_client *client)
+{
+	int i;
+	struct list_head *pos;
+
+	seq_printf(s, "  client: %s, id: %d\n",
+			client->name, client->id);
+
+	spin_lock_bh(&client->range_lock);
+	list_for_each(pos, &client->range_list) {
+		struct ioreq_range *range =
+			container_of(pos, struct ioreq_range, list);
+		seq_printf(s, "    io range: type %d, start 0x%lx, end 0x%lx\n",
+			range->type, range->start, range->end);
+#ifdef CONFIG_STACKTRACE
+		seq_puts(s, "      allocation stack:\n");
+		for (i = 0; i < range->st.nr_entries; i++) {
+			seq_printf(s, "        %pB\n",
+				(void *)range->st_entries[i]);
+		}
+#endif
+	}
+	spin_unlock_bh(&client->range_lock);
+}
+
+static int vhm_ioclient_range_show(struct seq_file *s, void *data)
+{
+	struct vhm_vm *vm;
+
+	read_lock_bh(&vhm_vm_list_lock);
+	list_for_each_entry(vm, &vhm_vm_list, list) {
+		struct list_head *pos, *tmp;
+
 		get_vm(vm);
+		seq_printf(s, "vm%ld:\n", vm->vmid);
 		list_for_each_safe(pos, tmp, &vm->ioreq_client_list) {
 			struct ioreq_client *client =
 				container_of(pos, struct ioreq_client, list);
-			acrn_ioreq_destroy_client(client->id);
+
+			vhm_ioclient_range_show_one(s, client);
 		}
 		put_vm(vm);
 	}
+	read_unlock_bh(&vhm_vm_list_lock);
 
+	return 0;
 }
+DEFINE_SHOW_ATTRIBUTE(vhm_ioclient_range);
 
 void acrn_ioreq_driver_init()
 {
 	idr_init(&idr_client);
+	vhm_debugfs_dir = debugfs_create_dir("vhm", NULL);
+	debugfs_create_file("ioclient_range", 0444, vhm_debugfs_dir, NULL,
+		&vhm_ioclient_range_fops);
+}
+
+void acrn_ioreq_driver_deinit(void)
+{
+	debugfs_remove_recursive(vhm_debugfs_dir);
 }

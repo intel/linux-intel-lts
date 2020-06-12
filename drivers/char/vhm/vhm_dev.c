@@ -154,13 +154,33 @@ static ssize_t vhm_dev_write(struct file *filep, const char *buffer,
 	return 0;
 }
 
+static void update_assigned_vf_state(uint16_t bdf, bool is_assigned)
+{
+	struct pci_dev *dev = NULL;
+	struct pci_bus *bus;
+
+	bus = pci_find_bus(0, PCI_BUS_NUM(bdf));
+	if (!bus)
+		return;
+
+	dev = pci_get_slot(bus, (bdf & 0xFF));
+	if (dev) {
+		if (dev->is_virtfn) {
+			if (is_assigned)
+				pci_set_dev_assigned(dev);
+			else
+				pci_clear_dev_assigned(dev);
+		}
+		pci_dev_put(dev);
+	}
+}
+
 static long vhm_dev_ioctl(struct file *filep,
 		unsigned int ioctl_num, unsigned long ioctl_param)
 {
 	long ret = 0;
 	struct vhm_vm *vm;
 	struct ic_ptdev_irq ic_pt_irq;
-	struct hc_ptdev_irq hc_pt_irq;
 
 	pr_debug("[%s] ioctl_num=0x%x\n", __func__, ioctl_num);
 
@@ -175,81 +195,115 @@ static long vhm_dev_ioctl(struct file *filep,
 			return -EFAULT;
 
 		return 0;
-	} else if (ioctl_num == IC_PM_SET_SSTATE_DATA) {
-		struct acpi_sstate_data host_sstate_data;
+	} else if (ioctl_num == IC_GET_PLATFORM_INFO) {
+		struct hc_platform_info *plat_info;
+		struct hc_platform_info plat_info_user;
+		void *vm_configs = NULL;
 
-		if (copy_from_user(&host_sstate_data,
-			(void *)ioctl_param, sizeof(host_sstate_data)))
-			return -EFAULT;
-
-		ret = hcall_set_sstate_data(virt_to_phys(&host_sstate_data));
-		if (ret < 0) {
-			pr_err("vhm: failed to set host Sstate data!");
+		/* Need to get the user provided vm_configs_addr */
+		if (copy_from_user(&plat_info_user, (void *)ioctl_param,
+			sizeof(*plat_info))) {
 			return -EFAULT;
 		}
-		return 0;
-	} else if (ioctl_num == IC_GET_PLATFORM_INFO) {
-		struct hc_platform_info platform_info;
 
-		ret = hcall_get_platform_info(virt_to_phys(&platform_info));
-		if (ret < 0)
-			return -EFAULT;
+		plat_info = acrn_mempool_alloc(GFP_KERNEL);
+
+		/* User wants to get vm_configs[] array */
+		if (plat_info_user.vm_configs_addr) {
+			vm_configs = acrn_mempool_alloc(GFP_KERNEL);
+			plat_info->vm_configs_addr =
+				(uint64_t)virt_to_phys(vm_configs);
+		} else {
+			plat_info->vm_configs_addr = 0;
+		}
+
+		ret = hcall_get_platform_info(virt_to_phys(plat_info));
+		if (ret < 0) {
+			ret = -EFAULT;
+			goto get_platform_info_done;
+		}
+
+		if (plat_info_user.vm_configs_addr) {
+			if (copy_to_user((void *)plat_info_user.vm_configs_addr,
+				vm_configs,
+				plat_info->vm_config_entry_size *
+				plat_info->max_vms)) {
+				ret = -EFAULT;
+				goto get_platform_info_done;
+			}
+		}
+
+		/* Restore the user address */
+		plat_info->vm_configs_addr = plat_info_user.vm_configs_addr;
 
 		if (copy_to_user((void *)ioctl_param,
-			&platform_info, sizeof(platform_info)))
-			return -EFAULT;
+			plat_info, sizeof(*plat_info))) {
+			ret = -EFAULT;
+			goto get_platform_info_done;
+		}
 
-		return 0;
+get_platform_info_done:
+		if (vm_configs)
+			acrn_mempool_free(vm_configs);
+		acrn_mempool_free(plat_info);
+		return ret;
 	}
 
-	memset(&hc_pt_irq, 0, sizeof(hc_pt_irq));
 	memset(&ic_pt_irq, 0, sizeof(ic_pt_irq));
 	vm = (struct vhm_vm *)filep->private_data;
 	if (vm == NULL) {
 		pr_err("vhm: invalid VM !\n");
 		return -EFAULT;
 	}
-	if ((vm->vmid == ACRN_INVALID_VMID) && (ioctl_num != IC_CREATE_VM)) {
+	if (((vm->vmid == ACRN_INVALID_VMID) && (ioctl_num != IC_CREATE_VM)) ||
+			test_bit(VHM_VM_DESTROYED, &vm->flags)) {
 		pr_err("vhm: invalid VM ID !\n");
 		return -EFAULT;
 	}
 
 	switch (ioctl_num) {
 	case IC_CREATE_VM: {
-		struct acrn_create_vm created_vm;
+		struct acrn_create_vm *created_vm;
 
-		if (copy_from_user(&created_vm, (void *)ioctl_param,
-			sizeof(struct acrn_create_vm)))
-			return -EFAULT;
+		created_vm = acrn_mempool_alloc(GFP_KERNEL);
 
-		ret = hcall_create_vm(virt_to_phys(&created_vm));
-		if ((ret < 0) ||
-			(created_vm.vmid == ACRN_INVALID_VMID)) {
-			pr_err("vhm: failed to create VM from Hypervisor !\n");
+		if (copy_from_user(created_vm, (void *)ioctl_param,
+			sizeof(struct acrn_create_vm))) {
+			acrn_mempool_free(created_vm);
 			return -EFAULT;
 		}
 
-		if (copy_to_user((void *)ioctl_param, &created_vm,
+		ret = hcall_create_vm(virt_to_phys(created_vm));
+		if ((ret < 0) ||
+			(created_vm->vmid == ACRN_INVALID_VMID)) {
+			pr_err("vhm: failed to create VM from Hypervisor !\n");
+			acrn_mempool_free(created_vm);
+			return -EFAULT;
+		}
+
+		if (copy_to_user((void *)ioctl_param, created_vm,
 			sizeof(struct acrn_create_vm))) {
 			ret = -EFAULT;
 			goto create_vm_fail;
 		}
-		vm->vmid = created_vm.vmid;
+		vm->vmid = created_vm->vmid;
 
-		if (created_vm.req_buf) {
-			ret = acrn_ioreq_init(vm, created_vm.req_buf);
+		if (created_vm->req_buf) {
+			ret = acrn_ioreq_init(vm, created_vm->req_buf);
 			if (ret < 0)
 				goto create_vm_fail;
 		}
 
 		acrn_ioeventfd_init(vm->vmid);
 		acrn_irqfd_init(vm->vmid);
+		acrn_mempool_free(created_vm);
 
-		pr_info("vhm: VM %d created\n", created_vm.vmid);
+		pr_info("vhm: VM %ld created\n", vm->vmid);
 		break;
 
 create_vm_fail:
-		hcall_destroy_vm(created_vm.vmid);
+		hcall_destroy_vm(created_vm->vmid);
+		acrn_mempool_free(created_vm);
 		vm->vmid = ACRN_INVALID_VMID;
 		break;
 
@@ -283,44 +337,45 @@ create_vm_fail:
 	}
 
 	case IC_DESTROY_VM: {
-		acrn_ioeventfd_deinit(vm->vmid);
-		acrn_irqfd_deinit(vm->vmid);
-		acrn_ioreq_free(vm);
-		ret = hcall_destroy_vm(vm->vmid);
-		if (ret < 0) {
-			pr_err("failed to destroy VM %ld\n", vm->vmid);
-			return -EFAULT;
-		}
-		vm->vmid = ACRN_INVALID_VMID;
+		ret = vhm_vm_destroy(vm);
 		break;
 	}
 
 	case IC_CREATE_VCPU: {
-		struct acrn_create_vcpu cv;
+		struct acrn_create_vcpu *cv;
 
-		if (copy_from_user(&cv, (void *)ioctl_param,
-				sizeof(struct acrn_create_vcpu)))
+		cv = acrn_mempool_alloc(GFP_KERNEL);
+		if (copy_from_user(cv, (void *)ioctl_param,
+				sizeof(struct acrn_create_vcpu))) {
+			acrn_mempool_free(cv);
 			return -EFAULT;
+		}
 
 		ret = acrn_hypercall2(HC_CREATE_VCPU, vm->vmid,
-				virt_to_phys(&cv));
+				virt_to_phys(cv));
 		if (ret < 0) {
-			pr_err("vhm: failed to create vcpu %d!\n", cv.vcpu_id);
+			pr_err("vhm: failed to create vcpu %d!\n", cv->vcpu_id);
+			acrn_mempool_free(cv);
 			return -EFAULT;
 		}
 		atomic_inc(&vm->vcpu_num);
+		acrn_mempool_free(cv);
 
 		return ret;
 	}
 
 	case IC_SET_VCPU_REGS: {
-		struct acrn_set_vcpu_regs asvr;
+		struct acrn_set_vcpu_regs *asvr;
 
-		if (copy_from_user(&asvr, (void *)ioctl_param, sizeof(asvr)))
+		asvr = acrn_mempool_alloc(GFP_KERNEL);
+		if (copy_from_user(asvr, (void *)ioctl_param, sizeof(*asvr))) {
+			acrn_mempool_free(asvr);
 			return -EFAULT;
+		}
 
 		ret = acrn_hypercall2(HC_SET_VCPU_REGS, vm->vmid,
-				virt_to_phys(&asvr));
+				virt_to_phys(asvr));
+		acrn_mempool_free(asvr);
 		if (ret < 0) {
 			pr_err("vhm: failed to set bsp state of vm %ld!\n",
 					vm->vmid);
@@ -425,12 +480,17 @@ create_vm_fail:
 	}
 
 	case IC_INJECT_MSI: {
-		struct acrn_msi_entry msi;
+		struct acrn_msi_entry *msi;
 
-		if (copy_from_user(&msi, (void *)ioctl_param, sizeof(msi)))
+		msi = acrn_mempool_alloc(GFP_KERNEL);
+
+		if (copy_from_user(msi, (void *)ioctl_param, sizeof(*msi))) {
+			acrn_mempool_free(msi);
 			return -EFAULT;
+		}
 
-		ret = hcall_inject_msi(vm->vmid, virt_to_phys(&msi));
+		ret = hcall_inject_msi(vm->vmid, virt_to_phys(msi));
+		acrn_mempool_free(msi);
 		if (ret < 0) {
 			pr_err("vhm: failed to inject!\n");
 			return -EFAULT;
@@ -477,6 +537,7 @@ create_vm_fail:
 				(void *)ioctl_param, sizeof(*pcidev))) {
 			ret = -EFAULT;
 		} else {
+			update_assigned_vf_state(pcidev->phys_bdf, true);
 			ret = hcall_assign_pcidev(vm->vmid, virt_to_phys(pcidev));
 			if (ret < 0) {
 				pr_err("vhm: failed to assign pci device!\n");
@@ -497,6 +558,7 @@ create_vm_fail:
 				(void *)ioctl_param, sizeof(*pcidev))) {
 			ret = -EFAULT;
 		} else {
+			update_assigned_vf_state(pcidev->phys_bdf, false);
 			ret = hcall_deassign_pcidev(vm->vmid, virt_to_phys(pcidev));
 			if (ret < 0) {
 				pr_err("vhm: failed to deassign pci device!\n");
@@ -508,19 +570,24 @@ create_vm_fail:
 
 	case IC_SET_PTDEV_INTR_INFO: {
 		struct table_iomems *new;
+		struct hc_ptdev_irq *hc_pt_irq;
 
 		if (copy_from_user(&ic_pt_irq,
 				(void *)ioctl_param, sizeof(ic_pt_irq)))
 			return -EFAULT;
 
-		memcpy(&hc_pt_irq, &ic_pt_irq, sizeof(hc_pt_irq));
+		hc_pt_irq = acrn_mempool_alloc(GFP_KERNEL);
+
+		memcpy(hc_pt_irq, &ic_pt_irq, sizeof(*hc_pt_irq));
 
 		ret = hcall_set_ptdev_intr_info(vm->vmid,
-				virt_to_phys(&hc_pt_irq));
+				virt_to_phys(hc_pt_irq));
 		if (ret < 0) {
 			pr_err("vhm: failed to set intr info for ptdev!\n");
+			acrn_mempool_free(hc_pt_irq);
 			return -EFAULT;
 		}
+		acrn_mempool_free(hc_pt_irq);
 
 		if ((ic_pt_irq.type == IRQ_MSIX) &&
 				ic_pt_irq.msix.table_paddr) {
@@ -541,21 +608,25 @@ create_vm_fail:
 	}
 	case IC_RESET_PTDEV_INTR_INFO: {
 		struct table_iomems *ptr;
+		struct hc_ptdev_irq *hc_pt_irq;
 		int dev_found = 0;
 
 		if (copy_from_user(&ic_pt_irq,
 				(void *)ioctl_param, sizeof(ic_pt_irq)))
 			return -EFAULT;
 
-		memcpy(&hc_pt_irq, &ic_pt_irq, sizeof(hc_pt_irq));
+		hc_pt_irq = acrn_mempool_alloc(GFP_KERNEL);
+		memcpy(hc_pt_irq, &ic_pt_irq, sizeof(*hc_pt_irq));
 
 		ret = hcall_reset_ptdev_intr_info(vm->vmid,
-				virt_to_phys(&hc_pt_irq));
+				virt_to_phys(hc_pt_irq));
 		if (ret < 0) {
 			pr_err("vhm: failed to reset intr info for ptdev!\n");
+			acrn_mempool_free(hc_pt_irq);
 			return -EFAULT;
 		}
 
+		acrn_mempool_free(hc_pt_irq);
 		if (ic_pt_irq.type == IRQ_MSIX) {
 			mutex_lock(&table_iomems_lock);
 			list_for_each_entry(ptr, &table_iomems_list, list) {
@@ -632,40 +703,52 @@ create_vm_fail:
 		switch (cmd & PMCMD_TYPE_MASK) {
 		case PMCMD_GET_PX_CNT:
 		case PMCMD_GET_CX_CNT: {
-			uint64_t pm_info;
+			uint64_t *pm_info;
 
-			ret = hcall_get_cpu_state(cmd, virt_to_phys(&pm_info));
-			if (ret < 0)
+			pm_info = acrn_mempool_alloc(GFP_KERNEL);
+			ret = hcall_get_cpu_state(cmd, virt_to_phys(pm_info));
+			if (ret < 0) {
+				acrn_mempool_free(pm_info);
 				return -EFAULT;
+			}
 
 			if (copy_to_user((void *)ioctl_param,
-					&pm_info, sizeof(pm_info)))
+					pm_info, sizeof(pm_info)))
 					ret = -EFAULT;
-
+			acrn_mempool_free(pm_info);
 			break;
 		}
 		case PMCMD_GET_PX_DATA: {
-			struct cpu_px_data px_data;
+			struct cpu_px_data *px_data;
 
-			ret = hcall_get_cpu_state(cmd, virt_to_phys(&px_data));
-			if (ret < 0)
+			px_data = acrn_mempool_alloc(GFP_KERNEL);
+			ret = hcall_get_cpu_state(cmd, virt_to_phys(px_data));
+			if (ret < 0) {
+				acrn_mempool_free(px_data);
 				return -EFAULT;
+			}
 
 			if (copy_to_user((void *)ioctl_param,
-					&px_data, sizeof(px_data)))
+					px_data, sizeof(*px_data)))
 					ret = -EFAULT;
+			acrn_mempool_free(px_data);
 			break;
 		}
 		case PMCMD_GET_CX_DATA: {
-			struct cpu_cx_data cx_data;
+			struct cpu_cx_data *cx_data;
 
-			ret = hcall_get_cpu_state(cmd, virt_to_phys(&cx_data));
-			if (ret < 0)
+			cx_data = acrn_mempool_alloc(GFP_KERNEL);
+
+			ret = hcall_get_cpu_state(cmd, virt_to_phys(cx_data));
+			if (ret < 0) {
+				acrn_mempool_free(cx_data);
 				return -EFAULT;
+			}
 
 			if (copy_to_user((void *)ioctl_param,
-					&cx_data, sizeof(cx_data)))
+					cx_data, sizeof(*cx_data)))
 					ret = -EFAULT;
+			acrn_mempool_free(cx_data);
 			break;
 		}
 		default:
@@ -738,6 +821,28 @@ static void vhm_intr_handler(void)
 	tasklet_schedule(&vhm_io_req_tasklet);
 }
 
+int vhm_vm_destroy(struct vhm_vm *vm)
+{
+	int ret;
+
+	if (test_and_set_bit(VHM_VM_DESTROYED, &vm->flags))
+		return -ENODEV;
+
+	acrn_ioeventfd_deinit(vm->vmid);
+	acrn_irqfd_deinit(vm->vmid);
+	acrn_ioreq_free(vm);
+
+	ret = hcall_destroy_vm(vm->vmid);
+	if (ret < 0)
+		pr_err("Failed to destroy VM %ld!\n", vm->vmid);
+	write_lock_bh(&vhm_vm_list_lock);
+	list_del_init(&vm->list);
+	write_unlock_bh(&vhm_vm_list_lock);
+	vm->vmid = ACRN_INVALID_VMID;
+
+	return 0;
+}
+
 static int vhm_dev_release(struct inode *inodep, struct file *filep)
 {
 	struct vhm_vm *vm = filep->private_data;
@@ -746,10 +851,7 @@ static int vhm_dev_release(struct inode *inodep, struct file *filep)
 		pr_err("vhm: invalid VM !\n");
 		return -EFAULT;
 	}
-	acrn_ioreq_free(vm);
-	write_lock_bh(&vhm_vm_list_lock);
-	list_del_init(&vm->list);
-	write_unlock_bh(&vhm_vm_list_lock);
+	vhm_vm_destroy(vm);
 	put_vm(vm);
 	filep->private_data = NULL;
 	return 0;
@@ -804,7 +906,7 @@ static struct attribute_group vhm_attr_group = {
 static int __init vhm_init(void)
 {
 	unsigned long flag;
-	struct hc_api_version api_version = {0, 0};
+	static struct hc_api_version api_version;
 
 	if (x86_hyper_type != X86_HYPER_ACRN)
 		return -ENODEV;
@@ -874,6 +976,14 @@ static int __init vhm_init(void)
 	}
 
 	acrn_ioreq_driver_init();
+
+	/*
+	 * The biggest consumer is the get_platform_info hypercall. Statically
+	 * use 2MB as this is enough for any reasonable amount of VMs the
+	 * hypervisor may have in its VM config and also aligns with the design
+	 * of 2MB huge pages.
+	 */
+	acrn_mempool_init(16, SZ_2M);
 	pr_info("vhm: Virtio & Hypervisor service module initialized\n");
 	return 0;
 }
@@ -886,6 +996,8 @@ static void __exit vhm_exit(void)
 	class_destroy(vhm_class);
 	unregister_chrdev(major, DEVICE_NAME);
 	sysfs_remove_group(&vhm_device->kobj, &vhm_attr_group);
+
+	acrn_mempool_deinit();
 	pr_info("vhm: exit\n");
 }
 

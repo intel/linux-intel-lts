@@ -606,16 +606,30 @@ int skl_virt_device_register(struct skl *skl)
 	ret = platform_device_add(pdev);
 	if (ret) {
 		dev_err(bus->dev, "failed to add virtualization device\n");
-		platform_device_put(pdev);
-		return -EIO;
+		ret = -EIO;
+		goto out_pdev_put;
 	}
-	pdata = devm_kzalloc(&pdev->dev,
-		sizeof(struct skl_virt_pdata), GFP_KERNEL);
-	pdata->skl = skl;
-	dev_set_drvdata(&pdev->dev, pdata);
-	skl->virt_dev = pdev;
 
-	return 0;
+	pdata = kzalloc(sizeof(struct skl_virt_pdata), GFP_KERNEL);
+	if (pdata == NULL) {
+		ret = -ENOMEM;
+		goto out_pdev_put;
+	}
+
+	pdata->skl = skl;
+	skl->virt_dev = pdev;
+	ret = platform_device_add_data(pdev, pdata,
+			sizeof(struct skl_virt_pdata));
+	if (ret) {
+		dev_err(bus->dev, "failed to add platform data\n");
+		ret = -EIO;
+	}
+
+	kfree(pdata);
+out_pdev_put:
+	if (ret)
+		platform_device_put(pdev);
+	return ret;
 }
 
 void skl_virt_device_unregister(struct skl *skl)

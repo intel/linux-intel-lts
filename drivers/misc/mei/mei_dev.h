@@ -1,17 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- *
  * Intel Management Engine Interface (Intel MEI) Linux driver
  * Copyright (c) 2003-2018, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
 
 #ifndef _MEI_DEV_H_
@@ -184,7 +174,7 @@ struct mei_cl;
  * @fop_type: file operation type
  * @buf: buffer for data associated with the callback
  * @buf_idx: last read index
- * @vtag: vm tag
+ * @vtag: virtual tag
  * @fp: pointer to file structure
  * @status: io status of the cb
  * @internal: communication between driver and FW flag
@@ -203,6 +193,14 @@ struct mei_cl_cb {
 	u32 blocking:1;
 };
 
+/**
+ * struct mei_cl_vtag - file pointer to vtag mapping structure
+ *
+ * @list: link in map queue
+ * @fp: file pointer
+ * @vtag: corresponding vtag
+ * @pending_read: the read is pending on this file
+ */
 struct mei_cl_vtag {
 	struct list_head list;
 	const struct file *fp;
@@ -226,7 +224,7 @@ struct mei_cl_vtag {
  * @me_cl: fw client connected
  * @fp: file associated with client
  * @host_client_id: host id
- * @vtag_map: vm tag map
+ * @vtag_map: vtag map
  * @tx_flow_ctrl_creds: transmit flow credentials
  * @rx_flow_ctrl_creds: receive flow credentials
  * @timer_count:  watchdog timer for operation completion
@@ -313,6 +311,7 @@ struct mei_hw_ops {
 	void (*hw_config)(struct mei_device *dev);
 
 	int (*fw_status)(struct mei_device *dev, struct mei_fw_status *fw_sts);
+
 	enum mei_pg_state (*pg_state)(struct mei_device *dev);
 	bool (*pg_in_transition)(struct mei_device *dev);
 	bool (*pg_is_enabled)(struct mei_device *dev);
@@ -447,7 +446,7 @@ struct mei_fw_version {
  * @hbm_f_ie_supported  : hbm feature immediate reply to enum request
  * @hbm_f_os_supported  : hbm feature support OS ver message
  * @hbm_f_dr_supported  : hbm feature dma ring supported
- * @hbm_f_vm_supported  : hbm feature vm tag supported
+ * @hbm_f_vt_supported  : hbm feature vtag supported
  * @hbm_f_cap_supported : hbm feature capabilities message supported
  *
  * @fw_ver : FW versions
@@ -534,7 +533,7 @@ struct mei_device {
 	unsigned int hbm_f_ie_supported:1;
 	unsigned int hbm_f_os_supported:1;
 	unsigned int hbm_f_dr_supported:1;
-	unsigned int hbm_f_vm_supported:1;
+	unsigned int hbm_f_vt_supported:1;
 	unsigned int hbm_f_cap_supported:1;
 
 	struct mei_fw_version fw_ver[MEI_MAX_FW_VER_BLOCKS];
