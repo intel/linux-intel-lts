@@ -121,13 +121,15 @@ irqreturn_t netproxy_isr_thread(int irq, void *dev_id)
 	}
 
 err_skb:
-	/* [REVERTME] DMA_CTL_CH(i) Workaround */
-	for (i = 0; i < EHL_PSE_ETH_DMA_TOTAL_CH; i++) {
-		value = readl(priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
-			      + i * sizeof(u32));
-		value |= EHL_PSE_ETH_DMA_MISC_DTM_DRAM;
-		writel(value, priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
-		       + i * sizeof(u32));
+	if (priv->plat->ehl_ao_wa) {
+		/* [REVERTME] DMA_CTL_CH(i) Workaround */
+		for (i = 0; i < EHL_PSE_ETH_DMA_TOTAL_CH; i++) {
+			value = readl(priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
+				      + i * sizeof(u32));
+			value |= EHL_PSE_ETH_DMA_MISC_DTM_DRAM;
+			writel(value, priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
+			       + i * sizeof(u32));
+		}
 	}
 
 	priv->networkproxy_exit = 1;
