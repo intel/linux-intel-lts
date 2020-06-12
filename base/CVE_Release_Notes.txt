@@ -97,6 +97,7 @@ CVEs fixed in 4.19.32:
 CVEs fixed in 4.19.33:
   CVE-2019-15921: 9b8ef421b481d6e648438131d867986c649c297c genetlink: Fix a memory leak on error path
   CVE-2019-20054: 07d0d2bd957ad922cf571e7cabb6c34067142b93 fs/proc/proc_sysctl.c: fix NULL pointer dereference in put_links
+  CVE-2019-20811: d9d215be3a3aa8b3638f2705826f52a7fb84cf24 net-sysfs: call dev_hold if kobject_init_and_add success
   CVE-2019-3459: 15d6538a0d6e0f6de5116081a948cba7cc3e1d3d Bluetooth: Verify that l2cap_get_conf_opt provides large enough buffer
   CVE-2019-3460: 2318c0e4b87e590c9d8e88db185477cfac18abe2 Bluetooth: Check L2CAP option sizes returned from l2cap_get_conf_opt
 
@@ -344,6 +345,7 @@ CVEs fixed in 4.19.92:
   CVE-2019-19057: 1b3e52db38471d5ac896eb9be111565e3734d5b5 mwifiex: pcie: Fix memory leak in mwifiex_pcie_init_evt_ring
   CVE-2019-19063: 3717a450f83945c481059a6921440e5e6fe3c856 rtlwifi: prevent memory leak in rtl_usb_probe
   CVE-2019-19947: 9ed59600c3524f12144b30cfc1d86734cfb3927b can: kvaser_usb: kvaser_usb_leaf: Fix some info-leaks to USB devices
+  CVE-2019-20812: e99af2cb552e3fe1ec6157fc15856a89a6388886 af_packet: set defaule value for tmo
 
 CVEs fixed in 4.19.93:
   CVE-2020-10690: 0393b8720128d5b39db8523e5bfbfc689f18c37c ptp: fix the race between the release of ptp_clock and cdev
@@ -446,8 +448,15 @@ CVEs fixed in 4.19.124:
 CVEs fixed in 4.19.125:
   CVE-2020-12768: 008708152ebb229c29e065135599984fa9c4a51c KVM: SVM: Fix potential memory leak in svm_cpu_init()
 
+CVEs fixed in 4.19.126:
+  CVE-2020-10732: d16b0abe2687f7f0a2f6343a09797e8aac045c86 fs/binfmt_elf.c: allocate initialized memory in fill_thread_core_info()
+
+CVEs fixed in 4.19.127:
+  CVE-2019-19462: 8b5dfa53eeb6c8bba5a035d38f6f8b981aebb622 kernel/relay.c: handle alloc_percpu returning NULL in relay_open
+  CVE-2020-10757: 78385480fd6572a83e7541e37658d9a7de6dc9b1 mm: Fix mremap not considering huge pmd devmap
+
  
-CVEs Fixed in this 4.19.125 LTS 4.19 release 
+CVEs Fixed in this 4.19.127 LTS 4.19 release 
 ====================================================
 # CVE-2018-20669
 0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
