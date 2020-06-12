@@ -6,3 +6,5 @@ keembay-ocs-aes-objs := keembay-ocs-aes-core.o ocs-aes.o
 
 obj-$(CONFIG_CRYPTO_DEV_KEEMBAY_OCS_HCU) += keembay-ocs-hcu.o
 keembay-ocs-hcu-objs := keembay-ocs-hcu-core.o ocs-hcu.o
+
+obj-$(CONFIG_CRYPTO_DEV_KEEMBAY_OCS_ECC) += keembay-ocs-ecc.o

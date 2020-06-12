@@ -69,3 +69,34 @@ config CRYPTO_DEV_KEEMBAY_OCS_HCU_HMAC_SHA224
 	  Provides OCS HCU hardware acceleration of sha224 and hmac(224).
 
 	  If unsure, say N.
+
+config CRYPTO_DEV_KEEMBAY_OCS_ECC
+	tristate "Support for Intel Keem Bay OCS ECC HW acceleration"
+	depends on ARCH_KEEMBAY || COMPILE_TEST
+	depends on OF || COMPILE_TEST
+	depends on HAS_IOMEM
+	select CRYPTO_ECDH
+	select CRYPTO_ENGINE
+	help
+	  Support for Intel Keem Bay Offload and Crypto Subsystem (OCS)
+	  Elliptic Curve Cryptography (ECC) hardware acceleration for use with
+	  Crypto API.
+
+	  Provides OCS acceleration for ECDH-256, ECDH-384.
+
+	  Say Y or M if you are compiling for the Intel Keem Bay SoC. The
+	  module will be called keembay-ocs-ecc.
+
+	  If unsure, say N.
+
+config CRYPTO_DEV_KEEMBAY_OCS_ECDH_GEN_PRIV_KEY_SUPPORT
+	bool "Add ECDH private key generation in Keem Bay OCS ECC driver"
+	depends on CRYPTO_DEV_KEEMBAY_OCS_ECC
+	help
+	  Add ECDH private key generation in the Intel Keem Bay OCS ECC driver.
+
+	  Intel does not recommend use of private key generation for ECDH
+	  computations, which, however, is required to pass crypto self-tests.
+
+	  Say Y if you need the driver to pass crypto self-tests. If unsure,
+	  say N.
