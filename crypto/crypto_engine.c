@@ -280,6 +280,19 @@ int crypto_transfer_skcipher_request_to_engine(struct crypto_engine *engine,
 EXPORT_SYMBOL_GPL(crypto_transfer_skcipher_request_to_engine);
 
 /**
+ * crypto_transfer_kpp_request_to_engine - transfer one kpp_request
+ * to list into the engine queue
+ * @engine: the hardware engine
+ * @req: the request need to be listed into the engine queue
+ */
+int crypto_transfer_kpp_request_to_engine(struct crypto_engine *engine,
+					  struct kpp_request *req)
+{
+	return crypto_transfer_request_to_engine(engine, &req->base);
+}
+EXPORT_SYMBOL_GPL(crypto_transfer_kpp_request_to_engine);
+
+/**
  * crypto_finalize_ablkcipher_request - finalize one ablkcipher_request if
  * the request is done
  * @engine: the hardware engine
@@ -349,6 +362,20 @@ void crypto_finalize_skcipher_request(struct crypto_engine *engine,
 	return crypto_finalize_request(engine, &req->base, err);
 }
 EXPORT_SYMBOL_GPL(crypto_finalize_skcipher_request);
+
+/**
+ * crypto_finalize_kpp_request - finalize one kpp_request if
+ * the request is done
+ * @engine: the hardware engine
+ * @req: the request need to be finalized
+ * @err: error number
+ */
+void crypto_finalize_kpp_request(struct crypto_engine *engine,
+				 struct kpp_request *req, int err)
+{
+	return crypto_finalize_request(engine, &req->base, err);
+}
+EXPORT_SYMBOL_GPL(crypto_finalize_kpp_request);
 
 /**
  * crypto_engine_start - start the hardware engine
