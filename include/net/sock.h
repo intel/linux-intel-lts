@@ -535,6 +535,9 @@ struct sock {
 #endif
 	void                    (*sk_destruct)(struct sock *sk);
 	struct sock_reuseport __rcu	*sk_reuseport_cb;
+#ifdef CONFIG_NET_OOB
+	void			*oob_data;
+#endif
 #ifdef CONFIG_BPF_SYSCALL
 	struct bpf_local_storage __rcu	*sk_bpf_storage;
 #endif
