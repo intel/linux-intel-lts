@@ -91,7 +91,8 @@
 
 /*
  * Tells the open call that out-of-band operations should be enabled
- * for the file (if supported).
+ * for the file (if supported). Can also be passed along to socket(2)
+ * via the type argument as SOCK_OOB.
  */
 #ifndef O_OOB
 #define O_OOB		010000000000
