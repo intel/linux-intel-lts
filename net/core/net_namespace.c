@@ -351,6 +351,8 @@ static __net_init int setup_net(struct net *net)
 	preempt_disable();
 	net->net_cookie = gen_cookie_next(&net_cookie);
 	preempt_enable();
+	/* Dovetail: set up the oob-specific state. */
+	net_init_oob_state(&net->oob);
 
 	list_for_each_entry(ops, &pernet_list, list) {
 		error = ops_init(ops, net);
@@ -615,6 +617,8 @@ static void cleanup_net(struct work_struct *work)
 	llist_for_each_entry(net, net_kill_list, cleanup_list) {
 		unhash_nsid(net, last);
 		list_add_tail(&net->exit_list, &net_exit_list);
+		/* Dovetail: drop the oob-specific state. */
+		net_cleanup_oob_state(&net->oob);
 	}
 
 	/* Run all of the network namespace pre_exit methods */

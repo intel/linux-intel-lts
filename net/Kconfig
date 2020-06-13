@@ -66,6 +66,9 @@ config SKB_DECRYPTED
 config SKB_EXTENSIONS
 	bool
 
+config NET_OOB
+	bool
+
 config NET_DEVMEM
 	def_bool y
 	depends on DMA_SHARED_BUFFER
