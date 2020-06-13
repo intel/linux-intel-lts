@@ -520,6 +520,9 @@ struct sock {
 	struct bpf_local_storage __rcu	*sk_bpf_storage;
 #endif
 	struct rcu_head		sk_rcu;
+#ifdef CONFIG_NET_OOB
+	void			*oob_data;
+#endif
 };
 
 enum sk_pacing {

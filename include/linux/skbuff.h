@@ -858,6 +858,11 @@ struct sk_buff {
 #ifdef CONFIG_TLS_DEVICE
 	__u8			decrypted:1;
 #endif
+#ifdef CONFIG_NET_OOB
+	__u8			oob:1;
+	__u8			oob_clone:1;
+	__u8			oob_cloned:1;
+#endif
 
 #ifdef CONFIG_NET_SCHED
 	__u16			tc_index;	/* traffic control index */
@@ -1080,6 +1085,54 @@ struct sk_buff *__build_skb(void *data, unsigned int frag_size);
 struct sk_buff *build_skb(void *data, unsigned int frag_size);
 struct sk_buff *build_skb_around(struct sk_buff *skb,
 				 void *data, unsigned int frag_size);
+#ifdef CONFIG_NET_OOB
+
+static inline bool skb_is_oob(const struct sk_buff *skb)
+{
+	return skb->oob;
+}
+
+static inline bool skb_is_oob_clone(const struct sk_buff *skb)
+{
+	return skb->oob_clone;
+}
+
+static inline bool skb_has_oob_clone(const struct sk_buff *skb)
+{
+	return skb->oob_cloned;
+}
+
+struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev,
+				       size_t len, gfp_t gfp_mask);
+void __netdev_free_oob_skb(struct net_device *dev, struct sk_buff *skb);
+void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb);
+struct sk_buff *skb_alloc_oob_head(gfp_t gfp_mask);
+void skb_morph_oob_skb(struct sk_buff *n, struct sk_buff *skb);
+bool skb_release_oob_skb(struct sk_buff *skb, int *dref);
+
+static inline bool recycle_oob_skb(struct sk_buff *skb)
+{
+	bool skb_oob_recycle(struct sk_buff *skb);
+
+	if (!skb->oob)
+		return false;
+
+	return skb_oob_recycle(skb);
+}
+
+#else
+
+static inline bool skb_is_oob(const struct sk_buff *skb)
+{
+	return false;
+}
+
+static inline bool recycle_oob_skb(struct sk_buff *skb)
+{
+	return false;
+}
+
+#endif
 
 /**
  * alloc_skb - allocate a network buffer
