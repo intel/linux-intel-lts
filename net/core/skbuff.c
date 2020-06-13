@@ -215,6 +215,117 @@ static void __build_skb_around(struct sk_buff *skb, void *data,
 	skb_set_kcov_handle(skb, kcov_common_handle());
 }
 
+#ifdef CONFIG_NET_OOB
+
+struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev, size_t len,
+				       gfp_t gfp_mask)
+{
+	struct sk_buff *skb = __alloc_skb(len, gfp_mask, 0, NUMA_NO_NODE);
+
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, NET_SKB_PAD);
+	skb->dev = dev;
+	skb->oob = true;
+
+	return skb;
+}
+EXPORT_SYMBOL_GPL(__netdev_alloc_oob_skb);
+
+void __netdev_free_oob_skb(struct net_device *dev, struct sk_buff *skb)
+{
+	skb->oob = false;
+	skb->oob_clone = false;
+	dev_kfree_skb(skb);
+}
+EXPORT_SYMBOL_GPL(__netdev_free_oob_skb);
+
+void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb)
+{
+	struct skb_shared_info *shinfo;
+	bool head_frag = skb->head_frag;
+	bool pfmemalloc = skb->pfmemalloc;
+
+	if (WARN_ON_ONCE(!skb->oob || skb->oob_clone))
+		return;
+
+	memset(skb, 0, offsetof(struct sk_buff, tail));
+	/* Out-of-band skbs are guaranteed to have linear storage. */
+	skb->data = skb->head;
+	skb_reset_tail_pointer(skb);
+	skb->mac_header = (typeof(skb->mac_header))~0U;
+	skb->transport_header = (typeof(skb->transport_header))~0U;
+	skb->head_frag = head_frag;
+	skb->pfmemalloc = pfmemalloc;
+	shinfo = skb_shinfo(skb);
+	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
+	atomic_set(&shinfo->dataref, 1);
+	skb_reserve(skb, NET_SKB_PAD);
+
+	refcount_set(&skb->users, 1);
+	skb->dev = dev;
+	skb->oob = true;
+	skb_set_kcov_handle(skb, kcov_common_handle());
+}
+EXPORT_SYMBOL_GPL(netdev_reset_oob_skb);
+
+struct sk_buff *skb_alloc_oob_head(gfp_t gfp_mask)
+{
+	struct sk_buff *skb = kmem_cache_alloc(skbuff_head_cache, gfp_mask);
+
+	if (!skb)
+		return NULL;
+
+	/*
+	 * skb heads allocated for out-of-band traffic should be
+	 * reserved for clones, so memset is extraneous in the sense
+	 * that skb_morph_oob() should follow the allocation.
+	 */
+	memset(skb, 0, offsetof(struct sk_buff, tail));
+	refcount_set(&skb->users, 1);
+	skb->oob_clone = true;
+	skb_set_kcov_handle(skb, kcov_common_handle());
+
+	return skb;
+}
+EXPORT_SYMBOL_GPL(skb_alloc_oob_head);
+
+static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb);
+
+void skb_morph_oob_skb(struct sk_buff *n, struct sk_buff *skb)
+{
+	__skb_clone(n, skb);
+	n->oob = true;
+	n->oob_clone = true;
+	skb->oob_cloned = true;
+}
+EXPORT_SYMBOL_GPL(skb_morph_oob_skb);
+
+bool skb_release_oob_skb(struct sk_buff *skb, int *dref)
+{
+	struct skb_shared_info *shinfo = skb_shinfo(skb);
+
+	if (!skb_unref(skb))
+		return false;
+
+	/*
+	 * ->nohdr is never set for oob shells, so we always refcount
+         * the full data (header + payload) when cloned.
+	 */
+	*dref = skb->cloned ? atomic_sub_return(1, &shinfo->dataref) : 0;
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(skb_release_oob_skb);
+
+__weak bool skb_oob_recycle(struct sk_buff *skb)
+{
+	return false;
+}
+
+#endif	/* CONFIG_NET_OOB */
+
 /**
  * __build_skb - build a network buffer
  * @data: data buffer provided by caller
@@ -753,6 +864,9 @@ static void skb_release_all(struct sk_buff *skb)
 
 void __kfree_skb(struct sk_buff *skb)
 {
+	if (recycle_oob_skb(skb))
+		return;
+
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }
@@ -951,12 +1065,18 @@ static void napi_skb_cache_put(struct sk_buff *skb)
 
 void __kfree_skb_defer(struct sk_buff *skb)
 {
+	if (recycle_oob_skb(skb))
+		return;
+
 	skb_release_all(skb);
 	napi_skb_cache_put(skb);
 }
 
 void napi_skb_free_stolen_head(struct sk_buff *skb)
 {
+	if (recycle_oob_skb(skb))
+		return;
+
 	if (unlikely(skb->slow_gro)) {
 		nf_reset_ct(skb);
 		skb_dst_drop(skb);
@@ -988,6 +1108,9 @@ void napi_consume_skb(struct sk_buff *skb, int budget)
 		__kfree_skb(skb);
 		return;
 	}
+
+	if (recycle_oob_skb(skb))
+		return;
 
 	skb_release_all(skb);
 	napi_skb_cache_put(skb);
