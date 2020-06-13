@@ -41,6 +41,7 @@
 #endif
 #include <net/netprio_cgroup.h>
 #include <net/xdp.h>
+#include <net/netoob.h>
 
 #include <linux/netdev_features.h>
 #include <linux/neighbour.h>
@@ -325,6 +326,7 @@ enum netdev_state_t {
 	__LINK_STATE_LINKWATCH_PENDING,
 	__LINK_STATE_DORMANT,
 	__LINK_STATE_TESTING,
+	__LINK_STATE_OOB,
 };
 
 struct gro_list {
@@ -1621,6 +1623,13 @@ struct net_device_ops {
 	ktime_t			(*ndo_get_tstamp)(struct net_device *dev,
 						  const struct skb_shared_hwtstamps *hwtstamps,
 						  bool cycles);
+#ifdef CONFIG_NET_OOB
+	struct sk_buff *	(*ndo_alloc_oob_skb)(struct net_device *dev,
+						     dma_addr_t *dma_addr);
+	void			(*ndo_free_oob_skb)(struct net_device *dev,
+						    struct sk_buff *skb,
+						    dma_addr_t dma_addr);
+#endif
 };
 
 /**
@@ -1815,6 +1824,7 @@ enum netdev_ml_priv_type {
  *	@tlsdev_ops:	Transport Layer Security offload operations
  *	@header_ops:	Includes callbacks for creating,parsing,caching,etc
  *			of Layer 2 headers.
+ *	@net_oob_context:	Out-of-band networking context (oob stage diversion)
  *
  *	@flags:		Interface flags (a la BSD)
  *	@priv_flags:	Like 'flags' but invisible to userspace,
@@ -2106,6 +2116,10 @@ struct net_device {
 
 #if IS_ENABLED(CONFIG_TLS_DEVICE)
 	const struct tlsdev_ops *tlsdev_ops;
+#endif
+
+#ifdef CONFIG_NET_OOB
+	struct oob_netdev_context  oob_context;
 #endif
 
 	const struct header_ops *header_ops;
@@ -4223,6 +4237,93 @@ static inline bool netif_device_present(const struct net_device *dev)
 void netif_device_detach(struct net_device *dev);
 
 void netif_device_attach(struct net_device *dev);
+
+#ifdef CONFIG_NET_OOB
+
+bool netif_receive_oob(struct sk_buff *skb);
+
+static inline bool netif_oob_diversion(const struct net_device *dev)
+{
+	return test_bit(__LINK_STATE_OOB, &dev->state);
+}
+
+static inline void netif_enable_oob_diversion(struct net_device *dev)
+{
+	return set_bit(__LINK_STATE_OOB, &dev->state);
+}
+
+static inline void netif_disable_oob_diversion(struct net_device *dev)
+{
+	clear_bit(__LINK_STATE_OOB, &dev->state);
+	smp_mb__after_atomic();
+}
+
+int netif_xmit_oob(struct sk_buff *skb);
+
+static inline bool netdev_is_oob_capable(struct net_device *dev)
+{
+	return !!(dev->oob_context.flags & IFF_OOB_CAPABLE);
+}
+
+static inline void netdev_enable_oob_port(struct net_device *dev)
+{
+	dev->oob_context.flags |= IFF_OOB_PORT;
+}
+
+static inline void netdev_disable_oob_port(struct net_device *dev)
+{
+	dev->oob_context.flags &= ~IFF_OOB_PORT;
+}
+
+static inline bool netdev_is_oob_port(struct net_device *dev)
+{
+	return !!(dev->oob_context.flags & IFF_OOB_PORT);
+}
+
+static inline struct sk_buff *netdev_alloc_oob_skb(struct net_device *dev,
+						   dma_addr_t *dma_addr)
+{
+	return dev->netdev_ops->ndo_alloc_oob_skb(dev, dma_addr);
+}
+
+static inline void netdev_free_oob_skb(struct net_device *dev,
+				       struct sk_buff *skb,
+				       dma_addr_t dma_addr)
+{
+	dev->netdev_ops->ndo_free_oob_skb(dev, skb, dma_addr);
+}
+
+#else
+
+static inline bool netif_receive_oob(struct sk_buff *skb)
+{
+	return false;
+}
+
+static inline bool netif_oob_diversion(const struct net_device *dev)
+{
+	return false;
+}
+
+static inline bool netdev_is_oob_capable(struct net_device *dev)
+{
+	return false;
+}
+
+static inline void netdev_enable_oob_port(struct net_device *dev)
+{
+}
+
+static inline void netdev_disable_oob_port(struct net_device *dev)
+{
+}
+
+static inline bool netdev_is_oob_port(struct net_device *dev)
+{
+	return false;
+}
+
+#endif
 
 /*
  * Network interface message level settings
