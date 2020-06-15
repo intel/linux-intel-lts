@@ -8,6 +8,11 @@
 #ifndef __HDDL_DEVICE_H
 #define __HDDL_DEVICE_H
 
+#include <linux/types.h>
+#include <linux/platform_device.h>
+#include <linux/i2c.h>
+#include <linux/xlink.h>
+
 #define HDDL_MAGIC 'x'
 #define HDDL_READ_SW_ID_DATA    _IOW(HDDL_MAGIC, 'a', void*)
 #define HDDL_SOFT_RESET		      _IOW(HDDL_MAGIC, 'b', void*)

@@ -250,6 +250,10 @@ static const struct of_device_id keembay_thermal_id_table[] = {
 
 struct keembay_therm_info *g_thermal_data;
 
+
+static int hddl_device_thermal_init(void);
+static int hddl_device_thermal_exit(void);
+
 static int keembay_thermal_probe(struct platform_device *pdev)
 {
 	int ret;
@@ -287,6 +291,11 @@ static int keembay_thermal_probe(struct platform_device *pdev)
 	error = clk_enable(g_thermal_data->thermal_clk);
 	if (error)
 		return error;
+
+#if defined(MODULE)
+	hddl_device_thermal_init();
+#endif /* MODULE */
+
 	return 0;
 }
 
@@ -329,8 +338,13 @@ static int keembay_thermal_exit(struct platform_device *pdev)
 	struct thermal_zone_device *keembay_thermal =
 				platform_get_drvdata(pdev);
 
+#if defined(MODULE)
+	hddl_device_thermal_exit();
+#endif /* MODULE */
+
 	thermal_zone_device_unregister(keembay_thermal);
 	clk_disable_unprepare(g_thermal_data->thermal_clk);
+
 	return 0;
 }
 MODULE_DEVICE_TABLE(of, keembay_thermal_id_table);
@@ -421,8 +435,10 @@ static int hddl_device_thermal_exit(void)
 	return 0;
 };
 
+#if !defined(MODULE)
 late_initcall(hddl_device_thermal_init);
-late_initcall(hddl_device_thermal_exit);
+late_initcall(hddl_device_thermal_init);
+#endif
 
 MODULE_DESCRIPTION("KeemBay Thermal Driver");
 MODULE_AUTHOR("Sandeep Singh <sandeep1.singh@intel.com>");
