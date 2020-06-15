@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * intel-qep.c - Intel Quadrature Encoder Driver
+ * Intel Quadrature Encoder Driver
  *
  * Copyright (C) 2019 Intel Corporation - https://www.intel.com
  *
