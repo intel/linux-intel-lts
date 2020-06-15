@@ -2,7 +2,7 @@
 /*
  * Intel Quadrature Encoder Driver
  *
- * Copyright (C) 2019 Intel Corporation - https://www.intel.com
+ * Copyright (C) 2019-2020 Intel Corporation
  *
  * Author: Felipe Balbi (Intel)
  */
