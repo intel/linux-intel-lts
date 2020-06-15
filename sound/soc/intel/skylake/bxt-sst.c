@@ -535,20 +535,10 @@ static int bxt_set_dsp_D0(struct sst_dsp *ctx, unsigned int core_id)
 
 	if (skl->fw_loaded == false) {
 		skl->boot_complete = false;
-		ret = bxt_load_base_firmware(ctx);
-		if (ret < 0) {
-			dev_err(ctx->dev, "reload fw failed: %d\n", ret);
-			return ret;
-		}
+		ret = bxt_sst_init_fw(ctx->dev, skl);
+		if (ret)
+			goto err;
 
-		if (skl->lib_count > 1) {
-			ret = bxt_load_library(ctx, skl->lib_info,
-						skl->lib_count);
-			if (ret < 0) {
-				dev_err(ctx->dev, "reload libs failed: %d\n", ret);
-				return ret;
-			}
-		}
 		skl->cores.state[core_id] = SKL_DSP_RUNNING;
 		return ret;
 	}
@@ -757,9 +747,9 @@ EXPORT_SYMBOL_GPL(bxt_sst_dsp_init);
 
 int bxt_sst_init_fw(struct device *dev, struct skl_sst *ctx)
 {
-	int ret;
+	int ret, lib_reload_retries = BXT_FW_INIT_RETRY;
 	struct sst_dsp *sst = ctx->dsp;
-
+again:
 	ret = sst->fw_ops.load_fw(sst);
 	if (ret < 0) {
 		dev_err(dev, "Load base fw failed: %x\n", ret);
@@ -768,14 +758,20 @@ int bxt_sst_init_fw(struct device *dev, struct skl_sst *ctx)
 
 	skl_dsp_init_core_state(sst);
 
-	if (ctx->lib_count > 1) {
-		ret = sst->fw_ops.load_library(sst, ctx->lib_info,
-						ctx->lib_count);
-		if (ret < 0) {
-			dev_err(dev, "Load Library failed : %x\n", ret);
-			return ret;
+	ret = sst->fw_ops.load_library(sst, ctx->lib_info, ctx->lib_count);
+	if (ret < 0) {
+		if (lib_reload_retries--) {
+			dev_info(ctx->dev, "reload libs failed:%d remaining retries:%d\n",
+				ret, lib_reload_retries);
+			skl_dsp_disable_core(sst, SKL_DSP_CORE0_MASK);
+			skl_freeup_uuid_list(ctx);
+			goto again;
 		}
+
+		dev_err(ctx->dev, "reload libs failed: %d\n", ret);
+		return ret;
 	}
+
 	ctx->is_first_boot = false;
 
 	return 0;
