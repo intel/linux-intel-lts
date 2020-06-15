@@ -1271,7 +1271,7 @@ static int __init acpi_parse_ptct(struct acpi_table_header *table)
 
 		ptr += entry->size;
 	}
-	if (total_psram_region > MAX_PSRAM_REGIONS)
+	if ((total_psram_region > MAX_PSRAM_REGIONS) && (total_psram_region < 1))
 		return -EINVAL;
 
 	/* Parse for the second round to record address for each regions */
