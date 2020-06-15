@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * intel-adc.c - Intel ADC Driver
+ * Intel ADC Driver
  *
  * Copyright (C) 2018 Intel Corporation
  *
