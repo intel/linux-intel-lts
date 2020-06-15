@@ -796,6 +796,8 @@ __i915_gem_get_obj_info(struct drm_i915_error_state_buf *m,
 	list_for_each_entry(file, &dev->filelist, lhead) {
 		struct drm_i915_file_private *file_priv = file->driver_priv;
 		struct get_obj_stats_buf obj_stat_buf;
+		struct drm_i915_gem_object *obj;
+		int id;
 
 		obj_stat_buf.entry = &pid_entry;
 		obj_stat_buf.m = m;
@@ -804,10 +806,29 @@ __i915_gem_get_obj_info(struct drm_i915_error_state_buf *m,
 			continue;
 
 		file_priv_reqd = file_priv;
-		spin_lock(&file->table_lock);
-		ret = idr_for_each(&file->object_idr,
-				&i915_drm_gem_obj_info, &obj_stat_buf);
-		spin_unlock(&file->table_lock);
+		/*
+		 * We do not use the idr_for_each() helper function
+		 * because the number of object can be large and we do
+		 * not want to keep the preemption disabled for too
+		 * long.
+		 */
+		for (id = 0 ;; ++id) {
+			/* Acquire an object. */
+			spin_lock(&file->table_lock);
+			obj = idr_get_next(&file->object_idr, &id);
+			if (obj)
+			i915_gem_object_get(obj);
+			spin_unlock(&file->table_lock);
+			if (!obj)
+				break;
+
+			/* Compute the object size. */
+			ret = i915_drm_gem_obj_info(id, obj, &obj_stat_buf);
+			i915_gem_object_put(obj);
+			if (ret)
+				break;
+		}
+
 		if (ret)
 			break;
 	}
