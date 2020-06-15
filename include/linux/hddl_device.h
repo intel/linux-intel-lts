@@ -21,7 +21,12 @@ typedef struct hddl_device_kmb_st {
 		struct platform_device *host_kmb_tj_plt_dev;
 		uint32_t xlink_i2c_ch[2];
 		struct i2c_adapter adap[2];
+		struct i2c_client **i2c_slaves_ext;
+		struct i2c_client **soc_smbus;
+		struct i2c_client **soc_xlinki2c;
 		struct platform_device *xlink_i2c_plt_dev[2];
+		uint32_t i2c_slaves_cnt;
+		uint32_t soc_xlinki2c_cnt;
 	} soc[3];
 } T_HDDL_DEVICE_KMB_NODE;
 

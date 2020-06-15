@@ -51,6 +51,7 @@ struct xlink_adapter_data {
 	struct task_struct *task_recv;
 	struct i2c_client *slave;
 	struct list_head head;
+	struct i2c_adapter *adap;
 };
 
 
@@ -231,7 +232,7 @@ static s32 xlink_smbus_xfer(struct i2c_adapter *adap, u16 addr,
 		dev_info(dbgxi2c, "xlink_write_data failed (%d)"
 			"dropping packet.\n",
 			xerr);
-		return xerr;
+		return -ENODEV;
 	}
 	//dev_info(dbgxi2c, "xlink_write_data - success[%d]\n", xerr);
 /* TODO: handle timeout and return time out error code to the caller of xfer */
@@ -259,6 +260,7 @@ static int xlinki2c_receive_thread(void *param)
 				(struct xlink_adapter_data *)param;
 	u32 size;
 	struct xlink_msg *msg;
+	struct device *dev = &adapt_data->adap->dev;
 
 	//dev_info(dbgxi2c, "xlinknet receive thread started [%p].\n",
 	//adapt_data);
@@ -274,15 +276,18 @@ static int xlinki2c_receive_thread(void *param)
 						adapt_data->channel,
 						(uint8_t *)msg, &size);
 		if (xerr != X_LINK_SUCCESS) {
-			dev_warn(dbgxi2c, "xlink_read_data failed (%d)"
-			"dropping packet.\n",
-				xerr);
+			if (xerr != X_LINK_TIMEOUT) {
+				dev_warn(dev, "[%d]xlink_read_data failed (%d)"
+					"dropping packet.\n",
+					adapt_data->adap->nr, xerr);
+			}
+			kfree(msg);
 			continue;
 		}
 		//dev_info(dbgxi2c, "xlink_read_data_to_buffer[%d][%d]\n",
 		//xerr, size);
 		xlink_release_data(adapt_data->xhandle, adapt_data->channel,
-		NULL);
+						NULL);
 		//dev_info(dbgxi2c, "xlink_release_data\n");
 		adap = get_adapter_from_channel(adapt_data->channel);
 		if (adap) {
@@ -333,6 +338,8 @@ static int xlinki2c_receive_thread(void *param)
 			//dev_info(dbgxi2c, "signal completed\n");
 		}
 	}
+	dev_info(dev, "[%d]xlinki2c_receive_thread stopped.\n",
+			adapt_data->adap->nr);
 
 	return 0;
 }
@@ -384,15 +391,16 @@ static struct i2c_algorithm xlink_algorithm = {
 static int xlink_i2c_probe(struct platform_device *pdev)
 {
 	struct xlink_adapter_data *adapt_data;
-	struct task_struct *task_recv;
 	uint32_t rc = 0;
 	struct kmb *hddl_device = pdev->dev.platform_data;
 	struct xlink_handle *devH = &hddl_device->devH;
 	struct i2c_adapter *adap = &hddl_device->adap[pdev->id & 0x3];
+	struct device *dev = &pdev->dev;
 
-	dev_info(dbgxi2c, "Registering xlink I2C adapter...\n");
+	dev_info(dev, "Registering xlink I2C adapter...\n");
 
 	//adap = kzalloc(sizeof(struct i2c_adapter), GFP_KERNEL);
+	memset(adap, 0, sizeof(struct i2c_adapter));
 	adap->class = 0; //I2C_CLASS_HWMON;
 	adap->owner  = THIS_MODULE;
 	adap->algo   = &xlink_algorithm;
@@ -408,13 +416,14 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 	adapt_data->channel = hddl_device->xlink_i2c_ch[pdev->id & 0x3];
 	adapt_data->slave = NULL;
 	adapt_data->xhandle = devH;
+	adapt_data->adap = adap;
 
 	rc = xlink_open_channel(devH,
 			adapt_data->channel,
 			RXB_TXB,  /* mode */
 			64*1024,
 			0   /* timeout */);
-	dev_info(dbgxi2c, "xlink_open_channel completed[%d][%d][%p]\n", rc,
+	dev_info(dev, "xlink_open_channel completed[%d][%d][%p]\n", rc,
 		adapt_data->channel,
 		adapt_data->xhandle);
 
@@ -422,12 +431,12 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 
 	rc = i2c_add_adapter(adap);
 
-	dev_info(dbgxi2c, "xlink_smbus_adapter[%d] [%d]\n", rc, adap->nr);
+	dev_info(&adap->dev, "xlink_smbus_adapter[%d] [%d]\n", rc, adap->nr);
 	/* create receiver thread */
-	task_recv = kthread_run(xlinki2c_receive_thread,
-			adapt_data,
-			"xlinki2c_receive_thread");
-	if (task_recv == NULL) {
+	adapt_data->task_recv = kthread_run(xlinki2c_receive_thread,
+															adapt_data,
+															"xlinki2c_receive_thread");
+	if (adapt_data->task_recv == NULL) {
 		printk("xlinki2c_receive_thread Thread creation failed");
 	}
 	return rc;
@@ -436,10 +445,19 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 static int xlink_i2c_remove(struct platform_device *pdev)
 {
 	struct i2c_adapter *adap = platform_get_drvdata(pdev);
+	struct xlink_adapter_data *adapt_data = i2c_get_adapdata(adap);
+	struct device *dev = &adapt_data->adap->dev;
 
-	dev_info(dbgxi2c, "Removing xlink I2C adapter...\n");
-	/* TODO: close the channel and disconnect */
-	i2c_del_adapter(adap);
+	dev_info(dev, "Removing xlink I2C adapter...\n");
+	kthread_stop(adapt_data->task_recv);
+	dev_info(dev, "stop the kthread...\n");
+
+	/* close the channel and disconnect */
+	xlink_close_channel(adapt_data->xhandle, adapt_data->channel);
+	dev_info(dev, "close the channel...\n");
+	i2c_del_adapter(adapt_data->adap); /* This will block the dynamic registeration */
+	kfree(adapt_data);
+	dev_info(dev, "delete the adapter...\n");
 
 	return 0;
 }

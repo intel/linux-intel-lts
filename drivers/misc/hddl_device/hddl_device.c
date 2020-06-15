@@ -31,7 +31,7 @@
 #include <linux/fs.h>
 #include <linux/mutex.h>
 #include <linux/delay.h>
-
+#include <linux/xlink_drv_inf.h>
 #define DRIVER_NAME "hddl_device"
 
 #define HOST_KMB_TJ_DEVICE "host_kmb_tj"
@@ -44,7 +44,7 @@
 
 struct mutex my_mutex; /* shared between the threads */
 
-static struct i2c_board_info host_i2c_devices[] = {
+static struct i2c_board_info soc_i2c_ext_devices[] = {
 	{
 		I2C_BOARD_INFO("tmp112", 0x48),
 	},
@@ -52,21 +52,23 @@ static struct i2c_board_info host_i2c_devices[] = {
 		I2C_BOARD_INFO("tmp112", 0x49),
 	},
 	{
+		I2C_BOARD_INFO("ina3221", 0x40),
+	},
+	{
 		I2C_BOARD_INFO("emc2103", 0x2e),
 	},
+};
+static struct i2c_board_info host_xlinki2c_devices[] = {
 	{
 		I2C_BOARD_INFO("host_kmb_tj", 0x5a),
 	},
-	{
-		I2C_BOARD_INFO("ina3221", 0x40),
-	},
 };
 #else
-	static struct i2c_board_info kmb_i2c_devices[] = {
-		{
-			I2C_BOARD_INFO("slave-kmb-tj", (unsigned short)0x4000005b),
-		},
-	};
+static struct i2c_board_info kmb_i2c_devices[] = {
+	{
+		I2C_BOARD_INFO("slave-kmb-tj", (unsigned short)0x4000005b),
+	},
+};
 #endif
 
 #define MAX_HDDL_DEVICES 8
@@ -185,8 +187,8 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 					} else {
 						soft_reset.return_id = 1;
 					}
-				    if (copy_to_user((T_SW_ID_SOFT_RESET *) arg, &soft_reset, sizeof(T_SW_ID_SOFT_RESET)))
-					return -EFAULT;
+					if (copy_to_user((T_SW_ID_SOFT_RESET *) arg, &soft_reset, sizeof(T_SW_ID_SOFT_RESET)))
+						return -EFAULT;
 					/* xlink-rest */
 				}
 			}
@@ -219,12 +221,89 @@ static struct file_operations fops = {
 };
 
 		/*ioctl-end*/
+int hddl_per_device_connect_thread(void *thread_param);
 
-
-
-
-static int hddl_per_device_connect_thread(void *thread_param)
+void hddl_device_probe(uint32_t sw_device_id)
 {
+	int i, j;
+	struct task_struct *task_recv;
+	printk(KERN_INFO "hddl_device_probe = %x\n", sw_device_id);
+
+	for (i = 0; i < 8; i++) {
+	for (j = 0; j < 3; j++) {
+		if (kmb_hddls[i].soc[j].devH.sw_device_id == sw_device_id) {
+
+			printk("inside probe if-condition sw_device_id %x\n", kmb_hddls[i].soc[j].devH.sw_device_id);
+
+			printk("HDDL: Booting kmb device after reset\n");
+			task_recv = kthread_run(hddl_per_device_connect_thread,
+					(void *)&kmb_hddls[i].soc[j].devH,
+					"hddl_per_device_thread");
+			if (task_recv == NULL)
+				printk(KERN_WARNING "hddl_device_init Thread creation failed");
+			}
+		}
+	}
+}
+
+void hddl_device_remove(uint32_t sw_device_id)
+{
+	int i, j, k, rc;
+	uint32_t chan_num;
+	struct kmb *soc;
+
+	printk(KERN_INFO "hddl_device_remove = %x\n", sw_device_id);
+
+	for (i = 0; i < 8; i++) {
+	for (j = 0; j < 3; j++) {
+		if (kmb_hddls[i].soc[j].devH.sw_device_id == sw_device_id) {
+
+			soc = &kmb_hddls[i].soc[j];
+			for (k = 0; k < soc->i2c_slaves_cnt; k++) {
+				printk("i2c_slaves_ext adapter %d", soc->i2c_slaves_ext[k]->adapter->nr);
+				i2c_unregister_device(soc->i2c_slaves_ext[k]);
+			}
+			for (k = 0; k < soc->soc_xlinki2c_cnt; k++) {
+				if (soc->soc_smbus[k]) {
+					printk("soc_smbus adapter %d", soc->soc_smbus[k]->adapter->nr);
+					i2c_unregister_device(soc->soc_smbus[k]);
+				}
+			}
+			for (k = 0; k < soc->soc_xlinki2c_cnt; k++) {
+				if (soc->soc_xlinki2c[k]) {
+					printk("soc_xlinki2c adapter %d", soc->soc_xlinki2c[k]->adapter->nr);
+					i2c_unregister_device(soc->soc_xlinki2c[k]);
+				}
+			}
+
+			chan_num = HDDL_NODE_XLINK_CHANNEL + soc->devH.node;
+			printk("chan_num form remove function = %d\n", chan_num);
+
+			for (k = 0; k < 2; k++) {
+
+				printk("HDDL : platform_device_unregister = %d\n", k);
+				platform_device_unregister(soc->xlink_i2c_plt_dev[k]);
+			}
+
+			rc = xlink_close_channel(&soc->devH, chan_num);
+			printk(KERN_INFO "HDDL:Close Channel Number[%x]: [%u] EC[%d]\n", sw_device_id, chan_num, rc);
+
+			rc = xlink_disconnect(&soc->devH);
+			printk(KERN_INFO "HDDL:Disconnect[%x]: EC[%d]\n", sw_device_id, rc);
+			printk("value of rc from remove = %d", rc);
+			}
+		}
+	}
+}
+
+const struct xlink_drv_event_ops ops = {
+	.probe = hddl_device_probe,
+	.remove = hddl_device_remove,
+};
+
+int hddl_per_device_connect_thread(void *thread_param)
+{
+	struct kmb *soc;
 	char device_name[XLINK_MAX_DEVICE_NAME_SIZE];
 	uint32_t device_status = 0xFF;
 	uint32_t board_info;
@@ -235,7 +314,7 @@ static int hddl_per_device_connect_thread(void *thread_param)
 	uint32_t kmb_id = 0;
 	struct timespec64 ts;
 	uint32_t chan_num;
-	uint32_t j = 0;
+	uint32_t j = 0, i = 0;
 	#ifndef CONFIG_HDDL_LOCAL_HOST
 	struct i2c_adapter *temp;
 	struct i2c_board_info temp_host_i2c_device;
@@ -244,43 +323,49 @@ static int hddl_per_device_connect_thread(void *thread_param)
 
 	struct platform_device_info xlink_i2c_info = {0};
 
+	while ((rc = xlink_boot_device(devH, DEFAULT_NOMINAL_MAX)) != X_LINK_SUCCESS) {
+		msleep_interruptible(1000);
+	}
+
 	rc = xlink_get_device_name(devH->sw_device_id,
-	device_name, XLINK_MAX_DEVICE_NAME_SIZE);
+		device_name, XLINK_MAX_DEVICE_NAME_SIZE);
 	if (rc > 0) {
 		printk(KERN_INFO
-		"HDDL:Failed to get device name of id [EC%d] %u\n",
+		"HDDL:Failed to get device name of id [EC%d] %x\n",
 		rc, devH->sw_device_id);
 		return rc;
 	}
-	printk(KERN_INFO "HDDL:Device name: %d %s\n",
-	devH->sw_device_id, device_name);
-	while ((rc = xlink_get_device_status(devH->sw_device_id,
-	&device_status)) != X_LINK_SUCCESS) {
+	printk(KERN_INFO "HDDL:Device name: %x %s\n",
+		devH->sw_device_id, device_name);
+	while ((rc = xlink_get_device_status(devH->sw_device_id, &device_status)) != X_LINK_SUCCESS) {
+
 	}
 	printk(KERN_INFO "HDDL:Device status[%d]: %u\n", rc, device_status);
 	while ((rc = xlink_connect(devH)) != 0) {
 	}
+
 	#ifdef CONFIG_HDDL_LOCAL_HOST
-		switch (hddl_get_kmb_id()) {
-		default:
-		case 0:
-			chan_num = HDDL_NODE_XLINK_CHANNEL + 0;
-			break;
+	switch (hddl_get_kmb_id()) {
+	default:
+	case 0:
+		chan_num = HDDL_NODE_XLINK_CHANNEL + 0;
+		break;
 
-		case 1:
-			chan_num = HDDL_NODE_XLINK_CHANNEL + 2;
-			break;
+	case 1:
+		chan_num = HDDL_NODE_XLINK_CHANNEL + 2;
+		break;
 
-		case 2:
-			chan_num = HDDL_NODE_XLINK_CHANNEL + 1;
-			break;
-		}
+	case 2:
+		chan_num = HDDL_NODE_XLINK_CHANNEL + 1;
+		break;
+}
 	#else
-		chan_num = HDDL_NODE_XLINK_CHANNEL + devH->node;
+	chan_num = HDDL_NODE_XLINK_CHANNEL + devH->node;
 	#endif
-
 	//chan_num = HDDL_NODE_XLINK_CHANNEL;
-	printk(KERN_INFO "HDDL:Channel Number: %u\n", chan_num);
+	printk(KERN_INFO "HDDL:Channel Number[%x]: %u\n", devH->sw_device_id, chan_num);
+
+	xlink_pcie_register_events(devH->sw_device_id, &ops);
 
 	while ((rc = xlink_open_channel(devH,
 			chan_num,
@@ -312,9 +397,9 @@ static int hddl_per_device_connect_thread(void *thread_param)
 	(uint8_t *) &board_id_rcvd, &size);
 	xlink_release_data(devH, chan_num, NULL);
 	printk(KERN_INFO
-	"HDDL: [%d]xlink_read_data completed Rcvd Size[%d]\n", rc, size);
-	printk(KERN_INFO "HDDL: Board Info[%x %x]\n", board_info,
-	board_id_rcvd);
+				"HDDL: [%d]xlink_read_data completed Rcvd Size[%d]\n", rc, size);
+	printk(KERN_INFO "HDDL: Board Info[%x %x]\n", board_info, board_id_rcvd);
+
 	if (board_info == ~(board_id_rcvd)) {
 		memcpy(&kmb_hddls[board_id].soc[kmb_id].devH, devH,
 		sizeof(struct xlink_handle));
@@ -329,12 +414,11 @@ static int hddl_per_device_connect_thread(void *thread_param)
 		);
 	}
 	#else
+
 	ktime_get_real_ts64(&ts);
 	printk(KERN_INFO "S[%llx] NS[%lx]\n", ts.tv_sec, ts.tv_nsec);
-	rc = xlink_write_volatile(devH, chan_num,
-	(uint8_t *) &ts, sizeof(struct timespec64));
-	printk(KERN_INFO "HDDL: Size Transferred[%d] = %ld\n",
-	rc, sizeof(struct timespec64));
+	rc = xlink_write_volatile(devH, chan_num, (uint8_t *) &ts, sizeof(struct timespec64));
+	printk(KERN_INFO "HDDL: Size Transferred[%d] = %ld\n", 	rc, sizeof(struct timespec64));
 
 	printk(KERN_INFO "HDDL: xlink_read_data to start...\n");
 	size = sizeof(board_id_rcvd);
@@ -363,6 +447,7 @@ static int hddl_per_device_connect_thread(void *thread_param)
 		kmb_hddls[board_id].soc[kmb_id].devH.link_id
 	);
 	#endif
+	soc = &kmb_hddls[board_id].soc[kmb_id];
 	for (j = 0; j < 2; ++j) {
 		xlink_i2c_info.name = "i2c_xlink";
 		xlink_i2c_info.id = board_id << 4 | kmb_id << 2 | j;
@@ -371,67 +456,83 @@ static int hddl_per_device_connect_thread(void *thread_param)
 		xlink_i2c_info.data = &kmb_hddls[board_id].soc[kmb_id];
 		xlink_i2c_info.size_data =
 				sizeof(kmb_hddls[board_id].soc[kmb_id]);
-		kmb_hddls[board_id].soc[kmb_id].xlink_i2c_plt_dev[j] =
+		soc->xlink_i2c_plt_dev[j] =
 		platform_device_register_full(&xlink_i2c_info);
-		kmb_hddls[board_id].soc[kmb_id].adap[j] = *
-		((struct i2c_adapter *)
-		platform_get_drvdata(
-		kmb_hddls[board_id].soc[kmb_id].xlink_i2c_plt_dev[j]));
-		printk(KERN_INFO "Adapter number = %d\n",
-		kmb_hddls[board_id].soc[kmb_id].adap[j].nr);
+		soc->adap[j] = *((struct i2c_adapter *)platform_get_drvdata(soc->xlink_i2c_plt_dev[j]));
+		printk(KERN_INFO "Adapter number = %d\n", soc->adap[j].nr);
 	}
 	#ifndef CONFIG_HDDL_LOCAL_HOST
+	soc->soc_xlinki2c_cnt = sizeof(host_xlinki2c_devices)/sizeof(struct i2c_board_info);
 
-	temp_host_i2c_device = host_i2c_devices[3];
+	soc->soc_smbus = kzalloc(sizeof(struct i2c_client *) * (kmb_hddls[board_id].soc[kmb_id].soc_xlinki2c_cnt), GFP_KERNEL);
 
-	if (board_id <= 4) {
-		/* slave address range 0x10 -- 0x1F */
-		temp_host_i2c_device.addr =
-					kmb_id + 0x10 + (board_id * 3);
-	} else {
-		/* Slave address range 0x60 -- 0x6F */
-		temp_host_i2c_device.addr =
-					kmb_id + 0x60 + ((board_id - 5) * 3);
-	}
-	temp_host_i2c_device.platform_data =
-			&kmb_hddls[board_id].soc[kmb_id].devH.sw_device_id;
-	j = 0;
-	while ((temp = i2c_get_adapter(j)) != NULL) {
-		if (strstr(temp->name, "SMBus I801") != NULL) {
-			i2c_new_client_device(temp, &temp_host_i2c_device);
-			break;
+	soc->soc_xlinki2c = kzalloc(sizeof(struct i2c_client *) * (kmb_hddls[board_id].soc[kmb_id].soc_xlinki2c_cnt), GFP_KERNEL);
+
+	for (i = 0; i < soc->soc_xlinki2c_cnt; i++) {
+		temp_host_i2c_device = host_xlinki2c_devices[i];
+
+		if (board_id <= 4) {
+			/* slave address range 0x10 -- 0x1F */
+			temp_host_i2c_device.addr =
+						kmb_id + 0x10 + (board_id * 3);
+		} else {
+			/* Slave address range 0x60 -- 0x6F */
+			temp_host_i2c_device.addr =
+						kmb_id + 0x60 + ((board_id - 5) * 3);
 		}
-		j++;
+		temp_host_i2c_device.platform_data = &(soc->devH.sw_device_id);
+
+		j = 0;
+		while ((temp = i2c_get_adapter(j)) != NULL) {
+			if (strstr(temp->name, "SMBus I801") != NULL) {
+				soc->soc_smbus[i] = i2c_new_client_device(temp, &temp_host_i2c_device);
+				printk("soc_smbus adapter %d", soc->soc_smbus[i]->adapter->nr);
+				break;
+			}
+			j++;
+		}
+		soc->soc_xlinki2c[i] = i2c_new_client_device(i2c_get_adapter(
+				soc->adap[1].nr),
+				&temp_host_i2c_device);
+		printk("soc_xlinki2c adapter %d", soc->soc_xlinki2c[i]->adapter->nr);
+
+		printk(KERN_INFO
+			"Host_kmb_tj [%s] %d\n",
+			temp_host_i2c_device.type,
+			temp_host_i2c_device.addr);
 	}
-	printk(KERN_INFO
-	"Host_kmb_tj [%s] %d\n",
-	temp_host_i2c_device.type, temp_host_i2c_device.addr);
-	i2c_new_client_device(i2c_get_adapter(
-	kmb_hddls[board_id].soc[kmb_id].adap[1].nr),
-	&temp_host_i2c_device); /* TODO */
+
+	soc->i2c_slaves_cnt = sizeof(soc_i2c_ext_devices)/sizeof(struct i2c_board_info);
+
+	soc->i2c_slaves_ext = kzalloc(sizeof(struct i2c_client *) * (soc->i2c_slaves_cnt), GFP_KERNEL);
 
 	mutex_lock(&my_mutex);
-	i2c_new_client_device(
-	i2c_get_adapter(kmb_hddls[board_id].soc[kmb_id].adap[0].nr),
-	&host_i2c_devices[0]); /* TODO */
-	i2c_new_client_device(
-	i2c_get_adapter(kmb_hddls[board_id].soc[kmb_id].adap[0].nr),
-	&host_i2c_devices[1]); /* TODO */
-	i2c_new_client_device(
-	i2c_get_adapter(kmb_hddls[board_id].soc[kmb_id].adap[0].nr),
-	&host_i2c_devices[2]); /* TODO */
-	i2c_new_client_device(
-	i2c_get_adapter(kmb_hddls[board_id].soc[kmb_id].adap[0].nr),
-	&host_i2c_devices[4]); /* TODO */
-	ssleep(1);
+
+	for (i = 0; i < soc->i2c_slaves_cnt; i++) {
+		soc->i2c_slaves_ext[i] = i2c_new_client_device(
+			i2c_get_adapter(soc->adap[0].nr),
+			&soc_i2c_ext_devices[i]);
+		printk("i2c_slaves_ext adapter %d", soc->i2c_slaves_ext[i]->adapter->nr);
+
+		ssleep(1);
+	}
 	mutex_unlock(&my_mutex);
+
 	#else
-		i2c_new_client_device(
-	i2c_get_adapter(kmb_hddls[board_id].soc[kmb_id].adap[1].nr),
-	&kmb_i2c_devices[0]); /* TODO */
+	soc->soc_xlinki2c_cnt = sizeof(kmb_i2c_devices)/sizeof(struct i2c_board_info);
+	soc->soc_xlinki2c = kzalloc(sizeof(struct i2c_client *) * (soc->soc_xlinki2c_cnt), GFP_KERNEL);
+	for (i = 0; i < soc->soc_xlinki2c_cnt; i++) {
+		soc->soc_xlinki2c[i] = i2c_new_client_device(
+			i2c_get_adapter(soc->adap[1].nr),
+			&kmb_i2c_devices[i]);
+	}
 	#endif
 	return 0;
 }
+
+
+
+
 
 #define SW_DEVICE_ID_INTERFACE_SHIFT 24U
 #define SW_DEVICE_ID_INTERFACE_MASK  0x7
@@ -444,10 +545,10 @@ static int hddl_per_device_connect_thread(void *thread_param)
 static struct xlink_handle xdevH[6];
 static int hddl_device_thermal_init(void *thread_param)
 {
-	uint32_t num_devices = 0, i = 0;
+	uint32_t num_devices = 0;
 	uint32_t sw_device_id_list[XLINK_MAX_DEVICE_LIST_SIZE];
 	char device_name[XLINK_MAX_DEVICE_NAME_SIZE];
-	uint32_t rc = 0;
+	uint32_t i = 0;
 
 	printk(KERN_INFO "HDDL:Getting device list...\n");
 #ifndef CONFIG_HDDL_LOCAL_HOST
@@ -467,31 +568,19 @@ static int hddl_device_thermal_init(void *thread_param)
 		xdevH[i].sw_device_id = sw_device_id_list[i];
 		xlink_get_device_name(xdevH[i].sw_device_id,
 		device_name, XLINK_MAX_DEVICE_NAME_SIZE);
-		printk(KERN_INFO "HDDL:Device name: %d %s\n",
+		printk(KERN_INFO "HDDL:Device name: %x %s\n",
 		xdevH[i].sw_device_id, device_name);
 	}
+
 	for (i = 0; i < num_devices; i++) {
-		#ifdef XLINK_CONNECT_THREAD_BASED
 		struct task_struct *task_recv;
-		#endif
-		printk(KERN_INFO "HDDL:Booting device...\n");
 		if (GET_INTERFACE_FROM_SW_DEVICE_ID(xdevH[i].sw_device_id) == SW_DEVICE_ID_PCIE_INTERFACE) {
-			rc = xlink_boot_device(&xdevH[i], DEFAULT_NOMINAL_MAX);
-			if (rc > 0) {
-				printk(KERN_WARNING
-				"HDDL:Failed to boot device [EC%d] %s\n", rc,
-				device_name);
-				continue;
-			}
-			#ifdef XLINK_CONNECT_THREAD_BASED
+			printk(KERN_INFO "HDDL:Booting device...\n");
 			task_recv = kthread_run(hddl_per_device_connect_thread,
 			(void *)&xdevH[i],
 			"hddl_per_device_thread");
 			if (task_recv == NULL)
 				printk(KERN_WARNING "hddl_device_init Thread creation failed");
-			#else
-				hddl_per_device_connect_thread(&xdevH[i]);
-			#endif
 		}
 
 	}
