@@ -65,7 +65,6 @@
 
 #include "tcc_buffer.h"
 
-#define ACPI_SIG_PTCT             "PTCT"
 #define PTCT_ENTRY_OFFSET_VERSION 0
 #define PTCT_ENTRY_OFFSET_SIZE    0
 #define PTCT_ENTRY_OFFSET_TYPE    1
@@ -319,6 +318,11 @@ static int tcc_parse_ptct(void)
 		offset += entry_size / sizeof(u32);
 		tbl_swap = tbl_swap + entry_size / sizeof(u32);
 	} while ((offset < (acpi_ptct_tbl->length) / sizeof(u32)) && entry_size);
+
+	if (p_tcc_config->num_of_psram < 1) {
+		pr_err("No psram found!\n");
+		return -1;
+	}
 
 	l2_start = 0;
 	l2_end = 0;
@@ -744,4 +748,4 @@ static void __exit tcc_buffer_exit(void)
 module_init(tcc_buffer_init);
 module_exit(tcc_buffer_exit);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("Dual BSD/GPL");
