@@ -149,7 +149,7 @@ static int keembay_thermal_get_trip_temp(struct thermal_zone_device *zone,
 	return 0;
 }
 
-
+/* Refer https://lwn.net/Articles/242046/ how to receive this event in userspace */
 int notify_user_space(struct thermal_zone_device *tz, int trip)
 {
 	char *thermal_prop[5];
@@ -437,7 +437,7 @@ static int hddl_device_thermal_exit(void)
 
 #if !defined(MODULE)
 late_initcall(hddl_device_thermal_init);
-late_initcall(hddl_device_thermal_init);
+late_initcall(hddl_device_thermal_exit);
 #endif
 
 MODULE_DESCRIPTION("KeemBay Thermal Driver");

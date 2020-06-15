@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * emc2103.c - Support for SMSC EMC2103
+ * Added emc2103 as a thermal cooling agent
  * Copyright (c) 2010 SMSC
+ * Copyright (C) 2019-2020 Intel Corporation
  */
 
 #include <linux/module.h>
