@@ -2,7 +2,7 @@
 /*
  * Intel ADC Driver
  *
- * Copyright (C) 2018 Intel Corporation
+ * Copyright (C) 2018-2020 Intel Corporation
  *
  * Author: Felipe Balbi (Intel)
  */
