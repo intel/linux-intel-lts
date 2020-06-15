@@ -4,7 +4,7 @@
  *
  * Copyright (C) 2018 Intel Corporation
  *
- * Author: Felipe Balbi <felipe.balbi@linux.intel.com>
+ * Author: Felipe Balbi (Intel)
  */
 
 #include <linux/completion.h>
@@ -413,6 +413,6 @@ static struct pci_driver intel_adc_driver = {
 };
 module_pci_driver(intel_adc_driver);
 
-MODULE_AUTHOR("Felipe Balbi <felipe.balbi@linux.intel.com>");
+MODULE_AUTHOR("Felipe Balbi (Intel)");
 MODULE_DESCRIPTION("Intel ADC");
 MODULE_LICENSE("GPL v2");
