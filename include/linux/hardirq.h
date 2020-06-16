@@ -158,4 +158,9 @@ static inline bool in_hard_irq(void)
 	return irqs_pipelined() ? in_pipeline() : in_hardirq();
 }
 
+static inline bool in_nonmaskable(void)
+{
+	return on_pipeline_entry() || in_nmi();
+}
+
 #endif /* LINUX_HARDIRQ_H */
