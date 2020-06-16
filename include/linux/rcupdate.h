@@ -297,7 +297,7 @@ static inline int rcu_read_lock_bh_held(void)
 
 static inline int rcu_read_lock_sched_held(void)
 {
-	return !preemptible();
+	return !running_inband() || !preemptible();
 }
 
 static inline int rcu_read_lock_any_held(void)

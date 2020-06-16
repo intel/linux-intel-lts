@@ -625,8 +625,9 @@ static void rcu_read_unlock_special(struct task_struct *t)
 	bool preempt_bh_were_disabled =
 			!!(preempt_count() & (PREEMPT_MASK | SOFTIRQ_MASK));
 
-	/* NMI handlers cannot block and cannot safely manipulate state. */
-	if (in_nmi())
+	/* Neither NMI handlers nor pipeline entry code can either
+	   block or safely manipulate state. */
+	if (rcu_in_nonmaskable())
 		return;
 
 	local_irq_save(flags);
@@ -816,7 +817,7 @@ void rcu_read_unlock_strict(void)
 	struct rcu_data *rdp;
 
 	if (!IS_ENABLED(CONFIG_RCU_STRICT_GRACE_PERIOD) ||
-	   irqs_disabled() || preempt_count() || !rcu_state.gp_kthread)
+	    on_pipeline_entry() || irqs_disabled() || preempt_count() || !rcu_state.gp_kthread)
 		return;
 	rdp = this_cpu_ptr(&rcu_data);
 	rcu_report_qs_rdp(rdp);
