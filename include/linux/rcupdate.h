@@ -160,6 +160,14 @@ static inline void rcu_nocb_flush_deferred_wakeup(void) { }
 
 #endif /* #else #ifdef CONFIG_RCU_NOCB_CPU */
 
+#ifdef CONFIG_IRQ_PIPELINE
+void rcu_oob_prepare_lock(void);
+void rcu_oob_finish_lock(void);
+#else
+#define rcu_oob_prepare_lock()	 do { } while (0)
+#define rcu_oob_finish_lock()	 do { } while (0)
+#endif
+
 /*
  * Note a quasi-voluntary context switch for RCU-tasks's benefit.
  * This is a macro rather than an inline function to avoid #include hell.
@@ -371,7 +379,7 @@ static inline int rcu_read_lock_bh_held(void)
 
 static inline int rcu_read_lock_sched_held(void)
 {
-	return !preemptible();
+	return !running_inband() || !preemptible();
 }
 
 static inline int rcu_read_lock_any_held(void)
@@ -844,6 +852,7 @@ do {									      \
  */
 static __always_inline void rcu_read_lock(void)
 {
+	rcu_oob_prepare_lock();
 	__rcu_read_lock();
 	__acquire(RCU);
 	rcu_lock_acquire(&rcu_lock_map);
@@ -880,6 +889,7 @@ static inline void rcu_read_unlock(void)
 	rcu_lock_release(&rcu_lock_map); /* Keep acq info for rls diags. */
 	__release(RCU);
 	__rcu_read_unlock();
+	rcu_oob_finish_lock();
 }
 
 /**
@@ -937,6 +947,7 @@ static inline void rcu_read_unlock_bh(void)
 static inline void rcu_read_lock_sched(void)
 {
 	preempt_disable();
+	rcu_oob_prepare_lock();
 	__acquire(RCU_SCHED);
 	rcu_lock_acquire(&rcu_sched_lock_map);
 	RCU_LOCKDEP_WARN(!rcu_is_watching(),
@@ -961,6 +972,7 @@ static inline void rcu_read_unlock_sched(void)
 			 "rcu_read_unlock_sched() used illegally while idle");
 	rcu_lock_release(&rcu_sched_lock_map);
 	__release(RCU_SCHED);
+	rcu_oob_finish_lock();
 	preempt_enable();
 }
 
