@@ -636,7 +636,7 @@ void __rcu_irq_enter_check_tick(void)
 	struct rcu_data *rdp = this_cpu_ptr(&rcu_data);
 
 	// If we're here from NMI there's nothing to do.
-	if (in_nmi())
+	if (in_nonmaskable())
 		return;
 
 	RCU_LOCKDEP_WARN(rcu_dynticks_curr_cpu_in_eqs(),
@@ -707,7 +707,7 @@ static void rcu_disable_urgency_upon_qs(struct rcu_data *rdp)
  * Return true if RCU is watching the running CPU, which means that this
  * CPU can safely enter RCU read-side critical sections.  In other words,
  * if the current CPU is not in its idle loop or is in an interrupt or
- * NMI handler, return true.
+ * NMI handler or entering the interrupt pipeline, return true.
  *
  * Make notrace because it can be called by the internal functions of
  * ftrace, and making this notrace removes unnecessary recursion calls.
@@ -716,6 +716,9 @@ notrace bool rcu_is_watching(void)
 {
 	bool ret;
 
+	if (on_pipeline_entry())
+ 		return true;
+ 
 	preempt_disable_notrace();
 	ret = !rcu_dynticks_curr_cpu_in_eqs();
 	preempt_enable_notrace();
@@ -761,7 +764,7 @@ bool rcu_lockdep_current_cpu_online(void)
 	struct rcu_data *rdp;
 	bool ret = false;
 
-	if (in_nmi() || !rcu_scheduler_fully_active)
+	if (in_nonmaskable() || !rcu_scheduler_fully_active)
 		return true;
 	preempt_disable_notrace();
 	rdp = this_cpu_ptr(&rcu_data);
