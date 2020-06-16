@@ -191,9 +191,13 @@ EXPORT_SYMBOL_GPL(keembay_thermal_zone_register_host);
 int keembay_thermal_zone_unregister_host(
 			struct kmb_trip_point_info *zone_trip_info)
 {
+	struct keembay_therm_info *ktherm = zone_trip_info->thermal_info;
+
+	spin_lock(&ktherm->lock);
 	printk("inside unregister");
 	thermal_zone_device_unregister(zone_trip_info->tz);
 	printk("exiting unregister");
+	spin_unlock(&ktherm->lock);
 	return 0;
 }
 
