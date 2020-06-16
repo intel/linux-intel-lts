@@ -409,6 +409,8 @@ struct skl_module_res {
 	u32 obs;
 	u32 dma_buffer_size;
 	u32 cpc;
+	u8 nr_input_pins;
+	u8 nr_output_pins;
 	struct skl_module_pin_resources input[MAX_IN_QUEUE];
 	struct skl_module_pin_resources output[MAX_OUT_QUEUE];
 };
