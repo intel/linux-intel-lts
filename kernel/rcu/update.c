@@ -99,6 +99,11 @@ module_param(rcu_normal_after_boot, int, 0);
  */
 static bool rcu_read_lock_held_common(bool *ret)
 {
+	if (irqs_pipelined() &&
+		(hard_irqs_disabled() || running_oob())) {
+		*ret = 1;
+		return true;
+	}
 	if (!debug_lockdep_rcu_enabled()) {
 		*ret = true;
 		return true;
