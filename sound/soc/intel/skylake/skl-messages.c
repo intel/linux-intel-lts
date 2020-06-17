@@ -1465,17 +1465,19 @@ static void skl_set_base_ext_module_format(struct skl_sst *ctx,
 			struct skl_module_cfg *mconfig,
 			struct skl_base_cfg_ext *base_cfg_ext)
 {
-	int i;
 	struct skl_module_pin_resources *pin_res;
 	struct skl_pin_format *pin_fmt;
 	struct skl_module *module = mconfig->module;
 	struct skl_module_res *res = &module->resources[mconfig->res_idx];
 	struct skl_module_iface *fmt = &module->formats[mconfig->fmt_idx];
 	struct skl_module_fmt *format;
+	int i;
+	char *params;
 
 	base_cfg_ext->nr_input_pins = res->nr_input_pins;
 	base_cfg_ext->nr_output_pins = res->nr_output_pins;
-	base_cfg_ext->priv_param_length = 0;
+	base_cfg_ext->priv_param_length =
+		mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 
 	for (i = 0; i < res->nr_input_pins; i++) {
 		pin_res = &res->input[i];
@@ -1498,6 +1500,16 @@ static void skl_set_base_ext_module_format(struct skl_sst *ctx,
 		format = &fmt->outputs[pin_res->pin_index].fmt;
 		fill_pin_params(&pin_fmt->audio_fmt, format);
 	}
+
+	if (base_cfg_ext->priv_param_length == 0)
+		return;
+
+	params = (char *)base_cfg_ext + sizeof(struct skl_base_cfg_ext) +
+		(base_cfg_ext->nr_input_pins + base_cfg_ext->nr_output_pins) *
+		sizeof(struct skl_pin_format);
+
+	memcpy(params, mconfig->formats_config[SKL_PARAM_INIT].caps,
+		 mconfig->formats_config[SKL_PARAM_INIT].caps_size);
 }
 
 /*
@@ -1916,35 +1928,6 @@ static void skl_set_probe_format(struct skl_sst *ctx,
 }
 
 /*
- * Algo modules are DSP pre processing modules. Algo module takes base module
- * configuration (with generic extension) and params
- */
-
-static void skl_set_algo_format(struct skl_sst *ctx,
-			struct skl_module_cfg *mconfig,
-			struct skl_algo_cfg *algo_mcfg)
-{
-	char *params;
-
-	skl_set_base_module_format(ctx, mconfig, &algo_mcfg->base_cfg);
-	skl_set_base_ext_module_format(ctx, mconfig,
-				       &algo_mcfg->base_cfg_ext);
-
-	if (mconfig->formats_config[SKL_PARAM_INIT].caps_size == 0)
-		return;
-
-	params = (char *)algo_mcfg + sizeof(struct skl_algo_cfg) +
-		(algo_mcfg->base_cfg_ext.nr_input_pins +
-		 algo_mcfg->base_cfg_ext.nr_output_pins) *
-		sizeof(struct skl_pin_format);
-
-	memcpy(params,
-	       mconfig->formats_config[SKL_PARAM_INIT].caps,
-	       mconfig->formats_config[SKL_PARAM_INIT].caps_size);
-
-}
-
-/*
  * Mic select module allows selecting one or many input channels, thus
  * acting as a demux.
  *
@@ -1987,13 +1970,6 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 	case SKL_MODULE_TYPE_UPDWMIX:
 		return sizeof(struct skl_up_down_mixer_cfg);
 
-	case SKL_MODULE_TYPE_ALGO:
-		param_size = sizeof(struct skl_algo_cfg) +
-			(m_res->nr_input_pins + m_res->nr_output_pins)
-			* sizeof(struct skl_pin_format);
-		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
-		return param_size;
-
 	case SKL_MODULE_TYPE_BASE_OUTFMT:
 	case SKL_MODULE_TYPE_MIC_SELECT:
 	case SKL_MODULE_TYPE_KPB:
@@ -2005,19 +1981,15 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 			* m_intf->outputs[0].fmt.channels;
 		return param_size;
 
-	case SKL_MODULE_TYPE_BASE_GENEXT:
+	case SKL_MODULE_TYPE_ALGO:
+	default:
+		m_res = skl_get_module_res(mconfig);
 		param_size = sizeof(struct skl_base_cfg);
 		param_size += sizeof(struct skl_base_cfg_ext) +
 			(m_res->nr_input_pins + m_res->nr_output_pins)
 			* sizeof(struct skl_pin_format);
+		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 		return param_size;
-
-	default:
-		/*
-		 * return only base cfg when no specific module type is
-		 * specified
-		 */
-		return sizeof(struct skl_base_cfg);
 	}
 
 	return 0;
@@ -2063,10 +2035,6 @@ static int skl_set_module_format(struct skl_sst *ctx,
 		skl_set_updown_mixer_format(ctx, module_config, *param_data);
 		break;
 
-	case SKL_MODULE_TYPE_ALGO:
-		skl_set_algo_format(ctx, module_config, *param_data);
-		break;
-
 	case SKL_MODULE_TYPE_BASE_OUTFMT:
 	case SKL_MODULE_TYPE_MIC_SELECT:
 	case SKL_MODULE_TYPE_KPB:
@@ -2077,15 +2045,12 @@ static int skl_set_module_format(struct skl_sst *ctx,
 		skl_set_gain_format(ctx, module_config, *param_data);
 		break;
 
-	case SKL_MODULE_TYPE_BASE_GENEXT:
+	case SKL_MODULE_TYPE_ALGO:
+	default:
 		skl_set_base_module_format(ctx, module_config, *param_data);
 		skl_set_base_ext_module_format(ctx, module_config,
 			*param_data + sizeof(struct skl_base_cfg));
 		break;
-	default:
-		skl_set_base_module_format(ctx, module_config, *param_data);
-		break;
-
 	}
 
 	dev_dbg(ctx->dev, "Module type=%d id=%d config size: %d bytes\n",

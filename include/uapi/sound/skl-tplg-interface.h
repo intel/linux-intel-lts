@@ -87,7 +87,6 @@ enum skl_module_type {
 	SKL_MODULE_TYPE_PROBE,
 	SKL_MODULE_TYPE_ASRC,
 	SKL_MODULE_TYPE_GAIN,
-	SKL_MODULE_TYPE_BASE_GENEXT
 };
 
 enum skl_core_affinity {
