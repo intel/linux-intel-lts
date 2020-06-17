@@ -1474,12 +1474,12 @@ static void skl_set_base_ext_module_format(struct skl_sst *ctx,
 	int i;
 	char *params;
 
-	base_cfg_ext->nr_input_pins = res->nr_input_pins;
-	base_cfg_ext->nr_output_pins = res->nr_output_pins;
+	base_cfg_ext->nr_input_pins = fmt->nr_in_fmt;
+	base_cfg_ext->nr_output_pins = fmt->nr_out_fmt;
 	base_cfg_ext->priv_param_length =
 		mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 
-	for (i = 0; i < res->nr_input_pins; i++) {
+	for (i = 0; i < fmt->nr_in_fmt; i++) {
 		pin_res = &res->input[i];
 		pin_fmt = &base_cfg_ext->pins_fmt[i];
 
@@ -1490,9 +1490,9 @@ static void skl_set_base_ext_module_format(struct skl_sst *ctx,
 		fill_pin_params(&pin_fmt->audio_fmt, format);
 	}
 
-	for (i = 0; i < res->nr_output_pins; i++) {
+	for (i = 0; i < fmt->nr_out_fmt; i++) {
 		pin_res = &res->output[i];
-		pin_fmt = &base_cfg_ext->pins_fmt[res->nr_input_pins + i];
+		pin_fmt = &base_cfg_ext->pins_fmt[fmt->nr_in_fmt + i];
 
 		pin_fmt->pin_idx = pin_res->pin_index;
 		pin_fmt->buf_size = pin_res->buf_size;
@@ -1951,9 +1951,7 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 {
 	u16 param_size;
 	struct skl_module *module = mconfig->module;
-	struct skl_module_iface *m_intf = &module->formats[mconfig->fmt_idx];
-	struct skl_module_res *m_res = &module->resources[mconfig->res_idx];
-
+	struct skl_module_iface *iface = &module->formats[mconfig->fmt_idx];
 	switch (mconfig->m_type) {
 	case SKL_MODULE_TYPE_COPIER:
 		param_size = sizeof(struct skl_cpr_cfg);
@@ -1977,17 +1975,16 @@ static u16 skl_get_module_param_size(struct skl_sst *ctx,
 
 	case SKL_MODULE_TYPE_GAIN:
 		param_size = sizeof(struct skl_base_cfg);
-		param_size += sizeof(struct skl_gain_config)
-			* m_intf->outputs[0].fmt.channels;
+		param_size += sizeof(struct skl_gain_config) *
+				iface->outputs[0].fmt.channels;
 		return param_size;
 
 	case SKL_MODULE_TYPE_ALGO:
 	default:
-		m_res = skl_get_module_res(mconfig);
 		param_size = sizeof(struct skl_base_cfg);
-		param_size += sizeof(struct skl_base_cfg_ext) +
-			(m_res->nr_input_pins + m_res->nr_output_pins)
-			* sizeof(struct skl_pin_format);
+		param_size += sizeof(struct skl_base_cfg_ext);
+		param_size += (iface->nr_in_fmt + iface->nr_out_fmt) *
+			sizeof(struct skl_pin_format);
 		param_size += mconfig->formats_config[SKL_PARAM_INIT].caps_size;
 		return param_size;
 	}
