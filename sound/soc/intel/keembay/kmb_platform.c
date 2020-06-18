@@ -17,7 +17,7 @@
 #define PERIODS_MAX		48
 #define PERIOD_BYTES_MIN	4096
 #define BUFFER_BYTES_MAX	(PERIODS_MAX * PERIOD_BYTES_MIN)
-#define TDM_OPERATION		1
+#define TDM_OPERATION		5
 #define I2S_OPERATION		0
 #define DATA_WIDTH_CONFIG_BIT	6
 #define TDM_CHANNEL_CONFIG_BIT	3
@@ -28,14 +28,16 @@ static const struct snd_pcm_hardware kmb_pcm_hardware = {
 		SNDRV_PCM_INFO_MMAP_VALID |
 		SNDRV_PCM_INFO_BATCH |
 		SNDRV_PCM_INFO_BLOCK_TRANSFER,
-	.rates = SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_48000,
-	.rate_min = 16000,
+	.rates = SNDRV_PCM_RATE_8000 |
+			SNDRV_PCM_RATE_16000 |
+			SNDRV_PCM_RATE_48000,
+	.rate_min = 8000,
 	.rate_max = 48000,
 	.formats = SNDRV_PCM_FMTBIT_S16_LE |
 		   SNDRV_PCM_FMTBIT_S24_LE |
 		   SNDRV_PCM_FMTBIT_S32_LE,
 	.channels_min = 2,
-	.channels_max = 2,
+	/* channels_max removed to allow configurable max channels */
 	.buffer_bytes_max = BUFFER_BYTES_MAX,
 	.period_bytes_min = PERIOD_BYTES_MIN,
 	.period_bytes_max = BUFFER_BYTES_MAX / PERIODS_MIN,
@@ -80,19 +82,25 @@ static unsigned int kmb_pcm_rx_fn(struct kmb_i2s_info *kmb_i2s,
 {
 	unsigned int period_pos = rx_ptr % runtime->period_size;
 	void __iomem *i2s_base = kmb_i2s->i2s_base;
+	int channel_num = kmb_i2s->config.chan_nr;
 	void *buf = runtime->dma_area;
-	int i;
+	int i, j;
 
 	/* KMB i2s uses two separate L/R FIFO */
 	for (i = 0; i < kmb_i2s->fifo_th; i++) {
-		if (kmb_i2s->config.data_width == 16) {
-			((u16(*)[2])buf)[rx_ptr][0] = readl(i2s_base + LRBR_LTHR(0));
-			((u16(*)[2])buf)[rx_ptr][1] = readl(i2s_base + RRBR_RTHR(0));
-		} else {
-			((u32(*)[2])buf)[rx_ptr][0] = readl(i2s_base + LRBR_LTHR(0));
-			((u32(*)[2])buf)[rx_ptr][1] = readl(i2s_base + RRBR_RTHR(0));
+		for (j = 0; j < channel_num / 2; j++) {
+			if (kmb_i2s->config.data_width == 16) {
+				((u16(*))buf)[rx_ptr * channel_num + (j * 2)] =
+							readl(i2s_base + LRBR_LTHR(j));
+				((u16(*))buf)[rx_ptr * channel_num + ((j * 2) + 1)]  =
+							readl(i2s_base + RRBR_RTHR(j));
+			} else {
+				((u32(*))buf)[rx_ptr * channel_num + (j * 2)] =
+							readl(i2s_base + LRBR_LTHR(j));
+				((u32(*))buf)[rx_ptr * channel_num + ((j * 2) + 1)]  =
+							readl(i2s_base + RRBR_RTHR(j));
+			}
 		}
-
 		period_pos++;
 
 		if (++rx_ptr >= runtime->buffer_size)
@@ -107,14 +115,14 @@ static unsigned int kmb_pcm_rx_fn(struct kmb_i2s_info *kmb_i2s,
 static inline void kmb_i2s_disable_channels(struct kmb_i2s_info *kmb_i2s,
 					    u32 stream)
 {
-	struct i2s_clk_config_data *config = &kmb_i2s->config;
 	u32 i;
 
+	/* Disable all channels regardless of configuration*/
 	if (stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		for (i = 0; i < config->chan_nr / 2; i++)
+		for (i = 0; i < 4; i++)
 			writel(0, kmb_i2s->i2s_base + TER(i));
 	} else {
-		for (i = 0; i < config->chan_nr / 2; i++)
+		for (i = 0; i < 4; i++)
 			writel(0, kmb_i2s->i2s_base + RER(i));
 	}
 }
@@ -234,30 +242,44 @@ static irqreturn_t kmb_i2s_irq_handler(int irq, void *dev_id)
 	struct kmb_i2s_info *kmb_i2s = dev_id;
 	struct i2s_clk_config_data *config = &kmb_i2s->config;
 	irqreturn_t ret = IRQ_NONE;
+	u32 tx_enabled = 0;
 	u32 isr[4];
 	int i;
 
-	for (i = 0; i < config->chan_nr / 2; i++)
+	for (i = 0; i < (config->chan_nr / 2); i++)
 		isr[i] = readl(kmb_i2s->i2s_base + ISR(i));
 
 	kmb_i2s_clear_irqs(kmb_i2s, SNDRV_PCM_STREAM_PLAYBACK);
 	kmb_i2s_clear_irqs(kmb_i2s, SNDRV_PCM_STREAM_CAPTURE);
+	/* Only check TX interrupt if TX is active */
+	tx_enabled = readl(kmb_i2s->i2s_base + ITER);
 
-	for (i = 0; i < config->chan_nr / 2; i++) {
+	for (i = 0; i < (config->chan_nr / 2); i++) {
 		/*
 		 * Check if TX fifo is empty. If empty fill FIFO with samples
 		 */
-		if ((isr[i] & ISR_TXFE)) {
+		if ((isr[i] & ISR_TXFE) && tx_enabled) {
 			kmb_pcm_operation(kmb_i2s, true);
 			ret = IRQ_HANDLED;
 		}
 		/*
 		 * Data available. Retrieve samples from FIFO
 		 */
-		if ((isr[i] & ISR_RXDA)) {
+		if ((isr[i] & ISR_RXDA) && i == 0 && config->chan_nr == 2) {
 			kmb_pcm_operation(kmb_i2s, false);
 			ret = IRQ_HANDLED;
 		}
+
+		if ((isr[i] & ISR_RXDA) && i == 1 && config->chan_nr == 4) {
+			kmb_pcm_operation(kmb_i2s, false);
+			ret = IRQ_HANDLED;
+		}
+
+		if ((isr[i] & ISR_RXDA) && i == 3 && config->chan_nr == 8) {
+			kmb_pcm_operation(kmb_i2s, false);
+			ret = IRQ_HANDLED;
+		}
+
 		/* Error Handling: TX */
 		if (isr[i] & ISR_TXFO) {
 			dev_dbg(kmb_i2s->dev, "TX overrun (ch_id=%d)\n", i);
@@ -443,7 +465,7 @@ static int kmb_dai_hw_params(struct snd_pcm_substream *substream,
 {
 	struct kmb_i2s_info *kmb_i2s = snd_soc_dai_get_drvdata(cpu_dai);
 	struct i2s_clk_config_data *config = &kmb_i2s->config;
-	u32 register_val, write_val;
+	u32 write_val;
 	int ret;
 
 	switch (params_format(hw_params)) {
@@ -470,16 +492,34 @@ static int kmb_dai_hw_params(struct snd_pcm_substream *substream,
 	config->chan_nr = params_channels(hw_params);
 
 	switch (config->chan_nr) {
-	/* TODO: This switch case will handle up to TDM8 in the near future */
-	case TWO_CHANNEL_SUPPORT:
+	case 8:
+	case 4:
+		/*
+		 * Platform is not capable of providing clocks for
+		 * multi channel audio
+		 */
+		if (kmb_i2s->master)
+			return -EINVAL;
+
+		write_val = ((config->chan_nr / 2) << TDM_CHANNEL_CONFIG_BIT) |
+				(config->data_width << DATA_WIDTH_CONFIG_BIT) |
+				!MASTER_MODE | TDM_OPERATION;
+
+		writel(write_val, kmb_i2s->pss_base + I2S_GEN_CFG_0);
+		break;
+	case 2:
+		/*
+		 * Platform is only capable of providing clocks need for
+		 * 2 channel master mode
+		 */
+		if (!(kmb_i2s->master))
+			return -EINVAL;
+
 		write_val = ((config->chan_nr / 2) << TDM_CHANNEL_CONFIG_BIT) |
 				(config->data_width << DATA_WIDTH_CONFIG_BIT) |
 				MASTER_MODE | I2S_OPERATION;
 
 		writel(write_val, kmb_i2s->pss_base + I2S_GEN_CFG_0);
-
-		register_val = readl(kmb_i2s->pss_base + I2S_GEN_CFG_0);
-		dev_dbg(kmb_i2s->dev, "pss register = 0x%X", register_val);
 		break;
 	default:
 		dev_dbg(kmb_i2s->dev, "channel not supported\n");
@@ -504,7 +544,7 @@ static int kmb_dai_hw_params(struct snd_pcm_substream *substream,
 		}
 	}
 
-ret = snd_pcm_lib_malloc_pages(substream,
+	ret = snd_pcm_lib_malloc_pages(substream,
 			params_buffer_bytes(hw_params));
 
 	return 0;
@@ -532,12 +572,14 @@ static struct snd_soc_dai_ops kmb_dai_ops = {
 
 static struct snd_soc_dai_driver intel_kmb_platform_dai[] = {
 	{
-		.name = "kmb-plat-dai",
+	/* .name is provided by Device Tree */
 		.playback = {
 			.channels_min = 2,
 			.channels_max = 2,
-			.rates = SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_48000,
-			.rate_min = 16000,
+			.rates = SNDRV_PCM_RATE_8000 |
+					SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000,
+			.rate_min = 8000,
 			.rate_max = 48000,
 			.formats = (SNDRV_PCM_FMTBIT_S32_LE |
 				    SNDRV_PCM_FMTBIT_S24_LE |
@@ -546,8 +588,11 @@ static struct snd_soc_dai_driver intel_kmb_platform_dai[] = {
 		.capture = {
 			.channels_min = 2,
 			.channels_max = 2,
-			.rates = SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_48000,
-			.rate_min = 16000,
+		/* .channels_max will be overwritten if provided by Device Tree */
+			.rates = SNDRV_PCM_RATE_8000 |
+					SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000,
+			.rate_min = 8000,
 			.rate_max = 48000,
 			.formats = (SNDRV_PCM_FMTBIT_S32_LE |
 				    SNDRV_PCM_FMTBIT_S24_LE |
@@ -564,6 +609,7 @@ static int kmb_plat_dai_probe(struct platform_device *pdev)
 	struct kmb_i2s_info *kmb_i2s;
 	int ret, irq;
 	u32 comp1_reg;
+	u32 channel_max;
 
 	kmb_i2s = devm_kzalloc(dev, sizeof(*kmb_i2s), GFP_KERNEL);
 	if (!kmb_i2s)
@@ -622,6 +668,12 @@ static int kmb_plat_dai_probe(struct platform_device *pdev)
 
 	kmb_i2s->fifo_th = (1 << COMP1_FIFO_DEPTH(comp1_reg)) / 2;
 
+	ret = of_property_read_u32(dev->of_node, "channel-max", &channel_max);
+	if (ret < 0)
+		dev_err(dev, "Couldn't find channel-max\n");
+	else if (intel_kmb_platform_dai->capture.channels_max < channel_max)
+		intel_kmb_platform_dai->capture.channels_max = channel_max;
+
 	ret = devm_snd_soc_register_component(dev, &kmb_component,
 					      intel_kmb_platform_dai,
 				ARRAY_SIZE(intel_kmb_platform_dai));
@@ -629,6 +681,10 @@ static int kmb_plat_dai_probe(struct platform_device *pdev)
 		dev_err(dev, "not able to register dai\n");
 		return ret;
 	}
+
+	/* To ensure none of the channels are enabled at boot up */
+	kmb_i2s_disable_channels(kmb_i2s, SNDRV_PCM_STREAM_PLAYBACK);
+	kmb_i2s_disable_channels(kmb_i2s, SNDRV_PCM_STREAM_CAPTURE);
 
 	dev_set_drvdata(dev, kmb_i2s);
 
