@@ -6,8 +6,6 @@
 
 ccflags-y += -Werror
 
-obj-$(CONFIG_INTEL_GNA) += gna.o
-
 gna-y := gna_drv.o \
          gna_hw.o \
          gna_ioctl.o \
@@ -17,4 +15,15 @@ gna-y := gna_drv.o \
          gna_request.o \
          gna_score.o \
 
+obj-m += gna.o
 
+ifeq ($(KERNELRELEASE),)
+ccflags-y += -I $(PWD)
+KDIR ?= /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+default:
+	$(MAKE) -C $(KDIR) M=$(PWD)
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean
+endif

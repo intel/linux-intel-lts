@@ -15,7 +15,7 @@
 #include "gna_mem.h"
 
 #define GNA_DRV_NAME	"gna"
-#define GNA_DRV_VER	"1.0"
+#define GNA_DRV_VER	"1.0.35"
 
 #define MAX_GNA_DEVICES		16
 

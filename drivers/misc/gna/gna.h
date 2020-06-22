@@ -70,6 +70,10 @@ struct gna_buffer {
 	__u64 patches_ptr;
 };
 
+/*
+ * Driver performance timestamps in nanoseconds.
+ * Values regard system boot time, but do not count during suspend.
+ */
 struct gna_drv_perf {
 	__u64 pre_processing;	// driver starts pre-processing
 	__u64 processing;	// hw starts processing
