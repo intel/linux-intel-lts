@@ -482,4 +482,5 @@ source "drivers/misc/ocxl/Kconfig"
 source "drivers/misc/cardreader/Kconfig"
 source "drivers/misc/habanalabs/Kconfig"
 source "drivers/misc/gna/Kconfig"
+source "drivers/misc/vpusmm/Kconfig"
 endmenu
