@@ -72,9 +72,11 @@ int pipe_is_enabled(struct intel_vgpu *vgpu, enum pipe pipe)
 {
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 
-	if (WARN_ON(pipe == INVALID_PIPE ||
-		    pipe >= INTEL_NUM_PIPES(dev_priv)))
+	if (pipe == INVALID_PIPE || pipe >= INTEL_NUM_PIPES(dev_priv)) {
+		gvt_dbg_dpy("vgpu:%d invalid pipe-%d to check enablement\n",
+					vgpu->id, pipe);
 		return -EINVAL;
+	}
 
 	if (vgpu_vreg_t(vgpu, PIPECONF(pipe)) & PIPECONF_ENABLE)
 		return 1;
