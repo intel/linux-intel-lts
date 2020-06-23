@@ -22,9 +22,6 @@
 # CVE-2017-18232
 0001-scsi-libsas-direct-call-probe-and-destruct-CVE-2017-18232.patch
 
-# CVE-2018-9517
-0001-l2tp-pass-tunnel-pointer-to-session_create-CVE-2018-9517.patch
-
 # CVE-2019-12381
 0001-ip_sockglue-Fix-missing-check-bug-in-ip_ra_control-CVE-2019-12381.patch
 
