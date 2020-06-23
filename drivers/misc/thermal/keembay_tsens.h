@@ -29,6 +29,11 @@
 #define NCE0_T_SAMPLE 0x3ff
 #define AON_TSENS_DATA1 0x004c
 #define AON_INTERFACE 0x20260000
+/* Bit shift for registers*/
+#define MSS_BIT_SHIFT 16
+#define CSS_BIT_SHIFT 0
+#define NCE0_BIT_SHIFT 0
+#define NCE1_BIT_SHIFT 16
 /* mask values for config register */
 #define CFG_MASK_AUTO 0x80ff //(auto configuration)
 #define CFG_IRQ_MASK 0x8fff

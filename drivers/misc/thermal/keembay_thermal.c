@@ -36,6 +36,7 @@ static int kmb_sensor_read_temp(void __iomem *regs_val,
 						int offset,
 						int sample_valid_mask,
 						int sample_value,
+						int bit_shift,
 						int *temp)
 {
 	int result;
@@ -44,7 +45,7 @@ static int kmb_sensor_read_temp(void __iomem *regs_val,
 	iowrite32(CFG_MASK_MANUAL, regs_val+AON_TSENS_CFG);
 	*temp = ioread32(regs_val+offset);
 	if (*temp & sample_valid_mask) {
-		*temp = (*temp & sample_value);
+		*temp = (*temp >> bit_shift & sample_value);
 		if (*temp >= Lower_Temp_Nrange && *temp <= Upper_Temp_Nrange) {
 			result = TempLookupSearch(0, NUM_RAW_KMB - 1, *temp);
 			*temp = result;
@@ -73,7 +74,9 @@ static int keembay_get_temp(struct thermal_zone_device *thermal,
 			kmb_sensor_read_temp(ktherm->regs_val,
 					AON_TSENS_DATA0,
 					MSS_T_SAMPLE_VALID,
-					MSS_T_SAMPLE, temp);
+					MSS_T_SAMPLE,
+					MSS_BIT_SHIFT,
+					temp);
 			ktherm->mss = *temp;
 			kmb_tj_temp_list[2] = *temp;
 			break;
@@ -83,6 +86,7 @@ static int keembay_get_temp(struct thermal_zone_device *thermal,
 					AON_TSENS_DATA0,
 					CSS_T_SAMPLE_VALID,
 					CSS_T_SAMPLE,
+					CSS_BIT_SHIFT,
 					temp);
 			ktherm->css = *temp;
 			kmb_tj_temp_list[3] = *temp;
@@ -93,11 +97,13 @@ static int keembay_get_temp(struct thermal_zone_device *thermal,
 					AON_TSENS_DATA1,
 					NCE0_T_SAMPLE_VALID,
 					NCE0_T_SAMPLE,
+					NCE0_BIT_SHIFT,
 					&ktherm->nce0);
 			kmb_sensor_read_temp(ktherm->regs_val,
 					AON_TSENS_DATA1,
 					NCE1_T_SAMPLE_VALID,
 					NCE1_T_SAMPLE,
+					NCE1_BIT_SHIFT,
 					&ktherm->nce1);
 			kmb_tj_temp_list[4] = ktherm->nce0;
 			kmb_tj_temp_list[5] = ktherm->nce1;
