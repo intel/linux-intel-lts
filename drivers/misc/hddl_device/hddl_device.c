@@ -296,10 +296,35 @@ void hddl_device_remove(uint32_t sw_device_id)
 	}
 }
 
-const struct xlink_drv_event_ops ops = {
-	.probe = hddl_device_probe,
-	.remove = hddl_device_remove,
+uint32_t xlink_device_events[] = {
+	_NOTIFY_INCOMING_DISCONNECTION,
+	_NOTIFY_DEVICE_DISCONNECTED,
+	_NOTIFY_DEVICE_CONNECTED,
+	_ERROR_UNEXPECTED_DISCONNECTION,
+	_NUM_EVENT_TYPE
 };
+
+
+int hddl_device_pcie_event_notify(uint32_t sw_device_id, enum _xlink_device_event_type event_type)
+{
+	printk(KERN_INFO "HDDL:xlink pcie notify[%x]: [%d]\n", sw_device_id, event_type);
+	switch (event_type) {
+	case _NOTIFY_INCOMING_DISCONNECTION:
+	case _NOTIFY_DEVICE_DISCONNECTED:
+	case _ERROR_UNEXPECTED_DISCONNECTION:
+			hddl_device_remove(sw_device_id);
+			break;
+
+	case _NOTIFY_DEVICE_CONNECTED:
+			hddl_device_probe(sw_device_id);
+			break;
+
+	default:
+			printk(KERN_INFO "HDDL:xlink pcie notify - Error[%x]: [%d]\n", sw_device_id, event_type);
+			break;
+	}
+	return 0;
+}
 
 int hddl_per_device_connect_thread(void *thread_param)
 {
@@ -365,7 +390,11 @@ int hddl_per_device_connect_thread(void *thread_param)
 	//chan_num = HDDL_NODE_XLINK_CHANNEL;
 	printk(KERN_INFO "HDDL:Channel Number[%x]: %u\n", devH->sw_device_id, chan_num);
 
-	xlink_pcie_register_events(devH->sw_device_id, &ops);
+	xlink_pcie_register_device_event(devH->sw_device_id,
+																		xlink_device_events,
+																		_NUM_EVENT_TYPE,
+																		hddl_device_pcie_event_notify,
+																		0);
 
 	while ((rc = xlink_open_channel(devH,
 			chan_num,
