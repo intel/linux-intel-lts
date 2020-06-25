@@ -103,7 +103,7 @@ struct dwxpcs_priv {
 	struct mdio_device *mdiodev;
 	struct pcs_stats stats;
 	struct dwxpcs_platform_data *pdata;
-	char int_name[IFNAMSIZ];
+	char int_name[IFNAMSIZ + 3];
 	unsigned long state;
 	struct workqueue_struct *int_wq;
 	struct work_struct an_task;
