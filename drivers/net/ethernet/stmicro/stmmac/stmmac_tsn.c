@@ -1257,7 +1257,7 @@ int tsn_fpe_get_config(struct mac_device_info *hw, struct net_device *dev,
 int tsn_fpe_show_pmac_sts(struct mac_device_info *hw, struct net_device *dev)
 {
 	void __iomem *ioaddr = hw->pcsr;
-	u32 hrs;
+	u32 hrs = 0;
 
 	if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
 		netdev_info(dev, "FPE: feature unsupported\n");
