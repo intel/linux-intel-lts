@@ -166,7 +166,7 @@ struct tsnif_info {
 	unsigned long task_state;
 	struct workqueue_struct *fpe_wq;
 	struct work_struct fpe_task;
-	char wq_name[IFNAMSIZ];
+	char wq_name[IFNAMSIZ + 4];
 };
 
 struct mac_device_info;
