@@ -809,7 +809,7 @@ static int stmmac_hwtstamp_get(struct net_device *dev, struct ifreq *ifr)
 static int stmmac_init_ptp(struct stmmac_priv *priv)
 {
 	struct timespec64 now;
-	u32 sec_inc;
+	u32 sec_inc = 0;
 	u32 value;
 	u64 temp;
 
