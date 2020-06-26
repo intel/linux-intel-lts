@@ -2,6 +2,7 @@ Synopsys DesignWare AXI DMA Controller
 
 Required properties:
 - compatible: "snps,axi-dma-1.01a"
+- compatible: "intel,kmb-axi-dma"
 - reg: Address range of the DMAC registers. This should include
   all of the per-channel registers.
 - interrupt: Should contain the DMAC interrupt number.
@@ -25,6 +26,22 @@ Example:
 dmac: dma-controller@80000 {
 	compatible = "snps,axi-dma-1.01a";
 	reg = <0x80000 0x400>;
+	clocks = <&core_clk>, <&cfgr_clk>;
+	clock-names = "core-clk", "cfgr-clk";
+	interrupt-parent = <&intc>;
+	interrupts = <27>;
+
+	dma-channels = <4>;
+	snps,dma-masters = <2>;
+	snps,data-width = <3>;
+	snps,block-size = <4096 4096 4096 4096>;
+	snps,priority = <0 1 2 3>;
+	snps,axi-max-burst-len = <16>;
+};
+
+dmac: dma-controller@28000000 {
+	compatible = "intel,kmb-axi-dma";
+	reg = <0x28000000 0x1000 0x20250000 0x24>;
 	clocks = <&core_clk>, <&cfgr_clk>;
 	clock-names = "core-clk", "cfgr-clk";
 	interrupt-parent = <&intc>;
