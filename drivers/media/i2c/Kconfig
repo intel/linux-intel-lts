@@ -644,6 +644,18 @@ config VIDEO_INTEL_KMB_IMX327
 	  To compile this driver as a module, choose M here: the
 	  module will be called kmb-imx327.
 
+config VIDEO_INTEL_KMB_OV9282
+	tristate "Keem Bay Camera V4L2 OV9282 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the OmniVision
+	  OV9282 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-ov9282.
+
 config VIDEO_OV2640
 	tristate "OmniVision OV2640 sensor support"
 	depends on VIDEO_V4L2 && I2C
