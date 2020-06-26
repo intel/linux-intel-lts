@@ -1066,6 +1066,16 @@ config VIDEO_DW9807_VCM
 	  capability. This is designed for linear control of
 	  voice coil motors, controlled via I2C serial interface.
 
+config VIDEO_INTEL_KMB_LENS
+	tristate "Keem Bay Camera lens voice coil support"
+	depends on I2C && VIDEO_V4L2 && MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  Support for the Keem Bay camera lens voice coil.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-lens.
+
 comment "Flash devices"
 
 config VIDEO_ADP1653
