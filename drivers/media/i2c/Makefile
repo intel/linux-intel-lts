@@ -140,3 +140,4 @@ obj-$(CONFIG_VIDEO_INTEL_KMB_IMX327)    += kmb-imx327.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_FLASH)	+= kmb-flash.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_LENS)	+= kmb-lens.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_OV9282)    += kmb-ov9282.o
+obj-$(CONFIG_VIDEO_INTEL_KMB_IMX334)    += kmb-imx334.o
