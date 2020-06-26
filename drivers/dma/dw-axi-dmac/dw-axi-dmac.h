@@ -38,6 +38,7 @@ struct axi_dma_chan {
 	void __iomem			*chan_regs;
 	u8				id;
 	u8				hw_hs_num;
+	u16				cyclic;
 	u32				reg_width;
 	atomic_t			descs_allocated;
 
