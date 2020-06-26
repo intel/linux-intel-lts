@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+# Copyright (C) 2020 Intel Corporation
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/media/intel,keembay-camera.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Intel Keem Bay camera subsystem
+
+maintainers:
+  - Daniele Alessandrelli <daniele.alessandrelli@intel.com>
+
+properties:
+  compatible:
+    oneOf:
+      - items:
+        - const: intel,camera-sensor
+
+  # See ./video-interfaces.txt for more details
+  port:
+    type: object
+    properties:
+      endpoint:
+        type: object
+        properties:
+          reg:
+            description: MIPI receiver index
+            maxItems: 1
+          data-lanes:
+              description: See ./video-interfaces.txt
+          clock-lanes:
+              description: See ./video-interfaces.txt
+          link-frequencies:
+            $ref: /schemas/types.yaml#/definitions/uint64-array
+            description: See ./video-interfaces.txt
+          remote-endpoint:
+              description: See ./video-interfaces.txt
+          lane-polarities:
+              description: See ./video-interfaces.txt
+
+        required:
+          - reg
+          - data-lanes
+          - clock-lanes
+
+required:
+  - compatible
+  - port
+
+examples:
+  - |
+    keembay_camera {
+          #address-cells = <1>;
+          #size-cells = <1>;
+          compatible = "intel,kmb-camera";
+          port {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                cam0: endpoint@4 {
+                      reg = <0x4>;
+                      remote-endpoint = <&cam_a>;
+                      crc = <1>;
+                      lane-polarities = <1 1 1 1 1>;
+                      data-lanes = <1 2 3 4>;
+                      clock-lanes = <0>;
+                };
+
+                cam9: endpoint@0 {
+                      reg = <0x0>;
+                      remote-endpoint = <&kmb_sen_i2c>;
+                      crc = <1>;
+                      lane-polarities = <1 1 1 1 1>;
+                      data-lanes = <1 2 3 4>;
+                      clock-lanes = <0>;
+                };
+          };
+    };
