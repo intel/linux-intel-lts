@@ -122,4 +122,5 @@ obj-$(CONFIG_VIDEO_INTEL_KMB_IMX334)    += kmb-imx334.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_IMX335)	+= kmb-imx335.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_IMX327)    += kmb-imx327.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_OV9282)    += kmb-ov9282.o
+obj-$(CONFIG_VIDEO_INTEL_KMB_IMX412)    += kmb-imx412.o
 obj-$(CONFIG_SDR_MAX2175) += max2175.o
