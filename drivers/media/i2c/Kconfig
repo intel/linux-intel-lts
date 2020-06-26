@@ -632,6 +632,18 @@ config VIDEO_INTEL_KMB_SENSOR
 	  To compile this driver as a module, choose M here: the
 	  module will be called kmb-sensor.
 
+config VIDEO_INTEL_KMB_IMX334
+	tristate "Keem Bay Camera V4L2 IMX334 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX33 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-imx334.
+
 config VIDEO_INTEL_KMB_IMX327
 	tristate "INTEL Keem Bay Camera V4L2 IMX327 sensor support"
 	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
