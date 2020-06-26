@@ -50,6 +50,17 @@ struct aic32x4_priv {
 	struct device *dev;
 };
 
+void aic32x4_reset_adc(struct snd_soc_component *component)
+{
+	u32 adc_reg;
+
+	adc_reg = snd_soc_component_read32(component, AIC32X4_ADCSETUP);
+	snd_soc_component_write(component, AIC32X4_ADCSETUP, adc_reg |
+				AIC32X4_LADC_EN | AIC32X4_RADC_EN);
+	snd_soc_component_write(component, AIC32X4_ADCSETUP, adc_reg);
+
+};
+
 static int mic_bias_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
@@ -67,6 +78,7 @@ static int mic_bias_event(struct snd_soc_dapm_widget *w,
 	case SND_SOC_DAPM_PRE_PMD:
 		snd_soc_component_update_bits(component, AIC32X4_MICBIAS,
 				AIC32x4_MICBIAS_MASK, 0);
+		aic32x4_reset_adc(component);
 		printk(KERN_DEBUG "%s: Mic Bias will be turned OFF\n",
 				__func__);
 		break;
@@ -661,8 +673,29 @@ static int aic32x4_set_processing_blocks(struct snd_soc_component *component,
 	return 0;
 }
 
+static int aic32x4_setup_mic_array_clocks(struct snd_soc_component *component,
+			unsigned int sample_rate, unsigned int channel,
+			unsigned int bit_depth)
+{
+	int ret;
+	struct clk_bulk_data clocks[] = {
+		{ .id = "ndac" },
+		{ .id = "mdac" },
+		{ .id = "bdiv" },
+	};
+	ret = devm_clk_bulk_get(component->dev, ARRAY_SIZE(clocks), clocks);
+	if (ret)
+		return ret;
+
+	clk_set_rate(clocks[0].clk, sample_rate * channel * bit_depth);
+	clk_set_rate(clocks[1].clk, sample_rate * channel * bit_depth);
+	clk_set_rate(clocks[2].clk, sample_rate * channel * bit_depth);
+	return 0;
+}
+
 static int aic32x4_setup_clocks(struct snd_soc_component *component,
-				unsigned int sample_rate)
+			unsigned int sample_rate, unsigned int channel,
+			unsigned int bit_depth)
 {
 	u8 aosr;
 	u16 dosr;
@@ -750,7 +783,8 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 							dosr);
 
 						clk_set_rate(clocks[5].clk,
-							sample_rate * 32);
+							sample_rate * channel *
+							bit_depth);
 						return 0;
 					}
 				}
@@ -769,12 +803,27 @@ static int aic32x4_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_component *component = dai->component;
 	struct aic32x4_priv *aic32x4 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	u8 iface1_reg = 0;
+	u8 iface6_reg = 0;
 	u8 dacsetup_reg = 0;
+	int mode = rtd->dai_link->dai_fmt;
 
-	aic32x4_setup_clocks(component, params_rate(params));
+	aic32x4_set_dai_fmt(dai, rtd->dai_link->dai_fmt);
 
-	switch (params_width(params)) {
+	if (params_channels(params) > 2) {
+		iface6_reg |= AIC32X4_ADCWS_MASK;
+		snd_soc_component_update_bits(component, AIC32X4_IFACE6,
+				AIC32X4_ADCWS_MASK, iface6_reg);
+	}
+	aic32x4_setup_clocks(component, params_rate(params),
+			params_channels(params), params_physical_width(params));
+	if ((mode & SND_SOC_DAIFMT_MASTER_MASK) == SND_SOC_DAIFMT_CBM_CFM
+			&& params_channels(params) > 2)
+		aic32x4_setup_mic_array_clocks(component, params_rate(params),
+				params_channels(params), params_physical_width(params));
+
+	switch (params_physical_width(params)) {
 	case 16:
 		iface1_reg |= (AIC32X4_WORD_LEN_16BITS <<
 				   AIC32X4_IFACE1_DATALEN_SHIFT);
@@ -825,6 +874,7 @@ static int aic32x4_set_bias_level(struct snd_soc_component *component,
 	int ret;
 
 	struct clk_bulk_data clocks[] = {
+		{ .id = "pll" },
 		{ .id = "madc" },
 		{ .id = "mdac" },
 		{ .id = "bdiv" },
@@ -859,7 +909,7 @@ static int aic32x4_set_bias_level(struct snd_soc_component *component,
 
 #define AIC32X4_RATES	SNDRV_PCM_RATE_8000_192000
 #define AIC32X4_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE \
-			 | SNDRV_PCM_FMTBIT_S24_3LE | SNDRV_PCM_FMTBIT_S32_LE)
+			 | SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S24_3LE | SNDRV_PCM_FMTBIT_S32_LE)
 
 static const struct snd_soc_dai_ops aic32x4_ops = {
 	.hw_params = aic32x4_hw_params,
@@ -879,7 +929,7 @@ static struct snd_soc_dai_driver aic32x4_dai = {
 	.capture = {
 			.stream_name = "Capture",
 			.channels_min = 1,
-			.channels_max = 2,
+			.channels_max = 8,
 			.rates = AIC32X4_RATES,
 			.formats = AIC32X4_FORMATS,},
 	.ops = &aic32x4_ops,
@@ -948,12 +998,6 @@ static int aic32x4_component_probe(struct snd_soc_component *component)
 	ret = devm_clk_bulk_get(component->dev, ARRAY_SIZE(clocks), clocks);
 	if (ret)
 		return ret;
-
-	if (gpio_is_valid(aic32x4->rstn_gpio)) {
-		ndelay(10);
-		gpio_set_value(aic32x4->rstn_gpio, 1);
-		mdelay(1);
-	}
 
 	snd_soc_component_write(component, AIC32X4_RESET, 0x01);
 
@@ -1189,10 +1233,6 @@ int aic32x4_probe(struct device *dev, struct regmap *regmap)
 		aic32x4->mclk_name = "mclk";
 	}
 
-	ret = aic32x4_register_clocks(dev, aic32x4->mclk_name);
-	if (ret)
-		return ret;
-
 	if (gpio_is_valid(aic32x4->rstn_gpio)) {
 		ret = devm_gpio_request_one(dev, aic32x4->rstn_gpio,
 				GPIOF_OUT_INIT_LOW, "tlv320aic32x4 rstn");
@@ -1213,6 +1253,16 @@ int aic32x4_probe(struct device *dev, struct regmap *regmap)
 		aic32x4_disable_regulators(aic32x4);
 		return ret;
 	}
+
+	if (gpio_is_valid(aic32x4->rstn_gpio)) {
+		ndelay(10);
+		gpio_set_value_cansleep(aic32x4->rstn_gpio, 1);
+		mdelay(1);
+	}
+
+	ret = aic32x4_register_clocks(dev, aic32x4->mclk_name);
+	if (ret)
+		return ret;
 
 	return 0;
 }

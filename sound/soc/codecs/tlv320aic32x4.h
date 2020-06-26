@@ -168,6 +168,9 @@ int aic32x4_register_clocks(struct device *dev, const char *mclk_name);
 #define AIC32X4_ADC2BCLK		(0x02)
 #define AIC32X4_ADCMOD2BCLK		(0x03)
 
+/* AIC32X4_IFACE6 */
+#define AIC32X4_ADCWS_MASK		BIT(4)
+
 /* AIC32X4_DACSETUP */
 #define AIC32X4_DAC_CHAN_MASK		GENMASK(5, 2)
 #define AIC32X4_LDAC2RCHN		BIT(5)
