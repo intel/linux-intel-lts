@@ -1,6 +1,3 @@
-# CVE-2018-20669
-0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
-
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
 
