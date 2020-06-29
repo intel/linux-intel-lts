@@ -6979,8 +6979,10 @@ int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev)
 
 	mutex_unlock(&priv->lock);
 
-	if (ndev->phydev && device_may_wakeup(priv->device))
+	if (ndev->phydev && device_may_wakeup(priv->device)) {
 		phy_start_machine(ndev->phydev);
+		phy_restart_aneg(ndev->phydev);
+	}
 
 	return 0;
 }
@@ -7159,6 +7161,7 @@ int stmmac_resume(struct device *dev)
 		rtnl_unlock();
 	} else if (ndev->phydev) {
 		phy_start_machine(ndev->phydev);
+		phy_restart_aneg(ndev->phydev);
 	}
 
 	phylink_mac_change(priv->phylink, true);
