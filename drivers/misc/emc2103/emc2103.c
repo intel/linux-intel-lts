@@ -572,36 +572,33 @@ static int  __set_rpm(struct device *dev, unsigned long state)
 	unsigned long period;
 	int ret = 0;
 	struct emc2103_data *data = emc2103_update_device(dev);
-		struct i2c_client *client = data->client;
-		unsigned long rpm_target;
+	struct i2c_client *client = data->client;
+	unsigned long rpm_target;
 
-		/* Datasheet states 16384 as maximum RPM target (table 3.2) */
-		rpm_target = clamp_val(rpm_target, 0, 16384);
+	/* Datasheet states 16384 as maximum RPM target (table 3.2) */
+	rpm_target = clamp_val(rpm_target, 0, 16384);
 
-if (state == 1) {
-	 rpm_target = 8000;
-} else if (state >= 2) {
-	rpm_target = 16384;
-} else {
-	rpm_target = 0;
-}
+	if (state == 1) {
+		rpm_target = 8000;
+	} else if (state >= 2) {
+		rpm_target = 16384;
+	} else {
+		rpm_target = 0;
+	}
 
-		mutex_lock(&data->update_lock);
+	mutex_lock(&data->update_lock);
 
-		if (rpm_target == 0)
-			data->fan_target = 0x1fff;
-		else
-			data->fan_target = clamp_val(
-				(FAN_RPM_FACTOR * data->fan_multiplier) / rpm_target,
-				0, 0x1fff);
+	if (rpm_target == 0)
+		data->fan_target = 0x1fff;
+	else
+		data->fan_target = clamp_val(
+			(FAN_RPM_FACTOR * data->fan_multiplier) / rpm_target,
+			0, 0x1fff);
 
-		write_fan_target_to_i2c(client, data->fan_target);
+	write_fan_target_to_i2c(client, data->fan_target);
 
-		mutex_unlock(&data->update_lock);
-		return 0;
-
-
-
+	mutex_unlock(&data->update_lock);
+	return 0;
 }
 
 
@@ -623,8 +620,7 @@ static int
 keembay_cooling_set_cur_state(struct thermal_cooling_device *cdev,
 			      unsigned long state)
 {
-
-struct keembay_cooling_data *ctx = cdev->devdata;
+	struct keembay_cooling_data *ctx = cdev->devdata;
 	int ret;
 
 	if (!ctx || (state > ctx->rpm_fan_max_state))
@@ -636,25 +632,23 @@ struct keembay_cooling_data *ctx = cdev->devdata;
 	ret = __set_rpm(ctx->dev, state);
 	ctx->rpm_fan_state = state;
 
-printk("state %d", state);
-printk(KERN_WARNING "keembay_cooling_set_cur_state\n");
-return 0;
-				  }
+	printk("state %d", state);
+	printk(KERN_WARNING "keembay_cooling_set_cur_state\n");
+	return 0;
+}
 
 static int
 keembay_cooling_get_cur_state(struct thermal_cooling_device *cdev,
 			      unsigned long *state)
 {
- struct keembay_cooling_data *ctx = cdev->devdata;
+	struct keembay_cooling_data *ctx = cdev->devdata;
 
-	 if (!ctx)
-		 return -EINVAL;
+	if (!ctx)
+		return -EINVAL;
 
-	 *state = ctx->rpm_fan_state;
+	*state = ctx->rpm_fan_state;
 
-	 return 0;
-
-
+	return 0;
 }
 
 static const struct thermal_cooling_device_ops keembay_cooling_ops = {
@@ -770,13 +764,13 @@ emc2103_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 /*******************thermal driver********************/
 
-int ret;
-d = devm_kzalloc(&client->dev, sizeof(*d), GFP_KERNEL);
-	if (!d) {
-			printk(KERN_WARNING "keembay_thermal_cooling_dev_kzalloc_failed\n");
-			return -ENOMEM;
-		}
 
+	int ret;
+	d = devm_kzalloc(&client->dev, sizeof(*d), GFP_KERNEL);
+	if (!d) {
+		printk(KERN_WARNING "keembay_thermal_cooling_dev_kzalloc_failed\n");
+		return -ENOMEM;
+	}
 
 ret = rpm_fan_of_get_cooling_data(&client->dev, d);
 	if (ret)
@@ -790,12 +784,11 @@ ret = rpm_fan_of_get_cooling_data(&client->dev, d);
 	if (IS_ERR(d->cooling_dev)) {
 		ret = PTR_ERR(d->cooling_dev);
 			printk(KERN_WARNING "keembay_thermal_cooling_register_failed\n");
-		}
-		printk(KERN_WARNING "keembay_thermal_cooling_register\n");
+	}
+	printk(KERN_WARNING "keembay_thermal_cooling_register\n");
 
 
 /*****************end-of thermal driver **************/
-
 
 	return 0;
 }

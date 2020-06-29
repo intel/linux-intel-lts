@@ -34,10 +34,10 @@ static int
 keembay_cooling_set_cur_state(struct thermal_cooling_device *cooling_dev,
 			      unsigned long state)
 {
-state = 0;
-printk(KERN_WARNING "keembay_cooling_set_cur_state\n");
-return 0;
-				  }
+	state = 0;
+	printk(KERN_WARNING "keembay_cooling_set_cur_state\n");
+	return 0;
+}
 
 static int
 keembay_cooling_get_cur_state(struct thermal_cooling_device *cooling_dev,
@@ -62,10 +62,10 @@ static int keembay_cooling_probe(struct platform_device *pdev)
 		printk(KERN_WARNING "keembay_thermal_cooling_probe_start\n");
 		d = devm_kzalloc(&pdev->dev, sizeof(*d), GFP_KERNEL);
 	if (!d) {
-			printk(KERN_WARNING "keembay_thermal_cooling_dev_kzalloc_failed\n");
-			return -ENOMEM;
-		}
-		printk(KERN_WARNING "keembay_thermal_cooling_kzalloc\n");
+		printk(KERN_WARNING "keembay_thermal_cooling_dev_kzalloc_failed\n");
+		return -ENOMEM;
+	}
+	printk(KERN_WARNING "keembay_thermal_cooling_kzalloc\n");
 	d->cooling_dev = thermal_cooling_device_register("keembay_thermal",
 							 d, &keembay_cooling_ops);
 	if (IS_ERR(d->cooling_dev)) {

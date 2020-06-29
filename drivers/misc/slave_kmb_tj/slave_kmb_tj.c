@@ -172,6 +172,11 @@ static int hddl_device_identify(uint32_t *board_id, uint32_t *kmb_id) /* TODO */
 	*kmb_id = *((volatile int*)(gpio_base_address + 0x28));
 	*kmb_id = (*kmb_id >> 10)&0x7;
 	printk(KERN_INFO "HDDL:Board Id = %x\n", *board_id);
+	if (*kmb_id > 2) {
+		*kmb_id = 0;
+		printk(KERN_INFO "HDDL: GPIO KEEMBAY ID > 2,"
+		"hence setting KEEMBAY ID = 0\n");
+	}
 	printk(KERN_INFO "HDDL:Kmb Id = %x\n", *kmb_id);
 
 	pr_info("HDDL: hddl_device_identify done\n");
