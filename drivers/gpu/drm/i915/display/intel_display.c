@@ -7314,6 +7314,10 @@ intel_aux_power_domain(struct intel_digital_port *dig_port)
 			return POWER_DOMAIN_AUX_F_TBT;
 		case AUX_CH_G:
 			return POWER_DOMAIN_AUX_G_TBT;
+		case AUX_CH_H:
+			return POWER_DOMAIN_AUX_H_TBT;
+		case AUX_CH_I:
+			return POWER_DOMAIN_AUX_I_TBT;
 		default:
 			MISSING_CASE(dig_port->aux_ch);
 			return POWER_DOMAIN_AUX_C_TBT;
@@ -7335,6 +7339,10 @@ intel_aux_power_domain(struct intel_digital_port *dig_port)
 		return POWER_DOMAIN_AUX_F;
 	case AUX_CH_G:
 		return POWER_DOMAIN_AUX_G;
+	case AUX_CH_H:
+		return POWER_DOMAIN_AUX_H;
+	case AUX_CH_I:
+		return POWER_DOMAIN_AUX_I;
 	default:
 		MISSING_CASE(dig_port->aux_ch);
 		return POWER_DOMAIN_AUX_A;
