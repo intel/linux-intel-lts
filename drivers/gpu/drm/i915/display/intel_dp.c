@@ -7611,7 +7611,6 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 	if (INTEL_GEN(dev_priv) >= 11)
 		connector->ycbcr_420_allowed = true;
 
-	intel_encoder->hpd_pin = intel_hpd_pin_default(dev_priv, port);
 	intel_connector->polled = DRM_CONNECTOR_POLL_HPD;
 
 	intel_dp_aux_init(intel_dp);
@@ -7724,6 +7723,7 @@ bool intel_dp_init(struct drm_i915_private *dev_priv,
 	}
 	intel_encoder->cloneable = 0;
 	intel_encoder->port = port;
+	intel_encoder->hpd_pin = intel_hpd_pin_default(dev_priv, port);
 
 	intel_dig_port->hpd_pulse = intel_dp_hpd_pulse;
 

@@ -3287,6 +3287,7 @@ void intel_hdmi_init(struct drm_i915_private *dev_priv,
 		intel_encoder->pipe_mask = ~0;
 	}
 	intel_encoder->cloneable = 1 << INTEL_OUTPUT_ANALOG;
+	intel_encoder->hpd_pin = intel_hpd_pin_default(dev_priv, port);
 	/*
 	 * BSpec is unclear about HDMI+HDMI cloning on g4x, but it seems
 	 * to work on real hardware. And since g4x can send infoframes to
