@@ -1483,7 +1483,6 @@ bool drm_edid_are_equal(const struct edid *edid1, const struct edid *edid2)
 		return false;
 
 	if (edid1) {
-
 		edid1_len = EDID_LENGTH * (1 + edid1->extensions);
 		edid2_len = EDID_LENGTH * (1 + edid2->extensions);
 
@@ -1497,7 +1496,6 @@ bool drm_edid_are_equal(const struct edid *edid1, const struct edid *edid2)
 	return true;
 }
 EXPORT_SYMBOL(drm_edid_are_equal);
-
 
 /**
  * drm_edid_block_valid - Sanity check the EDID block (base or extension)
@@ -1905,8 +1903,7 @@ struct edid *drm_get_edid(struct drm_connector *connector,
 		return NULL;
 
 	edid = drm_do_get_edid(connector, drm_do_probe_ddc_edid, adapter);
-	if (edid)
-		drm_get_displayid(connector, edid);
+	drm_connector_update_edid_property(connector, edid);
 	return edid;
 }
 EXPORT_SYMBOL(drm_get_edid);

@@ -247,6 +247,7 @@ int drm_connector_init(struct drm_device *dev,
 	INIT_LIST_HEAD(&connector->modes);
 	mutex_init(&connector->mutex);
 	connector->edid_blob_ptr = NULL;
+	connector->epoch_counter = 0;
 	connector->tile_blob_ptr = NULL;
 	connector->status = connector_status_unknown;
 	connector->display_info.panel_orientation =
@@ -1931,6 +1932,7 @@ int drm_connector_update_edid_property(struct drm_connector *connector,
 	struct drm_device *dev = connector->dev;
 	size_t size = 0;
 	int ret;
+	const struct edid *old_edid;
 
 	/* ignore requests to set edid when overridden */
 	if (connector->override_edid)
