@@ -52,3 +52,6 @@
 0005-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
 0006-debugfs-simplify-__debugfs_remove_file.patch
 0007-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
+
+# CVE-2020-15393
+0001-usb-usbtest-fix-missing-kfree-dev-buf-in-usbtest_dis.patch
