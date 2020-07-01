@@ -517,7 +517,7 @@ static int bxt_set_dsp_D0(struct sst_dsp *ctx, unsigned int core_id)
 				sst_dsp_shim_read(ctx, BXT_ADSP_ERROR_CODE),
 				sst_dsp_shim_read(ctx, BXT_ADSP_FW_STATUS));
 
-			ret = skl_sst_init_fw(ctx->dev, skl);
+			ret = bxt_sst_init_fw(ctx->dev, skl);
 			dev_warn(ctx->dev, "Reload fw status: %d\n", ret);
 			if (ret < 0) {
 				dev_err(ctx->dev, "Failed to set core0 to D0 state\n");
@@ -695,8 +695,8 @@ again:
 		dev_err(dev, "Load base fw failed: %x\n", ret);
 		return ret;
 	}
-
-	skl_dsp_init_core_state(sst);
+	if (ctx->is_first_boot)
+		skl_dsp_init_core_state(sst);
 
 	ret = sst->fw_ops.load_library(sst, ctx->lib_info, ctx->lib_count);
 	if (ret < 0) {
