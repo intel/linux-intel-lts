@@ -857,7 +857,7 @@ static int stmmac_config_multi_msi(struct pci_dev *pdev,
 	int i;
 
 	ret = pci_alloc_irq_vectors(pdev, 1, STMMAC_MSI_VEC_MAX,
-				    PCI_IRQ_MSI);
+				    PCI_IRQ_MSI | PCI_IRQ_MSIX);
 	if (ret < 0) {
 		dev_info(&pdev->dev, "%s: multi MSI enablement failed\n",
 			 __func__);
