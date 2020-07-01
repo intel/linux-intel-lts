@@ -653,7 +653,7 @@ read_again:
 
 		xdp.data = buf->umem_addr;
 
-		if (unlikely(priv->hwts_all) || unlikely(priv->hwts_rx_en)) {
+		if (unlikely(priv->hwts_all)) {
 			/* We use XDP meta data to store T/S */
 			xdp.data_meta = xdp.data - sizeof(ktime_t);
 
