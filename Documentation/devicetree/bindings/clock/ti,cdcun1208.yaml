@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
+# Copyright 2020 Intel Corporation
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/clock/ti,cdcun1208.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+
+title: TI CDCUN1208 Clock Buffer
+
+maintainers:
+  - Daniele Alessandrelli <daniele.alessandrelli@intel.com>
+
+description: |
+  CDCUN1208 is a 2:8 fan-out buffer.
+
+properties:
+  compatible:
+    const: ti,cdcun1208
+
+  reg:
+    items:
+      - description: i2c device address
+
+  clocks:
+    items:
+      - description: Input clock
+
+  clock-names:
+    items:
+      - const: gpio-out-clk
+
+  '#clock-cells':
+    const: 1
+    description: |
+      The clock consumer should specify the desired clock by having the clock
+      ID in its "clocks" phandle cell. See
+      include/dt-bindings/clock/ti,cdcun1208.h for the full list of CDCUN1208
+      clock IDs.
+
+  supply-out-clk:
+    description: A regulator node for Vdd
+
+required:
+  - compatible
+  - reg
+  - clocks
+  - clock-names
+  - '#clock-cells'
+
+examples:
+  - |
+    #include <dt-bindings/clock/ti,cdcun1208.h>
+
+    out_24Mhz: out_24Mhz {
+            #clock-cells = <0>;
+            compatible = "fixed-clock";
+            clock-frequency = <24000000>;
+    };
+
+    i2c0 {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            cdcun_1208: cdcun_1208@28 {
+                    #clock-cells = <1>;
+                    reg = <0x28>;
+                    compatible = "ti,cdcun1208";
+                    clock-names = "gpio-out-clk";
+                    clocks = <&out_24Mhz>;
+            };
+    };
+
+    // Clock consumer node
+    foo@0 {
+            compatible = "bar,foo";
+            /* ... */
+            clock-names = "clkout1";
+            clocks = <&cdcun_1208 CDCUN_1208_OUT1>;
+    };
