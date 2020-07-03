@@ -1039,32 +1039,6 @@ static void stmmac_pci_remove(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
-#define EHL_PSE_ETH_CGSR	0x10414
-#define EHL_PSE_ETH_CGSR_CG	BIT(16)
-
-static void ehl_pse_set_cgsr(struct pci_dev *pdev, bool enable)
-{
-	void __iomem *tempaddr = pcim_iomap_table(pdev)[0];
-	struct stmmac_priv *priv;
-	struct net_device *ndev;
-	u32 cgsr_reg;
-
-	ndev = dev_get_drvdata(&pdev->dev);
-	priv = netdev_priv(ndev);
-
-	if (!priv->plat->is_pse)
-		return;
-
-	cgsr_reg = readl(tempaddr + EHL_PSE_ETH_CGSR);
-
-	if (enable)
-		writel(cgsr_reg | EHL_PSE_ETH_CGSR_CG,
-		       tempaddr + EHL_PSE_ETH_CGSR);
-	else
-		writel(cgsr_reg & ~EHL_PSE_ETH_CGSR_CG,
-		       tempaddr + EHL_PSE_ETH_CGSR);
-}
-
 static int __maybe_unused stmmac_pci_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
@@ -1073,8 +1047,6 @@ static int __maybe_unused stmmac_pci_suspend(struct device *dev)
 	ret = stmmac_suspend(dev);
 	if (ret)
 		return ret;
-
-	ehl_pse_set_cgsr(pdev, 1);
 
 	ret = pci_save_state(pdev);
 	if (ret)
@@ -1100,8 +1072,6 @@ static int __maybe_unused stmmac_pci_resume(struct device *dev)
 		return ret;
 
 	pci_set_master(pdev);
-
-	ehl_pse_set_cgsr(pdev, 0);
 
 	return stmmac_resume(dev);
 }
