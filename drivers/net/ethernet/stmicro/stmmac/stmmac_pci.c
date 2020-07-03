@@ -1039,6 +1039,12 @@ static void stmmac_pci_remove(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
+static void stmmac_pci_shutdown(struct pci_dev *pdev)
+{
+	pci_wake_from_d3(pdev, true);
+	pci_set_power_state(pdev, PCI_D3hot);
+}
+
 static int __maybe_unused stmmac_pci_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
@@ -1233,6 +1239,7 @@ static struct pci_driver stmmac_pci_driver = {
 	.id_table = stmmac_id_table,
 	.probe = stmmac_pci_probe,
 	.remove = stmmac_pci_remove,
+	.shutdown = stmmac_pci_shutdown,
 	.driver         = {
 		.pm     = &stmmac_pm_ops,
 	},
