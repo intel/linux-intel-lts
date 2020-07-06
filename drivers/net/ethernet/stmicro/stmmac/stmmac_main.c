@@ -1455,7 +1455,7 @@ bool stmmac_alloc_rx_buffers(struct stmmac_rx_queue *rx_q, u32 count)
 	struct stmmac_priv *priv = rx_q->priv_data;
 	u32 queue = rx_q->queue_index;
 	int ret;
-	u32 i;
+	int i;
 
 	for (i = 0; i < count; i++) {
 		struct dma_desc *p;
