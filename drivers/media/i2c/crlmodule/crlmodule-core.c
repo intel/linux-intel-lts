@@ -25,10 +25,6 @@
 #include "crlmodule-regs.h"
 #include "crlmodule-msrlist.h"
 
-static bool mode_reg_write;
-module_param(mode_reg_write, bool, 0664);
-MODULE_PARM_DESC(mode_reg_write, "write mode registers only new mode selected.");
-
 #ifdef CONFIG_INTEL_IPU4_OV13858
 bool vcm_in_use;
 EXPORT_SYMBOL(vcm_in_use);
@@ -2163,16 +2159,12 @@ static int crlmodule_start_streaming(struct crl_sensor *sensor)
 	}
 
 	/* Write mode list */
-        if (!mode_reg_write ||
-                        (sensor->current_mode != sensor->previous_mode)) {
-                rval = crlmodule_write_regs(sensor,
-                                sensor->current_mode->mode_regs,
-                                sensor->current_mode->mode_regs_items);
-                if (rval) {
-                        dev_err(&client->dev, "%s failed to set mode\n", __func__);
-                        return rval;
-                }
-                sensor->previous_mode = sensor->current_mode;
+        rval = crlmodule_write_regs(sensor,
+                        sensor->current_mode->mode_regs,
+                        sensor->current_mode->mode_regs_items);
+        if (rval) {
+                dev_err(&client->dev, "%s failed to set mode\n", __func__);
+                return rval;
 	}
 
 	/* Write stream on list */
@@ -2489,8 +2481,6 @@ static int crlmodule_run_poweron_init(struct crl_sensor *sensor)
 				      __func__);
 		return rval;
 	}
-
-	sensor->previous_mode = NULL;
 
 	/* Are we still initialising...? If yes, return here. */
 	if (!sensor->pixel_array)
