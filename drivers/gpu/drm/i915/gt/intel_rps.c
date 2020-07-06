@@ -641,7 +641,7 @@ void intel_rps_mark_interactive(struct intel_rps *rps, bool interactive)
 {
 	mutex_lock(&rps->power.mutex);
 	if (interactive) {
-		if (!rps->power.interactive++ && rps->active)
+		if (!rps->power.interactive++ && intel_rps_is_active(rps))
 			rps_set_power(rps, HIGH_POWER);
 	} else {
 		GEM_BUG_ON(!rps->power.interactive);
@@ -707,7 +707,7 @@ static int rps_set(struct intel_rps *rps, u8 val)
 
 void intel_rps_unpark(struct intel_rps *rps)
 {
-	if (!rps->enabled)
+	if (!intel_rps_is_enabled(rps))
 		return;
 
 	/*
@@ -715,7 +715,7 @@ void intel_rps_unpark(struct intel_rps *rps)
 	 * performance, jump directly to RPe as our starting frequency.
 	 */
 	mutex_lock(&rps->lock);
-	rps->active = true;
+	intel_rps_set_active(rps);
 	intel_rps_set(rps,
 		clamp(rps->cur_freq,
 		rps->min_freq_softlimit,
@@ -735,13 +735,12 @@ void intel_rps_park(struct intel_rps *rps)
 {
 	struct drm_i915_private *i915 = rps_to_i915(rps);
 
-	if (!rps->enabled)
+	if (!intel_rps_clear_active(rps))
 		return;
 
 	if (INTEL_GEN(i915) >= 6)
 		rps_disable_interrupts(rps);
 
-	rps->active = false;
 	if (rps->last_freq <= rps->idle_freq)
 		return;
 
@@ -781,7 +780,7 @@ void intel_rps_boost(struct i915_request *rq)
 	struct intel_rps *rps = &rq->engine->gt->rps;
 	unsigned long flags;
 
-	if (i915_request_signaled(rq) || !rps->active)
+	if (i915_request_signaled(rq) || !intel_rps_is_active(rps))
 		return;
 
 	/* Serializes with i915_request_retire() */
@@ -807,7 +806,7 @@ int intel_rps_set(struct intel_rps *rps, u8 val)
 	GEM_BUG_ON(val > rps->max_freq);
 	GEM_BUG_ON(val < rps->min_freq);
 
-	if (rps->active) {
+	if (intel_rps_is_active(rps)) {
 		err = rps_set(rps, val);
 
 		/*
@@ -1185,22 +1184,27 @@ void intel_rps_enable(struct intel_rps *rps)
 {
 	struct drm_i915_private *i915 = rps_to_i915(rps);
 	struct intel_uncore *uncore = rps_to_uncore(rps);
+	bool enabled = false;
 
 	intel_uncore_forcewake_get(uncore, FORCEWAKE_ALL);
-	if (IS_CHERRYVIEW(i915))
-		rps->enabled = chv_rps_enable(rps);
+	if (rps->max_freq <= rps->min_freq)
+		/* leave disabled, no room for dynamic reclocking */;
+	else if (IS_CHERRYVIEW(i915))
+		enabled = chv_rps_enable(rps);
 	else if (IS_VALLEYVIEW(i915))
-		rps->enabled = vlv_rps_enable(rps);
+		enabled = vlv_rps_enable(rps);
 	else if (INTEL_GEN(i915) >= 9)
-		rps->enabled = gen9_rps_enable(rps);
+		enabled = gen9_rps_enable(rps);
 	else if (INTEL_GEN(i915) >= 8)
-		rps->enabled = gen8_rps_enable(rps);
+		enabled = gen8_rps_enable(rps);
 	else if (INTEL_GEN(i915) >= 6)
-		rps->enabled = gen6_rps_enable(rps);
+		enabled = gen6_rps_enable(rps);
 	else if (IS_IRONLAKE_M(i915))
-		rps->enabled = gen5_rps_enable(rps);
+		enabled = gen5_rps_enable(rps);
+	else
+		MISSING_CASE(INTEL_GEN(i915));
 	intel_uncore_forcewake_put(uncore, FORCEWAKE_ALL);
-	if (!rps->enabled)
+	if (!enabled)
 		return;
 
 	WARN_ON(rps->max_freq < rps->min_freq);
@@ -1208,6 +1212,8 @@ void intel_rps_enable(struct intel_rps *rps)
 
 	WARN_ON(rps->efficient_freq < rps->min_freq);
 	WARN_ON(rps->efficient_freq > rps->max_freq);
+
+	intel_rps_set_enabled(rps);
 }
 
 static void gen6_rps_disable(struct intel_rps *rps)
@@ -1219,7 +1225,7 @@ void intel_rps_disable(struct intel_rps *rps)
 {
 	struct drm_i915_private *i915 = rps_to_i915(rps);
 
-	rps->enabled = false;
+	intel_rps_clear_enabled(rps);
 
 	if (INTEL_GEN(i915) >= 6)
 		gen6_rps_disable(rps);
@@ -1472,6 +1478,11 @@ static void rps_work(struct work_struct *work)
 		goto out;
 
 	mutex_lock(&rps->lock);
+
+	if (!intel_rps_is_active(rps)) {
+		mutex_unlock(&rps->lock);
+		return;
+	}
 
 	pm_iir |= vlv_wa_c0_ei(rps, pm_iir);
 

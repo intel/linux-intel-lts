@@ -37,4 +37,31 @@ void gen11_rps_irq_handler(struct intel_rps *rps, u32 pm_iir);
 
 void rps_disable_interrupts(struct intel_rps *rps);
 
+static inline bool intel_rps_is_enabled(const struct intel_rps *rps)
+{
+	return test_bit(INTEL_RPS_ENABLED, &rps->flags);
+}
+
+static inline void intel_rps_set_enabled(struct intel_rps *rps)
+{
+	set_bit(INTEL_RPS_ENABLED, &rps->flags);
+}
+
+static inline void intel_rps_clear_enabled(struct intel_rps *rps)
+{
+	clear_bit(INTEL_RPS_ENABLED, &rps->flags);
+}
+static inline bool intel_rps_is_active(const struct intel_rps *rps)
+{
+	return test_bit(INTEL_RPS_ACTIVE, &rps->flags);
+}
+static inline void intel_rps_set_active(struct intel_rps *rps)
+{
+	set_bit(INTEL_RPS_ACTIVE, &rps->flags);
+}
+static inline bool intel_rps_clear_active(struct intel_rps *rps)
+{
+	return test_and_clear_bit(INTEL_RPS_ACTIVE, &rps->flags);
+}
+
 #endif /* INTEL_RPS_H */
