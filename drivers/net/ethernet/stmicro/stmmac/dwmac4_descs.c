@@ -451,9 +451,9 @@ static void dwmac4_set_mss_ctxt(struct dma_desc *p, unsigned int mss)
 static void dwmac4_get_addr(struct dma_desc *p, dma_addr_t *addr)
 {
 #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
-	*addr = le32_to_cpu(p->des1);
+	*addr = (u64)le32_to_cpu(p->des1);
 	*addr <<= 32;
-	*addr |= le32_to_cpu(p->des0);
+	*addr |= (u64)le32_to_cpu(p->des0);
 #else
 	*addr = le32_to_cpu(p->des0);
 #endif
