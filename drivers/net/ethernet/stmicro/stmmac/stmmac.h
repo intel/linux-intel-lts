@@ -413,8 +413,8 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			    struct dma_desc *np, ktime_t *hwtstamp);
 void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			    ktime_t *hwtstamp);
-int stmmac_set_tbs_launchtime(struct stmmac_priv *priv, struct dma_desc *desc,
-			      u64 tx_time);
+void stmmac_set_tbs_launchtime(struct stmmac_priv *priv, struct dma_desc *desc,
+			       u64 tx_time);
 void stmmac_tx_timer_arm(struct stmmac_priv *priv, u32 queue);
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,
