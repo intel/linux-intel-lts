@@ -178,8 +178,8 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 	}
 
 	gcl_depth = tsnif_est_get_gcl_depth(hw, ioaddr);
-	if (gcl_depth < 0) {
-		dev_err(pdev, "EST GCL depth(%d) < 0\n", gcl_depth);
+	if (gcl_depth == 0) {
+		dev_err(pdev, "EST GCL depth(%d) = 0\n", gcl_depth);
 		cap->est_support = 0;
 		return -EINVAL;
 	}
