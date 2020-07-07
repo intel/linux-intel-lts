@@ -82,3 +82,13 @@
 
 #CVE-2019-16234
 0015-iwlwifi-pcie-fix-rb_allocator-workqueue-allocation.patch
+
+#CVE-2020-15393
+0001-usb-usbtest-fix-missing-kfree-dev-buf-in-usbtest_dis.patch
+
+#CVE-2019-19377
+0002-btrfs-Don-t-submit-any-btree-write-bio-if-the-fs-has.patch
+
+#CVE-2020-2732
+0001-KVM-x86-emulate-RDPID.patch
+0002-KVM-nVMX-Don-t-emulate-instructions-in-guest-mode.patch
