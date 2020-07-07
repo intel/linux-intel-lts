@@ -98,6 +98,7 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 			   const syscall_fn_t syscall_table[])
 {
 	unsigned long flags = current_thread_info()->flags;
+	int ret;
 
 	regs->orig_x0 = regs->regs[0];
 	regs->syscallno = scno;
@@ -122,7 +123,17 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 
 	cortex_a76_erratum_1463225_svc_handler();
 	local_daif_restore(DAIF_PROCCTX);
-	unstall_inband();
+	if (running_inband()) {
+		unstall_inband();
+		user_exit();
+	}
+
+	ret = pipeline_syscall(scno, regs);
+	if (ret > 0)
+		return;
+
+	if (ret < 0)
+		goto tail_work;
 
 	if (system_supports_mte() && (flags & _TIF_MTE_ASYNC_FAULT)) {
 		/*
@@ -164,6 +175,7 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 	 * check again. However, if we were tracing entry, then we always trace
 	 * exit regardless, as the old entry assembly did.
 	 */
+tail_work:
 	if (!has_syscall_work(flags) && !IS_ENABLED(CONFIG_DEBUG_RSEQ)) {
 		local_daif_mask();
 		stall_inband();
