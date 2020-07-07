@@ -1,0 +1,21 @@
+config XLINK_PCIE_RH_DRIVER
+	tristate "XLink PCIe Remote Host driver"
+	depends on PCI && XLINK_PCIE_LH_DRIVER=n
+	help
+	  This option enables XLink PCIe Remote Host driver.
+
+	  Choose M here to compile this driver as a module, name is mxlk.
+	  This driver is used for XLink communication over PCIe,
+	  and is to be loaded on the IA host which is connected to
+	  the Intel Keem Bay.
+
+config XLINK_PCIE_LH_DRIVER
+	tristate "XLink PCIe Local Host driver"
+	depends on PCI_ENDPOINT
+	help
+	  This option enables XLink PCIe Local Host driver.
+
+	  Choose M here to compile this driver as a module, name is mxlk_ep.
+	  This driver is used for XLink communication over PCIe and is to be
+	  loaded on the Intel Keem Bay platform.
+
