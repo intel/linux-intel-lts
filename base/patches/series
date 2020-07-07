@@ -1,6 +1,3 @@
-# CVE-2018-20669
-0001-make-user_access_begin-do-access_ok-CVE-2018-20669.patch
-
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
 
@@ -61,3 +58,6 @@
 0005-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
 0006-debugfs-simplify-__debugfs_remove_file.patch
 0007-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
+
+# CVE-2020-15393
+0001-usb-usbtest-fix-missing-kfree-dev-buf-in-usbtest_dis.patch
