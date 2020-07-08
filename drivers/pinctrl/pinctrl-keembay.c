@@ -57,8 +57,7 @@
 #define GPIO_MODE_PULLUP_MASK	GENMASK(13, 12)
 #define GPIO_MODE_REN		BIT(11)
 #define GPIO_MODE_SCHMITT_EN	BIT(10)
-#define GPIO_MODE_SLEW_HIGH	(1 << 9)
-#define GPIO_MODE_SLEW_LOW	(0 << 9)
+#define GPIO_MODE_SLEW_RATE	BIT(9)
 #define GPIO_MODE_DRIVE_MASK	GENMASK(8, 7)
 #define GPIO_MODE_EN_INV	BIT(5)
 #define GPIO_MODE_DATA_INV	BIT(4)
@@ -1099,7 +1098,7 @@ static int keembay_pinconf_get_slew_rate(struct keembay_pinctrl *kpc,
 {
 	u32 reg = read_reg(kpc->base1 + GPIO_MODE, pin);
 
-	reg &= GPIO_MODE_SLEW_HIGH;
+	reg &= GPIO_MODE_SLEW_RATE;
 	if (reg)
 		*arg = 1;
 	else
@@ -1113,10 +1112,10 @@ static int keembay_pinconf_set_slew_rate(struct keembay_pinctrl *kpc,
 {
 	u32 reg = read_reg(kpc->base1 + GPIO_MODE, pin);
 
-	reg &= GPIO_MODE_SLEW_LOW;
+	reg &= ~GPIO_MODE_SLEW_RATE;
 
 	if (arg)
-		reg |= GPIO_MODE_SLEW_HIGH;
+		reg |= GPIO_MODE_SLEW_RATE;
 
 	write_reg(reg, kpc->base1 + GPIO_MODE, pin);
 
