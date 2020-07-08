@@ -1136,7 +1136,7 @@ static int __maybe_unused stmmac_pci_runtime_resume(struct device *dev)
 	return ret;
 }
 
-#define STMMAC_RUNTIME_SUSPEND_DELAY	2500
+#define STMMAC_RUNTIME_SUSPEND_DELAY	10000
 
 static int __maybe_unused stmmac_pci_runtime_idle(struct device *dev)
 {
