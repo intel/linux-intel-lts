@@ -1637,15 +1637,9 @@ static void rps_work(struct work_struct *work)
 		adj = 0;
 	}
 
-	rps->last_adj = adj;
-
 	/*
-	 * Limit deboosting and boosting to keep ourselves at the extremes
-	 * when in the respective power modes (i.e. slowly decrease frequencies
-	 * while in the HIGH_POWER zone and slowly increase frequencies while
-	 * in the LOW_POWER zone). On idle, we will hit the timeout and drop
-	 * to the next level quickly, and conversely if busy we expect to
-	 * hit a waitboost and rapidly switch into max power.
+	 * sysfs frequency limits may have snuck in while
+	 * servicing the interrupt
 	 */
 	if ((adj < 0 && rps->power.mode == HIGH_POWER) ||
 	    (adj > 0 && rps->power.mode == LOW_POWER))
@@ -1659,8 +1653,9 @@ static void rps_work(struct work_struct *work)
 
 	if (intel_rps_set(rps, new_freq)) {
 		DRM_DEBUG_DRIVER("Failed to set new GPU frequency\n");
-		rps->last_adj = 0;
+		adj = 0;
 	}
+	rps->last_adj = adj;
 
 	mutex_unlock(&rps->lock);
 
