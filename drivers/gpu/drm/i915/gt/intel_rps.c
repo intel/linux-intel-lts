@@ -804,7 +804,6 @@ void intel_rps_unpark(struct intel_rps *rps)
 		rps->min_freq_softlimit,
 		rps->max_freq_softlimit));
 
-	rps->last_adj = 0;
 	mutex_unlock(&rps->lock);
 
 	rps->pm_iir = 0;
@@ -819,6 +818,8 @@ void intel_rps_unpark(struct intel_rps *rps)
 
 void intel_rps_park(struct intel_rps *rps)
 {
+	int adj;
+
 	if (!intel_rps_clear_active(rps))
 		return;
 
@@ -857,8 +858,13 @@ void intel_rps_park(struct intel_rps *rps)
 	 * (Note we accommodate Cherryview's limitation of only using an
 	 * even bin by applying it to all.)
 	*/
-	rps->cur_freq =
-		max_t(int, round_down(rps->cur_freq - 1, 2), rps->min_freq);
+	adj = rps->last_adj;
+	if (adj < 0)
+		adj *= 2;
+	else /* CHV needs even encode values */
+		adj = -2;
+	rps->last_adj = adj;
+	rps->cur_freq = max_t(int, rps->cur_freq + adj, rps->min_freq);
 }
 
 void intel_rps_boost(struct i915_request *rq)
