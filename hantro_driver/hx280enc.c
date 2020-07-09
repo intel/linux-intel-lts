@@ -285,10 +285,11 @@ static int GetWorkableCore(struct hantroenc_t *dev, u32 *core_info, u32 *core_in
 
 static long ReserveEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 {
-	PDEBUG("hx280enc: ReserveEncoder\n");
 	struct slice_info *parentslice = getparentslice(dev, CORE_ENC);
 	u32 core_info_tmp = 0;
-	/*If HW resources are shared inter cores, just make sure only one is using the HW*/
+
+	PDEBUG("hx280enc: ReserveEncoder\n");
+        /*If HW resources are shared inter cores, just make sure only one is using the HW*/
 	if (resouce_shared) {
 		if (down_interruptible(&parentslice->enc_core_sem))
 			return -ERESTARTSYS;
@@ -727,9 +728,9 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 
 static void ResetAsic(struct hantroenc_t *dev)
 {
-	PDEBUG("hx280enc: ResetAsic\n");
 	int i;
 
+	PDEBUG("hx280enc: ResetAsic\n");
 	iowrite32(0, (void *)(dev->hwregs + 0x14));
 	for (i = 4; i < dev->core_cfg.iosize; i += 4)
 		iowrite32(0, (void *)(dev->hwregs + i));

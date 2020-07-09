@@ -27,7 +27,11 @@
 #ifdef CACHE_DEBUG
 #ifdef __KERNEL__
 /* This one if debugging is on, and kernel space */
-#define PDEBUG pr_info
+#define PDEBUG(fmt, arg...)     \
+        do {                                      \
+                        pr_info(fmt, ## arg); \
+        } while (0)
+
 #else
 /* This one for user space */
 #define PDEBUG(fmt, args...) printf(__FILE__ ":%d: " fmt, __LINE__, ## args)

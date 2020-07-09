@@ -1877,11 +1877,10 @@ static dtbnode * trycreatenode(
 {
 	struct fwnode_handle *fwnode;
 	struct resource r;
-	int i, count, na, ns, ret = 0;
+	int i, na, ns, ret = 0;
 	int endian = of_device_is_big_endian(ofnode);
 	u32 reg_u32[4];
 	const char *reg_name;
-	const char **names;
 	uint64_t ioaddress, iosize;
 
 	dtbnode *pnode = kzalloc(sizeof(dtbnode), GFP_KERNEL);
@@ -2000,7 +1999,7 @@ static void hantro_mmu_control(void)
 			printk("hantro_init: Media MMU600 is enabled, is_mmu_enabled = %d\n", is_mmu_enabled);
 		else
 			printk("hantro_init: Media MMU600 is disabled, is_mmu_enabled = %d\n", is_mmu_enabled);
-		iounmap((void *) is_mmu_enabled);
+                //iounmap((void *) is_mmu_enabled);
 	        release_mem_region(tbh_mmu_tcu_smmu_cr0, 0x32);
 	}
 
@@ -2010,8 +2009,7 @@ static void hantro_mmu_control(void)
 static int hantro_clock_control(struct platform_device *pdev, bool enable)
 {
 	struct device *dev = &pdev->dev;
-	struct device_node *ofnode = dev->of_node;
-	struct fwnode_handle *fwnode = &ofnode->fwnode;
+	struct clk *dev_clk=NULL;
 	const char **clock_names;
 	int i = 0, ret = 0, count = 0;
 
@@ -2020,18 +2018,18 @@ static int hantro_clock_control(struct platform_device *pdev, bool enable)
         if (count > 0 ) {
                 clock_names = kcalloc(count, sizeof(*clock_names), GFP_KERNEL);
                 if (!clock_names)
-                        return NULL;
+                        return 0;
                 ret = device_property_read_string_array(dev, "clock-names",
                                                 clock_names, count);
                 if (ret < 0) {
                         pr_err("failed to read clock names\n");
                         kfree(clock_names);
-                        return NULL;
+                        return 0;
                 }
 
                 for (i = 0; i < count; i++) {
 			DBG("hantro: clock_name = %s\n", clock_names[i]);
-			struct clk *dev_clk = clk_get(&pdev->dev, clock_names[i]);
+			dev_clk = clk_get(&pdev->dev, clock_names[i]);
                         if (enable == true)  {
                               clk_prepare_enable(dev_clk);
                               pr_info("hantro: default clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
@@ -2054,6 +2052,7 @@ static int hantro_reset_control(struct platform_device *pdev, bool deassert)
 
         struct device *dev = &pdev->dev;
         const char **reset_names;
+        struct reset_control *dev_reset = NULL;
         int i = 0, ret = 0, count = 0;
         // Read reset names
         count = device_property_read_string_array(dev, "reset-names", NULL, 0);
@@ -2061,19 +2060,19 @@ static int hantro_reset_control(struct platform_device *pdev, bool deassert)
         if (count > 0) {
                 reset_names = kcalloc(count, sizeof(*reset_names), GFP_KERNEL);
                 if (!reset_names)
-                        return NULL;
+                        return 0;
 
                 ret = device_property_read_string_array(dev, "reset-names",
                                                 reset_names, count);
                 if (ret < 0) {
                         pr_err("failed to read clock names\n");
                         kfree(reset_names);
-                        return NULL;
+                        return 0;
                 }
 
                 for (i = 0; i < count; i++) {
                         DBG("hantro: reset_name = %s\n", reset_names[i]);
-			struct reset_control *dev_reset = devm_reset_control_get(dev, reset_names[i]);
+			dev_reset = devm_reset_control_get(dev, reset_names[i]);
                         if (deassert == true) {
 				ret = reset_control_deassert(dev_reset);
 				if (ret < 0) {
@@ -2143,7 +2142,6 @@ static int hantro_drm_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	int result = 0;
 	int sliceidx = -1;
-	struct fwnode_handle *child;
         pr_info("hantro_drm_probe: dev %s probe", pdev->name);
 
         /*TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */

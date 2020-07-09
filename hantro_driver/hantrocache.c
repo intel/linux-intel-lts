@@ -636,7 +636,7 @@ static int ReserveIO(struct cache_dev_t *pccore)
 	}
 
 	if (!request_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize, pccore->reg_name)) {
-		PDEBUG(KERN_INFO "hantr_cache: failed to reserve HW regs,core:%d\n", i);
+		PDEBUG(KERN_INFO "hantr_cache: failed to reserve HW regs,core:%d\n", hwid);
 		pccore->is_valid = 0;
 		return -1;
 	}
@@ -646,7 +646,7 @@ static int ReserveIO(struct cache_dev_t *pccore)
 			pccore->core_cfg.iosize);
 
 	if (pccore->hwregs == NULL) {
-		PDEBUG(KERN_INFO "hantr_cache: failed to ioremap HW regs,core:%d\n", i);
+		PDEBUG(KERN_INFO "hantr_cache: failed to ioremap HW regs,core:%d\n", hwid);
 		release_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize);
 		pccore->is_valid = 0;
 		return -1;
