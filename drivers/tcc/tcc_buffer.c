@@ -319,11 +319,6 @@ static int tcc_parse_ptct(void)
 		tbl_swap = tbl_swap + entry_size / sizeof(u32);
 	} while ((offset < (acpi_ptct_tbl->length) / sizeof(u32)) && entry_size);
 
-	if (p_tcc_config->num_of_psram < 1) {
-		pr_err("No psram found!\n");
-		return -1;
-	}
-
 	l2_start = 0;
 	l2_end = 0;
 
