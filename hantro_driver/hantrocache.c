@@ -156,7 +156,7 @@ static unsigned int WaitCacheReady(struct cache_dev_t *dev)
 	return 0;
 }
 
-static int CheckCoreOccupation(struct cache_dev_t *dev)
+static int CheckCoreOccupation(struct cache_dev_t *dev, struct file *filp)
 {
 	struct slice_info *parentslice = getparentslice(dev, CORE_CACHE);
 	int ret = 0;
@@ -165,7 +165,7 @@ static int CheckCoreOccupation(struct cache_dev_t *dev)
 	spin_lock_irqsave(&parentslice->cache_owner_lock, flags);
 	if (!dev->is_reserved) {
 		dev->is_reserved = 1;
-		dev->pid = current->pid;
+		dev->cacheowner = filp;
 		ret = 1;
 	}
 
@@ -174,53 +174,18 @@ static int CheckCoreOccupation(struct cache_dev_t *dev)
 	return ret;
 }
 
-static int GetWorkableCore(struct cache_dev_t *dev, u32 parentid, u32 *core_id)
+static int GetWorkableCore(struct cache_dev_t *dev, struct file *filp)
 {
-	int i = 0, ret = 0;
-	driver_cache_dir dir = (*core_id) & 0x01;
-	cache_client_type client = ((*core_id) & 0x06) >> 1;
-
-	while (dev != NULL) {
-	/* a valid free Core*/
-		if (dev->is_valid && dev->core_cfg.client == client &&
-			dev->core_cfg.dir == dir && dev->parentid == parentid &&
-				CheckCoreOccupation(dev)) {
-			ret = 1;
-			*core_id = i;
-			break;
-		}
-		i++;
-		dev = dev->next;
-	}
-	return ret;
+	return CheckCoreOccupation(dev, filp);
 }
 
-static long ReserveCore(struct cache_dev_t *dev, u32 parentid, u32 *core_id)
+static long ReserveCore(struct cache_dev_t *dev, struct file *filp)
 {
-	/*fixe me: dir bits is not enough for 3 choice */
-	driver_cache_dir dir = (*core_id) & 0x01;
-	cache_client_type client = ((*core_id) & 0x06) >> 1;
-	int status = 0;
-	struct cache_dev_t *pccore = dev;
 	struct slice_info *parentslice;
-
-	while (pccore != NULL) {
-		/* a valid core supports such client and dir*/
-		if (pccore->is_valid && pccore->core_cfg.client == client && pccore->core_cfg.dir == dir &&
-			pccore->parentid == parentid) {
-			status = 1;
-			break;
-		}
-		pccore = pccore->next;
-	}
-	if (status == 0) {
-		PDEBUG(KERN_INFO "NO any core support client:%d,dir:%d.\n", dir, client);
-		return -1;
-	}
 	parentslice = getparentslice(dev, CORE_CACHE);
 
 	/* lock a core that has specified core id*/
-	if (wait_event_interruptible(parentslice->cache_hw_queue, GetWorkableCore(dev, parentid, core_id) != 0))
+	if (wait_event_interruptible(parentslice->cache_hw_queue, GetWorkableCore(dev, filp) != 0))
 		return -ERESTARTSYS;
 
 	return 0;
@@ -235,7 +200,7 @@ static void ReleaseCore(struct cache_dev_t *dev)
 	/* release specified core id */
 	spin_lock_irqsave(&parentslice->cache_owner_lock, flags);
 	if (dev->is_reserved) {
-		dev->pid = -1;
+		dev->cacheowner = NULL;
 		dev->is_reserved = 0;
 	}
 
@@ -261,9 +226,8 @@ long hantrocache_ioctl(
 	case CACHE_IOCGHWOFFSET:
 		__get_user(id, (int *)arg);
 		slice = SLICE(id);
-		type = NODETYPE(id);
 		node = KCORE(id);
-		pccore = get_cachenodebytype(slice, type, node);
+		pccore = get_cachenodes(slice, node);
 		if (pccore == NULL)
 			return -EFAULT;
 		else
@@ -272,9 +236,8 @@ long hantrocache_ioctl(
 	case CACHE_IOCGHWIOSIZE:
 		id = (u32)arg;
 		slice = SLICE(id);
-		type = NODETYPE(id);
 		node = KCORE(id);
-		pccore = get_cachenodebytype(slice, type, node);
+		pccore = get_cachenodes(slice, node);
 		if (pccore == NULL)
 			return -EFAULT;
 		else
@@ -285,36 +248,53 @@ long hantrocache_ioctl(
 		id = get_slicecorenum(id, CORE_CACHE);
 		return id;
 	case CACHE_IOCH_HW_RESERVE:
-		__get_user(tmp64, (unsigned long long *)arg);
-		id = tmp64 >> 32;
-		slice = SLICE(id);
-		node = KCORE(id);
-		core_id = (u32)tmp64;//get client and direction info
-		pccore = get_cachenodes(slice, 0);
-		if (pccore == NULL)
-			return -EFAULT;
+		{
+			driver_cache_dir dir;
+			cache_client_type client;
+		/*it's a little danger here since here's no protection of the chain*/
+			__get_user(tmp64, (unsigned long long *)arg);
+			id = tmp64 >> 32;
+			slice = SLICE(id);
+			type = NODETYPE(id);
+			node = KCORE(id);
+			core_id = (u32)tmp64;//get client and direction info
+			dir = core_id & 0x01;
+			client = (core_id & 0x06) >> 1;
+			pccore = get_cachenodes(slice, 0);
 
-		ret = ReserveCore(pccore, node, &core_id);
-		if (ret == 0)
-			return core_id;
-		return ret;
+			while (pccore != NULL) {
+				/* a valid core supports such client and dir*/
+				if (pccore->core_cfg.client == client && pccore->core_cfg.dir == dir &&
+					pccore->parentid == node && pccore->is_valid &&
+					((type == NODE_TYPE_DEC && pccore->parenttype == CORE_DEC)
+					|| (type == NODE_TYPE_ENC && pccore->parenttype == CORE_ENC)))
+					break;
+				pccore = pccore->next;
+			}
+			if (pccore == NULL)
+				return -EFAULT;
+
+			ret = ReserveCore(pccore, filp);
+			if (ret == 0)
+				return pccore->core_id;
+			return ret;
+		}
 	case CACHE_IOCH_HW_RELEASE:
 		core_id = (u32)arg;
 		slice = SLICE(core_id);
-		type = NODETYPE(core_id);
 		node = KCORE(core_id);
-		pccore = get_cachenodebytype(slice, type, node);
+		pccore = get_cachenodes(slice, node);
 		if (pccore == NULL)
 			return -EFAULT;
-		else
+		else {
 			ReleaseCore(pccore);
+		}
 		break;
 	case CACHE_IOCG_ABORT_WAIT:
 		core_id = (u32)arg;
 		slice = SLICE(core_id);
-		type = NODETYPE(core_id);
 		node = KCORE(core_id);
-		pccore = get_cachenodebytype(slice, type, node);
+		pccore = get_cachenodes(slice, node);
 		if (pccore == NULL)
 			return -EFAULT;
 		tmp = WaitCacheReady(pccore);
@@ -330,7 +310,7 @@ int cache_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-int cache_release(void)
+int cache_release(struct file *filp)
 {
 	int i, slicen = get_slicenumber();
 	struct cache_dev_t *dev;
@@ -338,7 +318,10 @@ int cache_release(void)
 	for (i = 0; i < slicen; i++) {
 		dev = get_cachenodes(i, 0);
 		while (dev != NULL) {
-			ReleaseCore(dev);
+			if (dev->cacheowner == filp && dev->is_reserved) {
+				ResetAsic(dev);
+				ReleaseCore(dev);
+			}
 			dev = dev->next;
 		}
 	}
@@ -533,7 +516,6 @@ int cache_probe(dtbnode *pnode)
 #endif
 		pccore->core_cfg.parentaddr = pnode->parentaddr;
 		add_cachenode(pnode->sliceidx, pccore);
-		pr_info("hantrocache: HW at base <0x%llx>\n", pccore->core_cfg.base_addr);
 	}
 #endif	/*not def PCI_BUS*/
 #endif	/*USE_DTB_PROBE*/
@@ -618,25 +600,21 @@ static int ReserveIO(struct cache_dev_t *pccore)
 
 	if (hwid == 0 && pccore->core_cfg.dir == DIR_RD) {
 		pccore->core_cfg.base_addr += CACHE_WITH_SHAPER_OFFSET;
-		pccore->core_cfg.iosize -= CACHE_WITH_SHAPER_OFFSET;
 	}
 	else if (hwid != 0) {
 		if (pccore->core_cfg.dir == DIR_WR) {
 			pccore->core_cfg.base_addr += SHAPER_OFFSET;
-			pccore->core_cfg.iosize -= SHAPER_OFFSET;
 		}
 		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 0) {
 			pccore->core_cfg.base_addr += CACHE_WITH_SHAPER_OFFSET;
-			pccore->core_cfg.iosize -= CACHE_WITH_SHAPER_OFFSET;
 		}
 		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 1) {
 			pccore->core_cfg.base_addr += CACHE_ONLY_OFFSET;
-			pccore->core_cfg.iosize -= CACHE_ONLY_OFFSET;
 		}
 	}
 
 	if (!request_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize, pccore->reg_name)) {
-		PDEBUG(KERN_INFO "hantr_cache: failed to reserve HW regs,core:%d\n", hwid);
+		PDEBUG(KERN_INFO "hantr_cache: failed to reserve HW regs,core:%x\n", hwid);
 		pccore->is_valid = 0;
 		return -1;
 	}
@@ -646,7 +624,7 @@ static int ReserveIO(struct cache_dev_t *pccore)
 			pccore->core_cfg.iosize);
 
 	if (pccore->hwregs == NULL) {
-		PDEBUG(KERN_INFO "hantr_cache: failed to ioremap HW regs,core:%d\n", hwid);
+		PDEBUG(KERN_INFO "hantr_cache: failed to ioremap HW regs,core:%x\n", hwid);
 		release_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize);
 		pccore->is_valid = 0;
 		return -1;
@@ -656,6 +634,8 @@ static int ReserveIO(struct cache_dev_t *pccore)
 		PDEBUG("cache  reg[0x10]=%08x\n", readl(pccore->hwregs + 0x10));
 	else
 		PDEBUG("shaper reg[0x08]=%08x\n", readl(pccore->hwregs + 0x08));
+
+	 pr_info("hantrocache: HW at base <0x%llx> with ID 0x%x [mapped addr = 0x%llx]\n", pccore->core_cfg.base_addr, hwid, (unsigned long long )pccore->hwregs);
 
 	return 0;
 }

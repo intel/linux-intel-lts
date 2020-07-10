@@ -50,10 +50,9 @@
 /* compile options */
 #define USE_HW 1
 #define USE_CMA 0
-#define HAS_VC8000E
-#define HAS_VC8000D
-//#define HAS_CACHECORE
-//#define HAS_DEC400
+#define ENABLE_VC8000E  1
+#define ENABLE_VC8000D  1
+#define ENABLE_DEC400_CACHE 0
 #define USE_RESET
 #define ENABLE_HANTRO_CLK
 
@@ -77,6 +76,26 @@
 
 struct hantro_device_handle hantro_dev;
 static ssize_t memory_usage_show_internal(int sliceidx, char *buf);
+
+bool verbose=0;
+module_param(verbose, bool, 0);
+MODULE_PARM_DESC(verbose,"Verbose log operations "
+                 "(default 0)");
+
+bool vc8000e = ENABLE_VC8000E;
+module_param(vc8000e, bool, 0);
+MODULE_PARM_DESC(vc8000e,"Enable VC8000E"
+                 "(default 1)");
+
+bool vc8000d = ENABLE_VC8000D;
+module_param(vc8000d, bool, 0);
+MODULE_PARM_DESC(vc8000d,"Enable VC8000D"
+                 "(default 1)");
+
+bool dec400 = ENABLE_DEC400_CACHE;
+module_param(dec400, bool, 0);
+MODULE_PARM_DESC(dec400,"Enable DEC400/L2"
+                 "(default 1)");
 
 #if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
 void debug_dma_alloc_coherent(
@@ -504,34 +523,30 @@ static int hantro_device_open(
 	struct inode *inode,
 	struct file *filp)
 {
-	int ret;
-
-	ret = drm_open(inode, filp);
+    int ret;
+    ret = drm_open(inode, filp);
 #if USE_HW == 1      /*hw init*/
-#ifdef HAS_VC8000D
-	hantrodec_open(inode, filp);
+    if (vc8000d)
+          hantrodec_open(inode, filp);
+    if (dec400)
+          cache_open(inode, filp);
 #endif
-#ifdef HAS_CACHECORE
-	cache_open(inode, filp);
-#endif
-#endif
-	return ret;
+    return ret;
 }
 
 static int hantro_device_release(struct inode *inode, struct file *filp)
 {
 #if USE_HW == 1
-#ifdef HAS_CACHECORE
-	cache_release();
+    if (dec400)
+          cache_release(filp);
+
+    if (vc8000d)
+          hantrodec_release(filp);
+
+    if (vc8000e)
+          hantroenc_release();
 #endif
-#ifdef HAS_VC8000D
-	hantrodec_release(filp);
-#endif
-#ifdef HAS_VC8000E
-	hantroenc_release();
-#endif
-#endif
-	return drm_release(inode, filp);
+    return drm_release(inode, filp);
 }
 
 #if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
@@ -1469,43 +1484,41 @@ static long hantro_ioctl(
 	}
 	if (nr >= DRM_IOCTL_NR(HX280ENC_IOC_START)
 		&& nr <= DRM_IOCTL_NR(HX280ENC_IOC_END)) {
-#ifdef HAS_VC8000E
-		return hantroenc_ioctl(filp, cmd, arg);
-#else
-		if (cmd == HX280ENC_IOCG_CORE_NUM) {
+		if (vc8000e) {
+                      return hantroenc_ioctl(filp, cmd, arg);
+	        }
+		else
+		{
+		    if (cmd == HX280ENC_IOCG_CORE_NUM) {
 			int corenum = 0;
-
 			__put_user(corenum, (unsigned int *) arg);
-		} else {
-			return -EFAULT;
-		}
-#endif
-	}
+                } else {
+                     return -EFAULT;
+                }
+        }
+    }
 	if (nr >= DRM_IOCTL_NR(HANTRODEC_IOC_START) &&
 		nr <= DRM_IOCTL_NR(HANTRODEC_IOC_END)) {
-#ifdef HAS_VC8000D
-		return hantrodec_ioctl(filp, cmd, arg);
-#else
-		return -EFAULT;
-#endif
+	        if (vc8000d)
+	              return hantrodec_ioctl(filp, cmd, arg);
+                else
+                      return -EFAULT;
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTROCACHE_IOC_START) &&
 		nr <= DRM_IOCTL_NR(HANTROCACHE_IOC_END)) {
-#ifdef HAS_CACHECORE
-		return hantrocache_ioctl(filp, cmd, arg);
-#else
-		return -EFAULT;
-#endif
+            if (dec400)
+                    return hantrocache_ioctl(filp, cmd, arg);
+            else
+	            return -EFAULT;
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTRODEC400_IOC_START) &&
 		nr <= DRM_IOCTL_NR(HANTRODEC400_IOC_END)) {
-#ifdef HAS_DEC400
-		return hantrodec400_ioctl(filp, cmd, arg);
-#else
-		return -EFAULT;
-#endif
+            if (dec400)
+                   return hantrodec400_ioctl(filp, cmd, arg);
+            else
+                   return -EFAULT;
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTROSLICE_IOC_START) &&
@@ -1582,7 +1595,9 @@ static void hantro_release(struct drm_device *dev)
 #if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
 	drm_dev_unregister(hantro_dev.drm_dev);
 #else
+#if KERNEL_VERSION(5, 6, 0) >= LINUX_VERSION_CODE
 	drm_dev_fini(hantro_dev.drm_dev);
+#endif
 #endif
 }
 #endif
@@ -1950,20 +1965,23 @@ static dtbnode * trycreatenode(
 	}
 
 	switch (pnode->type) {
-	case CORE_DEC:
-		ret = hantrodec_probe(pnode);
-		break;
-	case CORE_ENC:
-		ret = hantroenc_probe(pnode);
-		break;
-	// Cache and DEC400 disabled for now in hantro driver
-	case CORE_CACHE:
-		//ret = cache_probe(pnode);
-		break;
-	case CORE_DEC400:
-		//ret = hantro_dec400_probe(pnode);
-		break;
-	default:
+             case CORE_DEC:
+                if (vc8000d)
+                     ret = hantrodec_probe(pnode);
+                break;
+             case CORE_ENC:
+                if (vc8000e)
+                     ret = hantroenc_probe(pnode);
+                break;
+             case CORE_CACHE:
+                if (dec400)
+                     ret = cache_probe(pnode);
+                break;
+             case CORE_DEC400:
+                if (dec400)
+                     ret = hantro_dec400_probe(pnode);
+                break;
+             default:
 		ret = -EINVAL;
 		break;
 	}
@@ -2032,7 +2050,8 @@ static int hantro_clock_control(struct platform_device *pdev, bool enable)
 			dev_clk = clk_get(&pdev->dev, clock_names[i]);
                         if (enable == true)  {
                               clk_prepare_enable(dev_clk);
-                              pr_info("hantro: default clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
+                              if (verbose)
+                                   pr_info("hantro: default clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
                               //clk_set_rate(dev_clk, 800000000);
                               //pr_info("hantro: set 800 Mhz clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
 			}
@@ -2071,8 +2090,9 @@ static int hantro_reset_control(struct platform_device *pdev, bool deassert)
                 }
 
                 for (i = 0; i < count; i++) {
-                        DBG("hantro: reset_name = %s\n", reset_names[i]);
-			dev_reset = devm_reset_control_get(dev, reset_names[i]);
+                        if(verbose)
+                            pr_info("hantro: reset_name = %s\n", reset_names[i]);
+                        dev_reset = devm_reset_control_get(dev, reset_names[i]);
                         if (deassert == true) {
 				ret = reset_control_deassert(dev_reset);
 				if (ret < 0) {
@@ -2276,18 +2296,14 @@ void __exit hantro_cleanup(void)
 {
 	hantro_dev.config = 0;
 #if USE_HW == 1      /*hw init*/
-#ifdef HAS_VC8000D
-	hantrodec_cleanup();
-#endif
-#ifdef HAS_VC8000E
-	hantroenc_cleanup();
-#endif
-#ifdef HAS_CACHECORE
-	cache_cleanup();
-#endif
-#ifdef HAS_DEC400
-	hantro_dec400_cleanup();
-#endif
+        if (vc8000d)
+              hantrodec_cleanup();
+        if (vc8000e)
+              hantroenc_cleanup();
+        if (dec400)
+              cache_cleanup();
+        if (dec400)
+              hantro_dec400_cleanup();
 #endif
 	/*this one must be after above ones to maintain list*/
 	slice_remove();
@@ -2295,7 +2311,9 @@ void __exit hantro_cleanup(void)
 	// reserved mem relese need to be called somewhere
 	// of_reserved_mem_device_release(sinfo->dev);
 	drm_dev_unregister(hantro_dev.drm_dev);
-	drm_dev_fini(hantro_dev.drm_dev);
+#if KERNEL_VERSION(5, 6, 0) >= LINUX_VERSION_CODE
+ 	drm_dev_fini(hantro_dev.drm_dev);
+#endif
 	platform_device_unregister(hantro_dev.platformdev);
 	platform_driver_unregister(&hantro_drm_platform_driver);
 	pr_info("hantro driver removed\n");
@@ -2343,7 +2361,9 @@ int __init hantro_init(void)
 
 	if (result < 0) {
 		drm_dev_unregister(hantro_dev.drm_dev);
+#if KERNEL_VERSION(5, 6, 0) >= LINUX_VERSION_CODE
 		drm_dev_fini(hantro_dev.drm_dev);
+#endif
 		platform_device_unregister(hantro_dev.platformdev);
 		platform_driver_unregister(&hantro_drm_platform_driver);
 		return result;
@@ -2352,25 +2372,21 @@ int __init hantro_init(void)
 
 #ifndef USE_DTB_PROBE	//static table analyze, dec and enc must be in the front
 #if USE_HW == 1
-#ifdef HAS_VC8000D
-	result = hantrodec_probe(NULL);
-#endif
-#ifdef HAS_VC8000E
-	result = hantroenc_probe(NULL);
-#endif
-#ifdef HAS_CACHECORE
-//	result = cache_probe(NULL);
-#endif
-#ifdef HAS_DEC400
-//	result = hantro_dec400_probe(NULL);
-#endif
+        if (vc8000d)
+              result = hantrodec_probe(NULL);
+        if (vc8000e)
+              result = hantroenc_probe(NULL);
+        if (dec400)
+              result = cache_probe(NULL);
+        if (dec400)
+              result = hantro_dec400_probe(NULL);
 #endif	//USE_HW==1
 #endif	//USE_DTB_PROBE
 	if (get_slicenumber() == 0)
 		addslice(hantro_dev.drm_dev->dev, -1, 0);	//for PC, no DTB probe, create a default dev
 	for (i = 0; i < get_slicenumber(); i++) {
-		struct slice_info *pslice = getslicenode(i);
-		hantro_dev.config |= getsliceconfig(i);
+		struct slice_info *pslice = getslicenode_inInit(i);
+		hantro_dev.config |= pslice->config;
 		if (pslice->dev == NULL)
 			pslice->dev = hantro_dev.drm_dev->dev;
 
@@ -2380,8 +2396,10 @@ int __init hantro_init(void)
 			pr_info("create sysfs %d fail\n", i);
 
 	}
-	//slice_printdebug();
-	pr_info("hantro device created\n");
+        slice_init_finish();
+        if (verbose)
+             slice_printdebug();
+        pr_info("hantro device created\n");
 	return result;
 }
 

@@ -42,6 +42,7 @@
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_legacy.h>
 
+extern bool verbose;
 /*these domain definitions are identical to hantro_bufmgr.h*/
 #define HANTRO_DOMAIN_NONE    0x00000
 #define HANTRO_CPU_DOMAIN    0x00001

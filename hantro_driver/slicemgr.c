@@ -23,45 +23,50 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <linux/atomic.h>
 #include "hantro_priv.h"
 
 
 /*currently we simply not using dynamic chains*/
 static struct slice_info *slicehdr;
-static int slicenum;
-static struct mutex slice_mutex;
+static atomic_t sliceinitd;
+static atomic_t slicenum;
 
 int findslice_bydev(struct device *dev)
 {
 	int i = 0;
 	struct slice_info *hdr = slicehdr;
 
-	mutex_lock(&slice_mutex);
+	if (atomic_read(&sliceinitd) == 0)
+		return -1;
+
 	while (hdr != NULL) {
-		if (hdr->dev == dev) {
-			mutex_unlock(&slice_mutex);
+		if (hdr->dev == dev)
 			return i;
-		}
 		i++;
 		hdr = hdr->next;
 	}
-	mutex_unlock(&slice_mutex);
 	return -1;
 }
 
-struct slice_info *getslicenode(u32 sliceindex)
+struct slice_info *getslicenode_inInit(u32 sliceindex)
 {
 	int i = 0;
 	struct slice_info *hdr = slicehdr;
 
-	if (sliceindex >= slicenum)
+	if (sliceindex >= atomic_read(&slicenum))
 		return NULL;
-	mutex_lock(&slice_mutex);
 	for (i = 0; i < sliceindex; i++)
 		hdr = hdr->next;
-	mutex_unlock(&slice_mutex);
 
 	return hdr;
+}
+
+struct slice_info *getslicenode(u32 sliceindex)
+{
+	if (atomic_read(&sliceinitd) == 0)
+		return NULL;
+	return getslicenode_inInit(sliceindex);
 }
 
 int get_slicecorenum(u32 sliceindex, slice_coretype type)
@@ -85,15 +90,6 @@ int get_slicecorenum(u32 sliceindex, slice_coretype type)
 	}
 }
 
-u32 getsliceconfig(u32 sliceindex)
-{
-	struct slice_info *hdr = getslicenode(sliceindex);
-
-	if (hdr == NULL)
-		return 0;
-	return hdr->config;
-}
-
 /*get dec nodes list hdr of a slice*/
 struct hantrodec_t *get_decnodes(u32 sliceindex, u32 nodeidx)
 {
@@ -104,20 +100,20 @@ struct hantrodec_t *get_decnodes(u32 sliceindex, u32 nodeidx)
 	if (hdr == NULL)
 		return NULL;
 
-	mutex_lock(&slice_mutex);
 	p = hdr->dechdr;
 	for (i = 0; i < nodeidx; i++) {
 		if (p == NULL)
 			break;
 		p = p->next;
 	}
-	mutex_unlock(&slice_mutex);
 	return p;
 }
 
 struct hantrodec_t *getfirst_decnodes(struct slice_info *pslice)
 {
-	return pslice->dechdr;
+	if (atomic_read(&slicenum))
+		return pslice->dechdr;
+	return NULL;
 }
 
 
@@ -130,15 +126,12 @@ struct hantroenc_t *get_encnodes(u32 sliceindex, u32 nodeidx)
 
 	if (hdr == NULL)
 		return NULL;
-
-	mutex_lock(&slice_mutex);
 	p = hdr->enchdr;
 	for (i = 0; i < nodeidx; i++) {
 		if (p == NULL)
 			break;
 		p = p->next;
 	}
-	mutex_unlock(&slice_mutex);
 	return p;
 }
 
@@ -149,18 +142,16 @@ struct cache_dev_t *get_cachenodes(u32 sliceindex, u32 nodeidx)
 	struct cache_dev_t *p;
 	struct slice_info *hdr = getslicenode(sliceindex);
 
-	if (hdr == NULL)
+	if (hdr == NULL) {
+		printk("%s:%d:%d", __func__, atomic_read(&sliceinitd), atomic_read(&slicenum));
 		return NULL;
-
-
-	mutex_lock(&slice_mutex);
+	}
 	p = hdr->cachehdr;
 	for (i = 0; i < nodeidx; i++) {
 		if (p == NULL)
 			break;
 		p = p->next;
 	}
-	mutex_unlock(&slice_mutex);
 	return p;
 }
 
@@ -171,9 +162,6 @@ struct cache_dev_t *get_cachenodebytype(u32 sliceindex, u32 parenttype, u32 pare
 
 	if (hdr == NULL)
 		return NULL;
-
-
-	mutex_lock(&slice_mutex);
 	p = hdr->cachehdr;
 	while(p != NULL) {
 		if (p->parentid == parentnodeidx &&
@@ -182,7 +170,6 @@ struct cache_dev_t *get_cachenodebytype(u32 sliceindex, u32 parenttype, u32 pare
 			break;
 		p = p->next;
 	}
-	mutex_unlock(&slice_mutex);
 	return p;
 
 }
@@ -196,15 +183,12 @@ struct dec400_t *get_dec400nodes(u32 sliceindex, u32 nodeidx)
 
 	if (hdr == NULL)
 		return NULL;
-
-	mutex_lock(&slice_mutex);
 	p = hdr->dec400hdr;
 	for (i = 0; i < nodeidx; i++) {
 		if (p == NULL)
 			break;
 		p = p->next;
 	}
-	mutex_unlock(&slice_mutex);
 	return p;
 }
 
@@ -216,8 +200,6 @@ struct dec400_t *get_dec400nodebytype(u32 sliceindex, u32 parenttype, u32 parent
 
 	if (hdr == NULL)
 		return NULL;
-
-	mutex_lock(&slice_mutex);
 	p = hdr->dec400hdr;
 	while (p != NULL) {
 		if (p->parentid == parentnodeidx &&
@@ -226,29 +208,28 @@ struct dec400_t *get_dec400nodebytype(u32 sliceindex, u32 parenttype, u32 parent
 			break;
 		p = p->next;
 	}
-	mutex_unlock(&slice_mutex);
 	return p;
 }
 
 int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 {
 	struct hantrodec_t *pdec;
-	struct slice_info *splice = getslicenode(sliceindex);
+	struct slice_info *splice = getslicenode_inInit(sliceindex);
 
 #ifdef USE_DTB_PROBE
 	if (splice == NULL)
 		return -EINVAL;
 #else
-	if (splice == NULL && sliceindex == slicenum) {
+	if (splice == NULL && sliceindex == atomic_read(&slicenum)) {		
 		sliceindex = addslice(NULL, 0, 0);
 		if (sliceindex < 0)
 			return -EINVAL;
-		splice = getslicenode(sliceindex);
+		splice = getslicenode_inInit(sliceindex);
 	}
 	if (splice == NULL)
 		return -EINVAL;
 #endif
-	mutex_lock(&slice_mutex);
+
 	pdec = splice->dechdr;
 	if (pdec == NULL)
 		splice->dechdr = deccore;
@@ -265,28 +246,26 @@ int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 	splice->config |= CONFIG_HWDEC;
 
 	sema_init(&splice->dec_core_sem, splice->deccore_num);
-	mutex_unlock(&slice_mutex);
 	return 0;
 }
 
 int add_encnode(u32 sliceindex, struct hantroenc_t *enccore)
 {
 	struct hantroenc_t *penc;
-	struct slice_info *splice = getslicenode(sliceindex);
+	struct slice_info *splice = getslicenode_inInit(sliceindex);
 
 #ifdef USE_DTB_PROBE
 	if (splice == NULL)
 		return -EINVAL;
 #else
-	if (splice == NULL && sliceindex == slicenum) {
+	if (splice == NULL && sliceindex == atomic_read(&slicenum)) {
 		sliceindex = addslice(NULL, 0, 0);
 		if (sliceindex < 0)
 			return -EINVAL;
-		splice = getslicenode(sliceindex);
+		splice = getslicenode_inInit(sliceindex);
 	}
 #endif
 
-	mutex_lock(&slice_mutex);
 	penc = splice->enchdr;
 	if (penc == NULL)
 		splice->enchdr = enccore;
@@ -301,7 +280,6 @@ int add_encnode(u32 sliceindex, struct hantroenc_t *enccore)
 	enccore->core_cfg.sliceidx = sliceindex;
 	enccore->parentslice = splice;
 	splice->config |= CONFIG_HWENC;
-	mutex_unlock(&slice_mutex);
 	return 0;
 }
 
@@ -310,12 +288,11 @@ int add_dec400node(u32 sliceindex, struct dec400_t *dec400core)
 	struct dec400_t *pdec400;
 	struct hantrodec_t *pdec;
 	struct hantroenc_t *penc;
-	struct slice_info *splice = getslicenode(sliceindex);;
+	struct slice_info *splice = getslicenode_inInit(sliceindex);
 
 	if (splice == NULL)
 		return -EINVAL;
 
-	mutex_lock(&slice_mutex);
 	pdec400 = splice->dec400hdr;
 	if (pdec400 == NULL)
 		splice->dec400hdr = dec400core;
@@ -361,7 +338,6 @@ int add_dec400node(u32 sliceindex, struct dec400_t *dec400core)
 		pdec = pdec->next;
 	}
 end:
-	mutex_unlock(&slice_mutex);
 	return 0;
 }
 
@@ -370,12 +346,11 @@ int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore)
 	struct cache_dev_t *pcache;
 	struct hantrodec_t *pdec;
 	struct hantroenc_t *penc;
-	struct slice_info *splice = getslicenode(sliceindex);;
+	struct slice_info *splice = getslicenode_inInit(sliceindex);
 
 	if (splice == NULL)
 		return -ENODEV;
 
-	mutex_lock(&slice_mutex);
 	pcache = splice->cachehdr;
 	if (pcache == NULL)
 		splice->cachehdr = cachecore;
@@ -392,7 +367,8 @@ int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore)
 
 	//set default
 	cachecore->parentcore = splice;
-	cachecore->parentid = CORE_SLICE;
+	cachecore->parentid = sliceindex;
+	cachecore->parenttype = CORE_SLICE;
 	cachecore->parentslice = splice;
 
 	if (cachecore->core_cfg.client == VC8000E) {
@@ -418,13 +394,12 @@ int add_cachenode(u32 sliceindex, struct cache_dev_t *cachecore)
 			pdec = pdec->next;
 		}
 	}
-	mutex_unlock(&slice_mutex);
 	return 0;
 }
 
 int get_slicenumber(void)
 {
-	return slicenum;
+	return atomic_read(&slicenum);
 }
 
 struct slice_info *getparentslice(void *node, int type)
@@ -455,17 +430,15 @@ struct slice_info *getparentslice(void *node, int type)
 int slice_remove(void)
 {
 	struct slice_info *post, *prev;
-
 	post = prev = slicehdr;
-	mutex_lock(&slice_mutex);
 	while (prev != NULL) {
 		post = prev->next;
 		kfree(prev);
 		prev = post;
 	}
-	slicenum = 0;
+	atomic_set(&slicenum, 0);
+	atomic_set(&sliceinitd, 0);
 	slicehdr = NULL;
-	mutex_unlock(&slice_mutex);
 	return 0;
 }
 
@@ -505,7 +478,6 @@ int addslice(struct device *dev, phys_addr_t sliceaddr, phys_addr_t slicesize)
 	sema_init(&pslice->pp_core_sem, 1);
 	/*dec_core_sem could only be initialized after all dec core be inserted*/
 
-	mutex_lock(&slice_mutex);
 	if (slicehdr == NULL) {
 		slicehdr = pslice;
 	} else {
@@ -514,18 +486,22 @@ int addslice(struct device *dev, phys_addr_t sliceaddr, phys_addr_t slicesize)
 			head = head->next;
 		head->next = pslice;
 	}
-	slicenum++;
-	mutex_unlock(&slice_mutex);
-	return slicenum - 1;
+	atomic_inc(&slicenum);
+	return atomic_read(&slicenum) - 1;
 }
 
 /*for driver load*/
 int __init slice_init(void)
 {
-	slicenum = 0;
+	atomic_set(&slicenum, 0);
+	atomic_set(&sliceinitd, 0);
 	slicehdr = NULL;
-	mutex_init(&slice_mutex);
 	return 0;
+}
+
+void __init slice_init_finish(void)
+{
+	atomic_inc(&sliceinitd);
 }
 
 long hantroslice_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)

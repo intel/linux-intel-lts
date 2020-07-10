@@ -171,11 +171,12 @@ static int sliceidxtable[HXDEC_MAX_CORES] = {
 
 #endif
 static int bdecprobed;
-static int hantro_dbg = -1;
+//static int hantro_dbg = -1;
+extern bool verbose;
 #undef PDEBUG
 #define PDEBUG(fmt, arg...)     \
 	do {                                      \
-		if (hantro_dbg > 0)\
+		if (verbose)\
 			pr_info(fmt, ## arg); \
 	} while (0)
 
@@ -514,6 +515,7 @@ static int GetDecCore(
 		/*&& config.its_main_core_id[core] >= 0*/
 		dev->dec_owner == NULL) {
 		dev->dec_owner = filp;
+		((struct slice_info *)(dev->parentslice))->dec_irq &= ~(1 << core);
 		success = 1;
 
 		/* If one main core takes one format which doesn't supported
@@ -558,6 +560,7 @@ static int GetDecCoreAny(
 		if (GetDecCore(c, dev, filp, format)) {
 			success = 1;
 			*core = c;
+			PDEBUG("get core %ld:%d,fp=%lx, pid=%d", c, dev->core_id, (unsigned long)filp, (int )current->pid);
 			break;
 		}
 		c++;
@@ -623,8 +626,8 @@ static void ReleaseDecoder(struct hantrodec_t *dev, long core)
 				HANTRODEC_IRQ_STAT_DEC_OFF));
 
 	/* make sure HW is disabled */
-	if (status & HANTRODEC_DEC_E) {
-		pr_info("hantrodec: DEC[%lx] still enabled -> reset\n", core);
+    if (status & HANTRODEC_DEC_E) {
+		pr_info("hantrodec: DEC[%lx] still enabled -> reset, status = 0x%x [offset=%x]\n", core, status, HANTRODEC_IRQ_STAT_DEC_OFF);
 		/* abort decoder */
 		status |= HANTRODEC_DEC_ABORT | HANTRODEC_DEC_IRQ_DISABLE;
 		iowrite32(status, (void *)(dev->hwregs +
@@ -1043,7 +1046,6 @@ static long WaitCoreReady(struct hantrodec_t *dev, const struct file *filp, u32 
 	}
 
 	atomic_inc(&irq_tx);
-
 	return 0;
 }
 
@@ -1392,7 +1394,6 @@ int hantrodec_release(struct file *filp)
 		}
 	}
 
-
 	return 0;
 }
 
@@ -1534,7 +1535,6 @@ int hantrodec_probe(dtbnode *pnode)
 		add_decnode(pnode->sliceidx, pcore);
 		if (auxcore != NULL)
 			add_decnode(pnode->sliceidx, auxcore);
-
 
 	}
 

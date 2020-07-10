@@ -55,7 +55,7 @@ struct cache_dev_t {
 	u32 core_id; //core id for driver and sw internal use
 	u32 is_valid; //indicate this core is hantro's core or not
 	u32 is_reserved; //indicate this core is occupied by user or not
-	int pid; //indicate which process is occupying the core
+	struct file *cacheowner; //indicate which process is occupying the core
 	u32 irq_received; //indicate this core receives irq
 	u32 irq_status;
 	char *buffer;
@@ -223,8 +223,8 @@ struct slice_info {
 
 int findslice_bydev(struct device *dev);
 int addslice(struct device *dev, phys_addr_t sliceaddr, phys_addr_t slicesize);
-u32 getsliceconfig(u32 sliceindex);
 struct slice_info *getslicenode(u32 sliceindex);
+struct slice_info *getslicenode_inInit(u32 sliceindex);
 int get_slicecorenum(u32 sliceindex, slice_coretype type);
 struct hantrodec_t *get_decnodes(u32 sliceindex, u32 nodeidx);
 struct hantrodec_t *getfirst_decnodes(struct slice_info *pslice);
@@ -241,6 +241,7 @@ int get_slicenumber(void);
 struct slice_info *getparentslice(void *node, int type);
 int slice_remove(void);
 int slice_init(void);
+void slice_init_finish(void);
 long hantroslice_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 void slice_printdebug(void);

@@ -29,6 +29,7 @@
 /* This one if debugging is on, and kernel space */
 #define PDEBUG(fmt, arg...)     \
         do {                                      \
+                if (verbose)\
                         pr_info(fmt, ## arg); \
         } while (0)
 
@@ -49,7 +50,7 @@ int cache_init(void);
 int cache_probe(dtbnode *pnode);
 void cache_cleanup(void);
 int cache_open(struct inode *inode, struct file *filp);
-int cache_release(void);
+int cache_release(struct file *filp);
 
 #endif /* !_CACHE_H_ */
 
