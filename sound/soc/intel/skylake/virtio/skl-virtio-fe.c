@@ -299,8 +299,6 @@ static int vfe_put_inbox_buffer(struct snd_skl_vfe *vfe,
 static int vfe_send_dsp_ipc_msg(struct snd_skl_vfe *vfe,
 	struct ipc_message *msg)
 {
-	msg->complete = true;
-	list_del(&msg->list);
 	sst_ipc_tx_msg_reply_complete(&vfe->sdev.skl_sst->ipc,
 		msg);
 
