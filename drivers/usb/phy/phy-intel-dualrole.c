@@ -282,12 +282,6 @@ static int intel_usb_mux_init(struct intel_dr_phy *intel_phy)
 		return -ENODEV;
 	}
 
-	/* first switch the mux to host mode to force the host
-	 * enumerate the port */
-	extcon_set_state_sync(intel_phy->edev, EXTCON_USB_HOST, 1);
-	msleep(10);
-	extcon_set_state_sync(intel_phy->edev, EXTCON_USB_HOST, 0);
-
 	return 0;
 }
 
