@@ -319,10 +319,6 @@ static int intel_tgpio_config_input(struct intel_tgpio *tgpio,
 	u32			offset;
 	u32			ctrl;
 
-	/* +1 reference if pin OFF -> ON */
-	if (!tgpio->pin_state[index] && on)
-		pm_runtime_get_sync(tgpio->dev->parent);
-
 	offset = TGPIOCTL(index);
 	ctrl = intel_tgpio_readl(tgpio->base, offset);
 	ctrl &= ~(TGPIOCTL_TS | TGPIOCTL_EP | TGPIOCTL_DIR |
@@ -394,10 +390,6 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 	u32			offset;
 	u32			ctrl;
 
-	/* +1 reference if pin OFF -> ON */
-	if (!tgpio->pin_state[index] && on)
-		pm_runtime_get_sync(tgpio->dev->parent);
-
 	offset = TGPIOCTL(index);
 	ctrl = intel_tgpio_readl(tgpio->base, offset);
 	ctrl &= ~(TGPIOCTL_TS | TGPIOCTL_EP | TGPIOCTL_DIR |
@@ -454,18 +446,30 @@ static int intel_tgpio_enable(struct ptp_clock_info *info,
 	unsigned long		flags;
 	int			ret = -EOPNOTSUPP;
 
-	spin_lock_irqsave(&tgpio->lock, flags);
 	switch (req->type) {
 	case PTP_CLK_REQ_EXTTS:
+	{
+		if (!tgpio->pin_state[req->extts.index] && on)
+			pm_runtime_get_sync(tgpio->dev->parent);
+
+		spin_lock_irqsave(&tgpio->lock, flags);
 		ret = intel_tgpio_config_input(tgpio, &req->extts, on);
+		spin_unlock_irqrestore(&tgpio->lock, flags);
 		break;
+	}
 	case PTP_CLK_REQ_PEROUT:
+	{
+		if (!tgpio->pin_state[req->extts.index] && on)
+			pm_runtime_get_sync(tgpio->dev->parent);
+
+		spin_lock_irqsave(&tgpio->lock, flags);
 		ret = intel_tgpio_config_output(tgpio, &req->perout, on);
+		spin_unlock_irqrestore(&tgpio->lock, flags);
 		break;
+	}
 	default:
 		break;
 	}
-	spin_unlock_irqrestore(&tgpio->lock, flags);
 
 	return ret;
 }
