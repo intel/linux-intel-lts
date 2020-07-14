@@ -19,7 +19,7 @@
 #include <linux/pci.h>
 #include <linux/platform_device.h>
 
-#include "pcie-designware.h"
+#include "pcie-keembay.h"
 
 /* PCIE_REGS_APB_SLV Registers */
 #define PCIE_REGS_PCIE_CFG		0x4
@@ -55,6 +55,7 @@
 #define PCIE_DBI2_MASK		BIT(20)
 #define PERST_DELAY_US		1000
 
+/*
 struct keembay_pcie {
 	struct dw_pcie		*pci;
 	void __iomem		*apb_base;
@@ -69,9 +70,12 @@ struct keembay_pcie {
 	struct clk		*clk_aux;
 	struct gpio_desc	*reset;
 };
+*/
 
 struct keembay_pcie_of_data {
 	enum dw_pcie_device_mode mode;
+	const struct dw_pcie_host_ops *host_ops;
+	const struct dw_pcie_ep_ops *ep_ops;
 };
 
 static const struct of_device_id keembay_pcie_of_match[];
@@ -613,6 +617,75 @@ static int keembay_pcie_add_pcie_port(struct keembay_pcie *pcie,
 	return 0;
 }
 
+static struct pci_epc_ops keembay_epc_ops;
+
+static int keembay_ep_inbound_atu(struct dw_pcie_ep *ep, enum pci_barno bar,
+				  dma_addr_t cpu_addr,
+				  enum dw_pcie_as_type as_type)
+{
+	struct dw_pcie *pci = to_dw_pcie_from_ep(ep);
+	u32 free_win;
+	int ret;
+
+	free_win = find_first_zero_bit(ep->ib_window_map, ep->num_ib_windows);
+	if (free_win >= ep->num_ib_windows) {
+		dev_err(pci->dev, "No free inbound window\n");
+		return -EINVAL;
+	}
+
+	ret = dw_pcie_prog_inbound_atu(pci, free_win, bar, cpu_addr, as_type);
+	if (ret < 0) {
+		dev_err(pci->dev, "Failed to program IB window\n");
+		return ret;
+	}
+
+	ep->bar_to_atu[bar] = free_win;
+	set_bit(free_win, ep->ib_window_map);
+
+	return 0;
+}
+
+static int keembay_ep_set_bar(struct pci_epc *epc, u8 func_no,
+			      struct pci_epf_bar *epf_bar)
+{
+	struct dw_pcie_ep *ep = epc_get_drvdata(epc);
+	struct dw_pcie *pci = to_dw_pcie_from_ep(ep);
+	enum dw_pcie_as_type as_type;
+	enum pci_barno bar = epf_bar->barno;
+	u32 reg = PCI_BASE_ADDRESS_0 + (4 * bar);
+	size_t size = epf_bar->size;
+	int flags = epf_bar->flags;
+	u64 host_addr;
+	int ret;
+
+	if (!(flags & PCI_BASE_ADDRESS_SPACE))
+		as_type = DW_PCIE_AS_MEM;
+	else
+		as_type = DW_PCIE_AS_IO;
+
+	host_addr = dw_pcie_readl_dbi(pci, reg) & ~0xF;
+	if (flags & PCI_BASE_ADDRESS_MEM_TYPE_64)
+		host_addr |= (u64)dw_pcie_readl_dbi(pci, reg + 4) << 32;
+
+	ret = keembay_ep_inbound_atu(ep, bar, epf_bar->phys_addr, as_type);
+	if (ret)
+		return ret;
+
+	dw_pcie_dbi_ro_wr_en(pci);
+
+	dw_pcie_writel_dbi2(pci, reg, lower_32_bits(size - 1));
+	dw_pcie_writel_dbi(pci, reg, lower_32_bits(host_addr) | flags);
+
+	if (flags & PCI_BASE_ADDRESS_MEM_TYPE_64) {
+		dw_pcie_writel_dbi2(pci, reg + 4, upper_32_bits(size - 1));
+		dw_pcie_writel_dbi(pci, reg + 4, upper_32_bits(host_addr));
+	}
+
+	dw_pcie_dbi_ro_wr_dis(pci);
+
+	return 0;
+}
+
 static int keembay_pcie_add_pcie_ep(struct keembay_pcie *pcie,
 				    struct platform_device *pdev)
 {
@@ -662,6 +735,16 @@ static int keembay_pcie_add_pcie_ep(struct keembay_pcie *pcie,
 		dev_err(dev, "Failed to initialize endpoint\n");
 
 	return ret;
+
+	/*
+	 * Use Keembay version set_bar for setting BAR with the addresses
+	 * already set in BAR registers when Linux boots
+	 */
+	keembay_epc_ops = *ep->epc->ops;
+	keembay_epc_ops.set_bar = keembay_ep_set_bar;
+	ep->epc->ops = &keembay_epc_ops;
+
+	return 0;
 }
 
 static int keembay_pcie_probe(struct platform_device *pdev)
@@ -672,7 +755,10 @@ static int keembay_pcie_probe(struct platform_device *pdev)
 	struct keembay_pcie *pcie;
 	struct dw_pcie *pci;
 	struct resource *res;
+	struct device_node *soc_node, *version_node;
 	enum dw_pcie_device_mode mode;
+	const char *prop;
+	int prop_size;
 	int ret;
 
 	match = of_match_device(keembay_pcie_of_match, dev);
@@ -708,6 +794,21 @@ static int keembay_pcie_probe(struct platform_device *pdev)
 
 	/* DBI2 shadow register */
 	pci->dbi_base2 = pci->dbi_base + PCIE_DBI2_MASK;
+
+	/* Keem Bay stepping info, based on DT */
+	strncpy(pcie->stepping, "B0", strlen("B0"));
+	soc_node = of_get_parent(pdev->dev.of_node);
+	if (soc_node) {
+		version_node = of_get_child_by_name(soc_node, "version-info");
+		if (version_node) {
+			prop = of_get_property(version_node, "stepping",
+					       &prop_size);
+			if (prop && prop_size <= KEEMBAY_PCIE_STEPPING_MAXLEN)
+				strncpy(pcie->stepping, prop, prop_size);
+			of_node_put(version_node);
+		}
+		of_node_put(soc_node);
+	}
 
 	platform_set_drvdata(pdev, pcie);
 
