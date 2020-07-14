@@ -56,7 +56,7 @@ static int kmb_sensor_read_temp(void __iomem *regs_val,
 				*temp = Upper_Temp;
 		}
 	} else {
-		*temp = 0;
+		*temp = -255;
 	}
 	return 0;
 }
@@ -78,7 +78,7 @@ static int keembay_get_temp(struct thermal_zone_device *thermal,
 					MSS_BIT_SHIFT,
 					temp);
 			ktherm->mss = *temp;
-			kmb_tj_temp_list[2] = *temp;
+			kmb_tj_temp_list[2] = ktherm->mss;
 			break;
 
 	case KEEMBAY_SENSOR_CSS:
@@ -89,7 +89,7 @@ static int keembay_get_temp(struct thermal_zone_device *thermal,
 					CSS_BIT_SHIFT,
 					temp);
 			ktherm->css = *temp;
-			kmb_tj_temp_list[3] = *temp;
+			kmb_tj_temp_list[3] = ktherm->css;
 			break;
 
 	case KEEMBAY_SENSOR_NCE:
@@ -450,7 +450,3 @@ MODULE_DESCRIPTION("KeemBay Thermal Driver");
 MODULE_AUTHOR("Sandeep Singh <sandeep1.singh@intel.com>");
 MODULE_AUTHOR("Raja Subramanian, Lakshmi Bai <lakshmi.bai.raja.subramanian@intel.com>");
 MODULE_LICENSE("GPL v2");
-
-
-
-

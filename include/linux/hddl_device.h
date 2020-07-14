@@ -14,8 +14,13 @@
 #include <linux/xlink.h>
 
 #define HDDL_MAGIC 'x'
-#define HDDL_READ_SW_ID_DATA    _IOW(HDDL_MAGIC, 'a', void*)
-#define HDDL_SOFT_RESET		      _IOW(HDDL_MAGIC, 'b', void*)
+
+#define HDDL_READ_SW_ID_DATA    _IOW(HDDL_MAGIC,  'a', void*)
+#define HDDL_SOFT_RESET		      _IOW(HDDL_MAGIC,  'b', void*)
+
+#define HDDL_MAX_DEVICE 8
+#define HDDL_MAX_BAY_DEVICE 3
+
 
 typedef struct hddl_device_kmb_st {
 	uint32_t board_id;
@@ -32,7 +37,7 @@ typedef struct hddl_device_kmb_st {
 		struct platform_device *xlink_i2c_plt_dev[2];
 		uint32_t i2c_slaves_cnt;
 		uint32_t soc_xlinki2c_cnt;
-	} soc[3];
+	} soc[HDDL_MAX_BAY_DEVICE];
 } T_HDDL_DEVICE_KMB_NODE;
 
 typedef struct sw_id_hddl_data {

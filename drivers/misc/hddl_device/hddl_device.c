@@ -71,12 +71,10 @@ static struct i2c_board_info kmb_i2c_devices[] = {
 };
 #endif
 
-#define MAX_HDDL_DEVICES 8
-T_HDDL_DEVICE_KMB_NODE kmb_hddls[MAX_HDDL_DEVICES] = {0};
+T_HDDL_DEVICE_KMB_NODE kmb_hddls[HDDL_MAX_DEVICE] = {0};
 #define HDDL_NODE_XLINK_CHANNEL 1050
 #define HDDL_I2C_XLINK_CHANNEL 1080
 
-uint32_t one_dev;
 #ifdef CONFIG_HDDL_LOCAL_HOST
 
 uint32_t hddl_board_id;
@@ -144,7 +142,6 @@ static int __init hddl_device_init(void)
 	printk(KERN_INFO "HDDL: GPIO KEEMBAY ID = %u\n", kmb_id);
 	if (kmb_id > 2) {
 		kmb_id = 0;
-		one_dev = 1;
 		printk(KERN_INFO "HDDL: GPIO KEEMBAY ID > 2, ");
 		printk(KERN_INFO "Hence setting KEEMBAY ID = 0\n");
 	}
@@ -187,8 +184,8 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&soft_reset,
 				(int32_t *)arg, sizeof(T_SW_ID_SOFT_RESET)))
 			return -EFAULT;
-		for (i = 0; i < 8; i++) {
-			for (j = 0; j < 3; j++) {
+		for (i = 0; i < HDDL_MAX_DEVICE; i++) {
+			for (j = 0; j < HDDL_MAX_BAY_DEVICE; j++) {
 				if (kmb_hddls[i].soc[j].devH.sw_device_id
 						== soft_reset.sw_id) {
 					/* xlink-reset */
@@ -214,8 +211,8 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&swid_data, (int32_t *)arg,
 			sizeof(T_SW_ID_HDDL_DATA)))
 			return -EFAULT;
-		for (i = 0; i < 8; i++) {
-			for (j = 0; j < 3; j++) {
+		for (i = 0; i < HDDL_MAX_DEVICE; i++) {
+			for (j = 0; j < HDDL_MAX_BAY_DEVICE; j++) {
 				if (kmb_hddls[i].soc[j].devH.sw_device_id
 					== swid_data.sw_id) {
 					swid_data.board_id = kmb_hddls[i].board_id;
@@ -250,8 +247,8 @@ void hddl_device_probe(uint32_t sw_device_id)
 	struct task_struct *task_recv;
 	printk(KERN_INFO "hddl_device_probe = %x\n", sw_device_id);
 
-	for (i = 0; i < 8; i++) {
-	for (j = 0; j < 3; j++) {
+	for (i = 0; i < HDDL_MAX_DEVICE; i++) {
+	for (j = 0; j < HDDL_MAX_BAY_DEVICE; j++) {
 		if (kmb_hddls[i].soc[j].devH.sw_device_id == sw_device_id) {
 
 			printk("inside probe if-condition sw_device_id %x\n", kmb_hddls[i].soc[j].devH.sw_device_id);
@@ -275,8 +272,8 @@ void hddl_device_remove(uint32_t sw_device_id)
 
 	printk(KERN_INFO "hddl_device_remove = %x\n", sw_device_id);
 
-	for (i = 0; i < 8; i++) {
-	for (j = 0; j < 3; j++) {
+	for (i = 0; i < HDDL_MAX_DEVICE; i++) {
+	for (j = 0; j < HDDL_MAX_BAY_DEVICE; j++) {
 		if (kmb_hddls[i].soc[j].devH.sw_device_id == sw_device_id) {
 
 			soc = &kmb_hddls[i].soc[j];
@@ -330,7 +327,7 @@ int hddl_device_pcie_event_notify(uint32_t sw_device_id, enum _xlink_device_even
 {
 	printk(KERN_INFO "HDDL:xlink pcie notify[%x]: [%d]\n", sw_device_id, event_type);
 	switch (event_type) {
-	case _NOTIFY_INCOMING_DISCONNECTION:
+	/*case _NOTIFY_INCOMING_DISCONNECTION:*/
 	case _NOTIFY_DEVICE_DISCONNECTED:
 	case _ERROR_UNEXPECTED_DISCONNECTION:
 		hddl_device_remove(sw_device_id);
@@ -451,7 +448,7 @@ int hddl_per_device_connect_thread(void *thread_param)
 	ktime_get_real_ts64(&ts);
 	printk(KERN_INFO "S[%llx] NS[%lx]\n", ts.tv_sec, ts.tv_nsec);
 	rc = xlink_write_volatile(devH, chan_num, (uint8_t *) &ts, sizeof(struct timespec64));
-	printk(KERN_INFO "HDDL: Size Transferred[%d] = %ld\n", 	rc, sizeof(struct timespec64));
+	printk(KERN_INFO "HDDL: Size Transferred[%d] = %ld\n",	rc, sizeof(struct timespec64));
 
 	printk(KERN_INFO "HDDL: xlink_read_data to start...\n");
 	size = sizeof(board_id_rcvd);
@@ -480,16 +477,11 @@ int hddl_per_device_connect_thread(void *thread_param)
 	);
 	#endif
 	soc = &kmb_hddls[board_id].soc[kmb_id];
-	if (one_dev == 1) {
-		j = 1;
-	} else {
-		j = 0;
-	}
-	for (; j < 2; ++j) {
+	for (j = 0; j < 2; ++j) {
 		xlink_i2c_info.name = "i2c_xlink";
 		xlink_i2c_info.id = board_id << 4 | kmb_id << 2 | j;
 		kmb_hddls[board_id].soc[kmb_id].xlink_i2c_ch[j] =
-		HDDL_I2C_XLINK_CHANNEL + (kmb_id * 2) + j;
+					HDDL_I2C_XLINK_CHANNEL + j;
 		xlink_i2c_info.data = &kmb_hddls[board_id].soc[kmb_id];
 		xlink_i2c_info.size_data =
 				sizeof(kmb_hddls[board_id].soc[kmb_id]);
@@ -539,23 +531,21 @@ int hddl_per_device_connect_thread(void *thread_param)
 			temp_host_i2c_device.addr);
 	}
 
-	if (one_dev == 0) {
-		soc->i2c_slaves_cnt = sizeof(soc_i2c_ext_devices)/sizeof(struct i2c_board_info);
+	soc->i2c_slaves_cnt = sizeof(soc_i2c_ext_devices)/sizeof(struct i2c_board_info);
 
-		soc->i2c_slaves_ext = kzalloc(sizeof(struct i2c_client *) * (soc->i2c_slaves_cnt), GFP_KERNEL);
+	soc->i2c_slaves_ext = kzalloc(sizeof(struct i2c_client *) * (soc->i2c_slaves_cnt), GFP_KERNEL);
 
-		mutex_lock(&my_mutex);
+	mutex_lock(&my_mutex);
 
-		for (i = 0; i < soc->i2c_slaves_cnt; i++) {
-			soc->i2c_slaves_ext[i] = i2c_new_client_device(
-				i2c_get_adapter(soc->adap[0].nr),
-				&soc_i2c_ext_devices[i]);
-			printk("i2c_slaves_ext adapter %d", soc->i2c_slaves_ext[i]->adapter->nr);
+	for (i = 0; i < soc->i2c_slaves_cnt; i++) {
+		soc->i2c_slaves_ext[i] = i2c_new_client_device(
+			i2c_get_adapter(soc->adap[0].nr),
+			&soc_i2c_ext_devices[i]);
+		printk("i2c_slaves_ext adapter %d", soc->i2c_slaves_ext[i]->adapter->nr);
 
-			ssleep(1);
-		}
-		mutex_unlock(&my_mutex);
+		ssleep(1);
 	}
+	mutex_unlock(&my_mutex);
 
 	#else
 	soc->soc_xlinki2c_cnt = sizeof(kmb_i2c_devices)/sizeof(struct i2c_board_info);

@@ -35,28 +35,28 @@ static int keembay_get_temp_host(struct thermal_zone_device *thermal,
 		rx_buf[0] = i2c_smbus_read_byte_data(ktherm->i2c_c, 8);
 		mdelay(100);
 		rx_buf[1] = i2c_smbus_read_byte_data(ktherm->i2c_c, 9);
-		*temp = (rx_buf[1] << (8) | rx_buf[0]);
+		*temp = (short)(rx_buf[1] << (8) | rx_buf[0]);
 		break;
 
 	case KEEMBAY_SENSOR_CSS_HOST:
 		rx_buf[0] = i2c_smbus_read_byte_data(ktherm->i2c_c, 12);
 		mdelay(100);
 		rx_buf[1] = i2c_smbus_read_byte_data(ktherm->i2c_c, 13);
-		*temp = (rx_buf[1] << (8) | rx_buf[0]);
+		*temp = (short)(rx_buf[1] << (8) | rx_buf[0]);
 		break;
 
 	case KEEMBAY_SENSOR_NCE_HOST:
 		rx_buf[0] = i2c_smbus_read_byte_data(ktherm->i2c_c, 4);
 		mdelay(100);
 		rx_buf[1] = i2c_smbus_read_byte_data(ktherm->i2c_c, 5);
-		*temp = (rx_buf[1] << (8) | rx_buf[0]);
+		*temp = (short)(rx_buf[1] << (8) | rx_buf[0]);
 		break;
 
 	case KEEMBAY_SENSOR_SOC_HOST:
 		rx_buf[0] = i2c_smbus_read_byte_data(ktherm->i2c_c, 0);
 		mdelay(100);
 		rx_buf[1] = i2c_smbus_read_byte_data(ktherm->i2c_c, 1);
-		*temp = (rx_buf[1] << (8) | rx_buf[0]);
+		*temp = (short)(rx_buf[1] << (8) | rx_buf[0]);
 		break;
 
 	default:
@@ -194,9 +194,8 @@ int keembay_thermal_zone_unregister_host(
 	struct keembay_therm_info *ktherm = zone_trip_info->thermal_info;
 
 	spin_lock(&ktherm->lock);
-	printk("inside unregister");
 	thermal_zone_device_unregister(zone_trip_info->tz);
-	printk("exiting unregister");
+	dev_info(ktherm->dev, "thermal_zone_device_unregister %s\n", zone_trip_info->sensor_name);
 	spin_unlock(&ktherm->lock);
 	return 0;
 }

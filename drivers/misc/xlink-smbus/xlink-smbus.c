@@ -79,7 +79,7 @@ static struct i2c_adapter *get_adapter_from_channel(u32 channel)
 static s32 handle_slave_mode(struct i2c_client *slave, struct xlink_msg *msg)
 {
 	//the complete slave protocol is implemented in one shot here as
-	//the whole chunk of data is transfered or received via xlink
+	//the whole chunk of data is transferred or received via xlink
 	//, not byte-by-byte
 	u8 temp;
 
@@ -237,16 +237,16 @@ static s32 xlink_smbus_xfer(struct i2c_adapter *adap, u16 addr,
 	//dev_info(dbgxi2c, "xlink_write_data - success[%d]\n", xerr);
 /* TODO: handle timeout and return time out error code to the caller of xfer */
 #endif	/* CONFIG_XLINKI2C_ADAPTER */
-	wait_for_completion_interruptible(&adapt_data->work);
-	/* TODO: specify timeout */
-	//dev_info(dbgxi2c, "signal received\n");
-	msg = (list_first_entry(&adapt_data->head, struct xlink_msg, node));
-	list_del(&msg->node);
-	//dev_info(dbgxi2c, "list_get[%d]\n", msg.addr);
-	if (data)
-		*data = msg->data;
-	rc = msg->status;
-	kfree(msg);
+	if (wait_for_completion_interruptible_timeout(&adapt_data->work, 4*HZ) > 0) {
+		msg = (list_first_entry(&adapt_data->head, struct xlink_msg, node));
+		list_del(&msg->node);
+		if (data)
+			*data = msg->data;
+		rc = msg->status;
+		kfree(msg);
+	} else {
+		rc = -ETIMEDOUT;
+	}
 	return rc;
 }
 
@@ -422,7 +422,7 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 			adapt_data->channel,
 			RXB_TXB,  /* mode */
 			64*1024,
-			0   /* timeout */);
+			2000   /* timeout */);
 	dev_info(dev, "xlink_open_channel completed[%d][%d][%p]\n", rc,
 		adapt_data->channel,
 		adapt_data->xhandle);
@@ -455,7 +455,7 @@ static int xlink_i2c_remove(struct platform_device *pdev)
 	/* close the channel and disconnect */
 	xlink_close_channel(adapt_data->xhandle, adapt_data->channel);
 	dev_info(dev, "close the channel...\n");
-	i2c_del_adapter(adapt_data->adap); /* This will block the dynamic registeration */
+	//i2c_del_adapter(adapt_data->adap); /* This will block the dynamic registration */
 	kfree(adapt_data);
 	dev_info(dev, "delete the adapter...\n");
 
