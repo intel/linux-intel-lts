@@ -345,7 +345,7 @@ static struct crl_register_write_rep ox03a10_1920_1280_12DCG[] = {
 	{ 0x5801, CRL_REG_LEN_08BIT, 0x03 },
 	{ 0x5802, CRL_REG_LEN_08BIT, 0xc0 },
 	{ 0x5804, CRL_REG_LEN_08BIT, 0x00 },
-	{ 0x5805, CRL_REG_LEN_08BIT, 0x80 },
+	{ 0x5805, CRL_REG_LEN_08BIT, 0x40 },
 	{ 0x5806, CRL_REG_LEN_08BIT, 0x01 },
 	{ 0x5807, CRL_REG_LEN_08BIT, 0x00 },
 	{ 0x580e, CRL_REG_LEN_08BIT, 0x10 },
