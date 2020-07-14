@@ -218,32 +218,6 @@ static ssize_t np_cfs_ipc_send_store(struct config_item *item,
 	return count;
 }
 
-#ifdef NETPROX_DEBUG_MODE
-static ssize_t np_cfs_proxy_enter_show(struct config_item *item, char *page)
-{
-	return -EPERM;
-}
-
-static ssize_t np_cfs_proxy_enter_store(struct config_item *item,
-					const char *page, size_t count)
-{
-	int ret;
-	unsigned long tmp;
-
-	ret = kstrtoul(page, 0, &tmp);
-	if (ret)
-		return ret;
-
-	if (tmp != NP_PROXY_ENTER_VALUE) {
-		pr_err("Invalid value for Proxy Enter.\n");
-		return -EINVAL;
-	}
-
-	netprox_trigger_proxy_enter();
-	return count;
-}
-#endif
-
 CONFIGFS_ATTR_RO(np_cfs_, agent_version);
 CONFIGFS_ATTR_RO(np_cfs_, max_cls_rules);
 CONFIGFS_ATTR_RO(np_cfs_, max_resp_rules);
@@ -253,9 +227,6 @@ CONFIGFS_ATTR(np_cfs_, rules_offset);
 CONFIGFS_ATTR(np_cfs_, rules_size);
 CONFIGFS_ATTR(np_cfs_, rules_value);
 CONFIGFS_ATTR(np_cfs_, ipc_send);
-#ifdef NETPROX_DEBUG_MODE
-CONFIGFS_ATTR(np_cfs_, proxy_enter);
-#endif
 
 static struct configfs_attribute *np_cfs_attrs[] = {
 	&np_cfs_attr_agent_version,
@@ -267,9 +238,6 @@ static struct configfs_attribute *np_cfs_attrs[] = {
 	&np_cfs_attr_rules_size,
 	&np_cfs_attr_rules_value,
 	&np_cfs_attr_ipc_send,
-#ifdef NETPROX_DEBUG_MODE
-	&np_cfs_attr_proxy_enter,
-#endif
 	NULL,
 };
 

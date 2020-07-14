@@ -21,7 +21,6 @@
 #include <linux/network_proxy_common.h>
 
 #define NP_RULE_ACCESS_MAX_BYTE			(500 * 1024)
-#define NETPROX_DEBUG_MODE
 #define NP_PROXY_ENTER_VALUE			1
 
 /* Network Proxy Host States */
@@ -45,7 +44,6 @@ struct np_ipcdev {
 /* Network Device for Network Proxy Agent */
 struct np_netdev {
 	struct net_device *netdev;
-	int (*proxy_enter)(struct net_device *netdev);
 	void (*proxy_wakeup_enable)(struct net_device *netdev, bool enable);
 };
 
@@ -77,9 +75,6 @@ int netprox_host_proxy_exit(void);
 int netprox_send_ipc_msg(int cmd, const char *msg, int size);
 int netprox_read_rule(struct np_rules *rule, void *ptr, int *size);
 int netprox_write_rule(struct np_rules *rule, int size);
-#ifdef NETPROX_DEBUG_MODE
-void netprox_trigger_proxy_enter(void);
-#endif
 int netprox_ipc_recv(int cmd, unsigned char *payload, int size);
 int netprox_register_shm(struct np_shm *np_shm);
 int netprox_deregister_shm(struct np_shm *np_shm);
