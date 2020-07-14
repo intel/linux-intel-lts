@@ -1002,11 +1002,9 @@ static bool gen9_rps_enable(struct intel_rps *rps)
 		intel_uncore_write_fw(uncore, GEN6_RC_VIDEO_FREQ,
 				      GEN9_FREQUENCY(rps->rp1_freq));
 
-	/* 1 second timeout */
-	intel_uncore_write_fw(uncore, GEN6_RP_DOWN_TIMEOUT,
-			      GT_INTERVAL_FROM_US(i915, 1000000));
-
 	intel_uncore_write_fw(uncore, GEN6_RP_IDLE_HYSTERSIS, 0xa);
+
+	rps->pm_events = GEN6_PM_RP_UP_THRESHOLD | GEN6_PM_RP_DOWN_THRESHOLD;
 
 	return rps_reset(rps);
 }
@@ -1018,11 +1016,9 @@ static bool gen8_rps_enable(struct intel_rps *rps)
 	intel_uncore_write_fw(uncore, GEN6_RC_VIDEO_FREQ,
 			      HSW_FREQUENCY(rps->rp1_freq));
 
-	/* NB: Docs say 1s, and 1000000 - which aren't equivalent */
-	intel_uncore_write_fw(uncore, GEN6_RP_DOWN_TIMEOUT,
-			      100000000 / 128); /* 1 second timeout */
-
 	intel_uncore_write_fw(uncore, GEN6_RP_IDLE_HYSTERSIS, 10);
+
+	rps->pm_events = GEN6_PM_RP_UP_THRESHOLD | GEN6_PM_RP_DOWN_THRESHOLD;
 
 	return rps_reset(rps);
 }
@@ -1034,6 +1030,10 @@ static bool gen6_rps_enable(struct intel_rps *rps)
 	/* Power down if completely idle for over 50ms */
 	intel_uncore_write_fw(uncore, GEN6_RP_DOWN_TIMEOUT, 50000);
 	intel_uncore_write_fw(uncore, GEN6_RP_IDLE_HYSTERSIS, 10);
+
+	rps->pm_events = (GEN6_PM_RP_UP_THRESHOLD |
+			  GEN6_PM_RP_DOWN_THRESHOLD |
+			  GEN6_PM_RP_DOWN_TIMEOUT);
 
 	return rps_reset(rps);
 }
@@ -1119,6 +1119,10 @@ static bool chv_rps_enable(struct intel_rps *rps)
 			      GEN6_RP_ENABLE |
 			      GEN6_RP_UP_BUSY_AVG |
 			      GEN6_RP_DOWN_IDLE_AVG);
+
+	rps->pm_events = (GEN6_PM_RP_UP_THRESHOLD |
+			  GEN6_PM_RP_DOWN_THRESHOLD |
+			  GEN6_PM_RP_DOWN_TIMEOUT);
 
 	/* Setting Fixed Bias */
 	vlv_punit_get(i915);
@@ -1216,6 +1220,9 @@ static bool vlv_rps_enable(struct intel_rps *rps)
 			      GEN6_RP_ENABLE |
 			      GEN6_RP_UP_BUSY_AVG |
 			      GEN6_RP_DOWN_IDLE_CONT);
+
+	/* WaGsvRC0ResidencyMethod:vlv */
+	rps->pm_events = GEN6_PM_RP_UP_EI_EXPIRED;
 
 	vlv_punit_get(i915);
 
@@ -1585,7 +1592,7 @@ static void rps_work(struct work_struct *work)
 	u32 pm_iir = 0;
 
 	spin_lock_irq(&gt->irq_lock);
-	pm_iir = fetch_and_zero(&rps->pm_iir);
+	pm_iir = fetch_and_zero(&rps->pm_iir) & rps->pm_events;
 	client_boost = atomic_read(&rps->num_waiters);
 	spin_unlock_irq(&gt->irq_lock);
 
