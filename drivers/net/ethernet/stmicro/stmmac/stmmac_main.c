@@ -5409,7 +5409,7 @@ static irqreturn_t stmmac_msi_intr_tx(int irq, void *data)
 	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
-	status = stmmac_napi_check(priv, chan, DMA_DIR_TX);
+	status = stmmac_napi_check(priv, chan, DMA_DIR_RXTX);
 
 	if (unlikely(status & tx_hard_error_bump_tc)) {
 		/* Try to bump up the dma threshold on this failure */
@@ -5452,7 +5452,7 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
-	stmmac_napi_check(priv, chan, DMA_DIR_RX);
+	stmmac_napi_check(priv, chan, DMA_DIR_RXTX);
 
 	return IRQ_HANDLED;
 }
