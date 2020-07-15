@@ -1292,6 +1292,8 @@ static long do_video_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 
 	case VIDIOC_SUBDEV_G_ROUTING:
 	case VIDIOC_SUBDEV_S_ROUTING:
+	case VIDIOC_SUBDEV_G_ROUTING32:
+	case VIDIOC_SUBDEV_S_ROUTING32:
 		err = alloc_userspace(sizeof(struct v4l2_subdev_routing), 0, &new_p64);
                 if (!err)
                         err = get_v4l2_subdev_routing(new_p64, p32);
@@ -1443,6 +1445,8 @@ static long do_video_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 		break;
 	case VIDIOC_SUBDEV_G_ROUTING:
 	case VIDIOC_SUBDEV_S_ROUTING:
+	case VIDIOC_SUBDEV_G_ROUTING32:
+	case VIDIOC_SUBDEV_S_ROUTING32:
 		err = alloc_userspace(sizeof(struct v4l2_subdev_routing), 0, &new_p64);
 		if (!err)
 			if (put_v4l2_subdev_routing(new_p64, p32))
