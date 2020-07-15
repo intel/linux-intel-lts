@@ -325,6 +325,20 @@ struct phy_c45_device_ids {
 	u32 device_ids[8];
 };
 
+/**
+ * struct phy_latencies - Tx and Rx latency for different link speeds
+ */
+struct phy_latencies {
+	u32 tx_latency_10;
+	u32 tx_latency_100;
+	u32 tx_latency_1000;
+	u32 tx_latency_2500;
+	u32 rx_latency_10;
+	u32 rx_latency_100;
+	u32 rx_latency_1000;
+	u32 rx_latency_2500;
+};
+
 /* phy_device: An instance of a PHY
  *
  * drv: Pointer to the driver for this PHY instance
@@ -475,6 +489,7 @@ struct phy_driver {
 	const unsigned long * const features;
 	u32 flags;
 	const void *driver_data;
+	struct phy_latencies latencies;
 
 	/*
 	 * Called to issue a PHY software reset
