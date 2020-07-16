@@ -165,6 +165,8 @@ inline long hcall_assign_ptdev(unsigned long vmid, unsigned long bdf);
 inline long hcall_deassign_ptdev(unsigned long vmid, unsigned long bdf);
 inline long hcall_assign_pcidev(unsigned long vmid, unsigned long addr);
 inline long hcall_deassign_pcidev(unsigned long vmid, unsigned long addr);
+inline long hcall_assign_mmiodev(unsigned long vmid, unsigned long addr);
+inline long hcall_deassign_mmiodev(unsigned long vmid, unsigned long addr);
 inline long hcall_set_ptdev_intr_info(unsigned long vmid,
 		unsigned long pt_irq);
 inline long hcall_reset_ptdev_intr_info(unsigned long vmid,

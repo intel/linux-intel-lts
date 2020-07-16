@@ -497,6 +497,28 @@ struct acrn_pcidev {
 } __aligned(8);
 
 /**
+ * @brief Info to assign or deassign a MMIO device for a VM
+ *
+ * the parameter for HC_ASSIGN_MMIODEV or HC_DEASSIGN_MMIODEV hypercall
+ */
+struct acrn_mmiodev {
+	/** the gpa of the MMIO region for the MMIO device */
+	uint64_t base_gpa;
+
+	/** the hpa of the MMIO region for the MMIO device */
+	uint64_t base_hpa;
+
+	/** the size of the MMIO region for the MMIO device */
+	uint64_t size;
+
+	/** reserved for extension which could used for more
+	 *  MMIO regions/SID/HID/IRQ etc and align this structure to 2 ^ n
+	 */
+	uint64_t reserved[13];
+
+} __aligned(8);
+
+/**
  * @brief The guest config pointer offset.
  *
  * It's designed to support passing DM config data pointer, based on it,
