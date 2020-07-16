@@ -121,6 +121,49 @@ static inline void dw_spi_debugfs_remove(struct dw_spi *dws)
 }
 #endif /* CONFIG_DEBUG_FS */
 
+static void dw_spi_microwire_reg_update(struct spi_controller *master,
+				struct spi_transfer *transfer)
+{
+	struct dw_spi *dws = spi_controller_get_devdata(master);
+	u32 ctrlr1	= 0;
+	u32 mwcr	= 0;
+	u16 txlevel	= 0;
+	u8 imask	= 0;
+
+	/* MWCR [0] Microwire Transfer Mode */
+	if (dws->mwmod == SSI_SEQUENTIAL_TRANSFER)
+		mwcr = 1 << DW_SPI_MWCR_MWMOD_OFFSET;
+
+	/* MWCR [1] Microwire Control */
+	mwcr |= (dws->mdd) << DW_SPI_MWCR_MDD_OFFSET;
+
+	dw_writel(dws, DW_SPI_MWCR, mwcr);
+
+	if (dws->mdd == SSI_TRANSMIT_DATA) {
+		/* TXFTLR [5:0] Transmit FIFO Threshold */
+		txlevel = min_t(u16, dws->fifo_len / 2,
+			dws->len / dws->n_bytes);
+		dw_writel(dws, DW_SPI_TXFTLR, txlevel);
+
+		/* IMR Interrupt Mask Register */
+		imask |= SPI_INT_TXEI | SPI_INT_TXOI |
+			 SPI_INT_RXUI | SPI_INT_RXOI;
+
+	} else {
+		/* IMR Interrupt Mask Register */
+		imask |= SPI_INT_TXEI | SPI_INT_TXOI | SPI_INT_RXFI |
+			 SPI_INT_RXUI | SPI_INT_RXOI;
+
+		/* CTRL1 NDF [15:0] Number of Data Frames */
+		if (dws->mwmod == SSI_SEQUENTIAL_TRANSFER) {
+			ctrlr1 |= (dws->len - 1) << DW_SPI_CTRLR1_NDF_OFFSET;
+			dw_writel(dws, DW_SPI_CTRLR1, ctrlr1);
+		}
+	}
+
+	spi_umask_intr(dws, imask);
+}
+
 void dw_spi_set_cs(struct spi_device *spi, bool enable)
 {
 	struct dw_spi *dws = spi_controller_get_devdata(spi->controller);
@@ -221,6 +264,24 @@ static void int_error_stop(struct dw_spi *dws, const char *msg)
 	spi_finalize_current_transfer(dws->master);
 }
 
+static void microwire_ssi_write_control_word(struct dw_spi *dws)
+{
+	u16 txw = 0;
+
+	if (dws->dw_ssi_cfs >= 1 && dws->dw_ssi_cfs <= 8)
+		txw = (u8)(dws->rcv_cword);
+	else
+		txw = (u16)(dws->rcv_cword);
+
+	if (dws->cont_non_sequential) {
+		/* For cont-non-sequential will write more control words */
+		dw_write_io_reg(dws, DW_SPI_DR, txw);
+		dw_write_io_reg(dws, DW_SPI_DR, txw);
+	} else {
+		dw_write_io_reg(dws, DW_SPI_DR, txw);
+	}
+}
+
 static irqreturn_t interrupt_transfer(struct dw_spi *dws)
 {
 	u16 irq_status = dw_readl(dws, DW_SPI_ISR);
@@ -229,6 +290,34 @@ static irqreturn_t interrupt_transfer(struct dw_spi *dws)
 	if (irq_status & (SPI_INT_TXOI | SPI_INT_RXOI | SPI_INT_RXUI)) {
 		dw_readl(dws, DW_SPI_ICR);
 		int_error_stop(dws, "interrupt_transfer: fifo overrun/underrun");
+		return IRQ_HANDLED;
+	}
+
+	if (dws->type == SSI_NS_MICROWIRE) {
+		if (dws->mdd == SSI_TRANSMIT_DATA) {
+			if (irq_status & SPI_INT_TXEI) {
+				spi_mask_intr(dws, SPI_INT_TXEI);
+				dw_writer(dws);
+				spi_finalize_current_transfer(dws->master);
+				return IRQ_HANDLED;
+			}
+		} else {
+			if (irq_status & SPI_INT_TXEI) {
+				spi_mask_intr(dws, SPI_INT_TXEI);
+				microwire_ssi_write_control_word(dws);
+			} else if (irq_status & SPI_INT_RXFI) {
+				spi_mask_intr(dws, SPI_INT_RXFI);
+				dw_reader(dws);
+				spi_umask_intr(dws, SPI_INT_RXFI);
+
+				if (dws->rx_end == dws->rx) {
+					spi_mask_intr(dws, SPI_INT_RXFI);
+					spi_finalize_current_transfer(
+						dws->master);
+					return IRQ_HANDLED;
+				}
+			}
+		}
 		return IRQ_HANDLED;
 	}
 
@@ -289,6 +378,7 @@ u32 dw_spi_update_cr0_v1_01a(struct spi_controller *master,
 			     struct spi_device *spi,
 			     struct spi_transfer *transfer)
 {
+	struct dw_spi *dws = spi_controller_get_devdata(master);
 	struct chip_data *chip = spi_get_ctldata(spi);
 	u32 cr0;
 
@@ -311,6 +401,10 @@ u32 dw_spi_update_cr0_v1_01a(struct spi_controller *master,
 
 	/* CTRLR0[13] Shift Register Loop */
 	cr0 |= ((spi->mode & SPI_LOOP) ? 1 : 0) << DWC_SSI_CTRLR0_SRL_OFFSET;
+
+	/* CTRLR0[19:16] Control Frame size */
+	if (dws->type == SSI_NS_MICROWIRE)
+		cr0 |= (dws->dw_ssi_cfs - 1) << DWC_SPI_CTRLR0_CFS_OFFSET;
 
 	return cr0;
 }
@@ -376,14 +470,19 @@ static int dw_spi_transfer_one(struct spi_controller *master,
 			return ret;
 		}
 	} else {
-		txlevel = min_t(u16, dws->fifo_len / 2, dws->len / dws->n_bytes);
-		dw_writel(dws, DW_SPI_TXFTLR, txlevel);
+		/* update microwire required register */
+		if (dws->type == SSI_NS_MICROWIRE) {
+			dw_spi_microwire_reg_update(master, transfer);
+		} else {
+			txlevel = min_t(u16, dws->fifo_len / 2,
+				dws->len / dws->n_bytes);
+			dw_writel(dws, DW_SPI_TXFTLR, txlevel);
 
-		/* Set the interrupt mask */
-		imask |= SPI_INT_TXEI | SPI_INT_TXOI |
-			 SPI_INT_RXUI | SPI_INT_RXOI;
-		spi_umask_intr(dws, imask);
-
+			/* Set the interrupt mask */
+			imask |= SPI_INT_TXEI | SPI_INT_TXOI |
+				 SPI_INT_RXUI | SPI_INT_RXOI;
+			spi_umask_intr(dws, imask);
+		}
 		dws->transfer_handler = interrupt_transfer;
 	}
 
@@ -409,6 +508,7 @@ static void dw_spi_handle_err(struct spi_controller *master,
 /* This may be called twice for each spi dev */
 static int dw_spi_setup(struct spi_device *spi)
 {
+	struct dw_spi *dws = spi_controller_get_devdata(spi->controller);
 	struct chip_data *chip;
 
 	/* Only alloc on first setup */
@@ -420,6 +520,7 @@ static int dw_spi_setup(struct spi_device *spi)
 		spi_set_ctldata(spi, chip);
 	}
 
+	chip->type = dws->type;
 	chip->tmode = SPI_TMOD_TR;
 
 	return 0;
@@ -473,7 +574,6 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 		return -ENOMEM;
 
 	dws->master = master;
-	dws->type = SSI_MOTO_SPI;
 	dws->dma_inited = 0;
 	dws->dma_addr = (dma_addr_t)(dws->paddr + DW_SPI_DR);
 	spin_lock_init(&dws->buf_lock);
@@ -500,7 +600,11 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 	master->max_speed_hz = dws->max_freq;
 	master->dev.of_node = dev->of_node;
 	master->dev.fwnode = dev->fwnode;
-	master->flags = SPI_MASTER_GPIO_SS;
+	if (dws->type == SSI_NS_MICROWIRE)
+		master->flags =  SPI_CONTROLLER_HALF_DUPLEX |
+				 SPI_MASTER_GPIO_SS;
+	else
+		master->flags = SPI_MASTER_GPIO_SS;
 	master->auto_runtime_pm = true;
 
 	if (dws->set_cs)

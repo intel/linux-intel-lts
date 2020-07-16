@@ -59,6 +59,7 @@
 #define SPI_CFS_OFFSET			12
 
 /* Bit fields in CTRLR0 based on DWC_ssi_databook.pdf v1.01a */
+#define DWC_SPI_CTRLR0_CFS_OFFSET	16
 #define DWC_SSI_CTRLR0_SRL_OFFSET	13
 #define DWC_SSI_CTRLR0_TMOD_OFFSET	10
 #define DWC_SSI_CTRLR0_TMOD_MASK	GENMASK(11, 10)
@@ -66,6 +67,13 @@
 #define DWC_SSI_CTRLR0_SCPH_OFFSET	8
 #define DWC_SSI_CTRLR0_FRF_OFFSET	6
 #define DWC_SSI_CTRLR0_DFS_OFFSET	0
+
+/* Bit fields in MWCR based on DWC_ssi_databook.pdf v1.01a */
+#define DW_SPI_MWCR_MDD_OFFSET			1
+#define DW_SPI_MWCR_MWMOD_OFFSET		0
+
+/* Bit fields in CTRLR1 based on DWC_ssi_databook.pdf v1.01a */
+#define DW_SPI_CTRLR1_NDF_OFFSET	0
 
 /* Bit fields in SR, 7 bits */
 #define SR_MASK				0x7f		/* cover 7 bits */
@@ -98,6 +106,16 @@ enum dw_ssi_type {
 	SSI_NS_MICROWIRE,
 };
 
+enum dw_ssi_ctrl {
+	SSI_RECEIVES_DATA = 0,
+	SSI_TRANSMIT_DATA,
+};
+
+enum dw_ssi_mwmod {
+	SSI_NON_SEQUENTIAL_TRANSFER = 0,
+	SSI_SEQUENTIAL_TRANSFER,
+};
+
 struct dw_spi;
 struct dw_spi_dma_ops {
 	int (*dma_init)(struct dw_spi *dws);
@@ -111,7 +129,14 @@ struct dw_spi_dma_ops {
 
 struct dw_spi {
 	struct spi_controller	*master;
-	enum dw_ssi_type	type;
+	enum			dw_ssi_type	type;
+
+	/* Start of Microwire property */
+	enum			dw_ssi_ctrl	mdd;
+	int			dw_ssi_cfs;
+	enum			dw_ssi_mwmod	mwmod;
+	bool			cont_non_sequential;
+	int			rcv_cword;
 
 	void __iomem		*regs;
 	unsigned long		paddr;
