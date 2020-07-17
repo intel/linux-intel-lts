@@ -3,6 +3,3 @@
 
 # CVE-2019-18808
 0003-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
-
-# CVE-2020-15393
-0001-usb-usbtest-fix-missing-kfree-dev-buf-in-usbtest_dis.patch
