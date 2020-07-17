@@ -1258,11 +1258,6 @@ rollback:
 	}
 
 	return err;
-
-outunlock:
-	__raw_write_seqcount_end(&devnet_rename_seq);
-	mutex_unlock(&devnet_rename_mutex);
-	return err;
 }
 
 /**

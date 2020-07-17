@@ -5673,7 +5673,6 @@ void sched_setnuma(struct task_struct *p, int nid)
 #endif /* CONFIG_NUMA_BALANCING */
 
 #ifdef CONFIG_HOTPLUG_CPU
-static DEFINE_PER_CPU(struct mm_struct *, idle_last_mm);
 
 /*
  * Ensure that the idle task is using init_mm right before its CPU goes
@@ -6005,10 +6004,6 @@ int sched_cpu_dying(unsigned int cpu)
 	update_max_interval();
 	nohz_balance_exit_idle(rq);
 	hrtick_clear(rq);
-	if (per_cpu(idle_last_mm, cpu)) {
-		mmdrop_delayed(per_cpu(idle_last_mm, cpu));
-		per_cpu(idle_last_mm, cpu) = NULL;
-	}
 	return 0;
 }
 #endif
