@@ -756,7 +756,8 @@ again:
 		return ret;
 	}
 
-	skl_dsp_init_core_state(sst);
+	if (ctx->is_first_boot)
+		skl_dsp_init_core_state(sst);
 
 	ret = sst->fw_ops.load_library(sst, ctx->lib_info, ctx->lib_count);
 	if (ret < 0) {
