@@ -54,6 +54,7 @@
 #include "intel_serdes.h"
 #include "stmmac_tsn.h"
 #include "stmmac_xsk.h"
+#include <linux/dwxpcs.h>
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 #include "stmmac_netproxy.h"
 #endif
@@ -3658,9 +3659,16 @@ static int stmmac_open(struct net_device *dev)
 
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->setup_phy_conv) {
-		ret = priv->plat->setup_phy_conv(priv->mii, priv->phy_conv_irq,
-						 priv->plat->phy_addr,
-						 priv->plat->speed_2500_en);
+		struct dwxpcs_platform_data *pdata;
+		const void *intel_pdata = priv->plat->intel_bi->platform_data;
+
+		pdata = (struct dwxpcs_platform_data *)intel_pdata;
+		pdata->irq = priv->phy_conv_irq;
+		pdata->ext_phy_addr = priv->plat->phy_addr;
+		pdata->speed_2500_en = priv->plat->speed_2500_en;
+
+		ret = priv->plat->setup_phy_conv(priv->mii,
+						 priv->plat->intel_bi);
 
 		if (ret < 0) {
 			netdev_err(priv->dev,
@@ -3745,7 +3753,8 @@ static int stmmac_release(struct net_device *dev)
 
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->remove_phy_conv) {
-		ret = priv->plat->remove_phy_conv(priv->mii);
+		ret = priv->plat->remove_phy_conv(priv->mii,
+						  priv->plat->intel_bi);
 		if (ret < 0) {
 			netdev_err(priv->dev,
 				   "%s: ERROR: remove phy conv (error: %d)\n",
@@ -7036,7 +7045,8 @@ int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
 
 	/* Remove phy converter */
 	if (priv->plat->remove_phy_conv) {
-		ret = priv->plat->remove_phy_conv(priv->mii);
+		ret = priv->plat->remove_phy_conv(priv->mii,
+						  priv->plat->intel_bi);
 		if (ret < 0) {
 			netdev_err(priv->dev,
 				   "%s: ERROR: remove phy conv (error: %d)\n",
@@ -7153,7 +7163,8 @@ int stmmac_suspend(struct device *dev)
 
 	/* Remove phy converter */
 	if (priv->plat->remove_phy_conv) {
-		ret = priv->plat->remove_phy_conv(priv->mii);
+		ret = priv->plat->remove_phy_conv(priv->mii,
+						  priv->plat->intel_bi);
 		if (ret < 0) {
 			netdev_err(priv->dev,
 				   "%s: ERROR: remove phy conv (error: %d)\n",
@@ -7318,9 +7329,16 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->setup_phy_conv) {
-		ret = priv->plat->setup_phy_conv(priv->mii, priv->phy_conv_irq,
-						 priv->plat->phy_addr,
-						 priv->plat->speed_2500_en);
+		struct dwxpcs_platform_data *pdata;
+		const void *intel_pdata = priv->plat->intel_bi->platform_data;
+
+		pdata = (struct dwxpcs_platform_data *)intel_pdata;
+		pdata->irq = priv->phy_conv_irq;
+		pdata->ext_phy_addr = priv->plat->phy_addr;
+		pdata->speed_2500_en = priv->plat->speed_2500_en;
+
+		ret = priv->plat->setup_phy_conv(priv->mii,
+						 priv->plat->intel_bi);
 
 		if (ret < 0) {
 			netdev_err(priv->dev,
@@ -7450,9 +7468,16 @@ int stmmac_resume(struct device *dev)
 
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->setup_phy_conv) {
-		ret = priv->plat->setup_phy_conv(priv->mii, priv->phy_conv_irq,
-						 priv->plat->phy_addr,
-						 priv->plat->speed_2500_en);
+		struct dwxpcs_platform_data *pdata;
+		const void *intel_pdata = priv->plat->intel_bi->platform_data;
+
+		pdata = (struct dwxpcs_platform_data *)intel_pdata;
+		pdata->irq = priv->phy_conv_irq;
+		pdata->ext_phy_addr = priv->plat->phy_addr;
+		pdata->speed_2500_en = priv->plat->speed_2500_en;
+
+		ret = priv->plat->setup_phy_conv(priv->mii,
+						 priv->plat->intel_bi);
 
 		if (ret < 0) {
 			netdev_err(priv->dev,
