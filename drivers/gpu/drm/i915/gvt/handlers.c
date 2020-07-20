@@ -443,7 +443,7 @@ static int pipeconf_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	struct intel_gvt *gvt = vgpu->gvt;
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe pipe = SKL_PLANE_REG_TO_PIPE(offset);
 	enum pipe phy_pipe = INVALID_PIPE;
 
@@ -460,8 +460,9 @@ static int pipeconf_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 			    vgpu->id, pipe);
 	}
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (pipe == disp_path->pipe) {
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->pipe == pipe) {
+			disp_path = p;
 			phy_pipe = disp_path->p_pipe;
 			break;
 		}
@@ -881,7 +882,7 @@ static int skl_plane_surf_write(struct intel_vgpu *vgpu, unsigned int offset,
 	struct intel_gvt *gvt = vgpu->gvt;
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe pipe = SKL_PLANE_REG_TO_PIPE(offset);
 	enum plane_id plane = SKL_PLANE_REG_TO_PLANE(offset);
 	enum pipe phy_pipe = INVALID_PIPE;
@@ -895,8 +896,9 @@ static int skl_plane_surf_write(struct intel_vgpu *vgpu, unsigned int offset,
 	if (plane == PLANE_PRIMARY)
 		vgpu_vreg_t(vgpu, PIPE_FLIPCOUNT_G4X(pipe))++;
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->pipe == pipe) {
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->pipe == pipe) {
+			disp_path = p;
 			phy_pipe = disp_path->p_pipe;
 			break;
 		}
@@ -937,7 +939,7 @@ static int reg50080_mmio_write(struct intel_vgpu *vgpu,
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
 	struct intel_runtime_info *runtime = RUNTIME_INFO(dev_priv);
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe pipe = REG_50080_TO_PIPE(offset);
 	enum plane_id plane = REG_50080_TO_PLANE(offset);
 	enum pipe phy_pipe = INVALID_PIPE;
@@ -963,8 +965,9 @@ static int reg50080_mmio_write(struct intel_vgpu *vgpu,
 		return 0;
 	}
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->pipe == pipe) {
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->pipe == pipe) {
+			disp_path = p;
 			phy_pipe = disp_path->p_pipe;
 			break;
 		}
@@ -1003,7 +1006,7 @@ static int skl_plane_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 	struct intel_runtime_info *runtime = RUNTIME_INFO(dev_priv);
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe pipe = SKL_PLANE_REG_TO_PIPE(offset);
 	enum plane_id plane = SKL_PLANE_REG_TO_PLANE(offset);
 	enum pipe phy_pipe = INVALID_PIPE;
@@ -1011,8 +1014,9 @@ static int skl_plane_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 
 	write_vreg(vgpu, offset, p_data, bytes);
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->pipe == pipe) {
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->pipe == pipe) {
+			disp_path = p;
 			phy_pipe = disp_path->p_pipe;
 			break;
 		}
@@ -1110,7 +1114,7 @@ static int skl_cursor_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 {
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe pipe = SKL_PLANE_REG_TO_PIPE(offset);
 	enum pipe phy_pipe = INVALID_PIPE;
 	unsigned int phy_offset;
@@ -1120,8 +1124,9 @@ static int skl_cursor_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 		vgpu_vreg_t(vgpu, SKL_CURSOR_SURFLIVE(pipe)) =
 			vgpu_vreg(vgpu, offset);
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->pipe == pipe) {
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->pipe == pipe) {
+			disp_path = p;
 			phy_pipe = disp_path->p_pipe;
 			break;
 		}
@@ -1200,15 +1205,16 @@ static int skl_mmio_write_pipe_dist(struct intel_vgpu *vgpu,
 {
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe pipe = (((offset) >> bitpos) & 0x3);
 	enum pipe phy_pipe = INVALID_PIPE;
 	unsigned int dist = 1 << bitpos;
 
 	write_vreg(vgpu, offset, p_data, bytes);
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->pipe == pipe) {
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->pipe == pipe) {
+			disp_path = p;
 			phy_pipe = disp_path->p_pipe;
 			break;
 		}
@@ -1294,12 +1300,14 @@ static int skl_prec_pal_data_mmio_read(struct intel_vgpu *vgpu,
 				       unsigned int bytes)
 {
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe pipe = (((offset) >> 11) & 0x3);
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->pipe == pipe)
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->pipe == pipe) {
+			disp_path = p;
 			break;
+		}
 	}
 
 	if (disp_path) {
@@ -1331,14 +1339,16 @@ static int skl_prec_pal_data_mmio_write(struct intel_vgpu *vgpu,
 					unsigned int bytes)
 {
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe pipe = (((offset) >> 11) & 0x3);
 
 	write_vreg(vgpu, offset, p_data, bytes);
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->pipe == pipe)
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->pipe == pipe) {
+			disp_path = p;
 			break;
+		}
 	}
 
 	if (disp_path) {
@@ -1465,7 +1475,7 @@ static int dp_aux_ch_ctl_mmio_write(struct intel_vgpu *vgpu,
 		unsigned int offset, void *p_data, unsigned int bytes)
 {
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	int msg, addr, ctrl, op, len;
 	enum port port = OFFSET_TO_DP_AUX_PORT(offset);
 	struct intel_vgpu_dpcd_data *dpcd = NULL;
@@ -1479,13 +1489,18 @@ static int dp_aux_ch_ctl_mmio_write(struct intel_vgpu *vgpu,
 	write_vreg(vgpu, offset, p_data, bytes);
 	data = vgpu_vreg(vgpu, offset);
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list)
-		if (disp_path->port == port)
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->port == port) {
+			disp_path = p;
+			dpcd = disp_path->dpcd;
 			break;
+		}
+	}
 
-	if (!disp_path) {
-		gvt_err("vgpu-%d invalid vgpu display path\n", vgpu->id);
-		return -EINVAL;
+	if (!disp_path || !dpcd) {
+		gvt_dbg_dpy("vgpu-%d dp aux ch write invalid display path\n",
+			    vgpu->id);
+		return 0;
 	}
 
 	if ((INTEL_GEN(vgpu->gvt->dev_priv) >= 9) &&
@@ -1503,8 +1518,6 @@ static int dp_aux_ch_ctl_mmio_write(struct intel_vgpu *vgpu,
 		vgpu_vreg(vgpu, offset) = 0;
 		return 0;
 	}
-
-	dpcd = disp_path->dpcd;
 
 	/* read out message from DATA1 register */
 	msg = vgpu_vreg(vgpu, offset + 4);
