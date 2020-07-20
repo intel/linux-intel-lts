@@ -448,7 +448,7 @@ int hddl_per_device_connect_thread(void *thread_param)
 	ktime_get_real_ts64(&ts);
 	printk(KERN_INFO "S[%llx] NS[%lx]\n", ts.tv_sec, ts.tv_nsec);
 	rc = xlink_write_volatile(devH, chan_num, (uint8_t *) &ts, sizeof(struct timespec64));
-	printk(KERN_INFO "HDDL: Size Transferred[%d] = %ld\n",	rc, sizeof(struct timespec64));
+	printk(KERN_INFO "HDDL: Size Transferred[%d] = %ld\n", rc, sizeof(struct timespec64));
 
 	printk(KERN_INFO "HDDL: xlink_read_data to start...\n");
 	size = sizeof(board_id_rcvd);
@@ -514,13 +514,13 @@ int hddl_per_device_connect_thread(void *thread_param)
 		j = 0;
 		while ((temp = i2c_get_adapter(j)) != NULL) {
 			if (strstr(temp->name, "SMBus I801") != NULL) {
-				soc->soc_smbus[i] = i2c_new_client_device(temp, &temp_host_i2c_device);
+				soc->soc_smbus[i] = i2c_new_device(temp, &temp_host_i2c_device);
 				printk("soc_smbus adapter %d", soc->soc_smbus[i]->adapter->nr);
 				break;
 			}
 			j++;
 		}
-		soc->soc_xlinki2c[i] = i2c_new_client_device(i2c_get_adapter(
+		soc->soc_xlinki2c[i] = i2c_new_device(i2c_get_adapter(
 				soc->adap[1].nr),
 				&temp_host_i2c_device);
 		printk("soc_xlinki2c adapter %d", soc->soc_xlinki2c[i]->adapter->nr);
@@ -538,7 +538,7 @@ int hddl_per_device_connect_thread(void *thread_param)
 	mutex_lock(&my_mutex);
 
 	for (i = 0; i < soc->i2c_slaves_cnt; i++) {
-		soc->i2c_slaves_ext[i] = i2c_new_client_device(
+		soc->i2c_slaves_ext[i] = i2c_new_device(
 			i2c_get_adapter(soc->adap[0].nr),
 			&soc_i2c_ext_devices[i]);
 		printk("i2c_slaves_ext adapter %d", soc->i2c_slaves_ext[i]->adapter->nr);
@@ -551,7 +551,7 @@ int hddl_per_device_connect_thread(void *thread_param)
 	soc->soc_xlinki2c_cnt = sizeof(kmb_i2c_devices)/sizeof(struct i2c_board_info);
 	soc->soc_xlinki2c = kzalloc(sizeof(struct i2c_client *) * (soc->soc_xlinki2c_cnt), GFP_KERNEL);
 	for (i = 0; i < soc->soc_xlinki2c_cnt; i++) {
-		soc->soc_xlinki2c[i] = i2c_new_client_device(
+		soc->soc_xlinki2c[i] = i2c_new_device(
 			i2c_get_adapter(soc->adap[1].nr),
 			&kmb_i2c_devices[i]);
 	}

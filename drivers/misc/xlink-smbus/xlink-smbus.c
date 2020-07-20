@@ -17,7 +17,7 @@
 #include <linux/kmod.h>
 #include <linux/kthread.h>
 #include <linux/hddl_device.h>
-
+#include <linux/slab.h>
 
 //#undef CONFIG_I2C_SLAVE
 /* Define the xlink debug device structures to be used with dev_dbg() et al */
