@@ -646,6 +646,7 @@ static struct drm_gem_object *hantro_gem_prime_import_sg_table(
 	cma_obj->sgt = sgt;
 	cma_obj->flag |= HANTRO_GEM_FLAG_IMPORT;
 	cma_obj->num_pages = attach->dmabuf->size >> PAGE_SHIFT;
+        cma_obj->meta_data_info = ((struct drm_gem_hantro_object *)attach->dmabuf->priv)->meta_data_info;
 
 	return obj;
 }
@@ -1258,6 +1259,43 @@ static int hantro_ptr_to_phys(
 	return 0;
 }
 
+static int hantro_query_metadata(
+	struct drm_device *dev,
+	void *data,
+	struct drm_file *file_priv)
+{
+	struct hantro_exchanged_metadata_info *metadata_info_p = (struct hantro_exchanged_metadata_info *)data;
+	struct drm_gem_object *obj = NULL;
+	struct drm_gem_hantro_object *cma_obj = NULL;
+
+	obj = hantro_gem_object_lookup(dev, file_priv, metadata_info_p->exporter.handle);
+	if (obj == NULL)
+		return -ENOENT;
+	cma_obj = to_drm_gem_hantro_obj(obj);
+
+	memcpy(&metadata_info_p->meta_data_info, &cma_obj->meta_data_info, sizeof(struct viv_vidmem_metadata_info));
+
+	return 0;
+}
+
+static int hantro_update_metadata(
+	struct drm_device *dev,
+	void *data,
+	struct drm_file *file_priv)
+{
+	struct hantro_exchanged_metadata_info *metadata_info_p = (struct hantro_exchanged_metadata_info *)data;
+	struct drm_gem_object *obj = NULL;
+	struct drm_gem_hantro_object *cma_obj = NULL;
+
+	obj = hantro_gem_object_lookup(dev, file_priv, metadata_info_p->exporter.handle);
+	if (obj == NULL)
+		return -ENOENT;
+	cma_obj = to_drm_gem_hantro_obj(obj);
+
+	memcpy(&cma_obj->meta_data_info, &metadata_info_p->meta_data_info, sizeof(struct viv_vidmem_metadata_info));
+
+	return 0;
+}
 
 static int hantro_getmagic(
 	struct drm_device *dev,
@@ -1435,6 +1473,8 @@ static const struct drm_ioctl_desc hantro_ioctls[] = {
 	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_RELEASEBUF, hantro_releasebuf, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
 	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_GETPRIMEADDR, hantro_getprimeaddr, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
 	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_PTR_PHYADDR, hantro_ptr_to_phys, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
+	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_QUERY_METADATA, hantro_query_metadata, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
+	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_UPDATE_METADATA, hantro_update_metadata, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
 	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_GET_SLICENUM, hantro_get_slicenum, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
 };
 
@@ -1454,7 +1494,7 @@ static long hantro_ioctl(
 	drm_ioctl_t *func;
 	unsigned int nr = DRM_IOCTL_NR(cmd);
 	int retcode = 0;
-	char stack_kdata[128];
+	char stack_kdata[256];
 	char *kdata = stack_kdata;
 	unsigned int in_size, out_size;
 
@@ -1527,8 +1567,14 @@ static long hantro_ioctl(
 		return -EINVAL;
 	ioctl = &hantro_ioctls[nr];
 
-	if (copy_from_user(kdata, (void __user *)arg, in_size) != 0)
+	if((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
+		(cmd == DRM_IOCTL_HANTRO_QUERY_METADATA) ) {
+	if (copy_from_user(kdata, (void __user *)arg, sizeof(struct hantro_exchanged_metadata_info)) != 0)
 		return  -EFAULT;
+	} else {
+		if (copy_from_user(kdata, (void __user *)arg, in_size) != 0)
+			return  -EFAULT;
+	}
 
 	if (cmd == DRM_IOCTL_MODE_SETCRTC ||
 		cmd == DRM_IOCTL_MODE_GETRESOURCES ||
@@ -1545,8 +1591,15 @@ static long hantro_ioctl(
 		return -EINVAL;
 	retcode = func(dev, kdata, file_priv);
 
-	if (copy_to_user((void __user *)arg, kdata, out_size) != 0)
-		retcode = -EFAULT;
+	if((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
+		(cmd == DRM_IOCTL_HANTRO_QUERY_METADATA) ) {
+		if (copy_to_user((void __user *)arg, kdata, sizeof(struct hantro_exchanged_metadata_info)) != 0) {
+			retcode = -EFAULT;
+			}
+	} else {
+		if (copy_to_user((void __user *)arg, kdata, out_size) != 0)
+			retcode = -EFAULT;
+	}
 
 	return retcode;
 }

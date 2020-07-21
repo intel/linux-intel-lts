@@ -89,9 +89,39 @@ struct hantro_drm_fb {
 	struct drm_gem_object *obj[4];
 };
 
+struct viv_vidmem_metadata_info
+{
+	uint32_t magic; // __FOURCC('v', 'i', 'v', 'm')
+	uint32_t dmabuf_size; // DMABUF buffer size in byte (Maximum 4GB)
+	uint32_t image_format; // ImageFormat
+	uint32_t compressed; // if DMABUF buffer is compressed by DEC400
+	struct {
+		uint32_t offset; // plane buffer address offset from DMABUF address
+		uint32_t stride; // pitch in bytes
+		uint32_t width; // width in pixels
+		uint32_t height; // height in pixels
+		uint32_t tile_format; // uncompressed tile format
+		uint32_t compress_format; // tile mode for DEC400
+		uint32_t ts_offset; // tile status buffer offset within this plane buffer
+		// ts_offset 0 indicates using seperate tile status buffer
+		int32_t ts_fd; // fd of seperate tile status buffer of the plane buffer
+		uint64_t ts_dma_buf; // seperate tile status buffer dma_buf handle
+		uint32_t fc_enabled; // gpu fastclear enabled for the plane buffer
+		uint32_t fc_value_lower; // gpu fastclear color value (lower 32 bits) for the plane buffer
+		uint32_t fc_value_upper; // gpu fastclear color value (upper 32 bits) for the plane buffer
+	} plane[3];
+};
+
+struct hantro_exchanged_metadata_info {
+	struct drm_prime_handle exporter;
+	struct viv_vidmem_metadata_info meta_data_info;
+};
+
 struct drm_gem_hantro_object {
 	struct drm_gem_object base;
 	dma_addr_t paddr;
+        //common meta data description
+	struct viv_vidmem_metadata_info meta_data_info;
 	struct sg_table *sgt;
 
 	/* For objects with DMA memory allocated by GEM CMA */
@@ -177,6 +207,8 @@ struct core_desc {
 #define DRM_IOCTL_HANTRO_RELEASEBUF     DRM_IOWR(HANTRO_IOCTL_START+7, struct hantro_releasebuf)
 #define DRM_IOCTL_HANTRO_GETPRIMEADDR     DRM_IOWR(HANTRO_IOCTL_START+8, unsigned long *)
 #define DRM_IOCTL_HANTRO_PTR_PHYADDR     DRM_IOWR(HANTRO_IOCTL_START+9, unsigned long *)
+#define DRM_IOCTL_HANTRO_QUERY_METADATA   DRM_IOWR(HANTRO_IOCTL_START+10, struct hantro_exchanged_metadata_info *)
+#define DRM_IOCTL_HANTRO_UPDATE_METADATA  DRM_IOWR(HANTRO_IOCTL_START+11, struct hantro_exchanged_metadata_info *)
 
 /* hantro enc related */
 #define HX280ENC_IOC_START              DRM_IO(HANTRO_IOCTL_START + 17)
