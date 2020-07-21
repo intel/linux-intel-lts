@@ -61,3 +61,10 @@
 
 # CVE-2020-15393
 0001-usb-usbtest-fix-missing-kfree-dev-buf-in-usbtest_dis.patch
+
+# CVE-2019-20908
+0001-UBUNTU-SAUCE-efi-lockdown-Add-the-ability-to-lock-do.patch
+0002-efi-Restrict-efivar_ssdt_load-when-the-kernel-is-loc.patch
+
+# CVE-2020-15780
+0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
