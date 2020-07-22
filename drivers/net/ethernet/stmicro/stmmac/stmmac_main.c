@@ -1726,7 +1726,7 @@ static void stmmac_skb_clean_tx_queue(struct stmmac_priv *priv,
 {
 	unsigned int bytes_compl = 0, pkts_compl = 0;
 	u32 queue = tx_q->queue_index;
-	unsigned int entry, count;
+	unsigned int entry, count = 0;
 
 	__netif_tx_lock_bh(netdev_get_tx_queue(priv->dev, queue));
 
