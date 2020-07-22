@@ -304,6 +304,21 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.set_loopback	= genphy_loopback,
 		.get_wol	= gpy_get_wol,
 		.set_wol	= gpy_set_wol,
+		/* @TODO:
+		 * 1. latencies are not symmetrical, we need to update these
+		 *    values after getting correct values from CHD.
+		 * 2. Need to add latencies for GPY115.
+		 */
+		.latencies	= {
+					.tx_latency_2500 = 1772,
+					.tx_latency_1000 = 903,
+					.tx_latency_100	 = 5084,
+					.tx_latency_10	 = 45895,
+					.rx_latency_2500 = 1772,
+					.rx_latency_1000 = 903,
+					.rx_latency_100	 = 5084,
+					.rx_latency_10	 = 45895,
+				  },
 	},
 };
 module_phy_driver(intel_gpy_drivers);
