@@ -2751,6 +2751,19 @@ out_unlock:
 	return ret;
 }
 
+/* Restore the qos cfg state when a domain comes online */
+void rdt_domain_reconfigure_cdp(struct rdt_resource *r)
+{
+	if (!r->alloc_capable)
+		return;
+
+	if (r == &rdt_resources_all[RDT_RESOURCE_L2DATA])
+		l2_qos_cfg_update(&r->alloc_enabled);
+
+	if (r == &rdt_resources_all[RDT_RESOURCE_L3DATA])
+		l3_qos_cfg_update(&r->alloc_enabled);
+}
+
 /*
  * We allow creating mon groups only with in a directory called "mon_groups"
  * which is present in every ctrl_mon group. Check if this is a valid
@@ -2906,19 +2919,14 @@ static int rdtgroup_rmdir(struct kernfs_node *kn)
 	 * If the rdtgroup is a mon group and parent directory
 	 * is a valid "mon_groups" directory, remove the mon group.
 	 */
-	if (rdtgrp->type == RDTCTRL_GROUP && parent_kn == rdtgroup_default.kn) {
-		if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP ||
-		    rdtgrp->mode == RDT_MODE_PSEUDO_LOCKED) {
-			ret = rdtgroup_ctrl_remove(kn, rdtgrp);
-		} else {
-			ret = rdtgroup_rmdir_ctrl(kn, rdtgrp, tmpmask);
-		}
-	} else if (rdtgrp->type == RDTMON_GROUP &&
-		 is_mon_groups(parent_kn, kn->name)) {
+	if (rdtgrp->type == RDTCTRL_GROUP && parent_kn == rdtgroup_default.kn &&
+	    rdtgrp != &rdtgroup_default)
+		ret = rdtgroup_rmdir_ctrl(kn, rdtgrp, tmpmask);
+	else if (rdtgrp->type == RDTMON_GROUP &&
+		 is_mon_groups(parent_kn, kn->name))
 		ret = rdtgroup_rmdir_mon(kn, rdtgrp, tmpmask);
-	} else {
+	else
 		ret = -EPERM;
-	}
 
 out:
 	rdtgroup_kn_unlock(kn);
