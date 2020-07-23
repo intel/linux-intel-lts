@@ -159,6 +159,7 @@ static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
 		dw8250_writel_ext(p, DW_UART_TAR, 0x0);
 		dw8250_writel_ext(p, DW_UART_RAR, 0x0);
 		lcr = DW_UART_LCR_EXT_DLS_E;
+		dw8250_writel_ext(p, DW_UART_LCR_EXT, lcr);
 		if (rs485->flags & SER_RS485_9BIT_TX_ADDR) {
 			dw8250_writel_ext(p, DW_UART_TAR, rs485->padding[0]);
 			lcr |= DW_UART_LCR_EXT_SEND_ADDR;
