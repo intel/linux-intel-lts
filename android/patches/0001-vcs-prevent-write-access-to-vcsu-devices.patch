@@ -1,0 +1,50 @@
+From dbcde6d0836c54fb30cf7a5b72139989814e7bd0 Mon Sep 17 00:00:00 2001
+From: Nicolas Pitre <nico@fluxnic.net>
+Date: Tue, 5 Nov 2019 10:33:16 +0100
+Subject: [PATCH] vcs: prevent write access to vcsu devices
+
+Commit d21b0be246bf ("vt: introduce unicode mode for /dev/vcs") guarded
+against using devices containing attributes as this is not yet
+implemented. It however failed to guard against writes to any devices
+as this is also unimplemented.
+
+Change-Id: I206fbe3e341fd82a10ac77bfa3b9dc2a76140d2d
+Tracked-On: PKT-3010
+Reported-by: Or Cohen <orcohen@paloaltonetworks.com>
+Signed-off-by: Nicolas Pitre <npitre@baylibre.com>
+Cc: <stable@vger.kernel.org> # v4.19+
+Cc: Jiri Slaby <jslaby@suse.com>
+Fixes: d21b0be246bf ("vt: introduce unicode mode for /dev/vcs")
+Link: https://lore.kernel.org/r/nycvar.YSQ.7.76.1911051030580.30289@knanqh.ubzr
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Zhang, Baoli <baoli.zhang@intel.com>
+---
+ drivers/tty/vt/vc_screen.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/tty/vt/vc_screen.c b/drivers/tty/vt/vc_screen.c
+index 14a2b5f..cda4dcc 100644
+--- a/drivers/tty/vt/vc_screen.c
++++ b/drivers/tty/vt/vc_screen.c
+@@ -50,6 +50,8 @@
+ 
+ #define CON_BUF_SIZE (CONFIG_BASE_SMALL ? 256 : PAGE_SIZE)
+ 
++#define use_unicode(inode)      (iminor(inode) & 64)
++
+ struct vcs_poll_data {
+ 	struct notifier_block notifier;
+ 	unsigned int cons_num;
+@@ -384,6 +386,9 @@ vcs_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+ 	size_t ret;
+ 	char *con_buf;
+ 
++	if (use_unicode(inode))
++		return -EOPNOTSUPP;
++
+ 	con_buf = (char *) __get_free_page(GFP_KERNEL);
+ 	if (!con_buf)
+ 		return -ENOMEM;
+-- 
+2.7.4
+
