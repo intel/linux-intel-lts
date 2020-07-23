@@ -58,3 +58,13 @@
 # CVE-2019-10220
 0002-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
 0003-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
+
+# CVE-2019-20811
+0001-net-sysfs-call-dev_hold-if-kobject_init_and_add-succ.patch
+
+# CVE-2019-20908
+0001-UBUNTU-SAUCE-efi-lockdown-Add-the-ability-to-lock-do.patch
+0002-efi-Restrict-efivar_ssdt_load-when-the-kernel-is-loc.patch
+
+# CVE-2020-15780
+0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
