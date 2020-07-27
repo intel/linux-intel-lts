@@ -675,6 +675,9 @@ static int m88e2110_set_wol(struct phy_device *phydev,
 
 		if (ret < 0)
 			return ret;
+
+		/* Clear the interrupt status register */
+		ret = phy_read_mmd(phydev, MDIO_MMD_PCS, MV_PCS_INTR_STS);
 	} else {
 		/* Disable the link status changed interrupt */
 		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_PCS,
