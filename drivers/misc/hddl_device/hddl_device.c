@@ -72,8 +72,8 @@ static struct i2c_board_info kmb_i2c_devices[] = {
 #endif
 
 T_HDDL_DEVICE_KMB_NODE kmb_hddls[HDDL_MAX_DEVICE] = {0};
-#define HDDL_NODE_XLINK_CHANNEL 1050
-#define HDDL_I2C_XLINK_CHANNEL 1080
+#define HDDL_NODE_XLINK_CHANNEL 1080
+#define HDDL_I2C_XLINK_CHANNEL 1081
 
 #ifdef CONFIG_HDDL_LOCAL_HOST
 
