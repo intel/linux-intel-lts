@@ -1571,13 +1571,14 @@ done:
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP)) {
 		struct igc_adapter *adapter = netdev_priv(tx_ring->netdev);
 
+		spin_lock(&adapter->ptp_tx_lock);
+
 		/* FIXME: add support for retrieving timestamps from
 		 * the other timer registers before skipping the
 		 * timestamping request.
 		 */
 		if (adapter->tstamp_config.tx_type == HWTSTAMP_TX_ON &&
-		    !test_and_set_bit_lock(__IGC_PTP_TX_IN_PROGRESS,
-					   &adapter->state)) {
+		    !adapter->ptp_tx_skb) {
 			skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 			tx_flags |= IGC_TX_FLAGS_TSTAMP;
 
@@ -1586,6 +1587,8 @@ done:
 		} else {
 			adapter->tx_hwtstamp_skipped++;
 		}
+
+		spin_unlock(&adapter->ptp_tx_lock);
 	}
 
 	if (skb_vlan_tag_present(skb)) {
