@@ -490,4 +490,5 @@ source "drivers/misc/thermal/Kconfig"
 source "drivers/misc/slave_kmb_tj/Kconfig"
 source "drivers/misc/host_kmb_tj/Kconfig"
 source "drivers/misc/xlink-smbus/Kconfig"
+source "drivers/misc/emc2103/Kconfig"
 endmenu

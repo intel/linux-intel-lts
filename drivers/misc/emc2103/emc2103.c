@@ -11,11 +11,11 @@
 #include <linux/slab.h>
 #include <linux/jiffies.h>
 #include <linux/i2c.h>
+#include <linux/thermal.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/err.h>
 #include <linux/mutex.h>
-#include <linux/thermal.h>
 
 /* Addresses scanned */
 static const unsigned short normal_i2c[] = { 0x2E, I2C_CLIENT_END };
@@ -25,7 +25,6 @@ static const u8 REG_TEMP_MIN[4] = { 0x3c, 0x38, 0x39, 0x3a };
 static const u8 REG_TEMP_MAX[4] = { 0x34, 0x30, 0x31, 0x32 };
 
 #define REG_CONF1		0x20
-#define REG_CONF2		0x21
 #define REG_TEMP_MAX_ALARM	0x24
 #define REG_TEMP_MIN_ALARM	0x25
 #define REG_FAN_CONF1		0x42
@@ -35,8 +34,6 @@ static const u8 REG_TEMP_MAX[4] = { 0x34, 0x30, 0x31, 0x32 };
 #define REG_FAN_TACH_LO		0x4f
 #define REG_PRODUCT_ID		0xfd
 #define REG_MFG_ID		0xfe
-
-
 
 /* equation 4 from datasheet: rpm = (3932160 * multipler) / count */
 #define FAN_RPM_FACTOR		3932160
@@ -187,7 +184,7 @@ static struct emc2103_data *emc2103_update_device(struct device *dev)
 }
 
 static ssize_t
-temp_show(struct device *dev, struct device_attribute *da, char *buf)
+show_temp(struct device *dev, struct device_attribute *da, char *buf)
 {
 	int nr = to_sensor_dev_attr(da)->index;
 	struct emc2103_data *data = emc2103_update_device(dev);
@@ -197,7 +194,7 @@ temp_show(struct device *dev, struct device_attribute *da, char *buf)
 }
 
 static ssize_t
-temp_min_show(struct device *dev, struct device_attribute *da, char *buf)
+show_temp_min(struct device *dev, struct device_attribute *da, char *buf)
 {
 	int nr = to_sensor_dev_attr(da)->index;
 	struct emc2103_data *data = emc2103_update_device(dev);
@@ -206,7 +203,7 @@ temp_min_show(struct device *dev, struct device_attribute *da, char *buf)
 }
 
 static ssize_t
-temp_max_show(struct device *dev, struct device_attribute *da, char *buf)
+show_temp_max(struct device *dev, struct device_attribute *da, char *buf)
 {
 	int nr = to_sensor_dev_attr(da)->index;
 	struct emc2103_data *data = emc2103_update_device(dev);
@@ -215,7 +212,7 @@ temp_max_show(struct device *dev, struct device_attribute *da, char *buf)
 }
 
 static ssize_t
-temp_fault_show(struct device *dev, struct device_attribute *da, char *buf)
+show_temp_fault(struct device *dev, struct device_attribute *da, char *buf)
 {
 	int nr = to_sensor_dev_attr(da)->index;
 	struct emc2103_data *data = emc2103_update_device(dev);
@@ -224,8 +221,7 @@ temp_fault_show(struct device *dev, struct device_attribute *da, char *buf)
 }
 
 static ssize_t
-temp_min_alarm_show(struct device *dev, struct device_attribute *da,
-		    char *buf)
+show_temp_min_alarm(struct device *dev, struct device_attribute *da, char *buf)
 {
 	int nr = to_sensor_dev_attr(da)->index;
 	struct emc2103_data *data = emc2103_update_device(dev);
@@ -234,8 +230,7 @@ temp_min_alarm_show(struct device *dev, struct device_attribute *da,
 }
 
 static ssize_t
-temp_max_alarm_show(struct device *dev, struct device_attribute *da,
-		    char *buf)
+show_temp_max_alarm(struct device *dev, struct device_attribute *da, char *buf)
 {
 	int nr = to_sensor_dev_attr(da)->index;
 	struct emc2103_data *data = emc2103_update_device(dev);
@@ -243,8 +238,8 @@ temp_max_alarm_show(struct device *dev, struct device_attribute *da,
 	return sprintf(buf, "%d\n", alarm ? 1 : 0);
 }
 
-static ssize_t temp_min_store(struct device *dev, struct device_attribute *da,
-			      const char *buf, size_t count)
+static ssize_t set_temp_min(struct device *dev, struct device_attribute *da,
+			    const char *buf, size_t count)
 {
 	int nr = to_sensor_dev_attr(da)->index;
 	struct emc2103_data *data = dev_get_drvdata(dev);
@@ -265,8 +260,8 @@ static ssize_t temp_min_store(struct device *dev, struct device_attribute *da,
 	return count;
 }
 
-static ssize_t temp_max_store(struct device *dev, struct device_attribute *da,
-			      const char *buf, size_t count)
+static ssize_t set_temp_max(struct device *dev, struct device_attribute *da,
+			    const char *buf, size_t count)
 {
 	int nr = to_sensor_dev_attr(da)->index;
 	struct emc2103_data *data = dev_get_drvdata(dev);
@@ -386,7 +381,6 @@ fan1_target_show(struct device *dev, struct device_attribute *da, char *buf)
 	return sprintf(buf, "%d\n", rpm);
 }
 
-// fan speed control
 static ssize_t fan1_target_store(struct device *dev,
 				 struct device_attribute *da, const char *buf,
 				 size_t count)
@@ -475,33 +469,49 @@ err:
 	return count;
 }
 
-static SENSOR_DEVICE_ATTR_RO(temp1_input, temp, 0);
-static SENSOR_DEVICE_ATTR_RW(temp1_min, temp_min, 0);
-static SENSOR_DEVICE_ATTR_RW(temp1_max, temp_max, 0);
-static SENSOR_DEVICE_ATTR_RO(temp1_fault, temp_fault, 0);
-static SENSOR_DEVICE_ATTR_RO(temp1_min_alarm, temp_min_alarm, 0);
-static SENSOR_DEVICE_ATTR_RO(temp1_max_alarm, temp_max_alarm, 0);
+static SENSOR_DEVICE_ATTR(temp1_input, S_IRUGO, show_temp, NULL, 0);
+static SENSOR_DEVICE_ATTR(temp1_min, S_IRUGO | S_IWUSR, show_temp_min,
+	set_temp_min, 0);
+static SENSOR_DEVICE_ATTR(temp1_max, S_IRUGO | S_IWUSR, show_temp_max,
+	set_temp_max, 0);
+static SENSOR_DEVICE_ATTR(temp1_fault, S_IRUGO, show_temp_fault, NULL, 0);
+static SENSOR_DEVICE_ATTR(temp1_min_alarm, S_IRUGO, show_temp_min_alarm,
+	NULL, 0);
+static SENSOR_DEVICE_ATTR(temp1_max_alarm, S_IRUGO, show_temp_max_alarm,
+	NULL, 0);
 
-static SENSOR_DEVICE_ATTR_RO(temp2_input, temp, 1);
-static SENSOR_DEVICE_ATTR_RW(temp2_min, temp_min, 1);
-static SENSOR_DEVICE_ATTR_RW(temp2_max, temp_max, 1);
-static SENSOR_DEVICE_ATTR_RO(temp2_fault, temp_fault, 1);
-static SENSOR_DEVICE_ATTR_RO(temp2_min_alarm, temp_min_alarm, 1);
-static SENSOR_DEVICE_ATTR_RO(temp2_max_alarm, temp_max_alarm, 1);
+static SENSOR_DEVICE_ATTR(temp2_input, S_IRUGO, show_temp, NULL, 1);
+static SENSOR_DEVICE_ATTR(temp2_min, S_IRUGO | S_IWUSR, show_temp_min,
+	set_temp_min, 1);
+static SENSOR_DEVICE_ATTR(temp2_max, S_IRUGO | S_IWUSR, show_temp_max,
+	set_temp_max, 1);
+static SENSOR_DEVICE_ATTR(temp2_fault, S_IRUGO, show_temp_fault, NULL, 1);
+static SENSOR_DEVICE_ATTR(temp2_min_alarm, S_IRUGO, show_temp_min_alarm,
+	NULL, 1);
+static SENSOR_DEVICE_ATTR(temp2_max_alarm, S_IRUGO, show_temp_max_alarm,
+	NULL, 1);
 
-static SENSOR_DEVICE_ATTR_RO(temp3_input, temp, 2);
-static SENSOR_DEVICE_ATTR_RW(temp3_min, temp_min, 2);
-static SENSOR_DEVICE_ATTR_RW(temp3_max, temp_max, 2);
-static SENSOR_DEVICE_ATTR_RO(temp3_fault, temp_fault, 2);
-static SENSOR_DEVICE_ATTR_RO(temp3_min_alarm, temp_min_alarm, 2);
-static SENSOR_DEVICE_ATTR_RO(temp3_max_alarm, temp_max_alarm, 2);
+static SENSOR_DEVICE_ATTR(temp3_input, S_IRUGO, show_temp, NULL, 2);
+static SENSOR_DEVICE_ATTR(temp3_min, S_IRUGO | S_IWUSR, show_temp_min,
+	set_temp_min, 2);
+static SENSOR_DEVICE_ATTR(temp3_max, S_IRUGO | S_IWUSR, show_temp_max,
+	set_temp_max, 2);
+static SENSOR_DEVICE_ATTR(temp3_fault, S_IRUGO, show_temp_fault, NULL, 2);
+static SENSOR_DEVICE_ATTR(temp3_min_alarm, S_IRUGO, show_temp_min_alarm,
+	NULL, 2);
+static SENSOR_DEVICE_ATTR(temp3_max_alarm, S_IRUGO, show_temp_max_alarm,
+	NULL, 2);
 
-static SENSOR_DEVICE_ATTR_RO(temp4_input, temp, 3);
-static SENSOR_DEVICE_ATTR_RW(temp4_min, temp_min, 3);
-static SENSOR_DEVICE_ATTR_RW(temp4_max, temp_max, 3);
-static SENSOR_DEVICE_ATTR_RO(temp4_fault, temp_fault, 3);
-static SENSOR_DEVICE_ATTR_RO(temp4_min_alarm, temp_min_alarm, 3);
-static SENSOR_DEVICE_ATTR_RO(temp4_max_alarm, temp_max_alarm, 3);
+static SENSOR_DEVICE_ATTR(temp4_input, S_IRUGO, show_temp, NULL, 3);
+static SENSOR_DEVICE_ATTR(temp4_min, S_IRUGO | S_IWUSR, show_temp_min,
+	set_temp_min, 3);
+static SENSOR_DEVICE_ATTR(temp4_max, S_IRUGO | S_IWUSR, show_temp_max,
+	set_temp_max, 3);
+static SENSOR_DEVICE_ATTR(temp4_fault, S_IRUGO, show_temp_fault, NULL, 3);
+static SENSOR_DEVICE_ATTR(temp4_min_alarm, S_IRUGO, show_temp_min_alarm,
+	NULL, 3);
+static SENSOR_DEVICE_ATTR(temp4_max_alarm, S_IRUGO, show_temp_max_alarm,
+	NULL, 3);
 
 static DEVICE_ATTR_RO(fan1_input);
 static DEVICE_ATTR_RW(fan1_div);
@@ -569,11 +579,10 @@ static const struct attribute_group emc2103_temp4_group = {
 /***************************thermal cooling framework******************************/
 static int  __set_rpm(struct device *dev, unsigned long state)
 {
-	unsigned long period;
-	int ret = 0;
+
 	struct emc2103_data *data = emc2103_update_device(dev);
 	struct i2c_client *client = data->client;
-	unsigned long rpm_target;
+	unsigned long rpm_target = 0;
 
 	/* Datasheet states 16384 as maximum RPM target (table 3.2) */
 	rpm_target = clamp_val(rpm_target, 0, 16384);
@@ -632,7 +641,7 @@ keembay_cooling_set_cur_state(struct thermal_cooling_device *cdev,
 	ret = __set_rpm(ctx->dev, state);
 	ctx->rpm_fan_state = state;
 
-	printk("state %d", state);
+	printk("state %ld", state);
 	printk(KERN_WARNING "keembay_cooling_set_cur_state\n");
 	return 0;
 }
@@ -677,21 +686,14 @@ static int rpm_fan_of_get_cooling_data(struct device *dev,
 
 /***************************end-of thermal cooling framework**********************/
 
-
-
-
-
-
 static int
 emc2103_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
-
-
-
 	struct emc2103_data *data;
 	struct device *hwmon_dev;
 	struct keembay_cooling_data *d;
 	int status, idx = 0;
+	int ret;
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA))
 		return -EIO;
@@ -704,16 +706,6 @@ emc2103_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	i2c_set_clientdata(client, data);
 	data->client = client;
 	mutex_init(&data->update_lock);
-
-	/* Offset reg 0x21 bit 5 - disable SMBus time out function */
-	status = i2c_smbus_read_byte_data(client, REG_CONF2);
-	if ((status & BIT(5)) != BIT(5)) {
-		dev_info(&client->dev, "reg 0x%02x, value 0x%02x\n", REG_CONF2,
-			status);
-		i2c_smbus_write_byte_data(client, REG_CONF2, status | BIT(5));
-		status = i2c_smbus_read_byte_data(client, REG_CONF2);
-	}
-	dev_info(&client->dev, "reg 0x%02x, value 0x%02x\n", REG_CONF2, status);
 
 	/* 2103-2 and 2103-4 have 3 external diodes, 2103-1 has 1 */
 	status = i2c_smbus_read_byte_data(client, REG_PRODUCT_ID);
@@ -764,8 +756,6 @@ emc2103_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 /*******************thermal driver********************/
 
-
-	int ret;
 	d = devm_kzalloc(&client->dev, sizeof(*d), GFP_KERNEL);
 	if (!d) {
 		printk(KERN_WARNING "keembay_thermal_cooling_dev_kzalloc_failed\n");
@@ -794,7 +784,7 @@ ret = rpm_fan_of_get_cooling_data(&client->dev, d);
 }
 
 static const struct i2c_device_id emc2103_ids[] = {
-	{ "emc2103", 16 },
+	{ "emc2103", 0, },
 	{ /* LIST END */ }
 };
 MODULE_DEVICE_TABLE(i2c, emc2103_ids);
@@ -822,21 +812,18 @@ emc2103_detect(struct i2c_client *new_client, struct i2c_board_info *info)
 	return 0;
 }
 
-
 static struct i2c_driver emc2103_driver = {
 	.class		= I2C_CLASS_HWMON,
 	.driver = {
 		.name	= "emc2103",
 	},
-	.detect		= emc2103_detect,
 	.probe		= emc2103_probe,
 	.id_table	= emc2103_ids,
+	.detect		= emc2103_detect,
 	.address_list	= normal_i2c,
 };
 
 module_i2c_driver(emc2103_driver);
-
-
 
 MODULE_AUTHOR("Steve Glendinning <steve.glendinning@shawell.net>");
 MODULE_DESCRIPTION("SMSC EMC2103 hwmon driver");
