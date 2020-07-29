@@ -1,0 +1,211 @@
+From 9588d5b864dc88ad6bab8ce7c228027554845906 Mon Sep 17 00:00:00 2001
+From: Alex Williamson <alex.williamson@redhat.com>
+Date: Fri, 22 May 2020 13:17:32 -0600
+Subject: [PATCH 5/6] vfio-pci: Fault mmaps to enable vma tracking
+
+Rather than calling remap_pfn_range() when a region is mmap'd, setup
+a vm_ops handler to support dynamic faulting of the range on access.
+This allows us to manage a list of vmas actively mapping the area that
+we can later use to invalidate those mappings.  The open callback
+invalidates the vma range so that all tracking is inserted in the
+fault handler and removed in the close handler.
+
+Change-Id: If9f3734f81dfdf172e5d7df9024f30df29360532
+Tracked-On: PKT-3607
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+ drivers/vfio/pci/vfio_pci.c         | 76 ++++++++++++++++++++++++++++++++++++-
+ drivers/vfio/pci/vfio_pci_private.h |  7 ++++
+ include/linux/mm_types.h            | 49 ++++++++++++++++++++++++
+ 3 files changed, 130 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/vfio/pci/vfio_pci.c b/drivers/vfio/pci/vfio_pci.c
+index 550ab77..451cede 100644
+--- a/drivers/vfio/pci/vfio_pci.c
++++ b/drivers/vfio/pci/vfio_pci.c
+@@ -1120,6 +1120,70 @@ static ssize_t vfio_pci_write(void *device_data, const char __user *buf,
+ 	return vfio_pci_rw(device_data, (char __user *)buf, count, ppos, true);
+ }
+ 
++static int vfio_pci_add_vma(struct vfio_pci_device *vdev,
++			    struct vm_area_struct *vma)
++{
++	struct vfio_pci_mmap_vma *mmap_vma;
++
++	mmap_vma = kmalloc(sizeof(*mmap_vma), GFP_KERNEL);
++	if (!mmap_vma)
++		return -ENOMEM;
++
++	mmap_vma->vma = vma;
++
++	mutex_lock(&vdev->vma_lock);
++	list_add(&mmap_vma->vma_next, &vdev->vma_list);
++	mutex_unlock(&vdev->vma_lock);
++
++	return 0;
++}
++
++/*
++ * Zap mmaps on open so that we can fault them in on access and therefore
++ * our vma_list only tracks mappings accessed since last zap.
++ */
++static void vfio_pci_mmap_open(struct vm_area_struct *vma)
++{
++	zap_vma_ptes(vma, vma->vm_start, vma->vm_end - vma->vm_start);
++}
++
++static void vfio_pci_mmap_close(struct vm_area_struct *vma)
++{
++	struct vfio_pci_device *vdev = vma->vm_private_data;
++	struct vfio_pci_mmap_vma *mmap_vma;
++
++	mutex_lock(&vdev->vma_lock);
++	list_for_each_entry(mmap_vma, &vdev->vma_list, vma_next) {
++		if (mmap_vma->vma == vma) {
++			list_del(&mmap_vma->vma_next);
++			kfree(mmap_vma);
++			break;
++		}
++	}
++	mutex_unlock(&vdev->vma_lock);
++}
++
++static int vfio_pci_mmap_fault(struct vm_fault *vmf)
++{
++	struct vm_area_struct *vma = vmf->vma;
++	struct vfio_pci_device *vdev = vma->vm_private_data;
++
++	if (vfio_pci_add_vma(vdev, vma))
++		return VM_FAULT_OOM;
++
++	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
++			    vma->vm_end - vma->vm_start, vma->vm_page_prot))
++		return VM_FAULT_SIGBUS;
++
++	return VM_FAULT_NOPAGE;
++}
++
++static const struct vm_operations_struct vfio_pci_mmap_ops = {
++	.open = vfio_pci_mmap_open,
++	.close = vfio_pci_mmap_close,
++	.fault = vfio_pci_mmap_fault,
++};
++
+ static int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
+ {
+ 	struct vfio_pci_device *vdev = device_data;
+@@ -1185,8 +1249,14 @@ static int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
+ 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+ 	vma->vm_pgoff = (pci_resource_start(pdev, index) >> PAGE_SHIFT) + pgoff;
+ 
+-	return remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
+-			       req_len, vma->vm_page_prot);
++	/*
++	 * See remap_pfn_range(), called from vfio_pci_fault() but we can't
++	 * change vm_flags within the fault handler.  Set them now.
++	 */
++	vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
++	vma->vm_ops = &vfio_pci_mmap_ops;
++
++	return 0;
+ }
+ 
+ static void vfio_pci_request(void *device_data, unsigned int count)
+@@ -1243,6 +1313,8 @@ static int vfio_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ 	vdev->irq_type = VFIO_PCI_NUM_IRQS;
+ 	mutex_init(&vdev->igate);
+ 	spin_lock_init(&vdev->irqlock);
++	mutex_init(&vdev->vma_lock);
++	INIT_LIST_HEAD(&vdev->vma_list);
+ 
+ 	ret = vfio_add_group_dev(&pdev->dev, &vfio_pci_ops, vdev);
+ 	if (ret) {
+diff --git a/drivers/vfio/pci/vfio_pci_private.h b/drivers/vfio/pci/vfio_pci_private.h
+index f561ac1..4b78f12 100644
+--- a/drivers/vfio/pci/vfio_pci_private.h
++++ b/drivers/vfio/pci/vfio_pci_private.h
+@@ -63,6 +63,11 @@ struct vfio_pci_dummy_resource {
+ 	struct list_head	res_next;
+ };
+ 
++struct vfio_pci_mmap_vma {
++	struct vm_area_struct	*vma;
++	struct list_head	vma_next;
++};
++
+ struct vfio_pci_device {
+ 	struct pci_dev		*pdev;
+ 	void __iomem		*barmap[PCI_STD_RESOURCE_END + 1];
+@@ -95,6 +100,8 @@ struct vfio_pci_device {
+ 	struct eventfd_ctx	*err_trigger;
+ 	struct eventfd_ctx	*req_trigger;
+ 	struct list_head	dummy_resources_list;
++	struct mutex		vma_lock;
++	struct list_head	vma_list;
+ };
+ 
+ #define is_intx(vdev) (vdev->irq_type == VFIO_PCI_INTX_IRQ_INDEX)
+diff --git a/include/linux/mm_types.h b/include/linux/mm_types.h
+index be5d445..5dd9f44 100644
+--- a/include/linux/mm_types.h
++++ b/include/linux/mm_types.h
+@@ -620,6 +620,55 @@ static inline bool mm_tlb_flush_nested(struct mm_struct *mm)
+ 
+ struct vm_fault;
+ 
++/**
++ * typedef vm_fault_t - Return type for page fault handlers.
++ *
++ * Page fault handlers return a bitmask of %VM_FAULT values.
++ */
++typedef __bitwise unsigned int vm_fault_t;
++
++/**
++ * enum vm_fault_reason - Page fault handlers return a bitmask of
++ * these values to tell the core VM what happened when handling the
++ * fault. Used to decide whether a process gets delivered SIGBUS or
++ * just gets major/minor fault counters bumped up.
++ *
++ * @VM_FAULT_OOM:               Out Of Memory
++ * @VM_FAULT_SIGBUS:            Bad access
++ * @VM_FAULT_MAJOR:             Page read from storage
++ * @VM_FAULT_WRITE:             Special case for get_user_pages
++ * @VM_FAULT_HWPOISON:          Hit poisoned small page
++ * @VM_FAULT_HWPOISON_LARGE:    Hit poisoned large page. Index encoded
++ *                              in upper bits
++ * @VM_FAULT_SIGSEGV:           segmentation fault
++ * @VM_FAULT_NOPAGE:            ->fault installed the pte, not return page
++ * @VM_FAULT_LOCKED:            ->fault locked the returned page
++ * @VM_FAULT_RETRY:             ->fault blocked, must retry
++ * @VM_FAULT_FALLBACK:          huge page fault failed, fall back to small
++ * @VM_FAULT_DONE_COW:          ->fault has fully handled COW
++ * @VM_FAULT_NEEDDSYNC:         ->fault did not modify page tables and needs
++ *                              fsync() to complete (for synchronous page faults
++ *                              in DAX)
++ * @VM_FAULT_HINDEX_MASK:       mask HINDEX value
++ *
++ */
++enum vm_fault_reason {
++        VM_FAULT_OOM            = (__force vm_fault_t)0x000001,
++        VM_FAULT_SIGBUS         = (__force vm_fault_t)0x000002,
++        VM_FAULT_MAJOR          = (__force vm_fault_t)0x000004,
++        VM_FAULT_WRITE          = (__force vm_fault_t)0x000008,
++        VM_FAULT_HWPOISON       = (__force vm_fault_t)0x000010,
++        VM_FAULT_HWPOISON_LARGE = (__force vm_fault_t)0x000020,
++        VM_FAULT_SIGSEGV        = (__force vm_fault_t)0x000040,
++        VM_FAULT_NOPAGE         = (__force vm_fault_t)0x000100,
++        VM_FAULT_LOCKED         = (__force vm_fault_t)0x000200,
++        VM_FAULT_RETRY          = (__force vm_fault_t)0x000400,
++        VM_FAULT_FALLBACK       = (__force vm_fault_t)0x000800,
++        VM_FAULT_DONE_COW       = (__force vm_fault_t)0x001000,
++        VM_FAULT_NEEDDSYNC      = (__force vm_fault_t)0x002000,
++        VM_FAULT_HINDEX_MASK    = (__force vm_fault_t)0x0f0000,
++};
++
+ struct vm_special_mapping {
+ 	const char *name;	/* The name, e.g. "[vdso]". */
+ 
+-- 
+2.7.4
+
