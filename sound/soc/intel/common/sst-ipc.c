@@ -70,7 +70,7 @@ again:
 					  msecs_to_jiffies(IPC_TIMEOUT_MSECS));
 
 	if (!ret) {
-		if (ipc->ops.is_dsp_busy && !ipc->ops.is_dsp_busy(ipc->dsp))
+		if (!ipc->ops.is_dsp_busy || !ipc->ops.is_dsp_busy(ipc->dsp))
 			/* real timeout */
 			goto end;
 		/*
