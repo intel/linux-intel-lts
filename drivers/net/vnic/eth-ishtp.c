@@ -414,11 +414,9 @@ static int eth_ishtp_cl_reset(struct ishtp_cl_device *cl_device)
 	struct eth_ishtp_prv *prv;
 
 	prv = (struct eth_ishtp_prv *)ishtp_get_drvdata(cl_device);
-	if (!prv) {
-		dev_err(ishtp_device(prv->cl_device),
-			"Client driver not ready yet\n");
+	if (!prv)
 		return -ENODEV;
-	}
+
 	schedule_work(&prv->reset_work);
 	return 0;
 }
