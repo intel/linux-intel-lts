@@ -642,7 +642,7 @@ int skl_ipc_process_notification(struct sst_generic_ipc *ipc,
 	}
 
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
-	sst_ipc_tx_msg_reply_complete(ipc, ipc->msg);
+	complete(&ipc->complete);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 
 	return ret;
@@ -719,7 +719,6 @@ void skl_ipc_process_reply(struct sst_generic_ipc *ipc,
 		}
 	}
 	spin_lock_irqsave(&ipc->dsp->spinlock, flags);
-	ipc->response_processed = true;
 	sst_ipc_tx_msg_reply_complete(ipc, msg);
 	spin_unlock_irqrestore(&ipc->dsp->spinlock, flags);
 }

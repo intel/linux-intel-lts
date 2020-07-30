@@ -234,6 +234,7 @@ EXPORT_SYMBOL_GPL(sst_ipc_reply_find_msg);
 void sst_ipc_tx_msg_reply_complete(struct sst_generic_ipc *ipc,
 	struct ipc_message *msg)
 {
+	ipc->response_processed = true;
 	if (msg->wait)
 		complete(&ipc->complete);
 }
