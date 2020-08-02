@@ -134,17 +134,6 @@ bool intel_vgpu_has_huge_gtt(struct drm_i915_private *dev_priv)
 	return dev_priv->vgpu.caps & VGT_CAPS_HUGE_GTT;
 }
 
-struct _balloon_info_ {
-	/*
-	 * There are up to 2 regions per mappable/unmappable graphic
-	 * memory that might be ballooned. Here, index 0/1 is for mappable
-	 * graphic memory, 2/3 for unmappable graphic memory.
-	 */
-	struct drm_mm_node space[4];
-};
-
-static struct _balloon_info_ bl_info;
-
 /**
  * intel_vgt_deballoon - deballoon reserved graphics address trunks
  * @ggtt: the global GGTT from which we reserved earlier
@@ -163,7 +152,7 @@ void intel_vgt_deballoon(struct i915_ggtt *ggtt)
 	drm_dbg(&dev_priv->drm, "VGT deballoon.\n");
 
 	for (i = 0; i < 4; i++)
-		i915_ggtt_deballoon(ggtt, &bl_info.space[i]);
+		i915_ggtt_deballoon(ggtt, &ggtt->balloon[i]);
 }
 
 /**
@@ -253,7 +242,7 @@ int intel_vgt_balloon(struct i915_ggtt *ggtt)
 	/* Unmappable graphic memory ballooning */
 	if (unmappable_base > ggtt->mappable_end) {
 		ret = i915_ggtt_balloon(ggtt, ggtt->mappable_end,
-					unmappable_base, &bl_info.space[2]);
+					unmappable_base, &ggtt->balloon[2]);
 
 		if (ret)
 			goto err;
@@ -261,7 +250,7 @@ int intel_vgt_balloon(struct i915_ggtt *ggtt)
 
 	if (unmappable_end < ggtt_end) {
 		ret = i915_ggtt_balloon(ggtt, unmappable_end, ggtt_end,
-					&bl_info.space[3]);
+					&ggtt->balloon[3]);
 		if (ret)
 			goto err_upon_mappable;
 	}
@@ -269,7 +258,7 @@ int intel_vgt_balloon(struct i915_ggtt *ggtt)
 	/* Mappable graphic memory ballooning */
 	if (mappable_base) {
 		ret = i915_ggtt_balloon(ggtt, 0, mappable_base,
-					&bl_info.space[0]);
+					&ggtt->balloon[0]);
 
 		if (ret)
 			goto err_upon_unmappable;
@@ -277,7 +266,7 @@ int intel_vgt_balloon(struct i915_ggtt *ggtt)
 
 	if (mappable_end < ggtt->mappable_end) {
 		ret = i915_ggtt_balloon(ggtt, mappable_end, ggtt->mappable_end,
-					&bl_info.space[1]);
+					&ggtt->balloon[1]);
 
 		if (ret)
 			goto err_below_mappable;
@@ -287,11 +276,11 @@ int intel_vgt_balloon(struct i915_ggtt *ggtt)
 	return 0;
 
 err_below_mappable:
-	i915_ggtt_deballoon(ggtt, &bl_info.space[0]);
+	i915_ggtt_deballoon(ggtt, &ggtt->balloon[0]);
 err_upon_unmappable:
-	i915_ggtt_deballoon(ggtt, &bl_info.space[3]);
+	i915_ggtt_deballoon(ggtt, &ggtt->balloon[3]);
 err_upon_mappable:
-	i915_ggtt_deballoon(ggtt, &bl_info.space[2]);
+	i915_ggtt_deballoon(ggtt, &ggtt->balloon[2]);
 err:
 	drm_err(&dev_priv->drm, "VGT balloon fail\n");
 	return ret;
