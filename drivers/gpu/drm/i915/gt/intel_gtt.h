@@ -571,6 +571,10 @@ static inline bool i915_ggtt_has_aperture(const struct i915_ggtt *ggtt)
 	return ggtt->mappable_end > 0;
 }
 
+int i915_ggtt_balloon(struct i915_ggtt *ggtt, u64 start, u64 end,
+		      struct drm_mm_node *node);
+void i915_ggtt_deballoon(struct i915_ggtt *ggtt, struct drm_mm_node *node);
+
 int i915_ppgtt_init_hw(struct intel_gt *gt);
 
 struct i915_ppgtt *i915_ppgtt_create(struct intel_gt *gt,
