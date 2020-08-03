@@ -219,7 +219,7 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	case HDDL_READ_SW_ID_DATA:
 		if (copy_from_user(&swid_data, (int32_t *)arg,
-			sizeof(T_SW_ID_HDDL_DATA)))
+				sizeof(T_SW_ID_HDDL_DATA)))
 			return -EFAULT;
 		for (i = 0; i < HDDL_MAX_DEVICE; i++) {
 			for (j = 0; j < HDDL_MAX_BAY_DEVICE; j++) {
@@ -723,7 +723,7 @@ static int hddl_device_thread_create(void)
 	}
 	/*Creating device*/
 	if ((device_create(dev_class, NULL, dev, NULL, "hddl_dev"))
-			== NULL) {
+		== NULL) {
 		dev_info(hddl_dbg, "Cannot create the Device 1\n");
 		goto r_device;
 	}

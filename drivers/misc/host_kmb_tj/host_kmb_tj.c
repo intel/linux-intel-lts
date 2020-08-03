@@ -62,7 +62,9 @@ static int keembay_get_temp_host(struct thermal_zone_device *thermal,
 	default:
 		break;
 	}
-	//dev_info(&ktherm->i2c_c->dev, "HOST_KMB_TJ[%d] %d\n", kmb_zone_info->sensor_type, *temp);
+	//dev_info(&thermal->device, "HOST_KMB_TJ[%d] %d\n",
+	//	kmb_zone_info->sensor_type,
+	//	*temp);
 	spin_unlock(&ktherm->lock);
 
 	/* TODO: How to do error handling here */
@@ -98,13 +100,13 @@ static int keembay_thermal_notify_host(struct thermal_zone_device *zone,
 
 	switch (type) {
 	case THERMAL_TRIP_ACTIVE:
-		printk(KERN_WARNING "Thermal reached to active temperature\n");
+		dev_info(&zone->device, "Thermal reached to active temperature\n");
 		break;
 	case THERMAL_TRIP_CRITICAL:
-		printk(KERN_WARNING "Thermal reached to critical temperature\n");
+		dev_info(&zone->device, "Thermal reached to critical temperature\n");
 		break;
 	default:
-		printk(KERN_WARNING "Thermal not reached to active temperature\n");
+		dev_info(&zone->device, "Thermal not reached to active temperature\n");
 		break;
 	}
 	thermal_generate_netlink_event(zone, type);
@@ -140,9 +142,9 @@ static int keembay_unbind_host(struct thermal_zone_device *tz,
 		      struct thermal_cooling_device *cdev)
 {
 	int ret;
-	printk("inside unbind");
+
 	if (strncmp("keembay_thermal", cdev->type, THERMAL_NAME_LENGTH) == 0) {
-	ret = thermal_zone_unbind_cooling_device(tz, 0, cdev);
+		ret = thermal_zone_unbind_cooling_device(tz, 0, cdev);
 	if (ret) {
 		dev_err(&tz->device,
 			"unbinding zone %s with cdev %s failed:%d\n",
@@ -181,8 +183,8 @@ int keembay_thermal_zone_register_host(
 		);
 	if (IS_ERR(zone_trip_info->tz)) {
 		ret = PTR_ERR(zone_trip_info->tz);
-		printk(KERN_WARNING "failed to"
-				"register thermal zone device %d\n", ret);
+		dev_err(&zone_trip_info->tz->device,
+			"failed to register thermal zone device %d\n", ret);
 	}
 	return 0;
 }
@@ -195,7 +197,10 @@ int keembay_thermal_zone_unregister_host(
 
 	spin_lock(&ktherm->lock);
 	thermal_zone_device_unregister(zone_trip_info->tz);
-	dev_info(ktherm->dev, "thermal_zone_device_unregister %s\n", zone_trip_info->sensor_name);
+	dev_info(ktherm->dev,
+		"thermal_zone_device_unregister %s\n",
+		zone_trip_info->sensor_name
+	);
 	spin_unlock(&ktherm->lock);
 	return 0;
 }
@@ -272,66 +277,51 @@ static int host_kmb_tj_probe(struct i2c_client *client,
 		i2c_str = "xlk";
 
 
-	host_kmb_trip_info = (struct kmb_trip_point_info *)kzalloc(
-		sizeof(struct kmb_trip_point_info) * KMB_TJ_SENSORS, GFP_KERNEL);
-	for (i = 0; i < KMB_TJ_SENSORS; i++) {
-		switch (i) {
-		case 0:
-			memcpy(&host_kmb_trip_info[0], &mss_zone_trip_info_host,
-				sizeof(struct kmb_trip_point_info));
+	host_kmb_trip_info = kzalloc(
+		sizeof(struct kmb_trip_point_info) * KMB_TJ_SENSORS,
+		GFP_KERNEL);
 
-			host_kmb_trip_info[0].sensor_name = kasprintf(GFP_KERNEL,
-				"mss_%s-%x", i2c_str, *device_id);
+	/* thermal zone registeration for all zones */
+	memcpy(&host_kmb_trip_info[0],
+		&mss_zone_trip_info_host,
+		sizeof(struct kmb_trip_point_info));
+	host_kmb_trip_info[0].sensor_name
+		= kasprintf(GFP_KERNEL, "mss_%s-%x", i2c_str, *device_id);
+	host_kmb_trip_info[0].thermal_info =  kzalloc(
+		sizeof(struct keembay_therm_info), GFP_KERNEL);
+	host_kmb_trip_info[0].thermal_info->i2c_c = client;
+	keembay_thermal_zone_register_host(&host_kmb_trip_info[0]);
 
-			host_kmb_trip_info[0].thermal_info =  kzalloc(
-			sizeof(struct keembay_therm_info), GFP_KERNEL);
+	memcpy(&host_kmb_trip_info[1], &css_zone_trip_info_host,
+		sizeof(struct kmb_trip_point_info));
+	host_kmb_trip_info[1].sensor_name = kasprintf(GFP_KERNEL,
+		"css_%s-%x", i2c_str, *device_id);
+	host_kmb_trip_info[1].thermal_info =  kzalloc(
+		sizeof(struct keembay_therm_info), GFP_KERNEL);
+	host_kmb_trip_info[1].thermal_info->i2c_c = client;
+	keembay_thermal_zone_register_host(&host_kmb_trip_info[1]);
 
-			host_kmb_trip_info[0].thermal_info->i2c_c = client;
-			break;
-		case 1:
-			memcpy(&host_kmb_trip_info[1], &css_zone_trip_info_host,
-				sizeof(struct kmb_trip_point_info));
-
-			host_kmb_trip_info[1].sensor_name = kasprintf(GFP_KERNEL,
-				"css_%s-%x", i2c_str, *device_id);
-
-			host_kmb_trip_info[1].thermal_info =  kzalloc(
-			sizeof(struct keembay_therm_info), GFP_KERNEL);
-
-			host_kmb_trip_info[1].thermal_info->i2c_c = client;
-			break;
-		case 2:
-			memcpy(&host_kmb_trip_info[2], &nce_max_zone_trip_info_host,
-				sizeof(struct kmb_trip_point_info));
-
-			host_kmb_trip_info[2].sensor_name = kasprintf(GFP_KERNEL,
-				"nce_%s-%x", i2c_str, *device_id);
-
-			host_kmb_trip_info[2].thermal_info =
+	memcpy(&host_kmb_trip_info[2], &nce_max_zone_trip_info_host,
+		sizeof(struct kmb_trip_point_info));
+	host_kmb_trip_info[2].sensor_name = kasprintf(GFP_KERNEL,
+		"nce_%s-%x", i2c_str, *device_id);
+	host_kmb_trip_info[2].thermal_info =
 		kzalloc(sizeof(struct keembay_therm_info), GFP_KERNEL);
+	host_kmb_trip_info[2].thermal_info->i2c_c = client;
+	keembay_thermal_zone_register_host(&host_kmb_trip_info[2]);
 
-			host_kmb_trip_info[2].thermal_info->i2c_c = client;
-			break;
-		case 3:
-			memcpy(&host_kmb_trip_info[3], &soc_max_zone_trip_info_host,
-				sizeof(struct kmb_trip_point_info));
+	memcpy(&host_kmb_trip_info[3], &soc_max_zone_trip_info_host,
+		sizeof(struct kmb_trip_point_info));
+	host_kmb_trip_info[3].sensor_name = kasprintf(
+		GFP_KERNEL, "soc_%s-%x", i2c_str, *device_id);
+	host_kmb_trip_info[3].thermal_info =  kzalloc(
+		sizeof(struct keembay_therm_info), GFP_KERNEL);
+	host_kmb_trip_info[3].thermal_info->i2c_c = client;
+	keembay_thermal_zone_register_host(&host_kmb_trip_info[3]);
 
-			host_kmb_trip_info[3].sensor_name = kasprintf(
-			GFP_KERNEL, "soc_%s-%x", i2c_str, *device_id);
-
-			host_kmb_trip_info[3].thermal_info =  kzalloc(
-			sizeof(struct keembay_therm_info), GFP_KERNEL);
-
-			host_kmb_trip_info[3].thermal_info->i2c_c = client;
-			break;
-		default:
-			break;
-		}
-		keembay_thermal_zone_register_host(&host_kmb_trip_info[i]);
-	}
 	i2c_set_clientdata(client, host_kmb_trip_info);
 
-	printk(KERN_INFO "host_kmb_tj: probe success\n");
+	dev_info(client->dev, "host_kmb_tj: probe success\n");
 
 	return 0;
 }
@@ -341,14 +331,15 @@ static int host_kmb_tj_exit(struct i2c_client *client)
 	struct kmb_trip_point_info *host_kmb_trip_info =
 					i2c_get_clientdata(client);
 	int i;
+
 	for (i = 0; i < KMB_TJ_SENSORS; i++) {
 
 		keembay_thermal_zone_unregister_host(&host_kmb_trip_info[i]);
 
 		if (host_kmb_trip_info[i].thermal_info != NULL)
-			kfree (host_kmb_trip_info[i].thermal_info);
+			kfree(host_kmb_trip_info[i].thermal_info);
 	}
-	kfree (host_kmb_trip_info);
+	kfree(host_kmb_trip_info);
 	return 0;
 }
 

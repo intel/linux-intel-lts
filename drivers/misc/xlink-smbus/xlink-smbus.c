@@ -84,37 +84,21 @@ static s32 handle_slave_mode(struct i2c_client *slave, struct xlink_msg *msg)
 	u8 temp;
 
 	/* refer https://lwn.net/Articles/640346/ for protocol */
-	//dev_info(dbgxi2c,
-		//"handle_slave_mode:
-		//read_write[%d] protocol[%d] command[%x]\n",
-		//msg->read_write,
-		//msg->protocol,
-		//msg->command);
 
 	/* send the command as first write */
-	//dev_info(dbgxi2c, "handle_slave_mode: I2C_SLAVE_WRITE_REQUESTED:\n");
 	i2c_slave_event(slave, I2C_SLAVE_WRITE_REQUESTED, 0 /* unused */);
 	i2c_slave_event(slave, I2C_SLAVE_WRITE_RECEIVED, &(msg->command));
 
 	/* now handle specifics to read/write */
 	if (msg->read_write == I2C_SMBUS_WRITE) {
 		if (msg->protocol == I2C_SMBUS_BYTE_DATA) {
-			//dev_info(dbgxi2c, "handle_slave_mode:
-			//I2C_SLAVE_WRITE_RECEIVED: D[%X]\n",
-			//msg->data.byte);
 			i2c_slave_event(slave, I2C_SLAVE_WRITE_RECEIVED,
 					&(msg->data.byte));
 		} else if (msg->protocol == I2C_SMBUS_WORD_DATA) {
-			//dev_info(dbgxi2c, "handle_slave_mode:
-			//I2C_SLAVE_WRITE_RECEIVED: D[%X]\n",
-			//msg->data.word & 0XFF);
 			temp = msg->data.word & 0xFF;
 			i2c_slave_event(slave,
 					I2C_SLAVE_WRITE_RECEIVED,
 					&temp);
-			//dev_info(dbgxi2c, "handle_slave_mode:
-			//I2C_SLAVE_WRITE_RECEIVED: D[%X]\n",
-			//(msg->data.word >> 8) & 0xFF);
 			temp = (msg->data.word >> 8) & 0xFF;
 			i2c_slave_event(slave,
 					I2C_SLAVE_WRITE_RECEIVED,
@@ -123,18 +107,15 @@ static s32 handle_slave_mode(struct i2c_client *slave, struct xlink_msg *msg)
 			int i;
 
 			for (i = 1; (i < msg->data.block[0] ||
-				i <= I2C_SMBUS_BLOCK_MAX); ++i) {
-				//dev_info(dbgxi2c, "handle_slave_mode:
-				//I2C_SLAVE_WRITE_RECEIVED: D[%X]\n",
-				//msg->data.block[i]);
+					i <= I2C_SMBUS_BLOCK_MAX); ++i) {
 				i2c_slave_event(slave,
 						I2C_SLAVE_WRITE_RECEIVED,
 						&(msg->data.block[i]));
 			}
 		} else {
 			dev_err(dbgxi2c,
-				"unknown protocol (%d)"
-				"received in handle_slave_mode\n",
+				"unknown protocol (%d) received in %s\n",
+				__func__,
 				msg->protocol);
 		}
 	} else {
@@ -142,22 +123,14 @@ static s32 handle_slave_mode(struct i2c_client *slave, struct xlink_msg *msg)
 			i2c_slave_event(slave,
 					I2C_SLAVE_READ_REQUESTED,
 					&(msg->data.byte));
-			//dev_info(dbgxi2c, "handle_slave_mode:
-			//I2C_SLAVE_READ_REQUESTED: D[%X]\n",
-			//msg->data.byte);
 		} else if (msg->protocol == I2C_SMBUS_WORD_DATA) {
 			i2c_slave_event(slave,
 					I2C_SLAVE_READ_REQUESTED,
 					&temp);
-			//dev_info(dbgxi2c, "handle_slave_mode:
-			//I2C_SLAVE_READ_REQUESTED: D[%X]\n",
-			//temp);
 			msg->data.word = temp << 8;
 			i2c_slave_event(slave,
 					I2C_SLAVE_READ_REQUESTED,
 					&temp);
-			//dev_info(dbgxi2c, "handle_slave_mode:
-			//I2C_SLAVE_READ_REQUESTED: D[%X]\n", temp);
 			msg->data.word |= temp;
 		} else if (msg->protocol == I2C_SMBUS_BLOCK_DATA) {
 			int i;
@@ -167,21 +140,15 @@ static s32 handle_slave_mode(struct i2c_client *slave, struct xlink_msg *msg)
 				i2c_slave_event(slave,
 						I2C_SLAVE_READ_REQUESTED,
 						&(msg->data.block[i]));
-				//dev_info(dbgxi2c, "handle_slave_mode:
-				//I2C_SLAVE_READ_REQUESTED: D[%X]\n",
-				//msg->data.block[i]);
 			}
 		} else {
-			dev_err(dbgxi2c, "unknown protocol (%d)"
-			"received in handle_slave_mode\n", msg->protocol);
+			dev_err(dbgxi2c,
+				"unknown protocol (%d) received in %s\n",
+				__func__,
+				msg->protocol);
 		}
-		i2c_slave_event(slave,
-				I2C_SLAVE_READ_PROCESSED,
-				&temp);
-		//dev_info(dbgxi2c, "handle_slave_mode:
-		//I2C_SLAVE_READ_PROCESSED: D[%X]\n", temp);
+		i2c_slave_event(slave, I2C_SLAVE_READ_PROCESSED, &temp);
 	}
-	//dev_info(dbgxi2c, "handle_slave_mode: I2C_SLAVE_STOP\n");
 	i2c_slave_event(slave, I2C_SLAVE_STOP, 0 /* unused */);
 	return 0;
 }
@@ -222,23 +189,23 @@ static s32 xlink_smbus_xfer(struct i2c_adapter *adap, u16 addr,
 		msg->data = *data;
 	msg->status = 0;
 	devH = adapt_data->xhandle;
-	//dev_info(dbgxi2c, "devH = %d\n", devH->sw_device_id);
-	//dev_info(dbgxi2c, "xlink channel = %d\n", adapt_data->channel);
 	xerr = xlink_write_data(adapt_data->xhandle, adapt_data->channel,
 				(u8 *)msg,
 				sizeof(struct xlink_msg));
 	kfree(msg);
 	if (xerr != X_LINK_SUCCESS) {
-		dev_info(dbgxi2c, "xlink_write_data failed (%d)"
-			"dropping packet.\n",
+		dev_info(dbgxi2c, "xlink_write_data failed (%d) dropping packet.\n",
 			xerr);
 		return -ENODEV;
 	}
-	//dev_info(dbgxi2c, "xlink_write_data - success[%d]\n", xerr);
-/* TODO: handle timeout and return time out error code to the caller of xfer */
 #endif	/* CONFIG_XLINKI2C_ADAPTER */
-	if (wait_for_completion_interruptible_timeout(&adapt_data->work, 4*HZ) > 0) {
-		msg = (list_first_entry(&adapt_data->head, struct xlink_msg, node));
+	if (wait_for_completion_interruptible_timeout(
+			&adapt_data->work,
+			4*HZ) > 0) {
+		msg = list_first_entry(
+			&adapt_data->head,
+			struct xlink_msg,
+			node);
 		list_del(&msg->node);
 		if (data)
 			*data = msg->data;
@@ -277,33 +244,17 @@ static int xlinki2c_receive_thread(void *param)
 						(uint8_t *)msg, &size);
 		if (xerr != X_LINK_SUCCESS) {
 			if (xerr != X_LINK_TIMEOUT) {
-				dev_warn(dev, "[%d]xlink_read_data failed (%d)"
-					"dropping packet.\n",
+				dev_warn(dev,
+					"[%d] Error (%d) dropping packet.\n",
 					adapt_data->adap->nr, xerr);
 			}
 			kfree(msg);
 			continue;
 		}
-		//dev_info(dbgxi2c, "xlink_read_data_to_buffer[%d][%d]\n",
-		//xerr, size);
 		xlink_release_data(adapt_data->xhandle, adapt_data->channel,
 						NULL);
-		//dev_info(dbgxi2c, "xlink_release_data\n");
 		adap = get_adapter_from_channel(adapt_data->channel);
 		if (adap) {
-				//dev_info(dbgxi2c, "i2c-%d parameters:\n",
-				//adap->nr);
-				//dev_info(dbgxi2c, "addr = %.4x\n",
-				//msg->addr);
-				//dev_info(dbgxi2c, "flags = %.4x\n",
-				//msg->flags);
-				//dev_info(dbgxi2c, "read_write = %s\n",
-				//msg.read_write == I2C_SMBUS_WRITE ?
-				//"write" : "read");
-				//dev_info(dbgxi2c, "command = %d\n",
-				//msg->command);
-				//dev_info(dbgxi2c, "protocol = %d\n",
-				//msg->protocol);
 #if IS_ENABLED(CONFIG_I2C_SLAVE)
 			if (adapt_data->slave != NULL) {
 				msg->status =
@@ -323,23 +274,17 @@ static int xlinki2c_receive_thread(void *param)
 			}
 #endif
 	/* send back the complete message that carries status back to sender */
-			//dev_info(dbgxi2c, "xlink_write_data %d\n",
-			//msg.addr);
 			xlink_write_data(adapt_data->xhandle,
 			adapt_data->channel, (u8 *)msg,
 			sizeof(struct xlink_msg));
 			kfree(msg);
 		} else {
 			/* this is an adapter on its own. */
-	/* TODO: add this msg to the list in adapt_data. refer xlink-pcie for the usage of thread-safe list */
 			list_add_tail(&msg->node, &adapt_data->head);
-			//dev_info(dbgxi2c, "list_add[%d]\n", msg.addr);
 			complete(&adapt_data->work);
-			//dev_info(dbgxi2c, "signal completed\n");
 		}
 	}
-	dev_info(dev, "[%d]xlinki2c_receive_thread stopped.\n",
-			adapt_data->adap->nr);
+	dev_info(dev, "[%d] %s stopped\n", __func__, adapt_data->adap->nr);
 
 	return 0;
 }
@@ -349,7 +294,6 @@ static u32 xlink_smbus_func(struct i2c_adapter *adapter)
 	u32 func = I2C_FUNC_SMBUS_QUICK | I2C_FUNC_SMBUS_BYTE |
 		I2C_FUNC_SMBUS_BYTE_DATA | I2C_FUNC_SMBUS_WORD_DATA |
 		I2C_FUNC_SMBUS_BLOCK_DATA;
-	//dev_info(dbgxi2c, "Reporting func %X\n", func);
 
 	return func;
 }
@@ -434,11 +378,10 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 	dev_info(&adap->dev, "xlink_smbus_adapter[%d] [%d]\n", rc, adap->nr);
 	/* create receiver thread */
 	adapt_data->task_recv = kthread_run(xlinki2c_receive_thread,
-															adapt_data,
-															"xlinki2c_receive_thread");
-	if (adapt_data->task_recv == NULL) {
-		printk("xlinki2c_receive_thread Thread creation failed");
-	}
+					adapt_data,
+					"xlinki2c_receive_thread");
+	if (adapt_data->task_recv == NULL)
+		dev_info(dev, "%s Thread creation failed", __func__);
 	return rc;
 }
 
@@ -455,7 +398,8 @@ static int xlink_i2c_remove(struct platform_device *pdev)
 	/* close the channel and disconnect */
 	xlink_close_channel(adapt_data->xhandle, adapt_data->channel);
 	dev_info(dev, "close the channel...\n");
-	//i2c_del_adapter(adapt_data->adap); /* This will block the dynamic registration */
+	/* This will block the dynamic registration */
+	//i2c_del_adapter(adapt_data->adap);
 	kfree(adapt_data);
 	dev_info(dev, "delete the adapter...\n");
 

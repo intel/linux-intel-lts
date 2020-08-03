@@ -62,6 +62,7 @@ static int kmb_sensor_read_temp(void __iomem *regs_val,
 }
 
 int kmb_tj_temp_list[6];
+EXPORT_SYMBOL_GPL(kmb_tj_temp_list);
 static int keembay_get_temp(struct thermal_zone_device *thermal,
 							int *temp)
 {
@@ -265,7 +266,7 @@ static int keembay_thermal_probe(struct platform_device *pdev)
 	int ret;
 	int error;
 
-	printk(KERN_INFO "Keembay thermal probe \n");
+	dev_info(&pdev->dev, "Keembay thermal probe\n");
 
 	g_thermal_data = devm_kzalloc(&pdev->dev,
 					sizeof(struct keembay_therm_info),
@@ -428,7 +429,6 @@ struct kmb_trip_point_info soc_zone_trip_info = {
 
 static int hddl_device_thermal_init(void)
 {
-	printk(KERN_INFO "Keembay thermal init \n");
 	keembay_thermal_zone_register(&mss_zone_trip_info);
 	keembay_thermal_zone_register(&css_zone_trip_info);
 	keembay_thermal_zone_register(&nce_zone_trip_info);
