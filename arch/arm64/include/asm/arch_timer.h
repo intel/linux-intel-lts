@@ -224,6 +224,27 @@ static __always_inline u64 __arch_counter_get_cntvct(void)
 	return cnt;
 }
 
+#ifdef CONFIG_ARCH_KEEMBAY
+static __always_inline u64 __arch_counter_get_cntvct_wa(void)
+{
+	u64 prev, cnt, next;
+	int retries = 30;
+
+	isb();
+	preempt_disable_notrace();
+	while (retries--) {
+		prev = read_sysreg(cntvct_el0);
+		cnt = read_sysreg(cntvct_el0);
+		next = read_sysreg(cntvct_el0);
+		if (cnt >= prev && next >= cnt)
+			break;
+	}
+	preempt_enable_notrace();
+	arch_counter_enforce_ordering(cnt);
+	return cnt;
+}
+#endif // CONFIG_ARCH_KEEMBAY
+
 #undef arch_counter_enforce_ordering
 
 static inline int arch_timer_arch_init(void)
