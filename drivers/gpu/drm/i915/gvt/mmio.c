@@ -250,6 +250,8 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 		/* set the bit 0:2(Core C-State ) to C0 */
 		vgpu_vreg_t(vgpu, GEN6_GT_CORE_STATUS) = 0;
 
+		vgpu_vreg_t(vgpu, GUC_STATUS) |= GS_MIA_IN_RESET;
+
 		if (IS_BROADWELL(dev_priv)) {
 			vgpu_vreg_t(vgpu, PCH_ADPA) &= ~ADPA_CRT_HOTPLUG_MONITOR_MASK;
 			for (pipe = PIPE_A; pipe <= PIPE_C; pipe++) {
