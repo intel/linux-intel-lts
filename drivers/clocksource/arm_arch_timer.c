@@ -170,6 +170,11 @@ static notrace u64 arch_counter_get_cntvct(void)
 	return __arch_counter_get_cntvct();
 }
 
+static notrace u64 arch_counter_get_cntvct_wa(void)
+{
+	return __arch_counter_get_cntvct_wa();
+}
+
 /*
  * Default to cp15 based access because arm64 uses this function for
  * sched_clock() before DT is probed and the cp15 method is guaranteed
@@ -1004,8 +1009,10 @@ static void __init arch_counter_register(unsigned type)
 		    arch_timer_uses_ppi == ARCH_TIMER_VIRT_PPI) {
 			if (arch_timer_counter_has_wa())
 				rd = arch_counter_get_cntvct_stable;
-			else
-				rd = arch_counter_get_cntvct;
+			else {
+				rd = arch_counter_get_cntvct_wa;
+				pr_info("Keembay applied clocksource workaround\n");
+			}
 		} else {
 			if (arch_timer_counter_has_wa())
 				rd = arch_counter_get_cntpct_stable;
