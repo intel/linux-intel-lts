@@ -3,3 +3,6 @@
 
 # CVE-2019-18808
 0003-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
+
+# CVE-2020-16166
+0001-random32-update-the-net-random-state-on-interrupt-an.patch
