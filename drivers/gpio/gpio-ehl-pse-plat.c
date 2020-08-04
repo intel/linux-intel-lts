@@ -256,8 +256,6 @@ static int ehl_pse_irq_set_type(struct irq_data *d, unsigned int type)
 
 	raw_spin_unlock_irqrestore(&priv->lock, flags);
 
-	pm_runtime_put(priv->dev->parent);
-
 	return 0;
 }
 
@@ -271,6 +269,7 @@ static int ehl_pse_irq_set_wake(struct irq_data *d, unsigned int on)
 	unsigned long flags;
 	u32 value;
 
+	pm_runtime_put(priv->dev->parent);
 	raw_spin_lock_irqsave(&priv->lock, flags);
 
 	/* Clear the existing wake status */
