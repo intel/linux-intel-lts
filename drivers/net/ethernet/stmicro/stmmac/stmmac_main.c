@@ -6924,6 +6924,7 @@ int stmmac_dvr_probe(struct device *device,
 		return ret;
 #endif
 
+#ifdef CONFIG_PM
 	/* To support runtime PM, we need to make sure usage_count is equal to 0
 	 * when runtime_auto flag is set. Otherwise, it should be equal to 1.
 	 */
@@ -6934,6 +6935,7 @@ int stmmac_dvr_probe(struct device *device,
 		while (atomic_read(&priv->device->power.usage_count) > 1)
 			pm_runtime_put_noidle(device);
 	}
+#endif
 
 	return ret;
 
