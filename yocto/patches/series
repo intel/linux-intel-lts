@@ -6,3 +6,6 @@
 
 # CVE-2020-16166
 0001-random32-update-the-net-random-state-on-interrupt-an.patch
+
+# CVE-2019-19770
+0001-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
