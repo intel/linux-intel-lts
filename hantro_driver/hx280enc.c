@@ -3,18 +3,20 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License, version 2, as
- *    published by the Free Software Foundation.
+ *    This program is free software; you can redistribute it and/or
+ *    modify it under the terms of the GNU General Public License
+ *    as published by the Free Software Foundation; either version 2
+ *    of the License, or (at your option) any later version.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License version 2 for more details.
+ *    GNU General Public License for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 at the following locations:
- *    https://opensource.org/licenses/gpl-2.0.php
+ *    Version 2 or later at the following locations:
+ *    http://www.opensource.org/licenses/gpl-license.html
+ *    http://www.gnu.org/copyleft/gpl.html
  */
 
 #include <linux/kernel.h>
@@ -289,7 +291,7 @@ static long ReserveEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 	u32 core_info_tmp = 0;
 
 	PDEBUG("hx280enc: ReserveEncoder\n");
-        /*If HW resources are shared inter cores, just make sure only one is using the HW*/
+	/*If HW resources are shared inter cores, just make sure only one is using the HW*/
 	if (resouce_shared) {
 		if (down_interruptible(&parentslice->enc_core_sem))
 			return -ERESTARTSYS;
@@ -506,13 +508,13 @@ int hantroenc_probe(dtbnode *pnode)
 		pcore->core_cfg.sliceidx = core_array[i].sliceidx;
 		result = ReserveIO(pcore);
 		if (result < 0) {
-			pr_info("hx280enc: reserve reg 0x%llx-0x%lld fail\n",
+			pr_info("hx280enc: reserve reg 0x%llx-0x%x fail\n",
 				pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
 			vfree(pcore);
 			continue;
 		} else
-			pr_info("hx280enc: reserve reg succesfully hx280enc: reserve reg 0x%llx-0x%lld success\n",
-                                pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
+			pr_info("hx280enc: reserve reg succesfully hx280enc: reserve reg 0x%llx-0x%x success\n",
+				pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
 
 
 		ResetAsic(pcore);  /* reset hardware */
@@ -527,8 +529,7 @@ int hantroenc_probe(dtbnode *pnode)
 			if (result == 0) {
 				pcore->irqlist[0] = irqnum;
 				pr_info(" hx280enc: IRQ request <%d> successful\n", irqnum);
-			}
-			else {
+			} else {
 				pr_info("hx280enc: request IRQ <%d> fail\n", irqnum);
 				ReleaseIO(pcore);
 				vfree(pcore);
@@ -651,7 +652,7 @@ static int ReserveIO(struct hantroenc_t *pcore)
 	pcore->hw_id = hwid;
 
 	pr_info("hantroenc: HW at base <0x%llx> with ID 0x%x\n",
-	       pcore->core_cfg.base_addr, (hwid >> 16) & 0xFFFF );
+	       pcore->core_cfg.base_addr, (hwid >> 16) & 0xFFFF);
 
 	return 0;
 }

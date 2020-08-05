@@ -3,18 +3,20 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License, version 2, as
- *    published by the Free Software Foundation.
+ *    This program is free software; you can redistribute it and/or
+ *    modify it under the terms of the GNU General Public License
+ *    as published by the Free Software Foundation; either version 2
+ *    of the License, or (at your option) any later version.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License version 2 for more details.
+ *    GNU General Public License for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 at the following locations:
- *    https://opensource.org/licenses/gpl-2.0.php
+ *    Version 2 or later at the following locations:
+ *    http://www.opensource.org/licenses/gpl-license.html
+ *    http://www.gnu.org/copyleft/gpl.html
  */
 
 #include "hantrodec.h"
@@ -560,7 +562,7 @@ static int GetDecCoreAny(
 		if (GetDecCore(c, dev, filp, format)) {
 			success = 1;
 			*core = c;
-			PDEBUG("get core %ld:%d,fp=%lx, pid=%d", c, dev->core_id, (unsigned long)filp, (int )current->pid);
+			PDEBUG("get core %ld:%d,fp=%lx, pid=%d", c, dev->core_id, (unsigned long)filp, (int)current->pid);
 			break;
 		}
 		c++;
@@ -1599,7 +1601,7 @@ static int CheckHwId(struct hantrodec_t *dev)
 
 	if (!found) {
 		 pr_info("hantrodec: HW at base <0x%llx> with ID 0x%lx\n",
-                               dev->multicorebase_actual, hwid);
+			       dev->multicorebase_actual, hwid);
 		pr_info("hantrodec: Unknown HW found at 0x%llx\n",
 		       dev->multicorebase_actual);
 		return 0;
@@ -1797,7 +1799,7 @@ static void ResetAsic(struct hantrodec_t *dev)
 	u32 status;
 	int size = MIN(DEC_IO_SIZE_MAX, dev->iosize);
 
-        PDEBUG("hantrodec: ResetAsic\n");
+	PDEBUG("hantrodec: ResetAsic\n");
 	status = ioread32((void *)dev->hwregs +
 			HANTRODEC_IRQ_STAT_DEC_OFF);
 

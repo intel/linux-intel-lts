@@ -3,18 +3,20 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License, version 2, as
- *    published by the Free Software Foundation.
+ *    This program is free software; you can redistribute it and/or
+ *    modify it under the terms of the GNU General Public License
+ *    as published by the Free Software Foundation; either version 2
+ *    of the License, or (at your option) any later version.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License version 2 for more details.
+ *    GNU General Public License for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 at the following locations:
- *    https://opensource.org/licenses/gpl-2.0.php
+ *    Version 2 or later at the following locations:
+ *    http://www.opensource.org/licenses/gpl-license.html
+ *    http://www.gnu.org/copyleft/gpl.html
  */
 
 #include <linux/kernel.h>
@@ -186,10 +188,10 @@ long hantrodec400_ioctl(
 		return 0;
 	case DEC400_IOCGHWIOSIZE:
 		ret = copy_from_user(&id, (void *)arg, sizeof(u32));
-                if (ret) {
-                        pr_err("copy_from_user failed, returned %d\n", ret);
-                        return -EFAULT;
-                }
+		if (ret) {
+			pr_err("copy_from_user failed, returned %d\n", ret);
+			return -EFAULT;
+		}
 
 		slice = SLICE(id);
 		type = NODETYPE(id);
@@ -199,9 +201,9 @@ long hantrodec400_ioctl(
 			return -EFAULT;
 		ret = __put_user(pdec400->core_cfg.iosize, (unsigned int *) arg);
 		if (ret) {
-                        pr_err("copy_to_user failed, returned %d\n", ret);
-                        return -EFAULT;
-                }
+			pr_err("copy_to_user failed, returned %d\n", ret);
+			return -EFAULT;
+		}
 		return 0;
 	case DEC400_IOCS_DEC_WRITE_REG:
 		ret = copy_from_user(&coredesc, (void *)arg, sizeof(struct core_desc));

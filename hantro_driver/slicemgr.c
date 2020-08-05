@@ -163,7 +163,7 @@ struct cache_dev_t *get_cachenodebytype(u32 sliceindex, u32 parenttype, u32 pare
 	if (hdr == NULL)
 		return NULL;
 	p = hdr->cachehdr;
-	while(p != NULL) {
+	while (p != NULL) {
 		if (p->parentid == parentnodeidx &&
 			((parenttype == NODE_TYPE_DEC && p->parenttype == CORE_DEC)
 			|| (parenttype == NODE_TYPE_ENC && p->parenttype == CORE_ENC)))
@@ -220,7 +220,7 @@ int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 	if (splice == NULL)
 		return -EINVAL;
 #else
-	if (splice == NULL && sliceindex == atomic_read(&slicenum)) {		
+	if (splice == NULL && sliceindex == atomic_read(&slicenum)) {
 		sliceindex = addslice(NULL, 0, 0);
 		if (sliceindex < 0)
 			return -EINVAL;
@@ -444,7 +444,7 @@ int slice_remove(void)
 
 int addslice(struct device *dev, phys_addr_t sliceaddr, phys_addr_t slicesize)
 {
-	struct slice_info * pslice = kzalloc(sizeof(struct slice_info), GFP_KERNEL);
+	struct slice_info *pslice = kzalloc(sizeof(struct slice_info), GFP_KERNEL);
 
 	if (pslice == NULL)
 		return -ENOMEM;
@@ -481,7 +481,8 @@ int addslice(struct device *dev, phys_addr_t sliceaddr, phys_addr_t slicesize)
 	if (slicehdr == NULL) {
 		slicehdr = pslice;
 	} else {
-		struct slice_info * head = slicehdr;
+		struct slice_info *head = slicehdr;
+
 		while (head->next != NULL)
 			head = head->next;
 		head->next = pslice;

@@ -3,18 +3,20 @@
  *
  *    Copyright (c) 2017, VeriSilicon Inc.
  *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License, version 2, as
- *    published by the Free Software Foundation.
+ *    This program is free software; you can redistribute it and/or
+ *    modify it under the terms of the GNU General Public License
+ *    as published by the Free Software Foundation; either version 2
+ *    of the License, or (at your option) any later version.
  *
  *    This program is distributed in the hope that it will be useful,
  *    but WITHOUT ANY WARRANTY; without even the implied warranty of
  *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License version 2 for more details.
+ *    GNU General Public License for more details.
  *
  *    You may obtain a copy of the GNU General Public License
- *    Version 2 at the following locations:
- *    https://opensource.org/licenses/gpl-2.0.php
+ *    Version 2 or later at the following locations:
+ *    http://www.opensource.org/licenses/gpl-license.html
+ *    http://www.gnu.org/copyleft/gpl.html
  */
 
 #include <linux/kernel.h>
@@ -440,7 +442,7 @@ int cache_probe(dtbnode *pnode)
 
 		result = ReserveIO(pccore);
 		if (result < 0) {
-			pr_info("cachecore: reserve reg 0x%llx-0x%d fail\n",
+			pr_info("cachecore: reserve reg 0x%llx-0x%x fail\n",
 				pccore->com_base_addr, pccore->core_cfg.iosize);
 			vfree(pccore);
 			continue;
@@ -600,15 +602,12 @@ static int ReserveIO(struct cache_dev_t *pccore)
 
 	if (hwid == 0 && pccore->core_cfg.dir == DIR_RD) {
 		pccore->core_cfg.base_addr += CACHE_WITH_SHAPER_OFFSET;
-	}
-	else if (hwid != 0) {
+	} else if (hwid != 0) {
 		if (pccore->core_cfg.dir == DIR_WR) {
 			pccore->core_cfg.base_addr += SHAPER_OFFSET;
-		}
-		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 0) {
+		} else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 0) {
 			pccore->core_cfg.base_addr += CACHE_WITH_SHAPER_OFFSET;
-		}
-		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 1) {
+		} else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 1) {
 			pccore->core_cfg.base_addr += CACHE_ONLY_OFFSET;
 		}
 	}
@@ -635,7 +634,7 @@ static int ReserveIO(struct cache_dev_t *pccore)
 	else
 		PDEBUG("shaper reg[0x08]=%08x\n", readl(pccore->hwregs + 0x08));
 
-	 pr_info("hantrocache: HW at base <0x%llx> with ID 0x%x [mapped addr = 0x%llx]\n", pccore->core_cfg.base_addr, hwid, (unsigned long long )pccore->hwregs);
+	pr_info("hantrocache: HW at base <0x%llx> with ID 0x%x [mapped addr = 0x%llx]\n", pccore->core_cfg.base_addr, hwid, (unsigned long long)pccore->hwregs);
 
 	return 0;
 }
