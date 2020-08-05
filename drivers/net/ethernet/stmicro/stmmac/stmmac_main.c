@@ -7321,6 +7321,12 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 
 	phylink_mac_change(priv->phylink, true);
 
+	if (priv->wolopts) {
+		rtnl_lock();
+		stmmac_update_wol_status(ndev);
+		rtnl_unlock();
+	}
+
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->setup_phy_conv) {
 		struct dwxpcs_platform_data *pdata;
@@ -7459,6 +7465,12 @@ int stmmac_resume(struct device *dev)
 	}
 
 	phylink_mac_change(priv->phylink, true);
+
+	if (priv->wolopts) {
+		rtnl_lock();
+		stmmac_update_wol_status(ndev);
+		rtnl_unlock();
+	}
 
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->setup_phy_conv) {
