@@ -19,8 +19,9 @@
  *    http://www.gnu.org/copyleft/gpl.html
  */
 
-#ifndef _HANTRODEC_H_
-#define _HANTRODEC_H_
+#ifndef __HANTRO_DEC_H__
+#define __HANTRO_DEC_H__
+
 #include <linux/ioctl.h>
 #include <linux/types.h>
 #include "hantro_priv.h"
@@ -28,13 +29,13 @@
 
 #undef PDEBUG
 #ifdef HANTRODEC_DEBUG
-#  ifdef __KERNEL__
-#    define PDEBUG(fmt, args...) pr_info("hantrodec: " fmt, ## args)
-#  else
-#    define PDEBUG(fmt, args...) fprintf(stderr, fmt, ## args)
-#  endif
+#ifdef __KERNEL__
+#define PDEBUG(fmt, args...) pr_info("hantrodec: " fmt, ##args)
 #else
-#  define PDEBUG(fmt, args...)
+#define PDEBUG(fmt, args...) fprintf(stderr, fmt, ##args)
+#endif
+#else
+#define PDEBUG(fmt, args...)
 #endif
 
 int hantrodec_release(struct file *filp);
@@ -46,4 +47,4 @@ u32 *hantrodec_getRegAddr(u32 coreid, u32 regid);
 int hantrodec_open(struct inode *inode, struct file *filp);
 u32 hantrodec_readbandwidth(int sliceidx, int isreadBW);
 
-#endif /* !_HANTRODEC_H_ */
+#endif /* __HANTRO_DEC_H__ */

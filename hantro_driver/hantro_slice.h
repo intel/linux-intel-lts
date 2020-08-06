@@ -19,19 +19,19 @@
  *    http://www.gnu.org/copyleft/gpl.html
  */
 
-#ifndef HANTRO_SLICE_H
-#define HANTRO_SLICE_H
+#ifndef __HANTRO_SLICE_H__
+#define __HANTRO_SLICE_H__
 
 #include "hantro.h"
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MULTI_SLICE_LIMIT	8		//MAX slice supported now
-#define MAX_CACHE_PERCORE	2		//MAX cache number connected with a core
+#define MULTI_SLICE_LIMIT 8 /* MAX slice supported now */
+#define MAX_CACHE_PERCORE 2 /* MAX cache number connected with a core */
 
-#define HANTRO_INVALID_ID	-1
+#define HANTRO_INVALID_ID -1
 
-/*supported core type*/
+/* supported core type */
 typedef enum {
 	CORE_UNKNOWN = -1,
 	CORE_SLICE = 0,
@@ -52,26 +52,25 @@ struct cache_core_config {
 };
 
 struct cache_dev_t {
-	struct cache_core_config core_cfg; //config of each core,such as base addr, irq,etc
-	unsigned long hw_id; //hw id to indicate project
-	u32 core_id; //core id for driver and sw internal use
-	u32 is_valid; //indicate this core is hantro's core or not
-	u32 is_reserved; //indicate this core is occupied by user or not
-	struct file *cacheowner; //indicate which process is occupying the core
-	u32 irq_received; //indicate this core receives irq
+	struct cache_core_config core_cfg; /* config of each core,such as base addr, irq,etc */
+	unsigned long hw_id; /* hw id to indicate project */
+	u32 core_id; /* core id for driver and sw internal use */
+	u32 is_valid; /* indicate this core is hantro's core or not */
+	u32 is_reserved; /* indicate this core is occupied by user or not */
+	struct file *cacheowner; /* indicate which process is occupying the core */
+	u32 irq_received; /* indicate this core receives irq */
 	u32 irq_status;
 	char *buffer;
 	unsigned int buffsize;
 	u8 *hwregs;
 	char reg_name[32];
-	unsigned long long com_base_addr;//common base addr of each L2
+	unsigned long long com_base_addr; /* common base addr of each L2 */
 	int irqlist[4];
 	char irq_name[4][32];
 	slice_coretype parenttype;
-	u32 parentid;		//parent codec core's core_id
-	void *parentcore;	//either struct hantroenc_t or struct hantrodec_t, or slice itself
+	u32 parentid; /* parent codec core's core_id */
+	void *parentcore; /* either struct hantroenc_t or struct hantrodec_t, or slice itself */
 	void *parentslice;
-
 	struct cache_dev_t *next;
 };
 
@@ -90,9 +89,8 @@ struct dec400_t {
 
 	char reg_name[32];
 	slice_coretype parenttype;
-	u32 parentid;		//parent codec core's core_id
-	void *parentcore;	//either struct hantroenc_t or struct hantrodec_t, or slice itself
-
+	u32 parentid; /* parent codec core's core_id */
+	void *parentcore; /* either struct hantroenc_t or struct hantrodec_t, or slice itself */
 	void *parentslice;
 	struct dec400_t *next;
 };
@@ -101,19 +99,21 @@ typedef struct {
 	unsigned long long base_addr;
 	u32 iosize;
 	int irq;
-	//resouce_shared indicate core share resources with other cores.
-	//If 1, cores can not work at same time.
+	/*
+	 * resouce_shared indicate core share resources with other cores.
+	 * If 1, cores can not work at same time.
+	 */
 	u32 resouce_shared;
 	u32 sliceidx;
 } CORE_CONFIG;
 
 struct hantroenc_t {
-	CORE_CONFIG  core_cfg; //config of each core,such as base addr, irq,etc
-	u32 hw_id; //hw id to indicate project
-	u32 core_id; //core id for driver and sw internal use
-	u32 is_reserved; //indicate this core is occupied by user or not
-	int pid; //indicate which process is occupying the core
-	u32 irq_received; //indicate this core receives irq
+	CORE_CONFIG core_cfg; /* config of each core,such as base addr, irq,etc */
+	u32 hw_id; /* hw id to indicate project */
+	u32 core_id; /* core id for driver and sw internal use */
+	u32 is_reserved; /* indicate this core is occupied by user or not */
+	int pid; /* indicate which process is occupying the core */
+	u32 irq_received; /* indicate this core receives irq */
 	u32 irq_status;
 	char *buffer;
 	unsigned int buffsize;
@@ -126,12 +126,12 @@ struct hantroenc_t {
 	struct hantroenc_t *next;
 };
 
-#define HANTRO_G1_DEC_REGS            155 /*G1 total regs*/
-#define HANTRO_G2_DEC_REGS                 337 /*G2 total regs*/
-#define HANTRO_VC8000D_REGS             393 /*VC8000D total regs*/
-#define DEC_IO_SIZE_MAX                 \
+#define HANTRO_G1_DEC_REGS	155 /* G1 total regs */
+#define HANTRO_G2_DEC_REGS	337 /* G2 total regs */
+#define HANTRO_VC8000D_REGS	393 /* VC8000D total regs */
+#define DEC_IO_SIZE_MAX \
 	(MAX(MAX(HANTRO_G2_DEC_REGS, HANTRO_G1_DEC_REGS), \
-		HANTRO_VC8000D_REGS)*4)
+	     HANTRO_VC8000D_REGS) * 4)
 
 struct hantrodec_t {
 	u32 cfg;
@@ -142,14 +142,16 @@ struct hantrodec_t {
 	struct hantrodec_t *its_main_core_id;
 	/* indicate if aux core exist */
 	struct hantrodec_t *its_aux_core_id;
-	/*all access to hwregs are through readl/writel
+	/*
+	 * all access to hwregs are through readl/writel
 	 * so volatile is removed according to doc "volatile is evil"
 	 */
 	u8 *hwregs;
 	int hw_id;
 	char reg_name[32];
 	unsigned long long multicorebase;
-	/* Because one core may contain multi-pipeline,
+	/*
+	 * Because one core may contain multi-pipeline,
 	 * so multicore base may be changed
 	 */
 	unsigned long long multicorebase_actual;
@@ -185,7 +187,7 @@ And only ID to connect dec/enc to dec400/cache core is their HW address.
 */
 
 struct slice_info {
-	struct device *dev;	//related dev, for drm usage
+	struct device *dev; /* related dev, for drm usage */
 	phys_addr_t rsvmem_addr;
 	phys_addr_t memsize;
 	u32 config;
@@ -199,18 +201,18 @@ struct slice_info {
 	struct cache_dev_t *cachehdr;
 	struct dec400_t *dec400hdr;
 
-	/* orig cache global vars*/
+	/* orig cache global vars */
 	wait_queue_head_t cache_hw_queue;
 	wait_queue_head_t cache_wait_queue;
 	spinlock_t cache_owner_lock;
 
-	/*orig enc global vars*/
+	/* orig enc global vars */
 	struct semaphore enc_core_sem;
 	wait_queue_head_t enc_hw_queue;
 	spinlock_t enc_owner_lock;
 	wait_queue_head_t enc_wait_queue;
 
-	/*orig dec global vars*/
+	/* orig dec global vars */
 	int dec_irq;
 	int pp_irq;
 	spinlock_t owner_lock;
@@ -232,9 +234,11 @@ struct hantrodec_t *get_decnodes(u32 sliceindex, u32 nodeidx);
 struct hantrodec_t *getfirst_decnodes(struct slice_info *pslice);
 struct hantroenc_t *get_encnodes(u32 sliceindex, u32 nodeidx);
 struct cache_dev_t *get_cachenodes(u32 sliceindex, u32 nodeidx);
-struct cache_dev_t *get_cachenodebytype(u32 sliceindex, u32 parenttype, u32 parentnodeidx);
+struct cache_dev_t *get_cachenodebytype(u32 sliceindex, u32 parenttype,
+					u32 parentnodeidx);
 struct dec400_t *get_dec400nodes(u32 sliceindex, u32 nodeidx);
-struct dec400_t *get_dec400nodebytype(u32 sliceindex, u32 parenttype, u32 parentnodeidx);
+struct dec400_t *get_dec400nodebytype(u32 sliceindex, u32 parenttype,
+				      u32 parentnodeidx);
 int add_decnode(u32 sliceindex, struct hantrodec_t *deccore);
 int add_encnode(u32 sliceindex, struct hantroenc_t *enccore);
 int add_dec400node(u32 sliceindex, struct dec400_t *dec400core);
@@ -248,5 +252,4 @@ long hantroslice_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 void slice_printdebug(void);
 
-#endif	/*#define HANTRO_SLICE_H*/
-
+#endif /* __HANTRO_SLICE_H__ */

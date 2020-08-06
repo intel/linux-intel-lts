@@ -19,20 +19,15 @@
  *    http://www.gnu.org/copyleft/gpl.html
  */
 
-#ifndef _HANTRO_DEC400_H_
-#define _HANTRO_DEC400_H_
+#ifndef __HANTRO_DEC400_H__
+#define __HANTRO_DEC400_H__
 
 #include "hantro_priv.h"
 #include "hantro.h"
 
 int hantro_dec400_probe(dtbnode *pnode);
 void hantro_dec400_cleanup(void);
-long hantrodec400_ioctl(
-	struct file *filp,
-	unsigned int cmd,
-	unsigned long arg);
+long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 int hantrodec400_init(void);
 
-#endif	//_HANTRO_DEC400_H_
-
-
+#endif /* __HANTRO_DEC400_H__ */

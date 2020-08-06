@@ -19,34 +19,32 @@
  *    http://www.gnu.org/copyleft/gpl.html
  */
 
-#ifndef _CACHE_H_
-#define _CACHE_H_
+#ifndef __HANTRO_CACHE_H__
+#define __HANTRO_CACHE_H__
+
 #include <linux/ioctl.h>
 #include "hantro_priv.h"
 #include "hantro.h"
 
-#undef PDEBUG   /* undef it, just in case */
+#undef PDEBUG /* undef it, just in case */
 #ifdef CACHE_DEBUG
 #ifdef __KERNEL__
 /* This one if debugging is on, and kernel space */
-#define PDEBUG(fmt, arg...)     \
-	do {                                      \
-		if (verbose)\
-			pr_info(fmt, ## arg); \
+#define PDEBUG(fmt, arg...)                                                    \
+	do {                                                                   \
+		if (verbose)                                                   \
+			pr_info(fmt, ##arg);                                   \
 	} while (0)
 
 #else
 /* This one for user space */
-#define PDEBUG(fmt, args...) printf(__FILE__ ":%d: " fmt, __LINE__, ## args)
+#define PDEBUG(fmt, args...) printf(__FILE__ ":%d: " fmt, __LINE__, ##args)
 #endif
 #else
-#define PDEBUG(fmt, args...)  /* not debugging: nothing */
+#define PDEBUG(fmt, args...) /* not debugging: nothing */
 #endif
 
-long hantrocache_ioctl(
-	struct file *filp,
-	unsigned int cmd,
-	unsigned long arg);
+long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 int cache_init(void);
 int cache_probe(dtbnode *pnode);
@@ -54,5 +52,4 @@ void cache_cleanup(void);
 int cache_open(struct inode *inode, struct file *filp);
 int cache_release(struct file *filp);
 
-#endif /* !_CACHE_H_ */
-
+#endif /* __HANTRO_CACHE_H__ */
