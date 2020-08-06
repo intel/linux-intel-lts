@@ -50,13 +50,9 @@
 #include <linux/clk.h>
 
 /* compile options */
-#define USE_HW 1
-#define USE_CMA 0
 #define ENABLE_VC8000E  1
 #define ENABLE_VC8000D  1
 #define ENABLE_DEC400_CACHE 0
-#define USE_RESET
-#define ENABLE_HANTRO_CLK
 
 /* debug */
 //#define DMA_DEBUG_ALLOC
@@ -81,19 +77,19 @@ module_param(verbose, bool, 0);
 MODULE_PARM_DESC(verbose, "Verbose log operations "
 		"(default 0)");
 
-bool vc8000e = ENABLE_VC8000E;
-module_param(vc8000e, bool, 0);
-MODULE_PARM_DESC(vc8000e, "Enable VC8000E"
+bool enable_encode = ENABLE_VC8000E;
+module_param(enable_encode, bool, 0);
+MODULE_PARM_DESC(enable_encode, "Enable Encode"
 		"(default 1)");
 
-bool vc8000d = ENABLE_VC8000D;
-module_param(vc8000d, bool, 0);
-MODULE_PARM_DESC(vc8000d, "Enable VC8000D"
+bool enable_decode = ENABLE_VC8000D;
+module_param(enable_decode, bool, 0);
+MODULE_PARM_DESC(enable_decode, "Enable Decode"
 		"(default 1)");
 
-bool dec400 = ENABLE_DEC400_CACHE;
-module_param(dec400, bool, 0);
-MODULE_PARM_DESC(dec400, "Enable DEC400/L2"
+bool enable_dec400 = ENABLE_DEC400_CACHE;
+module_param(enable_dec400, bool, 0);
+MODULE_PARM_DESC(enable_dec400, "Enable DEC400/L2"
 		"(default 1)");
 
 /*temp no usage now*/
@@ -471,22 +467,22 @@ static int hantro_device_open(
 {
     int ret;
     ret = drm_open(inode, filp);
-    if (vc8000d)
+    if (enable_decode)
 	  hantrodec_open(inode, filp);
-    if (dec400)
+    if (enable_dec400)
 	  cache_open(inode, filp);
     return ret;
 }
 
 static int hantro_device_release(struct inode *inode, struct file *filp)
 {
-    if (dec400)
+    if (enable_dec400)
 	  cache_release(filp);
 
-    if (vc8000d)
+    if (enable_decode)
 	  hantrodec_release(filp);
 
-    if (vc8000e)
+    if (enable_encode)
 	  hantroenc_release();
 
     return drm_release(inode, filp);
@@ -1428,7 +1424,7 @@ static long hantro_ioctl(
 	}
 	if (nr >= DRM_IOCTL_NR(HX280ENC_IOC_START)
 		&& nr <= DRM_IOCTL_NR(HX280ENC_IOC_END)) {
-		if (vc8000e) {
+		if (enable_encode) {
 		      return hantroenc_ioctl(filp, cmd, arg);
 		} else {
 		if (cmd == HX280ENC_IOCG_CORE_NUM) {
@@ -1441,7 +1437,7 @@ static long hantro_ioctl(
     }
 	if (nr >= DRM_IOCTL_NR(HANTRODEC_IOC_START) &&
 		nr <= DRM_IOCTL_NR(HANTRODEC_IOC_END)) {
-		if (vc8000d)
+		if (enable_decode)
 			return hantrodec_ioctl(filp, cmd, arg);
 		else
 		      return -EFAULT;
@@ -1449,7 +1445,7 @@ static long hantro_ioctl(
 
 	if (nr >= DRM_IOCTL_NR(HANTROCACHE_IOC_START) &&
 		nr <= DRM_IOCTL_NR(HANTROCACHE_IOC_END)) {
-	    if (dec400)
+	    if (enable_dec400)
 		    return hantrocache_ioctl(filp, cmd, arg);
 	    else
 			return -EFAULT;
@@ -1457,7 +1453,7 @@ static long hantro_ioctl(
 
 	if (nr >= DRM_IOCTL_NR(HANTRODEC400_IOC_START) &&
 		nr <= DRM_IOCTL_NR(HANTRODEC400_IOC_END)) {
-	    if (dec400)
+	    if (enable_dec400)
 		   return hantrodec400_ioctl(filp, cmd, arg);
 	    else
 		   return -EFAULT;
@@ -1900,19 +1896,19 @@ static dtbnode *trycreatenode(
 
 	switch (pnode->type) {
 	case CORE_DEC:
-		if (vc8000d)
+		if (enable_decode)
 		     ret = hantrodec_probe(pnode);
 		break;
 	case CORE_ENC:
-		if (vc8000e)
+		if (enable_encode)
 		     ret = hantroenc_probe(pnode);
 		break;
 	case CORE_CACHE:
-		if (dec400)
+		if (enable_dec400)
 		     ret = cache_probe(pnode);
 		break;
 	case CORE_DEC400:
-		if (dec400)
+		if (enable_dec400)
 		     ret = hantro_dec400_probe(pnode);
 		break;
 	default:
@@ -2216,15 +2212,20 @@ static const struct platform_device_info hantro_platform_info = {
 void __exit hantro_cleanup(void)
 {
 	hantro_dev.config = 0;
-	if (vc8000d)
+
+	if (enable_decode)
 	      hantrodec_cleanup();
-	if (vc8000e)
+
+	if (enable_encode)
 	      hantroenc_cleanup();
-	if (dec400)
+
+	if (enable_dec400)
 	      cache_cleanup();
-	if (dec400)
+
+	if (enable_dec400)
 	      hantro_dec400_cleanup();
-	/*this one must be after above ones to maintain list*/
+	
+        /*this one must be after above ones to maintain list*/
 	slice_remove();
 	releaseFenceData();
 	// reserved mem relese need to be called somewhere
