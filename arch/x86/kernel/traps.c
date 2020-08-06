@@ -306,8 +306,10 @@ dotraplinkage void do_alignment_check(struct pt_regs *regs, long error_code)
 	if (notify_die(DIE_TRAP, str, regs, error_code, trapnr, signr) == NOTIFY_STOP)
 		return;
 
+#ifdef CONFIG_CPU_SUP_INTEL
 	if (!user_mode(regs) && split_lock_detect_enabled)
 		panic("Split lock detected\n");
+#endif
 
 	cond_local_irq_enable(regs);
 
