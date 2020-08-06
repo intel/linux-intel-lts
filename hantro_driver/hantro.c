@@ -186,7 +186,7 @@ static int hantro_gem_dumb_create_internal(
 	if (mutex_lock_interruptible(&dev->struct_mutex))
 		return -EBUSY;
 
-	cma_obj = kzalloc(
+	cma_obj = kzalloc(dev->dev,
 		sizeof(struct drm_gem_hantro_object), GFP_KERNEL);
 	if (!cma_obj) {
 		ret = -ENOMEM;
@@ -250,7 +250,7 @@ static int hantro_gem_dumb_create_internal(
 out:
 	mutex_unlock(&dev->struct_mutex);
 	if (ret == -ENOMEM) {
-		char *buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+		char *buf = kzalloc(dev->dev, PAGE_SIZE, GFP_KERNEL);
 
 		memory_usage_show_internal(sliceidx, buf);
 		pr_info("Slice %d out of memory\n%s", sliceidx, buf);
@@ -533,7 +533,7 @@ static struct drm_gem_object *hantro_gem_prime_import_sg_table(
 	struct drm_gem_hantro_object *cma_obj;
 	struct drm_gem_object *obj;
 
-	cma_obj = kzalloc(
+	cma_obj = kzalloc(dev->dev,
 		sizeof(struct drm_gem_hantro_object), GFP_KERNEL);
 	if (!cma_obj)
 		return ERR_PTR(-ENOMEM);
@@ -1799,6 +1799,43 @@ static const struct attribute_group hantro_attr_group = {
     .attrs = hantro_attrs,
  };
 
+#define DEFINE_HANTRO_DEBUGFS_SEQ_FOPS(__prefix)                          \
+static int __prefix ## _open(struct inode *inode, struct file *file)    \
+{                                   \
+    return single_open(file, __prefix ## _show, inode->i_private);  \
+}                                   \
+static const struct file_operations __prefix ## _fops = {       \
+    .owner = THIS_MODULE,                       \
+    .open = __prefix ## _open,                  \
+    .release = single_release,                  \
+    .read = seq_read,                       \
+    .llseek = seq_lseek,                        \
+}
+
+static int mem_usage_show(struct seq_file *s, void *v)
+{
+
+    seq_printf(s, "Hello World\n");
+
+    return 0;
+}
+
+
+DEFINE_HANTRO_DEBUGFS_SEQ_FOPS(mem_usage);
+
+void create_debugfs(void)
+{
+    struct dentry *root;
+    root = debugfs_create_dir("status",
+            NULL);
+
+    debugfs_create_file("status", S_IFREG | S_IRUGO,
+            root,
+            NULL, &mem_usage_fops);
+}
+
+
+
 static int getnodetype(const char *name)
 {
 	if (strstr(name, NODENAME_DECODER) == name)
@@ -1828,7 +1865,7 @@ static dtbnode *trycreatenode(
 	const char *reg_name;
 	uint64_t ioaddress, iosize;
 
-	dtbnode *pnode = kzalloc(sizeof(dtbnode), GFP_KERNEL);
+	dtbnode *pnode = kzalloc(&pdev->dev, sizeof(dtbnode), GFP_KERNEL);
 	if (!pnode)
 		return NULL;
 
@@ -2225,7 +2262,7 @@ void __exit hantro_cleanup(void)
 	if (enable_dec400)
 	      hantro_dec400_cleanup();
 	
-        /*this one must be after above ones to maintain list*/
+/*this one must be after above ones to maintain list*/
 	slice_remove();
 	releaseFenceData();
 	// reserved mem relese need to be called somewhere
@@ -2233,7 +2270,9 @@ void __exit hantro_cleanup(void)
 	drm_dev_unregister(hantro_dev.drm_dev);
 	platform_device_unregister(hantro_dev.platformdev);
 	platform_driver_unregister(&hantro_drm_platform_driver);
+    drm_dev_put(hantro_dev.drm_dev);
 	pr_info("hantro driver removed\n");
+
 }
 
 int __init hantro_init(void)
@@ -2280,6 +2319,7 @@ int __init hantro_init(void)
 		drm_dev_unregister(hantro_dev.drm_dev);
 		platform_device_unregister(hantro_dev.platformdev);
 		platform_driver_unregister(&hantro_drm_platform_driver);
+        drm_dev_put(hantro_dev.drm_dev);
 		return result;
 	}
 	initFenceData();
@@ -2298,6 +2338,8 @@ int __init hantro_init(void)
 			pr_info("create sysfs %d fail\n", i);
 
 	}
+
+      
 	slice_init_finish();
 	if (verbose)
 	     slice_printdebug();
