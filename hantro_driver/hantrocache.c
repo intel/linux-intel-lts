@@ -421,106 +421,53 @@ int cache_probe(dtbnode *pnode)
 	int i;
 	struct cache_dev_t *pccore;
 
-#ifndef USE_DTB_PROBE	/*simulate and compatible with old code*/
-	if (bcacheprobed != 0)
-		return 0;
-	bcacheprobed = 1;
-	for (i = 0; i < ARRAY_SIZE(cache_core_array); i++) {
-		int irqnum, irqn = 0;
-		pccore = vmalloc(sizeof(struct cache_dev_t));
-		if (pccore == NULL)
-			return -ENOMEM;
-
-		memset(pccore, 0, sizeof(struct cache_dev_t));
-
-		pccore->com_base_addr = pccore->core_cfg.base_addr = cache_core_array[i].base_addr;
-		pccore->core_cfg.iosize = cache_core_array[i].iosize;
-		pccore->core_cfg.client = cache_core_array[i].client;
-		pccore->core_cfg.dir = cache_core_array[i].dir;
-		pccore->core_cfg.sliceidx = cache_core_array[i].sliceidx;
-		pccore->core_cfg.parentaddr = cache_core_array[i].parentaddr;
-
-		result = ReserveIO(pccore);
-		if (result < 0) {
-			pr_info("cachecore: reserve reg 0x%llx-0x%x fail\n",
-				pccore->com_base_addr, pccore->core_cfg.iosize);
-			vfree(pccore);
-			continue;
-		}
-
-		ResetAsic(pccore);  /* reset hardware */
-		pccore->is_valid = 1;
-#ifdef USE_IRQ
-		irqn = 0;
-		irqnum = cache_core_array[i].irq;
-		if (irqnum > 0) {
-			result = request_irq(irqnum, cache_isr,
-				IRQF_SHARED,
-				"hantro_cache", (void *)pccore);
-			if (result == 0) {
-				pccore->irqlist[irqn] = irqnum;
-				irqn++;
-			} else {
-				pr_info("cachecore: request IRQ <%d> fail\n", irqnum);
-				ReleaseIO(pccore);
-				vfree(pccore);
-				continue;
-			}
-		}
-#endif
-		add_cachenode(pccore->core_cfg.sliceidx, pccore);
-	}
-
-#else	/*USE_DTB_PROBE*/
 #ifndef PCI_BUS
-	{
-		int type, dir;
+	int type, dir;
 
-		cache_getcachetype(pnode->ofnode->name, &type, &dir);
-		if (type == -1 || dir == -1)
-			return -EINVAL;
-		pccore = vmalloc(sizeof(struct cache_dev_t));
-		if (pccore == NULL)
-			return -ENOMEM;
-		memset(pccore, 0, sizeof(struct cache_dev_t));
-		pccore->com_base_addr = pccore->core_cfg.base_addr = pnode->ioaddr;
-		pccore->core_cfg.iosize = pnode->iosize;
-		pccore->core_cfg.client = type;
-		pccore->core_cfg.dir = dir;
+	cache_getcachetype(pnode->ofnode->name, &type, &dir);
+	if (type == -1 || dir == -1)
+		return -EINVAL;
+	pccore = vmalloc(sizeof(struct cache_dev_t));
+	if (pccore == NULL)
+		return -ENOMEM;
+	memset(pccore, 0, sizeof(struct cache_dev_t));
+	pccore->com_base_addr = pccore->core_cfg.base_addr = pnode->ioaddr;
+	pccore->core_cfg.iosize = pnode->iosize;
+	pccore->core_cfg.client = type;
+	pccore->core_cfg.dir = dir;
 
-		result = ReserveIO(pccore);
-		if (result < 0) {
-			pr_err("cachecore: reserve reg 0x%llx-0x%llx fail\n",
-				pnode->ioaddr, pnode->iosize);
-			vfree(pccore);
-			return -ENODEV;
-		}
-
-		ResetAsic(pccore);  /* reset hardware */
-		pccore->is_valid = 1;
-		for (i = 0; i < 4; i++)
-			pccore->irqlist[i] = -1;
-#ifdef USE_IRQ
-		if (pnode->irq[0] > 0) {
-			strcpy(pccore->irq_name[0], pnode->irq_name[0]);
-			result = request_irq(pnode->irq[0], cache_isr,
-				IRQF_SHARED,
-				pccore->irq_name[0], (void *)pccore);
-			if (result == 0)
-				pccore->irqlist[0] = pnode->irq[0];
-			else {
-				pr_err("cachecore: request IRQ <%d> fail\n", pnode->irq[0]);
-				ReleaseIO(pccore);
-				vfree(pccore);
-				return -EINVAL;
-			}
-		}
-#endif
-		pccore->core_cfg.parentaddr = pnode->parentaddr;
-		add_cachenode(pnode->sliceidx, pccore);
+	result = ReserveIO(pccore);
+	if (result < 0) {
+		pr_err("cachecore: reserve reg 0x%llx-0x%llx fail\n",
+			pnode->ioaddr, pnode->iosize);
+		vfree(pccore);
+		return -ENODEV;
 	}
+
+	ResetAsic(pccore);  /* reset hardware */
+	pccore->is_valid = 1;
+	for (i = 0; i < 4; i++)
+		pccore->irqlist[i] = -1;
+#ifdef USE_IRQ
+	if (pnode->irq[0] > 0) {
+		strcpy(pccore->irq_name[0], pnode->irq_name[0]);
+		result = request_irq(pnode->irq[0], cache_isr,
+			IRQF_SHARED,
+			pccore->irq_name[0], (void *)pccore);
+		if (result == 0)
+			pccore->irqlist[0] = pnode->irq[0];
+		else {
+			pr_err("cachecore: request IRQ <%d> fail\n", pnode->irq[0]);
+			ReleaseIO(pccore);
+			vfree(pccore);
+			return -EINVAL;
+		}
+	}
+#endif
+	pccore->core_cfg.parentaddr = pnode->parentaddr;
+	add_cachenode(pnode->sliceidx, pccore);
+
 #endif	/*not def PCI_BUS*/
-#endif	/*USE_DTB_PROBE*/
 	return 0;
 }
 
@@ -650,11 +597,7 @@ static void ReleaseIO(struct cache_dev_t *pccore)
 
 #ifdef USE_IRQ
 #ifndef PCI_BUS
-#if (KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE)
-static irqreturn_t cache_isr(int irq, void *dev_id, struct pt_regs *regs)
-#else
 static irqreturn_t cache_isr(int irq, void *dev_id)
-#endif
 {
 	unsigned int handled = 0;
 	struct cache_dev_t *dev = (struct cache_dev_t *) dev_id;

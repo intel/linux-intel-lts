@@ -88,20 +88,6 @@ static u32 resouce_shared;
 #define HANTRO_VC8KE_REG_BWWRITE 220
 #define VC8KE_BURSTWIDTH                 16
 
-/*for all cores, the core info should be listed here for subsequent use*/
-/*base_addr, iosize, irq, resource_shared*/
-#ifndef USE_DTB_PROBE
-static CORE_CONFIG core_array[] = {
-	{CORE_0_IO_ADDR, CORE_0_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 0},
-	{CORE_1_IO_ADDR, CORE_1_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 0},
-	{CORE_2_IO_ADDR, CORE_2_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 1}
-	{CORE_3_IO_ADDR, CORE_3_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 1},
-	{CORE_4_IO_ADDR, CORE_4_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 2},
-	{CORE_5_IO_ADDR, CORE_5_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 2},
-	{CORE_6_IO_ADDR, CORE_6_IO_SIZE, INT_PIN_CORE_0, RESOURCE_SHARED_INTER_CORES, 3},
-	{CORE_7_IO_ADDR, CORE_7_IO_SIZE, INT_PIN_CORE_1, RESOURCE_SHARED_INTER_CORES, 3}
-};
-#endif
 static int bencprobed;
 
 /*------------------------------END-------------------------------------*/
@@ -118,11 +104,7 @@ static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 
 #ifdef USE_IRQ
 /* IRQ handler */
-#if KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE
-static irqreturn_t hantroenc_isr(int irq, void *dev_id, struct pt_regs *regs);
-#else
 static irqreturn_t hantroenc_isr(int irq, void *dev_id);
-#endif
 #endif
 
 /*********************local variable declaration*****************/
@@ -492,100 +474,51 @@ int hantroenc_probe(dtbnode *pnode)
 	struct hantroenc_t *pcore;
 	int i;
 
-#ifndef USE_DTB_PROBE		/*simulate and compatible with old code*/
-	if (bencprobed != 0)
-		return 0;
-	bencprobed = 1;
-	for (i = 0; i < ARRAY_SIZE(core_array); i++) {
-		int irqnum;
-		pcore = vmalloc(sizeof(struct hantroenc_t));
-		if (pcore == NULL)
-			continue;
 
-		memset(pcore, 0, sizeof(struct hantroenc_t));
-		pcore->core_cfg.base_addr = core_array[i].base_addr;
-		pcore->core_cfg.iosize = core_array[i].iosize;
-		pcore->core_cfg.sliceidx = core_array[i].sliceidx;
-		result = ReserveIO(pcore);
-		if (result < 0) {
-			pr_info("hx280enc: reserve reg 0x%llx-0x%x fail\n",
-				pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
-			vfree(pcore);
-			continue;
-		} else
-			pr_info("hx280enc: reserve reg succesfully hx280enc: reserve reg 0x%llx-0x%x success\n",
-				pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
+	int irqn;
 
+	pcore = vmalloc(sizeof(struct hantroenc_t));
+	if (pcore == NULL)
+		return -ENOMEM;
 
-		ResetAsic(pcore);  /* reset hardware */
+	memset(pcore, 0, sizeof(struct hantroenc_t));
+	pcore->core_cfg.base_addr = pnode->ioaddr;
+	pcore->core_cfg.iosize = pnode->iosize;
 
+	result = ReserveIO(pcore);
+	if (result < 0) {
+		pr_err("hx280enc: reserve reg 0x%llx:%lldfail\n",
+			pnode->ioaddr, pnode->iosize);
+		vfree(pcore);
+		return -ENODEV;
+	}
+
+	ResetAsic(pcore);  /* reset hardware */
+	irqn = 0;
+	for (i = 0; i < 4; i++)
+		pcore->irqlist[i] = -1;
 #ifdef USE_IRQ
-		irqnum = core_array[i].irq;
-		if (irqnum > 0) {
-			PDEBUG("hx280enc: trying to request IRQ\n");
-			result = request_irq(irqnum, hantroenc_isr,
+	for (i = 0; i < 4; i++) {
+		if (pnode->irq[i] > 0) {
+			strcpy(pcore->irq_name[i], pnode->irq_name[i]);
+			result = request_irq(pnode->irq[i], hantroenc_isr,
 						IRQF_SHARED,
-						"hx280enc", (void *)pcore);
+						pcore->irq_name[i], (void *)pcore);
 			if (result == 0) {
-				pcore->irqlist[0] = irqnum;
-				pr_info(" hx280enc: IRQ request <%d> successful\n", irqnum);
+				pcore->irqlist[irqn] = pnode->irq[i];
+				irqn++;
 			} else {
-				pr_info("hx280enc: request IRQ <%d> fail\n", irqnum);
+				pr_info("hx280enc: request IRQ <%d> fail\n", pnode->irq[i]);
 				ReleaseIO(pcore);
 				vfree(pcore);
-				continue;
+				return -EINVAL;
 			}
 		}
-#endif
-		add_encnode(pcore->core_cfg.sliceidx, pcore);
 	}
-#else	/*USE_DTB_PROBE*/
-	{
-		int irqn;
-
-		pcore = vmalloc(sizeof(struct hantroenc_t));
-		if (pcore == NULL)
-			return -ENOMEM;
-
-		memset(pcore, 0, sizeof(struct hantroenc_t));
-		pcore->core_cfg.base_addr = pnode->ioaddr;
-		pcore->core_cfg.iosize = pnode->iosize;
-
-		result = ReserveIO(pcore);
-		if (result < 0) {
-			pr_err("hx280enc: reserve reg 0x%llx:%lldfail\n",
-				pnode->ioaddr, pnode->iosize);
-			vfree(pcore);
-			return -ENODEV;
-		}
-
-		ResetAsic(pcore);  /* reset hardware */
-		irqn = 0;
-		for (i = 0; i < 4; i++)
-			pcore->irqlist[i] = -1;
-#ifdef USE_IRQ
-		for (i = 0; i < 4; i++) {
-			if (pnode->irq[i] > 0) {
-				strcpy(pcore->irq_name[i], pnode->irq_name[i]);
-				result = request_irq(pnode->irq[i], hantroenc_isr,
-							IRQF_SHARED,
-							pcore->irq_name[i], (void *)pcore);
-				if (result == 0) {
-					pcore->irqlist[irqn] = pnode->irq[i];
-					irqn++;
-				} else {
-					pr_info("hx280enc: request IRQ <%d> fail\n", pnode->irq[i]);
-					ReleaseIO(pcore);
-					vfree(pcore);
-					return -EINVAL;
-				}
-			}
-		}
 #endif
 
-		add_encnode(pnode->sliceidx, pcore);
-	}
-#endif	/*USE_DTB_PROBE*/
+	add_encnode(pnode->sliceidx, pcore);
+
 
 	pr_info("hx280enc: module inserted. Major <%d>\n", hantroenc_major);
 
@@ -665,11 +598,7 @@ static void ReleaseIO(struct hantroenc_t *pcore)
 }
 
 #ifdef USE_IRQ
-#if KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE
-static irqreturn_t hantroenc_isr(int irq, void *dev_id, struct pt_regs *regs)
-#else
 static irqreturn_t hantroenc_isr(int irq, void *dev_id)
-#endif
 {
 	unsigned int handled = 0;
 	struct hantroenc_t *dev = (struct hantroenc_t *) dev_id;

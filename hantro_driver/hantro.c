@@ -96,22 +96,6 @@ module_param(dec400, bool, 0);
 MODULE_PARM_DESC(dec400, "Enable DEC400/L2"
 		"(default 1)");
 
-#if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
-void debug_dma_alloc_coherent(
-	struct device *dev,
-	size_t size,
-	dma_addr_t dma_addr,
-	void *virt)
-{
-}
-void debug_dma_free_coherent(
-	struct device *dev,
-	size_t size,
-	void *virt,
-	dma_addr_t addr)
-{
-}
-#endif
 /*temp no usage now*/
 static u32 hantro_vblank_no_hw_counter(
 	struct drm_device *dev,
@@ -232,29 +216,6 @@ static int hantro_gem_dumb_create_internal(
  *4. CMA's memory management is not stable.
  *We could choose to use CMA or page alloc by module parameter later.
  */
-#if USE_CMA
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-	cma_obj->pageaddr =
-		dma_alloc_from_contiguous(
-			pslice->dev,
-			args->size >> PAGE_SHIFT,
-			1);
-#else
-	cma_obj->pageaddr =
-		dma_alloc_from_contiguous(
-			pslice->dev,
-			args->size >> PAGE_SHIFT,
-			1,
-			GFP_KERNEL);
-#endif
-	if (cma_obj->pageaddr == NULL) {
-		kfree(cma_obj);
-		ret = -ENOMEM;
-		goto out;
-	}
-	cma_obj->vaddr = page_to_virt(cma_obj->pageaddr);
-	cma_obj->paddr = virt_to_phys(cma_obj->vaddr);
-#else
 	cma_obj->vaddr =
 		dma_alloc_coherent(
 			pslice->dev,
@@ -270,25 +231,18 @@ static int hantro_gem_dumb_create_internal(
 		ret = -ENOMEM;
 		goto out;
 	}
-#endif
+
 	drm_gem_object_init(dev, obj, args->size);
 
 	ret = drm_gem_handle_create(file_priv, obj, &args->handle);
 	if (ret == 0)
 		ret = hantro_recordmem(file_priv, cma_obj, args->size);
 	if (ret) {
-#if USE_CMA
-		dma_release_from_contiguous(
-			pslice->dev,
-			cma_obj->pageaddr,
-			cma_obj->num_pages);
-#else
 		dma_free_coherent(
 			pslice->dev,
 			args->size,
 			cma_obj->vaddr,
 			cma_obj->paddr);
-#endif
 		kfree(cma_obj);
 	}
 	init_hantro_resv(&cma_obj->kresv, cma_obj);
@@ -394,20 +348,13 @@ static int hantro_release_dumb(
 	if (!pslice) {
 		return 0;
 	}
-#if USE_CMA
-	if (cma_obj->pageaddr)
-		dma_release_from_contiguous(
-			pslice->dev,
-			cma_obj->pageaddr,
-			cma_obj->num_pages);
-#else
+
 	if (cma_obj->vaddr)
 		dma_free_coherent(
 			pslice->dev,
 			cma_obj->base.size,
 			cma_obj->vaddr,
 			cma_obj->paddr);
-#endif
 
 #ifdef DMA_DEBUG_ALLOC
 	pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
@@ -524,18 +471,15 @@ static int hantro_device_open(
 {
     int ret;
     ret = drm_open(inode, filp);
-#if USE_HW == 1      /*hw init*/
     if (vc8000d)
 	  hantrodec_open(inode, filp);
     if (dec400)
 	  cache_open(inode, filp);
-#endif
     return ret;
 }
 
 static int hantro_device_release(struct inode *inode, struct file *filp)
 {
-#if USE_HW == 1
     if (dec400)
 	  cache_release(filp);
 
@@ -544,29 +488,14 @@ static int hantro_device_release(struct inode *inode, struct file *filp)
 
     if (vc8000e)
 	  hantroenc_release();
-#endif
+
     return drm_release(inode, filp);
 }
 
-#if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
-/*we shall not support page fault. */
-static int hantro_vm_fault(
-	struct vm_area_struct *vma,
-	struct vm_fault *vmf)
-{
-	return -EPERM;
-}
-#elif KERNEL_VERSION(5, 0, 0) > LINUX_VERSION_CODE
-static int hantro_vm_fault(struct vm_fault *vmf)
-{
-	return -EPERM;
-}
-#else
 static vm_fault_t hantro_vm_fault(struct vm_fault *vmf)
 {
 	return -EPERM;
 }
-#endif
 
 #ifndef virt_to_bus
 static inline unsigned long virt_to_bus(void *address)
@@ -752,18 +681,11 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 		pslice = getslicenode(cma_obj->sliceidx);
 		if (!pslice)
 			return;
-#if USE_CMA
-		dma_release_from_contiguous(
-			pslice->dev,
-			cma_obj->pageaddr,
-			cma_obj->num_pages);
-#else
 		dma_free_coherent(
 			pslice->dev,
 			cma_obj->base.size,
 			cma_obj->vaddr,
 			cma_obj->paddr);
-#endif
 
 #ifdef DMA_DEBUG_ALLOC
 	pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx, (unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
@@ -1015,25 +937,17 @@ static int hantro_fb_create2(
 	struct hantro_drm_fb *vsifb;
 	struct drm_gem_object *objs[4];
 	struct drm_gem_object *obj;
-#if KERNEL_VERSION(4, 16, 0) <= LINUX_VERSION_CODE
 	const struct drm_format_info *info =
 		drm_get_format_info(dev, mode_cmd);
-#endif
 	unsigned int hsub;
 	unsigned int vsub;
 	int num_planes;
 	int ret;
 	int i;
 
-#if KERNEL_VERSION(4, 16, 0) <= LINUX_VERSION_CODE
 	hsub = info->hsub;
 	vsub = info->vsub;
 	num_planes = min_t(int, info->num_planes, 4);
-#else
-	hsub = drm_format_horz_chroma_subsampling(mode_cmd->pixel_format);
-	vsub = drm_format_vert_chroma_subsampling(mode_cmd->pixel_format);
-	num_planes = min(drm_format_num_planes(mode_cmd->pixel_format), 4);
-#endif
 	for (i = 0; i < num_planes; i++) {
 		unsigned int width = mode_cmd->width / (i ? hsub : 1);
 		unsigned int height = mode_cmd->height / (i ? vsub : 1);
@@ -1049,12 +963,8 @@ static int hantro_fb_create2(
 		}
 		hantro_unref_drmobj(obj);
 		min_size = (height - 1) * mode_cmd->pitches[i] +
-			mode_cmd->offsets[i] +
-#if KERNEL_VERSION(4, 16, 0) <= LINUX_VERSION_CODE
-			width * info->cpp[i];
-#else
-			width * drm_format_plane_cpp(mode_cmd->pixel_format, i);
-#endif
+			mode_cmd->offsets[i] +	width * info->cpp[i];
+
 		if (obj->size < min_size) {
 			//hantro_unref_drmobj(obj);
 			ret = -EINVAL;
@@ -1500,13 +1410,8 @@ static long hantro_ioctl(
 	char *kdata = stack_kdata;
 	unsigned int in_size, out_size;
 
-#if KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE
 	if (drm_dev_is_unplugged(dev))
 		return -ENODEV;
-#else
-	if (drm_device_is_unplugged(dev))
-		return -ENODEV;
-#endif
 
 	out_size = in_size = _IOC_SIZE(cmd);
 
@@ -1634,22 +1539,11 @@ static void hantro_gem_vm_close(struct vm_area_struct *vma)
 	drm_gem_vm_close(vma);
 }
 
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-static int hantro_unload(struct drm_device *dev)
-{
-	return 0;
-}
-#else
 static void hantro_release(struct drm_device *dev)
 {
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-	drm_dev_unregister(hantro_dev.drm_dev);
-#else
-#endif
-}
-#endif
 
-#if KERNEL_VERSION(4, 20, 0) <= LINUX_VERSION_CODE
+}
+
 static void hantro_gem_dmabuf_release(struct dma_buf *dma_buf)
 {
 	return drm_gem_dmabuf_release(dma_buf);
@@ -1700,7 +1594,6 @@ static const struct dma_buf_ops hantro_dmabuf_ops =  {
 	.vmap = hantro_gem_dmabuf_vmap,
 	.vunmap = drm_gem_dmabuf_vunmap,
 };
-#endif	/*#if KERNEL_VERSION(4, 20, 0) <= LINUX_VERSION_CODE*/
 
 static struct drm_driver hantro_drm_driver;
 static struct dma_buf *hantro_prime_export(
@@ -1754,11 +1647,7 @@ static struct drm_driver hantro_drm_driver = {
 	.get_vblank_counter      = hantro_vblank_no_hw_counter,
 	.open                        = hantro_drm_open,
 	.postclose                        = hantro_drm_postclose,
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-	.unload = hantro_unload,
-#else
 	.release = hantro_release,
-#endif
 	.dumb_destroy            = drm_gem_dumb_destroy,
 	.dumb_create            = hantro_gem_dumb_create_internal,
 	.dumb_map_offset      = hantro_gem_dumb_map_offset,
@@ -1914,7 +1803,6 @@ static const struct attribute_group hantro_attr_group = {
     .attrs = hantro_attrs,
  };
 
-#ifdef USE_DTB_PROBE
 static int getnodetype(const char *name)
 {
 	if (strstr(name, NODENAME_DECODER) == name)
@@ -2201,8 +2089,6 @@ static int hantro_analyze_subnode(
 
 	return 0;
 }
-#endif	//USE_DTB_PROBE
-
 
 static int hantro_drm_probe(struct platform_device *pdev)
 {
@@ -2212,13 +2098,10 @@ static int hantro_drm_probe(struct platform_device *pdev)
 	pr_info("hantro_drm_probe: dev %s probe", pdev->name);
 
 	/*TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
-#ifdef ENABLE_HANTRO_CLK
-	hantro_clock_control(pdev, true);
-#endif
 
-#ifdef USE_RESET
+	hantro_clock_control(pdev, true);
 	hantro_reset_control(pdev, true);
-#endif
+
 	/* Check the status of media MMU, whether it is enabled/disabled after reset de-assert of MMU */
 	hantro_mmu_control(pdev);
 
@@ -2234,13 +2117,10 @@ static int hantro_drm_probe(struct platform_device *pdev)
 			sliceidx = addslice(dev, -1, 0);
 		else
 			sliceidx = addslice(NULL, -1, 0);	//leave to end of init, set to default drm platform dev and default cma area
-#ifdef USE_DTB_PROBE
-#if USE_HW == 1
+
 		/*go throug all sub dtb node' resources */
 		if (sliceidx >= 0 && dev->of_node != NULL)
 			hantro_analyze_subnode(pdev, dev->of_node, sliceidx);
-#endif
-#endif
 	}
 
 	return 0;
@@ -2250,16 +2130,12 @@ static int hantro_drm_probe(struct platform_device *pdev)
 static int hantro_drm_remove(struct platform_device *pdev)
 {
 
-#ifdef USE_RESET
 	// disabled for now
 	/* TBH PO: Have to assert reset before disabling clocks */
 	/* TBH PO: For now do not assert reset yet until power isolation sequence is implemented */
 	// hantro_reset_control(pdev, false);
-#endif
 
-#ifdef ENABLE_HANTRO_CLK
 	hantro_clock_control(pdev, false);
-#endif
 
 	return 0;
 }
@@ -2336,13 +2212,10 @@ static const struct platform_device_info hantro_platform_info = {
 	.dma_mask	= DMA_BIT_MASK(48),
 };
 
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-static int hantro_major = 1;  /* dynamic */
-#endif
+
 void __exit hantro_cleanup(void)
 {
 	hantro_dev.config = 0;
-#if USE_HW == 1      /*hw init*/
 	if (vc8000d)
 	      hantrodec_cleanup();
 	if (vc8000e)
@@ -2351,7 +2224,6 @@ void __exit hantro_cleanup(void)
 	      cache_cleanup();
 	if (dec400)
 	      hantro_dec400_cleanup();
-#endif
 	/*this one must be after above ones to maintain list*/
 	slice_remove();
 	releaseFenceData();
@@ -2411,18 +2283,6 @@ int __init hantro_init(void)
 	}
 	initFenceData();
 
-#ifndef USE_DTB_PROBE	//static table analyze, dec and enc must be in the front
-#if USE_HW == 1
-	if (vc8000d)
-	      result = hantrodec_probe(NULL);
-	if (vc8000e)
-	      result = hantroenc_probe(NULL);
-	if (dec400)
-	      result = cache_probe(NULL);
-	if (dec400)
-	      result = hantro_dec400_probe(NULL);
-#endif	//USE_HW==1
-#endif	//USE_DTB_PROBE
 	if (get_slicenumber() == 0)
 		addslice(hantro_dev.drm_dev->dev, -1, 0);	//for PC, no DTB probe, create a default dev
 	for (i = 0; i < get_slicenumber(); i++) {

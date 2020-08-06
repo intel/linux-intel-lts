@@ -125,53 +125,6 @@ static const int DecHwId[] = {
 	0x8001
 };
 
-#ifndef USE_DTB_PROBE
-static unsigned long long multicorebase[HXDEC_MAX_CORES] = {
-	SOCLE_LOGIC_1_BASE,
-	SOCLE_LOGIC_0_BASE,
-	SOCLE_LOGIC_2_BASE,
-	SOCLE_LOGIC_3_BASE,
-	SOCLE_LOGIC_4_BASE,
-	SOCLE_LOGIC_5_BASE,
-	SOCLE_LOGIC_6_BASE,
-	SOCLE_LOGIC_7_BASE
-};
-
-static int irq[HXDEC_MAX_CORES] = {
-	DEC_IRQ_0,
-	DEC_IRQ_1,
-	DEC_IRQ_0,
-	DEC_IRQ_1,
-	DEC_IRQ_0,
-	DEC_IRQ_1,
-	DEC_IRQ_0,
-	DEC_IRQ_1
-};
-
-static unsigned int iosize[HXDEC_MAX_CORES] = {
-	DEC_IO_SIZE_0,
-	DEC_IO_SIZE_1,
-	DEC_IO_SIZE_0,
-	DEC_IO_SIZE_1,
-	DEC_IO_SIZE_0,
-	DEC_IO_SIZE_1,
-	DEC_IO_SIZE_0,
-	DEC_IO_SIZE_1
-};
-
-/*slice idx must be in sequence, else add dec node will fail: only for no DTB probe mode*/
-static int sliceidxtable[HXDEC_MAX_CORES] = {
-	0,
-	0,
-	1,
-	1,
-	2,
-	2,
-	3,
-	3
-};
-
-#endif
 static int bdecprobed;
 //static int hantro_dbg = -1;
 extern bool verbose;
@@ -703,45 +656,7 @@ static void ReleasePostProcessor(struct hantrodec_t *dev, long core)
 
 	up(&parentslice->pp_core_sem);
 }
-#if 0
-static long ReserveDecPp(struct hantrodec_t *dev, struct file *filp, unsigned long format)
-{
-	/* reserve core 0, DEC+PP for pipeline */
-	unsigned long flags;
 
-	long core = 0;
-
-	/* check that core has the requested dec format */
-	if (!CoreHasFormat(dev->cfg, format))
-		return -EFAULT;
-
-	/* check that core has PP */
-	if (!CoreHasFormat(dev->cfg, DWL_CLIENT_TYPE_PP))
-		return -EFAULT;
-
-	/* reserve a core */
-	if (down_interruptible(&dec_core_sem))
-		return -ERESTARTSYS;
-
-	/* wait until the core is available */
-	if (wait_event_interruptible(hw_queue,
-		GetDecCore(core, dev, filp, format) != 0)) {
-		up(&dec_core_sem);
-		return -ERESTARTSYS;
-	}
-
-	if (down_interruptible(&pp_core_sem)) {
-		ReleaseDecoder(dev, core);
-		return -ERESTARTSYS;
-	}
-
-	spin_lock_irqsave(&owner_lock, flags);
-	dev->pp_owner = filp;
-	spin_unlock_irqrestore(&owner_lock, flags);
-
-	return core;
-}
-#endif
 static long DecFlushRegs(struct hantrodec_t *dev, struct core_desc *core)
 {
 	long ret = 0, i;
@@ -1423,124 +1338,63 @@ int hantrodec_probe(dtbnode *pnode)
 {
 	int i, result = 0;
 	struct hantrodec_t *pcore, *auxcore;
-#ifndef USE_DTB_PROBE	/*simulate and compatible with old code*/
-	if (bdecprobed != 0)
-		return 0;
-	bdecprobed = 1;
-	for (i = 0; i < ARRAY_SIZE(multicorebase); i++) {
-		int irqnum;
-		if (multicorebase[i] == 0)
-			break;
-		pcore = vmalloc(sizeof(struct hantrodec_t));
-		if (pcore == NULL)
-			continue;
 
-		memset(pcore, 0, sizeof(struct hantrodec_t));
-		pcore->multicorebase = pcore->multicorebase_actual = multicorebase[i];
-		pcore->iosize = iosize[i];
 
-		auxcore = NULL;
-		result = ReserveIO(pcore, &auxcore);
-		if (result < 0) {
-			vfree(pcore);
-			continue;
-		}
+	int irqn;
+	pcore = vmalloc(sizeof(struct hantrodec_t));
+	if (pcore == NULL)
+		return -ENOMEM;
 
-		ReadCoreConfig(pcore);
-		ResetAsic(pcore);
-		pcore->dec_owner = pcore->pp_owner = NULL;
-		pcore->sliceidx = sliceidxtable[i];
+	memset(pcore, 0, sizeof(struct hantrodec_t));
+	pcore->multicorebase = pcore->multicorebase_actual = pnode->ioaddr;
+	pcore->iosize = pnode->iosize;
+	auxcore = NULL;
+	result = ReserveIO(pcore, &auxcore);
+	if (result < 0) {
+		vfree(pcore);
+		return -ENODEV;
+	}
 
-		if (auxcore != NULL) {
-			ReadCoreConfig(auxcore);
-			ResetAsic(auxcore);
-			auxcore->dec_owner = auxcore->pp_owner = NULL;
-			auxcore->sliceidx = pcore->sliceidx;
-		}
+	ReadCoreConfig(pcore);
+	ResetAsic(pcore);
+	pcore->dec_owner = pcore->pp_owner = NULL;
+	pcore->sliceidx = pnode->sliceidx;
+
+	if (auxcore != NULL) {
+		ReadCoreConfig(auxcore);
+		ResetAsic(auxcore);
+		auxcore->dec_owner = auxcore->pp_owner = NULL;
+		auxcore->sliceidx = pcore->sliceidx;
+	}
+	irqn = 0;
+	for (i = 0; i < 4; i++)
+		pcore->irqlist[i] = -1;
 #ifdef USE_IRQ
-		irqnum = irq[i];
-		if (irqnum > 0) {
-			result = request_irq(irqnum, hantrodec_isr, IRQF_SHARED,
-				"irq_hantro_c1", (void *)pcore);
+	for (i = 0; i < 4; i++) {
+		if (pnode->irq[i] > 0) {
+			strcpy(pcore->irq_name[i], pnode->irq_name[i]);
+			result = request_irq(pnode->irq[i], hantrodec_isr, IRQF_SHARED,
+				pcore->irq_name[i], (void *)pcore);
 			if (result != 0) {
-				pr_err("dec can't reserve irq %d\n", irqnum);
+				pr_err("dec can't reserve irq %d\n", pnode->irq[i]);
 				ReleaseIO(pcore);
 				vfree(pcore);
 				if (auxcore) {
 					ReleaseIO(auxcore);
 					vfree(auxcore);
 				}
-				continue;
+				return -ENODEV;
 			} else {
-				pcore->irqlist[0] = irqnum;
+				pcore->irqlist[irqn] = pnode->irq[i];
+				irqn++;
 			}
 		}
-#endif
-		add_decnode(pcore->sliceidx, pcore);
-		if (auxcore != NULL)
-			add_decnode(auxcore->sliceidx, auxcore);
-
 	}
-#else	/*USE_DTB_PROBE*/
-	{
-		int irqn;
-		pcore = vmalloc(sizeof(struct hantrodec_t));
-		if (pcore == NULL)
-			return -ENOMEM;
-
-		memset(pcore, 0, sizeof(struct hantrodec_t));
-		pcore->multicorebase = pcore->multicorebase_actual = pnode->ioaddr;
-		pcore->iosize = pnode->iosize;
-		auxcore = NULL;
-		result = ReserveIO(pcore, &auxcore);
-		if (result < 0) {
-			vfree(pcore);
-			return -ENODEV;
-		}
-
-		ReadCoreConfig(pcore);
-		ResetAsic(pcore);
-		pcore->dec_owner = pcore->pp_owner = NULL;
-		pcore->sliceidx = pnode->sliceidx;
-
-		if (auxcore != NULL) {
-			ReadCoreConfig(auxcore);
-			ResetAsic(auxcore);
-			auxcore->dec_owner = auxcore->pp_owner = NULL;
-			auxcore->sliceidx = pcore->sliceidx;
-		}
-		irqn = 0;
-		for (i = 0; i < 4; i++)
-			pcore->irqlist[i] = -1;
-#ifdef USE_IRQ
-		for (i = 0; i < 4; i++) {
-			if (pnode->irq[i] > 0) {
-				strcpy(pcore->irq_name[i], pnode->irq_name[i]);
-				result = request_irq(pnode->irq[i], hantrodec_isr, IRQF_SHARED,
-					pcore->irq_name[i], (void *)pcore);
-				if (result != 0) {
-					pr_err("dec can't reserve irq %d\n", pnode->irq[i]);
-					ReleaseIO(pcore);
-					vfree(pcore);
-					if (auxcore) {
-						ReleaseIO(auxcore);
-						vfree(auxcore);
-					}
-					return -ENODEV;
-				} else {
-					pcore->irqlist[irqn] = pnode->irq[i];
-					irqn++;
-				}
-			}
-		}
 #endif
-		add_decnode(pnode->sliceidx, pcore);
-		if (auxcore != NULL)
-			add_decnode(pnode->sliceidx, auxcore);
+	add_decnode(pnode->sliceidx, pcore);
+	if (auxcore != NULL)
+		add_decnode(pnode->sliceidx, auxcore);
 
-	}
-
-#endif	/*USE_DTB_PROBE*/
 	return 0;
 }
 

@@ -43,38 +43,9 @@
 #include "hantrodec400.h"
 #include "hantro_slice.h"
 
-#define DEC400_0_IO_BASE		0x680000//the base addr of core. for PCIE, it refers to offset from bar
-#define DEC400_1_IO_BASE		0x780000//the base addr of core. for PCIE, it refers to offset from bar
-#define DEC400_2_IO_BASE		(0xc0000000+0x10000)
-#define DEC400_3_IO_BASE		(0xd0000000+0x10000)
-
-#define DEC400_0_IO_SIZE		(1568 * 4)    /* bytes *///cache register size
-#define DEC400_1_IO_SIZE		(1568 * 4)    /* bytes *///shaper register size
-#define DEC400_2_IO_SIZE		(1600 * 4)    /* bytes *///cache register size
-#define DEC400_3_IO_SIZE		(1600 * 4)    /* bytes *///shaper register size
-
 static u32 dec400_regs[1568];	//for hantro_dec400FlushRegs use, else too big frame
 static int dec400probed;
-#ifndef USE_DTB_PROBE
-static struct dec400_core_cfg dec400cores[] = {
-	{0x185530000, DEC400_0_IO_SIZE, 0, 0x185538000},		//enc 0
-	{0x185532000, DEC400_1_IO_SIZE, 0, 0x185539000},		//enc 1
-	{0x185534000, DEC400_2_IO_SIZE, 0, 0x18553a000},		//dec 0
-	{0x185536000, DEC400_3_IO_SIZE, 0, 0x18553b000},		//dec 1
-	{0x285530000, DEC400_0_IO_SIZE, 1, 0x285538000},		//enc 0
-	{0x285532000, DEC400_1_IO_SIZE, 1, 0x285539000},		//enc 1
-	{0x285534000, DEC400_2_IO_SIZE, 1, 0x28553a000},		//dec 0
-	{0x285536000, DEC400_3_IO_SIZE, 1, 0x28553b000},		//dec 1
-	{0x385530000, DEC400_0_IO_SIZE, 2, 0x385538000},		//enc 0
-	{0x385532000, DEC400_1_IO_SIZE, 2, 0x385539000},		//enc 1
-	{0x385534000, DEC400_2_IO_SIZE, 2, 0x38553a000},		//dec 0
-	{0x385536000, DEC400_3_IO_SIZE, 2, 0x38553b000},		//dec 1
-	{0x485530000, DEC400_0_IO_SIZE, 3, 0x485538000},		//enc 0
-	{0x485532000, DEC400_1_IO_SIZE, 3, 0x485539000},		//enc 1
-	{0x485534000, DEC400_2_IO_SIZE, 3, 0x48553a000},		//dec 0
-	{0x485536000, DEC400_3_IO_SIZE, 3, 0x48553b000},		//dec 1
-};
-#endif
+
 static void dec400_ResetAsic(struct dec400_t *dev)
 {
 	int i;
@@ -257,70 +228,36 @@ int hantro_dec400_probe(dtbnode *pnode)
 {
 	struct dec400_t *pdec400;
 
-#ifndef USE_DTB_PROBE
-	int i;
-	if (dec400probed != 0)
-		return 0;
-	dec400probed = 1;
-	for (i = 0; i < ARRAY_SIZE(dec400cores); i++) {
-		pdec400 = vmalloc(sizeof(struct dec400_t));
-		if (pdec400 == NULL) {
-			pr_err("DEC400: failed to alloc node\n");
-			continue;
-		}
-		pdec400->core_cfg = dec400cores[i];
-		if (!request_mem_region(dec400cores[i].dec400corebase, dec400cores[i].iosize,
-								"hantrodec400")) {
-			vfree(pdec400);
-			pr_err("DEC400: HW regs busy\n");
-			continue;
-		}
-
-		pdec400->hwregs = (volatile u8 *) ioremap(dec400cores[i].dec400corebase,
-															dec400cores[i].iosize);
-
-		if (pdec400->hwregs == NULL) {
-			release_mem_region(dec400cores[i].dec400corebase, dec400cores[i].iosize);
-			vfree(pdec400);
-			pr_err("DEC400: failed to map HW regs\n");
-			continue;
-		}
-		dec400_ResetAsic(pdec400);
-		add_dec400node(dec400cores[i].sliceidx, pdec400);
+	pdec400 = vmalloc(sizeof(struct dec400_t));
+	if (pdec400 == NULL) {
+		pr_err("DEC400: failed to alloc node\n");
+		return -ENOMEM;
 	}
-#else	//ndef USE_DTB_PROBE
-	{
-		pdec400 = vmalloc(sizeof(struct dec400_t));
-		if (pdec400 == NULL) {
-			pr_err("DEC400: failed to alloc node\n");
-			return -ENOMEM;
-		}
-		pdec400->core_cfg.dec400corebase = pnode->ioaddr;
-		pdec400->core_cfg.iosize = pnode->iosize;
-		pdec400->core_cfg.sliceidx = pnode->sliceidx;
-		pdec400->core_cfg.parentaddr = pnode->parentaddr;
+	pdec400->core_cfg.dec400corebase = pnode->ioaddr;
+	pdec400->core_cfg.iosize = pnode->iosize;
+	pdec400->core_cfg.sliceidx = pnode->sliceidx;
+	pdec400->core_cfg.parentaddr = pnode->parentaddr;
 
-		if (!request_mem_region(pdec400->core_cfg.dec400corebase, pdec400->core_cfg.iosize,
-								"hantrodec400")) {
-			vfree(pdec400);
-			pr_err("DEC400: HW regs busy\n");
-			return -ENODEV;
-		}
-
-		pdec400->hwregs = ioremap(pdec400->core_cfg.dec400corebase,
-											pdec400->core_cfg.iosize);
-
-		if (pdec400->hwregs == NULL) {
-			release_mem_region(pdec400->core_cfg.dec400corebase, pdec400->core_cfg.iosize);
-			vfree(pdec400);
-			pr_err("DEC400: failed to map HW regs\n");
-			return -ENODEV;
-		}
-		dec400_ResetAsic(pdec400);
-		add_dec400node(pnode->sliceidx, pdec400);
-		pr_info("hantrodec400: HW at base <0x%llx>\n", pdec400->core_cfg.dec400corebase);
+	if (!request_mem_region(pdec400->core_cfg.dec400corebase, pdec400->core_cfg.iosize,
+							"hantrodec400")) {
+		vfree(pdec400);
+		pr_err("DEC400: HW regs busy\n");
+		return -ENODEV;
 	}
-#endif
+
+	pdec400->hwregs = ioremap(pdec400->core_cfg.dec400corebase,
+										pdec400->core_cfg.iosize);
+
+	if (pdec400->hwregs == NULL) {
+		release_mem_region(pdec400->core_cfg.dec400corebase, pdec400->core_cfg.iosize);
+		vfree(pdec400);
+		pr_err("DEC400: failed to map HW regs\n");
+		return -ENODEV;
+	}
+	dec400_ResetAsic(pdec400);
+	add_dec400node(pnode->sliceidx, pdec400);
+	pr_info("hantrodec400: HW at base <0x%llx>\n", pdec400->core_cfg.dec400corebase);
+
 	return 0;
 }
 
