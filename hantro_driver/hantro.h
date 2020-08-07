@@ -191,6 +191,20 @@ struct core_desc {
 	__u32 reg_id;
 };
 
+struct hantro_client {
+	int clientid;
+	int sliceid;
+	unsigned long width;        /*buffer size*/
+	unsigned long height;
+	int profile;
+	int codec;
+};
+
+struct file_data {
+	struct idr *clients;
+	struct idr *list;
+};
+
 /************* some cache related defines   ************/
 /* Define Cache&Shaper Offset from common base */
 #define SHAPER_OFFSET			(0x8 << 2)
@@ -222,6 +236,10 @@ struct core_desc {
 	DRM_IOWR(HANTRO_IOCTL_START + 10, struct hantro_exchanged_metadata_info *)
 #define DRM_IOCTL_HANTRO_UPDATE_METADATA \
 	DRM_IOWR(HANTRO_IOCTL_START + 11, struct hantro_exchanged_metadata_info *)
+#define DRM_IOCTL_HANTRO_ADD_CLIENT \
+	DRM_IOWR(HANTRO_IOCTL_START + 12, struct hantro_client)
+#define DRM_IOCTL_HANTRO_REMOVE_CLIENT \
+	DRM_IOWR(HANTRO_IOCTL_START + 13, struct hantro_client)
 
 /* hantro enc related */
 #define HX280ENC_IOC_START		DRM_IO(HANTRO_IOCTL_START + 17)

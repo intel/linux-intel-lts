@@ -106,7 +106,8 @@ static int hantro_recordmem(
 	int size)
 {
 	int ret;
-	struct idr *list = (struct idr *)priv->driver_priv;
+	struct file_data *data = (struct file_data *)priv->driver_priv;
+	struct idr *list = (struct idr *)data->list;
 
 	ret = idr_alloc(list, obj, 1, 0, GFP_KERNEL);
 	return (ret > 0 ? 0 : -ENOMEM);
@@ -117,7 +118,8 @@ static void hantro_unrecordmem(
 	void *obj)
 {
 	int id;
-	struct idr *list = (struct idr *)priv->driver_priv;
+	struct file_data *data = (struct file_data *)priv->driver_priv;
+	struct idr *list = (struct idr *)data->list;
 	void *gemobj;
 
 	idr_for_each_entry(list, gemobj, id) {
@@ -186,7 +188,7 @@ static int hantro_gem_dumb_create_internal(
 	if (mutex_lock_interruptible(&dev->struct_mutex))
 		return -EBUSY;
 
-	cma_obj = kzalloc(dev->dev,
+	cma_obj = kzalloc(
 		sizeof(struct drm_gem_hantro_object), GFP_KERNEL);
 	if (!cma_obj) {
 		ret = -ENOMEM;
@@ -250,7 +252,7 @@ static int hantro_gem_dumb_create_internal(
 out:
 	mutex_unlock(&dev->struct_mutex);
 	if (ret == -ENOMEM) {
-		char *buf = kzalloc(dev->dev, PAGE_SIZE, GFP_KERNEL);
+		char *buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
 
 		memory_usage_show_internal(sliceidx, buf);
 		pr_info("Slice %d out of memory\n%s", sliceidx, buf);
@@ -533,7 +535,7 @@ static struct drm_gem_object *hantro_gem_prime_import_sg_table(
 	struct drm_gem_hantro_object *cma_obj;
 	struct drm_gem_object *obj;
 
-	cma_obj = kzalloc(dev->dev,
+	cma_obj = kzalloc(
 		sizeof(struct drm_gem_hantro_object), GFP_KERNEL);
 	if (!cma_obj)
 		return ERR_PTR(-ENOMEM);
@@ -776,6 +778,50 @@ static int hantro_get_slicenum(
 	return get_slicenumber();
 }
 
+static int hantro_add_client(
+	struct drm_device *dev,
+	void *data,
+	struct drm_file *file_priv)
+{
+	int ret;
+	struct hantro_client *attrib = data;
+	struct file_data *file_attr = (struct file_data *)file_priv->driver_priv;
+	struct hantro_client *client = kzalloc(sizeof(struct hantro_client), GFP_KERNEL);
+
+	if (data == NULL)
+		return -EINVAL;
+	if (!client)
+		return -ENOMEM;
+
+	*client = *attrib;
+	ret = idr_alloc(file_attr->clients, client, 1, 0, GFP_KERNEL);
+	return (ret > 0 ? 0 : -ENOMEM);
+}
+
+static int hantro_remove_client(
+	struct drm_device *dev,
+	void *data,
+	struct drm_file *file_priv)
+{
+	struct hantro_client *attrib = data;
+	struct file_data *file_attr = (struct file_data *)file_priv->driver_priv;
+	struct hantro_client *client = NULL;
+	int id;
+
+	if (data == NULL)
+		return -EINVAL;
+
+	idr_for_each_entry(file_attr->clients, client, id) {
+		if (client && client->clientid == attrib->clientid) {
+			idr_remove(file_attr->clients, id);
+			kfree(client);
+			break;
+		}
+	}
+
+	return 0;
+}
+
 
 /*reference linux 4.11. ubuntu 16.04 have issues in its drm_gem_flink_ioctl().
  * MODIFICATION:
@@ -843,13 +889,15 @@ static int hantro_drm_open(
 	struct drm_device *dev,
 	struct drm_file *file)
 {
-	struct idr *ptr;
-
-	ptr = kzalloc(sizeof(struct idr), GFP_KERNEL);
-	if (ptr == NULL)
+	struct file_data *data;
+	data = kzalloc(sizeof(struct file_data), GFP_KERNEL);
+	data->clients = kzalloc(sizeof(struct idr), GFP_KERNEL);
+	data->list = kzalloc(sizeof(struct idr), GFP_KERNEL);
+	if (data->clients == NULL || data->list == NULL)
 		return -ENOMEM;
-	idr_init(ptr);
-	file->driver_priv = ptr;
+	idr_init(data->clients);
+	idr_init(data->list);
+	file->driver_priv = data;
 	return 0;
 }
 
@@ -866,21 +914,38 @@ static void hantro_drm_postclose(
 	struct drm_file *file)
 {
 	int id;
-	struct idr *cmalist = (struct idr *)file->driver_priv;
+	struct file_data *priv = (struct file_data *)file->driver_priv;
+	struct hantro_client *client;
 	void *obj;
 
+
 	mutex_lock(&dev->struct_mutex);
-	if (file->driver_priv) {
-		idr_for_each_entry(cmalist, obj, id) {
+	if (priv->list) {
+		idr_for_each_entry(priv->list, obj, id) {
 			if (obj) {
 				hantro_release_dumb(dev, file, obj);
-				idr_remove(cmalist, id);
+				idr_remove(priv->list, id);
 			}
 		}
-		idr_destroy(cmalist);
-		kfree(file->driver_priv);
-		file->driver_priv = NULL;
+		idr_destroy(priv->list);
+		kfree(priv->list);
+		priv->list = NULL;
 	}
+
+	if (priv->clients) {
+		idr_for_each_entry(priv->clients, client, id) {
+			if (obj) {
+				kfree(client);
+				idr_remove(priv->clients, id);
+			}
+		}
+		idr_destroy(priv->clients);
+		kfree(priv->clients);
+		priv->clients = NULL;
+	}
+
+	kfree(priv);
+	file->driver_priv = NULL;
 	mutex_unlock(&dev->struct_mutex);
 }
 
@@ -1384,6 +1449,8 @@ static const struct drm_ioctl_desc hantro_ioctls[] = {
 	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_QUERY_METADATA, hantro_query_metadata, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
 	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_UPDATE_METADATA, hantro_update_metadata, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
 	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_GET_SLICENUM, hantro_get_slicenum, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
+	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_ADD_CLIENT, hantro_add_client, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
+	DRM_IOCTL_DEF(DRM_IOCTL_HANTRO_REMOVE_CLIENT, hantro_remove_client, DRM_CONTROL_ALLOW | DRM_UNLOCKED),
 };
 
 #if DRM_CONTROL_ALLOW == 0
@@ -1722,6 +1789,97 @@ bandwidthEncWrite_show(struct device *kdev, struct device_attribute *attr, char 
 	bandwidth = hantroenc_readbandwidth(sliceidx, 0);
 	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
 }
+static ssize_t
+show_clients(struct device *kdev, struct device_attribute *attr, char *buf)
+{
+
+	struct drm_device *ddev = hantro_dev.drm_dev;
+	struct drm_file *file;
+	struct file_data *data = NULL;
+	int handle, buf_used = 0, client_count = 0;
+	bool noprint = false;
+	struct hantro_client *client;
+	int sliceidx = -1;
+	static char optype[64];
+	static char profile[64];
+	static char *unkown= "Unknown";
+	static char *optypes[] =
+	{
+	    "Decode",
+	    "Encode"
+	};
+
+	static char *profiles[]=
+	{
+	    /** \brief Profile ID used for video processing. */
+	    "VAProfileMPEG2Simple",
+	    "VAProfileMPEG2Main",
+	    "VAProfileMPEG4Simple",
+	    "VAProfileMPEG4AdvancedSimple",
+	    "VAProfileMPEG4Main",
+	    "VAProfileH264Baseline",
+	    "VAProfileH264Main",
+	    "VAProfileH264High",
+	    "VAProfileVC1Simple",
+	    "VAProfileVC1Main",
+	    "VAProfileVC1Advanced",
+	    "VAProfileH263Baseline",
+	    "VAProfileJPEGBaseline",
+	    "VAProfileH264ConstrainedBaseline",
+	    "VAProfileVP8Version0_3",
+	    "VAProfileH264MultiviewHigh",
+	    "VAProfileH264StereoHigh",
+	    "VAProfileHEVCMain",
+	    "VAProfileHEVCMain10",
+	    "VAProfileVP9Profile0",
+	    "VAProfileVP9Profile1",
+	    "VAProfileVP9Profile2",
+	    "VAProfileVP9Profile3"
+	};
+
+	sliceidx = findslice_bydev(kdev);
+	buf_used += snprintf(buf + buf_used, PAGE_SIZE, "  File Id  : ContextId : Slice :  Operation   :           Codec             :   Resolution  \n");
+	mutex_lock(&ddev->filelist_mutex);
+	// Go through all open drm files
+	list_for_each_entry(file, &ddev->filelist, lhead) {
+		mutex_lock(&ddev->struct_mutex);
+		// Traverse through cma objects added to file's driver_priv
+		// checkout hantro_recordmem
+		data = (struct file_data *)file->driver_priv;
+		if (data && data->clients) {
+			idr_for_each_entry(data->clients, client, handle) {
+				 if (client && client->sliceid == sliceidx) {
+					 if (buf_used < (PAGE_SIZE - 200)) {
+						 if (client->profile >= 0 && client->profile <= 22)
+							strncpy(profile, profiles[client->profile], strlen(profiles[client->profile]));
+						 else
+							strncpy(profile, unkown, strlen(unkown));
+
+						 if (client->codec == 0 || client->codec ==1)
+							strncpy(optype, optypes[client->codec], strlen(optypes[client->codec]));
+						 else
+							strncpy(optype, unkown, strlen(unkown));
+						 buf_used += snprintf(buf + buf_used, PAGE_SIZE, "%10p  %10x %5d\t  %s (%d)\t %20s (%d)\t%ldx%ld\n", file, client->clientid, client->sliceid,  optype, client->codec,  profile, client->profile, client->width, client->height);
+					 } else {
+						 // optimization to save buf space due to a PAGE_SIZE mem only
+						if (noprint == false) {
+							 buf_used += snprintf(buf + buf_used, PAGE_SIZE, " ....\n");
+							 noprint = true; //print ... only one time
+						}
+					}
+					 client_count++;
+				 }
+			}
+		}
+		mutex_unlock(&ddev->struct_mutex);
+	}
+
+	mutex_unlock(&ddev->filelist_mutex);
+	buf_used += snprintf(buf + buf_used, PAGE_SIZE, "\n%d clients\n\n",  client_count);
+
+	return buf_used;
+}
+
 
 static ssize_t
 memory_usage_show_internal(int sliceidx, char *buf)
@@ -1729,6 +1887,7 @@ memory_usage_show_internal(int sliceidx, char *buf)
 
 	struct drm_device *ddev = hantro_dev.drm_dev;
 	struct drm_file *file;
+	struct file_data *data;
 	struct drm_gem_hantro_object *cma_obj;
 	int buf_used = 0, alloc_count = 0;
 	ssize_t mem_used = 0;
@@ -1745,7 +1904,8 @@ memory_usage_show_internal(int sliceidx, char *buf)
 		mutex_lock(&ddev->struct_mutex);
 		// Traverse through cma objects added to file's driver_priv
 		// checkout hantro_recordmem
-		idr_for_each_entry(file->driver_priv, gobj, handle) {
+		data = (struct file_data *)file->driver_priv;
+		idr_for_each_entry(data->list, gobj, handle) {
 			if (gobj) {
 				cma_obj = to_drm_gem_hantro_obj(gobj);
 				if (cma_obj && cma_obj->sliceidx ==  sliceidx) {
@@ -1773,6 +1933,8 @@ memory_usage_show_internal(int sliceidx, char *buf)
 	return buf_used;
 }
 
+
+
 static ssize_t
 memory_usage_show(struct device *kdev, struct device_attribute *attr, char *buf)
 {
@@ -1785,6 +1947,7 @@ static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
 static DEVICE_ATTR(BWEncRead, 0444, bandwidthEncRead_show, NULL);
 static DEVICE_ATTR(BWEncWrite, 0444, bandwidthEncWrite_show, NULL);
 static DEVICE_ATTR(mem_usage, 0444, memory_usage_show, NULL);
+static DEVICE_ATTR(clients, 0444, show_clients, NULL);
 
 static struct attribute *hantro_attrs[] = {
 	&dev_attr_BWDecRead.attr,
@@ -1792,6 +1955,7 @@ static struct attribute *hantro_attrs[] = {
 	&dev_attr_BWEncRead.attr,
 	&dev_attr_BWEncWrite.attr,
 	&dev_attr_mem_usage.attr,
+	&dev_attr_clients.attr,
 	NULL,
 };
 
@@ -1823,13 +1987,13 @@ static int mem_usage_show(struct seq_file *s, void *v)
 
 DEFINE_HANTRO_DEBUGFS_SEQ_FOPS(mem_usage);
 
-void create_debugfs(void)
+void create_debugfs(int slice)
 {
     struct dentry *root;
-    root = debugfs_create_dir("status",
+    root = debugfs_create_dir("hantro",
             NULL);
 
-    debugfs_create_file("status", S_IFREG | S_IRUGO,
+    debugfs_create_file("mem_usage", S_IFREG | S_IRUGO,
             root,
             NULL, &mem_usage_fops);
 }
@@ -1865,7 +2029,7 @@ static dtbnode *trycreatenode(
 	const char *reg_name;
 	uint64_t ioaddress, iosize;
 
-	dtbnode *pnode = kzalloc(&pdev->dev, sizeof(dtbnode), GFP_KERNEL);
+	dtbnode *pnode = kzalloc(sizeof(dtbnode), GFP_KERNEL);
 	if (!pnode)
 		return NULL;
 
@@ -2128,10 +2292,9 @@ static int hantro_drm_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	int result = 0;
 	int sliceidx = -1;
-	pr_info("hantro_drm_probe: dev %s probe", pdev->name);
+	pr_info("hantro_drm_probe: dev %s probe\n", pdev->name);
 
-	/*TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
-
+        /*TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
 	hantro_clock_control(pdev, true);
 	hantro_reset_control(pdev, true);
 
@@ -2314,8 +2477,7 @@ int __init hantro_init(void)
 	hantro_dev.drm_dev->dev = &hantro_dev.platformdev->dev;
 	drm_mode_config_init(hantro_dev.drm_dev);
 	result  = drm_dev_register(hantro_dev.drm_dev, 0);
-
-	if (result < 0) {
+        if (result < 0) {
 		drm_dev_unregister(hantro_dev.drm_dev);
 		platform_device_unregister(hantro_dev.platformdev);
 		platform_driver_unregister(&hantro_drm_platform_driver);
@@ -2339,7 +2501,7 @@ int __init hantro_init(void)
 
 	}
 
-      
+        create_debugfs(0);
 	slice_init_finish();
 	if (verbose)
 	     slice_printdebug();
