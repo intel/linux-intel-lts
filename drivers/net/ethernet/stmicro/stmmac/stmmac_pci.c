@@ -1118,6 +1118,10 @@ static int __maybe_unused stmmac_pci_runtime_resume(struct device *dev)
 	ndev = dev_get_drvdata(&pdev->dev);
 	priv = netdev_priv(ndev);
 
+	ret = stmmac_pci_resume(dev);
+	if (!ret)
+		dev_info(dev, "%s: Device is runtime resumed.\n", __func__);
+
 	rtnl_lock();
 	/* Restore saved WoL operation */
 	wol.wolopts = priv->saved_wolopts;
@@ -1125,9 +1129,8 @@ static int __maybe_unused stmmac_pci_runtime_resume(struct device *dev)
 	priv->saved_wolopts = 0;
 	rtnl_unlock();
 
-	ret = stmmac_pci_resume(dev);
-	if (!ret)
-		dev_info(dev, "%s: Device is runtime resumed.\n", __func__);
+	if (!wol.wolopts)
+		device_set_wakeup_enable(priv->device, 0);
 
 	return ret;
 }
