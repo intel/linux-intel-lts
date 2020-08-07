@@ -59,3 +59,9 @@
 
 # CVE-2020-15780
 0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
+
+# CVE-2020-16166
+0001-random32-update-the-net-random-state-on-interrupt-an.patch
+
+# CVE-2019-19770
+0002-blktrace-move-blktrace-debugfs-creation-to-helper-fu.patch
