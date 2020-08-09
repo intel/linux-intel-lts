@@ -650,10 +650,41 @@ static void marvell_config_led(struct phy_device *phydev)
 		phydev_warn(phydev, "Fail to config marvell phy LED.\n");
 }
 
+static void marvell_config_wol_init(struct phy_device *phydev)
+{
+	int err;
+
+	err = phy_modify_paged(phydev, MII_MARVELL_COPPER_PAGE,
+			       MII_88E1318S_PHY_CSIER,
+			       MII_88E1318S_PHY_CSIER_WOL_EIE,
+			       0);
+	if (err < 0)
+		phydev_warn(phydev,
+			    "Fail to configure WOL Event Interrupt Enable on Copper Page.\n");
+
+	err = phy_modify_paged(phydev, MII_MARVELL_LED_PAGE,
+			       MII_88E1318S_PHY_LED_TCR,
+			       MII_88E1318S_PHY_LED_TCR_FORCE_INT |
+			       MII_88E1318S_PHY_LED_TCR_INTn_ENABLE,
+			       0);
+	if (err < 0)
+		phydev_warn(phydev,
+			    "Fail to configure LED[2] Interrupt Enable on LED Page.\n");
+
+	err = phy_write_paged(phydev, MII_MARVELL_WOL_PAGE,
+			      MII_88E1318S_PHY_WOL_CTRL, 0x00);
+	if (err < 0)
+		phydev_warn(phydev,
+			    "Fail to initialize WOL Control to default value on WOL Page.\n");
+}
+
 static int marvell_config_init(struct phy_device *phydev)
 {
 	/* Set defalut LED */
 	marvell_config_led(phydev);
+
+	/* Set default WOL interrupt and detection event */
+	marvell_config_wol_init(phydev);
 
 	/* Set registers from marvell,reg-init DT property */
 	return marvell_of_reg_init(phydev);
@@ -1512,12 +1543,12 @@ static int m88e1318_set_wol(struct phy_device *phydev,
 	if (oldpage < 0)
 		goto error;
 
-	if (wol->wolopts & (WAKE_MAGIC | WAKE_PHY)) {
-		/* Explicitly switch to page 0x00, just to be sure */
-		err = marvell_write_page(phydev, MII_MARVELL_COPPER_PAGE);
-		if (err < 0)
-			goto error;
+	/* Explicitly switch to page 0x00, just to be sure */
+	err = marvell_write_page(phydev, MII_MARVELL_COPPER_PAGE);
+	if (err < 0)
+		goto error;
 
+	if (wol->wolopts & (WAKE_MAGIC | WAKE_PHY)) {
 		/* If WOL event happened once, the LED[2] interrupt pin
 		 * will not be cleared unless we reading the interrupt status
 		 * register. If interrupts are in use, the normal interrupt
@@ -1542,6 +1573,24 @@ static int m88e1318_set_wol(struct phy_device *phydev,
 				   MII_88E1318S_PHY_LED_TCR_FORCE_INT,
 				   MII_88E1318S_PHY_LED_TCR_INTn_ENABLE |
 				   MII_88E1318S_PHY_LED_TCR_INT_ACTIVE_LOW);
+		if (err < 0)
+			goto error;
+	} else {
+		/* Disable the WOL interrupt */
+		err = __phy_modify(phydev, MII_88E1318S_PHY_CSIER,
+				   MII_88E1318S_PHY_CSIER_WOL_EIE,
+				   0);
+		if (err < 0)
+			goto error;
+
+		err = marvell_write_page(phydev, MII_MARVELL_LED_PAGE);
+		if (err < 0)
+			goto error;
+
+		err = __phy_modify(phydev, MII_88E1318S_PHY_LED_TCR,
+				   MII_88E1318S_PHY_LED_TCR_FORCE_INT |
+				   MII_88E1318S_PHY_LED_TCR_INTn_ENABLE,
+				   0);
 		if (err < 0)
 			goto error;
 	}
