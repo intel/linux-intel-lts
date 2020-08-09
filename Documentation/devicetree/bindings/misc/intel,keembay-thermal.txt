@@ -1,0 +1,23 @@
+Intel Keem Bay Thermal
+---------------------
+
+The Keem Bay Thermal driver enables reading of onchip sensors present
+in the Intel Keem Bay SoC.
+
+Required properties:
+- compatible : "intel,keembay-tsens"
+- compatible : "intel,keembay-dummy"
+
+- reg: list of register areas, as specified in reg-names
+- interrupts: not used
+- clocks: clock needed for thermal to operate
+
+Example:
+		thermal@20260030 {
+			compatible = "intel,keembay-tsens";
+			reg = <0x0 0x20260030 0x0 0x20>;
+			interrupts = <0x0 0x5a 0x4>;
+			clocks = <0x6 0x21>;
+			status = "okay";
+		};
+

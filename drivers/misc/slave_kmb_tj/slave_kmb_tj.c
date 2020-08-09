@@ -17,11 +17,14 @@
 #include <linux/sysfs.h>
 #include <linux/sched/mm.h>
 #include <linux/of_address.h>
+#include "../drivers/misc/thermal/keembay_tsens.h"
 
 #define I2C_SLAVE_BYTELEN GENMASK(15, 0)
 #define I2C_SLAVE_FLAG_ADDR16 BIT(16)
 #define I2C_SLAVE_FLAG_RO BIT(17)
 #define I2C_SLAVE_DEVICE_MAGIC(_len, _flags) ((_flags) | (_len))
+
+#define DEBUG_SLAVE_KMB_TJ 0
 
 #if IS_ENABLED(CONFIG_I2C_SLAVE)
 
@@ -35,7 +38,6 @@ struct kmb_tj_data {
 	bool read_only;
 	u8 buffer[];
 };
-
 
 static int i2c_slave_kmb_tj_slave_cb(struct i2c_client *client,
 				     enum i2c_slave_event event, u8 *val)
@@ -53,7 +55,7 @@ static int i2c_slave_kmb_tj_slave_cb(struct i2c_client *client,
 			kmb_tj->buffer_idx = *val | (kmb_tj->buffer_idx << 8);
 			kmb_tj->idx_write_cnt++;
 			spin_lock(&kmb_tj->buffer_lock);
-			temp = (unsigned char *)(kmb_tj_temp_list);
+			temp = (unsigned char *)kmb_tj_get_temp_base();
 			kmb_tj->buffer[kmb_tj->buffer_idx]
 				= temp[kmb_tj->buffer_idx];
 			spin_unlock(&kmb_tj->buffer_lock);
@@ -111,23 +113,6 @@ static int i2c_slave_kmb_tj_slave_cb(struct i2c_client *client,
 	return 0;
 }
 
-static ssize_t i2c_slave_kmb_tj_bin_read(struct file *filp,
-					struct kobject *kobj,
-					struct bin_attribute *attr,
-					char *buf, loff_t off, size_t count)
-{
-	struct kmb_tj_data *kmb_tj;
-	unsigned long flags;
-
-	kmb_tj = dev_get_drvdata(container_of(kobj, struct device, kobj));
-
-	spin_lock_irqsave(&kmb_tj->buffer_lock, flags);
-	memcpy(buf, &kmb_tj->buffer[off], count);
-	spin_unlock_irqrestore(&kmb_tj->buffer_lock, flags);
-
-	return count;
-}
-
 static int hddl_id_read(uint32_t *bid, uint32_t *kmbid, struct device *dev)
 {
 	char *gpio_base_address;
@@ -145,25 +130,30 @@ static int hddl_id_read(uint32_t *bid, uint32_t *kmbid, struct device *dev)
 	writel(0x1C0F, gpio_base_address + 0x2D0);
 	writel(0x1C0F, gpio_base_address + 0x2D4);
 
+#if DEBUG_SLAVE_KMB_TJ
 	dev_info(dev, "0x2CC = %x\n", readl(gpio_base_address + 0x2CC));
 	dev_info(dev, "0x2D0 = %x\n", readl(gpio_base_address + 0x2D0));
 	dev_info(dev, "0x2D4 = %x\n", readl(gpio_base_address + 0x2D4));
+#endif
 
 	writel(0x1C0F, gpio_base_address + 0x328);
 	writel(0x1C0F, gpio_base_address + 0x32C);
 	writel(0x1C0F, gpio_base_address + 0x330);
 
-
+#if DEBUG_SLAVE_KMB_TJ
 	dev_info(dev, "0x328 = %x\n", readl(gpio_base_address + 0x328));
 	dev_info(dev, "0x32C = %x\n", readl(gpio_base_address + 0x32C));
 	dev_info(dev, "0x330 = %x\n", readl(gpio_base_address + 0x330));
+#endif /*DEBUG_SLAVE_KMB_TJ*/
 
 	*bid = readl(gpio_base_address + 0x24);
-	*bid = (bid >> 19) & 0x7;
+	*bid = (*bid >> 19) & 0x7;
 	*kmbid = readl(gpio_base_address + 0x28);
-	*kmbid = (kmbid >> 10) & 0x7;
+	*kmbid = (*kmbid >> 10) & 0x7;
+#if DEBUG_SLAVE_KMB_TJ
 	dev_info(dev, "HDDL: GPIO BOARD ID = %u\n", *bid);
 	dev_info(dev, "HDDL: GPIO KEEMBAY ID = %u\n", *kmbid);
+#endif
 	if (*kmbid > 2) {
 		*kmbid = 0;
 		dev_info(dev, "HDDL: GPIO KEEMBAY ID > 2, ");
@@ -193,8 +183,6 @@ static int i2c_slave_kmb_tj_probe(struct i2c_client *client,
 		slave_addr = kmb_id + 0x60 + ((board_id - 5) * 3);
 	}
 
-	dev_info(&client->dev, "HDDL: Slave Address = %x\n", slave_addr);
-
 	kmb_tj = devm_kzalloc(&client->dev,
 			sizeof(struct kmb_tj_data) + size, GFP_KERNEL);
 	if (!kmb_tj)
@@ -209,6 +197,9 @@ static int i2c_slave_kmb_tj_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, kmb_tj);
 
 	ret = i2c_slave_register(client, i2c_slave_kmb_tj_slave_cb);
+#if DEBUG_SLAVE_KMB_TJ
+	dev_info(&client->dev, "Slave Kmb Probe Success[%x]\n", slave_addr);
+#endif
 
 	return ret;
 };

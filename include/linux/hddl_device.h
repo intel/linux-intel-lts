@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Keembay HDDL module.
  *
@@ -14,15 +14,14 @@
 #include <linux/xlink.h>
 
 #define HDDL_MAGIC 'x'
+#define HDDL_READ_SW_ID_DATA    _IOW(HDDL_MAGIC, 'a', void*)
+#define HDDL_SOFT_RESET		_IOW(HDDL_MAGIC, 'b', void*)
 
-#define HDDL_READ_SW_ID_DATA    _IOW(HDDL_MAGIC,  'a', void*)
-#define HDDL_SOFT_RESET		      _IOW(HDDL_MAGIC,  'b', void*)
 
 #define HDDL_MAX_DEVICE 8
 #define HDDL_MAX_BAY_DEVICE 3
 
-
-typedef struct hddl_device_kmb_st {
+struct hddl_device_kmb {
 	uint32_t board_id;
 	struct kmb {
 		uint32_t  id;
@@ -40,7 +39,7 @@ typedef struct hddl_device_kmb_st {
 	} soc[HDDL_MAX_BAY_DEVICE];
 } T_HDDL_DEVICE_KMB_NODE;
 
-typedef struct sw_id_hddl_data {
+struct sw_id_hddl_data {
 	uint32_t board_id;
 	uint32_t soc_id;
 	uint32_t soc_adaptor_no[2];
@@ -48,7 +47,7 @@ typedef struct sw_id_hddl_data {
 	uint32_t return_id;
 } T_SW_ID_HDDL_DATA;
 
-typedef struct sw_id_soft_reset {
+struct sw_id_soft_reset {
 	uint32_t sw_id;
 	uint32_t return_id;
 } T_SW_ID_SOFT_RESET;

@@ -34,7 +34,7 @@ keembay_cooling_set_cur_state(struct thermal_cooling_device *cooling_dev,
 			      unsigned long state)
 {
 	state = 0;
-	dev_info(&cooling_dev->dev, "%s\n", __func__);
+	dev_info(&cooling_dev->device, "%s\n", __func__);
 	return 0;
 }
 

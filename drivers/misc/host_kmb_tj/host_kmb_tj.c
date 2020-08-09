@@ -197,10 +197,6 @@ int keembay_thermal_zone_unregister_host(
 
 	spin_lock(&ktherm->lock);
 	thermal_zone_device_unregister(zone_trip_info->tz);
-	dev_info(ktherm->dev,
-		"thermal_zone_device_unregister %s\n",
-		zone_trip_info->sensor_name
-	);
 	spin_unlock(&ktherm->lock);
 	return 0;
 }
@@ -269,7 +265,6 @@ static int host_kmb_tj_probe(struct i2c_client *client,
 	char *i2c_str;
 	struct kmb_trip_point_info *host_kmb_trip_info;
 	uint32_t *device_id = client->dev.platform_data;
-	int i;
 
 	if (strstr(client->adapter->name, "SMBus I801") != NULL)
 		i2c_str = "smb";
@@ -321,7 +316,7 @@ static int host_kmb_tj_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, host_kmb_trip_info);
 
-	dev_info(client->dev, "host_kmb_tj: probe success\n");
+	dev_info(&client->dev, "host_kmb_tj: probe success\n");
 
 	return 0;
 }
