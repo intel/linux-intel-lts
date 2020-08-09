@@ -17,7 +17,7 @@
 #include <linux/sysfs.h>
 #include <linux/sched/mm.h>
 #include <linux/of_address.h>
-#include "../drivers/misc/thermal/keembay_tsens.h"
+#include "../drivers/misc/keembay-thermal/keembay_tsens.h"
 
 #define I2C_SLAVE_BYTELEN GENMASK(15, 0)
 #define I2C_SLAVE_FLAG_ADDR16 BIT(16)
