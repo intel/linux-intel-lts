@@ -264,5 +264,6 @@ struct plat_stmmacenet_data {
 	bool eee_timer;
 	struct mdio_board_info *intel_bi;
 	struct dwxpcs_platform_data *xpcs_pdata;
+	bool phy_wol_thru_pmc;
 };
 #endif

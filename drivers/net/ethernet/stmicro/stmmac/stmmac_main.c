@@ -7075,10 +7075,12 @@ int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
 	if (priv->plat->has_serdes)
 		stmmac_serdes_powerdown(priv, ndev);
 
-	/* Enable Power down mode by programming the PMT regs */
 	if (device_may_wakeup(priv->device)) {
-		stmmac_pmt(priv, priv->hw, priv->wolopts);
-		priv->irq_wake = 1;
+		/* Enable Power Down mode by programming the PMT regs. */
+		if (!priv->plat->phy_wol_thru_pmc) {
+			stmmac_pmt(priv, priv->hw, priv->wolopts);
+			priv->irq_wake = 1;
+		}
 	} else {
 		mutex_unlock(&priv->lock);
 		rtnl_lock();
@@ -7166,10 +7168,12 @@ int stmmac_suspend(struct device *dev)
 	if (priv->plat->has_serdes)
 		stmmac_serdes_powerdown(priv, ndev);
 
-	/* Enable Power down mode by programming the PMT regs */
 	if (device_may_wakeup(priv->device)) {
-		stmmac_pmt(priv, priv->hw, priv->wolopts);
-		priv->irq_wake = 1;
+		/* Enable Power Down mode by programming the PMT regs.*/
+		if (!priv->plat->phy_wol_thru_pmc) {
+			stmmac_pmt(priv, priv->hw, priv->wolopts);
+			priv->irq_wake = 1;
+		}
 	} else {
 		mutex_unlock(&priv->lock);
 		rtnl_lock();

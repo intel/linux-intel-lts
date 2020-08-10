@@ -322,6 +322,8 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->int_snapshot_en = 0;
 	plat->ext_snapshot_en = 0;
 
+	plat->phy_wol_thru_pmc = 1;
+
 	return 0;
 }
 
