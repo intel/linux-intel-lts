@@ -1,7 +1,7 @@
-From c16a9f23fa9b8934d7eb42f0527010cee6f45de4 Mon Sep 17 00:00:00 2001
+From db1da6d982a024fb71c303aaa63beff416b75cae Mon Sep 17 00:00:00 2001
 From: Luis Chamberlain <mcgrof@kernel.org>
 Date: Wed, 29 Apr 2020 07:46:24 +0000
-Subject: [PATCH 2/2] blktrace: move blktrace debugfs creation to helper
+Subject: [PATCH 3/5] blktrace: move blktrace debugfs creation to helper
  function
 
 Move the work to create the debugfs directory used into a helper.
