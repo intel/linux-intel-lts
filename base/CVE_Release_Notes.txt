@@ -442,6 +442,7 @@ CVEs fixed in 4.19.119:
   CVE-2020-1749: 5dd6835278454a7c7a045462253625de7c16b13e net: ipv6_stub: use ip6_dst_lookup_flow instead of ip6_dst_lookup
 
 CVEs fixed in 4.19.121:
+  CVE-2020-0255: 23075857ad192731fd9edcce3b5cd5db93602c26 selinux: properly handle multiple messages in selinux_netlink_send()
   CVE-2020-10751: 23075857ad192731fd9edcce3b5cd5db93602c26 selinux: properly handle multiple messages in selinux_netlink_send()
 
 CVEs fixed in 4.19.124:
@@ -482,8 +483,21 @@ CVEs fixed in 4.19.132:
 CVEs fixed in 4.19.134:
   CVE-2020-10781: 81a91bf266dd7f2dd56fc3472b7bb54348ac62c7 Revert "zram: convert remaining CLASS_ATTR() to CLASS_ATTR_RO()"
 
+CVEs fixed in 4.19.137:
+  CVE-2019-18808: 167edeeb034f65f57790ff70b1af84a501274d15 crypto: ccp - Release all allocated memory if sha type is invalid
+  CVE-2019-19054: 17271f33fd8811b364ae3c54671566434d46d3eb media: rc: prevent memory leak in cx23888_ir_probe
+  CVE-2019-19061: c57c213538156bff971aa352d9d7749196dfbfd8 iio: imu: adis16400: fix memory leak
+  CVE-2019-19067: e15f8a9b0046418295d09db24c1ec306c80d013b drm/amdgpu: fix multiple memory leaks in acp_hw_init
+  CVE-2019-19072: 7deb2dcb8963812742ed08420cfa4e23bbeda074 tracing: Have error path in predicate_parse() free its allocated memory
+  CVE-2019-19073: 5b8464dc9a6e81a16481549c77d0d341041e425e ath9k_htc: release allocated buffer if timed out
+  CVE-2019-19074: e0cf3ebfcf93dbce123b8bef00f549712efe1135 ath9k: release allocated buffer if timed out
+  CVE-2019-19082: 60e1b411bf0fd9fda2d2de7f45dc3b1d9960b85e drm/amd/display: prevent memory leak
+  CVE-2019-19813: 4e986ab36ed11ecf21de9b5aab0e46ac3342df93 btrfs: inode: Verify inode mode to avoid NULL pointer dereference
+  CVE-2019-19816: 4e986ab36ed11ecf21de9b5aab0e46ac3342df93 btrfs: inode: Verify inode mode to avoid NULL pointer dereference
+  CVE-2019-3874: 9a84bb13816fe3b361a75e10ee9821ab68aa36f5 sctp: implement memory accounting on tx path
+
  
-CVEs Fixed in this 4.19.134 LTS 4.19 release 
+CVEs Fixed in this 4.19.135 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -552,5 +566,15 @@ CVEs Fixed in this 4.19.134 LTS 4.19 release
 
 # CVE-2020-15780
 0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
+
+# CVE-2020-16166
+0001-random32-update-the-net-random-state-on-interrupt-an.patch
+
+# CVE-2019-19770
+0001-block-revert-back-to-synchronous-request_queue-remov.patch
+0002-block-move-main-block-debugfs-initialization-to-its-.patch
+0003-blktrace-move-blktrace-debugfs-creation-to-helper-fu.patch
+0004-blktrace-fix-debugfs-use-after-free.patch
+0005-loop-be-paranoid-on-exit-and-prevent-new-additions-r.patch
  
 ================
