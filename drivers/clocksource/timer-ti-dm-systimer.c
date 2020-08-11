@@ -437,7 +437,7 @@ static irqreturn_t dmtimer_clockevent_interrupt(int irq, void *data)
 	struct dmtimer_systimer *t = &clkevt->t;
 
 	writel_relaxed(OMAP_TIMER_INT_OVERFLOW, t->base + t->irq_stat);
-	clkevt->dev.event_handler(&clkevt->dev);
+	clockevents_handle_event(&clkevt->dev);
 
 	return IRQ_HANDLED;
 }
@@ -548,7 +548,8 @@ static int __init dmtimer_clockevent_init(struct device_node *np)
 	 * We mostly use cpuidle_coupled with ARM local timers for runtime,
 	 * so there's probably no use for CLOCK_EVT_FEAT_DYNIRQ here.
 	 */
-	dev->features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT;
+	dev->features = CLOCK_EVT_FEAT_PERIODIC | \
+		CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PIPELINE;
 	dev->rating = 300;
 	dev->set_next_event = dmtimer_set_next_event;
 	dev->set_state_shutdown = dmtimer_clockevent_shutdown;
