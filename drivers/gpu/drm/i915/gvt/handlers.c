@@ -2080,11 +2080,6 @@ static int hws_pga_write(struct intel_vgpu *vgpu, unsigned int offset,
 	u32 value = *(u32 *)p_data;
 	int ring_id = intel_gvt_render_mmio_to_ring_id(vgpu->gvt, offset);
 
-	if (!intel_gvt_ggtt_validate_range(vgpu, value, I915_GTT_PAGE_SIZE)) {
-		gvt_vgpu_err("write invalid HWSP address, reg:0x%x, value:0x%x\n",
-			      offset, value);
-		return -EINVAL;
-	}
 	/*
 	 * Need to emulate all the HWSP register write to ensure host can
 	 * update the VM CSB status correctly. Here listed registers can
@@ -2095,6 +2090,21 @@ static int hws_pga_write(struct intel_vgpu *vgpu, unsigned int offset,
 			     offset);
 		return -EINVAL;
 	}
+
+	if (!intel_gvt_ggtt_validate_range(vgpu, value, I915_GTT_PAGE_SIZE)) {
+		if (vgpu->pv_notified &&
+		    intel_gvt_ggtt_validate_range(vgpu, vgpu->hws_pga[ring_id],
+						  I915_GTT_PAGE_SIZE)) {
+			gvt_dbg_mmio("Skip zero out HWSP address, reg:0x%x, "
+				      "value:0x%x\n", offset, value);
+			return 0;
+		} else {
+			gvt_vgpu_err("write invalid HWSP address, reg:0x%x, "
+				      "value:0x%x\n", offset, value);
+			return -EINVAL;
+		}
+	}
+
 	vgpu->hws_pga[ring_id] = value;
 	gvt_dbg_mmio("VM(%d) write: 0x%x to HWSP: 0x%x\n",
 		     vgpu->id, value, offset);
