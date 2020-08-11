@@ -57,7 +57,7 @@ struct dmtimer_clockevent {
 };
 
 struct dmtimer_clocksource {
-	struct clocksource dev;
+	struct clocksource_user_mmio mmio;
 	struct dmtimer_systimer t;
 	unsigned int loadval;
 };
@@ -708,15 +708,7 @@ static int __init dmtimer_percpu_quirk_init(struct device_node *np, u32 pa)
 static struct dmtimer_clocksource *
 to_dmtimer_clocksource(struct clocksource *cs)
 {
-	return container_of(cs, struct dmtimer_clocksource, dev);
-}
-
-static u64 dmtimer_clocksource_read_cycles(struct clocksource *cs)
-{
-	struct dmtimer_clocksource *clksrc = to_dmtimer_clocksource(cs);
-	struct dmtimer_systimer *t = &clksrc->t;
-
-	return (u64)readl_relaxed(t->base + t->counter);
+	return container_of(cs, struct dmtimer_clocksource, mmio.mmio.clksrc);
 }
 
 static void __iomem *dmtimer_sched_clock_counter;
@@ -755,6 +747,7 @@ static void dmtimer_clocksource_resume(struct clocksource *cs)
 static int __init dmtimer_clocksource_init(struct device_node *np)
 {
 	struct dmtimer_clocksource *clksrc;
+	struct clocksource_mmio_regs mmr;
 	struct dmtimer_systimer *t;
 	struct clocksource *dev;
 	int error;
@@ -763,7 +756,7 @@ static int __init dmtimer_clocksource_init(struct device_node *np)
 	if (!clksrc)
 		return -ENOMEM;
 
-	dev = &clksrc->dev;
+	dev = &clksrc->mmio.mmio.clksrc;
 	t = &clksrc->t;
 
 	error = dmtimer_systimer_setup(np, t);
@@ -772,7 +765,7 @@ static int __init dmtimer_clocksource_init(struct device_node *np)
 
 	dev->name = "dmtimer";
 	dev->rating = 300;
-	dev->read = dmtimer_clocksource_read_cycles;
+	dev->read = clocksource_mmio_readl_up,
 	dev->mask = CLOCKSOURCE_MASK(32);
 	dev->flags = CLOCK_SOURCE_IS_CONTINUOUS;
 
@@ -795,7 +788,13 @@ static int __init dmtimer_clocksource_init(struct device_node *np)
 		sched_clock_register(dmtimer_read_sched_clock, 32, t->rate);
 	}
 
-	if (clocksource_register_hz(dev, t->rate))
+	mmr.reg_lower = t->base + t->counter;
+	mmr.bits_lower = 32;
+	mmr.reg_upper = 0;
+	mmr.bits_upper = 0;
+	mmr.revmap = NULL;
+
+	if (clocksource_user_mmio_init(&clksrc->mmio, &mmr, t->rate))
 		pr_err("Could not register clocksource %pOF\n", np);
 
 	return 0;
