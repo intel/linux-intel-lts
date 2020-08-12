@@ -47,15 +47,15 @@
 
 /*******************PCIE CONFIG*************************/
 #ifdef PCI_BUS
-#define PCI_VENDOR_ID_HANTRO            0x10ee//0x16c3
-#define PCI_DEVICE_ID_HANTRO_PCI      0x8014// 0x7011// 0xabcd
+#define PCI_VENDOR_ID_HANTRO		0x10ee
+#define PCI_DEVICE_ID_HANTRO_PCI	0x8014
 
 /* Base address got control register */
-#define PCI_H2_BAR              4
+#define PCI_H2_BAR	4
 
-static struct pci_dev *gDev;    /* PCI device structure. */
-static unsigned long gBaseHdwr;        /* PCI base register address (Hardware address) */
-static u32 gBaseLen;                   /* Base register address Length */
+static struct pci_dev *gDev; /* PCI device structure. */
+static unsigned long gBaseHdwr; /* PCI base register address (Hardware address) */
+static u32 gBaseLen; /* Base register address Length */
 #endif
 
 /*------------------PORTING LAYER------------------------------------*/
@@ -68,43 +68,53 @@ static u32 gBaseLen;                   /* Base register address Length */
 #define CCLIENT_TYPE_DECG20	"_DECODER_G2_0"
 #define CCLIENT_TYPE_DECG21	"_DECODER_G2_1"
 /* Cache directions */
-#define CC_DIR_READ		"_DIRRD"
+#define CC_DIR_READ	"_DIRRD"
 #define CC_DIR_WRITE	"_DIRWR"
 #define CC_DIR_BIDIR	"_DIRBI"
 
-#define RESOURCE_SHARED_INTER_CORES        0
-#define CORE_0_IO_BASE                 0x700000//the base addr of core. for PCIE, it refers to offset from bar
-#define CORE_1_IO_BASE                 0x700000//the base addr of core. for PCIE, it refers to offset from bar
+#define RESOURCE_SHARED_INTER_CORES	0
 
-#define CORE_2_IO_BASE                 0x780000//the base addr of core. for PCIE, it refers to offset from bar
-#define CORE_3_IO_BASE                 0x780000//the base addr of core. for PCIE, it refers to offset from bar
+/* the base addr of core. for PCIE, it refers to offset from bar */
+#define CORE_0_IO_BASE	0x700000
+#define CORE_1_IO_BASE	0x700000
+#define CORE_2_IO_BASE	0x780000
+#define CORE_3_IO_BASE	0x780000
 
-#define CORE_0_IO_SIZE                 0x800    //bytes cache register size
-#define CORE_1_IO_SIZE                 0x800    //bytes shaper register size
+#define CORE_0_IO_SIZE	0x800 /* bytes cache register size */
+#define CORE_1_IO_SIZE	0x800 /* bytes shaper register size */
 
+#define CORE_2_IO_SIZE	((6 + 4 * 8) * 4) /* bytes cache register size */
+#define CORE_3_IO_SIZE	((5 + 5 * 8) * 4) /* bytes shaper register size */
 
-#define CORE_2_IO_SIZE                 ((6+4*8) * 4)    //bytes cache register size
-#define CORE_3_IO_SIZE                 ((5+5*8) * 4)    // bytes shaper register size
+#define INT_PIN_CORE_0	-1
+#define INT_PIN_CORE_1	-1
 
-
-#define INT_PIN_CORE_0                    -1
-#define INT_PIN_CORE_1                    -1
-
-#define INT_PIN_CORE_2                    -1
-#define INT_PIN_CORE_3                    -1
-/*for all cores, the core info should be listed here for later use*/
-/*base_addr, iosize, irq*/
+#define INT_PIN_CORE_2	-1
+#define INT_PIN_CORE_3	-1
+/* for all cores, the core info should be listed here for later use */
+/* base_addr, iosize, irq */
 #ifndef USE_DTB_PROBE
 static struct cache_core_config cache_core_array[] = {
-	/*note parent address is copied from hx280enc.c's CORE_x_IO_ADDR and hantrodec.c's SOCLE_LOGIC_x_BASE */
-	{VC8000D_0, 0x18553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 0, 0x18553a000},
-	{VC8000D_1, 0x18553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 0, 0x18553b000},
-	{VC8000D_0, 0x28553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 1, 0x28553a000},
-	{VC8000D_1, 0x28553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 1, 0x28553b000},
-	{VC8000D_0, 0x38553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 2, 0x38553a000},
-	{VC8000D_1, 0x38553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 2, 0x38553b000},
-	{VC8000D_0, 0x48553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 3, 0x48553a000},
-	{VC8000D_1, 0x48553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 3, 0x48553b000},
+	/*
+	 * note parent address is copied from hx280enc.c's CORE_x_IO_ADDR
+	 * and hantrodec.c's SOCLE_LOGIC_x_BASE
+	 */
+	{ VC8000D_0, 0x18553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 0,
+	  0x18553a000 },
+	{ VC8000D_1, 0x18553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 0,
+	  0x18553b000 },
+	{ VC8000D_0, 0x28553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 1,
+	  0x28553a000 },
+	{ VC8000D_1, 0x28553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 1,
+	  0x28553b000 },
+	{ VC8000D_0, 0x38553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 2,
+	  0x38553a000 },
+	{ VC8000D_1, 0x38553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 2,
+	  0x38553b000 },
+	{ VC8000D_0, 0x48553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 3,
+	  0x48553a000 },
+	{ VC8000D_1, 0x48553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 3,
+	  0x48553b000 },
 };
 #endif
 static int bcacheprobed;
@@ -119,11 +129,7 @@ static void ReleaseIO(struct cache_dev_t *);
 static void ResetAsic(struct cache_dev_t *dev);
 #ifdef USE_IRQ
 #ifndef PCI_BUS
-#if (KERNEL_VERSION(2, 6, 18) > LINUX_VERSION_CODE)
-static irqreturn_t cache_isr(int irq, void *dev_id, struct pt_regs *regs);
-#else
 static irqreturn_t cache_isr(int irq, void *dev_id);
-#endif
 #endif
 #endif
 /*********************local variable declaration*****************/
@@ -150,7 +156,8 @@ static unsigned int WaitCacheReady(struct cache_dev_t *dev)
 {
 	struct slice_info *parentslice = getparentslice(dev, CORE_CACHE);
 
-	if (wait_event_interruptible(parentslice->cache_wait_queue, CheckCacheIrq(dev))) {
+	if (wait_event_interruptible(parentslice->cache_wait_queue,
+				     CheckCacheIrq(dev))) {
 		PDEBUG("Cache wait_event_interruptible interrupted\n");
 		return -ERESTARTSYS;
 	}
@@ -186,8 +193,9 @@ static long ReserveCore(struct cache_dev_t *dev, struct file *filp)
 	struct slice_info *parentslice;
 	parentslice = getparentslice(dev, CORE_CACHE);
 
-	/* lock a core that has specified core id*/
-	if (wait_event_interruptible(parentslice->cache_hw_queue, GetWorkableCore(dev, filp) != 0))
+	/* lock a core that has specified core id */
+	if (wait_event_interruptible(parentslice->cache_hw_queue,
+				     GetWorkableCore(dev, filp) != 0))
 		return -ERESTARTSYS;
 
 	return 0;
@@ -197,7 +205,6 @@ static void ReleaseCore(struct cache_dev_t *dev)
 {
 	unsigned long flags;
 	struct slice_info *parentslice = getparentslice(dev, CORE_CACHE);
-
 
 	/* release specified core id */
 	spin_lock_irqsave(&parentslice->cache_owner_lock, flags);
@@ -213,10 +220,7 @@ static void ReleaseCore(struct cache_dev_t *dev)
 	wake_up_interruptible_all(&parentslice->cache_hw_queue);
 }
 
-long hantrocache_ioctl(
-	struct file *filp,
-	unsigned int cmd,
-	unsigned long arg)
+long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
 	u32 tmp, id, slice, node, type;
@@ -233,7 +237,8 @@ long hantrocache_ioctl(
 		if (pccore == NULL)
 			return -EFAULT;
 		else
-			__put_user(pccore->com_base_addr, (unsigned long long *) arg);
+			__put_user(pccore->com_base_addr,
+				   (unsigned long long *)arg);
 		break;
 	case CACHE_IOCGHWIOSIZE:
 		id = (u32)arg;
@@ -249,38 +254,40 @@ long hantrocache_ioctl(
 		id = arg;
 		id = get_slicecorenum(id, CORE_CACHE);
 		return id;
-	case CACHE_IOCH_HW_RESERVE:
-		{
-			driver_cache_dir dir;
-			cache_client_type client;
-		/*it's a little danger here since here's no protection of the chain*/
-			__get_user(tmp64, (unsigned long long *)arg);
-			id = tmp64 >> 32;
-			slice = SLICE(id);
-			type = NODETYPE(id);
-			node = KCORE(id);
-			core_id = (u32)tmp64;//get client and direction info
-			dir = core_id & 0x01;
-			client = (core_id & 0x06) >> 1;
-			pccore = get_cachenodes(slice, 0);
+	case CACHE_IOCH_HW_RESERVE: {
+		driver_cache_dir dir;
+		cache_client_type client;
+		/* it's a little danger here since here's no protection of the chain */
+		__get_user(tmp64, (unsigned long long *)arg);
+		id = tmp64 >> 32;
+		slice = SLICE(id);
+		type = NODETYPE(id);
+		node = KCORE(id);
+		core_id = (u32)tmp64; /* get client and direction info */
+		dir = core_id & 0x01;
+		client = (core_id & 0x06) >> 1;
+		pccore = get_cachenodes(slice, 0);
 
-			while (pccore != NULL) {
-				/* a valid core supports such client and dir*/
-				if (pccore->core_cfg.client == client && pccore->core_cfg.dir == dir &&
-					pccore->parentid == node && pccore->is_valid &&
-					((type == NODE_TYPE_DEC && pccore->parenttype == CORE_DEC)
-					|| (type == NODE_TYPE_ENC && pccore->parenttype == CORE_ENC)))
-					break;
-				pccore = pccore->next;
-			}
-			if (pccore == NULL)
-				return -EFAULT;
-
-			ret = ReserveCore(pccore, filp);
-			if (ret == 0)
-				return pccore->core_id;
-			return ret;
+		while (pccore != NULL) {
+			/* a valid core supports such client and dir */
+			if (pccore->core_cfg.client == client &&
+			    pccore->core_cfg.dir == dir &&
+			    pccore->parentid == node && pccore->is_valid &&
+			    ((type == NODE_TYPE_DEC &&
+			      pccore->parenttype == CORE_DEC) ||
+			     (type == NODE_TYPE_ENC &&
+			      pccore->parenttype == CORE_ENC)))
+				break;
+			pccore = pccore->next;
 		}
+		if (pccore == NULL)
+			return -EFAULT;
+
+		ret = ReserveCore(pccore, filp);
+		if (ret == 0)
+			return pccore->core_id;
+		return ret;
+	}
 	case CACHE_IOCH_HW_RELEASE:
 		core_id = (u32)arg;
 		slice = SLICE(core_id);
@@ -335,7 +342,8 @@ static int PcieInit(int corenum)
 {
 	int i = 0;
 
-	gDev = pci_get_device(PCI_VENDOR_ID_HANTRO, PCI_DEVICE_ID_HANTRO_PCI, gDev);
+	gDev = pci_get_device(PCI_VENDOR_ID_HANTRO, PCI_DEVICE_ID_HANTRO_PCI,
+			      gDev);
 	if (gDev == NULL) {
 		PDEBUG("Init: Hardware not found.\n");
 		return -1;
@@ -354,7 +362,10 @@ static int PcieInit(int corenum)
 	gBaseLen = pci_resource_len(gDev, PCI_H2_BAR);
 
 	for (i = 0; i < corenum; i++)
-		cache_core_array[i].base_addr = gBaseHdwr + cache_core_array[i].base_addr;//the offset is based on which bus interface is chosen
+		cache_core_array[i].base_addr =
+			gBaseHdwr +
+			cache_core_array[i]
+				.base_addr; /* the offset is based on which bus interface is chosen */
 
 	return 0;
 
@@ -380,7 +391,8 @@ int __init cache_init(void)
 
 	bcacheprobed = 0;
 #ifdef PCI_BUS
-	result = PcieInit(sizeof(cache_core_array)/sizeof(struct cache_core_config));
+	result = PcieInit(sizeof(cache_core_array) /
+			  sizeof(struct cache_core_config));
 #endif
 	return result;
 }
@@ -439,25 +451,25 @@ int cache_probe(dtbnode *pnode)
 	result = ReserveIO(pccore);
 	if (result < 0) {
 		pr_err("cachecore: reserve reg 0x%llx-0x%llx fail\n",
-			pnode->ioaddr, pnode->iosize);
+		       pnode->ioaddr, pnode->iosize);
 		vfree(pccore);
 		return -ENODEV;
 	}
 
-	ResetAsic(pccore);  /* reset hardware */
+	ResetAsic(pccore); /* reset hardware */
 	pccore->is_valid = 1;
 	for (i = 0; i < 4; i++)
 		pccore->irqlist[i] = -1;
 #ifdef USE_IRQ
 	if (pnode->irq[0] > 0) {
 		strcpy(pccore->irq_name[0], pnode->irq_name[0]);
-		result = request_irq(pnode->irq[0], cache_isr,
-			IRQF_SHARED,
-			pccore->irq_name[0], (void *)pccore);
+		result = request_irq(pnode->irq[0], cache_isr, IRQF_SHARED,
+				     pccore->irq_name[0], (void *)pccore);
 		if (result == 0)
 			pccore->irqlist[0] = pnode->irq[0];
 		else {
-			pr_err("cachecore: request IRQ <%d> fail\n", pnode->irq[0]);
+			pr_err("cachecore: request IRQ <%d> fail\n",
+			       pnode->irq[0]);
 			ReleaseIO(pccore);
 			vfree(pccore);
 			return -EINVAL;
@@ -467,7 +479,7 @@ int cache_probe(dtbnode *pnode)
 	pccore->core_cfg.parentaddr = pnode->parentaddr;
 	add_cachenode(pnode->sliceidx, pccore);
 
-#endif	/*not def PCI_BUS*/
+#endif /* not def PCI_BUS */
 	return 0;
 }
 
@@ -487,7 +499,8 @@ void __exit cache_cleanup(void)
 			/* free the encoder IRQ */
 			for (k = 0; k < 4; k++)
 				if (pccore->irqlist[k] > 0)
-					free_irq(pccore->irqlist[k], (void *)pccore);
+					free_irq(pccore->irqlist[k],
+						 (void *)pccore);
 			ReleaseIO(pccore);
 
 			vfree(pccore);
@@ -503,10 +516,12 @@ static int cache_get_hwid(unsigned long base_addr, int *hwid)
 {
 	u8 *hwregs = NULL;
 	if (!request_mem_region(base_addr, 4, "hantro_cache")) {
-		PDEBUG(KERN_INFO "hantr_cache: failed to reserve HW regs,base_addr:%p\n", (void *)base_addr);
+		PDEBUG(KERN_INFO
+		       "hantr_cache: failed to reserve HW regs,base_addr:%p\n",
+		       (void *)base_addr);
 		return -1;
 	}
-	hwregs = (u8 *) ioremap(base_addr, 4);
+	hwregs = (u8 *)ioremap(base_addr, 4);
 	if (hwregs == NULL) {
 		PDEBUG(KERN_INFO "hantr_cache: failed to ioremap HW regs\n");
 		release_mem_region(base_addr, 4);
@@ -514,8 +529,8 @@ static int cache_get_hwid(unsigned long base_addr, int *hwid)
 	}
 
 	*hwid = readl(hwregs + 0x00);
-	PDEBUG(KERN_INFO "hantro_cache: hwid = %x, base_addr= %p\n",
-		(int)*hwid, (void *)base_addr);
+	PDEBUG(KERN_INFO "hantro_cache: hwid = %x, base_addr= %p\n", (int)*hwid,
+	       (void *)base_addr);
 
 	if (hwregs)
 		iounmap((void *)hwregs);
@@ -531,15 +546,14 @@ static int ReserveIO(struct cache_dev_t *pccore)
 	if (cache_get_hwid(pccore->core_cfg.base_addr, &hwid) < 0)
 		return -1;
 
-	hw_cfg = (hwid & 0xF0000)>>16;
-
+	hw_cfg = (hwid & 0xF0000) >> 16;
 
 	if (hw_cfg > 2)
 		return -1;
 
-	if (hw_cfg == 1 && pccore->core_cfg.dir == DIR_WR)//cache only
+	if (hw_cfg == 1 && pccore->core_cfg.dir == DIR_WR) /* cache only */
 		pccore->is_valid = 0;
-	else if (hw_cfg == 2 && pccore->core_cfg.dir == DIR_RD)//shaper only
+	else if (hw_cfg == 2 && pccore->core_cfg.dir == DIR_RD) /* shaper only */
 		pccore->is_valid = 0;
 	else
 		pccore->is_valid = 1;
@@ -559,19 +573,24 @@ static int ReserveIO(struct cache_dev_t *pccore)
 		}
 	}
 
-	if (!request_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize, pccore->reg_name)) {
-		PDEBUG(KERN_INFO "hantr_cache: failed to reserve HW regs,core:%x\n", hwid);
+	if (!request_mem_region(pccore->core_cfg.base_addr,
+				pccore->core_cfg.iosize, pccore->reg_name)) {
+		PDEBUG(KERN_INFO
+		       "hantr_cache: failed to reserve HW regs,core:%x\n",
+		       hwid);
 		pccore->is_valid = 0;
 		return -1;
 	}
 
-	pccore->hwregs =
-		(u8 *) ioremap(pccore->core_cfg.base_addr,
-			pccore->core_cfg.iosize);
+	pccore->hwregs = (u8 *)ioremap(pccore->core_cfg.base_addr,
+				       pccore->core_cfg.iosize);
 
 	if (pccore->hwregs == NULL) {
-		PDEBUG(KERN_INFO "hantr_cache: failed to ioremap HW regs,core:%x\n", hwid);
-		release_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize);
+		PDEBUG(KERN_INFO
+		       "hantr_cache: failed to ioremap HW regs,core:%x\n",
+		       hwid);
+		release_mem_region(pccore->core_cfg.base_addr,
+				   pccore->core_cfg.iosize);
 		pccore->is_valid = 0;
 		return -1;
 	}
@@ -581,7 +600,9 @@ static int ReserveIO(struct cache_dev_t *pccore)
 	else
 		PDEBUG("shaper reg[0x08]=%08x\n", readl(pccore->hwregs + 0x08));
 
-	pr_info("hantrocache: HW at base <0x%llx> with ID 0x%x [mapped addr = 0x%llx]\n", pccore->core_cfg.base_addr, hwid, (unsigned long long)pccore->hwregs);
+	pr_info("hantrocache: HW at base <0x%llx> with ID 0x%x [mapped addr = 0x%llx]\n",
+		pccore->core_cfg.base_addr, hwid,
+		(unsigned long long)pccore->hwregs);
 
 	return 0;
 }
@@ -591,7 +612,7 @@ static void ReleaseIO(struct cache_dev_t *pccore)
 	if (pccore->is_valid == 0)
 		return;
 	if (pccore->hwregs)
-		iounmap((void *) pccore->hwregs);
+		iounmap((void *)pccore->hwregs);
 	release_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize);
 }
 
@@ -600,14 +621,14 @@ static void ReleaseIO(struct cache_dev_t *pccore)
 static irqreturn_t cache_isr(int irq, void *dev_id)
 {
 	unsigned int handled = 0;
-	struct cache_dev_t *dev = (struct cache_dev_t *) dev_id;
+	struct cache_dev_t *dev = (struct cache_dev_t *)dev_id;
 	u32 irq_status;
 	unsigned long flags;
 	u32 irq_triggered = 0;
 	struct slice_info *parentslice;
 
 	parentslice = getparentslice(dev, CORE_CACHE);
-	/*If core is not reserved by any user, but irq is received, just ignore it*/
+	/* If core is not reserved by any user, but irq is received, just ignore it */
 	spin_lock_irqsave(&parentslice->cache_owner_lock, flags);
 	if (!dev->is_reserved) {
 		spin_unlock_irqrestore(&parentslice->cache_owner_lock, flags);
@@ -619,13 +640,13 @@ static irqreturn_t cache_isr(int irq, void *dev_id)
 		irq_status = readl(dev->hwregs + 0x04);
 		if (irq_status & 0x28) {
 			irq_triggered = 1;
-			writel(irq_status, dev->hwregs + 0x04);//clear irq
+			writel(irq_status, dev->hwregs + 0x04); /* clear irq */
 		}
 	} else {
 		irq_status = readl(dev->hwregs + 0x0C);
 		if (irq_status) {
 			irq_triggered = 1;
-			writel(irq_status, dev->hwregs + 0x0C);//clear irq
+			writel(irq_status, dev->hwregs + 0x0C); /* clear irq */
 		}
 	}
 	if (irq_triggered == 1) {
@@ -654,4 +675,3 @@ static void ResetAsic(struct cache_dev_t *dev)
 	for (i = 0; i < dev->core_cfg.iosize; i += 4)
 		writel(0, dev->hwregs + i);
 }
-

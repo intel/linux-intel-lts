@@ -34,7 +34,7 @@ static const char *hantro_fence_get_driver_name(hantro_fence_t *fence)
 
 static const char *hantro_fence_get_timeline_name(hantro_fence_t *fence)
 {
-	return " ";		/*it shoud correspond to six domains later*/
+	return " "; /*it shoud correspond to six domains later*/
 }
 
 static bool hantro_fence_enable_signaling(hantro_fence_t *fence)
@@ -102,9 +102,8 @@ static int isHantrofence(hantro_fence_t *fence)
 	return (fence->ops == &hantro_fenceops);
 }
 
-int init_hantro_resv(
-	struct dma_resv *presv,
-	struct drm_gem_hantro_object *cma_obj)
+int init_hantro_resv(struct dma_resv *presv,
+		     struct drm_gem_hantro_object *cma_obj)
 {
 	//hantro_fence_t *fobj;
 	dma_resv_init(presv);
@@ -129,10 +128,8 @@ int hantro_waitfence(hantro_fence_t *pfence)
 }
 
 /*it's obselete, left here for compiling compatible*/
-int hantro_setdomain(
-	struct drm_device *dev,
-	void *data,
-	struct drm_file *file_priv)
+int hantro_setdomain(struct drm_device *dev, void *data,
+		     struct drm_file *file_priv)
 {
 	return 0;
 }
@@ -159,10 +156,8 @@ void releaseFenceData(void)
 	mutex_unlock(&fence_mutex);
 }
 
-int hantro_acquirebuf(
-	struct drm_device *dev,
-	void *data,
-	struct drm_file *file_priv)
+int hantro_acquirebuf(struct drm_device *dev, void *data,
+		      struct drm_file *file_priv)
 {
 	struct hantro_acquirebuf *arg = data;
 	struct dma_resv *resv;
@@ -189,14 +184,11 @@ int hantro_acquirebuf(
 		resv = obj->dma_buf->resv;
 
 	/* Check for a stalled fence */
-	if (!dma_resv_wait_timeout_rcu(resv,
-			arg->flags & HANTRO_FENCE_WRITE,
-			1,
-			timeout)) {
+	if (!dma_resv_wait_timeout_rcu(resv, arg->flags & HANTRO_FENCE_WRITE, 1,
+				       timeout)) {
 		ret = -EBUSY;
 		goto err;
 	}
-
 
 	/* Expose the fence via the dma-buf */
 	ret = 0;
@@ -238,10 +230,8 @@ err:
 	return ret;
 }
 
-int hantro_testbufvalid(
-	struct drm_device *dev,
-	void *data,
-	struct drm_file *file_priv)
+int hantro_testbufvalid(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
 {
 	struct hantro_fencecheck *arg = data;
 	struct dma_resv *resv;
@@ -272,10 +262,8 @@ int hantro_testbufvalid(
 	return 0;
 }
 
-int hantro_releasebuf(
-	struct drm_device *dev,
-	void *data,
-	struct drm_file *file_priv)
+int hantro_releasebuf(struct drm_device *dev, void *data,
+		      struct drm_file *file_priv)
 {
 	struct hantro_releasebuf *arg = data;
 	hantro_fence_t *fence;
@@ -297,5 +285,3 @@ int hantro_releasebuf(
 	mutex_unlock(&fence_mutex);
 	return ret;
 }
-
-

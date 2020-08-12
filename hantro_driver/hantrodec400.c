@@ -43,7 +43,7 @@
 #include "hantrodec400.h"
 #include "hantro_slice.h"
 
-static u32 dec400_regs[1568];	//for hantro_dec400FlushRegs use, else too big frame
+static u32 dec400_regs[1568]; /* for hantro_dec400FlushRegs use, else too big frame */
 static int dec400probed;
 
 static void dec400_ResetAsic(struct dec400_t *dev)
@@ -62,10 +62,10 @@ static int hantro_dec400WriteRegs(struct dec400_t *dev, struct core_desc *core)
 
 	if (ret) {
 		pr_err("copy_from_user failed, returned %d\n", ret);
-			return -EFAULT;
+		return -EFAULT;
 	}
 
-	iowrite32(data, (void *)(dev->hwregs + core->reg_id*sizeof(u32)));
+	iowrite32(data, (void *)(dev->hwregs + core->reg_id * sizeof(u32)));
 	return 0;
 }
 
@@ -74,7 +74,7 @@ static int hantro_dec400ReadRegs(struct dec400_t *dev, struct core_desc *core)
 	u32 data;
 	int ret = 0;
 
-	data = ioread32((void *)(dev->hwregs + core->reg_id*sizeof(u32)));
+	data = ioread32((void *)(dev->hwregs + core->reg_id * sizeof(u32)));
 
 	ret = copy_to_user(core->regs + core->reg_id, &data, sizeof(u32));
 	if (ret) {
@@ -88,50 +88,47 @@ static int hantro_dec400FlushRegs(struct dec400_t *dev, struct core_desc *core)
 {
 	int ret = 0, i;
 
-	ret = copy_from_user(dec400_regs, core->regs, 1568*sizeof(u32));
+	ret = copy_from_user(dec400_regs, core->regs, 1568 * sizeof(u32));
 	if (ret) {
-			pr_err("copy_from_user failed, returned %d\n", ret);
+		pr_err("copy_from_user failed, returned %d\n", ret);
 		return -EFAULT;
 	}
 
 	/* write all regs but the status reg[1] to hardware */
 	for (i = 512; i < 704; i++)
-	iowrite32(dec400_regs[i], (void *)(dev->hwregs + i*sizeof(u32)));
+		iowrite32(dec400_regs[i],
+			  (void *)(dev->hwregs + i * sizeof(u32)));
 
-	/*gcregAHBDECControl*/
-	iowrite32(dec400_regs[704], (void *)(dev->hwregs + 704*sizeof(u32)));
-	/*gcregAHBDECIntrEnbl*/
-	iowrite32(dec400_regs[706], (void *)(dev->hwregs + 706*sizeof(u32)));
-	/*gcregAHBDECControlEx*/
-	iowrite32(dec400_regs[732], (void *)(dev->hwregs + 732*sizeof(u32)));
+	/* gcregAHBDECControl */
+	iowrite32(dec400_regs[704], (void *)(dev->hwregs + 704 * sizeof(u32)));
+	/* gcregAHBDECIntrEnbl */
+	iowrite32(dec400_regs[706], (void *)(dev->hwregs + 706 * sizeof(u32)));
+	/* gcregAHBDECControlEx */
+	iowrite32(dec400_regs[732], (void *)(dev->hwregs + 732 * sizeof(u32)));
 	for (i = 800; i < 832; i++)
-		iowrite32(dec400_regs[i], (void *)(dev->hwregs + i*sizeof(u32)));
+		iowrite32(dec400_regs[i],
+			  (void *)(dev->hwregs + i * sizeof(u32)));
 	for (i = 864; i < 896; i++)
-		iowrite32(dec400_regs[i], (void *)(dev->hwregs + i*sizeof(u32)));
+		iowrite32(dec400_regs[i],
+			  (void *)(dev->hwregs + i * sizeof(u32)));
 	for (i = 928; i < 1184; i++)
-		iowrite32(dec400_regs[i], (void *)(dev->hwregs + i*sizeof(u32)));
-	/*gcregAHBDECIntrEnblEx*/
-	iowrite32(dec400_regs[1254], (void *)(dev->hwregs + 1254*sizeof(u32)));
-	//iowrite32(dec400_regs[1263], (void *)(dev->hwregs + 1263*4));
-	//iowrite32(dec400_regs[1265], (void *)(dev->hwregs + 1265*4));
-	//iowrite32(dec400_regs[1266], (void *)(dev->hwregs + 1266*4));
-	//iowrite32(dec400_regs[1268], (void *)(dev->hwregs + 1268*4));
-	//iowrite32(dec400_regs[1270], (void *)(dev->hwregs + 1270*4));
-	//iowrite32(dec400_regs[1272], (void *)(dev->hwregs + 1272*4));
-	//iowrite32(dec400_regs[1274], (void *)(dev->hwregs + 1274*4));
-	//iowrite32(dec400_regs[1276], (void *)(dev->hwregs + 1276*4));
-	iowrite32(dec400_regs[1291], (void *)(dev->hwregs + 1291*sizeof(u32)));
+		iowrite32(dec400_regs[i],
+			  (void *)(dev->hwregs + i * sizeof(u32)));
+	/* gcregAHBDECIntrEnblEx */
+	iowrite32(dec400_regs[1254],
+		  (void *)(dev->hwregs + 1254 * sizeof(u32)));
+	iowrite32(dec400_regs[1291],
+		  (void *)(dev->hwregs + 1291 * sizeof(u32)));
 	for (i = 1312; i < 1376; i++)
-		iowrite32(dec400_regs[i], (void *)(dev->hwregs + i*sizeof(u32)));
+		iowrite32(dec400_regs[i],
+			  (void *)(dev->hwregs + i * sizeof(u32)));
 	for (i = 1504; i < 1568; i++)
-		iowrite32(dec400_regs[i], (void *)(dev->hwregs + i*sizeof(u32)));
+		iowrite32(dec400_regs[i],
+			  (void *)(dev->hwregs + i * sizeof(u32)));
 
 	return 0;
 }
-long hantrodec400_ioctl(
-	struct file *filp,
-	unsigned int cmd,
-	unsigned long arg)
+long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret;
 	u32 id, slice, node, type;
@@ -151,7 +148,8 @@ long hantrodec400_ioctl(
 		pdec400 = get_dec400nodebytype(slice, type, node);
 		if (pdec400 == NULL)
 			return -EINVAL;
-		ret = __put_user(pdec400->core_cfg.dec400corebase, (unsigned long long *) arg);
+		ret = __put_user(pdec400->core_cfg.dec400corebase,
+				 (unsigned long long *)arg);
 		if (ret) {
 			pr_err("copy_to_user failed, returned %d\n", ret);
 			return -EFAULT;
@@ -170,14 +168,15 @@ long hantrodec400_ioctl(
 		pdec400 = get_dec400nodebytype(slice, type, node);
 		if (pdec400 == NULL)
 			return -EFAULT;
-		ret = __put_user(pdec400->core_cfg.iosize, (unsigned int *) arg);
+		ret = __put_user(pdec400->core_cfg.iosize, (unsigned int *)arg);
 		if (ret) {
 			pr_err("copy_to_user failed, returned %d\n", ret);
 			return -EFAULT;
 		}
 		return 0;
 	case DEC400_IOCS_DEC_WRITE_REG:
-		ret = copy_from_user(&coredesc, (void *)arg, sizeof(struct core_desc));
+		ret = copy_from_user(&coredesc, (void *)arg,
+				     sizeof(struct core_desc));
 		if (ret) {
 			pr_err("copy_from_user failed, returned %d\n", ret);
 			return -EFAULT;
@@ -191,7 +190,8 @@ long hantrodec400_ioctl(
 
 		return hantro_dec400WriteRegs(pdec400, &coredesc);
 	case DEC400_IOCS_DEC_READ_REG:
-		ret = copy_from_user(&coredesc, (void *)arg, sizeof(struct core_desc));
+		ret = copy_from_user(&coredesc, (void *)arg,
+				     sizeof(struct core_desc));
 		if (ret) {
 			pr_err("copy_from_user failed, returned %d\n", ret);
 			return -EFAULT;
@@ -205,7 +205,8 @@ long hantrodec400_ioctl(
 
 		return hantro_dec400ReadRegs(pdec400, &coredesc);
 	case DEC400_IOCS_DEC_PUSH_REG:
-		ret = copy_from_user(&coredesc, (void *)arg, sizeof(struct core_desc));
+		ret = copy_from_user(&coredesc, (void *)arg,
+				     sizeof(struct core_desc));
 		if (ret) {
 			pr_err("copy_from_user failed, returned %d\n", ret);
 			return -EFAULT;
@@ -238,25 +239,27 @@ int hantro_dec400_probe(dtbnode *pnode)
 	pdec400->core_cfg.sliceidx = pnode->sliceidx;
 	pdec400->core_cfg.parentaddr = pnode->parentaddr;
 
-	if (!request_mem_region(pdec400->core_cfg.dec400corebase, pdec400->core_cfg.iosize,
-							"hantrodec400")) {
+	if (!request_mem_region(pdec400->core_cfg.dec400corebase,
+				pdec400->core_cfg.iosize, "hantrodec400")) {
 		vfree(pdec400);
 		pr_err("DEC400: HW regs busy\n");
 		return -ENODEV;
 	}
 
 	pdec400->hwregs = ioremap(pdec400->core_cfg.dec400corebase,
-										pdec400->core_cfg.iosize);
+				  pdec400->core_cfg.iosize);
 
 	if (pdec400->hwregs == NULL) {
-		release_mem_region(pdec400->core_cfg.dec400corebase, pdec400->core_cfg.iosize);
+		release_mem_region(pdec400->core_cfg.dec400corebase,
+				   pdec400->core_cfg.iosize);
 		vfree(pdec400);
 		pr_err("DEC400: failed to map HW regs\n");
 		return -ENODEV;
 	}
 	dec400_ResetAsic(pdec400);
 	add_dec400node(pnode->sliceidx, pdec400);
-	pr_info("hantrodec400: HW at base <0x%llx>\n", pdec400->core_cfg.dec400corebase);
+	pr_info("hantrodec400: HW at base <0x%llx>\n",
+		pdec400->core_cfg.dec400corebase);
 
 	return 0;
 }
@@ -270,8 +273,9 @@ void __exit hantro_dec400_cleanup(void)
 		dev = get_dec400nodes(i, 0);
 		while (dev != NULL) {
 			if (dev->hwregs) {
-				iounmap((void *) dev->hwregs);
-				release_mem_region(dev->core_cfg.dec400corebase, dev->core_cfg.iosize);
+				iounmap((void *)dev->hwregs);
+				release_mem_region(dev->core_cfg.dec400corebase,
+						   dev->core_cfg.iosize);
 			}
 			pp = dev->next;
 			vfree(dev);
@@ -286,4 +290,3 @@ int __init hantrodec400_init(void)
 	dec400probed = 0;
 	return 0;
 }
-
