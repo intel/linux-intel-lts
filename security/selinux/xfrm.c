@@ -154,7 +154,7 @@ static int selinux_xfrm_delete(struct xfrm_sec_ctx *ctx)
  * rule.
  */
 int selinux_xfrm_policy_lookup(struct xfrm_sec_ctx *ctx,
-				struct secids *fl_secid, u8 dir)
+				const struct secids *fl_secid, u8 dir)
 {
 	int rc;
 

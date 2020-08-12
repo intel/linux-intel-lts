@@ -1593,11 +1593,11 @@ int security_xfrm_policy_delete(struct xfrm_sec_ctx *ctx);
 int security_xfrm_state_alloc(struct xfrm_state *x, struct xfrm_user_sec_ctx *sec_ctx);
 int security_xfrm_state_alloc_acquire(struct xfrm_state *x,
 				      struct xfrm_sec_ctx *polsec,
-				      struct secids *secid);
+				      const struct secids *secid);
 int security_xfrm_state_delete(struct xfrm_state *x);
 void security_xfrm_state_free(struct xfrm_state *x);
 int security_xfrm_policy_lookup(struct xfrm_sec_ctx *ctx,
-					struct secids *fl_secid, u8 dir);
+					const struct secids *fl_secid, u8 dir);
 int security_xfrm_state_pol_flow_match(struct xfrm_state *x,
 				       struct xfrm_policy *xp,
 				       const struct flowi *fl);
@@ -1650,7 +1650,7 @@ static inline int security_xfrm_state_delete(struct xfrm_state *x)
 }
 
 static inline int security_xfrm_policy_lookup(struct xfrm_sec_ctx *ctx,
-					struct secids *fl_secid, u8 dir)
+					const struct secids *fl_secid, u8 dir)
 {
 	return 0;
 }

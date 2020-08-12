@@ -2483,7 +2483,7 @@ EXPORT_SYMBOL(security_xfrm_state_alloc);
 
 int security_xfrm_state_alloc_acquire(struct xfrm_state *x,
 				      struct xfrm_sec_ctx *polsec,
-				      struct secids *secid)
+				      const struct secids *secid)
 {
 	return call_int_hook(xfrm_state_alloc_acquire, 0, x, polsec, secid);
 }
@@ -2500,7 +2500,7 @@ void security_xfrm_state_free(struct xfrm_state *x)
 }
 
 int security_xfrm_policy_lookup(struct xfrm_sec_ctx *ctx,
-					struct secids *fl_secid, u8 dir)
+					const struct secids *fl_secid, u8 dir)
 {
 	return call_int_hook(xfrm_policy_lookup, 0, ctx, fl_secid, dir);
 }

@@ -71,7 +71,7 @@ int keystore_get_rdrand(uint8_t *buf, int size)
 				"2:",
 				X86_FEATURE_RDRAND,
 				ASM_OUTPUT2("=r" (ret), "=a" (random)),
-				"" (RDRAND_RETRY_LOOPS));
+				"i" (RDRAND_RETRY_LOOPS));
 		buf[i] = random;
 #else
 #pragma message "Compiling with out RDRAND support"

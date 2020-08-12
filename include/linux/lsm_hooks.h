@@ -1745,7 +1745,7 @@ union security_list_options {
 	void (*xfrm_state_free_security)(struct xfrm_state *x);
 	int (*xfrm_state_delete_security)(struct xfrm_state *x);
 	int (*xfrm_policy_lookup)(struct xfrm_sec_ctx *ctx,
-					struct secids *fl_secid, u8 dir);
+					const struct secids *fl_secid, u8 dir);
 	int (*xfrm_state_pol_flow_match)(struct xfrm_state *x,
 						struct xfrm_policy *xp,
 						const struct flowi *fl);
