@@ -1,11 +1,5 @@
-# CVE-2019-19054
-0002-media-rc-prevent-memory-leak-in-cx23888_ir_probe.patch
-
 # CVE-2019-18808
 0003-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
-
-# CVE-2020-16166
-0001-random32-update-the-net-random-state-on-interrupt-an.patch
 
 # CVE-2019-19770
 0001-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
