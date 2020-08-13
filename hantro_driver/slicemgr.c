@@ -440,6 +440,7 @@ struct slice_info *getparentslice(void *node, int type)
 int slice_remove(void)
 {
 	struct slice_info *post, *prev;
+
 	post = prev = slicehdr;
 	while (prev != NULL) {
 		post = prev->next;

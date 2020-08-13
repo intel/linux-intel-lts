@@ -192,6 +192,7 @@ static int GetWorkableCore(struct cache_dev_t *dev, struct file *filp)
 static long ReserveCore(struct cache_dev_t *dev, struct file *filp)
 {
 	struct slice_info *parentslice;
+
 	parentslice = getparentslice(dev, CORE_CACHE);
 
 	/* lock a core that has specified core id */
@@ -297,9 +298,8 @@ long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		pccore = get_cachenodes(slice, node);
 		if (pccore == NULL)
 			return -EFAULT;
-		else {
+		else
 			ReleaseCore(pccore);
-		}
 		break;
 	case CACHE_IOCG_ABORT_WAIT:
 		core_id = (u32)arg;
@@ -517,6 +517,7 @@ void __exit cache_cleanup(void)
 static int cache_get_hwid(unsigned long base_addr, int *hwid)
 {
 	u8 *hwregs = NULL;
+
 	if (!request_mem_region(base_addr, 4, "hantro_cache")) {
 		PDEBUG(KERN_INFO
 		       "hantr_cache: failed to reserve HW regs,base_addr:%p\n",
@@ -566,13 +567,12 @@ static int ReserveIO(struct cache_dev_t *pccore)
 	if (hwid == 0 && pccore->core_cfg.dir == DIR_RD) {
 		pccore->core_cfg.base_addr += CACHE_WITH_SHAPER_OFFSET;
 	} else if (hwid != 0) {
-		if (pccore->core_cfg.dir == DIR_WR) {
+		if (pccore->core_cfg.dir == DIR_WR)
 			pccore->core_cfg.base_addr += SHAPER_OFFSET;
-		} else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 0) {
+		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 0)
 			pccore->core_cfg.base_addr += CACHE_WITH_SHAPER_OFFSET;
-		} else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 1) {
+		else if (pccore->core_cfg.dir == DIR_RD && hw_cfg == 1)
 			pccore->core_cfg.base_addr += CACHE_ONLY_OFFSET;
-		}
 	}
 
 	if (!request_mem_region(pccore->core_cfg.base_addr,

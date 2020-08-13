@@ -383,6 +383,7 @@ long hantroenc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	case HX280ENC_IOCGHWIOSIZE: {
 		u32 io_size;
+
 		__get_user(id, (unsigned long *)arg);
 		node = KCORE(id);
 		slice = SLICE(id);
@@ -404,6 +405,7 @@ long hantroenc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return get_slicecorenum(tmp, CORE_ENC);
 	case HX280ENC_IOCH_ENC_RESERVE: {
 		int ret;
+
 		PDEBUG("Reserve ENC Cores\n");
 		__get_user(core_info, (unsigned long *)arg);
 		slice = (core_info >> 16) & 0xff;
@@ -589,6 +591,7 @@ void __exit hantroenc_cleanup(void)
 static int ReserveIO(struct hantroenc_t *pcore)
 {
 	u32 hwid;
+
 	PDEBUG("hx280enc: ReserveIO called\n");
 	if (!request_mem_region(pcore->core_cfg.base_addr,
 				pcore->core_cfg.iosize, pcore->reg_name)) {

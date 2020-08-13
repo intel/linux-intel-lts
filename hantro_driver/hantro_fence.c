@@ -60,11 +60,7 @@ static void hantro_fence_free(hantro_fence_t *fence)
 {
 	kfree(fence->lock);
 	fence->lock = NULL;
-#if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
-	fence_free(fence);
-#else
 	dma_fence_free(fence);
-#endif
 }
 
 const static hantro_fence_op_t hantro_fenceops = {

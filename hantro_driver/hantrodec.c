@@ -100,7 +100,7 @@
 #define VEXPRESS_LOGIC_0_BASE	0xFC010000
 #define VEXPRESS_LOGIC_1_BASE	0xFC020000
 
-#define DEC_IO_SIZE_0 		DEC_IO_SIZE_MAX /* bytes */
+#define DEC_IO_SIZE_0		DEC_IO_SIZE_MAX /* bytes */
 #define DEC_IO_SIZE_1		DEC_IO_SIZE_MAX /* bytes */
 
 #ifdef USE_IRQ
@@ -448,11 +448,10 @@ static int GetDecCore(long core, struct hantrodec_t *dev, struct file *filp,
 		 * which main core takes
 		 */
 		if (dev->its_aux_core_id != NULL) {
-			if (!CoreHasFormat(dev->its_aux_core_id->cfg, format)) {
+			if (!CoreHasFormat(dev->its_aux_core_id->cfg, format))
 				dev->its_aux_core_id->cfg = 0;
-			} else {
+			else
 				dev->its_aux_core_id->cfg = (1 << format);
-			}
 		}
 		/*
 		 * If one aux core takes one format,
@@ -742,6 +741,7 @@ u32 *hantrodec_getRegAddr(u32 coreid, u32 regid)
 static long DecReadRegs(struct hantrodec_t *dev, struct core_desc *core)
 {
 	long ret, i;
+
 	PDEBUG("hantrodec: DecReadRegs\n");
 	i = core->reg_id;
 	/* user has to know exactly what they are asking for */
@@ -924,6 +924,7 @@ static long WaitCoreReady(struct hantrodec_t *dev, const struct file *filp,
 			  u32 *id)
 {
 	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+
 	PDEBUG("wait_event_interruptible CORE\n");
 
 	if (wait_event_interruptible(parentslice->dec_wait_queue,
@@ -1319,8 +1320,8 @@ int hantrodec_probe(dtbnode *pnode)
 {
 	int i, result = 0;
 	struct hantrodec_t *pcore, *auxcore;
-
 	int irqn;
+
 	pcore = vmalloc(sizeof(struct hantrodec_t));
 	if (pcore == NULL)
 		return -ENOMEM;

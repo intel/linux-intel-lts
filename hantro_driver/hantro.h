@@ -32,9 +32,7 @@
 #include <drm/drm.h>
 #include <drm/drm_auth.h>
 #include <linux/version.h>
-#if KERNEL_VERSION(4, 13, 0) <= LINUX_VERSION_CODE
 #include <linux/dma-fence.h>
-#endif
 
 #include <linux/platform_device.h>
 #include <linux/dma-contiguous.h>

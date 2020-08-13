@@ -25,9 +25,9 @@
 #include "hantro_priv.h"
 #include "hantro.h"
 
+int hantrodec400_init(void);
 int hantro_dec400_probe(dtbnode *pnode);
 void hantro_dec400_cleanup(void);
 long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
-int hantrodec400_init(void);
 
 #endif /* __HANTRO_DEC400_H__ */

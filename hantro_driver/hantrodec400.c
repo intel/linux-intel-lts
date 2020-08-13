@@ -50,6 +50,7 @@ static int dec400probed;
 static void dec400_ResetAsic(struct dec400_t *dev)
 {
 	int i;
+
 	for (i = 0; i < dev->core_cfg.iosize; i += sizeof(u32))
 		iowrite32(0, (void *)(dev->hwregs + i));
 }

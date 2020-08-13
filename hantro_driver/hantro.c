@@ -116,7 +116,7 @@ static void hantro_unrecordmem(struct drm_file *priv, void *obj)
 	struct idr *list = (struct idr *)data->list;
 	void *gemobj;
 
-	idr_for_each_entry (list, gemobj, id) {
+	idr_for_each_entry(list, gemobj, id) {
 		if (gemobj == obj) {
 			idr_remove(list, id);
 			break;
@@ -319,9 +319,8 @@ static int hantro_release_dumb(struct drm_device *dev,
 	drm_gem_object_release(gemobj);
 	drm_gem_handle_delete(file_priv, cma_obj->handle);
 	pslice = getslicenode(cma_obj->sliceidx);
-	if (!pslice) {
+	if (!pslice)
 		return 0;
-	}
 
 	if (cma_obj->vaddr)
 		dma_free_coherent(pslice->dev, cma_obj->base.size,
@@ -431,6 +430,7 @@ static int hantro_gem_open_obj(struct drm_gem_object *obj,
 static int hantro_device_open(struct inode *inode, struct file *filp)
 {
 	int ret;
+
 	ret = drm_open(inode, filp);
 	if (!disable_decode)
 		hantrodec_open(inode, filp);
@@ -510,7 +510,7 @@ hantro_gem_prime_import_sg_table(struct drm_device *dev,
 		struct scatterlist *s;
 		unsigned int i;
 
-		for_each_sg (sgt->sgl, s, sgt->nents, i) {
+		for_each_sg(sgt->sgl, s, sgt->nents, i) {
 			/*
 			 * sg_dma_address(s) is only valid for entries
 			 * that have sg_dma_len(s) != 0
@@ -552,16 +552,6 @@ static void *hantro_gem_prime_vmap(struct drm_gem_object *obj)
 static void hantro_gem_prime_vunmap(struct drm_gem_object *obj, void *vaddr)
 {
 }
-
-/* omitted in kernel version > 5.4.0
-static struct reservation_object *hantro_gem_prime_res_obj(
-	struct drm_gem_object *obj)
-{
-	struct drm_gem_hantro_object *hobj = to_drm_gem_hantro_obj(obj);
-
-	return &hobj->kresv;
-}
-*/
 
 static int hantro_gem_prime_mmap(struct drm_gem_object *obj,
 				 struct vm_area_struct *vma)
@@ -758,7 +748,7 @@ static int hantro_remove_client(struct drm_device *dev, void *data,
 	if (data == NULL)
 		return -EINVAL;
 	mutex_lock(&dev->struct_mutex);
-	idr_for_each_entry (file_attr->clients, client, id) {
+	idr_for_each_entry(file_attr->clients, client, id) {
 		if (client && client->clientid == attrib->clientid) {
 			idr_remove(file_attr->clients, id);
 			kfree(client);
@@ -827,6 +817,7 @@ static int hantro_map_dumb(struct drm_device *dev, void *data,
 static int hantro_drm_open(struct drm_device *dev, struct drm_file *file)
 {
 	struct file_data *data;
+
 	data = kzalloc(sizeof(struct file_data), GFP_KERNEL);
 	data->clients = kzalloc(sizeof(struct idr), GFP_KERNEL);
 	data->list = kzalloc(sizeof(struct idr), GFP_KERNEL);
@@ -843,8 +834,8 @@ static int hantro_drm_open(struct drm_device *dev, struct drm_file *file)
  * We can't release memory or drm resources in normal way.
  * In kernel document it's suggested driver_priv
  * be used in this call back. In abnormal situation many kernel data
- *structures might be unavaible, e.g. hantro_gem_object_lookup is not
- *working. So we have to save every gem obj info by ourselves.
+ * structures might be unavaible, e.g. hantro_gem_object_lookup is not
+ * working. So we have to save every gem obj info by ourselves.
  */
 static void hantro_drm_postclose(struct drm_device *dev, struct drm_file *file)
 {
@@ -855,7 +846,7 @@ static void hantro_drm_postclose(struct drm_device *dev, struct drm_file *file)
 
 	mutex_lock(&dev->struct_mutex);
 	if (priv->list) {
-		idr_for_each_entry (priv->list, obj, id) {
+		idr_for_each_entry(priv->list, obj, id) {
 			if (obj) {
 				hantro_release_dumb(dev, file, obj);
 				idr_remove(priv->list, id);
@@ -867,7 +858,7 @@ static void hantro_drm_postclose(struct drm_device *dev, struct drm_file *file)
 	}
 
 	if (priv->clients) {
-		idr_for_each_entry (priv->clients, client, id) {
+		idr_for_each_entry(priv->clients, client, id) {
 			if (obj) {
 				kfree(client);
 				idr_remove(priv->clients, id);
@@ -975,7 +966,7 @@ err_gem_object_unreference:
 static int hantro_fb_create(struct drm_device *dev, void *data,
 			    struct drm_file *file_priv)
 {
-	struct drm_mode_fb_cmd * or = data;
+	struct drm_mode_fb_cmd *or = data;
 	struct drm_mode_fb_cmd2 r = {};
 	int ret;
 
@@ -1477,6 +1468,7 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		} else {
 			if (cmd == HX280ENC_IOCG_CORE_NUM) {
 				int corenum = 0;
+
 				__put_user(corenum, (unsigned int *)arg);
 			} else {
 				return -EFAULT;
@@ -1806,12 +1798,12 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 		"  File Id  : ContextId : Slice :  Operation   :           Codec             :   Resolution  \n");
 	mutex_lock(&ddev->filelist_mutex);
 	/* Go through all open drm files */
-	list_for_each_entry (file, &ddev->filelist, lhead) {
+	list_for_each_entry(file, &ddev->filelist, lhead) {
 		mutex_lock(&ddev->struct_mutex);
 		/* Traverse through cma objects added to file's driver_priv checkout hantro_recordmem */
 		data = (struct file_data *)file->driver_priv;
 		if (data && data->clients) {
-			idr_for_each_entry (data->clients, client, handle) {
+			idr_for_each_entry(data->clients, client, handle) {
 				if (client && client->sliceid == sliceidx) {
 					if (buf_used < (PAGE_SIZE - 200)) {
 						if (client->profile >= 0 &&
@@ -2012,8 +2004,8 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 	u32 reg_u32[4];
 	const char *reg_name;
 	uint64_t ioaddress, iosize;
-
 	dtbnode *pnode = kzalloc(sizeof(dtbnode), GFP_KERNEL);
+
 	if (!pnode)
 		return NULL;
 
@@ -2251,7 +2243,8 @@ static int hantro_analyze_subnode(struct platform_device *pdev,
 		nhead = newtail = NULL;
 		while (head != NULL) {
 			struct device_node *child, *ofnode = head->ofnode;
-			for_each_child_of_node (ofnode, child) {
+
+			for_each_child_of_node(ofnode, child) {
 				node = trycreatenode(pdev, child, sliceidx,
 						     head->type, head->ioaddr);
 				if (node) {
@@ -2320,6 +2313,7 @@ static int hantro_drm_probe(struct platform_device *pdev)
 	int result = 0;
 	int sliceidx = -1;
 	struct slice_info *pslice = NULL;
+
 	pr_info("hantro_drm_probe: dev %s probe\n", pdev->name);
 
 	/* TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
@@ -2417,13 +2411,12 @@ static const struct dev_pm_ops hantro_pm_ops = {
 static struct platform_driver hantro_drm_platform_driver = {
 	.probe		= hantro_drm_probe,
 	.remove		= hantro_drm_remove,
-	.driver		=
-			{
+	.driver		= {
 				.name		= DRIVER_NAME,
 				.owner		= THIS_MODULE,
 				.of_match_table	= hantro_of_match,
 				.pm		= &hantro_pm_ops,
-			},
+},
 	.id_table	= hantro_drm_platform_ids,
 };
 
@@ -2538,9 +2531,10 @@ int __init hantro_init(void)
 
 	if (get_slicenumber() == 0)
 		/* for PC, no DTB probe, create a default dev */
-		addslice(hantro_dev.drm_dev->dev, -1, 0); 
+		addslice(hantro_dev.drm_dev->dev, -1, 0);
 	for (i = 0; i < get_slicenumber(); i++) {
 		struct slice_info *pslice = getslicenode_inInit(i);
+
 		hantro_dev.config |= pslice->config;
 		if (pslice->dev == NULL)
 			pslice->dev = hantro_dev.drm_dev->dev;
