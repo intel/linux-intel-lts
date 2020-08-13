@@ -188,6 +188,7 @@ And only ID to connect dec/enc to dec400/cache core is their HW address.
 
 struct slice_info {
 	struct device *dev; /* related dev, for drm usage */
+	struct device *codec_rsvmem;
 	phys_addr_t rsvmem_addr;
 	phys_addr_t memsize;
 	u32 config;

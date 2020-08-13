@@ -123,6 +123,7 @@ static const int DecHwId[] = { 0x6731, /* G1 */
 
 static int bdecprobed;
 extern bool verbose;
+extern bool disable_decode;
 #undef PDEBUG
 #define PDEBUG(fmt, arg...)                                                    \
 	do {                                                                   \
@@ -952,6 +953,9 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long long tmp64;
 	struct core_desc core;
 	struct hantrodec_t *pcore;
+
+	if (disable_decode)
+		return -EFAULT;
 
 	switch (_IOC_NR(cmd)) {
 	case _IOC_NR(HANTRODEC_IOC_CLI): {

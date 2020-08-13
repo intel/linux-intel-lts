@@ -127,6 +127,7 @@ struct drm_gem_hantro_object {
         //common meta data description
 	struct viv_vidmem_metadata_info meta_data_info;
 	struct sg_table *sgt;
+	struct device *memdev;
 
 	/* For objects with DMA memory allocated by GEM CMA */
 	void *vaddr;

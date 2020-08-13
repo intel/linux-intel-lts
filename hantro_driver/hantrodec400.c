@@ -43,6 +43,7 @@
 #include "hantrodec400.h"
 #include "hantro_slice.h"
 
+extern bool disable_dec400;
 static u32 dec400_regs[1568]; /* for hantro_dec400FlushRegs use, else too big frame */
 static int dec400probed;
 
@@ -134,6 +135,9 @@ long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	u32 id, slice, node, type;
 	struct dec400_t *pdec400;
 	struct core_desc coredesc;
+
+	if (disable_dec400)
+		return -EFAULT;
 
 	switch (cmd) {
 	case DEC400_IOCGHWOFFSET:

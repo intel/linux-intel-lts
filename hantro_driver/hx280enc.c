@@ -42,6 +42,7 @@
 #include <linux/irq.h>
 
 static u32 resouce_shared;
+extern bool disable_encode;
 /*------------------------------------------------------------------------
  *****************************PORTING LAYER********************************
  *-------------------------------------------------------------------------
@@ -362,6 +363,9 @@ long hantroenc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned int id, tmp, node, slice;
 	struct hantroenc_t *pcore;
 	u32 core_info;
+
+	if (disable_encode == 1)
+		return -EFAULT;
 
 	switch (cmd) {
 	case HX280ENC_IOCGHWOFFSET: {

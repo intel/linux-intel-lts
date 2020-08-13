@@ -70,7 +70,8 @@ struct hantro_device_handle {
 	struct platform_device *platformdev; /* parent device */
 	struct drm_device *drm_dev;
 	u32 config;
-    void *data;
+	void *data;
+	struct dentry *debugfs_root;
 };
 extern struct hantro_device_handle hantro_dev;
 

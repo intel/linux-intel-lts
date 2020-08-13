@@ -49,11 +49,6 @@
 #include <linux/reset.h>
 #include <linux/clk.h>
 
-/* compile options */
-#define ENABLE_VC8000E		1
-#define ENABLE_VC8000D		1
-#define ENABLE_DEC400_CACHE	0
-
 /* debug */
 //#define DMA_DEBUG_ALLOC
 //#define ENABLE_DEBUG
@@ -70,27 +65,32 @@
 #define DRIVER_MINOR	1
 
 struct hantro_device_handle hantro_dev;
-static ssize_t memory_usage_show_internal(int sliceidx, char *buf);
+static ssize_t get_allocation_status(struct device *dev, int sliceidx, char *buf);
 
 bool verbose;
 module_param(verbose, bool, 0);
 MODULE_PARM_DESC(verbose, "Verbose log operations "
-			  "(default 0)");
+		"(default 0)");
 
-bool enable_encode = ENABLE_VC8000E;
-module_param(enable_encode, bool, 0);
-MODULE_PARM_DESC(enable_encode, "Enable Encode"
-				"(default 1)");
+bool disable_encode = 0;
+module_param(disable_encode, bool, 0);
+MODULE_PARM_DESC(disable_encode, "Disable Encode"
+		"(default 0)");
 
-bool enable_decode = ENABLE_VC8000D;
-module_param(enable_decode, bool, 0);
-MODULE_PARM_DESC(enable_decode, "Enable Decode"
-				"(default 1)");
+bool disable_decode = 0;
+module_param(disable_decode, bool, 0);
+MODULE_PARM_DESC(disable_decode, "Disable Decode"
+		"(default 0)");
 
-bool enable_dec400 = ENABLE_DEC400_CACHE;
-module_param(enable_dec400, bool, 0);
-MODULE_PARM_DESC(enable_dec400, "Enable DEC400/L2"
-				"(default 1)");
+bool disable_dec400 = 1;
+module_param(disable_dec400, bool, 0);
+MODULE_PARM_DESC(disable_dec400, "Disable DEC400/L2"
+		"(default 0)");
+
+bool enable_polling = 0;
+module_param(enable_polling, bool, 0);
+MODULE_PARM_DESC(enable_polling, "Enable polling mode"
+		"(default 0)");
 
 /*temp no usage now*/
 static u32 hantro_vblank_no_hw_counter(struct drm_device *dev,
@@ -225,9 +225,11 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 		dma_free_coherent(pslice->dev, args->size, cma_obj->vaddr,
 				  cma_obj->paddr);
 		kfree(cma_obj);
+		goto out;
 	}
 	init_hantro_resv(&cma_obj->kresv, cma_obj);
 	cma_obj->handle = args->handle;
+	cma_obj->memdev = pslice->dev;
 #ifdef DMA_DEBUG_ALLOC
 	pr_info("%s:%d,%lx:%llx:%llx\n", __func__, sliceidx,
 		(unsigned long)pslice->dev, cma_obj->paddr, args->size);
@@ -238,7 +240,7 @@ out:
 	if (ret == -ENOMEM) {
 		char *buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
 
-		memory_usage_show_internal(sliceidx, buf);
+		get_allocation_status(cma_obj->memdev, sliceidx, buf);
 		pr_info("Slice %d out of memory\n%s", sliceidx, buf);
 		kfree(buf);
 	}
@@ -430,22 +432,22 @@ static int hantro_device_open(struct inode *inode, struct file *filp)
 {
 	int ret;
 	ret = drm_open(inode, filp);
-	if (enable_decode)
+	if (!disable_decode)
 		hantrodec_open(inode, filp);
-	if (enable_dec400)
+	if (!disable_dec400)
 		cache_open(inode, filp);
 	return ret;
 }
 
 static int hantro_device_release(struct inode *inode, struct file *filp)
 {
-	if (enable_dec400)
+	if (!disable_dec400)
 		cache_release(filp);
 
-	if (enable_decode)
+	if (!disable_decode)
 		hantrodec_release(filp);
 
-	if (enable_encode)
+	if (!disable_encode)
 		hantroenc_release();
 
 	return drm_release(inode, filp);
@@ -727,16 +729,20 @@ static int hantro_add_client(struct drm_device *dev, void *data,
 	struct hantro_client *attrib = data;
 	struct file_data *file_attr =
 		(struct file_data *)file_priv->driver_priv;
-	struct hantro_client *client =
-		kzalloc(sizeof(struct hantro_client), GFP_KERNEL);
+	struct hantro_client *client = NULL;
 
 	if (data == NULL)
 		return -EINVAL;
+
+	client = kzalloc(sizeof(struct hantro_client), GFP_KERNEL);
 	if (!client)
 		return -ENOMEM;
 
 	*client = *attrib;
+	mutex_lock(&dev->struct_mutex);
 	ret = idr_alloc(file_attr->clients, client, 1, 0, GFP_KERNEL);
+	mutex_unlock(&dev->struct_mutex);
+
 	return (ret > 0 ? 0 : -ENOMEM);
 }
 
@@ -751,7 +757,7 @@ static int hantro_remove_client(struct drm_device *dev, void *data,
 
 	if (data == NULL)
 		return -EINVAL;
-
+	mutex_lock(&dev->struct_mutex);
 	idr_for_each_entry (file_attr->clients, client, id) {
 		if (client && client->clientid == attrib->clientid) {
 			idr_remove(file_attr->clients, id);
@@ -759,7 +765,7 @@ static int hantro_remove_client(struct drm_device *dev, void *data,
 			break;
 		}
 	}
-
+	mutex_unlock(&dev->struct_mutex);
 	return 0;
 }
 
@@ -1466,7 +1472,7 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 	if (nr >= DRM_IOCTL_NR(HX280ENC_IOC_START) &&
 	    nr <= DRM_IOCTL_NR(HX280ENC_IOC_END)) {
-		if (enable_encode) {
+		if (!disable_encode) {
 			return hantroenc_ioctl(filp, cmd, arg);
 		} else {
 			if (cmd == HX280ENC_IOCG_CORE_NUM) {
@@ -1478,27 +1484,19 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 	}
 	if (nr >= DRM_IOCTL_NR(HANTRODEC_IOC_START) &&
-	    nr <= DRM_IOCTL_NR(HANTRODEC_IOC_END)) {
-		if (enable_decode)
-			return hantrodec_ioctl(filp, cmd, arg);
-		else
-			return -EFAULT;
+		nr <= DRM_IOCTL_NR(HANTRODEC_IOC_END)) {
+		return hantrodec_ioctl(filp, cmd, arg);
+		
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTROCACHE_IOC_START) &&
-	    nr <= DRM_IOCTL_NR(HANTROCACHE_IOC_END)) {
-		if (enable_dec400)
-			return hantrocache_ioctl(filp, cmd, arg);
-		else
-			return -EFAULT;
+		nr <= DRM_IOCTL_NR(HANTROCACHE_IOC_END)) {
+	   	    return hantrocache_ioctl(filp, cmd, arg);
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTRODEC400_IOC_START) &&
-	    nr <= DRM_IOCTL_NR(HANTRODEC400_IOC_END)) {
-		if (enable_dec400)
-			return hantrodec400_ioctl(filp, cmd, arg);
-		else
-			return -EFAULT;
+		nr <= DRM_IOCTL_NR(HANTRODEC400_IOC_END)) {
+	   	   return hantrodec400_ioctl(filp, cmd, arg);
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTROSLICE_IOC_START) &&
@@ -1760,7 +1758,7 @@ static ssize_t bandwidthEncWrite_show(struct device *kdev,
 	bandwidth = hantroenc_readbandwidth(sliceidx, 0);
 	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
 }
-static ssize_t show_clients(struct device *kdev, struct device_attribute *attr,
+static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 			    char *buf)
 {
 	struct drm_device *ddev = hantro_dev.drm_dev;
@@ -1868,7 +1866,27 @@ static ssize_t show_clients(struct device *kdev, struct device_attribute *attr,
 	return buf_used;
 }
 
-static ssize_t memory_usage_show_internal(int sliceidx, char *buf)
+static DEVICE_ATTR(BWDecRead, 0444, bandwidthDecRead_show, NULL);
+static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
+static DEVICE_ATTR(BWEncRead, 0444, bandwidthEncRead_show, NULL);
+static DEVICE_ATTR(BWEncWrite, 0444, bandwidthEncWrite_show, NULL);
+static DEVICE_ATTR(clients, 0444, clients_show, NULL);
+
+static struct attribute *hantro_attrs[] = {
+	&dev_attr_BWDecRead.attr,
+	&dev_attr_BWDecWrite.attr,
+	&dev_attr_BWEncRead.attr,
+	&dev_attr_BWEncWrite.attr,
+	&dev_attr_clients.attr,
+	NULL,
+};
+
+static const struct attribute_group hantro_attr_group = {
+    .attrs = hantro_attrs,
+ };
+
+static ssize_t
+get_allocation_status(struct device *dev, int sliceidx, char *buf)
 {
 	struct drm_device *ddev = hantro_dev.drm_dev;
 	struct drm_file *file;
@@ -1876,47 +1894,22 @@ static ssize_t memory_usage_show_internal(int sliceidx, char *buf)
 	struct drm_gem_hantro_object *cma_obj;
 	int buf_used = 0, alloc_count = 0;
 	ssize_t mem_used = 0;
-	bool noprint = false;
-
-	buf_used = snprintf(buf, PAGE_SIZE, "Memory usage for slice %d:\n",
-			    sliceidx);
-	buf_used +=
-		snprintf(buf + buf_used, PAGE_SIZE, "Physical Addr: Size\n");
 
 	mutex_lock(&ddev->filelist_mutex);
-	/* Go through all open drm files */
+	// Go through all open drm files
 	list_for_each_entry (file, &ddev->filelist, lhead) {
 		struct drm_gem_object *gobj;
 		int handle;
 		mutex_lock(&ddev->struct_mutex);
-		/* Traverse through cma objects added to file's driver_priv checkout hantro_recordmem */
+		// Traverse through cma objects added to file's driver_priv
+		// checkout hantro_recordmem
 		data = (struct file_data *)file->driver_priv;
-		idr_for_each_entry (data->list, gobj, handle) {
+		idr_for_each_entry(data->list, gobj, handle) {
 			if (gobj) {
 				cma_obj = to_drm_gem_hantro_obj(gobj);
-				if (cma_obj && cma_obj->sliceidx == sliceidx) {
-					if (buf_used < (PAGE_SIZE - 200)) {
-						buf_used += snprintf(
-							buf + buf_used,
-							PAGE_SIZE,
-							"0x%-11llx: %ldK\n",
-							cma_obj->paddr,
-							cma_obj->base.size /
-								1024);
-					} else {
-						// optimization to save buf space due to a PAGE_SIZE mem only
-						if (noprint == false) {
-							buf_used += snprintf(
-								buf + buf_used,
-								PAGE_SIZE,
-								" ....\n");
-							noprint =
-								true; //print ... only one time
-						}
-					}
-
-					mem_used += cma_obj->base.size;
-					alloc_count++;
+				if (cma_obj && cma_obj->sliceidx ==  sliceidx && cma_obj->memdev == dev) {
+					   mem_used += cma_obj->base.size;
+					   alloc_count++;
 				}
 			}
 		}
@@ -1924,70 +1917,75 @@ static ssize_t memory_usage_show_internal(int sliceidx, char *buf)
 	}
 
 	mutex_unlock(&ddev->filelist_mutex);
-	buf_used += snprintf(buf + buf_used, PAGE_SIZE,
-			     "\n%ldK in %d allocations\n\n", mem_used / 1024,
-			     alloc_count);
+	buf_used += snprintf(buf + buf_used, PAGE_SIZE, "\n%ldK in %d allocations; device=%p\n\n",  mem_used/1024, alloc_count, dev);
 
 	return buf_used;
 }
-
-static ssize_t memory_usage_show(struct device *kdev,
-				 struct device_attribute *attr, char *buf)
+static int mem_usage_debugfs_internal(struct seq_file *s, struct device *dev, int sliceidx)
 {
-	int sliceidx = findslice_bydev(kdev);
-	return memory_usage_show_internal(sliceidx, buf);
-}
+	struct drm_device *ddev = hantro_dev.drm_dev;
+	struct drm_file *file;
+	struct file_data *data;
+	struct drm_gem_hantro_object *cma_obj;
+	struct task_struct *task;
+	int  alloc_count = 0;
+	ssize_t mem_used = 0;
 
-static DEVICE_ATTR(BWDecRead, 0444, bandwidthDecRead_show, NULL);
-static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
-static DEVICE_ATTR(BWEncRead, 0444, bandwidthEncRead_show, NULL);
-static DEVICE_ATTR(BWEncWrite, 0444, bandwidthEncWrite_show, NULL);
-static DEVICE_ATTR(mem_usage, 0444, memory_usage_show, NULL);
-static DEVICE_ATTR(clients, 0444, show_clients, NULL);
-
-static struct attribute *hantro_attrs[] = {
-	&dev_attr_BWDecRead.attr,
-	&dev_attr_BWDecWrite.attr,
-	&dev_attr_BWEncRead.attr,
-	&dev_attr_BWEncWrite.attr,
-	&dev_attr_mem_usage.attr,
-	&dev_attr_clients.attr,
-	NULL,
-};
-
-static const struct attribute_group hantro_attr_group = {
-	.attrs = hantro_attrs,
-};
-
-#define DEFINE_HANTRO_DEBUGFS_SEQ_FOPS(__prefix)                               \
-	static int __prefix##_open(struct inode *inode, struct file *file)     \
-	{                                                                      \
-		return single_open(file, __prefix##_show, inode->i_private);   \
-	}                                                                      \
-	static const struct file_operations __prefix##_fops = {                \
-		.owner		= THIS_MODULE,                                 \
-		.open		= __prefix##_open,                             \
-		.release	= single_release,                              \
-		.read		= seq_read,                                    \
-		.llseek		= seq_lseek,                                   \
+	seq_printf(s, "   PID  :        Name          : Physical Addr   :  Virtual Addr       : Size\n");
+	mutex_lock(&ddev->filelist_mutex);
+	// Go through all open drm files
+	list_for_each_entry(file, &ddev->filelist, lhead) {
+		struct drm_gem_object *gobj;
+		int handle;
+		task = pid_task(file->pid, PIDTYPE_PID);
+		mutex_lock(&ddev->struct_mutex);
+		// Traverse through cma objects added to file's driver_priv
+		// checkout hantro_recordmem
+		data = (struct file_data *)file->driver_priv;
+		idr_for_each_entry(data->list, gobj, handle) {
+			if (gobj) {
+				cma_obj = to_drm_gem_hantro_obj(gobj);
+				if (cma_obj && cma_obj->sliceidx ==  sliceidx && cma_obj->memdev == dev) {
+					   seq_printf(s, " %6d : %18s   : 0x%-13llx :  0x%-15p  : %ldK\n", task->pid, task->comm,  cma_obj->paddr, cma_obj->vaddr, cma_obj->base.size/1024);
+					   mem_used += cma_obj->base.size;
+					   alloc_count++;
+				}
+			}
+		}
+		mutex_unlock(&ddev->struct_mutex);
 	}
 
-static int mem_usage_show(struct seq_file *s, void *v)
-{
-	seq_printf(s, "Hello World\n");
+	mutex_unlock(&ddev->filelist_mutex);
+	seq_printf(s, "\n%ldK in %d allocations\n\n",  mem_used/1024, alloc_count);
 
 	return 0;
 }
 
-DEFINE_HANTRO_DEBUGFS_SEQ_FOPS(mem_usage);
-
-void create_debugfs(int slice)
+static int mem_usage_debugfs_show(struct seq_file *s, void *v)
 {
-	struct dentry *root;
-	root = debugfs_create_dir("hantro", NULL);
+	struct slice_info *pslice = s->private;
+	int sliceidx = findslice_bydev(pslice->dev);
 
-	debugfs_create_file("mem_usage", S_IFREG | S_IRUGO, root, NULL,
-			    &mem_usage_fops);
+	seq_printf(s, "Memory usage for slice %d:\n", sliceidx);
+	seq_printf(s, "Pixel CMA:\n");
+	mem_usage_debugfs_internal(s, pslice->dev, sliceidx);
+	if (pslice && pslice->codec_rsvmem != NULL) {
+		seq_printf(s, "Codec CMA:\n");
+		mem_usage_debugfs_internal(s, pslice->codec_rsvmem, sliceidx);
+	}
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(mem_usage_debugfs);
+
+void create_debugfs(struct slice_info *pslice, int sliceidx, bool has_codecmem)
+{
+    char filename[64];
+    if (!hantro_dev.debugfs_root)
+	 return;
+    sprintf(filename, "mem_usage%d", sliceidx);
+    debugfs_create_file(filename, S_IFREG | S_IRUGO,
+            hantro_dev.debugfs_root, pslice, &mem_usage_debugfs_fops);
 }
 
 static int getnodetype(const char *name)
@@ -2083,19 +2081,19 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 
 	switch (pnode->type) {
 	case CORE_DEC:
-		if (enable_decode)
+		if (!disable_decode)
 			ret = hantrodec_probe(pnode);
 		break;
 	case CORE_ENC:
-		if (enable_encode)
+		if (!disable_encode)
 			ret = hantroenc_probe(pnode);
 		break;
 	case CORE_CACHE:
-		if (enable_dec400)
+		if (!disable_dec400)
 			ret = cache_probe(pnode);
 		break;
 	case CORE_DEC400:
-		if (enable_dec400)
+		if (!disable_dec400)
 			ret = hantro_dec400_probe(pnode);
 		break;
 	default:
@@ -2275,11 +2273,53 @@ static int hantro_analyze_subnode(struct platform_device *pdev,
 	return 0;
 }
 
+static int init_codec_rsvd_mem(struct device *dev, struct slice_info *pslice,
+                             const char *mem_name, unsigned int mem_idx)
+{
+        struct device *mem_dev;
+        int rc = -1;
+
+        /* Create a child device (of dev) to own the reserved memory. */
+        mem_dev = devm_kzalloc(dev, sizeof(struct device), GFP_KERNEL | GFP_DMA);
+        if (!mem_dev)
+                return -ENOMEM;
+
+        device_initialize(mem_dev);
+        dev_set_name(mem_dev, "%s:%s", dev_name(dev), mem_name);
+        mem_dev->parent = dev;
+        mem_dev->dma_mask = dev->dma_mask;
+        mem_dev->coherent_dma_mask = dev->coherent_dma_mask;
+
+        /* Set up DMA configuration using information from parent's DT node. */
+      //  rc = of_dma_configure(mem_dev, dev->of_node, true);
+        mem_dev->release = of_reserved_mem_device_release;
+
+        rc = device_add(mem_dev);
+        if (rc)
+                goto err;
+        /* Initialized the device reserved memory region. */
+        rc = of_reserved_mem_device_init_by_idx(mem_dev, dev->of_node, mem_idx);
+        if (rc) {
+                device_del(mem_dev);
+                goto err;
+        } else
+		dev_info(dev, "Success: Codec reserved memory found at idx = %d, ret=%d\n",
+                        mem_idx, rc);
+
+        pslice->codec_rsvmem = mem_dev;
+
+        return 0;
+err:
+        put_device(mem_dev);
+        return rc;
+}
+
 static int hantro_drm_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	int result = 0;
 	int sliceidx = -1;
+	struct slice_info *pslice = NULL;
 	pr_info("hantro_drm_probe: dev %s probe\n", pdev->name);
 
 	/* TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
@@ -2306,7 +2346,12 @@ static int hantro_drm_probe(struct platform_device *pdev)
 
 		/* go throug all sub dtb node' resources */
 		if (sliceidx >= 0 && dev->of_node != NULL)
+		{
 			hantro_analyze_subnode(pdev, dev->of_node, sliceidx);
+			pslice = getslicenode_inInit(sliceidx);
+			result = init_codec_rsvd_mem(dev, pslice, "codec_reserved", 1);
+			create_debugfs(pslice, sliceidx, result == 0);
+		}
 	}
 
 	return 0;
@@ -2390,21 +2435,37 @@ static const struct platform_device_info hantro_platform_info = {
 
 void __exit hantro_cleanup(void)
 {
+	int i;
+	struct slice_info *pslice = NULL;
 	hantro_dev.config = 0;
 
-	if (enable_decode)
-		hantrodec_cleanup();
+	if (hantro_dev.debugfs_root)
+		debugfs_remove(hantro_dev.debugfs_root);
 
-	if (enable_encode)
-		hantroenc_cleanup();
+	if (!disable_decode)
+	      hantrodec_cleanup();
 
-	if (enable_dec400)
-		cache_cleanup();
+	if (!disable_encode)
+	      hantroenc_cleanup();
 
-	if (enable_dec400)
-		hantro_dec400_cleanup();
+	if (!disable_dec400) {
+	      cache_cleanup();
+	      hantro_dec400_cleanup();
+	}
 
-	/* this one must be after above ones to maintain list */
+        for (i = 0; i < get_slicenumber(); i++) {
+           pslice = getslicenode(i);
+           if (pslice != NULL && pslice->codec_rsvmem != NULL)
+           {
+              of_reserved_mem_device_release(pslice->codec_rsvmem);
+              device_del(pslice->codec_rsvmem);
+              put_device(pslice->codec_rsvmem);
+              pslice->codec_rsvmem=NULL;
+           }
+
+       }	
+
+        /*this one must be after above ones to maintain list*/
 	slice_remove();
 	releaseFenceData();
 	/*
@@ -2433,6 +2494,7 @@ int __init hantro_init(void)
 	cache_init();
 	hantrodec400_init();
 	hantro_dev.config = 0;
+	hantro_dev.debugfs_root = debugfs_create_dir("hantro", NULL);
 
 	result = platform_driver_register(&hantro_drm_platform_driver);
 	if (result < 0) {
@@ -2489,7 +2551,6 @@ int __init hantro_init(void)
 			pr_info("create sysfs %d fail\n", i);
 	}
 
-	create_debugfs(0);
 	slice_init_finish();
 	if (verbose)
 		slice_printdebug();

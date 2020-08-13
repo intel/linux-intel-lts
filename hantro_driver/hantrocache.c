@@ -118,6 +118,7 @@ static struct cache_core_config cache_core_array[] = {
 };
 #endif
 static int bcacheprobed;
+extern bool disable_dec400;
 
 /*------------------------------END-------------------------------------*/
 
@@ -227,7 +228,8 @@ long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	u32 core_id;
 	unsigned long long tmp64;
 	struct cache_dev_t *pccore;
-
+	if (disable_dec400)
+		return -EFAULT;
 	switch (cmd) {
 	case CACHE_IOCGHWOFFSET:
 		__get_user(id, (int *)arg);
