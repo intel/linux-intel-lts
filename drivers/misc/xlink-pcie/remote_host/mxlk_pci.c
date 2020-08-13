@@ -73,12 +73,23 @@ struct mxlk_pcie *mxlk_create_device(u32 sw_device_id, struct pci_dev *pdev)
 		 PCI_FUNC(pdev->devfn));
 
 	mutex_init(&xdev->lock);
+	INIT_LIST_HEAD(&xdev->event_notif_list);
 
 	return xdev;
 }
 
 void mxlk_remove_device(struct mxlk_pcie *xdev)
 {
+	struct mxlk_pcie_event_op *op, *next;
+
+	if (!list_empty(&xdev->event_notif_list)) {
+		list_for_each_entry_safe(op, next, &xdev->event_notif_list,
+					list) {
+			list_del(&op->list);
+			kfree(op);
+		}
+	}
+
 	mutex_destroy(&xdev->lock);
 	kfree(xdev);
 }
@@ -619,6 +630,7 @@ int mxlk_pci_cleanup(struct mxlk_pcie *xdev)
 	pci_set_drvdata(xdev->pci, NULL);
 	xdev->mxlk.status = MXLK_STATUS_OFF;
 	xdev->irq_enabled = false;
+	xdev->reset_sent = false;
 
 	mutex_unlock(&xdev->lock);
 
@@ -851,6 +863,8 @@ int mxlk_pci_write(u32 id, void *data, size_t *size, u32 timeout)
 
 static int mxlk_pci_prepare_dev_reset(struct mxlk_pcie *xdev, bool notify)
 {
+	mxlk_pci_notify_event(xdev, _NOTIFY_INCOMING_DISCONNECTION);
+
 	if (mutex_lock_interruptible(&xdev->lock))
 		return -EINTR;
 
@@ -859,8 +873,10 @@ static int mxlk_pci_prepare_dev_reset(struct mxlk_pcie *xdev, bool notify)
 		mxlk_core_cleanup(&xdev->mxlk);
 	}
 	xdev->mxlk.status = MXLK_STATUS_OFF;
-	if (notify)
+	if (notify) {
 		mxlk_pci_raise_irq(xdev, DEV_EVENT, REQUEST_RESET);
+		xdev->reset_sent = true;
+	}
 
 	mutex_unlock(&xdev->lock);
 
@@ -875,6 +891,127 @@ int mxlk_pci_reset_device(u32 id)
 		return -ENOMEM;
 
 	return mxlk_pci_prepare_dev_reset(xdev, true);
+}
+
+static int mxlk_register_event_op(struct mxlk_pcie *xdev, u32 event_map,
+				  _xlink_device_event event_notif_fn, int pid)
+{
+	int i;
+	struct mxlk_pcie_event_op *op;
+
+	if (!list_empty(&xdev->event_notif_list)) {
+		list_for_each_entry(op, &xdev->event_notif_list, list) {
+			if (op->pid != pid)
+				continue;
+			if (op->event_map & event_map)
+				return -EINVAL;
+			for (i = 0; i < _NUM_EVENT_TYPE; i++) {
+				if (BIT(i) & event_map)
+					op->event_fn[i] = event_notif_fn;
+			}
+			op->event_map |= event_map;
+			return 0;
+		}
+	}
+
+	op = kzalloc(sizeof(struct mxlk_pcie_event_op), GFP_KERNEL);
+	if (!op)
+		return -ENOMEM;
+	op->pid = pid;
+	for (i = 0; i < _NUM_EVENT_TYPE; i++) {
+		if (BIT(i) & event_map)
+			op->event_fn[i] = event_notif_fn;
+	}
+	op->event_map = event_map;
+	list_add_tail(&op->list, &xdev->event_notif_list);
+
+	return 0;
+}
+
+static int mxlk_unregister_event_op(struct mxlk_pcie *xdev, u32 event_map,
+				    int pid)
+{
+	int i;
+	struct mxlk_pcie_event_op *op;
+
+	if (list_empty(&xdev->event_notif_list))
+		return 0;
+
+	list_for_each_entry(op, &xdev->event_notif_list, list) {
+		if (op->pid != pid)
+			continue;
+		if (!(op->event_map & event_map))
+			return 0;
+		for (i = 0; i < _NUM_EVENT_TYPE; i++) {
+			if (BIT(i) & event_map)
+				op->event_fn[i] = NULL;
+		}
+		op->event_map &= ~event_map;
+		if (op->event_map == 0) {
+			list_del(&op->list);
+			kfree(op);
+		}
+		return 0;
+	}
+
+	return 0;
+}
+
+int mxlk_pci_set_event_op(u32 id, u32 *event_list, u32 num_events,
+			  _xlink_device_event event_notif_fn, int pid)
+{
+	int i, rc = 0;
+	u32 event_map = 0;
+	struct mxlk_pcie *xdev = mxlk_get_device_by_id(id);
+
+	if (!xdev)
+		return -EINVAL;
+
+	if (num_events == 0 || num_events > _NUM_EVENT_TYPE)
+		return -EINVAL;
+
+	for (i = 0; i < num_events; i++) {
+		if (event_list[i] >= _NUM_EVENT_TYPE)
+			return -EINVAL;
+		event_map |= BIT(event_list[i]);
+	}
+
+	if (mutex_lock_interruptible(&xdev->lock))
+		return -EINTR;
+
+	if (event_notif_fn)
+		rc = mxlk_register_event_op(xdev, event_map, event_notif_fn,
+					    pid);
+	else
+		rc = mxlk_unregister_event_op(xdev, event_map, pid);
+
+	mutex_unlock(&xdev->lock);
+
+	return rc;
+}
+
+void mxlk_pci_notify_event(struct mxlk_pcie *xdev,
+			   enum _xlink_device_event_type event_type)
+{
+	struct mxlk_pcie_event_op *op;
+
+	if (event_type >= _NUM_EVENT_TYPE)
+		return;
+
+	if (mutex_lock_interruptible(&xdev->lock))
+		return;
+
+	if (list_empty(&xdev->event_notif_list)) {
+		mutex_unlock(&xdev->lock);
+		return;
+	}
+
+	mutex_unlock(&xdev->lock);
+
+	list_for_each_entry(op, &xdev->event_notif_list, list) {
+		if (BIT(event_type) & op->event_map)
+			op->event_fn[event_type](xdev->devid, event_type);
+	}
 }
 
 u64 mxlk_pci_hw_dev_id(struct mxlk_pcie *xdev)

@@ -19,6 +19,14 @@
 
 #define MXLK_MAX_NAME_LEN (32)
 
+
+struct mxlk_pcie_event_op {
+	struct list_head list;
+	int pid;
+	u32 event_map;
+	_xlink_device_event event_fn[_NUM_EVENT_TYPE];
+};
+
 struct mxlk_pcie {
 	struct list_head list;
 	struct mutex lock;
@@ -26,6 +34,8 @@ struct mxlk_pcie {
 	struct pci_dev *pci;
 	char name[MXLK_MAX_NAME_LEN];
 	u32 devid;
+	struct list_head event_notif_list;
+	bool reset_sent;
 	char fw_name[MXLK_MAX_NAME_LEN];
 
 	struct delayed_work wait_event;
@@ -69,6 +79,11 @@ int mxlk_pci_connect_device(u32 id);
 int mxlk_pci_read(u32 id, void *data, size_t *size, u32 timeout);
 int mxlk_pci_write(u32 id, void *data, size_t *size, u32 timeout);
 int mxlk_pci_reset_device(u32 id);
+
+int mxlk_pci_set_event_op(u32 id, u32 *event_list, u32 num_events,
+			  _xlink_device_event event_notif_fn, int pid);
+void mxlk_pci_notify_event(struct mxlk_pcie *xdev,
+			   enum _xlink_device_event_type event_type);
 
 u64 mxlk_pci_hw_dev_id(struct mxlk_pcie *xdev);
 

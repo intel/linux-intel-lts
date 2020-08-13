@@ -59,6 +59,17 @@ enum _xlink_device_status {
 	_XLINK_DEV_READY
 };
 
+enum _xlink_device_event_type {
+	_NOTIFY_INCOMING_DISCONNECTION,
+	_NOTIFY_DEVICE_DISCONNECTED,
+	_NOTIFY_DEVICE_CONNECTED,
+	_ERROR_UNEXPECTED_DISCONNECTION,
+	_NUM_EVENT_TYPE
+};
+
+typedef int (*_xlink_device_event)(uint32_t sw_device_id,
+				   enum _xlink_device_event_type event_type);
+
 int xlink_pcie_get_device_list(uint32_t *sw_device_id_list,
 			       uint32_t *num_devices);
 int xlink_pcie_get_device_name(uint32_t sw_device_id, char *device_name,
@@ -72,6 +83,11 @@ int xlink_pcie_read(uint32_t sw_device_id, void *data, size_t *const size,
 int xlink_pcie_write(uint32_t sw_device_id, void *data, size_t *const size,
 		     uint32_t timeout);
 int xlink_pcie_reset_device(uint32_t sw_device_id);
+int xlink_pcie_register_device_event(uint32_t sw_device_id,
+		uint32_t *event_list, uint32_t num_events,
+		_xlink_device_event event_notif_fn, int pid);
+int xlink_pcie_unregister_device_event(uint32_t sw_device_id,
+		uint32_t *event_list, uint32_t num_events, int pid);
 
 int xlink_usb_get_device_list(uint32_t *sw_device_id_list,
 			       uint32_t *num_devices);

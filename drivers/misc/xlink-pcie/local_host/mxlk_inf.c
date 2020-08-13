@@ -117,3 +117,18 @@ int xlink_pcie_reset_device(uint32_t sw_device_id)
 	return 0;
 }
 EXPORT_SYMBOL(xlink_pcie_reset_device);
+
+int xlink_pcie_register_device_event(uint32_t sw_device_id,
+		uint32_t *event_list, uint32_t num_events,
+		_xlink_device_event event_notif_fn, int pid)
+{
+	return 0;
+}
+EXPORT_SYMBOL(xlink_pcie_register_device_event);
+
+int xlink_pcie_unregister_device_event(uint32_t sw_device_id,
+		uint32_t *event_list, uint32_t num_events, int pid)
+{
+	return 0;
+}
+EXPORT_SYMBOL(xlink_pcie_unregister_device_event);
