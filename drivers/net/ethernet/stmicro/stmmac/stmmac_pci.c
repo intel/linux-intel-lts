@@ -187,6 +187,7 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->tsn_est_en = 1;
 	plat->tsn_fpe_en = 1;
 	plat->tsn_tbs_en = 1;
+	plat->sph_en = 0;
 	/* FPE HW Tunable */
 	plat->fprq = 1;
 	plat->afsz = 0;  /* Adjustable Fragment Size */
