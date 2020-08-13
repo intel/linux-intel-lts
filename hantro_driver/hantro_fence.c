@@ -21,8 +21,8 @@
 
 #include "hantro_priv.h"
 
-/*fence related code*/
-/*for fence's seqno, maybe each domain shoul hold one*/
+/* fence related code */
+/* for fence's seqno, maybe each domain should hold one */
 static unsigned long seqno;
 DEFINE_IDR(fence_idr);
 struct mutex fence_mutex;
@@ -34,7 +34,7 @@ static const char *hantro_fence_get_driver_name(hantro_fence_t *fence)
 
 static const char *hantro_fence_get_timeline_name(hantro_fence_t *fence)
 {
-	return " "; /*it shoud correspond to six domains later*/
+	return " "; /* it shoud correspond to six domains later */
 }
 
 static bool hantro_fence_enable_signaling(hantro_fence_t *fence)
@@ -64,12 +64,12 @@ static void hantro_fence_free(hantro_fence_t *fence)
 }
 
 const static hantro_fence_op_t hantro_fenceops = {
-	.get_driver_name = hantro_fence_get_driver_name,
-	.get_timeline_name = hantro_fence_get_timeline_name,
-	.enable_signaling = hantro_fence_enable_signaling,
-	.signaled = hantro_fence_signaled,
-	.wait = hantro_fence_default_wait,
-	.release = hantro_fence_free,
+	.get_driver_name	= hantro_fence_get_driver_name,
+	.get_timeline_name	= hantro_fence_get_timeline_name,
+	.enable_signaling	= hantro_fence_enable_signaling,
+	.signaled		= hantro_fence_signaled,
+	.wait			= hantro_fence_default_wait,
+	.release		= hantro_fence_free,
 };
 
 static hantro_fence_t *alloc_fence(unsigned int ctxno)
@@ -101,13 +101,9 @@ static int isHantrofence(hantro_fence_t *fence)
 int init_hantro_resv(struct dma_resv *presv,
 		     struct drm_gem_hantro_object *cma_obj)
 {
-	//hantro_fence_t *fobj;
 	dma_resv_init(presv);
 	cma_obj->ctxno = hantro_fence_context_alloc(1);
 
-	//fobj = alloc_fence(cma_obj->ctxno);
-	/*real fence insertion will be done when buffer is really attached */
-	//reservation_object_add_excl_fence(presv, (hantro_fence_t *)fobj);
 	return 0;
 }
 
@@ -117,13 +113,13 @@ int hantro_waitfence(hantro_fence_t *pfence)
 		return 0;
 
 	if (isHantrofence(pfence))
-		/*need self check*/
+		/* need self check */
 		return 0;
 	else
 		return hantro_fence_wait_timeout(pfence, true, 30 * HZ);
 }
 
-/*it's obselete, left here for compiling compatible*/
+/* it's obselete, left here for compiling compatible */
 int hantro_setdomain(struct drm_device *dev, void *data,
 		     struct drm_file *file_priv)
 {
@@ -199,7 +195,7 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 	if (arg->flags & HANTRO_FENCE_WRITE) {
 		dma_resv_add_excl_fence(resv, fence);
 	} else {
-		/*I'm not sure if 1 fence is enough, pass compilation first*/
+		/* I'm not sure if 1 fence is enough, pass compilation first */
 		ret = hantro_reserve_obj_shared(resv, 1);
 		if (ret == 0)
 			dma_resv_add_shared_fence(resv, fence);

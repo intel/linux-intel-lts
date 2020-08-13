@@ -24,9 +24,6 @@
 #include "hantro.h"
 #include "hantro_slice.h"
 
-#define USE_IRQ
-#define USE_DTB_PROBE
-
 #define HANTRO_GEM_FLAG_IMPORT		(1 << 0)
 #define HANTRO_GEM_FLAG_EXPORT		(1 << 1)
 #define HANTRO_GEM_FLAG_EXPORTUSED	(1 << 2)
@@ -40,16 +37,6 @@
 #define NODENAME_ENCODER	"encoder"
 #define NODENAME_CACHE		"cache"
 #define NODENAME_DEC400		"dec400"
-
-/* Reset control defines */
-#define RESET_ID_TOTAL		19
-#define RESET_DEASSERTED	0
-#define RESET_ASSERTED		1
-
-/* Clock control defines */
-#define CLOCK_ID_TOTAL		8
-#define CLOCK_DISABLED		0
-#define CLOCK_ENABLED		1
 
 typedef struct dtbnode {
 	struct device_node *ofnode;

@@ -41,23 +41,6 @@
 #include <linux/of.h>
 #include "hantrocache.h"
 
-/********variables declaration related with race condition**********/
-
-//struct semaphore enc_core_sem;
-
-/*******************PCIE CONFIG*************************/
-#ifdef PCI_BUS
-#define PCI_VENDOR_ID_HANTRO		0x10ee
-#define PCI_DEVICE_ID_HANTRO_PCI	0x8014
-
-/* Base address got control register */
-#define PCI_H2_BAR	4
-
-static struct pci_dev *gDev; /* PCI device structure. */
-static unsigned long gBaseHdwr; /* PCI base register address (Hardware address) */
-static u32 gBaseLen; /* Base register address Length */
-#endif
-
 /*------------------PORTING LAYER------------------------------------*/
 /* Cache types */
 #define CCLIENT_TYPE_VC8000E	"_VC8000E"
@@ -72,51 +55,6 @@ static u32 gBaseLen; /* Base register address Length */
 #define CC_DIR_WRITE	"_DIRWR"
 #define CC_DIR_BIDIR	"_DIRBI"
 
-#define RESOURCE_SHARED_INTER_CORES	0
-
-/* the base addr of core. for PCIE, it refers to offset from bar */
-#define CORE_0_IO_BASE	0x700000
-#define CORE_1_IO_BASE	0x700000
-#define CORE_2_IO_BASE	0x780000
-#define CORE_3_IO_BASE	0x780000
-
-#define CORE_0_IO_SIZE	0x800 /* bytes cache register size */
-#define CORE_1_IO_SIZE	0x800 /* bytes shaper register size */
-
-#define CORE_2_IO_SIZE	((6 + 4 * 8) * 4) /* bytes cache register size */
-#define CORE_3_IO_SIZE	((5 + 5 * 8) * 4) /* bytes shaper register size */
-
-#define INT_PIN_CORE_0	-1
-#define INT_PIN_CORE_1	-1
-
-#define INT_PIN_CORE_2	-1
-#define INT_PIN_CORE_3	-1
-/* for all cores, the core info should be listed here for later use */
-/* base_addr, iosize, irq */
-#ifndef USE_DTB_PROBE
-static struct cache_core_config cache_core_array[] = {
-	/*
-	 * note parent address is copied from hx280enc.c's CORE_x_IO_ADDR
-	 * and hantrodec.c's SOCLE_LOGIC_x_BASE
-	 */
-	{ VC8000D_0, 0x18553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 0,
-	  0x18553a000 },
-	{ VC8000D_1, 0x18553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 0,
-	  0x18553b000 },
-	{ VC8000D_0, 0x28553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 1,
-	  0x28553a000 },
-	{ VC8000D_1, 0x28553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 1,
-	  0x28553b000 },
-	{ VC8000D_0, 0x38553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 2,
-	  0x38553a000 },
-	{ VC8000D_1, 0x38553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 2,
-	  0x38553b000 },
-	{ VC8000D_0, 0x48553d000, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 3,
-	  0x48553a000 },
-	{ VC8000D_1, 0x48553d800, CORE_0_IO_SIZE, INT_PIN_CORE_0, DIR_WR, 3,
-	  0x48553b000 },
-};
-#endif
 static int bcacheprobed;
 extern bool disable_dec400;
 
@@ -128,11 +66,7 @@ extern bool disable_dec400;
 static int ReserveIO(struct cache_dev_t *);
 static void ReleaseIO(struct cache_dev_t *);
 static void ResetAsic(struct cache_dev_t *dev);
-#ifdef USE_IRQ
-#ifndef PCI_BUS
 static irqreturn_t cache_isr(int irq, void *dev_id);
-#endif
-#endif
 /*********************local variable declaration*****************/
 
 /******************************************************************************/
@@ -339,66 +273,18 @@ int cache_release(struct file *filp)
 	return 0;
 }
 
-#ifdef PCI_BUS
-static int PcieInit(int corenum)
-{
-	int i = 0;
-
-	gDev = pci_get_device(PCI_VENDOR_ID_HANTRO, PCI_DEVICE_ID_HANTRO_PCI,
-			      gDev);
-	if (gDev == NULL) {
-		PDEBUG("Init: Hardware not found.\n");
-		return -1;
-	}
-
-	if (pci_enable_device(gDev) < 0) {
-		PDEBUG("Init: Device not enabled.\n");
-		return -1;
-	}
-
-	gBaseHdwr = pci_resource_start(gDev, PCI_H2_BAR);
-	if (gBaseHdwr < 0) {
-		PDEBUG(KERN_INFO "Init: Base Address not set.\n");
-		goto out_pci_disable_device;
-	}
-	gBaseLen = pci_resource_len(gDev, PCI_H2_BAR);
-
-	for (i = 0; i < corenum; i++)
-		cache_core_array[i].base_addr =
-			gBaseHdwr +
-			cache_core_array[i]
-				.base_addr; /* the offset is based on which bus interface is chosen */
-
-	return 0;
-
-out_pci_disable_device:
-	pci_disable_device(gDev);
-	gDev = NULL;
-}
-
-static void PcieClose(void)
-{
-	if (gDev)
-		pci_disable_device(gDev);
-}
-#else
 static void PcieClose(void)
 {
 }
-#endif
 
 int __init cache_init(void)
 {
 	int result = 0;
 
 	bcacheprobed = 0;
-#ifdef PCI_BUS
-	result = PcieInit(sizeof(cache_core_array) /
-			  sizeof(struct cache_core_config));
-#endif
 	return result;
 }
-#ifdef USE_DTB_PROBE
+
 static void cache_getcachetype(const char *name, int *client, int *dir)
 {
 	if (strstr(name, CCLIENT_TYPE_VC8000E) != NULL)
@@ -427,15 +313,12 @@ static void cache_getcachetype(const char *name, int *client, int *dir)
 	else
 		*dir = -1;
 }
-#endif
 
 int cache_probe(dtbnode *pnode)
 {
 	int result;
 	int i;
 	struct cache_dev_t *pccore;
-
-#ifndef PCI_BUS
 	int type, dir;
 
 	cache_getcachetype(pnode->ofnode->name, &type, &dir);
@@ -462,7 +345,6 @@ int cache_probe(dtbnode *pnode)
 	pccore->is_valid = 1;
 	for (i = 0; i < 4; i++)
 		pccore->irqlist[i] = -1;
-#ifdef USE_IRQ
 	if (pnode->irq[0] > 0) {
 		strcpy(pccore->irq_name[0], pnode->irq_name[0]);
 		result = request_irq(pnode->irq[0], cache_isr, IRQF_SHARED,
@@ -477,17 +359,14 @@ int cache_probe(dtbnode *pnode)
 			return -EINVAL;
 		}
 	}
-#endif
 	pccore->core_cfg.parentaddr = pnode->parentaddr;
 	add_cachenode(pnode->sliceidx, pccore);
 
-#endif /* not def PCI_BUS */
 	return 0;
 }
 
 void __exit cache_cleanup(void)
 {
-#ifndef PCI_BUS
 	int i, k, slicen = get_slicenumber();
 	struct cache_dev_t *pccore, *pnext;
 
@@ -509,7 +388,6 @@ void __exit cache_cleanup(void)
 			pccore = pnext;
 		}
 	}
-#endif
 	bcacheprobed = 0;
 	PcieClose();
 }
@@ -618,8 +496,6 @@ static void ReleaseIO(struct cache_dev_t *pccore)
 	release_mem_region(pccore->core_cfg.base_addr, pccore->core_cfg.iosize);
 }
 
-#ifdef USE_IRQ
-#ifndef PCI_BUS
 static irqreturn_t cache_isr(int irq, void *dev_id)
 {
 	unsigned int handled = 0;
@@ -665,8 +541,6 @@ static irqreturn_t cache_isr(int irq, void *dev_id)
 		PDEBUG("IRQ received, but not cache's!\n");
 	return IRQ_HANDLED;
 }
-#endif
-#endif
 
 static void ResetAsic(struct cache_dev_t *dev)
 {

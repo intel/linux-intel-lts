@@ -26,10 +26,6 @@
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MULTI_SLICE_LIMIT 8 /* MAX slice supported now */
-#define MAX_CACHE_PERCORE 2 /* MAX cache number connected with a core */
-
-#define HANTRO_INVALID_ID -1
 
 /* supported core type */
 typedef enum {

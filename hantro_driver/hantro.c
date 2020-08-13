@@ -49,9 +49,6 @@
 #include <linux/reset.h>
 #include <linux/clk.h>
 
-/* debug */
-//#define DMA_DEBUG_ALLOC
-//#define ENABLE_DEBUG
 #ifdef ENABLE_DEBUG
 #define DBG(...) pr_info(__VA_ARGS__)
 #else
@@ -92,7 +89,7 @@ module_param(enable_polling, bool, 0);
 MODULE_PARM_DESC(enable_polling, "Enable polling mode"
 		"(default 0)");
 
-/*temp no usage now*/
+/* temp no usage now */
 static u32 hantro_vblank_no_hw_counter(struct drm_device *dev,
 				       unsigned int pipe)
 {
@@ -150,7 +147,7 @@ static int hantro_drm_fb_dirty(struct drm_framebuffer *fb,
 			       unsigned int color, struct drm_clip_rect *clips,
 			       unsigned int num_clips)
 {
-	/*nothing to do now*/
+	/* nothing to do now */
 	return 0;
 }
 
@@ -405,7 +402,7 @@ static int hantro_mmap(struct file *filp, struct vm_area_struct *vma)
 		set_memory_uc((unsigned long)cma_obj->vaddr, (int)page_num);
 #endif
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-		/*else mmap report uncached error for some importer, e.g. i915*/
+		/* else mmap report uncached error for some importer, e.g. i915 */
 	}
 
 	vma->vm_pgoff = 0;
@@ -531,9 +528,7 @@ hantro_gem_prime_import_sg_table(struct drm_device *dev,
 		return ERR_PTR(-ENOMEM);
 	}
 	cma_obj->paddr = sg_dma_address(sgt->sgl);
-	//cma_obj->vaddr = (void *)__va(sg_dma_address(&sgt->sgl[0]));
 	cma_obj->vaddr = dma_buf_vmap(attach->dmabuf);
-	//cma_obj->paddr = virt_to_phys(cma_obj->vaddr);
 	cma_obj->sgt = sgt;
 	cma_obj->flag |= HANTRO_GEM_FLAG_IMPORT;
 	cma_obj->num_pages = attach->dmabuf->size >> PAGE_SHIFT;
@@ -939,7 +934,6 @@ static int hantro_fb_create2(struct drm_device *dev, void *data,
 			   mode_cmd->offsets[i] + width * info->cpp[i];
 
 		if (obj->size < min_size) {
-			//hantro_unref_drmobj(obj);
 			ret = -EINVAL;
 			goto err_gem_object_unreference;
 		}
@@ -958,7 +952,7 @@ static int hantro_fb_create2(struct drm_device *dev, void *data,
 
 err_gem_object_unreference:
 	for (i--; i >= 0; i--)
-		; //hantro_unref_drmobj(objs[i]);
+		;
 
 	return ret;
 }
@@ -1020,7 +1014,7 @@ static int hantro_get_cap(struct drm_device *dev, void *data,
 	struct drm_get_cap *req = (struct drm_get_cap *)data;
 
 	req->value = 0;
-	/*some values should be reset*/
+	/* some values should be reset */
 	switch (req->capability) {
 	case DRM_CAP_PRIME:
 		req->value |= dev->driver->prime_fd_to_handle ?
@@ -1066,7 +1060,7 @@ static int hantro_get_cap(struct drm_device *dev, void *data,
 	return 0;
 }
 
-/*just a test API for any purpose*/
+/* just a test API for any purpose */
 static int hantro_test(struct drm_device *dev, void *data,
 		       struct drm_file *file_priv)
 {
@@ -1074,7 +1068,7 @@ static int hantro_test(struct drm_device *dev, void *data,
 	int handle = *input;
 	struct drm_gem_object *obj;
 	hantro_fence_t *pfence;
-	int ret = 10 * HZ; /*timeout*/
+	int ret = 10 * HZ; /* timeout */
 
 	obj = hantro_gem_object_lookup(dev, file_priv, handle);
 	if (!obj)
@@ -1613,14 +1607,14 @@ static void *hantro_gem_dmabuf_vmap(struct dma_buf *dma_buf)
 }
 
 static const struct dma_buf_ops hantro_dmabuf_ops = {
-	.attach = hantro_gem_map_attach,
-	.detach = hantro_gem_map_detach,
-	.map_dma_buf = hantro_gem_map_dma_buf,
-	.unmap_dma_buf = drm_gem_unmap_dma_buf,
-	.release = hantro_gem_dmabuf_release,
-	.mmap = hantro_gem_dmabuf_mmap,
-	.vmap = hantro_gem_dmabuf_vmap,
-	.vunmap = drm_gem_dmabuf_vunmap,
+	.attach		= hantro_gem_map_attach,
+	.detach		= hantro_gem_map_detach,
+	.map_dma_buf	= hantro_gem_map_dma_buf,
+	.unmap_dma_buf	= drm_gem_unmap_dma_buf,
+	.release	= hantro_gem_dmabuf_release,
+	.mmap		= hantro_gem_dmabuf_mmap,
+	.vmap		= hantro_gem_dmabuf_vmap,
+	.vunmap		= drm_gem_dmabuf_vunmap,
 };
 
 static struct drm_driver hantro_drm_driver;
@@ -1629,11 +1623,11 @@ static struct dma_buf *hantro_prime_export(struct drm_gem_object *obj,
 {
 	struct drm_gem_hantro_object *cma_obj;
 	struct dma_buf_export_info exp_info = {
-		.exp_name = KBUILD_MODNAME,
-		.owner = obj->dev->driver->fops->owner,
-		.ops = &hantro_dmabuf_ops,
-		.flags = flags,
-		.priv = obj,
+		.exp_name	= KBUILD_MODNAME,
+		.owner		= obj->dev->driver->fops->owner,
+		.ops		= &hantro_dmabuf_ops,
+		.flags		= flags,
+		.priv		= obj,
 	};
 
 	cma_obj = to_drm_gem_hantro_obj(obj);
@@ -2060,7 +2054,6 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 
 	for (i = 0; i < 4; i++) {
 		if (of_irq_to_resource(ofnode, i, &r) > 0) {
-			//int irq = platform_get_irq_byname(pdev, r.name);
 			pnode->irq[i] = r.start;
 			if (strlen(r.name))
 				strcpy(pnode->irq_name[i], r.name);
@@ -2284,7 +2277,6 @@ static int init_codec_rsvd_mem(struct device *dev, struct slice_info *pslice,
         mem_dev->coherent_dma_mask = dev->coherent_dma_mask;
 
         /* Set up DMA configuration using information from parent's DT node. */
-      //  rc = of_dma_configure(mem_dev, dev->of_node, true);
         mem_dev->release = of_reserved_mem_device_release;
 
         rc = device_add(mem_dev);

@@ -41,10 +41,8 @@
 #define PDEBUG(fmt, args...) /* not debugging: nothing */
 #endif
 
-#define IRQF_DISABLED		0x00000020
 #define ENC_HW_ID1		0x48320100
 #define ENC_HW_ID2		0x80006000
-#define CORE_INFO_MODE_OFFSET	31
 #define CORE_INFO_AMOUNT_OFFSET	28
 
 long hantroenc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);

@@ -47,71 +47,23 @@
 #include <linux/pm_runtime.h>
 
 /* hantro G1 regs config including dec and pp */
-#define HANTRO_DEC_ORG_REGS		60
 #define HANTRO_PP_ORG_REGS		41
 
-#define HANTRO_DEC_EXT_REGS		27
 #define HANTRO_PP_EXT_REGS		9
 
-#define HANTRO_G1_DEC_TOTAL_REGS	(HANTRO_DEC_ORG_REGS + HANTRO_DEC_EXT_REGS)
 #define HANTRO_PP_TOTAL_REGS		(HANTRO_PP_ORG_REGS + HANTRO_PP_EXT_REGS)
-
-#define HANTRO_DEC_ORG_FIRST_REG	0
-#define HANTRO_DEC_ORG_LAST_REG		59
-#define HANTRO_DEC_EXT_FIRST_REG	119
-#define HANTRO_DEC_EXT_LAST_REG		145
 
 #define HANTRO_PP_ORG_FIRST_REG		60
 #define HANTRO_PP_ORG_LAST_REG		100
 #define HANTRO_PP_EXT_FIRST_REG		146
 #define HANTRO_PP_EXT_LAST_REG		154
 
-/* hantro G2 reg config */
-#define HANTRO_G2_DEC_FIRST_REG		0
-#define HANTRO_G2_DEC_LAST_REG		(HANTRO_G2_DEC_REGS - 1)
-
 /* hantro VC8000D reg config */
-#define HANTRO_VC8000D_FIRST_REG	0
 #define HANTRO_VC8000D_LAST_REG		(HANTRO_VC8000D_REGS - 1)
 
 #define HANTRO_VC8KD_REG_BWREAD		300
 #define HANTRO_VC8KD_REG_BWWRITE	304
 #define VC8KD_BURSTWIDTH		16
-
-/********************************************************************
- *                                              PORTING SEGMENT
- * NOTES: customer should modify these configuration if do porting to own
- * platform. Please guarantee the base_addr, io_size,dec_irq belong to
- * same core.
- ********************************************************************/
-
-#define HXDEC_MAX_CORES	8
-
-/* Logic module base address */
-#define SOCLE_LOGIC_0_BASE	0x18553A000 /* VCDA */
-#define SOCLE_LOGIC_1_BASE	0x18553B000 /* VCDB */
-#define SOCLE_LOGIC_2_BASE	0x28553A000 /* VCDA */
-#define SOCLE_LOGIC_3_BASE	0x28553B000 /* VCDB */
-#define SOCLE_LOGIC_4_BASE	0x38553A000 /* VCDA */
-#define SOCLE_LOGIC_5_BASE	0x38553B000 /* VCDB */
-#define SOCLE_LOGIC_6_BASE	0x48553A000 /* VCDA */
-#define SOCLE_LOGIC_7_BASE	0x48553B000 /* VCDB */
-
-#define VEXPRESS_LOGIC_0_BASE	0xFC010000
-#define VEXPRESS_LOGIC_1_BASE	0xFC020000
-
-#define DEC_IO_SIZE_0		DEC_IO_SIZE_MAX /* bytes */
-#define DEC_IO_SIZE_1		DEC_IO_SIZE_MAX /* bytes */
-
-#ifdef USE_IRQ
-#define DEC_IRQ_0	-1
-#define DEC_IRQ_1	-1
-#else
-#define DEC_IRQ_0	-1
-#define DEC_IRQ_1	-1
-#endif
-
-/***********************************************************************/
 
 #define IS_G1(hw_id)		(((hw_id) == 0x6731) ? 1 : 0)
 #define IS_G2(hw_id)		(((hw_id) == 0x6732) ? 1 : 0)
@@ -141,14 +93,9 @@ static void ReleaseIO(struct hantrodec_t *);
 
 static void ResetAsic(struct hantrodec_t *dev);
 
-#ifdef HANTRODEC_DEBUG
-static void dump_regs(struct hantrodec_t *dev);
-#endif
 
-#ifdef USE_IRQ
 /* IRQ handler */
 static irqreturn_t hantrodec_isr(int irq, void *dev_id);
-#endif
 
 atomic_t irq_rx = ATOMIC_INIT(0);
 atomic_t irq_tx = ATOMIC_INIT(0);
@@ -769,12 +716,6 @@ static long PPFlushRegs(struct hantrodec_t *dev, struct core_desc *Core)
 	ret = copy_from_user(dev->dec_regs + HANTRO_PP_ORG_FIRST_REG,
 			     Core->regs + HANTRO_PP_ORG_FIRST_REG,
 			     HANTRO_PP_ORG_REGS * 4);
-#ifdef USE_64BIT_ENV
-	/* copy extended dec regs to kernal space */
-	ret = copy_from_user(dev->dec_regs + HANTRO_PP_EXT_FIRST_REG,
-			     Core->regs + HANTRO_PP_EXT_FIRST_REG,
-			     HANTRO_PP_EXT_REGS * 4);
-#endif
 	if (ret) {
 		pr_err("copy_from_user failed, returned %li\n", ret);
 		return -EFAULT;
@@ -784,10 +725,6 @@ static long PPFlushRegs(struct hantrodec_t *dev, struct core_desc *Core)
 	/* both original and extended regs need to be written */
 	for (i = HANTRO_PP_ORG_FIRST_REG + 1; i <= HANTRO_PP_ORG_LAST_REG; i++)
 		iowrite32(dev->dec_regs[i], (void *)dev->hwregs + i * 4);
-#ifdef USE_64BIT_ENV
-	for (i = HANTRO_PP_EXT_FIRST_REG; i <= HANTRO_PP_EXT_LAST_REG; i++)
-		iowrite32(dev->dec_regs[i], (void *)dev->hwregs + i * 4);
-#endif
 	/* write the stat reg, which may start the PP */
 	iowrite32(dev->dec_regs[HANTRO_PP_ORG_FIRST_REG],
 		  (void *)dev->hwregs + HANTRO_PP_ORG_FIRST_REG * 4);
@@ -798,35 +735,19 @@ static long PPFlushRegs(struct hantrodec_t *dev, struct core_desc *Core)
 static long PPRefreshRegs(struct hantrodec_t *dev, struct core_desc *Core)
 {
 	long i, ret;
-#ifdef USE_64BIT_ENV
-	/* user has to know exactly what they are asking for */
-	if (Core->size != (HANTRO_PP_TOTAL_REGS * 4))
-		return -EFAULT;
-#else
 	/* user has to know exactly what they are asking for */
 	if (Core->size != (HANTRO_PP_ORG_REGS * 4))
 		return -EFAULT;
-#endif
 
 	/* read all registers from hardware */
 	/* both original and extended regs need to be read */
 	for (i = HANTRO_PP_ORG_FIRST_REG; i <= HANTRO_PP_ORG_LAST_REG; i++)
 		dev->dec_regs[i] = ioread32((void *)dev->hwregs + i * 4);
-#ifdef USE_64BIT_ENV
-	for (i = HANTRO_PP_EXT_FIRST_REG; i <= HANTRO_PP_EXT_LAST_REG; i++)
-		dev->dec_regs[i] = ioread32((void *)dev->hwregs + i * 4);
-#endif
 	/* put registers to user space*/
 	/* put original registers to user space*/
 	ret = copy_to_user(Core->regs + HANTRO_PP_ORG_FIRST_REG,
 			   dev->dec_regs + HANTRO_PP_ORG_FIRST_REG,
 			   HANTRO_PP_ORG_REGS * 4);
-#ifdef USE_64BIT_ENV
-	/* put extended registers to user space*/
-	ret = copy_to_user(Core->regs + HANTRO_PP_EXT_FIRST_REG,
-			   dev->dec_regs + HANTRO_PP_EXT_FIRST_REG,
-			   HANTRO_PP_EXT_REGS * 4);
-#endif
 	if (ret) {
 		pr_err("copy_to_user failed, returned %li\n", ret);
 		return -EFAULT;
@@ -1350,7 +1271,6 @@ int hantrodec_probe(dtbnode *pnode)
 	irqn = 0;
 	for (i = 0; i < 4; i++)
 		pcore->irqlist[i] = -1;
-#ifdef USE_IRQ
 	for (i = 0; i < 4; i++) {
 		if (pnode->irq[i] > 0) {
 			strcpy(pcore->irq_name[i], pnode->irq_name[i]);
@@ -1373,7 +1293,6 @@ int hantrodec_probe(dtbnode *pnode)
 			}
 		}
 	}
-#endif
 	add_decnode(pnode->sliceidx, pcore);
 	if (auxcore != NULL)
 		add_decnode(pnode->sliceidx, auxcore);
@@ -1567,7 +1486,6 @@ static void ReleaseIO(struct hantrodec_t *dev)
 	release_mem_region(dev->multicorebase_actual, dev->iosize);
 }
 
-#ifdef USE_IRQ
 /*---------------------------------------------------------------------------
  *Function name   : hantrodec_isr
  *Description     : interrupt handler
@@ -1622,7 +1540,6 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 	(void)hwregs;
 	return IRQ_RETVAL(handled);
 }
-#endif
 
 /*---------------------------------------------------------------------------
  *Function name   : ResetAsic

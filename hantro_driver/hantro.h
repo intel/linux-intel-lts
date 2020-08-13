@@ -43,14 +43,6 @@
 #include <drm/drm_legacy.h>
 
 extern bool verbose;
-/* these domain definitions are identical to hantro_bufmgr.h */
-#define HANTRO_DOMAIN_NONE	0x00000
-#define HANTRO_CPU_DOMAIN	0x00001
-#define HANTRO_HEVC264_DOMAIN	0x00002
-#define HANTRO_JPEG_DOMAIN	0x00004
-#define HANTRO_DECODER0_DOMAIN	0x00008
-#define HANTRO_DECODER1_DOMAIN	0x00010
-#define HANTRO_DECODER2_DOMAIN	0x00020
 
 #define CONFIG_HWDEC	(1 << 0)
 #define CONFIG_HWENC	(1 << 1)

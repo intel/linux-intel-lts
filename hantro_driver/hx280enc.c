@@ -47,43 +47,6 @@ extern bool disable_encode;
  *****************************PORTING LAYER********************************
  *-------------------------------------------------------------------------
  */
-/* 0:no resource sharing inter cores 1: existing resource sharing */
-#define RESOURCE_SHARED_INTER_CORES	0
-
-/* slice 0 */
-/* customer specify according to own platform */
-#define CORE_0_IO_ADDR	0x185539000 /* VCE */
-#define CORE_0_IO_SIZE	(500 * 4) /* bytes */
-/* customer specify according to own platform */
-#define CORE_1_IO_ADDR	0x185538000 /* VCEJ */
-#define CORE_1_IO_SIZE	(500 * 4) /* bytes */
-
-/* slice 1 */
-/* customer specify according to own platform */
-#define CORE_2_IO_ADDR	0x285539000 /* VCE */
-#define CORE_2_IO_SIZE	(500 * 4) /* bytes */
-/* customer specify according to own platform */
-#define CORE_3_IO_ADDR	0x285538000 /* VCEJ */
-#define CORE_3_IO_SIZE	(500 * 4) /* bytes */
-
-/* slice 2 */
-/* customer specify according to own platform */
-#define CORE_4_IO_ADDR	0x385539000 /* VCE */
-#define CORE_4_IO_SIZE	(500 * 4) /* bytes */
-/* customer specify according to own platform */
-#define CORE_5_IO_ADDR	0x385538000 /* VCEJ */
-#define CORE_5_IO_SIZE	(500 * 4) /* bytes */
-
-/* slice 3 */
-/* customer specify according to own platform */
-#define CORE_6_IO_ADDR	0x485539000 /* VCE */
-#define CORE_6_IO_SIZE	(500 * 4) /* bytes */
-/* customer specify according to own platform */
-#define CORE_7_IO_ADDR	0x485538000 /* VCEJ */
-#define CORE_7_IO_SIZE	(500 * 4) /* bytes */
-
-#define INT_PIN_CORE_0	-1 /* IRQ pin of core 0 */
-#define INT_PIN_CORE_1	-1 /* IRQ pin of core 1 */
 
 #define HANTRO_VC8KE_REG_BWREAD		216
 #define HANTRO_VC8KE_REG_BWWRITE	220
@@ -104,10 +67,8 @@ static int CheckCoreOccupation(struct hantroenc_t *dev);
 static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info,
 			   u32 nodenum);
 
-#ifdef USE_IRQ
 /* IRQ handler */
 static irqreturn_t hantroenc_isr(int irq, void *dev_id);
-#endif
 
 /*********************local variable declaration*****************/
 unsigned long long sram_base;
@@ -529,7 +490,6 @@ int hantroenc_probe(dtbnode *pnode)
 	irqn = 0;
 	for (i = 0; i < 4; i++)
 		pcore->irqlist[i] = -1;
-#ifdef USE_IRQ
 	for (i = 0; i < 4; i++) {
 		if (pnode->irq[i] > 0) {
 			strcpy(pcore->irq_name[i], pnode->irq_name[i]);
@@ -548,7 +508,6 @@ int hantroenc_probe(dtbnode *pnode)
 			}
 		}
 	}
-#endif
 
 	add_encnode(pnode->sliceidx, pcore);
 
@@ -634,7 +593,6 @@ static void ReleaseIO(struct hantroenc_t *pcore)
 	release_mem_region(pcore->core_cfg.base_addr, pcore->core_cfg.iosize);
 }
 
-#ifdef USE_IRQ
 static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 {
 	unsigned int handled = 0;
@@ -693,7 +651,6 @@ static irqreturn_t hantroenc_isr(int irq, void *dev_id)
 
 	return IRQ_HANDLED;
 }
-#endif
 
 static void ResetAsic(struct hantroenc_t *dev)
 {

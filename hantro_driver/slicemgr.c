@@ -115,7 +115,7 @@ struct hantrodec_t *getfirst_decnodes(struct slice_info *pslice)
 	return NULL;
 }
 
-/*get enc nodes list hdr of a slice*/
+/* get enc nodes list hdr of a slice */
 struct hantroenc_t *get_encnodes(u32 sliceindex, u32 nodeidx)
 {
 	int i;
@@ -133,7 +133,7 @@ struct hantroenc_t *get_encnodes(u32 sliceindex, u32 nodeidx)
 	return p;
 }
 
-/*get cache nodes list hdr of a slice*/
+/* get cache nodes list hdr of a slice */
 struct cache_dev_t *get_cachenodes(u32 sliceindex, u32 nodeidx)
 {
 	int i;
@@ -192,7 +192,7 @@ struct dec400_t *get_dec400nodes(u32 sliceindex, u32 nodeidx)
 	return p;
 }
 
-/*get dec400 nodes by parent type and parent core num */
+/* get dec400 nodes by parent type and parent core num */
 struct dec400_t *get_dec400nodebytype(u32 sliceindex, u32 parenttype,
 				      u32 parentnodeidx)
 {
@@ -218,19 +218,8 @@ int add_decnode(u32 sliceindex, struct hantrodec_t *deccore)
 	struct hantrodec_t *pdec;
 	struct slice_info *splice = getslicenode_inInit(sliceindex);
 
-#ifdef USE_DTB_PROBE
 	if (splice == NULL)
 		return -EINVAL;
-#else
-	if (splice == NULL && sliceindex == atomic_read(&slicenum)) {
-		sliceindex = addslice(NULL, 0, 0);
-		if (sliceindex < 0)
-			return -EINVAL;
-		splice = getslicenode_inInit(sliceindex);
-	}
-	if (splice == NULL)
-		return -EINVAL;
-#endif
 
 	pdec = splice->dechdr;
 	if (pdec == NULL)
@@ -256,17 +245,8 @@ int add_encnode(u32 sliceindex, struct hantroenc_t *enccore)
 	struct hantroenc_t *penc;
 	struct slice_info *splice = getslicenode_inInit(sliceindex);
 
-#ifdef USE_DTB_PROBE
 	if (splice == NULL)
 		return -EINVAL;
-#else
-	if (splice == NULL && sliceindex == atomic_read(&slicenum)) {
-		sliceindex = addslice(NULL, 0, 0);
-		if (sliceindex < 0)
-			return -EINVAL;
-		splice = getslicenode_inInit(sliceindex);
-	}
-#endif
 
 	penc = splice->enchdr;
 	if (penc == NULL)
