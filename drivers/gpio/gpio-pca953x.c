@@ -775,6 +775,13 @@ static bool pca953x_irq_pending(struct pca953x_chip *chip, unsigned long *pendin
 	return !bitmap_empty(pending, gc->ngpio);
 }
 
+static irqreturn_t pca953x_hw_irq_handler(int irq, void *devid)
+{
+	/* Disable IRQ before waking the threaded irq handler */
+	disable_irq_nosync(irq);
+	return IRQ_WAKE_THREAD;
+}
+
 static irqreturn_t pca953x_irq_handler(int irq, void *devid)
 {
 	struct pca953x_chip *chip = devid;
@@ -805,6 +812,8 @@ static irqreturn_t pca953x_irq_handler(int irq, void *devid)
 		}
 	}
 
+	/* Interrupt handled, Enable back the IRQ before exiting */
+	enable_irq(irq);
 	return IRQ_RETVAL(ret);
 }
 
@@ -866,7 +875,7 @@ static int pca953x_irq_setup(struct pca953x_chip *chip, int irq_base)
 	girq->first = irq_base; /* FIXME: get rid of this */
 
 	ret = devm_request_threaded_irq(&client->dev, client->irq,
-					NULL, pca953x_irq_handler,
+					pca953x_hw_irq_handler, pca953x_irq_handler,
 					IRQF_ONESHOT | IRQF_SHARED,
 					dev_name(&client->dev), chip);
 	if (ret) {
