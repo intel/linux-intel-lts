@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *    Hantro dec400 controller hardware driver header file.
  *

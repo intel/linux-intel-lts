@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *    Hantro driver main entrance.
  *
@@ -62,19 +63,20 @@
 #define DRIVER_MINOR	1
 
 struct hantro_device_handle hantro_dev;
-static ssize_t get_allocation_status(struct device *dev, int sliceidx, char *buf);
+static ssize_t get_allocation_status(struct device *dev, int sliceidx,
+				     char *buf);
 
 bool verbose;
 module_param(verbose, bool, 0);
 MODULE_PARM_DESC(verbose, "Verbose log operations "
 		"(default 0)");
 
-bool disable_encode = 0;
+bool disable_encode;
 module_param(disable_encode, bool, 0);
 MODULE_PARM_DESC(disable_encode, "Disable Encode"
 		"(default 0)");
 
-bool disable_decode = 0;
+bool disable_decode;
 module_param(disable_decode, bool, 0);
 MODULE_PARM_DESC(disable_decode, "Disable Decode"
 		"(default 0)");
@@ -84,7 +86,7 @@ module_param(disable_dec400, bool, 0);
 MODULE_PARM_DESC(disable_dec400, "Disable DEC400/L2"
 		"(default 0)");
 
-bool enable_polling = 0;
+bool enable_polling;
 module_param(enable_polling, bool, 0);
 MODULE_PARM_DESC(enable_polling, "Enable polling mode"
 		"(default 0)");
@@ -532,7 +534,9 @@ hantro_gem_prime_import_sg_table(struct drm_device *dev,
 	cma_obj->sgt = sgt;
 	cma_obj->flag |= HANTRO_GEM_FLAG_IMPORT;
 	cma_obj->num_pages = attach->dmabuf->size >> PAGE_SHIFT;
-        cma_obj->meta_data_info = ((struct drm_gem_hantro_object *)attach->dmabuf->priv)->meta_data_info;
+	cma_obj->meta_data_info =
+		((struct drm_gem_hantro_object *)attach->dmabuf->priv)
+			->meta_data_info;
 
 	return obj;
 }
@@ -1128,40 +1132,42 @@ static int hantro_ptr_to_phys(struct drm_device *dev, void *data,
 	return 0;
 }
 
-static int hantro_query_metadata(
-	struct drm_device *dev,
-	void *data,
-	struct drm_file *file_priv)
+static int hantro_query_metadata(struct drm_device *dev, void *data,
+				 struct drm_file *file_priv)
 {
-	struct hantro_exchanged_metadata_info *metadata_info_p = (struct hantro_exchanged_metadata_info *)data;
+	struct hantro_exchanged_metadata_info *metadata_info_p =
+		(struct hantro_exchanged_metadata_info *)data;
 	struct drm_gem_object *obj = NULL;
 	struct drm_gem_hantro_object *cma_obj = NULL;
 
-	obj = hantro_gem_object_lookup(dev, file_priv, metadata_info_p->exporter.handle);
+	obj = hantro_gem_object_lookup(dev, file_priv,
+				       metadata_info_p->exporter.handle);
 	if (obj == NULL)
 		return -ENOENT;
 	cma_obj = to_drm_gem_hantro_obj(obj);
 
-	memcpy(&metadata_info_p->meta_data_info, &cma_obj->meta_data_info, sizeof(struct viv_vidmem_metadata_info));
+	memcpy(&metadata_info_p->meta_data_info, &cma_obj->meta_data_info,
+	       sizeof(struct viv_vidmem_metadata_info));
 
 	return 0;
 }
 
-static int hantro_update_metadata(
-	struct drm_device *dev,
-	void *data,
-	struct drm_file *file_priv)
+static int hantro_update_metadata(struct drm_device *dev, void *data,
+				  struct drm_file *file_priv)
 {
-	struct hantro_exchanged_metadata_info *metadata_info_p = (struct hantro_exchanged_metadata_info *)data;
+	struct hantro_exchanged_metadata_info *metadata_info_p =
+		(struct hantro_exchanged_metadata_info *)data;
 	struct drm_gem_object *obj = NULL;
 	struct drm_gem_hantro_object *cma_obj = NULL;
 
-	obj = hantro_gem_object_lookup(dev, file_priv, metadata_info_p->exporter.handle);
+	obj = hantro_gem_object_lookup(dev, file_priv,
+				       metadata_info_p->exporter.handle);
 	if (obj == NULL)
 		return -ENOENT;
 	cma_obj = to_drm_gem_hantro_obj(obj);
 
-	memcpy(&cma_obj->meta_data_info, &metadata_info_p->meta_data_info, sizeof(struct viv_vidmem_metadata_info));
+	memcpy(&cma_obj->meta_data_info, &metadata_info_p->meta_data_info,
+	       sizeof(struct viv_vidmem_metadata_info));
 
 	return 0;
 }
@@ -1470,19 +1476,18 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 	}
 	if (nr >= DRM_IOCTL_NR(HANTRODEC_IOC_START) &&
-		nr <= DRM_IOCTL_NR(HANTRODEC_IOC_END)) {
+	    nr <= DRM_IOCTL_NR(HANTRODEC_IOC_END)) {
 		return hantrodec_ioctl(filp, cmd, arg);
-		
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTROCACHE_IOC_START) &&
-		nr <= DRM_IOCTL_NR(HANTROCACHE_IOC_END)) {
-	   	    return hantrocache_ioctl(filp, cmd, arg);
+	    nr <= DRM_IOCTL_NR(HANTROCACHE_IOC_END)) {
+		return hantrocache_ioctl(filp, cmd, arg);
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTRODEC400_IOC_START) &&
-		nr <= DRM_IOCTL_NR(HANTRODEC400_IOC_END)) {
-	   	   return hantrodec400_ioctl(filp, cmd, arg);
+	    nr <= DRM_IOCTL_NR(HANTRODEC400_IOC_END)) {
+		return hantrodec400_ioctl(filp, cmd, arg);
 	}
 
 	if (nr >= DRM_IOCTL_NR(HANTROSLICE_IOC_START) &&
@@ -1494,13 +1499,15 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EINVAL;
 	ioctl = &hantro_ioctls[nr];
 
-	if((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
-		(cmd == DRM_IOCTL_HANTRO_QUERY_METADATA) ) {
-	if (copy_from_user(kdata, (void __user *)arg, sizeof(struct hantro_exchanged_metadata_info)) != 0)
-		return  -EFAULT;
+	if ((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
+	    (cmd == DRM_IOCTL_HANTRO_QUERY_METADATA)) {
+		if (copy_from_user(
+			    kdata, (void __user *)arg,
+			    sizeof(struct hantro_exchanged_metadata_info)) != 0)
+			return -EFAULT;
 	} else {
 		if (copy_from_user(kdata, (void __user *)arg, in_size) != 0)
-			return  -EFAULT;
+			return -EFAULT;
 	}
 
 	if (cmd == DRM_IOCTL_MODE_SETCRTC ||
@@ -1516,11 +1523,14 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EINVAL;
 	retcode = func(dev, kdata, file_priv);
 
-	if((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
-		(cmd == DRM_IOCTL_HANTRO_QUERY_METADATA) ) {
-		if (copy_to_user((void __user *)arg, kdata, sizeof(struct hantro_exchanged_metadata_info)) != 0) {
+	if ((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
+	    (cmd == DRM_IOCTL_HANTRO_QUERY_METADATA)) {
+		if (copy_to_user(
+			    (void __user *)arg, kdata,
+			    sizeof(struct hantro_exchanged_metadata_info)) !=
+		    0) {
 			retcode = -EFAULT;
-			}
+		}
 	} else {
 		if (copy_to_user((void __user *)arg, kdata, out_size) != 0)
 			retcode = -EFAULT;
@@ -1868,11 +1878,11 @@ static struct attribute *hantro_attrs[] = {
 };
 
 static const struct attribute_group hantro_attr_group = {
-    .attrs = hantro_attrs,
- };
+	.attrs = hantro_attrs,
+};
 
-static ssize_t
-get_allocation_status(struct device *dev, int sliceidx, char *buf)
+static ssize_t get_allocation_status(struct device *dev, int sliceidx,
+				     char *buf)
 {
 	struct drm_device *ddev = hantro_dev.drm_dev;
 	struct drm_file *file;
@@ -1883,9 +1893,10 @@ get_allocation_status(struct device *dev, int sliceidx, char *buf)
 
 	mutex_lock(&ddev->filelist_mutex);
 	// Go through all open drm files
-	list_for_each_entry (file, &ddev->filelist, lhead) {
+	list_for_each_entry(file, &ddev->filelist, lhead) {
 		struct drm_gem_object *gobj;
 		int handle;
+
 		mutex_lock(&ddev->struct_mutex);
 		// Traverse through cma objects added to file's driver_priv
 		// checkout hantro_recordmem
@@ -1893,9 +1904,10 @@ get_allocation_status(struct device *dev, int sliceidx, char *buf)
 		idr_for_each_entry(data->list, gobj, handle) {
 			if (gobj) {
 				cma_obj = to_drm_gem_hantro_obj(gobj);
-				if (cma_obj && cma_obj->sliceidx ==  sliceidx && cma_obj->memdev == dev) {
-					   mem_used += cma_obj->base.size;
-					   alloc_count++;
+				if (cma_obj && cma_obj->sliceidx == sliceidx &&
+				    cma_obj->memdev == dev) {
+					mem_used += cma_obj->base.size;
+					alloc_count++;
 				}
 			}
 		}
@@ -1903,18 +1915,21 @@ get_allocation_status(struct device *dev, int sliceidx, char *buf)
 	}
 
 	mutex_unlock(&ddev->filelist_mutex);
-	buf_used += snprintf(buf + buf_used, PAGE_SIZE, "\n%ldK in %d allocations; device=%p\n\n",  mem_used/1024, alloc_count, dev);
+	buf_used += snprintf(buf + buf_used, PAGE_SIZE,
+			     "\n%ldK in %d allocations; device=%p\n\n",
+			     mem_used / 1024, alloc_count, dev);
 
 	return buf_used;
 }
-static int mem_usage_debugfs_internal(struct seq_file *s, struct device *dev, int sliceidx)
+static int mem_usage_debugfs_internal(struct seq_file *s, struct device *dev,
+				      int sliceidx)
 {
 	struct drm_device *ddev = hantro_dev.drm_dev;
 	struct drm_file *file;
 	struct file_data *data;
 	struct drm_gem_hantro_object *cma_obj;
 	struct task_struct *task;
-	int  alloc_count = 0;
+	int alloc_count = 0;
 	ssize_t mem_used = 0;
 
 	seq_printf(s, "   PID  :        Name          : Physical Addr   :  Virtual Addr       : Size\n");
@@ -1923,6 +1938,7 @@ static int mem_usage_debugfs_internal(struct seq_file *s, struct device *dev, in
 	list_for_each_entry(file, &ddev->filelist, lhead) {
 		struct drm_gem_object *gobj;
 		int handle;
+
 		task = pid_task(file->pid, PIDTYPE_PID);
 		mutex_lock(&ddev->struct_mutex);
 		// Traverse through cma objects added to file's driver_priv
@@ -1942,7 +1958,8 @@ static int mem_usage_debugfs_internal(struct seq_file *s, struct device *dev, in
 	}
 
 	mutex_unlock(&ddev->filelist_mutex);
-	seq_printf(s, "\n%ldK in %d allocations\n\n",  mem_used/1024, alloc_count);
+	seq_printf(s, "\n%ldK in %d allocations\n\n", mem_used / 1024,
+		   alloc_count);
 
 	return 0;
 }
@@ -1966,12 +1983,14 @@ DEFINE_SHOW_ATTRIBUTE(mem_usage_debugfs);
 
 void create_debugfs(struct slice_info *pslice, int sliceidx, bool has_codecmem)
 {
-    char filename[64];
-    if (!hantro_dev.debugfs_root)
-	 return;
-    sprintf(filename, "mem_usage%d", sliceidx);
-    debugfs_create_file(filename, S_IFREG | S_IRUGO,
-            hantro_dev.debugfs_root, pslice, &mem_usage_debugfs_fops);
+	char filename[64];
+
+	if (!hantro_dev.debugfs_root)
+		return;
+	sprintf(filename, "mem_usage%d", sliceidx);
+	debugfs_create_file(filename, S_IFREG | S_IRUGO,
+			    hantro_dev.debugfs_root, pslice,
+			    &mem_usage_debugfs_fops);
 }
 
 static int getnodetype(const char *name)
@@ -2097,30 +2116,35 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 /* hantro_mmu_control is used to check whether media MMU is enabled or disabled */
 static void hantro_mmu_control(struct platform_device *pdev)
 {
-        struct device *dev = &pdev->dev;
+	struct device *dev = &pdev->dev;
 	u64 tbh_mmu_tcu_smmu_cr0;
 	u8 *tbh_mmu_tcu_smmu_cr0_register;
 	int is_mmu_enabled, count = 0;
 
-        count = device_property_read_u64 (dev, "mmu-tcu-reg", &tbh_mmu_tcu_smmu_cr0);
+	count = device_property_read_u64(dev, "mmu-tcu-reg",
+					 &tbh_mmu_tcu_smmu_cr0);
 
-        if (count == 0) {
-	        /* request mem region of TBH_MMU_TCU_SMMU_CR0 */
-		if (!request_mem_region(tbh_mmu_tcu_smmu_cr0, 0x32,"tbh_mmu_tcu_smmu_cr0")) {
+	if (count == 0) {
+		/* request mem region of TBH_MMU_TCU_SMMU_CR0 */
+		if (!request_mem_region(tbh_mmu_tcu_smmu_cr0, 0x32,
+					"tbh_mmu_tcu_smmu_cr0")) {
 			pr_info("tbh_mmu_tcu_smmu_cr0: failed to request mem region\n");
 		}
 
 		/* ioremap to the TBH_MMU_TCU_SMMU_CR0 */
-		tbh_mmu_tcu_smmu_cr0_register = (u8 *) ioremap(tbh_mmu_tcu_smmu_cr0, 0x32);
+		tbh_mmu_tcu_smmu_cr0_register =
+			(u8 *)ioremap(tbh_mmu_tcu_smmu_cr0, 0x32);
 		if (tbh_mmu_tcu_smmu_cr0_register == NULL) {
 			pr_info("tbh_mmu_tcu_smmu_cr0_register: failed to ioremap tbh_mmu_tcu_smmu_cr0_register\n");
-		}
-		else {
-			is_mmu_enabled = ioread32((void *)(tbh_mmu_tcu_smmu_cr0_register));
+		} else {
+			is_mmu_enabled = ioread32(
+				(void *)(tbh_mmu_tcu_smmu_cr0_register));
 			if (is_mmu_enabled)
-				printk("hantro_init: Media MMU600 is enabled, is_mmu_enabled = %d\n", is_mmu_enabled);
+				printk("hantro_init: Media MMU600 is enabled, is_mmu_enabled = %d\n",
+				       is_mmu_enabled);
 			else
-				printk("hantro_init: Media MMU600 is disabled, is_mmu_enabled = %d\n", is_mmu_enabled);
+				printk("hantro_init: Media MMU600 is disabled, is_mmu_enabled = %d\n",
+				       is_mmu_enabled);
 			release_mem_region(tbh_mmu_tcu_smmu_cr0, 0x32);
 		}
 	}
@@ -2260,43 +2284,46 @@ static int hantro_analyze_subnode(struct platform_device *pdev,
 }
 
 static int init_codec_rsvd_mem(struct device *dev, struct slice_info *pslice,
-                             const char *mem_name, unsigned int mem_idx)
+			       const char *mem_name, unsigned int mem_idx)
 {
-        struct device *mem_dev;
-        int rc = -1;
+	struct device *mem_dev;
+	int rc = -1;
 
-        /* Create a child device (of dev) to own the reserved memory. */
-        mem_dev = devm_kzalloc(dev, sizeof(struct device), GFP_KERNEL | GFP_DMA);
-        if (!mem_dev)
-                return -ENOMEM;
+	/* Create a child device (of dev) to own the reserved memory. */
+	mem_dev =
+		devm_kzalloc(dev, sizeof(struct device), GFP_KERNEL | GFP_DMA);
+	if (!mem_dev)
+		return -ENOMEM;
 
-        device_initialize(mem_dev);
-        dev_set_name(mem_dev, "%s:%s", dev_name(dev), mem_name);
-        mem_dev->parent = dev;
-        mem_dev->dma_mask = dev->dma_mask;
-        mem_dev->coherent_dma_mask = dev->coherent_dma_mask;
+	device_initialize(mem_dev);
+	dev_set_name(mem_dev, "%s:%s", dev_name(dev), mem_name);
+	mem_dev->parent = dev;
+	mem_dev->dma_mask = dev->dma_mask;
+	mem_dev->coherent_dma_mask = dev->coherent_dma_mask;
 
-        /* Set up DMA configuration using information from parent's DT node. */
-        mem_dev->release = of_reserved_mem_device_release;
+	/* Set up DMA configuration using information from parent's DT node. */
+	mem_dev->release = of_reserved_mem_device_release;
 
-        rc = device_add(mem_dev);
-        if (rc)
-                goto err;
-        /* Initialized the device reserved memory region. */
-        rc = of_reserved_mem_device_init_by_idx(mem_dev, dev->of_node, mem_idx);
-        if (rc) {
-                device_del(mem_dev);
-                goto err;
-        } else
-		dev_info(dev, "Success: Codec reserved memory found at idx = %d, ret=%d\n",
-                        mem_idx, rc);
+	rc = device_add(mem_dev);
+	if (rc)
+		goto err;
+	/* Initialized the device reserved memory region. */
+	rc = of_reserved_mem_device_init_by_idx(mem_dev, dev->of_node, mem_idx);
+	if (rc) {
+		device_del(mem_dev);
+		goto err;
+	} else
+		dev_info(
+			dev,
+			"Success: Codec reserved memory found at idx = %d, ret=%d\n",
+			mem_idx, rc);
 
-        pslice->codec_rsvmem = mem_dev;
+	pslice->codec_rsvmem = mem_dev;
 
-        return 0;
+	return 0;
 err:
-        put_device(mem_dev);
-        return rc;
+	put_device(mem_dev);
+	return rc;
 }
 
 static int hantro_drm_probe(struct platform_device *pdev)
@@ -2331,11 +2358,11 @@ static int hantro_drm_probe(struct platform_device *pdev)
 				0); /* leave to end of init, set to default drm platform dev and default cma area */
 
 		/* go throug all sub dtb node' resources */
-		if (sliceidx >= 0 && dev->of_node != NULL)
-		{
+		if (sliceidx >= 0 && dev->of_node != NULL) {
 			hantro_analyze_subnode(pdev, dev->of_node, sliceidx);
 			pslice = getslicenode_inInit(sliceidx);
-			result = init_codec_rsvd_mem(dev, pslice, "codec_reserved", 1);
+			result = init_codec_rsvd_mem(dev, pslice,
+						     "codec_reserved", 1);
 			create_debugfs(pslice, sliceidx, result == 0);
 		}
 	}
@@ -2422,35 +2449,34 @@ void __exit hantro_cleanup(void)
 {
 	int i;
 	struct slice_info *pslice = NULL;
+
 	hantro_dev.config = 0;
 
 	if (hantro_dev.debugfs_root)
 		debugfs_remove(hantro_dev.debugfs_root);
 
 	if (!disable_decode)
-	      hantrodec_cleanup();
+		hantrodec_cleanup();
 
 	if (!disable_encode)
-	      hantroenc_cleanup();
+		hantroenc_cleanup();
 
 	if (!disable_dec400) {
-	      cache_cleanup();
-	      hantro_dec400_cleanup();
+		cache_cleanup();
+		hantro_dec400_cleanup();
 	}
 
-        for (i = 0; i < get_slicenumber(); i++) {
-           pslice = getslicenode(i);
-           if (pslice != NULL && pslice->codec_rsvmem != NULL)
-           {
-              of_reserved_mem_device_release(pslice->codec_rsvmem);
-              device_del(pslice->codec_rsvmem);
-              put_device(pslice->codec_rsvmem);
-              pslice->codec_rsvmem=NULL;
-           }
+	for (i = 0; i < get_slicenumber(); i++) {
+		pslice = getslicenode(i);
+		if (pslice != NULL && pslice->codec_rsvmem != NULL) {
+			of_reserved_mem_device_release(pslice->codec_rsvmem);
+			device_del(pslice->codec_rsvmem);
+			put_device(pslice->codec_rsvmem);
+			pslice->codec_rsvmem = NULL;
+		}
+	}
 
-       }	
-
-        /*this one must be after above ones to maintain list*/
+	/* this one must be after above ones to maintain list */
 	slice_remove();
 	releaseFenceData();
 	/*

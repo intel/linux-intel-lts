@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *    Hantro driver public header file.
  *
@@ -83,8 +84,7 @@ struct hantro_drm_fb {
 	struct drm_gem_object *obj[4];
 };
 
-struct viv_vidmem_metadata_info
-{
+struct viv_vidmem_metadata_info {
 	uint32_t magic; // __FOURCC('v', 'i', 'v', 'm')
 	uint32_t dmabuf_size; // DMABUF buffer size in byte (Maximum 4GB)
 	uint32_t image_format; // ImageFormat
@@ -114,7 +114,7 @@ struct hantro_exchanged_metadata_info {
 struct drm_gem_hantro_object {
 	struct drm_gem_object base;
 	dma_addr_t paddr;
-        //common meta data description
+	/* common meta data description */
 	struct viv_vidmem_metadata_info meta_data_info;
 	struct sg_table *sgt;
 	struct device *memdev;

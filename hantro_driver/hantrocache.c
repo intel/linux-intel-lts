@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *    Hantro cache controller hardware driver.
  *
@@ -163,6 +164,7 @@ long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	u32 core_id;
 	unsigned long long tmp64;
 	struct cache_dev_t *pccore;
+
 	if (disable_dec400)
 		return -EFAULT;
 	switch (cmd) {
