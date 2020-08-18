@@ -2181,8 +2181,9 @@ static int hantro_clock_control(struct platform_device *pdev, bool enable)
 					pr_info("hantro: default clock frequency of clock_name = %s is %ld\n",
 						clock_names[i],
 						clk_get_rate(dev_clk));
-				//clk_set_rate(dev_clk, 800000000);
-				//pr_info("hantro: set 800 Mhz clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
+				clk_set_rate(dev_clk, 800000000);
+				if (verbose)
+					pr_info("hantro: set 800 Mhz clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
 			} else {
 				clk_disable_unprepare(dev_clk);
 			}
