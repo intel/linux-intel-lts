@@ -235,13 +235,10 @@ static int intel_adc_read_raw(struct iio_dev *iio,
 		long mask)
 {
 	struct intel_adc *adc = iio_priv(iio);
-	int shift;
 	int ret;
 
 	switch (mask) {
 	case IIO_CHAN_INFO_RAW:
-		shift = channel->scan_type.shift;
-
 		ret = iio_device_claim_direct_mode(iio);
 		if (ret)
 			break;
