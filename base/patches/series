@@ -7,9 +7,6 @@
 # CVE-2018-8043
 0001-net-phy-mdio-bcm-unimac-fix-potential-NULL-dereferen-CVE-2018-8043.patch
 
-# CVE-2018-10323
-0001-xfs-set-format-back-to-extents-if-xfs_bmap_extents_t-CVE-2018-10323.patch
-
 # CVE-2018-13094
 0001-xfs-don-t-call-xfs_da_shrink_inode-with-NULL-bp-CVE-2018-13094.patch
 
