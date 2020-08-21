@@ -8,6 +8,7 @@
 #include <linux/pci.h>
 #include <linux/ptp_classify.h>
 #include <linux/clocksource.h>
+#include <linux/ktime.h>
 
 #define INCVALUE_MASK		0x7fffffff
 #define ISGN			0x80000000
@@ -508,6 +509,9 @@ void igc_ptp_init(struct igc_adapter *adapter)
 	adapter->tstamp_config.rx_filter = HWTSTAMP_FILTER_NONE;
 	adapter->tstamp_config.tx_type = HWTSTAMP_TX_OFF;
 
+	adapter->prev_ptp_time = ktime_to_timespec64(ktime_get_real());
+	adapter->ptp_reset_start = ktime_get();
+
 	adapter->ptp_clock = ptp_clock_register(&adapter->ptp_caps,
 						&adapter->pdev->dev);
 	if (IS_ERR(adapter->ptp_clock)) {
@@ -517,6 +521,24 @@ void igc_ptp_init(struct igc_adapter *adapter)
 		netdev_info(netdev, "PHC added\n");
 		adapter->ptp_flags |= IGC_PTP_ENABLED;
 	}
+}
+
+static void igc_ptp_time_save(struct igc_adapter *adapter)
+{
+	igc_ptp_read_i225(adapter, &adapter->prev_ptp_time);
+	adapter->ptp_reset_start = ktime_get();
+}
+
+static void igc_ptp_time_restore(struct igc_adapter *adapter)
+{
+	struct timespec64 ts = adapter->prev_ptp_time;
+	ktime_t delta;
+
+	delta = ktime_sub(ktime_get(), adapter->ptp_reset_start);
+
+	timespec64_add_ns(&ts, ktime_to_ns(delta));
+
+	igc_ptp_write_i225(adapter, &ts);
 }
 
 /**
@@ -540,6 +562,8 @@ void igc_ptp_suspend(struct igc_adapter *adapter)
 	adapter->ptp_tx_start = 0;
 
 	spin_unlock(&adapter->ptp_tx_lock);
+
+	igc_ptp_time_save(adapter);
 }
 
 /**
@@ -589,9 +613,7 @@ void igc_ptp_reset(struct igc_adapter *adapter)
 
 	/* Re-initialize the timer. */
 	if (hw->mac.type == igc_i225) {
-		struct timespec64 ts64 = ktime_to_timespec64(ktime_get_real());
-
-		igc_ptp_write_i225(adapter, &ts64);
+		igc_ptp_time_restore(adapter);
 	} else {
 		timecounter_init(&adapter->tc, &adapter->cc,
 				 ktime_to_ns(ktime_get_real()));
