@@ -12,7 +12,6 @@
 
 # CVE-2019-3874
 0001-sctp-implement-memory-accounting-on-rx-path-CVE-2019-3874.patch
-0002-sctp-implement-memory-accounting-on-tx-path-CVE-2019-3874.patch
 
 # CVE-2019-15098
 0001-Fix-a-NULL-ptr-deref-bug-in-ath6kl_usb_alloc_urb_fro-CVE-2019-15098.patch
@@ -20,21 +19,6 @@
 # CVE-2019-15099
 0001-ath10k-Fix-a-NULL-ptr-deref-bug-in-ath10k_usb_alloc-CVE-2019-15099.patch
 
-# CVE-2019-19067
-0001-drm-amdgpu-fix-multiple-memory-leaks-in-acp_hw_init-CVE-2019-19067.patch
-
-# CVE-2019-19073
-0001-ath9k_htc-release-allocated-buffer-if-timed-out-CVE-2019-19073.patch
- 
-# CVE-2019-19072
-0001-tracing-Have-error-path-in-predicate_parse-free-its-CVE-2019-19072.patch
- 
-# CVE-2019-19054
-0001-media-rc-prevent-memory-leak-in-cx23888_ir_probe-CVE-2019-19054.patch
- 
-# CVE-2019-19074
-0001-ath9k-release-allocated-buffer-if-timed-out-CVE-2019-19074.patch
- 
 # CVE-2019-18808
 0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-CVE-2019-18808.patch
  
@@ -44,9 +28,6 @@
 # CVE-2019-19083
 0001-drm-amd-display-memory-leak-CVE-2019-19083.patch
  
-# CVE-2019-19082
-0001-drm-amd-display-prevent-memory-leak-CVE-2019-19082.patch
-
 # CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
 
@@ -66,12 +47,8 @@
 # CVE-2020-15780
 0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
 
-# CVE-2020-16166
-0001-random32-update-the-net-random-state-on-interrupt-an.patch
-
 # CVE-2019-19770
 0001-block-revert-back-to-synchronous-request_queue-remov.patch
 0002-block-move-main-block-debugfs-initialization-to-its-.patch
 0003-blktrace-move-blktrace-debugfs-creation-to-helper-fu.patch
 0004-blktrace-fix-debugfs-use-after-free.patch
-0005-loop-be-paranoid-on-exit-and-prevent-new-additions-r.patch
