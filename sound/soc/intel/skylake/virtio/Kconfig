@@ -1,6 +1,6 @@
 config SND_SOC_INTEL_SKYLAKE_VIRTIO_FE
 	tristate "SKL/BXT/KBL/GLK/CNL... Platforms Virtio FrontEnd"
-	depends on ACRN_VIRTIO_DEVICES && SND_SOC_INTEL_SKYLAKE
+	depends on ACRN_VIRTIO_DEVICES && SND_SOC_INTEL_SKYLAKE && SND_SOC_INTEL_SKYLAKE_VIRTIO_BE=n
 	help
 	  Enables virtio frontend for Intel Skylake audio driver.
 	  This option should be enabled only on Guest OS.
