@@ -1701,8 +1701,9 @@ static int i915_drm_suspend(struct drm_device *dev)
 	drm_kms_helper_poll_disable(dev);
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt)
+	if (dev_priv->gvt) {
 		intel_gvt_pm_suspend(dev_priv->gvt);
+	}
 #endif
 
 	pci_save_state(pdev);
@@ -1887,7 +1888,7 @@ static int i915_drm_resume(struct drm_device *dev)
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 	if (dev_priv->gvt) {
-		return intel_gvt_pm_resume(dev_priv->gvt);
+		intel_gvt_pm_resume(dev_priv->gvt);
 	}
 #endif
 
@@ -1964,12 +1965,8 @@ static int i915_drm_resume_early(struct drm_device *dev)
 
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (!ret) {
-		if (dev_priv->gvt) {
-			ret = intel_gvt_pm_early_resume(dev_priv->gvt);
-			if (ret)
-				return ret;
-		}
+	if (dev_priv->gvt) {
+		intel_gvt_pm_early_resume(dev_priv->gvt);
 	}
 #endif
 
@@ -2636,12 +2633,8 @@ static int intel_runtime_resume(struct device *kdev)
 	intel_enable_ipc(dev_priv);
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (!ret) {
-		if (dev_priv->gvt) {
-			ret = intel_gvt_pm_early_resume(dev_priv->gvt);
-			if (ret)
-				return ret;
-		}
+	if (dev_priv->gvt) {
+		intel_gvt_pm_early_resume(dev_priv->gvt);
 	}
 #endif
 
