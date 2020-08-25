@@ -98,6 +98,17 @@ int usb_ep_enable(struct usb_ep *ep)
 	if (ep->enabled)
 		goto out;
 
+	/* UDC drivers can't handle endpoints with maxpacket size 0 */
+	if (usb_endpoint_maxp(ep->desc) == 0) {
+		/*
+		 * We should log an error message here, but we can't call
+		 * dev_err() because there's no way to find the gadget
+		 * given only ep.
+		 */
+		ret = -EINVAL;
+		goto out;
+	}
+
 	ret = ep->ops->enable(ep, ep->desc);
 	if (ret)
 		goto out;
@@ -494,6 +505,43 @@ out:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(usb_gadget_wakeup);
+
+/**
+ * usb_gsi_ep_op - performs operation on GSI accelerated EP based on EP op code
+ *
+ * Operations such as EP configuration, TRB allocation, StartXfer etc.
+ * See gsi_ep_op for more details.
+ */
+int usb_gsi_ep_op(struct usb_ep *ep,
+		struct usb_gsi_request *req, enum gsi_ep_op op)
+{
+	if (ep && ep->ops && ep->ops->gsi_ep_op)
+		return ep->ops->gsi_ep_op(ep, req, op);
+
+	return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL_GPL(usb_gsi_ep_op);
+
+/**
+ * usb_gadget_func_wakeup - send a function remote wakeup up notification
+ * to the host connected to this gadget
+ * @gadget: controller used to wake up the host
+ * @interface_id: the interface which triggered the remote wakeup event
+ *
+ * Returns zero on success. Otherwise, negative error code is returned.
+ */
+int usb_gadget_func_wakeup(struct usb_gadget *gadget,
+	int interface_id)
+{
+	if (!gadget || (gadget->speed != USB_SPEED_SUPER))
+		return -EOPNOTSUPP;
+
+	if (!gadget->ops || !gadget->ops->func_wakeup)
+		return -EOPNOTSUPP;
+
+	return gadget->ops->func_wakeup(gadget, interface_id);
+}
+EXPORT_SYMBOL_GPL(usb_gadget_func_wakeup);
 
 /**
  * usb_gadget_set_selfpowered - sets the device selfpowered feature.
@@ -1138,7 +1186,7 @@ static int check_pending_gadget_drivers(struct usb_udc *udc)
 						dev_name(&udc->dev)) == 0) {
 			ret = udc_bind_to_driver(udc, driver);
 			if (ret != -EPROBE_DEFER)
-				list_del(&driver->pending);
+				list_del_init(&driver->pending);
 			break;
 		}
 

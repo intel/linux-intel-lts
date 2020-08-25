@@ -228,8 +228,11 @@ static int mv88e6xxx_port_set_speed(struct mv88e6xxx_chip *chip, int port,
 		ctrl = MV88E6XXX_PORT_MAC_CTL_SPEED_1000;
 		break;
 	case 2500:
-		ctrl = MV88E6390_PORT_MAC_CTL_SPEED_10000 |
-			MV88E6390_PORT_MAC_CTL_ALTSPEED;
+		if (alt_bit)
+			ctrl = MV88E6390_PORT_MAC_CTL_SPEED_10000 |
+				MV88E6390_PORT_MAC_CTL_ALTSPEED;
+		else
+			ctrl = MV88E6390_PORT_MAC_CTL_SPEED_10000;
 		break;
 	case 10000:
 		/* all bits set, fall through... */
@@ -289,6 +292,24 @@ int mv88e6185_port_set_speed(struct mv88e6xxx_chip *chip, int port, int speed)
 		return -EOPNOTSUPP;
 
 	return mv88e6xxx_port_set_speed(chip, port, speed, false, false);
+}
+
+/* Support 10, 100, 200, 1000, 2500 Mbps (e.g. 88E6341) */
+int mv88e6341_port_set_speed(struct mv88e6xxx_chip *chip, int port, int speed)
+{
+	if (speed == SPEED_MAX)
+		speed = port < 5 ? 1000 : 2500;
+
+	if (speed > 2500)
+		return -EOPNOTSUPP;
+
+	if (speed == 200 && port != 0)
+		return -EOPNOTSUPP;
+
+	if (speed == 2500 && port < 5)
+		return -EOPNOTSUPP;
+
+	return mv88e6xxx_port_set_speed(chip, port, speed, !port, true);
 }
 
 /* Support 10, 100, 200, 1000 Mbps (e.g. 88E6352 family) */
@@ -379,18 +400,22 @@ int mv88e6390x_port_set_cmode(struct mv88e6xxx_chip *chip, int port,
 		return 0;
 
 	lane = mv88e6390x_serdes_get_lane(chip, port);
-	if (lane < 0)
+	if (lane < 0 && lane != -ENODEV)
 		return lane;
 
-	if (chip->ports[port].serdes_irq) {
-		err = mv88e6390_serdes_irq_disable(chip, port, lane);
+	if (lane >= 0) {
+		if (chip->ports[port].serdes_irq) {
+			err = mv88e6390_serdes_irq_disable(chip, port, lane);
+			if (err)
+				return err;
+		}
+
+		err = mv88e6390x_serdes_power(chip, port, false);
 		if (err)
 			return err;
 	}
 
-	err = mv88e6390x_serdes_power(chip, port, false);
-	if (err)
-		return err;
+	chip->ports[port].cmode = 0;
 
 	if (cmode) {
 		err = mv88e6xxx_port_read(chip, port, MV88E6XXX_PORT_STS, &reg);
@@ -404,6 +429,12 @@ int mv88e6390x_port_set_cmode(struct mv88e6xxx_chip *chip, int port,
 		if (err)
 			return err;
 
+		chip->ports[port].cmode = cmode;
+
+		lane = mv88e6390x_serdes_get_lane(chip, port);
+		if (lane < 0)
+			return lane;
+
 		err = mv88e6390x_serdes_power(chip, port, true);
 		if (err)
 			return err;
@@ -414,8 +445,6 @@ int mv88e6390x_port_set_cmode(struct mv88e6xxx_chip *chip, int port,
 				return err;
 		}
 	}
-
-	chip->ports[port].cmode = cmode;
 
 	return 0;
 }

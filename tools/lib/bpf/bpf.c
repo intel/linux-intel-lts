@@ -53,6 +53,8 @@
 #  define __NR_bpf 349
 # elif defined(__s390__)
 #  define __NR_bpf 351
+# elif defined(__arc__)
+#  define __NR_bpf 280
 # else
 #  error __NR_bpf not defined. libbpf does not support your arch.
 # endif
@@ -71,6 +73,17 @@ static inline int sys_bpf(enum bpf_cmd cmd, union bpf_attr *attr,
 			  unsigned int size)
 {
 	return syscall(__NR_bpf, cmd, attr, size);
+}
+
+static inline int sys_bpf_prog_load(union bpf_attr *attr, unsigned int size)
+{
+	int fd;
+
+	do {
+		fd = sys_bpf(BPF_PROG_LOAD, attr, size);
+	} while (fd < 0 && errno == EAGAIN);
+
+	return fd;
 }
 
 int bpf_create_map_xattr(const struct bpf_create_map_attr *create_attr)
@@ -216,7 +229,7 @@ int bpf_load_program_xattr(const struct bpf_load_program_attr *load_attr,
 	memcpy(attr.prog_name, load_attr->name,
 	       min(name_len, BPF_OBJ_NAME_LEN - 1));
 
-	fd = sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+	fd = sys_bpf_prog_load(&attr, sizeof(attr));
 	if (fd >= 0 || !log_buf || !log_buf_sz)
 		return fd;
 
@@ -225,7 +238,7 @@ int bpf_load_program_xattr(const struct bpf_load_program_attr *load_attr,
 	attr.log_size = log_buf_sz;
 	attr.log_level = 1;
 	log_buf[0] = 0;
-	return sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+	return sys_bpf_prog_load(&attr, sizeof(attr));
 }
 
 int bpf_load_program(enum bpf_prog_type type, const struct bpf_insn *insns,
@@ -266,7 +279,7 @@ int bpf_verify_program(enum bpf_prog_type type, const struct bpf_insn *insns,
 	attr.kern_version = kern_version;
 	attr.prog_flags = strict_alignment ? BPF_F_STRICT_ALIGNMENT : 0;
 
-	return sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+	return sys_bpf_prog_load(&attr, sizeof(attr));
 }
 
 int bpf_map_update_elem(int fd, const void *key, const void *value,

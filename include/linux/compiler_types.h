@@ -144,11 +144,19 @@ struct ftrace_likely_data {
 #define __visible
 #endif
 
+#ifndef __noscs
+# define __noscs
+#endif
+
 /*
  * Assume alignment of return value.
  */
 #ifndef __assume_aligned
 #define __assume_aligned(a, ...)
+#endif
+
+#ifndef asm_volatile_goto
+#define asm_volatile_goto(x...) asm goto(x)
 #endif
 
 /* Are two types/vars the same type (ignoring qualifiers)? */
@@ -218,7 +226,7 @@ struct ftrace_likely_data {
 #define __section(S)		__attribute__((__section__(#S)))
 
 
-#ifdef CONFIG_ENABLE_MUST_CHECK
+#if defined(CONFIG_ENABLE_MUST_CHECK) && !defined(__GENKSYMS__)
 #define __must_check		__attribute__((warn_unused_result))
 #else
 #define __must_check
@@ -250,6 +258,14 @@ struct ftrace_likely_data {
 # define __gnu_inline	__attribute__((gnu_inline))
 #else
 # define __gnu_inline
+#endif
+
+#ifndef __norecordmcount
+#define __norecordmcount
+#endif
+
+#ifndef __nocfi
+#define __nocfi
 #endif
 
 /*

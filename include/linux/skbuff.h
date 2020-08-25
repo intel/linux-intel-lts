@@ -249,8 +249,8 @@ struct nf_conntrack {
 	atomic_t use;
 };
 #endif
+#include <linux/android_kabi.h>
 
-#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 struct nf_bridge_info {
 	refcount_t		use;
 	enum {
@@ -278,7 +278,6 @@ struct nf_bridge_info {
 		char neigh_header[8];
 	};
 };
-#endif
 
 struct sk_buff_head {
 	/* These two members must be first. */
@@ -713,9 +712,7 @@ struct sk_buff {
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	unsigned long		 _nfct;
 #endif
-#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	struct nf_bridge_info	*nf_bridge;
-#endif
 	unsigned int		len,
 				data_len;
 	__u16			mac_len,
@@ -848,6 +845,9 @@ struct sk_buff {
 	/* private: */
 	__u32			headers_end[0];
 	/* public: */
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 
 	/* These elements must be at the end, see alloc_skb() for details.  */
 	sk_buff_data_t		tail;
@@ -1251,7 +1251,8 @@ static inline __u32 skb_get_hash_flowi6(struct sk_buff *skb, const struct flowi6
 	return skb->hash;
 }
 
-__u32 skb_get_hash_perturb(const struct sk_buff *skb, u32 perturb);
+__u32 skb_get_hash_perturb(const struct sk_buff *skb,
+			   const siphash_key_t *perturb);
 
 static inline __u32 skb_get_hash_raw(const struct sk_buff *skb)
 {
@@ -1333,10 +1334,12 @@ static inline void skb_zcopy_clear(struct sk_buff *skb, bool zerocopy)
 	struct ubuf_info *uarg = skb_zcopy(skb);
 
 	if (uarg) {
-		if (uarg->callback == sock_zerocopy_callback) {
+		if (skb_zcopy_is_nouarg(skb)) {
+			/* no notification callback */
+		} else if (uarg->callback == sock_zerocopy_callback) {
 			uarg->zerocopy = uarg->zerocopy && zerocopy;
 			sock_zerocopy_put(uarg);
-		} else if (!skb_zcopy_is_nouarg(skb)) {
+		} else {
 			uarg->callback(uarg, zerocopy);
 		}
 
@@ -1376,6 +1379,19 @@ static inline int skb_queue_empty(const struct sk_buff_head *list)
 {
 	return list->next == (const struct sk_buff *) list;
 }
+
+/**
+ *	skb_queue_empty_lockless - check if a queue is empty
+ *	@list: queue head
+ *
+ *	Returns true if the queue is empty, false otherwise.
+ *	This variant can be used in lockless contexts.
+ */
+static inline bool skb_queue_empty_lockless(const struct sk_buff_head *list)
+{
+	return READ_ONCE(list->next) == (const struct sk_buff *) list;
+}
+
 
 /**
  *	skb_queue_is_last - check if skb is the last entry in the queue
@@ -1653,7 +1669,7 @@ static inline struct sk_buff *skb_peek_next(struct sk_buff *skb,
  */
 static inline struct sk_buff *skb_peek_tail(const struct sk_buff_head *list_)
 {
-	struct sk_buff *skb = list_->prev;
+	struct sk_buff *skb = READ_ONCE(list_->prev);
 
 	if (skb == (struct sk_buff *)list_)
 		skb = NULL;
@@ -1721,9 +1737,13 @@ static inline void __skb_insert(struct sk_buff *newsk,
 				struct sk_buff *prev, struct sk_buff *next,
 				struct sk_buff_head *list)
 {
-	newsk->next = next;
-	newsk->prev = prev;
-	next->prev  = prev->next = newsk;
+	/* See skb_queue_empty_lockless() and skb_peek_tail()
+	 * for the opposite READ_ONCE()
+	 */
+	WRITE_ONCE(newsk->next, next);
+	WRITE_ONCE(newsk->prev, prev);
+	WRITE_ONCE(next->prev, newsk);
+	WRITE_ONCE(prev->next, newsk);
 	list->qlen++;
 }
 
@@ -1734,11 +1754,11 @@ static inline void __skb_queue_splice(const struct sk_buff_head *list,
 	struct sk_buff *first = list->next;
 	struct sk_buff *last = list->prev;
 
-	first->prev = prev;
-	prev->next = first;
+	WRITE_ONCE(first->prev, prev);
+	WRITE_ONCE(prev->next, first);
 
-	last->next = next;
-	next->prev = last;
+	WRITE_ONCE(last->next, next);
+	WRITE_ONCE(next->prev, last);
 }
 
 /**
@@ -1879,8 +1899,8 @@ static inline void __skb_unlink(struct sk_buff *skb, struct sk_buff_head *list)
 	next	   = skb->next;
 	prev	   = skb->prev;
 	skb->next  = skb->prev = NULL;
-	next->prev = prev;
-	prev->next = next;
+	WRITE_ONCE(next->prev, prev);
+	WRITE_ONCE(prev->next, next);
 }
 
 /**
@@ -2587,7 +2607,8 @@ static inline int skb_orphan_frags(struct sk_buff *skb, gfp_t gfp_mask)
 {
 	if (likely(!skb_zcopy(skb)))
 		return 0;
-	if (skb_uarg(skb)->callback == sock_zerocopy_callback)
+	if (!skb_zcopy_is_nouarg(skb) &&
+	    skb_uarg(skb)->callback == sock_zerocopy_callback)
 		return 0;
 	return skb_copy_ubufs(skb, gfp_mask);
 }
@@ -3875,8 +3896,8 @@ static inline void nf_reset(struct sk_buff *skb)
 #endif
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	nf_bridge_put(skb->nf_bridge);
-	skb->nf_bridge = NULL;
 #endif
+	skb->nf_bridge = NULL;
 }
 
 static inline void nf_reset_trace(struct sk_buff *skb)

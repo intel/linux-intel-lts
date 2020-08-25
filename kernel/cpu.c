@@ -3,6 +3,7 @@
  *
  * This code is licenced under the GPL.
  */
+#include <linux/sched/mm.h>
 #include <linux/proc_fs.h>
 #include <linux/smp.h>
 #include <linux/init.h>
@@ -375,6 +376,7 @@ void __init cpu_smt_disable(bool force)
 		pr_info("SMT: Force disabled\n");
 		cpu_smt_control = CPU_SMT_FORCE_DISABLED;
 	} else {
+		pr_info("SMT: disabled\n");
 		cpu_smt_control = CPU_SMT_DISABLED;
 	}
 }
@@ -492,8 +494,7 @@ static int bringup_wait_for_ap(unsigned int cpu)
 	if (WARN_ON_ONCE((!cpu_online(cpu))))
 		return -ECANCELED;
 
-	/* Unpark the stopper thread and the hotplug thread of the target cpu */
-	stop_machine_unpark(cpu);
+	/* Unpark the hotplug thread of the target cpu */
 	kthread_unpark(st->thread);
 
 	/*
@@ -530,6 +531,21 @@ static int bringup_cpu(unsigned int cpu)
 	if (ret)
 		return ret;
 	return bringup_wait_for_ap(cpu);
+}
+
+static int finish_cpu(unsigned int cpu)
+{
+	struct task_struct *idle = idle_thread_get(cpu);
+	struct mm_struct *mm = idle->active_mm;
+
+	/*
+	 * idle_task_exit() will have switched to &init_mm, now
+	 * clean up any remaining active_mm state.
+	 */
+	if (mm != &init_mm)
+		idle->active_mm = &init_mm;
+	mmdrop(mm);
+	return 0;
 }
 
 /*
@@ -1047,8 +1063,8 @@ void notify_cpu_starting(unsigned int cpu)
 
 /*
  * Called from the idle task. Wake up the controlling task which brings the
- * stopper and the hotplug thread of the upcoming CPU up and then delegates
- * the rest of the online bringup to the hotplug thread.
+ * hotplug thread of the upcoming CPU up and then delegates the rest of the
+ * online bringup to the hotplug thread.
  */
 void cpuhp_online_idle(enum cpuhp_state state)
 {
@@ -1057,6 +1073,12 @@ void cpuhp_online_idle(enum cpuhp_state state)
 	/* Happens for the boot cpu */
 	if (state != CPUHP_AP_ONLINE_IDLE)
 		return;
+
+	/*
+	 * Unpart the stopper thread before we start the idle loop (and start
+	 * scheduling); this ensures the stopper task is always available.
+	 */
+	stop_machine_unpark(smp_processor_id());
 
 	st->state = CPUHP_AP_ONLINE_IDLE;
 	complete_ap_thread(st, true);
@@ -1220,6 +1242,7 @@ void __weak arch_enable_nonboot_cpus_end(void)
 void enable_nonboot_cpus(void)
 {
 	int cpu, error;
+	struct device *cpu_device;
 
 	/* Allow everyone to use the CPU hotplug again */
 	cpu_maps_update_begin();
@@ -1237,6 +1260,12 @@ void enable_nonboot_cpus(void)
 		trace_suspend_resume(TPS("CPU_ON"), cpu, false);
 		if (!error) {
 			pr_info("CPU%d is up\n", cpu);
+			cpu_device = get_cpu_device(cpu);
+			if (!cpu_device)
+				pr_err("%s: failed to get cpu%d device\n",
+				       __func__, cpu);
+			else
+				kobject_uevent(&cpu_device->kobj, KOBJ_ONLINE);
 			continue;
 		}
 		pr_warn("Error taking CPU%d up: %d\n", cpu, error);
@@ -1373,7 +1402,7 @@ static struct cpuhp_step cpuhp_hp_states[] = {
 	[CPUHP_BRINGUP_CPU] = {
 		.name			= "cpu:bringup",
 		.startup.single		= bringup_cpu,
-		.teardown.single	= NULL,
+		.teardown.single	= finish_cpu,
 		.cant_stop		= true,
 	},
 	/* Final state before CPU kills itself */
@@ -1925,6 +1954,9 @@ static ssize_t write_cpuhp_fail(struct device *dev,
 	if (ret)
 		return ret;
 
+	if (fail < CPUHP_OFFLINE || fail > CPUHP_ONLINE)
+		return -EINVAL;
+
 	/*
 	 * Cannot fail STARTING/DYING callbacks.
 	 */
@@ -2035,7 +2067,7 @@ static void cpuhp_online_cpu_device(unsigned int cpu)
 	kobject_uevent(&dev->kobj, KOBJ_ONLINE);
 }
 
-static int cpuhp_smt_disable(enum cpuhp_smt_control ctrlval)
+int cpuhp_smt_disable(enum cpuhp_smt_control ctrlval)
 {
 	int cpu, ret = 0;
 
@@ -2061,21 +2093,18 @@ static int cpuhp_smt_disable(enum cpuhp_smt_control ctrlval)
 		 */
 		cpuhp_offline_cpu_device(cpu);
 	}
-	if (!ret) {
+	if (!ret)
 		cpu_smt_control = ctrlval;
-		arch_smt_update();
-	}
 	cpu_maps_update_done();
 	return ret;
 }
 
-static int cpuhp_smt_enable(void)
+int cpuhp_smt_enable(void)
 {
 	int cpu, ret = 0;
 
 	cpu_maps_update_begin();
 	cpu_smt_control = CPU_SMT_ENABLED;
-	arch_smt_update();
 	for_each_present_cpu(cpu) {
 		/* Skip online CPUs and CPUs on offline nodes */
 		if (cpu_online(cpu) || !node_online(cpu_to_node(cpu)))
@@ -2235,6 +2264,9 @@ EXPORT_SYMBOL(__cpu_present_mask);
 struct cpumask __cpu_active_mask __read_mostly;
 EXPORT_SYMBOL(__cpu_active_mask);
 
+struct cpumask __cpu_isolated_mask __read_mostly;
+EXPORT_SYMBOL(__cpu_isolated_mask);
+
 void init_cpu_present(const struct cpumask *src)
 {
 	cpumask_copy(&__cpu_present_mask, src);
@@ -2278,3 +2310,46 @@ void __init boot_cpu_hotplug_init(void)
 #endif
 	this_cpu_write(cpuhp_state.state, CPUHP_ONLINE);
 }
+
+/*
+ * These are used for a global "mitigations=" cmdline option for toggling
+ * optional CPU mitigations.
+ */
+enum cpu_mitigations {
+	CPU_MITIGATIONS_OFF,
+	CPU_MITIGATIONS_AUTO,
+	CPU_MITIGATIONS_AUTO_NOSMT,
+};
+
+static enum cpu_mitigations cpu_mitigations __ro_after_init =
+	CPU_MITIGATIONS_AUTO;
+
+static int __init mitigations_parse_cmdline(char *arg)
+{
+	if (!strcmp(arg, "off"))
+		cpu_mitigations = CPU_MITIGATIONS_OFF;
+	else if (!strcmp(arg, "auto"))
+		cpu_mitigations = CPU_MITIGATIONS_AUTO;
+	else if (!strcmp(arg, "auto,nosmt"))
+		cpu_mitigations = CPU_MITIGATIONS_AUTO_NOSMT;
+	else
+		pr_crit("Unsupported mitigations=%s, system may still be vulnerable\n",
+			arg);
+
+	return 0;
+}
+early_param("mitigations", mitigations_parse_cmdline);
+
+/* mitigations=off */
+bool cpu_mitigations_off(void)
+{
+	return cpu_mitigations == CPU_MITIGATIONS_OFF;
+}
+EXPORT_SYMBOL_GPL(cpu_mitigations_off);
+
+/* mitigations=auto,nosmt */
+bool cpu_mitigations_auto_nosmt(void)
+{
+	return cpu_mitigations == CPU_MITIGATIONS_AUTO_NOSMT;
+}
+EXPORT_SYMBOL_GPL(cpu_mitigations_auto_nosmt);

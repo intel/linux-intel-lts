@@ -641,6 +641,8 @@ static int fusb302_set_toggling(struct fusb302_chip *chip,
 			return ret;
 		chip->intr_togdone = false;
 	} else {
+		/* Datasheet says vconn MUST be off when toggling */
+		WARN(chip->vconn_on, "Vconn is on during toggle start");
 		/* unmask TOGDONE interrupt */
 		ret = fusb302_i2c_clear_bits(chip, FUSB_REG_MASKA,
 					     FUSB_REG_MASKA_TOGDONE);
@@ -988,12 +990,16 @@ done:
 	return ret;
 }
 
-static int tcpm_start_drp_toggling(struct tcpc_dev *dev,
-				   enum typec_cc_status cc)
+static int tcpm_start_toggling(struct tcpc_dev *dev,
+			       enum typec_port_type port_type,
+			       enum typec_cc_status cc)
 {
 	struct fusb302_chip *chip = container_of(dev, struct fusb302_chip,
 						 tcpc_dev);
 	int ret = 0;
+
+	if (port_type != TYPEC_PORT_DRP)
+		return -EOPNOTSUPP;
 
 	mutex_lock(&chip->lock);
 	ret = fusb302_set_src_current(chip, cc_src_current[cc]);
@@ -1204,7 +1210,7 @@ static void init_tcpc_dev(struct tcpc_dev *fusb302_tcpc_dev)
 	fusb302_tcpc_dev->set_vbus = tcpm_set_vbus;
 	fusb302_tcpc_dev->set_pd_rx = tcpm_set_pd_rx;
 	fusb302_tcpc_dev->set_roles = tcpm_set_roles;
-	fusb302_tcpc_dev->start_drp_toggling = tcpm_start_drp_toggling;
+	fusb302_tcpc_dev->start_toggling = tcpm_start_toggling;
 	fusb302_tcpc_dev->pd_transmit = tcpm_pd_transmit;
 }
 

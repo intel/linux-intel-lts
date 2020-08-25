@@ -54,6 +54,7 @@
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
 #include <rdma/opa_addr.h>
+#include <linux/nospec.h>
 
 #include "hfi.h"
 #include "common.h"
@@ -147,9 +148,6 @@ static int pio_wait(struct rvt_qp *qp,
 
 /* Length of buffer to create verbs txreq cache name */
 #define TXREQ_NAME_LEN 24
-
-/* 16B trailing buffer */
-static const u8 trail_buf[MAX_16B_PADDING];
 
 static uint wss_threshold;
 module_param(wss_threshold, uint, S_IRUGO);
@@ -597,10 +595,11 @@ static inline void hfi1_handle_packet(struct hfi1_packet *packet,
 				       opa_get_lid(packet->dlid, 9B));
 		if (!mcast)
 			goto drop;
+		rcu_read_lock();
 		list_for_each_entry_rcu(p, &mcast->qp_list, list) {
 			packet->qp = p->qp;
 			if (hfi1_do_pkey_check(packet))
-				goto drop;
+				goto unlock_drop;
 			spin_lock_irqsave(&packet->qp->r_lock, flags);
 			packet_handler = qp_ok(packet);
 			if (likely(packet_handler))
@@ -609,6 +608,7 @@ static inline void hfi1_handle_packet(struct hfi1_packet *packet,
 				ibp->rvp.n_pkt_drops++;
 			spin_unlock_irqrestore(&packet->qp->r_lock, flags);
 		}
+		rcu_read_unlock();
 		/*
 		 * Notify rvt_multicast_detach() if it is waiting for us
 		 * to finish.
@@ -892,8 +892,8 @@ static int build_verbs_tx_desc(
 
 	/* add icrc, lt byte, and padding to flit */
 	if (extra_bytes)
-		ret = sdma_txadd_kvaddr(sde->dd, &tx->txreq,
-					(void *)trail_buf, extra_bytes);
+		ret = sdma_txadd_daddr(sde->dd, &tx->txreq,
+				       sde->dd->sdma_pad_phys, extra_bytes);
 
 bail_txadd:
 	return ret;
@@ -1098,10 +1098,10 @@ int hfi1_verbs_send_pio(struct rvt_qp *qp, struct hfi1_pkt_state *ps,
 	if (cb)
 		iowait_pio_inc(&priv->s_iowait);
 	pbuf = sc_buffer_alloc(sc, plen, cb, qp);
-	if (unlikely(!pbuf)) {
+	if (unlikely(IS_ERR_OR_NULL(pbuf))) {
 		if (cb)
 			verbs_pio_complete(qp, 0);
-		if (ppd->host_link_state != HLS_UP_ACTIVE) {
+		if (IS_ERR(pbuf)) {
 			/*
 			 * If we have filled the PIO buffers to capacity and are
 			 * not in an active state this request is not going to
@@ -1150,7 +1150,8 @@ int hfi1_verbs_send_pio(struct rvt_qp *qp, struct hfi1_pkt_state *ps,
 		}
 		/* add icrc, lt byte, and padding to flit */
 		if (extra_bytes)
-			seg_pio_copy_mid(pbuf, trail_buf, extra_bytes);
+			seg_pio_copy_mid(pbuf, ppd->dd->sdma_pad_dma,
+					 extra_bytes);
 
 		seg_pio_copy_end(pbuf);
 	}
@@ -1418,8 +1419,6 @@ static void hfi1_fill_device_attr(struct hfi1_devdata *dd)
 	rdi->dparms.props.max_cq = hfi1_max_cqs;
 	rdi->dparms.props.max_ah = hfi1_max_ahs;
 	rdi->dparms.props.max_cqe = hfi1_max_cqes;
-	rdi->dparms.props.max_mr = rdi->lkey_table.max;
-	rdi->dparms.props.max_fmr = rdi->lkey_table.max;
 	rdi->dparms.props.max_map_per_fmr = 32767;
 	rdi->dparms.props.max_pd = hfi1_max_pds;
 	rdi->dparms.props.max_qp_rd_atom = HFI1_MAX_RDMA_ATOMIC;
@@ -1598,6 +1597,7 @@ static int hfi1_check_ah(struct ib_device *ibdev, struct rdma_ah_attr *ah_attr)
 	sl = rdma_ah_get_sl(ah_attr);
 	if (sl >= ARRAY_SIZE(ibp->sl_to_sc))
 		return -EINVAL;
+	sl = array_index_nospec(sl, ARRAY_SIZE(ibp->sl_to_sc));
 
 	sc5 = ibp->sl_to_sc[sl];
 	if (sc_to_vlt(dd, sc5) > num_vls && sc_to_vlt(dd, sc5) != 0xf)

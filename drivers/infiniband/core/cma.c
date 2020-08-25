@@ -1078,18 +1078,31 @@ static inline bool cma_any_addr(const struct sockaddr *addr)
 	return cma_zero_addr(addr) || cma_loopback_addr(addr);
 }
 
-static int cma_addr_cmp(struct sockaddr *src, struct sockaddr *dst)
+static int cma_addr_cmp(const struct sockaddr *src, const struct sockaddr *dst)
 {
 	if (src->sa_family != dst->sa_family)
 		return -1;
 
 	switch (src->sa_family) {
 	case AF_INET:
-		return ((struct sockaddr_in *) src)->sin_addr.s_addr !=
-		       ((struct sockaddr_in *) dst)->sin_addr.s_addr;
-	case AF_INET6:
-		return ipv6_addr_cmp(&((struct sockaddr_in6 *) src)->sin6_addr,
-				     &((struct sockaddr_in6 *) dst)->sin6_addr);
+		return ((struct sockaddr_in *)src)->sin_addr.s_addr !=
+		       ((struct sockaddr_in *)dst)->sin_addr.s_addr;
+	case AF_INET6: {
+		struct sockaddr_in6 *src_addr6 = (struct sockaddr_in6 *)src;
+		struct sockaddr_in6 *dst_addr6 = (struct sockaddr_in6 *)dst;
+		bool link_local;
+
+		if (ipv6_addr_cmp(&src_addr6->sin6_addr,
+					  &dst_addr6->sin6_addr))
+			return 1;
+		link_local = ipv6_addr_type(&dst_addr6->sin6_addr) &
+			     IPV6_ADDR_LINKLOCAL;
+		/* Link local must match their scope_ids */
+		return link_local ? (src_addr6->sin6_scope_id !=
+				     dst_addr6->sin6_scope_id) :
+				    0;
+	}
+
 	default:
 		return ib_addr_cmp(&((struct sockaddr_ib *) src)->sib_addr,
 				   &((struct sockaddr_ib *) dst)->sib_addr);
@@ -1494,6 +1507,8 @@ static struct rdma_id_private *cma_find_listener(
 {
 	struct rdma_id_private *id_priv, *id_priv_dev;
 
+	lockdep_assert_held(&lock);
+
 	if (!bind_list)
 		return ERR_PTR(-EINVAL);
 
@@ -1539,6 +1554,7 @@ cma_ib_id_from_event(struct ib_cm_id *cm_id,
 		}
 	}
 
+	mutex_lock(&lock);
 	/*
 	 * Net namespace might be getting deleted while route lookup,
 	 * cm_id lookup is in progress. Therefore, perform netdevice
@@ -1580,6 +1596,7 @@ cma_ib_id_from_event(struct ib_cm_id *cm_id,
 	id_priv = cma_find_listener(bind_list, cm_id, ib_event, &req, *net_dev);
 err:
 	rcu_read_unlock();
+	mutex_unlock(&lock);
 	if (IS_ERR(id_priv) && *net_dev) {
 		dev_put(*net_dev);
 		*net_dev = NULL;
@@ -1710,8 +1727,8 @@ void rdma_destroy_id(struct rdma_cm_id *id)
 	mutex_lock(&id_priv->handler_mutex);
 	mutex_unlock(&id_priv->handler_mutex);
 
+	rdma_restrack_del(&id_priv->res);
 	if (id_priv->cma_dev) {
-		rdma_restrack_del(&id_priv->res);
 		if (rdma_cap_ib_cm(id_priv->id.device, 1)) {
 			if (id_priv->cm_id.ib)
 				ib_destroy_cm_id(id_priv->cm_id.ib);
@@ -2257,9 +2274,10 @@ static int iw_conn_req_handler(struct iw_cm_id *cm_id,
 		conn_id->cm_id.iw = NULL;
 		cma_exch(conn_id, RDMA_CM_DESTROYING);
 		mutex_unlock(&conn_id->handler_mutex);
+		mutex_unlock(&listen_id->handler_mutex);
 		cma_deref_id(conn_id);
 		rdma_destroy_id(&conn_id->id);
-		goto out;
+		return ret;
 	}
 
 	mutex_unlock(&conn_id->handler_mutex);
@@ -2331,6 +2349,8 @@ static void cma_listen_on_dev(struct rdma_id_private *id_priv,
 	struct rdma_cm_id *id;
 	struct net *net = id_priv->id.route.addr.dev_addr.net;
 	int ret;
+
+	lockdep_assert_held(&lock);
 
 	if (cma_family(id_priv) == AF_IB && !rdma_cap_ib_cm(cma_dev->device, 1))
 		return;
@@ -2739,6 +2759,7 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 err2:
 	kfree(route->path_rec);
 	route->path_rec = NULL;
+	route->num_paths = 0;
 err1:
 	kfree(work);
 	return ret;
@@ -2875,7 +2896,7 @@ static void addr_handler(int status, struct sockaddr *src_addr,
 		if (status)
 			pr_debug_ratelimited("RDMA CM: ADDR_ERROR: failed to acquire device. status %d\n",
 					     status);
-	} else {
+	} else if (status) {
 		pr_debug_ratelimited("RDMA CM: ADDR_ERROR: failed to resolve IP. status %d\n", status);
 	}
 
@@ -3066,6 +3087,8 @@ static void cma_bind_port(struct rdma_bind_list *bind_list,
 	u64 sid, mask;
 	__be16 port;
 
+	lockdep_assert_held(&lock);
+
 	addr = cma_src_addr(id_priv);
 	port = htons(bind_list->port);
 
@@ -3094,6 +3117,8 @@ static int cma_alloc_port(enum rdma_ucm_port_space ps,
 	struct rdma_bind_list *bind_list;
 	int ret;
 
+	lockdep_assert_held(&lock);
+
 	bind_list = kzalloc(sizeof *bind_list, GFP_KERNEL);
 	if (!bind_list)
 		return -ENOMEM;
@@ -3119,6 +3144,8 @@ static int cma_port_is_unique(struct rdma_bind_list *bind_list,
 	struct sockaddr  *daddr = cma_dst_addr(id_priv);
 	struct sockaddr  *saddr = cma_src_addr(id_priv);
 	__be16 dport = cma_port(daddr);
+
+	lockdep_assert_held(&lock);
 
 	hlist_for_each_entry(cur_id, &bind_list->owners, node) {
 		struct sockaddr  *cur_daddr = cma_dst_addr(cur_id);
@@ -3158,6 +3185,8 @@ static int cma_alloc_any_port(enum rdma_ucm_port_space ps,
 	int low, high, remaining;
 	unsigned int rover;
 	struct net *net = id_priv->id.route.addr.dev_addr.net;
+
+	lockdep_assert_held(&lock);
 
 	inet_get_local_port_range(net, &low, &high);
 	remaining = (high - low) + 1;
@@ -3206,6 +3235,8 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
 	struct rdma_id_private *cur_id;
 	struct sockaddr *addr, *cur_addr;
 
+	lockdep_assert_held(&lock);
+
 	addr = cma_src_addr(id_priv);
 	hlist_for_each_entry(cur_id, &bind_list->owners, node) {
 		if (id_priv == cur_id)
@@ -3235,6 +3266,8 @@ static int cma_use_port(enum rdma_ucm_port_space ps,
 	struct rdma_bind_list *bind_list;
 	unsigned short snum;
 	int ret;
+
+	lockdep_assert_held(&lock);
 
 	snum = ntohs(cma_port(cma_src_addr(id_priv)));
 	if (snum < PROT_SOCK && !capable(CAP_NET_BIND_SERVICE))
@@ -3450,10 +3483,9 @@ int rdma_bind_addr(struct rdma_cm_id *id, struct sockaddr *addr)
 
 	return 0;
 err2:
-	if (id_priv->cma_dev) {
-		rdma_restrack_del(&id_priv->res);
+	rdma_restrack_del(&id_priv->res);
+	if (id_priv->cma_dev)
 		cma_release_dev(id_priv);
-	}
 err1:
 	cma_comp_exch(id_priv, RDMA_CM_ADDR_BOUND, RDMA_CM_IDLE);
 	return ret;
@@ -4622,6 +4654,19 @@ static int __init cma_init(void)
 {
 	int ret;
 
+	/*
+	 * There is a rare lock ordering dependency in cma_netdev_callback()
+	 * that only happens when bonding is enabled. Teach lockdep that rtnl
+	 * must never be nested under lock so it can find these without having
+	 * to test with bonding.
+	 */
+	if (IS_ENABLED(CONFIG_LOCKDEP)) {
+		rtnl_lock();
+		mutex_lock(&lock);
+		mutex_unlock(&lock);
+		rtnl_unlock();
+	}
+
 	cma_wq = alloc_ordered_workqueue("rdma_cm", WQ_MEM_RECLAIM);
 	if (!cma_wq)
 		return -ENOMEM;
@@ -4645,6 +4690,7 @@ static int __init cma_init(void)
 err:
 	unregister_netdevice_notifier(&cma_nb);
 	ib_sa_unregister_client(&sa_client);
+	unregister_pernet_subsys(&cma_pernet_operations);
 err_wq:
 	destroy_workqueue(cma_wq);
 	return ret;

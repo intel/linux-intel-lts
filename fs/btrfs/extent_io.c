@@ -1707,7 +1707,8 @@ static int __process_pages_contig(struct address_space *mapping,
 				if (!PageDirty(pages[i]) ||
 				    pages[i]->mapping != mapping) {
 					unlock_page(pages[i]);
-					put_page(pages[i]);
+					for (; i < ret; i++)
+						put_page(pages[i]);
 					err = -EAGAIN;
 					goto out;
 				}
@@ -3199,7 +3200,7 @@ static void update_nr_written(struct writeback_control *wbc,
 /*
  * helper for __extent_writepage, doing all of the delayed allocation setup.
  *
- * This returns 1 if our fill_delalloc function did all the work required
+ * This returns 1 if btrfs_run_delalloc_range function did all the work required
  * to write the page (copy into inline extent).  In this case the IO has
  * been started and the page is already unlocked.
  *
@@ -3220,7 +3221,7 @@ static noinline_for_stack int writepage_delalloc(struct inode *inode,
 	int ret;
 	int page_started = 0;
 
-	if (epd->extent_locked || !tree->ops || !tree->ops->fill_delalloc)
+	if (epd->extent_locked)
 		return 0;
 
 	while (delalloc_end < page_end) {
@@ -3233,18 +3234,16 @@ static noinline_for_stack int writepage_delalloc(struct inode *inode,
 			delalloc_start = delalloc_end + 1;
 			continue;
 		}
-		ret = tree->ops->fill_delalloc(inode, page,
-					       delalloc_start,
-					       delalloc_end,
-					       &page_started,
-					       nr_written, wbc);
+		ret = btrfs_run_delalloc_range(inode, page, delalloc_start,
+				delalloc_end, &page_started, nr_written, wbc);
 		/* File system has been set read-only */
 		if (ret) {
 			SetPageError(page);
-			/* fill_delalloc should be return < 0 for error
-			 * but just in case, we use > 0 here meaning the
-			 * IO is started, so we don't want to return > 0
-			 * unless things are going well.
+			/*
+			 * btrfs_run_delalloc_range should return < 0 for error
+			 * but just in case, we use > 0 here meaning the IO is
+			 * started, so we don't want to return > 0 unless
+			 * things are going well.
 			 */
 			ret = ret < 0 ? ret : -EIO;
 			goto done;
@@ -3958,7 +3957,7 @@ retry:
 		for (i = 0; i < nr_pages; i++) {
 			struct page *page = pvec.pages[i];
 
-			done_index = page->index;
+			done_index = page->index + 1;
 			/*
 			 * At this point we hold neither the i_pages lock nor
 			 * the page lock: the page may be truncated or
@@ -3995,16 +3994,6 @@ retry:
 				ret = 0;
 			}
 			if (ret < 0) {
-				/*
-				 * done_index is set past this page,
-				 * so media errors will not choke
-				 * background writeout for the entire
-				 * file. This has consequences for
-				 * range_cyclic semantics (ie. it may
-				 * not be suitable for data integrity
-				 * writeout).
-				 */
-				done_index = page->index + 1;
 				done = 1;
 				break;
 			}
@@ -4026,6 +4015,14 @@ retry:
 		 */
 		scanned = 1;
 		index = 0;
+
+		/*
+		 * If we're looping we could run into a page that is locked by a
+		 * writer and that writer could be waiting on writeback for a
+		 * page in our current bio, and thus deadlock, so flush the
+		 * write bio here.
+		 */
+		flush_write_bio(epd);
 		goto retry;
 	}
 
@@ -4273,6 +4270,8 @@ int try_release_extent_mapping(struct page *page, gfp_t mask)
 
 			/* once for us */
 			free_extent_map(em);
+
+			cond_resched(); /* Allow large-extent preemption. */
 		}
 	}
 	return try_release_extent_state(tree, page, mask);
@@ -4805,25 +4804,28 @@ struct extent_buffer *alloc_dummy_extent_buffer(struct btrfs_fs_info *fs_info,
 static void check_buffer_tree_ref(struct extent_buffer *eb)
 {
 	int refs;
-	/* the ref bit is tricky.  We have to make sure it is set
-	 * if we have the buffer dirty.   Otherwise the
-	 * code to free a buffer can end up dropping a dirty
-	 * page
+	/*
+	 * The TREE_REF bit is first set when the extent_buffer is added
+	 * to the radix tree. It is also reset, if unset, when a new reference
+	 * is created by find_extent_buffer.
 	 *
-	 * Once the ref bit is set, it won't go away while the
-	 * buffer is dirty or in writeback, and it also won't
-	 * go away while we have the reference count on the
-	 * eb bumped.
+	 * It is only cleared in two cases: freeing the last non-tree
+	 * reference to the extent_buffer when its STALE bit is set or
+	 * calling releasepage when the tree reference is the only reference.
 	 *
-	 * We can't just set the ref bit without bumping the
-	 * ref on the eb because free_extent_buffer might
-	 * see the ref bit and try to clear it.  If this happens
-	 * free_extent_buffer might end up dropping our original
-	 * ref by mistake and freeing the page before we are able
-	 * to add one more ref.
+	 * In both cases, care is taken to ensure that the extent_buffer's
+	 * pages are not under io. However, releasepage can be concurrently
+	 * called with creating new references, which is prone to race
+	 * conditions between the calls to check_buffer_tree_ref in those
+	 * codepaths and clearing TREE_REF in try_release_extent_buffer.
 	 *
-	 * So bump the ref count first, then set the bit.  If someone
-	 * beat us to it, drop the ref we added.
+	 * The actual lifetime of the extent_buffer in the radix tree is
+	 * adequately protected by the refcount, but the TREE_REF bit and
+	 * its corresponding reference are not. To protect against this
+	 * class of races, we call check_buffer_tree_ref from the codepaths
+	 * which trigger io after they set eb->io_pages. Note that once io is
+	 * initiated, TREE_REF can no longer be cleared, so that is the
+	 * moment at which any such race is best fixed.
 	 */
 	refs = atomic_read(&eb->refs);
 	if (refs >= 2 && test_bit(EXTENT_BUFFER_TREE_REF, &eb->bflags))
@@ -4900,12 +4902,14 @@ struct extent_buffer *alloc_test_extent_buffer(struct btrfs_fs_info *fs_info,
 		return eb;
 	eb = alloc_dummy_extent_buffer(fs_info, start);
 	if (!eb)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	eb->fs_info = fs_info;
 again:
 	ret = radix_tree_preload(GFP_NOFS);
-	if (ret)
+	if (ret) {
+		exists = ERR_PTR(ret);
 		goto free_eb;
+	}
 	spin_lock(&fs_info->buffer_lock);
 	ret = radix_tree_insert(&fs_info->buffer_radix,
 				start >> PAGE_SHIFT, eb);
@@ -5275,6 +5279,11 @@ int read_extent_buffer_pages(struct extent_io_tree *tree,
 	clear_bit(EXTENT_BUFFER_READ_ERR, &eb->bflags);
 	eb->read_mirror = 0;
 	atomic_set(&eb->io_pages, num_reads);
+	/*
+	 * It is possible for releasepage to clear the TREE_REF bit before we
+	 * set io_pages. See check_buffer_tree_ref for a more detailed comment.
+	 */
+	check_buffer_tree_ref(eb);
 	for (i = 0; i < num_pages; i++) {
 		page = eb->pages[i];
 

@@ -21,6 +21,8 @@
 #include <linux/rbtree_latch.h>
 #include <linux/error-injection.h>
 #include <linux/tracepoint-defs.h>
+#include <linux/cfi.h>
+#include <linux/android_kabi.h>
 
 #include <linux/percpu.h>
 #include <asm/module.h>
@@ -348,6 +350,10 @@ struct module {
 	const s32 *crcs;
 	unsigned int num_syms;
 
+#ifdef CONFIG_CFI_CLANG
+	cfi_check_fn cfi_check;
+#endif
+
 	/* Kernel parameters. */
 #ifdef CONFIG_SYSFS
 	struct mutex param_lock;
@@ -372,10 +378,12 @@ struct module {
 	const s32 *unused_gpl_crcs;
 #endif
 
-#ifdef CONFIG_MODULE_SIG
-	/* Signature was verified. */
+	/*
+	 * Signature was verified. Unconditionally compiled in Android to
+	 * preserve ABI compatibility between kernels without module
+	 * signing enabled and signed modules.
+	 */
 	bool sig_ok;
-#endif
 
 	bool async_probe_requested;
 
@@ -433,7 +441,7 @@ struct module {
 	unsigned int num_tracepoints;
 	tracepoint_ptr_t *tracepoints_ptrs;
 #endif
-#ifdef HAVE_JUMP_LABEL
+#ifdef CONFIG_JUMP_LABEL
 	struct jump_entry *jump_entries;
 	unsigned int num_jump_entries;
 #endif
@@ -482,6 +490,10 @@ struct module {
 	struct error_injection_entry *ei_funcs;
 	unsigned int num_ei_funcs;
 #endif
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 } ____cacheline_aligned __randomize_layout;
 #ifndef MODULE_ARCH_INIT
 #define MODULE_ARCH_INIT {}
@@ -679,6 +691,23 @@ static inline bool __is_module_percpu_address(unsigned long addr, unsigned long 
 }
 
 static inline bool is_module_text_address(unsigned long addr)
+{
+	return false;
+}
+
+static inline bool within_module_core(unsigned long addr,
+				      const struct module *mod)
+{
+	return false;
+}
+
+static inline bool within_module_init(unsigned long addr,
+				      const struct module *mod)
+{
+	return false;
+}
+
+static inline bool within_module(unsigned long addr, const struct module *mod)
 {
 	return false;
 }

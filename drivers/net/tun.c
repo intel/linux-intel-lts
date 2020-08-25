@@ -319,8 +319,8 @@ static void tun_napi_init(struct tun_struct *tun, struct tun_file *tfile,
 	tfile->napi_enabled = napi_en;
 	tfile->napi_frags_enabled = napi_en && napi_frags;
 	if (napi_en) {
-		netif_napi_add(tun->dev, &tfile->napi, tun_napi_poll,
-			       NAPI_POLL_WEIGHT);
+		netif_tx_napi_add(tun->dev, &tfile->napi, tun_napi_poll,
+				  NAPI_POLL_WEIGHT);
 		napi_enable(&tfile->napi);
 	}
 }
@@ -599,13 +599,18 @@ static u16 tun_automq_select_queue(struct tun_struct *tun, struct sk_buff *skb)
 static u16 tun_ebpf_select_queue(struct tun_struct *tun, struct sk_buff *skb)
 {
 	struct tun_prog *prog;
+	u32 numqueues;
 	u16 ret = 0;
+
+	numqueues = READ_ONCE(tun->numqueues);
+	if (!numqueues)
+		return 0;
 
 	prog = rcu_dereference(tun->steering_prog);
 	if (prog)
 		ret = bpf_prog_run_clear_cb(prog->prog, skb);
 
-	return ret % tun->numqueues;
+	return ret % numqueues;
 }
 
 static u16 tun_select_queue(struct net_device *dev, struct sk_buff *skb,
@@ -703,6 +708,8 @@ static void __tun_detach(struct tun_file *tfile, bool clean)
 				   tun->tfiles[tun->numqueues - 1]);
 		ntfile = rtnl_dereference(tun->tfiles[index]);
 		ntfile->queue_index = index;
+		rcu_assign_pointer(tun->tfiles[tun->numqueues - 1],
+				   NULL);
 
 		--tun->numqueues;
 		if (clean) {
@@ -794,7 +801,8 @@ static void tun_detach_all(struct net_device *dev)
 }
 
 static int tun_attach(struct tun_struct *tun, struct file *file,
-		      bool skip_filter, bool napi, bool napi_frags)
+		      bool skip_filter, bool napi, bool napi_frags,
+		      bool publish_tun)
 {
 	struct tun_file *tfile = file->private_data;
 	struct net_device *dev = tun->dev;
@@ -874,7 +882,8 @@ static int tun_attach(struct tun_struct *tun, struct file *file,
 	 * initialized tfile; otherwise we risk using half-initialized
 	 * object.
 	 */
-	rcu_assign_pointer(tfile->tun, tun);
+	if (publish_tun)
+		rcu_assign_pointer(tfile->tun, tun);
 	rcu_assign_pointer(tun->tfiles[tun->numqueues], tfile);
 	tun->numqueues++;
 	tun_set_real_num_queues(tun);
@@ -1017,17 +1026,7 @@ static void tun_net_uninit(struct net_device *dev)
 /* Net device open. */
 static int tun_net_open(struct net_device *dev)
 {
-	struct tun_struct *tun = netdev_priv(dev);
-	int i;
-
 	netif_tx_start_all_queues(dev);
-
-	for (i = 0; i < tun->numqueues; i++) {
-		struct tun_file *tfile;
-
-		tfile = rtnl_dereference(tun->tfiles[i]);
-		tfile->socket.sk->sk_write_space(tfile->socket.sk);
-	}
 
 	return 0;
 }
@@ -1085,7 +1084,7 @@ static netdev_tx_t tun_net_xmit(struct sk_buff *skb, struct net_device *dev)
 	tfile = rcu_dereference(tun->tfiles[txq]);
 
 	/* Drop packet if interface is not attached */
-	if (txq >= tun->numqueues)
+	if (!tfile)
 		goto drop;
 
 	if (!rcu_dereference(tun->steering_prog))
@@ -1276,6 +1275,7 @@ static int tun_xdp_xmit(struct net_device *dev, int n,
 
 	rcu_read_lock();
 
+resample:
 	numqueues = READ_ONCE(tun->numqueues);
 	if (!numqueues) {
 		rcu_read_unlock();
@@ -1284,6 +1284,8 @@ static int tun_xdp_xmit(struct net_device *dev, int n,
 
 	tfile = rcu_dereference(tun->tfiles[smp_processor_id() %
 					    numqueues]);
+	if (unlikely(!tfile))
+		goto resample;
 
 	spin_lock(&tfile->tx_ring.producer_lock);
 	for (i = 0; i < n; i++) {
@@ -1682,6 +1684,7 @@ static struct sk_buff *tun_build_skb(struct tun_struct *tun,
 
 	skb_reserve(skb, pad - delta);
 	skb_put(skb, len);
+	skb_set_owner_w(skb, tfile->socket.sk);
 	get_page(alloc_frag->page);
 	alloc_frag->offset += buflen;
 
@@ -1867,8 +1870,11 @@ drop:
 		skb->dev = tun->dev;
 		break;
 	case IFF_TAP:
-		if (!frags)
-			skb->protocol = eth_type_trans(skb, tun->dev);
+		if (frags && !pskb_may_pull(skb, ETH_HLEN)) {
+			err = -ENOMEM;
+			goto drop;
+		}
+		skb->protocol = eth_type_trans(skb, tun->dev);
 		break;
 	}
 
@@ -1897,6 +1903,10 @@ drop:
 			if (ret != XDP_PASS) {
 				rcu_read_unlock();
 				local_bh_enable();
+				if (frags) {
+					tfile->napi.skb = NULL;
+					mutex_unlock(&tfile->napi_mutex);
+				}
 				return total_len;
 			}
 		}
@@ -1920,8 +1930,11 @@ drop:
 	}
 
 	if (frags) {
+		u32 headlen;
+
 		/* Exercise flow dissector code path. */
-		u32 headlen = eth_get_headlen(skb->data, skb_headlen(skb));
+		skb_push(skb, ETH_HLEN);
+		headlen = eth_get_headlen(skb->data, skb_headlen(skb));
 
 		if (unlikely(headlen > skb_headlen(skb))) {
 			this_cpu_inc(tun->pcpu_stats->rx_dropped);
@@ -2552,7 +2565,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 
 		err = tun_attach(tun, file, ifr->ifr_flags & IFF_NOFILTER,
 				 ifr->ifr_flags & IFF_NAPI,
-				 ifr->ifr_flags & IFF_NAPI_FRAGS);
+				 ifr->ifr_flags & IFF_NAPI_FRAGS, true);
 		if (err < 0)
 			return err;
 
@@ -2651,13 +2664,17 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 
 		INIT_LIST_HEAD(&tun->disabled);
 		err = tun_attach(tun, file, false, ifr->ifr_flags & IFF_NAPI,
-				 ifr->ifr_flags & IFF_NAPI_FRAGS);
+				 ifr->ifr_flags & IFF_NAPI_FRAGS, false);
 		if (err < 0)
 			goto err_free_flow;
 
 		err = register_netdevice(tun->dev);
 		if (err < 0)
 			goto err_detach;
+		/* free_netdev() won't check refcnt, to aovid race
+		 * with dev_put() we need publish tun after registration.
+		 */
+		rcu_assign_pointer(tfile->tun, tun);
 	}
 
 	netif_carrier_on(tun->dev);
@@ -2801,7 +2818,7 @@ static int tun_set_queue(struct file *file, struct ifreq *ifr)
 		if (ret < 0)
 			goto unlock;
 		ret = tun_attach(tun, file, false, tun->flags & IFF_NAPI,
-				 tun->flags & IFF_NAPI_FRAGS);
+				 tun->flags & IFF_NAPI_FRAGS, true);
 	} else if (ifr->ifr_flags & IFF_DETACH_QUEUE) {
 		tun = rtnl_dereference(tfile->tun);
 		if (!tun || !(tun->flags & IFF_MULTI_QUEUE) || tfile->detached)
@@ -3433,6 +3450,7 @@ static int tun_device_event(struct notifier_block *unused,
 {
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct tun_struct *tun = netdev_priv(dev);
+	int i;
 
 	if (dev->rtnl_link_ops != &tun_link_ops)
 		return NOTIFY_DONE;
@@ -3441,6 +3459,14 @@ static int tun_device_event(struct notifier_block *unused,
 	case NETDEV_CHANGE_TX_QUEUE_LEN:
 		if (tun_queue_resize(tun))
 			return NOTIFY_BAD;
+		break;
+	case NETDEV_UP:
+		for (i = 0; i < tun->numqueues; i++) {
+			struct tun_file *tfile;
+
+			tfile = rtnl_dereference(tun->tfiles[i]);
+			tfile->socket.sk->sk_write_space(tfile->socket.sk);
+		}
 		break;
 	default:
 		break;

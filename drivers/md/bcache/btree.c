@@ -35,7 +35,7 @@
 #include <linux/rcupdate.h>
 #include <linux/sched/clock.h>
 #include <linux/rculist.h>
-
+#include <linux/delay.h>
 #include <trace/events/bcache.h>
 
 /*
@@ -649,7 +649,25 @@ static int mca_reap(struct btree *b, unsigned int min_order, bool flush)
 		up(&b->io_mutex);
 	}
 
+retry:
+	/*
+	 * BTREE_NODE_dirty might be cleared in btree_flush_btree() by
+	 * __bch_btree_node_write(). To avoid an extra flush, acquire
+	 * b->write_lock before checking BTREE_NODE_dirty bit.
+	 */
 	mutex_lock(&b->write_lock);
+	/*
+	 * If this btree node is selected in btree_flush_write() by journal
+	 * code, delay and retry until the node is flushed by journal code
+	 * and BTREE_NODE_journal_flush bit cleared by btree_flush_write().
+	 */
+	if (btree_node_journal_flush(b)) {
+		pr_debug("bnode %p is flushing by journal, retry", b);
+		mutex_unlock(&b->write_lock);
+		udelay(1);
+		goto retry;
+	}
+
 	if (btree_node_dirty(b))
 		__bch_btree_node_write(b, &cl);
 	mutex_unlock(&b->write_lock);
@@ -695,6 +713,8 @@ static unsigned long bch_mca_scan(struct shrinker *shrink,
 	 * IO can always make forward progress:
 	 */
 	nr /= c->btree_pages;
+	if (nr == 0)
+		nr = 1;
 	nr = min_t(unsigned long, nr, mca_can_free(c));
 
 	i = 0;
@@ -772,10 +792,15 @@ void bch_btree_cache_free(struct cache_set *c)
 	while (!list_empty(&c->btree_cache)) {
 		b = list_first_entry(&c->btree_cache, struct btree, list);
 
-		if (btree_node_dirty(b))
+		/*
+		 * This function is called by cache_set_free(), no I/O
+		 * request on cache now, it is unnecessary to acquire
+		 * b->write_lock before clearing BTREE_NODE_dirty anymore.
+		 */
+		if (btree_node_dirty(b)) {
 			btree_complete_write(b, btree_current_write(b));
-		clear_bit(BTREE_NODE_dirty, &b->flags);
-
+			clear_bit(BTREE_NODE_dirty, &b->flags);
+		}
 		mca_data_free(b);
 	}
 
@@ -805,7 +830,7 @@ int bch_btree_cache_alloc(struct cache_set *c)
 	mutex_init(&c->verify_lock);
 
 	c->verify_ondisk = (void *)
-		__get_free_pages(GFP_KERNEL, ilog2(bucket_pages(c)));
+		__get_free_pages(GFP_KERNEL|__GFP_COMP, ilog2(bucket_pages(c)));
 
 	c->verify_data = mca_bucket_alloc(c, &ZERO_KEY, GFP_KERNEL);
 
@@ -1061,11 +1086,25 @@ static void btree_node_free(struct btree *b)
 
 	BUG_ON(b == b->c->root);
 
+retry:
 	mutex_lock(&b->write_lock);
+	/*
+	 * If the btree node is selected and flushing in btree_flush_write(),
+	 * delay and retry until the BTREE_NODE_journal_flush bit cleared,
+	 * then it is safe to free the btree node here. Otherwise this btree
+	 * node will be in race condition.
+	 */
+	if (btree_node_journal_flush(b)) {
+		mutex_unlock(&b->write_lock);
+		pr_debug("bnode %p journal_flush set, retry", b);
+		udelay(1);
+		goto retry;
+	}
 
-	if (btree_node_dirty(b))
+	if (btree_node_dirty(b)) {
 		btree_complete_write(b, btree_current_write(b));
-	clear_bit(BTREE_NODE_dirty, &b->flags);
+		clear_bit(BTREE_NODE_dirty, &b->flags);
+	}
 
 	mutex_unlock(&b->write_lock);
 
@@ -1393,7 +1432,7 @@ static int btree_gc_coalesce(struct btree *b, struct btree_op *op,
 			if (__set_blocks(n1, n1->keys + n2->keys,
 					 block_bytes(b->c)) >
 			    btree_blocks(new_nodes[i]))
-				goto out_nocoalesce;
+				goto out_unlock_nocoalesce;
 
 			keys = n2->keys;
 			/* Take the key of the node we're getting rid of */
@@ -1422,7 +1461,7 @@ static int btree_gc_coalesce(struct btree *b, struct btree_op *op,
 
 		if (__bch_keylist_realloc(&keylist,
 					  bkey_u64s(&new_nodes[i]->key)))
-			goto out_nocoalesce;
+			goto out_unlock_nocoalesce;
 
 		bch_btree_node_write(new_nodes[i], &cl);
 		bch_keylist_add(&keylist, &new_nodes[i]->key);
@@ -1467,6 +1506,10 @@ static int btree_gc_coalesce(struct btree *b, struct btree_op *op,
 
 	/* Invalidated our iterator */
 	return -EINTR;
+
+out_unlock_nocoalesce:
+	for (i = 0; i < nodes; i++)
+		mutex_unlock(&new_nodes[i]->write_lock);
 
 out_nocoalesce:
 	closure_sync(&cl);

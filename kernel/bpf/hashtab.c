@@ -518,16 +518,28 @@ static u32 htab_map_gen_lookup(struct bpf_map *map, struct bpf_insn *insn_buf)
 	return insn - insn_buf;
 }
 
-static void *htab_lru_map_lookup_elem(struct bpf_map *map, void *key)
+static __always_inline void *__htab_lru_map_lookup_elem(struct bpf_map *map,
+							void *key, const bool mark)
 {
 	struct htab_elem *l = __htab_map_lookup_elem(map, key);
 
 	if (l) {
-		bpf_lru_node_set_ref(&l->lru_node);
+		if (mark)
+			bpf_lru_node_set_ref(&l->lru_node);
 		return l->key + round_up(map->key_size, 8);
 	}
 
 	return NULL;
+}
+
+static void *htab_lru_map_lookup_elem(struct bpf_map *map, void *key)
+{
+	return __htab_lru_map_lookup_elem(map, key, true);
+}
+
+static void *htab_lru_map_lookup_elem_sys(struct bpf_map *map, void *key)
+{
+	return __htab_lru_map_lookup_elem(map, key, false);
 }
 
 static u32 htab_lru_map_gen_lookup(struct bpf_map *map,
@@ -666,15 +678,20 @@ static void htab_elem_free_rcu(struct rcu_head *head)
 	preempt_enable();
 }
 
-static void free_htab_elem(struct bpf_htab *htab, struct htab_elem *l)
+static void htab_put_fd_value(struct bpf_htab *htab, struct htab_elem *l)
 {
 	struct bpf_map *map = &htab->map;
+	void *ptr;
 
 	if (map->ops->map_fd_put_ptr) {
-		void *ptr = fd_htab_map_get_ptr(map, l);
-
+		ptr = fd_htab_map_get_ptr(map, l);
 		map->ops->map_fd_put_ptr(ptr);
 	}
+}
+
+static void free_htab_elem(struct bpf_htab *htab, struct htab_elem *l)
+{
+	htab_put_fd_value(htab, l);
 
 	if (htab_is_prealloc(htab)) {
 		__pcpu_freelist_push(&htab->freelist, &l->fnode);
@@ -735,6 +752,7 @@ static struct htab_elem *alloc_htab_elem(struct bpf_htab *htab, void *key,
 			 */
 			pl_new = this_cpu_ptr(htab->extra_elems);
 			l_new = *pl_new;
+			htab_put_fd_value(htab, old_elem);
 			*pl_new = old_elem;
 		} else {
 			struct pcpu_freelist_node *l;
@@ -1206,6 +1224,7 @@ const struct bpf_map_ops htab_lru_map_ops = {
 	.map_free = htab_map_free,
 	.map_get_next_key = htab_map_get_next_key,
 	.map_lookup_elem = htab_lru_map_lookup_elem,
+	.map_lookup_elem_sys_only = htab_lru_map_lookup_elem_sys,
 	.map_update_elem = htab_lru_map_update_elem,
 	.map_delete_elem = htab_lru_map_delete_elem,
 	.map_gen_lookup = htab_lru_map_gen_lookup,
@@ -1237,7 +1256,6 @@ static void *htab_lru_percpu_map_lookup_elem(struct bpf_map *map, void *key)
 
 int bpf_percpu_hash_copy(struct bpf_map *map, void *key, void *value)
 {
-	struct bpf_htab *htab = container_of(map, struct bpf_htab, map);
 	struct htab_elem *l;
 	void __percpu *pptr;
 	int ret = -ENOENT;
@@ -1253,8 +1271,9 @@ int bpf_percpu_hash_copy(struct bpf_map *map, void *key, void *value)
 	l = __htab_map_lookup_elem(map, key);
 	if (!l)
 		goto out;
-	if (htab_is_lru(htab))
-		bpf_lru_node_set_ref(&l->lru_node);
+	/* We do not mark LRU map element here in order to not mess up
+	 * eviction heuristics when user space does a map walk.
+	 */
 	pptr = htab_elem_get_ptr(l, map->key_size);
 	for_each_possible_cpu(cpu) {
 		bpf_long_memcpy(value + off,

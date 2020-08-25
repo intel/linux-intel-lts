@@ -131,6 +131,7 @@ struct cc_drvdata {
 	u32 axim_mon_offset;
 	u32 sig_offset;
 	u32 ver_offset;
+	bool pm_on;
 };
 
 struct cc_crypto_alg {
@@ -162,6 +163,7 @@ struct cc_alg_template {
 
 struct async_gen_req_ctx {
 	dma_addr_t iv_dma_addr;
+	u8 *iv;
 	enum drv_crypto_direction op_type;
 };
 

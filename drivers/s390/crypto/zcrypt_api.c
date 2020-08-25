@@ -190,8 +190,8 @@ static inline bool zcrypt_card_compare(struct zcrypt_card *zc,
 	weight += atomic_read(&zc->load);
 	pref_weight += atomic_read(&pref_zc->load);
 	if (weight == pref_weight)
-		return atomic_read(&zc->card->total_request_count) >
-			atomic_read(&pref_zc->card->total_request_count);
+		return atomic64_read(&zc->card->total_request_count) >
+			atomic64_read(&pref_zc->card->total_request_count);
 	return weight > pref_weight;
 }
 
@@ -224,6 +224,7 @@ static long zcrypt_rsa_modexpo(struct ica_rsa_modexpo *mex)
 	trace_s390_zcrypt_req(mex, TP_ICARSAMODEXPO);
 
 	if (mex->outputdatalength < mex->inputdatalength) {
+		func_code = 0;
 		rc = -EINVAL;
 		goto out;
 	}
@@ -298,6 +299,7 @@ static long zcrypt_rsa_crt(struct ica_rsa_modexpo_crt *crt)
 	trace_s390_zcrypt_req(crt, TP_ICARSACRT);
 
 	if (crt->outputdatalength < crt->inputdatalength) {
+		func_code = 0;
 		rc = -EINVAL;
 		goto out;
 	}
@@ -483,6 +485,7 @@ static long zcrypt_send_ep11_cprb(struct ep11_urb *xcrb)
 
 		targets = kcalloc(target_num, sizeof(*targets), GFP_KERNEL);
 		if (!targets) {
+			func_code = 0;
 			rc = -ENOMEM;
 			goto out;
 		}
@@ -490,6 +493,7 @@ static long zcrypt_send_ep11_cprb(struct ep11_urb *xcrb)
 		uptr = (struct ep11_target_dev __force __user *) xcrb->targets;
 		if (copy_from_user(targets, uptr,
 				   target_num * sizeof(*targets))) {
+			func_code = 0;
 			rc = -EFAULT;
 			goto out_free;
 		}
@@ -715,11 +719,12 @@ static void zcrypt_qdepth_mask(char qdepth[], size_t max_adapters)
 	spin_unlock(&zcrypt_list_lock);
 }
 
-static void zcrypt_perdev_reqcnt(int reqcnt[], size_t max_adapters)
+static void zcrypt_perdev_reqcnt(u32 reqcnt[], size_t max_adapters)
 {
 	struct zcrypt_card *zc;
 	struct zcrypt_queue *zq;
 	int card;
+	u64 cnt;
 
 	memset(reqcnt, 0, sizeof(int) * max_adapters);
 	spin_lock(&zcrypt_list_lock);
@@ -731,8 +736,9 @@ static void zcrypt_perdev_reqcnt(int reqcnt[], size_t max_adapters)
 			    || card >= max_adapters)
 				continue;
 			spin_lock(&zq->queue->lock);
-			reqcnt[card] = zq->queue->total_request_count;
+			cnt = zq->queue->total_request_count;
 			spin_unlock(&zq->queue->lock);
+			reqcnt[card] = (cnt < UINT_MAX) ? (u32) cnt : UINT_MAX;
 		}
 	}
 	local_bh_enable();
@@ -903,9 +909,9 @@ static long zcrypt_unlocked_ioctl(struct file *filp, unsigned int cmd,
 		return 0;
 	}
 	case ZCRYPT_PERDEV_REQCNT: {
-		int *reqcnt;
+		u32 *reqcnt;
 
-		reqcnt = kcalloc(AP_DEVICES, sizeof(int), GFP_KERNEL);
+		reqcnt = kcalloc(AP_DEVICES, sizeof(u32), GFP_KERNEL);
 		if (!reqcnt)
 			return -ENOMEM;
 		zcrypt_perdev_reqcnt(reqcnt, AP_DEVICES);
@@ -962,7 +968,7 @@ static long zcrypt_unlocked_ioctl(struct file *filp, unsigned int cmd,
 	}
 	case Z90STAT_PERDEV_REQCNT: {
 		/* the old ioctl supports only 64 adapters */
-		int reqcnt[MAX_ZDEV_CARDIDS];
+		u32 reqcnt[MAX_ZDEV_CARDIDS];
 
 		zcrypt_perdev_reqcnt(reqcnt, MAX_ZDEV_CARDIDS);
 		if (copy_to_user((int __user *) arg, reqcnt, sizeof(reqcnt)))

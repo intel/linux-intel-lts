@@ -681,24 +681,6 @@ int machine__process_switch_event(struct machine *machine __maybe_unused,
 	return 0;
 }
 
-static void dso__adjust_kmod_long_name(struct dso *dso, const char *filename)
-{
-	const char *dup_filename;
-
-	if (!filename || !dso || !dso->long_name)
-		return;
-	if (dso->long_name[0] != '[')
-		return;
-	if (!strchr(filename, '/'))
-		return;
-
-	dup_filename = strdup(filename);
-	if (!dup_filename)
-		return;
-
-	dso__set_long_name(dso, dup_filename, true);
-}
-
 struct map *machine__findnew_module_map(struct machine *machine, u64 start,
 					const char *filename)
 {
@@ -710,15 +692,8 @@ struct map *machine__findnew_module_map(struct machine *machine, u64 start,
 		return NULL;
 
 	map = map_groups__find_by_name(&machine->kmaps, m.name);
-	if (map) {
-		/*
-		 * If the map's dso is an offline module, give dso__load()
-		 * a chance to find the file path of that module by fixing
-		 * long_name.
-		 */
-		dso__adjust_kmod_long_name(map->dso, filename);
+	if (map)
 		goto out;
-	}
 
 	dso = machine__findnew_module_dso(machine, &m, filename);
 	if (dso == NULL)
@@ -1295,6 +1270,7 @@ static int machine__set_modules_path(struct machine *machine)
 	return map_groups__set_modules_path_dir(&machine->kmaps, modules_path, 0);
 }
 int __weak arch__fix_module_text_start(u64 *start __maybe_unused,
+				u64 *size __maybe_unused,
 				const char *name __maybe_unused)
 {
 	return 0;
@@ -1306,7 +1282,7 @@ static int machine__create_module(void *arg, const char *name, u64 start,
 	struct machine *machine = arg;
 	struct map *map;
 
-	if (arch__fix_module_text_start(&start, name) < 0)
+	if (arch__fix_module_text_start(&start, &size, name) < 0)
 		return -1;
 
 	map = machine__findnew_module_map(machine, start, name);
@@ -2275,7 +2251,7 @@ static int thread__resolve_callchain_sample(struct thread *thread,
 	}
 
 check_calls:
-	if (callchain_param.order != ORDER_CALLEE) {
+	if (chain && callchain_param.order != ORDER_CALLEE) {
 		err = find_prev_cpumode(chain, thread, cursor, parent, root_al,
 					&cpumode, chain->nr - first_call);
 		if (err)

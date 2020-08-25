@@ -26,6 +26,7 @@
 #include <linux/uidgid.h>
 #include <linux/gfp.h>
 #include <linux/overflow.h>
+#include <linux/android_kabi.h>
 #include <asm/device.h>
 
 struct device;
@@ -79,6 +80,13 @@ extern void bus_remove_file(struct bus_type *, struct bus_attribute *);
  *		that generate uevents to add the environment variables.
  * @probe:	Called when a new device or driver add to this bus, and callback
  *		the specific driver's probe to initial the matched device.
+ * @sync_state:	Called to sync device state to software state after all the
+ *		state tracking consumers linked to this device (present at
+ *		the time of late_initcall) have successfully bound to a
+ *		driver. If the device has no consumers, this function will
+ *		be called at late_initcall_sync level. If the device has
+ *		consumers that are never bound to a driver, this function
+ *		will never get called until they do.
  * @remove:	Called when a device removed from this bus.
  * @shutdown:	Called at shut-down time to quiesce the device.
  *
@@ -122,6 +130,7 @@ struct bus_type {
 	int (*match)(struct device *dev, struct device_driver *drv);
 	int (*uevent)(struct device *dev, struct kobj_uevent_env *env);
 	int (*probe)(struct device *dev);
+	void (*sync_state)(struct device *dev);
 	int (*remove)(struct device *dev);
 	void (*shutdown)(struct device *dev);
 
@@ -143,6 +152,11 @@ struct bus_type {
 	struct lock_class_key lock_key;
 
 	bool need_parent_lock;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 extern int __must_check bus_register(struct bus_type *bus);
@@ -251,6 +265,13 @@ enum probe_type {
  * @probe:	Called to query the existence of a specific device,
  *		whether this driver can work with it, and bind the driver
  *		to a specific device.
+ * @sync_state:	Called to sync device state to software state after all the
+ *		state tracking consumers linked to this device (present at
+ *		the time of late_initcall) have successfully bound to a
+ *		driver. If the device has no consumers, this function will
+ *		be called at late_initcall_sync level. If the device has
+ *		consumers that are never bound to a driver, this function
+ *		will never get called until they do.
  * @remove:	Called when the device is removed from the system to
  *		unbind a device from this driver.
  * @shutdown:	Called at shut-down time to quiesce the device.
@@ -288,6 +309,7 @@ struct device_driver {
 	const struct acpi_device_id	*acpi_match_table;
 
 	int (*probe) (struct device *dev);
+	void (*sync_state)(struct device *dev);
 	int (*remove) (struct device *dev);
 	void (*shutdown) (struct device *dev);
 	int (*suspend) (struct device *dev, pm_message_t state);
@@ -298,6 +320,11 @@ struct device_driver {
 	void (*coredump) (struct device *dev);
 
 	struct driver_private *p;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 
@@ -339,6 +366,7 @@ struct device *driver_find_device(struct device_driver *drv,
 				  struct device *start, void *data,
 				  int (*match)(struct device *dev, void *data));
 
+void driver_deferred_probe_add(struct device *dev);
 int driver_deferred_probe_check_state(struct device *dev);
 
 /**
@@ -423,6 +451,11 @@ struct class {
 	const struct dev_pm_ops *pm;
 
 	struct subsys_private *p;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 struct class_dev_iter {
@@ -701,7 +734,8 @@ extern unsigned long devm_get_free_pages(struct device *dev,
 					 gfp_t gfp_mask, unsigned int order);
 extern void devm_free_pages(struct device *dev, unsigned long addr);
 
-void __iomem *devm_ioremap_resource(struct device *dev, struct resource *res);
+void __iomem *devm_ioremap_resource(struct device *dev,
+				    const struct resource *res);
 
 void __iomem *devm_of_iomap(struct device *dev,
 			    struct device_node *node, int index,
@@ -753,11 +787,17 @@ struct device_dma_parameters {
 
 /**
  * struct device_connection - Device Connection Descriptor
+ * @fwnode: The device node of the connected device
  * @endpoint: The names of the two devices connected together
  * @id: Unique identifier for the connection
  * @list: List head, private, for internal use only
+ *
+ * NOTE: @fwnode is not used together with @endpoint. @fwnode is used when
+ * platform firmware defines the connection. When the connection is registered
+ * with device_connection_add() @endpoint is used instead.
  */
 struct device_connection {
+	struct fwnode_handle	*fwnode;
 	const char		*endpoint[2];
 	const char		*id;
 	struct list_head	list;
@@ -818,17 +858,23 @@ enum device_link_state {
 /*
  * Device link flags.
  *
- * STATELESS: The core won't track the presence of supplier/consumer drivers.
+ * STATELESS: The core will not remove this link automatically.
  * AUTOREMOVE_CONSUMER: Remove the link automatically on consumer driver unbind.
  * PM_RUNTIME: If set, the runtime PM framework will use this link.
  * RPM_ACTIVE: Run pm_runtime_get_sync() on the supplier during link creation.
  * AUTOREMOVE_SUPPLIER: Remove the link automatically on supplier driver unbind.
+ * AUTOPROBE_CONSUMER: Probe consumer driver automatically after supplier binds.
+ * MANAGED: The core tracks presence of supplier/consumer drivers (internal).
+ * SYNC_STATE_ONLY: Link only affects sync_state() behavior.
  */
 #define DL_FLAG_STATELESS		BIT(0)
 #define DL_FLAG_AUTOREMOVE_CONSUMER	BIT(1)
 #define DL_FLAG_PM_RUNTIME		BIT(2)
 #define DL_FLAG_RPM_ACTIVE		BIT(3)
 #define DL_FLAG_AUTOREMOVE_SUPPLIER	BIT(4)
+#define DL_FLAG_AUTOPROBE_CONSUMER	BIT(5)
+#define DL_FLAG_MANAGED			BIT(6)
+#define DL_FLAG_SYNC_STATE_ONLY		BIT(7)
 
 /**
  * struct device_link - Device link representation.
@@ -849,11 +895,17 @@ struct device_link {
 	struct list_head c_node;
 	enum device_link_state status;
 	u32 flags;
-	bool rpm_active;
+	refcount_t rpm_active;
 	struct kref kref;
 #ifdef CONFIG_SRCU
 	struct rcu_head rcu_head;
 #endif
+	bool supplier_preactivated; /* Owned by consumer probe. */
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 /**
@@ -874,12 +926,24 @@ enum dl_dev_state {
  * struct dev_links_info - Device data related to device links.
  * @suppliers: List of links to supplier devices.
  * @consumers: List of links to consumer devices.
+ * @needs_suppliers: Hook to global list of devices waiting for suppliers.
+ * @defer_sync: Hook to global list of devices that have deferred sync_state.
+ * @need_for_probe: If needs_suppliers is on a list, this indicates if the
+ *		    suppliers are needed for probe or not.
  * @status: Driver status information.
  */
 struct dev_links_info {
 	struct list_head suppliers;
 	struct list_head consumers;
+	struct list_head needs_suppliers;
+	struct list_head defer_sync;
+	bool need_for_probe;
 	enum dl_dev_state status;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 /**
@@ -951,6 +1015,9 @@ struct dev_links_info {
  * @offline:	Set after successful invocation of bus type's .offline().
  * @of_node_reused: Set if the device-tree node is shared with an ancestor
  *              device.
+ * @state_synced: The hardware state of this device has been synced to match
+ *		  the software state of this device by calling the driver/bus
+ *		  sync_state() callback.
  *
  * At the lowest level, every device in a Linux system is represented by an
  * instance of struct device. The device structure contains the information
@@ -1017,6 +1084,7 @@ struct device {
 	struct cma *cma_area;		/* contiguous memory area for dma
 					   allocations */
 #endif
+	struct removed_region *removed_mem;
 	/* arch specific additions */
 	struct dev_archdata	archdata;
 
@@ -1040,6 +1108,16 @@ struct device {
 	bool			offline_disabled:1;
 	bool			offline:1;
 	bool			of_node_reused:1;
+	bool			state_synced:1;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
+	ANDROID_KABI_RESERVE(5);
+	ANDROID_KABI_RESERVE(6);
+	ANDROID_KABI_RESERVE(7);
+	ANDROID_KABI_RESERVE(8);
 };
 
 static inline struct device *kobj_to_dev(struct kobject *kobj)
@@ -1144,6 +1222,16 @@ static inline bool device_async_suspend_enabled(struct device *dev)
 	return !!dev->power.async_suspend;
 }
 
+static inline bool device_pm_not_required(struct device *dev)
+{
+	return dev->power.no_pm;
+}
+
+static inline void device_set_pm_not_required(struct device *dev)
+{
+	dev->power.no_pm = true;
+}
+
 static inline void dev_pm_syscore_device(struct device *dev, bool val)
 {
 #ifdef CONFIG_PM_SLEEP
@@ -1191,6 +1279,17 @@ static inline struct device_node *dev_of_node(struct device *dev)
 	if (!IS_ENABLED(CONFIG_OF))
 		return NULL;
 	return dev->of_node;
+}
+
+static inline bool dev_has_sync_state(struct device *dev)
+{
+	if (!dev)
+		return false;
+	if (dev->driver && dev->driver->sync_state)
+		return true;
+	if (dev->bus && dev->bus->sync_state)
+		return true;
+	return false;
 }
 
 void driver_init(void);
@@ -1332,6 +1431,7 @@ extern int (*platform_notify_remove)(struct device *dev);
  */
 extern struct device *get_device(struct device *dev);
 extern void put_device(struct device *dev);
+extern bool kill_device(struct device *dev);
 
 #ifdef CONFIG_DEVTMPFS
 extern int devtmpfs_create_node(struct device *dev);
@@ -1354,6 +1454,8 @@ struct device_link *device_link_add(struct device *consumer,
 				    struct device *supplier, u32 flags);
 void device_link_del(struct device_link *link);
 void device_link_remove(void *consumer, struct device *supplier);
+void device_links_supplier_sync_state_pause(void);
+void device_links_supplier_sync_state_resume(void);
 
 #ifndef dev_fmt
 #define dev_fmt(fmt) fmt

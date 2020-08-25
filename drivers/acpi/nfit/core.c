@@ -542,6 +542,12 @@ int acpi_nfit_ctl(struct nvdimm_bus_descriptor *nd_desc, struct nvdimm *nvdimm,
 		goto out;
 	}
 
+	dev_dbg(dev, "%s cmd: %s output length: %d\n", dimm_name,
+			cmd_name, out_obj->buffer.length);
+	print_hex_dump_debug(cmd_name, DUMP_PREFIX_OFFSET, 4, 4,
+			out_obj->buffer.pointer,
+			min_t(u32, 128, out_obj->buffer.length), true);
+
 	if (call_pkg) {
 		call_pkg->nd_fw_size = out_obj->buffer.length;
 		memcpy(call_pkg->nd_payload + call_pkg->nd_size_in,
@@ -559,12 +565,6 @@ int acpi_nfit_ctl(struct nvdimm_bus_descriptor *nd_desc, struct nvdimm *nvdimm,
 			*cmd_rc = 0;
 		return 0;
 	}
-
-	dev_dbg(dev, "%s cmd: %s output length: %d\n", dimm_name,
-			cmd_name, out_obj->buffer.length);
-	print_hex_dump_debug(cmd_name, DUMP_PREFIX_OFFSET, 4, 4,
-			out_obj->buffer.pointer,
-			min_t(u32, 128, out_obj->buffer.length), true);
 
 	for (i = 0, offset = 0; i < desc->out_num; i++) {
 		u32 out_size = nd_cmd_out_size(nvdimm, cmd, desc, i, buf,
@@ -1773,9 +1773,17 @@ static int acpi_nfit_add_dimm(struct acpi_nfit_desc *acpi_desc,
 	dev_set_drvdata(&adev_dimm->dev, nfit_mem);
 
 	/*
-	 * Until standardization materializes we need to consider 4
-	 * different command sets.  Note, that checking for function0 (bit0)
-	 * tells us if any commands are reachable through this GUID.
+	 * There are 4 "legacy" NVDIMM command sets
+	 * (NVDIMM_FAMILY_{INTEL,MSFT,HPE1,HPE2}) that were created before
+	 * an EFI working group was established to constrain this
+	 * proliferation. The nfit driver probes for the supported command
+	 * set by GUID. Note, if you're a platform developer looking to add
+	 * a new command set to this probe, consider using an existing set,
+	 * or otherwise seek approval to publish the command set at
+	 * http://www.uefi.org/RFIC_LIST.
+	 *
+	 * Note, that checking for function0 (bit0) tells us if any commands
+	 * are reachable through this GUID.
 	 */
 	for (i = 0; i <= NVDIMM_FAMILY_MAX; i++)
 		if (acpi_check_dsm(adev_dimm->handle, to_nfit_uuid(i), 1, 1))
@@ -1798,6 +1806,8 @@ static int acpi_nfit_add_dimm(struct acpi_nfit_desc *acpi_desc,
 			dsm_mask &= ~(1 << 8);
 	} else if (nfit_mem->family == NVDIMM_FAMILY_MSFT) {
 		dsm_mask = 0xffffffff;
+	} else if (nfit_mem->family == NVDIMM_FAMILY_HYPERV) {
+		dsm_mask = 0x1f;
 	} else {
 		dev_dbg(dev, "unknown dimm command family\n");
 		nfit_mem->family = -1;
@@ -2282,7 +2292,7 @@ static void write_blk_ctl(struct nfit_blk *nfit_blk, unsigned int bw,
 		offset = to_interleave_offset(offset, mmio);
 
 	writeq(cmd, mmio->addr.base + offset);
-	nvdimm_flush(nfit_blk->nd_region);
+	nvdimm_flush(nfit_blk->nd_region, NULL);
 
 	if (nfit_blk->dimm_flags & NFIT_BLK_DCR_LATCH)
 		readq(mmio->addr.base + offset);
@@ -2331,7 +2341,7 @@ static int acpi_nfit_blk_single_io(struct nfit_blk *nfit_blk,
 	}
 
 	if (rw)
-		nvdimm_flush(nfit_blk->nd_region);
+		nvdimm_flush(nfit_blk->nd_region, NULL);
 
 	rc = read_blk_stat(nfit_blk, lane) ? -EIO : 0;
 	return rc;
@@ -3622,6 +3632,7 @@ static __init int nfit_init(void)
 	guid_parse(UUID_NFIT_DIMM_N_HPE1, &nfit_uuid[NFIT_DEV_DIMM_N_HPE1]);
 	guid_parse(UUID_NFIT_DIMM_N_HPE2, &nfit_uuid[NFIT_DEV_DIMM_N_HPE2]);
 	guid_parse(UUID_NFIT_DIMM_N_MSFT, &nfit_uuid[NFIT_DEV_DIMM_N_MSFT]);
+	guid_parse(UUID_NFIT_DIMM_N_HYPERV, &nfit_uuid[NFIT_DEV_DIMM_N_HYPERV]);
 
 	nfit_wq = create_singlethread_workqueue("nfit");
 	if (!nfit_wq)

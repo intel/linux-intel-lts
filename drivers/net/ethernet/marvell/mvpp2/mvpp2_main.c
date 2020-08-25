@@ -908,7 +908,7 @@ static void mvpp2_interrupts_unmask(void *arg)
 	u32 val;
 
 	val = MVPP2_CAUSE_MISC_SUM_MASK |
-		MVPP2_CAUSE_RXQ_OCCUP_DESC_ALL_MASK;
+		MVPP2_CAUSE_RXQ_OCCUP_DESC_ALL_MASK(port->priv->hw_version);
 	if (port->has_tx_irqs)
 		val |= MVPP2_CAUSE_TXQ_OCCUP_DESC_ALL_MASK;
 
@@ -928,7 +928,7 @@ mvpp2_shared_interrupt_mask_unmask(struct mvpp2_port *port, bool mask)
 	if (mask)
 		val = 0;
 	else
-		val = MVPP2_CAUSE_RXQ_OCCUP_DESC_ALL_MASK;
+		val = MVPP2_CAUSE_RXQ_OCCUP_DESC_ALL_MASK(MVPP22);
 
 	for (i = 0; i < port->nqvecs; i++) {
 		struct mvpp2_queue_vector *v = port->qvecs + i;
@@ -1310,8 +1310,8 @@ static void mvpp2_ethtool_get_strings(struct net_device *netdev, u32 sset,
 		int i;
 
 		for (i = 0; i < ARRAY_SIZE(mvpp2_ethtool_regs); i++)
-			memcpy(data + i * ETH_GSTRING_LEN,
-			       &mvpp2_ethtool_regs[i].string, ETH_GSTRING_LEN);
+			strscpy(data + i * ETH_GSTRING_LEN,
+			        mvpp2_ethtool_regs[i].string, ETH_GSTRING_LEN);
 	}
 }
 
@@ -1404,7 +1404,7 @@ static inline void mvpp2_xlg_max_rx_size_set(struct mvpp2_port *port)
 /* Set defaults to the MVPP2 port */
 static void mvpp2_defaults_set(struct mvpp2_port *port)
 {
-	int tx_port_num, val, queue, ptxq, lrxq;
+	int tx_port_num, val, queue, lrxq;
 
 	if (port->priv->hw_version == MVPP21) {
 		/* Update TX FIFO MIN Threshold */
@@ -1422,11 +1422,9 @@ static void mvpp2_defaults_set(struct mvpp2_port *port)
 	mvpp2_write(port->priv, MVPP2_TXP_SCHED_CMD_1_REG, 0);
 
 	/* Close bandwidth for all queues */
-	for (queue = 0; queue < MVPP2_MAX_TXQ; queue++) {
-		ptxq = mvpp2_txq_phys(port->id, queue);
+	for (queue = 0; queue < MVPP2_MAX_TXQ; queue++)
 		mvpp2_write(port->priv,
-			    MVPP2_TXQ_SCHED_TOKEN_CNTR_REG(ptxq), 0);
-	}
+			    MVPP2_TXQ_SCHED_TOKEN_CNTR_REG(queue), 0);
 
 	/* Set refill period to 1 usec, refill tokens
 	 * and bucket size to maximum
@@ -2271,7 +2269,7 @@ static void mvpp2_txq_deinit(struct mvpp2_port *port,
 	txq->descs_dma         = 0;
 
 	/* Set minimum bandwidth for disabled TXQs */
-	mvpp2_write(port->priv, MVPP2_TXQ_SCHED_TOKEN_CNTR_REG(txq->id), 0);
+	mvpp2_write(port->priv, MVPP2_TXQ_SCHED_TOKEN_CNTR_REG(txq->log_id), 0);
 
 	/* Set Tx descriptors queue starting address and size */
 	cpu = get_cpu();
@@ -2903,7 +2901,7 @@ release:
 }
 
 /* Main tx processing */
-static int mvpp2_tx(struct sk_buff *skb, struct net_device *dev)
+static netdev_tx_t mvpp2_tx(struct sk_buff *skb, struct net_device *dev)
 {
 	struct mvpp2_port *port = netdev_priv(dev);
 	struct mvpp2_tx_queue *txq, *aggr_txq;
@@ -3061,7 +3059,8 @@ static int mvpp2_poll(struct napi_struct *napi, int budget)
 	}
 
 	/* Process RX packets */
-	cause_rx = cause_rx_tx & MVPP2_CAUSE_RXQ_OCCUP_DESC_ALL_MASK;
+	cause_rx = cause_rx_tx &
+		   MVPP2_CAUSE_RXQ_OCCUP_DESC_ALL_MASK(port->priv->hw_version);
 	cause_rx <<= qv->first_rxq;
 	cause_rx |= qv->pending_cause_rx;
 	while (cause_rx && budget > 0) {
@@ -3342,7 +3341,7 @@ static int mvpp2_open(struct net_device *dev)
 		valid = true;
 	}
 
-	if (priv->hw_version == MVPP22 && port->link_irq && !port->phylink) {
+	if (priv->hw_version == MVPP22 && port->link_irq) {
 		err = request_irq(port->link_irq, mvpp2_link_status_isr, 0,
 				  dev->name, port);
 		if (err) {
@@ -3503,6 +3502,7 @@ static int mvpp2_set_mac_address(struct net_device *dev, void *p)
 static int mvpp2_change_mtu(struct net_device *dev, int mtu)
 {
 	struct mvpp2_port *port = netdev_priv(dev);
+	bool running = netif_running(dev);
 	int err;
 
 	if (!IS_ALIGNED(MVPP2_RX_PKT_SIZE(mtu), 8)) {
@@ -3511,40 +3511,24 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
 		mtu = ALIGN(MVPP2_RX_PKT_SIZE(mtu), 8);
 	}
 
-	if (!netif_running(dev)) {
-		err = mvpp2_bm_update_mtu(dev, mtu);
-		if (!err) {
-			port->pkt_size =  MVPP2_RX_PKT_SIZE(mtu);
-			return 0;
-		}
-
-		/* Reconfigure BM to the original MTU */
-		err = mvpp2_bm_update_mtu(dev, dev->mtu);
-		if (err)
-			goto log_error;
-	}
-
-	mvpp2_stop_dev(port);
+	if (running)
+		mvpp2_stop_dev(port);
 
 	err = mvpp2_bm_update_mtu(dev, mtu);
-	if (!err) {
+	if (err) {
+		netdev_err(dev, "failed to change MTU\n");
+		/* Reconfigure BM to the original MTU */
+		mvpp2_bm_update_mtu(dev, dev->mtu);
+	} else {
 		port->pkt_size =  MVPP2_RX_PKT_SIZE(mtu);
-		goto out_start;
 	}
 
-	/* Reconfigure BM to the original MTU */
-	err = mvpp2_bm_update_mtu(dev, dev->mtu);
-	if (err)
-		goto log_error;
+	if (running) {
+		mvpp2_start_dev(port);
+		mvpp2_egress_enable(port);
+		mvpp2_ingress_enable(port);
+	}
 
-out_start:
-	mvpp2_start_dev(port);
-	mvpp2_egress_enable(port);
-	mvpp2_ingress_enable(port);
-
-	return 0;
-log_error:
-	netdev_err(dev, "failed to change MTU\n");
 	return err;
 }
 
@@ -4429,9 +4413,9 @@ static void mvpp2_xlg_config(struct mvpp2_port *port, unsigned int mode,
 	if (state->pause & MLO_PAUSE_RX)
 		ctrl0 |= MVPP22_XLG_CTRL0_RX_FLOW_CTRL_EN;
 
-	ctrl4 &= ~MVPP22_XLG_CTRL4_MACMODSELECT_GMAC;
-	ctrl4 |= MVPP22_XLG_CTRL4_FWD_FC | MVPP22_XLG_CTRL4_FWD_PFC |
-		 MVPP22_XLG_CTRL4_EN_IDLE_CHECK;
+	ctrl4 &= ~(MVPP22_XLG_CTRL4_MACMODSELECT_GMAC |
+		   MVPP22_XLG_CTRL4_EN_IDLE_CHECK);
+	ctrl4 |= MVPP22_XLG_CTRL4_FWD_FC | MVPP22_XLG_CTRL4_FWD_PFC;
 
 	writel(ctrl0, port->base + MVPP22_XLG_CTRL0_REG);
 	writel(ctrl4, port->base + MVPP22_XLG_CTRL4_REG);
@@ -5148,6 +5132,8 @@ static int mvpp2_probe(struct platform_device *pdev)
 	if (has_acpi_companion(&pdev->dev)) {
 		acpi_id = acpi_match_device(pdev->dev.driver->acpi_match_table,
 					    &pdev->dev);
+		if (!acpi_id)
+			return -EINVAL;
 		priv->hw_version = (unsigned long)acpi_id->driver_data;
 	} else {
 		priv->hw_version =
@@ -5360,9 +5346,6 @@ static int mvpp2_remove(struct platform_device *pdev)
 
 	mvpp2_dbgfs_cleanup(priv);
 
-	flush_workqueue(priv->stats_queue);
-	destroy_workqueue(priv->stats_queue);
-
 	fwnode_for_each_available_child_node(fwnode, port_fwnode) {
 		if (priv->port_list[i]) {
 			mutex_destroy(&priv->port_list[i]->gather_stats_lock);
@@ -5370,6 +5353,8 @@ static int mvpp2_remove(struct platform_device *pdev)
 		}
 		i++;
 	}
+
+	destroy_workqueue(priv->stats_queue);
 
 	for (i = 0; i < MVPP2_BM_POOLS_NUM; i++) {
 		struct mvpp2_bm_pool *bm_pool = &priv->bm_pools[i];

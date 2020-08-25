@@ -76,6 +76,10 @@ enum ipi_msg_type {
 	IPI_CPU_STOP,
 	IPI_IRQ_WORK,
 	IPI_COMPLETION,
+	/*
+	 * CPU_BACKTRACE is special and not included in NR_IPI
+	 * or tracable with trace_ipi_*
+	 */
 	IPI_CPU_BACKTRACE,
 	/*
 	 * SGI8-15 can be reserved by secure firmware, and thus may
@@ -512,6 +516,14 @@ void __init set_smp_cross_call(void (*fn)(const struct cpumask *, unsigned int))
 		__smp_cross_call = fn;
 }
 
+static void (*__smp_update_ipi_history_cb)(int cpu);
+
+void set_update_ipi_history_callback(void (*fn)(int))
+{
+	__smp_update_ipi_history_cb = fn;
+}
+EXPORT_SYMBOL_GPL(set_update_ipi_history_callback);
+
 static const char *ipi_types[NR_IPI] __tracepoint_string = {
 #define S(x,s)	[x] = s
 	S(IPI_WAKEUP, "CPU wakeup interrupts"),
@@ -704,6 +716,8 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 void smp_send_reschedule(int cpu)
 {
+	if (__smp_update_ipi_history_cb)
+		__smp_update_ipi_history_cb(cpu);
 	smp_cross_call(cpumask_of(cpu), IPI_RESCHEDULE);
 }
 
@@ -803,7 +817,7 @@ core_initcall(register_cpufreq_notifier);
 
 static void raise_nmi(cpumask_t *mask)
 {
-	smp_cross_call(mask, IPI_CPU_BACKTRACE);
+	__smp_cross_call(mask, IPI_CPU_BACKTRACE);
 }
 
 void arch_trigger_cpumask_backtrace(const cpumask_t *mask, bool exclude_self)

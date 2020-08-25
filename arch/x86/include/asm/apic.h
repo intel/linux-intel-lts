@@ -48,7 +48,7 @@ static inline void generic_apic_probe(void)
 
 #ifdef CONFIG_X86_LOCAL_APIC
 
-extern unsigned int apic_verbosity;
+extern int apic_verbosity;
 extern int local_apic_timer_c2_ok;
 
 extern int disable_apic;
@@ -446,6 +446,14 @@ static inline void ack_APIC_irq(void)
 	 * ... yummie.
 	 */
 	apic_eoi();
+}
+
+
+static inline bool lapic_vector_set_in_irr(unsigned int vector)
+{
+	u32 irr = apic_read(APIC_IRR + (vector / 32 * 0x10));
+
+	return !!(irr & (1U << (vector % 32)));
 }
 
 static inline unsigned default_get_apic_id(unsigned long x)

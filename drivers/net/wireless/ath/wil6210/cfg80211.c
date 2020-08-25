@@ -311,7 +311,7 @@ int wil_cid_fill_sinfo(struct wil6210_vif *vif, int cid,
 			BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC) |
 			BIT_ULL(NL80211_STA_INFO_TX_FAILED);
 
-	sinfo->txrate.flags = RATE_INFO_FLAGS_60G;
+	sinfo->txrate.flags = RATE_INFO_FLAGS_DMG;
 	sinfo->txrate.mcs = le16_to_cpu(reply.evt.bf_mcs);
 	sinfo->rxrate.mcs = stats->last_mcs_rx;
 	sinfo->rx_bytes = stats->rx_bytes;
@@ -1131,7 +1131,12 @@ int wil_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			     params->wait);
 
 out:
+	/* when the sent packet was not acked by receiver(ACK=0), rc will
+	 * be -EAGAIN. In this case this function needs to return success,
+	 * the ACK=0 will be reflected in tx_status.
+	 */
 	tx_status = (rc == 0);
+	rc = (rc == -EAGAIN) ? 0 : rc;
 	cfg80211_mgmt_tx_status(wdev, cookie ? *cookie : 0, buf, len,
 				tx_status, GFP_KERNEL);
 

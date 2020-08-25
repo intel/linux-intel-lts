@@ -73,6 +73,7 @@ struct proc_dir_entry *proc_create_net_single_write(const char *name, umode_t mo
 						    int (*show)(struct seq_file *, void *),
 						    proc_write_t write,
 						    void *data);
+extern struct pid *tgid_pidfd_to_pid(const struct file *file);
 
 #else /* CONFIG_PROC_FS */
 
@@ -114,7 +115,18 @@ static inline int remove_proc_subtree(const char *name, struct proc_dir_entry *p
 #define proc_create_net(name, mode, parent, state_size, ops) ({NULL;})
 #define proc_create_net_single(name, mode, parent, show, data) ({NULL;})
 
+static inline struct pid *tgid_pidfd_to_pid(const struct file *file)
+{
+	return ERR_PTR(-EBADF);
+}
+
 #endif /* CONFIG_PROC_FS */
+
+#ifdef CONFIG_PROC_UID
+extern void proc_register_uid(kuid_t uid);
+#else
+static inline void proc_register_uid(kuid_t uid) {}
+#endif
 
 struct net;
 

@@ -872,22 +872,31 @@ extern void __trace_graph_return(struct trace_array *tr,
 				 unsigned long flags, int pc);
 
 #ifdef CONFIG_DYNAMIC_FTRACE
-extern struct ftrace_hash *ftrace_graph_hash;
-extern struct ftrace_hash *ftrace_graph_notrace_hash;
+extern struct ftrace_hash __rcu *ftrace_graph_hash;
+extern struct ftrace_hash __rcu *ftrace_graph_notrace_hash;
 
 static inline int ftrace_graph_addr(struct ftrace_graph_ent *trace)
 {
 	unsigned long addr = trace->func;
 	int ret = 0;
+	struct ftrace_hash *hash;
 
 	preempt_disable_notrace();
 
-	if (ftrace_hash_empty(ftrace_graph_hash)) {
+	/*
+	 * Have to open code "rcu_dereference_sched()" because the
+	 * function graph tracer can be called when RCU is not
+	 * "watching".
+	 * Protected with schedule_on_each_cpu(ftrace_sync)
+	 */
+	hash = rcu_dereference_protected(ftrace_graph_hash, !preemptible());
+
+	if (ftrace_hash_empty(hash)) {
 		ret = 1;
 		goto out;
 	}
 
-	if (ftrace_lookup_ip(ftrace_graph_hash, addr)) {
+	if (ftrace_lookup_ip(hash, addr)) {
 
 		/*
 		 * This needs to be cleared on the return functions
@@ -923,10 +932,20 @@ static inline void ftrace_graph_addr_finish(struct ftrace_graph_ret *trace)
 static inline int ftrace_graph_notrace_addr(unsigned long addr)
 {
 	int ret = 0;
+	struct ftrace_hash *notrace_hash;
 
 	preempt_disable_notrace();
 
-	if (ftrace_lookup_ip(ftrace_graph_notrace_hash, addr))
+	/*
+	 * Have to open code "rcu_dereference_sched()" because the
+	 * function graph tracer can be called when RCU is not
+	 * "watching".
+	 * Protected with schedule_on_each_cpu(ftrace_sync)
+	 */
+	notrace_hash = rcu_dereference_protected(ftrace_graph_notrace_hash,
+						 !preemptible());
+
+	if (ftrace_lookup_ip(notrace_hash, addr))
 		ret = 1;
 
 	preempt_enable_notrace();
@@ -1894,5 +1913,23 @@ static inline void tracer_hardirqs_off(unsigned long a0, unsigned long a1) { }
 #endif
 
 extern struct trace_iterator *tracepoint_print_iter;
+
+/*
+ * Reset the state of the trace_iterator so that it can read consumed data.
+ * Normally, the trace_iterator is used for reading the data when it is not
+ * consumed, and must retain state.
+ */
+static __always_inline void trace_iterator_reset(struct trace_iterator *iter)
+{
+	const size_t offset = offsetof(struct trace_iterator, seq);
+
+	/*
+	 * Keep gcc from complaining about overwriting more than just one
+	 * member in the structure.
+	 */
+	memset((char *)iter + offset, 0, sizeof(struct trace_iterator) - offset);
+
+	iter->pos = -1;
+}
 
 #endif /* _LINUX_KERNEL_TRACE_H */

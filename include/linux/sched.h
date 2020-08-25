@@ -26,8 +26,10 @@
 #include <linux/sched/prio.h>
 #include <linux/signal_types.h>
 #include <linux/mm_types_task.h>
+#include <linux/mm_event.h>
 #include <linux/task_io_accounting.h>
 #include <linux/rseq.h>
+#include <linux/android_kabi.h>
 
 /* task_struct member predeclarations (sorted alphabetically): */
 struct audit_context;
@@ -279,6 +281,18 @@ struct vtime {
 	u64			gtime;
 };
 
+/*
+ * Utilization clamp constraints.
+ * @UCLAMP_MIN:	Minimum utilization
+ * @UCLAMP_MAX:	Maximum utilization
+ * @UCLAMP_CNT:	Utilization clamp constraints count
+ */
+enum uclamp_id {
+	UCLAMP_MIN = 0,
+	UCLAMP_MAX,
+	UCLAMP_CNT
+};
+
 struct sched_info {
 #ifdef CONFIG_SCHED_INFO
 	/* Cumulative counters: */
@@ -309,6 +323,10 @@ struct sched_info {
  */
 # define SCHED_FIXEDPOINT_SHIFT		10
 # define SCHED_FIXEDPOINT_SCALE		(1L << SCHED_FIXEDPOINT_SHIFT)
+
+/* Increase resolution of cpu_capacity calculations */
+# define SCHED_CAPACITY_SHIFT		SCHED_FIXEDPOINT_SHIFT
+# define SCHED_CAPACITY_SCALE		(1L << SCHED_CAPACITY_SHIFT)
 
 struct load_weight {
 	unsigned long			weight;
@@ -355,12 +373,6 @@ struct util_est {
  * For cfs_rq, it is the aggregated load_avg of all runnable and
  * blocked sched_entities.
  *
- * load_avg may also take frequency scaling into account:
- *
- *   load_avg = runnable% * scale_load_down(load) * freq%
- *
- * where freq% is the CPU frequency normalized to the highest frequency.
- *
  * [util_avg definition]
  *
  *   util_avg = running% * SCHED_CAPACITY_SCALE
@@ -369,17 +381,14 @@ struct util_est {
  * a CPU. For cfs_rq, it is the aggregated util_avg of all runnable
  * and blocked sched_entities.
  *
- * util_avg may also factor frequency scaling and CPU capacity scaling:
+ * load_avg and util_avg don't direcly factor frequency scaling and CPU
+ * capacity scaling. The scaling is done through the rq_clock_pelt that
+ * is used for computing those signals (see update_rq_clock_pelt())
  *
- *   util_avg = running% * SCHED_CAPACITY_SCALE * freq% * capacity%
- *
- * where freq% is the same as above, and capacity% is the CPU capacity
- * normalized to the greatest capacity (due to uarch differences, etc).
- *
- * N.B., the above ratios (runnable%, running%, freq%, and capacity%)
- * themselves are in the range of [0, 1]. To do fixed point arithmetics,
- * we therefore scale them to as large a range as necessary. This is for
- * example reflected by util_avg's SCHED_CAPACITY_SCALE.
+ * N.B., the above ratios (runnable% and running%) themselves are in the
+ * range of [0, 1]. To do fixed point arithmetics, we therefore scale them
+ * to as large a range as necessary. This is for example reflected by
+ * util_avg's SCHED_CAPACITY_SCALE.
  *
  * [Overflow issue]
  *
@@ -478,6 +487,11 @@ struct sched_entity {
 	 */
 	struct sched_avg		avg;
 #endif
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 struct sched_rt_entity {
@@ -496,6 +510,11 @@ struct sched_rt_entity {
 	/* rq "owned" by this entity/group: */
 	struct rt_rq			*my_q;
 #endif
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 } __randomize_layout;
 
 struct sched_dl_entity {
@@ -566,6 +585,41 @@ struct sched_dl_entity {
 	 */
 	struct hrtimer inactive_timer;
 };
+
+#ifdef CONFIG_UCLAMP_TASK
+/* Number of utilization clamp buckets (shorter alias) */
+#define UCLAMP_BUCKETS CONFIG_UCLAMP_BUCKETS_COUNT
+
+/*
+ * Utilization clamp for a scheduling entity
+ * @value:		clamp value "assigned" to a se
+ * @bucket_id:		bucket index corresponding to the "assigned" value
+ * @active:		the se is currently refcounted in a rq's bucket
+ * @user_defined:	the requested clamp value comes from user-space
+ *
+ * The bucket_id is the index of the clamp bucket matching the clamp value
+ * which is pre-computed and stored to avoid expensive integer divisions from
+ * the fast path.
+ *
+ * The active bit is set whenever a task has got an "effective" value assigned,
+ * which can be different from the clamp value "requested" from user-space.
+ * This allows to know a task is refcounted in the rq's bucket corresponding
+ * to the "effective" bucket_id.
+ *
+ * The user_defined bit is set whenever a task has got a task-specific clamp
+ * value requested from userspace, i.e. the system defaults apply to this task
+ * just as a restriction. This allows to relax default clamps when a less
+ * restrictive task-specific value has been requested, thus allowing to
+ * implement a "nice" semantic. For example, a task running with a 20%
+ * default boost can still drop its own boosting to 0%.
+ */
+struct uclamp_se {
+	unsigned int value		: bits_per(SCHED_CAPACITY_SCALE);
+	unsigned int bucket_id		: bits_per(UCLAMP_BUCKETS);
+	unsigned int active		: 1;
+	unsigned int user_defined	: 1;
+};
+#endif /* CONFIG_UCLAMP_TASK */
 
 union rcu_special {
 	struct {
@@ -644,10 +698,24 @@ struct task_struct {
 	const struct sched_class	*sched_class;
 	struct sched_entity		se;
 	struct sched_rt_entity		rt;
+
+	/* task boost vendor fields */
+	u64				last_sleep_ts;
+	int				boost;
+	u64				boost_period;
+	u64				boost_expires;
+
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group		*sched_task_group;
 #endif
 	struct sched_dl_entity		dl;
+
+#ifdef CONFIG_UCLAMP_TASK
+	/* Clamp values requested for a scheduling entity */
+	struct uclamp_se		uclamp_req[UCLAMP_CNT];
+	/* Effective clamp values used for a scheduling entity */
+	struct uclamp_se		uclamp[UCLAMP_CNT];
+#endif
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	/* List of struct preempt_notifier: */
@@ -661,6 +729,7 @@ struct task_struct {
 	unsigned int			policy;
 	int				nr_cpus_allowed;
 	cpumask_t			cpus_allowed;
+	cpumask_t			cpus_requested;
 
 #ifdef CONFIG_PREEMPT_RCU
 	int				rcu_read_lock_nesting;
@@ -710,6 +779,10 @@ struct task_struct {
 	unsigned			sched_contributes_to_load:1;
 	unsigned			sched_migrated:1;
 	unsigned			sched_remote_wakeup:1;
+#ifdef CONFIG_PSI
+	unsigned			sched_psi_wake_requeue:1;
+#endif
+
 	/* Force alignment to the next boundary: */
 	unsigned			:0;
 
@@ -799,6 +872,10 @@ struct task_struct {
 	u64				stimescaled;
 #endif
 	u64				gtime;
+#ifdef CONFIG_CPU_FREQ_TIMES
+	u64				*time_in_state;
+	unsigned int			max_state;
+#endif
 	struct prev_cputime		prev_cputime;
 #ifdef CONFIG_VIRT_CPU_ACCOUNTING_GEN
 	struct vtime			vtime;
@@ -887,8 +964,8 @@ struct task_struct {
 	struct seccomp			seccomp;
 
 	/* Thread group tracking: */
-	u32				parent_exec_id;
-	u32				self_exec_id;
+	u64				parent_exec_id;
+	u64				self_exec_id;
 
 	/* Protection against (de-)allocation: mm, files, fs, tty, keyrings, mems_allowed, mempolicy: */
 	spinlock_t			alloc_lock;
@@ -906,7 +983,10 @@ struct task_struct {
 	/* Deadlock detection and priority inheritance handling: */
 	struct rt_mutex_waiter		*pi_blocked_on;
 #endif
-
+#ifdef CONFIG_MM_EVENT_STAT
+	struct mm_event_task	mm_event[MM_TYPE_NUM];
+	unsigned long		next_period;
+#endif
 #ifdef CONFIG_DEBUG_MUTEXES
 	/* Mutex deadlock detection: */
 	struct mutex_waiter		*blocked_on;
@@ -963,6 +1043,10 @@ struct task_struct {
 	siginfo_t			*last_siginfo;
 
 	struct task_io_accounting	ioac;
+#ifdef CONFIG_PSI
+	/* Pressure stall state */
+	unsigned int			psi_flags;
+#endif
 #ifdef CONFIG_TASK_XACCT
 	/* Accumulated RSS usage: */
 	u64				acct_rss_mem1;
@@ -1023,7 +1107,15 @@ struct task_struct {
 	u64				last_sum_exec_runtime;
 	struct callback_head		numa_work;
 
-	struct numa_group		*numa_group;
+	/*
+	 * This pointer is only modified for current in syscall and
+	 * pagefault context (and for tasks being destroyed), so it can be read
+	 * from any of the following contexts:
+	 *  - RCU read-side critical section
+	 *  - current->numa_group from everywhere
+	 *  - task's runqueue locked, task not running
+	 */
+	struct numa_group __rcu		*numa_group;
 
 	/*
 	 * numa_faults is an array split into four regions:
@@ -1135,6 +1227,8 @@ struct task_struct {
 #endif /* CONFIG_TRACING */
 
 #ifdef CONFIG_KCOV
+	/* See kernel/kcov.c for more details. */
+
 	/* Coverage collection mode enabled for this task (0 if disabled): */
 	unsigned int			kcov_mode;
 
@@ -1146,6 +1240,12 @@ struct task_struct {
 
 	/* KCOV descriptor wired with this task or NULL: */
 	struct kcov			*kcov;
+
+	/* KCOV common handle for remote coverage collection: */
+	u64				kcov_handle;
+
+	/* KCOV sequence number: */
+	int				kcov_sequence;
 #endif
 
 #ifdef CONFIG_MEMCG
@@ -1192,6 +1292,16 @@ struct task_struct {
 	/* Used by LSM modules for access restriction: */
 	void				*security;
 #endif
+	/* task is frozen/stopped (used by the cgroup freezer) */
+	ANDROID_KABI_USE(1, unsigned frozen:1);
+
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
+	ANDROID_KABI_RESERVE(5);
+	ANDROID_KABI_RESERVE(6);
+	ANDROID_KABI_RESERVE(7);
+	ANDROID_KABI_RESERVE(8);
 
 	/*
 	 * New fields for task_struct should be added above here, so that
@@ -1390,6 +1500,7 @@ extern struct pid *cad_pid;
 #define PF_KTHREAD		0x00200000	/* I am a kernel thread */
 #define PF_RANDOMIZE		0x00400000	/* Randomize virtual address space */
 #define PF_SWAPWRITE		0x00800000	/* Allowed to write to swap */
+#define PF_MEMSTALL		0x01000000	/* Stalled due to lack of memory */
 #define PF_NO_SETAFFINITY	0x04000000	/* Userland is not allowed to meddle with cpus_allowed */
 #define PF_MCE_EARLY		0x08000000      /* Early kill for mce process policy */
 #define PF_MUTEX_TESTER		0x20000000	/* Thread belongs to the rt mutex tester */
@@ -1835,11 +1946,11 @@ static inline void rseq_migrate(struct task_struct *t)
 
 /*
  * If parent process has a registered restartable sequences area, the
- * child inherits. Only applies when forking a process, not a thread.
+ * child inherits. Unregister rseq for a clone with CLONE_VM set.
  */
 static inline void rseq_fork(struct task_struct *t, unsigned long clone_flags)
 {
-	if (clone_flags & CLONE_THREAD) {
+	if (clone_flags & CLONE_VM) {
 		t->rseq = NULL;
 		t->rseq_len = 0;
 		t->rseq_sig = 0;

@@ -877,6 +877,12 @@ static void fib6_drop_pcpu_from(struct fib6_info *f6i,
 {
 	int cpu;
 
+	/* Make sure rt6_make_pcpu_route() wont add other percpu routes
+	 * while we are cleaning them here.
+	 */
+	f6i->fib6_destroying = 1;
+	mb(); /* paired with the cmpxchg() in rt6_make_pcpu_route() */
+
 	/* release the reference to this fib entry from
 	 * all of its cached pcpu routes
 	 */
@@ -900,6 +906,9 @@ static void fib6_purge_rt(struct fib6_info *rt, struct fib6_node *fn,
 {
 	struct fib6_table *table = rt->fib6_table;
 
+	if (rt->rt6i_pcpu)
+		fib6_drop_pcpu_from(rt, table);
+
 	if (atomic_read(&rt->fib6_ref) != 1) {
 		/* This route is used as dummy address holder in some split
 		 * nodes. It is not leaked, but it still holds other resources,
@@ -921,9 +930,6 @@ static void fib6_purge_rt(struct fib6_info *rt, struct fib6_node *fn,
 			fn = rcu_dereference_protected(fn->parent,
 				    lockdep_is_held(&table->tb6_lock));
 		}
-
-		if (rt->rt6i_pcpu)
-			fib6_drop_pcpu_from(rt, table);
 	}
 }
 
@@ -975,8 +981,7 @@ static int fib6_add_rt2node(struct fib6_node *fn, struct fib6_info *rt,
 					found++;
 					break;
 				}
-				if (rt_can_ecmp)
-					fallback_ins = fallback_ins ?: ins;
+				fallback_ins = fallback_ins ?: ins;
 				goto next_iter;
 			}
 
@@ -1019,7 +1024,9 @@ next_iter:
 	}
 
 	if (fallback_ins && !found) {
-		/* No ECMP-able route found, replace first non-ECMP one */
+		/* No matching route with same ecmp-able-ness found, replace
+		 * first matching route
+		 */
 		ins = fallback_ins;
 		iter = rcu_dereference_protected(*ins,
 				    lockdep_is_held(&rt->fib6_table->tb6_lock));
@@ -1075,8 +1082,24 @@ add:
 		err = call_fib6_entry_notifiers(info->nl_net,
 						FIB_EVENT_ENTRY_ADD,
 						rt, extack);
-		if (err)
+		if (err) {
+			struct fib6_info *sibling, *next_sibling;
+
+			/* If the route has siblings, then it first
+			 * needs to be unlinked from them.
+			 */
+			if (!rt->fib6_nsiblings)
+				return err;
+
+			list_for_each_entry_safe(sibling, next_sibling,
+						 &rt->fib6_siblings,
+						 fib6_siblings)
+				sibling->fib6_nsiblings--;
+			rt->fib6_nsiblings = 0;
+			list_del_init(&rt->fib6_siblings);
+			rt6_multipath_rebalance(next_sibling);
 			return err;
+		}
 
 		rcu_assign_pointer(rt->fib6_next, iter);
 		atomic_inc(&rt->fib6_ref);
@@ -1507,7 +1530,8 @@ static struct fib6_node *fib6_locate_1(struct fib6_node *root,
 		if (plen == fn->fn_bit)
 			return fn;
 
-		prev = fn;
+		if (fn->fn_flags & RTN_RTINFO)
+			prev = fn;
 
 next:
 		/*

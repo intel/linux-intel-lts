@@ -1198,7 +1198,8 @@ static void iwl_pcie_rx_reuse_rbd(struct iwl_trans *trans,
 static void iwl_pcie_rx_handle_rb(struct iwl_trans *trans,
 				struct iwl_rxq *rxq,
 				struct iwl_rx_mem_buffer *rxb,
-				bool emergency)
+				bool emergency,
+				int i)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 	struct iwl_txq *txq = trans_pcie->txq[trans_pcie->cmd_queue];
@@ -1223,6 +1224,9 @@ static void iwl_pcie_rx_handle_rb(struct iwl_trans *trans,
 			._page_stolen = false,
 			.truesize = max_len,
 		};
+
+		if (trans->cfg->device_family >= IWL_DEVICE_FAMILY_22560)
+			rxcb.status = rxq->cd[i].status;
 
 		pkt = rxb_addr(&rxcb);
 
@@ -1388,9 +1392,14 @@ out_err:
 static void iwl_pcie_rx_handle(struct iwl_trans *trans, int queue)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
-	struct iwl_rxq *rxq = &trans_pcie->rxq[queue];
+	struct iwl_rxq *rxq;
 	u32 r, i, count = 0;
 	bool emergency = false;
+
+	if (WARN_ON_ONCE(!trans_pcie->rxq || !trans_pcie->rxq[queue].bd))
+		return;
+
+	rxq = &trans_pcie->rxq[queue];
 
 restart:
 	spin_lock(&rxq->lock);
@@ -1425,7 +1434,7 @@ restart:
 			goto out;
 
 		IWL_DEBUG_RX(trans, "Q %d: HW = %d, SW = %d\n", rxq->id, r, i);
-		iwl_pcie_rx_handle_rb(trans, rxq, rxb, emergency);
+		iwl_pcie_rx_handle_rb(trans, rxq, rxb, emergency, i);
 
 		i = (i + 1) & (rxq->queue_size - 1);
 
@@ -1773,26 +1782,26 @@ irqreturn_t iwl_pcie_irq_handler(int irq, void *dev_id)
 		goto out;
 	}
 
-	if (iwl_have_debug_level(IWL_DL_ISR)) {
-		/* NIC fires this, but we don't use it, redundant with WAKEUP */
-		if (inta & CSR_INT_BIT_SCD) {
-			IWL_DEBUG_ISR(trans,
-				      "Scheduler finished to transmit the frame/frames.\n");
-			isr_stats->sch++;
+	/* NIC fires this, but we don't use it, redundant with WAKEUP */
+	if (inta & CSR_INT_BIT_SCD) {
+		IWL_DEBUG_ISR(trans,
+			      "Scheduler finished to transmit the frame/frames.\n");
+		isr_stats->sch++;
+	}
+
+	/* Alive notification via Rx interrupt will do the real work */
+	if (inta & CSR_INT_BIT_ALIVE) {
+		IWL_DEBUG_ISR(trans, "Alive interrupt\n");
+		isr_stats->alive++;
+		if (trans->cfg->gen2) {
+			/*
+			 * We can restock, since firmware configured
+			 * the RFH
+			 */
+			iwl_pcie_rxmq_restock(trans, trans_pcie->rxq);
 		}
 
-		/* Alive notification via Rx interrupt will do the real work */
-		if (inta & CSR_INT_BIT_ALIVE) {
-			IWL_DEBUG_ISR(trans, "Alive interrupt\n");
-			isr_stats->alive++;
-			if (trans->cfg->gen2) {
-				/*
-				 * We can restock, since firmware configured
-				 * the RFH
-				 */
-				iwl_pcie_rxmq_restock(trans, trans_pcie->rxq);
-			}
-		}
+		handled |= CSR_INT_BIT_ALIVE;
 	}
 
 	/* Safely ignore these bits for debug checks below */
@@ -1911,6 +1920,9 @@ irqreturn_t iwl_pcie_irq_handler(int irq, void *dev_id)
 	/* Re-enable RF_KILL if it occurred */
 	else if (handled & CSR_INT_BIT_RF_KILL)
 		iwl_enable_rfkill_int(trans);
+	/* Re-enable the ALIVE / Rx interrupt if it occurred */
+	else if (handled & (CSR_INT_BIT_ALIVE | CSR_INT_BIT_FH_RX))
+		iwl_enable_fw_load_int_ctx_info(trans);
 	spin_unlock(&trans_pcie->irq_lock);
 
 out:
@@ -2055,10 +2067,18 @@ irqreturn_t iwl_pcie_irq_msix_handler(int irq, void *dev_id)
 		return IRQ_NONE;
 	}
 
-	if (iwl_have_debug_level(IWL_DL_ISR))
-		IWL_DEBUG_ISR(trans, "ISR inta_fh 0x%08x, enabled 0x%08x\n",
-			      inta_fh,
+	if (iwl_have_debug_level(IWL_DL_ISR)) {
+		IWL_DEBUG_ISR(trans,
+			      "ISR inta_fh 0x%08x, enabled (sw) 0x%08x (hw) 0x%08x\n",
+			      inta_fh, trans_pcie->fh_mask,
 			      iwl_read32(trans, CSR_MSIX_FH_INT_MASK_AD));
+		if (inta_fh & ~trans_pcie->fh_mask)
+			IWL_DEBUG_ISR(trans,
+				      "We got a masked interrupt (0x%08x)\n",
+				      inta_fh & ~trans_pcie->fh_mask);
+	}
+
+	inta_fh &= trans_pcie->fh_mask;
 
 	if ((trans_pcie->shared_vec_mask & IWL_SHARED_IRQ_NON_RX) &&
 	    inta_fh & MSIX_FH_INT_CAUSES_Q0) {
@@ -2098,11 +2118,18 @@ irqreturn_t iwl_pcie_irq_msix_handler(int irq, void *dev_id)
 	}
 
 	/* After checking FH register check HW register */
-	if (iwl_have_debug_level(IWL_DL_ISR))
+	if (iwl_have_debug_level(IWL_DL_ISR)) {
 		IWL_DEBUG_ISR(trans,
-			      "ISR inta_hw 0x%08x, enabled 0x%08x\n",
-			      inta_hw,
+			      "ISR inta_hw 0x%08x, enabled (sw) 0x%08x (hw) 0x%08x\n",
+			      inta_hw, trans_pcie->hw_mask,
 			      iwl_read32(trans, CSR_MSIX_HW_INT_MASK_AD));
+		if (inta_hw & ~trans_pcie->hw_mask)
+			IWL_DEBUG_ISR(trans,
+				      "We got a masked interrupt 0x%08x\n",
+				      inta_hw & ~trans_pcie->hw_mask);
+	}
+
+	inta_hw &= trans_pcie->hw_mask;
 
 	/* Alive notification via Rx interrupt will do the real work */
 	if (inta_hw & MSIX_HW_INT_CAUSES_REG_ALIVE) {

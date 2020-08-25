@@ -228,6 +228,37 @@ static void regulator_unlock_supply(struct regulator_dev *rdev)
 }
 
 /**
+ * of_get_child_regulator - get a child regulator device node
+ * based on supply name
+ * @parent: Parent device node
+ * @prop_name: Combination regulator supply name and "-supply"
+ *
+ * Traverse all child nodes.
+ * Extract the child regulator device node corresponding to the supply name.
+ * returns the device node corresponding to the regulator if found, else
+ * returns NULL.
+ */
+static struct device_node *of_get_child_regulator(struct device_node *parent,
+						  const char *prop_name)
+{
+	struct device_node *regnode = NULL;
+	struct device_node *child = NULL;
+
+	for_each_child_of_node(parent, child) {
+		regnode = of_parse_phandle(child, prop_name, 0);
+
+		if (!regnode) {
+			regnode = of_get_child_regulator(child, prop_name);
+			if (regnode)
+				return regnode;
+		} else {
+			return regnode;
+		}
+	}
+	return NULL;
+}
+
+/**
  * of_get_regulator - get a regulator device node based on supply name
  * @dev: Device pointer for the consumer (of regulator) device
  * @supply: regulator supply name
@@ -239,14 +270,18 @@ static void regulator_unlock_supply(struct regulator_dev *rdev)
 static struct device_node *of_get_regulator(struct device *dev, const char *supply)
 {
 	struct device_node *regnode = NULL;
-	char prop_name[32]; /* 32 is max size of property name */
+	char prop_name[256];
 
 	dev_dbg(dev, "Looking up %s-supply from device tree\n", supply);
 
-	snprintf(prop_name, 32, "%s-supply", supply);
+	snprintf(prop_name, sizeof(prop_name), "%s-supply", supply);
 	regnode = of_parse_phandle(dev->of_node, prop_name, 0);
 
 	if (!regnode) {
+		regnode = of_get_child_regulator(dev->of_node, prop_name);
+		if (regnode)
+			return regnode;
+
 		dev_dbg(dev, "Looking up %s property in node %pOF failed\n",
 				prop_name, dev->of_node);
 		return NULL;
@@ -731,7 +766,7 @@ static int drms_uA_update(struct regulator_dev *rdev)
 {
 	struct regulator *sibling;
 	int current_uA = 0, output_uV, input_uV, err;
-	unsigned int mode;
+	unsigned int regulator_curr_mode, mode;
 
 	lockdep_assert_held_once(&rdev->mutex);
 
@@ -790,6 +825,14 @@ static int drms_uA_update(struct regulator_dev *rdev)
 			rdev_err(rdev, "failed to get optimum mode @ %d uA %d -> %d uV\n",
 				 current_uA, input_uV, output_uV);
 			return err;
+		}
+		/* return if the same mode is requested */
+		if (rdev->desc->ops->get_mode) {
+			regulator_curr_mode = rdev->desc->ops->get_mode(rdev);
+			if (regulator_curr_mode == mode)
+				return 0;
+		} else {
+			return 0;
 		}
 
 		err = rdev->desc->ops->set_mode(rdev, mode);
@@ -1623,16 +1666,6 @@ static int regulator_resolve_supply(struct regulator_dev *rdev)
 		return ret;
 	}
 
-	/* Cascade always-on state to supply */
-	if (_regulator_is_enabled(rdev)) {
-		ret = regulator_enable(rdev->supply);
-		if (ret < 0) {
-			_regulator_put(rdev->supply);
-			rdev->supply = NULL;
-			return ret;
-		}
-	}
-
 	return 0;
 }
 
@@ -1724,8 +1757,8 @@ struct regulator *_regulator_get(struct device *dev, const char *id,
 	regulator = create_regulator(rdev, dev, id);
 	if (regulator == NULL) {
 		regulator = ERR_PTR(-ENOMEM);
-		put_device(&rdev->dev);
 		module_put(rdev->owner);
+		put_device(&rdev->dev);
 		return regulator;
 	}
 
@@ -1851,13 +1884,13 @@ static void _regulator_put(struct regulator *regulator)
 
 	rdev->open_count--;
 	rdev->exclusive = 0;
-	put_device(&rdev->dev);
 	regulator_unlock(rdev);
 
 	kfree_const(regulator->supply_name);
 	kfree(regulator);
 
 	module_put(rdev->owner);
+	put_device(&rdev->dev);
 }
 
 /**
@@ -4403,6 +4436,8 @@ regulator_register(const struct regulator_desc *regulator_desc,
 	}
 
 	rdev_init_debugfs(rdev);
+	rdev->proxy_consumer = regulator_proxy_consumer_register(dev,
+							config->of_node);
 
 	/* try to resolve regulators supply since a new one was registered */
 	class_for_each_device(&regulator_class, NULL, NULL,
@@ -4442,6 +4477,7 @@ void regulator_unregister(struct regulator_dev *rdev)
 			regulator_disable(rdev->supply);
 		regulator_put(rdev->supply);
 	}
+	regulator_proxy_consumer_unregister(rdev->proxy_consumer);
 	mutex_lock(&regulator_list_mutex);
 	debugfs_remove_recursive(rdev->debugfs);
 	flush_work(&rdev->disable_work.work);
@@ -4453,6 +4489,30 @@ void regulator_unregister(struct regulator_dev *rdev)
 	device_unregister(&rdev->dev);
 }
 EXPORT_SYMBOL_GPL(regulator_unregister);
+
+static int regulator_sync_supply(struct device *dev, void *data)
+{
+	struct regulator_dev *rdev = dev_to_rdev(dev);
+
+	if (rdev->dev.parent != data)
+		return 0;
+
+	if (!rdev->proxy_consumer)
+		return 0;
+
+	dev_dbg(data, "Removing regulator proxy consumer requests\n");
+	regulator_proxy_consumer_unregister(rdev->proxy_consumer);
+	rdev->proxy_consumer = NULL;
+
+	return 0;
+}
+
+void regulator_sync_state(struct device *dev)
+{
+	class_for_each_device(&regulator_class, NULL, dev,
+			      regulator_sync_supply);
+}
+EXPORT_SYMBOL_GPL(regulator_sync_state);
 
 #ifdef CONFIG_SUSPEND
 static int _regulator_suspend(struct device *dev, void *data)
@@ -4789,7 +4849,7 @@ static int __init regulator_init(void)
 /* init early to allow our consumers to complete system booting */
 core_initcall(regulator_init);
 
-static int __init regulator_late_cleanup(struct device *dev, void *data)
+static int regulator_late_cleanup(struct device *dev, void *data)
 {
 	struct regulator_dev *rdev = dev_to_rdev(dev);
 	const struct regulator_ops *ops = rdev->desc->ops;
@@ -4838,17 +4898,8 @@ unlock:
 	return 0;
 }
 
-static int __init regulator_init_complete(void)
+static void regulator_init_complete_work_function(struct work_struct *work)
 {
-	/*
-	 * Since DT doesn't provide an idiomatic mechanism for
-	 * enabling full constraints and since it's much more natural
-	 * with DT to provide them just assume that a DT enabled
-	 * system has full constraints.
-	 */
-	if (of_have_populated_dt())
-		has_full_constraints = true;
-
 	/*
 	 * Regulators may had failed to resolve their input supplies
 	 * when were registered, either because the input supply was
@@ -4866,6 +4917,35 @@ static int __init regulator_init_complete(void)
 	 */
 	class_for_each_device(&regulator_class, NULL, NULL,
 			      regulator_late_cleanup);
+}
+
+static DECLARE_DELAYED_WORK(regulator_init_complete_work,
+			    regulator_init_complete_work_function);
+
+static int __init regulator_init_complete(void)
+{
+	/*
+	 * Since DT doesn't provide an idiomatic mechanism for
+	 * enabling full constraints and since it's much more natural
+	 * with DT to provide them just assume that a DT enabled
+	 * system has full constraints.
+	 */
+	if (of_have_populated_dt())
+		has_full_constraints = true;
+
+	/*
+	 * We punt completion for an arbitrary amount of time since
+	 * systems like distros will load many drivers from userspace
+	 * so consumers might not always be ready yet, this is
+	 * particularly an issue with laptops where this might bounce
+	 * the display off then on.  Ideally we'd get a notification
+	 * from userspace when this happens but we don't so just wait
+	 * a bit and hope we waited long enough.  It'd be better if
+	 * we'd only do this on systems that need it, and a kernel
+	 * command line option might be useful.
+	 */
+	schedule_delayed_work(&regulator_init_complete_work,
+			      msecs_to_jiffies(30000));
 
 	class_for_each_device(&regulator_class, NULL, NULL,
 			      regulator_register_fill_coupling_array);

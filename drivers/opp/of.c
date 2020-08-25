@@ -113,11 +113,9 @@ static int opp_parse_supplies(struct dev_pm_opp *opp, struct device *dev,
 			      struct opp_table *opp_table)
 {
 	u32 *microvolt, *microamp = NULL;
-	int supplies, vcount, icount, ret, i, j;
+	int supplies = opp_table->regulator_count, vcount, icount, ret, i, j;
 	struct property *prop = NULL;
 	char name[NAME_MAX];
-
-	supplies = opp_table->regulator_count ? opp_table->regulator_count : 1;
 
 	/* Search for "opp-microvolt-<name>" */
 	if (opp_table->prop_name) {
@@ -133,13 +131,27 @@ static int opp_parse_supplies(struct dev_pm_opp *opp, struct device *dev,
 
 		/* Missing property isn't a problem, but an invalid entry is */
 		if (!prop) {
-			if (!opp_table->regulator_count)
+			if (unlikely(supplies == -1)) {
+				/* Initialize regulator_count */
+				opp_table->regulator_count = 0;
+				return 0;
+			}
+
+			if (!supplies)
 				return 0;
 
 			dev_err(dev, "%s: opp-microvolt missing although OPP managing regulators\n",
 				__func__);
 			return -EINVAL;
 		}
+	}
+
+	if (unlikely(supplies == -1)) {
+		/* Initialize regulator_count */
+		supplies = opp_table->regulator_count = 1;
+	} else if (unlikely(!supplies)) {
+		dev_err(dev, "%s: opp-microvolt wasn't expected\n", __func__);
+		return -EINVAL;
 	}
 
 	vcount = of_property_count_u32_elems(opp->np, name);
@@ -778,3 +790,63 @@ struct device_node *dev_pm_opp_get_of_node(struct dev_pm_opp *opp)
 	return of_node_get(opp->np);
 }
 EXPORT_SYMBOL_GPL(dev_pm_opp_get_of_node);
+
+/**
+ * of_dev_pm_opp_get_cpu_power() - Estimates the power of a CPU
+ * @mW:		pointer to the power estimate in milli-watts
+ * @KHz:	pointer to the OPP's frequency, in kilo-hertz
+ * @cpu:	CPU for which power needs to be estimated
+ *
+ * Computes the power estimated by @CPU at the first OPP above @KHz (ceil),
+ * and updates @KHz and @mW accordingly.
+ *
+ * The power is estimated as P = C * V^2 * f, with C the CPU's capacitance
+ * (read from the 'dynamic-power-coefficient' devicetree binding) and V and f
+ * respectively the voltage and frequency of the OPP.
+ *
+ * Return: -ENODEV if the CPU device cannot be found, -EINVAL if the power
+ * calculation failed because of missing parameters, 0 otherwise.
+ */
+int of_dev_pm_opp_get_cpu_power(unsigned long *mW, unsigned long *KHz, int cpu)
+{
+	unsigned long mV, Hz, MHz;
+	struct device *cpu_dev;
+	struct dev_pm_opp *opp;
+	struct device_node *np;
+	u32 cap;
+	u64 tmp;
+	int ret;
+
+	cpu_dev = get_cpu_device(cpu);
+	if (!cpu_dev)
+		return -ENODEV;
+
+	np = of_node_get(cpu_dev->of_node);
+	if (!np)
+		return -EINVAL;
+
+	ret = of_property_read_u32(np, "dynamic-power-coefficient", &cap);
+	of_node_put(np);
+	if (ret)
+		return -EINVAL;
+
+	Hz = *KHz * 1000;
+	opp = dev_pm_opp_find_freq_ceil(cpu_dev, &Hz);
+	if (IS_ERR(opp))
+		return -EINVAL;
+
+	mV = dev_pm_opp_get_voltage(opp) / 1000;
+	dev_pm_opp_put(opp);
+	if (!mV)
+		return -EINVAL;
+
+	MHz = Hz / 1000000;
+	tmp = (u64)cap * mV * mV * MHz;
+	do_div(tmp, 1000000000);
+
+	*mW = (unsigned long)tmp;
+	*KHz = Hz / 1000;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(of_dev_pm_opp_get_cpu_power);

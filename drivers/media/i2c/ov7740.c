@@ -510,7 +510,7 @@ static int ov7740_set_ctrl(struct v4l2_ctrl *ctrl)
 	int ret;
 	u8 val = 0;
 
-	if (pm_runtime_get_if_in_use(&client->dev) <= 0)
+	if (!pm_runtime_get_if_in_use(&client->dev))
 		return 0;
 
 	switch (ctrl->id) {
@@ -761,7 +761,11 @@ static int ov7740_try_fmt_internal(struct v4l2_subdev *sd,
 
 		fsize++;
 	}
-
+	if (i >= ARRAY_SIZE(ov7740_framesizes)) {
+		fsize = &ov7740_framesizes[0];
+		fmt->width = fsize->width;
+		fmt->height = fsize->height;
+	}
 	if (ret_frmsize != NULL)
 		*ret_frmsize = fsize;
 

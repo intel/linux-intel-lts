@@ -278,7 +278,8 @@ drm_internal_framebuffer_create(struct drm_device *dev,
 	struct drm_framebuffer *fb;
 	int ret;
 
-	if (r->flags & ~(DRM_MODE_FB_INTERLACED | DRM_MODE_FB_MODIFIERS)) {
+	if (r->flags & ~(DRM_MODE_FB_INTERLACED | DRM_MODE_FB_MODIFIERS |
+			DRM_MODE_FB_SECURE)) {
 		DRM_DEBUG_KMS("bad framebuffer flags 0x%08x\n", r->flags);
 		return ERR_PTR(-EINVAL);
 	}
@@ -793,7 +794,7 @@ static int atomic_remove_fb(struct drm_framebuffer *fb)
 	struct drm_device *dev = fb->dev;
 	struct drm_atomic_state *state;
 	struct drm_plane *plane;
-	struct drm_connector *conn;
+	struct drm_connector *conn __maybe_unused;
 	struct drm_connector_state *conn_state;
 	int i, ret;
 	unsigned plane_mask;

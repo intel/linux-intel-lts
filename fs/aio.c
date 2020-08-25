@@ -169,6 +169,7 @@ struct fsync_iocb {
 	struct file		*file;
 	struct work_struct	work;
 	bool			datasync;
+	struct cred		*creds;
 };
 
 struct poll_iocb {
@@ -1579,8 +1580,11 @@ static ssize_t aio_write(struct kiocb *req, const struct iocb *iocb,
 static void aio_fsync_work(struct work_struct *work)
 {
 	struct aio_kiocb *iocb = container_of(work, struct aio_kiocb, fsync.work);
+	const struct cred *old_cred = override_creds(iocb->fsync.creds);
 
 	iocb->ki_res.res = vfs_fsync(iocb->fsync.file, iocb->fsync.datasync);
+	revert_creds(old_cred);
+	put_cred(iocb->fsync.creds);
 	iocb_put(iocb);
 }
 
@@ -1594,10 +1598,22 @@ static int aio_fsync(struct fsync_iocb *req, const struct iocb *iocb,
 	if (unlikely(!req->file->f_op->fsync))
 		return -EINVAL;
 
+	req->creds = prepare_creds();
+	if (!req->creds)
+		return -ENOMEM;
+
 	req->datasync = datasync;
 	INIT_WORK(&req->work, aio_fsync_work);
 	schedule_work(&req->work);
 	return 0;
+}
+
+static void aio_poll_put_work(struct work_struct *work)
+{
+	struct poll_iocb *req = container_of(work, struct poll_iocb, work);
+	struct aio_kiocb *iocb = container_of(req, struct aio_kiocb, poll);
+
+	iocb_put(iocb);
 }
 
 static void aio_poll_complete_work(struct work_struct *work)
@@ -1664,6 +1680,8 @@ static int aio_poll_wake(struct wait_queue_entry *wait, unsigned mode, int sync,
 	list_del_init(&req->wait.entry);
 
 	if (mask && spin_trylock_irqsave(&iocb->ki_ctx->ctx_lock, flags)) {
+		struct kioctx *ctx = iocb->ki_ctx;
+
 		/*
 		 * Try to complete the iocb inline if we can. Use
 		 * irqsave/irqrestore because not all filesystems (e.g. fuse)
@@ -1673,8 +1691,14 @@ static int aio_poll_wake(struct wait_queue_entry *wait, unsigned mode, int sync,
 		list_del(&iocb->ki_list);
 		iocb->ki_res.res = mangle_poll(mask);
 		req->done = true;
-		spin_unlock_irqrestore(&iocb->ki_ctx->ctx_lock, flags);
-		iocb_put(iocb);
+		if (iocb->ki_eventfd && eventfd_signal_count()) {
+			iocb = NULL;
+			INIT_WORK(&req->work, aio_poll_put_work);
+			schedule_work(&req->work);
+		}
+		spin_unlock_irqrestore(&ctx->ctx_lock, flags);
+		if (iocb)
+			iocb_put(iocb);
 	} else {
 		schedule_work(&req->work);
 	}

@@ -23,7 +23,7 @@ static void mesh_path_free_rcu(struct mesh_table *tbl, struct mesh_path *mpath);
 static u32 mesh_table_hash(const void *addr, u32 len, u32 seed)
 {
 	/* Use last four bytes of hw addr as hash index */
-	return jhash_1word(*(u32 *)(addr+2), seed);
+	return jhash_1word(__get_unaligned_cpu32((u8 *)addr + 2), seed);
 }
 
 static const struct rhashtable_params mesh_rht_params = {
@@ -532,6 +532,7 @@ static void mesh_path_free_rcu(struct mesh_table *tbl,
 	del_timer_sync(&mpath->timer);
 	atomic_dec(&sdata->u.mesh.mpaths);
 	atomic_dec(&tbl->entries);
+	mesh_path_flush_pending(mpath);
 	kfree_rcu(mpath, rcu);
 }
 
@@ -627,7 +628,7 @@ static int table_path_del(struct mesh_table *tbl,
 	spin_lock_bh(&tbl->walk_lock);
 	mpath = rhashtable_lookup_fast(&tbl->rhead, addr, mesh_rht_params);
 	if (!mpath) {
-		rcu_read_unlock();
+		spin_unlock_bh(&tbl->walk_lock);
 		return -ENXIO;
 	}
 

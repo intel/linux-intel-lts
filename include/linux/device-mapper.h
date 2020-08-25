@@ -62,7 +62,8 @@ typedef int (*dm_clone_and_map_request_fn) (struct dm_target *ti,
 					    struct request *rq,
 					    union map_info *map_context,
 					    struct request **clone);
-typedef void (*dm_release_clone_request_fn) (struct request *clone);
+typedef void (*dm_release_clone_request_fn) (struct request *clone,
+					     union map_info *map_context);
 
 /*
  * Returns:
@@ -314,6 +315,12 @@ struct dm_target {
 	 * on max_io_len boundary.
 	 */
 	bool split_discard_bios:1;
+
+	/*
+	 * Set if inline crypto capabilities from this target's underlying
+	 * device(s) can be exposed via the device-mapper device.
+	 */
+	bool may_passthrough_inline_crypto:1;
 };
 
 /* Each target can link one of these into the table */
@@ -418,6 +425,7 @@ const char *dm_device_name(struct mapped_device *md);
 int dm_copy_name_and_uuid(struct mapped_device *md, char *name, char *uuid);
 struct gendisk *dm_disk(struct mapped_device *md);
 int dm_suspended(struct dm_target *ti);
+int dm_post_suspending(struct dm_target *ti);
 int dm_noflush_suspending(struct dm_target *ti);
 void dm_accept_partial_bio(struct bio *bio, unsigned n_sectors);
 void dm_remap_zone_report(struct dm_target *ti, struct bio *bio,

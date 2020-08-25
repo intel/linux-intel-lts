@@ -18,6 +18,7 @@
 #include <linux/string.h>
 #include <linux/mm.h>
 #include <linux/fs.h>
+#include <linux/fscrypt.h>
 #include <linux/fsnotify.h>
 #include <linux/slab.h>
 #include <linux/init.h>
@@ -257,24 +258,10 @@ static void __d_free(struct rcu_head *head)
 	kmem_cache_free(dentry_cache, dentry); 
 }
 
-static void __d_free_external_name(struct rcu_head *head)
-{
-	struct external_name *name = container_of(head, struct external_name,
-						  u.head);
-
-	mod_node_page_state(page_pgdat(virt_to_page(name)),
-			    NR_INDIRECTLY_RECLAIMABLE_BYTES,
-			    -ksize(name));
-
-	kfree(name);
-}
-
 static void __d_free_external(struct rcu_head *head)
 {
 	struct dentry *dentry = container_of(head, struct dentry, d_u.d_rcu);
-
-	__d_free_external_name(&external_name(dentry)->u.head);
-
+	kfree(external_name(dentry));
 	kmem_cache_free(dentry_cache, dentry);
 }
 
@@ -306,7 +293,7 @@ void release_dentry_name_snapshot(struct name_snapshot *name)
 		struct external_name *p;
 		p = container_of(name->name, struct external_name, name[0]);
 		if (unlikely(atomic_dec_and_test(&p->u.count)))
-			call_rcu(&p->u.head, __d_free_external_name);
+			kfree_rcu(p, u.head);
 	}
 }
 EXPORT_SYMBOL(release_dentry_name_snapshot);
@@ -344,7 +331,7 @@ static void dentry_free(struct dentry *dentry)
 		}
 	}
 	/* if dentry was never visible to RCU, immediate free is OK */
-	if (!(dentry->d_flags & DCACHE_RCUACCESS))
+	if (dentry->d_flags & DCACHE_NORCU)
 		__d_free(&dentry->d_u.d_rcu);
 	else
 		call_rcu(&dentry->d_u.d_rcu, __d_free);
@@ -1602,7 +1589,6 @@ EXPORT_SYMBOL(d_invalidate);
  
 struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 {
-	struct external_name *ext = NULL;
 	struct dentry *dentry;
 	char *dname;
 	int err;
@@ -1623,14 +1609,15 @@ struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 		dname = dentry->d_iname;
 	} else if (name->len > DNAME_INLINE_LEN-1) {
 		size_t size = offsetof(struct external_name, name[1]);
-
-		ext = kmalloc(size + name->len, GFP_KERNEL_ACCOUNT);
-		if (!ext) {
+		struct external_name *p = kmalloc(size + name->len,
+						  GFP_KERNEL_ACCOUNT |
+						  __GFP_RECLAIMABLE);
+		if (!p) {
 			kmem_cache_free(dentry_cache, dentry); 
 			return NULL;
 		}
-		atomic_set(&ext->u.count, 1);
-		dname = ext->name;
+		atomic_set(&p->u.count, 1);
+		dname = p->name;
 	} else  {
 		dname = dentry->d_iname;
 	}	
@@ -1669,12 +1656,6 @@ struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 		}
 	}
 
-	if (unlikely(ext)) {
-		pg_data_t *pgdat = page_pgdat(virt_to_page(ext));
-		mod_node_page_state(pgdat, NR_INDIRECTLY_RECLAIMABLE_BYTES,
-				    ksize(ext));
-	}
-
 	this_cpu_inc(nr_dentry);
 
 	return dentry;
@@ -1694,7 +1675,6 @@ struct dentry *d_alloc(struct dentry * parent, const struct qstr *name)
 	struct dentry *dentry = __d_alloc(parent->d_sb, name);
 	if (!dentry)
 		return NULL;
-	dentry->d_flags |= DCACHE_RCUACCESS;
 	spin_lock(&parent->d_lock);
 	/*
 	 * don't need child lock because it is not subject
@@ -1719,7 +1699,7 @@ struct dentry *d_alloc_cursor(struct dentry * parent)
 {
 	struct dentry *dentry = d_alloc_anon(parent->d_sb);
 	if (dentry) {
-		dentry->d_flags |= DCACHE_RCUACCESS | DCACHE_DENTRY_CURSOR;
+		dentry->d_flags |= DCACHE_DENTRY_CURSOR;
 		dentry->d_parent = dget(parent);
 	}
 	return dentry;
@@ -1732,10 +1712,17 @@ struct dentry *d_alloc_cursor(struct dentry * parent)
  *
  * For a filesystem that just pins its dentries in memory and never
  * performs lookups at all, return an unhashed IS_ROOT dentry.
+ * This is used for pipes, sockets et.al. - the stuff that should
+ * never be anyone's children or parents.  Unlike all other
+ * dentries, these will not have RCU delay between dropping the
+ * last reference and freeing them.
  */
 struct dentry *d_alloc_pseudo(struct super_block *sb, const struct qstr *name)
 {
-	return __d_alloc(sb, name);
+	struct dentry *dentry = __d_alloc(sb, name);
+	if (likely(dentry))
+		dentry->d_flags |= DCACHE_NORCU;
+	return dentry;
 }
 EXPORT_SYMBOL(d_alloc_pseudo);
 
@@ -1899,12 +1886,10 @@ struct dentry *d_make_root(struct inode *root_inode)
 
 	if (root_inode) {
 		res = d_alloc_anon(root_inode->i_sb);
-		if (res) {
-			res->d_flags |= DCACHE_RCUACCESS;
+		if (res)
 			d_instantiate(res, root_inode);
-		} else {
+		else
 			iput(root_inode);
-		}
 	}
 	return res;
 }
@@ -2703,7 +2688,7 @@ static void copy_name(struct dentry *dentry, struct dentry *target)
 		dentry->d_name.hash_len = target->d_name.hash_len;
 	}
 	if (old_name && likely(atomic_dec_and_test(&old_name->u.count)))
-		call_rcu(&old_name->u.head, __d_free_external_name);
+		kfree_rcu(old_name, u.head);
 }
 
 /*
@@ -2769,9 +2754,7 @@ static void __d_move(struct dentry *dentry, struct dentry *target,
 		copy_name(dentry, target);
 		target->d_hash.pprev = NULL;
 		dentry->d_parent->d_lockref.count++;
-		if (dentry == old_parent)
-			dentry->d_flags |= DCACHE_RCUACCESS;
-		else
+		if (dentry != old_parent) /* wasn't IS_ROOT */
 			WARN_ON(!--old_parent->d_lockref.count);
 	} else {
 		target->d_parent = old_parent;
@@ -2783,6 +2766,7 @@ static void __d_move(struct dentry *dentry, struct dentry *target,
 	list_move(&dentry->d_child, &dentry->d_parent->d_subdirs);
 	__d_rehash(dentry);
 	fsnotify_update_flags(dentry);
+	fscrypt_handle_d_move(dentry);
 
 	write_seqcount_end(&target->d_seq);
 	write_seqcount_end(&dentry->d_seq);

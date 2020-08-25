@@ -43,17 +43,25 @@ int rtl8366_set_vlan(struct realtek_smi *smi, int vid, u32 member,
 	int ret;
 	int i;
 
+	dev_dbg(smi->dev,
+		"setting VLAN%d 4k members: 0x%02x, untagged: 0x%02x\n",
+		vid, member, untag);
+
 	/* Update the 4K table */
 	ret = smi->ops->get_vlan_4k(smi, vid, &vlan4k);
 	if (ret)
 		return ret;
 
-	vlan4k.member = member;
-	vlan4k.untag = untag;
+	vlan4k.member |= member;
+	vlan4k.untag |= untag;
 	vlan4k.fid = fid;
 	ret = smi->ops->set_vlan_4k(smi, &vlan4k);
 	if (ret)
 		return ret;
+
+	dev_dbg(smi->dev,
+		"resulting VLAN%d 4k members: 0x%02x, untagged: 0x%02x\n",
+		vid, vlan4k.member, vlan4k.untag);
 
 	/* Try to find an existing MC entry for this VID */
 	for (i = 0; i < smi->num_vlan_mc; i++) {
@@ -65,11 +73,16 @@ int rtl8366_set_vlan(struct realtek_smi *smi, int vid, u32 member,
 
 		if (vid == vlanmc.vid) {
 			/* update the MC entry */
-			vlanmc.member = member;
-			vlanmc.untag = untag;
+			vlanmc.member |= member;
+			vlanmc.untag |= untag;
 			vlanmc.fid = fid;
 
 			ret = smi->ops->set_vlan_mc(smi, i, &vlanmc);
+
+			dev_dbg(smi->dev,
+				"resulting VLAN%d MC members: 0x%02x, untagged: 0x%02x\n",
+				vid, vlanmc.member, vlanmc.untag);
+
 			break;
 		}
 	}
@@ -307,7 +320,8 @@ int rtl8366_vlan_filtering(struct dsa_switch *ds, int port, bool vlan_filtering)
 	struct rtl8366_vlan_4k vlan4k;
 	int ret;
 
-	if (!smi->ops->is_vlan_valid(smi, port))
+	/* Use VLAN nr port + 1 since VLAN0 is not valid */
+	if (!smi->ops->is_vlan_valid(smi, port + 1))
 		return -EINVAL;
 
 	dev_info(smi->dev, "%s filtering on port %d\n",
@@ -318,12 +332,12 @@ int rtl8366_vlan_filtering(struct dsa_switch *ds, int port, bool vlan_filtering)
 	 * The hardware support filter ID (FID) 0..7, I have no clue how to
 	 * support this in the driver when the callback only says on/off.
 	 */
-	ret = smi->ops->get_vlan_4k(smi, port, &vlan4k);
+	ret = smi->ops->get_vlan_4k(smi, port + 1, &vlan4k);
 	if (ret)
 		return ret;
 
 	/* Just set the filter to FID 1 for now then */
-	ret = rtl8366_set_vlan(smi, port,
+	ret = rtl8366_set_vlan(smi, port + 1,
 			       vlan4k.member,
 			       vlan4k.untag,
 			       1);
@@ -338,10 +352,12 @@ int rtl8366_vlan_prepare(struct dsa_switch *ds, int port,
 			 const struct switchdev_obj_port_vlan *vlan)
 {
 	struct realtek_smi *smi = ds->priv;
+	u16 vid;
 	int ret;
 
-	if (!smi->ops->is_vlan_valid(smi, port))
-		return -EINVAL;
+	for (vid = vlan->vid_begin; vid < vlan->vid_end; vid++)
+		if (!smi->ops->is_vlan_valid(smi, vid))
+			return -EINVAL;
 
 	dev_info(smi->dev, "prepare VLANs %04x..%04x\n",
 		 vlan->vid_begin, vlan->vid_end);
@@ -369,8 +385,9 @@ void rtl8366_vlan_add(struct dsa_switch *ds, int port,
 	u16 vid;
 	int ret;
 
-	if (!smi->ops->is_vlan_valid(smi, port))
-		return;
+	for (vid = vlan->vid_begin; vid < vlan->vid_end; vid++)
+		if (!smi->ops->is_vlan_valid(smi, vid))
+			return;
 
 	dev_info(smi->dev, "add VLAN on port %d, %s, %s\n",
 		 port,
@@ -380,7 +397,7 @@ void rtl8366_vlan_add(struct dsa_switch *ds, int port,
 	if (dsa_is_dsa_port(ds, port) || dsa_is_cpu_port(ds, port))
 		dev_err(smi->dev, "port is DSA or CPU port\n");
 
-	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid) {
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
 		int pvid_val = 0;
 
 		dev_info(smi->dev, "add VLAN %04x\n", vid);
@@ -403,13 +420,13 @@ void rtl8366_vlan_add(struct dsa_switch *ds, int port,
 			if (ret < 0)
 				return;
 		}
-	}
 
-	ret = rtl8366_set_vlan(smi, port, member, untag, 0);
-	if (ret)
-		dev_err(smi->dev,
-			"failed to set up VLAN %04x",
-			vid);
+		ret = rtl8366_set_vlan(smi, vid, member, untag, 0);
+		if (ret)
+			dev_err(smi->dev,
+				"failed to set up VLAN %04x",
+				vid);
+	}
 }
 EXPORT_SYMBOL_GPL(rtl8366_vlan_add);
 

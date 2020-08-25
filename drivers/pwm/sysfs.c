@@ -50,7 +50,7 @@ static ssize_t period_show(struct device *child,
 
 	pwm_get_state(pwm, &state);
 
-	return sprintf(buf, "%u\n", state.period);
+	return sprintf(buf, "%llu\n", state.period);
 }
 
 static ssize_t period_store(struct device *child,
@@ -85,7 +85,7 @@ static ssize_t duty_cycle_show(struct device *child,
 
 	pwm_get_state(pwm, &state);
 
-	return sprintf(buf, "%u\n", state.duty_cycle);
+	return sprintf(buf, "%llu\n", state.duty_cycle);
 }
 
 static ssize_t duty_cycle_store(struct device *child,
@@ -220,7 +220,7 @@ static ssize_t capture_show(struct device *child,
 	if (ret)
 		return ret;
 
-	return sprintf(buf, "%u %u\n", result.period, result.duty_cycle);
+	return sprintf(buf, "%llu %llu\n", result.period, result.duty_cycle);
 }
 
 static DEVICE_ATTR_RW(period);
@@ -263,7 +263,6 @@ static int pwm_export_child(struct device *parent, struct pwm_device *pwm)
 	export->pwm = pwm;
 	mutex_init(&export->lock);
 
-	export->child.class = parent->class;
 	export->child.release = pwm_export_release;
 	export->child.parent = parent;
 	export->child.devt = MKDEV(0, 0);
@@ -401,19 +400,6 @@ void pwmchip_sysfs_export(struct pwm_chip *chip)
 void pwmchip_sysfs_unexport(struct pwm_chip *chip)
 {
 	struct device *parent;
-
-	parent = class_find_device(&pwm_class, NULL, chip,
-				   pwmchip_sysfs_match);
-	if (parent) {
-		/* for class_find_device() */
-		put_device(parent);
-		device_unregister(parent);
-	}
-}
-
-void pwmchip_sysfs_unexport_children(struct pwm_chip *chip)
-{
-	struct device *parent;
 	unsigned int i;
 
 	parent = class_find_device(&pwm_class, NULL, chip,
@@ -429,6 +415,7 @@ void pwmchip_sysfs_unexport_children(struct pwm_chip *chip)
 	}
 
 	put_device(parent);
+	device_unregister(parent);
 }
 
 static int __init pwm_sysfs_init(void)

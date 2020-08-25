@@ -277,7 +277,8 @@ xfs_dquot_set_prealloc_limits(struct xfs_dquot *dqp)
 
 /*
  * Ensure that the given in-core dquot has a buffer on disk backing it, and
- * return the buffer. This is called when the bmapi finds a hole.
+ * return the buffer locked and held. This is called when the bmapi finds a
+ * hole.
  */
 STATIC int
 xfs_dquot_disk_alloc(
@@ -355,13 +356,14 @@ xfs_dquot_disk_alloc(
 	 * If everything succeeds, the caller of this function is returned a
 	 * buffer that is locked and held to the transaction.  The caller
 	 * is responsible for unlocking any buffer passed back, either
-	 * manually or by committing the transaction.
+	 * manually or by committing the transaction.  On error, the buffer is
+	 * released and not passed back.
 	 */
 	xfs_trans_bhold(tp, bp);
 	error = xfs_defer_finish(tpp);
-	tp = *tpp;
 	if (error) {
-		xfs_buf_relse(bp);
+		xfs_trans_bhold_release(*tpp, bp);
+		xfs_trans_brelse(*tpp, bp);
 		return error;
 	}
 	*bpp = bp;
@@ -521,7 +523,6 @@ xfs_qm_dqread_alloc(
 	struct xfs_buf		**bpp)
 {
 	struct xfs_trans	*tp;
-	struct xfs_buf		*bp;
 	int			error;
 
 	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_qm_dqalloc,
@@ -529,7 +530,7 @@ xfs_qm_dqread_alloc(
 	if (error)
 		goto err;
 
-	error = xfs_dquot_disk_alloc(&tp, dqp, &bp);
+	error = xfs_dquot_disk_alloc(&tp, dqp, bpp);
 	if (error)
 		goto err_cancel;
 
@@ -539,10 +540,10 @@ xfs_qm_dqread_alloc(
 		 * Buffer was held to the transaction, so we have to unlock it
 		 * manually here because we're not passing it back.
 		 */
-		xfs_buf_relse(bp);
+		xfs_buf_relse(*bpp);
+		*bpp = NULL;
 		goto err;
 	}
-	*bpp = bp;
 	return 0;
 
 err_cancel:
@@ -1119,13 +1120,12 @@ xfs_qm_dqflush(
 	dqb = bp->b_addr + dqp->q_bufoffset;
 	ddqp = &dqb->dd_diskdq;
 
-	/*
-	 * A simple sanity check in case we got a corrupted dquot.
-	 */
-	fa = xfs_dqblk_verify(mp, dqb, be32_to_cpu(ddqp->d_id), 0);
+	/* sanity check the in-core structure before we flush */
+	fa = xfs_dquot_verify(mp, &dqp->q_core, be32_to_cpu(dqp->q_core.d_id),
+			      0);
 	if (fa) {
 		xfs_alert(mp, "corrupt dquot ID 0x%x in memory at %pS",
-				be32_to_cpu(ddqp->d_id), fa);
+				be32_to_cpu(dqp->q_core.d_id), fa);
 		xfs_buf_relse(bp);
 		xfs_dqfunlock(dqp);
 		xfs_force_shutdown(mp, SHUTDOWN_CORRUPT_INCORE);

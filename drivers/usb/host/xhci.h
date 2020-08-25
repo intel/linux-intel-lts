@@ -716,7 +716,7 @@ struct xhci_ep_ctx {
  * 4 - TRB error
  * 5-7 - reserved
  */
-#define EP_STATE_MASK		(0xf)
+#define EP_STATE_MASK		(0x7)
 #define EP_STATE_DISABLED	0
 #define EP_STATE_RUNNING	1
 #define EP_STATE_HALTED		2
@@ -1010,6 +1010,15 @@ struct xhci_virt_device {
 	u8				real_port;
 	struct xhci_interval_bw_table	*bw_table;
 	struct xhci_tt_bw_info		*tt_info;
+	/*
+	 * flags for state tracking based on events and issued commands.
+	 * Software can not rely on states from output contexts because of
+	 * latency between events and xHC updating output context values.
+	 * See xhci 1.1 section 4.8.3 for more details
+	 */
+	unsigned long			flags;
+#define VDEV_PORT_ERROR			BIT(0) /* Port error, link inactive */
+
 	/* The current max exit latency for the enabled USB3 link states. */
 	u16				current_mel;
 	/* Used for the debugfs interfaces. */
@@ -1695,11 +1704,21 @@ static inline unsigned int hcd_index(struct usb_hcd *hcd)
 	else
 		return 1;
 }
+
+struct xhci_port_cap {
+	u32			*psi;	/* array of protocol speed ID entries */
+	u8			psi_count;
+	u8			psi_uid_count;
+	u8			maj_rev;
+	u8			min_rev;
+};
+
 struct xhci_port {
 	__le32 __iomem		*addr;
 	int			hw_portnum;
 	int			hcd_portnum;
 	struct xhci_hub		*rhub;
+	struct xhci_port_cap	*port_cap;
 };
 
 struct xhci_hub {
@@ -1709,9 +1728,6 @@ struct xhci_hub {
 	/* supported prococol extended capabiliy values */
 	u8			maj_rev;
 	u8			min_rev;
-	u32			*psi;	/* array of protocol speed ID entries */
-	u8			psi_count;
-	u8			psi_uid_count;
 };
 
 /* There is one xhci_hcd structure per controller */
@@ -1725,6 +1741,10 @@ struct xhci_hcd {
 	struct xhci_doorbell_array __iomem *dba;
 	/* Our HCD's current interrupter register set */
 	struct	xhci_intr_reg __iomem *ir_set;
+	/* secondary interrupter */
+	struct	xhci_intr_reg __iomem **sec_ir_set;
+
+	int		core_id;
 
 	/* Cached register copies of read-only HC data */
 	__u32		hcs_params1;
@@ -1768,6 +1788,11 @@ struct xhci_hcd {
 	struct xhci_command	*current_cmd;
 	struct xhci_ring	*event_ring;
 	struct xhci_erst	erst;
+
+	/* secondary event ring and erst */
+	struct xhci_ring	**sec_event_ring;
+	struct xhci_erst	*sec_erst;
+
 	/* Scratchpad */
 	struct xhci_scratchpad  *scratchpad;
 	/* Store LPM test failed devices' information */
@@ -1873,6 +1898,9 @@ struct xhci_hcd {
 	/* cached usb2 extened protocol capabilites */
 	u32                     *ext_caps;
 	unsigned int            num_ext_caps;
+	/* cached extended protocol port capabilities */
+	struct xhci_port_cap	*port_caps;
+	unsigned int		num_port_caps;
 	/* Compliance Mode Recovery Data */
 	struct timer_list	comp_mode_recovery_timer;
 	u32			port_status_u0;
@@ -2033,6 +2061,8 @@ struct xhci_container_ctx *xhci_alloc_container_ctx(struct xhci_hcd *xhci,
 		int type, gfp_t flags);
 void xhci_free_container_ctx(struct xhci_hcd *xhci,
 		struct xhci_container_ctx *ctx);
+int xhci_sec_event_ring_setup(struct usb_hcd *hcd, unsigned int intr_num);
+int xhci_sec_event_ring_cleanup(struct usb_hcd *hcd, unsigned int intr_num);
 
 /* xHCI host controller glue */
 typedef void (*xhci_get_quirks_t)(struct device *, struct xhci_hcd *);
@@ -2043,6 +2073,7 @@ int xhci_start(struct xhci_hcd *xhci);
 int xhci_reset(struct xhci_hcd *xhci);
 int xhci_run(struct usb_hcd *hcd);
 int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks);
+void xhci_shutdown(struct usb_hcd *hcd);
 void xhci_init_driver(struct hc_driver *drv,
 		      const struct xhci_driver_overrides *over);
 int xhci_disable_slot(struct xhci_hcd *xhci, u32 slot_id);

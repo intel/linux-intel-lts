@@ -575,7 +575,7 @@ static struct mlxreg_core_item mlxplat_mlxcpld_msn201x_items[] = {
 
 static
 struct mlxreg_core_hotplug_platform_data mlxplat_mlxcpld_msn201x_data = {
-	.items = mlxplat_mlxcpld_msn21xx_items,
+	.items = mlxplat_mlxcpld_msn201x_items,
 	.counter = ARRAY_SIZE(mlxplat_mlxcpld_msn201x_items),
 	.cell = MLXPLAT_CPLD_LPC_REG_AGGR_OFFSET,
 	.mask = MLXPLAT_CPLD_AGGR_MASK_DEF,
@@ -1421,7 +1421,7 @@ static int __init mlxplat_dmi_msn201x_matched(const struct dmi_system_id *dmi)
 	mlxplat_hotplug = &mlxplat_mlxcpld_msn201x_data;
 	mlxplat_hotplug->deferred_nr =
 		mlxplat_default_channels[i - 1][MLXPLAT_CPLD_GRP_CHNL_NUM - 1];
-	mlxplat_led = &mlxplat_default_ng_led_data;
+	mlxplat_led = &mlxplat_msn21xx_led_data;
 	mlxplat_regs_io = &mlxplat_msn21xx_regs_io_data;
 
 	return 1;
@@ -1439,7 +1439,7 @@ static int __init mlxplat_dmi_qmb7xx_matched(const struct dmi_system_id *dmi)
 	mlxplat_hotplug = &mlxplat_mlxcpld_default_ng_data;
 	mlxplat_hotplug->deferred_nr =
 		mlxplat_msn21xx_channels[MLXPLAT_CPLD_GRP_CHNL_NUM - 1];
-	mlxplat_led = &mlxplat_msn21xx_led_data;
+	mlxplat_led = &mlxplat_default_ng_led_data;
 	mlxplat_fan = &mlxplat_default_fan_data;
 
 	return 1;
@@ -1626,7 +1626,7 @@ static int __init mlxplat_init(void)
 
 	for (i = 0; i < ARRAY_SIZE(mlxplat_mux_data); i++) {
 		priv->pdev_mux[i] = platform_device_register_resndata(
-						&mlxplat_dev->dev,
+						&priv->pdev_i2c->dev,
 						"i2c-mux-reg", i, NULL,
 						0, &mlxplat_mux_data[i],
 						sizeof(mlxplat_mux_data[i]));

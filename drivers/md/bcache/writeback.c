@@ -506,15 +506,19 @@ void bcache_dev_sectors_dirty_add(struct cache_set *c, unsigned int inode,
 				  uint64_t offset, int nr_sectors)
 {
 	struct bcache_device *d = c->devices[inode];
-	unsigned int stripe_offset, stripe, sectors_dirty;
+	unsigned int stripe_offset, sectors_dirty;
+	int stripe;
 
 	if (!d)
+		return;
+
+	stripe = offset_to_stripe(d, offset);
+	if (stripe < 0)
 		return;
 
 	if (UUID_FLASH_ONLY(&c->uuids[inode]))
 		atomic_long_add(nr_sectors, &c->flash_dev_dirty_sectors);
 
-	stripe = offset_to_stripe(d, offset);
 	stripe_offset = offset & (d->stripe_size - 1);
 
 	while (nr_sectors) {
@@ -554,12 +558,12 @@ static bool dirty_pred(struct keybuf *buf, struct bkey *k)
 static void refill_full_stripes(struct cached_dev *dc)
 {
 	struct keybuf *buf = &dc->writeback_keys;
-	unsigned int start_stripe, stripe, next_stripe;
+	unsigned int start_stripe, next_stripe;
+	int stripe;
 	bool wrapped = false;
 
 	stripe = offset_to_stripe(&dc->disk, KEY_OFFSET(&buf->last_scanned));
-
-	if (stripe >= dc->disk.nr_stripes)
+	if (stripe < 0)
 		stripe = 0;
 
 	start_stripe = stripe;
@@ -708,6 +712,10 @@ static int bch_writeback_thread(void *arg)
 		}
 	}
 
+	if (dc->writeback_write_wq) {
+		flush_workqueue(dc->writeback_write_wq);
+		destroy_workqueue(dc->writeback_write_wq);
+	}
 	cached_dev_put(dc);
 	wait_for_kthread_stop();
 
@@ -777,7 +785,7 @@ void bch_cached_dev_writeback_init(struct cached_dev *dc)
 	bch_keybuf_init(&dc->writeback_keys);
 
 	dc->writeback_metadata		= true;
-	dc->writeback_running		= true;
+	dc->writeback_running		= false;
 	dc->writeback_percent		= 10;
 	dc->writeback_delay		= 30;
 	atomic_long_set(&dc->writeback_rate.rate, 1024);
@@ -803,8 +811,10 @@ int bch_cached_dev_writeback_start(struct cached_dev *dc)
 					      "bcache_writeback");
 	if (IS_ERR(dc->writeback_thread)) {
 		cached_dev_put(dc);
+		destroy_workqueue(dc->writeback_write_wq);
 		return PTR_ERR(dc->writeback_thread);
 	}
+	dc->writeback_running = true;
 
 	WARN_ON(test_and_set_bit(BCACHE_DEV_WB_RUNNING, &dc->disk.flags));
 	schedule_delayed_work(&dc->writeback_rate_update,

@@ -1424,6 +1424,8 @@ static int drm_atomic_connector_set_property(struct drm_connector *connector,
 			return -EINVAL;
 		}
 		state->content_protection = val;
+	} else if (property == connector->colorspace_property) {
+		state->colorspace = val;
 	} else if (property == config->writeback_fb_id_property) {
 		struct drm_framebuffer *fb = drm_framebuffer_lookup(dev, NULL, val);
 		int ret = drm_atomic_set_writeback_fb_for_connector(state, fb);
@@ -1523,6 +1525,8 @@ drm_atomic_connector_get_property(struct drm_connector *connector,
 		*val = state->picture_aspect_ratio;
 	} else if (property == config->content_type_property) {
 		*val = state->content_type;
+	} else if (property == connector->colorspace_property) {
+		*val = state->colorspace;
 	} else if (property == connector->scaling_mode_property) {
 		*val = state->scaling_mode;
 	} else if (property == connector->content_protection_property) {
@@ -1717,6 +1721,27 @@ drm_atomic_set_crtc_for_connector(struct drm_connector_state *conn_state,
 {
 	struct drm_connector *connector = conn_state->connector;
 	struct drm_crtc_state *crtc_state;
+
+	/*
+	 * For compatibility with legacy users, we want to make sure that
+	 * we allow DPMS On<->Off modesets on unregistered connectors, since
+	 * legacy modesetting users will not be expecting these to fail. We do
+	 * not however, want to allow legacy users to assign a connector
+	 * that's been unregistered from sysfs to another CRTC, since doing
+	 * this with a now non-existent connector could potentially leave us
+	 * in an invalid state.
+	 *
+	 * Since the connector can be unregistered at any point during an
+	 * atomic check or commit, this is racy. But that's OK: all we care
+	 * about is ensuring that userspace can't use this connector for new
+	 * configurations after it's been notified that the connector is no
+	 * longer present.
+	 */
+	if (!READ_ONCE(connector->registered) && crtc) {
+		DRM_DEBUG_ATOMIC("[CONNECTOR:%d:%s] is not registered\n",
+				 connector->base.id, connector->name);
+		return -EINVAL;
+	}
 
 	if (conn_state->crtc == crtc)
 		return 0;

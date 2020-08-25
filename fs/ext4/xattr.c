@@ -1700,7 +1700,7 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
 
 	/* No failures allowed past this point. */
 
-	if (!s->not_found && here->e_value_size && here->e_value_offs) {
+	if (!s->not_found && here->e_value_size && !here->e_value_inum) {
 		/* Remove the old value. */
 		void *first_val = s->base + min_offs;
 		size_t offs = le16_to_cpu(here->e_value_offs);
@@ -1824,8 +1824,11 @@ ext4_xattr_block_find(struct inode *inode, struct ext4_xattr_info *i,
 	if (EXT4_I(inode)->i_file_acl) {
 		/* The inode already has an extended attribute block. */
 		bs->bh = ext4_sb_bread(sb, EXT4_I(inode)->i_file_acl, REQ_PRIO);
-		if (IS_ERR(bs->bh))
-			return PTR_ERR(bs->bh);
+		if (IS_ERR(bs->bh)) {
+			error = PTR_ERR(bs->bh);
+			bs->bh = NULL;
+			return error;
+		}
 		ea_bdebug(bs->bh, "b_count=%d, refcount=%d",
 			atomic_read(&(bs->bh->b_count)),
 			le32_to_cpu(BHDR(bs->bh)->h_refcount));

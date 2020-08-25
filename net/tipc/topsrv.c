@@ -409,10 +409,11 @@ static int tipc_conn_rcv_from_sock(struct tipc_conn *con)
 		read_lock_bh(&sk->sk_callback_lock);
 		ret = tipc_conn_rcv_sub(srv, con, &s);
 		read_unlock_bh(&sk->sk_callback_lock);
+		if (!ret)
+			return 0;
 	}
-	if (ret < 0)
-		tipc_conn_close(con);
 
+	tipc_conn_close(con);
 	return ret;
 }
 
@@ -643,7 +644,7 @@ static void tipc_topsrv_work_stop(struct tipc_topsrv *s)
 	destroy_workqueue(s->send_wq);
 }
 
-int tipc_topsrv_start(struct net *net)
+static int tipc_topsrv_start(struct net *net)
 {
 	struct tipc_net *tn = tipc_net(net);
 	const char name[] = "topology_server";
@@ -677,7 +678,7 @@ int tipc_topsrv_start(struct net *net)
 	return ret;
 }
 
-void tipc_topsrv_stop(struct net *net)
+static void tipc_topsrv_stop(struct net *net)
 {
 	struct tipc_topsrv *srv = tipc_topsrv(net);
 	struct socket *lsock = srv->listener;
@@ -701,4 +702,14 @@ void tipc_topsrv_stop(struct net *net)
 	tipc_topsrv_work_stop(srv);
 	idr_destroy(&srv->conn_idr);
 	kfree(srv);
+}
+
+int __net_init tipc_topsrv_init_net(struct net *net)
+{
+	return tipc_topsrv_start(net);
+}
+
+void __net_exit tipc_topsrv_exit_net(struct net *net)
+{
+	tipc_topsrv_stop(net);
 }

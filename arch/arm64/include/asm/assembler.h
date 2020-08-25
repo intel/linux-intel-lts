@@ -23,6 +23,8 @@
 #ifndef __ASM_ASSEMBLER_H
 #define __ASM_ASSEMBLER_H
 
+#include <asm-generic/export.h>
+
 #include <asm/asm-offsets.h>
 #include <asm/cpufeature.h>
 #include <asm/debug-monitors.h>
@@ -79,6 +81,18 @@
 	msr	daif, \flags
 	.endm
 
+/*
+ * Save/disable and restore interrupts.
+ */
+	.macro	save_and_disable_irqs, olddaif
+	mrs	\olddaif, daif
+	disable_irq
+	.endm
+
+	.macro	restore_irqs, olddaif
+	msr	daif, \olddaif
+	.endm
+
 	.macro	enable_dbg
 	msr	daifclr, #8
 	.endm
@@ -112,7 +126,11 @@
  * RAS Error Synchronization barrier
  */
 	.macro  esb
+#ifdef CONFIG_ARM64_RAS_EXTN
 	hint    #16
+#else
+	nop
+#endif
 	.endm
 
 /*
@@ -484,6 +502,13 @@ USER(\label, ic	ivau, \tmp2)			// invalidate I line PoU
 #else
 #define NOKPROBE(x)
 #endif
+
+#ifdef CONFIG_KASAN
+#define EXPORT_SYMBOL_NOKASAN(name)
+#else
+#define EXPORT_SYMBOL_NOKASAN(name)	EXPORT_SYMBOL(name)
+#endif
+
 	/*
 	 * Emit a 64-bit absolute little endian symbol reference in a way that
 	 * ensures that it will be resolved at build time, even when building a

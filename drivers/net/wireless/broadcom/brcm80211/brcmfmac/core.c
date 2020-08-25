@@ -464,7 +464,8 @@ void brcmf_rx_frame(struct device *dev, struct sk_buff *skb, bool handle_event)
 	} else {
 		/* Process special event packets */
 		if (handle_event)
-			brcmf_fweh_process_skb(ifp->drvr, skb);
+			brcmf_fweh_process_skb(ifp->drvr, skb,
+					       BCMILCP_SUBTYPE_VENDOR_LONG);
 
 		brcmf_netif_rx(ifp, skb);
 	}
@@ -481,7 +482,7 @@ void brcmf_rx_event(struct device *dev, struct sk_buff *skb)
 	if (brcmf_rx_hdrpull(drvr, skb, &ifp))
 		return;
 
-	brcmf_fweh_process_skb(ifp->drvr, skb);
+	brcmf_fweh_process_skb(ifp->drvr, skb, 0);
 	brcmu_pkt_buf_free_skb(skb);
 }
 
@@ -783,17 +784,17 @@ static void brcmf_del_if(struct brcmf_pub *drvr, s32 bsscfgidx,
 			 bool rtnl_locked)
 {
 	struct brcmf_if *ifp;
+	int ifidx;
 
 	ifp = drvr->iflist[bsscfgidx];
-	drvr->iflist[bsscfgidx] = NULL;
 	if (!ifp) {
 		brcmf_err("Null interface, bsscfgidx=%d\n", bsscfgidx);
 		return;
 	}
 	brcmf_dbg(TRACE, "Enter, bsscfgidx=%d, ifidx=%d\n", bsscfgidx,
 		  ifp->ifidx);
-	if (drvr->if2bss[ifp->ifidx] == bsscfgidx)
-		drvr->if2bss[ifp->ifidx] = BRCMF_BSSIDX_INVALID;
+	ifidx = ifp->ifidx;
+
 	if (ifp->ndev) {
 		if (bsscfgidx == 0) {
 			if (ifp->ndev->netdev_ops == &brcmf_netdev_ops_pri) {
@@ -821,6 +822,10 @@ static void brcmf_del_if(struct brcmf_pub *drvr, s32 bsscfgidx,
 		brcmf_p2p_ifp_removed(ifp, rtnl_locked);
 		kfree(ifp);
 	}
+
+	drvr->iflist[bsscfgidx] = NULL;
+	if (drvr->if2bss[ifidx] == bsscfgidx)
+		drvr->if2bss[ifidx] = BRCMF_BSSIDX_INVALID;
 }
 
 void brcmf_remove_interface(struct brcmf_if *ifp, bool rtnl_locked)
@@ -1100,6 +1105,7 @@ static int brcmf_bus_started(struct brcmf_pub *drvr, struct cfg80211_ops *ops)
 	brcmf_debugfs_add_entry(drvr, "revinfo", brcmf_revinfo_read);
 	brcmf_feat_debugfs_create(drvr);
 	brcmf_proto_debugfs_create(drvr);
+	brcmf_bus_debugfs_create(bus_if);
 
 	return 0;
 
@@ -1239,6 +1245,13 @@ void brcmf_detach(struct device *dev)
 
 	brcmf_bus_change_state(bus_if, BRCMF_BUS_DOWN);
 
+	brcmf_proto_detach_pre_delif(drvr);
+
+	if (drvr->mon_if) {
+		brcmf_net_detach(drvr->mon_if->ndev, false);
+		drvr->mon_if = NULL;
+	}
+
 	/* make sure primary interface removed last */
 	for (i = BRCMF_MAX_IFS-1; i > -1; i--)
 		brcmf_remove_interface(drvr->iflist[i], false);
@@ -1248,7 +1261,7 @@ void brcmf_detach(struct device *dev)
 
 	brcmf_bus_stop(drvr->bus_if);
 
-	brcmf_proto_detach(drvr);
+	brcmf_proto_detach_post_delif(drvr);
 
 	bus_if->drvr = NULL;
 	wiphy_free(drvr->wiphy);

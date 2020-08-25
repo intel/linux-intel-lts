@@ -33,6 +33,7 @@
 #include <linux/cpufreq.h>
 #include <linux/cpuidle.h>
 #include <linux/timer.h>
+#include <linux/wakeup_reason.h>
 
 #include "../base.h"
 #include "power.h"
@@ -123,6 +124,10 @@ void device_pm_unlock(void)
  */
 void device_pm_add(struct device *dev)
 {
+	/* Skip PM setup/initialization. */
+	if (device_pm_not_required(dev))
+		return;
+
 	pr_debug("PM: Adding info for %s:%s\n",
 		 dev->bus ? dev->bus->name : "No Bus", dev_name(dev));
 	device_pm_check_callbacks(dev);
@@ -141,6 +146,9 @@ void device_pm_add(struct device *dev)
  */
 void device_pm_remove(struct device *dev)
 {
+	if (device_pm_not_required(dev))
+		return;
+
 	pr_debug("PM: Removing info for %s:%s\n",
 		 dev->bus ? dev->bus->name : "No Bus", dev_name(dev));
 	complete_all(&dev->power.completion);
@@ -265,10 +273,38 @@ static void dpm_wait_for_suppliers(struct device *dev, bool async)
 	device_links_read_unlock(idx);
 }
 
-static void dpm_wait_for_superior(struct device *dev, bool async)
+static bool dpm_wait_for_superior(struct device *dev, bool async)
 {
-	dpm_wait(dev->parent, async);
+	struct device *parent;
+
+	/*
+	 * If the device is resumed asynchronously and the parent's callback
+	 * deletes both the device and the parent itself, the parent object may
+	 * be freed while this function is running, so avoid that by reference
+	 * counting the parent once more unless the device has been deleted
+	 * already (in which case return right away).
+	 */
+	mutex_lock(&dpm_list_mtx);
+
+	if (!device_pm_initialized(dev)) {
+		mutex_unlock(&dpm_list_mtx);
+		return false;
+	}
+
+	parent = get_device(dev->parent);
+
+	mutex_unlock(&dpm_list_mtx);
+
+	dpm_wait(parent, async);
+	put_device(parent);
+
 	dpm_wait_for_suppliers(dev, async);
+
+	/*
+	 * If the parent's callback has deleted the device, attempting to resume
+	 * it would be invalid, so avoid doing that then.
+	 */
+	return device_pm_initialized(dev);
 }
 
 static void dpm_wait_for_consumers(struct device *dev, bool async)
@@ -628,7 +664,8 @@ static int device_resume_noirq(struct device *dev, pm_message_t state, bool asyn
 	if (!dev->power.is_noirq_suspended)
 		goto Out;
 
-	dpm_wait_for_superior(dev, async);
+	if (!dpm_wait_for_superior(dev, async))
+		goto Out;
 
 	skip_resume = dev_pm_may_skip_resume(dev);
 
@@ -829,7 +866,8 @@ static int device_resume_early(struct device *dev, pm_message_t state, bool asyn
 	if (!dev->power.is_late_suspended)
 		goto Out;
 
-	dpm_wait_for_superior(dev, async);
+	if (!dpm_wait_for_superior(dev, async))
+		goto Out;
 
 	callback = dpm_subsys_resume_early_cb(dev, state, &info);
 
@@ -949,7 +987,9 @@ static int device_resume(struct device *dev, pm_message_t state, bool async)
 		goto Complete;
 	}
 
-	dpm_wait_for_superior(dev, async);
+	if (!dpm_wait_for_superior(dev, async))
+		goto Complete;
+
 	dpm_watchdog_set(&wd, dev);
 	device_lock(dev);
 
@@ -1323,6 +1363,8 @@ Run:
 	error = dpm_run_callback(callback, dev, state, info);
 	if (error) {
 		async_error = error;
+		log_suspend_abort_reason("Callback failed on %s in %pS returned %d",
+					 dev_name(dev), callback, error);
 		goto Complete;
 	}
 
@@ -1537,6 +1579,8 @@ Run:
 	error = dpm_run_callback(callback, dev, state, info);
 	if (error) {
 		async_error = error;
+		log_suspend_abort_reason("Callback failed on %s in %pS returned %d",
+					 dev_name(dev), callback, error);
 		goto Complete;
 	}
 	dpm_propagate_wakeup_to_parent(dev);
@@ -1736,6 +1780,10 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	if (dev->power.syscore)
 		goto Complete;
 
+	/* Avoid direct_complete to let wakeup_path propagate. */
+	if (device_may_wakeup(dev) || dev->power.wakeup_path)
+		dev->power.direct_complete = false;
+
 	if (dev->power.direct_complete) {
 		if (pm_runtime_status_suspended(dev)) {
 			pm_runtime_disable(dev);
@@ -1799,6 +1847,9 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 
 		dpm_propagate_wakeup_to_parent(dev);
 		dpm_clear_superiors_direct_complete(dev);
+	} else {
+		log_suspend_abort_reason("Callback failed on %s in %pS returned %d",
+					 dev_name(dev), callback, error);
 	}
 
 	device_unlock(dev);
@@ -2013,6 +2064,9 @@ int dpm_prepare(pm_message_t state)
 			printk(KERN_INFO "PM: Device %s not prepared "
 				"for power transition: code %d\n",
 				dev_name(dev), error);
+			log_suspend_abort_reason("Device %s not prepared for power transition: code %d",
+						 dev_name(dev), error);
+			dpm_save_failed_dev(dev_name(dev));
 			put_device(dev);
 			break;
 		}

@@ -428,6 +428,8 @@ enum vmbus_channel_message_type {
 	CHANNELMSG_19				= 19,
 	CHANNELMSG_20				= 20,
 	CHANNELMSG_TL_CONNECT_REQUEST		= 21,
+	CHANNELMSG_22				= 22,
+	CHANNELMSG_TL_CONNECT_RESULT		= 23,
 	CHANNELMSG_COUNT
 };
 
@@ -739,7 +741,7 @@ struct vmbus_channel {
 	u32 ringbuffer_gpadlhandle;
 
 	/* Allocated memory for ring buffer */
-	void *ringbuffer_pages;
+	struct page *ringbuffer_page;
 	u32 ringbuffer_pagecount;
 	struct hv_ring_buffer_info outbound;	/* send to parent */
 	struct hv_ring_buffer_info inbound;	/* receive from parent */

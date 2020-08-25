@@ -87,12 +87,16 @@ static int uinput_dev_event(struct input_dev *dev,
 	struct uinput_device	*udev = input_get_drvdata(dev);
 	struct timespec64	ts;
 
-	udev->buff[udev->head].type = type;
-	udev->buff[udev->head].code = code;
-	udev->buff[udev->head].value = value;
 	ktime_get_ts64(&ts);
-	udev->buff[udev->head].input_event_sec = ts.tv_sec;
-	udev->buff[udev->head].input_event_usec = ts.tv_nsec / NSEC_PER_USEC;
+
+	udev->buff[udev->head] = (struct input_event) {
+		.input_event_sec = ts.tv_sec,
+		.input_event_usec = ts.tv_nsec / NSEC_PER_USEC,
+		.type = type,
+		.code = code,
+		.value = value,
+	};
+
 	udev->head = (udev->head + 1) % UINPUT_BUFFER_SIZE;
 
 	wake_up_interruptible(&udev->waitq);
@@ -1051,13 +1055,31 @@ static long uinput_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 #ifdef CONFIG_COMPAT
 
-#define UI_SET_PHYS_COMPAT	_IOW(UINPUT_IOCTL_BASE, 108, compat_uptr_t)
+/*
+ * These IOCTLs change their size and thus their numbers between
+ * 32 and 64 bits.
+ */
+#define UI_SET_PHYS_COMPAT		\
+	_IOW(UINPUT_IOCTL_BASE, 108, compat_uptr_t)
+#define UI_BEGIN_FF_UPLOAD_COMPAT	\
+	_IOWR(UINPUT_IOCTL_BASE, 200, struct uinput_ff_upload_compat)
+#define UI_END_FF_UPLOAD_COMPAT		\
+	_IOW(UINPUT_IOCTL_BASE, 201, struct uinput_ff_upload_compat)
 
 static long uinput_compat_ioctl(struct file *file,
 				unsigned int cmd, unsigned long arg)
 {
-	if (cmd == UI_SET_PHYS_COMPAT)
+	switch (cmd) {
+	case UI_SET_PHYS_COMPAT:
 		cmd = UI_SET_PHYS;
+		break;
+	case UI_BEGIN_FF_UPLOAD_COMPAT:
+		cmd = UI_BEGIN_FF_UPLOAD;
+		break;
+	case UI_END_FF_UPLOAD_COMPAT:
+		cmd = UI_END_FF_UPLOAD;
+		break;
+	}
 
 	return uinput_ioctl_handler(file, cmd, arg, compat_ptr(arg));
 }

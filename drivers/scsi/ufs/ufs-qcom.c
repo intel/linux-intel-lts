@@ -1098,6 +1098,13 @@ static void ufs_qcom_advertise_quirks(struct ufs_hba *hba)
 				| UFSHCD_QUIRK_DME_PEER_ACCESS_AUTO_MODE
 				| UFSHCD_QUIRK_BROKEN_PA_RXHSUNTERMCAP);
 	}
+
+	/*
+	 * Inline crypto is currently broken with ufs-qcom at least because the
+	 * device tree doesn't include the crypto registers.  There are likely
+	 * to be other issues that will need to be addressed too.
+	 */
+	hba->quirks |= UFSHCD_QUIRK_BROKEN_CRYPTO;
 }
 
 static void ufs_qcom_set_caps(struct ufs_hba *hba)
@@ -1635,11 +1642,11 @@ static void ufs_qcom_dump_dbg_regs(struct ufs_hba *hba)
 
 	/* sleep a bit intermittently as we are dumping too much data */
 	ufs_qcom_print_hw_debug_reg_all(hba, NULL, ufs_qcom_dump_regs_wrapper);
-	usleep_range(1000, 1100);
+	udelay(1000);
 	ufs_qcom_testbus_read(hba);
-	usleep_range(1000, 1100);
+	udelay(1000);
 	ufs_qcom_print_unipro_testbus(hba);
-	usleep_range(1000, 1100);
+	udelay(1000);
 }
 
 /**

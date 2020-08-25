@@ -402,16 +402,14 @@ static inline bool is_freerunning_event(struct perf_event *event)
 	       (((cfg >> 8) & 0xff) >= UNCORE_FREERUNNING_UMASK_START);
 }
 
-static inline void uncore_disable_box(struct intel_uncore_box *box)
+/* Check and reject invalid config */
+static inline int uncore_freerunning_hw_config(struct intel_uncore_box *box,
+					       struct perf_event *event)
 {
-	if (box->pmu->type->ops->disable_box)
-		box->pmu->type->ops->disable_box(box);
-}
+	if (is_freerunning_event(event))
+		return 0;
 
-static inline void uncore_enable_box(struct intel_uncore_box *box)
-{
-	if (box->pmu->type->ops->enable_box)
-		box->pmu->type->ops->enable_box(box);
+	return -EINVAL;
 }
 
 static inline void uncore_disable_event(struct intel_uncore_box *box,

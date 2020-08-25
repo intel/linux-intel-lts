@@ -59,7 +59,9 @@ static int write_kprobe_events(const char *val)
 {
 	int fd, ret, flags;
 
-	if ((val != NULL) && (val[0] == '\0'))
+	if (val == NULL)
+		return -1;
+	else if (val[0] == '\0')
 		flags = O_WRONLY | O_TRUNC;
 	else
 		flags = O_WRONLY | O_APPEND;
@@ -677,7 +679,7 @@ void read_trace_pipe(void)
 		static char buf[4096];
 		ssize_t sz;
 
-		sz = read(trace_fd, buf, sizeof(buf));
+		sz = read(trace_fd, buf, sizeof(buf) - 1);
 		if (sz > 0) {
 			buf[sz] = 0;
 			puts(buf);

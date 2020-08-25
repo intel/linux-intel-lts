@@ -72,6 +72,9 @@
 #define GENET_RDMA_REG_OFF	(priv->hw_params->rdma_offset + \
 				TOTAL_DESC * DMA_DESC_SIZE)
 
+/* Forward declarations */
+static void bcmgenet_set_rx_mode(struct net_device *dev);
+
 static inline void bcmgenet_writel(u32 value, void __iomem *offset)
 {
 	/* MIPS chips strapped for BE will automagically configure the
@@ -998,6 +1001,8 @@ static void bcmgenet_get_ethtool_stats(struct net_device *dev,
 	if (netif_running(dev))
 		bcmgenet_update_mib_counters(priv);
 
+	dev->netdev_ops->ndo_get_stats(dev);
+
 	for (i = 0; i < BCMGENET_STATS_LEN; i++) {
 		const struct bcmgenet_stats *s;
 		char *p;
@@ -1169,7 +1174,7 @@ static int bcmgenet_power_down(struct bcmgenet_priv *priv,
 		break;
 	}
 
-	return 0;
+	return ret;
 }
 
 static void bcmgenet_power_up(struct bcmgenet_priv *priv,
@@ -1588,11 +1593,6 @@ static netdev_tx_t bcmgenet_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto out;
 	}
 
-	if (skb_padto(skb, ETH_ZLEN)) {
-		ret = NETDEV_TX_OK;
-		goto out;
-	}
-
 	/* Retain how many bytes will be sent on the wire, without TSB inserted
 	 * by transmit checksum offload
 	 */
@@ -1641,6 +1641,9 @@ static netdev_tx_t bcmgenet_xmit(struct sk_buff *skb, struct net_device *dev)
 		len_stat = (size << DMA_BUFLENGTH_SHIFT) |
 			   (priv->hw_params->qtag_mask << DMA_TX_QTAG_SHIFT);
 
+		/* Note: if we ever change from DMA_TX_APPEND_CRC below we
+		 * will need to restore software padding of "runt" packets
+		 */
 		if (!i) {
 			len_stat |= DMA_TX_APPEND_CRC | DMA_SOP;
 			if (skb->ip_summed == CHECKSUM_PARTIAL)
@@ -1697,7 +1700,8 @@ static struct sk_buff *bcmgenet_rx_refill(struct bcmgenet_priv *priv,
 	dma_addr_t mapping;
 
 	/* Allocate a new Rx skb */
-	skb = netdev_alloc_skb(priv->dev, priv->rx_buf_len + SKB_ALIGNMENT);
+	skb = __netdev_alloc_skb(priv->dev, priv->rx_buf_len + SKB_ALIGNMENT,
+				 GFP_ATOMIC | __GFP_NOWARN);
 	if (!skb) {
 		priv->mib.alloc_rx_buff_failed++;
 		netif_err(priv, rx_err, priv->dev,
@@ -1998,8 +2002,6 @@ static void reset_umac(struct bcmgenet_priv *priv)
 
 	/* issue soft reset with (rg)mii loopback to ensure a stable rxclk */
 	bcmgenet_umac_writel(priv, CMD_SW_RESET | CMD_LCL_LOOP_EN, UMAC_CMD);
-	udelay(2);
-	bcmgenet_umac_writel(priv, 0, UMAC_CMD);
 }
 
 static void bcmgenet_intr_disable(struct bcmgenet_priv *priv)
@@ -2020,6 +2022,8 @@ static void bcmgenet_link_intr_enable(struct bcmgenet_priv *priv)
 	 */
 	if (priv->internal_phy) {
 		int0_enable |= UMAC_IRQ_LINK_EVENT;
+		if (GENET_IS_V1(priv) || GENET_IS_V2(priv) || GENET_IS_V3(priv))
+			int0_enable |= UMAC_IRQ_PHY_DET_R;
 	} else if (priv->ext_phy) {
 		int0_enable |= UMAC_IRQ_LINK_EVENT;
 	} else if (priv->phy_interface == PHY_INTERFACE_MODE_MOCA) {
@@ -2166,8 +2170,8 @@ static void bcmgenet_init_tx_ring(struct bcmgenet_priv *priv,
 				  DMA_END_ADDR);
 
 	/* Initialize Tx NAPI */
-	netif_napi_add(priv->dev, &ring->napi, bcmgenet_tx_poll,
-		       NAPI_POLL_WEIGHT);
+	netif_tx_napi_add(priv->dev, &ring->napi, bcmgenet_tx_poll,
+			  NAPI_POLL_WEIGHT);
 }
 
 /* Initialize a RDMA ring */
@@ -2618,11 +2622,16 @@ static void bcmgenet_irq_task(struct work_struct *work)
 	priv->irq0_stat = 0;
 	spin_unlock_irq(&priv->lock);
 
-	/* Link UP/DOWN event */
-	if (status & UMAC_IRQ_LINK_EVENT) {
-		priv->dev->phydev->link = !!(status & UMAC_IRQ_LINK_UP);
-		phy_mac_interrupt(priv->dev->phydev);
+	if (status & UMAC_IRQ_PHY_DET_R &&
+	    priv->dev->phydev->autoneg != AUTONEG_ENABLE) {
+		phy_init_hw(priv->dev->phydev);
+		genphy_config_aneg(priv->dev->phydev);
 	}
+
+	/* Link UP/DOWN event */
+	if (status & UMAC_IRQ_LINK_EVENT)
+		phy_mac_interrupt(priv->dev->phydev);
+
 }
 
 /* bcmgenet_isr1: handle Rx and Tx priority queues */
@@ -2717,7 +2726,7 @@ static irqreturn_t bcmgenet_isr0(int irq, void *dev_id)
 	}
 
 	/* all other interested interrupts handled in bottom half */
-	status &= UMAC_IRQ_LINK_EVENT;
+	status &= (UMAC_IRQ_LINK_EVENT | UMAC_IRQ_PHY_DET_R);
 	if (status) {
 		/* Save irq status for bottom-half processing. */
 		spin_lock_irqsave(&priv->lock, flags);
@@ -2851,6 +2860,7 @@ static void bcmgenet_netif_start(struct net_device *dev)
 	struct bcmgenet_priv *priv = netdev_priv(dev);
 
 	/* Start the network engine */
+	bcmgenet_set_rx_mode(dev);
 	bcmgenet_enable_rx_napi(priv);
 
 	umac_enable_set(priv, CMD_TX_EN | CMD_RX_EN, true);
@@ -3086,39 +3096,42 @@ static void bcmgenet_timeout(struct net_device *dev)
 	netif_tx_wake_all_queues(dev);
 }
 
-#define MAX_MC_COUNT	16
+#define MAX_MDF_FILTER	17
 
 static inline void bcmgenet_set_mdf_addr(struct bcmgenet_priv *priv,
 					 unsigned char *addr,
-					 int *i,
-					 int *mc)
+					 int *i)
 {
-	u32 reg;
-
 	bcmgenet_umac_writel(priv, addr[0] << 8 | addr[1],
 			     UMAC_MDF_ADDR + (*i * 4));
 	bcmgenet_umac_writel(priv, addr[2] << 24 | addr[3] << 16 |
 			     addr[4] << 8 | addr[5],
 			     UMAC_MDF_ADDR + ((*i + 1) * 4));
-	reg = bcmgenet_umac_readl(priv, UMAC_MDF_CTRL);
-	reg |= (1 << (MAX_MC_COUNT - *mc));
-	bcmgenet_umac_writel(priv, reg, UMAC_MDF_CTRL);
 	*i += 2;
-	(*mc)++;
 }
 
 static void bcmgenet_set_rx_mode(struct net_device *dev)
 {
 	struct bcmgenet_priv *priv = netdev_priv(dev);
 	struct netdev_hw_addr *ha;
-	int i, mc;
+	int i, nfilter;
 	u32 reg;
 
 	netif_dbg(priv, hw, dev, "%s: %08X\n", __func__, dev->flags);
 
-	/* Promiscuous mode */
+	/* Number of filters needed */
+	nfilter = netdev_uc_count(dev) + netdev_mc_count(dev) + 2;
+
+	/*
+	 * Turn on promicuous mode for three scenarios
+	 * 1. IFF_PROMISC flag is set
+	 * 2. IFF_ALLMULTI flag is set
+	 * 3. The number of filters needed exceeds the number filters
+	 *    supported by the hardware.
+	*/
 	reg = bcmgenet_umac_readl(priv, UMAC_CMD);
-	if (dev->flags & IFF_PROMISC) {
+	if ((dev->flags & (IFF_PROMISC | IFF_ALLMULTI)) ||
+	    (nfilter > MAX_MDF_FILTER)) {
 		reg |= CMD_PROMISC;
 		bcmgenet_umac_writel(priv, reg, UMAC_CMD);
 		bcmgenet_umac_writel(priv, 0, UMAC_MDF_CTRL);
@@ -3128,32 +3141,24 @@ static void bcmgenet_set_rx_mode(struct net_device *dev)
 		bcmgenet_umac_writel(priv, reg, UMAC_CMD);
 	}
 
-	/* UniMac doesn't support ALLMULTI */
-	if (dev->flags & IFF_ALLMULTI) {
-		netdev_warn(dev, "ALLMULTI is not supported\n");
-		return;
-	}
-
 	/* update MDF filter */
 	i = 0;
-	mc = 0;
 	/* Broadcast */
-	bcmgenet_set_mdf_addr(priv, dev->broadcast, &i, &mc);
+	bcmgenet_set_mdf_addr(priv, dev->broadcast, &i);
 	/* my own address.*/
-	bcmgenet_set_mdf_addr(priv, dev->dev_addr, &i, &mc);
-	/* Unicast list*/
-	if (netdev_uc_count(dev) > (MAX_MC_COUNT - mc))
-		return;
+	bcmgenet_set_mdf_addr(priv, dev->dev_addr, &i);
 
-	if (!netdev_uc_empty(dev))
-		netdev_for_each_uc_addr(ha, dev)
-			bcmgenet_set_mdf_addr(priv, ha->addr, &i, &mc);
+	/* Unicast */
+	netdev_for_each_uc_addr(ha, dev)
+		bcmgenet_set_mdf_addr(priv, ha->addr, &i);
+
 	/* Multicast */
-	if (netdev_mc_empty(dev) || netdev_mc_count(dev) >= (MAX_MC_COUNT - mc))
-		return;
-
 	netdev_for_each_mc_addr(ha, dev)
-		bcmgenet_set_mdf_addr(priv, ha->addr, &i, &mc);
+		bcmgenet_set_mdf_addr(priv, ha->addr, &i);
+
+	/* Enable filters */
+	reg = GENMASK(MAX_MDF_FILTER - 1, MAX_MDF_FILTER - nfilter);
+	bcmgenet_umac_writel(priv, reg, UMAC_MDF_CTRL);
 }
 
 /* Set the hardware MAC address. */
@@ -3211,6 +3216,7 @@ static struct net_device_stats *bcmgenet_get_stats(struct net_device *dev)
 	dev->stats.rx_packets = rx_packets;
 	dev->stats.rx_errors = rx_errors;
 	dev->stats.rx_missed_errors = rx_errors;
+	dev->stats.rx_dropped = rx_dropped;
 	return &dev->stats;
 }
 
@@ -3612,36 +3618,6 @@ static int bcmgenet_remove(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_PM_SLEEP
-static int bcmgenet_suspend(struct device *d)
-{
-	struct net_device *dev = dev_get_drvdata(d);
-	struct bcmgenet_priv *priv = netdev_priv(dev);
-	int ret = 0;
-
-	if (!netif_running(dev))
-		return 0;
-
-	netif_device_detach(dev);
-
-	bcmgenet_netif_stop(dev);
-
-	if (!device_may_wakeup(d))
-		phy_suspend(dev->phydev);
-
-	/* Prepare the device for Wake-on-LAN and switch to the slow clock */
-	if (device_may_wakeup(d) && priv->wolopts) {
-		ret = bcmgenet_power_down(priv, GENET_POWER_WOL_MAGIC);
-		clk_prepare_enable(priv->clk_wol);
-	} else if (priv->internal_phy) {
-		ret = bcmgenet_power_down(priv, GENET_POWER_PASSIVE);
-	}
-
-	/* Turn off the clocks */
-	clk_disable_unprepare(priv->clk);
-
-	return ret;
-}
-
 static int bcmgenet_resume(struct device *d)
 {
 	struct net_device *dev = dev_get_drvdata(d);
@@ -3675,6 +3651,7 @@ static int bcmgenet_resume(struct device *d)
 	phy_init_hw(dev->phydev);
 
 	/* Speed settings must be restored */
+	genphy_config_aneg(dev->phydev);
 	bcmgenet_mii_config(priv->dev, false);
 
 	bcmgenet_set_hw_addr(priv, dev->dev_addr);
@@ -3717,6 +3694,39 @@ out_clk_disable:
 	if (priv->internal_phy)
 		bcmgenet_power_down(priv, GENET_POWER_PASSIVE);
 	clk_disable_unprepare(priv->clk);
+	return ret;
+}
+
+static int bcmgenet_suspend(struct device *d)
+{
+	struct net_device *dev = dev_get_drvdata(d);
+	struct bcmgenet_priv *priv = netdev_priv(dev);
+	int ret = 0;
+
+	if (!netif_running(dev))
+		return 0;
+
+	netif_device_detach(dev);
+
+	bcmgenet_netif_stop(dev);
+
+	if (!device_may_wakeup(d))
+		phy_suspend(dev->phydev);
+
+	/* Prepare the device for Wake-on-LAN and switch to the slow clock */
+	if (device_may_wakeup(d) && priv->wolopts) {
+		ret = bcmgenet_power_down(priv, GENET_POWER_WOL_MAGIC);
+		clk_prepare_enable(priv->clk_wol);
+	} else if (priv->internal_phy) {
+		ret = bcmgenet_power_down(priv, GENET_POWER_PASSIVE);
+	}
+
+	/* Turn off the clocks */
+	clk_disable_unprepare(priv->clk);
+
+	if (ret)
+		bcmgenet_resume(d);
+
 	return ret;
 }
 #endif /* CONFIG_PM_SLEEP */

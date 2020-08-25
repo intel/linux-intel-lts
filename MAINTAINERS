@@ -6014,6 +6014,7 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tytso/fscrypt.git
 S:	Supported
 F:	fs/crypto/
 F:	include/linux/fscrypt*.h
+F:	include/uapi/linux/fscrypt.h
 F:	Documentation/filesystems/fscrypt.rst
 
 FSI-ATTACHED I2C DRIVER
@@ -6031,6 +6032,18 @@ L:	linux-fsdevel@vger.kernel.org
 S:	Maintained
 F:	fs/notify/
 F:	include/linux/fsnotify*.h
+
+FSVERITY: READ-ONLY FILE-BASED AUTHENTICITY PROTECTION
+M:	Eric Biggers <ebiggers@kernel.org>
+M:	Theodore Y. Ts'o <tytso@mit.edu>
+L:	linux-fscrypt@vger.kernel.org
+Q:	https://patchwork.kernel.org/project/linux-fscrypt/list/
+T:	git git://git.kernel.org/pub/scm/fs/fscrypt/fscrypt.git fsverity
+S:	Supported
+F:	fs/verity/
+F:	include/linux/fsverity.h
+F:	include/uapi/linux/fsverity.h
+F:	Documentation/filesystems/fsverity.rst
 
 FUJITSU LAPTOP EXTRAS
 M:	Jonathan Woithe <jwoithe@just42.net>
@@ -7355,7 +7368,7 @@ M:	Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
 M:	Rodrigo Vivi <rodrigo.vivi@intel.com>
 L:	intel-gfx@lists.freedesktop.org
 W:	https://01.org/linuxgraphics/
-B:	https://01.org/linuxgraphics/documentation/how-report-bugs
+B:	https://gitlab.freedesktop.org/drm/intel/-/wikis/How-to-file-i915-bugs
 C:	irc://chat.freenode.net/intel-gfx
 Q:	http://patchwork.freedesktop.org/project/intel-gfx/
 T:	git git://anongit.freedesktop.org/drm-intel
@@ -10305,6 +10318,12 @@ W:	http://www.netlab.is.tsukuba.ac.jp/~yokota/izumi/ninja/
 S:	Maintained
 F:	Documentation/scsi/NinjaSCSI.txt
 F:	drivers/scsi/nsp32*
+
+NINTENDO HID DRIVER
+M:	Daniel J. Ogorchock <djogorchock@gmail.com>
+L:	linux-input@vger.kernel.org
+S:	Maintained
+F:	drivers/hid/hid-nintendo*
 
 NIOS2 ARCHITECTURE
 M:	Ley Foon Tan <lftan@altera.com>
@@ -15153,13 +15172,6 @@ L:	netdev@vger.kernel.org
 W:	http://www.linux-usb.org/usbnet
 S:	Maintained
 F:	drivers/net/usb/dm9601.c
-
-USB DIAMOND RIO500 DRIVER
-M:	Cesar Miquel <miquel@df.uba.ar>
-L:	rio500-users@lists.sourceforge.net
-W:	http://rio500.sourceforge.net
-S:	Maintained
-F:	drivers/usb/misc/rio500*
 
 USB EHCI DRIVER
 M:	Alan Stern <stern@rowland.harvard.edu>

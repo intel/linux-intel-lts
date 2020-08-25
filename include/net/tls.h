@@ -161,6 +161,10 @@ enum {
 	TLS_PENDING_CLOSED_RECORD
 };
 
+enum tls_context_flags {
+	TLS_RX_SYNC_RUNNING = 0,
+};
+
 struct cipher_context {
 	u16 prepend_size;
 	u16 tag_size;
@@ -230,6 +234,7 @@ struct tls_offload_context_rx {
 	(ALIGN(sizeof(struct tls_offload_context_rx), sizeof(void *)) + \
 	 TLS_DRIVER_STATE_SIZE)
 
+void tls_ctx_free(struct tls_context *ctx);
 int wait_on_pending_writer(struct sock *sk, long *timeo);
 int tls_sk_query(struct sock *sk, int optname, char __user *optval,
 		int __user *optlen);

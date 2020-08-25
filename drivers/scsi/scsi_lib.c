@@ -71,11 +71,11 @@ int scsi_init_sense_cache(struct Scsi_Host *shost)
 	struct kmem_cache *cache;
 	int ret = 0;
 
+	mutex_lock(&scsi_sense_cache_mutex);
 	cache = scsi_select_sense_cache(shost->unchecked_isa_dma);
 	if (cache)
-		return 0;
+		goto exit;
 
-	mutex_lock(&scsi_sense_cache_mutex);
 	if (shost->unchecked_isa_dma) {
 		scsi_sense_isadma_cache =
 			kmem_cache_create("scsi_sense_cache(DMA)",
@@ -91,7 +91,7 @@ int scsi_init_sense_cache(struct Scsi_Host *shost)
 		if (!scsi_sense_cache)
 			ret = -ENOMEM;
 	}
-
+ exit:
 	mutex_unlock(&scsi_sense_cache_mutex);
 	return ret;
 }
@@ -279,7 +279,11 @@ int __scsi_execute(struct scsi_device *sdev, const unsigned char *cmd,
 	rq->cmd_len = COMMAND_SIZE(cmd[0]);
 	memcpy(rq->cmd, cmd, rq->cmd_len);
 	rq->retries = retries;
-	req->timeout = timeout;
+	if (likely(!sdev->timeout_override))
+		req->timeout = timeout;
+	else
+		req->timeout = sdev->timeout_override;
+
 	req->cmd_flags |= flags;
 	req->rq_flags |= rq_flags | RQF_QUIET;
 
@@ -1250,6 +1254,18 @@ static void scsi_initialize_rq(struct request *rq)
 	init_rcu_head(&cmd->rcu);
 	cmd->jiffies_at_alloc = jiffies;
 	cmd->retries = 0;
+}
+
+/*
+ * Only called when the request isn't completed by SCSI, and not freed by
+ * SCSI
+ */
+static void scsi_cleanup_rq(struct request *rq)
+{
+	if (rq->rq_flags & RQF_DONTPREP) {
+		scsi_mq_uninit_cmd(blk_mq_rq_to_pdu(rq));
+		rq->rq_flags &= ~RQF_DONTPREP;
+	}
 }
 
 /* Add a command to the list used by the aacraid and dpt_i2o drivers */
@@ -2339,6 +2355,7 @@ static const struct blk_mq_ops scsi_mq_ops = {
 	.init_request	= scsi_mq_init_request,
 	.exit_request	= scsi_mq_exit_request,
 	.initialize_rq_fn = scsi_initialize_rq,
+	.cleanup_rq	= scsi_cleanup_rq,
 	.map_queues	= scsi_map_queues,
 };
 
@@ -2358,7 +2375,8 @@ int scsi_mq_setup_tags(struct Scsi_Host *shost)
 {
 	unsigned int cmd_size, sgl_size;
 
-	sgl_size = scsi_mq_sgl_size(shost);
+	sgl_size = max_t(unsigned int, sizeof(struct scatterlist),
+			scsi_mq_sgl_size(shost));
 	cmd_size = sizeof(struct scsi_cmnd) + shost->hostt->cmd_size + sgl_size;
 	if (scsi_host_get_prot(shost))
 		cmd_size += sizeof(struct scsi_data_buffer) + sgl_size;
@@ -2453,6 +2471,33 @@ void scsi_unblock_requests(struct Scsi_Host *shost)
 	scsi_run_host_queues(shost);
 }
 EXPORT_SYMBOL(scsi_unblock_requests);
+
+/*
+ * Function:    scsi_set_cmd_timeout_override()
+ *
+ * Purpose:     Utility function used by low-level drivers to override
+		timeout for the scsi commands.
+ *
+ * Arguments:   sdev       - scsi device in question
+ *		timeout	   - timeout in jiffies
+ *
+ * Returns:     Nothing
+ *
+ * Lock status: No locks are assumed held.
+ *
+ * Notes:	Some platforms might be very slow and command completion may
+ *		take much longer than default scsi command timeouts.
+ *		SCSI Read/Write command timeout can be changed by
+ *		blk_queue_rq_timeout() but there is no option to override
+ *		timeout for rest of the scsi commands. This function would
+ *		would allow this.
+ */
+void scsi_set_cmd_timeout_override(struct scsi_device *sdev,
+				   unsigned int timeout)
+{
+	sdev->timeout_override = timeout;
+}
+EXPORT_SYMBOL(scsi_set_cmd_timeout_override);
 
 int __init scsi_init_queue(void)
 {
@@ -3059,11 +3104,14 @@ scsi_device_quiesce(struct scsi_device *sdev)
 	 */
 	WARN_ON_ONCE(sdev->quiesced_by && sdev->quiesced_by != current);
 
-	blk_set_preempt_only(q);
+	if (sdev->quiesced_by == current)
+		return 0;
+
+	blk_set_pm_only(q);
 
 	blk_mq_freeze_queue(q);
 	/*
-	 * Ensure that the effect of blk_set_preempt_only() will be visible
+	 * Ensure that the effect of blk_set_pm_only() will be visible
 	 * for percpu_ref_tryget() callers that occur after the queue
 	 * unfreeze even if the queue was already frozen before this function
 	 * was called. See also https://lwn.net/Articles/573497/.
@@ -3076,7 +3124,7 @@ scsi_device_quiesce(struct scsi_device *sdev)
 	if (err == 0)
 		sdev->quiesced_by = current;
 	else
-		blk_clear_preempt_only(q);
+		blk_clear_pm_only(q);
 	mutex_unlock(&sdev->state_mutex);
 
 	return err;
@@ -3099,8 +3147,10 @@ void scsi_device_resume(struct scsi_device *sdev)
 	 * device deleted during suspend)
 	 */
 	mutex_lock(&sdev->state_mutex);
-	sdev->quiesced_by = NULL;
-	blk_clear_preempt_only(sdev->request_queue);
+	if (sdev->quiesced_by) {
+		sdev->quiesced_by = NULL;
+		blk_clear_pm_only(sdev->request_queue);
+	}
 	if (sdev->sdev_state == SDEV_QUIESCE)
 		scsi_device_set_state(sdev, SDEV_RUNNING);
 	mutex_unlock(&sdev->state_mutex);

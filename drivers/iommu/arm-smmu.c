@@ -39,6 +39,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/io-64-nonatomic-hi-lo.h>
+#include <linux/io-pgtable.h>
 #include <linux/iommu.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
@@ -53,8 +54,16 @@
 
 #include <linux/amba/bus.h>
 
-#include "io-pgtable.h"
 #include "arm-smmu-regs.h"
+
+/*
+ * Apparently, some Qualcomm arm64 platforms which appear to expose their SMMU
+ * global register space are still, in fact, using a hypervisor to mediate it
+ * by trapping and emulating register accesses. Sadly, some deployed versions
+ * of said trapping code have bugs wherein they go horribly wrong for stores
+ * using r31 (i.e. XZR/WZR) as the source register.
+ */
+#define QCOM_DUMMY_VAL -1
 
 #define ARM_MMU500_ACTLR_CPRE		(1 << 1)
 
@@ -398,7 +407,7 @@ static void __arm_smmu_tlb_sync(struct arm_smmu_device *smmu,
 {
 	unsigned int spin_cnt, delay;
 
-	writel_relaxed(0, sync);
+	writel_relaxed(QCOM_DUMMY_VAL, sync);
 	for (delay = 1; delay < TLB_LOOP_TIMEOUT; delay *= 2) {
 		for (spin_cnt = TLB_SPIN_COUNT; spin_cnt > 0; spin_cnt--) {
 			if (!(readl_relaxed(status) & sTLBGSTATUS_GSACTIVE))
@@ -1637,8 +1646,8 @@ static void arm_smmu_device_reset(struct arm_smmu_device *smmu)
 	}
 
 	/* Invalidate the TLB, just in case */
-	writel_relaxed(0, gr0_base + ARM_SMMU_GR0_TLBIALLH);
-	writel_relaxed(0, gr0_base + ARM_SMMU_GR0_TLBIALLNSNH);
+	writel_relaxed(QCOM_DUMMY_VAL, gr0_base + ARM_SMMU_GR0_TLBIALLH);
+	writel_relaxed(QCOM_DUMMY_VAL, gr0_base + ARM_SMMU_GR0_TLBIALLNSNH);
 
 	reg = readl_relaxed(ARM_SMMU_GR0_NS(smmu) + ARM_SMMU_GR0_sCR0);
 
@@ -2179,7 +2188,9 @@ static int arm_smmu_legacy_bus_init(void)
 		arm_smmu_bus_init();
 	return 0;
 }
+#ifndef MODULE
 device_initcall_sync(arm_smmu_legacy_bus_init);
+#endif
 
 static int arm_smmu_device_remove(struct platform_device *pdev)
 {
@@ -2221,7 +2232,26 @@ static struct platform_driver arm_smmu_driver = {
 	.remove	= arm_smmu_device_remove,
 	.shutdown = arm_smmu_device_shutdown,
 };
-module_platform_driver(arm_smmu_driver);
+
+static int __init arm_smmu_driver_init(void)
+{
+	int ret;
+
+	ret = platform_driver_register(&arm_smmu_driver);
+#ifdef MODULE
+	if (!ret)
+		arm_smmu_legacy_bus_init();
+#endif
+	return ret;
+}
+
+static void __exit arm_smmu_driver_exit(void)
+{
+	platform_driver_unregister(&arm_smmu_driver);
+}
+
+subsys_initcall(arm_smmu_driver_init);
+module_exit(arm_smmu_driver_exit);
 
 MODULE_DESCRIPTION("IOMMU API for ARM architected SMMU implementations");
 MODULE_AUTHOR("Will Deacon <will.deacon@arm.com>");

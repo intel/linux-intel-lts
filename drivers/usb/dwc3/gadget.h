@@ -91,6 +91,7 @@ static inline void dwc3_gadget_move_cancelled_request(struct dwc3_request *req)
 	struct dwc3_ep		*dep = req->dep;
 
 	req->status = DWC3_REQUEST_STATUS_CANCELLED;
+	req->started = false;
 	list_move_tail(&req->list, &dep->cancelled_list);
 }
 
