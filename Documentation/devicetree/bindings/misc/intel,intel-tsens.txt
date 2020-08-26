@@ -1,0 +1,51 @@
+Intel Temperature sensors in Bay series
+---------------------
+
+The tsens driver enables reading of onchip sensors present
+in the Intel Bay SoC.
+
+Required properties:
+- compatible : "intel,intel-tsens"
+
+- reg: list of register areas, as specified in reg-names
+- interrupts: not used
+- clocks: clock needed for thermal to operate
+
+Example:
+		tsens: tsens@20260000 {
+			compatible = "intel,intel-tsens";
+			status = "disabled";
+			plat_name = "intel,keembay_thermal";
+			reg = <0x0 0x20260000 0x0 0x100>;
+			interrupts = <GIC_SPI 90 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&scmi_clk MOVISOC_KMB_A53_AUX_TSENS>;
+			clk-rate = <1250000>;
+
+			mss {
+				passive_delay = <1000>;
+				polling_delay = <2000>;
+				trip_temp = <40000 80000 1000000>;
+				trip_type = "passive", "passive", "critical";
+			};
+
+			css {
+				passive_delay = <1000>;
+				polling_delay = <2000>;
+				trip_temp = <40000 80000 1000000>;
+				trip_type = "passive", "passive", "critical";
+			};
+
+			nce {
+				passive_delay = <1000>;
+				polling_delay = <2000>;
+				trip_temp = <40000 80000 1000000>;
+				trip_type = "passive", "passive", "critical";
+			};
+
+			soc {
+				passive_delay = <1000>;
+				polling_delay = <2000>;
+				trip_temp = <40000 80000 1000000>;
+				trip_type = "passive", "passive", "critical";
+			};
+		};

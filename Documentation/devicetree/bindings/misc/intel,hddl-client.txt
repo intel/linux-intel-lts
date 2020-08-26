@@ -1,0 +1,29 @@
+Intel HDDL client
+---------------------
+
+The hddl client driver enables reading of onchip sensors present
+in the Intel Bay SoC.
+
+Required properties:
+- compatible : "intel,hddl-client"
+
+- reg: list of register areas, as specified in reg-names
+- interrupts: not used
+- clocks: clock needed for thermal to operate
+
+Example:
+	hddl_dev: hddl_device {
+		compatible = "intel,hddl-client";
+		status = "disabled";
+		reg = <0x0 0x20320000 0x0 0x800>;
+		xlink_chan = <1080>;
+		i2c_xlink_chan = <1081>;
+		kmb_xlink_tj@5a {
+			status = "okay";
+			compatible = "intel_tsens";
+			reg = <0x4000005a>;
+			local-host = <0x3>;
+			remote-host = <0x3>;
+			bus = <0x1>;
+		};
+	};

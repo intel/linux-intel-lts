@@ -19,10 +19,7 @@
 #include <linux/hddl_device.h>
 #include <linux/slab.h>
 
-//#undef CONFIG_I2C_SLAVE
 /* Define the xlink debug device structures to be used with dev_dbg() et al */
-
-#define XLINK_SMBUS_DEBUG 0
 
 static struct device_driver dbg_name = {
 	.name = "xlink_i2c_dbg"
@@ -170,18 +167,15 @@ static s32 xlink_smbus_xfer(struct i2c_adapter *adap, u16 addr,
 #endif
 	struct xlink_adapter_data *adapt_data = i2c_get_adapdata(adap);
 
-#if XLINK_SMBUS_DEBUG
-	dev_info(dbgxi2c, "%s was called with the following parameters:\n",
+	dev_dbg(dbgxi2c, "%s was called with the following parameters:\n",
 		__func__);
-	dev_info(dbgxi2c, "addr = %.4x\n", addr);
-	dev_info(dbgxi2c, "flags = %.4x\n", flags);
-	dev_info(dbgxi2c, "read_write = %s\n",
+	dev_dbg(dbgxi2c, "addr = %.4x\n", addr);
+	dev_dbg(dbgxi2c, "flags = %.4x\n", flags);
+	dev_dbg(dbgxi2c, "read_write = %s\n",
 			read_write == I2C_SMBUS_WRITE ? "write" : "read");
-	dev_info(dbgxi2c, "command = %d\n", command);
-	dev_info(dbgxi2c, "protocol = %d\n", protocol);
-	dev_info(dbgxi2c, "data = %p\n", data);
-#endif
-
+	dev_dbg(dbgxi2c, "command = %d\n", command);
+	dev_dbg(dbgxi2c, "protocol = %d\n", protocol);
+	dev_dbg(dbgxi2c, "data = %p\n", data);
 	msg = kzalloc(sizeof(struct xlink_msg), GFP_KERNEL);
 	if (!msg)
 		return X_LINK_ERROR;
@@ -198,9 +192,9 @@ static s32 xlink_smbus_xfer(struct i2c_adapter *adap, u16 addr,
 	xerr = xlink_write_data(adapt_data->xhandle, adapt_data->channel,
 				(u8 *)msg,
 				sizeof(struct xlink_msg));
-	kfree(msg);
+	//kfree(msg);
 	if (xerr != X_LINK_SUCCESS) {
-		dev_info(dbgxi2c,
+		dev_err(dbgxi2c,
 			"xlink_write_data failed (%d) dropping packet.\n",
 			xerr);
 		return -ENODEV;
@@ -217,7 +211,7 @@ static s32 xlink_smbus_xfer(struct i2c_adapter *adap, u16 addr,
 		if (data)
 			*data = msg->data;
 		rc = msg->status;
-		kfree(msg);
+		//kfree(msg);
 	} else {
 		rc = -ETIMEDOUT;
 	}
@@ -236,12 +230,12 @@ static int xlinki2c_receive_thread(void *param)
 	struct xlink_msg *msg;
 	struct device *dev = &adapt_data->adap->dev;
 
-	//dev_info(dbgxi2c, "xlinknet receive thread started [%p].\n",
-	//adapt_data);
-	//dev_info(dbgxi2c, "xlinknet adapt_data channel [%d].\n",
-	//adapt_data->channel);
-	//dev_info(dbgxi2c, "xlinknet adapt_data xhandle[%p].\n",
-	//adapt_data->xhandle);
+	dev_dbg(dbgxi2c, "xlinknet receive thread started [%p].\n",
+			adapt_data);
+	dev_dbg(dbgxi2c, "xlinknet adapt_data channel [%d].\n",
+			adapt_data->channel);
+	dev_dbg(dbgxi2c, "xlinknet adapt_data xhandle[%p].\n",
+			adapt_data->xhandle);
 	while (!kthread_should_stop()) {
 		msg = kzalloc(sizeof(struct xlink_msg), GFP_KERNEL);
 		if (!msg)
@@ -284,16 +278,14 @@ static int xlinki2c_receive_thread(void *param)
 			xlink_write_data(adapt_data->xhandle,
 			adapt_data->channel, (u8 *)msg,
 			sizeof(struct xlink_msg));
-			kfree(msg);
+			//kfree(msg);
 		} else {
 			/* this is an adapter on its own. */
 			list_add_tail(&msg->node, &adapt_data->head);
 			complete(&adapt_data->work);
 		}
 	}
-#if XLINK_SMBUS_DEBUG
-	dev_info(dev, "[%d] %s stopped\n", adapt_data->adap->nr, __func__);
-#endif
+	dev_dbg(dev, "[%d] %s stopped\n", adapt_data->adap->nr, __func__);
 
 	return 0;
 }
@@ -345,15 +337,15 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 {
 	struct xlink_adapter_data *adapt_data;
 	uint32_t rc = 0;
-	struct kmb *hddl_device = pdev->dev.platform_data;
-	struct xlink_handle *devH = &hddl_device->devH;
-	struct i2c_adapter *adap = &hddl_device->adap[pdev->id & 0x3];
+	struct intel_hddl_clients *c = pdev->dev.platform_data;
+	struct xlink_handle *devH = &c->xlink_dev;
+	struct i2c_adapter *adap;
 	struct device *dev = &pdev->dev;
 
-#if XLINK_SMBUS_DEBUG
-	dev_info(dev, "Registering xlink I2C adapter...\n");
-#endif
+	dev_dbg(dev, "Registering xlink I2C adapter...\n");
 
+	adap = kzalloc(sizeof(struct i2c_adapter), GFP_KERNEL);
+	c->adap[pdev->id & 0x3] = adap;
 	memset(adap, 0, sizeof(struct i2c_adapter));
 	adap->class = 0; //I2C_CLASS_HWMON;
 	adap->owner  = THIS_MODULE;
@@ -367,7 +359,7 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 
 	INIT_LIST_HEAD(&adapt_data->head);
 	/* TODO: connect and assign channel number */
-	adapt_data->channel = hddl_device->xlink_i2c_ch[pdev->id & 0x3];
+	adapt_data->channel = c->xlink_i2c_ch[pdev->id & 0x3];
 	adapt_data->slave = NULL;
 	adapt_data->xhandle = devH;
 	adapt_data->adap = adap;
@@ -376,12 +368,17 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 			adapt_data->channel,
 			RXB_TXB,  /* mode */
 			64*1024,
-			2000   /* timeout */);
-#if XLINK_SMBUS_DEBUG
-	dev_info(dev, "xlink_open_channel completed[%d][%d][%p]\n", rc,
+			100   /* timeout */);
+	if (rc != X_LINK_SUCCESS) {
+		dev_err(dev, "xlink_open_channel failed[%d][%d][%p]\n", rc,
+		  adapt_data->channel,
+		  adapt_data->xhandle);
+		kfree(adap);
+		return -EINVAL;
+	}
+	dev_dbg(dev, "xlink_open_channel completed[%d][%d][%p]\n", rc,
 			adapt_data->channel,
 			adapt_data->xhandle);
-#endif
 
 	i2c_set_adapdata(adap, adapt_data);
 
@@ -395,7 +392,7 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 					adapt_data,
 					"xlinki2c_receive_thread");
 	if (adapt_data->task_recv == NULL)
-		dev_info(dev, "%s Thread creation failed", __func__);
+		dev_err(dev, "%s Thread creation failed", __func__);
 	return rc;
 }
 
@@ -409,7 +406,7 @@ static int xlink_i2c_remove(struct platform_device *pdev)
 	/* close the channel and disconnect */
 	xlink_close_channel(adapt_data->xhandle, adapt_data->channel);
 	/* This will block the dynamic registration */
-	//i2c_del_adapter(adapt_data->adap);
+	i2c_del_adapter(adapt_data->adap);
 	kfree(adapt_data);
 	dev_info(&adap->dev, "delete the adapter[%d]\n", adap->nr);
 
@@ -426,17 +423,13 @@ static struct platform_driver xlink_i2c_driver = {
 
 static void __exit xlink_adapter_exit(void)
 {
-#if XLINK_SMBUS_DEBUG
-	dev_info(dbgxi2c, "Unloading XLink I2C module...\n");
-#endif
+	dev_dbg(dbgxi2c, "Unloading XLink I2C module...\n");
 	platform_driver_unregister(&xlink_i2c_driver);
 }
 
 static int __init xlink_adapter_init(void)
 {
-#if XLINK_SMBUS_DEBUG
-	dev_info(dbgxi2c, "Loading XLink I2C module...\n");
-#endif
+	dev_dbg(dbgxi2c, "Loading XLink I2C module...\n");
 	platform_driver_register(&xlink_i2c_driver);
 	return 0;
 

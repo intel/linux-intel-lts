@@ -1,9 +1,0 @@
-#
-# kConfig for KeemBay Thermal Linux driver
-#
-
-config HOST_KMB_TJ
-	tristate "IA Host Keembay Tj Driver"
-	default m
-	help
-	  Enable this option to get the KMB Tj in the IA host

@@ -1,15 +1,14 @@
 # Copyright (C) 2019 Intel Corporation
 # SPDX-License-Identifier: GPL-2.0-only
 
-config HDDL_DEVICE
+config HDDL_DEVICE_SERVER
 	tristate "Support for hddl device"
 	default m
 	depends on XLINK_CORE
 	help
 	  hddl device management
 
-
-config HDDL_LOCAL_HOST
+config HDDL_DEVICE_CLIENT
 	tristate "Support for hddl device local host"
 	depends on XLINK_CORE
 	default y
