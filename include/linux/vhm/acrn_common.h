@@ -519,6 +519,49 @@ struct acrn_mmiodev {
 } __aligned(8);
 
 /**
+ * @brief Info to create or destroy a virtual PCI or legacy device for a VM
+ *
+ * the parameter for HC_CREATE_VDEV or HC_DESTROY_VDEV hypercall
+ */
+struct acrn_emul_dev {
+	/*
+	 * the identifier of the device, the low 32 bits represent the vendor
+	 * id and device id of PCI device and the high 32 bits represent the
+	 * device number of the legacy device
+	 */
+	union {
+		uint64_t value;
+		struct {
+			uint16_t vendor_id;
+			uint16_t device_id;
+			uint32_t legacy_device_number;
+		} fields;
+	} dev_id;
+
+	/*
+	 * the slot of the device, if the device is a PCI device, the slot
+	 * represents BDF, otherwise it represents legacy device slot number
+	 */
+	uint32_t slot;
+
+	/** reserved for extension */
+	uint32_t reserved0;
+
+	/** the IO resource address of the device, initialized by ACRN-DM. */
+	uint32_t io_addr[6];
+
+	/** the IO resource size of the device, initialized by ACRN-DM. */
+	uint32_t io_size[6];
+
+	/** the options for the virtual device, initialized by ACRN-DM. */
+	uint8_t args[128];
+
+	/** reserved for extension */
+	uint64_t reserved1[8];
+
+} __aligned(8);
+
+/**
  * @brief The guest config pointer offset.
  *
  * It's designed to support passing DM config data pointer, based on it,
