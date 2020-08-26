@@ -60,7 +60,7 @@ static bool key_equal(const void *key1, const void *key2,
 }
 
 /* Caller must make sure id is allocated */
-int expr__add_id_val(struct expr_parse_ctx *ctx, const char *name, double val)
+int expr__add_id_val(struct expr_parse_ctx *ctx, const char *id, double val)
 {
 	struct expr_id_data *data_ptr = NULL, *old_data = NULL;
 	char *old_key = NULL;
