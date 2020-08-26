@@ -93,6 +93,7 @@ expr:	  NUMBER
 					if (expr__resolve_id(ctx, $1, &data) == 0)
 						$$ = expr_id_data__value(data);
 
+					$$ = expr_id_data__value(data);
 					free($1);
 				}
 	| expr '|' expr		{ $$ = (long)$1 | (long)$3; }
