@@ -3260,25 +3260,25 @@ static void stmmac_free_irq(struct net_device *dev,
 			if (priv->rx_irq[j] > 0)
 				free_irq(priv->rx_irq[j], &priv->rx_queue[j]);
 		}
+	case REQ_IRQ_ERR_SFTY_UE:
 		if (priv->sfty_ue_irq > 0 && priv->sfty_ue_irq != dev->irq)
 			free_irq(priv->sfty_ue_irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_SFTY_UE:
+	case REQ_IRQ_ERR_SFTY_CE:
 		if (priv->sfty_ce_irq > 0 && priv->sfty_ce_irq != dev->irq)
 			free_irq(priv->sfty_ce_irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_SFTY_CE:
+	case REQ_IRQ_ERR_LPI:
 		if (priv->lpi_irq > 0 && priv->lpi_irq != dev->irq)
 			free_irq(priv->lpi_irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_LPI:
+	case REQ_IRQ_ERR_WOL:
 		if (priv->wol_irq > 0 && priv->wol_irq != dev->irq)
 			free_irq(priv->wol_irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_WOL:
+	case REQ_IRQ_ERR_MAC:
 		free_irq(dev->irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_MAC:
 	case REQ_IRQ_ERR_NO:
 		/* If MAC IRQ request error, no more IRQ to free */
 		break;
