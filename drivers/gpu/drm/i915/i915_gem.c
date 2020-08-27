@@ -1112,6 +1112,10 @@ err_rq:
 		goto out;
 	}
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
+	msleep(2000);
+#endif
+
 	for (id = 0; id < ARRAY_SIZE(requests); id++) {
 		struct i915_request *rq;
 		struct i915_vma *state;

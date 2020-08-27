@@ -572,6 +572,45 @@ create_vm_fail:
 		break;
 	}
 
+	case IC_ASSIGN_MMIODEV: {
+		struct acrn_mmiodev *mmiodev;
+
+		mmiodev = acrn_mempool_alloc(GFP_KERNEL);
+		if (mmiodev == NULL)
+			return -EFAULT;
+		if (copy_from_user(mmiodev,
+				(void *)ioctl_param, sizeof(*mmiodev))) {
+			ret = -EFAULT;
+		} else {
+			ret = hcall_assign_mmiodev(vm->vmid,
+					virt_to_phys(mmiodev));
+			if (ret < 0)
+				pr_err("vhm: failed to assign mmio device!\n");
+		}
+		acrn_mempool_free(mmiodev);
+		break;
+	}
+
+	case IC_DEASSIGN_MMIODEV: {
+		struct acrn_mmiodev *mmiodev;
+
+		mmiodev = acrn_mempool_alloc(GFP_KERNEL);
+		if (mmiodev == NULL)
+			return -EFAULT;
+
+		if (copy_from_user(mmiodev,
+				(void *)ioctl_param, sizeof(*mmiodev))) {
+			ret = -EFAULT;
+		} else {
+			ret = hcall_deassign_mmiodev(vm->vmid,
+					virt_to_phys(mmiodev));
+			if (ret < 0)
+				pr_err("vhm: failed to deassign mmio device!\n");
+		}
+		acrn_mempool_free(mmiodev);
+		break;
+	}
+
 	case IC_SET_PTDEV_INTR_INFO: {
 		struct hc_ptdev_irq *hc_pt_irq;
 

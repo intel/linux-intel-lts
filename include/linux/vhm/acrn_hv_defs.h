@@ -115,6 +115,8 @@
 #define HC_RESET_PTDEV_INTR_INFO    _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x04)
 #define HC_ASSIGN_PCIDEV            _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x05)
 #define HC_DEASSIGN_PCIDEV          _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x06)
+#define HC_ASSIGN_MMIODEV           _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x07)
+#define HC_DEASSIGN_MMIODEV         _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x08)
 
 /* DEBUG */
 #define HC_ID_DBG_BASE              0x60UL
