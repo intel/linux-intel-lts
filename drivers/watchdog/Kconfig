@@ -980,6 +980,19 @@ config PM8916_WATCHDOG
 	  Say Y here to include support watchdog timer embedded into the
 	  pm8916 module.
 
+config KEEMBAY_WATCHDOG
+	tristate "Intel Keem Bay SoC non-secure watchdog"
+	depends on ARM64 || COMPILE_TEST
+	depends on HAVE_ARM_SMCCC
+	depends on OF
+	select WATCHDOG_CORE
+	help
+	  Say Y here to include support for the non-secure watchdog timer in
+	  Intel Keem Bay SoC.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called keembay_wdt.
+
 # X86 (i386 + ia64 + x86_64) Architecture
 
 config ACQUIRE_WDT

@@ -200,7 +200,6 @@ invalid_firmware:
 
 #define GVT_FIRMWARE_PATH "i915/gvt"
 
-bool disable_gvt_fw_loading = true;
 /**
  * intel_gvt_load_firmware - load GVT firmware
  * @gvt: intel gvt device
@@ -218,26 +217,26 @@ int intel_gvt_load_firmware(struct intel_gvt *gvt)
 	void *mem;
 	int ret;
 
-	mem = kmalloc(info->cfg_space_size, GFP_KERNEL);
-	if (!mem)
+	path = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!path)
 		return -ENOMEM;
+
+	mem = kmalloc(info->cfg_space_size, GFP_KERNEL);
+	if (!mem) {
+		kfree(path);
+		return -ENOMEM;
+	}
 
 	firmware->cfg_space = mem;
 
 	mem = kmalloc(info->mmio_size, GFP_KERNEL);
 	if (!mem) {
+		kfree(path);
 		kfree(firmware->cfg_space);
 		return -ENOMEM;
 	}
 
 	firmware->mmio = mem;
-
-	if (disable_gvt_fw_loading)
-		goto expose_firmware;
-
-	path = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!path)
-		return -ENOMEM;
 
 	sprintf(path, "%s/vid_0x%04x_did_0x%04x_rid_0x%02x.golden_hw_state",
 		 GVT_FIRMWARE_PATH, pdev->vendor, pdev->device,

@@ -27,6 +27,7 @@
 #include <linux/marvell_phy.h>
 #include <linux/phy.h>
 #include <linux/delay.h>
+#include <linux/netdevice.h>
 
 #define MV_PHY_ALASKA_NBT_QUIRK_MASK	0xfffffffe
 #define MV_PHY_ALASKA_NBT_QUIRK_REV	(MARVELL_PHY_ID_88X3310 | 0xa)
@@ -44,6 +45,11 @@ enum {
 	MV_PCS_PAIRSWAP_AB	= 0x0002,
 	MV_PCS_PAIRSWAP_NONE	= 0x0003,
 
+	/* Copper Specific Interrupt registers */
+	MV_PCS_INTR_ENABLE	= 0x8010,
+	MV_PCS_INTR_STS		= 0x8011,
+	PM_PCS_INTR_LSC		= BIT(10),
+
 	/* These registers appear at 0x800X and 0xa00X - the 0xa00X control
 	 * registers appear to set themselves to the 0x800X when AN is
 	 * restarted, but status registers appear readable from either.
@@ -60,6 +66,16 @@ enum {
 	MV_V2_TEMP_CTRL_DISABLE	= 0xc000,
 	MV_V2_TEMP		= 0xf08c,
 	MV_V2_TEMP_UNKNOWN	= 0x9600, /* unknown function */
+	MV_V2_MAGIC_PKT_WORD0	= 0xf06b,
+	MV_V2_MAGIC_PKT_WORD1	= 0xf06c,
+	MV_V2_MAGIC_PKT_WORD2	= 0xf06d,
+	MV_V2_WOL_CTRL		= 0xf06e,
+	MV_V2_WOL_STS		= 0xf06f,
+	MV_V2_WOL_CLEAR_STS	= BIT(15),
+	MV_V2_WOL_MAGIC_PKT_EN	= BIT(0),
+	MV_V2_PORT_INTR_STS	= 0xf040,
+	MV_V2_PORT_INTR_MASK	= 0xf043,
+	MV_V2_WOL_INTR_EN	= BIT(8),
 
 	/* 88E2110 specific */
 	M88E2110_PORTCONTROL	= 0xc04a,
@@ -559,6 +575,119 @@ static int m88e2110_loopback(struct phy_device *phydev, bool enable)
 			  enable ? M88E2110_LOOPBACK : 0);
 }
 
+static void m88e2110_get_wol(struct phy_device *phydev,
+			     struct ethtool_wolinfo *wol)
+{
+	int ret = 0;
+
+	wol->supported = WAKE_MAGIC | WAKE_PHY;
+	wol->wolopts = 0;
+
+	ret = phy_read_mmd(phydev, MDIO_MMD_VEND2, MV_V2_WOL_CTRL);
+
+	if (ret & MV_V2_WOL_MAGIC_PKT_EN)
+		wol->wolopts |= WAKE_MAGIC;
+
+	ret = phy_read_mmd(phydev, MDIO_MMD_PCS, MV_PCS_INTR_ENABLE);
+
+	if (ret & PM_PCS_INTR_LSC)
+		wol->wolopts |= WAKE_PHY;
+}
+
+static int m88e2110_set_wol(struct phy_device *phydev,
+			    struct ethtool_wolinfo *wol)
+{
+	int ret = 0;
+
+	if (wol->wolopts & WAKE_MAGIC) {
+		/* Enable the WOL interrupt */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       MV_V2_PORT_INTR_MASK,
+				       MV_V2_WOL_INTR_EN);
+
+		if (ret < 0)
+			return ret;
+
+		/* Store the device address for the magic packet */
+		ret = phy_write_mmd(phydev, MDIO_MMD_VEND2,
+				    MV_V2_MAGIC_PKT_WORD2,
+				    ((phydev->attached_dev->dev_addr[5] << 8) |
+				    phydev->attached_dev->dev_addr[4]));
+
+		if (ret < 0)
+			return ret;
+
+		ret = phy_write_mmd(phydev, MDIO_MMD_VEND2,
+				    MV_V2_MAGIC_PKT_WORD1,
+				    ((phydev->attached_dev->dev_addr[3] << 8) |
+				    phydev->attached_dev->dev_addr[2]));
+
+		if (ret < 0)
+			return ret;
+
+		ret = phy_write_mmd(phydev, MDIO_MMD_VEND2,
+				    MV_V2_MAGIC_PKT_WORD0,
+				    ((phydev->attached_dev->dev_addr[1] << 8) |
+				    phydev->attached_dev->dev_addr[0]));
+
+		if (ret < 0)
+			return ret;
+
+		/* Clear WOL status and enable magic packet matching */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       MV_V2_WOL_CTRL,
+				       MV_V2_WOL_MAGIC_PKT_EN |
+				       MV_V2_WOL_CLEAR_STS);
+
+		if (ret < 0)
+			return ret;
+
+		/* Reset the clear WOL status bit as it does not self-clear */
+		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2,
+					 MV_V2_WOL_CTRL,
+					 MV_V2_WOL_CLEAR_STS);
+
+		if (ret < 0)
+			return ret;
+	} else {
+		/* Disable magic packet matching & reset WOL status bit */
+		ret = phy_modify_mmd(phydev, MDIO_MMD_VEND2,
+				     MV_V2_WOL_CTRL,
+				     MV_V2_WOL_MAGIC_PKT_EN,
+				     MV_V2_WOL_CLEAR_STS);
+
+		if (ret < 0)
+			return ret;
+
+		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2,
+					 MV_V2_WOL_CTRL,
+					 MV_V2_WOL_CLEAR_STS);
+
+		if (ret < 0)
+			return ret;
+	}
+
+	if (wol->wolopts & WAKE_PHY) {
+		/* Enable the link status changed interrupt */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_PCS,
+				       MV_PCS_INTR_ENABLE,
+				       PM_PCS_INTR_LSC);
+
+		if (ret < 0)
+			return ret;
+	} else {
+		/* Disable the link status changed interrupt */
+		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_PCS,
+					 MV_PCS_INTR_ENABLE,
+					 PM_PCS_INTR_LSC);
+
+		if (ret < 0)
+			return ret;
+	}
+
+	return ret;
+}
+
 static struct phy_driver mv3310_drivers[] = {
 	{
 		.phy_id		= MARVELL_PHY_ID_88X3310,
@@ -587,6 +716,8 @@ static struct phy_driver mv3310_drivers[] = {
 		.aneg_done	= genphy_c45_aneg_done,
 		.read_status	= mv3310_read_status,
 		.set_loopback	= m88e2110_loopback,
+		.get_wol	= &m88e2110_get_wol,
+		.set_wol	= &m88e2110_set_wol,
 	},
 };
 

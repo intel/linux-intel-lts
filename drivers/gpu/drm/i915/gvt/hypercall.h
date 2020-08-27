@@ -67,8 +67,6 @@ struct intel_gvt_mpt {
 			      unsigned long mfn, unsigned int nr, bool map);
 	int (*set_trap_area)(unsigned long handle, u64 start, u64 end,
 			     bool map);
-	int (*set_pvmmio)(unsigned long handle, u64 start, u64 end,
-			     bool map);
 	int (*set_opregion)(void *vgpu);
 	int (*set_edid)(void *vgpu, int port_num);
 	int (*get_vfio_device)(void *vgpu);

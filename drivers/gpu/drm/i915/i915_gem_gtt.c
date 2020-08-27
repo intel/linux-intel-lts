@@ -1021,10 +1021,6 @@ static u64 __gen8_ppgtt_clear(struct i915_address_space * const vm,
 static void gen8_ppgtt_clear(struct i915_address_space *vm,
 			     u64 start, u64 length)
 {
-	struct i915_page_directory * const pml4 = i915_vm_to_ppgtt(vm)->pd;
-	u64 orig_start = start;
-	u64 orig_length = length;
-
 	GEM_BUG_ON(!IS_ALIGNED(start, BIT_ULL(GEN8_PTE_SHIFT)));
 	GEM_BUG_ON(!IS_ALIGNED(length, BIT_ULL(GEN8_PTE_SHIFT)));
 	GEM_BUG_ON(range_overflows(start, length, vm->total));
@@ -1033,20 +1029,8 @@ static void gen8_ppgtt_clear(struct i915_address_space *vm,
 	length >>= GEN8_PTE_SHIFT;
 	GEM_BUG_ON(length == 0);
 
-	__gen8_ppgtt_clear(vm, pml4, start, start + length, vm->top);
-
-	if (PVMMIO_LEVEL(vm->i915, PVMMIO_PPGTT_UPDATE)) {
-		struct drm_i915_private *dev_priv = vm->i915;
-		struct pv_ppgtt_update *pv_ppgtt =
-					&dev_priv->shared_page->pv_ppgtt;
-
-		spin_lock(&dev_priv->pvmmio_ppgtt_lock);
-		writeq(px_dma(pml4), &pv_ppgtt->pdp);
-		writeq(orig_start, &pv_ppgtt->start);
-		writeq(orig_length, &pv_ppgtt->length);
-		I915_WRITE(vgtif_reg(g2v_notify), VGT_G2V_PPGTT_L4_CLEAR);
-		spin_unlock(&dev_priv->pvmmio_ppgtt_lock);
-	}
+	__gen8_ppgtt_clear(vm, i915_vm_to_ppgtt(vm)->pd,
+			   start, start + length, vm->top);
 }
 
 static int __gen8_ppgtt_alloc(struct i915_address_space * const vm,
@@ -1150,9 +1134,6 @@ static int gen8_ppgtt_alloc(struct i915_address_space *vm,
 {
 	u64 from;
 	int err;
-	struct i915_page_directory * const pml4 = i915_vm_to_ppgtt(vm)->pd;
-	u64 orig_start = start;
-	u64 orig_length = length;
 
 	GEM_BUG_ON(!IS_ALIGNED(start, BIT_ULL(GEN8_PTE_SHIFT)));
 	GEM_BUG_ON(!IS_ALIGNED(length, BIT_ULL(GEN8_PTE_SHIFT)));
@@ -1163,23 +1144,11 @@ static int gen8_ppgtt_alloc(struct i915_address_space *vm,
 	GEM_BUG_ON(length == 0);
 	from = start;
 
-	err = __gen8_ppgtt_alloc(vm, pml4, &start, start + length, vm->top);
-
-	if (PVMMIO_LEVEL(vm->i915, PVMMIO_PPGTT_UPDATE)) {
-		struct drm_i915_private *dev_priv = vm->i915;
-		struct pv_ppgtt_update *pv_ppgtt =
-					&dev_priv->shared_page->pv_ppgtt;
-
-		spin_lock(&dev_priv->pvmmio_ppgtt_lock);
-		writeq(px_dma(pml4), &pv_ppgtt->pdp);
-		writeq(orig_start, &pv_ppgtt->start);
-		writeq(orig_length, &pv_ppgtt->length);
-		I915_WRITE(vgtif_reg(g2v_notify), VGT_G2V_PPGTT_L4_ALLOC);
-		spin_unlock(&dev_priv->pvmmio_ppgtt_lock);
-	}
-
+	err = __gen8_ppgtt_alloc(vm, i915_vm_to_ppgtt(vm)->pd,
+				 &start, start + length, vm->top);
 	if (unlikely(err && from != start))
-		__gen8_ppgtt_clear(vm, pml4, from, start, vm->top);
+		__gen8_ppgtt_clear(vm, i915_vm_to_ppgtt(vm)->pd,
+				   from, start, vm->top);
 
 	return err;
 }
@@ -1367,7 +1336,6 @@ static void gen8_ppgtt_insert(struct i915_address_space *vm,
 			      u32 flags)
 {
 	struct i915_ppgtt * const ppgtt = i915_vm_to_ppgtt(vm);
-	struct i915_page_directory * const pml4 = ppgtt->pd;
 	struct sgt_dma iter = sgt_dma(vma);
 
 	if (vma->page_sizes.sg > I915_GTT_PAGE_SIZE) {
@@ -1382,20 +1350,6 @@ static void gen8_ppgtt_insert(struct i915_address_space *vm,
 			idx = gen8_ppgtt_insert_pte(ppgtt, pdp, &iter, idx,
 						    cache_level, flags);
 		} while (idx);
-
-		if (PVMMIO_LEVEL(vm->i915, PVMMIO_PPGTT_UPDATE)) {
-			struct drm_i915_private *dev_priv = vm->i915;
-			struct pv_ppgtt_update *pv_ppgtt =
-				&dev_priv->shared_page->pv_ppgtt;
-
-			spin_lock(&dev_priv->pvmmio_ppgtt_lock);
-			writeq(px_dma(pml4), &pv_ppgtt->pdp);
-			writeq(vma->node.start, &pv_ppgtt->start);
-			writeq(vma->node.size, &pv_ppgtt->length);
-			writel(cache_level, &pv_ppgtt->cache_level);
-			I915_WRITE(vgtif_reg(g2v_notify), VGT_G2V_PPGTT_L4_INSERT);
-			spin_unlock(&dev_priv->pvmmio_ppgtt_lock);
-		}
 
 		vma->page_sizes.gtt = I915_GTT_PAGE_SIZE;
 	}
@@ -1569,6 +1523,8 @@ static struct i915_ppgtt *gen8_ppgtt_create(struct drm_i915_private *i915)
 	ppgtt->vm.insert_entries = gen8_ppgtt_insert;
 	ppgtt->vm.allocate_va_range = gen8_ppgtt_alloc;
 	ppgtt->vm.clear_range = gen8_ppgtt_clear;
+
+	ppgtt->vm.pte_encode = gen8_pte_encode;
 
 	if (intel_vgpu_active(i915))
 		gen8_ppgtt_notify_vgt(ppgtt, true);
@@ -2209,6 +2165,13 @@ int i915_gem_gtt_prepare_pages(struct drm_i915_gem_object *obj,
 	return -ENOSPC;
 }
 
+static u64 gen8_ggtt_pte_encode(dma_addr_t addr,
+				enum i915_cache_level level,
+				u32 flags)
+{
+	return addr | _PAGE_PRESENT;
+}
+
 static void gen8_set_pte(void __iomem *addr, gen8_pte_t pte)
 {
 	writeq(pte, addr);
@@ -2224,7 +2187,7 @@ static void gen8_ggtt_insert_page(struct i915_address_space *vm,
 	gen8_pte_t __iomem *pte =
 		(gen8_pte_t __iomem *)ggtt->gsm + offset / I915_GTT_PAGE_SIZE;
 
-	gen8_set_pte(pte, gen8_pte_encode(addr, level, 0));
+	gen8_set_pte(pte, gen8_ggtt_pte_encode(addr, level, 0));
 
 	ggtt->invalidate(ggtt);
 }
@@ -2237,7 +2200,7 @@ static void gen8_ggtt_insert_entries(struct i915_address_space *vm,
 	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vm);
 	struct sgt_iter sgt_iter;
 	gen8_pte_t __iomem *gtt_entries;
-	const gen8_pte_t pte_encode = gen8_pte_encode(0, level, 0);
+	const gen8_pte_t pte_encode = gen8_ggtt_pte_encode(0, level, 0);
 	dma_addr_t addr;
 
 	/*
@@ -2760,19 +2723,16 @@ static int init_ggtt(struct i915_ggtt *ggtt)
 	if (ret)
 		goto err;
 
-	if (!intel_vgpu_active(ggtt->vm.i915)) {
-		/* Clear any non-preallocated blocks */
-		drm_mm_for_each_hole(entry, &ggtt->vm.mm, hole_start, hole_end) {
-			DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
+	/* Clear any non-preallocated blocks */
+	drm_mm_for_each_hole(entry, &ggtt->vm.mm, hole_start, hole_end) {
+		DRM_DEBUG_KMS("clearing unused GTT space: [%lx, %lx]\n",
 			      hole_start, hole_end);
-			ggtt->vm.clear_range(&ggtt->vm, hole_start,
+		ggtt->vm.clear_range(&ggtt->vm, hole_start,
 				     hole_end - hole_start);
-		}
-
-		/* And finally clear the reserved guard page */
-		ggtt->vm.clear_range(&ggtt->vm, ggtt->vm.total - PAGE_SIZE, PAGE_SIZE);
-
 	}
+
+	/* And finally clear the reserved guard page */
+	ggtt->vm.clear_range(&ggtt->vm, ggtt->vm.total - PAGE_SIZE, PAGE_SIZE);
 
 	return 0;
 
@@ -3101,7 +3061,7 @@ static int gen8_gmch_probe(struct i915_ggtt *ggtt)
 	ggtt->vm.vma_ops.set_pages   = ggtt_set_pages;
 	ggtt->vm.vma_ops.clear_pages = clear_pages;
 
-	ggtt->vm.pte_encode = gen8_pte_encode;
+	ggtt->vm.pte_encode = gen8_ggtt_pte_encode;
 
 	setup_private_pat(ggtt->vm.gt->uncore);
 

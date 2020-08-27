@@ -13,8 +13,9 @@
 #include <linux/vhm/acrn_vhm_mm.h>
 
 static mempool_t *acrn_mempool;
+static gfp_t gfp_mempool_flag;
 
-int acrn_mempool_init(int min_nr, int buf_size)
+int acrn_mempool_init(int min_nr, size_t buf_size)
 {
 	if (acrn_mempool)
 		return 0;
@@ -25,6 +26,12 @@ int acrn_mempool_init(int min_nr, int buf_size)
 		pr_err("Failed to initialize the memory poll\n");
 		return -ENOMEM;
 	}
+
+	gfp_mempool_flag = 0;
+
+	if (buf_size > PAGE_SIZE)
+		gfp_mempool_flag |= __GFP_COMP;
+
 	return 0;
 }
 
@@ -39,7 +46,7 @@ void *acrn_mempool_alloc(gfp_t gfp_flag)
 	if (acrn_mempool == NULL)
 		return NULL;
 
-	return mempool_alloc(acrn_mempool, gfp_flag);
+	return mempool_alloc(acrn_mempool, gfp_flag | gfp_mempool_flag);
 }
 EXPORT_SYMBOL_GPL(acrn_mempool_alloc);
 

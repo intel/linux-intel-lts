@@ -163,23 +163,56 @@ static long vhm_dev_ioctl(struct file *filep,
 
 		return 0;
 	} else if (ioctl_num == IC_GET_PLATFORM_INFO) {
-		struct hc_platform_info *platform_info;
+		struct hc_platform_info *plat_info;
+		struct hc_platform_info plat_info_user;
+		void *vm_configs = NULL;
 
-		platform_info = acrn_mempool_alloc(GFP_KERNEL);
-		ret = hcall_get_platform_info(virt_to_phys(platform_info));
-		if (ret < 0) {
-			acrn_mempool_free(platform_info);
+		/* Need to get the user provided vm_configs_addr */
+		if (copy_from_user(&plat_info_user, (void *)ioctl_param,
+			sizeof(*plat_info))) {
 			return -EFAULT;
 		}
+
+		plat_info = acrn_mempool_alloc(GFP_KERNEL);
+
+		/* User wants to get vm_configs[] array */
+		if (plat_info_user.vm_configs_addr) {
+			vm_configs = acrn_mempool_alloc(GFP_KERNEL);
+			plat_info->vm_configs_addr = (uint64_t)virt_to_phys(vm_configs);
+		} else {
+			plat_info->vm_configs_addr = 0;
+		}
+
+		ret = hcall_get_platform_info(virt_to_phys(plat_info));
+		if (ret < 0) {
+			ret = -EFAULT;
+			goto get_platform_info_done;
+		}
+
+		if (plat_info_user.vm_configs_addr) {
+			if (copy_to_user((void *)plat_info_user.vm_configs_addr,
+				vm_configs,
+				plat_info->vm_config_entry_size *
+				plat_info->max_vms)) {
+				ret = -EFAULT;
+				goto get_platform_info_done;
+			}
+		}
+
+		/* Restore the user address */
+		plat_info->vm_configs_addr = plat_info_user.vm_configs_addr;
 
 		if (copy_to_user((void *)ioctl_param,
-			platform_info, sizeof(*platform_info))) {
-			acrn_mempool_free(platform_info);
-			return -EFAULT;
+			plat_info, sizeof(*plat_info))) {
+			ret = -EFAULT;
+			goto get_platform_info_done;
 		}
 
-		acrn_mempool_free(platform_info);
-		return 0;
+get_platform_info_done:
+		if (vm_configs)
+			acrn_mempool_free(vm_configs);
+		acrn_mempool_free(plat_info);
+		return ret;
 	}
 
 	memset(&ic_pt_irq, 0, sizeof(ic_pt_irq));
@@ -857,8 +890,14 @@ static int __init vhm_init(void)
 	}
 
 	acrn_ioreq_driver_init();
-	/* initialize memory pool with 16 elements and 512 bytes element size */
-	acrn_mempool_init(16, 512);
+
+	/*
+	 * The biggest consumer is the get_platform_info hypercall. Statically
+	 * use 2MB as this is enough for any reasonable amount of VMs the
+	 * hypervisor may have in its VM config and also aligns with the design
+	 * of 2MB huge pages.
+	 */
+	acrn_mempool_init(16, SZ_2M);
 	pr_info("vhm: Virtio & Hypervisor service module initialized\n");
 	return 0;
 }

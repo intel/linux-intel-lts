@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/crypto/intel,keembay-ocs-hcu.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Keem Bay OCS HCU Device Tree Bindings
+
+maintainers:
+  - Paul Murphy <paul.j.murphy@intel.com>
+
+description: |
+  The Keem Bay Offload and Crypto Subsystem (OCS) HCU driver enables
+  use of the hardware accelerated hashing module, embedded in the
+  Intel Movidius SoC code name Keem Bay, via the kernel crypto API.
+
+properties:
+  compatible:
+    const: intel,keembay-ocs-hcu
+
+  reg:
+    items:
+      - description: The OCS HCU base register address
+
+  interrupts:
+    items:
+      - description: OCS HCU interrupt
+
+  clocks:
+    items:
+      - description: OCS clock
+
+required:
+  - compatible
+  - reg
+  - interrupts
+  - clocks
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+    #define KEEM_BAY_PSS_AUX_OCS
+    hcu {
+      compatible = "intel,keembay-ocs-hcu";
+      reg = <0x0 0x3000b000 0x0 0x1000>;
+      interrupts = <GIC_SPI 121 IRQ_TYPE_LEVEL_HIGH>;
+      clocks = <&scmi_clk KEEM_BAY_PSS_AUX_OCS>;
+    };
+
+...

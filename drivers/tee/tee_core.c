@@ -54,6 +54,7 @@ err:
 	kfree(ctx);
 	tee_device_put(teedev);
 	return ERR_PTR(rc);
+
 }
 
 void teedev_ctx_get(struct tee_context *ctx)
@@ -983,7 +984,9 @@ tee_client_open_context(struct tee_context *start,
 	 * tee_client_open_session() if any in kernel client requires
 	 * different behaviour.
 	 */
-	ctx->supp_nowait = true;
+	if (!IS_ERR(ctx))
+		ctx->supp_nowait = true;
+
 	return ctx;
 }
 EXPORT_SYMBOL_GPL(tee_client_open_context);

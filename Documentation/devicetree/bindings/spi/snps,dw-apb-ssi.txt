@@ -2,7 +2,8 @@ Synopsys DesignWare AMBA 2.0 Synchronous Serial Interface.
 
 Required properties:
 - compatible : "snps,dw-apb-ssi" or "mscc,<soc>-spi", where soc is "ocelot" or
-  "jaguar2", or "amazon,alpine-dw-apb-ssi"
+  "jaguar2", or "amazon,alpine-dw-apb-ssi", or "snps,dwc-ssi-1.01a" or
+  "intel,keembay-ssi"
 - reg : The register base for the controller. For "mscc,<soc>-spi", a second
   register set is required (named ICPU_CFG:SPI_MST)
 - interrupts : One interrupt, used by the controller.
@@ -36,5 +37,142 @@ Example:
 		num-cs = <2>;
 		cs-gpios = <&gpio0 13 0>,
 			   <&gpio0 14 0>;
+	};
+
+Optional properties for Microwire Intel Keembay SOC:
+
+- dw,ssi-type : Frame format Selection for serial protocol transfers
+  <0>: Motorola
+  <1>: Texas Instrument
+  <2>: Microwire
+
+- dw,ssi-mdd : Microwire Control. Defines the direction of the data word when the Microwire
+  serial protocol is used. When this bit is set to 0, the data word is received by Keembay Master
+  from the external slave device. When this bit is set to 1, the data word is received by
+  Slave device from Keembay Master.
+
+- dw,ssi-cfs : Control frame size to select the length of the control word
+  for Microwire. Control words length can be set between (1 -16) bits.
+  Define <16> to set 16-bit control word.
+
+- dw,ssi-mwmod : Defines whether transfer is sequential or non-sequential
+  for Microwire.
+  <0>: Non-Sequential Microwire Transfer
+  <1>: Sequential Microwire Transfer
+
+- dw,ssi-cword : Specify the value of control words for Microwire.
+  Values can be set between (0-65535) which is up to 16 bit of data.
+  Used when dw-ssi-mdd equal to 0.
+
+- cont-non-sequential : Variable to write more control words into tx fifo
+  for Microwire. Define when to perform continuous non sequential operations.
+
+SSI as transmit data example:
+
+Non Sequential Microwire Transmit:
+
+	spi@201c0000 {
+			compatible = "snps,dw-ahb-ssi";
+			reg = <0x00000000 0x201c0000 0x00000000 0x00000110>;
+			interrupts = <0x00000000 0x0000004a 0x00000004>;
+			#address-cells = <0x00000001>;
+			#size-cells = <0x00000000>;
+			status = "okay";
+			clocks = <0x00000006 0x00000043>;
+			spidev@0 {
+			};
+			n25q128a {
+			};
+			dw,ssi-mdd = <0x00000001>;
+			dw,ssi-cfs = <0x00000007>;
+			dw,ssi-type = <0x00000002>;
+			dw,ssi-mwmod = <0x00000000>;
+	};
+
+Continuous Non Sequential Microwire Transmit:
+
+	spi@201c0000 {
+			compatible = "snps,dw-ahb-ssi";
+			reg = <0x00000000 0x201c0000 0x00000000 0x00000110>;
+			interrupts = <0x00000000 0x0000004a 0x00000004>;
+			#address-cells = <0x00000001>;
+			#size-cells = <0x00000000>;
+			status = "okay";
+			clocks = <0x00000006 0x00000043>;
+			spidev@0 {
+			};
+			n25q128a {
+			};
+			dw,ssi-mdd = <0x00000001>;
+			dw,ssi-cfs = <0x00000007>;
+			dw,ssi-type = <0x00000002>;
+			dw,ssi-mwmod = <0x00000000>;
+			cont-non-sequential;
+	};
+
+SSI as receives data :
+
+Non Sequential Microwire Receives example:
+
+	spi@201c0000 {
+			compatible = "snps,dw-ahb-ssi";
+			reg = <0x00000000 0x201c0000 0x00000000 0x00000110>;
+			interrupts = <0x00000000 0x0000004a 0x00000004>;
+			#address-cells = <0x00000001>;
+			#size-cells = <0x00000000>;
+			status = "okay";
+			clocks = <0x00000006 0x00000043>;
+			spidev@0 {
+			};
+			n25q128a {
+			};
+			dw,ssi-mdd = <0x00000000>;
+			dw,ssi-cfs = <0x00000007>;
+			dw,ssi-type = <0x00000002>;
+			dw,ssi-mwmod = <0x00000000>;
+			dw,ssi-cword = <0x000000aa>;
+	};
+
+Continuous Non Sequential Microwire Receives example:
+
+	spi@201c0000 {
+			compatible = "snps,dw-ahb-ssi";
+			reg = <0x00000000 0x201c0000 0x00000000 0x00000110>;
+			interrupts = <0x00000000 0x0000004a 0x00000004>;
+			#address-cells = <0x00000001>;
+			#size-cells = <0x00000000>;
+			status = "okay";
+			clocks = <0x00000006 0x00000043>;
+			spidev@0 {
+			};
+			n25q128a {
+			};
+			dw,ssi-mdd = <0x00000000>;
+			dw,ssi-cfs = <0x00000007>;
+			dw,ssi-type = <0x00000002>;
+			dw,ssi-mwmod = <0x00000000>;
+			dw,ssi-cword = <0x000000aa>;
+			cont-non-sequential;
+	};
+
+Sequential Microwire Receive example:
+
+	spi@201c0000 {
+			compatible = "snps,dw-ahb-ssi";
+			reg = <0x00000000 0x201c0000 0x00000000 0x00000110>;
+			interrupts = <0x00000000 0x0000004a 0x00000004>;
+			#address-cells = <0x00000001>;
+			#size-cells = <0x00000000>;
+			status = "okay";
+			clocks = <0x00000006 0x00000043>;
+			spidev@0 {
+			};
+			n25q128a {
+			};
+			dw,ssi-mdd = <0x00000000>;
+			dw,ssi-cfs = <0x00000007>;
+			dw,ssi-type = <0x00000002>;
+			dw,ssi-mwmod = <0x00000001>;
+			dw,ssi-cword = <0x000000aa>;
 	};
 

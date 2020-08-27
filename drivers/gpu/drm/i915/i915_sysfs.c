@@ -38,6 +38,10 @@
 #include "intel_pm.h"
 #include "intel_sideband.h"
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+#include "gvt/gvt.h"
+#endif
+
 static inline struct drm_i915_private *kdev_minor_to_i915(struct device *kdev)
 {
 	struct drm_minor *minor = dev_get_drvdata(kdev);
@@ -569,10 +573,328 @@ static void i915_setup_error_capture(struct device *kdev) {}
 static void i915_teardown_error_capture(struct device *kdev) {}
 #endif
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+static ssize_t gvt_disp_ports_mask_show(
+	struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+
+	return snprintf(buf, PAGE_SIZE, "Display ports assignment: 0x%016llx\n",
+			dev_priv->gvt->sel_disp_port_mask);
+}
+
+static ssize_t gvt_disp_ports_mask_store(
+	struct device *kdev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+	u64 val;
+	ssize_t ret;
+
+	ret = kstrtou64(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	intel_gvt_store_vgpu_display_mask(dev_priv, val);
+
+	return count;
+}
+
+static ssize_t gvt_disp_ports_status_show(
+	struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+	struct intel_gvt *gvt = dev_priv->gvt;
+	int id;
+	u32 port_mask;
+	u8 port_sel, port;
+	ssize_t count_total = 0;
+	size_t buf_size = PAGE_SIZE;
+	size_t count = 0;
+
+	count = snprintf(buf, buf_size, "Auto host/vGPU display switch: %s\n",
+			 READ_ONCE(dev_priv->gvt->disp_auto_switch) ?
+			 "Y" : "N");
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	count = snprintf(buf, buf_size, "Available display ports: 0x%016llx\n",
+			 gvt->avail_disp_port_mask);
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+		port_sel = intel_gvt_external_disp_id_from_port(port);
+		if (gvt->avail_disp_port_mask & intel_gvt_port_to_mask_bit(port_sel, port)) {
+			count = snprintf(buf, buf_size, "  ( PORT_%c(%d) )\n",
+					 port_name(port), port_sel);
+			buf_size -= count;
+			count_total += count;
+			buf += count;
+			if (!buf_size)
+				return count_total;
+		}
+	}
+
+	count = snprintf(buf, buf_size,
+			 "Display ports assignment: 0x%016llx\n",
+			 gvt->sel_disp_port_mask);
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	count = snprintf(buf, buf_size,
+			 "  Each byte represents the bit mask of assigned port(s) to vGPU 1-8 (low to high)\n");
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	count = snprintf(buf, buf_size,
+			 "    Bit mask is decoded from LSB to MSB (PORT_A to I915_MAX_PORTS):\n");
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	count = snprintf(buf, buf_size,
+			 "      0: This port isn't assigned to that vGPU.\n");
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	count = snprintf(buf, buf_size,
+			 "      1: This port is assigned to that vGPU.\n");
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	for (id = 0; id < GVT_MAX_VGPU; id++) {
+		port_mask = (gvt->sel_disp_port_mask >> (id * 8)) & 0xFF;
+		if (port_mask) {
+			count = snprintf(buf, buf_size,
+					 "  vGPU-%d port mask: (0x%02x)\n",
+					 id + 1, port_mask);
+			buf_size -= count;
+			count_total += count;
+			buf += count;
+			if (!buf_size)
+				return count_total;
+
+			for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+				if (port_mask & (1 << port)) {
+					port_sel = intel_gvt_external_disp_id_from_port(port);
+					count = snprintf(buf, buf_size,
+							 "    ( PORT_%c(%d) )\n",
+							 port_name(port), port_sel);
+					buf_size -= count;
+					count_total += count;
+					buf += count;
+					if (!buf_size)
+						return count_total;
+				}
+			}
+		}
+	}
+
+	count = snprintf(buf, buf_size,
+			 "Display ports ownership: 0x%08x\n",
+			 gvt->disp_owner);
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	count = snprintf(buf, buf_size,
+			 "  x on n-th hex-digit: (port_name(port_id#) <---> owner)\n");
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	count = snprintf(buf, buf_size,
+			 "    n: port id, PORT_A(1), PORT_B(2), ...\n");
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	count = snprintf(buf, buf_size, "    x: owner: host (0), vGPU id(x)\n");
+	buf_size -= count;
+	count_total += count;
+	buf += count;
+	if (!buf_size)
+		return count_total;
+
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
+		port_sel = intel_gvt_external_disp_id_from_port(port);
+		if (gvt->avail_disp_port_mask & intel_gvt_port_to_mask_bit(port_sel, port)) {
+			count = snprintf(buf, buf_size, "  ( PORT_%c(%d) ",
+					 port_name(port), port_sel);
+			buf_size -= count;
+			count_total += count;
+			buf += count;
+			if (!buf_size)
+				return count_total;
+
+			id = (gvt->disp_owner >> port * 4) & 0xF;
+			if (id)
+				count = snprintf(buf, buf_size,
+						 "<---> VGPU-%d )\n", id);
+			else
+				count = snprintf(buf, buf_size,
+						 "<---> Host )\n");
+
+			buf_size -= count;
+			count_total += count;
+			buf += count;
+			if (!buf_size)
+				return count_total;
+		}
+	}
+
+	return count_total;
+}
+
+static ssize_t gvt_disp_ports_owner_show(
+	struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+
+	return snprintf(buf, PAGE_SIZE,
+			"Display ports ownership: 0x%08x\n",
+			dev_priv->gvt->disp_owner);
+}
+
+static ssize_t gvt_disp_ports_owner_store(
+	struct device *kdev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+	u32 val;
+	ssize_t ret;
+
+	ret = kstrtou32(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	intel_gvt_store_vgpu_display_owner(dev_priv, val);
+
+	return count;
+}
+
+static ssize_t gvt_disp_auto_switch_show(
+	struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+
+	return snprintf(buf, PAGE_SIZE,
+			"%s\n",
+			READ_ONCE(dev_priv->gvt->disp_auto_switch) ?
+			"Y" : "N");
+}
+
+static ssize_t gvt_disp_auto_switch_store(
+	struct device *kdev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+	u32 val;
+	ssize_t ret;
+
+	ret = kstrtou32(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	intel_gvt_store_vgpu_display_switch(dev_priv, val != 0);
+
+	return count;
+}
+
+static ssize_t gvt_disp_edid_filter_show(
+	struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+
+	return snprintf(buf, PAGE_SIZE,
+			"%s\n",
+			READ_ONCE(dev_priv->gvt->disp_edid_filter) ?
+			"Y" : "N");
+}
+
+static ssize_t gvt_disp_edid_filter_store(
+	struct device *kdev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
+	u32 val;
+	ssize_t ret;
+
+	ret = kstrtou32(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val != 0)
+		WRITE_ONCE(dev_priv->gvt->disp_edid_filter, true);
+	else
+		WRITE_ONCE(dev_priv->gvt->disp_edid_filter, false);
+
+	return count;
+}
+
+
+static struct device_attribute dev_attr_gvt_disp_ports_mask =
+	__ATTR(gvt_disp_ports_mask, 0644,
+	       gvt_disp_ports_mask_show, gvt_disp_ports_mask_store);
+static struct device_attribute dev_attr_gvt_disp_ports_status =
+	__ATTR(gvt_disp_ports_status, 0444,
+	       gvt_disp_ports_status_show, NULL);
+static struct device_attribute dev_attr_gvt_disp_ports_owner =
+	__ATTR(gvt_disp_ports_owner, 0644,
+	       gvt_disp_ports_owner_show, gvt_disp_ports_owner_store);
+static struct device_attribute dev_attr_gvt_disp_auto_switch =
+	__ATTR(gvt_disp_auto_switch, 0644,
+	       gvt_disp_auto_switch_show, gvt_disp_auto_switch_store);
+static struct device_attribute dev_attr_gvt_disp_edid_filter =
+	__ATTR(gvt_disp_edid_filter, 0644,
+	       gvt_disp_edid_filter_show, gvt_disp_edid_filter_store);
+
+
+static const struct attribute *gvt_attrs[] = {
+	&dev_attr_gvt_disp_ports_mask.attr,
+	&dev_attr_gvt_disp_ports_status.attr,
+	&dev_attr_gvt_disp_ports_owner.attr,
+	&dev_attr_gvt_disp_auto_switch.attr,
+	&dev_attr_gvt_disp_edid_filter.attr,
+	NULL,
+};
+
+#endif
+
 void i915_setup_sysfs(struct drm_i915_private *dev_priv)
 {
 	struct device *kdev = dev_priv->drm.primary->kdev;
 	int ret;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+#endif
 
 #ifdef CONFIG_PM
 	if (HAS_RC6(dev_priv)) {
@@ -614,6 +936,13 @@ void i915_setup_sysfs(struct drm_i915_private *dev_priv)
 		ret = sysfs_create_files(&kdev->kobj, gen6_attrs);
 	if (ret)
 		DRM_ERROR("RPS sysfs setup failed\n");
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (gvt) {
+		if (sysfs_create_files(&kdev->kobj, gvt_attrs))
+			DRM_ERROR("gvt attr setup failed\n");
+	}
+#endif
 
 	i915_setup_error_capture(kdev);
 }

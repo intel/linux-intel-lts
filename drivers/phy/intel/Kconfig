@@ -1,0 +1,23 @@
+config PHY_KEEMBAY_EMMC
+	tristate "Intel Keem Bay EMMC PHY driver"
+	depends on ARM64 || COMPILE_TEST
+	depends on OF && HAS_IOMEM
+	select GENERIC_PHY
+	select REGMAP_MMIO
+	help
+	  Choose this option if you have an Intel Keem Bay SoC.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called phy-keembay-emmc.
+
+config PHY_KEEMBAY_USB
+	tristate "Intel Keem Bay USB PHY driver"
+	depends on ARM64 || COMPILE_TEST
+	depends on OF && HAS_IOMEM
+	select GENERIC_PHY
+	select REGMAP_MMIO
+	help
+	  Choose this option if you have an Intel Keem Bay SoC.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called phy-keembay-usb.

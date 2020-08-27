@@ -37,7 +37,6 @@
 #include "i915_drv.h"
 #include "gvt.h"
 #include "i915_pvinfo.h"
-#include "fb_decoder.h"
 
 #define PRIMARY_FORMAT_NUM	16
 struct pixel_format {
@@ -180,15 +179,22 @@ static u32 intel_vgpu_get_stride(struct intel_vgpu *vgpu, int pipe,
 	return stride;
 }
 
-static int get_active_pipe(struct intel_vgpu *vgpu)
+static enum pipe get_active_pipe(struct intel_vgpu *vgpu)
 {
-	int i;
+	enum pipe pipe = INVALID_PIPE;
+	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
+	struct intel_vgpu_display_path *disp_path = NULL, *n;
 
-	for (i = 0; i < I915_MAX_PIPES; i++)
-		if (pipe_is_enabled(vgpu, i))
+	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
+		/* Current dmabuf only support 1st pipe */
+		if (disp_path->pipe != INVALID_PIPE &&
+		    pipe_is_enabled(vgpu, disp_path->pipe)) {
+			pipe = disp_path->pipe;
 			break;
+		}
+	}
 
-	return i;
+	return pipe;
 }
 
 /**
@@ -205,10 +211,10 @@ int intel_vgpu_decode_primary_plane(struct intel_vgpu *vgpu,
 {
 	u32 val, fmt;
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
-	int pipe;
+	enum pipe pipe = INVALID_PIPE;
 
 	pipe = get_active_pipe(vgpu);
-	if (pipe >= I915_MAX_PIPES)
+	if (pipe == INVALID_PIPE || pipe >= INTEL_NUM_PIPES(dev_priv))
 		return -ENODEV;
 
 	val = vgpu_vreg_t(vgpu, DSPCNTR(pipe));
@@ -261,12 +267,11 @@ int intel_vgpu_decode_primary_plane(struct intel_vgpu *vgpu,
 			(_PRI_PLANE_STRIDE_MASK >> 6) :
 				_PRI_PLANE_STRIDE_MASK, plane->bpp);
 
-	plane->width = vgpu_vreg_t(vgpu, PLANE_SIZE(pipe, PLANE_PRIMARY))&
-					_PLANE_SIZE_WIDTH_MASK;
-
+	plane->width = (vgpu_vreg_t(vgpu, PIPESRC(pipe)) & _PIPE_H_SRCSZ_MASK) >>
+		_PIPE_H_SRCSZ_SHIFT;
 	plane->width += 1;
-	plane->height = (vgpu_vreg_t(vgpu, PLANE_SIZE(pipe, PLANE_PRIMARY)) &
-			 _PLANE_SIZE_HEIGHT_MASK) >> _PLANE_SIZE_HEIGHT_SHIFT;
+	plane->height = (vgpu_vreg_t(vgpu, PIPESRC(pipe)) &
+			_PIPE_V_SRCSZ_MASK) >> _PIPE_V_SRCSZ_SHIFT;
 	plane->height += 1;	/* raw height is one minus the real value */
 
 	val = vgpu_vreg_t(vgpu, DSPTILEOFF(pipe));
@@ -337,10 +342,10 @@ int intel_vgpu_decode_cursor_plane(struct intel_vgpu *vgpu,
 	u32 val, mode, index;
 	u32 alpha_plane, alpha_force;
 	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
-	int pipe;
+	enum pipe pipe = INVALID_PIPE;
 
 	pipe = get_active_pipe(vgpu);
-	if (pipe >= I915_MAX_PIPES)
+	if (pipe == INVALID_PIPE || pipe >= INTEL_NUM_PIPES(dev_priv))
 		return -ENODEV;
 
 	val = vgpu_vreg_t(vgpu, CURCNTR(pipe));
@@ -416,10 +421,10 @@ int intel_vgpu_decode_sprite_plane(struct intel_vgpu *vgpu,
 	u32 val, fmt;
 	u32 color_order, yuv_order;
 	int drm_format;
-	int pipe;
+	enum pipe pipe = INVALID_PIPE;
 
 	pipe = get_active_pipe(vgpu);
-	if (pipe >= I915_MAX_PIPES)
+	if (pipe == INVALID_PIPE || pipe >= INTEL_NUM_PIPES(vgpu->gvt->dev_priv))
 		return -ENODEV;
 
 	val = vgpu_vreg_t(vgpu, SPRCTL(pipe));

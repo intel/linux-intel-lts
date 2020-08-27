@@ -7,9 +7,11 @@
 
 #include <linux/intel_phy.h>
 #include <linux/phy.h>
+#include <linux/netdevice.h>
 
 #define GPY_IMASK		0x19	/* interrupt mask */
 #define GPY_ISTAT		0x1A	/* interrupt status */
+#define GPY_INTR_WOL		BIT(15)	/* Wake-on-LAN */
 #define GPY_INTR_ANC		BIT(10)	/* Auto-Neg complete */
 #define GPY_INTR_DXMC		BIT(2)	/* Duplex mode change */
 #define GPY_INTR_LSPC		BIT(1)	/* Link speed change */
@@ -28,8 +30,50 @@
 #define GPY_SGMII_DR_MASK	GENMASK(1, 0)	/* Data rate */
 #define GPY_SGMII_DR_2500	0x3
 
+/* GPY VENDOR SPECIFIC 2 */
+#define GPY_VSPEC2_WOL_CTL	0xe06
+#define GPY_WOL_EN		BIT(0)
+
+#define GPY_VSPEV2_WOL_AD01	0xe08		/* WOL addr Byte5:Byte6 */
+#define GPY_VSPEV2_WOL_AD23	0xe09		/* WOL addr Byte3:Byte4 */
+#define GPY_VSPEV2_WOL_AD45	0xe0a		/* WOL addr Byte1:Byte2 */
+
 /* WA for Q-SPEC GPY115 PHY ID */
 #define INTEL_PHY_ID_GPY115_C22		0x67C9DE00
+
+static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
+{
+	int cap, old_adv, adv = 0, ret;
+
+	cap = phy_read_mmd(phydev, MDIO_MMD_PCS, MDIO_PCS_EEE_ABLE);
+	if (cap < 0)
+		return cap;
+
+	old_adv = phy_read_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV);
+	if (old_adv < 0)
+		return old_adv;
+
+	if (data->eee_enabled) {
+		adv = !data->advertised ? cap :
+		      ethtool_adv_to_mmd_eee_adv_t(data->advertised) & cap;
+		adv &= ~phydev->eee_broken_modes;
+	}
+
+	if (old_adv != adv) {
+		ret = phy_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, adv);
+		if (ret < 0)
+			return ret;
+
+		/* C45 access to restart autonegotiation is not supported
+		 * in the GPY PHYs, hence use C22 access for this.
+		 */
+		ret = genphy_restart_aneg(phydev);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
 
 static int gpy_soft_reset(struct phy_device *phydev)
 {
@@ -73,59 +117,7 @@ static int gpy_config_aneg(struct phy_device *phydev)
 	if (ret > 0)
 		changed = true;
 
-	ret = phy_read_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_STS);
-
-	if (linkmode_test_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT,
-			      phydev->advertising)) {
-		/* For SGMII 2.5Gbps link, MAC side SGMII will turn off
-		 * autoneg as not all PHY supports autoneg for 2.5Gbps.
-		 * GPY211 will disable autoneg by toggling the BIT12
-		 */
-		if ((ret & GPY_SGMII_ANOK) && (!(ret & GPY_SGMII_LS))) {
-			phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
-					       GPY_VSPEC1_SGMII_CTRL,
-					       GPY_SGMII_ANEN,
-					       GPY_SGMII_ANEN);
-			phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1,
-					   GPY_VSPEC1_SGMII_CTRL,
-					   GPY_SGMII_ANEN);
-
-			/* If the SGMII link is not at 2.5Gbps mode,
-			 * restart the TPI link by toggling TPI
-			 * autoneg bit. As the SGMII buad rate will
-			 * follow the TPI link
-			 */
-			if ((ret & GPY_SGMII_DR_MASK) != GPY_SGMII_DR_2500)
-				genphy_c45_an_disable_aneg(phydev);
-
-			changed = true;
-		}
-	} else {
-		/* For SGMII 10/100/1000Mbps link, enable the SGMII
-		 * autoneg by toggling the BIT12
-		 */
-		if (ret & GPY_SGMII_ANOK || (!(ret & GPY_SGMII_LS))) {
-			phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1,
-					   GPY_VSPEC1_SGMII_CTRL,
-					   GPY_SGMII_ANEN);
-			phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
-					       GPY_VSPEC1_SGMII_CTRL,
-					       GPY_SGMII_ANEN,
-					       GPY_SGMII_ANEN);
-
-			/* If the SGMII link is not at 10/100/1000Mbps,
-			 * restart the TPI link by toggling TPI
-			 * autoneg bit. As the SGMII buad rate will
-			 * follow the TPI link
-			 */
-			if ((ret & GPY_SGMII_DR_MASK) == GPY_SGMII_DR_2500)
-				genphy_c45_an_disable_aneg(phydev);
-
-			changed = true;
-		}
-	}
-
-	return genphy_c45_check_and_restart_aneg(phydev, changed);
+	return changed ? genphy_restart_aneg(phydev) : 0;
 }
 
 static int gpy_ack_interrupt(struct phy_device *phydev)
@@ -194,6 +186,104 @@ static int gpy_read_status(struct phy_device *phydev)
 	return ret;
 }
 
+static void gpy_get_wol(struct phy_device *phydev,
+			struct ethtool_wolinfo *wol)
+{
+	int ret = 0;
+
+	wol->supported = WAKE_MAGIC | WAKE_PHY;
+	wol->wolopts = 0;
+
+	ret = phy_read_mmd(phydev, MDIO_MMD_VEND2, GPY_VSPEC2_WOL_CTL);
+
+	if (ret & GPY_WOL_EN)
+		wol->wolopts |= WAKE_MAGIC;
+
+	ret = phy_read(phydev, GPY_IMASK);
+
+	if (ret & GPY_INTR_LSTC)
+		wol->wolopts |= WAKE_PHY;
+}
+
+static int gpy_set_wol(struct phy_device *phydev,
+		       struct ethtool_wolinfo *wol)
+{
+	struct net_device *attach_dev = phydev->attached_dev;
+	int ret = 0;
+
+	if (wol->wolopts & WAKE_MAGIC) {
+		/* There are discrepancy in the datasheet where the
+		 * register name does not reflect correctly on the content
+		 * MAC address - Byte0:Byte1:Byte2:Byte3:Byte4:Byte5
+		 * GPY_VSPEV2_WOL_AD45 = Byte0:Byte1
+		 * GPY_VSPEV2_WOL_AD23 = Byte2:Byte3
+		 * GPY_VSPEV2_WOL_AD01 = Byte4:Byte5
+		 */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       GPY_VSPEV2_WOL_AD45,
+				       ((attach_dev->dev_addr[0] << 8) |
+				       attach_dev->dev_addr[1]));
+
+		if (ret < 0)
+			return ret;
+
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       GPY_VSPEV2_WOL_AD23,
+				       ((attach_dev->dev_addr[2] << 8) |
+				       attach_dev->dev_addr[3]));
+
+		if (ret < 0)
+			return ret;
+
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       GPY_VSPEV2_WOL_AD01,
+				       ((attach_dev->dev_addr[4] << 8) |
+				       attach_dev->dev_addr[5]));
+
+		if (ret < 0)
+			return ret;
+
+		/* Enable the WOL interrupt */
+		ret = phy_write(phydev, GPY_IMASK, GPY_INTR_WOL);
+
+		if (ret < 0)
+			return ret;
+
+		/* Enable magic packet matching */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2,
+				       GPY_VSPEC2_WOL_CTL,
+				       GPY_WOL_EN);
+
+		if (ret < 0)
+			return ret;
+
+	} else {
+		/* Disable magic packet matching */
+		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2,
+					 GPY_VSPEC2_WOL_CTL,
+					 GPY_WOL_EN);
+
+		if (ret < 0)
+			return ret;
+	}
+
+	if (wol->wolopts & WAKE_PHY) {
+		/* Enable the link state change interrupt */
+		ret = phy_set_bits(phydev, GPY_IMASK, GPY_INTR_LSTC);
+
+		if (ret < 0)
+			return ret;
+	} else {
+		/* Disable the link state change interrupt */
+		ret = phy_clear_bits(phydev, GPY_IMASK, GPY_INTR_LSTC);
+
+		if (ret < 0)
+			return ret;
+	}
+
+	return ret;
+}
+
 static struct phy_driver intel_gpy_drivers[] = {
 	{
 		.phy_id		= INTEL_PHY_ID_GPY,
@@ -201,6 +291,7 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.name		= "INTEL(R) Ethernet Network Connection GPY",
 		.get_features	= genphy_c45_pma_read_abilities,
 		.aneg_done	= genphy_c45_aneg_done,
+		.set_eee	= gpy_set_eee,
 		.soft_reset	= gpy_soft_reset,
 		.ack_interrupt	= gpy_ack_interrupt,
 		.did_interrupt	= gpy_did_interrupt,
@@ -208,6 +299,8 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.config_aneg	= gpy_config_aneg,
 		.read_status	= gpy_read_status,
 		.set_loopback	= genphy_loopback,
+		.get_wol	= gpy_get_wol,
+		.set_wol	= gpy_set_wol,
 	},
 };
 module_phy_driver(intel_gpy_drivers);

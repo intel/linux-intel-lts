@@ -1,0 +1,14 @@
+# Copyright (C) 2019 Intel Corporation
+# SPDX-License-Identifier: GPL-2.0-only
+
+config VPUSMM
+	tristate "Support for VPU Shared memory management"
+	help
+	  VPUSMM exposes following capabilities to user space application
+	  through ioctl syscall:
+	    1. allocate DMABuf qualified to be accessed by KeemBay VPU Sub-System.
+	    2. import/unimport qualified DMABuf for VPU to access.
+	    3. translate user-space virtual address within a mem-mapped
+	       region of an imported DMABuf into VPU side DMA address,
+	       which allows application to pass buffer pointer with
+	       offsets to VPU sub-system.

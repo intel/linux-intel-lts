@@ -39,8 +39,8 @@
 
 #define GEN12_CSR_MAX_FW_SIZE		ICL_CSR_MAX_FW_SIZE
 
-#define TGL_CSR_PATH			"i915/tgl_dmc_ver2_04.bin"
-#define TGL_CSR_VERSION_REQUIRED	CSR_VERSION(2, 4)
+#define TGL_CSR_PATH			"i915/tgl_dmc_ver2_06.bin"
+#define TGL_CSR_VERSION_REQUIRED	CSR_VERSION(2, 6)
 #define TGL_CSR_MAX_FW_SIZE		0x6000
 MODULE_FIRMWARE(TGL_CSR_PATH);
 
@@ -625,12 +625,21 @@ static void csr_load_work_fn(struct work_struct *work)
 	struct drm_i915_private *dev_priv;
 	struct intel_csr *csr;
 	const struct firmware *fw = NULL;
+	bool skip_dmc = false;
 
 	dev_priv = container_of(work, typeof(*dev_priv), csr.work);
 	csr = &dev_priv->csr;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (dev_priv->gvt) {
+		skip_dmc = true;
+		DRM_WARN("Skip DMC firmware loading in IDV\n");
+	}
+#endif
 
-	request_firmware(&fw, dev_priv->csr.fw_path, &dev_priv->drm.pdev->dev);
-	parse_csr_fw(dev_priv, fw);
+	if (!skip_dmc) {
+		request_firmware(&fw, dev_priv->csr.fw_path, &dev_priv->drm.pdev->dev);
+		parse_csr_fw(dev_priv, fw);
+	}
 
 	if (dev_priv->csr.dmc_payload) {
 		intel_csr_load_program(dev_priv);
@@ -665,13 +674,7 @@ void intel_csr_ucode_init(struct drm_i915_private *dev_priv)
 
 	INIT_WORK(&dev_priv->csr.work, csr_load_work_fn);
 
-	/*
-	 * In a GVTg enabled environment, loading the CSR firmware for DomU doesn't
-	 * make much sense since we don't allow it to control display power
-	 * management settings. Furthermore, we can save some time for DomU bootup
-	 * by skipping CSR loading.
-	 */
-	if (!HAS_CSR(dev_priv) || intel_vgpu_active(dev_priv))
+	if (!HAS_CSR(dev_priv))
 		return;
 
 	/*

@@ -25,6 +25,10 @@
 #include "intel_color.h"
 #include "intel_display_types.h"
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+#include "gvt.h"
+#endif
+
 #define CTM_COEFF_SIGN	(1ULL << 63)
 
 #define CTM_COEFF_1_0	(1ULL << 32)
@@ -156,6 +160,29 @@ static void ilk_update_pipe_csc(struct intel_crtc *crtc,
 {
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	enum pipe pipe = crtc->pipe;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_pipe_regs *pipe_regs = NULL;
+
+	if (gvt) {
+		pipe_regs = &gvt->pipe_info[pipe].dom0_pipe_regs;
+		pipe_regs->csc_preoff_hi = preoff[0];
+		pipe_regs->csc_preoff_me = preoff[1];
+		pipe_regs->csc_preoff_lo = preoff[2];
+		pipe_regs->csc_coeff_rygy = coeff[0] << 16 | coeff[1];
+		pipe_regs->csc_coeff_by = coeff[2] << 16;
+		pipe_regs->csc_coeff_rugu = coeff[3] << 16 | coeff[4];
+		pipe_regs->csc_coeff_bu = coeff[5] << 16;
+		pipe_regs->csc_coeff_rvgv = coeff[6] << 16 | coeff[7];
+		pipe_regs->csc_coeff_bv = coeff[8] << 16;
+		pipe_regs->csc_postoff_hi = postoff[0];
+		pipe_regs->csc_postoff_me = postoff[0];
+		pipe_regs->csc_postoff_lo = postoff[0];
+
+		if (gvt->pipe_info[pipe].owner)
+			return;
+	}
+#endif
 
 	I915_WRITE(PIPE_CSC_PREOFF_HI(pipe), preoff[0]);
 	I915_WRITE(PIPE_CSC_PREOFF_ME(pipe), preoff[1]);
@@ -273,6 +300,14 @@ static void ilk_load_csc_matrix(const struct intel_crtc_state *crtc_state)
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	bool limited_color_range = ilk_csc_limited_range(crtc_state);
+	bool skip = false;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_pipe_regs *pipe_regs = NULL;
+
+	if (gvt && gvt->pipe_info[crtc->pipe].owner)
+		skip = true;
+#endif
 
 	if (crtc_state->hw.ctm) {
 		u16 coeff[9];
@@ -304,7 +339,14 @@ static void ilk_load_csc_matrix(const struct intel_crtc_state *crtc_state)
 				    ilk_csc_off_zero);
 	}
 
-	I915_WRITE(PIPE_CSC_MODE(crtc->pipe), crtc_state->csc_mode);
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (gvt) {
+		pipe_regs = &gvt->pipe_info[crtc->pipe].dom0_pipe_regs;
+		pipe_regs->csc_mode = crtc_state->csc_mode;
+	}
+#endif
+	if (!skip)
+		I915_WRITE(PIPE_CSC_MODE(crtc->pipe), crtc_state->csc_mode);
 }
 
 static void icl_load_csc_matrix(const struct intel_crtc_state *crtc_state)
@@ -408,6 +450,14 @@ static void i9xx_load_luts_internal(const struct intel_crtc_state *crtc_state,
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	enum pipe pipe = crtc->pipe;
 	int i;
+	bool skip = false;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_pipe_regs *pipe_regs = NULL;
+
+	if (gvt && gvt->pipe_info[pipe].owner)
+		skip = true;
+#endif
 
 	if (HAS_GMCH(dev_priv)) {
 		if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DSI))
@@ -425,10 +475,19 @@ static void i9xx_load_luts_internal(const struct intel_crtc_state *crtc_state,
 				(drm_color_lut_extract(lut[i].green, 8) << 8) |
 				drm_color_lut_extract(lut[i].blue, 8);
 
-			if (HAS_GMCH(dev_priv))
-				I915_WRITE(PALETTE(pipe, i), word);
-			else
-				I915_WRITE(LGC_PALETTE(pipe, i), word);
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+			if (gvt) {
+				pipe_regs = &gvt->pipe_info[pipe].dom0_pipe_regs;
+				pipe_regs->lgc_palette[i] = word;
+			}
+#endif
+
+			if (!skip) {
+				if (HAS_GMCH(dev_priv))
+					I915_WRITE(PALETTE(pipe, i), word);
+				else
+					I915_WRITE(LGC_PALETTE(pipe, i), word);
+			}
 		}
 	}
 }
@@ -482,6 +541,14 @@ static void skl_color_commit(const struct intel_crtc_state *crtc_state)
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	enum pipe pipe = crtc->pipe;
 	u32 val = 0;
+	bool skip = false;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_pipe_regs *pipe_regs = NULL;
+
+	if (gvt && gvt->pipe_info[pipe].owner)
+		skip = true;
+#endif
 
 	/*
 	 * We don't (yet) allow userspace to control the pipe background color,
@@ -492,9 +559,19 @@ static void skl_color_commit(const struct intel_crtc_state *crtc_state)
 		val |= SKL_BOTTOM_COLOR_GAMMA_ENABLE;
 	if (crtc_state->csc_enable)
 		val |= SKL_BOTTOM_COLOR_CSC_ENABLE;
-	I915_WRITE(SKL_BOTTOM_COLOR(pipe), val);
 
-	I915_WRITE(GAMMA_MODE(crtc->pipe), crtc_state->gamma_mode);
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (gvt) {
+		pipe_regs = &gvt->pipe_info[pipe].dom0_pipe_regs;
+		pipe_regs->bottom_color = val;
+		pipe_regs->gamma_mode = crtc_state->gamma_mode;
+	}
+#endif
+
+	if (!skip) {
+		I915_WRITE(SKL_BOTTOM_COLOR(pipe), val);
+		I915_WRITE(GAMMA_MODE(pipe), crtc_state->gamma_mode);
+	}
 
 	if (INTEL_GEN(dev_priv) >= 11)
 		icl_load_csc_matrix(crtc_state);
@@ -605,6 +682,28 @@ static void bdw_load_lut_10(struct intel_crtc *crtc,
 	const struct drm_color_lut *lut = blob->data;
 	int i, lut_size = drm_color_lut_size(blob);
 	enum pipe pipe = crtc->pipe;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_pipe_regs *pipe_regs = &gvt->pipe_info[pipe].dom0_pipe_regs;
+	struct prec_pal_data *pal_data = NULL;
+	if (prec_index & PAL_PREC_SPLIT_MODE)
+		pal_data = pipe_regs->prec_palette_split;
+	else
+		pal_data = pipe_regs->prec_palette_nonsplit;
+
+	for (i = 0; i < hw_lut_size; i++) {
+		/* We discard half the user entries in split gamma mode */
+		const struct drm_color_lut *entry =
+			&lut[i * (lut_size - 1) / (hw_lut_size - 1)];
+
+		// No need set dirty bit here since all set in d0_regs.
+		pal_data[prec_index + i].val = ilk_lut_10(entry);
+		//pal_data[prec_index + i].dirty = 1;
+	}
+
+	if (gvt && gvt->pipe_info[pipe].owner)
+		return;
+#endif
 
 	I915_WRITE(PREC_PAL_INDEX(pipe), prec_index |
 		   PAL_PREC_AUTO_INCREMENT);

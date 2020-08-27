@@ -482,4 +482,7 @@ source "drivers/misc/ocxl/Kconfig"
 source "drivers/misc/cardreader/Kconfig"
 source "drivers/misc/habanalabs/Kconfig"
 source "drivers/misc/gna/Kconfig"
+source "drivers/misc/xlink-pcie/Kconfig"
+source "drivers/misc/xlink-usb/Kconfig"
+source "drivers/misc/vpusmm/Kconfig"
 endmenu

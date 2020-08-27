@@ -113,6 +113,17 @@ static int intel_serdes_powerup(struct net_device *ndev)
 		return data;
 	}
 
+	/* Ungate SGMII PHY Rx Clock */
+	if (priv->plat->is_pse && !priv->plat->serdes_pse_sgmii_wa) {
+		data = mdiobus_read(priv->mii, serdes_phy_addr,
+				    SERDES_GCR0);
+
+		data |= SERDES_PHY_RX_CLK;
+
+		mdiobus_write(priv->mii, serdes_phy_addr,
+			      SERDES_GCR0, data);
+	}
+
 	return 0;
 }
 
@@ -126,6 +137,17 @@ static int intel_serdes_powerdown(struct net_device *ndev)
 
 	if (!priv->plat->intel_adhoc_addr)
 		return 0;
+
+	/* Gate SGMII PHY Rx Clock */
+	if (priv->plat->is_pse && !priv->plat->serdes_pse_sgmii_wa) {
+		data = mdiobus_read(priv->mii, serdes_phy_addr,
+				    SERDES_GCR0);
+
+		data &= ~SERDES_PHY_RX_CLK;
+
+		mdiobus_write(priv->mii, serdes_phy_addr,
+			      SERDES_GCR0, data);
+	}
 
 	/*  move power state to P3 */
 	data = mdiobus_read(priv->mii, serdes_phy_addr,

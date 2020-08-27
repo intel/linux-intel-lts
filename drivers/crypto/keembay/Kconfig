@@ -1,0 +1,144 @@
+config CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+	tristate "Support for Keem Bay OCS symmetric cipher HW acceleration"
+	select CRYPTO_SKCIPHER
+	select CRYPTO_AEAD
+	select CRYPTO_ENGINE
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS) AES and/or
+	  SM4 cihper hardware acceleration for use with Crypto API.
+
+	  CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_AES and/or
+	  CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4 also needs to be selected
+	  to make the OCS symmetric cipher functionality available through
+	  the Crypto API
+
+if CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+
+config CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_AES
+	bool "Support for Keem Bay OCS AES HW acceleration"
+	default y
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS)
+	  AES hardware acceleration for use with Crypto API.
+
+	  Provides OCS versions of cbc(aes), ctr(aes), ccm(aes) and gcm(aes),
+	  with additional optional support for ecb(aes) and cts(cbc(aes)).
+
+if CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_AES
+
+config CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_AES_ECB
+	bool "Support for Keem Bay OCS ECB(AES) HW acceleration"
+	default n
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_AES
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS)
+	  AES ECB mode hardware acceleration for use with Crypto API.
+
+	  Provides OCS versions of ecb(aes).
+
+	  Intel does not recommend use of ECB mode with AES.
+
+config CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_AES_CTS
+	bool "Support for Keem Bay OCS CTS(CBC(AES)) HW acceleration"
+	default n
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_AES
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS)
+	  AES CBC with CTS mode hardware acceleration for use with
+	  Crypto API.
+
+	  Provides OCS versions of cts(cbc(aes)).
+
+	  Intel does not recommend use of CTS mode with AES.
+
+endif # CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_AES
+
+config CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4
+	bool "Support for Keem Bay OCS SM4 HW acceleration"
+	default y
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS)
+	  SM4 hardware acceleration for use with Crypto API.
+
+	  Provides OCS versions of cbc(sm4), ctr(sm4), ccm(sm4) and gcm(sm4),
+	  with additional optional support for ecb(sm4) and cts(cbc(sm4)).
+
+if CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4
+
+config CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4_ECB
+	bool "Support for Keem Bay OCS ECB(SM4) HW acceleration"
+	default n
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS)
+	  SM4 ECB mode hardware acceleration for use with Crypto API.
+
+	  Provides OCS versions of ecb(sm4).
+
+	  Intel does not recommend use of ECB mode with SM4.
+
+config CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4_CTS
+	bool "Support for Keem Bay OCS CTS(CBC(SM4)) HW acceleration"
+	default n
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+	depends on CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS)
+	  SM4 CBC with CTS mode hardware acceleration for use with
+	  Crypto API.
+
+	  Provides OCS versions of cts(cbc(sm4)).
+
+	  Intel does not recommend use of CTS mode with SM4.
+
+endif # CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER_SM4
+
+endif # CRYPTO_DEV_KEEMBAY_OCS_SYM_CIPHER
+
+config CRYPTO_DEV_KEEMBAY_OCS_HCU
+	tristate "Support for Keem Bay OCS HCU HW acceleration"
+	select CRYPTO_ENGINE
+
+	help
+	  Support for Keem Bay Offload and Crypto Subsystem (OCS)
+	  HCU (Hash Control Unit) hardware acceleration for use
+	  with Crypto API.
+
+	  Provides OCS implementation of sha256, sha384, sha512 as well
+	  as the HMAC variant of these algorithms.
+
+config CRYPTO_DEV_KEEMBAY_OCS_HCU_HMAC_SHA224
+	bool "Support for Keem Bay SHA224 and HMAC(SHA224) HW acceleration"
+	default n
+	depends on CRYPTO_DEV_KEEMBAY_OCS_HCU
+
+	help
+	  Enables support for the Keem Bay OCS HCU SHA224 and HMAC(SHA224)
+	  algorithms. These algorithms are not recommended for use.
+
+	  Provides OCS implementation of sha224 as well as the HMAC variant of
+	  this algorithm.
+
+config CRYPTO_DEV_KEEMBAY_OCS_ECC
+	tristate "Support for Keembay OCS ECC HW acceleration"
+	select CRYPTO_ECDH
+	select CRYPTO_ENGINE
+
+	help
+	  Support for Keembay Offload and Crypto Subsystem (OCS)
+	  ECC (Elliptic Curve Cryptography) hardware acceleration for use
+	  with Crypto API.
+
+	  Provides OCS acceleration for ECDH-256, ECDH-384.

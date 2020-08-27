@@ -14,9 +14,14 @@
 #include <linux/pci.h>
 #include <linux/dmi.h>
 #include <linux/dwxpcs.h>
+#include <linux/pm_runtime.h>
 #include "stmmac.h"
 #include "dwmac4.h"
 #include "stmmac_ptp.h"
+
+#ifdef CONFIG_X86
+#define CPU_STEPPING	boot_cpu_data.x86_stepping
+#endif
 
 /*
  * This struct is used to associate PCI Function of MAC controller on a board,
@@ -396,6 +401,9 @@ static void ehl_pse_work_around(struct pci_dev *pdev,
 	}
 	plat->is_hfpga = 0;
 	plat->ehl_ao_wa = 1;
+
+	if (plat->phy_interface == PHY_INTERFACE_MODE_SGMII)
+		plat->serdes_pse_sgmii_wa = 1;
 }
 
 static int ehl_pse0_common_data(struct pci_dev *pdev,
@@ -411,11 +419,14 @@ static int ehl_pse0_common_data(struct pci_dev *pdev,
 		plat->pmc_art_to_pse_art_ratio = ecx_pmc_art_freq /
 						 pse_art_freq;
 	}
+
+	/* WA needed for EHL A0 */
+	if (CPU_STEPPING == 0)
+		ehl_pse_work_around(pdev, plat);
 #endif
 
 	plat->is_pse = 1;
 	plat->dma_bit_mask = 32;
-	ehl_pse_work_around(pdev, plat);
 
 	if (plat->is_hfpga)
 		plat->clk_ptp_rate = 20000000;
@@ -451,7 +462,6 @@ static int ehl_pse0_sgmii1g_data(struct pci_dev *pdev,
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	ehl_sgmii_path_latency_data(plat);
-	plat->serdes_pse_sgmii_wa = 1;
 
 	return ehl_pse0_common_data(pdev, plat);
 }
@@ -473,10 +483,14 @@ static int ehl_pse1_common_data(struct pci_dev *pdev,
 		plat->pmc_art_to_pse_art_ratio = ecx_pmc_art_freq /
 						 pse_art_freq;
 	}
+
+	/* WA needed for EHL A0 */
+	if (CPU_STEPPING == 0)
+		ehl_pse_work_around(pdev, plat);
 #endif
+
 	plat->is_pse = 1;
 	plat->dma_bit_mask = 32;
-	ehl_pse_work_around(pdev, plat);
 
 	if (plat->is_hfpga)
 		plat->clk_ptp_rate = 20000000;
@@ -513,7 +527,6 @@ static int ehl_pse1_sgmii1g_data(struct pci_dev *pdev,
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	ehl_sgmii_path_latency_data(plat);
-	plat->serdes_pse_sgmii_wa = 1;
 
 	return ehl_pse1_common_data(pdev, plat);
 }
@@ -844,7 +857,7 @@ static int stmmac_config_multi_msi(struct pci_dev *pdev,
 	int i;
 
 	ret = pci_alloc_irq_vectors(pdev, 1, STMMAC_MSI_VEC_MAX,
-				    PCI_IRQ_MSI);
+				    PCI_IRQ_MSI | PCI_IRQ_MSIX);
 	if (ret < 0) {
 		dev_info(&pdev->dev, "%s: multi MSI enablement failed\n",
 			 __func__);
@@ -1026,6 +1039,12 @@ static void stmmac_pci_remove(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
+static void stmmac_pci_shutdown(struct pci_dev *pdev)
+{
+	pci_wake_from_d3(pdev, true);
+	pci_set_power_state(pdev, PCI_D3hot);
+}
+
 static int __maybe_unused stmmac_pci_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
@@ -1063,7 +1082,98 @@ static int __maybe_unused stmmac_pci_resume(struct device *dev)
 	return stmmac_resume(dev);
 }
 
-static SIMPLE_DEV_PM_OPS(stmmac_pm_ops, stmmac_pci_suspend, stmmac_pci_resume);
+static int __maybe_unused stmmac_pci_runtime_suspend(struct device *dev)
+{
+	struct ethtool_wolinfo wol;
+	struct stmmac_priv *priv;
+	struct net_device *ndev;
+	struct pci_dev *pdev;
+	int ret;
+
+	pdev = to_pci_dev(dev);
+	ndev = dev_get_drvdata(&pdev->dev);
+	priv = netdev_priv(ndev);
+
+	rtnl_lock();
+	/* Save current WoL operation */
+	phylink_ethtool_get_wol(priv->phylink, &wol);
+	priv->saved_wolopts = wol.wolopts;
+	/* Enable WoL to wake on PHY activity */
+	wol.wolopts = WAKE_PHY;
+	phylink_ethtool_set_wol(priv->phylink, &wol);
+	rtnl_unlock();
+
+	device_set_wakeup_enable(priv->device, 1);
+
+	ret = stmmac_pci_suspend(dev);
+	if (!ret)
+		dev_info(dev, "%s: Device is runtime suspended.\n", __func__);
+
+	return ret;
+}
+
+static int __maybe_unused stmmac_pci_runtime_resume(struct device *dev)
+{
+	struct ethtool_wolinfo wol;
+	struct stmmac_priv *priv;
+	struct net_device *ndev;
+	struct pci_dev *pdev;
+	int ret;
+
+	pdev = to_pci_dev(dev);
+	ndev = dev_get_drvdata(&pdev->dev);
+	priv = netdev_priv(ndev);
+
+	rtnl_lock();
+	/* Restore saved WoL operation */
+	wol.wolopts = priv->saved_wolopts;
+	phylink_ethtool_set_wol(priv->phylink, &wol);
+	priv->saved_wolopts = 0;
+	rtnl_unlock();
+
+	ret = stmmac_pci_resume(dev);
+	if (!ret)
+		dev_info(dev, "%s: Device is runtime resumed.\n", __func__);
+
+	return ret;
+}
+
+#define STMMAC_RUNTIME_SUSPEND_DELAY	2500
+
+static int __maybe_unused stmmac_pci_runtime_idle(struct device *dev)
+{
+	struct ethtool_wolinfo wol;
+	struct stmmac_priv *priv;
+	struct net_device *ndev;
+	struct pci_dev *pdev;
+
+	pdev = to_pci_dev(dev);
+	ndev = dev_get_drvdata(&pdev->dev);
+	priv = netdev_priv(ndev);
+
+	/* Allow runtime suspend only if link is down */
+	if (priv->phylink_up)
+		return -EBUSY;
+
+	/* Allow runtime suspend only if PHY support wake on PHY activity */
+	rtnl_lock();
+	phylink_ethtool_get_wol(priv->phylink, &wol);
+	rtnl_unlock();
+	if (!(wol.supported & WAKE_PHY))
+		return -EBUSY;
+
+	/* Schedule the execution of delayed runtime suspend */
+	pm_schedule_suspend(dev, STMMAC_RUNTIME_SUSPEND_DELAY);
+
+	/* Return non-zero value to prevent PM core from calling autosuspend */
+	return -EBUSY;
+}
+
+static const struct dev_pm_ops stmmac_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(stmmac_pci_suspend, stmmac_pci_resume)
+	SET_RUNTIME_PM_OPS(stmmac_pci_runtime_suspend,
+			   stmmac_pci_runtime_resume, stmmac_pci_runtime_idle)
+};
 
 /* synthetic ID, no official vendor */
 #define PCI_VENDOR_ID_STMMAC 0x700
@@ -1129,6 +1239,7 @@ static struct pci_driver stmmac_pci_driver = {
 	.id_table = stmmac_id_table,
 	.probe = stmmac_pci_probe,
 	.remove = stmmac_pci_remove,
+	.shutdown = stmmac_pci_shutdown,
 	.driver         = {
 		.pm     = &stmmac_pm_ops,
 	},

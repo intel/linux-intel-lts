@@ -304,9 +304,9 @@ static int gna_dev_create(struct gna_private *gna_priv)
 
 	dev_num = find_first_zero_bit(gna_drv_priv.dev_map, MAX_GNA_DEVICES);
 	if (dev_num == MAX_GNA_DEVICES) {
+		mutex_unlock(&gna_drv_priv.lock);
 		dev_err(&pcidev->dev, "number of gna devices reached maximum\n");
-		ret = -ENODEV;
-		goto err_unlock_drv;
+		return -ENODEV;
 	}
 
 	set_bit(dev_num, gna_drv_priv.dev_map);
@@ -334,22 +334,15 @@ static int gna_dev_create(struct gna_private *gna_priv)
 
 	ret = cdev_device_add(&gna_priv->cdev, &gna_priv->dev);
 	if (ret) {
+		mutex_lock(&gna_drv_priv.lock);
+		__clear_bit(minor, gna_drv_priv.dev_map);
+		mutex_unlock(&gna_drv_priv.lock);
 		dev_err(&gna_priv->dev, "could not add gna%d char device\n",
 			dev_num);
-		goto err_release_devnum;
+	} else {
+		dev_info(&gna_priv->dev, "registered gna%d device: major %d, "
+			"minor %d\n", dev_num, major, minor);
 	}
-
-	dev_info(&gna_priv->dev, "registered gna%d device: major %d, minor %d\n",
-						dev_num, major, minor);
-
-	return 0;
-
-err_release_devnum:
-	mutex_lock(&gna_drv_priv.lock);
-	__clear_bit(minor, gna_drv_priv.dev_map);
-
-err_unlock_drv:
-	mutex_unlock(&gna_drv_priv.lock);
 
 	return ret;
 }

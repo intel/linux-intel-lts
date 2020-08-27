@@ -30,6 +30,8 @@ source "drivers/media/platform/cadence/Kconfig"
 
 source "drivers/media/platform/davinci/Kconfig"
 
+source "drivers/media/platform/kmb-camera/Kconfig"
+
 source "drivers/media/platform/omap/Kconfig"
 
 config VIDEO_ASPEED

@@ -234,11 +234,15 @@ out:
 void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 {
 	struct intel_gvt *gvt = vgpu->gvt;
+	struct drm_i915_private *dev_priv = gvt->dev_priv;
+	struct intel_runtime_info *runtime = RUNTIME_INFO(dev_priv);
 	const struct intel_gvt_device_info *info = &gvt->device_info;
 	void  *mmio = gvt->firmware.mmio;
-	struct drm_i915_private *dev_priv = gvt->dev_priv;
 
 	if (dmlr) {
+		enum pipe pipe = INVALID_PIPE;
+		int scaler;
+
 		memcpy(vgpu->mmio.vreg, mmio, info->mmio_size);
 
 		vgpu_vreg_t(vgpu, GEN6_GT_THREAD_STATUS_REG) = 0;
@@ -246,7 +250,18 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 		/* set the bit 0:2(Core C-State ) to C0 */
 		vgpu_vreg_t(vgpu, GEN6_GT_CORE_STATUS) = 0;
 
-		if (IS_BROXTON(vgpu->gvt->dev_priv)) {
+		if (IS_BROADWELL(dev_priv)) {
+			vgpu_vreg_t(vgpu, PCH_ADPA) &= ~ADPA_CRT_HOTPLUG_MONITOR_MASK;
+			for (pipe = PIPE_A; pipe <= PIPE_C; pipe++) {
+				vgpu_vreg_t(vgpu, PF_CTL(pipe)) = 0;
+				vgpu_vreg_t(vgpu, PF_WIN_SZ(pipe)) = 0;
+				vgpu_vreg_t(vgpu, PF_WIN_POS(pipe)) = 0;
+				vgpu_vreg_t(vgpu, PF_VSCALE(pipe)) = 0;
+				vgpu_vreg_t(vgpu, PF_HSCALE(pipe)) = 0;
+			}
+		}
+
+		if (IS_BROXTON(dev_priv)) {
 			vgpu_vreg_t(vgpu, BXT_P_CR_GT_DISP_PWRON) &=
 				    ~(BIT(0) | BIT(1));
 			vgpu_vreg_t(vgpu, BXT_PORT_CL1CM_DW0(DPIO_PHY0)) &=
@@ -272,6 +287,33 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 			vgpu_vreg_t(vgpu, BXT_PHY_CTL(PORT_C)) |=
 				    BXT_PHY_CMNLANE_POWERDOWN_ACK |
 				    BXT_PHY_LANE_POWERDOWN_ACK;
+			vgpu_vreg_t(vgpu, SKL_FUSE_STATUS) |=
+				SKL_FUSE_DOWNLOAD_STATUS |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG0) |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG1) |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG2);
+		}
+		if (IS_SKYLAKE(dev_priv) || IS_KABYLAKE(dev_priv) ||
+		    IS_COFFEELAKE(dev_priv)) {
+			vgpu_vreg_t(vgpu, SKL_FUSE_STATUS) |=
+				SKL_FUSE_DOWNLOAD_STATUS |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG0) |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG1) |
+				SKL_FUSE_PG_DIST_STATUS(SKL_PG2);
+			vgpu_vreg_t(vgpu, LCPLL1_CTL) |=
+				LCPLL_PLL_ENABLE |
+				LCPLL_PLL_LOCK;
+			vgpu_vreg_t(vgpu, LCPLL2_CTL) |= LCPLL_PLL_ENABLE;
+		}
+
+		if (INTEL_GEN(dev_priv) >= 9) {
+			for_each_pipe(dev_priv, pipe) {
+				for (scaler = 0; scaler < runtime->num_scalers[pipe]; scaler++) {
+					vgpu_vreg_t(vgpu, SKL_PS_WIN_POS(pipe, scaler)) = 0;
+					vgpu_vreg_t(vgpu, SKL_PS_WIN_SZ(pipe, scaler)) = 0;
+					vgpu_vreg_t(vgpu, SKL_PS_CTRL(pipe, scaler)) = 0;
+				}
+			}
 		}
 	} else {
 #define GVT_GEN8_MMIO_RESET_OFFSET		(0x44200)
@@ -282,21 +324,6 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 		memcpy(vgpu->mmio.vreg, mmio, GVT_GEN8_MMIO_RESET_OFFSET);
 	}
 
-	/* below vreg init value are got from handler.c,
-	 * which won't change during vgpu life cycle
-	 */
-	vgpu_vreg(vgpu, 0xe651c) = 1 << 17;
-	vgpu_vreg(vgpu, 0xe661c) = 1 << 17;
-	vgpu_vreg(vgpu, 0xe671c) = 1 << 17;
-	vgpu_vreg(vgpu, 0xe681c) = 1 << 17;
-	vgpu_vreg(vgpu, 0xe6c04) = 3;
-	vgpu_vreg(vgpu, 0xe6e1c) = 0x2f << 16;
-
-	if (HAS_GT_UC(dev_priv)) {
-		mmio_hw_access_pre(dev_priv);
-		vgpu_vreg_t(vgpu, HUC_STATUS2) = I915_READ(HUC_STATUS2);
-		mmio_hw_access_post(dev_priv);
-	}
 }
 
 /**
@@ -308,19 +335,11 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
  */
 int intel_vgpu_init_mmio(struct intel_vgpu *vgpu)
 {
-	BUILD_BUG_ON(sizeof(struct gvt_shared_page) != PAGE_SIZE);
+	const struct intel_gvt_device_info *info = &vgpu->gvt->device_info;
 
-	vgpu->mmio.vreg = intel_gvt_allocate_vreg(vgpu);
+	vgpu->mmio.vreg = vzalloc(info->mmio_size);
 	if (!vgpu->mmio.vreg)
 		return -ENOMEM;
-
-	vgpu->mmio.shared_page = (struct gvt_shared_page *) __get_free_pages(
-			GFP_KERNEL, 0);
-	if (!vgpu->mmio.shared_page) {
-		intel_gvt_free_vreg(vgpu);
-		vgpu->mmio.vreg = NULL;
-		return -ENOMEM;
-	}
 
 	intel_vgpu_reset_mmio(vgpu, true);
 
@@ -334,7 +353,6 @@ int intel_vgpu_init_mmio(struct intel_vgpu *vgpu)
  */
 void intel_vgpu_clean_mmio(struct intel_vgpu *vgpu)
 {
-	intel_gvt_free_vreg(vgpu);
-	free_pages((unsigned long) vgpu->mmio.shared_page, 0);
-	vgpu->mmio.vreg = vgpu->mmio.shared_page = NULL;
+	vfree(vgpu->mmio.vreg);
+	vgpu->mmio.vreg = NULL;
 }

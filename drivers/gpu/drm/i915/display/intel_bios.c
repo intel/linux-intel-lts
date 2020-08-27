@@ -1951,13 +1951,6 @@ void intel_bios_init(struct drm_i915_private *dev_priv)
 		return;
 	}
 
-	if (HAS_PCH_NOP(dev_priv) && !intel_vgpu_active(dev_priv)) {
-		DRM_DEBUG_KMS("Skipping VBT init due to disabled display.\n");
-		return;
-	} else if (HAS_PCH_NOP(dev_priv)) {
-		dev_priv->pch_type = PCH_NONE;
-	}
-
 	init_vbt_defaults(dev_priv);
 
 	/* If the OpRegion does not have VBT, look in PCI ROM. */

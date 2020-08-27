@@ -220,6 +220,16 @@
 
 #define ADV7533_REG_CEC_OFFSET		0x70
 
+#define KMB
+
+#ifdef KMB
+#define KMB_MAX_WIDTH			1920
+#define KMB_MAX_HEIGHT			1080
+#define KMB_MIN_WIDTH			1920
+#define KMB_MIN_HEIGHT			1080
+#define KMB_VREFRESH			60
+#endif
+
 enum adv7511_input_clock {
 	ADV7511_INPUT_CLOCK_1X,
 	ADV7511_INPUT_CLOCK_2X,

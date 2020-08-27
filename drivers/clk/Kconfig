@@ -52,6 +52,15 @@ config COMMON_CLK_MAX9485
 	help
 	  This driver supports Maxim 9485 Programmable Audio Clock Generator
 
+config COMMON_CLK_CDCUN1208
+	tristate "CDCUN1208 Clock Buffer"
+	depends on I2C
+	help
+	  This driver supports CDCUN1208 universal fanout buffer.
+	  Driver exposes 8 clock outputs.
+	  Outputs will always have the same frequency.
+	  Clock rate change will be propagated to parent clock.
+
 config COMMON_CLK_RK808
 	tristate "Clock driver for RK805/RK808/RK809/RK817/RK818"
 	depends on MFD_RK808

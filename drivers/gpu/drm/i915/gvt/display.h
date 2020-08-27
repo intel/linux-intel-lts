@@ -35,21 +35,19 @@
 #ifndef _GVT_DISPLAY_H_
 #define _GVT_DISPLAY_H_
 
+#include "display/intel_display_types.h"
+#include "edid.h"
+
 #define SBI_REG_MAX	20
 #define DPCD_SIZE	0x700
 
-#define intel_vgpu_port(vgpu, port) \
-	(&(vgpu->display.ports[port]))
+#define intel_vgpu_display_has_monitor(disp_path) \
+	((disp_path)->edid && (disp_path)->edid->data_valid)
 
-#define intel_vgpu_has_monitor_on_port(vgpu, port) \
-	(intel_vgpu_port(vgpu, port)->edid && \
-		intel_vgpu_port(vgpu, port)->edid->data_valid)
-
-#define intel_vgpu_port_is_dp(vgpu, port) \
-	((intel_vgpu_port(vgpu, port)->type == GVT_DP_A) || \
-	(intel_vgpu_port(vgpu, port)->type == GVT_DP_B) || \
-	(intel_vgpu_port(vgpu, port)->type == GVT_DP_C) || \
-	(intel_vgpu_port(vgpu, port)->type == GVT_DP_D))
+#define intel_vgpu_display_is_dp(disp_path) \
+	(((disp_path)->port_type == INTEL_OUTPUT_DP) || \
+	((disp_path)->port_type == INTEL_OUTPUT_EDP) || \
+	((disp_path)->port_type == INTEL_OUTPUT_DP_MST))
 
 #define INTEL_GVT_MAX_UEVENT_VARS	3
 
@@ -134,31 +132,83 @@ struct intel_vgpu_dpcd_data {
 	u8 data[DPCD_SIZE];
 };
 
-enum intel_vgpu_port_type {
-	GVT_CRT = 0,
-	GVT_DP_A,
-	GVT_DP_B,
-	GVT_DP_C,
-	GVT_DP_D,
-	GVT_HDMI_B,
-	GVT_HDMI_C,
-	GVT_HDMI_D,
-	GVT_PORT_MAX
-};
-
 enum intel_vgpu_edid {
 	GVT_EDID_1024_768,
 	GVT_EDID_1920_1200,
 	GVT_EDID_NUM,
 };
 
-struct intel_vgpu_port {
-	/* per display EDID information */
+struct vgpu_scaler_config {
+	u32 win_pos[2];
+	u32 win_size[2];
+	u32 ctrl[2];
+};
+
+struct prec_pal_data {
+	u32 val;
+	bool dirty;
+};
+
+enum {
+	INTEL_GVT_DIRECT_DISPLAY_HW_VSYNC = 0
+};
+
+/* Per-path display configuration */
+struct intel_vgpu_display_path {
+	/* virtual display path id */
+	u32 id;
+	/* resolution from fake EDID */
+	u64 resolution;
+	/* assigned host display port */
+	enum port p_port;
+	/* assigned host pipe corresponding to port */
+	enum pipe p_pipe;
+	/* current vgpu port, starts from PORT_B */
+	enum port port;
+	/* current vgpu port type */
+	enum intel_output_type port_type;
+	/* I2C EDID information */
+	struct intel_vgpu_i2c_edid i2c_edid;
+	/* EDID information */
 	struct intel_vgpu_edid_data *edid;
-	/* per display DPCD information */
+	/* Resolution ID from QEMU */
+	enum intel_vgpu_edid edid_id;
+	/* DPCD information */
 	struct intel_vgpu_dpcd_data *dpcd;
-	int type;
-	enum intel_vgpu_edid id;
+	/* current vgpu pipe, starts from PIPE_A */
+	enum pipe pipe;
+	/* current vgpu transcoder, starts from TRANSCODER_A */
+	enum transcoder trans;
+	/* overridden scaler settings for vgpu pipe */
+	struct vgpu_scaler_config scaler_cfg;
+	/* watermark for vgpu */
+	struct skl_pipe_wm wm_cfg;
+	/* Precision palette data */
+	struct prec_pal_data prec_palette_split[PAL_PREC_INDEX_VALUE_MASK + 1];
+	struct prec_pal_data prec_palette_nonsplit[PAL_PREC_INDEX_VALUE_MASK + 1];
+	/* current foreground state of display */
+	u32 foreground_state;
+	/* request to switch this vgpu as foreground */
+	u32 foreground;
+	/* display status bits */
+	u32 stat;
+	/* vsync freq */
+	u64 vsync_interval_ns;
+	/* last hw vsync injected */
+	u64 last_hwvsync_ns;
+	/* number of emulated vsync injected */
+	u64 sw_vsync_injected;
+	/* pointer to prev or next path */
+	struct list_head list;
+};
+
+struct intel_vgpu_display {
+	/* SBI information */
+	struct intel_vgpu_sbi sbi;
+	/* Per-path virtual display configuration */
+	struct list_head path_list;
+	/* display switch lock */
+	struct mutex sw_lock;
 };
 
 static inline char *vgpu_edid_str(enum intel_vgpu_edid id)
@@ -198,13 +248,20 @@ static inline unsigned int vgpu_edid_yres(enum intel_vgpu_edid id)
 }
 
 void intel_gvt_emulate_vblank(struct intel_gvt *gvt);
-void intel_gvt_check_vblank_emulation(struct intel_gvt *gvt);
+void intel_gvt_check_vblank_emulation(struct intel_vgpu *vgpu, enum pipe pipe);
 
 int intel_vgpu_init_display(struct intel_vgpu *vgpu, u64 resolution);
 void intel_vgpu_reset_display(struct intel_vgpu *vgpu);
 void intel_vgpu_clean_display(struct intel_vgpu *vgpu);
+void intel_gvt_switch_display_pipe(struct intel_gvt *gvt, enum pipe pipe,
+				   struct intel_vgpu *old_v,
+				   struct intel_vgpu *new_v);
+void intel_gvt_flush_pipe_color(struct intel_gvt *gvt, enum pipe pipe,
+				struct intel_vgpu *vgpu);
 
-int pipe_is_enabled(struct intel_vgpu *vgpu, int pipe);
+int pipe_is_enabled(struct intel_vgpu *vgpu, enum pipe pipe);
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 int intel_vgpu_g2v_setup_gop(struct intel_vgpu *vgpu);
+#endif
 #endif

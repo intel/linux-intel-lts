@@ -14,6 +14,7 @@
 #include <linux/mii.h>
 #include <linux/phylink.h>
 #include <linux/net_tstamp.h>
+#include <linux/pm_runtime.h>
 #include <asm/io.h>
 
 #include "stmmac.h"
@@ -439,9 +440,26 @@ static void stmmac_ethtool_setmsglevel(struct net_device *dev, u32 level)
 
 static int stmmac_check_if_running(struct net_device *dev)
 {
+	struct stmmac_priv *priv = netdev_priv(dev);
+
 	if (!netif_running(dev))
 		return -EBUSY;
+
+	/* Increase the device's usage_count and cancel any scheduled runtime
+	 * suspend, so that race condition between runtime suspend and ethtool
+	 * operation can be avoided.
+	 */
+	pm_runtime_get_sync(priv->device);
+
 	return 0;
+}
+
+static void stmmac_ethtool_complete(struct net_device *dev)
+{
+	struct stmmac_priv *priv = netdev_priv(dev);
+
+	/* Decrease the device's usage_count after ethtool operation. */
+	pm_runtime_put(priv->device);
 }
 
 static int stmmac_ethtool_get_regs_len(struct net_device *dev)
@@ -706,6 +724,8 @@ static void stmmac_get_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
 
+	phylink_ethtool_get_wol(priv->phylink, wol);
+
 	mutex_lock(&priv->lock);
 	if (device_can_wakeup(priv->device)) {
 		wol->supported = WAKE_MAGIC | WAKE_UCAST;
@@ -739,6 +759,8 @@ static int stmmac_set_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
 		device_set_wakeup_enable(priv->device, 0);
 		disable_irq_wake(priv->wol_irq);
 	}
+
+	phylink_ethtool_set_wol(priv->phylink, wol);
 
 	mutex_lock(&priv->lock);
 	priv->wolopts = wol->wolopts;
@@ -782,8 +804,19 @@ static int stmmac_ethtool_op_set_eee(struct net_device *dev,
 	if (ret)
 		return ret;
 
-	priv->tx_lpi_timer = edata->tx_lpi_timer;
+	/* TODO: Disable assertion of TX LPI if tx_lpi_enabled
+	 * is set to false.
+	 */
 	priv->tx_lpi_enabled = edata->tx_lpi_enabled;
+
+	if (!edata->eee_enabled || !priv->tx_lpi_enabled)
+		return 0;
+
+	if (priv->tx_lpi_timer != edata->tx_lpi_timer) {
+		priv->tx_lpi_timer = edata->tx_lpi_timer;
+		stmmac_eee_init(priv);
+	}
+
 	return 0;
 }
 
@@ -1050,6 +1083,7 @@ static int stmmac_set_tunable(struct net_device *dev,
 
 static const struct ethtool_ops stmmac_ethtool_ops = {
 	.begin = stmmac_check_if_running,
+	.complete = stmmac_ethtool_complete,
 	.get_drvinfo = stmmac_ethtool_getdrvinfo,
 	.get_msglevel = stmmac_ethtool_getmsglevel,
 	.set_msglevel = stmmac_ethtool_setmsglevel,

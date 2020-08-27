@@ -258,8 +258,11 @@ intel_wait_for_register_fw(struct intel_uncore *uncore,
 
 /* register access functions */
 #define __raw_read(x__, s__) \
-u##x__ __raw_uncore_read##x__(const struct intel_uncore *uncore, \
-					    i915_reg_t reg);
+static inline u##x__ __raw_uncore_read##x__(const struct intel_uncore *uncore, \
+					    i915_reg_t reg) \
+{ \
+	return read##s__(uncore->regs + i915_mmio_reg_offset(reg)); \
+}
 
 #define __raw_write(x__, s__) \
 static inline void __raw_uncore_write##x__(const struct intel_uncore *uncore, \

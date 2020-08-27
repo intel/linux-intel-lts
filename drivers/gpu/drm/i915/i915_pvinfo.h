@@ -48,68 +48,10 @@ enum vgt_g2v_type {
 	VGT_G2V_PPGTT_L4_PAGE_TABLE_DESTROY,
 	VGT_G2V_EXECLIST_CONTEXT_CREATE,
 	VGT_G2V_EXECLIST_CONTEXT_DESTROY,
-	VGT_G2V_PPGTT_L4_ALLOC,
-	VGT_G2V_PPGTT_L4_CLEAR,
-	VGT_G2V_PPGTT_L4_INSERT,
-	VGT_RESERVED1,
-	VGT_RESERVED2,
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 	VGT_G2V_GOP_SETUP,
+#endif
 	VGT_G2V_MAX,
-};
-
-#define PLANE_COLOR_CTL_BIT	(1 << 0)
-#define PLANE_KEY_BIT		(1 << 1)
-#define PLANE_SCALER_BIT	(1 << 2)
-
-struct pv_plane_update {
-	u32 flags;
-	u32 plane_color_ctl;
-	u32 plane_key_val;
-	u32 plane_key_max;
-	u32 plane_key_msk;
-	u32 plane_offset;
-	u32 plane_stride;
-	u32 plane_size;
-	u32 plane_aux_dist;
-	u32 plane_aux_offset;
-	u32 ps_ctrl;
-	u32 ps_pwr_gate;
-	u32 ps_win_ps;
-	u32 ps_win_sz;
-	u32 plane_pos;
-	u32 plane_ctl;
-};
-
-struct pv_ppgtt_update {
-	u64 pdp;
-	u64 start;
-	u64 length;
-	u32 cache_level;
-};
-
-/* shared page(4KB) between gvt and VM, located at the first page next
- * to MMIO region(2MB size normally).
- */
-struct gvt_shared_page {
-	u32 elsp_data[4];
-	u32 reg_addr;
-	struct pv_plane_update pv_plane;
-	/* This is reserved only for compatibility */
-	u32 plane_wm_rsvd[11];
-	struct pv_ppgtt_update pv_ppgtt;
-	u32 rsvd2[0x400 - 40];
-};
-
-#define VGPU_PVMMIO(vgpu) vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio))
-
-/*
- * define different levels of PVMMIO optimization
- */
-enum pvmmio_levels {
-	PVMMIO_ELSP_SUBMIT = 0x1,
-	PVMMIO_PLANE_UPDATE = 0x2,
-	/* PVMMIO_XX= 0x4. Reseved for compatibility */
-	PVMMIO_PPGTT_UPDATE = 0x10,
 };
 
 /*
@@ -118,10 +60,9 @@ enum pvmmio_levels {
 #define VGT_CAPS_FULL_PPGTT		BIT(2)
 #define VGT_CAPS_HWSP_EMULATION		BIT(3)
 #define VGT_CAPS_HUGE_GTT		BIT(4)
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 #define VGT_CAPS_GOP_SUPPORT		BIT(5)
-
-#define PVMMIO_LEVEL(dev_priv, level) \
-	(intel_vgpu_active(dev_priv) && (i915_modparams.enable_pvmmio & level))
+#endif
 
 struct vgt_if {
 	u64 magic;		/* VGT_MAGIC */
@@ -173,10 +114,8 @@ struct vgt_if {
 
 	u32 execlist_context_descriptor_lo;
 	u32 execlist_context_descriptor_hi;
-	u32 enable_pvmmio;
-	u32 pv_mmio;
-	u32 scaler_owned;
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 	struct {
 		u32 fb_base;
 		u32 width;
@@ -185,11 +124,14 @@ struct vgt_if {
 		u32 Bpp;
 		u32 size;
 	} gop;
-	u32  rsv8[0x200 - 33];    /* pad to one page */
+	u32  rsv8[0x200 - 30];    /* pad to one page */
+#else
+	u32  rsv7[0x200 - 24];    /* pad to one page */
+#endif
 } __packed;
 
 #define _vgtif_reg(x) \
-	(VGT_PVINFO_PAGE + offsetof(struct vgt_if, x))
+       (VGT_PVINFO_PAGE + offsetof(struct vgt_if, x))
 
 #define vgtif_offset(x) (offsetof(struct vgt_if, x))
 

@@ -54,8 +54,8 @@ int gna_mmu_alloc(struct gna_private *gna_priv)
 
 	desc_size = ROUND_UP(gna_priv->info.desc_info.desc_size, PAGE_SIZE);
 
-	mmu->hwdesc = pci_alloc_consistent(gna_priv->pdev,
-				     desc_size, &mmu->hwdesc_dma);
+	mmu->hwdesc = dma_alloc_coherent(&gna_priv->pdev->dev,
+				     desc_size, &mmu->hwdesc_dma, GFP_KERNEL);
 	if (!mmu->hwdesc) {
 		dev_err(&gna_priv->dev, "gna base descriptor alloc fail\n");
 		goto end;
@@ -77,8 +77,8 @@ int gna_mmu_alloc(struct gna_private *gna_priv)
 		goto err_free_pagetables_dma;
 
 	for (i = 0; i < mmu->num_pagetables; i++) {
-		mmu->pagetables[i] = pci_alloc_consistent(gna_priv->pdev,
-			PAGE_SIZE, &mmu->pagetables_dma[i]);
+		mmu->pagetables[i] = dma_alloc_coherent(&gna_priv->pdev->dev,
+			PAGE_SIZE, &mmu->pagetables_dma[i], GFP_KERNEL);
 		if (!mmu->pagetables[i]) {
 			dev_err(&gna_priv->dev,
 				"gna page table %d alloc fail\n", i);

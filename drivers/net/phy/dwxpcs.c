@@ -21,6 +21,7 @@
 #define MDIO_MII_MMD_AN_CTRL		0x8001	/* AN Control */
 #define MDIO_MII_MMD_AN_STAT		0x8002	/* AN Status */
 #define MDIO_MII_MMD_EEE_MCTRL0		0x8006	/* EEE Mode Control Register */
+#define MDIO_MII_MMD_EEE_MCTRL1		0x800b	/* EEE Mode Control 1 */
 
 /* MII MMD SR AN Advertisement & Link Partner Ability are slightly
  * different from MII_ADVERTISEMENT & MII_LPA in below fields:
@@ -72,6 +73,9 @@
 #define VR_MII_EEE_RX_QUIET_EN		BIT(3)  /* Rx Quiet Enable */
 #define VR_MII_EEE_TX_EN_CTRL		BIT(4)  /* Tx Control Enable */
 #define VR_MII_EEE_RX_EN_CTRL		BIT(7)  /* Rx Control Enable */
+
+/* VR MII EEE Control 1 defines */
+#define VR_MII_EEE_TRN_LPI		BIT(0)	/* Transparent Mode Enable */
 
 /* 100ns Clock Tic Multiplying Factor where
  * clk_eee_i freq is 19.2Mhz, clk_eee_i_time_period is 52ns
@@ -202,6 +206,14 @@ static void dwxpcs_init(struct dwxpcs_priv *priv)
 			VR_MII_EEE_MULT_FACT_100NS;
 	xpcs_write(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_EEE_MCTRL0, phydata);
 
+	/* TODO: Implement a more flexible design/method of configuring
+	 * the EEE control and timer registers, to enable generic use of
+	 * the driver.
+	 */
+
+	phydata = xpcs_read(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_EEE_MCTRL1);
+	phydata |= VR_MII_EEE_TRN_LPI;
+	xpcs_write(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_EEE_MCTRL1, phydata);
 }
 
 static int dwxpcs_read_status(struct phy_device *phydev)

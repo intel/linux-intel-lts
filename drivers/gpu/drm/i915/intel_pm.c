@@ -46,6 +46,10 @@
 #include "intel_sideband.h"
 #include "../../../platform/x86/intel_ips.h"
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+#include "gvt.h"
+#endif
+
 static void gen9_init_clock_gating(struct drm_i915_private *dev_priv)
 {
 	if (HAS_LLC(dev_priv)) {
@@ -389,10 +393,6 @@ static bool _intel_set_memory_cxsr(struct drm_i915_private *dev_priv, bool enabl
 
 	return was_enabled;
 }
-
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-#include "gvt.h"
-#endif
 
 /**
  * intel_set_memory_cxsr - Configure CxSR state
@@ -3762,7 +3762,7 @@ bool intel_can_enable_sagv(struct intel_atomic_state *state)
 	enum pipe pipe;
 	int level, latency;
 
-	if (!intel_has_sagv(dev_priv) || intel_vgpu_active(dev_priv))
+	if (!intel_has_sagv(dev_priv))
 		return false;
 
 	/*
@@ -3989,15 +3989,37 @@ skl_ddb_get_hw_plane_state(struct drm_i915_private *dev_priv,
 {
 	u32 val, val2;
 	u32 fourcc = 0;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_gvt_pipe_info *pipe_info = &gvt->pipe_info[pipe];
+	struct intel_dom0_plane_regs *dom0_regs =
+		&gvt->pipe_info[pipe].plane_info[plane_id].dom0_regs;
+#endif
 
 	/* Cursor doesn't support NV12/planar, so no extra calculation needed */
 	if (plane_id == PLANE_CURSOR) {
 		val = I915_READ(CUR_BUF_CFG(pipe));
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	/* In GVT direct display, we only use the statically allocated ddb */
+		if (gvt) {
+			struct skl_ddb_entry *ddb_y = &pipe_info->ddb_y[PLANE_CURSOR];
+
+			if (ddb_y->end)
+				val = (ddb_y->end - 1) << 16 | ddb_y->start;
+			else
+				val = 0;
+		}
+#endif
 		skl_ddb_entry_init_from_hw(dev_priv, ddb_y, val);
 		return;
 	}
 
 	val = I915_READ(PLANE_CTL(pipe, plane_id));
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	// If pipe is not owned by host, read plane_ctl from cache
+	if (gvt && gvt->pipe_info[pipe].plane_info[plane_id].owner)
+		val = dom0_regs->plane_ctl;
+#endif
 
 	/* No DDB allocated for disabled planes */
 	if (val & PLANE_CTL_ENABLE)
@@ -4011,6 +4033,23 @@ skl_ddb_get_hw_plane_state(struct drm_i915_private *dev_priv,
 	} else {
 		val = I915_READ(PLANE_BUF_CFG(pipe, plane_id));
 		val2 = I915_READ(PLANE_NV12_BUF_CFG(pipe, plane_id));
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+		if (gvt) {
+			struct skl_ddb_entry *ddb_y = &pipe_info->ddb_y[plane_id];
+			struct skl_ddb_entry *ddb_uv = &pipe_info->ddb_uv[plane_id];
+
+			if (ddb_y->end)
+				val = (ddb_y->end - 1) << 16 | ddb_y->start;
+			else
+				val = 0;
+
+			if (ddb_uv->end)
+				val2 = (ddb_uv->end - 1) << 16 | ddb_uv->start;
+			else
+				val2 = 0;
+		}
+#endif
 
 		if (fourcc &&
 		    drm_format_info_is_yuv_semiplanar(drm_format_info(fourcc)))
@@ -4030,6 +4069,9 @@ void skl_pipe_ddb_get_hw_state(struct intel_crtc *crtc,
 	enum pipe pipe = crtc->pipe;
 	intel_wakeref_t wakeref;
 	enum plane_id plane_id;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+#endif
 
 	power_domain = POWER_DOMAIN_PIPE(pipe);
 	wakeref = intel_display_power_get_if_enabled(dev_priv, power_domain);
@@ -4041,7 +4083,14 @@ void skl_pipe_ddb_get_hw_state(struct intel_crtc *crtc,
 					   plane_id,
 					   &ddb_y[plane_id],
 					   &ddb_uv[plane_id]);
-
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+		// skl_allocate_pipe_ddb will zero out sw ddb for inactive ddb
+		// so we fake hw ddb as well.
+		if (gvt && !crtc->config->hw.active) {
+			memset(&ddb_y[plane_id], 0, sizeof(struct skl_ddb_entry));
+			memset(&ddb_uv[plane_id], 0, sizeof(struct skl_ddb_entry));
+		}
+#endif
 	intel_display_power_put(dev_priv, power_domain, wakeref);
 }
 
@@ -4243,6 +4292,10 @@ skl_allocate_pipe_ddb(struct intel_crtc_state *crtc_state,
 	u64 uv_plane_data_rate[I915_MAX_PLANES] = {};
 	u32 blocks;
 	int level;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_gvt_pipe_info *pipe_info = &gvt->pipe_info[intel_crtc->pipe];
+#endif
 
 	/* Clear the partitioning for disabled planes. */
 	memset(crtc_state->wm.skl.plane_ddb_y, 0, sizeof(crtc_state->wm.skl.plane_ddb_y));
@@ -4279,6 +4332,14 @@ skl_allocate_pipe_ddb(struct intel_crtc_state *crtc_state,
 	crtc_state->wm.skl.plane_ddb_y[PLANE_CURSOR].start =
 		alloc->end - total[PLANE_CURSOR];
 	crtc_state->wm.skl.plane_ddb_y[PLANE_CURSOR].end = alloc->end;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (gvt) {
+		crtc_state->wm.skl.plane_ddb_y[PLANE_CURSOR].start =
+			pipe_info->ddb_y[PLANE_CURSOR].start;
+		crtc_state->wm.skl.plane_ddb_y[PLANE_CURSOR].end =
+			pipe_info->ddb_y[PLANE_CURSOR].end;
+	}
+#endif
 
 	if (total_data_rate == 0)
 		return 0;
@@ -4387,6 +4448,14 @@ skl_allocate_pipe_ddb(struct intel_crtc_state *crtc_state,
 			start += uv_total[plane_id];
 			uv_plane_alloc->end = start;
 		}
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+		if (gvt) {
+			plane_alloc->start = pipe_info->ddb_y[plane_id].start;
+			plane_alloc->end = pipe_info->ddb_y[plane_id].end;
+			uv_plane_alloc->start = pipe_info->ddb_uv[plane_id].start;
+			uv_plane_alloc->end = pipe_info->ddb_uv[plane_id].end;
+		}
+#endif
 	}
 
 	/*
@@ -4450,7 +4519,7 @@ skl_allocate_pipe_ddb(struct intel_crtc_state *crtc_state,
  * should allow pixel_rate up to ~2 GHz which seems sufficient since max
  * 2xcdclk is 1350 MHz and the pixel rate should never exceed that.
 */
-static uint_fixed_16_16_t
+uint_fixed_16_16_t
 skl_wm_method1(const struct drm_i915_private *dev_priv, u32 pixel_rate,
 	       u8 cpp, u32 latency, u32 dbuf_block_size)
 {
@@ -4469,7 +4538,7 @@ skl_wm_method1(const struct drm_i915_private *dev_priv, u32 pixel_rate,
 	return ret;
 }
 
-static uint_fixed_16_16_t
+uint_fixed_16_16_t
 skl_wm_method2(u32 pixel_rate, u32 pipe_htotal, u32 latency,
 	       uint_fixed_16_16_t plane_blocks_per_line)
 {
@@ -4486,7 +4555,7 @@ skl_wm_method2(u32 pixel_rate, u32 pipe_htotal, u32 latency,
 	return ret;
 }
 
-static uint_fixed_16_16_t
+uint_fixed_16_16_t
 intel_get_linetime_us(const struct intel_crtc_state *crtc_state)
 {
 	u32 pixel_rate;
@@ -4814,7 +4883,7 @@ skl_compute_linetime_wm(const struct intel_crtc_state *crtc_state)
 	return linetime_wm;
 }
 
-static void skl_compute_transition_wm(const struct intel_crtc_state *crtc_state,
+void skl_compute_transition_wm(const struct intel_crtc_state *crtc_state,
 				      const struct skl_wm_params *wp,
 				      struct skl_plane_wm *wm)
 {
@@ -5016,9 +5085,7 @@ static void skl_ddb_entry_write(struct drm_i915_private *dev_priv,
 		I915_WRITE_FW(reg, 0);
 }
 
-static void skl_write_wm_level(struct drm_i915_private *dev_priv,
-			       i915_reg_t reg,
-			       const struct skl_wm_level *level)
+static inline uint32_t skl_calc_wm_level(const struct skl_wm_level *level)
 {
 	u32 val = 0;
 
@@ -5028,6 +5095,15 @@ static void skl_write_wm_level(struct drm_i915_private *dev_priv,
 		val |= PLANE_WM_IGNORE_LINES;
 	val |= level->plane_res_b;
 	val |= level->plane_res_l << PLANE_WM_LINES_SHIFT;
+
+	return val;
+}
+
+static void skl_write_wm_level(struct drm_i915_private *dev_priv,
+			       i915_reg_t reg,
+			       const struct skl_wm_level *level)
+{
+	uint32_t val = skl_calc_wm_level(level);
 
 	I915_WRITE_FW(reg, val);
 }
@@ -5045,13 +5121,36 @@ void skl_write_plane_wm(struct intel_plane *plane,
 		&crtc_state->wm.skl.plane_ddb_y[plane_id];
 	const struct skl_ddb_entry *ddb_uv =
 		&crtc_state->wm.skl.plane_ddb_uv[plane_id];
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
 
+	if (gvt) {
+		struct intel_dom0_plane_regs *dom0_regs =
+			&gvt->pipe_info[pipe].plane_info[plane_id].dom0_regs;
+
+		for (level = 0; level <= max_level; level++) {
+			dom0_regs->plane_wm[level] = skl_calc_wm_level(
+				&wm->wm[level]);
+		}
+		dom0_regs->plane_wm_trans = skl_calc_wm_level(
+			&wm->trans_wm);
+
+		if (gvt->pipe_info[pipe].plane_info[plane_id].owner)
+			return;
+	}
+#endif
 	for (level = 0; level <= max_level; level++) {
 		skl_write_wm_level(dev_priv, PLANE_WM(pipe, plane_id, level),
 				   &wm->wm[level]);
 	}
 	skl_write_wm_level(dev_priv, PLANE_WM_TRANS(pipe, plane_id),
 			   &wm->trans_wm);
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	/* In GVT direct display, we only use the statically allocated ddb */
+	if (dev_priv->gvt)
+		return;
+#endif
 
 	if (INTEL_GEN(dev_priv) >= 11) {
 		skl_ddb_entry_write(dev_priv,
@@ -5079,6 +5178,21 @@ void skl_write_cursor_wm(struct intel_plane *plane,
 		&crtc_state->wm.skl.optimal.planes[plane_id];
 	const struct skl_ddb_entry *ddb =
 		&crtc_state->wm.skl.plane_ddb_y[plane_id];
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+
+	if (gvt) {
+		struct intel_dom0_plane_regs *dom0_regs =
+			&gvt->pipe_info[pipe].plane_info[PLANE_CURSOR].dom0_regs;
+
+		for (level = 0; level <= max_level; level++)
+			dom0_regs->plane_wm[level] = skl_calc_wm_level(&wm->wm[level]);
+		dom0_regs->plane_wm_trans = skl_calc_wm_level(&wm->trans_wm);
+
+		if (gvt->pipe_info[pipe].owner)
+			return;
+	}
+#endif
 
 	for (level = 0; level <= max_level; level++) {
 		skl_write_wm_level(dev_priv, CUR_WM(pipe, level),
@@ -5086,34 +5200,13 @@ void skl_write_cursor_wm(struct intel_plane *plane,
 	}
 	skl_write_wm_level(dev_priv, CUR_WM_TRANS(pipe), &wm->trans_wm);
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	/* In GVT direct display, we only use the statically allocated ddb */
+	if (dev_priv->gvt)
+		return;
+#endif
+
 	skl_ddb_entry_write(dev_priv, CUR_BUF_CFG(pipe), ddb);
-}
-
-void skl_write_planeid_wm(struct drm_i915_private *dev_priv,
-			  enum plane_id plane_id,
-			  const struct intel_crtc_state *crtc_state)
-{
-	int level, max_level = ilk_wm_max_level(dev_priv);
-	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	enum pipe pipe = crtc->pipe;
-	const struct skl_plane_wm *wm =
-		&crtc_state->wm.skl.optimal.planes[plane_id];
-	const struct skl_ddb_entry *ddb_y =
-		&crtc_state->wm.skl.plane_ddb_y[plane_id];
-	const struct skl_ddb_entry *ddb_uv =
-		&crtc_state->wm.skl.plane_ddb_uv[plane_id];
-
-	for (level = 0; level <= max_level; level++) {
-		skl_write_wm_level(dev_priv, PLANE_WM(pipe, plane_id, level),
-				   &wm->wm[level]);
-	}
-	skl_write_wm_level(dev_priv, PLANE_WM_TRANS(pipe, plane_id),
-			   &wm->trans_wm);
-
-	skl_ddb_entry_write(dev_priv,
-			    PLANE_BUF_CFG(pipe, plane_id), ddb_y);
-	skl_ddb_entry_write(dev_priv,
-			    PLANE_NV12_BUF_CFG(pipe, plane_id), ddb_uv);
 }
 
 bool skl_wm_level_equals(const struct skl_wm_level *l1,
@@ -5218,42 +5311,6 @@ skl_compute_ddb(struct intel_atomic_state *state)
 	int ret, i;
 
 	memcpy(ddb, &dev_priv->wm.skl_hw.ddb, sizeof(*ddb));
-
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	/*
-	 * In GVT environemnt, allocate ddb for all planes in active crtc.
-	 * When there is active pipe change, intel_state active_pipes is
-	 * not zero and updated before dev_priv, so use intel_state
-	 * active_crtc when it is not zero.
-	 */
-	if (dev_priv->gvt) {
-		unsigned int active_pipes;
-		struct intel_gvt_pipe_info *pipe_info;
-
-		active_pipes = state->active_pipes ?
-			state->active_pipes : dev_priv->active_pipes;
-		intel_gvt_allocate_ddb(dev_priv->gvt, active_pipes);
-
-		/* update the ddb into intel_crtc_state->wm */
-		for_each_new_intel_crtc_in_state(state, crtc,
-					new_crtc_state, i) {
-			pipe_info = &(dev_priv->gvt->pipe_info[crtc->pipe]);
-
-			memset(new_crtc_state->wm.skl.plane_ddb_y, 0,
-				sizeof(new_crtc_state->wm.skl.plane_ddb_y));
-			memset(new_crtc_state->wm.skl.plane_ddb_uv, 0,
-				sizeof(new_crtc_state->wm.skl.plane_ddb_uv));
-
-			memcpy(new_crtc_state->wm.skl.plane_ddb_y,
-			       pipe_info->plane_ddb_y,
-			       sizeof(pipe_info->plane_ddb_y));
-			memcpy(&new_crtc_state->wm.skl.ddb,
-			       &pipe_info->pipe_ddb,
-			       sizeof(pipe_info->pipe_ddb));
-		}
-		return 0;
-	}
-#endif
 
 	for_each_oldnew_intel_crtc_in_state(state, crtc, old_crtc_state,
 					    new_crtc_state, i) {
@@ -5522,7 +5579,6 @@ static int skl_wm_add_affected_planes(struct intel_atomic_state *state,
 static int
 skl_compute_wm(struct intel_atomic_state *state)
 {
-	struct drm_i915_private *dev_priv = to_i915(state->base.dev);
 	struct intel_crtc *crtc;
 	struct intel_crtc_state *new_crtc_state;
 	struct intel_crtc_state *old_crtc_state;
@@ -5532,22 +5588,9 @@ skl_compute_wm(struct intel_atomic_state *state)
 	/* Clear all dirty flags */
 	results->dirty_pipes = 0;
 
-	/* For the VGPU scenario based on Linux this is skipped as Dom0
-	 * ignores the WM setting from Guest.
-	 */
-	if (intel_vgpu_active(dev_priv))
-		return 0;
-
 	ret = skl_ddb_add_affected_pipes(state);
 	if (ret)
 		return ret;
-
-	/* In GVT-g scenario the ddb is statically allocated in DOM0 */
-	if (intel_gvt_active(dev_priv)) {
-		ret = skl_compute_ddb(state);
-		if (ret)
-			return ret;
-	}
 
 	/*
 	 * Calculate WM's for all pipes that are part of this transaction.
@@ -5571,39 +5614,14 @@ skl_compute_wm(struct intel_atomic_state *state)
 			results->dirty_pipes |= BIT(crtc->pipe);
 	}
 
-	if (!intel_gvt_active(dev_priv)) {
-		/* On native scenario it uses the dynamic mechanism among pipes */
-		ret = skl_compute_ddb(state);
-		if (ret)
-			return ret;
-	}
+	ret = skl_compute_ddb(state);
+	if (ret)
+		return ret;
 
 	skl_print_wm_changes(state);
 
 	return 0;
 }
-
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-/*
- * when SOS updates plane wm registers, we need to refresh the planes owned by
- * GVT-g guests, to avoid some garbage display on the screen
- */
-static void update_gvt_guest_plane(struct drm_i915_private *dev_priv,
-				   int pipe,
-				   int plane_id)
-{
-	unsigned long value, irqflags;
-
-	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
-
-	value = I915_READ_FW(PLANE_CTL(pipe, plane_id));
-	I915_WRITE_FW(PLANE_CTL(pipe, plane_id), value);
-	value = I915_READ_FW(PLANE_SURF(pipe, plane_id));
-	I915_WRITE_FW(PLANE_SURF(pipe, plane_id), value);
-
-	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
-}
-#endif
 
 static void skl_atomic_update_crtc_wm(struct intel_atomic_state *state,
 				      struct intel_crtc_state *crtc_state)
@@ -5613,64 +5631,10 @@ static void skl_atomic_update_crtc_wm(struct intel_atomic_state *state,
 	struct skl_pipe_wm *pipe_wm = &crtc_state->wm.skl.optimal;
 	enum pipe pipe = crtc->pipe;
 
-	/* This is ignored for VGPU */
-	if (intel_vgpu_active(dev_priv))
-		return;
-
 	if ((state->wm_results.dirty_pipes & BIT(crtc->pipe)) == 0)
 		return;
 
 	I915_WRITE(PIPE_WM_LINETIME(pipe), pipe_wm->linetime);
-
-	if (intel_gvt_active(dev_priv)) {
-		struct intel_plane *intel_plane;
-		enum plane_id plane_id;
-
-		/* TBD: 1. Check the plane_res_block with ddb_plane[i].
-		 *      2. update the plane with plane_id
-		 */
-
-		if (i915_modparams.avail_planes_per_pipe) {
-			enum plane_id valid_plane;
-			struct skl_plane_wm *src_wm, *dst_wm;
-			for_each_intel_plane_on_crtc(&dev_priv->drm, crtc, intel_plane) {
-				valid_plane = intel_plane->id;
-				break;
-			}
-			src_wm = &crtc_state->wm.skl.optimal.planes[valid_plane];
-			for_each_universal_plane(dev_priv, crtc->pipe, plane_id) {
-				dst_wm = &crtc_state->wm.skl.optimal.planes[plane_id];
-				if (!dst_wm->trans_wm.plane_res_b) {
-					memcpy(dst_wm, src_wm, sizeof(*src_wm));
-				}
-				skl_write_planeid_wm(dev_priv, plane_id, crtc_state);
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-				if (dev_priv->gvt &&
-					dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
-					update_gvt_guest_plane(dev_priv, pipe, plane_id);
-#endif
-			}
-
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-			skl_ddb_entry_write(dev_priv, CUR_BUF_CFG(pipe),
-					&dev_priv->gvt->pipe_info[pipe].plane_ddb_y[PLANE_CURSOR]);
-#endif
-			return;
-		}
-
-		for_each_intel_plane_on_crtc(&dev_priv->drm, crtc, intel_plane) {
-			plane_id = intel_plane->id;
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-			if (dev_priv->gvt &&
-				dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
-				continue;
-#endif
-			if (plane_id != PLANE_CURSOR)
-				skl_write_plane_wm(intel_plane, crtc_state);
-			else
-				skl_write_cursor_wm(intel_plane, crtc_state);
-		}
-	}
 }
 
 static void skl_initial_wm(struct intel_atomic_state *state,
@@ -5679,10 +5643,6 @@ static void skl_initial_wm(struct intel_atomic_state *state,
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	struct skl_ddb_values *results = &state->wm_results;
-
-	/* This is ignored on VGPU */
-	if (intel_vgpu_active(dev_priv))
-		return;
 
 	if ((results->dirty_pipes & BIT(crtc->pipe)) == 0)
 		return;
@@ -5790,8 +5750,34 @@ void skl_pipe_wm_get_hw_state(struct intel_crtc *crtc,
 	int level, max_level;
 	enum plane_id plane_id;
 	u32 val;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+#endif
 
 	max_level = ilk_wm_max_level(dev_priv);
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (gvt && gvt->pipe_info[pipe].owner) {
+		for_each_plane_id_on_crtc(crtc, plane_id) {
+			struct skl_plane_wm *wm = &out->planes[plane_id];
+			struct intel_dom0_plane_regs *dom0_regs =
+				&gvt->pipe_info[pipe].plane_info[plane_id].dom0_regs;
+
+			for (level = 0; level <= max_level; level++) {
+				val = dom0_regs->plane_wm[level];
+				skl_wm_level_from_reg_val(val, &wm->wm[level]);
+			}
+			val = dom0_regs->plane_wm_trans;
+			skl_wm_level_from_reg_val(val, &wm->trans_wm);
+		}
+
+		if (!crtc->active)
+			return;
+
+		out->linetime = I915_READ(PIPE_WM_LINETIME(pipe));
+
+		return;
+	}
+#endif
 
 	for_each_plane_id_on_crtc(crtc, plane_id) {
 		struct skl_plane_wm *wm = &out->planes[plane_id];

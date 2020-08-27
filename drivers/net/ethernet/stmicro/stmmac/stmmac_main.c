@@ -45,6 +45,7 @@
 #include <linux/of_mdio.h>
 #include <linux/bpf.h>
 #include <linux/bpf_trace.h>
+#include <linux/pm_runtime.h>
 #include <net/xdp.h>
 #include "dwmac1000.h"
 #include "dwxgmac2.h"
@@ -104,11 +105,12 @@ static const u32 default_msg_level = (NETIF_MSG_DRV | NETIF_MSG_PROBE |
 				      NETIF_MSG_LINK | NETIF_MSG_IFUP |
 				      NETIF_MSG_IFDOWN | NETIF_MSG_TIMER);
 
-#define STMMAC_DEFAULT_LPI_TIMER	1000
-static int eee_timer = STMMAC_DEFAULT_LPI_TIMER;
-module_param(eee_timer, int, 0644);
-MODULE_PARM_DESC(eee_timer, "LPI tx expiration time in msec");
-#define STMMAC_LPI_T(x) (jiffies + msecs_to_jiffies(x))
+#define STMMAC_DEFAULT_LPI_TIMER	1000000
+#define STMMAC_LPI_T(x)	(jiffies + usecs_to_jiffies(x))
+
+static int tw_timer = STMMAC_DEFAULT_TWT_LS;
+module_param(tw_timer, int, 0644);
+MODULE_PARM_DESC(tw_timer, "LPI TW timer value in msec");
 
 /* By default the driver will use the ring mode to manage tx and rx descriptors,
  * but allow user to force to use the chain instead of the ring
@@ -149,8 +151,8 @@ static void stmmac_verify_args(void)
 		flow_ctrl = FLOW_OFF;
 	if (unlikely((pause < 0) || (pause > 0xffff)))
 		pause = PAUSE_TIME;
-	if (eee_timer < 0)
-		eee_timer = STMMAC_DEFAULT_LPI_TIMER;
+	if (tw_timer < 0 || tw_timer > STMMAC_TWT_MAX)
+		tw_timer = STMMAC_DEFAULT_TWT_LS;
 }
 
 /**
@@ -352,6 +354,11 @@ static void stmmac_enable_eee_mode(struct stmmac_priv *priv)
  */
 void stmmac_disable_eee_mode(struct stmmac_priv *priv)
 {
+	if (!priv->plat->eee_timer) {
+		stmmac_lpi_entry_timer_enable(priv, LPI_ET_DISABLE);
+		return;
+	}
+
 	stmmac_reset_eee_mode(priv, priv->hw);
 	del_timer_sync(&priv->eee_ctrl_timer);
 	priv->tx_path_in_lpi_mode = false;
@@ -369,7 +376,17 @@ static void stmmac_eee_ctrl_timer(struct timer_list *t)
 	struct stmmac_priv *priv = from_timer(priv, t, eee_ctrl_timer);
 
 	stmmac_enable_eee_mode(priv);
-	mod_timer(&priv->eee_ctrl_timer, STMMAC_LPI_T(eee_timer));
+	mod_timer(&priv->eee_ctrl_timer, STMMAC_LPI_T(priv->tx_lpi_timer));
+}
+
+void stmmac_lpi_entry_timer_enable(struct stmmac_priv *priv, bool en)
+{
+	int tx_lpi_timer;
+
+	/* Clear/set the SW EEE timer flag based on LPI ET enablement */
+	priv->plat->eee_timer = en ? 0 : 1;
+	tx_lpi_timer  = en ? priv->tx_lpi_timer : 0;
+	stmmac_set_eee_lpi_timer(priv, priv->hw, tx_lpi_timer);
 }
 
 /**
@@ -402,8 +419,9 @@ bool stmmac_eee_init(struct stmmac_priv *priv)
 	if (!priv->eee_active) {
 		if (priv->eee_enabled) {
 			netdev_dbg(priv->dev, "disable EEE\n");
+			stmmac_lpi_entry_timer_enable(priv, LPI_ET_DISABLE);
 			del_timer_sync(&priv->eee_ctrl_timer);
-			stmmac_set_eee_timer(priv, priv->hw, 0, tx_lpi_timer);
+			stmmac_set_eee_timer(priv, priv->hw, 0, tw_timer);
 		}
 		mutex_unlock(&priv->lock);
 		return false;
@@ -411,9 +429,17 @@ bool stmmac_eee_init(struct stmmac_priv *priv)
 
 	if (priv->eee_active && !priv->eee_enabled) {
 		timer_setup(&priv->eee_ctrl_timer, stmmac_eee_ctrl_timer, 0);
-		mod_timer(&priv->eee_ctrl_timer, STMMAC_LPI_T(eee_timer));
 		stmmac_set_eee_timer(priv, priv->hw, STMMAC_DEFAULT_LIT_LS,
-				     tx_lpi_timer);
+				     tw_timer);
+	}
+
+	if (priv->plat->has_gmac4 && priv->tx_lpi_timer <= STMMAC_ET_MAX) {
+		del_timer_sync(&priv->eee_ctrl_timer);
+		priv->tx_path_in_lpi_mode = false;
+		stmmac_lpi_entry_timer_enable(priv, LPI_ET_ENABLE);
+	} else {
+		stmmac_lpi_entry_timer_enable(priv, LPI_ET_DISABLE);
+		mod_timer(&priv->eee_ctrl_timer, STMMAC_LPI_T(tx_lpi_timer));
 	}
 
 	mutex_unlock(&priv->lock);
@@ -664,7 +690,8 @@ static int stmmac_hwtstamp_set(struct net_device *dev, struct ifreq *ifr)
 			config.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
 			ptp_v2 = PTP_TCR_TSVER2ENA;
 			snap_type_sel = PTP_TCR_SNAPTYPSEL_1;
-			ts_event_en = PTP_TCR_TSEVNTENA;
+			if (priv->synopsys_id != DWMAC_CORE_5_10)
+				ts_event_en = PTP_TCR_TSEVNTENA;
 			ptp_over_ipv4_udp = PTP_TCR_TSIPV4ENA;
 			ptp_over_ipv6_udp = PTP_TCR_TSIPV6ENA;
 			ptp_over_ethernet = PTP_TCR_TSIPENA;
@@ -1011,12 +1038,18 @@ static void stmmac_mac_link_down(struct phylink_config *config,
 {
 	struct stmmac_priv *priv = netdev_priv(to_net_dev(config->dev));
 
+	priv->phylink_up = false;
+
 	stmmac_mac_set(priv, priv->ioaddr, false);
 	priv->eee_active = false;
 	stmmac_eee_init(priv);
 	stmmac_set_eee_pls(priv, priv->hw, false);
 	stmmac_fpe_link_state_handle(priv, priv->hw, priv->dev, false);
 
+	/* Schedule runtime suspend if the device's runtime PM status allows it
+	 * to be suspended.
+	 */
+	pm_runtime_idle(priv->device);
 }
 
 static void stmmac_mac_link_up(struct phylink_config *config,
@@ -1024,6 +1057,11 @@ static void stmmac_mac_link_up(struct phylink_config *config,
 			       struct phy_device *phy)
 {
 	struct stmmac_priv *priv = netdev_priv(to_net_dev(config->dev));
+
+	priv->phylink_up = true;
+
+	/* Cancel any scheduled runtime suspend request */
+	pm_runtime_resume(priv->device);
 
 	stmmac_mac_set(priv, priv->ioaddr, true);
 	if (phy && priv->dma_cap.eee) {
@@ -2353,9 +2391,11 @@ static int stmmac_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 	}
 
 xdp_tx_done:
-	if ((priv->eee_enabled) && (!priv->tx_path_in_lpi_mode)) {
+	if (priv->eee_enabled && !priv->tx_path_in_lpi_mode &&
+	    priv->plat->eee_timer) {
 		stmmac_enable_eee_mode(priv);
-		mod_timer(&priv->eee_ctrl_timer, STMMAC_LPI_T(eee_timer));
+		mod_timer(&priv->eee_ctrl_timer,
+			  STMMAC_LPI_T(priv->tx_lpi_timer));
 	}
 
 	/* We still have pending packets, let's call for a new scheduling */
@@ -3026,7 +3066,7 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp,
 			netdev_warn(priv->dev, "PTP init failed\n");
 	}
 
-	priv->tx_lpi_timer = STMMAC_DEFAULT_TWT_LS;
+	priv->tx_lpi_timer = STMMAC_DEFAULT_LPI_TIMER;
 
 	if (priv->use_riwt) {
 		ret = stmmac_rx_watchdog(priv, priv->ioaddr, MIN_DMA_RIWT, rx_cnt);
@@ -3426,6 +3466,12 @@ static int stmmac_open(struct net_device *dev)
 	u32 chan;
 	int ret;
 
+	/* Use pm_runtime_get_sync() call paired with pm_runtime_put() call to
+	 * ensure that the device is not put into runtime suspend during the
+	 * operation.
+	 */
+	pm_runtime_get_sync(priv->device);
+
 	if (priv->hw->pcs != STMMAC_PCS_RGMII &&
 	    priv->hw->pcs != STMMAC_PCS_TBI &&
 	    priv->hw->pcs != STMMAC_PCS_RTBI) {
@@ -3434,7 +3480,7 @@ static int stmmac_open(struct net_device *dev)
 			netdev_err(priv->dev,
 				   "%s: Cannot attach to PHY (error: %d)\n",
 				   __func__, ret);
-			return ret;
+			goto out;
 		}
 	}
 
@@ -3534,6 +3580,7 @@ static int stmmac_open(struct net_device *dev)
 		stmmac_netproxy_register(dev);
 #endif
 
+	pm_runtime_put(priv->device);
 	return 0;
 
 phy_conv_error:
@@ -3554,6 +3601,8 @@ init_error:
 	free_dma_desc_resources(priv);
 dma_desc_error:
 	phylink_disconnect_phy(priv->phylink);
+out:
+	pm_runtime_put(priv->device);
 	return ret;
 }
 
@@ -3568,6 +3617,12 @@ static int stmmac_release(struct net_device *dev)
 	struct stmmac_priv *priv = netdev_priv(dev);
 	u32 chan;
 	int ret;
+
+	/* Use pm_runtime_get_sync() call paired with pm_runtime_put() call to
+	 * ensure that the device is not put into runtime suspend during the
+	 * operation.
+	 */
+	pm_runtime_get_sync(priv->device);
 
 	if (priv->eee_enabled)
 		del_timer_sync(&priv->eee_ctrl_timer);
@@ -3594,7 +3649,7 @@ static int stmmac_release(struct net_device *dev)
 			netdev_err(priv->dev,
 				   "%s: ERROR: remove phy conv (error: %d)\n",
 				   __func__, ret);
-			return 0;
+			goto out;
 		}
 	}
 
@@ -3620,7 +3675,8 @@ static int stmmac_release(struct net_device *dev)
 	if (priv->plat->has_netproxy)
 		stmmac_netproxy_deregister(dev);
 #endif
-
+out:
+	pm_runtime_put(priv->device);
 	return 0;
 }
 
@@ -3995,7 +4051,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	tx_q = &priv->tx_queue[queue];
 
-	if (priv->tx_path_in_lpi_mode)
+	if (priv->tx_path_in_lpi_mode && priv->plat->eee_timer)
 		stmmac_disable_eee_mode(priv);
 
 	/* Manage oversized TCP frames for GMAC4/GMAC5 device.
@@ -5198,7 +5254,6 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	struct stmmac_rx_queue *rx_q = (struct stmmac_rx_queue *)data;
 	int chan = rx_q->queue_index;
 	struct stmmac_priv *priv;
-	int mtl_status;
 
 	priv = container_of(rx_q, struct stmmac_priv, rx_queue[chan]);
 
@@ -5210,16 +5265,6 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	/* Check if adapter is up */
 	if (test_bit(STMMAC_DOWN, &priv->state))
 		return IRQ_HANDLED;
-
-	mtl_status = stmmac_host_mtl_irq_status(priv, priv->hw,
-						chan);
-
-	if (mtl_status & CORE_IRQ_MTL_RX_OVERFLOW) {
-		stmmac_set_rx_tail_ptr(priv, priv->ioaddr,
-				       rx_q->rx_tail_addr,
-				       chan);
-		return IRQ_HANDLED;
-	}
 
 	if (rx_q->xsk_umem && priv->xdp_prog) {
 		int status = stmmac_dma_interrupt_status(priv, priv->ioaddr,
@@ -6136,10 +6181,12 @@ static int stmmac_hw_init(struct stmmac_priv *priv)
 		return ret;
 
 	/* Initialize TSN capability */
-	stmmac_tsnif_setup(priv, priv->hw);
-	ret = stmmac_tsn_init(priv, priv->hw, priv->dev);
-	if (ret)
-		return ret;
+	if (priv->hw->tsn_info.cap.est_support) {
+		stmmac_tsnif_setup(priv, priv->hw);
+		ret = stmmac_tsn_init(priv, priv->hw, priv->dev);
+		if (ret)
+			return ret;
+	}
 
 	/* Get the HW capability (new GMAC newer than 3.50a) */
 	priv->hw_cap_support = stmmac_get_hw_features(priv);
@@ -6596,6 +6643,23 @@ int stmmac_dvr_probe(struct device *device,
 	stmmac_init_fs(ndev);
 #endif
 
+	/* Runtime PM is mutually exclusive with network proxy service */
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy)
+		return ret;
+#endif
+
+	/* To support runtime PM, we need to make sure usage_count is equal to 0
+	 * when runtime_auto flag is set. Otherwise, it should be equal to 1.
+	 */
+	if (priv->device->power.runtime_auto) {
+		while (atomic_read(&priv->device->power.usage_count) > 0)
+			pm_runtime_put_noidle(device);
+	} else {
+		while (atomic_read(&priv->device->power.usage_count) > 1)
+			pm_runtime_put_noidle(device);
+	}
+
 	return ret;
 
 error_netdev_register:
@@ -6625,6 +6689,9 @@ int stmmac_dvr_remove(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
+
+	/* Increase device’s usage_count so that runtime PM is disabled */
+	pm_runtime_get_noresume(dev);
 
 	netdev_info(priv->dev, "%s: removing driver", __func__);
 
@@ -6670,6 +6737,9 @@ int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
 {
 	u32 chan;
 	int ret;
+
+	if (ndev->phydev && device_may_wakeup(priv->device))
+		phy_stop_machine(ndev->phydev);
 
 	mutex_lock(&priv->lock);
 
@@ -6784,6 +6854,9 @@ int stmmac_suspend(struct device *dev)
 		return 0;
 
 	phylink_mac_change(priv->phylink, false);
+
+	if (ndev->phydev && device_may_wakeup(priv->device))
+		phy_stop_machine(ndev->phydev);
 
 	mutex_lock(&priv->lock);
 
@@ -6905,6 +6978,11 @@ int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev)
 	stmmac_enable_all_queues(priv);
 
 	mutex_unlock(&priv->lock);
+
+	if (ndev->phydev && device_may_wakeup(priv->device)) {
+		phy_start_machine(ndev->phydev);
+		phy_restart_aneg(ndev->phydev);
+	}
 
 	return 0;
 }
@@ -7081,6 +7159,9 @@ int stmmac_resume(struct device *dev)
 		rtnl_lock();
 		phylink_start(priv->phylink);
 		rtnl_unlock();
+	} else if (ndev->phydev) {
+		phy_start_machine(ndev->phydev);
+		phy_restart_aneg(ndev->phydev);
 	}
 
 	phylink_mac_change(priv->phylink, true);
@@ -7134,8 +7215,8 @@ static int __init stmmac_cmdline_opt(char *str)
 		} else if (!strncmp(opt, "pause:", 6)) {
 			if (kstrtoint(opt + 6, 0, &pause))
 				goto err;
-		} else if (!strncmp(opt, "eee_timer:", 10)) {
-			if (kstrtoint(opt + 10, 0, &eee_timer))
+		} else if (!strncmp(opt, "tw_timer:", 10)) {
+			if (kstrtoint(opt + 10, 0, &tw_timer))
 				goto err;
 		} else if (!strncmp(opt, "chain_mode:", 11)) {
 			if (kstrtoint(opt + 11, 0, &chain_mode))

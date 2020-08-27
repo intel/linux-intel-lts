@@ -40,7 +40,6 @@
 #include "interrupt.h"
 #include "gtt.h"
 #include "display.h"
-#include "edid.h"
 #include "execlist.h"
 #include "scheduler.h"
 #include "sched_policy.h"
@@ -49,11 +48,10 @@
 #include "fb_decoder.h"
 #include "dmabuf.h"
 #include "page_track.h"
-#include "display/intel_display_types.h"
+#include "intel_pm.h"
 
 #define GVT_MAX_VGPU 8
 
-#define GVT_CURSOR_BLOCKS 8
 struct intel_gvt_host {
 	struct device *dev;
 	bool initialized;
@@ -68,7 +66,6 @@ struct intel_gvt_device_info {
 	u32 max_support_vgpus;
 	u32 cfg_space_size;
 	u32 mmio_size;
-	u32 mmio_size_order;
 	u32 mmio_bar;
 	unsigned long msi_cap_offset;
 	u32 gtt_start_offset;
@@ -78,6 +75,7 @@ struct intel_gvt_device_info {
 	u32 max_surface_size;
 };
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 struct gvt_gop_info {
 	unsigned int fb_base;
 	unsigned int width;
@@ -86,6 +84,7 @@ struct gvt_gop_info {
 	unsigned int Bpp;
 	unsigned int size;
 };
+#endif
 
 /* GM resources owned by a vGPU */
 struct intel_vgpu_gm {
@@ -93,9 +92,11 @@ struct intel_vgpu_gm {
 	u64 hidden_sz;
 	struct drm_mm_node low_gm_node;
 	struct drm_mm_node high_gm_node;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 	struct page **gop_fb_pages;
 	struct gvt_gop_info gop;
 	u32 gop_fb_size;
+#endif
 };
 
 #define INTEL_GVT_MAX_NUM_FENCES 32
@@ -109,7 +110,6 @@ struct intel_vgpu_fence {
 
 struct intel_vgpu_mmio {
 	void *vreg;
-	struct gvt_shared_page *shared_page;
 };
 
 #define INTEL_GVT_MAX_BAR_NUM 4
@@ -122,6 +122,7 @@ struct intel_vgpu_pci_bar {
 struct intel_vgpu_cfg_space {
 	unsigned char virtual_cfg_space[PCI_CFG_SPACE_EXP_SIZE];
 	struct intel_vgpu_pci_bar bar[INTEL_GVT_MAX_BAR_NUM];
+	u32 pmcsr_off;
 };
 
 #define vgpu_cfg_space(vgpu) ((vgpu)->cfg_space.virtual_cfg_space)
@@ -132,8 +133,10 @@ struct intel_vgpu_irq {
 		       INTEL_GVT_EVENT_MAX);
 };
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 /* ToDo: GOP_FB_BASE from kernel parameter */
 #define GOP_FB_BASE	0xDF000000
+#endif
 
 struct intel_vgpu_opregion {
 	bool mapped;
@@ -142,12 +145,6 @@ struct intel_vgpu_opregion {
 };
 
 #define vgpu_opregion(vgpu) (&(vgpu->opregion))
-
-struct intel_vgpu_display {
-	struct intel_vgpu_i2c_edid i2c_edid;
-	struct intel_vgpu_port ports[I915_MAX_PORTS];
-	struct intel_vgpu_sbi sbi;
-};
 
 struct vgpu_sched_ctl {
 	int weight;
@@ -189,7 +186,7 @@ struct intel_vgpu {
 	struct mutex vgpu_lock;
 	int id;
 	unsigned long handle; /* vGPU handle used by hypervisor MPT modules */
-	bool active;
+	atomic_t active;
 	bool pv_notified;
 	bool failsafe;
 	unsigned int resetting_eng;
@@ -208,10 +205,13 @@ struct intel_vgpu {
 	struct intel_vgpu_irq irq;
 	struct intel_vgpu_gtt gtt;
 	struct intel_vgpu_opregion opregion;
-	struct intel_vgpu_display display;
+	struct intel_vgpu_display disp_cfg;
 	struct intel_vgpu_submission submission;
 	struct radix_tree_root page_track_tree;
 	u32 hws_pga[I915_NUM_ENGINES];
+	u64 *ggtt_entries; /* place to save ggtt entries in suspend */
+	/* Set on PCI_D3, reset on DMLR, not reflecting the actual PM state */
+	bool d3_entered;
 
 	struct dentry *debugfs;
 
@@ -248,10 +248,8 @@ struct intel_vgpu {
 	struct completion vblank_done;
 
 	u32 scan_nonprivbb;
-
-	unsigned long long *cached_guest_entry;
-	bool ge_cache_enable;
 };
+
 
 /* validating GM healthy status*/
 #define vgpu_is_vm_unhealthy(ret_val) \
@@ -320,16 +318,67 @@ struct intel_vgpu_type {
 	enum intel_vgpu_edid resolution;
 };
 
+struct intel_dom0_pipe_regs {
+	u32 pipesrc;
+	u32 scaler_ctl[I915_MAX_PIPES];
+	u32 scaler_win_pos[I915_MAX_PIPES];
+	u32 scaler_win_size[I915_MAX_PIPES];
+	u32 scaler_pwr_gate[I915_MAX_PIPES];
+	u32 bottom_color;
+	u32 gamma_mode;
+	u32 csc_mode;
+	u32 csc_preoff_hi;
+	u32 csc_preoff_me;
+	u32 csc_preoff_lo;
+	u32 csc_coeff_rygy;
+	u32 csc_coeff_by;
+	u32 csc_coeff_rugu;
+	u32 csc_coeff_bu;
+	u32 csc_coeff_rvgv;
+	u32 csc_coeff_bv;
+	u32 csc_postoff_hi;
+	u32 csc_postoff_me;
+	u32 csc_postoff_lo;
+	u32 lgc_palette[256];
+	struct prec_pal_data prec_palette_split[PAL_PREC_INDEX_VALUE_MASK + 1];
+	struct prec_pal_data prec_palette_nonsplit[PAL_PREC_INDEX_VALUE_MASK + 1];
+};
+
+struct intel_dom0_plane_regs {
+	u32 plane_ctl;
+	u32 plane_stride;
+	u32 plane_pos;
+	u32 plane_size;
+	u32 plane_keyval;
+	u32 plane_keymsk;
+	u32 plane_keymax;
+	u32 plane_offset;
+	u32 plane_aux_dist;
+	u32 plane_aux_offset;
+	u32 plane_surf;
+	u32 plane_wm[8];
+	u32 plane_wm_trans;
+	u32 cur_fbc_ctl;
+};
+
+struct intel_gvt_plane_info {
+	struct intel_gvt *gvt;
+	enum pipe pipe;
+	enum plane_id plane;
+	int owner;
+	struct work_struct flipdone_work;
+	struct intel_dom0_plane_regs dom0_regs;
+};
+
 struct intel_gvt_pipe_info {
 	enum pipe pipe_num;
 	int owner;
 	struct intel_gvt *gvt;
 	struct work_struct vblank_work;
-	int plane_owner[I915_MAX_PLANES];
-	int scaler_owner[SKL_NUM_SCALERS];
-	struct skl_ddb_entry plane_ddb_y[I915_MAX_PLANES];
-	struct skl_ddb_entry plane_ddb_uv[I915_MAX_PLANES];
-	struct skl_ddb_entry pipe_ddb;
+	struct intel_dom0_pipe_regs dom0_pipe_regs;
+	struct intel_gvt_plane_info plane_info[I915_MAX_PLANES];
+	struct skl_ddb_entry ddb_y[I915_MAX_PLANES];
+	struct skl_ddb_entry ddb_uv[I915_MAX_PLANES];
 };
 
 struct intel_gvt {
@@ -364,7 +413,6 @@ struct intel_gvt {
 	 * use it with atomic bit ops so that no need to use gvt big lock.
 	 */
 	unsigned long service_request;
-
 	struct intel_gvt_pipe_info pipe_info[I915_MAX_PIPES];
 
 	struct {
@@ -377,10 +425,68 @@ struct intel_gvt {
 	} engine_mmio_list;
 
 	struct dentry *debugfs_root;
-	struct work_struct active_hp_work;
 
-	void *intel_gvt_vreg_pool[GVT_MAX_VGPU];
-	bool intel_gvt_vreg_allocated[GVT_MAX_VGPU];
+	/*
+	 * Notify to gvt when host encoder connectivity changed
+	 */
+	struct work_struct connector_change_work;
+	/* display switch work lock */
+	struct mutex sw_in_progress;
+	struct work_struct switch_display_work;
+
+	/*
+	 * Available display port mask for PORT_A to I915_MAX_PORTS (low to high).
+	 * Each hex digit represents the availability of corresponding port.
+	 * 0: Port isn't available.
+	 * x: Port x is available.
+	 * Be noticed the hex digit is enum type PORT_x + 1.
+	 * e.g. 0x4320
+	 *      PORT_A: N/A.
+	 *      PORT_B: Available.
+	 *      PORT_C: Available.
+	 *      PORT_D: Available.
+	 */
+	u64 avail_disp_port_mask;
+
+	/*
+	 * Bit mask of selected ports for vGPU-1 to vGPU-8 (low to high).
+	 * Each byte represents the bit mask of assigned ports for vGPU id.
+	 * From LSB to MSB (PORT_A to I915_MAX_PORTS):
+	 *   0: This port isn't assigned to that vGPU.
+	 *   1: This port is assigned to that vGPU.
+	 * Be noticed that bit position base is same as enum type PORT_x, and
+	 *   equal to avail_disp_port_mask minus 1 for same port.
+	 * e.g. 0x0A0602.
+	 *      vGPU 1: Bit mask is 2, port 2 assigned, PORT_B.
+	 *      vGPU 2: Bit mask is 6, port 2 & 3 assigned, PORT_B and PORT_C.
+	 *      vGPU 3: Bit mask is A, port 2 & 4 assigned, PORT_B and PORT_D.
+	 */
+	u64 sel_disp_port_mask;
+
+	/*
+	 * Display owner for PORT_A to I915_MAX_PORTS (low to high).
+	 * Each hex digit represents the owner vGPU id of corresponding port.
+	 * 0: display N/A or owned by host.
+	 * x: display owned by vGPU x.
+	 * e.g. 0x2010
+	 *      PORT_A: N/A or owned by host.
+	 *      PORT_B: Owned by vGPU-1.
+	 *      PORT_C: N/A or owned by host.
+	 *      PORT_D: Owned by vGPU-2.
+	 */
+	u32 disp_owner;
+
+	/*
+	 * Auto switch disp, it contains:
+	 * a. Switch to guest display when guest display is ready.
+	 * b. Switch to next guest display when same port/pipe assigned.
+	 * c. Switch to host display if no active guest.
+	 * true: enable auto switch as default.
+	 */
+	bool disp_auto_switch;
+	bool disp_edid_filter;
+
+	struct work_struct active_hp_work;
 };
 
 static inline struct intel_gvt *to_gvt(struct drm_i915_private *i915)
@@ -493,12 +599,7 @@ void intel_vgpu_write_fence(struct intel_vgpu *vgpu,
 
 #define for_each_active_vgpu(gvt, vgpu, id) \
 	idr_for_each_entry((&(gvt)->vgpu_idr), (vgpu), (id)) \
-		for_each_if(vgpu->active)
-
-#define for_each_universal_scaler(__dev_priv, __pipe, __s)		\
-	for ((__s) = 0;							\
-	     (__s) < RUNTIME_INFO(__dev_priv)->num_scalers[(__pipe)] + 1; \
-	     (__s)++)
+		for_each_if(atomic_read(&vgpu->active))
 
 static inline void intel_vgpu_write_pci_bar(struct intel_vgpu *vgpu,
 					    u32 offset, u32 val, bool low)
@@ -572,8 +673,6 @@ void intel_vgpu_init_cfg_space(struct intel_vgpu *vgpu,
 		bool primary);
 void intel_vgpu_reset_cfg_space(struct intel_vgpu *vgpu);
 
-int set_pvmmio(struct intel_vgpu *vgpu, bool map);
-
 int intel_vgpu_emulate_cfg_read(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes);
 
@@ -627,7 +726,6 @@ struct intel_gvt_ops {
 	void (*emulate_hotplug)(struct intel_vgpu *vgpu, bool connected);
 };
 
-void intel_gvt_allocate_ddb(struct intel_gvt *gvt, unsigned int active_crtcs);
 
 enum {
 	GVT_FAILSAFE_UNSUPPORTED_GUEST,
@@ -740,8 +838,34 @@ void intel_gvt_debugfs_remove_vgpu(struct intel_vgpu *vgpu);
 void intel_gvt_debugfs_init(struct intel_gvt *gvt);
 void intel_gvt_debugfs_clean(struct intel_gvt *gvt);
 
-void *intel_gvt_allocate_vreg(struct intel_vgpu *vgpu);
-void intel_gvt_free_vreg(struct intel_vgpu *vgpu);
+
+u8 intel_gvt_external_disp_id_from_port(enum port port);
+enum port intel_gvt_port_from_external_disp_id(u8 port_id);
+u64 intel_gvt_port_to_mask_bit(u8 port_sel, enum port port);
+enum pipe intel_gvt_pipe_from_port(
+	struct drm_i915_private *dev_priv, enum port port);
+enum port intel_gvt_port_from_pipe(
+	struct drm_i915_private *dev_priv, enum pipe pipe);
+void intel_gvt_store_vgpu_display_owner(
+	struct drm_i915_private *dev_priv, u32 disp_owner);
+void intel_gvt_store_vgpu_display_mask(struct drm_i915_private *dev_priv,
+				       u64 mask);
+void intel_gvt_store_vgpu_display_switch(struct drm_i915_private *dev_priv,
+					 bool auto_switch);
+u32 intel_vgpu_display_find_owner(struct intel_vgpu *vgpu, bool reset, bool next);
+void intel_vgpu_display_set_foreground(struct intel_vgpu *vgpu, bool reset);
+
+void intel_gvt_init_display(struct intel_gvt *gvt);
+void intel_vgpu_update_plane_scaler(struct intel_vgpu *vgpu,
+	struct intel_crtc *intel_crtc, enum plane_id plane);
+void intel_vgpu_update_plane_wm(struct intel_vgpu *vgpu,
+	struct intel_crtc *intel_crtc, enum plane_id plane);
+u32 vgpu_calc_wm_level(const struct skl_wm_level *level);
+
+void intel_gvt_init_ddb(struct intel_gvt *gvt);
+int intel_gvt_pm_suspend(struct intel_gvt *gvt);
+int intel_gvt_pm_early_resume(struct intel_gvt *gvt);
+int intel_gvt_pm_resume(struct intel_gvt *gvt);
 
 #include "trace.h"
 #include "mpt.h"

@@ -895,6 +895,14 @@ config HOTPLUG_CPU
 	  Say Y here to experiment with turning CPUs off and on.  CPUs
 	  can be controlled through /sys/devices/system/cpu.
 
+config HOTPLUG_CPU0
+	bool "Support for hot-pluggable CPU0"
+	depends on HOTPLUG_CPU
+	def_bool n
+	help
+	  CPU0 hotplug is not supported on all arm64 platforms.
+	  Say Y here to enable CPU0 hotplug. If unsure say N here.
+
 # Common NUMA Features
 config NUMA
 	bool "Numa Memory Allocation and Scheduler Support"

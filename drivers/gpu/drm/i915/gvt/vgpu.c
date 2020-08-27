@@ -37,11 +37,6 @@
 
 void populate_pvinfo_page(struct intel_vgpu *vgpu)
 {
-	enum pipe pipe;
-	int scaler;
-	struct intel_gvt *gvt = vgpu->gvt;
-	struct drm_i915_private *dev_priv = gvt->dev_priv;
-
 	/* setup the ballooning information */
 	vgpu_vreg64_t(vgpu, vgtif_reg(magic)) = VGT_MAGIC;
 	vgpu_vreg_t(vgpu, vgtif_reg(version_major)) = 1;
@@ -52,7 +47,10 @@ void populate_pvinfo_page(struct intel_vgpu *vgpu)
 	vgpu_vreg_t(vgpu, vgtif_reg(vgt_caps)) = VGT_CAPS_FULL_PPGTT;
 	vgpu_vreg_t(vgpu, vgtif_reg(vgt_caps)) |= VGT_CAPS_HWSP_EMULATION;
 	vgpu_vreg_t(vgpu, vgtif_reg(vgt_caps)) |= VGT_CAPS_HUGE_GTT;
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 	vgpu_vreg_t(vgpu, vgtif_reg(vgt_caps)) |= VGT_CAPS_GOP_SUPPORT;
+#endif
 
 	vgpu_vreg_t(vgpu, vgtif_reg(avail_rs.mappable_gmadr.base)) =
 		vgpu_aperture_gmadr_base(vgpu);
@@ -68,23 +66,14 @@ void populate_pvinfo_page(struct intel_vgpu *vgpu)
 	vgpu_vreg_t(vgpu, vgtif_reg(cursor_x_hot)) = UINT_MAX;
 	vgpu_vreg_t(vgpu, vgtif_reg(cursor_y_hot)) = UINT_MAX;
 
-	vgpu_vreg_t(vgpu, vgtif_reg(scaler_owned)) = 0;
-	for_each_pipe(dev_priv, pipe)
-		for_each_universal_scaler(dev_priv, pipe, scaler)
-			if (gvt->pipe_info[pipe].scaler_owner[scaler] ==
-				vgpu->id)
-				vgpu_vreg_t(vgpu, vgtif_reg(scaler_owned)) |=
-					1 << (pipe * SKL_NUM_SCALERS + scaler);
-
-	vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio)) = 0;
-
+#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
 	vgpu_vreg_t(vgpu, vgtif_reg(gop.fb_base)) = 0;
 	vgpu_vreg_t(vgpu, vgtif_reg(gop.width)) = 0;
 	vgpu_vreg_t(vgpu, vgtif_reg(gop.height)) = 0;
 	vgpu_vreg_t(vgpu, vgtif_reg(gop.pitch)) = 0;
 	vgpu_vreg_t(vgpu, vgtif_reg(gop.Bpp)) = 0;
 	vgpu_vreg_t(vgpu, vgtif_reg(gop.size)) = 0;
-
+#endif
 	gvt_dbg_core("Populate PVINFO PAGE for vGPU %d\n", vgpu->id);
 	gvt_dbg_core("aperture base [GMADR] 0x%llx size 0x%llx\n",
 		vgpu_aperture_gmadr_base(vgpu), vgpu_aperture_sz(vgpu));
@@ -236,7 +225,9 @@ static void intel_gvt_update_vgpu_types(struct intel_gvt *gvt)
 void intel_gvt_activate_vgpu(struct intel_vgpu *vgpu)
 {
 	mutex_lock(&vgpu->gvt->lock);
-	vgpu->active = true;
+
+	atomic_set(&vgpu->active, true);
+
 	mutex_unlock(&vgpu->gvt->lock);
 }
 
@@ -250,9 +241,10 @@ void intel_gvt_activate_vgpu(struct intel_vgpu *vgpu)
  */
 void intel_gvt_deactivate_vgpu(struct intel_vgpu *vgpu)
 {
-	mutex_lock(&vgpu->vgpu_lock);
+	struct intel_gvt *gvt = vgpu->gvt;
 
-	vgpu->active = false;
+	mutex_lock(&vgpu->vgpu_lock);
+	atomic_set(&vgpu->active, false);
 
 	if (atomic_read(&vgpu->submission.running_workload_num)) {
 		mutex_unlock(&vgpu->vgpu_lock);
@@ -260,7 +252,29 @@ void intel_gvt_deactivate_vgpu(struct intel_vgpu *vgpu)
 		mutex_lock(&vgpu->vgpu_lock);
 	}
 
+	intel_vgpu_display_set_foreground(vgpu, false);
+	if (READ_ONCE(gvt->disp_auto_switch)) {
+		u32 owner = 0;
+
+		mutex_lock(&gvt->sw_in_progress);
+		owner = intel_vgpu_display_find_owner(vgpu, true, true);
+		if (owner != gvt->disp_owner) {
+			gvt->disp_owner = owner;
+			gvt_dbg_dpy("Schedule display owner changed to 0x%08x due to "
+				    "deactivate of vGPU-%d\n",
+				    gvt->disp_owner, vgpu->id);
+			queue_work(system_unbound_wq, &gvt->switch_display_work);
+		}
+		mutex_unlock(&gvt->sw_in_progress);
+	}
+
 	intel_vgpu_stop_schedule(vgpu);
+
+	/**
+	* the pending workloads might be resubmitted to HW GPU before cleanup
+	* @intel_gvt_reset_vgpu_locked once start schedule.
+	*/
+	intel_vgpu_clean_workloads(vgpu, ALL_ENGINES);
 
 	mutex_unlock(&vgpu->vgpu_lock);
 }
@@ -279,7 +293,9 @@ void intel_gvt_release_vgpu(struct intel_vgpu *vgpu)
 	intel_gvt_deactivate_vgpu(vgpu);
 
 	mutex_lock(&vgpu->vgpu_lock);
+	vgpu->d3_entered = false;
 	intel_vgpu_clean_workloads(vgpu, ALL_ENGINES);
+	intel_vgpu_destroy_all_ppgtt_mm(vgpu);
 	intel_vgpu_dmabuf_cleanup(vgpu);
 	mutex_unlock(&vgpu->vgpu_lock);
 }
@@ -295,7 +311,7 @@ void intel_gvt_destroy_vgpu(struct intel_vgpu *vgpu)
 {
 	struct intel_gvt *gvt = vgpu->gvt;
 
-	WARN(vgpu->active, "vGPU is still active!\n");
+	WARN(atomic_read(&vgpu->active), "vGPU is still active!\n");
 
 	/*
 	 * remove idr first so later clean can judge if need to stop
@@ -315,7 +331,6 @@ void intel_gvt_destroy_vgpu(struct intel_vgpu *vgpu)
 	intel_vgpu_clean_gtt(vgpu);
 	intel_gvt_hypervisor_detach_vgpu(vgpu);
 	intel_vgpu_free_resource(vgpu);
-	intel_vgpu_reset_cfg_space(vgpu);
 	intel_vgpu_clean_mmio(vgpu);
 	intel_vgpu_dmabuf_cleanup(vgpu);
 	mutex_unlock(&vgpu->vgpu_lock);
@@ -361,7 +376,7 @@ struct intel_vgpu *intel_gvt_create_idle_vgpu(struct intel_gvt *gvt)
 	if (ret)
 		goto out_free_vgpu;
 
-	vgpu->active = false;
+	atomic_set(&vgpu->active, false);
 
 	return vgpu;
 
@@ -415,6 +430,8 @@ static struct intel_vgpu *__intel_gvt_create_vgpu(struct intel_gvt *gvt,
 	INIT_RADIX_TREE(&vgpu->page_track_tree, GFP_KERNEL);
 	idr_init(&vgpu->object_idr);
 	intel_vgpu_init_cfg_space(vgpu, param->primary);
+	vgpu->ggtt_entries = NULL;
+	vgpu->d3_entered = false;
 
 	ret = intel_vgpu_init_mmio(vgpu);
 	if (ret)
@@ -559,7 +576,6 @@ void intel_gvt_reset_vgpu_locked(struct intel_vgpu *vgpu, bool dmlr,
 	struct intel_gvt *gvt = vgpu->gvt;
 	struct intel_gvt_workload_scheduler *scheduler = &gvt->scheduler;
 	intel_engine_mask_t resetting_eng = dmlr ? ALL_ENGINES : engine_mask;
-	u32 enable_pvmmio = vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio));
 
 	gvt_dbg_core("------------------------------------------\n");
 	gvt_dbg_core("resseting vgpu%d, dmlr %d, engine_mask %08x\n",
@@ -582,24 +598,34 @@ void intel_gvt_reset_vgpu_locked(struct intel_vgpu *vgpu, bool dmlr,
 	/* full GPU reset or device model level reset */
 	if (engine_mask == ALL_ENGINES || dmlr) {
 		intel_vgpu_select_submission_ops(vgpu, ALL_ENGINES, 0);
-		intel_vgpu_invalidate_ppgtt(vgpu);
+		if (engine_mask == ALL_ENGINES)
+			intel_vgpu_invalidate_ppgtt(vgpu);
 		/*fence will not be reset during virtual reset */
 		if (dmlr) {
-			intel_vgpu_reset_gtt(vgpu);
+			if (!vgpu->d3_entered) {
+				intel_vgpu_invalidate_ppgtt(vgpu);
+				intel_vgpu_destroy_all_ppgtt_mm(vgpu);
+			}
+			intel_vgpu_reset_ggtt(vgpu, true);
 			intel_vgpu_reset_resource(vgpu);
 		}
 
 		intel_vgpu_reset_mmio(vgpu, dmlr);
 		populate_pvinfo_page(vgpu);
-		vgpu_vreg_t(vgpu, vgtif_reg(enable_pvmmio)) = enable_pvmmio;
-		intel_vgpu_reset_display(vgpu);
 
 		if (dmlr) {
 			intel_vgpu_reset_display(vgpu);
 			intel_vgpu_reset_cfg_space(vgpu);
 			/* only reset the failsafe mode when dmlr reset */
 			vgpu->failsafe = false;
-			vgpu->pv_notified = false;
+			/*
+			 * PCI_D0 is set before dmlr, so reset d3_entered here
+			 * after done using.
+			 */
+			if (vgpu->d3_entered)
+				vgpu->d3_entered = false;
+			else
+				vgpu->pv_notified = false;
 		}
 	}
 

@@ -7,14 +7,14 @@
 #include <linux/gpio.h>
 
 /* Register offsets */
-#define DW_SPI_CTRL0			0x00
-#define DW_SPI_CTRL1			0x04
+#define DW_SPI_CTRLR0			0x00
+#define DW_SPI_CTRLR1			0x04
 #define DW_SPI_SSIENR			0x08
 #define DW_SPI_MWCR			0x0c
 #define DW_SPI_SER			0x10
 #define DW_SPI_BAUDR			0x14
-#define DW_SPI_TXFLTR			0x18
-#define DW_SPI_RXFLTR			0x1c
+#define DW_SPI_TXFTLR			0x18
+#define DW_SPI_RXFTLR			0x1c
 #define DW_SPI_TXFLR			0x20
 #define DW_SPI_RXFLR			0x24
 #define DW_SPI_SR			0x28
@@ -58,6 +58,23 @@
 #define SPI_SRL_OFFSET			11
 #define SPI_CFS_OFFSET			12
 
+/* Bit fields in CTRLR0 based on DWC_ssi_databook.pdf v1.01a */
+#define DWC_SPI_CTRLR0_CFS_OFFSET	16
+#define DWC_SSI_CTRLR0_SRL_OFFSET	13
+#define DWC_SSI_CTRLR0_TMOD_OFFSET	10
+#define DWC_SSI_CTRLR0_TMOD_MASK	GENMASK(11, 10)
+#define DWC_SSI_CTRLR0_SCPOL_OFFSET	9
+#define DWC_SSI_CTRLR0_SCPH_OFFSET	8
+#define DWC_SSI_CTRLR0_FRF_OFFSET	6
+#define DWC_SSI_CTRLR0_DFS_OFFSET	0
+
+/* Bit fields in MWCR based on DWC_ssi_databook.pdf v1.01a */
+#define DW_SPI_MWCR_MDD_OFFSET			1
+#define DW_SPI_MWCR_MWMOD_OFFSET		0
+
+/* Bit fields in CTRLR1 based on DWC_ssi_databook.pdf v1.01a */
+#define DW_SPI_CTRLR1_NDF_OFFSET	0
+
 /* Bit fields in SR, 7 bits */
 #define SR_MASK				0x7f		/* cover 7 bits */
 #define SR_BUSY				(1 << 0)
@@ -89,6 +106,16 @@ enum dw_ssi_type {
 	SSI_NS_MICROWIRE,
 };
 
+enum dw_ssi_ctrl {
+	SSI_RECEIVES_DATA = 0,
+	SSI_TRANSMIT_DATA,
+};
+
+enum dw_ssi_mwmod {
+	SSI_NON_SEQUENTIAL_TRANSFER = 0,
+	SSI_SEQUENTIAL_TRANSFER,
+};
+
 struct dw_spi;
 struct dw_spi_dma_ops {
 	int (*dma_init)(struct dw_spi *dws);
@@ -102,7 +129,14 @@ struct dw_spi_dma_ops {
 
 struct dw_spi {
 	struct spi_controller	*master;
-	enum dw_ssi_type	type;
+	enum			dw_ssi_type	type;
+
+	/* Start of Microwire property */
+	enum			dw_ssi_ctrl	mdd;
+	int			dw_ssi_cfs;
+	enum			dw_ssi_mwmod	mwmod;
+	bool			cont_non_sequential;
+	int			rcv_cword;
 
 	void __iomem		*regs;
 	unsigned long		paddr;
@@ -115,6 +149,8 @@ struct dw_spi {
 	u16			bus_num;
 	u16			num_cs;		/* supported slave numbers */
 	void (*set_cs)(struct spi_device *spi, bool enable);
+	u32 (*update_cr0)(struct spi_controller *master, struct spi_device *spi,
+			  struct spi_transfer *transfer);
 
 	/* Current message transfer state info */
 	size_t			len;
@@ -236,23 +272,17 @@ static inline void spi_shutdown_chip(struct dw_spi *dws)
 	spi_set_clk(dws, 0);
 }
 
-/*
- * Each SPI slave device to work with dw_api controller should
- * has such a structure claiming its working mode (poll or PIO/DMA),
- * which can be save in the "controller_data" member of the
- * struct spi_device.
- */
-struct dw_spi_chip {
-	u8 poll_mode;	/* 1 for controller polling mode */
-	u8 type;	/* SPI/SSP/MicroWire */
-	void (*cs_control)(u32 command);
-};
-
 extern void dw_spi_set_cs(struct spi_device *spi, bool enable);
 extern int dw_spi_add_host(struct device *dev, struct dw_spi *dws);
 extern void dw_spi_remove_host(struct dw_spi *dws);
 extern int dw_spi_suspend_host(struct dw_spi *dws);
 extern int dw_spi_resume_host(struct dw_spi *dws);
+extern u32 dw_spi_update_cr0(struct spi_controller *master,
+			     struct spi_device *spi,
+			     struct spi_transfer *transfer);
+extern u32 dw_spi_update_cr0_v1_01a(struct spi_controller *master,
+				    struct spi_device *spi,
+				    struct spi_transfer *transfer);
 
 /* platform related setup */
 extern int dw_spi_mid_init(struct dw_spi *dws); /* Intel MID platforms */

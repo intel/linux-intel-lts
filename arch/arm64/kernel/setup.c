@@ -367,6 +367,10 @@ void __init setup_arch(char **cmdline_p)
 static inline bool cpu_can_disable(unsigned int cpu)
 {
 #ifdef CONFIG_HOTPLUG_CPU
+#if !defined(CONFIG_HOTPLUG_CPU0)
+	if (cpu == 0)
+		return false;
+#endif
 	if (cpu_ops[cpu] && cpu_ops[cpu]->cpu_can_disable)
 		return cpu_ops[cpu]->cpu_can_disable(cpu);
 #endif

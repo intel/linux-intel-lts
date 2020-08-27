@@ -131,7 +131,7 @@ enum intel_gvt_mm_type {
 	INTEL_GVT_MM_PPGTT,
 };
 
-#define GVT_RING_CTX_NR_PDPS   GEN8_3LVL_PDPES
+#define GVT_RING_CTX_NR_PDPS	GEN8_3LVL_PDPES
 
 struct intel_gvt_partial_pte {
 	unsigned long offset;
@@ -160,7 +160,6 @@ struct intel_vgpu_mm {
 
 			struct list_head list;
 			struct list_head lru_list;
-			struct i915_ppgtt *ppgtt;
 		} ppgtt_mm;
 		struct {
 			void *virtual_ggtt;
@@ -279,12 +278,7 @@ int intel_vgpu_emulate_ggtt_mmio_read(struct intel_vgpu *vgpu,
 int intel_vgpu_emulate_ggtt_mmio_write(struct intel_vgpu *vgpu,
 	unsigned int off, void *p_data, unsigned int bytes);
 
-int intel_vgpu_g2v_pv_ppgtt_alloc_4lvl(struct intel_vgpu *vgpu,
-		int page_table_level);
-
-int intel_vgpu_g2v_pv_ppgtt_clear_4lvl(struct intel_vgpu *vgpu,
-		int page_table_level);
-
-int intel_vgpu_g2v_pv_ppgtt_insert_4lvl(struct intel_vgpu *vgpu,
-		int page_table_level);
+void intel_gvt_save_ggtt(struct intel_gvt *gvt);
+void intel_gvt_restore_ggtt(struct intel_gvt *gvt);
+void intel_vgpu_destroy_all_ppgtt_mm(struct intel_vgpu *vgpu);
 #endif /* _GVT_GTT_H_ */

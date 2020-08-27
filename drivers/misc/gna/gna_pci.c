@@ -113,8 +113,6 @@ static int __init gna_init(void)
 	}
 	gna_class->devnode = gna_devnode;
 
-	mutex_lock(&gna_drv_priv.lock);
-
 	ret = alloc_chrdev_region(&gna_drv_priv.devt, 0, MAX_GNA_DEVICES, "gna");
 	if (ret) {
 		pr_err("could not get major number\n");
@@ -125,8 +123,6 @@ static int __init gna_init(void)
 	pr_debug("minor %d\n", MINOR(gna_drv_priv.devt));
 
 	gna_drv_priv.minor = MINOR(gna_drv_priv.devt);
-
-	mutex_unlock(&gna_drv_priv.lock);
 
 	ret = pci_register_driver(&gna_driver);
 	if (ret) {

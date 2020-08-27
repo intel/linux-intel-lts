@@ -38,6 +38,7 @@ properties:
               - brcm,bcm21664-dw-apb-uart
           - const: snps,dw-apb-uart
       - const: snps,dw-apb-uart
+      - const: intel,keembay-uart
 
   reg:
     maxItems: 1

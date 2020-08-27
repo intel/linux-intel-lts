@@ -121,21 +121,20 @@ irqreturn_t netproxy_isr_thread(int irq, void *dev_id)
 	}
 
 err_skb:
-	/* [REVERTME] DMA_CTL_CH(i) Workaround */
-	for (i = 0; i < EHL_PSE_ETH_DMA_TOTAL_CH; i++) {
-		value = readl(priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
-			      + i * sizeof(u32));
-		value |= EHL_PSE_ETH_DMA_MISC_DTM_DRAM;
-		writel(value, priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
-		       + i * sizeof(u32));
+	if (priv->plat->ehl_ao_wa) {
+		/* [REVERTME] DMA_CTL_CH(i) Workaround */
+		for (i = 0; i < EHL_PSE_ETH_DMA_TOTAL_CH; i++) {
+			value = readl(priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
+				      + i * sizeof(u32));
+			value |= EHL_PSE_ETH_DMA_MISC_DTM_DRAM;
+			writel(value, priv->ioaddr + EHL_PSE_ETH_DMA_MISC_OFFSET
+			       + i * sizeof(u32));
+		}
 	}
 
 	priv->networkproxy_exit = 1;
 	stmmac_resume_common(priv, ndev);
 	priv->networkproxy_exit = 0;
-
-	if (ndev->phydev)
-		phy_start_machine(ndev->phydev);
 
 	netif_device_attach(ndev);
 
@@ -176,9 +175,6 @@ static int stmmac_netprox_suspend(struct stmmac_priv *priv,
 
 	/* Message Network Proxy Agent to enter proxy mode */
 	netprox_host_proxy_enter();
-
-	if (ndev->phydev)
-		phy_stop_machine(ndev->phydev);
 
 	stmmac_suspend_common(priv, ndev);
 

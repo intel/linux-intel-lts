@@ -298,7 +298,7 @@ void gna_request_tasklet(unsigned long data)
 	del_timer(&gna_priv->isr_timer);
 
 	spin_lock_bh(&score_request->perf_lock);
-	score_request->drv_perf.hw_completed = rdtsc();
+	score_request->drv_perf.hw_completed = ktime_get_ns();
 	spin_unlock_bh(&score_request->perf_lock);
 
 	/* get hw status written to device context by interrupt handler */
@@ -341,10 +341,6 @@ void gna_request_tasklet(unsigned long data)
 	if (ret < 0)
 		dev_warn_once(&gna_priv->dev,
 			"pm_runtime_put() failed: %d\n", ret);
-
-	spin_lock_bh(&score_request->perf_lock);
-	score_request->drv_perf.completion = rdtsc();
-	spin_unlock_bh(&score_request->perf_lock);
 
 	spin_lock_bh(&gna_priv->busy_lock);
 	gna_priv->busy = false;

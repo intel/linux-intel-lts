@@ -39,12 +39,10 @@
 #include "gem/i915_gem_pm.h"
 #include "gt/intel_context.h"
 #include "gt/intel_ring.h"
-
 #include "gt/intel_rps.h"
 
 #include "i915_drv.h"
 #include "gvt.h"
-#include "intel_pm.h"
 
 #define RING_CTX_OFF(x) \
 	offsetof(struct execlist_ring_context, x)
@@ -233,13 +231,14 @@ static void active_hp_work(struct work_struct *work)
 		container_of(work, struct intel_gvt, active_hp_work);
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
 	struct intel_rps *rps = &dev_priv->gt.rps;
-	u8 freq = rps->rp0_freq;
 
-	if (IS_BROXTON(dev_priv))
-		freq = intel_freq_opcode(rps, 600);
+	rps_disable_interrupts(rps);
 
-	if (READ_ONCE(rps->cur_freq) < freq) {
-		intel_rps_set(rps, freq);
+	if (READ_ONCE(dev_priv->gt.rps.cur_freq) !=
+	    READ_ONCE(dev_priv->gt.rps.max_freq)) {
+		mutex_lock(&rps->lock);
+		intel_rps_set(rps, dev_priv->gt.rps.max_freq);
+		mutex_unlock(&rps->lock);
 	}
 }
 
@@ -255,9 +254,6 @@ static int shadow_context_status_change(struct notifier_block *nb,
 	unsigned long flags;
 
 	if (!is_gvt_request(req)) {
-		if (!i915_modparams.enable_context_restore)
-			return NOTIFY_OK;
-
 		spin_lock_irqsave(&scheduler->mmio_context_lock, flags);
 		if (action == INTEL_CONTEXT_SCHEDULE_IN &&
 		    scheduler->engine_owner[ring_id]) {
@@ -277,13 +273,6 @@ static int shadow_context_status_change(struct notifier_block *nb,
 
 	switch (action) {
 	case INTEL_CONTEXT_SCHEDULE_IN:
-		if (!i915_modparams.enable_hp_work)
-			schedule_work(&gvt->active_hp_work);
-
-		if (!i915_modparams.enable_context_restore) {
-			atomic_set(&workload->shadow_ctx_active, 1);
-			break;
-		}
 		spin_lock_irqsave(&scheduler->mmio_context_lock, flags);
 		if (workload->vgpu != scheduler->engine_owner[ring_id]) {
 			/* Switch ring from host to vGPU or vGPU to vGPU. */
@@ -294,18 +283,15 @@ static int shadow_context_status_change(struct notifier_block *nb,
 			gvt_dbg_sched("skip ring %d mmio switch for vgpu%d\n",
 				      ring_id, workload->vgpu->id);
 		spin_unlock_irqrestore(&scheduler->mmio_context_lock, flags);
+		schedule_work(&gvt->active_hp_work);
 		atomic_set(&workload->shadow_ctx_active, 1);
 		break;
 	case INTEL_CONTEXT_SCHEDULE_OUT:
-		if (i915_modparams.enable_context_restore) {
-			save_ring_hw_state(workload->vgpu, ring_id);
-		}
+		save_ring_hw_state(workload->vgpu, ring_id);
 		atomic_set(&workload->shadow_ctx_active, 0);
 		break;
 	case INTEL_CONTEXT_SCHEDULE_PREEMPTED:
-		if (i915_modparams.enable_context_restore) {
-			save_ring_hw_state(workload->vgpu, ring_id);
-		}
+		save_ring_hw_state(workload->vgpu, ring_id);
 		break;
 	default:
 		WARN_ON(1);
@@ -479,15 +465,6 @@ int intel_gvt_scan_and_shadow_workload(struct intel_vgpu_workload *workload)
 err_shadow:
 	release_shadow_wa_ctx(&workload->wa_ctx);
 	return ret;
-}
-
-static int sanitize_priority(int priority)
-{
-	if (priority > I915_CONTEXT_MAX_USER_PRIORITY)
-		return I915_CONTEXT_MAX_USER_PRIORITY;
-	else if (priority < I915_CONTEXT_MIN_USER_PRIORITY)
-		return I915_CONTEXT_MIN_USER_PRIORITY;
-	return priority;
 }
 
 static void release_shadow_batch_buffer(struct intel_vgpu_workload *workload);
@@ -688,14 +665,6 @@ static int prepare_workload(struct intel_vgpu_workload *workload)
 		goto err_unpin_mm;
 	}
 
-	/* we consider this as an workaround to avoid the situation that
-	 * PDP's not updated, and right now we only limit it to BXT platform
-	 * since it's not reported on the other platforms
-	 */
-	if (IS_BROXTON(vgpu->gvt->dev_priv)) {
-		gvt_emit_pdps(workload);
-	}
-
 	ret = copy_workload_to_ring_buffer(workload);
 	if (ret) {
 		gvt_vgpu_err("fail to generate request\n");
@@ -736,7 +705,6 @@ static int dispatch_workload(struct intel_vgpu_workload *workload)
 	struct i915_request *rq;
 	int ring_id = workload->ring_id;
 	int ret;
-	struct intel_vgpu_submission *s = &vgpu->submission;
 
 	gvt_dbg_sched("ring id %d prepare to dispatch workload %p\n",
 		ring_id, workload);
@@ -758,8 +726,6 @@ static int dispatch_workload(struct intel_vgpu_workload *workload)
 	}
 
 	ret = prepare_workload(workload);
-
-	workload->guilty_count = atomic_read(&workload->req->gem_context->guilty_count);
 out:
 	if (ret) {
 		/* We might still need to add request with
@@ -772,8 +738,6 @@ out:
 	if (!IS_ERR_OR_NULL(workload->req)) {
 		gvt_dbg_sched("ring id %d submit workload to i915 %p\n",
 				ring_id, workload->req);
-		i915_modparams.gvt_workload_priority = sanitize_priority(i915_modparams.gvt_workload_priority);
-		s->shadow[workload->ring_id]->gem_context->sched.priority = i915_modparams.gvt_workload_priority;
 		i915_request_add(workload->req);
 		workload->dispatched = true;
 	}
@@ -806,7 +770,7 @@ static struct intel_vgpu_workload *pick_next_workload(
 		goto out;
 	}
 
-	if (!scheduler->current_vgpu->active ||
+	if (!atomic_read(&scheduler->current_vgpu->active) ||
 	    list_empty(workload_q_head(scheduler->current_vgpu, ring_id)))
 		goto out;
 
@@ -999,9 +963,6 @@ static void complete_current_workload(struct intel_gvt *gvt, int ring_id)
 
 	list_del_init(&workload->list);
 
-	if (workload->status == -EIO)
-		intel_vgpu_reset_submission(vgpu, 1 << ring_id);
-
 	if (workload->status || vgpu->resetting_eng & BIT(ring_id)) {
 		/* if workload->status is not successful means HW GPU
 		 * has occurred GPU hang or something wrong with i915/GVT,
@@ -1029,22 +990,6 @@ static void complete_current_workload(struct intel_gvt *gvt, int ring_id)
 
 	mutex_unlock(&gvt->sched_lock);
 	mutex_unlock(&vgpu->vgpu_lock);
-}
-
-static void inject_error_cs_irq(struct intel_vgpu *vgpu, int ring_id)
-{
-	enum intel_gvt_event_type events[] = {
-		[RCS0] = RCS_CMD_STREAMER_ERR,
-		[BCS0] = BCS_CMD_STREAMER_ERR,
-		[VCS0] = VCS_CMD_STREAMER_ERR,
-		[VCS2] = VCS2_CMD_STREAMER_ERR,
-		[VECS0] = VECS_CMD_STREAMER_ERR,
-	};
-
-	if (unlikely(events[ring_id] == 0))
-		return;
-
-	intel_vgpu_trigger_virtual_event(vgpu, events[ring_id]);
 }
 
 struct workload_thread_param {
@@ -1113,25 +1058,7 @@ static int workload_thread(void *priv)
 
 		gvt_dbg_sched("ring id %d wait workload %p\n",
 				workload->ring_id, workload);
-
-		ret = i915_request_wait(workload->req, 0,
-				MAX_SCHEDULE_TIMEOUT);
-
-		gvt_dbg_sched("i915_wait_request %p returns %d\n",
-				workload, ret);
-
-		if (ret >= 0 && workload->status == -EINPROGRESS)
-			workload->status = 0;
-		/*
-		 * increased guilty_count means that this request triggerred
-		 * a GPU reset, so we need to notify the guest about the
-		 * hang.
-		 */
-		if (workload->guilty_count <
-				atomic_read(&workload->req->gem_context->guilty_count)) {
-			workload->status = -EIO;
-			inject_error_cs_irq(workload->vgpu, ring_id);
-		}
+		i915_request_wait(workload->req, 0, MAX_SCHEDULE_TIMEOUT);
 
 complete:
 		gvt_dbg_sched("will complete workload %p, status: %d\n",
@@ -1562,6 +1489,7 @@ intel_vgpu_create_workload(struct intel_vgpu *vgpu, int ring_id,
 	struct list_head *q = workload_q_head(vgpu, ring_id);
 	struct intel_vgpu_workload *last_workload = NULL;
 	struct intel_vgpu_workload *workload = NULL;
+	struct drm_i915_private *dev_priv = vgpu->gvt->dev_priv;
 	u64 ring_context_gpa;
 	u32 head, tail, start, ctl, ctx_ctl, per_ctx, indirect_ctx;
 	u32 guest_head;
@@ -1680,14 +1608,11 @@ intel_vgpu_create_workload(struct intel_vgpu *vgpu, int ring_id,
 	/* Only scan and shadow the first workload in the queue
 	 * as there is only one pre-allocated buf-obj for shadow.
 	 */
-	/* scan_workload and prepare_shadow are executed in one thread to avoid
-	 * the incorrect mutex lock.
 	if (list_empty(workload_q_head(vgpu, ring_id))) {
 		intel_runtime_pm_get(&dev_priv->runtime_pm);
 		ret = intel_gvt_scan_and_shadow_workload(workload);
 		intel_runtime_pm_put_unchecked(&dev_priv->runtime_pm);
 	}
-	*/
 
 	if (ret) {
 		if (vgpu_is_vm_unhealthy(ret))

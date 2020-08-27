@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+# Copyright (C) 2020 Intel Corporation
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/media/i2c/intel,kmb-camera-lens.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Keem Bay lens
+
+maintainers:
+  - Daniele Alessandrelli <daniele.alessandrelli@intel.com>
+
+properties:
+  compatible:
+    oneOf:
+      - items:
+        - const: intel,kmb-camera-lens
+
+  reg:
+    items:
+      - description: I2C address (0x61, or an alternative address)
+
+required:
+  - compatible
+  - reg
+
+examples:
+  - |
+    i2c {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        kmb_lens: lens@61 {
+              compatible = "intel,kmb-camera-lens";
+              reg = <0x61>;
+        };
+    };

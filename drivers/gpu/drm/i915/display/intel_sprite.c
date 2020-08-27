@@ -605,18 +605,19 @@ skl_program_plane(struct intel_plane *plane,
 	unsigned long irqflags;
 	u32 keymsk, keymax;
 	u32 plane_ctl = plane_state->ctl;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_plane_regs *dom0_regs =
+		&gvt->pipe_info[pipe].plane_info[plane_id].dom0_regs;
+	struct intel_dom0_pipe_regs *dom0_pipe_regs =
+		&gvt->pipe_info[pipe].dom0_pipe_regs;
+#endif
 
 	plane_ctl |= skl_plane_ctl_crtc(crtc_state);
 
 	if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv))
 		plane_color_ctl = plane_state->color_ctl |
 			glk_plane_color_ctl_crtc(crtc_state);
-
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt &&
-			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
-		return;
-#endif
 
 	/* Sizes are 0 based */
 	src_w--;
@@ -633,6 +634,49 @@ skl_program_plane(struct intel_plane *plane,
 		crtc_x = 0;
 		crtc_y = 0;
 	}
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (gvt) {
+		u32 crtc_w = drm_rect_width(&plane_state->uapi.dst);
+		u32 crtc_h = drm_rect_height(&plane_state->uapi.dst);
+
+		dom0_regs->plane_keyval =  key->min_value;
+		dom0_regs->plane_keymax =  key->max_value;
+		dom0_regs->plane_keymsk =  key->channel_mask;
+		dom0_regs->plane_offset =  (y << 16) | x;
+		dom0_regs->plane_stride = stride;
+		dom0_regs->plane_size = (src_h << 16) | src_w;
+		dom0_regs->plane_aux_dist =
+			(plane_state->color_plane[1].offset - surf_addr) |
+			aux_stride;
+		dom0_regs->plane_aux_offset =
+			(plane_state->color_plane[1].y << 16) |
+			plane_state->color_plane[1].x;
+		dom0_regs->plane_pos = (crtc_y << 16) | crtc_x;
+		dom0_regs->plane_ctl = plane_ctl;
+		dom0_regs->plane_surf =
+			intel_plane_ggtt_offset(plane_state) +
+			surf_addr;
+
+		if (plane_state->scaler_id >= 0) {
+			int scaler_id = plane_state->scaler_id;
+			const struct intel_scaler *scaler;
+
+			scaler = &crtc_state->scaler_state.scalers[scaler_id];
+			dom0_pipe_regs->scaler_ctl[scaler_id] = PS_SCALER_EN
+				| PS_PLANE_SEL(plane_id) | scaler->mode;
+			dom0_pipe_regs->scaler_pwr_gate[scaler_id] = 0;
+			dom0_pipe_regs->scaler_win_pos[scaler_id] =
+				(crtc_x << 16) | crtc_y;
+			dom0_pipe_regs->scaler_win_size[scaler_id] =
+				(crtc_w << 16) | crtc_h;
+			dom0_regs->plane_pos = 0;
+		}
+
+		if (gvt->pipe_info[pipe].plane_info[plane_id].owner)
+			return;
+	}
+#endif
 
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
 
@@ -653,9 +697,7 @@ skl_program_plane(struct intel_plane *plane,
 	if (fb->format->is_yuv && icl_is_hdr_plane(dev_priv, plane_id))
 		icl_program_input_csc(plane, crtc_state, plane_state);
 
-	/* In VGPU or gvt-g mode, skip plane DDB/WM */
-	if (!(intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv)))
-		skl_write_plane_wm(plane, crtc_state);
+	skl_write_plane_wm(plane, crtc_state);
 
 	I915_WRITE_FW(PLANE_KEYVAL(pipe, plane_id), key->min_value);
 	I915_WRITE_FW(PLANE_KEYMSK(pipe, plane_id), keymsk);
@@ -704,11 +746,17 @@ skl_disable_plane(struct intel_plane *plane,
 	enum plane_id plane_id = plane->id;
 	enum pipe pipe = plane->pipe;
 	unsigned long irqflags;
-
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt &&
-			dev_priv->gvt->pipe_info[pipe].plane_owner[plane_id])
-		return;
+	struct intel_gvt *gvt = dev_priv->gvt;
+
+	if (gvt) {
+		struct intel_dom0_plane_regs *dom0_regs =
+			&gvt->pipe_info[pipe].plane_info[plane_id].dom0_regs;
+		dom0_regs->plane_ctl = 0;
+		dom0_regs->plane_surf = 0;
+		if (gvt->pipe_info[pipe].plane_info[plane_id].owner)
+			return;
+	}
 #endif
 
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
@@ -716,9 +764,7 @@ skl_disable_plane(struct intel_plane *plane,
 	if (icl_is_hdr_plane(dev_priv, plane_id))
 		I915_WRITE_FW(PLANE_CUS_CTL(pipe, plane_id), 0);
 
-	/* In VGPU ornative mode, skip plane DDB/WM */
-	if (!(intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv)))
-		skl_write_plane_wm(plane, crtc_state);
+	skl_write_plane_wm(plane, crtc_state);
 
 	I915_WRITE_FW(PLANE_CTL(pipe, plane_id), 0);
 	I915_WRITE_FW(PLANE_SURF(pipe, plane_id), 0);
@@ -735,6 +781,17 @@ skl_plane_get_hw_state(struct intel_plane *plane,
 	enum plane_id plane_id = plane->id;
 	intel_wakeref_t wakeref;
 	bool ret;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	struct intel_gvt *gvt = dev_priv->gvt;
+	struct intel_dom0_plane_regs *dom0_regs =
+		&gvt->pipe_info[plane->pipe].plane_info[plane_id].dom0_regs;
+
+	if (gvt && gvt->pipe_info[plane->pipe].plane_info[plane_id].owner) {
+		ret = dom0_regs->plane_ctl & PLANE_CTL_ENABLE;
+		*pipe = plane->pipe;
+		return ret;
+	}
+#endif
 
 	power_domain = POWER_DOMAIN_PIPE(plane->pipe);
 	wakeref = intel_display_power_get_if_enabled(dev_priv, power_domain);
@@ -2928,11 +2985,6 @@ static const u32 *skl_get_plane_formats(struct drm_i915_private *dev_priv,
 					enum pipe pipe, enum plane_id plane_id,
 					int *num_formats)
 {
-	if (intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv)) {
-		*num_formats = ARRAY_SIZE(skl_plane_formats);
-		return skl_plane_formats;
-	}
-
 	if (skl_plane_has_planar(dev_priv, pipe, plane_id)) {
 		*num_formats = ARRAY_SIZE(skl_planar_formats);
 		return skl_planar_formats;
@@ -3047,17 +3099,10 @@ skl_universal_plane_create(struct drm_i915_private *dev_priv,
 		modifiers = gen12_get_plane_modifiers(plane_id);
 		plane_funcs = &gen12_plane_funcs;
 	} else {
-		if (intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv))
-			plane->has_ccs = false;
-
 		if (plane->has_ccs)
 			modifiers = skl_plane_format_modifiers_ccs;
 		else
 			modifiers = skl_plane_format_modifiers_noccs;
-
-		if (intel_gvt_active(dev_priv) || intel_vgpu_active(dev_priv))
-			modifiers = i9xx_plane_format_modifiers;
-
 		plane_funcs = &skl_plane_funcs;
 	}
 
@@ -3066,7 +3111,7 @@ skl_universal_plane_create(struct drm_i915_private *dev_priv,
 	else
 		plane_type = DRM_PLANE_TYPE_OVERLAY;
 
-	possible_crtcs = 1 << (dev_priv->drm.mode_config.num_crtc);
+	possible_crtcs = BIT(pipe);
 
 	ret = drm_universal_plane_init(&dev_priv->drm, &plane->base,
 				       possible_crtcs, plane_funcs,

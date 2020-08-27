@@ -79,6 +79,10 @@
 #include "intel_memory_region.h"
 #include "intel_pm.h"
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+#include "gvt.h"
+#endif
+
 static struct drm_driver driver;
 
 struct vlv_s0ix_state {
@@ -270,24 +274,6 @@ intel_teardown_mchbar(struct drm_i915_private *dev_priv)
 		release_resource(&dev_priv->mch_res);
 }
 
-static inline int get_max_avail_pipes(struct drm_i915_private *dev_priv)
-{
-	enum pipe pipe;
-	int index = 0;
-
-	if (!intel_vgpu_active(dev_priv) ||
-	    !i915_modparams.avail_planes_per_pipe)
-		return INTEL_NUM_PIPES(dev_priv);
-
-	for_each_pipe(dev_priv, pipe) {
-		if (AVAIL_PLANE_PER_PIPE(dev_priv, i915_modparams.avail_planes_per_pipe,
-					pipe))
-			index++;
-	}
-
-	return index;
-}
-
 static int i915_driver_modeset_probe(struct drm_i915_private *i915)
 {
 	int ret;
@@ -296,13 +282,10 @@ static int i915_driver_modeset_probe(struct drm_i915_private *i915)
 		return -ENODEV;
 
 	if (HAS_DISPLAY(i915) && INTEL_DISPLAY_ENABLED(i915)) {
-		int num_crtcs = get_max_avail_pipes(i915);
-
-		if (num_crtcs) {
-			ret = drm_vblank_init(&i915->drm, num_crtcs);
-			if (ret)
-				goto out;
-		}
+		ret = drm_vblank_init(&i915->drm,
+				      INTEL_NUM_PIPES(i915));
+		if (ret)
+			goto out;
 	}
 
 	intel_bios_init(i915);
@@ -511,8 +494,6 @@ static int i915_driver_early_probe(struct drm_i915_private *dev_priv)
 	intel_uncore_init_early(&dev_priv->uncore, dev_priv);
 
 	spin_lock_init(&dev_priv->irq_lock);
-	spin_lock_init(&dev_priv->shared_page_lock);
-	spin_lock_init(&dev_priv->pvmmio_ppgtt_lock);
 	spin_lock_init(&dev_priv->gpu_error.lock);
 	mutex_init(&dev_priv->backlight_lock);
 
@@ -619,21 +600,6 @@ static int i915_driver_mmio_probe(struct drm_i915_private *dev_priv)
 
 	intel_uc_init_mmio(&dev_priv->gt.uc);
 
-	if (intel_vgpu_active(dev_priv) && i915_modparams.enable_pvmmio) {
-		u32 bar = 0;
-		u32 mmio_size = 2 * 1024 * 1024;
-
-		/* Map a share page from the end of 2M mmio region in bar0. */
-		dev_priv->shared_page = (struct gvt_shared_page *)
-			pci_iomap_range(dev_priv->drm.pdev, bar,
-			mmio_size, PAGE_SIZE);
-		if (dev_priv->shared_page == NULL) {
-			ret = -EIO;
-			DRM_ERROR("I915: failed to map share page.\n");
-			goto err_uncore;
-		}
-	}
-
 	ret = intel_engines_init_mmio(&dev_priv->gt);
 	if (ret)
 		goto err_uncore;
@@ -641,9 +607,6 @@ static int i915_driver_mmio_probe(struct drm_i915_private *dev_priv)
 	return 0;
 
 err_uncore:
-	if (intel_vgpu_active(dev_priv) && dev_priv->shared_page)
-		pci_iounmap(dev_priv->drm.pdev, dev_priv->shared_page);
-
 	intel_teardown_mchbar(dev_priv);
 	intel_uncore_fini_mmio(&dev_priv->uncore);
 err_bridge:
@@ -1562,8 +1525,7 @@ int i915_driver_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	i915_driver_register(dev_priv);
 
-	if (!intel_vgpu_active(dev_priv))
-		enable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
+	enable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
 
 	i915_welcome_messages(dev_priv);
 
@@ -1737,6 +1699,11 @@ static int i915_drm_suspend(struct drm_device *dev)
 	intel_power_domains_disable(dev_priv);
 
 	drm_kms_helper_poll_disable(dev);
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (dev_priv->gvt)
+		intel_gvt_pm_suspend(dev_priv->gvt);
+#endif
 
 	pci_save_state(pdev);
 
@@ -1918,6 +1885,12 @@ static int i915_drm_resume(struct drm_device *dev)
 
 	intel_power_domains_enable(dev_priv);
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (dev_priv->gvt) {
+		return intel_gvt_pm_resume(dev_priv->gvt);
+	}
+#endif
+
 	enable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
 
 	return 0;
@@ -1988,6 +1961,17 @@ static int i915_drm_resume_early(struct drm_device *dev)
 	intel_display_power_resume_early(dev_priv);
 
 	intel_power_domains_resume(dev_priv);
+
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (!ret) {
+		if (dev_priv->gvt) {
+			ret = intel_gvt_pm_early_resume(dev_priv->gvt);
+			if (ret)
+				return ret;
+		}
+	}
+#endif
 
 	enable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
 
@@ -2651,6 +2635,16 @@ static int intel_runtime_resume(struct device *kdev)
 
 	intel_enable_ipc(dev_priv);
 
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	if (!ret) {
+		if (dev_priv->gvt) {
+			ret = intel_gvt_pm_early_resume(dev_priv->gvt);
+			if (ret)
+				return ret;
+		}
+	}
+#endif
+
 	enable_rpm_wakeref_asserts(rpm);
 
 	if (ret)
@@ -2785,7 +2779,6 @@ static const struct drm_ioctl_desc i915_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(I915_QUERY, i915_query_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_VM_CREATE, i915_gem_vm_create_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_VM_DESTROY, i915_gem_vm_destroy_ioctl, DRM_RENDER_ALLOW),
-	DRM_IOCTL_DEF_DRV(I915_GEM_GVTBUFFER, i915_gem_gvtbuffer_ioctl, DRM_RENDER_ALLOW),
 };
 
 static struct drm_driver driver = {

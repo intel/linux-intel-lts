@@ -4,8 +4,13 @@
 
 config INTEL_GNA
         tristate "Intel GMM & Neural Networks Accelerator"
-	depends on X86 && PCI
+	depends on X86_64 && PCI
         help
-	  This adds an option to enable the Intel GMM & Neural Networks Accelerator (Intel GNA) driver
+	  This adds an option to enable the Intel GMM & Neural Networks Accelerator (Intel GNA) driver.
 	  See Documentation/misc-devices/gna/gna.txt for more information on the functionality.
 
+config INTEL_GNA_DEBUG
+	bool "Debug messages for INTEL GNA driver"
+	depends on INTEL_GNA
+	---help---
+	  This enables the debug messages from the INTEL GNA driver.

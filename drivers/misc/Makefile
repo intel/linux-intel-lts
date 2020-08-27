@@ -58,3 +58,6 @@ obj-$(CONFIG_PVPANIC)   	+= pvpanic.o
 obj-$(CONFIG_HABANA_AI)		+= habanalabs/
 obj-$(CONFIG_XILINX_SDFEC)	+= xilinx_sdfec.o
 obj-$(CONFIG_INTEL_GNA)        += gna/
+obj-y                          += xlink-pcie/
+obj-y                          += xlink-usb/
+obj-$(CONFIG_VPUSMM)		+= vpusmm/

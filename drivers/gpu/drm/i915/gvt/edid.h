@@ -134,7 +134,8 @@ struct intel_vgpu_i2c_edid {
 	struct intel_vgpu_i2c_aux_ch aux_ch;
 };
 
-void intel_vgpu_init_i2c_edid(struct intel_vgpu *vgpu);
+void intel_vgpu_init_i2c_edid(struct intel_vgpu *vgpu,
+			      struct intel_vgpu_i2c_edid *edid);
 
 int intel_gvt_i2c_handle_gmbus_read(struct intel_vgpu *vgpu,
 		unsigned int offset, void *p_data, unsigned int bytes);
@@ -143,10 +144,8 @@ int intel_gvt_i2c_handle_gmbus_write(struct intel_vgpu *vgpu,
 		unsigned int offset, void *p_data, unsigned int bytes);
 
 void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
-		int port_idx,
+		enum port port,
 		unsigned int offset,
 		void *p_data);
-
-struct edid *intel_gvt_create_edid_from_mode(struct drm_display_mode *mode);
 
 #endif /*_GVT_EDID_H_*/

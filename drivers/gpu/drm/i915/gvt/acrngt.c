@@ -88,8 +88,7 @@ void acrngt_instance_destroy(struct intel_vgpu *vgpu)
 
 		for_each_pipe(gvt->dev_priv, pipe) {
 			for_each_universal_plane(gvt->dev_priv, pipe, plane) {
-				if (gvt->pipe_info[pipe].plane_owner[plane] ==
-						vgpu->id) {
+				if (gvt->pipe_info[pipe].owner == vgpu->id) {
 					disable_domu_plane(pipe, plane);
 				}
 			}
@@ -578,17 +577,17 @@ static ssize_t show_plane_owner(struct kobject *kobj,
 {
 	return sprintf(buf, "Planes:\nPipe A: %d %d %d %d\n"
 				"Pipe B: %d %d %d %d\nPipe C: %d %d %d\n",
-		acrngt_priv.gvt->pipe_info[PIPE_A].plane_owner[PLANE_PRIMARY],
-		acrngt_priv.gvt->pipe_info[PIPE_A].plane_owner[PLANE_SPRITE0],
-		acrngt_priv.gvt->pipe_info[PIPE_A].plane_owner[PLANE_SPRITE1],
-		acrngt_priv.gvt->pipe_info[PIPE_A].plane_owner[PLANE_SPRITE2],
-		acrngt_priv.gvt->pipe_info[PIPE_B].plane_owner[PLANE_PRIMARY],
-		acrngt_priv.gvt->pipe_info[PIPE_B].plane_owner[PLANE_SPRITE0],
-		acrngt_priv.gvt->pipe_info[PIPE_B].plane_owner[PLANE_SPRITE1],
-		acrngt_priv.gvt->pipe_info[PIPE_B].plane_owner[PLANE_SPRITE2],
-		acrngt_priv.gvt->pipe_info[PIPE_C].plane_owner[PLANE_PRIMARY],
-		acrngt_priv.gvt->pipe_info[PIPE_C].plane_owner[PLANE_SPRITE0],
-		acrngt_priv.gvt->pipe_info[PIPE_C].plane_owner[PLANE_SPRITE1]);
+		acrngt_priv.gvt->pipe_info[PIPE_A].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_A].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_A].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_A].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_B].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_B].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_B].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_B].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_C].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_C].owner,
+		acrngt_priv.gvt->pipe_info[PIPE_C].owner);
 }
 
 static struct kobj_attribute acrngt_instance_attr =
@@ -815,33 +814,13 @@ static int acrngt_write_gpa(unsigned long handle, unsigned long gpa,
 	return 0;
 }
 
-static bool is_identical_mmap(void)
-{
-	/* todo: need add hypercall to get such info from hypervisor */
-	return true;
-}
-
 static unsigned long acrngt_gfn_to_pfn(unsigned long handle, unsigned long gfn)
 {
 	unsigned long hpa;
 	struct acrngt_hvm_dev *info = (struct acrngt_hvm_dev *)handle;
-
 	gvt_dbg_core("convert gfn 0x%lx to pfn\n", gfn);
-	if (is_identical_mmap()) {
-		void *va = NULL;
 
-		va = map_guest_phys(info->vm_id, gfn << PAGE_SHIFT,
-				    1 << PAGE_SHIFT);
-		if (!va) {
-			gvt_err("GVT: can not map gfn = 0x%lx!!!\n", gfn);
-			hpa = vhm_vm_gpa2hpa(info->vm_id, gfn << PAGE_SHIFT);
-		} else {
-			hpa = virt_to_phys(va);
-		}
-	} else {
-		hpa = vhm_vm_gpa2hpa(info->vm_id, gfn << PAGE_SHIFT);
-	}
-
+	hpa = vhm_vm_gpa2hpa(info->vm_id, gfn << PAGE_SHIFT);
 	return hpa >> PAGE_SHIFT;
 }
 
@@ -884,110 +863,6 @@ static int acrngt_set_trap_area(unsigned long handle, u64 start,
 		gvt_err("failed set trap, start 0x%llx, end 0x%llx, map %d\n",
 			start, end, map);
 	return ret;
-}
-
-static int acrngt_set_pvmmio(unsigned long handle, u64 start, u64 end, bool map)
-{
-	int rc, i;
-	unsigned long mfn, shared_mfn;
-	unsigned long pfn = start >> PAGE_SHIFT;
-	u32 mmio_size_fn = acrngt_priv.gvt->device_info.mmio_size >> PAGE_SHIFT;
-	struct acrngt_hvm_dev *info = (struct acrngt_hvm_dev *)handle;
-
-	if (map) {
-		mfn = acrngt_virt_to_mfn(info->vgpu->mmio.vreg);
-		rc = acrngt_map_gfn_to_mfn(handle, pfn, mfn, mmio_size_fn, map);
-		if (rc) {
-			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
-					pfn, mfn, rc);
-			return rc;
-		}
-
-		/* map the shared page to guest */
-		shared_mfn = acrngt_virt_to_mfn(info->vgpu->mmio.shared_page);
-		rc = acrngt_map_gfn_to_mfn(handle, pfn + mmio_size_fn, shared_mfn, 1, map);
-		if (rc) {
-			gvt_err("acrn-gvt: map shared page fail with ret %d\n", rc);
-			return rc;
-		}
-
-		/* mmio access is trapped like memory write protection */
-		rc = acrn_ioreq_add_iorange(info->client, REQ_WP, pfn << PAGE_SHIFT,
-					((pfn + mmio_size_fn) << PAGE_SHIFT) - 1);
-		if (rc) {
-			gvt_err("failed acrn_ioreq_add_iorange for pfn 0x%lx\n", pfn);
-			return rc;
-		}
-
-		for (i = 0; i < mmio_size_fn; i++) {
-			rc = write_protect_page(info->vm_id,
-				(pfn + i) << PAGE_SHIFT, true);
-			if (rc) {
-				gvt_err("failed set wp for pfn 0x%lx\n", pfn + i);
-				return rc;
-			}
-		}
-
-		/* scratch reg access is trapped like mmio access, 1 page */
-		rc = acrngt_map_gfn_to_mfn(handle, pfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT),
-					mfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT), 1, 0);
-		if (rc) {
-			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
-					pfn, mfn, rc);
-			return rc;
-		}
-		rc = acrn_ioreq_add_iorange(info->client, REQ_MMIO,
-				(pfn << PAGE_SHIFT) + VGT_PVINFO_PAGE,
-				((pfn + 1) << PAGE_SHIFT) + VGT_PVINFO_PAGE - 1);
-		if (rc) {
-			gvt_err("failed acrn_ioreq_add_iorange for pfn 0x%lx\n",
-				(pfn << PAGE_SHIFT) + VGT_PVINFO_PAGE);
-			return rc;
-		}
-
-	} else {
-		mfn = acrngt_virt_to_mfn(info->vgpu->mmio.vreg);
-
-		/* scratch reg access is trapped like mmio access, 1 page */
-		rc = acrngt_map_gfn_to_mfn(handle,
-				pfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT),
-				mfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT), 1, 1);
-		if (rc) {
-			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
-					pfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT),
-					mfn + (VGT_PVINFO_PAGE >> PAGE_SHIFT),
-					rc);
-			return rc;
-		}
-
-		rc = acrngt_map_gfn_to_mfn(handle, pfn, mfn, mmio_size_fn, map);
-		if (rc) {
-			gvt_err("acrn-gvt: map pfn %lx to mfn %lx fail with ret %d\n",
-					pfn, mfn, rc);
-			return rc;
-		}
-		rc = acrn_ioreq_del_iorange(info->client, REQ_WP, pfn << PAGE_SHIFT,
-					((pfn + mmio_size_fn) << PAGE_SHIFT) - 1);
-		if (rc) {
-			gvt_err("failed acrn_ioreq_add_iorange for pfn 0x%lx\n", pfn);
-			return rc;
-		}
-		rc = acrn_ioreq_add_iorange(info->client, REQ_MMIO, pfn << PAGE_SHIFT,
-					((pfn + mmio_size_fn) << PAGE_SHIFT) - 1);
-		if (rc) {
-			gvt_err("failed acrn_ioreq_del_iorange for pfn 0x%lx\n", pfn);
-			return rc;
-		}
-
-		/* unmap the shared page to guest */
-		shared_mfn = acrngt_virt_to_mfn(info->vgpu->mmio.shared_page);
-		rc = acrngt_map_gfn_to_mfn(handle, pfn + mmio_size_fn, shared_mfn, 1, map);
-		if (rc) {
-			gvt_err("acrn-gvt: map shared page fail with ret %d\n", rc);
-			return rc;
-		}
-	}
-	return rc;
 }
 
 static int acrngt_dma_map_guest_page(unsigned long handle, unsigned long gfn,
@@ -1051,7 +926,6 @@ struct intel_gvt_mpt acrn_gvt_mpt = {
 	.dma_map_guest_page = acrngt_dma_map_guest_page,
 	.dma_unmap_guest_page = acrngt_dma_unmap_guest_page,
 	.set_trap_area = acrngt_set_trap_area,
-	.set_pvmmio = acrngt_set_pvmmio,
 	.set_opregion = acrngt_set_opregion,
 };
 EXPORT_SYMBOL_GPL(acrn_gvt_mpt);

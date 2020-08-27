@@ -257,17 +257,6 @@ void gen2_irq_init(struct intel_uncore *uncore,
 	intel_uncore_posting_read16(uncore, GEN2_IMR);
 }
 
-
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-static inline void gvt_notify_vblank(struct drm_i915_private *dev_priv,
-				     enum pipe pipe)
-{
-	if (dev_priv->gvt)
-		queue_work(system_highpri_wq,
-				&dev_priv->gvt->pipe_info[pipe].vblank_work);
-}
-#endif
-
 /* For display hotplug interrupt */
 static inline void
 i915_hotplug_interrupt_update_locked(struct drm_i915_private *dev_priv,
@@ -1281,6 +1270,24 @@ static void i9xx_pipe_crc_irq_handler(struct drm_i915_private *dev_priv,
 				     I915_READ(PIPE_CRC_RES_BLUE(pipe)),
 				     res1, res2);
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+static inline void gvt_notify_vblank(struct drm_i915_private *dev_priv,
+				     enum pipe pipe)
+{
+	if (dev_priv->gvt && dev_priv->gvt->pipe_info[pipe].owner)
+		queue_work(system_unbound_wq,
+			   &dev_priv->gvt->pipe_info[pipe].vblank_work);
+}
+
+static inline void gvt_notify_flipdone(struct drm_i915_private *dev_priv,
+				       enum pipe pipe, enum plane_id plane)
+{
+	if (dev_priv->gvt && dev_priv->gvt->pipe_info[pipe].plane_info[plane].owner)
+		queue_work(system_unbound_wq,
+			   &dev_priv->gvt->pipe_info[pipe].plane_info[plane].flipdone_work);
+}
+#endif
 
 static void i9xx_pipestat_irq_reset(struct drm_i915_private *dev_priv)
 {
@@ -2333,11 +2340,7 @@ gen8_de_irq_handler(struct drm_i915_private *dev_priv, u32 master_ctl)
 		I915_WRITE(GEN8_DE_PIPE_IIR(pipe), iir);
 
 		if (iir & GEN8_PIPE_VBLANK) {
-			struct intel_crtc *crtc =
-				intel_get_crtc_for_pipe(dev_priv, pipe);
-
-			drm_handle_vblank(&dev_priv->drm,
-					  drm_crtc_index(&crtc->base));
+			drm_handle_vblank(&dev_priv->drm, pipe);
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 			gvt_notify_vblank(dev_priv, pipe);
 #endif
@@ -2348,6 +2351,11 @@ gen8_de_irq_handler(struct drm_i915_private *dev_priv, u32 master_ctl)
 
 		if (iir & GEN8_PIPE_FIFO_UNDERRUN)
 			intel_cpu_fifo_underrun_irq_handler(dev_priv, pipe);
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+		if (iir & GEN9_PIPE_PLANE_FLIP_DONE(PLANE_PRIMARY))
+			gvt_notify_flipdone(dev_priv, pipe, PLANE_PRIMARY);
+#endif
 
 		fault_errors = iir & gen8_de_pipe_fault_mask(dev_priv);
 		if (fault_errors)
@@ -2601,9 +2609,14 @@ int bdw_enable_vblank(struct drm_crtc *crtc)
 	struct drm_i915_private *dev_priv = to_i915(crtc->dev);
 	enum pipe pipe = to_intel_crtc(crtc)->pipe;
 	unsigned long irqflags;
+	unsigned long irq_enable = GEN8_PIPE_VBLANK;
+
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+	irq_enable |= GEN9_PIPE_PLANE_FLIP_DONE(PLANE_PRIMARY);
+#endif
 
 	spin_lock_irqsave(&dev_priv->irq_lock, irqflags);
-	bdw_enable_pipe_irq(dev_priv, pipe, GEN8_PIPE_VBLANK);
+	bdw_enable_pipe_irq(dev_priv, pipe, irq_enable);
 	spin_unlock_irqrestore(&dev_priv->irq_lock, irqflags);
 
 	/* Even if there is no DMC, frame counter can get stuck when
@@ -3072,6 +3085,7 @@ static void gen11_hpd_irq_setup(struct drm_i915_private *dev_priv)
 
 	val = I915_READ(GEN11_DE_HPD_IMR);
 	val &= ~hotplug_irqs;
+	val |= ~enabled_irqs & hotplug_irqs;
 	I915_WRITE(GEN11_DE_HPD_IMR, val);
 	POSTING_READ(GEN11_DE_HPD_IMR);
 
@@ -3348,6 +3362,9 @@ static void gen8_de_irq_postinstall(struct drm_i915_private *dev_priv)
 		de_pipe_masked |= GEN9_DE_PIPE_IRQ_FAULT_ERRORS;
 		de_port_masked |= GEN9_AUX_CHANNEL_B | GEN9_AUX_CHANNEL_C |
 				  GEN9_AUX_CHANNEL_D;
+#if IS_ENABLED(CONFIG_DRM_I915_GVT)
+		de_pipe_masked |= GEN9_PIPE_PLANE_FLIP_DONE(PLANE_PRIMARY);
+#endif
 		if (IS_GEN9_LP(dev_priv))
 			de_port_masked |= BXT_DE_PORT_GMBUS;
 	} else {

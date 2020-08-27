@@ -703,4 +703,13 @@ config INGENIC_TIMER
 	help
 	  Support for the timer/counter unit of the Ingenic JZ SoCs.
 
+config KEEMBAY_TIMER
+	bool "Intel Keem Bay timer driver"
+	depends on ARM64 || COMPILE_TEST
+	select TIMER_OF
+	help
+	  Say Y here to enable the support for general purpose timer
+	  and free running counter in Keem Bay SoC.
+	  It is used as a clocksource and a clockevent.
+
 endmenu

@@ -92,14 +92,6 @@ void i915_detect_vgpu(struct drm_i915_private *dev_priv)
 	}
 
 	dev_priv->vgpu.caps = readl(shared_area + vgtif_offset(vgt_caps));
-	dev_priv->vgpu.scaler_owned = readl(shared_area + vgtif_offset(scaler_owned));
-
-	/* If guest wants to enable pvmmio, it needs to enable it explicitly
-	 * through vgt_if interface, and then read back the enable state from
-	 * gvt layer.
-	 */
-	writel(i915_modparams.enable_pvmmio, shared_area + vgtif_offset(enable_pvmmio));
-	i915_modparams.enable_pvmmio = readl(shared_area + vgtif_offset(enable_pvmmio));
 
 	dev_priv->vgpu.active = true;
 	mutex_init(&dev_priv->vgpu.lock);

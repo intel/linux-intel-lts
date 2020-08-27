@@ -40,7 +40,7 @@ static void gna_request_process(struct work_struct *work)
 	spin_unlock_bh(&score_request->state_lock);
 
 	spin_lock_bh(&score_request->perf_lock);
-	score_request->drv_perf.pre_processing = rdtsc();
+	score_request->drv_perf.pre_processing = ktime_get_ns();
 	spin_unlock_bh(&score_request->perf_lock);
 
 	ret = pm_runtime_get_sync(&gna_priv->pdev->dev);
@@ -58,6 +58,10 @@ static void gna_request_process(struct work_struct *work)
 				"pm_runtime_put() failed: %d\n", ret);
 		goto end;
 	}
+
+	spin_lock_bh(&score_request->perf_lock);
+	score_request->drv_perf.processing = ktime_get_ns();
+	spin_unlock_bh(&score_request->perf_lock);
 
 	wait_event(gna_priv->busy_waitq, !gna_priv->busy);
 
@@ -95,7 +99,7 @@ static void gna_request_process(struct work_struct *work)
 
 end:
 	spin_lock_bh(&score_request->perf_lock);
-	score_request->drv_perf.processing = rdtsc();
+	score_request->drv_perf.completion = ktime_get_ns();
 	spin_unlock_bh(&score_request->perf_lock);
 }
 

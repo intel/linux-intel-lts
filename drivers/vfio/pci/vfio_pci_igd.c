@@ -58,6 +58,9 @@ static int vfio_pci_igd_opregion_init(struct vfio_pci_device *vdev)
 	u32 addr, size;
 	void *base;
 	int ret;
+	u32 ver;
+	u64 rvda;
+	u32 rvds;
 
 	ret = pci_read_config_dword(vdev->pdev, OPREGION_PCI_ADDR, &addr);
 	if (ret)
@@ -82,6 +85,20 @@ static int vfio_pci_igd_opregion_init(struct vfio_pci_device *vdev)
 	}
 
 	size *= 1024; /* In KB */
+
+	/* Support opregion v2+ */
+	ver = le32_to_cpu(*(__le32 *)(base + 20));
+	if (ver >= 0x02000000) {
+		rvda = le64_to_cpu(*(__le64 *)(base + 0x3BA));
+		if (rvda != 0) {
+			rvds = le32_to_cpu(*(__le32 *)(base + 0x3C2));
+			if (ver == 0x02000000) {
+				size += ((rvda - (u64)addr) + rvds);
+			} else {
+				size += ((rvda - (u64)size) + rvds);
+			}
+		}
+	}
 
 	if (size != OPREGION_SIZE) {
 		memunmap(base);

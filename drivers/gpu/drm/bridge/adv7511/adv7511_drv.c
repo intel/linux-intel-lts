@@ -671,7 +671,18 @@ static enum drm_mode_status adv7511_mode_valid(struct adv7511 *adv7511,
 {
 	if (mode->clock > 165000)
 		return MODE_CLOCK_HIGH;
+#ifdef KMB
+	if (mode->hdisplay < KMB_MIN_WIDTH ||
+		mode->hdisplay > KMB_MAX_WIDTH)
+		return MODE_BAD_HVALUE;
 
+	if (mode->vdisplay < KMB_MIN_HEIGHT ||
+		mode->vdisplay > KMB_MAX_HEIGHT)
+		return MODE_BAD_VVALUE;
+
+	if (mode->vrefresh != KMB_VREFRESH)
+		return MODE_BAD;
+#endif
 	return MODE_OK;
 }
 
@@ -845,6 +856,10 @@ static void adv7511_bridge_mode_set(struct drm_bridge *bridge,
 	struct adv7511 *adv = bridge_to_adv7511(bridge);
 
 	adv7511_mode_set(adv, mode, adj_mode);
+
+#ifdef KMB
+	adv7511_power_on(adv);
+#endif
 }
 
 static int adv7511_bridge_attach(struct drm_bridge *bridge)

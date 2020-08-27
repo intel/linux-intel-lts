@@ -1649,7 +1649,8 @@ static int i915_rps_boost_info(struct seq_file *m, void *data)
 		}
 	}
 
-	seq_printf(m, "RPS enabled? %d\n", rps->enabled);
+	seq_printf(m, "RPS enabled? %s\n", yesno(intel_rps_is_enabled(rps)));
+	seq_printf(m, "RPS active? %s\n", yesno(intel_rps_is_active(rps)));
 	seq_printf(m, "GPU busy? %s\n", yesno(dev_priv->gt.awake));
 	seq_printf(m, "Boosts outstanding? %d\n",
 		   atomic_read(&rps->num_waiters));
@@ -1669,7 +1670,7 @@ static int i915_rps_boost_info(struct seq_file *m, void *data)
 
 	seq_printf(m, "Wait boosts: %d\n", atomic_read(&rps->boosts));
 
-	if (INTEL_GEN(dev_priv) >= 6 && rps->enabled && dev_priv->gt.awake) {
+	if (INTEL_GEN(dev_priv) >= 6 && intel_rps_is_active(rps)) {
 		u32 rpup, rpupei;
 		u32 rpdown, rpdownei;
 
@@ -2694,17 +2695,13 @@ static int i915_display_info(struct seq_file *m, void *unused)
 
 			intel_crtc_info(m, crtc);
 
-			if (cursor) {
-				seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x\n",
+			seq_printf(m, "\tcursor visible? %s, position (%d, %d), size %dx%d, addr 0x%08x\n",
 				   yesno(cursor->base.state->visible),
 				   cursor->base.state->crtc_x,
 				   cursor->base.state->crtc_y,
 				   cursor->base.state->crtc_w,
 				   cursor->base.state->crtc_h,
 				   cursor->cursor.base);
-			} else {
-				seq_puts(m, "\tNo cursor plane available on this platform\n");
-			}
 			intel_scaler_info(m, crtc);
 			intel_plane_info(m, crtc);
 		}
@@ -2927,13 +2924,20 @@ static int i915_ddb_info(struct seq_file *m, void *unused)
 
 		for_each_plane_id_on_crtc(crtc, plane_id) {
 			entry = &crtc_state->wm.skl.plane_ddb_y[plane_id];
-			seq_printf(m, "  Plane%-8d%8u%8u%8u\n", plane_id + 1,
+			seq_printf(m, "  YPlane%-8d%8u%8u%8u\n", plane_id + 1,
+				   entry->start, entry->end,
+				   skl_ddb_entry_size(entry));
+			entry = &crtc_state->wm.skl.plane_ddb_uv[plane_id];
+			seq_printf(m, "  UVPlane%-8d%8u%8u%8u\n", plane_id + 1,
 				   entry->start, entry->end,
 				   skl_ddb_entry_size(entry));
 		}
 
 		entry = &crtc_state->wm.skl.plane_ddb_y[PLANE_CURSOR];
-		seq_printf(m, "  %-13s%8u%8u%8u\n", "Cursor", entry->start,
+		seq_printf(m, "  %-13s%8u%8u%8u\n", "YCursor", entry->start,
+			   entry->end, skl_ddb_entry_size(entry));
+		entry = &crtc_state->wm.skl.plane_ddb_uv[PLANE_CURSOR];
+		seq_printf(m, "  %-13s%8u%8u%8u\n", "UVCursor", entry->start,
 			   entry->end, skl_ddb_entry_size(entry));
 	}
 
@@ -3659,8 +3663,7 @@ i915_cache_sharing_get(void *data, u64 *val)
 	intel_wakeref_t wakeref;
 	u32 snpcr = 0;
 
-	if (!(IS_GEN(dev_priv, 6) || IS_GEN(dev_priv, 7)
-				|| IS_GEN(dev_priv, 9)))
+	if (!(IS_GEN_RANGE(dev_priv, 6, 7)))
 		return -ENODEV;
 
 	with_intel_runtime_pm(&dev_priv->runtime_pm, wakeref)
@@ -3676,10 +3679,8 @@ i915_cache_sharing_set(void *data, u64 val)
 {
 	struct drm_i915_private *dev_priv = data;
 	intel_wakeref_t wakeref;
-	u32 idicr;
 
-	if (!(IS_GEN(dev_priv, 6) || IS_GEN(dev_priv, 7)
-				|| IS_GEN(dev_priv, 9)))
+	if (!(IS_GEN_RANGE(dev_priv, 6, 7)))
 		return -ENODEV;
 
 	if (val > 3)
@@ -3694,13 +3695,6 @@ i915_cache_sharing_set(void *data, u64 val)
 		snpcr &= ~GEN6_MBC_SNPCR_MASK;
 		snpcr |= val << GEN6_MBC_SNPCR_SHIFT;
 		I915_WRITE(GEN6_MBCUNIT_SNPCR, snpcr);
-	}
-
-	if (IS_GEN(dev_priv, 9)) {
-		idicr = I915_READ(HSW_IDICR);
-		idicr &= ~IDI_QOS_MASK;
-		idicr |= (val << IDI_QOS_SHIFT);
-		I915_WRITE(HSW_IDICR, idicr);
 	}
 
 	return 0;
