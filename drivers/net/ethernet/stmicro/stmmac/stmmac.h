@@ -71,7 +71,6 @@ struct stmmac_tx_queue {
 	u32 mss;
 	struct xdp_umem *xsk_umem;
 	struct zero_copy_allocator zca; /* ZC allocator */
-	spinlock_t xdp_xmit_lock;
 };
 
 struct stmmac_rx_buffer {
@@ -120,6 +119,7 @@ struct stmmac_channel {
 	struct napi_struct rx_napi ____cacheline_aligned_in_smp;
 	struct napi_struct tx_napi ____cacheline_aligned_in_smp;
 	struct stmmac_priv *priv_data;
+	spinlock_t lock;
 	u32 index;
 };
 
@@ -172,9 +172,10 @@ struct stmmac_flow_entry {
 
 struct stmmac_priv {
 	/* Frequently used values are kept adjacent for cache effect */
-	u32 tx_coal_frames;
-	u32 tx_coal_timer;
-	u32 rx_coal_frames;
+	bool tx_timer_scheduled[MTL_MAX_TX_QUEUES];
+	u32 tx_coal_frames[MTL_MAX_TX_QUEUES];
+	u32 tx_coal_timer[MTL_MAX_TX_QUEUES];
+	u32 rx_coal_frames[MTL_MAX_RX_QUEUES];
 
 	int tx_coalesce;
 	int hwts_tx_en;
@@ -185,7 +186,7 @@ struct stmmac_priv {
 
 	unsigned int dma_buf_sz;
 	unsigned int rx_copybreak;
-	u32 rx_riwt;
+	u32 rx_riwt[MTL_MAX_RX_QUEUES];
 	int hwts_rx_en;
 
 	void __iomem *ioaddr;
@@ -268,10 +269,10 @@ struct stmmac_priv {
 	char int_name_mac[IFNAMSIZ + 9];
 	char int_name_wol[IFNAMSIZ + 9];
 	char int_name_lpi[IFNAMSIZ + 9];
-	char int_name_sfty_ce[IFNAMSIZ + 9];
-	char int_name_sfty_ue[IFNAMSIZ + 9];
-	char int_name_rx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 9];
-	char int_name_tx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 9];
+	char int_name_sfty_ce[IFNAMSIZ + 10];
+	char int_name_sfty_ue[IFNAMSIZ + 10];
+	char int_name_rx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 14];
+	char int_name_tx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 18];
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 	char int_name_netprox_irq[IFNAMSIZ + 9];
 #endif
@@ -280,7 +281,7 @@ struct stmmac_priv {
 	struct dentry *dbgfs_dir;
 #endif
 
-	unsigned long state;
+	unsigned long *state;
 	struct workqueue_struct *wq;
 	struct work_struct service_task;
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
@@ -305,22 +306,20 @@ struct stmmac_priv {
 	/* WA for EST */
 	int est_hw_del;
 
-	/* Flag to track driver state from normal->xdp or vice versa */
-	bool cur_mode_is_normal;
-
 	/* XDP BPF Program */
 	struct bpf_prog *xdp_prog;
 
 	/* AF_XDP zero-copy */
-	unsigned long af_xdp_zc_qps; /* tracks AF_XDP ZC enabled qps */
+	unsigned long *af_xdp_zc_qps; /* tracks AF_XDP ZC enabled qps */
 	struct xdp_umem **xsk_umems;
 };
 
 enum stmmac_state {
 	STMMAC_DOWN,
 	STMMAC_RESET_REQUESTED,
-	STMMAC_RESETING,
+	STMMAC_RESETTING,
 	STMMAC_SERVICE_SCHED,
+	STMMAC_STATE_MAX,
 };
 
 int stmmac_mdio_unregister(struct net_device *ndev);
@@ -360,6 +359,8 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
 #define STMMAC_RX_DMA_ATTR \
 	(DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
 
+#define STMMAC_COAL_TIMER(x) (jiffies + usecs_to_jiffies(x))
+
 static inline bool stmmac_enabled_xdp(struct stmmac_priv *priv)
 {
 	return !!priv->xdp_prog;
@@ -367,11 +368,7 @@ static inline bool stmmac_enabled_xdp(struct stmmac_priv *priv)
 
 static inline bool queue_is_xdp(struct stmmac_priv *priv, u32 queue_index)
 {
-	if (priv->tx_queue_is_xdp[queue_index] &&
-	    !priv->cur_mode_is_normal)
-		return true;
-
-	return false;
+	return priv->tx_queue_is_xdp[queue_index];
 }
 
 static inline void set_queue_xdp(struct stmmac_priv *priv, u32 queue_index)
@@ -387,9 +384,6 @@ static inline void clear_queue_xdp(struct stmmac_priv *priv, u32 queue_index)
 static inline struct stmmac_tx_queue *get_tx_queue(struct stmmac_priv *priv,
 						   u32 queue_index)
 {
-	if (queue_is_xdp(priv, queue_index) && !priv->cur_mode_is_normal)
-		return &priv->tx_queue[queue_index];
-
 	return queue_is_xdp(priv, queue_index) ?
 	       &priv->xdp_queue[queue_index - priv->plat->num_queue_pairs] :
 	       &priv->tx_queue[queue_index];
@@ -419,8 +413,9 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			    struct dma_desc *np, ktime_t *hwtstamp);
 void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			    ktime_t *hwtstamp);
-int stmmac_set_tbs_launchtime(struct stmmac_priv *priv, struct dma_desc *desc,
-			      u64 tx_time);
+void stmmac_set_tbs_launchtime(struct stmmac_priv *priv, struct dma_desc *desc,
+			       u64 tx_time);
+void stmmac_tx_timer_arm(struct stmmac_priv *priv, u32 queue);
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,
 			 struct ethtool_test *etest, u64 *buf);

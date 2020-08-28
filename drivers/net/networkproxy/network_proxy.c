@@ -553,14 +553,6 @@ int netprox_write_rule(struct np_rules *rule, int size)
 }
 EXPORT_SYMBOL(netprox_write_rule);
 
-#ifdef NETPROX_DEBUG_MODE
-void netprox_trigger_proxy_enter(void)
-{
-	np_ctx->np_netdev->proxy_enter(np_ctx->np_netdev->netdev);
-}
-EXPORT_SYMBOL(netprox_trigger_proxy_enter);
-#endif
-
 int netprox_agent_is_ready(void)
 {
 	if (!np_ctx->np_ipcdev || !np_ctx->np_netdev)

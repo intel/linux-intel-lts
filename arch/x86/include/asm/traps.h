@@ -173,6 +173,8 @@ enum x86_pf_error_code {
 	X86_PF_PK	=		1 << 5,
 };
 
+#ifdef CONFIG_CPU_SUP_INTEL
 extern bool split_lock_detect_enabled;
+#endif
 
 #endif /* _ASM_X86_TRAPS_H */

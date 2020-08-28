@@ -212,18 +212,6 @@ static int stmmac_netprox_resume(struct stmmac_priv *priv,
 }
 
 /**
- * stmmac_netproxy_enter - stmmac network proxy enter function
- * @ndev: net device structure
- * Description: call from network proxy framework
- */
-static int stmmac_netproxy_enter(struct net_device *ndev)
-{
-	struct stmmac_priv *priv = netdev_priv(ndev);
-
-	return stmmac_netprox_suspend(priv, ndev);
-}
-
-/**
  * stmmac_netproxy_wakeup_enable - stmmac network proxy wakeup enable function
  * @ndev: net device structure
  * @enable: 1: enable; 0: disable
@@ -253,7 +241,6 @@ int stmmac_netproxy_register(struct net_device *ndev)
 	}
 
 	np_netdev.netdev = ndev;
-	np_netdev.proxy_enter = &stmmac_netproxy_enter;
 	np_netdev.proxy_wakeup_enable = &stmmac_netproxy_wakeup_enable;
 
 	/* TODO: check registration is success */

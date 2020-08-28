@@ -83,9 +83,10 @@ static int dwmac4_wrback_get_rx_status(void *data, struct stmmac_extra_stats *x,
 	if (unlikely(rdes3 & RDES3_OWN))
 		return dma_own;
 
-	/* Verify rx error by looking at the last segment. */
-	if (likely(!(rdes3 & RDES3_LAST_DESCRIPTOR)))
+	if (unlikely(rdes3 & RDES3_CONTEXT_DESCRIPTOR))
 		return discard_frame;
+	if (likely(!(rdes3 & RDES3_LAST_DESCRIPTOR)))
+		return rx_not_ls;
 
 	if (unlikely(rdes3 & RDES3_ERROR_SUMMARY)) {
 		if (unlikely(rdes3 & RDES3_GIANT_PACKET))
@@ -188,7 +189,7 @@ static void dwmac4_set_tx_owner(struct dma_desc *p)
 
 static void dwmac4_set_rx_owner(struct dma_desc *p, int disable_rx_ic)
 {
-	p->des3 = cpu_to_le32(RDES3_OWN | RDES3_BUFFER1_VALID_ADDR);
+	p->des3 |= cpu_to_le32(RDES3_OWN | RDES3_BUFFER1_VALID_ADDR);
 
 	if (!disable_rx_ic)
 		p->des3 |= cpu_to_le32(RDES3_INT_ON_COMPLETION_EN);
@@ -227,6 +228,12 @@ static int dwmac4_wrback_get_tx_timestamp_status(struct dma_desc *p)
 	if (le32_to_cpu(p->des3) & TDES3_CONTEXT_TYPE)
 		return 0;
 
+	/* Check for descriptor error
+	 * TODO: See if need to check against other descriptor error bits.
+	 */
+	if (le32_to_cpu(p->des3) & TDES3_DESC_ERR)
+		return 0;
+
 	/* Tx Timestamp Status is 1 so des0 and des1'll have valid values */
 	if (le32_to_cpu(p->des3) & TDES3_TIMESTAMP_STATUS)
 		return 1;
@@ -252,12 +259,14 @@ static int dwmac4_rx_check_timestamp(void *desc)
 	unsigned int rdes0 = le32_to_cpu(p->des0);
 	unsigned int rdes1 = le32_to_cpu(p->des1);
 	unsigned int rdes3 = le32_to_cpu(p->des3);
-	u32 own, ctxt;
+	u32 own, ctxt, de;
 	int ret = 1;
 
 	own = rdes3 & RDES3_OWN;
 	ctxt = ((rdes3 & RDES3_CONTEXT_DESCRIPTOR)
 		>> RDES3_CONTEXT_DESCRIPTOR_SHIFT);
+	de = ((rdes3 & RDES3_CONTEXT_DESCRIPTOR_ERR)
+		>> RDES3_CONTEXT_DESCRIPTOR_ERR_SHIFT);
 
 	if (likely(!own && ctxt)) {
 		if ((rdes0 == 0xffffffff) && (rdes1 == 0xffffffff))
@@ -267,6 +276,10 @@ static int dwmac4_rx_check_timestamp(void *desc)
 			/* A valid Timestamp is ready to be read */
 			ret = 0;
 	}
+
+	/* Descriptor Error */
+	if (unlikely(de))
+		ret = -EINVAL;
 
 	/* Timestamp not ready */
 	return ret;
@@ -438,9 +451,9 @@ static void dwmac4_set_mss_ctxt(struct dma_desc *p, unsigned int mss)
 static void dwmac4_get_addr(struct dma_desc *p, dma_addr_t *addr)
 {
 #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
-	*addr = le32_to_cpu(p->des1);
+	*addr = (u64)le32_to_cpu(p->des1);
 	*addr <<= 32;
-	*addr |= le32_to_cpu(p->des0);
+	*addr |= (u64)le32_to_cpu(p->des0);
 #else
 	*addr = le32_to_cpu(p->des0);
 #endif
@@ -514,6 +527,18 @@ static void dwmac4_set_vlan(struct dma_desc *p, u32 type)
 	p->des2 |= cpu_to_le32(type & TDES2_VLAN_TAG_MASK);
 }
 
+static int dwmac4_get_rx_header_len(struct dma_desc *p, unsigned int *len)
+{
+	*len = le32_to_cpu(p->des2) & RDES2_HL;
+	return 0;
+}
+
+static void dwmac4_set_sec_addr(struct dma_desc *p, dma_addr_t addr)
+{
+	p->des2 = cpu_to_le32(lower_32_bits(addr));
+	p->des3 = cpu_to_le32(upper_32_bits(addr) | RDES3_BUFFER2_VALID_ADDR);
+}
+
 const struct stmmac_desc_ops dwmac4_desc_ops = {
 	.tx_status = dwmac4_wrback_get_tx_status,
 	.rx_status = dwmac4_wrback_get_rx_status,
@@ -543,6 +568,8 @@ const struct stmmac_desc_ops dwmac4_desc_ops = {
 	.set_sarc = dwmac4_set_sarc,
 	.set_vlan_tag = dwmac4_set_vlan_tag,
 	.set_vlan = dwmac4_set_vlan,
+	.get_rx_header_len = dwmac4_get_rx_header_len,
+	.set_sec_addr = dwmac4_set_sec_addr,
 };
 
 static void dwmac5_rd_init_tx_desc(struct dma_desc *p, int mode, int end)
@@ -633,6 +660,8 @@ const struct stmmac_desc_ops dwmac5_desc_ops = {
 	.set_sarc = dwmac4_set_sarc,
 	.set_vlan_tag = dwmac4_set_vlan_tag,
 	.set_vlan = dwmac4_set_vlan,
+	.get_rx_header_len = dwmac4_get_rx_header_len,
+	.set_sec_addr = dwmac4_set_sec_addr,
 };
 
 const struct stmmac_mode_ops dwmac4_ring_mode_ops = {

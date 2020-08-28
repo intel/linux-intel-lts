@@ -820,6 +820,12 @@ static int tc_setup_etf(struct stmmac_priv *priv,
 	else
 		priv->tx_queue[qopt->queue].tbs &= ~STMMAC_TBS_EN;
 
+	if (queue_is_xdp(priv, qopt->queue)) {
+		struct stmmac_tx_queue *xdp_q = get_tx_queue(priv, qopt->queue);
+
+		xdp_q->tbs = priv->tx_queue[qopt->queue].tbs;
+	}
+
 	netdev_info(priv->dev, "%s ETF for Queue %d\n",
 		    qopt->enable ? "enabled" : "disabled", qopt->queue);
 

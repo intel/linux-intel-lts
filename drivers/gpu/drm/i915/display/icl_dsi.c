@@ -34,6 +34,7 @@
 #include "intel_ddi.h"
 #include "intel_dsi.h"
 #include "intel_panel.h"
+#include "intel_vdsc.h"
 
 static inline int header_credits_available(struct drm_i915_private *dev_priv,
 					   enum transcoder dsi_trans)
@@ -1211,6 +1212,17 @@ static void gen11_dsi_disable(struct intel_encoder *encoder,
 	gen11_dsi_disable_io_power(encoder);
 }
 
+static void gen11_dsi_post_disable(struct intel_encoder *encoder,
+				   const struct intel_crtc_state *old_crtc_state,
+				   const struct drm_connector_state *old_conn_state)
+{
+	intel_crtc_vblank_off(old_crtc_state);
+
+	intel_dsc_disable(old_crtc_state);
+
+	skylake_scaler_disable(old_crtc_state);
+}
+
 static void gen11_dsi_get_timings(struct intel_encoder *encoder,
 				  struct intel_crtc_state *pipe_config)
 {
@@ -1577,6 +1589,7 @@ void icl_dsi_init(struct drm_i915_private *dev_priv)
 	encoder->pre_pll_enable = gen11_dsi_pre_pll_enable;
 	encoder->pre_enable = gen11_dsi_pre_enable;
 	encoder->disable = gen11_dsi_disable;
+	encoder->post_disable = gen11_dsi_post_disable;
 	encoder->port = port;
 	encoder->get_config = gen11_dsi_get_config;
 	encoder->update_pipe = intel_panel_update_backlight;

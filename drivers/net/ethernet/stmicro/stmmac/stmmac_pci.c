@@ -103,7 +103,6 @@ static void common_default_data(struct plat_stmmacenet_data *plat)
 	plat->force_sf_dma_mode = 1;
 
 	plat->mdio_bus_data->needs_reset = true;
-	plat->mdio_bus_data->phy_mask = 0;
 
 	/* Set default value for multicast hash bins */
 	plat->multicast_filter_bins = HASH_TABLE_SIZE;
@@ -147,35 +146,18 @@ static const struct stmmac_pci_info stmmac_pci_info = {
 	.setup = stmmac_default_data,
 };
 
-static struct dwxpcs_platform_data intel_mgbe_pdata = {
-	.mode = DWXPCS_MODE_SGMII_AN,
-};
-
-static struct mdio_board_info intel_mgbe_bdinfo = {
-	.bus_id = "stmmac-1",
-	.modalias = "dwxpcs",
-	.mdio_addr = 0x16,
-	.platform_data = &intel_mgbe_pdata,
-};
-
-static int setup_intel_mgbe_phy_conv(struct mii_bus *bus, int irq,
-				     int phy_addr, bool speed_2500_en)
+static int setup_intel_mgbe_phy_conv(struct mii_bus *bus,
+				     struct mdio_board_info *bi)
 {
-	struct dwxpcs_platform_data *pdata = &intel_mgbe_pdata;
-
-	pdata->irq = irq;
-	pdata->ext_phy_addr = phy_addr;
-	pdata->speed_2500_en = speed_2500_en;
-
-	return mdiobus_create_device(bus, &intel_mgbe_bdinfo);
+	return mdiobus_create_device(bus, bi);
 }
 
-static int remove_intel_mgbe_phy_conv(struct mii_bus *bus)
+static int remove_intel_mgbe_phy_conv(struct mii_bus *bus,
+				      struct mdio_board_info *bi)
 {
-	struct mdio_board_info *bdinfo = &intel_mgbe_bdinfo;
 	struct mdio_device *mdiodev;
 
-	mdiodev = mdiobus_get_mdio_device(bus, bdinfo->mdio_addr);
+	mdiodev = mdiobus_get_mdio_device(bus, bi->mdio_addr);
 
 	if (!mdiodev)
 		return -1;
@@ -258,8 +240,6 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->tx_queues_cfg[6].weight = 0x0F;
 	plat->tx_queues_cfg[7].weight = 0x10;
 
-	plat->mdio_bus_data->phy_mask = 0;
-
 	plat->dma_cfg->pbl = 32;
 	plat->dma_cfg->pblx8 = true;
 	plat->dma_cfg->fixed_burst = 0;
@@ -302,6 +282,19 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->maxmtu = JUMBO_LEN;
 
 	if (plat->phy_interface == PHY_INTERFACE_MODE_SGMII) {
+		plat->xpcs_pdata = devm_kzalloc(&pdev->dev,
+						sizeof(*plat->xpcs_pdata),
+						GFP_KERNEL);
+		plat->xpcs_pdata->mode = DWXPCS_MODE_SGMII_AN;
+
+		plat->intel_bi = devm_kzalloc(&pdev->dev,
+					      sizeof(*plat->intel_bi),
+					      GFP_KERNEL);
+		plat->intel_bi->bus_id = "stmmac-1";
+		strncpy(plat->intel_bi->modalias, "dwxpcs", MDIO_NAME_SIZE);
+		plat->intel_bi->mdio_addr = 0x16;
+		plat->intel_bi->platform_data = plat->xpcs_pdata;
+
 		plat->setup_phy_conv = setup_intel_mgbe_phy_conv;
 		plat->remove_phy_conv = remove_intel_mgbe_phy_conv;
 		plat->has_serdes = 1;
@@ -545,6 +538,9 @@ static int tgl_common_data(struct pci_dev *pdev,
 	/* Maximum TX XDP queue */
 	plat->max_combined = 2;
 
+	/* WORKAROUND: TGL has to use DMA INTM 0 to avoid intermittent reset */
+	plat->dma_cfg->tgl_wa = 1;
+
 	/* TX and RX Marvell 88E2110 PHY latency (ns) */
 	plat->phy_tx_latency_10 = 6652;
 	plat->phy_tx_latency_100 = 1152;
@@ -765,8 +761,6 @@ static int snps_gmac5_default_data(struct pci_dev *pdev,
 	plat->force_sf_dma_mode = 1;
 	plat->tso_en = 1;
 	plat->pmt = 1;
-
-	plat->mdio_bus_data->phy_mask = 0;
 
 	/* Set default value for multicast hash bins */
 	plat->multicast_filter_bins = HASH_TABLE_SIZE;
@@ -1138,7 +1132,7 @@ static int __maybe_unused stmmac_pci_runtime_resume(struct device *dev)
 	return ret;
 }
 
-#define STMMAC_RUNTIME_SUSPEND_DELAY	2500
+#define STMMAC_RUNTIME_SUSPEND_DELAY	10000
 
 static int __maybe_unused stmmac_pci_runtime_idle(struct device *dev)
 {

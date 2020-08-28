@@ -94,6 +94,7 @@ struct stmmac_dma_cfg {
 	int mixed_burst;
 	bool aal;
 	bool multi_msi_en;
+	bool tgl_wa;
 };
 
 #define AXI_BLEN	7
@@ -172,9 +173,10 @@ struct plat_stmmacenet_data {
 	int (*init)(struct platform_device *pdev, void *priv);
 	void (*exit)(struct platform_device *pdev, void *priv);
 	struct mac_device_info *(*setup)(void *priv);
-	int (*setup_phy_conv)(struct mii_bus *bus, int irq,
-	     int phy_addr, bool speed_2500_en);
-	int (*remove_phy_conv)(struct mii_bus *bus);
+	int (*setup_phy_conv)(struct mii_bus *bus,
+			      struct mdio_board_info *bi);
+	int (*remove_phy_conv)(struct mii_bus *bus,
+			       struct mdio_board_info *bi);
 	void *bsp_priv;
 	struct clk *stmmac_clk;
 	struct clk *pclk;
@@ -260,5 +262,7 @@ struct plat_stmmacenet_data {
 	u64 xpcs_rx_latency_100;
 	u64 xpcs_rx_latency_10;
 	bool eee_timer;
+	struct mdio_board_info *intel_bi;
+	struct dwxpcs_platform_data *xpcs_pdata;
 };
 #endif

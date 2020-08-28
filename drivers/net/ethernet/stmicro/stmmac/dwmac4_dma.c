@@ -125,6 +125,22 @@ static void dwmac4_dma_init_channel(void __iomem *ioaddr,
 	       ioaddr + DMA_CHAN_INTR_ENA(chan));
 }
 
+static void dwmac410_dma_init_channel(void __iomem *ioaddr,
+				      struct stmmac_dma_cfg *dma_cfg, u32 chan)
+{
+	u32 value;
+
+	/* common channel control register config */
+	value = readl(ioaddr + DMA_CHAN_CONTROL(chan));
+	if (dma_cfg->pblx8)
+		value = value | DMA_BUS_MODE_PBL;
+	writel(value, ioaddr + DMA_CHAN_CONTROL(chan));
+
+	/* Mask interrupts by writing to CSR7 */
+	writel(DMA_CHAN_INTR_DEFAULT_MASK_4_10,
+	       ioaddr + DMA_CHAN_INTR_ENA(chan));
+}
+
 static void dwmac4_dma_init(void __iomem *ioaddr,
 			    struct stmmac_dma_cfg *dma_cfg, int atds)
 {
@@ -149,10 +165,9 @@ static void dwmac4_dma_init(void __iomem *ioaddr,
 
 	value = readl(ioaddr + DMA_BUS_MODE);
 
-	if (dma_cfg->multi_msi_en) {
-		value &= ~DMA_BUS_MODE_INTM_MASK;
-		value |= (DMA_BUS_MODE_INTM_MODE1 << DMA_BUS_MODE_INTM_SHIFT);
-	}
+	value &= ~DMA_BUS_MODE_INTM_MASK;
+	value |= (DMA_BUS_MODE_INTM_MODE0 << DMA_BUS_MODE_INTM_SHIFT);
+
 	writel(value, ioaddr + DMA_BUS_MODE);
 }
 
@@ -207,12 +222,9 @@ static void dwmac4_dump_dma_regs(void __iomem *ioaddr, u32 *reg_space)
 		_dwmac4_dump_dma_regs(ioaddr, i, reg_space);
 }
 
-static void dwmac4_rx_watchdog(void __iomem *ioaddr, u32 riwt, u32 number_chan)
+static void dwmac4_rx_watchdog(void __iomem *ioaddr, u32 riwt, u32 queue)
 {
-	u32 chan;
-
-	for (chan = 0; chan < number_chan; chan++)
-		writel(riwt, ioaddr + DMA_CHAN_RX_WATCHDOG(chan));
+	writel(riwt, ioaddr + DMA_CHAN_RX_WATCHDOG(queue));
 }
 
 static void dwmac4_dma_rx_chan_op_mode(void __iomem *ioaddr, int mode,
@@ -381,6 +393,7 @@ static void dwmac4_get_hw_feature(void __iomem *ioaddr,
 	dma_cap->hash_tb_sz = (hw_cap & GMAC_HW_HASH_TB_SZ) >> 24;
 	dma_cap->av = (hw_cap & GMAC_HW_FEAT_AVSEL) >> 20;
 	dma_cap->tsoen = (hw_cap & GMAC_HW_TSOEN) >> 18;
+	dma_cap->sphen = (hw_cap & GMAC_HW_FEAT_SPHEN) >> 17;
 
 	dma_cap->addr64 = (hw_cap & GMAC_HW_FEAT_ADDR64) >> 14;
 	switch (dma_cap->addr64) {
@@ -479,6 +492,22 @@ static void dwmac4_set_bfsize(void __iomem *ioaddr, int bfsize, u32 chan)
 	writel(value, ioaddr + DMA_CHAN_RX_CONTROL(chan));
 }
 
+static void dwmac4_enable_sph(void __iomem *ioaddr, bool en, u32 chan)
+{
+	u32 value = readl(ioaddr + GMAC_EXT_CONFIG);
+
+	value &= ~GMAC_CONFIG_HDSMS;
+	value |= GMAC_CONFIG_HDSMS_256; /* Segment max 256 bytes */
+	writel(value, ioaddr + GMAC_EXT_CONFIG);
+
+	value = readl(ioaddr + DMA_CHAN_CONTROL(chan));
+	if (en)
+		value |= DMA_CONTROL_SPH;
+	else
+		value &= ~DMA_CONTROL_SPH;
+	writel(value, ioaddr + DMA_CHAN_CONTROL(chan));
+}
+
 const struct stmmac_dma_ops dwmac4_dma_ops = {
 	.reset = dwmac4_dma_reset,
 	.init = dwmac4_dma_init,
@@ -505,12 +534,13 @@ const struct stmmac_dma_ops dwmac4_dma_ops = {
 	.enable_tso = dwmac4_enable_tso,
 	.qmode = dwmac4_qmode,
 	.set_bfsize = dwmac4_set_bfsize,
+	.enable_sph = dwmac4_enable_sph,
 };
 
 const struct stmmac_dma_ops dwmac410_dma_ops = {
 	.reset = dwmac4_dma_reset,
 	.init = dwmac4_dma_init,
-	.init_chan = dwmac4_dma_init_channel,
+	.init_chan = dwmac410_dma_init_channel,
 	.init_rx_chan = dwmac4_dma_init_rx_chan,
 	.init_tx_chan = dwmac4_dma_init_tx_chan,
 	.axi = dwmac4_dma_axi,
@@ -533,6 +563,7 @@ const struct stmmac_dma_ops dwmac410_dma_ops = {
 	.enable_tso = dwmac4_enable_tso,
 	.qmode = dwmac4_qmode,
 	.set_bfsize = dwmac4_set_bfsize,
+	.enable_sph = dwmac4_enable_sph,
 };
 
 static void dwmac5_dma_init_tx_chan(void __iomem *ioaddr,
@@ -579,7 +610,7 @@ static int dwmac5_enable_tbs(void __iomem *ioaddr, bool en, u32 chan)
 const struct stmmac_dma_ops dwmac5_dma_ops = {
 	.reset = dwmac4_dma_reset,
 	.init = dwmac4_dma_init,
-	.init_chan = dwmac4_dma_init_channel,
+	.init_chan = dwmac410_dma_init_channel,
 	.init_rx_chan = dwmac4_dma_init_rx_chan,
 	.init_tx_chan = dwmac5_dma_init_tx_chan,
 	.axi = dwmac4_dma_axi,
@@ -603,4 +634,5 @@ const struct stmmac_dma_ops dwmac5_dma_ops = {
 	.qmode = dwmac4_qmode,
 	.set_bfsize = dwmac4_set_bfsize,
 	.enable_tbs = dwmac5_enable_tbs,
+	.enable_sph = dwmac4_enable_sph,
 };

@@ -10,6 +10,7 @@
 *******************************************************************************/
 
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/delay.h>
 #include "common.h"
 #include "stmmac_ptp.h"
@@ -66,7 +67,6 @@ static void config_sub_second_increment(void __iomem *ioaddr,
 
 static int init_systime(void __iomem *ioaddr, u32 sec, u32 nsec)
 {
-	int limit;
 	u32 value;
 
 	writel(sec, ioaddr + PTP_STSUR);
@@ -77,16 +77,9 @@ static int init_systime(void __iomem *ioaddr, u32 sec, u32 nsec)
 	writel(value, ioaddr + PTP_TCR);
 
 	/* wait for present system time initialize to complete */
-	limit = 10;
-	while (limit--) {
-		if (!(readl(ioaddr + PTP_TCR) & PTP_TCR_TSINIT))
-			break;
-		mdelay(10);
-	}
-	if (limit < 0)
-		return -EBUSY;
-
-	return 0;
+	return readl_poll_timeout(ioaddr + PTP_TCR, value,
+				 !(value & PTP_TCR_TSINIT),
+				 10000, 100000);
 }
 
 static int config_addend(void __iomem *ioaddr, u32 addend)
@@ -172,7 +165,7 @@ static void get_systime(void __iomem *ioaddr, u64 *systime)
 static void get_arttime(struct mii_bus *mii, int intel_adhoc_addr,
 			u64 *art_time)
 {
-	u64 ns;
+	int ns;
 
 	ns = mdiobus_read(mii, intel_adhoc_addr, PMC_ART_VALUE3);
 	ns <<= GMAC4_ART_TIME_SHIFT;
@@ -185,7 +178,7 @@ static void get_arttime(struct mii_bus *mii, int intel_adhoc_addr,
 
 	ns |= mdiobus_read(mii, intel_adhoc_addr, PMC_ART_VALUE0);
 
-	*art_time = ns;
+	*art_time = (u64)ns;
 }
 
 static void get_ptptime(void __iomem *ptpaddr, u64 *ptp_time)

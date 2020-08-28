@@ -2,6 +2,7 @@
 #ifndef DW_SPI_HEADER_H
 #define DW_SPI_HEADER_H
 
+#include <linux/irqreturn.h>
 #include <linux/io.h>
 #include <linux/scatterlist.h>
 #include <linux/gpio.h>
@@ -118,7 +119,7 @@ enum dw_ssi_mwmod {
 
 struct dw_spi;
 struct dw_spi_dma_ops {
-	int (*dma_init)(struct dw_spi *dws);
+	int (*dma_init)(struct device *dev, struct dw_spi *dws);
 	void (*dma_exit)(struct dw_spi *dws);
 	int (*dma_setup)(struct dw_spi *dws, struct spi_transfer *xfer);
 	bool (*can_dma)(struct spi_controller *master, struct spi_device *spi,
@@ -285,5 +286,6 @@ extern u32 dw_spi_update_cr0_v1_01a(struct spi_controller *master,
 				    struct spi_transfer *transfer);
 
 /* platform related setup */
-extern int dw_spi_mid_init(struct dw_spi *dws); /* Intel MID platforms */
+extern int dw_spi_mid_init_mfld(struct dw_spi *dws);
+
 #endif /* DW_SPI_HEADER_H */

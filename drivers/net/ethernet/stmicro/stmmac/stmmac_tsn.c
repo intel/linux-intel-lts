@@ -178,8 +178,8 @@ int tsn_init(struct mac_device_info *hw, struct net_device *dev)
 	}
 
 	gcl_depth = tsnif_est_get_gcl_depth(hw, ioaddr);
-	if (gcl_depth < 0) {
-		dev_err(pdev, "EST GCL depth(%d) < 0\n", gcl_depth);
+	if (gcl_depth == 0) {
+		dev_err(pdev, "EST GCL depth(%d) = 0\n", gcl_depth);
 		cap->est_support = 0;
 		return -EINVAL;
 	}
@@ -1257,7 +1257,7 @@ int tsn_fpe_get_config(struct mac_device_info *hw, struct net_device *dev,
 int tsn_fpe_show_pmac_sts(struct mac_device_info *hw, struct net_device *dev)
 {
 	void __iomem *ioaddr = hw->pcsr;
-	u32 hrs;
+	u32 hrs = 0;
 
 	if (!tsn_has_feat(hw, dev, TSN_FEAT_ID_FPE)) {
 		netdev_info(dev, "FPE: feature unsupported\n");

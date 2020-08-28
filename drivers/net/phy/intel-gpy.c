@@ -273,6 +273,9 @@ static int gpy_set_wol(struct phy_device *phydev,
 
 		if (ret < 0)
 			return ret;
+
+		/* Clear the interrupt status register */
+		ret = phy_read(phydev, GPY_ISTAT);
 	} else {
 		/* Disable the link state change interrupt */
 		ret = phy_clear_bits(phydev, GPY_IMASK, GPY_INTR_LSTC);
