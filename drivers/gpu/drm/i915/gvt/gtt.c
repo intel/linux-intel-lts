@@ -2883,11 +2883,12 @@ void intel_gvt_save_ggtt(struct intel_gvt *gvt)
 
 		index = vgpu_aperture_gmadr_base(vgpu) >> PAGE_SHIFT;
 		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
-		memcpy(vgpu->ggtt_entries, addr, num_low);
+		memcpy_fromio(vgpu->ggtt_entries, addr, num_low * sizeof(u64));
 
 		index = vgpu_hidden_gmadr_base(vgpu) >> PAGE_SHIFT;
 		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
-		memcpy((u64 *)vgpu->ggtt_entries + num_low, addr, num_hi);
+		memcpy_fromio(vgpu->ggtt_entries + num_low, addr,
+			      num_hi * sizeof(u64));
 	}
 }
 
@@ -2917,10 +2918,11 @@ void intel_gvt_restore_ggtt(struct intel_gvt *gvt)
 
 		index = vgpu_aperture_gmadr_base(vgpu) >> PAGE_SHIFT;
 		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
-		memcpy(addr, vgpu->ggtt_entries, num_low);
+		memcpy_toio(addr, vgpu->ggtt_entries, num_low * sizeof(u64));
 		index = vgpu_hidden_gmadr_base(vgpu) >> PAGE_SHIFT;
 		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
-		memcpy(addr, (u64 *)vgpu->ggtt_entries + num_low, num_hi);
+		memcpy_toio(addr, vgpu->ggtt_entries + num_low,
+			    num_hi * sizeof(u64));
 
 		vfree(vgpu->ggtt_entries);
 		vgpu->ggtt_entries = NULL;
