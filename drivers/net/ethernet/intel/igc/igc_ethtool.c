@@ -1896,7 +1896,8 @@ static void igc_ethtool_diag_test(struct net_device *netdev,
 }
 
 static const struct ethtool_ops igc_ethtool_ops = {
-	.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
+	/* Resolve conflict with patch - net: igc: let core reject the unsupported coalescing parameters
+	.supported_coalesce_params = ETHTOOL_COALESCE_USECS, */
 	.get_drvinfo		= igc_ethtool_get_drvinfo,
 	.get_regs_len		= igc_ethtool_get_regs_len,
 	.get_regs		= igc_ethtool_get_regs,
