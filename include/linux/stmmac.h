@@ -98,6 +98,7 @@ struct stmmac_dma_cfg {
 	bool eame;
 	bool multi_msi_en;
 	bool dche;
+	bool pch_intr_wa;
 };
 
 #define AXI_BLEN	7
