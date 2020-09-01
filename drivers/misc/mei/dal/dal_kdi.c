@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright(c) 2016-2019, Intel Corporation.
+ * Copyright(c) 2016-2020, Intel Corporation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
@@ -371,10 +371,14 @@ EXPORT_SYMBOL(dal_close_session);
  *         -ENOMEM on memory allocation failure
  *         -EPERM when ta is owned by another client
  *         -EEXIST when ta is already owned by current client
+ *         -EINVAL when ta_id is NULL
  */
 int dal_set_ta_exclusive_access(const uuid_t *ta_id)
 {
 	int ret;
+
+	if (!ta_id)
+		return -EINVAL;
 
 	mutex_lock(&dal_kdi_lock);
 
@@ -394,10 +398,14 @@ EXPORT_SYMBOL(dal_set_ta_exclusive_access);
  *         -ENODEV when the device can't be found
  *         -ENOENT when ta isn't found in exclusiveness ta list
  *         -EPERM when ta is owned by another client
+ *         -EINVAL when ta_id is NULL
  */
 int dal_unset_ta_exclusive_access(const uuid_t *ta_id)
 {
 	int ret;
+
+	if (!ta_id)
+		return -EINVAL;
 
 	mutex_lock(&dal_kdi_lock);
 
