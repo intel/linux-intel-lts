@@ -611,6 +611,44 @@ create_vm_fail:
 		break;
 	}
 
+	case IC_CREATE_HV_VDEV: {
+		struct acrn_emul_dev *dev;
+
+		dev = acrn_mempool_alloc(GFP_KERNEL);
+		if (dev == NULL)
+			return -EFAULT;
+		if (copy_from_user(dev, (void *)ioctl_param, sizeof(*dev))) {
+			ret = -EFAULT;
+		} else {
+			ret = hcall_create_vdev(vm->vmid,
+					virt_to_phys(dev));
+			if (ret < 0)
+				pr_err("vhm: failed to create emulated device!\n");
+		}
+		acrn_mempool_free(dev);
+		break;
+	}
+
+	case IC_DESTROY_HV_VDEV: {
+		struct acrn_emul_dev *dev;
+
+		dev = acrn_mempool_alloc(GFP_KERNEL);
+		if (dev == NULL)
+			return -EFAULT;
+
+		if (copy_from_user(dev, (void *)ioctl_param, sizeof(*dev))) {
+			ret = -EFAULT;
+		} else {
+			ret = hcall_destroy_vdev(vm->vmid,
+					virt_to_phys(dev));
+			if (ret < 0)
+				pr_err("vhm: failed to destroy emulated device!\n");
+					 break;
+		}
+		acrn_mempool_free(dev);
+		break;
+	}
+
 	case IC_SET_PTDEV_INTR_INFO: {
 		struct hc_ptdev_irq *hc_pt_irq;
 

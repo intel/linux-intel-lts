@@ -165,7 +165,7 @@ static void get_systime(void __iomem *ioaddr, u64 *systime)
 static void get_arttime(struct mii_bus *mii, int intel_adhoc_addr,
 			u64 *art_time)
 {
-	int ns;
+	u64 ns;
 
 	ns = mdiobus_read(mii, intel_adhoc_addr, PMC_ART_VALUE3);
 	ns <<= GMAC4_ART_TIME_SHIFT;
@@ -178,7 +178,7 @@ static void get_arttime(struct mii_bus *mii, int intel_adhoc_addr,
 
 	ns |= mdiobus_read(mii, intel_adhoc_addr, PMC_ART_VALUE0);
 
-	*art_time = (u64)ns;
+	*art_time = ns;
 }
 
 static void get_ptptime(void __iomem *ptpaddr, u64 *ptp_time)

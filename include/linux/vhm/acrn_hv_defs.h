@@ -117,6 +117,8 @@
 #define HC_DEASSIGN_PCIDEV          _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x06)
 #define HC_ASSIGN_MMIODEV           _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x07)
 #define HC_DEASSIGN_MMIODEV         _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x08)
+#define HC_CREATE_VDEV              _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x09)
+#define HC_DESTROY_VDEV             _HC_ID(HC_ID, HC_ID_PCI_BASE + 0x0A)
 
 /* DEBUG */
 #define HC_ID_DBG_BASE              0x60UL

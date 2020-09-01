@@ -721,6 +721,16 @@ static struct phy_driver mv3310_drivers[] = {
 		.set_loopback	= m88e2110_loopback,
 		.get_wol	= &m88e2110_get_wol,
 		.set_wol	= &m88e2110_set_wol,
+		.latencies	= {
+					.tx_latency_2500 = 3600,
+					.tx_latency_1000 = 297,
+					.tx_latency_100	 = 1152,
+					.tx_latency_10	 = 6652,
+					.rx_latency_2500 = 3600,
+					.rx_latency_1000 = 405,
+					.rx_latency_100	 = 1472,
+					.rx_latency_10	 = 12490,
+				  },
 	},
 };
 

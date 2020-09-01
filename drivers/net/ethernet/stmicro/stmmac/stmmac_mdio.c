@@ -427,6 +427,23 @@ int stmmac_mdio_register(struct net_device *ndev)
 
 		phy_attached_info(phydev);
 		found = 1;
+
+		priv->plat->phy_tx_latency_10 =
+					phydev->drv->latencies.tx_latency_10;
+		priv->plat->phy_tx_latency_100 =
+					phydev->drv->latencies.tx_latency_100;
+		priv->plat->phy_tx_latency_1000 =
+					phydev->drv->latencies.tx_latency_1000;
+		priv->plat->phy_tx_latency_2500 =
+					phydev->drv->latencies.tx_latency_2500;
+		priv->plat->phy_rx_latency_10 =
+					phydev->drv->latencies.rx_latency_10;
+		priv->plat->phy_rx_latency_100 =
+					phydev->drv->latencies.rx_latency_100;
+		priv->plat->phy_rx_latency_1000 =
+					phydev->drv->latencies.rx_latency_1000;
+		priv->plat->phy_rx_latency_2500 =
+					phydev->drv->latencies.rx_latency_2500;
 	}
 
 	if (!found && !mdio_node) {

@@ -187,6 +187,7 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->tsn_est_en = 1;
 	plat->tsn_fpe_en = 1;
 	plat->tsn_tbs_en = 1;
+	plat->sph_en = 0;
 	/* FPE HW Tunable */
 	plat->fprq = 1;
 	plat->afsz = 0;  /* Adjustable Fragment Size */
@@ -321,6 +322,8 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->ext_snapshot_num = AUX_SNAPSHOT0;
 	plat->int_snapshot_en = 0;
 	plat->ext_snapshot_en = 0;
+
+	plat->phy_wol_thru_pmc = 1;
 
 	return 0;
 }
@@ -1118,6 +1121,10 @@ static int __maybe_unused stmmac_pci_runtime_resume(struct device *dev)
 	ndev = dev_get_drvdata(&pdev->dev);
 	priv = netdev_priv(ndev);
 
+	ret = stmmac_pci_resume(dev);
+	if (!ret)
+		dev_info(dev, "%s: Device is runtime resumed.\n", __func__);
+
 	rtnl_lock();
 	/* Restore saved WoL operation */
 	wol.wolopts = priv->saved_wolopts;
@@ -1125,9 +1132,8 @@ static int __maybe_unused stmmac_pci_runtime_resume(struct device *dev)
 	priv->saved_wolopts = 0;
 	rtnl_unlock();
 
-	ret = stmmac_pci_resume(dev);
-	if (!ret)
-		dev_info(dev, "%s: Device is runtime resumed.\n", __func__);
+	if (!wol.wolopts)
+		device_set_wakeup_enable(priv->device, 0);
 
 	return ret;
 }

@@ -6774,7 +6774,7 @@ int stmmac_dvr_probe(struct device *device,
 		dev_info(priv->device, "TSO feature enabled\n");
 	}
 
-	if (priv->dma_cap.sphen) {
+	if (priv->dma_cap.sphen && priv->plat->sph_en) {
 		ndev->hw_features |= NETIF_F_GRO;
 		priv->sph = true;
 		dev_info(priv->device, "SPH feature enabled\n");
@@ -6924,16 +6924,15 @@ int stmmac_dvr_probe(struct device *device,
 		return ret;
 #endif
 
+#ifdef CONFIG_PM
 	/* To support runtime PM, we need to make sure usage_count is equal to 0
 	 * when runtime_auto flag is set. Otherwise, it should be equal to 1.
 	 */
-	if (priv->device->power.runtime_auto) {
-		while (atomic_read(&priv->device->power.usage_count) > 0)
-			pm_runtime_put_noidle(device);
-	} else {
-		while (atomic_read(&priv->device->power.usage_count) > 1)
-			pm_runtime_put_noidle(device);
-	}
+	if (priv->device->power.runtime_auto)
+		atomic_set(&priv->device->power.usage_count, 0);
+	else
+		atomic_set(&priv->device->power.usage_count, 1);
+#endif
 
 	return ret;
 
@@ -7076,10 +7075,12 @@ int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
 	if (priv->plat->has_serdes)
 		stmmac_serdes_powerdown(priv, ndev);
 
-	/* Enable Power down mode by programming the PMT regs */
 	if (device_may_wakeup(priv->device)) {
-		stmmac_pmt(priv, priv->hw, priv->wolopts);
-		priv->irq_wake = 1;
+		/* Enable Power Down mode by programming the PMT regs. */
+		if (!priv->plat->phy_wol_thru_pmc) {
+			stmmac_pmt(priv, priv->hw, priv->wolopts);
+			priv->irq_wake = 1;
+		}
 	} else {
 		mutex_unlock(&priv->lock);
 		rtnl_lock();
@@ -7167,10 +7168,12 @@ int stmmac_suspend(struct device *dev)
 	if (priv->plat->has_serdes)
 		stmmac_serdes_powerdown(priv, ndev);
 
-	/* Enable Power down mode by programming the PMT regs */
 	if (device_may_wakeup(priv->device)) {
-		stmmac_pmt(priv, priv->hw, priv->wolopts);
-		priv->irq_wake = 1;
+		/* Enable Power Down mode by programming the PMT regs.*/
+		if (!priv->plat->phy_wol_thru_pmc) {
+			stmmac_pmt(priv, priv->hw, priv->wolopts);
+			priv->irq_wake = 1;
+		}
 	} else {
 		mutex_unlock(&priv->lock);
 		rtnl_lock();

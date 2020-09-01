@@ -183,6 +183,16 @@ inline long hcall_deassign_mmiodev(unsigned long vmid, unsigned long addr)
 	return acrn_hypercall2(HC_DEASSIGN_MMIODEV, vmid, addr);
 }
 
+inline long hcall_create_vdev(unsigned long vmid, unsigned long addr)
+{
+	return acrn_hypercall2(HC_CREATE_VDEV, vmid, addr);
+}
+
+inline long hcall_destroy_vdev(unsigned long vmid, unsigned long addr)
+{
+	return acrn_hypercall2(HC_DESTROY_VDEV, vmid, addr);
+}
+
 inline long hcall_set_ptdev_intr_info(unsigned long vmid, unsigned long pt_irq)
 {
 	return acrn_hypercall2(HC_SET_PTDEV_INTR_INFO, vmid, pt_irq);
