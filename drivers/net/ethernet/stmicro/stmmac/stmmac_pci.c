@@ -355,6 +355,8 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 204860000;
 
+	plat->dma_cfg->pch_intr_wa = 1;
+
 	return ehl_common_data(pdev, plat);
 }
 
@@ -370,6 +372,8 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 200000000;
+
+	plat->dma_cfg->pch_intr_wa = 1;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -555,6 +559,8 @@ static int tgl_common_data(struct pci_dev *pdev,
 	ret = intel_mgbe_common_data(pdev, plat);
 	if (ret)
 		return ret;
+
+	plat->dma_cfg->pch_intr_wa = 1;
 
 	return 0;
 }
