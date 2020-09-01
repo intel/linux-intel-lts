@@ -125,7 +125,8 @@ static void dal_recv_cb(struct mei_cl_device *cldev)
 	bool is_unexpected_msg = false;
 
 	ddev = mei_cldev_get_drvdata(cldev);
-
+	if (!ddev)
+		return;
 	/*
 	 * read the msg from MEI
 	 */
@@ -216,6 +217,9 @@ static int dal_mei_enable(struct dal_device *ddev)
 		return ret;
 	}
 
+	/* save pointer to the context in the device */
+	mei_cldev_set_drvdata(ddev->cldev, ddev);
+
 	/* register to mei bus callbacks */
 	ret = mei_cldev_register_rx_cb(ddev->cldev, dal_recv_cb);
 	if (ret) {
@@ -223,9 +227,6 @@ static int dal_mei_enable(struct dal_device *ddev)
 			ret);
 		goto err;
 	}
-
-	/* save pointer to the context in the device */
-	mei_cldev_set_drvdata(ddev->cldev, ddev);
 
 	return 0;
 err:
