@@ -118,6 +118,7 @@ static const char * const tb_security_names[] = {
 	[TB_SECURITY_SECURE] = "secure",
 	[TB_SECURITY_DPONLY] = "dponly",
 	[TB_SECURITY_USBONLY] = "usbonly",
+	[TB_SECURITY_NOPCIE] = "nopcie",
 };
 
 static ssize_t boot_acl_show(struct device *dev, struct device_attribute *attr,
