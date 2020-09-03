@@ -2763,7 +2763,8 @@ static int nested_vmx_check_vmcs_link_ptr(struct kvm_vcpu *vcpu,
 static int nested_check_guest_non_reg_state(struct vmcs12 *vmcs12)
 {
 	if (CC(vmcs12->guest_activity_state != GUEST_ACTIVITY_ACTIVE &&
-	       vmcs12->guest_activity_state != GUEST_ACTIVITY_HLT))
+	       vmcs12->guest_activity_state != GUEST_ACTIVITY_HLT &&
+	       vmcs12->guest_activity_state != GUEST_ACTIVITY_WAIT_SIPI))
 		return -EINVAL;
 
 	return 0;
@@ -3282,7 +3283,8 @@ static int nested_vmx_run(struct kvm_vcpu *vcpu, bool launch)
 	 * awakened by event injection or by an NMI-window VM-exit or
 	 * by an interrupt-window VM-exit, halt the vcpu.
 	 */
-	if ((vmcs12->guest_activity_state == GUEST_ACTIVITY_HLT) &&
+	if (((vmcs12->guest_activity_state == GUEST_ACTIVITY_HLT) ||
+	    (vmcs12->guest_activity_state == GUEST_ACTIVITY_WAIT_SIPI)) &&
 	    !(vmcs12->vm_entry_intr_info_field & INTR_INFO_VALID_MASK) &&
 	    !(vmcs12->cpu_based_vm_exec_control & CPU_BASED_VIRTUAL_NMI_PENDING) &&
 	    !((vmcs12->cpu_based_vm_exec_control & CPU_BASED_VIRTUAL_INTR_PENDING) &&
@@ -3467,14 +3469,27 @@ static int vmx_check_nested_events(struct kvm_vcpu *vcpu)
 	bool block_nested_events =
 	    vmx->nested.nested_run_pending || kvm_event_needs_reinjection(vcpu);
 	struct kvm_lapic *apic = vcpu->arch.apic;
+	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
 
 	if (lapic_in_kernel(vcpu) &&
 		test_bit(KVM_APIC_INIT, &apic->pending_events)) {
 		if (block_nested_events)
 			return -EBUSY;
 		clear_bit(KVM_APIC_INIT, &apic->pending_events);
-		nested_vmx_vmexit(vcpu, EXIT_REASON_INIT_SIGNAL, 0, 0);
+		if (vmcs12->guest_activity_state != GUEST_ACTIVITY_WAIT_SIPI)
+			nested_vmx_vmexit(vcpu, EXIT_REASON_INIT_SIGNAL, 0, 0);
 		return 0;
+	}
+
+	if (lapic_in_kernel(vcpu) &&
+	    test_bit(KVM_APIC_SIPI, &apic->pending_events)) {
+		if (block_nested_events)
+			return -EBUSY;
+
+		clear_bit(KVM_APIC_SIPI, &apic->pending_events);
+		if (vmcs12->guest_activity_state == GUEST_ACTIVITY_WAIT_SIPI)
+			nested_vmx_vmexit(vcpu, EXIT_REASON_SIPI_SIGNAL, 0,
+						apic->sipi_vector & 0xFFUL);
 	}
 
 	if (vcpu->arch.exception.pending &&
@@ -5984,7 +5999,8 @@ void nested_vmx_setup_ctls_msrs(struct nested_vmx_msrs *msrs, u32 ept_caps)
 	msrs->misc_low |=
 		MSR_IA32_VMX_MISC_VMWRITE_SHADOW_RO_FIELDS |
 		VMX_MISC_EMULATED_PREEMPTION_TIMER_RATE |
-		VMX_MISC_ACTIVITY_HLT;
+		VMX_MISC_ACTIVITY_HLT |
+		VMX_MISC_ACTIVITY_WAIT_SIPI;
 	msrs->misc_high = 0;
 
 	/*
