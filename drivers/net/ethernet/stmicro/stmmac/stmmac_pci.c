@@ -541,9 +541,6 @@ static int tgl_common_data(struct pci_dev *pdev,
 	/* Maximum TX XDP queue */
 	plat->max_combined = 2;
 
-	/* WORKAROUND: TGL has to use DMA INTM 0 to avoid intermittent reset */
-	plat->dma_cfg->tgl_wa = 1;
-
 	/* TX and RX Marvell 88E2110 PHY latency (ns) */
 	plat->phy_tx_latency_10 = 6652;
 	plat->phy_tx_latency_100 = 1152;
