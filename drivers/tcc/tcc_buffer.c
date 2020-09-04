@@ -175,9 +175,11 @@ static struct memory_slot_info *tcc_get_memslot(u32 minor)
 	struct memory_slot_info *p_slot;
 
 	list_for_each_entry(p_psram, &p_tcc_config->psrams, node) {
-		list_for_each_entry(p_slot, &p_psram->memslots, node) {
-			if (p_slot->minor == minor)
-				return p_slot;
+		if (p_psram->config.size > 0) {
+			list_for_each_entry(p_slot, &p_psram->memslots, node) {
+				if (p_slot->minor == minor)
+					return p_slot;
+			}
 		}
 	}
 	return NULL;
@@ -386,7 +388,7 @@ static u32 tcc_allocate_memslot(u32 id, size_t size)
 	mutex_lock(&tccbuffer_mutex);
 
 	list_for_each_entry(p_psram, &p_tcc_config->psrams, node) {
-		if (p_psram->config.id == id) {
+		if ((p_psram->config.id == id) && (p_psram->config.size > 0)) {
 			list_for_each_entry(p_slot, &p_psram->memslots, node) {
 				if (p_slot->status == MEM_FREE && p_slot->size >= size) {
 					found = 1;
@@ -645,16 +647,17 @@ static void tcc_cleanup(void)
 	struct memory_slot_info *p_slot, *p_temp_slot;
 
 	list_for_each_entry_safe(p_psram, p_temp_psram, &p_tcc_config->psrams, node) {
-		list_for_each_entry_safe(p_slot, p_temp_slot, &p_psram->memslots, node) {
-			if (p_slot->status != MEM_FREE)
-				device_destroy(tcc_buffer_class, MKDEV(tcc_buffer_device_major, p_slot->minor));
+		if (p_psram->config.size > 0) {
+			list_for_each_entry_safe(p_slot, p_temp_slot, &p_psram->memslots, node) {
+				if (p_slot->status != MEM_FREE)
+					device_destroy(tcc_buffer_class, MKDEV(tcc_buffer_device_major, p_slot->minor));
 
-			list_del(&p_slot->node);
-			kfree(p_slot);
+				list_del(&p_slot->node);
+				kfree(p_slot);
+			}
+			if ((p_psram->vaddr) && (p_psram->config.size > 0))
+				memunmap(p_psram->vaddr);
 		}
-		if (p_psram->vaddr)
-			memunmap(p_psram->vaddr);
-
 		list_del(&p_psram->node);
 		kfree(p_psram);
 	}
