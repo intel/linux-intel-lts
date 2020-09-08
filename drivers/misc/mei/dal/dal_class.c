@@ -560,9 +560,11 @@ void dal_dc_destroy(struct dal_device *ddev, enum dal_intf intf)
 	if (!dc)
 		return;
 
+	ddev->clients[intf] = NULL;
+
+	list_del_init(&dc->wrlink);
 	kfifo_free(&dc->read_queue);
 	kfree(dc);
-	ddev->clients[intf] = NULL;
 }
 
 /**
