@@ -369,3 +369,29 @@ int restore_signal_shadow_stack(void)
 
 	return err;
 }
+
+unsigned long cet_alloc_shstk(unsigned long len)
+{
+	unsigned long token;
+	unsigned long addr, ssp;
+
+	addr = alloc_shstk(round_up(len, PAGE_SIZE));
+
+	if (IS_ERR_VALUE(addr))
+		return addr;
+
+	/* Restore token is 8 bytes and aligned to 8 bytes */
+	ssp = addr + len;
+	token = ssp;
+
+	if (!in_ia32_syscall())
+		token |= BIT(0);
+	ssp -= 8;
+
+	if (write_user_shstk_64((u64 __user *)ssp, (u64)token)) {
+		vm_munmap(addr, len);
+		return -EINVAL;
+	}
+
+	return addr;
+}
