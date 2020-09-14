@@ -693,38 +693,38 @@ static long vpusmm_session_ptr2vpu(struct vpusmm_session *sess, unsigned long *a
 
 	mm = get_task_mm(task);
 	if (!mm) {
-		pr_info("[vpusmm]: failed at line %d\n", __LINE__);
+		pr_debug("[vpusmm]: failed at line %d\n", __LINE__);
 		goto failed;
 	}
 	down_read(&mm->mmap_sem);
 
 	vma = find_vma(mm, vaddr);
 	if (!vma) {
-		pr_info("[vpusmm]: failed at line %d\n", __LINE__);
+		pr_debug("[vpusmm]: failed at line %d\n", __LINE__);
 		goto failed;
 	}
 
 	if (vaddr < vma->vm_start) {
-		pr_info("[vpusmm]: failed at line %d, vaddr=%lx, vma->vm_start=%lx\n", __LINE__, vaddr, vma->vm_start);
+		pr_debug("[vpusmm]: failed at line %d, vaddr=%lx, vma->vm_start=%lx\n", __LINE__, vaddr, vma->vm_start);
 		goto failed;
 	}
 
 	// make sure the vma is backed by a dmabuf
 	if (vma->vm_file == NULL) {
-		pr_info("[vpusmm]: failed at line %d\n", __LINE__);
+		pr_debug("[vpusmm]: failed at line %d\n", __LINE__);
 		goto failed;
 	}
 
 	dmabuf = vma->vm_file->private_data;
 	if (dmabuf == NULL) {
-		pr_info("[vpusmm]: failed at line %d\n", __LINE__);
+		pr_debug("[vpusmm]: failed at line %d\n", __LINE__);
 		goto failed;
 	}
 
 	// how do we know it's a dmabuf backed file?
 	// our imported dmabuf rbtree should have it inserted
 	if (dmabuf->file != vma->vm_file) {
-		pr_info("[vpusmm]: failed at line %d\n", __LINE__);
+		pr_debug("[vpusmm]: failed at line %d\n", __LINE__);
 		goto failed;
 	}
 	up_read(&mm->mmap_sem);
@@ -735,7 +735,7 @@ static long vpusmm_session_ptr2vpu(struct vpusmm_session *sess, unsigned long *a
 	mutex_unlock(&sess->imp_rb_lock);
 
 	if (!item) {
-		pr_info("[vpusmm]: failed to find the dmabuf in imported list for vaddr=0x%lx (%d)\n",
+		pr_debug("[vpusmm]: failed to find the dmabuf in imported list for vaddr=0x%lx (%d)\n",
 			vaddr, __LINE__);
 		return -EFAULT;
 	}
