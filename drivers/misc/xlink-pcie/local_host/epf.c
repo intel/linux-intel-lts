@@ -12,6 +12,7 @@
 #include <linux/reboot.h>
 
 #include "epf.h"
+#include "../common/boot.h"
 
 #define BAR2_MIN_SIZE			SZ_16K
 #define BAR4_MIN_SIZE			SZ_16K
@@ -200,6 +201,7 @@ static void intel_xpcie_cleanup_bars(struct pci_epf *epf)
 
 	intel_xpcie_cleanup_bar(epf, BAR_2);
 	intel_xpcie_cleanup_bar(epf, BAR_4);
+	xpcie_epf->xpcie.io_comm = NULL;
 	xpcie_epf->xpcie.mmio = NULL;
 	xpcie_epf->xpcie.bar4 = NULL;
 }
@@ -255,7 +257,8 @@ static int intel_xpcie_setup_bars(struct pci_epf *epf, size_t align)
 	}
 
 	xpcie_epf->comm_bar = BAR_2;
-	xpcie_epf->xpcie.mmio = (void *)xpcie_epf->vaddr[BAR_2] +
+	xpcie_epf->xpcie.io_comm = xpcie_epf->vaddr[BAR_2];
+	xpcie_epf->xpcie.mmio = (void *)xpcie_epf->xpcie.io_comm +
 				XPCIE_MMIO_OFFSET;
 
 	xpcie_epf->bar4 = BAR_4;

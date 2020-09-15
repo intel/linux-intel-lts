@@ -12,6 +12,8 @@
 #include "core.h"
 #include "xpcie.h"
 
+extern int intel_xpcie_pci_boot_device(u32 id, const char *binary_name);
+
 /* Define xpcie driver interface API */
 int xlink_pcie_get_device_list(u32 *sw_device_id_list, u32 *num_devices)
 {
@@ -72,7 +74,11 @@ EXPORT_SYMBOL(xlink_pcie_get_device_status);
 
 int xlink_pcie_boot_device(u32 sw_device_id, const char *binary_name)
 {
+#ifdef XLINK_PCIE_REMOTE
+	return intel_xpcie_pci_boot_device(sw_device_id, binary_name);
+#else
 	return 0;
+#endif
 }
 EXPORT_SYMBOL(xlink_pcie_boot_device);
 
