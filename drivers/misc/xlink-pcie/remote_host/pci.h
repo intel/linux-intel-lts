@@ -16,6 +16,7 @@
 #include <linux/xlink_drv_inf.h>
 #include "../common/xpcie.h"
 #include "../common/util.h"
+#include "../common/boot.h"
 
 #define XPCIE_DRIVER_NAME "mxlk"
 #define XPCIE_DRIVER_DESC "Intel(R) Keem Bay XLink PCIe driver"
@@ -36,6 +37,12 @@ struct xpcie_dev {
 	wait_queue_head_t waitqueue;
 	bool irq_enabled;
 	irq_handler_t core_irq_callback;
+
+	void *dma_buf;
+	size_t dma_buf_offset;
+
+	char partition_name[XPCIE_BOOT_DEST_STRLEN];
+	unsigned long partition_offset;
 
 	struct xpcie xpcie;
 	xlink_device_event event_fn;
