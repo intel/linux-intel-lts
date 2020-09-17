@@ -4,15 +4,6 @@
 # CVE-2019-11811
 0001-ipmi_si-fix-use-after-free-of-resource-name-CVE-2019-11811.patch
 
-# CVE-2018-8043
-0001-net-phy-mdio-bcm-unimac-fix-potential-NULL-dereferen-CVE-2018-8043.patch
-
-# CVE-2018-13094
-0001-xfs-don-t-call-xfs_da_shrink_inode-with-NULL-bp-CVE-2018-13094.patch
-
-# CVE-2018-13093
-0001-xfs-validate-cached-inodes-are-free-when-allocated-CVE-2018-13093.patch
-
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
 
@@ -28,17 +19,8 @@
 # CVE-2019-12455
 0002-clk-sunxi-fix-a-missing-check-bug-in-sunxi_divs_clk_CVE-2019-12455.patch
 
-# CVE-2019-19073
-0001-ath9k_htc-release-allocated-buffer-if-timed-out.patch
-
-# CVE-2019-19074
-0001-ath9k-release-allocated-buffer-if-timed-out.patch
-
 # CVE-2019-18808
 0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
-
-# CVE-2019-19054
-0001-media-rc-prevent-memory-leak-in-cx23888_ir_probe.patch
 
 # CVE-2019-19060
 0001-iio-imu-adis16400-release-allocated-memory-on-failur.patch
@@ -65,6 +47,3 @@
 
 # CVE-2020-15780
 0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
-
-# CVE-2020-16166
-0001-random32-update-the-net-random-state-on-interrupt-an.patch
