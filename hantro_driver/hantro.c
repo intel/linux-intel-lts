@@ -56,6 +56,9 @@
 #define DBG(...)
 #endif
 
+#define PIXEL_CMA 0
+#define CODEC_RESERVED 1
+
 #define DRIVER_NAME	"hantro"
 #define DRIVER_DESC	"hantro DRM"
 #define DRIVER_DATE	"20200526"
@@ -168,7 +171,9 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	struct drm_gem_hantro_object *cma_obj;
 	int min_pitch = DIV_ROUND_UP(args->width * args->bpp, 8);
 	struct drm_gem_object *obj;
-	unsigned int sliceidx = args->handle;
+	unsigned int sliceidx = (args->flags & 0xf);
+	unsigned int region = (args->flags >> 0xf) & 0xf;
+	struct device *mem_dev = NULL;
 	struct slice_info *pslice = getslicenode(sliceidx);
 
 	if (pslice == NULL)
@@ -203,16 +208,33 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	 * 4. CMA's memory management is not stable.
 	 * We could choose to use CMA or page alloc by module parameter later.
 	 */
+
+	if (region == CODEC_RESERVED && pslice->codec_rsvmem != NULL)
+		mem_dev = pslice->codec_rsvmem;
+	else
+		mem_dev = pslice->dev;
+
 	cma_obj->vaddr = dma_alloc_coherent(
-		pslice->dev, args->size, &cma_obj->paddr, GFP_KERNEL | GFP_DMA);
+		mem_dev, args->size, &cma_obj->paddr, GFP_KERNEL | GFP_DMA);
 #ifdef DMA_DEBUG_ALLOC
 	pr_info("dumb_create_internal: dma_alloc_coherent cma_obj->paddr = %llx, size = %d, pslice->dev = %s\n",
 		cma_obj->paddr, args->size, dev_name(pslice->dev));
 #endif
 	if (cma_obj->vaddr == NULL) {
-		kfree(cma_obj);
-		ret = -ENOMEM;
-		goto out;
+
+		//if it was codec reserved memory, then try allocating from pixel cma
+		if (region == CODEC_RESERVED) {
+			printk("Memory allocation failed from codec reserved memory.  Now trying from Pixel CMA\n");
+			mem_dev = pslice->dev;
+			cma_obj->vaddr = dma_alloc_coherent(
+				mem_dev, args->size, &cma_obj->paddr, GFP_KERNEL | GFP_DMA);
+		}
+		if (cma_obj->vaddr == NULL) {
+			kfree(cma_obj);
+			ret = -ENOMEM;
+			goto out;
+		}
+
 	}
 
 	drm_gem_object_init(dev, obj, args->size);
@@ -221,17 +243,17 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	if (ret == 0)
 		ret = hantro_recordmem(file_priv, cma_obj, args->size);
 	if (ret) {
-		dma_free_coherent(pslice->dev, args->size, cma_obj->vaddr,
+		dma_free_coherent(mem_dev, args->size, cma_obj->vaddr,
 				  cma_obj->paddr);
 		kfree(cma_obj);
 		goto out;
 	}
 	init_hantro_resv(&cma_obj->kresv, cma_obj);
 	cma_obj->handle = args->handle;
-	cma_obj->memdev = pslice->dev;
+	cma_obj->memdev = mem_dev;
 #ifdef DMA_DEBUG_ALLOC
 	pr_info("%s:%d,%lx:%llx:%llx\n", __func__, sliceidx,
-		(unsigned long)pslice->dev, cma_obj->paddr, args->size);
+		(unsigned long)mem_dev, cma_obj->paddr, args->size);
 #endif
 
 out:
@@ -322,12 +344,12 @@ static int hantro_release_dumb(struct drm_device *dev,
 		return 0;
 
 	if (cma_obj->vaddr)
-		dma_free_coherent(pslice->dev, cma_obj->base.size,
+		dma_free_coherent(cma_obj->memdev, cma_obj->base.size,
 				  cma_obj->vaddr, cma_obj->paddr);
 
 #ifdef DMA_DEBUG_ALLOC
 	pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx,
-		(unsigned long)pslice->dev, cma_obj->paddr, cma_obj->base.size);
+		(unsigned long)cma_obj->memdev, cma_obj->paddr, cma_obj->base.size);
 #endif
 
 	dma_resv_fini(&cma_obj->kresv);
@@ -381,7 +403,7 @@ static int hantro_mmap(struct file *filp, struct vm_area_struct *vma)
 			mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
 			return -EINVAL;
 		}
-		dev = pslice->dev;
+		dev = cma_obj->memdev;
 	} else
 		dev = obj->dev->dev;
 
@@ -470,7 +492,7 @@ hantro_gem_prime_get_sg_table(struct drm_gem_object *obj)
 	if (!sgt)
 		return NULL;
 
-	ret = dma_get_sgtable(pslice->dev, sgt, cma_obj->vaddr, cma_obj->paddr,
+	ret = dma_get_sgtable(cma_obj->memdev, sgt, cma_obj->vaddr, cma_obj->paddr,
 			      obj->size);
 	if (ret < 0)
 		goto out;
@@ -617,12 +639,12 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 		pslice = getslicenode(cma_obj->sliceidx);
 		if (!pslice)
 			return;
-		dma_free_coherent(pslice->dev, cma_obj->base.size,
+		dma_free_coherent(cma_obj->memdev, cma_obj->base.size,
 				  cma_obj->vaddr, cma_obj->paddr);
 
 #ifdef DMA_DEBUG_ALLOC
 		pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx,
-			(unsigned long)pslice->dev, cma_obj->paddr,
+			(unsigned long)cma_obj->memdev, cma_obj->paddr,
 			cma_obj->base.size);
 #endif
 	}
@@ -1914,18 +1936,18 @@ static int mem_usage_debugfs_internal(struct seq_file *s, struct device *dev,
 	struct drm_file *file;
 	struct file_data *data;
 	struct drm_gem_hantro_object *cma_obj;
-	struct task_struct *task;
+
 	int alloc_count = 0;
 	ssize_t mem_used = 0;
 
-	seq_printf(s, "   PID  :        Name          : Physical Addr   :  Virtual Addr       : Size\n");
+	seq_printf(s, " Physical Addr   :  Virtual Addr       : Size\n");
 	mutex_lock(&ddev->filelist_mutex);
 	// Go through all open drm files
 	list_for_each_entry(file, &ddev->filelist, lhead) {
 		struct drm_gem_object *gobj;
 		int handle;
 
-		task = pid_task(file->pid, PIDTYPE_PID);
+
 		mutex_lock(&ddev->struct_mutex);
 		// Traverse through cma objects added to file's driver_priv
 		// checkout hantro_recordmem
@@ -1934,7 +1956,7 @@ static int mem_usage_debugfs_internal(struct seq_file *s, struct device *dev,
 			if (gobj) {
 				cma_obj = to_drm_gem_hantro_obj(gobj);
 				if (cma_obj && cma_obj->sliceidx ==  sliceidx && cma_obj->memdev == dev) {
-					   seq_printf(s, " %6d : %18s   : 0x%-13llx :  0x%-15p  : %ldK\n", task->pid, task->comm,  cma_obj->paddr, cma_obj->vaddr, cma_obj->base.size/1024);
+					   seq_printf(s, " 0x%-13llx :  0x%-15p  : %ldK\n", cma_obj->paddr, cma_obj->vaddr, cma_obj->base.size/1024);
 					   mem_used += cma_obj->base.size;
 					   alloc_count++;
 				}
