@@ -44,7 +44,7 @@
 #include "hantrodec400.h"
 #include "hantro_slice.h"
 
-extern bool disable_dec400;
+extern bool enable_dec400;
 static u32 dec400_regs[1568]; /* for hantro_dec400FlushRegs use, else too big frame */
 static int dec400probed;
 
@@ -138,7 +138,7 @@ long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct dec400_t *pdec400;
 	struct core_desc coredesc;
 
-	if (disable_dec400)
+	if (enable_dec400 == 0)
 		return -EFAULT;
 
 	switch (cmd) {
@@ -234,6 +234,9 @@ long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 int hantro_dec400_probe(dtbnode *pnode)
 {
 	struct dec400_t *pdec400;
+
+	if (enable_dec400 == 0)
+		return 0;
 
 	pdec400 = vmalloc(sizeof(struct dec400_t));
 	if (pdec400 == NULL) {

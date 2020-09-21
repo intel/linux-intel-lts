@@ -76,7 +76,8 @@ static const int DecHwId[] = { 0x6731, /* G1 */
 
 static int bdecprobed;
 extern bool verbose;
-extern bool disable_decode;
+extern bool enable_decode;
+extern bool enable_irqmode;
 #undef PDEBUG
 #define PDEBUG(fmt, arg...)                                                    \
 	do {                                                                   \
@@ -877,7 +878,7 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct core_desc core;
 	struct hantrodec_t *pcore;
 
-	if (disable_decode)
+	if (enable_decode == 0)
 		return -EFAULT;
 
 	switch (_IOC_NR(cmd)) {
@@ -1194,6 +1195,9 @@ int hantrodec_release(struct file *filp)
 	int n, i, slicen = get_slicenumber();
 	struct hantrodec_t *pcore;
 
+	if (enable_decode == 0)
+		return 0;
+
 	PDEBUG("hantrodec_release\n");
 	for (i = 0; i < slicen; i++) {
 		pcore = get_decnodes(i, 0);
@@ -1228,6 +1232,9 @@ int hantrodec_release(struct file *filp)
 
 int hantrodec_open(struct inode *inode, struct file *filp)
 {
+	if (enable_decode == 0)
+		return 0;
+
 	return 0;
 }
 
@@ -1243,6 +1250,9 @@ int hantrodec_probe(dtbnode *pnode)
 	int i, result = 0;
 	struct hantrodec_t *pcore, *auxcore;
 	int irqn;
+
+	if (enable_decode == 0)
+		return 0;
 
 	pcore = vmalloc(sizeof(struct hantrodec_t));
 	if (pcore == NULL)
@@ -1272,25 +1282,27 @@ int hantrodec_probe(dtbnode *pnode)
 	irqn = 0;
 	for (i = 0; i < 4; i++)
 		pcore->irqlist[i] = -1;
-	for (i = 0; i < 4; i++) {
-		if (pnode->irq[i] > 0) {
-			strcpy(pcore->irq_name[i], pnode->irq_name[i]);
-			result = request_irq(pnode->irq[i], hantrodec_isr,
-					     IRQF_SHARED, pcore->irq_name[i],
-					     (void *)pcore);
-			if (result != 0) {
-				pr_err("dec can't reserve irq %d\n",
-				       pnode->irq[i]);
-				ReleaseIO(pcore);
-				vfree(pcore);
-				if (auxcore) {
-					ReleaseIO(auxcore);
-					vfree(auxcore);
+	if (enable_irqmode == 1) {
+		for (i = 0; i < 4; i++) {
+			if (pnode->irq[i] > 0) {
+				strcpy(pcore->irq_name[i], pnode->irq_name[i]);
+				result = request_irq(pnode->irq[i], hantrodec_isr,
+						     IRQF_SHARED, pcore->irq_name[i],
+						     (void *)pcore);
+				if (result != 0) {
+					pr_err("dec can't reserve irq %d\n",
+						pnode->irq[i]);
+					ReleaseIO(pcore);
+					vfree(pcore);
+					if (auxcore) {
+						ReleaseIO(auxcore);
+						vfree(auxcore);
+					}
+					return -ENODEV;
+				} else {
+					pcore->irqlist[irqn] = pnode->irq[i];
+					irqn++;
 				}
-				return -ENODEV;
-			} else {
-				pcore->irqlist[irqn] = pnode->irq[i];
-				irqn++;
 			}
 		}
 	}

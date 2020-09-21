@@ -71,25 +71,25 @@ module_param(verbose, bool, 0);
 MODULE_PARM_DESC(verbose, "Verbose log operations "
 		"(default 0)");
 
-bool disable_encode;
-module_param(disable_encode, bool, 0);
-MODULE_PARM_DESC(disable_encode, "Disable Encode"
-		"(default 0)");
+bool enable_encode = 1;
+module_param(enable_encode, bool, 0);
+MODULE_PARM_DESC(enable_encode, "Enable Encode"
+		"(default 1)");
 
-bool disable_decode;
-module_param(disable_decode, bool, 0);
-MODULE_PARM_DESC(disable_decode, "Disable Decode"
-		"(default 0)");
+bool enable_decode = 1;
+module_param(enable_decode, bool, 0);
+MODULE_PARM_DESC(enable_decode, "Enable Decode"
+		"(default 1)");
 
-bool disable_dec400 = 1;
-module_param(disable_dec400, bool, 0);
-MODULE_PARM_DESC(disable_dec400, "Disable DEC400/L2"
-		"(default 0)");
+bool enable_dec400 = 1;
+module_param(enable_dec400, bool, 0);
+MODULE_PARM_DESC(enable_dec400, "Enable DEC400/L2"
+		"(default 1)");
 
-bool enable_polling;
-module_param(enable_polling, bool, 0);
-MODULE_PARM_DESC(enable_polling, "Enable polling mode"
-		"(default 0)");
+bool enable_irqmode = 1;
+module_param(enable_irqmode, bool, 0);
+MODULE_PARM_DESC(enable_dec400, "Enable IRQ Mode"
+        "(default 1)");
 
 /* temp no usage now */
 static u32 hantro_vblank_no_hw_counter(struct drm_device *dev,
@@ -186,7 +186,7 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	out_size = in_size = sizeof(*args);
 	args->pitch = ALIGN(min_pitch, 64);
 	args->size = (__u64)args->pitch * (__u64)args->height;
-	args->size = (args->size + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
+	args->size = PAGE_ALIGN(args->size);
 
 	cma_obj->num_pages = args->size >> PAGE_SHIFT;
 	cma_obj->flag = 0;
@@ -431,23 +431,16 @@ static int hantro_device_open(struct inode *inode, struct file *filp)
 	int ret;
 
 	ret = drm_open(inode, filp);
-	if (!disable_decode)
-		hantrodec_open(inode, filp);
-	if (!disable_dec400)
-		cache_open(inode, filp);
+	hantrodec_open(inode, filp);
+	cache_open(inode, filp);
 	return ret;
 }
 
 static int hantro_device_release(struct inode *inode, struct file *filp)
 {
-	if (!disable_dec400)
-		cache_release(filp);
-
-	if (!disable_decode)
-		hantrodec_release(filp);
-
-	if (!disable_encode)
-		hantroenc_release();
+	cache_release(filp);
+	hantrodec_release(filp);
+	hantroenc_release();
 
 	return drm_release(inode, filp);
 }
@@ -1135,19 +1128,18 @@ static int hantro_ptr_to_phys(struct drm_device *dev, void *data,
 static int hantro_query_metadata(struct drm_device *dev, void *data,
 				 struct drm_file *file_priv)
 {
-	struct hantro_exchanged_metadata_info *metadata_info_p =
-		(struct hantro_exchanged_metadata_info *)data;
+	struct hantro_metainfo_params *metadata_info_p = (struct hantro_metainfo_params *)data;
 	struct drm_gem_object *obj = NULL;
 	struct drm_gem_hantro_object *cma_obj = NULL;
 
-	obj = hantro_gem_object_lookup(dev, file_priv,
-				       metadata_info_p->exporter.handle);
+	obj = hantro_gem_object_lookup(dev, file_priv, metadata_info_p->handle);
 	if (obj == NULL)
 		return -ENOENT;
 	cma_obj = to_drm_gem_hantro_obj(obj);
 
-	memcpy(&metadata_info_p->meta_data_info, &cma_obj->meta_data_info,
-	       sizeof(struct viv_vidmem_metadata_info));
+	memcpy(&metadata_info_p->info, &cma_obj->meta_data_info, sizeof(struct dec_buf_info));
+
+	hantro_unref_drmobj(obj);
 
 	return 0;
 }
@@ -1155,19 +1147,18 @@ static int hantro_query_metadata(struct drm_device *dev, void *data,
 static int hantro_update_metadata(struct drm_device *dev, void *data,
 				  struct drm_file *file_priv)
 {
-	struct hantro_exchanged_metadata_info *metadata_info_p =
-		(struct hantro_exchanged_metadata_info *)data;
+	struct hantro_metainfo_params *metadata_info_p = (struct hantro_metainfo_params *)data;
 	struct drm_gem_object *obj = NULL;
 	struct drm_gem_hantro_object *cma_obj = NULL;
 
-	obj = hantro_gem_object_lookup(dev, file_priv,
-				       metadata_info_p->exporter.handle);
+	obj = hantro_gem_object_lookup(dev, file_priv, metadata_info_p->handle);
 	if (obj == NULL)
 		return -ENOENT;
 	cma_obj = to_drm_gem_hantro_obj(obj);
 
-	memcpy(&cma_obj->meta_data_info, &metadata_info_p->meta_data_info,
-	       sizeof(struct viv_vidmem_metadata_info));
+	memcpy(&cma_obj->meta_data_info, &metadata_info_p->info, sizeof(struct dec_buf_info));
+
+	hantro_unref_drmobj(obj);
 
 	return 0;
 }
@@ -1463,7 +1454,7 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 	if (nr >= DRM_IOCTL_NR(HX280ENC_IOC_START) &&
 	    nr <= DRM_IOCTL_NR(HX280ENC_IOC_END)) {
-		if (!disable_encode) {
+		if (enable_encode) {
 			return hantroenc_ioctl(filp, cmd, arg);
 		} else {
 			if (cmd == HX280ENC_IOCG_CORE_NUM) {
@@ -1499,12 +1490,10 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EINVAL;
 	ioctl = &hantro_ioctls[nr];
 
-	if ((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
-	    (cmd == DRM_IOCTL_HANTRO_QUERY_METADATA)) {
-		if (copy_from_user(
-			    kdata, (void __user *)arg,
-			    sizeof(struct hantro_exchanged_metadata_info)) != 0)
-			return -EFAULT;
+	if((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
+		(cmd == DRM_IOCTL_HANTRO_QUERY_METADATA) ) {
+		if (copy_from_user(kdata, (void __user *)arg, sizeof(struct hantro_metainfo_params)) != 0)
+			return  -EFAULT;
 	} else {
 		if (copy_from_user(kdata, (void __user *)arg, in_size) != 0)
 			return -EFAULT;
@@ -1523,12 +1512,9 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EINVAL;
 	retcode = func(dev, kdata, file_priv);
 
-	if ((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
-	    (cmd == DRM_IOCTL_HANTRO_QUERY_METADATA)) {
-		if (copy_to_user(
-			    (void __user *)arg, kdata,
-			    sizeof(struct hantro_exchanged_metadata_info)) !=
-		    0) {
+	if((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
+		(cmd == DRM_IOCTL_HANTRO_QUERY_METADATA) ) {
+		if (copy_to_user((void __user *)arg, kdata, sizeof(struct hantro_metainfo_params)) != 0) {
 			retcode = -EFAULT;
 		}
 	} else {
@@ -2085,20 +2071,16 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 
 	switch (pnode->type) {
 	case CORE_DEC:
-		if (!disable_decode)
-			ret = hantrodec_probe(pnode);
+		ret = hantrodec_probe(pnode);
 		break;
 	case CORE_ENC:
-		if (!disable_encode)
-			ret = hantroenc_probe(pnode);
+		ret = hantroenc_probe(pnode);
 		break;
 	case CORE_CACHE:
-		if (!disable_dec400)
-			ret = cache_probe(pnode);
+		ret = cache_probe(pnode);
 		break;
 	case CORE_DEC400:
-		if (!disable_dec400)
-			ret = hantro_dec400_probe(pnode);
+		ret = hantro_dec400_probe(pnode);
 		break;
 	default:
 		ret = -EINVAL;
@@ -2456,16 +2438,10 @@ void __exit hantro_cleanup(void)
 	if (hantro_dev.debugfs_root)
 		debugfs_remove(hantro_dev.debugfs_root);
 
-	if (!disable_decode)
-		hantrodec_cleanup();
-
-	if (!disable_encode)
-		hantroenc_cleanup();
-
-	if (!disable_dec400) {
-		cache_cleanup();
-		hantro_dec400_cleanup();
-	}
+	hantrodec_cleanup();
+	hantroenc_cleanup();
+	cache_cleanup();
+	hantro_dec400_cleanup();
 
 	for (i = 0; i < get_slicenumber(); i++) {
 		pslice = getslicenode(i);

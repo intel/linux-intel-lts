@@ -57,7 +57,8 @@
 #define CC_DIR_BIDIR	"_DIRBI"
 
 static int bcacheprobed;
-extern bool disable_dec400;
+extern bool enable_dec400;
+extern bool enable_irqmode;
 
 /*------------------------------END-------------------------------------*/
 
@@ -165,7 +166,7 @@ long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long long tmp64;
 	struct cache_dev_t *pccore;
 
-	if (disable_dec400)
+	if (enable_dec400 == 0)
 		return -EFAULT;
 	switch (cmd) {
 	case CACHE_IOCGHWOFFSET:
@@ -254,6 +255,9 @@ long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 int cache_open(struct inode *inode, struct file *filp)
 {
+	if (enable_dec400 == 0)
+		return 0;
+
 	return 0;
 }
 
@@ -261,6 +265,9 @@ int cache_release(struct file *filp)
 {
 	int i, slicen = get_slicenumber();
 	struct cache_dev_t *dev;
+
+	if (enable_dec400 == 0)
+		return 0;
 
 	for (i = 0; i < slicen; i++) {
 		dev = get_cachenodes(i, 0);
@@ -323,6 +330,8 @@ int cache_probe(dtbnode *pnode)
 	struct cache_dev_t *pccore;
 	int type, dir;
 
+	if (enable_dec400 == 0)
+		return 0;
 	cache_getcachetype(pnode->ofnode->name, &type, &dir);
 	if (type == -1 || dir == -1)
 		return -EINVAL;
@@ -347,18 +356,20 @@ int cache_probe(dtbnode *pnode)
 	pccore->is_valid = 1;
 	for (i = 0; i < 4; i++)
 		pccore->irqlist[i] = -1;
-	if (pnode->irq[0] > 0) {
-		strcpy(pccore->irq_name[0], pnode->irq_name[0]);
-		result = request_irq(pnode->irq[0], cache_isr, IRQF_SHARED,
-				     pccore->irq_name[0], (void *)pccore);
-		if (result == 0)
-			pccore->irqlist[0] = pnode->irq[0];
-		else {
-			pr_err("cachecore: request IRQ <%d> fail\n",
-			       pnode->irq[0]);
-			ReleaseIO(pccore);
-			vfree(pccore);
-			return -EINVAL;
+	if (enable_irqmode == 1) {
+		if (pnode->irq[0] > 0) {
+			strcpy(pccore->irq_name[0], pnode->irq_name[0]);
+			result = request_irq(pnode->irq[0], cache_isr, IRQF_SHARED,
+					     pccore->irq_name[0], (void *)pccore);
+			if (result == 0)
+				pccore->irqlist[0] = pnode->irq[0];
+			else {
+				pr_err("cachecore: request IRQ <%d> fail\n",
+				pnode->irq[0]);
+				ReleaseIO(pccore);
+				vfree(pccore);
+				return -EINVAL;
+			}
 		}
 	}
 	pccore->core_cfg.parentaddr = pnode->parentaddr;

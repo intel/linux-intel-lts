@@ -43,7 +43,8 @@
 #include <linux/irq.h>
 
 static u32 resouce_shared;
-extern bool disable_encode;
+extern bool enable_encode;
+extern bool enable_irqmode;
 /*------------------------------------------------------------------------
  *****************************PORTING LAYER********************************
  *-------------------------------------------------------------------------
@@ -326,7 +327,7 @@ long hantroenc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct hantroenc_t *pcore;
 	u32 core_info;
 
-	if (disable_encode == 1)
+	if (enable_encode == 0)
 		return -EFAULT;
 
 	switch (cmd) {
@@ -426,6 +427,9 @@ int hantroenc_release(void)
 	struct hantroenc_t *dev;
 	unsigned long flags;
 
+	if (enable_encode == 0)
+		return 0;
+
 	for (i = 0; i < slicen; i++) {
 		dev = get_encnodes(i, 0);
 		if (dev == NULL)
@@ -468,8 +472,10 @@ int hantroenc_probe(dtbnode *pnode)
 	int result = 0;
 	struct hantroenc_t *pcore;
 	int i;
-
 	int irqn;
+
+	if (enable_encode == 0)
+		return 0;
 
 	pcore = vmalloc(sizeof(struct hantroenc_t));
 	if (pcore == NULL)
@@ -491,25 +497,26 @@ int hantroenc_probe(dtbnode *pnode)
 	irqn = 0;
 	for (i = 0; i < 4; i++)
 		pcore->irqlist[i] = -1;
-	for (i = 0; i < 4; i++) {
-		if (pnode->irq[i] > 0) {
-			strcpy(pcore->irq_name[i], pnode->irq_name[i]);
-			result = request_irq(pnode->irq[i], hantroenc_isr,
-					     IRQF_SHARED, pcore->irq_name[i],
-					     (void *)pcore);
-			if (result == 0) {
-				pcore->irqlist[irqn] = pnode->irq[i];
-				irqn++;
-			} else {
-				pr_info("hx280enc: request IRQ <%d> fail\n",
-					pnode->irq[i]);
-				ReleaseIO(pcore);
-				vfree(pcore);
-				return -EINVAL;
+	if (enable_irqmode == 1) {
+		for (i = 0; i < 4; i++) {
+			if (pnode->irq[i] > 0) {
+				strcpy(pcore->irq_name[i], pnode->irq_name[i]);
+				result = request_irq(pnode->irq[i], hantroenc_isr,
+						     IRQF_SHARED, pcore->irq_name[i],
+						     (void *)pcore);
+				if (result == 0) {
+					pcore->irqlist[irqn] = pnode->irq[i];
+					irqn++;
+				} else {
+					pr_info("hx280enc: request IRQ <%d> fail\n",
+						pnode->irq[i]);
+					ReleaseIO(pcore);
+					vfree(pcore);
+					return -EINVAL;
+				}
 			}
 		}
 	}
-
 	add_encnode(pnode->sliceidx, pcore);
 
 	pr_info("hx280enc: module inserted. Major <%d>\n", hantroenc_major);
