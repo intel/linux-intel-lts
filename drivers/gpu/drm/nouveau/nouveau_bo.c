@@ -795,8 +795,9 @@ done:
 }
 
 static int
-nouveau_bo_move_m2mf(struct ttm_buffer_object *bo, int evict, bool intr,
-		     bool no_wait_gpu, struct ttm_resource *new_reg)
+nouveau_bo_move_m2mf(struct ttm_buffer_object *bo, int evict,
+		     struct ttm_operation_ctx *ctx,
+		     struct ttm_resource *new_reg)
 {
 	struct nouveau_drm *drm = nouveau_bdev(bo->bdev);
 	struct nouveau_channel *chan = drm->ttm.chan;
@@ -815,7 +816,7 @@ nouveau_bo_move_m2mf(struct ttm_buffer_object *bo, int evict, bool intr,
 	}
 
 	mutex_lock_nested(&cli->mutex, SINGLE_DEPTH_NESTING);
-	ret = nouveau_fence_sync(nouveau_bo(bo), chan, true, intr);
+	ret = nouveau_fence_sync(nouveau_bo(bo), chan, true, ctx->interruptible);
 	if (ret == 0) {
 		ret = drm->ttm.move(chan, bo, &bo->mem, new_reg);
 		if (ret == 0) {
@@ -902,10 +903,10 @@ nouveau_bo_move_init(struct nouveau_drm *drm)
 }
 
 static int
-nouveau_bo_move_flipd(struct ttm_buffer_object *bo, bool evict, bool intr,
-		      bool no_wait_gpu, struct ttm_resource *new_reg)
+nouveau_bo_move_flipd(struct ttm_buffer_object *bo, bool evict,
+		      struct ttm_operation_ctx *ctx,
+		      struct ttm_resource *new_reg)
 {
-	struct ttm_operation_ctx ctx = { intr, no_wait_gpu };
 	struct ttm_place placement_memtype = {
 		.fpfn = 0,
 		.lpfn = 0,
@@ -921,11 +922,11 @@ nouveau_bo_move_flipd(struct ttm_buffer_object *bo, bool evict, bool intr,
 
 	tmp_reg = *new_reg;
 	tmp_reg.mm_node = NULL;
-	ret = ttm_bo_mem_space(bo, &placement, &tmp_reg, &ctx);
+	ret = ttm_bo_mem_space(bo, &placement, &tmp_reg, ctx);
 	if (ret)
 		return ret;
 
-	ret = ttm_tt_populate(bo->bdev, bo->ttm, &ctx);
+	ret = ttm_tt_populate(bo->bdev, bo->ttm, ctx);
 	if (ret)
 		goto out;
 
@@ -933,21 +934,21 @@ nouveau_bo_move_flipd(struct ttm_buffer_object *bo, bool evict, bool intr,
 	if (ret)
 		goto out;
 
-	ret = nouveau_bo_move_m2mf(bo, true, intr, no_wait_gpu, &tmp_reg);
+	ret = nouveau_bo_move_m2mf(bo, true, ctx, &tmp_reg);
 	if (ret)
 		goto out;
 
-	ret = ttm_bo_move_ttm(bo, &ctx, new_reg);
+	ret = ttm_bo_move_ttm(bo, ctx, new_reg);
 out:
 	ttm_resource_free(bo, &tmp_reg);
 	return ret;
 }
 
 static int
-nouveau_bo_move_flips(struct ttm_buffer_object *bo, bool evict, bool intr,
-		      bool no_wait_gpu, struct ttm_resource *new_reg)
+nouveau_bo_move_flips(struct ttm_buffer_object *bo, bool evict,
+		      struct ttm_operation_ctx *ctx,
+		      struct ttm_resource *new_reg)
 {
-	struct ttm_operation_ctx ctx = { intr, no_wait_gpu };
 	struct ttm_place placement_memtype = {
 		.fpfn = 0,
 		.lpfn = 0,
@@ -963,15 +964,15 @@ nouveau_bo_move_flips(struct ttm_buffer_object *bo, bool evict, bool intr,
 
 	tmp_reg = *new_reg;
 	tmp_reg.mm_node = NULL;
-	ret = ttm_bo_mem_space(bo, &placement, &tmp_reg, &ctx);
+	ret = ttm_bo_mem_space(bo, &placement, &tmp_reg, ctx);
 	if (ret)
 		return ret;
 
-	ret = ttm_bo_move_ttm(bo, &ctx, &tmp_reg);
+	ret = ttm_bo_move_ttm(bo, ctx, &tmp_reg);
 	if (ret)
 		goto out;
 
-	ret = nouveau_bo_move_m2mf(bo, true, intr, no_wait_gpu, new_reg);
+	ret = nouveau_bo_move_m2mf(bo, true, ctx, new_reg);
 	if (ret)
 		goto out;
 
@@ -1082,17 +1083,14 @@ nouveau_bo_move(struct ttm_buffer_object *bo, bool evict,
 	/* Hardware assisted copy. */
 	if (drm->ttm.move) {
 		if (new_reg->mem_type == TTM_PL_SYSTEM)
-			ret = nouveau_bo_move_flipd(bo, evict,
-						    ctx->interruptible,
-						    ctx->no_wait_gpu, new_reg);
+			ret = nouveau_bo_move_flipd(bo, evict, ctx,
+						    new_reg);
 		else if (old_reg->mem_type == TTM_PL_SYSTEM)
-			ret = nouveau_bo_move_flips(bo, evict,
-						    ctx->interruptible,
-						    ctx->no_wait_gpu, new_reg);
+			ret = nouveau_bo_move_flips(bo, evict, ctx,
+						    new_reg);
 		else
-			ret = nouveau_bo_move_m2mf(bo, evict,
-						   ctx->interruptible,
-						   ctx->no_wait_gpu, new_reg);
+			ret = nouveau_bo_move_m2mf(bo, evict, ctx,
+						   new_reg);
 		if (!ret)
 			goto out;
 	}
