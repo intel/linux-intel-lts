@@ -391,6 +391,7 @@ CVEs fixed in 4.19.100:
   CVE-2020-8428: 752f72edea55f9b7c6fd019e71365def13a0f2b6 do_last(): fetch directory ->i_mode and ->i_uid before it's too late
 
 CVEs fixed in 4.19.101:
+  CVE-2020-0432: 9dab6bbc9462c43001a88ee933a491a1502fa6f5 staging: most: net: fix buffer overflow
   CVE-2020-12769: 6fb12237c51e73e65899f9b1df69cd3999b4d90a spi: spi-dw: Add lock protect dw_spi rx/tx to prevent concurrent calls
 
 CVEs fixed in 4.19.103:
@@ -521,7 +522,7 @@ CVEs fixed in 4.19.144:
   CVE-2020-25285: 221ea9a3da9169dc3c9a364a5f938e215db6419e mm/hugetlb: fix a race between hugetlb sysctl handlers
 
  
-CVEs Fixed in this 4.19.142 LTS 4.19 release 
+CVEs Fixed in this 4.19.145 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -577,5 +578,17 @@ CVEs Fixed in this 4.19.142 LTS 4.19 release
 0002-block-move-main-block-debugfs-initialization-to-its-.patch
 0003-blktrace-move-blktrace-debugfs-creation-to-helper-fu.patch
 0004-blktrace-fix-debugfs-use-after-free.patch
+
+# CVE-2020-25211
+0001-netfilter-ctnetlink-add-a-range-check-for-l3-l4-prot.patch
+
+# CVE-2019-19815
+0001-f2fs-support-swap-file-w-DIO.patch
+
+# CVE-2020-12656
+0001-sunrpc-check-that-domain-table-is-empty-at-module-un.patch
+
+# CVE-2019-19377
+0001-btrfs-Don-t-submit-any-btree-write-bio-if-the-fs-has.patch
  
 ================
