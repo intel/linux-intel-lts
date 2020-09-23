@@ -172,7 +172,7 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	int min_pitch = DIV_ROUND_UP(args->width * args->bpp, 8);
 	struct drm_gem_object *obj;
 	unsigned int sliceidx = (args->flags & 0xf);
-	unsigned int region = (args->flags >> 0xf) & 0xf;
+	unsigned int region = (args->flags >> 0x8) & 0xf;
 	struct device *mem_dev = NULL;
 	struct slice_info *pslice = getslicenode(sliceidx);
 
@@ -224,7 +224,6 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 
 		//if it was codec reserved memory, then try allocating from pixel cma
 		if (region == CODEC_RESERVED) {
-			printk("Memory allocation failed from codec reserved memory.  Now trying from Pixel CMA\n");
 			mem_dev = pslice->dev;
 			cma_obj->vaddr = dma_alloc_coherent(
 				mem_dev, args->size, &cma_obj->paddr, GFP_KERNEL | GFP_DMA);
