@@ -448,6 +448,9 @@ void ingenic_drm_plane_config(struct device *dev,
 		case DRM_FORMAT_XRGB8888:
 			ctrl |= JZ_LCD_OSDCTRL_BPP_18_24;
 			break;
+		case DRM_FORMAT_XRGB2101010:
+			ctrl |= JZ_LCD_OSDCTRL_BPP_30;
+			break;
 		}
 
 		regmap_update_bits(priv->map, JZ_REG_LCD_OSDCTRL,
@@ -462,6 +465,9 @@ void ingenic_drm_plane_config(struct device *dev,
 			break;
 		case DRM_FORMAT_XRGB8888:
 			ctrl |= JZ_LCD_CTRL_BPP_18_24;
+			break;
+		case DRM_FORMAT_XRGB2101010:
+			ctrl |= JZ_LCD_CTRL_BPP_30;
 			break;
 		}
 
@@ -1112,12 +1118,14 @@ static const u32 jz4770_formats_f1[] = {
 	DRM_FORMAT_XRGB1555,
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_XRGB8888,
+	DRM_FORMAT_XRGB2101010,
 };
 
 static const u32 jz4770_formats_f0[] = {
 	DRM_FORMAT_XRGB1555,
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_XRGB8888,
+	DRM_FORMAT_XRGB2101010,
 };
 
 static const struct jz_soc_info jz4740_soc_info = {
