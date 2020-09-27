@@ -1132,6 +1132,10 @@ err_rq:
 		if (!state)
 			continue;
 
+		err = wait_for(!i915_vma_is_pinned(state), 50);
+		if (err)
+			goto out;
+
 		/*
 		 * As we will hold a reference to the logical state, it will
 		 * not be torn down with the context, and importantly the

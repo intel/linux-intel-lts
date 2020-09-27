@@ -4078,7 +4078,7 @@ void skl_pipe_ddb_get_hw_state(struct intel_crtc *crtc,
 	if (!wakeref)
 		return;
 
-	for_each_plane_id_on_crtc(crtc, plane_id)
+	for_each_plane_id_on_crtc(crtc, plane_id) {
 		skl_ddb_get_hw_plane_state(dev_priv, pipe,
 					   plane_id,
 					   &ddb_y[plane_id],
@@ -4086,11 +4086,14 @@ void skl_pipe_ddb_get_hw_state(struct intel_crtc *crtc,
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 		// skl_allocate_pipe_ddb will zero out sw ddb for inactive ddb
 		// so we fake hw ddb as well.
-		if (gvt && !crtc->config->hw.active) {
+		if (gvt && (plane_id != PLANE_CURSOR) &&
+		    (!crtc->config->hw.active ||
+		     !(I915_READ_FW(PLANE_CTL(pipe, plane_id)) & PLANE_CTL_ENABLE))) {
 			memset(&ddb_y[plane_id], 0, sizeof(struct skl_ddb_entry));
 			memset(&ddb_uv[plane_id], 0, sizeof(struct skl_ddb_entry));
 		}
 #endif
+	}
 	intel_display_power_put(dev_priv, power_domain, wakeref);
 }
 

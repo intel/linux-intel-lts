@@ -5398,7 +5398,10 @@ static irqreturn_t stmmac_msi_intr_tx(int irq, void *data)
 	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
-	status = stmmac_napi_check(priv, chan, DMA_DIR_RXTX);
+	if (priv->plat->dma_cfg->pch_intr_wa)
+		status = stmmac_napi_check(priv, chan, DMA_DIR_RXTX);
+	else
+		status = stmmac_napi_check(priv, chan, DMA_DIR_TX);
 
 	if (unlikely(status & tx_hard_error_bump_tc)) {
 		/* Try to bump up the dma threshold on this failure */
@@ -5441,7 +5444,10 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 	if (test_bit(STMMAC_DOWN, priv->state))
 		return IRQ_HANDLED;
 
-	stmmac_napi_check(priv, chan, DMA_DIR_RXTX);
+	if (priv->plat->dma_cfg->pch_intr_wa)
+		stmmac_napi_check(priv, chan, DMA_DIR_RXTX);
+	else
+		stmmac_napi_check(priv, chan, DMA_DIR_RX);
 
 	return IRQ_HANDLED;
 }
@@ -6473,11 +6479,15 @@ static int stmmac_hw_init(struct stmmac_priv *priv)
 	if (ret)
 		return ret;
 
+#ifndef CONFIG_ARCH_KEEMBAY
 	/* Initialize TSN capability */
-	stmmac_tsnif_setup(priv, priv->hw);
-	ret = stmmac_tsn_init(priv, priv->hw, priv->dev);
-	if (ret)
-		return ret;
+	if (priv->hw->tsn_info.cap.est_support) {
+		stmmac_tsnif_setup(priv, priv->hw);
+		ret = stmmac_tsn_init(priv, priv->hw, priv->dev);
+		if (ret)
+			return ret;
+	}
+#endif
 
 	/* Get the HW capability (new GMAC newer than 3.50a) */
 	priv->hw_cap_support = stmmac_get_hw_features(priv);
@@ -7264,7 +7274,6 @@ int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev)
 
 	if (ndev->phydev && device_may_wakeup(priv->device)) {
 		phy_start_machine(ndev->phydev);
-		phy_restart_aneg(ndev->phydev);
 	}
 
 	return 0;
@@ -7313,9 +7322,18 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 		rtnl_lock();
 		phylink_start(priv->phylink);
 		rtnl_unlock();
+	} else {
+		if (ndev->phydev)
+			phy_restart_aneg(ndev->phydev);
 	}
 
 	phylink_mac_change(priv->phylink, true);
+
+	if (priv->wolopts) {
+		rtnl_lock();
+		stmmac_update_wol_status(ndev);
+		rtnl_unlock();
+	}
 
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->setup_phy_conv) {
@@ -7455,6 +7473,12 @@ int stmmac_resume(struct device *dev)
 	}
 
 	phylink_mac_change(priv->phylink, true);
+
+	if (priv->wolopts) {
+		rtnl_lock();
+		stmmac_update_wol_status(ndev);
+		rtnl_unlock();
+	}
 
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->setup_phy_conv) {

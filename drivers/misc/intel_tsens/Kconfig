@@ -1,0 +1,31 @@
+config INTEL_TSENS
+	tristate "Temperature sensor driver for intel tsens"
+	default y
+	depends on XLINK_CORE
+	help
+	  Enable this option if you want to have support for thermal management
+	  controller
+
+config INTEL_TSENS_HOST
+	tristate "Temperature sensor driver for intel tsens remote host"
+	default y
+	depends on XLINK_CORE
+	help
+	  Enable this option if you want to have support for thermal management
+	  controller
+
+config KEEMBAY_THERMAL
+	tristate "Temperature sensor driver for intel keembay"
+	default y
+	depends on XLINK_CORE
+	help
+	  Enable this option if you want to have support for thermal management
+	  controller present in Keembay
+
+config KEEMBAY_COOLING
+	tristate "dummy cooling driver for intel keembay"
+	default y
+	depends on XLINK_CORE
+	help
+	  Enable this option if you want to have support for thermal management
+	  controller present in Keembay

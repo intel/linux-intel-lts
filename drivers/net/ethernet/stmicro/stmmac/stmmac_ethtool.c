@@ -769,6 +769,18 @@ static int stmmac_set_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
 	return 0;
 }
 
+void stmmac_update_wol_status(struct net_device *ndev)
+{
+	struct stmmac_priv *priv = netdev_priv(ndev);
+	struct ethtool_wolinfo wol;
+
+	memset(&wol, 0, sizeof(struct ethtool_wolinfo));
+
+	wol.wolopts = (u32)priv->wolopts;
+
+	stmmac_set_wol(ndev, &wol);
+}
+
 static int stmmac_ethtool_op_get_eee(struct net_device *dev,
 				     struct ethtool_eee *edata)
 {

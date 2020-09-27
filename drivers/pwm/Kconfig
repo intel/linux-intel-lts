@@ -561,7 +561,7 @@ config PWM_ZX
 
 config PWM_KEEMBAY
 	tristate "Intel Keem Bay PWM driver"
-	depends on ARM64
+	depends on ARM64 || COMPILE_TEST
 	help
 	  The platform driver for Intel Keem Bay PWM controller.
 

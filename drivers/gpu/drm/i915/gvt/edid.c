@@ -169,21 +169,25 @@ static int gmbus1_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes)
 {
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	struct intel_vgpu_i2c_edid *i2c_edid = NULL;
 	enum port port;
 	u32 slave_addr;
 	u32 wvalue = *(u32 *)p_data;
 
 	port = get_port_from_gmbus0(vgpu);
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->port == port)
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->port == port) {
+			disp_path = p;
 			i2c_edid = &disp_path->i2c_edid;
+		}
 	}
 
 	if (!disp_path) {
-		gvt_err("vgpu-%d invalid vgpu display path\n", vgpu->id);
-		return -EINVAL;
+		memcpy(&vgpu_vreg(vgpu, offset), p_data, bytes);
+		gvt_dbg_dpy("vgpu-%d gmbus1_mmio_write invalid display path\n",
+			    vgpu->id);
+		return 0;
 	}
 
 	if (vgpu_vreg(vgpu, offset) & GMBUS_SW_CLR_INT) {
@@ -291,15 +295,16 @@ static int gmbus3_mmio_read(struct intel_vgpu *vgpu, unsigned int offset,
 		void *p_data, unsigned int bytes)
 {
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	struct intel_vgpu_i2c_edid *i2c_edid = NULL;
 	unsigned char byte_data;
 	int i = 0, byte_left = 0, byte_count = 0;
 	u32 reg_data = 0;
 	enum port port = get_port_from_gmbus0(vgpu);
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->port == port) {
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->port == port) {
+			disp_path = p;
 			i2c_edid = &disp_path->i2c_edid;
 			byte_left = i2c_edid->gmbus.total_byte_count -
 				i2c_edid->current_edid_read;
@@ -309,8 +314,10 @@ static int gmbus3_mmio_read(struct intel_vgpu *vgpu, unsigned int offset,
 	}
 
 	if (!disp_path) {
-		gvt_err("vgpu-%d invalid vgpu display path\n", vgpu->id);
-		return -EINVAL;
+		memcpy(p_data, &vgpu_vreg(vgpu, offset), bytes);
+		gvt_dbg_dpy("vgpu-%d gmbus3_mmio_read invalid display path\n",
+			    vgpu->id);
+		return 0;
 	}
 
 	/* Data can only be recevied if previous settings correct */
@@ -496,7 +503,7 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
 				       void *p_data)
 {
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	struct intel_vgpu_i2c_edid *i2c_edid = NULL;
 	int msg_length, ret_msg_size;
 	int msg, addr, ctrl, op;
@@ -511,15 +518,17 @@ void intel_gvt_i2c_handle_aux_ch_write(struct intel_vgpu *vgpu,
 		return;
 	}
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-		if (disp_path->port == port) {
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->port == port) {
+			disp_path = p;
 			i2c_edid = &disp_path->i2c_edid;
 			break;
 		}
 	}
 
 	if (!disp_path) {
-		gvt_err("vgpu-%d invalid vgpu display path\n", vgpu->id);
+		gvt_dbg_dpy("vgpu-%d i2c aux ch write invalid display path\n",
+			    vgpu->id);
 		return;
 	}
 

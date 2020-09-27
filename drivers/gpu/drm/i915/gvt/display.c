@@ -1313,16 +1313,19 @@ vgpu_compute_plane_wm_params(struct intel_vgpu *vgpu,
 	int scaler, plane_scaler;
 	u32 reg_val;
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe host_pipe = INVALID_PIPE;
 	enum pipe vgpu_pipe = INVALID_PIPE;
 
 	if (!intel_cstate->hw.active || !prim_pstate->uapi.visible)
 		return 0;
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list)
-		if (disp_path->p_pipe == crtc->pipe)
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->p_pipe == crtc->pipe) {
+			disp_path = p;
 			break;
+		}
+	}
 
 	if (!disp_path) {
 		gvt_err("vgpu-%d invalid vgpu display path\n", vgpu->id);
@@ -1690,7 +1693,7 @@ void intel_vgpu_update_plane_scaler(struct intel_vgpu *vgpu,
 	struct intel_dom0_plane_regs *dom0_regs;
 	struct drm_display_mode *mode = NULL;
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe host_pipe = INVALID_PIPE;
 	enum pipe vgpu_pipe = INVALID_PIPE;
 	u32 host_hactive = 0, host_vactive = 0;
@@ -1708,9 +1711,12 @@ void intel_vgpu_update_plane_scaler(struct intel_vgpu *vgpu,
 	else
 		return;
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list)
-		if (disp_path->p_pipe == intel_crtc->pipe)
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->p_pipe == intel_crtc->pipe) {
+			disp_path = p;
 			break;
+		}
+	}
 
 	if (!disp_path) {
 		gvt_err("vgpu-%d invalid vgpu display path\n", vgpu->id);
@@ -1885,7 +1891,7 @@ void intel_vgpu_update_plane_wm(struct intel_vgpu *vgpu,
 	struct drm_i915_private *dev_priv = gvt->dev_priv;
 	struct intel_crtc_state *intel_cstate = NULL;
 	struct intel_vgpu_display *disp_cfg = &vgpu->disp_cfg;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	enum pipe host_pipe = INVALID_PIPE;
 	enum pipe vgpu_pipe = INVALID_PIPE;
 	int level, max_level = ilk_wm_max_level(dev_priv);
@@ -1895,9 +1901,12 @@ void intel_vgpu_update_plane_wm(struct intel_vgpu *vgpu,
 	struct skl_wm_params wm_params;
 	int ret;
 
-	list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list)
-		if (disp_path->p_pipe == intel_crtc->pipe)
+	list_for_each_entry_safe(p, n, &disp_cfg->path_list, list) {
+		if (p->p_pipe == intel_crtc->pipe) {
+			disp_path = p;
 			break;
+		}
+	}
 
 	if (!disp_path) {
 		gvt_err("vgpu-%d invalid vgpu display path\n", vgpu->id);
@@ -1969,7 +1978,7 @@ void intel_gvt_switch_display_pipe(struct intel_gvt *gvt, enum pipe pipe,
 	struct drm_device *dev = &dev_priv->drm;
 	struct intel_crtc *crtc = NULL;
 	struct intel_dom0_pipe_regs *d0_pipe_regs = NULL;
-	struct intel_vgpu_display_path *disp_path = NULL, *disp_path_old, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *disp_path_old, *p, *n;
 	enum pipe v_pipe = INVALID_PIPE;
 	enum plane_id plane = PLANE_PRIMARY;
 	int scaler, level, max_scaler = 0;
@@ -2000,9 +2009,11 @@ void intel_gvt_switch_display_pipe(struct intel_gvt *gvt, enum pipe pipe,
 	max_scaler = runtime->num_scalers[pipe];
 
 	if (new_v) {
-		list_for_each_entry_safe(disp_path, n, &new_v->disp_cfg.path_list, list) {
-			if (disp_path->p_pipe == pipe)
+		list_for_each_entry_safe(p, n, &new_v->disp_cfg.path_list, list) {
+			if (p->p_pipe == pipe) {
+				disp_path = p;
 				break;
+			}
 		}
 
 		if (!disp_path)
@@ -2298,7 +2309,7 @@ static void intel_gvt_switch_display_work(struct work_struct *w)
 	struct intel_gvt *gvt = container_of(w,
 		struct intel_gvt, switch_display_work);
 	struct intel_vgpu *vgpu, *old_v, *new_v;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
+	struct intel_vgpu_display_path *disp_path = NULL, *p, *n;
 	int id, old, new;
 	u32 new_owner = 0;
 	enum pipe pipe;
@@ -2335,10 +2346,12 @@ static void intel_gvt_switch_display_work(struct work_struct *w)
 		if (new != old) {
 			if (new_v) {
 				disp_path = NULL;
-				list_for_each_entry_safe(disp_path, n, &new_v->disp_cfg.path_list, list) {
-					if (disp_path->p_pipe != INVALID_PIPE &&
-					    disp_path->p_port == port)
+				list_for_each_entry_safe(p, n, &new_v->disp_cfg.path_list, list) {
+					if (p->p_pipe != INVALID_PIPE &&
+					    p->p_port == port) {
+						disp_path = p;
 						break;
+					}
 				}
 				if (atomic_read(&new_v->active) && disp_path &&
 				    disp_path->foreground &&
@@ -2900,11 +2913,15 @@ static int setup_gop_display(struct intel_vgpu *vgpu)
 	width--;
 	height--;
 	surf = vgpu->gm.high_gm_node.start;
-	ctl = PLANE_CTL_ENABLE | PLANE_CTL_FORMAT_XRGB_8888;
-	ctl |= PLANE_CTL_PIPE_GAMMA_ENABLE |
-		PLANE_CTL_PIPE_CSC_ENABLE |
-		PLANE_CTL_PLANE_GAMMA_DISABLE;
+
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
+	ctl = I915_READ_FW(PLANE_CTL(pipe, 0));
+	if ((ctl & PLANE_CTL_ENABLE) == 0) {
+		ctl = PLANE_CTL_ENABLE | PLANE_CTL_FORMAT_XRGB_8888;
+		ctl |= PLANE_CTL_PIPE_GAMMA_ENABLE |
+			PLANE_CTL_PIPE_CSC_ENABLE |
+			PLANE_CTL_PLANE_GAMMA_DISABLE;
+	}
 	I915_WRITE_FW(PLANE_OFFSET(pipe, 0), 0);
 	I915_WRITE_FW(PLANE_STRIDE(pipe, 0), stride);
 	I915_WRITE_FW(PLANE_SIZE(pipe, 0), (height << 16) | width);

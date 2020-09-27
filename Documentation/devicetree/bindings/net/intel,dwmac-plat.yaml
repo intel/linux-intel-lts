@@ -9,6 +9,15 @@ title: Intel DWMAC glue layer Device Tree Bindings
 maintainers:
   - Vineetha G. Jaya Kumaran <vineetha.g.jaya.kumaran@intel.com>
 
+select:
+  properties:
+    compatible:
+      contains:
+        enum:
+          - intel,keembay-dwmac
+  required:
+    - compatible
+
 allOf:
   - $ref: "snps,dwmac.yaml#"
 
@@ -19,8 +28,8 @@ properties:
           - enum:
               - intel,keembay-dwmac
           - const: snps,dwmac-4.10a
+
   clocks:
-    maxItems: 3
     items:
       - description: GMAC main clock
       - description: PTP reference clock
@@ -113,8 +122,6 @@ examples:
             compatible = "snps,dwmac-mdio";
 
             ethernet-phy@0 {
-                compatible = "ethernet-phy-id0141.0dd0",
-                              "ethernet-phy-ieee802.3-c22";
                 reg = <0>;
             };
         };

@@ -1,0 +1,13 @@
+config KEEMBAY_THERMAL
+	tristate "Temperature sensor driver for intel keembay"
+	default y
+	help
+	  Enable this option if you want to have support for thermal management
+	  controller present in Keembay
+
+config KEEMBAY_COOLING
+	tristate "dummy cooling driver for intel keembay"
+	default y
+	help
+	  Enable this option if you want to have support for thermal management
+	  controller present in Keembay

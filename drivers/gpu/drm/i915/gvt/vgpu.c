@@ -473,8 +473,9 @@ static struct intel_vgpu *__intel_gvt_create_vgpu(struct intel_gvt *gvt,
 	if (ret)
 		goto out_clean_sched_policy;
 
-	/*TODO: add more platforms support */
-	if (IS_SKYLAKE(gvt->dev_priv) || IS_KABYLAKE(gvt->dev_priv))
+	if (IS_BROADWELL(gvt->dev_priv))
+		ret = intel_gvt_hypervisor_set_edid(vgpu, PORT_B);
+	else
 		ret = intel_gvt_hypervisor_set_edid(vgpu, PORT_D);
 	if (ret)
 		goto out_clean_sched_policy;
@@ -597,6 +598,9 @@ void intel_gvt_reset_vgpu_locked(struct intel_vgpu *vgpu, bool dmlr,
 	intel_vgpu_reset_submission(vgpu, resetting_eng);
 	/* full GPU reset or device model level reset */
 	if (engine_mask == ALL_ENGINES || dmlr) {
+		struct intel_engine_cs *engine;
+		intel_engine_mask_t tmp;
+
 		intel_vgpu_select_submission_ops(vgpu, ALL_ENGINES, 0);
 		if (engine_mask == ALL_ENGINES)
 			intel_vgpu_invalidate_ppgtt(vgpu);
@@ -626,6 +630,10 @@ void intel_gvt_reset_vgpu_locked(struct intel_vgpu *vgpu, bool dmlr,
 				vgpu->d3_entered = false;
 			else
 				vgpu->pv_notified = false;
+		}
+
+		for_each_engine_masked(engine, &gvt->dev_priv->gt, engine_mask, tmp) {
+			vgpu->hws_pga[engine->id] = 0;
 		}
 	}
 

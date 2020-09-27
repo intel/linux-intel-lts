@@ -50,14 +50,24 @@ static int mxlk_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (new_device)
 		mxlk_list_add_device(xdev);
 
+	mxlk_pci_notify_event(xdev, _NOTIFY_DEVICE_CONNECTED);
+
 	return ret;
 }
 
 static void mxlk_remove(struct pci_dev *pdev)
 {
+	enum _xlink_device_event_type event_type;
 	struct mxlk_pcie *xdev = pci_get_drvdata(pdev);
 
 	if (xdev) {
+		if (!driver_unload) {
+			event_type = xdev->reset_sent ?
+				_NOTIFY_DEVICE_DISCONNECTED :
+				_ERROR_UNEXPECTED_DISCONNECTION;
+			mxlk_pci_notify_event(xdev, event_type);
+		}
+
 		mxlk_pci_cleanup(xdev);
 		if (driver_unload)
 			mxlk_remove_device(xdev);

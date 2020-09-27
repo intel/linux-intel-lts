@@ -1204,7 +1204,7 @@ static int keembay_pinconf_get(struct pinctrl_dev *pctldev, unsigned int pin,
 		break;
 
 	default:
-		return -ENOTSUPP;
+		return -EINVAL;
 	}
 
 	return 0;
@@ -1256,7 +1256,7 @@ static int keembay_pinconf_set(struct pinctrl_dev *pctldev,
 			break;
 
 		default:
-			return -ENOTSUPP;
+			return -EINVAL;
 		}
 	}
 
@@ -1480,6 +1480,10 @@ static int keembay_gpio_irq_set_type(struct irq_data *data, unsigned int type)
 	struct gpio_chip *chip = irq_data_get_irq_chip_data(data);
 	struct keembay_pinctrl *kpc = gpiochip_get_data(chip);
 
+	/*
+	 * IRQ_TYPE_EDGE_BOTH interrupts are not supported
+	 * due to hardware limitation in Keem Bay.
+	 */
 	if (max_gpios_edge_type == 0 &&
 	   (type == IRQ_TYPE_EDGE_RISING || type == IRQ_TYPE_EDGE_FALLING)) {
 		dev_err(kpc->dev, "IRQ_TYPE_EDGE_RISING interrupt property not specified in Device Tree\n");
@@ -1711,12 +1715,13 @@ static int keembay_gpiochip_probe(struct keembay_pinctrl *kpc,
 		return -ENOMEM;
 
 	for (i = 0; i < KEEMBAY_NUM_IRQ_LINES; i++) {
-		girq->parents[i] = platform_get_irq(pdev, i);
-		if (girq->parents[i] < 0) {
-			dev_err(kpc->dev, "Failed to map IRQ line %d\n", i);
-			continue;
-		}
+		int irq;
 
+		irq = platform_get_irq_optional(pdev, i);
+		if (irq < 0)
+			continue;
+
+		girq->parents[i] = irq;
 		keembay_irq[i].line = girq->parents[i];
 		keembay_irq[i].source = i;
 		keembay_irq[i].trigger = irq_get_trigger_type(girq->parents[i]);
