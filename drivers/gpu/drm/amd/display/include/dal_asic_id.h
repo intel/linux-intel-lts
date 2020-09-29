@@ -206,8 +206,20 @@ enum {
 #define ASICREV_IS_SIENNA_CICHLID_P(eChipRev)        ((eChipRev >= NV_SIENNA_CICHLID_P_A0))
 #endif
 #define GREEN_SARDINE_A0 0xA1
+
 #ifndef ASICREV_IS_GREEN_SARDINE
 #define ASICREV_IS_GREEN_SARDINE(eChipRev) ((eChipRev >= GREEN_SARDINE_A0) && (eChipRev < 0xFF))
+#endif
+
+#if defined(CONFIG_DRM_AMD_DC_DCN3_01)
+#define FAMILY_VGH 144
+#define DEVICE_ID_VGH_163F 0x163F
+#define VANGOGH_A0 0x01
+#define VANGOGH_UNKNOWN 0xFF
+#endif
+
+#ifndef ASICREV_IS_VANGOGH
+#define ASICREV_IS_VANGOGH(eChipRev) ((eChipRev >= VANGOGH_A0) && (eChipRev < VANGOGH_UNKNOWN))
 #endif
 
 /*
