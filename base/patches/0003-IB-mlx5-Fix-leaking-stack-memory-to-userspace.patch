@@ -1,0 +1,32 @@
+From 69b95a41ff16da6e4afb1c2047e433600c3a1d2d Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@mellanox.com>
+Date: Tue, 14 Aug 2018 15:33:52 -0600
+Subject: [PATCH 03/19] IB/mlx5: Fix leaking stack memory to userspace
+
+mlx5_ib_create_qp_resp was never initialized and only the first 4 bytes
+were written.
+
+Fixes: 41d902cb7c32 ("RDMA/mlx5: Fix definition of mlx5_ib_create_qp_resp")
+Cc: <stable@vger.kernel.org>
+Acked-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+---
+ drivers/infiniband/hw/mlx5/qp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/hw/mlx5/qp.c b/drivers/infiniband/hw/mlx5/qp.c
+index 7205af7..c99cef3 100644
+--- a/drivers/infiniband/hw/mlx5/qp.c
++++ b/drivers/infiniband/hw/mlx5/qp.c
+@@ -1519,7 +1519,7 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
+ 	struct mlx5_ib_resources *devr = &dev->devr;
+ 	int inlen = MLX5_ST_SZ_BYTES(create_qp_in);
+ 	struct mlx5_core_dev *mdev = dev->mdev;
+-	struct mlx5_ib_create_qp_resp resp;
++	struct mlx5_ib_create_qp_resp resp = {};
+ 	struct mlx5_ib_cq *send_cq;
+ 	struct mlx5_ib_cq *recv_cq;
+ 	unsigned long flags;
+-- 
+2.7.4
+

@@ -1,0 +1,64 @@
+From a73ab2b1102005986dadc1d7c034611169ddf9bb Mon Sep 17 00:00:00 2001
+From: nanli2x <nanli2x@intel.com>
+Date: Wed, 12 Aug 2020 22:51:04 -0400
+Subject: [PATCH 05/19] sctp: implement memory accounting on tx path
+
+Now when sending packets, sk_mem_charge() and sk_mem_uncharge() have been
+used to set sk_forward_alloc. We just need to call sk_wmem_schedule() to
+check if the allocated should be raised, and call sk_mem_reclaim() to
+check if the allocated should be reduced when it's under memory pressure.
+
+If sk_wmem_schedule() returns false, which means no memory is allowed to
+allocate, it will block and wait for memory to become available.
+
+Note different from tcp, sctp wait_for_buf happens before allocating any
+skb, so memory accounting check is done with the whole msg_len before it
+too.
+
+Change-Id: I354123bdcc80acea6f0c1862506779e1969dfc1c
+Tracked-On: PKT-2203
+Reported-by: Matteo Croce <mcroce@redhat.com>
+Tested-by: Matteo Croce <mcroce@redhat.com>
+Acked-by: Neil Horman <nhorman@tuxdriver.com>
+Acked-by: Marcelo Ricardo Leitner <marcelo.leitner@gmail.com>
+Signed-off-by: Xin Long <lucien.xin@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Zhang, Baoli <baoli.zhang@intel.com>
+---
+ net/sctp/socket.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/net/sctp/socket.c b/net/sctp/socket.c
+index 1f15427..122b0fa 100644
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -1981,9 +1981,11 @@ static int sctp_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
+ 	if (sctp_wspace(asoc) < msg_len)
+ 		sctp_prsctp_prune(asoc, sinfo, msg_len - sctp_wspace(asoc));
+ 
+-	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+-	if (!sctp_wspace(asoc)) {
+-		/* sk can be changed by peel off when waiting for buf. */
++	if (sk_under_memory_pressure(sk))
++		sk_mem_reclaim(sk);
++
++	if (!sctp_wspace(asoc) || !sk_wmem_schedule(sk, msg_len)) {
++		timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+ 		err = sctp_wait_for_sndbuf(asoc, &timeo, msg_len);
+ 		if (err) {
+ 			if (err == -ESRCH) {
+@@ -7889,7 +7891,10 @@ static int sctp_wait_for_sndbuf(struct sctp_association *asoc, long *timeo_p,
+ 			goto do_error;
+ 		if (signal_pending(current))
+ 			goto do_interrupted;
+-		if (msg_len <= sctp_wspace(asoc))
++		if (sk_under_memory_pressure(sk))
++			sk_mem_reclaim(sk);
++		if (msg_len <= sctp_wspace(asoc) &&
++		    sk_wmem_schedule(sk, msg_len))
+ 			break;
+ 
+ 		/* Let another process have a go.  Since we are going
+-- 
+2.7.4
+

@@ -1,0 +1,261 @@
+From 8fcac787ff70043156995187283787de8906f051 Mon Sep 17 00:00:00 2001
+From: Chao Yu <yuchao0@huawei.com>
+Date: Thu, 11 Jan 2018 14:42:30 +0800
+Subject: [PATCH 14/19] f2fs: support F2FS_IOC_PRECACHE_EXTENTS
+
+This patch introduces a new ioctl F2FS_IOC_PRECACHE_EXTENTS to precache
+extent info like ext4, in order to gain better performance during
+triggering AIO by eliminating synchronous waiting of mapping info.
+
+commit 7869a4a6c5ca ("ext4: add support for extent pre-caching")
+
+In addition, with newly added extent precache abilitiy, this patch add
+to support FIEMAP_FLAG_CACHE in ->fiemap.
+
+Signed-off-by: Chao Yu <yuchao0@huawei.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/data.c | 38 ++++++++++++++++++++++++++++++++++++++
+ fs/f2fs/f2fs.h |  4 ++++
+ fs/f2fs/file.c | 45 +++++++++++++++++++++++++++++++++++++++++++--
+ 3 files changed, 85 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index ef38999..bd3d4af 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -856,6 +856,7 @@ int f2fs_preallocate_blocks(struct kiocb *iocb, struct iov_iter *from)
+ 		map.m_len = 0;
+ 
+ 	map.m_next_pgofs = NULL;
++	map.m_next_extent = NULL;
+ 
+ 	if (iocb->ki_flags & IOCB_DIRECT) {
+ 		err = f2fs_convert_inline_inode(inode);
+@@ -913,6 +914,7 @@ int f2fs_map_blocks(struct inode *inode, struct f2fs_map_blocks *map,
+ 	blkcnt_t prealloc;
+ 	struct extent_info ei = {0,0,0};
+ 	block_t blkaddr;
++	unsigned int start_pgofs;
+ 
+ 	if (!maxblocks)
+ 		return 0;
+@@ -928,6 +930,8 @@ int f2fs_map_blocks(struct inode *inode, struct f2fs_map_blocks *map,
+ 		map->m_pblk = ei.blk + pgofs - ei.fofs;
+ 		map->m_len = min((pgoff_t)maxblocks, ei.fofs + ei.len - pgofs);
+ 		map->m_flags = F2FS_MAP_MAPPED;
++		if (map->m_next_extent)
++			*map->m_next_extent = pgofs + map->m_len;
+ 		goto out;
+ 	}
+ 
+@@ -946,10 +950,14 @@ int f2fs_map_blocks(struct inode *inode, struct f2fs_map_blocks *map,
+ 			if (map->m_next_pgofs)
+ 				*map->m_next_pgofs =
+ 					get_next_page_offset(&dn, pgofs);
++			if (map->m_next_extent)
++				*map->m_next_extent =
++					get_next_page_offset(&dn, pgofs);
+ 		}
+ 		goto unlock_out;
+ 	}
+ 
++	start_pgofs = pgofs;
+ 	prealloc = 0;
+ 	last_ofs_in_node = ofs_in_node = dn.ofs_in_node;
+ 	end_offset = ADDRS_PER_PAGE(dn.node_page, inode);
+@@ -988,6 +996,8 @@ int f2fs_map_blocks(struct inode *inode, struct f2fs_map_blocks *map,
+ 				map->m_pblk = 0;
+ 				goto sync_out;
+ 			}
++			if (flag == F2FS_GET_BLOCK_PRECACHE)
++				goto sync_out;
+ 			if (flag == F2FS_GET_BLOCK_FIEMAP &&
+ 						blkaddr == NULL_ADDR) {
+ 				if (map->m_next_pgofs)
+@@ -1046,6 +1056,16 @@ int f2fs_map_blocks(struct inode *inode, struct f2fs_map_blocks *map,
+ 	else if (dn.ofs_in_node < end_offset)
+ 		goto next_block;
+ 
++	if (flag == F2FS_GET_BLOCK_PRECACHE) {
++		if (map->m_flags & F2FS_MAP_MAPPED) {
++			unsigned int ofs = start_pgofs - map->m_lblk;
++
++			f2fs_update_extent_cache_range(&dn,
++				start_pgofs, map->m_pblk + ofs,
++				map->m_len - ofs);
++		}
++	}
++
+ 	f2fs_put_dnode(&dn);
+ 
+ 	if (create) {
+@@ -1055,6 +1075,17 @@ int f2fs_map_blocks(struct inode *inode, struct f2fs_map_blocks *map,
+ 	goto next_dnode;
+ 
+ sync_out:
++	if (flag == F2FS_GET_BLOCK_PRECACHE) {
++		if (map->m_flags & F2FS_MAP_MAPPED) {
++			unsigned int ofs = start_pgofs - map->m_lblk;
++
++			f2fs_update_extent_cache_range(&dn,
++				start_pgofs, map->m_pblk + ofs,
++				map->m_len - ofs);
++		}
++		if (map->m_next_extent)
++			*map->m_next_extent = pgofs + 1;
++	}
+ 	f2fs_put_dnode(&dn);
+ unlock_out:
+ 	if (create) {
+@@ -1076,6 +1107,7 @@ static int __get_data_block(struct inode *inode, sector_t iblock,
+ 	map.m_lblk = iblock;
+ 	map.m_len = bh->b_size >> inode->i_blkbits;
+ 	map.m_next_pgofs = next_pgofs;
++	map.m_next_extent = NULL;
+ 
+ 	err = f2fs_map_blocks(inode, &map, create, flag);
+ 	if (!err) {
+@@ -1132,6 +1164,11 @@ int f2fs_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 	u32 flags = 0;
+ 	int ret = 0;
+ 
++	if (fieinfo->fi_flags & FIEMAP_FLAG_CACHE) {
++		ret = f2fs_precache_extents(inode);
++		if (ret)
++			return ret;
++	}
+ 	ret = fiemap_check_flags(fieinfo, FIEMAP_FLAG_SYNC);
+ 	if (ret)
+ 		return ret;
+@@ -1229,6 +1266,7 @@ static int f2fs_mpage_readpages(struct address_space *mapping,
+ 	map.m_len = 0;
+ 	map.m_flags = 0;
+ 	map.m_next_pgofs = NULL;
++	map.m_next_extent = NULL;
+ 
+ 	for (page_idx = 0; nr_pages; page_idx++, nr_pages--) {
+ 
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 63f04fb..3d085f9 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -331,6 +331,7 @@ static inline bool __has_cursum_space(struct f2fs_journal *journal,
+ #define F2FS_IOC_GET_FEATURES		_IOR(F2FS_IOCTL_MAGIC, 12, __u32)
+ #define F2FS_IOC_SET_PIN_FILE		_IOW(F2FS_IOCTL_MAGIC, 13, __u32)
+ #define F2FS_IOC_GET_PIN_FILE		_IOR(F2FS_IOCTL_MAGIC, 14, __u32)
++#define F2FS_IOC_PRECACHE_EXTENTS	_IO(F2FS_IOCTL_MAGIC, 15)
+ 
+ #define F2FS_IOC_SET_ENCRYPTION_POLICY	FS_IOC_SET_ENCRYPTION_POLICY
+ #define F2FS_IOC_GET_ENCRYPTION_POLICY	FS_IOC_GET_ENCRYPTION_POLICY
+@@ -523,6 +524,7 @@ struct f2fs_map_blocks {
+ 	unsigned int m_len;
+ 	unsigned int m_flags;
+ 	pgoff_t *m_next_pgofs;		/* point next possible non-hole pgofs */
++	pgoff_t *m_next_extent;		/* point to next possible extent */
+ };
+ 
+ /* for flag in get_data_block */
+@@ -532,6 +534,7 @@ enum {
+ 	F2FS_GET_BLOCK_BMAP,
+ 	F2FS_GET_BLOCK_PRE_DIO,
+ 	F2FS_GET_BLOCK_PRE_AIO,
++	F2FS_GET_BLOCK_PRECACHE,
+ };
+ 
+ /*
+@@ -2456,6 +2459,7 @@ int f2fs_getattr(const struct path *path, struct kstat *stat,
+ int f2fs_setattr(struct dentry *dentry, struct iattr *attr);
+ int truncate_hole(struct inode *inode, pgoff_t pg_start, pgoff_t pg_end);
+ int truncate_data_blocks_range(struct dnode_of_data *dn, int count);
++int f2fs_precache_extents(struct inode *inode);
+ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
+ long f2fs_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+ int f2fs_pin_file_control(struct inode *inode, bool inc);
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 606850d..87673d6 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -1420,7 +1420,8 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
+ 					loff_t len, int mode)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+-	struct f2fs_map_blocks map = { .m_next_pgofs = NULL };
++	struct f2fs_map_blocks map = { .m_next_pgofs = NULL,
++			.m_next_extent = NULL };
+ 	pgoff_t pg_end;
+ 	loff_t new_size = i_size_read(inode);
+ 	loff_t off_end;
+@@ -2064,7 +2065,8 @@ static int f2fs_defragment_range(struct f2fs_sb_info *sbi,
+ 					struct f2fs_defragment *range)
+ {
+ 	struct inode *inode = file_inode(filp);
+-	struct f2fs_map_blocks map = { .m_next_pgofs = NULL };
++	struct f2fs_map_blocks map = { .m_next_pgofs = NULL,
++			.m_next_extent = NULL };
+ 	struct extent_info ei = {0,0,0};
+ 	pgoff_t pg_start, pg_end;
+ 	unsigned int blk_per_seg = sbi->blocks_per_seg;
+@@ -2733,6 +2735,42 @@ static int f2fs_ioc_get_pin_file(struct file *filp, unsigned long arg)
+ 	return put_user(pin, (u32 __user *)arg);
+ }
+ 
++int f2fs_precache_extents(struct inode *inode)
++{
++	struct f2fs_inode_info *fi = F2FS_I(inode);
++	struct f2fs_map_blocks map;
++	pgoff_t m_next_extent;
++	loff_t end;
++	int err;
++
++	if (is_inode_flag_set(inode, FI_NO_EXTENT))
++		return -EOPNOTSUPP;
++
++	map.m_lblk = 0;
++	map.m_next_pgofs = NULL;
++	map.m_next_extent = &m_next_extent;
++	end = F2FS_I_SB(inode)->max_file_blocks;
++
++	while (map.m_lblk < end) {
++		map.m_len = end - map.m_lblk;
++
++		down_write(&fi->dio_rwsem[WRITE]);
++		err = f2fs_map_blocks(inode, &map, 0, F2FS_GET_BLOCK_PRECACHE);
++		up_write(&fi->dio_rwsem[WRITE]);
++		if (err)
++			return err;
++
++		map.m_lblk = m_next_extent;
++	}
++
++	return err;
++}
++
++static int f2fs_ioc_precache_extents(struct file *filp, unsigned long arg)
++{
++	return f2fs_precache_extents(file_inode(filp));
++}
++
+ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+ 	switch (cmd) {
+@@ -2784,6 +2822,8 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 		return f2fs_ioc_get_pin_file(filp, arg);
+ 	case F2FS_IOC_SET_PIN_FILE:
+ 		return f2fs_ioc_set_pin_file(filp, arg);
++	case F2FS_IOC_PRECACHE_EXTENTS:
++		return f2fs_ioc_precache_extents(filp, arg);
+ 	default:
+ 		return -ENOTTY;
+ 	}
+@@ -2867,6 +2907,7 @@ long f2fs_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 	case F2FS_IOC_FSSETXATTR:
+ 	case F2FS_IOC_GET_PIN_FILE:
+ 	case F2FS_IOC_SET_PIN_FILE:
++	case F2FS_IOC_PRECACHE_EXTENTS:
+ 		break;
+ 	default:
+ 		return -ENOIOCTLCMD;
+-- 
+2.7.4
+

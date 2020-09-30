@@ -1,9 +1,3 @@
-# CVE-2018-8043
-0001-net-phy-mdio-bcm-unimac-fix-potential-NULL-dereferen-CVE-2018-8043.patch
-
-# CVE-2018-10323
-0001-xfs-set-format-back-to-extents-if-xfs_bmap_extents_t-CVE-2018-10323.patch
-
 # CVE-2016-10723
 0001-mm-oom-remove-sleep-from-under-oom_lock-CVE-2016-10723.patch
 
@@ -33,15 +27,6 @@
 
 # CVE-2019-18808
 0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
-
-# CVE-2019-19073
-0001-ath9k_htc-release-allocated-buffer-if-timed-out.patch
-
-# CVE-2019-19074
-0001-ath9k-release-allocated-buffer-if-timed-out.patch
-
-# CVE-2019-19054
-0001-media-rc-prevent-memory-leak-in-cx23888_ir_probe.patch
 
 # CVE-2019-19060
 0001-iio-imu-adis16400-release-allocated-memory-on-failur.patch
@@ -81,10 +66,43 @@
 # CVE-2020-15780
 0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
 
-# CVE-2020-12888
-0004-vfio-type1-Support-faulting-PFNMAP-vmas.patch
-0005-vfio-pci-Fault-mmaps-to-enable-vma-tracking.patch
-0006-vfio-pci-Invalidate-mmaps-and-block-MMIO-access-on-d.patch
+# CVE-2019-12381
+0001-commit-425aa0e1d015-ip_sockglue-Fix-missing-check-bu.patch
 
-# CVE-2020-16166
-0001-random32-update-the-net-random-state-on-interrupt-an.patch
+# CVE-2018-20855
+0002-RDMA-mlx5-Fix-definition-of-mlx5_ib_create_qp_resp.patch
+0003-IB-mlx5-Fix-leaking-stack-memory-to-userspace.patch
+
+# CVE-2019-18885
+0004-commit-09ba3bc9dd15-btrfs-merge-btrfs_find_device-an.patch
+
+# CVE-2019-3874
+0005-sctp-implement-memory-accounting-on-tx-path.patch
+0006-sctp-implement-memory-accounting-on-rx-path.patch
+
+# CVE-2019-12380
+0007-efi-Use-efi_mm-in-x86-as-well-as-ARM.patch
+0008-x86-efi-Replace-efi_pgd-with-efi_mm.pgd.patch
+0009-x86-efi-Use-efi_switch_mm-rather-than-manually-twidd.patch
+0010-efi-x86-Add-missing-error-handling-to-old_memmap-1-1.patch
+
+# CVE-2019-19036
+0011-btrfs-Validate-child-tree-block-s-level-and-first-ke.patch
+0012-btrfs-Detect-unbalanced-tree-with-empty-leaf-before-.patch
+
+# CVE-2019-19815
+0013-f2fs-add-an-ioctl-to-disable-GC-for-specific-file.patch
+0014-f2fs-support-F2FS_IOC_PRECACHE_EXTENTS.patch
+0015-f2fs-support-swap-file-w-DIO.patch
+
+# CVE-2020-25284
+0016-rbd-require-global-CAP_SYS_ADMIN-for-mapping-and-unm.patch
+
+# CVE-2020-25211
+0017-netfilter-ctnetlink-add-a-range-check-for-l3-l4-prot.patch
+
+# CVE-2020-14386
+0018-net-packet-fix-overflow-in-tpacket_rcv.patch
+
+# CVE-2018-7754
+0019-printk-hash-addresses-printed-with-p.patch

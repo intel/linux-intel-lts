@@ -1,0 +1,36 @@
+From a69de0f205f9bc3dfede3219c3e5ea128af4bec8 Mon Sep 17 00:00:00 2001
+From: nanli2x <nanli2x@intel.com>
+Date: Thu, 13 Aug 2020 22:17:25 -0400
+Subject: [PATCH 01/19] commit 425aa0e1d015 ("ip_sockglue: Fix missing-check
+ bug in ip_ra_control()")
+
+In function ip_ra_control(), the pointer new_ra is allocated a memory
+space via kmalloc(). And it is used in the following codes. However,
+when  there is a memory allocation error, kmalloc() fails. Thus null
+pointer dereference may happen. And it will cause the kernel to crash.
+Therefore, we should check the return value and handle the error.
+
+Change-Id: I4f364e0dbfb1c26b45dd7112f64dae1acbaea0af
+Tracked-On: PKT-2261
+Signed-off-by: Gen Zhang <blackgod016574@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/ipv4/ip_sockglue.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/net/ipv4/ip_sockglue.c b/net/ipv4/ip_sockglue.c
+index d1081ea..29ca79a 100644
+--- a/net/ipv4/ip_sockglue.c
++++ b/net/ipv4/ip_sockglue.c
+@@ -354,6 +354,8 @@ int ip_ra_control(struct sock *sk, unsigned char on,
+ 		return -EINVAL;
+ 
+ 	new_ra = on ? kmalloc(sizeof(*new_ra), GFP_KERNEL) : NULL;
++	if (on && !new_ra)
++		return -ENOMEM;
+ 
+ 	for (rap = &ip_ra_chain;
+ 	     (ra = rtnl_dereference(*rap)) != NULL;
+-- 
+2.7.4
+

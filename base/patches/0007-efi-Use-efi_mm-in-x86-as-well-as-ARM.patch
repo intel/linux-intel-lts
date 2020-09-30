@@ -1,0 +1,118 @@
+From b6aab642acb13583fddac5d19f7e368d43297bb7 Mon Sep 17 00:00:00 2001
+From: Sai Praneeth <sai.praneeth.prakhya@intel.com>
+Date: Mon, 12 Mar 2018 08:44:56 +0000
+Subject: [PATCH 07/19] efi: Use efi_mm in x86 as well as ARM
+
+Presently, only ARM uses mm_struct to manage EFI page tables and EFI
+runtime region mappings. As this is the preferred approach, let's make
+this data structure common across architectures. Specially, for x86,
+using this data structure improves code maintainability and readability.
+
+Tested-by: Bhupesh Sharma <bhsharma@redhat.com>
+[ardb: don't #include the world to get a declaration of struct mm_struct]
+Signed-off-by: Sai Praneeth Prakhya <sai.praneeth.prakhya@intel.com>
+Signed-off-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Reviewed-by: Matt Fleming <matt@codeblueprint.co.uk>
+Cc: Andy Lutomirski <luto@kernel.org>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Lee, Chun-Yi <jlee@suse.com>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Michael S. Tsirkin <mst@redhat.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Ravi Shankar <ravi.v.shankar@intel.com>
+Cc: Ricardo Neri <ricardo.neri@intel.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Tony Luck <tony.luck@intel.com>
+Cc: linux-efi@vger.kernel.org
+Link: http://lkml.kernel.org/r/20180312084500.10764-2-ard.biesheuvel@linaro.org
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+---
+ arch/x86/include/asm/efi.h         | 1 +
+ arch/x86/platform/efi/efi_64.c     | 3 +++
+ drivers/firmware/efi/arm-runtime.c | 9 ---------
+ drivers/firmware/efi/efi.c         | 9 +++++++++
+ include/linux/efi.h                | 2 ++
+ 5 files changed, 15 insertions(+), 9 deletions(-)
+
+diff --git a/arch/x86/include/asm/efi.h b/arch/x86/include/asm/efi.h
+index 96fd025..20be073 100644
+--- a/arch/x86/include/asm/efi.h
++++ b/arch/x86/include/asm/efi.h
+@@ -7,6 +7,7 @@
+ #include <asm/processor-flags.h>
+ #include <asm/tlb.h>
+ #include <asm/nospec-branch.h>
++#include <asm/mmu_context.h>
+ 
+ /*
+  * We map the EFI regions needed for runtime services non-contiguously,
+diff --git a/arch/x86/platform/efi/efi_64.c b/arch/x86/platform/efi/efi_64.c
+index 0ebb7f9..6fd19ae 100644
+--- a/arch/x86/platform/efi/efi_64.c
++++ b/arch/x86/platform/efi/efi_64.c
+@@ -231,6 +231,9 @@ int __init efi_alloc_page_tables(void)
+ 		return -ENOMEM;
+ 	}
+ 
++	mm_init_cpumask(&efi_mm);
++	init_new_context(NULL, &efi_mm);
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/firmware/efi/arm-runtime.c b/drivers/firmware/efi/arm-runtime.c
+index ad1530a..8033cf9 100644
+--- a/drivers/firmware/efi/arm-runtime.c
++++ b/drivers/firmware/efi/arm-runtime.c
+@@ -31,15 +31,6 @@
+ 
+ extern u64 efi_system_table;
+ 
+-static struct mm_struct efi_mm = {
+-	.mm_rb			= RB_ROOT,
+-	.mm_users		= ATOMIC_INIT(2),
+-	.mm_count		= ATOMIC_INIT(1),
+-	.mmap_sem		= __RWSEM_INITIALIZER(efi_mm.mmap_sem),
+-	.page_table_lock	= __SPIN_LOCK_UNLOCKED(efi_mm.page_table_lock),
+-	.mmlist			= LIST_HEAD_INIT(efi_mm.mmlist),
+-};
+-
+ #ifdef CONFIG_ARM64_PTDUMP_DEBUGFS
+ #include <asm/ptdump.h>
+ 
+diff --git a/drivers/firmware/efi/efi.c b/drivers/firmware/efi/efi.c
+index e6f12d8..c264981 100644
+--- a/drivers/firmware/efi/efi.c
++++ b/drivers/firmware/efi/efi.c
+@@ -74,6 +74,15 @@ static unsigned long *efi_tables[] = {
+ 	&efi.mem_attr_table,
+ };
+ 
++struct mm_struct efi_mm = {
++	.mm_rb			= RB_ROOT,
++	.mm_users		= ATOMIC_INIT(2),
++	.mm_count		= ATOMIC_INIT(1),
++	.mmap_sem		= __RWSEM_INITIALIZER(efi_mm.mmap_sem),
++	.page_table_lock	= __SPIN_LOCK_UNLOCKED(efi_mm.page_table_lock),
++	.mmlist			= LIST_HEAD_INIT(efi_mm.mmlist),
++};
++
+ static bool disable_runtime;
+ static int __init setup_noefi(char *arg)
+ {
+diff --git a/include/linux/efi.h b/include/linux/efi.h
+index 598ee6b..c029d13 100644
+--- a/include/linux/efi.h
++++ b/include/linux/efi.h
+@@ -930,6 +930,8 @@ extern struct efi {
+ 	unsigned long flags;
+ } efi;
+ 
++extern struct mm_struct efi_mm;
++
+ static inline int
+ efi_guidcmp (efi_guid_t left, efi_guid_t right)
+ {
+-- 
+2.7.4
+

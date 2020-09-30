@@ -1,0 +1,57 @@
+From f18e4b2be2aabf00461506cea0a8cf2bfec1f89e Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@mellanox.com>
+Date: Tue, 3 Apr 2018 10:00:53 +0300
+Subject: [PATCH 02/19] RDMA/mlx5: Fix definition of mlx5_ib_create_qp_resp
+
+This structure is pushed down the ex and the non-ex path, so it needs to be
+aligned to 8 bytes to go through ex without implicit padding.
+
+Old user space will provide 4 bytes of resp on !ex and 8 bytes on ex, so
+take the approach of just copying the minimum length.
+
+New user space will consistently provide 8 bytes in both cases.
+
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+---
+ drivers/infiniband/hw/mlx5/qp.c | 4 ++--
+ include/uapi/rdma/mlx5-abi.h    | 1 +
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/infiniband/hw/mlx5/qp.c b/drivers/infiniband/hw/mlx5/qp.c
+index d835ef2..7205af7 100644
+--- a/drivers/infiniband/hw/mlx5/qp.c
++++ b/drivers/infiniband/hw/mlx5/qp.c
+@@ -858,7 +858,7 @@ static int create_user_qp(struct mlx5_ib_dev *dev, struct ib_pd *pd,
+ 		goto err_free;
+ 	}
+ 
+-	err = ib_copy_to_udata(udata, resp, sizeof(*resp));
++	err = ib_copy_to_udata(udata, resp, min(udata->outlen, sizeof(*resp)));
+ 	if (err) {
+ 		mlx5_ib_dbg(dev, "copy failed\n");
+ 		goto err_unmap;
+@@ -1394,7 +1394,7 @@ static int create_rss_raw_qp_tir(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
+ 		return -EOPNOTSUPP;
+ 	}
+ 
+-	err = ib_copy_to_udata(udata, &resp, min_resp_len);
++	err = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
+ 	if (err) {
+ 		mlx5_ib_dbg(dev, "copy failed\n");
+ 		return -EINVAL;
+diff --git a/include/uapi/rdma/mlx5-abi.h b/include/uapi/rdma/mlx5-abi.h
+index 23dba2d..9f6851a 100644
+--- a/include/uapi/rdma/mlx5-abi.h
++++ b/include/uapi/rdma/mlx5-abi.h
+@@ -286,6 +286,7 @@ struct mlx5_ib_create_qp_rss {
+ 
+ struct mlx5_ib_create_qp_resp {
+ 	__u32	bfreg_index;
++	__u32   reserved;
+ };
+ 
+ struct mlx5_ib_alloc_mw {
+-- 
+2.7.4
+
