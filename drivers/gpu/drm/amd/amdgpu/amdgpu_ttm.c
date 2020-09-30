@@ -1298,7 +1298,9 @@ static void amdgpu_ttm_backend_destroy(struct ttm_bo_device *bdev,
 static struct ttm_tt *amdgpu_ttm_tt_create(struct ttm_buffer_object *bo,
 					   uint32_t page_flags)
 {
+	struct amdgpu_bo *abo = ttm_to_amdgpu_bo(bo);
 	struct amdgpu_ttm_tt *gtt;
+	enum ttm_caching caching;
 
 	gtt = kzalloc(sizeof(struct amdgpu_ttm_tt), GFP_KERNEL);
 	if (gtt == NULL) {
@@ -1306,8 +1308,13 @@ static struct ttm_tt *amdgpu_ttm_tt_create(struct ttm_buffer_object *bo,
 	}
 	gtt->gobj = &bo->base;
 
+	if (abo->flags & AMDGPU_GEM_CREATE_CPU_GTT_USWC)
+		caching = ttm_write_combined;
+	else
+		caching = ttm_cached;
+
 	/* allocate space for the uninitialized page entries */
-	if (ttm_sg_tt_init(&gtt->ttm, bo, page_flags)) {
+	if (ttm_sg_tt_init(&gtt->ttm, bo, page_flags, caching)) {
 		kfree(gtt);
 		return NULL;
 	}
@@ -1531,7 +1538,7 @@ uint64_t amdgpu_ttm_tt_pde_flags(struct ttm_tt *ttm, struct ttm_resource *mem)
 	if (mem && mem->mem_type == TTM_PL_TT) {
 		flags |= AMDGPU_PTE_SYSTEM;
 
-		if (ttm->caching_state == tt_cached)
+		if (ttm->caching == ttm_cached)
 			flags |= AMDGPU_PTE_SNOOPED;
 	}
 
