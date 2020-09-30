@@ -308,6 +308,28 @@ static int __init tsc_setup(char *str)
 
 __setup("tsc=", tsc_setup);
 
+#define ART_DISABLE	-1
+#define ART_DEFAULT	 0
+#define ART_VIRTALLOW	 1
+#define ART_FORCE	 2
+
+static int force_art_enable;
+
+static int __init art_setup(char *str)
+{
+	if (!strncmp(str, "force", 5))
+		force_art_enable = ART_FORCE;
+	else if (!strncmp(str, "disable", 7))
+		force_art_enable = ART_DISABLE;
+	else if (!strncmp(str, "virtallow", 9))
+		force_art_enable = ART_VIRTALLOW;
+	else if (!strncmp(str, "default", 7))
+		force_art_enable = ART_DEFAULT;
+	return 1;
+}
+
+__setup("art=", art_setup);
+
 #define MAX_RETRIES		5
 #define TSC_DEFAULT_THRESHOLD	0x20000
 
@@ -1033,7 +1055,6 @@ core_initcall(cpufreq_register_tsc_scaling);
 #define ART_CPUID_LEAF (0x15)
 #define ART_MIN_DENOMINATOR (1)
 
-
 /*
  * If ART is present detect the numerator:denominator to convert to TSC
  */
@@ -1041,26 +1062,35 @@ static void __init detect_art(void)
 {
 	unsigned int unused[2];
 
-	if (boot_cpu_data.cpuid_level < ART_CPUID_LEAF)
+	if (force_art_enable == ART_DISABLE)
 		return;
 
+	if (force_art_enable == ART_FORCE)
+		goto art_bypass_check;
+
 	/*
-	 * Don't enable ART in a VM, non-stop TSC and TSC_ADJUST required,
-	 * and the TSC counter resets must not occur asynchronously.
+	 * Non-stop TSC required, and TSC counter resets must not occur
+	 * asynchronously.
 	 */
-	if (boot_cpu_has(X86_FEATURE_HYPERVISOR) ||
-	    !boot_cpu_has(X86_FEATURE_NONSTOP_TSC) ||
-	    !boot_cpu_has(X86_FEATURE_TSC_ADJUST) ||
+	if (!boot_cpu_has(X86_FEATURE_NONSTOP_TSC) ||
 	    tsc_async_resets)
 		return;
 
-	cpuid(ART_CPUID_LEAF, &art_to_tsc_denominator,
-	      &art_to_tsc_numerator, unused, unused+1);
-
-	if (art_to_tsc_denominator < ART_MIN_DENOMINATOR)
+	/*
+	 * Don't enable ART in a VM, unless the bypass flag is passed on the
+	 * command line
+	 */
+	if (boot_cpu_has(X86_FEATURE_HYPERVISOR) &&
+	    force_art_enable != ART_VIRTALLOW)
 		return;
 
-	rdmsrl(MSR_IA32_TSC_ADJUST, art_to_tsc_offset);
+art_bypass_check:
+	if (boot_cpu_data.cpuid_level >= ART_CPUID_LEAF) {
+		cpuid(ART_CPUID_LEAF, &art_to_tsc_denominator,
+		      &art_to_tsc_numerator, unused, unused+1);
+	}
+	if (boot_cpu_has(X86_FEATURE_TSC_ADJUST))
+		rdmsrl(MSR_IA32_TSC_ADJUST, art_to_tsc_offset);
 
 	/* Make this sticky over multiple CPU init calls */
 	setup_force_cpu_cap(X86_FEATURE_ART);
