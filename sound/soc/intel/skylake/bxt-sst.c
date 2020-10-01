@@ -695,6 +695,7 @@ again:
 		dev_err(dev, "Load base fw failed: %x\n", ret);
 		return ret;
 	}
+
 	if (ctx->is_first_boot)
 		skl_dsp_init_core_state(sst);
 
@@ -704,7 +705,6 @@ again:
 			dev_info(ctx->dev, "reload libs failed:%d remaining retries:%d\n",
 				ret, lib_reload_retries);
 			skl_dsp_disable_core(sst, SKL_DSP_CORE0_MASK);
-			skl_freeup_uuid_list(ctx);
 			goto again;
 		}
 

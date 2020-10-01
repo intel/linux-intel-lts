@@ -391,6 +391,7 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
 	struct firmware stripped_fw;
 	unsigned int safe_file;
 	int ret = 0;
+	bool already_on_list;
 
 	/* Get the FW pointer to derive ADSP header */
 	stripped_fw.data = fw->data;
@@ -442,13 +443,23 @@ int snd_skl_parse_uuids(struct sst_dsp *ctx, const struct firmware *fw,
 	 */
 
 	for (i = 0; i < num_entry; i++, mod_entry++) {
+		uuid_bin = (uuid_le *)mod_entry->uuid.id;
+		already_on_list = false;
+		list_for_each_entry(module, &skl->uuid_list, list)
+			if (uuid_le_cmp(*uuid_bin, module->uuid) == 0) {
+				already_on_list = true;
+				break;
+			}
+
+		if (already_on_list)
+			continue;
+
 		module = kzalloc(sizeof(*module), GFP_KERNEL);
 		if (!module) {
 			ret = -ENOMEM;
 			goto free_uuid_list;
 		}
 
-		uuid_bin = (uuid_le *)mod_entry->uuid.id;
 		memcpy(&module->uuid, uuid_bin, sizeof(module->uuid));
 
 		module->id = (i | (index << 12));
