@@ -765,7 +765,6 @@ again:
 			dev_info(ctx->dev, "reload libs failed:%d remaining retries:%d\n",
 				ret, lib_reload_retries);
 			skl_dsp_disable_core(sst, SKL_DSP_CORE0_MASK);
-			skl_freeup_uuid_list(ctx);
 			goto again;
 		}
 
