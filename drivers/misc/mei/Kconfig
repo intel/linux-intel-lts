@@ -93,5 +93,6 @@ config INTEL_MEI_VIRTIO
 source "drivers/misc/mei/hdcp/Kconfig"
 source "drivers/misc/mei/pxp/Kconfig"
 source "drivers/misc/mei/gsc_proxy/Kconfig"
+source "drivers/misc/mei/iaf/Kconfig"
 
 endif

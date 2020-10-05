@@ -16,6 +16,8 @@
 #define MKHI_GEN_GROUP_ID 0xFF
 #define MKHI_GEN_GET_FW_VERSION_CMD 0x2
 
+#define MCHI_GROUP_ID  0xA
+
 #define MKHI_GROUP_ID_GFX              0x30
 #define MKHI_GFX_RESET_WARN_CMD_REQ    0x0
 #define MKHI_GFX_MEMORY_READY_CMD_REQ  0x1
