@@ -80,6 +80,7 @@
 #include "i915_drm_client.h"
 #include "i915_drv.h"
 #include "i915_getparam.h"
+#include "i915_hwmon.h"
 #include "i915_ioc32.h"
 #include "i915_ioctl.h"
 #include "i915_irq.h"
@@ -711,6 +712,8 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 
 	intel_gt_driver_register(to_gt(dev_priv));
 
+	i915_hwmon_register(dev_priv);
+
 	intel_display_driver_register(dev_priv);
 
 	intel_power_domains_enable(dev_priv);
@@ -736,6 +739,8 @@ static void i915_driver_unregister(struct drm_i915_private *dev_priv)
 	intel_power_domains_disable(dev_priv);
 
 	intel_display_driver_unregister(dev_priv);
+
+	i915_hwmon_unregister(dev_priv);
 
 	intel_gt_driver_unregister(to_gt(dev_priv));
 
