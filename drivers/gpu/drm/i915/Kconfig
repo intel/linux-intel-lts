@@ -18,6 +18,7 @@ config DRM_I915
 	select DRM_MIPI_DSI
 	select RELAY
 	select IRQ_WORK
+	select HWMON
 	# i915 depends on ACPI_VIDEO when ACPI is enabled
 	# but for select to work, need to select ACPI_VIDEO's dependencies, ick
 	select BACKLIGHT_CLASS_DEVICE if ACPI
