@@ -10,6 +10,7 @@
 
 struct drm_i915_private;
 
+
 int snb_pcode_read(struct drm_i915_private *i915, u32 mbox, u32 *val, u32 *val1);
 int snb_pcode_write_timeout(struct drm_i915_private *i915, u32 mbox, u32 val,
 			    int fast_timeout_us, int slow_timeout_ms);
