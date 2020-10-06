@@ -1,0 +1,35 @@
+What:		/sys/devices/.../hwmon/hwmon<i>/energy1_input
+Date:		June 2021
+KernelVersion:	5.14
+Contact:	dri-devel@lists.freedesktop.org
+Description:	RO. Energy input of device in microjoules.
+
+		The returned textual representation is an unsigned integer
+		number that can be stored in 64-bits.  Warning: The hardware
+		register is 32-bits wide and can overflow by wrapping around.
+		A single wrap-around between calls to read this value can
+		be detected and will be accounted for in the returned value.
+		At a power consumption of 1 watt, the 32-bit hardware register
+		would wrap-around approximately every 3 days.
+
+		Only supported for particular Intel i915 graphics platforms.
+
+What:		/sys/devices/.../hwmon/hwmon<i>/power1_max
+Date:		June 2021
+KernelVersion:	5.14
+Contact:	dri-devel@lists.freedesktop.org
+Description:	RW. Card reactive sustained  (PL1/Tau) power limit in microwatts.
+
+		The power controller will throttle the operating frequency
+		if the power averaged over a window (typically seconds)
+		exceeds this limit.
+
+		Only supported for particular Intel i915 graphics platforms.
+
+What:		/sys/devices/.../hwmon/hwmon<i>/power1_max_default
+Date:		June 2021
+KernelVersion:	5.14
+Contact:	dri-devel@lists.freedesktop.org
+Description:	RO. Card default power limit (default TDP setting).
+
+		Only supported for particular Intel i915 graphics platforms.
