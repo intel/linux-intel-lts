@@ -143,3 +143,4 @@ obj-$(CONFIG_VIDEO_INTEL_KMB_OV9282)    += kmb-ov9282.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_IMX334)    += kmb-imx334.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_IMX335)	+= kmb-imx335.o
 obj-$(CONFIG_VIDEO_INTEL_KMB_IMX412)    += kmb-imx412.o
+obj-$(CONFIG_VIDEO_INTEL_KMB_SMART_DRV) += kmb-smart-driver.o
