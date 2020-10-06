@@ -137,6 +137,7 @@ needed).
    misc-devices/index
    scheduler/index
    mhi/index
+   vpu/index
 
 Architecture-agnostic documentation
 -----------------------------------
