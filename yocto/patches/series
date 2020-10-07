@@ -6,3 +6,6 @@
 
 # CVE-2020-25211
 0001-netfilter-ctnetlink-add-a-range-check-for-l3-l4-prot.patch
+
+# CVE-2020-26541
+0001-certs-Add-EFI_CERT_X509_GUID-support-for-dbx-entries.patch
