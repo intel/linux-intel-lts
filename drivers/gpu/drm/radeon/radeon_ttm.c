@@ -396,8 +396,8 @@ static int radeon_ttm_tt_pin_userptr(struct ttm_bo_device *bdev, struct ttm_tt *
 	if (r)
 		goto release_sg;
 
-	drm_prime_sg_to_page_addr_arrays(ttm->sg, ttm->pages,
-					 gtt->ttm.dma_address, ttm->num_pages);
+	drm_prime_sg_to_page_addr_arrays(ttm->sg, NULL, gtt->ttm.dma_address,
+					 ttm->num_pages);
 
 	return 0;
 
@@ -535,7 +535,7 @@ static struct ttm_tt *radeon_ttm_tt_create(struct ttm_buffer_object *bo,
 	else
 		caching = ttm_cached;
 
-	if (ttm_dma_tt_init(&gtt->ttm, bo, page_flags, caching)) {
+	if (ttm_sg_tt_init(&gtt->ttm, bo, page_flags, caching)) {
 		kfree(gtt);
 		return NULL;
 	}
@@ -573,8 +573,9 @@ static int radeon_ttm_tt_populate(struct ttm_bo_device *bdev,
 	}
 
 	if (slave && ttm->sg) {
-		drm_prime_sg_to_page_addr_arrays(ttm->sg, ttm->pages,
-						 gtt->ttm.dma_address, ttm->num_pages);
+		drm_prime_sg_to_page_addr_arrays(ttm->sg, NULL,
+						 gtt->ttm.dma_address,
+						 ttm->num_pages);
 		return 0;
 	}
 
