@@ -1,0 +1,7 @@
+config XLINK_IPC
+	tristate "Support for XLINK IPC"
+	depends on KEEMBAY_VPU_IPC
+	help
+	  XLINK IPC enables the communication/control IPC Sub-System.
+
+	  Select M if you have an Intel SoC with a Vision Processing Unit (VPU).
