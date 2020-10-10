@@ -325,7 +325,8 @@ static int mct_set_state_periodic(struct clock_event_device *evt)
 static struct clock_event_device mct_comp_device = {
 	.name			= "mct-comp",
 	.features		= CLOCK_EVT_FEAT_PERIODIC |
-				  CLOCK_EVT_FEAT_ONESHOT,
+				  CLOCK_EVT_FEAT_ONESHOT |
+				  CLOCK_EVT_FEAT_PIPELINE,
 	.rating			= 250,
 	.set_next_event		= exynos4_comp_set_next_event,
 	.set_state_periodic	= mct_set_state_periodic,
@@ -341,7 +342,7 @@ static irqreturn_t exynos4_mct_comp_isr(int irq, void *dev_id)
 
 	exynos4_mct_write(0x1, EXYNOS4_MCT_G_INT_CSTAT);
 
-	evt->event_handler(evt);
+	clockevents_handle_event(evt);
 
 	return IRQ_HANDLED;
 }
@@ -352,7 +353,7 @@ static int exynos4_clockevent_init(void)
 	clockevents_config_and_register(&mct_comp_device, clk_rate,
 					0xf, 0xffffffff);
 	if (request_irq(mct_irqs[MCT_G0_IRQ], exynos4_mct_comp_isr,
-			IRQF_TIMER | IRQF_IRQPOLL, "mct_comp_irq",
+			IRQF_TIMER | IRQF_IRQPOLL | IRQF_OOB, "mct_comp_irq",
 			&mct_comp_device))
 		pr_err("%s: request_irq() failed\n", "mct_comp_irq");
 
@@ -451,7 +452,7 @@ static irqreturn_t exynos4_mct_tick_isr(int irq, void *dev_id)
 
 	exynos4_mct_tick_clear(mevt);
 
-	evt->event_handler(evt);
+	clockevents_handle_event(evt);
 
 	return IRQ_HANDLED;
 }
@@ -473,7 +474,7 @@ static int exynos4_mct_starting_cpu(unsigned int cpu)
 	evt->set_state_oneshot_stopped = set_state_shutdown;
 	evt->tick_resume = set_state_shutdown;
 	evt->features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT |
-			CLOCK_EVT_FEAT_PERCPU;
+			CLOCK_EVT_FEAT_PERCPU | CLOCK_EVT_FEAT_PIPELINE;
 	evt->rating = MCT_CLKEVENTS_RATING;
 
 	exynos4_mct_write(TICK_BASE_CNT, mevt->base + MCT_L_TCNTB_OFFSET);
@@ -567,9 +568,9 @@ static int __init exynos4_timer_interrupts(struct device_node *np,
 
 	if (mct_int_type == MCT_INT_PPI) {
 
-		err = request_percpu_irq(mct_irqs[MCT_L0_IRQ],
-					 exynos4_mct_tick_isr, "MCT",
-					 &percpu_mct_tick);
+		err = __request_percpu_irq(mct_irqs[MCT_L0_IRQ],
+					exynos4_mct_tick_isr, IRQF_TIMER,
+					"MCT", &percpu_mct_tick);
 		WARN(err, "MCT: can't request IRQ %d (%d)\n",
 		     mct_irqs[MCT_L0_IRQ], err);
 	} else {
