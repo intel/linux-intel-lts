@@ -1,0 +1,26 @@
+# Copyright (C) 2020 Intel Corporation
+# SPDX-License-Identifier: GPL-2.0-only
+
+config XLINK_SMBUS
+	tristate "Enable smbus interface over Xlink PCIe"
+	depends on XLINK_CORE
+	depends on HDDL_DEVICE_CLIENT || HDDL_DEVICE_SERVER
+	help
+	 Enable xlink-pcie as i2c adapter both slave and master. The server
+	 (Remote Host) will use this interface to get sensor data from the soc
+	 (vision accelerator - Local Host) which is connected over PCIe.
+	 This driver is loaded on both Remote Host and Local Host.
+	 Select M to compile the driver as a module, name is xlink-smbus.
+	 If unsure, select N.
+
+
+config XLINK_SMBUS_PROXY
+	tristate "Enable SMBUS adapter as proxy for I2C controller"
+	depends on XLINK_CORE
+	depends on XLINK_SMBUS
+	help
+	 Enable this config when SMBUS adapter is acting as proxy for
+	 another I2C controller.
+	 Select M or Y if building for Intel Vision Processing Unit (VPU)
+	 Local Host core.
+	 Select N, if building for a Remote Host kernel.
