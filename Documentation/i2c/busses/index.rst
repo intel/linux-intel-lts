@@ -29,4 +29,5 @@ I2C Bus Drivers
    i2c-taos-evm
    i2c-viapro
    i2c-via
+   intel-xlink-smbus.rst
    scx200_acb
