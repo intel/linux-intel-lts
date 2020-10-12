@@ -494,4 +494,5 @@ source "drivers/misc/xlink-ipc/Kconfig"
 source "drivers/misc/xlink-pcie/Kconfig"
 source "drivers/misc/noc/Kconfig"
 source "drivers/misc/intel_tsens/Kconfig"
+source "drivers/misc/xlink-smbus/Kconfig"
 endmenu

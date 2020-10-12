@@ -66,3 +66,4 @@ obj-$(CONFIG_INTEL_GNA)		+= gna/
 obj-y                           += xlink-pcie/
 obj-$(CONFIG_NOC_DSS)		+= noc/
 obj-y                           += intel_tsens/
+obj-$(CONFIG_XLINK_SMBUS)	+= xlink-smbus/
