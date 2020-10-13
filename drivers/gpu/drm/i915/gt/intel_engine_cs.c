@@ -141,7 +141,7 @@ static const struct engine_info intel_engines[] = {
 
 /**
  * intel_engine_context_size() - return the size of the context for an engine
- * @dev_priv: i915 device private
+ * @gt: the gt
  * @class: engine class
  *
  * Each engine class may require a different amount of space for a context
@@ -153,17 +153,18 @@ static const struct engine_info intel_engines[] = {
  * in LRC mode, but does not include the "shared data page" used with
  * GuC submission. The caller should account for this if using the GuC.
  */
-u32 intel_engine_context_size(struct drm_i915_private *dev_priv, u8 class)
+u32 intel_engine_context_size(struct intel_gt *gt, u8 class)
 {
+	struct intel_uncore *uncore = gt->uncore;
 	u32 cxt_size;
 
 	BUILD_BUG_ON(I915_GTT_PAGE_SIZE != PAGE_SIZE);
 
 	switch (class) {
 	case RENDER_CLASS:
-		switch (INTEL_GEN(dev_priv)) {
+		switch (INTEL_GEN(gt->i915)) {
 		default:
-			MISSING_CASE(INTEL_GEN(dev_priv));
+			MISSING_CASE(INTEL_GEN(gt->i915));
 			return DEFAULT_LR_CONTEXT_RENDER_SIZE;
 		case 12:
 		case 11:
@@ -175,14 +176,14 @@ u32 intel_engine_context_size(struct drm_i915_private *dev_priv, u8 class)
 		case 8:
 			return GEN8_LR_CONTEXT_RENDER_SIZE;
 		case 7:
-			if (IS_HASWELL(dev_priv))
+			if (IS_HASWELL(gt->i915))
 				return HSW_CXT_TOTAL_SIZE;
 
-			cxt_size = I915_READ(GEN7_CXT_SIZE);
+			cxt_size = intel_uncore_read(uncore, GEN7_CXT_SIZE);
 			return round_up(GEN7_CXT_TOTAL_SIZE(cxt_size) * 64,
 					PAGE_SIZE);
 		case 6:
-			cxt_size = I915_READ(CXT_SIZE);
+			cxt_size = intel_uncore_read(uncore, CXT_SIZE);
 			return round_up(GEN6_CXT_TOTAL_SIZE(cxt_size) * 64,
 					PAGE_SIZE);
 		case 5:
@@ -197,9 +198,9 @@ u32 intel_engine_context_size(struct drm_i915_private *dev_priv, u8 class)
 			 * minimum allocation anyway so it should all come
 			 * out in the wash.
 			 */
-			cxt_size = I915_READ(CXT_SIZE) + 1;
+			cxt_size = intel_uncore_read(uncore, CXT_SIZE) + 1;
 			DRM_DEBUG_DRIVER("gen%d CXT_SIZE = %d bytes [0x%08x]\n",
-					 INTEL_GEN(dev_priv),
+					 INTEL_GEN(gt->i915),
 					 cxt_size * 64,
 					 cxt_size - 1);
 			return round_up(cxt_size * 64, PAGE_SIZE);
@@ -216,7 +217,7 @@ u32 intel_engine_context_size(struct drm_i915_private *dev_priv, u8 class)
 	case VIDEO_DECODE_CLASS:
 	case VIDEO_ENHANCEMENT_CLASS:
 	case COPY_ENGINE_CLASS:
-		if (INTEL_GEN(dev_priv) < 8)
+		if (INTEL_GEN(gt->i915) < 8)
 			return 0;
 		return GEN8_LR_CONTEXT_OTHER_SIZE;
 	}
@@ -273,6 +274,7 @@ static void intel_engine_sanitize_mmio(struct intel_engine_cs *engine)
 static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id)
 {
 	const struct engine_info *info = &intel_engines[id];
+	struct drm_i915_private *i915 = gt->i915;
 	struct intel_engine_cs *engine;
 
 	BUILD_BUG_ON(MAX_ENGINE_CLASS >= BIT(GEN11_ENGINE_CLASS_WIDTH));
@@ -299,11 +301,11 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id)
 	engine->id = id;
 	engine->legacy_idx = INVALID_ENGINE;
 	engine->mask = BIT(id);
-	engine->i915 = gt->i915;
+	engine->i915 = i915;
 	engine->gt = gt;
 	engine->uncore = gt->uncore;
 	engine->hw_id = engine->guc_id = info->hw_id;
-	engine->mmio_base = __engine_mmio_base(gt->i915, info->mmio_bases);
+	engine->mmio_base = __engine_mmio_base(i915, info->mmio_bases);
 
 	engine->class = info->class;
 	engine->instance = info->instance;
@@ -311,6 +313,8 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id)
 
 	engine->props.heartbeat_interval_ms =
 		CONFIG_DRM_I915_HEARTBEAT_INTERVAL;
+	engine->props.max_busywait_duration_ns =
+		CONFIG_DRM_I915_MAX_REQUEST_BUSYWAIT;
 	engine->props.preempt_timeout_ms =
 		CONFIG_DRM_I915_PREEMPT_TIMEOUT;
 	engine->props.stop_timeout_ms =
@@ -323,13 +327,15 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id)
 	 * cleanup on error during setup, we always provide the destroy vfunc.
 	 */
 	engine->destroy = (typeof(engine->destroy))kfree;
+	/* Override to uninterruptible for OpenCL workloads. */
+	if (INTEL_GEN(i915) == 12 && engine->class == RENDER_CLASS)
+		engine->props.preempt_timeout_ms = 0;
 
-	engine->context_size = intel_engine_context_size(gt->i915,
-							 engine->class);
+	engine->context_size = intel_engine_context_size(gt, engine->class);
 	if (WARN_ON(engine->context_size > BIT(20)))
 		engine->context_size = 0;
 	if (engine->context_size)
-		DRIVER_CAPS(gt->i915)->has_logical_contexts = true;
+		DRIVER_CAPS(i915)->has_logical_contexts = true;
 
 	/* Nothing to do here, execute in order of dependencies */
 	engine->schedule = NULL;
@@ -345,7 +351,7 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id)
 	gt->engine[id] = engine;
 
 	intel_engine_add_user(engine);
-	gt->i915->engine[id] = engine;
+	i915->engine[id] = engine;
 
 	return 0;
 }

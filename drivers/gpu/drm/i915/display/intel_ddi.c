@@ -3252,57 +3252,6 @@ static void intel_ddi_clk_disable(struct intel_encoder *encoder)
 }
 
 static void
-icl_phy_set_clock_gating(struct intel_digital_port *dig_port, bool enable)
-{
-	struct drm_i915_private *dev_priv = to_i915(dig_port->base.base.dev);
-	enum tc_port tc_port = intel_port_to_tc(dev_priv, dig_port->base.port);
-	u32 val, bits;
-	int ln;
-
-	if (tc_port == PORT_TC_NONE)
-		return;
-
-	bits = MG_DP_MODE_CFG_TR2PWR_GATING | MG_DP_MODE_CFG_TRPWR_GATING |
-	       MG_DP_MODE_CFG_CLNPWR_GATING | MG_DP_MODE_CFG_DIGPWR_GATING |
-	       MG_DP_MODE_CFG_GAONPWR_GATING;
-
-	for (ln = 0; ln < 2; ln++) {
-		if (INTEL_GEN(dev_priv) >= 12) {
-			I915_WRITE(HIP_INDEX_REG(tc_port), HIP_INDEX_VAL(tc_port, ln));
-			val = I915_READ(DKL_DP_MODE(tc_port));
-		} else {
-			val = I915_READ(MG_DP_MODE(ln, tc_port));
-		}
-
-		if (enable)
-			val |= bits;
-		else
-			val &= ~bits;
-
-		if (INTEL_GEN(dev_priv) >= 12)
-			I915_WRITE(DKL_DP_MODE(tc_port), val);
-		else
-			I915_WRITE(MG_DP_MODE(ln, tc_port), val);
-	}
-
-	if (INTEL_GEN(dev_priv) == 11) {
-		bits = MG_MISC_SUS0_CFG_TR2PWR_GATING |
-		       MG_MISC_SUS0_CFG_CL2PWR_GATING |
-		       MG_MISC_SUS0_CFG_GAONPWR_GATING |
-		       MG_MISC_SUS0_CFG_TRPWR_GATING |
-		       MG_MISC_SUS0_CFG_CL1PWR_GATING |
-		       MG_MISC_SUS0_CFG_DGPWR_GATING;
-
-		val = I915_READ(MG_MISC_SUS0(tc_port));
-		if (enable)
-			val |= (bits | MG_MISC_SUS0_SUSCLK_DYNCLKGATE_MODE(3));
-		else
-			val &= ~(bits | MG_MISC_SUS0_SUSCLK_DYNCLKGATE_MODE_MASK);
-		I915_WRITE(MG_MISC_SUS0(tc_port), val);
-	}
-}
-
-static void
 icl_program_mg_dp_mode(struct intel_digital_port *intel_dig_port,
 		       const struct intel_crtc_state *crtc_state)
 {
@@ -3534,48 +3483,80 @@ static void tgl_ddi_pre_enable_dp(struct intel_encoder *encoder,
 	intel_dp->regs.dp_tp_ctl = TGL_DP_TP_CTL(transcoder);
 	intel_dp->regs.dp_tp_status = TGL_DP_TP_STATUS(transcoder);
 
-	/* 1.a got on intel_atomic_commit_tail() */
+	/*
+	 * 1. Enable Power Wells
+	 *
+	 * This was handled at the beginning of intel_atomic_commit_tail(),
+	 * before we called down into this function.
+	 */
 
-	/* 2. */
+	/* 2. Enable Panel Power if PPS is required */
 	intel_edp_panel_on(intel_dp);
 
 	/*
-	 * 1.b, 3. and 4.a is done before tgl_ddi_pre_enable_dp() by:
-	 * haswell_crtc_enable()->intel_encoders_pre_pll_enable() and
-	 * haswell_crtc_enable()->intel_enable_shared_dpll()
+	 * 3. For non-TBT Type-C ports, set FIA lane count
+	 * (DFLEXDPSP.DPX4TXLATC)
+	 *
+	 * This was done before tgl_ddi_pre_enable_dp by
+	 * haswell_crtc_enable()->intel_encoders_pre_pll_enable().
 	 */
 
-	/* 4.b */
+	/*
+	 * 4. Enable the port PLL.
+	 *
+	 * The PLL enabling itself was already done before this function by
+	 * haswell_crtc_enable()->intel_enable_shared_dpll().  We need only
+	 * configure the PLL to port mapping here.
+	 */
 	intel_ddi_clk_select(encoder, crtc_state);
 
-	/* 5. */
+	/* 5. If IO power is controlled through PWR_WELL_CTL, Enable IO Power */
 	if (!intel_phy_is_tc(dev_priv, phy) ||
 	    dig_port->tc_mode != TC_PORT_TBT_ALT)
 		intel_display_power_get(dev_priv,
 					dig_port->ddi_io_power_domain);
 
-	/* 6. */
+	/* 6. Program DP_MODE */
 	icl_program_mg_dp_mode(dig_port, crtc_state);
 
 	/*
-	 * 7.a - single stream or multi-stream master transcoder: Configure
-	 * Transcoder Clock Select. For additional MST streams this will be done
-	 * by intel_mst_pre_enable_dp() after programming VC Payload ID through
-	 * AUX.
+	 * 7. The rest of the below are substeps under the bspec's "Enable and
+	 * Train Display Port" step.  Note that steps that are specific to
+	 * MST will be handled by intel_mst_pre_enable_dp() before/after it
+	 * calls into this function.  Also intel_mst_pre_enable_dp() only calls
+	 * us when active_mst_links==0, so any steps designated for "single
+	 * stream or multi-stream master transcoder" can just be performed
+	 * unconditionally here.
+	 */
+
+	/*
+	 * 7.a Configure Transcoder Clock Select to direct the Port clock to the
+	 * Transcoder.
 	 */
 	intel_ddi_enable_pipe_clock(crtc_state);
 
-	/* 7.b */
+	/*
+	 * 7.b Configure TRANS_DDI_FUNC_CTL DDI Select, DDI Mode Select & MST
+	 * Transport Select
+	 */
 	intel_ddi_config_transcoder_func(crtc_state);
 
-	/* 7.d */
-	icl_phy_set_clock_gating(dig_port, false);
+	/*
+	 * 7.c Configure & enable DP_TP_CTL with link training pattern 1
+	 * selected
+	 *
+	 * This will be handled by the intel_dp_start_link_train() farther
+	 * down this function.
+	 */
 
-	/* 7.e */
+	/* 7.e Configure voltage swing and related IO settings */
 	tgl_ddi_vswing_sequence(encoder, crtc_state->port_clock, level,
 				encoder->type);
 
-	/* 7.f */
+	/*
+	 * 7.f Combo PHY: Configure PORT_CL_DW10 Static Power Down to power up
+	 * the used lanes of the DDI.
+	 */
 	if (intel_phy_is_combo(dev_priv, phy)) {
 		bool lane_reversal =
 			dig_port->saved_port_bits & DDI_BUF_PORT_REVERSAL;
@@ -3585,7 +3566,14 @@ static void tgl_ddi_pre_enable_dp(struct intel_encoder *encoder,
 					       lane_reversal);
 	}
 
-	/* 7.g */
+	/*
+	 * 7.g Configure and enable DDI_BUF_CTL
+	 * 7.h Wait for DDI_BUF_CTL DDI Idle Status = 0b (Not Idle), timeout
+	 *     after 500 us.
+	 *
+	 * We only configure what the register value will be here.  Actual
+	 * enabling happens during link training farther down.
+	 */
 	intel_ddi_init_dp_buf_reg(encoder);
 
 	if (!is_mst)
@@ -3598,23 +3586,21 @@ static void tgl_ddi_pre_enable_dp(struct intel_encoder *encoder,
 	 * training
 	 */
 	intel_dp_sink_set_fec_ready(intel_dp, crtc_state);
-	/* 7.c, 7.h, 7.i, 7.j */
+
+	/*
+	 * 7.i Follow DisplayPort specification training sequence (see notes for
+	 *     failure handling)
+	 * 7.j If DisplayPort multi-stream - Set DP_TP_CTL link training to Idle
+	 *     Pattern, wait for 5 idle patterns (DP_TP_STATUS Min_Idles_Sent)
+	 *     (timeout after 800 us)
+	 */
 	intel_dp_start_link_train(intel_dp);
 
-	/* 7.k */
+	/* 7.k Set DP_TP_CTL link training to Normal */
 	if (!is_trans_port_sync_mode(crtc_state))
 		intel_dp_stop_link_train(intel_dp);
 
-	/*
-	 * TODO: enable clock gating
-	 *
-	 * It is not written in DP enabling sequence but "PHY Clockgating
-	 * programming" states that clock gating should be enabled after the
-	 * link training but doing so causes all the following trainings to fail
-	 * so not enabling it for now.
-	 */
-
-	/* 7.l */
+	/* 7.l Configure and enable FEC if needed */
 	intel_ddi_enable_fec(encoder, crtc_state);
 	intel_dsc_enable(encoder, crtc_state);
 }
@@ -3631,7 +3617,10 @@ static void hsw_ddi_pre_enable_dp(struct intel_encoder *encoder,
 	bool is_mst = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST);
 	int level = intel_ddi_dp_level(intel_dp);
 
-	WARN_ON(is_mst && (port == PORT_A || port == PORT_E));
+	if (INTEL_GEN(dev_priv) < 11)
+		WARN_ON(is_mst && (port == PORT_A || port == PORT_E));
+	else
+		WARN_ON(is_mst && port == PORT_A);
 
 	intel_dp_set_link_params(intel_dp, crtc_state->port_clock,
 				 crtc_state->lane_count, is_mst);
@@ -3649,7 +3638,6 @@ static void hsw_ddi_pre_enable_dp(struct intel_encoder *encoder,
 					dig_port->ddi_io_power_domain);
 
 	icl_program_mg_dp_mode(dig_port, crtc_state);
-	icl_phy_set_clock_gating(dig_port, false);
 
 	if (INTEL_GEN(dev_priv) >= 11)
 		icl_ddi_vswing_sequence(encoder, crtc_state->port_clock,
@@ -3682,8 +3670,6 @@ static void hsw_ddi_pre_enable_dp(struct intel_encoder *encoder,
 		intel_dp_stop_link_train(intel_dp);
 
 	intel_ddi_enable_fec(encoder, crtc_state);
-
-	icl_phy_set_clock_gating(dig_port, true);
 
 	if (!is_mst)
 		intel_ddi_enable_pipe_clock(crtc_state);
@@ -3726,7 +3712,6 @@ static void intel_ddi_pre_enable_hdmi(struct intel_encoder *encoder,
 	intel_display_power_get(dev_priv, dig_port->ddi_io_power_domain);
 
 	icl_program_mg_dp_mode(dig_port, crtc_state);
-	icl_phy_set_clock_gating(dig_port, false);
 
 	if (INTEL_GEN(dev_priv) >= 12)
 		tgl_ddi_vswing_sequence(encoder, crtc_state->port_clock,
@@ -3740,8 +3725,6 @@ static void intel_ddi_pre_enable_hdmi(struct intel_encoder *encoder,
 		bxt_ddi_vswing_sequence(encoder, level, INTEL_OUTPUT_HDMI);
 	else
 		intel_prepare_hdmi_ddi_buffers(encoder, level);
-
-	icl_phy_set_clock_gating(dig_port, true);
 
 	if (IS_GEN9_BC(dev_priv))
 		skl_ddi_set_iboost(encoder, level, INTEL_OUTPUT_HDMI);
