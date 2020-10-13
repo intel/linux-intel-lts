@@ -6,6 +6,7 @@
 #ifndef __ASSEMBLY__
 
 #include <linux/bits.h>
+#include <asm/msr.h>
 
 #define KL_CPUID                0x019
 #define KL_CPUID_EAX_SUPERVISOR BIT(0)

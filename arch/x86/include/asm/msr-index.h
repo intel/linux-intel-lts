@@ -944,4 +944,10 @@
 #define MSR_IA32_PL3_SSP	0x000006a7 /* user shadow stack pointer */
 #define MSR_IA32_INT_SSP_TAB	0x000006a8 /* exception shadow stack table */
 
+/* MSRs for Key Locker's Internal Wrapping Key (IWKey) management */
+#define MSR_IA32_COPY_LOCAL_TO_PLATFORM		0x00000d91
+#define MSR_IA32_COPY_PLATFORM_TO_LOCAL		0x00000d92
+#define MSR_IA32_COPY_STATUS			0x00000990
+#define MSR_IA32_IWKEYBACKUP_STATUS		0x00000991
+
 #endif /* _ASM_X86_MSR_INDEX_H */
