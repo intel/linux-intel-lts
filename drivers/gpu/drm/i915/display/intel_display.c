@@ -4917,17 +4917,13 @@ void intel_finish_reset(struct drm_i915_private *dev_priv)
 		intel_pps_unlock_regs_wa(dev_priv);
 		intel_modeset_init_hw(dev_priv);
 		intel_init_clock_gating(dev_priv);
-
-		spin_lock_irq(&dev_priv->irq_lock);
-		if (dev_priv->display.hpd_irq_setup)
-			dev_priv->display.hpd_irq_setup(dev_priv);
-		spin_unlock_irq(&dev_priv->irq_lock);
+		intel_hpd_init(dev_priv);
 
 		ret = __intel_display_resume(dev, state, ctx);
 		if (ret)
 			DRM_ERROR("Restoring old state failed with %i\n", ret);
 
-		intel_hpd_init(dev_priv);
+		intel_hpd_poll_disable(dev_priv);
 	}
 
 	drm_atomic_state_put(state);
@@ -17542,6 +17538,13 @@ int intel_modeset_init(struct drm_i915_private *i915)
 	ret = intel_initial_commit(dev);
 	if (ret)
 		DRM_DEBUG_KMS("Initial commit in probe failed.\n");
+		return ret;
+
+	/* Only enable hotplug handling once the fbdev is fully set up. */
+	intel_hpd_init(i915);
+	intel_hpd_poll_disable(i915);
+
+	intel_init_ipc(i915);
 
 	return 0;
 }

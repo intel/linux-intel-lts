@@ -15,7 +15,8 @@ struct intel_connector;
 struct intel_encoder;
 enum port;
 
-void intel_hpd_poll_init(struct drm_i915_private *dev_priv);
+void intel_hpd_poll_enable(struct drm_i915_private *dev_priv);
+void intel_hpd_poll_disable(struct drm_i915_private *dev_priv);
 enum intel_hotplug_state intel_encoder_hotplug(struct intel_encoder *encoder,
 					       struct intel_connector *connector,
 					       bool irq_received);
